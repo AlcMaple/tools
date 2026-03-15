@@ -1,0 +1,7 @@
+requests
+beautifulsoup4
+aiohttp
+tqdm
+playwright
+pycryptodome
+urllib3
