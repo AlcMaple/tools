@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Biu Sync - The Digital Archivist</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&amp;family=Space+Grotesk:wght@300;400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-fixed-variant": "#00458d",
+              "on-surface": "#e2e2e2",
+              "on-tertiary-container": "#3f4040",
+              "tertiary-fixed": "#e4e2e2",
+              "error": "#ffb4ab",
+              "surface-container": "#1f1f1f",
+              "surface-variant": "#353535",
+              "on-background": "#e2e2e2",
+              "inverse-on-surface": "#303030",
+              "primary": "#ffb3b8",
+              "secondary-fixed": "#d6e3ff",
+              "on-error": "#690005",
+              "error-container": "#93000a",
+              "on-primary": "#5a1923",
+              "on-surface-variant": "#d9c1c1",
+              "tertiary": "#c8c6c6",
+              "primary-fixed-dim": "#ffb2b8",
+              "tertiary-container": "#acabab",
+              "surface-bright": "#393939",
+              "inverse-primary": "#94464f",
+              "on-primary-fixed": "#3e0410",
+              "surface-dim": "#131313",
+              "on-primary-fixed-variant": "#772f38",
+              "secondary-fixed-dim": "#aac7ff",
+              "on-primary-container": "#6e2932",
+              "primary-container": "#f09199",
+              "on-secondary": "#002f64",
+              "secondary-container": "#004c9a",
+              "on-tertiary-fixed": "#1b1c1c",
+              "surface-container-high": "#2a2a2a",
+              "background": "#131313",
+              "primary-fixed": "#ffdadb",
+              "surface": "#131313",
+              "on-tertiary-fixed-variant": "#464747",
+              "on-tertiary": "#303030",
+              "on-error-container": "#ffdad6",
+              "surface-container-low": "#1b1b1b",
+              "on-secondary-fixed": "#001b3e",
+              "tertiary-fixed-dim": "#c8c6c6",
+              "secondary": "#aac7ff",
+              "on-secondary-container": "#9ec0ff",
+              "surface-container-lowest": "#0e0e0e",
+              "surface-tint": "#ffb2b8",
+              "surface-container-highest": "#353535",
+              "outline-variant": "#544343",
+              "outline": "#a18c8c",
+              "inverse-surface": "#e2e2e2"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Space Grotesk"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #131313;
+            color: #e2e2e2;
+            font-family: 'Inter', sans-serif;
+        }
+        .glass-panel {
+            background: rgba(53, 53, 53, 0.7);
+            backdrop-filter: blur(30px);
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #ffb3b8 0%, #f09199 100%);
+        }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #131313; }
+        ::-webkit-scrollbar-thumb { background: #353535; border-radius: 2px; }
+    </style>
+</head>
+<body class="overflow-hidden">
+<!-- SideNavBar -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-[#0e0e0e] flex flex-col py-8 z-50">
+<div class="px-8 mb-12">
+<h1 class="text-xl font-black text-[#ffb3b8] tracking-tighter">ARCHIVIST</h1>
+<p class="font-label text-[10px] text-[#ffb3b8]/50 tracking-widest mt-1">V2.4.0</p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center px-8 py-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-colors duration-200 group" href="#">
+<span class="material-symbols-outlined mr-4 group-active:scale-95" data-icon="search">search</span>
+<span class="font-label text-sm uppercase tracking-wider">Search &amp; Download</span>
+</a>
+<a class="flex items-center px-8 py-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-colors duration-200 group" href="#">
+<span class="material-symbols-outlined mr-4 group-active:scale-95" data-icon="download_for_offline">download_for_offline</span>
+<span class="font-label text-sm uppercase tracking-wider">Download Queue</span>
+</a>
+<a class="flex items-center px-8 py-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-colors duration-200 group" href="#">
+<span class="material-symbols-outlined mr-4 group-active:scale-95" data-icon="menu_book">menu_book</span>
+<span class="font-label text-sm uppercase tracking-wider">Anime Info</span>
+</a>
+<!-- Active Navigation: Biu Sync -->
+<a class="flex items-center px-8 py-3 text-[#ffb3b8] font-bold border-r-2 border-[#ffb3b8] bg-[#1f1f1f]/50 group" href="#">
+<span class="material-symbols-outlined mr-4" data-icon="sync" style="font-variation-settings: 'FILL' 1;">sync</span>
+<span class="font-label text-sm uppercase tracking-wider">Biu Sync</span>
+</a>
+</nav>
+<div class="px-8 mt-auto">
+<div class="flex items-center gap-3 p-3 rounded-xl bg-surface-container-low">
+<img alt="Archivist Profile" class="w-10 h-10 rounded-full object-cover grayscale opacity-80" data-alt="Abstract digital profile avatar representing archivist" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBryt-UxYh-xwrgsd3VvetEtstM5uHuSStgXbcJGUKMpGVji44tTX6pA9lHNPhGp_aKYe_-iInK8ggXn8v2sME4CpZ8MzylB_0IQvzWmI-khT6NGgFW8geCq8lgVZCLyGq1OrljzBE8Rz8AnHDmPOzVkY0JmQgYTrHNwUZgexcTo969CsCJPTPr3hv5ARuUDElDPQHFQF1OrrZGi9lEYH1_mys5L6KqdiiC2xYOdpgL0686PgsttyGzsOsLg1QymyfvBoJzo807IQ"/>
+<div>
+<p class="font-label text-xs font-bold text-on-surface">OPERATOR_01</p>
+<p class="font-label text-[10px] text-on-surface-variant">Authenticated</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- TopNavBar -->
+<header class="fixed top-0 right-0 left-64 h-16 flex justify-between items-center px-10 w-full ml-0 bg-[#131313]/80 backdrop-blur-xl z-40">
+<div class="flex items-center bg-surface-container-highest px-4 py-1.5 rounded-md w-96 group focus-within:bg-surface-bright transition-all">
+<span class="material-symbols-outlined text-on-surface-variant text-sm mr-3" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm w-full placeholder:text-on-surface-variant/40 font-body" placeholder="Search archive logs..." type="text"/>
+</div>
+<div class="flex items-center gap-6">
+<button class="text-on-surface hover:bg-[#353535]/40 p-2 rounded-full transition-all group">
+<span class="material-symbols-outlined" data-icon="dark_mode">dark_mode</span>
+</button>
+<button class="text-on-surface hover:bg-[#353535]/40 p-2 rounded-full transition-all group">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<button class="text-on-surface hover:bg-[#353535]/40 p-2 rounded-full transition-all group">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 pt-16 h-screen overflow-y-auto bg-surface">
+<div class="max-w-6xl mx-auto px-10 py-12">
+<!-- Hero Branding -->
+<header class="mb-16 relative">
+<div class="absolute -left-4 top-0 w-1 h-24 primary-gradient rounded-full"></div>
+<h2 class="text-6xl font-black tracking-tighter font-headline mb-2 text-on-surface">Biu Sync</h2>
+<p class="font-label text-sm tracking-[0.2em] uppercase text-primary/80">Personal Data Synchronization Node</p>
+</header>
+<!-- Sync Interface -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
+<!-- Interaction Column -->
+<div class="lg:col-span-7 space-y-6">
+<div class="flex flex-col md:flex-row gap-6">
+<!-- Push Action -->
+<button class="flex-1 group relative overflow-hidden bg-surface-container rounded-xl p-8 text-left transition-all active:scale-95 border-b-4 border-transparent hover:border-primary transition-all duration-300">
+<div class="flex justify-between items-start mb-8">
+<div class="p-3 bg-primary/10 rounded-lg">
+<span class="material-symbols-outlined text-primary text-4xl" data-icon="upload_file">upload_file</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant/20 group-hover:text-primary/40 transition-colors" data-icon="north_east">north_east</span>
+</div>
+<h3 class="font-headline text-2xl font-bold text-on-surface mb-1">Push to E Drive</h3>
+<p class="font-label text-xs text-on-surface-variant tracking-wide">Update remote repository with local 'Biu' contents.</p>
+</button>
+<!-- Pull Action -->
+<button class="flex-1 group relative overflow-hidden bg-surface-container rounded-xl p-8 text-left transition-all active:scale-95 border-b-4 border-transparent hover:border-secondary transition-all duration-300">
+<div class="flex justify-between items-start mb-8">
+<div class="p-3 bg-secondary/10 rounded-lg">
+<span class="material-symbols-outlined text-secondary text-4xl" data-icon="download_for_offline">download_for_offline</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant/20 group-hover:text-secondary/40 transition-colors" data-icon="south_west">south_west</span>
+</div>
+<h3 class="font-headline text-2xl font-bold text-on-surface mb-1">Pull from E Drive</h3>
+<p class="font-label text-xs text-on-surface-variant tracking-wide">Sync local workstation with latest E Drive data.</p>
+</button>
+</div>
+<!-- Progress/Status Area -->
+<div class="bg-surface-container-low rounded-xl p-8">
+<div class="flex justify-between items-end mb-6">
+<div>
+<h4 class="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">Sync Status</h4>
+<p class="font-headline text-xl font-bold text-secondary">Idle &amp; Standby</p>
+</div>
+<div class="text-right">
+<p class="font-label text-xs text-on-surface-variant">Last checked: <span class="text-on-surface">2 mins ago</span></p>
+</div>
+</div>
+<!-- Progress Bar Visual (Dual Tone Trace) -->
+<div class="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full w-full bg-gradient-to-r from-secondary to-secondary-container opacity-20"></div>
+</div>
+</div>
+</div>
+<!-- Info Column (Bento Style) -->
+<div class="lg:col-span-5 flex flex-col gap-6">
+<!-- Metadata Card -->
+<div class="bg-surface-container p-6 rounded-xl flex-1 border border-outline-variant/10">
+<div class="flex items-center gap-3 mb-8">
+<span class="material-symbols-outlined text-primary text-sm" data-icon="history" style="font-variation-settings: 'FILL' 1;">history</span>
+<span class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">Session History</span>
+</div>
+<div class="space-y-6">
+<div class="flex justify-between items-center">
+<span class="font-label text-xs text-on-surface-variant">Last Successful Sync</span>
+<span class="font-body text-sm font-medium text-on-surface">2023.10.24 — 14:02</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-label text-xs text-on-surface-variant">Total Data Moved</span>
+<span class="font-body text-sm font-medium text-on-surface">1.24 GB</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-label text-xs text-on-surface-variant">Files Impacted</span>
+<span class="font-body text-sm font-medium text-on-surface">142 items</span>
+</div>
+</div>
+</div>
+<!-- Path Mapping -->
+<div class="bg-surface-container-lowest p-6 rounded-xl space-y-4 border border-outline-variant/5">
+<div class="space-y-1">
+<span class="font-label text-[9px] uppercase tracking-[0.25em] text-primary/60 block">Local Path</span>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="folder_open">folder_open</span>
+<code class="font-label text-xs text-on-surface truncate">C:/Users/Archivist/Documents/Biu</code>
+</div>
+</div>
+<div class="h-px w-full bg-surface-variant/30"></div>
+<div class="space-y-1">
+<span class="font-label text-[9px] uppercase tracking-[0.25em] text-secondary/60 block">Remote Path</span>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="storage">storage</span>
+<code class="font-label text-xs text-on-surface truncate">E:/Backups/Projects/Biu_Sync_V2</code>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Meta -->
+<footer class="mt-20 flex justify-between items-center opacity-40 grayscale border-t border-outline-variant/10 pt-6">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-lg" data-icon="shield_with_heart">shield_with_heart</span>
+<span class="font-label text-[10px] uppercase tracking-widest">End-to-End Encryption Enabled</span>
+</div>
+<div class="flex gap-8">
+<span class="font-label text-[10px] uppercase tracking-widest">Biu-Engine v4.1</span>
+<span class="font-label text-[10px] uppercase tracking-widest">Node: Local-01</span>
+</div>
+</footer>
+</div>
+</main>
+<!-- Contextual Floating Effect (Ambient Glow) -->
+<div class="fixed -bottom-48 -right-48 w-96 h-96 bg-primary/10 rounded-full blur-[100px] pointer-events-none"></div>
+<div class="fixed top-48 -left-24 w-64 h-64 bg-secondary/5 rounded-full blur-[80px] pointer-events-none"></div>
+</body></html>

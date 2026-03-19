@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&amp;family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-fixed-variant": "#00458d",
+              "on-surface": "#e2e2e2",
+              "on-tertiary-container": "#3f4040",
+              "tertiary-fixed": "#e4e2e2",
+              "error": "#ffb4ab",
+              "surface-container": "#1f1f1f",
+              "surface-variant": "#353535",
+              "on-background": "#e2e2e2",
+              "inverse-on-surface": "#303030",
+              "primary": "#ffb3b8",
+              "secondary-fixed": "#d6e3ff",
+              "on-error": "#690005",
+              "error-container": "#93000a",
+              "on-primary": "#5a1923",
+              "on-surface-variant": "#d9c1c1",
+              "tertiary": "#c8c6c6",
+              "primary-fixed-dim": "#ffb2b8",
+              "tertiary-container": "#acabab",
+              "surface-bright": "#393939",
+              "inverse-primary": "#94464f",
+              "on-primary-fixed": "#3e0410",
+              "surface-dim": "#131313",
+              "on-primary-fixed-variant": "#772f38",
+              "secondary-fixed-dim": "#aac7ff",
+              "on-primary-container": "#6e2932",
+              "primary-container": "#f09199",
+              "on-secondary": "#002f64",
+              "secondary-container": "#004c9a",
+              "on-tertiary-fixed": "#1b1c1c",
+              "surface-container-high": "#2a2a2a",
+              "background": "#131313",
+              "primary-fixed": "#ffdadb",
+              "surface": "#131313",
+              "on-tertiary-fixed-variant": "#464747",
+              "on-tertiary": "#303030",
+              "on-error-container": "#ffdad6",
+              "surface-container-low": "#1b1b1b",
+              "on-secondary-fixed": "#001b3e",
+              "tertiary-fixed-dim": "#c8c6c6",
+              "secondary": "#aac7ff",
+              "on-secondary-container": "#9ec0ff",
+              "surface-container-lowest": "#0e0e0e",
+              "surface-tint": "#ffb2b8",
+              "surface-container-highest": "#353535",
+              "outline-variant": "#544343",
+              "outline": "#a18c8c",
+              "inverse-surface": "#e2e2e2"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Space Grotesk"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .glass-effect {
+            background: rgba(53, 53, 53, 0.7);
+            backdrop-filter: blur(30px);
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #ffb3b8 0%, #f09199 100%);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #131313;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #353535;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container custom-scrollbar overflow-x-hidden">
+<!-- SideNavBar -->
+<nav class="h-screen w-64 fixed left-0 top-0 bg-[#0e0e0e] flex flex-col py-8 z-50">
+<div class="px-8 mb-12">
+<h1 class="text-xl font-black text-[#ffb3b8] tracking-tighter">ARCHIVIST</h1>
+<p class="font-label text-[10px] tracking-widest text-on-surface-variant opacity-50">V2.4.0</p>
+</div>
+<div class="flex-1 flex flex-col gap-1">
+<a class="flex items-center gap-4 px-8 py-3 text-[#ffb3b8] font-bold border-r-2 border-[#ffb3b8] hover:bg-[#1f1f1f] transition-all duration-150 active:scale-95" href="#">
+<span class="material-symbols-outlined">search</span>
+<span class="font-label text-sm uppercase tracking-wider">Search &amp; Download</span>
+</a>
+<a class="flex items-center gap-4 px-8 py-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-150 active:scale-95" href="#">
+<span class="material-symbols-outlined">download_for_offline</span>
+<span class="font-label text-sm uppercase tracking-wider">Download Queue</span>
+</a>
+<a class="flex items-center gap-4 px-8 py-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-150 active:scale-95" href="#">
+<span class="material-symbols-outlined">menu_book</span>
+<span class="font-label text-sm uppercase tracking-wider">Anime Info</span>
+</a>
+<a class="flex items-center gap-4 px-8 py-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-150 active:scale-95" href="#">
+<span class="material-symbols-outlined">sync</span>
+<span class="font-label text-sm uppercase tracking-wider">Biu Sync</span>
+</a>
+</div>
+<div class="px-8 mt-auto flex items-center gap-3 pt-8">
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Digital Archivist User Avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB_FPsHZq9LGI6IG8Uf0bT5wkTCNVJtlZ-ZomZDNbU7DsKxm2IiWh6KhPHW8Vb_3SZ8u78ydERKewd_64uG6GVZRquLLd3Sb-wy41onTZ4YUV1yn5i_IhFMd0j-evq-Ayn7iv58i1_1NpoPo_wvgnb80E17HEooqiZyZNfQOC5qy0fCf4Pny-h_sxwr_-RwufD-UJKwdB8i27H0qqIm5T3O5RwiDs79PQnRX1Z2HUVaxLJXlaArB8496CfSlUleNWo6mGaq239iWQ"/>
+</div>
+<div>
+<p class="text-xs font-bold text-on-surface">Archivist Admin</p>
+<p class="text-[10px] text-primary">System Online</p>
+</div>
+</div>
+</nav>
+<!-- TopNavBar -->
+<header class="fixed top-0 right-0 left-64 h-16 bg-[#131313]/80 backdrop-blur-xl flex justify-between items-center px-6 z-40">
+<div class="flex items-center gap-4 flex-1 max-w-xl">
+<div class="relative w-full group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">search</span>
+<input class="w-full bg-surface-container-highest border-none rounded-md py-2 pl-10 pr-4 text-sm font-body focus:ring-0 focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/40" placeholder="Quick find archives..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="w-10 h-10 flex items-center justify-center text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all group">
+<span class="material-symbols-outlined group-hover:drop-shadow-[0_0_4px_rgba(255,179,184,0.6)]">dark_mode</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all group">
+<span class="material-symbols-outlined group-hover:drop-shadow-[0_0_4px_rgba(255,179,184,0.6)]">settings</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all group">
+<span class="material-symbols-outlined group-hover:drop-shadow-[0_0_4px_rgba(255,179,184,0.6)]">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Main Content -->
+<main class="ml-64 pt-16 min-h-screen">
+<div class="max-w-7xl mx-auto p-12 space-y-16">
+<!-- Hero Search Section -->
+<section class="relative space-y-8">
+<div class="max-w-3xl">
+<h2 class="text-6xl font-black font-headline tracking-tighter text-on-surface leading-[0.9] mb-4">
+                        INDEX THE <br/><span class="text-primary">MULTIVERSE</span>
+</h2>
+<p class="font-label text-sm text-on-surface-variant uppercase tracking-[0.2em] mb-12 opacity-80">Advanced Media Crawler Engine</p>
+</div>
+<div class="bg-surface-container rounded-xl p-8 flex flex-col md:flex-row gap-4 items-end shadow-2xl">
+<div class="flex-1 space-y-2 w-full">
+<label class="font-label text-[10px] uppercase tracking-widest text-primary ml-1">Search Database</label>
+<input class="w-full bg-surface-container-highest border-none rounded-lg py-4 px-6 text-xl font-headline tracking-tight focus:ring-2 focus:ring-primary/20 transition-all outline-none" placeholder="Enter anime title, studio, or genre..." type="text"/>
+</div>
+<div class="w-full md:w-48 space-y-2">
+<label class="font-label text-[10px] uppercase tracking-widest text-primary ml-1">Crawler Source</label>
+<div class="relative">
+<select class="w-full bg-surface-container-highest border-none rounded-lg py-4 px-6 text-sm font-label appearance-none focus:ring-2 focus:ring-primary/20 cursor-pointer">
+<option>Xifan</option>
+<option>Girigiri</option>
+<option>Nyaa.si</option>
+<option>AnimeBytes</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant">expand_more</span>
+</div>
+</div>
+<button class="primary-gradient h-[60px] px-8 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-transform group">
+<span class="material-symbols-outlined text-on-primary">rocket_launch</span>
+<span class="text-on-primary font-black font-headline tracking-tight">INITIALIZE</span>
+</button>
+</div>
+</section>
+<!-- Results Grid -->
+<section class="space-y-8">
+<div class="flex justify-between items-end border-b border-outline-variant/10 pb-4">
+<div class="flex items-center gap-4">
+<h3 class="font-headline text-2xl font-black tracking-tight">SEARCH RESULTS</h3>
+<span class="font-label text-xs bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full">42 FOUND</span>
+</div>
+<div class="flex gap-2">
+<button class="w-8 h-8 rounded-sm bg-surface-container-high flex items-center justify-center text-primary"><span class="material-symbols-outlined text-lg">grid_view</span></button>
+<button class="w-8 h-8 rounded-sm hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant transition-colors"><span class="material-symbols-outlined text-lg">view_list</span></button>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-16">
+<!-- Result Card 1 -->
+<div class="group relative">
+<div class="relative aspect-[2/3] overflow-hidden rounded-lg bg-surface-container-low mb-6 transition-transform duration-500 group-hover:-translate-y-2">
+<img class="w-full h-full object-cover" data-alt="Cyberpunk style anime poster art" src="https://lh3.googleusercontent.com/aida-public/AB6AXuASN2fcKwdDKqhiOcVNnmpABQ84DEgEtZY3fLFIpidsUnKJO2TOraiQQR6VTPY4eV9MFxAmpa5yv_eGgNHtJ8xE47tZdu70IvM_CN8s2FnS0X0E-rSevb-R6azVl0H-okOE2WmsjxW1H3ceNIuwSEdrFpPWXGP2pFE3sAHeoONP7589PEBlXot7kTvWhpJJlJnY2YH51XCDqsOt7Tl2KYG65gHTFGyGhzqDQX8187TvAgq0kXxG6-pgD6mInhaIZBsXjKso7xmayQ"/>
+<div class="absolute top-4 right-4 flex flex-col gap-2">
+<span class="bg-[#131313]/90 backdrop-blur-md px-2 py-1 rounded text-[10px] font-label text-secondary tracking-widest uppercase">4K RAW</span>
+<span class="bg-primary/90 backdrop-blur-md px-2 py-1 rounded text-[10px] font-label text-on-primary tracking-widest uppercase">NEW</span>
+</div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
+<button class="w-full bg-on-surface text-surface font-black font-headline py-3 rounded-full active:scale-95 transition-transform flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+                                    SELECT ENTRY
+                                </button>
+</div>
+</div>
+<div class="space-y-1">
+<p class="font-label text-[10px] text-primary tracking-[0.2em] uppercase">Trigger Studio • 2024</p>
+<h4 class="font-headline text-lg font-black leading-tight group-hover:text-primary transition-colors">NEO-TOKYO DRIFT: ARCHIVE</h4>
+<div class="flex gap-4 pt-2">
+<div class="flex items-center gap-1 text-[11px] font-label text-on-surface-variant">
+<span class="material-symbols-outlined text-xs">storage</span> 2.4 GB
+                                </div>
+<div class="flex items-center gap-1 text-[11px] font-label text-on-surface-variant">
+<span class="material-symbols-outlined text-xs">timer</span> 24 MIN
+                                </div>
+</div>
+</div>
+</div>
+<!-- Result Card 2 -->
+<div class="group relative">
+<div class="relative aspect-[2/3] overflow-hidden rounded-lg bg-surface-container-low mb-6 transition-transform duration-500 group-hover:-translate-y-2">
+<img class="w-full h-full object-cover" data-alt="Vibrant futuristic anime girl landscape" src="https://lh3.googleusercontent.com/aida-public/AB6AXuASgyELPXZJ_pRMs5NjcPNG3I62C0FOifew_rCbHlQD7UT7W3oM5S7ygSk390XB9aFfpom9DcTePdjVWOeHPmStZ17ieE1KQ-TS5x2H7v1h_kcyiEOJzj72RC59fR-3TTT8Eys1J6BR0mVfrzCZQkJqkuppqEt6HWpZ_FGTTR3MJc7aOHE-gVCEmU5JzfPZQUTUJOPp80fFUj_XTb3XYK0zdKNi7JIIo84_Sa8jP_A_LK9kiV5rGE4FLblxh1dUJ5LLsNrPW6YGoA"/>
+<div class="absolute top-4 right-4">
+<span class="bg-[#131313]/90 backdrop-blur-md px-2 py-1 rounded text-[10px] font-label text-secondary tracking-widest uppercase">1080P</span>
+</div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
+<button class="w-full bg-on-surface text-surface font-black font-headline py-3 rounded-full active:scale-95 transition-transform flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+                                    SELECT ENTRY
+                                </button>
+</div>
+</div>
+<div class="space-y-1">
+<p class="font-label text-[10px] text-primary tracking-[0.2em] uppercase">Production I.G • 2023</p>
+<h4 class="font-headline text-lg font-black leading-tight group-hover:text-primary transition-colors">SILICON DREAMS: RECALL</h4>
+<div class="flex gap-4 pt-2">
+<div class="flex items-center gap-1 text-[11px] font-label text-on-surface-variant">
+<span class="material-symbols-outlined text-xs">storage</span> 1.8 GB
+                                </div>
+<div class="flex items-center gap-1 text-[11px] font-label text-on-surface-variant">
+<span class="material-symbols-outlined text-xs">timer</span> 23 MIN
+                                </div>
+</div>
+</div>
+</div>
+<!-- Result Card 3 -->
+<div class="group relative">
+<div class="relative aspect-[2/3] overflow-hidden rounded-lg bg-surface-container-low mb-6 transition-transform duration-500 group-hover:-translate-y-2">
+<img class="w-full h-full object-cover" data-alt="Abstract anime clouds and sky" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCS9VUkdArOkDQ-QZGvRr_jWRP_Q3esvWwGhOecS4HOSab4lRCmkFY-JPZ0t4kUhesGlmtEZDVj-n5JHzqw6B8PZJDxKOBfJpllJgkYUiO3y3cX9K6mmV1WqBGxwUqna_DBbSlVYL2oplAFv4F_poGYq-WZpKhAJqRTh_itLy3aAZbyr4zfnZXj6RorKGoAcaPjPYhpMXoOyiHR7YJfJIgtgEipc0F2uhSQ0KA2z8C3I-7hNUF1fCsccCZUwE3x7O8pkATTGv1e3Q"/>
+<div class="absolute top-4 right-4">
+<span class="bg-[#131313]/90 backdrop-blur-md px-2 py-1 rounded text-[10px] font-label text-error tracking-widest uppercase">EN-SUB</span>
+</div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
+<button class="w-full bg-on-surface text-surface font-black font-headline py-3 rounded-full active:scale-95 transition-transform flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+                                    SELECT ENTRY
+                                </button>
+</div>
+</div>
+<div class="space-y-1">
+<p class="font-label text-[10px] text-primary tracking-[0.2em] uppercase">MAPPA • 2024</p>
+<h4 class="font-headline text-lg font-black leading-tight group-hover:text-primary transition-colors">ZENITH OVERFLOW</h4>
+<div class="flex gap-4 pt-2">
+<div class="flex items-center gap-1 text-[11px] font-label text-on-surface-variant">
+<span class="material-symbols-outlined text-xs">storage</span> 3.1 GB
+                                </div>
+<div class="flex items-center gap-1 text-[11px] font-label text-on-surface-variant">
+<span class="material-symbols-outlined text-xs">timer</span> 45 MIN
+                                </div>
+</div>
+</div>
+</div>
+<!-- Result Card 4 -->
+<div class="group relative">
+<div class="relative aspect-[2/3] overflow-hidden rounded-lg bg-surface-container-low mb-6 transition-transform duration-500 group-hover:-translate-y-2">
+<img class="w-full h-full object-cover" data-alt="Futuristic dark architecture anime" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC5rFA8AqJtXuUlZ-o0lzXh2MKzv7inPxdyWuZKSeqKxWg_nGjf9ZtBTzcqux2wCjY9Od21liYZ2m_slDBddqmX5bAIQZuGgKkWrhScguATdNlfeKGdtCWmxOVclIdCta3GQDwVdR6QjWcVQZ1Yz8RBNfAMAT7lxRRvFtu4sVL7kWT5Vm8nORbIRqtCYYANxCMSjb7ZZyaPBMNQQJABkh0gGrXe5XmTPUGCPfPpGXwsv3MNCpayFKTlSEwds_8DBFDYEl98srQbuQ"/>
+<div class="absolute top-4 right-4">
+<span class="bg-[#131313]/90 backdrop-blur-md px-2 py-1 rounded text-[10px] font-label text-secondary tracking-widest uppercase">4K RAW</span>
+</div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
+<button class="w-full bg-on-surface text-surface font-black font-headline py-3 rounded-full active:scale-95 transition-transform flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+                                    SELECT ENTRY
+                                </button>
+</div>
+</div>
+<div class="space-y-1">
+<p class="font-label text-[10px] text-primary tracking-[0.2em] uppercase">Science SARU • 2024</p>
+<h4 class="font-headline text-lg font-black leading-tight group-hover:text-primary transition-colors">THE VOID PROTOCOL</h4>
+<div class="flex gap-4 pt-2">
+<div class="flex items-center gap-1 text-[11px] font-label text-on-surface-variant">
+<span class="material-symbols-outlined text-xs">storage</span> 2.7 GB
+                                </div>
+<div class="flex items-center gap-1 text-[11px] font-label text-on-surface-variant">
+<span class="material-symbols-outlined text-xs">timer</span> 24 MIN
+                                </div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Placeholder CAPTCHA Modal -->
+<div class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-surface-lowest/40 backdrop-blur-sm">
+<div class="glass-effect w-full max-w-md rounded-xl p-8 shadow-[0_0_60px_rgba(255,179,184,0.08)] border border-outline-variant/15">
+<div class="flex items-center justify-between mb-8">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">security</span>
+</div>
+<div>
+<h5 class="font-headline font-black text-xl tracking-tight">CRAWLER VERIFICATION</h5>
+<p class="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">Source: Xifan (Private)</p>
+</div>
+</div>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="space-y-6">
+<div class="bg-surface-container-highest/50 rounded-lg p-4 border border-outline-variant/5">
+<div class="aspect-video bg-surface-container-high rounded-md mb-4 flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover grayscale contrast-125" data-alt="Abstract colorful light streaks and shapes" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAX8nj6s3cUk0kmXZC1gGrbPaqrNAlMJ2WIpSDjc4Ga-4VEqwFNU1HP1CjrcNRjOmMkRmLTpsHqLuS5l5CuxLlDgKl69_A3mPEbn09nhrhr_gLeTkqUj3U8_9BXMnWiFAocod7TxumxI9gtQMQ5nr4m05JmDlm8Zhx9HLrcgb8tPZdO6p1Nsop2ec3U1m1bFg8Ii-la4HOHCJ_5rt3ukZF4IHZF_P84xQumhzaLWIBvH7tVzu93cgZptfrbI7lYJlMCRibQUoTGDA"/>
+</div>
+<div class="flex justify-between items-center px-2">
+<span class="font-label text-xs text-on-surface-variant">Verify you are not a bot</span>
+<button class="text-primary"><span class="material-symbols-outlined">refresh</span></button>
+</div>
+</div>
+<div class="space-y-2">
+<input class="w-full bg-surface-container border-none rounded-lg py-4 px-6 text-sm font-label focus:ring-2 focus:ring-primary/20 placeholder:text-on-surface-variant/40" placeholder="Enter characters above..." type="text"/>
+</div>
+<div class="flex gap-4">
+<button class="flex-1 bg-white/5 border border-white/20 py-4 rounded-full font-headline font-black text-sm text-on-surface hover:bg-white/10 transition-colors uppercase">CANCEL</button>
+<button class="flex-1 primary-gradient py-4 rounded-full font-headline font-black text-sm text-on-primary shadow-lg shadow-primary/10">VERIFY</button>
+</div>
+</div>
+</div>
+</div>
+</body></html>
