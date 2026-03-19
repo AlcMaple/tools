@@ -1,0 +1,726 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&amp;family=Space+Grotesk:wght@400;500;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-fixed-variant": "#00458d",
+              "on-surface": "#e2e2e2",
+              "on-tertiary-container": "#3f4040",
+              "tertiary-fixed": "#e4e2e2",
+              error: "#ffb4ab",
+              "surface-container": "#1f1f1f",
+              "surface-variant": "#353535",
+              "on-background": "#e2e2e2",
+              "inverse-on-surface": "#303030",
+              primary: "#ffb3b8",
+              "secondary-fixed": "#d6e3ff",
+              "on-error": "#690005",
+              "error-container": "#93000a",
+              "on-primary": "#5a1923",
+              "on-surface-variant": "#d9c1c1",
+              tertiary: "#c8c6c6",
+              "primary-fixed-dim": "#ffb2b8",
+              "tertiary-container": "#acabab",
+              "surface-bright": "#393939",
+              "inverse-primary": "#94464f",
+              "on-primary-fixed": "#3e0410",
+              "surface-dim": "#131313",
+              "on-primary-fixed-variant": "#772f38",
+              "secondary-fixed-dim": "#aac7ff",
+              "on-primary-container": "#6e2932",
+              "primary-container": "#f09199",
+              "on-secondary": "#002f64",
+              "secondary-container": "#004c9a",
+              "on-tertiary-fixed": "#1b1c1c",
+              "surface-container-high": "#2a2a2a",
+              background: "#131313",
+              "primary-fixed": "#ffdadb",
+              surface: "#131313",
+              "on-tertiary-fixed-variant": "#464747",
+              "on-tertiary": "#303030",
+              "on-error-container": "#ffdad6",
+              "surface-container-low": "#1b1b1b",
+              "on-secondary-fixed": "#001b3e",
+              "tertiary-fixed-dim": "#c8c6c6",
+              secondary: "#aac7ff",
+              "on-secondary-container": "#9ec0ff",
+              "surface-container-lowest": "#0e0e0e",
+              "surface-tint": "#ffb2b8",
+              "surface-container-highest": "#353535",
+              "outline-variant": "#544343",
+              outline: "#a18c8c",
+              "inverse-surface": "#e2e2e2",
+            },
+            fontFamily: {
+              headline: ["Inter"],
+              body: ["Inter"],
+              label: ["Space Grotesk"],
+            },
+            borderRadius: {
+              DEFAULT: "0.125rem",
+              lg: "0.25rem",
+              xl: "0.5rem",
+              full: "0.75rem",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .material-symbols-outlined {
+        font-variation-settings:
+          "FILL" 0,
+          "wght" 400,
+          "GRAD" 0,
+          "opsz" 24;
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #353535;
+        border-radius: 2px;
+      }
+      .glass-modal {
+        background: rgba(53, 53, 53, 0.7);
+        backdrop-filter: blur(20px);
+      }
+      .primary-gradient {
+        background: linear-gradient(135deg, #ffb3b8 0%, #f09199 100%);
+      }
+    </style>
+  </head>
+  <body class="bg-surface text-on-surface font-body selection:bg-primary/30">
+    <!-- SideNavBar Anchor -->
+    <aside
+      class="h-screen w-64 fixed left-0 top-0 bg-[#0e0e0e] flex flex-col py-8 z-50"
+    >
+      <div class="px-6 mb-12">
+        <h1 class="text-xl font-black text-[#ffb3b8] tracking-tighter">
+          ARCHIVIST
+        </h1>
+        <p
+          class="font-label text-[10px] text-[#e2e2e2]/40 tracking-widest mt-1"
+        >
+          V2.4.0
+        </p>
+      </div>
+      <nav class="flex-1 space-y-1">
+        <a
+          class="flex items-center px-6 py-3 space-x-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-colors duration-200"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-lg">search</span>
+          <span class="font-label text-sm">Search &amp; Download</span>
+        </a>
+        <!-- ACTIVE TAB: Download Queue -->
+        <a
+          class="flex items-center px-6 py-3 space-x-3 text-[#ffb3b8] font-bold border-r-2 border-[#ffb3b8] bg-[#1f1f1f] transition-colors duration-200"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-lg"
+            >download_for_offline</span
+          >
+          <span class="font-label text-sm">Download Queue</span>
+        </a>
+        <a
+          class="flex items-center px-6 py-3 space-x-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-colors duration-200"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-lg">menu_book</span>
+          <span class="font-label text-sm">Anime Info</span>
+        </a>
+        <a
+          class="flex items-center px-6 py-3 space-x-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-colors duration-200"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-lg">sync</span>
+          <span class="font-label text-sm">Biu Sync</span>
+        </a>
+      </nav>
+      <div class="px-6 mt-auto">
+        <div
+          class="flex items-center space-x-3 p-3 rounded-xl bg-surface-container-high/40"
+        >
+          <div
+            class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center overflow-hidden"
+          >
+            <img
+              alt="User Avatar"
+              class="w-full h-full object-cover"
+              data-alt="Stylized user avatar portrait"
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBBIxW7Kj8f6YqF_i9BbC-agX7cOcbz4qJRbzEMVGzx5ATU0eBFlQITC4oN86HrGMTEoRehMdp6HrDRyalm1LJfKeKErf8gwO6uavajDKOAUdhf9kEEWPglhjdd_Zw2ABdlTmY7ZxWRKvTAKQp3BYfJWCbMoKc64wtN2CpDQRJeCO1vfcZvXVpvZVIy8RfgJZImqb85egpo7RkIlK6hoQWh5jQdudjWCDPG1yYsNBeR35Z36eh1D5lWr5GzN-pAdWr4OS9ZICfoXg"
+            />
+          </div>
+          <div class="overflow-hidden">
+            <p class="text-xs font-bold truncate">Archivist_User</p>
+            <p class="text-[10px] text-on-surface-variant/60 font-label">
+              PRO PLAN
+            </p>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <!-- TopNavBar Anchor -->
+    <header
+      class="fixed top-0 right-0 left-64 h-16 bg-[#131313]/80 backdrop-blur-xl flex justify-between items-center px-8 z-40"
+    >
+      <div
+        class="flex items-center bg-surface-container-highest rounded-md px-4 py-2 w-96 transition-all duration-300 focus-within:bg-surface-bright focus-within:ring-1 focus-within:ring-primary/40"
+      >
+        <span
+          class="material-symbols-outlined text-on-surface-variant text-sm mr-2"
+          >search</span
+        >
+        <input
+          class="bg-transparent border-none text-sm focus:ring-0 p-0 w-full text-on-surface placeholder:text-on-surface-variant/40 font-body"
+          placeholder="Filter current downloads..."
+          type="text"
+        />
+      </div>
+      <div class="flex items-center space-x-6">
+        <div class="flex items-center space-x-1">
+          <span
+            class="material-symbols-outlined text-[#ffb3b8] text-sm"
+            style="font-variation-settings: &quot;FILL&quot; 1"
+            >speed</span
+          >
+          <span class="font-label text-xs font-bold">12.4 MB/s</span>
+        </div>
+        <div class="flex items-center space-x-4">
+          <button
+            class="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all"
+          >
+            <span class="material-symbols-outlined text-xl">dark_mode</span>
+          </button>
+          <button
+            class="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all"
+          >
+            <span class="material-symbols-outlined text-xl">settings</span>
+          </button>
+          <button
+            class="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all"
+          >
+            <span class="material-symbols-outlined text-xl"
+              >account_circle</span
+            >
+          </button>
+        </div>
+      </div>
+    </header>
+    <!-- Main Content Area -->
+    <main class="ml-64 pt-16 min-h-screen custom-scrollbar overflow-y-auto">
+      <div class="p-8 max-w-6xl mx-auto">
+        <!-- Master Control Bar -->
+        <div class="flex justify-between items-end mb-10">
+          <div>
+            <h2 class="text-4xl font-black font-headline tracking-tighter mb-2">
+              DOWNLOAD QUEUE
+            </h2>
+            <div class="flex items-center space-x-4">
+              <span
+                class="font-label text-xs uppercase tracking-widest text-on-surface-variant"
+                >Active Tasks: 04</span
+              >
+              <div class="w-1 h-1 bg-on-surface-variant/30 rounded-full"></div>
+              <span
+                class="font-label text-xs uppercase tracking-widest text-on-surface-variant"
+                >Pending: 12</span
+              >
+            </div>
+          </div>
+          <div class="flex space-x-3">
+            <button
+              class="flex items-center space-x-2 px-6 py-2.5 rounded-full bg-surface-container-high border border-outline-variant/10 hover:bg-surface-variant transition-colors text-sm font-bold font-label"
+            >
+              <span class="material-symbols-outlined text-sm"
+                >pause_circle</span
+              >
+              <span>Pause All</span>
+            </button>
+            <button
+              class="flex items-center space-x-2 px-6 py-2.5 rounded-full primary-gradient text-on-primary text-sm font-bold font-label shadow-lg shadow-primary/10"
+            >
+              <span
+                class="material-symbols-outlined text-sm"
+                style="font-variation-settings: &quot;FILL&quot; 1"
+                >play_arrow</span
+              >
+              <span>Start All</span>
+            </button>
+          </div>
+        </div>
+        <!-- Download Items List -->
+        <div class="space-y-6">
+          <!-- Task Item 1: Active -->
+          <div
+            class="bg-surface-container rounded-xl overflow-hidden group transition-all duration-300 hover:bg-surface-container-high/60"
+          >
+            <div class="p-6">
+              <div class="flex items-start space-x-6">
+                <div
+                  class="relative w-20 h-28 flex-shrink-0 rounded-lg overflow-hidden shadow-2xl"
+                >
+                  <img
+                    alt="Anime Poster"
+                    class="w-full h-full object-cover"
+                    data-alt="Cyberpunk anime poster with neon lights"
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuAPh0ZdZHaH2m6XHXkW8O8PlsZjZ5OuH7rRwcJbQZz2DPTcc8P_YNJO2xask51ADsvmAZGtLd6cr0OYpMhVIY3R4dP0ngX5d8uyZ0--FBe_Zo5UQ5q6B_NDxsRrI33nvNQIAYwvmuaqg5zf1a6PDKmM-HY3dUYE_-Qmw2dyOhUJK8ApZIU2Souqu-bpD2eupFGHaTY0OAnDbsylyI5-ZMkpLiROOHQCpFieXoGJDp4sN4v0fphQXo7LoKS2p5rezvgiNwPlzP9DIA"
+                  />
+                  <div
+                    class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/80 to-transparent"
+                  ></div>
+                </div>
+                <div class="flex-1 flex flex-col justify-between h-28">
+                  <div class="flex justify-between items-start">
+                    <div>
+                      <h3
+                        class="text-xl font-black tracking-tight leading-none mb-1"
+                      >
+                        Cyberpunk: Edgerunners
+                      </h3>
+                      <p
+                        class="font-label text-[10px] text-primary/80 uppercase tracking-widest"
+                      >
+                        Season 01 • Batch [1080p HEVC]
+                      </p>
+                    </div>
+                    <div class="flex space-x-1">
+                      <button
+                        class="p-2 hover:bg-surface-variant rounded-full text-secondary transition-all"
+                      >
+                        <span class="material-symbols-outlined text-lg"
+                          >pause</span
+                        >
+                      </button>
+                      <button
+                        class="p-2 hover:bg-error/10 rounded-full text-error transition-all"
+                      >
+                        <span class="material-symbols-outlined text-lg"
+                          >close</span
+                        >
+                      </button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-4 gap-4 items-end">
+                    <div class="col-span-2">
+                      <div class="flex justify-between items-center mb-2">
+                        <span
+                          class="font-label text-[10px] text-on-surface-variant"
+                          >PROGRESS: 68%</span
+                        >
+                        <span
+                          class="font-label text-[10px] text-on-surface-variant"
+                          >8.2 GB / 12.0 GB</span
+                        >
+                      </div>
+                      <div
+                        class="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden"
+                      >
+                        <div
+                          class="h-full bg-secondary w-[68%] rounded-full shadow-[0_0_8px_rgba(170,199,255,0.4)]"
+                        ></div>
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <p
+                        class="font-label text-[10px] text-on-surface-variant uppercase mb-1"
+                      >
+                        Speed
+                      </p>
+                      <p class="text-sm font-black text-secondary">4.2 MB/s</p>
+                    </div>
+                    <div class="text-right">
+                      <p
+                        class="font-label text-[10px] text-on-surface-variant uppercase mb-1"
+                      >
+                        Remaining
+                      </p>
+                      <p class="text-sm font-black text-on-surface">14m 20s</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- Episode Grid (Expanded State Simulation) -->
+              <div class="mt-8 pt-6 border-t border-outline-variant/10">
+                <div class="grid grid-cols-6 gap-3">
+                  <div
+                    class="bg-surface-container-lowest p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-secondary/40"
+                  >
+                    <span
+                      class="font-label text-[10px] text-on-surface-variant mb-1"
+                      >EP 01</span
+                    >
+                    <span
+                      class="material-symbols-outlined text-secondary text-sm"
+                      style="font-variation-settings: &quot;FILL&quot; 1"
+                      >check_circle</span
+                    >
+                  </div>
+                  <div
+                    class="bg-surface-container-lowest p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-secondary/40"
+                  >
+                    <span
+                      class="font-label text-[10px] text-on-surface-variant mb-1"
+                      >EP 02</span
+                    >
+                    <span
+                      class="material-symbols-outlined text-secondary text-sm"
+                      style="font-variation-settings: &quot;FILL&quot; 1"
+                      >check_circle</span
+                    >
+                  </div>
+                  <div
+                    class="bg-surface-container-lowest p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-secondary/40"
+                  >
+                    <span
+                      class="font-label text-[10px] text-on-surface-variant mb-1"
+                      >EP 03</span
+                    >
+                    <div
+                      class="w-full h-0.5 bg-surface-variant rounded-full mt-2 overflow-hidden"
+                    >
+                      <div class="h-full bg-secondary w-full"></div>
+                    </div>
+                  </div>
+                  <div
+                    class="bg-surface-container-high p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-primary/40 animate-pulse"
+                  >
+                    <span
+                      class="font-label text-[10px] text-on-surface-variant mb-1"
+                      >EP 04</span
+                    >
+                    <span class="material-symbols-outlined text-primary text-sm"
+                      >downloading</span
+                    >
+                  </div>
+                  <div
+                    class="bg-surface-container-lowest/40 p-3 rounded-lg flex flex-col items-center justify-center opacity-40"
+                  >
+                    <span
+                      class="font-label text-[10px] text-on-surface-variant mb-1"
+                      >EP 05</span
+                    >
+                    <span class="material-symbols-outlined text-xs"
+                      >hourglass_empty</span
+                    >
+                  </div>
+                  <div
+                    class="bg-surface-container-lowest/40 p-3 rounded-lg flex flex-col items-center justify-center opacity-40"
+                  >
+                    <span
+                      class="font-label text-[10px] text-on-surface-variant mb-1"
+                      >EP 06</span
+                    >
+                    <span class="material-symbols-outlined text-xs"
+                      >hourglass_empty</span
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Task Item 2: Paused -->
+          <div
+            class="bg-surface-container rounded-xl overflow-hidden transition-all duration-300"
+          >
+            <div class="p-6">
+              <div class="flex items-start space-x-6 opacity-60">
+                <div
+                  class="relative w-20 h-28 flex-shrink-0 rounded-lg overflow-hidden grayscale"
+                >
+                  <img
+                    alt="Anime Poster"
+                    class="w-full h-full object-cover"
+                    data-alt="Monochrome landscape anime art"
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8sX20breYriDPNHhU6sOHa2b18vybW1RZ4zjTSQZkSYT3vmHxKK8dR_Mew6pDRDBILsEmwL_hA-4M_AzeKilcE6JQrx6aUNZDWrnDXyEk8zkMeazd_eOHWGl2EgYcddNRpu3TNjBV5VLkts0xj6nJxxHbRCU77yT9p7-ckL3rDgGPSKN0JxwP8QoWmcgDVcBmqH-CtgIh5VDhE9q2DTXbR0usJn56Q7bGWPaUdotK4O8pvNY7Dhsg5ODYO7auFFN4QT0sIfg0VQ"
+                  />
+                </div>
+                <div class="flex-1 flex flex-col justify-between h-28">
+                  <div class="flex justify-between items-start">
+                    <div>
+                      <h3
+                        class="text-xl font-black tracking-tight leading-none mb-1"
+                      >
+                        Sousou no Frieren
+                      </h3>
+                      <p
+                        class="font-label text-[10px] text-on-surface-variant uppercase tracking-widest"
+                      >
+                        Full Season • [2160p HDR]
+                      </p>
+                    </div>
+                    <div class="flex space-x-1">
+                      <button
+                        class="p-2 hover:bg-primary/20 rounded-full text-primary transition-all"
+                      >
+                        <span
+                          class="material-symbols-outlined text-lg"
+                          style="font-variation-settings: &quot;FILL&quot; 1"
+                          >play_arrow</span
+                        >
+                      </button>
+                      <button
+                        class="p-2 hover:bg-error/10 rounded-full text-error transition-all"
+                      >
+                        <span class="material-symbols-outlined text-lg"
+                          >close</span
+                        >
+                      </button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-4 gap-4 items-end">
+                    <div class="col-span-2">
+                      <div class="flex justify-between items-center mb-2">
+                        <span
+                          class="font-label text-[10px] text-on-surface-variant"
+                          >PAUSED AT: 12%</span
+                        >
+                        <span
+                          class="font-label text-[10px] text-on-surface-variant"
+                          >4.1 GB / 34.2 GB</span
+                        >
+                      </div>
+                      <div
+                        class="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden"
+                      >
+                        <div
+                          class="h-full bg-on-surface-variant/40 w-[12%] rounded-full"
+                        ></div>
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <p
+                        class="font-label text-[10px] text-on-surface-variant uppercase mb-1"
+                      >
+                        Speed
+                      </p>
+                      <p class="text-sm font-black text-on-surface-variant">
+                        --
+                      </p>
+                    </div>
+                    <div class="text-right">
+                      <p
+                        class="font-label text-[10px] text-on-surface-variant uppercase mb-1"
+                      >
+                        Remaining
+                      </p>
+                      <p class="text-sm font-black text-on-surface-variant">
+                        Paused
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Task Item 3: Error State -->
+          <div
+            class="bg-surface-container rounded-xl overflow-hidden border-l-4 border-error/50"
+          >
+            <div class="p-6">
+              <div class="flex items-start space-x-6">
+                <div
+                  class="relative w-20 h-28 flex-shrink-0 rounded-lg overflow-hidden"
+                >
+                  <img
+                    alt="Anime Poster"
+                    class="w-full h-full object-cover"
+                    data-alt="Action anime poster with fire effects"
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuAhQP5geB02mI9AARiVIkLMirzM7fBR7GgHas1BkKQ3XTzkdRq46gMfT1uqNNe0cKz8O4_9GyrED7yezmBOyfIzhk_3kCo8QyynG41dpzHg93-6KfHQwNpQn0LCqD_upbtFYVtAEI7ped79sbGydJRnTGN5iZrSRrBhRLB7WZrAiTIZr-B2DM3AWIHBvhFijAiGOwEBSUHDYjvlasztlLTn9y-JhIlvQgmpL7bmAOjI_lIR36BYtgXjhhp8rnt8jDchNqHaAHv1zA"
+                  />
+                </div>
+                <div class="flex-1 flex flex-col justify-between h-28">
+                  <div class="flex justify-between items-start">
+                    <div>
+                      <h3
+                        class="text-xl font-black tracking-tight leading-none mb-1"
+                      >
+                        Chainsaw Man
+                      </h3>
+                      <div class="flex items-center space-x-2">
+                        <p
+                          class="font-label text-[10px] text-error uppercase tracking-widest font-bold"
+                        >
+                          Network Timeout
+                        </p>
+                        <span
+                          class="material-symbols-outlined text-error text-[12px]"
+                          >error</span
+                        >
+                      </div>
+                    </div>
+                    <div class="flex space-x-1">
+                      <button
+                        class="p-2 hover:bg-secondary/20 rounded-full text-secondary transition-all"
+                      >
+                        <span class="material-symbols-outlined text-lg"
+                          >refresh</span
+                        >
+                      </button>
+                      <button
+                        class="p-2 hover:bg-error/10 rounded-full text-error transition-all"
+                      >
+                        <span class="material-symbols-outlined text-lg"
+                          >close</span
+                        >
+                      </button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-4 gap-4 items-end">
+                    <div class="col-span-2">
+                      <div class="flex justify-between items-center mb-2">
+                        <span class="font-label text-[10px] text-error/60"
+                          >ERROR AT: 94%</span
+                        >
+                        <span
+                          class="font-label text-[10px] text-on-surface-variant"
+                          >11.4 GB / 12.1 GB</span
+                        >
+                      </div>
+                      <div
+                        class="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden"
+                      >
+                        <div
+                          class="h-full bg-error w-[94%] rounded-full opacity-60"
+                        ></div>
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <p
+                        class="font-label text-[10px] text-on-surface-variant uppercase mb-1"
+                      >
+                        Status
+                      </p>
+                      <p class="text-sm font-black text-error">Failed</p>
+                    </div>
+                    <div class="text-right">
+                      <p
+                        class="font-label text-[10px] text-on-surface-variant uppercase mb-1"
+                      >
+                        Attempts
+                      </p>
+                      <p class="text-sm font-black text-on-surface">3/5</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Recently Completed (Minimalist Table Style) -->
+        <section class="mt-16">
+          <div class="flex items-center justify-between mb-6">
+            <h4
+              class="font-label text-xs font-bold uppercase tracking-[0.2em] text-on-surface-variant/60"
+            >
+              Recently Completed
+            </h4>
+            <button
+              class="text-[10px] font-label font-bold text-primary uppercase tracking-widest hover:underline transition-all"
+            >
+              View All History
+            </button>
+          </div>
+          <div
+            class="bg-surface-container-lowest rounded-xl divide-y divide-outline-variant/5"
+          >
+            <div
+              class="flex items-center justify-between p-4 px-6 hover:bg-surface-container-low transition-colors"
+            >
+              <div class="flex items-center space-x-4">
+                <span
+                  class="material-symbols-outlined text-secondary text-lg"
+                  style="font-variation-settings: &quot;FILL&quot; 1"
+                  >verified</span
+                >
+                <div>
+                  <p class="text-sm font-bold">Oshi no Ko - S01E11.mkv</p>
+                  <p class="text-[10px] font-label text-on-surface-variant">
+                    1.2 GB • Completed 2m ago
+                  </p>
+                </div>
+              </div>
+              <button
+                class="text-on-surface-variant hover:text-primary transition-colors"
+              >
+                <span class="material-symbols-outlined text-lg"
+                  >folder_open</span
+                >
+              </button>
+            </div>
+            <div
+              class="flex items-center justify-between p-4 px-6 hover:bg-surface-container-low transition-colors"
+            >
+              <div class="flex items-center space-x-4">
+                <span
+                  class="material-symbols-outlined text-secondary text-lg"
+                  style="font-variation-settings: &quot;FILL&quot; 1"
+                  >verified</span
+                >
+                <div>
+                  <p class="text-sm font-bold">
+                    Vinland Saga S2 Complete Batch.zip
+                  </p>
+                  <p class="text-[10px] font-label text-on-surface-variant">
+                    14.8 GB • Completed 45m ago
+                  </p>
+                </div>
+              </div>
+              <button
+                class="text-on-surface-variant hover:text-primary transition-colors"
+              >
+                <span class="material-symbols-outlined text-lg"
+                  >folder_open</span
+                >
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+    <!-- Bottom Toast / Status Bar (Ambient Shadow) -->
+    <div
+      class="fixed bottom-8 right-8 z-50 glass-modal p-4 rounded-xl border border-outline-variant/10 shadow-[0_20px_40px_rgba(255,179,184,0.06)] flex items-center space-x-4"
+    >
+      <div
+        class="w-10 h-10 rounded-full primary-gradient flex items-center justify-center text-on-primary"
+      >
+        <span class="material-symbols-outlined">auto_awesome</span>
+      </div>
+      <div>
+        <p class="text-xs font-bold">Storage Health: Optimal</p>
+        <p class="text-[10px] font-label text-on-surface-variant">
+          2.4 TB free on Archivist_Main
+        </p>
+      </div>
+      <div class="h-8 w-px bg-outline-variant/20 mx-2"></div>
+      <button class="p-2 hover:bg-surface-variant rounded-lg transition-all">
+        <span class="material-symbols-outlined text-sm">close</span>
+      </button>
+    </div>
+  </body>
+</html>
