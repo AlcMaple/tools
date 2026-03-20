@@ -1,4 +1,4 @@
-import TopBar from '../components/TopBar'
+import TopBar from "../components/TopBar";
 
 function BiuSync(): JSX.Element {
   return (
@@ -18,8 +18,8 @@ function BiuSync(): JSX.Element {
               Biu <span className="text-primary">Sync</span>
             </h1>
             <p className="text-on-surface-variant/50 text-sm font-label max-w-lg">
-              Bidirectional sync between local Documents and the E: drive. Keep your Biu project
-              safe and up-to-date across environments.
+              Bidirectional sync between local Documents and the E: drive. Keep
+              your Biu project safe and up-to-date across environments.
             </p>
           </div>
         </section>
@@ -37,7 +37,9 @@ function BiuSync(): JSX.Element {
                     upload_file
                   </span>
                 </div>
-                <h3 className="font-bold text-on-surface text-sm mb-1">Push to E Drive</h3>
+                <h3 className="font-bold text-on-surface text-sm mb-1">
+                  Push to E Drive
+                </h3>
                 <p className="text-xs font-label text-on-surface-variant/50">
                   Sync local changes → remote storage
                 </p>
@@ -50,7 +52,9 @@ function BiuSync(): JSX.Element {
                     download_for_offline
                   </span>
                 </div>
-                <h3 className="font-bold text-on-surface text-sm mb-1">Pull from E Drive</h3>
+                <h3 className="font-bold text-on-surface text-sm mb-1">
+                  Pull from E Drive
+                </h3>
                 <p className="text-xs font-label text-on-surface-variant/50">
                   Fetch remote changes → local storage
                 </p>
@@ -63,14 +67,18 @@ function BiuSync(): JSX.Element {
                 <div className="flex items-center space-x-3">
                   <div className="w-2 h-2 rounded-full bg-tertiary/60" />
                   <div>
-                    <h3 className="text-sm font-bold text-on-surface">Idle & Standby</h3>
+                    <h3 className="text-sm font-bold text-on-surface">
+                      Idle & Standby
+                    </h3>
                     <p className="text-[10px] font-label text-on-surface-variant/40 mt-0.5">
                       Last checked: 5 minutes ago
                     </p>
                   </div>
                 </div>
                 <button className="flex items-center space-x-1.5 text-xs font-label text-on-surface-variant/50 hover:text-primary transition-colors">
-                  <span className="material-symbols-outlined text-sm leading-none">refresh</span>
+                  <span className="material-symbols-outlined text-sm leading-none">
+                    refresh
+                  </span>
                   <span>Check now</span>
                 </button>
               </div>
@@ -80,8 +88,9 @@ function BiuSync(): JSX.Element {
                 <div
                   className="h-full rounded-full opacity-20"
                   style={{
-                    background: 'linear-gradient(90deg, #ffb3b8 0%, #aac7ff 100%)',
-                    width: '0%'
+                    background:
+                      "linear-gradient(90deg, #ffb3b8 0%, #aac7ff 100%)",
+                    width: "0%",
                   }}
                 />
               </div>
@@ -89,20 +98,24 @@ function BiuSync(): JSX.Element {
                 <span className="text-[10px] font-label text-on-surface-variant/30">
                   No active operation
                 </span>
-                <span className="text-[10px] font-label text-on-surface-variant/30">--</span>
+                <span className="text-[10px] font-label text-on-surface-variant/30">
+                  --
+                </span>
               </div>
 
               {/* Log area */}
               <div className="mt-5 bg-surface-container-lowest rounded-lg p-4 font-label text-[11px] space-y-1.5">
                 <p className="text-on-surface-variant/40">
-                  <span className="text-primary/40">09:41:02</span> — System idle. Awaiting command.
+                  <span className="text-primary/40">09:41:02</span> — System
+                  idle. Awaiting command.
                 </p>
                 <p className="text-on-surface-variant/30">
-                  <span className="text-primary/30">09:30:17</span> — Last sync completed
-                  successfully.
+                  <span className="text-primary/30">09:30:17</span> — Last sync
+                  completed successfully.
                 </p>
                 <p className="text-on-surface-variant/20">
-                  <span className="text-primary/20">08:00:00</span> — Session started.
+                  <span className="text-primary/20">08:00:00</span> — Session
+                  started.
                 </p>
               </div>
             </div>
@@ -117,13 +130,30 @@ function BiuSync(): JSX.Element {
               </h3>
               <div className="space-y-4">
                 {[
-                  { label: 'Last Successful Sync', value: 'Today, 09:30 AM', icon: 'check_circle', iconColor: 'text-primary' },
-                  { label: 'Total Data Moved', value: '2.4 GB this month', icon: 'database', iconColor: 'text-secondary' },
-                  { label: 'Files Impacted', value: '1,204 files', icon: 'folder', iconColor: 'text-tertiary' }
+                  {
+                    label: "Last Successful Sync",
+                    value: "Today, 09:30 AM",
+                    icon: "check_circle",
+                    iconColor: "text-primary",
+                  },
+                  {
+                    label: "Total Data Moved",
+                    value: "2.4 GB this month",
+                    icon: "database",
+                    iconColor: "text-secondary",
+                  },
+                  {
+                    label: "Files Impacted",
+                    value: "1,204 files",
+                    icon: "folder",
+                    iconColor: "text-tertiary",
+                  },
                 ].map((item) => (
                   <div key={item.label} className="flex items-center space-x-3">
                     <div className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center flex-shrink-0">
-                      <span className={`material-symbols-outlined ${item.iconColor} text-base leading-none`}>
+                      <span
+                        className={`material-symbols-outlined ${item.iconColor} text-base leading-none`}
+                      >
                         {item.icon}
                       </span>
                     </div>
@@ -131,7 +161,9 @@ function BiuSync(): JSX.Element {
                       <p className="text-[9px] font-label text-on-surface-variant/40 uppercase tracking-widest">
                         {item.label}
                       </p>
-                      <p className="text-sm font-bold text-on-surface">{item.value}</p>
+                      <p className="text-sm font-bold text-on-surface">
+                        {item.value}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -181,12 +213,12 @@ function BiuSync(): JSX.Element {
             </span>
           </div>
           <span className="text-[10px] font-label text-on-surface-variant/20 tracking-widest">
-            ARCHIVIST SYNC v2.4.0
+            MAPLE TOOLS SYNC v1.0.0
           </span>
         </div>
       </main>
     </div>
-  )
+  );
 }
 
-export default BiuSync
+export default BiuSync;

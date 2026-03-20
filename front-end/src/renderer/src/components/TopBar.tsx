@@ -33,11 +33,11 @@ function TopBar({ placeholder, rightSlot }: TopBarProps): JSX.Element {
             settings
           </span>
         </button>
-        <button className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-surface-container transition-colors">
+        {/* <button className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-surface-container transition-colors">
           <span className="material-symbols-outlined text-on-surface-variant text-xl leading-none">
             account_circle
           </span>
-        </button>
+        </button> */}
       </div>
     </header>
   )
