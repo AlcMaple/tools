@@ -1,0 +1,424 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Anime Info | The Digital Archivist</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&amp;family=Space+Grotesk:wght@300;500;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-fixed-variant": "#00458d",
+              "on-surface": "#e2e2e2",
+              "on-tertiary-container": "#3f4040",
+              "tertiary-fixed": "#e4e2e2",
+              error: "#ffb4ab",
+              "surface-container": "#1f1f1f",
+              "surface-variant": "#353535",
+              "on-background": "#e2e2e2",
+              "inverse-on-surface": "#303030",
+              primary: "#ffb3b8",
+              "secondary-fixed": "#d6e3ff",
+              "on-error": "#690005",
+              "error-container": "#93000a",
+              "on-primary": "#5a1923",
+              "on-surface-variant": "#d9c1c1",
+              tertiary: "#c8c6c6",
+              "primary-fixed-dim": "#ffb2b8",
+              "tertiary-container": "#acabab",
+              "surface-bright": "#393939",
+              "inverse-primary": "#94464f",
+              "on-primary-fixed": "#3e0410",
+              "surface-dim": "#131313",
+              "on-primary-fixed-variant": "#772f38",
+              "secondary-fixed-dim": "#aac7ff",
+              "on-primary-container": "#6e2932",
+              "primary-container": "#f09199",
+              "on-secondary": "#002f64",
+              "secondary-container": "#004c9a",
+              "on-tertiary-fixed": "#1b1c1c",
+              "surface-container-high": "#2a2a2a",
+              background: "#131313",
+              "primary-fixed": "#ffdadb",
+              surface: "#131313",
+              "on-tertiary-fixed-variant": "#464747",
+              "on-tertiary": "#303030",
+              "on-error-container": "#ffdad6",
+              "surface-container-low": "#1b1b1b",
+              "on-secondary-fixed": "#001b3e",
+              "tertiary-fixed-dim": "#c8c6c6",
+              secondary: "#aac7ff",
+              "on-secondary-container": "#9ec0ff",
+              "surface-container-lowest": "#0e0e0e",
+              "surface-tint": "#ffb2b8",
+              "surface-container-highest": "#353535",
+              "outline-variant": "#544343",
+              outline: "#a18c8c",
+              "inverse-surface": "#e2e2e2",
+            },
+            fontFamily: {
+              headline: ["Inter"],
+              body: ["Inter"],
+              label: ["Space Grotesk"],
+            },
+            borderRadius: {
+              DEFAULT: "0.125rem",
+              lg: "0.25rem",
+              xl: "0.5rem",
+              full: "0.75rem",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        background-color: #131313;
+        color: #e2e2e2;
+        font-family: "Inter", sans-serif;
+      }
+      .material-symbols-outlined {
+        font-variation-settings:
+          "FILL" 0,
+          "wght" 400,
+          "GRAD" 0,
+          "opsz" 24;
+      }
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #131313;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #353535;
+        border-radius: 2px;
+      }
+    </style>
+  </head>
+  <body class="bg-surface text-on-surface">
+    <!-- SideNavBar -->
+    <aside
+      class="h-screen w-64 fixed left-0 top-0 bg-[#0e0e0e] flex flex-col py-8 z-50"
+    >
+      <div class="px-6 mb-12">
+        <h1 class="text-xl font-black text-[#ffb3b8] tracking-tighter">
+          ARCHIVIST
+        </h1>
+        <p class="font-label text-[10px] text-primary/60 tracking-widest mt-1">
+          V1.0.4
+        </p>
+      </div>
+      <nav class="flex-1 flex flex-col gap-2">
+        <a
+          class="flex items-center gap-4 px-6 py-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-colors duration-200 active:scale-95"
+          href="#"
+        >
+          <span class="material-symbols-outlined" data-icon="search"
+            >search</span
+          >
+          <span class="font-label text-sm">Search &amp; Download</span>
+        </a>
+        <a
+          class="flex items-center gap-4 px-6 py-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-colors duration-200 active:scale-95"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined"
+            data-icon="download_for_offline"
+            >download_for_offline</span
+          >
+          <span class="font-label text-sm">Download Queue</span>
+        </a>
+        <a
+          class="flex items-center gap-4 px-6 py-3 text-[#ffb3b8] font-bold border-r-2 border-[#ffb3b8] bg-[#1f1f1f] transition-colors duration-200 active:scale-95"
+          href="#"
+        >
+          <span class="material-symbols-outlined" data-icon="menu_book"
+            >menu_book</span
+          >
+          <span class="font-label text-sm">Anime Info</span>
+        </a>
+        <a
+          class="flex items-center gap-4 px-6 py-3 text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-colors duration-200 active:scale-95"
+          href="#"
+        >
+          <span class="material-symbols-outlined" data-icon="sync">sync</span>
+          <span class="font-label text-sm">Biu Sync</span>
+        </a>
+      </nav>
+    </aside>
+    <!-- TopNavBar -->
+    <header
+      class="fixed top-0 right-0 left-64 h-16 flex justify-between items-center px-6 w-auto bg-[#131313]/80 backdrop-blur-xl z-40"
+    >
+      <div class="flex items-center flex-1 max-w-xl">
+        <div class="relative w-full group">
+          <span
+            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm"
+            data-icon="search"
+            >search</span
+          >
+          <input
+            class="w-full bg-surface-container-highest rounded-md py-2 pl-10 pr-4 text-sm font-body outline-none transition-all focus:bg-surface-bright focus:ring-1 focus:ring-primary/40 border-none"
+            placeholder="Lookup titles from bgm.tv..."
+            type="text"
+          />
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <button
+          class="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all group"
+        >
+          <span class="material-symbols-outlined" data-icon="dark_mode"
+            >dark_mode</span
+          >
+        </button>
+        <button
+          class="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all group"
+        >
+          <span class="material-symbols-outlined" data-icon="settings"
+            >settings</span
+          >
+        </button>
+      </div>
+    </header>
+    <!-- Main Content Canvas -->
+    <main class="ml-64 pt-24 px-12 pb-16 min-h-screen">
+      <!-- Detailed View Section -->
+      <section class="max-w-6xl mx-auto">
+        <!-- Hero Editorial Layout -->
+        <div class="grid grid-cols-12 gap-12 items-start">
+          <!-- Poster Column (Asymmetric Grid) -->
+          <div class="col-span-12 lg:col-span-4 sticky top-28">
+            <div class="relative group">
+              <div
+                class="absolute -inset-4 bg-primary/5 rounded-xl blur-3xl opacity-0 group-hover:opacity-100 transition-opacity"
+              ></div>
+              <img
+                class="relative rounded-lg shadow-2xl w-full aspect-[2/3] object-cover"
+                data-alt="Cinematic anime style poster of a futuristic city"
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBZamF55y3XoAJ9HE9Ctza7a24F0uAcpNpL5g7KgoVbJ6ZqFh4RnYMaUKsG7ToyCgSAsKPl14bY_66Y0E5uQnNbfuhfS5L3923bo0fK48Lg1pakJuZENYhR17XSPoiTVbJCXvjW4DWe_YMkW79tGIDxFR27CwNweQ7IGcdKXa6vNhxH7IWuFwN7kzHpLla-7vt8T6XxBR9bMoLlPIWR6daZNEIQat7vYE3_iI0ii3zLfTxnfqcAzefcOCLdgcaAVs0VcUq__AXidg"
+              />
+              <!-- Floating Rating Card -->
+              <div
+                class="absolute -bottom-6 -right-6 bg-surface-variant/70 backdrop-blur-2xl p-6 rounded-xl border border-outline-variant/15 shadow-2xl"
+              >
+                <p
+                  class="font-label text-[10px] uppercase tracking-widest text-primary mb-1"
+                >
+                  Bangumi Rating
+                </p>
+                <div class="flex items-baseline gap-1">
+                  <span
+                    class="text-4xl font-black text-on-surface tracking-tighter"
+                    >8.2</span
+                  >
+                  <span class="text-on-surface-variant font-label text-sm"
+                    >/ 10</span
+                  >
+                </div>
+              </div>
+            </div>
+            <div class="mt-16 flex flex-col gap-4">
+              <button
+                class="w-full py-4 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold text-sm tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-transform"
+              >
+                <span
+                  class="material-symbols-outlined text-lg"
+                  data-icon="download"
+                  >download</span
+                >
+                Configure &amp; Download
+              </button>
+              <button
+                class="w-full py-4 rounded-full border border-outline-variant/20 hover:bg-surface-container transition-colors font-label text-sm text-on-surface-variant"
+              >
+                Official Site
+              </button>
+            </div>
+          </div>
+          <!-- Info Column -->
+          <div class="col-span-12 lg:col-span-8">
+            <div class="mb-12">
+              <div class="flex items-center gap-3 mb-4">
+                <span
+                  class="px-3 py-1 bg-secondary-container text-on-secondary-container font-label text-[10px] tracking-widest uppercase rounded-sm"
+                  >Currently Airing</span
+                >
+                <span class="text-on-surface-variant font-label text-xs"
+                  >TV Series • 24m per ep</span
+                >
+              </div>
+              <h2
+                class="text-7xl font-black text-on-surface tracking-tighter leading-[0.9] mb-6"
+              >
+                NEON <br />
+                ARCHIVE: <br />
+                <span class="text-primary">SIGNAL</span>
+              </h2>
+              <div class="flex gap-8">
+                <div>
+                  <p
+                    class="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1"
+                  >
+                    Air Date
+                  </p>
+                  <p class="font-body font-bold text-on-surface">
+                    Oct 12, 2023
+                  </p>
+                </div>
+                <div>
+                  <p
+                    class="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1"
+                  >
+                    Studio
+                  </p>
+                  <p class="font-body font-bold text-on-surface">
+                    MAPPA Studios
+                  </p>
+                </div>
+                <div>
+                  <p
+                    class="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1"
+                  >
+                    Genre
+                  </p>
+                  <p class="font-body font-bold text-on-surface">
+                    Sci-Fi, Noir, Tech
+                  </p>
+                </div>
+              </div>
+            </div>
+            <!-- Summary -->
+            <div class="bg-surface-container rounded-xl p-10 mb-12">
+              <h3
+                class="font-label text-xs text-primary uppercase tracking-[0.2em] mb-4"
+              >
+                The Narrative
+              </h3>
+              <p
+                class="text-on-surface-variant leading-relaxed text-xl font-light"
+              >
+                In a world where digital consciousness can be archived and
+                retrieved, a lone investigator discovers a signal from a
+                forgotten era. As the boundaries between memory and data blur,
+                the quest for the truth leads to the heart of the Digital
+                Archive. An exploration of identity in the age of infinite
+                replication and the shadows cast by technological transcendence.
+              </p>
+            </div>
+            <!-- Metadata Record Summary -->
+            <div class="pt-8 border-t border-outline-variant/10">
+              <div class="flex items-center gap-4 text-on-surface-variant/40">
+                <span
+                  class="font-label text-[10px] uppercase tracking-[0.2em] whitespace-nowrap"
+                  >Metadata Record</span
+                >
+                <span class="h-px w-8 bg-outline-variant/20"></span>
+                <p class="font-body text-xs italic">
+                  Staff metadata is not included in this record.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Metadata Tech Strip -->
+        <div
+          class="mt-20 pt-8 border-t border-outline-variant/10 flex justify-between items-center"
+        >
+          <div class="flex gap-12">
+            <div class="flex flex-col">
+              <span
+                class="font-label text-[10px] text-on-surface-variant uppercase tracking-widest"
+                >Database ID</span
+              >
+              <span class="font-label text-sm font-bold">BGM-442931</span>
+            </div>
+            <div class="flex flex-col">
+              <span
+                class="font-label text-[10px] text-on-surface-variant uppercase tracking-widest"
+                >File Density</span
+              >
+              <span class="font-label text-sm font-bold">12.4 GB / S1</span>
+            </div>
+            <div class="flex flex-col">
+              <span
+                class="font-label text-[10px] text-on-surface-variant uppercase tracking-widest"
+                >Metadata Sync</span
+              >
+              <span
+                class="font-label text-sm font-bold flex items-center gap-2"
+              >
+                <span class="w-2 h-2 rounded-full bg-secondary"></span> 100%
+                Secure
+              </span>
+            </div>
+          </div>
+          <div class="flex gap-4">
+            <button
+              class="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors font-label text-xs uppercase tracking-wider text-primary"
+            >
+              <span class="material-symbols-outlined text-lg" data-icon="share"
+                >share</span
+              >
+              Export Record
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <!-- Floating Action Background Glow -->
+    <div
+      class="fixed top-0 right-0 -z-10 w-[500px] h-[500px] bg-primary/5 blur-[120px] rounded-full pointer-events-none"
+    ></div>
+    <div
+      class="fixed bottom-0 left-64 -z-10 w-[300px] h-[300px] bg-secondary/5 blur-[100px] rounded-full pointer-events-none"
+    ></div>
+    <!-- Centered Redesigned Notification Card Overlay -->
+    <div
+      class="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none"
+    >
+      <div
+        class="w-[340px] border rounded-2xl p-8 flex flex-col items-center gap-6 shadow-[0_0_50px_rgba(240,145,153,0.15)] animate-in fade-in zoom-in-95 duration-300 pointer-events-auto border-white/10 bg-white/10 backdrop-blur-[40px] border-white/20"
+      >
+        <div
+          class="w-16 h-16 rounded-full bg-[#F09199]/10 flex items-center justify-center"
+        >
+          <span
+            class="material-symbols-outlined text-[#F09199] text-4xl"
+            data-icon="check_circle"
+            >check_circle</span
+          >
+        </div>
+        <div class="text-center">
+          <h4
+            class="font-label text-primary uppercase tracking-[0.2em] text-xs mb-2"
+          >
+            Success
+          </h4>
+          <p class="font-body text-lg text-white font-semibold leading-snug">
+            Share link copied to clipboard
+          </p>
+        </div>
+        <button
+          class="mt-2 px-8 py-2.5 rounded-full bg-primary text-on-primary font-label text-xs font-black uppercase tracking-widest hover:brightness-110 transition-all active:scale-95 shadow-lg shadow-primary/20"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  </body>
+</html>
