@@ -175,18 +175,36 @@ def search_bgm(keyword, update=False):
 # ===================== 主程序 =====================
 if __name__ == "__main__":
     import sys
+    import json as _json
 
-    if len(sys.argv) >= 3:
-        keyword = sys.argv[1]
-        update = sys.argv[2].lower() == "y"
+    # 支持 --json 标志：输出 JSON 供 IPC 调用
+    #   用法: python search_anime.py <keyword> [y|n] [--json]
+    args = [a for a in sys.argv[1:] if a != "--json"]
+    json_mode = "--json" in sys.argv
+
+    if len(args) >= 2:
+        keyword = args[0]
+        update = args[1].lower() == "y"
+    elif len(args) == 1:
+        keyword = args[0]
+        update = False
     else:
         keyword = input("关键词：").strip()
         update = input("更新缓存？y/n：").lower() == "y"
 
     final = search_bgm(keyword, update)
-    print("\n" + "=" * 60)
-    if not final:
-        print("没有找到结果")
+
+    if json_mode:
+        # 去掉不可序列化的 date_obj 字段
+        output = [
+            {"title": x["title"], "date": x["date_str"], "rate": x["rate"], "link": x["link"]}
+            for x in final
+        ]
+        print(_json.dumps(output, ensure_ascii=False))
     else:
-        for item in final:
-            print(f"{item['date_str']}   | {item['title']}")
+        print("\n" + "=" * 60)
+        if not final:
+            print("没有找到结果")
+        else:
+            for item in final:
+                print(f"{item['date_str']}   | {item['title']}")
