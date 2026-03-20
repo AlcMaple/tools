@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 import urllib.parse
 import os
+import sys
 import time
 
 # ===================== 配置区域 =====================
@@ -152,7 +153,7 @@ def search_bgm(keyword, update=False):
 
     # 从第2页开始爬
     for page in range(2, total_page + 1):
-        print(f"正在爬取第 {page} 页...")
+        print(f"正在爬取第 {page} 页...", file=sys.stderr)
         html = request_page(keyword, page, update)
         if not html:
             continue
@@ -163,7 +164,7 @@ def search_bgm(keyword, update=False):
         # 这一页 一条匹配都没有 → 直接结束！
         # =====================
         if len(current) == 0:
-            print(f"第 {page} 页没有匹配「{keyword}」的动漫，停止爬取")
+            print(f"第 {page} 页没有匹配「{keyword}」的动漫，停止爬取", file=sys.stderr)
             break
 
         all_items.extend(current)
@@ -174,7 +175,6 @@ def search_bgm(keyword, update=False):
 
 # ===================== 主程序 =====================
 if __name__ == "__main__":
-    import sys
     import json as _json
 
     # 支持 --json 标志：输出 JSON 供 IPC 调用
