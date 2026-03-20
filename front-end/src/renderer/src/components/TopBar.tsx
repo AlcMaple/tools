@@ -1,8 +1,19 @@
+import { useState } from 'react'
+
 interface TopBarProps {
   placeholder: string
+  onSearch?: (query: string) => void
 }
 
-function TopBar({ placeholder }: TopBarProps): JSX.Element {
+function TopBar({ placeholder, onSearch }: TopBarProps): JSX.Element {
+  const [query, setQuery] = useState('')
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter' && query.trim() && onSearch) {
+      onSearch(query.trim())
+    }
+  }
+
   return (
     <header className="fixed top-0 right-0 left-64 h-16 bg-[#131313]/80 backdrop-blur-xl flex justify-between items-center px-8 z-40">
       {/* Search input */}
@@ -13,6 +24,9 @@ function TopBar({ placeholder }: TopBarProps): JSX.Element {
         <input
           type="text"
           placeholder={placeholder}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
           className="bg-transparent border-none text-sm focus:ring-0 p-0 w-full text-on-surface placeholder:text-on-surface-variant/40 font-body outline-none"
         />
       </div>
