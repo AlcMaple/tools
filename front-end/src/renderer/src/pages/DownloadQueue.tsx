@@ -9,16 +9,9 @@ function ImagePlaceholder({ icon = 'movie', className = '' }: { icon?: string; c
 }
 
 function DownloadQueue(): JSX.Element {
-  const speedIndicator = (
-    <div className="flex items-center space-x-1.5 bg-surface-container rounded-lg px-3 py-1.5">
-      <span className="material-symbols-outlined text-primary text-sm leading-none">speed</span>
-      <span className="text-sm font-label font-bold text-primary">12.4 MB/s</span>
-    </div>
-  )
-
   return (
     <div className="min-h-screen bg-background">
-      <TopBar placeholder="Filter current downloads..." rightSlot={speedIndicator} />
+      <TopBar placeholder="Filter downloads..." />
 
       <main className="pt-16 px-8 py-8 custom-scrollbar overflow-y-auto">
         {/* Master control bar */}

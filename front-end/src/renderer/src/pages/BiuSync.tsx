@@ -29,34 +29,44 @@ function BiuSync(): JSX.Element {
           {/* Left col: actions + status */}
           <div className="col-span-7 space-y-5">
             {/* Action buttons */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="flex gap-6">
               {/* Push to E Drive */}
-              <button className="bg-surface-container rounded-xl p-6 border border-outline-variant/20 hover:border-b-4 hover:border-b-primary text-left transition-all duration-150 group">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                  <span className="material-symbols-outlined text-primary text-2xl leading-none">
-                    upload_file
+              <button className="flex-1 group relative overflow-hidden bg-surface-container rounded-xl p-8 text-left active:scale-95 border-b-4 border-transparent hover:border-primary transition-all duration-300">
+                <div className="flex justify-between items-start mb-8">
+                  <div className="p-3 bg-primary/10 rounded-lg">
+                    <span className="material-symbols-outlined text-primary text-4xl leading-none">
+                      upload_file
+                    </span>
+                  </div>
+                  <span className="material-symbols-outlined text-on-surface-variant/20 group-hover:text-primary/40 transition-colors">
+                    north_east
                   </span>
                 </div>
-                <h3 className="font-bold text-on-surface text-sm mb-1">
+                <h3 className="font-headline text-2xl font-bold text-on-surface mb-1">
                   Push to E Drive
                 </h3>
-                <p className="text-xs font-label text-on-surface-variant/50">
-                  Sync local changes → remote storage
+                <p className="font-label text-xs text-on-surface-variant tracking-wide">
+                  Update remote repository with local 'Biu' contents.
                 </p>
               </button>
 
               {/* Pull from E Drive */}
-              <button className="bg-surface-container rounded-xl p-6 border border-outline-variant/20 hover:border-b-4 hover:border-b-secondary text-left transition-all duration-150 group">
-                <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center mb-4">
-                  <span className="material-symbols-outlined text-secondary text-2xl leading-none">
-                    download_for_offline
+              <button className="flex-1 group relative overflow-hidden bg-surface-container rounded-xl p-8 text-left active:scale-95 border-b-4 border-transparent hover:border-secondary transition-all duration-300">
+                <div className="flex justify-between items-start mb-8">
+                  <div className="p-3 bg-secondary/10 rounded-lg">
+                    <span className="material-symbols-outlined text-secondary text-4xl leading-none">
+                      download_for_offline
+                    </span>
+                  </div>
+                  <span className="material-symbols-outlined text-on-surface-variant/20 group-hover:text-secondary/40 transition-colors">
+                    south_west
                   </span>
                 </div>
-                <h3 className="font-bold text-on-surface text-sm mb-1">
+                <h3 className="font-headline text-2xl font-bold text-on-surface mb-1">
                   Pull from E Drive
                 </h3>
-                <p className="text-xs font-label text-on-surface-variant/50">
-                  Fetch remote changes → local storage
+                <p className="font-label text-xs text-on-surface-variant tracking-wide">
+                  Sync local workstation with latest E Drive data.
                 </p>
               </button>
             </div>

@@ -27,40 +27,27 @@ function Sidebar(): JSX.Element {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 space-y-1 px-3">
+      <nav className="flex-1 space-y-1">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             end={item.path === "/"}
             className={({ isActive }) =>
-              `flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-150 group ${
+              `flex items-center px-6 py-3 space-x-3 transition-colors duration-200 ${
                 isActive
                   ? "text-[#ffb3b8] font-bold border-r-2 border-[#ffb3b8] bg-[#1f1f1f]"
-                  : "text-[#e2e2e2]/60 hover:text-[#e2e2e2] hover:bg-[#1f1f1f]"
+                  : "text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f]"
               }`
             }
           >
-            <span className="material-symbols-outlined text-xl leading-none">
+            <span className="material-symbols-outlined text-lg leading-none">
               {item.icon}
             </span>
-            <span className="text-sm font-label">{item.label}</span>
+            <span className="font-label text-sm">{item.label}</span>
           </NavLink>
         ))}
       </nav>
-
-      {/* User */}
-      {/* <div className="px-6 mt-auto">
-        <div className="flex items-center space-x-3 p-3 rounded-xl bg-surface-container-high/40">
-          <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center overflow-hidden flex-shrink-0">
-            <span className="material-symbols-outlined text-on-primary text-sm">person</span>
-          </div>
-          <div className="overflow-hidden">
-            <p className="text-xs font-bold truncate">Archivist_User</p>
-            <p className="text-[10px] text-on-surface-variant/60 font-label">PRO PLAN</p>
-          </div>
-        </div>
-      </div> */}
     </aside>
   );
 }
