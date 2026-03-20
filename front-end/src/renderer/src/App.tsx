@@ -8,9 +8,9 @@ import BiuSync from './pages/BiuSync'
 function App(): JSX.Element {
   return (
     <HashRouter>
-      <div className="min-h-screen bg-background text-on-surface font-body">
+      <div className="h-screen overflow-hidden bg-background text-on-surface font-body">
         <Sidebar />
-        <div className="ml-64">
+        <div className="ml-64 h-full overflow-y-auto custom-scrollbar">
           <Routes>
             <Route path="/" element={<SearchDownload />} />
             <Route path="/queue" element={<DownloadQueue />} />
