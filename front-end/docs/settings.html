@@ -1,0 +1,534 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800;900&amp;family=Space+Grotesk:wght@500;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container-highest": "#353535",
+              "on-tertiary-container": "#3f4040",
+              "on-secondary-fixed": "#001b3e",
+              "inverse-surface": "#e2e2e2",
+              primary: "#ffb3b8",
+              "on-tertiary": "#303030",
+              "surface-container-high": "#2a2a2a",
+              outline: "#a18c8c",
+              "on-error-container": "#ffdad6",
+              secondary: "#aac7ff",
+              "on-primary-fixed": "#3e0410",
+              tertiary: "#c8c6c6",
+              "on-surface": "#e2e2e2",
+              "on-background": "#e2e2e2",
+              "on-tertiary-fixed-variant": "#464747",
+              error: "#ffb4ab",
+              "secondary-fixed-dim": "#aac7ff",
+              "surface-dim": "#131313",
+              "tertiary-container": "#acabab",
+              "surface-variant": "#353535",
+              "outline-variant": "#544343",
+              "error-container": "#93000a",
+              "secondary-container": "#004c9a",
+              "on-error": "#690005",
+              "inverse-primary": "#94464f",
+              "surface-container": "#1f1f1f",
+              "primary-fixed": "#ffdadb",
+              "tertiary-fixed": "#e4e2e2",
+              "tertiary-fixed-dim": "#c8c6c6",
+              surface: "#131313",
+              "primary-container": "#f09199",
+              "secondary-fixed": "#d6e3ff",
+              "inverse-on-surface": "#303030",
+              "on-tertiary-fixed": "#1b1c1c",
+              "on-secondary-container": "#9ec0ff",
+              "surface-bright": "#393939",
+              "primary-fixed-dim": "#ffb2b8",
+              "on-primary-container": "#6e2932",
+              "on-surface-variant": "#d9c1c1",
+              "on-primary-fixed-variant": "#772f38",
+              "surface-tint": "#ffb2b8",
+              background: "#131313",
+              "on-secondary-fixed-variant": "#00458d",
+              "on-primary": "#5a1923",
+              "surface-container-lowest": "#0e0e0e",
+              "surface-container-low": "#1b1b1b",
+              "on-secondary": "#002f64",
+            },
+            fontFamily: {
+              headline: ["Inter"],
+              body: ["Inter"],
+              label: ["Space Grotesk"],
+            },
+            borderRadius: {
+              DEFAULT: "0.125rem",
+              lg: "0.25rem",
+              xl: "0.5rem",
+              full: "0.75rem",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .material-symbols-outlined {
+        font-variation-settings:
+          "FILL" 0,
+          "wght" 400,
+          "GRAD" 0,
+          "opsz" 24;
+      }
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #131313;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #353535;
+        border-radius: 2px;
+      }
+      .glass-panel {
+        background: rgba(53, 53, 53, 0.7);
+        backdrop-filter: blur(20px);
+      }
+    </style>
+  </head>
+  <body
+    class="bg-surface text-on-surface font-body selection:bg-primary/30 selection:text-primary"
+  >
+    <!-- SideNavBar (Shared Component) -->
+    <aside
+      class="h-screen w-64 fixed left-0 top-0 overflow-y-auto bg-[#0e0e0e] contrast-125 border-r border-white/5 flex flex-col py-8 z-50"
+    >
+      <div class="px-6 mb-12">
+        <span class="text-xl font-black tracking-tighter text-[#f09199]"
+          >ARCHIVIST</span
+        >
+        <p class="font-label text-[10px] text-gray-500 tracking-[0.2em] mt-1">
+          V2.0.4
+        </p>
+      </div>
+      <nav class="flex-1 space-y-1">
+        <a
+          class="flex items-center gap-3 px-6 py-4 text-gray-400 hover:text-gray-200 transition-colors group"
+          href="#"
+        >
+          <span class="material-symbols-outlined" data-icon="search"
+            >search</span
+          >
+          <span class="font-label text-xs uppercase tracking-wider"
+            >Search</span
+          >
+        </a>
+        <a
+          class="flex items-center gap-3 px-6 py-4 text-gray-400 hover:text-gray-200 transition-colors group"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined"
+            data-icon="download_for_offline"
+            >download_for_offline</span
+          >
+          <span class="font-label text-xs uppercase tracking-wider"
+            >Download Queue</span
+          >
+        </a>
+        <a
+          class="flex items-center gap-3 px-6 py-4 text-gray-400 hover:text-gray-200 transition-colors group"
+          href="#"
+        >
+          <span class="material-symbols-outlined" data-icon="info">info</span>
+          <span class="font-label text-xs uppercase tracking-wider"
+            >Anime Info</span
+          >
+        </a>
+        <a
+          class="flex items-center gap-3 px-6 py-4 text-[#f09199] bg-[#1f1f1f] border-r-4 border-[#f09199] transition-all"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined"
+            data-icon="sync"
+            style="font-variation-settings: &quot;FILL&quot; 1"
+            >sync</span
+          >
+          <span class="font-label text-xs uppercase tracking-wider"
+            >Biu Sync</span
+          >
+        </a>
+      </nav>
+    </aside>
+    <!-- Main Content Canvas -->
+    <main
+      class="ml-64 min-h-screen bg-surface relative overflow-y-auto h-screen"
+    >
+      <!-- TopAppBar (Shared Component) -->
+      <header
+        class="fixed top-0 right-0 w-[calc(100%-16rem)] h-16 z-40 bg-[#131313]/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-8 shadow-[0_20px_40px_rgba(240,145,153,0.05)]"
+      >
+        <div class="flex items-center gap-4">
+          <span
+            class="font-headline font-bold text-lg text-[#e2e2e2] tracking-widest uppercase"
+            >DASHBOARD</span
+          >
+          <span class="h-4 w-[1px] bg-white/10"></span>
+          <span class="font-label text-xs text-gray-500 tracking-widest"
+            >SYSTEM PREFERENCES</span
+          >
+        </div>
+        <div class="flex items-center gap-6">
+          <div class="flex items-center gap-2 text-gray-500">
+            <span class="material-symbols-outlined text-sm" data-icon="storage"
+              >storage</span
+            >
+            <span class="font-label text-[10px] tracking-widest"
+              >942 GB FREE</span
+            >
+          </div>
+          <div class="flex items-center gap-2 text-gray-500">
+            <span class="material-symbols-outlined text-sm" data-icon="speed"
+              >speed</span
+            >
+            <span class="font-label text-[10px] tracking-widest">3 ACTIVE</span>
+          </div>
+          <button
+            class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors"
+          >
+            <span
+              class="material-symbols-outlined text-on-surface"
+              data-icon="wifi_tethering"
+              >wifi_tethering</span
+            >
+          </button>
+        </div>
+      </header>
+      <!-- Page Content -->
+      <div class="pt-32 pb-20 px-12 max-w-7xl mx-auto">
+        <!-- Application Settings Header -->
+        <section class="mb-16">
+          <h1
+            class="font-headline font-black text-6xl tracking-tighter text-on-surface mb-2"
+          >
+            SETTINGS<span class="text-primary">.</span>
+          </h1>
+          <p
+            class="font-label text-sm uppercase tracking-[0.3em] text-gray-500 max-w-xl"
+          >
+            Configure the core operational parameters for the digital archivist
+            environment. Changes take effect immediately upon persistence.
+          </p>
+        </section>
+        <div class="grid grid-cols-12 gap-10 items-start">
+          <!-- Primary Configuration Column -->
+          <section class="col-span-12 lg:col-span-7 space-y-8">
+            <!-- Biu Sync Configuration -->
+            <div
+              class="bg-surface-container p-8 rounded-xl relative overflow-hidden group border border-white/5"
+            >
+              <div class="flex items-center justify-between mb-8 relative z-10">
+                <div class="flex items-center gap-3">
+                  <span
+                    class="material-symbols-outlined text-primary"
+                    data-icon="folder_shared"
+                    >folder_shared</span
+                  >
+                  <h2
+                    class="font-headline font-bold text-xl uppercase tracking-tight"
+                  >
+                    Biu Sync Configuration
+                  </h2>
+                </div>
+                <div
+                  class="flex items-center gap-2 px-3 py-1 bg-primary/10 rounded-full"
+                >
+                  <span
+                    class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"
+                  ></span>
+                  <span
+                    class="font-label text-[10px] text-primary font-bold tracking-widest uppercase"
+                    >Required</span
+                  >
+                </div>
+              </div>
+              <div class="space-y-6 relative z-10">
+                <!-- Local Path -->
+                <div class="space-y-2">
+                  <label
+                    class="font-label text-xs uppercase tracking-widest text-gray-400"
+                    >Local Project Path</label
+                  >
+                  <div class="flex gap-2">
+                    <div
+                      class="flex-1 bg-surface-container-highest rounded-md px-4 py-3 flex items-center gap-3 group/input focus-within:bg-surface-bright transition-all"
+                    >
+                      <span
+                        class="material-symbols-outlined text-gray-500 text-sm"
+                        data-icon="computer"
+                        >computer</span
+                      >
+                      <input
+                        class="bg-transparent border-none focus:ring-0 w-full text-sm font-label text-on-surface placeholder-gray-600"
+                        type="text"
+                        value="C:/Users/Archivist/Documents/BiuProjects/Anime"
+                      />
+                    </div>
+                    <button
+                      class="bg-surface-container-high hover:bg-surface-bright px-4 rounded-md transition-colors flex items-center justify-center"
+                    >
+                      <span
+                        class="material-symbols-outlined text-sm"
+                        data-icon="folder_open"
+                        >folder_open</span
+                      >
+                    </button>
+                  </div>
+                </div>
+                <!-- Remote Path -->
+                <div class="space-y-2">
+                  <label
+                    class="font-label text-xs uppercase tracking-widest text-gray-400"
+                    >Remote Sync Path</label
+                  >
+                  <div class="flex gap-2">
+                    <div
+                      class="flex-1 bg-surface-container-highest rounded-md px-4 py-3 flex items-center gap-3 focus-within:bg-surface-bright transition-all"
+                    >
+                      <span
+                        class="material-symbols-outlined text-gray-500 text-sm"
+                        data-icon="cloud_sync"
+                        >cloud_sync</span
+                      >
+                      <input
+                        class="bg-transparent border-none focus:ring-0 w-full text-sm font-label text-on-surface placeholder-gray-600"
+                        type="text"
+                        value="ssh://obsidian-node-01/mnt/media/archivist/biu-mirror"
+                      />
+                    </div>
+                    <button
+                      class="bg-surface-container-high hover:bg-surface-bright px-4 rounded-md transition-colors flex items-center justify-center"
+                    >
+                      <span
+                        class="material-symbols-outlined text-sm"
+                        data-icon="link"
+                        >link</span
+                      >
+                    </button>
+                  </div>
+                </div>
+                <p
+                  class="font-body text-xs text-gray-500 leading-relaxed border-t border-white/5 pt-4"
+                >
+                  These paths define the architectural bridge between your local
+                  workstation and the remote Biu project server. Automated hash
+                  verification will be performed during each synchronization
+                  cycle.
+                </p>
+              </div>
+            </div>
+            <!-- Search & Download Preferences -->
+            <div
+              class="bg-surface-container p-8 rounded-xl border border-white/5"
+            >
+              <div class="flex items-center gap-3 mb-8">
+                <span
+                  class="material-symbols-outlined text-primary"
+                  data-icon="search_insights"
+                  >search_insights</span
+                >
+                <h2
+                  class="font-headline font-bold text-xl uppercase tracking-tight"
+                >
+                  Search Preferences
+                </h2>
+              </div>
+              <div
+                class="flex items-start justify-between gap-8 p-6 bg-surface-container-low rounded-lg border border-white/5"
+              >
+                <div class="space-y-1">
+                  <h3
+                    class="font-headline font-bold text-sm uppercase tracking-wider"
+                  >
+                    Enable Search Cache
+                  </h3>
+                  <p class="text-xs text-gray-500 leading-relaxed">
+                    When enabled, previously searched titles will load instantly
+                    from local storage. Disable to force fresh metadata scraping
+                    from original indexers.
+                  </p>
+                </div>
+                <!-- Custom Toggle Switch -->
+                <label
+                  class="relative inline-flex items-center cursor-pointer mt-1"
+                >
+                  <input checked="" class="sr-only peer" type="checkbox" />
+                  <div
+                    class="w-12 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"
+                  ></div>
+                </label>
+              </div>
+            </div>
+          </section>
+          <!-- Sidebar Actions & Info Column -->
+          <aside class="col-span-12 lg:col-span-5 space-y-6">
+            <div
+              class="glass-panel p-8 rounded-xl border border-white/10 shadow-2xl"
+            >
+              <h4
+                class="font-headline font-bold text-lg mb-6 uppercase tracking-wider border-b border-white/5 pb-4"
+              >
+                Configuration Summary
+              </h4>
+              <div class="space-y-4 mb-10">
+                <div class="flex justify-between items-center">
+                  <span
+                    class="font-label text-xs text-gray-500 uppercase tracking-widest"
+                    >Environment</span
+                  >
+                  <span class="font-label text-xs text-on-surface uppercase"
+                    >Production</span
+                  >
+                </div>
+                <div class="flex justify-between items-center">
+                  <span
+                    class="font-label text-xs text-gray-500 uppercase tracking-widest"
+                    >Node ID</span
+                  >
+                  <span class="font-label text-xs text-on-surface uppercase"
+                    >ARC-8821-X</span
+                  >
+                </div>
+                <div class="flex justify-between items-center">
+                  <span
+                    class="font-label text-xs text-gray-500 uppercase tracking-widest"
+                    >Last Sync</span
+                  >
+                  <span class="font-label text-xs text-on-surface uppercase"
+                    >4 MIN AGO</span
+                  >
+                </div>
+                <div class="w-full h-[1px] bg-white/5 my-2"></div>
+                <div class="flex justify-between items-center">
+                  <span
+                    class="font-label text-xs text-gray-500 uppercase tracking-widest"
+                    >Storage Status</span
+                  >
+                  <span class="font-label text-xs text-secondary uppercase"
+                    >Optimal</span
+                  >
+                </div>
+              </div>
+              <!-- Action Buttons -->
+              <div class="space-y-3">
+                <button
+                  class="w-full py-4 bg-gradient-to-r from-primary to-primary-container rounded-full text-on-primary-container font-headline font-black text-sm uppercase tracking-[0.2em] shadow-[0_10px_30px_rgba(240,145,153,0.2)] hover:scale-[1.02] active:scale-100 transition-all"
+                >
+                  Save Changes
+                </button>
+                <button
+                  class="w-full py-4 text-primary font-headline font-bold text-sm uppercase tracking-[0.2em] hover:bg-surface-variant/40 rounded-full transition-all"
+                >
+                  Reset to Default
+                </button>
+              </div>
+            </div>
+            <!-- Recent Changes & System Info -->
+            <div class="space-y-6">
+              <div
+                class="p-8 bg-surface-container rounded-xl border border-white/5"
+              >
+                <div class="flex items-center gap-3 mb-6">
+                  <span
+                    class="material-symbols-outlined text-secondary"
+                    data-icon="history"
+                    >history</span
+                  >
+                  <h2
+                    class="font-headline font-bold text-sm uppercase tracking-widest"
+                  >
+                    Change History
+                  </h2>
+                </div>
+                <ul class="space-y-4">
+                  <li class="flex items-start gap-4 group">
+                    <div
+                      class="mt-1 w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors flex-shrink-0"
+                    ></div>
+                    <div class="space-y-1">
+                      <p
+                        class="font-label text-[11px] text-on-surface/80 uppercase leading-tight"
+                      >
+                        Updated project_path via auto-detect
+                      </p>
+                      <p
+                        class="font-label text-[9px] text-gray-500 uppercase tracking-tighter"
+                      >
+                        OCT 24, 14:21:05
+                      </p>
+                    </div>
+                  </li>
+                  <li class="flex items-start gap-4 group">
+                    <div
+                      class="mt-1 w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors flex-shrink-0"
+                    ></div>
+                    <div class="space-y-1">
+                      <p
+                        class="font-label text-[11px] text-on-surface/80 uppercase leading-tight"
+                      >
+                        Search cache enabled
+                      </p>
+                      <p
+                        class="font-label text-[9px] text-gray-500 uppercase tracking-tighter"
+                      >
+                        OCT 23, 09:12:44
+                      </p>
+                    </div>
+                  </li>
+                  <li class="flex items-start gap-4 group">
+                    <div
+                      class="mt-1 w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors flex-shrink-0"
+                    ></div>
+                    <div class="space-y-1">
+                      <p
+                        class="font-label text-[11px] text-on-surface/80 uppercase leading-tight"
+                      >
+                        Remote sync path validated
+                      </p>
+                      <p
+                        class="font-label text-[9px] text-gray-500 uppercase tracking-tighter"
+                      >
+                        OCT 22, 11:45:12
+                      </p>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+    <!-- Visual Artifacts -->
+    <div
+      class="fixed bottom-0 right-0 p-8 pointer-events-none select-none opacity-20"
+    >
+      <p
+        class="font-label text-[150px] font-black text-white/5 leading-none tracking-tighter uppercase"
+      >
+        Config
+      </p>
+    </div>
+  </body>
+</html>
