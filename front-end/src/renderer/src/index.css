@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #353535;
+  border-radius: 2px;
+}
+
+.glass-modal {
+  background: rgba(53, 53, 53, 0.7);
+  backdrop-filter: blur(20px);
+}
+
+.glass-effect {
+  background: rgba(53, 53, 53, 0.7);
+  backdrop-filter: blur(30px);
+}
+
+.glass-panel {
+  background: rgba(53, 53, 53, 0.7);
+  backdrop-filter: blur(30px);
+}
+
+.primary-gradient {
+  background: linear-gradient(135deg, #ffb3b8 0%, #f09199 100%);
+}
