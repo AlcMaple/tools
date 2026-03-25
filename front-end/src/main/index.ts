@@ -50,6 +50,40 @@ ipcMain.handle('bgm:detail', async (_event, subjectId: number) => {
   const output = await runPython('bgm_detail.py', [String(subjectId)])
   return JSON.parse(output)
 })
+
+ipcMain.handle('xifan:captcha', async () => {
+  const output = await runPython('xifan_api.py', ['captcha'])
+  return JSON.parse(output)
+})
+
+ipcMain.handle('xifan:verify', async (_event, code: string) => {
+  const output = await runPython('xifan_api.py', ['verify', code])
+  return JSON.parse(output)
+})
+
+ipcMain.handle('xifan:search', async (_event, keyword: string) => {
+  const output = await runPython('xifan_api.py', ['search', keyword])
+  return JSON.parse(output)
+})
+
+ipcMain.handle('xifan:watch', async (_event, watchUrl: string) => {
+  const output = await runPython('xifan_api.py', ['watch', watchUrl])
+  return JSON.parse(output)
+})
+
+ipcMain.handle(
+  'xifan:download',
+  async (_event, title: string, templates: string[], startEp: number, endEp: number) => {
+    const scriptsDir = join(app.getAppPath(), '..')
+    const proc = spawn(
+      PYTHON_BIN,
+      [join(scriptsDir, 'xifan_api.py'), 'download', title, String(startEp), String(endEp), ...templates],
+      { cwd: scriptsDir, detached: true, stdio: 'ignore' }
+    )
+    proc.unref()
+    return { started: true, pid: proc.pid }
+  }
+)
 // ────────────────────────────────────────────────────────────
 
 function createWindow(): void {
