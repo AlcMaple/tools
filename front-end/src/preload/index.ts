@@ -18,4 +18,10 @@ contextBridge.exposeInMainWorld('xifanApi', {
   getWatch: (watchUrl: string) => ipcRenderer.invoke('xifan:watch', watchUrl),
   startDownload: (title: string, templates: string[], startEp: number, endEp: number) =>
     ipcRenderer.invoke('xifan:download', title, templates, startEp, endEp),
+  cancelDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-cancel', taskId),
+  onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
+    ipcRenderer.on('download:progress', handler)
+    return () => ipcRenderer.removeListener('download:progress', handler)
+  },
 })

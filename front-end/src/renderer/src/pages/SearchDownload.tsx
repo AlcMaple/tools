@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import TopBar from '../components/TopBar'
 import type { XifanSearchResult, XifanWatchInfo } from '../types/xifan'
+import { downloadStore } from '../stores/downloadStore'
 
 // ── State machine ──────────────────────────────────────────────────────────────
 
@@ -269,8 +270,23 @@ function SearchDownload(): JSX.Element {
   const handleStartDownload = async (templates: string[], startEp: number, endEp: number): Promise<void> => {
     if (state.status !== 'download_config') return
     const { item, items, watchInfo } = state
+    const title = watchInfo.title || item.title
     try {
-      await window.xifanApi.startDownload(watchInfo.title || item.title, templates, startEp, endEp)
+      const { taskId, pid } = await window.xifanApi.startDownload(title, templates, startEp, endEp)
+      // Build initial epStatus: all episodes start as pending
+      const epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error'> = {}
+      for (let ep = startEp; ep <= endEp; ep++) epStatus[ep] = 'pending'
+      downloadStore.addTask({
+        id: taskId,
+        title,
+        cover: item.cover,
+        startEp,
+        endEp,
+        status: 'running',
+        epStatus,
+        startedAt: Date.now(),
+        pid,
+      })
       setDownloadStarted(true)
       setTimeout(() => setDownloadStarted(false), 3000)
       setState({ status: 'results', items, keyword: currentKeyword.current })

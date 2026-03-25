@@ -258,10 +258,17 @@ def cmd_watch(watch_url: str) -> None:
 # ── download ───────────────────────────────────────────────────────────────────
 
 def cmd_download(title: str, start_ep: int, end_ep: int, templates: list) -> None:
-    """阻塞式下载，由 Electron 以 detached 进程方式调用"""
+    """逐集下载，向 stdout 输出 JSON 进度行供 Electron 读取"""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from xifan_crawler import download_mp4_series  # type: ignore
-    download_mp4_series(templates, start_ep, end_ep, title)
+    for ep in range(start_ep, end_ep + 1):
+        print(json.dumps({"type": "ep_start", "ep": ep}), flush=True)
+        try:
+            download_mp4_series(templates, ep, ep, title)
+            print(json.dumps({"type": "ep_done", "ep": ep}), flush=True)
+        except Exception as e:
+            print(json.dumps({"type": "ep_error", "ep": ep, "msg": str(e)}), flush=True)
+    print(json.dumps({"type": "all_done"}), flush=True)
 
 
 # ── entry point ────────────────────────────────────────────────────────────────
