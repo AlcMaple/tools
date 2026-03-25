@@ -22,11 +22,13 @@ if sys.platform == "win32":
 
 
 class MultiThreadDownloader:
-    def __init__(self, url, save_path, threads=THREADS_PER_EP):
+    def __init__(self, url, save_path, threads=THREADS_PER_EP, progress_callback=None):
         self.url = url
         self.save_path = save_path
         self.threads = threads
         self.file_size = 0
+        self.progress_callback = progress_callback
+        self._bytes_done = 0
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": f"https://{urlparse(url).hostname}",
@@ -74,7 +76,12 @@ class MultiThreadDownloader:
                     with open(self.save_path, "r+b") as f:
                         f.seek(start)
                         f.write(chunk)
-                    progress_bar.update(len(chunk))
+                    n = len(chunk)
+                    progress_bar.update(n)
+                    self._bytes_done += n
+                    if self.progress_callback and self.file_size > 0:
+                        pct = min(99, int(self._bytes_done * 100 / self.file_size))
+                        self.progress_callback(self._bytes_done, self.file_size, pct)
                     return True
                 else:
                     raise Exception(f"状态码错误: {resp.status}")
@@ -201,6 +208,39 @@ def download_mp4_series(template_urls, start_episode, end_episode, anime_title):
             print(f"❌ 第{ep_str}集所有源均失效，跳过\n")
 
     print("🎉 指定范围的集数下载完成！")
+
+
+def download_single_ep(template_urls, ep, anime_title, progress_callback=None):
+    """下载单集（供 xifan_api.py 的 download-single 命令调用）。
+    返回 True 表示成功，False 表示失败。"""
+    save_dir = os.path.join(os.getcwd(), anime_title)
+    os.makedirs(save_dir, exist_ok=True)
+    ep_str = f"{ep:02d}"
+    save_path = os.path.join(save_dir, f"{anime_title} - {ep_str}.mp4")
+
+    # 文件已存在且大于 10MB 则视为已完成，跳过
+    if os.path.exists(save_path) and os.path.getsize(save_path) >= 10 * 1024 * 1024:
+        return True
+    # 删除残留的小/不完整文件
+    if os.path.exists(save_path):
+        os.remove(save_path)
+
+    for template in template_urls:
+        if not template:
+            continue
+        url = template.format(ep)
+        downloader = MultiThreadDownloader(
+            url, save_path, threads=THREADS_PER_EP, progress_callback=progress_callback
+        )
+        try:
+            ok = asyncio.run(downloader.download())
+        except Exception:
+            if os.path.exists(save_path):
+                os.remove(save_path)
+            ok = False
+        if ok:
+            return True
+    return False
 
 
 if __name__ == "__main__":
