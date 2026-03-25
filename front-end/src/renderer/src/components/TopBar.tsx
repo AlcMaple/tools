@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 interface TopBarProps {
   placeholder: string
@@ -7,6 +8,7 @@ interface TopBarProps {
 
 function TopBar({ placeholder, onSearch }: TopBarProps): JSX.Element {
   const [query, setQuery] = useState('')
+  const navigate = useNavigate()
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && query.trim() && onSearch) {
@@ -73,7 +75,10 @@ function TopBar({ placeholder, onSearch }: TopBarProps): JSX.Element {
           <button className="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all">
             <span className="material-symbols-outlined text-xl leading-none">dark_mode</span>
           </button>
-          <button className="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all">
+          <button
+            className="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all"
+            onClick={() => navigate('/settings')}
+          >
             <span className="material-symbols-outlined text-xl leading-none">settings</span>
           </button>
         </div>
