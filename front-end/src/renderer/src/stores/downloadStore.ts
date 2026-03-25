@@ -4,8 +4,10 @@ export interface DownloadTask {
   cover: string
   startEp: number
   endEp: number
-  status: 'running' | 'done' | 'error'
-  epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error'>
+  templates: string[]
+  status: 'running' | 'paused' | 'done' | 'error'
+  epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error' | 'paused'>
+  epProgress: Record<number, number>  // 0–99 while downloading, absent when done
   startedAt: number
   completedAt?: number
   pid?: number
@@ -31,11 +33,11 @@ export const downloadStore = {
   },
 
   getActiveTasks(): DownloadTask[] {
-    return downloadStore.getTasks().filter((t) => t.status === 'running')
+    return downloadStore.getTasks().filter((t) => t.status === 'running' || t.status === 'paused')
   },
 
   getCompletedTasks(): DownloadTask[] {
-    return downloadStore.getTasks().filter((t) => t.status !== 'running')
+    return downloadStore.getTasks().filter((t) => t.status === 'done' || t.status === 'error')
   },
 
   addTask(task: DownloadTask): void {
@@ -53,7 +55,7 @@ export const downloadStore = {
   updateEpStatus(
     id: string,
     ep: number,
-    status: 'pending' | 'downloading' | 'done' | 'error'
+    status: 'pending' | 'downloading' | 'done' | 'error' | 'paused'
   ): void {
     const t = tasks.get(id)
     if (!t) return
@@ -66,15 +68,55 @@ export const downloadStore = {
     notify()
   },
 
+  retryTask(id: string): void {
+    const t = tasks.get(id)
+    if (!t) return
+    const newEpStatus = { ...t.epStatus }
+    for (const ep of Object.keys(newEpStatus)) {
+      if (newEpStatus[Number(ep)] === 'error' || newEpStatus[Number(ep)] === 'paused') {
+        newEpStatus[Number(ep)] = 'pending'
+      }
+    }
+    tasks.set(id, { ...t, status: 'running', epStatus: newEpStatus, completedAt: undefined })
+    notify()
+  },
+
   handleProgressEvent(taskId: string, ev: unknown): void {
     if (!ev || typeof ev !== 'object') return
     const event = ev as Record<string, unknown>
+    const ep = Number(event.ep)
+
     if (event.type === 'ep_start') {
-      downloadStore.updateEpStatus(taskId, Number(event.ep), 'downloading')
+      const t = tasks.get(taskId)
+      if (!t) return
+      tasks.set(taskId, {
+        ...t,
+        epStatus: { ...t.epStatus, [ep]: 'downloading' },
+        epProgress: { ...t.epProgress, [ep]: 0 },
+      })
+      notify()
+    } else if (event.type === 'ep_progress') {
+      const t = tasks.get(taskId)
+      if (!t) return
+      tasks.set(taskId, { ...t, epProgress: { ...t.epProgress, [ep]: Number(event.pct) } })
+      notify()
     } else if (event.type === 'ep_done') {
-      downloadStore.updateEpStatus(taskId, Number(event.ep), 'done')
+      const t = tasks.get(taskId)
+      if (!t) return
+      const newProgress = { ...t.epProgress }
+      delete newProgress[ep]
+      tasks.set(taskId, {
+        ...t,
+        epStatus: { ...t.epStatus, [ep]: 'done' },
+        epProgress: newProgress,
+      })
+      notify()
     } else if (event.type === 'ep_error') {
-      downloadStore.updateEpStatus(taskId, Number(event.ep), 'error')
+      downloadStore.updateEpStatus(taskId, ep, 'error')
+    } else if (event.type === 'ep_paused') {
+      downloadStore.updateEpStatus(taskId, ep, 'paused')
+    } else if (event.type === 'ep_queued') {
+      downloadStore.updateEpStatus(taskId, ep, 'pending')
     } else if (event.type === 'all_done') {
       const t = tasks.get(taskId)
       if (!t) return

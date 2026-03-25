@@ -19,6 +19,14 @@ contextBridge.exposeInMainWorld('xifanApi', {
   startDownload: (title: string, templates: string[], startEp: number, endEp: number) =>
     ipcRenderer.invoke('xifan:download', title, templates, startEp, endEp),
   cancelDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-cancel', taskId),
+  pauseDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-pause', taskId),
+  resumeDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-resume', taskId),
+  pauseEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-pause-ep', taskId, ep),
+  resumeEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-resume-ep', taskId, ep),
+  requeueEpisodes: (taskId: string, title: string, templates: string[], eps: number[]) =>
+    ipcRenderer.invoke('xifan:download-requeue', taskId, title, templates, eps),
+  retryDownload: (taskId: string, title: string, templates: string[], failedEps: number[]) =>
+    ipcRenderer.invoke('xifan:download-retry', taskId, title, templates, failedEps),
   onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
     const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
     ipcRenderer.on('download:progress', handler)
