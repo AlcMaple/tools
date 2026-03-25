@@ -4,6 +4,7 @@ import SearchDownload from './pages/SearchDownload'
 import DownloadQueue from './pages/DownloadQueue'
 import AnimeInfo from './pages/AnimeInfo'
 import BiuSync from './pages/BiuSync'
+import Settings from './pages/Settings'
 
 function App(): JSX.Element {
   return (
@@ -16,6 +17,7 @@ function App(): JSX.Element {
             <Route path="/queue" element={<DownloadQueue />} />
             <Route path="/anime-info" element={<AnimeInfo />} />
             <Route path="/biu-sync" element={<BiuSync />} />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </div>
       </div>
