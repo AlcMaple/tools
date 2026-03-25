@@ -22,7 +22,11 @@ declare global {
         templates: string[],
         startEp: number,
         endEp: number
-      ) => Promise<{ started: boolean; pid?: number }>
+      ) => Promise<{ started: boolean; pid?: number; taskId: string }>
+      cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
+      onDownloadProgress: (
+        cb: (taskId: string, event: unknown) => void
+      ) => () => void
     }
   }
 }

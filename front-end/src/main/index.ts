@@ -71,19 +71,64 @@ ipcMain.handle('xifan:watch', async (_event, watchUrl: string) => {
   return JSON.parse(output)
 })
 
+// Track running download processes by taskId
+const downloadProcesses = new Map<string, ReturnType<typeof spawn>>()
+
 ipcMain.handle(
   'xifan:download',
-  async (_event, title: string, templates: string[], startEp: number, endEp: number) => {
+  async (event, title: string, templates: string[], startEp: number, endEp: number) => {
     const scriptsDir = join(app.getAppPath(), '..')
+    const taskId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+
     const proc = spawn(
       PYTHON_BIN,
       [join(scriptsDir, 'xifan_api.py'), 'download', title, String(startEp), String(endEp), ...templates],
-      { cwd: scriptsDir, detached: true, stdio: 'ignore' }
+      { cwd: scriptsDir }
     )
-    proc.unref()
-    return { started: true, pid: proc.pid }
+
+    downloadProcesses.set(taskId, proc)
+
+    let buf = ''
+    proc.stdout.on('data', (data: Buffer) => {
+      buf += data.toString()
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        try {
+          const ev = JSON.parse(trimmed)
+          event.sender.send('download:progress', taskId, ev)
+        } catch {
+          // ignore non-JSON lines (tqdm output etc.)
+        }
+      }
+    })
+
+    proc.on('close', (code: number) => {
+      downloadProcesses.delete(taskId)
+      if (code !== 0) {
+        event.sender.send('download:progress', taskId, { type: 'all_done', error: true })
+      }
+    })
+
+    proc.on('error', () => {
+      downloadProcesses.delete(taskId)
+      event.sender.send('download:progress', taskId, { type: 'all_done', error: true })
+    })
+
+    return { started: true, pid: proc.pid, taskId }
   }
 )
+
+ipcMain.handle('xifan:download-cancel', (_event, taskId: string) => {
+  const proc = downloadProcesses.get(taskId)
+  if (proc) {
+    proc.kill()
+    downloadProcesses.delete(taskId)
+  }
+  return { cancelled: true }
+})
 // ────────────────────────────────────────────────────────────
 
 function createWindow(): void {
