@@ -1,7 +1,13 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import TopBar from '../components/TopBar'
 import type { XifanSearchResult, XifanWatchInfo } from '../types/xifan'
 import { downloadStore } from '../stores/downloadStore'
+
+// ── Module-level cache (persists across component unmount/remount) ─────────────
+
+let _cachedState: PageState = { status: 'idle' }
+let _cachedSearchQuery = ''
+let _cachedKeyword = ''
 
 // ── State machine ──────────────────────────────────────────────────────────────
 
@@ -47,13 +53,21 @@ interface DownloadConfigProps {
 function DownloadConfigModal({ item, watchInfo, onClose, onStart }: DownloadConfigProps): JSX.Element {
   const validSources = watchInfo.sources.filter((s) => s.template)
   const [selectedIdx, setSelectedIdx] = useState(validSources[0]?.idx ?? 1)
-  const [startEp, setStartEp] = useState(1)
-  const [endEp, setEndEp] = useState(watchInfo.total)
+  // Use string state so users can freely edit; clamp only on blur / submit
+  const [startStr, setStartStr] = useState('1')
+  const [endStr, setEndStr] = useState(String(watchInfo.total))
+
+  const clampStart = (s: string): number =>
+    Math.max(1, Math.min(watchInfo.total, parseInt(s, 10) || 1))
+  const clampEnd = (s: string, start: number): number =>
+    Math.max(start, Math.min(watchInfo.total, parseInt(s, 10) || watchInfo.total))
 
   const handleStart = (): void => {
     const selected = validSources.find((s) => s.idx === selectedIdx)
     if (!selected?.template) return
-    onStart([selected.template], startEp, endEp)
+    const s = clampStart(startStr)
+    const e = clampEnd(endStr, s)
+    onStart([selected.template], s, e)
   }
 
   return (
@@ -131,8 +145,9 @@ function DownloadConfigModal({ item, watchInfo, onClose, onStart }: DownloadConf
                 type="number"
                 min={1}
                 max={watchInfo.total}
-                value={startEp}
-                onChange={(e) => setStartEp(Math.max(1, Math.min(endEp, Number(e.target.value))))}
+                value={startStr}
+                onChange={(e) => setStartStr(e.target.value)}
+                onBlur={() => setStartStr(String(clampStart(startStr)))}
                 className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors"
               />
             </div>
@@ -143,10 +158,11 @@ function DownloadConfigModal({ item, watchInfo, onClose, onStart }: DownloadConf
               </label>
               <input
                 type="number"
-                min={startEp}
+                min={1}
                 max={watchInfo.total}
-                value={endEp}
-                onChange={(e) => setEndEp(Math.max(startEp, Math.min(watchInfo.total, Number(e.target.value))))}
+                value={endStr}
+                onChange={(e) => setEndStr(e.target.value)}
+                onBlur={() => setEndStr(String(clampEnd(endStr, clampStart(startStr))))}
                 className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors"
               />
             </div>
@@ -183,13 +199,24 @@ function DownloadConfigModal({ item, watchInfo, onClose, onStart }: DownloadConf
 // ── Main component ────────────────────────────────────────────────────────────
 
 function SearchDownload(): JSX.Element {
-  const [state, setState] = useState<PageState>({ status: 'idle' })
+  const [state, setState] = useState<PageState>(() => {
+    // Restore to results/idle only — don't restore mid-flight states
+    const s = _cachedState
+    if (s.status === 'searching' || s.status === 'verifying') return { status: 'idle' }
+    if (s.status === 'download_config') return { status: 'results', items: s.items, keyword: _cachedKeyword }
+    return s
+  })
   const [source, setSource] = useState('Xifan')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchQuery, setSearchQuery] = useState(() => _cachedSearchQuery)
   const [captchaInput, setCaptchaInput] = useState('')
   const [loadingWatchUrl, setLoadingWatchUrl] = useState<string | null>(null)
   const [downloadStarted, setDownloadStarted] = useState(false)
-  const currentKeyword = useRef('')
+  const currentKeyword = useRef(_cachedKeyword)
+
+  // Sync state back to module-level cache whenever it changes
+  useEffect(() => { _cachedState = state }, [state])
+  useEffect(() => { _cachedSearchQuery = searchQuery }, [searchQuery])
+  useEffect(() => { _cachedKeyword = currentKeyword.current }, [state])
 
   const handleSearch = async (keyword: string): Promise<void> => {
     if (!keyword.trim()) return
