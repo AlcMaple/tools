@@ -309,8 +309,10 @@ function SearchDownload(): JSX.Element {
         cover: item.cover,
         startEp,
         endEp,
+        templates,
         status: 'running',
         epStatus,
+        epProgress: {},
         startedAt: Date.now(),
         pid,
       })

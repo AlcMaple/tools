@@ -257,11 +257,40 @@ def cmd_watch(watch_url: str) -> None:
 
 # ── download ───────────────────────────────────────────────────────────────────
 
-def cmd_download(title: str, start_ep: int, end_ep: int, templates: list) -> None:
-    """逐集下载，向 stdout 输出 JSON 进度行供 Electron 读取"""
+def cmd_download_single(title: str, ep: int, templates: list) -> None:
+    """下载单集，向 stdout 输出 JSON 进度行供 Electron 读取"""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from xifan_crawler import download_single_ep  # type: ignore
+
+    print(json.dumps({"type": "ep_start", "ep": ep}), flush=True)
+
+    last_pct = [-1]
+
+    def on_progress(*args):
+        pct = args[2]
+        if pct != last_pct[0]:
+            last_pct[0] = pct
+            print(json.dumps({"type": "ep_progress", "ep": ep, "pct": pct}), flush=True)
+
+    try:
+        success = download_single_ep(templates, ep, title, on_progress)
+        if success:
+            print(json.dumps({"type": "ep_done", "ep": ep}), flush=True)
+        else:
+            print(json.dumps({"type": "ep_error", "ep": ep, "msg": "All sources failed"}), flush=True)
+    except Exception as e:
+        print(json.dumps({"type": "ep_error", "ep": ep, "msg": str(e)}), flush=True)
+
+    print(json.dumps({"type": "all_done"}), flush=True)
+
+
+def cmd_download(title: str, start_ep: int, end_ep: int, templates: list, eps=None) -> None:
+    """逐集下载，向 stdout 输出 JSON 进度行供 Electron 读取。
+    eps 若提供（列表），则只下载指定集数而非 start_ep~end_ep 范围。"""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from xifan_crawler import download_mp4_series  # type: ignore
-    for ep in range(start_ep, end_ep + 1):
+    episode_list = eps if eps is not None else list(range(start_ep, end_ep + 1))
+    for ep in episode_list:
         print(json.dumps({"type": "ep_start", "ep": ep}), flush=True)
         try:
             download_mp4_series(templates, ep, ep, title)
@@ -288,12 +317,24 @@ def main() -> None:
             cmd_search(sys.argv[2])
         elif cmd == "watch":
             cmd_watch(sys.argv[2])
+        elif cmd == "download-single":
+            title = sys.argv[2]
+            ep = int(sys.argv[3])
+            templates = sys.argv[4:]
+            cmd_download_single(title, ep, templates)
         elif cmd == "download":
             title = sys.argv[2]
             start_ep = int(sys.argv[3])
             end_ep = int(sys.argv[4])
-            templates = sys.argv[5:]
-            cmd_download(title, start_ep, end_ep, templates)
+            rest = sys.argv[5:]
+            eps = None
+            if '--eps' in rest:
+                idx = rest.index('--eps')
+                templates = rest[:idx]
+                eps = [int(e) for e in rest[idx + 1:]]
+            else:
+                templates = rest
+            cmd_download(title, start_ep, end_ep, templates, eps)
         else:
             print(f"Unknown command: {cmd}", file=sys.stderr)
             sys.exit(1)
