@@ -11,10 +11,10 @@ import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # 配置
-THREADS_PER_EP = 16  # 单集分片线程数
-CHUNK_SIZE = 1024 * 1024  # 每片1MB
-TIMEOUT = 60  # 单个分片超时时间（秒）
-MAX_RETRIES = 3  # 分片最大重试次数
+THREADS_PER_EP = 16        # 保留供旧接口兼容，流式下载不再使用
+CHUNK_SIZE = 1024 * 1024   # 流式读取块大小（1MB）
+TIMEOUT_CONNECT = 30       # 连接超时（秒）
+TIMEOUT_READ = 30          # 单次读取超时（秒），不限制整体下载时长
 
 # Windows 事件循环修复（仅 Windows 需要）
 if sys.platform == "win32":
@@ -40,9 +40,8 @@ class MultiThreadDownloader:
     async def get_file_size(self):
         """获取文件真实大小，验证是否是完整视频"""
         try:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=TIMEOUT)
-            ) as session:
+            timeout = aiohttp.ClientTimeout(connect=TIMEOUT_CONNECT, sock_read=TIMEOUT_READ)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.head(self.url, headers=self.headers) as resp:
                     if resp.status == 200:
                         self.file_size = int(resp.headers.get("Content-Length", 0))
@@ -55,91 +54,74 @@ class MultiThreadDownloader:
         except Exception as e:
             print(f"❌ 获取文件大小异常: {e}")
 
-    async def download_chunk(self, session, start, end, progress_bar, retry_count=0):
-        """下载单个分片（带重试限制）"""
-        if retry_count >= MAX_RETRIES:
-            print(f"❌ 分片[{start}-{end}]重试{MAX_RETRIES}次失败，跳过")
-            return False
-
-        headers = self.headers.copy()
-        headers["Range"] = f"bytes={start}-{end}"
-
-        try:
-            async with session.get(
-                self.url,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=TIMEOUT),
-                verify_ssl=False,  # 忽略SSL验证，解决部分网站证书问题
-            ) as resp:
-                if resp.status in (206, 200):
-                    chunk = await resp.read()
-                    with open(self.save_path, "r+b") as f:
-                        f.seek(start)
-                        f.write(chunk)
-                    n = len(chunk)
-                    progress_bar.update(n)
-                    self._bytes_done += n
-                    if self.progress_callback and self.file_size > 0:
-                        pct = min(99, int(self._bytes_done * 100 / self.file_size))
-                        self.progress_callback(self._bytes_done, self.file_size, pct)
-                    return True
-                else:
-                    raise Exception(f"状态码错误: {resp.status}")
-        except Exception as e:
-            print(
-                f"❌ 分片[{start}-{end}]下载失败({retry_count+1}/{MAX_RETRIES}): {e}，重试中..."
-            )
-            await asyncio.sleep(0.5)
-            return await self.download_chunk(session, start, end, progress_bar, retry_count + 1)
-
     async def download(self):
-        """单集多线程下载主逻辑"""
-        # 1. 获取文件大小
+        """流式下载，支持断点续传。不预分配文件，不在内存中缓存整个分片。"""
+        # 1. 获取服务端文件大小
         await self.get_file_size()
         if self.file_size == 0:
             return False
 
-        # 2. 创建空文件并预分配空间
-        try:
-            with open(self.save_path, "wb") as f:
-                f.truncate(self.file_size)
-        except Exception as e:
-            print(f"❌ 创建文件失败: {e}")
-            return False
+        # 2. 检查已下载字节数（断点续传）
+        existing = 0
+        if os.path.exists(self.save_path):
+            existing = os.path.getsize(self.save_path)
+            if existing >= self.file_size:
+                print(f"✅ {os.path.basename(self.save_path)} 已完整，跳过\n")
+                return True
+            if existing > 0:
+                print(f"🔄 断点续传，从 {existing/1024/1024:.2f} MB 继续...")
 
-        # 3. 计算分片
-        chunk_per_thread = self.file_size // self.threads
-        ranges = []
-        for i in range(self.threads):
-            start = i * chunk_per_thread
-            end = (
-                start + chunk_per_thread - 1
-                if i != self.threads - 1
-                else self.file_size - 1
-            )
-            ranges.append((start, end))
+        self._bytes_done = existing
 
-        # 4. 异步下载所有分片
+        # 3. 构造请求头（断点续传时加 Range）
+        req_headers = self.headers.copy()
+        if existing > 0:
+            req_headers["Range"] = f"bytes={existing}-"
+
+        # 4. 流式下载并追加写入
+        timeout = aiohttp.ClientTimeout(connect=TIMEOUT_CONNECT, sock_read=TIMEOUT_READ)
+        mode = "ab" if existing > 0 else "wb"
         progress_bar = tqdm(
             total=self.file_size,
+            initial=existing,
             unit="iB",
             unit_scale=True,
             desc=os.path.basename(self.save_path),
         )
-        async with aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(limit=32)
-        ) as session:
-            tasks = [self.download_chunk(session, s, e, progress_bar) for s, e in ranges]
-            await asyncio.gather(*tasks)
+        try:
+            async with aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector()
+            ) as session:
+                async with session.get(
+                    self.url, headers=req_headers, timeout=timeout, verify_ssl=False
+                ) as resp:
+                    if resp.status not in (200, 206):
+                        print(f"❌ 请求失败，状态码: {resp.status}")
+                        progress_bar.close()
+                        return False
+                    with open(self.save_path, mode) as f:
+                        async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
+                            f.write(chunk)
+                            n = len(chunk)
+                            self._bytes_done += n
+                            progress_bar.update(n)
+                            if self.progress_callback and self.file_size > 0:
+                                pct = min(99, int(self._bytes_done * 100 / self.file_size))
+                                self.progress_callback(self._bytes_done, self.file_size, pct)
+        except Exception as e:
+            print(f"❌ 下载异常: {e}")
+            progress_bar.close()
+            return False
 
         progress_bar.close()
 
         # 5. 验证文件完整性
-        if os.path.exists(self.save_path) and os.path.getsize(self.save_path) == self.file_size:
+        actual = os.path.getsize(self.save_path) if os.path.exists(self.save_path) else 0
+        if actual == self.file_size:
             print(f"✅ {os.path.basename(self.save_path)} 下载完成（完整）\n")
             return True
         else:
-            print(f"❌ {os.path.basename(self.save_path)} 下载不完整，已删除\n")
+            print(f"❌ {os.path.basename(self.save_path)} 不完整（{actual}/{self.file_size} 字节），已删除\n")
             if os.path.exists(self.save_path):
                 os.remove(self.save_path)
             return False
@@ -217,13 +199,6 @@ def download_single_ep(template_urls, ep, anime_title, progress_callback=None):
     os.makedirs(save_dir, exist_ok=True)
     ep_str = f"{ep:02d}"
     save_path = os.path.join(save_dir, f"{anime_title} - {ep_str}.mp4")
-
-    # 文件已存在且大于 10MB 则视为已完成，跳过
-    if os.path.exists(save_path) and os.path.getsize(save_path) >= 10 * 1024 * 1024:
-        return True
-    # 删除残留的小/不完整文件
-    if os.path.exists(save_path):
-        os.remove(save_path)
 
     for template in template_urls:
         if not template:
