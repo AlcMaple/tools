@@ -267,10 +267,10 @@ def cmd_download_single(title: str, ep: int, templates: list) -> None:
     last_pct = [-1]
 
     def on_progress(*args):
-        pct = args[2]
+        bytes_done, pct = int(args[0]), args[2]
         if pct != last_pct[0]:
             last_pct[0] = pct
-            print(json.dumps({"type": "ep_progress", "ep": ep, "pct": pct}), flush=True)
+            print(json.dumps({"type": "ep_progress", "ep": ep, "pct": pct, "bytes": bytes_done}), flush=True)
 
     try:
         success = download_single_ep(templates, ep, title, on_progress)

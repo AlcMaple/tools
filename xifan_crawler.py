@@ -14,7 +14,8 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 THREADS_PER_EP = 16        # 保留供旧接口兼容，流式下载不再使用
 CHUNK_SIZE = 1024 * 1024   # 流式读取块大小（1MB）
 TIMEOUT_CONNECT = 30       # 连接超时（秒）
-TIMEOUT_READ = 30          # 单次读取超时（秒），不限制整体下载时长
+TIMEOUT_READ = 60          # 单次读取超时（秒），不限制整体下载时长
+MAX_RETRIES = 5            # 网络抖动时自动断点续传重试次数
 
 # Windows 事件循环修复（仅 Windows 需要）
 if sys.platform == "win32":
@@ -55,32 +56,19 @@ class MultiThreadDownloader:
             print(f"❌ 获取文件大小异常: {e}")
 
     async def download(self):
-        """流式下载，支持断点续传。不预分配文件，不在内存中缓存整个分片。"""
+        """流式下载，支持断点续传 + 网络抖动自动重试。"""
         # 1. 获取服务端文件大小
         await self.get_file_size()
         if self.file_size == 0:
             return False
 
-        # 2. 检查已下载字节数（断点续传）
-        existing = 0
-        if os.path.exists(self.save_path):
-            existing = os.path.getsize(self.save_path)
-            if existing >= self.file_size:
-                print(f"✅ {os.path.basename(self.save_path)} 已完整，跳过\n")
-                return True
-            if existing > 0:
-                print(f"🔄 断点续传，从 {existing/1024/1024:.2f} MB 继续...")
+        # 2. 初始化进度条（整个下载过程只创建一次）
+        existing = os.path.getsize(self.save_path) if os.path.exists(self.save_path) else 0
+        if existing >= self.file_size:
+            print(f"✅ {os.path.basename(self.save_path)} 已完整，跳过\n")
+            return True
 
         self._bytes_done = existing
-
-        # 3. 构造请求头（断点续传时加 Range）
-        req_headers = self.headers.copy()
-        if existing > 0:
-            req_headers["Range"] = f"bytes={existing}-"
-
-        # 4. 流式下载并追加写入
-        timeout = aiohttp.ClientTimeout(connect=TIMEOUT_CONNECT, sock_read=TIMEOUT_READ)
-        mode = "ab" if existing > 0 else "wb"
         progress_bar = tqdm(
             total=self.file_size,
             initial=existing,
@@ -88,34 +76,56 @@ class MultiThreadDownloader:
             unit_scale=True,
             desc=os.path.basename(self.save_path),
         )
-        try:
-            async with aiohttp.ClientSession(
-                connector=aiohttp.TCPConnector()
-            ) as session:
-                async with session.get(
-                    self.url, headers=req_headers, timeout=timeout, verify_ssl=False
-                ) as resp:
-                    if resp.status not in (200, 206):
-                        print(f"❌ 请求失败，状态码: {resp.status}")
-                        progress_bar.close()
-                        return False
-                    with open(self.save_path, mode) as f:
-                        async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
-                            f.write(chunk)
-                            n = len(chunk)
-                            self._bytes_done += n
-                            progress_bar.update(n)
-                            if self.progress_callback and self.file_size > 0:
-                                pct = min(99, int(self._bytes_done * 100 / self.file_size))
-                                self.progress_callback(self._bytes_done, self.file_size, pct)
-        except Exception as e:
-            print(f"❌ 下载异常: {e}")
-            progress_bar.close()
-            return False
+
+        # 3. 带自动重试的流式下载（超时/断线从当前文件末尾续传）
+        timeout = aiohttp.ClientTimeout(connect=TIMEOUT_CONNECT, sock_read=TIMEOUT_READ)
+        for attempt in range(1, MAX_RETRIES + 1):
+            existing = os.path.getsize(self.save_path) if os.path.exists(self.save_path) else 0
+            if existing >= self.file_size:
+                break  # 已完整，退出重试循环
+
+            req_headers = self.headers.copy()
+            if existing > 0:
+                req_headers["Range"] = f"bytes={existing}-"
+                if attempt == 1:
+                    print(f"🔄 断点续传，从 {existing/1024/1024:.2f} MB 继续...")
+                else:
+                    print(f"🔄 网络抖动，第{attempt}次重试，从 {existing/1024/1024:.2f} MB 续传...")
+
+            mode = "ab" if existing > 0 else "wb"
+            try:
+                async with aiohttp.ClientSession(
+                    connector=aiohttp.TCPConnector()
+                ) as session:
+                    async with session.get(
+                        self.url, headers=req_headers, timeout=timeout, verify_ssl=False
+                    ) as resp:
+                        if resp.status not in (200, 206):
+                            print(f"❌ 请求失败，状态码: {resp.status}")
+                            progress_bar.close()
+                            return False
+                        with open(self.save_path, mode) as f:
+                            async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
+                                f.write(chunk)
+                                n = len(chunk)
+                                self._bytes_done += n
+                                progress_bar.update(n)
+                                if self.progress_callback and self.file_size > 0:
+                                    pct = min(99, int(self._bytes_done * 100 / self.file_size))
+                                    self.progress_callback(self._bytes_done, self.file_size, pct)
+                break  # 正常读完，退出重试循环
+            except Exception as e:
+                if attempt < MAX_RETRIES:
+                    print(f"⚠️  连接中断（{e}），准备续传...")
+                    await asyncio.sleep(1)
+                else:
+                    print(f"❌ 下载失败，已重试 {MAX_RETRIES} 次: {e}")
+                    progress_bar.close()
+                    return False
 
         progress_bar.close()
 
-        # 5. 验证文件完整性
+        # 4. 验证文件完整性
         actual = os.path.getsize(self.save_path) if os.path.exists(self.save_path) else 0
         if actual == self.file_size:
             print(f"✅ {os.path.basename(self.save_path)} 下载完成（完整）\n")

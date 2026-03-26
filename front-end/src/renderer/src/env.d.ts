@@ -3,6 +3,10 @@ import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
 
 declare global {
   interface Window {
+    systemApi: {
+      getDiskFree: () => Promise<{ free: number; total: number }>
+      onSpeedUpdate: (cb: (bps: number) => void) => () => void
+    }
     versions: {
       node: () => string
       chrome: () => string

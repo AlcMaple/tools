@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { spawn } from 'child_process'
+import { statfs } from 'fs/promises'
 
 // Python 可执行文件：Windows 用 python，macOS/Linux 用 python3
 const PYTHON_BIN = process.platform === 'win32' ? 'python' : 'python3'
@@ -71,6 +72,28 @@ ipcMain.handle('xifan:watch', async (_event, watchUrl: string) => {
   return JSON.parse(output)
 })
 
+// ── System stats ─────────────────────────────────────────────
+let _speedAccum = 0
+const _epLastBytes = new Map<string, Map<number, number>>()
+
+ipcMain.handle('system:disk-free', async () => {
+  try {
+    const stats = await statfs(join(app.getAppPath(), '..'))
+    return { free: stats.bavail * stats.bsize, total: stats.blocks * stats.bsize }
+  } catch {
+    return { free: 0, total: 0 }
+  }
+})
+
+// Push download speed to renderer every second
+setInterval(() => {
+  const bps = _speedAccum
+  _speedAccum = 0
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('system:speed', bps)
+  }
+}, 1000)
+
 // ── Episode Queue Manager ────────────────────────────────────
 interface EpQueue {
   title: string
@@ -109,6 +132,7 @@ function startNextEp(taskId: string): void {
     // Queue exhausted — done only if no eps are sitting in pausedEps
     if (q.pausedEps.size === 0) {
       episodeQueues.delete(taskId)
+      _epLastBytes.delete(taskId)
       q.sender.send('download:progress', taskId, { type: 'all_done' })
     }
     // Otherwise we wait; user must resume paused eps manually
@@ -134,6 +158,14 @@ function startNextEp(taskId: string): void {
       if (!trimmed) continue
       try {
         const ev = JSON.parse(trimmed) as Record<string, unknown>
+        // Track bytes for download speed calculation
+        if (ev.type === 'ep_progress' && typeof ev.bytes === 'number') {
+          const taskMap = _epLastBytes.get(taskId) ?? new Map<number, number>()
+          const prev = taskMap.get(Number(ev.ep)) ?? 0
+          _speedAccum += Math.max(0, (ev.bytes as number) - prev)
+          taskMap.set(Number(ev.ep), ev.bytes as number)
+          _epLastBytes.set(taskId, taskMap)
+        }
         // Don't forward the single-ep 'all_done' — we handle queue completion ourselves
         if (ev.type !== 'all_done') {
           q.sender.send('download:progress', taskId, ev)

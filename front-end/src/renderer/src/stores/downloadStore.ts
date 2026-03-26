@@ -15,11 +15,41 @@ export interface DownloadTask {
 
 type Listener = () => void
 
+const STORAGE_KEY = 'xifan_download_tasks_v1'
 const tasks = new Map<string, DownloadTask>()
 const listeners = new Set<Listener>()
 
+function persist(): void {
+  const toSave = [...tasks.values()].map((t) => ({ ...t, epProgress: {} }))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
+}
+
+function load(): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+    const saved = JSON.parse(raw) as DownloadTask[]
+    for (const t of saved) {
+      if (t.status === 'running' || t.status === 'paused') {
+        // Process died on app close — mark unfinished eps as error so user can retry
+        const newEpStatus = { ...t.epStatus }
+        for (const ep of Object.keys(newEpStatus)) {
+          const s = newEpStatus[Number(ep)]
+          if (s === 'downloading' || s === 'pending') newEpStatus[Number(ep)] = 'error'
+        }
+        tasks.set(t.id, { ...t, status: 'error', epStatus: newEpStatus, epProgress: {} })
+      } else {
+        tasks.set(t.id, { ...t, epProgress: {} })
+      }
+    }
+  } catch { /* ignore corrupted data */ }
+}
+
+load()
+
 function notify(): void {
   listeners.forEach((l) => l())
+  persist()
 }
 
 export const downloadStore = {
