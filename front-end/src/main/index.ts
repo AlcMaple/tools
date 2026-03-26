@@ -1,7 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { spawn } from 'child_process'
-import { unlinkSync } from 'fs'
 
 // Python 可执行文件：Windows 用 python，macOS/Linux 用 python3
 const PYTHON_BIN = process.platform === 'win32' ? 'python' : 'python3'
@@ -144,26 +143,10 @@ function startNextEp(taskId: string): void {
   })
 
   proc.on('close', () => {
-    const wasKilledForPause = q.killedForEpPause
-    const killedEp = q.current  // save before clearing
+    q.killedForEpPause = false
     q.current = null
     q.currentProc = null
     if (q.cancelled) return
-
-    if (wasKilledForPause) {
-      q.killedForEpPause = false
-      // The downloader pre-allocates the file to full size before downloading chunks.
-      // When we kill the process mid-download, the file exists at full size but is
-      // mostly zeros — download_single_ep would wrongly treat it as complete on retry.
-      // Delete it so the retry starts fresh.
-      if (killedEp !== null) {
-        const scriptsDir = join(app.getAppPath(), '..')
-        const epStr = String(killedEp).padStart(2, '0')
-        const partialFile = join(scriptsDir, q.title, `${q.title} - ${epStr}.mp4`)
-        try { unlinkSync(partialFile) } catch { /* file may not exist, ignore */ }
-      }
-    }
-
     startNextEp(taskId)
   })
 
