@@ -6,6 +6,30 @@ function Settings(): JSX.Element {
   const navigate = useNavigate()
   const [localPath, setLocalPath] = useState('C:/Users/Archivist/Documents/BiuProjects/Anime')
   const [remotePath, setRemotePath] = useState('ssh://obsidian-node-01/mnt/media/archivist/biu-mirror')
+
+  const [downloadPath, setDownloadPath] = useState<string>(() => {
+    try { return JSON.parse(localStorage.getItem('xifan_settings') || '{}').downloadPath || '' }
+    catch { return '' }
+  })
+
+  const handlePickDownloadFolder = async (): Promise<void> => {
+    const picked = await window.systemApi.pickFolder()
+    if (!picked) return
+    setDownloadPath(picked)
+    try {
+      const s = JSON.parse(localStorage.getItem('xifan_settings') || '{}')
+      localStorage.setItem('xifan_settings', JSON.stringify({ ...s, downloadPath: picked }))
+    } catch { /* ignore */ }
+  }
+
+  const handleClearDownloadPath = (): void => {
+    setDownloadPath('')
+    try {
+      const s = JSON.parse(localStorage.getItem('xifan_settings') || '{}')
+      delete s.downloadPath
+      localStorage.setItem('xifan_settings', JSON.stringify(s))
+    } catch { /* ignore */ }
+  }
   const { diskFreeLabel, activeTasks, networkOnline } = useSystemStats()
 
   const [searchCache, setSearchCache] = useState<boolean>(() => {
@@ -138,6 +162,49 @@ function Settings(): JSX.Element {
                   These paths define the architectural bridge between your local workstation and the
                   remote Biu project server. Automated hash verification will be performed during
                   each synchronization cycle.
+                </p>
+              </div>
+            </div>
+
+            {/* Download Save Path */}
+            <div className="bg-surface-container p-8 rounded-xl border border-white/5">
+              <div className="flex items-center gap-3 mb-8">
+                <span className="material-symbols-outlined text-primary">save_alt</span>
+                <h2 className="font-headline font-bold text-xl uppercase tracking-tight">
+                  Download Save Path
+                </h2>
+              </div>
+              <div className="space-y-2">
+                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant/60">
+                  Save Location
+                </label>
+                <div className="flex gap-2">
+                  <div className="flex-1 bg-surface-container-highest rounded-md px-4 py-3 flex items-center gap-3">
+                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">
+                      folder_open
+                    </span>
+                    <span className={`flex-1 text-sm font-label truncate ${downloadPath ? 'text-on-surface' : 'text-on-surface-variant/30'}`}>
+                      {downloadPath || 'Default: script directory'}
+                    </span>
+                    {downloadPath && (
+                      <button
+                        onClick={handleClearDownloadPath}
+                        className="text-on-surface-variant/40 hover:text-on-surface transition-colors flex-shrink-0"
+                      >
+                        <span className="material-symbols-outlined text-sm leading-none">close</span>
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    onClick={handlePickDownloadFolder}
+                    className="bg-surface-container-high hover:bg-surface-bright px-4 rounded-md transition-colors flex items-center justify-center"
+                  >
+                    <span className="material-symbols-outlined text-sm leading-none">drive_folder_upload</span>
+                  </button>
+                </div>
+                <p className="font-body text-xs text-on-surface-variant/40 leading-relaxed border-t border-white/5 pt-4">
+                  Downloaded files are saved to <span className="text-on-surface-variant/60">&lt;path&gt;/&lt;title&gt;/</span>.
+                  Leave empty to use the default directory alongside the scripts.
                 </p>
               </div>
             </div>

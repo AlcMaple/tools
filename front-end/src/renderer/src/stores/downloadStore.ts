@@ -5,6 +5,7 @@ export interface DownloadTask {
   startEp: number
   endEp: number
   templates: string[]
+  savePath?: string
   status: 'running' | 'paused' | 'done' | 'error'
   epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error' | 'paused'>
   epProgress: Record<number, number>  // 0–99 while downloading, absent when done

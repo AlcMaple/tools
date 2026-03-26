@@ -354,8 +354,12 @@ function SearchDownload(): JSX.Element {
     if (state.status !== 'download_config') return
     const { item, items, watchInfo } = state
     const title = watchInfo.title || item.title
+    const savePath = (() => {
+      try { return JSON.parse(localStorage.getItem('xifan_settings') || '{}').downloadPath || undefined }
+      catch { return undefined }
+    })()
     try {
-      const { taskId, pid } = await window.xifanApi.startDownload(title, templates, startEp, endEp)
+      const { taskId, pid } = await window.xifanApi.startDownload(title, templates, startEp, endEp, savePath)
       // Build initial epStatus: all episodes start as pending
       const epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error'> = {}
       for (let ep = startEp; ep <= endEp; ep++) epStatus[ep] = 'pending'
@@ -366,6 +370,7 @@ function SearchDownload(): JSX.Element {
         startEp,
         endEp,
         templates,
+        savePath,
         status: 'running',
         epStatus,
         epProgress: {},

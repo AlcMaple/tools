@@ -257,7 +257,7 @@ def cmd_watch(watch_url: str) -> None:
 
 # ── download ───────────────────────────────────────────────────────────────────
 
-def cmd_download_single(title: str, ep: int, templates: list) -> None:
+def cmd_download_single(title: str, ep: int, templates: list, save_dir: str | None = None) -> None:
     """下载单集，向 stdout 输出 JSON 进度行供 Electron 读取"""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from xifan_crawler import download_single_ep  # type: ignore
@@ -273,7 +273,7 @@ def cmd_download_single(title: str, ep: int, templates: list) -> None:
             print(json.dumps({"type": "ep_progress", "ep": ep, "pct": pct, "bytes": bytes_done}), flush=True)
 
     try:
-        success = download_single_ep(templates, ep, title, on_progress)
+        success = download_single_ep(templates, ep, title, on_progress, save_dir=save_dir)
         if success:
             print(json.dumps({"type": "ep_done", "ep": ep}), flush=True)
         else:
@@ -320,8 +320,14 @@ def main() -> None:
         elif cmd == "download-single":
             title = sys.argv[2]
             ep = int(sys.argv[3])
-            templates = sys.argv[4:]
-            cmd_download_single(title, ep, templates)
+            rest = sys.argv[4:]
+            save_dir = None
+            if '--save-dir' in rest:
+                idx = rest.index('--save-dir')
+                save_dir = rest[idx + 1]
+                rest = rest[:idx] + rest[idx + 2:]
+            templates = rest
+            cmd_download_single(title, ep, templates, save_dir=save_dir)
         elif cmd == "download":
             title = sys.argv[2]
             start_ep = int(sys.argv[3])

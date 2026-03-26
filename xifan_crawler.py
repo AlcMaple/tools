@@ -148,7 +148,7 @@ def _ep1_to_template(ep1_url):
     return ep1_url.replace(filename, base_filename)
 
 
-def download_mp4_series(template_urls, start_episode, end_episode, anime_title):
+def download_mp4_series(template_urls, start_episode, end_episode, anime_title, save_dir=None):
     """
     批量下载：支持多源自动回退 + 自定义起始/结束集数。
 
@@ -157,7 +157,8 @@ def download_mp4_series(template_urls, start_episode, end_episode, anime_title):
     start_episode: 起始集数（含）
     end_episode:   结束集数（含）
     """
-    save_dir = os.path.join(os.getcwd(), anime_title)
+    base = save_dir if save_dir else os.getcwd()
+    save_dir = os.path.join(base, anime_title)
     os.makedirs(save_dir, exist_ok=True)
     print(f"📂 保存目录: {save_dir}")
     print(f"📡 可用源数: {len(template_urls)}")
@@ -202,10 +203,11 @@ def download_mp4_series(template_urls, start_episode, end_episode, anime_title):
     print("🎉 指定范围的集数下载完成！")
 
 
-def download_single_ep(template_urls, ep, anime_title, progress_callback=None):
+def download_single_ep(template_urls, ep, anime_title, progress_callback=None, save_dir=None):
     """下载单集（供 xifan_api.py 的 download-single 命令调用）。
     返回 True 表示成功，False 表示失败。"""
-    save_dir = os.path.join(os.getcwd(), anime_title)
+    base = save_dir if save_dir else os.getcwd()
+    save_dir = os.path.join(base, anime_title)
     os.makedirs(save_dir, exist_ok=True)
     ep_str = f"{ep:02d}"
     save_path = os.path.join(save_dir, f"{anime_title} - {ep_str}.mp4")
