@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { spawn } from 'child_process'
 import { statfs } from 'fs/promises'
@@ -98,6 +98,7 @@ setInterval(() => {
 interface EpQueue {
   title: string
   templates: string[]
+  savePath: string | null
   pending: number[]        // normal order queue
   priorityFront: number[]  // played after current finishes (high priority)
   pausedEps: Set<number>   // per-episode paused by user
@@ -141,11 +142,10 @@ function startNextEp(taskId: string): void {
 
   q.current = ep
   const scriptsDir = join(app.getAppPath(), '..')
-  const proc = spawn(
-    PYTHON_BIN,
-    [join(scriptsDir, 'xifan_api.py'), 'download-single', q.title, String(ep), ...q.templates],
-    { cwd: scriptsDir }
-  )
+  const spawnArgs = [join(scriptsDir, 'xifan_api.py'), 'download-single', q.title, String(ep)]
+  if (q.savePath) spawnArgs.push('--save-dir', q.savePath)
+  spawnArgs.push(...q.templates)
+  const proc = spawn(PYTHON_BIN, spawnArgs, { cwd: scriptsDir })
   q.currentProc = proc
 
   let buf = ''
@@ -192,12 +192,13 @@ function startNextEp(taskId: string): void {
 
 ipcMain.handle(
   'xifan:download',
-  async (event, title: string, templates: string[], startEp: number, endEp: number) => {
+  async (event, title: string, templates: string[], startEp: number, endEp: number, savePath?: string) => {
     const taskId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const pending = Array.from({ length: endEp - startEp + 1 }, (_, i) => startEp + i)
     episodeQueues.set(taskId, {
       title,
       templates,
+      savePath: savePath ?? null,
       pending,
       priorityFront: [],
       pausedEps: new Set(),
@@ -284,10 +285,11 @@ ipcMain.handle('xifan:download-resume-ep', (_event, taskId: string, ep: number) 
 // so that progress events update the existing store entry.
 ipcMain.handle(
   'xifan:download-requeue',
-  async (event, taskId: string, title: string, templates: string[], eps: number[]) => {
+  async (event, taskId: string, title: string, templates: string[], eps: number[], savePath?: string) => {
     episodeQueues.set(taskId, {
       title,
       templates,
+      savePath: savePath ?? null,
       pending: [...eps],
       priorityFront: [],
       pausedEps: new Set(),
@@ -320,6 +322,11 @@ ipcMain.handle('xifan:download-retry', (_event, taskId: string, _title: string, 
   return { started: true }
 })
 // ────────────────────────────────────────────────────────────
+
+ipcMain.handle('system:pick-folder', async () => {
+  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+  return result.canceled ? null : result.filePaths[0]
+})
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({

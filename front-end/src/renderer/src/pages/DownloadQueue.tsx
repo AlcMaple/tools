@@ -362,7 +362,7 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       epProgress: {},
       completedAt: undefined,
     })
-    await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, failedEps)
+    await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, failedEps, task.savePath)
   }
 
   const handleRetryEp = async (ep: number): Promise<void> => {
@@ -372,7 +372,7 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       epProgress: { ...task.epProgress },
       completedAt: undefined,
     })
-    await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, [ep])
+    await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, [ep], task.savePath)
   }
 
   return (
