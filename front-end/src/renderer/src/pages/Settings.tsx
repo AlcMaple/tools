@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSystemStats } from '../hooks/useSystemStats'
+import { navGuard } from '../utils/navGuard'
 
 // ── constants ────────────────────────────────────────────────
 const NODE_ID_KEY = 'xifan_node_id'
@@ -95,6 +96,27 @@ function Settings(): JSX.Element {
     staged.downloadPath !== saved.downloadPath ||
     staged.searchCacheEnabled !== saved.searchCacheEnabled
 
+  // pendingNav: path to navigate to after dialog action ('__back__' for back button)
+  const [pendingNav, setPendingNav] = useState<string | null>(null)
+
+  // Register/unregister nav guard whenever isDirty changes
+  useEffect(() => {
+    if (isDirty) {
+      navGuard.setListener((to) => setPendingNav(to))
+    } else {
+      navGuard.setListener(null)
+    }
+    return () => navGuard.setListener(null)
+  }, [isDirty])
+
+  const handleProceedNav = (save: boolean): void => {
+    if (save) handleSave()
+    navGuard.setListener(null)
+    if (pendingNav === '__back__') navigate(-1)
+    else if (pendingNav) navigate(pendingNav)
+    setPendingNav(null)
+  }
+
   // Save button feedback
   const [saveLabel, setSaveLabel] = useState<'save' | 'saved'>('save')
 
@@ -171,7 +193,7 @@ function Settings(): JSX.Element {
       <header className="fixed top-0 right-0 left-64 h-16 z-40 bg-[#131313]/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-8">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => isDirty ? setPendingNav('__back__') : navigate(-1)}
             className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-variant/40 rounded-full transition-colors"
           >
             <span className="material-symbols-outlined text-xl leading-none">arrow_back</span>
@@ -441,6 +463,49 @@ function Settings(): JSX.Element {
       <div className="fixed bottom-0 right-0 p-8 pointer-events-none select-none">
         <p className="font-label text-[150px] font-black text-white/[0.02] leading-none tracking-tighter uppercase">Config</p>
       </div>
+
+      {/* Unsaved changes navigation warning dialog */}
+      {pendingNav !== null && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40"
+          onClick={() => setPendingNav(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white/10 backdrop-blur-[40px] rounded-xl p-10 flex flex-col items-center text-center shadow-[0_40px_80px_rgba(0,0,0,0.5)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative mb-8">
+              <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full" />
+              <span
+                className="material-symbols-outlined text-primary text-6xl relative"
+                style={{ fontVariationSettings: '"wght" 200' }}
+              >
+                warning_amber
+              </span>
+            </div>
+            <h2 className="text-2xl font-black font-headline tracking-tight text-white mb-3">
+              Unsaved Changes Detected
+            </h2>
+            <p className="text-white/70 font-body text-sm mb-10 leading-relaxed px-4">
+              You have unsaved configuration changes. Leaving now will permanently discard them.
+            </p>
+            <div className="flex flex-col w-full gap-3">
+              <button
+                onClick={() => handleProceedNav(true)}
+                className="w-full py-4 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary-container font-headline font-extrabold text-sm tracking-widest uppercase hover:scale-[1.02] active:scale-100 transition-transform"
+              >
+                Save &amp; Leave
+              </button>
+              <button
+                onClick={() => handleProceedNav(false)}
+                className="w-full py-4 rounded-full bg-white/5 hover:bg-white/10 text-white font-label font-bold text-xs tracking-[0.2em] uppercase transition-colors"
+              >
+                Discard &amp; Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
