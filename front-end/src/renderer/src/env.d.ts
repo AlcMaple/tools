@@ -5,6 +5,7 @@ declare global {
   interface Window {
     systemApi: {
       getDiskFree: () => Promise<{ free: number; total: number }>
+      pickFolder: () => Promise<string | null>
       onSpeedUpdate: (cb: (bps: number) => void) => () => void
     }
     versions: {
@@ -25,7 +26,8 @@ declare global {
         title: string,
         templates: string[],
         startEp: number,
-        endEp: number
+        endEp: number,
+        savePath?: string
       ) => Promise<{ started: boolean; pid?: number; taskId: string }>
       cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
       pauseDownload: (taskId: string) => Promise<{ paused: boolean }>
@@ -36,7 +38,8 @@ declare global {
         taskId: string,
         title: string,
         templates: string[],
-        eps: number[]
+        eps: number[],
+        savePath?: string
       ) => Promise<{ started: boolean }>
       retryDownload: (
         taskId: string,

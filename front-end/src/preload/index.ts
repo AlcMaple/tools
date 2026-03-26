@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('bgmApi', {
 
 contextBridge.exposeInMainWorld('systemApi', {
   getDiskFree: () => ipcRenderer.invoke('system:disk-free'),
+  pickFolder: () => ipcRenderer.invoke('system:pick-folder'),
   onSpeedUpdate: (cb: (bps: number) => void) => {
     const handler = (_: Electron.IpcRendererEvent, bps: number) => cb(bps)
     ipcRenderer.on('system:speed', handler)
@@ -25,15 +26,15 @@ contextBridge.exposeInMainWorld('xifanApi', {
   verifyCaptcha: (code: string) => ipcRenderer.invoke('xifan:verify', code),
   search: (keyword: string) => ipcRenderer.invoke('xifan:search', keyword),
   getWatch: (watchUrl: string) => ipcRenderer.invoke('xifan:watch', watchUrl),
-  startDownload: (title: string, templates: string[], startEp: number, endEp: number) =>
-    ipcRenderer.invoke('xifan:download', title, templates, startEp, endEp),
+  startDownload: (title: string, templates: string[], startEp: number, endEp: number, savePath?: string) =>
+    ipcRenderer.invoke('xifan:download', title, templates, startEp, endEp, savePath),
   cancelDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-cancel', taskId),
   pauseDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-pause', taskId),
   resumeDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-resume', taskId),
   pauseEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-pause-ep', taskId, ep),
   resumeEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-resume-ep', taskId, ep),
-  requeueEpisodes: (taskId: string, title: string, templates: string[], eps: number[]) =>
-    ipcRenderer.invoke('xifan:download-requeue', taskId, title, templates, eps),
+  requeueEpisodes: (taskId: string, title: string, templates: string[], eps: number[], savePath?: string) =>
+    ipcRenderer.invoke('xifan:download-requeue', taskId, title, templates, eps, savePath),
   retryDownload: (taskId: string, title: string, templates: string[], failedEps: number[]) =>
     ipcRenderer.invoke('xifan:download-retry', taskId, title, templates, failedEps),
   onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
