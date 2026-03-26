@@ -9,6 +9,42 @@ let _cachedState: PageState = { status: 'idle' }
 let _cachedSearchQuery = ''
 let _cachedKeyword = ''
 
+// ── localStorage search/watch cache ──────────────────────────────────────────
+
+function isSearchCacheEnabled(): boolean {
+  try {
+    return JSON.parse(localStorage.getItem('xifan_settings') || '{}').searchCacheEnabled !== false
+  } catch { return true }
+}
+
+function getCachedSearch(keyword: string): XifanSearchResult[] | null {
+  try {
+    return (JSON.parse(localStorage.getItem('xifan_search_cache') || '{}') as Record<string, XifanSearchResult[]>)[keyword] ?? null
+  } catch { return null }
+}
+
+function setCachedSearch(keyword: string, results: XifanSearchResult[]): void {
+  try {
+    const cache = JSON.parse(localStorage.getItem('xifan_search_cache') || '{}') as Record<string, XifanSearchResult[]>
+    cache[keyword] = results
+    localStorage.setItem('xifan_search_cache', JSON.stringify(cache))
+  } catch { /* ignore */ }
+}
+
+function getCachedWatch(url: string): XifanWatchInfo | null {
+  try {
+    return (JSON.parse(localStorage.getItem('xifan_watch_cache') || '{}') as Record<string, XifanWatchInfo>)[url] ?? null
+  } catch { return null }
+}
+
+function setCachedWatch(url: string, info: XifanWatchInfo): void {
+  try {
+    const cache = JSON.parse(localStorage.getItem('xifan_watch_cache') || '{}') as Record<string, XifanWatchInfo>
+    cache[url] = info
+    localStorage.setItem('xifan_watch_cache', JSON.stringify(cache))
+  } catch { /* ignore */ }
+}
+
 // ── State machine ──────────────────────────────────────────────────────────────
 
 type PageState =
@@ -222,16 +258,25 @@ function SearchDownload(): JSX.Element {
     if (!keyword.trim()) return
     currentKeyword.current = keyword
     setSearchQuery(keyword)
-    setState({ status: 'searching' })
 
+    // Return cached results immediately if cache is enabled
+    if (isSearchCacheEnabled()) {
+      const cached = getCachedSearch(keyword)
+      if (cached) {
+        setState({ status: 'results', items: cached, keyword })
+        return
+      }
+    }
+
+    setState({ status: 'searching' })
     try {
       const result = await window.xifanApi.search(keyword)
       if (!Array.isArray(result) && result.needs_captcha) {
-        // Need captcha — fetch the image
         const { image_b64 } = await window.xifanApi.getCaptcha()
         setCaptchaInput('')
         setState({ status: 'captcha', imageB64: image_b64, keyword })
       } else if (Array.isArray(result)) {
+        setCachedSearch(keyword, result)
         setState({ status: 'results', items: result, keyword })
       }
     } catch (err) {
@@ -279,6 +324,16 @@ function SearchDownload(): JSX.Element {
 
   const handleDownloadClick = async (item: XifanSearchResult): Promise<void> => {
     if (state.status !== 'results') return
+
+    // Return cached watch info immediately if cache is enabled
+    if (isSearchCacheEnabled()) {
+      const cached = getCachedWatch(item.watch_url)
+      if (cached) {
+        setState({ status: 'download_config', items: state.items, item, watchInfo: cached })
+        return
+      }
+    }
+
     setLoadingWatchUrl(item.watch_url)
     try {
       const watchInfo = await window.xifanApi.getWatch(item.watch_url)
@@ -286,6 +341,7 @@ function SearchDownload(): JSX.Element {
         alert(`Failed to load sources: ${watchInfo.error}`)
         return
       }
+      setCachedWatch(item.watch_url, watchInfo)
       setState({ status: 'download_config', items: state.items, item, watchInfo })
     } catch (err) {
       alert(`Error: ${err}`)

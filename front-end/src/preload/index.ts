@@ -11,6 +11,15 @@ contextBridge.exposeInMainWorld('bgmApi', {
   detail: (subjectId: number) => ipcRenderer.invoke('bgm:detail', subjectId),
 })
 
+contextBridge.exposeInMainWorld('systemApi', {
+  getDiskFree: () => ipcRenderer.invoke('system:disk-free'),
+  onSpeedUpdate: (cb: (bps: number) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, bps: number) => cb(bps)
+    ipcRenderer.on('system:speed', handler)
+    return () => ipcRenderer.removeListener('system:speed', handler)
+  },
+})
+
 contextBridge.exposeInMainWorld('xifanApi', {
   getCaptcha: () => ipcRenderer.invoke('xifan:captcha'),
   verifyCaptcha: (code: string) => ipcRenderer.invoke('xifan:verify', code),
