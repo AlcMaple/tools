@@ -1,7 +1,8 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, net } from 'electron'
 import { join } from 'path'
 import { spawn } from 'child_process'
 import { statfs } from 'fs/promises'
+import { readFileSync, writeFileSync } from 'fs'
 
 // Python 可执行文件：Windows 用 python，macOS/Linux 用 python3
 const PYTHON_BIN = process.platform === 'win32' ? 'python' : 'python3'
@@ -326,6 +327,30 @@ ipcMain.handle('xifan:download-retry', (_event, taskId: string, _title: string, 
 ipcMain.handle('system:pick-folder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
   return result.canceled ? null : result.filePaths[0]
+})
+
+ipcMain.handle('system:connectivity', () => {
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), 2500)
+    try {
+      const req = net.request({ method: 'HEAD', url: 'https://connectivitycheck.gstatic.com/generate_204' })
+      req.on('response', (res) => { clearTimeout(timer); resolve(res.statusCode === 204) })
+      req.on('error', () => { clearTimeout(timer); resolve(false) })
+      req.end()
+    } catch { clearTimeout(timer); resolve(false) }
+  })
+})
+
+const HISTORY_FILE = (): string => join(app.getPath('userData'), 'xifan_settings_history.json')
+
+ipcMain.handle('system:history-read', () => {
+  try { return JSON.parse(readFileSync(HISTORY_FILE(), 'utf-8')) }
+  catch { return [] }
+})
+
+ipcMain.handle('system:history-write', (_event, entries: unknown) => {
+  try { writeFileSync(HISTORY_FILE(), JSON.stringify(entries)); return true }
+  catch { return false }
 })
 
 function createWindow(): void {

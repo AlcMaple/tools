@@ -15,11 +15,14 @@ function formatSpeed(bps: number): string {
 
 export function useSystemStats(): {
   diskFreeLabel: string
+  diskFreeRaw: number | null
+  diskTotal: number | null
   activeTasks: number
   networkOnline: boolean
   speedLabel: string
 } {
   const [diskFree, setDiskFree] = useState<number | null>(null)
+  const [diskTotal, setDiskTotal] = useState<number | null>(null)
   const [activeTasks, setActiveTasks] = useState(0)
   const [networkOnline, setNetworkOnline] = useState(navigator.onLine)
   const [speedBps, setSpeedBps] = useState(0)
@@ -33,18 +36,32 @@ export function useSystemStats(): {
 
   // Disk free space — fetch once then every 30s
   useEffect(() => {
-    const fetch = async (): Promise<void> => {
+    const fetchDisk = async (): Promise<void> => {
       try {
-        const { free } = await window.systemApi.getDiskFree()
+        const { free, total } = await window.systemApi.getDiskFree()
         setDiskFree(free)
+        setDiskTotal(total)
       } catch { /* ignore */ }
     }
-    fetch()
-    const id = setInterval(fetch, 30_000)
+    fetchDisk()
+    const id = setInterval(fetchDisk, 30_000)
     return () => clearInterval(id)
   }, [])
 
-  // Network status
+  // Real connectivity check via main process (every 10s)
+  useEffect(() => {
+    const check = async (): Promise<void> => {
+      try {
+        const ok = await window.systemApi.checkConnectivity()
+        setNetworkOnline(ok)
+      } catch { /* ignore */ }
+    }
+    check()
+    const id = setInterval(check, 10_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // navigator.onLine events as immediate fallback
   useEffect(() => {
     const onOnline = (): void => setNetworkOnline(true)
     const onOffline = (): void => setNetworkOnline(false)
@@ -63,6 +80,8 @@ export function useSystemStats(): {
 
   return {
     diskFreeLabel: diskFree === null ? '— FREE' : formatFree(diskFree),
+    diskFreeRaw: diskFree,
+    diskTotal,
     activeTasks,
     networkOnline,
     speedLabel: formatSpeed(speedBps),
