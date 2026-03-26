@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('bgmApi', {
 contextBridge.exposeInMainWorld('systemApi', {
   getDiskFree: () => ipcRenderer.invoke('system:disk-free'),
   pickFolder: () => ipcRenderer.invoke('system:pick-folder'),
+  checkConnectivity: () => ipcRenderer.invoke('system:connectivity'),
+  loadSettingsHistory: () => ipcRenderer.invoke('system:history-read'),
+  saveSettingsHistory: (entries: unknown) => ipcRenderer.invoke('system:history-write', entries),
   onSpeedUpdate: (cb: (bps: number) => void) => {
     const handler = (_: Electron.IpcRendererEvent, bps: number) => cb(bps)
     ipcRenderer.on('system:speed', handler)
