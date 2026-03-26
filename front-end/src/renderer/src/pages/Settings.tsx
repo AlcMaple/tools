@@ -1,11 +1,26 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useSystemStats } from '../hooks/useSystemStats'
 
 function Settings(): JSX.Element {
   const navigate = useNavigate()
   const [localPath, setLocalPath] = useState('C:/Users/Archivist/Documents/BiuProjects/Anime')
   const [remotePath, setRemotePath] = useState('ssh://obsidian-node-01/mnt/media/archivist/biu-mirror')
-  const [searchCache, setSearchCache] = useState(true)
+  const { diskFreeLabel, activeTasks, networkOnline } = useSystemStats()
+
+  const [searchCache, setSearchCache] = useState<boolean>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('xifan_settings') || '{}').searchCacheEnabled !== false
+    } catch { return true }
+  })
+
+  const handleSearchCacheToggle = (enabled: boolean): void => {
+    setSearchCache(enabled)
+    try {
+      const s = JSON.parse(localStorage.getItem('xifan_settings') || '{}')
+      localStorage.setItem('xifan_settings', JSON.stringify({ ...s, searchCacheEnabled: enabled }))
+    } catch { /* ignore */ }
+  }
 
   return (
     <div className="min-h-full bg-surface">
@@ -30,14 +45,14 @@ function Settings(): JSX.Element {
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 text-on-surface-variant/60">
             <span className="material-symbols-outlined text-sm leading-none">storage</span>
-            <span className="font-label text-[10px] tracking-widest">942 GB FREE</span>
+            <span className="font-label text-[10px] tracking-widest">{diskFreeLabel}</span>
           </div>
           <div className="flex items-center gap-2 text-on-surface-variant/60">
             <span className="material-symbols-outlined text-sm leading-none">speed</span>
-            <span className="font-label text-[10px] tracking-widest">3 ACTIVE</span>
+            <span className="font-label text-[10px] tracking-widest">{activeTasks} ACTIVE</span>
           </div>
-          <button className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors text-on-surface">
-            <span className="material-symbols-outlined text-xl leading-none">wifi_tethering</span>
+          <button className={`w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors ${networkOnline ? 'text-on-surface' : 'text-red-500'}`}>
+            <span className="material-symbols-outlined text-xl leading-none">{networkOnline ? 'wifi_tethering' : 'wifi_off'}</span>
           </button>
         </div>
       </header>
@@ -151,7 +166,7 @@ function Settings(): JSX.Element {
                     type="checkbox"
                     className="sr-only peer"
                     checked={searchCache}
-                    onChange={(e) => setSearchCache(e.target.checked)}
+                    onChange={(e) => handleSearchCacheToggle(e.target.checked)}
                   />
                   <div className="w-12 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary" />
                 </label>
