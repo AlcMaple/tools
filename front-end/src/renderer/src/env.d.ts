@@ -6,6 +6,9 @@ declare global {
     systemApi: {
       getDiskFree: () => Promise<{ free: number; total: number }>
       pickFolder: () => Promise<string | null>
+      checkConnectivity: () => Promise<boolean>
+      loadSettingsHistory: () => Promise<Array<{ text: string; time: number }>>
+      saveSettingsHistory: (entries: Array<{ text: string; time: number }>) => Promise<boolean>
       onSpeedUpdate: (cb: (bps: number) => void) => () => void
     }
     versions: {
