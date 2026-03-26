@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { navGuard } from "../utils/navGuard";
 
 interface NavItem {
   label: string;
@@ -33,6 +34,12 @@ function Sidebar(): JSX.Element {
             key={item.path}
             to={item.path}
             end={item.path === "/"}
+            onClick={(e) => {
+              if (navGuard.isActive()) {
+                e.preventDefault()
+                navGuard.requestNavigation(item.path)
+              }
+            }}
             className={({ isActive }) =>
               `flex items-center px-6 py-3 space-x-3 transition-colors duration-200 ${
                 isActive
