@@ -1,0 +1,457 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Archivist - Settings</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800;900&amp;family=Space+Grotesk:wght@500;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-fixed": "#ffdadb",
+              "on-tertiary-container": "#3f4040",
+              "on-surface": "#e2e2e2",
+              "on-primary-fixed-variant": "#772f38",
+              "on-secondary-fixed": "#001b3e",
+              "secondary-fixed-dim": "#aac7ff",
+              "on-secondary-container": "#9ec0ff",
+              "error-container": "#93000a",
+              "surface-variant": "#353535",
+              "on-error-container": "#ffdad6",
+              "on-secondary": "#002f64",
+              "surface-container-high": "#2a2a2a",
+              "on-tertiary": "#303030",
+              "surface-dim": "#131313",
+              "surface-container": "#1f1f1f",
+              "inverse-surface": "#e2e2e2",
+              "tertiary-container": "#acabab",
+              "on-primary-fixed": "#3e0410",
+              "inverse-on-surface": "#303030",
+              "surface-bright": "#393939",
+              "outline-variant": "#544343",
+              "secondary-fixed": "#d6e3ff",
+              error: "#ffb4ab",
+              "on-tertiary-fixed-variant": "#464747",
+              "on-primary": "#5a1923",
+              "surface-tint": "#ffb2b8",
+              "on-secondary-fixed-variant": "#00458d",
+              "on-background": "#e2e2e2",
+              "tertiary-fixed-dim": "#c8c6c6",
+              "inverse-primary": "#94464f",
+              "on-surface-variant": "#d9c1c1",
+              tertiary: "#c8c6c6",
+              "surface-container-lowest": "#0e0e0e",
+              "on-tertiary-fixed": "#1b1c1c",
+              "surface-container-low": "#1b1b1b",
+              "on-error": "#690005",
+              secondary: "#aac7ff",
+              background: "#131313",
+              surface: "#131313",
+              "on-primary-container": "#6e2932",
+              "surface-container-highest": "#353535",
+              primary: "#ffb3b8",
+              "secondary-container": "#004c9a",
+              "primary-container": "#f09199",
+              "primary-fixed-dim": "#ffb2b8",
+              "tertiary-fixed": "#e4e2e2",
+              outline: "#a18c8c",
+            },
+            fontFamily: {
+              headline: ["Inter"],
+              body: ["Inter"],
+              label: ["Space Grotesk"],
+            },
+            borderRadius: {
+              DEFAULT: "0.125rem",
+              lg: "0.25rem",
+              xl: "0.5rem",
+              full: "0.75rem",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .material-symbols-outlined {
+        font-variation-settings:
+          "FILL" 0,
+          "wght" 400,
+          "GRAD" 0,
+          "opsz" 24;
+      }
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #131313;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #353535;
+        border-radius: 10px;
+      }
+    </style>
+  </head>
+  <body class="bg-background text-on-surface font-body overflow-hidden">
+    <!-- SideNavBar (JSON Component) -->
+    <aside
+      class="h-screen w-64 fixed left-0 top-0 overflow-y-auto bg-[#0e0e0e] contrast-125 border-r border-white/5 flex flex-col py-8 z-40"
+    >
+      <div class="px-6 mb-12">
+        <h1 class="text-xl font-black tracking-tighter text-[#f09199]">
+          ARCHIVIST
+        </h1>
+        <p
+          class="font-label text-[10px] uppercase tracking-widest text-gray-500 mt-1"
+        >
+          V2.0.4
+        </p>
+      </div>
+      <nav class="flex-1">
+        <a
+          class="flex items-center gap-3 px-6 py-4 text-gray-400 hover:text-gray-200 transition-colors group"
+          href="#"
+        >
+          <span class="material-symbols-outlined" data-icon="search"
+            >search</span
+          >
+          <span class="font-label text-sm font-medium uppercase tracking-wider"
+            >Search</span
+          >
+        </a>
+        <a
+          class="flex items-center gap-3 px-6 py-4 text-gray-400 hover:text-gray-200 transition-colors group"
+          href="#"
+        >
+          <span
+            class="material-symbols-outlined"
+            data-icon="download_for_offline"
+            >download_for_offline</span
+          >
+          <span class="font-label text-sm font-medium uppercase tracking-wider"
+            >Download Queue</span
+          >
+        </a>
+        <a
+          class="flex items-center gap-3 px-6 py-4 text-gray-400 hover:text-gray-200 transition-colors group"
+          href="#"
+        >
+          <span class="material-symbols-outlined" data-icon="info">info</span>
+          <span class="font-label text-sm font-medium uppercase tracking-wider"
+            >Anime Info</span
+          >
+        </a>
+        <!-- Active Tab: Biu Sync (Closest match to Settings/Preferences request) -->
+        <a
+          class="flex items-center gap-3 px-6 py-4 text-[#f09199] bg-[#1f1f1f] border-r-4 border-[#f09199] transition-all"
+          href="#"
+        >
+          <span class="material-symbols-outlined" data-icon="sync">sync</span>
+          <span class="font-label text-sm font-medium uppercase tracking-wider"
+            >Biu Sync</span
+          >
+        </a>
+      </nav>
+    </aside>
+    <!-- TopNavBar (JSON Component) -->
+    <header
+      class="fixed top-0 right-0 w-[calc(100%-16rem)] h-16 z-30 bg-[#131313]/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-8 shadow-[0_20px_40px_rgba(240,145,153,0.05)]"
+    >
+      <div class="flex items-center gap-4">
+        <span
+          class="text-lg font-bold text-[#e2e2e2] tracking-widest font-headline"
+          >DASHBOARD</span
+        >
+        <div class="h-4 w-[1px] bg-white/10"></div>
+        <span
+          class="font-label text-xs uppercase tracking-widest text-[#f09199]"
+          >Settings / Biu Sync</span
+        >
+      </div>
+      <div class="flex items-center gap-6">
+        <div class="flex items-center gap-4 mr-4">
+          <div class="flex flex-col items-end">
+            <span class="font-label text-[10px] text-gray-500 uppercase"
+              >Status</span
+            >
+            <span
+              class="font-label text-xs text-[#f09199] font-bold tracking-widest"
+              >3 ACTIVE</span
+            >
+          </div>
+          <div class="flex flex-col items-end">
+            <span class="font-label text-[10px] text-gray-500 uppercase"
+              >Storage</span
+            >
+            <span
+              class="font-label text-xs text-[#e2e2e2] font-bold tracking-widest"
+              >942 GB FREE</span
+            >
+          </div>
+        </div>
+        <div class="flex items-center gap-3 text-gray-400">
+          <span
+            class="material-symbols-outlined cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
+            data-icon="storage"
+            >storage</span
+          >
+          <span
+            class="material-symbols-outlined cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
+            data-icon="speed"
+            >speed</span
+          >
+          <span
+            class="material-symbols-outlined cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
+            data-icon="wifi_tethering"
+            >wifi_tethering</span
+          >
+        </div>
+      </div>
+    </header>
+    <!-- Main Content Canvas -->
+    <main class="ml-64 pt-16 h-screen overflow-y-auto bg-surface relative">
+      <div class="max-w-5xl mx-auto p-12 pb-32">
+        <!-- Header Section -->
+        <header class="mb-16">
+          <h2
+            class="text-5xl font-black font-headline tracking-tighter mb-4 text-on-surface"
+          >
+            Preferences
+          </h2>
+          <p
+            class="text-on-surface-variant font-body max-w-2xl text-lg opacity-80"
+          >
+            Configure your local synchronization engine and search behavior.
+            Changes are persistent across sessions.
+          </p>
+        </header>
+        <!-- Settings Grid -->
+        <div class="grid grid-cols-12 gap-8">
+          <!-- Biu Sync Preferences Section -->
+          <section class="col-span-12 lg:col-span-8 space-y-8">
+            <div
+              class="bg-surface-container p-8 rounded-lg relative overflow-hidden group"
+            >
+              <div class="absolute top-0 left-0 w-1 h-full bg-secondary"></div>
+              <h3
+                class="font-label text-xs uppercase tracking-[0.2em] text-secondary mb-6"
+              >
+                Biu Sync Engine
+              </h3>
+              <div class="space-y-6">
+                <div
+                  class="flex items-center justify-between p-4 bg-surface-container-low rounded"
+                >
+                  <div>
+                    <p class="font-headline font-bold text-on-surface">
+                      Auto-Sync Library
+                    </p>
+                    <p
+                      class="font-label text-xs text-on-surface-variant opacity-60"
+                    >
+                      Synchronize database with local file changes every 15
+                      minutes.
+                    </p>
+                  </div>
+                  <div
+                    class="w-12 h-6 bg-secondary rounded-full relative cursor-pointer"
+                  >
+                    <div
+                      class="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"
+                    ></div>
+                  </div>
+                </div>
+                <div
+                  class="flex items-center justify-between p-4 bg-surface-container-low rounded"
+                >
+                  <div>
+                    <p class="font-headline font-bold text-on-surface">
+                      Deep Metadata Scraping
+                    </p>
+                    <p
+                      class="font-label text-xs text-on-surface-variant opacity-60"
+                    >
+                      Fetch cast lists, high-res posters, and staff bios
+                      automatically.
+                    </p>
+                  </div>
+                  <div
+                    class="w-12 h-6 bg-surface-container-highest rounded-full relative cursor-pointer"
+                  >
+                    <div
+                      class="absolute left-1 top-1 w-4 h-4 bg-on-surface-variant rounded-full"
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Search Behavior -->
+            <div class="bg-surface-container p-8 rounded-lg">
+              <h3
+                class="font-label text-xs uppercase tracking-[0.2em] text-primary mb-6"
+              >
+                Search &amp; Indexing
+              </h3>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="p-4 bg-surface-container-low rounded">
+                  <label
+                    class="font-label text-[10px] uppercase text-gray-500 block mb-2"
+                    >Default Provider</label
+                  >
+                  <select
+                    class="w-full bg-surface-container-highest border-none text-on-surface font-label text-sm rounded-sm py-2 px-3 focus:ring-1 focus:ring-primary"
+                  >
+                    <option>Bangumi.tv (Global)</option>
+                    <option>MyAnimeList (Mirror)</option>
+                    <option>Anilist (API)</option>
+                  </select>
+                </div>
+                <div class="p-4 bg-surface-container-low rounded">
+                  <label
+                    class="font-label text-[10px] uppercase text-gray-500 block mb-2"
+                    >Result Limit</label
+                  >
+                  <input
+                    class="w-full bg-surface-container-highest border-none text-on-surface font-label text-sm rounded-sm py-2 px-3 focus:ring-1 focus:ring-primary"
+                    type="number"
+                    value="50"
+                  />
+                </div>
+              </div>
+              <div
+                class="mt-8 flex items-center gap-4 p-4 border border-outline-variant/15 rounded"
+              >
+                <span
+                  class="material-symbols-outlined text-secondary"
+                  data-icon="language"
+                  >language</span
+                >
+                <div>
+                  <p class="font-headline font-bold text-on-surface">
+                    Fuzzy Search Matching
+                  </p>
+                  <p
+                    class="font-label text-xs text-on-surface-variant opacity-60"
+                  >
+                    Allows for typos and localized title variations (e.g.,
+                    Romaji vs Kanji).
+                  </p>
+                </div>
+                <div class="ml-auto">
+                  <button
+                    class="px-4 py-2 bg-secondary/10 text-secondary font-label text-xs uppercase tracking-widest hover:bg-secondary/20 transition-colors"
+                  >
+                    Enabled
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <!-- Sidebar Utility -->
+          <section class="col-span-12 lg:col-span-4 space-y-6">
+            <div
+              class="bg-surface-container-lowest p-6 rounded-lg border border-outline-variant/5"
+            >
+              <h4 class="font-label text-xs uppercase text-gray-400 mb-4">
+                Storage Insight
+              </h4>
+              <div class="space-y-4">
+                <div
+                  class="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden"
+                >
+                  <div
+                    class="h-full bg-gradient-to-r from-secondary to-secondary-container"
+                    style="width: 72%"
+                  ></div>
+                </div>
+                <div
+                  class="flex justify-between font-label text-[10px] uppercase tracking-tighter"
+                >
+                  <span class="text-on-surface">2.4 TB USED</span>
+                  <span class="text-secondary">942 GB FREE</span>
+                </div>
+              </div>
+            </div>
+            <div class="relative rounded-lg overflow-hidden h-48 group">
+              <img
+                class="w-full h-full object-cover grayscale opacity-40 group-hover:grayscale-0 group-hover:opacity-60 transition-all duration-700"
+                data-alt="dramatic cinematic shot of high-tech data server room with glowing blue and pink neon light strips in dark environment"
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAs5vT9tgMyyban_jTW6jkNYOOxybzK4lkYarYqLP0aIOTid3xvcW5jirjyZslx-Jh1i4lA3xy3kBzOopF3vTaoZQcyyEHUM9hg723iUAII2Yo-ACcbg5AfbdAwrJfc_j5tSJSIJElvD-fv_2E1bI6AEZrPMLRJG_MlGMcJpX1iH1mSOiZhhEg40ulTXiAbzU_5L4zqth3OZTWPIYT-2HfzAEMQI0fBjb5E9_ZEr3guCV_It2B7Pjnme_GVf9U4tTXkGZhV2kLiwA"
+              />
+              <div
+                class="absolute inset-0 bg-gradient-to-t from-surface-container via-transparent to-transparent"
+              ></div>
+              <div class="absolute bottom-4 left-4">
+                <span
+                  class="font-label text-[10px] uppercase text-[#f09199] block mb-1"
+                  >Archivist Pro</span
+                >
+                <span class="font-headline font-bold text-lg"
+                  >Cloud Sync Enabled</span
+                >
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <!-- MODAL OVERLAY: Liquid Glass Unsaved Changes -->
+      <div
+        class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40"
+      >
+        <div
+          class="w-full max-w-md bg-white/10 backdrop-blur-[40px] rounded-xl p-10 flex flex-col items-center text-center shadow-[0_40px_80px_rgba(0,0,0,0.5)] border-none"
+        >
+          <!-- Warning Icon with Ambient Glow -->
+          <div class="relative mb-8">
+            <div
+              class="absolute inset-0 bg-primary/20 blur-2xl rounded-full"
+            ></div>
+            <span
+              class="material-symbols-outlined text-primary text-6xl relative"
+              data-icon="warning_amber"
+              style="font-variation-settings: &quot;wght&quot; 200"
+              >warning_amber</span
+            >
+          </div>
+          <h2
+            class="text-2xl font-black font-headline tracking-tight text-white mb-3"
+          >
+            Unsaved Changes detected
+          </h2>
+          <p class="text-white/70 font-body text-sm mb-10 leading-relaxed px-4">
+            You have modified your Biu Sync and Search preferences. Leaving now
+            will result in permanent loss of these configurations.
+          </p>
+          <!-- Actions Column -->
+          <div class="flex flex-col w-full gap-3">
+            <button
+              class="w-full py-4 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-headline font-extrabold text-sm tracking-widest uppercase hover:scale-[1.02] active:scale-100 transition-transform"
+            >
+              SAVE
+            </button>
+            <button
+              class="w-full py-4 rounded-full bg-white/5 hover:bg-white/10 text-white font-label font-bold text-xs tracking-[0.2em] uppercase transition-colors"
+            >
+              DISCARD
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
