@@ -1,8 +1,40 @@
 import type { BgmSearchResult, BgmDetail } from './types/bgm'
 import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
+import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 
 declare global {
   interface Window {
+    girigiriApi: {
+      getCaptcha: () => Promise<{ image_b64: string }>
+      verifyCaptcha: (code: string) => Promise<{ success: boolean }>
+      search: (keyword: string) => Promise<GirigiriSearchResult[] | { needs_captcha: true }>
+      getWatch: (playUrl: string) => Promise<GirigiriWatchInfo>
+      startDownload: (
+        title: string,
+        epList: GirigiriEpisode[],
+        selectedIdxs: number[],
+        savePath?: string
+      ) => Promise<{ started: boolean; taskId: string }>
+      cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
+      pauseDownload: (taskId: string) => Promise<{ paused: boolean }>
+      resumeDownload: (taskId: string) => Promise<{ resumed: boolean }>
+      pauseEpisode: (taskId: string, ep: number) => Promise<{ paused: boolean }>
+      resumeEpisode: (taskId: string, ep: number) => Promise<{ resumed: boolean }>
+      requeueEpisodes: (
+        taskId: string,
+        title: string,
+        epList: GirigiriEpisode[],
+        eps: number[],
+        savePath?: string
+      ) => Promise<{ started: boolean }>
+      retryDownload: (
+        taskId: string,
+        title: string,
+        epList: GirigiriEpisode[],
+        failedEps: number[]
+      ) => Promise<{ started: boolean }>
+      onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => () => void
+    }
     systemApi: {
       getDiskFree: () => Promise<{ free: number; total: number }>
       pickFolder: () => Promise<string | null>
