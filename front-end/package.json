@@ -21,9 +21,6 @@
       "node_modules/**/*",
       "package.json"
     ],
-    "asarUnpack": [
-      "node_modules/ffmpeg-static/**"
-    ],
     "win": {
       "target": "nsis",
       "icon": "resources/icon.ico"
@@ -39,15 +36,13 @@
   "dependencies": {
     "axios": "^1.13.6",
     "cheerio": "^1.2.0",
-    "ffmpeg-static": "^5.3.0",
-    "react": "^18.2.0",
+"react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0"
   },
   "devDependencies": {
     "@types/cheerio": "^0.22.35",
-    "@types/ffmpeg-static": "^3.0.3",
-    "@types/node": "^25.5.0",
+"@types/node": "^25.5.0",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",
