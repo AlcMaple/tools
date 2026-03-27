@@ -16,7 +16,11 @@ import { BrowserWindow, session as electronSession } from 'electron'
 import { app } from 'electron'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const ffmpegPath: string | null = require('ffmpeg-static')
+let ffmpegPath: string | null = require('ffmpeg-static')
+// 打包后二进制在 app.asar.unpacked/ 外，需修正路径
+if (ffmpegPath && app.isPackaged) {
+  ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked')
+}
 
 export interface DlEvent {
   type: 'ep_start' | 'ep_progress' | 'ep_done' | 'ep_error'

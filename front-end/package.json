@@ -21,6 +21,9 @@
       "node_modules/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
     "win": {
       "target": "nsis",
       "icon": "resources/icon.ico"
@@ -50,6 +53,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "electron": "^28.2.1",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^2.0.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
