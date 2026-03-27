@@ -1,45 +1,24 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, net } from 'electron'
 import { join } from 'path'
-import { spawn } from 'child_process'
+import { spawn } from 'child_process'   // bgm:detail 尚未迁移，暂时保留
 import { statfs } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
 import { searchBgm } from './bgm/search'
+import { getCaptcha as xifanGetCaptcha, verifyCaptcha as xifanVerify, search as xifanSearch, watch as xifanWatch } from './xifan/api'
+import { downloadSingleEp as xifanDownloadSingleEp, DlEvent } from './xifan/download'
+import { getCaptcha as giriGetCaptcha, verifyCaptcha as giriVerify, search as giriSearch, watch as giriWatch, giriSession } from './girigiri/api'
+import { downloadSingleEp as giriDownloadSingleEp } from './girigiri/download'
 
-// Python 可执行文件：Windows 用 python，macOS/Linux 用 python3
+// bgm:detail 仍用 Python，等待后续迁移
 const PYTHON_BIN = process.platform === 'win32' ? 'python' : 'python3'
-
-/**
- * 运行指定 Python 脚本，返回 stdout 字符串。
- * scriptsDir 在运行时确定（app.getAppPath() 在 ready 前也可用）。
- */
 function runPython(scriptName: string, args: string[]): Promise<string> {
-  const scriptsDir = join(app.getAppPath(), '..')
-  const scriptPath = join(scriptsDir, scriptName)
-
+  const dir = join(app.getAppPath(), '..')
   return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON_BIN, [scriptPath, ...args], {
-      cwd: scriptsDir,
-    })
-
-    let stdout = ''
-    let stderr = ''
-
-    proc.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString()
-    })
-    proc.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString()
-    })
-    proc.on('close', (code: number) => {
-      if (code === 0) {
-        resolve(stdout)
-      } else {
-        reject(new Error(stderr.trim() || `Python exited with code ${code}`))
-      }
-    })
-    proc.on('error', (err: Error) => {
-      reject(new Error(`Failed to start Python: ${err.message}`))
-    })
+    const proc = spawn(PYTHON_BIN, [join(dir, scriptName), ...args], { cwd: dir })
+    let out = ''
+    proc.stdout.on('data', (d: Buffer) => { out += d.toString() })
+    proc.on('close', (code) => { code === 0 ? resolve(out) : reject(new Error(`Python exited ${code}`)) })
+    proc.on('error', (e) => reject(e))
   })
 }
 
@@ -53,25 +32,15 @@ ipcMain.handle('bgm:detail', async (_event, subjectId: number) => {
   return JSON.parse(output)
 })
 
-ipcMain.handle('xifan:captcha', async () => {
-  const output = await runPython('xifan_api.py', ['captcha'])
-  return JSON.parse(output)
-})
+ipcMain.handle('xifan:captcha', async () => xifanGetCaptcha())
+ipcMain.handle('xifan:verify', async (_event, code: string) => xifanVerify(code))
+ipcMain.handle('xifan:search', async (_event, keyword: string) => xifanSearch(keyword))
+ipcMain.handle('xifan:watch', async (_event, watchUrl: string) => xifanWatch(watchUrl))
 
-ipcMain.handle('xifan:verify', async (_event, code: string) => {
-  const output = await runPython('xifan_api.py', ['verify', code])
-  return JSON.parse(output)
-})
-
-ipcMain.handle('xifan:search', async (_event, keyword: string) => {
-  const output = await runPython('xifan_api.py', ['search', keyword])
-  return JSON.parse(output)
-})
-
-ipcMain.handle('xifan:watch', async (_event, watchUrl: string) => {
-  const output = await runPython('xifan_api.py', ['watch', watchUrl])
-  return JSON.parse(output)
-})
+ipcMain.handle('girigiri:captcha', async () => giriGetCaptcha())
+ipcMain.handle('girigiri:verify', async (_event, code: string) => giriVerify(code))
+ipcMain.handle('girigiri:search', async (_event, keyword: string) => giriSearch(keyword))
+ipcMain.handle('girigiri:watch', async (_event, playUrl: string) => giriWatch(playUrl))
 
 // ── System stats ─────────────────────────────────────────────
 let _speedAccum = 0
@@ -86,7 +55,6 @@ ipcMain.handle('system:disk-free', async () => {
   }
 })
 
-// Push download speed to renderer every second
 setInterval(() => {
   const bps = _speedAccum
   _speedAccum = 0
@@ -95,29 +63,35 @@ setInterval(() => {
   }
 }, 1000)
 
-// ── Episode Queue Manager ────────────────────────────────────
+// ── Xifan Episode Queue ───────────────────────────────────────
 interface EpQueue {
   title: string
   templates: string[]
   savePath: string | null
-  pending: number[]        // normal order queue
-  priorityFront: number[]  // played after current finishes (high priority)
-  pausedEps: Set<number>   // per-episode paused by user
+  pending: number[]
+  priorityFront: number[]
+  pausedEps: Set<number>
   current: number | null
-  currentProc: ReturnType<typeof spawn> | null
+  currentAbort: AbortController | null
   taskPaused: boolean
-  killedForEpPause: boolean // current was killed for ep-level pause (not an error)
   cancelled: boolean
   sender: Electron.WebContents
 }
 
 const episodeQueues = new Map<string, EpQueue>()
 
+function trackSpeed(taskId: string, ep: number, bytes: number): void {
+  const taskMap = _epLastBytes.get(taskId) ?? new Map<number, number>()
+  const prev = taskMap.get(ep) ?? 0
+  _speedAccum += Math.max(0, bytes - prev)
+  taskMap.set(ep, bytes)
+  _epLastBytes.set(taskId, taskMap)
+}
+
 function startNextEp(taskId: string): void {
   const q = episodeQueues.get(taskId)
   if (!q || q.taskPaused || q.cancelled || q.current !== null) return
 
-  // Pick next: priority first, then normal pending
   let ep: number | undefined
   while (q.priorityFront.length > 0) {
     const c = q.priorityFront.shift()!
@@ -131,63 +105,32 @@ function startNextEp(taskId: string): void {
   }
 
   if (ep === undefined) {
-    // Queue exhausted — done only if no eps are sitting in pausedEps
     if (q.pausedEps.size === 0) {
       episodeQueues.delete(taskId)
       _epLastBytes.delete(taskId)
       q.sender.send('download:progress', taskId, { type: 'all_done' })
     }
-    // Otherwise we wait; user must resume paused eps manually
     return
   }
 
-  q.current = ep
-  const scriptsDir = join(app.getAppPath(), '..')
-  const spawnArgs = [join(scriptsDir, 'xifan_api.py'), 'download-single', q.title, String(ep)]
-  if (q.savePath) spawnArgs.push('--save-dir', q.savePath)
-  spawnArgs.push(...q.templates)
-  const proc = spawn(PYTHON_BIN, spawnArgs, { cwd: scriptsDir })
-  q.currentProc = proc
+  const capturedEp = ep
+  q.current = capturedEp
+  const abort = new AbortController()
+  q.currentAbort = abort
 
-  let buf = ''
-  proc.stdout.on('data', (data: Buffer) => {
-    buf += data.toString()
-    const lines = buf.split('\n')
-    buf = lines.pop() ?? ''
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      try {
-        const ev = JSON.parse(trimmed) as Record<string, unknown>
-        // Track bytes for download speed calculation
-        if (ev.type === 'ep_progress' && typeof ev.bytes === 'number') {
-          const taskMap = _epLastBytes.get(taskId) ?? new Map<number, number>()
-          const prev = taskMap.get(Number(ev.ep)) ?? 0
-          _speedAccum += Math.max(0, (ev.bytes as number) - prev)
-          taskMap.set(Number(ev.ep), ev.bytes as number)
-          _epLastBytes.set(taskId, taskMap)
-        }
-        // Don't forward the single-ep 'all_done' — we handle queue completion ourselves
-        if (ev.type !== 'all_done') {
-          q.sender.send('download:progress', taskId, ev)
-        }
-      } catch { /* ignore non-JSON */ }
-    }
-  })
-
-  proc.on('close', () => {
-    q.killedForEpPause = false
-    q.current = null
-    q.currentProc = null
-    if (q.cancelled) return
-    startNextEp(taskId)
-  })
-
-  proc.on('error', () => {
-    q.current = null
-    q.currentProc = null
-    q.sender.send('download:progress', taskId, { type: 'ep_error', ep, msg: 'Process error' })
-    startNextEp(taskId)
+  setImmediate(() => {
+    xifanDownloadSingleEp(q.title, capturedEp, q.templates, q.savePath ?? undefined, abort.signal, (ev: DlEvent) => {
+      if (ev.type === 'ep_progress' && typeof ev.bytes === 'number') {
+        trackSpeed(taskId, capturedEp, ev.bytes)
+      }
+      q.sender.send('download:progress', taskId, ev)
+    }).finally(() => {
+      if (q.currentAbort === abort) {
+        q.current = null
+        q.currentAbort = null
+      }
+      if (!q.cancelled) startNextEp(taskId)
+    })
   })
 }
 
@@ -197,17 +140,9 @@ ipcMain.handle(
     const taskId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const pending = Array.from({ length: endEp - startEp + 1 }, (_, i) => startEp + i)
     episodeQueues.set(taskId, {
-      title,
-      templates,
-      savePath: savePath ?? null,
-      pending,
-      priorityFront: [],
-      pausedEps: new Set(),
-      current: null,
-      currentProc: null,
-      taskPaused: false,
-      killedForEpPause: false,
-      cancelled: false,
+      title, templates, savePath: savePath ?? null,
+      pending, priorityFront: [], pausedEps: new Set(),
+      current: null, currentAbort: null, taskPaused: false, cancelled: false,
       sender: event.sender,
     })
     startNextEp(taskId)
@@ -217,88 +152,50 @@ ipcMain.handle(
 
 ipcMain.handle('xifan:download-cancel', (_event, taskId: string) => {
   const q = episodeQueues.get(taskId)
-  if (q) {
-    q.cancelled = true
-    q.currentProc?.kill()
-    episodeQueues.delete(taskId)
-  }
+  if (q) { q.cancelled = true; q.currentAbort?.abort(); episodeQueues.delete(taskId) }
   return { cancelled: true }
 })
 
 ipcMain.handle('xifan:download-pause', (_event, taskId: string) => {
   const q = episodeQueues.get(taskId)
-  if (q) {
-    q.taskPaused = true
-    // Pause the current episode process at OS level
-    if (q.currentProc?.pid) process.kill(q.currentProc.pid, 'SIGSTOP')
-  }
+  if (q) q.taskPaused = true
+  // Current episode continues to completion; won't start next while paused
   return { paused: true }
 })
 
 ipcMain.handle('xifan:download-resume', (_event, taskId: string) => {
   const q = episodeQueues.get(taskId)
-  if (q) {
-    q.taskPaused = false
-    if (q.current !== null && q.currentProc?.pid) {
-      // Resume the paused process
-      process.kill(q.currentProc.pid, 'SIGCONT')
-    } else {
-      startNextEp(taskId)
-    }
-  }
+  if (q) { q.taskPaused = false; startNextEp(taskId) }
   return { resumed: true }
 })
 
-// Pause a specific episode: kill its process (if running), skip it for now
 ipcMain.handle('xifan:download-pause-ep', (_event, taskId: string, ep: number) => {
   const q = episodeQueues.get(taskId)
   if (!q) return { paused: false }
-
   q.pausedEps.add(ep)
   q.sender.send('download:progress', taskId, { type: 'ep_paused', ep })
-
-  if (q.current === ep && q.currentProc) {
-    // Kill current download so the next ep in queue can start
-    q.killedForEpPause = true
-    q.currentProc.kill()
-    // close handler will call startNextEp
-  }
+  // Abort if currently downloading this ep; .finally() will call startNextEp → picks next
+  if (q.current === ep) q.currentAbort?.abort()
   return { paused: true }
 })
 
-// Resume a specific episode: move it to the front of the priority queue
 ipcMain.handle('xifan:download-resume-ep', (_event, taskId: string, ep: number) => {
   const q = episodeQueues.get(taskId)
   if (!q) return { resumed: false }
-
   q.pausedEps.delete(ep)
   q.priorityFront.unshift(ep)
   q.sender.send('download:progress', taskId, { type: 'ep_queued', ep })
-
-  // If nothing is downloading right now (and task not paused), start immediately
-  if (q.current === null && !q.taskPaused) {
-    startNextEp(taskId)
-  }
+  if (q.current === null && !q.taskPaused) startNextEp(taskId)
   return { resumed: true }
 })
 
-// Re-queue specific episodes for a completed task, reusing the same taskId
-// so that progress events update the existing store entry.
 ipcMain.handle(
   'xifan:download-requeue',
   async (event, taskId: string, title: string, templates: string[], eps: number[], savePath?: string) => {
     episodeQueues.set(taskId, {
-      title,
-      templates,
-      savePath: savePath ?? null,
-      pending: [...eps],
-      priorityFront: [],
-      pausedEps: new Set(),
-      current: null,
-      currentProc: null,
-      taskPaused: false,
-      killedForEpPause: false,
-      cancelled: false,
+      title, templates, savePath: savePath ?? null,
+      pending: [...eps], priorityFront: [], pausedEps: new Set(),
+      current: null, currentAbort: null, taskPaused: false, cancelled: false,
       sender: event.sender,
     })
     startNextEp(taskId)
@@ -306,42 +203,12 @@ ipcMain.handle(
   }
 )
 
-// Retry failed episodes: add them to front of priority queue
 ipcMain.handle('xifan:download-retry', (_event, taskId: string, _title: string, _templates: string[], failedEps: number[]) => {
   const q = episodeQueues.get(taskId)
   if (!q) return { started: false }
-
-  // Move failed eps back into priority queue
-  for (const ep of [...failedEps].reverse()) {
-    q.pausedEps.delete(ep)
-    q.priorityFront.unshift(ep)
-  }
-
-  if (q.current === null && !q.taskPaused) {
-    startNextEp(taskId)
-  }
+  for (const ep of [...failedEps].reverse()) { q.pausedEps.delete(ep); q.priorityFront.unshift(ep) }
+  if (q.current === null && !q.taskPaused) startNextEp(taskId)
   return { started: true }
-})
-// ── Girigiri IPC handlers ────────────────────────────────────
-
-ipcMain.handle('girigiri:captcha', async () => {
-  const output = await runPython('girigiri_api.py', ['captcha'])
-  return JSON.parse(output)
-})
-
-ipcMain.handle('girigiri:verify', async (_event, code: string) => {
-  const output = await runPython('girigiri_api.py', ['verify', code])
-  return JSON.parse(output)
-})
-
-ipcMain.handle('girigiri:search', async (_event, keyword: string) => {
-  const output = await runPython('girigiri_api.py', ['search', keyword])
-  return JSON.parse(output)
-})
-
-ipcMain.handle('girigiri:watch', async (_event, playUrl: string) => {
-  const output = await runPython('girigiri_api.py', ['watch', playUrl])
-  return JSON.parse(output)
 })
 
 // ── Girigiri Episode Queue ────────────────────────────────────
@@ -354,9 +221,8 @@ interface GiriEpQueue {
   priorityFront: number[]
   pausedEps: Set<number>
   current: number | null
-  currentProc: ReturnType<typeof spawn> | null
+  currentAbort: AbortController | null
   taskPaused: boolean
-  killedForEpPause: boolean
   cancelled: boolean
   sender: Electron.WebContents
 }
@@ -390,57 +256,29 @@ function startNextGiriEp(taskId: string): void {
   const epInfo = q.epList.find((e) => e.idx === ep)
   if (!epInfo) { startNextGiriEp(taskId); return }
 
-  q.current = ep
-  const scriptsDir = join(app.getAppPath(), '..')
-  const spawnArgs = [
-    join(scriptsDir, 'girigiri_api.py'),
-    'download-single',
-    q.title,
-    String(ep),
-    epInfo.name,
-    epInfo.url,
-  ]
-  if (q.savePath) spawnArgs.push('--save-dir', q.savePath)
-  const proc = spawn(PYTHON_BIN, spawnArgs, { cwd: scriptsDir })
-  q.currentProc = proc
+  const capturedEp = ep
+  q.current = capturedEp
+  const abort = new AbortController()
+  q.currentAbort = abort
 
-  let buf = ''
-  proc.stdout.on('data', (data: Buffer) => {
-    buf += data.toString()
-    const lines = buf.split('\n')
-    buf = lines.pop() ?? ''
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      try {
-        const ev = JSON.parse(trimmed) as Record<string, unknown>
+  setImmediate(() => {
+    giriDownloadSingleEp(
+      q.title, capturedEp, epInfo.name, epInfo.url,
+      q.savePath ?? undefined, giriSession.getCookieString(),
+      abort.signal,
+      (ev: DlEvent) => {
         if (ev.type === 'ep_progress' && typeof ev.bytes === 'number') {
-          const taskMap = _epLastBytes.get(taskId) ?? new Map<number, number>()
-          const prev = taskMap.get(Number(ev.ep)) ?? 0
-          _speedAccum += Math.max(0, (ev.bytes as number) - prev)
-          taskMap.set(Number(ev.ep), ev.bytes as number)
-          _epLastBytes.set(taskId, taskMap)
+          trackSpeed(taskId, capturedEp, ev.bytes)
         }
-        if (ev.type !== 'all_done') {
-          q.sender.send('download:progress', taskId, ev)
-        }
-      } catch { /* ignore non-JSON */ }
-    }
-  })
-
-  proc.on('close', () => {
-    q.killedForEpPause = false
-    q.current = null
-    q.currentProc = null
-    if (q.cancelled) return
-    startNextGiriEp(taskId)
-  })
-
-  proc.on('error', () => {
-    q.current = null
-    q.currentProc = null
-    q.sender.send('download:progress', taskId, { type: 'ep_error', ep, msg: 'Process error' })
-    startNextGiriEp(taskId)
+        q.sender.send('download:progress', taskId, ev)
+      }
+    ).finally(() => {
+      if (q.currentAbort === abort) {
+        q.current = null
+        q.currentAbort = null
+      }
+      if (!q.cancelled) startNextGiriEp(taskId)
+    })
   })
 }
 
@@ -449,17 +287,9 @@ ipcMain.handle(
   async (event, title: string, epList: { idx: number; name: string; url: string }[], selectedIdxs: number[], savePath?: string) => {
     const taskId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     giriEpQueues.set(taskId, {
-      title,
-      epList,
-      savePath: savePath ?? null,
-      pending: [...selectedIdxs],
-      priorityFront: [],
-      pausedEps: new Set(),
-      current: null,
-      currentProc: null,
-      taskPaused: false,
-      killedForEpPause: false,
-      cancelled: false,
+      title, epList, savePath: savePath ?? null,
+      pending: [...selectedIdxs], priorityFront: [], pausedEps: new Set(),
+      current: null, currentAbort: null, taskPaused: false, cancelled: false,
       sender: event.sender,
     })
     startNextGiriEp(taskId)
@@ -469,23 +299,19 @@ ipcMain.handle(
 
 ipcMain.handle('girigiri:download-cancel', (_event, taskId: string) => {
   const q = giriEpQueues.get(taskId)
-  if (q) { q.cancelled = true; q.currentProc?.kill(); giriEpQueues.delete(taskId) }
+  if (q) { q.cancelled = true; q.currentAbort?.abort(); giriEpQueues.delete(taskId) }
   return { cancelled: true }
 })
 
 ipcMain.handle('girigiri:download-pause', (_event, taskId: string) => {
   const q = giriEpQueues.get(taskId)
-  if (q) { q.taskPaused = true; if (q.currentProc?.pid) process.kill(q.currentProc.pid, 'SIGSTOP') }
+  if (q) q.taskPaused = true
   return { paused: true }
 })
 
 ipcMain.handle('girigiri:download-resume', (_event, taskId: string) => {
   const q = giriEpQueues.get(taskId)
-  if (q) {
-    q.taskPaused = false
-    if (q.current !== null && q.currentProc?.pid) process.kill(q.currentProc.pid, 'SIGCONT')
-    else startNextGiriEp(taskId)
-  }
+  if (q) { q.taskPaused = false; startNextGiriEp(taskId) }
   return { resumed: true }
 })
 
@@ -494,7 +320,7 @@ ipcMain.handle('girigiri:download-pause-ep', (_event, taskId: string, ep: number
   if (!q) return { paused: false }
   q.pausedEps.add(ep)
   q.sender.send('download:progress', taskId, { type: 'ep_paused', ep })
-  if (q.current === ep && q.currentProc) { q.killedForEpPause = true; q.currentProc.kill() }
+  if (q.current === ep) q.currentAbort?.abort()
   return { paused: true }
 })
 
@@ -514,8 +340,8 @@ ipcMain.handle(
     giriEpQueues.set(taskId, {
       title, epList, savePath: savePath ?? null,
       pending: [...eps], priorityFront: [], pausedEps: new Set(),
-      current: null, currentProc: null, taskPaused: false,
-      killedForEpPause: false, cancelled: false, sender: event.sender,
+      current: null, currentAbort: null, taskPaused: false, cancelled: false,
+      sender: event.sender,
     })
     startNextGiriEp(taskId)
     return { started: true }
@@ -530,7 +356,7 @@ ipcMain.handle('girigiri:download-retry', (_event, taskId: string, _title: strin
   return { started: true }
 })
 
-// ────────────────────────────────────────────────────────────
+// ── Misc IPC ──────────────────────────────────────────────────
 
 ipcMain.handle('system:pick-folder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
@@ -561,6 +387,8 @@ ipcMain.handle('system:history-write', (_event, entries: unknown) => {
   catch { return false }
 })
 
+// ── Window ────────────────────────────────────────────────────
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -573,9 +401,7 @@ function createWindow(): void {
     },
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
-  })
+  mainWindow.on('ready-to-show', () => { mainWindow.show() })
 
   mainWindow.webContents.setWindowOpenHandler((details: { url: string }) => {
     shell.openExternal(details.url)
@@ -591,14 +417,11 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   createWindow()
-
-  app.on('activate', function () {
+  app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  if (process.platform !== 'darwin') app.quit()
 })
