@@ -322,6 +322,214 @@ ipcMain.handle('xifan:download-retry', (_event, taskId: string, _title: string, 
   }
   return { started: true }
 })
+// ── Girigiri IPC handlers ────────────────────────────────────
+
+ipcMain.handle('girigiri:captcha', async () => {
+  const output = await runPython('girigiri_api.py', ['captcha'])
+  return JSON.parse(output)
+})
+
+ipcMain.handle('girigiri:verify', async (_event, code: string) => {
+  const output = await runPython('girigiri_api.py', ['verify', code])
+  return JSON.parse(output)
+})
+
+ipcMain.handle('girigiri:search', async (_event, keyword: string) => {
+  const output = await runPython('girigiri_api.py', ['search', keyword])
+  return JSON.parse(output)
+})
+
+ipcMain.handle('girigiri:watch', async (_event, playUrl: string) => {
+  const output = await runPython('girigiri_api.py', ['watch', playUrl])
+  return JSON.parse(output)
+})
+
+// ── Girigiri Episode Queue ────────────────────────────────────
+
+interface GiriEpQueue {
+  title: string
+  epList: { idx: number; name: string; url: string }[]
+  savePath: string | null
+  pending: number[]
+  priorityFront: number[]
+  pausedEps: Set<number>
+  current: number | null
+  currentProc: ReturnType<typeof spawn> | null
+  taskPaused: boolean
+  killedForEpPause: boolean
+  cancelled: boolean
+  sender: Electron.WebContents
+}
+
+const giriEpQueues = new Map<string, GiriEpQueue>()
+
+function startNextGiriEp(taskId: string): void {
+  const q = giriEpQueues.get(taskId)
+  if (!q || q.taskPaused || q.cancelled || q.current !== null) return
+
+  let ep: number | undefined
+  while (q.priorityFront.length > 0) {
+    const c = q.priorityFront.shift()!
+    if (!q.pausedEps.has(c)) { ep = c; break }
+  }
+  if (ep === undefined) {
+    while (q.pending.length > 0) {
+      const c = q.pending.shift()!
+      if (!q.pausedEps.has(c)) { ep = c; break }
+    }
+  }
+
+  if (ep === undefined) {
+    if (q.pausedEps.size === 0) {
+      giriEpQueues.delete(taskId)
+      q.sender.send('download:progress', taskId, { type: 'all_done' })
+    }
+    return
+  }
+
+  const epInfo = q.epList.find((e) => e.idx === ep)
+  if (!epInfo) { startNextGiriEp(taskId); return }
+
+  q.current = ep
+  const scriptsDir = join(app.getAppPath(), '..')
+  const spawnArgs = [
+    join(scriptsDir, 'girigiri_api.py'),
+    'download-single',
+    q.title,
+    String(ep),
+    epInfo.name,
+    epInfo.url,
+  ]
+  if (q.savePath) spawnArgs.push('--save-dir', q.savePath)
+  const proc = spawn(PYTHON_BIN, spawnArgs, { cwd: scriptsDir })
+  q.currentProc = proc
+
+  let buf = ''
+  proc.stdout.on('data', (data: Buffer) => {
+    buf += data.toString()
+    const lines = buf.split('\n')
+    buf = lines.pop() ?? ''
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      try {
+        const ev = JSON.parse(trimmed) as Record<string, unknown>
+        if (ev.type === 'ep_progress' && typeof ev.bytes === 'number') {
+          const taskMap = _epLastBytes.get(taskId) ?? new Map<number, number>()
+          const prev = taskMap.get(Number(ev.ep)) ?? 0
+          _speedAccum += Math.max(0, (ev.bytes as number) - prev)
+          taskMap.set(Number(ev.ep), ev.bytes as number)
+          _epLastBytes.set(taskId, taskMap)
+        }
+        if (ev.type !== 'all_done') {
+          q.sender.send('download:progress', taskId, ev)
+        }
+      } catch { /* ignore non-JSON */ }
+    }
+  })
+
+  proc.on('close', () => {
+    q.killedForEpPause = false
+    q.current = null
+    q.currentProc = null
+    if (q.cancelled) return
+    startNextGiriEp(taskId)
+  })
+
+  proc.on('error', () => {
+    q.current = null
+    q.currentProc = null
+    q.sender.send('download:progress', taskId, { type: 'ep_error', ep, msg: 'Process error' })
+    startNextGiriEp(taskId)
+  })
+}
+
+ipcMain.handle(
+  'girigiri:download',
+  async (event, title: string, epList: { idx: number; name: string; url: string }[], selectedIdxs: number[], savePath?: string) => {
+    const taskId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    giriEpQueues.set(taskId, {
+      title,
+      epList,
+      savePath: savePath ?? null,
+      pending: [...selectedIdxs],
+      priorityFront: [],
+      pausedEps: new Set(),
+      current: null,
+      currentProc: null,
+      taskPaused: false,
+      killedForEpPause: false,
+      cancelled: false,
+      sender: event.sender,
+    })
+    startNextGiriEp(taskId)
+    return { started: true, taskId }
+  }
+)
+
+ipcMain.handle('girigiri:download-cancel', (_event, taskId: string) => {
+  const q = giriEpQueues.get(taskId)
+  if (q) { q.cancelled = true; q.currentProc?.kill(); giriEpQueues.delete(taskId) }
+  return { cancelled: true }
+})
+
+ipcMain.handle('girigiri:download-pause', (_event, taskId: string) => {
+  const q = giriEpQueues.get(taskId)
+  if (q) { q.taskPaused = true; if (q.currentProc?.pid) process.kill(q.currentProc.pid, 'SIGSTOP') }
+  return { paused: true }
+})
+
+ipcMain.handle('girigiri:download-resume', (_event, taskId: string) => {
+  const q = giriEpQueues.get(taskId)
+  if (q) {
+    q.taskPaused = false
+    if (q.current !== null && q.currentProc?.pid) process.kill(q.currentProc.pid, 'SIGCONT')
+    else startNextGiriEp(taskId)
+  }
+  return { resumed: true }
+})
+
+ipcMain.handle('girigiri:download-pause-ep', (_event, taskId: string, ep: number) => {
+  const q = giriEpQueues.get(taskId)
+  if (!q) return { paused: false }
+  q.pausedEps.add(ep)
+  q.sender.send('download:progress', taskId, { type: 'ep_paused', ep })
+  if (q.current === ep && q.currentProc) { q.killedForEpPause = true; q.currentProc.kill() }
+  return { paused: true }
+})
+
+ipcMain.handle('girigiri:download-resume-ep', (_event, taskId: string, ep: number) => {
+  const q = giriEpQueues.get(taskId)
+  if (!q) return { resumed: false }
+  q.pausedEps.delete(ep)
+  q.priorityFront.unshift(ep)
+  q.sender.send('download:progress', taskId, { type: 'ep_queued', ep })
+  if (q.current === null && !q.taskPaused) startNextGiriEp(taskId)
+  return { resumed: true }
+})
+
+ipcMain.handle(
+  'girigiri:download-requeue',
+  async (event, taskId: string, title: string, epList: { idx: number; name: string; url: string }[], eps: number[], savePath?: string) => {
+    giriEpQueues.set(taskId, {
+      title, epList, savePath: savePath ?? null,
+      pending: [...eps], priorityFront: [], pausedEps: new Set(),
+      current: null, currentProc: null, taskPaused: false,
+      killedForEpPause: false, cancelled: false, sender: event.sender,
+    })
+    startNextGiriEp(taskId)
+    return { started: true }
+  }
+)
+
+ipcMain.handle('girigiri:download-retry', (_event, taskId: string, _title: string, _epList: unknown, failedEps: number[]) => {
+  const q = giriEpQueues.get(taskId)
+  if (!q) return { started: false }
+  for (const ep of [...failedEps].reverse()) { q.pausedEps.delete(ep); q.priorityFront.unshift(ep) }
+  if (q.current === null && !q.taskPaused) startNextGiriEp(taskId)
+  return { started: true }
+})
+
 // ────────────────────────────────────────────────────────────
 
 ipcMain.handle('system:pick-folder', async () => {

@@ -24,6 +24,42 @@ contextBridge.exposeInMainWorld('systemApi', {
   },
 })
 
+contextBridge.exposeInMainWorld('girigiriApi', {
+  getCaptcha: () => ipcRenderer.invoke('girigiri:captcha'),
+  verifyCaptcha: (code: string) => ipcRenderer.invoke('girigiri:verify', code),
+  search: (keyword: string) => ipcRenderer.invoke('girigiri:search', keyword),
+  getWatch: (playUrl: string) => ipcRenderer.invoke('girigiri:watch', playUrl),
+  startDownload: (
+    title: string,
+    epList: { idx: number; name: string; url: string }[],
+    selectedIdxs: number[],
+    savePath?: string
+  ) => ipcRenderer.invoke('girigiri:download', title, epList, selectedIdxs, savePath),
+  cancelDownload: (taskId: string) => ipcRenderer.invoke('girigiri:download-cancel', taskId),
+  pauseDownload: (taskId: string) => ipcRenderer.invoke('girigiri:download-pause', taskId),
+  resumeDownload: (taskId: string) => ipcRenderer.invoke('girigiri:download-resume', taskId),
+  pauseEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('girigiri:download-pause-ep', taskId, ep),
+  resumeEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('girigiri:download-resume-ep', taskId, ep),
+  requeueEpisodes: (
+    taskId: string,
+    title: string,
+    epList: { idx: number; name: string; url: string }[],
+    eps: number[],
+    savePath?: string
+  ) => ipcRenderer.invoke('girigiri:download-requeue', taskId, title, epList, eps, savePath),
+  retryDownload: (
+    taskId: string,
+    title: string,
+    epList: { idx: number; name: string; url: string }[],
+    failedEps: number[]
+  ) => ipcRenderer.invoke('girigiri:download-retry', taskId, title, epList, failedEps),
+  onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
+    ipcRenderer.on('download:progress', handler)
+    return () => ipcRenderer.removeListener('download:progress', handler)
+  },
+})
+
 contextBridge.exposeInMainWorld('xifanApi', {
   getCaptcha: () => ipcRenderer.invoke('xifan:captcha'),
   verifyCaptcha: (code: string) => ipcRenderer.invoke('xifan:verify', code),
