@@ -21,7 +21,17 @@ function EpisodeGrid({
   onPauseEp: (ep: number) => void
   onResumeEp: (ep: number) => void
 }): JSX.Element {
-  const eps = Array.from({ length: task.endEp - task.startEp + 1 }, (_, i) => task.startEp + i)
+  const eps =
+    task.source === 'girigiri'
+      ? Object.keys(task.epStatus).map(Number).sort((a, b) => a - b)
+      : Array.from({ length: task.endEp - task.startEp + 1 }, (_, i) => task.startEp + i)
+
+  const epLabel = (ep: number): string => {
+    if (task.source === 'girigiri') {
+      return task.girigiriEps?.find((e) => e.idx === ep)?.name ?? `EP ${ep}`
+    }
+    return `EP ${String(ep).padStart(2, '0')}`
+  }
 
   return (
     <div className="mt-6 pt-5 border-t border-outline-variant/10">
@@ -37,7 +47,7 @@ function EpisodeGrid({
                 className="bg-surface-container-lowest p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-secondary/40"
               >
                 <span className="font-label text-[10px] text-on-surface-variant mb-1.5">
-                  EP {String(ep).padStart(2, '0')}
+                  {epLabel(ep)}
                 </span>
                 <span
                   className="material-symbols-outlined text-secondary text-sm leading-none"
@@ -56,7 +66,7 @@ function EpisodeGrid({
                 className="group relative bg-surface-container-high p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-primary/40"
               >
                 <span className="font-label text-[10px] text-on-surface-variant mb-1.5">
-                  EP {String(ep).padStart(2, '0')}
+                  {epLabel(ep)}
                 </span>
                 {/* Progress bar fills as download progresses */}
                 <div className="w-full h-1 bg-surface-variant rounded-full overflow-hidden">
@@ -87,7 +97,7 @@ function EpisodeGrid({
                 className="bg-surface-container-lowest/60 p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-on-surface-variant/20 hover:bg-surface-container transition-colors"
               >
                 <span className="font-label text-[10px] text-on-surface-variant/50 mb-1.5">
-                  EP {String(ep).padStart(2, '0')}
+                  {epLabel(ep)}
                 </span>
                 <span
                   className="material-symbols-outlined text-on-surface-variant/50 text-sm leading-none"
@@ -108,7 +118,7 @@ function EpisodeGrid({
                 className="bg-surface-container-lowest p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-error/40 hover:bg-error/10 transition-colors"
               >
                 <span className="font-label text-[10px] text-error mb-1.5">
-                  EP {String(ep).padStart(2, '0')}
+                  {epLabel(ep)}
                 </span>
                 <span className="material-symbols-outlined text-error text-sm leading-none">
                   error_outline
@@ -124,7 +134,7 @@ function EpisodeGrid({
               className="bg-surface-container-lowest/40 p-3 rounded-lg flex flex-col items-center justify-center opacity-40"
             >
               <span className="font-label text-[10px] text-on-surface-variant mb-1.5">
-                EP {String(ep).padStart(2, '0')}
+                {epLabel(ep)}
               </span>
               <span className="material-symbols-outlined text-xs leading-none">hourglass_empty</span>
             </div>
@@ -138,7 +148,10 @@ function EpisodeGrid({
 // ── Progress bar ──────────────────────────────────────────────────────────────
 
 function ProgressBar({ task }: { task: DownloadTask }): JSX.Element {
-  const total = task.endEp - task.startEp + 1
+  const total =
+    task.source === 'girigiri'
+      ? Object.keys(task.epStatus).length
+      : task.endEp - task.startEp + 1
   const done = Object.values(task.epStatus).filter((s) => s === 'done').length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
 
@@ -179,39 +192,49 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
     .filter(([, s]) => s === 'error')
     .map(([ep]) => Number(ep))
 
+  const api = task.source === 'girigiri' ? window.girigiriApi : window.xifanApi
+
   const handlePauseResume = async (): Promise<void> => {
     if (isPaused) {
-      await window.xifanApi.resumeDownload(task.id)
+      await api.resumeDownload(task.id)
       downloadStore.updateTask(task.id, { status: 'running' })
     } else {
-      await window.xifanApi.pauseDownload(task.id)
+      await api.pauseDownload(task.id)
       downloadStore.updateTask(task.id, { status: 'paused' })
     }
   }
 
   const handleCancel = async (): Promise<void> => {
-    await window.xifanApi.cancelDownload(task.id)
+    await api.cancelDownload(task.id)
     downloadStore.removeTask(task.id)
   }
 
   const handleRetryAll = async (): Promise<void> => {
     if (failedEps.length === 0) return
     downloadStore.retryTask(task.id)
-    await window.xifanApi.retryDownload(task.id, task.title, task.templates, failedEps)
+    if (task.source === 'girigiri') {
+      await window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, failedEps)
+    } else {
+      await window.xifanApi.retryDownload(task.id, task.title, task.templates, failedEps)
+    }
   }
 
   const handleRetryEp = async (ep: number): Promise<void> => {
     downloadStore.retryTask(task.id)
-    await window.xifanApi.retryDownload(task.id, task.title, task.templates, [ep])
+    if (task.source === 'girigiri') {
+      await window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, [ep])
+    } else {
+      await window.xifanApi.retryDownload(task.id, task.title, task.templates, [ep])
+    }
   }
 
   const handlePauseEp = async (ep: number): Promise<void> => {
-    await window.xifanApi.pauseEpisode(task.id, ep)
+    await api.pauseEpisode(task.id, ep)
     // ep_paused event from main process will update the store
   }
 
   const handleResumeEp = async (ep: number): Promise<void> => {
-    await window.xifanApi.resumeEpisode(task.id, ep)
+    await api.resumeEpisode(task.id, ep)
     // ep_queued event from main process will update the store
   }
 
@@ -256,7 +279,10 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
                   </div>
                 ) : (
                   <p className="font-label text-[10px] text-primary/80 uppercase tracking-widest">
-                    {isPaused ? 'Paused' : 'Downloading'} · EP{task.startEp}–EP{task.endEp}
+                    {isPaused ? 'Paused' : 'Downloading'} ·{' '}
+                    {task.source === 'girigiri'
+                      ? `${Object.keys(task.epStatus).length} eps`
+                      : `EP${task.startEp}–EP${task.endEp}`}
                   </p>
                 )}
               </div>
@@ -314,7 +340,9 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
               <div className="text-right">
                 <p className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Episodes</p>
                 <p className="text-sm font-black text-on-surface">
-                  {task.endEp - task.startEp + 1}
+                  {task.source === 'girigiri'
+                    ? Object.keys(task.epStatus).length
+                    : task.endEp - task.startEp + 1}
                 </p>
               </div>
             </div>
@@ -362,7 +390,11 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       epProgress: {},
       completedAt: undefined,
     })
-    await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, failedEps, task.savePath)
+    if (task.source === 'girigiri') {
+      await window.girigiriApi.requeueEpisodes(task.id, task.title, task.girigiriEps!, failedEps, task.savePath)
+    } else {
+      await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, failedEps, task.savePath)
+    }
   }
 
   const handleRetryEp = async (ep: number): Promise<void> => {
@@ -372,7 +404,11 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       epProgress: { ...task.epProgress },
       completedAt: undefined,
     })
-    await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, [ep], task.savePath)
+    if (task.source === 'girigiri') {
+      await window.girigiriApi.requeueEpisodes(task.id, task.title, task.girigiriEps!, [ep], task.savePath)
+    } else {
+      await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, [ep], task.savePath)
+    }
   }
 
   return (
@@ -490,7 +526,8 @@ function DownloadQueue(): JSX.Element {
   const handlePauseAll = async (): Promise<void> => {
     await Promise.all(
       running.map(async (t) => {
-        await window.xifanApi.pauseDownload(t.id)
+        const api = t.source === 'girigiri' ? window.girigiriApi : window.xifanApi
+        await api.pauseDownload(t.id)
         downloadStore.updateTask(t.id, { status: 'paused' })
       })
     )
@@ -499,7 +536,8 @@ function DownloadQueue(): JSX.Element {
   const handleStartAll = async (): Promise<void> => {
     await Promise.all(
       paused.map(async (t) => {
-        await window.xifanApi.resumeDownload(t.id)
+        const api = t.source === 'girigiri' ? window.girigiriApi : window.xifanApi
+        await api.resumeDownload(t.id)
         downloadStore.updateTask(t.id, { status: 'running' })
       })
     )

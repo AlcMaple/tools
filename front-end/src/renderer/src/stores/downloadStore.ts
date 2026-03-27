@@ -1,10 +1,12 @@
 export interface DownloadTask {
   id: string
+  source?: 'xifan' | 'girigiri'
   title: string
   cover: string
   startEp: number
   endEp: number
   templates: string[]
+  girigiriEps?: { idx: number; name: string; url: string }[]
   savePath?: string
   status: 'running' | 'paused' | 'done' | 'error'
   epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error' | 'paused'>
