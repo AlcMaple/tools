@@ -7,7 +7,31 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.archivist.app",
+    "productName": "Archivist",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Archivist"
+    }
   },
   "dependencies": {
     "react": "^18.2.0",
