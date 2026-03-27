@@ -1,26 +1,13 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, net } from 'electron'
 import { join } from 'path'
-import { spawn } from 'child_process'   // bgm:detail 尚未迁移，暂时保留
 import { statfs } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
 import { searchBgm } from './bgm/search'
+import { getBgmDetail } from './bgm/detail'
 import { getCaptcha as xifanGetCaptcha, verifyCaptcha as xifanVerify, search as xifanSearch, watch as xifanWatch } from './xifan/api'
 import { downloadSingleEp as xifanDownloadSingleEp, DlEvent } from './xifan/download'
 import { getCaptcha as giriGetCaptcha, verifyCaptcha as giriVerify, search as giriSearch, watch as giriWatch, giriSession } from './girigiri/api'
 import { downloadSingleEp as giriDownloadSingleEp } from './girigiri/download'
-
-// bgm:detail 仍用 Python，等待后续迁移
-const PYTHON_BIN = process.platform === 'win32' ? 'python' : 'python3'
-function runPython(scriptName: string, args: string[]): Promise<string> {
-  const dir = join(app.getAppPath(), '..')
-  return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON_BIN, [join(dir, scriptName), ...args], { cwd: dir })
-    let out = ''
-    proc.stdout.on('data', (d: Buffer) => { out += d.toString() })
-    proc.on('close', (code) => { code === 0 ? resolve(out) : reject(new Error(`Python exited ${code}`)) })
-    proc.on('error', (e) => reject(e))
-  })
-}
 
 // ── IPC 处理器 ──────────────────────────────────────────────
 ipcMain.handle('bgm:search', async (_event, keyword: string) => {
@@ -28,8 +15,7 @@ ipcMain.handle('bgm:search', async (_event, keyword: string) => {
 })
 
 ipcMain.handle('bgm:detail', async (_event, subjectId: number) => {
-  const output = await runPython('bgm_detail.py', [String(subjectId)])
-  return JSON.parse(output)
+  return getBgmDetail(subjectId)
 })
 
 ipcMain.handle('xifan:captcha', async () => xifanGetCaptcha())
