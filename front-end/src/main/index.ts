@@ -3,6 +3,7 @@ import { join } from 'path'
 import { spawn } from 'child_process'
 import { statfs } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
+import { searchBgm } from './bgm/search'
 
 // Python 可执行文件：Windows 用 python，macOS/Linux 用 python3
 const PYTHON_BIN = process.platform === 'win32' ? 'python' : 'python3'
@@ -44,8 +45,7 @@ function runPython(scriptName: string, args: string[]): Promise<string> {
 
 // ── IPC 处理器 ──────────────────────────────────────────────
 ipcMain.handle('bgm:search', async (_event, keyword: string) => {
-  const output = await runPython('search_anime.py', [keyword, 'n', '--json'])
-  return JSON.parse(output)
+  return searchBgm(keyword)
 })
 
 ipcMain.handle('bgm:detail', async (_event, subjectId: number) => {
