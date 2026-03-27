@@ -166,14 +166,6 @@ function Settings(): JSX.Element {
     setStaged({ ...DEFAULTS })
     setLocalPath('C:/Users/example-user/Documents/BiuProjects/Anime')
     setRemotePath('ssh://obsidian-node-01/mnt/media/archivist/biu-mirror')
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-        searchCacheEnabled: DEFAULTS.searchCacheEnabled,
-      }))
-    } catch { /* ignore */ }
-    recordChange('Settings reset to defaults')
-    setSaveLabel('saved')
-    setTimeout(() => setSaveLabel('save'), 2000)
   }
 
   // ── folder picker ───────────────────────────────────────────
