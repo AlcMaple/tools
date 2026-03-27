@@ -12,15 +12,9 @@ import { join } from 'path'
 import { URL } from 'url'
 import { createDecipheriv } from 'crypto'
 import { spawn } from 'child_process'
-import { BrowserWindow, session as electronSession } from 'electron'
-import { app } from 'electron'
+import { BrowserWindow, session as electronSession, app } from 'electron'
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-let ffmpegPath: string | null = require('ffmpeg-static')
-// 打包后二进制在 app.asar.unpacked/ 外，需修正路径
-if (ffmpegPath && app.isPackaged) {
-  ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked')
-}
+const ffmpegPath = 'ffmpeg'
 
 export interface DlEvent {
   type: 'ep_start' | 'ep_progress' | 'ep_done' | 'ep_error'
