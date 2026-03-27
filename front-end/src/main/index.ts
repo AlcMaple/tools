@@ -368,6 +368,25 @@ ipcMain.handle('system:history-read', () => {
   catch { return [] }
 })
 
+ipcMain.handle('cache:get', (_event, key: string) => {
+  try {
+    const file = join(app.getPath('userData'), 'search_cache.json')
+    const all = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>
+    return all[key] ?? null
+  } catch { return null }
+})
+
+ipcMain.handle('cache:set', (_event, key: string, subkey: string, value: unknown) => {
+  try {
+    const file = join(app.getPath('userData'), 'search_cache.json')
+    let all: Record<string, Record<string, unknown>> = {}
+    try { all = JSON.parse(readFileSync(file, 'utf-8')) } catch { /* new file */ }
+    if (!all[key]) all[key] = {}
+    all[key][subkey] = value
+    writeFileSync(file, JSON.stringify(all))
+  } catch { /* ignore */ }
+})
+
 ipcMain.handle('system:history-write', (_event, entries: unknown) => {
   try { writeFileSync(HISTORY_FILE(), JSON.stringify(entries)); return true }
   catch { return false }

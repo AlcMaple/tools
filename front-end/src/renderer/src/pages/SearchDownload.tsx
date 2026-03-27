@@ -43,20 +43,17 @@ function isSearchCacheEnabled(): boolean {
   } catch { return true }
 }
 
-function getCachedSearch(keyword: string, source: Source): SearchCard[] | null {
+async function getCachedSearch(keyword: string, source: Source): Promise<SearchCard[] | null> {
   try {
     const key = `search_cache_${source.toLowerCase()}`
-    return (JSON.parse(localStorage.getItem(key) || '{}') as Record<string, SearchCard[]>)[keyword] ?? null
+    const cache = await window.systemApi.cacheGet(key) as Record<string, SearchCard[]> | null
+    return cache?.[keyword] ?? null
   } catch { return null }
 }
 
 function setCachedSearch(keyword: string, source: Source, cards: SearchCard[]): void {
-  try {
-    const key = `search_cache_${source.toLowerCase()}`
-    const cache = JSON.parse(localStorage.getItem(key) || '{}') as Record<string, SearchCard[]>
-    cache[keyword] = cards
-    localStorage.setItem(key, JSON.stringify(cache))
-  } catch { /* ignore */ }
+  const key = `search_cache_${source.toLowerCase()}`
+  window.systemApi.cacheSet(key, keyword, cards).catch(() => { /* ignore */ })
 }
 
 function getCachedXifanWatch(url: string): XifanWatchInfo | null {
@@ -331,7 +328,7 @@ function SearchDownload(): JSX.Element {
     setSearchQuery(keyword)
 
     if (isSearchCacheEnabled()) {
-      const cached = getCachedSearch(keyword, source)
+      const cached = await getCachedSearch(keyword, source)
       if (cached) { setState({ status: 'results', cards: cached, keyword }); return }
     }
 
