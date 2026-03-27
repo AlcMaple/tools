@@ -390,6 +390,7 @@ function SearchDownload(): JSX.Element {
           const result = await window.girigiriApi.search(keyword)
           if (Array.isArray(result)) {
             const cards = result.map(normalizeGirigiri)
+            setCachedSearch(keyword, captchaSource, cards)
             setState({ status: 'results', cards, keyword })
           } else {
             const { image_b64 } = await window.girigiriApi.getCaptcha()
@@ -400,6 +401,7 @@ function SearchDownload(): JSX.Element {
           const result = await window.xifanApi.search(keyword)
           if (Array.isArray(result)) {
             const cards = result.map(normalizeXifan)
+            setCachedSearch(keyword, captchaSource, cards)
             setState({ status: 'results', cards, keyword })
           } else {
             const { image_b64 } = await window.xifanApi.getCaptcha()
