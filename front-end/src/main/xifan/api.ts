@@ -40,7 +40,7 @@ function needsCaptcha(html: string): boolean {
 }
 
 function buildTemplate(ep1Url: string): string | null {
-  const result = ep1Url.replace(/(\d{2})(\.[^./]+$)/, '{:02d}$2')
+  const result = ep1Url.replace(/(.*?)(\d+)([^./\d]*\.[^./]+$)/, '$1{:02d}$3')
   return result.includes('{:02d}') ? result : null
 }
 
@@ -90,7 +90,7 @@ export async function search(keyword: string): Promise<XifanSearchResult[] | { n
 
     const cover = $(el).find('div.detail-pic img').attr('data-src') ?? ''
     const remarks: string[] = []
-    $(el).find('span.slide-info-remarks').each((_, r) => remarks.push($(r).text().trim()))
+    $(el).find('span.slide-info-remarks').each((_, r) => { remarks.push($(r).text().trim()) })
 
     if (title) {
       results.push({

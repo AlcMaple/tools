@@ -120,7 +120,7 @@ function getCachedXifanWatch(url: string): XifanWatchInfo | null {
   try {
     return (
       (
-        JSON.parse(localStorage.getItem("xifan_watch_cache") || "{}") as Record<
+        JSON.parse(localStorage.getItem("xifan_watch_cache_v2") || "{}") as Record<
           string,
           XifanWatchInfo
         >
@@ -134,10 +134,10 @@ function getCachedXifanWatch(url: string): XifanWatchInfo | null {
 function setCachedXifanWatch(url: string, info: XifanWatchInfo): void {
   try {
     const cache = JSON.parse(
-      localStorage.getItem("xifan_watch_cache") || "{}",
+      localStorage.getItem("xifan_watch_cache_v2") || "{}",
     ) as Record<string, XifanWatchInfo>;
     cache[url] = info;
-    localStorage.setItem("xifan_watch_cache", JSON.stringify(cache));
+    localStorage.setItem("xifan_watch_cache_v2", JSON.stringify(cache));
   } catch {
     /* ignore */
   }
