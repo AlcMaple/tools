@@ -190,6 +190,24 @@ function ImagePlaceholder({
   );
 }
 
+function CoverImage({ src, alt }: { src: string; alt: string }): JSX.Element {
+  const [hasError, setHasError] = useState(false);
+
+  if (!src || hasError) {
+    return <ImagePlaceholder className="w-full h-full" />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      className="w-full h-full object-cover"
+      onError={() => setHasError(true)}
+    />
+  );
+}
+
 function SearchingState(): JSX.Element {
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-6">
@@ -987,26 +1005,17 @@ function SearchDownload(): JSX.Element {
                     className="group relative bg-surface-container rounded-xl overflow-hidden border border-outline-variant/20 hover:border-primary/30 transition-all duration-300"
                   >
                     <div className="aspect-[2/3] relative overflow-hidden">
-                      {card.cover ? (
-                        <img
-                          src={card.cover}
-                          alt={card.title}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <ImagePlaceholder className="w-full h-full" />
-                      )}
+                      {/* 处理封面或占位图 */}
+                      <CoverImage src={card.cover} alt={card.title} />
 
+                      {/* 点击下载后，加载剧集信息时的转圈动画 */}
                       {loadingKey === card.key && (
                         <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
                           <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
                         </div>
                       )}
 
+                      {/* 鼠标悬浮时显示的黑色渐变遮罩和下载按钮 */}
                       {loadingKey !== card.key && (
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
                           <button
