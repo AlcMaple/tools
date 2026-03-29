@@ -43,7 +43,7 @@ declare global {
       saveSettingsHistory: (entries: Array<{ text: string; time: number }>) => Promise<boolean>
       onSpeedUpdate: (cb: (bps: number) => void) => () => void
       cacheGet: (key: string) => Promise<Record<string, unknown> | null>
-      cacheSet: (key: string, subkey: string, value: unknown) => Promise<void>
+      cacheSet: (key: string, valueOrSubkey: unknown, maybeValue?: unknown) => Promise<void>
     }
     versions: {
       node: () => string
