@@ -12,8 +12,14 @@ export interface GirigiriEpisode {
   url: string
 }
 
+export interface GirigiriSource {
+  name: string
+  episodes: GirigiriEpisode[]
+}
+
 export interface GirigiriWatchInfo {
   title: string
-  episodes: GirigiriEpisode[]
+  sources: GirigiriSource[]
+  episodes: GirigiriEpisode[]  // = sources[0].episodes
   error?: string
 }

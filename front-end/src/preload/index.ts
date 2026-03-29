@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('systemApi', {
   loadSettingsHistory: () => ipcRenderer.invoke('system:history-read'),
   saveSettingsHistory: (entries: unknown) => ipcRenderer.invoke('system:history-write', entries),
   cacheGet: (key: string) => ipcRenderer.invoke('cache:get', key),
-  cacheSet: (key: string, subkey: string, value: unknown) => ipcRenderer.invoke('cache:set', key, subkey, value),
+  cacheSet: (key: string, valueOrSubkey: unknown, maybeValue?: unknown) => ipcRenderer.invoke('cache:set', key, valueOrSubkey, maybeValue),
   onSpeedUpdate: (cb: (bps: number) => void) => {
     const handler = (_: Electron.IpcRendererEvent, bps: number) => cb(bps)
     ipcRenderer.on('system:speed', handler)

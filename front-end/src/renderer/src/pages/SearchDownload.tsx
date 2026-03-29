@@ -78,8 +78,14 @@ async function getCachedSearch(
       string,
       SearchCard[]
     > | null;
-    return cache?.[keyword] ?? null;
-  } catch {
+    if (cache && cache[keyword]) {
+      console.log(`[Cache 读取] 成功命中关键词: "${keyword}"`);
+      return cache[keyword];
+    }
+    console.log(`[Cache 读取] 未找到关键词: "${keyword}"`);
+    return null;
+  } catch (err) {
+    console.error(`[Cache 读取错误] 无法读取本地缓存:`, err);
     return null;
   }
 }
@@ -91,20 +97,22 @@ async function setCachedSearch(
 ): Promise<void> {
   const key = `search_cache_${source.toLowerCase()}`;
   try {
-    // 把本地硬盘里已经存的搜索记录字典拿出来（如果没有，就初始化一个空对象 {}）
+    console.log(
+      `[Cache 写入] 正在保存 "${keyword}" 的 ${cards.length} 条数据...`,
+    );
     const existingCache =
       ((await window.systemApi.cacheGet(key)) as Record<
         string,
         SearchCard[]
       >) || {};
-
-    // 把这次新搜索的关键词和结果，追加到这个字典里
     existingCache[keyword] = cards;
-
-    // 把更新后、包含了历史和最新记录的完整字典，重新存回本地硬盘
     await window.systemApi.cacheSet(key, existingCache);
-  } catch {
-    /* ignore */
+    console.log(`[Cache 写入] 成功保存到本地硬盘！`);
+  } catch (err) {
+    console.error(
+      `[Cache 写入致命错误] 缓存保存失败，可能是 Base64 数据过大或底层 API 报错:`,
+      err,
+    );
   }
 }
 
