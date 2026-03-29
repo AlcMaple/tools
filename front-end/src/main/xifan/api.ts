@@ -186,7 +186,8 @@ export async function watch(watchUrl: string): Promise<XifanWatchInfo> {
   for (let i = 0; i < sourceTags.length; i++) {
     const tag = sourceTags.eq(i)
     const badgeText = tag.find('span.badge').text()
-    const name = tag.text().replace(badgeText, '').trim()
+    const iconText = tag.find('i').text()
+    const name = tag.text().replace(badgeText, '').replace(iconText, '').replace(/\u00A0/g, ' ').trim()
     const idx = i + 1
 
     if (idx === 1) {
