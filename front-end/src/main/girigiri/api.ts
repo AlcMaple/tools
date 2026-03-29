@@ -108,7 +108,6 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
     if (!img.length) {
       img = $(el).parent().find('img').first();
     }
-
     if (!img.length) {
       img = link.closest('.flex, .vod-item, .g-movie-item, li').find('img').first();
     }
@@ -116,24 +115,18 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
     const rawCover = img.attr('data-src') ?? img.attr('data-original') ?? img.attr('src') ?? '';
     let coverUrl = rawCover ? resolveUrl(rawCover) : '';
 
-    // 如果获取到了封面链接，直接下载并转为 Base64
     let finalCover = '';
     if (coverUrl) {
       try {
         console.log(`[girigiri:search]   downloading cover for "${title}"...`);
-        
-        // 使用 Node 原生 fetch
         const imgRes = await fetch(coverUrl, {
           headers: {
             'Referer': BASE_DOMAIN,
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           }
         });
-        
-        // 二进制 buffer 处理
         const arrayBuffer = await imgRes.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        
         if (buffer.length > 0) {
           finalCover = `data:image/jpeg;base64,${buffer.toString('base64')}`;
           console.log(`[girigiri:search]   cover downloaded successfully! Base64 size: ${Math.round(finalCover.length / 1024)}KB`);
@@ -142,10 +135,10 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
         }
       } catch (err) {
         console.warn(`[girigiri:search]   failed to download cover for "${title}":`, err);
-        finalCover = coverUrl; 
+        finalCover = coverUrl;
       }
     } else {
-       console.warn(`[girigiri:search]   no cover URL found in DOM for "${title}"`);
+      console.warn(`[girigiri:search]   no cover URL found in DOM for "${title}"`);
     }
 
     const infoText = $(el).find('div[class*="info"], span[class*="desc"], div[class*="meta"], p[class*="detail"]').text()
@@ -155,7 +148,7 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
     console.log(`[girigiri:search]   card title="${title}" url=${playUrl}`)
     results.push({
       title,
-      cover: finalCover, // 使用转换后的 Base64 或者是原链接
+      cover: finalCover,
       year: yearM ? yearM[1] : '',
       region: regionM ? regionM[1] : '',
       play_url: playUrl,
@@ -182,6 +175,41 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
 
 // ── watch ──────────────────────────────────────────────────────────────────────
 
+const DATA_FORM_MAP: Record<string, string> = { cht: '繁中', chs: '簡中' }
+
+/**
+ * 从播放页（如 /playGV26879-1-1/）提取片源名列表。
+ *
+ * 列表页（/GV26879/）的 tab 是由 Swiper JS 动态插入的，原始 HTML 里没有；
+ * 但播放页是 PHP 服务端渲染的，包含所有片源 tab，因此可以从这里拿到名称。
+ */
+async function resolveSourceNamesFromPlayerPage(firstEpUrls: string[]): Promise<string[]> {
+  if (!firstEpUrls.length) return []
+  try {
+    // 只需抓第一个片源的第一集，页面里会列出所有片源 tab
+    const res = await giriSession.get(firstEpUrls[0])
+    const $p = cheerio.load(res.body)
+    const names: string[] = []
+
+    $p('a.vod-playerUrl, a[data-form]').each((_, el) => {
+      const dataForm = $p(el).attr('data-form') ?? ''
+      const text = $p(el).clone().children('.badge').remove().end().text().trim()
+      const name = DATA_FORM_MAP[dataForm] || text
+      if (name && !names.includes(name)) names.push(name)
+    })
+
+    if (names.length) {
+      console.log(`[girigiri:watch]   player-page source names: [${names.join(', ')}]`)
+    } else {
+      console.warn('[girigiri:watch]   player page also has tabs=0, source names unavailable')
+    }
+    return names
+  } catch (err) {
+    console.warn('[girigiri:watch]   failed to fetch player page for source names:', err)
+    return []
+  }
+}
+
 export async function watch(playUrl: string): Promise<GiriWatchInfo> {
   const res = await giriSession.get(playUrl)
   giriSession.save()
@@ -197,17 +225,18 @@ export async function watch(playUrl: string): Promise<GiriWatchInfo> {
 
   const sources: GiriSource[] = []
 
-  // Parse structured source tabs (.anthology-tab) + matching episode boxes (.anthology-list-box)
-  const $tabs = $('a.vod-playerUrl')
+  // ── 主路径：tab + episode box（适用于 tab 服务端渲染的情况）───────────────────
+  const $tabs = $('a.vod-playerUrl, a[data-form]')
   const $boxes = $('.anthology-list-box')
   console.log(`[girigiri:watch] tabs=${$tabs.length} boxes=${$boxes.length} url=${playUrl}`)
-  const DATA_FORM_MAP: Record<string, string> = { cht: '繁中', chs: '简中' }
+
   if ($tabs.length > 0 && $boxes.length > 0) {
     $tabs.each((i, tab) => {
       const dataForm = $(tab).attr('data-form') ?? ''
-      const sourceName = DATA_FORM_MAP[dataForm] || $(tab).clone().find('.badge').remove().end().text().trim() || `片源${i + 1}`
+      const tabText = $(tab).clone().children('.badge').remove().end().text().trim()
+      const sourceName = DATA_FORM_MAP[dataForm] || tabText || `片源${i + 1}`
       const eps: GiriEpisode[] = []
-      $boxes.eq(i).find('ul.anthology-list-play li a').each((_, el) => {
+      $boxes.eq(i).find('ul.anthology-list-play li a, ul.anthology-list-play a').each((_, el) => {
         const href = $(el).attr('href') ?? ''
         if (!href) return
         const idx = eps.length + 1
@@ -215,25 +244,48 @@ export async function watch(playUrl: string): Promise<GiriWatchInfo> {
         eps.push({ idx, name: epName, url: resolveUrl(href) })
       })
       console.log(`[girigiri:watch]   source[${i}] data-form="${dataForm}" name="${sourceName}" eps=${eps.length}`)
-      sources.push({ name: sourceName, episodes: eps })
+      if (eps.length > 0) sources.push({ name: sourceName, episodes: eps })
     })
   }
 
-  // Fallback: single source from common selectors
-  if (sources.every((s) => s.episodes.length === 0)) {
-    sources.length = 0
+  // ── fallback：列表页 tab 是 JS 动态渲染（tabs=0），但 boxes 解析成功 ──────────
+  if (sources.length === 0 && $boxes.length > 0) {
+    // Step 1: 从各 box 收集集数，记录每个 box 的第一集 URL
+    const boxList: { firstEpUrl: string; eps: GiriEpisode[] }[] = []
+    $boxes.each((_, box) => {
+      const eps: GiriEpisode[] = []
+      let firstEpUrl = ''
+      $(box).find('ul li a').each((_, el) => {
+        const href = $(el).attr('href') ?? ''
+        if (!href) return
+        const url2 = resolveUrl(href)
+        if (!firstEpUrl) firstEpUrl = url2
+        const idx = eps.length + 1
+        eps.push({ idx, name: $(el).text().trim() || `第${idx}集`, url: url2 })
+      })
+      if (eps.length) boxList.push({ firstEpUrl, eps })
+    })
+
+    // Step 2: 用播放页（PHP 服务端渲染）获取片源名
+    const firstEpUrls = boxList.map(b => b.firstEpUrl).filter(Boolean)
+    const sourceNames = await resolveSourceNamesFromPlayerPage(firstEpUrls)
+
+    // Step 3: 组装 sources
+    boxList.forEach((box, i) => {
+      const name = sourceNames[i] || `片源${i + 1}`
+      sources.push({ name, episodes: box.eps })
+      console.log(`[girigiri:watch]   fallback-box[${i}] name="${name}" eps=${box.eps.length}`)
+    })
+  }
+
+  // ── 兜底：连 boxes 都没有 ─────────────────────────────────────────────────────
+  if (sources.length === 0) {
+    console.warn('[girigiri:watch] no sources found via box parsing, trying generic selectors...')
     const fallbackEps: GiriEpisode[] = []
-    const EP_CONTAINERS = ['.anthology-list-play', 'div[class*="anthology"]', 'div[class*="episode-list"]']
-    for (const sel of EP_CONTAINERS) {
+    for (const sel of ['.anthology-list-play', 'div[class*="anthology"]', 'div[class*="episode-list"]']) {
       const $container = $(sel).first()
       if (!$container.length) continue
-      let $bestUl = $container.find('ul').first()
-      let bestCount = $bestUl.find('li a[href]').length
-      $container.find('ul').each((_, ul) => {
-        const count = $(ul).find('li a[href]').length
-        if (count > bestCount) { bestCount = count; $bestUl = $(ul) }
-      })
-      $bestUl.find('li a').each((_, el) => {
+      $container.find('li a').each((_, el) => {
         const href = $(el).attr('href') ?? ''
         if (!href) return
         const idx = fallbackEps.length + 1
@@ -242,10 +294,9 @@ export async function watch(playUrl: string): Promise<GiriWatchInfo> {
       if (fallbackEps.length) break
     }
     if (!fallbackEps.length) {
-      const matches = res.body.matchAll(/href=["']([^"']*(?:play|GV)[^"']*\d+[^"']*)['"]/g)
       const seen = new Set<string>()
       let idx = 1
-      for (const m of matches) {
+      for (const m of res.body.matchAll(/href=["']([^"']*\/play[^"']*)["']/g)) {
         const url2 = resolveUrl(m[1])
         if (!seen.has(url2)) { seen.add(url2); fallbackEps.push({ idx, name: `第${idx}集`, url: url2 }); idx++ }
       }
@@ -255,7 +306,6 @@ export async function watch(playUrl: string): Promise<GiriWatchInfo> {
 
   if (!sources.length) {
     console.warn('[girigiri:watch] 0 episodes parsed. URL:', playUrl)
-    console.warn('[girigiri:watch] body snippet:', res.body.slice(0, 2000))
   }
 
   return { title, sources, episodes: sources[0]?.episodes ?? [] }
