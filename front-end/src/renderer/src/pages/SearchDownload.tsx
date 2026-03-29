@@ -374,12 +374,20 @@ interface GirigiriConfigProps {
   onStart: (selectedEps: GirigiriEpisode[]) => void;
 }
 
+interface GirigiriConfigProps {
+  card: SearchCard;
+  watchInfo: GirigiriWatchInfo;
+  onClose: () => void;
+  onStart: (selectedEps: GirigiriEpisode[]) => void;
+}
+
 function GirigiriDownloadConfigModal({
   card,
   watchInfo,
   onClose,
   onStart,
 }: GirigiriConfigProps): JSX.Element {
+  // 如果没有 sources 数组，则提供一个默认片源
   const sources =
     watchInfo.sources.length > 0
       ? watchInfo.sources
@@ -429,42 +437,34 @@ function GirigiriDownloadConfigModal({
           </button>
         </div>
 
-        {/* Source selector */}
-        {sources.length > 1 && (
-          <div className="mb-5">
-            <p className="font-label text-[10px] text-on-surface-variant/60 uppercase tracking-widest mb-2">
-              片源
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              {sources.map((src, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSourceChange(i)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-label transition-colors border ${i === sourceIdx ? "primary-gradient text-on-primary border-transparent" : "border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high"}`}
-                >
-                  {src.name}{" "}
-                  <span className="opacity-60">· {src.episodes.length}集</span>
-                </button>
-              ))}
-            </div>
+        <div className="mb-6">
+          <p className="font-label text-[10px] text-on-surface-variant/60 uppercase tracking-widest mb-3">
+            Download Source
+          </p>
+          <div className="space-y-2">
+            {sources.map((src, i) => (
+              <label
+                key={i}
+                className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${sourceIdx === i ? "border-primary/40 bg-primary/5" : "border-outline-variant/20 hover:bg-surface-container-high"}`}
+              >
+                <input
+                  type="radio"
+                  name="girigiri_source"
+                  value={i}
+                  checked={sourceIdx === i}
+                  onChange={() => handleSourceChange(i)}
+                  className="accent-primary"
+                />
+                <span className="font-label text-sm text-on-surface">
+                  {src.name}
+                </span>
+                <span className="ml-auto font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest">
+                  {src.episodes.length} Episodes
+                </span>
+              </label>
+            ))}
           </div>
-        )}
-
-        {/* Episode preview */}
-        {eps.length > 0 && (
-          <div className="mb-6 p-3 bg-surface-container-low rounded-lg border border-outline-variant/10 max-h-40 overflow-y-auto">
-            <div className="grid grid-cols-3 gap-1.5">
-              {eps.map((ep) => (
-                <div
-                  key={ep.idx}
-                  className="px-2 py-1 rounded bg-surface-container-high text-[10px] font-label text-on-surface-variant/60 truncate"
-                >
-                  {ep.name}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        </div>
 
         <div className="mb-8">
           <p className="font-label text-[10px] text-on-surface-variant/60 uppercase tracking-widest mb-3">
