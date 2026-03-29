@@ -376,13 +376,17 @@ ipcMain.handle('cache:get', (_event, key: string) => {
   } catch { return null }
 })
 
-ipcMain.handle('cache:set', (_event, key: string, subkey: string, value: unknown) => {
+ipcMain.handle('cache:set', (_event, key: string, valueOrSubkey: unknown, maybeValue?: unknown) => {
   try {
     const file = join(app.getPath('userData'), 'search_cache.json')
-    let all: Record<string, Record<string, unknown>> = {}
-    try { all = JSON.parse(readFileSync(file, 'utf-8')) } catch { /* new file */ }
-    if (!all[key]) all[key] = {}
-    all[key][subkey] = value
+    let all: Record<string, unknown> = {}
+    try { all = JSON.parse(readFileSync(file, 'utf-8')) } catch { }
+    if (maybeValue !== undefined) {
+      if (!all[key] || typeof all[key] !== 'object') all[key] = {}
+        ; (all[key] as Record<string, unknown>)[valueOrSubkey as string] = maybeValue
+    } else {
+      all[key] = valueOrSubkey
+    }
     writeFileSync(file, JSON.stringify(all))
   } catch { /* ignore */ }
 })
