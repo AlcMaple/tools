@@ -84,15 +84,28 @@ async function getCachedSearch(
   }
 }
 
-function setCachedSearch(
+async function setCachedSearch(
   keyword: string,
   source: Source,
   cards: SearchCard[],
-): void {
+): Promise<void> {
   const key = `search_cache_${source.toLowerCase()}`;
-  window.systemApi.cacheSet(key, keyword, cards).catch(() => {
+  try {
+    // 把本地硬盘里已经存的搜索记录字典拿出来（如果没有，就初始化一个空对象 {}）
+    const existingCache =
+      ((await window.systemApi.cacheGet(key)) as Record<
+        string,
+        SearchCard[]
+      >) || {};
+
+    // 把这次新搜索的关键词和结果，追加到这个字典里
+    existingCache[keyword] = cards;
+
+    // 把更新后、包含了历史和最新记录的完整字典，重新存回本地硬盘
+    await window.systemApi.cacheSet(key, existingCache);
+  } catch {
     /* ignore */
-  });
+  }
 }
 
 function getCachedXifanWatch(url: string): XifanWatchInfo | null {
