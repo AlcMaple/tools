@@ -120,7 +120,7 @@ function getCachedXifanWatch(url: string): XifanWatchInfo | null {
   try {
     return (
       (
-        JSON.parse(localStorage.getItem("xifan_watch_cache_v2") || "{}") as Record<
+        JSON.parse(localStorage.getItem("xifan_watch_cache_v3") || "{}") as Record<
           string,
           XifanWatchInfo
         >
@@ -134,10 +134,10 @@ function getCachedXifanWatch(url: string): XifanWatchInfo | null {
 function setCachedXifanWatch(url: string, info: XifanWatchInfo): void {
   try {
     const cache = JSON.parse(
-      localStorage.getItem("xifan_watch_cache_v2") || "{}",
+      localStorage.getItem("xifan_watch_cache_v3") || "{}",
     ) as Record<string, XifanWatchInfo>;
     cache[url] = info;
-    localStorage.setItem("xifan_watch_cache_v2", JSON.stringify(cache));
+    localStorage.setItem("xifan_watch_cache_v3", JSON.stringify(cache));
   } catch {
     /* ignore */
   }
@@ -307,7 +307,7 @@ function XifanDownloadConfigModal({
                     className="accent-primary"
                   />
                   <span className="font-label text-sm text-on-surface">
-                    {src.name}
+                    {src.name.replace(/[\uE000-\uF8FF]/g, "").trim()}
                   </span>
                   <span className="ml-auto font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest">
                     Source {src.idx}
@@ -482,7 +482,7 @@ function GirigiriDownloadConfigModal({
                   className="accent-primary"
                 />
                 <span className="font-label text-sm text-on-surface">
-                  {src.name}
+                  {src.name.replace(/[\uE000-\uF8FF]/g, "").trim()}
                 </span>
                 <span className="ml-auto font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest">
                   {src.episodes.length} Episodes
