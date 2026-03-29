@@ -310,7 +310,7 @@ function XifanDownloadConfigModal({
                     {src.name.replace(/[\uE000-\uF8FF]/g, "").trim()}
                   </span>
                   <span className="ml-auto font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest">
-                    Source {src.idx}
+                    {watchInfo.total} Episodes
                   </span>
                 </label>
               ))}
