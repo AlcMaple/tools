@@ -608,11 +608,11 @@ function Settings(): JSX.Element {
       </div>
 
       {/* Background watermark */}
-      <div className="fixed bottom-0 right-0 p-8 pointer-events-none select-none">
+      {/* <div className="fixed bottom-0 right-0 p-8 pointer-events-none select-none">
         <p className="font-label text-[150px] font-black text-white/[0.02] leading-none tracking-tighter uppercase">
           Config
         </p>
-      </div>
+      </div> */}
 
       {/* Unsaved changes navigation warning dialog */}
       {pendingNav !== null && (
