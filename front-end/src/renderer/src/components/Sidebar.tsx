@@ -16,13 +16,13 @@ const navItems: NavItem[] = [
 
 function Sidebar(): JSX.Element {
   return (
-    <aside className="h-screen w-64 fixed left-0 top-0 bg-[#0e0e0e] flex flex-col py-8 z-50">
+    <aside className="h-screen w-64 fixed left-0 top-0 bg-surface-container-lowest flex flex-col py-8 z-50">
       {/* Brand */}
       <div className="px-6 mb-12">
-        <h1 className="text-xl font-black text-[#ffb3b8] tracking-tighter">
+        <h1 className="text-xl font-black text-primary tracking-tighter">
           MAPLE TOOLS
         </h1>
-        <p className="font-label text-[10px] text-[#e2e2e2]/40 tracking-widest mt-1">
+        <p className="font-label text-[10px] text-on-surface/40 tracking-widest mt-1">
           V1.0.0
         </p>
       </div>
@@ -43,8 +43,8 @@ function Sidebar(): JSX.Element {
             className={({ isActive }) =>
               `flex items-center px-6 py-3 space-x-3 transition-colors duration-200 ${
                 isActive
-                  ? "text-[#ffb3b8] font-bold border-r-2 border-[#ffb3b8] bg-[#1f1f1f]"
-                  : "text-[#e2e2e2]/60 font-medium hover:text-[#e2e2e2] hover:bg-[#1f1f1f]"
+                  ? "text-primary font-bold border-r-2 border-primary bg-surface-container"
+                  : "text-on-surface/60 font-medium hover:text-on-surface hover:bg-surface-container"
               }`
             }
           >
