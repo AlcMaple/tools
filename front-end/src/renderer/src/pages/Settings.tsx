@@ -235,7 +235,7 @@ function Settings(): JSX.Element {
   return (
     <div className="min-h-full bg-surface">
       {/* Header */}
-      <header className="fixed top-0 right-0 left-64 h-16 z-40 bg-[#131313]/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-8">
+      <header className="fixed top-0 right-0 left-64 h-16 z-40 bg-background/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-8">
         <div className="flex items-center gap-4">
           <button
             onClick={() => (isDirty ? setPendingNav("__back__") : navigate(-1))}
