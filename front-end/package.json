@@ -1,7 +1,7 @@
 {
-  "name": "archivist",
+  "name": "mapletools",
   "version": "1.0.0",
-  "description": "Anime Archivist Desktop App",
+  "description": "MapleTools Desktop App",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -11,8 +11,8 @@
     "dist": "npm run build && electron-builder"
   },
   "build": {
-    "appId": "com.archivist.app",
-    "productName": "Archivist",
+    "appId": "com.mapletools.app",
+    "productName": "MapleTools",
     "directories": {
       "output": "dist"
     },
@@ -30,7 +30,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Archivist"
+      "shortcutName": "MapleTools"
     }
   },
   "dependencies": {
