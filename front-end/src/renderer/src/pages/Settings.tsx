@@ -130,6 +130,24 @@ function Settings(): JSX.Element {
   // pendingNav: path to navigate to after dialog action ('__back__' for back button)
   const [pendingNav, setPendingNav] = useState<string | null>(null);
 
+  const [isDark, setIsDark] = useState(() => {
+    const stored = localStorage.getItem("theme");
+    if (stored) return stored === "dark";
+    return document.documentElement.classList.contains("dark");
+  });
+
+  const toggleTheme = () => {
+    if (isDark) {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+      setIsDark(false);
+    } else {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+      setIsDark(true);
+    }
+  };
+
   // Register/unregister nav guard whenever isDirty changes
   useEffect(() => {
     if (isDirty) {
@@ -286,6 +304,15 @@ function Settings(): JSX.Element {
               {networkOnline ? "ONLINE" : "OFFLINE"}
             </span>
           </div>
+          <span className="h-4 w-px bg-white/10" />
+          <button
+            onClick={toggleTheme}
+            className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-variant/40 rounded-full transition-colors flex items-center justify-center"
+          >
+            <span className="material-symbols-outlined text-sm leading-none">
+              {isDark ? "light_mode" : "dark_mode"}
+            </span>
+          </button>
         </div>
       </header>
 
