@@ -11,6 +11,23 @@ function TopBar({ placeholder, onSearch }: TopBarProps): JSX.Element {
   const [query, setQuery] = useState('')
   const navigate = useNavigate()
   const { diskFreeLabel, activeTasks, networkOnline, speedLabel } = useSystemStats()
+  const [isDark, setIsDark] = useState(() => {
+    const stored = localStorage.getItem('theme')
+    if (stored) return stored === 'dark'
+    return document.documentElement.classList.contains('dark')
+  })
+
+  const toggleTheme = () => {
+    if (isDark) {
+      document.documentElement.classList.remove('dark')
+      localStorage.setItem('theme', 'light')
+      setIsDark(false)
+    } else {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
+      setIsDark(true)
+    }
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && query.trim() && onSearch) {
@@ -19,7 +36,7 @@ function TopBar({ placeholder, onSearch }: TopBarProps): JSX.Element {
   }
 
   return (
-    <header className="fixed top-0 right-0 left-64 h-16 bg-[#131313]/80 backdrop-blur-xl flex justify-between items-center px-8 z-40">
+    <header className="fixed top-0 right-0 left-64 h-16 bg-background/80 backdrop-blur-xl flex justify-between items-center px-8 z-40">
       {/* Search input */}
       <div className="flex items-center bg-surface-container-highest rounded-md px-4 py-2 w-80 transition-all duration-300 focus-within:bg-surface-bright focus-within:ring-1 focus-within:ring-primary/40">
         <span className="material-symbols-outlined text-on-surface-variant text-sm mr-2 leading-none">
@@ -76,11 +93,14 @@ function TopBar({ placeholder, onSearch }: TopBarProps): JSX.Element {
           <span className="font-label text-xs font-bold">{speedLabel}</span>
         </div>
         <div className="flex items-center space-x-4">
-          <button className="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all">
-            <span className="material-symbols-outlined text-xl leading-none">dark_mode</span>
+          <button 
+            className="p-2 text-on-surface hover:bg-surface-variant/40 rounded-full transition-all"
+            onClick={toggleTheme}
+          >
+            <span className="material-symbols-outlined text-xl leading-none">{isDark ? 'light_mode' : 'dark_mode'}</span>
           </button>
           <button
-            className="p-2 text-[#e2e2e2] hover:bg-[#353535]/40 rounded-full transition-all"
+            className="p-2 text-on-surface hover:bg-surface-variant/40 rounded-full transition-all"
             onClick={() => navigate('/settings')}
           >
             <span className="material-symbols-outlined text-xl leading-none">settings</span>
