@@ -282,6 +282,14 @@ function Settings(): JSX.Element {
             </span>
           </div>
           <div className="flex items-center gap-2 text-on-surface-variant/60">
+            <span className={`material-symbols-outlined text-sm leading-none ${activeTasks > 0 ? "text-primary flex-shrink-0 animate-pulse" : ""}`}>
+              downloading
+            </span>
+            <span className={`font-label text-[10px] tracking-widest ${activeTasks > 0 ? "text-primary" : ""}`}>
+              {activeTasks} TASKS
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-on-surface-variant/60">
             <span className="material-symbols-outlined text-sm leading-none">
               speed
             </span>
