@@ -47,7 +47,7 @@ function buildTemplate(ep1Url: string): string | null {
 // ── captcha ────────────────────────────────────────────────────────────────────
 
 export async function getCaptcha(): Promise<{ image_b64: string }> {
-  const res = await xifanSession.get(`${BASE_URL}/verify/index.html`)
+  const res = await xifanSession.get(`${BASE_URL}/verify/index.html?t=${Date.now()}`)
   xifanSession.save()
   return { image_b64: res.bodyBuffer.toString('base64') }
 }

@@ -1095,7 +1095,7 @@ function SearchDownload(): JSX.Element {
             <div className="aspect-video rounded-lg overflow-hidden mb-4 relative bg-surface-container-high">
               {state.status === "captcha" && state.imageB64 ? (
                 <img
-                  src={`data:image/jpeg;base64,${state.imageB64}`}
+                  src={`data:image/png;base64,${state.imageB64}`}
                   alt="CAPTCHA"
                   className="w-full h-full object-contain"
                 />
