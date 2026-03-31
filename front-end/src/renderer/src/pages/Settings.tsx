@@ -103,7 +103,7 @@ function Settings(): JSX.Element {
     "C:/Users/example-user/Documents/BiuProjects/Anime",
   );
   const [remotePath, setRemotePath] = useState(
-    "ssh://obsidian-node-01/mnt/media/archivist/biu-mirror",
+    "ssh://obsidian-node-01/mnt/media/mapletools/biu-mirror",
   );
 
   // Staged settings — edit freely, only committed on Save
@@ -218,7 +218,7 @@ function Settings(): JSX.Element {
   const handleReset = (): void => {
     setStaged({ ...DEFAULTS });
     setLocalPath("C:/Users/example-user/Documents/BiuProjects/Anime");
-    setRemotePath("ssh://obsidian-node-01/mnt/media/archivist/biu-mirror");
+    setRemotePath("ssh://obsidian-node-01/mnt/media/mapletools/biu-mirror");
   };
 
   // ── folder picker ───────────────────────────────────────────
@@ -296,7 +296,7 @@ function Settings(): JSX.Element {
             SETTINGS<span className="text-primary">.</span>
           </h1>
           <p className="font-label text-sm uppercase tracking-[0.3em] text-on-surface-variant/40 max-w-xl">
-            Configure the core operational parameters for the digital archivist
+            Configure the core operational parameters for MapleTools
             environment. Changes take effect after saving.
           </p>
         </section>
