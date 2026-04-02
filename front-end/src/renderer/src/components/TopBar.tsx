@@ -30,7 +30,7 @@ function TopBar({ placeholder, onSearch }: TopBarProps): JSX.Element {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter' && query.trim() && onSearch) {
+    if (e.key === 'Enter' && onSearch) {
       onSearch(query.trim())
     }
   }
