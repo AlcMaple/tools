@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SoraIndex | Local Library</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800;900&amp;family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container": "#1f1f1f",
+                        "on-tertiary": "#303030",
+                        "on-tertiary-container": "#3f4040",
+                        "surface-dim": "#131313",
+                        "on-surface-variant": "#d9c1c1",
+                        "inverse-primary": "#94464f",
+                        "error-container": "#93000a",
+                        "background": "#131313",
+                        "primary-fixed-dim": "#ffb2b8",
+                        "surface-bright": "#393939",
+                        "outline": "#a18c8c",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-secondary-fixed": "#001b3e",
+                        "on-primary-fixed-variant": "#772f38",
+                        "on-primary-container": "#6e2932",
+                        "on-error": "#690005",
+                        "primary-container": "#f09199",
+                        "on-primary": "#5a1923",
+                        "surface-container-highest": "#353535",
+                        "inverse-surface": "#e2e2e2",
+                        "outline-variant": "#544343",
+                        "on-tertiary-fixed": "#1b1c1c",
+                        "on-surface": "#e2e2e2",
+                        "tertiary-fixed": "#e4e2e2",
+                        "surface-container-high": "#2a2a2a",
+                        "surface": "#131313",
+                        "secondary": "#aac7ff",
+                        "tertiary-fixed-dim": "#c8c6c6",
+                        "on-tertiary-fixed-variant": "#464747",
+                        "on-primary-fixed": "#3e0410",
+                        "secondary-fixed-dim": "#aac7ff",
+                        "secondary-container": "#004c9a",
+                        "on-secondary-container": "#9ec0ff",
+                        "on-background": "#e2e2e2",
+                        "on-error-container": "#ffdad6",
+                        "tertiary-container": "#acabab",
+                        "surface-container-low": "#1b1b1b",
+                        "primary-fixed": "#ffdadb",
+                        "error": "#ffb4ab",
+                        "primary": "#ffb3b8",
+                        "surface-tint": "#ffb2b8",
+                        "inverse-on-surface": "#303030",
+                        "on-secondary-fixed-variant": "#00458d",
+                        "on-secondary": "#002f64",
+                        "tertiary": "#c8c6c6",
+                        "secondary-fixed": "#d6e3ff",
+                        "surface-variant": "#353535"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Space Grotesk"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .poster-card:hover .poster-overlay {
+            opacity: 1;
+        }
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #131313;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #353535;
+            border-radius: 2px;
+        }
+        .text-glow {
+            text-shadow: 0 0 15px rgba(255, 179, 184, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary/30">
+<!-- SideNavBar (Shared Component) -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-neutral-950 flex flex-col py-8 px-4 z-[60] border-r border-white/5">
+<div class="mb-12 px-4">
+<h1 class="text-2xl font-black tracking-tighter text-rose-300">SoraIndex</h1>
+<p class="font-headline font-bold tracking-tighter text-neutral-500 text-xs mt-1">The Digital Archivist</p>
+</div>
+<nav class="space-y-2 flex-1">
+<!-- Active Tab: Library -->
+<a class="flex items-center gap-4 px-4 py-3 text-rose-300 font-bold border-r-2 border-rose-300 bg-rose-900/10 transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="subscriptions">subscriptions</span>
+<span class="font-label font-medium text-xs uppercase tracking-widest">Library</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-neutral-400 font-medium hover:text-neutral-200 hover:bg-neutral-800 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+<span class="font-label font-medium text-xs uppercase tracking-widest">Search</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-neutral-400 font-medium hover:text-neutral-200 hover:bg-neutral-800 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="download_for_offline">download_for_offline</span>
+<span class="font-label font-medium text-xs uppercase tracking-widest">Queue</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-neutral-400 font-medium hover:text-neutral-200 hover:bg-neutral-800 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="info">info</span>
+<span class="font-label font-medium text-xs uppercase tracking-widest">Anime Info</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-neutral-400 font-medium hover:text-neutral-200 hover:bg-neutral-800 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="sync">sync</span>
+<span class="font-label font-medium text-xs uppercase tracking-widest">Biu Sync</span>
+</a>
+</nav>
+<div class="mt-auto px-4 py-4 border-t border-white/5">
+<div class="flex items-center gap-3 text-neutral-500">
+<span class="material-symbols-outlined text-sm" data-icon="database">database</span>
+<span class="font-label text-[10px] uppercase tracking-tighter">System Ready</span>
+</div>
+</div>
+</aside>
+<!-- TopNavBar (Shared Component) -->
+<header class="fixed top-0 right-0 w-[calc(100%-16rem)] h-16 bg-neutral-900/70 backdrop-blur-xl flex justify-between items-center px-8 z-50 border-b border-white/5 shadow-2xl shadow-rose-900/5">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2 bg-surface-container-highest px-3 py-1.5 rounded-md">
+<span class="material-symbols-outlined text-rose-300 text-sm" data-icon="search">search</span>
+<input class="bg-transparent border-none outline-none text-xs font-label placeholder:text-neutral-500 w-64" placeholder="Search archive..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-4">
+<div class="flex flex-col items-end">
+<span class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">Storage Status</span>
+<span class="font-label text-xs text-rose-300">89% CAPACITY</span>
+</div>
+<div class="w-16 h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary" style="width: 89%"></div>
+</div>
+</div>
+<div class="flex items-center gap-6 text-neutral-400">
+<div class="flex items-center gap-1.5 hover:text-rose-200 transition-all cursor-pointer">
+<span class="material-symbols-outlined text-sm" data-icon="hub">hub</span>
+<span class="font-label text-[10px] uppercase tracking-widest">Node: Tokyo-01</span>
+</div>
+<div class="flex items-center gap-1.5 hover:text-rose-200 transition-all cursor-pointer">
+<span class="material-symbols-outlined text-sm" data-icon="settings_ethernet">settings_ethernet</span>
+<span class="font-label text-[10px] uppercase tracking-widest">1.2 Gbps</span>
+</div>
+<span class="material-symbols-outlined text-xl hover:text-rose-200 cursor-pointer" data-icon="dark_mode">dark_mode</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 pt-16 min-h-screen bg-background relative">
+<!-- Hero Actions & Stats Area -->
+<section class="p-12 pb-6">
+<div class="flex justify-between items-end mb-12">
+<div>
+<h2 class="font-headline font-black text-5xl tracking-tighter text-on-surface mb-2">Local Library</h2>
+<div class="flex items-center gap-4 text-neutral-500 font-label text-sm">
+<span class="flex items-center gap-1.5"><span class="text-rose-300 font-bold">482</span> Titles</span>
+<span class="w-1 h-1 bg-neutral-700 rounded-full"></span>
+<span class="flex items-center gap-1.5"><span class="text-rose-300 font-bold">12.4</span> TB Indexed</span>
+<span class="w-1 h-1 bg-neutral-700 rounded-full"></span>
+<span class="flex items-center gap-1.5">Last update: 2m ago</span>
+</div>
+</div>
+<button class="bg-gradient-to-br from-primary to-primary-container text-on-primary font-label font-bold text-sm px-8 py-4 rounded-full flex items-center gap-3 shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95">
+<span class="material-symbols-outlined" data-icon="folder_zip">folder_zip</span>
+                    SCAN LOCAL FOLDERS
+                </button>
+</div>
+<!-- Filter Chips -->
+<div class="flex gap-3 mb-8">
+<button class="px-5 py-1.5 rounded-full bg-rose-300 text-on-primary-container font-label text-xs font-bold uppercase tracking-widest">All Titles</button>
+<button class="px-5 py-1.5 rounded-full bg-surface-container-high text-neutral-400 font-label text-xs font-bold uppercase tracking-widest hover:text-on-surface transition-colors">Recently Added</button>
+<button class="px-5 py-1.5 rounded-full bg-surface-container-high text-neutral-400 font-label text-xs font-bold uppercase tracking-widest hover:text-on-surface transition-colors">By Resolution</button>
+<button class="px-5 py-1.5 rounded-full bg-surface-container-high text-neutral-400 font-label text-xs font-bold uppercase tracking-widest hover:text-on-surface transition-colors">A-Z</button>
+</div>
+</section>
+<!-- Poster Wall Grid -->
+<section class="px-12 pb-32 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-8 gap-y-12">
+<!-- Poster Card 1 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Cinematic anime style poster of a futuristic cyberpunk city at night with neon lights and purple sky" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAAex9u9ekIpmrZFERhLoFACYNgVbdHfpS9TbMmcspi9tT7G3b-JQZE14ar6d8rKxVUqSGaX6nxuhX7vwd5P3K7E0myfXyomsZ6EQh4QPk8R_pQojJ-o-nMzk5wJXHpSXvE-alUxx1adwOkneZcYOKDIBU1R63-H1xSWKWGH-k2ZL8Gz16Hkw3uicOerQEzEK1oVK-qYsSj2w7SoH8C7lGKHjD1wHxHwlGtAnx-1lFaqf0uUhim8Uv7S6NRoeHGIjtiyG4p9rmmBQ"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<div class="mb-4"><h4 class="font-headline font-bold text-lg text-white mb-1 leading-tight line-clamp-2">Neon Genesis Evangelion</h4><p class="font-body text-rose-300 text-[10px] font-bold uppercase tracking-widest mb-2">Sci-Fi • Psychological</p><p class="font-body text-rose-300 text-sm font-bold italic opacity-80">新世紀エヴァンゲリオン</p></div>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">26 Episodes</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Neon Genesis Evangelion</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">1080p • MKV • 24.2 GB</p>
+</div>
+<!-- Poster Card 2 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Modern Japanese interior with soft morning light streaming through windows and tea on a table anime style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcPcSQwYkMDnYC0vO1ySBUI_a0zwFpI15jvVnepRQJ0ILVaeokLZJThUV0rYlauv_kq_akiWN13746Yjq7Rp0NyMjf0xU89qIc0i8dYSZdaYCG3TlXqMrhigoWfP4LVXC4IRlNdibJGquh6G9A4jyib7Kt-VQ9ATIs2MXB8jhZKokxzih-OpPK5m_V-mrx5zrgbOjjhEMidJXuX3y0nVgg6DDHfprt2TfuAkjWvkuHuN6dAdbDSo9I7Zo7VKakSmKB9bu-KbGGrw"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<div class="mb-4">
+<h4 class="font-headline font-bold text-white mb-1 leading-tight text-lg line-clamp-2">Clannad: After Story</h4>
+<p class="font-body text-rose-300 text-sm font-bold">クラナド アフターストーリー</p>
+</div>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">24 Episodes</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Clannad: After Story</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">4K • Remastered • 48.5 GB</p>
+</div>
+<!-- Poster Card 3 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Epic space scene with nebula and futuristic starship in minimalist anime illustration style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuABaUtPmlJc5ma7PyolRn_gYPjp5ss_Hv-7I4X0zkrSzIsy5c7EaDjUawHugOIn8y2DUiFk_QzVxIfICrCS_HUaQoJzZS8uptUrgH7DVpRXGl_dY3RUsG0eSwWIynSbyVJL1OKQMuixjB0fgdG_oN67giG-4VbvTF6g_LQlUwr4_Dr81-1JObWd6nLOnQYAI4lCBgkKzQdIcc9GHNAYbIBWwtINamZixCJZqnhcKc8KqLuFyf5xkuJEgeNEKDkwaxVyRbcyKlgM_A"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<div class="mb-4"><h4 class="font-headline font-bold text-lg text-white mb-1 leading-tight line-clamp-2">Cowboy Bebop</h4><p class="font-body text-rose-300 text-[10px] font-bold uppercase tracking-widest mb-2">Space Western • Noir</p><p class="font-body text-rose-300 text-sm font-bold italic opacity-80">カウボーイビバップ</p></div>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">26 Episodes</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Cowboy Bebop</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">1080p • BLURAY • 18.9 GB</p>
+</div>
+<!-- Poster Card 4 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Quiet Japanese mountain village with cherry blossoms in spring at twilight anime landscape" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAtBSGzYMY1Rf_luL7yYcjeFlrCbdAA2_rdrNdCO6Am5FmsSWPTOoBr3hKjzvuiNqNIsI3hVysUvqEhTiF_ANMGCzvzhTaIgFT0PUurzKlFwQq_WO48d4s0VBgJ-StAlzL0LJWWb93tr1Syl_i5my_ki2uRAmanxEhKLeDZAr66oB9R8rplcHBy5_NDqcsdRgh3XRZwSNvMcIzJTuLxsQTuVzkKGUc1fYBaewa-bZaWpQK29O03K8K_5U4qdVUa5KOL0LekOEO3bw"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<div class="mb-4">
+<h4 class="font-headline font-bold text-white mb-1 leading-tight text-lg line-clamp-2">Mushishi</h4>
+<p class="font-body text-rose-300 text-sm font-bold">蟲師</p>
+</div>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">26 Episodes</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Mushishi</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">1080p • WEB-DL • 12.1 GB</p>
+</div>
+<!-- Poster Card 5 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Traditional Japanese shrine with lanterns and misty forest background in stylized anime illustration" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDFLxxZM8TU9XgCK1TlW0cBbWuJt0PnE5pOjJWDHhYqWweuEi_FteoHiRoRsJD7NmAeSX1__1wPSrv6xMPOODfuAVMv-y8JuFl5WriwOCCJ_HYgdVL7Q0nja3MuXBM9ralF4KGzHm7zRxJLPlAyvlI-ElGxfsWICob_pwqk3q9GGETVZDT8ntEfNYJ-RxJIaaZX7dRbPuv2S8qYi_rllgjo6xGVtqUZwDcxFaSiEUjP5tFZ250uGz9-IwcgQ1mtdBZPkii8wLQwkA"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<div class="mb-4">
+<h4 class="font-headline font-bold text-white mb-1 leading-tight text-lg line-clamp-2">Mononoke</h4>
+<p class="font-body text-rose-300 text-sm font-bold">モノノケ</p>
+</div>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">12 Episodes</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Mononoke</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">1080p • BD-RIP • 9.8 GB</p>
+</div>
+<!-- Poster Card 6 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Digital grid with glowing blue lines and abstract tech patterns cybernetic anime background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBTiK51MKwrhMEa4CvQZsid4YkN1RaKTTfmp0eb-wBe02tyWo9XTHMnarWQa_JrEY5Kuh-JSpX_m1Qqdics2Z7ikfD49Q_MKp9gO08oXrBC5d1inTfb7jWgKqHE6NfCkVTbbzzXddew6x1R7FOJD8sZ87sT0wyle4fdMc6rk3U6iYzo_5KI5BaGrgOb5Zw4RTUkWbbWAh2DokALe2ASVGX-0qi9M8Y0vQF-Mw6H5IPGbkdjxIjNRu-R56hDGmw9BbQsPBB_YdgsYA"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<div class="mb-4">
+<h4 class="font-headline font-bold text-white mb-1 leading-tight text-lg line-clamp-2">Serial Experiments Lain</h4>
+</div>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">13 Episodes</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Serial Experiments Lain</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">1080p • Remux • 15.6 GB</p>
+</div>
+<!-- Poster Card 7 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Futuristic urban subway station in Tokyo with glowing displays and minimal people anime aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCUFZSE4IMY7Gb_rpRLtAhNNz3ZfilP2D2WMf-Yg53RDWswF8F_f1erVTkuwV8rN7jPKoOUs6CiUCITJ5VsTugY6HPkFoCkF_nBtxe_HKaklWqZka0zgH01eld783xGfgXwCbzdlDaN-E3NnCGsrjqHxYsVZKcMnlJIEHMaOhcWIS73LgU4seaQGlUZtYeZdOaFhDMO2pkHSPO8wr_KTgvi1Dbh3Gornfdh8hpd2be-Rf0yWqe6ieQNCOot6SZJkgYTBWS4clXXRg"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<h4 class="font-headline font-bold text-white leading-tight text-lg line-clamp-2">Psycho-Pass</h4>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">22 Episodes</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Psycho-Pass</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">1080p • MKV • 21.0 GB</p>
+</div>
+<!-- Poster Card 8 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Snow falling over a quiet residential street in Japan at night with warm lamp light anime scenery" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD5sQCJ53zIjrjuQwoew1FGlcr3me2X8_y1F4r16jYHsNRoyE-TYExWUTvfYC4jW37HwiXPrGPbogTV7XovzxVirOHGFOEWrZZE0OPy337TLdrxDKSmg05pD6kxNYSpQt1d05HIt-dxP1v-fUw7xYgdvtTMcDYXeRfdP-9hVFOrhPt0D_XR9PgBuzcvQGFLNDS2cMlwc88Ukz-VEQ3TY86ZkiT9-xueEAhuqSW121xCGaWmF6iYVQ5hqAa2Uk8PFTWLkobIb3OJEg"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<h4 class="font-headline font-bold text-white leading-tight text-lg line-clamp-2">March Comes in Like a Lion</h4>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">44 Episodes</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">March Comes in Like a Lion</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">1080p • BD-RIP • 32.4 GB</p>
+</div>
+<!-- Poster Card 9 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Ancient stone steps leading to a hidden temple gate in a lush misty jungle anime style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDepRhz8HiyPgaBAeB3VX_-WW99LkMS7LxXaNND_dCTyaozIyrNtstL9vb_LWWLnusFDQJcgP_7XtlKm_y_Ob6WMuMAw_X0R1SXYCSfFOIs_7gY2TLQ5VZO5ceD5Tzm6Wq6f2kdh4Ovwz9Lc8BiPPMfciRkMuuWO1qfPPrkhDuZOJtfC8HMGUAq80DZwoq_Ff775inodTWBGO8u8Int1UUinrhJ9RV8uTJBcov_SvaYMtiteA-lFCiwoToP3qqYWtxgLIjvLrJaoA"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<h4 class="font-headline font-bold text-white leading-tight text-lg line-clamp-2">Princess Mononoke</h4>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">Movie</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Princess Mononoke</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">4K • REMASTER • 14.7 GB</p>
+</div>
+<!-- Poster Card 10 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Digital abstract landscape with floating geometric shapes and soft rose light in cinematic anime style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBgnMHJeXvAc45UZq72XsreCDBTMhCAOiJ8jNyazkrtcB0jsqtbSIF5HolAOugwNqUf9Ry48prNIiQ2jU0T7Q6xm5tlOF20XhgvZkjYANPfGWz6qgO12E_5_8R2DtGjolMa9oQuJh9NczDE7mvg6X2eSIZNEqbMQyxch3JnToQSqw8aLefviI9j06Ry6M3E5p2SbcFvf0ZGPNe1mvWqUXDaflfV1w1YW31vSCHkT_4n_gzLJfhApa4h1G7YtuHuqQ3sF9b_RLDkPA"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<h4 class="font-headline font-bold text-white leading-tight text-lg line-clamp-2">Paprika</h4>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">Movie</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Paprika</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">1080p • MKV • 8.4 GB</p>
+</div>
+<!-- Poster Card 11 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Vibrant summer sky with massive white clouds over a crystal clear lake anime background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnrhEcRX95MdlhSLoBByKCGOKZieOBY2z6ABp5QgfWvNHC5k8J30eP6zsRhGzJ3txepU8ytHGM8jzBW3r5A7jTutZmi2BiW4iz7GjHCLwnNLpBoHdiRMf9gRywuAUgsEd2Jy8sODizx0xdV_vx6GgbneEqDsVKNpFWmI9F9OKwrGEswi_cvhm0WxrIFt3nadguPIoboPCyiupWYifPxH_qGqUrGF5TPPbZF7sfi5vsPPy2lIV_StMQ_3lOcinneEasx1VKULV48w"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<h4 class="font-headline font-bold text-white leading-tight text-lg line-clamp-2">Wolf Children</h4>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">Movie</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Wolf Children</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">1080p • BLURAY • 11.2 GB</p>
+</div>
+<!-- Poster Card 12 -->
+<div class="group relative poster-card cursor-pointer">
+<div class="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-white/5 transition-transform duration-500">
+<img class="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" data-alt="Cyberpunk workspace with multiple screens and wiring in a dark industrial room anime style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuClLErAxZ1424SMeYDOWOozJ4OMt0gn974sa0LahwuLXqF_gUafXcghNYxwVryzZibYbOHZa46KIJrKpl5y3U93BU60U2XRRSwF_OhURqXm7wlA2xMaPpF0GexhQCTxSW-vY3UJDSjwFXStNtWRugUoGqu2GmBQlWlnLQHcZS8264Qp2_WRNhzhWpG6Akk_RclAi3yDkFMypvR4a82it4ZxLEmjOAjEDuj-LQbaBIDU9zx0xuS9FsDBdByLE_JZ0NoIaYCmRlVpIg"/>
+<div class="absolute inset-0 opacity-0 poster-overlay transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
+<h4 class="font-headline font-bold text-white leading-tight text-lg line-clamp-2">Ghost in the Shell</h4>
+<div class="flex items-center justify-between border-t border-white/10 pt-4 mt-4 mt-auto">
+<span class="font-label text-xs text-rose-200">Movie</span>
+<span class="material-symbols-outlined text-rose-300" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+</div>
+<h3 class="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-rose-300 transition-colors">Ghost in the Shell</h3>
+<p class="font-label text-[10px] text-neutral-500 uppercase tracking-widest">4K • REMUX • 54.1 GB</p>
+</div>
+</section>
+<!-- Floating Status Bar -->
+<div class="fixed bottom-8 right-8 left-72 bg-surface-container-lowest/80 backdrop-blur-md ring-1 ring-white/5 rounded-full px-6 py-3 flex items-center justify-between shadow-2xl z-[55]">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+<span class="font-label text-[10px] text-neutral-300 uppercase tracking-widest">Auto-Scan Active</span>
+</div>
+<div class="h-4 w-[1px] bg-white/10"></div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-rose-300 text-sm" data-icon="hard_drive">hard_drive</span>
+<span class="font-label text-[10px] text-neutral-300 uppercase tracking-widest">NAS-01: CONNECTED</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="font-label text-[10px] text-neutral-500 uppercase tracking-widest italic">Archiving current sector...</span>
+<div class="w-32 h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-secondary" style="width: 45%"></div>
+</div>
+</div>
+</div>
+</main>
+</body></html>
