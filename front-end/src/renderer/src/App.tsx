@@ -6,6 +6,7 @@ import DownloadQueue from './pages/DownloadQueue'
 import AnimeInfo from './pages/AnimeInfo'
 import BiuSync from './pages/BiuSync'
 import Settings from './pages/Settings'
+import LocalLibrary from './pages/LocalLibrary'
 import { downloadStore } from './stores/downloadStore'
 
 function DownloadProgressListener(): null {
@@ -26,7 +27,8 @@ function App(): JSX.Element {
         <Sidebar />
         <div className="ml-64 h-full overflow-y-auto custom-scrollbar">
           <Routes>
-            <Route path="/" element={<SearchDownload />} />
+            <Route path="/" element={<LocalLibrary />} />
+            <Route path="/search" element={<SearchDownload />} />
             <Route path="/queue" element={<DownloadQueue />} />
             <Route path="/anime-info" element={<AnimeInfo />} />
             <Route path="/biu-sync" element={<BiuSync />} />
