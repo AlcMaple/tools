@@ -39,7 +39,8 @@ contextBridge.exposeInMainWorld('girigiriApi', {
   ) => ipcRenderer.invoke('girigiri:download', title, epList, selectedIdxs, savePath),
   cancelDownload: (taskId: string) => ipcRenderer.invoke('girigiri:download-cancel', taskId),
   pauseDownload: (taskId: string) => ipcRenderer.invoke('girigiri:download-pause', taskId),
-  resumeDownload: (taskId: string) => ipcRenderer.invoke('girigiri:download-resume', taskId),
+  resumeDownload: (taskId: string, title?: string, epList?: { idx: number; name: string; url: string }[], pendingEps?: number[], savePath?: string) =>
+    ipcRenderer.invoke('girigiri:download-resume', taskId, title, epList, pendingEps, savePath),
   pauseEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('girigiri:download-pause-ep', taskId, ep),
   resumeEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('girigiri:download-resume-ep', taskId, ep),
   requeueEpisodes: (
@@ -53,8 +54,9 @@ contextBridge.exposeInMainWorld('girigiriApi', {
     taskId: string,
     title: string,
     epList: { idx: number; name: string; url: string }[],
-    failedEps: number[]
-  ) => ipcRenderer.invoke('girigiri:download-retry', taskId, title, epList, failedEps),
+    failedEps: number[],
+    savePath?: string
+  ) => ipcRenderer.invoke('girigiri:download-retry', taskId, title, epList, failedEps, savePath),
   onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
     const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
     ipcRenderer.on('download:progress', handler)
@@ -71,13 +73,14 @@ contextBridge.exposeInMainWorld('xifanApi', {
     ipcRenderer.invoke('xifan:download', title, templates, startEp, endEp, savePath),
   cancelDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-cancel', taskId),
   pauseDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-pause', taskId),
-  resumeDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-resume', taskId),
+  resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string) =>
+    ipcRenderer.invoke('xifan:download-resume', taskId, title, templates, pendingEps, savePath),
   pauseEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-pause-ep', taskId, ep),
   resumeEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-resume-ep', taskId, ep),
   requeueEpisodes: (taskId: string, title: string, templates: string[], eps: number[], savePath?: string) =>
     ipcRenderer.invoke('xifan:download-requeue', taskId, title, templates, eps, savePath),
-  retryDownload: (taskId: string, title: string, templates: string[], failedEps: number[]) =>
-    ipcRenderer.invoke('xifan:download-retry', taskId, title, templates, failedEps),
+  retryDownload: (taskId: string, title: string, templates: string[], failedEps: number[], savePath?: string) =>
+    ipcRenderer.invoke('xifan:download-retry', taskId, title, templates, failedEps, savePath),
   onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
     const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
     ipcRenderer.on('download:progress', handler)

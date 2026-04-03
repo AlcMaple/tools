@@ -17,7 +17,7 @@ declare global {
       ) => Promise<{ started: boolean; taskId: string }>
       cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
       pauseDownload: (taskId: string) => Promise<{ paused: boolean }>
-      resumeDownload: (taskId: string) => Promise<{ resumed: boolean }>
+      resumeDownload: (taskId: string, title?: string, epList?: GirigiriEpisode[], pendingEps?: number[], savePath?: string) => Promise<{ resumed: boolean }>
       pauseEpisode: (taskId: string, ep: number) => Promise<{ paused: boolean }>
       resumeEpisode: (taskId: string, ep: number) => Promise<{ resumed: boolean }>
       requeueEpisodes: (
@@ -31,7 +31,8 @@ declare global {
         taskId: string,
         title: string,
         epList: GirigiriEpisode[],
-        failedEps: number[]
+        failedEps: number[],
+        savePath?: string
       ) => Promise<{ started: boolean }>
       onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => () => void
     }
@@ -68,7 +69,7 @@ declare global {
       ) => Promise<{ started: boolean; pid?: number; taskId: string }>
       cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
       pauseDownload: (taskId: string) => Promise<{ paused: boolean }>
-      resumeDownload: (taskId: string) => Promise<{ resumed: boolean }>
+      resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string) => Promise<{ resumed: boolean }>
       pauseEpisode: (taskId: string, ep: number) => Promise<{ paused: boolean }>
       resumeEpisode: (taskId: string, ep: number) => Promise<{ resumed: boolean }>
       requeueEpisodes: (
@@ -82,7 +83,8 @@ declare global {
         taskId: string,
         title: string,
         templates: string[],
-        failedEps: number[]
+        failedEps: number[],
+        savePath?: string
       ) => Promise<{ started: boolean }>
       onDownloadProgress: (
         cb: (taskId: string, event: unknown) => void
