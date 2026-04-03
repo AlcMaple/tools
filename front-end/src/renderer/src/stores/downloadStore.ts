@@ -23,8 +23,7 @@ const tasks = new Map<string, DownloadTask>()
 const listeners = new Set<Listener>()
 
 function persist(): void {
-  const toSave = [...tasks.values()].map((t) => ({ ...t, epProgress: {} }))
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([...tasks.values()]))
 }
 
 function load(): void {
@@ -34,15 +33,15 @@ function load(): void {
     const saved = JSON.parse(raw) as DownloadTask[]
     for (const t of saved) {
       if (t.status === 'running' || t.status === 'paused') {
-        // Process died on app close — mark unfinished eps as error so user can retry
+        // App closed while active — restore as paused so user can resume with Range continuation
         const newEpStatus = { ...t.epStatus }
         for (const ep of Object.keys(newEpStatus)) {
           const s = newEpStatus[Number(ep)]
-          if (s === 'downloading' || s === 'pending') newEpStatus[Number(ep)] = 'error'
+          if (s === 'downloading' || s === 'pending') newEpStatus[Number(ep)] = 'paused'
         }
-        tasks.set(t.id, { ...t, status: 'error', epStatus: newEpStatus, epProgress: {} })
+        tasks.set(t.id, { ...t, status: 'paused', epStatus: newEpStatus })
       } else {
-        tasks.set(t.id, { ...t, epProgress: {} })
+        tasks.set(t.id, t)
       }
     }
   } catch { /* ignore corrupted data */ }
