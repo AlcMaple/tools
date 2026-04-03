@@ -1,59 +1,25 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import TopBar from '../components/TopBar'
+import defaultCover from '../assets/default-cover.png'
 
 export default function LocalLibrary(): JSX.Element {
   const [isScanModalOpen, setIsScanModalOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [posters, setPosters] = useState<any[]>([])
+  const [paths, setPaths] = useState<any[]>([])
+  const [isScanning, setIsScanning] = useState(false)
+  const [scanStatus, setScanStatus] = useState({ status: 'Idle', currentVal: 0, totalVal: 0 })
 
-  // Dummy data for posters based on the HTML mockup
-  const posters = [
-    {
-      id: 1,
-      title: "Neon Genesis Evangelion",
-      nativeTitle: "新世紀エヴァンゲリオン",
-      tags: "Sci-Fi • Psychological",
-      episodes: 26,
-      specs: "1080p • MKV • 24.2 GB",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuAAex9u9ekIpmrZFERhLoFACYNgVbdHfpS9TbMmcspi9tT7G3b-JQZE14ar6d8rKxVUqSGaX6nxuhX7vwd5P3K7E0myfXyomsZ6EQh4QPk8R_pQojJ-o-nMzk5wJXHpSXvE-alUxx1adwOkneZcYOKDIBU1R63-H1xSWKWGH-k2ZL8Gz16Hkw3uicOerQEzEK1oVK-qYsSj2w7SoH8C7lGKHjD1wHxHwlGtAnx-1lFaqf0uUhim8Uv7S6NRoeHGIjtiyG4p9rmmBQ"
-    },
-    {
-      id: 2,
-      title: "Clannad: After Story",
-      nativeTitle: "クラナド アフターストーリー",
-      tags: "Drama • Romance",
-      episodes: 24,
-      specs: "4K • Remastered • 48.5 GB",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuAcPcSQwYkMDnYC0vO1ySBUI_a0zwFpI15jvVnepRQJ0ILVaeokLZJThUV0rYlauv_kq_akiWN13746Yjq7Rp0NyMjf0xU89qIc0i8dYSZdaYCG3TlXqMrhigoWfP4LVXC4IRlNdibJGquh6G9A4jyib7Kt-VQ9ATIs2MXB8jhZKokxzih-OpPK5m_V-mrx5zrgbOjjhEMidJXuX3y0nVgg6DDHfprt2TfuAkjWvkuHuN6dAdbDSo9I7Zo7VKakSmKB9bu-KbGGrw"
-    },
-    {
-      id: 3,
-      title: "Cowboy Bebop",
-      nativeTitle: "カウボーイビバップ",
-      tags: "Space Western • Noir",
-      episodes: 26,
-      specs: "1080p • BLURAY • 18.9 GB",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuABaUtPmlJc5ma7PyolRn_gYPjp5ss_Hv-7I4X0zkrSzIsy5c7EaDjUawHugOIn8y2DUiFk_QzVxIfICrCS_HUaQoJzZS8uptUrgH7DVpRXGl_dY3RUsG0eSwWIynSbyVJL1OKQMuixjB0fgdG_oN67giG-4VbvTF6g_LQlUwr4_Dr81-1JObWd6nLOnQYAI4lCBgkKzQdIcc9GHNAYbIBWwtINamZixCJZqnhcKc8KqLuFyf5xkuJEgeNEKDkwaxVyRbcyKlgM_A"
-    },
-    {
-      id: 4,
-      title: "Mushishi",
-      nativeTitle: "蟲師",
-      tags: "Slice of Life • Supernatural",
-      episodes: 26,
-      specs: "1080p • WEB-DL • 12.1 GB",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuAtBSGzYMY1Rf_luL7yYcjeFlrCbdAA2_rdrNdCO6Am5FmsSWPTOoBr3hKjzvuiNqNIsI3hVysUvqEhTiF_ANMGCzvzhTaIgFT0PUurzKlFwQq_WO48d4s0VBgJ-StAlzL0LJWWb93tr1Syl_i5my_ki2uRAmanxEhKLeDZAr66oB9R8rplcHBy5_NDqcsdRgh3XRZwSNvMcIzJTuLxsQTuVzkKGUc1fYBaewa-bZaWpQK29O03K8K_5U4qdVUa5KOL0LekOEO3bw"
-    },
-    {
-      id: 5,
-      title: "Mononoke",
-      nativeTitle: "モノノ怪",
-      tags: "Mystery • Horror",
-      episodes: 12,
-      specs: "1080p • BD-RIP • 9.8 GB",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuDFLxxZM8TU9XgCK1TlW0cBbWuJt0PnE5pOjJWDHhYqWweuEi_FteoHiRoRsJD7NmAeSX1__1wPSrv6xMPOODfuAVMv-y8JuFl5WriwOCCJ_HYgdVL7Q0nja3MuXBM9ralF4KGzHm7zRxJLPlAyvlI-ElGxfsWICob_pwqk3q9GGETVZDT8ntEfNYJ-RxJIaaZX7dRbPuv2S8qYi_rllgjo6xGVtqUZwDcxFaSiEUjP5tFZ250uGz9-IwcgQ1mtdBZPkii8wLQwkA"
-    }
-  ]
+  useEffect(() => {
+    window.libraryApi.getEntries().then(setPosters)
+    window.libraryApi.getPaths().then(setPaths)
+    const cleanup = window.libraryApi.onScanStatus((status) => {
+      setScanStatus(status)
+    })
+    return cleanup
+  }, [])
 
+  // Dynamic data fetched from libraryApi
   const filteredPosters = useMemo(() => {
     if (!searchQuery.trim()) return posters;
     const query = searchQuery.toLowerCase();
@@ -61,7 +27,7 @@ export default function LocalLibrary(): JSX.Element {
       p.title.toLowerCase().includes(query) || 
       p.nativeTitle.toLowerCase().includes(query)
     );
-  }, [searchQuery]);
+  }, [searchQuery, posters]); // 👈 这里加上了 posters 依赖
 
   return (
     <div className="relative min-h-full bg-background">
@@ -73,11 +39,11 @@ export default function LocalLibrary(): JSX.Element {
           <div>
             <h2 className="font-headline font-black text-5xl tracking-tighter text-on-surface mb-2">Local Library</h2>
             <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm">
-              <span className="flex items-center gap-1.5"><span className="text-primary font-bold">482</span> Titles</span>
+              <span className="flex items-center gap-1.5"><span className="text-primary font-bold">{posters.length}</span> Titles</span>
               <span className="w-1 h-1 bg-outline-variant rounded-full"></span>
-              <span className="flex items-center gap-1.5"><span className="text-primary font-bold">12.4</span> TB Indexed</span>
+              <span className="flex items-center gap-1.5"><span className="text-primary font-bold">{posters.reduce((acc, p) => acc + (p.episodes || 0), 0)}</span> Episodes</span>
               <span className="w-1 h-1 bg-outline-variant rounded-full"></span>
-              <span className="flex items-center gap-1.5">Last update: 2m ago</span>
+              <span className="flex items-center gap-1.5">Last update: recently</span>
             </div>
           </div>
           <button 
@@ -109,7 +75,7 @@ export default function LocalLibrary(): JSX.Element {
               <img 
                 className="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500" 
                 alt={poster.title} 
-                src={poster.image}
+                src={poster.image || defaultCover} 
               />
               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
                 <div className="mb-4">
@@ -133,21 +99,23 @@ export default function LocalLibrary(): JSX.Element {
       <div className="fixed bottom-8 right-8 bg-surface-container-lowest/80 backdrop-blur-md ring-1 ring-outline-variant/30 rounded-full px-6 py-3 flex items-center justify-between shadow-2xl z-[55]">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">Auto-Scan Active</span>
+            <div className={`w-2 h-2 ${isScanning ? 'bg-green-400 animate-pulse' : 'bg-outline-variant'} rounded-full`}></div>
+            <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">{isScanning ? 'Scanning Active' : 'Idle'}</span>
           </div>
           <div className="h-4 w-[1px] bg-outline-variant/30"></div>
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-sm leading-none">hard_drive</span>
-            <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">NAS-01: CONNECTED</span>
+            <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">{paths.length} SOURCES</span>
           </div>
         </div>
-        <div className="flex items-center gap-4 ml-8">
-          <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest italic">Archiving current sector...</span>
-          <div className="w-32 h-1 bg-surface-container-highest rounded-full overflow-hidden">
-            <div className="h-full bg-secondary" style={{ width: '45%' }}></div>
+        {isScanning && (
+          <div className="flex items-center gap-4 ml-8">
+            <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest italic">{scanStatus.status}</span>
+            <div className="w-32 h-1 bg-surface-container-highest rounded-full overflow-hidden">
+              <div className="h-full bg-secondary transition-all" style={{ width: `${scanStatus.totalVal > 0 ? (scanStatus.currentVal / scanStatus.totalVal) * 100 : 0}%` }}></div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Scan Folders Modal */}
@@ -174,34 +142,38 @@ export default function LocalLibrary(): JSX.Element {
             
             <div className="p-8 space-y-4">
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-4 rounded-xl bg-surface-container-high border border-outline-variant/30 group">
-                  <div className="flex items-center gap-4">
-                    <span className="material-symbols-outlined text-on-surface-variant leading-none">folder</span>
-                    <div>
-                      <p className="text-xs font-label text-on-surface font-bold">D:\Anime</p>
-                      <p className="text-[10px] text-on-surface-variant font-label uppercase">Main Archive</p>
+                {paths.map(p => (
+                  <div key={p.path} className="flex items-center justify-between p-4 rounded-xl bg-surface-container-high border border-outline-variant/30 group">
+                    <div className="flex items-center gap-4">
+                      <span className="material-symbols-outlined text-on-surface-variant leading-none">folder</span>
+                      <div>
+                        <p className="text-xs font-label text-on-surface font-bold">{p.path}</p>
+                        <p className="text-[10px] text-on-surface-variant font-label uppercase">{p.label}</p>
+                      </div>
                     </div>
+                    <button 
+                      className="text-on-surface-variant hover:text-error opacity-0 group-hover:opacity-100 transition-all leading-none"
+                      onClick={async () => {
+                        const newPaths = await window.libraryApi.removePath(p.path);
+                        setPaths(newPaths);
+                      }}
+                    >
+                      <span className="material-symbols-outlined text-sm leading-none">delete</span>
+                    </button>
                   </div>
-                  <button className="text-on-surface-variant hover:text-error opacity-0 group-hover:opacity-100 transition-all leading-none">
-                    <span className="material-symbols-outlined text-sm leading-none">delete</span>
-                  </button>
-                </div>
-                
-                <div className="flex items-center justify-between p-4 rounded-xl bg-surface-container-high border border-outline-variant/30 group">
-                  <div className="flex items-center gap-4">
-                    <span className="material-symbols-outlined text-on-surface-variant leading-none">folder</span>
-                    <div>
-                      <p className="text-xs font-label text-on-surface font-bold">E:\Downloads\Seasonals</p>
-                      <p className="text-[10px] text-on-surface-variant font-label uppercase">Staging Area</p>
-                    </div>
-                  </div>
-                  <button className="text-on-surface-variant hover:text-error opacity-0 group-hover:opacity-100 transition-all leading-none">
-                    <span className="material-symbols-outlined text-sm leading-none">delete</span>
-                  </button>
-                </div>
+                ))}
               </div>
               
-              <button className="w-full py-4 border-2 border-dashed border-outline-variant/30 rounded-xl text-on-surface-variant hover:text-primary hover:border-primary/50 hover:bg-primary/5 transition-all flex items-center justify-center gap-3 font-label text-xs font-bold uppercase tracking-widest">
+              <button 
+                className="w-full py-4 border-2 border-dashed border-outline-variant/30 rounded-xl text-on-surface-variant hover:text-primary hover:border-primary/50 hover:bg-primary/5 transition-all flex items-center justify-center gap-3 font-label text-xs font-bold uppercase tracking-widest"
+                onClick={async () => {
+                  const folder = await window.systemApi.pickFolder();
+                  if (folder) {
+                    const newPaths = await window.libraryApi.addPath(folder, 'Local Folder');
+                    setPaths(newPaths);
+                  }
+                }}
+              >
                 <span className="material-symbols-outlined text-sm leading-none">add</span>
                 Add New Path
               </button>
@@ -214,8 +186,18 @@ export default function LocalLibrary(): JSX.Element {
               >
                 Cancel
               </button>
-              <button className="flex-[2] py-4 bg-primary text-on-primary font-label text-xs font-bold uppercase tracking-widest rounded-full shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95">
-                Start Scanning
+              <button 
+                className="flex-[2] py-4 bg-primary text-on-primary font-label text-xs font-bold uppercase tracking-widest rounded-full shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95 disabled:opacity-50"
+                disabled={isScanning}
+                onClick={async () => {
+                  setIsScanning(true);
+                  setIsScanModalOpen(false);
+                  const entries = await window.libraryApi.scan();
+                  setPosters(entries);
+                  setIsScanning(false);
+                }}
+              >
+                {isScanning ? 'Scanning...' : 'Start Scanning'}
               </button>
             </div>
           </div>

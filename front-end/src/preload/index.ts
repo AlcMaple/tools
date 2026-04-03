@@ -87,3 +87,16 @@ contextBridge.exposeInMainWorld('xifanApi', {
     return () => ipcRenderer.removeListener('download:progress', handler)
   },
 })
+
+contextBridge.exposeInMainWorld('libraryApi', {
+  getPaths: () => ipcRenderer.invoke('library:get-paths'),
+  addPath: (folderPath: string, label: string) => ipcRenderer.invoke('library:add-path', folderPath, label),
+  removePath: (folderPath: string) => ipcRenderer.invoke('library:remove-path', folderPath),
+  getEntries: () => ipcRenderer.invoke('library:get-entries'),
+  scan: () => ipcRenderer.invoke('library:scan'),
+  onScanStatus: (cb: (status: { status: string, currentVal: number, totalVal: number }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, status: any) => cb(status)
+    ipcRenderer.on('library:scan-status', handler)
+    return () => ipcRenderer.removeListener('library:scan-status', handler)
+  }
+})
