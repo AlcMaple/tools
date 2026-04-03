@@ -2,6 +2,22 @@ import type { BgmSearchResult, BgmDetail } from './types/bgm'
 import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 
+export interface LibraryPath {
+  path: string;
+  label: string;
+}
+
+export interface LibraryEntry {
+  id: string;
+  title: string;
+  nativeTitle: string;
+  tags: string;
+  episodes: number;
+  specs: string;
+  image: string;
+  folderPath: string;
+}
+
 declare global {
   interface Window {
     girigiriApi: {
@@ -90,5 +106,14 @@ declare global {
         cb: (taskId: string, event: unknown) => void
       ) => () => void
     }
+    libraryApi: {
+      getPaths: () => Promise<LibraryPath[]>
+      addPath: (folderPath: string, label: string) => Promise<LibraryPath[]>
+      removePath: (folderPath: string) => Promise<LibraryPath[]>
+      getEntries: () => Promise<LibraryEntry[]>
+      scan: () => Promise<LibraryEntry[]>
+      onScanStatus: (cb: (status: { status: string, currentVal: number, totalVal: number }) => void) => () => void
+    }
   }
 }
+
