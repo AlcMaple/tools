@@ -1,4 +1,5 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, net } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, net, protocol } from 'electron'
+import { pathToFileURL } from 'url'
 import { join } from 'path'
 import { statfs } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
@@ -8,6 +9,7 @@ import { getCaptcha as xifanGetCaptcha, verifyCaptcha as xifanVerify, search as 
 import { downloadSingleEp as xifanDownloadSingleEp, DlEvent } from './xifan/download'
 import { getCaptcha as giriGetCaptcha, verifyCaptcha as giriVerify, search as giriSearch, watch as giriWatch, giriSession } from './girigiri/api'
 import { downloadSingleEp as giriDownloadSingleEp } from './girigiri/download'
+import { getPaths, addPath, removePath, getEntries, scanLibrary } from './library/api'
 
 // ── IPC 处理器 ──────────────────────────────────────────────
 ipcMain.handle('bgm:search', async (_event, keyword: string) => {
@@ -27,6 +29,16 @@ ipcMain.handle('girigiri:captcha', async () => giriGetCaptcha())
 ipcMain.handle('girigiri:verify', async (_event, code: string) => giriVerify(code))
 ipcMain.handle('girigiri:search', async (_event, keyword: string) => giriSearch(keyword))
 ipcMain.handle('girigiri:watch', async (_event, playUrl: string) => giriWatch(playUrl))
+
+ipcMain.handle('library:get-paths', async () => getPaths())
+ipcMain.handle('library:add-path', async (_event, folderPath: string, label: string) => addPath(folderPath, label))
+ipcMain.handle('library:remove-path', async (_event, folderPath: string) => removePath(folderPath))
+ipcMain.handle('library:get-entries', async () => getEntries())
+ipcMain.handle('library:scan', async (event) => {
+  return scanLibrary((status: string, currentVal: number, totalVal: number) => {
+    event.sender.send('library:scan-status', { status, currentVal, totalVal })
+  })
+})
 
 // ── System stats ─────────────────────────────────────────────
 let _speedAccum = 0
@@ -459,7 +471,7 @@ function createWindow(): void {
     },
   })
 
-  // mainWindow.webContents.openDevTools()
+  mainWindow.webContents.openDevTools()
 
   mainWindow.on('ready-to-show', () => { mainWindow.show() })
 
@@ -476,6 +488,14 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+
+  protocol.handle('archivist', (request) => {
+    // 把请求的 URL (archivist://C:/Users/...) 提取出后面的真实本地路径
+    const filePath = request.url.slice('archivist://'.length)
+    // 解码并转换为 file:// 标准格式返回给前端流
+    return net.fetch(pathToFileURL(decodeURIComponent(filePath)).toString())
+  })
+
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
