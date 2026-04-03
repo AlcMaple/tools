@@ -196,7 +196,14 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
 
   const handlePauseResume = async (): Promise<void> => {
     if (isPaused) {
-      await api.resumeDownload(task.id)
+      const pendingEps = Object.entries(task.epStatus)
+        .filter(([, s]) => s === 'paused')
+        .map(([ep]) => Number(ep))
+      if (task.source === 'girigiri') {
+        await window.girigiriApi.resumeDownload(task.id, task.title, task.girigiriEps, pendingEps, task.savePath)
+      } else {
+        await window.xifanApi.resumeDownload(task.id, task.title, task.templates, pendingEps, task.savePath)
+      }
       downloadStore.updateTask(task.id, { status: 'running' })
     } else {
       await api.pauseDownload(task.id)
@@ -213,18 +220,18 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
     if (failedEps.length === 0) return
     downloadStore.retryTask(task.id)
     if (task.source === 'girigiri') {
-      await window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, failedEps)
+      await window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, failedEps, task.savePath)
     } else {
-      await window.xifanApi.retryDownload(task.id, task.title, task.templates, failedEps)
+      await window.xifanApi.retryDownload(task.id, task.title, task.templates, failedEps, task.savePath)
     }
   }
 
   const handleRetryEp = async (ep: number): Promise<void> => {
     downloadStore.retryTask(task.id)
     if (task.source === 'girigiri') {
-      await window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, [ep])
+      await window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, [ep], task.savePath)
     } else {
-      await window.xifanApi.retryDownload(task.id, task.title, task.templates, [ep])
+      await window.xifanApi.retryDownload(task.id, task.title, task.templates, [ep], task.savePath)
     }
   }
 
@@ -536,8 +543,14 @@ function DownloadQueue(): JSX.Element {
   const handleStartAll = async (): Promise<void> => {
     await Promise.all(
       paused.map(async (t) => {
-        const api = t.source === 'girigiri' ? window.girigiriApi : window.xifanApi
-        await api.resumeDownload(t.id)
+        const pendingEps = Object.entries(t.epStatus)
+          .filter(([, s]) => s === 'paused')
+          .map(([ep]) => Number(ep))
+        if (t.source === 'girigiri') {
+          await window.girigiriApi.resumeDownload(t.id, t.title, t.girigiriEps, pendingEps, t.savePath)
+        } else {
+          await window.xifanApi.resumeDownload(t.id, t.title, t.templates, pendingEps, t.savePath)
+        }
         downloadStore.updateTask(t.id, { status: 'running' })
       })
     )

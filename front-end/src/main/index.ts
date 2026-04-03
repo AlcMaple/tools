@@ -149,9 +149,23 @@ ipcMain.handle('xifan:download-pause', (_event, taskId: string) => {
   return { paused: true }
 })
 
-ipcMain.handle('xifan:download-resume', (_event, taskId: string) => {
+ipcMain.handle('xifan:download-resume', (event, taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string) => {
   const q = episodeQueues.get(taskId)
-  if (q) { q.taskPaused = false; startNextEp(taskId) }
+  if (!q) {
+    // Queue lost after app restart — recreate it and start downloading
+    if (title && templates && pendingEps?.length) {
+      episodeQueues.set(taskId, {
+        title, templates, savePath: savePath ?? null,
+        pending: [...pendingEps], priorityFront: [], pausedEps: new Set(),
+        current: null, currentAbort: null, taskPaused: false, cancelled: false,
+        sender: event.sender,
+      })
+      startNextEp(taskId)
+    }
+    return { resumed: true }
+  }
+  q.taskPaused = false
+  startNextEp(taskId)
   return { resumed: true }
 })
 
@@ -189,9 +203,19 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('xifan:download-retry', (_event, taskId: string, _title: string, _templates: string[], failedEps: number[]) => {
+ipcMain.handle('xifan:download-retry', (event, taskId: string, title: string, templates: string[], failedEps: number[], savePath?: string) => {
   const q = episodeQueues.get(taskId)
-  if (!q) return { started: false }
+  if (!q) {
+    // Queue lost after app restart — recreate it from the persisted task info
+    episodeQueues.set(taskId, {
+      title, templates, savePath: savePath ?? null,
+      pending: [...failedEps], priorityFront: [], pausedEps: new Set(),
+      current: null, currentAbort: null, taskPaused: false, cancelled: false,
+      sender: event.sender,
+    })
+    startNextEp(taskId)
+    return { started: true }
+  }
   for (const ep of [...failedEps].reverse()) { q.pausedEps.delete(ep); q.priorityFront.unshift(ep) }
   if (q.current === null && !q.taskPaused) startNextEp(taskId)
   return { started: true }
@@ -295,9 +319,23 @@ ipcMain.handle('girigiri:download-pause', (_event, taskId: string) => {
   return { paused: true }
 })
 
-ipcMain.handle('girigiri:download-resume', (_event, taskId: string) => {
+ipcMain.handle('girigiri:download-resume', (event, taskId: string, title?: string, epList?: { idx: number; name: string; url: string }[], pendingEps?: number[], savePath?: string) => {
   const q = giriEpQueues.get(taskId)
-  if (q) { q.taskPaused = false; startNextGiriEp(taskId) }
+  if (!q) {
+    // Queue lost after app restart — recreate it and start downloading
+    if (title && epList && pendingEps?.length) {
+      giriEpQueues.set(taskId, {
+        title, epList, savePath: savePath ?? null,
+        pending: [...pendingEps], priorityFront: [], pausedEps: new Set(),
+        current: null, currentAbort: null, taskPaused: false, cancelled: false,
+        sender: event.sender,
+      })
+      startNextGiriEp(taskId)
+    }
+    return { resumed: true }
+  }
+  q.taskPaused = false
+  startNextGiriEp(taskId)
   return { resumed: true }
 })
 
@@ -334,9 +372,19 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('girigiri:download-retry', (_event, taskId: string, _title: string, _epList: unknown, failedEps: number[]) => {
+ipcMain.handle('girigiri:download-retry', (event, taskId: string, title: string, epList: { idx: number; name: string; url: string }[], failedEps: number[], savePath?: string) => {
   const q = giriEpQueues.get(taskId)
-  if (!q) return { started: false }
+  if (!q) {
+    // Queue lost after app restart — recreate it from the persisted task info
+    giriEpQueues.set(taskId, {
+      title, epList, savePath: savePath ?? null,
+      pending: [...failedEps], priorityFront: [], pausedEps: new Set(),
+      current: null, currentAbort: null, taskPaused: false, cancelled: false,
+      sender: event.sender,
+    })
+    startNextGiriEp(taskId)
+    return { started: true }
+  }
   for (const ep of [...failedEps].reverse()) { q.pausedEps.delete(ep); q.priorityFront.unshift(ep) }
   if (q.current === null && !q.taskPaused) startNextGiriEp(taskId)
   return { started: true }
