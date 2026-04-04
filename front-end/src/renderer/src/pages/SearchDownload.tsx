@@ -120,10 +120,9 @@ function getCachedXifanWatch(url: string): XifanWatchInfo | null {
   try {
     return (
       (
-        JSON.parse(localStorage.getItem("xifan_watch_cache_v3") || "{}") as Record<
-          string,
-          XifanWatchInfo
-        >
+        JSON.parse(
+          localStorage.getItem("xifan_watch_cache_v3") || "{}",
+        ) as Record<string, XifanWatchInfo>
       )[url] ?? null
     );
   } catch {
@@ -221,7 +220,7 @@ function SearchingState(): JSX.Element {
     <div className="flex flex-col items-center justify-center py-24 gap-6">
       <div className="w-12 h-12 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
       <p className="font-label text-xs text-on-surface-variant/50 tracking-widest uppercase">
-        Indexing archives...
+        Indexing Maple Tools...
       </p>
     </div>
   );
