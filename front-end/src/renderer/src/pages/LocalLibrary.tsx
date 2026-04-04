@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import TopBar from "../components/TopBar";
-import defaultCover from "../assets/default-cover.png";
+import defaultCover from "../assets/default-cover-2.png";
 import type { LibraryFile } from "../env";
 
 type SortMode = "default" | "recent" | "size" | "az";
@@ -169,91 +169,67 @@ export default function LocalLibrary(): JSX.Element {
           </div>
         </section>
 
-        {/* Poster Wall Grid */}
+        {/* Card Grid */}
         {isRefreshing ? (
           <SearchingState />
         ) : (
-          <section className="px-12 pb-32 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-8 gap-y-12">
+          <section className="px-12 pb-32 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {filteredPosters.length > 0 ? (
               filteredPosters.map((poster) => (
-                <div key={poster.id} className="group relative cursor-pointer">
-                  <div className="aspect-[2/3] w-full rounded-lg overflow-hidden bg-surface-container-lowest relative ring-1 ring-outline-variant/30 transition-transform duration-500">
+                <div
+                  key={poster.id}
+                  className="group bg-surface-container-low rounded-xl overflow-hidden border border-white/5 transition-all duration-300"
+                >
+                  {/* Landscape Thumbnail with hover overlay */}
+                  <div className="aspect-video w-full overflow-hidden bg-surface-container-lowest relative">
                     <img
-                      className="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500"
+                      className="w-full h-full object-cover grayscale-[30%] group-hover:grayscale-0 transition-all duration-700"
                       alt={poster.title}
                       src={poster.image || defaultCover}
                     />
-
-                    {/* Hover Overlay */}
-                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-[#1f1f1f]/70 to-[#131313]/85 backdrop-blur-md p-6 flex flex-col justify-between">
-                      <div className="space-y-1">
-                        <h4 className="font-headline font-black text-xl text-white leading-tight mb-4 line-clamp-2">
-                          {poster.title}
-                        </h4>
-                        <p className="font-label text-xs font-bold text-primary tracking-[0.2em] uppercase">
-                          LOCAL
-                        </p>
-                        <p className="font-label text-sm text-white/80">
-                          {poster.episodes || 0} Episodes
-                        </p>
-                      </div>
-                      <div className="w-full border-t border-white/10 mt-2 mb-4" />
-                      <div className="grid grid-cols-3 gap-3 w-full mt-auto">
-                        {/* Show file list */}
-                        <button
-                          className="aspect-square rounded-lg bg-white/10 text-white flex items-center justify-center hover:bg-primary hover:text-on-primary transition-all"
-                          title="Show File List"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPoster(poster);
-                          }}
-                        >
-                          <span className="material-symbols-outlined text-xl leading-none">
-                            list
-                          </span>
-                        </button>
-                        {/* Open folder */}
-                        <button
-                          className="aspect-square rounded-lg bg-white/10 text-white flex items-center justify-center hover:bg-primary hover:text-on-primary transition-all"
-                          title="Open Folder"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            window.libraryApi.openFolder(poster.folderPath);
-                          }}
-                        >
-                          <span className="material-symbols-outlined text-xl leading-none">
-                            folder_open
-                          </span>
-                        </button>
-                        {/* Play first video */}
-                        <button
-                          className="aspect-square rounded-lg bg-primary text-on-primary flex items-center justify-center hover:scale-105 transition-all shadow-lg shadow-primary/20"
-                          title="Play"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            window.libraryApi.playFolder(poster.folderPath);
-                          }}
-                        >
-                          <span className="material-symbols-outlined text-2xl font-bold leading-none">
-                            play_arrow
-                          </span>
-                        </button>
-                      </div>
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-4">
+                      <button
+                        className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all flex items-center justify-center"
+                        title="View File List"
+                        onClick={(e) => { e.stopPropagation(); setSelectedPoster(poster); }}
+                      >
+                        <span className="material-symbols-outlined leading-none">list</span>
+                      </button>
+                      <button
+                        className="w-14 h-14 rounded-full bg-primary text-on-primary shadow-xl shadow-primary/20 hover:scale-110 transition-all flex items-center justify-center"
+                        title="Play"
+                        onClick={(e) => { e.stopPropagation(); window.libraryApi.playFolder(poster.folderPath); }}
+                      >
+                        <span className="material-symbols-outlined text-2xl leading-none" style={{ fontVariationSettings: "'FILL' 1" }}>
+                          play_arrow
+                        </span>
+                      </button>
+                      <button
+                        className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all flex items-center justify-center"
+                        title="Open Folder"
+                        onClick={(e) => { e.stopPropagation(); window.libraryApi.openFolder(poster.folderPath); }}
+                      >
+                        <span className="material-symbols-outlined leading-none">folder_open</span>
+                      </button>
                     </div>
                   </div>
 
-                  <div className="mt-4 flex flex-col gap-1">
-                    <h3 className="font-headline font-bold text-on-surface truncate group-hover:text-primary transition-colors">
+                  {/* Info Area */}
+                  <div className="p-5 flex flex-col">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex flex-col gap-1">
+                        <p className="font-label text-[10px] font-bold text-primary tracking-[0.2em] uppercase">LOCAL</p>
+                        <p className="font-label text-[11px] text-on-surface-variant uppercase tracking-widest">
+                          {poster.episodes || 0} Episodes
+                        </p>
+                      </div>
+                      <span className="font-label text-[10px] text-on-surface-variant/60 uppercase tracking-widest text-right">
+                        {poster.specs || "Unknown"}
+                      </span>
+                    </div>
+                    <h3 className="font-headline font-bold text-xl text-on-surface truncate group-hover:text-primary transition-colors">
                       {poster.title}
                     </h3>
-                    <div className="flex items-center justify-between">
-                      <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
-                        {poster.specs || "UNKNOWN SIZE"}
-                      </p>
-                      <p className="font-label text-[10px] text-primary font-bold uppercase tracking-widest">
-                        {poster.episodes || 0} Episodes
-                      </p>
-                    </div>
                   </div>
                 </div>
               ))

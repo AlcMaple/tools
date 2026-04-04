@@ -1,3 +1,8 @@
+declare module '*.png' {
+  const src: string
+  export default src
+}
+
 import type { BgmSearchResult, BgmDetail } from './types/bgm'
 import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
