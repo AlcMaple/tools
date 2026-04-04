@@ -93,6 +93,10 @@ contextBridge.exposeInMainWorld('libraryApi', {
   addPath: (folderPath: string, label: string) => ipcRenderer.invoke('library:add-path', folderPath, label),
   removePath: (folderPath: string) => ipcRenderer.invoke('library:remove-path', folderPath),
   getEntries: () => ipcRenderer.invoke('library:get-entries'),
+  getFiles: (folderPath: string) => ipcRenderer.invoke('library:get-files', folderPath),
+  openFolder: (folderPath: string) => ipcRenderer.invoke('library:open-folder', folderPath),
+  playVideo: (filePath: string) => ipcRenderer.invoke('library:play-video', filePath),
+  playFolder: (folderPath: string) => ipcRenderer.invoke('library:play-folder', folderPath),
   scan: () => ipcRenderer.invoke('library:scan'),
   onScanStatus: (cb: (status: { status: string, currentVal: number, totalVal: number }) => void) => {
     const handler = (_: Electron.IpcRendererEvent, status: any) => cb(status)

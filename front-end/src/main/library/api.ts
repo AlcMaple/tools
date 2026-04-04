@@ -20,6 +20,14 @@ export interface LibraryEntry {
   specs: string;
   image: string;
   folderPath: string;
+  addedAt: number;
+  totalSize: number;
+}
+
+export interface LibraryFile {
+  name: string;
+  path: string;
+  sizeBytes: number;
 }
 
 const getPathsFile = () => join(app.getPath('userData'), 'library_paths.json')
@@ -129,12 +137,34 @@ export function setEntries(entries: LibraryEntry[]): void {
 // ==========================================
 // 核心扫描模块
 // ==========================================
+export async function getFiles(folderPath: string): Promise<LibraryFile[]> {
+  const VIDEO_EXTS = ['mp4', 'mkv', 'avi', 'flv', 'mov', 'webm']
+  try {
+    const items = await readdir(folderPath, { withFileTypes: true })
+    const files: LibraryFile[] = []
+    for (const item of items) {
+      if (!item.isFile() || item.name.startsWith('.')) continue
+      const ext = item.name.split('.').pop()?.toLowerCase() || ''
+      if (!VIDEO_EXTS.includes(ext)) continue
+      try {
+        const s = await stat(join(folderPath, item.name))
+        files.push({ name: item.name, path: join(folderPath, item.name), sizeBytes: s.size })
+      } catch { /* ignore */ }
+    }
+    return files.sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    return []
+  }
+}
+
 export async function scanLibrary(
   onProgress: (status: string, currentVal: number, totalVal: number) => void,
   isAutoScan: boolean = false // 👈 新增标识：区分是手动强制扫描，还是后台自动更新
 ): Promise<LibraryEntry[]> {
   const paths = getPaths()
   const entries: LibraryEntry[] = []
+  // 保留旧条目的 addedAt，避免重扫时丢失首次发现时间
+  const existingMap = new Map(getEntries().map(e => [e.id, e]))
 
   const thumbnailsDir = join(app.getPath('userData'), 'thumbnails')
 
@@ -236,8 +266,10 @@ export async function scanLibrary(
             tags: 'Local',
             episodes: episodeCount,
             specs: `${episodeCount > 0 ? 'Varying' : 'Unknown'} • ${sizeGB} GB`,
-            image: imagePath, 
-            folderPath: currentPath
+            image: imagePath,
+            folderPath: currentPath,
+            addedAt: existingMap.get(id)?.addedAt ?? Date.now(),
+            totalSize,
           })
 
           onProgress(`Found: ${folderName}`, entries.length, entries.length + 1)
