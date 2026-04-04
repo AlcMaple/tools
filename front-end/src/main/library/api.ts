@@ -1,10 +1,14 @@
 import { app } from 'electron'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'fs'
-import { readdir, stat } from 'fs/promises'
+import { readdir, stat, unlink } from 'fs/promises'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import crypto from 'crypto'
 import ffmpeg from 'fluent-ffmpeg'
 import chokidar from 'chokidar'
+
+const execFileAsync = promisify(execFile)
 
 export interface LibraryPath {
   path: string;
@@ -157,6 +161,48 @@ export async function getFiles(folderPath: string): Promise<LibraryFile[]> {
   }
 }
 
+// ==========================================
+// 缩略图提取模块
+// ==========================================
+
+/**
+ * 从视频文件提取缩略图，保存到 outputPath（.jpg）。
+ * macOS：优先用 qlmanage（与访达/QuickLook 完全一致），失败时 fallback 到 ffmpeg 截帧。
+ * Windows/Linux：直接用 ffmpeg 截帧。
+ */
+async function extractVideoThumbnail(videoPath: string, outputPath: string): Promise<boolean> {
+  if (process.platform === 'darwin') {
+    const folderName = basename(videoPath) // e.g. "ep01.mp4"
+    const outputDir = outputPath.substring(0, outputPath.lastIndexOf('/'))
+    const qlOut = join(outputDir, `${folderName}.png`) // qlmanage 固定输出 <filename>.png
+
+    try {
+      await execFileAsync('/usr/bin/qlmanage', ['-t', '-s', '640', '-o', outputDir, videoPath], {
+        timeout: 15000,
+      })
+      if (existsSync(qlOut)) {
+        // 用 sips 将 PNG 转为 JPG（macOS 内置，无需 ffmpeg，不受 PATH 影响）
+        try {
+          await execFileAsync('/usr/bin/sips', ['-s', 'format', 'jpeg', qlOut, '--out', outputPath], { timeout: 10000 })
+          await unlink(qlOut).catch(() => { /* ignore */ })
+          if (existsSync(outputPath)) return true
+        } catch { /* sips 失败，清理并 fallback */ }
+        await unlink(qlOut).catch(() => { /* ignore */ })
+      }
+    } catch { /* qlmanage 失败，fallback 到 ffmpeg */ }
+  }
+
+  // Windows / Linux / macOS fallback：ffmpeg 截取 10% 处帧
+  const filename = outputPath.split('/').pop()!
+  const folder = outputPath.substring(0, outputPath.lastIndexOf('/'))
+  return new Promise<boolean>((resolve) => {
+    ffmpeg(videoPath)
+      .screenshots({ timestamps: ['10%'], filename, folder, size: '640x?' })
+      .on('end', () => resolve(true))
+      .on('error', () => resolve(false))
+  })
+}
+
 export async function scanLibrary(
   onProgress: (status: string, currentVal: number, totalVal: number) => void,
   isAutoScan: boolean = false // 👈 新增标识：区分是手动强制扫描，还是后台自动更新
@@ -218,42 +264,35 @@ export async function scanLibrary(
             const thumbnailFilename = `${id}.jpg`
             const fullThumbnailPath = join(thumbnailsDir, thumbnailFilename)
 
-            // 因为后台自动扫描不会清空目录，这里存在的话就直接复用，秒出结果
+            // 后台自动扫描不清空目录，已有缓存直接复用
             if (existsSync(fullThumbnailPath)) {
               imagePath = `archivist://${fullThumbnailPath.replace(/\\/g, '/')}`
             } else {
-              onProgress(`Checking embedded cover for ${folderName}...`, entries.length, entries.length + 1)
+              // 先尝试 attached_pic 嵌入封面（BD/CRC 资源常见），否则走 extractVideoThumbnail
+              onProgress(`Extracting thumbnail for ${folderName}...`, entries.length, entries.length + 1)
 
-              const hasEmbeddedCover = await new Promise<boolean>((resolve) => {
+              const success = await new Promise<boolean>((resolve) => {
                 ffmpeg.ffprobe(firstVideoPath, (err, metadata) => {
-                  if (err || !metadata || !metadata.streams) {
-                    return resolve(false)
-                  }
-
-                  const coverStreamIndex = metadata.streams.findIndex(
+                  const coverStreamIndex = metadata?.streams?.findIndex(
                     (s) => s.disposition && s.disposition.attached_pic === 1
-                  )
+                  ) ?? -1
 
-                  if (coverStreamIndex === -1) {
-                    return resolve(false) 
+                  if (!err && coverStreamIndex !== -1) {
+                    // 有嵌入封面：直接复制，无需解码，最快
+                    ffmpeg(firstVideoPath)
+                      .outputOptions([`-map 0:${coverStreamIndex}`, '-c copy'])
+                      .output(fullThumbnailPath)
+                      .on('end', () => resolve(true))
+                      .on('error', () => extractVideoThumbnail(firstVideoPath, fullThumbnailPath).then(resolve))
+                      .run()
+                  } else {
+                    // 无嵌入封面：macOS 用 qlmanage（和访达完全一致），其他平台 ffmpeg 截帧
+                    extractVideoThumbnail(firstVideoPath, fullThumbnailPath).then(resolve)
                   }
-
-                  ffmpeg(firstVideoPath)
-                    .outputOptions([
-                      `-map 0:${coverStreamIndex}`, 
-                      '-c copy'                     
-                    ])
-                    .output(fullThumbnailPath)
-                    .on('end', () => resolve(true))
-                    .on('error', (e) => {
-                      console.error(`Failed to extract embedded cover for ${folderName}:`, e)
-                      resolve(false)
-                    })
-                    .run()
                 })
               })
 
-              if (hasEmbeddedCover) {
+              if (success) {
                 imagePath = `archivist://${fullThumbnailPath.replace(/\\/g, '/')}`
               }
             }
