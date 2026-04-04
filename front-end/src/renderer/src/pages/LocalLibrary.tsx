@@ -100,7 +100,9 @@ export default function LocalLibrary(): JSX.Element {
 
   const modalTotalSize = modalFiles.reduce((acc, f) => acc + f.sizeBytes, 0);
   const modalExts = [
-    ...new Set(modalFiles.map((f) => f.name.split(".").pop()?.toUpperCase() ?? "")),
+    ...new Set(
+      modalFiles.map((f) => f.name.split(".").pop()?.toUpperCase() ?? ""),
+    ),
   ].join(", ");
 
   const SORT_OPTIONS: { label: string; value: SortMode }[] = [
@@ -123,7 +125,9 @@ export default function LocalLibrary(): JSX.Element {
               </h2>
               <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm">
                 <span className="flex items-center gap-1.5">
-                  <span className="text-primary font-bold">{posters.length}</span>{" "}
+                  <span className="text-primary font-bold">
+                    {posters.length}
+                  </span>{" "}
                   Titles
                 </span>
                 <span className="w-1 h-1 bg-outline-variant rounded-full" />
@@ -143,7 +147,9 @@ export default function LocalLibrary(): JSX.Element {
               className="bg-primary text-on-primary font-label font-bold text-sm px-8 py-4 rounded-full flex items-center gap-3 shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95"
               onClick={() => setIsScanModalOpen(true)}
             >
-              <span className="material-symbols-outlined leading-none">folder_zip</span>
+              <span className="material-symbols-outlined leading-none">
+                folder_zip
+              </span>
               SCAN LOCAL FOLDERS
             </button>
           </div>
@@ -191,25 +197,41 @@ export default function LocalLibrary(): JSX.Element {
                       <button
                         className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all flex items-center justify-center"
                         title="View File List"
-                        onClick={(e) => { e.stopPropagation(); setSelectedPoster(poster); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPoster(poster);
+                        }}
                       >
-                        <span className="material-symbols-outlined leading-none">list</span>
+                        <span className="material-symbols-outlined leading-none">
+                          list
+                        </span>
                       </button>
                       <button
                         className="w-14 h-14 rounded-full bg-primary text-on-primary shadow-xl shadow-primary/20 hover:scale-110 transition-all flex items-center justify-center"
                         title="Play"
-                        onClick={(e) => { e.stopPropagation(); window.libraryApi.playFolder(poster.folderPath); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.libraryApi.playFolder(poster.folderPath);
+                        }}
                       >
-                        <span className="material-symbols-outlined text-2xl leading-none" style={{ fontVariationSettings: "'FILL' 1" }}>
+                        <span
+                          className="material-symbols-outlined text-2xl leading-none"
+                          style={{ fontVariationSettings: "'FILL' 1" }}
+                        >
                           play_arrow
                         </span>
                       </button>
                       <button
                         className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all flex items-center justify-center"
                         title="Open Folder"
-                        onClick={(e) => { e.stopPropagation(); window.libraryApi.openFolder(poster.folderPath); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.libraryApi.openFolder(poster.folderPath);
+                        }}
                       >
-                        <span className="material-symbols-outlined leading-none">folder_open</span>
+                        <span className="material-symbols-outlined leading-none">
+                          folder_open
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -218,7 +240,9 @@ export default function LocalLibrary(): JSX.Element {
                   <div className="p-5 flex flex-col">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex flex-col gap-1">
-                        <p className="font-label text-[10px] font-bold text-primary tracking-[0.2em] uppercase">LOCAL</p>
+                        <p className="font-label text-[10px] font-bold text-primary tracking-[0.2em] uppercase">
+                          LOCAL
+                        </p>
                         <p className="font-label text-[11px] text-on-surface-variant uppercase tracking-widest">
                           {poster.episodes || 0} Episodes
                         </p>
@@ -282,7 +306,10 @@ export default function LocalLibrary(): JSX.Element {
         {/* Scan Folders Modal */}
         {isScanModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-surface-container-lowest/80 backdrop-blur-sm">
-            <div className="absolute inset-0" onClick={() => setIsScanModalOpen(false)} />
+            <div
+              className="absolute inset-0"
+              onClick={() => setIsScanModalOpen(false)}
+            />
             <div className="relative bg-surface border border-outline-variant/30 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl">
               <div className="p-8 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-low">
                 <div>
@@ -297,7 +324,9 @@ export default function LocalLibrary(): JSX.Element {
                   className="text-on-surface-variant hover:text-on-surface transition-colors"
                   onClick={() => setIsScanModalOpen(false)}
                 >
-                  <span className="material-symbols-outlined leading-none">close</span>
+                  <span className="material-symbols-outlined leading-none">
+                    close
+                  </span>
                 </button>
               </div>
 
@@ -313,7 +342,9 @@ export default function LocalLibrary(): JSX.Element {
                           folder
                         </span>
                         <div>
-                          <p className="text-xs font-label text-on-surface font-bold">{p.path}</p>
+                          <p className="text-xs font-label text-on-surface font-bold">
+                            {p.path}
+                          </p>
                           <p className="text-[10px] text-on-surface-variant font-label uppercase">
                             {p.label}
                           </p>
@@ -322,11 +353,15 @@ export default function LocalLibrary(): JSX.Element {
                       <button
                         className="text-on-surface-variant hover:text-error opacity-0 group-hover:opacity-100 transition-all leading-none"
                         onClick={async () => {
-                          const newPaths = await window.libraryApi.removePath(p.path);
+                          const newPaths = await window.libraryApi.removePath(
+                            p.path,
+                          );
                           setPaths(newPaths);
                         }}
                       >
-                        <span className="material-symbols-outlined text-sm leading-none">delete</span>
+                        <span className="material-symbols-outlined text-sm leading-none">
+                          delete
+                        </span>
                       </button>
                     </div>
                   ))}
@@ -337,12 +372,17 @@ export default function LocalLibrary(): JSX.Element {
                   onClick={async () => {
                     const folder = await window.systemApi.pickFolder();
                     if (folder) {
-                      const newPaths = await window.libraryApi.addPath(folder, "Local Folder");
+                      const newPaths = await window.libraryApi.addPath(
+                        folder,
+                        "Local Folder",
+                      );
                       setPaths(newPaths);
                     }
                   }}
                 >
-                  <span className="material-symbols-outlined text-sm leading-none">add</span>
+                  <span className="material-symbols-outlined text-sm leading-none">
+                    add
+                  </span>
                   Add New Path
                 </button>
               </div>
@@ -374,36 +414,44 @@ export default function LocalLibrary(): JSX.Element {
           </div>
         )}
 
-        {/* Episode List Modal */}
+        {/* 全新升级的 Episode List Modal (16:9 桌面级排版) */}
         {selectedPoster && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-surface-container-lowest/40 backdrop-blur-md">
-            <div className="absolute inset-0" onClick={() => setSelectedPoster(null)} />
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+            {/* 点击背景关闭弹窗 */}
+            <div
+              className="absolute inset-0"
+              onClick={() => setSelectedPoster(null)}
+            />
 
-            <div className="relative w-full max-w-4xl max-h-[870px] rounded-3xl overflow-hidden shadow-2xl flex flex-col border border-white/5 bg-[rgba(53,53,53,0.7)] backdrop-blur-[40px]">
-              {/* Modal Header */}
-              <div className="p-8 flex items-center justify-between border-b border-white/5">
-                <div className="flex items-center gap-6">
-                  <div className="w-20 h-28 rounded-lg overflow-hidden shadow-xl bg-surface-container-lowest flex-shrink-0">
+            {/* 弹窗主体 */}
+            <div className="relative w-full max-w-5xl max-h-[85vh] rounded-2xl overflow-hidden shadow-2xl flex flex-col border border-white/10 bg-[#1e1e1e]">
+              {/* 头部区域 */}
+              <div className="p-10 flex items-start justify-between relative border-b border-white/5">
+                <div className="flex items-center gap-8">
+                  {/* 左侧：16:9 宽屏封面 */}
+                  <div className="w-[320px] aspect-video rounded-xl overflow-hidden shadow-xl shrink-0 ring-1 ring-white/10 bg-black">
                     <img
                       alt="Poster"
                       className="w-full h-full object-cover"
                       src={selectedPoster.image || defaultCover}
                     />
                   </div>
-                  <div>
-                    <h2 className="text-3xl font-black font-headline tracking-tighter text-on-surface">
+
+                  {/* 中间：标题与元数据 */}
+                  <div className="flex flex-col justify-center">
+                    <h2 className="text-[2.5rem] font-bold tracking-tight text-white mb-4 line-clamp-2">
                       {selectedPoster.title}
                     </h2>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="font-label text-sm text-primary">Local</span>
-                      <span className="w-1 h-1 rounded-full bg-outline-variant" />
-                      <span className="font-label text-sm text-on-surface-variant/60">
+                    <div className="flex items-center gap-4 font-medium text-lg">
+                      <span className="text-primary">Local</span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-700" />
+                      <span className="text-neutral-400">
                         {selectedPoster.episodes || 0} Video Files
                       </span>
                       {selectedPoster.totalSize > 0 && (
                         <>
-                          <span className="w-1 h-1 rounded-full bg-outline-variant" />
-                          <span className="font-label text-sm text-on-surface-variant/60">
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-700" />
+                          <span className="text-neutral-400">
                             {formatSize(selectedPoster.totalSize)}
                           </span>
                         </>
@@ -411,26 +459,33 @@ export default function LocalLibrary(): JSX.Element {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  {/* Open folder from modal header */}
+
+                {/* 右侧：操作按钮 */}
+                <div className="flex items-center gap-6 mt-2 relative z-10">
                   <button
-                    className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors text-on-surface-variant hover:text-on-surface"
+                    className="text-neutral-400 hover:text-white transition-colors"
                     title="Open Folder"
-                    onClick={() => window.libraryApi.openFolder(selectedPoster.folderPath)}
+                    onClick={() =>
+                      window.libraryApi.openFolder(selectedPoster.folderPath)
+                    }
                   >
-                    <span className="material-symbols-outlined text-xl leading-none">folder_open</span>
+                    <span className="material-symbols-outlined text-[32px] font-light leading-none">
+                      folder
+                    </span>
                   </button>
                   <button
-                    className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors"
+                    className="text-neutral-400 hover:text-white transition-colors"
                     onClick={() => setSelectedPoster(null)}
                   >
-                    <span className="material-symbols-outlined text-on-surface-variant leading-none">close</span>
+                    <span className="material-symbols-outlined text-[32px] font-light leading-none">
+                      close
+                    </span>
                   </button>
                 </div>
               </div>
 
-              {/* Scrollable File List */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-0.5">
+              {/* 剧集列表区域 */}
+              <div className="flex-1 overflow-y-auto bg-[#1a1a1a]">
                 {isLoadingFiles ? (
                   <div className="flex items-center justify-center py-16">
                     <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -443,82 +498,82 @@ export default function LocalLibrary(): JSX.Element {
                   modalFiles.map((file, i) => (
                     <div
                       key={file.path}
-                      className="group grid grid-cols-[2rem_1fr_5rem_6rem] items-center gap-4 px-4 py-3 rounded-xl hover:bg-white/5 transition-all cursor-default"
+                      onClick={() => window.libraryApi.playVideo(file.path)}
+                      className="group flex items-center justify-between px-10 py-4 hover:bg-white/5 transition-all border-b border-white/5 cursor-pointer"
                     >
-                      {/* Index */}
-                      <span className="font-label text-sm text-on-surface-variant/40 group-hover:text-primary transition-colors text-right tabular-nums">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      {/* Filename */}
-                      <div className="min-w-0">
-                        <span className="font-headline font-semibold text-on-surface text-sm truncate block">
+                      <div className="flex items-center gap-6 min-w-0">
+                        <span className="font-bold text-xl text-neutral-600 group-hover:text-primary transition-colors w-8 tabular-nums">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <span className="font-bold text-lg text-neutral-200 group-hover:text-white truncate transition-colors">
                           {file.name}
                         </span>
                       </div>
-                      {/* Size */}
-                      <span className="font-label text-xs text-on-surface-variant/50 text-right tabular-nums">
-                        {formatSize(file.sizeBytes)}
-                      </span>
-                      {/* Play button */}
-                      <button
-                        className="opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-on-primary transition-all active:scale-95 ml-auto"
-                        onClick={() => window.libraryApi.playVideo(file.path)}
-                      >
-                        <span
-                          className="material-symbols-outlined text-sm leading-none"
-                          style={{ fontVariationSettings: "'FILL' 1" }}
-                        >
-                          play_arrow
+
+                      <div className="flex items-center gap-6 shrink-0 ml-4">
+                        <span className="font-medium text-neutral-500 tabular-nums">
+                          {formatSize(file.sizeBytes)}
                         </span>
-                        <span className="font-label font-bold text-xs">PLAY</span>
-                      </button>
+
+                        <div className="w-10 h-10 rounded-full bg-white/5 text-neutral-400 group-hover:bg-primary group-hover:text-on-primary group-hover:shadow-lg group-hover:shadow-primary/20 flex items-center justify-center transition-all duration-300 scale-95 group-hover:scale-100">
+                          <span
+                            className="material-symbols-outlined text-xl leading-none"
+                            style={{ fontVariationSettings: "'FILL' 1" }}
+                          >
+                            play_arrow
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   ))
                 )}
               </div>
 
-              {/* Footer Stats */}
-              <div className="p-6 bg-surface-container-lowest/50 border-t border-white/5 flex items-center justify-between">
-                <div className="flex gap-6">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[9px] font-label text-on-surface-variant uppercase tracking-tighter">
+              {/* 底部状态与播放栏 */}
+              <div className="px-10 py-6 bg-[#161616] border-t border-white/5 flex items-center justify-between shrink-0">
+                <div className="flex gap-16">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-widest">
                       Files
                     </span>
-                    <span className="text-xs font-headline font-bold">
+                    <span className="text-xl font-bold text-white">
                       {modalFiles.length}
                     </span>
                   </div>
                   {modalExts && (
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] font-label text-on-surface-variant uppercase tracking-tighter">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-widest">
                         Container
                       </span>
-                      <span className="text-xs font-headline font-bold text-secondary">
+                      <span className="text-xl font-bold text-secondary">
                         {modalExts}
                       </span>
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <span className="text-[9px] font-label text-on-surface-variant uppercase tracking-widest block mb-0.5">
+
+                <div className="flex items-center gap-8">
+                  <div className="flex flex-col gap-1 text-right">
+                    <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-widest">
                       Total Size
                     </span>
-                    <span className="text-xs font-headline text-primary font-bold">
+                    <span className="text-xl font-bold text-primary">
                       {formatSize(modalTotalSize)}
                     </span>
                   </div>
                   <button
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-on-primary font-label font-bold text-xs hover:brightness-110 transition-all active:scale-95 shadow-lg shadow-primary/20"
-                    onClick={() => window.libraryApi.playFolder(selectedPoster.folderPath)}
+                    className="px-8 py-3.5 rounded-xl bg-primary text-on-primary font-bold flex items-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/20"
+                    onClick={() =>
+                      window.libraryApi.playFolder(selectedPoster.folderPath)
+                    }
                   >
                     <span
-                      className="material-symbols-outlined text-sm leading-none"
+                      className="material-symbols-outlined text-xl leading-none"
                       style={{ fontVariationSettings: "'FILL' 1" }}
                     >
                       play_arrow
                     </span>
-                    PLAY ALL
+                    <span className="tracking-widest">PLAY ALL</span>
                   </button>
                 </div>
               </div>
