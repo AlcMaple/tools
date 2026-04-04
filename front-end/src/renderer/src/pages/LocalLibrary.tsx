@@ -15,6 +15,7 @@ function SearchingState(): JSX.Element {
 
 export default function LocalLibrary(): JSX.Element {
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
+  const [selectedPoster, setSelectedPoster] = useState<any | null>(null); // 控制剧集列表弹窗
   const [searchQuery, setSearchQuery] = useState("");
   const [posters, setPosters] = useState<any[]>([]);
   const [paths, setPaths] = useState<any[]>([]);
@@ -141,38 +142,70 @@ export default function LocalLibrary(): JSX.Element {
                       alt={poster.title}
                       src={poster.image || defaultCover}
                     />
-                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-surface-variant/70 backdrop-blur-md p-6 flex flex-col justify-start pt-8">
-                      <div className="mb-4">
-                        <h4 className="font-headline font-bold text-lg text-on-surface mb-1 leading-tight line-clamp-2">
+
+                    {/* New Liquid Glass Hover Overlay */}
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-[#1f1f1f]/70 to-[#131313]/85 backdrop-blur-md p-6 flex flex-col justify-between">
+                      <div className="space-y-1">
+                        <h4 className="font-headline font-black text-xl text-white leading-tight mb-4 line-clamp-2">
                           {poster.title}
                         </h4>
-                        <p className="font-body text-primary text-[10px] font-bold uppercase tracking-widest mb-2">
-                          {poster.tags}
+                        <p className="font-label text-xs font-bold text-primary tracking-[0.2em] uppercase">
+                          LOCAL
                         </p>
-                        <p className="font-body text-primary text-sm font-bold italic opacity-80">
-                          {poster.nativeTitle}
+                        <p className="font-label text-sm text-white/80">
+                          {poster.episodes || 0} Episodes
                         </p>
                       </div>
-                      <div className="flex items-center justify-between border-t border-outline-variant/30 pt-4 mt-auto">
-                        <span className="font-label text-xs text-primary/80">
-                          {poster.episodes} Episodes
-                        </span>
-                        <span className="material-symbols-outlined text-primary leading-none">
-                          play_circle
-                        </span>
+                      <div className="w-full border-t border-white/10 mt-2 mb-4"></div>
+                      <div className="grid grid-cols-3 gap-3 w-full mt-auto">
+                        <button
+                          className="aspect-square rounded-lg bg-white/10 text-white flex items-center justify-center hover:bg-primary hover:text-on-primary transition-all group/btn"
+                          title="Expand Video List"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPoster(poster);
+                          }}
+                        >
+                          <span className="material-symbols-outlined text-xl leading-none">
+                            list
+                          </span>
+                        </button>
+                        <button
+                          className="aspect-square rounded-lg bg-white/10 text-white flex items-center justify-center hover:bg-primary hover:text-on-primary transition-all group/btn"
+                          title="Open Folder Location"
+                        >
+                          <span className="material-symbols-outlined text-xl leading-none">
+                            folder_open
+                          </span>
+                        </button>
+                        <button
+                          className="aspect-square rounded-lg bg-primary text-on-primary flex items-center justify-center hover:scale-105 transition-all shadow-lg shadow-primary/20"
+                          title="Play"
+                        >
+                          <span className="material-symbols-outlined text-2xl font-bold leading-none">
+                            play_arrow
+                          </span>
+                        </button>
                       </div>
                     </div>
                   </div>
-                  <h3 className="mt-4 font-headline font-bold text-on-surface truncate group-hover:text-primary transition-colors">
-                    {poster.title}
-                  </h3>
-                  <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
-                    {poster.specs}
-                  </p>
+
+                  <div className="mt-4 flex flex-col gap-1">
+                    <h3 className="font-headline font-bold text-on-surface truncate group-hover:text-primary transition-colors">
+                      {poster.title}
+                    </h3>
+                    <div className="flex items-center justify-between">
+                      <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
+                        {poster.specs || "1080p • UNKNOWN SIZE"}
+                      </p>
+                      <p className="font-label text-[10px] text-primary font-bold uppercase tracking-widest">
+                        {poster.episodes || 0} Episodes
+                      </p>
+                    </div>
+                  </div>
                 </div>
               ))
             ) : (
-              // 可选：如果没有任何视频时的占位文本
               <div className="col-span-full py-24 flex justify-center text-on-surface-variant/50 font-label text-sm uppercase tracking-widest">
                 Library is empty
               </div>
@@ -325,6 +358,122 @@ export default function LocalLibrary(): JSX.Element {
                 >
                   {isScanning ? "Scanning..." : "Start Scanning"}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Episode List Modal (Liquid-Glass Effect) */}
+        {selectedPoster && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-surface-container-lowest/40 backdrop-blur-md">
+            <div
+              className="absolute inset-0"
+              onClick={() => setSelectedPoster(null)}
+            ></div>
+
+            <div className="relative w-full max-w-4xl max-h-[870px] rounded-3xl overflow-hidden shadow-2xl flex flex-col border border-white/5 bg-[rgba(53,53,53,0.7)] backdrop-blur-[40px]">
+              {/* Modal Header */}
+              <div className="p-8 flex items-center justify-between border-b border-white/5 relative z-10">
+                <div className="flex items-center gap-6">
+                  <div className="w-20 h-28 rounded-lg overflow-hidden shadow-xl bg-surface-container-lowest">
+                    <img
+                      alt="Small Poster"
+                      className="w-full h-full object-cover"
+                      src={selectedPoster.image || defaultCover}
+                    />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-black font-headline tracking-tighter text-on-surface">
+                      {selectedPoster.title}
+                    </h2>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="font-label text-sm text-primary">
+                        Season 01
+                      </span>
+                      <span className="w-1 h-1 rounded-full bg-outline-variant"></span>
+                      <span className="font-label text-sm text-on-surface-variant/60">
+                        {selectedPoster.episodes || 0} Video Files
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors"
+                  onClick={() => setSelectedPoster(null)}
+                >
+                  <span className="material-symbols-outlined text-on-surface-variant leading-none">
+                    close
+                  </span>
+                </button>
+              </div>
+
+              {/* Scrollable List */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-1 relative z-10">
+                {/* Fallback mock list rendered based on episodes count */}
+                {Array.from({ length: selectedPoster.episodes || 12 }).map(
+                  (_, i) => (
+                    <div
+                      key={i}
+                      className="group flex items-center justify-between p-4 rounded-xl hover:bg-white/5 transition-all cursor-default"
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="font-label text-sm text-on-surface-variant/40 group-hover:text-primary transition-colors">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <div className="flex flex-col">
+                          <span className="font-headline font-semibold text-on-surface truncate max-w-lg">
+                            [SoraIndex] {selectedPoster.title} -{" "}
+                            {String(i + 1).padStart(2, "0")}.mkv
+                          </span>
+                          <span className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest">
+                            {selectedPoster.specs || "1080p"} • FLAC • 1.2 GB
+                          </span>
+                        </div>
+                      </div>
+                      <button className="opacity-0 group-hover:opacity-100 flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-on-primary transition-all active:scale-95">
+                        <span
+                          className="material-symbols-outlined text-sm leading-none"
+                          style={{ fontVariationSettings: "'FILL' 1" }}
+                        >
+                          play_arrow
+                        </span>
+                        <span className="font-label font-bold text-xs">
+                          PLAY
+                        </span>
+                      </button>
+                    </div>
+                  ),
+                )}
+              </div>
+
+              {/* Footer Stats */}
+              <div className="p-6 bg-surface-container-lowest/50 border-t border-white/5 flex items-center justify-between relative z-10">
+                <div className="flex gap-4">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-label text-on-surface-variant uppercase tracking-tighter">
+                      Container
+                    </span>
+                    <span className="text-xs font-headline font-bold">
+                      Matroska
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-label text-on-surface-variant uppercase tracking-tighter">
+                      Subtitles
+                    </span>
+                    <span className="text-xs font-headline font-bold text-secondary">
+                      VobSub, ASS
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] font-label text-on-surface-variant uppercase tracking-widest block mb-1">
+                    Archive Integrity
+                  </span>
+                  <span className="text-xs font-headline text-primary font-bold">
+                    CRC32 VERIFIED
+                  </span>
+                </div>
               </div>
             </div>
           </div>
