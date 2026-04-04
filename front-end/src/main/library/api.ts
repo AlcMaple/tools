@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { join, basename } from 'path'
+import { join, basename, dirname } from 'path'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'fs'
 import { readdir, stat, unlink } from 'fs/promises'
 import { execFile } from 'child_process'
@@ -192,12 +192,39 @@ async function extractVideoThumbnail(videoPath: string, outputPath: string): Pro
     } catch { /* qlmanage 失败，fallback 到 ffmpeg */ }
   }
 
-  // Windows / Linux / macOS fallback：ffmpeg 截取 10% 处帧
-  const filename = outputPath.split('/').pop()!
-  const folder = outputPath.substring(0, outputPath.lastIndexOf('/'))
+  // Windows：使用 Shell IShellItemImageFactory，与资源管理器封面完全一致
+  if (process.platform === 'win32') {
+    const escapedSrc = videoPath.replace(/'/g, "''")
+    const escapedDst = outputPath.replace(/'/g, "''")
+    const psCode = `
+Add-Type @"
+using System;using System.Drawing;using System.Drawing.Imaging;using System.Runtime.InteropServices;
+public class WinThumb{
+  [DllImport("shell32.dll",CharSet=CharSet.Unicode,PreserveSig=false)]
+  static extern void SHCreateItemFromParsingName(string p,IntPtr b,ref Guid r,[MarshalAs(UnmanagedType.Interface)]out object v);
+  [ComImport,Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IFactory{[PreserveSig]int GetImage(Size s,uint f,out IntPtr h);}
+  [DllImport("gdi32.dll")]static extern bool DeleteObject(IntPtr h);
+  public static bool Get(string src,string dst){try{
+    Guid g=new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b");object o;
+    SHCreateItemFromParsingName(src,IntPtr.Zero,ref g,out o);
+    IntPtr h;if(((IFactory)o).GetImage(new Size(640,640),0,out h)!=0)return false;
+    var b=Bitmap.FromHbitmap(h);b.Save(dst,ImageFormat.Jpeg);b.Dispose();DeleteObject(h);return true;
+  }catch{return false;}}
+}
+"@ -ReferencedAssemblies System.Drawing
+if([WinThumb]::Get('${escapedSrc}','${escapedDst}')){'ok'}else{'fail'}
+`
+    try {
+      const { stdout } = await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', psCode], { timeout: 20000 })
+      if (stdout.trim() === 'ok' && existsSync(outputPath)) return true
+    } catch { /* fallback to ffmpeg */ }
+  }
+
+  // Linux / ffmpeg fallback（当系统原生方式失败时）
   return new Promise<boolean>((resolve) => {
     ffmpeg(videoPath)
-      .screenshots({ timestamps: ['10%'], filename, folder, size: '640x?' })
+      .screenshots({ timestamps: ['10%'], filename: basename(outputPath), folder: dirname(outputPath), size: '640x?' })
       .on('end', () => resolve(true))
       .on('error', () => resolve(false))
   })
