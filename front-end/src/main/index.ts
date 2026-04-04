@@ -9,7 +9,7 @@ import { getCaptcha as xifanGetCaptcha, verifyCaptcha as xifanVerify, search as 
 import { downloadSingleEp as xifanDownloadSingleEp, DlEvent } from './xifan/download'
 import { getCaptcha as giriGetCaptcha, verifyCaptcha as giriVerify, search as giriSearch, watch as giriWatch, giriSession } from './girigiri/api'
 import { downloadSingleEp as giriDownloadSingleEp } from './girigiri/download'
-import { getPaths, addPath, removePath, getEntries, scanLibrary } from './library/api'
+import { getPaths, addPath, removePath, getEntries, scanLibrary,startLibraryWatch } from './library/api'
 
 // ── IPC 处理器 ──────────────────────────────────────────────
 ipcMain.handle('bgm:search', async (_event, keyword: string) => {
@@ -497,6 +497,36 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+
+  // 3. 启动后台目录变动监听
+  startLibraryWatch(async () => {
+    console.log('检测到文件夹变动，开始后台静默扫描...')
+    
+    const newEntries = await scanLibrary((status, current, total) => {
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('library:scan-status', { status, currentVal: current, totalVal: total })
+        }
+      })
+    }, true) 
+    
+    console.log(`后台扫描完成，推送了 ${newEntries.length} 个条目给前端`)
+
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('library-updated', newEntries)
+      }
+    })
+  },() => {
+      console.log('文件夹发生变动，准备扫描...')
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+          // 发送一个前置状态，由于 status 不等于 'Idle'，你的 React 页面会立刻开始转圈圈！
+          win.webContents.send('library:scan-status', { status: 'Preparing to scan...', currentVal: 0, totalVal: 1 })
+        }
+      })
+    })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

@@ -98,5 +98,9 @@ contextBridge.exposeInMainWorld('libraryApi', {
     const handler = (_: Electron.IpcRendererEvent, status: any) => cb(status)
     ipcRenderer.on('library:scan-status', handler)
     return () => ipcRenderer.removeListener('library:scan-status', handler)
+  },
+  onLibraryUpdated: (callback: (entries: any[]) => void) => {
+    ipcRenderer.removeAllListeners('library-updated') // 防止热更新导致重复绑定
+    ipcRenderer.on('library-updated', (_event, entries) => callback(entries))
   }
 })

@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'fs'
 import { readdir, stat } from 'fs/promises'
 import crypto from 'crypto'
 import ffmpeg from 'fluent-ffmpeg'
+import chokidar from 'chokidar'
 
 export interface LibraryPath {
   path: string;
@@ -24,6 +25,54 @@ export interface LibraryEntry {
 const getPathsFile = () => join(app.getPath('userData'), 'library_paths.json')
 const getEntriesFile = () => join(app.getPath('userData'), 'library_entries.json')
 
+// ==========================================
+// 动态监听器模块 (新增)
+// ==========================================
+let libraryWatcher: chokidar.FSWatcher | null = null
+let currentWatchCallback: (() => void) | null = null
+let currentDetectCallback: (() => void) | null = null
+
+export function startLibraryWatch(onLibraryChanged: () => void,onEventDetected?: () => void) {
+  currentWatchCallback = onLibraryChanged // 保存回调，以备后用
+  currentDetectCallback = onEventDetected || null
+
+  if (libraryWatcher) {
+    libraryWatcher.close()
+  }
+
+  const paths = getPaths().map(p => p.path)
+  if (paths.length === 0) return
+
+  libraryWatcher = chokidar.watch(paths, {
+    ignored: /(^|[\/\\])\../,
+    persistent: true,
+    ignoreInitial: true,
+    awaitWriteFinish: {
+      stabilityThreshold: 2000,
+      pollInterval: 100
+    }
+  })
+
+  let timeout: NodeJS.Timeout
+  const trigger = () => {
+    if (currentDetectCallback) currentDetectCallback();
+    clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      onLibraryChanged()
+    }, 1000)
+  }
+
+  libraryWatcher
+    .on('add', trigger)
+    .on('unlink', trigger)
+    .on('addDir', trigger)
+    .on('unlinkDir', trigger)
+    .on('change', trigger)
+}
+
+// ==========================================
+// 数据读写模块
+// ==========================================
 export function getPaths(): LibraryPath[] {
   try {
     const data = readFileSync(getPathsFile(), 'utf-8')
@@ -46,6 +95,8 @@ export function addPath(folderPath: string, label: string): LibraryPath[] {
   if (!current.some(p => p.path === folderPath)) {
     current.push({ path: folderPath, label })
     setPaths(current)
+    // 添加新路径后，立刻用保存的回调重启监听器
+    if (currentWatchCallback) startLibraryWatch(currentWatchCallback, currentDetectCallback || undefined)
   }
   return current
 }
@@ -53,6 +104,8 @@ export function addPath(folderPath: string, label: string): LibraryPath[] {
 export function removePath(folderPath: string): LibraryPath[] {
   const current = getPaths().filter(p => p.path !== folderPath)
   setPaths(current)
+  // 移除路径后，同样重启监听器
+  if (currentWatchCallback) startLibraryWatch(currentWatchCallback, currentDetectCallback || undefined)
   return current
 }
 
@@ -73,20 +126,26 @@ export function setEntries(entries: LibraryEntry[]): void {
   }
 }
 
+// ==========================================
+// 核心扫描模块
+// ==========================================
 export async function scanLibrary(
-  onProgress: (status: string, currentVal: number, totalVal: number) => void
+  onProgress: (status: string, currentVal: number, totalVal: number) => void,
+  isAutoScan: boolean = false // 👈 新增标识：区分是手动强制扫描，还是后台自动更新
 ): Promise<LibraryEntry[]> {
   const paths = getPaths()
   const entries: LibraryEntry[] = []
 
   const thumbnailsDir = join(app.getPath('userData'), 'thumbnails')
 
-  if (existsSync(thumbnailsDir)) {
+  // 如果是手动扫描，暴力清理旧缓存；如果是自动扫描，保留现有缓存以提升性能
+  if (!isAutoScan && existsSync(thumbnailsDir)) {
     onProgress('Clearing old cache...', 0, 1)
     rmSync(thumbnailsDir, { recursive: true, force: true })
   }
-  // 重新创建一个干净的空目录
-  mkdirSync(thumbnailsDir, { recursive: true })
+  if (!existsSync(thumbnailsDir)) {
+    mkdirSync(thumbnailsDir, { recursive: true })
+  }
 
   for (const libPath of paths) {
     onProgress(`Starting scan for ${libPath.label}...`, 0, 1)
@@ -123,39 +182,36 @@ export async function scanLibrary(
           const sizeGB = (totalSize / (1024 * 1024 * 1024)).toFixed(1)
           const folderName = currentPath.split(/[\\/]/).pop() || 'Local Folder'
 
-          let imagePath = '' // 默认为空，前端将展示系统默认图
+          let imagePath = '' 
 
           if (firstVideoPath) {
             const thumbnailFilename = `${id}.jpg`
             const fullThumbnailPath = join(thumbnailsDir, thumbnailFilename)
 
-            // 因为每次扫描前都清空了目录，这里理论上不需要 existsSync 判断了，但保留也无妨
+            // 因为后台自动扫描不会清空目录，这里存在的话就直接复用，秒出结果
             if (existsSync(fullThumbnailPath)) {
               imagePath = `archivist://${fullThumbnailPath.replace(/\\/g, '/')}`
             } else {
               onProgress(`Checking embedded cover for ${folderName}...`, entries.length, entries.length + 1)
 
-              // 核心提取逻辑：先探测，后提取
               const hasEmbeddedCover = await new Promise<boolean>((resolve) => {
                 ffmpeg.ffprobe(firstVideoPath, (err, metadata) => {
                   if (err || !metadata || !metadata.streams) {
                     return resolve(false)
                   }
 
-                  // 寻找被打上了 attached_pic 标记的图片流（MP4/MKV 内嵌封面的标准做法）
                   const coverStreamIndex = metadata.streams.findIndex(
                     (s) => s.disposition && s.disposition.attached_pic === 1
                   )
 
                   if (coverStreamIndex === -1) {
-                    return resolve(false) // 没有找到内嵌封面
+                    return resolve(false) 
                   }
 
-                  // 如果找到了，将该流（通常是 mjpeg 或 png）原封不动拷贝出来
                   ffmpeg(firstVideoPath)
                     .outputOptions([
-                      `-map 0:${coverStreamIndex}`, // 精确映射封面流
-                      '-c copy'                     // 不重新编码，瞬间完成
+                      `-map 0:${coverStreamIndex}`, 
+                      '-c copy'                     
                     ])
                     .output(fullThumbnailPath)
                     .on('end', () => resolve(true))
@@ -167,7 +223,6 @@ export async function scanLibrary(
                 })
               })
 
-              // 如果提取成功，才把路径赋给 imagePath
               if (hasEmbeddedCover) {
                 imagePath = `archivist://${fullThumbnailPath.replace(/\\/g, '/')}`
               }
@@ -181,7 +236,7 @@ export async function scanLibrary(
             tags: 'Local',
             episodes: episodeCount,
             specs: `${episodeCount > 0 ? 'Varying' : 'Unknown'} • ${sizeGB} GB`,
-            image: imagePath, // 如果没提取到封面，这里依然是 ''
+            image: imagePath, 
             folderPath: currentPath
           })
 
