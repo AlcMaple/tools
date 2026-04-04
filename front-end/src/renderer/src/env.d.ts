@@ -16,6 +16,14 @@ export interface LibraryEntry {
   specs: string;
   image: string;
   folderPath: string;
+  addedAt: number;
+  totalSize: number;
+}
+
+export interface LibraryFile {
+  name: string;
+  path: string;
+  sizeBytes: number;
 }
 
 declare global {
@@ -111,8 +119,13 @@ declare global {
       addPath: (folderPath: string, label: string) => Promise<LibraryPath[]>
       removePath: (folderPath: string) => Promise<LibraryPath[]>
       getEntries: () => Promise<LibraryEntry[]>
+      getFiles: (folderPath: string) => Promise<LibraryFile[]>
+      openFolder: (folderPath: string) => Promise<void>
+      playVideo: (filePath: string) => Promise<void>
+      playFolder: (folderPath: string) => Promise<void>
       scan: () => Promise<LibraryEntry[]>
       onScanStatus: (cb: (status: { status: string, currentVal: number, totalVal: number }) => void) => () => void
+      onLibraryUpdated: (callback: (entries: LibraryEntry[]) => void) => void
     }
   }
 }
