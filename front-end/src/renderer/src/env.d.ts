@@ -74,6 +74,8 @@ declare global {
       onSpeedUpdate: (cb: (bps: number) => void) => () => void
       cacheGet: (key: string) => Promise<Record<string, unknown> | null>
       cacheSet: (key: string, valueOrSubkey: unknown, maybeValue?: unknown) => Promise<void>
+      getSetting: (key: string) => Promise<any>
+      setSetting: (key: string, value: any) => Promise<void>
     }
     versions: {
       node: () => string
