@@ -46,6 +46,35 @@ ipcMain.handle('library:scan', async (event) => {
   })
 })
 
+let appMinimizeOnClose = false
+try {
+  const file = join(app.getPath('userData'), 'app_settings.json')
+  const settings = JSON.parse(readFileSync(file, 'utf-8'))
+  if (typeof settings.minimizeOnClose === 'boolean') {
+    appMinimizeOnClose = settings.minimizeOnClose
+  }
+} catch {
+  // ignore
+}
+
+ipcMain.handle('system:get-setting', (_event, key: string) => {
+  if (key === 'minimizeOnClose') return appMinimizeOnClose
+  return null
+})
+
+ipcMain.handle('system:set-setting', (_event, key: string, value: any) => {
+  if (key === 'minimizeOnClose') {
+    appMinimizeOnClose = value
+    const file = join(app.getPath('userData'), 'app_settings.json')
+    try {
+      let settings: any = {}
+      try { settings = JSON.parse(readFileSync(file, 'utf-8')) } catch { }
+      settings.minimizeOnClose = value
+      writeFileSync(file, JSON.stringify(settings))
+    } catch { }
+  }
+})
+
 // ── System stats ─────────────────────────────────────────────
 let _speedAccum = 0
 const _epLastBytes = new Map<string, Map<number, number>>()
@@ -464,6 +493,12 @@ ipcMain.handle('system:history-write', (_event, entries: unknown) => {
 
 // ── Window ────────────────────────────────────────────────────
 
+let isAppQuitting = false
+
+app.on('before-quit', () => {
+  isAppQuitting = true
+})
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -477,13 +512,20 @@ function createWindow(): void {
     },
   })
 
-  mainWindow.webContents.openDevTools()
+  // mainWindow.webContents.openDevTools()
 
   mainWindow.on('ready-to-show', () => { mainWindow.show() })
 
   mainWindow.webContents.setWindowOpenHandler((details: { url: string }) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  mainWindow.on('close', (event) => {
+    if (appMinimizeOnClose && !isAppQuitting) {
+      event.preventDefault()
+      mainWindow.minimize()
+    }
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -514,15 +556,15 @@ app.whenReady().then(() => {
   // 3. 启动后台目录变动监听
   startLibraryWatch(async () => {
     console.log('检测到文件夹变动，开始后台静默扫描...')
-    
+
     const newEntries = await scanLibrary((status, current, total) => {
       BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed()) {
           win.webContents.send('library:scan-status', { status, currentVal: current, totalVal: total })
         }
       })
-    }, true) 
-    
+    }, true)
+
     console.log(`后台扫描完成，推送了 ${newEntries.length} 个条目给前端`)
 
     BrowserWindow.getAllWindows().forEach(win => {
@@ -530,15 +572,15 @@ app.whenReady().then(() => {
         win.webContents.send('library-updated', newEntries)
       }
     })
-  },() => {
-      console.log('文件夹发生变动，准备扫描...')
-      BrowserWindow.getAllWindows().forEach(win => {
-        if (!win.isDestroyed()) {
-          // 发送一个前置状态，由于 status 不等于 'Idle'，你的 React 页面会立刻开始转圈圈！
-          win.webContents.send('library:scan-status', { status: 'Preparing to scan...', currentVal: 0, totalVal: 1 })
-        }
-      })
+  }, () => {
+    console.log('文件夹发生变动，准备扫描...')
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        // 发送一个前置状态，由于 status 不等于 'Idle'，你的 React 页面会立刻开始转圈圈！
+        win.webContents.send('library:scan-status', { status: 'Preparing to scan...', currentVal: 0, totalVal: 1 })
+      }
     })
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
