@@ -15,11 +15,13 @@ interface HistoryEntry {
 interface SavedSettings {
   downloadPath?: string;
   searchCacheEnabled?: boolean;
+  minimizeOnClose?: boolean;
 }
 
 const DEFAULTS: Required<SavedSettings> = {
   downloadPath: "",
   searchCacheEnabled: true,
+  minimizeOnClose: false,
 };
 
 // ── helpers ──────────────────────────────────────────────────
@@ -42,6 +44,7 @@ function readSavedSettings(): Required<SavedSettings> {
     return {
       downloadPath: s.downloadPath ?? DEFAULTS.downloadPath,
       searchCacheEnabled: s.searchCacheEnabled ?? DEFAULTS.searchCacheEnabled,
+      minimizeOnClose: s.minimizeOnClose ?? DEFAULTS.minimizeOnClose,
     };
   } catch {
     return { ...DEFAULTS };
@@ -125,7 +128,8 @@ function Settings(): JSX.Element {
   const saved = readSavedSettings();
   const isDirty =
     staged.downloadPath !== saved.downloadPath ||
-    staged.searchCacheEnabled !== saved.searchCacheEnabled;
+    staged.searchCacheEnabled !== saved.searchCacheEnabled ||
+    staged.minimizeOnClose !== saved.minimizeOnClose;
 
   // pendingNav: path to navigate to after dialog action ('__back__' for back button)
   const [pendingNav, setPendingNav] = useState<string | null>(null);
@@ -213,6 +217,14 @@ function Settings(): JSX.Element {
         `Search cache ${staged.searchCacheEnabled ? "enabled" : "disabled"}`,
       );
     }
+    if (staged.minimizeOnClose !== current.minimizeOnClose) {
+      changes.push(
+        `Minimize on close ${staged.minimizeOnClose ? "enabled" : "disabled"}`,
+      );
+      if (window.systemApi && window.systemApi.setSetting) {
+        window.systemApi.setSetting('minimizeOnClose', staged.minimizeOnClose).catch(() => {});
+      }
+    }
 
     try {
       localStorage.setItem(
@@ -220,6 +232,7 @@ function Settings(): JSX.Element {
         JSON.stringify({
           downloadPath: staged.downloadPath || undefined,
           searchCacheEnabled: staged.searchCacheEnabled,
+          minimizeOnClose: staged.minimizeOnClose,
         }),
       );
     } catch {
@@ -468,41 +481,68 @@ function Settings(): JSX.Element {
               </div>
             </div>
 
-            {/* Search Preferences */}
+            {/* App Preferences */}
             <div className="bg-surface-container p-8 rounded-xl border border-white/5">
               <div className="flex items-center gap-3 mb-8">
                 <span className="material-symbols-outlined text-primary">
-                  search_insights
+                  tune
                 </span>
                 <h2 className="font-headline font-bold text-xl uppercase tracking-tight">
-                  Search Preferences
+                  App Preferences
                 </h2>
               </div>
-              <div className="flex items-start justify-between gap-8 p-6 bg-surface-container-low rounded-lg border border-white/5">
-                <div className="space-y-1">
-                  <h3 className="font-headline font-bold text-sm uppercase tracking-wider">
-                    Enable Search Cache
-                  </h3>
-                  <p className="text-xs text-on-surface-variant/50 leading-relaxed">
-                    When enabled, previously searched titles will load instantly
-                    from local storage. Disable to force fresh metadata scraping
-                    from original indexers.
-                  </p>
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-8 p-6 bg-surface-container-low rounded-lg border border-white/5">
+                  <div className="space-y-1">
+                    <h3 className="font-headline font-bold text-sm uppercase tracking-wider">
+                      Enable Search Cache
+                    </h3>
+                    <p className="text-xs text-on-surface-variant/50 leading-relaxed">
+                      When enabled, previously searched titles will load instantly
+                      from local storage. Disable to force fresh metadata scraping
+                      from original indexers.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer mt-1 flex-shrink-0">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={staged.searchCacheEnabled}
+                      onChange={(e) =>
+                        setStaged((s) => ({
+                          ...s,
+                          searchCacheEnabled: e.target.checked,
+                        }))
+                      }
+                    />
+                    <div className="w-12 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary" />
+                  </label>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer mt-1 flex-shrink-0">
-                  <input
-                    type="checkbox"
-                    className="sr-only peer"
-                    checked={staged.searchCacheEnabled}
-                    onChange={(e) =>
-                      setStaged((s) => ({
-                        ...s,
-                        searchCacheEnabled: e.target.checked,
-                      }))
-                    }
-                  />
-                  <div className="w-12 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary" />
-                </label>
+
+                <div className="flex items-start justify-between gap-8 p-6 bg-surface-container-low rounded-lg border border-white/5">
+                  <div className="space-y-1">
+                    <h3 className="font-headline font-bold text-sm uppercase tracking-wider">
+                      Minimize on Close
+                    </h3>
+                    <p className="text-xs text-on-surface-variant/50 leading-relaxed">
+                      When enabled, closing the window will minimize it to the background instead of quitting the application.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer mt-1 flex-shrink-0">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={staged.minimizeOnClose}
+                      onChange={(e) =>
+                        setStaged((s) => ({
+                          ...s,
+                          minimizeOnClose: e.target.checked,
+                        }))
+                      }
+                    />
+                    <div className="w-12 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary" />
+                  </label>
+                </div>
               </div>
             </div>
           </section>
