@@ -1,7 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, net, protocol } from 'electron'
-import { pathToFileURL } from 'url'
 import { join } from 'path'
-import { statfs } from 'fs/promises'
+import { statfs, readFile } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
 import { searchBgm } from './bgm/search'
 import { getBgmDetail } from './bgm/detail'
@@ -496,11 +495,18 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
 
-  protocol.handle('archivist', (request) => {
-    // 把请求的 URL (archivist://C:/Users/...) 提取出后面的真实本地路径
-    const filePath = request.url.slice('archivist://'.length)
-    // 解码并转换为 file:// 标准格式返回给前端流
-    return net.fetch(pathToFileURL(decodeURIComponent(filePath)).toString())
+  protocol.handle('archivist', async (request) => {
+    try {
+      // URL 格式：archivist:///C:/Users/... (Windows) 或 archivist:///Users/mac/... (macOS)
+      // host 为空，完整路径在 pathname 里：/C:/Users/... 或 /Users/mac/...
+      const pathname = decodeURIComponent(request.url.slice('archivist://'.length))
+      // Windows 盘符路径有引导斜杠：/C:/Users/... → C:/Users/...
+      const filePath = pathname.replace(/^\/([A-Za-z]:)/, '$1')
+      const data = await readFile(filePath)
+      return new Response(data, { headers: { 'Content-Type': 'image/jpeg' } })
+    } catch {
+      return new Response(null, { status: 404 })
+    }
   })
 
   createWindow()
