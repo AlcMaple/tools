@@ -244,11 +244,11 @@ public class WinThumb {
 }
 $src = @'
 ${videoPath}
-'@
+'@.Trim()
 $dst = @'
 ${outputPath}
-'@
-$result = if([WinThumb]::Extract($src.Trim(),$dst.Trim())){"ok"}else{"fail"}
+'@.Trim()
+$result = if([WinThumb]::Extract($src,$dst)){"ok"}else{"fail"}
 Write-Host $result
 `
     try {
@@ -312,6 +312,10 @@ export async function scanLibrary(
 
       try {
         const items = await readdir(currentPath, { withFileTypes: true })
+        // 按自然数字排序（与 Windows 资源管理器一致），确保 firstVideoPath 是集数最小的文件
+        // NTFS 原始顺序通常按创建时间，不按文件名，会导致误选第 7 集、第 13 集等
+        items.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+
         const foldersToVisit: string[] = []
 
         for (const item of items) {
@@ -321,7 +325,7 @@ export async function scanLibrary(
             foldersToVisit.push(join(currentPath, item.name))
           } else if (item.isFile()) {
             const ext = item.name.split('.').pop()?.toLowerCase()
-            if (['mp4', 'mkv', 'avi', 'flv', 'mov', 'webm'].includes(ext || '')) {
+            if (['mp4', 'mkv', 'avi', 'flv', 'mov', 'webm', 'ts'].includes(ext || '')) {
               episodeCount++
               if (!firstVideoPath) firstVideoPath = join(currentPath, item.name)
               try {
