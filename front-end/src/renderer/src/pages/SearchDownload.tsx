@@ -575,9 +575,24 @@ function SearchDownload(): JSX.Element {
     return s;
   });
   const [source, setSource] = useState<Source>("Xifan");
+  const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false);
+  const sourceDropdownRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState(() => _cachedSearchQuery);
   const [captchaInput, setCaptchaInput] = useState("");
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        sourceDropdownRef.current &&
+        !sourceDropdownRef.current.contains(e.target as Node)
+      ) {
+        setSourceDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
   const [downloadStarted, setDownloadStarted] = useState(false);
   const currentKeyword = useRef(_cachedKeyword);
 
@@ -901,18 +916,41 @@ function SearchDownload(): JSX.Element {
             </div>
 
             {/* Source selector */}
-            <div className="relative">
-              <select
-                value={source}
-                onChange={(e) => setSource(e.target.value as Source)}
-                className="appearance-none bg-surface-container-highest border border-outline-variant/30 text-on-surface text-sm font-label rounded-xl px-4 py-3.5 pr-8 outline-none cursor-pointer hover:border-primary/40 transition-colors"
+            <div className="relative" ref={sourceDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setSourceDropdownOpen((o) => !o)}
+                className="w-36 flex items-center justify-between gap-2 bg-surface-container-highest border border-outline-variant/30 text-on-surface text-sm font-label rounded-xl px-5 py-4 outline-none cursor-pointer hover:border-primary/40 transition-colors"
               >
-                <option value="Xifan">Xifan</option>
-                <option value="Girigiri">Girigiri</option>
-              </select>
-              <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60 text-sm pointer-events-none leading-none">
-                expand_more
-              </span>
+                <span>{source}</span>
+                <span
+                  className={`material-symbols-outlined text-on-surface-variant/60 text-base leading-none transition-transform duration-200 ${sourceDropdownOpen ? "rotate-180" : ""}`}
+                >
+                  expand_more
+                </span>
+              </button>
+
+              {sourceDropdownOpen && (
+                <div className="absolute top-full left-0 mt-1.5 w-full bg-surface-container-highest border border-outline-variant/30 rounded-xl overflow-hidden shadow-lg z-50">
+                  {(["Xifan", "Girigiri"] as Source[]).map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => {
+                        setSource(opt);
+                        setSourceDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 text-sm font-label transition-colors ${
+                        source === opt
+                          ? "text-primary bg-primary/8"
+                          : "text-on-surface hover:bg-surface-container-high"
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <button
