@@ -522,10 +522,10 @@ function Settings(): JSX.Element {
                 <div className="flex items-start justify-between gap-8 p-6 bg-surface-container-low rounded-lg border border-white/5">
                   <div className="space-y-1">
                     <h3 className="font-headline font-bold text-sm uppercase tracking-wider">
-                      Minimize on Close
+                      关闭到托盘
                     </h3>
                     <p className="text-xs text-on-surface-variant/50 leading-relaxed">
-                      When enabled, closing the window will minimize it to the background instead of quitting the application.
+                      开启后，点击关闭按钮将隐藏窗口到系统托盘。单击托盘图标或再次启动应用可重新显示窗口。
                     </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer mt-1 flex-shrink-0">

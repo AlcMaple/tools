@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, net, protocol } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, net, protocol, Tray, Menu, nativeImage } from 'electron'
 import { join } from 'path'
 import { statfs, readFile } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
@@ -494,10 +494,51 @@ ipcMain.handle('system:history-write', (_event, entries: unknown) => {
 // ── Window ────────────────────────────────────────────────────
 
 let isAppQuitting = false
+let appTray: Tray | null = null
 
 app.on('before-quit', () => {
   isAppQuitting = true
 })
+
+function getOrCreateTray(mainWindow: BrowserWindow): Tray {
+  if (appTray) return appTray
+
+  const iconPath = join(__dirname, '../../resources/icon.ico')
+  const icon = nativeImage.createFromPath(iconPath)
+  appTray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
+  appTray.setToolTip('MapleTools')
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '显示窗口',
+      click: () => {
+        mainWindow.show()
+        mainWindow.focus()
+      },
+    },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isAppQuitting = true
+        app.quit()
+      },
+    },
+  ])
+  appTray.setContextMenu(contextMenu)
+
+  appTray.on('click', () => {
+    mainWindow.show()
+    mainWindow.focus()
+  })
+
+  appTray.on('double-click', () => {
+    mainWindow.show()
+    mainWindow.focus()
+  })
+
+  return appTray
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -524,7 +565,8 @@ function createWindow(): void {
   mainWindow.on('close', (event) => {
     if (appMinimizeOnClose && !isAppQuitting) {
       event.preventDefault()
-      mainWindow.minimize()
+      getOrCreateTray(mainWindow)
+      mainWindow.hide()
     }
   })
 
@@ -533,6 +575,21 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+}
+
+// 单实例锁：再次启动 exe 时，聚焦到已有窗口而非创建新实例
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    }
+  })
 }
 
 app.whenReady().then(() => {
