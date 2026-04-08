@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, net, protocol, Tray, Menu, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, net, protocol, Tray, Menu } from 'electron'
 import { join } from 'path'
 import { statfs, readFile } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
@@ -503,9 +503,10 @@ app.on('before-quit', () => {
 function getOrCreateTray(mainWindow: BrowserWindow): Tray {
   if (appTray) return appTray
 
-  const iconPath = join(__dirname, '../../resources/icon.ico')
-  const icon = nativeImage.createFromPath(iconPath)
-  appTray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.ico')
+    : join(__dirname, '../../resources/icon.ico')
+  appTray = new Tray(iconPath)
   appTray.setToolTip('MapleTools')
 
   const contextMenu = Menu.buildFromTemplate([
