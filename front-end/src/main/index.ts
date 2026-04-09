@@ -498,10 +498,14 @@ let appTray: Tray | null = null
 
 app.on('before-quit', () => {
   isAppQuitting = true
+  if (appTray) {
+    appTray.destroy()
+    appTray = null
+  }
 })
 
-function getOrCreateTray(mainWindow: BrowserWindow): Tray {
-  if (appTray) return appTray
+function initTray(): void {
+  if (appTray) return
 
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, 'icon.ico')
@@ -509,13 +513,21 @@ function getOrCreateTray(mainWindow: BrowserWindow): Tray {
   appTray = new Tray(iconPath)
   appTray.setToolTip('MapleTools')
 
+  const showWin = () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    } else {
+      createWindow()
+    }
+  }
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: '显示窗口',
-      click: () => {
-        mainWindow.show()
-        mainWindow.focus()
-      },
+      click: showWin,
     },
     { type: 'separator' },
     {
@@ -528,17 +540,8 @@ function getOrCreateTray(mainWindow: BrowserWindow): Tray {
   ])
   appTray.setContextMenu(contextMenu)
 
-  appTray.on('click', () => {
-    mainWindow.show()
-    mainWindow.focus()
-  })
-
-  appTray.on('double-click', () => {
-    mainWindow.show()
-    mainWindow.focus()
-  })
-
-  return appTray
+  appTray.on('click', showWin)
+  appTray.on('double-click', showWin)
 }
 
 function createWindow(): void {
@@ -566,8 +569,10 @@ function createWindow(): void {
   mainWindow.on('close', (event) => {
     if (appMinimizeOnClose && !isAppQuitting) {
       event.preventDefault()
-      getOrCreateTray(mainWindow)
       mainWindow.hide()
+    } else if (!appMinimizeOnClose && !isAppQuitting) {
+      isAppQuitting = true
+      app.quit()
     }
   })
 
@@ -594,6 +599,7 @@ if (!gotLock) {
 }
 
 app.whenReady().then(() => {
+  initTray()
 
   protocol.handle('archivist', async (request) => {
     try {
@@ -646,5 +652,5 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  app.quit()
 })
