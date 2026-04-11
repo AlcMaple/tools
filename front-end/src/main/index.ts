@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, net, protocol, Tray, Menu } from 'electron'
 import { join } from 'path'
-import { statfs, readFile } from 'fs/promises'
+import { statfs, readFile,writeFile } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
 import { searchBgm } from './bgm/search'
 import { getBgmDetail } from './bgm/detail'
@@ -185,7 +185,12 @@ ipcMain.handle(
 
 ipcMain.handle('xifan:download-cancel', (_event, taskId: string) => {
   const q = episodeQueues.get(taskId)
-  if (q) { q.cancelled = true; q.currentAbort?.abort(); episodeQueues.delete(taskId) }
+  if (q) {
+     q.cancelled = true;
+     q.currentAbort?.abort(); 
+     episodeQueues.delete(taskId); 
+     _epLastBytes.delete(taskId); 
+    }
   return { cancelled: true }
 })
 
@@ -305,6 +310,7 @@ function startNextGiriEp(taskId: string): void {
   if (ep === undefined) {
     if (q.pausedEps.size === 0) {
       giriEpQueues.delete(taskId)
+      _epLastBytes.delete(taskId)
       q.sender.send('download:progress', taskId, { type: 'all_done' })
     }
     return
@@ -356,7 +362,12 @@ ipcMain.handle(
 
 ipcMain.handle('girigiri:download-cancel', (_event, taskId: string) => {
   const q = giriEpQueues.get(taskId)
-  if (q) { q.cancelled = true; q.currentAbort?.abort(); giriEpQueues.delete(taskId) }
+  if (q) { 
+    q.cancelled = true; 
+    q.currentAbort?.abort(); 
+    giriEpQueues.delete(taskId)
+    _epLastBytes.delete(taskId) 
+  }
   return { cancelled: true }
 })
 
@@ -471,18 +482,21 @@ ipcMain.handle('cache:get', (_event, key: string) => {
   } catch { return null }
 })
 
-ipcMain.handle('cache:set', (_event, key: string, valueOrSubkey: unknown, maybeValue?: unknown) => {
+ipcMain.handle('cache:set',async (_event, key: string, valueOrSubkey: unknown, maybeValue?: unknown) => {
   try {
     const file = join(app.getPath('userData'), 'search_cache.json')
     let all: Record<string, unknown> = {}
-    try { all = JSON.parse(readFileSync(file, 'utf-8')) } catch { }
+    try { 
+      const data = await readFile(file, 'utf-8')
+      all = JSON.parse(data)
+    } catch { }
     if (maybeValue !== undefined) {
       if (!all[key] || typeof all[key] !== 'object') all[key] = {}
         ; (all[key] as Record<string, unknown>)[valueOrSubkey as string] = maybeValue
     } else {
       all[key] = valueOrSubkey
     }
-    writeFileSync(file, JSON.stringify(all))
+    await writeFile(file, JSON.stringify(all))
   } catch { /* ignore */ }
 })
 
