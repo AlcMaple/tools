@@ -59,6 +59,29 @@ function fetchJson(url: string): Promise<unknown> {
 }
 
 // ── Parsers ────────────────────────────────────────────────────────────────────
+function extractChineseSummary(summary: string): string {
+  if (!summary) return ''
+  const splitters = [
+    /\[简介原文\]/, /\[簡介原文\]/, /【简介原文】/, /【簡介原文】/, 
+    /\n简介原文：/, /\n簡介原文：/, /\[introduction\]/i
+  ]
+  let textToProcess = summary
+  for (const splitter of splitters) {
+    if (splitter.test(textToProcess)) {
+      textToProcess = textToProcess.split(splitter)[0].trim()
+      break
+    }
+  }
+  const paragraphs = textToProcess.split(/\r?\n/).map((p) => p.trim()).filter(Boolean)
+  const chineseParagraphs = paragraphs.filter((p) => {
+    const kanaMatches = p.match(/[\u3040-\u309F\u30A0-\u30FF]/g) || []
+    const kanaRatio = kanaMatches.length / p.length
+    if (kanaMatches.length > 5 && kanaRatio > 0.1) return false
+    return true
+  })
+  if (chineseParagraphs.length === 0) return summary
+  return chineseParagraphs.join('\n')
+}
 
 function parseInfobox(infobox: unknown[]): Record<string, string> {
   const result: Record<string, string> = {}
@@ -155,7 +178,7 @@ export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
     id: Number(subject.id),
     title: String(subject.name ?? ''),
     title_cn: String(subject.name_cn ?? ''),
-    summary: String(subject.summary ?? ''),
+    summary: extractChineseSummary(String(subject.summary ?? '')),
     cover,
     link: `https://bgm.tv/subject/${subjectId}`,
     score: Number(rating.score ?? 0),
