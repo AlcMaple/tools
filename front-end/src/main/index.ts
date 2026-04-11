@@ -505,7 +505,7 @@ app.on('before-quit', () => {
 })
 
 function initTray(): void {
-  if (appTray) return
+  if (appTray || process.platform !== 'win32') return
 
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, 'icon.ico')
@@ -569,10 +569,8 @@ function createWindow(): void {
   mainWindow.on('close', (event) => {
     if (appMinimizeOnClose && !isAppQuitting) {
       event.preventDefault()
+      initTray()
       mainWindow.hide()
-    } else if (!appMinimizeOnClose && !isAppQuitting) {
-      isAppQuitting = true
-      app.quit()
     }
   })
 
@@ -583,24 +581,24 @@ function createWindow(): void {
   }
 }
 
-// 单实例锁：再次启动 exe 时，聚焦到已有窗口而非创建新实例
-const gotLock = app.requestSingleInstanceLock()
-if (!gotLock) {
-  app.quit()
-} else {
-  app.on('second-instance', () => {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.show()
-      win.focus()
-    }
-  })
+// 单实例锁：仅打包后生效，dev 模式跳过避免热重载冲突
+if (app.isPackaged) {
+  const gotLock = app.requestSingleInstanceLock()
+  if (!gotLock) {
+    app.quit()
+  } else {
+    app.on('second-instance', () => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win) {
+        if (win.isMinimized()) win.restore()
+        win.show()
+        win.focus()
+      }
+    })
+  }
 }
 
 app.whenReady().then(() => {
-  initTray()
-
   protocol.handle('archivist', async (request) => {
     try {
       // URL 格式：archivist:///C:/Users/... (Windows) 或 archivist:///Users/mac/... (macOS)
@@ -652,5 +650,5 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  app.quit()
+  if (process.platform !== 'darwin') app.quit()
 })
