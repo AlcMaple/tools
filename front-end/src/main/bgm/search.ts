@@ -157,7 +157,7 @@ export async function searchBgm(
   await initCache()
 
   const html1 = await fetchPage(keyword, 1, update)
-  if (!html1) return []
+  if (!html1) throw new Error('网络请求失败，请检查网络连接后重试')
 
   const totalPages = parseTotalPages(html1)
   const page1Items = parsePage(html1, keyword)
