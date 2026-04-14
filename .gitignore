@@ -214,4 +214,5 @@ front-end/node_modules/
 front-end/dist/
 front-end/build/
 front-end/out/
+*.tsbuildinfo
 .gitnexus
