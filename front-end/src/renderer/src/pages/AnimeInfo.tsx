@@ -388,7 +388,7 @@ function AnimeInfo(): JSX.Element {
     try {
       const results = await window.bgmApi.search(keyword)
       if (results.length === 0) {
-        setState({ status: 'error', message: `No results found for "${keyword}"` })
+        setState({ status: 'error', message: `未找到与"${keyword}"相关的结果` })
       } else if (results.length === 1) {
         lastResults.current = []
         _cachedResults = []
