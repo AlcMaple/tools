@@ -629,10 +629,7 @@ app.whenReady().then(() => {
 
   createWindow()
 
-  // 3. 启动后台目录变动监听
-  startLibraryWatch(async () => {
-    console.log('检测到文件夹变动，开始后台静默扫描...')
-
+  const runSilentScan = async () => {
     const newEntries = await scanLibrary((status, current, total) => {
       BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed()) {
@@ -641,13 +638,20 @@ app.whenReady().then(() => {
       })
     }, true)
 
-    console.log(`后台扫描完成，推送了 ${newEntries.length} 个条目给前端`)
-
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) {
         win.webContents.send('library-updated', newEntries)
       }
     })
+  }
+
+  // 启动时对账一次：移除磁盘上已不存在的条目，刷新现有路径
+  runSilentScan().catch(err => console.error('启动对账扫描失败:', err))
+
+  // 3. 启动后台目录变动监听
+  startLibraryWatch(async () => {
+    console.log('检测到文件夹变动，开始后台静默扫描...')
+    await runSilentScan()
   }, () => {
     console.log('文件夹发生变动，准备扫描...')
     BrowserWindow.getAllWindows().forEach(win => {
