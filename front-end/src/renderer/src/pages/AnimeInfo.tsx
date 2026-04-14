@@ -387,6 +387,11 @@ function AnimeInfo(): JSX.Element {
     setState({ status: 'searching' })
     try {
       const results = await window.bgmApi.search(keyword)
+      results.sort((a, b) => {
+        const da = /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : '0000-00-00'
+        const db = /^\d{4}-\d{2}-\d{2}$/.test(b.date) ? b.date : '0000-00-00'
+        return db.localeCompare(da)
+      })
       if (results.length === 0) {
         setState({ status: 'error', message: `未找到与"${keyword}"相关的结果` })
       } else if (results.length === 1) {
