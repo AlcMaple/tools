@@ -121,6 +121,16 @@ export function removePath(folderPath: string): LibraryPath[] {
   return current
 }
 
+// 对账：剔除磁盘上已不存在的路径（用户手动删除文件夹后留下的残留条目）
+export function reconcilePaths(): LibraryPath[] {
+  const current = getPaths()
+  const alive = current.filter(p => existsSync(p.path))
+  if (alive.length !== current.length) {
+    setPaths(alive)
+  }
+  return alive
+}
+
 export function getEntries(): LibraryEntry[] {
   try {
     const data = readFileSync(getEntriesFile(), 'utf-8')
