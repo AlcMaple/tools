@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SoraIndex | Digital Archivist</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&amp;family=Space+Grotesk:wght@300;400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-bright": "#393939",
+                        "primary-fixed-dim": "#ffb2b8",
+                        "primary-fixed": "#ffdadb",
+                        "surface-container-high": "#2a2a2a",
+                        "on-primary-fixed-variant": "#772f38",
+                        "on-surface": "#e2e2e2",
+                        "tertiary-fixed-dim": "#c8c6c6",
+                        "on-secondary-fixed": "#001b3e",
+                        "surface-container-low": "#1b1b1b",
+                        "on-secondary-fixed-variant": "#00458d",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface-container-highest": "#353535",
+                        "on-tertiary": "#303030",
+                        "on-tertiary-fixed": "#1b1c1c",
+                        "background": "#131313",
+                        "tertiary-container": "#acabab",
+                        "secondary-fixed-dim": "#aac7ff",
+                        "error": "#ffb4ab",
+                        "on-secondary-container": "#9ec0ff",
+                        "on-primary": "#5a1923",
+                        "inverse-primary": "#94464f",
+                        "on-primary-fixed": "#3e0410",
+                        "on-background": "#e2e2e2",
+                        "secondary": "#aac7ff",
+                        "primary": "#ffb3b8",
+                        "outline": "#a18c8c",
+                        "inverse-on-surface": "#303030",
+                        "error-container": "#93000a",
+                        "primary-container": "#f09199",
+                        "surface-container": "#1f1f1f",
+                        "secondary-fixed": "#d6e3ff",
+                        "outline-variant": "#544343",
+                        "inverse-surface": "#e2e2e2",
+                        "surface-tint": "#ffb2b8",
+                        "on-surface-variant": "#d9c1c1",
+                        "on-tertiary-container": "#3f4040",
+                        "surface": "#131313",
+                        "tertiary-fixed": "#e4e2e2",
+                        "tertiary": "#c8c6c6",
+                        "on-secondary": "#002f64",
+                        "on-error-container": "#ffdad6",
+                        "on-error": "#690005",
+                        "surface-variant": "#353535",
+                        "secondary-container": "#004c9a",
+                        "on-tertiary-fixed-variant": "#464747",
+                        "surface-dim": "#131313",
+                        "on-primary-container": "#6e2932"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Space Grotesk"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #131313;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #353535;
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #ffb3b8;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden">
+<div class="flex h-screen overflow-hidden">
+<!-- SideNavBar -->
+<aside class="flex flex-col fixed left-0 top-0 h-full z-40 bg-[#0e0e0e] h-screen w-64 border-none tonal shift bg-[#0e0e0e] flat no shadows transition-all duration-300 ease-in-out">
+<div class="px-6 py-8 flex flex-col gap-1">
+<div class="flex items-center gap-3 mb-10">
+<div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-xl" data-icon="inventory_2">inventory_2</span>
+</div>
+<div>
+<h1 class="text-lg font-black text-[#ffb3b8] tracking-tighter">SoraIndex</h1>
+<p class="font-['Space_Grotesk'] text-[10px] uppercase tracking-widest text-[#ffb3b8]/60">Local Archive</p>
+</div>
+</div>
+<nav class="flex flex-col space-y-1">
+<a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span>Home</span>
+</a>
+<a class="bg-gradient-to-r from-[#ffb3b8]/10 to-transparent text-[#ffb3b8] border-l-4 border-[#ffb3b8] py-3 px-4 transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="download" style="font-variation-settings: 'FILL' 1;">download</span>
+<span>Downloads</span>
+</a>
+<a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="theaters">theaters</span>
+<span>Series</span>
+</a>
+<a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="movie">movie</span>
+<span>Movies</span>
+</a>
+<a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span>Archived</span>
+</a>
+</nav>
+</div>
+<div class="mt-auto px-6 py-8 border-t border-white/5">
+<nav class="flex flex-col space-y-1">
+<a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span>Support</span>
+</a>
+<a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+<span>Logs</span>
+</a>
+</nav>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-64 flex-1 flex flex-col min-w-0 bg-surface">
+<!-- TopNavBar -->
+<header class="bg-[#131313] text-[#ffb3b8] font-['Inter'] tracking-tight text-on-surface bg-[#0e0e0e] border-none flat no shadows flex justify-between items-center w-full px-6 py-4 sticky top-0 z-50">
+<div class="flex items-center gap-4">
+<h2 class="text-2xl font-bold tracking-tighter text-[#ffb3b8]">Library</h2>
+</div>
+<div class="flex-1 max-w-xl mx-12 hidden lg:block">
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm" data-icon="search">search</span>
+<input class="w-full bg-surface-container-highest border-none rounded-md py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/50" placeholder="Search archive..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex gap-1">
+<button class="p-2 rounded-md hover:bg-[#353535]/40 transition-colors duration-200 active:scale-95 text-[#e2e2e2]">
+<span class="material-symbols-outlined" data-icon="sync">sync</span>
+</button>
+<button class="p-2 rounded-md hover:bg-[#353535]/40 transition-colors duration-200 active:scale-95 text-[#e2e2e2]">
+<span class="material-symbols-outlined" data-icon="filter_list">filter_list</span>
+</button>
+</div>
+<div class="h-8 w-8 rounded-full overflow-hidden border border-primary/20">
+<img class="w-full h-full object-cover" data-alt="Close-up professional portrait of a tech specialist in a dark studio setting with subtle blue backlighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC0SQucnsWNORH28FZAko7Kt0BLCWVbRQOys4fhf3sMTAF9rnrRhwdsqDjUQ9AUGh06G5c2IjLnlyJ2-Rq6UyK3QfWNdaSvnYS2mmWNIfBB_409hUmikigbnMJcMK9aVDw8E541qRASxEHz3Oyz78VvahkL-h3mpco3V8BreBf0B1F-PkIWM4J0NMVz7ykY13_NPTarE-3nWkqJLkqvbrkkRSsP0uCSC8p1DwqGi_p840YxWWDvstNz6cBAaZ7c1hrtw0g9rb5h7w"/>
+</div>
+</div>
+</header>
+<div class="flex-1 flex flex-col px-10 py-8 overflow-y-auto">
+<!-- Folder Selection Header -->
+<section class="mb-12">
+<div class="flex items-center gap-2 mb-6 text-sm font-label text-outline uppercase tracking-widest">
+<span class="material-symbols-outlined text-[16px]" data-icon="folder_open">folder_open</span>
+<span class="hover:text-primary transition-colors cursor-pointer">Local Storage</span>
+<span class="text-outline-variant">/</span>
+<span class="text-on-surface font-bold">Cowboy Bebop</span>
+</div>
+<div class="flex flex-wrap gap-3">
+<button class="px-6 py-2 rounded-full bg-surface-container-high border border-outline-variant/10 text-on-surface font-label text-xs uppercase tracking-widest hover:border-primary/50 transition-all active:scale-95">
+                            Evangelion
+                        </button>
+<button class="px-6 py-2 rounded-full bg-primary-container text-on-primary-container font-label text-xs uppercase tracking-widest shadow-lg shadow-primary/10 transition-all active:scale-95">
+                            Cowboy Bebop
+                        </button>
+<button class="px-6 py-2 rounded-full bg-surface-container-high border border-outline-variant/10 text-on-surface font-label text-xs uppercase tracking-widest hover:border-primary/50 transition-all active:scale-95">
+                            Champloo
+                        </button>
+<button class="px-6 py-2 rounded-full bg-surface-container-high border border-outline-variant/10 text-on-surface font-label text-xs uppercase tracking-widest hover:border-primary/50 transition-all active:scale-95">
+                            Lain
+                        </button>
+<button class="px-6 py-2 rounded-full bg-surface-container-high border border-outline-variant/10 text-on-surface font-label text-xs uppercase tracking-widest hover:border-primary/50 transition-all active:scale-95">
+                            Trigun
+                        </button>
+<button class="w-10 h-10 rounded-full flex items-center justify-center border border-dashed border-outline-variant/40 text-outline hover:text-primary transition-all">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</div>
+</section>
+<!-- High-Density Video List -->
+<section class="flex-1 bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col border-none shadow-2xl">
+<div class="grid grid-cols-12 gap-4 px-6 py-4 bg-surface-container-low font-label text-[10px] uppercase tracking-[0.15em] text-outline border-b border-white/5">
+<div class="col-span-7">File Name</div>
+<div class="col-span-2 text-right">Size</div>
+<div class="col-span-2 text-center">Resolution</div>
+<div class="col-span-1"></div>
+</div>
+<div class="divide-y divide-white/[0.02]">
+<!-- Row 1 -->
+<div class="group grid grid-cols-12 gap-4 px-6 py-4 items-center bg-surface hover:bg-surface-container transition-colors cursor-pointer relative">
+<div class="col-span-7 flex items-center gap-4">
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary transition-colors" data-icon="movie">movie</span>
+<span class="text-sm font-headline font-bold text-on-surface truncate">[SoraIndex] Cowboy Bebop - 01 - Asteroid Blues.mkv</span>
+</div>
+<div class="col-span-2 text-right font-label text-xs text-on-surface-variant">1.2GB</div>
+<div class="col-span-2 text-center">
+<span class="bg-secondary-container/30 text-secondary px-2 py-0.5 rounded text-[10px] font-label font-bold uppercase tracking-wider">1080P HEVC</span>
+</div>
+<div class="col-span-1 flex justify-end">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+</div>
+<!-- Row 2 -->
+<div class="group grid grid-cols-12 gap-4 px-6 py-4 items-center bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer relative">
+<div class="col-span-7 flex items-center gap-4">
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary transition-colors" data-icon="movie">movie</span>
+<span class="text-sm font-headline font-bold text-on-surface truncate">[SoraIndex] Cowboy Bebop - 02 - Stray Dog Strut.mkv</span>
+</div>
+<div class="col-span-2 text-right font-label text-xs text-on-surface-variant">1.1GB</div>
+<div class="col-span-2 text-center">
+<span class="bg-secondary-container/30 text-secondary px-2 py-0.5 rounded text-[10px] font-label font-bold uppercase tracking-wider">1080P HEVC</span>
+</div>
+<div class="col-span-1 flex justify-end">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+</div>
+<!-- Row 3 -->
+<div class="group grid grid-cols-12 gap-4 px-6 py-4 items-center bg-surface hover:bg-surface-container transition-colors cursor-pointer relative">
+<div class="col-span-7 flex items-center gap-4">
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary transition-colors" data-icon="movie">movie</span>
+<span class="text-sm font-headline font-bold text-on-surface truncate">[SoraIndex] Cowboy Bebop - 03 - Honky Tonk Women.mkv</span>
+</div>
+<div class="col-span-2 text-right font-label text-xs text-on-surface-variant">1.4GB</div>
+<div class="col-span-2 text-center">
+<span class="bg-secondary-container/30 text-secondary px-2 py-0.5 rounded text-[10px] font-label font-bold uppercase tracking-wider">1080P HEVC</span>
+</div>
+<div class="col-span-1 flex justify-end">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+</div>
+<!-- Row 4 -->
+<div class="group grid grid-cols-12 gap-4 px-6 py-4 items-center bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer relative">
+<div class="col-span-7 flex items-center gap-4">
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary transition-colors" data-icon="movie">movie</span>
+<span class="text-sm font-headline font-bold text-on-surface truncate">[SoraIndex] Cowboy Bebop - 04 - Gateway Shuffle.mkv</span>
+</div>
+<div class="col-span-2 text-right font-label text-xs text-on-surface-variant">1.2GB</div>
+<div class="col-span-2 text-center">
+<span class="bg-secondary-container/30 text-secondary px-2 py-0.5 rounded text-[10px] font-label font-bold uppercase tracking-wider">1080P HEVC</span>
+</div>
+<div class="col-span-1 flex justify-end">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+</div>
+<!-- Row 5 -->
+<div class="group grid grid-cols-12 gap-4 px-6 py-4 items-center bg-surface hover:bg-surface-container transition-colors cursor-pointer relative">
+<div class="col-span-7 flex items-center gap-4">
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary transition-colors" data-icon="movie">movie</span>
+<span class="text-sm font-headline font-bold text-on-surface truncate">[SoraIndex] Cowboy Bebop - 05 - Ballad of Fallen Angels.mkv</span>
+</div>
+<div class="col-span-2 text-right font-label text-xs text-on-surface-variant">1.6GB</div>
+<div class="col-span-2 text-center">
+<span class="bg-secondary-container/30 text-secondary px-2 py-0.5 rounded text-[10px] font-label font-bold uppercase tracking-wider">1080P HEVC</span>
+</div>
+<div class="col-span-1 flex justify-end">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+</div>
+<!-- Row 6 -->
+<div class="group grid grid-cols-12 gap-4 px-6 py-4 items-center bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer relative">
+<div class="col-span-7 flex items-center gap-4">
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary transition-colors" data-icon="movie">movie</span>
+<span class="text-sm font-headline font-bold text-on-surface truncate">[SoraIndex] Cowboy Bebop - 06 - Sympathy for the Devil.mkv</span>
+</div>
+<div class="col-span-2 text-right font-label text-xs text-on-surface-variant">1.1GB</div>
+<div class="col-span-2 text-center">
+<span class="bg-secondary-container/30 text-secondary px-2 py-0.5 rounded text-[10px] font-label font-bold uppercase tracking-wider">1080P HEVC</span>
+</div>
+<div class="col-span-1 flex justify-end">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+</div>
+<!-- Row 7 -->
+<div class="group grid grid-cols-12 gap-4 px-6 py-4 items-center bg-surface hover:bg-surface-container transition-colors cursor-pointer relative">
+<div class="col-span-7 flex items-center gap-4">
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary transition-colors" data-icon="movie">movie</span>
+<span class="text-sm font-headline font-bold text-on-surface truncate">[SoraIndex] Cowboy Bebop - 07 - Heavy Metal Queen.mkv</span>
+</div>
+<div class="col-span-2 text-right font-label text-xs text-on-surface-variant">1.3GB</div>
+<div class="col-span-2 text-center">
+<span class="bg-secondary-container/30 text-secondary px-2 py-0.5 rounded text-[10px] font-label font-bold uppercase tracking-wider">1080P HEVC</span>
+</div>
+<div class="col-span-1 flex justify-end">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Bottom Gradient Overlay to indicate scroll -->
+<div class="sticky bottom-0 left-0 w-full h-12 bg-gradient-to-t from-surface-container-lowest to-transparent pointer-events-none"></div>
+</section>
+</div>
+</main>
+</div>
+</body></html>
