@@ -8,7 +8,7 @@ import { getCaptcha as xifanGetCaptcha, verifyCaptcha as xifanVerify, search as 
 import { downloadSingleEp as xifanDownloadSingleEp, DlEvent } from './xifan/download'
 import { getCaptcha as giriGetCaptcha, verifyCaptcha as giriVerify, search as giriSearch, watch as giriWatch, giriSession } from './girigiri/api'
 import { downloadSingleEp as giriDownloadSingleEp } from './girigiri/download'
-import { getPaths, addPath, removePath, getEntries, scanLibrary, startLibraryWatch, getFiles } from './library/api'
+import { addPath, removePath, getEntries, scanLibrary, startLibraryWatch, getFiles, reconcilePaths } from './library/api'
 
 // ── IPC 处理器 ──────────────────────────────────────────────
 ipcMain.handle('bgm:search', async (_event, keyword: string) => {
@@ -29,7 +29,7 @@ ipcMain.handle('girigiri:verify', async (_event, code: string) => giriVerify(cod
 ipcMain.handle('girigiri:search', async (_event, keyword: string) => giriSearch(keyword))
 ipcMain.handle('girigiri:watch', async (_event, playUrl: string) => giriWatch(playUrl))
 
-ipcMain.handle('library:get-paths', async () => getPaths())
+ipcMain.handle('library:get-paths', async () => reconcilePaths())
 ipcMain.handle('library:add-path', async (_event, folderPath: string, label: string) => addPath(folderPath, label))
 ipcMain.handle('library:remove-path', async (_event, folderPath: string) => removePath(folderPath))
 ipcMain.handle('library:get-entries', async () => getEntries())
@@ -645,7 +645,8 @@ app.whenReady().then(() => {
     })
   }
 
-  // 启动时对账一次：移除磁盘上已不存在的条目，刷新现有路径
+  // 启动时对账一次：剔除已被用户删除的路径，再扫描现有条目
+  reconcilePaths()
   runSilentScan().catch(err => console.error('启动对账扫描失败:', err))
 
   // 3. 启动后台目录变动监听
