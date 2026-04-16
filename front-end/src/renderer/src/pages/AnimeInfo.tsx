@@ -1,6 +1,451 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import TopBar from '../components/TopBar'
 import type { BgmSearchResult, BgmDetail } from '../types/bgm'
+import type { XifanSearchResult, XifanWatchInfo } from '../types/xifan'
+import { downloadStore } from '../stores/downloadStore'
+
+// ── 工具函数 ──────────────────────────────────────────────────
+function extractSubjectId(link: string): number | null {
+  const m = link.match(/\/subject\/(\d+)/)
+  return m ? parseInt(m[1]) : null
+}
+
+// ── Archive 缓存（与 SearchDownload 共享同一套 key）────────────
+
+// ArchiveFlow 自己的缓存（XifanSearchResult 格式）
+const ARCHIVE_CACHE_KEY = 'archive_search_cache_xifan'
+
+async function getSearchCache(keyword: string): Promise<XifanSearchResult[] | null> {
+  // 先查 ArchiveFlow 自己的缓存
+  try {
+    const c = (await window.systemApi.cacheGet(ARCHIVE_CACHE_KEY)) as Record<string, XifanSearchResult[]> | null
+    console.log('[ArchiveFlow] own cache:', c ? Object.keys(c) : null)
+    if (c?.[keyword]) {
+      console.log('[ArchiveFlow] own cache HIT for', keyword)
+      return c[keyword]
+    }
+  } catch (e) { console.warn('[ArchiveFlow] own cache error', e) }
+
+  // 回落到 SearchDownload 的缓存，SearchCard.key → watch_url
+  try {
+    const sd = (await window.systemApi.cacheGet('search_cache_xifan')) as Record<string, any[]> | null
+    console.log('[ArchiveFlow] SD cache keys:', sd ? Object.keys(sd) : null, '| looking for:', JSON.stringify(keyword))
+    if (sd?.[keyword]) {
+      const mapped = sd[keyword]
+        .map((c: any): XifanSearchResult => ({
+          title: c.title ?? '',
+          cover: c.cover ?? '',
+          year: c.year ?? '',
+          area: c.tag ?? '',
+          episode: c.count ?? '',
+          watch_url: c.key ?? '',       // SearchCard 用 key 存 watch_url
+          detail_url: '',
+        }))
+      console.log('[ArchiveFlow] SD cache HIT:', mapped.length, 'items, with watch_url:', mapped.filter(r => r.watch_url).length)
+      const withUrl = mapped.filter(r => r.watch_url)
+      if (withUrl.length > 0) return withUrl
+      // 有结果但全都没有 watch_url：仍然返回所有结果让用户选
+      if (mapped.length > 0) return mapped
+    }
+  } catch (e) { console.warn('[ArchiveFlow] SD cache error', e) }
+
+  return null
+}
+
+async function setSearchCache(keyword: string, cards: XifanSearchResult[]): Promise<void> {
+  try {
+    const c = ((await window.systemApi.cacheGet(ARCHIVE_CACHE_KEY)) as Record<string, XifanSearchResult[]>) || {}
+    c[keyword] = cards
+    await window.systemApi.cacheSet(ARCHIVE_CACHE_KEY, c)
+  } catch { /* noop */ }
+}
+
+function getWatchCache(url: string): XifanWatchInfo | null {
+  try {
+    return (JSON.parse(localStorage.getItem('xifan_watch_cache_v3') || '{}') as Record<string, XifanWatchInfo>)[url] ?? null
+  } catch { return null }
+}
+
+function setWatchCache(url: string, info: XifanWatchInfo): void {
+  try {
+    const c = JSON.parse(localStorage.getItem('xifan_watch_cache_v3') || '{}') as Record<string, XifanWatchInfo>
+    c[url] = info
+    localStorage.setItem('xifan_watch_cache_v3', JSON.stringify(c))
+  } catch { /* noop */ }
+}
+
+function getSavePath(): string | undefined {
+  try { return JSON.parse(localStorage.getItem('xifan_settings') || '{}').downloadPath || undefined } catch { return undefined }
+}
+
+// ── XifanConfigModal ──────────────────────────────────────────
+
+function XifanConfigModal({ card, watchInfo, onClose, onStart }: {
+  card: XifanSearchResult
+  watchInfo: XifanWatchInfo
+  onClose: () => void
+  onStart: (templates: string[], startEp: number, endEp: number) => void
+}): JSX.Element {
+  const validSources = watchInfo.sources.filter(s => s.template)
+  const [selectedIdx, setSelectedIdx] = useState(validSources[0]?.idx ?? 1)
+  const [startStr, setStartStr] = useState('1')
+  const [endStr, setEndStr] = useState(String(watchInfo.total))
+
+  const clampStart = (s: string): number => Math.max(1, Math.min(watchInfo.total, parseInt(s, 10) || 1))
+  const clampEnd = (s: string, start: number): number => Math.max(start, Math.min(watchInfo.total, parseInt(s, 10) || watchInfo.total))
+
+  const handleStart = (): void => {
+    const selected = validSources.find(s => s.idx === selectedIdx)
+    if (!selected?.template) return
+    onStart([selected.template], clampStart(startStr), clampEnd(endStr, clampStart(startStr)))
+  }
+
+  return (
+    <div className="relative bg-surface-container w-full max-w-lg rounded-2xl border border-outline-variant/20 overflow-hidden shadow-2xl">
+      <div className="p-6 border-b border-outline-variant/20 bg-surface-container-low flex justify-between items-center">
+        <div>
+          <h3 className="font-headline font-black text-lg text-on-surface tracking-tight">{watchInfo.title || card.title}</h3>
+          <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">{watchInfo.total} Episodes · Xifan</p>
+        </div>
+        <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
+          <span className="material-symbols-outlined leading-none">close</span>
+        </button>
+      </div>
+
+      <div className="p-6 space-y-6">
+        {validSources.length > 0 ? (
+          <div>
+            <p className="font-label text-[10px] text-on-surface-variant/60 uppercase tracking-widest mb-3">Download Source</p>
+            <div className="space-y-2">
+              {validSources.map(src => (
+                <label key={src.idx} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedIdx === src.idx ? 'border-primary/40 bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container-high'}`}>
+                  <input type="radio" name="archive_source" value={src.idx} checked={selectedIdx === src.idx} onChange={() => setSelectedIdx(src.idx)} className="accent-primary" />
+                  <span className="font-label text-sm text-on-surface">{src.name.replace(/[\uE000-\uF8FF]/g, '').trim()}</span>
+                  <span className="ml-auto font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest">{watchInfo.total} Episodes</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 rounded-lg bg-error/10 border border-error/20">
+            <p className="font-label text-xs text-error">No valid download sources found.</p>
+          </div>
+        )}
+
+        <div>
+          <p className="font-label text-[10px] text-on-surface-variant/60 uppercase tracking-widest mb-3">Episode Range</p>
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <label className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest block mb-1.5">From</label>
+              <input type="number" min={1} max={watchInfo.total} value={startStr} onChange={e => setStartStr(e.target.value)} onBlur={() => setStartStr(String(clampStart(startStr)))} className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors" />
+            </div>
+            <span className="text-on-surface-variant/30 mt-5">—</span>
+            <div className="flex-1">
+              <label className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest block mb-1.5">To</label>
+              <input type="number" min={1} max={watchInfo.total} value={endStr} onChange={e => setEndStr(e.target.value)} onBlur={() => setEndStr(String(clampEnd(endStr, clampStart(startStr))))} className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors" />
+            </div>
+            <div className="mt-5">
+              <span className="font-label text-[10px] text-on-surface-variant/30">/ {watchInfo.total}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 font-label text-sm text-on-surface-variant hover:bg-surface-container-high transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleStart} disabled={validSources.length === 0} className="flex-1 py-3 rounded-xl bg-primary text-on-primary font-label text-sm font-black tracking-widest hover:brightness-110 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            <span className="material-symbols-outlined text-base leading-none">bolt</span>
+            START DOWNLOAD
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── ArchiveFlow ───────────────────────────────────────────────
+// 独立状态机，叠加在页面上处理完整的搜索→验证→配置→下载流程
+
+type ArchiveFlowState =
+  | { status: 'searching' }
+  | { status: 'captcha'; imageB64: string; error?: string }
+  | { status: 'verifying' }
+  | { status: 'results'; cards: XifanSearchResult[] }
+  | { status: 'loadingWatch'; card: XifanSearchResult }
+  | { status: 'configuring'; card: XifanSearchResult; watchInfo: XifanWatchInfo }
+  | { status: 'queued' }
+  | { status: 'error'; message: string }
+
+function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; onClose: () => void }): JSX.Element {
+  const [state, setState] = useState<ArchiveFlowState>({ status: 'searching' })
+  const [captchaInput, setCaptchaInput] = useState('')
+  const [searchKeyword, setSearchKeyword] = useState(initialKeyword)
+  const activeKeyword = useRef(initialKeyword)
+
+  useEffect(() => { void doSearch(initialKeyword) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function doSearch(kw: string, skipCache = false): Promise<void> {
+    activeKeyword.current = kw
+    setSearchKeyword(kw)
+    setState({ status: 'searching' })
+
+    if (!skipCache) {
+      const cached = await getSearchCache(kw)
+      if (cached && cached.length > 0) { handleResults(kw, cached); return }
+    }
+
+    console.log('[ArchiveFlow] doing fresh Xifan search for:', kw)
+    try {
+      const result = await window.xifanApi.search(kw)
+      console.log('[ArchiveFlow] fresh search result:', Array.isArray(result) ? `array[${result.length}]` : result)
+      if (!Array.isArray(result) && result.needs_captcha) {
+        const { image_b64 } = await window.xifanApi.getCaptcha()
+        setCaptchaInput('')
+        setState({ status: 'captcha', imageB64: image_b64 })
+      } else if (Array.isArray(result)) {
+        if (result.length > 0) void setSearchCache(kw, result)
+        handleResults(kw, result)
+      } else {
+        setState({ status: 'error', message: `Xifan 返回了意外的响应` })
+      }
+    } catch (err) {
+      setState({ status: 'error', message: `Search failed: ${String(err)}` })
+    }
+  }
+
+  function handleResults(kw: string, cards: XifanSearchResult[]): void {
+    if (cards.length === 0) {
+      setState({ status: 'error', message: `Xifan 未找到与"${kw}"相关的结果` })
+      return
+    }
+    if (cards.length === 1) { void loadWatch(cards[0]); return }
+    setState({ status: 'results', cards })
+  }
+
+  async function loadWatch(card: XifanSearchResult): Promise<void> {
+    setState({ status: 'loadingWatch', card })
+    try {
+      const cached = getWatchCache(card.watch_url)
+      if (cached) { setState({ status: 'configuring', card, watchInfo: cached }); return }
+      const watchInfo = await window.xifanApi.getWatch(card.watch_url)
+      setWatchCache(card.watch_url, watchInfo)
+      setState({ status: 'configuring', card, watchInfo })
+    } catch (err) {
+      setState({ status: 'error', message: `Failed to load sources: ${String(err)}` })
+    }
+  }
+
+  async function handleVerify(): Promise<void> {
+    if (state.status !== 'captcha') return
+    setState({ status: 'verifying' })
+    try {
+      const { success } = await window.xifanApi.verifyCaptcha(captchaInput.trim())
+      if (success) {
+        await doSearch(activeKeyword.current, true)
+      } else {
+        const { image_b64 } = await window.xifanApi.getCaptcha()
+        setCaptchaInput('')
+        setState({ status: 'captcha', imageB64: image_b64, error: 'Wrong code, try again.' })
+      }
+    } catch { onClose() }
+  }
+
+  async function handleRefreshCaptcha(): Promise<void> {
+    try {
+      const { image_b64 } = await window.xifanApi.getCaptcha()
+      setCaptchaInput('')
+      setState({ status: 'captcha', imageB64: image_b64 })
+    } catch { /* noop */ }
+  }
+
+  async function handleStartDownload(templates: string[], startEp: number, endEp: number): Promise<void> {
+    if (state.status !== 'configuring') return
+    const { card, watchInfo } = state
+    const title = watchInfo.title || card.title
+    const savePath = getSavePath()
+    try {
+      const { taskId, pid } = await window.xifanApi.startDownload(title, templates, startEp, endEp, savePath)
+      const epStatus: Record<number, 'pending'> = {}
+      for (let ep = startEp; ep <= endEp; ep++) epStatus[ep] = 'pending'
+      downloadStore.addTask({
+        id: taskId,
+        source: 'xifan',
+        title,
+        cover: card.cover,
+        startEp,
+        endEp,
+        templates,
+        savePath,
+        status: 'running',
+        epStatus,
+        epProgress: {},
+        startedAt: Date.now(),
+        pid,
+      })
+      setState({ status: 'queued' })
+      setTimeout(onClose, 2000)
+    } catch (err) { alert(`Download error: ${err}`) }
+  }
+
+  const isLoading = state.status === 'searching' || state.status === 'verifying' || state.status === 'loadingWatch'
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm">
+      {/* 点击背景关闭（加载中仍可关闭） */}
+      <div className="absolute inset-0" onClick={onClose} />
+
+      {/* 加载中 */}
+      {isLoading && (
+        <div className="relative bg-surface-container w-full max-w-sm rounded-2xl border border-outline-variant/20 p-12 flex flex-col items-center gap-6 shadow-2xl">
+          <div className="w-10 h-10 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+          <p className="font-label text-xs text-on-surface-variant/60 uppercase tracking-widest">
+            {state.status === 'searching' ? 'Searching Xifan...' : state.status === 'verifying' ? 'Verifying...' : 'Loading sources...'}
+          </p>
+        </div>
+      )}
+
+      {/* 验证码 */}
+      {state.status === 'captcha' && (
+        <div className="relative bg-surface-container w-full max-w-md rounded-2xl border border-outline-variant/20 overflow-hidden shadow-2xl">
+          <div className="p-6 border-b border-outline-variant/20 bg-surface-container-low flex justify-between items-center">
+            <div>
+              <h3 className="font-headline font-black text-lg text-on-surface">Verification Required</h3>
+              <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">Xifan requires captcha to search</p>
+            </div>
+            <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
+              <span className="material-symbols-outlined leading-none">close</span>
+            </button>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="relative">
+              <img src={`data:image/gif;base64,${state.imageB64}`} alt="captcha" className="w-full rounded-lg border border-outline-variant/20" />
+              <button
+                onClick={() => void handleRefreshCaptcha()}
+                className="absolute top-2 right-2 w-8 h-8 rounded-full bg-surface-container-high/80 backdrop-blur-sm flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors"
+                title="Refresh captcha"
+              >
+                <span className="material-symbols-outlined text-base leading-none">refresh</span>
+              </button>
+            </div>
+            <input
+              type="text"
+              value={captchaInput}
+              onChange={e => setCaptchaInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && captchaInput.trim()) void handleVerify() }}
+              placeholder="Enter code above"
+              autoFocus
+              className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl px-4 py-3 font-label text-sm text-on-surface outline-none focus:border-primary/40 transition-colors placeholder:text-on-surface-variant/30"
+            />
+            {state.error && (
+              <p className="font-label text-xs text-error">{state.error}</p>
+            )}
+          </div>
+          <div className="p-6 pt-0 flex gap-3">
+            <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 font-label text-sm text-on-surface-variant hover:bg-surface-container-high transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={() => void handleVerify()}
+              disabled={!captchaInput.trim()}
+              className="flex-[2] py-3 rounded-xl bg-primary text-on-primary font-label text-sm font-bold tracking-widest hover:brightness-110 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Verify
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 搜索结果选择 */}
+      {state.status === 'results' && (
+        <div className="relative bg-surface-container w-full max-w-lg rounded-2xl border border-outline-variant/20 overflow-hidden shadow-2xl flex flex-col max-h-[70vh]">
+          <div className="p-6 border-b border-outline-variant/20 bg-surface-container-low flex justify-between items-center shrink-0">
+            <div>
+              <h3 className="font-headline font-black text-lg text-on-surface">Select from Xifan</h3>
+              <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">
+                {state.cards.length} results for "{activeKeyword.current}"
+              </p>
+            </div>
+            <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
+              <span className="material-symbols-outlined leading-none">close</span>
+            </button>
+          </div>
+          <div className="overflow-y-auto flex-1 p-4 space-y-2">
+            {state.cards.map(card => (
+              <button
+                key={card.watch_url}
+                onClick={() => void loadWatch(card)}
+                className="w-full flex items-center justify-between bg-surface hover:bg-surface-container-high border border-outline-variant/10 hover:border-primary/20 rounded-xl px-5 py-4 text-left transition-all group"
+              >
+                <div className="min-w-0">
+                  <p className="font-bold text-on-surface text-sm group-hover:text-primary transition-colors truncate">{card.title}</p>
+                  <p className="font-label text-[10px] text-on-surface-variant/50 mt-0.5 uppercase tracking-widest">
+                    {[card.year, card.episode, card.area].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <span className="material-symbols-outlined text-on-surface-variant/20 group-hover:text-primary/50 transition-colors text-lg shrink-0 ml-4">arrow_forward</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 下载配置 */}
+      {state.status === 'configuring' && (
+        <XifanConfigModal
+          card={state.card}
+          watchInfo={state.watchInfo}
+          onClose={onClose}
+          onStart={(templates, startEp, endEp) => void handleStartDownload(templates, startEp, endEp)}
+        />
+      )}
+
+      {/* 错误提示 */}
+      {state.status === 'error' && (
+        <div className="relative bg-surface-container w-full max-w-sm rounded-2xl border border-outline-variant/20 p-10 flex flex-col items-center gap-6 shadow-2xl">
+          <div className="w-16 h-16 rounded-full bg-error/10 flex items-center justify-center">
+            <span className="material-symbols-outlined text-error text-4xl leading-none">error_outline</span>
+          </div>
+          <div className="text-center">
+            <p className="font-label text-xs text-error uppercase tracking-[0.2em] mb-2">Failed</p>
+            <p className="font-body text-sm text-on-surface-variant leading-relaxed">{state.message}</p>
+          </div>
+          <div className="w-full">
+            <input
+              type="text"
+              value={searchKeyword}
+              onChange={e => setSearchKeyword(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && searchKeyword.trim()) void doSearch(searchKeyword.trim(), true) }}
+              className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl px-4 py-2.5 font-label text-sm text-on-surface outline-none focus:border-primary/40 transition-colors placeholder:text-on-surface-variant/30 mb-3"
+              placeholder="修改关键词重试..."
+            />
+          </div>
+          <div className="flex gap-3 w-full">
+            <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 font-label text-sm text-on-surface-variant hover:bg-surface-container-high transition-colors">
+              Cancel
+            </button>
+            <button onClick={() => void doSearch(searchKeyword.trim(), true)} disabled={!searchKeyword.trim()} className="flex-1 py-3 rounded-xl bg-primary text-on-primary font-label text-sm font-bold hover:brightness-110 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 成功提示 */}
+      {state.status === 'queued' && (
+        <div className="relative bg-surface-container w-full max-w-sm rounded-2xl border border-outline-variant/20 p-10 flex flex-col items-center gap-6 shadow-2xl">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+            <span className="material-symbols-outlined text-primary text-4xl leading-none" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+          </div>
+          <div className="text-center">
+            <p className="font-label text-xs text-primary uppercase tracking-[0.2em] mb-2">Queued</p>
+            <p className="font-body text-lg text-on-surface font-semibold">Added to download queue</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── 状态机类型 ────────────────────────────────────────────────
 type PageState =
@@ -10,12 +455,6 @@ type PageState =
   | { status: 'loading' }
   | { status: 'detail'; data: BgmDetail }
   | { status: 'error'; message: string }
-
-// ── 工具函数 ──────────────────────────────────────────────────
-function extractSubjectId(link: string): number | null {
-  const m = link.match(/\/subject\/(\d+)/)
-  return m ? parseInt(m[1]) : null
-}
 
 // ── 子组件 ────────────────────────────────────────────────────
 function LoadingSpinner(): JSX.Element {
@@ -95,9 +534,11 @@ function SearchResults({
 function DetailView({
   data,
   onBack,
+  onArchive,
 }: {
   data: BgmDetail
   onBack?: () => void
+  onArchive?: () => void
 }): JSX.Element {
   const [copied, setCopied] = useState(false)
   const hasStaff = data.staff.length > 0
@@ -175,7 +616,10 @@ function DetailView({
           </div>
 
           <div className="flex flex-col gap-4">
-            <button className="w-full py-4 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold text-sm tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-transform">
+            <button
+              className="w-full py-4 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold text-sm tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-transform hover:brightness-110"
+              onClick={onArchive}
+            >
               <span className="material-symbols-outlined text-lg leading-none">
                 download
               </span>
@@ -373,17 +817,22 @@ function DetailView({
 // ── 模块级缓存：页面切换后恢复状态 ───────────────────────────
 let _cachedState: PageState = { status: 'idle' }
 let _cachedResults: BgmSearchResult[] = []
+let _cachedBgmKeyword = ''
 
 // ── 主页面 ────────────────────────────────────────────────────
 function AnimeInfo(): JSX.Element {
   const [state, setState] = useState<PageState>(_cachedState)
-  const lastResults = useRef<BgmSearchResult[]>(_cachedResults)
+  const lastResults = { current: _cachedResults }
+  const lastBgmKeyword = useRef(_cachedBgmKeyword)
+  const [archiveKeyword, setArchiveKeyword] = useState<string | null>(null)
 
   useEffect(() => {
     _cachedState = state
   }, [state])
 
   const handleSearch = async (keyword: string): Promise<void> => {
+    lastBgmKeyword.current = keyword
+    _cachedBgmKeyword = keyword
     setState({ status: 'searching' })
     try {
       const results = await window.bgmApi.search(keyword)
@@ -441,6 +890,7 @@ function AnimeInfo(): JSX.Element {
                 ? () => setState({ status: 'results', items: lastResults.current })
                 : undefined
             }
+            onArchive={() => setArchiveKeyword(lastBgmKeyword.current || state.data.title_cn || state.data.title)}
           />
         )}
         {state.status === 'error' && (
@@ -460,6 +910,14 @@ function AnimeInfo(): JSX.Element {
           </div>
         )}
       </main>
+
+      {/* Archive 流程叠加层 */}
+      {archiveKeyword !== null && (
+        <ArchiveFlow
+          keyword={archiveKeyword}
+          onClose={() => setArchiveKeyword(null)}
+        />
+      )}
     </div>
   )
 }
