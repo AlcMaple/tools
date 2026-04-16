@@ -233,7 +233,7 @@ export default function LocalLibrary(): JSX.Element {
                   {folderFiles.map((file, i) => (
                     <div
                       key={file.path}
-                      onClick={() => window.libraryApi.playVideo(file.path)}
+                      onDoubleClick={() => window.libraryApi.playVideo(file.path)}
                       className={`group grid grid-cols-12 gap-4 px-6 py-4 items-center transition-colors cursor-pointer ${
                         i % 2 === 0
                           ? "bg-surface hover:bg-surface-container"
