@@ -253,10 +253,7 @@ export default function LocalLibrary(): JSX.Element {
                       </div>
                       <div className="col-span-2 text-center">
                         <span className="bg-secondary-container/30 text-secondary px-2 py-0.5 rounded text-[10px] font-label font-bold uppercase tracking-wider">
-                          {extractResolution(
-                            file.name,
-                            selectedPoster?.specs || "",
-                          )}
+                          {extractResolution(file.name, "")}
                         </span>
                       </div>
                       <div className="col-span-1 flex justify-end">
