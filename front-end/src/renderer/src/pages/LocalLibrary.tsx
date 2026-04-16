@@ -202,8 +202,20 @@ export default function LocalLibrary(): JSX.Element {
               })}
               <button
                 className="w-10 h-10 rounded-full flex items-center justify-center border border-dashed border-outline-variant/40 text-outline hover:text-primary hover:border-primary/50 transition-all"
-                onClick={() => setIsScanModalOpen(true)}
-                title="Manage folders"
+                onClick={async () => {
+                  const folder = await window.systemApi.pickFolder();
+                  if (folder) {
+                    const newPaths = await window.libraryApi.addPath(folder, 'Local Folder');
+                    setPaths(newPaths);
+                    setIsScanning(true);
+                    setIsRefreshing(true);
+                    const entries = await window.libraryApi.scan();
+                    setPosters(entries);
+                    setIsScanning(false);
+                    setIsRefreshing(false);
+                  }
+                }}
+                title="Add folder"
               >
                 <span className="material-symbols-outlined leading-none">
                   add
@@ -388,10 +400,10 @@ export default function LocalLibrary(): JSX.Element {
                       <button
                         className="text-on-surface-variant hover:text-error opacity-0 group-hover:opacity-100 transition-all leading-none"
                         onClick={async () => {
-                          const newPaths = await window.libraryApi.removePath(
-                            p.path,
-                          );
+                          const removed = p.path;
+                          const newPaths = await window.libraryApi.removePath(removed);
                           setPaths(newPaths);
+                          setPosters(prev => prev.filter(e => !e.folderPath.startsWith(removed)));
                         }}
                       >
                         <span className="material-symbols-outlined text-sm leading-none">
