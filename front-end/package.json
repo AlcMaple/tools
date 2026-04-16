@@ -8,7 +8,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron .",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "build:win": "node scripts/build-win.mjs"
   },
   "build": {
     "appId": "com.mapletools.app",
