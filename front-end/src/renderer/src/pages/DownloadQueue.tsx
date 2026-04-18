@@ -268,7 +268,11 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
   }
 
   const handleRetryEp = async (ep: number): Promise<void> => {
-    downloadStore.retryTask(task.id)
+    downloadStore.updateTask(task.id, {
+      status: 'running',
+      epStatus: { ...task.epStatus, [ep]: 'pending' },
+      completedAt: undefined,
+    })
     if (task.source === 'girigiri') {
       await window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, [ep], task.savePath)
     } else {
