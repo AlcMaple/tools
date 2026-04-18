@@ -41,7 +41,7 @@ export function createTray(onExit: () => void): void {
   ])
   appTray.setContextMenu(menu)
 
-  appTray.on('click', toggleWindow)
+  appTray.on('click', showWindow)
   appTray.on('double-click', showWindow)
 }
 
