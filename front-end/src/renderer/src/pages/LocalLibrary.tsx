@@ -8,17 +8,6 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
-function extractResolution(name: string, fallback: string): string {
-  const upper = name.toUpperCase();
-  const resMatch = upper.match(/(2160P|1080P|720P|480P|4K)/);
-  const codecMatch = upper.match(/(HEVC|H\.?265|H\.?264|AVC|AV1|X265|X264)/);
-  const res = resMatch?.[1];
-  const codec = codecMatch?.[1]?.replace(".", "");
-  if (res && codec) return `${res} ${codec}`;
-  if (res) return res;
-  if (codec) return codec;
-  return fallback || "UNKNOWN";
-}
 
 function SearchingState(): JSX.Element {
   return (
@@ -225,10 +214,24 @@ export default function LocalLibrary(): JSX.Element {
 
             {/* High-Density Video List */}
             <div className="bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col shadow-2xl">
+              {/* Path bar */}
+              {selectedPoster && (
+                <button
+                  className="group flex items-center gap-3 px-6 py-3 bg-surface-container border-b border-white/5 text-left hover:bg-surface-container-high transition-colors"
+                  onClick={() => window.libraryApi.openFolder(selectedPoster.folderPath)}
+                >
+                  <span className="material-symbols-outlined text-[14px] text-outline leading-none shrink-0">folder</span>
+                  <span className="font-label text-[10px] text-on-surface-variant/50 tracking-wide truncate flex-1">
+                    {selectedPoster.folderPath}
+                  </span>
+                  <span className="material-symbols-outlined text-[14px] text-primary/0 group-hover:text-primary/60 leading-none shrink-0 transition-colors">
+                    open_in_new
+                  </span>
+                </button>
+              )}
               <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-surface-container-low font-label text-[10px] uppercase tracking-[0.15em] text-outline border-b border-white/5">
-                <div className="col-span-7">File Name</div>
+                <div className="col-span-9">File Name</div>
                 <div className="col-span-2 text-right">Size</div>
-                <div className="col-span-2 text-center">Resolution</div>
                 <div className="col-span-1"></div>
               </div>
 
@@ -252,7 +255,7 @@ export default function LocalLibrary(): JSX.Element {
                           : "bg-surface-container-low hover:bg-surface-container"
                       }`}
                     >
-                      <div className="col-span-7 flex items-center gap-4 min-w-0">
+                      <div className="col-span-9 flex items-center gap-4 min-w-0">
                         <span className="material-symbols-outlined text-primary/40 group-hover:text-primary transition-colors leading-none shrink-0">
                           movie
                         </span>
@@ -262,11 +265,6 @@ export default function LocalLibrary(): JSX.Element {
                       </div>
                       <div className="col-span-2 text-right font-label text-xs text-on-surface-variant tabular-nums">
                         {formatSize(file.sizeBytes)}
-                      </div>
-                      <div className="col-span-2 text-center">
-                        <span className="bg-secondary-container/30 text-secondary px-2 py-0.5 rounded text-[10px] font-label font-bold uppercase tracking-wider">
-                          {extractResolution(file.name, "")}
-                        </span>
                       </div>
                       <div className="col-span-1 flex justify-end">
                         <button
@@ -313,25 +311,6 @@ export default function LocalLibrary(): JSX.Element {
                 {paths.length} SOURCES
               </span>
             </div>
-            {selectedPoster && (
-              <>
-                <div className="h-4 w-[1px] bg-outline-variant/30" />
-                <button
-                  className="flex items-center gap-2 hover:text-primary transition-colors"
-                  onClick={() =>
-                    window.libraryApi.openFolder(selectedPoster.folderPath)
-                  }
-                  title="Open Folder"
-                >
-                  <span className="material-symbols-outlined text-primary text-sm leading-none">
-                    folder_open
-                  </span>
-                  <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
-                    Open
-                  </span>
-                </button>
-              </>
-            )}
           </div>
           {isScanning && (
             <div className="flex items-center gap-4 ml-8">
