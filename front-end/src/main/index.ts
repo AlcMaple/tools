@@ -202,8 +202,14 @@ ipcMain.handle('xifan:download-cancel', (_event, taskId: string) => {
 
 ipcMain.handle('xifan:download-pause', (_event, taskId: string) => {
   const q = episodeQueues.get(taskId)
-  if (q) q.taskPaused = true
-  // Current episode continues to completion; won't start next while paused
+  if (!q) return { paused: false }
+  q.taskPaused = true
+  if (q.current !== null) {
+    const ep = q.current
+    q.priorityFront.unshift(ep)
+    q.sender.send('download:progress', taskId, { type: 'ep_paused', ep })
+    q.currentAbort?.abort()
+  }
   return { paused: true }
 })
 
@@ -379,7 +385,14 @@ ipcMain.handle('girigiri:download-cancel', (_event, taskId: string) => {
 
 ipcMain.handle('girigiri:download-pause', (_event, taskId: string) => {
   const q = giriEpQueues.get(taskId)
-  if (q) q.taskPaused = true
+  if (!q) return { paused: false }
+  q.taskPaused = true
+  if (q.current !== null) {
+    const ep = q.current
+    q.priorityFront.unshift(ep)
+    q.sender.send('download:progress', taskId, { type: 'ep_paused', ep })
+    q.currentAbort?.abort()
+  }
   return { paused: true }
 })
 
