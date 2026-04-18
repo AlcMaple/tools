@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, net, protocol, Tray, Menu } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, net, protocol } from 'electron'
 import { join } from 'path'
 import { statfs, readFile,writeFile } from 'fs/promises'
 import { readFileSync, writeFileSync } from 'fs'
@@ -9,6 +9,7 @@ import { downloadSingleEp as xifanDownloadSingleEp, DlEvent } from './xifan/down
 import { getCaptcha as giriGetCaptcha, verifyCaptcha as giriVerify, search as giriSearch, watch as giriWatch, giriSession } from './girigiri/api'
 import { downloadSingleEp as giriDownloadSingleEp } from './girigiri/download'
 import { addPath, removePath, getEntries, scanLibrary, startLibraryWatch, getFiles, reconcilePaths } from './library/api'
+import { createTray, destroyTray } from './tray'
 
 // ── IPC 处理器 ──────────────────────────────────────────────
 ipcMain.handle('bgm:search', async (_event, keyword: string) => {
@@ -74,6 +75,11 @@ ipcMain.handle('system:set-setting', (_event, key: string, value: any) => {
     } catch { }
   }
 })
+
+function exitApp(): void {
+  isAppQuitting = true
+  app.quit()
+}
 
 // ── System stats ─────────────────────────────────────────────
 let _speedAccum = 0
@@ -508,57 +514,11 @@ ipcMain.handle('system:history-write', (_event, entries: unknown) => {
 // ── Window ────────────────────────────────────────────────────
 
 let isAppQuitting = false
-let appTray: Tray | null = null
 
-process.on('SIGINT', () => app.quit())
+process.on('SIGINT', exitApp)
 
-app.on('before-quit', () => {
-  isAppQuitting = true
-  if (appTray) {
-    appTray.destroy()
-    appTray = null
-  }
-})
-
-function initTray(): void {
-  if (appTray || process.platform !== 'win32') return
-
-  const iconPath = app.isPackaged
-    ? join(process.resourcesPath, 'icon.ico')
-    : join(__dirname, '../../resources/icon.ico')
-  appTray = new Tray(iconPath)
-  appTray.setToolTip('MapleTools')
-
-  const showWin = () => {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.show()
-      win.focus()
-    } else {
-      createWindow()
-    }
-  }
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: '显示窗口',
-      click: showWin,
-    },
-    { type: 'separator' },
-    {
-      label: '退出',
-      click: () => {
-        isAppQuitting = true
-        app.quit()
-      },
-    },
-  ])
-  appTray.setContextMenu(contextMenu)
-
-  appTray.on('click', showWin)
-  appTray.on('double-click', showWin)
-}
+app.on('before-quit', () => { isAppQuitting = true })
+app.on('will-quit', () => { destroyTray() })
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -585,7 +545,6 @@ function createWindow(): void {
   mainWindow.on('close', (event) => {
     if (appMinimizeOnClose && !isAppQuitting) {
       event.preventDefault()
-      initTray()
       mainWindow.hide()
     }
   })
@@ -630,6 +589,7 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+  createTray(exitApp)
 
   const runSilentScan = async () => {
     const newEntries = await scanLibrary((status, current, total) => {
