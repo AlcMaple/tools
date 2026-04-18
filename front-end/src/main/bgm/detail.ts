@@ -1,4 +1,5 @@
 import * as https from 'https'
+import { getMoegirlSynopsis } from '../moegirl/synopsis'
 
 const BASE_API = 'https://api.bgm.tv/v0'
 const HEADERS = {
@@ -59,10 +60,10 @@ function fetchJson(url: string): Promise<unknown> {
 }
 
 // ── Parsers ────────────────────────────────────────────────────────────────────
-function extractChineseSummary(summary: string): string {
-  if (!summary) return ''
+function extractChineseSummary(summary: string): { text: string; hasChinese: boolean } {
+  if (!summary) return { text: '', hasChinese: false }
   const splitters = [
-    /\[简介原文\]/, /\[簡介原文\]/, /【简介原文】/, /【簡介原文】/, 
+    /\[简介原文\]/, /\[簡介原文\]/, /【简介原文】/, /【簡介原文】/,
     /\n简介原文：/, /\n簡介原文：/, /\[introduction\]/i
   ]
   let textToProcess = summary
@@ -79,8 +80,8 @@ function extractChineseSummary(summary: string): string {
     if (kanaMatches.length > 5 && kanaRatio > 0.1) return false
     return true
   })
-  if (chineseParagraphs.length === 0) return summary
-  return chineseParagraphs.join('\n')
+  if (chineseParagraphs.length === 0) return { text: summary, hasChinese: false }
+  return { text: chineseParagraphs.join('\n'), hasChinese: true }
 }
 
 function parseInfobox(infobox: unknown[]): Record<string, string> {
@@ -174,11 +175,27 @@ export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
 
   const staff = mergeStaff(staffInfobox, staffPersons)
 
+  const rawSummary = String(subject.summary ?? '')
+  const bgmSummary = extractChineseSummary(rawSummary)
+  let finalSummary = bgmSummary.text
+  if (!bgmSummary.hasChinese && rawSummary) {
+    const searchTitle = String(subject.name_cn || subject.name || '').trim()
+    if (searchTitle) {
+      try {
+        const moe = await getMoegirlSynopsis(searchTitle)
+        if (moe) {
+          const moeCheck = extractChineseSummary(moe)
+          if (moeCheck.hasChinese) finalSummary = moeCheck.text
+        }
+      } catch { /* moegirl 失败时回退到 BGM 原文 */ }
+    }
+  }
+
   return {
     id: Number(subject.id),
     title: String(subject.name ?? ''),
     title_cn: String(subject.name_cn ?? ''),
-    summary: extractChineseSummary(String(subject.summary ?? '')),
+    summary: finalSummary,
     cover,
     link: `https://bgm.tv/subject/${subjectId}`,
     score: Number(rating.score ?? 0),
