@@ -510,6 +510,8 @@ ipcMain.handle('system:history-write', (_event, entries: unknown) => {
 let isAppQuitting = false
 let appTray: Tray | null = null
 
+process.on('SIGINT', () => app.quit())
+
 app.on('before-quit', () => {
   isAppQuitting = true
   if (appTray) {
