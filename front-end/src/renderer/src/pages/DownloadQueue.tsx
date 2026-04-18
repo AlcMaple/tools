@@ -70,12 +70,12 @@ function EpisodeGrid({
                 </span>
                 {/* Progress bar fills as download progresses */}
                 <div className="w-full h-1 bg-surface-variant rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
+                  {pct < 0
+                    ? <div className="h-full w-1/3 bg-primary rounded-full animate-pulse" />
+                    : <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+                  }
                 </div>
-                <span className="font-label text-[9px] text-primary/60 mt-1">{pct}%</span>
+                <span className="font-label text-[9px] text-primary/60 mt-1">{pct < 0 ? '···' : `${pct}%`}</span>
                 {/* Pause button overlay on hover */}
                 <button
                   onClick={() => onPauseEp(ep)}

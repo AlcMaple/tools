@@ -9,7 +9,6 @@ import { join } from 'path'
 import { URL } from 'url'
 import { app } from 'electron'
 
-const MIN_VALID_BYTES = 10 * 1024 * 1024 // 10 MB — smaller = anti-hotlink, skip
 const MAX_RETRIES = 5
 
 const DL_HEADERS = {
@@ -52,7 +51,7 @@ async function getFileSize(url: string): Promise<number> {
 async function streamToFile(
   url: string,
   savePath: string,
-  fileSize: number,
+  fileSize: number, // 0 = unknown
   signal: AbortSignal,
   onBytes: (total: number) => void
 ): Promise<boolean> {
@@ -60,10 +59,10 @@ async function streamToFile(
     if (signal.aborted) return false
 
     const existing = existsSync(savePath) ? statSync(savePath).size : 0
-    if (existing >= fileSize) return true
+    if (fileSize > 0 && existing >= fileSize) return true
 
     const headers: Record<string, string> = { ...DL_HEADERS }
-    if (existing > 0) headers['Range'] = `bytes=${existing}-`
+    if (existing > 0 && fileSize > 0) headers['Range'] = `bytes=${existing}-`
     const u = new URL(url)
     const mod = (u.protocol === 'https:' ? https : http) as typeof https
 
@@ -74,7 +73,7 @@ async function streamToFile(
           if (res.statusCode !== 200 && res.statusCode !== 206) {
             res.resume(); resolve(false); return
           }
-          const file = createWriteStream(savePath, { flags: existing > 0 ? 'a' : 'w' })
+          const file = createWriteStream(savePath, { flags: existing > 0 && fileSize > 0 ? 'a' : 'w' })
           let written = existing
 
           const onAbort = (): void => { req.destroy(); file.destroy(); resolve(false) }
@@ -105,7 +104,8 @@ async function streamToFile(
   }
 
   if (!existsSync(savePath)) return false
-  return statSync(savePath).size >= fileSize
+  const written = statSync(savePath).size
+  return fileSize > 0 ? written >= fileSize : written > 0
 }
 
 export async function downloadSingleEp(
@@ -130,17 +130,16 @@ export async function downloadSingleEp(
 
     const url = template.replace('{:02d}', epStr)
 
-    const fileSize = await getFileSize(url)
-    if (fileSize < MIN_VALID_BYTES) continue // anti-hotlink or invalid
+    const fileSize = await getFileSize(url) // 0 = unknown (HEAD not supported)
 
     // Already complete?
-    if (existsSync(savePath) && statSync(savePath).size >= fileSize) {
+    if (fileSize > 0 && existsSync(savePath) && statSync(savePath).size >= fileSize) {
       onEvent({ type: 'ep_done', ep })
       return
     }
 
     const ok = await streamToFile(url, savePath, fileSize, signal, (bytesTotal) => {
-      const pct = Math.min(99, Math.floor(bytesTotal * 100 / fileSize))
+      const pct = fileSize > 0 ? Math.min(99, Math.floor(bytesTotal * 100 / fileSize)) : -1
       onEvent({ type: 'ep_progress', ep, pct, bytes: bytesTotal })
     })
 
