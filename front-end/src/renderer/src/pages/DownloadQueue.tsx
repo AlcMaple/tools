@@ -21,6 +21,8 @@ function EpisodeGrid({
   onPauseEp: (ep: number) => void
   onResumeEp: (ep: number) => void
 }): JSX.Element {
+  const [copiedEp, setCopiedEp] = useState<number | null>(null)
+
   const eps =
     task.source === 'girigiri'
       ? Object.keys(task.epStatus).map(Number).sort((a, b) => a - b)
@@ -33,6 +35,34 @@ function EpisodeGrid({
     return `EP ${String(ep).padStart(2, '0')}`
   }
 
+  function getEpUrl(ep: number): string {
+    if (task.source === 'girigiri') {
+      return task.girigiriEps?.find((e) => e.idx === ep)?.url ?? ''
+    }
+    const template = task.templates?.[0] ?? ''
+    return template ? template.replace('{:02d}', String(ep).padStart(2, '0')) : ''
+  }
+
+  async function copyEpUrl(ep: number): Promise<void> {
+    const url = getEpUrl(ep)
+    if (!url) return
+    await navigator.clipboard.writeText(url)
+    setCopiedEp(ep)
+    setTimeout(() => setCopiedEp(null), 1500)
+  }
+
+  const copyIcon = (ep: number): JSX.Element => (
+    <button
+      onClick={(e) => { e.stopPropagation(); void copyEpUrl(ep) }}
+      title="Copy download URL"
+      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-all w-5 h-5 flex items-center justify-center rounded text-outline/50 hover:text-primary"
+    >
+      <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>
+        {copiedEp === ep ? 'check' : 'content_copy'}
+      </span>
+    </button>
+  )
+
   return (
     <div className="mt-6 pt-5 border-t border-outline-variant/10">
       <div className="grid grid-cols-6 gap-2.5">
@@ -44,7 +74,7 @@ function EpisodeGrid({
             return (
               <div
                 key={ep}
-                className="bg-surface-container-lowest p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-secondary/40"
+                className="group relative bg-surface-container-lowest p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-secondary/40"
               >
                 <span className="font-label text-[10px] text-on-surface-variant mb-1.5">
                   {epLabel(ep)}
@@ -55,6 +85,7 @@ function EpisodeGrid({
                 >
                   check_circle
                 </span>
+                {copyIcon(ep)}
               </div>
             )
           }
@@ -68,7 +99,6 @@ function EpisodeGrid({
                 <span className="font-label text-[10px] text-on-surface-variant mb-1.5">
                   {epLabel(ep)}
                 </span>
-                {/* Progress bar fills as download progresses */}
                 <div className="w-full h-1 bg-surface-variant rounded-full overflow-hidden">
                   {pct < 0
                     ? <div className="h-full w-1/3 bg-primary rounded-full animate-pulse" />
@@ -76,25 +106,33 @@ function EpisodeGrid({
                   }
                 </div>
                 <span className="font-label text-[9px] text-primary/60 mt-1">{pct < 0 ? '···' : `${pct}%`}</span>
-                {/* Pause button overlay on hover */}
-                <button
-                  onClick={() => onPauseEp(ep)}
-                  title="Pause this episode"
-                  className="absolute inset-0 flex items-center justify-center rounded-lg bg-surface-container-highest/80 opacity-0 group-hover:opacity-100 transition-opacity"
+                <div
+                  className="absolute inset-0 rounded-lg bg-surface-container-highest/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                 >
-                  <span className="material-symbols-outlined text-secondary text-base leading-none">pause</span>
-                </button>
+                  <button onClick={(e) => { e.stopPropagation(); onPauseEp(ep) }} title="Pause this episode">
+                    <span className="material-symbols-outlined text-secondary text-base leading-none">pause</span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); void copyEpUrl(ep) }}
+                    title="Copy download URL"
+                    className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded text-outline/50 hover:text-primary transition-colors"
+                  >
+                    <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>
+                      {copiedEp === ep ? 'check' : 'content_copy'}
+                    </span>
+                  </button>
+                </div>
               </div>
             )
           }
 
           if (status === 'paused') {
             return (
-              <button
+              <div
                 key={ep}
                 onClick={() => onResumeEp(ep)}
                 title="Click to prioritize this episode"
-                className="bg-surface-container-lowest/60 p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-on-surface-variant/20 hover:bg-surface-container transition-colors"
+                className="group relative cursor-pointer bg-surface-container-lowest/60 p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-on-surface-variant/20 hover:bg-surface-container transition-colors"
               >
                 <span className="font-label text-[10px] text-on-surface-variant/50 mb-1.5">
                   {epLabel(ep)}
@@ -105,17 +143,18 @@ function EpisodeGrid({
                 >
                   pause_circle
                 </span>
-              </button>
+                {copyIcon(ep)}
+              </div>
             )
           }
 
           if (status === 'error') {
             return (
-              <button
+              <div
                 key={ep}
                 onClick={() => onRetryEp(ep)}
                 title="Click to retry this episode"
-                className="bg-surface-container-lowest p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-error/40 hover:bg-error/10 transition-colors"
+                className="group relative cursor-pointer bg-surface-container-lowest p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-error/40 hover:bg-error/10 transition-colors"
               >
                 <span className="font-label text-[10px] text-error mb-1.5">
                   {epLabel(ep)}
@@ -123,7 +162,8 @@ function EpisodeGrid({
                 <span className="material-symbols-outlined text-error text-sm leading-none">
                   error_outline
                 </span>
-              </button>
+                {copyIcon(ep)}
+              </div>
             )
           }
 
@@ -131,12 +171,13 @@ function EpisodeGrid({
           return (
             <div
               key={ep}
-              className="bg-surface-container-lowest/40 p-3 rounded-lg flex flex-col items-center justify-center opacity-40"
+              className="group relative bg-surface-container-lowest/40 p-3 rounded-lg flex flex-col items-center justify-center opacity-40 hover:opacity-70 transition-opacity"
             >
               <span className="font-label text-[10px] text-on-surface-variant mb-1.5">
                 {epLabel(ep)}
               </span>
               <span className="material-symbols-outlined text-xs leading-none">hourglass_empty</span>
+              {copyIcon(ep)}
             </div>
           )
         })}
