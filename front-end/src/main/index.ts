@@ -530,8 +530,23 @@ let isAppQuitting = false
 
 process.on('SIGINT', exitApp)
 
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err)
+  isAppQuitting = true
+  app.quit()
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason)
+})
+
 app.on('before-quit', () => { isAppQuitting = true })
-app.on('will-quit', () => { destroyTray() })
+app.on('will-quit', () => {
+  destroyTray()
+  // dev 模式下：Ctrl+C 会让整组进程收到 SIGINT，此处强制以 code=0 退出，
+  // 父进程(electron-vite)看到 close(0, null) 就不会打"exited with signal"。
+  // 打包环境不能 process.exit，否则 electron-log 之类的异步写入会被截断。
+  if (!app.isPackaged) process.exit(0)
+})
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
