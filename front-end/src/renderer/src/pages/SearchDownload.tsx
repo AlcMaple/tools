@@ -1077,7 +1077,10 @@ function SearchDownload(): JSX.Element {
                     </div>
 
                     <div className="p-3">
-                      <h3 className="text-sm font-bold text-on-surface truncate mb-1">
+                      <h3
+                        className="text-sm font-bold text-on-surface line-clamp-2 mb-1 min-h-[2.5rem] leading-5"
+                        title={card.title}
+                      >
                         {card.title}
                       </h3>
                       <div className="flex items-center justify-between">
