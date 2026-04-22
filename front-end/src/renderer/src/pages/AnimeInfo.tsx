@@ -548,6 +548,20 @@ function DetailView({
   const [copied, setCopied] = useState(false)
   const hasStaff = data.staff.length > 0
   const displayTitle = (data.title_cn || data.title).toUpperCase()
+
+  // 别名：infobox 的「别名」字段 + 原名（若与显示标题不同）；去重
+  const aliases = (() => {
+    const raw = data.infobox?.['别名'] ?? ''
+    const fromInfobox = raw.split(/[、,，]/).map((s) => s.trim()).filter(Boolean)
+    const shown = (data.title_cn || data.title).trim()
+    const origNative = data.title.trim()
+    const merged: string[] = []
+    if (origNative && origNative !== shown) merged.push(origNative)
+    for (const a of fromInfobox) {
+      if (a !== shown && !merged.includes(a)) merged.push(a)
+    }
+    return merged
+  })()
   // 末尾单词高亮
   const words = displayTitle.split(' ')
   const lastWord = words.pop()
@@ -658,6 +672,28 @@ function DetailView({
             {restTitle && <>{restTitle}<br /></>}
             <span className="text-primary">{lastWord}</span>
           </h2>
+
+          {/* 别名 */}
+          {aliases.length > 0 && (
+            <div className="mb-6 flex items-start gap-3">
+              <span className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest pt-1 shrink-0">
+                Also Known As
+              </span>
+              <div className="flex flex-wrap gap-x-2 gap-y-1">
+                {aliases.map((a, i) => (
+                  <span
+                    key={`${a}-${i}`}
+                    className="font-body text-sm text-on-surface-variant/70"
+                  >
+                    {a}
+                    {i < aliases.length - 1 && (
+                      <span className="text-on-surface-variant/20 ml-2">·</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Stats 行 */}
           <div className="flex gap-8 mb-12">
