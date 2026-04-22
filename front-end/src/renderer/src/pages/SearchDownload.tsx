@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import TopBar from "../components/TopBar";
+import ErrorPanel from "../components/ErrorPanel";
 import type { XifanSearchResult, XifanWatchInfo } from "../types/xifan";
 import type {
   GirigiriSearchResult,
@@ -1002,18 +1003,7 @@ function SearchDownload(): JSX.Element {
         {state.status === "searching" && <SearchingState />}
 
         {state.status === "error" && (
-          <div className="flex flex-col items-center justify-center py-24 gap-4">
-            <span className="material-symbols-outlined text-error/60 text-5xl">
-              error_outline
-            </span>
-            <p className="font-label text-sm text-error/80">{state.message}</p>
-            <button
-              onClick={() => setState({ status: "idle" })}
-              className="font-label text-xs text-primary hover:underline"
-            >
-              Try again
-            </button>
-          </div>
+          <ErrorPanel error={state.message} onRetry={() => setState({ status: "idle" })} />
         )}
 
         {state.status === "results" && state.cards.length === 0 && (
