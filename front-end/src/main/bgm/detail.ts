@@ -181,8 +181,12 @@ export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
   if (!bgmSummary.hasChinese && rawSummary) {
     const searchTitle = String(subject.name_cn || subject.name || '').trim()
     if (searchTitle) {
+      const aliases = (infobox['别名'] ?? '')
+        .split(/[、,，]/)
+        .map((s) => s.trim())
+        .filter(Boolean)
       try {
-        const moe = await getMoegirlSynopsis(searchTitle)
+        const moe = await getMoegirlSynopsis(searchTitle, aliases)
         if (moe) {
           const moeCheck = extractChineseSummary(moe)
           if (moeCheck.hasChinese) finalSummary = moeCheck.text
