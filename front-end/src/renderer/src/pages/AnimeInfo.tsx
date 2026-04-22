@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import TopBar from '../components/TopBar'
+import ErrorPanel from '../components/ErrorPanel'
 import type { BgmSearchResult, BgmDetail } from '../types/bgm'
 import type { XifanSearchResult, XifanWatchInfo } from '../types/xifan'
 import { downloadStore } from '../stores/downloadStore'
@@ -898,20 +899,7 @@ function AnimeInfo(): JSX.Element {
           />
         )}
         {state.status === 'error' && (
-          <div className="flex flex-col items-center justify-center py-32 gap-4 opacity-60">
-            <span className="material-symbols-outlined text-error text-4xl">
-              error_outline
-            </span>
-            <p className="font-label text-xs text-on-surface-variant tracking-wide">
-              {state.message}
-            </p>
-            <button
-              onClick={() => setState({ status: 'idle' })}
-              className="mt-2 font-label text-[11px] text-primary/70 hover:text-primary underline underline-offset-4"
-            >
-              Try again
-            </button>
-          </div>
+          <ErrorPanel error={state.message} onRetry={() => setState({ status: 'idle' })} />
         )}
       </main>
 
