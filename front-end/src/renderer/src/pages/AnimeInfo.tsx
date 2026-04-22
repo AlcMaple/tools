@@ -97,7 +97,11 @@ function XifanConfigModal({ card, watchInfo, onClose, onStart }: {
   const handleStart = (): void => {
     const selected = validSources.find(s => s.idx === selectedIdx)
     if (!selected?.template) return
-    onStart([selected.template], clampStart(startStr), clampEnd(endStr, clampStart(startStr)))
+    const ordered = [
+      selected.template,
+      ...validSources.filter(s => s.idx !== selectedIdx).map(s => s.template!),
+    ]
+    onStart(ordered, clampStart(startStr), clampEnd(endStr, clampStart(startStr)))
   }
 
   return (
