@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from 'fs'
 import { searchBgm } from './bgm/search'
 import { getBgmDetail } from './bgm/detail'
 import { getCaptcha as xifanGetCaptcha, verifyCaptcha as xifanVerify, search as xifanSearch, watch as xifanWatch } from './xifan/api'
-import { downloadSingleEp as xifanDownloadSingleEp, DlEvent } from './xifan/download'
+import { downloadSingleEp as xifanDownloadSingleEp, cleanupParts as xifanCleanupParts, DlEvent } from './xifan/download'
 import { getCaptcha as giriGetCaptcha, verifyCaptcha as giriVerify, search as giriSearch, watch as giriWatch, giriSession } from './girigiri/api'
 import { downloadSingleEp as giriDownloadSingleEp } from './girigiri/download'
 import { addPath, removePath, getEntries, scanLibrary, startLibraryWatch, getFiles, reconcilePaths } from './library/api'
@@ -106,6 +106,7 @@ setInterval(() => {
 interface EpQueue {
   title: string
   templates: string[]
+  sourceIdx: number
   savePath: string | null
   pending: number[]
   priorityFront: number[]
@@ -158,7 +159,7 @@ function startNextEp(taskId: string): void {
   q.currentAbort = abort
 
   setImmediate(() => {
-    xifanDownloadSingleEp(q.title, capturedEp, q.templates, q.savePath ?? undefined, abort.signal, (ev: DlEvent) => {
+    xifanDownloadSingleEp(q.title, capturedEp, q.templates, q.sourceIdx, q.savePath ?? undefined, abort.signal, (ev: DlEvent) => {
       if (ev.type === 'ep_progress' && typeof ev.bytes === 'number') {
         trackSpeed(taskId, capturedEp, ev.bytes)
       }
@@ -179,7 +180,7 @@ ipcMain.handle(
     const taskId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const pending = Array.from({ length: endEp - startEp + 1 }, (_, i) => startEp + i)
     episodeQueues.set(taskId, {
-      title, templates, savePath: savePath ?? null,
+      title, templates, sourceIdx: 0, savePath: savePath ?? null,
       pending, priorityFront: [], pausedEps: new Set(),
       current: null, currentAbort: null, taskPaused: false, cancelled: false,
       sender: event.sender,
@@ -213,13 +214,13 @@ ipcMain.handle('xifan:download-pause', (_event, taskId: string) => {
   return { paused: true }
 })
 
-ipcMain.handle('xifan:download-resume', (event, taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string) => {
+ipcMain.handle('xifan:download-resume', (event, taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number) => {
   const q = episodeQueues.get(taskId)
   if (!q) {
     // Queue lost after app restart — recreate it and start downloading
     if (title && templates && pendingEps?.length) {
       episodeQueues.set(taskId, {
-        title, templates, savePath: savePath ?? null,
+        title, templates, sourceIdx: sourceIdx ?? 0, savePath: savePath ?? null,
         pending: [...pendingEps], priorityFront: [], pausedEps: new Set(),
         current: null, currentAbort: null, taskPaused: false, cancelled: false,
         sender: event.sender,
@@ -255,9 +256,9 @@ ipcMain.handle('xifan:download-resume-ep', (_event, taskId: string, ep: number) 
 
 ipcMain.handle(
   'xifan:download-requeue',
-  async (event, taskId: string, title: string, templates: string[], eps: number[], savePath?: string) => {
+  async (event, taskId: string, title: string, templates: string[], eps: number[], savePath?: string, sourceIdx?: number) => {
     episodeQueues.set(taskId, {
-      title, templates, savePath: savePath ?? null,
+      title, templates, sourceIdx: sourceIdx ?? 0, savePath: savePath ?? null,
       pending: [...eps], priorityFront: [], pausedEps: new Set(),
       current: null, currentAbort: null, taskPaused: false, cancelled: false,
       sender: event.sender,
@@ -267,12 +268,12 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('xifan:download-retry', (event, taskId: string, title: string, templates: string[], failedEps: number[], savePath?: string) => {
+ipcMain.handle('xifan:download-retry', (event, taskId: string, title: string, templates: string[], failedEps: number[], savePath?: string, sourceIdx?: number) => {
   const q = episodeQueues.get(taskId)
   if (!q) {
     // Queue lost after app restart — recreate it from the persisted task info
     episodeQueues.set(taskId, {
-      title, templates, savePath: savePath ?? null,
+      title, templates, sourceIdx: sourceIdx ?? 0, savePath: savePath ?? null,
       pending: [...failedEps], priorityFront: [], pausedEps: new Set(),
       current: null, currentAbort: null, taskPaused: false, cancelled: false,
       sender: event.sender,
@@ -280,10 +281,36 @@ ipcMain.handle('xifan:download-retry', (event, taskId: string, title: string, te
     startNextEp(taskId)
     return { started: true }
   }
+  if (typeof sourceIdx === 'number') q.sourceIdx = sourceIdx
   for (const ep of [...failedEps].reverse()) { q.pausedEps.delete(ep); q.priorityFront.unshift(ep) }
   if (q.current === null && !q.taskPaused) startNextEp(taskId)
   return { started: true }
 })
+
+ipcMain.handle(
+  'xifan:download-switch-source',
+  (event, taskId: string, title: string, templates: string[], failedEps: number[], newSourceIdx: number, savePath?: string) => {
+    // Wipe any partial files for these eps — switching source = different URL, cannot reuse parts.
+    for (const ep of failedEps) {
+      xifanCleanupParts(title, ep, savePath)
+    }
+    const q = episodeQueues.get(taskId)
+    if (!q) {
+      episodeQueues.set(taskId, {
+        title, templates, sourceIdx: newSourceIdx, savePath: savePath ?? null,
+        pending: [...failedEps], priorityFront: [], pausedEps: new Set(),
+        current: null, currentAbort: null, taskPaused: false, cancelled: false,
+        sender: event.sender,
+      })
+      startNextEp(taskId)
+      return { switched: true }
+    }
+    q.sourceIdx = newSourceIdx
+    for (const ep of [...failedEps].reverse()) { q.pausedEps.delete(ep); q.priorityFront.unshift(ep) }
+    if (q.current === null && !q.taskPaused) startNextEp(taskId)
+    return { switched: true }
+  }
+)
 
 // ── Girigiri Episode Queue ────────────────────────────────────
 

@@ -75,14 +75,16 @@ contextBridge.exposeInMainWorld('xifanApi', {
     ipcRenderer.invoke('xifan:download', title, templates, startEp, endEp, savePath),
   cancelDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-cancel', taskId),
   pauseDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-pause', taskId),
-  resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string) =>
-    ipcRenderer.invoke('xifan:download-resume', taskId, title, templates, pendingEps, savePath),
+  resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number) =>
+    ipcRenderer.invoke('xifan:download-resume', taskId, title, templates, pendingEps, savePath, sourceIdx),
   pauseEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-pause-ep', taskId, ep),
   resumeEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-resume-ep', taskId, ep),
-  requeueEpisodes: (taskId: string, title: string, templates: string[], eps: number[], savePath?: string) =>
-    ipcRenderer.invoke('xifan:download-requeue', taskId, title, templates, eps, savePath),
-  retryDownload: (taskId: string, title: string, templates: string[], failedEps: number[], savePath?: string) =>
-    ipcRenderer.invoke('xifan:download-retry', taskId, title, templates, failedEps, savePath),
+  requeueEpisodes: (taskId: string, title: string, templates: string[], eps: number[], savePath?: string, sourceIdx?: number) =>
+    ipcRenderer.invoke('xifan:download-requeue', taskId, title, templates, eps, savePath, sourceIdx),
+  retryDownload: (taskId: string, title: string, templates: string[], failedEps: number[], savePath?: string, sourceIdx?: number) =>
+    ipcRenderer.invoke('xifan:download-retry', taskId, title, templates, failedEps, savePath, sourceIdx),
+  switchSource: (taskId: string, title: string, templates: string[], failedEps: number[], newSourceIdx: number, savePath?: string) =>
+    ipcRenderer.invoke('xifan:download-switch-source', taskId, title, templates, failedEps, newSourceIdx, savePath),
   onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
     const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
     ipcRenderer.on('download:progress', handler)

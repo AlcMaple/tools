@@ -257,8 +257,13 @@ function XifanDownloadConfigModal({
   const handleStart = (): void => {
     const selected = validSources.find((s) => s.idx === selectedIdx);
     if (!selected?.template) return;
+    // Pass all valid templates (selected first) so user can cycle sources if it fails.
+    const ordered = [
+      selected.template,
+      ...validSources.filter((s) => s.idx !== selectedIdx).map((s) => s.template!),
+    ];
     onStart(
-      [selected.template],
+      ordered,
       clampStart(startStr),
       clampEnd(endStr, clampStart(startStr)),
     );

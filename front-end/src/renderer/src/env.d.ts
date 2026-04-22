@@ -100,7 +100,7 @@ declare global {
       ) => Promise<{ started: boolean; pid?: number; taskId: string }>
       cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
       pauseDownload: (taskId: string) => Promise<{ paused: boolean }>
-      resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string) => Promise<{ resumed: boolean }>
+      resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number) => Promise<{ resumed: boolean }>
       pauseEpisode: (taskId: string, ep: number) => Promise<{ paused: boolean }>
       resumeEpisode: (taskId: string, ep: number) => Promise<{ resumed: boolean }>
       requeueEpisodes: (
@@ -108,15 +108,25 @@ declare global {
         title: string,
         templates: string[],
         eps: number[],
-        savePath?: string
+        savePath?: string,
+        sourceIdx?: number
       ) => Promise<{ started: boolean }>
       retryDownload: (
         taskId: string,
         title: string,
         templates: string[],
         failedEps: number[],
-        savePath?: string
+        savePath?: string,
+        sourceIdx?: number
       ) => Promise<{ started: boolean }>
+      switchSource: (
+        taskId: string,
+        title: string,
+        templates: string[],
+        failedEps: number[],
+        newSourceIdx: number,
+        savePath?: string
+      ) => Promise<{ switched: boolean }>
       onDownloadProgress: (
         cb: (taskId: string, event: unknown) => void
       ) => () => void

@@ -235,6 +235,9 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
 
   const api = task.source === 'girigiri' ? window.girigiriApi : window.xifanApi
 
+  const sourceIdx = task.sourceIdx ?? 0
+  const canSwitchSource = task.source !== 'girigiri' && task.templates.length > 1
+
   const handlePauseResume = async (): Promise<void> => {
     if (isPaused) {
       const pendingEps = Object.entries(task.epStatus)
@@ -243,7 +246,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       if (task.source === 'girigiri') {
         await window.girigiriApi.resumeDownload(task.id, task.title, task.girigiriEps, pendingEps, task.savePath)
       } else {
-        await window.xifanApi.resumeDownload(task.id, task.title, task.templates, pendingEps, task.savePath)
+        await window.xifanApi.resumeDownload(task.id, task.title, task.templates, pendingEps, task.savePath, sourceIdx)
       }
       downloadStore.updateTask(task.id, { status: 'running' })
     } else {
@@ -263,7 +266,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
     if (task.source === 'girigiri') {
       await window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, failedEps, task.savePath)
     } else {
-      await window.xifanApi.retryDownload(task.id, task.title, task.templates, failedEps, task.savePath)
+      await window.xifanApi.retryDownload(task.id, task.title, task.templates, failedEps, task.savePath, sourceIdx)
     }
   }
 
@@ -276,8 +279,23 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
     if (task.source === 'girigiri') {
       await window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, [ep], task.savePath)
     } else {
-      await window.xifanApi.retryDownload(task.id, task.title, task.templates, [ep], task.savePath)
+      await window.xifanApi.retryDownload(task.id, task.title, task.templates, [ep], task.savePath, sourceIdx)
     }
+  }
+
+  const handleSwitchSource = async (): Promise<void> => {
+    if (!canSwitchSource || failedEps.length === 0) return
+    const newIdx = (sourceIdx + 1) % task.templates.length
+    const newEpStatus = { ...task.epStatus }
+    for (const ep of failedEps) newEpStatus[ep] = 'pending'
+    downloadStore.updateTask(task.id, {
+      status: 'running',
+      sourceIdx: newIdx,
+      epStatus: newEpStatus,
+      epProgress: {},
+      completedAt: undefined,
+    })
+    await window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newIdx, task.savePath)
   }
 
   const handlePauseEp = async (ep: number): Promise<void> => {
@@ -323,12 +341,29 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
               <div>
                 <h3 className="text-xl font-black tracking-tight leading-none mb-1">{task.title}</h3>
                 {isError ? (
-                  <div className="flex items-center space-x-1.5">
-                    <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
-                      Download Failed
-                    </p>
-                    <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
-                  </div>
+                  canSwitchSource ? (
+                    <button
+                      onClick={handleSwitchSource}
+                      disabled={failedEps.length === 0}
+                      title={`Switch to source ${((sourceIdx + 1) % task.templates.length) + 1}`}
+                      className="group flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
+                        Source {sourceIdx + 1}/{task.templates.length} · Failed
+                      </p>
+                      <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
+                      <span className="material-symbols-outlined text-primary/0 group-hover:text-primary/70 text-[13px] leading-none transition-colors">
+                        swap_horiz
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center space-x-1.5">
+                      <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
+                        Download Failed
+                      </p>
+                      <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
+                    </div>
+                  )
                 ) : (
                   <p className="font-label text-[10px] text-primary/80 uppercase tracking-widest">
                     {isPaused ? 'Paused' : 'Downloading'} ·{' '}
@@ -431,6 +466,9 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       })
     : ''
 
+  const sourceIdx = task.sourceIdx ?? 0
+  const canSwitchSource = task.source !== 'girigiri' && task.templates.length > 1
+
   // Both retry handlers reuse the same task.id so progress events update this card.
   const handleRetryAll = async (): Promise<void> => {
     if (failedEps.length === 0) return
@@ -445,7 +483,7 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
     if (task.source === 'girigiri') {
       await window.girigiriApi.requeueEpisodes(task.id, task.title, task.girigiriEps!, failedEps, task.savePath)
     } else {
-      await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, failedEps, task.savePath)
+      await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, failedEps, task.savePath, sourceIdx)
     }
   }
 
@@ -459,8 +497,23 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
     if (task.source === 'girigiri') {
       await window.girigiriApi.requeueEpisodes(task.id, task.title, task.girigiriEps!, [ep], task.savePath)
     } else {
-      await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, [ep], task.savePath)
+      await window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, [ep], task.savePath, sourceIdx)
     }
+  }
+
+  const handleSwitchSource = async (): Promise<void> => {
+    if (!canSwitchSource || failedEps.length === 0) return
+    const newIdx = (sourceIdx + 1) % task.templates.length
+    const newEpStatus = { ...task.epStatus }
+    for (const ep of failedEps) newEpStatus[ep] = 'pending'
+    downloadStore.updateTask(task.id, {
+      status: 'running',
+      sourceIdx: newIdx,
+      epStatus: newEpStatus,
+      epProgress: {},
+      completedAt: undefined,
+    })
+    await window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newIdx, task.savePath)
   }
 
   return (
@@ -494,12 +547,29 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
               <div>
                 <h3 className="text-xl font-black tracking-tight leading-none mb-1">{task.title}</h3>
                 {isError ? (
-                  <div className="flex items-center space-x-1.5">
-                    <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
-                      Completed with errors
-                    </p>
-                    <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
-                  </div>
+                  canSwitchSource ? (
+                    <button
+                      onClick={handleSwitchSource}
+                      disabled={failedEps.length === 0}
+                      title={`Switch to source ${((sourceIdx + 1) % task.templates.length) + 1}`}
+                      className="group flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
+                        Source {sourceIdx + 1}/{task.templates.length} · Errors
+                      </p>
+                      <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
+                      <span className="material-symbols-outlined text-primary/0 group-hover:text-primary/70 text-[13px] leading-none transition-colors">
+                        swap_horiz
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center space-x-1.5">
+                      <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
+                        Completed with errors
+                      </p>
+                      <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
+                    </div>
+                  )
                 ) : (
                   <div className="flex items-center space-x-1.5">
                     <p className="font-label text-[10px] text-secondary uppercase tracking-widest font-bold">

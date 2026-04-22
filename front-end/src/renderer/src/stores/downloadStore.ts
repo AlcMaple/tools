@@ -6,6 +6,7 @@ export interface DownloadTask {
   startEp: number
   endEp: number
   templates: string[]
+  sourceIdx?: number
   girigiriEps?: { idx: number; name: string; url: string }[]
   savePath?: string
   status: 'running' | 'paused' | 'done' | 'error'
