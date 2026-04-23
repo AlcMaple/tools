@@ -88,7 +88,7 @@ async function main() {
 
   console.log('')
   console.log('========================================')
-  console.log(' 打包完成！输出目录: front-end\\dist\\')
+  console.log(' 打包完成！输出目录: dist\\')
   console.log('========================================')
 }
 
