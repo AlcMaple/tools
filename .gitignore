@@ -210,9 +210,15 @@ __marimo__/
 .DS_Store
 
 # electron
-front-end/node_modules/
-front-end/dist/
-front-end/build/
-front-end/out/
+node_modules/
+dist/
+build/
+out/
+logs/
 *.tsbuildinfo
 .gitnexus
+
+# python script caches / sessions
+*.pkl
+bgm_cache/
+html_cache/
