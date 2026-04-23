@@ -79,6 +79,47 @@ function getSavePath(): string | undefined {
   try { return JSON.parse(localStorage.getItem('xifan_settings') || '{}').downloadPath || undefined } catch { return undefined }
 }
 
+// ── BGM 搜索结果缓存 ──────────────────────────────────────────
+const BGM_SEARCH_CACHE_KEY = 'search_cache_bgm'
+
+function isSearchCacheEnabled(): boolean {
+  try {
+    return JSON.parse(localStorage.getItem('xifan_settings') || '{}').searchCacheEnabled !== false
+  } catch { return true }
+}
+
+async function getCachedBgmSearch(keyword: string): Promise<BgmSearchResult[] | null> {
+  try {
+    const c = (await window.systemApi.cacheGet(BGM_SEARCH_CACHE_KEY)) as Record<string, BgmSearchResult[]> | null
+    return c?.[keyword] ?? null
+  } catch { return null }
+}
+
+async function setCachedBgmSearch(keyword: string, items: BgmSearchResult[]): Promise<void> {
+  try {
+    const c = ((await window.systemApi.cacheGet(BGM_SEARCH_CACHE_KEY)) as Record<string, BgmSearchResult[]>) || {}
+    c[keyword] = items
+    await window.systemApi.cacheSet(BGM_SEARCH_CACHE_KEY, c)
+  } catch { /* noop */ }
+}
+
+const BGM_DETAIL_CACHE_KEY = 'bgm_detail_cache'
+
+async function getCachedBgmDetail(subjectId: number): Promise<BgmDetail | null> {
+  try {
+    const c = (await window.systemApi.cacheGet(BGM_DETAIL_CACHE_KEY)) as Record<string, BgmDetail> | null
+    return c?.[String(subjectId)] ?? null
+  } catch { return null }
+}
+
+async function setCachedBgmDetail(subjectId: number, detail: BgmDetail): Promise<void> {
+  try {
+    const c = ((await window.systemApi.cacheGet(BGM_DETAIL_CACHE_KEY)) as Record<string, BgmDetail>) || {}
+    c[String(subjectId)] = detail
+    await window.systemApi.cacheSet(BGM_DETAIL_CACHE_KEY, c)
+  } catch { /* noop */ }
+}
+
 // ── XifanConfigModal ──────────────────────────────────────────
 
 function XifanConfigModal({ card, watchInfo, onClose, onStart }: {
@@ -876,7 +917,12 @@ function AnimeInfo(): JSX.Element {
     _cachedBgmKeyword = keyword
     setState({ status: 'searching' })
     try {
-      const results = await window.bgmApi.search(keyword)
+      const cacheEnabled = isSearchCacheEnabled()
+      const cached = cacheEnabled ? await getCachedBgmSearch(keyword) : null
+      const results = cached ?? (await window.bgmApi.search(keyword))
+      if (cacheEnabled && !cached && results.length > 0) {
+        void setCachedBgmSearch(keyword, results)
+      }
       results.sort((a, b) => {
         const da = /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : '0000-00-00'
         const db = /^\d{4}-\d{2}-\d{2}$/.test(b.date) ? b.date : '0000-00-00'
@@ -906,7 +952,12 @@ function AnimeInfo(): JSX.Element {
     }
     setState({ status: 'loading' })
     try {
-      const detail = await window.bgmApi.detail(sid)
+      const cacheEnabled = isSearchCacheEnabled()
+      const cached = cacheEnabled ? await getCachedBgmDetail(sid) : null
+      const detail = cached ?? (await window.bgmApi.detail(sid))
+      if (cacheEnabled && !cached) {
+        void setCachedBgmDetail(sid, detail)
+      }
       setState({ status: 'detail', data: detail })
     } catch (err) {
       setState({ status: 'error', message: String(err) })
