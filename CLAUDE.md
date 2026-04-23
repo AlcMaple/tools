@@ -10,11 +10,9 @@ There are also standalone Python scripts in the root for prototyping crawlers an
 
 ## Commands
 
-All commands are run from `front-end/`:
+All commands are run from the project root:
 
 ```bash
-cd front-end
-
 npm install        # Install dependencies
 npm run dev        # Start dev server with hot reload (recommended)
 npm run build      # Build all (main + preload + renderer)
@@ -82,7 +80,7 @@ App data is stored in Electron's `userData` directory:
 3. Add type declaration in `src/renderer/src/env.d.ts` (or wherever window globals are typed)
 4. Call from renderer via the corresponding `window.*Api` global
 
-## Python Scripts (Root)
+## Python Scripts (`python/`)
 
 Standalone scripts used for prototyping/data work. Not integrated with the Electron app. Key ones:
 - `xifan_api.py`, `girigiri_api.py` — site API clients
