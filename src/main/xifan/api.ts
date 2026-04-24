@@ -1,9 +1,10 @@
 import * as cheerio from 'cheerio/slim'
 import { HttpSession } from '../shared/http-session'
+import { DESKTOP_USER_AGENT } from '../shared/download-types'
 
 const BASE_URL = 'https://dm.xifanacg.com'
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'User-Agent': DESKTOP_USER_AGENT,
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'zh-CN,zh;q=0.9',
   Referer: `${BASE_URL}/`,

@@ -13,24 +13,15 @@ import { URL } from 'url'
 import { createDecipheriv } from 'crypto'
 import { spawn } from 'child_process'
 import { BrowserWindow, session as electronSession, app } from 'electron'
+import { DESKTOP_USER_AGENT, safeName, DlEvent } from '../shared/download-types'
 
 const ffmpegPath = 'ffmpeg'
 
-export interface DlEvent {
-  type: 'ep_start' | 'ep_progress' | 'ep_done' | 'ep_error'
-  ep?: number
-  pct?: number
-  bytes?: number
-  msg?: string
-}
+export type { DlEvent }
 
 const GIRI_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'User-Agent': DESKTOP_USER_AGENT,
   Accept: '*/*',
-}
-
-function safeName(s: string): string {
-  return s.replace(/[\\/:*?"<>|]/g, '_')
 }
 
 // ── m3u8 capture via hidden BrowserWindow ─────────────────────────────────────
