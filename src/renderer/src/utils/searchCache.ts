@@ -1,5 +1,18 @@
-import type { XifanWatchInfo } from "../types/xifan";
 import type { SearchCard, Source } from "../types/search";
+
+const DAY = 24 * 60 * 60 * 1000;
+
+const TTL_BY_SOURCE: Record<string, number> = {
+  xifan: 30 * DAY,
+  girigiri: 30 * DAY,
+  bgm: 14 * DAY,
+};
+
+try {
+  localStorage.removeItem("xifan_watch_cache_v3");
+} catch {
+  /* ignore */
+}
 
 export function isSearchCacheEnabled(): boolean {
   try {
@@ -12,24 +25,51 @@ export function isSearchCacheEnabled(): boolean {
   }
 }
 
+export interface CachedSearchHit {
+  data: SearchCard[];
+  isStale: boolean;
+}
+
+type Entry<T> = { data: T; updatedAt: number };
+
+export function readCacheEntry<T>(raw: unknown): Entry<T> | null {
+  if (Array.isArray(raw)) return { data: raw as T, updatedAt: 0 };
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "data" in (raw as Record<string, unknown>)
+  ) {
+    const r = raw as { data: T; updatedAt?: number };
+    return {
+      data: r.data,
+      updatedAt: typeof r.updatedAt === "number" ? r.updatedAt : 0,
+    };
+  }
+  return null;
+}
+
+function ttlFor(source: Source): number {
+  return TTL_BY_SOURCE[source.toLowerCase()] ?? 7 * DAY;
+}
+
 export async function getCachedSearch(
   keyword: string,
   source: Source,
-): Promise<SearchCard[] | null> {
+): Promise<CachedSearchHit | null> {
   try {
     const key = `search_cache_${source.toLowerCase()}`;
-    const cache = (await window.systemApi.cacheGet(key)) as Record<
+    const all = (await window.systemApi.cacheGet(key)) as Record<
       string,
-      SearchCard[]
+      unknown
     > | null;
-    if (cache && cache[keyword]) {
-      console.log(`[Cache 读取] 成功命中关键词: "${keyword}"`);
-      return cache[keyword];
-    }
-    console.log(`[Cache 读取] 未找到关键词: "${keyword}"`);
-    return null;
-  } catch (err) {
-    console.error(`[Cache 读取错误] 无法读取本地缓存:`, err);
+    if (!all) return null;
+    const entry = readCacheEntry<SearchCard[]>(all[keyword]);
+    if (!entry) return null;
+    return {
+      data: entry.data,
+      isStale: Date.now() - entry.updatedAt > ttlFor(source),
+    };
+  } catch {
     return null;
   }
 }
@@ -41,49 +81,26 @@ export async function setCachedSearch(
 ): Promise<void> {
   const key = `search_cache_${source.toLowerCase()}`;
   try {
-    console.log(
-      `[Cache 写入] 正在保存 "${keyword}" 的 ${cards.length} 条数据...`,
-    );
-    const existingCache =
-      ((await window.systemApi.cacheGet(key)) as Record<
-        string,
-        SearchCard[]
-      >) || {};
-    existingCache[keyword] = cards;
-    await window.systemApi.cacheSet(key, existingCache);
-    console.log(`[Cache 写入] 成功保存到本地硬盘！`);
-  } catch (err) {
-    console.error(
-      `[Cache 写入致命错误] 缓存保存失败，可能是 Base64 数据过大或底层 API 报错:`,
-      err,
-    );
-  }
-}
-
-export function getCachedXifanWatch(url: string): XifanWatchInfo | null {
-  try {
-    return (
-      (
-        JSON.parse(
-          localStorage.getItem("xifan_watch_cache_v3") || "{}",
-        ) as Record<string, XifanWatchInfo>
-      )[url] ?? null
-    );
-  } catch {
-    return null;
-  }
-}
-
-export function setCachedXifanWatch(url: string, info: XifanWatchInfo): void {
-  try {
-    const cache = JSON.parse(
-      localStorage.getItem("xifan_watch_cache_v3") || "{}",
-    ) as Record<string, XifanWatchInfo>;
-    cache[url] = info;
-    localStorage.setItem("xifan_watch_cache_v3", JSON.stringify(cache));
+    await window.systemApi.cacheSet(key, keyword, {
+      data: cards,
+      updatedAt: Date.now(),
+    });
   } catch {
     /* ignore */
   }
+}
+
+const inflight = new Map<string, Promise<void>>();
+
+export function dedupRefresh(
+  key: string,
+  run: () => Promise<void>,
+): Promise<void> {
+  const existing = inflight.get(key);
+  if (existing) return existing;
+  const p = run().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
 }
 
 export function getSavePath(): string | undefined {

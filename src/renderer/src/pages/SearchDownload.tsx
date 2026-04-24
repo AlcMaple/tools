@@ -15,8 +15,6 @@ import {
   isSearchCacheEnabled,
   getCachedSearch,
   setCachedSearch,
-  getCachedXifanWatch,
-  setCachedXifanWatch,
   getSavePath,
 } from "../utils/searchCache";
 import {
@@ -121,9 +119,9 @@ function SearchDownload(): JSX.Element {
     setSearchQuery(keyword);
 
     if (isSearchCacheEnabled()) {
-      const cached = await getCachedSearch(keyword, source);
-      if (cached) {
-        setState({ status: "results", cards: cached, keyword });
+      const hit = await getCachedSearch(keyword, source);
+      if (hit && !hit.isStale) {
+        setState({ status: "results", cards: hit.data, keyword });
         return;
       }
     }
@@ -257,33 +255,20 @@ function SearchDownload(): JSX.Element {
       if (card.source === "Girigiri") {
         const watchInfo = await window.girigiriApi.getWatch(card.key);
         if (watchInfo.error) {
-          alert(`Failed to load episodes: ${watchInfo.error}`);
+          setState({ status: "error", message: String(watchInfo.error) });
           return;
         }
         setState({ status: "girigiri_config", cards, card, watchInfo });
       } else {
-        if (isSearchCacheEnabled()) {
-          const cached = getCachedXifanWatch(card.key);
-          if (cached) {
-            setState({
-              status: "xifan_config",
-              cards,
-              card,
-              watchInfo: cached,
-            });
-            return;
-          }
-        }
         const watchInfo = await window.xifanApi.getWatch(card.key);
         if (watchInfo.error) {
-          alert(`Failed to load sources: ${watchInfo.error}`);
+          setState({ status: "error", message: String(watchInfo.error) });
           return;
         }
-        setCachedXifanWatch(card.key, watchInfo);
         setState({ status: "xifan_config", cards, card, watchInfo });
       }
     } catch (err) {
-      alert(`Error: ${err}`);
+      setState({ status: "error", message: String(err) });
     } finally {
       setLoadingKey(null);
     }
