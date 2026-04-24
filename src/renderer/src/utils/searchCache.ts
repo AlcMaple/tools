@@ -8,12 +8,6 @@ const TTL_BY_SOURCE: Record<string, number> = {
   bgm: 14 * DAY,
 };
 
-try {
-  localStorage.removeItem("xifan_watch_cache_v3");
-} catch {
-  /* ignore */
-}
-
 export function isSearchCacheEnabled(): boolean {
   try {
     return (
@@ -33,7 +27,6 @@ export interface CachedSearchHit {
 type Entry<T> = { data: T; updatedAt: number };
 
 export function readCacheEntry<T>(raw: unknown): Entry<T> | null {
-  if (Array.isArray(raw)) return { data: raw as T, updatedAt: 0 };
   if (
     raw &&
     typeof raw === "object" &&
