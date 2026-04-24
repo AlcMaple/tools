@@ -4,6 +4,10 @@ import ErrorPanel from '../components/ErrorPanel'
 import type { BgmSearchResult, BgmDetail } from '../types/bgm'
 import type { XifanSearchResult, XifanWatchInfo } from '../types/xifan'
 import { downloadStore } from '../stores/downloadStore'
+import { readCacheEntry, dedupRefresh } from '../utils/searchCache'
+
+const DAY_MS = 24 * 60 * 60 * 1000
+const BGM_SEARCH_TTL_MS = 14 * DAY_MS
 
 // ── 工具函数 ──────────────────────────────────────────────────
 function extractSubjectId(link: string): number | null {
@@ -17,38 +21,30 @@ function extractSubjectId(link: string): number | null {
 const ARCHIVE_CACHE_KEY = 'archive_search_cache_xifan'
 
 async function getSearchCache(keyword: string): Promise<XifanSearchResult[] | null> {
-  // 先查 ArchiveFlow 自己的缓存
   try {
     const c = (await window.systemApi.cacheGet(ARCHIVE_CACHE_KEY)) as Record<string, XifanSearchResult[]> | null
-    console.log('[ArchiveFlow] own cache:', c ? Object.keys(c) : null)
-    if (c?.[keyword]) {
-      console.log('[ArchiveFlow] own cache HIT for', keyword)
-      return c[keyword]
-    }
-  } catch (e) { console.warn('[ArchiveFlow] own cache error', e) }
+    if (c?.[keyword]) return c[keyword]
+  } catch { /* noop */ }
 
-  // 回落到 SearchDownload 的缓存，SearchCard.key → watch_url
   try {
-    const sd = (await window.systemApi.cacheGet('search_cache_xifan')) as Record<string, any[]> | null
-    console.log('[ArchiveFlow] SD cache keys:', sd ? Object.keys(sd) : null, '| looking for:', JSON.stringify(keyword))
-    if (sd?.[keyword]) {
-      const mapped = sd[keyword]
+    const sd = (await window.systemApi.cacheGet('search_cache_xifan')) as Record<string, unknown> | null
+    const entry = sd ? readCacheEntry<any[]>(sd[keyword]) : null
+    if (entry) {
+      const mapped = entry.data
         .map((c: any): XifanSearchResult => ({
           title: c.title ?? '',
           cover: c.cover ?? '',
           year: c.year ?? '',
           area: c.tag ?? '',
           episode: c.count ?? '',
-          watch_url: c.key ?? '',       // SearchCard 用 key 存 watch_url
+          watch_url: c.key ?? '',
           detail_url: '',
         }))
-      console.log('[ArchiveFlow] SD cache HIT:', mapped.length, 'items, with watch_url:', mapped.filter(r => r.watch_url).length)
       const withUrl = mapped.filter(r => r.watch_url)
       if (withUrl.length > 0) return withUrl
-      // 有结果但全都没有 watch_url：仍然返回所有结果让用户选
       if (mapped.length > 0) return mapped
     }
-  } catch (e) { console.warn('[ArchiveFlow] SD cache error', e) }
+  } catch { /* noop */ }
 
   return null
 }
@@ -58,20 +54,6 @@ async function setSearchCache(keyword: string, cards: XifanSearchResult[]): Prom
     const c = ((await window.systemApi.cacheGet(ARCHIVE_CACHE_KEY)) as Record<string, XifanSearchResult[]>) || {}
     c[keyword] = cards
     await window.systemApi.cacheSet(ARCHIVE_CACHE_KEY, c)
-  } catch { /* noop */ }
-}
-
-function getWatchCache(url: string): XifanWatchInfo | null {
-  try {
-    return (JSON.parse(localStorage.getItem('xifan_watch_cache_v3') || '{}') as Record<string, XifanWatchInfo>)[url] ?? null
-  } catch { return null }
-}
-
-function setWatchCache(url: string, info: XifanWatchInfo): void {
-  try {
-    const c = JSON.parse(localStorage.getItem('xifan_watch_cache_v3') || '{}') as Record<string, XifanWatchInfo>
-    c[url] = info
-    localStorage.setItem('xifan_watch_cache_v3', JSON.stringify(c))
   } catch { /* noop */ }
 }
 
@@ -88,18 +70,24 @@ function isSearchCacheEnabled(): boolean {
   } catch { return true }
 }
 
-async function getCachedBgmSearch(keyword: string): Promise<BgmSearchResult[] | null> {
+interface BgmSearchHit { data: BgmSearchResult[]; isStale: boolean }
+
+async function getCachedBgmSearch(keyword: string): Promise<BgmSearchHit | null> {
   try {
-    const c = (await window.systemApi.cacheGet(BGM_SEARCH_CACHE_KEY)) as Record<string, BgmSearchResult[]> | null
-    return c?.[keyword] ?? null
+    const c = (await window.systemApi.cacheGet(BGM_SEARCH_CACHE_KEY)) as Record<string, unknown> | null
+    if (!c) return null
+    const entry = readCacheEntry<BgmSearchResult[]>(c[keyword])
+    if (!entry) return null
+    return { data: entry.data, isStale: Date.now() - entry.updatedAt > BGM_SEARCH_TTL_MS }
   } catch { return null }
 }
 
 async function setCachedBgmSearch(keyword: string, items: BgmSearchResult[]): Promise<void> {
   try {
-    const c = ((await window.systemApi.cacheGet(BGM_SEARCH_CACHE_KEY)) as Record<string, BgmSearchResult[]>) || {}
-    c[keyword] = items
-    await window.systemApi.cacheSet(BGM_SEARCH_CACHE_KEY, c)
+    await window.systemApi.cacheSet(BGM_SEARCH_CACHE_KEY, keyword, {
+      data: items,
+      updatedAt: Date.now(),
+    })
   } catch { /* noop */ }
 }
 
@@ -272,10 +260,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
   async function loadWatch(card: XifanSearchResult): Promise<void> {
     setState({ status: 'loadingWatch', card })
     try {
-      const cached = getWatchCache(card.watch_url)
-      if (cached) { setState({ status: 'configuring', card, watchInfo: cached }); return }
       const watchInfo = await window.xifanApi.getWatch(card.watch_url)
-      setWatchCache(card.watch_url, watchInfo)
       setState({ status: 'configuring', card, watchInfo })
     } catch (err) {
       setState({ status: 'error', message: `Failed to load sources: ${String(err)}` })
@@ -912,32 +897,67 @@ function AnimeInfo(): JSX.Element {
     _cachedState = state
   }, [state])
 
+  const sortByDate = (items: BgmSearchResult[]): BgmSearchResult[] => {
+    items.sort((a, b) => {
+      const da = /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : '0000-00-00'
+      const db = /^\d{4}-\d{2}-\d{2}$/.test(b.date) ? b.date : '0000-00-00'
+      return db.localeCompare(da)
+    })
+    return items
+  }
+
+  const refreshBgmSearchInBackground = async (keyword: string): Promise<void> => {
+    await dedupRefresh(`bgm:${keyword}`, async () => {
+      try {
+        const fresh = await window.bgmApi.search(keyword)
+        if (!Array.isArray(fresh) || fresh.length === 0) return
+        await setCachedBgmSearch(keyword, fresh)
+      } catch {
+        /* swallow — next foreground search will retry */
+      }
+    })
+  }
+
   const handleSearch = async (keyword: string): Promise<void> => {
     lastBgmKeyword.current = keyword
     _cachedBgmKeyword = keyword
-    setState({ status: 'searching' })
-    try {
-      const cacheEnabled = isSearchCacheEnabled()
-      const cached = cacheEnabled ? await getCachedBgmSearch(keyword) : null
-      const results = cached ?? (await window.bgmApi.search(keyword))
-      if (cacheEnabled && !cached && results.length > 0) {
-        void setCachedBgmSearch(keyword, results)
-      }
-      results.sort((a, b) => {
-        const da = /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : '0000-00-00'
-        const db = /^\d{4}-\d{2}-\d{2}$/.test(b.date) ? b.date : '0000-00-00'
-        return db.localeCompare(da)
-      })
-      if (results.length === 0) {
+    const cacheEnabled = isSearchCacheEnabled()
+    const hit = cacheEnabled ? await getCachedBgmSearch(keyword) : null
+
+    if (hit) {
+      const sorted = sortByDate(hit.data)
+      if (sorted.length === 0) {
         setState({ status: 'error', message: `未找到与"${keyword}"相关的结果` })
-      } else if (results.length === 1) {
+      } else if (sorted.length === 1) {
         lastResults.current = []
         _cachedResults = []
-        await loadDetail(results[0])
+        await loadDetail(sorted[0])
       } else {
-        lastResults.current = results
-        _cachedResults = results
-        setState({ status: 'results', items: results })
+        lastResults.current = sorted
+        _cachedResults = sorted
+        setState({ status: 'results', items: sorted })
+      }
+      if (hit.isStale) void refreshBgmSearchInBackground(keyword)
+      return
+    }
+
+    setState({ status: 'searching' })
+    try {
+      const results = await window.bgmApi.search(keyword)
+      if (cacheEnabled && results.length > 0) {
+        void setCachedBgmSearch(keyword, results)
+      }
+      const sorted = sortByDate(results)
+      if (sorted.length === 0) {
+        setState({ status: 'error', message: `未找到与"${keyword}"相关的结果` })
+      } else if (sorted.length === 1) {
+        lastResults.current = []
+        _cachedResults = []
+        await loadDetail(sorted[0])
+      } else {
+        lastResults.current = sorted
+        _cachedResults = sorted
+        setState({ status: 'results', items: sorted })
       }
     } catch (err) {
       setState({ status: 'error', message: String(err) })
