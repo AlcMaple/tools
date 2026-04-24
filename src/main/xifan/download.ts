@@ -16,12 +16,13 @@ import { createWriteStream, createReadStream, existsSync, statSync, mkdirSync, u
 import { join } from 'path'
 import { URL } from 'url'
 import { app } from 'electron'
+import { DESKTOP_USER_AGENT, safeName, DlEvent } from '../shared/download-types'
 
 const MAX_RETRIES = 5
 const THREAD_COUNT = 8
 
 const DL_HEADERS: Record<string, string> = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'User-Agent': DESKTOP_USER_AGENT,
   Accept: '*/*',
 }
 
@@ -29,17 +30,7 @@ function headersFor(_url: string, extra?: Record<string, string>): Record<string
   return { ...DL_HEADERS, ...(extra ?? {}) }
 }
 
-export interface DlEvent {
-  type: 'ep_start' | 'ep_progress' | 'ep_done' | 'ep_error'
-  ep?: number
-  pct?: number
-  bytes?: number
-  msg?: string
-}
-
-function safeName(s: string): string {
-  return s.replace(/[\\/:*?"<>|]/g, '_')
-}
+export type { DlEvent }
 
 function partPath(savePath: string, idx: number): string {
   return `${savePath}.part${idx}`
