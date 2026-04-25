@@ -2,6 +2,27 @@
 
 基于 Electron 构建的桌面端应用，用于搜索、下载与管理动漫。
 
+## 平台支持
+
+| 平台 | 架构 | 状态 |
+|---|---|---|
+| Windows 10/11 | x64 | ✅ 主测平台 |
+| macOS 11+ | arm64（Apple Silicon） | ✅ 主测平台 |
+| macOS Intel | x86_64 | ❌ 暂不发布 |
+| Linux | — | ❌ 暂不发布 |
+
+## 前置依赖
+
+> [!Note]
+> **必须在系统 PATH 中安装 ffmpeg**。本应用不内置 ffmpeg，下载视频与提取本地缩略图均依赖系统 ffmpeg。
+>
+> - Windows：从 [ffmpeg.org](https://ffmpeg.org/download.html) 下载，将 `bin` 目录加入 PATH
+> - macOS：`brew install ffmpeg`
+
+> [!Tip]
+> macOS 首次打开提示"无法验证开发者"时，请右键 App → 选择"打开"，
+> 或执行 `xattr -d com.apple.quarantine /Applications/MapleTools.app`。
+
 ## 目录结构
 
 ```

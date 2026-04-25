@@ -223,7 +223,7 @@ function BiuSync(): JSX.Element {
             </span>
           </div>
           <span className="text-[10px] font-label text-on-surface-variant/20 tracking-widest">
-            MAPLE TOOLS SYNC v1.0.0
+            MAPLE TOOLS SYNC v{__APP_VERSION__}
           </span>
         </div>
       </main>
