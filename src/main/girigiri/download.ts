@@ -1,21 +1,17 @@
 /**
- * Girigiri HLS/m3u8 download.
- * Replaces girigiri_api.py cmd_download_single().
- *
- * m3u8 capture: uses a hidden Electron BrowserWindow + webRequest interception
- * instead of Playwright (no extra dependency, uses the bundled Chromium).
+ * Girigiri HLS/m3u8 download. The real m3u8 URL is sniffed by loading the player
+ * page in a hidden BrowserWindow and intercepting requests via webRequest, which
+ * avoids pulling in a headless-browser dependency just to get one URL.
  */
 import * as https from 'https'
 import * as http from 'http'
-import { mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'fs'
+import { mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync, existsSync, statSync } from 'fs'
 import { join } from 'path'
 import { URL } from 'url'
 import { createDecipheriv } from 'crypto'
 import { spawn } from 'child_process'
 import { BrowserWindow, session as electronSession, app } from 'electron'
 import { DESKTOP_USER_AGENT, safeName, DlEvent } from '../shared/download-types'
-
-const ffmpegPath = 'ffmpeg'
 
 export type { DlEvent }
 
@@ -60,19 +56,20 @@ async function captureM3u8(epUrl: string, cookieString: string): Promise<string 
 
       const timer = setTimeout(() => done(null), 30000)
 
-      // Intercept network requests to find m3u8
+      // Intercept network requests to find the real m3u8 playlist.
+      // Strict: pathname (case-insensitive) must end with `.m3u8` so we don't
+      // grab JS / HTML resources that merely contain the substring "m3u8".
       ses.webRequest.onBeforeRequest((details, callback) => {
-        const url = details.url
-        if (
-          !resolved &&
-          url.includes('.m3u8') &&
-          (url.includes('girigirilove') || url.includes('ai.girigirilove.net'))
-        ) {
-          done(url)
-          callback({ cancel: false })
-          return
-        }
         callback({})
+        if (resolved) return
+        let parsed: URL
+        try { parsed = new URL(details.url) } catch { return }
+        const pathLower = parsed.pathname.toLowerCase()
+        const hostLower = parsed.hostname.toLowerCase()
+        if (!pathLower.endsWith('.m3u8')) return
+        if (!hostLower.includes('girigirilove')) return
+        console.log(`[girigiri] captured m3u8 candidate: ${details.url}`)
+        done(details.url)
       })
 
       win.loadURL(epUrl).catch(() => done(null))
@@ -83,21 +80,65 @@ async function captureM3u8(epUrl: string, cookieString: string): Promise<string 
 
 // ── HTTP fetch helper ─────────────────────────────────────────────────────────
 
-async function fetchBuffer(url: string, extraHeaders: Record<string, string> = {}): Promise<Buffer | null> {
-  return new Promise((resolve) => {
-    const u = new URL(url)
+// http.request rejects unescaped chars in `path`. URL parser leaves [, ], |, {, }, `, space, etc. unencoded.
+// Encode them defensively so chunk URLs containing such chars don't crash mod.get synchronously.
+function buildSafePath(u: URL): string {
+  let out = ''
+  for (const ch of u.pathname) {
+    const code = ch.charCodeAt(0)
+    const unsafe = code < 0x21 || code === 0x7f || '[]|{}\\^`"<>'.indexOf(ch) >= 0
+    out += unsafe ? '%' + code.toString(16).toUpperCase().padStart(2, '0') : ch
+  }
+  return out + u.search
+}
+
+async function fetchBuffer(url: string, signal?: AbortSignal, extraHeaders: Record<string, string> = {}): Promise<Buffer | null> {
+  if (signal?.aborted) return null
+  return new Promise<Buffer | null>((resolve) => {
+    let settled = false
+    let req: http.ClientRequest | null = null
+
+    const finish = (val: Buffer | null): void => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', onAbort)
+      resolve(val)
+    }
+    const onAbort = (): void => {
+      req?.destroy()
+      finish(null)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+
+    let u: URL
+    try { u = new URL(url) } catch (e) {
+      console.warn(`[girigiri] fetchBuffer URL parse failed: ${url}`, e)
+      finish(null); return
+    }
     const mod = (u.protocol === 'https:' ? https : http) as typeof https
-    const req = mod.get(
-      { hostname: u.hostname, path: u.pathname + u.search, headers: { ...GIRI_HEADERS, ...extraHeaders }, rejectUnauthorized: false },
-      (res) => {
-        const chunks: Buffer[] = []
-        res.on('data', (c: Buffer) => chunks.push(c))
-        res.on('end', () => resolve(Buffer.concat(chunks)))
-        res.on('error', () => resolve(null))
-      }
-    )
-    req.setTimeout(30000, () => { req.destroy(); resolve(null) })
-    req.on('error', () => resolve(null))
+    try {
+      req = mod.get(
+        { hostname: u.hostname, port: u.port || undefined, path: buildSafePath(u), headers: { ...GIRI_HEADERS, ...extraHeaders }, rejectUnauthorized: false },
+        (res) => {
+          const status = res.statusCode ?? 0
+          if (status < 200 || status >= 300) {
+            console.warn(`[girigiri] fetchBuffer HTTP ${status} for ${url}`)
+            res.resume()
+            finish(null)
+            return
+          }
+          const chunks: Buffer[] = []
+          res.on('data', (c: Buffer) => chunks.push(c))
+          res.on('end', () => finish(Buffer.concat(chunks)))
+          res.on('error', (e) => { console.warn(`[girigiri] fetchBuffer stream error for ${url}:`, e); finish(null) })
+        }
+      )
+    } catch (e) {
+      console.warn(`[girigiri] fetchBuffer mod.get threw for ${url}:`, e)
+      finish(null); return
+    }
+    req.setTimeout(30000, () => { console.warn(`[girigiri] fetchBuffer timeout (30s) for ${url}`); req?.destroy(); finish(null) })
+    req.on('error', (e) => { console.warn(`[girigiri] fetchBuffer req error for ${url}:`, e.message); finish(null) })
   })
 }
 
@@ -113,6 +154,16 @@ async function parseM3u8(m3u8Url: string): Promise<M3u8Info> {
   if (!buf) return { tsUrls: [], keyInfo: null }
 
   const text = buf.toString('utf-8')
+
+  // A real m3u8 playlist always starts with the #EXTM3U marker.
+  // Without this guard, JS/HTML content that snuck in via the wrong URL
+  // would be parsed line-by-line as if every line were a segment URL.
+  if (!text.trimStart().startsWith('#EXTM3U')) {
+    console.error(`[girigiri] not a valid m3u8 (no #EXTM3U marker): ${m3u8Url}`)
+    console.error(`[girigiri] first 300 chars of response:\n${text.slice(0, 300)}`)
+    return { tsUrls: [], keyInfo: null }
+  }
+
   const tsUrls: string[] = []
   let keyInfo: M3u8Info['keyInfo'] = null
 
@@ -132,11 +183,19 @@ async function parseM3u8(m3u8Url: string): Promise<M3u8Info> {
       continue
     }
     if (l.startsWith('#')) continue
-    if (l.includes('.m3u8')) {
-      // nested m3u8
-      const nested = await parseM3u8(new URL(l, m3u8Url).href)
-      return nested
+    // Master playlists list variant playlists ending in .m3u8 (optionally with query).
+    // Substring match would mistakenly recurse on segment URLs that merely contain ".m3u8".
+    if (/\.m3u8($|\?)/i.test(l)) {
+      return parseM3u8(new URL(l, m3u8Url).href)
     }
+
+    // A real segment URL never contains whitespace or these JS/HTML chars.
+    // Lines that match are obviously not URLs (e.g. `return new Promise(...)`).
+    if (/[\s(){}<>"'`]/.test(l)) {
+      console.warn(`[girigiri] skipping non-URL line in m3u8: ${l.slice(0, 80)}`)
+      continue
+    }
+
     tsUrls.push(new URL(l, m3u8Url).href)
   }
 
@@ -151,15 +210,17 @@ async function downloadSegment(
   signal: AbortSignal,
   maxRetries = 8
 ): Promise<boolean> {
+  if (existsSync(savePath) && statSync(savePath).size > 0) return true
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     if (signal.aborted) return false
-    const buf = await fetchBuffer(url)
+    const buf = await fetchBuffer(url, signal)
     if (buf && buf.length > 0) {
       writeFileSync(savePath, buf)
       return true
     }
     await new Promise((r) => setTimeout(r, Math.min(2000 + attempt * 1500, 8000)))
   }
+  console.error(`[girigiri] segment FAILED after ${maxRetries} attempts: ${url}`)
   return false
 }
 
@@ -184,7 +245,7 @@ async function downloadSegmentsConcurrent(
     semaphore.slots++
     if (ok) {
       let segSize = 0
-      try { segSize = require('node:fs').statSync(segPath).size as number } catch { /* ignore */ }
+      try { segSize = statSync(segPath).size } catch { /* ignore */ }
       segsDone++
       totalBytes += segSize
       onProgress(segsDone, total, totalBytes)
@@ -197,6 +258,8 @@ async function downloadSegmentsConcurrent(
   return failedCount
 }
 
+const isSegmentFile = (f: string): boolean => f.startsWith('segment_') && f.endsWith('.ts')
+
 // ── AES decrypt ───────────────────────────────────────────────────────────────
 
 async function decryptSegments(tempDir: string, keyInfo: NonNullable<M3u8Info['keyInfo']>): Promise<void> {
@@ -205,7 +268,7 @@ async function decryptSegments(tempDir: string, keyInfo: NonNullable<M3u8Info['k
 
   const ivBuf = Buffer.from(keyInfo.iv.padStart(32, '0'), 'hex')
 
-  const files = readdirSync(tempDir).filter((f) => f.endsWith('.ts')).sort()
+  const files = readdirSync(tempDir).filter(isSegmentFile).sort()
   for (const fname of files) {
     const fpath = join(tempDir, fname)
     const data = readFileSync(fpath)
@@ -222,9 +285,7 @@ async function decryptSegments(tempDir: string, keyInfo: NonNullable<M3u8Info['k
 
 function runFfmpeg(segListPath: string, outputPath: string, cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (!ffmpegPath) { reject(new Error('ffmpeg-static not found')); return }
-
-    const proc = spawn(ffmpegPath, [
+    const proc = spawn('ffmpeg', [
       '-f', 'concat', '-safe', '0', '-i', segListPath,
       '-c:v', 'copy', '-c:a', 'copy', '-bsf:a', 'aac_adtstoasc',
       '-movflags', '+faststart', '-y', '-loglevel', 'warning',
@@ -271,12 +332,11 @@ export async function downloadSingleEp(
     return
   }
 
-  // 3. Prepare temp dir
+  // 3. Prepare temp dir (kept across pause/restart so segments can resume)
   const tempDir = join(app.getPath('temp'), 'girigiri_ts', `${safeName(title)}_${String(epIdx).padStart(4, '0')}`)
-  rmSync(tempDir, { recursive: true, force: true })
   mkdirSync(tempDir, { recursive: true })
 
-  // 4. Download segments
+  // 4. Download segments (already-downloaded segments are skipped inside downloadSegment)
   const failed = await downloadSegmentsConcurrent(
     tsUrls, tempDir, signal,
     (done, total, bytes) => {
@@ -285,7 +345,7 @@ export async function downloadSingleEp(
     }
   )
 
-  if (signal.aborted) { rmSync(tempDir, { recursive: true, force: true }); return }
+  if (signal.aborted) return
 
   if (failed > 0) {
     rmSync(tempDir, { recursive: true, force: true })
@@ -307,7 +367,7 @@ export async function downloadSingleEp(
   onEvent({ type: 'ep_progress', ep: epIdx, pct: 97, bytes: 0 })
 
   // 6. Write segment list file for ffmpeg
-  const segFiles = readdirSync(tempDir).filter((f) => f.startsWith('segment_') && f.endsWith('.ts')).sort()
+  const segFiles = readdirSync(tempDir).filter(isSegmentFile).sort()
   const segListPath = join(tempDir, 'segments.txt')
   writeFileSync(segListPath, segFiles.map((f) => `file '${f}'`).join('\n'))
 

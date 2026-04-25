@@ -63,7 +63,12 @@ function startNextGiriEp(taskId: string): void {
         }
         q.sender.send('download:progress', taskId, ev)
       }
-    ).finally(() => {
+    ).catch((err) => {
+      // Defensive: any unexpected throw inside the download flow surfaces as ep_error
+      // instead of letting an unhandled rejection slip into .finally and trigger all_done.
+      console.error(`[girigiri] download crashed for ep=${capturedEp}:`, err)
+      q.sender.send('download:progress', taskId, { type: 'ep_error', ep: capturedEp, msg: String(err) })
+    }).finally(() => {
       if (q.currentAbort === abort) {
         q.current = null
         q.currentAbort = null
