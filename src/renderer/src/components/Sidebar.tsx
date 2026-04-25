@@ -24,7 +24,7 @@ function Sidebar(): JSX.Element {
           MAPLE TOOLS
         </h1>
         <p className="font-label text-[10px] text-on-surface/40 tracking-widest mt-1">
-          V1.0.0
+          V{__APP_VERSION__}
         </p>
       </div>
 
