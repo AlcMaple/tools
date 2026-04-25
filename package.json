@@ -1,6 +1,6 @@
 {
   "name": "mapletools",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "MapleTools Desktop App",
   "main": "out/main/index.js",
   "scripts": {
@@ -30,7 +30,8 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "resources/icon.ico"
+      "icon": "resources/icon.ico",
+      "artifactName": "${productName}_${version}_windows_${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -38,6 +39,17 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "MapleTools"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "zip", "arch": ["arm64"] }
+      ],
+      "category": "public.app-category.entertainment",
+      "artifactName": "${productName}_${version}_macos_${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "${productName}_${version}_macos_${arch}.${ext}"
     }
   },
   "dependencies": {

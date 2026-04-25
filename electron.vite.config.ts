@@ -1,13 +1,20 @@
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import pkg from './package.json'
+
+const versionDefine = {
+  __APP_VERSION__: JSON.stringify(pkg.version)
+}
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    define: versionDefine
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    define: versionDefine
   },
   renderer: {
     resolve: {
@@ -15,6 +22,7 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()]
+    plugins: [react()],
+    define: versionDefine
   }
 })

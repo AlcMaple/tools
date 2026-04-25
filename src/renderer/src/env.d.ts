@@ -3,6 +3,10 @@ declare module '*.png' {
   export default src
 }
 
+declare global {
+  const __APP_VERSION__: string
+}
+
 import type { BgmSearchResult, BgmDetail } from './types/bgm'
 import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
