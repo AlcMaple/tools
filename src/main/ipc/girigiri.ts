@@ -1,7 +1,9 @@
 import { ipcMain } from 'electron'
+import { setMaxListeners } from 'events'
 import { getCaptcha, verifyCaptcha, search, watch, giriSession } from '../girigiri/api'
 import { downloadSingleEp, DlEvent } from '../girigiri/download'
 import { trackSpeed, forgetTask } from '../shared/speed-tracker'
+import { girigiriScheduler } from '../shared/download-scheduler'
 
 interface GiriEpQueue {
   title: string
@@ -9,7 +11,6 @@ interface GiriEpQueue {
   savePath: string | null
   pending: number[]
   priorityFront: number[]
-  pausedEps: Set<number>
   current: number | null
   currentAbort: AbortController | null
   taskPaused: boolean
@@ -23,33 +24,33 @@ function startNextGiriEp(taskId: string): void {
   const q = giriEpQueues.get(taskId)
   if (!q || q.taskPaused || q.cancelled || q.current !== null) return
 
-  let ep: number | undefined
-  while (q.priorityFront.length > 0) {
-    const c = q.priorityFront.shift()!
-    if (!q.pausedEps.has(c)) { ep = c; break }
-  }
-  if (ep === undefined) {
-    while (q.pending.length > 0) {
-      const c = q.pending.shift()!
-      if (!q.pausedEps.has(c)) { ep = c; break }
-    }
-  }
+  const ep = q.priorityFront.shift() ?? q.pending.shift()
 
   if (ep === undefined) {
-    if (q.pausedEps.size === 0) {
-      giriEpQueues.delete(taskId)
-      forgetTask(taskId)
-      q.sender.send('download:progress', taskId, { type: 'all_done' })
-    }
+    giriEpQueues.delete(taskId)
+    forgetTask(taskId)
+    girigiriScheduler.release(taskId)
+    q.sender.send('download:progress', taskId, { type: 'all_done' })
     return
   }
 
   const epInfo = q.epList.find((e) => e.idx === ep)
   if (!epInfo) { startNextGiriEp(taskId); return }
 
+  // Per-source single slot: if another girigiri task is currently downloading,
+  // queue this ep back up and wait for the scheduler to broadcast 'available'.
+  // Cross-source concurrency (girigiri + xifan) stays allowed.
+  if (!girigiriScheduler.tryAcquire(taskId)) {
+    q.priorityFront.unshift(ep)
+    return
+  }
+
   const capturedEp = ep
   q.current = capturedEp
   const abort = new AbortController()
+  // ~10 concurrent fetchBuffer + retry sleeps may all subscribe to the same signal.
+  // Bump the limit so Node doesn't print MaxListenersExceededWarning.
+  setMaxListeners(50, abort.signal)
   q.currentAbort = abort
 
   setImmediate(() => {
@@ -90,7 +91,7 @@ export function registerGirigiriIpc(): void {
       const taskId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
       giriEpQueues.set(taskId, {
         title, epList, savePath: savePath ?? null,
-        pending: [...selectedIdxs], priorityFront: [], pausedEps: new Set(),
+        pending: [...selectedIdxs], priorityFront: [],
         current: null, currentAbort: null, taskPaused: false, cancelled: false,
         sender: event.sender,
       })
@@ -107,6 +108,7 @@ export function registerGirigiriIpc(): void {
       giriEpQueues.delete(taskId)
       forgetTask(taskId)
     }
+    girigiriScheduler.release(taskId)
     return { cancelled: true }
   })
 
@@ -120,6 +122,7 @@ export function registerGirigiriIpc(): void {
       q.sender.send('download:progress', taskId, { type: 'ep_paused', ep })
       q.currentAbort?.abort()
     }
+    girigiriScheduler.release(taskId)
     return { paused: true }
   })
 
@@ -129,7 +132,7 @@ export function registerGirigiriIpc(): void {
       if (title && epList && pendingEps?.length) {
         giriEpQueues.set(taskId, {
           title, epList, savePath: savePath ?? null,
-          pending: [...pendingEps], priorityFront: [], pausedEps: new Set(),
+          pending: [...pendingEps], priorityFront: [],
           current: null, currentAbort: null, taskPaused: false, cancelled: false,
           sender: event.sender,
         })
@@ -142,31 +145,12 @@ export function registerGirigiriIpc(): void {
     return { resumed: true }
   })
 
-  ipcMain.handle('girigiri:download-pause-ep', (_event, taskId: string, ep: number) => {
-    const q = giriEpQueues.get(taskId)
-    if (!q) return { paused: false }
-    q.pausedEps.add(ep)
-    q.sender.send('download:progress', taskId, { type: 'ep_paused', ep })
-    if (q.current === ep) q.currentAbort?.abort()
-    return { paused: true }
-  })
-
-  ipcMain.handle('girigiri:download-resume-ep', (_event, taskId: string, ep: number) => {
-    const q = giriEpQueues.get(taskId)
-    if (!q) return { resumed: false }
-    q.pausedEps.delete(ep)
-    q.priorityFront.unshift(ep)
-    q.sender.send('download:progress', taskId, { type: 'ep_queued', ep })
-    if (q.current === null && !q.taskPaused) startNextGiriEp(taskId)
-    return { resumed: true }
-  })
-
   ipcMain.handle(
     'girigiri:download-requeue',
     async (event, taskId: string, title: string, epList: { idx: number; name: string; url: string }[], eps: number[], savePath?: string) => {
       giriEpQueues.set(taskId, {
         title, epList, savePath: savePath ?? null,
-        pending: [...eps], priorityFront: [], pausedEps: new Set(),
+        pending: [...eps], priorityFront: [],
         current: null, currentAbort: null, taskPaused: false, cancelled: false,
         sender: event.sender,
       })
@@ -180,15 +164,21 @@ export function registerGirigiriIpc(): void {
     if (!q) {
       giriEpQueues.set(taskId, {
         title, epList, savePath: savePath ?? null,
-        pending: [...failedEps], priorityFront: [], pausedEps: new Set(),
+        pending: [...failedEps], priorityFront: [],
         current: null, currentAbort: null, taskPaused: false, cancelled: false,
         sender: event.sender,
       })
       startNextGiriEp(taskId)
       return { started: true }
     }
-    for (const ep of [...failedEps].reverse()) { q.pausedEps.delete(ep); q.priorityFront.unshift(ep) }
+    for (const ep of [...failedEps].reverse()) q.priorityFront.unshift(ep)
     if (q.current === null && !q.taskPaused) startNextGiriEp(taskId)
     return { started: true }
+  })
+
+  // When the global slot frees up (any source releases it), retry every queued task.
+  // Each call is a no-op for tasks that aren't ready, so this is safe to broadcast.
+  girigiriScheduler.on('available', () => {
+    for (const taskId of giriEpQueues.keys()) startNextGiriEp(taskId)
   })
 }
