@@ -10,6 +10,7 @@ declare global {
 import type { BgmSearchResult, BgmDetail } from './types/bgm'
 import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
+import type { AowuSearchResult, AowuEpisode, AowuWatchInfo } from './types/aowu'
 
 export interface LibraryPath {
   path: string;
@@ -130,6 +131,57 @@ declare global {
       onDownloadProgress: (
         cb: (taskId: string, event: unknown) => void
       ) => () => void
+    }
+    aowuApi: {
+      search: (keyword: string) => Promise<AowuSearchResult[]>
+      getWatch: (watchUrl: string) => Promise<AowuWatchInfo>
+      startDownload: (
+        title: string,
+        animeId: string,
+        sourceIdx: number,
+        epList: AowuEpisode[],
+        selectedIdxs: number[],
+        savePath?: string
+      ) => Promise<{ started: boolean; taskId: string }>
+      cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
+      pauseDownload: (taskId: string) => Promise<{ paused: boolean }>
+      resumeDownload: (
+        taskId: string,
+        title?: string,
+        animeId?: string,
+        sourceIdx?: number,
+        epList?: AowuEpisode[],
+        pendingEps?: number[],
+        savePath?: string
+      ) => Promise<{ resumed: boolean }>
+      requeueEpisodes: (
+        taskId: string,
+        title: string,
+        animeId: string,
+        sourceIdx: number,
+        epList: AowuEpisode[],
+        eps: number[],
+        savePath?: string
+      ) => Promise<{ started: boolean }>
+      retryDownload: (
+        taskId: string,
+        title: string,
+        animeId: string,
+        sourceIdx: number,
+        epList: AowuEpisode[],
+        failedEps: number[],
+        savePath?: string
+      ) => Promise<{ started: boolean }>
+      switchSource: (
+        taskId: string,
+        title: string,
+        animeId: string,
+        newSourceIdx: number,
+        epList: AowuEpisode[],
+        failedEps: number[],
+        savePath?: string
+      ) => Promise<{ switched: boolean }>
+      onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => () => void
     }
     libraryApi: {
       getPaths: () => Promise<LibraryPath[]>

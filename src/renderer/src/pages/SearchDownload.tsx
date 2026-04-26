@@ -4,11 +4,13 @@ import ErrorPanel from "../components/ErrorPanel";
 import { CoverImage } from "../components/CoverImage";
 import { XifanDownloadConfigModal } from "../components/XifanDownloadModal";
 import { GirigiriDownloadConfigModal } from "../components/GirigiriDownloadModal";
+import { AowuDownloadConfigModal } from "../components/AowuDownloadModal";
 import type { XifanWatchInfo } from "../types/xifan";
 import type {
   GirigiriWatchInfo,
   GirigiriEpisode,
 } from "../types/girigiri";
+import type { AowuWatchInfo, AowuEpisode } from "../types/aowu";
 import type { Source, SearchCard } from "../types/search";
 import { downloadStore } from "../stores/downloadStore";
 import {
@@ -20,6 +22,7 @@ import {
 import {
   normalizeXifan,
   normalizeGirigiri,
+  normalizeAowu,
 } from "../utils/searchNormalize";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -48,6 +51,12 @@ type PageState =
       card: SearchCard;
       watchInfo: GirigiriWatchInfo;
     }
+  | {
+      status: "aowu_config";
+      cards: SearchCard[];
+      card: SearchCard;
+      watchInfo: AowuWatchInfo;
+    }
   | { status: "error"; message: string };
 
 // ── Module-level cache ─────────────────────────────────────────────────────────
@@ -74,7 +83,11 @@ function SearchDownload(): JSX.Element {
     const s = _cachedState;
     if (s.status === "searching" || s.status === "verifying")
       return { status: "idle" };
-    if (s.status === "xifan_config" || s.status === "girigiri_config") {
+    if (
+      s.status === "xifan_config" ||
+      s.status === "girigiri_config" ||
+      s.status === "aowu_config"
+    ) {
       return { status: "results", cards: s.cards, keyword: _cachedKeyword };
     }
     return s;
@@ -144,6 +157,11 @@ function SearchDownload(): JSX.Element {
           setCachedSearch(keyword, source, cards);
           setState({ status: "results", cards, keyword });
         }
+      } else if (source === "Aowu") {
+        const result = await window.aowuApi.search(keyword);
+        const cards = result.map(normalizeAowu);
+        setCachedSearch(keyword, source, cards);
+        setState({ status: "results", cards, keyword });
       } else {
         const result = await window.xifanApi.search(keyword);
         if (!Array.isArray(result) && result.needs_captcha) {
@@ -259,6 +277,13 @@ function SearchDownload(): JSX.Element {
           return;
         }
         setState({ status: "girigiri_config", cards, card, watchInfo });
+      } else if (card.source === "Aowu") {
+        const watchInfo = await window.aowuApi.getWatch(card.key);
+        if (watchInfo.error) {
+          setState({ status: "error", message: String(watchInfo.error) });
+          return;
+        }
+        setState({ status: "aowu_config", cards, card, watchInfo });
       } else {
         const watchInfo = await window.xifanApi.getWatch(card.key);
         if (watchInfo.error) {
@@ -359,6 +384,54 @@ function SearchDownload(): JSX.Element {
     }
   };
 
+  // ── Start aowu download ─────────────────────────────────────────────────────
+
+  const handleStartAowuDownload = async (
+    sourceIdx: number,
+    epList: AowuEpisode[],
+    selectedIdxs: number[],
+  ): Promise<void> => {
+    if (state.status !== "aowu_config") return;
+    const { card, cards, watchInfo } = state;
+    const title = watchInfo.title || card.title;
+    const savePath = getSavePath();
+    try {
+      const { taskId } = await window.aowuApi.startDownload(
+        title,
+        watchInfo.id,
+        sourceIdx,
+        epList,
+        selectedIdxs,
+        savePath,
+      );
+      const epStatus: Record<number, "pending"> = {};
+      for (const idx of selectedIdxs) epStatus[idx] = "pending";
+      downloadStore.addTask({
+        id: taskId,
+        source: "aowu",
+        title,
+        cover: card.cover,
+        startEp: selectedIdxs[0],
+        endEp: selectedIdxs[selectedIdxs.length - 1],
+        templates: [],
+        sourceIdx,
+        aowuId: watchInfo.id,
+        aowuEps: epList,
+        aowuSources: watchInfo.sources.map((s) => ({ idx: s.idx, name: s.name })),
+        savePath,
+        status: "running",
+        epStatus,
+        epProgress: {},
+        startedAt: Date.now(),
+      });
+      setDownloadStarted(true);
+      setTimeout(() => setDownloadStarted(false), 3000);
+      setState({ status: "results", cards, keyword: currentKeyword.current });
+    } catch (err) {
+      alert(`Download error: ${err}`);
+    }
+  };
+
   const isSearching =
     state.status === "searching" || state.status === "verifying";
   const captchaSourceLabel =
@@ -423,7 +496,7 @@ function SearchDownload(): JSX.Element {
 
               {sourceDropdownOpen && (
                 <div className="absolute top-full left-0 mt-1.5 w-full bg-surface-container-highest border border-outline-variant/30 rounded-xl overflow-hidden shadow-lg z-50">
-                  {(["Xifan", "Girigiri"] as Source[]).map((opt) => (
+                  {(["Xifan", "Girigiri", "Aowu"] as Source[]).map((opt) => (
                     <button
                       key={opt}
                       type="button"
@@ -505,7 +578,8 @@ function SearchDownload(): JSX.Element {
 
         {(state.status === "results" ||
           state.status === "xifan_config" ||
-          state.status === "girigiri_config") &&
+          state.status === "girigiri_config" ||
+          state.status === "aowu_config") &&
           state.cards.length > 0 && (
             <section>
               <div className="flex items-center justify-between mb-5">
@@ -706,6 +780,22 @@ function SearchDownload(): JSX.Element {
             })
           }
           onStart={handleStartGirigiriDownload}
+        />
+      )}
+
+      {/* Aowu Download Config Modal */}
+      {state.status === "aowu_config" && (
+        <AowuDownloadConfigModal
+          card={state.card}
+          watchInfo={state.watchInfo}
+          onClose={() =>
+            setState({
+              status: "results",
+              cards: state.cards,
+              keyword: currentKeyword.current,
+            })
+          }
+          onStart={handleStartAowuDownload}
         />
       )}
     </div>

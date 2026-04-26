@@ -1,6 +1,6 @@
 export interface DownloadTask {
   id: string
-  source?: 'xifan' | 'girigiri'
+  source?: 'xifan' | 'girigiri' | 'aowu'
   title: string
   cover: string
   startEp: number
@@ -8,6 +8,11 @@ export interface DownloadTask {
   templates: string[]
   sourceIdx?: number
   girigiriEps?: { idx: number; name: string; url: string }[]
+  // Aowu-specific: animeId + per-source full ep list (so we can switch source / retry
+  // without re-fetching watch). Each source's ep list lives on the queue side.
+  aowuId?: string
+  aowuEps?: { idx: number; label: string }[]
+  aowuSources?: { idx: number; name: string }[]
   savePath?: string
   status: 'running' | 'paused' | 'done' | 'error'
   epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error' | 'paused'>
