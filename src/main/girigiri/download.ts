@@ -346,6 +346,19 @@ export async function downloadSingleEp(
   onEvent: (ev: DlEvent) => void
 ): Promise<void> {
   onEvent({ type: 'ep_start', ep: epIdx })
+
+  // Check if already downloaded — skip the whole pipeline if the final file exists.
+  const base = saveDir ?? app.getPath('downloads')
+  const animeDir = join(base, `[Girigiri] ${safeName(title)}`)
+  const outputPath = join(animeDir, `${safeName(epName)}.mp4`)
+  if (existsSync(outputPath) && statSync(outputPath).size > 0) {
+    onEvent({ type: 'ep_done', ep: epIdx })
+    return
+  }
+
+  // Create the destination folder immediately so it's visible in Finder during download.
+  mkdirSync(animeDir, { recursive: true })
+
   onEvent({ type: 'ep_progress', ep: epIdx, pct: 2, bytes: 0 })
 
   // 1. Capture m3u8
@@ -414,11 +427,6 @@ export async function downloadSingleEp(
   writeFileSync(segListPath, segFiles.map((f) => `file '${f}'`).join('\n'))
 
   // 7. Merge with ffmpeg
-  const base = saveDir ?? app.getPath('downloads')
-  const animeDir = join(base, safeName(title))
-  mkdirSync(animeDir, { recursive: true })
-  const outputPath = join(animeDir, `${safeName(epName)}.mp4`)
-
   try {
     await runFfmpeg('segments.txt', outputPath, tempDir)
     rmSync(tempDir, { recursive: true, force: true })

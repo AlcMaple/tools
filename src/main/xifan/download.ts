@@ -282,7 +282,7 @@ async function streamToFile(
 export function cleanupParts(title: string, ep: number, saveDir: string | undefined): void {
   const epStr = String(ep).padStart(2, '0')
   const base = saveDir ?? app.getPath('downloads')
-  const dir = join(base, safeName(title))
+  const dir = join(base, `[Xifan] ${safeName(title)}`)
   const savePath = join(dir, `${safeName(title)} - ${epStr}.mp4`)
   for (let i = 0; i < 32; i++) {
     const p = partPath(savePath, i)
@@ -316,7 +316,7 @@ export async function downloadSingleEp(
 
   const epStr = String(ep).padStart(2, '0')
   const base = saveDir ?? app.getPath('downloads')
-  const dir = join(base, safeName(title))
+  const dir = join(base, `[Xifan] ${safeName(title)}`)
   mkdirSync(dir, { recursive: true })
   const savePath = join(dir, `${safeName(title)} - ${epStr}.mp4`)
   const rawUrl = template.replace('{:02d}', epStr)
