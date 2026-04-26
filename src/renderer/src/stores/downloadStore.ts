@@ -50,9 +50,36 @@ function load(): void {
 
 load()
 
-function notify(): void {
+// Heavy ep_progress events fire at >30Hz per concurrent ep. Notifying + persisting on
+// every one would block the renderer's main thread (full re-render + JSON.stringify +
+// localStorage write each time), making clicks like "Pause All" feel sluggish.
+//
+// Strategy:
+//   - state transitions  → notify() : immediate listener flush + persist
+//   - progress updates   → notifyProgressThrottled() : coalesce to one flush per frame,
+//                                                     skip persist (progress is ephemeral —
+//                                                     resume continues from on-disk size)
+let progressRaf: number | null = null
+
+function flushListeners(): void {
   listeners.forEach((l) => l())
+}
+
+function notify(): void {
+  if (progressRaf !== null) {
+    cancelAnimationFrame(progressRaf)
+    progressRaf = null
+  }
+  flushListeners()
   persist()
+}
+
+function notifyProgressThrottled(): void {
+  if (progressRaf !== null) return
+  progressRaf = requestAnimationFrame(() => {
+    progressRaf = null
+    flushListeners()
+  })
 }
 
 export const downloadStore = {
@@ -132,7 +159,7 @@ export const downloadStore = {
       const t = tasks.get(taskId)
       if (!t) return
       tasks.set(taskId, { ...t, epProgress: { ...t.epProgress, [ep]: Number(event.pct) } })
-      notify()
+      notifyProgressThrottled()
     } else if (event.type === 'ep_done') {
       const t = tasks.get(taskId)
       if (!t) return
