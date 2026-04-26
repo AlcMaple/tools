@@ -155,6 +155,9 @@ async function downloadChunk(
           signal.addEventListener('abort', onAbort, { once: true })
 
           res.on('data', (chunk: Buffer) => {
+            // After abort the file is destroyed but res may still emit a few queued chunks;
+            // writing to a destroyed stream throws ERR_STREAM_DESTROYED async via fs cb.
+            if (!file.writable) return
             file.write(chunk)
             onDelta(chunk.length)
           })
@@ -244,6 +247,7 @@ async function streamToFile(
           const onAbort = (): void => { req.destroy(); file.destroy(); resolve(false) }
           signal.addEventListener('abort', onAbort, { once: true })
           res.on('data', (chunk: Buffer) => {
+            if (!file.writable) return
             file.write(chunk)
             written += chunk.length
             onBytes(written)
