@@ -2,6 +2,8 @@ import { ipcMain } from 'electron'
 import { getCaptcha, verifyCaptcha, search, watch } from '../xifan/api'
 import { downloadSingleEp, cleanupParts, DlEvent } from '../xifan/download'
 import { trackSpeed, forgetTask } from '../shared/speed-tracker'
+import { xifanScheduler } from '../shared/download-scheduler'
+
 
 interface EpQueue {
   title: string
@@ -10,7 +12,6 @@ interface EpQueue {
   savePath: string | null
   pending: number[]
   priorityFront: number[]
-  pausedEps: Set<number>
   current: number | null
   currentAbort: AbortController | null
   taskPaused: boolean
@@ -24,24 +25,21 @@ function startNextEp(taskId: string): void {
   const q = episodeQueues.get(taskId)
   if (!q || q.taskPaused || q.cancelled || q.current !== null) return
 
-  let ep: number | undefined
-  while (q.priorityFront.length > 0) {
-    const c = q.priorityFront.shift()!
-    if (!q.pausedEps.has(c)) { ep = c; break }
-  }
-  if (ep === undefined) {
-    while (q.pending.length > 0) {
-      const c = q.pending.shift()!
-      if (!q.pausedEps.has(c)) { ep = c; break }
-    }
-  }
+  const ep = q.priorityFront.shift() ?? q.pending.shift()
 
   if (ep === undefined) {
-    if (q.pausedEps.size === 0) {
-      episodeQueues.delete(taskId)
-      forgetTask(taskId)
-      q.sender.send('download:progress', taskId, { type: 'all_done' })
-    }
+    episodeQueues.delete(taskId)
+    forgetTask(taskId)
+    xifanScheduler.release(taskId)
+    q.sender.send('download:progress', taskId, { type: 'all_done' })
+    return
+  }
+
+  // Per-source single slot — see download-scheduler.ts. If another xifan task
+  // holds the slot, queue this ep back and bail; we'll retry when 'available' fires.
+  // Cross-source concurrency (girigiri + xifan) stays allowed.
+  if (!xifanScheduler.tryAcquire(taskId)) {
+    q.priorityFront.unshift(ep)
     return
   }
 
@@ -79,7 +77,7 @@ export function registerXifanIpc(): void {
       const pending = Array.from({ length: endEp - startEp + 1 }, (_, i) => startEp + i)
       episodeQueues.set(taskId, {
         title, templates, sourceIdx: 0, savePath: savePath ?? null,
-        pending, priorityFront: [], pausedEps: new Set(),
+        pending, priorityFront: [],
         current: null, currentAbort: null, taskPaused: false, cancelled: false,
         sender: event.sender,
       })
@@ -96,6 +94,7 @@ export function registerXifanIpc(): void {
       episodeQueues.delete(taskId)
       forgetTask(taskId)
     }
+    xifanScheduler.release(taskId)
     return { cancelled: true }
   })
 
@@ -109,6 +108,7 @@ export function registerXifanIpc(): void {
       q.sender.send('download:progress', taskId, { type: 'ep_paused', ep })
       q.currentAbort?.abort()
     }
+    xifanScheduler.release(taskId)
     return { paused: true }
   })
 
@@ -119,7 +119,7 @@ export function registerXifanIpc(): void {
       if (title && templates && pendingEps?.length) {
         episodeQueues.set(taskId, {
           title, templates, sourceIdx: sourceIdx ?? 0, savePath: savePath ?? null,
-          pending: [...pendingEps], priorityFront: [], pausedEps: new Set(),
+          pending: [...pendingEps], priorityFront: [],
           current: null, currentAbort: null, taskPaused: false, cancelled: false,
           sender: event.sender,
         })
@@ -132,31 +132,12 @@ export function registerXifanIpc(): void {
     return { resumed: true }
   })
 
-  ipcMain.handle('xifan:download-pause-ep', (_event, taskId: string, ep: number) => {
-    const q = episodeQueues.get(taskId)
-    if (!q) return { paused: false }
-    q.pausedEps.add(ep)
-    q.sender.send('download:progress', taskId, { type: 'ep_paused', ep })
-    if (q.current === ep) q.currentAbort?.abort()
-    return { paused: true }
-  })
-
-  ipcMain.handle('xifan:download-resume-ep', (_event, taskId: string, ep: number) => {
-    const q = episodeQueues.get(taskId)
-    if (!q) return { resumed: false }
-    q.pausedEps.delete(ep)
-    q.priorityFront.unshift(ep)
-    q.sender.send('download:progress', taskId, { type: 'ep_queued', ep })
-    if (q.current === null && !q.taskPaused) startNextEp(taskId)
-    return { resumed: true }
-  })
-
   ipcMain.handle(
     'xifan:download-requeue',
     async (event, taskId: string, title: string, templates: string[], eps: number[], savePath?: string, sourceIdx?: number) => {
       episodeQueues.set(taskId, {
         title, templates, sourceIdx: sourceIdx ?? 0, savePath: savePath ?? null,
-        pending: [...eps], priorityFront: [], pausedEps: new Set(),
+        pending: [...eps], priorityFront: [],
         current: null, currentAbort: null, taskPaused: false, cancelled: false,
         sender: event.sender,
       })
@@ -170,7 +151,7 @@ export function registerXifanIpc(): void {
     if (!q) {
       episodeQueues.set(taskId, {
         title, templates, sourceIdx: sourceIdx ?? 0, savePath: savePath ?? null,
-        pending: [...failedEps], priorityFront: [], pausedEps: new Set(),
+        pending: [...failedEps], priorityFront: [],
         current: null, currentAbort: null, taskPaused: false, cancelled: false,
         sender: event.sender,
       })
@@ -178,7 +159,7 @@ export function registerXifanIpc(): void {
       return { started: true }
     }
     if (typeof sourceIdx === 'number') q.sourceIdx = sourceIdx
-    for (const ep of [...failedEps].reverse()) { q.pausedEps.delete(ep); q.priorityFront.unshift(ep) }
+    for (const ep of [...failedEps].reverse()) q.priorityFront.unshift(ep)
     if (q.current === null && !q.taskPaused) startNextEp(taskId)
     return { started: true }
   })
@@ -194,7 +175,7 @@ export function registerXifanIpc(): void {
       if (!q) {
         episodeQueues.set(taskId, {
           title, templates, sourceIdx: newSourceIdx, savePath: savePath ?? null,
-          pending: [...failedEps], priorityFront: [], pausedEps: new Set(),
+          pending: [...failedEps], priorityFront: [],
           current: null, currentAbort: null, taskPaused: false, cancelled: false,
           sender: event.sender,
         })
@@ -202,9 +183,14 @@ export function registerXifanIpc(): void {
         return { switched: true }
       }
       q.sourceIdx = newSourceIdx
-      for (const ep of [...failedEps].reverse()) { q.pausedEps.delete(ep); q.priorityFront.unshift(ep) }
+      for (const ep of [...failedEps].reverse()) q.priorityFront.unshift(ep)
       if (q.current === null && !q.taskPaused) startNextEp(taskId)
       return { switched: true }
     }
   )
+
+  // When the global slot frees up (any source releases it), retry every queued task.
+  xifanScheduler.on('available', () => {
+    for (const taskId of episodeQueues.keys()) startNextEp(taskId)
+  })
 }

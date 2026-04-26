@@ -43,8 +43,6 @@ contextBridge.exposeInMainWorld('girigiriApi', {
   pauseDownload: (taskId: string) => ipcRenderer.invoke('girigiri:download-pause', taskId),
   resumeDownload: (taskId: string, title?: string, epList?: { idx: number; name: string; url: string }[], pendingEps?: number[], savePath?: string) =>
     ipcRenderer.invoke('girigiri:download-resume', taskId, title, epList, pendingEps, savePath),
-  pauseEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('girigiri:download-pause-ep', taskId, ep),
-  resumeEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('girigiri:download-resume-ep', taskId, ep),
   requeueEpisodes: (
     taskId: string,
     title: string,
@@ -77,8 +75,6 @@ contextBridge.exposeInMainWorld('xifanApi', {
   pauseDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-pause', taskId),
   resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number) =>
     ipcRenderer.invoke('xifan:download-resume', taskId, title, templates, pendingEps, savePath, sourceIdx),
-  pauseEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-pause-ep', taskId, ep),
-  resumeEpisode: (taskId: string, ep: number) => ipcRenderer.invoke('xifan:download-resume-ep', taskId, ep),
   requeueEpisodes: (taskId: string, title: string, templates: string[], eps: number[], savePath?: string, sourceIdx?: number) =>
     ipcRenderer.invoke('xifan:download-requeue', taskId, title, templates, eps, savePath, sourceIdx),
   retryDownload: (taskId: string, title: string, templates: string[], failedEps: number[], savePath?: string, sourceIdx?: number) =>
