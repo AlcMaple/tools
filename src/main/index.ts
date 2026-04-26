@@ -21,9 +21,9 @@ function exitApp(): void {
 process.on('SIGINT', exitApp)
 
 process.on('uncaughtException', (err) => {
+  // Don't quit on stray async errors (e.g. fs writes racing past stream destroy).
+  // Surface them in the log; only quit on truly fatal startup errors via SIGINT path.
   console.error('[uncaughtException]', err)
-  isAppQuitting = true
-  app.quit()
 })
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason)
