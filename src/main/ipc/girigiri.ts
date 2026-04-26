@@ -48,9 +48,10 @@ function startNextGiriEp(taskId: string): void {
   const capturedEp = ep
   q.current = capturedEp
   const abort = new AbortController()
-  // ~10 concurrent fetchBuffer + retry sleeps may all subscribe to the same signal.
-  // Bump the limit so Node doesn't print MaxListenersExceededWarning.
-  setMaxListeners(50, abort.signal)
+  // Inside one ep download, ~10 concurrent segment fetches × (retry attempts + per-attempt
+  // sleep + per-attempt fetchBuffer) all subscribe to the same signal. Empirically peaks
+  // above 50, so give it generous headroom.
+  setMaxListeners(200, abort.signal)
   q.currentAbort = abort
 
   setImmediate(() => {
@@ -148,13 +149,20 @@ export function registerGirigiriIpc(): void {
   ipcMain.handle(
     'girigiri:download-requeue',
     async (event, taskId: string, title: string, epList: { idx: number; name: string; url: string }[], eps: number[], savePath?: string) => {
-      giriEpQueues.set(taskId, {
-        title, epList, savePath: savePath ?? null,
-        pending: [...eps], priorityFront: [],
-        current: null, currentAbort: null, taskPaused: false, cancelled: false,
-        sender: event.sender,
-      })
-      startNextGiriEp(taskId)
+      // Same defensive merge as xifan:download-requeue — see comment there.
+      const q = giriEpQueues.get(taskId)
+      if (!q) {
+        giriEpQueues.set(taskId, {
+          title, epList, savePath: savePath ?? null,
+          pending: [...eps], priorityFront: [],
+          current: null, currentAbort: null, taskPaused: false, cancelled: false,
+          sender: event.sender,
+        })
+        startNextGiriEp(taskId)
+        return { started: true }
+      }
+      for (const ep of [...eps].reverse()) q.priorityFront.unshift(ep)
+      if (q.current === null && !q.taskPaused) startNextGiriEp(taskId)
       return { started: true }
     }
   )
