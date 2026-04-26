@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { setMaxListeners } from 'events'
 import { getCaptcha, verifyCaptcha, search, watch } from '../xifan/api'
 import { downloadSingleEp, cleanupParts, DlEvent } from '../xifan/download'
 import { trackSpeed, forgetTask } from '../shared/speed-tracker'
@@ -46,6 +47,10 @@ function startNextEp(taskId: string): void {
   const capturedEp = ep
   q.current = capturedEp
   const abort = new AbortController()
+  // 8 concurrent chunks × (in-flight fetch + retry sleep) all subscribe to the same signal.
+  // Default cap is 10, which is borderline; give headroom so spikes don't trigger
+  // MaxListenersExceededWarning during retries.
+  setMaxListeners(200, abort.signal)
   q.currentAbort = abort
 
   setImmediate(() => {
@@ -135,13 +140,24 @@ export function registerXifanIpc(): void {
   ipcMain.handle(
     'xifan:download-requeue',
     async (event, taskId: string, title: string, templates: string[], eps: number[], savePath?: string, sourceIdx?: number) => {
-      episodeQueues.set(taskId, {
-        title, templates, sourceIdx: sourceIdx ?? 0, savePath: savePath ?? null,
-        pending: [...eps], priorityFront: [],
-        current: null, currentAbort: null, taskPaused: false, cancelled: false,
-        sender: event.sender,
-      })
-      startNextEp(taskId)
+      // Called from the completed-card retry path. In normal flow the queue was deleted
+      // on all_done, so we recreate. But guard against a live queue: blindly overwriting
+      // would orphan its AbortController and leak an in-flight download. Mirror the
+      // retry handler's merge pattern instead.
+      const q = episodeQueues.get(taskId)
+      if (!q) {
+        episodeQueues.set(taskId, {
+          title, templates, sourceIdx: sourceIdx ?? 0, savePath: savePath ?? null,
+          pending: [...eps], priorityFront: [],
+          current: null, currentAbort: null, taskPaused: false, cancelled: false,
+          sender: event.sender,
+        })
+        startNextEp(taskId)
+        return { started: true }
+      }
+      if (typeof sourceIdx === 'number') q.sourceIdx = sourceIdx
+      for (const ep of [...eps].reverse()) q.priorityFront.unshift(ep)
+      if (q.current === null && !q.taskPaused) startNextEp(taskId)
       return { started: true }
     }
   )

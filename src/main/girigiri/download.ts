@@ -256,7 +256,7 @@ async function downloadSegmentsConcurrent(
   tempDir: string,
   signal: AbortSignal,
   onProgress: (done: number, total: number, bytes: number) => void,
-  concurrency = 10
+  concurrency = 8
 ): Promise<number> {
   let segsDone = 0
   let totalBytes = 0
