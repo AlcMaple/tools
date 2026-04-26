@@ -99,7 +99,7 @@ declare global {
         startEp: number,
         endEp: number,
         savePath?: string
-      ) => Promise<{ started: boolean; pid?: number; taskId: string }>
+      ) => Promise<{ started: boolean; taskId: string }>
       cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
       pauseDownload: (taskId: string) => Promise<{ paused: boolean }>
       resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number) => Promise<{ resumed: boolean }>

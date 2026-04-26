@@ -11,10 +11,9 @@ export interface DownloadTask {
   savePath?: string
   status: 'running' | 'paused' | 'done' | 'error'
   epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error' | 'paused'>
-  epProgress: Record<number, number>  // 0–99 while downloading, absent when done
+  epProgress: Record<number, number>  // 0–99 while downloading, -1 when total size unknown, absent when done
   startedAt: number
   completedAt?: number
-  pid?: number
 }
 
 type Listener = () => void

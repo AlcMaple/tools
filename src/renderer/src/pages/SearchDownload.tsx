@@ -286,7 +286,7 @@ function SearchDownload(): JSX.Element {
     const title = watchInfo.title || card.title;
     const savePath = getSavePath();
     try {
-      const { taskId, pid } = await window.xifanApi.startDownload(
+      const { taskId } = await window.xifanApi.startDownload(
         title,
         templates,
         startEp,
@@ -308,7 +308,6 @@ function SearchDownload(): JSX.Element {
         epStatus,
         epProgress: {},
         startedAt: Date.now(),
-        pid,
       });
       setDownloadStarted(true);
       setTimeout(() => setDownloadStarted(false), 3000);
