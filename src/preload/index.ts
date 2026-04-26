@@ -88,6 +88,62 @@ contextBridge.exposeInMainWorld('xifanApi', {
   },
 })
 
+contextBridge.exposeInMainWorld('aowuApi', {
+  search: (keyword: string) => ipcRenderer.invoke('aowu:search', keyword),
+  getWatch: (watchUrl: string) => ipcRenderer.invoke('aowu:watch', watchUrl),
+  startDownload: (
+    title: string,
+    animeId: string,
+    sourceIdx: number,
+    epList: { idx: number; name?: string; label: string }[],
+    selectedIdxs: number[],
+    savePath?: string
+  ) => ipcRenderer.invoke('aowu:download', title, animeId, sourceIdx, epList, selectedIdxs, savePath),
+  cancelDownload: (taskId: string) => ipcRenderer.invoke('aowu:download-cancel', taskId),
+  pauseDownload: (taskId: string) => ipcRenderer.invoke('aowu:download-pause', taskId),
+  resumeDownload: (
+    taskId: string,
+    title?: string,
+    animeId?: string,
+    sourceIdx?: number,
+    epList?: { idx: number; label: string }[],
+    pendingEps?: number[],
+    savePath?: string
+  ) => ipcRenderer.invoke('aowu:download-resume', taskId, title, animeId, sourceIdx, epList, pendingEps, savePath),
+  requeueEpisodes: (
+    taskId: string,
+    title: string,
+    animeId: string,
+    sourceIdx: number,
+    epList: { idx: number; label: string }[],
+    eps: number[],
+    savePath?: string
+  ) => ipcRenderer.invoke('aowu:download-requeue', taskId, title, animeId, sourceIdx, epList, eps, savePath),
+  retryDownload: (
+    taskId: string,
+    title: string,
+    animeId: string,
+    sourceIdx: number,
+    epList: { idx: number; label: string }[],
+    failedEps: number[],
+    savePath?: string
+  ) => ipcRenderer.invoke('aowu:download-retry', taskId, title, animeId, sourceIdx, epList, failedEps, savePath),
+  switchSource: (
+    taskId: string,
+    title: string,
+    animeId: string,
+    newSourceIdx: number,
+    epList: { idx: number; label: string }[],
+    failedEps: number[],
+    savePath?: string
+  ) => ipcRenderer.invoke('aowu:download-switch-source', taskId, title, animeId, newSourceIdx, epList, failedEps, savePath),
+  onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
+    ipcRenderer.on('download:progress', handler)
+    return () => ipcRenderer.removeListener('download:progress', handler)
+  },
+})
+
 contextBridge.exposeInMainWorld('libraryApi', {
   getPaths: () => ipcRenderer.invoke('library:get-paths'),
   addPath: (folderPath: string, label: string) => ipcRenderer.invoke('library:add-path', folderPath, label),
