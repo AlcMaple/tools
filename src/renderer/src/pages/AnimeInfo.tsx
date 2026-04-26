@@ -296,7 +296,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
     const title = watchInfo.title || card.title
     const savePath = getSavePath()
     try {
-      const { taskId, pid } = await window.xifanApi.startDownload(title, templates, startEp, endEp, savePath)
+      const { taskId } = await window.xifanApi.startDownload(title, templates, startEp, endEp, savePath)
       const epStatus: Record<number, 'pending'> = {}
       for (let ep = startEp; ep <= endEp; ep++) epStatus[ep] = 'pending'
       downloadStore.addTask({
@@ -312,7 +312,6 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
         epStatus,
         epProgress: {},
         startedAt: Date.now(),
-        pid,
       })
       setState({ status: 'queued' })
       setTimeout(onClose, 2000)
