@@ -148,8 +148,6 @@ export const downloadStore = {
       downloadStore.updateEpStatus(taskId, ep, 'error')
     } else if (event.type === 'ep_paused') {
       downloadStore.updateEpStatus(taskId, ep, 'paused')
-    } else if (event.type === 'ep_queued') {
-      downloadStore.updateEpStatus(taskId, ep, 'pending')
     } else if (event.type === 'all_done') {
       const t = tasks.get(taskId)
       if (!t) return

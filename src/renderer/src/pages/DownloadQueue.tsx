@@ -8,18 +8,42 @@ function useDownloadTasks(): DownloadTask[] {
   return tasks
 }
 
+// Derived runtime state for a task in the active region (status ∈ running|paused|error).
+type TaskState = 'running' | 'paused' | 'error'
+function getTaskState(t: DownloadTask): TaskState {
+  if (t.status === 'error') return 'error'
+  if (t.status === 'paused') return 'paused'
+  return 'running'
+}
+
+// Resume an entire task. Treats any 'paused' ep status (left over from an app-restart
+// recovery or the currently-downloading ep being interrupted) as pending so the main
+// queue picks them up again, then flips taskPaused via resumeDownload.
+async function resumeTask(t: DownloadTask): Promise<void> {
+  if (t.status !== 'paused') return
+  const pendingEps = Object.entries(t.epStatus)
+    .filter(([, s]) => s === 'paused' || s === 'pending')
+    .map(([ep]) => Number(ep))
+  if (t.source === 'girigiri') {
+    await window.girigiriApi.resumeDownload(t.id, t.title, t.girigiriEps, pendingEps, t.savePath)
+  } else {
+    await window.xifanApi.resumeDownload(t.id, t.title, t.templates, pendingEps, t.savePath, t.sourceIdx ?? 0)
+  }
+  const newEpStatus = { ...t.epStatus }
+  for (const ep of Object.keys(newEpStatus)) {
+    if (newEpStatus[Number(ep)] === 'paused') newEpStatus[Number(ep)] = 'pending'
+  }
+  downloadStore.updateTask(t.id, { status: 'running', epStatus: newEpStatus })
+}
+
 // ── Episode grid ──────────────────────────────────────────────────────────────
 
 function EpisodeGrid({
   task,
   onRetryEp,
-  onPauseEp,
-  onResumeEp,
 }: {
   task: DownloadTask
   onRetryEp: (ep: number) => void
-  onPauseEp: (ep: number) => void
-  onResumeEp: (ep: number) => void
 }): JSX.Element {
   const [copiedEp, setCopiedEp] = useState<number | null>(null)
 
@@ -106,22 +130,7 @@ function EpisodeGrid({
                   }
                 </div>
                 <span className="font-label text-[9px] text-primary/60 mt-1">{pct < 0 ? '···' : `${pct}%`}</span>
-                <div
-                  className="absolute inset-0 rounded-lg bg-surface-container-highest/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                >
-                  <button onClick={(e) => { e.stopPropagation(); onPauseEp(ep) }} title="Pause this episode">
-                    <span className="material-symbols-outlined text-secondary text-base leading-none">pause</span>
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); void copyEpUrl(ep) }}
-                    title="Copy download URL"
-                    className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded text-outline/50 hover:text-primary transition-colors"
-                  >
-                    <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>
-                      {copiedEp === ep ? 'check' : 'content_copy'}
-                    </span>
-                  </button>
-                </div>
+                {copyIcon(ep)}
               </div>
             )
           }
@@ -130,9 +139,7 @@ function EpisodeGrid({
             return (
               <div
                 key={ep}
-                onClick={() => onResumeEp(ep)}
-                title="Click to prioritize this episode"
-                className="group relative cursor-pointer bg-surface-container-lowest/60 p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-on-surface-variant/20 hover:bg-surface-container transition-colors"
+                className="group relative bg-surface-container-lowest/60 p-3 rounded-lg flex flex-col items-center justify-center border-b-2 border-on-surface-variant/20"
               >
                 <span className="font-label text-[10px] text-on-surface-variant/50 mb-1.5">
                   {epLabel(ep)}
@@ -196,8 +203,9 @@ function ProgressBar({ task }: { task: DownloadTask }): JSX.Element {
   const done = Object.values(task.epStatus).filter((s) => s === 'done').length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
 
-  const isPaused = task.status === 'paused'
-  const isError = task.status === 'error'
+  const state = getTaskState(task)
+  const isError = state === 'error'
+  const isPaused = state === 'paused'
 
   const barColor = isError
     ? 'bg-error/60'
@@ -226,8 +234,10 @@ function ProgressBar({ task }: { task: DownloadTask }): JSX.Element {
 // ── Active / paused / error task card ─────────────────────────────────────────
 
 function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
-  const isPaused = task.status === 'paused'
-  const isError = task.status === 'error'
+  const state = getTaskState(task)
+  const isError = state === 'error'
+  const isRunning = state === 'running'
+  const isPaused = state === 'paused'
 
   const failedEps = Object.entries(task.epStatus)
     .filter(([, s]) => s === 'error')
@@ -239,19 +249,11 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
   const canSwitchSource = task.source !== 'girigiri' && task.templates.length > 1
 
   const handlePauseResume = async (): Promise<void> => {
-    if (isPaused) {
-      const pendingEps = Object.entries(task.epStatus)
-        .filter(([, s]) => s === 'paused')
-        .map(([ep]) => Number(ep))
-      if (task.source === 'girigiri') {
-        await window.girigiriApi.resumeDownload(task.id, task.title, task.girigiriEps, pendingEps, task.savePath)
-      } else {
-        await window.xifanApi.resumeDownload(task.id, task.title, task.templates, pendingEps, task.savePath, sourceIdx)
-      }
-      downloadStore.updateTask(task.id, { status: 'running' })
-    } else {
+    if (isRunning) {
       await api.pauseDownload(task.id)
       downloadStore.updateTask(task.id, { status: 'paused' })
+    } else if (isPaused) {
+      await resumeTask(task)
     }
   }
 
@@ -296,16 +298,6 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       completedAt: undefined,
     })
     await window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newIdx, task.savePath)
-  }
-
-  const handlePauseEp = async (ep: number): Promise<void> => {
-    await api.pauseEpisode(task.id, ep)
-    // ep_paused event from main process will update the store
-  }
-
-  const handleResumeEp = async (ep: number): Promise<void> => {
-    await api.resumeEpisode(task.id, ep)
-    // ep_queued event from main process will update the store
   }
 
   return (
@@ -383,7 +375,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
                   >
                     <span className="material-symbols-outlined text-lg leading-none">refresh</span>
                   </button>
-                ) : (
+                ) : (isRunning || isPaused) ? (
                   <button
                     onClick={handlePauseResume}
                     className={`p-2 rounded-full transition-all ${
@@ -400,7 +392,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
                       {isPaused ? 'play_arrow' : 'pause'}
                     </span>
                   </button>
-                )}
+                ) : null}
                 <button
                   onClick={handleCancel}
                   className="p-2 hover:bg-error/10 rounded-full text-error transition-all"
@@ -437,12 +429,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
         </div>
 
         {/* Episode grid */}
-        <EpisodeGrid
-          task={task}
-          onRetryEp={handleRetryEp}
-          onPauseEp={handlePauseEp}
-          onResumeEp={handleResumeEp}
-        />
+        <EpisodeGrid task={task} onRetryEp={handleRetryEp} />
       </div>
     </div>
   )
@@ -624,12 +611,7 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
         </div>
 
         {/* Episode grid — no pause/resume for completed tasks */}
-        <EpisodeGrid
-          task={task}
-          onRetryEp={handleRetryEp}
-          onPauseEp={() => {}}
-          onResumeEp={() => {}}
-        />
+        <EpisodeGrid task={task} onRetryEp={handleRetryEp} />
       </div>
     </div>
   )
@@ -642,8 +624,9 @@ function DownloadQueue(): JSX.Element {
   const active = tasks.filter((t) => t.status === 'running' || t.status === 'paused' || t.status === 'error')
   const completed = tasks.filter((t) => t.status === 'done')
 
-  const running = active.filter((t) => t.status === 'running')
-  const paused = active.filter((t) => t.status === 'paused')
+  // Master bar reflects the unified runtime state, not raw task.status.
+  const running = active.filter((t) => getTaskState(t) === 'running')
+  const paused = active.filter((t) => getTaskState(t) === 'paused')
 
   const handlePauseAll = async (): Promise<void> => {
     await Promise.all(
@@ -656,19 +639,7 @@ function DownloadQueue(): JSX.Element {
   }
 
   const handleStartAll = async (): Promise<void> => {
-    await Promise.all(
-      paused.map(async (t) => {
-        const pendingEps = Object.entries(t.epStatus)
-          .filter(([, s]) => s === 'paused')
-          .map(([ep]) => Number(ep))
-        if (t.source === 'girigiri') {
-          await window.girigiriApi.resumeDownload(t.id, t.title, t.girigiriEps, pendingEps, t.savePath)
-        } else {
-          await window.xifanApi.resumeDownload(t.id, t.title, t.templates, pendingEps, t.savePath)
-        }
-        downloadStore.updateTask(t.id, { status: 'running' })
-      })
-    )
+    await Promise.all(paused.map(resumeTask))
   }
 
   const handleClearCompleted = (): void => {

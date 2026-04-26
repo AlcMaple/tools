@@ -15,6 +15,13 @@ import { DESKTOP_USER_AGENT, safeName, DlEvent } from '../shared/download-types'
 
 export type { DlEvent }
 
+// Per-process session id. Used to invalidate tempDir contents from a previous
+// app run — segments only resume if they were written by this same process.
+// Prevents partial / corrupt segments left over by older buggy runs from being
+// treated as "already downloaded" and ffmpeg-merged into broken mp4 files.
+const SESSION_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+const SESSION_FILE = '.session'
+
 const GIRI_HEADERS = {
   'User-Agent': DESKTOP_USER_AGENT,
   Accept: '*/*',
@@ -78,7 +85,21 @@ async function captureM3u8(epUrl: string, cookieString: string): Promise<string 
   })
 }
 
-// ── HTTP fetch helper ─────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Sleep that wakes up immediately when the signal aborts. Used so retry/semaphore
+// loops respond to pause within milliseconds instead of dragging out for seconds.
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) { resolve(); return }
+    const onAbort = (): void => { clearTimeout(timer); resolve() }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
 
 // http.request rejects unescaped chars in `path`. URL parser leaves [, ], |, {, }, `, space, etc. unencoded.
 // Encode them defensively so chunk URLs containing such chars don't crash mod.get synchronously.
@@ -130,7 +151,10 @@ async function fetchBuffer(url: string, signal?: AbortSignal, extraHeaders: Reco
           const chunks: Buffer[] = []
           res.on('data', (c: Buffer) => chunks.push(c))
           res.on('end', () => finish(Buffer.concat(chunks)))
-          res.on('error', (e) => { console.warn(`[girigiri] fetchBuffer stream error for ${url}:`, e); finish(null) })
+          res.on('error', (e) => {
+            if (!settled) console.warn(`[girigiri] fetchBuffer stream error for ${url}:`, e)
+            finish(null)
+          })
         }
       )
     } catch (e) {
@@ -138,7 +162,10 @@ async function fetchBuffer(url: string, signal?: AbortSignal, extraHeaders: Reco
       finish(null); return
     }
     req.setTimeout(30000, () => { console.warn(`[girigiri] fetchBuffer timeout (30s) for ${url}`); req?.destroy(); finish(null) })
-    req.on('error', (e) => { console.warn(`[girigiri] fetchBuffer req error for ${url}:`, e.message); finish(null) })
+    req.on('error', (e) => {
+      if (!settled) console.warn(`[girigiri] fetchBuffer req error for ${url}:`, e.message)
+      finish(null)
+    })
   })
 }
 
@@ -218,9 +245,9 @@ async function downloadSegment(
       writeFileSync(savePath, buf)
       return true
     }
-    await new Promise((r) => setTimeout(r, Math.min(2000 + attempt * 1500, 8000)))
+    await sleep(Math.min(2000 + attempt * 1500, 8000), signal)
   }
-  console.error(`[girigiri] segment FAILED after ${maxRetries} attempts: ${url}`)
+  if (!signal.aborted) console.error(`[girigiri] segment FAILED after ${maxRetries} attempts: ${url}`)
   return false
 }
 
@@ -238,7 +265,11 @@ async function downloadSegmentsConcurrent(
 
   const semaphore = { slots: concurrency }
   const tasks = tsUrls.map((url, i) => async () => {
-    while (semaphore.slots <= 0) await new Promise((r) => setTimeout(r, 50))
+    while (semaphore.slots <= 0) {
+      if (signal.aborted) return
+      await sleep(50, signal)
+    }
+    if (signal.aborted) return
     semaphore.slots--
     const segPath = join(tempDir, `segment_${String(i).padStart(5, '0')}.ts`)
     const ok = await downloadSegment(url, segPath, signal)
@@ -249,7 +280,7 @@ async function downloadSegmentsConcurrent(
       segsDone++
       totalBytes += segSize
       onProgress(segsDone, total, totalBytes)
-    } else {
+    } else if (!signal.aborted) {
       failedCount++
     }
   })
@@ -332,9 +363,20 @@ export async function downloadSingleEp(
     return
   }
 
-  // 3. Prepare temp dir (kept across pause/restart so segments can resume)
+  // 3. Prepare temp dir.
+  // Segments are kept across pause/resume within the same app run.
+  // A SESSION_ID guard wipes leftovers from a previous run so corrupt partial
+  // segments don't get reused (the resume guard in downloadSegment only checks
+  // file size, which can't tell good data from garbage).
   const tempDir = join(app.getPath('temp'), 'girigiri_ts', `${safeName(title)}_${String(epIdx).padStart(4, '0')}`)
   mkdirSync(tempDir, { recursive: true })
+  const sessionPath = join(tempDir, SESSION_FILE)
+  let lastSession = ''
+  try { lastSession = readFileSync(sessionPath, 'utf-8') } catch { /* missing is fine */ }
+  if (lastSession !== SESSION_ID) {
+    for (const f of readdirSync(tempDir)) rmSync(join(tempDir, f), { recursive: true, force: true })
+    writeFileSync(sessionPath, SESSION_ID)
+  }
 
   // 4. Download segments (already-downloaded segments are skipped inside downloadSegment)
   const failed = await downloadSegmentsConcurrent(
