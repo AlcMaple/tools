@@ -91,8 +91,15 @@ function EpisodeGrid({
     <div className="mt-6 pt-5 border-t border-outline-variant/10">
       <div className="grid grid-cols-6 gap-2.5">
         {eps.map((ep) => {
-          const status = task.epStatus[ep] ?? 'pending'
+          const rawStatus = task.epStatus[ep] ?? 'pending'
           const pct = task.epProgress[ep] ?? 0
+          // When the whole task is paused, surface every unfinished ep as paused so the
+          // grid matches the card's pause state. Otherwise mid-session pause looks like
+          // "only the abort-victim ep is paused" and the rest still show as pending.
+          const status =
+            task.status === 'paused' && (rawStatus === 'pending' || rawStatus === 'downloading')
+              ? 'paused'
+              : rawStatus
 
           if (status === 'done') {
             return (
