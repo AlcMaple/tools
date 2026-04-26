@@ -41,7 +41,9 @@ class DownloadScheduler extends EventEmitter {
 
 export const girigiriScheduler = new DownloadScheduler()
 export const xifanScheduler = new DownloadScheduler()
+export const aowuScheduler = new DownloadScheduler()
 // Many tasks may subscribe to 'available' (one listener per ipc module).
 // Bump the cap so we don't trip the default-10 warning.
 girigiriScheduler.setMaxListeners(50)
 xifanScheduler.setMaxListeners(50)
+aowuScheduler.setMaxListeners(50)
