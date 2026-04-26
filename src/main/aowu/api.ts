@@ -122,33 +122,23 @@ export async function search(keyword: string): Promise<AowuSearchResult[]> {
   const $ = cheerio.load(res.body)
   const results: AowuSearchResult[] = []
 
-  // The search page nests result cards similarly to xifan's layout. Each card has:
-  //   - h3.slide-info-title for the title (wrapped in <a href="/bangumi/..">)
-  //   - div.vod-detail-bnt a.button → href="/play/{id}-1-1/"
-  //   - img with data-src for the cover
-  //   - span.slide-info-remarks for episode count / year / area (sometimes split into spans)
-  $('h3.slide-info-title').each((_, h3) => {
-    const $card = $(h3).closest('.row, .vod-detail, .v-list-item, div').first()
-    // Walk up to find the wrapper that contains both the title and the play button.
-    // Fall back to nearest ancestor that has the play link.
-    let $wrap = $card
-    if ($wrap.find('div.vod-detail-bnt a.button').length === 0) {
-      $wrap = $(h3).parents().filter((_, p) => $(p).find('div.vod-detail-bnt a.button').length > 0).first()
-    }
-    if (!$wrap || $wrap.length === 0) return
+  // Each card is a `div.vod-detail.search-list` (same MacCMS dsn2 markup as xifan):
+  //   - .detail-pic > img[data-src] — cover (lazy-loaded)
+  //   - .detail-info > a > h3.slide-info-title — title
+  //   - .detail-info ... div.vod-detail-bnt > a.button[href="/play/{id}-1-1/"] — play link
+  //   - year / area come from anchors that link into /vods/year/ and /vods/area/.
+  $('div.vod-detail.search-list').each((_, el) => {
+    const $card = $(el)
+    const title = $card.find('h3.slide-info-title').text().trim()
+    const playHref = $card.find('div.vod-detail-bnt a.button').attr('href') ?? ''
+    if (!title || !playHref) return
 
-    const title = $(h3).text().trim()
-    const playHref = $wrap.find('div.vod-detail-bnt a.button').attr('href') ?? ''
-    if (!playHref) return
+    const cover = $card.find('div.detail-pic img').attr('data-src') ?? ''
     const watch_url = new URL(playHref, BASE_URL).href
+    const year = $card.find('a[href*="/vods/year/"]').first().text().trim()
+    const area = $card.find('a[href*="/vods/area/"]').first().text().trim()
 
-    const cover = $wrap.find('img').attr('data-src') ?? ''
-
-    // Year + area come from /vods/year/.. and /vods/area/.. anchors when present.
-    const year = $wrap.find('a[href*="/vods/year/"]').first().text().trim()
-    const area = $wrap.find('a[href*="/vods/area/"]').first().text().trim()
-
-    if (title) results.push({ title, cover, year, area, watch_url })
+    results.push({ title, cover, year, area, watch_url })
   })
 
   return results
