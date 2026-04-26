@@ -5,6 +5,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const TTL_BY_SOURCE: Record<string, number> = {
   xifan: 30 * DAY,
   girigiri: 30 * DAY,
+  aowu: 30 * DAY,
   bgm: 14 * DAY,
 };
 
