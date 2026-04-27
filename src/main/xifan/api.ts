@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio/slim'
 import { HttpSession } from '../shared/http-session'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
+import { crawlAllPages } from '../shared/maccms-search-paginator'
 
 const BASE_URL = 'https://dm.xifanacg.com'
 const HEADERS = {
@@ -69,14 +70,8 @@ export async function verifyCaptcha(code: string): Promise<{ success: boolean }>
 
 // ── search ─────────────────────────────────────────────────────────────────────
 
-export async function search(keyword: string): Promise<XifanSearchResult[] | { needs_captcha: true }> {
-  const url = `${BASE_URL}/search.html?wd=${encodeURIComponent(keyword)}`
-  const res = await xifanSession.get(url)
-  xifanSession.save()
-
-  if (needsCaptcha(res.body)) return { needs_captcha: true }
-
-  const $ = cheerio.load(res.body)
+function parseSearchPage(html: string): XifanSearchResult[] {
+  const $ = cheerio.load(html)
   const results: XifanSearchResult[] = []
 
   $('div.row.mask2 div.vod-detail.search-list').each((_, el) => {
@@ -107,6 +102,28 @@ export async function search(keyword: string): Promise<XifanSearchResult[] | { n
   })
 
   return results
+}
+
+export async function search(keyword: string): Promise<XifanSearchResult[] | { needs_captcha: true }> {
+  const url = `${BASE_URL}/search.html?wd=${encodeURIComponent(keyword)}`
+  const res = await xifanSession.get(url)
+  xifanSession.save()
+
+  if (needsCaptcha(res.body)) return { needs_captcha: true }
+
+  // Sequential pagination via shared helper — follows `下一页` links with 1s delay.
+  // The session cookie persists across page fetches so the captcha gate stays open.
+  return crawlAllPages({
+    firstHtml: res.body,
+    baseUrl: BASE_URL,
+    parsePage: parseSearchPage,
+    fetchHtml: async (pageUrl) => {
+      const r = await xifanSession.get(pageUrl)
+      xifanSession.save()
+      if (needsCaptcha(r.body)) throw new Error('captcha re-appeared mid-pagination')
+      return r.body
+    },
+  })
 }
 
 // ── watch ──────────────────────────────────────────────────────────────────────

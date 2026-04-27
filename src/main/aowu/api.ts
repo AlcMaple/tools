@@ -11,6 +11,7 @@ import * as http from 'http'
 import { URL } from 'url'
 import * as cheerio from 'cheerio/slim'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
+import { crawlAllPages } from '../shared/maccms-search-paginator'
 
 export const BASE_URL = 'https://www.aowu.tv'
 
@@ -114,20 +115,16 @@ export function postForm(
 
 // ── search ────────────────────────────────────────────────────────────────────
 
-const MAX_SEARCH_PAGES = 20  // safety cap; in practice the site rarely exceeds 6–10
-
 /**
- * Parse one search-results page into cards + page info.
+ * Parse one search-results page into cards.
  *
  * Each card is a `div.vod-detail.search-list` (same MacCMS dsn2 markup as xifan):
  *   - .detail-pic > img[data-src] — cover (lazy-loaded)
  *   - .detail-info > a > h3.slide-info-title — title
  *   - .detail-info ... div.vod-detail-bnt > a.button[href="/play/{id}-1-1/"] — play link
  *   - year / area come from anchors that link into /vods/year/ and /vods/area/.
- *
- * Total page count comes from `.page-tip` text: e.g. "共59条数据,当前1/6页" → 6.
  */
-function parseSearchPage(html: string): { results: AowuSearchResult[]; totalPages: number } {
+function parseSearchPage(html: string): AowuSearchResult[] {
   const $ = cheerio.load(html)
   const results: AowuSearchResult[] = []
 
@@ -145,39 +142,25 @@ function parseSearchPage(html: string): { results: AowuSearchResult[]; totalPage
     results.push({ title, cover, year, area, watch_url })
   })
 
-  let totalPages = 1
-  const tip = $('.page-tip').text()
-  const m = /\/(\d+)页/.exec(tip)
-  if (m) totalPages = Math.max(1, parseInt(m[1]))
-
-  return { results, totalPages }
+  return results
 }
 
 export async function search(keyword: string): Promise<AowuSearchResult[]> {
-  const encoded = encodeURIComponent(keyword)
-  const firstUrl = `${BASE_URL}/vods/?wd=${encoded}`
+  const firstUrl = `${BASE_URL}/vods/?wd=${encodeURIComponent(keyword)}`
   const firstRes = await fetchPage(firstUrl)
   if (firstRes.status !== 200) throw new Error(`Search failed: HTTP ${firstRes.status}`)
 
-  const { results: page1, totalPages } = parseSearchPage(firstRes.body)
-  if (totalPages <= 1) return page1
-
-  // Fetch remaining pages in parallel — the site uses /vods/page/{N}/wd/{kw}/ for paging.
-  // Cap at MAX_SEARCH_PAGES so a malformed parse doesn't fan out a huge fetch.
-  const cap = Math.min(totalPages, MAX_SEARCH_PAGES)
-  const tail = await Promise.all(
-    Array.from({ length: cap - 1 }, (_, i) => i + 2).map(async (n) => {
-      try {
-        const r = await fetchPage(`${BASE_URL}/vods/page/${n}/wd/${encoded}/`)
-        if (r.status !== 200) return [] as AowuSearchResult[]
-        return parseSearchPage(r.body).results
-      } catch {
-        return [] as AowuSearchResult[]
-      }
-    })
-  )
-
-  return [...page1, ...tail.flat()]
+  // Sequential pagination via shared helper — follows `下一页` links with 1s delay.
+  return crawlAllPages({
+    firstHtml: firstRes.body,
+    baseUrl: BASE_URL,
+    parsePage: parseSearchPage,
+    fetchHtml: async (url) => {
+      const r = await fetchPage(url)
+      if (r.status !== 200) throw new Error(`HTTP ${r.status}`)
+      return r.body
+    },
+  })
 }
 
 // ── watch ─────────────────────────────────────────────────────────────────────
