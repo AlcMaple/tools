@@ -1,0 +1,944 @@
+<!doctype html>
+<html class="dark" lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>SoraIndex | File Explorer</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&amp;family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet" />
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: { extend: {
+          colors: {
+            "surface-bright": "#393939",
+            "primary-fixed-dim": "#ffb2b8",
+            "primary-fixed": "#ffdadb",
+            "surface-container-high": "#2a2a2a",
+            "on-surface": "#e2e2e2",
+            "surface-container-low": "#1b1b1b",
+            "surface-container-lowest": "#0e0e0e",
+            "surface-container-highest": "#353535",
+            background: "#131313",
+            error: "#ffb4ab",
+            "on-primary": "#5a1923",
+            secondary: "#aac7ff",
+            primary: "#ffb3b8",
+            outline: "#a18c8c",
+            "error-container": "#93000a",
+            "primary-container": "#f09199",
+            "surface-container": "#1f1f1f",
+            "outline-variant": "#544343",
+            "on-surface-variant": "#d9c1c1",
+            surface: "#131313",
+            "surface-variant": "#353535",
+            "on-error-container": "#ffdad6",
+          },
+          fontFamily: { headline: ["Inter"], body: ["Inter"], label: ["Space Grotesk"] },
+          borderRadius: { DEFAULT: "0.125rem", lg: "0.25rem", xl: "0.5rem", full: "0.75rem" },
+        }},
+      };
+    </script>
+    <style>
+      html, body { height: 100%; }
+      body { font-family: Inter, sans-serif; }
+      .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+      .ms-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #353535; border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: #544343; }
+      .ctx-menu { background: rgba(20,20,20,0.94); backdrop-filter: blur(20px) saturate(180%); }
+      .glass { background: rgba(15,15,15,0.85); backdrop-filter: blur(24px) saturate(180%); }
+      @keyframes fadeUp { from { opacity:0; transform: translateY(6px);} to {opacity:1; transform:translateY(0);} }
+      .anim-pop { animation: fadeUp .16s ease-out; }
+      @keyframes overlayIn { from {opacity:0;} to {opacity:1;} }
+      .anim-overlay { animation: overlayIn .2s ease-out; }
+      @keyframes scaleIn { from {opacity:0; transform: scale(.96);} to {opacity:1; transform:scale(1);} }
+      .anim-scale { animation: scaleIn .22s cubic-bezier(.2,.8,.2,1); }
+      .file-icon-bg {
+        background:
+          radial-gradient(120% 120% at 0% 0%, rgba(255,179,184,.10), transparent 60%),
+          linear-gradient(180deg, #1a1a1a 0%, #141414 100%);
+      }
+      .row:nth-child(even) { background: rgba(255,255,255,.012); }
+      .selectable { user-select: none; }
+      .focus-ring:focus-visible { outline: 2px solid #ffb3b8; outline-offset: 2px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body class="bg-background text-on-surface selection:bg-primary/30 overflow-hidden">
+
+    <div class="flex h-screen overflow-hidden">
+
+      <!-- ========== SIDEBAR (existing project menu — unchanged style) ========== -->
+      <aside class="flex flex-col fixed left-0 top-0 h-full z-40 bg-[#0e0e0e] w-64">
+        <div class="px-6 py-8 flex flex-col gap-1">
+          <div class="flex items-center gap-3 mb-10">
+            <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+              <span class="material-symbols-outlined text-on-primary text-xl">inventory_2</span>
+            </div>
+            <div>
+              <h1 class="text-lg font-black text-[#ffb3b8] tracking-tighter">SoraIndex</h1>
+              <p class="font-label text-[10px] uppercase tracking-widest text-[#ffb3b8]/60">Local Archive</p>
+            </div>
+          </div>
+          <nav class="flex flex-col space-y-1">
+            <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 font-label text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+              <span class="material-symbols-outlined">home</span><span>Home</span>
+            </a>
+            <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 font-label text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+              <span class="material-symbols-outlined">download</span><span>Downloads</span>
+            </a>
+            <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 font-label text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+              <span class="material-symbols-outlined">theaters</span><span>Series</span>
+            </a>
+            <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 font-label text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+              <span class="material-symbols-outlined">menu_book</span><span>Anime Info</span>
+            </a>
+            <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 font-label text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+              <span class="material-symbols-outlined">sync</span><span>Biu Sync</span>
+            </a>
+            <!-- NEW: File Explorer entry (active) -->
+            <a class="bg-gradient-to-r from-[#ffb3b8]/10 to-transparent text-[#ffb3b8] border-l-4 border-[#ffb3b8] py-3 px-4 transition-all duration-300 font-label text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+              <span class="material-symbols-outlined ms-fill">folder_managed</span><span>File Explorer</span>
+              <span class="ml-auto font-label text-[9px] tracking-widest text-[#ffb3b8] bg-[#ffb3b8]/10 px-1.5 py-0.5 rounded">NEW</span>
+            </a>
+          </nav>
+        </div>
+        <div class="mt-auto px-6 py-8 border-t border-white/5">
+          <nav class="flex flex-col space-y-1">
+            <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] font-label text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+              <span class="material-symbols-outlined">help</span><span>Support</span>
+            </a>
+            <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] font-label text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+              <span class="material-symbols-outlined">terminal</span><span>Logs</span>
+            </a>
+          </nav>
+        </div>
+      </aside>
+
+      <!-- ========== MAIN CONTENT ========== -->
+      <main class="ml-64 flex-1 flex flex-col min-w-0 bg-surface">
+
+        <!-- Top header (matches project pattern) -->
+        <header class="bg-[#0e0e0e] flex justify-between items-center w-full px-6 py-4 sticky top-0 z-30 border-b border-white/5">
+          <div class="flex items-center gap-4">
+            <h2 class="text-2xl font-bold tracking-tighter text-[#ffb3b8]">File Explorer</h2>
+            <span class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">Windows / macOS — like file system</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60">
+              <span class="material-symbols-outlined text-[14px]">hard_drive</span>
+              <span>3 Drives Mounted</span>
+            </div>
+            <div class="h-6 w-px bg-outline-variant/20"></div>
+            <button class="p-2 rounded-md hover:bg-[#353535]/40 text-[#e2e2e2]" title="Refresh">
+              <span class="material-symbols-outlined">refresh</span>
+            </button>
+            <button class="p-2 rounded-md hover:bg-[#353535]/40 text-[#e2e2e2]" title="Settings">
+              <span class="material-symbols-outlined">settings</span>
+            </button>
+          </div>
+        </header>
+
+        <!-- ========== ADDRESS BAR ========== -->
+        <section class="px-8 pt-6 pb-3 bg-surface border-b border-white/5">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="flex items-center gap-1">
+              <button id="btnBack" class="w-8 h-8 rounded-md hover:bg-surface-container-high disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center" title="后退">
+                <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+              </button>
+              <button id="btnForward" class="w-8 h-8 rounded-md hover:bg-surface-container-high disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center" title="前进">
+                <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+              </button>
+            </div>
+
+            <!-- Address input -->
+            <div class="flex-1 flex items-stretch bg-surface-container-lowest rounded-lg border border-white/5 focus-within:border-primary/50 transition-colors overflow-hidden">
+              <div class="flex items-center pl-3 pr-2 text-on-surface-variant/60">
+                <span class="material-symbols-outlined text-[18px]">folder_open</span>
+              </div>
+              <input id="addressInput"
+                class="flex-1 bg-transparent border-0 focus:ring-0 py-2.5 px-1 text-sm font-mono tracking-tight text-on-surface placeholder:text-on-surface-variant/40 focus-ring"
+                placeholder="输入绝对路径,例如 C:\Users\Yuming\Videos 或 C:\Users\Yuming\Videos\poster.jpg"
+                spellcheck="false" />
+              <span id="pathStatus" class="hidden items-center gap-1 px-3 font-label text-[10px] uppercase tracking-widest"></span>
+            </div>
+
+            <!-- Action buttons -->
+            <button id="btnOpen" class="flex items-center gap-1.5 px-4 h-10 rounded-lg bg-primary text-on-primary font-label text-[11px] font-bold uppercase tracking-widest hover:bg-primary-fixed-dim active:scale-95 transition-all" title="打开输入框中的路径">
+              <span class="material-symbols-outlined text-[16px]">arrow_outward</span>
+              <span>Open</span>
+            </button>
+            <button id="btnDelete" class="flex items-center gap-1.5 px-4 h-10 rounded-lg bg-surface-container-high border border-error/30 text-error font-label text-[11px] font-bold uppercase tracking-widest hover:bg-error/10 active:scale-95 transition-all" title="删除输入框中的路径所指文件/文件夹">
+              <span class="material-symbols-outlined text-[16px]">delete</span>
+              <span>Delete</span>
+            </button>
+          </div>
+
+          <!-- View switcher + sort -->
+          <div class="flex items-center justify-end gap-3">
+            <div class="flex items-center gap-1 bg-surface-container-low rounded-md p-0.5">
+              <span class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 px-2">Sort</span>
+              <select id="sortSelect" class="bg-transparent border-0 focus:ring-0 text-xs font-label text-on-surface py-1 pl-1 pr-6 rounded">
+                <option value="name">Name</option>
+                <option value="size">Size</option>
+                <option value="mtime">Modified</option>
+                <option value="kind">Type</option>
+              </select>
+            </div>
+
+            <div class="flex items-center bg-surface-container-low rounded-md p-0.5" id="viewSwitcher">
+              <button data-view="list" class="view-btn p-1.5 rounded-sm" title="详细列表">
+                <span class="material-symbols-outlined text-[16px]">view_list</span>
+              </button>
+              <button data-view="grid" class="view-btn p-1.5 rounded-sm" title="大图标">
+                <span class="material-symbols-outlined text-[16px]">grid_view</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== FILE LIST AREA ========== -->
+        <section id="fileArea" class="flex-1 overflow-y-auto px-8 py-6 selectable" tabindex="0">
+          <!-- view content rendered here -->
+        </section>
+
+        <!-- ========== STATUS BAR ========== -->
+        <footer class="bg-[#0e0e0e] border-t border-white/5 px-8 py-2.5 flex items-center justify-between text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60">
+          <div class="flex items-center gap-6">
+            <span id="statusItems">0 项</span>
+            <span class="h-3 w-px bg-outline-variant/20"></span>
+            <span id="statusSize">— 总大小</span>
+          </div>
+          <div class="flex items-center gap-6">
+            <div class="flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+              <span>Filesystem · Live</span>
+            </div>
+            <span id="statusPath" class="font-mono normal-case tracking-tight text-on-surface-variant/40 truncate max-w-md">—</span>
+          </div>
+        </footer>
+
+      </main>
+    </div>
+
+    <!-- ========== CONTEXT MENU ========== -->
+    <div id="ctxMenu" hidden class="fixed z-50 ctx-menu rounded-lg border border-white/10 shadow-2xl py-1.5 min-w-[220px] anim-pop">
+      <button data-action="open" class="ctx-item w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-sm">
+        <span class="material-symbols-outlined text-[18px] text-primary">play_arrow</span>
+        <span class="flex-1 text-left">打开</span>
+        <span class="font-label text-[10px] text-on-surface-variant/40 tracking-widest">Enter</span>
+      </button>
+      <button data-action="reveal" class="ctx-item w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-sm">
+        <span class="material-symbols-outlined text-[18px] text-on-surface-variant">folder_open</span>
+        <span class="flex-1 text-left">打开所在位置</span>
+      </button>
+      <div class="h-px bg-white/5 my-1"></div>
+      <button data-action="delete" class="ctx-item w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-sm">
+        <span class="material-symbols-outlined text-[18px] text-on-surface-variant">delete</span>
+        <span class="flex-1 text-left">删除(到回收站)</span>
+        <span class="font-label text-[10px] text-on-surface-variant/40 tracking-widest">Del</span>
+      </button>
+      <button data-action="purge" class="ctx-item w-full flex items-center gap-3 px-3 py-2 hover:bg-error/10 text-sm text-error">
+        <span class="material-symbols-outlined text-[18px]">delete_forever</span>
+        <span class="flex-1 text-left">永久删除</span>
+        <span class="font-label text-[10px] tracking-widest opacity-60">Shift+Del</span>
+      </button>
+    </div>
+
+    <!-- ========== DELETE CONFIRMATION ========== -->
+    <div id="deleteOverlay" hidden class="fixed inset-0 z-50 flex items-center justify-center anim-overlay">
+      <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" id="deleteBackdrop"></div>
+      <div class="relative glass rounded-xl border border-white/10 shadow-2xl w-[520px] max-w-[92vw] anim-scale">
+        <div class="p-7 pb-5">
+          <div class="flex items-start gap-4 mb-5">
+            <div id="deleteIconWrap" class="w-12 h-12 rounded-xl bg-error/15 border border-error/30 flex items-center justify-center flex-shrink-0">
+              <span id="deleteIcon" class="material-symbols-outlined text-error text-[24px]">delete</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 id="deleteTitle" class="text-lg font-black tracking-tight mb-1">删除到回收站?</h3>
+              <p id="deleteSubtitle" class="text-xs text-on-surface-variant/70">此项目将被移动到系统回收站,你可以稍后还原。</p>
+            </div>
+          </div>
+
+          <!-- Detail card -->
+          <div id="deleteDetail" class="bg-surface-container-lowest border border-white/5 rounded-lg p-4 space-y-2.5">
+            <!-- filled by JS -->
+          </div>
+
+          <div id="deleteWarning" hidden class="mt-3 flex items-start gap-2 text-[11px] text-error font-label uppercase tracking-widest">
+            <span class="material-symbols-outlined text-[14px] mt-px">warning</span>
+            <span>永久删除后无法恢复,请谨慎操作。</span>
+          </div>
+        </div>
+
+        <div class="px-7 py-4 bg-surface-container-lowest/40 border-t border-white/5 rounded-b-xl flex items-center justify-end gap-2">
+          <button id="deleteCancel" class="px-5 py-2 rounded-lg hover:bg-white/5 font-label text-[11px] font-bold uppercase tracking-widest text-on-surface">
+            取消
+          </button>
+          <button id="deleteConfirm" class="px-5 py-2 rounded-lg bg-error text-on-error-container font-label text-[11px] font-bold uppercase tracking-widest hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">delete</span>
+            <span id="deleteConfirmLabel">删除</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== TOAST ========== -->
+    <div id="toast" hidden class="fixed bottom-6 right-6 z-50 glass rounded-xl border border-white/10 shadow-2xl px-5 py-3.5 flex items-center gap-3 anim-pop max-w-md">
+      <span id="toastIcon" class="material-symbols-outlined text-primary">check_circle</span>
+      <div class="min-w-0">
+        <p id="toastTitle" class="text-sm font-bold">已删除</p>
+        <p id="toastMsg" class="text-[11px] text-on-surface-variant/70 truncate">—</p>
+      </div>
+      <button id="toastClose" class="p-1 rounded hover:bg-white/5 ml-2 flex-shrink-0">
+        <span class="material-symbols-outlined text-[16px]">close</span>
+      </button>
+    </div>
+
+    <!-- ========== APP LOGIC ========== -->
+    <script>
+    // ─────────── MOCK FILESYSTEM ───────────
+    const FS = {
+      "C:\\":               { type:"folder", name:"本地磁盘 (C:)", mtime:"2026-04-20 09:14",
+                              children:["C:\\Users","C:\\Program Files","C:\\Windows","C:\\Anime"] },
+      "C:\\Users":          { type:"folder", name:"Users", mtime:"2026-04-22 11:02",
+                              children:["C:\\Users\\Yuming","C:\\Users\\Public"] },
+      "C:\\Users\\Public":  { type:"folder", name:"Public", mtime:"2026-01-08 10:00", children:[] },
+      "C:\\Users\\Yuming":  { type:"folder", name:"Yuming", mtime:"2026-04-25 22:48",
+                              children:["C:\\Users\\Yuming\\Desktop","C:\\Users\\Yuming\\Documents",
+                                        "C:\\Users\\Yuming\\Downloads","C:\\Users\\Yuming\\Videos",
+                                        "C:\\Users\\Yuming\\Pictures","C:\\Users\\Yuming\\Music"] },
+      "C:\\Program Files":  { type:"folder", name:"Program Files", mtime:"2026-04-01 18:30", children:[] },
+      "C:\\Windows":        { type:"folder", name:"Windows", mtime:"2026-04-23 03:12", children:[] },
+      "C:\\Anime":          { type:"folder", name:"Anime", mtime:"2026-04-20 18:00",
+                              children:["C:\\Anime\\Movies","C:\\Anime\\OVAs"] },
+      "C:\\Anime\\Movies":  { type:"folder", name:"Movies", mtime:"2026-04-20 18:00", children:[] },
+      "C:\\Anime\\OVAs":    { type:"folder", name:"OVAs", mtime:"2026-04-20 18:00", children:[] },
+
+      "C:\\Users\\Yuming\\Desktop": { type:"folder", name:"Desktop", mtime:"2026-04-26 19:01",
+        children:["C:\\Users\\Yuming\\Desktop\\SoraIndex.lnk","C:\\Users\\Yuming\\Desktop\\readme.txt"] },
+      "C:\\Users\\Yuming\\Desktop\\SoraIndex.lnk": { type:"file", name:"SoraIndex.lnk", ext:"lnk", size:1862, mtime:"2026-04-12 10:22", kind:"shortcut" },
+      "C:\\Users\\Yuming\\Desktop\\readme.txt": { type:"file", name:"readme.txt", ext:"txt", size:412, mtime:"2026-04-26 18:55", kind:"text" },
+
+      "C:\\Users\\Yuming\\Documents": { type:"folder", name:"Documents", mtime:"2026-04-22 14:08", children:[] },
+      "C:\\Users\\Yuming\\Pictures":  { type:"folder", name:"Pictures",  mtime:"2026-03-30 09:00", children:[] },
+      "C:\\Users\\Yuming\\Music":     { type:"folder", name:"Music",     mtime:"2026-04-18 21:45", children:[] },
+
+      "C:\\Users\\Yuming\\Downloads": { type:"folder", name:"Downloads", mtime:"2026-04-26 20:31",
+        children:[
+          "C:\\Users\\Yuming\\Downloads\\[SoraIndex] Frieren - 17.mkv",
+          "C:\\Users\\Yuming\\Downloads\\[SoraIndex] Frieren - 18.mkv",
+          "C:\\Users\\Yuming\\Downloads\\subtitles.zip",
+          "C:\\Users\\Yuming\\Downloads\\poster_collection",
+        ] },
+      "C:\\Users\\Yuming\\Downloads\\[SoraIndex] Frieren - 17.mkv": { type:"file", name:"[SoraIndex] Frieren - 17.mkv", ext:"mkv", size:1342177280, mtime:"2026-04-26 20:31", kind:"video" },
+      "C:\\Users\\Yuming\\Downloads\\[SoraIndex] Frieren - 18.mkv": { type:"file", name:"[SoraIndex] Frieren - 18.mkv", ext:"mkv", size:1289748480, mtime:"2026-04-26 20:31", kind:"video" },
+      "C:\\Users\\Yuming\\Downloads\\subtitles.zip": { type:"file", name:"subtitles.zip", ext:"zip", size:4823422, mtime:"2026-04-25 14:08", kind:"archive" },
+      "C:\\Users\\Yuming\\Downloads\\poster_collection": { type:"folder", name:"poster_collection", mtime:"2026-04-20 11:18", children:[] },
+
+      "C:\\Users\\Yuming\\Videos": { type:"folder", name:"Videos", mtime:"2026-04-25 22:14",
+        children:[
+          "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners",
+          "C:\\Users\\Yuming\\Videos\\Cowboy Bebop",
+          "C:\\Users\\Yuming\\Videos\\Sousou no Frieren",
+          "C:\\Users\\Yuming\\Videos\\Vinland Saga",
+          "C:\\Users\\Yuming\\Videos\\screen_capture.mp4",
+        ] },
+      "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners": { type:"folder", name:"Cyberpunk Edgerunners", mtime:"2026-04-22 23:11",
+        children:[
+          "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E01.mkv",
+          "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E02.mkv",
+          "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E03.mkv",
+          "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\poster.jpg",
+        ] },
+      "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E01.mkv": { type:"file", name:"[SoraIndex] Cyberpunk Edgerunners - 01.mkv", ext:"mkv", size:1431655765, mtime:"2026-04-22 22:48", kind:"video" },
+      "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E02.mkv": { type:"file", name:"[SoraIndex] Cyberpunk Edgerunners - 02.mkv", ext:"mkv", size:1395864371, mtime:"2026-04-22 22:50", kind:"video" },
+      "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E03.mkv": { type:"file", name:"[SoraIndex] Cyberpunk Edgerunners - 03.mkv", ext:"mkv", size:1502468608, mtime:"2026-04-22 22:54", kind:"video" },
+      "C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\poster.jpg": { type:"file", name:"poster.jpg", ext:"jpg", size:482718, mtime:"2026-04-21 09:20", kind:"image" },
+
+      "C:\\Users\\Yuming\\Videos\\Cowboy Bebop": { type:"folder", name:"Cowboy Bebop", mtime:"2026-04-19 14:00",
+        children:[
+          "C:\\Users\\Yuming\\Videos\\Cowboy Bebop\\E01.mkv",
+          "C:\\Users\\Yuming\\Videos\\Cowboy Bebop\\E02.mkv",
+          "C:\\Users\\Yuming\\Videos\\Cowboy Bebop\\E03.mkv",
+        ] },
+      "C:\\Users\\Yuming\\Videos\\Cowboy Bebop\\E01.mkv": { type:"file", name:"[SoraIndex] Cowboy Bebop - 01 - Asteroid Blues.mkv", ext:"mkv", size:1288490188, mtime:"2026-04-19 13:55", kind:"video" },
+      "C:\\Users\\Yuming\\Videos\\Cowboy Bebop\\E02.mkv": { type:"file", name:"[SoraIndex] Cowboy Bebop - 02 - Stray Dog Strut.mkv", ext:"mkv", size:1181116006, mtime:"2026-04-19 13:55", kind:"video" },
+      "C:\\Users\\Yuming\\Videos\\Cowboy Bebop\\E03.mkv": { type:"file", name:"[SoraIndex] Cowboy Bebop - 03 - Honky Tonk Women.mkv", ext:"mkv", size:1503238553, mtime:"2026-04-19 13:55", kind:"video" },
+
+      "C:\\Users\\Yuming\\Videos\\Sousou no Frieren": { type:"folder", name:"Sousou no Frieren", mtime:"2026-04-25 19:40", children:[] },
+      "C:\\Users\\Yuming\\Videos\\Vinland Saga":      { type:"folder", name:"Vinland Saga",      mtime:"2026-04-15 11:22", children:[] },
+      "C:\\Users\\Yuming\\Videos\\screen_capture.mp4": { type:"file", name:"screen_capture.mp4", ext:"mp4", size:286331153, mtime:"2026-04-24 16:18", kind:"video" },
+
+      "D:\\":           { type:"folder", name:"媒体库 (D:)", mtime:"2026-04-26 20:00",
+                          children:["D:\\Anime","D:\\Movies","D:\\Backup"] },
+      "D:\\Anime":      { type:"folder", name:"Anime",  mtime:"2026-04-26 19:55", children:[] },
+      "D:\\Movies":     { type:"folder", name:"Movies", mtime:"2026-04-15 22:14", children:[] },
+      "D:\\Backup":     { type:"folder", name:"Backup", mtime:"2026-04-01 03:00", children:[] },
+
+      "E:\\":           { type:"folder", name:"工作 (E:)", mtime:"2026-04-26 17:00", children:[] },
+    };
+
+    // ─────────── HELPERS ───────────
+    const $ = (s) => document.querySelector(s);
+    const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+    function normPath(input) {
+      if (!input) return "";
+      let p = input.trim().replace(/\//g, "\\").replace(/\\+/g, "\\");
+      if (/^[a-z]:$/i.test(p)) p += "\\";
+      if (p.length > 3 && p.endsWith("\\")) p = p.slice(0, -1);
+      if (/^[a-z]:/.test(p)) p = p[0].toUpperCase() + p.slice(1);
+      return p;
+    }
+    function isRoot(p) { return /^[A-Z]:\\?$/.test(p); }
+    function parentOf(p) {
+      p = normPath(p);
+      if (isRoot(p) || !p) return null;
+      const idx = p.lastIndexOf("\\");
+      if (idx <= 2) return p.slice(0,3);
+      return p.slice(0, idx);
+    }
+    function listChildren(p) {
+      const node = FS[normPath(p)];
+      if (!node || node.type !== "folder") return [];
+      return (node.children || []).map(c => ({ path: c, ...FS[c] })).filter(x => x.type);
+    }
+    function breadcrumbs(p) {
+      p = normPath(p);
+      if (!p) return [];
+      const drive = p.slice(0,3);
+      const parts = [{ label: FS[drive]?.name || drive, path: drive }];
+      if (p === drive) return parts;
+      const segs = p.slice(3).split("\\").filter(Boolean);
+      let cur = drive;
+      for (const seg of segs) {
+        cur = cur === drive ? drive + seg : cur + "\\" + seg;
+        parts.push({ label: seg, path: cur });
+      }
+      return parts;
+    }
+    function fmtSize(b) {
+      if (b == null) return "—";
+      const u = ["B","KB","MB","GB","TB"];
+      let i=0, n=b;
+      while (n>=1024 && i<u.length-1){ n/=1024; i++; }
+      return `${n<10&&i>0?n.toFixed(2):n<100&&i>0?n.toFixed(1):Math.round(n)} ${u[i]}`;
+    }
+    function kindLabel(node) {
+      if (!node) return "";
+      if (node.type === "folder") return "文件夹";
+      const m = { video:"视频文件", image:"图像文件", archive:"压缩文件", text:"文本文档", shortcut:"快捷方式" };
+      return m[node.kind] || (node.ext ? node.ext.toUpperCase()+" 文件" : "文件");
+    }
+    function iconFor(node) {
+      if (node.type === "folder") return "folder";
+      return ({ video:"movie", image:"image", archive:"folder_zip", text:"description", shortcut:"link" })[node.kind] || "draft";
+    }
+    function colorFor(node) {
+      if (node.type === "folder") return "text-primary";
+      return ({ video:"text-primary/80", image:"text-secondary", archive:"text-[#c8c6c6]",
+               text:"text-[#d9c1c1]", shortcut:"text-secondary" })[node.kind] || "text-on-surface-variant";
+    }
+    function basename(p) {
+      p = normPath(p);
+      if (isRoot(p)) return FS[p]?.name || p;
+      return p.slice(p.lastIndexOf("\\")+1);
+    }
+
+    // ─────────── STATE ───────────
+    const state = {
+      cwd: "C:\\Users\\Yuming\\Videos",
+      view: "list",      // list | grid | compact | columns
+      sort: "name",
+      history: ["C:\\Users\\Yuming\\Videos"],
+      hIdx: 0,
+      selected: new Set(),
+      ctxTarget: null,
+      pendingDelete: null,
+    };
+
+    // ─────────── NAVIGATION ───────────
+    function navTo(path, fromHistory=false) {
+      const p = normPath(path);
+      if (!FS[p] || FS[p].type !== "folder") {
+        flashStatus("路径不存在或不是文件夹", "error");
+        return;
+      }
+      state.cwd = p;
+      state.selected.clear();
+      if (!fromHistory) {
+        state.history = state.history.slice(0, state.hIdx+1);
+        state.history.push(p);
+        state.hIdx = state.history.length - 1;
+      }
+      render();
+    }
+    function back() { if (state.hIdx>0){ state.hIdx--; navTo(state.history[state.hIdx], true); } }
+    function forward() { if (state.hIdx<state.history.length-1){ state.hIdx++; navTo(state.history[state.hIdx], true); } }
+    function up() { const p = parentOf(state.cwd); if (p) navTo(p); }
+
+    // ─────────── ADDRESS ACTIONS ───────────
+    function flashStatus(msg, kind) {
+      const el = $("#pathStatus");
+      el.textContent = msg;
+      el.classList.remove("hidden");
+      el.classList.add("flex");
+      el.className = `flex items-center gap-1 px-3 font-label text-[10px] uppercase tracking-widest ${
+        kind==="error" ? "text-error" : kind==="ok" ? "text-green-400" : "text-on-surface-variant/60"}`;
+      clearTimeout(flashStatus._t);
+      flashStatus._t = setTimeout(() => { el.classList.add("hidden"); el.classList.remove("flex"); }, 2200);
+    }
+
+    function tryOpenInput() {
+      const raw = $("#addressInput").value;
+      if (!raw.trim()) { flashStatus("请输入路径", "error"); return; }
+      const p = normPath(raw);
+      const node = FS[p];
+      if (!node) { flashStatus("路径不存在", "error"); return; }
+      if (node.type === "folder") {
+        navTo(p);
+        flashStatus("已打开", "ok");
+      } else {
+        // open containing folder + select
+        const parent = parentOf(p);
+        if (parent) {
+          navTo(parent);
+          state.selected = new Set([p]);
+          render();
+          flashStatus("已定位文件", "ok");
+        }
+      }
+    }
+
+    function tryDeleteInput() {
+      const raw = $("#addressInput").value;
+      if (!raw.trim()) { flashStatus("请输入要删除的路径", "error"); return; }
+      const p = normPath(raw);
+      if (!FS[p]) { flashStatus("路径不存在,无法删除", "error"); return; }
+      openDeleteDialog([p], false);
+    }
+
+    // ─────────── RENDER ───────────
+    function render() {
+      renderFiles();
+      renderStatus();
+      renderNavButtons();
+      $("#addressInput").value = state.cwd;
+    }
+
+    function renderNavButtons() {
+      $("#btnBack").disabled = state.hIdx === 0;
+      $("#btnForward").disabled = state.hIdx >= state.history.length-1;
+    }
+
+    function renderBreadcrumb() { /* removed by design */ }
+
+    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+    function sortItems(items) {
+      const key = state.sort;
+      const folders = items.filter(i => i.type==="folder");
+      const files = items.filter(i => i.type!=="folder");
+      const cmp = (a,b) => {
+        if (key==="size") return (b.size||0) - (a.size||0);
+        if (key==="mtime") return String(b.mtime).localeCompare(String(a.mtime));
+        if (key==="kind") return (a.kind||a.ext||"").localeCompare(b.kind||b.ext||"");
+        return a.name.localeCompare(b.name, "zh");
+      };
+      folders.sort(cmp); files.sort(cmp);
+      return [...folders, ...files];
+    }
+
+    function renderFiles() {
+      const area = $("#fileArea");
+      const items = sortItems(listChildren(state.cwd));
+      area.innerHTML = "";
+
+      if (items.length === 0) {
+        area.innerHTML = `
+          <div class="h-full flex flex-col items-center justify-center text-center py-24">
+            <div class="w-16 h-16 rounded-2xl file-icon-bg border border-white/5 flex items-center justify-center mb-4">
+              <span class="material-symbols-outlined text-on-surface-variant/40 text-[28px]">folder_open</span>
+            </div>
+            <p class="font-label text-sm uppercase tracking-widest text-on-surface-variant/60">空文件夹</p>
+            <p class="text-xs text-on-surface-variant/40 mt-2">此目录下没有项目</p>
+          </div>`;
+        return;
+      }
+
+      if (state.view === "list") renderList(area, items);
+      else if (state.view === "grid") renderGrid(area, items);
+    }
+
+    // -- LIST (detailed) view
+    function renderList(area, items) {
+      const head = `
+        <div class="grid grid-cols-12 gap-4 px-4 py-2.5 bg-surface-container-low rounded-t-lg border border-white/5 font-label text-[10px] uppercase tracking-[0.15em] text-outline">
+          <div class="col-span-6">名称</div>
+          <div class="col-span-2">修改时间</div>
+          <div class="col-span-2">类型</div>
+          <div class="col-span-2 text-right">大小</div>
+        </div>`;
+      const rows = items.map(item => {
+        const sel = state.selected.has(item.path);
+        return `
+          <div class="row file-row group grid grid-cols-12 gap-4 px-4 py-2.5 items-center cursor-pointer border-b border-white/[0.03] hover:bg-surface-container-low/60 ${sel?'bg-primary/10 hover:bg-primary/15':''}"
+               data-path="${escapeHtml(item.path)}">
+            <div class="col-span-6 flex items-center gap-3 min-w-0">
+              <span class="material-symbols-outlined ${item.type==='folder'?'ms-fill':''} ${colorFor(item)} text-[20px] flex-shrink-0">${iconFor(item)}</span>
+              <span class="text-sm font-headline ${item.type==='folder'?'font-bold':'font-medium'} text-on-surface truncate">${escapeHtml(item.name)}</span>
+            </div>
+            <div class="col-span-2 font-label text-[11px] text-on-surface-variant/70">${item.mtime||'—'}</div>
+            <div class="col-span-2">
+              <span class="font-label text-[10px] uppercase tracking-wider text-on-surface-variant/60">${kindLabel(item)}</span>
+            </div>
+            <div class="col-span-2 text-right font-label text-[11px] text-on-surface-variant/70">${item.type==='folder'?'—':fmtSize(item.size)}</div>
+          </div>`;
+      }).join("");
+      area.innerHTML = `<div class="bg-surface-container-lowest border border-white/5 rounded-lg overflow-hidden">${head}<div>${rows}</div></div>`;
+      bindRowEvents();
+    }
+
+    // -- GRID (large icons)
+    function renderGrid(area, items) {
+      const cells = items.map(item => {
+        const sel = state.selected.has(item.path);
+        const thumb = item.kind === "video"
+          ? `<div class="absolute inset-0 file-icon-bg flex items-center justify-center">
+               <span class="material-symbols-outlined ms-fill text-primary/70 text-[40px]">movie</span>
+             </div>
+             <div class="absolute bottom-1.5 right-1.5 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 font-label text-[9px] text-white/90 uppercase tracking-wider">${item.ext||'video'}</div>`
+          : `<div class="absolute inset-0 file-icon-bg flex items-center justify-center">
+               <span class="material-symbols-outlined ${item.type==='folder'?'ms-fill':''} ${colorFor(item)} text-[44px]">${iconFor(item)}</span>
+             </div>`;
+        return `
+          <div class="file-row group cursor-pointer flex flex-col gap-2 p-2 rounded-lg ${sel?'bg-primary/10 ring-1 ring-primary/40':'hover:bg-surface-container-low/60'}"
+               data-path="${escapeHtml(item.path)}">
+            <div class="relative aspect-[4/3] rounded-md overflow-hidden border border-white/5">${thumb}</div>
+            <div class="px-1">
+              <p class="text-xs font-headline ${item.type==='folder'?'font-bold':'font-medium'} text-on-surface truncate">${escapeHtml(item.name)}</p>
+              <p class="font-label text-[10px] text-on-surface-variant/50 truncate">${item.type==='folder'?kindLabel(item):fmtSize(item.size)}</p>
+            </div>
+          </div>`;
+      }).join("");
+      area.innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">${cells}</div>`;
+      bindRowEvents();
+    }
+
+    // -- COMPACT
+    function renderCompact(area, items) {
+      const cells = items.map(item => {
+        const sel = state.selected.has(item.path);
+        return `
+          <div class="file-row cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded ${sel?'bg-primary/10':'hover:bg-surface-container-low/60'}"
+               data-path="${escapeHtml(item.path)}">
+            <span class="material-symbols-outlined ${item.type==='folder'?'ms-fill':''} ${colorFor(item)} text-[16px] flex-shrink-0">${iconFor(item)}</span>
+            <span class="text-xs ${item.type==='folder'?'font-bold':''} text-on-surface truncate">${escapeHtml(item.name)}</span>
+          </div>`;
+      }).join("");
+      area.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-0.5">${cells}</div>`;
+      bindRowEvents();
+    }
+
+    // -- COLUMNS (macOS column view)
+    function renderColumns(area) {
+      // Build columns from drive root → cwd → preview of selected (or first child)
+      const path = state.cwd;
+      const drive = path.slice(0,3);
+      const segs = path === drive ? [] : path.slice(3).split("\\").filter(Boolean);
+      // Each column shows the children of the path up to that level; last column = children of cwd
+      const colPaths = [drive];
+      let cur = drive;
+      for (const s of segs) { cur = cur===drive ? drive+s : cur+"\\"+s; colPaths.push(cur); }
+
+      const focusedPath = [...state.selected][0] || null;
+      let previewNode = focusedPath ? FS[focusedPath] : null;
+      // If the focused item is a folder, we'll already render it as a column. Preview pane only for files or for the cwd if no selection.
+      const showPreview = previewNode && previewNode.type !== "folder";
+
+      let html = `<div class="flex h-full gap-px bg-white/5 rounded-lg overflow-hidden border border-white/5 min-h-[420px]">`;
+      colPaths.forEach((cp, idx) => {
+        const items = sortItems(listChildren(cp));
+        const activeChild = colPaths[idx+1] || null;
+        html += `<div class="flex-1 min-w-[200px] max-w-[280px] bg-surface-container-lowest overflow-y-auto">
+          <div class="px-3 py-2 sticky top-0 bg-surface-container-low/95 backdrop-blur border-b border-white/5">
+            <p class="font-label text-[10px] uppercase tracking-widest text-outline truncate">${escapeHtml(basename(cp))}</p>
+          </div>`;
+        if (items.length === 0) {
+          html += `<p class="px-3 py-4 text-[11px] text-on-surface-variant/40 italic">空</p>`;
+        } else {
+          html += items.map(item => {
+            const isActive = item.path === activeChild;
+            const isSel = state.selected.has(item.path);
+            return `<div class="file-row cursor-pointer flex items-center gap-2 px-3 py-1.5 ${
+                     isActive?'bg-surface-container-high':isSel?'bg-primary/10':'hover:bg-white/5'}"
+                     data-path="${escapeHtml(item.path)}">
+              <span class="material-symbols-outlined ${item.type==='folder'?'ms-fill':''} ${colorFor(item)} text-[15px] flex-shrink-0">${iconFor(item)}</span>
+              <span class="text-xs ${item.type==='folder'?'font-bold':''} text-on-surface truncate flex-1">${escapeHtml(item.name)}</span>
+              ${item.type==='folder'?'<span class="material-symbols-outlined text-[14px] text-on-surface-variant/40">chevron_right</span>':''}
+            </div>`;
+          }).join("");
+        }
+        html += `</div>`;
+      });
+
+      // Preview column for selected file
+      if (showPreview) {
+        const node = previewNode;
+        html += `<div class="flex-1 min-w-[240px] bg-surface-container-low/40 p-5 flex flex-col items-center text-center">
+          <div class="w-24 h-24 rounded-xl file-icon-bg border border-white/5 flex items-center justify-center mb-4">
+            <span class="material-symbols-outlined ${colorFor(node)} text-[48px]">${iconFor(node)}</span>
+          </div>
+          <p class="text-sm font-bold mb-1 break-all">${escapeHtml(node.name)}</p>
+          <p class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-4">${kindLabel(node)}</p>
+          <div class="w-full space-y-2 text-left mt-2">
+            <div class="flex justify-between text-[11px]"><span class="text-on-surface-variant/60 font-label uppercase tracking-wider">大小</span><span class="font-mono">${fmtSize(node.size)}</span></div>
+            <div class="flex justify-between text-[11px]"><span class="text-on-surface-variant/60 font-label uppercase tracking-wider">修改</span><span class="font-mono">${node.mtime}</span></div>
+          </div>
+        </div>`;
+      }
+      html += `</div>`;
+      area.innerHTML = html;
+      bindRowEvents();
+    }
+
+    function bindRowEvents() {
+      $$(".file-row").forEach(row => {
+        row.addEventListener("click", (e) => {
+          const p = row.dataset.path;
+          const node = FS[p];
+          if (!node) return;
+          if (e.metaKey || e.ctrlKey) {
+            if (state.selected.has(p)) state.selected.delete(p); else state.selected.add(p);
+          } else {
+            state.selected = new Set([p]);
+          }
+          render();
+        });
+        row.addEventListener("dblclick", () => {
+          const p = row.dataset.path;
+          const node = FS[p];
+          if (!node) return;
+          if (node.type === "folder") navTo(p);
+          else flashStatus("已请求播放: " + node.name, "ok");
+        });
+        row.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          const p = row.dataset.path;
+          if (!state.selected.has(p)) state.selected = new Set([p]);
+          render();
+          showCtxMenu(e.clientX, e.clientY, p);
+        });
+      });
+    }
+
+    function renderStatus() {
+      const items = listChildren(state.cwd);
+      const totalSize = items.reduce((s,i) => s + (i.size||0), 0);
+      $("#statusItems").textContent = `${items.length} 项`;
+      $("#statusSize").textContent = totalSize ? `${fmtSize(totalSize)} 总大小` : "—";
+      $("#statusPath").textContent = state.cwd;
+    }
+
+    // ─────────── CONTEXT MENU ───────────
+    function showCtxMenu(x, y, path) {
+      const menu = $("#ctxMenu");
+      state.ctxTarget = path;
+      menu.hidden = false;
+      // measure & clamp
+      const r = menu.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      menu.style.left = Math.min(x, vw - r.width - 8) + "px";
+      menu.style.top  = Math.min(y, vh - r.height - 8) + "px";
+    }
+    function hideCtxMenu() { $("#ctxMenu").hidden = true; state.ctxTarget = null; }
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#ctxMenu")) hideCtxMenu();
+    });
+    document.addEventListener("scroll", hideCtxMenu, true);
+    window.addEventListener("blur", hideCtxMenu);
+
+    $$("#ctxMenu .ctx-item").forEach(b => {
+      b.addEventListener("click", () => {
+        const action = b.dataset.action;
+        const target = state.ctxTarget;
+        hideCtxMenu();
+        if (!target) return;
+        const node = FS[target];
+        if (!node) return;
+        if (action === "open") {
+          if (node.type === "folder") navTo(target);
+          else flashStatus("已请求播放: " + node.name, "ok");
+        } else if (action === "reveal") {
+          const parent = parentOf(target);
+          if (parent) {
+            navTo(parent);
+            state.selected = new Set([target]);
+            render();
+            flashStatus("已定位到: " + basename(target), "ok");
+          } else {
+            flashStatus("此项没有上级位置", "error");
+          }
+        } else if (action === "delete") {
+          openDeleteDialog([target], false);
+        } else if (action === "purge") {
+          openDeleteDialog([target], true);
+        }
+      });
+    });
+
+    // ─────────── DELETE DIALOG ───────────
+    function openDeleteDialog(paths, permanent) {
+      const targets = paths.map(p => ({ path: p, ...FS[p] })).filter(x => x.type);
+      if (targets.length === 0) return;
+      state.pendingDelete = { targets, permanent };
+
+      $("#deleteTitle").textContent = permanent ? "永久删除?" : "删除到回收站?";
+      $("#deleteSubtitle").textContent = permanent
+        ? "此操作不可撤销。所选项目将被永久从磁盘移除。"
+        : "选中项目将被移动到系统回收站,你可以稍后还原。";
+      $("#deleteIcon").textContent = permanent ? "delete_forever" : "delete";
+      $("#deleteIconWrap").className = `w-12 h-12 rounded-xl ${permanent?'bg-error/20 border-error/50':'bg-error/15 border-error/30'} border flex items-center justify-center flex-shrink-0`;
+      $("#deleteWarning").hidden = !permanent;
+      $("#deleteConfirmLabel").textContent = permanent ? "永久删除" : "移到回收站";
+
+      // Detail card
+      const detail = $("#deleteDetail");
+      if (targets.length === 1) {
+        const t = targets[0];
+        const isFolder = t.type === "folder";
+        const childCount = isFolder ? listChildren(t.path).length : 0;
+        detail.innerHTML = `
+          <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-lg file-icon-bg border border-white/5 flex items-center justify-center flex-shrink-0">
+              <span class="material-symbols-outlined ${isFolder?'ms-fill':''} ${colorFor(t)} text-[22px]">${iconFor(t)}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-bold truncate">${escapeHtml(t.name)}</p>
+              <p class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 mt-0.5">${kindLabel(t)}</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3 pt-3 border-t border-white/5 mt-3">
+            <div>
+              <p class="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-0.5">大小</p>
+              <p class="text-xs font-mono">${isFolder?'—':fmtSize(t.size)}</p>
+            </div>
+            <div>
+              <p class="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-0.5">${isFolder?'子项':'修改时间'}</p>
+              <p class="text-xs font-mono">${isFolder?(childCount+' 项'):t.mtime}</p>
+            </div>
+            <div class="col-span-2">
+              <p class="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-0.5">完整路径</p>
+              <p class="text-[11px] font-mono text-on-surface-variant/80 break-all">${escapeHtml(t.path)}</p>
+            </div>
+          </div>`;
+      } else {
+        detail.innerHTML = `<p class="text-sm font-bold">${targets.length} 个项目</p>`;
+      }
+
+      $("#deleteOverlay").hidden = false;
+    }
+    function closeDeleteDialog() { $("#deleteOverlay").hidden = true; state.pendingDelete = null; }
+
+    function performDelete() {
+      const pd = state.pendingDelete;
+      if (!pd) return;
+      const removed = [];
+      for (const t of pd.targets) {
+        const p = t.path;
+        // recursive removal
+        const stack = [p];
+        while (stack.length) {
+          const cur = stack.pop();
+          const node = FS[cur];
+          if (!node) continue;
+          if (node.type === "folder") for (const c of (node.children||[])) stack.push(c);
+          delete FS[cur];
+        }
+        // remove from parent
+        const parent = parentOf(p);
+        if (parent && FS[parent]) {
+          FS[parent].children = (FS[parent].children||[]).filter(x => x !== p);
+        }
+        removed.push(t);
+      }
+      closeDeleteDialog();
+      state.selected.clear();
+      render();
+      showToast(
+        pd.permanent ? "已永久删除" : "已移到回收站",
+        removed.length===1 ? removed[0].name : `${removed.length} 个项目`,
+        pd.permanent ? "delete_forever" : "delete"
+      );
+    }
+
+    $("#deleteCancel").addEventListener("click", closeDeleteDialog);
+    $("#deleteBackdrop").addEventListener("click", closeDeleteDialog);
+    $("#deleteConfirm").addEventListener("click", performDelete);
+
+    // ─────────── TOAST ───────────
+    function showToast(title, msg, icon="check_circle") {
+      $("#toastTitle").textContent = title;
+      $("#toastMsg").textContent = msg;
+      $("#toastIcon").textContent = icon;
+      const t = $("#toast"); t.hidden = false;
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => { t.hidden = true; }, 3500);
+    }
+    $("#toastClose").addEventListener("click", () => { $("#toast").hidden = true; });
+
+    // ─────────── ADDRESS INPUT ───────────
+    $("#addressInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") tryOpenInput();
+    });
+    $("#btnOpen").addEventListener("click", tryOpenInput);
+    $("#btnDelete").addEventListener("click", tryDeleteInput);
+    $("#btnBack").addEventListener("click", back);
+    $("#btnForward").addEventListener("click", forward);
+
+    // ─────────── VIEW SWITCHER ───────────
+    function setView(v) {
+      state.view = v;
+      $$("#viewSwitcher .view-btn").forEach(b => {
+        const active = b.dataset.view === v;
+        b.className = `view-btn p-1.5 rounded-sm transition-colors ${active?'bg-primary text-on-primary':'text-on-surface-variant/70 hover:bg-white/5 hover:text-on-surface'}`;
+      });
+      render();
+    }
+    $$("#viewSwitcher .view-btn").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
+    $("#sortSelect").addEventListener("change", (e) => { state.sort = e.target.value; render(); });
+
+    // ─────────── KEYBOARD ───────────
+    document.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+      if (!$("#deleteOverlay").hidden) {
+        if (e.key === "Escape") closeDeleteDialog();
+        else if (e.key === "Enter") performDelete();
+        return;
+      }
+      if (e.key === "Backspace") { e.preventDefault(); up(); }
+      else if (e.key === "Enter" && state.selected.size === 1) {
+        const p = [...state.selected][0];
+        const node = FS[p];
+        if (node?.type === "folder") navTo(p);
+      }
+      else if (e.key === "Delete" && state.selected.size) {
+        openDeleteDialog([...state.selected], e.shiftKey);
+      }
+      else if (e.key === "Escape") {
+        state.selected.clear(); render();
+      }
+    });
+
+    // ─────────── BOOT ───────────
+    setView("list");
+    render();
+    </script>
+  </body>
+</html>
