@@ -26,7 +26,7 @@ function App(): JSX.Element {
       <DownloadProgressListener />
       <div className="h-screen overflow-hidden bg-background text-on-surface font-body">
         <Sidebar />
-        <div className="ml-64 h-full overflow-y-auto custom-scrollbar">
+        <div id="page-scroll" className="ml-64 h-full overflow-y-auto custom-scrollbar">
           <Routes>
             <Route path="/" element={<LocalLibrary />} />
             <Route path="/search" element={<SearchDownload />} />
