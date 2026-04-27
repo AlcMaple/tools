@@ -7,6 +7,7 @@ import AnimeInfo from './pages/AnimeInfo'
 import BiuSync from './pages/BiuSync'
 import Settings from './pages/Settings'
 import LocalLibrary from './pages/LocalLibrary'
+import FileExplorer from './pages/FileExplorer'
 import { downloadStore } from './stores/downloadStore'
 
 function DownloadProgressListener(): null {
@@ -32,6 +33,7 @@ function App(): JSX.Element {
             <Route path="/queue" element={<DownloadQueue />} />
             <Route path="/anime-info" element={<AnimeInfo />} />
             <Route path="/biu-sync" element={<BiuSync />} />
+            <Route path="/file-explorer" element={<FileExplorer />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </div>
