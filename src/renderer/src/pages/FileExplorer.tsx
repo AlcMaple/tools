@@ -1,128 +1,54 @@
-/**
- * File Explorer — visual port of docs/design-mockups/File_Explorer.html.
- *
- * NOT WIRED to real filesystem. The page renders a Windows-style explorer over
- * an in-memory mock FS for layout / interaction preview only:
- *   - back / forward / up navigation works (within the mock graph)
- *   - view switcher (list / grid) and sort selector are live
- *   - context menu, selection, address-bar Open/Delete all show the visual flow
- *     but Delete only mutates the in-memory mock (no IPC to main, no fs touched)
- *
- * To make this real later: lift FS reads behind window.* IPC, replace the mock
- * dictionary with on-demand calls, wire delete through Electron's shell.trashItem
- * or fs.rm. The component shape shouldn't need to change much.
- */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
+import type { FsEntry } from '../env.d.ts'
 
-// ── Mock filesystem ──────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-interface FsNode {
-  type: 'folder' | 'file'
-  name: string
-  mtime?: string
-  ext?: string
-  size?: number
-  kind?: 'video' | 'image' | 'archive' | 'text' | 'shortcut'
-  children?: string[]
-}
+const VIRTUAL_ROOT = '__root__'
 
-const FS: Record<string, FsNode> = {
-  'C:\\': { type: 'folder', name: '本地磁盘 (C:)', mtime: '2026-04-20 09:14',
-    children: ['C:\\Users', 'C:\\Program Files', 'C:\\Windows', 'C:\\Anime'] },
-  'C:\\Users': { type: 'folder', name: 'Users', mtime: '2026-04-22 11:02',
-    children: ['C:\\Users\\Yuming', 'C:\\Users\\Public'] },
-  'C:\\Users\\Public': { type: 'folder', name: 'Public', mtime: '2026-01-08 10:00', children: [] },
-  'C:\\Users\\Yuming': { type: 'folder', name: 'Yuming', mtime: '2026-04-25 22:48',
-    children: [
-      'C:\\Users\\Yuming\\Desktop', 'C:\\Users\\Yuming\\Documents',
-      'C:\\Users\\Yuming\\Downloads', 'C:\\Users\\Yuming\\Videos',
-      'C:\\Users\\Yuming\\Pictures', 'C:\\Users\\Yuming\\Music',
-    ] },
-  'C:\\Program Files': { type: 'folder', name: 'Program Files', mtime: '2026-04-01 18:30', children: [] },
-  'C:\\Windows': { type: 'folder', name: 'Windows', mtime: '2026-04-23 03:12', children: [] },
-  'C:\\Anime': { type: 'folder', name: 'Anime', mtime: '2026-04-20 18:00',
-    children: ['C:\\Anime\\Movies', 'C:\\Anime\\OVAs'] },
-  'C:\\Anime\\Movies': { type: 'folder', name: 'Movies', mtime: '2026-04-20 18:00', children: [] },
-  'C:\\Anime\\OVAs': { type: 'folder', name: 'OVAs', mtime: '2026-04-20 18:00', children: [] },
-  'C:\\Users\\Yuming\\Desktop': { type: 'folder', name: 'Desktop', mtime: '2026-04-26 19:01',
-    children: ['C:\\Users\\Yuming\\Desktop\\SoraIndex.lnk', 'C:\\Users\\Yuming\\Desktop\\readme.txt'] },
-  'C:\\Users\\Yuming\\Desktop\\SoraIndex.lnk': { type: 'file', name: 'SoraIndex.lnk', ext: 'lnk', size: 1862, mtime: '2026-04-12 10:22', kind: 'shortcut' },
-  'C:\\Users\\Yuming\\Desktop\\readme.txt': { type: 'file', name: 'readme.txt', ext: 'txt', size: 412, mtime: '2026-04-26 18:55', kind: 'text' },
-  'C:\\Users\\Yuming\\Documents': { type: 'folder', name: 'Documents', mtime: '2026-04-22 14:08', children: [] },
-  'C:\\Users\\Yuming\\Pictures': { type: 'folder', name: 'Pictures', mtime: '2026-03-30 09:00', children: [] },
-  'C:\\Users\\Yuming\\Music': { type: 'folder', name: 'Music', mtime: '2026-04-18 21:45', children: [] },
-  'C:\\Users\\Yuming\\Downloads': { type: 'folder', name: 'Downloads', mtime: '2026-04-26 20:31',
-    children: [
-      'C:\\Users\\Yuming\\Downloads\\[SoraIndex] Frieren - 17.mkv',
-      'C:\\Users\\Yuming\\Downloads\\[SoraIndex] Frieren - 18.mkv',
-      'C:\\Users\\Yuming\\Downloads\\subtitles.zip',
-      'C:\\Users\\Yuming\\Downloads\\poster_collection',
-    ] },
-  'C:\\Users\\Yuming\\Downloads\\[SoraIndex] Frieren - 17.mkv': { type: 'file', name: '[SoraIndex] Frieren - 17.mkv', ext: 'mkv', size: 1342177280, mtime: '2026-04-26 20:31', kind: 'video' },
-  'C:\\Users\\Yuming\\Downloads\\[SoraIndex] Frieren - 18.mkv': { type: 'file', name: '[SoraIndex] Frieren - 18.mkv', ext: 'mkv', size: 1289748480, mtime: '2026-04-26 20:31', kind: 'video' },
-  'C:\\Users\\Yuming\\Downloads\\subtitles.zip': { type: 'file', name: 'subtitles.zip', ext: 'zip', size: 4823422, mtime: '2026-04-25 14:08', kind: 'archive' },
-  'C:\\Users\\Yuming\\Downloads\\poster_collection': { type: 'folder', name: 'poster_collection', mtime: '2026-04-20 11:18', children: [] },
-  'C:\\Users\\Yuming\\Videos': { type: 'folder', name: 'Videos', mtime: '2026-04-25 22:14',
-    children: [
-      'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners',
-      'C:\\Users\\Yuming\\Videos\\Cowboy Bebop',
-      'C:\\Users\\Yuming\\Videos\\Sousou no Frieren',
-      'C:\\Users\\Yuming\\Videos\\Vinland Saga',
-      'C:\\Users\\Yuming\\Videos\\screen_capture.mp4',
-    ] },
-  'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners': { type: 'folder', name: 'Cyberpunk Edgerunners', mtime: '2026-04-22 23:11',
-    children: [
-      'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E01.mkv',
-      'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E02.mkv',
-      'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E03.mkv',
-      'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\poster.jpg',
-    ] },
-  'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E01.mkv': { type: 'file', name: '[SoraIndex] Cyberpunk Edgerunners - 01.mkv', ext: 'mkv', size: 1431655765, mtime: '2026-04-22 22:48', kind: 'video' },
-  'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E02.mkv': { type: 'file', name: '[SoraIndex] Cyberpunk Edgerunners - 02.mkv', ext: 'mkv', size: 1395864371, mtime: '2026-04-22 22:50', kind: 'video' },
-  'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\E03.mkv': { type: 'file', name: '[SoraIndex] Cyberpunk Edgerunners - 03.mkv', ext: 'mkv', size: 1502468608, mtime: '2026-04-22 22:54', kind: 'video' },
-  'C:\\Users\\Yuming\\Videos\\Cyberpunk Edgerunners\\poster.jpg': { type: 'file', name: 'poster.jpg', ext: 'jpg', size: 482718, mtime: '2026-04-21 09:20', kind: 'image' },
-  'C:\\Users\\Yuming\\Videos\\Cowboy Bebop': { type: 'folder', name: 'Cowboy Bebop', mtime: '2026-04-19 14:00', children: [] },
-  'C:\\Users\\Yuming\\Videos\\Sousou no Frieren': { type: 'folder', name: 'Sousou no Frieren', mtime: '2026-04-25 19:40', children: [] },
-  'C:\\Users\\Yuming\\Videos\\Vinland Saga': { type: 'folder', name: 'Vinland Saga', mtime: '2026-04-15 11:22', children: [] },
-  'C:\\Users\\Yuming\\Videos\\screen_capture.mp4': { type: 'file', name: 'screen_capture.mp4', ext: 'mp4', size: 286331153, mtime: '2026-04-24 16:18', kind: 'video' },
-  'D:\\': { type: 'folder', name: '媒体库 (D:)', mtime: '2026-04-26 20:00', children: ['D:\\Anime', 'D:\\Movies', 'D:\\Backup'] },
-  'D:\\Anime': { type: 'folder', name: 'Anime', mtime: '2026-04-26 19:55', children: [] },
-  'D:\\Movies': { type: 'folder', name: 'Movies', mtime: '2026-04-15 22:14', children: [] },
-  'D:\\Backup': { type: 'folder', name: 'Backup', mtime: '2026-04-01 03:00', children: [] },
-  'E:\\': { type: 'folder', name: '工作 (E:)', mtime: '2026-04-26 17:00', children: [] },
-}
+// ── Path helpers (platform-aware) ─────────────────────────────────────────────
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function normPath(input: string): string {
+function normPath(input: string, plat: string): string {
   if (!input) return ''
-  let p = input.trim().replace(/\//g, '\\').replace(/\\+/g, '\\')
-  if (/^[a-z]:$/i.test(p)) p += '\\'
-  if (p.length > 3 && p.endsWith('\\')) p = p.slice(0, -1)
-  if (/^[a-z]:/.test(p)) p = p[0].toUpperCase() + p.slice(1)
-  return p
+  if (plat === 'win32') {
+    let p = input.trim().replace(/\//g, '\\').replace(/\\+/g, '\\')
+    if (/^[a-z]:$/i.test(p)) p += '\\'
+    if (p.length > 3 && p.endsWith('\\')) p = p.slice(0, -1)
+    if (/^[a-z]:/.test(p)) p = p[0].toUpperCase() + p.slice(1)
+    return p
+  }
+  return input.trim()
 }
 
-function isRoot(p: string): boolean { return /^[A-Z]:\\?$/.test(p) }
-
-function parentOf(p: string): string | null {
-  p = normPath(p)
-  if (isRoot(p) || !p) return null
-  const idx = p.lastIndexOf('\\')
-  if (idx <= 2) return p.slice(0, 3)
-  return p.slice(0, idx)
+function parentOf(p: string, plat: string): string | null {
+  if (!p || p === VIRTUAL_ROOT) return null
+  if (plat === 'win32') {
+    if (/^[A-Z]:\\?$/i.test(p)) return VIRTUAL_ROOT
+    const clean = p.replace(/\\$/, '')
+    const idx = clean.lastIndexOf('\\')
+    if (idx <= 2) return clean.slice(0, 3)
+    return clean.slice(0, idx)
+  } else {
+    if (p === '/') return null
+    const clean = p.replace(/\/$/, '')
+    const idx = clean.lastIndexOf('/')
+    if (idx === 0) return '/'
+    return clean.slice(0, idx)
+  }
 }
 
-interface FsItem extends FsNode { path: string }
-
-function listChildren(p: string): FsItem[] {
-  const node = FS[normPath(p)]
-  if (!node || node.type !== 'folder') return []
-  return (node.children ?? [])
-    .map((c) => ({ path: c, ...FS[c] }))
-    .filter((x): x is FsItem => Boolean(x.type))
+function basenameOf(p: string, plat: string): string {
+  if (!p || p === VIRTUAL_ROOT) return '我的电脑'
+  if (plat === 'win32') {
+    if (/^[A-Z]:\\?$/i.test(p)) return p.slice(0, 2)
+    return p.slice(p.lastIndexOf('\\') + 1)
+  }
+  if (p === '/') return '/'
+  const clean = p.replace(/\/$/, '')
+  return clean.slice(clean.lastIndexOf('/') + 1)
 }
+
+// ── Display helpers ───────────────────────────────────────────────────────────
 
 function fmtSize(b: number | undefined): string {
   if (b == null) return '—'
@@ -132,43 +58,34 @@ function fmtSize(b: number | undefined): string {
   return `${n < 10 && i > 0 ? n.toFixed(2) : n < 100 && i > 0 ? n.toFixed(1) : Math.round(n)} ${u[i]}`
 }
 
-function kindLabel(node: FsNode): string {
+function kindLabel(node: FsEntry): string {
   if (node.type === 'folder') return '文件夹'
-  const m: Record<string, string> = { video: '视频文件', image: '图像文件', archive: '压缩文件', text: '文本文档', shortcut: '快捷方式' }
-  return m[node.kind ?? ''] ?? (node.ext ? `${node.ext.toUpperCase()} 文件` : '文件')
+  const m: Record<string, string> = { video: '视频文件', image: '图像文件', archive: '压缩文件', text: '文本文档' }
+  return m[node.kind ?? ''] ?? (node.ext ? `${node.ext.replace('.', '').toUpperCase()} 文件` : '文件')
 }
 
-function iconFor(node: FsNode): string {
+function iconFor(node: FsEntry): string {
   if (node.type === 'folder') return 'folder'
-  return ({ video: 'movie', image: 'image', archive: 'folder_zip', text: 'description', shortcut: 'link' } as Record<string, string>)[node.kind ?? ''] ?? 'draft'
+  return ({ video: 'movie', image: 'image', archive: 'folder_zip', text: 'description' } as Record<string, string>)[node.kind ?? ''] ?? 'draft'
 }
 
-function colorFor(node: FsNode): string {
+function colorFor(node: FsEntry): string {
   if (node.type === 'folder') return 'text-primary'
-  return ({ video: 'text-primary/80', image: 'text-secondary', archive: 'text-[#c8c6c6]', text: 'text-[#d9c1c1]', shortcut: 'text-secondary' } as Record<string, string>)[node.kind ?? ''] ?? 'text-on-surface-variant'
+  return ({ video: 'text-primary/80', image: 'text-secondary', archive: 'text-[#c8c6c6]', text: 'text-[#d9c1c1]' } as Record<string, string>)[node.kind ?? ''] ?? 'text-on-surface-variant'
 }
 
-function basename(p: string): string {
-  p = normPath(p)
-  if (isRoot(p)) return FS[p]?.name ?? p
-  return p.slice(p.lastIndexOf('\\') + 1)
-}
-
-// ── Page ─────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type ViewMode = 'list' | 'grid'
 type SortKey = 'name' | 'size' | 'mtime' | 'kind'
 
-// Order matters — keys are iterated to render the dropdown options.
-const SORT_LABELS: Record<SortKey, string> = {
-  name: 'Name',
-  size: 'Size',
-  mtime: 'Modified',
-  kind: 'Type',
-}
+const SORT_LABELS: Record<SortKey, string> = { name: 'Name', size: 'Size', mtime: 'Modified', kind: 'Type' }
 
-interface DeletePending { targets: FsItem[]; permanent: boolean }
+interface DeletePending { targets: FsEntry[]; permanent: boolean }
 interface CtxState { x: number; y: number; path: string }
+interface ToastState { title: string; msg: string; icon: string }
+
+// ── Title slot ────────────────────────────────────────────────────────────────
 
 const TITLE_SLOT = (
   <div className="flex items-center gap-4">
@@ -179,41 +96,74 @@ const TITLE_SLOT = (
   </div>
 )
 
+// ── Component ─────────────────────────────────────────────────────────────────
+
+function lsPref<T>(key: string, fallback: T): T {
+  try { const v = localStorage.getItem(`fe.${key}`); return v !== null ? JSON.parse(v) as T : fallback } catch { return fallback }
+}
+function svPref(key: string, value: unknown): void {
+  try { localStorage.setItem(`fe.${key}`, JSON.stringify(value)) } catch {}
+}
+
 function FileExplorer(): JSX.Element {
-  const [cwd, setCwd] = useState('C:\\Users\\Yuming\\Videos')
-  const [history, setHistory] = useState<string[]>(['C:\\Users\\Yuming\\Videos'])
-  const [hIdx, setHIdx] = useState(0)
-  const [view, setView] = useState<ViewMode>('list')
-  const [sort, setSort] = useState<SortKey>('name')
+  const [platform, setPlatform] = useState('darwin')
+  const [homeDir, setHomeDir] = useState('')
+  const [cwd, setCwd] = useState('')
+  const [isVirtualRoot, setIsVirtualRoot] = useState(false)
+  const [items, setItems] = useState<FsEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [history, setHistory] = useState<string[]>([])
+  const [hIdx, setHIdx] = useState(-1)
+  const [view, setView] = useState<ViewMode>(() => lsPref<ViewMode>('view', 'list'))
+  const [sort, setSort] = useState<SortKey>(() => lsPref<SortKey>('sort', 'name'))
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false)
   const sortDropdownRef = useRef<HTMLDivElement | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [addressInput, setAddressInput] = useState('C:\\Users\\Yuming\\Videos')
+  const [addressInput, setAddressInput] = useState('')
   const [pathStatus, setPathStatus] = useState<{ msg: string; tone: 'ok' | 'error' | 'info' } | null>(null)
   const [ctx, setCtx] = useState<CtxState | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DeletePending | null>(null)
-  const [toast, setToast] = useState<{ title: string; msg: string; icon: string } | null>(null)
+  const [toast, setToast] = useState<ToastState | null>(null)
 
-  // Mock FS mutates in-place when we delete; bump this to force a re-render.
-  const [fsTick, setFsTick] = useState(0)
-  const fileAreaRef = useRef<HTMLDivElement | null>(null)
+  // Refs so stable callbacks (keyboard handler) always read fresh state
+  const platformRef = useRef('darwin')
+  const homeDirRef = useRef('')
+  const cwdRef = useRef('')
+  const histRef = useRef<string[]>([])
+  const hIdxRef = useRef(-1)
+  const selectedRef = useRef<Set<string>>(new Set())
+  const itemsRef = useRef<FsEntry[]>([])
+  const pendingDeleteRef = useRef<DeletePending | null>(null)
 
-  // Keep address input in sync when cwd changes (programmatic navigations).
-  useEffect(() => { setAddressInput(cwd) }, [cwd])
+  platformRef.current = platform
+  homeDirRef.current = homeDir
+  cwdRef.current = cwd
+  histRef.current = history
+  hIdxRef.current = hIdx
+  selectedRef.current = selected
+  itemsRef.current = items
+  pendingDeleteRef.current = pendingDelete
 
-  // ── Status flash + toast auto-dismiss ──
+  // Keep address input in sync with cwd
+  useEffect(() => {
+    setAddressInput(cwd === VIRTUAL_ROOT ? '' : cwd)
+  }, [cwd])
+
+  // Auto-dismiss status flash
   useEffect(() => {
     if (!pathStatus) return
     const t = setTimeout(() => setPathStatus(null), 2200)
     return () => clearTimeout(t)
   }, [pathStatus])
+
+  // Auto-dismiss toast
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 3500)
     return () => clearTimeout(t)
   }, [toast])
 
-  // ── Sort dropdown click-away ──
+  // Sort dropdown click-away
   useEffect(() => {
     if (!sortDropdownOpen) return
     const onClickAway = (e: MouseEvent): void => {
@@ -225,12 +175,11 @@ function FileExplorer(): JSX.Element {
     return () => document.removeEventListener('mousedown', onClickAway)
   }, [sortDropdownOpen])
 
-  // ── Context menu dismissal ──
+  // Context menu dismissal
   useEffect(() => {
     if (!ctx) return
     const onClickAway = (e: MouseEvent): void => {
-      const tgt = e.target as HTMLElement
-      if (!tgt.closest('[data-ctx-menu]')) setCtx(null)
+      if (!(e.target as HTMLElement).closest('[data-ctx-menu]')) setCtx(null)
     }
     const onScroll = (): void => setCtx(null)
     document.addEventListener('click', onClickAway)
@@ -242,131 +191,227 @@ function FileExplorer(): JSX.Element {
     }
   }, [ctx])
 
-  // ── Keyboard shortcuts ──
+  // ── Navigation ──
+
+  async function doNavTo(path: string, fromHistory: boolean): Promise<void> {
+    setLoading(true)
+    try {
+      const result = await window.fileExplorerApi.listDir(path)
+      setCwd(path)
+      setItems(result.entries)
+      setIsVirtualRoot(result.isVirtualRoot)
+      setSelected(new Set())
+      if (!fromHistory) {
+        const next = histRef.current.slice(0, hIdxRef.current + 1).concat(path)
+        setHistory(next)
+        setHIdx(next.length - 1)
+      }
+    } catch (e) {
+      setPathStatus({ msg: `无法访问: ${(e as Error).message}`, tone: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function refresh(): Promise<void> {
+    if (!cwdRef.current) return
+    setLoading(true)
+    try {
+      const result = await window.fileExplorerApi.listDir(cwdRef.current)
+      setItems(result.entries)
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function back(): void {
+    if (hIdxRef.current > 0) {
+      const i = hIdxRef.current - 1
+      setHIdx(i)
+      doNavTo(histRef.current[i], true)
+    }
+  }
+
+  function forward(): void {
+    if (hIdxRef.current < histRef.current.length - 1) {
+      const i = hIdxRef.current + 1
+      setHIdx(i)
+      doNavTo(histRef.current[i], true)
+    }
+  }
+
+  function up(): void {
+    const root = platformRef.current === 'win32' ? VIRTUAL_ROOT : homeDirRef.current
+    if (root && cwdRef.current !== root) doNavTo(root, false)
+  }
+
+  // Persist sort/view/path to localStorage on every change
+  useEffect(() => { svPref('sort', sort) }, [sort])
+  useEffect(() => { svPref('view', view) }, [view])
+  useEffect(() => { if (cwd) svPref('lastPath', cwd) }, [cwd])
+
+  // Initial load — platform info + navigate to last path (sort/view already init'd from localStorage)
+  useEffect(() => {
+    window.fileExplorerApi.getHomeInfo().then(async ({ homeDir: hd, platform: plat }) => {
+      setPlatform(plat)
+      platformRef.current = plat
+      setHomeDir(hd)
+      homeDirRef.current = hd
+
+      const startPath = lsPref('lastPath', hd) || hd
+      setLoading(true)
+      try {
+        const result = await window.fileExplorerApi.listDir(startPath)
+        setCwd(startPath)
+        setItems(result.entries)
+        setIsVirtualRoot(result.isVirtualRoot)
+        setHistory([startPath])
+        setHIdx(0)
+      } catch {
+        doNavTo(hd, false)
+      } finally {
+        setLoading(false)
+      }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Auto-refresh when the current directory changes on disk
+  useEffect(() => {
+    const unsub = window.fileExplorerApi.onDirChange(() => refresh())
+    return unsub
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Keyboard shortcuts (stable — reads via refs) ──
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const tag = (e.target as HTMLElement | null)?.tagName
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
-      if (pendingDelete) {
+
+      if (pendingDeleteRef.current) {
         if (e.key === 'Escape') setPendingDelete(null)
-        else if (e.key === 'Enter') performDelete()
+        else if (e.key === 'Enter') confirmDelete()
         return
       }
+
       if (e.key === 'Backspace') { e.preventDefault(); up() }
-      else if (e.key === 'Enter' && selected.size === 1) {
-        const p = [...selected][0]
-        const node = FS[p]
-        if (node?.type === 'folder') navTo(p)
+      else if (e.key === 'Enter' && selectedRef.current.size === 1) {
+        const p = [...selectedRef.current][0]
+        const item = itemsRef.current.find((i) => i.path === p)
+        if (item?.type === 'folder') doNavTo(p, false)
+        else if (item) window.fileExplorerApi.open(p)
       }
-      else if (e.key === 'Delete' && selected.size) openDeleteDialog([...selected], e.shiftKey)
+      else if (e.key === 'Delete' && selectedRef.current.size) {
+        openDeleteDialog([...selectedRef.current], e.shiftKey)
+      }
       else if (e.key === 'Escape') setSelected(new Set())
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingDelete, selected])
-
-  // ── Navigation ──
-  function navTo(path: string, fromHistory = false): void {
-    const p = normPath(path)
-    if (!FS[p] || FS[p].type !== 'folder') {
-      setPathStatus({ msg: '路径不存在或不是文件夹', tone: 'error' })
-      return
-    }
-    setCwd(p)
-    setSelected(new Set())
-    if (!fromHistory) {
-      const next = history.slice(0, hIdx + 1).concat(p)
-      setHistory(next)
-      setHIdx(next.length - 1)
-    }
-  }
-  function back(): void {
-    if (hIdx > 0) {
-      const i = hIdx - 1
-      setHIdx(i)
-      navTo(history[i], true)
-    }
-  }
-  function forward(): void {
-    if (hIdx < history.length - 1) {
-      const i = hIdx + 1
-      setHIdx(i)
-      navTo(history[i], true)
-    }
-  }
-  function up(): void {
-    const p = parentOf(cwd)
-    if (p) navTo(p)
-  }
+  }, [])
 
   // ── Address bar actions ──
-  function tryOpenInput(): void {
-    const raw = addressInput
-    if (!raw.trim()) { setPathStatus({ msg: '请输入路径', tone: 'error' }); return }
-    const p = normPath(raw)
-    const node = FS[p]
-    if (!node) { setPathStatus({ msg: '路径不存在', tone: 'error' }); return }
-    if (node.type === 'folder') {
-      navTo(p)
+
+  async function tryOpenInput(): Promise<void> {
+    const raw = addressInput.trim()
+    if (!raw) { setPathStatus({ msg: '请输入路径', tone: 'error' }); return }
+    const p = normPath(raw, platform)
+    try {
+      const result = await window.fileExplorerApi.listDir(p)
+      setCwd(p)
+      setItems(result.entries)
+      setIsVirtualRoot(result.isVirtualRoot)
+      setSelected(new Set())
+      const next = histRef.current.slice(0, hIdxRef.current + 1).concat(p)
+      setHistory(next)
+      setHIdx(next.length - 1)
       setPathStatus({ msg: '已打开', tone: 'ok' })
-    } else {
-      const parent = parentOf(p)
+    } catch {
+      // might be a file — navigate to parent and select
+      const parent = parentOf(p, platform)
       if (parent) {
-        navTo(parent)
-        setSelected(new Set([p]))
-        setPathStatus({ msg: '已定位文件', tone: 'ok' })
+        try {
+          const result = await window.fileExplorerApi.listDir(parent)
+          setCwd(parent)
+          setItems(result.entries)
+          setIsVirtualRoot(result.isVirtualRoot)
+          setSelected(new Set([p]))
+          const next = histRef.current.slice(0, hIdxRef.current + 1).concat(parent)
+          setHistory(next)
+          setHIdx(next.length - 1)
+          setPathStatus({ msg: '已定位文件', tone: 'ok' })
+        } catch {
+          setPathStatus({ msg: '路径不存在', tone: 'error' })
+        }
+      } else {
+        setPathStatus({ msg: '路径不存在', tone: 'error' })
       }
     }
   }
+
   function tryDeleteInput(): void {
-    const raw = addressInput
-    if (!raw.trim()) { setPathStatus({ msg: '请输入要删除的路径', tone: 'error' }); return }
-    const p = normPath(raw)
-    if (!FS[p]) { setPathStatus({ msg: '路径不存在,无法删除', tone: 'error' }); return }
-    openDeleteDialog([p], false)
+    const raw = addressInput.trim()
+    if (!raw) { setPathStatus({ msg: '请输入要删除的路径', tone: 'error' }); return }
+    const p = normPath(raw, platform)
+    // Find in current listing; if not found create a minimal entry for the dialog
+    const found = items.find((i) => i.path === p) ?? { name: basenameOf(p, platform), path: p, type: 'file' as const }
+    openDeleteDialog([p], false, [found])
   }
 
-  // ── Selection / context-menu actions ──
-  function openDeleteDialog(paths: string[], permanent: boolean): void {
-    const targets = paths.map((p) => ({ path: p, ...FS[p] })).filter((x): x is FsItem => Boolean(x.type))
+  // ── Delete flow ──
+
+  function openDeleteDialog(paths: string[], permanent: boolean, overrideTargets?: FsEntry[]): void {
+    const targets = overrideTargets ?? paths.map((p) => items.find((i) => i.path === p)).filter(Boolean) as FsEntry[]
     if (!targets.length) return
     setPendingDelete({ targets, permanent })
   }
-  function performDelete(): void {
-    if (!pendingDelete) return
-    const removed: FsItem[] = []
-    for (const t of pendingDelete.targets) {
-      const stack = [t.path]
-      while (stack.length) {
-        const cur = stack.pop()!
-        const node = FS[cur]
-        if (!node) continue
-        if (node.type === 'folder') for (const c of node.children ?? []) stack.push(c)
-        delete FS[cur]
-      }
-      const parent = parentOf(t.path)
-      if (parent && FS[parent]) {
-        FS[parent].children = (FS[parent].children ?? []).filter((x) => x !== t.path)
-      }
-      removed.push(t)
-    }
+
+  // Stable ref so keyboard handler can call confirmDelete without stale closure
+  const confirmDeleteRef = useRef<() => void>(() => {})
+
+  async function confirmDelete(): Promise<void> {
+    const pd = pendingDeleteRef.current
+    if (!pd) return
     setPendingDelete(null)
+
+    const errors: string[] = []
+    for (const t of pd.targets) {
+      try {
+        if (pd.permanent) await window.fileExplorerApi.deletePermanent(t.path)
+        else await window.fileExplorerApi.trash(t.path)
+      } catch {
+        errors.push(t.name)
+      }
+    }
+
     setSelected(new Set())
-    setFsTick((n) => n + 1)
-    setToast({
-      title: pendingDelete.permanent ? '已永久删除' : '已移到回收站',
-      msg: removed.length === 1 ? removed[0].name : `${removed.length} 个项目`,
-      icon: pendingDelete.permanent ? 'delete_forever' : 'delete',
-    })
+    await refresh()
+
+    if (errors.length) {
+      setToast({ title: '操作失败', msg: `${errors.join(', ')} 无法删除`, icon: 'error' })
+    } else {
+      setToast({
+        title: pd.permanent ? '已永久删除' : '已移到回收站',
+        msg: pd.targets.length === 1 ? pd.targets[0].name : `${pd.targets.length} 个项目`,
+        icon: pd.permanent ? 'delete_forever' : 'delete',
+      })
+    }
   }
 
-  // ── Derived view data ──
-  const items = useMemo(() => {
-    const list = listChildren(cwd)
-    const folders = list.filter((i) => i.type === 'folder')
-    const files = list.filter((i) => i.type !== 'folder')
-    const cmp = (a: FsItem, b: FsItem): number => {
+  confirmDeleteRef.current = confirmDelete
+  // Expose stable wrapper for keyboard handler
+  function confirmDeleteStable(): void { confirmDeleteRef.current() }
+
+  // ── Sorted items ──
+
+  const sortedItems = useMemo(() => {
+    const folders = items.filter((i) => i.type === 'folder')
+    const files = items.filter((i) => i.type !== 'folder')
+    const cmp = (a: FsEntry, b: FsEntry): number => {
       if (sort === 'size') return (b.size ?? 0) - (a.size ?? 0)
       if (sort === 'mtime') return String(b.mtime).localeCompare(String(a.mtime))
       if (sort === 'kind') return (a.kind ?? a.ext ?? '').localeCompare(b.kind ?? b.ext ?? '')
@@ -374,11 +419,11 @@ function FileExplorer(): JSX.Element {
     }
     folders.sort(cmp); files.sort(cmp)
     return [...folders, ...files]
-  // fsTick re-runs when mock FS mutates after delete.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cwd, sort, fsTick])
+  }, [items, sort])
 
-  const totalSize = items.reduce((s, i) => s + (i.size ?? 0), 0)
+  const totalSize = sortedItems.reduce((s, i) => s + (i.size ?? 0), 0)
+
+  // ── Row interactions ──
 
   function onRowClick(e: React.MouseEvent, path: string): void {
     if (e.metaKey || e.ctrlKey) {
@@ -389,12 +434,12 @@ function FileExplorer(): JSX.Element {
       setSelected(new Set([path]))
     }
   }
-  function onRowDoubleClick(path: string): void {
-    const node = FS[path]
-    if (!node) return
-    if (node.type === 'folder') navTo(path)
-    else setPathStatus({ msg: `已请求播放: ${node.name}`, tone: 'ok' })
+
+  function onRowDoubleClick(item: FsEntry): void {
+    if (item.type === 'folder') doNavTo(item.path, false)
+    else window.fileExplorerApi.open(item.path)
   }
+
   function onRowContextMenu(e: React.MouseEvent, path: string): void {
     e.preventDefault()
     if (!selected.has(path)) setSelected(new Set([path]))
@@ -405,17 +450,23 @@ function FileExplorer(): JSX.Element {
     return tone === 'error' ? 'text-error' : tone === 'ok' ? 'text-green-400' : 'text-on-surface-variant/60'
   }
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const placeholder = platform === 'win32'
+    ? '输入绝对路径，例如 C:\\Users\\Yuming\\Videos'
+    : '输入绝对路径，例如 /Users/mac/Downloads'
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       <TopBar placeholder="" titleSlot={TITLE_SLOT} />
 
       {/* Address bar */}
-      <section className="pt-16 px-8 pt-22 pb-3 bg-background border-b border-white/5" style={{ paddingTop: '5rem' }}>
+      <section className="px-8 pb-3 bg-background border-b border-white/5" style={{ paddingTop: '5rem' }}>
         <div className="flex items-center gap-2 mb-3">
           <div className="flex items-center gap-1">
             <button
               onClick={back}
-              disabled={hIdx === 0}
+              disabled={hIdx <= 0}
               title="后退"
               className="w-8 h-8 rounded-md hover:bg-surface-container-high disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center"
             >
@@ -429,22 +480,37 @@ function FileExplorer(): JSX.Element {
             >
               <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
             </button>
+            <button
+              onClick={up}
+              disabled={platform === 'win32' ? cwd === VIRTUAL_ROOT : cwd === homeDir}
+              title="根目录"
+              className="w-8 h-8 rounded-md hover:bg-surface-container-high disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center"
+            >
+              <span className="material-symbols-outlined text-[18px]">arrow_upward</span>
+            </button>
           </div>
 
           <div className="flex-1 flex items-stretch bg-surface-container-lowest rounded-lg border border-white/5 focus-within:border-primary/50 transition-colors overflow-hidden">
-            <div className="flex items-center pl-3 pr-2 text-on-surface-variant/60">
+            <button
+              onClick={async () => {
+                const picked = await window.systemApi.pickFolder()
+                if (picked) doNavTo(picked, false)
+              }}
+              title="浏览文件夹"
+              className="flex items-center pl-3 pr-2 text-on-surface-variant/60 hover:text-primary transition-colors cursor-pointer"
+            >
               <span className="material-symbols-outlined text-[18px]">folder_open</span>
-            </div>
+            </button>
             <input
               value={addressInput}
               onChange={(e) => setAddressInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') tryOpenInput() }}
-              placeholder={'输入绝对路径,例如 C:\\Users\\Yuming\\Videos'}
+              placeholder={placeholder}
               spellCheck={false}
               className="flex-1 bg-transparent border-0 focus:ring-0 py-2.5 px-1 text-sm font-mono tracking-tight text-on-surface placeholder:text-on-surface-variant/40 outline-none"
             />
             {pathStatus && (
-              <span className={`flex items-center gap-1 px-3 font-label text-[10px] uppercase tracking-widest ${statusToneClass(pathStatus.tone)}`}>
+              <span className={`flex items-center gap-1 px-3 font-label text-[10px] uppercase tracking-widest whitespace-nowrap ${statusToneClass(pathStatus.tone)}`}>
                 {pathStatus.msg}
               </span>
             )}
@@ -469,23 +535,19 @@ function FileExplorer(): JSX.Element {
         </div>
 
         <div className="flex items-center justify-end gap-3">
-          {/* Sort selector — same custom dropdown pattern as SearchDownload's source selector.
-              Trigger has a fixed width and the dropdown panel uses w-full so they align. */}
+          {/* Sort selector */}
           <div className="relative w-40" ref={sortDropdownRef}>
             <button
               type="button"
               onClick={() => setSortDropdownOpen((o) => !o)}
-              className="w-full flex items-center justify-between gap-2 bg-surface-container-highest border border-outline-variant/30 text-on-surface text-xs font-label rounded-lg px-3 py-2 outline-none cursor-pointer hover:border-primary/40 transition-colors"
+              className="w-full flex items-center justify-between gap-2 bg-surface-container-highest border border-outline-variant/30 text-on-surface text-xs font-label rounded-lg px-3 py-2 outline-none cursor-pointer hover:border-primary/40 transition-colors select-none"
             >
               <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60">Sort</span>
               <span className="text-on-surface flex-1 text-left">{SORT_LABELS[sort]}</span>
-              <span
-                className={`material-symbols-outlined text-on-surface-variant/60 text-base leading-none transition-transform duration-200 ${sortDropdownOpen ? 'rotate-180' : ''}`}
-              >
+              <span className={`material-symbols-outlined text-on-surface-variant/60 text-base leading-none transition-transform duration-200 ${sortDropdownOpen ? 'rotate-180' : ''}`}>
                 expand_more
               </span>
             </button>
-
             {sortDropdownOpen && (
               <div className="absolute top-full right-0 mt-1.5 w-full bg-surface-container-highest border border-outline-variant/30 rounded-lg overflow-hidden shadow-lg z-50">
                 {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
@@ -493,11 +555,7 @@ function FileExplorer(): JSX.Element {
                     key={key}
                     type="button"
                     onClick={() => { setSort(key); setSortDropdownOpen(false) }}
-                    className={`w-full text-left px-4 py-2 text-xs font-label transition-colors ${
-                      sort === key
-                        ? 'text-primary bg-primary/8'
-                        : 'text-on-surface hover:bg-surface-container-high'
-                    }`}
+                    className={`w-full text-left px-4 py-2 text-xs font-label transition-colors select-none ${sort === key ? 'text-primary bg-primary/8' : 'text-on-surface hover:bg-surface-container-high'}`}
                   >
                     {SORT_LABELS[key]}
                   </button>
@@ -506,27 +564,32 @@ function FileExplorer(): JSX.Element {
             )}
           </div>
 
+          {/* View switcher */}
           <div className="flex items-center bg-surface-container-low rounded-md p-0.5">
-            {(['list', 'grid'] as ViewMode[]).map((v) => {
-              const active = view === v
-              return (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  title={v === 'list' ? '详细列表' : '大图标'}
-                  className={`p-1.5 rounded-sm transition-colors ${active ? 'bg-primary text-on-primary' : 'text-on-surface-variant/70 hover:bg-white/5 hover:text-on-surface'}`}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{v === 'list' ? 'view_list' : 'grid_view'}</span>
-                </button>
-              )
-            })}
+            {(['list', 'grid'] as ViewMode[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                title={v === 'list' ? '详细列表' : '大图标'}
+                className={`p-1.5 rounded-sm transition-colors ${view === v ? 'bg-primary text-on-primary' : 'text-on-surface-variant/70 hover:bg-white/5 hover:text-on-surface'}`}
+              >
+                <span className="material-symbols-outlined text-[16px]">{v === 'list' ? 'view_list' : 'grid_view'}</span>
+              </button>
+            ))}
           </div>
         </div>
       </section>
 
       {/* File list area */}
-      <section ref={fileAreaRef} className="flex-1 overflow-y-auto px-8 py-6 select-none" tabIndex={0}>
-        {items.length === 0 ? (
+      <section className="flex-1 overflow-y-auto px-8 py-6 select-none" tabIndex={0}>
+        {loading ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3 text-on-surface-variant/40">
+              <span className="material-symbols-outlined text-[36px] animate-spin" style={{ animationDuration: '1.4s' }}>progress_activity</span>
+              <p className="font-label text-xs uppercase tracking-widest">加载中...</p>
+            </div>
+          </div>
+        ) : sortedItems.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center py-24">
             <div className="w-16 h-16 rounded-2xl border border-white/5 flex items-center justify-center mb-4 bg-gradient-to-br from-surface-container-high/50 to-surface-container-lowest">
               <span className="material-symbols-outlined text-on-surface-variant/40 text-[28px]">folder_open</span>
@@ -535,6 +598,7 @@ function FileExplorer(): JSX.Element {
             <p className="text-xs text-on-surface-variant/40 mt-2">此目录下没有项目</p>
           </div>
         ) : view === 'list' ? (
+          /* List view */
           <div className="bg-surface-container-lowest border border-white/5 rounded-lg overflow-hidden">
             <div className="grid grid-cols-12 gap-4 px-4 py-2.5 bg-surface-container-low rounded-t-lg border-b border-white/5 font-label text-[10px] uppercase tracking-[0.15em] text-outline">
               <div className="col-span-6">名称</div>
@@ -543,13 +607,13 @@ function FileExplorer(): JSX.Element {
               <div className="col-span-2 text-right">大小</div>
             </div>
             <div>
-              {items.map((item) => {
+              {sortedItems.map((item) => {
                 const sel = selected.has(item.path)
                 return (
                   <div
                     key={item.path}
                     onClick={(e) => onRowClick(e, item.path)}
-                    onDoubleClick={() => onRowDoubleClick(item.path)}
+                    onDoubleClick={() => onRowDoubleClick(item)}
                     onContextMenu={(e) => onRowContextMenu(e, item.path)}
                     className={`grid grid-cols-12 gap-4 px-4 py-2.5 items-center cursor-pointer border-b border-white/[0.03] hover:bg-surface-container-low/60 ${sel ? 'bg-primary/10 hover:bg-primary/15' : ''}`}
                   >
@@ -573,14 +637,15 @@ function FileExplorer(): JSX.Element {
             </div>
           </div>
         ) : (
+          /* Grid view */
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {items.map((item) => {
+            {sortedItems.map((item) => {
               const sel = selected.has(item.path)
               return (
                 <div
                   key={item.path}
                   onClick={(e) => onRowClick(e, item.path)}
-                  onDoubleClick={() => onRowDoubleClick(item.path)}
+                  onDoubleClick={() => onRowDoubleClick(item)}
                   onContextMenu={(e) => onRowContextMenu(e, item.path)}
                   className={`cursor-pointer flex flex-col gap-2 p-2 rounded-lg ${sel ? 'bg-primary/10 ring-1 ring-primary/40' : 'hover:bg-surface-container-low/60'}`}
                 >
@@ -595,7 +660,7 @@ function FileExplorer(): JSX.Element {
                     </div>
                     {item.kind === 'video' && (
                       <div className="absolute bottom-1.5 right-1.5 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 font-label text-[9px] text-white/90 uppercase tracking-wider">
-                        {item.ext ?? 'video'}
+                        {item.ext?.replace('.', '') ?? 'video'}
                       </div>
                     )}
                   </div>
@@ -615,16 +680,18 @@ function FileExplorer(): JSX.Element {
       {/* Status bar */}
       <footer className="bg-surface-container-lowest border-t border-white/5 px-8 py-2.5 flex items-center justify-between text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60">
         <div className="flex items-center gap-6">
-          <span>{items.length} 项</span>
+          <span>{sortedItems.length} 项</span>
           <span className="h-3 w-px bg-outline-variant/20" />
           <span>{totalSize ? `${fmtSize(totalSize)} 总大小` : '—'}</span>
         </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-            <span>Filesystem · Mock</span>
+            <span>Filesystem · Live</span>
           </div>
-          <span className="font-mono normal-case tracking-tight text-on-surface-variant/40 truncate max-w-md">{cwd}</span>
+          <span className="font-mono normal-case tracking-tight text-on-surface-variant/40 truncate max-w-md">
+            {isVirtualRoot ? '我的电脑' : cwd}
+          </span>
         </div>
       </footer>
 
@@ -635,39 +702,33 @@ function FileExplorer(): JSX.Element {
           style={{ left: ctx.x, top: ctx.y }}
           className="fixed z-50 rounded-lg border border-white/10 shadow-2xl py-1.5 min-w-[220px] bg-surface-container/95 backdrop-blur"
         >
-          {[
-            { action: 'open', icon: 'play_arrow', iconClass: 'text-primary', label: '打开', kbd: 'Enter' },
-            { action: 'reveal', icon: 'folder_open', iconClass: 'text-on-surface-variant', label: '打开所在位置' },
-          ].map((item) => (
-            <button
-              key={item.action}
-              onClick={() => {
-                const target = ctx.path
-                setCtx(null)
-                const node = FS[target]
-                if (!node) return
-                if (item.action === 'open') {
-                  if (node.type === 'folder') navTo(target)
-                  else setPathStatus({ msg: `已请求播放: ${node.name}`, tone: 'ok' })
-                } else if (item.action === 'reveal') {
-                  const parent = parentOf(target)
-                  if (parent) {
-                    navTo(parent)
-                    setSelected(new Set([target]))
-                    setPathStatus({ msg: `已定位到: ${basename(target)}`, tone: 'ok' })
-                  } else setPathStatus({ msg: '此项没有上级位置', tone: 'error' })
-                }
-              }}
-              className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-sm text-left"
-            >
-              <span className={`material-symbols-outlined text-[18px] ${item.iconClass}`}>{item.icon}</span>
-              <span className="flex-1">{item.label}</span>
-              {item.kbd && <span className="font-label text-[10px] text-on-surface-variant/40 tracking-widest">{item.kbd}</span>}
-            </button>
-          ))}
+          <button
+            onClick={() => {
+              const p = ctx.path; setCtx(null)
+              const item = itemsRef.current.find((i) => i.path === p)
+              if (!item) return
+              if (item.type === 'folder') doNavTo(p, false)
+              else window.fileExplorerApi.open(p)
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-sm text-left"
+          >
+            <span className="material-symbols-outlined text-[18px] text-primary">play_arrow</span>
+            <span className="flex-1">打开</span>
+            <span className="font-label text-[10px] text-on-surface-variant/40 tracking-widest">Enter</span>
+          </button>
+          <button
+            onClick={() => {
+              const p = ctx.path; setCtx(null)
+              window.fileExplorerApi.reveal(p)
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-sm text-left"
+          >
+            <span className="material-symbols-outlined text-[18px] text-on-surface-variant">folder_open</span>
+            <span className="flex-1">打开所在位置</span>
+          </button>
           <div className="h-px bg-white/5 my-1" />
           <button
-            onClick={() => { const t = ctx.path; setCtx(null); openDeleteDialog([t], false) }}
+            onClick={() => { const p = ctx.path; setCtx(null); openDeleteDialog([p], false) }}
             className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-sm text-left"
           >
             <span className="material-symbols-outlined text-[18px] text-on-surface-variant">delete</span>
@@ -675,7 +736,7 @@ function FileExplorer(): JSX.Element {
             <span className="font-label text-[10px] text-on-surface-variant/40 tracking-widest">Del</span>
           </button>
           <button
-            onClick={() => { const t = ctx.path; setCtx(null); openDeleteDialog([t], true) }}
+            onClick={() => { const p = ctx.path; setCtx(null); openDeleteDialog([p], true) }}
             className="w-full flex items-center gap-3 px-3 py-2 hover:bg-error/10 text-sm text-error text-left"
           >
             <span className="material-symbols-outlined text-[18px]">delete_forever</span>
@@ -690,7 +751,6 @@ function FileExplorer(): JSX.Element {
         const isOne = pendingDelete.targets.length === 1
         const t = pendingDelete.targets[0]
         const isFolder = isOne && t.type === 'folder'
-        const childCount = isFolder ? listChildren(t.path).length : 0
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setPendingDelete(null)} />
@@ -705,7 +765,7 @@ function FileExplorer(): JSX.Element {
                     <p className="text-xs text-on-surface-variant/70">
                       {pendingDelete.permanent
                         ? '此操作不可撤销。所选项目将被永久从磁盘移除。'
-                        : '选中项目将被移动到系统回收站,你可以稍后还原。'}
+                        : '选中项目将被移动到系统回收站，你可以稍后还原。'}
                     </p>
                   </div>
                 </div>
@@ -731,8 +791,8 @@ function FileExplorer(): JSX.Element {
                           <p className="text-xs font-mono">{isFolder ? '—' : fmtSize(t.size)}</p>
                         </div>
                         <div>
-                          <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-0.5">{isFolder ? '子项' : '修改时间'}</p>
-                          <p className="text-xs font-mono">{isFolder ? `${childCount} 项` : t.mtime}</p>
+                          <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-0.5">修改时间</p>
+                          <p className="text-xs font-mono">{t.mtime ?? '—'}</p>
                         </div>
                         <div className="col-span-2">
                           <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-0.5">完整路径</p>
@@ -748,7 +808,7 @@ function FileExplorer(): JSX.Element {
                 {pendingDelete.permanent && (
                   <div className="mt-3 flex items-start gap-2 text-[11px] text-error font-label uppercase tracking-widest">
                     <span className="material-symbols-outlined text-[14px] mt-px">warning</span>
-                    <span>永久删除后无法恢复,请谨慎操作。</span>
+                    <span>永久删除后无法恢复，请谨慎操作。</span>
                   </div>
                 )}
               </div>
@@ -761,10 +821,10 @@ function FileExplorer(): JSX.Element {
                   取消
                 </button>
                 <button
-                  onClick={performDelete}
+                  onClick={confirmDeleteStable}
                   className="flex-1 py-3 rounded-xl border border-error/40 bg-error/10 text-sm font-bold text-error hover:bg-error/20 transition-colors flex items-center justify-center gap-2"
                 >
-                  <span className="material-symbols-outlined text-base leading-none">delete</span>
+                  <span className="material-symbols-outlined text-base leading-none">{pendingDelete.permanent ? 'delete_forever' : 'delete'}</span>
                   <span>{pendingDelete.permanent ? '永久删除' : '移到回收站'}</span>
                 </button>
               </div>

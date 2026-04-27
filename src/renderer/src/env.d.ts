@@ -36,8 +36,27 @@ export interface LibraryFile {
   sizeBytes: number;
 }
 
+export interface FsEntry {
+  name: string
+  path: string
+  type: 'file' | 'folder'
+  size?: number
+  mtime?: string
+  ext?: string
+  kind?: 'video' | 'image' | 'archive' | 'text'
+}
+
 declare global {
   interface Window {
+    fileExplorerApi: {
+      getHomeInfo: () => Promise<{ homeDir: string; platform: string }>
+      listDir: (dirPath: string) => Promise<{ entries: FsEntry[]; isVirtualRoot: boolean }>
+      open: (targetPath: string) => Promise<void>
+      reveal: (targetPath: string) => Promise<void>
+      trash: (targetPath: string) => Promise<void>
+      deletePermanent: (targetPath: string) => Promise<void>
+      onDirChange: (cb: () => void) => () => void
+    }
     girigiriApi: {
       getCaptcha: () => Promise<{ image_b64: string }>
       verifyCaptcha: (code: string) => Promise<{ success: boolean }>

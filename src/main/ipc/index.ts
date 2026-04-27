@@ -4,6 +4,7 @@ import { registerGirigiriIpc } from './girigiri'
 import { registerAowuIpc } from './aowu'
 import { registerLibraryIpc } from './library'
 import { registerSystemIpc } from './system'
+import { registerFileExplorerIpc } from './fileExplorer'
 
 export function registerAllIpc(): void {
   registerBgmIpc()
@@ -12,6 +13,7 @@ export function registerAllIpc(): void {
   registerAowuIpc()
   registerLibraryIpc()
   registerSystemIpc()
+  registerFileExplorerIpc()
 }
 
 export { getMinimizeOnClose } from './system'
