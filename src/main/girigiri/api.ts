@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio/slim'
 import { HttpSession } from '../shared/http-session'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
+import { crawlAllPages } from '../shared/maccms-search-paginator'
 
 const BASE_DOMAIN = 'https://bgm.girigirilove.com'
 const HEADERS = {
@@ -74,14 +75,8 @@ export async function verifyCaptcha(code: string): Promise<{ success: boolean }>
 
 // ── search ─────────────────────────────────────────────────────────────────────
 
-export async function search(keyword: string): Promise<GiriSearchResult[] | { needs_captcha: true }> {
-  const url = `${BASE_DOMAIN}/search/-------------/?wd=${encodeURIComponent(keyword)}`
-  const res = await giriSession.get(url)
-  giriSession.save()
-
-  if (needsCaptcha(res.body)) return { needs_captcha: true }
-
-  const $ = cheerio.load(res.body)
+async function parseSearchPage(html: string): Promise<GiriSearchResult[]> {
+  const $ = cheerio.load(html)
   const results: GiriSearchResult[] = []
   const seen = new Set<string>()
 
@@ -114,7 +109,7 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
     }
 
     const rawCover = img.attr('data-src') ?? img.attr('data-original') ?? img.attr('src') ?? '';
-    let coverUrl = rawCover ? resolveUrl(rawCover) : '';
+    const coverUrl = rawCover ? resolveUrl(rawCover) : '';
 
     let finalCover = '';
     if (coverUrl) {
@@ -156,7 +151,7 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
     })
   }
 
-  // Fallback: scan for /watch/ or /GV links
+  // Fallback: scan for /watch/ or /GV links when primary selectors return nothing.
   if (!results.length) {
     $('a[href]').each((_, el) => {
       const href = $(el).attr('href') ?? ''
@@ -172,6 +167,28 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
   }
 
   return results
+}
+
+export async function search(keyword: string): Promise<GiriSearchResult[] | { needs_captcha: true }> {
+  const url = `${BASE_DOMAIN}/search/-------------/?wd=${encodeURIComponent(keyword)}`
+  const res = await giriSession.get(url)
+  giriSession.save()
+
+  if (needsCaptcha(res.body)) return { needs_captcha: true }
+
+  // Sequential pagination via shared helper — follows `下一页` links with 1s delay.
+  // Cookie-based session keeps the captcha gate open across pages.
+  return crawlAllPages({
+    firstHtml: res.body,
+    baseUrl: BASE_DOMAIN,
+    parsePage: parseSearchPage,
+    fetchHtml: async (pageUrl) => {
+      const r = await giriSession.get(pageUrl)
+      giriSession.save()
+      if (needsCaptcha(r.body)) throw new Error('captcha re-appeared mid-pagination')
+      return r.body
+    },
+  })
 }
 
 // ── watch ──────────────────────────────────────────────────────────────────────
