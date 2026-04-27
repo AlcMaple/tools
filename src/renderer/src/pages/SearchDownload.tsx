@@ -496,7 +496,7 @@ function SearchDownload(): JSX.Element {
 
               {sourceDropdownOpen && (
                 <div className="absolute top-full left-0 mt-1.5 w-full bg-surface-container-highest border border-outline-variant/30 rounded-xl overflow-hidden shadow-lg z-50">
-                  {(["Xifan", "Girigiri", "Aowu"] as Source[]).map((opt) => (
+                  {(["Aowu", "Xifan", "Girigiri"] as Source[]).map((opt) => (
                     <button
                       key={opt}
                       type="button"
