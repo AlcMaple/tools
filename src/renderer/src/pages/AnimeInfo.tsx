@@ -884,6 +884,7 @@ function DetailView({
 let _cachedState: PageState = { status: 'idle' }
 let _cachedResults: BgmSearchResult[] = []
 let _cachedBgmKeyword = ''
+let _cachedScrollY = 0
 
 // ── 主页面 ────────────────────────────────────────────────────
 function AnimeInfo(): JSX.Element {
@@ -891,10 +892,22 @@ function AnimeInfo(): JSX.Element {
   const lastResults = { current: _cachedResults }
   const lastBgmKeyword = useRef(_cachedBgmKeyword)
   const [archiveKeyword, setArchiveKeyword] = useState<string | null>(null)
+  const pendingScrollRestore = useRef(false)
 
   useEffect(() => {
     _cachedState = state
   }, [state])
+
+  // Restore scroll position after returning to results list
+  useEffect(() => {
+    if (state.status === 'results' && pendingScrollRestore.current) {
+      pendingScrollRestore.current = false
+      requestAnimationFrame(() => {
+        const el = document.getElementById('page-scroll')
+        if (el) el.scrollTop = _cachedScrollY
+      })
+    }
+  }, [state.status])
 
   const sortByDate = (items: BgmSearchResult[]): BgmSearchResult[] => {
     items.sort((a, b) => {
@@ -964,6 +977,7 @@ function AnimeInfo(): JSX.Element {
   }
 
   const loadDetail = async (item: BgmSearchResult): Promise<void> => {
+    _cachedScrollY = document.getElementById('page-scroll')?.scrollTop ?? 0
     const sid = extractSubjectId(item.link)
     if (!sid) {
       setState({ status: 'error', message: 'Could not parse subject ID from link.' })
@@ -998,7 +1012,10 @@ function AnimeInfo(): JSX.Element {
             data={state.data}
             onBack={
               lastResults.current.length > 0
-                ? () => setState({ status: 'results', items: lastResults.current })
+                ? () => {
+                    pendingScrollRestore.current = true
+                    setState({ status: 'results', items: lastResults.current })
+                  }
                 : undefined
             }
             onArchive={() => setArchiveKeyword(lastBgmKeyword.current || state.data.title_cn || state.data.title)}
