@@ -13,6 +13,7 @@ const navItems: NavItem[] = [
   { label: "Download Queue", path: "/queue", icon: "download_for_offline" },
   { label: "Anime Info", path: "/anime-info", icon: "menu_book" },
   { label: "Biu Sync", path: "/biu-sync", icon: "sync" },
+  { label: "File Explorer", path: "/file-explorer", icon: "folder_managed" },
 ];
 
 function Sidebar(): JSX.Element {
