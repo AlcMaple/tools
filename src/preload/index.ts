@@ -144,6 +144,20 @@ contextBridge.exposeInMainWorld('aowuApi', {
   },
 })
 
+contextBridge.exposeInMainWorld('fileExplorerApi', {
+  getHomeInfo: () => ipcRenderer.invoke('fs:home-info'),
+  listDir: (dirPath: string) => ipcRenderer.invoke('fs:list-dir', dirPath),
+  open: (targetPath: string) => ipcRenderer.invoke('fs:open', targetPath),
+  reveal: (targetPath: string) => ipcRenderer.invoke('fs:reveal', targetPath),
+  trash: (targetPath: string) => ipcRenderer.invoke('fs:trash', targetPath),
+  deletePermanent: (targetPath: string) => ipcRenderer.invoke('fs:delete-permanent', targetPath),
+  onDirChange: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('fs:dir-changed', handler)
+    return () => ipcRenderer.removeListener('fs:dir-changed', handler)
+  },
+})
+
 contextBridge.exposeInMainWorld('libraryApi', {
   getPaths: () => ipcRenderer.invoke('library:get-paths'),
   addPath: (folderPath: string, label: string) => ipcRenderer.invoke('library:add-path', folderPath, label),
