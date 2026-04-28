@@ -210,13 +210,18 @@ function parseSourceTabs(html: string): { from: string; name: string }[] {
 }
 
 /**
- * Parse the episode list for the currently displayed source.
- * Pulls `{idx, label}` from each `<li><a href="/play/{id}-{src}-{idx}/"><span>{label}</span>...`
+ * Parse the episode list for one source.
+ * `boxIndex` selects which `.anthology-list-box` to read — all sources' lists live in
+ * the same HTML page, so we must scope to the right box to avoid mixing episodes from
+ * different sources. Falls back to the whole document when no boxes are present.
  */
-function parseEpisodes(html: string): AowuEpisode[] {
+function parseEpisodes(html: string, boxIndex = 0): AowuEpisode[] {
   const $ = cheerio.load(html)
+  const $boxes = $('.anthology-list-box')
+  const $scope = $boxes.length > 0 ? $boxes.eq(boxIndex) : $('body')
+
   const eps: AowuEpisode[] = []
-  $('ul.anthology-list-play li a').each((_, a) => {
+  $scope.find('ul.anthology-list-play li a').each((_, a) => {
     const $a = $(a)
     const href = $a.attr('href') ?? ''
     const m = /\/play\/[^/]+-\d+-(\d+)\/?$/.exec(href)
@@ -226,9 +231,9 @@ function parseEpisodes(html: string): AowuEpisode[] {
     const label = $a.find('span').first().text().trim() || String(idx)
     eps.push({ idx, label })
   })
-  // Sort by idx ascending — ensures display order matches sequential URL idx.
   eps.sort((a, b) => a.idx - b.idx)
-  return eps
+  // Safety-dedup: drop consecutive entries with identical idx (e.g. duplicated markup).
+  return eps.filter((ep, i) => i === 0 || ep.idx !== eps[i - 1].idx)
 }
 
 /**
@@ -271,7 +276,7 @@ export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
   const sourceTabs = parseSourceTabs(html)
   if (sourceTabs.length === 0) {
     // Fallback: only the source we landed on.
-    const eps = parseEpisodes(html)
+    const eps = parseEpisodes(html, 0)
     return {
       id: animeId,
       title,
@@ -279,8 +284,9 @@ export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
     }
   }
 
-  // We already have full ep list for the source we landed on.
-  const currentEps = parseEpisodes(html)
+  // The N-th source tab corresponds to the N-th anthology-list-box in the HTML.
+  const currentTabIdx = sourceTabs.findIndex(t => t.from === data.from)
+  const currentEps = parseEpisodes(html, currentTabIdx >= 0 ? currentTabIdx : 0)
   const fromIdxMap = new Map<string, number>([[data.from, data.sid || 1]])
 
   // Probe other sources to learn their {src} idx and ep list.
@@ -299,7 +305,15 @@ export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
     } else {
       try {
         const probe = await fetchPage(`${BASE_URL}/play/${animeId}-${idx}-1/`)
-        sources.push({ idx, name: tab.name, episodes: probe.status === 200 ? parseEpisodes(probe.body) : [] })
+        if (probe.status === 200) {
+          const probeData = parsePlayerData(probe.body)
+          const probeTabIdx = probeData
+            ? sourceTabs.findIndex(t => t.from === probeData.from)
+            : -1
+          sources.push({ idx, name: tab.name, episodes: parseEpisodes(probe.body, probeTabIdx >= 0 ? probeTabIdx : 0) })
+        } else {
+          sources.push({ idx, name: tab.name, episodes: [] })
+        }
       } catch {
         sources.push({ idx, name: tab.name, episodes: [] })
       }
