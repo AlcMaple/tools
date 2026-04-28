@@ -55,6 +55,7 @@ declare global {
       reveal: (targetPath: string) => Promise<void>
       trash: (targetPath: string) => Promise<void>
       deletePermanent: (targetPath: string) => Promise<void>
+      resolveSpecial: (input: string) => Promise<string | null>
       onDirChange: (cb: () => void) => () => void
     }
     girigiriApi: {
