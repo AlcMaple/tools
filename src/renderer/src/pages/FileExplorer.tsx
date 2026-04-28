@@ -37,6 +37,16 @@ function parentOf(p: string, plat: string): string | null {
   }
 }
 
+/**
+ * Whether `s` looks like a single token without path structure — candidate for
+ * a special-folder alias resolution (e.g. "下载", "Downloads"). Inputs that
+ * already contain separators or a Windows drive prefix are real paths and
+ * shouldn't be aliased.
+ */
+function looksLikeAlias(s: string): boolean {
+  return !s.includes('/') && !s.includes('\\') && !/^[a-z]:/i.test(s)
+}
+
 function basenameOf(p: string, plat: string): string {
   if (!p || p === VIRTUAL_ROOT) return '我的电脑'
   if (plat === 'win32') {
@@ -319,7 +329,20 @@ function FileExplorer(): JSX.Element {
   async function tryOpenInput(): Promise<void> {
     const raw = addressInput.trim()
     if (!raw) { setPathStatus({ msg: '请输入路径', tone: 'error' }); return }
-    const p = normPath(raw, platform)
+
+    // Try special-folder alias resolution first when the input looks like a bare
+    // localized name (e.g. "下载" copied from Windows Explorer's address bar).
+    // On hit, expand the address bar to the real path so the user sees what was
+    // resolved.
+    let p = normPath(raw, platform)
+    if (looksLikeAlias(raw)) {
+      const resolved = await window.fileExplorerApi.resolveSpecial(raw)
+      if (resolved) {
+        p = resolved
+        setAddressInput(resolved)
+      }
+    }
+
     try {
       const result = await window.fileExplorerApi.listDir(p)
       setCwd(p)
@@ -353,11 +376,22 @@ function FileExplorer(): JSX.Element {
     }
   }
 
-  function tryDeleteInput(): void {
+  async function tryDeleteInput(): Promise<void> {
     const raw = addressInput.trim()
     if (!raw) { setPathStatus({ msg: '请输入要删除的路径', tone: 'error' }); return }
-    const p = normPath(raw, platform)
-    // Find in current listing; if not found create a minimal entry for the dialog
+
+    // Same alias resolution as Open — pasting "下载" should target the real
+    // Downloads folder. The confirmation dialog will display the resolved path,
+    // so the user can still abort if it's not what they intended.
+    let p = normPath(raw, platform)
+    if (looksLikeAlias(raw)) {
+      const resolved = await window.fileExplorerApi.resolveSpecial(raw)
+      if (resolved) {
+        p = resolved
+        setAddressInput(resolved)
+      }
+    }
+
     const found = items.find((i) => i.path === p) ?? { name: basenameOf(p, platform), path: p, type: 'file' as const }
     openDeleteDialog([p], false, [found])
   }
