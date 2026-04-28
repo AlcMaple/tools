@@ -108,20 +108,27 @@ app.whenReady().then(() => {
   createWindow()
   createTray(exitApp)
 
+  let silentScanRunning = false
   const runSilentScan = async (): Promise<void> => {
-    const newEntries = await scanLibrary((status, current, total) => {
+    if (silentScanRunning) return
+    silentScanRunning = true
+    try {
+      const newEntries = await scanLibrary((status, current, total) => {
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('library:scan-status', { status, currentVal: current, totalVal: total })
+          }
+        })
+      })
+
       BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed()) {
-          win.webContents.send('library:scan-status', { status, currentVal: current, totalVal: total })
+          win.webContents.send('library-updated', newEntries)
         }
       })
-    }, true)
-
-    BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) {
-        win.webContents.send('library-updated', newEntries)
-      }
-    })
+    } finally {
+      silentScanRunning = false
+    }
   }
 
   // 启动时对账一次：剔除已被用户删除的路径，再扫描现有条目
