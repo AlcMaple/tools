@@ -12,6 +12,7 @@ import { downloadStore } from './stores/downloadStore'
 
 function DownloadProgressListener(): null {
   useEffect(() => {
+    downloadStore.init()
     const unlisten = window.xifanApi.onDownloadProgress((taskId, event) => {
       downloadStore.handleProgressEvent(taskId, event)
     })

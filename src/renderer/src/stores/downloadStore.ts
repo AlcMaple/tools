@@ -8,55 +8,29 @@ export interface DownloadTask {
   templates: string[]
   sourceIdx?: number
   girigiriEps?: { idx: number; name: string; url: string }[]
-  // Aowu-specific: animeId + per-source full ep list (so we can switch source / retry
-  // without re-fetching watch). Each source's ep list lives on the queue side.
   aowuId?: string
   aowuEps?: { idx: number; label: string }[]
   aowuSources?: { idx: number; name: string }[]
   savePath?: string
   status: 'running' | 'paused' | 'done' | 'error'
   epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error' | 'paused'>
-  epProgress: Record<number, number>  // 0–99 while downloading, -1 when total size unknown, absent when done
+  epProgress: Record<number, number>
   startedAt: number
   completedAt?: number
 }
 
 type Listener = () => void
 
-const STORAGE_KEY = 'xifan_download_tasks_v1'
 const tasks = new Map<string, DownloadTask>()
 const listeners = new Set<Listener>()
 
 function persist(): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([...tasks.values()]))
+  window.systemApi.saveDownloadState([...tasks.values()])
 }
-
-function load(): void {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return
-    const saved = JSON.parse(raw) as DownloadTask[]
-    for (const t of saved) {
-      if (t.status === 'running' || t.status === 'paused') {
-        // App closed while active — restore as paused so user can resume with Range continuation
-        const newEpStatus = { ...t.epStatus }
-        for (const ep of Object.keys(newEpStatus)) {
-          const s = newEpStatus[Number(ep)]
-          if (s === 'downloading' || s === 'pending') newEpStatus[Number(ep)] = 'paused'
-        }
-        tasks.set(t.id, { ...t, status: 'paused', epStatus: newEpStatus })
-      } else {
-        tasks.set(t.id, t)
-      }
-    }
-  } catch { /* ignore corrupted data */ }
-}
-
-load()
 
 // Heavy ep_progress events fire at >30Hz per concurrent ep. Notifying + persisting on
 // every one would block the renderer's main thread (full re-render + JSON.stringify +
-// localStorage write each time), making clicks like "Pause All" feel sluggish.
+// IPC write each time), making clicks like "Pause All" feel sluggish.
 //
 // Strategy:
 //   - state transitions  → notify() : immediate listener flush + persist
@@ -87,6 +61,25 @@ function notifyProgressThrottled(): void {
 }
 
 export const downloadStore = {
+  async init(): Promise<void> {
+    try {
+      const saved = await window.systemApi.loadDownloadState()
+      for (const t of saved as DownloadTask[]) {
+        if (t.status === 'running' || t.status === 'paused') {
+          const newEpStatus = { ...t.epStatus }
+          for (const ep of Object.keys(newEpStatus)) {
+            const s = newEpStatus[Number(ep)]
+            if (s === 'downloading' || s === 'pending') newEpStatus[Number(ep)] = 'paused'
+          }
+          tasks.set(t.id, { ...t, status: 'paused', epStatus: newEpStatus })
+        } else {
+          tasks.set(t.id, t)
+        }
+      }
+    } catch { /* ignore corrupted file */ }
+    flushListeners()
+  },
+
   subscribe(fn: Listener): () => void {
     listeners.add(fn)
     return () => listeners.delete(fn)
