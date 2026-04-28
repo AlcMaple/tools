@@ -99,6 +99,8 @@ declare global {
       cacheSet: (key: string, valueOrSubkey: unknown, maybeValue?: unknown) => Promise<void>
       getSetting: (key: string) => Promise<any>
       setSetting: (key: string, value: any) => Promise<void>
+      loadDownloadState: () => Promise<any[]>
+      saveDownloadState: (tasks: any[]) => Promise<void>
     }
     versions: {
       node: () => string

@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('systemApi', {
   cacheSet: (key: string, valueOrSubkey: unknown, maybeValue?: unknown) => ipcRenderer.invoke('cache:set', key, valueOrSubkey, maybeValue),
   getSetting: (key: string) => ipcRenderer.invoke('system:get-setting', key),
   setSetting: (key: string, value: any) => ipcRenderer.invoke('system:set-setting', key, value),
+  loadDownloadState: () => ipcRenderer.invoke('download:load-state'),
+  saveDownloadState: (tasks: unknown) => ipcRenderer.invoke('download:save-state', tasks),
   onSpeedUpdate: (cb: (bps: number) => void) => {
     const handler = (_: Electron.IpcRendererEvent, bps: number) => cb(bps)
     ipcRenderer.on('system:speed', handler)
