@@ -244,7 +244,21 @@ export async function incrementalUpdate(changedPath: string): Promise<LibraryEnt
   // 确定扫描范围：监听根的第一层子目录（或根本身）
   const rel = changedPath.slice(watchRoot.path.length).replace(/^[/\\]/, '')
   const topChild = rel.split(/[/\\]/)[0]
-  const scopePath = topChild ? join(watchRoot.path, topChild) : watchRoot.path
+  let scopePath: string
+  if (!topChild) {
+    scopePath = watchRoot.path
+  } else {
+    const candidate = join(watchRoot.path, topChild)
+    try {
+      const s = await stat(candidate)
+      // 是目录才以它为 scope；是文件说明变动发生在 watch root 直接层，重扫 root
+      scopePath = s.isDirectory() ? candidate : watchRoot.path
+    } catch {
+      // 已删除：若事件路径含子目录分隔符，说明删的是子目录内的项，用顶层子目录为 scope
+      // 否则删的是 watch root 的直接子项（文件或文件夹），重扫 root
+      scopePath = rel.includes(sep) ? candidate : watchRoot.path
+    }
+  }
 
   const allEntries = getEntries()
   const existingMap = new Map(allEntries.map(e => [e.id, e]))
