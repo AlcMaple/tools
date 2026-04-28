@@ -1,4 +1,4 @@
-import { ipcMain, shell, WebContents } from 'electron'
+import { app, ipcMain, shell, WebContents } from 'electron'
 import { readdir, stat, rm } from 'fs/promises'
 import { existsSync, watch as fsWatch, FSWatcher } from 'fs'
 import { join, extname } from 'path'
@@ -103,6 +103,51 @@ async function listDirEntries(dirPath: string): Promise<{ entries: FsEntry[]; is
   return { entries, isVirtualRoot: false }
 }
 
+// ── Special-folder alias resolution ────────────────────────────────────────────
+//
+// Windows Explorer shows known folders by localized display name (e.g. "下载" for
+// Downloads), and the address bar's "Copy as path" returns just the display name
+// rather than the absolute path. Same on macOS Finder for some folders ("文稿" for
+// Documents, "影片" for Movies). When users paste those names into our address bar
+// we'd otherwise fail with ENOENT — translate first via Electron's app.getPath().
+//
+// Mapping is exhaustively keyed (English / Simplified / Traditional / mac variants)
+// because each system / language combo surfaces a slightly different label.
+type SpecialFolderId = 'downloads' | 'desktop' | 'documents' | 'pictures' | 'videos' | 'music'
+
+const ALIAS_MAP: Record<string, SpecialFolderId> = {
+  // English (lower-cased before lookup)
+  'downloads': 'downloads',
+  'desktop': 'desktop',
+  'documents': 'documents',
+  'pictures': 'pictures',
+  'videos': 'videos',
+  'movies': 'videos',  // macOS English
+  'music': 'music',
+  // Simplified Chinese (Windows / macOS zh-CN)
+  '下载': 'downloads',
+  '桌面': 'desktop',
+  '文档': 'documents',
+  '文稿': 'documents',  // macOS Chinese
+  '图片': 'pictures',
+  '视频': 'videos',
+  '影片': 'videos',     // macOS Chinese
+  '音乐': 'music',
+  // Traditional Chinese (zh-TW)
+  '下載': 'downloads',
+  '文檔': 'documents',
+  '圖片': 'pictures',
+  '音樂': 'music',
+}
+
+function resolveSpecialFolder(input: string): string | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  const id = ALIAS_MAP[trimmed] ?? ALIAS_MAP[trimmed.toLowerCase()]
+  if (!id) return null
+  try { return app.getPath(id) } catch { return null }
+}
+
 async function permanentDelete(targetPath: string): Promise<void> {
   if (osPlatform() === 'win32') {
     // Use base64-encoded PowerShell to handle paths with spaces/Chinese chars.
@@ -154,4 +199,6 @@ export function registerFileExplorerIpc(): void {
   ipcMain.handle('fs:trash', (_event, targetPath: string) => shell.trashItem(targetPath))
 
   ipcMain.handle('fs:delete-permanent', (_event, targetPath: string) => permanentDelete(targetPath))
+
+  ipcMain.handle('fs:resolve-special', (_event, input: string) => resolveSpecialFolder(input))
 }
