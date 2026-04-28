@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, protocol } from 'electron'
 import { join } from 'path'
 import { readFile } from 'fs/promises'
-import { scanLibrary, startLibraryWatch, reconcilePaths } from './library/api'
+import { scanLibrary, startLibraryWatch, reconcilePaths, incrementalUpdate, type LibraryEntry } from './library/api'
 import { createTray, destroyTray } from './tray'
 import { registerAllIpc, getMinimizeOnClose } from './ipc'
 import { startSpeedBroadcast } from './shared/speed-tracker'
@@ -135,18 +135,23 @@ app.whenReady().then(() => {
   reconcilePaths()
   runSilentScan().catch(err => console.error('启动对账扫描失败:', err))
 
-  // 启动后台目录变动监听
-  startLibraryWatch(async () => {
-    console.log('检测到文件夹变动，开始后台静默扫描...')
-    await runSilentScan()
-  }, () => {
-    console.log('文件夹发生变动，准备扫描...')
-    BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) {
-        // 发送一个前置状态，由于 status 不等于 'Idle'，React 页面会立刻开始转圈圈
-        win.webContents.send('library:scan-status', { status: 'Preparing to scan...', currentVal: 0, totalVal: 1 })
+  // 启动后台目录变动监听（增量更新：只重扫变化发生的子目录，静默不触发全屏加载）
+  startLibraryWatch(async (changedPaths) => {
+    if (silentScanRunning) return
+    silentScanRunning = true
+    try {
+      let updatedEntries: LibraryEntry[] = []
+      for (const p of changedPaths) {
+        updatedEntries = await incrementalUpdate(p)
       }
-    })
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('library-updated', updatedEntries)
+        }
+      })
+    } finally {
+      silentScanRunning = false
+    }
   })
 
   app.on('activate', () => {
