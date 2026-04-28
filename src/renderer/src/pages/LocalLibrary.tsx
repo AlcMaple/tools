@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import TopBar from "../components/TopBar";
 import type { LibraryFile } from "../env";
 
@@ -34,7 +34,7 @@ export default function LocalLibrary(): JSX.Element {
     currentVal: 0,
     totalVal: 0,
   });
-  const [isRefreshing, setIsRefreshing] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     window.libraryApi.getEntries().then((data) => {
@@ -91,12 +91,16 @@ export default function LocalLibrary(): JSX.Element {
   );
 
   // Load files of selected folder
+  const prevFolderPathRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedPoster) {
       setFolderFiles([]);
+      prevFolderPathRef.current = null;
       return;
     }
-    setIsLoadingFiles(true);
+    const folderChanged = prevFolderPathRef.current !== selectedPoster.folderPath;
+    prevFolderPathRef.current = selectedPoster.folderPath;
+    if (folderChanged) setIsLoadingFiles(true);
     window.libraryApi.getFiles(selectedPoster.folderPath).then((files) => {
       setFolderFiles(files);
       setIsLoadingFiles(false);
