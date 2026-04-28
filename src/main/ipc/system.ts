@@ -1,7 +1,7 @@
 import { ipcMain, app, dialog, net } from 'electron'
 import { join } from 'path'
 import { statfs, readFile, writeFile } from 'fs/promises'
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync, writeFileSync, renameSync } from 'fs'
 
 let appMinimizeOnClose = false
 try {
@@ -81,6 +81,20 @@ export function registerSystemIpc(): void {
       const all = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>
       return all[key] ?? null
     } catch { return null }
+  })
+
+  const DOWNLOAD_STATE_FILE = join(app.getPath('userData'), 'download_queue.json')
+
+  ipcMain.handle('download:load-state', () => {
+    try { return JSON.parse(readFileSync(DOWNLOAD_STATE_FILE, 'utf-8')) }
+    catch { return [] }
+  })
+
+  ipcMain.handle('download:save-state', (_event, tasks: unknown) => {
+    try {
+      writeFileSync(DOWNLOAD_STATE_FILE + '.tmp', JSON.stringify(tasks))
+      renameSync(DOWNLOAD_STATE_FILE + '.tmp', DOWNLOAD_STATE_FILE)
+    } catch { /* ignore */ }
   })
 
   ipcMain.handle('cache:set', async (_event, key: string, valueOrSubkey: unknown, maybeValue?: unknown) => {
