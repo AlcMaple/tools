@@ -79,7 +79,6 @@ export function startLibraryWatch(onLibraryChanged: () => void, onEventDetected?
     .on('unlink', trigger)
     .on('addDir', trigger)
     .on('unlinkDir', trigger)
-    .on('change', trigger)
 }
 
 // ==========================================
