@@ -222,3 +222,4 @@ logs/
 *.pkl
 bgm_cache/
 html_cache/
+maple-tools-*.zip
