@@ -47,6 +47,17 @@ function looksLikeAlias(s: string): boolean {
   return !s.includes('/') && !s.includes('\\') && !/^[a-z]:/i.test(s)
 }
 
+/**
+ * Paths the user must never be able to delete: the virtual "我的电脑" root,
+ * Windows drive roots (C:\, D:\, ...), and POSIX root /. Deleting any of these
+ * either makes no semantic sense or is catastrophic.
+ */
+function isProtectedPath(p: string, plat: string): boolean {
+  if (!p || p === VIRTUAL_ROOT) return true
+  if (plat === 'win32') return /^[A-Z]:\\?$/i.test(p)
+  return p === '/'
+}
+
 function basenameOf(p: string, plat: string): string {
   if (!p || p === VIRTUAL_ROOT) return '我的电脑'
   if (plat === 'win32') {
@@ -315,7 +326,9 @@ function FileExplorer(): JSX.Element {
         else if (item) window.fileExplorerApi.open(p)
       }
       else if (e.key === 'Delete' && selectedRef.current.size) {
-        openDeleteDialog([...selectedRef.current], e.shiftKey)
+        // Filter out drive roots / virtual root — never deletable.
+        const allowed = [...selectedRef.current].filter((p) => !isProtectedPath(p, platformRef.current))
+        if (allowed.length) openDeleteDialog(allowed, e.shiftKey)
       }
       else if (e.key === 'Escape') setSelected(new Set())
     }
@@ -390,6 +403,11 @@ function FileExplorer(): JSX.Element {
         p = resolved
         setAddressInput(resolved)
       }
+    }
+
+    if (isProtectedPath(p, platform)) {
+      setPathStatus({ msg: '系统根目录不可删除', tone: 'error' })
+      return
     }
 
     const found = items.find((i) => i.path === p) ?? { name: basenameOf(p, platform), path: p, type: 'file' as const }
@@ -760,23 +778,28 @@ function FileExplorer(): JSX.Element {
             <span className="material-symbols-outlined text-[18px] text-on-surface-variant">folder_open</span>
             <span className="flex-1">打开所在位置</span>
           </button>
-          <div className="h-px bg-white/5 my-1" />
-          <button
-            onClick={() => { const p = ctx.path; setCtx(null); openDeleteDialog([p], false) }}
-            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-sm text-left"
-          >
-            <span className="material-symbols-outlined text-[18px] text-on-surface-variant">delete</span>
-            <span className="flex-1">删除(到回收站)</span>
-            <span className="font-label text-[10px] text-on-surface-variant/40 tracking-widest">Del</span>
-          </button>
-          <button
-            onClick={() => { const p = ctx.path; setCtx(null); openDeleteDialog([p], true) }}
-            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-error/10 text-sm text-error text-left"
-          >
-            <span className="material-symbols-outlined text-[18px]">delete_forever</span>
-            <span className="flex-1">永久删除</span>
-            <span className="font-label text-[10px] tracking-widest opacity-60">Shift+Del</span>
-          </button>
+          {/* Delete options hidden for drive roots / virtual root — see isProtectedPath */}
+          {!isProtectedPath(ctx.path, platform) && (
+            <>
+              <div className="h-px bg-white/5 my-1" />
+              <button
+                onClick={() => { const p = ctx.path; setCtx(null); openDeleteDialog([p], false) }}
+                className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-sm text-left"
+              >
+                <span className="material-symbols-outlined text-[18px] text-on-surface-variant">delete</span>
+                <span className="flex-1">删除(到回收站)</span>
+                <span className="font-label text-[10px] text-on-surface-variant/40 tracking-widest">Del</span>
+              </button>
+              <button
+                onClick={() => { const p = ctx.path; setCtx(null); openDeleteDialog([p], true) }}
+                className="w-full flex items-center gap-3 px-3 py-2 hover:bg-error/10 text-sm text-error text-left"
+              >
+                <span className="material-symbols-outlined text-[18px]">delete_forever</span>
+                <span className="flex-1">永久删除</span>
+                <span className="font-label text-[10px] tracking-widest opacity-60">Shift+Del</span>
+              </button>
+            </>
+          )}
         </div>
       )}
 
