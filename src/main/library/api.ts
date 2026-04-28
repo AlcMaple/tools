@@ -259,6 +259,7 @@ export async function incrementalUpdate(changedPath: string): Promise<LibraryEnt
   await walkFolder(scopePath, newEntries, existingMap)
 
   const result = [...unchanged, ...newEntries]
+    .sort((a, b) => (a.folderPath < b.folderPath ? -1 : a.folderPath > b.folderPath ? 1 : 0))
   setEntries(result)
   return result
 }
@@ -276,6 +277,7 @@ export async function scanLibrary(
     await walkFolder(libPath.path, entries, existingMap)
   }
 
+  entries.sort((a, b) => (a.folderPath < b.folderPath ? -1 : a.folderPath > b.folderPath ? 1 : 0))
   onProgress('Saving index...', 99, 100)
   setEntries(entries)
   onProgress('Scan complete', 100, 100)
