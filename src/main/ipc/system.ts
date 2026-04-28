@@ -54,14 +54,34 @@ export function registerSystemIpc(): void {
   })
 
   ipcMain.handle('system:connectivity', () => {
+    // Probe multiple endpoints in parallel — any 2xx/3xx response means online.
+    // Google's generate_204 is blocked in mainland China, so we include domestic
+    // alternatives. First success wins; resolve false only if all fail/timeout.
+    const PROBES = [
+      'https://www.baidu.com',
+      'https://connectivitycheck.gstatic.com/generate_204',
+    ]
     return new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => resolve(false), 2500)
-      try {
-        const req = net.request({ method: 'HEAD', url: 'https://connectivitycheck.gstatic.com/generate_204' })
-        req.on('response', (res) => { clearTimeout(timer); resolve(res.statusCode === 204) })
-        req.on('error', () => { clearTimeout(timer); resolve(false) })
-        req.end()
-      } catch { clearTimeout(timer); resolve(false) }
+      let settled = false
+      let failures = 0
+      const done = (ok: boolean): void => {
+        if (settled) return
+        if (ok) { settled = true; resolve(true); return }
+        failures++
+        if (failures === PROBES.length) { settled = true; resolve(false) }
+      }
+      const timer = setTimeout(() => { if (!settled) { settled = true; resolve(false) } }, 4000)
+      for (const url of PROBES) {
+        try {
+          const req = net.request({ method: 'HEAD', url })
+          req.on('response', (res) => {
+            clearTimeout(timer)
+            done(res.statusCode >= 200 && res.statusCode < 400)
+          })
+          req.on('error', () => done(false))
+          req.end()
+        } catch { done(false) }
+      }
     })
   })
 
