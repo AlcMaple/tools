@@ -45,7 +45,9 @@ export default function LocalLibrary(): JSX.Element {
 
     const cleanupScan = window.libraryApi.onScanStatus((status) => {
       setScanStatus(status);
-      if (status.status !== "Scan complete" && status.status !== "Idle") {
+      if (status.status === "Scan complete" || status.status === "Idle") {
+        setIsRefreshing(false);
+      } else {
         setIsRefreshing(true);
       }
     });
