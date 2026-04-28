@@ -146,7 +146,7 @@ export default function LocalLibrary(): JSX.Element {
           </div>
         </section>
 
-        {isRefreshing ? (
+        {isRefreshing && posters.length === 0 ? (
           <SearchingState />
         ) : filteredPosters.length === 0 ? (
           <section className="px-12 pb-32">
@@ -298,10 +298,10 @@ export default function LocalLibrary(): JSX.Element {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <div
-                className={`w-2 h-2 ${isScanning ? "bg-green-400 animate-pulse" : "bg-outline-variant"} rounded-full`}
+                className={`w-2 h-2 ${isScanning || isRefreshing ? "bg-green-400 animate-pulse" : "bg-outline-variant"} rounded-full`}
               />
               <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
-                {isScanning ? "Scanning Active" : "Idle"}
+                {isScanning ? "Scanning Active" : isRefreshing ? "Updating" : "Idle"}
               </span>
             </div>
             <div className="h-4 w-[1px] bg-outline-variant/30" />
