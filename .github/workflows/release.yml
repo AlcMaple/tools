@@ -33,12 +33,9 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Strip local mirrors from .npmrc
+      - name: Clear .npmrc for CI
         shell: bash
-        run: |
-          # CI runners are outside China — remove mirror overrides so electron-builder
-          # fetches electron and dmg-builder from official GitHub releases
-          sed -i.bak '/ELECTRON_MIRROR\|ELECTRON_BUILDER_BINARIES_MIRROR\|electron_download_mirror\|registry=/d' .npmrc || true
+        run: echo "" > .npmrc
 
       - name: Install dependencies
         run: npm ci
