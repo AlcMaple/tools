@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { join, sep } from 'path'
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'fs'
-import { readdir, stat } from 'fs/promises'
+import { readdir, stat, open } from 'fs/promises'
 import crypto from 'crypto'
 import chokidar from 'chokidar'
 
@@ -153,6 +153,30 @@ export function setEntries(entries: LibraryEntry[]): void {
 // 核心扫描模块
 // ==========================================
 
+const VIDEO_EXTS = ['mp4', 'mkv', 'avi', 'flv', 'mov', 'webm']
+
+// MPEG-TS 同步字节检测：0x47 出现在 offset 0 和 188（一个 TS 包长度）
+async function isMpegTs(filePath: string): Promise<boolean> {
+  let fd: Awaited<ReturnType<typeof open>> | null = null
+  try {
+    fd = await open(filePath, 'r')
+    const buf = Buffer.alloc(189)
+    const { bytesRead } = await fd.read(buf, 0, 189, 0)
+    return bytesRead === 189 && buf[0] === 0x47 && buf[188] === 0x47
+  } catch {
+    return false
+  } finally {
+    await fd?.close()
+  }
+}
+
+async function isVideoFile(filePath: string, name: string): Promise<boolean> {
+  const ext = name.split('.').pop()?.toLowerCase() || ''
+  if (VIDEO_EXTS.includes(ext)) return true
+  if (ext === 'ts') return isMpegTs(filePath)
+  return false
+}
+
 // 递归遍历文件夹，找出直接包含视频文件的子文件夹并记录为条目
 async function walkFolder(
   currentPath: string,
@@ -174,11 +198,11 @@ async function walkFolder(
       if (item.isDirectory()) {
         foldersToVisit.push(join(currentPath, item.name))
       } else if (item.isFile()) {
-        const ext = item.name.split('.').pop()?.toLowerCase()
-        if (['mp4', 'mkv', 'avi', 'flv', 'mov', 'webm'].includes(ext || '')) {
+        const fullPath = join(currentPath, item.name)
+        if (await isVideoFile(fullPath, item.name)) {
           episodeCount++
           try {
-            const s = await stat(join(currentPath, item.name))
+            const s = await stat(fullPath)
             totalSize += s.size
           } catch { /* ignore */ }
         }
@@ -211,17 +235,16 @@ async function walkFolder(
 }
 
 export async function getFiles(folderPath: string): Promise<LibraryFile[]> {
-  const VIDEO_EXTS = ['mp4', 'mkv', 'avi', 'flv', 'mov', 'webm']
   try {
     const items = await readdir(folderPath, { withFileTypes: true })
     const files: LibraryFile[] = []
     for (const item of items) {
       if (!item.isFile() || item.name.startsWith('.')) continue
-      const ext = item.name.split('.').pop()?.toLowerCase() || ''
-      if (!VIDEO_EXTS.includes(ext)) continue
+      const fullPath = join(folderPath, item.name)
+      if (!await isVideoFile(fullPath, item.name)) continue
       try {
-        const s = await stat(join(folderPath, item.name))
-        files.push({ name: item.name, path: join(folderPath, item.name), sizeBytes: s.size })
+        const s = await stat(fullPath)
+        files.push({ name: item.name, path: fullPath, sizeBytes: s.size })
       } catch { /* ignore */ }
     }
     return files.sort((a, b) => a.name.localeCompare(b.name))
