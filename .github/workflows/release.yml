@@ -36,14 +36,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Override npm mirrors for CI
+        run: |
+          npm config set ELECTRON_MIRROR https://github.com/electron/electron/releases/download/
+          npm config set ELECTRON_BUILDER_BINARIES_MIRROR https://github.com/electron-userland/electron-builder-binaries/releases/download/
+          npm config delete electron_download_mirror || true
+
       - name: Build & package
         run: npm run build && npx electron-builder --publish never
         env:
           # 不做签名/公证；electron-builder 默认在 CI 上跳过 macOS 签名
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          # CI 在境外，直接用官方源，绕过 .npmrc 里的国内镜像（npmmirror 没有 dmg-builder）
-          ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
-          ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
