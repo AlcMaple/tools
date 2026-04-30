@@ -37,9 +37,8 @@ jobs:
         run: npm ci
 
       - name: Build & package
-        run: npm run dist
+        run: npm run build && npx electron-builder --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 不做签名/公证；electron-builder 默认在 CI 上跳过 macOS 签名
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
