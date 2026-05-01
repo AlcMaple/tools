@@ -73,6 +73,11 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function ipcErrMsg(e: unknown, fallback: string): string {
+  if (!(e instanceof Error)) return fallback
+  return e.message.replace(/^Error invoking remote method '[^']+': /, '') || fallback
+}
+
 function Highlight({ text, query }: { text: string; query: string }): JSX.Element {
   if (!query) return <>{text}</>
   const re = new RegExp(`(${escapeRe(query)})`, 'gi')
@@ -652,7 +657,7 @@ export default function HomeworkLookup(): JSX.Element {
       localStorage.setItem('maple-homework-last-sync', String(now))
       syncSettle('synced', '上传成功')
     } catch (e: unknown) {
-      syncSettle('error', e instanceof Error ? e.message : '上传失败')
+      syncSettle('error', ipcErrMsg(e, '上传失败'))
     }
   }
 
@@ -669,7 +674,7 @@ export default function HomeworkLookup(): JSX.Element {
       localStorage.setItem('maple-homework-last-sync', String(now))
       syncSettle('synced', '拉取成功')
     } catch (e: unknown) {
-      syncSettle('error', e instanceof Error ? e.message : '拉取失败')
+      syncSettle('error', ipcErrMsg(e, '拉取失败'))
     }
   }
 

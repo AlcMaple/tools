@@ -97,6 +97,11 @@ const PLATFORM = (() => {
 
 const NODE_ID = getOrCreateNodeId();
 
+function ipcErrMsg(e: unknown, fallback: string): string {
+  if (!(e instanceof Error)) return fallback
+  return e.message.replace(/^Error invoking remote method '[^']+': /, '') || fallback
+}
+
 // ── component ────────────────────────────────────────────────
 function Settings(): JSX.Element {
   const navigate = useNavigate();
@@ -157,7 +162,7 @@ function Settings(): JSX.Element {
       setWebdavTestMsg('连接成功');
     } catch (e: unknown) {
       setWebdavTestLabel('error');
-      setWebdavTestMsg(e instanceof Error ? e.message : '连接失败');
+      setWebdavTestMsg(ipcErrMsg(e, '连接失败'));
     }
     setTimeout(() => { setWebdavTestLabel('idle'); setWebdavTestMsg(''); }, 4000);
   };
