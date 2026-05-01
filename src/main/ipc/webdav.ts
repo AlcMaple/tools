@@ -58,10 +58,11 @@ export function registerWebDavIpc(): void {
     const auth = authHeader(cfg.account, cfg.appPassword)
     const url = WEBDAV_BASE + cfg.remotePath
 
-    // Ensure parent directory exists (MKCOL is idempotent)
-    const parentPath = cfg.remotePath.split('/').slice(0, -1).join('/')
-    if (parentPath) {
-      await fetch(WEBDAV_BASE + parentPath, {
+    // Create each ancestor directory in order (MKCOL is idempotent, errors silently ignored)
+    const parts = cfg.remotePath.split('/').slice(0, -1)
+    for (let i = 1; i <= parts.length; i++) {
+      const dirPath = parts.slice(0, i).join('/')
+      await fetch(WEBDAV_BASE + dirPath, {
         method: 'MKCOL',
         headers: { Authorization: auth },
       }).catch(() => {})
