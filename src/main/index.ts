@@ -46,6 +46,7 @@ function createWindow(): void {
     title: 'MapleTools',
     show: false,
     autoHideMenuBar: true,
+    icon: join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -104,6 +105,10 @@ app.whenReady().then(() => {
       return new Response(null, { status: 404 })
     }
   })
+
+  if (process.platform === 'darwin') {
+    app.dock.setIcon(join(__dirname, '../../resources/icon.png'))
+  }
 
   createWindow()
   createTray(exitApp)
