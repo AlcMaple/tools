@@ -181,3 +181,12 @@ contextBridge.exposeInMainWorld('libraryApi', {
     ipcRenderer.on('library-updated', (_event, entries) => callback(entries))
   }
 })
+
+contextBridge.exposeInMainWorld('webdavApi', {
+  getConfig: () => ipcRenderer.invoke('webdav:get-config'),
+  saveConfig: (config: { account: string; appPassword: string; remotePath: string }) =>
+    ipcRenderer.invoke('webdav:save-config', config),
+  test: () => ipcRenderer.invoke('webdav:test'),
+  push: (jsonStr: string) => ipcRenderer.invoke('webdav:push', jsonStr),
+  pull: () => ipcRenderer.invoke('webdav:pull'),
+})

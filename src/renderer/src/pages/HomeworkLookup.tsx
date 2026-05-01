@@ -531,6 +531,15 @@ export default function HomeworkLookup(): JSX.Element {
   const [deleteGroup, setDeleteGroup] = useState<DefenseGroup | null>(null)
   const [deleteAttackTarget, setDeleteAttackTarget] = useState<{ groupId: number; atk: Attack } | null>(null)
 
+  // sync state
+  type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
+  const [syncMsg, setSyncMsg] = useState('')
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(() => {
+    const v = localStorage.getItem('maple-homework-last-sync')
+    return v ? Number(v) : null
+  })
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -624,6 +633,46 @@ export default function HomeworkLookup(): JSX.Element {
     setDeleteGroup(null)
   }
 
+  const syncSettle = (status: SyncStatus, msg: string) => {
+    setSyncStatus(status)
+    setSyncMsg(msg)
+    if (status === 'synced' || status === 'error') {
+      setTimeout(() => { setSyncStatus('idle'); setSyncMsg('') }, 3500)
+    }
+  }
+
+  const handlePush = async () => {
+    if (syncStatus === 'syncing') return
+    setSyncStatus('syncing')
+    setSyncMsg('')
+    try {
+      await window.webdavApi.push(JSON.stringify(data))
+      const now = Date.now()
+      setLastSyncTime(now)
+      localStorage.setItem('maple-homework-last-sync', String(now))
+      syncSettle('synced', '上传成功')
+    } catch (e: unknown) {
+      syncSettle('error', e instanceof Error ? e.message : '上传失败')
+    }
+  }
+
+  const handlePull = async () => {
+    if (syncStatus === 'syncing') return
+    setSyncStatus('syncing')
+    setSyncMsg('')
+    try {
+      const jsonStr = await window.webdavApi.pull()
+      const remote = JSON.parse(jsonStr) as DefenseGroup[]
+      setData(remote)
+      const now = Date.now()
+      setLastSyncTime(now)
+      localStorage.setItem('maple-homework-last-sync', String(now))
+      syncSettle('synced', '拉取成功')
+    } catch (e: unknown) {
+      syncSettle('error', e instanceof Error ? e.message : '拉取失败')
+    }
+  }
+
   const handleDeleteAttack = () => {
     if (!deleteAttackTarget) return
     setData(prev => prev.map(d =>
@@ -704,6 +753,54 @@ export default function HomeworkLookup(): JSX.Element {
             </span>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {/* Sync chip */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-high border border-outline-variant/15">
+              {syncStatus === 'syncing' ? (
+                <span className="material-symbols-outlined text-primary animate-spin" style={{ fontSize: 13 }}>progress_activity</span>
+              ) : syncStatus === 'synced' ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />
+              ) : syncStatus === 'error' ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-outline/40 flex-shrink-0" />
+              )}
+              <span className={`font-label text-[10px] uppercase tracking-widest ${
+                syncStatus === 'synced' ? 'text-secondary' :
+                syncStatus === 'error' ? 'text-error' :
+                syncStatus === 'syncing' ? 'text-primary' :
+                lastSyncTime ? 'text-on-surface-variant/50' : 'text-on-surface-variant/30'
+              }`}>
+                {syncStatus === 'syncing' ? '同步中…' :
+                 syncStatus === 'synced' ? syncMsg :
+                 syncStatus === 'error' ? syncMsg :
+                 lastSyncTime ? (() => {
+                   const diff = Date.now() - lastSyncTime
+                   if (diff < 60000) return '刚刚'
+                   if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
+                   const d = new Date(lastSyncTime)
+                   return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
+                 })() : '未同步'}
+              </span>
+              <div className="flex items-center gap-0.5 ml-0.5 border-l border-outline-variant/20 pl-1">
+                <button
+                  onClick={handlePush}
+                  disabled={syncStatus === 'syncing'}
+                  title="上传到坚果云"
+                  className="p-1 rounded text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 13 }}>upload</span>
+                </button>
+                <button
+                  onClick={handlePull}
+                  disabled={syncStatus === 'syncing'}
+                  title="从坚果云拉取"
+                  className="p-1 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-secondary/10 transition-colors disabled:opacity-30"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 13 }}>download</span>
+                </button>
+              </div>
+            </div>
+            <span className="text-outline-variant/30">|</span>
             <button
               onClick={() => setCollapsedIds(new Set())}
               className="px-3 py-1 rounded-md bg-surface-container-high text-on-surface-variant border border-outline-variant/15 font-label text-[11px] uppercase tracking-widest hover:text-primary hover:border-primary/30 transition-colors flex items-center gap-1"
