@@ -45,6 +45,7 @@
         { "target": "dmg", "arch": ["arm64"] },
         { "target": "zip", "arch": ["arm64"] }
       ],
+      "icon": "resources/icon.icns",
       "category": "public.app-category.entertainment",
       "artifactName": "${productName}_${version}_macos_${arch}.${ext}"
     },
