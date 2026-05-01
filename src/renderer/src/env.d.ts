@@ -205,6 +205,13 @@ declare global {
       ) => Promise<{ switched: boolean }>
       onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => () => void
     }
+    webdavApi: {
+      getConfig: () => Promise<{ account: string; appPassword: string; remotePath: string } | null>
+      saveConfig: (config: { account: string; appPassword: string; remotePath: string }) => Promise<boolean>
+      test: () => Promise<boolean>
+      push: (jsonStr: string) => Promise<boolean>
+      pull: () => Promise<string>
+    }
     libraryApi: {
       getPaths: () => Promise<LibraryPath[]>
       addPath: (folderPath: string, label: string) => Promise<LibraryPath[]>
