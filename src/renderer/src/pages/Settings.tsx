@@ -109,6 +109,59 @@ function Settings(): JSX.Element {
     "ssh://obsidian-node-01/mnt/media/mapletools/biu-mirror",
   );
 
+  // WebDAV config
+  const [webdavAccount, setWebdavAccount] = useState('');
+  const [webdavPassword, setWebdavPassword] = useState('');
+  const [webdavPath, setWebdavPath] = useState('MapleTools/homework.json');
+  const [webdavShowPwd, setWebdavShowPwd] = useState(false);
+  const [webdavSaveLabel, setWebdavSaveLabel] = useState<'save' | 'saved' | 'error'>('save');
+  const [webdavTestLabel, setWebdavTestLabel] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+  const [webdavTestMsg, setWebdavTestMsg] = useState('');
+
+  useEffect(() => {
+    window.webdavApi.getConfig().then(cfg => {
+      if (!cfg) return;
+      setWebdavAccount(cfg.account);
+      setWebdavPassword(cfg.appPassword);
+      setWebdavPath(cfg.remotePath || 'MapleTools/homework.json');
+    }).catch(() => {});
+  }, []);
+
+  const handleWebdavSave = async () => {
+    try {
+      await window.webdavApi.saveConfig({
+        account: webdavAccount.trim(),
+        appPassword: webdavPassword,
+        remotePath: webdavPath.trim(),
+      });
+      setWebdavSaveLabel('saved');
+      recordChange('WebDAV 坚果云配置已保存');
+      setTimeout(() => setWebdavSaveLabel('save'), 2000);
+    } catch {
+      setWebdavSaveLabel('error');
+      setTimeout(() => setWebdavSaveLabel('save'), 2500);
+    }
+  };
+
+  const handleWebdavTest = async () => {
+    setWebdavTestLabel('testing');
+    setWebdavTestMsg('');
+    try {
+      await window.webdavApi.saveConfig({
+        account: webdavAccount.trim(),
+        appPassword: webdavPassword,
+        remotePath: webdavPath.trim(),
+      });
+      await window.webdavApi.test();
+      setWebdavTestLabel('ok');
+      setWebdavTestMsg('连接成功');
+    } catch (e: unknown) {
+      setWebdavTestLabel('error');
+      setWebdavTestMsg(e instanceof Error ? e.message : '连接失败');
+    }
+    setTimeout(() => { setWebdavTestLabel('idle'); setWebdavTestMsg(''); }, 4000);
+  };
+
   // Staged settings — edit freely, only committed on Save
   const [staged, setStaged] =
     useState<Required<SavedSettings>>(readSavedSettings);
@@ -677,6 +730,104 @@ function Settings(): JSX.Element {
                   ))
                 )}
               </ul>
+            </div>
+
+            {/* Homework Sync — 坚果云 WebDAV */}
+            <div className="bg-surface-container p-6 rounded-xl border border-white/5">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-primary text-lg leading-none">cloud_sync</span>
+                  <h2 className="font-headline font-bold text-sm uppercase tracking-widest">Homework Sync</h2>
+                </div>
+                <span className="font-label text-[9px] text-on-surface-variant/40 uppercase tracking-widest">坚果云 WebDAV</span>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50">账号（注册邮箱）</label>
+                  <div className="bg-surface-container-highest rounded-md px-3 py-2.5 flex items-center gap-2.5 focus-within:bg-surface-bright transition-all">
+                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">account_circle</span>
+                    <input
+                      type="text"
+                      placeholder="example@email.com"
+                      value={webdavAccount}
+                      onChange={e => setWebdavAccount(e.target.value)}
+                      className="bg-transparent border-none focus:ring-0 w-full text-xs font-label text-on-surface placeholder-on-surface-variant/30 outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50">应用密码</label>
+                  <div className="bg-surface-container-highest rounded-md px-3 py-2.5 flex items-center gap-2.5 focus-within:bg-surface-bright transition-all">
+                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">key</span>
+                    <input
+                      type={webdavShowPwd ? 'text' : 'password'}
+                      placeholder="坚果云后台生成的应用密码"
+                      value={webdavPassword}
+                      onChange={e => setWebdavPassword(e.target.value)}
+                      className="bg-transparent border-none focus:ring-0 w-full text-xs font-label text-on-surface placeholder-on-surface-variant/30 outline-none"
+                    />
+                    <button
+                      onClick={() => setWebdavShowPwd(v => !v)}
+                      className="text-on-surface-variant/40 hover:text-on-surface transition-colors flex-shrink-0"
+                    >
+                      <span className="material-symbols-outlined text-sm leading-none">
+                        {webdavShowPwd ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50">远程文件路径</label>
+                  <div className="bg-surface-container-highest rounded-md px-3 py-2.5 flex items-center gap-2.5 focus-within:bg-surface-bright transition-all">
+                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">folder_open</span>
+                    <input
+                      type="text"
+                      placeholder="MapleTools/homework.json"
+                      value={webdavPath}
+                      onChange={e => setWebdavPath(e.target.value)}
+                      className="bg-transparent border-none focus:ring-0 w-full text-xs font-label text-on-surface placeholder-on-surface-variant/30 outline-none"
+                    />
+                  </div>
+                  <p className="font-body text-[10px] text-on-surface-variant/35">
+                    路径相对于坚果云 WebDAV 根目录，文件夹不存在会自动创建
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 pt-0.5">
+                  <button
+                    onClick={handleWebdavTest}
+                    disabled={webdavTestLabel === 'testing'}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-container-high border border-outline-variant/20 text-xs font-label text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-all disabled:opacity-50"
+                  >
+                    <span className={`material-symbols-outlined text-sm leading-none ${webdavTestLabel === 'testing' ? 'animate-spin' : ''}`}>
+                      {webdavTestLabel === 'ok' ? 'check_circle' : webdavTestLabel === 'error' ? 'error' : 'wifi_find'}
+                    </span>
+                    {webdavTestLabel === 'testing' ? '测试中…' : '测试连接'}
+                  </button>
+                  {webdavTestMsg && (
+                    <span className={`font-label text-[10px] ${webdavTestLabel === 'ok' ? 'text-secondary' : 'text-error'}`}>
+                      {webdavTestMsg}
+                    </span>
+                  )}
+                  <button
+                    onClick={handleWebdavSave}
+                    className={`ml-auto flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-label transition-all ${
+                      webdavSaveLabel === 'saved'
+                        ? 'bg-secondary/10 border border-secondary/30 text-secondary'
+                        : webdavSaveLabel === 'error'
+                        ? 'bg-error/10 border border-error/30 text-error'
+                        : 'bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-sm leading-none">
+                      {webdavSaveLabel === 'saved' ? 'check' : webdavSaveLabel === 'error' ? 'error' : 'save'}
+                    </span>
+                    {webdavSaveLabel === 'saved' ? '已保存' : webdavSaveLabel === 'error' ? '保存失败' : '保存配置'}
+                  </button>
+                </div>
+                <p className="font-body text-[10px] text-on-surface-variant/30 leading-relaxed border-t border-white/5 pt-3">
+                  应用密码在坚果云网页端「账号信息 → 安全选项 → 第三方应用管理」中生成，不是登录密码。
+                </p>
+              </div>
             </div>
           </aside>
         </div>
