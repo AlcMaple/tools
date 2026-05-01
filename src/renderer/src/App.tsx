@@ -8,6 +8,7 @@ import BiuSync from './pages/BiuSync'
 import Settings from './pages/Settings'
 import LocalLibrary from './pages/LocalLibrary'
 import FileExplorer from './pages/FileExplorer'
+import HomeworkLookup from './pages/HomeworkLookup'
 import { downloadStore } from './stores/downloadStore'
 
 function DownloadProgressListener(): null {
@@ -36,6 +37,7 @@ function App(): JSX.Element {
             <Route path="/biu-sync" element={<BiuSync />} />
             <Route path="/file-explorer" element={<FileExplorer />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/homework" element={<HomeworkLookup />} />
           </Routes>
         </div>
       </div>
