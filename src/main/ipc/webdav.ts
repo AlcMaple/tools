@@ -87,7 +87,7 @@ export function registerWebDavIpc(): void {
     const res = await fetch(url, {
       headers: { Authorization: authHeader(cfg.account, cfg.appPassword) },
     })
-    if (res.status === 404) throw new Error('远程文件不存在，请先在此设备上传一次')
+    if (res.status === 404 || res.status === 409) throw new Error('远程文件不存在，请先在此设备上传一次')
     if (!res.ok) throw new Error(`拉取失败 (HTTP ${res.status})`)
     return await res.text()
   })
