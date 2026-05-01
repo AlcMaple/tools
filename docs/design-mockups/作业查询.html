@@ -1,0 +1,760 @@
+<!doctype html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta content="width=device-width, initial-scale=1.0" name="viewport" />
+<title>SoraIndex | 作业查询</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&family=Space+Grotesk:wght@300;400;500;700&display=swap"
+  rel="stylesheet"
+/>
+<link
+  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+  rel="stylesheet"
+/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "surface-container-highest": "#353535",
+          "surface-container-high": "#2a2a2a",
+          "surface-container": "#1f1f1f",
+          "surface-container-low": "#1b1b1b",
+          "surface-container-lowest": "#0e0e0e",
+          "surface-bright": "#393939",
+          "surface-variant": "#353535",
+          surface: "#131313",
+          background: "#131313",
+          "on-surface": "#e2e2e2",
+          "on-surface-variant": "#d9c1c1",
+          "on-background": "#e2e2e2",
+          outline: "#a18c8c",
+          "outline-variant": "#544343",
+          primary: "#ffb3b8",
+          "primary-container": "#f09199",
+          "primary-fixed": "#ffdadb",
+          "primary-fixed-dim": "#ffb2b8",
+          "on-primary": "#5a1923",
+          "on-primary-container": "#6e2932",
+          secondary: "#aac7ff",
+          "secondary-container": "#004c9a",
+          "on-secondary": "#002f64",
+          "on-secondary-container": "#9ec0ff",
+          tertiary: "#c8c6c6",
+          "tertiary-container": "#acabab",
+          "on-tertiary": "#303030",
+          error: "#ffb4ab",
+          "error-container": "#93000a",
+          "on-error": "#690005",
+          "on-error-container": "#ffdad6",
+        },
+        fontFamily: {
+          headline: ["Inter"],
+          body: ["Inter"],
+          label: ["Space Grotesk"],
+        },
+        borderRadius: {
+          DEFAULT: "0.125rem",
+          lg: "0.25rem",
+          xl: "0.5rem",
+          full: "0.75rem",
+        },
+      },
+    },
+  };
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  }
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #131313;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #353535;
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #ffb3b8;
+  }
+  /* highlight from search match */
+  mark.hl {
+    background: rgba(255, 179, 184, 0.18);
+    color: #ffdadb;
+    padding: 0 2px;
+    border-radius: 2px;
+  }
+  /* subtle pulse on debounce indicator */
+  @keyframes pulseDot {
+    0%, 100% { opacity: 0.35; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  .pulse-dot { animation: pulseDot 1.1s ease-in-out infinite; }
+
+  /* token chip (used in defense header) */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    background: rgba(255, 179, 184, 0.08);
+    color: #ffdadb;
+    border: 1px solid rgba(255, 179, 184, 0.18);
+    font-family: "Space Grotesk", "Inter", sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  /* dense attack row — looks like the user's markdown notes */
+  .atk-row {
+    display: grid;
+    grid-template-columns: 36px 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 16px 6px 18px;
+    border-radius: 6px;
+    transition: background .15s ease;
+    position: relative;
+  }
+  .atk-row:hover { background: rgba(255,255,255,0.025); }
+  .atk-row:hover .row-actions { opacity: 1; }
+  .atk-row .row-actions { opacity: 0; transition: opacity .15s ease; display: flex; gap: 2px; }
+
+  /* the attack lineup text — chinese-friendly, comma-separated */
+  .atk-text {
+    font-family: "Inter", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    letter-spacing: 0.01em;
+    color: #e2e2e2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .atk-text .core { color: #ffb3b8; font-weight: 700; }       /* shared prefix in cluster */
+  .atk-text .rest { color: #e2e2e2; font-weight: 500; }
+  .atk-text .sep  { color: #544343; margin: 0 2px; font-weight: 400; }
+  .atk-text mark.hl {
+    background: rgba(255,179,184,0.22);
+    color: #ffdadb;
+    padding: 0 3px;
+    border-radius: 2px;
+  }
+
+  /* note: subtle pill aligned under attack lineup, no markdown bullet */
+  .atk-note {
+    grid-column: 2 / 3;
+    margin-top: 4px;
+    margin-bottom: 2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px 4px 10px;
+    border-radius: 9999px;
+    background: rgba(170, 199, 255, 0.06);
+    border: 1px solid rgba(170, 199, 255, 0.14);
+    color: #cfdfff;
+    font-size: 12px;
+    line-height: 1.4;
+    font-family: "Inter", system-ui, sans-serif;
+    max-width: fit-content;
+  }
+  .atk-note::before {
+    content: "";
+    width: 4px;
+    height: 4px;
+    border-radius: 9999px;
+    background: #aac7ff;
+    box-shadow: 0 0 0 2px rgba(170, 199, 255, 0.18);
+    flex-shrink: 0;
+  }
+
+  /* cluster separator: thin dashed line between defense lineups, no big card */
+  .cluster {
+    border-top: 1px solid rgba(255,255,255,0.04);
+  }
+  .cluster:first-child { border-top: 0; }
+
+  /* index badge for each attack within a defense */
+  .idx {
+    font-family: "Space Grotesk", monospace;
+    font-size: 10px;
+    color: #544343;
+    letter-spacing: 0.1em;
+    text-align: right;
+  }
+
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] .chev { transform: rotate(90deg); }
+  .chev { transition: transform .25s ease; display: inline-block; }
+  .cluster:not(.collapsed) > .defense-header .chev { transform: rotate(90deg); }
+
+  /* collapsed-state preview row inside the defense header */
+  .preview-strip {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    color: rgba(217, 193, 193, 0.55);
+    font-size: 12.5px;
+    font-family: "Inter", system-ui, sans-serif;
+    min-width: 0;
+  }
+  .preview-strip .pv-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cluster.collapsed .preview-strip { display: flex; }
+
+  /* smooth collapse using grid-rows trick */
+  .collapse-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows .28s ease;
+  }
+  .collapse-body > .inner { min-height: 0; overflow: hidden; }
+  .cluster.collapsed .collapse-body { grid-template-rows: 0fr; }
+
+  /* card hover lift */
+  .lift { transition: transform .25s ease, border-color .25s ease, background .25s ease; }
+  .lift:hover { border-color: rgba(255,179,184,0.28); }
+
+  /* divider patterned line for VS */
+  .vs-line {
+    height: 1px;
+    background: repeating-linear-gradient(90deg, rgba(161,140,140,0.25) 0 6px, transparent 6px 12px);
+  }
+</style>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden">
+<div class="flex h-screen overflow-hidden">
+
+<!-- ============== Side Nav ============== -->
+<aside class="flex flex-col fixed left-0 top-0 h-full z-40 bg-[#0e0e0e] w-64 border-none transition-all duration-300 ease-in-out">
+  <div class="px-6 py-8 flex flex-col gap-1">
+    <div class="flex items-center gap-3 mb-10">
+      <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+        <span class="material-symbols-outlined text-on-primary text-xl">inventory_2</span>
+      </div>
+      <div>
+        <h1 class="text-lg font-black text-[#ffb3b8] tracking-tighter">SoraIndex</h1>
+        <p class="font-['Space_Grotesk'] text-[10px] uppercase tracking-widest text-[#ffb3b8]/60">Local Archive</p>
+      </div>
+    </div>
+    <nav class="flex flex-col space-y-1">
+      <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+        <span class="material-symbols-outlined">home</span><span>Home</span>
+      </a>
+      <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+        <span class="material-symbols-outlined">download</span><span>Downloads</span>
+      </a>
+      <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+        <span class="material-symbols-outlined">theaters</span><span>Series</span>
+      </a>
+      <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+        <span class="material-symbols-outlined">movie</span><span>Movies</span>
+      </a>
+      <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+        <span class="material-symbols-outlined">inventory_2</span><span>Archived</span>
+      </a>
+
+      <!-- NEW NAV ENTRY -->
+      <a class="bg-gradient-to-r from-[#ffb3b8]/10 to-transparent text-[#ffb3b8] border-l-4 border-[#ffb3b8] py-3 px-4 transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+        <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">swords</span>
+        <span>Homework</span>
+      </a>
+    </nav>
+  </div>
+  <div class="mt-auto px-6 py-8 border-t border-white/5">
+    <nav class="flex flex-col space-y-1">
+      <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+        <span class="material-symbols-outlined">help</span><span>Support</span>
+      </a>
+      <a class="text-[#e2e2e2]/60 py-3 px-4 hover:text-[#e2e2e2] hover:bg-[#1f1f1f] transition-all duration-300 ease-in-out font-['Space_Grotesk'] text-sm uppercase tracking-wider flex items-center gap-3" href="#">
+        <span class="material-symbols-outlined">terminal</span><span>Logs</span>
+      </a>
+    </nav>
+  </div>
+</aside>
+
+<!-- ============== Main ============== -->
+<main class="ml-64 flex-1 flex flex-col min-w-0 bg-surface">
+  <!-- TopNav (unchanged) -->
+  <header class="bg-[#0e0e0e] text-[#ffb3b8] font-['Inter'] tracking-tight flex justify-between items-center w-full px-6 py-4 sticky top-0 z-50">
+    <div class="flex items-center gap-4">
+      <h2 class="text-2xl font-bold tracking-tighter text-[#ffb3b8]">Homework</h2>
+    </div>
+    <div class="flex-1 max-w-xl mx-12 hidden lg:block">
+      <div class="relative group">
+        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+        <input class="w-full bg-surface-container-highest border-none rounded-md py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/50" placeholder="Search archive..." type="text"/>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <div class="flex gap-1">
+        <button class="p-2 rounded-md hover:bg-[#353535]/40 transition-colors duration-200 active:scale-95 text-[#e2e2e2]">
+          <span class="material-symbols-outlined">sync</span>
+        </button>
+        <button class="p-2 rounded-md hover:bg-[#353535]/40 transition-colors duration-200 active:scale-95 text-[#e2e2e2]">
+          <span class="material-symbols-outlined">filter_list</span>
+        </button>
+      </div>
+      <div class="h-8 w-8 rounded-full overflow-hidden border border-primary/20 bg-surface-container-high flex items-center justify-center">
+        <span class="material-symbols-outlined text-primary text-base">person</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Body -->
+  <div class="flex-1 flex flex-col px-10 py-8 overflow-y-auto">
+
+    <!-- Breadcrumb / page intro -->
+    <section class="mb-6">
+      <div class="flex items-center gap-2 mb-3 text-sm font-label text-outline uppercase tracking-widest">
+        <span class="material-symbols-outlined text-[16px]">swords</span>
+        <span class="hover:text-primary transition-colors cursor-pointer">Tools</span>
+        <span class="text-outline-variant">/</span>
+        <span class="text-on-surface font-bold">Homework Lookup</span>
+      </div>
+      <div class="flex items-end justify-between gap-6 flex-wrap">
+        <div>
+          <h1 class="text-3xl font-black tracking-tighter text-on-surface">阵容作业查询</h1>
+          <p class="text-sm text-on-surface-variant/80 mt-1 font-['Space_Grotesk']">
+            输入防守方角色,实时检索匹配的进攻方阵容 · 同一防守方的多个攻略归纳到一起
+          </p>
+        </div>
+
+        <!-- Search bar (debounced) -->
+        <div class="flex items-center gap-3">
+          <div class="relative">
+            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">search</span>
+            <input id="searchInput"
+              class="w-[420px] bg-surface-container-high border border-outline-variant/20 rounded-xl py-2.5 pl-10 pr-24 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/40 focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/40"
+              placeholder="模糊搜索:角色名、备注、关键词…" type="text"/>
+            <!-- debounce indicator -->
+            <div id="debounceDot" class="hidden absolute right-12 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary pulse-dot"></div>
+            <button id="clearSearch" class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-primary p-1 hidden">
+              <span class="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </div>
+          <button id="addBtn" class="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-label text-xs uppercase tracking-widest hover:bg-primary-fixed transition-all active:scale-95 shadow-lg shadow-primary/10">
+            <span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">add</span>
+            添加阵容
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats strip (compact) -->
+    <section class="flex items-center gap-6 mb-6 px-1 text-on-surface-variant">
+      <div class="flex items-center gap-2">
+        <span class="font-label text-[10px] uppercase tracking-widest text-outline">Defense</span>
+        <span class="text-base font-bold text-on-surface" id="statDefense">0</span>
+      </div>
+      <span class="text-outline-variant">·</span>
+      <div class="flex items-center gap-2">
+        <span class="font-label text-[10px] uppercase tracking-widest text-outline">Attacks</span>
+        <span class="text-base font-bold text-on-surface" id="statAttack">0</span>
+      </div>
+      <span class="text-outline-variant">·</span>
+      <div class="flex items-center gap-2">
+        <span class="font-label text-[10px] uppercase tracking-widest text-outline">Showing</span>
+        <span class="text-base font-bold text-primary"><span id="statShown">0</span><span class="text-on-surface-variant font-normal text-xs">&nbsp;rows</span></span>
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        <button id="expandAll" class="px-3 py-1 rounded-md bg-surface-container-high text-on-surface-variant border border-outline-variant/15 font-label text-[11px] uppercase tracking-widest hover:text-primary hover:border-primary/30 transition-colors flex items-center gap-1">
+          <span class="material-symbols-outlined text-[14px]">unfold_more</span>全部展开
+        </button>
+        <button id="collapseAll" class="px-3 py-1 rounded-md bg-surface-container-high text-on-surface-variant border border-outline-variant/15 font-label text-[11px] uppercase tracking-widest hover:text-primary hover:border-primary/30 transition-colors flex items-center gap-1">
+          <span class="material-symbols-outlined text-[14px]">unfold_less</span>全部折叠
+        </button>
+      </div>
+    </section>
+
+    <!-- Results list (dense) -->
+    <section id="resultsRoot" class="bg-surface-container-lowest rounded-xl border border-white/5 overflow-hidden pb-2"></section>
+
+    <!-- Empty state (hidden by default) -->
+    <section id="emptyState" class="hidden flex-1 flex flex-col items-center justify-center text-center py-20">
+      <div class="w-16 h-16 rounded-2xl bg-surface-container-high flex items-center justify-center mb-4">
+        <span class="material-symbols-outlined text-primary text-3xl">search_off</span>
+      </div>
+      <h3 class="text-lg font-bold text-on-surface">没有匹配的阵容</h3>
+      <p class="text-sm text-on-surface-variant/70 mt-1 font-['Space_Grotesk']">
+        试试别的角色名,或者 <button id="clearFromEmpty" class="text-primary underline underline-offset-2">清空搜索</button>
+      </p>
+    </section>
+
+  </div>
+</main>
+</div>
+
+<!-- =============== Add / Edit Modal =============== -->
+<div id="modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+  <div class="w-full max-w-2xl bg-surface-container-low border border-outline-variant/20 rounded-2xl shadow-2xl overflow-hidden">
+    <header class="flex items-center justify-between px-6 py-4 border-b border-white/5">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary">add_circle</span>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-on-surface">新增作业</h3>
+          <p class="text-[11px] font-['Space_Grotesk'] text-on-surface-variant/60 uppercase tracking-widest">defense lineup → attack solutions</p>
+        </div>
+      </div>
+      <button id="modalClose" class="p-2 rounded-md hover:bg-surface-container-high transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant">close</span>
+      </button>
+    </header>
+
+    <div class="px-6 py-5 space-y-5">
+
+      <!-- Defense -->
+      <div>
+        <label class="flex items-center gap-2 text-xs font-label uppercase tracking-widest text-outline mb-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+          Defense · 防守方 <span class="text-primary/60">(1-5,顿号 、 分隔)</span>
+        </label>
+        <input class="w-full bg-surface-container-high border border-outline-variant/20 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40"
+          placeholder="例:涅比亚、ams、春剑、水m、布丁" />
+        <p class="mt-2 text-[11px] text-on-surface-variant/50 font-['Space_Grotesk']">已存在的相同防守方会自动归并到一起</p>
+      </div>
+
+      <div class="vs-line"></div>
+
+      <!-- Single Attacker -->
+      <div>
+        <label class="flex items-center gap-2 text-xs font-label uppercase tracking-widest text-outline mb-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+          Attack · 进攻方 <span class="text-secondary/60">(1-5,顿号 、 分隔)</span>
+        </label>
+        <input class="w-full bg-surface-container-high border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-secondary/40"
+          placeholder="例:els、魔女、春剑、水m、布丁" />
+      </div>
+
+      <!-- Note -->
+      <div>
+        <label class="flex items-center gap-2 text-xs font-label uppercase tracking-widest text-outline mb-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+          Note · 备注 <span class="text-outline/60">(可选)</span>
+        </label>
+        <input class="w-full bg-surface-container-high border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-outline/40 placeholder:text-on-surface-variant/40"
+          placeholder="配速、装备、控制要点…" />
+      </div>
+
+      <p class="text-[11px] text-on-surface-variant/50 font-['Space_Grotesk']">
+        <span class="material-symbols-outlined text-[12px] align-middle text-primary/70">info</span>
+        每次添加一条「防守 → 进攻」。多个进攻方就多次点击添加,系统会按防守方自动归类。
+      </p>
+    </div>
+
+    <footer class="flex items-center justify-end gap-2 px-6 py-4 bg-surface-container-lowest border-t border-white/5">
+      <button id="modalCancel" class="px-5 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high font-label text-xs uppercase tracking-widest transition-colors">取消</button>
+      <button class="px-5 py-2 rounded-lg bg-primary text-on-primary font-label text-xs uppercase tracking-widest hover:bg-primary-fixed transition-all active:scale-95">保存</button>
+    </footer>
+  </div>
+</div>
+
+<!-- =============== Delete confirm =============== -->
+<div id="confirm" class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+  <div class="w-full max-w-sm bg-surface-container-low border border-outline-variant/20 rounded-2xl shadow-2xl overflow-hidden">
+    <div class="px-6 py-5">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-9 h-9 rounded-lg bg-error/15 flex items-center justify-center">
+          <span class="material-symbols-outlined text-error">delete</span>
+        </div>
+        <h3 class="text-base font-bold text-on-surface">删除阵容?</h3>
+      </div>
+      <p class="text-sm text-on-surface-variant/80" id="confirmText">这条作业及其所有进攻方将被永久删除。</p>
+    </div>
+    <footer class="flex items-center justify-end gap-2 px-6 py-3 bg-surface-container-lowest border-t border-white/5">
+      <button id="confirmCancel" class="px-4 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high font-label text-xs uppercase tracking-widest transition-colors">取消</button>
+      <button id="confirmOk" class="px-4 py-2 rounded-lg bg-error/90 text-on-error font-label text-xs uppercase tracking-widest hover:bg-error transition-all active:scale-95">删除</button>
+    </footer>
+  </div>
+</div>
+
+<!-- =============== App Script =============== -->
+<script>
+// ---- Mock data (modeled on user's markdown notes) ----
+const DATA = [
+  {
+    id: 1,
+    defense: ["涅比亚", "ams", "春剑", "水m", "布丁"],
+    updatedAt: "2026-04-29",
+    attacks: [
+      { team: ["els", "魔女", "春剑", "水m", "布丁"], note: "" },
+      { team: ["els", "魔女", "水优妮", "春剑", "布丁"], note: "" },
+      { team: ["els", "魔女", "水电", "水雷姆", "跳跳虎"], note: "" },
+      { team: ["涅比亚", "ams", "春剑", "水m", "布丁"], note: "镜像阵容,稳定" },
+      { team: ["涅比亚", "ams", "驴", "水m", "布丁"], note: "" },
+      { team: ["涅比亚", "ams", "路人妹", "春剑", "布丁"], note: "" },
+      { team: ["涅比亚", "ams", "驴", "春剑", "布丁"], note: "" },
+      { team: ["涅比亚", "ams", "鬼松", "黄骑", "布丁"], note: "" },
+      { team: ["涅比亚", "ams", "超猫", "黄骑", "偶像"], note: "" },
+      { team: ["涅比亚", "ams", "史莱姆", "黑姐姐", "水m"], note: "" },
+      { team: ["涅比亚", "妹弓", "史莱姆", "水m", "布丁"], note: "" },
+      { team: ["涅比亚", "妹弓", "圣吃", "史莱姆", "水m"], note: "" },
+      { team: ["涅比亚", "镜子", "水星", "黄骑", "真阳"], note: "" },
+      { team: ["涅比亚", "els", "魔女/smt", "黄骑", "布丁"], note: "" },
+      { team: ["涅比亚", "els", "smt", "黄骑", "春剑"], note: "" },
+      { team: ["涅比亚", "els", "魔女", "水星", "布丁"], note: "" },
+      { team: ["涅比亚", "水星", "黄骑", "姐姐", "水m"], note: "" },
+      { team: ["涅比亚", "魔女", "水星", "春剑", "布丁"], note: "" },
+      { team: ["涅比亚", "魔女", "水老师", "春剑", "布丁"], note: "" },
+      { team: ["涅比亚", "魔女", "ams", "春剑", "布丁"], note: "" },
+      { team: ["涅比亚", "魔女", "裁缝", "春剑", "布丁"], note: "" },
+    ],
+  },
+  {
+    id: 2,
+    defense: ["涅比亚", "ams", "驴", "水m", "布丁"],
+    updatedAt: "2026-04-26",
+    attacks: [
+      { team: ["xcw", "els", "驴", "水电", "猫剑"], note: "" },
+      { team: ["白猫", "水电", "中二", "风剑", "裁缝"], note: "" },
+      { team: ["xcw", "els", "水电", "裁缝", "龙拳"], note: "" },
+      { team: ["xcw", "水电", "江月", "路人兔", "中二"], note: "控制魔攻(xcw 比中二要低)" },
+      { team: ["xcw", "优妮", "水电", "水星", "龙拳"], note: "" },
+      { team: ["魔女", "水电", "水拉姆", "中二", "龙锤"], note: "" },
+    ],
+  },
+  {
+    id: 3,
+    defense: ["魔女", "圣莱", "水电", "水星", "水雷姆"],
+    updatedAt: "2026-04-22",
+    attacks: [
+      { team: ["圣莱", "水电", "雷姆", "裁缝", "龙拳"], note: "up 主推荐" },
+    ],
+  },
+  {
+    id: 4,
+    defense: ["黄泉", "克拉拉", "三月七", "藿藿"],
+    updatedAt: "2026-04-19",
+    attacks: [
+      { team: ["饮月", "停云", "罗刹", "藿藿"], note: "饮月单核,需要专武" },
+      { team: ["刃", "布洛妮娅", "花火", "罗刹"], note: "刃打巨像更稳" },
+    ],
+  },
+];
+
+// ---- Render ----
+const root = document.getElementById("resultsRoot");
+const empty = document.getElementById("emptyState");
+const input = document.getElementById("searchInput");
+const clearBtn = document.getElementById("clearSearch");
+const debounceDot = document.getElementById("debounceDot");
+const statShown = document.getElementById("statShown");
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+}
+function highlight(text, q) {
+  if (!q) return escapeHtml(text);
+  const safe = escapeHtml(text);
+  const re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
+  return safe.replace(re, '<mark class="hl">$1</mark>');
+}
+
+function matches(item, q) {
+  if (!q) return true;
+  const hay = [
+    ...item.defense,
+    ...item.attacks.flatMap(a => [...a.team, a.note || ""]),
+  ].join(" ").toLowerCase();
+  return hay.includes(q.toLowerCase());
+}
+
+// Compute the shared prefix length across an array of teams (each = string[]).
+// e.g. [[A,B,C],[A,B,D,E],[A,X]] -> 1  (only A is common to all)
+function commonPrefixLen(teams) {
+  if (teams.length <= 1) return 0;
+  let n = 0;
+  const first = teams[0];
+  while (n < first.length) {
+    const ch = first[n];
+    if (!teams.every(t => t[n] === ch)) break;
+    n++;
+  }
+  return n;
+}
+
+// Render a team as inline text with shared-prefix highlighting + search highlighting.
+function renderTeamText(team, prefixLen, q) {
+  return team.map((c, i) => {
+    const cls = i < prefixLen ? "core" : "rest";
+    const sep = i < team.length - 1 ? '<span class="sep">、</span>' : "";
+    return `<span class="${cls}">${highlight(c, q)}</span>${sep}`;
+  }).join("");
+}
+
+function render(q = "") {
+  const filtered = DATA.filter(i => matches(i, q));
+
+  // count attack rows total
+  const totalAttacks = filtered.reduce((s, d) => s + d.attacks.length, 0);
+  document.getElementById("statDefense").textContent = filtered.length;
+  document.getElementById("statAttack").textContent = totalAttacks;
+  statShown.textContent = totalAttacks;
+
+  if (filtered.length === 0) {
+    root.innerHTML = "";
+    empty.classList.remove("hidden");
+    empty.classList.add("flex");
+    return;
+  }
+  empty.classList.add("hidden");
+  empty.classList.remove("flex");
+
+  // sort defenses by updatedAt descending (newest first)
+  filtered.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+
+  root.innerHTML = filtered.map(item => {
+    // sort attacks lexicographically by team so identical prefixes cluster
+    const sortedAttacks = [...item.attacks].sort((a, b) => {
+      const la = a.team.join("\u0001");
+      const lb = b.team.join("\u0001");
+      return la < lb ? -1 : la > lb ? 1 : 0;
+    });
+    const teams = sortedAttacks.map(a => a.team);
+    const prefixLen = commonPrefixLen(teams);
+
+    // collapsed-state preview: first 2 attack lineups
+    const preview = sortedAttacks.slice(0, 2).map(a => a.team.join("、")).join("  •  ");
+    const more = sortedAttacks.length > 2 ? `  •  +${sortedAttacks.length - 2}` : "";
+
+    return `
+    <div class="cluster" data-id="${item.id}">
+      <!-- Defense header (clickable to toggle) -->
+      <header class="defense-header flex items-center gap-3 px-5 py-3 bg-gradient-to-r from-[#ffb3b8]/[0.06] to-transparent cursor-pointer hover:from-[#ffb3b8]/[0.12] transition-colors select-none">
+        <span class="material-symbols-outlined text-outline text-[18px] chev shrink-0">chevron_right</span>
+        <span class="material-symbols-outlined text-primary text-[16px] shrink-0" style="font-variation-settings: 'FILL' 1;">shield</span>
+        <div class="flex flex-wrap items-center gap-x-1 text-[15px] font-bold tracking-tight shrink-0">
+          ${item.defense.map((c, i) => `<span class="text-primary">${highlight(c, q)}</span>${i < item.defense.length - 1 ? '<span class="text-primary/40">、</span>' : ''}`).join("")}
+        </div>
+
+        <!-- spacer (no preview text, keeps layout balanced) -->
+        <div class="flex-1"></div>
+
+        <div class="header-actions flex items-center gap-1 shrink-0">
+          <span class="font-label text-[10px] uppercase tracking-widest text-outline mr-2">${item.updatedAt}</span>
+          <button class="p-1.5 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant" title="编辑防守方">
+            <span class="material-symbols-outlined text-[16px]">edit</span>
+          </button>
+          <button class="delete-btn p-1.5 rounded-md hover:bg-error/10 transition-colors text-on-surface-variant hover:text-error" title="删除整组" data-id="${item.id}">
+            <span class="material-symbols-outlined text-[16px]">delete</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Collapsible body -->
+      <div class="collapse-body">
+        <div class="inner">
+          <div class="py-1">
+            ${sortedAttacks.map((a, idx) => `
+              <div class="atk-row">
+                <div class="idx">${String(idx + 1).padStart(2, "0")}</div>
+                <div class="min-w-0">
+                  <div class="atk-text">${renderTeamText(a.team, prefixLen, q)}</div>
+                  ${a.note ? `<div class="atk-note">${highlight(a.note, q)}</div>` : ""}
+                </div>
+                <div class="font-label text-[10px] uppercase tracking-widest text-outline/70">${a.team.length}/5</div>
+                <div class="row-actions">
+                  <button class="p-1.5 rounded text-on-surface-variant/50 hover:text-primary hover:bg-surface-container-high transition-colors" title="复制">
+                    <span class="material-symbols-outlined text-[15px]">content_copy</span>
+                  </button>
+                  <button class="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors" title="编辑">
+                    <span class="material-symbols-outlined text-[15px]">edit</span>
+                  </button>
+                  <button class="p-1.5 rounded text-on-surface-variant/50 hover:text-error hover:bg-error/10 transition-colors" title="删除该条">
+                    <span class="material-symbols-outlined text-[15px]">delete</span>
+                  </button>
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+
+  // wire collapse toggles on defense headers (ignore clicks on action buttons)
+  root.querySelectorAll(".defense-header").forEach(h => {
+    h.addEventListener("click", (e) => {
+      if (e.target.closest(".header-actions")) return;
+      h.parentElement.classList.toggle("collapsed");
+    });
+  });
+
+  // wire delete buttons
+  root.querySelectorAll(".delete-btn").forEach(b => {
+    b.addEventListener("click", () => openConfirm(b.dataset.id));
+  });
+}
+
+// ---- Debounce search ----
+let timer = null;
+input.addEventListener("input", () => {
+  const v = input.value.trim();
+  clearBtn.classList.toggle("hidden", v.length === 0);
+  debounceDot.classList.remove("hidden");
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    debounceDot.classList.add("hidden");
+    render(v);
+  }, 220);
+});
+clearBtn.addEventListener("click", () => {
+  input.value = "";
+  clearBtn.classList.add("hidden");
+  render("");
+  input.focus();
+});
+document.getElementById("clearFromEmpty").addEventListener("click", () => {
+  input.value = "";
+  clearBtn.classList.add("hidden");
+  render("");
+  input.focus();
+});
+
+// ---- Modal wiring ----
+const modal = document.getElementById("modal");
+document.getElementById("addBtn").addEventListener("click", () => modal.classList.remove("hidden"));
+document.getElementById("modalClose").addEventListener("click", () => modal.classList.add("hidden"));
+document.getElementById("modalCancel").addEventListener("click", () => modal.classList.add("hidden"));
+modal.addEventListener("click", e => { if (e.target === modal) modal.classList.add("hidden"); });
+
+// ---- Confirm wiring ----
+const confirmEl = document.getElementById("confirm");
+function openConfirm(id) { confirmEl.classList.remove("hidden"); confirmEl.dataset.id = id; }
+document.getElementById("confirmCancel").addEventListener("click", () => confirmEl.classList.add("hidden"));
+document.getElementById("confirmOk").addEventListener("click", () => confirmEl.classList.add("hidden"));
+confirmEl.addEventListener("click", e => { if (e.target === confirmEl) confirmEl.classList.add("hidden"); });
+
+// expand / collapse all
+document.getElementById("expandAll").addEventListener("click", () => {
+  root.querySelectorAll(".cluster").forEach(c => c.classList.remove("collapsed"));
+});
+document.getElementById("collapseAll").addEventListener("click", () => {
+  root.querySelectorAll(".cluster").forEach(c => c.classList.add("collapsed"));
+});
+
+// initial render — collapse all but the first cluster
+render("");
+root.querySelectorAll(".cluster").forEach((c, i) => {
+  if (i > 0) c.classList.add("collapsed");
+});
+</script>
+</body>
+</html>
