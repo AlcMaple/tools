@@ -14,60 +14,7 @@ interface DefenseGroup {
   attacks: Attack[]
 }
 
-const STORAGE_KEY = 'maple-homework-data'
-
-const INITIAL_DATA: DefenseGroup[] = [
-  {
-    id: 1, defense: ['涅比亚', 'ams', '春剑', '水m', '布丁'], updatedAt: '2026-04-29',
-    attacks: [
-      { id: 101, team: ['els', '魔女', '春剑', '水m', '布丁'], note: '' },
-      { id: 102, team: ['els', '魔女', '水优妮', '春剑', '布丁'], note: '' },
-      { id: 103, team: ['els', '魔女', '水电', '水雷姆', '跳跳虎'], note: '' },
-      { id: 104, team: ['涅比亚', 'ams', '春剑', '水m', '布丁'], note: '镜像阵容，稳定' },
-      { id: 105, team: ['涅比亚', 'ams', '驴', '水m', '布丁'], note: '' },
-      { id: 106, team: ['涅比亚', 'ams', '路人妹', '春剑', '布丁'], note: '' },
-      { id: 107, team: ['涅比亚', 'ams', '驴', '春剑', '布丁'], note: '' },
-      { id: 108, team: ['涅比亚', 'ams', '鬼松', '黄骑', '布丁'], note: '' },
-      { id: 109, team: ['涅比亚', 'ams', '超猫', '黄骑', '偶像'], note: '' },
-      { id: 110, team: ['涅比亚', 'ams', '史莱姆', '黑姐姐', '水m'], note: '' },
-      { id: 111, team: ['涅比亚', '妹弓', '史莱姆', '水m', '布丁'], note: '' },
-      { id: 112, team: ['涅比亚', '妹弓', '圣吃', '史莱姆', '水m'], note: '' },
-      { id: 113, team: ['涅比亚', '镜子', '水星', '黄骑', '真阳'], note: '' },
-      { id: 114, team: ['涅比亚', 'els', '魔女/smt', '黄骑', '布丁'], note: '' },
-      { id: 115, team: ['涅比亚', 'els', 'smt', '黄骑', '春剑'], note: '' },
-      { id: 116, team: ['涅比亚', 'els', '魔女', '水星', '布丁'], note: '' },
-      { id: 117, team: ['涅比亚', '水星', '黄骑', '姐姐', '水m'], note: '' },
-      { id: 118, team: ['涅比亚', '魔女', '水星', '春剑', '布丁'], note: '' },
-      { id: 119, team: ['涅比亚', '魔女', '水老师', '春剑', '布丁'], note: '' },
-      { id: 120, team: ['涅比亚', '魔女', 'ams', '春剑', '布丁'], note: '' },
-      { id: 121, team: ['涅比亚', '魔女', '裁缝', '春剑', '布丁'], note: '' },
-    ],
-  },
-  {
-    id: 2, defense: ['涅比亚', 'ams', '驴', '水m', '布丁'], updatedAt: '2026-04-26',
-    attacks: [
-      { id: 201, team: ['xcw', 'els', '驴', '水电', '猫剑'], note: '' },
-      { id: 202, team: ['白猫', '水电', '中二', '风剑', '裁缝'], note: '' },
-      { id: 203, team: ['xcw', 'els', '水电', '裁缝', '龙拳'], note: '' },
-      { id: 204, team: ['xcw', '水电', '江月', '路人兔', '中二'], note: '控制魔攻（xcw 比中二要低）' },
-      { id: 205, team: ['xcw', '优妮', '水电', '水星', '龙拳'], note: '' },
-      { id: 206, team: ['魔女', '水电', '水拉姆', '中二', '龙锤'], note: '' },
-    ],
-  },
-  {
-    id: 3, defense: ['魔女', '圣莱', '水电', '水星', '水雷姆'], updatedAt: '2026-04-22',
-    attacks: [
-      { id: 301, team: ['圣莱', '水电', '雷姆', '裁缝', '龙拳'], note: 'up 主推荐' },
-    ],
-  },
-  {
-    id: 4, defense: ['黄泉', '克拉拉', '三月七', '藿藿'], updatedAt: '2026-04-19',
-    attacks: [
-      { id: 401, team: ['饮月', '停云', '罗刹', '藿藿'], note: '饮月单核，需要专武' },
-      { id: 402, team: ['刃', '布洛妮娅', '花火', '罗刹'], note: '刃打巨像更稳' },
-    ],
-  },
-]
+const STORAGE_KEY = 'maple-homework-data-v2'
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -110,10 +57,17 @@ function commonPrefixLen(teams: string[][]): number {
   return n
 }
 
+function stripCjkLatinSpaces(s: string): string {
+  return s
+    .replace(/(?<=[一-鿿])\s+(?=[a-zA-Z0-9])/g, '')
+    .replace(/(?<=[a-zA-Z0-9])\s+(?=[一-鿿])/g, '')
+}
+
 function matches(item: DefenseGroup, q: string): boolean {
   if (!q) return true
   const hay = [...item.defense, ...item.attacks.flatMap(a => [...a.team, a.note])].join(' ').toLowerCase()
-  return hay.includes(q.toLowerCase())
+  const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
+  return terms.every(t => hay.includes(t))
 }
 
 // ── Shared modal shell (FileExplorer style) ────────────────
@@ -512,13 +466,83 @@ function DeleteAttackModal({
   )
 }
 
+// ── Add attack to existing group modal ────────────────────
+function AddAttackModal({
+  group, onClose, onSave,
+}: {
+  group: DefenseGroup
+  onClose: () => void
+  onSave: (team: string[], note: string) => void
+}): JSX.Element {
+  const [teamValue, setTeamValue] = useState('')
+  const [noteValue, setNoteValue] = useState('')
+  const canSave = teamValue.trim().length > 0
+  return (
+    <ModalShell onBackdrop={onClose}>
+      <div className="flex items-center gap-4 px-7 pt-6 pb-5 border-b border-outline-variant/10">
+        <div className="w-11 h-11 rounded-xl bg-secondary/15 border border-secondary/25 flex items-center justify-center flex-shrink-0">
+          <span className="material-symbols-outlined text-secondary text-[22px]" style={{ fontVariationSettings: "'FILL' 1" }}>swords</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base font-black tracking-tight">新增进攻阵容</h3>
+          <p className="text-[11px] text-on-surface-variant/60 mt-0.5 font-label truncate">
+            防守方：{group.defense.join('、')}
+          </p>
+        </div>
+      </div>
+      <div className="px-7 py-5 space-y-3">
+        <div className="rounded-xl border border-secondary/20 bg-secondary/[0.04] px-4 pt-3 pb-4">
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="material-symbols-outlined text-secondary text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>swords</span>
+            <span className="font-label text-[10px] uppercase tracking-widest text-secondary/80">进攻方</span>
+          </div>
+          <ModalInput
+            placeholder="例：els、魔女、春剑、水m、布丁"
+            value={teamValue}
+            onChange={e => setTeamValue(e.target.value)}
+            autoFocus
+          />
+          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
+        </div>
+        <div>
+          <label className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-1.5">
+            <span className="material-symbols-outlined text-[13px]">edit_note</span>
+            备注（可选）
+          </label>
+          <ModalInput
+            placeholder="配速、装备、控制要点…"
+            value={noteValue}
+            onChange={e => setNoteValue(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
+        <button
+          onClick={onClose}
+          className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors"
+        >
+          取消
+        </button>
+        <button
+          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteValue.trim())}
+          disabled={!canSave}
+          className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <span className="material-symbols-outlined text-base leading-none">save</span>
+          保存
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────
 export default function HomeworkLookup(): JSX.Element {
   const [data, setData] = useState<DefenseGroup[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : INITIAL_DATA
-    } catch { return INITIAL_DATA }
+      return saved ? JSON.parse(saved) : []
+    } catch { return [] }
   })
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -535,6 +559,14 @@ export default function HomeworkLookup(): JSX.Element {
   const [editAttackTarget, setEditAttackTarget] = useState<{ groupId: number; atk: Attack } | null>(null)
   const [deleteGroup, setDeleteGroup] = useState<DefenseGroup | null>(null)
   const [deleteAttackTarget, setDeleteAttackTarget] = useState<{ groupId: number; atk: Attack } | null>(null)
+  const [addAttackTarget, setAddAttackTarget] = useState<DefenseGroup | null>(null)
+
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const copyWithFeedback = (key: string, text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedKey(key)
+    setTimeout(() => setCopiedKey(null), 1500)
+  }
 
   // sync state
   type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
@@ -686,6 +718,16 @@ export default function HomeworkLookup(): JSX.Element {
         : d
     ))
     setDeleteAttackTarget(null)
+  }
+
+  const handleAddAttack = (team: string[], note: string) => {
+    if (!addAttackTarget) return
+    setData(prev => prev.map(d =>
+      d.id === addAttackTarget.id
+        ? { ...d, updatedAt: new Date().toISOString().slice(0, 10), attacks: [...d.attacks, { id: Date.now(), team, note }] }
+        : d
+    ))
+    setAddAttackTarget(null)
   }
 
   return (
@@ -878,6 +920,22 @@ export default function HomeworkLookup(): JSX.Element {
                     <div className="header-actions flex items-center gap-1 shrink-0">
                       <span className="font-label text-[10px] uppercase tracking-widest text-outline mr-2">{item.updatedAt}</span>
                       <button
+                        className="p-1.5 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant hover:text-secondary"
+                        title="新增进攻阵容"
+                        onClick={() => setAddAttackTarget(item)}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
+                      </button>
+                      <button
+                        className={`p-1.5 rounded-md transition-colors ${copiedKey === `def-${item.id}` ? 'text-secondary' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+                        title="复制防守方阵容"
+                        onClick={() => copyWithFeedback(`def-${item.id}`, item.defense.join('、'))}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                          {copiedKey === `def-${item.id}` ? 'check' : 'content_copy'}
+                        </span>
+                      </button>
+                      <button
                         className="p-1.5 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant"
                         title="编辑防守方"
                         onClick={() => setEditDefenseGroup(item)}
@@ -920,8 +978,14 @@ export default function HomeworkLookup(): JSX.Element {
                             </div>
                             <div className="font-label text-[10px] uppercase tracking-widest text-outline/70">{atk.team.length}/5</div>
                             <div className="row-actions">
-                              <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-primary hover:bg-surface-container-high transition-colors" title="复制">
-                                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>content_copy</span>
+                              <button
+                                className={`p-1.5 rounded transition-colors ${copiedKey === `atk-${atk.id}` ? 'text-secondary' : 'text-on-surface-variant/50 hover:text-primary hover:bg-surface-container-high'}`}
+                                title="复制进攻阵容"
+                                onClick={() => copyWithFeedback(`atk-${atk.id}`, atk.team.join('、') + (atk.note ? ` (${atk.note})` : ''))}
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+                                  {copiedKey === `atk-${atk.id}` ? 'check' : 'content_copy'}
+                                </span>
                               </button>
                               <button
                                 className="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors"
@@ -984,6 +1048,13 @@ export default function HomeworkLookup(): JSX.Element {
           atk={deleteAttackTarget.atk}
           onClose={() => setDeleteAttackTarget(null)}
           onConfirm={handleDeleteAttack}
+        />
+      )}
+      {addAttackTarget && (
+        <AddAttackModal
+          group={addAttackTarget}
+          onClose={() => setAddAttackTarget(null)}
+          onSave={handleAddAttack}
         />
       )}
       </div>

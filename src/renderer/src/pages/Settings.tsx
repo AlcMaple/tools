@@ -119,7 +119,6 @@ function Settings(): JSX.Element {
   const [webdavPassword, setWebdavPassword] = useState('');
   const [webdavPath, setWebdavPath] = useState('MapleTools/homework.json');
   const [webdavShowPwd, setWebdavShowPwd] = useState(false);
-  const [webdavSaveLabel, setWebdavSaveLabel] = useState<'save' | 'saved' | 'error'>('save');
   const [webdavTestLabel, setWebdavTestLabel] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
   const [webdavTestMsg, setWebdavTestMsg] = useState('');
 
@@ -131,22 +130,6 @@ function Settings(): JSX.Element {
       setWebdavPath(cfg.remotePath || 'MapleTools/homework.json');
     }).catch(() => {});
   }, []);
-
-  const handleWebdavSave = async () => {
-    try {
-      await window.webdavApi.saveConfig({
-        account: webdavAccount.trim(),
-        appPassword: webdavPassword,
-        remotePath: webdavPath.trim(),
-      });
-      setWebdavSaveLabel('saved');
-      recordChange('WebDAV 坚果云配置已保存');
-      setTimeout(() => setWebdavSaveLabel('save'), 2000);
-    } catch {
-      setWebdavSaveLabel('error');
-      setTimeout(() => setWebdavSaveLabel('save'), 2500);
-    }
-  };
 
   const handleWebdavTest = async () => {
     setWebdavTestLabel('testing');
@@ -296,6 +279,13 @@ function Settings(): JSX.Element {
     } catch {
       /* ignore */
     }
+
+    // Save WebDAV config silently alongside other settings
+    window.webdavApi.saveConfig({
+      account: webdavAccount.trim(),
+      appPassword: webdavPassword,
+      remotePath: webdavPath.trim(),
+    }).catch(() => {});
 
     const label =
       changes.length > 0 ? changes.join("; ") : "Configuration saved";
@@ -813,21 +803,6 @@ function Settings(): JSX.Element {
                       {webdavTestMsg}
                     </span>
                   )}
-                  <button
-                    onClick={handleWebdavSave}
-                    className={`ml-auto flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-label transition-all ${
-                      webdavSaveLabel === 'saved'
-                        ? 'bg-secondary/10 border border-secondary/30 text-secondary'
-                        : webdavSaveLabel === 'error'
-                        ? 'bg-error/10 border border-error/30 text-error'
-                        : 'bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-sm leading-none">
-                      {webdavSaveLabel === 'saved' ? 'check' : webdavSaveLabel === 'error' ? 'error' : 'save'}
-                    </span>
-                    {webdavSaveLabel === 'saved' ? '已保存' : webdavSaveLabel === 'error' ? '保存失败' : '保存配置'}
-                  </button>
                 </div>
                 <p className="font-body text-[10px] text-on-surface-variant/30 leading-relaxed border-t border-white/5 pt-3">
                   应用密码在坚果云网页端「账号信息 → 安全选项 → 第三方应用管理」中生成，不是登录密码。
