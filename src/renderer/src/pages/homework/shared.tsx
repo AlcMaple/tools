@@ -17,6 +17,7 @@ export interface ClassicTeam {
   id: number
   team: string[]
   note: string
+  updatedAt: string
 }
 
 export interface ClassicGroup {
@@ -24,6 +25,22 @@ export interface ClassicGroup {
   title: string
   updatedAt: string
   teams: ClassicTeam[]
+}
+
+/**
+ * Backfill missing `updatedAt` on teams using today's date.
+ * Idempotent: only touches teams that lack a date (e.g. legacy data).
+ * After running, the user should manually push to sync the dated data to WebDAV.
+ */
+export function normalizeClassic(groups: ClassicGroup[]): ClassicGroup[] {
+  const now = todayStr()
+  return groups.map(g => ({
+    ...g,
+    teams: g.teams.map(t => ({
+      ...t,
+      updatedAt: t.updatedAt || now,
+    })),
+  }))
 }
 
 export function escapeRe(s: string): string {
