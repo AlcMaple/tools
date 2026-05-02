@@ -4,6 +4,7 @@ export interface Attack {
   id: number
   team: string[]
   note: string
+  updatedAt: string
 }
 
 export interface DefenseGroup {
@@ -11,6 +12,21 @@ export interface DefenseGroup {
   defense: string[]
   updatedAt: string
   attacks: Attack[]
+}
+
+/**
+ * Backfill missing `updatedAt` on attacks using today's date.
+ * Idempotent. Mirrors normalizeClassic for the homework dataset.
+ */
+export function normalizeHomework(groups: DefenseGroup[]): DefenseGroup[] {
+  const now = todayStr()
+  return groups.map(g => ({
+    ...g,
+    attacks: g.attacks.map(a => ({
+      ...a,
+      updatedAt: a.updatedAt || now,
+    })),
+  }))
 }
 
 export interface ClassicTeam {
