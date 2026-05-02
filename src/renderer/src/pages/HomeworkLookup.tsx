@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
 import HomeworkView, { HomeworkViewHandle } from './homework/HomeworkView'
 import ClassicView, { ClassicViewHandle } from './homework/ClassicView'
-import { ClassicGroup, DefenseGroup, ipcErrMsg, normalizeClassic } from './homework/shared'
+import { ClassicGroup, DefenseGroup, ipcErrMsg, normalizeClassic, normalizeHomework } from './homework/shared'
 
 type Tab = 'homework' | 'classic'
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
@@ -25,7 +25,7 @@ export default function HomeworkLookup(): JSX.Element {
     return v === 'classic' ? 'classic' : 'homework'
   })
 
-  const [homeworkData, setHomeworkData] = useState<DefenseGroup[]>(() => readJson(HOMEWORK_KEY, []))
+  const [homeworkData, setHomeworkData] = useState<DefenseGroup[]>(() => normalizeHomework(readJson(HOMEWORK_KEY, [])))
   const [classicData, setClassicData] = useState<ClassicGroup[]>(() => normalizeClassic(readJson(CLASSIC_KEY, [])))
 
   const [query, setQuery] = useState('')
@@ -111,9 +111,9 @@ export default function HomeworkLookup(): JSX.Element {
       const remote = JSON.parse(jsonStr)
       if (Array.isArray(remote)) {
         // Legacy schema: array of homework only
-        setHomeworkData(remote as DefenseGroup[])
+        setHomeworkData(normalizeHomework(remote as DefenseGroup[]))
       } else if (remote && typeof remote === 'object' && remote._v === 2) {
-        setHomeworkData(Array.isArray(remote.homework) ? remote.homework : [])
+        setHomeworkData(normalizeHomework(Array.isArray(remote.homework) ? remote.homework : []))
         setClassicData(normalizeClassic(Array.isArray(remote.classic) ? remote.classic : []))
       } else {
         throw new Error('远端数据格式不识别')
