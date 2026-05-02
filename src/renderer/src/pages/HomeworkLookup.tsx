@@ -128,8 +128,8 @@ export default function HomeworkLookup(): JSX.Element {
   }
 
   const searchPlaceholder = activeTab === 'homework'
-    ? '模糊搜索：角色名、备注、关键词…'
-    : '模糊搜索：标题、角色名、备注…'
+    ? '模糊搜索防守方角色…'
+    : '模糊搜索主题标题…'
 
   const addLabel = activeTab === 'homework' ? '添加作业' : '添加经典阵容'
 

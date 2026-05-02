@@ -89,17 +89,21 @@ export function cleanCharName(s: string): string {
   return stripCjkLatinSpaces(s.replace(/`/g, '').trim())
 }
 
+/** Match against the defense field only. Attacks and notes are ignored. */
 export function matchesDefense(item: DefenseGroup, q: string): boolean {
   if (!q) return true
-  const hay = [...item.defense, ...item.attacks.flatMap(a => [...a.team, a.note])].join(' ').toLowerCase()
   const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
+  if (terms.length === 0) return true
+  const hay = item.defense.join(' ').toLowerCase()
   return terms.every(t => hay.includes(t))
 }
 
+/** Match against the title field only. Teams and notes are ignored. */
 export function matchesClassic(item: ClassicGroup, q: string): boolean {
   if (!q) return true
-  const hay = [item.title, ...item.teams.flatMap(t => [...t.team, t.note])].join(' ').toLowerCase()
   const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
+  if (terms.length === 0) return true
+  const hay = item.title.toLowerCase()
   return terms.every(t => hay.includes(t))
 }
 
