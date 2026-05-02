@@ -442,13 +442,15 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     setData(prev => {
       const existing = prev.find(d => d.title === title)
       if (existing) {
+        // Adding a team to an existing group: only the new team gets a fresh date.
         return prev.map(d =>
           d.id === existing.id
-            ? { ...d, updatedAt: now, teams: [...d.teams, { id: Date.now(), team, note: noteInput.trim() }] }
+            ? { ...d, teams: [...d.teams, { id: Date.now(), team, note: noteInput.trim(), updatedAt: now }] }
             : d
         )
       }
-      return [...prev, { id: Date.now(), title, updatedAt: now, teams: [{ id: Date.now() + 1, team, note: noteInput.trim() }] }]
+      // New group: group + first team share the same date.
+      return [...prev, { id: Date.now(), title, updatedAt: now, teams: [{ id: Date.now() + 1, team, note: noteInput.trim(), updatedAt: now }] }]
     })
     setIsAddOpen(false)
   }
@@ -463,9 +465,10 @@ const ClassicView = forwardRef<ClassicViewHandle, {
 
   const handleEditTeam = (team: string[], note: string) => {
     if (!editTeamTarget) return
+    const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === editTeamTarget.groupId
-        ? { ...d, updatedAt: todayStr(), teams: d.teams.map(t => t.id === editTeamTarget.team.id ? { ...t, team, note } : t) }
+        ? { ...d, teams: d.teams.map(t => t.id === editTeamTarget.team.id ? { ...t, team, note, updatedAt: now } : t) }
         : d
     ))
     setEditTeamTarget(null)
@@ -489,8 +492,11 @@ const ClassicView = forwardRef<ClassicViewHandle, {
 
   const handleAddTeam = (team: string[], note: string) => {
     if (!addTeamTarget) return
+    const now = todayStr()
     setData(prev => prev.map(d =>
-      d.id === addTeamTarget.id ? { ...d, updatedAt: todayStr(), teams: [...d.teams, { id: Date.now(), team, note }] } : d
+      d.id === addTeamTarget.id
+        ? { ...d, teams: [...d.teams, { id: Date.now(), team, note, updatedAt: now }] }
+        : d
     ))
     setAddTeamTarget(null)
   }
@@ -617,7 +623,9 @@ const ClassicView = forwardRef<ClassicViewHandle, {
                               </div>
                             )}
                           </div>
-                          <div className="font-label text-[10px] uppercase tracking-widest text-outline/70">{t.team.length}/5</div>
+                          <div className="font-label text-[10px] uppercase tracking-widest text-outline/70 whitespace-nowrap">
+                            {t.updatedAt}<span className="text-outline-variant/40 mx-1.5">·</span>{t.team.length}/5
+                          </div>
                           <div className="row-actions">
                             <button
                               className={`p-1.5 rounded transition-colors ${copiedKey === `tm-${t.id}` ? 'text-secondary' : 'text-on-surface-variant/50 hover:text-tertiary hover:bg-surface-container-high'}`}
