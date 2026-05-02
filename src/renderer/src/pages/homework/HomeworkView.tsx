@@ -72,17 +72,15 @@ function computeImportMerge(items: ImportItem[], current: DefenseGroup[]): Impor
     const defKey = item.defense.join('、')
     const existing = result.find(d => d.defense.join('、') === defKey)
     if (existing) {
+      // Defense's own updatedAt is left untouched — only attacks get a fresh date.
       const existingTeams = new Set(existing.attacks.map(a => a.team.join('、')))
-      let touched = false
       for (const atk of item.attacks) {
         const teamKey = atk.team.join('、')
         if (existingTeams.has(teamKey)) { skippedCount++; continue }
-        existing.attacks.push({ id: nextId(), team: atk.team, note: atk.note })
+        existing.attacks.push({ id: nextId(), team: atk.team, note: atk.note, updatedAt: now })
         existingTeams.add(teamKey)
         newAttackCount++
-        touched = true
       }
-      if (touched) existing.updatedAt = now
     } else {
       const seenTeams = new Set<string>()
       const newAttacks: Attack[] = []
@@ -90,10 +88,11 @@ function computeImportMerge(items: ImportItem[], current: DefenseGroup[]): Impor
         const teamKey = atk.team.join('、')
         if (seenTeams.has(teamKey)) { skippedCount++; continue }
         seenTeams.add(teamKey)
-        newAttacks.push({ id: nextId(), team: atk.team, note: atk.note })
+        newAttacks.push({ id: nextId(), team: atk.team, note: atk.note, updatedAt: now })
         newAttackCount++
       }
       if (newAttacks.length > 0) {
+        // Brand-new defense: defense + first batch of attacks share today's date.
         result.push({ id: nextId(), defense: item.defense, updatedAt: now, attacks: newAttacks })
         newDefenseCount++
       }
@@ -707,13 +706,15 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     setData(prev => {
       const existing = prev.find(d => d.defense.join('、') === defKey)
       if (existing) {
+        // Adding an attack to an existing defense: only the new attack gets a fresh date.
         return prev.map(d =>
           d.id === existing.id
-            ? { ...d, updatedAt: now, attacks: [...d.attacks, { id: Date.now(), team, note: noteInput.trim() }] }
+            ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, note: noteInput.trim(), updatedAt: now }] }
             : d
         )
       }
-      return [...prev, { id: Date.now(), defense, updatedAt: now, attacks: [{ id: Date.now() + 1, team, note: noteInput.trim() }] }]
+      // New defense: defense + first attack share today's date.
+      return [...prev, { id: Date.now(), defense, updatedAt: now, attacks: [{ id: Date.now() + 1, team, note: noteInput.trim(), updatedAt: now }] }]
     })
     setIsAddOpen(false)
   }
@@ -728,9 +729,10 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
 
   const handleEditAttack = (team: string[], note: string) => {
     if (!editAttackTarget) return
+    const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === editAttackTarget.groupId
-        ? { ...d, updatedAt: todayStr(), attacks: d.attacks.map(a => a.id === editAttackTarget.atk.id ? { ...a, team, note } : a) }
+        ? { ...d, attacks: d.attacks.map(a => a.id === editAttackTarget.atk.id ? { ...a, team, note, updatedAt: now } : a) }
         : d
     ))
     setEditAttackTarget(null)
@@ -759,8 +761,11 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
 
   const handleAddAttack = (team: string[], note: string) => {
     if (!addAttackTarget) return
+    const now = todayStr()
     setData(prev => prev.map(d =>
-      d.id === addAttackTarget.id ? { ...d, updatedAt: todayStr(), attacks: [...d.attacks, { id: Date.now(), team, note }] } : d
+      d.id === addAttackTarget.id
+        ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, note, updatedAt: now }] }
+        : d
     ))
     setAddAttackTarget(null)
   }
@@ -897,7 +902,9 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
                               </div>
                             )}
                           </div>
-                          <div className="font-label text-[10px] uppercase tracking-widest text-outline/70">{atk.team.length}/5</div>
+                          <div className="font-label text-[10px] uppercase tracking-widest text-outline/70 whitespace-nowrap">
+                            {atk.updatedAt}<span className="text-outline-variant/40 mx-1.5">·</span>{atk.team.length}/5
+                          </div>
                           <div className="row-actions">
                             <button
                               className={`p-1.5 rounded transition-colors ${copiedKey === `atk-${atk.id}` ? 'text-secondary' : 'text-on-surface-variant/50 hover:text-primary hover:bg-surface-container-high'}`}
