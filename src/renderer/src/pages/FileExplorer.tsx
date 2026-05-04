@@ -103,7 +103,7 @@ type SortKey = 'name' | 'size' | 'mtime' | 'kind'
 const SORT_LABELS: Record<SortKey, string> = { name: 'Name', size: 'Size', mtime: 'Modified', kind: 'Type' }
 
 interface DeletePending { targets: FsEntry[]; permanent: boolean }
-interface CtxState { x: number; y: number; path: string }
+interface CtxState { x: number; y: number; path: string; flipX: boolean; flipY: boolean }
 interface ToastState { title: string; msg: string; icon: string }
 
 // ── Title slot ────────────────────────────────────────────────────────────────
@@ -509,7 +509,15 @@ function FileExplorer(): JSX.Element {
   function onRowContextMenu(e: React.MouseEvent, path: string): void {
     e.preventDefault()
     if (!selected.has(path)) setSelected(new Set([path]))
-    setCtx({ x: e.clientX, y: e.clientY, path })
+    // Native-style flipping: when the menu would overflow on the right/bottom,
+    // anchor the OPPOSITE corner of the menu to the cursor instead of shifting
+    // the whole thing. The cursor always sits at one of the menu's four corners.
+    const MENU_W = 260
+    const MENU_H = 220
+    const PAD = 8
+    const flipX = e.clientX + MENU_W + PAD > window.innerWidth
+    const flipY = e.clientY + MENU_H + PAD > window.innerHeight
+    setCtx({ x: e.clientX, y: e.clientY, path, flipX, flipY })
   }
 
   function statusToneClass(tone: 'ok' | 'error' | 'info'): string {
@@ -794,7 +802,10 @@ function FileExplorer(): JSX.Element {
       {ctx && (
         <div
           data-ctx-menu
-          style={{ left: ctx.x, top: ctx.y }}
+          style={{
+            ...(ctx.flipX ? { right: window.innerWidth - ctx.x } : { left: ctx.x }),
+            ...(ctx.flipY ? { bottom: window.innerHeight - ctx.y } : { top: ctx.y }),
+          }}
           className="fixed z-50 rounded-lg border border-white/10 shadow-2xl py-1.5 min-w-[220px] bg-surface-container/95 backdrop-blur"
         >
           <button
