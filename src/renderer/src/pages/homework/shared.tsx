@@ -108,7 +108,11 @@ export function matchesClassic(item: ClassicGroup, q: string): boolean {
 }
 
 export function todayStr(): string {
-  return new Date().toISOString().slice(0, 10)
+  // Local date — toISOString() returns UTC and would roll back across midnight
+  // for users east of UTC (e.g. UTC+8 sees yesterday's date until 08:00 local).
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 export function Highlight({ text, query }: { text: string; query: string }): JSX.Element {
