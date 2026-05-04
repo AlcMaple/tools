@@ -139,6 +139,8 @@ function FileExplorer(): JSX.Element {
   const [sort, setSort] = useState<SortKey>(() => lsPref<SortKey>('sort', 'name'))
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false)
   const sortDropdownRef = useRef<HTMLDivElement | null>(null)
+  const [deleteMenuOpen, setDeleteMenuOpen] = useState(false)
+  const deleteMenuRef = useRef<HTMLDivElement | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [addressInput, setAddressInput] = useState('')
   const [pathStatus, setPathStatus] = useState<{ msg: string; tone: 'ok' | 'error' | 'info' } | null>(null)
@@ -195,6 +197,18 @@ function FileExplorer(): JSX.Element {
     document.addEventListener('mousedown', onClickAway)
     return () => document.removeEventListener('mousedown', onClickAway)
   }, [sortDropdownOpen])
+
+  // Delete split-button menu click-away
+  useEffect(() => {
+    if (!deleteMenuOpen) return
+    const onClickAway = (e: MouseEvent): void => {
+      if (deleteMenuRef.current && !deleteMenuRef.current.contains(e.target as Node)) {
+        setDeleteMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onClickAway)
+    return () => document.removeEventListener('mousedown', onClickAway)
+  }, [deleteMenuOpen])
 
   // Context menu dismissal
   useEffect(() => {
@@ -389,7 +403,7 @@ function FileExplorer(): JSX.Element {
     }
   }
 
-  async function tryDeleteInput(): Promise<void> {
+  async function tryDeleteInput(permanent = false): Promise<void> {
     const raw = addressInput.trim()
     if (!raw) { setPathStatus({ msg: '请输入要删除的路径', tone: 'error' }); return }
 
@@ -411,7 +425,7 @@ function FileExplorer(): JSX.Element {
     }
 
     const found = items.find((i) => i.path === p) ?? { name: basenameOf(p, platform), path: p, type: 'file' as const }
-    openDeleteDialog([p], false, [found])
+    openDeleteDialog([p], permanent, [found])
   }
 
   // ── Delete flow ──
@@ -576,14 +590,43 @@ function FileExplorer(): JSX.Element {
             <span className="material-symbols-outlined text-[16px]">arrow_outward</span>
             <span>Open</span>
           </button>
-          <button
-            onClick={tryDeleteInput}
-            className="flex items-center gap-1.5 px-4 h-10 rounded-lg bg-surface-container-high border border-error/30 text-error font-label text-[11px] font-bold uppercase tracking-widest hover:bg-error/10 active:scale-95 transition-all"
-            title="删除输入框中的路径所指文件/文件夹"
-          >
-            <span className="material-symbols-outlined text-[16px]">delete</span>
-            <span>Delete</span>
-          </button>
+          <div className="relative inline-flex" ref={deleteMenuRef}>
+            <button
+              onClick={() => tryDeleteInput(false)}
+              className="flex items-center gap-1.5 px-4 h-10 rounded-l-lg bg-surface-container-high border border-error/30 border-r-0 text-error font-label text-[11px] font-bold uppercase tracking-widest hover:bg-error/10 active:scale-95 transition-all"
+              title="移到回收站（默认）"
+            >
+              <span className="material-symbols-outlined text-[16px]">delete</span>
+              <span>Delete</span>
+            </button>
+            <button
+              onClick={() => setDeleteMenuOpen((o) => !o)}
+              className="flex items-center justify-center w-7 h-10 rounded-r-lg bg-surface-container-high border border-error/30 text-error hover:bg-error/10 active:scale-95 transition-all"
+              title="更多删除选项"
+            >
+              <span className={`material-symbols-outlined text-[18px] transition-transform duration-200 ${deleteMenuOpen ? 'rotate-180' : ''}`}>expand_more</span>
+            </button>
+            {deleteMenuOpen && (
+              <div className="absolute top-full right-0 mt-1.5 w-full bg-surface-container-highest border border-outline-variant/30 rounded-lg overflow-hidden shadow-lg z-50">
+                <button
+                  type="button"
+                  onClick={() => { setDeleteMenuOpen(false); tryDeleteInput(false) }}
+                  className="w-full flex items-center gap-1.5 px-3 py-2.5 text-xs font-label text-on-surface hover:bg-surface-container-high transition-colors text-left whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-[15px] text-on-surface-variant/70 shrink-0">delete</span>
+                  <span>移到回收站</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteMenuOpen(false); tryDeleteInput(true) }}
+                  className="w-full flex items-center gap-1.5 px-3 py-2.5 text-xs font-label text-error hover:bg-error/10 transition-colors text-left whitespace-nowrap border-t border-outline-variant/15"
+                >
+                  <span className="material-symbols-outlined text-[15px] shrink-0">delete_forever</span>
+                  <span>永久删除</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center justify-end gap-3">
