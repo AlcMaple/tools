@@ -148,26 +148,56 @@ function resolveSpecialFolder(input: string): string | null {
   try { return app.getPath(id) } catch { return null }
 }
 
+async function runWindowsPowerShell(psScript: string): Promise<void> {
+  const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
+  await execFileAsync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+    { timeout: 120000 }
+  )
+}
+
 async function permanentDelete(targetPath: string): Promise<void> {
   if (osPlatform() === 'win32') {
     // Use base64-encoded PowerShell to handle paths with spaces/Chinese chars.
     // Requires the app or the shell to run with administrator privileges.
-    const psScript = `
+    await runWindowsPowerShell(`
 $target = @'
 ${targetPath}
 '@.Trim()
 takeown /f $target /r /d y
 icacls $target /grant administrators:F /t /c
 Remove-Item -Path $target -Recurse -Force
-`.trim()
-    const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
-    await execFileAsync(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-      { timeout: 120000 }
-    )
+`.trim())
   } else {
     await rm(targetPath, { recursive: true, force: true })
+  }
+}
+
+async function trashItem(targetPath: string): Promise<void> {
+  if (osPlatform() === 'win32') {
+    // shell.trashItem fails on ACL-restricted files. We grant CURRENT USER
+    // explicit Full Control (by SID) before recycling, so that emptying the
+    // recycle bin later — which runs in the user's normal token, possibly with
+    // Administrators filtered out by UAC — still has DELETE permission.
+    // The file remains recoverable thanks to SendToRecycleBin (vs. Remove-Item).
+    await runWindowsPowerShell(`
+$target = @'
+${targetPath}
+'@.Trim()
+$sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+takeown /f $target /r /d y 2>$null | Out-Null
+icacls $target /grant "*\${sid}:F" /t /c 2>$null | Out-Null
+icacls $target /grant administrators:F /t /c 2>$null | Out-Null
+Add-Type -AssemblyName Microsoft.VisualBasic
+if (Test-Path -LiteralPath $target -PathType Container) {
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($target, 'DoNothing', 'SendToRecycleBin')
+} else {
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($target, 'DoNothing', 'SendToRecycleBin')
+}
+`.trim())
+  } else {
+    await shell.trashItem(targetPath)
   }
 }
 
@@ -196,7 +226,7 @@ export function registerFileExplorerIpc(): void {
     shell.showItemInFolder(targetPath)
   })
 
-  ipcMain.handle('fs:trash', (_event, targetPath: string) => shell.trashItem(targetPath))
+  ipcMain.handle('fs:trash', (_event, targetPath: string) => trashItem(targetPath))
 
   ipcMain.handle('fs:delete-permanent', (_event, targetPath: string) => permanentDelete(targetPath))
 
