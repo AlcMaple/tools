@@ -2,21 +2,82 @@ import { useEffect, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
 import HomeworkView, { HomeworkViewHandle } from './homework/HomeworkView'
 import ClassicView, { ClassicViewHandle } from './homework/ClassicView'
-import { ClassicGroup, DefenseGroup, ipcErrMsg, normalizeClassic, normalizeHomework } from './homework/shared'
+import {
+  ClassicGroup, DefenseGroup,
+  ipcErrMsg, normalizeClassic, normalizeHomework,
+  ModalShell,
+} from './homework/shared'
 
 type Tab = 'homework' | 'classic'
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
+type SyncDirection = 'push' | 'pull'
+
+interface SyncRemoteMeta {
+  rev: number
+  ts: string
+  homework: DefenseGroup[]
+  classic: ClassicGroup[]
+}
+
+interface SyncConfirmState {
+  direction: SyncDirection
+  loading: boolean
+  remote: SyncRemoteMeta | null
+  loadError?: string
+  forceArmed: boolean
+}
 
 const HOMEWORK_KEY = 'maple-homework-data-v2'
 const CLASSIC_KEY = 'maple-classic-data-v1'
 const TAB_KEY = 'maple-knowledge-active-tab'
 const LAST_SYNC_KEY = 'maple-homework-last-sync'
+const LAST_REV_KEY = 'maple-knowledge-last-rev'
+const DIRTY_KEY = 'maple-knowledge-dirty'
 
 function readJson<T>(key: string, fallback: T): T {
   try {
     const v = localStorage.getItem(key)
     return v ? JSON.parse(v) as T : fallback
   } catch { return fallback }
+}
+
+function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
+  const remote = JSON.parse(jsonStr)
+  if (Array.isArray(remote)) {
+    // Legacy: array = homework only, no embedded rev/ts
+    return { rev: 0, ts: '', homework: remote as DefenseGroup[], classic: [] }
+  }
+  if (remote && typeof remote === 'object') {
+    return {
+      rev: typeof remote._rev === 'number' ? remote._rev : 0,
+      ts: typeof remote._ts === 'string' ? remote._ts : '',
+      homework: Array.isArray(remote.homework) ? remote.homework : [],
+      classic: Array.isArray(remote.classic) ? remote.classic : [],
+    }
+  }
+  throw new Error('远端数据格式不识别')
+}
+
+function homeworkStats(data: DefenseGroup[]): { defense: number; attacks: number } {
+  return {
+    defense: data.length,
+    attacks: data.reduce((s, d) => s + d.attacks.length, 0),
+  }
+}
+
+function classicStats(data: ClassicGroup[]): { themes: number; teams: number } {
+  return {
+    themes: data.length,
+    teams: data.reduce((s, d) => s + d.teams.length, 0),
+  }
+}
+
+function formatRemoteTs(ts: string): string {
+  if (!ts) return '未知'
+  const d = new Date(ts)
+  if (isNaN(d.getTime())) return ts
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 export default function HomeworkLookup(): JSX.Element {
@@ -40,6 +101,16 @@ export default function HomeworkLookup(): JSX.Element {
     return v ? Number(v) : null
   })
 
+  // Conflict-detection state (C scheme)
+  const [lastSyncedRev, setLastSyncedRev] = useState<number>(() => {
+    const v = localStorage.getItem(LAST_REV_KEY)
+    return v ? Number(v) : 0
+  })
+  const [localDirty, setLocalDirty] = useState<boolean>(() => {
+    return localStorage.getItem(DIRTY_KEY) === '1'
+  })
+  const [syncConfirm, setSyncConfirm] = useState<SyncConfirmState | null>(null)
+
   const homeworkRef = useRef<HomeworkViewHandle>(null)
   const classicRef = useRef<ClassicViewHandle>(null)
 
@@ -47,6 +118,8 @@ export default function HomeworkLookup(): JSX.Element {
   useEffect(() => { localStorage.setItem(HOMEWORK_KEY, JSON.stringify(homeworkData)) }, [homeworkData])
   useEffect(() => { localStorage.setItem(CLASSIC_KEY, JSON.stringify(classicData)) }, [classicData])
   useEffect(() => { localStorage.setItem(TAB_KEY, activeTab) }, [activeTab])
+  useEffect(() => { localStorage.setItem(LAST_REV_KEY, String(lastSyncedRev)) }, [lastSyncedRev])
+  useEffect(() => { localStorage.setItem(DIRTY_KEY, localDirty ? '1' : '0') }, [localDirty])
 
   // Reset query when switching tabs (avoids stale debounce ghost dot)
   useEffect(() => {
@@ -86,15 +159,58 @@ export default function HomeworkLookup(): JSX.Element {
     }
   }
 
-  const handlePush = async () => {
-    if (syncStatus === 'syncing') return
+  // ── Wrapped setters for views — any mutation marks the local dataset dirty.
+  // Pull/import paths use the raw setters and explicitly clear dirty.
+  const setHomeworkAndDirty: React.Dispatch<React.SetStateAction<DefenseGroup[]>> = (v) => {
+    setHomeworkData(v)
+    setLocalDirty(true)
+  }
+  const setClassicAndDirty: React.Dispatch<React.SetStateAction<ClassicGroup[]>> = (v) => {
+    setClassicData(v)
+    setLocalDirty(true)
+  }
+
+  // ── Sync intent: open confirmation modal, fetch remote in background ─────
+  const openSyncConfirm = async (direction: SyncDirection) => {
+    if (syncStatus === 'syncing' || syncConfirm) return
+    setSyncConfirm({ direction, loading: true, remote: null, forceArmed: false })
+    try {
+      const jsonStr = await window.webdavApi.pull()
+      const parsed = parseRemoteBlob(jsonStr)
+      setSyncConfirm({ direction, loading: false, remote: parsed, forceArmed: false })
+    } catch (e: unknown) {
+      // Pull failure (404 / network / parse): treat as no remote yet.
+      // Push can still proceed (cold start); pull cannot.
+      setSyncConfirm({
+        direction,
+        loading: false,
+        remote: null,
+        loadError: ipcErrMsg(e, '读取远端失败'),
+        forceArmed: false,
+      })
+    }
+  }
+
+  const executePush = async () => {
+    if (!syncConfirm) return
+    const remoteRev = syncConfirm.remote?.rev ?? 0
+    const newRev = Math.max(lastSyncedRev, remoteRev) + 1
+    setSyncConfirm(null)
     setSyncStatus('syncing')
     setSyncMsg('')
     try {
-      const blob = JSON.stringify({ _v: 2, homework: homeworkData, classic: classicData })
+      const blob = JSON.stringify({
+        _v: 2,
+        _rev: newRev,
+        _ts: new Date().toISOString(),
+        homework: homeworkData,
+        classic: classicData,
+      })
       await window.webdavApi.push(blob)
       const now = Date.now()
       setLastSyncTime(now)
+      setLastSyncedRev(newRev)
+      setLocalDirty(false)
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '上传成功')
     } catch (e: unknown) {
@@ -102,24 +218,23 @@ export default function HomeworkLookup(): JSX.Element {
     }
   }
 
-  const handlePull = async () => {
-    if (syncStatus === 'syncing') return
+  const executePull = async () => {
+    if (!syncConfirm?.remote) {
+      setSyncConfirm(null)
+      return
+    }
+    const remote = syncConfirm.remote
+    setSyncConfirm(null)
     setSyncStatus('syncing')
     setSyncMsg('')
     try {
-      const jsonStr = await window.webdavApi.pull()
-      const remote = JSON.parse(jsonStr)
-      if (Array.isArray(remote)) {
-        // Legacy schema: array of homework only
-        setHomeworkData(normalizeHomework(remote as DefenseGroup[]))
-      } else if (remote && typeof remote === 'object' && remote._v === 2) {
-        setHomeworkData(normalizeHomework(Array.isArray(remote.homework) ? remote.homework : []))
-        setClassicData(normalizeClassic(Array.isArray(remote.classic) ? remote.classic : []))
-      } else {
-        throw new Error('远端数据格式不识别')
-      }
+      // Raw setters — pull must NOT mark local dirty.
+      setHomeworkData(normalizeHomework(remote.homework))
+      setClassicData(normalizeClassic(remote.classic))
       const now = Date.now()
       setLastSyncTime(now)
+      setLastSyncedRev(remote.rev)
+      setLocalDirty(false)
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '拉取成功')
     } catch (e: unknown) {
@@ -219,6 +334,8 @@ export default function HomeworkLookup(): JSX.Element {
                 <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />
               ) : syncStatus === 'error' ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0" />
+              ) : localDirty ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0" title="有未同步改动" />
               ) : (
                 <span className="w-1.5 h-1.5 rounded-full bg-outline/40 flex-shrink-0" />
               )}
@@ -226,11 +343,13 @@ export default function HomeworkLookup(): JSX.Element {
                 syncStatus === 'synced' ? 'text-secondary' :
                 syncStatus === 'error' ? 'text-error' :
                 syncStatus === 'syncing' ? 'text-primary' :
+                localDirty ? 'text-tertiary' :
                 lastSyncTime ? 'text-on-surface-variant/50' : 'text-on-surface-variant/30'
               }`}>
                 {syncStatus === 'syncing' ? '同步中…' :
                  syncStatus === 'synced' ? syncMsg :
                  syncStatus === 'error' ? syncMsg :
+                 localDirty ? '有未同步改动' :
                  lastSyncTime ? (() => {
                    const diff = Date.now() - lastSyncTime
                    if (diff < 60000) return '刚刚'
@@ -241,17 +360,17 @@ export default function HomeworkLookup(): JSX.Element {
               </span>
               <div className="flex items-center gap-0.5 ml-0.5 border-l border-outline-variant/20 pl-1">
                 <button
-                  onClick={handlePush}
-                  disabled={syncStatus === 'syncing'}
-                  title="上传到坚果云（合并作业 + 经典阵容）"
+                  onClick={() => openSyncConfirm('push')}
+                  disabled={syncStatus === 'syncing' || !!syncConfirm}
+                  title="上传到坚果云"
                   className="p-1 rounded text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: 13 }}>upload</span>
                 </button>
                 <button
-                  onClick={handlePull}
-                  disabled={syncStatus === 'syncing'}
-                  title="从坚果云拉取（覆盖本地作业 + 经典阵容）"
+                  onClick={() => openSyncConfirm('pull')}
+                  disabled={syncStatus === 'syncing' || !!syncConfirm}
+                  title="从坚果云拉取"
                   className="p-1 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-secondary/10 transition-colors disabled:opacity-30"
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: 13 }}>download</span>
@@ -266,7 +385,7 @@ export default function HomeworkLookup(): JSX.Element {
           <HomeworkView
             ref={homeworkRef}
             data={homeworkData}
-            setData={setHomeworkData}
+            setData={setHomeworkAndDirty}
             query={debouncedQuery}
             onClearQuery={clearQuery}
           />
@@ -274,12 +393,213 @@ export default function HomeworkLookup(): JSX.Element {
           <ClassicView
             ref={classicRef}
             data={classicData}
-            setData={setClassicData}
+            setData={setClassicAndDirty}
             query={debouncedQuery}
             onClearQuery={clearQuery}
           />
         )}
+
+        {/* Sync confirm modal */}
+        {syncConfirm && (
+          <SyncConfirmModal
+            state={syncConfirm}
+            setState={setSyncConfirm}
+            localHomework={homeworkData}
+            localClassic={classicData}
+            localDirty={localDirty}
+            lastSyncedRev={lastSyncedRev}
+            onConfirmPush={executePush}
+            onConfirmPull={executePull}
+          />
+        )}
       </div>
     </div>
+  )
+}
+
+// ── Sync confirm modal ─────────────────────────────────────────────────────
+function SyncConfirmModal({
+  state, setState,
+  localHomework, localClassic, localDirty, lastSyncedRev,
+  onConfirmPush, onConfirmPull,
+}: {
+  state: SyncConfirmState
+  setState: React.Dispatch<React.SetStateAction<SyncConfirmState | null>>
+  localHomework: DefenseGroup[]
+  localClassic: ClassicGroup[]
+  localDirty: boolean
+  lastSyncedRev: number
+  onConfirmPush: () => void
+  onConfirmPull: () => void
+}): JSX.Element {
+  const { direction, loading, remote, loadError, forceArmed } = state
+  const isPush = direction === 'push'
+
+  const localHw = homeworkStats(localHomework)
+  const localCl = classicStats(localClassic)
+  const remoteHw = remote ? homeworkStats(remote.homework) : null
+  const remoteCl = remote ? classicStats(remote.classic) : null
+
+  // Conflict logic:
+  // - push: remote exists with rev > lastSyncedRev (someone updated cloud after our last sync)
+  // - pull: localDirty=true (we have unsynced local changes that pull would overwrite)
+  const hasConflict = !loading && (
+    isPush
+      ? !!remote && remote.rev > lastSyncedRev
+      : localDirty
+  )
+
+  // Pull is impossible when remote is missing.
+  const pullImpossible = !isPush && !loading && !remote
+
+  const close = () => setState(null)
+
+  const onConfirmClick = () => {
+    if (hasConflict && !forceArmed) {
+      // First click on the destructive button: arm it.
+      setState({ ...state, forceArmed: true })
+      return
+    }
+    if (isPush) onConfirmPush()
+    else onConfirmPull()
+  }
+
+  // Reset arm if the user clicks anywhere else (cancel button etc.) — handled
+  // implicitly by close()/state transitions.
+
+  return (
+    <ModalShell onBackdrop={close}>
+      {/* Header */}
+      <div className="flex items-center gap-4 px-7 pt-6 pb-5 border-b border-outline-variant/10">
+        <div className={`w-11 h-11 rounded-xl ${isPush ? 'bg-primary/15 border-primary/25' : 'bg-secondary/15 border-secondary/25'} border flex items-center justify-center flex-shrink-0`}>
+          <span className={`material-symbols-outlined ${isPush ? 'text-primary' : 'text-secondary'} text-[22px]`}>{isPush ? 'upload' : 'download'}</span>
+        </div>
+        <div>
+          <h3 className="text-base font-black tracking-tight">{isPush ? '上传到云端' : '从云端拉取'}</h3>
+          <p className="text-[11px] text-on-surface-variant/60 mt-0.5 font-label">
+            {isPush ? '把本地数据推送到坚果云' : '把云端数据应用到本地'}
+          </p>
+        </div>
+      </div>
+
+      <div className="px-7 py-5 space-y-3">
+        {/* Loading */}
+        {loading && (
+          <div className="rounded-xl border border-outline-variant/15 bg-surface-container px-4 py-6 flex items-center justify-center gap-3 text-on-surface-variant/70">
+            <span className="material-symbols-outlined text-primary animate-spin" style={{ fontSize: 18 }}>progress_activity</span>
+            <span className="text-sm font-label">读取远端状态…</span>
+          </div>
+        )}
+
+        {/* Conflict banner */}
+        {!loading && hasConflict && (
+          <div className="rounded-xl border border-error/40 bg-error/[0.08] px-4 py-3 flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-error text-[18px] mt-px">warning</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-error">
+                {isPush ? '云端比你的最后同步新' : '本地有未同步的改动'}
+              </p>
+              <p className="text-[11px] text-error/85 mt-0.5 font-label leading-relaxed">
+                {isPush
+                  ? `云端 rev=${remote!.rev}，你的最后同步 rev=${lastSyncedRev}。继续上传将覆盖其他设备在此期间的所有改动。建议先点拉取。`
+                  : '当前本地数据含有未推送到云端的修改。继续拉取将丢失这些改动。建议先点上传。'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Pull impossible (remote missing) */}
+        {!loading && pullImpossible && (
+          <div className="rounded-xl border border-outline-variant/30 bg-surface-container px-4 py-3 flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-on-surface-variant text-[18px] mt-px">cloud_off</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-on-surface-variant">远端不存在数据</p>
+              <p className="text-[11px] text-on-surface-variant/70 mt-0.5 font-label">
+                {loadError ? `读取远端失败：${loadError}` : '坚果云上还没有数据，无需拉取。请先在某台设备上传一次。'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Comparison */}
+        {!loading && (
+          <div className="rounded-xl border border-outline-variant/15 bg-surface-container px-4 py-3 grid grid-cols-[1fr_auto_1fr] gap-3 items-start">
+            {/* Local side */}
+            <div>
+              <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-2">本地</p>
+              <div className="space-y-1">
+                <p className="text-xs font-mono">
+                  {localHw.defense} 防 / {localHw.attacks} 进
+                </p>
+                <p className="text-xs font-mono">
+                  {localCl.themes} 主题 / {localCl.teams} 阵容
+                </p>
+                <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
+                  rev={lastSyncedRev}
+                  {localDirty && <span className="ml-1 text-tertiary">+ 未同步改动</span>}
+                </p>
+              </div>
+            </div>
+
+            {/* Arrow */}
+            <div className="flex items-center justify-center pt-5">
+              <span className={`material-symbols-outlined ${isPush ? 'text-primary' : 'text-secondary'}`} style={{ fontSize: 20 }}>
+                {isPush ? 'arrow_forward' : 'arrow_back'}
+              </span>
+            </div>
+
+            {/* Remote side */}
+            <div>
+              <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-2">远端</p>
+              {remote ? (
+                <div className="space-y-1">
+                  <p className="text-xs font-mono">
+                    {remoteHw!.defense} 防 / {remoteHw!.attacks} 进
+                  </p>
+                  <p className="text-xs font-mono">
+                    {remoteCl!.themes} 主题 / {remoteCl!.teams} 阵容
+                  </p>
+                  <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
+                    rev={remote.rev}{remote.ts && ` · ${formatRemoteTs(remote.ts)}`}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs font-mono text-on-surface-variant/50">空 / 不存在</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
+        <button
+          onClick={close}
+          className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors"
+        >
+          {hasConflict ? (isPush ? '取消，先去拉取' : '取消，先去上传') : '取消'}
+        </button>
+        <button
+          onClick={onConfirmClick}
+          disabled={loading || pullImpossible}
+          className={`flex-1 py-3 rounded-xl border text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+            hasConflict
+              ? 'border-error/50 bg-error/15 text-error hover:bg-error/25'
+              : isPush
+                ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
+                : 'border-secondary/40 bg-secondary/10 text-secondary hover:bg-secondary/20'
+          }`}
+        >
+          <span className="material-symbols-outlined text-base leading-none">
+            {hasConflict ? 'warning' : isPush ? 'upload' : 'download'}
+          </span>
+          <span>
+            {hasConflict
+              ? (forceArmed ? '再次确认覆盖' : '我知道风险，强制覆盖')
+              : isPush ? '确认上传' : '确认拉取'}
+          </span>
+        </button>
+      </div>
+    </ModalShell>
   )
 }
