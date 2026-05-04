@@ -272,6 +272,9 @@ export default function HomeworkLookup(): JSX.Element {
               <div className="relative">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">search</span>
                 <input
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCorrect="off"
                   className="w-[380px] bg-surface-container-high border border-outline-variant/20 rounded-xl py-2.5 pl-10 pr-20 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/40 focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/40"
                   placeholder={searchPlaceholder}
                   value={query}
