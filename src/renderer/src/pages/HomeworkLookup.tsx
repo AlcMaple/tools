@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
 import HomeworkView, { HomeworkViewHandle } from './homework/HomeworkView'
 import ClassicView, { ClassicViewHandle } from './homework/ClassicView'
+import LogView, { LogViewHandle } from './homework/LogView'
 import {
-  ClassicGroup, DefenseGroup,
-  ipcErrMsg, normalizeClassic, normalizeHomework,
+  ClassicGroup, DefenseGroup, LogEntry,
+  ipcErrMsg, normalizeClassic, normalizeHomework, normalizeLog,
   ModalShell,
 } from './homework/shared'
 
-type Tab = 'homework' | 'classic'
+type Tab = 'homework' | 'classic' | 'log'
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type SyncDirection = 'push' | 'pull'
 
@@ -17,6 +18,7 @@ interface SyncRemoteMeta {
   ts: string
   homework: DefenseGroup[]
   classic: ClassicGroup[]
+  log: LogEntry[]
 }
 
 interface SyncConfirmState {
@@ -29,13 +31,14 @@ interface SyncConfirmState {
 
 const HOMEWORK_KEY = 'maple-homework-data-v2'
 const CLASSIC_KEY = 'maple-classic-data-v1'
+const LOG_KEY = 'maple-log-data-v1'
 const TAB_KEY = 'maple-knowledge-active-tab'
 const LAST_SYNC_KEY = 'maple-homework-last-sync'
 const LAST_REV_KEY = 'maple-knowledge-last-rev'
 const SNAPSHOT_KEY = 'maple-knowledge-last-snapshot'
 
-function snapshotOf(homework: DefenseGroup[], classic: ClassicGroup[]): string {
-  return JSON.stringify({ homework, classic })
+function snapshotOf(homework: DefenseGroup[], classic: ClassicGroup[], log: LogEntry[]): string {
+  return JSON.stringify({ homework, classic, log })
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -49,7 +52,7 @@ function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
   const remote = JSON.parse(jsonStr)
   if (Array.isArray(remote)) {
     // Legacy: array = homework only, no embedded rev/ts
-    return { rev: 0, ts: '', homework: remote as DefenseGroup[], classic: [] }
+    return { rev: 0, ts: '', homework: remote as DefenseGroup[], classic: [], log: [] }
   }
   if (remote && typeof remote === 'object') {
     return {
@@ -57,6 +60,7 @@ function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
       ts: typeof remote._ts === 'string' ? remote._ts : '',
       homework: Array.isArray(remote.homework) ? remote.homework : [],
       classic: Array.isArray(remote.classic) ? remote.classic : [],
+      log: Array.isArray(remote.log) ? remote.log : [],
     }
   }
   throw new Error('远端数据格式不识别')
@@ -76,6 +80,10 @@ function classicStats(data: ClassicGroup[]): { themes: number; teams: number } {
   }
 }
 
+function logStats(data: LogEntry[]): { count: number } {
+  return { count: data.length }
+}
+
 function formatRemoteTs(ts: string): string {
   if (!ts) return '未知'
   const d = new Date(ts)
@@ -87,15 +95,19 @@ function formatRemoteTs(ts: string): string {
 export default function HomeworkLookup(): JSX.Element {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const v = localStorage.getItem(TAB_KEY)
-    return v === 'classic' ? 'classic' : 'homework'
+    if (v === 'classic') return 'classic'
+    if (v === 'log') return 'log'
+    return 'homework'
   })
 
   // Eagerly compute initial data so the snapshot init can reuse the same values.
   const initialHomework = (() => normalizeHomework(readJson(HOMEWORK_KEY, [])))()
   const initialClassic = (() => normalizeClassic(readJson(CLASSIC_KEY, [])))()
+  const initialLog = (() => normalizeLog(readJson(LOG_KEY, [])))()
 
   const [homeworkData, setHomeworkData] = useState<DefenseGroup[]>(initialHomework)
   const [classicData, setClassicData] = useState<ClassicGroup[]>(initialClassic)
+  const [logData, setLogData] = useState<LogEntry[]>(initialLog)
 
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -119,7 +131,7 @@ export default function HomeworkLookup(): JSX.Element {
   // (previously-dirty state is forgotten — one-time cost of upgrading).
   const [lastSyncedSnapshot, setLastSyncedSnapshot] = useState<string>(() => {
     const stored = localStorage.getItem(SNAPSHOT_KEY)
-    return stored ?? snapshotOf(initialHomework, initialClassic)
+    return stored ?? snapshotOf(initialHomework, initialClassic, initialLog)
   })
   // Remote rev seen by background probe / last sync. null = unknown.
   const [remoteRev, setRemoteRev] = useState<number | null>(null)
@@ -129,18 +141,20 @@ export default function HomeworkLookup(): JSX.Element {
   // Memoized so unrelated re-renders (search keystrokes, tab switches, sync
   // status changes) don't re-stringify the entire dataset.
   const currentSnapshot = useMemo(
-    () => snapshotOf(homeworkData, classicData),
-    [homeworkData, classicData]
+    () => snapshotOf(homeworkData, classicData, logData),
+    [homeworkData, classicData, logData]
   )
   const localDirty = currentSnapshot !== lastSyncedSnapshot
   const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
   const homeworkRef = useRef<HomeworkViewHandle>(null)
   const classicRef = useRef<ClassicViewHandle>(null)
+  const logRef = useRef<LogViewHandle>(null)
 
   // Persistence
   useEffect(() => { localStorage.setItem(HOMEWORK_KEY, JSON.stringify(homeworkData)) }, [homeworkData])
   useEffect(() => { localStorage.setItem(CLASSIC_KEY, JSON.stringify(classicData)) }, [classicData])
+  useEffect(() => { localStorage.setItem(LOG_KEY, JSON.stringify(logData)) }, [logData])
   useEffect(() => { localStorage.setItem(TAB_KEY, activeTab) }, [activeTab])
   useEffect(() => { localStorage.setItem(LAST_REV_KEY, String(lastSyncedRev)) }, [lastSyncedRev])
   useEffect(() => { localStorage.setItem(SNAPSHOT_KEY, lastSyncedSnapshot) }, [lastSyncedSnapshot])
@@ -189,7 +203,8 @@ export default function HomeworkLookup(): JSX.Element {
 
   const handleAdd = () => {
     if (activeTab === 'homework') homeworkRef.current?.openAdd()
-    else classicRef.current?.openAdd()
+    else if (activeTab === 'classic') classicRef.current?.openAdd()
+    else logRef.current?.focusInput()
   }
 
   const syncSettle = (status: SyncStatus, msg: string) => {
@@ -233,18 +248,19 @@ export default function HomeworkLookup(): JSX.Element {
     setSyncMsg('')
     try {
       const blob = JSON.stringify({
-        _v: 2,
+        _v: 3,
         _rev: newRev,
         _ts: new Date().toISOString(),
         homework: homeworkData,
         classic: classicData,
+        log: logData,
       })
       await window.webdavApi.push(blob)
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(newRev)
       setRemoteRev(newRev)
-      setLastSyncedSnapshot(snapshotOf(homeworkData, classicData))
+      setLastSyncedSnapshot(snapshotOf(homeworkData, classicData, logData))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '上传成功')
     } catch (e: unknown) {
@@ -264,13 +280,15 @@ export default function HomeworkLookup(): JSX.Element {
     try {
       const newHomework = normalizeHomework(remote.homework)
       const newClassic = normalizeClassic(remote.classic)
+      const newLog = normalizeLog(remote.log)
       setHomeworkData(newHomework)
       setClassicData(newClassic)
+      setLogData(newLog)
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(remote.rev)
       setRemoteRev(remote.rev)
-      setLastSyncedSnapshot(snapshotOf(newHomework, newClassic))
+      setLastSyncedSnapshot(snapshotOf(newHomework, newClassic, newLog))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '拉取成功')
     } catch (e: unknown) {
@@ -278,11 +296,15 @@ export default function HomeworkLookup(): JSX.Element {
     }
   }
 
-  const searchPlaceholder = activeTab === 'homework'
-    ? '模糊搜索防守方角色…'
-    : '模糊搜索主题标题…'
+  const searchPlaceholder =
+    activeTab === 'homework' ? '模糊搜索防守方角色…' :
+    activeTab === 'classic' ? '模糊搜索主题标题…' :
+    '模糊搜索记录正文…'
 
-  const addLabel = activeTab === 'homework' ? '添加作业' : '添加经典阵容'
+  const addLabel =
+    activeTab === 'homework' ? '添加作业' :
+    activeTab === 'classic' ? '添加经典阵容' :
+    '添加记录'
 
   return (
     <div className="relative min-h-full bg-background">
@@ -300,7 +322,7 @@ export default function HomeworkLookup(): JSX.Element {
               </div>
               <h1 className="text-3xl font-black tracking-tighter text-on-surface">阵容知识库</h1>
               <p className="text-sm text-on-surface-variant/80 mt-1 font-label">
-                查询作业 · 浏览经典阵容 · 一站式阵容工具
+                查询作业 · 浏览经典阵容 · 流水账记录
               </p>
             </div>
 
@@ -328,13 +350,15 @@ export default function HomeworkLookup(): JSX.Element {
                   </button>
                 )}
               </div>
-              <button
-                onClick={handleAdd}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-label text-xs uppercase tracking-widest hover:bg-primary-fixed transition-all active:scale-95 shadow-lg shadow-primary/10 whitespace-nowrap"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>add</span>
-                {addLabel}
-              </button>
+              {activeTab !== 'log' && (
+                <button
+                  onClick={handleAdd}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-label text-xs uppercase tracking-widest hover:bg-primary-fixed transition-all active:scale-95 shadow-lg shadow-primary/10 whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>add</span>
+                  {addLabel}
+                </button>
+              )}
             </div>
           </div>
 
@@ -362,6 +386,17 @@ export default function HomeworkLookup(): JSX.Element {
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'classic' ? "'FILL' 1" : "'FILL' 0" }}>auto_awesome</span>
                 经典阵容
+              </button>
+              <button
+                onClick={() => setActiveTab('log')}
+                className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'log'
+                    ? 'bg-secondary/15 text-secondary border border-secondary/20 font-bold'
+                    : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
+                }`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'log' ? "'FILL' 1" : "'FILL' 0" }}>edit_note</span>
+                记录
               </button>
             </div>
 
@@ -450,7 +485,7 @@ export default function HomeworkLookup(): JSX.Element {
         </div>
 
         {/* View content */}
-        {activeTab === 'homework' ? (
+        {activeTab === 'homework' && (
           <HomeworkView
             ref={homeworkRef}
             data={homeworkData}
@@ -458,11 +493,21 @@ export default function HomeworkLookup(): JSX.Element {
             query={debouncedQuery}
             onClearQuery={clearQuery}
           />
-        ) : (
+        )}
+        {activeTab === 'classic' && (
           <ClassicView
             ref={classicRef}
             data={classicData}
             setData={setClassicData}
+            query={debouncedQuery}
+            onClearQuery={clearQuery}
+          />
+        )}
+        {activeTab === 'log' && (
+          <LogView
+            ref={logRef}
+            data={logData}
+            setData={setLogData}
             query={debouncedQuery}
             onClearQuery={clearQuery}
           />
@@ -475,6 +520,7 @@ export default function HomeworkLookup(): JSX.Element {
             setState={setSyncConfirm}
             localHomework={homeworkData}
             localClassic={classicData}
+            localLog={logData}
             localDirty={localDirty}
             lastSyncedRev={lastSyncedRev}
             onConfirmPush={executePush}
@@ -489,13 +535,14 @@ export default function HomeworkLookup(): JSX.Element {
 // ── Sync confirm modal ─────────────────────────────────────────────────────
 function SyncConfirmModal({
   state, setState,
-  localHomework, localClassic, localDirty, lastSyncedRev,
+  localHomework, localClassic, localLog, localDirty, lastSyncedRev,
   onConfirmPush, onConfirmPull,
 }: {
   state: SyncConfirmState
   setState: React.Dispatch<React.SetStateAction<SyncConfirmState | null>>
   localHomework: DefenseGroup[]
   localClassic: ClassicGroup[]
+  localLog: LogEntry[]
   localDirty: boolean
   lastSyncedRev: number
   onConfirmPush: () => void
@@ -506,8 +553,10 @@ function SyncConfirmModal({
 
   const localHw = homeworkStats(localHomework)
   const localCl = classicStats(localClassic)
+  const localLg = logStats(localLog)
   const remoteHw = remote ? homeworkStats(remote.homework) : null
   const remoteCl = remote ? classicStats(remote.classic) : null
+  const remoteLg = remote ? logStats(remote.log) : null
 
   // Conflict logic:
   // - push: remote exists with rev > lastSyncedRev (someone updated cloud after our last sync)
@@ -603,6 +652,9 @@ function SyncConfirmModal({
                 <p className="text-xs font-mono">
                   {localCl.themes} 主题 / {localCl.teams} 阵容
                 </p>
+                <p className="text-xs font-mono">
+                  {localLg.count} 条记录
+                </p>
                 <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
                   rev={lastSyncedRev}
                   {localDirty && <span className="ml-1 text-tertiary">+ 未同步改动</span>}
@@ -627,6 +679,9 @@ function SyncConfirmModal({
                   </p>
                   <p className="text-xs font-mono">
                     {remoteCl!.themes} 主题 / {remoteCl!.teams} 阵容
+                  </p>
+                  <p className="text-xs font-mono">
+                    {remoteLg!.count} 条记录
                   </p>
                   <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
                     rev={remote.rev}{remote.ts && ` · ${formatRemoteTs(remote.ts)}`}
