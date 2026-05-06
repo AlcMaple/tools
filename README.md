@@ -1,6 +1,29 @@
 # MapleTools
 
-基于 Electron 构建的桌面端应用，用于搜索、下载与管理动漫。
+基于 Electron + React + Tailwind 构建的桌面端动漫管理应用，整合多个流媒体源的搜索与下载、Bangumi 元数据浏览、本地媒体库扫描等能力。整体采用 Material 3 风格的深色界面。
+
+<p align="center">
+  <img src="docs/screenshots/hero.png" alt="MapleTools 主界面" width="860" />
+</p>
+
+## 功能一览
+
+- **多源搜索与下载** — 同时检索 Xifan、Girigiri 两个流媒体站点的资源，串行队列下载，支持暂停 / 续传 / 个别集优先。
+- **Bangumi 详情整合** — 自动拉取 BGM 元数据、Staff、剧情简介，剧场版额外展示片长。简介为日语原文时回退到萌娘百科中文版。
+- **本地媒体库** — 扫描配置好的目录树，自动提取 ffmpeg 缩略图，按番剧组织展示。
+- **文件浏览器** — 内置跨平台文件管理，支持视频 / 图片 / 文档预览。
+- **BiuSync** — 与远端配置同步，启动时探测远端 rev，dirty 状态准确化。
+- **阵容知识库** — 角色阵容查询（独立工具页）。
+
+## 截图
+
+| 搜索与下载 | 下载队列 |
+|---|---|
+| ![](docs/screenshots/search-download.png) | ![](docs/screenshots/download-queue.png) |
+
+| 番剧详情 | 本地媒体库 |
+|---|---|
+| ![](docs/screenshots/anime-info.png) | ![](docs/screenshots/local-library.png) |
 
 ## 平台支持
 
