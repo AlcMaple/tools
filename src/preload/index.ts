@@ -153,6 +153,7 @@ contextBridge.exposeInMainWorld('fileExplorerApi', {
   reveal: (targetPath: string) => ipcRenderer.invoke('fs:reveal', targetPath),
   trash: (targetPath: string) => ipcRenderer.invoke('fs:trash', targetPath),
   deletePermanent: (targetPath: string) => ipcRenderer.invoke('fs:delete-permanent', targetPath),
+  forceDeletePermanent: (targetPath: string) => ipcRenderer.invoke('fs:force-delete-permanent', targetPath),
   resolveSpecial: (input: string) => ipcRenderer.invoke('fs:resolve-special', input),
   onDirChange: (cb: () => void) => {
     const handler = () => cb()

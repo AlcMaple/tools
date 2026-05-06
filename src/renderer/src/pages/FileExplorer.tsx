@@ -112,6 +112,7 @@ interface DeleteResultState {
   succeededCount: number
   failures: DeleteFailure[]
 }
+interface ForceDeleteResult { killed: { pid: number; name: string }[] }
 
 // ── Title slot ────────────────────────────────────────────────────────────────
 
@@ -957,7 +958,27 @@ function FileExplorer(): JSX.Element {
 
       {/* Delete result modal — shown when one or more items failed to delete */}
       {deleteResult && (
-        <DeleteResultModal state={deleteResult} onClose={() => setDeleteResult(null)} />
+        <DeleteResultModal
+          state={deleteResult}
+          onClose={() => setDeleteResult(null)}
+          onForceDelete={async (path) => {
+            const result = await window.fileExplorerApi.forceDeletePermanent(path)
+            // Drop the resolved item from the modal's failure list. If it
+            // was the last failure, close the modal.
+            setDeleteResult(prev => {
+              if (!prev) return prev
+              const remaining = prev.failures.filter(f => f.path !== path)
+              if (remaining.length === 0) return null
+              return { ...prev, succeededCount: prev.succeededCount + 1, failures: remaining }
+            })
+            await refresh()
+            const killedDesc = result.killed.length === 0
+              ? '直接删除'
+              : `杀掉 ${result.killed.length} 个进程：${result.killed.map(k => k.name || `pid ${k.pid}`).join('、')}`
+            setToast({ title: '已强制删除', msg: killedDesc, icon: 'delete_forever' })
+            return result
+          }}
+        />
       )}
 
       {/* Toast */}
@@ -981,9 +1002,18 @@ export default FileExplorer
 
 // ── Delete result modal ────────────────────────────────────────────────────
 function DeleteResultModal({
-  state, onClose,
-}: { state: DeleteResultState; onClose: () => void }): JSX.Element {
+  state, onClose, onForceDelete,
+}: {
+  state: DeleteResultState
+  onClose: () => void
+  onForceDelete: (path: string) => Promise<ForceDeleteResult>
+}): JSX.Element {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  // Per-failure escalation state. Keyed by path because indices shift when
+  // items resolve and drop out of the list.
+  type EscState = 'idle' | 'armed' | 'running' | 'failed'
+  const [escState, setEscState] = useState<Record<string, EscState>>({})
+  const [escError, setEscError] = useState<Record<string, string>>({})
   const toggle = (i: number) =>
     setExpanded(prev => {
       const next = new Set(prev)
@@ -994,6 +1024,19 @@ function DeleteResultModal({
   const totalCount = succeededCount + failures.length
   const partial = succeededCount > 0 && failures.length > 0
   const allFailed = succeededCount === 0 && failures.length > 0
+
+  const runForceDelete = async (path: string) => {
+    setEscState(s => ({ ...s, [path]: 'running' }))
+    setEscError(s => ({ ...s, [path]: '' }))
+    try {
+      await onForceDelete(path)
+      // Parent removes the failure from state — nothing else to do here.
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setEscState(s => ({ ...s, [path]: 'failed' }))
+      setEscError(s => ({ ...s, [path]: msg }))
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -1021,6 +1064,9 @@ function DeleteResultModal({
           {failures.map((f, i) => {
             const fe = friendlyError(f.error)
             const open = expanded.has(i)
+            // 文件被占用 → 提供「强制删除（杀进程）」escalation
+            const canForce = fe.title === '文件被占用'
+            const status = escState[f.path] ?? 'idle'
             return (
               <div key={f.path} className="rounded-lg border border-error/20 bg-error/[0.04] overflow-hidden">
                 <button
@@ -1039,6 +1085,55 @@ function DeleteResultModal({
                     expand_more
                   </span>
                 </button>
+                {canForce && (
+                  <div className="px-4 pb-3 -mt-1 flex items-center gap-2">
+                    {status === 'idle' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEscState(s => ({ ...s, [f.path]: 'armed' })) }}
+                        className="px-3 py-1.5 rounded-md text-[11px] font-label uppercase tracking-widest border border-error/40 bg-error/10 text-error hover:bg-error/20 transition-colors flex items-center gap-1.5"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>bolt</span>
+                        强制删除（杀进程）
+                      </button>
+                    )}
+                    {status === 'armed' && (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); runForceDelete(f.path) }}
+                          className="px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-widest border border-error/60 bg-error/25 text-error hover:bg-error/35 transition-colors flex items-center gap-1.5"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>warning</span>
+                          再次确认：杀进程并永久删除
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEscState(s => ({ ...s, [f.path]: 'idle' })) }}
+                          className="px-2.5 py-1.5 rounded-md text-[11px] font-label uppercase tracking-widest border border-outline-variant/20 text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                        >
+                          取消
+                        </button>
+                      </>
+                    )}
+                    {status === 'running' && (
+                      <span className="inline-flex items-center gap-2 text-[11px] font-label text-on-surface-variant/70">
+                        <span className="material-symbols-outlined animate-spin text-primary" style={{ fontSize: 14 }}>progress_activity</span>
+                        正在杀进程并删除…
+                      </span>
+                    )}
+                    {status === 'failed' && (
+                      <div className="flex flex-col gap-1.5 w-full">
+                        <p className="text-[11px] text-error font-label">
+                          强制删除也失败了：{escError[f.path]}
+                        </p>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEscState(s => ({ ...s, [f.path]: 'idle' })) }}
+                          className="self-start px-3 py-1.5 rounded-md text-[11px] font-label uppercase tracking-widest border border-error/40 bg-error/10 text-error hover:bg-error/20 transition-colors"
+                        >
+                          再试一次
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {open && (
                   <div className="px-4 pb-3 pt-1 space-y-2">
                     <div>
