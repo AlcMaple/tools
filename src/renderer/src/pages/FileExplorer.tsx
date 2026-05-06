@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
 import type { FsEntry } from '../env.d.ts'
+import { friendlyError } from '../utils/errorMessage'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,12 @@ const SORT_LABELS: Record<SortKey, string> = { name: 'Name', size: 'Size', mtime
 interface DeletePending { targets: FsEntry[]; permanent: boolean }
 interface CtxState { x: number; y: number; path: string; flipX: boolean; flipY: boolean }
 interface ToastState { title: string; msg: string; icon: string }
+interface DeleteFailure { name: string; path: string; error: unknown }
+interface DeleteResultState {
+  permanent: boolean
+  succeededCount: number
+  failures: DeleteFailure[]
+}
 
 // ── Title slot ────────────────────────────────────────────────────────────────
 
@@ -147,6 +154,7 @@ function FileExplorer(): JSX.Element {
   const [ctx, setCtx] = useState<CtxState | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DeletePending | null>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
+  const [deleteResult, setDeleteResult] = useState<DeleteResultState | null>(null)
 
   // Refs so stable callbacks (keyboard handler) always read fresh state
   const platformRef = useRef('darwin')
@@ -444,21 +452,24 @@ function FileExplorer(): JSX.Element {
     if (!pd) return
     setPendingDelete(null)
 
-    const errors: string[] = []
+    const failures: DeleteFailure[] = []
+    let succeeded = 0
     for (const t of pd.targets) {
       try {
         if (pd.permanent) await window.fileExplorerApi.deletePermanent(t.path)
         else await window.fileExplorerApi.trash(t.path)
-      } catch {
-        errors.push(t.name)
+        succeeded += 1
+      } catch (e: unknown) {
+        failures.push({ name: t.name, path: t.path, error: e })
       }
     }
 
     setSelected(new Set())
     await refresh()
 
-    if (errors.length) {
-      setToast({ title: '操作失败', msg: `${errors.join(', ')} 无法删除`, icon: 'error' })
+    if (failures.length) {
+      // Open the rich result modal so the user can drill into per-item errors.
+      setDeleteResult({ permanent: pd.permanent, succeededCount: succeeded, failures })
     } else {
       setToast({
         title: pd.permanent ? '已永久删除' : '已移到回收站',
@@ -944,6 +955,11 @@ function FileExplorer(): JSX.Element {
         )
       })()}
 
+      {/* Delete result modal — shown when one or more items failed to delete */}
+      {deleteResult && (
+        <DeleteResultModal state={deleteResult} onClose={() => setDeleteResult(null)} />
+      )}
+
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-surface-container/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl px-5 py-3.5 flex items-center gap-3 max-w-md">
@@ -962,3 +978,93 @@ function FileExplorer(): JSX.Element {
 }
 
 export default FileExplorer
+
+// ── Delete result modal ────────────────────────────────────────────────────
+function DeleteResultModal({
+  state, onClose,
+}: { state: DeleteResultState; onClose: () => void }): JSX.Element {
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const toggle = (i: number) =>
+    setExpanded(prev => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+  const { permanent, succeededCount, failures } = state
+  const totalCount = succeededCount + failures.length
+  const partial = succeededCount > 0 && failures.length > 0
+  const allFailed = succeededCount === 0 && failures.length > 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-surface-container/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl w-[560px] max-w-[92vw] max-h-[80vh] flex flex-col">
+        <div className="flex items-start gap-4 px-7 pt-6 pb-5 border-b border-outline-variant/10">
+          <div className="w-12 h-12 rounded-xl bg-error/15 border border-error/30 flex items-center justify-center flex-shrink-0">
+            <span className="material-symbols-outlined text-error text-[24px]">error</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-black tracking-tight mb-1">
+              {allFailed
+                ? (permanent ? '永久删除失败' : '移到回收站失败')
+                : (permanent ? '永久删除部分失败' : '移到回收站部分失败')}
+            </h3>
+            <p className="text-xs text-on-surface-variant/70 leading-relaxed">
+              {partial
+                ? `共 ${totalCount} 项：成功 ${succeededCount}，失败 ${failures.length}。失败项见下方，可展开查看详情。`
+                : `${failures.length} 项无法删除，可展开查看详情。`}
+            </p>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 overflow-y-auto flex-1 space-y-2">
+          {failures.map((f, i) => {
+            const fe = friendlyError(f.error)
+            const open = expanded.has(i)
+            return (
+              <div key={f.path} className="rounded-lg border border-error/20 bg-error/[0.04] overflow-hidden">
+                <button
+                  onClick={() => toggle(i)}
+                  className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-error/[0.06] transition-colors"
+                >
+                  <span className="material-symbols-outlined text-error/80 text-[18px] mt-0.5 shrink-0">
+                    {permanent ? 'delete_forever' : 'delete'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-on-surface truncate">{f.name}</p>
+                    <p className="text-[11px] text-error font-label uppercase tracking-widest mt-0.5">{fe.title}</p>
+                    <p className="text-[11px] text-on-surface-variant/70 mt-1 leading-relaxed">{fe.hint}</p>
+                  </div>
+                  <span className={`material-symbols-outlined text-on-surface-variant/40 text-[18px] mt-0.5 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+                    expand_more
+                  </span>
+                </button>
+                {open && (
+                  <div className="px-4 pb-3 pt-1 space-y-2">
+                    <div>
+                      <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1">路径</p>
+                      <p className="text-[11px] font-mono text-on-surface-variant/80 break-all">{f.path}</p>
+                    </div>
+                    <div>
+                      <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1">原始错误</p>
+                      <pre className="text-[11px] font-mono text-on-surface-variant/70 whitespace-pre-wrap break-all bg-surface-container-lowest/60 rounded-md px-3 py-2 border border-outline-variant/10 max-h-60 overflow-auto">{fe.raw}</pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-lg border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

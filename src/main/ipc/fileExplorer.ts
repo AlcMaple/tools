@@ -150,11 +150,20 @@ function resolveSpecialFolder(input: string): string | null {
 
 async function runWindowsPowerShell(psScript: string): Promise<void> {
   const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
-  await execFileAsync(
-    'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-    { timeout: 120000 }
-  )
+  try {
+    await execFileAsync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      { timeout: 120000 }
+    )
+  } catch (e: unknown) {
+    // Surface stderr/stdout so the renderer can show actual cause to the user.
+    const err = e as { stdout?: unknown; stderr?: unknown; message?: string }
+    const stderr = String(err.stderr ?? '').trim()
+    const stdout = String(err.stdout ?? '').trim()
+    const detail = [stderr, stdout].filter(Boolean).join('\n').trim()
+    throw new Error(detail || err.message || 'PowerShell 执行失败')
+  }
 }
 
 async function permanentDelete(targetPath: string): Promise<void> {
@@ -181,19 +190,33 @@ async function trashItem(targetPath: string): Promise<void> {
     // recycle bin later — which runs in the user's normal token, possibly with
     // Administrators filtered out by UAC — still has DELETE permission.
     // The file remains recoverable thanks to SendToRecycleBin (vs. Remove-Item).
+    //
+    // Diagnostic output from takeown/icacls is captured and only surfaced on
+    // failure, so the renderer can show exactly which step rejected access.
     await runWindowsPowerShell(`
 $target = @'
 ${targetPath}
 '@.Trim()
 $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
-takeown /f $target /r /d y 2>$null | Out-Null
-icacls $target /grant "*\${sid}:F" /t /c 2>$null | Out-Null
-icacls $target /grant administrators:F /t /c 2>$null | Out-Null
+$takeownLog = (takeown /f $target /r /d y 2>&1) -join "\`n"
+$icaclsUserLog = (icacls $target /grant "*\${sid}:F" /t /c 2>&1) -join "\`n"
+$icaclsAdminLog = (icacls $target /grant administrators:F /t /c 2>&1) -join "\`n"
 Add-Type -AssemblyName Microsoft.VisualBasic
-if (Test-Path -LiteralPath $target -PathType Container) {
-  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($target, 'DoNothing', 'SendToRecycleBin')
-} else {
-  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($target, 'DoNothing', 'SendToRecycleBin')
+try {
+  if (Test-Path -LiteralPath $target -PathType Container) {
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($target, 'DoNothing', 'SendToRecycleBin')
+  } else {
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($target, 'DoNothing', 'SendToRecycleBin')
+  }
+} catch {
+  [Console]::Error.WriteLine("SendToRecycleBin: $($_.Exception.Message)")
+  [Console]::Error.WriteLine("--- takeown ---")
+  [Console]::Error.WriteLine($takeownLog)
+  [Console]::Error.WriteLine("--- icacls (current user) ---")
+  [Console]::Error.WriteLine($icaclsUserLog)
+  [Console]::Error.WriteLine("--- icacls (administrators) ---")
+  [Console]::Error.WriteLine($icaclsAdminLog)
+  exit 1
 }
 `.trim())
   } else {
