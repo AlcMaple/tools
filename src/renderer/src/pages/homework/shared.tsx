@@ -59,6 +59,38 @@ export function normalizeClassic(groups: ClassicGroup[]): ClassicGroup[] {
   }))
 }
 
+// ── Log entry (做过的事记录) ───────────────────────────────────────────────────
+// 极简结构：只有正文，无时间无嵌套。展示时用「、」拼接成流式文本。
+export interface LogEntry {
+  id: number
+  text: string
+}
+
+export function normalizeLog(entries: unknown): LogEntry[] {
+  if (!Array.isArray(entries)) return []
+  const seen = new Set<number>()
+  return entries
+    .map((raw, i) => {
+      if (!raw || typeof raw !== 'object') return null
+      const e = raw as { id?: unknown; text?: unknown }
+      const text = typeof e.text === 'string' ? e.text.trim() : ''
+      if (!text) return null
+      let id = typeof e.id === 'number' ? e.id : Date.now() + i
+      while (seen.has(id)) id++
+      seen.add(id)
+      return { id, text }
+    })
+    .filter((e): e is LogEntry => e !== null)
+}
+
+export function matchesLog(entry: LogEntry, q: string): boolean {
+  if (!q) return true
+  const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
+  if (terms.length === 0) return true
+  const hay = entry.text.toLowerCase()
+  return terms.every(t => hay.includes(t))
+}
+
 export function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
