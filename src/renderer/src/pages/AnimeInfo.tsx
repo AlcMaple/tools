@@ -814,17 +814,17 @@ function DetailView({
               <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">
                 Air Date
               </p>
-              <p className="font-body font-bold text-on-surface">
+              <p className="font-body font-bold text-on-surface whitespace-nowrap">
                 {data.date || '—'}
               </p>
             </div>
-            {data.platform === '剧场版' && data.infobox?.['片长'] && (
+            {(data.infobox?.['片长'] || data.infobox?.['时长']) && (
               <div>
                 <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">
                   Duration
                 </p>
-                <p className="font-body font-bold text-on-surface">
-                  {data.infobox['片长']}
+                <p className="font-body font-bold text-on-surface whitespace-nowrap">
+                  {data.infobox['片长'] || data.infobox['时长']}
                 </p>
               </div>
             )}
