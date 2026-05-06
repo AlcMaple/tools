@@ -247,7 +247,7 @@ export async function getFiles(folderPath: string): Promise<LibraryFile[]> {
         files.push({ name: item.name, path: fullPath, sizeBytes: s.size })
       } catch { /* ignore */ }
     }
-    return files.sort((a, b) => a.name.localeCompare(b.name))
+    return files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
   } catch {
     return []
   }
