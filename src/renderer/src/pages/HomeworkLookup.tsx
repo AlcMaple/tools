@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
 import HomeworkView, { HomeworkViewHandle } from './homework/HomeworkView'
 import ClassicView, { ClassicViewHandle } from './homework/ClassicView'
@@ -32,7 +32,11 @@ const CLASSIC_KEY = 'maple-classic-data-v1'
 const TAB_KEY = 'maple-knowledge-active-tab'
 const LAST_SYNC_KEY = 'maple-homework-last-sync'
 const LAST_REV_KEY = 'maple-knowledge-last-rev'
-const DIRTY_KEY = 'maple-knowledge-dirty'
+const SNAPSHOT_KEY = 'maple-knowledge-last-snapshot'
+
+function snapshotOf(homework: DefenseGroup[], classic: ClassicGroup[]): string {
+  return JSON.stringify({ homework, classic })
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -86,8 +90,12 @@ export default function HomeworkLookup(): JSX.Element {
     return v === 'classic' ? 'classic' : 'homework'
   })
 
-  const [homeworkData, setHomeworkData] = useState<DefenseGroup[]>(() => normalizeHomework(readJson(HOMEWORK_KEY, [])))
-  const [classicData, setClassicData] = useState<ClassicGroup[]>(() => normalizeClassic(readJson(CLASSIC_KEY, [])))
+  // Eagerly compute initial data so the snapshot init can reuse the same values.
+  const initialHomework = (() => normalizeHomework(readJson(HOMEWORK_KEY, [])))()
+  const initialClassic = (() => normalizeClassic(readJson(CLASSIC_KEY, [])))()
+
+  const [homeworkData, setHomeworkData] = useState<DefenseGroup[]>(initialHomework)
+  const [classicData, setClassicData] = useState<ClassicGroup[]>(initialClassic)
 
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -106,10 +114,26 @@ export default function HomeworkLookup(): JSX.Element {
     const v = localStorage.getItem(LAST_REV_KEY)
     return v ? Number(v) : 0
   })
-  const [localDirty, setLocalDirty] = useState<boolean>(() => {
-    return localStorage.getItem(DIRTY_KEY) === '1'
+  // Snapshot of data at last successful sync — drives `localDirty` via diff.
+  // Migration: if no snapshot stored, assume current state is already in sync
+  // (previously-dirty state is forgotten — one-time cost of upgrading).
+  const [lastSyncedSnapshot, setLastSyncedSnapshot] = useState<string>(() => {
+    const stored = localStorage.getItem(SNAPSHOT_KEY)
+    return stored ?? snapshotOf(initialHomework, initialClassic)
   })
+  // Remote rev seen by background probe / last sync. null = unknown.
+  const [remoteRev, setRemoteRev] = useState<number | null>(null)
   const [syncConfirm, setSyncConfirm] = useState<SyncConfirmState | null>(null)
+
+  // localDirty derived from snapshot diff — auto-clears when user reverts edits.
+  // Memoized so unrelated re-renders (search keystrokes, tab switches, sync
+  // status changes) don't re-stringify the entire dataset.
+  const currentSnapshot = useMemo(
+    () => snapshotOf(homeworkData, classicData),
+    [homeworkData, classicData]
+  )
+  const localDirty = currentSnapshot !== lastSyncedSnapshot
+  const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
   const homeworkRef = useRef<HomeworkViewHandle>(null)
   const classicRef = useRef<ClassicViewHandle>(null)
@@ -119,7 +143,24 @@ export default function HomeworkLookup(): JSX.Element {
   useEffect(() => { localStorage.setItem(CLASSIC_KEY, JSON.stringify(classicData)) }, [classicData])
   useEffect(() => { localStorage.setItem(TAB_KEY, activeTab) }, [activeTab])
   useEffect(() => { localStorage.setItem(LAST_REV_KEY, String(lastSyncedRev)) }, [lastSyncedRev])
-  useEffect(() => { localStorage.setItem(DIRTY_KEY, localDirty ? '1' : '0') }, [localDirty])
+  useEffect(() => { localStorage.setItem(SNAPSHOT_KEY, lastSyncedSnapshot) }, [lastSyncedSnapshot])
+
+  // Background probe on mount: query remote rev so the chip can show
+  // "云端有更新" without requiring the user to click anything.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const jsonStr = await window.webdavApi.pull()
+        if (cancelled) return
+        const parsed = parseRemoteBlob(jsonStr)
+        setRemoteRev(parsed.rev)
+      } catch {
+        // No network / no remote / WebDAV unconfigured — silently fall back.
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // Reset query when switching tabs (avoids stale debounce ghost dot)
   useEffect(() => {
@@ -159,16 +200,8 @@ export default function HomeworkLookup(): JSX.Element {
     }
   }
 
-  // ── Wrapped setters for views — any mutation marks the local dataset dirty.
-  // Pull/import paths use the raw setters and explicitly clear dirty.
-  const setHomeworkAndDirty: React.Dispatch<React.SetStateAction<DefenseGroup[]>> = (v) => {
-    setHomeworkData(v)
-    setLocalDirty(true)
-  }
-  const setClassicAndDirty: React.Dispatch<React.SetStateAction<ClassicGroup[]>> = (v) => {
-    setClassicData(v)
-    setLocalDirty(true)
-  }
+  // Views just call the raw setters — `localDirty` is recomputed from the
+  // snapshot diff each render, so no manual flagging is needed.
 
   // ── Sync intent: open confirmation modal, fetch remote in background ─────
   const openSyncConfirm = async (direction: SyncDirection) => {
@@ -210,7 +243,8 @@ export default function HomeworkLookup(): JSX.Element {
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(newRev)
-      setLocalDirty(false)
+      setRemoteRev(newRev)
+      setLastSyncedSnapshot(snapshotOf(homeworkData, classicData))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '上传成功')
     } catch (e: unknown) {
@@ -228,13 +262,15 @@ export default function HomeworkLookup(): JSX.Element {
     setSyncStatus('syncing')
     setSyncMsg('')
     try {
-      // Raw setters — pull must NOT mark local dirty.
-      setHomeworkData(normalizeHomework(remote.homework))
-      setClassicData(normalizeClassic(remote.classic))
+      const newHomework = normalizeHomework(remote.homework)
+      const newClassic = normalizeClassic(remote.classic)
+      setHomeworkData(newHomework)
+      setClassicData(newClassic)
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(remote.rev)
-      setLocalDirty(false)
+      setRemoteRev(remote.rev)
+      setLastSyncedSnapshot(snapshotOf(newHomework, newClassic))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '拉取成功')
     } catch (e: unknown) {
@@ -330,56 +366,86 @@ export default function HomeworkLookup(): JSX.Element {
             </div>
 
             {/* Sync chip (shared, sends combined blob) */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-high border border-outline-variant/15">
-              {syncStatus === 'syncing' ? (
-                <span className="material-symbols-outlined text-primary animate-spin" style={{ fontSize: 13 }}>progress_activity</span>
-              ) : syncStatus === 'synced' ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />
-              ) : syncStatus === 'error' ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0" />
-              ) : localDirty ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0" title="有未同步改动" />
-              ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-outline/40 flex-shrink-0" />
-              )}
-              <span className={`font-label text-[10px] uppercase tracking-widest ${
-                syncStatus === 'synced' ? 'text-secondary' :
-                syncStatus === 'error' ? 'text-error' :
-                syncStatus === 'syncing' ? 'text-primary' :
-                localDirty ? 'text-tertiary' :
-                lastSyncTime ? 'text-on-surface-variant/50' : 'text-on-surface-variant/30'
-              }`}>
-                {syncStatus === 'syncing' ? '同步中…' :
-                 syncStatus === 'synced' ? syncMsg :
-                 syncStatus === 'error' ? syncMsg :
-                 localDirty ? '有未同步改动' :
-                 lastSyncTime ? (() => {
-                   const diff = Date.now() - lastSyncTime
-                   if (diff < 60000) return '刚刚'
-                   if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
-                   const d = new Date(lastSyncTime)
-                   return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
-                 })() : '未同步'}
-              </span>
-              <div className="flex items-center gap-0.5 ml-0.5 border-l border-outline-variant/20 pl-1">
-                <button
-                  onClick={() => openSyncConfirm('push')}
-                  disabled={syncStatus === 'syncing' || !!syncConfirm}
-                  title="上传到坚果云"
-                  className="p-1 rounded text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: 13 }}>upload</span>
-                </button>
-                <button
-                  onClick={() => openSyncConfirm('pull')}
-                  disabled={syncStatus === 'syncing' || !!syncConfirm}
-                  title="从坚果云拉取"
-                  className="p-1 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-secondary/10 transition-colors disabled:opacity-30"
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: 13 }}>download</span>
-                </button>
-              </div>
-            </div>
+            {(() => {
+              type ChipKind = 'syncing' | 'synced' | 'error' | 'both' | 'remote' | 'local' | 'idle'
+              const kind: ChipKind =
+                syncStatus === 'syncing' ? 'syncing' :
+                syncStatus === 'synced' ? 'synced' :
+                syncStatus === 'error' ? 'error' :
+                (localDirty && cloudNewer) ? 'both' :
+                cloudNewer ? 'remote' :
+                localDirty ? 'local' :
+                'idle'
+              const idleText = lastSyncTime ? (() => {
+                const diff = Date.now() - lastSyncTime
+                if (diff < 60000) return '刚刚'
+                if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
+                const d = new Date(lastSyncTime)
+                return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
+              })() : '未同步'
+              const config: Record<ChipKind, { dot: JSX.Element; text: string; cls: string }> = {
+                syncing: {
+                  dot: <span className="material-symbols-outlined text-primary animate-spin" style={{ fontSize: 13 }}>progress_activity</span>,
+                  text: '同步中…',
+                  cls: 'text-primary',
+                },
+                synced: {
+                  dot: <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />,
+                  text: syncMsg,
+                  cls: 'text-secondary',
+                },
+                error: {
+                  dot: <span className="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0" />,
+                  text: syncMsg,
+                  cls: 'text-error',
+                },
+                both: {
+                  dot: <span className="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0" />,
+                  text: '本地与云端都有变化',
+                  cls: 'text-error',
+                },
+                remote: {
+                  dot: <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />,
+                  text: '云端有更新',
+                  cls: 'text-secondary',
+                },
+                local: {
+                  dot: <span className="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0" />,
+                  text: '本地未上传',
+                  cls: 'text-tertiary',
+                },
+                idle: {
+                  dot: <span className="w-1.5 h-1.5 rounded-full bg-outline/40 flex-shrink-0" />,
+                  text: idleText,
+                  cls: lastSyncTime ? 'text-on-surface-variant/50' : 'text-on-surface-variant/30',
+                },
+              }
+              const c = config[kind]
+              return (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-high border border-outline-variant/15">
+                  {c.dot}
+                  <span className={`font-label text-[10px] uppercase tracking-widest ${c.cls}`}>{c.text}</span>
+                  <div className="flex items-center gap-0.5 ml-0.5 border-l border-outline-variant/20 pl-1">
+                    <button
+                      onClick={() => openSyncConfirm('push')}
+                      disabled={syncStatus === 'syncing' || !!syncConfirm}
+                      title="上传到坚果云"
+                      className="p-1 rounded text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 13 }}>upload</span>
+                    </button>
+                    <button
+                      onClick={() => openSyncConfirm('pull')}
+                      disabled={syncStatus === 'syncing' || !!syncConfirm}
+                      title="从坚果云拉取"
+                      className="p-1 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-secondary/10 transition-colors disabled:opacity-30"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 13 }}>download</span>
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </div>
 
@@ -388,7 +454,7 @@ export default function HomeworkLookup(): JSX.Element {
           <HomeworkView
             ref={homeworkRef}
             data={homeworkData}
-            setData={setHomeworkAndDirty}
+            setData={setHomeworkData}
             query={debouncedQuery}
             onClearQuery={clearQuery}
           />
@@ -396,7 +462,7 @@ export default function HomeworkLookup(): JSX.Element {
           <ClassicView
             ref={classicRef}
             data={classicData}
-            setData={setClassicAndDirty}
+            setData={setClassicData}
             query={debouncedQuery}
             onClearQuery={clearQuery}
           />
