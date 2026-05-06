@@ -24,6 +24,60 @@ export function friendlyError(err: unknown): FriendlyError {
   const msg = unwrap(raw)
   const lower = msg.toLowerCase()
 
+  // Windows file operations are classified FIRST. PowerShell stderr often
+  // contains paths like "...\electron\network\..." which would trip the
+  // network-keyword match below. Detect file-op markers and branch out early.
+  const isFileOp =
+    lower.includes('microsoft.visualbasic.fileio') ||
+    lower.includes('sendtorecyclebin') ||
+    lower.includes('remove-item') ||
+    lower.includes('move-item') ||
+    /\btakeown\b/.test(lower) ||
+    /\bicacls\b/.test(lower) ||
+    msg.includes('拒绝访问') ||
+    msg.includes('正在使用') ||
+    msg.includes('被占用') ||
+    msg.includes('另一进程') ||
+    msg.includes('另一程序')
+
+  if (isFileOp) {
+    if (
+      lower.includes('being used by another') ||
+      lower.includes('process cannot access') ||
+      lower.includes('used by another process') ||
+      msg.includes('正在使用') ||
+      msg.includes('被占用') ||
+      msg.includes('另一进程') ||
+      msg.includes('另一程序')
+    ) {
+      return {
+        title: '文件被占用',
+        hint: '有别的程序还打开着这个文件夹/文件（资源管理器、终端、编辑器等），先把它们关掉再试。Windows 不允许删除被占用的文件。',
+        raw: msg,
+      }
+    }
+    if (
+      lower.includes('access is denied') ||
+      lower.includes('access to the path') ||
+      lower.includes('unauthorizedaccessexception') ||
+      lower.includes('does not have ownership') ||
+      msg.includes('拒绝访问') ||
+      msg.includes('权限') ||
+      msg.includes('需要管理员')
+    ) {
+      return {
+        title: '权限不足',
+        hint: '系统拒绝了删除/修改操作。这通常意味着该文件需要管理员权限——可以用 Windows 资源管理器手动删除（按 UAC 提示授权），或以管理员身份重新运行 Maple Tools 后再试。',
+        raw: msg,
+      }
+    }
+    return {
+      title: '文件操作失败',
+      hint: '这次文件操作没成功，可以展开查看原始错误判断原因。',
+      raw: msg,
+    }
+  }
+
   // Network / TLS failures — not the user's content, the network can't reach the site
   if (
     lower.includes('socket disconnected') ||

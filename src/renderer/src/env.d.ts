@@ -55,6 +55,7 @@ declare global {
       reveal: (targetPath: string) => Promise<void>
       trash: (targetPath: string) => Promise<void>
       deletePermanent: (targetPath: string) => Promise<void>
+      forceDeletePermanent: (targetPath: string) => Promise<{ killed: { pid: number; name: string }[] }>
       resolveSpecial: (input: string) => Promise<string | null>
       onDirChange: (cb: () => void) => () => void
     }
