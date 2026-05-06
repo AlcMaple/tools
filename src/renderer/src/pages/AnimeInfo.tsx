@@ -2,7 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import TopBar from '../components/TopBar'
 import ErrorPanel from '../components/ErrorPanel'
 import type { BgmSearchResult, BgmDetail } from '../types/bgm'
-import type { XifanSearchResult, XifanWatchInfo } from '../types/xifan'
+import type { XifanWatchInfo } from '../types/xifan'
+import type { GirigiriEpisode, GirigiriWatchInfo } from '../types/girigiri'
+import type { AowuEpisode, AowuWatchInfo } from '../types/aowu'
+import type { Source, SearchCard } from '../types/search'
+import { normalizeXifan, normalizeGirigiri, normalizeAowu } from '../utils/searchNormalize'
+import { XifanDownloadConfigModal } from '../components/XifanDownloadModal'
+import { GirigiriDownloadConfigModal } from '../components/GirigiriDownloadModal'
+import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh } from '../utils/searchCache'
 
@@ -15,45 +22,36 @@ function extractSubjectId(link: string): number | null {
   return m ? parseInt(m[1]) : null
 }
 
-// ── Archive 缓存（与 SearchDownload 共享同一套 key）────────────
+// ── Archive 缓存（per-source）─────────────────────────────────
 
-// ArchiveFlow 自己的缓存（XifanSearchResult 格式）
-const ARCHIVE_CACHE_KEY = 'archive_search_cache_xifan'
+// ArchiveFlow 各源的缓存独立，存的是统一后的 SearchCard
+const archiveCacheKey = (source: Source): string =>
+  `archive_search_cache_${source.toLowerCase()}`
 
-async function getSearchCache(keyword: string): Promise<XifanSearchResult[] | null> {
+const sharedSearchCacheKey = (source: Source): string =>
+  `search_cache_${source.toLowerCase()}`
+
+async function getSearchCache(source: Source, keyword: string): Promise<SearchCard[] | null> {
   try {
-    const c = (await window.systemApi.cacheGet(ARCHIVE_CACHE_KEY)) as Record<string, XifanSearchResult[]> | null
+    const c = (await window.systemApi.cacheGet(archiveCacheKey(source))) as Record<string, SearchCard[]> | null
     if (c?.[keyword]) return c[keyword]
   } catch { /* noop */ }
 
+  // 兼容 SearchDownload 写入的共享缓存
   try {
-    const sd = (await window.systemApi.cacheGet('search_cache_xifan')) as Record<string, unknown> | null
-    const entry = sd ? readCacheEntry<any[]>(sd[keyword]) : null
-    if (entry) {
-      const mapped = entry.data
-        .map((c: any): XifanSearchResult => ({
-          title: c.title ?? '',
-          cover: c.cover ?? '',
-          year: c.year ?? '',
-          area: c.tag ?? '',
-          episode: c.count ?? '',
-          watch_url: c.key ?? '',
-          detail_url: '',
-        }))
-      const withUrl = mapped.filter(r => r.watch_url)
-      if (withUrl.length > 0) return withUrl
-      if (mapped.length > 0) return mapped
-    }
+    const sd = (await window.systemApi.cacheGet(sharedSearchCacheKey(source))) as Record<string, unknown> | null
+    const entry = sd ? readCacheEntry<SearchCard[]>(sd[keyword]) : null
+    if (entry && Array.isArray(entry.data) && entry.data.length > 0) return entry.data
   } catch { /* noop */ }
 
   return null
 }
 
-async function setSearchCache(keyword: string, cards: XifanSearchResult[]): Promise<void> {
+async function setSearchCache(source: Source, keyword: string, cards: SearchCard[]): Promise<void> {
   try {
-    const c = ((await window.systemApi.cacheGet(ARCHIVE_CACHE_KEY)) as Record<string, XifanSearchResult[]>) || {}
+    const c = ((await window.systemApi.cacheGet(archiveCacheKey(source))) as Record<string, SearchCard[]>) || {}
     c[keyword] = cards
-    await window.systemApi.cacheSet(ARCHIVE_CACHE_KEY, c)
+    await window.systemApi.cacheSet(archiveCacheKey(source), c)
   } catch { /* noop */ }
 }
 
@@ -108,160 +106,125 @@ async function setCachedBgmDetail(subjectId: number, detail: BgmDetail): Promise
   } catch { /* noop */ }
 }
 
-// ── XifanConfigModal ──────────────────────────────────────────
-
-function XifanConfigModal({ card, watchInfo, onClose, onStart }: {
-  card: XifanSearchResult
-  watchInfo: XifanWatchInfo
-  onClose: () => void
-  onStart: (templates: string[], startEp: number, endEp: number) => void
-}): JSX.Element {
-  const validSources = watchInfo.sources.filter(s => s.template)
-  const [selectedIdx, setSelectedIdx] = useState(validSources[0]?.idx ?? 1)
-  const [startStr, setStartStr] = useState('1')
-  const [endStr, setEndStr] = useState(String(watchInfo.total))
-
-  const clampStart = (s: string): number => Math.max(1, Math.min(watchInfo.total, parseInt(s, 10) || 1))
-  const clampEnd = (s: string, start: number): number => Math.max(start, Math.min(watchInfo.total, parseInt(s, 10) || watchInfo.total))
-
-  const handleStart = (): void => {
-    const selected = validSources.find(s => s.idx === selectedIdx)
-    if (!selected?.template) return
-    const ordered = [
-      selected.template,
-      ...validSources.filter(s => s.idx !== selectedIdx).map(s => s.template!),
-    ]
-    onStart(ordered, clampStart(startStr), clampEnd(endStr, clampStart(startStr)))
-  }
-
-  return (
-    <div className="relative bg-surface-container w-full max-w-lg rounded-2xl border border-outline-variant/20 overflow-hidden shadow-2xl">
-      <div className="p-6 border-b border-outline-variant/20 bg-surface-container-low flex justify-between items-center">
-        <div>
-          <h3 className="font-headline font-black text-lg text-on-surface tracking-tight">{watchInfo.title || card.title}</h3>
-          <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">{watchInfo.total} Episodes · Xifan</p>
-        </div>
-        <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
-          <span className="material-symbols-outlined leading-none">close</span>
-        </button>
-      </div>
-
-      <div className="p-6 space-y-6">
-        {validSources.length > 0 ? (
-          <div>
-            <p className="font-label text-[10px] text-on-surface-variant/60 uppercase tracking-widest mb-3">Download Source</p>
-            <div className="space-y-2">
-              {validSources.map(src => (
-                <label key={src.idx} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedIdx === src.idx ? 'border-primary/40 bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container-high'}`}>
-                  <input type="radio" name="archive_source" value={src.idx} checked={selectedIdx === src.idx} onChange={() => setSelectedIdx(src.idx)} className="accent-primary" />
-                  <span className="font-label text-sm text-on-surface">{src.name.replace(/[\uE000-\uF8FF]/g, '').trim()}</span>
-                  <span className="ml-auto font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest">{watchInfo.total} Episodes</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="p-4 rounded-lg bg-error/10 border border-error/20">
-            <p className="font-label text-xs text-error">No valid download sources found.</p>
-          </div>
-        )}
-
-        <div>
-          <p className="font-label text-[10px] text-on-surface-variant/60 uppercase tracking-widest mb-3">Episode Range</p>
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <label className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest block mb-1.5">From</label>
-              <input type="number" min={1} max={watchInfo.total} value={startStr} onChange={e => setStartStr(e.target.value)} onBlur={() => setStartStr(String(clampStart(startStr)))} className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors" />
-            </div>
-            <span className="text-on-surface-variant/30 mt-5">—</span>
-            <div className="flex-1">
-              <label className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest block mb-1.5">To</label>
-              <input type="number" min={1} max={watchInfo.total} value={endStr} onChange={e => setEndStr(e.target.value)} onBlur={() => setEndStr(String(clampEnd(endStr, clampStart(startStr))))} className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors" />
-            </div>
-            <div className="mt-5">
-              <span className="font-label text-[10px] text-on-surface-variant/30">/ {watchInfo.total}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 font-label text-sm text-on-surface-variant hover:bg-surface-container-high transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleStart} disabled={validSources.length === 0} className="flex-1 py-3 rounded-xl bg-primary text-on-primary font-label text-sm font-black tracking-widest hover:brightness-110 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-            <span className="material-symbols-outlined text-base leading-none">bolt</span>
-            START DOWNLOAD
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ── ArchiveFlow ───────────────────────────────────────────────
 // 独立状态机，叠加在页面上处理完整的搜索→验证→配置→下载流程
 
+type ArchiveCaptchaSource = 'Xifan' | 'Girigiri'
+
+const ARCHIVE_SOURCE_KEY = 'maple-archive-source'
+
+function readArchiveSource(): Source {
+  const v = localStorage.getItem(ARCHIVE_SOURCE_KEY)
+  return v === 'Xifan' || v === 'Girigiri' ? v : 'Aowu'
+}
+
 type ArchiveFlowState =
+  // pickSource — 流程的第一站：让用户确认/切换本次添加要走哪个源
+  | { status: 'pickSource'; selected: Source }
   | { status: 'searching' }
-  | { status: 'captcha'; imageB64: string; error?: string }
-  | { status: 'verifying' }
-  | { status: 'results'; cards: XifanSearchResult[] }
-  | { status: 'loadingWatch'; card: XifanSearchResult }
-  | { status: 'configuring'; card: XifanSearchResult; watchInfo: XifanWatchInfo }
+  | { status: 'captcha'; imageB64: string; captchaSource: ArchiveCaptchaSource; error?: string }
+  | { status: 'verifying'; captchaSource: ArchiveCaptchaSource }
+  | { status: 'results'; cards: SearchCard[] }
+  | { status: 'loadingWatch'; card: SearchCard }
+  | { status: 'xifan_config'; card: SearchCard; watchInfo: XifanWatchInfo }
+  | { status: 'girigiri_config'; card: SearchCard; watchInfo: GirigiriWatchInfo }
+  | { status: 'aowu_config'; card: SearchCard; watchInfo: AowuWatchInfo }
   | { status: 'queued' }
   | { status: 'error'; message: string }
 
-function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; onClose: () => void }): JSX.Element {
-  const [state, setState] = useState<ArchiveFlowState>({ status: 'searching' })
+function ArchiveFlow({ keyword: initialKeyword, onClose }: {
+  keyword: string
+  onClose: () => void
+}): JSX.Element {
+  // Source 在 pickSource 步骤之后被锁定为本次选择，并写回 localStorage 供下次预选
+  const [source, setSource] = useState<Source>(() => readArchiveSource())
+  const [state, setState] = useState<ArchiveFlowState>(() => ({ status: 'pickSource', selected: readArchiveSource() }))
   const [captchaInput, setCaptchaInput] = useState('')
   const [searchKeyword, setSearchKeyword] = useState(initialKeyword)
   const activeKeyword = useRef(initialKeyword)
 
-  useEffect(() => { void doSearch(initialKeyword) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // 选源确认后再开始搜索
+  function confirmSource(picked: Source): void {
+    setSource(picked)
+    localStorage.setItem(ARCHIVE_SOURCE_KEY, picked)
+    void doSearch(initialKeyword, false, picked)
+  }
 
-  async function doSearch(kw: string, skipCache = false): Promise<void> {
+  async function doSearch(kw: string, skipCache = false, src: Source = source): Promise<void> {
     activeKeyword.current = kw
     setSearchKeyword(kw)
     setState({ status: 'searching' })
 
     if (!skipCache) {
-      const cached = await getSearchCache(kw)
-      if (cached && cached.length > 0) { handleResults(kw, cached); return }
+      const cached = await getSearchCache(src, kw)
+      if (cached && cached.length > 0) { handleResults(kw, cached, src); return }
     }
 
-    console.log('[ArchiveFlow] doing fresh Xifan search for:', kw)
     try {
-      const result = await window.xifanApi.search(kw)
-      console.log('[ArchiveFlow] fresh search result:', Array.isArray(result) ? `array[${result.length}]` : result)
-      if (!Array.isArray(result) && result.needs_captcha) {
-        const { image_b64 } = await window.xifanApi.getCaptcha()
-        setCaptchaInput('')
-        setState({ status: 'captcha', imageB64: image_b64 })
-      } else if (Array.isArray(result)) {
-        if (result.length > 0) void setSearchCache(kw, result)
-        handleResults(kw, result)
+      if (src === 'Aowu') {
+        const result = await window.aowuApi.search(kw)
+        const cards = result.map(normalizeAowu)
+        if (cards.length > 0) void setSearchCache(src, kw, cards)
+        handleResults(kw, cards, src)
+      } else if (src === 'Girigiri') {
+        const result = await window.girigiriApi.search(kw)
+        if (!Array.isArray(result) && result.needs_captcha) {
+          const { image_b64 } = await window.girigiriApi.getCaptcha()
+          setCaptchaInput('')
+          setState({ status: 'captcha', imageB64: image_b64, captchaSource: 'Girigiri' })
+        } else if (Array.isArray(result)) {
+          const cards = result.map(normalizeGirigiri)
+          if (cards.length > 0) void setSearchCache(src, kw, cards)
+          handleResults(kw, cards, src)
+        } else {
+          setState({ status: 'error', message: `Girigiri 返回了意外的响应` })
+        }
       } else {
-        setState({ status: 'error', message: `Xifan 返回了意外的响应` })
+        const result = await window.xifanApi.search(kw)
+        if (!Array.isArray(result) && result.needs_captcha) {
+          const { image_b64 } = await window.xifanApi.getCaptcha()
+          setCaptchaInput('')
+          setState({ status: 'captcha', imageB64: image_b64, captchaSource: 'Xifan' })
+        } else if (Array.isArray(result)) {
+          const cards = result.map(normalizeXifan)
+          if (cards.length > 0) void setSearchCache(src, kw, cards)
+          handleResults(kw, cards, src)
+        } else {
+          setState({ status: 'error', message: `Xifan 返回了意外的响应` })
+        }
       }
     } catch (err) {
       setState({ status: 'error', message: `Search failed: ${String(err)}` })
     }
   }
 
-  function handleResults(kw: string, cards: XifanSearchResult[]): void {
+  function handleResults(kw: string, cards: SearchCard[], src: Source = source): void {
     if (cards.length === 0) {
-      setState({ status: 'error', message: `Xifan 未找到与"${kw}"相关的结果` })
+      setState({ status: 'error', message: `${src} 未找到与"${kw}"相关的结果` })
       return
     }
     if (cards.length === 1) { void loadWatch(cards[0]); return }
     setState({ status: 'results', cards })
   }
 
-  async function loadWatch(card: XifanSearchResult): Promise<void> {
+  async function loadWatch(card: SearchCard): Promise<void> {
     setState({ status: 'loadingWatch', card })
     try {
-      const watchInfo = await window.xifanApi.getWatch(card.watch_url)
-      setState({ status: 'configuring', card, watchInfo })
+      if (card.source === 'Aowu') {
+        const watchInfo = await window.aowuApi.getWatch(card.key)
+        if (watchInfo.error) { setState({ status: 'error', message: String(watchInfo.error) }); return }
+        setState({ status: 'aowu_config', card, watchInfo })
+      } else if (card.source === 'Girigiri') {
+        const watchInfo = await window.girigiriApi.getWatch(card.key)
+        if (watchInfo.error) { setState({ status: 'error', message: String(watchInfo.error) }); return }
+        setState({ status: 'girigiri_config', card, watchInfo })
+      } else {
+        const watchInfo = await window.xifanApi.getWatch(card.key)
+        const wErr = (watchInfo as { error?: unknown }).error
+        if (wErr) { setState({ status: 'error', message: String(wErr) }); return }
+        setState({ status: 'xifan_config', card, watchInfo })
+      }
     } catch (err) {
       setState({ status: 'error', message: `Failed to load sources: ${String(err)}` })
     }
@@ -269,29 +232,33 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
 
   async function handleVerify(): Promise<void> {
     if (state.status !== 'captcha') return
-    setState({ status: 'verifying' })
+    const captchaSource = state.captchaSource
+    setState({ status: 'verifying', captchaSource })
     try {
-      const { success } = await window.xifanApi.verifyCaptcha(captchaInput.trim())
+      const api = captchaSource === 'Girigiri' ? window.girigiriApi : window.xifanApi
+      const { success } = await api.verifyCaptcha(captchaInput.trim())
       if (success) {
         await doSearch(activeKeyword.current, true)
       } else {
-        const { image_b64 } = await window.xifanApi.getCaptcha()
+        const { image_b64 } = await api.getCaptcha()
         setCaptchaInput('')
-        setState({ status: 'captcha', imageB64: image_b64, error: 'Wrong code, try again.' })
+        setState({ status: 'captcha', imageB64: image_b64, captchaSource, error: 'Wrong code, try again.' })
       }
     } catch { onClose() }
   }
 
   async function handleRefreshCaptcha(): Promise<void> {
+    if (state.status !== 'captcha') return
     try {
-      const { image_b64 } = await window.xifanApi.getCaptcha()
+      const api = state.captchaSource === 'Girigiri' ? window.girigiriApi : window.xifanApi
+      const { image_b64 } = await api.getCaptcha()
       setCaptchaInput('')
-      setState({ status: 'captcha', imageB64: image_b64 })
+      setState({ status: 'captcha', imageB64: image_b64, captchaSource: state.captchaSource })
     } catch { /* noop */ }
   }
 
-  async function handleStartDownload(templates: string[], startEp: number, endEp: number): Promise<void> {
-    if (state.status !== 'configuring') return
+  async function handleStartXifanDownload(templates: string[], startEp: number, endEp: number): Promise<void> {
+    if (state.status !== 'xifan_config') return
     const { card, watchInfo } = state
     const title = watchInfo.title || card.title
     const savePath = getSavePath()
@@ -300,22 +267,153 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
       const epStatus: Record<number, 'pending'> = {}
       for (let ep = startEp; ep <= endEp; ep++) epStatus[ep] = 'pending'
       downloadStore.addTask({
-        id: taskId,
-        source: 'xifan',
-        title,
-        cover: card.cover,
-        startEp,
-        endEp,
-        templates,
-        savePath,
-        status: 'running',
-        epStatus,
-        epProgress: {},
-        startedAt: Date.now(),
+        id: taskId, source: 'xifan', title, cover: card.cover,
+        startEp, endEp, templates, savePath,
+        status: 'running', epStatus, epProgress: {}, startedAt: Date.now(),
       })
       setState({ status: 'queued' })
       setTimeout(onClose, 2000)
     } catch (err) { alert(`Download error: ${err}`) }
+  }
+
+  async function handleStartGirigiriDownload(selectedEps: GirigiriEpisode[]): Promise<void> {
+    if (state.status !== 'girigiri_config') return
+    const { card, watchInfo } = state
+    const title = watchInfo.title || card.title
+    const savePath = getSavePath()
+    const selectedIdxs = selectedEps.map(e => e.idx)
+    try {
+      const { taskId } = await window.girigiriApi.startDownload(title, selectedEps, selectedIdxs, savePath)
+      const epStatus: Record<number, 'pending'> = {}
+      for (const idx of selectedIdxs) epStatus[idx] = 'pending'
+      downloadStore.addTask({
+        id: taskId, source: 'girigiri', title, cover: card.cover,
+        startEp: selectedIdxs[0], endEp: selectedIdxs[selectedIdxs.length - 1],
+        templates: [], girigiriEps: selectedEps, savePath,
+        status: 'running', epStatus, epProgress: {}, startedAt: Date.now(),
+      })
+      setState({ status: 'queued' })
+      setTimeout(onClose, 2000)
+    } catch (err) { alert(`Download error: ${err}`) }
+  }
+
+  async function handleStartAowuDownload(sourceIdx: number, epList: AowuEpisode[], selectedIdxs: number[]): Promise<void> {
+    if (state.status !== 'aowu_config') return
+    const { card, watchInfo } = state
+    const title = watchInfo.title || card.title
+    const savePath = getSavePath()
+    try {
+      const { taskId } = await window.aowuApi.startDownload(title, watchInfo.id, sourceIdx, epList, selectedIdxs, savePath)
+      const epStatus: Record<number, 'pending'> = {}
+      for (const idx of selectedIdxs) epStatus[idx] = 'pending'
+      downloadStore.addTask({
+        id: taskId, source: 'aowu', title, cover: card.cover,
+        startEp: selectedIdxs[0], endEp: selectedIdxs[selectedIdxs.length - 1],
+        templates: [], sourceIdx,
+        aowuId: watchInfo.id, aowuEps: epList,
+        aowuSources: watchInfo.sources.map(s => ({ idx: s.idx, name: s.name })),
+        savePath,
+        status: 'running', epStatus, epProgress: {}, startedAt: Date.now(),
+      })
+      setState({ status: 'queued' })
+      setTimeout(onClose, 2000)
+    } catch (err) { alert(`Download error: ${err}`) }
+  }
+
+  // ── pickSource: 流程的第一道弹窗 — 让用户在搜索之前确认/切换源 ──────
+  if (state.status === 'pickSource') {
+    const picked = state.selected
+    return (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm">
+        <div className="absolute inset-0" onClick={onClose} />
+        <div className="relative bg-surface-container w-full max-w-md rounded-2xl border border-outline-variant/20 overflow-hidden shadow-2xl">
+          <div className="p-6 border-b border-outline-variant/20 bg-surface-container-low flex justify-between items-center">
+            <div>
+              <h3 className="font-headline font-black text-lg text-on-surface">Choose Source</h3>
+              <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">
+                "{initialKeyword}" — pick where to add from
+              </p>
+            </div>
+            <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
+              <span className="material-symbols-outlined leading-none">close</span>
+            </button>
+          </div>
+          <div className="p-6 space-y-2">
+            {(['Aowu', 'Xifan', 'Girigiri'] as Source[]).map(opt => (
+              <label
+                key={opt}
+                className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                  picked === opt
+                    ? 'border-primary/40 bg-primary/5'
+                    : 'border-outline-variant/20 hover:bg-surface-container-high'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="archive_pick_source"
+                  value={opt}
+                  checked={picked === opt}
+                  onChange={() => setState({ status: 'pickSource', selected: opt })}
+                  className="accent-primary"
+                />
+                <span className="font-label text-sm text-on-surface flex-1">{opt}</span>
+                <span className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest">
+                  {opt === 'Aowu' ? '无验证码' : '有验证码'}
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="p-6 pt-0 flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl border border-outline-variant/20 font-label text-sm text-on-surface-variant hover:bg-surface-container-high transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => confirmSource(picked)}
+              className="flex-[2] py-3 rounded-xl bg-primary text-on-primary font-label text-sm font-bold tracking-widest hover:brightness-110 transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined text-base leading-none">arrow_forward</span>
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Configuring step delegates to source-specific shared modal (modal owns its
+  // own overlay, so we render it standalone, not inside ArchiveFlow's overlay).
+  if (state.status === 'xifan_config') {
+    return (
+      <XifanDownloadConfigModal
+        card={state.card}
+        watchInfo={state.watchInfo}
+        onClose={onClose}
+        onStart={(templates, startEp, endEp) => void handleStartXifanDownload(templates, startEp, endEp)}
+      />
+    )
+  }
+  if (state.status === 'girigiri_config') {
+    return (
+      <GirigiriDownloadConfigModal
+        card={state.card}
+        watchInfo={state.watchInfo}
+        onClose={onClose}
+        onStart={(eps) => void handleStartGirigiriDownload(eps)}
+      />
+    )
+  }
+  if (state.status === 'aowu_config') {
+    return (
+      <AowuDownloadConfigModal
+        card={state.card}
+        watchInfo={state.watchInfo}
+        onClose={onClose}
+        onStart={(sourceIdx, epList, selectedIdxs) => void handleStartAowuDownload(sourceIdx, epList, selectedIdxs)}
+      />
+    )
   }
 
   const isLoading = state.status === 'searching' || state.status === 'verifying' || state.status === 'loadingWatch'
@@ -330,7 +428,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
         <div className="relative bg-surface-container w-full max-w-sm rounded-2xl border border-outline-variant/20 p-12 flex flex-col items-center gap-6 shadow-2xl">
           <div className="w-10 h-10 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
           <p className="font-label text-xs text-on-surface-variant/60 uppercase tracking-widest">
-            {state.status === 'searching' ? 'Searching Xifan...' : state.status === 'verifying' ? 'Verifying...' : 'Loading sources...'}
+            {state.status === 'searching' ? `Searching ${source}...` : state.status === 'verifying' ? 'Verifying...' : 'Loading sources...'}
           </p>
         </div>
       )}
@@ -341,7 +439,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
           <div className="p-6 border-b border-outline-variant/20 bg-surface-container-low flex justify-between items-center">
             <div>
               <h3 className="font-headline font-black text-lg text-on-surface">Verification Required</h3>
-              <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">Xifan requires captcha to search</p>
+              <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">{state.captchaSource} requires captcha to search</p>
             </div>
             <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
               <span className="material-symbols-outlined leading-none">close</span>
@@ -391,7 +489,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
         <div className="relative bg-surface-container w-full max-w-lg rounded-2xl border border-outline-variant/20 overflow-hidden shadow-2xl flex flex-col max-h-[70vh]">
           <div className="p-6 border-b border-outline-variant/20 bg-surface-container-low flex justify-between items-center shrink-0">
             <div>
-              <h3 className="font-headline font-black text-lg text-on-surface">Select from Xifan</h3>
+              <h3 className="font-headline font-black text-lg text-on-surface">Select from {source}</h3>
               <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">
                 {state.cards.length} results for "{activeKeyword.current}"
               </p>
@@ -403,14 +501,14 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
           <div className="overflow-y-auto flex-1 p-4 space-y-2">
             {state.cards.map(card => (
               <button
-                key={card.watch_url}
+                key={card.key}
                 onClick={() => void loadWatch(card)}
                 className="w-full flex items-center justify-between bg-surface hover:bg-surface-container-high border border-outline-variant/10 hover:border-primary/20 rounded-xl px-5 py-4 text-left transition-all group"
               >
                 <div className="min-w-0">
                   <p className="font-bold text-on-surface text-sm group-hover:text-primary transition-colors truncate">{card.title}</p>
                   <p className="font-label text-[10px] text-on-surface-variant/50 mt-0.5 uppercase tracking-widest">
-                    {[card.year, card.episode, card.area].filter(Boolean).join(' · ')}
+                    {[card.year, card.count, card.tag].filter(Boolean).join(' · ')}
                   </p>
                 </div>
                 <span className="material-symbols-outlined text-on-surface-variant/20 group-hover:text-primary/50 transition-colors text-lg shrink-0 ml-4">arrow_forward</span>
@@ -418,16 +516,6 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: { keyword: string; on
             ))}
           </div>
         </div>
-      )}
-
-      {/* 下载配置 */}
-      {state.status === 'configuring' && (
-        <XifanConfigModal
-          card={state.card}
-          watchInfo={state.watchInfo}
-          onClose={onClose}
-          onStart={(templates, startEp, endEp) => void handleStartDownload(templates, startEp, endEp)}
-        />
       )}
 
       {/* 错误提示 */}
