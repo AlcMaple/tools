@@ -32,7 +32,7 @@ const CONFIG = {
     { name: '百度',     url: 'https://www.baidu.com' },
     { name: '腾讯',     url: 'https://www.qq.com' },
   ],
-  // 境内能直连的境外站（不需 VPN），用来判断公司国际出口本身行不行
+  // 境内能直连的境外站（不需 VPN），用来判断网络国际出口本身行不行
   foreignDirectTargets: [
     { name: 'Apple',      url: 'https://www.apple.com' },
     { name: 'Cloudflare', url: 'https://www.cloudflare.com' },
@@ -61,6 +61,11 @@ const CONFIG = {
     /美国|🇺🇸|\bus\b|usa|america|united\s*states|洛杉矶|硅谷|纽约/i,
     /新加坡|🇸🇬|\bsg\b|singapore/i,
   ],
+
+  // 主用区域 — 设置后会在结论里单独高亮该区域状态、推荐节点优先选这里。null 表示无偏好。
+  // 可选值（与节点名匹配，由 detailedRegion 决定）：
+  //   '香港' / '台湾' / '日本' / '美国' / '新加坡' / '韩国' / '马来西亚' / '越南' / '泰国' / '英国' / '德国'
+  preferredRegion: '台湾',
 
   logDir: './vpn-logs',
 };
@@ -190,9 +195,9 @@ async function phase1_localService() {
   return r;
 }
 
-// Phase 2: 公司基础网络
+// Phase 2: 网络基础（不走代理）
 async function phase2_baseNetwork() {
-  log('INFO', 'Phase 2', '═══ 检查公司基础网络（不走代理）═══');
+  log('INFO', 'Phase 2', '═══ 检查网络基础（不走代理）═══');
   const r = { healthy: true, dnsOk: true, domesticOk: true, foreignDirectOk: true, foreignDirectSlow: false };
   try {
     const ips = await Promise.race([dns.resolve4('www.baidu.com'),
@@ -216,9 +221,9 @@ async function phase2_baseNetwork() {
     } else { log('WARN', '境外直连', `${t.name} 失败: ${x.error}`); fail++; }
   }
   if (fail === CONFIG.foreignDirectTargets.length) { r.foreignDirectOk = false;
-    log('WARN', '境外直连', '所有境外站直连都不通 → 公司国际出口可能全断了'); }
+    log('WARN', '境外直连', '所有境外站直连都不通 → 国际出口可能全断了'); }
   else if (slow + fail > 0) { r.foreignDirectSlow = true;
-    log('HINT', '境外直连', '境外直连出现慢/超时 → 公司国际出口本身就在拥塞'); }
+    log('HINT', '境外直连', '部分境外站直连慢/超时（可能单点抽风也可能出口拥塞，结合代理穿透判断）'); }
   return r;
 }
 
@@ -279,6 +284,45 @@ function isPopularRegion(nodeName) {
   return CONFIG.popularRegionPatterns.some(re => re.test(nodeName));
 }
 
+// 细粒度地区识别 — 用于检测「某地区整组失效」（比如台湾 D10-D15 全挂）
+function detailedRegion(name) {
+  if (/香港|🇭🇰|\bhk\b|hong\s*kong/i.test(name)) return '香港';
+  if (/台湾|台灣|🇹🇼|\btw\b|taiwan/i.test(name)) return '台湾';
+  if (/日本|🇯🇵|\bjp\b|japan|东京|大阪/i.test(name)) return '日本';
+  if (/美国|🇺🇸|\bus\b|usa|america|united\s*states|洛杉矶|硅谷|纽约/i.test(name)) return '美国';
+  if (/新加坡|🇸🇬|\bsg\b|singapore/i.test(name)) return '新加坡';
+  if (/韩国|🇰🇷|\bkr\b|korea/i.test(name)) return '韩国';
+  if (/马来|🇲🇾|malaysia/i.test(name)) return '马来西亚';
+  if (/越南|🇻🇳|vietnam/i.test(name)) return '越南';
+  if (/泰国|🇹🇭|thailand/i.test(name)) return '泰国';
+  if (/英国|🇬🇧|\buk\b|britain/i.test(name)) return '英国';
+  if (/德国|🇩🇪|germany/i.test(name)) return '德国';
+  return '其他';
+}
+
+// 中文/emoji 字符宽度修正版 padEnd（用于终端对齐）
+// 国旗 emoji = 两个 Regional Indicator Symbol，视觉宽度 2（不是 4）
+function padDisplay(s, width) {
+  let w = 0, i = 0;
+  while (i < s.length) {
+    const cp = s.codePointAt(i);
+    const charLen = cp > 0xFFFF ? 2 : 1;
+    if (cp >= 0x1F1E6 && cp <= 0x1F1FF) {
+      const next = s.codePointAt(i + charLen);
+      if (next && next >= 0x1F1E6 && next <= 0x1F1FF) {
+        w += 2;
+        i += charLen + (next > 0xFFFF ? 2 : 1);
+        continue;
+      }
+    }
+    if (cp >= 0x1F300) w += 2;                                              // 其他 emoji
+    else if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3040 && cp <= 0x30FF)) w += 2;  // 中日韩
+    else w += 1;
+    i += charLen;
+  }
+  return s + ' '.repeat(Math.max(0, width - w));
+}
+
 // Phase 4: 节点池详细诊断（仅当 API 可用）
 async function phase4_nodePool(controllerOk) {
   log('INFO', 'Phase 4', '═══ 节点池详细诊断 ═══');
@@ -289,6 +333,10 @@ async function phase4_nodePool(controllerOk) {
       popular: { ok: 0, slow: 0, fail: 0, total: 0, deadNames: [] },
       obscure: { ok: 0, slow: 0, fail: 0, total: 0, aliveNames: [] },
     },
+    // 每个具体地区的死活统计 — 用于检测「某地区整组挂掉」、给主用区域单独高亮
+    byDetailedRegion: {},   // { 地区: { total, dead, alive: [{ name, delay }] } }
+    // 健康（≤slowDelayThreshold）节点列表，verdict 里排序后用作切节点推荐
+    fastNodes: [],          // [{ name, delay }]
   };
   if (!controllerOk) {
     log('HINT', '节点池', '控制器 API 不可用，跳过');
@@ -306,33 +354,52 @@ async function phase4_nodePool(controllerOk) {
 
   for (const [name, info] of sample) {
     const cat = isPopularRegion(name) ? 'popular' : 'obscure';
+    const region = detailedRegion(name);
+    if (!r.byDetailedRegion[region]) r.byDetailedRegion[region] = { total: 0, dead: 0, alive: [], nodes: [] };
+    r.byDetailedRegion[region].total++;
+
     const encoded = encodeURIComponent(name);
     const x = await clashApi(`/proxies/${encoded}/delay?url=http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=5000`);
     r.stats.total++;
     r.byRegion[cat].total++;
     const tag = cat === 'popular' ? '主流' : '冷门';
 
+    let isDead = false, delayValue = null;
     if (x.ok && typeof x.data?.delay === 'number') {
       const d = x.data.delay;
       if (d === 0) {
         log('ERR', '节点', `[${tag}][${info.type}] ${name} → 不可用`);
         r.stats.fail++; r.byRegion[cat].fail++;
         if (cat === 'popular') r.byRegion.popular.deadNames.push(name);
+        isDead = true;
       } else if (d > CONFIG.slowDelayThreshold) {
         log('WARN', '节点', `[${tag}][${info.type}] ${name} → ${d}ms (慢)`);
         r.stats.slow++; r.byRegion[cat].slow++;
         if (cat === 'obscure') r.byRegion.obscure.aliveNames.push(`${name}(${d}ms)`);
+        delayValue = d;
       } else {
         log('OK', '节点', `[${tag}][${info.type}] ${name} → ${d}ms`);
         r.stats.ok++; r.byRegion[cat].ok++;
         if (cat === 'obscure') r.byRegion.obscure.aliveNames.push(`${name}(${d}ms)`);
+        delayValue = d;
+        r.fastNodes.push({ name, delay: d });
       }
     } else {
       log('ERR', '节点', `[${tag}][${info.type}] ${name} → 测试失败 (${x.data?.message || x.error})`);
       r.stats.fail++; r.byRegion[cat].fail++;
       if (cat === 'popular') r.byRegion.popular.deadNames.push(name);
+      isDead = true;
     }
+
+    if (isDead) r.byDetailedRegion[region].dead++;
+    else if (delayValue != null) r.byDetailedRegion[region].alive.push({ name, delay: delayValue });
+
+    // 同时按池里顺序保存到 nodes，给主用区域块逐节点展示用
+    const nodeStatus = isDead ? 'fail' : (delayValue > CONFIG.slowDelayThreshold ? 'slow' : 'ok');
+    r.byDetailedRegion[region].nodes.push({ name, status: nodeStatus, delay: isDead ? null : delayValue });
   }
+
+  r.fastNodes.sort((a, b) => a.delay - b.delay);
 
   const { ok, slow, fail, total } = r.stats;
   const pop = r.byRegion.popular, obs = r.byRegion.obscure;
@@ -369,62 +436,222 @@ async function phase4_nodePool(controllerOk) {
 
 // ============ 综合判断 ============
 function verdict(p1, p2, p3a, p3b, p4) {
-  console.log('\n' + '═'.repeat(64));
-  log('INFO', '诊断结论', '');
-  console.log('═'.repeat(64));
-  const conclusions = [];
+  const stripAnsi = s => s.replace(/\x1b\[[0-9;]*m/g, '');
+  const line = s => { console.log(s); if (logStream) logStream.write(stripAnsi(s) + '\n'); };
+  const sevIcon = lvl =>
+    lvl === 'ok'   ? c.green  + ' ✓ ' + c.reset :
+    lvl === 'fail' ? c.red    + ' ✗ ' + c.reset :
+    lvl === 'warn' ? c.yellow + ' ⚠ ' + c.reset :
+                     c.gray   + ' – ' + c.reset;
 
-  if (!p1.healthy) {
-    conclusions.push({ sev: '严重', cat: 'flclash', msg: 'flclash 本地服务异常 → 重启 flclash 或检查端口' });
+  // ---------- 1. 收集每一类的判定（含依据）----------
+  let flclash;
+  if (!p1.healthy) flclash = { lvl: 'fail', msg: `端口 ${CONFIG.httpProxyPort} 不通 → flclash 没运行或端口配错` };
+  else if (!p1.controllerOk) flclash = { lvl: 'warn', msg: '代理端口正常，但外部控制器未开（节点详情会跳过）' };
+  else flclash = { lvl: 'ok', msg: `正常（代理 ${CONFIG.httpProxyPort} + 控制器 API）` };
+
+  // 真的国际出口拥塞 vs 单点抽风：
+  //   p2.foreignDirectSlow 太敏感（一个境外站慢就触发，比如 Cloudflare 路由抽风但其实不影响 VPN）
+  //   "真拥塞" 需要：经代理穿透多个目标都慢 + 当前节点本身不慢（排除节点慢的干扰）
+  const proxyManySlow = p3a && p3a.results.length >= 2
+    && p3a.results.filter(r => !r.ok || r.elapsed > 3000).length >= 2;
+  const currentNodeFast = !p3b || !p3b.stats || p3b.stats.avg <= 800;
+
+  let network;
+  if (!p2.dnsOk)                network = { lvl: 'fail', msg: 'DNS 解析失败 → 网络配置出问题' };
+  else if (!p2.domesticOk)      network = { lvl: 'fail', msg: '境内站连不上 → 整个网络断了' };
+  else if (!p2.foreignDirectOk) network = { lvl: 'fail', msg: '国际出口断了，VPN 也走不出去（流量也走这条路）→ 个人无解，换手机热点或等线路恢复' };
+  else if (p2.foreignDirectSlow && proxyManySlow && currentNodeFast) {
+    network = { lvl: 'warn', msg: '国际出口确实拥塞（经代理多个目标都慢）→ VPN 救不了，临时换手机热点或等高峰过' };
   }
-  if (!p2.dnsOk) conclusions.push({ sev: '严重', cat: '公司网络', msg: 'DNS 解析挂了' });
-  if (!p2.domesticOk) conclusions.push({ sev: '严重', cat: '公司网络', msg: '连境内站都连不上 → 公司网整个出问题' });
-  if (p2.domesticOk && !p2.foreignDirectOk) {
-    conclusions.push({ sev: '严重', cat: '公司国际出口', msg: '境内通但境外直连全失败 → 公司国际线路断了，VPN 走不出去' });
-  } else if (p2.foreignDirectSlow) {
-    conclusions.push({ sev: '中等', cat: '公司国际出口', msg: '境外直连慢/超时 → 公司国际带宽拥塞（下午高峰常见，VPN 也会一起慢）' });
+  else network = { lvl: 'ok', msg: '正常（境内 + 国际出口都通）' };
+
+  let subscription;
+  if (!p4 || p4.skipped) subscription = { lvl: 'skip', msg: '未检查（控制器 API 未开，节点池跳过了）' };
+  else if (p4.stalePattern) {
+    const obsAlive = p4.byRegion.obscure.ok + p4.byRegion.obscure.slow;
+    subscription = { lvl: 'fail', msg: `失效 — 主流 ${p4.byRegion.popular.total} 全死、冷门活 ${obsAlive} 个 → 重新导入订阅` };
+  } else {
+    const popAlive = p4.byRegion.popular.ok + p4.byRegion.popular.slow;
+    subscription = { lvl: 'ok', msg: `健康（主流活 ${popAlive}/${p4.byRegion.popular.total}）` };
   }
 
-  // ★订阅源失效特征（最高优先级提示）
-  if (p4 && p4.stalePattern) {
-    conclusions.push({ sev: '中等', cat: '订阅源', msg: '主流地区(HK/TW/JP/US)节点全部失效但冷门地区还活着 → 重新导入订阅（最快的解决方案）' });
+  let preferred = null;
+  if (CONFIG.preferredRegion) {
+    if (!p4 || p4.skipped) {
+      preferred = { lvl: 'skip', msg: '未检查（控制器 API 未开）' };
+    } else {
+      const st = p4.byDetailedRegion[CONFIG.preferredRegion];
+      if (!st || st.total === 0) {
+        preferred = { lvl: 'skip', msg: `节点池里没有 ${CONFIG.preferredRegion} 节点` };
+      } else if (st.alive.length === 0) {
+        preferred = { lvl: 'fail', msg: `${st.total} 个节点全部失效（详见下方）` };
+      } else if (st.dead > 0) {
+        preferred = { lvl: 'warn', msg: `部分可用 ${st.alive.length}/${st.total}（详见下方）` };
+      } else {
+        preferred = { lvl: 'ok', msg: `全部可用 ${st.alive.length}/${st.total}` };
+      }
+    }
   }
 
-  if (p3a && !p3a.healthy) {
-    const allFail = p3a.results.every(x => !x.ok);
-    if (allFail) conclusions.push({ sev: '严重', cat: '代理穿透', msg: '所有目标经代理都失败 → 当前节点已挂或代理链路不通' });
-    else conclusions.push({ sev: '中等', cat: '代理穿透', msg: '部分境外目标经代理失败/慢 → 当前节点拥堵或线路不稳' });
-  }
-  if (p3b && !p3b.healthy && p3b.stats) {
+  let current = null;
+  if (p3b && p3b.stats) {
     const s = p3b.stats;
-    if (s.succRate < 0.5) conclusions.push({ sev: '严重', cat: '当前节点', msg: `成功率仅 ${(s.succRate*100).toFixed(0)}% → 切节点` });
-    else if (s.jitterRatio > CONFIG.unstableJitterRatio) conclusions.push({ sev: '中等', cat: '当前节点', msg: `延迟很不稳定（抖动 σ=${s.stdev}ms，范围 ${s.min}~${s.max}ms）→ 切到稳定节点` });
-    else if (s.avg && s.avg > 2000) conclusions.push({ sev: '中等', cat: '当前节点', msg: `平均延迟 ${s.avg}ms 过高` });
-  }
-  if (p4 && !p4.skipped && !p4.healthy && !p4.stalePattern) {
-    conclusions.push({ sev: '中等', cat: '节点池', msg: `节点池整体劣化（健康 ${p4.stats.ok}/${p4.stats.total}）→ 试试切冷门节点` });
+    if (s.succRate === 0)                                    current = { lvl: 'fail', msg: '0% 成功率 → 节点完全挂了' };
+    else if (s.succRate < 0.7)                               current = { lvl: 'fail', msg: `成功率仅 ${(s.succRate * 100).toFixed(0)}%` };
+    else if (s.jitterRatio > CONFIG.unstableJitterRatio)     current = { lvl: 'warn', msg: `抖动严重 σ=${s.stdev}ms（不稳定）` };
+    else if (s.avg > 2000)                                   current = { lvl: 'fail', msg: `平均 ${s.avg}ms 过高（稳定但慢）` };
+    else if (s.avg > 800)                                    current = { lvl: 'warn', msg: `平均 ${s.avg}ms 偏慢` };
+    else                                                     current = { lvl: 'ok',   msg: `平均 ${s.avg}ms, 稳定（σ=${s.stdev}ms）` };
   }
 
-  if (conclusions.length === 0) log('OK', '诊断结论', '✓ 全部检查通过，VPN 与网络状态健康');
-  else conclusions.forEach((x, i) => {
-    const icon = x.sev === '严重' ? '🔴' : '🟡';
-    log('WARN', '诊断结论', `${i + 1}. ${icon} [${x.sev}][${x.cat}] ${x.msg}`);
-  });
+  // ---------- 2. 问题定位（按优先级把"最该处理的事"挑出来）----------
+  // 优先级：flclash > 网络 > 订阅源 > 主用区域全死 > 其他区域整组失效 > 当前节点 > 国际出口拥塞 > 主用区域部分劣化 > 一切正常
+  let issue;
+  if (flclash.lvl === 'fail') {
+    issue = { color: c.red, title: 'flclash 软件异常', hint: '检查 flclash 是否运行、端口是否被改' };
+  } else if (!p2.dnsOk || !p2.domesticOk) {
+    issue = { color: c.red, title: '网络问题', hint: '联系 IT 或检查物理网络，VPN 救不了' };
+  } else if (!p2.foreignDirectOk) {
+    issue = { color: c.red, title: '国际出口断了', hint: 'VPN 流量也走这条路，换手机热点绕过或等线路恢复' };
+  } else if (subscription.lvl === 'fail') {
+    issue = { color: c.red, title: '订阅源失效', hint: '主流地区全死、冷门活 → 重新导入订阅链接' };
+  } else if (preferred && preferred.lvl === 'fail') {
+    issue = {
+      color: c.red,
+      title: `节点失效（${CONFIG.preferredRegion}机房挂了）`,
+      hint: '等 1–2 小时机房恢复，期间切到下方推荐的低延迟节点暂时缓解',
+    };
+  } else if (p4 && !p4.skipped) {
+    let downRegion = null;
+    for (const [region, st] of Object.entries(p4.byDetailedRegion || {})) {
+      if (region === '其他' || region === CONFIG.preferredRegion) continue;
+      if (st.total >= 3 && st.dead / st.total >= 0.8) { downRegion = region; break; }
+    }
+    if (downRegion) {
+      issue = { color: c.yellow, title: `${downRegion}区域整组失效`, hint: '该机房挂了，过几小时再测' };
+    } else if (current && current.lvl === 'fail') {
+      issue = { color: c.red, title: '当前节点性能差', hint: '切到其他节点（推荐见下方）' };
+    } else if (network.lvl === 'warn') {
+      issue = { color: c.yellow, title: '国际出口拥塞', hint: '换手机热点 / 等高峰过，VPN 救不了' };
+    } else if (current && current.lvl === 'warn') {
+      issue = { color: c.yellow, title: '当前节点偏慢', hint: '可考虑切到更快的节点' };
+    } else if (preferred && preferred.lvl === 'warn') {
+      issue = { color: c.yellow, title: '主用区域部分劣化', hint: '部分节点失效，但仍可工作' };
+    } else {
+      issue = { color: c.green, title: '一切正常 ✓', hint: null };
+    }
+  } else {
+    issue = { color: c.green, title: '一切正常 ✓', hint: null };
+  }
 
-  console.log('\n' + c.cyan + '判断逻辑速查：' + c.reset);
-  console.log('  Phase 1 失败              → flclash 本身问题');
-  console.log('  Phase 2 境内全失败        → 公司网络断了');
-  console.log('  Phase 2 境外直连全失败    → 公司国际出口出问题（VPN 救不了）');
-  console.log('  Phase 2 境外直连慢        → 国际带宽拥塞（下午高峰）');
-  console.log('  Phase 3a 全失败           → 当前节点挂了');
-  console.log('  Phase 3b 抖动大           → 当前节点不稳，切节点');
-  console.log('  Phase 4 主流全死+冷门活   → ★ 订阅源失效，重新导入');
+  // ---------- 3. 输出 ----------
   console.log('');
+  line(c.bold + c.cyan + '══════════════════ 诊断结果 ══════════════════' + c.reset);
+  line('');
+  line('  ' + c.bold + '【问题定位】' + c.reset + ' ' + issue.color + c.bold + issue.title + c.reset);
+  if (issue.hint) line('  ' + c.gray + '             ' + issue.hint + c.reset);
+  line('');
 
-  // 时段提示
-  const h = new Date().getHours();
-  if (h >= 13 && h <= 19) {
-    console.log(c.yellow + `💡 当前 ${h} 点正处下午高峰。如果 Phase 2 境外直连也慢，那就是公司国际出口被运营商限速 — VPN 也救不了；如果 Phase 2 OK 但 Phase 3/4 慢，那就是节点拥堵或订阅源失效，按上面结论处理。` + c.reset + '\n');
+  // 五行状态
+  const rows = [
+    { name: 'flclash 软件', ...flclash },
+    { name: '网络',         ...network },
+    { name: '订阅源',       ...subscription },
+  ];
+  if (preferred) rows.push({ name: `主用区域（${CONFIG.preferredRegion}）`, ...preferred });
+  if (current)   rows.push({ name: '当前节点', ...current });
+  for (const r of rows) {
+    line(`  ${sevIcon(r.lvl)} ${c.bold}${padDisplay(r.name, 18)}${c.reset}  ${r.msg}`);
+  }
+
+  // ---------- 4. 主用区域专属区块（逐节点 + 推荐）----------
+  if (CONFIG.preferredRegion && p4 && !p4.skipped) {
+    const st = p4.byDetailedRegion[CONFIG.preferredRegion];
+    if (st && st.total > 0) {
+      line('');
+      const aliveN = st.alive.length;
+      line(c.bold + c.cyan + `─────── ${CONFIG.preferredRegion}节点逐个状态（${aliveN}/${st.total} 可用）───────` + c.reset);
+      for (const n of st.nodes) {
+        let icon, valueColored;
+        if (n.status === 'fail')      { icon = c.red    + '✗' + c.reset; valueColored = c.red    + '失效' + c.reset; }
+        else if (n.status === 'slow') { icon = c.yellow + '⚠' + c.reset; valueColored = c.yellow + `${n.delay}ms (慢)` + c.reset; }
+        else                          { icon = c.green  + '✓' + c.reset; valueColored = c.green  + `${n.delay}ms` + c.reset; }
+        line(`   ${icon}  ${padDisplay(n.name, 20)}  ${valueColored}`);
+      }
+      line('');
+      if (aliveN === 0) {
+        line('  ' + c.gray + '期间临时切到这些低延迟节点缓解:' + c.reset);
+        if (p4.fastNodes && p4.fastNodes.length > 0) {
+          for (const n of p4.fastNodes.slice(0, 3)) {
+            line(`     • ${n.name}    ${c.green}${n.delay}ms${c.reset}`);
+          }
+        } else {
+          line('     ' + c.gray + '（节点池里没有可用的快节点）' + c.reset);
+        }
+      } else {
+        const fastest = st.alive.reduce((a, b) => a.delay < b.delay ? a : b);
+        line('  ' + c.gray + '推荐使用: ' + c.reset + c.green + c.bold + `${fastest.name}  ${fastest.delay}ms` + c.reset + c.gray + '（最快）' + c.reset);
+      }
+    }
+  }
+
+  // 区域恢复/失效检测 — 与上次运行对比
+  printRegionStateChange(p4, line);
+
+  console.log('');
+}
+
+
+// 持久化区域状态、并报告与上次运行的差异（恢复/新失效）
+function printRegionStateChange(p4, line) {
+  if (!p4 || p4.skipped) return;
+  const stateFile = path.join(CONFIG.logDir, 'last-region-state.json');
+
+  // 先读上次状态
+  let last = null;
+  try {
+    if (fs.existsSync(stateFile)) {
+      last = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    }
+  } catch { /* 损坏就当没有 */ }
+
+  // 构造当前状态
+  const current = {};
+  for (const [r, st] of Object.entries(p4.byDetailedRegion || {})) {
+    if (r === '其他') continue;
+    current[r] = { total: st.total, alive: st.alive.length };
+  }
+
+  // 写入当前状态（即便之后比对失败，也要把这次的写下来供下次用）
+  try {
+    fs.writeFileSync(stateFile, JSON.stringify({ ts: Date.now(), regions: current }, null, 2));
+  } catch { /* 写不了不致命 */ }
+
+  if (!last || !last.regions) return;
+
+  // 对比
+  const recovered = [], degraded = [];
+  for (const [r, cur] of Object.entries(current)) {
+    const prev = last.regions[r];
+    if (!prev) continue;
+    if (prev.alive === 0 && cur.alive > 0) {
+      recovered.push({ region: r, alive: cur.alive, total: cur.total });
+    } else if (prev.alive > 0 && cur.alive === 0 && cur.total >= 3) {
+      degraded.push({ region: r, total: cur.total });
+    }
+  }
+
+  if (recovered.length === 0 && degraded.length === 0) return;
+
+  const ago = Math.max(1, Math.round((Date.now() - last.ts) / 60000));
+  line('');
+  line(c.gray + `自上次运行（${ago} 分钟前）以来:` + c.reset);
+  for (const r of recovered) {
+    line('  ' + c.green + `🎉 ${r.region} 已恢复（活 ${r.alive}/${r.total}）` + c.reset);
+  }
+  for (const r of degraded) {
+    line('  ' + c.red + `💀 ${r.region} 刚刚整组失效（0/${r.total}）` + c.reset);
   }
 }
 
