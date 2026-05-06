@@ -69,6 +69,31 @@ export function friendlyError(err: unknown): FriendlyError {
     return { title: '需要验证码', hint: '按提示输入验证码继续', raw: msg }
   }
 
+  // Windows file ACL / permission errors — surfaced from PowerShell stderr
+  if (
+    lower.includes('access is denied') ||
+    lower.includes('access to the path') ||
+    lower.includes('unauthorizedaccessexception') ||
+    lower.includes('does not have ownership') ||
+    msg.includes('拒绝访问') ||
+    msg.includes('权限') ||
+    msg.includes('需要管理员')
+  ) {
+    return {
+      title: '权限不足',
+      hint: '系统拒绝了删除/修改操作。这通常意味着该文件需要管理员权限——可以用 Windows 资源管理器手动删除（按 UAC 提示授权），或以管理员身份重新运行 Maple Tools 后再试。',
+      raw: msg,
+    }
+  }
+
+  if (lower.includes('eperm') || lower.includes('eacces')) {
+    return {
+      title: '权限不足',
+      hint: '当前账户没有权限对这个文件执行该操作。',
+      raw: msg,
+    }
+  }
+
   return {
     title: '出错了',
     hint: '这个错误暂时没法自动判断来源，可以参考下方信息',
