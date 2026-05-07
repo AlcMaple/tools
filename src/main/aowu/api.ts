@@ -1,17 +1,21 @@
 /**
  * Aowu (嗷呜动漫) API — search + watch.
  *
- * Site uses the same MacCMS dsn2 template as xifan, so the HTML selectors are nearly
- * identical. Difference: video URLs are not template-able — each ep needs the 3-step
- * resolution flow in url-resolver.ts at download time. Watch only enumerates the play
- * pages.
+ * 2026-05 site overhaul: switched off MacCMS dsn2 to a custom "FantasyKon" frontend.
+ *   - search URL: /search?anime={kw}&page={N}  → 302 → /s/{token}?anime=...&page=...
+ *   - cards: <article class="category-video-card"> with <a class="poster" href="/v/{token}">
+ *   - pagination: button-driven UI but URL `&page=N` works directly
+ *   - total pages: text "第 X / Y 页" in HTML body
+ *
+ * Watch / download URL pipeline still uses the old /play/{id}-{src}-{ep}/ pattern —
+ * those flows will fail until url-resolver.ts and watch() below are also updated for
+ * the new /v/{token} pattern. See the TODO marker in watch().
  */
 import * as https from 'https'
 import * as http from 'http'
 import { URL } from 'url'
 import * as cheerio from 'cheerio/slim'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
-import { crawlAllPages } from '../shared/maccms-search-paginator'
 
 export const BASE_URL = 'https://www.aowu.tv'
 
@@ -51,7 +55,9 @@ export interface AowuWatchInfo {
 
 interface FetchResult { status: number; body: string }
 
-export function fetchPage(url: string, extraHeaders?: Record<string, string>): Promise<FetchResult> {
+interface FetchResultRaw { status: number; body: string; location: string | null }
+
+function fetchPageOnce(url: string, extraHeaders?: Record<string, string>): Promise<FetchResultRaw> {
   return new Promise((resolve, reject) => {
     const u = new URL(url)
     const mod = (u.protocol === 'https:' ? https : http) as typeof https
@@ -66,7 +72,12 @@ export function fetchPage(url: string, extraHeaders?: Record<string, string>): P
         const chunks: Buffer[] = []
         res.on('data', (c: Buffer) => chunks.push(c))
         res.on('end', () => {
-          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf-8') })
+          const loc = res.headers.location
+          resolve({
+            status: res.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString('utf-8'),
+            location: Array.isArray(loc) ? loc[0] ?? null : (loc ?? null),
+          })
         })
         res.on('error', reject)
       }
@@ -74,6 +85,20 @@ export function fetchPage(url: string, extraHeaders?: Record<string, string>): P
     req.setTimeout(20000, () => { req.destroy(new Error('timeout')) })
     req.on('error', reject)
   })
+}
+
+/** GET that transparently follows 3xx redirects (up to 5 hops). */
+export async function fetchPage(url: string, extraHeaders?: Record<string, string>): Promise<FetchResult> {
+  let cur = url
+  for (let i = 0; i < 6; i++) {
+    const res = await fetchPageOnce(cur, extraHeaders)
+    if (res.status >= 300 && res.status < 400 && res.location) {
+      cur = new URL(res.location, cur).href
+      continue
+    }
+    return { status: res.status, body: res.body }
+  }
+  throw new Error('Too many redirects')
 }
 
 export function postForm(
@@ -116,39 +141,47 @@ export function postForm(
 // ── search ────────────────────────────────────────────────────────────────────
 
 /**
- * Parse one search-results page into cards.
+ * Parse one search-results page into cards (new FantasyKon layout).
  *
- * Each card is a `div.vod-detail.search-list` (same MacCMS dsn2 markup as xifan):
- *   - .detail-pic > img[data-src] — cover (lazy-loaded)
- *   - .detail-info > a > h3.slide-info-title — title
- *   - .detail-info ... div.vod-detail-bnt > a.button[href="/play/{id}-1-1/"] — play link
- *   - year / area come from anchors that link into /vods/year/ and /vods/area/.
+ *   <article class="category-video-card">
+ *     <a class="poster" href="/v/{token}" data-fk-raw-href="/video/{id}">
+ *       <img src="..." alt="{title}" />
+ *     </a>
+ *     <h3><a href="/v/{token}">{title}</a></h3>
+ *     <p>{epCount}|{updateDay}</p>      ← optional
+ *     <strong>{rating}</strong>          ← optional
+ *   </article>
+ *
+ * No year/area in cards anymore — they only appear on the detail page. We fill them
+ * with empty strings to keep the AowuSearchResult shape stable.
  */
 function parseSearchPage(html: string): AowuSearchResult[] {
   const $ = cheerio.load(html)
   const results: AowuSearchResult[] = []
 
-  $('div.vod-detail.search-list').each((_, el) => {
+  $('article.category-video-card').each((_, el) => {
     const $card = $(el)
-    const title = $card.find('h3.slide-info-title').text().trim()
-    const playHref = $card.find('div.vod-detail-bnt a.button').attr('href') ?? ''
-    if (!title || !playHref) return
+    const $poster = $card.find('a.poster').first()
+    const href = $poster.attr('href') || $card.find('h3 a').attr('href') || ''
+    if (!href) return
 
-    const cover = $card.find('div.detail-pic img').attr('data-src') ?? ''
-    const watch_url = new URL(playHref, BASE_URL).href
-    const year = $card.find('a[href*="/vods/year/"]').first().text().trim()
-    const area = $card.find('a[href*="/vods/area/"]').first().text().trim()
+    const title =
+      $card.find('h3 a').first().text().trim() ||
+      $card.find('h3').first().text().trim() ||
+      $poster.find('img').attr('alt') ||
+      ''
+    if (!title) return
 
-    results.push({ title, cover, year, area, watch_url })
+    const cover = $poster.find('img').attr('src') || ''
+    const watch_url = new URL(href, BASE_URL).href
+
+    results.push({ title, cover, year: '', area: '', watch_url })
   })
 
   return results
 }
 
 // Error markers — friendlyError translates these into user-facing title+hint.
-// AOWU_UNREACHABLE: site/CDN can't deliver content (523, timeout, custom error page)
-// AOWU_STRUCTURE_CHANGED: HTML loaded fine but our selectors don't match → site改版
-// AOWU_HTTP_<code>: other HTTP non-2xx that doesn't fit "unreachable"
 const ERR_UNREACHABLE = 'AOWU_UNREACHABLE'
 const ERR_STRUCTURE = 'AOWU_STRUCTURE_CHANGED'
 
@@ -158,55 +191,71 @@ function looksLikeErrorPage(html: string): boolean {
   return /源站响应超时|源站超时|origin\s+timeout|cf-error|connection\s+timed\s+out/i.test(html)
 }
 
-// "Did the page parse like a MacCMS search results page?" — used to distinguish
-// site改版 from genuinely-zero matches.
+// "Did the page parse like a search results page?" — used to distinguish
+// site改版 from "search ran, no matches" (latter has a recognizable empty-state).
 function looksLikeSearchResultPage(html: string): boolean {
-  return /vod-detail|search-list|slide-info-title|anthology-tab|class="vod-list/.test(html)
+  return /category-video-card|category-pagination|搜索结果|没有找到相关内容/.test(html)
 }
 
+// Pagination: server emits "第 X / Y 页" text. Pull Y. Fall back to 1.
+function parseTotalPages(html: string): number {
+  const m = html.match(/第\s*\d+\s*\/\s*(\d+)\s*页/)
+  if (!m) return 1
+  const n = parseInt(m[1])
+  return isNaN(n) || n < 1 ? 1 : n
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+const PAGE_DELAY_MS = 800
+const MAX_PAGES = 20
+
 export async function search(keyword: string): Promise<AowuSearchResult[]> {
-  const firstUrl = `${BASE_URL}/vods/?wd=${encodeURIComponent(keyword)}`
+  const buildUrl = (page: number): string =>
+    page <= 1
+      ? `${BASE_URL}/search?anime=${encodeURIComponent(keyword)}`
+      : `${BASE_URL}/search?anime=${encodeURIComponent(keyword)}&page=${page}`
 
   let firstRes: FetchResult
   try {
-    firstRes = await fetchPage(firstUrl)
+    firstRes = await fetchPage(buildUrl(1))
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     throw new Error(`${ERR_UNREACHABLE}: 网络请求失败 (${msg})`)
   }
 
-  // 5xx including 523 (Cloudflare 源站不可达) → unreachable
+  // 5xx including 523 (Cloudflare 源站不可达)
   if (firstRes.status >= 500 && firstRes.status < 600) {
     throw new Error(`${ERR_UNREACHABLE}: HTTP ${firstRes.status}`)
   }
   if (firstRes.status !== 200) {
     throw new Error(`AOWU_HTTP_${firstRes.status}: HTTP ${firstRes.status}`)
   }
-  // Site uses Cloudflare-like custom error pages that sometimes return 200
   if (looksLikeErrorPage(firstRes.body)) {
     throw new Error(`${ERR_UNREACHABLE}: 站点返回了 CDN 错误页`)
   }
 
-  // Heuristic: if 0 cards parsed AND none of the expected MacCMS markers are
-  // present in the HTML, the site has been redesigned. Surfacing this as a
-  // distinct error (vs. silently empty results) tells the user to update the
-  // parser instead of assuming the keyword has no matches.
+  // 0 cards + no recognizable search-results markup ⇒ site has changed shape again.
+  // (vs. 0 cards + "没有找到相关内容" page = real "no matches" — return [].)
   const firstPage = parseSearchPage(firstRes.body)
   if (firstPage.length === 0 && !looksLikeSearchResultPage(firstRes.body)) {
-    throw new Error(`${ERR_STRUCTURE}: 搜索页 HTML 不含已知的 MacCMS 标记`)
+    throw new Error(`${ERR_STRUCTURE}: 搜索页 HTML 不含已知 FantasyKon 标记`)
   }
 
-  // Sequential pagination via shared helper — follows `下一页` links with 1s delay.
-  return crawlAllPages({
-    firstHtml: firstRes.body,
-    baseUrl: BASE_URL,
-    parsePage: parseSearchPage,
-    fetchHtml: async (url) => {
-      const r = await fetchPage(url)
-      if (r.status !== 200) throw new Error(`HTTP ${r.status}`)
-      return r.body
-    },
-  })
+  // Walk remaining pages by incrementing `page` until we hit total or an empty page.
+  const total = Math.min(parseTotalPages(firstRes.body), MAX_PAGES)
+  const all: AowuSearchResult[] = [...firstPage]
+  for (let p = 2; p <= total; p++) {
+    await sleep(PAGE_DELAY_MS)
+    let res: FetchResult
+    try { res = await fetchPage(buildUrl(p)) }
+    catch { break } // network blip — return what we have rather than hard-fail
+    if (res.status !== 200) break
+    const items = parseSearchPage(res.body)
+    if (items.length === 0) break // server clamps over-the-end pages to empty
+    all.push(...items)
+  }
+  return all
 }
 
 // ── watch ─────────────────────────────────────────────────────────────────────
@@ -309,6 +358,13 @@ async function resolveSourceIdx(animeId: string, fromValues: string[]): Promise<
  * Returns the title + animeId + every source's full episode list.
  */
 export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
+  // The new search returns /v/{token} URLs but watch/download pipeline still
+  // assumes the legacy /play/{id}-{src}-{ep}/ format. Fail clearly instead of
+  // crashing on missing `var player_aaaa`.
+  if (/\/v\//.test(new URL(watchUrl).pathname)) {
+    throw new Error('AOWU_WATCH_NOT_ADAPTED: 详情/下载流程未适配新版 /v/{token} 路径')
+  }
+
   const res = await fetchPage(watchUrl)
   if (res.status !== 200) throw new Error(`Watch fetch failed: HTTP ${res.status}`)
   const html = res.body

@@ -41,6 +41,13 @@ export function friendlyError(err: unknown): FriendlyError {
       raw: msg,
     }
   }
+  if (msg.startsWith('AOWU_WATCH_NOT_ADAPTED')) {
+    return {
+      title: '下载流程未适配',
+      hint: '站点改版后详情页是新结构（/v/{token}），下载/播放链接解析尚未重写。目前只能用搜索功能浏览结果。',
+      raw: msg,
+    }
+  }
   if (/^AOWU_HTTP_\d+/.test(msg)) {
     const code = msg.match(/AOWU_HTTP_(\d+)/)?.[1] ?? '?'
     return {
