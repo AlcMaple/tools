@@ -44,6 +44,15 @@ export async function downloadSingleEp(
     onEvent({ type: 'ep_error', ep, msg: 'Missing animeId or sourceIdx' })
     return
   }
+  // FantasyKon anime tokens are alphanumeric + underscore (e.g. "_2jACJ3_AIQE").
+  // Stale tasks from a brief buggy intermediate version of search() captured
+  // raw `data-fk-raw-href` values like "/video/73" — these would build a URL
+  // with a double slash and silently 30s-timeout in resolveAowuMp4. Reject
+  // them up front with a clear message instructing the user to re-add.
+  if (!/^[A-Za-z0-9_-]+$/.test(animeId)) {
+    onEvent({ type: 'ep_error', ep, msg: `任务数据已过期（aowuId="${animeId}"）— 请删除该任务并重新搜索添加` })
+    return
+  }
 
   const savePath = epSavePath(title, label, saveDir)
   const dir = dirname(savePath)

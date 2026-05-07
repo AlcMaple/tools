@@ -93,6 +93,8 @@ contextBridge.exposeInMainWorld('xifanApi', {
 contextBridge.exposeInMainWorld('aowuApi', {
   search: (keyword: string) => ipcRenderer.invoke('aowu:search', keyword),
   getWatch: (watchUrl: string) => ipcRenderer.invoke('aowu:watch', watchUrl),
+  resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) =>
+    ipcRenderer.invoke('aowu:resolve-mp4-url', animeId, sourceIdx, ep) as Promise<string>,
   startDownload: (
     title: string,
     animeId: string,
