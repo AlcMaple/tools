@@ -24,6 +24,32 @@ export function friendlyError(err: unknown): FriendlyError {
   const msg = unwrap(raw)
   const lower = msg.toLowerCase()
 
+  // Source-specific error markers — emitted by site adapters when they detect
+  // unreachable / structure-changed conditions. Match BEFORE generic classifiers
+  // so the user sees the right cause.
+  if (msg.startsWith('AOWU_UNREACHABLE')) {
+    return {
+      title: '嗷呜动漫无法访问',
+      hint: '该站点对境外节点屏蔽，挂 VPN 时会触发 523 / 源站超时。请关闭 VPN（或对该域名设置代理直连）后再试。',
+      raw: msg,
+    }
+  }
+  if (msg.startsWith('AOWU_STRUCTURE_CHANGED')) {
+    return {
+      title: '嗷呜动漫已改版',
+      hint: '页面结构变了，旧解析器抓不到结果。需要根据新 UI 更新搜索 / 详情页解析代码。',
+      raw: msg,
+    }
+  }
+  if (/^AOWU_HTTP_\d+/.test(msg)) {
+    const code = msg.match(/AOWU_HTTP_(\d+)/)?.[1] ?? '?'
+    return {
+      title: `嗷呜动漫返回 HTTP ${code}`,
+      hint: '站点返回非预期状态码，可能是临时维护或路由问题。',
+      raw: msg,
+    }
+  }
+
   // Windows file operations are classified FIRST. PowerShell stderr often
   // contains paths like "...\electron\network\..." which would trip the
   // network-keyword match below. Detect file-op markers and branch out early.
