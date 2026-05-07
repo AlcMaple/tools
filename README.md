@@ -19,11 +19,11 @@
 
 | 搜索与下载 | 下载队列 |
 |---|---|
-| ![](docs/screenshots/search-download.png) | ![](docs/screenshots/download-queue.png) |
+| <img src="docs/screenshots/search-download.png" width="420" /> | <img src="docs/screenshots/download-queue.png" width="420" /> |
 
 | 番剧详情 | 本地媒体库 |
 |---|---|
-| ![](docs/screenshots/anime-info.png) | ![](docs/screenshots/local-library.png) |
+| <img src="docs/screenshots/anime-info.png" width="420" /> | <img src="docs/screenshots/local-library.png" width="420" /> |
 
 ## 平台支持
 
