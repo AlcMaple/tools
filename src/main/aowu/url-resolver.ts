@@ -1,94 +1,59 @@
 /**
- * Aowu video URL resolver.
+ * Aowu video URL resolver — FantasyKon (post-2026-05) flow.
  *
- * The play page exposes `player_aaaa.url` as a base64-of-percent-encoded string
- * (encrypt: 2 in MacCMS terms). The "plain" form is a parser-specific token
- * (e.g. a TikTok video id), not a URL. To get the actual mp4 we have to:
+ * The new watch page is /w/{animeToken}#s={source_id}&ep={ep_num}. It's a
+ * JS-rendered SPA that:
+ *   1. Reads the URL hash to figure out which source/ep is selected
+ *   2. POSTs to /api/site/secure with an encrypted payload
+ *   3. Decrypts the response in-page
+ *   4. Sets the resulting CDN URL onto a <video> element's src attribute
  *
- *   1. Decode the play page url field:  base64 → percent-decode → plain
- *   2. POST /player1/encode.php with `plain=<x>` → server returns {url, ts, sig}
- *   3. GET /player1/?url=&ts=&sig=&next=  → an iframe HTML page that has a JS-side
- *      AES-128-CBC-encrypted real URL, with the IV being the first 16 bytes of the
- *      ciphertext and the key inlined into the page.
- *   4. AES decrypt with key + iv → final mp4 URL (TikTok / Douyin CDN, supports Range).
+ * Replicating the request/response crypto in Node would require reverse-engineering
+ * the obfuscated bundle (~520KB minified, no `site/secure` literal). Instead we
+ * drive the page in a hidden Electron BrowserWindow and pluck `<video>.src` once
+ * the SPA has set it.
  *
- * The resolved URL is short-lived but typically valid for hours, so we resolve once
- * per ep at download start and don't retry.
+ * The resolved URL is a signed ByteDance CDN link
+ * (e.g. lf26-imcloud-file-sign.bytetos.com), supports HTTP Range, and stays valid
+ * for a few hours — long enough for downstream chunked-Range download to complete.
  */
-import { createDecipheriv } from 'crypto'
-import { BASE_URL, fetchPage, parsePlayerData, postForm } from './api'
-
-interface EncodeResponse {
-  ok: number
-  url: string
-  ts: number
-  sig: string
-}
-
-function b64decode(s: string): string {
-  return Buffer.from(s, 'base64').toString('latin1')
-}
+import { BASE_URL } from './api'
+import { navigate, evalInPage, waitFor } from './headless'
 
 /**
- * Run the full chain for one play-page URL. Returns the final mp4 direct URL.
+ * Run the resolution chain for one watch URL. Returns the final mp4 direct URL.
  *
- * `playPageUrl` is something like `https://www.aowu.tv/play/iSAAAK-1-1/`.
+ * `watchUrl` is `${BASE_URL}/w/{animeToken}#s={src}&ep={ep}` (or accepts the
+ * separate parts via the convenience overload below).
  */
-export async function resolveAowuMp4(playPageUrl: string): Promise<string> {
-  // Step 1: fetch play page, extract player_aaaa, decode .url.
-  const playRes = await fetchPage(playPageUrl)
-  if (playRes.status !== 200) throw new Error(`Play page fetch failed: HTTP ${playRes.status}`)
-  const data = parsePlayerData(playRes.body)
-  if (!data) throw new Error('player_aaaa not found on play page')
-
-  let plain: string
-  if (data.encrypt === 2) {
-    // base64decode then unescape (MacCMS player.js reference logic)
-    plain = decodeURIComponent(b64decode(data.url))
-  } else if (data.encrypt === 1) {
-    plain = decodeURIComponent(data.url)
-  } else {
-    plain = data.url
+export async function resolveAowuMp4(watchUrl: string): Promise<string> {
+  const u = new URL(watchUrl)
+  if (!u.pathname.startsWith('/w/')) {
+    throw new Error(`AOWU_STRUCTURE_CHANGED: 期望 /w/{token}# 形式的播放 URL，收到 ${u.pathname}`)
   }
 
-  // Step 2: POST encode.php to get {url, ts, sig}.
-  const encodeRes = await postForm(
-    `${BASE_URL}/player1/encode.php`,
-    `plain=${encodeURIComponent(plain)}`,
-    { Referer: playPageUrl }
-  )
-  if (encodeRes.status !== 200) throw new Error(`encode.php failed: HTTP ${encodeRes.status}`)
-  let parsed: EncodeResponse
-  try { parsed = JSON.parse(encodeRes.body) as EncodeResponse } catch {
-    throw new Error('encode.php returned non-JSON')
+  await navigate(watchUrl)
+
+  // The SPA sets <video>.src after /api/site/secure POST + in-page decryption.
+  // Empirically takes 3–6s; pad the timeout for slow networks / first-load JS bundle.
+  await waitFor(() => {
+    const v = document.querySelector('video') as HTMLVideoElement | null
+    const src = v?.src || ''
+    return !!(src && /^https?:\/\//.test(src))
+  }, 30000, 250)
+
+  const url = await evalInPage<string>(() => {
+    const v = document.querySelector('video') as HTMLVideoElement | null
+    return (v?.src || '').toString()
+  })
+
+  if (!url || !/^https?:\/\//.test(url)) {
+    throw new Error('AOWU_RESOLVE_FAILED: 未在 <video>.src 上找到有效 URL')
   }
-  if (parsed.ok !== 1 || !parsed.url || !parsed.ts || !parsed.sig) {
-    throw new Error('encode.php returned unexpected payload')
-  }
+  return url
+}
 
-  // Step 3: fetch player1 iframe page, extract encryptedUrl + sessionKey.
-  const ifrUrl =
-    `${BASE_URL}/player1/?url=${encodeURIComponent(parsed.url)}` +
-    `&ts=${encodeURIComponent(String(parsed.ts))}` +
-    `&sig=${encodeURIComponent(parsed.sig)}` +
-    `&next=`
-  const ifrRes = await fetchPage(ifrUrl, { Referer: playPageUrl })
-  if (ifrRes.status !== 200) throw new Error(`player1 iframe failed: HTTP ${ifrRes.status}`)
-
-  const encMatch = ifrRes.body.match(/const\s+encryptedUrl\s*=\s*"([^"]+)"/)
-  const keyMatch = ifrRes.body.match(/const\s+sessionKey\s*=\s*"([^"]+)"/)
-  if (!encMatch || !keyMatch) throw new Error('encryptedUrl/sessionKey not found in iframe HTML')
-
-  // Step 4: AES-128-CBC decrypt. IV = first 16 bytes of ciphertext, key = sessionKey ASCII.
-  const ct = Buffer.from(encMatch[1], 'base64')
-  if (ct.length < 32) throw new Error('encryptedUrl ciphertext too short')
-  const iv = ct.subarray(0, 16)
-  const data2 = ct.subarray(16)
-  const key = Buffer.from(keyMatch[1], 'utf-8')
-  if (key.length !== 16) throw new Error(`unexpected sessionKey length ${key.length}`)
-
-  const decipher = createDecipheriv('aes-128-cbc', key, iv)
-  const plaintext = Buffer.concat([decipher.update(data2), decipher.final()]).toString('utf-8')
-  if (!/^https?:\/\//.test(plaintext)) throw new Error(`decrypted result is not a URL: ${plaintext.slice(0, 80)}`)
-  return plaintext
+/** Convenience: build the watch URL from parts. */
+export function buildAowuWatchUrl(animeToken: string, sourceId: number, epNum: number): string {
+  return `${BASE_URL}/w/${animeToken}#s=${sourceId}&ep=${epNum}`
 }
