@@ -59,6 +59,11 @@ export async function getCachedSearch(
     if (!all) return null;
     const entry = readCacheEntry<SearchCard[]>(all[keyword]);
     if (!entry) return null;
+    // Treat empty-result entries as a cache MISS. They are commonly artifacts
+    // of transient failures (site改版 / network blip) that produced 0 cards
+    // without throwing; serving such an entry locks the user out of real
+    // results until TTL. Force a re-fetch by returning null.
+    if (!Array.isArray(entry.data) || entry.data.length === 0) return null;
     return {
       data: entry.data,
       isStale: Date.now() - entry.updatedAt > ttlFor(source),
@@ -73,6 +78,8 @@ export async function setCachedSearch(
   source: Source,
   cards: SearchCard[],
 ): Promise<void> {
+  // Don't cache empty results — see getCachedSearch comment for rationale.
+  if (!Array.isArray(cards) || cards.length === 0) return;
   const key = `search_cache_${source.toLowerCase()}`;
   try {
     await window.systemApi.cacheSet(key, keyword, {
