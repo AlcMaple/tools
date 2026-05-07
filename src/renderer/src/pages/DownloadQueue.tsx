@@ -48,6 +48,8 @@ function EpisodeGrid({
   onRetryEp: (ep: number) => void
 }): JSX.Element {
   const [copiedEp, setCopiedEp] = useState<number | null>(null)
+  const [resolvingEp, setResolvingEp] = useState<number | null>(null)
+  const [copyError, setCopyError] = useState<string | null>(null)
 
   const eps =
     task.source === 'girigiri' || task.source === 'aowu'
@@ -64,43 +66,81 @@ function EpisodeGrid({
     return `EP ${String(ep).padStart(2, '0')}`
   }
 
-  function getEpUrl(ep: number): string {
+  function getSyncEpUrl(ep: number): string {
+    // Synchronous URL for non-aowu sources (xifan / girigiri), where the URL is
+    // a static template and copying is instant. Aowu goes through resolveEpUrl.
     if (task.source === 'girigiri') {
       return task.girigiriEps?.find((e) => e.idx === ep)?.url ?? ''
     }
-    if (task.source === 'aowu') {
-      // Aowu's real mp4 URL is signed + lazy — exposing the play page URL is the closest
-      // analog (clicking it in a browser opens the player).
-      const id = task.aowuId
-      const src = task.sourceIdx ?? 1
-      return id ? `https://www.aowu.tv/play/${id}-${src}-${ep}/` : ''
-    }
+    if (task.source === 'aowu') return ''
     const template = task.templates?.[0] ?? ''
     return template ? template.replace('{:02d}', String(ep).padStart(2, '0')) : ''
   }
 
   async function copyEpUrl(ep: number): Promise<void> {
-    const url = getEpUrl(ep)
+    setCopyError(null)
+
+    // Aowu: real downloadable URL is a signed ByteDance CDN link only available
+    // after the SPA decrypts /api/site/secure response. Resolve on-demand
+    // (~3-5s) so the user can paste into NDM 等 external downloaders.
+    if (task.source === 'aowu') {
+      const id = task.aowuId
+      const src = task.sourceIdx
+      if (!id || !src) { setCopyError('任务缺少 aowuId / sourceIdx'); return }
+      setResolvingEp(ep)
+      try {
+        const url = await window.aowuApi.resolveMp4Url(id, src, ep)
+        await navigator.clipboard.writeText(url)
+        setCopiedEp(ep)
+        setTimeout(() => setCopiedEp(null), 1500)
+      } catch (err) {
+        setCopyError((err as Error).message || '获取下载链接失败')
+        setTimeout(() => setCopyError(null), 3500)
+      } finally {
+        setResolvingEp(null)
+      }
+      return
+    }
+
+    const url = getSyncEpUrl(ep)
     if (!url) return
     await navigator.clipboard.writeText(url)
     setCopiedEp(ep)
     setTimeout(() => setCopiedEp(null), 1500)
   }
 
-  const copyIcon = (ep: number): JSX.Element => (
-    <button
-      onClick={(e) => { e.stopPropagation(); void copyEpUrl(ep) }}
-      title="Copy download URL"
-      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-all w-5 h-5 flex items-center justify-center rounded text-outline/50 hover:text-primary"
-    >
-      <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>
-        {copiedEp === ep ? 'check' : 'content_copy'}
-      </span>
-    </button>
-  )
+  const copyIcon = (ep: number): JSX.Element => {
+    const isResolving = resolvingEp === ep
+    const isCopied = copiedEp === ep
+    const tooltip = task.source === 'aowu'
+      ? (isResolving ? '正在获取真实下载链接…' : '复制 mp4 直链（约 3-5s）')
+      : 'Copy download URL'
+    const icon = isResolving ? 'progress_activity' : (isCopied ? 'check' : 'content_copy')
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); void copyEpUrl(ep) }}
+        disabled={isResolving}
+        title={tooltip}
+        className={`absolute top-1 right-1 ${isResolving ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-all w-5 h-5 flex items-center justify-center rounded text-outline/50 hover:text-primary disabled:opacity-100 disabled:text-primary/70 disabled:cursor-wait`}
+      >
+        <span
+          className={`material-symbols-outlined leading-none ${isResolving ? 'animate-spin' : ''}`}
+          style={{ fontSize: 11 }}
+        >
+          {icon}
+        </span>
+      </button>
+    )
+  }
 
   return (
     <div className="mt-6 pt-5 border-t border-outline-variant/10">
+      {copyError && (
+        <div className="mb-3 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-[11px] text-error font-label flex items-center gap-2">
+          <span className="material-symbols-outlined" style={{ fontSize: 13 }}>error</span>
+          <span className="flex-1 break-all">{copyError}</span>
+        </div>
+      )}
       <div className="grid grid-cols-6 gap-2.5">
         {eps.map((ep) => {
           const rawStatus = task.epStatus[ep] ?? 'pending'

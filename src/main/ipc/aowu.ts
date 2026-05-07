@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { setMaxListeners } from 'events'
 import { search, watch } from '../aowu/api'
 import { downloadSingleEp, cleanupParts, DlEvent } from '../aowu/download'
+import { resolveAowuMp4, buildAowuWatchUrl } from '../aowu/url-resolver'
 import { trackSpeed, forgetTask } from '../shared/speed-tracker'
 import { aowuScheduler } from '../shared/download-scheduler'
 
@@ -88,6 +89,22 @@ function startNextEp(taskId: string): void {
 export function registerAowuIpc(): void {
   ipcMain.handle('aowu:search', async (_event, keyword: string) => search(keyword))
   ipcMain.handle('aowu:watch', async (_event, watchUrl: string) => watch(watchUrl))
+
+  // Resolve a watch (animeId, sourceIdx, ep) tuple to the signed ByteDance CDN
+  // direct URL. Used by the queue's "copy URL" feature so the user can paste
+  // into external downloaders (NDM 等) and actually get the mp4. ~3-5s per call
+  // because we drive the SPA in a hidden BrowserWindow and wait for <video>.src.
+  ipcMain.handle(
+    'aowu:resolve-mp4-url',
+    async (_event, animeId: string, sourceIdx: number, ep: number): Promise<string> => {
+      if (!animeId || !sourceIdx) throw new Error('Missing animeId or sourceIdx')
+      if (!/^[A-Za-z0-9_-]+$/.test(animeId)) {
+        throw new Error(`任务数据已过期（aowuId="${animeId}"）— 请删除该任务并重新搜索添加`)
+      }
+      const watchUrl = buildAowuWatchUrl(animeId, sourceIdx, ep)
+      return resolveAowuMp4(watchUrl)
+    }
+  )
 
   ipcMain.handle(
     'aowu:download',

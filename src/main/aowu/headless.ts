@@ -25,24 +25,43 @@ async function ensureWindow(): Promise<BrowserWindow> {
 
   _initPromise = (async () => {
     await app.whenReady()
+
+    // CRITICAL: aowu's SPA detects `document.hidden` / `visibilityState === 'hidden'`
+    // and refuses to fire `/api/site/secure`, so a `show: false` window never
+    // gets <video>.src populated. Workaround: create a visible-but-imperceptible
+    // window — 1x1 px, frameless, no taskbar, parked off-screen. To Chromium it's
+    // a normal visible window, to the user it's nothing.
+    const debug = process.env.DEBUG_AOWU_HEADLESS === '1'
     const win = new BrowserWindow({
-      show: false,
+      show: debug,
       width: 1280,
       height: 800,
       webPreferences: {
         sandbox: true,
         contextIsolation: true,
-        // Hidden windows are background-throttled by default — Chromium would
-        // pause the SPA's timers and the secure endpoint would never fire.
+        // Hidden windows are background-throttled by default — keep timers
+        // running so the SPA can fire its /api/site/secure POST.
         backgroundThrottling: false,
       },
     })
     win.webContents.setUserAgent(DESKTOP_UA)
+    if (debug) {
+      win.webContents.openDevTools({ mode: 'right' })
+    }
     win.on('closed', () => {
       _win = null
       _initPromise = null
     })
     _win = win
+
+    // Pre-warm: visit the homepage so the FantasyKon SPA can install its session
+    // cookies (mxa* analytics + any anti-bot tokens). Without this, the very first
+    // /api/site/secure POST may fail with a fresh Electron session.
+    try {
+      await win.loadURL('https://www.aowu.tv/')
+      await new Promise(r => setTimeout(r, 1000))
+    } catch { /* best-effort — caller will retry if real navigation also fails */ }
+
     return win
   })()
   return _initPromise
