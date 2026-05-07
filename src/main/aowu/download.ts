@@ -12,8 +12,7 @@ import { dirname, join } from 'path'
 import { app } from 'electron'
 import { safeName, DlEvent } from '../shared/download-types'
 import { downloadByUrl, cleanupPartsAt } from '../shared/mp4-range-downloader'
-import { BASE_URL } from './api'
-import { resolveAowuMp4 } from './url-resolver'
+import { resolveAowuMp4, buildAowuWatchUrl } from './url-resolver'
 
 export type { DlEvent }
 
@@ -50,11 +49,13 @@ export async function downloadSingleEp(
   const dir = dirname(savePath)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 
-  // Step 1: resolve the play page → real mp4 URL.
+  // Step 1: resolve the watch page → real mp4 URL (signed ByteDance CDN link).
+  // Both `animeId` (anime token, e.g. "_2jACJ3_AIQE") and `sourceIdx` (source_id,
+  // e.g. 4116) come from watch() which scrapes them out of the FantasyKon DOM.
   let mp4Url: string
   try {
-    const playPageUrl = `${BASE_URL}/play/${animeId}-${sourceIdx}-${ep}/`
-    mp4Url = await resolveAowuMp4(playPageUrl)
+    const watchUrl = buildAowuWatchUrl(animeId, sourceIdx, ep)
+    mp4Url = await resolveAowuMp4(watchUrl)
   } catch (err) {
     if (signal.aborted) return
     onEvent({ type: 'ep_error', ep, msg: `URL resolve failed: ${(err as Error).message}` })
