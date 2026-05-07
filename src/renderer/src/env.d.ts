@@ -158,6 +158,7 @@ declare global {
     aowuApi: {
       search: (keyword: string) => Promise<AowuSearchResult[]>
       getWatch: (watchUrl: string) => Promise<AowuWatchInfo>
+      resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) => Promise<string>
       startDownload: (
         title: string,
         animeId: string,

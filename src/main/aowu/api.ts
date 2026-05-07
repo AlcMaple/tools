@@ -189,9 +189,14 @@ export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
   }, 25000, 200)
 
   // Step 2: read static metadata + the currently-active source's episodes.
+  // CRITICAL: the play-page token (path of /w/...) is DIFFERENT from the detail
+  // page token (path of /v/...). Search returns the latter; the former lives
+  // inside episode hrefs on the detail page. We must capture both: detail
+  // token to load this very page, play token for resolveAowuMp4 later.
   const initial = await evalInPage<{
     title: string
     sourceNames: string[]
+    playToken: string
     sourceId: number
     episodes: AowuEpisode[]
   }>(() => {
@@ -201,8 +206,10 @@ export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
     const sourceNames = tabs.map(b => (b.textContent || '').trim()).filter(Boolean)
     const grid = document.querySelector('.episode-grid')
     const firstHref = grid?.firstElementChild?.getAttribute('href') || ''
-    const m = /[#&]s=(\d+)/.exec(firstHref)
-    const sourceId = m ? parseInt(m[1]) : 0
+    const playTokenM = /^\/w\/([^#?/]+)/.exec(firstHref)
+    const playToken = playTokenM ? playTokenM[1] : ''
+    const sourceM = /[#&]s=(\d+)/.exec(firstHref)
+    const sourceId = sourceM ? parseInt(sourceM[1]) : 0
     const episodes = Array.from(grid?.children || []).map(a => {
       const href = (a as HTMLAnchorElement).getAttribute('href') || ''
       const epM = /[#&]ep=(\d+)/.exec(href)
@@ -210,7 +217,7 @@ export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
       const label = (a.textContent || '').trim() || String(idx)
       return { idx, label }
     }).filter(e => e.idx > 0)
-    return { title, sourceNames, sourceId, episodes }
+    return { title, sourceNames, playToken, sourceId, episodes }
   })
 
   const sources: AowuSource[] = []
@@ -270,5 +277,8 @@ export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
     }
   }
 
-  return { id: animeToken, title: initial.title, sources }
+  // Use playToken if we got one — that's the token that goes into /w/ URLs for
+  // resolveAowuMp4. Fall back to detail-page token if extraction failed (which
+  // would still be wrong, but at least we tried).
+  return { id: initial.playToken || animeToken, title: initial.title, sources }
 }
