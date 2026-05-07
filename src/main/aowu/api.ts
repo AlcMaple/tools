@@ -145,10 +145,56 @@ function parseSearchPage(html: string): AowuSearchResult[] {
   return results
 }
 
+// Error markers — friendlyError translates these into user-facing title+hint.
+// AOWU_UNREACHABLE: site/CDN can't deliver content (523, timeout, custom error page)
+// AOWU_STRUCTURE_CHANGED: HTML loaded fine but our selectors don't match → site改版
+// AOWU_HTTP_<code>: other HTTP non-2xx that doesn't fit "unreachable"
+const ERR_UNREACHABLE = 'AOWU_UNREACHABLE'
+const ERR_STRUCTURE = 'AOWU_STRUCTURE_CHANGED'
+
+// Detect "200 but body is a CDN error page" (e.g. 嗷呜's custom 523 page returns
+// HTTP 200 wrapping the error UI on some routes / proxy chains).
+function looksLikeErrorPage(html: string): boolean {
+  return /源站响应超时|源站超时|origin\s+timeout|cf-error|connection\s+timed\s+out/i.test(html)
+}
+
+// "Did the page parse like a MacCMS search results page?" — used to distinguish
+// site改版 from genuinely-zero matches.
+function looksLikeSearchResultPage(html: string): boolean {
+  return /vod-detail|search-list|slide-info-title|anthology-tab|class="vod-list/.test(html)
+}
+
 export async function search(keyword: string): Promise<AowuSearchResult[]> {
   const firstUrl = `${BASE_URL}/vods/?wd=${encodeURIComponent(keyword)}`
-  const firstRes = await fetchPage(firstUrl)
-  if (firstRes.status !== 200) throw new Error(`Search failed: HTTP ${firstRes.status}`)
+
+  let firstRes: FetchResult
+  try {
+    firstRes = await fetchPage(firstUrl)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new Error(`${ERR_UNREACHABLE}: 网络请求失败 (${msg})`)
+  }
+
+  // 5xx including 523 (Cloudflare 源站不可达) → unreachable
+  if (firstRes.status >= 500 && firstRes.status < 600) {
+    throw new Error(`${ERR_UNREACHABLE}: HTTP ${firstRes.status}`)
+  }
+  if (firstRes.status !== 200) {
+    throw new Error(`AOWU_HTTP_${firstRes.status}: HTTP ${firstRes.status}`)
+  }
+  // Site uses Cloudflare-like custom error pages that sometimes return 200
+  if (looksLikeErrorPage(firstRes.body)) {
+    throw new Error(`${ERR_UNREACHABLE}: 站点返回了 CDN 错误页`)
+  }
+
+  // Heuristic: if 0 cards parsed AND none of the expected MacCMS markers are
+  // present in the HTML, the site has been redesigned. Surfacing this as a
+  // distinct error (vs. silently empty results) tells the user to update the
+  // parser instead of assuming the keyword has no matches.
+  const firstPage = parseSearchPage(firstRes.body)
+  if (firstPage.length === 0 && !looksLikeSearchResultPage(firstRes.body)) {
+    throw new Error(`${ERR_STRUCTURE}: 搜索页 HTML 不含已知的 MacCMS 标记`)
+  }
 
   // Sequential pagination via shared helper — follows `下一页` links with 1s delay.
   return crawlAllPages({
