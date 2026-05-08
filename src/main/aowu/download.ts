@@ -74,10 +74,14 @@ export async function downloadSingleEp(
 
   if (signal.aborted) return
 
-  // Step 2: chunked Range download via shared module.
+  // Step 2: single-stream download. Aowu's signed mp4 URLs come from ByteDance's
+  // imcloud-file-sign CDN, which throttles signed URLs as a whole — multiple
+  // parallel Range connections don't go faster, instead one chunk crawls while
+  // others race ahead, producing the "stuck at 97%" symptom. Single-stream
+  // matches what NDM-style tools do and reliably completes.
   const outcome = await downloadByUrl(mp4Url, savePath, signal, (bytes, _total, pct) => {
     onEvent({ type: 'ep_progress', ep, pct, bytes })
-  }, LOG_TAG)
+  }, LOG_TAG, { threadCount: 1 })
 
   if (outcome.ok) {
     onEvent({ type: 'ep_done', ep })
