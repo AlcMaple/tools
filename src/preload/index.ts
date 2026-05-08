@@ -91,7 +91,15 @@ contextBridge.exposeInMainWorld('xifanApi', {
 })
 
 contextBridge.exposeInMainWorld('aowuApi', {
+  // Streaming search. Returns first page immediately; further pages stream
+  // through onSearchPage events. See registerAowuIpc('aowu:search') for shape.
   search: (keyword: string) => ipcRenderer.invoke('aowu:search', keyword),
+  onSearchPage: (cb: (requestId: string, results: unknown[], done: boolean) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, requestId: string, results: unknown[], done: boolean): void =>
+      cb(requestId, results, done)
+    ipcRenderer.on('aowu:search-page', handler)
+    return () => ipcRenderer.removeListener('aowu:search-page', handler)
+  },
   getWatch: (watchUrl: string) => ipcRenderer.invoke('aowu:watch', watchUrl),
   resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) =>
     ipcRenderer.invoke('aowu:resolve-mp4-url', animeId, sourceIdx, ep) as Promise<string>,

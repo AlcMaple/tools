@@ -113,6 +113,26 @@ function SearchDownload(): JSX.Element {
   }, []);
   const [downloadStarted, setDownloadStarted] = useState(false);
   const currentKeyword = useRef(_cachedKeyword);
+  const currentSearchRequestId = useRef<string | null>(null);
+
+  // Subscribe once to streaming search-page events. The aowu source paginates
+  // search results; the first page lands via the awaited Promise, follow-up
+  // pages stream in here. We filter by requestId so a stale search doesn't
+  // pollute newer results when the user types fast.
+  useEffect(() => {
+    return window.aowuApi.onSearchPage((requestId, more, _done) => {
+      if (requestId !== currentSearchRequestId.current) return;
+      if (!Array.isArray(more) || more.length === 0) return;
+      const newCards = more.map(normalizeAowu);
+      setState((prev) => {
+        if (prev.status !== "results") return prev;
+        const merged = [...prev.cards, ...newCards];
+        // Keep cache in sync with what's on screen so a re-search shows the full set.
+        setCachedSearch(prev.keyword, "Aowu", merged);
+        return { ...prev, cards: merged };
+      });
+    });
+  }, []);
 
   useEffect(() => {
     _cachedState = state;
@@ -158,10 +178,13 @@ function SearchDownload(): JSX.Element {
           setState({ status: "results", cards, keyword });
         }
       } else if (source === "Aowu") {
-        const result = await window.aowuApi.search(keyword);
-        const cards = result.map(normalizeAowu);
+        const { requestId, results } = await window.aowuApi.search(keyword);
+        currentSearchRequestId.current = requestId;
+        const cards = results.map(normalizeAowu);
         setCachedSearch(keyword, source, cards);
         setState({ status: "results", cards, keyword });
+        // Follow-up pages (if any) arrive via the onSearchPage subscription
+        // installed in useEffect above and append to state.cards.
       } else {
         const result = await window.xifanApi.search(keyword);
         if (!Array.isArray(result) && result.needs_captcha) {

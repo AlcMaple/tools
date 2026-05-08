@@ -56,8 +56,10 @@ interface BundleSearchData {
   data: { query: string; list: SearchListItem[]; page: number; limit: number; total: number }
 }
 
-// Defensive cap. With limit=10/page this is 200 results — more than any real search.
-const MAX_SEARCH_PAGES = 20
+// Defensive cap. With limit=10/page this is 100 results — more than any real
+// search. The throttle in secure.ts pushes 6 pages to ~6-9s; capping at 10
+// keeps the worst case under 15s.
+const MAX_SEARCH_PAGES = 10
 
 const NAMED_ENTITIES: Record<string, string> = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
@@ -98,8 +100,35 @@ function toResult(it: SearchListItem): AowuSearchResult {
   }
 }
 
-export async function search(keyword: string): Promise<AowuSearchResult[]> {
-  // Page 1 — also tells us total + limit so we know how many more pages to fetch.
+export interface SearchPaging {
+  /** Called when a follow-up page (2..N) lands. Final call has done=true. */
+  onPage: (results: AowuSearchResult[], done: boolean) => void
+}
+
+export interface SearchFirstPage {
+  results: AowuSearchResult[]
+  total: number
+  /** True if pages 2..N will arrive via the onPage callback. */
+  more: boolean
+}
+
+/**
+ * Fetch search results.
+ *
+ * Two-mode return:
+ *   - With opts.onPage: resolves with FIRST PAGE only; subsequent pages stream
+ *     via callback. Each callback fires after the global throttle (~1.25s
+ *     median between calls), mimicking a user paging through results.
+ *   - Without opts.onPage: resolves only after all pages are in (synchronous
+ *     batch mode for callers that don't want to deal with streaming).
+ *
+ * Errors on individual follow-up pages are swallowed (logged + skipped).
+ * Partial results are better than none. The first-page error always propagates.
+ */
+export async function search(
+  keyword: string,
+  opts?: SearchPaging
+): Promise<SearchFirstPage> {
   const first = await callSecure<BundleSearchData>({
     action: 'bundle',
     params: { bundle_page: 'search', anime: keyword, page: 1 },
@@ -112,34 +141,51 @@ export async function search(keyword: string): Promise<AowuSearchResult[]> {
   const limit = inner.limit > 0 ? inner.limit : 10
   const total = typeof inner.total === 'number' ? inner.total : inner.list.length
   const totalPages = Math.min(Math.ceil(total / limit), MAX_SEARCH_PAGES)
+  const firstResults = inner.list.filter((it) => it && typeof it.id === 'number' && it.name).map(toResult)
+  const more = totalPages > 1
 
-  const all = inner.list.filter((it) => it && typeof it.id === 'number' && it.name).map(toResult)
-
-  if (totalPages > 1) {
-    // Pages 2..N in parallel — each call is ~150ms and the API is fast enough
-    // that fan-out beats sequential. Errors on a single page are swallowed and
-    // logged; partial results are better than none.
-    const pages = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, i) =>
-        callSecure<BundleSearchData>({
-          action: 'bundle',
-          params: { bundle_page: 'search', anime: keyword, page: i + 2 },
-        }).catch((e) => {
-          console.error(`[aowu] search page ${i + 2} failed:`, e instanceof Error ? e.message : e)
-          return null
-        })
-      )
-    )
-    for (const p of pages) {
-      const list = p?.data?.list
-      if (!Array.isArray(list)) continue
-      for (const it of list) {
-        if (it && typeof it.id === 'number' && it.name) all.push(toResult(it))
-      }
-    }
+  if (!more) {
+    if (opts?.onPage) opts.onPage([], true)  // signal completion to streaming caller
+    return { results: firstResults, total, more: false }
   }
 
-  return all
+  // Background fetch of pages 2..N. Sequential — each call goes through the
+  // secure.ts throttle so two adjacent calls have a randomized 500-2000ms gap.
+  const fetchRest = async (): Promise<AowuSearchResult[]> => {
+    const all: AowuSearchResult[] = []
+    for (let p = 2; p <= totalPages; p++) {
+      try {
+        const res = await callSecure<BundleSearchData>({
+          action: 'bundle',
+          params: { bundle_page: 'search', anime: keyword, page: p },
+        })
+        const list = res?.data?.list
+        if (!Array.isArray(list)) continue
+        const pageResults: AowuSearchResult[] = []
+        for (const it of list) {
+          if (it && typeof it.id === 'number' && it.name) pageResults.push(toResult(it))
+        }
+        all.push(...pageResults)
+        opts?.onPage?.(pageResults, /* done */ p === totalPages)
+      } catch (e) {
+        console.error(`[aowu] search page ${p} failed:`, e instanceof Error ? e.message : e)
+        // On a stream caller, signal "done" early so UI clears the loading state.
+        // The error itself is non-fatal — we keep whatever we collected.
+        if (opts?.onPage && p === totalPages) opts.onPage([], true)
+      }
+    }
+    return all
+  }
+
+  if (opts?.onPage) {
+    // Streaming mode: kick off background fetch, return first page immediately.
+    void fetchRest()
+    return { results: firstResults, total, more: true }
+  }
+
+  // Synchronous batch mode: wait for everything.
+  const rest = await fetchRest()
+  return { results: [...firstResults, ...rest], total, more: false }
 }
 
 // ── Watch (detail page) ───────────────────────────────────────────────────────
