@@ -300,9 +300,23 @@ export type DownloadOutcome =
   | { ok: true }
   | { ok: false; reason: 'aborted' | 'probe_failed' | 'chunks_failed' | 'merge_failed' | 'stream_failed'; msg?: string }
 
+export interface DownloadOpts {
+  /**
+   * Number of parallel Range chunks. Default 8.
+   *
+   * Set to 1 for CDNs that throttle signed URLs as a whole (typical of ByteDance's
+   * imcloud-file-sign / toutiao*.com hosts used by aowu): multiple connections
+   * don't add throughput, instead they run into per-URL bandwidth caps that make
+   * one chunk crawl while others race ahead — the visible "stuck at 97%" symptom.
+   * Single-stream matches what tools like NDM do, and gets reliable completion.
+   */
+  threadCount?: number
+}
+
 /**
  * The orchestrator. Caller provides the final URL (already resolved/decrypted) and
- * the destination savePath; we pick multi-thread or single-stream based on probe.
+ * the destination savePath; we pick multi-thread or single-stream based on probe
+ * and the optional threadCount hint.
  *
  * `onProgress` is called with (bytesDownloaded, totalBytes, pct). pct is -1 when
  * total size is unknown (single-stream fallback case).
@@ -312,8 +326,10 @@ export async function downloadByUrl(
   savePath: string,
   signal: AbortSignal,
   onProgress: (bytes: number, total: number, pct: number) => void,
-  logTag: string
+  logTag: string,
+  opts: DownloadOpts = {}
 ): Promise<DownloadOutcome> {
+  const threadCount = Math.max(1, Math.min(opts.threadCount ?? THREAD_COUNT, THREAD_COUNT))
   const finalUrl = await resolveRedirects(url)
 
   // Already complete? Skip re-probe-and-download.
@@ -331,18 +347,18 @@ export async function downloadByUrl(
   }
 
   // Multi-thread path
-  if (info.rangeSupported && info.size > THREAD_COUNT * 64 * 1024) {
+  if (info.rangeSupported && threadCount > 1 && info.size > threadCount * 64 * 1024) {
     const totalBytes = info.size
-    const chunkBase = Math.floor(totalBytes / THREAD_COUNT)
+    const chunkBase = Math.floor(totalBytes / threadCount)
     const ranges: Array<{ start: number; end: number }> = []
-    for (let i = 0; i < THREAD_COUNT; i++) {
+    for (let i = 0; i < threadCount; i++) {
       const s = i * chunkBase
-      const e = i === THREAD_COUNT - 1 ? totalBytes - 1 : (i + 1) * chunkBase - 1
+      const e = i === threadCount - 1 ? totalBytes - 1 : (i + 1) * chunkBase - 1
       ranges.push({ start: s, end: e })
     }
 
     let downloaded = 0
-    for (let i = 0; i < THREAD_COUNT; i++) {
+    for (let i = 0; i < threadCount; i++) {
       const p = partPath(savePath, i)
       if (existsSync(p)) downloaded += statSync(p).size
     }
@@ -366,7 +382,7 @@ export async function downloadByUrl(
 
     if (results.every((ok) => ok)) {
       try {
-        await mergeParts(savePath, THREAD_COUNT)
+        await mergeParts(savePath, threadCount)
       } catch (err) {
         return { ok: false, reason: 'merge_failed', msg: (err as Error).message }
       }
@@ -376,7 +392,19 @@ export async function downloadByUrl(
     return { ok: false, reason: 'chunks_failed', msg: 'One or more chunks failed after retries' }
   }
 
-  // Single-stream fallback
+  // Single-stream path. If the caller went single-thread but had stale .partN
+  // files lying around from a previous multi-thread attempt, clear them so we
+  // don't leak orphaned files. The savePath itself we leave alone — streamToFile
+  // resumes from its existing size via Range.
+  if (threadCount === 1) {
+    for (let i = 0; i < THREAD_COUNT; i++) {
+      const p = partPath(savePath, i)
+      if (existsSync(p)) {
+        try { unlinkSync(p) } catch { /* ignore */ }
+      }
+    }
+  }
+
   const ok = await streamToFile(finalUrl, savePath, info.size, signal, (bytesTotal) => {
     const pct = info.size > 0 ? Math.min(99, Math.floor(bytesTotal * 100 / info.size)) : -1
     onProgress(bytesTotal, info.size, pct)
