@@ -2,6 +2,7 @@ import { useEffect, useImperativeHandle, useState, forwardRef } from 'react'
 import {
   ClassicGroup, ClassicTeam,
   Highlight, ModalShell, FormField, ModalInput,
+  NoteChip, NoteTagInput, useNoteTagState,
   commonPrefixLen, matchesClassic, todayStr,
 } from './shared'
 
@@ -9,18 +10,40 @@ export interface ClassicViewHandle {
   openAdd: () => void
 }
 
+// Helper: render a row's notes inline as chips (display-only).
+function NoteChipList({ notes, query }: { notes: string[]; query?: string }): JSX.Element | null {
+  if (notes.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+      {notes.map((n, i) => <NoteChip key={i} text={n} query={query} />)}
+    </div>
+  )
+}
+
+// Helper: build the "copy" payload for a team line. Notes are joined with ` / `.
+function copyText(team: string[], notes: string[]): string {
+  return team.join('、') + (notes.length ? ` (${notes.join(' / ')})` : '')
+}
+
+// Helper: shallow-equal for two string arrays (order-sensitive).
+function notesEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 // ── Add modal (new classic group) ──────────────────────────
 function AddClassicModal({
-  titleInput, teamInput, noteInput,
-  setTitleInput, setTeamInput, setNoteInput,
+  titleInput, teamInput,
+  setTitleInput, setTeamInput,
   onClose, onSave,
 }: {
-  titleInput: string; teamInput: string; noteInput: string
+  titleInput: string; teamInput: string
   setTitleInput: (v: string) => void
   setTeamInput: (v: string) => void
-  setNoteInput: (v: string) => void
-  onClose: () => void; onSave: () => void
+  onClose: () => void; onSave: (notes: string[]) => void
 }): JSX.Element {
+  const noteState = useNoteTagState([])
   const canSave = titleInput.trim().length > 0 && teamInput.trim().length > 0
   return (
     <ModalShell onBackdrop={onClose}>
@@ -72,13 +95,16 @@ function AddClassicModal({
         <div>
           <label className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-1.5">
             <span className="material-symbols-outlined text-[13px]">edit_note</span>
-            备注（可选）
+            备注（可选，可多条）
           </label>
-          <ModalInput
-            placeholder="如：叠叠乐 / 专门打没角色的阵容"
-            value={noteInput}
-            onChange={e => setNoteInput(e.target.value)}
+          <NoteTagInput
+            notes={noteState.notes}
+            onNotesChange={noteState.setNotes}
+            draft={noteState.draft}
+            onDraftChange={noteState.setDraft}
+            placeholder="如：叠叠乐 — 回车添加新备注"
           />
+          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；双击 chip 编辑；点 ✕ 移除</p>
         </div>
       </div>
 
@@ -87,7 +113,7 @@ function AddClassicModal({
           取消
         </button>
         <button
-          onClick={onSave}
+          onClick={() => onSave(noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-tertiary/40 bg-tertiary/10 text-sm font-bold text-tertiary hover:bg-tertiary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -155,12 +181,14 @@ function EditTeamModal({
 }: {
   team: ClassicTeam
   onClose: () => void
-  onSave: (team: string[], note: string) => void
+  onSave: (team: string[], notes: string[]) => void
 }): JSX.Element {
   const [teamValue, setTeamValue] = useState(team.team.join('、'))
-  const [noteValue, setNoteValue] = useState(team.note)
-  const canSave = teamValue.trim().length > 0 &&
-    (teamValue.trim() !== team.team.join('、') || noteValue.trim() !== team.note)
+  const noteState = useNoteTagState(team.notes)
+  const teamChanged = teamValue.trim() !== team.team.join('、')
+  const finalNotes = noteState.finalNotes()
+  const notesChanged = !notesEqual(finalNotes, team.notes)
+  const canSave = teamValue.trim().length > 0 && (teamChanged || notesChanged)
   return (
     <ModalShell onBackdrop={onClose}>
       <div className="p-7 pb-5">
@@ -178,13 +206,23 @@ function EditTeamModal({
           <div className="pb-4 border-b border-outline-variant/15">
             <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5">当前阵容</p>
             <p className="text-sm text-on-surface-variant/70 font-mono">{team.team.join('、')}</p>
-            {team.note && <p className="text-xs text-secondary/70 mt-1">{team.note}</p>}
+            {team.notes.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {team.notes.map((n, i) => <NoteChip key={i} text={n} />)}
+              </div>
+            )}
           </div>
           <FormField label="阵容角色" dot="bg-secondary" hint="用顿号 、 分隔，最多 5 名角色">
             <ModalInput value={teamValue} onChange={e => setTeamValue(e.target.value)} autoFocus />
           </FormField>
-          <FormField label="备注（可选）" dot="bg-outline">
-            <ModalInput placeholder="如：叠叠乐 / 专门打没角色的阵容" value={noteValue} onChange={e => setNoteValue(e.target.value)} />
+          <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；双击 chip 编辑；点 ✕ 移除">
+            <NoteTagInput
+              notes={noteState.notes}
+              onNotesChange={noteState.setNotes}
+              draft={noteState.draft}
+              onDraftChange={noteState.setDraft}
+              placeholder="如：叠叠乐 — 回车添加新备注"
+            />
           </FormField>
         </div>
       </div>
@@ -193,7 +231,7 @@ function EditTeamModal({
           取消
         </button>
         <button
-          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteValue.trim())}
+          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -211,10 +249,10 @@ function AddTeamModal({
 }: {
   group: ClassicGroup
   onClose: () => void
-  onSave: (team: string[], note: string) => void
+  onSave: (team: string[], notes: string[]) => void
 }): JSX.Element {
   const [teamValue, setTeamValue] = useState('')
-  const [noteValue, setNoteValue] = useState('')
+  const noteState = useNoteTagState([])
   const canSave = teamValue.trim().length > 0
   return (
     <ModalShell onBackdrop={onClose}>
@@ -244,9 +282,16 @@ function AddTeamModal({
         <div>
           <label className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-1.5">
             <span className="material-symbols-outlined text-[13px]">edit_note</span>
-            备注（可选）
+            备注（可选，可多条）
           </label>
-          <ModalInput placeholder="如：叠叠乐 / 专门打没角色的阵容" value={noteValue} onChange={e => setNoteValue(e.target.value)} />
+          <NoteTagInput
+            notes={noteState.notes}
+            onNotesChange={noteState.setNotes}
+            draft={noteState.draft}
+            onDraftChange={noteState.setDraft}
+            placeholder="如：叠叠乐 — 回车添加新备注"
+          />
+          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；双击 chip 编辑；点 ✕ 移除</p>
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
@@ -254,7 +299,7 @@ function AddTeamModal({
           取消
         </button>
         <button
-          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteValue.trim())}
+          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -357,7 +402,11 @@ function DeleteTeamModal({
             ))}
             <span className="ml-2 font-label text-[10px] uppercase tracking-widest text-outline/70">{team.team.length}/5</span>
           </div>
-          {team.note && <p className="text-xs text-on-surface-variant/70 font-label">{team.note}</p>}
+          {team.notes.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {team.notes.map((n, i) => <NoteChip key={i} text={n} />)}
+            </div>
+          )}
         </div>
 
         <div className="mt-3 flex items-start gap-2 text-[11px] text-error font-label uppercase tracking-widest">
@@ -390,7 +439,6 @@ const ClassicView = forwardRef<ClassicViewHandle, {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   const [teamInput, setTeamInput] = useState('')
-  const [noteInput, setNoteInput] = useState('')
 
   const [editTitleGroup, setEditTitleGroup] = useState<ClassicGroup | null>(null)
   const [editTeamTarget, setEditTeamTarget] = useState<{ groupId: number; team: ClassicTeam } | null>(null)
@@ -409,7 +457,6 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     openAdd: () => {
       setTitleInput('')
       setTeamInput('')
-      setNoteInput('')
       setIsAddOpen(true)
     },
   }), [])
@@ -434,7 +481,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     })
   }
 
-  const handleAdd = () => {
+  const handleAdd = (notes: string[]) => {
     const title = titleInput.trim()
     const team = teamInput.split('、').map(s => s.trim()).filter(Boolean)
     if (!title || !team.length) return
@@ -445,12 +492,12 @@ const ClassicView = forwardRef<ClassicViewHandle, {
         // Adding a team to an existing group: only the new team gets a fresh date.
         return prev.map(d =>
           d.id === existing.id
-            ? { ...d, teams: [...d.teams, { id: Date.now(), team, note: noteInput.trim(), updatedAt: now }] }
+            ? { ...d, teams: [...d.teams, { id: Date.now(), team, notes, updatedAt: now }] }
             : d
         )
       }
       // New group: group + first team share the same date.
-      return [...prev, { id: Date.now(), title, updatedAt: now, teams: [{ id: Date.now() + 1, team, note: noteInput.trim(), updatedAt: now }] }]
+      return [...prev, { id: Date.now(), title, updatedAt: now, teams: [{ id: Date.now() + 1, team, notes, updatedAt: now }] }]
     })
     setIsAddOpen(false)
   }
@@ -463,12 +510,12 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     setEditTitleGroup(null)
   }
 
-  const handleEditTeam = (team: string[], note: string) => {
+  const handleEditTeam = (team: string[], notes: string[]) => {
     if (!editTeamTarget) return
     const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === editTeamTarget.groupId
-        ? { ...d, teams: d.teams.map(t => t.id === editTeamTarget.team.id ? { ...t, team, note, updatedAt: now } : t) }
+        ? { ...d, teams: d.teams.map(t => t.id === editTeamTarget.team.id ? { ...t, team, notes, updatedAt: now } : t) }
         : d
     ))
     setEditTeamTarget(null)
@@ -490,12 +537,12 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     setDeleteTeamTarget(null)
   }
 
-  const handleAddTeam = (team: string[], note: string) => {
+  const handleAddTeam = (team: string[], notes: string[]) => {
     if (!addTeamTarget) return
     const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === addTeamTarget.id
-        ? { ...d, teams: [...d.teams, { id: Date.now(), team, note, updatedAt: now }] }
+        ? { ...d, teams: [...d.teams, { id: Date.now(), team, notes, updatedAt: now }] }
         : d
     ))
     setAddTeamTarget(null)
@@ -617,11 +664,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
                                 </span>
                               ))}
                             </div>
-                            {t.note && (
-                              <div className="atk-note">
-                                <Highlight text={t.note} query={query} />
-                              </div>
-                            )}
+                            <NoteChipList notes={t.notes} query={query} />
                           </div>
                           <div className="font-label text-[10px] uppercase tracking-widest text-outline/70 whitespace-nowrap">
                             {t.updatedAt}<span className="text-outline-variant/40 mx-1.5">·</span>{t.team.length}/5
@@ -630,7 +673,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
                             <button
                               className={`p-1.5 rounded transition-colors ${copiedKey === `tm-${t.id}` ? 'text-secondary' : 'text-on-surface-variant/50 hover:text-tertiary hover:bg-surface-container-high'}`}
                               title="复制阵容"
-                              onClick={() => copyWithFeedback(`tm-${t.id}`, t.team.join('、') + (t.note ? ` (${t.note})` : ''))}
+                              onClick={() => copyWithFeedback(`tm-${t.id}`, copyText(t.team, t.notes))}
                             >
                               <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{copiedKey === `tm-${t.id}` ? 'check' : 'content_copy'}</span>
                             </button>
@@ -655,8 +698,8 @@ const ClassicView = forwardRef<ClassicViewHandle, {
       {/* Modals */}
       {isAddOpen && (
         <AddClassicModal
-          titleInput={titleInput} teamInput={teamInput} noteInput={noteInput}
-          setTitleInput={setTitleInput} setTeamInput={setTeamInput} setNoteInput={setNoteInput}
+          titleInput={titleInput} teamInput={teamInput}
+          setTitleInput={setTitleInput} setTeamInput={setTeamInput}
           onClose={() => setIsAddOpen(false)} onSave={handleAdd}
         />
       )}
