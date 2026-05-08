@@ -1,22 +1,18 @@
 /**
  * Aowu (嗷呜动漫) API — search + watch.
  *
- * 2026-05 site overhaul: switched from MacCMS dsn2 to a custom "FantasyKon" frontend.
- * The new site is a pure SPA — search / detail / watch pages all return a 2797-byte
- * shell on direct HTTP requests; real content is hydrated by JS after the SPA POSTs
- * to a private encrypted endpoint (`/api/site/secure`). We can't replicate that
- * crypto in Node practically, so all operations drive a hidden BrowserWindow
- * (see headless.ts) and read the populated DOM.
+ * 2026-05 site overhaul: switched from MacCMS dsn2 to a custom "FantasyKon" frontend
+ * with everything behind an encrypted POST /api/site/secure. We replicate the
+ * protocol directly in Node (see ./secure.ts) and skip the browser entirely.
  *
- * URL patterns:
- *   - search: /search?anime={kw}&page={N}  (top-level nav 302→ /s/{token}?anime=...)
- *   - detail: /v/{anime_token}
- *   - watch:  /w/{anime_token}#s={source_id}&ep={ep_num}
- *   - mp4:    signed CDN URL on lf*-imcloud-file-sign.bytetos.com (set onto <video>.src)
+ * Verbs we issue here:
+ *   - bundle({bundle_page:"search", anime})         search results
+ *   - route({token})                                URL token → numeric video_id
+ *   - bundle({bundle_page:"video", id})             detail incl. sources & episodes
  */
-import { navigate, evalInPage, clickInPage, waitFor, setPageGlobal } from './headless'
+import { BASE_URL, callSecure, ERR_STRUCTURE } from './secure'
 
-export const BASE_URL = 'https://www.aowu.tv'
+export { BASE_URL }
 
 export interface AowuEpisode {
   idx: number    // ep number (1, 2, ...)
@@ -32,253 +28,189 @@ export interface AowuSource {
 export interface AowuSearchResult {
   title: string
   cover: string
-  year: string       // empty in new layout (only on detail page)
-  area: string       // empty in new layout (only on detail page)
-  watch_url: string  // absolute /v/{token} URL
+  year: string
+  area: string
+  watch_url: string  // ${BASE_URL}/v/{numericId} — opaque, round-tripped to watch()
 }
 
 export interface AowuWatchInfo {
-  id: string                 // anime token, e.g. "_2jACJ3_AIQE"
+  id: string             // numeric video id as string ("2893") — passed to download.ts
   title: string
   sources: AowuSource[]
 }
 
-const ERR_UNREACHABLE = 'AOWU_UNREACHABLE'
-const ERR_STRUCTURE = 'AOWU_STRUCTURE_CHANGED'
+// ── Search ────────────────────────────────────────────────────────────────────
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
-// ── search ────────────────────────────────────────────────────────────────────
-
-const PAGE_DELAY_MS = 600
-const MAX_PAGES = 20
-
-interface ScrapedCard {
-  title: string
-  cover: string
-  href: string
+interface SearchListItem {
+  id: number
+  name?: string
+  pic?: string
+  year?: string | number
+  area?: string
+  type_name?: string
+  remarks?: string
 }
 
-async function scrapeCardsFromCurrentPage(): Promise<ScrapedCard[]> {
-  return evalInPage<ScrapedCard[]>(() => {
-    const cards = Array.from(document.querySelectorAll('article.category-video-card'))
-    return cards.map(c => {
-      const poster = c.querySelector('a.poster') as HTMLAnchorElement | null
-      const titleEl = c.querySelector('h3 a') || c.querySelector('h3')
-      const img = poster?.querySelector('img') as HTMLImageElement | null
-      const href = poster?.getAttribute('href')
-        || (c.querySelector('h3 a') as HTMLAnchorElement | null)?.getAttribute('href')
-        || ''
-      const title =
-        (titleEl?.textContent || '').trim()
-        || img?.getAttribute('alt')
-        || ''
-      const cover = img?.getAttribute('src') || ''
-      return { title, cover, href }
-    }).filter(c => c.title && c.href)
-  })
+interface BundleSearchData {
+  page: string
+  data: { query: string; list: SearchListItem[]; page: number; limit: number; total: number }
 }
 
-function toResults(cards: ScrapedCard[]): AowuSearchResult[] {
-  return cards.map(c => ({
-    title: c.title,
-    cover: c.cover,
-    year: '',
-    area: '',
-    watch_url: c.href.startsWith('http') ? c.href : new URL(c.href, BASE_URL).href,
-  }))
+// Defensive cap. With limit=10/page this is 200 results — more than any real search.
+const MAX_SEARCH_PAGES = 20
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+}
+
+/**
+ * Decode HTML entities (named + numeric, dec/hex). Iterative because the API
+ * sometimes returns double-encoded values (e.g. `&amp;#039;` → `&#039;` → `'`).
+ * Bounded at 3 passes to defuse pathological loops.
+ */
+function decodeEntities(s: string): string {
+  let prev = ''
+  let cur = s
+  for (let i = 0; i < 3 && cur !== prev; i++) {
+    prev = cur
+    cur = cur.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, code: string) => {
+      if (code[0] === '#') {
+        const n = code[1] === 'x' || code[1] === 'X' ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10)
+        if (Number.isFinite(n) && n >= 0 && n <= 0x10ffff) return String.fromCodePoint(n)
+        return m
+      }
+      const repl = NAMED_ENTITIES[code.toLowerCase()]
+      return repl !== undefined ? repl : m
+    })
+  }
+  return cur
+}
+
+function toResult(it: SearchListItem): AowuSearchResult {
+  return {
+    title: decodeEntities(it.name ?? ''),
+    cover: it.pic ?? '',
+    year: it.year != null ? String(it.year) : '',
+    area: it.area ?? '',
+    // We anchor on the numeric id. The /v/{id} URL is synthetic — we never
+    // visit it, just round-trip it back into watch() which reads the path tail.
+    watch_url: `${BASE_URL}/v/${it.id}`,
+  }
 }
 
 export async function search(keyword: string): Promise<AowuSearchResult[]> {
-  const buildUrl = (page: number): string =>
-    page <= 1
-      ? `${BASE_URL}/search?anime=${encodeURIComponent(keyword)}`
-      : `${BASE_URL}/search?anime=${encodeURIComponent(keyword)}&page=${page}`
-
-  // Page 1
-  try {
-    await navigate(buildUrl(1))
-  } catch (e) {
-    throw new Error(`${ERR_UNREACHABLE}: 搜索页加载失败 (${e instanceof Error ? e.message : String(e)})`)
-  }
-
-  // Wait for one of:
-  //   - cards rendered (results found)
-  //   - "没有找到相关内容" appears (genuine zero-match)
-  //   - timeout (unreachable / structure changed)
-  try {
-    await waitFor(() => {
-      if (document.querySelectorAll('article.category-video-card').length > 0) return true
-      const text = document.body?.textContent || ''
-      return text.includes('没有找到相关内容')
-    }, 20000, 250)
-  } catch {
-    // SPA never populated. Could be CDN error / network / new structure.
-    const errorIndicator = await evalInPage<string>(() => {
-      const text = document.body?.textContent || ''
-      if (/源站响应超时|源站超时|origin\s+timeout/i.test(text)) return 'unreachable'
-      if (document.querySelector('.search-result, .category-video-card, .episode-grid')) return 'partial'
-      return 'unknown'
-    }).catch(() => 'unknown')
-    if (errorIndicator === 'unreachable') {
-      throw new Error(`${ERR_UNREACHABLE}: 站点返回了 CDN 错误页`)
-    }
-    throw new Error(`${ERR_STRUCTURE}: 搜索页 SPA 未在预期时间内渲染出卡片或空状态`)
-  }
-
-  const firstCards = await scrapeCardsFromCurrentPage()
-  if (firstCards.length === 0) return []
-
-  // Read total page count from "第 X / Y 页" text in DOM
-  const totalPages = await evalInPage<number>(() => {
-    const m = /第\s*\d+\s*\/\s*(\d+)\s*页/.exec(document.body?.textContent || '')
-    return m ? parseInt(m[1]) : 1
+  // Page 1 — also tells us total + limit so we know how many more pages to fetch.
+  const first = await callSecure<BundleSearchData>({
+    action: 'bundle',
+    params: { bundle_page: 'search', anime: keyword, page: 1 },
   })
-
-  const all: AowuSearchResult[] = toResults(firstCards)
-  const total = Math.min(totalPages, MAX_PAGES)
-  for (let p = 2; p <= total; p++) {
-    await sleep(PAGE_DELAY_MS)
-    try {
-      await navigate(buildUrl(p))
-      await waitFor(
-        () => document.querySelectorAll('article.category-video-card').length > 0,
-        10000, 250
-      )
-    } catch {
-      break
-    }
-    const items = await scrapeCardsFromCurrentPage()
-    if (items.length === 0) break
-    all.push(...toResults(items))
+  const inner = first?.data
+  if (!inner || !Array.isArray(inner.list)) {
+    throw new Error(`${ERR_STRUCTURE}: 搜索响应缺少 data.data.list`)
   }
+
+  const limit = inner.limit > 0 ? inner.limit : 10
+  const total = typeof inner.total === 'number' ? inner.total : inner.list.length
+  const totalPages = Math.min(Math.ceil(total / limit), MAX_SEARCH_PAGES)
+
+  const all = inner.list.filter((it) => it && typeof it.id === 'number' && it.name).map(toResult)
+
+  if (totalPages > 1) {
+    // Pages 2..N in parallel — each call is ~150ms and the API is fast enough
+    // that fan-out beats sequential. Errors on a single page are swallowed and
+    // logged; partial results are better than none.
+    const pages = await Promise.all(
+      Array.from({ length: totalPages - 1 }, (_, i) =>
+        callSecure<BundleSearchData>({
+          action: 'bundle',
+          params: { bundle_page: 'search', anime: keyword, page: i + 2 },
+        }).catch((e) => {
+          console.error(`[aowu] search page ${i + 2} failed:`, e instanceof Error ? e.message : e)
+          return null
+        })
+      )
+    )
+    for (const p of pages) {
+      const list = p?.data?.list
+      if (!Array.isArray(list)) continue
+      for (const it of list) {
+        if (it && typeof it.id === 'number' && it.name) all.push(toResult(it))
+      }
+    }
+  }
+
   return all
 }
 
-// ── watch (detail page) ────────────────────────────────────────────────────────
+// ── Watch (detail page) ───────────────────────────────────────────────────────
+
+interface RouteData {
+  page: string
+  video_id: number
+}
+
+interface BundleVideoData {
+  page: string
+  data: {
+    video: { id: number; name: string; [k: string]: unknown }
+    sources: Array<{ id: number; name: string; episodes: Array<{ id: number; no: number; name?: string }> }>
+  }
+}
+
+/** Pull the path tail out of /v/{x} or /w/{x}. Does not throw. */
+function parsePathTail(watchUrl: string): string {
+  try {
+    const u = new URL(watchUrl)
+    const m = /^\/(?:v|w)\/([^/?#]+)/.exec(u.pathname)
+    return m ? decodeURIComponent(m[1]) : ''
+  } catch {
+    return ''
+  }
+}
 
 /**
- * Detail page (/v/{token}) — JS-rendered SPA. We drive it from a hidden
- * BrowserWindow:
- *   1. Load /v/{token}, wait for .episode-grid to populate
- *   2. Read tab names + first source's eps (whichever is active by default)
- *   3. Click each remaining tab, wait for ep grid to switch, read its eps
- *
- * Episode hrefs encode source/ep as `/w/{anime}#s={source_id}&ep={N}`, which is
- * how we extract opaque source IDs (no DOM data attributes available).
- *
- * Accepts either /v/{token} or /w/{token}#... (search hands us /v/, but we tolerate
- * either to keep callers simple).
+ * Resolve a watch URL (`/v/{id-or-token}`) to detail. Both the new numeric form
+ * (from search() above) and any legacy token form (from queues created before
+ * this refactor) work — we route(token) once if the tail isn't numeric.
  */
 export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
-  const u = new URL(watchUrl)
-  if (u.pathname.startsWith('/play/')) {
-    throw new Error('AOWU_STRUCTURE_CHANGED: 旧版 /play/ 路径已不可用，需要从搜索重新进入')
-  }
-  const detailUrl = u.pathname.startsWith('/w/')
-    ? `${u.origin}/v/${u.pathname.slice(3)}`
-    : watchUrl
-  const animeToken = decodeURIComponent(new URL(detailUrl).pathname.replace(/^\/v\//, ''))
+  const tail = parsePathTail(watchUrl)
+  if (!tail) throw new Error(`${ERR_STRUCTURE}: 无法从 URL 解析出 token (${watchUrl})`)
 
-  // Step 1: load detail page once and wait for the SPA to hydrate.
-  await navigate(detailUrl)
-  await waitFor(() => {
-    const grid = document.querySelector('.episode-grid')
-    const titleEl = document.querySelector('h1, h2.video-title, .video-title h1')
-    return !!(grid && grid.children && grid.children.length > 0 && titleEl)
-  }, 25000, 200)
-
-  // Step 2: read static metadata + the currently-active source's episodes.
-  // CRITICAL: the play-page token (path of /w/...) is DIFFERENT from the detail
-  // page token (path of /v/...). Search returns the latter; the former lives
-  // inside episode hrefs on the detail page. We must capture both: detail
-  // token to load this very page, play token for resolveAowuMp4 later.
-  const initial = await evalInPage<{
-    title: string
-    sourceNames: string[]
-    playToken: string
-    sourceId: number
-    episodes: AowuEpisode[]
-  }>(() => {
-    const titleEl = document.querySelector('h1, h2.video-title, .video-title h1')
-    const title = (titleEl?.textContent || '').trim()
-    const tabs = Array.from(document.querySelectorAll('.episode-head button'))
-    const sourceNames = tabs.map(b => (b.textContent || '').trim()).filter(Boolean)
-    const grid = document.querySelector('.episode-grid')
-    const firstHref = grid?.firstElementChild?.getAttribute('href') || ''
-    const playTokenM = /^\/w\/([^#?/]+)/.exec(firstHref)
-    const playToken = playTokenM ? playTokenM[1] : ''
-    const sourceM = /[#&]s=(\d+)/.exec(firstHref)
-    const sourceId = sourceM ? parseInt(sourceM[1]) : 0
-    const episodes = Array.from(grid?.children || []).map(a => {
-      const href = (a as HTMLAnchorElement).getAttribute('href') || ''
-      const epM = /[#&]ep=(\d+)/.exec(href)
-      const idx = epM ? parseInt(epM[1]) : 0
-      const label = (a.textContent || '').trim() || String(idx)
-      return { idx, label }
-    }).filter(e => e.idx > 0)
-    return { title, sourceNames, playToken, sourceId, episodes }
-  })
-
-  const sources: AowuSource[] = []
-  const seenSourceIds = new Set<number>()
-  if (initial.sourceId && initial.episodes.length > 0) {
-    sources.push({
-      idx: initial.sourceId,
-      name: initial.sourceNames[0] || 'default',
-      episodes: initial.episodes,
+  let videoId: number
+  if (/^\d+$/.test(tail)) {
+    videoId = parseInt(tail, 10)
+  } else {
+    const route = await callSecure<RouteData>({
+      action: 'route',
+      params: { token: tail },
     })
-    seenSourceIds.add(initial.sourceId)
-  }
-
-  // Step 3: click each remaining source tab and read the new ep grid.
-  // We detect the tab actually switched by waiting for the grid's first ep href
-  // to point at a source_id we haven't seen yet — list passed via window global
-  // because predicate is serialized with toString() (no closure capture).
-  for (let i = 1; i < initial.sourceNames.length; i++) {
-    await setPageGlobal('__mtSeenSources', Array.from(seenSourceIds))
-    await clickInPage('.episode-head button', i)
-    let switched = false
-    try {
-      await waitFor(() => {
-        const seen = ((window as unknown as { __mtSeenSources?: number[] }).__mtSeenSources) || []
-        const a = document.querySelector('.episode-grid > *')
-        const href = a?.getAttribute('href') || ''
-        const m = /[#&]s=(\d+)/.exec(href)
-        if (!m) return false
-        return !seen.includes(parseInt(m[1]))
-      }, 8000, 150)
-      switched = true
-    } catch { /* tab click might be a no-op if same source */ }
-    if (!switched) continue
-
-    const data = await evalInPage<{ sourceId: number; episodes: AowuEpisode[] }>(() => {
-      const grid = document.querySelector('.episode-grid')
-      const firstHref = grid?.firstElementChild?.getAttribute('href') || ''
-      const m = /[#&]s=(\d+)/.exec(firstHref)
-      const sourceId = m ? parseInt(m[1]) : 0
-      const episodes = Array.from(grid?.children || []).map(a => {
-        const href = (a as HTMLAnchorElement).getAttribute('href') || ''
-        const epM = /[#&]ep=(\d+)/.exec(href)
-        const idx = epM ? parseInt(epM[1]) : 0
-        const label = (a.textContent || '').trim() || String(idx)
-        return { idx, label }
-      }).filter(e => e.idx > 0)
-      return { sourceId, episodes }
-    })
-
-    if (data.sourceId && !seenSourceIds.has(data.sourceId) && data.episodes.length > 0) {
-      sources.push({
-        idx: data.sourceId,
-        name: initial.sourceNames[i] || `线路${i + 1}`,
-        episodes: data.episodes,
-      })
-      seenSourceIds.add(data.sourceId)
+    if (!route?.video_id) {
+      throw new Error(`${ERR_STRUCTURE}: route 未返回 video_id (token=${tail})`)
     }
+    videoId = route.video_id
   }
 
-  // Use playToken if we got one — that's the token that goes into /w/ URLs for
-  // resolveAowuMp4. Fall back to detail-page token if extraction failed (which
-  // would still be wrong, but at least we tried).
-  return { id: initial.playToken || animeToken, title: initial.title, sources }
+  const data = await callSecure<BundleVideoData>({
+    action: 'bundle',
+    params: { id: videoId, bundle_page: 'video' },
+  })
+  const inner = data?.data
+  if (!inner?.video || !Array.isArray(inner.sources)) {
+    throw new Error(`${ERR_STRUCTURE}: 详情响应缺少 video / sources`)
+  }
+  return {
+    id: String(inner.video.id),
+    title: decodeEntities(inner.video.name ?? ''),
+    sources: inner.sources.map((s) => ({
+      idx: s.id,
+      name: decodeEntities(s.name ?? ''),
+      episodes: (s.episodes ?? [])
+        .filter((e) => e && typeof e.no === 'number')
+        .map((e) => ({
+          idx: e.no,
+          label: decodeEntities(e.name || `第${String(e.no).padStart(2, '0')}话`),
+        })),
+    })),
+  }
 }
