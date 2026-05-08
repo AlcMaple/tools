@@ -32,8 +32,6 @@ process.on('unhandledRejection', (reason) => {
 app.on('before-quit', () => { isAppQuitting = true })
 app.on('will-quit', () => {
   destroyTray()
-  // 关闭 aowu 用的隐藏 BrowserWindow（如果有），避免泄漏
-  void import('./aowu/headless').then(m => m.closeAowuHeadless()).catch(() => {})
   // dev 模式下：Ctrl+C 会让整组进程收到 SIGINT，此处强制以 code=0 退出，
   // 父进程(electron-vite)看到 close(0, null) 就不会打"exited with signal"。
   // 打包环境不能 process.exit，否则 electron-log 之类的异步写入会被截断。
