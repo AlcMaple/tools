@@ -201,31 +201,6 @@ mark.hl {
 .atk-text .sep  { color: rgb(var(--color-outline-variant)); margin: 0 2px; font-weight: 400; }
 .atk-text mark.hl { background: rgba(255, 179, 184, 0.22); color: #ffdadb; padding: 0 3px; border-radius: 2px; }
 
-.atk-note {
-  margin-top: 4px;
-  margin-bottom: 2px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 12px 4px 10px;
-  border-radius: 9999px;
-  background: rgba(170, 199, 255, 0.06);
-  border: 1px solid rgba(170, 199, 255, 0.14);
-  color: #cfdfff;
-  font-size: 12px;
-  line-height: 1.4;
-  max-width: fit-content;
-}
-.atk-note::before {
-  content: "";
-  width: 4px;
-  height: 4px;
-  border-radius: 9999px;
-  background: #aac7ff;
-  box-shadow: 0 0 0 2px rgba(170, 199, 255, 0.18);
-  flex-shrink: 0;
-}
-
 .idx {
   font-family: "Space Grotesk", monospace;
   font-size: 10px;

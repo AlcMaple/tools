@@ -2,6 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from 're
 import {
   Attack, DefenseGroup,
   Highlight, ModalShell, FormField, ModalInput,
+  NoteChip, NoteTagInput, useNoteTagState, coerceNotes,
   cleanCharName, commonPrefixLen, matchesDefense, todayStr,
 } from './shared'
 
@@ -9,10 +10,32 @@ export interface HomeworkViewHandle {
   openAdd: () => void
 }
 
+// Helper: render a row's notes inline as chips (display-only).
+function NoteChipList({ notes, query }: { notes: string[]; query?: string }): JSX.Element | null {
+  if (notes.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+      {notes.map((n, i) => <NoteChip key={i} text={n} query={query} />)}
+    </div>
+  )
+}
+
+// Helper: build the "copy" payload for an attack line. Notes joined with ` / `.
+function copyText(team: string[], notes: string[]): string {
+  return team.join('、') + (notes.length ? ` (${notes.join(' / ')})` : '')
+}
+
+// Helper: shallow-equal for two string arrays (order-sensitive).
+function notesEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 // ── Import helpers (homework-only) ─────────────────────────
 interface ImportItem {
   defense: string[]
-  attacks: Array<{ team: string[]; note: string }>
+  attacks: Array<{ team: string[]; notes: string[] }>
 }
 
 interface ImportParseResult {
@@ -36,16 +59,17 @@ function parseImportJson(text: string): ImportParseResult {
     const defense = it.defense.map(c => cleanCharName(String(c))).filter(Boolean)
     if (defense.length === 0) return { error: `第 ${i + 1} 项 defense 为空` }
 
-    const attacks: Array<{ team: string[]; note: string }> = []
+    const attacks: Array<{ team: string[]; notes: string[] }> = []
     for (let j = 0; j < it.attacks.length; j++) {
-      const a = it.attacks[j] as { team?: unknown; note?: unknown } | null
+      const a = it.attacks[j] as { team?: unknown; note?: unknown; notes?: unknown } | null
       if (!a || typeof a !== 'object' || !Array.isArray(a.team)) {
         return { error: `第 ${i + 1} 项第 ${j + 1} 条攻击缺少 team 数组` }
       }
       const team = a.team.map(c => cleanCharName(String(c))).filter(Boolean)
       if (team.length === 0) return { error: `第 ${i + 1} 项第 ${j + 1} 条攻击 team 为空` }
-      const note = typeof a.note === 'string' ? a.note.trim() : ''
-      attacks.push({ team, note })
+      // Accept legacy `note: string` or fresh `notes: string[]` from external JSON.
+      const notes = coerceNotes(a.notes ?? a.note)
+      attacks.push({ team, notes })
     }
     items.push({ defense, attacks })
   }
@@ -77,7 +101,7 @@ function computeImportMerge(items: ImportItem[], current: DefenseGroup[]): Impor
       for (const atk of item.attacks) {
         const teamKey = atk.team.join('、')
         if (existingTeams.has(teamKey)) { skippedCount++; continue }
-        existing.attacks.push({ id: nextId(), team: atk.team, note: atk.note, updatedAt: now })
+        existing.attacks.push({ id: nextId(), team: atk.team, notes: atk.notes, updatedAt: now })
         existingTeams.add(teamKey)
         newAttackCount++
       }
@@ -88,7 +112,7 @@ function computeImportMerge(items: ImportItem[], current: DefenseGroup[]): Impor
         const teamKey = atk.team.join('、')
         if (seenTeams.has(teamKey)) { skippedCount++; continue }
         seenTeams.add(teamKey)
-        newAttacks.push({ id: nextId(), team: atk.team, note: atk.note, updatedAt: now })
+        newAttacks.push({ id: nextId(), team: atk.team, notes: atk.notes, updatedAt: now })
         newAttackCount++
       }
       if (newAttacks.length > 0) {
@@ -109,14 +133,14 @@ const AI_IMPORT_PROMPT = `请把以下 markdown 中 \`# jjc\` 段落下面的内
 2. ## 二级标题是 defense（防守方），紧随其后的 - 列表项是该防守方对应的 attack（进攻方）
 3. 角色名以 、分隔；保留 /（如「路人妹/炸弹人」当一个名字）
 4. 备注按优先级提取（去掉外围括号）：【...】> （...）/(...) > 角色串末尾以 ，引出的纯文本
-5. 没有备注时 note 为空字符串
+5. 多条独立备注请拆成数组多项；没有备注时 notes 为 []
 
 输出格式（严格符合，不要任何额外解释文字）：
 [
   {
     "defense": ["els", "魔女", "ams", "魔驴", "拉姆"],
     "attacks": [
-      { "team": ["白望", "真阳", "风剑", "龙锤", "春511"], "note": "up主" }
+      { "team": ["白望", "真阳", "风剑", "龙锤", "春511"], "notes": ["up主"] }
     ]
   }
 ]
@@ -127,16 +151,16 @@ const AI_IMPORT_PROMPT = `请把以下 markdown 中 \`# jjc\` 段落下面的内
 
 // ── Add modal ──────────────────────────────────────────────
 function AddModal({
-  defenseInput, attackInput, noteInput,
-  setDefenseInput, setAttackInput, setNoteInput,
+  defenseInput, attackInput,
+  setDefenseInput, setAttackInput,
   onClose, onSave,
 }: {
-  defenseInput: string; attackInput: string; noteInput: string
+  defenseInput: string; attackInput: string
   setDefenseInput: (v: string) => void
   setAttackInput: (v: string) => void
-  setNoteInput: (v: string) => void
-  onClose: () => void; onSave: () => void
+  onClose: () => void; onSave: (notes: string[]) => void
 }): JSX.Element {
+  const noteState = useNoteTagState([])
   const canSave = defenseInput.trim().length > 0 && attackInput.trim().length > 0
   return (
     <ModalShell onBackdrop={onClose}>
@@ -188,13 +212,16 @@ function AddModal({
         <div>
           <label className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-1.5">
             <span className="material-symbols-outlined text-[13px]">edit_note</span>
-            备注（可选）
+            备注（可选，可多条）
           </label>
-          <ModalInput
-            placeholder="配速、装备、控制要点…"
-            value={noteInput}
-            onChange={e => setNoteInput(e.target.value)}
+          <NoteTagInput
+            notes={noteState.notes}
+            onNotesChange={noteState.setNotes}
+            draft={noteState.draft}
+            onDraftChange={noteState.setDraft}
+            placeholder="如：配速、装备、控制要点 — 回车添加新备注"
           />
+          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；双击 chip 编辑；点 ✕ 移除</p>
         </div>
       </div>
 
@@ -203,7 +230,7 @@ function AddModal({
           取消
         </button>
         <button
-          onClick={onSave}
+          onClick={() => onSave(noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-primary/40 bg-primary/10 text-sm font-bold text-primary hover:bg-primary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -277,12 +304,14 @@ function EditAttackModal({
 }: {
   atk: Attack
   onClose: () => void
-  onSave: (team: string[], note: string) => void
+  onSave: (team: string[], notes: string[]) => void
 }): JSX.Element {
   const [teamValue, setTeamValue] = useState(atk.team.join('、'))
-  const [noteValue, setNoteValue] = useState(atk.note)
-  const canSave = teamValue.trim().length > 0 &&
-    (teamValue.trim() !== atk.team.join('、') || noteValue.trim() !== atk.note)
+  const noteState = useNoteTagState(atk.notes)
+  const teamChanged = teamValue.trim() !== atk.team.join('、')
+  const finalNotes = noteState.finalNotes()
+  const notesChanged = !notesEqual(finalNotes, atk.notes)
+  const canSave = teamValue.trim().length > 0 && (teamChanged || notesChanged)
   return (
     <ModalShell onBackdrop={onClose}>
       <div className="p-7 pb-5">
@@ -300,13 +329,23 @@ function EditAttackModal({
           <div className="pb-4 border-b border-outline-variant/15">
             <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5">当前阵容</p>
             <p className="text-sm text-on-surface-variant/70 font-mono">{atk.team.join('、')}</p>
-            {atk.note && <p className="text-xs text-secondary/70 mt-1">{atk.note}</p>}
+            {atk.notes.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {atk.notes.map((n, i) => <NoteChip key={i} text={n} />)}
+              </div>
+            )}
           </div>
           <FormField label="进攻方角色" dot="bg-secondary" hint="用顿号 、 分隔，最多 5 名角色">
             <ModalInput value={teamValue} onChange={e => setTeamValue(e.target.value)} autoFocus />
           </FormField>
-          <FormField label="备注（可选）" dot="bg-outline">
-            <ModalInput placeholder="配速、装备、控制要点…" value={noteValue} onChange={e => setNoteValue(e.target.value)} />
+          <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；双击 chip 编辑；点 ✕ 移除">
+            <NoteTagInput
+              notes={noteState.notes}
+              onNotesChange={noteState.setNotes}
+              draft={noteState.draft}
+              onDraftChange={noteState.setDraft}
+              placeholder="如：配速、装备、控制要点 — 回车添加新备注"
+            />
           </FormField>
         </div>
       </div>
@@ -315,7 +354,7 @@ function EditAttackModal({
           取消
         </button>
         <button
-          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteValue.trim())}
+          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -421,8 +460,10 @@ function DeleteAttackModal({
             ))}
             <span className="ml-2 font-label text-[10px] uppercase tracking-widest text-outline/70">{atk.team.length}/5</span>
           </div>
-          {atk.note && (
-            <p className="text-xs text-on-surface-variant/70 font-label">{atk.note}</p>
+          {atk.notes.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {atk.notes.map((n, i) => <NoteChip key={i} text={n} />)}
+            </div>
           )}
         </div>
 
@@ -450,10 +491,10 @@ function AddAttackModal({
 }: {
   group: DefenseGroup
   onClose: () => void
-  onSave: (team: string[], note: string) => void
+  onSave: (team: string[], notes: string[]) => void
 }): JSX.Element {
   const [teamValue, setTeamValue] = useState('')
-  const [noteValue, setNoteValue] = useState('')
+  const noteState = useNoteTagState([])
   const canSave = teamValue.trim().length > 0
   return (
     <ModalShell onBackdrop={onClose}>
@@ -485,9 +526,16 @@ function AddAttackModal({
         <div>
           <label className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-1.5">
             <span className="material-symbols-outlined text-[13px]">edit_note</span>
-            备注（可选）
+            备注（可选，可多条）
           </label>
-          <ModalInput placeholder="配速、装备、控制要点…" value={noteValue} onChange={e => setNoteValue(e.target.value)} />
+          <NoteTagInput
+            notes={noteState.notes}
+            onNotesChange={noteState.setNotes}
+            draft={noteState.draft}
+            onDraftChange={noteState.setDraft}
+            placeholder="如：配速、装备、控制要点 — 回车添加新备注"
+          />
+          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；双击 chip 编辑；点 ✕ 移除</p>
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
@@ -495,7 +543,7 @@ function AddAttackModal({
           取消
         </button>
         <button
-          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteValue.trim())}
+          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -652,7 +700,6 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [defenseInput, setDefenseInput] = useState('')
   const [attackInput, setAttackInput] = useState('')
-  const [noteInput, setNoteInput] = useState('')
 
   const [editDefenseGroup, setEditDefenseGroup] = useState<DefenseGroup | null>(null)
   const [editAttackTarget, setEditAttackTarget] = useState<{ groupId: number; atk: Attack } | null>(null)
@@ -672,7 +719,6 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     openAdd: () => {
       setDefenseInput('')
       setAttackInput('')
-      setNoteInput('')
       setIsAddOpen(true)
     },
   }), [])
@@ -697,7 +743,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     })
   }
 
-  const handleAdd = () => {
+  const handleAdd = (notes: string[]) => {
     const defense = defenseInput.split('、').map(s => s.trim()).filter(Boolean)
     const team = attackInput.split('、').map(s => s.trim()).filter(Boolean)
     if (!defense.length || !team.length) return
@@ -709,12 +755,12 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
         // Adding an attack to an existing defense: only the new attack gets a fresh date.
         return prev.map(d =>
           d.id === existing.id
-            ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, note: noteInput.trim(), updatedAt: now }] }
+            ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
             : d
         )
       }
       // New defense: defense + first attack share today's date.
-      return [...prev, { id: Date.now(), defense, updatedAt: now, attacks: [{ id: Date.now() + 1, team, note: noteInput.trim(), updatedAt: now }] }]
+      return [...prev, { id: Date.now(), defense, updatedAt: now, attacks: [{ id: Date.now() + 1, team, notes, updatedAt: now }] }]
     })
     setIsAddOpen(false)
   }
@@ -727,12 +773,12 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     setEditDefenseGroup(null)
   }
 
-  const handleEditAttack = (team: string[], note: string) => {
+  const handleEditAttack = (team: string[], notes: string[]) => {
     if (!editAttackTarget) return
     const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === editAttackTarget.groupId
-        ? { ...d, attacks: d.attacks.map(a => a.id === editAttackTarget.atk.id ? { ...a, team, note, updatedAt: now } : a) }
+        ? { ...d, attacks: d.attacks.map(a => a.id === editAttackTarget.atk.id ? { ...a, team, notes, updatedAt: now } : a) }
         : d
     ))
     setEditAttackTarget(null)
@@ -759,12 +805,12 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     setIsImportOpen(false)
   }
 
-  const handleAddAttack = (team: string[], note: string) => {
+  const handleAddAttack = (team: string[], notes: string[]) => {
     if (!addAttackTarget) return
     const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === addAttackTarget.id
-        ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, note, updatedAt: now }] }
+        ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
         : d
     ))
     setAddAttackTarget(null)
@@ -896,11 +942,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
                                 </span>
                               ))}
                             </div>
-                            {atk.note && (
-                              <div className="atk-note">
-                                <Highlight text={atk.note} query={query} />
-                              </div>
-                            )}
+                            <NoteChipList notes={atk.notes} query={query} />
                           </div>
                           <div className="font-label text-[10px] uppercase tracking-widest text-outline/70 whitespace-nowrap">
                             {atk.updatedAt}<span className="text-outline-variant/40 mx-1.5">·</span>{atk.team.length}/5
@@ -909,7 +951,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
                             <button
                               className={`p-1.5 rounded transition-colors ${copiedKey === `atk-${atk.id}` ? 'text-secondary' : 'text-on-surface-variant/50 hover:text-primary hover:bg-surface-container-high'}`}
                               title="复制进攻阵容"
-                              onClick={() => copyWithFeedback(`atk-${atk.id}`, atk.team.join('、') + (atk.note ? ` (${atk.note})` : ''))}
+                              onClick={() => copyWithFeedback(`atk-${atk.id}`, copyText(atk.team, atk.notes))}
                             >
                               <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{copiedKey === `atk-${atk.id}` ? 'check' : 'content_copy'}</span>
                             </button>
@@ -934,8 +976,8 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
       {/* Modals */}
       {isAddOpen && (
         <AddModal
-          defenseInput={defenseInput} attackInput={attackInput} noteInput={noteInput}
-          setDefenseInput={setDefenseInput} setAttackInput={setAttackInput} setNoteInput={setNoteInput}
+          defenseInput={defenseInput} attackInput={attackInput}
+          setDefenseInput={setDefenseInput} setAttackInput={setAttackInput}
           onClose={() => setIsAddOpen(false)} onSave={handleAdd}
         />
       )}
