@@ -163,8 +163,21 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
 
     try {
       if (src === 'Aowu') {
-        const result = await window.aowuApi.search(kw)
-        const cards = result.map(normalizeAowu)
+        // AnimeInfo auto-selects when exactly 1 result lands, so we need the
+        // *full* result set before deciding. Streaming search returns the
+        // first page immediately and pumps subsequent pages via events; here
+        // we synchronously wait for the stream to complete (done=true).
+        const { requestId, results, more } = await window.aowuApi.search(kw)
+        let cards = results.map(normalizeAowu)
+        if (more) {
+          await new Promise<void>((resolve) => {
+            const unsub = window.aowuApi.onSearchPage((rid, page, done) => {
+              if (rid !== requestId) return
+              if (page.length > 0) cards = cards.concat(page.map(normalizeAowu))
+              if (done) { unsub(); resolve() }
+            })
+          })
+        }
         if (cards.length > 0) void setSearchCache(src, kw, cards)
         handleResults(kw, cards, src)
       } else if (src === 'Girigiri') {

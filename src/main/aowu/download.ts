@@ -44,11 +44,12 @@ export async function downloadSingleEp(
     onEvent({ type: 'ep_error', ep, msg: 'Missing animeId or sourceIdx' })
     return
   }
-  // FantasyKon anime tokens are alphanumeric + underscore (e.g. "_2jACJ3_AIQE").
-  // Stale tasks from a brief buggy intermediate version of search() captured
-  // raw `data-fk-raw-href` values like "/video/73" — these would build a URL
-  // with a double slash and silently 30s-timeout in resolveAowuMp4. Reject
-  // them up front with a clear message instructing the user to re-add.
+  // After the HTTP refactor, `animeId` is a numeric video id as string (e.g.
+  // "2893"). Legacy queues from before the refactor may still carry an opaque
+  // play_token like "_2jACJ3_AIQE" — both shapes match this regex and the new
+  // resolveAowuMp4 handles them (it routes legacy tokens through `route(token)`).
+  // The check rejects malformed values (slashes, empty, null-stringified) up
+  // front with a clear message instead of letting them silently fail.
   if (!/^[A-Za-z0-9_-]+$/.test(animeId)) {
     onEvent({ type: 'ep_error', ep, msg: `任务数据已过期（aowuId="${animeId}"）— 请删除该任务并重新搜索添加` })
     return
@@ -59,8 +60,8 @@ export async function downloadSingleEp(
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 
   // Step 1: resolve the watch page → real mp4 URL (signed ByteDance CDN link).
-  // Both `animeId` (anime token, e.g. "_2jACJ3_AIQE") and `sourceIdx` (source_id,
-  // e.g. 4116) come from watch() which scrapes them out of the FantasyKon DOM.
+  // resolveAowuMp4 hits /api/site/secure twice (bundle(play) → play) and
+  // returns in ~250ms over a warm key cache.
   let mp4Url: string
   try {
     const watchUrl = buildAowuWatchUrl(animeId, sourceIdx, ep)

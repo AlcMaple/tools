@@ -156,7 +156,16 @@ declare global {
       ) => () => void
     }
     aowuApi: {
-      search: (keyword: string) => Promise<AowuSearchResult[]>
+      search: (keyword: string) => Promise<{
+        requestId: string
+        results: AowuSearchResult[]
+        total: number
+        /** True if more pages will arrive via onSearchPage. */
+        more: boolean
+      }>
+      onSearchPage: (
+        cb: (requestId: string, results: AowuSearchResult[], done: boolean) => void
+      ) => () => void
       getWatch: (watchUrl: string) => Promise<AowuWatchInfo>
       resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) => Promise<string>
       startDownload: (

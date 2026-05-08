@@ -87,13 +87,30 @@ function startNextEp(taskId: string): void {
 }
 
 export function registerAowuIpc(): void {
-  ipcMain.handle('aowu:search', async (_event, keyword: string) => search(keyword))
+  // Streaming search:
+  //   - Returns { requestId, results: <page 1>, total, more }.
+  //   - If `more=true`, emits 'aowu:search-page' events on the same sender for
+  //     each subsequent page, with payload (requestId, results, done).
+  //   - The renderer should track the latest requestId and discard events from
+  //     stale searches (user typing fast).
+  ipcMain.handle('aowu:search', async (event, keyword: string) => {
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const sender = event.sender
+    const first = await search(keyword, {
+      onPage: (results, done) => {
+        if (sender.isDestroyed()) return
+        sender.send('aowu:search-page', requestId, results, done)
+      },
+    })
+    return { requestId, results: first.results, total: first.total, more: first.more }
+  })
+
   ipcMain.handle('aowu:watch', async (_event, watchUrl: string) => watch(watchUrl))
 
   // Resolve a watch (animeId, sourceIdx, ep) tuple to the signed ByteDance CDN
   // direct URL. Used by the queue's "copy URL" feature so the user can paste
-  // into external downloaders (NDM 等) and actually get the mp4. ~3-5s per call
-  // because we drive the SPA in a hidden BrowserWindow and wait for <video>.src.
+  // into external downloaders (NDM 等) and actually get the mp4. Sub-second
+  // typically — two encrypted POSTs (bundle/play → play) over the warm key cache.
   ipcMain.handle(
     'aowu:resolve-mp4-url',
     async (_event, animeId: string, sourceIdx: number, ep: number): Promise<string> => {
