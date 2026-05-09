@@ -46,52 +46,45 @@ export function siteApi(task: DownloadTask): SiteApi {
       resume: (pendingEps) =>
         window.girigiriApi.resumeDownload(task.id, task.title, task.girigiriEps, pendingEps, savePath),
       retry: (eps) =>
-        window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, eps, savePath),
+        window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps, eps, savePath),
       requeue: (eps) =>
-        window.girigiriApi.requeueEpisodes(task.id, task.title, task.girigiriEps!, eps, savePath),
+        window.girigiriApi.requeueEpisodes(task.id, task.title, task.girigiriEps, eps, savePath),
       switchSource: null, // girigiri has no switchSource handler — HLS streams are per-source-baked
       resolveEpUrl: async (ep) =>
-        task.girigiriEps?.find((e) => e.idx === ep)?.url ?? '',
+        task.girigiriEps.find((e) => e.idx === ep)?.url ?? '',
       resolveIsAsync: false,
     }
   }
   if (task.source === 'aowu') {
-    const sourceIdx = task.sourceIdx ?? 1
     return {
       pause: () => window.aowuApi.pauseDownload(task.id),
       cancel: () => window.aowuApi.cancelDownload(task.id),
       resume: (pendingEps) =>
-        window.aowuApi.resumeDownload(task.id, task.title, task.aowuId, sourceIdx, task.aowuEps, pendingEps, savePath),
+        window.aowuApi.resumeDownload(task.id, task.title, task.aowuId, task.sourceIdx, task.aowuEps, pendingEps, savePath),
       retry: (eps) =>
-        window.aowuApi.retryDownload(task.id, task.title, task.aowuId!, sourceIdx, task.aowuEps!, eps, savePath),
+        window.aowuApi.retryDownload(task.id, task.title, task.aowuId, task.sourceIdx, task.aowuEps, eps, savePath),
       requeue: (eps) =>
-        window.aowuApi.requeueEpisodes(task.id, task.title, task.aowuId!, sourceIdx, task.aowuEps!, eps, savePath),
+        window.aowuApi.requeueEpisodes(task.id, task.title, task.aowuId, task.sourceIdx, task.aowuEps, eps, savePath),
       switchSource: ({ failedEps, newSourceIdx }) =>
-        window.aowuApi.switchSource(task.id, task.title, task.aowuId!, newSourceIdx, task.aowuEps!, failedEps, savePath),
-      resolveEpUrl: (ep) => {
-        if (!task.aowuId || !task.sourceIdx) {
-          return Promise.reject(new Error('任务缺少 aowuId / sourceIdx'))
-        }
-        return window.aowuApi.resolveMp4Url(task.aowuId, task.sourceIdx, ep)
-      },
+        window.aowuApi.switchSource(task.id, task.title, task.aowuId, newSourceIdx, task.aowuEps, failedEps, savePath),
+      resolveEpUrl: (ep) => window.aowuApi.resolveMp4Url(task.aowuId, task.sourceIdx, ep),
       resolveIsAsync: true,
     }
   }
-  // xifan (default for legacy tasks without `source`)
-  const sourceIdx = task.sourceIdx ?? 0
+  // xifan
   return {
     pause: () => window.xifanApi.pauseDownload(task.id),
     cancel: () => window.xifanApi.cancelDownload(task.id),
     resume: (pendingEps) =>
-      window.xifanApi.resumeDownload(task.id, task.title, task.templates, pendingEps, savePath, sourceIdx),
+      window.xifanApi.resumeDownload(task.id, task.title, task.templates, pendingEps, savePath, task.sourceIdx),
     retry: (eps) =>
-      window.xifanApi.retryDownload(task.id, task.title, task.templates, eps, savePath, sourceIdx),
+      window.xifanApi.retryDownload(task.id, task.title, task.templates, eps, savePath, task.sourceIdx),
     requeue: (eps) =>
-      window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, eps, savePath, sourceIdx),
+      window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, eps, savePath, task.sourceIdx),
     switchSource: ({ failedEps, newSourceIdx }) =>
       window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newSourceIdx, savePath),
     resolveEpUrl: async (ep) => {
-      const template = task.templates?.[0] ?? ''
+      const template = task.templates[0] ?? ''
       return template ? template.replace('{:02d}', String(ep).padStart(2, '0')) : ''
     },
     resolveIsAsync: false,
@@ -116,10 +109,10 @@ export function taskEpCount(task: DownloadTask): number {
 
 export function taskEpLabel(task: DownloadTask, ep: number): string {
   if (task.source === 'girigiri') {
-    return task.girigiriEps?.find((e) => e.idx === ep)?.name ?? `EP ${ep}`
+    return task.girigiriEps.find((e) => e.idx === ep)?.name ?? `EP ${ep}`
   }
   if (task.source === 'aowu') {
-    return task.aowuEps?.find((e) => e.idx === ep)?.label ?? `EP ${ep}`
+    return task.aowuEps.find((e) => e.idx === ep)?.label ?? `EP ${ep}`
   }
   return `EP ${String(ep).padStart(2, '0')}`
 }
@@ -144,12 +137,12 @@ export function sourceSwitchInfo(task: DownloadTask): SourceSwitch | null {
   if (task.source === 'girigiri') return null
   if (task.source === 'aowu') {
     const list = task.aowuSources
-    if (!list || list.length <= 1) return null
-    const cur = list.findIndex((s) => s.idx === (task.sourceIdx ?? 1))
+    if (list.length <= 1) return null
+    const cur = list.findIndex((s) => s.idx === task.sourceIdx)
     const next = list[(cur + 1) % list.length]
     return { total: list.length, current: cur + 1, next: next.idx }
   }
   if (task.templates.length <= 1) return null
-  const cur = task.sourceIdx ?? 0
+  const cur = task.sourceIdx
   return { total: task.templates.length, current: cur + 1, next: (cur + 1) % task.templates.length }
 }

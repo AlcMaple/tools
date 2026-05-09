@@ -271,7 +271,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
       for (let ep = startEp; ep <= endEp; ep++) epStatus[ep] = 'pending'
       downloadStore.addTask({
         id: taskId, source: 'xifan', title, cover: card.cover,
-        startEp, endEp, templates, savePath,
+        startEp, endEp, templates, sourceIdx: 0, savePath,
         status: 'running', epStatus, epProgress: {}, startedAt: Date.now(),
       })
       setState({ status: 'queued' })
@@ -292,7 +292,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
       downloadStore.addTask({
         id: taskId, source: 'girigiri', title, cover: card.cover,
         startEp: selectedIdxs[0], endEp: selectedIdxs[selectedIdxs.length - 1],
-        templates: [], girigiriEps: selectedEps, savePath,
+        girigiriEps: selectedEps, savePath,
         status: 'running', epStatus, epProgress: {}, startedAt: Date.now(),
       })
       setState({ status: 'queued' })
@@ -312,7 +312,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
       downloadStore.addTask({
         id: taskId, source: 'aowu', title, cover: card.cover,
         startEp: selectedIdxs[0], endEp: selectedIdxs[selectedIdxs.length - 1],
-        templates: [], sourceIdx,
+        sourceIdx,
         aowuId: watchInfo.id, aowuEps: epList,
         aowuSources: watchInfo.sources.map(s => ({ idx: s.idx, name: s.name })),
         savePath,
