@@ -223,7 +223,14 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
                   </span>
                 )}
                 {i < visible.length - 1 && (
-                  <span className="text-secondary/60 mx-1.5 select-none font-medium" aria-hidden>、</span>
+                  // CSS-rendered vertical bar instead of a punctuation char —
+                  // 顿号 / 中点 / 斜杠 等都可能出现在条目文本里（例如标题
+                  // 「お兄ちゃん、朝までずっとギュッてして！」），用纯视觉
+                  // 分隔符避免跟内容混淆。
+                  <span
+                    aria-hidden
+                    className="inline-block w-px h-3.5 bg-secondary/40 mx-2.5 align-middle select-none"
+                  />
                 )}
               </Fragment>
             )
