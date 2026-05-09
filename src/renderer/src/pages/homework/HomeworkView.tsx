@@ -3,7 +3,7 @@ import {
   Attack, DefenseGroup,
   Highlight, ModalShell, FormField, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
-  commonPrefixLen, matchesDefense, todayStr, sortDefenseLex,
+  commonPrefixLen, matchesDefense, todayStr,
 } from './shared'
 import { ImportModal } from './ImportModal'
 
@@ -452,11 +452,13 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   query: string
   onClearQuery: () => void
   /**
-   * When true, defense lineups are sorted lexicographically (字典序) on save.
-   * Used by JJC where the defense title is canonicalised so lineups with the
-   * same characters in different input order collapse into one group.
+   * When true, the filtered group list is sorted lexicographically by the
+   * (joined) defense title (zh-CN locale) instead of by `updatedAt` descending.
+   * Character order **within** a single defense lineup is always preserved as
+   * the user originally typed it — this prop only affects ordering *between*
+   * groups in the rendered list.
    */
-  sortDefenseLex?: boolean
+  sortGroupsByTitle?: boolean
   /**
    * When true, the import button is hidden. JJC reuses HomeworkView but has
    * no JSON import path of its own.
@@ -468,8 +470,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
    * JJC where defenders are recorded ahead of attack作业.
    */
   attackOptional?: boolean
-}>(function HomeworkView({ data, setData, query, onClearQuery, sortDefenseLex: shouldSort = false, hideImport = false, attackOptional = false }, ref) {
-  const maybeSort = (d: string[]): string[] => shouldSort ? sortDefenseLex(d) : d
+}>(function HomeworkView({ data, setData, query, onClearQuery, sortGroupsByTitle = false, hideImport = false, attackOptional = false }, ref) {
   const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set())
 
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -506,7 +507,15 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
 
   const filtered = data
     .filter(d => matchesDefense(d, query))
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
+    .sort((a, b) => {
+      if (sortGroupsByTitle) {
+        // Lexicographic by defense title (zh-CN locale → pinyin-aware ordering).
+        // Character order **within** each lineup is left untouched — this only
+        // controls how the groups are ordered relative to each other.
+        return a.defense.join('、').localeCompare(b.defense.join('、'), 'zh-CN')
+      }
+      return a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0
+    })
 
   const totalAttacks = filtered.reduce((s, d) => s + d.attacks.length, 0)
 
@@ -526,11 +535,12 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     // attach to the attack row.
     const team = attackOptional ? [] : attackInput.split('、').map(s => s.trim()).filter(Boolean)
     if (!attackOptional && !team.length) return
-    const defense = maybeSort(defenseRaw)
+    // Preserve the user's character order — store the lineup exactly as typed.
+    const defense = defenseRaw
     const defKey = defense.join('、')
     const now = todayStr()
     setData(prev => {
-      const existing = prev.find(d => maybeSort(d.defense).join('、') === defKey)
+      const existing = prev.find(d => d.defense.join('、') === defKey)
       if (existing) {
         if (attackOptional) {
           // JJC: defense already exists — merge any new notes into the group.
@@ -566,10 +576,9 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
 
   const handleEditDefense = (newDefense: string[], newNotes: string[]) => {
     if (!editDefenseGroup) return
-    const next = maybeSort(newDefense)
     setData(prev => prev.map(d =>
       d.id === editDefenseGroup.id
-        ? { ...d, defense: next, notes: attackOptional ? newNotes : (d.notes ?? []), updatedAt: todayStr() }
+        ? { ...d, defense: newDefense, notes: attackOptional ? newNotes : (d.notes ?? []), updatedAt: todayStr() }
         : d
     ))
     setEditDefenseGroup(null)
