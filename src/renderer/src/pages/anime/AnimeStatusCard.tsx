@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react'
-import { animeTrackStore, AnimeStatus, AnimeTrack } from '../../stores/animeTrackStore'
+import { animeTrackStore, AnimeStatus, useAnimeTrack } from '../../stores/animeTrackStore'
 import { NoteTagInput } from '../homework/shared'
 
 interface Props {
   bgmId: number
-  title: string
-  titleCn?: string
-  cover?: string
   totalEpisodes?: number
 }
 
@@ -17,17 +14,6 @@ const STATUS_LABEL: Record<AnimeStatus, string> = {
   completed: '看完',
   paused: '暂停',
   dropped: '弃番',
-}
-
-function useTrack(bgmId: number): AnimeTrack | null {
-  const [track, setTrack] = useState<AnimeTrack | null>(() => animeTrackStore.getByBgmId(bgmId))
-  useEffect(() => {
-    setTrack(animeTrackStore.getByBgmId(bgmId))
-    return animeTrackStore.subscribe(() => {
-      setTrack(animeTrackStore.getByBgmId(bgmId))
-    })
-  }, [bgmId])
-  return track
 }
 
 function relativeAgo(iso: string): string {
@@ -42,11 +28,14 @@ function relativeAgo(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export function AnimeStatusCard({
-  bgmId, title, titleCn, cover, totalEpisodes,
-}: Props): JSX.Element {
-  const track = useTrack(bgmId)
-  const exists = track !== null
+/**
+ * "我的状态" — only renders when the user has an active track entry.
+ * The empty-state CTA is owned by the host page (AnimeInfo) and integrated
+ * into its existing button column, so this component itself never creates
+ * an extra visual layer for the "not yet tracked" state.
+ */
+export function AnimeStatusCard({ bgmId, totalEpisodes }: Props): JSX.Element | null {
+  const track = useAnimeTrack(bgmId)
   const [confirmRemove, setConfirmRemove] = useState(false)
 
   // Local draft state for the notes tag input — committed back to store on change.
@@ -54,26 +43,8 @@ export function AnimeStatusCard({
   const [noteDraft, setNoteDraft] = useState('')
   useEffect(() => { setNoteDraft('') }, [bgmId])
 
-  // ── Empty state ───────────────────────────────────────────────────────────
-  if (!exists) {
-    return (
-      <button
-        onClick={() => {
-          animeTrackStore.upsert({
-            bgmId, title, titleCn, cover, totalEpisodes,
-            status: 'plan',
-            episode: 0,
-          })
-        }}
-        className="w-full mt-4 py-4 rounded-xl border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/[0.04] transition-colors flex items-center justify-center gap-2 text-on-surface-variant/60 hover:text-primary group"
-      >
-        <span className="material-symbols-outlined text-base leading-none">bookmark_add</span>
-        <span className="font-label text-[11px] uppercase tracking-widest">加入追番列表</span>
-      </button>
-    )
-  }
+  if (!track) return null
 
-  // ── Active state ─────────────────────────────────────────────────────────
   const setStatus = (s: AnimeStatus): void => {
     // Toggling to "watching" auto-bumps episode 0 → 1 so the user doesn't need
     // a second tap. Setting to "completed" backfills episode to total when known.
