@@ -13,6 +13,7 @@ import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
 import { AnimeStatusCard } from './anime/AnimeStatusCard'
+import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const BGM_SEARCH_TTL_MS = 14 * DAY_MS
@@ -665,6 +666,7 @@ function DetailView({
   const [copied, setCopied] = useState(false)
   const hasStaff = data.staff.length > 0
   const displayTitle = (data.title_cn || data.title).toUpperCase()
+  const track = useAnimeTrack(data.id)
 
   // 别名：infobox 的「别名」字段 + 原名（若与显示标题不同）；去重
   const aliases = (() => {
@@ -767,14 +769,30 @@ function DetailView({
             >
               Official Site
             </button>
+            {/* Tracking CTA only present when the user hasn't added this anime yet —
+                once tracked, the AnimeStatusCard below takes over the role. */}
+            {!track && (
+              <button
+                className="w-full py-4 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 text-on-surface-variant hover:text-primary font-label text-sm transition-colors flex items-center justify-center gap-2"
+                onClick={() => animeTrackStore.upsert({
+                  bgmId: data.id,
+                  title: data.title,
+                  titleCn: data.title_cn || undefined,
+                  cover: data.cover || undefined,
+                  totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
+                  status: 'plan',
+                  episode: 0,
+                })}
+              >
+                <span className="material-symbols-outlined text-lg leading-none">bookmark_add</span>
+                Track this anime
+              </button>
+            )}
           </div>
 
-          {/* Personal tracking — empty state shows a single CTA, populated state expands. */}
+          {/* Active state only — empty state lives as the third button above. */}
           <AnimeStatusCard
             bgmId={data.id}
-            title={data.title}
-            titleCn={data.title_cn || undefined}
-            cover={data.cover || undefined}
             totalEpisodes={data.episodes > 0 ? data.episodes : undefined}
           />
         </div>
