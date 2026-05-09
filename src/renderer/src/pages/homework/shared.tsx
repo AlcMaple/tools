@@ -246,7 +246,7 @@ export function NoteChip({
         aria-hidden
         className="w-[2.5px] shrink-0 bg-gradient-to-b from-secondary/80 via-secondary/55 to-secondary/30"
       />
-      <span className="px-2.5 py-[3px] text-[11.5px] font-medium text-secondary/95 tracking-[0.005em] leading-[1.45] whitespace-nowrap">
+      <span className="px-2.5 py-[3px] text-[11.5px] font-medium text-secondary/95 tracking-[0.005em] leading-[1.45] whitespace-nowrap select-none">
         {query ? <Highlight text={text} query={query} /> : text}
       </span>
       {withRemove && (
