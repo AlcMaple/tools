@@ -11,7 +11,7 @@ import { XifanDownloadConfigModal } from '../components/XifanDownloadModal'
 import { GirigiriDownloadConfigModal } from '../components/GirigiriDownloadModal'
 import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
-import { readCacheEntry, dedupRefresh } from '../utils/searchCache'
+import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const BGM_SEARCH_TTL_MS = 14 * DAY_MS
@@ -55,18 +55,8 @@ async function setSearchCache(source: Source, keyword: string, cards: SearchCard
   } catch { /* noop */ }
 }
 
-function getSavePath(): string | undefined {
-  try { return JSON.parse(localStorage.getItem('xifan_settings') || '{}').downloadPath || undefined } catch { return undefined }
-}
-
 // ── BGM 搜索结果缓存 ──────────────────────────────────────────
 const BGM_SEARCH_CACHE_KEY = 'search_cache_bgm'
-
-function isSearchCacheEnabled(): boolean {
-  try {
-    return JSON.parse(localStorage.getItem('xifan_settings') || '{}').searchCacheEnabled !== false
-  } catch { return true }
-}
 
 interface BgmSearchHit { data: BgmSearchResult[]; isStale: boolean }
 
