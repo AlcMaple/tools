@@ -104,6 +104,8 @@ export interface PjjcGroup {
   defenses: string[][]  // length 3
   updatedAt: string
   attacks: PjjcAttack[]
+  /** Group-level notes — defense-side annotations. Default `[]`. */
+  notes?: string[]
 }
 
 function padToThree(rows: string[][]): string[][] {
@@ -149,6 +151,7 @@ export function normalizePjjc(groups: unknown): PjjcGroup[] {
         defenses,
         updatedAt: typeof g.updatedAt === 'string' && g.updatedAt ? g.updatedAt : now,
         attacks,
+        notes: coerceNotes((g as { notes?: unknown }).notes),
       }
     })
 }
