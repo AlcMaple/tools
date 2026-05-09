@@ -229,15 +229,16 @@ export function ModalInput(props: React.InputHTMLAttributes<HTMLInputElement>): 
 // ── Note chip — refined editorial tag ─────────────────────────────────────────
 // Design: hairline border + gradient tonal fill + left accent bar.
 // Replaces the legacy "blue pill + dot" with something more intentional.
-// `onEdit` (when provided) makes the text area double-clickable for in-place edit.
+// To "edit", the user removes via ✕ and re-adds — same model as GitHub labels /
+// Issue assignees. Avoids the in-place edit state machine (and the surprise
+// double-click hit area users sometimes triggered while just selecting text).
 export function NoteChip({
-  text, query, withRemove, onRemove, onEdit,
+  text, query, withRemove, onRemove,
 }: {
   text: string
   query?: string
   withRemove?: boolean
   onRemove?: () => void
-  onEdit?: () => void
 }): JSX.Element {
   return (
     <span className="inline-flex items-stretch overflow-hidden rounded-md border border-secondary/[0.18] bg-gradient-to-r from-secondary/[0.10] to-secondary/[0.03] hover:from-secondary/[0.14] hover:to-secondary/[0.05] transition-colors">
@@ -245,11 +246,7 @@ export function NoteChip({
         aria-hidden
         className="w-[2.5px] shrink-0 bg-gradient-to-b from-secondary/80 via-secondary/55 to-secondary/30"
       />
-      <span
-        className={`px-2.5 py-[3px] text-[11.5px] font-medium text-secondary/95 tracking-[0.005em] leading-[1.45] whitespace-nowrap ${onEdit ? 'cursor-text select-none' : ''}`}
-        onDoubleClick={onEdit ? (e) => { e.stopPropagation(); onEdit() } : undefined}
-        title={onEdit ? '双击编辑' : undefined}
-      >
+      <span className="px-2.5 py-[3px] text-[11.5px] font-medium text-secondary/95 tracking-[0.005em] leading-[1.45] whitespace-nowrap">
         {query ? <Highlight text={text} query={query} /> : text}
       </span>
       {withRemove && (
@@ -290,12 +287,10 @@ export function notesEqual(a: string[], b: string[]): boolean {
 }
 
 // ── NoteTagInput — chip-style tag input for the modals ────────────────────────
-// Behavior:
-//   - Type + Enter on main input   → adds the trimmed draft as a new chip
-//   - Click ✕ on any chip          → removes that chip
-//   - Double-click chip text       → in-place edit (chip becomes input)
-//       · Enter / blur commits (empty or duplicate input ⇒ chip is removed)
-//       · Esc cancels (original chip kept intact)
+// Behavior (mirrors GitHub label / assignee pickers):
+//   - Type + Enter on main input → adds the trimmed draft as a new chip
+//   - Click ✕ on any chip        → removes that chip
+//   - To "edit" a chip, remove it and type the new value
 //   - onBlur on main input commits pending draft (no data loss on Save)
 // Backspace on empty main input is intentionally a no-op so users don't
 // accidentally wipe out chips while editing other fields.
@@ -309,8 +304,6 @@ export function NoteTagInput({
   placeholder?: string
 }): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [editingIndex, setEditingIndex] = useState<number | null>(null)
-  const [editDraft, setEditDraft] = useState('')
 
   const commit = (): void => {
     const t = draft.trim()
@@ -321,40 +314,6 @@ export function NoteTagInput({
 
   const removeAt = (i: number): void => {
     onNotesChange(notes.filter((_, idx) => idx !== i))
-    if (editingIndex === i) setEditingIndex(null)
-  }
-
-  const startEdit = (i: number): void => {
-    // Flush any pending main-input draft first so it doesn't get lost.
-    commit()
-    setEditingIndex(i)
-    setEditDraft(notes[i])
-  }
-
-  const commitEdit = (): void => {
-    if (editingIndex === null) return
-    const i = editingIndex
-    const t = editDraft.trim()
-    setEditingIndex(null)
-    setEditDraft('')
-    if (!t) {
-      // Empty = treat as remove.
-      onNotesChange(notes.filter((_, idx) => idx !== i))
-      return
-    }
-    // Editing into an existing chip's text = collapse (drop the duplicate).
-    if (notes.some((n, idx) => idx !== i && n === t)) {
-      onNotesChange(notes.filter((_, idx) => idx !== i))
-      return
-    }
-    if (t !== notes[i]) {
-      onNotesChange(notes.map((n, idx) => idx === i ? t : n))
-    }
-  }
-
-  const cancelEdit = (): void => {
-    setEditingIndex(null)
-    setEditDraft('')
   }
 
   return (
@@ -366,44 +325,14 @@ export function NoteTagInput({
       }}
       className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-2.5 py-2 flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary/30 transition-all min-h-[42px] cursor-text"
     >
-      {notes.map((n, i) => {
-        if (i === editingIndex) {
-          return (
-            <span
-              key={`edit-${i}`}
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-stretch overflow-hidden rounded-md border border-secondary/40 bg-gradient-to-r from-secondary/[0.16] to-secondary/[0.05] ring-1 ring-secondary/25"
-            >
-              <span aria-hidden className="w-[2.5px] shrink-0 bg-gradient-to-b from-secondary via-secondary/70 to-secondary/40" />
-              <input
-                autoFocus
-                value={editDraft}
-                onChange={e => setEditDraft(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') { e.preventDefault(); commitEdit() }
-                  else if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
-                }}
-                onBlur={commitEdit}
-                onFocus={e => e.currentTarget.select()}
-                spellCheck={false}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                className="px-2.5 py-[2px] text-[11.5px] font-medium text-secondary bg-transparent outline-none min-w-[160px]"
-              />
-            </span>
-          )
-        }
-        return (
-          <NoteChip
-            key={`${i}-${n}`}
-            text={n}
-            withRemove
-            onRemove={() => removeAt(i)}
-            onEdit={() => startEdit(i)}
-          />
-        )
-      })}
+      {notes.map((n, i) => (
+        <NoteChip
+          key={`${i}-${n}`}
+          text={n}
+          withRemove
+          onRemove={() => removeAt(i)}
+        />
+      ))}
       <input
         ref={inputRef}
         spellCheck={false}
