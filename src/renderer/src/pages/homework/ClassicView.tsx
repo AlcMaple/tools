@@ -2,34 +2,12 @@ import { useEffect, useImperativeHandle, useState, forwardRef } from 'react'
 import {
   ClassicGroup, ClassicTeam,
   Highlight, ModalShell, FormField, ModalInput,
-  NoteChip, NoteTagInput, useNoteTagState,
+  NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
   commonPrefixLen, matchesClassic, todayStr,
 } from './shared'
 
 export interface ClassicViewHandle {
   openAdd: () => void
-}
-
-// Helper: render a row's notes inline as chips (display-only).
-function NoteChipList({ notes, query }: { notes: string[]; query?: string }): JSX.Element | null {
-  if (notes.length === 0) return null
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-      {notes.map((n, i) => <NoteChip key={i} text={n} query={query} />)}
-    </div>
-  )
-}
-
-// Helper: build the "copy" payload for a team line. Notes are joined with ` / `.
-function copyText(team: string[], notes: string[]): string {
-  return team.join('、') + (notes.length ? ` (${notes.join(' / ')})` : '')
-}
-
-// Helper: shallow-equal for two string arrays (order-sensitive).
-function notesEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
-  return true
 }
 
 // ── Add modal (new classic group) ──────────────────────────
@@ -673,7 +651,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
                             <button
                               className={`p-1.5 rounded transition-colors ${copiedKey === `tm-${t.id}` ? 'text-secondary' : 'text-on-surface-variant/50 hover:text-tertiary hover:bg-surface-container-high'}`}
                               title="复制阵容"
-                              onClick={() => copyWithFeedback(`tm-${t.id}`, copyText(t.team, t.notes))}
+                              onClick={() => copyWithFeedback(`tm-${t.id}`, copyTeamText(t.team, t.notes))}
                             >
                               <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{copiedKey === `tm-${t.id}` ? 'check' : 'content_copy'}</span>
                             </button>
