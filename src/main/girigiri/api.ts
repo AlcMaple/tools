@@ -114,18 +114,16 @@ async function parseSearchPage(html: string): Promise<GiriSearchResult[]> {
     let finalCover = '';
     if (coverUrl) {
       try {
-        console.log(`[girigiri:search]   downloading cover for "${title}"...`);
         const imgRes = await fetch(coverUrl, {
           headers: {
             'Referer': BASE_DOMAIN,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': DESKTOP_USER_AGENT,
           }
         });
         const arrayBuffer = await imgRes.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         if (buffer.length > 0) {
           finalCover = `data:image/jpeg;base64,${buffer.toString('base64')}`;
-          console.log(`[girigiri:search]   cover downloaded successfully! Base64 size: ${Math.round(finalCover.length / 1024)}KB`);
         } else {
           finalCover = coverUrl;
         }
@@ -141,7 +139,6 @@ async function parseSearchPage(html: string): Promise<GiriSearchResult[]> {
     const yearM = infoText.match(/(\d{4})/)
     const regionM = infoText.match(/(日本|中国|美国|韩国|国产|日漫|大陆)/)
 
-    console.log(`[girigiri:search]   card title="${title}" url=${playUrl}`)
     results.push({
       title,
       cover: finalCover,
