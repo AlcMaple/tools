@@ -41,18 +41,17 @@ export function friendlyError(err: unknown): FriendlyError {
       raw: msg,
     }
   }
-  if (msg.startsWith('AOWU_WATCH_NOT_ADAPTED')) {
+  if (msg.startsWith('AOWU_RATE_LIMITED')) {
     return {
-      title: '下载流程未适配',
-      hint: '站点改版后详情页是新结构（/v/{token}），下载/播放链接解析尚未重写。目前只能用搜索功能浏览结果。',
+      title: '嗷呜动漫触发限流',
+      hint: '请求太频繁被站点限流（HTTP 429）。先停一会儿（错误里若带 Retry-After 秒数即等那么久），再继续操作。',
       raw: msg,
     }
   }
-  if (/^AOWU_HTTP_\d+/.test(msg)) {
-    const code = msg.match(/AOWU_HTTP_(\d+)/)?.[1] ?? '?'
+  if (msg.startsWith('AOWU_RESOLVE_FAILED')) {
     return {
-      title: `嗷呜动漫返回 HTTP ${code}`,
-      hint: '站点返回非预期状态码，可能是临时维护或路由问题。',
+      title: '播放链接解析失败',
+      hint: '站点返回的 play 响应里没有可用的 mp4 URL，可能是该集刚上线还没切片完，或换源 idx 试试。',
       raw: msg,
     }
   }
