@@ -11,6 +11,17 @@ contextBridge.exposeInMainWorld('bgmApi', {
   detail: (subjectId: number) => ipcRenderer.invoke('bgm:detail', subjectId),
 })
 
+// Single subscription point for download progress events. The main process
+// emits all three sources (xifan / girigiri / aowu) onto the unified
+// 'download:progress' channel, so the renderer only needs one listener.
+contextBridge.exposeInMainWorld('downloadApi', {
+  onProgress: (cb: (taskId: string, event: unknown) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown): void => cb(taskId, ev)
+    ipcRenderer.on('download:progress', handler)
+    return () => ipcRenderer.removeListener('download:progress', handler)
+  },
+})
+
 contextBridge.exposeInMainWorld('systemApi', {
   getDiskFree: () => ipcRenderer.invoke('system:disk-free'),
   pickFolder: () => ipcRenderer.invoke('system:pick-folder'),
@@ -59,11 +70,6 @@ contextBridge.exposeInMainWorld('girigiriApi', {
     failedEps: number[],
     savePath?: string
   ) => ipcRenderer.invoke('girigiri:download-retry', taskId, title, epList, failedEps, savePath),
-  onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
-    ipcRenderer.on('download:progress', handler)
-    return () => ipcRenderer.removeListener('download:progress', handler)
-  },
 })
 
 contextBridge.exposeInMainWorld('xifanApi', {
@@ -83,11 +89,6 @@ contextBridge.exposeInMainWorld('xifanApi', {
     ipcRenderer.invoke('xifan:download-retry', taskId, title, templates, failedEps, savePath, sourceIdx),
   switchSource: (taskId: string, title: string, templates: string[], failedEps: number[], newSourceIdx: number, savePath?: string) =>
     ipcRenderer.invoke('xifan:download-switch-source', taskId, title, templates, failedEps, newSourceIdx, savePath),
-  onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
-    ipcRenderer.on('download:progress', handler)
-    return () => ipcRenderer.removeListener('download:progress', handler)
-  },
 })
 
 contextBridge.exposeInMainWorld('aowuApi', {
@@ -149,11 +150,6 @@ contextBridge.exposeInMainWorld('aowuApi', {
     failedEps: number[],
     savePath?: string
   ) => ipcRenderer.invoke('aowu:download-switch-source', taskId, title, animeId, newSourceIdx, epList, failedEps, savePath),
-  onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown) => cb(taskId, ev)
-    ipcRenderer.on('download:progress', handler)
-    return () => ipcRenderer.removeListener('download:progress', handler)
-  },
 })
 
 contextBridge.exposeInMainWorld('fileExplorerApi', {

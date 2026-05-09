@@ -87,7 +87,14 @@ declare global {
         failedEps: number[],
         savePath?: string
       ) => Promise<{ started: boolean }>
-      onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => () => void
+    }
+    /**
+     * Single subscription point for download progress events. The main process
+     * emits all three sources (xifan / girigiri / aowu) onto the unified
+     * 'download:progress' channel — only one listener is needed.
+     */
+    downloadApi: {
+      onProgress: (cb: (taskId: string, event: unknown) => void) => () => void
     }
     systemApi: {
       getDiskFree: () => Promise<{ free: number; total: number }>
@@ -151,9 +158,6 @@ declare global {
         newSourceIdx: number,
         savePath?: string
       ) => Promise<{ switched: boolean }>
-      onDownloadProgress: (
-        cb: (taskId: string, event: unknown) => void
-      ) => () => void
     }
     aowuApi: {
       search: (keyword: string) => Promise<{
@@ -214,7 +218,6 @@ declare global {
         failedEps: number[],
         savePath?: string
       ) => Promise<{ switched: boolean }>
-      onDownloadProgress: (cb: (taskId: string, event: unknown) => void) => () => void
     }
     webdavApi: {
       getConfig: () => Promise<{ account: string; appPassword: string; remotePath: string } | null>
