@@ -3,13 +3,14 @@ import TopBar from '../components/TopBar'
 import HomeworkView, { HomeworkViewHandle } from './homework/HomeworkView'
 import ClassicView, { ClassicViewHandle } from './homework/ClassicView'
 import LogView, { LogViewHandle } from './homework/LogView'
+import PjjcView, { PjjcViewHandle } from './homework/PjjcView'
 import {
-  ClassicGroup, DefenseGroup, LogEntry,
-  ipcErrMsg, normalizeClassic, normalizeHomework, normalizeLog,
+  ClassicGroup, DefenseGroup, LogEntry, PjjcGroup,
+  ipcErrMsg, normalizeClassic, normalizeHomework, normalizeLog, normalizePjjc,
   ModalShell,
 } from './homework/shared'
 
-type Tab = 'homework' | 'classic' | 'log'
+type Tab = 'homework' | 'jjc' | 'pjjc' | 'classic' | 'log'
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type SyncDirection = 'push' | 'pull'
 
@@ -17,6 +18,8 @@ interface SyncRemoteMeta {
   rev: number
   ts: string
   homework: DefenseGroup[]
+  jjc: DefenseGroup[]
+  pjjc: PjjcGroup[]
   classic: ClassicGroup[]
   log: LogEntry[]
 }
@@ -30,6 +33,8 @@ interface SyncConfirmState {
 }
 
 const HOMEWORK_KEY = 'maple-homework-data-v2'
+const JJC_KEY = 'maple-jjc-data-v1'
+const PJJC_KEY = 'maple-pjjc-data-v1'
 const CLASSIC_KEY = 'maple-classic-data-v1'
 const LOG_KEY = 'maple-log-data-v1'
 const TAB_KEY = 'maple-knowledge-active-tab'
@@ -37,8 +42,14 @@ const LAST_SYNC_KEY = 'maple-homework-last-sync'
 const LAST_REV_KEY = 'maple-knowledge-last-rev'
 const SNAPSHOT_KEY = 'maple-knowledge-last-snapshot'
 
-function snapshotOf(homework: DefenseGroup[], classic: ClassicGroup[], log: LogEntry[]): string {
-  return JSON.stringify({ homework, classic, log })
+function snapshotOf(
+  homework: DefenseGroup[],
+  jjc: DefenseGroup[],
+  pjjc: PjjcGroup[],
+  classic: ClassicGroup[],
+  log: LogEntry[],
+): string {
+  return JSON.stringify({ homework, jjc, pjjc, classic, log })
 }
 
 /**
@@ -62,11 +73,15 @@ function rebuildIfSchemaDrift(stored: string, current: string): string {
   try {
     const parsed = JSON.parse(stored) as {
       homework?: unknown
+      jjc?: unknown
+      pjjc?: unknown
       classic?: unknown
       log?: unknown
     }
     const renormalized = snapshotOf(
       normalizeHomework(Array.isArray(parsed.homework) ? (parsed.homework as DefenseGroup[]) : []),
+      normalizeHomework(Array.isArray(parsed.jjc) ? (parsed.jjc as DefenseGroup[]) : []),
+      normalizePjjc(parsed.pjjc),
       normalizeClassic(Array.isArray(parsed.classic) ? (parsed.classic as ClassicGroup[]) : []),
       normalizeLog(parsed.log),
     )
@@ -86,13 +101,15 @@ function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
   const remote = JSON.parse(jsonStr)
   if (Array.isArray(remote)) {
     // Legacy: array = homework only, no embedded rev/ts
-    return { rev: 0, ts: '', homework: remote as DefenseGroup[], classic: [], log: [] }
+    return { rev: 0, ts: '', homework: remote as DefenseGroup[], jjc: [], pjjc: [], classic: [], log: [] }
   }
   if (remote && typeof remote === 'object') {
     return {
       rev: typeof remote._rev === 'number' ? remote._rev : 0,
       ts: typeof remote._ts === 'string' ? remote._ts : '',
       homework: Array.isArray(remote.homework) ? remote.homework : [],
+      jjc: Array.isArray(remote.jjc) ? remote.jjc : [],
+      pjjc: Array.isArray(remote.pjjc) ? remote.pjjc : [],
       classic: Array.isArray(remote.classic) ? remote.classic : [],
       log: Array.isArray(remote.log) ? remote.log : [],
     }
@@ -114,6 +131,13 @@ function classicStats(data: ClassicGroup[]): { themes: number; teams: number } {
   }
 }
 
+function pjjcStats(data: PjjcGroup[]): { groups: number; attacks: number } {
+  return {
+    groups: data.length,
+    attacks: data.reduce((s, d) => s + d.attacks.length, 0),
+  }
+}
+
 function logStats(data: LogEntry[]): { count: number } {
   return { count: data.length }
 }
@@ -129,17 +153,20 @@ function formatRemoteTs(ts: string): string {
 export default function HomeworkLookup(): JSX.Element {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const v = localStorage.getItem(TAB_KEY)
-    if (v === 'classic') return 'classic'
-    if (v === 'log') return 'log'
+    if (v === 'classic' || v === 'log' || v === 'jjc' || v === 'pjjc') return v
     return 'homework'
   })
 
   // Eagerly compute initial data so the snapshot init can reuse the same values.
   const initialHomework = (() => normalizeHomework(readJson(HOMEWORK_KEY, [])))()
+  const initialJjc = (() => normalizeHomework(readJson(JJC_KEY, [])))()
+  const initialPjjc = (() => normalizePjjc(readJson(PJJC_KEY, [])))()
   const initialClassic = (() => normalizeClassic(readJson(CLASSIC_KEY, [])))()
   const initialLog = (() => normalizeLog(readJson(LOG_KEY, [])))()
 
   const [homeworkData, setHomeworkData] = useState<DefenseGroup[]>(initialHomework)
+  const [jjcData, setJjcData] = useState<DefenseGroup[]>(initialJjc)
+  const [pjjcData, setPjjcData] = useState<PjjcGroup[]>(initialPjjc)
   const [classicData, setClassicData] = useState<ClassicGroup[]>(initialClassic)
   const [logData, setLogData] = useState<LogEntry[]>(initialLog)
 
@@ -167,7 +194,7 @@ export default function HomeworkLookup(): JSX.Element {
   // current shape but is *semantically* identical after re-normalizing, treat
   // it as pure shape drift and rebuild. See rebuildIfSchemaDrift().
   const [lastSyncedSnapshot, setLastSyncedSnapshot] = useState<string>(() => {
-    const initialSnapshot = snapshotOf(initialHomework, initialClassic, initialLog)
+    const initialSnapshot = snapshotOf(initialHomework, initialJjc, initialPjjc, initialClassic, initialLog)
     const stored = localStorage.getItem(SNAPSHOT_KEY)
     if (!stored) return initialSnapshot
     return rebuildIfSchemaDrift(stored, initialSnapshot)
@@ -180,18 +207,22 @@ export default function HomeworkLookup(): JSX.Element {
   // Memoized so unrelated re-renders (search keystrokes, tab switches, sync
   // status changes) don't re-stringify the entire dataset.
   const currentSnapshot = useMemo(
-    () => snapshotOf(homeworkData, classicData, logData),
-    [homeworkData, classicData, logData]
+    () => snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData),
+    [homeworkData, jjcData, pjjcData, classicData, logData]
   )
   const localDirty = currentSnapshot !== lastSyncedSnapshot
   const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
   const homeworkRef = useRef<HomeworkViewHandle>(null)
+  const jjcRef = useRef<HomeworkViewHandle>(null)
+  const pjjcRef = useRef<PjjcViewHandle>(null)
   const classicRef = useRef<ClassicViewHandle>(null)
   const logRef = useRef<LogViewHandle>(null)
 
   // Persistence
   useEffect(() => { localStorage.setItem(HOMEWORK_KEY, JSON.stringify(homeworkData)) }, [homeworkData])
+  useEffect(() => { localStorage.setItem(JJC_KEY, JSON.stringify(jjcData)) }, [jjcData])
+  useEffect(() => { localStorage.setItem(PJJC_KEY, JSON.stringify(pjjcData)) }, [pjjcData])
   useEffect(() => { localStorage.setItem(CLASSIC_KEY, JSON.stringify(classicData)) }, [classicData])
   useEffect(() => { localStorage.setItem(LOG_KEY, JSON.stringify(logData)) }, [logData])
   useEffect(() => { localStorage.setItem(TAB_KEY, activeTab) }, [activeTab])
@@ -242,6 +273,8 @@ export default function HomeworkLookup(): JSX.Element {
 
   const handleAdd = () => {
     if (activeTab === 'homework') homeworkRef.current?.openAdd()
+    else if (activeTab === 'jjc') jjcRef.current?.openAdd()
+    else if (activeTab === 'pjjc') pjjcRef.current?.openAdd()
     else if (activeTab === 'classic') classicRef.current?.openAdd()
     else logRef.current?.focusInput()
   }
@@ -287,10 +320,12 @@ export default function HomeworkLookup(): JSX.Element {
     setSyncMsg('')
     try {
       const blob = JSON.stringify({
-        _v: 3,
+        _v: 4,
         _rev: newRev,
         _ts: new Date().toISOString(),
         homework: homeworkData,
+        jjc: jjcData,
+        pjjc: pjjcData,
         classic: classicData,
         log: logData,
       })
@@ -299,7 +334,7 @@ export default function HomeworkLookup(): JSX.Element {
       setLastSyncTime(now)
       setLastSyncedRev(newRev)
       setRemoteRev(newRev)
-      setLastSyncedSnapshot(snapshotOf(homeworkData, classicData, logData))
+      setLastSyncedSnapshot(snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '上传成功')
     } catch (e: unknown) {
@@ -318,16 +353,20 @@ export default function HomeworkLookup(): JSX.Element {
     setSyncMsg('')
     try {
       const newHomework = normalizeHomework(remote.homework)
+      const newJjc = normalizeHomework(remote.jjc)
+      const newPjjc = normalizePjjc(remote.pjjc)
       const newClassic = normalizeClassic(remote.classic)
       const newLog = normalizeLog(remote.log)
       setHomeworkData(newHomework)
+      setJjcData(newJjc)
+      setPjjcData(newPjjc)
       setClassicData(newClassic)
       setLogData(newLog)
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(remote.rev)
       setRemoteRev(remote.rev)
-      setLastSyncedSnapshot(snapshotOf(newHomework, newClassic, newLog))
+      setLastSyncedSnapshot(snapshotOf(newHomework, newJjc, newPjjc, newClassic, newLog))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '拉取成功')
     } catch (e: unknown) {
@@ -337,11 +376,15 @@ export default function HomeworkLookup(): JSX.Element {
 
   const searchPlaceholder =
     activeTab === 'homework' ? '模糊搜索防守方角色…' :
+    activeTab === 'jjc' ? '模糊搜索 JJC 防守方角色…' :
+    activeTab === 'pjjc' ? '模糊搜索三防角色…' :
     activeTab === 'classic' ? '模糊搜索主题标题…' :
     '模糊搜索记录正文…'
 
   const addLabel =
     activeTab === 'homework' ? '添加作业' :
+    activeTab === 'jjc' ? '添加 JJC' :
+    activeTab === 'pjjc' ? '添加换防' :
     activeTab === 'classic' ? '添加经典阵容' :
     '添加记录'
 
@@ -414,6 +457,28 @@ export default function HomeworkLookup(): JSX.Element {
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'homework' ? "'FILL' 1" : "'FILL' 0" }}>shield</span>
                 作业查询
+              </button>
+              <button
+                onClick={() => setActiveTab('jjc')}
+                className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'jjc'
+                    ? 'bg-primary/15 text-primary border border-primary/20 font-bold'
+                    : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
+                }`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'jjc' ? "'FILL' 1" : "'FILL' 0" }}>military_tech</span>
+                JJC
+              </button>
+              <button
+                onClick={() => setActiveTab('pjjc')}
+                className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'pjjc'
+                    ? 'bg-primary/15 text-primary border border-primary/20 font-bold'
+                    : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
+                }`}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'pjjc' ? "'FILL' 1" : "'FILL' 0" }}>swap_horiz</span>
+                PJJC 换防
               </button>
               <button
                 onClick={() => setActiveTab('classic')}
@@ -533,6 +598,26 @@ export default function HomeworkLookup(): JSX.Element {
             onClearQuery={clearQuery}
           />
         )}
+        {activeTab === 'jjc' && (
+          <HomeworkView
+            ref={jjcRef}
+            data={jjcData}
+            setData={setJjcData}
+            query={debouncedQuery}
+            onClearQuery={clearQuery}
+            sortDefenseLex
+            hideImport
+          />
+        )}
+        {activeTab === 'pjjc' && (
+          <PjjcView
+            ref={pjjcRef}
+            data={pjjcData}
+            setData={setPjjcData}
+            query={debouncedQuery}
+            onClearQuery={clearQuery}
+          />
+        )}
         {activeTab === 'classic' && (
           <ClassicView
             ref={classicRef}
@@ -558,6 +643,8 @@ export default function HomeworkLookup(): JSX.Element {
             state={syncConfirm}
             setState={setSyncConfirm}
             localHomework={homeworkData}
+            localJjc={jjcData}
+            localPjjc={pjjcData}
             localClassic={classicData}
             localLog={logData}
             localDirty={localDirty}
@@ -574,12 +661,14 @@ export default function HomeworkLookup(): JSX.Element {
 // ── Sync confirm modal ─────────────────────────────────────────────────────
 function SyncConfirmModal({
   state, setState,
-  localHomework, localClassic, localLog, localDirty, lastSyncedRev,
+  localHomework, localJjc, localPjjc, localClassic, localLog, localDirty, lastSyncedRev,
   onConfirmPush, onConfirmPull,
 }: {
   state: SyncConfirmState
   setState: React.Dispatch<React.SetStateAction<SyncConfirmState | null>>
   localHomework: DefenseGroup[]
+  localJjc: DefenseGroup[]
+  localPjjc: PjjcGroup[]
   localClassic: ClassicGroup[]
   localLog: LogEntry[]
   localDirty: boolean
@@ -591,9 +680,13 @@ function SyncConfirmModal({
   const isPush = direction === 'push'
 
   const localHw = homeworkStats(localHomework)
+  const localJjcStats = homeworkStats(localJjc)
+  const localPj = pjjcStats(localPjjc)
   const localCl = classicStats(localClassic)
   const localLg = logStats(localLog)
   const remoteHw = remote ? homeworkStats(remote.homework) : null
+  const remoteJjcStats = remote ? homeworkStats(remote.jjc) : null
+  const remotePj = remote ? pjjcStats(remote.pjjc) : null
   const remoteCl = remote ? classicStats(remote.classic) : null
   const remoteLg = remote ? logStats(remote.log) : null
 
@@ -686,7 +779,13 @@ function SyncConfirmModal({
               <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-2">本地</p>
               <div className="space-y-1">
                 <p className="text-xs font-mono">
-                  {localHw.defense} 防 / {localHw.attacks} 进
+                  作业 {localHw.defense} 防 / {localHw.attacks} 进
+                </p>
+                <p className="text-xs font-mono">
+                  JJC {localJjcStats.defense} 防 / {localJjcStats.attacks} 进
+                </p>
+                <p className="text-xs font-mono">
+                  换防 {localPj.groups} 组 / {localPj.attacks} 进
                 </p>
                 <p className="text-xs font-mono">
                   {localCl.themes} 主题 / {localCl.teams} 阵容
@@ -714,7 +813,13 @@ function SyncConfirmModal({
               {remote ? (
                 <div className="space-y-1">
                   <p className="text-xs font-mono">
-                    {remoteHw!.defense} 防 / {remoteHw!.attacks} 进
+                    作业 {remoteHw!.defense} 防 / {remoteHw!.attacks} 进
+                  </p>
+                  <p className="text-xs font-mono">
+                    JJC {remoteJjcStats!.defense} 防 / {remoteJjcStats!.attacks} 进
+                  </p>
+                  <p className="text-xs font-mono">
+                    换防 {remotePj!.groups} 组 / {remotePj!.attacks} 进
                   </p>
                   <p className="text-xs font-mono">
                     {remoteCl!.themes} 主题 / {remoteCl!.teams} 阵容
