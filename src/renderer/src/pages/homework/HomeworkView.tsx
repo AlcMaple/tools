@@ -36,8 +36,10 @@ function AddModal({
           <span className="material-symbols-outlined text-primary text-[22px]" style={{ fontVariationSettings: "'FILL' 1" }}>add_circle</span>
         </div>
         <div>
-          <h3 className="text-base font-black tracking-tight">新增作业</h3>
-          <p className="text-[11px] text-on-surface-variant/60 mt-0.5 font-label">记录一条「防守 → 进攻」对应关系</p>
+          <h3 className="text-base font-black tracking-tight">{attackOptional ? '新增防守阵容' : '新增作业'}</h3>
+          <p className="text-[11px] text-on-surface-variant/60 mt-0.5 font-label">
+            {attackOptional ? '记录一组防守方阵容，进攻作业稍后用 + 添加' : '记录一条「防守 → 进攻」对应关系'}
+          </p>
         </div>
       </div>
 
@@ -48,7 +50,7 @@ function AddModal({
             <span className="font-label text-[10px] uppercase tracking-widest text-primary/80">防守方</span>
           </div>
           <ModalInput
-            placeholder="例：涅比亚、ams、春剑、水m、布丁"
+            placeholder="例:涅比亚、ams、春剑、水m、布丁"
             value={defenseInput}
             onChange={e => setDefenseInput(e.target.value)}
             autoFocus
@@ -56,39 +58,41 @@ function AddModal({
           <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
         </div>
 
-        <div className="flex items-center justify-center">
-          <div className="flex items-center gap-1 text-on-surface-variant/30 text-[11px] font-label uppercase tracking-widest">
-            <span className="material-symbols-outlined text-[16px]">arrow_downward</span>
-            进攻
-          </div>
-        </div>
+        {!attackOptional && (
+          <>
+            <div className="flex items-center justify-center">
+              <div className="flex items-center gap-1 text-on-surface-variant/30 text-[11px] font-label uppercase tracking-widest">
+                <span className="material-symbols-outlined text-[16px]">arrow_downward</span>
+                进攻
+              </div>
+            </div>
 
-        <div className="rounded-xl border border-secondary/20 bg-secondary/[0.04] px-4 pt-3 pb-4">
-          <div className="flex items-center gap-2 mb-2.5">
-            <span className="material-symbols-outlined text-secondary text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>swords</span>
-            <span className="font-label text-[10px] uppercase tracking-widest text-secondary/80">
-              进攻方{attackOptional && <span className="text-on-surface-variant/40 normal-case ml-1">· 可留空</span>}
-            </span>
-          </div>
-          <ModalInput
-            placeholder={attackOptional ? '例：els、魔女、春剑（可留空，之后再补）' : '例：els、魔女、春剑、水m、布丁'}
-            value={attackInput}
-            onChange={e => setAttackInput(e.target.value)}
-          />
-          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
-        </div>
+            <div className="rounded-xl border border-secondary/20 bg-secondary/[0.04] px-4 pt-3 pb-4">
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="material-symbols-outlined text-secondary text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>swords</span>
+                <span className="font-label text-[10px] uppercase tracking-widest text-secondary/80">进攻方</span>
+              </div>
+              <ModalInput
+                placeholder="例：els、魔女、春剑、水m、布丁"
+                value={attackInput}
+                onChange={e => setAttackInput(e.target.value)}
+              />
+              <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
+            </div>
+          </>
+        )}
 
         <div>
           <label className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-1.5">
             <span className="material-symbols-outlined text-[13px]">edit_note</span>
-            备注（可选，可多条）
+            {attackOptional ? '防守方备注（可选，可多条）' : '备注（可选，可多条）'}
           </label>
           <NoteTagInput
             notes={noteState.notes}
             onNotesChange={noteState.setNotes}
             draft={noteState.draft}
             onDraftChange={noteState.setDraft}
-            placeholder="如：配速、装备、控制要点 — 回车添加新备注"
+            placeholder={attackOptional ? '如：缺克制、需要先打掉某角色 — 回车添加新备注' : '如：配速、装备、控制要点 — 回车添加新备注'}
           />
           <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；点 ✕ 移除</p>
         </div>
@@ -516,8 +520,11 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
 
   const handleAdd = (notes: string[]) => {
     const defenseRaw = defenseInput.split('、').map(s => s.trim()).filter(Boolean)
-    const team = attackInput.split('、').map(s => s.trim()).filter(Boolean)
     if (!defenseRaw.length) return
+    // In attackOptional mode the attack input isn't rendered at all — notes are
+    // always group-level. In standard mode, both fields are required and notes
+    // attach to the attack row.
+    const team = attackOptional ? [] : attackInput.split('、').map(s => s.trim()).filter(Boolean)
     if (!attackOptional && !team.length) return
     const defense = maybeSort(defenseRaw)
     const defKey = defense.join('、')
@@ -525,42 +532,33 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     setData(prev => {
       const existing = prev.find(d => maybeSort(d.defense).join('、') === defKey)
       if (existing) {
-        // Adding to an existing defense.
-        if (team.length) {
-          // Provided an attack — append it as a new attack row.
-          return prev.map(d =>
-            d.id === existing.id
-              ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
-              : d
-          )
+        if (attackOptional) {
+          // JJC: defense already exists — merge any new notes into the group.
+          if (notes.length === 0) return prev
+          return prev.map(d => {
+            if (d.id !== existing.id) return d
+            const merged = [...(d.notes ?? [])]
+            for (const n of notes) if (!merged.includes(n)) merged.push(n)
+            return { ...d, notes: merged, updatedAt: now }
+          })
         }
-        // No attack but notes provided — merge into group-level notes.
-        if (notes.length === 0) return prev
-        return prev.map(d => {
-          if (d.id !== existing.id) return d
-          const merged = [...(d.notes ?? [])]
-          for (const n of notes) if (!merged.includes(n)) merged.push(n)
-          return { ...d, notes: merged, updatedAt: now }
-        })
+        // Homework: append a new attack row to the existing defense.
+        return prev.map(d =>
+          d.id === existing.id
+            ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
+            : d
+        )
       }
       // New defense.
-      if (team.length) {
-        // Notes belong to the attack row — group-level notes stay empty.
-        return [...prev, {
-          id: Date.now(),
-          defense,
-          updatedAt: now,
-          attacks: [{ id: Date.now() + 1, team, notes, updatedAt: now }],
-          notes: [],
-        }]
+      if (attackOptional) {
+        return [...prev, { id: Date.now(), defense, updatedAt: now, attacks: [], notes }]
       }
-      // No attack — keep notes on the group itself so they're still visible.
       return [...prev, {
         id: Date.now(),
         defense,
         updatedAt: now,
-        attacks: [],
-        notes,
+        attacks: [{ id: Date.now() + 1, team, notes, updatedAt: now }],
+        notes: [],
       }]
     })
     setIsAddOpen(false)
