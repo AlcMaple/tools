@@ -27,13 +27,11 @@ type Density = "compact" | "comfortable" | "spacious";
 interface Tweaks {
   navStyle: NavStyle;
   density: Density;
-  showStatusInHeader: boolean;
 }
 
 const TWEAKS_DEFAULT: Tweaks = {
   navStyle: "rail",
   density: "comfortable",
-  showStatusInHeader: true,
 };
 
 // ── helpers ──────────────────────────────────────────────────
@@ -80,7 +78,6 @@ function readTweaks(): Tweaks {
     return {
       navStyle: raw.navStyle === "tabs" ? "tabs" : "rail",
       density: raw.density === "compact" || raw.density === "spacious" ? raw.density : "comfortable",
-      showStatusInHeader: raw.showStatusInHeader ?? TWEAKS_DEFAULT.showStatusInHeader,
     };
   } catch { return { ...TWEAKS_DEFAULT }; }
 }
@@ -289,11 +286,9 @@ function ReadonlyValue({ value }: { value: string }): JSX.Element {
 function SettingsHeader({
   onBack,
   onOpenTweaks,
-  showStats,
 }: {
   onBack: () => void;
   onOpenTweaks: () => void;
-  showStats: boolean;
 }): JSX.Element {
   const { diskFreeLabel, activeTasks, networkOnline, speedLabel } = useSystemStats();
   return (
@@ -314,19 +309,15 @@ function SettingsHeader({
           </div>
         </div>
         <div className="flex items-center gap-5">
-          {showStats && (
-            <>
-              <Stat icon="storage" label={diskFreeLabel} />
-              <Stat icon="downloading" label={`${activeTasks} TASKS`} active={activeTasks > 0} />
-              <Stat icon="speed" label={speedLabel} />
-              <div className={`flex items-center gap-1.5 ${networkOnline ? "text-green-400" : "text-red-500"}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? "bg-green-400 animate-pulse" : "bg-red-500"}`} />
-                <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{networkOnline ? "wifi_tethering" : "wifi_off"}</span>
-                <span className="font-label text-[10px] tracking-widest uppercase">{networkOnline ? "Online" : "Offline"}</span>
-              </div>
-              <span className="h-4 w-px bg-outline-variant/20" />
-            </>
-          )}
+          <Stat icon="storage" label={diskFreeLabel} />
+          <Stat icon="downloading" label={`${activeTasks} TASKS`} active={activeTasks > 0} />
+          <Stat icon="speed" label={speedLabel} />
+          <div className={`flex items-center gap-1.5 ${networkOnline ? "text-green-400" : "text-red-500"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? "bg-green-400 animate-pulse" : "bg-red-500"}`} />
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{networkOnline ? "wifi_tethering" : "wifi_off"}</span>
+            <span className="font-label text-[10px] tracking-widest uppercase">{networkOnline ? "Online" : "Offline"}</span>
+          </div>
+          <span className="h-4 w-px bg-outline-variant/20" />
           <button
             onClick={onOpenTweaks}
             className="w-8 h-8 rounded-lg hover:bg-on-surface/[0.04] flex items-center justify-center text-on-surface-variant"
@@ -491,13 +482,6 @@ function TweaksPanel({
             ]}
             onChange={(v) => setTweak("density", v as Density)}
           />
-          <div className="flex items-center justify-between">
-            <span className="font-label text-[11px] uppercase tracking-widest text-on-surface-variant">顶栏显示状态</span>
-            <Switch
-              checked={tweaks.showStatusInHeader}
-              onChange={(v) => setTweak("showStatusInHeader", v)}
-            />
-          </div>
         </div>
       </div>
     </>
@@ -647,7 +631,6 @@ function Settings(): JSX.Element {
       <SettingsHeader
         onBack={() => navigate(-1)}
         onOpenTweaks={() => setTweaksOpen((o) => !o)}
-        showStats={tweaks.showStatusInHeader}
       />
 
       <div className="flex flex-1 min-h-0">
