@@ -21,7 +21,7 @@ import { URL } from 'url'
 import { DESKTOP_USER_AGENT } from './download-types'
 
 const MAX_RETRIES = 5
-export const THREAD_COUNT = 8
+const THREAD_COUNT = 8
 
 const DL_HEADERS: Record<string, string> = {
   'User-Agent': DESKTOP_USER_AGENT,
@@ -32,11 +32,11 @@ function headersFor(extra?: Record<string, string>): Record<string, string> {
   return { ...DL_HEADERS, ...(extra ?? {}) }
 }
 
-export function partPath(savePath: string, idx: number): string {
+function partPath(savePath: string, idx: number): string {
   return `${savePath}.part${idx}`
 }
 
-export interface ProbeResult {
+interface ProbeResult {
   size: number
   rangeSupported: boolean
 }
@@ -45,7 +45,7 @@ export interface ProbeResult {
  * Resolve redirects, returning the final URL. Some MP4 URLs 302 to a CDN
  * (e.g. moedot.net for xifan); Node's http.get does not follow redirects automatically.
  */
-export async function resolveRedirects(url: string, maxHops = 5): Promise<string> {
+async function resolveRedirects(url: string, maxHops = 5): Promise<string> {
   let current = url
   for (let i = 0; i < maxHops; i++) {
     const next = await new Promise<string | null>((resolve) => {
@@ -77,7 +77,7 @@ export async function resolveRedirects(url: string, maxHops = 5): Promise<string
   return current
 }
 
-export async function probe(url: string, logTag: string): Promise<ProbeResult | null> {
+async function probe(url: string, logTag: string): Promise<ProbeResult | null> {
   return new Promise((resolve) => {
     const u = new URL(url)
     const mod = (u.protocol === 'https:' ? https : http) as typeof https
