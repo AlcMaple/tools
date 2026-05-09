@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import SearchDownload from './pages/SearchDownload'
@@ -21,24 +21,41 @@ function DownloadProgressListener(): null {
   return null
 }
 
+/**
+ * Settings is a "fullscreen" route — it renders its own category rail in place
+ * of the global Sidebar, so we hide the Sidebar (and its 16rem left margin)
+ * while on /settings.
+ */
+function Shell(): JSX.Element {
+  const location = useLocation()
+  const isFullscreen = location.pathname.startsWith('/settings')
+
+  return (
+    <div className="h-screen overflow-hidden bg-background text-on-surface font-body">
+      {!isFullscreen && <Sidebar />}
+      <div
+        id="page-scroll"
+        className={`h-full overflow-y-auto custom-scrollbar ${isFullscreen ? '' : 'ml-64'}`}
+      >
+        <Routes>
+          <Route path="/" element={<LocalLibrary />} />
+          <Route path="/search" element={<SearchDownload />} />
+          <Route path="/queue" element={<DownloadQueue />} />
+          <Route path="/anime-info" element={<AnimeInfo />} />
+          <Route path="/file-explorer" element={<FileExplorer />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/homework" element={<HomeworkLookup />} />
+        </Routes>
+      </div>
+    </div>
+  )
+}
+
 function App(): JSX.Element {
   return (
     <HashRouter>
       <DownloadProgressListener />
-      <div className="h-screen overflow-hidden bg-background text-on-surface font-body">
-        <Sidebar />
-        <div id="page-scroll" className="ml-64 h-full overflow-y-auto custom-scrollbar">
-          <Routes>
-            <Route path="/" element={<LocalLibrary />} />
-            <Route path="/search" element={<SearchDownload />} />
-            <Route path="/queue" element={<DownloadQueue />} />
-            <Route path="/anime-info" element={<AnimeInfo />} />
-            <Route path="/file-explorer" element={<FileExplorer />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/homework" element={<HomeworkLookup />} />
-          </Routes>
-        </div>
-      </div>
+      <Shell />
     </HashRouter>
   )
 }

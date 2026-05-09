@@ -1,18 +1,12 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSystemStats } from "../hooks/useSystemStats";
-import { navGuard } from "../utils/navGuard";
-import { ipcErrMsg } from "../utils/ipcError";
 
-// ── constants ────────────────────────────────────────────────
+// ── persistence keys ─────────────────────────────────────────
 const NODE_ID_KEY = "xifan_node_id";
 const SETTINGS_KEY = "xifan_settings";
 const ACTIVE_CATEGORY_KEY = "maple-settings-category";
-
-interface HistoryEntry {
-  text: string;
-  time: number;
-}
+const TWEAKS_KEY = "maple-settings-tweaks";
 
 interface SavedSettings {
   downloadPath?: string;
@@ -24,6 +18,22 @@ const DEFAULTS: Required<SavedSettings> = {
   downloadPath: "",
   searchCacheEnabled: true,
   minimizeOnClose: false,
+};
+
+// Settings-page-specific UI tweaks — meta-controls in the floating Tweaks panel.
+type NavStyle = "rail" | "tabs";
+type Density = "compact" | "comfortable" | "spacious";
+
+interface Tweaks {
+  navStyle: NavStyle;
+  density: Density;
+  showStatusInHeader: boolean;
+}
+
+const TWEAKS_DEFAULT: Tweaks = {
+  navStyle: "rail",
+  density: "comfortable",
+  showStatusInHeader: true,
 };
 
 // ── helpers ──────────────────────────────────────────────────
@@ -40,9 +50,7 @@ function getOrCreateNodeId(): string {
 
 function readSavedSettings(): Required<SavedSettings> {
   try {
-    const s = JSON.parse(
-      localStorage.getItem(SETTINGS_KEY) || "{}",
-    ) as SavedSettings;
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") as SavedSettings;
     return {
       downloadPath: s.downloadPath ?? DEFAULTS.downloadPath,
       searchCacheEnabled: s.searchCacheEnabled ?? DEFAULTS.searchCacheEnabled,
@@ -53,19 +61,28 @@ function readSavedSettings(): Required<SavedSettings> {
   }
 }
 
-function formatHistoryTime(ts: number): string {
-  const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
-  }
-  return d.toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+function writeSettings(s: Required<SavedSettings>): void {
+  try {
+    localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({
+        downloadPath: s.downloadPath || undefined,
+        searchCacheEnabled: s.searchCacheEnabled,
+        minimizeOnClose: s.minimizeOnClose,
+      }),
+    );
+  } catch { /* ignore */ }
+}
+
+function readTweaks(): Tweaks {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TWEAKS_KEY) || "{}") as Partial<Tweaks>;
+    return {
+      navStyle: raw.navStyle === "tabs" ? "tabs" : "rail",
+      density: raw.density === "compact" || raw.density === "spacious" ? raw.density : "comfortable",
+      showStatusInHeader: raw.showStatusInHeader ?? TWEAKS_DEFAULT.showStatusInHeader,
+    };
+  } catch { return { ...TWEAKS_DEFAULT }; }
 }
 
 const PLATFORM = (() => {
@@ -91,23 +108,27 @@ const CATEGORIES: ReadonlyArray<{
   { id: "downloads", label: "下载", en: "Downloads", icon: "download", desc: "保存路径与下载默认行为" },
   { id: "sync", label: "云同步", en: "Sync", icon: "cloud_sync", desc: "坚果云 WebDAV 配置" },
   { id: "appearance", label: "外观", en: "Appearance", icon: "palette", desc: "主题切换" },
-  { id: "about", label: "关于", en: "About", icon: "info", desc: "版本、节点与最近更改" },
+  { id: "about", label: "关于", en: "About", icon: "info", desc: "版本、节点与系统信息" },
 ];
 
-// ── reusable Row primitive ───────────────────────────────────
+// ── Row / Block primitives ───────────────────────────────────
 function Row({
   icon,
   title,
   desc,
+  density,
   control,
 }: {
   icon: string;
   title: string;
   desc: string;
+  density: Density;
   control: ReactNode;
 }): JSX.Element {
+  const heightCls =
+    density === "compact" ? "py-3.5" : density === "spacious" ? "py-7" : "py-5";
   return (
-    <div className="group flex items-start gap-5 px-6 py-5 hover:bg-on-surface/[0.015] transition-colors">
+    <div className={`group flex items-start gap-5 px-6 ${heightCls} hover:bg-on-surface/[0.02] transition-colors`}>
       <div className="mt-0.5 w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant flex-shrink-0">
         <span className="material-symbols-outlined leading-none" style={{ fontSize: 20 }}>{icon}</span>
       </div>
@@ -143,7 +164,7 @@ function Block({
   );
 }
 
-// ── Controls ─────────────────────────────────────────────────
+// ── controls ─────────────────────────────────────────────────
 function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }): JSX.Element {
   return (
     <button
@@ -161,18 +182,21 @@ function Segment<T extends string>({
   value,
   options,
   onChange,
+  size = "md",
 }: {
   value: T;
   options: ReadonlyArray<{ v: T; l: string }>;
   onChange: (v: T) => void;
+  size?: "sm" | "md";
 }): JSX.Element {
+  const padding = size === "sm" ? "px-2.5 py-1 text-[10px]" : "px-3 py-1.5 text-[11px]";
   return (
     <div className="inline-flex bg-surface-container-high rounded-lg p-1 border border-outline-variant/10">
       {options.map((o) => (
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`px-3 py-1.5 text-[11px] font-label uppercase tracking-wider rounded-md transition-all ${
+          className={`${padding} font-label uppercase tracking-wider rounded-md transition-all ${
             value === o.v ? "bg-primary-container text-on-primary-container shadow-sm" : "text-on-surface-variant/70 hover:text-on-surface"
           }`}
         >
@@ -228,12 +252,15 @@ function TextControl({
   placeholder,
   type = "text",
   onChange,
+  onCommit,
   trailing,
 }: {
   value: string;
   placeholder?: string;
   type?: "text" | "password";
   onChange: (v: string) => void;
+  /** Called when input loses focus or Enter is pressed — natural commit point for auto-save. */
+  onCommit?: () => void;
   trailing?: ReactNode;
 }): JSX.Element {
   return (
@@ -243,6 +270,8 @@ function TextControl({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onCommit}
+        onKeyDown={(e) => { if (e.key === "Enter" && onCommit) onCommit(); }}
         spellCheck={false}
         autoComplete="off"
         className="flex-1 bg-transparent py-2 outline-none placeholder-on-surface-variant/30"
@@ -256,21 +285,19 @@ function ReadonlyValue({ value }: { value: string }): JSX.Element {
   return <span className="font-label text-[12px] text-on-surface-variant/80 tabular-nums">{value}</span>;
 }
 
-// ── Header (system stats + theme toggle + back) ──────────────
+// ── header (sticky) ──────────────────────────────────────────
 function SettingsHeader({
-  isDirty,
   onBack,
-  onToggleTheme,
-  isDark,
+  onOpenTweaks,
+  showStats,
 }: {
-  isDirty: boolean;
   onBack: () => void;
-  onToggleTheme: () => void;
-  isDark: boolean;
+  onOpenTweaks: () => void;
+  showStats: boolean;
 }): JSX.Element {
   const { diskFreeLabel, activeTasks, networkOnline, speedLabel } = useSystemStats();
   return (
-    <header className="fixed top-0 right-0 left-64 z-40 bg-background/85 backdrop-blur-xl border-b border-outline-variant/10">
+    <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl border-b border-outline-variant/10">
       <div className="h-14 px-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button
@@ -284,33 +311,28 @@ function SettingsHeader({
             <span className="text-on-surface/80">Dashboard</span>
             <span className="text-on-surface-variant/30">/</span>
             <span>System Preferences</span>
-            {isDirty && (
-              <>
-                <span className="text-on-surface-variant/30">·</span>
-                <span className="text-yellow-400 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-                  Unsaved
-                </span>
-              </>
-            )}
           </div>
         </div>
         <div className="flex items-center gap-5">
-          <Stat icon="storage" label={diskFreeLabel} />
-          <Stat icon="downloading" label={`${activeTasks} TASKS`} active={activeTasks > 0} />
-          <Stat icon="speed" label={speedLabel} />
-          <div className={`flex items-center gap-1.5 ${networkOnline ? "text-tertiary" : "text-error"}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? "bg-tertiary animate-pulse" : "bg-error"}`} />
-            <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{networkOnline ? "wifi_tethering" : "wifi_off"}</span>
-            <span className="font-label text-[10px] tracking-widest uppercase">{networkOnline ? "Online" : "Offline"}</span>
-          </div>
-          <span className="h-4 w-px bg-outline-variant/20" />
+          {showStats && (
+            <>
+              <Stat icon="storage" label={diskFreeLabel} />
+              <Stat icon="downloading" label={`${activeTasks} TASKS`} active={activeTasks > 0} />
+              <Stat icon="speed" label={speedLabel} />
+              <div className={`flex items-center gap-1.5 ${networkOnline ? "text-tertiary" : "text-error"}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? "bg-tertiary animate-pulse" : "bg-error"}`} />
+                <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{networkOnline ? "wifi_tethering" : "wifi_off"}</span>
+                <span className="font-label text-[10px] tracking-widest uppercase">{networkOnline ? "Online" : "Offline"}</span>
+              </div>
+              <span className="h-4 w-px bg-outline-variant/20" />
+            </>
+          )}
           <button
-            onClick={onToggleTheme}
+            onClick={onOpenTweaks}
             className="w-8 h-8 rounded-lg hover:bg-on-surface/[0.04] flex items-center justify-center text-on-surface-variant"
-            title="切换主题"
+            title="界面调节"
           >
-            <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>{isDark ? "light_mode" : "dark_mode"}</span>
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>tune</span>
           </button>
         </div>
       </div>
@@ -327,7 +349,7 @@ function Stat({ icon, label, active }: { icon: string; label: string; active?: b
   );
 }
 
-// ── Left rail (category nav) ─────────────────────────────────
+// ── category nav (rail or tabs based on tweak) ───────────────
 function CategoryRail({
   active,
   onSelect,
@@ -385,7 +407,137 @@ function CategoryRail({
   );
 }
 
-// ── Main component ───────────────────────────────────────────
+function CategoryTabs({
+  active,
+  onSelect,
+}: {
+  active: CategoryId;
+  onSelect: (id: CategoryId) => void;
+}): JSX.Element {
+  return (
+    <div className="border-b border-outline-variant/10 bg-surface-container-low/40 sticky top-14 z-30 backdrop-blur-xl">
+      <div className="px-8 flex items-center gap-1 overflow-x-auto custom-scrollbar">
+        {CATEGORIES.map((c) => {
+          const isActive = active === c.id;
+          return (
+            <button
+              key={c.id}
+              onClick={() => onSelect(c.id)}
+              className={`relative flex items-center gap-2 px-4 py-3 text-[13px] font-label uppercase tracking-wider whitespace-nowrap transition-colors ${
+                isActive ? "text-on-surface" : "text-on-surface-variant/55 hover:text-on-surface"
+              }`}
+            >
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>{c.icon}</span>
+              {c.en}
+              {isActive && <span className="absolute left-3 right-3 -bottom-px h-0.5 bg-primary-container rounded-full" />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Tweaks floating panel ────────────────────────────────────
+function TweaksPanel({
+  tweaks,
+  setTweak,
+  onClose,
+  isDark,
+  setIsDark,
+}: {
+  tweaks: Tweaks;
+  setTweak: <K extends keyof Tweaks>(k: K, v: Tweaks[K]) => void;
+  onClose: () => void;
+  isDark: boolean;
+  setIsDark: (v: boolean) => void;
+}): JSX.Element {
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed top-16 right-6 z-50 w-[300px] bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 rounded-2xl shadow-2xl">
+        <div className="px-5 py-4 flex items-center justify-between border-b border-outline-variant/10">
+          <span className="font-label text-[11px] uppercase tracking-[0.25em] text-on-surface-variant">Tweaks</span>
+          <button onClick={onClose} className="text-on-surface-variant/60 hover:text-on-surface">
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 18 }}>close</span>
+          </button>
+        </div>
+        <div className="p-5 space-y-5">
+          <TweakRadio
+            label="主题"
+            value={isDark ? "dark" : "light"}
+            options={[
+              { v: "light", l: "浅色" },
+              { v: "dark", l: "深色" },
+            ]}
+            onChange={(v) => setIsDark(v === "dark")}
+          />
+          <TweakRadio
+            label="导航样式"
+            value={tweaks.navStyle}
+            options={[
+              { v: "rail", l: "侧边栏" },
+              { v: "tabs", l: "顶部标签" },
+            ]}
+            onChange={(v) => setTweak("navStyle", v as NavStyle)}
+          />
+          <TweakRadio
+            label="界面密度"
+            value={tweaks.density}
+            options={[
+              { v: "compact", l: "紧凑" },
+              { v: "comfortable", l: "舒适" },
+              { v: "spacious", l: "宽松" },
+            ]}
+            onChange={(v) => setTweak("density", v as Density)}
+          />
+          <div className="flex items-center justify-between">
+            <span className="font-label text-[11px] uppercase tracking-widest text-on-surface-variant">顶栏显示状态</span>
+            <Switch
+              checked={tweaks.showStatusInHeader}
+              onChange={(v) => setTweak("showStatusInHeader", v)}
+            />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function TweakRadio({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: ReadonlyArray<{ v: string; l: string }>;
+  onChange: (v: string) => void;
+}): JSX.Element {
+  return (
+    <div>
+      <div className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2">{label}</div>
+      <div className="inline-flex bg-surface-container rounded-lg p-0.5 w-full border border-outline-variant/10">
+        {options.map((o) => (
+          <button
+            key={o.v}
+            onClick={() => onChange(o.v)}
+            className={`flex-1 text-[11px] py-1.5 rounded-md transition-all ${
+              value === o.v
+                ? "bg-primary-container text-on-primary-container font-bold"
+                : "text-on-surface-variant/70 hover:text-on-surface"
+            }`}
+          >
+            {o.l}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── main component ───────────────────────────────────────────
 function Settings(): JSX.Element {
   const navigate = useNavigate();
 
@@ -396,18 +548,25 @@ function Settings(): JSX.Element {
   });
   useEffect(() => { localStorage.setItem(ACTIVE_CATEGORY_KEY, active); }, [active]);
 
-  // Staged form (only committed on Save) — preserves the existing dirty-state UX.
-  const [staged, setStaged] = useState<Required<SavedSettings>>(readSavedSettings);
-  const [saved, setSaved] = useState<Required<SavedSettings>>(readSavedSettings);
+  // Settings — auto-save on every change.
+  const [settings, setSettingsState] = useState<Required<SavedSettings>>(readSavedSettings);
+  const updateSettings = (patch: Partial<Required<SavedSettings>>): void => {
+    const next = { ...settings, ...patch };
+    setSettingsState(next);
+    writeSettings(next);
+    if (patch.minimizeOnClose !== undefined) {
+      window.systemApi.setSetting?.("minimizeOnClose", patch.minimizeOnClose).catch(() => {});
+    }
+  };
 
-  // WebDAV — separate from the main saved bundle (its own IPC path)
+  // WebDAV — auto-save on commit (Enter / blur).
   const [webdavAccount, setWebdavAccount] = useState("");
   const [webdavPassword, setWebdavPassword] = useState("");
   const [webdavPath, setWebdavPath] = useState("MapleTools/homework.json");
-  const [webdavOriginal, setWebdavOriginal] = useState({ account: "", password: "", path: "MapleTools/homework.json" });
   const [webdavShowPwd, setWebdavShowPwd] = useState(false);
   const [webdavTestState, setWebdavTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [webdavTestMsg, setWebdavTestMsg] = useState("");
+  const lastSavedWebdav = useRef({ account: "", password: "", path: "MapleTools/homework.json" });
 
   useEffect(() => {
     window.webdavApi
@@ -416,173 +575,88 @@ function Settings(): JSX.Element {
         if (!cfg) return;
         setWebdavAccount(cfg.account);
         setWebdavPassword(cfg.appPassword);
-        setWebdavPath(cfg.remotePath || "MapleTools/homework.json");
-        setWebdavOriginal({
-          account: cfg.account,
-          password: cfg.appPassword,
-          path: cfg.remotePath || "MapleTools/homework.json",
-        });
+        const p = cfg.remotePath || "MapleTools/homework.json";
+        setWebdavPath(p);
+        lastSavedWebdav.current = { account: cfg.account, password: cfg.appPassword, path: p };
       })
       .catch(() => {});
   }, []);
 
-  const isDirty = useMemo(() => {
-    const a = staged;
-    const b = saved;
-    return (
-      a.downloadPath !== b.downloadPath ||
-      a.searchCacheEnabled !== b.searchCacheEnabled ||
-      a.minimizeOnClose !== b.minimizeOnClose ||
-      webdavAccount !== webdavOriginal.account ||
-      webdavPassword !== webdavOriginal.password ||
-      webdavPath !== webdavOriginal.path
-    );
-  }, [staged, saved, webdavAccount, webdavPassword, webdavPath, webdavOriginal]);
+  const persistWebdav = (): void => {
+    const cur = { account: webdavAccount.trim(), appPassword: webdavPassword, remotePath: webdavPath.trim() };
+    const last = lastSavedWebdav.current;
+    if (cur.account === last.account && cur.appPassword === last.password && cur.remotePath === last.path) {
+      return; // unchanged — skip the IPC roundtrip
+    }
+    window.webdavApi.saveConfig(cur).then(() => {
+      lastSavedWebdav.current = { account: cur.account, password: cur.appPassword, path: cur.remotePath };
+    }).catch(() => {});
+  };
 
-  // Theme toggle (persisted via the same `theme` key the rest of the app uses)
+  // Tweaks (UI meta-controls), persisted.
+  const [tweaks, setTweaks] = useState<Tweaks>(readTweaks);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const setTweak = <K extends keyof Tweaks>(k: K, v: Tweaks[K]): void => {
+    setTweaks((t) => {
+      const next = { ...t, [k]: v };
+      try { localStorage.setItem(TWEAKS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  // Theme — same global state as the rest of the app uses.
   const [isDark, setIsDark] = useState(() => {
     const stored = localStorage.getItem("theme");
     if (stored) return stored === "dark";
     return document.documentElement.classList.contains("dark");
   });
-  const toggleTheme = (): void => {
-    if (isDark) {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-      setIsDark(false);
-    } else {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-      setIsDark(true);
-    }
+  const applyDark = (next: boolean): void => {
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("theme", next ? "dark" : "light");
+    setIsDark(next);
   };
-
-  // History (last 20 changes; we display 5)
-  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
-  useEffect(() => {
-    window.systemApi.loadSettingsHistory().then(setHistoryEntries).catch(() => {});
-  }, []);
-
-  // pendingNav: where to go after the dirty-warn dialog resolves ('__back__' for back nav)
-  const [pendingNav, setPendingNav] = useState<string | null>(null);
-  useEffect(() => {
-    if (isDirty) navGuard.setListener((to) => setPendingNav(to));
-    else navGuard.setListener(null);
-    return () => navGuard.setListener(null);
-  }, [isDirty]);
-
-  const recordChange = (text: string): void => {
-    const updated = [{ text, time: Date.now() }, ...historyEntries].slice(0, 20);
-    setHistoryEntries(updated);
-    window.systemApi.saveSettingsHistory(updated).catch(() => {});
-  };
-
-  const handleSave = (): void => {
-    const current = readSavedSettings();
-    const changes: string[] = [];
-    if (staged.downloadPath !== current.downloadPath) {
-      changes.push(staged.downloadPath ? `下载路径 → ${staged.downloadPath}` : "下载路径已清空");
-    }
-    if (staged.searchCacheEnabled !== current.searchCacheEnabled) {
-      changes.push(`搜索缓存 ${staged.searchCacheEnabled ? "已启用" : "已禁用"}`);
-    }
-    if (staged.minimizeOnClose !== current.minimizeOnClose) {
-      changes.push(`关闭到托盘 ${staged.minimizeOnClose ? "已启用" : "已禁用"}`);
-      window.systemApi.setSetting?.("minimizeOnClose", staged.minimizeOnClose).catch(() => {});
-    }
-    if (
-      webdavAccount !== webdavOriginal.account ||
-      webdavPassword !== webdavOriginal.password ||
-      webdavPath !== webdavOriginal.path
-    ) {
-      changes.push("WebDAV 配置已更新");
-    }
-
-    try {
-      localStorage.setItem(
-        SETTINGS_KEY,
-        JSON.stringify({
-          downloadPath: staged.downloadPath || undefined,
-          searchCacheEnabled: staged.searchCacheEnabled,
-          minimizeOnClose: staged.minimizeOnClose,
-        }),
-      );
-    } catch { /* ignore */ }
-
-    window.webdavApi
-      .saveConfig({
-        account: webdavAccount.trim(),
-        appPassword: webdavPassword,
-        remotePath: webdavPath.trim(),
-      })
-      .catch(() => {});
-
-    setSaved({ ...staged });
-    setWebdavOriginal({ account: webdavAccount, password: webdavPassword, path: webdavPath });
-    if (changes.length > 0) recordChange(changes.join(" · "));
-    setSaveLabel("saved");
-    setTimeout(() => setSaveLabel("save"), 1800);
-  };
-
-  const handleReset = (): void => {
-    setStaged({ ...DEFAULTS });
-    setWebdavAccount(webdavOriginal.account);
-    setWebdavPassword(webdavOriginal.password);
-    setWebdavPath(webdavOriginal.path);
-  };
-
-  const handleProceedNav = (save: boolean): void => {
-    if (save) handleSave();
-    navGuard.setListener(null);
-    if (pendingNav === "__back__") navigate(-1);
-    else if (pendingNav) navigate(pendingNav);
-    setPendingNav(null);
-  };
-
-  const [saveLabel, setSaveLabel] = useState<"save" | "saved">("save");
 
   const handlePickDownloadFolder = async (): Promise<void> => {
     const picked = await window.systemApi.pickFolder();
     if (!picked) return;
-    setStaged((s) => ({ ...s, downloadPath: picked }));
+    updateSettings({ downloadPath: picked });
   };
 
   const handleWebdavTest = async (): Promise<void> => {
     setWebdavTestState("testing");
     setWebdavTestMsg("");
     try {
-      await window.webdavApi.saveConfig({
-        account: webdavAccount.trim(),
-        appPassword: webdavPassword,
-        remotePath: webdavPath.trim(),
-      });
+      const cur = { account: webdavAccount.trim(), appPassword: webdavPassword, remotePath: webdavPath.trim() };
+      await window.webdavApi.saveConfig(cur);
+      lastSavedWebdav.current = { account: cur.account, password: cur.appPassword, path: cur.remotePath };
       await window.webdavApi.test();
-      setWebdavOriginal({ account: webdavAccount, password: webdavPassword, path: webdavPath });
       setWebdavTestState("ok");
-      setWebdavTestMsg("连接成功并已写入配置");
+      setWebdavTestMsg("连接成功");
     } catch (e: unknown) {
       setWebdavTestState("error");
-      setWebdavTestMsg(ipcErrMsg(e, "连接失败"));
+      setWebdavTestMsg(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': /, "") : "连接失败");
     }
     setTimeout(() => { setWebdavTestState("idle"); setWebdavTestMsg(""); }, 4000);
   };
 
   const cat = CATEGORIES.find((c) => c.id === active)!;
+  const useTabs = tweaks.navStyle === "tabs";
 
   return (
-    <div className="min-h-full bg-surface">
+    <div className="h-full flex flex-col bg-background relative">
       <SettingsHeader
-        isDirty={isDirty}
-        onBack={() => (isDirty ? setPendingNav("__back__") : navigate(-1))}
-        onToggleTheme={toggleTheme}
-        isDark={isDark}
+        onBack={() => navigate(-1)}
+        onOpenTweaks={() => setTweaksOpen((o) => !o)}
+        showStats={tweaks.showStatusInHeader}
       />
 
-      <div className="pt-14 flex min-h-[calc(100vh-3.5rem)]">
-        <CategoryRail active={active} onSelect={setActive} />
+      <div className="flex flex-1 min-h-0">
+        {!useTabs && <CategoryRail active={active} onSelect={setActive} />}
 
         <main className="flex-1 overflow-y-auto custom-scrollbar">
-          <div className="max-w-3xl mx-auto px-8 py-10 pb-32">
+          {useTabs && <CategoryTabs active={active} onSelect={setActive} />}
+
+          <div className="max-w-3xl mx-auto px-8 py-10 pb-16">
             {/* Category header */}
             <div key={active} className="mb-8 animate-fade-in">
               <div className="flex items-center gap-2 font-label text-[10px] uppercase tracking-[0.3em] text-on-surface-variant/40 mb-3">
@@ -604,10 +678,11 @@ function Settings(): JSX.Element {
                     icon="cached"
                     title="启用搜索缓存"
                     desc="已搜索过的标题将从本地即时加载；禁用则每次都重新抓取。"
+                    density={tweaks.density}
                     control={
                       <Switch
-                        checked={staged.searchCacheEnabled}
-                        onChange={(v) => setStaged((s) => ({ ...s, searchCacheEnabled: v }))}
+                        checked={settings.searchCacheEnabled}
+                        onChange={(v) => updateSettings({ searchCacheEnabled: v })}
                       />
                     }
                   />
@@ -615,10 +690,11 @@ function Settings(): JSX.Element {
                     icon="minimize"
                     title="关闭到托盘"
                     desc="点击关闭按钮时隐藏窗口到系统托盘。单击托盘图标可重新显示。"
+                    density={tweaks.density}
                     control={
                       <Switch
-                        checked={staged.minimizeOnClose}
-                        onChange={(v) => setStaged((s) => ({ ...s, minimizeOnClose: v }))}
+                        checked={settings.minimizeOnClose}
+                        onChange={(v) => updateSettings({ minimizeOnClose: v })}
                       />
                     }
                   />
@@ -634,11 +710,12 @@ function Settings(): JSX.Element {
                     icon="folder_open"
                     title="默认下载目录"
                     desc="影响所有源（西番 / Girigiri / 嗷呜）的默认保存位置。"
+                    density={tweaks.density}
                     control={
                       <PathControl
-                        value={staged.downloadPath}
+                        value={settings.downloadPath}
                         onPick={handlePickDownloadFolder}
-                        onClear={() => setStaged((s) => ({ ...s, downloadPath: "" }))}
+                        onClear={() => updateSettings({ downloadPath: "" })}
                       />
                     }
                   />
@@ -660,11 +737,7 @@ function Settings(): JSX.Element {
                           className={`material-symbols-outlined leading-none ${webdavTestState === "testing" ? "animate-spin" : ""}`}
                           style={{ fontSize: 16 }}
                         >
-                          {webdavTestState === "ok"
-                            ? "check_circle"
-                            : webdavTestState === "error"
-                              ? "error"
-                              : "wifi_find"}
+                          {webdavTestState === "ok" ? "check_circle" : webdavTestState === "error" ? "error" : "wifi_find"}
                         </span>
                         {webdavTestState === "testing" ? "测试中…" : webdavTestState === "ok" ? "连接成功" : "测试连接"}
                       </button>
@@ -680,11 +753,13 @@ function Settings(): JSX.Element {
                     icon="account_circle"
                     title="账号（注册邮箱）"
                     desc="登录坚果云的邮箱地址。"
+                    density={tweaks.density}
                     control={
                       <TextControl
                         value={webdavAccount}
                         placeholder="example@email.com"
                         onChange={setWebdavAccount}
+                        onCommit={persistWebdav}
                       />
                     }
                   />
@@ -692,12 +767,14 @@ function Settings(): JSX.Element {
                     icon="key"
                     title="应用密码"
                     desc="坚果云后台生成的第三方应用密码（不是登录密码）。"
+                    density={tweaks.density}
                     control={
                       <TextControl
                         value={webdavPassword}
                         placeholder="••••••••"
                         type={webdavShowPwd ? "text" : "password"}
                         onChange={setWebdavPassword}
+                        onCommit={persistWebdav}
                         trailing={
                           <button
                             onClick={() => setWebdavShowPwd((v) => !v)}
@@ -716,11 +793,13 @@ function Settings(): JSX.Element {
                     icon="folder_zip"
                     title="远程文件路径"
                     desc="相对于 WebDAV 根目录，文件夹不存在时自动创建。"
+                    density={tweaks.density}
                     control={
                       <TextControl
                         value={webdavPath}
                         placeholder="MapleTools/homework.json"
                         onChange={setWebdavPath}
+                        onCommit={persistWebdav}
                       />
                     }
                   />
@@ -732,7 +811,8 @@ function Settings(): JSX.Element {
                   <Row
                     icon="contrast"
                     title="颜色模式"
-                    desc="深色与浅色之间切换。设置立即生效，无需保存。"
+                    desc="深色与浅色之间切换，立即生效。"
+                    density={tweaks.density}
                     control={
                       <Segment
                         value={isDark ? "dark" : "light"}
@@ -740,10 +820,7 @@ function Settings(): JSX.Element {
                           { v: "light", l: "浅色" },
                           { v: "dark", l: "深色" },
                         ]}
-                        onChange={(v) => {
-                          if (v === "dark" && !isDark) toggleTheme();
-                          if (v === "light" && isDark) toggleTheme();
-                        }}
+                        onChange={(v) => applyDark(v === "dark")}
                       />
                     }
                   />
@@ -751,115 +828,49 @@ function Settings(): JSX.Element {
               )}
 
               {active === "about" && (
-                <>
-                  <Block title="应用信息">
-                    <Row icon="package_2" title="版本" desc="当前已安装的应用版本。" control={<ReadonlyValue value={`MapleTools v${__APP_VERSION__}`} />} />
-                    <Row icon="devices" title="运行平台" desc="操作系统类型。" control={<ReadonlyValue value={PLATFORM} />} />
-                    <Row icon="fingerprint" title="节点 ID" desc="本机匿名标识符（仅本地，不上传）。" control={<ReadonlyValue value={NODE_ID} />} />
-                  </Block>
-                  <Block title="最近更改">
-                    <div className="px-6 py-5">
-                      {historyEntries.length === 0 ? (
-                        <p className="font-label text-[11px] text-on-surface-variant/30 uppercase tracking-widest">暂无更改记录</p>
-                      ) : (
-                        <ul className="space-y-3">
-                          {historyEntries.slice(0, 5).map((entry, i) => (
-                            <li key={i} className="flex items-start gap-3 group">
-                              <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors flex-shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <p className="font-body text-[12px] text-on-surface/85 leading-snug break-all">{entry.text}</p>
-                                <p className="font-label text-[10px] text-on-surface-variant/40 tracking-wider mt-0.5">{formatHistoryTime(entry.time)}</p>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </Block>
-                </>
+                <Block title="应用信息">
+                  <Row
+                    icon="package_2"
+                    title="版本"
+                    desc="当前已安装的应用版本。"
+                    density={tweaks.density}
+                    control={<ReadonlyValue value={`MapleTools v${__APP_VERSION__}`} />}
+                  />
+                  <Row
+                    icon="devices"
+                    title="运行平台"
+                    desc="操作系统类型。"
+                    density={tweaks.density}
+                    control={<ReadonlyValue value={PLATFORM} />}
+                  />
+                  <Row
+                    icon="fingerprint"
+                    title="节点 ID"
+                    desc="本机匿名标识符（仅本地，不上传）。"
+                    density={tweaks.density}
+                    control={<ReadonlyValue value={NODE_ID} />}
+                  />
+                </Block>
               )}
             </div>
 
-            {/* Tail status — same vibe as mockup's "已自动保存" but honest about staged */}
+            {/* Auto-save badge */}
             <div className="pt-6 flex items-center gap-2.5 text-on-surface-variant/30">
-              <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>
-                {isDirty ? "edit" : "cloud_done"}
-              </span>
-              <span className="font-label text-[10px] uppercase tracking-widest">
-                {isDirty ? "有未保存的更改" : "所有更改已保存"}
-              </span>
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>cloud_done</span>
+              <span className="font-label text-[10px] uppercase tracking-widest">设置已自动保存并实时生效</span>
             </div>
           </div>
         </main>
       </div>
 
-      {/* Sticky save bar — slides up when there are staged changes. */}
-      <div
-        className={`fixed bottom-0 left-64 right-0 z-30 transition-transform duration-200 ${
-          isDirty ? "translate-y-0" : "translate-y-full pointer-events-none"
-        }`}
-      >
-        <div className="bg-surface-container-high/95 backdrop-blur-xl border-t border-outline-variant/15">
-          <div className="max-w-3xl mx-auto px-8 py-3 flex items-center gap-4">
-            <span className="flex items-center gap-2 font-label text-[11px] uppercase tracking-widest text-yellow-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-              有未保存的更改
-            </span>
-            <span className="flex-1" />
-            <button
-              onClick={handleReset}
-              className="px-4 h-9 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-on-surface/[0.04] font-label text-[11px] uppercase tracking-widest transition-colors"
-            >
-              撤销修改
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-5 h-9 rounded-lg bg-primary-container text-on-primary-container font-headline font-bold text-[12px] uppercase tracking-wider hover:brightness-110 active:brightness-95 transition-all flex items-center gap-2 shadow-lg shadow-primary/10"
-            >
-              {saveLabel === "saved" && (
-                <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>check</span>
-              )}
-              {saveLabel === "save" ? "保存修改" : "已保存"}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Unsaved-changes navigation warning */}
-      {pendingNav !== null && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40"
-          onClick={() => setPendingNav(null)}
-        >
-          <div
-            className="w-full max-w-md bg-surface-container-high/95 backdrop-blur-2xl rounded-2xl p-8 border border-outline-variant/15 shadow-[0_40px_80px_rgba(0,0,0,0.5)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-4 mb-6">
-              <div className="w-10 h-10 rounded-lg bg-yellow-400/15 border border-yellow-400/25 flex items-center justify-center flex-shrink-0">
-                <span className="material-symbols-outlined text-yellow-400 leading-none" style={{ fontSize: 22 }}>warning_amber</span>
-              </div>
-              <div>
-                <h2 className="font-headline font-black text-lg text-on-surface tracking-tight">有未保存的更改</h2>
-                <p className="font-body text-[13px] text-on-surface-variant/70 mt-1.5">现在离开会丢弃这些改动。</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => handleProceedNav(false)}
-                className="flex-1 py-3 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:bg-on-surface/[0.04] font-label text-[11px] uppercase tracking-wider transition-colors"
-              >
-                丢弃并离开
-              </button>
-              <button
-                onClick={() => handleProceedNav(true)}
-                className="flex-1 py-3 rounded-lg bg-primary-container text-on-primary-container font-headline font-bold text-[12px] uppercase tracking-wider hover:brightness-110 transition-all"
-              >
-                保存并离开
-              </button>
-            </div>
-          </div>
-        </div>
+      {tweaksOpen && (
+        <TweaksPanel
+          tweaks={tweaks}
+          setTweak={setTweak}
+          onClose={() => setTweaksOpen(false)}
+          isDark={isDark}
+          setIsDark={applyDark}
+        />
       )}
     </div>
   );
