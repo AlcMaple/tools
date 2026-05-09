@@ -106,14 +106,6 @@ function ipcErrMsg(e: unknown, fallback: string): string {
 function Settings(): JSX.Element {
   const navigate = useNavigate();
 
-  // Biu sync paths (UI-only, not yet wired to backend)
-  const [localPath, setLocalPath] = useState(
-    "C:/Users/MapleTools/Documents/BiuProjects/Anime",
-  );
-  const [remotePath, setRemotePath] = useState(
-    "ssh://obsidian-node-01/mnt/media/mapletools/biu-mirror",
-  );
-
   // WebDAV config
   const [webdavAccount, setWebdavAccount] = useState('');
   const [webdavPassword, setWebdavPassword] = useState('');
@@ -296,8 +288,6 @@ function Settings(): JSX.Element {
 
   const handleReset = (): void => {
     setStaged({ ...DEFAULTS });
-    setLocalPath("C:/Users/MapleTools/Documents/BiuProjects/Anime");
-    setRemotePath("ssh://obsidian-node-01/mnt/media/mapletools/biu-mirror");
   };
 
   // ── folder picker ───────────────────────────────────────────
@@ -400,80 +390,6 @@ function Settings(): JSX.Element {
         <div className="grid grid-cols-12 gap-10 items-start">
           {/* Left Column */}
           <section className="col-span-12 lg:col-span-7 space-y-8">
-            {/* Biu Sync Configuration */}
-            <div className="bg-surface-container p-8 rounded-xl border border-white/5">
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary">
-                    folder_shared
-                  </span>
-                  <h2 className="font-headline font-bold text-xl uppercase tracking-tight">
-                    Biu Sync Configuration
-                  </h2>
-                </div>
-                <div className="flex items-center gap-2 px-3 py-1 bg-primary/10 rounded-full">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                  <span className="font-label text-[10px] text-primary font-bold tracking-widest uppercase">
-                    Required
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant/60">
-                    Local Project Path
-                  </label>
-                  <div className="flex gap-2">
-                    <div className="flex-1 bg-surface-container-highest rounded-md px-4 py-3 flex items-center gap-3 focus-within:bg-surface-bright transition-all">
-                      <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">
-                        computer
-                      </span>
-                      <input
-                        type="text"
-                        value={localPath}
-                        onChange={(e) => setLocalPath(e.target.value)}
-                        className="bg-transparent border-none focus:ring-0 w-full text-sm font-label text-on-surface placeholder-on-surface-variant/30 outline-none"
-                      />
-                    </div>
-                    <button className="bg-surface-container-high hover:bg-surface-bright px-4 rounded-md transition-colors flex items-center justify-center">
-                      <span className="material-symbols-outlined text-sm leading-none">
-                        folder_open
-                      </span>
-                    </button>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant/60">
-                    Remote Sync Path
-                  </label>
-                  <div className="flex gap-2">
-                    <div className="flex-1 bg-surface-container-highest rounded-md px-4 py-3 flex items-center gap-3 focus-within:bg-surface-bright transition-all">
-                      <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">
-                        cloud_sync
-                      </span>
-                      <input
-                        type="text"
-                        value={remotePath}
-                        onChange={(e) => setRemotePath(e.target.value)}
-                        className="bg-transparent border-none focus:ring-0 w-full text-sm font-label text-on-surface placeholder-on-surface-variant/30 outline-none"
-                      />
-                    </div>
-                    <button className="bg-surface-container-high hover:bg-surface-bright px-4 rounded-md transition-colors flex items-center justify-center">
-                      <span className="material-symbols-outlined text-sm leading-none">
-                        link
-                      </span>
-                    </button>
-                  </div>
-                </div>
-                <p className="font-body text-xs text-on-surface-variant/40 leading-relaxed border-t border-white/5 pt-4">
-                  These paths define the architectural bridge between your local
-                  workstation and the remote Biu project server. Automated hash
-                  verification will be performed during each synchronization
-                  cycle.
-                </p>
-              </div>
-            </div>
-
             {/* Download Save Path */}
             <div className="bg-surface-container p-8 rounded-xl border border-white/5">
               <div className="flex items-center gap-3 mb-8">
