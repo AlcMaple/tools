@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import TopBar from '../components/TopBar'
 import { downloadStore, type DownloadTask } from '../stores/downloadStore'
+import {
+  siteApi,
+  listTaskEps,
+  taskEpCount,
+  taskEpLabel,
+  sourceSwitchInfo,
+} from '../stores/siteApi'
 
 function useDownloadTasks(): DownloadTask[] {
   const [tasks, setTasks] = useState<DownloadTask[]>(() => downloadStore.getTasks())
@@ -24,13 +31,7 @@ async function resumeTask(t: DownloadTask): Promise<void> {
   const pendingEps = Object.entries(t.epStatus)
     .filter(([, s]) => s === 'paused' || s === 'pending')
     .map(([ep]) => Number(ep))
-  if (t.source === 'girigiri') {
-    await window.girigiriApi.resumeDownload(t.id, t.title, t.girigiriEps, pendingEps, t.savePath)
-  } else if (t.source === 'aowu') {
-    await window.aowuApi.resumeDownload(t.id, t.title, t.aowuId, t.sourceIdx ?? 1, t.aowuEps, pendingEps, t.savePath)
-  } else {
-    await window.xifanApi.resumeDownload(t.id, t.title, t.templates, pendingEps, t.savePath, t.sourceIdx ?? 0)
-  }
+  await siteApi(t).resume(pendingEps)
   const newEpStatus = { ...t.epStatus }
   for (const ep of Object.keys(newEpStatus)) {
     if (newEpStatus[Number(ep)] === 'paused') newEpStatus[Number(ep)] = 'pending'
@@ -47,72 +48,37 @@ function EpisodeGrid({
   task: DownloadTask
   onRetryEp: (ep: number) => void
 }): JSX.Element {
+  const api = siteApi(task)
   const [copiedEp, setCopiedEp] = useState<number | null>(null)
   const [resolvingEp, setResolvingEp] = useState<number | null>(null)
   const [copyError, setCopyError] = useState<string | null>(null)
 
-  const eps =
-    task.source === 'girigiri' || task.source === 'aowu'
-      ? Object.keys(task.epStatus).map(Number).sort((a, b) => a - b)
-      : Array.from({ length: task.endEp - task.startEp + 1 }, (_, i) => task.startEp + i)
-
-  const epLabel = (ep: number): string => {
-    if (task.source === 'girigiri') {
-      return task.girigiriEps?.find((e) => e.idx === ep)?.name ?? `EP ${ep}`
-    }
-    if (task.source === 'aowu') {
-      return task.aowuEps?.find((e) => e.idx === ep)?.label ?? `EP ${ep}`
-    }
-    return `EP ${String(ep).padStart(2, '0')}`
-  }
-
-  function getSyncEpUrl(ep: number): string {
-    // Synchronous URL for non-aowu sources (xifan / girigiri), where the URL is
-    // a static template and copying is instant. Aowu goes through resolveEpUrl.
-    if (task.source === 'girigiri') {
-      return task.girigiriEps?.find((e) => e.idx === ep)?.url ?? ''
-    }
-    if (task.source === 'aowu') return ''
-    const template = task.templates?.[0] ?? ''
-    return template ? template.replace('{:02d}', String(ep).padStart(2, '0')) : ''
-  }
+  const eps = listTaskEps(task)
+  const epLabel = (ep: number): string => taskEpLabel(task, ep)
 
   async function copyEpUrl(ep: number): Promise<void> {
     setCopyError(null)
-
-    // Aowu: real downloadable URL is a signed ByteDance CDN link only available
-    // after the SPA decrypts /api/site/secure response. Resolve on-demand
-    // (~3-5s) so the user can paste into NDM 等 external downloaders.
-    if (task.source === 'aowu') {
-      const id = task.aowuId
-      const src = task.sourceIdx
-      if (!id || !src) { setCopyError('任务缺少 aowuId / sourceIdx'); return }
-      setResolvingEp(ep)
-      try {
-        const url = await window.aowuApi.resolveMp4Url(id, src, ep)
-        await navigator.clipboard.writeText(url)
-        setCopiedEp(ep)
-        setTimeout(() => setCopiedEp(null), 1500)
-      } catch (err) {
-        setCopyError((err as Error).message || '获取下载链接失败')
-        setTimeout(() => setCopyError(null), 3500)
-      } finally {
-        setResolvingEp(null)
-      }
-      return
+    // Async resolvers (aowu) need a spinner; sync ones (xifan / girigiri) just
+    // copy and flash the check icon.
+    if (api.resolveIsAsync) setResolvingEp(ep)
+    try {
+      const url = await api.resolveEpUrl(ep)
+      if (!url) return
+      await navigator.clipboard.writeText(url)
+      setCopiedEp(ep)
+      setTimeout(() => setCopiedEp(null), 1500)
+    } catch (err) {
+      setCopyError((err as Error).message || '获取下载链接失败')
+      setTimeout(() => setCopyError(null), 3500)
+    } finally {
+      if (api.resolveIsAsync) setResolvingEp(null)
     }
-
-    const url = getSyncEpUrl(ep)
-    if (!url) return
-    await navigator.clipboard.writeText(url)
-    setCopiedEp(ep)
-    setTimeout(() => setCopiedEp(null), 1500)
   }
 
   const copyIcon = (ep: number): JSX.Element => {
     const isResolving = resolvingEp === ep
     const isCopied = copiedEp === ep
-    const tooltip = task.source === 'aowu'
+    const tooltip = api.resolveIsAsync
       ? (isResolving ? '正在获取真实下载链接…' : '复制 mp4 直链（约 3-5s）')
       : 'Copy download URL'
     const icon = isResolving ? 'progress_activity' : (isCopied ? 'check' : 'content_copy')
@@ -255,10 +221,7 @@ function EpisodeGrid({
 // ── Progress bar ──────────────────────────────────────────────────────────────
 
 function ProgressBar({ task }: { task: DownloadTask }): JSX.Element {
-  const total =
-    task.source === 'girigiri' || task.source === 'aowu'
-      ? Object.keys(task.epStatus).length
-      : task.endEp - task.startEp + 1
+  const total = taskEpCount(task)
   const done = Object.values(task.epStatus).filter((s) => s === 'done').length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
 
@@ -293,6 +256,7 @@ function ProgressBar({ task }: { task: DownloadTask }): JSX.Element {
 // ── Active / paused / error task card ─────────────────────────────────────────
 
 function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
+  const api = siteApi(task)
   const state = getTaskState(task)
   const isError = state === 'error'
   const isRunning = state === 'running'
@@ -302,26 +266,12 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
     .filter(([, s]) => s === 'error')
     .map(([ep]) => Number(ep))
 
-  const sourceIdx = task.sourceIdx ?? (task.source === 'aowu' ? 1 : 0)
-  const aowuSourceCount = task.aowuSources?.length ?? 0
-  const canSwitchSource =
-    task.source === 'aowu'
-      ? aowuSourceCount > 1
-      : task.source !== 'girigiri' && task.templates.length > 1
-
-  // pause / cancel only need taskId — every api exposes the same shape, so simple dispatch.
-  const callPause = (): Promise<unknown> =>
-    task.source === 'girigiri' ? window.girigiriApi.pauseDownload(task.id) :
-    task.source === 'aowu' ? window.aowuApi.pauseDownload(task.id) :
-    window.xifanApi.pauseDownload(task.id)
-  const callCancel = (): Promise<unknown> =>
-    task.source === 'girigiri' ? window.girigiriApi.cancelDownload(task.id) :
-    task.source === 'aowu' ? window.aowuApi.cancelDownload(task.id) :
-    window.xifanApi.cancelDownload(task.id)
+  const switchInfo = sourceSwitchInfo(task)
+  const canSwitchSource = switchInfo !== null
 
   const handlePauseResume = async (): Promise<void> => {
     if (isRunning) {
-      await callPause()
+      await api.pause()
       downloadStore.updateTask(task.id, { status: 'paused' })
     } else if (isPaused) {
       await resumeTask(task)
@@ -329,24 +279,14 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
   }
 
   const handleCancel = async (): Promise<void> => {
-    await callCancel()
+    await api.cancel()
     downloadStore.removeTask(task.id)
-  }
-
-  const retryEpsCall = (eps: number[]): Promise<unknown> => {
-    if (task.source === 'girigiri') {
-      return window.girigiriApi.retryDownload(task.id, task.title, task.girigiriEps!, eps, task.savePath)
-    }
-    if (task.source === 'aowu') {
-      return window.aowuApi.retryDownload(task.id, task.title, task.aowuId!, sourceIdx, task.aowuEps!, eps, task.savePath)
-    }
-    return window.xifanApi.retryDownload(task.id, task.title, task.templates, eps, task.savePath, sourceIdx)
   }
 
   const handleRetryAll = async (): Promise<void> => {
     if (failedEps.length === 0) return
     downloadStore.retryTask(task.id)
-    await retryEpsCall(failedEps)
+    await api.retry(failedEps)
   }
 
   const handleRetryEp = async (ep: number): Promise<void> => {
@@ -355,36 +295,21 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       epStatus: { ...task.epStatus, [ep]: 'pending' },
       completedAt: undefined,
     })
-    await retryEpsCall([ep])
+    await api.retry([ep])
   }
 
   const handleSwitchSource = async (): Promise<void> => {
-    if (!canSwitchSource || failedEps.length === 0) return
+    if (!switchInfo || !api.switchSource || failedEps.length === 0) return
     const newEpStatus = { ...task.epStatus }
     for (const ep of failedEps) newEpStatus[ep] = 'pending'
-    if (task.source === 'aowu' && task.aowuSources) {
-      // Cycle to the next source idx in the recorded list.
-      const cur = task.aowuSources.findIndex((s) => s.idx === sourceIdx)
-      const next = task.aowuSources[(cur + 1) % task.aowuSources.length]
-      downloadStore.updateTask(task.id, {
-        status: 'running',
-        sourceIdx: next.idx,
-        epStatus: newEpStatus,
-        epProgress: {},
-        completedAt: undefined,
-      })
-      await window.aowuApi.switchSource(task.id, task.title, task.aowuId!, next.idx, task.aowuEps!, failedEps, task.savePath)
-      return
-    }
-    const newIdx = (sourceIdx + 1) % task.templates.length
     downloadStore.updateTask(task.id, {
       status: 'running',
-      sourceIdx: newIdx,
+      sourceIdx: switchInfo.next,
       epStatus: newEpStatus,
       epProgress: {},
       completedAt: undefined,
     })
-    await window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newIdx, task.savePath)
+    await api.switchSource({ failedEps, newSourceIdx: switchInfo.next })
   }
 
   return (
@@ -420,15 +345,15 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
               <div>
                 <h3 className="text-xl font-black tracking-tight leading-none mb-1">{task.title}</h3>
                 {isError ? (
-                  canSwitchSource ? (
+                  canSwitchSource && switchInfo ? (
                     <button
                       onClick={handleSwitchSource}
                       disabled={failedEps.length === 0}
-                      title={`Switch to source ${((sourceIdx + 1) % task.templates.length) + 1}`}
+                      title={`Switch to source ${switchInfo.current % switchInfo.total + 1}`}
                       className="group flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
-                        Source {(task.source === 'aowu' ? ((task.aowuSources?.findIndex((s) => s.idx === sourceIdx) ?? 0) + 1) : (sourceIdx + 1))}/{task.source === 'aowu' ? aowuSourceCount : task.templates.length} · Failed
+                        Source {switchInfo.current}/{switchInfo.total} · Failed
                       </p>
                       <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
                       <span className="material-symbols-outlined text-primary/0 group-hover:text-primary/70 text-[13px] leading-none transition-colors">
@@ -447,7 +372,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
                   <p className="font-label text-[10px] text-primary/80 uppercase tracking-widest">
                     {isPaused ? 'Paused' : 'Downloading'} ·{' '}
                     {task.source === 'girigiri' || task.source === 'aowu'
-                      ? `${Object.keys(task.epStatus).length} eps`
+                      ? `${taskEpCount(task)} eps`
                       : `EP${task.startEp}–EP${task.endEp}`}
                   </p>
                 )}
@@ -505,11 +430,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
               </div>
               <div className="text-right">
                 <p className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Episodes</p>
-                <p className="text-sm font-black text-on-surface">
-                  {task.source === 'girigiri' || task.source === 'aowu'
-                    ? Object.keys(task.epStatus).length
-                    : task.endEp - task.startEp + 1}
-                </p>
+                <p className="text-sm font-black text-on-surface">{taskEpCount(task)}</p>
               </div>
             </div>
           </div>
@@ -525,6 +446,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
 // ── Completed task card ───────────────────────────────────────────────────────
 
 function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
+  const api = siteApi(task)
   const isError = task.status === 'error'
 
   const failedEps = Object.entries(task.epStatus)
@@ -540,22 +462,8 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       })
     : ''
 
-  const sourceIdx = task.sourceIdx ?? (task.source === 'aowu' ? 1 : 0)
-  const aowuSourceCount = task.aowuSources?.length ?? 0
-  const canSwitchSource =
-    task.source === 'aowu'
-      ? aowuSourceCount > 1
-      : task.source !== 'girigiri' && task.templates.length > 1
-
-  const requeueCall = (eps: number[]): Promise<unknown> => {
-    if (task.source === 'girigiri') {
-      return window.girigiriApi.requeueEpisodes(task.id, task.title, task.girigiriEps!, eps, task.savePath)
-    }
-    if (task.source === 'aowu') {
-      return window.aowuApi.requeueEpisodes(task.id, task.title, task.aowuId!, sourceIdx, task.aowuEps!, eps, task.savePath)
-    }
-    return window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, eps, task.savePath, sourceIdx)
-  }
+  const switchInfo = sourceSwitchInfo(task)
+  const canSwitchSource = switchInfo !== null
 
   // Both retry handlers reuse the same task.id so progress events update this card.
   const handleRetryAll = async (): Promise<void> => {
@@ -568,7 +476,7 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       epProgress: {},
       completedAt: undefined,
     })
-    await requeueCall(failedEps)
+    await api.requeue(failedEps)
   }
 
   const handleRetryEp = async (ep: number): Promise<void> => {
@@ -578,35 +486,21 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
       epProgress: { ...task.epProgress },
       completedAt: undefined,
     })
-    await requeueCall([ep])
+    await api.requeue([ep])
   }
 
   const handleSwitchSource = async (): Promise<void> => {
-    if (!canSwitchSource || failedEps.length === 0) return
+    if (!switchInfo || !api.switchSource || failedEps.length === 0) return
     const newEpStatus = { ...task.epStatus }
     for (const ep of failedEps) newEpStatus[ep] = 'pending'
-    if (task.source === 'aowu' && task.aowuSources) {
-      const cur = task.aowuSources.findIndex((s) => s.idx === sourceIdx)
-      const next = task.aowuSources[(cur + 1) % task.aowuSources.length]
-      downloadStore.updateTask(task.id, {
-        status: 'running',
-        sourceIdx: next.idx,
-        epStatus: newEpStatus,
-        epProgress: {},
-        completedAt: undefined,
-      })
-      await window.aowuApi.switchSource(task.id, task.title, task.aowuId!, next.idx, task.aowuEps!, failedEps, task.savePath)
-      return
-    }
-    const newIdx = (sourceIdx + 1) % task.templates.length
     downloadStore.updateTask(task.id, {
       status: 'running',
-      sourceIdx: newIdx,
+      sourceIdx: switchInfo.next,
       epStatus: newEpStatus,
       epProgress: {},
       completedAt: undefined,
     })
-    await window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newIdx, task.savePath)
+    await api.switchSource({ failedEps, newSourceIdx: switchInfo.next })
   }
 
   return (
@@ -640,15 +534,15 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
               <div>
                 <h3 className="text-xl font-black tracking-tight leading-none mb-1">{task.title}</h3>
                 {isError ? (
-                  canSwitchSource ? (
+                  canSwitchSource && switchInfo ? (
                     <button
                       onClick={handleSwitchSource}
                       disabled={failedEps.length === 0}
-                      title={`Switch to source ${((sourceIdx + 1) % task.templates.length) + 1}`}
+                      title={`Switch to source ${switchInfo.current % switchInfo.total + 1}`}
                       className="group flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
-                        Source {sourceIdx + 1}/{task.templates.length} · Errors
+                        Source {switchInfo.current}/{switchInfo.total} · Errors
                       </p>
                       <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
                       <span className="material-symbols-outlined text-primary/0 group-hover:text-primary/70 text-[13px] leading-none transition-colors">
@@ -737,9 +631,7 @@ function DownloadQueue(): JSX.Element {
   const handlePauseAll = async (): Promise<void> => {
     await Promise.all(
       running.map(async (t) => {
-        if (t.source === 'girigiri') await window.girigiriApi.pauseDownload(t.id)
-        else if (t.source === 'aowu') await window.aowuApi.pauseDownload(t.id)
-        else await window.xifanApi.pauseDownload(t.id)
+        await siteApi(t).pause()
         downloadStore.updateTask(t.id, { status: 'paused' })
       })
     )
