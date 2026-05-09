@@ -7,6 +7,8 @@
 // this id via a per-track `bindings[]` list, populated when the user actively
 // links a source result to the track. There is *no* fuzzy title matching.
 
+import { useEffect, useState } from 'react'
+
 export type AnimeStatus = 'plan' | 'watching' | 'completed' | 'paused' | 'dropped'
 
 export interface AnimeBinding {
@@ -137,3 +139,21 @@ class AnimeTrackStore {
 }
 
 export const animeTrackStore = new AnimeTrackStore()
+
+/**
+ * React hook — subscribes to a single track entry by BGM id.
+ * Returns null when the user has not added this anime to their list yet.
+ */
+export function useAnimeTrack(bgmId: number | null | undefined): AnimeTrack | null {
+  const [track, setTrack] = useState<AnimeTrack | null>(() =>
+    bgmId != null ? animeTrackStore.getByBgmId(bgmId) : null
+  )
+  useEffect(() => {
+    if (bgmId == null) { setTrack(null); return }
+    setTrack(animeTrackStore.getByBgmId(bgmId))
+    return animeTrackStore.subscribe(() => {
+      setTrack(animeTrackStore.getByBgmId(bgmId))
+    })
+  }, [bgmId])
+  return track
+}
