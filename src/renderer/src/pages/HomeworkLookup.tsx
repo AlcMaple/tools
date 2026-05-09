@@ -376,14 +376,14 @@ export default function HomeworkLookup(): JSX.Element {
 
   const searchPlaceholder =
     activeTab === 'homework' ? '模糊搜索防守方角色…' :
-    activeTab === 'jjc' ? '模糊搜索 JJC 防守方角色…' :
+    activeTab === 'jjc' ? '模糊搜索 JJC 换防角色…' :
     activeTab === 'pjjc' ? '模糊搜索三防角色…' :
     activeTab === 'classic' ? '模糊搜索主题标题…' :
     '模糊搜索记录正文…'
 
   const addLabel =
     activeTab === 'homework' ? '添加作业' :
-    activeTab === 'jjc' ? '添加 JJC' :
+    activeTab === 'jjc' ? '添加 JJC 换防' :
     activeTab === 'pjjc' ? '添加换防' :
     activeTab === 'classic' ? '添加经典阵容' :
     '添加记录'
@@ -467,7 +467,7 @@ export default function HomeworkLookup(): JSX.Element {
                 }`}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'jjc' ? "'FILL' 1" : "'FILL' 0" }}>military_tech</span>
-                JJC
+                JJC 换防
               </button>
               <button
                 onClick={() => setActiveTab('pjjc')}
