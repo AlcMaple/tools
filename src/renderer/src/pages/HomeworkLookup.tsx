@@ -607,6 +607,7 @@ export default function HomeworkLookup(): JSX.Element {
             onClearQuery={clearQuery}
             sortDefenseLex
             hideImport
+            attackOptional
           />
         )}
         {activeTab === 'pjjc' && (
