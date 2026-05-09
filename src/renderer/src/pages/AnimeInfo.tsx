@@ -12,6 +12,7 @@ import { GirigiriDownloadConfigModal } from '../components/GirigiriDownloadModal
 import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
+import { AnimeStatusCard } from './anime/AnimeStatusCard'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const BGM_SEARCH_TTL_MS = 14 * DAY_MS
@@ -767,6 +768,15 @@ function DetailView({
               Official Site
             </button>
           </div>
+
+          {/* Personal tracking — empty state shows a single CTA, populated state expands. */}
+          <AnimeStatusCard
+            bgmId={data.id}
+            title={data.title}
+            titleCn={data.title_cn || undefined}
+            cover={data.cover || undefined}
+            totalEpisodes={data.episodes > 0 ? data.episodes : undefined}
+          />
         </div>
 
         {/* ── 右栏：信息 ── */}
