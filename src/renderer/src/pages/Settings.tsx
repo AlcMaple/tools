@@ -415,7 +415,7 @@ function CategoryTabs({
   onSelect: (id: CategoryId) => void;
 }): JSX.Element {
   return (
-    <div className="border-b border-outline-variant/10 bg-surface-container-low/40 sticky top-14 z-30 backdrop-blur-xl">
+    <div className="border-b border-outline-variant/10 bg-surface-container-low/40 sticky top-0 z-30 backdrop-blur-xl">
       <div className="px-8 flex items-center gap-1 overflow-x-auto custom-scrollbar">
         {CATEGORIES.map((c) => {
           const isActive = active === c.id;
