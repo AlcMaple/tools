@@ -80,6 +80,85 @@ export function normalizeClassic(groups: ClassicGroup[]): ClassicGroup[] {
   }))
 }
 
+// ── PJJC (3v3 换防) ──────────────────────────────────────────────────────────
+// PJJC = "皮甲竞技场 / 巅峰竞技场" — defenders set 3 lineups simultaneously, and
+// attackers must clear all 3 (one team per defense). A PjjcGroup is therefore a
+// 3-defense bundle, and each PjjcAttack is a 3-team bundle that beats it (with
+// shared notes describing the run).
+export interface PjjcAttack {
+  id: number
+  teams: string[][]   // length 3, paired 1:1 with PjjcGroup.defenses
+  notes: string[]
+  updatedAt: string
+}
+
+export interface PjjcGroup {
+  id: number
+  defenses: string[][]  // length 3
+  updatedAt: string
+  attacks: PjjcAttack[]
+}
+
+function padToThree(rows: string[][]): string[][] {
+  const out = rows.slice(0, 3)
+  while (out.length < 3) out.push([])
+  return out
+}
+
+export function normalizePjjc(groups: unknown): PjjcGroup[] {
+  if (!Array.isArray(groups)) return []
+  const now = todayStr()
+  return groups
+    .filter((g): g is object => !!g && typeof g === 'object')
+    .map((raw, gi) => {
+      const g = raw as { id?: unknown; defenses?: unknown; updatedAt?: unknown; attacks?: unknown }
+      const defenses = padToThree(
+        (Array.isArray(g.defenses) ? g.defenses : [])
+          .map((d: unknown) =>
+            Array.isArray(d)
+              ? d.filter((x): x is string => typeof x === 'string').map(s => s.trim()).filter(Boolean)
+              : [])
+      )
+      const attacks: PjjcAttack[] = Array.isArray(g.attacks)
+        ? g.attacks.map((ar: unknown, ai) => {
+            const a = ar as { id?: unknown; teams?: unknown; notes?: unknown; note?: unknown; updatedAt?: unknown }
+            const teams = padToThree(
+              (Array.isArray(a.teams) ? a.teams : [])
+                .map((t: unknown) =>
+                  Array.isArray(t)
+                    ? t.filter((x): x is string => typeof x === 'string').map(s => s.trim()).filter(Boolean)
+                    : [])
+            )
+            return {
+              id: typeof a.id === 'number' ? a.id : Date.now() + gi * 100 + ai,
+              teams,
+              notes: coerceNotes(a.notes ?? a.note),
+              updatedAt: typeof a.updatedAt === 'string' && a.updatedAt ? a.updatedAt : now,
+            }
+          })
+        : []
+      return {
+        id: typeof g.id === 'number' ? g.id : Date.now() + gi,
+        defenses,
+        updatedAt: typeof g.updatedAt === 'string' && g.updatedAt ? g.updatedAt : now,
+        attacks,
+      }
+    })
+}
+
+export function matchesPjjc(group: PjjcGroup, q: string): boolean {
+  if (!q) return true
+  const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
+  if (terms.length === 0) return true
+  const hay = group.defenses.flat().join(' ').toLowerCase()
+  return terms.every(t => hay.includes(t))
+}
+
+/** Lexicographic sort using Chinese collation (so ams/涅比亚/春剑 order is stable). */
+export function sortDefenseLex(defense: string[]): string[] {
+  return [...defense].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+}
+
 // ── Log entry (做过的事记录) ───────────────────────────────────────────────────
 // 极简结构：只有正文，无时间无嵌套。展示时用「、」拼接成流式文本。
 export interface LogEntry {

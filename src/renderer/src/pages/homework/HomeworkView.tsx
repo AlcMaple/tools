@@ -3,7 +3,7 @@ import {
   Attack, DefenseGroup,
   Highlight, ModalShell, FormField, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
-  commonPrefixLen, matchesDefense, todayStr,
+  commonPrefixLen, matchesDefense, todayStr, sortDefenseLex,
 } from './shared'
 import { ImportModal } from './ImportModal'
 
@@ -423,7 +423,19 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   setData: React.Dispatch<React.SetStateAction<DefenseGroup[]>>
   query: string
   onClearQuery: () => void
-}>(function HomeworkView({ data, setData, query, onClearQuery }, ref) {
+  /**
+   * When true, defense lineups are sorted lexicographically (字典序) on save.
+   * Used by JJC where the defense title is canonicalised so lineups with the
+   * same characters in different input order collapse into one group.
+   */
+  sortDefenseLex?: boolean
+  /**
+   * When true, the import button is hidden. JJC reuses HomeworkView but has
+   * no JSON import path of its own.
+   */
+  hideImport?: boolean
+}>(function HomeworkView({ data, setData, query, onClearQuery, sortDefenseLex: shouldSort = false, hideImport = false }, ref) {
+  const maybeSort = (d: string[]): string[] => shouldSort ? sortDefenseLex(d) : d
   const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set())
 
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -473,13 +485,14 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   }
 
   const handleAdd = (notes: string[]) => {
-    const defense = defenseInput.split('、').map(s => s.trim()).filter(Boolean)
+    const defenseRaw = defenseInput.split('、').map(s => s.trim()).filter(Boolean)
     const team = attackInput.split('、').map(s => s.trim()).filter(Boolean)
-    if (!defense.length || !team.length) return
+    if (!defenseRaw.length || !team.length) return
+    const defense = maybeSort(defenseRaw)
     const defKey = defense.join('、')
     const now = todayStr()
     setData(prev => {
-      const existing = prev.find(d => d.defense.join('、') === defKey)
+      const existing = prev.find(d => maybeSort(d.defense).join('、') === defKey)
       if (existing) {
         // Adding an attack to an existing defense: only the new attack gets a fresh date.
         return prev.map(d =>
@@ -496,8 +509,9 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
 
   const handleEditDefense = (newDefense: string[]) => {
     if (!editDefenseGroup) return
+    const next = maybeSort(newDefense)
     setData(prev => prev.map(d =>
-      d.id === editDefenseGroup.id ? { ...d, defense: newDefense, updatedAt: todayStr() } : d
+      d.id === editDefenseGroup.id ? { ...d, defense: next, updatedAt: todayStr() } : d
     ))
     setEditDefenseGroup(null)
   }
@@ -566,13 +580,15 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => setIsImportOpen(true)}
-            className="px-3 py-1 rounded-md bg-surface-container-high text-on-surface-variant border border-outline-variant/15 font-label text-[11px] uppercase tracking-widest hover:text-tertiary hover:border-tertiary/30 transition-colors flex items-center gap-1"
-            title="从 JSON 文件批量导入作业"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>upload_file</span>导入
-          </button>
+          {!hideImport && (
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className="px-3 py-1 rounded-md bg-surface-container-high text-on-surface-variant border border-outline-variant/15 font-label text-[11px] uppercase tracking-widest hover:text-tertiary hover:border-tertiary/30 transition-colors flex items-center gap-1"
+              title="从 JSON 文件批量导入作业"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>upload_file</span>导入
+            </button>
+          )}
           <button
             onClick={() => setCollapsedIds(new Set())}
             className="px-3 py-1 rounded-md bg-surface-container-high text-on-surface-variant border border-outline-variant/15 font-label text-[11px] uppercase tracking-widest hover:text-primary hover:border-primary/30 transition-colors flex items-center gap-1"
