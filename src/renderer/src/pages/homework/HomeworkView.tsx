@@ -16,14 +16,19 @@ function AddModal({
   defenseInput, attackInput,
   setDefenseInput, setAttackInput,
   onClose, onSave,
+  attackOptional = false,
 }: {
   defenseInput: string; attackInput: string
   setDefenseInput: (v: string) => void
   setAttackInput: (v: string) => void
   onClose: () => void; onSave: (notes: string[]) => void
+  /** When true, only defense is required to save (attack may be left blank). */
+  attackOptional?: boolean
 }): JSX.Element {
   const noteState = useNoteTagState([])
-  const canSave = defenseInput.trim().length > 0 && attackInput.trim().length > 0
+  const canSave = attackOptional
+    ? defenseInput.trim().length > 0
+    : defenseInput.trim().length > 0 && attackInput.trim().length > 0
   return (
     <ModalShell onBackdrop={onClose}>
       <div className="flex items-center gap-4 px-7 pt-6 pb-5 border-b border-outline-variant/10">
@@ -61,10 +66,12 @@ function AddModal({
         <div className="rounded-xl border border-secondary/20 bg-secondary/[0.04] px-4 pt-3 pb-4">
           <div className="flex items-center gap-2 mb-2.5">
             <span className="material-symbols-outlined text-secondary text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>swords</span>
-            <span className="font-label text-[10px] uppercase tracking-widest text-secondary/80">进攻方</span>
+            <span className="font-label text-[10px] uppercase tracking-widest text-secondary/80">
+              进攻方{attackOptional && <span className="text-on-surface-variant/40 normal-case ml-1">· 可留空</span>}
+            </span>
           </div>
           <ModalInput
-            placeholder="例：els、魔女、春剑、水m、布丁"
+            placeholder={attackOptional ? '例：els、魔女、春剑（可留空，之后再补）' : '例：els、魔女、春剑、水m、布丁'}
             value={attackInput}
             onChange={e => setAttackInput(e.target.value)}
           />
@@ -83,7 +90,7 @@ function AddModal({
             onDraftChange={noteState.setDraft}
             placeholder="如：配速、装备、控制要点 — 回车添加新备注"
           />
-          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；双击 chip 编辑；点 ✕ 移除</p>
+          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；点 ✕ 移除</p>
         </div>
       </div>
 
@@ -200,7 +207,7 @@ function EditAttackModal({
           <FormField label="进攻方角色" dot="bg-secondary" hint="用顿号 、 分隔，最多 5 名角色">
             <ModalInput value={teamValue} onChange={e => setTeamValue(e.target.value)} autoFocus />
           </FormField>
-          <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；双击 chip 编辑；点 ✕ 移除">
+          <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；点 ✕ 移除">
             <NoteTagInput
               notes={noteState.notes}
               onNotesChange={noteState.setNotes}
@@ -397,7 +404,7 @@ function AddAttackModal({
             onDraftChange={noteState.setDraft}
             placeholder="如：配速、装备、控制要点 — 回车添加新备注"
           />
-          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；双击 chip 编辑；点 ✕ 移除</p>
+          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；点 ✕ 移除</p>
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
@@ -434,7 +441,13 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
    * no JSON import path of its own.
    */
   hideImport?: boolean
-}>(function HomeworkView({ data, setData, query, onClearQuery, sortDefenseLex: shouldSort = false, hideImport = false }, ref) {
+  /**
+   * When true, the Add modal allows saving with only the defense filled in
+   * (attack may be left blank → group created with empty attacks[]). Used by
+   * JJC where defenders are recorded ahead of attack作业.
+   */
+  attackOptional?: boolean
+}>(function HomeworkView({ data, setData, query, onClearQuery, sortDefenseLex: shouldSort = false, hideImport = false, attackOptional = false }, ref) {
   const maybeSort = (d: string[]): string[] => shouldSort ? sortDefenseLex(d) : d
   const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set())
 
@@ -487,22 +500,27 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   const handleAdd = (notes: string[]) => {
     const defenseRaw = defenseInput.split('、').map(s => s.trim()).filter(Boolean)
     const team = attackInput.split('、').map(s => s.trim()).filter(Boolean)
-    if (!defenseRaw.length || !team.length) return
+    if (!defenseRaw.length) return
+    if (!attackOptional && !team.length) return
     const defense = maybeSort(defenseRaw)
     const defKey = defense.join('、')
     const now = todayStr()
     setData(prev => {
       const existing = prev.find(d => maybeSort(d.defense).join('、') === defKey)
       if (existing) {
-        // Adding an attack to an existing defense: only the new attack gets a fresh date.
+        // Adding to an existing defense: only append an attack if one was provided.
+        if (!team.length) return prev
         return prev.map(d =>
           d.id === existing.id
             ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
             : d
         )
       }
-      // New defense: defense + first attack share today's date.
-      return [...prev, { id: Date.now(), defense, updatedAt: now, attacks: [{ id: Date.now() + 1, team, notes, updatedAt: now }] }]
+      // New defense: include initial attack only if one was provided.
+      const attacks: Attack[] = team.length
+        ? [{ id: Date.now() + 1, team, notes, updatedAt: now }]
+        : []
+      return [...prev, { id: Date.now(), defense, updatedAt: now, attacks }]
     })
     setIsAddOpen(false)
   }
@@ -724,6 +742,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
           defenseInput={defenseInput} attackInput={attackInput}
           setDefenseInput={setDefenseInput} setAttackInput={setAttackInput}
           onClose={() => setIsAddOpen(false)} onSave={handleAdd}
+          attackOptional={attackOptional}
         />
       )}
       {editDefenseGroup && (

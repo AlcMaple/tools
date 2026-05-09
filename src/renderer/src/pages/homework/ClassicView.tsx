@@ -82,7 +82,7 @@ function AddClassicModal({
             onDraftChange={noteState.setDraft}
             placeholder="如：叠叠乐 — 回车添加新备注"
           />
-          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；双击 chip 编辑；点 ✕ 移除</p>
+          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；点 ✕ 移除</p>
         </div>
       </div>
 
@@ -193,7 +193,7 @@ function EditTeamModal({
           <FormField label="阵容角色" dot="bg-secondary" hint="用顿号 、 分隔，最多 5 名角色">
             <ModalInput value={teamValue} onChange={e => setTeamValue(e.target.value)} autoFocus />
           </FormField>
-          <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；双击 chip 编辑；点 ✕ 移除">
+          <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；点 ✕ 移除">
             <NoteTagInput
               notes={noteState.notes}
               onNotesChange={noteState.setNotes}
@@ -269,7 +269,7 @@ function AddTeamModal({
             onDraftChange={noteState.setDraft}
             placeholder="如：叠叠乐 — 回车添加新备注"
           />
-          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；双击 chip 编辑；点 ✕ 移除</p>
+          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">回车提交一条；点 ✕ 移除</p>
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
