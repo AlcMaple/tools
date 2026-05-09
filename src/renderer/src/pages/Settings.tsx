@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSystemStats } from "../hooks/useSystemStats";
 import { navGuard } from "../utils/navGuard";
@@ -7,6 +7,7 @@ import { ipcErrMsg } from "../utils/ipcError";
 // ── constants ────────────────────────────────────────────────
 const NODE_ID_KEY = "xifan_node_id";
 const SETTINGS_KEY = "xifan_settings";
+const ACTIVE_CATEGORY_KEY = "maple-settings-category";
 
 interface HistoryEntry {
   text: string;
@@ -54,38 +55,17 @@ function readSavedSettings(): Required<SavedSettings> {
 
 function formatHistoryTime(ts: number): string {
   const d = new Date(ts);
-  return d
-    .toLocaleString("en", {
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    })
-    .toUpperCase();
-}
-
-function formatLastSave(ts: number | null): string {
-  if (!ts) return "—";
-  const d = new Date(ts);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString("en", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+    return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
   }
-  return d
-    .toLocaleString("en", {
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    })
-    .toUpperCase();
+  return d.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 const PLATFORM = (() => {
@@ -98,78 +78,374 @@ const PLATFORM = (() => {
 
 const NODE_ID = getOrCreateNodeId();
 
-// ── component ────────────────────────────────────────────────
+type CategoryId = "general" | "downloads" | "sync" | "appearance" | "about";
+
+const CATEGORIES: ReadonlyArray<{
+  id: CategoryId;
+  label: string;
+  en: string;
+  icon: string;
+  desc: string;
+}> = [
+  { id: "general", label: "通用", en: "General", icon: "tune", desc: "常用偏好与基础行为" },
+  { id: "downloads", label: "下载", en: "Downloads", icon: "download", desc: "保存路径与下载默认行为" },
+  { id: "sync", label: "云同步", en: "Sync", icon: "cloud_sync", desc: "坚果云 WebDAV 配置" },
+  { id: "appearance", label: "外观", en: "Appearance", icon: "palette", desc: "主题切换" },
+  { id: "about", label: "关于", en: "About", icon: "info", desc: "版本、节点与最近更改" },
+];
+
+// ── reusable Row primitive ───────────────────────────────────
+function Row({
+  icon,
+  title,
+  desc,
+  control,
+}: {
+  icon: string;
+  title: string;
+  desc: string;
+  control: ReactNode;
+}): JSX.Element {
+  return (
+    <div className="group flex items-start gap-5 px-6 py-5 hover:bg-on-surface/[0.015] transition-colors">
+      <div className="mt-0.5 w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant flex-shrink-0">
+        <span className="material-symbols-outlined leading-none" style={{ fontSize: 20 }}>{icon}</span>
+      </div>
+      <div className="flex-1 min-w-0 pr-4">
+        <h3 className="font-headline font-semibold text-[14px] text-on-surface tracking-tight">{title}</h3>
+        <p className="font-body text-[12px] leading-relaxed text-on-surface-variant/60 mt-1 max-w-2xl">{desc}</p>
+      </div>
+      <div className="flex-shrink-0 self-center min-w-[180px] flex justify-end">{control}</div>
+    </div>
+  );
+}
+
+function Block({
+  title,
+  hint,
+  children,
+  footer,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+  footer?: ReactNode;
+}): JSX.Element {
+  return (
+    <section className="bg-surface-container/60 rounded-2xl border border-outline-variant/10 overflow-hidden">
+      <header className="px-6 pt-5 pb-3 flex items-baseline justify-between gap-4">
+        <h2 className="font-headline font-bold text-[12px] uppercase tracking-[0.2em] text-on-surface-variant/60">{title}</h2>
+        {hint && <span className="font-body text-[11px] text-on-surface-variant/35 max-w-md text-right hidden md:block">{hint}</span>}
+      </header>
+      <div className="divide-y divide-outline-variant/10">{children}</div>
+      {footer && <div className="px-6 py-4 border-t border-outline-variant/10 bg-surface-container-low/40">{footer}</div>}
+    </section>
+  );
+}
+
+// ── Controls ─────────────────────────────────────────────────
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }): JSX.Element {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className={`relative w-11 h-6 rounded-full transition-colors ${checked ? "bg-primary-container" : "bg-surface-container-highest"}`}
+    >
+      <span
+        className={`absolute top-[2px] left-[2px] w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`}
+      />
+    </button>
+  );
+}
+
+function Segment<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: ReadonlyArray<{ v: T; l: string }>;
+  onChange: (v: T) => void;
+}): JSX.Element {
+  return (
+    <div className="inline-flex bg-surface-container-high rounded-lg p-1 border border-outline-variant/10">
+      {options.map((o) => (
+        <button
+          key={o.v}
+          onClick={() => onChange(o.v)}
+          className={`px-3 py-1.5 text-[11px] font-label uppercase tracking-wider rounded-md transition-all ${
+            value === o.v ? "bg-primary-container text-on-primary-container shadow-sm" : "text-on-surface-variant/70 hover:text-on-surface"
+          }`}
+        >
+          {o.l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PathControl({
+  value,
+  onPick,
+  onClear,
+}: {
+  value: string;
+  onPick: () => void;
+  onClear: () => void;
+}): JSX.Element {
+  const isEmpty = !value;
+  return (
+    <div className="flex items-center gap-2 w-[320px]">
+      <div
+        className={`flex-1 bg-surface-container-high rounded-lg px-3 py-2 text-[12px] font-label truncate border border-outline-variant/10 ${
+          isEmpty ? "text-on-surface-variant/35" : "text-on-surface"
+        }`}
+        title={value || undefined}
+      >
+        {value || "默认: 应用同级目录"}
+      </div>
+      {!isEmpty && (
+        <button
+          onClick={onClear}
+          className="w-9 h-9 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/60 hover:text-on-surface flex items-center justify-center transition-colors"
+          title="清空"
+        >
+          <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>close</span>
+        </button>
+      )}
+      <button
+        onClick={onPick}
+        className="w-9 h-9 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/80 hover:text-on-surface flex items-center justify-center transition-colors"
+        title="选择文件夹"
+      >
+        <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>drive_folder_upload</span>
+      </button>
+    </div>
+  );
+}
+
+function TextControl({
+  value,
+  placeholder,
+  type = "text",
+  onChange,
+  trailing,
+}: {
+  value: string;
+  placeholder?: string;
+  type?: "text" | "password";
+  onChange: (v: string) => void;
+  trailing?: ReactNode;
+}): JSX.Element {
+  return (
+    <div className="bg-surface-container-high text-on-surface text-[12px] font-label rounded-lg pl-3 pr-2 border border-outline-variant/10 hover:border-outline-variant/25 focus-within:border-primary-container/40 transition-colors w-[280px] flex items-center gap-2">
+      <input
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        spellCheck={false}
+        autoComplete="off"
+        className="flex-1 bg-transparent py-2 outline-none placeholder-on-surface-variant/30"
+      />
+      {trailing}
+    </div>
+  );
+}
+
+function ReadonlyValue({ value }: { value: string }): JSX.Element {
+  return <span className="font-label text-[12px] text-on-surface-variant/80 tabular-nums">{value}</span>;
+}
+
+// ── Header (system stats + theme toggle + back) ──────────────
+function SettingsHeader({
+  isDirty,
+  onBack,
+  onToggleTheme,
+  isDark,
+}: {
+  isDirty: boolean;
+  onBack: () => void;
+  onToggleTheme: () => void;
+  isDark: boolean;
+}): JSX.Element {
+  const { diskFreeLabel, activeTasks, networkOnline, speedLabel } = useSystemStats();
+  return (
+    <header className="fixed top-0 right-0 left-64 z-40 bg-background/85 backdrop-blur-xl border-b border-outline-variant/10">
+      <div className="h-14 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onBack}
+            className="w-8 h-8 rounded-lg hover:bg-on-surface/[0.04] flex items-center justify-center text-on-surface-variant"
+            title="返回"
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 18 }}>arrow_back</span>
+          </button>
+          <div className="flex items-center gap-2 font-label text-[10px] uppercase tracking-[0.25em] text-on-surface-variant/60">
+            <span className="text-on-surface/80">Dashboard</span>
+            <span className="text-on-surface-variant/30">/</span>
+            <span>System Preferences</span>
+            {isDirty && (
+              <>
+                <span className="text-on-surface-variant/30">·</span>
+                <span className="text-yellow-400 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                  Unsaved
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-5">
+          <Stat icon="storage" label={diskFreeLabel} />
+          <Stat icon="downloading" label={`${activeTasks} TASKS`} active={activeTasks > 0} />
+          <Stat icon="speed" label={speedLabel} />
+          <div className={`flex items-center gap-1.5 ${networkOnline ? "text-tertiary" : "text-error"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? "bg-tertiary animate-pulse" : "bg-error"}`} />
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{networkOnline ? "wifi_tethering" : "wifi_off"}</span>
+            <span className="font-label text-[10px] tracking-widest uppercase">{networkOnline ? "Online" : "Offline"}</span>
+          </div>
+          <span className="h-4 w-px bg-outline-variant/20" />
+          <button
+            onClick={onToggleTheme}
+            className="w-8 h-8 rounded-lg hover:bg-on-surface/[0.04] flex items-center justify-center text-on-surface-variant"
+            title="切换主题"
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>{isDark ? "light_mode" : "dark_mode"}</span>
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Stat({ icon, label, active }: { icon: string; label: string; active?: boolean }): JSX.Element {
+  return (
+    <div className={`flex items-center gap-1.5 ${active ? "text-primary" : "text-on-surface-variant/60"}`}>
+      <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{icon}</span>
+      <span className="font-label text-[10px] tracking-widest uppercase">{label}</span>
+    </div>
+  );
+}
+
+// ── Left rail (category nav) ─────────────────────────────────
+function CategoryRail({
+  active,
+  onSelect,
+}: {
+  active: CategoryId;
+  onSelect: (id: CategoryId) => void;
+}): JSX.Element {
+  return (
+    <aside className="w-[260px] flex-shrink-0 border-r border-outline-variant/10 bg-surface-container-low/30 flex flex-col">
+      <div className="px-6 pt-8 pb-5">
+        <div className="font-label text-[10px] uppercase tracking-[0.3em] text-on-surface-variant/40 mb-2">Settings</div>
+        <h1 className="font-headline font-black text-[28px] tracking-tight text-on-surface leading-none">
+          系统偏好<span className="text-primary-container">.</span>
+        </h1>
+      </div>
+      <nav className="px-3 flex-1 overflow-y-auto custom-scrollbar pb-6">
+        {CATEGORIES.map((c) => {
+          const isActive = active === c.id;
+          return (
+            <button
+              key={c.id}
+              onClick={() => onSelect(c.id)}
+              className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-0.5 text-left transition-colors ${
+                isActive
+                  ? "bg-primary-container/15 text-on-surface"
+                  : "text-on-surface-variant/70 hover:bg-on-surface/[0.04] hover:text-on-surface"
+              }`}
+            >
+              <span
+                className={`material-symbols-outlined leading-none flex-shrink-0 ${isActive ? "text-primary-container" : ""}`}
+                style={{ fontSize: 18 }}
+              >
+                {c.icon}
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-[13px] font-headline font-semibold leading-tight truncate">{c.label}</span>
+                <span className="block text-[10px] font-label uppercase tracking-widest text-on-surface-variant/40 leading-tight mt-0.5">
+                  {c.en}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+      <div className="px-6 py-5 border-t border-outline-variant/10">
+        <div className="flex items-center gap-2 text-on-surface-variant/40">
+          <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>fingerprint</span>
+          <span className="font-label text-[10px] tracking-widest uppercase">{NODE_ID}</span>
+        </div>
+        <div className="font-label text-[10px] tracking-widest uppercase text-on-surface-variant/30 mt-1.5">
+          MapleTools v{__APP_VERSION__}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ── Main component ───────────────────────────────────────────
 function Settings(): JSX.Element {
   const navigate = useNavigate();
 
-  // WebDAV config
-  const [webdavAccount, setWebdavAccount] = useState('');
-  const [webdavPassword, setWebdavPassword] = useState('');
-  const [webdavPath, setWebdavPath] = useState('MapleTools/homework.json');
+  // Active category, persisted across sessions.
+  const [active, setActive] = useState<CategoryId>(() => {
+    const v = localStorage.getItem(ACTIVE_CATEGORY_KEY) as CategoryId | null;
+    return v && CATEGORIES.some((c) => c.id === v) ? v : "general";
+  });
+  useEffect(() => { localStorage.setItem(ACTIVE_CATEGORY_KEY, active); }, [active]);
+
+  // Staged form (only committed on Save) — preserves the existing dirty-state UX.
+  const [staged, setStaged] = useState<Required<SavedSettings>>(readSavedSettings);
+  const [saved, setSaved] = useState<Required<SavedSettings>>(readSavedSettings);
+
+  // WebDAV — separate from the main saved bundle (its own IPC path)
+  const [webdavAccount, setWebdavAccount] = useState("");
+  const [webdavPassword, setWebdavPassword] = useState("");
+  const [webdavPath, setWebdavPath] = useState("MapleTools/homework.json");
+  const [webdavOriginal, setWebdavOriginal] = useState({ account: "", password: "", path: "MapleTools/homework.json" });
   const [webdavShowPwd, setWebdavShowPwd] = useState(false);
-  const [webdavTestLabel, setWebdavTestLabel] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
-  const [webdavTestMsg, setWebdavTestMsg] = useState('');
+  const [webdavTestState, setWebdavTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [webdavTestMsg, setWebdavTestMsg] = useState("");
 
   useEffect(() => {
-    window.webdavApi.getConfig().then(cfg => {
-      if (!cfg) return;
-      setWebdavAccount(cfg.account);
-      setWebdavPassword(cfg.appPassword);
-      setWebdavPath(cfg.remotePath || 'MapleTools/homework.json');
-    }).catch(() => {});
-  }, []);
-
-  const handleWebdavTest = async () => {
-    setWebdavTestLabel('testing');
-    setWebdavTestMsg('');
-    try {
-      await window.webdavApi.saveConfig({
-        account: webdavAccount.trim(),
-        appPassword: webdavPassword,
-        remotePath: webdavPath.trim(),
-      });
-      await window.webdavApi.test();
-      setWebdavTestLabel('ok');
-      setWebdavTestMsg('连接成功');
-    } catch (e: unknown) {
-      setWebdavTestLabel('error');
-      setWebdavTestMsg(ipcErrMsg(e, '连接失败'));
-    }
-    setTimeout(() => { setWebdavTestLabel('idle'); setWebdavTestMsg(''); }, 4000);
-  };
-
-  // Staged settings — edit freely, only committed on Save
-  const [staged, setStaged] =
-    useState<Required<SavedSettings>>(readSavedSettings);
-
-  // History — loaded from file on mount
-  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
-  useEffect(() => {
-    window.systemApi
-      .loadSettingsHistory()
-      .then(setHistoryEntries)
+    window.webdavApi
+      .getConfig()
+      .then((cfg) => {
+        if (!cfg) return;
+        setWebdavAccount(cfg.account);
+        setWebdavPassword(cfg.appPassword);
+        setWebdavPath(cfg.remotePath || "MapleTools/homework.json");
+        setWebdavOriginal({
+          account: cfg.account,
+          password: cfg.appPassword,
+          path: cfg.remotePath || "MapleTools/homework.json",
+        });
+      })
       .catch(() => {});
   }, []);
 
-  const lastSaved = historyEntries[0]?.time ?? null;
+  const isDirty = useMemo(() => {
+    const a = staged;
+    const b = saved;
+    return (
+      a.downloadPath !== b.downloadPath ||
+      a.searchCacheEnabled !== b.searchCacheEnabled ||
+      a.minimizeOnClose !== b.minimizeOnClose ||
+      webdavAccount !== webdavOriginal.account ||
+      webdavPassword !== webdavOriginal.password ||
+      webdavPath !== webdavOriginal.path
+    );
+  }, [staged, saved, webdavAccount, webdavPassword, webdavPath, webdavOriginal]);
 
-  // Whether staged differs from what's currently saved
-  const saved = readSavedSettings();
-  const isDirty =
-    staged.downloadPath !== saved.downloadPath ||
-    staged.searchCacheEnabled !== saved.searchCacheEnabled ||
-    staged.minimizeOnClose !== saved.minimizeOnClose;
-
-  // pendingNav: path to navigate to after dialog action ('__back__' for back button)
-  const [pendingNav, setPendingNav] = useState<string | null>(null);
-
+  // Theme toggle (persisted via the same `theme` key the rest of the app uses)
   const [isDark, setIsDark] = useState(() => {
     const stored = localStorage.getItem("theme");
     if (stored) return stored === "dark";
     return document.documentElement.classList.contains("dark");
   });
-
-  const toggleTheme = () => {
+  const toggleTheme = (): void => {
     if (isDark) {
       document.documentElement.classList.remove("dark");
       localStorage.setItem("theme", "light");
@@ -181,78 +457,45 @@ function Settings(): JSX.Element {
     }
   };
 
-  // Register/unregister nav guard whenever isDirty changes
+  // History (last 20 changes; we display 5)
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   useEffect(() => {
-    if (isDirty) {
-      navGuard.setListener((to) => setPendingNav(to));
-    } else {
-      navGuard.setListener(null);
-    }
+    window.systemApi.loadSettingsHistory().then(setHistoryEntries).catch(() => {});
+  }, []);
+
+  // pendingNav: where to go after the dirty-warn dialog resolves ('__back__' for back nav)
+  const [pendingNav, setPendingNav] = useState<string | null>(null);
+  useEffect(() => {
+    if (isDirty) navGuard.setListener((to) => setPendingNav(to));
+    else navGuard.setListener(null);
     return () => navGuard.setListener(null);
   }, [isDirty]);
 
-  const handleProceedNav = (save: boolean): void => {
-    if (save) handleSave();
-    navGuard.setListener(null);
-    if (pendingNav === "__back__") navigate(-1);
-    else if (pendingNav) navigate(pendingNav);
-    setPendingNav(null);
-  };
-
-  // Save button feedback
-  const [saveLabel, setSaveLabel] = useState<"save" | "saved">("save");
-
-  const {
-    diskFreeLabel,
-    diskFreeRaw,
-    diskTotal,
-    activeTasks,
-    networkOnline,
-    speedLabel,
-  } = useSystemStats();
-
-  const storageStatus = (() => {
-    if (diskFreeRaw === null || diskTotal === null || diskTotal === 0)
-      return { label: "Unknown", color: "text-on-surface-variant/40" };
-    const pct = diskFreeRaw / diskTotal;
-    if (pct > 0.3) return { label: "Optimal", color: "text-secondary" };
-    if (pct > 0.1) return { label: "Warning", color: "text-yellow-400" };
-    return { label: "Critical", color: "text-red-400" };
-  })();
-
-  // ── history helper ──────────────────────────────────────────
   const recordChange = (text: string): void => {
-    const updated = [{ text, time: Date.now() }, ...historyEntries].slice(
-      0,
-      20,
-    );
+    const updated = [{ text, time: Date.now() }, ...historyEntries].slice(0, 20);
     setHistoryEntries(updated);
     window.systemApi.saveSettingsHistory(updated).catch(() => {});
   };
 
-  // ── save / reset ────────────────────────────────────────────
   const handleSave = (): void => {
     const current = readSavedSettings();
     const changes: string[] = [];
     if (staged.downloadPath !== current.downloadPath) {
-      changes.push(
-        staged.downloadPath
-          ? `Download path → ${staged.downloadPath}`
-          : "Download path cleared",
-      );
+      changes.push(staged.downloadPath ? `下载路径 → ${staged.downloadPath}` : "下载路径已清空");
     }
     if (staged.searchCacheEnabled !== current.searchCacheEnabled) {
-      changes.push(
-        `Search cache ${staged.searchCacheEnabled ? "enabled" : "disabled"}`,
-      );
+      changes.push(`搜索缓存 ${staged.searchCacheEnabled ? "已启用" : "已禁用"}`);
     }
     if (staged.minimizeOnClose !== current.minimizeOnClose) {
-      changes.push(
-        `Minimize on close ${staged.minimizeOnClose ? "enabled" : "disabled"}`,
-      );
-      if (window.systemApi && window.systemApi.setSetting) {
-        window.systemApi.setSetting('minimizeOnClose', staged.minimizeOnClose).catch(() => {});
-      }
+      changes.push(`关闭到托盘 ${staged.minimizeOnClose ? "已启用" : "已禁用"}`);
+      window.systemApi.setSetting?.("minimizeOnClose", staged.minimizeOnClose).catch(() => {});
+    }
+    if (
+      webdavAccount !== webdavOriginal.account ||
+      webdavPassword !== webdavOriginal.password ||
+      webdavPath !== webdavOriginal.path
+    ) {
+      changes.push("WebDAV 配置已更新");
     }
 
     try {
@@ -264,512 +507,355 @@ function Settings(): JSX.Element {
           minimizeOnClose: staged.minimizeOnClose,
         }),
       );
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
 
-    // Save WebDAV config silently alongside other settings
-    window.webdavApi.saveConfig({
-      account: webdavAccount.trim(),
-      appPassword: webdavPassword,
-      remotePath: webdavPath.trim(),
-    }).catch(() => {});
+    window.webdavApi
+      .saveConfig({
+        account: webdavAccount.trim(),
+        appPassword: webdavPassword,
+        remotePath: webdavPath.trim(),
+      })
+      .catch(() => {});
 
-    const label =
-      changes.length > 0 ? changes.join("; ") : "Configuration saved";
-    recordChange(label);
+    setSaved({ ...staged });
+    setWebdavOriginal({ account: webdavAccount, password: webdavPassword, path: webdavPath });
+    if (changes.length > 0) recordChange(changes.join(" · "));
     setSaveLabel("saved");
-    setTimeout(() => setSaveLabel("save"), 2000);
+    setTimeout(() => setSaveLabel("save"), 1800);
   };
 
   const handleReset = (): void => {
     setStaged({ ...DEFAULTS });
+    setWebdavAccount(webdavOriginal.account);
+    setWebdavPassword(webdavOriginal.password);
+    setWebdavPath(webdavOriginal.path);
   };
 
-  // ── folder picker ───────────────────────────────────────────
+  const handleProceedNav = (save: boolean): void => {
+    if (save) handleSave();
+    navGuard.setListener(null);
+    if (pendingNav === "__back__") navigate(-1);
+    else if (pendingNav) navigate(pendingNav);
+    setPendingNav(null);
+  };
+
+  const [saveLabel, setSaveLabel] = useState<"save" | "saved">("save");
+
   const handlePickDownloadFolder = async (): Promise<void> => {
     const picked = await window.systemApi.pickFolder();
     if (!picked) return;
     setStaged((s) => ({ ...s, downloadPath: picked }));
   };
 
-  const handleClearDownloadPath = (): void => {
-    setStaged((s) => ({ ...s, downloadPath: "" }));
+  const handleWebdavTest = async (): Promise<void> => {
+    setWebdavTestState("testing");
+    setWebdavTestMsg("");
+    try {
+      await window.webdavApi.saveConfig({
+        account: webdavAccount.trim(),
+        appPassword: webdavPassword,
+        remotePath: webdavPath.trim(),
+      });
+      await window.webdavApi.test();
+      setWebdavOriginal({ account: webdavAccount, password: webdavPassword, path: webdavPath });
+      setWebdavTestState("ok");
+      setWebdavTestMsg("连接成功并已写入配置");
+    } catch (e: unknown) {
+      setWebdavTestState("error");
+      setWebdavTestMsg(ipcErrMsg(e, "连接失败"));
+    }
+    setTimeout(() => { setWebdavTestState("idle"); setWebdavTestMsg(""); }, 4000);
   };
+
+  const cat = CATEGORIES.find((c) => c.id === active)!;
 
   return (
     <div className="min-h-full bg-surface">
-      {/* Header */}
-      <header className="fixed top-0 right-0 left-64 h-16 z-40 bg-background/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-8">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => (isDirty ? setPendingNav("__back__") : navigate(-1))}
-            className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-variant/40 rounded-full transition-colors"
-          >
-            <span className="material-symbols-outlined text-xl leading-none">
-              arrow_back
-            </span>
-          </button>
-          <span className="h-4 w-px bg-white/10" />
-          <span className="font-headline font-bold text-sm text-on-surface tracking-widest uppercase">
-            Dashboard
-          </span>
-          <span className="h-4 w-px bg-white/10" />
-          <span className="font-label text-xs text-on-surface-variant/60 tracking-widest uppercase">
-            System Preferences
-          </span>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 text-on-surface-variant/60">
-            <span className="material-symbols-outlined text-sm leading-none">
-              storage
-            </span>
-            <span className="font-label text-[10px] tracking-widest">
-              {diskFreeLabel}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-on-surface-variant/60">
-            <span className={`material-symbols-outlined text-sm leading-none ${activeTasks > 0 ? "text-primary flex-shrink-0 animate-pulse" : ""}`}>
-              downloading
-            </span>
-            <span className={`font-label text-[10px] tracking-widest ${activeTasks > 0 ? "text-primary" : ""}`}>
-              {activeTasks} TASKS
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-on-surface-variant/60">
-            <span className="material-symbols-outlined text-sm leading-none">
-              speed
-            </span>
-            <span className="font-label text-[10px] tracking-widest">
-              {speedLabel}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div
-              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${networkOnline ? "bg-green-400 animate-pulse" : "bg-red-500"}`}
-            />
-            <span
-              className={`material-symbols-outlined text-sm leading-none ${networkOnline ? "text-green-400" : "text-red-500"}`}
-            >
-              {networkOnline ? "wifi_tethering" : "wifi_off"}
-            </span>
-            <span
-              className={`font-label text-[10px] tracking-widest ${networkOnline ? "text-green-400" : "text-red-500"}`}
-            >
-              {networkOnline ? "ONLINE" : "OFFLINE"}
-            </span>
-          </div>
-          <span className="h-4 w-px bg-white/10" />
-          <button
-            onClick={toggleTheme}
-            className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-variant/40 rounded-full transition-colors flex items-center justify-center"
-          >
-            <span className="material-symbols-outlined text-sm leading-none">
-              {isDark ? "light_mode" : "dark_mode"}
-            </span>
-          </button>
-        </div>
-      </header>
+      <SettingsHeader
+        isDirty={isDirty}
+        onBack={() => (isDirty ? setPendingNav("__back__") : navigate(-1))}
+        onToggleTheme={toggleTheme}
+        isDark={isDark}
+      />
 
-      {/* Content */}
-      <div className="pt-32 pb-20 px-12 max-w-7xl mx-auto">
-        <section className="mb-16">
-          <h1 className="font-headline font-black text-6xl tracking-tighter text-on-surface mb-2">
-            SETTINGS<span className="text-primary">.</span>
-          </h1>
-          <p className="font-label text-sm uppercase tracking-[0.3em] text-on-surface-variant/40 max-w-xl">
-            Configure the core operational parameters for MapleTools
-            environment. Changes take effect after saving.
-          </p>
-        </section>
+      <div className="pt-14 flex min-h-[calc(100vh-3.5rem)]">
+        <CategoryRail active={active} onSelect={setActive} />
 
-        <div className="grid grid-cols-12 gap-10 items-start">
-          {/* Left Column */}
-          <section className="col-span-12 lg:col-span-7 space-y-8">
-            {/* Download Save Path */}
-            <div className="bg-surface-container p-8 rounded-xl border border-white/5">
-              <div className="flex items-center gap-3 mb-8">
-                <span className="material-symbols-outlined text-primary">
-                  save_alt
-                </span>
-                <h2 className="font-headline font-bold text-xl uppercase tracking-tight">
-                  Download Save Path
-                </h2>
+        <main className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="max-w-3xl mx-auto px-8 py-10 pb-32">
+            {/* Category header */}
+            <div key={active} className="mb-8 animate-fade-in">
+              <div className="flex items-center gap-2 font-label text-[10px] uppercase tracking-[0.3em] text-on-surface-variant/40 mb-3">
+                <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{cat.icon}</span>
+                {cat.en}
               </div>
-              <div className="space-y-2">
-                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant/60">
-                  Save Location
-                </label>
-                <div className="flex gap-2">
-                  <div className="flex-1 bg-surface-container-highest rounded-md px-4 py-3 flex items-center gap-3">
-                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">
-                      folder_open
-                    </span>
-                    <span
-                      className={`flex-1 text-sm font-label truncate ${staged.downloadPath ? "text-on-surface" : "text-on-surface-variant/30"}`}
-                    >
-                      {staged.downloadPath || "Default: script directory"}
-                    </span>
-                    {staged.downloadPath && (
-                      <button
-                        onClick={handleClearDownloadPath}
-                        className="text-on-surface-variant/40 hover:text-on-surface transition-colors flex-shrink-0"
-                      >
-                        <span className="material-symbols-outlined text-sm leading-none">
-                          close
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    onClick={handlePickDownloadFolder}
-                    className="bg-surface-container-high hover:bg-surface-bright px-4 rounded-md transition-colors flex items-center justify-center"
-                  >
-                    <span className="material-symbols-outlined text-sm leading-none">
-                      drive_folder_upload
-                    </span>
-                  </button>
-                </div>
-                <p className="font-body text-xs text-on-surface-variant/40 leading-relaxed border-t border-white/5 pt-4">
-                  Downloaded files are saved to{" "}
-                  <span className="text-on-surface-variant/60">
-                    &lt;path&gt;/&lt;title&gt;/
-                  </span>
-                  . Leave empty to use the default directory alongside the
-                  scripts.
-                </p>
-              </div>
+              <h2 className="font-headline font-black text-[40px] tracking-tight text-on-surface leading-[1.05]">
+                {cat.label}
+                <span className="text-primary-container">.</span>
+              </h2>
+              <p className="font-body text-[14px] text-on-surface-variant/55 mt-2 max-w-xl">{cat.desc}</p>
             </div>
 
-            {/* App Preferences */}
-            <div className="bg-surface-container p-8 rounded-xl border border-white/5">
-              <div className="flex items-center gap-3 mb-8">
-                <span className="material-symbols-outlined text-primary">
-                  tune
-                </span>
-                <h2 className="font-headline font-bold text-xl uppercase tracking-tight">
-                  App Preferences
-                </h2>
-              </div>
-              <div className="space-y-4">
-                <div className="flex items-start justify-between gap-8 p-6 bg-surface-container-low rounded-lg border border-white/5">
-                  <div className="space-y-1">
-                    <h3 className="font-headline font-bold text-sm uppercase tracking-wider">
-                      Enable Search Cache
-                    </h3>
-                    <p className="text-xs text-on-surface-variant/50 leading-relaxed">
-                      When enabled, previously searched titles will load instantly
-                      from local storage. Disable to force fresh metadata scraping
-                      from original indexers.
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer mt-1 flex-shrink-0">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={staged.searchCacheEnabled}
-                      onChange={(e) =>
-                        setStaged((s) => ({
-                          ...s,
-                          searchCacheEnabled: e.target.checked,
-                        }))
-                      }
-                    />
-                    <div className="w-12 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary" />
-                  </label>
-                </div>
-
-                <div className="flex items-start justify-between gap-8 p-6 bg-surface-container-low rounded-lg border border-white/5">
-                  <div className="space-y-1">
-                    <h3 className="font-headline font-bold text-sm uppercase tracking-wider">
-                      关闭到托盘
-                    </h3>
-                    <p className="text-xs text-on-surface-variant/50 leading-relaxed">
-                      开启后，点击关闭按钮将隐藏窗口到系统托盘。单击托盘图标或再次启动应用可重新显示窗口。
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer mt-1 flex-shrink-0">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={staged.minimizeOnClose}
-                      onChange={(e) =>
-                        setStaged((s) => ({
-                          ...s,
-                          minimizeOnClose: e.target.checked,
-                        }))
-                      }
-                    />
-                    <div className="w-12 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary" />
-                  </label>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Right Column */}
-          <aside className="col-span-12 lg:col-span-5 space-y-6">
-            {/* Configuration Summary */}
-            <div className="bg-surface-variant/70 p-8 rounded-xl border border-white/10 shadow-2xl">
-              <h4 className="font-headline font-bold text-lg mb-6 uppercase tracking-wider border-b border-white/5 pb-4">
-                Configuration Summary
-              </h4>
-              <div className="space-y-4 mb-10">
-                <div className="flex justify-between items-center">
-                  <span className="font-label text-xs text-on-surface-variant/50 uppercase tracking-widest">
-                    Platform
-                  </span>
-                  <span className="font-label text-xs text-on-surface uppercase">
-                    {PLATFORM}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-label text-xs text-on-surface-variant/50 uppercase tracking-widest">
-                    Node ID
-                  </span>
-                  <span className="font-label text-xs text-on-surface uppercase">
-                    {NODE_ID}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-label text-xs text-on-surface-variant/50 uppercase tracking-widest">
-                    Last Saved
-                  </span>
-                  <span className="font-label text-xs text-on-surface uppercase">
-                    {formatLastSave(lastSaved)}
-                  </span>
-                </div>
-                <div className="w-full h-px bg-white/5 my-2" />
-                <div className="flex justify-between items-center">
-                  <span className="font-label text-xs text-on-surface-variant/50 uppercase tracking-widest">
-                    Storage
-                  </span>
-                  <span
-                    className={`font-label text-xs uppercase ${storageStatus.color}`}
-                  >
-                    {storageStatus.label}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-label text-xs text-on-surface-variant/50 uppercase tracking-widest">
-                    Network
-                  </span>
-                  <span
-                    className={`font-label text-xs uppercase flex items-center gap-1.5 ${networkOnline ? "text-secondary" : "text-red-400"}`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${networkOnline ? "bg-secondary animate-pulse" : "bg-red-400"}`}
-                    />
-                    {networkOnline ? "Connected" : "Offline"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-label text-xs text-on-surface-variant/50 uppercase tracking-widest">
-                    Active Tasks
-                  </span>
-                  <span
-                    className={`font-label text-xs uppercase ${activeTasks > 0 ? "text-primary" : "text-on-surface-variant/40"}`}
-                  >
-                    {activeTasks}
-                  </span>
-                </div>
-                {/* Unsaved changes indicator — always rendered to avoid layout shift */}
-                <div className="flex items-center gap-2 pt-2 border-t border-white/5">
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors ${isDirty ? "bg-yellow-400 animate-pulse" : "bg-transparent"}`}
+            {/* Blocks */}
+            <div className="space-y-5">
+              {active === "general" && (
+                <Block title="搜索与缓存">
+                  <Row
+                    icon="cached"
+                    title="启用搜索缓存"
+                    desc="已搜索过的标题将从本地即时加载；禁用则每次都重新抓取。"
+                    control={
+                      <Switch
+                        checked={staged.searchCacheEnabled}
+                        onChange={(v) => setStaged((s) => ({ ...s, searchCacheEnabled: v }))}
+                      />
+                    }
                   />
-                  <span
-                    className={`font-label text-[10px] uppercase tracking-widest transition-opacity duration-200 ${isDirty ? "text-yellow-400 opacity-100" : "opacity-0 select-none"}`}
-                  >
-                    Unsaved changes
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <button
-                  onClick={handleSave}
-                  className="w-full py-4 bg-gradient-to-r from-primary to-primary-container rounded-full text-on-primary-container font-headline font-black text-sm uppercase tracking-[0.2em] shadow-[0_10px_30px_rgba(240,145,153,0.2)] hover:scale-[1.02] active:scale-100 transition-all flex items-center justify-center gap-2"
+                  <Row
+                    icon="minimize"
+                    title="关闭到托盘"
+                    desc="点击关闭按钮时隐藏窗口到系统托盘。单击托盘图标可重新显示。"
+                    control={
+                      <Switch
+                        checked={staged.minimizeOnClose}
+                        onChange={(v) => setStaged((s) => ({ ...s, minimizeOnClose: v }))}
+                      />
+                    }
+                  />
+                </Block>
+              )}
+
+              {active === "downloads" && (
+                <Block
+                  title="保存路径"
+                  hint="文件保存到 <path>/<title>/。留空时使用应用同级目录。"
                 >
-                  {saveLabel === "saved" && (
-                    <span className="material-symbols-outlined text-sm leading-none">
-                      check
-                    </span>
-                  )}
-                  {saveLabel === "save" ? "Save Changes" : "Saved"}
-                </button>
-                <button
-                  onClick={handleReset}
-                  className="w-full py-4 text-primary font-headline font-bold text-sm uppercase tracking-[0.2em] hover:bg-surface-variant/40 rounded-full transition-all"
+                  <Row
+                    icon="folder_open"
+                    title="默认下载目录"
+                    desc="影响所有源（西番 / Girigiri / 嗷呜）的默认保存位置。"
+                    control={
+                      <PathControl
+                        value={staged.downloadPath}
+                        onPick={handlePickDownloadFolder}
+                        onClear={() => setStaged((s) => ({ ...s, downloadPath: "" }))}
+                      />
+                    }
+                  />
+                </Block>
+              )}
+
+              {active === "sync" && (
+                <Block
+                  title="坚果云 WebDAV"
+                  hint="应用密码在坚果云「账号信息 → 安全选项 → 第三方应用管理」生成。"
+                  footer={
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleWebdavTest}
+                        disabled={webdavTestState === "testing"}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/20 hover:bg-on-surface/[0.04] disabled:opacity-50 text-on-surface text-[12px] font-label uppercase tracking-wider transition-colors"
+                      >
+                        <span
+                          className={`material-symbols-outlined leading-none ${webdavTestState === "testing" ? "animate-spin" : ""}`}
+                          style={{ fontSize: 16 }}
+                        >
+                          {webdavTestState === "ok"
+                            ? "check_circle"
+                            : webdavTestState === "error"
+                              ? "error"
+                              : "wifi_find"}
+                        </span>
+                        {webdavTestState === "testing" ? "测试中…" : webdavTestState === "ok" ? "连接成功" : "测试连接"}
+                      </button>
+                      {webdavTestMsg && (
+                        <span className={`font-label text-[11px] ${webdavTestState === "ok" ? "text-tertiary" : "text-error"}`}>
+                          {webdavTestMsg}
+                        </span>
+                      )}
+                    </div>
+                  }
                 >
-                  Reset to Default
-                </button>
-              </div>
+                  <Row
+                    icon="account_circle"
+                    title="账号（注册邮箱）"
+                    desc="登录坚果云的邮箱地址。"
+                    control={
+                      <TextControl
+                        value={webdavAccount}
+                        placeholder="example@email.com"
+                        onChange={setWebdavAccount}
+                      />
+                    }
+                  />
+                  <Row
+                    icon="key"
+                    title="应用密码"
+                    desc="坚果云后台生成的第三方应用密码（不是登录密码）。"
+                    control={
+                      <TextControl
+                        value={webdavPassword}
+                        placeholder="••••••••"
+                        type={webdavShowPwd ? "text" : "password"}
+                        onChange={setWebdavPassword}
+                        trailing={
+                          <button
+                            onClick={() => setWebdavShowPwd((v) => !v)}
+                            className="text-on-surface-variant/40 hover:text-on-surface transition-colors flex-shrink-0 px-1"
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>
+                              {webdavShowPwd ? "visibility_off" : "visibility"}
+                            </span>
+                          </button>
+                        }
+                      />
+                    }
+                  />
+                  <Row
+                    icon="folder_zip"
+                    title="远程文件路径"
+                    desc="相对于 WebDAV 根目录，文件夹不存在时自动创建。"
+                    control={
+                      <TextControl
+                        value={webdavPath}
+                        placeholder="MapleTools/homework.json"
+                        onChange={setWebdavPath}
+                      />
+                    }
+                  />
+                </Block>
+              )}
+
+              {active === "appearance" && (
+                <Block title="主题">
+                  <Row
+                    icon="contrast"
+                    title="颜色模式"
+                    desc="深色与浅色之间切换。设置立即生效，无需保存。"
+                    control={
+                      <Segment
+                        value={isDark ? "dark" : "light"}
+                        options={[
+                          { v: "light", l: "浅色" },
+                          { v: "dark", l: "深色" },
+                        ]}
+                        onChange={(v) => {
+                          if (v === "dark" && !isDark) toggleTheme();
+                          if (v === "light" && isDark) toggleTheme();
+                        }}
+                      />
+                    }
+                  />
+                </Block>
+              )}
+
+              {active === "about" && (
+                <>
+                  <Block title="应用信息">
+                    <Row icon="package_2" title="版本" desc="当前已安装的应用版本。" control={<ReadonlyValue value={`MapleTools v${__APP_VERSION__}`} />} />
+                    <Row icon="devices" title="运行平台" desc="操作系统类型。" control={<ReadonlyValue value={PLATFORM} />} />
+                    <Row icon="fingerprint" title="节点 ID" desc="本机匿名标识符（仅本地，不上传）。" control={<ReadonlyValue value={NODE_ID} />} />
+                  </Block>
+                  <Block title="最近更改">
+                    <div className="px-6 py-5">
+                      {historyEntries.length === 0 ? (
+                        <p className="font-label text-[11px] text-on-surface-variant/30 uppercase tracking-widest">暂无更改记录</p>
+                      ) : (
+                        <ul className="space-y-3">
+                          {historyEntries.slice(0, 5).map((entry, i) => (
+                            <li key={i} className="flex items-start gap-3 group">
+                              <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-body text-[12px] text-on-surface/85 leading-snug break-all">{entry.text}</p>
+                                <p className="font-label text-[10px] text-on-surface-variant/40 tracking-wider mt-0.5">{formatHistoryTime(entry.time)}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </Block>
+                </>
+              )}
             </div>
 
-            {/* Change History */}
-            <div className="p-8 bg-surface-container rounded-xl border border-white/5">
-              <div className="flex items-center gap-3 mb-6">
-                <span className="material-symbols-outlined text-secondary">
-                  history
-                </span>
-                <h2 className="font-headline font-bold text-sm uppercase tracking-widest">
-                  Change History
-                </h2>
-              </div>
-              <ul className="space-y-4">
-                {historyEntries.length === 0 ? (
-                  <li className="font-label text-xs text-on-surface-variant/30 uppercase tracking-widest">
-                    No changes recorded yet
-                  </li>
-                ) : (
-                  historyEntries.slice(0, 5).map((entry, i) => (
-                    <li key={i} className="flex items-start gap-4 group">
-                      <div className="mt-1 w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors flex-shrink-0" />
-                      <div className="space-y-1">
-                        <p className="font-label text-[11px] text-on-surface/80 uppercase leading-tight">
-                          {entry.text}
-                        </p>
-                        <p className="font-label text-[9px] text-on-surface-variant/40 uppercase tracking-tighter">
-                          {formatHistoryTime(entry.time)}
-                        </p>
-                      </div>
-                    </li>
-                  ))
-                )}
-              </ul>
+            {/* Tail status — same vibe as mockup's "已自动保存" but honest about staged */}
+            <div className="pt-6 flex items-center gap-2.5 text-on-surface-variant/30">
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>
+                {isDirty ? "edit" : "cloud_done"}
+              </span>
+              <span className="font-label text-[10px] uppercase tracking-widest">
+                {isDirty ? "有未保存的更改" : "所有更改已保存"}
+              </span>
             </div>
+          </div>
+        </main>
+      </div>
 
-            {/* Homework Sync — 坚果云 WebDAV */}
-            <div className="bg-surface-container p-6 rounded-xl border border-white/5">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary text-lg leading-none">cloud_sync</span>
-                  <h2 className="font-headline font-bold text-sm uppercase tracking-widest">Homework Sync</h2>
-                </div>
-                <span className="font-label text-[9px] text-on-surface-variant/40 uppercase tracking-widest">坚果云 WebDAV</span>
-              </div>
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50">账号（注册邮箱）</label>
-                  <div className="bg-surface-container-highest rounded-md px-3 py-2.5 flex items-center gap-2.5 focus-within:bg-surface-bright transition-all">
-                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">account_circle</span>
-                    <input
-                      type="text"
-                      placeholder="example@email.com"
-                      value={webdavAccount}
-                      onChange={e => setWebdavAccount(e.target.value)}
-                      className="bg-transparent border-none focus:ring-0 w-full text-xs font-label text-on-surface placeholder-on-surface-variant/30 outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50">应用密码</label>
-                  <div className="bg-surface-container-highest rounded-md px-3 py-2.5 flex items-center gap-2.5 focus-within:bg-surface-bright transition-all">
-                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">key</span>
-                    <input
-                      type={webdavShowPwd ? 'text' : 'password'}
-                      placeholder="坚果云后台生成的应用密码"
-                      value={webdavPassword}
-                      onChange={e => setWebdavPassword(e.target.value)}
-                      className="bg-transparent border-none focus:ring-0 w-full text-xs font-label text-on-surface placeholder-on-surface-variant/30 outline-none"
-                    />
-                    <button
-                      onClick={() => setWebdavShowPwd(v => !v)}
-                      className="text-on-surface-variant/40 hover:text-on-surface transition-colors flex-shrink-0"
-                    >
-                      <span className="material-symbols-outlined text-sm leading-none">
-                        {webdavShowPwd ? 'visibility_off' : 'visibility'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50">远程文件路径</label>
-                  <div className="bg-surface-container-highest rounded-md px-3 py-2.5 flex items-center gap-2.5 focus-within:bg-surface-bright transition-all">
-                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm leading-none">folder_open</span>
-                    <input
-                      type="text"
-                      placeholder="MapleTools/homework.json"
-                      value={webdavPath}
-                      onChange={e => setWebdavPath(e.target.value)}
-                      className="bg-transparent border-none focus:ring-0 w-full text-xs font-label text-on-surface placeholder-on-surface-variant/30 outline-none"
-                    />
-                  </div>
-                  <p className="font-body text-[10px] text-on-surface-variant/35">
-                    路径相对于坚果云 WebDAV 根目录，文件夹不存在会自动创建
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 pt-0.5">
-                  <button
-                    onClick={handleWebdavTest}
-                    disabled={webdavTestLabel === 'testing'}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-container-high border border-outline-variant/20 text-xs font-label text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-all disabled:opacity-50"
-                  >
-                    <span className={`material-symbols-outlined text-sm leading-none ${webdavTestLabel === 'testing' ? 'animate-spin' : ''}`}>
-                      {webdavTestLabel === 'ok' ? 'check_circle' : webdavTestLabel === 'error' ? 'error' : 'wifi_find'}
-                    </span>
-                    {webdavTestLabel === 'testing' ? '测试中…' : '测试连接'}
-                  </button>
-                  {webdavTestMsg && (
-                    <span className={`font-label text-[10px] ${webdavTestLabel === 'ok' ? 'text-secondary' : 'text-error'}`}>
-                      {webdavTestMsg}
-                    </span>
-                  )}
-                </div>
-                <p className="font-body text-[10px] text-on-surface-variant/30 leading-relaxed border-t border-white/5 pt-3">
-                  应用密码在坚果云网页端「账号信息 → 安全选项 → 第三方应用管理」中生成，不是登录密码。
-                </p>
-              </div>
-            </div>
-          </aside>
+      {/* Sticky save bar — slides up when there are staged changes. */}
+      <div
+        className={`fixed bottom-0 left-64 right-0 z-30 transition-transform duration-200 ${
+          isDirty ? "translate-y-0" : "translate-y-full pointer-events-none"
+        }`}
+      >
+        <div className="bg-surface-container-high/95 backdrop-blur-xl border-t border-outline-variant/15">
+          <div className="max-w-3xl mx-auto px-8 py-3 flex items-center gap-4">
+            <span className="flex items-center gap-2 font-label text-[11px] uppercase tracking-widest text-yellow-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+              有未保存的更改
+            </span>
+            <span className="flex-1" />
+            <button
+              onClick={handleReset}
+              className="px-4 h-9 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-on-surface/[0.04] font-label text-[11px] uppercase tracking-widest transition-colors"
+            >
+              撤销修改
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-5 h-9 rounded-lg bg-primary-container text-on-primary-container font-headline font-bold text-[12px] uppercase tracking-wider hover:brightness-110 active:brightness-95 transition-all flex items-center gap-2 shadow-lg shadow-primary/10"
+            >
+              {saveLabel === "saved" && (
+                <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>check</span>
+              )}
+              {saveLabel === "save" ? "保存修改" : "已保存"}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Background watermark */}
-      {/* <div className="fixed bottom-0 right-0 p-8 pointer-events-none select-none">
-        <p className="font-label text-[150px] font-black text-white/[0.02] leading-none tracking-tighter uppercase">
-          Config
-        </p>
-      </div> */}
-
-      {/* Unsaved changes navigation warning dialog */}
+      {/* Unsaved-changes navigation warning */}
       {pendingNav !== null && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40"
           onClick={() => setPendingNav(null)}
         >
           <div
-            className="w-full max-w-md bg-white/10 backdrop-blur-[40px] rounded-xl p-10 flex flex-col items-center text-center shadow-[0_40px_80px_rgba(0,0,0,0.5)]"
+            className="w-full max-w-md bg-surface-container-high/95 backdrop-blur-2xl rounded-2xl p-8 border border-outline-variant/15 shadow-[0_40px_80px_rgba(0,0,0,0.5)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="relative mb-8">
-              <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full" />
-              <span
-                className="material-symbols-outlined text-primary text-6xl relative"
-                style={{ fontVariationSettings: '"wght" 200' }}
-              >
-                warning_amber
-              </span>
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-10 h-10 rounded-lg bg-yellow-400/15 border border-yellow-400/25 flex items-center justify-center flex-shrink-0">
+                <span className="material-symbols-outlined text-yellow-400 leading-none" style={{ fontSize: 22 }}>warning_amber</span>
+              </div>
+              <div>
+                <h2 className="font-headline font-black text-lg text-on-surface tracking-tight">有未保存的更改</h2>
+                <p className="font-body text-[13px] text-on-surface-variant/70 mt-1.5">现在离开会丢弃这些改动。</p>
+              </div>
             </div>
-            <h2 className="text-2xl font-black font-headline tracking-tight text-white mb-3">
-              Unsaved Changes Detected
-            </h2>
-            <p className="text-white/70 font-body text-sm mb-10 leading-relaxed px-4">
-              You have unsaved configuration changes. Leaving now will
-              permanently discard them.
-            </p>
-            <div className="flex flex-col w-full gap-3">
-              <button
-                onClick={() => handleProceedNav(true)}
-                className="w-full py-4 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary-container font-headline font-extrabold text-sm tracking-widest uppercase hover:scale-[1.02] active:scale-100 transition-transform"
-              >
-                Save &amp; Leave
-              </button>
+            <div className="flex gap-3">
               <button
                 onClick={() => handleProceedNav(false)}
-                className="w-full py-4 rounded-full bg-white/5 hover:bg-white/10 text-white font-label font-bold text-xs tracking-[0.2em] uppercase transition-colors"
+                className="flex-1 py-3 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:bg-on-surface/[0.04] font-label text-[11px] uppercase tracking-wider transition-colors"
               >
-                Discard &amp; Leave
+                丢弃并离开
+              </button>
+              <button
+                onClick={() => handleProceedNav(true)}
+                className="flex-1 py-3 rounded-lg bg-primary-container text-on-primary-container font-headline font-bold text-[12px] uppercase tracking-wider hover:brightness-110 transition-all"
+              >
+                保存并离开
               </button>
             </div>
           </div>
