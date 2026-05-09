@@ -164,11 +164,6 @@ export function matchesPjjc(group: PjjcGroup, q: string): boolean {
   return terms.every(t => hay.includes(t))
 }
 
-/** Lexicographic sort using Chinese collation (so ams/涅比亚/春剑 order is stable). */
-export function sortDefenseLex(defense: string[]): string[] {
-  return [...defense].sort((a, b) => a.localeCompare(b, 'zh-CN'))
-}
-
 // ── Log entry (做过的事记录) ───────────────────────────────────────────────────
 // 极简结构：只有正文，无时间无嵌套。展示时用「、」拼接成流式文本。
 export interface LogEntry {
