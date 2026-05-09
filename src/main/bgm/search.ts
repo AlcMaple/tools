@@ -3,11 +3,11 @@ import * as cheerio from 'cheerio/slim'
 import { promises as fs, existsSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
+import { DESKTOP_USER_AGENT, safeName } from '../shared/download-types'
 
 const BASE_URL = 'https://bgm.tv/subject_search/{keyword}?cat=2&page={page}'
 const HEADERS = {
-  'User-Agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  'User-Agent': DESKTOP_USER_AGENT,
 }
 const PAGE_DELAY_MS = 1000
 
@@ -20,10 +20,6 @@ export interface BgmSearchResult {
 
 function getCacheDir(): string {
   return join(app.getPath('userData'), 'bgm_cache')
-}
-
-function safeName(keyword: string): string {
-  return keyword.replace(/[\\/:*?"<>|]/g, '_')
 }
 
 function getCachePath(keyword: string, page: number): string {
