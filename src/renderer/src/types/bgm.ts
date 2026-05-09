@@ -5,7 +5,7 @@ export interface BgmSearchResult {
   link: string
 }
 
-export interface BgmStaff {
+interface BgmStaff {
   role: string
   name: string
   name_cn: string

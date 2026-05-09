@@ -46,8 +46,10 @@ export const BASE_URL = 'https://www.aowu.tv'
 
 const SECURE_PATH = '/api/site/secure'
 
-export const ERR_UNREACHABLE = 'AOWU_UNREACHABLE'
-export const ERR_RATE_LIMITED = 'AOWU_RATE_LIMITED'
+// Internal-only — only the literal AOWU_* prefixes leave this module via thrown
+// Error messages, where the renderer matches them with `.startsWith(...)`.
+const ERR_UNREACHABLE = 'AOWU_UNREACHABLE'
+const ERR_RATE_LIMITED = 'AOWU_RATE_LIMITED'
 export const ERR_STRUCTURE = 'AOWU_STRUCTURE_CHANGED'
 
 // ── User-Agent pool ───────────────────────────────────────────────────────────
