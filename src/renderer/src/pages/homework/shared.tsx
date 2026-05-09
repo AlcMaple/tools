@@ -267,6 +267,28 @@ export function NoteChip({
   )
 }
 
+/** Inline list of NoteChips for a row. Renders nothing if `notes` is empty. */
+export function NoteChipList({ notes, query }: { notes: string[]; query?: string }): JSX.Element | null {
+  if (notes.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+      {notes.map((n, i) => <NoteChip key={i} text={n} query={query} />)}
+    </div>
+  )
+}
+
+/** Build the "copy" payload for an attack/team line — names joined with 、, notes appended in parentheses. */
+export function copyTeamText(team: string[], notes: string[]): string {
+  return team.join('、') + (notes.length ? ` (${notes.join(' / ')})` : '')
+}
+
+/** Shallow-equal for two string arrays (order-sensitive). */
+export function notesEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 // ── NoteTagInput — chip-style tag input for the modals ────────────────────────
 // Behavior:
 //   - Type + Enter on main input   → adds the trimmed draft as a new chip
