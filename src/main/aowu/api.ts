@@ -12,8 +12,6 @@
  */
 import { BASE_URL, callSecure, ERR_STRUCTURE } from './secure'
 
-export { BASE_URL }
-
 export interface AowuEpisode {
   idx: number    // ep number (1, 2, ...)
   label: string  // display label e.g. "第01话", "BD", "OVA"
