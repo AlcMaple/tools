@@ -12,7 +12,6 @@ const navItems: NavItem[] = [
   { label: "Search & Download", path: "/search", icon: "search" },
   { label: "Download Queue", path: "/queue", icon: "download_for_offline" },
   { label: "Anime Info", path: "/anime-info", icon: "menu_book" },
-  { label: "Biu Sync", path: "/biu-sync", icon: "sync" },
   { label: "File Explorer", path: "/file-explorer", icon: "folder_managed" },
   { label: "Homework", path: "/homework", icon: "swords" },
 ];

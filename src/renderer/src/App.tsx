@@ -4,7 +4,6 @@ import Sidebar from './components/Sidebar'
 import SearchDownload from './pages/SearchDownload'
 import DownloadQueue from './pages/DownloadQueue'
 import AnimeInfo from './pages/AnimeInfo'
-import BiuSync from './pages/BiuSync'
 import Settings from './pages/Settings'
 import LocalLibrary from './pages/LocalLibrary'
 import FileExplorer from './pages/FileExplorer'
@@ -34,7 +33,6 @@ function App(): JSX.Element {
             <Route path="/search" element={<SearchDownload />} />
             <Route path="/queue" element={<DownloadQueue />} />
             <Route path="/anime-info" element={<AnimeInfo />} />
-            <Route path="/biu-sync" element={<BiuSync />} />
             <Route path="/file-explorer" element={<FileExplorer />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/homework" element={<HomeworkLookup />} />
