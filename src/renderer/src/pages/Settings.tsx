@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSystemStats } from "../hooks/useSystemStats";
 import { navGuard } from "../utils/navGuard";
+import { ipcErrMsg } from "../utils/ipcError";
 
 // ── constants ────────────────────────────────────────────────
 const NODE_ID_KEY = "xifan_node_id";
@@ -96,11 +97,6 @@ const PLATFORM = (() => {
 })();
 
 const NODE_ID = getOrCreateNodeId();
-
-function ipcErrMsg(e: unknown, fallback: string): string {
-  if (!(e instanceof Error)) return fallback
-  return e.message.replace(/^Error invoking remote method '[^']+': /, '') || fallback
-}
 
 // ── component ────────────────────────────────────────────────
 function Settings(): JSX.Element {

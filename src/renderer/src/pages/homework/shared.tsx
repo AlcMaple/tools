@@ -116,10 +116,8 @@ export function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-export function ipcErrMsg(e: unknown, fallback: string): string {
-  if (!(e instanceof Error)) return fallback
-  return e.message.replace(/^Error invoking remote method '[^']+': /, '') || fallback
-}
+// Re-export from the shared util so HomeworkLookup's existing import keeps working.
+export { ipcErrMsg } from '../../utils/ipcError'
 
 export function commonPrefixLen(teams: string[][]): number {
   if (teams.length <= 1) return 0
