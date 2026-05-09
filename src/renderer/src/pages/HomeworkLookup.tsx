@@ -41,6 +41,40 @@ function snapshotOf(homework: DefenseGroup[], classic: ClassicGroup[], log: LogE
   return JSON.stringify({ homework, classic, log })
 }
 
+/**
+ * Detect schema-shape drift in the stored snapshot and rebuild if pure-shape.
+ *
+ * `lastSyncedSnapshot` is a JSON string compared byte-for-byte against the
+ * current data. Any code change that affects the JSON shape — adding the
+ * `log` key, migrating `note: string` → `notes: string[]`, future schema
+ * tweaks — silently makes every device's stored snapshot "look dirty" on
+ * cold start, even when the user hasn't touched anything. That false dirty
+ * combined with the background remote-rev probe is what triggers the
+ * "本地与云端都有变化" red chip on a freshly-launched B device.
+ *
+ * Fix: re-run the stored snapshot through the *current* normalizer pipeline
+ * and compare the result to `current`. If equal, the diff was pure shape and
+ * we rebuild. If not equal, real local edits exist and we keep the stored
+ * value so localDirty fires correctly.
+ */
+function rebuildIfSchemaDrift(stored: string, current: string): string {
+  if (stored === current) return stored
+  try {
+    const parsed = JSON.parse(stored) as {
+      homework?: unknown
+      classic?: unknown
+      log?: unknown
+    }
+    const renormalized = snapshotOf(
+      normalizeHomework(Array.isArray(parsed.homework) ? (parsed.homework as DefenseGroup[]) : []),
+      normalizeClassic(Array.isArray(parsed.classic) ? (parsed.classic as ClassicGroup[]) : []),
+      normalizeLog(parsed.log),
+    )
+    if (renormalized === current) return current
+  } catch { /* malformed stored snapshot — fall through, keep it */ }
+  return stored
+}
+
 function readJson<T>(key: string, fallback: T): T {
   try {
     const v = localStorage.getItem(key)
@@ -129,9 +163,14 @@ export default function HomeworkLookup(): JSX.Element {
   // Snapshot of data at last successful sync — drives `localDirty` via diff.
   // Migration: if no snapshot stored, assume current state is already in sync
   // (previously-dirty state is forgotten — one-time cost of upgrading).
+  // Schema-drift guard: if the stored snapshot is bytewise different from the
+  // current shape but is *semantically* identical after re-normalizing, treat
+  // it as pure shape drift and rebuild. See rebuildIfSchemaDrift().
   const [lastSyncedSnapshot, setLastSyncedSnapshot] = useState<string>(() => {
+    const initialSnapshot = snapshotOf(initialHomework, initialClassic, initialLog)
     const stored = localStorage.getItem(SNAPSHOT_KEY)
-    return stored ?? snapshotOf(initialHomework, initialClassic, initialLog)
+    if (!stored) return initialSnapshot
+    return rebuildIfSchemaDrift(stored, initialSnapshot)
   })
   // Remote rev seen by background probe / last sync. null = unknown.
   const [remoteRev, setRemoteRev] = useState<number | null>(null)
