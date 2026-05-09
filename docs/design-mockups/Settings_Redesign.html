@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MapleTools · Settings (Redesign)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script>
+  // ── Project design tokens (mirrored from src/renderer/src/index.css) ──
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          'on-surface': 'rgb(var(--c-on-surface) / <alpha-value>)',
+          'on-surface-variant': 'rgb(var(--c-on-surface-variant) / <alpha-value>)',
+          'on-background': 'rgb(var(--c-on-background) / <alpha-value>)',
+          'on-primary': 'rgb(var(--c-on-primary) / <alpha-value>)',
+          'on-primary-container': 'rgb(var(--c-on-primary-container) / <alpha-value>)',
+          'on-secondary': 'rgb(var(--c-on-secondary) / <alpha-value>)',
+          primary: 'rgb(var(--c-primary) / <alpha-value>)',
+          'primary-container': 'rgb(var(--c-primary-container) / <alpha-value>)',
+          secondary: 'rgb(var(--c-secondary) / <alpha-value>)',
+          tertiary: 'rgb(var(--c-tertiary) / <alpha-value>)',
+          background: 'rgb(var(--c-background) / <alpha-value>)',
+          surface: 'rgb(var(--c-surface) / <alpha-value>)',
+          'surface-bright': 'rgb(var(--c-surface-bright) / <alpha-value>)',
+          'surface-dim': 'rgb(var(--c-surface-dim) / <alpha-value>)',
+          'surface-container-lowest': 'rgb(var(--c-sc-lowest) / <alpha-value>)',
+          'surface-container-low': 'rgb(var(--c-sc-low) / <alpha-value>)',
+          'surface-container': 'rgb(var(--c-sc) / <alpha-value>)',
+          'surface-container-high': 'rgb(var(--c-sc-high) / <alpha-value>)',
+          'surface-container-highest': 'rgb(var(--c-sc-highest) / <alpha-value>)',
+          'surface-variant': 'rgb(var(--c-surface-variant) / <alpha-value>)',
+          outline: 'rgb(var(--c-outline) / <alpha-value>)',
+          'outline-variant': 'rgb(var(--c-outline-variant) / <alpha-value>)',
+          error: 'rgb(var(--c-error) / <alpha-value>)',
+        },
+        fontFamily: {
+          headline: ['Inter', 'sans-serif'],
+          body: ['Inter', 'sans-serif'],
+          label: ['"Space Grotesk"', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  :root {
+    /* Light tokens (project) */
+    --c-on-surface: 25 28 29;
+    --c-on-surface-variant: 82 67 68;
+    --c-on-background: 28 27 27;
+    --c-on-primary: 255 255 255;
+    --c-on-primary-container: 62 4 16;
+    --c-on-secondary: 255 255 255;
+    --c-primary: 148 70 79;
+    --c-primary-container: 240 145 153;
+    --c-secondary: 88 96 98;
+    --c-tertiary: 22 108 69;
+    --c-background: 248 249 250;
+    --c-surface: 248 249 250;
+    --c-surface-bright: 248 249 250;
+    --c-surface-dim: 222 216 217;
+    --c-sc-lowest: 255 255 255;
+    --c-sc-low: 243 244 245;
+    --c-sc: 237 238 239;
+    --c-sc-high: 227 228 229;
+    --c-sc-highest: 223 223 224;
+    --c-surface-variant: 244 221 221;
+    --c-outline: 132 115 116;
+    --c-outline-variant: 217 193 193;
+    --c-error: 186 26 26;
+  }
+  .dark {
+    /* Dark tokens (project) */
+    --c-on-surface: 226 226 226;
+    --c-on-surface-variant: 217 193 193;
+    --c-on-background: 226 226 226;
+    --c-on-primary: 90 25 35;
+    --c-on-primary-container: 110 41 50;
+    --c-on-secondary: 0 47 100;
+    --c-primary: 255 179 184;
+    --c-primary-container: 240 145 153;
+    --c-secondary: 170 199 255;
+    --c-tertiary: 200 198 198;
+    --c-background: 19 19 19;
+    --c-surface: 19 19 19;
+    --c-surface-bright: 57 57 57;
+    --c-surface-dim: 19 19 19;
+    --c-sc-lowest: 14 14 14;
+    --c-sc-low: 27 27 27;
+    --c-sc: 31 31 31;
+    --c-sc-high: 42 42 42;
+    --c-sc-highest: 53 53 53;
+    --c-surface-variant: 53 53 53;
+    --c-outline: 161 140 140;
+    --c-outline-variant: 84 67 67;
+    --c-error: 255 180 171;
+  }
+
+  html, body, #root { height: 100%; }
+  body { font-family: 'Inter', sans-serif; background: rgb(var(--c-background)); color: rgb(var(--c-on-background)); -webkit-font-smoothing: antialiased; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  /* Hide scrollbars, keep scrollability */
+  .nice-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+  .nice-scroll::-webkit-scrollbar-track { background: transparent; }
+  .nice-scroll::-webkit-scrollbar-thumb { background: rgba(217,193,193,0.15); border-radius: 999px; }
+  .nice-scroll::-webkit-scrollbar-thumb:hover { background: rgba(217,193,193,0.3); }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-up { animation: fadeUp .35s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes pulseDot {
+    0%, 100% { opacity: .35; transform: scale(.85); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  .pulse-dot { animation: pulseDot 1.4s ease-in-out infinite; }
+
+  /* Subtle grain (very faint, inspired by GeekMaker DS rays-but-quieter) */
+  .grain::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: radial-gradient(circle at 20% 0%, rgba(240,145,153,0.05), transparent 50%),
+      radial-gradient(circle at 80% 100%, rgba(170,199,255,0.04), transparent 55%);
+  }
+</style>
+</head>
+<body class="dark grain">
+  <div id="root"></div>
+  <script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useMemo, useRef } = React;
+
+/*EDITMODE-BEGIN*/
+const TWEAK_DEFAULTS = {
+  "theme": "dark",
+  "density": "comfortable",
+  "navStyle": "rail",
+  "showStatusInHeader": true,
+  "accent": "rose"
+};
+/*EDITMODE-END*/
+
+// ── Mock data: realistic settings drawn from the user's actual page ──
+const CATEGORIES = [
+  { id: 'general',   label: '通用',     en: 'General',     icon: 'tune',           desc: '常用偏好与基础行为' },
+  { id: 'downloads', label: '下载',     en: 'Downloads',   icon: 'download',       desc: '保存路径、并发与默认行为' },
+  { id: 'window',    label: '窗口',     en: 'Window',      icon: 'desktop_windows',desc: '窗口、托盘与开机自启' },
+  { id: 'sync',      label: '云同步',   en: 'Sync',        icon: 'cloud_sync',     desc: '坚果云 WebDAV 配置与同步' },
+  { id: 'privacy',   label: '隐私',     en: 'Privacy',     icon: 'lock',           desc: '缓存、历史与数据清理' },
+  { id: 'appearance',label: '外观',     en: 'Appearance',  icon: 'palette',        desc: '主题、字号与界面密度' },
+  { id: 'advanced',  label: '高级',     en: 'Advanced',    icon: 'memory',         desc: '调试、日志与实验功能' },
+  { id: 'about',     label: '关于',     en: 'About',       icon: 'info',           desc: '版本、节点与系统信息' },
+];
+
+// Each category is a list of "blocks" (sections). A block has a title and rows.
+const SETTINGS_DATA = {
+  general: [
+    {
+      title: '搜索与缓存',
+      rows: [
+        { id: 'searchCache', kind: 'switch', icon: 'cached',
+          title: '启用搜索缓存', desc: '已搜索过的标题将从本地即时加载，禁用则每次都重新抓取。', value: true },
+        { id: 'autoUpdate', kind: 'switch', icon: 'system_update',
+          title: '自动检查更新', desc: '启动时静默检查是否有新版本，仅做提示，不会自动下载。', value: true },
+      ],
+    },
+    {
+      title: '语言与区域',
+      rows: [
+        { id: 'language', kind: 'select', icon: 'translate',
+          title: '界面语言', desc: '切换后将立即应用到全局界面与对话框。', value: 'zh-CN',
+          options: [{v:'zh-CN', l:'简体中文'}, {v:'zh-TW', l:'繁體中文'}, {v:'en', l:'English'}, {v:'ja', l:'日本語'}] },
+        { id: 'region', kind: 'select', icon: 'public',
+          title: '区域格式', desc: '影响日期、时间与数字的显示方式。', value: 'CN',
+          options: [{v:'CN', l:'中国 (CN)'}, {v:'JP', l:'日本 (JP)'}, {v:'US', l:'United States (US)'}] },
+      ],
+    },
+  ],
+  downloads: [
+    {
+      title: '保存路径',
+      rows: [
+        { id: 'downloadPath', kind: 'path', icon: 'folder_open',
+          title: '默认下载目录', desc: '文件将保存到 <path>/<title>/。留空则使用脚本同级目录。', value: '' },
+      ],
+    },
+    {
+      title: '下载行为',
+      rows: [
+        { id: 'concurrent', kind: 'slider', icon: 'multiline_chart',
+          title: '最大并发数', desc: '同时进行的下载任务数。过高可能触发服务器限速。', value: 4, min: 1, max: 12 },
+        { id: 'autoRetry', kind: 'switch', icon: 'restart_alt',
+          title: '失败自动重试', desc: '网络异常或限速时自动重新排队，最多 3 次。', value: true },
+        { id: 'verifyChecksum', kind: 'switch', icon: 'verified',
+          title: '完成后校验完整性', desc: '通过 SHA-1 校验下载文件是否完整。会增加完成耗时。', value: false },
+      ],
+    },
+  ],
+  window: [
+    {
+      title: '关闭与启动',
+      rows: [
+        { id: 'minimizeOnClose', kind: 'switch', icon: 'minimize',
+          title: '关闭到托盘', desc: '点击关闭按钮将隐藏窗口到系统托盘，单击托盘图标可重新显示。', value: false },
+        { id: 'autoLaunch', kind: 'switch', icon: 'rocket_launch',
+          title: '开机自启', desc: '系统启动时静默运行，并最小化到托盘。', value: false },
+        { id: 'launchPage', kind: 'select', icon: 'home',
+          title: '启动页面', desc: '应用启动后默认跳转到的页面。', value: 'library',
+          options: [{v:'library',l:'本地库'}, {v:'queue',l:'下载队列'}, {v:'search',l:'搜索'}, {v:'last',l:'上次离开的位置'}] },
+      ],
+    },
+  ],
+  sync: [
+    {
+      title: '坚果云 WebDAV',
+      hint: '应用密码在坚果云网页端「账号信息 → 安全选项 → 第三方应用管理」中生成。',
+      rows: [
+        { id: 'webdavAccount', kind: 'text', icon: 'account_circle',
+          title: '账号 (注册邮箱)', desc: '用于登录坚果云的邮箱地址。', value: '', placeholder: 'example@email.com' },
+        { id: 'webdavPassword', kind: 'password', icon: 'key',
+          title: '应用密码', desc: '坚果云后台生成的第三方应用密码。', value: '', placeholder: '••••••••••••' },
+        { id: 'webdavPath', kind: 'text', icon: 'folder_zip',
+          title: '远程文件路径', desc: '相对于 WebDAV 根目录,文件夹不存在时会自动创建。', value: 'MapleTools/homework.json' },
+      ],
+      footer: { kind: 'test-button', label: '测试连接', icon: 'wifi_find' },
+    },
+    {
+      title: '同步策略',
+      rows: [
+        { id: 'autoSync', kind: 'switch', icon: 'sync',
+          title: '自动同步', desc: '保存作业表时自动推送到 WebDAV,并在启动时拉取最新版本。', value: true },
+        { id: 'syncInterval', kind: 'select', icon: 'schedule',
+          title: '同步间隔', desc: '后台轮询拉取远端变更的频率。', value: '5min',
+          options: [{v:'manual',l:'仅手动'},{v:'1min',l:'每 1 分钟'},{v:'5min',l:'每 5 分钟'},{v:'30min',l:'每 30 分钟'}] },
+      ],
+    },
+  ],
+  privacy: [
+    {
+      title: '本地数据',
+      rows: [
+        { id: 'historyKeep', kind: 'select', icon: 'history',
+          title: '保留搜索历史', desc: '超过期限的历史记录将被自动清理。', value: '30d',
+          options: [{v:'7d',l:'7 天'},{v:'30d',l:'30 天'},{v:'90d',l:'90 天'},{v:'forever',l:'永久'}] },
+        { id: 'sendCrash', kind: 'switch', icon: 'bug_report',
+          title: '发送匿名崩溃日志', desc: '帮助修复影响范围较大的稳定性问题,不包含任何个人信息。', value: false },
+      ],
+    },
+    {
+      title: '清理',
+      rows: [
+        { id: 'clearCache', kind: 'action', icon: 'mop',
+          title: '清空搜索缓存', desc: '当前缓存约 28.4 MB。', actionLabel: '清空', tone: 'danger' },
+        { id: 'clearHistory', kind: 'action', icon: 'delete_sweep',
+          title: '清空全部历史', desc: '该操作不可撤销。', actionLabel: '清空', tone: 'danger' },
+      ],
+    },
+  ],
+  appearance: [
+    {
+      title: '主题',
+      rows: [
+        { id: 'theme', kind: 'segment', icon: 'contrast',
+          title: '颜色模式', desc: '深色与浅色之间切换,或跟随系统设置。', value: 'dark',
+          options: [{v:'light',l:'浅色'},{v:'dark',l:'深色'},{v:'auto',l:'跟随系统'}] },
+        { id: 'accent', kind: 'swatches', icon: 'palette',
+          title: '强调色', desc: '用于按钮、链接和高亮。', value: 'rose',
+          options: [
+            {v:'rose',  c:'#f09199'},
+            {v:'sky',   c:'#aac7ff'},
+            {v:'mint',  c:'#a0f5c3'},
+            {v:'plum',  c:'#c8a5e2'},
+            {v:'amber', c:'#f0c674'},
+          ] },
+      ],
+    },
+    {
+      title: '排版与密度',
+      rows: [
+        { id: 'fontScale', kind: 'slider', icon: 'format_size',
+          title: '字号缩放', desc: '影响所有正文与标签字号。', value: 100, min: 80, max: 130 },
+        { id: 'density', kind: 'segment', icon: 'density_medium',
+          title: '界面密度', desc: '影响列表行高、按钮高度等。', value: 'comfortable',
+          options: [{v:'compact',l:'紧凑'},{v:'comfortable',l:'舒适'},{v:'spacious',l:'宽松'}] },
+      ],
+    },
+  ],
+  advanced: [
+    {
+      title: '调试',
+      rows: [
+        { id: 'devtools', kind: 'switch', icon: 'code',
+          title: '启动时打开开发者工具', desc: '仅推荐在排查问题时开启,会增加启动耗时。', value: false },
+        { id: 'logLevel', kind: 'select', icon: 'subject',
+          title: '日志级别', desc: '影响 winthumb.log 的详细程度。', value: 'info',
+          options: [{v:'error',l:'仅错误'},{v:'warn',l:'警告及以上'},{v:'info',l:'信息及以上'},{v:'debug',l:'全部 (Debug)'}] },
+        { id: 'experimental', kind: 'switch', icon: 'science',
+          title: '启用实验性功能', desc: '提前体验未发布的功能,可能不稳定。', value: false },
+      ],
+    },
+  ],
+  about: [
+    {
+      title: '应用信息',
+      rows: [
+        { id: 'version',  kind: 'readonly', icon: 'package_2',  title: '版本',     desc: '当前已安装的应用版本。', value: 'MapleTools 1.4.2' },
+        { id: 'platform', kind: 'readonly', icon: 'devices',    title: '运行平台', desc: '操作系统与架构。',       value: 'Windows 11 · x64' },
+        { id: 'nodeId',   kind: 'readonly', icon: 'fingerprint',title: '节点 ID',  desc: '本机匿名标识符,用于同步识别。', value: 'ARC-7392-K' },
+      ],
+    },
+    {
+      title: '链接',
+      rows: [
+        { id: 'github',  kind: 'link', icon: 'star',     title: 'GitHub 仓库', desc: 'HGYJLLK / MapleTools', actionLabel: '前往' },
+        { id: 'docs',    kind: 'link', icon: 'menu_book',title: '使用手册',    desc: 'docs.hgyjllk.top',   actionLabel: '打开' },
+        { id: 'blog',    kind: 'link', icon: 'rss_feed', title: '极创客博客',  desc: 'blog.hgyjllk.top',   actionLabel: '打开' },
+      ],
+    },
+  ],
+};
+
+// ── Tweak helpers ──
+function useTweaks(defaults) {
+  const [tweaks, setTweaks] = useState(defaults);
+  const setTweak = (k, v) => setTweaks(s => ({ ...s, [k]: v }));
+  return [tweaks, setTweak];
+}
+
+// ── Reusable Row component ──
+function Row({ row, density, value, onChange, accentVar }) {
+  const heightCls = density === 'compact' ? 'py-3.5' : density === 'spacious' ? 'py-7' : 'py-5';
+  return (
+    <div className={`group flex items-start gap-5 px-6 ${heightCls} hover:bg-white/[0.02] transition-colors`}>
+      <div className="mt-0.5 w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant flex-shrink-0">
+        <span className="material-symbols-outlined text-[20px] leading-none">{row.icon}</span>
+      </div>
+      <div className="flex-1 min-w-0 pr-4">
+        <h3 className="font-headline font-semibold text-[14px] text-on-surface tracking-tight">{row.title}</h3>
+        <p className="font-body text-[12px] leading-relaxed text-on-surface-variant/60 mt-1 max-w-2xl">{row.desc}</p>
+      </div>
+      <div className="flex-shrink-0 self-center min-w-[180px] flex justify-end">
+        <Control row={row} value={value} onChange={onChange} accentVar={accentVar} />
+      </div>
+    </div>
+  );
+}
+
+function Control({ row, value, onChange, accentVar }) {
+  switch (row.kind) {
+    case 'switch':
+      return <Switch checked={!!value} onChange={onChange} />;
+    case 'select':
+      return (
+        <select value={value} onChange={e => onChange(e.target.value)}
+          className="bg-surface-container-high text-on-surface text-[12px] font-label rounded-lg px-3 py-2 border border-white/5 hover:border-white/15 focus:border-primary-container/40 focus:outline-none transition-colors min-w-[180px]">
+          {row.options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+        </select>
+      );
+    case 'segment':
+      return (
+        <div className="inline-flex bg-surface-container-high rounded-lg p-1 border border-white/5">
+          {row.options.map(o => (
+            <button key={o.v} onClick={() => onChange(o.v)}
+              className={`px-3 py-1.5 text-[11px] font-label uppercase tracking-wider rounded-md transition-all
+                ${value === o.v ? 'bg-primary-container text-on-primary-container shadow-sm' : 'text-on-surface-variant/70 hover:text-on-surface'}`}>
+              {o.l}
+            </button>
+          ))}
+        </div>
+      );
+    case 'swatches':
+      return (
+        <div className="flex items-center gap-2">
+          {row.options.map(o => (
+            <button key={o.v} onClick={() => onChange(o.v)} aria-label={o.v}
+              className={`w-7 h-7 rounded-full border-2 transition-all ${value === o.v ? 'border-on-surface scale-110' : 'border-transparent hover:scale-110'}`}
+              style={{ background: o.c }} />
+          ))}
+        </div>
+      );
+    case 'slider':
+      return (
+        <div className="flex items-center gap-3 w-[220px]">
+          <input type="range" min={row.min} max={row.max} value={value} onChange={e => onChange(+e.target.value)}
+            className="flex-1 accent-primary-container" />
+          <span className="font-label text-[12px] text-on-surface tabular-nums w-10 text-right">{value}{row.id==='fontScale'?'%':''}</span>
+        </div>
+      );
+    case 'text':
+    case 'password':
+      return (
+        <input type={row.kind} value={value} onChange={e => onChange(e.target.value)} placeholder={row.placeholder}
+          className="bg-surface-container-high text-on-surface placeholder-on-surface-variant/30 text-[12px] font-label rounded-lg px-3 py-2 border border-white/5 hover:border-white/15 focus:border-primary-container/40 focus:outline-none transition-colors w-[260px]" />
+      );
+    case 'path': {
+      const display = value || '默认: 脚本同级目录';
+      const isEmpty = !value;
+      return (
+        <div className="flex items-center gap-2 w-[320px]">
+          <div className={`flex-1 bg-surface-container-high rounded-lg px-3 py-2 text-[12px] font-label truncate border border-white/5 ${isEmpty ? 'text-on-surface-variant/35' : 'text-on-surface'}`}>{display}</div>
+          {!isEmpty && (
+            <button onClick={() => onChange('')} className="w-9 h-9 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/60 hover:text-on-surface flex items-center justify-center transition-colors" title="清空">
+              <span className="material-symbols-outlined text-[16px] leading-none">close</span>
+            </button>
+          )}
+          <button onClick={() => onChange('D:/MapleTools/Downloads')} className="w-9 h-9 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/80 hover:text-on-surface flex items-center justify-center transition-colors" title="选择文件夹">
+            <span className="material-symbols-outlined text-[16px] leading-none">drive_folder_upload</span>
+          </button>
+        </div>
+      );
+    }
+    case 'action': {
+      const tone = row.tone === 'danger' ? 'border-error/30 text-error hover:bg-error/10' : 'border-white/10 text-on-surface hover:bg-white/5';
+      return (
+        <button className={`px-4 py-2 rounded-lg border text-[12px] font-label uppercase tracking-wider transition-colors ${tone}`}>
+          {row.actionLabel}
+        </button>
+      );
+    }
+    case 'link':
+      return (
+        <button className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-white/10 text-on-surface text-[12px] font-label uppercase tracking-wider hover:bg-white/5 transition-colors">
+          {row.actionLabel}
+          <span className="material-symbols-outlined text-[14px] leading-none">arrow_outward</span>
+        </button>
+      );
+    case 'readonly':
+      return <span className="font-label text-[12px] text-on-surface-variant/80 tabular-nums">{value}</span>;
+    default: return null;
+  }
+}
+
+function Switch({ checked, onChange }) {
+  return (
+    <button onClick={() => onChange(!checked)}
+      className={`relative w-11 h-6 rounded-full transition-colors ${checked ? 'bg-primary-container' : 'bg-surface-container-highest'}`}>
+      <span className={`absolute top-[2px] left-[2px] w-5 h-5 rounded-full bg-white transition-transform shadow ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
+    </button>
+  );
+}
+
+// ── Header bar ──
+function Header({ stats, onToggleTheme, isDark, showStats }) {
+  return (
+    <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl border-b border-white/5">
+      <div className="h-14 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button className="w-8 h-8 rounded-lg hover:bg-white/5 flex items-center justify-center text-on-surface-variant" title="返回">
+            <span className="material-symbols-outlined text-[18px] leading-none">arrow_back</span>
+          </button>
+          <div className="flex items-center gap-2 font-label text-[11px] uppercase tracking-[0.2em] text-on-surface-variant/60">
+            <span className="text-on-surface/80">Dashboard</span>
+            <span className="text-on-surface-variant/30">/</span>
+            <span>System Preferences</span>
+          </div>
+        </div>
+        {showStats && (
+          <div className="flex items-center gap-5">
+            <Stat icon="storage" label={stats.disk} />
+            <Stat icon="downloading" label={`${stats.tasks} TASKS`} active={stats.tasks > 0} />
+            <Stat icon="speed" label={stats.speed} />
+            <div className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${stats.online ? 'bg-tertiary pulse-dot' : 'bg-error'}`} />
+              <span className={`material-symbols-outlined text-[14px] leading-none ${stats.online ? 'text-tertiary' : 'text-error'}`}>{stats.online ? 'wifi_tethering' : 'wifi_off'}</span>
+              <span className={`font-label text-[10px] tracking-widest ${stats.online ? 'text-tertiary' : 'text-error'}`}>{stats.online ? 'ONLINE' : 'OFFLINE'}</span>
+            </div>
+            <span className="h-4 w-px bg-white/10" />
+            <button onClick={onToggleTheme} className="w-8 h-8 rounded-lg hover:bg-white/5 flex items-center justify-center text-on-surface-variant" title="切换主题">
+              <span className="material-symbols-outlined text-[16px] leading-none">{isDark ? 'light_mode' : 'dark_mode'}</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </header>
+  );
+}
+function Stat({ icon, label, active }) {
+  return (
+    <div className={`flex items-center gap-1.5 ${active ? 'text-primary-container' : 'text-on-surface-variant/60'}`}>
+      <span className="material-symbols-outlined text-[14px] leading-none">{icon}</span>
+      <span className="font-label text-[10px] tracking-widest uppercase">{label}</span>
+    </div>
+  );
+}
+
+// ── Left rail (category nav) ──
+function CategoryRail({ active, onSelect, navStyle }) {
+  if (navStyle === 'tabs') {
+    return (
+      <div className="border-b border-white/5 bg-surface-container-low/40 sticky top-0 z-30 backdrop-blur-xl">
+        <div className="px-6 flex items-center gap-1 overflow-x-auto nice-scroll">
+          {CATEGORIES.map(c => {
+            const isActive = active === c.id;
+            return (
+              <button key={c.id} onClick={() => onSelect(c.id)}
+                className={`relative flex items-center gap-2 px-4 py-3 text-[13px] font-label uppercase tracking-wider whitespace-nowrap transition-colors
+                  ${isActive ? 'text-on-surface' : 'text-on-surface-variant/55 hover:text-on-surface'}`}>
+                <span className="material-symbols-outlined text-[16px] leading-none">{c.icon}</span>
+                {c.en}
+                {isActive && <span className="absolute left-3 right-3 -bottom-px h-0.5 bg-primary-container rounded-full" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <aside className="w-[260px] flex-shrink-0 border-r border-white/5 bg-surface-container-low/30 flex flex-col">
+      <div className="px-6 pt-8 pb-5">
+        <div className="font-label text-[10px] uppercase tracking-[0.3em] text-on-surface-variant/40 mb-2">Settings</div>
+        <h1 className="font-headline font-black text-[28px] tracking-tight text-on-surface leading-none">
+          系统偏好<span className="text-primary-container">.</span>
+        </h1>
+      </div>
+      <nav className="px-3 flex-1 overflow-y-auto nice-scroll pb-6">
+        {CATEGORIES.map(c => {
+          const isActive = active === c.id;
+          return (
+            <button key={c.id} onClick={() => onSelect(c.id)}
+              className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-0.5 text-left transition-colors
+                ${isActive ? 'bg-primary-container/15 text-on-surface' : 'text-on-surface-variant/70 hover:bg-white/[0.04] hover:text-on-surface'}`}>
+              <span className={`material-symbols-outlined text-[18px] leading-none flex-shrink-0 ${isActive ? 'text-primary-container' : ''}`}>{c.icon}</span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-[13px] font-headline font-semibold leading-tight truncate">{c.label}</span>
+                <span className="block text-[10px] font-label uppercase tracking-widest text-on-surface-variant/40 leading-tight mt-0.5">{c.en}</span>
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+      <div className="px-6 py-5 border-t border-white/5">
+        <div className="flex items-center gap-2 text-on-surface-variant/40">
+          <span className="material-symbols-outlined text-[14px] leading-none">fingerprint</span>
+          <span className="font-label text-[10px] tracking-widest uppercase">ARC-7392-K</span>
+        </div>
+        <div className="font-label text-[10px] tracking-widest uppercase text-on-surface-variant/30 mt-1.5">MapleTools 1.4.2</div>
+      </div>
+    </aside>
+  );
+}
+
+// ── Block (a section inside a category) ──
+function Block({ block, values, onChange, density, accentVar }) {
+  return (
+    <section className="bg-surface-container/60 rounded-2xl border border-white/5 overflow-hidden">
+      <header className="px-6 pt-5 pb-3 flex items-baseline justify-between gap-4">
+        <h2 className="font-headline font-bold text-[13px] uppercase tracking-[0.2em] text-on-surface-variant/60">{block.title}</h2>
+        {block.hint && <span className="font-body text-[11px] text-on-surface-variant/35 max-w-md text-right hidden md:block">{block.hint}</span>}
+      </header>
+      <div className="divide-y divide-white/5">
+        {block.rows.map(r => (
+          <Row key={r.id} row={r} density={density} value={values[r.id] ?? r.value}
+            onChange={(v) => onChange(r.id, v)} accentVar={accentVar} />
+        ))}
+      </div>
+      {block.footer && <BlockFooter footer={block.footer} />}
+    </section>
+  );
+}
+
+function BlockFooter({ footer }) {
+  const [state, setState] = useState('idle'); // idle | testing | ok
+  const onClick = () => {
+    if (state !== 'idle') return;
+    setState('testing');
+    setTimeout(() => {
+      setState('ok');
+      setTimeout(() => setState('idle'), 2200);
+    }, 1100);
+  };
+  return (
+    <div className="px-6 py-4 border-t border-white/5 bg-surface-container-low/40 flex items-center gap-3">
+      <button onClick={onClick} disabled={state === 'testing'}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 hover:bg-white/5 disabled:opacity-50 text-on-surface text-[12px] font-label uppercase tracking-wider transition-colors">
+        <span className={`material-symbols-outlined text-[16px] leading-none ${state==='testing'?'animate-spin':''}`}>
+          {state === 'ok' ? 'check_circle' : footer.icon}
+        </span>
+        {state === 'testing' ? '测试中…' : state === 'ok' ? '连接成功' : footer.label}
+      </button>
+      {state === 'ok' && <span className="font-label text-[11px] text-tertiary">已写入并验证 WebDAV 配置</span>}
+    </div>
+  );
+}
+
+// ── Tweaks panel ──
+function TweaksPanel({ tweaks, setTweak, open, onClose }) {
+  if (!open) return null;
+  return (
+    <div className="fixed top-20 right-6 z-50 w-[300px] bg-surface-container-high/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl">
+      <div className="px-5 py-4 flex items-center justify-between border-b border-white/5">
+        <span className="font-label text-[11px] uppercase tracking-[0.25em] text-on-surface-variant">Tweaks</span>
+        <button onClick={onClose} className="text-on-surface-variant/60 hover:text-on-surface">
+          <span className="material-symbols-outlined text-[18px] leading-none">close</span>
+        </button>
+      </div>
+      <div className="p-5 space-y-5">
+        <TweakRadio label="主题" value={tweaks.theme} onChange={v => setTweak('theme', v)}
+          options={[{v:'dark',l:'深色'},{v:'light',l:'浅色'}]} />
+        <TweakRadio label="导航样式" value={tweaks.navStyle} onChange={v => setTweak('navStyle', v)}
+          options={[{v:'rail',l:'侧边栏'},{v:'tabs',l:'顶部标签'}]} />
+        <TweakRadio label="界面密度" value={tweaks.density} onChange={v => setTweak('density', v)}
+          options={[{v:'compact',l:'紧凑'},{v:'comfortable',l:'舒适'},{v:'spacious',l:'宽松'}]} />
+        <TweakSwitch label="顶栏显示状态" value={tweaks.showStatusInHeader} onChange={v => setTweak('showStatusInHeader', v)} />
+      </div>
+    </div>
+  );
+}
+function TweakRadio({ label, value, onChange, options }) {
+  return (
+    <div>
+      <div className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2">{label}</div>
+      <div className="inline-flex bg-surface-container rounded-lg p-0.5 w-full">
+        {options.map(o => (
+          <button key={o.v} onClick={() => onChange(o.v)}
+            className={`flex-1 text-[11px] py-1.5 rounded-md transition-all ${value===o.v ? 'bg-primary-container text-on-primary-container font-bold' : 'text-on-surface-variant/70 hover:text-on-surface'}`}>
+            {o.l}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+function TweakSwitch({ label, value, onChange }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="font-label text-[11px] uppercase tracking-widest text-on-surface-variant">{label}</span>
+      <Switch checked={value} onChange={onChange} />
+    </div>
+  );
+}
+
+// ── Main App ──
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [active, setActive] = useState('general');
+  const [values, setValues] = useState({});       // { rowId: newValue }
+  const contentRef = useRef(null);
+
+  // Theme follow tweak
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', tweaks.theme === 'dark');
+  }, [tweaks.theme]);
+
+  // 修改配置时立即生效
+  const handleChange = (id, v) => {
+    setValues(s => ({ ...s, [id]: v }));
+    // 💡 在真实应用中，你可以在这里触发同步到本地存储或后端的代码
+    // 例如: ipcRenderer.send('save-setting', { key: id, value: v });
+  };
+
+  // System stats (fake for the mock)
+  const stats = { disk: '218G FREE', tasks: 2, speed: '5.2 MB/S', online: true };
+
+  const blocks = SETTINGS_DATA[active] || [];
+  const cat = CATEGORIES.find(c => c.id === active);
+
+  const isDark = tweaks.theme === 'dark';
+  const navStyle = tweaks.navStyle;
+  const density = tweaks.density;
+
+  return (
+    <div className="h-full flex flex-col relative">
+      <Header stats={stats} isDark={isDark}
+        onToggleTheme={() => setTweak('theme', isDark ? 'light' : 'dark')}
+        showStats={tweaks.showStatusInHeader} />
+
+      {/* Tweaks toggle (top-right floating) */}
+      <button onClick={() => setTweaksOpen(o => !o)}
+        className="fixed top-3 right-6 z-50 w-8 h-8 rounded-lg bg-surface-container-high/80 backdrop-blur border border-white/10 hover:bg-surface-container-highest text-on-surface-variant flex items-center justify-center"
+        title="Tweaks">
+        <span className="material-symbols-outlined text-[16px] leading-none">tune</span>
+      </button>
+
+      <div className="flex flex-1 min-h-0">
+        {navStyle === 'rail' && (
+          <CategoryRail active={active} onSelect={setActive} navStyle="rail" />
+        )}
+
+        <main ref={contentRef} className="flex-1 overflow-y-auto nice-scroll relative">
+          {navStyle === 'tabs' && (
+            <CategoryRail active={active} onSelect={setActive} navStyle="tabs" />
+          )}
+
+          <div className="max-w-3xl mx-auto px-8 py-10">
+            {/* Category header */}
+            <div key={active} className="fade-up mb-8">
+              <div className="flex items-center gap-3 font-label text-[10px] uppercase tracking-[0.3em] text-on-surface-variant/40 mb-3">
+                <span className="material-symbols-outlined text-[14px] leading-none">{cat.icon}</span>
+                {cat.en}
+              </div>
+              <h2 className="font-headline font-black text-[40px] tracking-tight text-on-surface leading-[1.05]">
+                {cat.label}
+                <span className="text-primary-container">.</span>
+              </h2>
+              <p className="font-body text-[14px] text-on-surface-variant/55 mt-2 max-w-xl">{cat.desc}</p>
+            </div>
+
+            {/* Blocks */}
+            <div key={`blocks-${active}`} className="fade-up space-y-5 pb-10">
+              {blocks.map((b, i) => (
+                <Block key={`${active}-${i}`} block={b} values={values} onChange={handleChange}
+                  density={density} accentVar="--c-primary-container" />
+              ))}
+
+              {/* Empty-state-resilient footnote */}
+              <div className="pt-4 flex items-center gap-3 text-on-surface-variant/30">
+                <span className="material-symbols-outlined text-[14px] leading-none">cloud_done</span>
+                <span className="font-label text-[10px] uppercase tracking-widest">设置已自动保存并实时生效</span>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <TweaksPanel tweaks={tweaks} setTweak={setTweak} open={tweaksOpen} onClose={() => setTweaksOpen(false)} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
