@@ -292,7 +292,7 @@ function DenseRow({
     <div
       className={`group flex items-center gap-2 h-9 px-3 border-b border-outline-variant/10 last:border-b-0 transition-colors
         ${isEditing ? 'bg-surface-container-high/60' : 'hover:bg-surface-container-high/30'}
-        ${isNew ? 'log-fade-up' : ''}`}
+        ${isNew ? 'animate-fade-up' : ''}`}
     >
       <span className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/30 tabular-nums w-6 flex-shrink-0">
         {String(idx).padStart(2, '0')}
@@ -426,7 +426,7 @@ function ChipRow({
 
   return (
     <div
-      className={`group inline-flex items-center h-7 rounded-md bg-surface-container/60 border border-outline-variant/15 hover:border-outline-variant/30 transition-colors ${isNew ? 'log-fade-up ring-1 ring-primary/40' : ''}`}
+      className={`group inline-flex items-center h-7 rounded-md bg-surface-container/60 border border-outline-variant/15 hover:border-outline-variant/30 transition-colors ${isNew ? 'animate-fade-up ring-1 ring-primary/40' : ''}`}
     >
       <span
         onDoubleClick={onStartEdit}
