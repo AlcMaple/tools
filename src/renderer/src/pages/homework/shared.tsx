@@ -112,7 +112,7 @@ export function matchesLog(entry: LogEntry, q: string): boolean {
   return terms.every(t => hay.includes(t))
 }
 
-export function escapeRe(s: string): string {
+function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
@@ -130,7 +130,7 @@ export function commonPrefixLen(teams: string[][]): number {
   return n
 }
 
-export function stripCjkLatinSpaces(s: string): string {
+function stripCjkLatinSpaces(s: string): string {
   return s
     .replace(/(?<=[一-鿿])\s+(?=[a-zA-Z0-9])/g, '')
     .replace(/(?<=[a-zA-Z0-9])\s+(?=[一-鿿])/g, '')
@@ -433,7 +433,7 @@ export function NoteTagInput({
 }
 
 /** Merge any pending draft text into the notes list (used by modal Save buttons). */
-export function flushNotes(notes: string[], draft: string): string[] {
+function flushNotes(notes: string[], draft: string): string[] {
   const t = draft.trim()
   if (!t) return notes
   if (notes.includes(t)) return notes
