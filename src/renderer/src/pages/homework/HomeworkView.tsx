@@ -113,14 +113,20 @@ function AddModal({
 
 // ── Edit defense modal ─────────────────────────────────────
 function EditDefenseModal({
-  group, onClose, onSave,
+  group, onClose, onSave, withNotes = false,
 }: {
   group: DefenseGroup
   onClose: () => void
-  onSave: (newDefense: string[]) => void
+  onSave: (newDefense: string[], newNotes: string[]) => void
+  /** When true, also expose a NoteTagInput for editing group-level notes (JJC). */
+  withNotes?: boolean
 }): JSX.Element {
   const [value, setValue] = useState(group.defense.join('、'))
-  const canSave = value.trim().length > 0 && value.trim() !== group.defense.join('、')
+  const noteState = useNoteTagState(group.notes ?? [])
+  const defenseChanged = value.trim() !== group.defense.join('、')
+  const finalNotes = noteState.finalNotes()
+  const notesChanged = withNotes && !notesEqual(finalNotes, group.notes ?? [])
+  const canSave = value.trim().length > 0 && (defenseChanged || notesChanged)
   return (
     <ModalShell onBackdrop={onClose}>
       <div className="p-7 pb-5">
@@ -148,6 +154,17 @@ function EditDefenseModal({
           <FormField label="防守方角色" dot="bg-primary" hint="用顿号 、 分隔，最多 5 名角色">
             <ModalInput value={value} onChange={e => setValue(e.target.value)} autoFocus />
           </FormField>
+          {withNotes && (
+            <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；点 ✕ 移除">
+              <NoteTagInput
+                notes={noteState.notes}
+                onNotesChange={noteState.setNotes}
+                draft={noteState.draft}
+                onDraftChange={noteState.setDraft}
+                placeholder="如：缺克制、配速 — 回车添加新备注"
+              />
+            </FormField>
+          )}
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
@@ -155,7 +172,7 @@ function EditDefenseModal({
           取消
         </button>
         <button
-          onClick={() => onSave(value.split('、').map(s => s.trim()).filter(Boolean))}
+          onClick={() => onSave(value.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-primary/40 bg-primary/10 text-sm font-bold text-primary hover:bg-primary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -508,28 +525,54 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     setData(prev => {
       const existing = prev.find(d => maybeSort(d.defense).join('、') === defKey)
       if (existing) {
-        // Adding to an existing defense: only append an attack if one was provided.
-        if (!team.length) return prev
-        return prev.map(d =>
-          d.id === existing.id
-            ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
-            : d
-        )
+        // Adding to an existing defense.
+        if (team.length) {
+          // Provided an attack — append it as a new attack row.
+          return prev.map(d =>
+            d.id === existing.id
+              ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
+              : d
+          )
+        }
+        // No attack but notes provided — merge into group-level notes.
+        if (notes.length === 0) return prev
+        return prev.map(d => {
+          if (d.id !== existing.id) return d
+          const merged = [...(d.notes ?? [])]
+          for (const n of notes) if (!merged.includes(n)) merged.push(n)
+          return { ...d, notes: merged, updatedAt: now }
+        })
       }
-      // New defense: include initial attack only if one was provided.
-      const attacks: Attack[] = team.length
-        ? [{ id: Date.now() + 1, team, notes, updatedAt: now }]
-        : []
-      return [...prev, { id: Date.now(), defense, updatedAt: now, attacks }]
+      // New defense.
+      if (team.length) {
+        // Notes belong to the attack row — group-level notes stay empty.
+        return [...prev, {
+          id: Date.now(),
+          defense,
+          updatedAt: now,
+          attacks: [{ id: Date.now() + 1, team, notes, updatedAt: now }],
+          notes: [],
+        }]
+      }
+      // No attack — keep notes on the group itself so they're still visible.
+      return [...prev, {
+        id: Date.now(),
+        defense,
+        updatedAt: now,
+        attacks: [],
+        notes,
+      }]
     })
     setIsAddOpen(false)
   }
 
-  const handleEditDefense = (newDefense: string[]) => {
+  const handleEditDefense = (newDefense: string[], newNotes: string[]) => {
     if (!editDefenseGroup) return
     const next = maybeSort(newDefense)
     setData(prev => prev.map(d =>
-      d.id === editDefenseGroup.id ? { ...d, defense: next, updatedAt: todayStr() } : d
+      d.id === editDefenseGroup.id
+        ? { ...d, defense: next, notes: attackOptional ? newNotes : (d.notes ?? []), updatedAt: todayStr() }
+        : d
     ))
     setEditDefenseGroup(null)
   }
@@ -644,30 +687,42 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
             const prefixLen = commonPrefixLen(sortedAttacks.map(a => a.team))
             const isCollapsed = collapsedIds.has(item.id)
 
+            const hasAttacks = item.attacks.length > 0
+            const groupNotes = item.notes ?? []
+
             return (
               <div key={item.id} className={groupIndex > 0 ? 'border-t border-white/[0.04]' : ''}>
                 <div
-                  className="flex items-center gap-3 px-5 py-3 bg-gradient-to-r from-primary/[0.06] to-transparent cursor-pointer hover:from-primary/[0.12] transition-colors select-none"
+                  className={`flex items-start gap-3 px-5 py-3 bg-gradient-to-r from-primary/[0.06] to-transparent transition-colors select-none ${hasAttacks ? 'cursor-pointer hover:from-primary/[0.12]' : ''}`}
                   onClick={e => {
+                    if (!hasAttacks) return
                     if ((e.target as HTMLElement).closest('.header-actions')) return
                     toggleCollapse(item.id)
                   }}
                 >
-                  <span
-                    className="material-symbols-outlined text-outline shrink-0 transition-transform duration-200"
-                    style={{ fontSize: 18, transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}
-                  >chevron_right</span>
-                  <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}>shield</span>
-                  <div className="flex flex-wrap items-center gap-x-0.5 text-[15px] font-bold tracking-tight shrink-0">
-                    {item.defense.map((c, i) => (
-                      <span key={i} className="text-primary">
-                        <Highlight text={c} query={query} />
-                        {i < item.defense.length - 1 && <span className="text-primary/40">、</span>}
-                      </span>
-                    ))}
+                  {hasAttacks ? (
+                    <span
+                      className="material-symbols-outlined text-outline shrink-0 transition-transform duration-200 mt-0.5"
+                      style={{ fontSize: 18, transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}
+                    >chevron_right</span>
+                  ) : (
+                    <span className="w-[18px] shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="material-symbols-outlined text-primary shrink-0 mt-0.5" style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}>shield</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-0.5 text-[15px] font-bold tracking-tight">
+                      {item.defense.map((c, i) => (
+                        <span key={i} className="text-primary">
+                          <Highlight text={c} query={query} />
+                          {i < item.defense.length - 1 && <span className="text-primary/40">、</span>}
+                        </span>
+                      ))}
+                    </div>
+                    {groupNotes.length > 0 && (
+                      <NoteChipList notes={groupNotes} query={query} />
+                    )}
                   </div>
-                  <div className="flex-1" />
-                  <div className="header-actions flex items-center gap-1 shrink-0">
+                  <div className="header-actions flex items-center gap-1 shrink-0 mt-0.5">
                     <span className="font-label text-[10px] uppercase tracking-widest text-outline mr-2">{item.updatedAt}</span>
                     <button className="p-1.5 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant hover:text-secondary" title="新增进攻阵容" onClick={() => setAddAttackTarget(item)}>
                       <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
@@ -688,6 +743,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
                   </div>
                 </div>
 
+                {hasAttacks && (
                 <div className={`collapse-body${isCollapsed ? ' collapsed' : ''}`}>
                   <div className="inner">
                     <div className="py-1">
@@ -730,6 +786,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
                     </div>
                   </div>
                 </div>
+                )}
               </div>
             )
           })}
@@ -746,7 +803,12 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
         />
       )}
       {editDefenseGroup && (
-        <EditDefenseModal group={editDefenseGroup} onClose={() => setEditDefenseGroup(null)} onSave={handleEditDefense} />
+        <EditDefenseModal
+          group={editDefenseGroup}
+          onClose={() => setEditDefenseGroup(null)}
+          onSave={handleEditDefense}
+          withNotes={attackOptional}
+        />
       )}
       {editAttackTarget && (
         <EditAttackModal atk={editAttackTarget.atk} onClose={() => setEditAttackTarget(null)} onSave={handleEditAttack} />
