@@ -1,6 +1,6 @@
 // Shared types, helpers, and primitive UI used by HomeworkView / ClassicView.
 
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 export interface Attack {
   id: number
@@ -14,6 +14,12 @@ export interface DefenseGroup {
   defense: string[]
   updatedAt: string
   attacks: Attack[]
+  /**
+   * Group-level notes — used by JJC 换防 (attackOptional mode) when the user
+   * records a defense lineup without any attacks. They render under the group
+   * header so the user can see them on first scan. Default `[]`.
+   */
+  notes?: string[]
 }
 
 /** Coerce legacy `note: string` or fresh `notes: string[]` into a normalized array. */
@@ -39,6 +45,7 @@ export function normalizeHomework(groups: DefenseGroup[]): DefenseGroup[] {
   const now = todayStr()
   return groups.map(g => ({
     ...g,
+    notes: coerceNotes((g as { notes?: unknown }).notes),
     attacks: g.attacks.map(a => ({
       id: a.id,
       team: a.team,
@@ -383,6 +390,23 @@ export function NoteTagInput({
   placeholder?: string
 }): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null)
+  const measureRef = useRef<HTMLSpanElement>(null)
+  const [inputWidth, setInputWidth] = useState<number>(140)
+
+  // Auto-size the input to fit the current draft (or placeholder when empty).
+  // The hidden measuring span shares typography with the input, so its rendered
+  // width is the natural width the input needs to display the same text.
+  // Result: the input only consumes the space it actually needs on row 1, and
+  // the flex-wrap container keeps it on row 1 as long as it fits — only
+  // wrapping to row 2 when the typed text genuinely overflows.
+  useLayoutEffect(() => {
+    if (!measureRef.current) return
+    const measured = measureRef.current.offsetWidth
+    // Empty + no chips: roomy slot so the placeholder reads naturally.
+    // Empty + chips present: just enough for the cursor + a couple chars.
+    const minW = notes.length === 0 ? 140 : 14
+    setInputWidth(Math.max(minW, measured + 12))
+  }, [draft, notes.length, placeholder])
 
   const commit = (): void => {
     const t = draft.trim()
@@ -395,6 +419,12 @@ export function NoteTagInput({
     onNotesChange(notes.filter((_, idx) => idx !== i))
   }
 
+  // Text the measuring span renders. Mirrors what the user sees:
+  // - draft when typing
+  // - placeholder when empty and chips are absent
+  // - empty (so the input collapses to minW) when chips are present and no draft
+  const measureText = draft || (notes.length === 0 ? placeholder ?? '' : '')
+
   return (
     <div
       onClick={(e) => {
@@ -402,7 +432,7 @@ export function NoteTagInput({
         // not when clicking a chip / button / inner input.
         if (e.target === e.currentTarget) inputRef.current?.focus()
       }}
-      className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-2.5 py-2 flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary/30 transition-all min-h-[42px] cursor-text"
+      className="relative w-full bg-surface-container border border-outline-variant/20 rounded-lg px-2.5 py-2 flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary/30 transition-all min-h-[42px] cursor-text"
     >
       {notes.map((n, i) => (
         <NoteChip
@@ -412,6 +442,16 @@ export function NoteTagInput({
           onRemove={() => removeAt(i)}
         />
       ))}
+      {/* Hidden span — measures the natural width of `measureText` in the same
+          typography as the input below. `whitespace-pre` preserves spaces. */}
+      <span
+        ref={measureRef}
+        aria-hidden="true"
+        className="invisible absolute whitespace-pre text-sm pointer-events-none"
+        style={{ left: -9999, top: -9999 }}
+      >
+        {measureText || ' '}
+      </span>
       <input
         ref={inputRef}
         spellCheck={false}
@@ -430,11 +470,11 @@ export function NoteTagInput({
         }}
         onBlur={commit}
         placeholder={notes.length === 0 ? placeholder : ''}
-        // When chips are present the trailing input only needs enough room to
-        // be clickable / typeable (60px). When the row is empty we widen it so
-        // the placeholder reads naturally. This avoids a forced wrap that
-        // leaves an awkward blank second row when chips don't quite fill row 1.
-        className={`flex-1 bg-transparent outline-none text-sm text-on-surface placeholder:text-on-surface-variant/35 py-0.5 ${notes.length === 0 ? 'min-w-[140px]' : 'min-w-[60px]'}`}
+        style={{ width: inputWidth }}
+        // flex-shrink-0 + explicit width = the input occupies exactly
+        // `inputWidth` and the flex-wrap parent will wrap it to row 2 only
+        // when row 1 cannot fit it.
+        className="flex-shrink-0 bg-transparent outline-none text-sm text-on-surface placeholder:text-on-surface-variant/35 py-0.5"
       />
     </div>
   )
