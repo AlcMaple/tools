@@ -319,8 +319,8 @@ function SettingsHeader({
               <Stat icon="storage" label={diskFreeLabel} />
               <Stat icon="downloading" label={`${activeTasks} TASKS`} active={activeTasks > 0} />
               <Stat icon="speed" label={speedLabel} />
-              <div className={`flex items-center gap-1.5 ${networkOnline ? "text-tertiary" : "text-error"}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? "bg-tertiary animate-pulse" : "bg-error"}`} />
+              <div className={`flex items-center gap-1.5 ${networkOnline ? "text-green-400" : "text-red-500"}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? "bg-green-400 animate-pulse" : "bg-red-500"}`} />
                 <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{networkOnline ? "wifi_tethering" : "wifi_off"}</span>
                 <span className="font-label text-[10px] tracking-widest uppercase">{networkOnline ? "Online" : "Offline"}</span>
               </div>
