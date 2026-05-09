@@ -1,16 +1,27 @@
-export interface DownloadTask {
+/**
+ * Download task store.
+ *
+ * `DownloadTask` is a discriminated union over `source`. The common fields
+ * (id / title / cover / status / epStatus / ...) are the same for every site;
+ * the per-source variants carry whatever each downloader needs to resume:
+ *
+ *   - xifan    → templates[] + sourceIdx  (sourceIdx is the templates array index)
+ *   - girigiri → girigiriEps[]            (HLS m3u8, no source switching)
+ *   - aowu     → aowuId + sourceIdx + aowuEps + aowuSources
+ *                (sourceIdx is FantasyKon's opaque source_id, e.g. 4116)
+ *
+ * Tasks persist to localStorage via `download:save-state` IPC. Old tasks (saved
+ * before the discriminated union landed) had a flat shape with all per-source
+ * fields optional on the common type; `init()` migrates those into the new
+ * shape and drops anything that can't be reconstructed.
+ */
+
+interface TaskCommon {
   id: string
-  source?: 'xifan' | 'girigiri' | 'aowu'
   title: string
   cover: string
   startEp: number
   endEp: number
-  templates: string[]
-  sourceIdx?: number
-  girigiriEps?: { idx: number; name: string; url: string }[]
-  aowuId?: string
-  aowuEps?: { idx: number; label: string }[]
-  aowuSources?: { idx: number; name: string }[]
   savePath?: string
   status: 'running' | 'paused' | 'done' | 'error'
   epStatus: Record<number, 'pending' | 'downloading' | 'done' | 'error' | 'paused'>
@@ -18,6 +29,32 @@ export interface DownloadTask {
   startedAt: number
   completedAt?: number
 }
+
+export interface XifanTaskData {
+  source: 'xifan'
+  /** All valid templates for the original episode set; sourceIdx picks one. */
+  templates: string[]
+  /** Index into `templates`. 0 if never switched. */
+  sourceIdx: number
+}
+
+export interface GirigiriTaskData {
+  source: 'girigiri'
+  girigiriEps: { idx: number; name: string; url: string }[]
+}
+
+export interface AowuTaskData {
+  source: 'aowu'
+  /** Numeric video id as a string (FantasyKon's `id`), e.g. "2893". */
+  aowuId: string
+  /** FantasyKon source_id, e.g. 4116. NOT an index — opaque. */
+  sourceIdx: number
+  aowuEps: { idx: number; label: string }[]
+  /** All sources discovered on the watch page, used by source-cycling UI. */
+  aowuSources: { idx: number; name: string }[]
+}
+
+export type DownloadTask = TaskCommon & (XifanTaskData | GirigiriTaskData | AowuTaskData)
 
 type Listener = () => void
 
@@ -60,11 +97,64 @@ function notifyProgressThrottled(): void {
   })
 }
 
+/**
+ * Coerce a localStorage-loaded payload (which may predate the discriminated
+ * union and have missing or extra fields) into a valid DownloadTask. Returns
+ * null if the task can't be reconstructed (e.g. girigiri task without
+ * girigiriEps — we can't resume without the URLs).
+ */
+function migrateLoadedTask(raw: unknown): DownloadTask | null {
+  if (!raw || typeof raw !== 'object') return null
+  const t = raw as Partial<DownloadTask> & Record<string, unknown>
+  if (typeof t.id !== 'string' || typeof t.title !== 'string') return null
+
+  // Common fields with safe defaults.
+  const common: TaskCommon = {
+    id: t.id,
+    title: t.title,
+    cover: typeof t.cover === 'string' ? t.cover : '',
+    startEp: typeof t.startEp === 'number' ? t.startEp : 1,
+    endEp: typeof t.endEp === 'number' ? t.endEp : 1,
+    savePath: typeof t.savePath === 'string' ? t.savePath : undefined,
+    status: (t.status === 'running' || t.status === 'paused' || t.status === 'done' || t.status === 'error')
+      ? t.status : 'error',
+    epStatus: (t.epStatus && typeof t.epStatus === 'object') ? t.epStatus as TaskCommon['epStatus'] : {},
+    epProgress: (t.epProgress && typeof t.epProgress === 'object') ? t.epProgress as TaskCommon['epProgress'] : {},
+    startedAt: typeof t.startedAt === 'number' ? t.startedAt : Date.now(),
+    completedAt: typeof t.completedAt === 'number' ? t.completedAt : undefined,
+  }
+
+  if (t.source === 'girigiri') {
+    if (!Array.isArray(t.girigiriEps) || t.girigiriEps.length === 0) return null
+    return { ...common, source: 'girigiri', girigiriEps: t.girigiriEps as GirigiriTaskData['girigiriEps'] }
+  }
+  if (t.source === 'aowu') {
+    if (typeof t.aowuId !== 'string' || !Array.isArray(t.aowuEps) || !Array.isArray(t.aowuSources)) return null
+    return {
+      ...common,
+      source: 'aowu',
+      aowuId: t.aowuId,
+      sourceIdx: typeof t.sourceIdx === 'number' ? t.sourceIdx : 1,
+      aowuEps: t.aowuEps as AowuTaskData['aowuEps'],
+      aowuSources: t.aowuSources as AowuTaskData['aowuSources'],
+    }
+  }
+  // No source field, or source: 'xifan' → xifan (legacy default).
+  return {
+    ...common,
+    source: 'xifan',
+    templates: Array.isArray(t.templates) ? t.templates as string[] : [],
+    sourceIdx: typeof t.sourceIdx === 'number' ? t.sourceIdx : 0,
+  }
+}
+
 export const downloadStore = {
   async init(): Promise<void> {
     try {
       const saved = await window.systemApi.loadDownloadState()
-      for (const t of saved as DownloadTask[]) {
+      for (const raw of (saved as unknown[])) {
+        const t = migrateLoadedTask(raw)
+        if (!t) continue
         if (t.status === 'running' || t.status === 'paused') {
           const newEpStatus = { ...t.epStatus }
           for (const ep of Object.keys(newEpStatus)) {
@@ -105,7 +195,9 @@ export const downloadStore = {
   updateTask(id: string, updates: Partial<DownloadTask>): void {
     const t = tasks.get(id)
     if (!t) return
-    tasks.set(id, { ...t, ...updates })
+    // Cast: TS can't prove the partial keeps the discriminator narrow, but
+    // every callsite either omits `source` or passes the same one.
+    tasks.set(id, { ...t, ...updates } as DownloadTask)
     notify()
   },
 
