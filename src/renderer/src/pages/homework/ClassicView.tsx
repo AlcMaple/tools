@@ -3,6 +3,7 @@ import {
   ClassicGroup, ClassicTeam,
   Highlight, ModalShell, FormField, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
+  createTeamPasteHandler,
   commonPrefixLen, matchesClassic, todayStr,
 } from './shared'
 
@@ -191,7 +192,16 @@ function EditTeamModal({
             )}
           </div>
           <FormField label="阵容角色" dot="bg-secondary" hint="用顿号 、 分隔，最多 5 名角色">
-            <ModalInput value={teamValue} onChange={e => setTeamValue(e.target.value)} autoFocus />
+            <ModalInput
+              value={teamValue}
+              onChange={e => setTeamValue(e.target.value)}
+              onPaste={createTeamPasteHandler({
+                setTeam: setTeamValue,
+                setNotes: noteState.setNotes,
+                currentNotes: noteState.notes,
+              })}
+              autoFocus
+            />
           </FormField>
           <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；点 ✕ 移除">
             <NoteTagInput
@@ -253,6 +263,11 @@ function AddTeamModal({
             placeholder="例：els、七七香、涅比亚、猪妹、春剑"
             value={teamValue}
             onChange={e => setTeamValue(e.target.value)}
+            onPaste={createTeamPasteHandler({
+              setTeam: setTeamValue,
+              setNotes: noteState.setNotes,
+              currentNotes: noteState.notes,
+            })}
             autoFocus
           />
           <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
