@@ -1,4 +1,4 @@
-// 我的追番 — aggregate view + the canonical editing surface for status / episode / notes.
+// 我的追番 — aggregate view + the canonical editing surface for status / episode.
 //
 // AnimeInfo deliberately keeps only a Track / Untrack toggle (the sticky left
 // column there has no room for editing UI). All real progress management lives
@@ -10,6 +10,7 @@
 //   the page collapsing into nothing when a bucket is empty.
 // - WebDAV sync isn't owned here — HomeworkLookup's shared blob picks `tracks`
 //   up alongside homework/jjc/pjjc/classic/log (see `_v=5` migration there).
+// - 备注字段在 store 里仍保留（向后兼容老数据），但不再有 UI 入口。
 
 import { useMemo, useState } from 'react'
 import TopBar from '../components/TopBar'
@@ -19,11 +20,6 @@ import {
   type AnimeStatus,
   type AnimeTrack,
 } from '../stores/animeTrackStore'
-import {
-  NoteTagInput,
-  useNoteTagState,
-  NoteChipList,
-} from './homework/shared'
 import { WatchHere } from '../components/WatchHere'
 
 // ── Status taxonomy ──────────────────────────────────────────────────────────
@@ -58,7 +54,7 @@ function statusMetaOf(s: AnimeStatus): StatusMeta {
 function matchesAnime(t: AnimeTrack, q: string): boolean {
   if (!q) return true
   const needle = q.toLowerCase()
-  const hay = [t.title, t.titleCn ?? '', t.notes.join(' '), t.bindings.map(b => b.sourceTitle).join(' ')]
+  const hay = [t.title, t.titleCn ?? '', t.bindings.map(b => b.sourceTitle).join(' ')]
     .join(' ')
     .toLowerCase()
   return hay.includes(needle)
@@ -239,10 +235,6 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
     if (clamped > 0 && track.status === 'plan') patch.status = 'watching'
     animeTrackStore.upsert(patch)
   }
-  const setNotes = (notes: string[]): void => {
-    animeTrackStore.upsert({ bgmId: track.bgmId, notes })
-  }
-
   return (
     <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex">
       {/* Cover */}
@@ -321,17 +313,12 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
           />
         </div>
 
-        {/* Notes — inline NoteTagInput so the user can scribble without a
-            separate edit modal. Auto-saves on Enter / blur via committed
-            notes change handlers. */}
-        <NotesEditor notes={track.notes} onChange={setNotes} />
-
         {/* Source bindings → 跳转 chip。每个绑定一颗按钮，点击在外部浏览器
             打开源详情页（不算具体集数 URL，省一次抓 watch info 的开销，
             chip 上的 "ep N" 提醒用户当前进度）。SearchDownload 的「关联追番」
             是这里 chip 的来源；本行没有编辑入口，删除绑定走完整删除流程。 */}
         {track.bindings.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 -mt-1">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35 mr-0.5">
               在线观看
             </span>
@@ -455,77 +442,6 @@ function EpisodeInput({
       <span className="text-on-surface-variant/40">
         / {total != null ? total : '?'}
       </span>
-    </div>
-  )
-}
-
-// ── Notes editor ─────────────────────────────────────────────────────────────
-
-function NotesEditor({
-  notes, onChange,
-}: { notes: string[]; onChange: (n: string[]) => void }): JSX.Element {
-  // Edit-on-click pattern — the row stays compact (just the chips) until the
-  // user clicks the pencil. Then we swap in NoteTagInput. Avoids cluttering
-  // every row with a permanent input field.
-  const [editing, setEditing] = useState(false)
-  const state = useNoteTagState(notes)
-
-  if (!editing) {
-    return (
-      <div className="flex items-center gap-2 flex-wrap min-h-[20px]">
-        {notes.length > 0 ? (
-          <NoteChipList notes={notes} />
-        ) : (
-          <button
-            onClick={() => setEditing(true)}
-            className="font-label text-[10px] text-on-surface-variant/40 hover:text-primary uppercase tracking-widest transition-colors flex items-center gap-1"
-          >
-            <span className="material-symbols-outlined text-[14px] leading-none">add</span>
-            添加备注
-          </button>
-        )}
-        {notes.length > 0 && (
-          <button
-            onClick={() => setEditing(true)}
-            className="ml-1 font-label text-[10px] text-on-surface-variant/40 hover:text-primary uppercase tracking-widest transition-colors flex items-center gap-1"
-          >
-            <span className="material-symbols-outlined text-[12px] leading-none">edit</span>
-            编辑
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  // Editing mode — commit current draft + persist on save / cancel.
-  const save = (): void => {
-    onChange(state.finalNotes())
-    setEditing(false)
-  }
-  return (
-    <div className="flex flex-col gap-1.5">
-      <NoteTagInput
-        notes={state.notes}
-        onNotesChange={state.setNotes}
-        draft={state.draft}
-        onDraftChange={state.setDraft}
-        placeholder="如：看到了！— 回车添加新备注"
-      />
-      <div className="flex items-center gap-2">
-        <button
-          onClick={save}
-          className="px-3 py-1 rounded-md border border-primary/40 bg-primary/10 text-primary font-label text-[11px] uppercase tracking-widest hover:bg-primary/20 transition-colors flex items-center gap-1"
-        >
-          <span className="material-symbols-outlined text-[13px] leading-none">check</span>
-          保存
-        </button>
-        <button
-          onClick={() => setEditing(false)}
-          className="px-3 py-1 rounded-md border border-outline-variant/20 font-label text-[11px] uppercase tracking-widest text-on-surface-variant hover:bg-surface-container-high transition-colors"
-        >
-          取消
-        </button>
-      </div>
     </div>
   )
 }
