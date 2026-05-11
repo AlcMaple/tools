@@ -7,7 +7,7 @@ declare global {
   const __APP_VERSION__: string
 }
 
-import type { BgmSearchResult, BgmDetail } from './types/bgm'
+import type { BgmSearchResult, BgmDetail, BgmCalendarResult } from './types/bgm'
 import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 import type { AowuSearchResult, AowuEpisode, AowuWatchInfo } from './types/aowu'
@@ -129,6 +129,8 @@ declare global {
       /** Subscribe to per-page progress events. Fires `(current, total)` after
        * each page completes. Returns an unsubscribe function. */
       onSearchProgress: (cb: (current: number, total: number) => void) => () => void
+      /** Weekly airing calendar. `update=true` bypasses the 24h cache. */
+      calendar: (update?: boolean) => Promise<BgmCalendarResult>
     }
     xifanApi: {
       getCaptcha: () => Promise<{ image_b64: string }>

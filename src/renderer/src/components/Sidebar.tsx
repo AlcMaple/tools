@@ -13,6 +13,7 @@ const navItems: NavItem[] = [
   { label: "Download Queue", path: "/queue", icon: "download_for_offline" },
   { label: "Anime Info", path: "/anime-info", icon: "menu_book" },
   { label: "My Anime", path: "/my-anime", icon: "bookmarks" },
+  { label: "Calendar", path: "/calendar", icon: "calendar_month" },
   { label: "File Explorer", path: "/file-explorer", icon: "folder_managed" },
   { label: "Homework", path: "/homework", icon: "swords" },
 ];
