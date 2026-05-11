@@ -170,6 +170,21 @@ class AnimeTrackStore {
     return this.upsert({ ...patch, bindings })
   }
 
+  /**
+   * Remove a single binding by (source, sourceKey). No-op if the track or the
+   * matching binding doesn't exist. Returns true if a binding was removed.
+   */
+  removeBinding(bgmId: number, source: AnimeBinding['source'], sourceKey: string): boolean {
+    const map = this.ensure()
+    const prev = map.get(bgmId)
+    if (!prev) return false
+    const key = sourceKey.trim()
+    const next = prev.bindings.filter(b => !(b.source === source && b.sourceKey.trim() === key))
+    if (next.length === prev.bindings.length) return false
+    this.upsert({ bgmId, bindings: next })
+    return true
+  }
+
   delete(bgmId: number): boolean {
     const map = this.ensure()
     const removed = map.delete(bgmId)
