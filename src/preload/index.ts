@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('bgmApi', {
     ipcRenderer.on('bgm:search-progress', handler)
     return () => ipcRenderer.removeListener('bgm:search-progress', handler)
   },
+  /** Weekly airing calendar (本季新番). `update=true` bypasses the 24h cache. */
+  calendar: (update?: boolean) => ipcRenderer.invoke('bgm:calendar', update),
 })
 
 // Single subscription point for download progress events. The main process

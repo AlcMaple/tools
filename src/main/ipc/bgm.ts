@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { searchBgm } from '../bgm/search'
 import { getBgmDetail } from '../bgm/detail'
+import { getBgmCalendar } from '../bgm/calendar'
 
 export function registerBgmIpc(): void {
   ipcMain.handle(
@@ -19,4 +20,9 @@ export function registerBgmIpc(): void {
     },
   )
   ipcMain.handle('bgm:detail', async (_event, subjectId: number) => getBgmDetail(subjectId))
+  // `update=true` bypasses the 24h cache and refetches. Renderer wires this
+  // up to a small refresh button on the calendar page.
+  ipcMain.handle('bgm:calendar', async (_event, update?: boolean) =>
+    getBgmCalendar(update ?? false),
+  )
 }
