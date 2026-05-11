@@ -57,8 +57,9 @@ export default function AnimeCalendar(): JSX.Element {
     <div className="relative min-h-full bg-background">
       <TopBar placeholder="搜索本周番剧..." />
       <div className="pt-16">
-        {/* Sticky header */}
-        <div className="sticky top-0 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-8 py-5">
+        {/* Sticky header —— top-16 让它贴在 TopBar (fixed top-0 h-16) 下面,
+            而不是被 TopBar 的 backdrop-blur 半透明压在身下。 */}
+        <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-8 py-5">
           <div className="flex items-end justify-between gap-6 flex-wrap">
             <div>
               <div className="flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
@@ -129,10 +130,11 @@ function CalendarGrid({ result }: { result: BgmCalendarResult }): JSX.Element {
   }
 
   return (
-    // 7 列等分 + 不设 min-w，自适应容器宽度，不会左右溢出。
-    // 列头随内容一起滚动（不 sticky），sticky 会和 page header 出现高度
-    // 偏差导致内容从缝隙穿透；用户滚多了周回顶部就能看到。
-    <div className="px-6 py-6 grid grid-cols-7 gap-3">
+    // 7 列固定宽度（不自适应容器）。窗口够宽时 7 列贴边对齐，窄了就横向
+    // 滚动；底部水平滚动条样式已经和侧边对齐（index.css custom-scrollbar）。
+    // 列头随内容一起滚动（不 sticky） —— 之前用 top-[148px] 会和 page sticky
+    // header 的实际高度对不上，留出"缝隙"让内容穿透。
+    <div className="px-6 py-6 grid grid-cols-[repeat(7,180px)] gap-3">
       {result.data.map(day => (
         <DayColumn key={day.id} day={day} isToday={day.id === todayBgmId} />
       ))}
@@ -265,30 +267,30 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
         </div>
       </div>
 
-      {/* 信息区固定高度 + min-h 占位，保证同列卡片高度一致：
-          - 标题强制 2 行
-          - sub 强制 1 行（无 sub 时塞个 nbsp 占位，避免塌陷）
-          - meta 行始终渲染（无值用空字符串），保留底部 baseline
-          WatchHere chips 只在用户已绑过源时出现，这种番在 calendar 视图里
-          是少数；让它们略高一点能直观看出"这部已经追了"。 */}
+      {/* 信息区精确固定高度（用 h-* 而非 min-h-*），保证所有卡片高度一致：
+          - 标题 h-[30px] = text-xs 12px × leading-tight 1.25 × 2 行
+          - sub h-[14px] ≈ 10px × 1.25 × 1 行（无 sub 时空格占位防塌陷）
+          - meta 行 h-[12px] 始终渲染，score/eps 缺值时占位空字符串
+          WatchHere chips 仅在已绑过源时出现，calendar 里这种卡是少数；
+          多出来的高度等同于"这部已追"的视觉信号，不强求对齐。 */}
       <div className="px-2 py-2 flex flex-col gap-0.5">
         <h3
-          className="text-xs font-bold text-on-surface line-clamp-2 leading-tight min-h-[2em]"
+          className="text-xs font-bold text-on-surface line-clamp-2 leading-tight h-[30px]"
           title={displayTitle}
         >
           {displayTitle}
         </h3>
         <p
-          className="text-[10px] text-on-surface-variant/40 line-clamp-1 leading-tight min-h-[1.1em]"
+          className="text-[10px] text-on-surface-variant/40 line-clamp-1 leading-tight h-[14px]"
           title={sub || undefined}
         >
           {sub || ' '}
         </p>
-        <div className="flex items-center justify-between gap-1 min-h-[12px]">
-          <span className="font-label text-[9px] text-primary/70">
+        <div className="flex items-center justify-between gap-1 h-[12px]">
+          <span className="font-label text-[9px] text-primary/70 leading-none">
             {item.score > 0 ? `★ ${item.score.toFixed(1)}` : ''}
           </span>
-          <span className="font-label text-[9px] text-on-surface-variant/40 tracking-wider">
+          <span className="font-label text-[9px] text-on-surface-variant/40 tracking-wider leading-none">
             {item.episodes > 0 ? `${item.episodes} eps` : ''}
           </span>
         </div>
