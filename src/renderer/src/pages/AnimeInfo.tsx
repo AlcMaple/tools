@@ -12,7 +12,6 @@ import { GirigiriDownloadConfigModal } from '../components/GirigiriDownloadModal
 import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
-import { AnimeStatusCard } from './anime/AnimeStatusCard'
 import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -769,11 +768,21 @@ function DetailView({
             >
               Official Site
             </button>
-            {/* Tracking CTA only present when the user hasn't added this anime yet —
-                once tracked, the AnimeStatusCard below takes over the role. */}
-            {!track && (
+            {/* Tracking toggle — single button flipping between "add to list" and
+                "remove from list". Status / episode / notes editing is intentionally
+                kept off this page (it would sit below the fold in the sticky column)
+                and will move to the aggregate "我的追番" view in a later step. */}
+            {track ? (
               <button
-                className="w-full py-4 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 text-on-surface-variant hover:text-primary font-label text-sm transition-colors flex items-center justify-center gap-2"
+                onClick={() => animeTrackStore.delete(data.id)}
+                className="group w-full py-4 rounded-full bg-primary-container/15 border border-primary-container/30 hover:bg-error-container/15 hover:border-error/30 text-primary hover:text-error transition-colors flex items-center justify-center gap-2"
+              >
+                <span className="material-symbols-outlined text-lg leading-none" style={{ fontVariationSettings: "'FILL' 1" }}>bookmark</span>
+                <span className="font-label text-sm">已加入追番</span>
+                <span className="material-symbols-outlined text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity">close</span>
+              </button>
+            ) : (
+              <button
                 onClick={() => animeTrackStore.upsert({
                   bgmId: data.id,
                   title: data.title,
@@ -783,18 +792,13 @@ function DetailView({
                   status: 'plan',
                   episode: 0,
                 })}
+                className="w-full py-4 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 text-on-surface-variant hover:text-primary font-label text-sm transition-colors flex items-center justify-center gap-2"
               >
                 <span className="material-symbols-outlined text-lg leading-none">bookmark_add</span>
                 Track this anime
               </button>
             )}
           </div>
-
-          {/* Active state only — empty state lives as the third button above. */}
-          <AnimeStatusCard
-            bgmId={data.id}
-            totalEpisodes={data.episodes > 0 ? data.episodes : undefined}
-          />
         </div>
 
         {/* ── 右栏：信息 ── */}
