@@ -3,6 +3,7 @@ import {
   PjjcAttack, PjjcGroup,
   Highlight, ModalShell, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
+  createTeamPasteHandler,
   matchesPjjc, todayStr,
 } from './shared'
 
@@ -71,6 +72,11 @@ function AddPjjcModal({
                   placeholder={`例：涅比亚、ams、春剑、水m、布丁`}
                   value={defenseInputs[i]}
                   onChange={e => updateDefense(i as 0 | 1 | 2, e.target.value)}
+                  onPaste={createTeamPasteHandler({
+                    setTeam: (v) => updateDefense(i as 0 | 1 | 2, v),
+                    setNotes: noteState.setNotes,
+                    currentNotes: noteState.notes,
+                  })}
                   autoFocus={i === 0}
                 />
               </div>
@@ -164,6 +170,11 @@ function EditDefensesModal({
               <ModalInput
                 value={inputs[i]}
                 onChange={e => update(i as 0 | 1 | 2, e.target.value)}
+                onPaste={createTeamPasteHandler({
+                  setTeam: (v) => update(i as 0 | 1 | 2, v),
+                  setNotes: noteState.setNotes,
+                  currentNotes: noteState.notes,
+                })}
                 autoFocus={i === 0}
               />
             </div>
@@ -252,6 +263,11 @@ function EditAttackModal({
               <ModalInput
                 value={inputs[i]}
                 onChange={e => update(i as 0 | 1 | 2, e.target.value)}
+                onPaste={createTeamPasteHandler({
+                  setTeam: (v) => update(i as 0 | 1 | 2, v),
+                  setNotes: noteState.setNotes,
+                  currentNotes: noteState.notes,
+                })}
                 autoFocus={i === 0}
               />
             </div>
@@ -336,6 +352,11 @@ function AddAttackModal({
                   placeholder={`对应防 ${i + 1} 的进攻阵容（可留空）`}
                   value={inputs[i]}
                   onChange={e => update(i as 0 | 1 | 2, e.target.value)}
+                  onPaste={createTeamPasteHandler({
+                    setTeam: (v) => update(i as 0 | 1 | 2, v),
+                    setNotes: noteState.setNotes,
+                    currentNotes: noteState.notes,
+                  })}
                   autoFocus={i === 0}
                 />
               </div>

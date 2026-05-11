@@ -363,6 +363,72 @@ export function copyTeamText(team: string[], notes: string[]): string {
   return team.join('、') + (notes.length ? ` (${notes.join(' / ')})` : '')
 }
 
+// ── Reverse of copyTeamText: parse pasted "<team> (note1 / note2)" payloads ──
+
+/**
+ * Inverse of `copyTeamText`. Recognizes our own emitted format plus a few
+ * tolerated variants:
+ *   - ASCII or full-width parens: `(...)` / `（...）`
+ *   - Slash separator with optional surrounding whitespace
+ *
+ * Returns null when the input doesn't end with a parens block — that case is
+ * indistinguishable from a normal team-only paste and the default paste should
+ * proceed.
+ */
+export function parseTeamPaste(text: string): { team: string; notes: string[] } | null {
+  // Trailing parens block, greedy team part, non-paren-containing notes body.
+  const m = text.match(/^(.+?)\s*[（(]\s*([^()（）]+?)\s*[）)]\s*$/)
+  if (!m) return null
+  const teamPart = m[1].trim()
+  const notesPart = m[2].trim()
+  if (!teamPart || !notesPart) return null
+  const notes = notesPart
+    .split(/\s*\/\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (notes.length === 0) return null
+  return { team: teamPart, notes }
+}
+
+/**
+ * Build an `onPaste` handler for a team `ModalInput` that auto-extracts a
+ * trailing "(notes ...)" block into the chip-style notes field. Returns a
+ * no-op handler that defers to the browser when the paste isn't a full-field
+ * replace OR doesn't match our copy format, so partial inserts (e.g. user
+ * editing a single character in the middle) aren't hijacked.
+ *
+ * Merges new notes into existing ones (dedup) rather than replacing — if the
+ * user added a note before pasting, we don't want to lose it.
+ */
+export function createTeamPasteHandler(opts: {
+  setTeam: (v: string) => void
+  setNotes: (n: string[]) => void
+  currentNotes: string[]
+}): (e: React.ClipboardEvent<HTMLInputElement>) => void {
+  return (e) => {
+    const input = e.currentTarget
+    const valueLen = input.value.length
+    const selStart = input.selectionStart ?? 0
+    const selEnd = input.selectionEnd ?? 0
+    // Only intercept when paste replaces the WHOLE field (empty input, or full
+    // selection). Middle-of-text paste falls through to the browser default.
+    const isFullReplace = valueLen === 0 || (selStart === 0 && selEnd === valueLen)
+    if (!isFullReplace) return
+
+    const pasted = e.clipboardData.getData('text')
+    const parsed = parseTeamPaste(pasted)
+    if (!parsed) return
+
+    e.preventDefault()
+    opts.setTeam(parsed.team)
+    const merged = [...opts.currentNotes]
+    for (const n of parsed.notes) {
+      if (!merged.includes(n)) merged.push(n)
+    }
+    opts.setNotes(merged)
+  }
+}
+
 /** Shallow-equal for two string arrays (order-sensitive). */
 export function notesEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
