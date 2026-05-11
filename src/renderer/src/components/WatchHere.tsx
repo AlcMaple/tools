@@ -19,9 +19,11 @@ interface Props {
   variant?: 'row' | 'inline'
   /** When true, show the "no bindings yet" placeholder instead of returning null. */
   showEmpty?: boolean
+  /** When provided, each chip grows a hover-✕ button that calls this. */
+  onRemove?: (binding: AnimeBinding) => void
 }
 
-export function WatchHere({ bgmId, variant = 'row', showEmpty = false }: Props): JSX.Element | null {
+export function WatchHere({ bgmId, variant = 'row', showEmpty = false, onRemove }: Props): JSX.Element | null {
   const track = useAnimeTrack(bgmId)
   if (!track || track.bindings.length === 0) {
     return showEmpty ? <EmptyPlaceholder /> : null
@@ -32,20 +34,39 @@ export function WatchHere({ bgmId, variant = 'row', showEmpty = false }: Props):
       : 'flex flex-wrap items-center gap-2'}
     >
       {track.bindings.map((b, i) => (
-        <SourceButton key={`${b.source}-${i}`} binding={b} track={track} variant={variant} />
+        <SourceButton
+          key={`${b.source}-${i}`}
+          binding={b}
+          track={track}
+          variant={variant}
+          onRemove={onRemove ? () => onRemove(b) : undefined}
+        />
       ))}
     </div>
   )
 }
 
+/**
+ * Chip display label. For built-in scraped sources (Aowu/Xifan/Girigiri) we
+ * trust the source enum. For Bilibili/Custom — where the binding came from
+ * AddBindingModal — `sourceTitle` is the user-chosen label and gets priority
+ * because "Custom" alone is meaningless on screen.
+ */
+function chipLabel(b: AnimeBinding): string {
+  if (b.source === 'Custom') return b.sourceTitle || '自定义'
+  if (b.source === 'Bilibili') return b.sourceTitle || 'B 站'
+  return b.source
+}
+
 // ── Per-source button ───────────────────────────────────────────────────────
 
 function SourceButton({
-  binding, track, variant,
+  binding, track, variant, onRemove,
 }: {
   binding: AnimeBinding
   track: AnimeTrack
   variant: 'row' | 'inline'
+  onRemove?: () => void
 }): JSX.Element {
   // Prefer the explicit sourceUrl when provided; fall back to the per-source
   // computation. For Aowu/Xifan/Girigiri the sourceKey IS the watch URL.
@@ -55,36 +76,65 @@ function SourceButton({
       ? `ep ${track.episode}/${track.totalEpisodes}`
       : `ep ${track.episode}`
     : '从头开始'
+  const label = chipLabel(binding)
 
+  // Wrap chip + ✕ in a single flex container when removable. Container has
+  // group-hover scoping so ✕ stays hidden until the row is hovered.
   if (variant === 'inline') {
     return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        title={`${binding.source} · ${binding.sourceTitle}\n${url}`}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-primary/30 bg-primary/8 hover:bg-primary/15 text-primary font-label text-[10px] tracking-wider transition-colors"
-      >
-        <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>play_arrow</span>
-        <span className="font-bold">{binding.source}</span>
-        <span className="text-primary/60">{epText}</span>
-      </a>
+      <span className="group inline-flex items-stretch overflow-hidden rounded-md border border-primary/30 bg-primary/8 hover:bg-primary/15 transition-colors">
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          title={`${label} · ${binding.sourceTitle || ''}\n${url}`}
+          className="inline-flex items-center gap-1 px-2 py-0.5 text-primary font-label text-[10px] tracking-wider"
+        >
+          <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>play_arrow</span>
+          <span className="font-bold">{label}</span>
+          <span className="text-primary/60">{epText}</span>
+        </a>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onRemove() }}
+            tabIndex={-1}
+            title="移除此链接"
+            className="px-1 flex items-center text-primary/45 hover:text-error hover:bg-error/12 opacity-0 group-hover:opacity-100 transition-all border-l border-primary/20"
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>close</span>
+          </button>
+        )}
+      </span>
     )
   }
 
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      title={`${binding.sourceTitle}\n${url}`}
-      className="group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 hover:border-primary/45 text-primary font-label text-[11px] uppercase tracking-widest transition-colors"
-    >
-      <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>play_arrow</span>
-      <span className="font-bold">{binding.source}</span>
-      <span className="text-primary/55">·</span>
-      <span className="text-primary/75 tracking-wider">{epText}</span>
-    </a>
+    <span className="group inline-flex items-stretch overflow-hidden rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 hover:border-primary/45 transition-colors">
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        title={`${binding.sourceTitle || label}\n${url}`}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-primary font-label text-[11px] uppercase tracking-widest"
+      >
+        <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>play_arrow</span>
+        <span className="font-bold">{label}</span>
+        <span className="text-primary/55">·</span>
+        <span className="text-primary/75 tracking-wider">{epText}</span>
+      </a>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemove() }}
+          tabIndex={-1}
+          title="移除此链接"
+          className="px-1.5 flex items-center text-primary/45 hover:text-error hover:bg-error/12 opacity-0 group-hover:opacity-100 transition-all border-l border-primary/20"
+        >
+          <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>close</span>
+        </button>
+      )}
+    </span>
   )
 }
 
