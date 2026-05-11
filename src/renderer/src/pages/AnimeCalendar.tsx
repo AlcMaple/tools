@@ -57,47 +57,51 @@ export default function AnimeCalendar(): JSX.Element {
     <div className="relative min-h-full bg-background">
       <TopBar placeholder="搜索本周番剧..." />
       <div className="pt-16">
-        {/* Sticky header —— top-16 让它贴在 TopBar (fixed top-0 h-16) 下面,
-            而不是被 TopBar 的 backdrop-blur 半透明压在身下。 */}
-        <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-8 py-5">
-          <div className="flex items-end justify-between gap-6 flex-wrap">
-            <div>
-              <div className="flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
-                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>calendar_month</span>
-                <span>Anime</span>
-                <span className="text-outline-variant">/</span>
-                <span className="text-on-surface font-bold">番剧周历</span>
-              </div>
-              <h1 className="text-3xl font-black tracking-tighter text-on-surface">番剧周历</h1>
-              <p className="text-sm text-on-surface-variant/80 mt-1 font-label">
-                本季正在播出，按星期排列。来源 Bangumi · 14 天缓存。
-              </p>
-            </div>
+        {/* Hero — 标题块随内容滚走，不 sticky。 */}
+        <div className="px-8 pt-5 pb-3">
+          <div className="flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>calendar_month</span>
+            <span>Anime</span>
+            <span className="text-outline-variant">/</span>
+            <span className="text-on-surface font-bold">番剧周历</span>
+          </div>
+          <h1 className="text-3xl font-black tracking-tighter text-on-surface">番剧周历</h1>
+          <p className="text-sm text-on-surface-variant/80 mt-1 font-label">
+            本季正在播出，按星期排列。来源 Bangumi · 14 天缓存。
+          </p>
+        </div>
 
+        {/* 真正的置顶栏：周一-周日 chip 行 + 刷新按钮。
+            top-16 紧贴 TopBar；用户滚下去能始终看到周几对应哪列以及刷新。
+            chip 用 grid-cols-7 和下面卡片网格完全对齐。
+            刷新按钮挂在右侧浮于第七列之外，用 px-6 padding 给它留位置。 */}
+        {state.status === 'ready' && (
+          <div className="sticky top-16 z-30 bg-surface-container-lowest border-y border-outline-variant/10 px-6 py-2">
             <div className="flex items-center gap-3">
-              {state.status === 'ready' && (
-                <span className="font-label text-[11px] text-on-surface-variant/50 tracking-wider">
-                  {state.result.fromCache ? '缓存：' : '刚刚拉取：'}
+              <DayChipsBar result={state.result} />
+              <div className="shrink-0 flex items-center gap-2 pl-3 border-l border-outline-variant/20">
+                <span className="font-label text-[10px] text-on-surface-variant/50 tracking-wider whitespace-nowrap hidden xl:inline">
+                  {state.result.fromCache ? '缓存：' : '刚拉取：'}
                   {formatRelTime(state.result.updatedAt)}
                 </span>
-              )}
-              <button
-                onClick={() => void load(true)}
-                disabled={refreshing || state.status === 'loading'}
-                title="强制刷新（绕过 24h 缓存）"
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-container-high border border-outline-variant/20 hover:bg-primary/10 hover:border-primary/30 hover:text-primary font-label text-xs uppercase tracking-widest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <span
-                  className={`material-symbols-outlined leading-none ${refreshing ? 'animate-spin' : ''}`}
-                  style={{ fontSize: 14 }}
+                <button
+                  onClick={() => void load(true)}
+                  disabled={refreshing}
+                  title="强制刷新（绕过 14 天缓存）"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-surface-container-high border border-outline-variant/20 hover:bg-primary/10 hover:border-primary/30 hover:text-primary font-label text-[11px] uppercase tracking-widest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  refresh
-                </span>
-                <span>{refreshing ? '更新中...' : '刷新'}</span>
-              </button>
+                  <span
+                    className={`material-symbols-outlined leading-none ${refreshing ? 'animate-spin' : ''}`}
+                    style={{ fontSize: 13 }}
+                  >
+                    refresh
+                  </span>
+                  <span>{refreshing ? '更新中' : '刷新'}</span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {state.status === 'loading' && <LoadingState />}
         {state.status === 'error' && (
@@ -109,17 +113,42 @@ export default function AnimeCalendar(): JSX.Element {
   )
 }
 
-// ── Grid ─────────────────────────────────────────────────────────────────────
+// ── Day chips bar ────────────────────────────────────────────────────────────
+// 7 day chips on a single grid row. Sticks at top-16 with the refresh cluster.
+// Uses grid-cols-7 to align column-by-column with the cards grid below.
 
-function CalendarGrid({ result }: { result: BgmCalendarResult }): JSX.Element {
-  // BGM orders Mon-Sun. We highlight "today" so the user's eye lands on the
-  // relevant column on open. JS Date.getDay() returns 0=Sun, 1=Mon...; convert
-  // to BGM's 1-7 (Mon-Sun) scheme.
+function DayChipsBar({ result }: { result: BgmCalendarResult }): JSX.Element {
   const todayBgmId = useMemo(() => {
     const d = new Date().getDay() // 0..6
     return d === 0 ? 7 : d
   }, [])
+  return (
+    <div className="flex-1 grid grid-cols-7 gap-3 min-w-0">
+      {result.data.map(day => {
+        const active = day.id === todayBgmId
+        return (
+          <div
+            key={day.id}
+            className={`px-2.5 py-1.5 rounded-md border flex items-baseline justify-between gap-2 ${
+              active
+                ? 'bg-primary/12 border-primary/30 text-primary'
+                : 'bg-surface-container border-outline-variant/15 text-on-surface-variant/80'
+            }`}
+          >
+            <span className="font-headline text-xs font-black tracking-tight">{day.label}</span>
+            <span className="font-label text-[10px] uppercase tracking-widest opacity-60">
+              {day.items.length} 部
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
+// ── Grid ─────────────────────────────────────────────────────────────────────
+
+function CalendarGrid({ result }: { result: BgmCalendarResult }): JSX.Element {
   if (result.data.every(d => d.items.length === 0)) {
     return (
       <div className="flex flex-col items-center justify-center py-32 gap-4 text-on-surface-variant/30">
@@ -130,50 +159,29 @@ function CalendarGrid({ result }: { result: BgmCalendarResult }): JSX.Element {
   }
 
   return (
-    // 7 列固定宽度（不自适应容器）。窗口够宽时 7 列贴边对齐，窄了就横向
-    // 滚动；底部水平滚动条样式已经和侧边对齐（index.css custom-scrollbar）。
-    // 列头随内容一起滚动（不 sticky） —— 之前用 top-[148px] 会和 page sticky
-    // header 的实际高度对不上，留出"缝隙"让内容穿透。
-    <div className="px-6 py-6 grid grid-cols-[repeat(7,180px)] gap-3">
+    // grid-cols-7 自适应容器宽度 —— 默认 1280px 窗口（content ≈ 1024px）能
+    // 完整装下 7 列；用户调小窗口卡片随之变小，不会出现横向滚动。
+    // 周一-周日 chip 行已经移到上方 sticky bar 里，DayColumn 只保留卡片堆。
+    <div className="px-6 py-3 grid grid-cols-7 gap-3">
       {result.data.map(day => (
-        <DayColumn key={day.id} day={day} isToday={day.id === todayBgmId} />
+        <DayColumn key={day.id} day={day} />
       ))}
     </div>
   )
 }
 
 function DayColumn({
-  day, isToday,
-}: { day: { id: number; label: string; items: BgmCalendarItem[] }; isToday: boolean }): JSX.Element {
+  day,
+}: { day: { id: number; label: string; items: BgmCalendarItem[] } }): JSX.Element {
   return (
-    <div className="flex flex-col min-w-0">
-      {/* Column header — 仅靠高亮配色区分当日，"TODAY" 字样冗余删掉 */}
-      <div
-        className={`px-3 py-2 mb-2 rounded-lg border ${
-          isToday
-            ? 'bg-primary/12 border-primary/30 text-primary'
-            : 'bg-surface-container border-outline-variant/15 text-on-surface-variant/80'
-        }`}
-      >
-        <div className="flex items-baseline justify-between">
-          <span className="font-headline text-sm font-black tracking-tight">
-            {day.label}
-          </span>
-          <span className="font-label text-[10px] uppercase tracking-widest opacity-60">
-            {day.items.length} 部
-          </span>
+    <div className="flex flex-col gap-2 min-w-0">
+      {day.items.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-outline-variant/20 px-3 py-6 text-center font-label text-[10px] text-on-surface-variant/30 uppercase tracking-widest">
+          空
         </div>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        {day.items.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-outline-variant/20 px-3 py-6 text-center font-label text-[10px] text-on-surface-variant/30 uppercase tracking-widest">
-            空
-          </div>
-        ) : (
-          day.items.map(item => <CalendarCard key={item.id} item={item} />)
-        )}
-      </div>
+      ) : (
+        day.items.map(item => <CalendarCard key={item.id} item={item} />)
+      )}
     </div>
   )
 }
