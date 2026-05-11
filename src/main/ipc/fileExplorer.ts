@@ -148,10 +148,6 @@ function resolveSpecialFolder(input: string): string | null {
   try { return app.getPath(id) } catch { return null }
 }
 
-async function runWindowsPowerShell(psScript: string): Promise<void> {
-  await runWindowsPowerShellWithStdout(psScript)
-}
-
 async function runWindowsPowerShellWithStdout(psScript: string): Promise<string> {
   const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
   try {
@@ -171,45 +167,20 @@ async function runWindowsPowerShellWithStdout(psScript: string): Promise<string>
   }
 }
 
-async function permanentDelete(targetPath: string): Promise<void> {
-  if (osPlatform() === 'win32') {
-    // Use base64-encoded PowerShell to handle paths with spaces/Chinese chars.
-    // Requires the app or the shell to run with administrator privileges.
-    await runWindowsPowerShell(`
-$target = @'
-${targetPath}
-'@.Trim()
-takeown /f $target /r /d y
-icacls $target /grant administrators:F /t /c
-Remove-Item -Path $target -Recurse -Force
-`.trim())
-  } else {
-    await rm(targetPath, { recursive: true, force: true })
-  }
-}
-
 interface KilledProcess { pid: number; name: string }
 
-// Force delete: enumerate processes locking the target via Restart Manager,
-// kill them, then Remove-Item. Used as escalation when normal delete fails
-// with "in use by another process". Returns the list of killed processes so
-// the renderer can show what happened.
-async function forceDeletePermanent(targetPath: string): Promise<{ killed: KilledProcess[] }> {
-  if (osPlatform() !== 'win32') {
-    // POSIX: rm -rf already succeeds against open files (unlink while open).
-    await rm(targetPath, { recursive: true, force: true })
-    return { killed: [] }
-  }
-
-  // PowerShell: register target + immediate children with Restart Manager,
-  // get locking processes, Stop-Process them, then takeown + Remove-Item.
-  // RmGetList cap'd to 64 process slots — enough for any realistic case.
-  // Process list emitted between BEGIN/END markers as JSON.
-  const stdout = await runWindowsPowerShellWithStdout(`
-$target = @'
-${targetPath}
-'@.Trim()
-
+// Shared PowerShell fragment: defines the RmApi C# wrapper for Restart Manager
+// and kills every process holding `$target` open (after also registering the
+// directory's immediate file children — catches most lock-holders without
+// recursing massive trees). Used by both trashItem and permanentDelete so the
+// "what to actually delete" step can succeed.
+//
+// Contract:
+//   - Input:  $target (string)  — set by caller before this fragment runs
+//   - Output: $killed (List)    — @{ pid; name } objects, may be empty
+//
+// Idempotent: Add-Type checks if the type is already loaded.
+const PS_KILL_PROCESSES_FRAGMENT = `
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -255,8 +226,6 @@ public static class RmApi {
 }
 "@ -ErrorAction SilentlyContinue
 
-# Build list of paths to register: target itself + non-recursive direct file
-# children (covers most lock cases without paying recursion cost on big trees)
 $paths = New-Object System.Collections.Generic.List[string]
 $paths.Add($target)
 if (Test-Path -LiteralPath $target -PathType Container) {
@@ -300,61 +269,192 @@ if ($startResult -eq 0) {
   }
 }
 
-# Wait briefly for kernel to actually release the handles
 if ($killed.Count -gt 0) { Start-Sleep -Milliseconds 400 }
+`
 
-# Now do the actual delete (mirrors permanentDelete)
-takeown /f $target /r /d y 2>&1 | Out-Null
-icacls $target /grant administrators:F /t /c 2>&1 | Out-Null
-Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
-
-# Emit kill list as JSON between markers (so the parent can extract it
-# regardless of whatever stdout chatter the prior commands produced).
-Write-Output 'MAPLE_KILL_BEGIN'
-if ($killed.Count -eq 0) {
-  Write-Output '[]'
-} else {
-  $items = @()
-  foreach ($k in $killed) { $items += (ConvertTo-Json -InputObject $k -Compress) }
-  Write-Output ('[' + ($items -join ',') + ']')
-}
-Write-Output 'MAPLE_KILL_END'
-`.trim())
-
-  // Extract JSON between markers
-  const m = stdout.match(/MAPLE_KILL_BEGIN\s*([\s\S]*?)\s*MAPLE_KILL_END/)
-  if (!m) return { killed: [] }
-  try {
-    const parsed = JSON.parse(m[1].trim()) as Array<{ pid?: unknown; name?: unknown }>
-    const killed = parsed.map(p => ({
-      pid: typeof p.pid === 'number' ? p.pid : Number(p.pid) || 0,
-      name: typeof p.name === 'string' ? p.name : String(p.name ?? ''),
-    }))
-    return { killed }
-  } catch {
-    return { killed: [] }
+interface PsDeleteResult {
+  killed: KilledProcess[]
+  success: boolean
+  error: string | null
+  diagnostics: {
+    takeown?: string
+    icaclsUser?: string
+    icaclsAdmin?: string
   }
 }
 
-async function trashItem(targetPath: string): Promise<void> {
-  if (osPlatform() === 'win32') {
-    // shell.trashItem fails on ACL-restricted files. We grant CURRENT USER
-    // explicit Full Control (by SID) before recycling, so that emptying the
-    // recycle bin later — which runs in the user's normal token, possibly with
-    // Administrators filtered out by UAC — still has DELETE permission.
-    // The file remains recoverable thanks to SendToRecycleBin (vs. Remove-Item).
-    //
-    // Diagnostic output from takeown/icacls is captured and only surfaced on
-    // failure, so the renderer can show exactly which step rejected access.
-    await runWindowsPowerShell(`
+/**
+ * Parse the JSON blob emitted between `MAPLE_RESULT_BEGIN` / `MAPLE_RESULT_END`
+ * markers by trashItem/permanentDelete PowerShell scripts. Defensive — returns
+ * a failure shape on any parse error so callers don't crash on unexpected
+ * output (e.g. PowerShell itself crashed before emit).
+ */
+function parsePsDeleteResult(stdout: string): PsDeleteResult {
+  const m = stdout.match(/MAPLE_RESULT_BEGIN\s*([\s\S]*?)\s*MAPLE_RESULT_END/)
+  if (!m) {
+    return { killed: [], success: false, error: '未拿到 PowerShell 结果输出', diagnostics: {} }
+  }
+  try {
+    const parsed = JSON.parse(m[1].trim()) as {
+      killed?: Array<{ pid?: unknown; name?: unknown }>
+      success?: boolean
+      error?: string | null
+      diagnostics?: { takeown?: string; icaclsUser?: string; icaclsAdmin?: string }
+    }
+    const killed = (parsed.killed ?? []).map((p) => ({
+      pid: typeof p.pid === 'number' ? p.pid : Number(p.pid) || 0,
+      name: typeof p.name === 'string' ? p.name : String(p.name ?? ''),
+    }))
+    return {
+      killed,
+      success: parsed.success === true,
+      error: typeof parsed.error === 'string' ? parsed.error : null,
+      diagnostics: parsed.diagnostics ?? {},
+    }
+  } catch {
+    return { killed: [], success: false, error: 'PowerShell 结果解析失败', diagnostics: {} }
+  }
+}
+
+/** Build a multi-line error message from a failed PsDeleteResult, including
+ *  the takeown / icacls diagnostics so the renderer's friendlyError() can
+ *  classify it and the user can read the raw cause. */
+function formatPsDeleteError(r: PsDeleteResult, opLabel: string): string {
+  const lines = [`${opLabel}: ${r.error ?? '未知错误'}`]
+  if (r.diagnostics.takeown) lines.push('--- takeown ---', r.diagnostics.takeown)
+  if (r.diagnostics.icaclsUser) lines.push('--- icacls (current user) ---', r.diagnostics.icaclsUser)
+  if (r.diagnostics.icaclsAdmin) lines.push('--- icacls (administrators) ---', r.diagnostics.icaclsAdmin)
+  return lines.join('\n')
+}
+
+/**
+ * Permanent delete: kills any processes holding the target, takes ownership,
+ * grants Full Control to current user + Administrators, then Remove-Item.
+ *
+ * Subsumes the old `forceDeletePermanent` — there is no longer a "force vs
+ * normal" distinction at this layer; permanent delete does everything it can
+ * to succeed in one shot, and the caller doesn't need to retry or escalate.
+ *
+ * Returns the list of processes that were killed (may be empty), so the
+ * renderer can disclose them post-hoc in the success toast.
+ *
+ * On failure: throws an Error whose message includes the underlying cause +
+ * takeown/icacls diagnostics, so the renderer's friendlyError() can classify
+ * it and the user can read the raw output.
+ */
+async function permanentDelete(targetPath: string): Promise<{ killed: KilledProcess[] }> {
+  if (osPlatform() !== 'win32') {
+    // POSIX: rm -rf already succeeds against open files (unlink while open).
+    await rm(targetPath, { recursive: true, force: true })
+    return { killed: [] }
+  }
+
+  // The PS script intentionally always exits 0 and reports outcome via the
+  // MAPLE_RESULT JSON block. This lets us read `killed` even on Remove-Item
+  // failure (the kill step might have legitimately killed processes before
+  // the final delete tripped on a different cause).
+  const stdout = await runWindowsPowerShellWithStdout(`
 $target = @'
 ${targetPath}
 '@.Trim()
+
+${PS_KILL_PROCESSES_FRAGMENT}
+
 $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
 $takeownLog = (takeown /f $target /r /d y 2>&1) -join "\`n"
 $icaclsUserLog = (icacls $target /grant "*\${sid}:F" /t /c 2>&1) -join "\`n"
 $icaclsAdminLog = (icacls $target /grant administrators:F /t /c 2>&1) -join "\`n"
+
+$success = $true
+$errMsg = $null
+try {
+  Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
+} catch {
+  $success = $false
+  $errMsg = $_.Exception.Message
+}
+
+$result = @{
+  killed = @($killed)
+  success = $success
+  error = $errMsg
+  diagnostics = @{
+    takeown = $takeownLog
+    icaclsUser = $icaclsUserLog
+    icaclsAdmin = $icaclsAdminLog
+  }
+}
+Write-Output 'MAPLE_RESULT_BEGIN'
+Write-Output (ConvertTo-Json -InputObject $result -Compress -Depth 5)
+Write-Output 'MAPLE_RESULT_END'
+`.trim())
+
+  const r = parsePsDeleteResult(stdout)
+  if (!r.success) throw new Error(formatPsDeleteError(r, 'Remove-Item'))
+  return { killed: r.killed }
+}
+
+/**
+ * Move-to-recycle-bin. Like `permanentDelete`, this does everything it can
+ * internally — kill processes, takeown, swap APIs — and either succeeds or
+ * fails. Returns the list of processes that were killed (if any) so the
+ * renderer can surface them in the success toast.
+ *
+ * Windows trash chain (three attempts, fast → slow):
+ *
+ *   1. shell.trashItem — Electron's modern IFileOperation-based API.
+ *      Fast path: no PowerShell, no killed processes, no ACL changes.
+ *      Handles most normal cases.
+ *
+ *   2. PowerShell: kill processes + takeown + icacls + legacy SendToRecycleBin
+ *      (Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory under the
+ *      hood, which is SHFileOperation). Used for ACL-restricted / locked
+ *      files. Grants Full Control to current user + Administrators so the
+ *      eventual "empty recycle bin" (UAC-filtered token) still has DELETE.
+ *
+ *   3. shell.trashItem AGAIN — sometimes succeeds where step 2's legacy
+ *      VB API returns "system does not support this function" (real-world
+ *      report: a game-mod folder with mixed file types). IFileOperation
+ *      often works after permissions + processes are cleared.
+ *
+ * Killed-processes from step 2 propagate even when step 2's SendToRecycleBin
+ * leg failed and we recovered via step 3 — the kills were real, the user
+ * deserves to see them in the toast.
+ */
+async function trashItem(targetPath: string): Promise<{ killed: KilledProcess[] }> {
+  if (osPlatform() !== 'win32') {
+    await shell.trashItem(targetPath)
+    return { killed: [] }
+  }
+
+  // Step 1
+  try {
+    await shell.trashItem(targetPath)
+    return { killed: [] }
+  } catch {
+    /* fall through to elevated path */
+  }
+
+  // Step 2: heavy machinery. PS always exits 0 and reports outcome via JSON,
+  // so we can read $killed even when SendToRecycleBin itself failed.
+  let killed: KilledProcess[] = []
+  let psFailure: string | null = null
+  try {
+    const stdout = await runWindowsPowerShellWithStdout(`
+$target = @'
+${targetPath}
+'@.Trim()
+
+${PS_KILL_PROCESSES_FRAGMENT}
+
+$sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+$takeownLog = (takeown /f $target /r /d y 2>&1) -join "\`n"
+$icaclsUserLog = (icacls $target /grant "*\${sid}:F" /t /c 2>&1) -join "\`n"
+$icaclsAdminLog = (icacls $target /grant administrators:F /t /c 2>&1) -join "\`n"
+
 Add-Type -AssemblyName Microsoft.VisualBasic
+$success = $true
+$errMsg = $null
 try {
   if (Test-Path -LiteralPath $target -PathType Container) {
     [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($target, 'OnlyErrorDialogs', 'SendToRecycleBin')
@@ -362,18 +462,42 @@ try {
     [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($target, 'OnlyErrorDialogs', 'SendToRecycleBin')
   }
 } catch {
-  [Console]::Error.WriteLine("SendToRecycleBin: $($_.Exception.Message)")
-  [Console]::Error.WriteLine("--- takeown ---")
-  [Console]::Error.WriteLine($takeownLog)
-  [Console]::Error.WriteLine("--- icacls (current user) ---")
-  [Console]::Error.WriteLine($icaclsUserLog)
-  [Console]::Error.WriteLine("--- icacls (administrators) ---")
-  [Console]::Error.WriteLine($icaclsAdminLog)
-  exit 1
+  $success = $false
+  $errMsg = $_.Exception.Message
 }
+
+$result = @{
+  killed = @($killed)
+  success = $success
+  error = $errMsg
+  diagnostics = @{
+    takeown = $takeownLog
+    icaclsUser = $icaclsUserLog
+    icaclsAdmin = $icaclsAdminLog
+  }
+}
+Write-Output 'MAPLE_RESULT_BEGIN'
+Write-Output (ConvertTo-Json -InputObject $result -Compress -Depth 5)
+Write-Output 'MAPLE_RESULT_END'
 `.trim())
-  } else {
+
+    const r = parsePsDeleteResult(stdout)
+    killed = r.killed
+    if (r.success) return { killed }
+    psFailure = formatPsDeleteError(r, 'SendToRecycleBin')
+  } catch (e) {
+    psFailure = (e as Error).message
+  }
+
+  // Step 3: IFileOperation retry now that processes are killed and permissions
+  // are wide open. Preserves the killed list from step 2 either way.
+  try {
     await shell.trashItem(targetPath)
+    return { killed }
+  } catch {
+    // Surface step 2's diagnostic — it has the most detail about why the
+    // operation can't recycle this target.
+    throw new Error(psFailure ?? 'trashItem failed')
   }
 }
 
@@ -402,11 +526,12 @@ export function registerFileExplorerIpc(): void {
     shell.showItemInFolder(targetPath)
   })
 
+  // Both delete operations return `{ killed }` so the renderer can mention
+  // in the success toast which processes (if any) were terminated to free
+  // the file. There's intentionally no "force delete" handler anymore —
+  // trashItem and permanentDelete each do their own kill-processes step.
   ipcMain.handle('fs:trash', (_event, targetPath: string) => trashItem(targetPath))
-
   ipcMain.handle('fs:delete-permanent', (_event, targetPath: string) => permanentDelete(targetPath))
-
-  ipcMain.handle('fs:force-delete-permanent', (_event, targetPath: string) => forceDeletePermanent(targetPath))
 
   ipcMain.handle('fs:resolve-special', (_event, input: string) => resolveSpecialFolder(input))
 }
