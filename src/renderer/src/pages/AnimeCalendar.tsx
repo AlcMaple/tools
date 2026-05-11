@@ -16,6 +16,7 @@ import {
   animeTrackStore,
   useAnimeTrack,
 } from '../stores/animeTrackStore'
+import { WatchHere } from '../components/WatchHere'
 
 type State =
   | { status: 'loading' }
@@ -287,6 +288,11 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
               {item.episodes} eps
             </span>
           )}
+        </div>
+        {/* 已关联的源跳转 chips —— 只在已追且有 bindings 时出现，没有 bindings
+            时组件自身返回 null 不占位。 */}
+        <div className="mt-1.5">
+          <WatchHere bgmId={item.id} variant="inline" />
         </div>
       </div>
     </div>
