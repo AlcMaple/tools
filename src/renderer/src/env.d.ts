@@ -53,9 +53,14 @@ declare global {
       listDir: (dirPath: string) => Promise<{ entries: FsEntry[]; isVirtualRoot: boolean }>
       open: (targetPath: string) => Promise<void>
       reveal: (targetPath: string) => Promise<void>
-      trash: (targetPath: string) => Promise<void>
-      deletePermanent: (targetPath: string) => Promise<void>
-      forceDeletePermanent: (targetPath: string) => Promise<{ killed: { pid: number; name: string }[] }>
+      /** Move to recycle bin. Internally kills any processes holding the
+       * target, takes ownership, and tries multiple Windows trash APIs.
+       * Returns the list of processes that were killed (may be empty). */
+      trash: (targetPath: string) => Promise<{ killed: { pid: number; name: string }[] }>
+      /** Permanent delete. Internally kills processes + takeown + Remove-Item.
+       * Subsumes the old `forceDeletePermanent` — there is no separate "force"
+       * path because permanent delete now does everything it can in one shot. */
+      deletePermanent: (targetPath: string) => Promise<{ killed: { pid: number; name: string }[] }>
       resolveSpecial: (input: string) => Promise<string | null>
       onDirChange: (cb: () => void) => () => void
     }
