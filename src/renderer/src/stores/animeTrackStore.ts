@@ -121,6 +121,37 @@ class AnimeTrackStore {
     return this.ensure().get(id) ?? null
   }
 
+  /**
+   * Resolve `(source, sourceKey)` → the track that owns this binding, if any.
+   * Used by SearchDownload to draw "已追" badges on cards the user has linked
+   * before. We compare sourceKey loosely (trim) since both Aowu / Xifan watch
+   * URLs and Girigiri play URLs are sometimes pasted with extra whitespace.
+   */
+  findByBinding(source: AnimeBinding['source'], sourceKey: string): AnimeTrack | null {
+    const key = sourceKey.trim()
+    if (!key) return null
+    for (const t of this.ensure().values()) {
+      if (t.bindings.some(b => b.source === source && b.sourceKey.trim() === key)) return t
+    }
+    return null
+  }
+
+  /**
+   * Append a binding to an existing track or create a new one. Idempotent on
+   * (source, sourceKey) — duplicate bindings are filtered out. Returns the
+   * resulting track.
+   */
+  bind(patch: Partial<AnimeTrack> & { bgmId: number }, binding: AnimeBinding): AnimeTrack {
+    const map = this.ensure()
+    const prev = map.get(patch.bgmId)
+    const prevBindings = prev?.bindings ?? []
+    const exists = prevBindings.some(
+      b => b.source === binding.source && b.sourceKey.trim() === binding.sourceKey.trim(),
+    )
+    const bindings = exists ? prevBindings : [...prevBindings, binding]
+    return this.upsert({ ...patch, bindings })
+  }
+
   delete(bgmId: number): boolean {
     const map = this.ensure()
     const removed = map.delete(bgmId)
@@ -155,5 +186,27 @@ export function useAnimeTrack(bgmId: number | null | undefined): AnimeTrack | nu
       setTrack(animeTrackStore.getByBgmId(bgmId))
     })
   }, [bgmId])
+  return track
+}
+
+/**
+ * React hook — subscribes to a track entry by (source, sourceKey) binding.
+ * Re-renders when the underlying binding list changes (e.g. user just linked
+ * the card on this page). Returns null when no track owns this binding yet.
+ */
+export function useAnimeTrackByBinding(
+  source: AnimeBinding['source'] | null | undefined,
+  sourceKey: string | null | undefined,
+): AnimeTrack | null {
+  const [track, setTrack] = useState<AnimeTrack | null>(() =>
+    source && sourceKey ? animeTrackStore.findByBinding(source, sourceKey) : null
+  )
+  useEffect(() => {
+    if (!source || !sourceKey) { setTrack(null); return }
+    setTrack(animeTrackStore.findByBinding(source, sourceKey))
+    return animeTrackStore.subscribe(() => {
+      setTrack(animeTrackStore.findByBinding(source, sourceKey))
+    })
+  }, [source, sourceKey])
   return track
 }

@@ -5,6 +5,7 @@ import { CoverImage } from "../components/CoverImage";
 import { XifanDownloadConfigModal } from "../components/XifanDownloadModal";
 import { GirigiriDownloadConfigModal } from "../components/GirigiriDownloadModal";
 import { AowuDownloadConfigModal } from "../components/AowuDownloadModal";
+import { LinkTrackModal } from "../components/LinkTrackModal";
 import type { XifanWatchInfo } from "../types/xifan";
 import type {
   GirigiriWatchInfo,
@@ -13,6 +14,12 @@ import type {
 import type { AowuWatchInfo, AowuEpisode } from "../types/aowu";
 import type { Source, SearchCard } from "../types/search";
 import { downloadStore } from "../stores/downloadStore";
+import {
+  animeTrackStore,
+  useAnimeTrackByBinding,
+  type AnimeBinding,
+} from "../stores/animeTrackStore";
+import { cleanForBgmSearch } from "../utils/animeTitle";
 import {
   isSearchCacheEnabled,
   getCachedSearch,
@@ -76,6 +83,113 @@ function SearchingState(): JSX.Element {
   );
 }
 
+// ── Per-card sub-component ─────────────────────────────────────────────────────
+// Pulled out so each card can subscribe independently to its own track entry
+// via `useAnimeTrackByBinding`. Without this split the top-level component
+// would have to re-render every card whenever any track changes.
+
+interface ResultCardProps {
+  card: SearchCard;
+  isLoading: boolean;
+  onDownload: () => void;
+  onLink: () => void;
+}
+
+function ResultCard({
+  card,
+  isLoading,
+  onDownload,
+  onLink,
+}: ResultCardProps): JSX.Element {
+  const track = useAnimeTrackByBinding(card.source, card.key);
+
+  return (
+    <div className="group relative bg-surface-container rounded-xl overflow-hidden border border-outline-variant/20 hover:border-primary/30 transition-all duration-300">
+      <div className="aspect-[2/3] relative overflow-hidden">
+        <CoverImage src={card.cover} alt={card.title} />
+
+        {/* "已追" badge — always-visible info chip on the cover when this
+            (source, sourceKey) is already bound to a track. Sits in the top-
+            left so the existing year/count metadata at the bottom isn't crowded. */}
+        {track && (
+          <div
+            className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-container/85 backdrop-blur-sm border border-primary/30 text-on-primary-container shadow-sm"
+            title={`BGM ${track.bgmId} · ${track.titleCn || track.title}`}
+          >
+            <span
+              className="material-symbols-outlined text-[12px] leading-none"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              bookmark
+            </span>
+            <span className="font-label text-[10px] font-bold tracking-wider whitespace-nowrap">
+              {track.episode > 0
+                ? `EP ${track.episode}${track.totalEpisodes ? `/${track.totalEpisodes}` : ""}`
+                : "在追"}
+            </span>
+          </div>
+        )}
+
+        {/* Loading spinner (when fetching this card's watch info) */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20">
+            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+          </div>
+        )}
+
+        {/* Hover overlay: DOWNLOAD + optional + 关联追番 */}
+        {!isLoading && (
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
+            <button
+              onClick={onDownload}
+              className="w-full primary-gradient text-on-primary text-xs font-black tracking-widest py-2.5 rounded-lg mb-2 flex items-center justify-center space-x-1.5"
+            >
+              <span className="material-symbols-outlined text-sm leading-none">
+                download
+              </span>
+              <span>DOWNLOAD</span>
+            </button>
+            {/* Only show 关联追番 when this card has no binding yet — once
+                linked, the chip above already communicates the state and a
+                second "关联" entry would be redundant noise. */}
+            {!track && (
+              <button
+                onClick={onLink}
+                className="w-full bg-surface-container-highest/85 backdrop-blur-sm hover:bg-primary/15 border border-outline-variant/30 hover:border-primary/40 text-on-surface-variant/80 hover:text-primary text-[10px] font-label tracking-widest uppercase py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm leading-none">
+                  bookmark_add
+                </span>
+                <span>关联追番</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="p-3">
+        <h3
+          className="text-sm font-bold text-on-surface line-clamp-2 mb-1 min-h-[2.5rem] leading-5"
+          title={card.title}
+        >
+          {card.title}
+        </h3>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-label text-on-surface-variant/50">
+            {card.year}
+            {card.tag ? ` · ${card.tag}` : ""}
+          </span>
+          {card.count && (
+            <span className="text-xs font-label text-primary/70">
+              {card.count}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 function SearchDownload(): JSX.Element {
@@ -98,6 +212,8 @@ function SearchDownload(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState(() => _cachedSearchQuery);
   const [captchaInput, setCaptchaInput] = useState("");
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  // The card the user is currently linking to a BGM entry. null = modal closed.
+  const [linkingCard, setLinkingCard] = useState<SearchCard | null>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -621,57 +737,13 @@ function SearchDownload(): JSX.Element {
 
               <div className="grid grid-cols-4 gap-4">
                 {state.cards.map((card, idx) => (
-                  <div
-                    key={idx}
-                    className="group relative bg-surface-container rounded-xl overflow-hidden border border-outline-variant/20 hover:border-primary/30 transition-all duration-300"
-                  >
-                    <div className="aspect-[2/3] relative overflow-hidden">
-                      {/* 处理封面或占位图 */}
-                      <CoverImage src={card.cover} alt={card.title} />
-
-                      {/* 点击下载后，加载剧集信息时的转圈动画 */}
-                      {loadingKey === card.key && (
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                        </div>
-                      )}
-
-                      {/* 鼠标悬浮时显示的黑色渐变遮罩和下载按钮 */}
-                      {loadingKey !== card.key && (
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
-                          <button
-                            onClick={() => handleDownloadClick(card)}
-                            className="w-full primary-gradient text-on-primary text-xs font-black tracking-widest py-2.5 rounded-lg mb-2 flex items-center justify-center space-x-1.5"
-                          >
-                            <span className="material-symbols-outlined text-sm leading-none">
-                              download
-                            </span>
-                            <span>DOWNLOAD</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-3">
-                      <h3
-                        className="text-sm font-bold text-on-surface line-clamp-2 mb-1 min-h-[2.5rem] leading-5"
-                        title={card.title}
-                      >
-                        {card.title}
-                      </h3>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-label text-on-surface-variant/50">
-                          {card.year}
-                          {card.tag ? ` · ${card.tag}` : ""}
-                        </span>
-                        {card.count && (
-                          <span className="text-xs font-label text-primary/70">
-                            {card.count}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  <ResultCard
+                    key={`${card.source}-${card.key}-${idx}`}
+                    card={card}
+                    isLoading={loadingKey === card.key}
+                    onDownload={() => handleDownloadClick(card)}
+                    onLink={() => setLinkingCard(card)}
+                  />
                 ))}
               </div>
             </section>
@@ -818,6 +890,36 @@ function SearchDownload(): JSX.Element {
             })
           }
           onStart={handleStartAowuDownload}
+        />
+      )}
+
+      {/* 关联追番 — mini BGM search */}
+      {linkingCard && (
+        <LinkTrackModal
+          initialKeyword={cleanForBgmSearch(linkingCard.title)}
+          sourceLabel={`${linkingCard.source} · 来源链接已记录`}
+          sourceTitle={linkingCard.title}
+          onClose={() => setLinkingCard(null)}
+          onConfirm={(detail) => {
+            const binding: AnimeBinding = {
+              source: linkingCard.source,
+              sourceTitle: linkingCard.title,
+              sourceKey: linkingCard.key,
+            };
+            animeTrackStore.bind(
+              {
+                bgmId: detail.id,
+                title: detail.title,
+                titleCn: detail.title_cn || undefined,
+                cover: detail.cover || undefined,
+                totalEpisodes: detail.episodes > 0 ? detail.episodes : undefined,
+                status: "plan",
+                episode: 0,
+              },
+              binding,
+            );
+            setLinkingCard(null);
+          }}
         />
       )}
     </div>
