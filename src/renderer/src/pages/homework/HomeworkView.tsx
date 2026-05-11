@@ -3,6 +3,7 @@ import {
   Attack, DefenseGroup,
   Highlight, ModalShell, FormField, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
+  createTeamPasteHandler,
   commonPrefixLen, matchesDefense, todayStr,
 } from './shared'
 import { ImportModal } from './ImportModal'
@@ -53,6 +54,11 @@ function AddModal({
             placeholder="例:涅比亚、ams、春剑、水m、布丁"
             value={defenseInput}
             onChange={e => setDefenseInput(e.target.value)}
+            onPaste={createTeamPasteHandler({
+              setTeam: setDefenseInput,
+              setNotes: noteState.setNotes,
+              currentNotes: noteState.notes,
+            })}
             autoFocus
           />
           <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
@@ -76,6 +82,11 @@ function AddModal({
                 placeholder="例：els、魔女、春剑、水m、布丁"
                 value={attackInput}
                 onChange={e => setAttackInput(e.target.value)}
+                onPaste={createTeamPasteHandler({
+                  setTeam: setAttackInput,
+                  setNotes: noteState.setNotes,
+                  currentNotes: noteState.notes,
+                })}
               />
               <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
             </div>
@@ -156,7 +167,19 @@ function EditDefenseModal({
             </div>
           </div>
           <FormField label="防守方角色" dot="bg-primary" hint="用顿号 、 分隔，最多 5 名角色">
-            <ModalInput value={value} onChange={e => setValue(e.target.value)} autoFocus />
+            <ModalInput
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              onPaste={createTeamPasteHandler({
+                setTeam: setValue,
+                // Notes-update is a no-op when this modal is rendered without
+                // a notes field (PJJC defense edit) — the discarded notes are
+                // an acceptable cost vs adding a withNotes branch here.
+                setNotes: withNotes ? noteState.setNotes : () => {},
+                currentNotes: withNotes ? noteState.notes : [],
+              })}
+              autoFocus
+            />
           </FormField>
           {withNotes && (
             <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；点 ✕ 移除">
@@ -226,7 +249,16 @@ function EditAttackModal({
             )}
           </div>
           <FormField label="进攻方角色" dot="bg-secondary" hint="用顿号 、 分隔，最多 5 名角色">
-            <ModalInput value={teamValue} onChange={e => setTeamValue(e.target.value)} autoFocus />
+            <ModalInput
+              value={teamValue}
+              onChange={e => setTeamValue(e.target.value)}
+              onPaste={createTeamPasteHandler({
+                setTeam: setTeamValue,
+                setNotes: noteState.setNotes,
+                currentNotes: noteState.notes,
+              })}
+              autoFocus
+            />
           </FormField>
           <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；点 ✕ 移除">
             <NoteTagInput
@@ -409,6 +441,11 @@ function AddAttackModal({
             placeholder="例：els、魔女、春剑、水m、布丁"
             value={teamValue}
             onChange={e => setTeamValue(e.target.value)}
+            onPaste={createTeamPasteHandler({
+              setTeam: setTeamValue,
+              setNotes: noteState.setNotes,
+              currentNotes: noteState.notes,
+            })}
             autoFocus
           />
           <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
