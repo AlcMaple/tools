@@ -18,6 +18,9 @@ import { app } from 'electron'
 
 const CALENDAR_URL = 'https://api.bgm.tv/calendar'
 const DAY_MS = 24 * 60 * 60 * 1000
+// 番剧周期表一季度更新一次，缓存 14 天和 BGM 搜索结果一致。
+// 用户想强制刷新走刷新按钮（update=true）即可。
+const CALENDAR_TTL_MS = 14 * DAY_MS
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -162,7 +165,7 @@ export interface CalendarResult {
 export async function getBgmCalendar(update = false): Promise<CalendarResult> {
   if (!update) {
     const cached = await readCache()
-    if (cached && Date.now() - cached.updatedAt < DAY_MS) {
+    if (cached && Date.now() - cached.updatedAt < CALENDAR_TTL_MS) {
       return { data: cached.data, updatedAt: cached.updatedAt, fromCache: true }
     }
   }
