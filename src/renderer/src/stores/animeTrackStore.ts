@@ -44,6 +44,24 @@ export interface AnimeTrack {
 const STORAGE_KEY = 'maple-anime-tracks-v1'
 const VALID_STATUS: ReadonlyArray<AnimeStatus> = ['plan', 'watching', 'completed', 'paused', 'dropped']
 
+/**
+ * Idempotent normalize for an array of unknown tracks — used both for
+ * localStorage read and for the WebDAV pull path. Filters out entries
+ * without a numeric bgmId, deduplicates by bgmId (keeps the last one in
+ * iteration order), and routes each through the per-entry normalizer.
+ */
+export function normalizeTracks(input: unknown): AnimeTrack[] {
+  if (!Array.isArray(input)) return []
+  const map = new Map<number, AnimeTrack>()
+  for (const v of input) {
+    if (!v || typeof v !== 'object') continue
+    const t = v as Partial<AnimeTrack>
+    if (typeof t.bgmId !== 'number') continue
+    map.set(t.bgmId, normalize({ ...t, bgmId: t.bgmId }))
+  }
+  return [...map.values()]
+}
+
 function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   const now = new Date().toISOString()
   const status = (t.status && VALID_STATUS.includes(t.status)) ? t.status : 'plan'
@@ -163,6 +181,17 @@ class AnimeTrackStore {
     return [...this.ensure().values()]
   }
 
+  /**
+   * Wholesale replace — used by the WebDAV pull path. Input is normalized so
+   * partial / legacy entries still land cleanly. Persists + notifies subscribers.
+   */
+  replaceAll(tracks: AnimeTrack[]): void {
+    const next = new Map<number, AnimeTrack>()
+    for (const t of tracks) next.set(t.bgmId, t)
+    this.cache = next
+    this.persist()
+  }
+
   subscribe(cb: () => void): () => void {
     this.listeners.add(cb)
     return () => { this.listeners.delete(cb) }
@@ -170,6 +199,19 @@ class AnimeTrackStore {
 }
 
 export const animeTrackStore = new AnimeTrackStore()
+
+/**
+ * React hook — subscribes to the full list of tracked anime. Used by the
+ * aggregate "我的追番" page. Returns a stable snapshot per change event.
+ */
+export function useAnimeTrackList(): AnimeTrack[] {
+  const [tracks, setTracks] = useState<AnimeTrack[]>(() => animeTrackStore.list())
+  useEffect(() => {
+    setTracks(animeTrackStore.list())
+    return animeTrackStore.subscribe(() => setTracks(animeTrackStore.list()))
+  }, [])
+  return tracks
+}
 
 /**
  * React hook — subscribes to a single track entry by BGM id.

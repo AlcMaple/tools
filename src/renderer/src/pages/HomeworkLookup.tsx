@@ -9,6 +9,7 @@ import {
   ipcErrMsg, normalizeClassic, normalizeHomework, normalizeLog, normalizePjjc,
   ModalShell,
 } from './homework/shared'
+import { animeTrackStore, useAnimeTrackList, normalizeTracks, type AnimeTrack } from '../stores/animeTrackStore'
 
 type Tab = 'homework' | 'jjc' | 'pjjc' | 'classic' | 'log'
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
@@ -22,6 +23,8 @@ interface SyncRemoteMeta {
   pjjc: PjjcGroup[]
   classic: ClassicGroup[]
   log: LogEntry[]
+  /** Anime追番列表 — added in blob v5. Older blobs leave this as []. */
+  tracks: AnimeTrack[]
 }
 
 interface SyncConfirmState {
@@ -48,8 +51,9 @@ function snapshotOf(
   pjjc: PjjcGroup[],
   classic: ClassicGroup[],
   log: LogEntry[],
+  tracks: AnimeTrack[],
 ): string {
-  return JSON.stringify({ homework, jjc, pjjc, classic, log })
+  return JSON.stringify({ homework, jjc, pjjc, classic, log, tracks })
 }
 
 /**
@@ -77,6 +81,7 @@ function rebuildIfSchemaDrift(stored: string, current: string): string {
       pjjc?: unknown
       classic?: unknown
       log?: unknown
+      tracks?: unknown
     }
     const renormalized = snapshotOf(
       normalizeHomework(Array.isArray(parsed.homework) ? (parsed.homework as DefenseGroup[]) : []),
@@ -84,6 +89,7 @@ function rebuildIfSchemaDrift(stored: string, current: string): string {
       normalizePjjc(parsed.pjjc),
       normalizeClassic(Array.isArray(parsed.classic) ? (parsed.classic as ClassicGroup[]) : []),
       normalizeLog(parsed.log),
+      normalizeTracks(parsed.tracks),
     )
     if (renormalized === current) return current
   } catch { /* malformed stored snapshot — fall through, keep it */ }
@@ -101,7 +107,7 @@ function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
   const remote = JSON.parse(jsonStr)
   if (Array.isArray(remote)) {
     // Legacy: array = homework only, no embedded rev/ts
-    return { rev: 0, ts: '', homework: remote as DefenseGroup[], jjc: [], pjjc: [], classic: [], log: [] }
+    return { rev: 0, ts: '', homework: remote as DefenseGroup[], jjc: [], pjjc: [], classic: [], log: [], tracks: [] }
   }
   if (remote && typeof remote === 'object') {
     return {
@@ -112,6 +118,7 @@ function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
       pjjc: Array.isArray(remote.pjjc) ? remote.pjjc : [],
       classic: Array.isArray(remote.classic) ? remote.classic : [],
       log: Array.isArray(remote.log) ? remote.log : [],
+      tracks: normalizeTracks(remote.tracks),
     }
   }
   throw new Error('远端数据格式不识别')
@@ -142,6 +149,13 @@ function logStats(data: LogEntry[]): { count: number } {
   return { count: data.length }
 }
 
+function trackStats(data: AnimeTrack[]): { total: number; watching: number } {
+  return {
+    total: data.length,
+    watching: data.filter(t => t.status === 'watching').length,
+  }
+}
+
 function formatRemoteTs(ts: string): string {
   if (!ts) return '未知'
   const d = new Date(ts)
@@ -163,12 +177,19 @@ export default function HomeworkLookup(): JSX.Element {
   const initialPjjc = (() => normalizePjjc(readJson(PJJC_KEY, [])))()
   const initialClassic = (() => normalizeClassic(readJson(CLASSIC_KEY, [])))()
   const initialLog = (() => normalizeLog(readJson(LOG_KEY, [])))()
+  // animeTrackStore is self-persisting; pull initial state via the store API
+  // (already normalized) instead of reading localStorage twice.
+  const initialTracks = animeTrackStore.list()
 
   const [homeworkData, setHomeworkData] = useState<DefenseGroup[]>(initialHomework)
   const [jjcData, setJjcData] = useState<DefenseGroup[]>(initialJjc)
   const [pjjcData, setPjjcData] = useState<PjjcGroup[]>(initialPjjc)
   const [classicData, setClassicData] = useState<ClassicGroup[]>(initialClassic)
   const [logData, setLogData] = useState<LogEntry[]>(initialLog)
+  // Subscribe to animeTrackStore — sync chip needs to flip "本地未上传" when
+  // the user edits tracks on MyAnime. animeTrackStore persists itself, so we
+  // only need the snapshot for diff purposes here.
+  const tracksData = useAnimeTrackList()
 
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -194,7 +215,7 @@ export default function HomeworkLookup(): JSX.Element {
   // current shape but is *semantically* identical after re-normalizing, treat
   // it as pure shape drift and rebuild. See rebuildIfSchemaDrift().
   const [lastSyncedSnapshot, setLastSyncedSnapshot] = useState<string>(() => {
-    const initialSnapshot = snapshotOf(initialHomework, initialJjc, initialPjjc, initialClassic, initialLog)
+    const initialSnapshot = snapshotOf(initialHomework, initialJjc, initialPjjc, initialClassic, initialLog, initialTracks)
     const stored = localStorage.getItem(SNAPSHOT_KEY)
     if (!stored) return initialSnapshot
     return rebuildIfSchemaDrift(stored, initialSnapshot)
@@ -207,8 +228,8 @@ export default function HomeworkLookup(): JSX.Element {
   // Memoized so unrelated re-renders (search keystrokes, tab switches, sync
   // status changes) don't re-stringify the entire dataset.
   const currentSnapshot = useMemo(
-    () => snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData),
-    [homeworkData, jjcData, pjjcData, classicData, logData]
+    () => snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData, tracksData),
+    [homeworkData, jjcData, pjjcData, classicData, logData, tracksData]
   )
   const localDirty = currentSnapshot !== lastSyncedSnapshot
   const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
@@ -320,7 +341,7 @@ export default function HomeworkLookup(): JSX.Element {
     setSyncMsg('')
     try {
       const blob = JSON.stringify({
-        _v: 4,
+        _v: 5,
         _rev: newRev,
         _ts: new Date().toISOString(),
         homework: homeworkData,
@@ -328,13 +349,14 @@ export default function HomeworkLookup(): JSX.Element {
         pjjc: pjjcData,
         classic: classicData,
         log: logData,
+        tracks: tracksData,
       })
       await window.webdavApi.push(blob)
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(newRev)
       setRemoteRev(newRev)
-      setLastSyncedSnapshot(snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData))
+      setLastSyncedSnapshot(snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData, tracksData))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '上传成功')
     } catch (e: unknown) {
@@ -357,16 +379,18 @@ export default function HomeworkLookup(): JSX.Element {
       const newPjjc = normalizePjjc(remote.pjjc)
       const newClassic = normalizeClassic(remote.classic)
       const newLog = normalizeLog(remote.log)
+      const newTracks = normalizeTracks(remote.tracks)
       setHomeworkData(newHomework)
       setJjcData(newJjc)
       setPjjcData(newPjjc)
       setClassicData(newClassic)
       setLogData(newLog)
+      animeTrackStore.replaceAll(newTracks)
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(remote.rev)
       setRemoteRev(remote.rev)
-      setLastSyncedSnapshot(snapshotOf(newHomework, newJjc, newPjjc, newClassic, newLog))
+      setLastSyncedSnapshot(snapshotOf(newHomework, newJjc, newPjjc, newClassic, newLog, newTracks))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '拉取成功')
     } catch (e: unknown) {
@@ -648,6 +672,7 @@ export default function HomeworkLookup(): JSX.Element {
             localPjjc={pjjcData}
             localClassic={classicData}
             localLog={logData}
+            localTracks={tracksData}
             localDirty={localDirty}
             lastSyncedRev={lastSyncedRev}
             onConfirmPush={executePush}
@@ -662,7 +687,7 @@ export default function HomeworkLookup(): JSX.Element {
 // ── Sync confirm modal ─────────────────────────────────────────────────────
 function SyncConfirmModal({
   state, setState,
-  localHomework, localJjc, localPjjc, localClassic, localLog, localDirty, lastSyncedRev,
+  localHomework, localJjc, localPjjc, localClassic, localLog, localTracks, localDirty, lastSyncedRev,
   onConfirmPush, onConfirmPull,
 }: {
   state: SyncConfirmState
@@ -672,6 +697,7 @@ function SyncConfirmModal({
   localPjjc: PjjcGroup[]
   localClassic: ClassicGroup[]
   localLog: LogEntry[]
+  localTracks: AnimeTrack[]
   localDirty: boolean
   lastSyncedRev: number
   onConfirmPush: () => void
@@ -685,11 +711,13 @@ function SyncConfirmModal({
   const localPj = pjjcStats(localPjjc)
   const localCl = classicStats(localClassic)
   const localLg = logStats(localLog)
+  const localTr = trackStats(localTracks)
   const remoteHw = remote ? homeworkStats(remote.homework) : null
   const remoteJjcStats = remote ? homeworkStats(remote.jjc) : null
   const remotePj = remote ? pjjcStats(remote.pjjc) : null
   const remoteCl = remote ? classicStats(remote.classic) : null
   const remoteLg = remote ? logStats(remote.log) : null
+  const remoteTr = remote ? trackStats(remote.tracks) : null
 
   // Conflict logic:
   // - push: remote exists with rev > lastSyncedRev (someone updated cloud after our last sync)
@@ -794,6 +822,9 @@ function SyncConfirmModal({
                 <p className="text-xs font-mono">
                   {localLg.count} 条记录
                 </p>
+                <p className="text-xs font-mono">
+                  追番 {localTr.total} 部 / 在追 {localTr.watching}
+                </p>
                 <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
                   rev={lastSyncedRev}
                   {localDirty && <span className="ml-1 text-tertiary">+ 未同步改动</span>}
@@ -827,6 +858,9 @@ function SyncConfirmModal({
                   </p>
                   <p className="text-xs font-mono">
                     {remoteLg!.count} 条记录
+                  </p>
+                  <p className="text-xs font-mono">
+                    追番 {remoteTr!.total} 部 / 在追 {remoteTr!.watching}
                   </p>
                   <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
                     rev={remote.rev}{remote.ts && ` · ${formatRemoteTs(remote.ts)}`}
