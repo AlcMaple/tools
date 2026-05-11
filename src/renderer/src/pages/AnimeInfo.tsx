@@ -775,11 +775,10 @@ function DetailView({
             {track ? (
               <button
                 onClick={() => animeTrackStore.delete(data.id)}
-                className="group w-full py-4 rounded-full bg-primary-container/15 border border-primary-container/30 hover:bg-error-container/15 hover:border-error/30 text-primary hover:text-error transition-colors flex items-center justify-center gap-2"
+                className="w-full py-4 rounded-full bg-primary-container/15 border border-primary-container/30 hover:bg-error-container/15 hover:border-error/30 text-primary hover:text-error transition-colors flex items-center justify-center gap-2"
               >
                 <span className="material-symbols-outlined text-lg leading-none" style={{ fontVariationSettings: "'FILL' 1" }}>bookmark</span>
                 <span className="font-label text-sm">已加入追番</span>
-                <span className="material-symbols-outlined text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity">close</span>
               </button>
             ) : (
               <button
