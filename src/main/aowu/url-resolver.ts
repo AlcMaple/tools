@@ -71,8 +71,7 @@ async function parseWatchUrl(watchUrl: string): Promise<WatchPathParts> {
   return { id, sourceId, ep }
 }
 
-/** Resolve a watch URL to its signed CDN mp4 URL (~200ms over warm key cache). */
-export async function resolveAowuMp4(watchUrl: string): Promise<string> {
+async function computeAowuMp4(watchUrl: string): Promise<string> {
   const { id, sourceId, ep } = await parseWatchUrl(watchUrl)
 
   const playRes = await callSecure<PlayBundleData>({
@@ -93,6 +92,57 @@ export async function resolveAowuMp4(watchUrl: string): Promise<string> {
     throw new Error('AOWU_RESOLVE_FAILED: play 响应缺少有效 url')
   }
   return url
+}
+
+// ── In-memory resolved-URL cache ─────────────────────────────────────────────
+// The signed ByteDance CDN URLs returned by play() stay valid for "several
+// hours". Both the download flow (download.ts) and the "copy mp4 link" flow
+// (ipc/aowu.ts via the renderer) call resolveAowuMp4 with the *same* watch
+// URL — yet without a cache, every call hits the encrypted endpoint twice
+// (bundle + play, ~3-5s of round-trips).
+//
+// With this cache:
+//   • Once download.ts resolves ep 1's URL to kick off the download, a
+//     subsequent "copy URL" click on ep 1 returns instantly from cache.
+//   • Resolving ep 2 to copy its URL while ep 1 is still downloading also
+//     populates the cache, so when ep 1 finishes and ep 2 starts, the
+//     download flow gets the cached URL — no second resolve.
+//   • Concurrent calls for the same watchUrl coalesce on a single promise.
+//
+// TTL is conservative (1h) because the signed URL outlives this window in
+// practice; if the CDN starts returning 403, the consumer can call
+// `invalidateAowuMp4` to force a re-fetch.
+interface CacheEntry { url: string; resolvedAt: number }
+const CACHE_TTL_MS = 60 * 60 * 1000
+const urlCache = new Map<string, CacheEntry>()
+const inflight = new Map<string, Promise<string>>()
+
+/** Resolve a watch URL to its signed CDN mp4 URL. Cached (TTL 1h) + coalesced. */
+export async function resolveAowuMp4(watchUrl: string): Promise<string> {
+  const cached = urlCache.get(watchUrl)
+  if (cached && Date.now() - cached.resolvedAt < CACHE_TTL_MS) {
+    return cached.url
+  }
+
+  const existing = inflight.get(watchUrl)
+  if (existing) return existing
+
+  const p = (async (): Promise<string> => {
+    try {
+      const url = await computeAowuMp4(watchUrl)
+      urlCache.set(watchUrl, { url, resolvedAt: Date.now() })
+      return url
+    } finally {
+      inflight.delete(watchUrl)
+    }
+  })()
+  inflight.set(watchUrl, p)
+  return p
+}
+
+/** Drop a cached entry — e.g. after the CDN returns 403 indicating expiry. */
+export function invalidateAowuMp4(watchUrl: string): void {
+  urlCache.delete(watchUrl)
 }
 
 /**
