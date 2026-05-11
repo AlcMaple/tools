@@ -213,6 +213,100 @@ function parsePathTail(watchUrl: string): string {
 }
 
 /**
+ * Resolve a numeric video id (or a /v/{id} URL) to the user-facing /w/{token}
+ * URL via the `route-tokens` endpoint — the documented inverse of route().
+ *
+ * Background: search() returns `aowu.tv/v/{numericId}` which is a synthetic
+ * URL we use to round-trip through watch(). The actual user-facing SPA URL
+ * uses an opaque per-video token like `JrTmTRkaoEhG`. Opening /v/{id} in a
+ * browser yields the site's "页面令牌生成失败" error page. So when WatchHere
+ * wants to send the user to "watch online", we need the /w/{token} form.
+ *
+ * The route-tokens endpoint shape is undocumented (the SPA uses it internally
+ * for <a> link rewriting). We try common response shapes defensively — if
+ * none of them yield a token, throw ERR_STRUCTURE.
+ *
+ * Input forms accepted:
+ *   - `"2997"`                    raw numeric id
+ *   - `"https://aowu.tv/v/2997"`  synthetic search URL
+ *   - `"https://aowu.tv/w/Jr..."` already a token URL → returned as-is
+ */
+export async function resolveSharePath(input: string): Promise<string> {
+  const raw = input.trim()
+  if (!raw) throw new Error('resolveSharePath: empty input')
+
+  // Already token form — just normalise.
+  const tail = parsePathTail(raw)
+  if (tail && !/^\d+$/.test(tail)) {
+    return `${BASE_URL}/w/${tail}`
+  }
+
+  // Numeric id form. Extract id then call route-tokens.
+  const id = /^\d+$/.test(raw) ? raw : tail
+  if (!/^\d+$/.test(id)) {
+    throw new Error(`resolveSharePath: not a numeric id or token URL: ${raw}`)
+  }
+
+  const path = `/play/${id}`
+  const res = await callSecure<unknown>({
+    action: 'route-tokens',
+    params: { paths: [path] },
+  })
+
+  const token = extractTokenFromRouteTokens(res, path)
+  if (!token) {
+    throw new Error(
+      `${ERR_STRUCTURE}: route-tokens 未返回 token for ${path}; ` +
+      `response shape unexpected: ${JSON.stringify(res).slice(0, 200)}`,
+    )
+  }
+  return `${BASE_URL}/w/${token}`
+}
+
+/**
+ * The `route-tokens` response shape isn't documented. From the SPA's usage
+ * pattern (translate `<a>` link paths to internal tokens), the response is
+ * most likely a map or list keyed by path. We try the four shapes we've
+ * seen FantasyKon-style APIs return, in order, and return the first that
+ * yields a non-empty string. Returns null if none match.
+ */
+function extractTokenFromRouteTokens(res: unknown, path: string): string | null {
+  if (!res || typeof res !== 'object') return null
+  const r = res as Record<string, unknown>
+
+  // Shape 1: { "/play/2893": "JrTmTRkaoEhG", ... }
+  if (typeof r[path] === 'string' && r[path]) return r[path] as string
+
+  // Shape 2: { data: { "/play/2893": "JrTmTRkaoEhG" } }
+  const data = r.data
+  if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>
+    if (typeof d[path] === 'string' && d[path]) return d[path] as string
+    // Shape 2a: { data: [{ path: "...", token: "..." }, ...] }
+    if (Array.isArray(d.tokens)) {
+      for (const t of d.tokens) {
+        const e = t as Record<string, unknown>
+        if (e?.path === path && typeof e.token === 'string' && e.token) return e.token as string
+      }
+    }
+    // Shape 2b: { data: { tokens: { "/play/2893": "..." } } }
+    if (d.tokens && typeof d.tokens === 'object') {
+      const tt = d.tokens as Record<string, unknown>
+      if (typeof tt[path] === 'string' && tt[path]) return tt[path] as string
+    }
+  }
+
+  // Shape 3: { tokens: { "/play/2893": "..." } }
+  const tokens = r.tokens
+  if (tokens && typeof tokens === 'object') {
+    const t = tokens as Record<string, unknown>
+    if (typeof t[path] === 'string' && t[path]) return t[path] as string
+  }
+
+  return null
+}
+
+/**
  * Resolve a watch URL (`/v/{id-or-token}`) to detail. Both the new numeric form
  * (from search() above) and any legacy token form (from queues created before
  * this refactor) work — we route(token) once if the tail isn't numeric.

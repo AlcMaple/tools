@@ -900,11 +900,26 @@ function SearchDownload(): JSX.Element {
           sourceLabel={`${linkingCard.source} · 来源链接已记录`}
           sourceTitle={linkingCard.title}
           onClose={() => setLinkingCard(null)}
-          onConfirm={(detail) => {
+          onConfirm={async (detail) => {
+            // Aowu 的 card.key 形如 aowu.tv/v/{id}，在浏览器里打开会得到
+            // 「页面令牌生成失败」错误页。这里同步去 route-tokens 拿一次
+            // user-facing 的 /w/{token} URL，写到 sourceUrl 上 —— 之后 WatchHere
+            // chip 点击就能直接命中正确页面。
+            // 失败时（网络抖动 / 站点改版）让 sourceUrl 留空，chip 会回退到
+            // sourceKey，至少功能不退化；WatchHere 也有 lazy 兜底再试一次。
+            let sourceUrl: string | undefined
+            if (linkingCard.source === "Aowu") {
+              try {
+                sourceUrl = await window.aowuApi.resolveShareUrl(linkingCard.key);
+              } catch (e) {
+                console.warn("[searchDL] aowu resolveShareUrl failed:", e);
+              }
+            }
             const binding: AnimeBinding = {
               source: linkingCard.source,
               sourceTitle: linkingCard.title,
               sourceKey: linkingCard.key,
+              sourceUrl,
             };
             animeTrackStore.bind(
               {
