@@ -13,6 +13,7 @@ import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
 import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
+import { WatchHere } from '../components/WatchHere'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const BGM_SEARCH_TTL_MS = 14 * DAY_MS
@@ -810,6 +811,10 @@ function DetailView({
                 Track this anime
               </button>
             )}
+            {/* 已关联的源跳转 — 只在 bindings 非空时出现，每个源一颗 chip。
+                未追番时 useAnimeTrack 返回 null，组件自身就 return null，
+                所以这里不需要包条件分支。 */}
+            <WatchHere bgmId={data.id} variant="row" />
           </div>
         </div>
 

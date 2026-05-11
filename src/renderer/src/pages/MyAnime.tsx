@@ -24,6 +24,7 @@ import {
   useNoteTagState,
   NoteChipList,
 } from './homework/shared'
+import { WatchHere } from '../components/WatchHere'
 
 // ── Status taxonomy ──────────────────────────────────────────────────────────
 
@@ -325,25 +326,16 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             notes change handlers. */}
         <NotesEditor notes={track.notes} onChange={setNotes} />
 
-        {/* Source bindings — passive disclosure, no edit. They get written by
-            SearchDownload's 关联追番 flow; here we just show what's linked. */}
+        {/* Source bindings → 跳转 chip。每个绑定一颗按钮，点击在外部浏览器
+            打开源详情页（不算具体集数 URL，省一次抓 watch info 的开销，
+            chip 上的 "ep N" 提醒用户当前进度）。SearchDownload 的「关联追番」
+            是这里 chip 的来源；本行没有编辑入口，删除绑定走完整删除流程。 */}
         {track.bindings.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 -mt-1">
-            <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35">
-              来源
+            <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35 mr-0.5">
+              在线观看
             </span>
-            {track.bindings.map((b, i) => (
-              <span
-                key={`${b.source}-${i}`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface border border-outline-variant/15 text-[10px] text-on-surface-variant/60 font-label"
-                title={b.sourceTitle}
-              >
-                <span className="font-bold">{b.source}</span>
-                <span className="text-on-surface-variant/35 truncate max-w-[180px]">
-                  {b.sourceTitle}
-                </span>
-              </span>
-            ))}
+            <WatchHere bgmId={track.bgmId} variant="inline" />
           </div>
         )}
       </div>
