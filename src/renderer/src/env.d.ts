@@ -116,8 +116,14 @@ declare global {
       electron: () => string
     }
     bgmApi: {
-      search: (keyword: string) => Promise<BgmSearchResult[]>
+      /** `update=true` bypasses both the renderer and main-side caches and
+       * refetches every page through the rate limiter. Use sparingly — meant
+       * for the manual refresh button, not background sync. */
+      search: (keyword: string, update?: boolean) => Promise<BgmSearchResult[]>
       detail: (subjectId: number) => Promise<BgmDetail>
+      /** Subscribe to per-page progress events. Fires `(current, total)` after
+       * each page completes. Returns an unsubscribe function. */
+      onSearchProgress: (cb: (current: number, total: number) => void) => () => void
     }
     xifanApi: {
       getCaptcha: () => Promise<{ image_b64: string }>

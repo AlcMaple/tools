@@ -579,7 +579,15 @@ type PageState =
   | { status: 'error'; message: string }
 
 // ── 子组件 ────────────────────────────────────────────────────
-function LoadingSpinner(): JSX.Element {
+function LoadingSpinner({
+  progress,
+}: {
+  /** When a multi-page BGM search is running, main fires progress events that
+   * land here. Shows "page X / Y" below the spinner so the user has feedback
+   * during ≥2s-per-page rate-limited fetches instead of staring at a blank
+   * spinner for 10+ seconds. */
+  progress?: { current: number; total: number } | null
+} = {}): JSX.Element {
   return (
     <div className="flex flex-col items-center justify-center py-32 gap-4">
       <span
@@ -591,6 +599,11 @@ function LoadingSpinner(): JSX.Element {
       <p className="font-label text-xs text-on-surface-variant/40 tracking-widest uppercase">
         Accessing Archive...
       </p>
+      {progress && progress.total > 1 && (
+        <p className="font-label text-[11px] text-on-surface-variant/60 tracking-wider">
+          Page {progress.current} / {progress.total}
+        </p>
+      )}
     </div>
   )
 }
@@ -1025,10 +1038,22 @@ function AnimeInfo(): JSX.Element {
   const lastBgmKeyword = useRef(_cachedBgmKeyword)
   const [archiveKeyword, setArchiveKeyword] = useState<string | null>(null)
   const pendingScrollRestore = useRef(false)
+  // Live progress from main-process BGM search. Set by the IPC subscription
+  // below; cleared at the start/end of every search invocation.
+  const [searchProgress, setSearchProgress] = useState<{ current: number; total: number } | null>(null)
 
   useEffect(() => {
     _cachedState = state
   }, [state])
+
+  // Subscribe once for the page lifetime. Main process emits a `(current, total)`
+  // tuple after each page completes (cache hit or rate-limited network fetch).
+  useEffect(() => {
+    const unsub = window.bgmApi.onSearchProgress((current, total) => {
+      setSearchProgress({ current, total })
+    })
+    return unsub
+  }, [])
 
   // Restore scroll position after returning to results list
   useEffect(() => {
@@ -1050,10 +1075,17 @@ function AnimeInfo(): JSX.Element {
     return items
   }
 
+  /**
+   * Stale-cache background refresh: user is already looking at older results,
+   * we silently fetch fresh in the background to update the cache (and the
+   * displayed list will be fresh on next search). Passes update=true so the
+   * main-side disk cache is also bypassed — otherwise we'd just re-cache the
+   * same stale HTML.
+   */
   const refreshBgmSearchInBackground = async (keyword: string): Promise<void> => {
     await dedupRefresh(`bgm:${keyword}`, async () => {
       try {
-        const fresh = await window.bgmApi.search(keyword)
+        const fresh = await window.bgmApi.search(keyword, true)
         if (!Array.isArray(fresh) || fresh.length === 0) return
         await setCachedBgmSearch(keyword, fresh)
       } catch {
@@ -1062,33 +1094,53 @@ function AnimeInfo(): JSX.Element {
     })
   }
 
+  /**
+   * Search semantics (matches SearchDownload / per project-wide setting):
+   *   - Cache ON  + hit + fresh  → use cache, return early
+   *   - Cache ON  + hit + stale  → use cache for display, refresh in background
+   *   - Cache ON  + miss         → fetch online (main may still use its disk cache)
+   *   - Cache OFF                → always fetch online with update=true, bypassing
+   *                                BOTH renderer and main-side caches
+   *
+   * After ANY successful fetch the renderer cache is updated (data + timestamp),
+   * regardless of the setting — so when the user flips it back on the cache is
+   * already populated and the TTL clock is restarted.
+   */
   const handleSearch = async (keyword: string): Promise<void> => {
     lastBgmKeyword.current = keyword
     _cachedBgmKeyword = keyword
     const cacheEnabled = isSearchCacheEnabled()
-    const hit = cacheEnabled ? await getCachedBgmSearch(keyword) : null
 
-    if (hit) {
-      const sorted = sortByDate(hit.data)
-      if (sorted.length === 0) {
-        setState({ status: 'error', message: `未找到与"${keyword}"相关的结果` })
-      } else if (sorted.length === 1) {
-        lastResults.current = []
-        _cachedResults = []
-        await loadDetail(sorted[0])
-      } else {
-        lastResults.current = sorted
-        _cachedResults = sorted
-        setState({ status: 'results', items: sorted })
+    if (cacheEnabled) {
+      const hit = await getCachedBgmSearch(keyword)
+      if (hit) {
+        const sorted = sortByDate(hit.data)
+        if (sorted.length === 0) {
+          setState({ status: 'error', message: `未找到与"${keyword}"相关的结果` })
+        } else if (sorted.length === 1) {
+          lastResults.current = []
+          _cachedResults = []
+          await loadDetail(sorted[0])
+        } else {
+          lastResults.current = sorted
+          _cachedResults = sorted
+          setState({ status: 'results', items: sorted })
+        }
+        if (hit.isStale) void refreshBgmSearchInBackground(keyword)
+        return
       }
-      if (hit.isStale) void refreshBgmSearchInBackground(keyword)
-      return
     }
 
+    setSearchProgress(null)
     setState({ status: 'searching' })
     try {
-      const results = await window.bgmApi.search(keyword)
-      if (cacheEnabled && results.length > 0) {
+      // When the cache toggle is OFF the user has explicitly asked for fresh
+      // data, so we bypass main's disk cache too. When ON we allow main to
+      // serve from disk (it's faster and avoids any chance of rate-limiting).
+      const results = await window.bgmApi.search(keyword, !cacheEnabled)
+      if (results.length > 0) {
+        // Always write through, even when cache is OFF — per user contract:
+        // "关闭的时候同时更新缓存里的数据以及 ttl 这些时间"
         void setCachedBgmSearch(keyword, results)
       }
       const sorted = sortByDate(results)
@@ -1105,6 +1157,8 @@ function AnimeInfo(): JSX.Element {
       }
     } catch (err) {
       setState({ status: 'error', message: String(err) })
+    } finally {
+      setSearchProgress(null)
     }
   }
 
@@ -1135,7 +1189,9 @@ function AnimeInfo(): JSX.Element {
 
       <main className="ml-0 pt-16 px-10 py-10">
         {state.status === 'idle' && <IdleState />}
-        {(state.status === 'searching' || state.status === 'loading') && <LoadingSpinner />}
+        {(state.status === 'searching' || state.status === 'loading') && (
+          <LoadingSpinner progress={state.status === 'searching' ? searchProgress : null} />
+        )}
         {state.status === 'results' && (
           <SearchResults items={state.items} onSelect={loadDetail} />
         )}

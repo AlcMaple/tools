@@ -7,8 +7,18 @@ contextBridge.exposeInMainWorld('versions', {
 })
 
 contextBridge.exposeInMainWorld('bgmApi', {
-  search: (keyword: string) => ipcRenderer.invoke('bgm:search', keyword),
+  search: (keyword: string, update?: boolean) =>
+    ipcRenderer.invoke('bgm:search', keyword, update),
   detail: (subjectId: number) => ipcRenderer.invoke('bgm:detail', subjectId),
+  // Per-page progress for multi-page searches. Main fires `(current, total)`
+  // after each page is fetched (cache hit or network). Returns an unsubscribe
+  // function so callers can clean up in their useEffect teardown.
+  onSearchProgress: (cb: (current: number, total: number) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, current: number, total: number): void =>
+      cb(current, total)
+    ipcRenderer.on('bgm:search-progress', handler)
+    return () => ipcRenderer.removeListener('bgm:search-progress', handler)
+  },
 })
 
 // Single subscription point for download progress events. The main process
