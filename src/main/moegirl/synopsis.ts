@@ -265,6 +265,45 @@ async function tryPage(title: string): Promise<PageInfo | null> {
 }
 
 /**
+ * Resolve a query to Moegirl's canonical page title via MediaWiki's opensearch
+ * API. Use as a fallback when direct page lookup 404s — common causes:
+ *
+ *   - BGM gives `电影 LOVELIVE！...` (all-caps + full-width "！")
+ *     Moegirl page lives at `电影 LoveLive!...` (mixed case + half-width "!")
+ *   - BGM has `JoJo的奇妙冒险 黄金之风` but Moegirl uses `JoJo的奇妙冒险 黄金之风`
+ *     with different spacing
+ *
+ * MediaWiki is case-sensitive past the first character AND does not normalize
+ * full-width Unicode punctuation. The search API is index-backed and fuzzy on
+ * both axes, so it finds the canonical title we can then re-fetch.
+ *
+ * Returns null on network error / empty results / parse failure — caller falls
+ * through to the next candidate.
+ */
+async function resolveCanonicalTitle(query: string): Promise<string | null> {
+  const params = new URLSearchParams({
+    action: 'opensearch',
+    search: query,
+    limit: '1',
+    namespace: '0',
+    format: 'json',
+  })
+  try {
+    const res = await httpsGet(`${BASE_URL}api.php?${params.toString()}`, 10000)
+    if (res.status !== 200 || !res.body) return null
+    const data = JSON.parse(res.body)
+    // opensearch contract: [searchTerm, [titles], [descriptions], [urls]]
+    if (Array.isArray(data) && Array.isArray(data[1]) && data[1].length > 0) {
+      const t = String(data[1][0]).trim()
+      return t || null
+    }
+  } catch {
+    /* swallow — opensearch is a best-effort fallback */
+  }
+  return null
+}
+
+/**
  * 从萌娘百科取剧情简介。
  *
  * 处理"bgm 标题落到系列页"的情况（例：《光之美少女》bgm id=4243，
@@ -291,7 +330,17 @@ export async function getMoegirlSynopsis(
   const allNames = candidates.slice()
 
   for (const candidate of candidates) {
-    const page = await tryPage(candidate)
+    // 1. Direct page lookup. Works for most well-canonicalized titles
+    //    (e.g. 光之美少女, JoJo的奇妙冒险).
+    let page = await tryPage(candidate)
+    // 2. Opensearch fallback when direct lookup 404s. Catches casing /
+    //    full-width-punctuation mismatches between BGM and Moegirl titles.
+    if (!page) {
+      const canonical = await resolveCanonicalTitle(candidate)
+      if (canonical && canonical !== candidate) {
+        page = await tryPage(canonical)
+      }
+    }
     if (!page) continue
     const { $, root, displayTitle } = page
     if (!root || root.length === 0) continue
