@@ -16,6 +16,9 @@
  */
 import { BASE_URL, callSecure, ERR_STRUCTURE } from './secure'
 import { URL } from 'node:url'
+import { app } from 'electron'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 interface PlayBundleData {
   data: {
@@ -94,31 +97,76 @@ async function computeAowuMp4(watchUrl: string): Promise<string> {
   return url
 }
 
-// ── In-memory resolved-URL cache ─────────────────────────────────────────────
-// The signed ByteDance CDN URLs returned by play() stay valid for "several
-// hours". Both the download flow (download.ts) and the "copy mp4 link" flow
+// ── Resolved-URL cache (persisted across Electron restarts) ─────────────────
+// The signed ByteDance CDN URLs returned by play() stay valid for at least
+// 24h in practice (verified by pasting into NDM after a day — still works).
+// Both the download flow (download.ts) and the "copy mp4 link" flow
 // (ipc/aowu.ts via the renderer) call resolveAowuMp4 with the *same* watch
 // URL — yet without a cache, every call hits the encrypted endpoint twice
 // (bundle + play, ~3-5s of round-trips).
 //
 // With this cache:
 //   • Once download.ts resolves ep 1's URL to kick off the download, a
-//     subsequent "copy URL" click on ep 1 returns instantly from cache.
+//     subsequent "copy URL" click on ep 1 returns instantly from disk.
 //   • Resolving ep 2 to copy its URL while ep 1 is still downloading also
 //     populates the cache, so when ep 1 finishes and ep 2 starts, the
 //     download flow gets the cached URL — no second resolve.
 //   • Concurrent calls for the same watchUrl coalesce on a single promise.
+//   • Restarting Electron does NOT invalidate the cache — entries written
+//     within the last 24h survive and resume the "instant copy" experience.
 //
-// TTL is conservative (1h) because the signed URL outlives this window in
-// practice; if the CDN starts returning 403, the consumer can call
-// `invalidateAowuMp4` to force a re-fetch.
+// Storage: a JSON map in `userData/aowu-url-cache.json`. Loaded lazily on
+// first access (so the module can be imported before `app.whenReady()`).
+// Writes are debounced (1s) so a burst of resolves coalesce into one flush.
+// Stale (>24h) entries are filtered on load. If the file is corrupt the
+// cache simply starts fresh — no hard failure.
 interface CacheEntry { url: string; resolvedAt: number }
-const CACHE_TTL_MS = 60 * 60 * 1000
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24h — verified safe via NDM testing
+const PERSIST_DEBOUNCE_MS = 1000
 const urlCache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<string>>()
 
-/** Resolve a watch URL to its signed CDN mp4 URL. Cached (TTL 1h) + coalesced. */
+let cacheFile: string | null = null
+let cacheLoaded = false
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+function ensureLoaded(): void {
+  if (cacheLoaded) return
+  cacheLoaded = true
+  try {
+    cacheFile = join(app.getPath('userData'), 'aowu-url-cache.json')
+    if (!existsSync(cacheFile)) return
+    const obj = JSON.parse(readFileSync(cacheFile, 'utf-8')) as Record<string, CacheEntry>
+    const now = Date.now()
+    for (const [k, v] of Object.entries(obj)) {
+      if (v && typeof v.url === 'string' && typeof v.resolvedAt === 'number'
+          && now - v.resolvedAt < CACHE_TTL_MS) {
+        urlCache.set(k, v)
+      }
+    }
+  } catch {
+    // Corrupt cache or app not ready — fall through, in-memory map stays empty.
+  }
+}
+
+function persist(): void {
+  if (!cacheFile) return
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    try {
+      const obj: Record<string, CacheEntry> = {}
+      for (const [k, v] of urlCache) obj[k] = v
+      writeFileSync(cacheFile!, JSON.stringify(obj))
+    } catch {
+      // Disk errors are non-fatal — next session just re-resolves.
+    }
+  }, PERSIST_DEBOUNCE_MS)
+}
+
+/** Resolve a watch URL to its signed CDN mp4 URL. Cached (TTL 24h, on disk) + coalesced. */
 export async function resolveAowuMp4(watchUrl: string): Promise<string> {
+  ensureLoaded()
   const cached = urlCache.get(watchUrl)
   if (cached && Date.now() - cached.resolvedAt < CACHE_TTL_MS) {
     return cached.url
@@ -131,6 +179,7 @@ export async function resolveAowuMp4(watchUrl: string): Promise<string> {
     try {
       const url = await computeAowuMp4(watchUrl)
       urlCache.set(watchUrl, { url, resolvedAt: Date.now() })
+      persist()
       return url
     } finally {
       inflight.delete(watchUrl)
@@ -142,7 +191,7 @@ export async function resolveAowuMp4(watchUrl: string): Promise<string> {
 
 /** Drop a cached entry — e.g. after the CDN returns 403 indicating expiry. */
 export function invalidateAowuMp4(watchUrl: string): void {
-  urlCache.delete(watchUrl)
+  if (urlCache.delete(watchUrl)) persist()
 }
 
 /**
