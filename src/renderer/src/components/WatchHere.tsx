@@ -11,8 +11,9 @@
 // - 默认 `variant="row"` 横向 chips，适合 AnimeInfo 左栏 / Calendar 卡 hover。
 // - `variant="inline"` 紧凑横排，适合 MyAnime 行尾。
 
+import { useEffect, useRef } from 'react'
 import type { AnimeBinding, AnimeTrack } from '../stores/animeTrackStore'
-import { useAnimeTrack } from '../stores/animeTrackStore'
+import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
 
 interface Props {
   bgmId: number
@@ -25,6 +26,7 @@ interface Props {
 
 export function WatchHere({ bgmId, variant = 'row', showEmpty = false, onRemove }: Props): JSX.Element | null {
   const track = useAnimeTrack(bgmId)
+  useAowuShareUrlBackfill(bgmId, track)
   if (!track || track.bindings.length === 0) {
     return showEmpty ? <EmptyPlaceholder /> : null
   }
@@ -44,6 +46,48 @@ export function WatchHere({ bgmId, variant = 'row', showEmpty = false, onRemove 
       ))}
     </div>
   )
+}
+
+/**
+ * Lazy migration: bindings created before the Aowu URL resolver landed store
+ * the synthetic /v/{id} URL as sourceKey with no sourceUrl. On first render
+ * of any WatchHere with such a binding, we silently call resolveShareUrl
+ * once per (bgmId, sourceKey) and patch the binding via the store. The
+ * `attemptedRef` guard prevents re-trying within the same session if the
+ * backfill failed (e.g. network down) — next app restart will try again.
+ *
+ * After backfill, sourceUrl points at /w/{token} and the chip's `<a href>`
+ * lands the user on the real watch page. No flicker since the patch happens
+ * via store.subscribe — the chip re-renders with the new href in place.
+ */
+const attemptedAowuBackfill = new Set<string>()
+
+function useAowuShareUrlBackfill(bgmId: number, track: AnimeTrack | null): void {
+  const attemptedRef = useRef(false)
+  useEffect(() => {
+    if (attemptedRef.current) return
+    if (!track) return
+    const needsFix = track.bindings.filter(b =>
+      b.source === 'Aowu' && !b.sourceUrl && /\/v\/\d+/.test(b.sourceKey)
+    )
+    if (needsFix.length === 0) return
+    attemptedRef.current = true
+
+    for (const b of needsFix) {
+      const guardKey = `${bgmId}:${b.sourceKey}`
+      if (attemptedAowuBackfill.has(guardKey)) continue
+      attemptedAowuBackfill.add(guardKey)
+      void window.aowuApi.resolveShareUrl(b.sourceKey)
+        .then(url => {
+          if (url) animeTrackStore.setBindingSourceUrl(bgmId, b.source, b.sourceKey, url)
+        })
+        .catch(err => {
+          // Leave it broken for this session — next launch will retry. Logging
+          // here keeps the failure debuggable without spamming a toast.
+          console.warn(`[WatchHere] aowu sourceUrl backfill failed for ${b.sourceKey}:`, err)
+        })
+    }
+  }, [bgmId, track])
 }
 
 /**

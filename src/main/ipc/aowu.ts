@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { search, watch, type AowuEpisode } from '../aowu/api'
+import { search, watch, resolveSharePath, type AowuEpisode } from '../aowu/api'
 import { downloadSingleEp, cleanupParts } from '../aowu/download'
 import { resolveAowuMp4, buildAowuWatchUrl } from '../aowu/url-resolver'
 import { aowuScheduler } from '../shared/download-scheduler'
@@ -47,6 +47,15 @@ export function registerAowuIpc(): void {
   })
 
   ipcMain.handle('aowu:watch', async (_event, watchUrl: string) => watch(watchUrl))
+
+  // Convert search-time synthetic /v/{id} URL → user-facing /w/{token} URL.
+  // Used by WatchHere chips so the user lands on the SPA's real watch page
+  // instead of the "页面令牌生成失败" error page. Single-shot, no caching here
+  // since it's only called when the user clicks a chip (and the renderer
+  // persists the resolved URL to the binding's sourceUrl after the first hit).
+  ipcMain.handle('aowu:resolve-share-url', async (_event, input: string) => {
+    return resolveSharePath(input)
+  })
 
   // Resolve a watch (animeId, sourceIdx, ep) tuple to the signed ByteDance CDN
   // direct URL. Used by the queue's "copy URL" feature so the user can paste

@@ -171,6 +171,34 @@ class AnimeTrackStore {
   }
 
   /**
+   * Patch a single binding's `sourceUrl` in place. Used by lazy migrations —
+   * e.g. resolving Aowu's synthetic /v/{id} URL to the user-facing /w/{token}
+   * form on first chip render, so subsequent clicks have a working link.
+   * No-op if no matching binding is found.
+   */
+  setBindingSourceUrl(
+    bgmId: number,
+    source: AnimeBinding['source'],
+    sourceKey: string,
+    sourceUrl: string,
+  ): void {
+    const map = this.ensure()
+    const prev = map.get(bgmId)
+    if (!prev) return
+    const key = sourceKey.trim()
+    let changed = false
+    const next = prev.bindings.map(b => {
+      if (b.source === source && b.sourceKey.trim() === key && b.sourceUrl !== sourceUrl) {
+        changed = true
+        return { ...b, sourceUrl }
+      }
+      return b
+    })
+    if (!changed) return
+    this.upsert({ bgmId, bindings: next })
+  }
+
+  /**
    * Remove a single binding by (source, sourceKey). No-op if the track or the
    * matching binding doesn't exist. Returns true if a binding was removed.
    */
