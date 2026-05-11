@@ -69,7 +69,7 @@ export default function AnimeCalendar(): JSX.Element {
               </div>
               <h1 className="text-3xl font-black tracking-tighter text-on-surface">番剧周历</h1>
               <p className="text-sm text-on-surface-variant/80 mt-1 font-label">
-                本季正在播出，按星期排列。来源 Bangumi · 24h 缓存。
+                本季正在播出，按星期排列。来源 Bangumi · 14 天缓存。
               </p>
             </div>
 
@@ -129,7 +129,10 @@ function CalendarGrid({ result }: { result: BgmCalendarResult }): JSX.Element {
   }
 
   return (
-    <div className="px-6 py-6 grid grid-cols-7 gap-3 min-w-[1100px]">
+    // 7 列等分 + 不设 min-w，自适应容器宽度，不会左右溢出。
+    // 列头随内容一起滚动（不 sticky），sticky 会和 page header 出现高度
+    // 偏差导致内容从缝隙穿透；用户滚多了周回顶部就能看到。
+    <div className="px-6 py-6 grid grid-cols-7 gap-3">
       {result.data.map(day => (
         <DayColumn key={day.id} day={day} isToday={day.id === todayBgmId} />
       ))}
@@ -142,9 +145,9 @@ function DayColumn({
 }: { day: { id: number; label: string; items: BgmCalendarItem[] }; isToday: boolean }): JSX.Element {
   return (
     <div className="flex flex-col min-w-0">
-      {/* Column header */}
+      {/* Column header — 仅靠高亮配色区分当日，"TODAY" 字样冗余删掉 */}
       <div
-        className={`sticky top-[148px] z-20 px-3 py-2 mb-2 rounded-lg border ${
+        className={`px-3 py-2 mb-2 rounded-lg border ${
           isToday
             ? 'bg-primary/12 border-primary/30 text-primary'
             : 'bg-surface-container border-outline-variant/15 text-on-surface-variant/80'
@@ -158,9 +161,6 @@ function DayColumn({
             {day.items.length} 部
           </span>
         </div>
-        {isToday && (
-          <p className="font-label text-[9px] uppercase tracking-widest opacity-80 mt-0.5">today</p>
-        )}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -265,33 +265,34 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
         </div>
       </div>
 
-      <div className="px-2 py-2">
+      {/* 信息区固定高度 + min-h 占位，保证同列卡片高度一致：
+          - 标题强制 2 行
+          - sub 强制 1 行（无 sub 时塞个 nbsp 占位，避免塌陷）
+          - meta 行始终渲染（无值用空字符串），保留底部 baseline
+          WatchHere chips 只在用户已绑过源时出现，这种番在 calendar 视图里
+          是少数；让它们略高一点能直观看出"这部已经追了"。 */}
+      <div className="px-2 py-2 flex flex-col gap-0.5">
         <h3
-          className="text-xs font-bold text-on-surface line-clamp-2 leading-tight"
+          className="text-xs font-bold text-on-surface line-clamp-2 leading-tight min-h-[2em]"
           title={displayTitle}
         >
           {displayTitle}
         </h3>
-        {sub && (
-          <p className="text-[10px] text-on-surface-variant/40 line-clamp-1 mt-0.5" title={sub}>
-            {sub}
-          </p>
-        )}
-        <div className="flex items-center justify-between mt-1 gap-1">
-          {item.score > 0 && (
-            <span className="font-label text-[9px] text-primary/70">
-              ★ {item.score.toFixed(1)}
-            </span>
-          )}
-          {item.episodes > 0 && (
-            <span className="font-label text-[9px] text-on-surface-variant/40 tracking-wider">
-              {item.episodes} eps
-            </span>
-          )}
+        <p
+          className="text-[10px] text-on-surface-variant/40 line-clamp-1 leading-tight min-h-[1.1em]"
+          title={sub || undefined}
+        >
+          {sub || ' '}
+        </p>
+        <div className="flex items-center justify-between gap-1 min-h-[12px]">
+          <span className="font-label text-[9px] text-primary/70">
+            {item.score > 0 ? `★ ${item.score.toFixed(1)}` : ''}
+          </span>
+          <span className="font-label text-[9px] text-on-surface-variant/40 tracking-wider">
+            {item.episodes > 0 ? `${item.episodes} eps` : ''}
+          </span>
         </div>
-        {/* 已关联的源跳转 chips —— 只在已追且有 bindings 时出现，没有 bindings
-            时组件自身返回 null 不占位。 */}
-        <div className="mt-1.5">
+        <div className="mt-0.5">
           <WatchHere bgmId={item.id} variant="inline" />
         </div>
       </div>
