@@ -184,6 +184,8 @@ declare global {
         cb: (requestId: string, results: AowuSearchResult[], done: boolean) => void
       ) => () => void
       getWatch: (watchUrl: string) => Promise<AowuWatchInfo>
+      /** Convert search-time /v/{id} URL → user-facing /w/{token} URL. */
+      resolveShareUrl: (input: string) => Promise<string>
       resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) => Promise<string>
       startDownload: (
         title: string,

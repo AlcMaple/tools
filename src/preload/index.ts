@@ -114,6 +114,9 @@ contextBridge.exposeInMainWorld('aowuApi', {
     return () => ipcRenderer.removeListener('aowu:search-page', handler)
   },
   getWatch: (watchUrl: string) => ipcRenderer.invoke('aowu:watch', watchUrl),
+  /** Convert search-time /v/{id} URL → user-facing /w/{token} URL. */
+  resolveShareUrl: (input: string) =>
+    ipcRenderer.invoke('aowu:resolve-share-url', input) as Promise<string>,
   resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) =>
     ipcRenderer.invoke('aowu:resolve-mp4-url', animeId, sourceIdx, ep) as Promise<string>,
   startDownload: (
