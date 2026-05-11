@@ -21,6 +21,8 @@ import {
   type AnimeTrack,
 } from '../stores/animeTrackStore'
 import { WatchHere } from '../components/WatchHere'
+import { AddBindingModal } from '../components/AddBindingModal'
+import type { AnimeBinding } from '../stores/animeTrackStore'
 
 // ── Status taxonomy ──────────────────────────────────────────────────────────
 
@@ -219,6 +221,7 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const displayTitle = track.titleCn || track.title
   const nativeTitle = track.titleCn && track.title !== track.titleCn ? track.title : ''
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [addingBinding, setAddingBinding] = useState(false)
 
   const setStatus = (s: AnimeStatus): void => {
     animeTrackStore.upsert({ bgmId: track.bgmId, status: s })
@@ -314,18 +317,44 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
         </div>
 
         {/* Source bindings → 跳转 chip。每个绑定一颗按钮，点击在外部浏览器
-            打开源详情页（不算具体集数 URL，省一次抓 watch info 的开销，
-            chip 上的 "ep N" 提醒用户当前进度）。SearchDownload 的「关联追番」
-            是这里 chip 的来源；本行没有编辑入口，删除绑定走完整删除流程。 */}
-        {track.bindings.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35 mr-0.5">
-              在线观看
-            </span>
-            <WatchHere bgmId={track.bgmId} variant="inline" />
-          </div>
-        )}
+            打开源详情页（不算具体集数 URL，省一次抓 watch info 的开销,
+            chip 上的 "ep N" 提醒用户当前进度）。chip hover ✕ 移除单条绑定,
+            右侧「+ 添加」打开 AddBindingModal 添加 B 站 / 自定义链接。
+            SearchDownload 的「关联追番」也会写到这里；两个入口共用 bindings[]。 */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35 mr-0.5">
+            在线观看
+          </span>
+          <WatchHere
+            bgmId={track.bgmId}
+            variant="inline"
+            onRemove={(b) => animeTrackStore.removeBinding(track.bgmId, b.source, b.sourceKey)}
+          />
+          <button
+            type="button"
+            onClick={() => setAddingBinding(true)}
+            title="添加 B 站 / 自定义观看链接"
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>add</span>
+            <span>{track.bindings.length === 0 ? '添加链接' : '添加'}</span>
+          </button>
+        </div>
       </div>
+
+      {addingBinding && (
+        <AddBindingModal
+          animeTitle={displayTitle}
+          existing={track.bindings}
+          onClose={() => setAddingBinding(false)}
+          onConfirm={(binding: AnimeBinding) => {
+            // bind() preserves existing track fields when prev exists — passing
+            // bgmId alone is enough; we just need the binding write to land.
+            animeTrackStore.bind({ bgmId: track.bgmId }, binding)
+            setAddingBinding(false)
+          }}
+        />
+      )}
     </div>
   )
 }
