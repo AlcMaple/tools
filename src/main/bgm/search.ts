@@ -257,6 +257,28 @@ function parseDate(text: string): { dateObj: Date; dateStr: string } {
   return { dateObj: new Date(0), dateStr: '未知日期' }
 }
 
+/**
+ * Normalize a string for whitespace/punctuation-insensitive matching:
+ *   - lowercase
+ *   - strip all whitespace (\s)
+ *   - strip Unicode punctuation (\p{P}) and symbols (\p{S})
+ *
+ * The intent is that the user shouldn't have to remember whether the official
+ * title spells it "Love Live!" or "LoveLive!" or "love-live". CJK and Japanese
+ * kana fall under \p{L} (letters), so Chinese / Japanese titles are unaffected.
+ *
+ * Examples:
+ *   "Love Live!"   → "lovelive"
+ *   "LoveLive!"    → "lovelive"
+ *   "love-live"    → "lovelive"
+ *   "love~live"    → "lovelive"
+ *   "光之美少女"   → "光之美少女"  (no punctuation to strip)
+ *   "ご注文は？"   → "ご注文は"    (Unicode full-width punct still gets stripped)
+ */
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '')
+}
+
 function parsePage(
   html: string,
   keyword: string,
@@ -264,17 +286,18 @@ function parsePage(
   const $ = cheerio.load(html)
   const results: Array<BgmSearchResult & { dateObj: Date }> = []
 
-  // Case-insensitive substring match: keyword "lovelive" must still hit a title
-  // like "LoveLive! Sunshine!!". Chinese keywords have no case variants, so this
-  // is purely a safety net for Latin-letter searches.
-  const kwLower = keyword.toLowerCase()
+  // Pre-normalize once; matching becomes a single substring check per title.
+  // Falls back to the raw lowercase keyword when normalization would empty it
+  // (e.g. user searches only "!!!" — match against the un-normalized title
+  // instead of accidentally matching every result).
+  const kwNorm = normalizeForMatch(keyword) || keyword.toLowerCase()
 
   $('#browserItemList li.item').each((_, el) => {
     const a = $(el).find('h3 > a.l')
     if (!a.length) return
 
     const title = a.text().trim()
-    if (!title.toLowerCase().includes(kwLower)) return
+    if (!normalizeForMatch(title).includes(kwNorm)) return
 
     const infoText = $(el).find('p.info.tip').text().trim()
     const { dateObj, dateStr } = parseDate(infoText)
