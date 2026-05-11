@@ -58,9 +58,15 @@ function EpisodeGrid({
 
   async function copyEpUrl(ep: number): Promise<void> {
     setCopyError(null)
-    // Async resolvers (aowu) need a spinner; sync ones (xifan / girigiri) just
-    // copy and flash the check icon.
-    if (api.resolveIsAsync) setResolvingEp(ep)
+    // Async resolvers (aowu) need a spinner — but the main process now caches
+    // resolved URLs, so a re-copy or copy-after-download returns in <1ms and
+    // a naked setState would flash the spinner for a single frame. Delay the
+    // spinner by 100ms so the slow path still shows feedback while the cache
+    // hit stays silent.
+    let spinnerTimer: ReturnType<typeof setTimeout> | null = null
+    if (api.resolveIsAsync) {
+      spinnerTimer = setTimeout(() => setResolvingEp(ep), 100)
+    }
     try {
       const url = await api.resolveEpUrl(ep)
       if (!url) return
@@ -71,6 +77,7 @@ function EpisodeGrid({
       setCopyError((err as Error).message || '获取下载链接失败')
       setTimeout(() => setCopyError(null), 3500)
     } finally {
+      if (spinnerTimer !== null) clearTimeout(spinnerTimer)
       if (api.resolveIsAsync) setResolvingEp(null)
     }
   }
