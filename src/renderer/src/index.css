@@ -109,8 +109,11 @@
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
+/* 滚动条统一 4px 粗细 —— width 控制垂直滚动条的宽度，height 控制水平
+   滚动条的高度，两者都设上才能让左侧和底部的进度条外观一致。 */
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -120,6 +123,10 @@
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #353535;
   border-radius: 2px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .glass-modal {
