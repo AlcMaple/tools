@@ -717,8 +717,8 @@ function DetailView({
       )}
       <div className="grid grid-cols-12 gap-12 items-start">
         {/* ── 左栏：海报 + 按钮 ── */}
-        <div className="col-span-4 sticky top-28">
-          <div className="relative group mb-16">
+        <div className="col-span-4 sticky top-20">
+          <div className="relative group mb-10">
             {/* 光晕 */}
             <div className="absolute -inset-4 bg-primary/5 rounded-xl blur-3xl opacity-0 group-hover:opacity-100 transition-opacity" />
 
