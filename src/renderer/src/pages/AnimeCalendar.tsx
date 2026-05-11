@@ -71,35 +71,38 @@ export default function AnimeCalendar(): JSX.Element {
           </p>
         </div>
 
-        {/* 真正的置顶栏：周一-周日 chip 行 + 刷新按钮。
+        {/* 真正的置顶栏：周一-周日 chip 行 + 缓存/刷新小工具栏。
             top-16 紧贴 TopBar；用户滚下去能始终看到周几对应哪列以及刷新。
-            chip 用 grid-cols-7 和下面卡片网格完全对齐。
-            刷新按钮挂在右侧浮于第七列之外，用 px-6 padding 给它留位置。 */}
+
+            两行结构：
+              Row 1: 缓存时间 + 刷新按钮，右对齐，紧凑（高度约 22px）
+              Row 2: 7 chip grid-cols-7，和下方 cards grid-cols-7 共享同一份
+                     容器宽度（都是 px-6 + 完整宽度），column 对 column 严丝
+                     合缝。一行结构（刷新挤在右侧）会让 chip flex-1 比 cards
+                     窄出一截，造成"周日 chip 在卡片的左边"的视觉错位。 */}
         {state.status === 'ready' && (
-          <div className="sticky top-16 z-30 bg-surface-container-lowest border-y border-outline-variant/10 px-6 py-2">
-            <div className="flex items-center gap-3">
-              <DayChipsBar result={state.result} />
-              <div className="shrink-0 flex items-center gap-2 pl-3 border-l border-outline-variant/20">
-                <span className="font-label text-[10px] text-on-surface-variant/50 tracking-wider whitespace-nowrap hidden xl:inline">
-                  {state.result.fromCache ? '缓存：' : '刚拉取：'}
-                  {formatRelTime(state.result.updatedAt)}
-                </span>
-                <button
-                  onClick={() => void load(true)}
-                  disabled={refreshing}
-                  title="强制刷新（绕过 14 天缓存）"
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-surface-container-high border border-outline-variant/20 hover:bg-primary/10 hover:border-primary/30 hover:text-primary font-label text-[11px] uppercase tracking-widest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          <div className="sticky top-16 z-30 bg-surface-container-lowest border-y border-outline-variant/10 px-6 pt-1.5 pb-2">
+            <div className="flex items-center justify-end gap-2 mb-1.5 h-5">
+              <span className="font-label text-[10px] text-on-surface-variant/50 tracking-wider whitespace-nowrap">
+                {state.result.fromCache ? '缓存：' : '刚拉取：'}
+                {formatRelTime(state.result.updatedAt)}
+              </span>
+              <button
+                onClick={() => void load(true)}
+                disabled={refreshing}
+                title="强制刷新（绕过 14 天缓存）"
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant/20 hover:bg-primary/10 hover:border-primary/30 hover:text-primary font-label text-[10px] uppercase tracking-widest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <span
+                  className={`material-symbols-outlined leading-none ${refreshing ? 'animate-spin' : ''}`}
+                  style={{ fontSize: 12 }}
                 >
-                  <span
-                    className={`material-symbols-outlined leading-none ${refreshing ? 'animate-spin' : ''}`}
-                    style={{ fontSize: 13 }}
-                  >
-                    refresh
-                  </span>
-                  <span>{refreshing ? '更新中' : '刷新'}</span>
-                </button>
-              </div>
+                  refresh
+                </span>
+                <span>{refreshing ? '更新中' : '刷新'}</span>
+              </button>
             </div>
+            <DayChipsBar result={state.result} />
           </div>
         )}
 
@@ -123,7 +126,9 @@ function DayChipsBar({ result }: { result: BgmCalendarResult }): JSX.Element {
     return d === 0 ? 7 : d
   }, [])
   return (
-    <div className="flex-1 grid grid-cols-7 gap-3 min-w-0">
+    // grid-cols-7 + gap-3，和 CalendarGrid 完全同结构；外层 px-6 也一致,
+    // 所以 chip N 的左右边和 card column N 的左右边逐像素对齐。
+    <div className="grid grid-cols-7 gap-3 min-w-0">
       {result.data.map(day => {
         const active = day.id === todayBgmId
         return (
