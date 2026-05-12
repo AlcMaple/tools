@@ -362,7 +362,7 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
           >
             <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>add</span>
-            <span>{track.bindings.length === 0 ? '添加链接' : '链接'}</span>
+            <span>添加链接</span>
           </button>
         </div>
       </div>
