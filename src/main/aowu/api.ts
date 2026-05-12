@@ -214,106 +214,134 @@ function parsePathTail(watchUrl: string): string {
 
 /**
  * Resolve a numeric video id (or a /v/{id} synthetic URL) to the user-facing
- * /v/{token} listing page URL, where the user can click "立即播放" to pick an
- * episode.
+ * /w/{token}#s={source_id}&ep=1 watch URL — exactly the destination of the
+ * SPA's "立即播放" button. One click in our app, one tap to start playing.
  *
  * Background: search() returns `aowu.tv/v/{numericId}` which is a synthetic
- * URL we use to round-trip through watch(). The actual user-facing SPA URL
- * uses an opaque per-video token like `jRDdniK8gqWG` in the SAME `/v/` path
- * prefix — only the tail format differs (numeric vs opaque-token). Opening
- * /v/{numericId} in a browser yields the site's "页面令牌生成失败" error.
+ * URL we use to round-trip through watch(). The user-visible SPA URL uses
+ * an opaque per-video token like `NebBNVu3UvfN`. Opening /v/{numericId} in
+ * a browser yields the site's "页面令牌生成失败" error.
  *
- * Two flavors of user-facing URL share the same token:
- *   - `/v/{token}`               listing page (this is what we return)
- *   - `/w/{token}#s={src}&ep={ep}` specific episode watch page
- * We go to the listing page so the user picks the episode themselves via
- * the "立即播放" button — also avoids needing to know source_id / episode.
+ * Two API calls in parallel:
+ *   - route-tokens(["/play/{id}"]) → token
+ *   - bundle("video", id)          → sources[0].id (source_id)
  *
- * The route-tokens action's response shape isn't formally documented (SPA-
- * internal). We log the raw response on every call for diagnosability and
- * try several extraction shapes; if none yield a token, throw ERR_STRUCTURE
- * with the raw response truncated into the message.
+ * If bundle("video") fails (rate limit / network), we fall back to
+ * `/v/{token}` (the listing page where the user can hit "立即播放" manually).
+ * /v/{token} always works as long as we have the token.
  *
  * Input forms accepted:
  *   - `"2997"`                          raw numeric id
  *   - `"https://aowu.tv/v/2997"`        synthetic search URL
- *   - `"https://aowu.tv/v/jRDdniK8..."` already a token URL → returned as-is
+ *   - `"https://aowu.tv/v/jRDdniK8..."` already a token URL → list page form
  */
 export async function resolveSharePath(input: string): Promise<string> {
   const raw = input.trim()
   if (!raw) throw new Error('resolveSharePath: empty input')
 
-  // Already token form (path tail is opaque, not numeric) — just normalise.
+  // Already token form (path tail is opaque, not numeric). We can't construct
+  // /w/{token}#s=&ep= without the numeric id (which we'd need to route() to
+  // get back), and that round-trip is rarely worth it on already-tokenized
+  // input. Just return /v/{token} listing page.
   const tail = parsePathTail(raw)
   if (tail && !/^\d+$/.test(tail)) {
     return `${BASE_URL}/v/${tail}`
   }
 
-  // Numeric id form. Extract id then call route-tokens.
+  // Numeric id form. Two parallel API calls.
   const id = /^\d+$/.test(raw) ? raw : tail
   if (!/^\d+$/.test(id)) {
     throw new Error(`resolveSharePath: not a numeric id or token URL: ${raw}`)
   }
 
   const path = `/play/${id}`
-  const res = await callSecure<unknown>({
-    action: 'route-tokens',
-    params: { paths: [path] },
-  })
+  const [tokenRes, watchInfoRes] = await Promise.allSettled([
+    callSecure<unknown>({ action: 'route-tokens', params: { paths: [path] } }),
+    watch(`${BASE_URL}/v/${id}`),
+  ])
 
-  // Diagnostic: log raw response so we can confirm the shape on first run.
-  // route-tokens is SPA-internal so its shape isn't pinned down anywhere;
-  // this log lets us iterate the extractor without instrumenting again.
-  console.log(`[aowu/resolveSharePath] route-tokens raw for ${path}:`, JSON.stringify(res))
-
-  const token = extractTokenFromRouteTokens(res, path)
+  if (tokenRes.status === 'rejected') {
+    throw new Error(
+      `${ERR_STRUCTURE}: route-tokens 调用失败 for ${path}: ${tokenRes.reason}`,
+    )
+  }
+  const token = extractTokenFromRouteTokens(tokenRes.value, path)
   if (!token) {
     throw new Error(
       `${ERR_STRUCTURE}: route-tokens 未返回 token for ${path}; ` +
-      `response shape unexpected: ${JSON.stringify(res).slice(0, 300)}`,
+      `response shape unexpected: ${JSON.stringify(tokenRes.value).slice(0, 300)}`,
     )
   }
+
+  // Have token. Try to also get source_id for the direct /w/ player URL.
+  // If watchInfo failed, fall back to /v/{token} (listing page).
+  if (watchInfoRes.status === 'fulfilled' && watchInfoRes.value.sources.length > 0) {
+    const sourceId = watchInfoRes.value.sources[0].idx
+    return `${BASE_URL}/w/${token}#s=${sourceId}&ep=1`
+  }
+  console.warn(
+    `[aowu/resolveSharePath] watch() failed or no sources for id=${id}, ` +
+    `falling back to /v/{token} listing page`,
+    watchInfoRes.status === 'rejected' ? watchInfoRes.reason : '(empty sources)',
+  )
   return `${BASE_URL}/v/${token}`
 }
 
 /**
- * The `route-tokens` response shape isn't documented. From the SPA's usage
- * pattern (translate `<a>` link paths to internal tokens), the response is
- * most likely a map or list keyed by path. We try the four shapes we've
- * seen FantasyKon-style APIs return, in order, and return the first that
- * yields a non-empty string. Returns null if none match.
+ * Extract the token string from `route-tokens` response. The observed shape
+ * (logged on first run) is `{ "/play/{id}": { token: "...", expires_in: N } }`
+ * — the path is the top-level key and the value is an object with `token`.
+ *
+ * We also keep a few fallback shapes in case the API ever returns a flat-
+ * string form or wraps things under `data` / `tokens`. Returns null if no
+ * shape yields a token; caller throws with the raw response in the error.
  */
 function extractTokenFromRouteTokens(res: unknown, path: string): string | null {
   if (!res || typeof res !== 'object') return null
   const r = res as Record<string, unknown>
 
-  // Shape 1: { "/play/2893": "JrTmTRkaoEhG", ... }
-  if (typeof r[path] === 'string' && r[path]) return r[path] as string
+  // Helper: pull `.token` out of an entry that may itself be a string OR
+  // an object `{ token: "..." }`.
+  const stringify = (v: unknown): string | null => {
+    if (typeof v === 'string' && v) return v
+    if (v && typeof v === 'object') {
+      const tok = (v as Record<string, unknown>).token
+      if (typeof tok === 'string' && tok) return tok
+    }
+    return null
+  }
 
-  // Shape 2: { data: { "/play/2893": "JrTmTRkaoEhG" } }
+  // Primary shape (observed live): `{ "/play/14": { token, expires_in } }`
+  const primary = stringify(r[path])
+  if (primary) return primary
+
+  // Fallback: `{ data: { "/play/14": <string or {token}> } }`
   const data = r.data
   if (data && typeof data === 'object') {
     const d = data as Record<string, unknown>
-    if (typeof d[path] === 'string' && d[path]) return d[path] as string
-    // Shape 2a: { data: [{ path: "...", token: "..." }, ...] }
+    const fromData = stringify(d[path])
+    if (fromData) return fromData
+    // `{ data: [{ path, token }, ...] }`
     if (Array.isArray(d.tokens)) {
       for (const t of d.tokens) {
         const e = t as Record<string, unknown>
         if (e?.path === path && typeof e.token === 'string' && e.token) return e.token as string
       }
     }
-    // Shape 2b: { data: { tokens: { "/play/2893": "..." } } }
+    // `{ data: { tokens: { "/play/14": <...> } } }`
     if (d.tokens && typeof d.tokens === 'object') {
       const tt = d.tokens as Record<string, unknown>
-      if (typeof tt[path] === 'string' && tt[path]) return tt[path] as string
+      const fromTokens = stringify(tt[path])
+      if (fromTokens) return fromTokens
     }
   }
 
-  // Shape 3: { tokens: { "/play/2893": "..." } }
+  // Fallback: `{ tokens: { "/play/14": <...> } }`
   const tokens = r.tokens
   if (tokens && typeof tokens === 'object') {
     const t = tokens as Record<string, unknown>
-    if (typeof t[path] === 'string' && t[path]) return t[path] as string
+    const fromTokens = stringify(t[path])
+    if (fromTokens) return fromTokens
   }
 
   return null
