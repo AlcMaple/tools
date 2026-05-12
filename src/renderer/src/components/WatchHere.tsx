@@ -20,11 +20,19 @@ interface Props {
   variant?: 'row' | 'inline'
   /** When true, show the "no bindings yet" placeholder instead of returning null. */
   showEmpty?: boolean
-  /** When provided, each chip grows a hover-✕ button that calls this. */
+  /**
+   * When true, switch all chips into "edit mode":
+   *   - chip body becomes non-clickable (no navigation on click)
+   *   - a prominent ✕ button is added per chip
+   * 配合外部的「编辑 / 完成」开关使用 —— 默认状态下用户点 chip 就跳转,
+   * 想删除必须先主动进入编辑模式，杜绝跳转和删除按钮挨着误点的风险。
+   */
+  editing?: boolean
+  /** Called when ✕ is clicked (only in edit mode). */
   onRemove?: (binding: AnimeBinding) => void
 }
 
-export function WatchHere({ bgmId, variant = 'row', showEmpty = false, onRemove }: Props): JSX.Element | null {
+export function WatchHere({ bgmId, variant = 'row', showEmpty = false, editing = false, onRemove }: Props): JSX.Element | null {
   const track = useAnimeTrack(bgmId)
   useAowuShareUrlBackfill(bgmId, track)
   if (!track || track.bindings.length === 0) {
@@ -41,7 +49,8 @@ export function WatchHere({ bgmId, variant = 'row', showEmpty = false, onRemove 
           binding={b}
           track={track}
           variant={variant}
-          onRemove={onRemove ? () => onRemove(b) : undefined}
+          editing={editing}
+          onRemove={editing && onRemove ? () => onRemove(b) : undefined}
         />
       ))}
     </div>
@@ -105,11 +114,12 @@ function chipLabel(b: AnimeBinding): string {
 // ── Per-source button ───────────────────────────────────────────────────────
 
 function SourceButton({
-  binding, track, variant, onRemove,
+  binding, track, variant, editing = false, onRemove,
 }: {
   binding: AnimeBinding
   track: AnimeTrack
   variant: 'row' | 'inline'
+  editing?: boolean
   onRemove?: () => void
 }): JSX.Element {
   // Prefer the explicit sourceUrl when provided; fall back to the per-source
@@ -125,67 +135,81 @@ function SourceButton({
       : ''
   const label = chipLabel(binding)
 
-  // Wrap chip + ✕ in a single flex container when removable. Container has
-  // group-hover scoping so ✕ stays hidden until the row is hovered.
+  // Inline variant (MyAnime / Calendar) - 紧凑款。
   if (variant === 'inline') {
-    return (
-      <span className="group inline-flex items-stretch overflow-hidden rounded-md border border-primary/30 bg-primary/8 hover:bg-primary/15 transition-colors">
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          title={`${label} · ${binding.sourceTitle || ''}\n${url}`}
-          className="inline-flex items-center gap-1 px-2 py-0.5 text-primary font-label text-[10px] tracking-wider"
+    if (editing && onRemove) {
+      // 编辑模式：chip body 不再是 <a>，整体改色调成 error，强制
+      // 移除是显式动作（点 chip 任何地方都触发删除，要求用户先点
+      // 上方的"编辑"显式进入这个状态）。
+      return (
+        <button
+          type="button"
+          onClick={onRemove}
+          title={`移除：${binding.sourceTitle || label}`}
+          className="inline-flex items-stretch overflow-hidden rounded-md border border-error/40 bg-error/10 hover:bg-error/20 transition-colors"
         >
-          <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>play_arrow</span>
-          <span className="font-bold">{label}</span>
-          {epText && <span className="text-primary/60">{epText}</span>}
-        </a>
-        {onRemove && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onRemove() }}
-            tabIndex={-1}
-            title="移除此链接"
-            className="px-1 flex items-center text-primary/45 hover:text-error hover:bg-error/12 opacity-0 group-hover:opacity-100 transition-all border-l border-primary/20"
-          >
-            <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>close</span>
-          </button>
-        )}
-      </span>
-    )
-  }
-
-  return (
-    <span className="group inline-flex items-stretch overflow-hidden rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 hover:border-primary/45 transition-colors">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-error font-label text-[10px] tracking-wider">
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>delete</span>
+            <span className="font-bold">{label}</span>
+            {epText && <span className="text-error/70">{epText}</span>}
+          </span>
+        </button>
+      )
+    }
+    return (
       <a
         href={url}
         target="_blank"
         rel="noreferrer"
-        title={`${binding.sourceTitle || label}\n${url}`}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-primary font-label text-[11px] uppercase tracking-widest"
+        title={`${label} · ${binding.sourceTitle || ''}\n${url}`}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-primary/30 bg-primary/8 hover:bg-primary/15 text-primary font-label text-[10px] tracking-wider transition-colors"
       >
-        <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>play_arrow</span>
+        <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>play_arrow</span>
         <span className="font-bold">{label}</span>
-        {epText && (
-          <>
-            <span className="text-primary/55">·</span>
-            <span className="text-primary/75 tracking-wider">{epText}</span>
-          </>
-        )}
+        {epText && <span className="text-primary/60">{epText}</span>}
       </a>
-      {onRemove && (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onRemove() }}
-          tabIndex={-1}
-          title="移除此链接"
-          className="px-1.5 flex items-center text-primary/45 hover:text-error hover:bg-error/12 opacity-0 group-hover:opacity-100 transition-all border-l border-primary/20"
-        >
-          <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>close</span>
-        </button>
+    )
+  }
+
+  // Row variant (AnimeInfo) - 大款。
+  if (editing && onRemove) {
+    return (
+      <button
+        type="button"
+        onClick={onRemove}
+        title={`移除：${binding.sourceTitle || label}`}
+        className="inline-flex items-stretch overflow-hidden rounded-lg border border-error/40 bg-error/10 hover:bg-error/20 transition-colors"
+      >
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-error font-label text-[11px] uppercase tracking-widest">
+          <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>delete</span>
+          <span className="font-bold">{label}</span>
+          {epText && (
+            <>
+              <span className="text-error/55">·</span>
+              <span className="text-error/75 tracking-wider">{epText}</span>
+            </>
+          )}
+        </span>
+      </button>
+    )
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      title={`${binding.sourceTitle || label}\n${url}`}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 hover:border-primary/45 text-primary font-label text-[11px] uppercase tracking-widest transition-colors"
+    >
+      <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>play_arrow</span>
+      <span className="font-bold">{label}</span>
+      {epText && (
+        <>
+          <span className="text-primary/55">·</span>
+          <span className="text-primary/75 tracking-wider">{epText}</span>
+        </>
       )}
-    </span>
+    </a>
   )
 }
 
