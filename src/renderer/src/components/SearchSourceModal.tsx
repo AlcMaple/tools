@@ -43,10 +43,21 @@ type State =
 
 export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose, onConfirm }: Props): JSX.Element {
   const [keyword, setKeyword] = useState(initialKeyword)
-  const [state, setState] = useState<State>({ status: 'idle' })
+  // 初始就给 'searching' —— 只要有预填关键词，挂载后第一件事就是搜，
+  // 用 'idle' 渲染空白会让用户误以为"没找到"。
+  const [state, setState] = useState<State>(() =>
+    initialKeyword.trim() ? { status: 'searching' } : { status: 'idle' },
+  )
   const [captchaInput, setCaptchaInput] = useState('')
   const aowuStreamUnsubRef = useRef<(() => void) | null>(null)
   const currentReqIdRef = useRef<string | null>(null)
+  // 串行化 doSearch 的请求 id。新一次搜索递增，旧请求的回调里发现
+  // myId !== reqIdRef.current 就 bail，不再 setState。防止 strict mode
+  // 双 fire / 用户连击搜索按钮等场景里旧请求覆盖新状态。
+  const reqIdRef = useRef(0)
+  // 防 strict mode 双 fire：useEffect 重跑时 startedRef 已经是 true,
+  // 跳过本次初始搜索（refs 跨 fake-unmount 持久）。
+  const startedRef = useRef(false)
 
   // 卸载时清掉 aowu 流监听，避免 stale modal 还在收新页
   useEffect(() => {
@@ -55,8 +66,10 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
     }
   }, [])
 
-  // 首次进来自动跑一次搜索
+  // 首次进来自动跑一次搜索（strict mode 双 fire 用 startedRef 守住）
   useEffect(() => {
+    if (startedRef.current) return
+    startedRef.current = true
     if (initialKeyword.trim()) {
       void doSearch(initialKeyword.trim())
     }
@@ -65,30 +78,40 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
 
   async function doSearch(kw: string): Promise<void> {
     if (!kw) return
+    const myId = ++reqIdRef.current
     aowuStreamUnsubRef.current?.()
     aowuStreamUnsubRef.current = null
     currentReqIdRef.current = null
     setState({ status: 'searching' })
     setCaptchaInput('')
 
+    // 包装所有 setState：仅在本请求还是最新时才执行。封一层避免每处
+    // 都写 if (myId !== reqIdRef.current) return。
+    const safeSet = (next: State): void => {
+      if (myId !== reqIdRef.current) return
+      setState(next)
+    }
+
     try {
       if (source === 'Aowu') {
         // 流式：第一页同步拿，剩下的通过 onSearchPage 接力
         const { requestId, results, more } = await window.aowuApi.search(kw)
+        if (myId !== reqIdRef.current) return
         currentReqIdRef.current = requestId
         const cards = results.map(normalizeAowu)
         if (cards.length === 0 && !more) {
-          setState({ status: 'empty' })
+          safeSet({ status: 'empty' })
           return
         }
-        setState({ status: 'results', cards })
+        safeSet({ status: 'results', cards })
         if (more) {
           aowuStreamUnsubRef.current = window.aowuApi.onSearchPage((rid, page, done) => {
             if (rid !== currentReqIdRef.current) return
+            if (myId !== reqIdRef.current) return
             if (page.length > 0) {
-              const more = page.map(normalizeAowu)
+              const moreCards = page.map(normalizeAowu)
               setState((prev) =>
-                prev.status === 'results' ? { ...prev, cards: [...prev.cards, ...more] } : prev,
+                prev.status === 'results' ? { ...prev, cards: [...prev.cards, ...moreCards] } : prev,
               )
             }
             if (done) {
@@ -99,28 +122,30 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
         }
       } else if (source === 'Girigiri') {
         const result = await window.girigiriApi.search(kw)
+        if (myId !== reqIdRef.current) return
         if (!Array.isArray(result) && result.needs_captcha) {
           const { image_b64 } = await window.girigiriApi.getCaptcha()
-          setState({ status: 'captcha', imageB64: image_b64 })
+          safeSet({ status: 'captcha', imageB64: image_b64 })
           return
         }
         const arr = Array.isArray(result) ? result : []
         const cards = arr.map(normalizeGirigiri)
-        setState(cards.length === 0 ? { status: 'empty' } : { status: 'results', cards })
+        safeSet(cards.length === 0 ? { status: 'empty' } : { status: 'results', cards })
       } else {
         // Xifan
         const result = await window.xifanApi.search(kw)
+        if (myId !== reqIdRef.current) return
         if (!Array.isArray(result) && result.needs_captcha) {
           const { image_b64 } = await window.xifanApi.getCaptcha()
-          setState({ status: 'captcha', imageB64: image_b64 })
+          safeSet({ status: 'captcha', imageB64: image_b64 })
           return
         }
         const arr = Array.isArray(result) ? result : []
         const cards = arr.map(normalizeXifan)
-        setState(cards.length === 0 ? { status: 'empty' } : { status: 'results', cards })
+        safeSet(cards.length === 0 ? { status: 'empty' } : { status: 'results', cards })
       }
     } catch (err) {
-      setState({ status: 'error', message: String(err) })
+      safeSet({ status: 'error', message: String(err) })
     }
   }
 
