@@ -115,11 +115,14 @@ function SourceButton({
   // Prefer the explicit sourceUrl when provided; fall back to the per-source
   // computation. For Aowu/Xifan/Girigiri the sourceKey IS the watch URL.
   const url = resolveUrl(binding)
-  const epText = track.episode > 0
-    ? track.totalEpisodes
-      ? `ep ${track.episode}/${track.totalEpisodes}`
-      : `ep ${track.episode}`
-    : '从头开始'
+  // 只在 episode > 0 时显示集数；尚未开始看（episode = 0）就不显示
+  // 任何额外文字，避免 "从头开始" 这种冗余 chip 字段。
+  const epText =
+    track.episode > 0
+      ? track.totalEpisodes
+        ? `ep ${track.episode}/${track.totalEpisodes}`
+        : `ep ${track.episode}`
+      : ''
   const label = chipLabel(binding)
 
   // Wrap chip + ✕ in a single flex container when removable. Container has
@@ -136,7 +139,7 @@ function SourceButton({
         >
           <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>play_arrow</span>
           <span className="font-bold">{label}</span>
-          <span className="text-primary/60">{epText}</span>
+          {epText && <span className="text-primary/60">{epText}</span>}
         </a>
         {onRemove && (
           <button
@@ -164,8 +167,12 @@ function SourceButton({
       >
         <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>play_arrow</span>
         <span className="font-bold">{label}</span>
-        <span className="text-primary/55">·</span>
-        <span className="text-primary/75 tracking-wider">{epText}</span>
+        {epText && (
+          <>
+            <span className="text-primary/55">·</span>
+            <span className="text-primary/75 tracking-wider">{epText}</span>
+          </>
+        )}
       </a>
       {onRemove && (
         <button
