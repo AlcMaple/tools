@@ -12,7 +12,7 @@
 //   up alongside homework/jjc/pjjc/classic/log (see `_v=5` migration there).
 // - 备注字段在 store 里仍保留（向后兼容老数据），但不再有 UI 入口。
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import TopBar from '../components/TopBar'
 import {
   animeTrackStore,
@@ -23,6 +23,11 @@ import {
 import { WatchHere } from '../components/WatchHere'
 import { AddBindingModal } from '../components/AddBindingModal'
 import { SearchSourceModal } from '../components/SearchSourceModal'
+import {
+  EditBindingsModal,
+  isUserAddedBinding,
+  type BindingEdit,
+} from '../components/EditBindingsModal'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 import type { Source, SearchCard } from '../types/search'
 
@@ -226,16 +231,11 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const [addingBinding, setAddingBinding] = useState(false)
   // 当前正在补搜的内置源；null = 没在搜
   const [searchingSource, setSearchingSource] = useState<Source | null>(null)
-  // 「在线观看」chip 行的编辑模式：默认 false，chip 只能跳转；
-  // true 时 chip 全部变成 error 色的"点了就删"按钮，跳转禁用。
-  // 用户必须显式点「编辑」按钮才进入这个状态，杜绝跳转和删除按钮
-  // 挨着的误点风险。删完点「完成」回到正常模式。
-  const [editingBindings, setEditingBindings] = useState(false)
-  // 删完最后一条 binding 时自动退出编辑模式 —— 否则 chip 行变空,
-  // 用户再补绑新源时 chip 会以红色"删除按钮"形态出现，反人类。
-  useEffect(() => {
-    if (track.bindings.length === 0 && editingBindings) setEditingBindings(false)
-  }, [track.bindings.length, editingBindings])
+  // 「编辑」按钮打开的弹窗 —— 弹窗里集中改用户手动加的链接（标题 / URL /
+  // 删除），物理隔离日常的"点 chip 跳转"操作，杜绝误删。
+  // 内置三源（Aowu/Xifan/Girigiri）不在弹窗里，它们走「+ 搜 X」流程管理。
+  const [editingOpen, setEditingOpen] = useState(false)
+  const userAddedBindings = track.bindings.filter(isUserAddedBinding)
 
   // 哪些内置源还没绑过 —— 已绑过的隐藏「+ 搜 X」按钮，留出空间。
   const boundSources = new Set(track.bindings.map(b => b.source))
@@ -334,25 +334,17 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
           />
         </div>
 
-        {/* 在线观看 chip 行。
-            默认模式：chip 只能跳转（<a>），完全看不到删除按钮，无误删可能;
-                     右侧显示「+ 搜 X / + 添加链接」补绑入口和「编辑」开关。
-            编辑模式：chip 全部染成 error 红，点击 = 删除单条 binding；
-                     补绑入口隐藏，右侧只剩「完成」按钮回到默认模式。
-
-            两种模式物理隔离：编辑模式下根本没有"跳转"目标，正常模式下根本
-            没有"删除"按钮，杜绝两个动作挨着误点的风险。 */}
+        {/* 在线观看 chip 行：
+              - chip 全是 <a>，点了纯跳转，没有任何 hover 删除按钮
+              - 右侧补绑入口：「+ 搜 X」（内置三源缺哪个显哪个）+「+ 添加链接」
+              - 「编辑」按钮（仅在有用户手动加的 binding 时）打开 EditBindingsModal
+                集中改 / 删 自定义链接，与跳转动作物理隔离 */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35 mr-0.5">
             在线观看
           </span>
-          <WatchHere
-            bgmId={track.bgmId}
-            variant="inline"
-            editing={editingBindings}
-            onRemove={(b) => animeTrackStore.removeBinding(track.bgmId, b.source, b.sourceKey)}
-          />
-          {!editingBindings && missingBuiltins.map(s => (
+          <WatchHere bgmId={track.bgmId} variant="inline" />
+          {missingBuiltins.map(s => (
             <button
               key={s}
               type="button"
@@ -364,36 +356,24 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
               <span>搜 {s}</span>
             </button>
           ))}
-          {!editingBindings && (
+          <button
+            type="button"
+            onClick={() => setAddingBinding(true)}
+            title="添加 B 站 / 自定义观看链接"
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>add</span>
+            <span>添加链接</span>
+          </button>
+          {userAddedBindings.length > 0 && (
             <button
               type="button"
-              onClick={() => setAddingBinding(true)}
-              title="添加 B 站 / 自定义观看链接"
-              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
+              onClick={() => setEditingOpen(true)}
+              title="编辑 / 删除已添加的自定义链接"
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-outline-variant/30 hover:border-on-surface-variant/40 text-on-surface-variant/40 hover:text-on-surface-variant/70 font-label text-[10px] tracking-wider transition-colors"
             >
-              <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>add</span>
-              <span>添加链接</span>
-            </button>
-          )}
-          {/* 编辑开关 —— 仅在有 binding 可编辑时显示。 */}
-          {track.bindings.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setEditingBindings(v => !v)}
-              title={editingBindings ? '点完成回到正常模式' : '进入编辑模式后才能删除单条绑定'}
-              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border font-label text-[10px] tracking-wider transition-colors ${
-                editingBindings
-                  ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
-                  : 'border-outline-variant/30 hover:border-on-surface-variant/40 text-on-surface-variant/40 hover:text-on-surface-variant/70'
-              }`}
-            >
-              <span
-                className="material-symbols-outlined leading-none"
-                style={{ fontSize: 12, fontVariationSettings: editingBindings ? "'FILL' 1" : "'FILL' 0" }}
-              >
-                {editingBindings ? 'check' : 'edit'}
-              </span>
-              <span>{editingBindings ? '完成' : '编辑'}</span>
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>edit</span>
+              <span>编辑</span>
             </button>
           )}
         </div>
@@ -440,6 +420,26 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             }
             animeTrackStore.bind({ bgmId: track.bgmId }, binding)
             setSearchingSource(null)
+          }}
+        />
+      )}
+
+      {editingOpen && (
+        <EditBindingsModal
+          animeTitle={displayTitle}
+          bindings={track.bindings}
+          onClose={() => setEditingOpen(false)}
+          onSave={(changes: BindingEdit[]) => {
+            // 把 modal 攒下的改动一次性 commit 到 store。modal 已经做过
+            // 校验（URL 合法 / 标题非空 / URL 去重），这里只需 dispatch。
+            for (const c of changes) {
+              if (c.kind === 'delete') {
+                animeTrackStore.removeBinding(track.bgmId, c.originalSource, c.originalSourceKey)
+              } else if (c.patch) {
+                animeTrackStore.updateBinding(track.bgmId, c.originalSource, c.originalSourceKey, c.patch)
+              }
+            }
+            setEditingOpen(false)
           }}
         />
       )}

@@ -171,6 +171,35 @@ class AnimeTrackStore {
   }
 
   /**
+   * Edit an existing binding in place by (source, sourceKey). Caller can patch
+   * sourceTitle / sourceKey / sourceUrl together. Used by EditBindingsModal so
+   * users can rename custom labels and fix typo'd URLs without losing the
+   * binding's position. No-op if no matching binding exists.
+   */
+  updateBinding(
+    bgmId: number,
+    oldSource: AnimeBinding['source'],
+    oldSourceKey: string,
+    patch: Partial<Pick<AnimeBinding, 'sourceTitle' | 'sourceKey' | 'sourceUrl'>>,
+  ): boolean {
+    const map = this.ensure()
+    const prev = map.get(bgmId)
+    if (!prev) return false
+    const oldKey = oldSourceKey.trim()
+    let changed = false
+    const next = prev.bindings.map(b => {
+      if (b.source === oldSource && b.sourceKey.trim() === oldKey) {
+        changed = true
+        return { ...b, ...patch }
+      }
+      return b
+    })
+    if (!changed) return false
+    this.upsert({ bgmId, bindings: next })
+    return true
+  }
+
+  /**
    * Patch a single binding's `sourceUrl` in place. Used by lazy migrations —
    * e.g. resolving Aowu's synthetic /v/{id} URL to the user-facing /w/{token}
    * form on first chip render, so subsequent clicks have a working link.
