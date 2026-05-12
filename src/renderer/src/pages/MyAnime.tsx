@@ -22,7 +22,9 @@ import {
 } from '../stores/animeTrackStore'
 import { WatchHere } from '../components/WatchHere'
 import { AddBindingModal } from '../components/AddBindingModal'
+import { SearchSourceModal } from '../components/SearchSourceModal'
 import type { AnimeBinding } from '../stores/animeTrackStore'
+import type { Source, SearchCard } from '../types/search'
 
 // ── Status taxonomy ──────────────────────────────────────────────────────────
 
@@ -217,11 +219,21 @@ function FilterChip({
 
 // ── Track row ────────────────────────────────────────────────────────────────
 
+// 内置三源顺序固定：常驻显示在补绑按钮里，给"还没绑过"的源画虚线按钮。
+// 其他来源（Bilibili / Custom）走 AddBindingModal 单独的「+ 添加链接」入口。
+const BUILTIN_SOURCES: ReadonlyArray<Source> = ['Aowu', 'Xifan', 'Girigiri']
+
 function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const displayTitle = track.titleCn || track.title
   const nativeTitle = track.titleCn && track.title !== track.titleCn ? track.title : ''
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [addingBinding, setAddingBinding] = useState(false)
+  // 当前正在补搜的内置源；null = 没在搜
+  const [searchingSource, setSearchingSource] = useState<Source | null>(null)
+
+  // 哪些内置源还没绑过 —— 已绑过的隐藏「+ 搜 X」按钮，留出空间。
+  const boundSources = new Set(track.bindings.map(b => b.source))
+  const missingBuiltins = BUILTIN_SOURCES.filter(s => !boundSources.has(s))
 
   const setStatus = (s: AnimeStatus): void => {
     animeTrackStore.upsert({ bgmId: track.bgmId, status: s })
@@ -317,10 +329,15 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
         </div>
 
         {/* Source bindings → 跳转 chip。每个绑定一颗按钮，点击在外部浏览器
-            打开源详情页（不算具体集数 URL，省一次抓 watch info 的开销,
-            chip 上的 "ep N" 提醒用户当前进度）。chip hover ✕ 移除单条绑定,
-            右侧「+ 添加」打开 AddBindingModal 添加 B 站 / 自定义链接。
-            SearchDownload 的「关联追番」也会写到这里；两个入口共用 bindings[]。 */}
+            打开源详情页；chip hover ✕ 移除单条绑定。
+            行尾按钮分两类：
+              1. 每个还没绑过的内置源画一个虚线「+ 搜 X」按钮 —— 点开
+                 SearchSourceModal 在该源里搜索（关键词预填中文标题），
+                 用户挑结果后写 binding。Aowu 选中后还会同步 resolveShareUrl
+                 把 /w/{token} 提前算好存进 sourceUrl。
+              2. 永远显示一个「+ 添加链接」按钮 —— AddBindingModal 用于
+                 B 站 / 自定义 URL。
+            SearchDownload 的关联追番和这里共用 bindings[]，两条入口数据互通。 */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35 mr-0.5">
             在线观看
@@ -330,6 +347,18 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             variant="inline"
             onRemove={(b) => animeTrackStore.removeBinding(track.bgmId, b.source, b.sourceKey)}
           />
+          {missingBuiltins.map(s => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSearchingSource(s)}
+              title={`在 ${s} 里搜并关联这部番`}
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
+            >
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>search</span>
+              <span>搜 {s}</span>
+            </button>
+          ))}
           <button
             type="button"
             onClick={() => setAddingBinding(true)}
@@ -337,7 +366,7 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
           >
             <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>add</span>
-            <span>{track.bindings.length === 0 ? '添加链接' : '添加'}</span>
+            <span>{track.bindings.length === 0 ? '添加链接' : '链接'}</span>
           </button>
         </div>
       </div>
@@ -352,6 +381,37 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             // bgmId alone is enough; we just need the binding write to land.
             animeTrackStore.bind({ bgmId: track.bgmId }, binding)
             setAddingBinding(false)
+          }}
+        />
+      )}
+
+      {searchingSource && (
+        <SearchSourceModal
+          source={searchingSource}
+          initialKeyword={track.titleCn || track.title}
+          animeTitle={displayTitle}
+          onClose={() => setSearchingSource(null)}
+          onConfirm={async (card: SearchCard) => {
+            // Aowu 的 card.key 是 /v/{numericId} 合成 URL，浏览器打开会
+            // 报错。和 SearchDownload 的关联追番一样，写 binding 前先
+            // resolveShareUrl 拿到 /w/{token}#s=&ep=1 存到 sourceUrl。
+            // Xifan / Girigiri 的 card.key 本身就是真实 watch URL，直接用。
+            let sourceUrl: string | undefined
+            if (card.source === 'Aowu') {
+              try {
+                sourceUrl = await window.aowuApi.resolveShareUrl(card.key)
+              } catch (err) {
+                console.warn('[MyAnime] aowu resolveShareUrl failed:', err)
+              }
+            }
+            const binding: AnimeBinding = {
+              source: card.source,
+              sourceTitle: card.title,
+              sourceKey: card.key,
+              sourceUrl,
+            }
+            animeTrackStore.bind({ bgmId: track.bgmId }, binding)
+            setSearchingSource(null)
           }}
         />
       )}
