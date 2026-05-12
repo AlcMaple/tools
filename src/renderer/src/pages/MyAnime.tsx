@@ -256,6 +256,12 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
     if (clamped > 0 && track.status === 'plan') patch.status = 'watching'
     animeTrackStore.upsert(patch)
   }
+  const setTotalEpisodes = (n: number | undefined): void => {
+    // 用户手动改总集数 —— BGM eps=0 时的逃生通道。store 的 normalize 会
+    // 在新 total 比 episode 小的时候自动把 episode 夹到 total 上限,
+    // 避免用户填了一个比已观看集数还小的总数导致状态不一致。
+    animeTrackStore.upsert({ bgmId: track.bgmId, totalEpisodes: n })
+  }
   return (
     <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex">
       {/* Cover */}
@@ -331,6 +337,7 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             episode={track.episode}
             total={track.totalEpisodes}
             onChange={setEpisode}
+            onTotalChange={setTotalEpisodes}
           />
         </div>
 
@@ -484,11 +491,14 @@ function StatusSegment({
 // ── Episode counter ──────────────────────────────────────────────────────────
 
 function EpisodeCounter({
-  episode, total, onChange,
+  episode, total, onChange, onTotalChange,
 }: {
   episode: number
   total: number | undefined
   onChange: (n: number) => void
+  /** 用户改"总集数"。BGM 长篇连载番（柯南 / 海贼）和剧场版 / OVA 那种
+   *  eps=0 的条目在我们这边会显示成 "?"，用户可以点 "?" 自己填一个目标值。 */
+  onTotalChange: (n: number | undefined) => void
 }): JSX.Element {
   const atMax = total != null && episode >= total
   return (
@@ -504,7 +514,12 @@ function EpisodeCounter({
 
       {/* Episode display — editable inline so the user can jump to a specific
           ep without spamming +1. */}
-      <EpisodeInput episode={episode} total={total} onCommit={onChange} />
+      <EpisodeInput
+        episode={episode}
+        total={total}
+        onCommit={onChange}
+        onTotalCommit={onTotalChange}
+      />
 
       {/* +1 is always primary-colored — it's the headline "I watched another
           ep" action and the status segment to the left already conveys the
@@ -527,20 +542,37 @@ function EpisodeCounter({
 }
 
 function EpisodeInput({
-  episode, total, onCommit,
+  episode, total, onCommit, onTotalCommit,
 }: {
   episode: number
   total: number | undefined
   onCommit: (n: number) => void
+  onTotalCommit: (n: number | undefined) => void
 }): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null)
+  const [totalDraft, setTotalDraft] = useState<string | null>(null)
   const display = draft ?? String(episode)
+  const totalDisplay = totalDraft ?? (total != null ? String(total) : '')
+
   const commit = (): void => {
     if (draft === null) return
     const parsed = parseInt(draft, 10)
     if (!Number.isNaN(parsed)) onCommit(parsed)
     setDraft(null)
   }
+  const commitTotal = (): void => {
+    if (totalDraft === null) return
+    const trimmed = totalDraft.trim()
+    if (trimmed === '') {
+      // 清空 = 重置为未知
+      onTotalCommit(undefined)
+    } else {
+      const parsed = parseInt(trimmed, 10)
+      if (!Number.isNaN(parsed) && parsed > 0) onTotalCommit(parsed)
+    }
+    setTotalDraft(null)
+  }
+
   return (
     <div className="inline-flex items-center gap-1 px-2 h-7 rounded-md bg-surface border border-outline-variant/15 font-mono text-xs">
       <input
@@ -556,9 +588,24 @@ function EpisodeInput({
         }}
         className="w-7 bg-transparent outline-none text-center text-on-surface"
       />
-      <span className="text-on-surface-variant/40">
-        / {total != null ? total : '?'}
-      </span>
+      <span className="text-on-surface-variant/40">/</span>
+      {/* 总集数也可编辑 —— BGM eps=0 显示成 "?" 时，用户点 "?" 自己输入
+          一个目标值。留空提交 = 重置回 "?"。 */}
+      <input
+        type="text"
+        inputMode="numeric"
+        value={totalDisplay}
+        onChange={e => setTotalDraft(e.target.value.replace(/[^0-9]/g, ''))}
+        onFocus={() => setTotalDraft(total != null ? String(total) : '')}
+        onBlur={commitTotal}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.currentTarget.blur() }
+          if (e.key === 'Escape') { setTotalDraft(null); e.currentTarget.blur() }
+        }}
+        placeholder="?"
+        title={total == null ? '点这里填总集数（留空保持未知）' : '改总集数'}
+        className="w-7 bg-transparent outline-none text-center text-on-surface-variant/70 hover:text-on-surface focus:text-on-surface placeholder:text-on-surface-variant/40"
+      />
     </div>
   )
 }
