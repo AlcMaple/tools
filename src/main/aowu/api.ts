@@ -213,32 +213,40 @@ function parsePathTail(watchUrl: string): string {
 }
 
 /**
- * Resolve a numeric video id (or a /v/{id} URL) to the user-facing /w/{token}
- * URL via the `route-tokens` endpoint — the documented inverse of route().
+ * Resolve a numeric video id (or a /v/{id} synthetic URL) to the user-facing
+ * /v/{token} listing page URL, where the user can click "立即播放" to pick an
+ * episode.
  *
  * Background: search() returns `aowu.tv/v/{numericId}` which is a synthetic
  * URL we use to round-trip through watch(). The actual user-facing SPA URL
- * uses an opaque per-video token like `JrTmTRkaoEhG`. Opening /v/{id} in a
- * browser yields the site's "页面令牌生成失败" error page. So when WatchHere
- * wants to send the user to "watch online", we need the /w/{token} form.
+ * uses an opaque per-video token like `jRDdniK8gqWG` in the SAME `/v/` path
+ * prefix — only the tail format differs (numeric vs opaque-token). Opening
+ * /v/{numericId} in a browser yields the site's "页面令牌生成失败" error.
  *
- * The route-tokens endpoint shape is undocumented (the SPA uses it internally
- * for <a> link rewriting). We try common response shapes defensively — if
- * none of them yield a token, throw ERR_STRUCTURE.
+ * Two flavors of user-facing URL share the same token:
+ *   - `/v/{token}`               listing page (this is what we return)
+ *   - `/w/{token}#s={src}&ep={ep}` specific episode watch page
+ * We go to the listing page so the user picks the episode themselves via
+ * the "立即播放" button — also avoids needing to know source_id / episode.
+ *
+ * The route-tokens action's response shape isn't formally documented (SPA-
+ * internal). We log the raw response on every call for diagnosability and
+ * try several extraction shapes; if none yield a token, throw ERR_STRUCTURE
+ * with the raw response truncated into the message.
  *
  * Input forms accepted:
- *   - `"2997"`                    raw numeric id
- *   - `"https://aowu.tv/v/2997"`  synthetic search URL
- *   - `"https://aowu.tv/w/Jr..."` already a token URL → returned as-is
+ *   - `"2997"`                          raw numeric id
+ *   - `"https://aowu.tv/v/2997"`        synthetic search URL
+ *   - `"https://aowu.tv/v/jRDdniK8..."` already a token URL → returned as-is
  */
 export async function resolveSharePath(input: string): Promise<string> {
   const raw = input.trim()
   if (!raw) throw new Error('resolveSharePath: empty input')
 
-  // Already token form — just normalise.
+  // Already token form (path tail is opaque, not numeric) — just normalise.
   const tail = parsePathTail(raw)
   if (tail && !/^\d+$/.test(tail)) {
-    return `${BASE_URL}/w/${tail}`
+    return `${BASE_URL}/v/${tail}`
   }
 
   // Numeric id form. Extract id then call route-tokens.
@@ -253,14 +261,19 @@ export async function resolveSharePath(input: string): Promise<string> {
     params: { paths: [path] },
   })
 
+  // Diagnostic: log raw response so we can confirm the shape on first run.
+  // route-tokens is SPA-internal so its shape isn't pinned down anywhere;
+  // this log lets us iterate the extractor without instrumenting again.
+  console.log(`[aowu/resolveSharePath] route-tokens raw for ${path}:`, JSON.stringify(res))
+
   const token = extractTokenFromRouteTokens(res, path)
   if (!token) {
     throw new Error(
       `${ERR_STRUCTURE}: route-tokens 未返回 token for ${path}; ` +
-      `response shape unexpected: ${JSON.stringify(res).slice(0, 200)}`,
+      `response shape unexpected: ${JSON.stringify(res).slice(0, 300)}`,
     )
   }
-  return `${BASE_URL}/w/${token}`
+  return `${BASE_URL}/v/${token}`
 }
 
 /**
