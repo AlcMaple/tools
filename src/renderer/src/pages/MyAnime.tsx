@@ -73,29 +73,25 @@ export default function MyAnime(): JSX.Element {
   const [filter, setFilter] = useState<FilterKey>('all')
   const [query, setQuery] = useState('')
 
-  // Sort: most-recently-updated first within each status. The user touches a
-  // row → it bubbles back to the top of its bucket, mirroring how email
-  // inboxes behave when you reply to a thread.
-  const sorted = useMemo(() => {
-    return [...tracks].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  }, [tracks])
-
+  // 不按 updatedAt 排序 —— animeTrackStore.list() 已经是 Map 的插入顺序
+  // （= 用户加入追番的顺序）。编辑某条 track 不会动它的位置，避免每次改
+  // 进度 / 状态都被弹到顶部那种"邮件式 reorder"的吵闹感。
   const filtered = useMemo(() => {
-    const byQ = sorted.filter(t => matchesAnime(t, query.trim()))
+    const byQ = tracks.filter(t => matchesAnime(t, query.trim()))
     return filter === 'all' ? byQ : byQ.filter(t => t.status === filter)
-  }, [sorted, filter, query])
+  }, [tracks, filter, query])
 
   // Counts include search-narrowed scope so the badges reflect what would
   // actually appear if the user clicked into each bucket.
   const counts = useMemo(() => {
     const c: Record<FilterKey, number> = { all: 0, watching: 0, plan: 0, completed: 0, paused: 0, dropped: 0 }
-    for (const t of sorted) {
+    for (const t of tracks) {
       if (!matchesAnime(t, query.trim())) continue
       c.all++
       c[t.status]++
     }
     return c
-  }, [sorted, query])
+  }, [tracks, query])
 
   return (
     <div className="relative min-h-full bg-background">
