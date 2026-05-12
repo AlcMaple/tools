@@ -20,19 +20,9 @@ interface Props {
   variant?: 'row' | 'inline'
   /** When true, show the "no bindings yet" placeholder instead of returning null. */
   showEmpty?: boolean
-  /**
-   * When true, switch all chips into "edit mode":
-   *   - chip body becomes non-clickable (no navigation on click)
-   *   - a prominent ✕ button is added per chip
-   * 配合外部的「编辑 / 完成」开关使用 —— 默认状态下用户点 chip 就跳转,
-   * 想删除必须先主动进入编辑模式，杜绝跳转和删除按钮挨着误点的风险。
-   */
-  editing?: boolean
-  /** Called when ✕ is clicked (only in edit mode). */
-  onRemove?: (binding: AnimeBinding) => void
 }
 
-export function WatchHere({ bgmId, variant = 'row', showEmpty = false, editing = false, onRemove }: Props): JSX.Element | null {
+export function WatchHere({ bgmId, variant = 'row', showEmpty = false }: Props): JSX.Element | null {
   const track = useAnimeTrack(bgmId)
   useAowuShareUrlBackfill(bgmId, track)
   if (!track || track.bindings.length === 0) {
@@ -49,8 +39,6 @@ export function WatchHere({ bgmId, variant = 'row', showEmpty = false, editing =
           binding={b}
           track={track}
           variant={variant}
-          editing={editing}
-          onRemove={editing && onRemove ? () => onRemove(b) : undefined}
         />
       ))}
     </div>
@@ -114,13 +102,11 @@ function chipLabel(b: AnimeBinding): string {
 // ── Per-source button ───────────────────────────────────────────────────────
 
 function SourceButton({
-  binding, track, variant, editing = false, onRemove,
+  binding, track, variant,
 }: {
   binding: AnimeBinding
   track: AnimeTrack
   variant: 'row' | 'inline'
-  editing?: boolean
-  onRemove?: () => void
 }): JSX.Element {
   // Prefer the explicit sourceUrl when provided; fall back to the per-source
   // computation. For Aowu/Xifan/Girigiri the sourceKey IS the watch URL.
@@ -135,27 +121,9 @@ function SourceButton({
       : ''
   const label = chipLabel(binding)
 
-  // Inline variant (MyAnime / Calendar) - 紧凑款。
+  // Chip 永远是纯跳转 <a>，没有删除按钮。删除入口集中在 MyAnime 的
+  // EditBindingsModal 里（点行尾「编辑」按钮打开），物理隔离避免误删。
   if (variant === 'inline') {
-    if (editing && onRemove) {
-      // 编辑模式：chip body 不再是 <a>，整体改色调成 error，强制
-      // 移除是显式动作（点 chip 任何地方都触发删除，要求用户先点
-      // 上方的"编辑"显式进入这个状态）。
-      return (
-        <button
-          type="button"
-          onClick={onRemove}
-          title={`移除：${binding.sourceTitle || label}`}
-          className="inline-flex items-stretch overflow-hidden rounded-md border border-error/40 bg-error/10 hover:bg-error/20 transition-colors"
-        >
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-error font-label text-[10px] tracking-wider">
-            <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>delete</span>
-            <span className="font-bold">{label}</span>
-            {epText && <span className="text-error/70">{epText}</span>}
-          </span>
-        </button>
-      )
-    }
     return (
       <a
         href={url}
@@ -171,28 +139,6 @@ function SourceButton({
     )
   }
 
-  // Row variant (AnimeInfo) - 大款。
-  if (editing && onRemove) {
-    return (
-      <button
-        type="button"
-        onClick={onRemove}
-        title={`移除：${binding.sourceTitle || label}`}
-        className="inline-flex items-stretch overflow-hidden rounded-lg border border-error/40 bg-error/10 hover:bg-error/20 transition-colors"
-      >
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-error font-label text-[11px] uppercase tracking-widest">
-          <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>delete</span>
-          <span className="font-bold">{label}</span>
-          {epText && (
-            <>
-              <span className="text-error/55">·</span>
-              <span className="text-error/75 tracking-wider">{epText}</span>
-            </>
-          )}
-        </span>
-      </button>
-    )
-  }
   return (
     <a
       href={url}
