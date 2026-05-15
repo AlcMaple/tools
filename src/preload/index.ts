@@ -182,6 +182,14 @@ contextBridge.exposeInMainWorld('fileExplorerApi', {
   trash: (targetPath: string) => ipcRenderer.invoke('fs:trash', targetPath),
   deletePermanent: (targetPath: string) => ipcRenderer.invoke('fs:delete-permanent', targetPath),
   resolveSpecial: (input: string) => ipcRenderer.invoke('fs:resolve-special', input),
+  /**
+   * Walk up from `targetPath` and return the closest still-existing directory
+   * (returns `targetPath` itself if it still exists). Used by the delete flow
+   * to navigate away from a now-deleted cwd without leaving the UI stranded
+   * on an unreachable path.
+   */
+  findExistingAncestor: (targetPath: string): Promise<string | null> =>
+    ipcRenderer.invoke('fs:find-existing-ancestor', targetPath),
   onDirChange: (cb: () => void) => {
     const handler = () => cb()
     ipcRenderer.on('fs:dir-changed', handler)
