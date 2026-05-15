@@ -14,7 +14,7 @@
 //   tracks 字段做无感迁移（详见 AnimeSyncBar）。
 // - 备注字段在 store 里仍保留（向后兼容老数据），但不再有 UI 入口。
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
 import {
   animeTrackStore,
@@ -38,7 +38,6 @@ import { NewRecommendationModal } from '../components/NewRecommendationModal'
 import { CriteriaModal } from '../components/CriteriaModal'
 import { GoodEpisodesEditor } from '../components/GoodEpisodesEditor'
 import { TagFilter } from '../components/TagFilter'
-import { UserTagsEditor } from '../components/UserTagsEditor'
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal'
 import {
   EditBindingsModal,
@@ -542,9 +541,21 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
     animeTrackStore.upsert({ bgmId: track.bgmId, goodEpisodes: eps })
   }
   const [goodEpsOpen, setGoodEpsOpen] = useState(false)
-  // 自定义标签编辑弹窗 —— 行内 🏷 按钮触发，让用户管理 userTags。
-  // 跟 AnimeInfo 的 Genre 区不冲突（那边只读，这边是写入入口）。
-  const [tagsOpen, setTagsOpen] = useState(false)
+  // 行内"添加自定义标签" inline 输入 —— 替代了早期的 UserTagsEditor modal,
+  // 因为 BGM tag 最多 4 + 用户自定义最多 4 总数 6-8 个 chip 完全能放进
+  // TrackRow 一行里，专门弹个 modal 编辑反而多此一举。
+  const [addingTag, setAddingTag] = useState(false)
+  const [tagDraft, setTagDraft] = useState('')
+  const tagInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (addingTag) tagInputRef.current?.focus()
+  }, [addingTag])
+  const commitTag = (): void => {
+    const trimmed = tagDraft.trim()
+    if (trimmed) animeTrackStore.addUserTag(track.bgmId, trimmed)
+    setTagDraft('')
+    setAddingTag(false)
+  }
   return (
     <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex">
       {/* Cover */}
@@ -563,19 +574,79 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
         )}
       </div>
 
-      {/* Body */}
-      <div className="flex-1 p-4 min-w-0 flex flex-col gap-3">
-        {/* Title row */}
+      {/* Body —— padding / gap 都收紧一档，让总高度刚好等于 cover 132px,
+          避免 cover 容器右侧出现"img 132 + 灰色留白" 的视觉割裂。 */}
+      <div className="flex-1 p-3 min-w-0 flex flex-col gap-2">
+        {/* Title row —— 日文原标题不再单独占一行，挪到主标题的 title attribute
+            （hover 可看），把副标题位置让给类型 chip 行。这是为了在不增加卡片
+            高度的前提下塞下"类型"信息。 */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="text-base font-bold text-on-surface truncate" title={displayTitle}>
+          <div className="min-w-0 flex-1">
+            <h3
+              className="text-base font-bold text-on-surface truncate leading-tight"
+              title={nativeTitle ? `${displayTitle}\n${nativeTitle}` : displayTitle}
+            >
               {displayTitle}
             </h3>
-            {nativeTitle && (
-              <p className="text-xs text-on-surface-variant/60 truncate mt-0.5" title={nativeTitle}>
-                {nativeTitle}
-              </p>
-            )}
+            {/* 类型 chip 行：BGM 标签（primary 实色只读，加追番时的快照）+
+                自定义标签（amber 实色 hover 出 ×）+ 末尾 [+ 添加] inline 入口。
+                紧贴标题下方（mt-1）替代了之前的日文副标题位置，不增加卡片
+                高度。 BGM 限 4 + 用户实际也不超过 4，flex-wrap 兜底超长行。 */}
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {track.bgmTags.map(t => (
+                <span
+                  key={`bgm-${t}`}
+                  title="来自 Bangumi（不可编辑）"
+                  className="inline-flex items-center px-2 py-0.5 rounded bg-primary/12 border border-primary/25 text-primary font-label text-[10px] font-bold tracking-wider"
+                >
+                  {t}
+                </span>
+              ))}
+              {track.userTags.map(t => (
+                <button
+                  key={`user-${t}`}
+                  type="button"
+                  onClick={() => animeTrackStore.removeUserTag(track.bgmId, t)}
+                  title={`自定义「${t}」（点击移除）`}
+                  className="group inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-amber-400/20 border border-amber-400/50 text-amber-600 hover:bg-error/15 hover:border-error/40 hover:text-error font-label text-[10px] font-bold tracking-wider transition-colors"
+                >
+                  <span>{t}</span>
+                  <span
+                    className="material-symbols-outlined leading-none opacity-0 group-hover:opacity-100 transition-opacity -mr-0.5"
+                    style={{ fontSize: 11 }}
+                  >
+                    close
+                  </span>
+                </button>
+              ))}
+              {addingTag ? (
+                <input
+                  ref={tagInputRef}
+                  type="text"
+                  value={tagDraft}
+                  onChange={e => setTagDraft(e.target.value)}
+                  onBlur={commitTag}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') commitTag()
+                    if (e.key === 'Escape') { setTagDraft(''); setAddingTag(false) }
+                  }}
+                  placeholder="例：下饭"
+                  maxLength={20}
+                  spellCheck={false}
+                  className="w-24 px-2 py-0.5 rounded bg-surface border border-primary/40 outline-none focus:ring-1 focus:ring-primary/40 text-on-surface font-label text-[10px] font-bold tracking-wider"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAddingTag(true)}
+                  title="加自定义标签（下饭 / 通勤番 之类）"
+                  className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded border border-dashed border-outline-variant/35 hover:border-primary/50 hover:bg-primary/8 text-on-surface-variant/55 hover:text-primary font-label text-[10px] font-bold tracking-wider transition-colors"
+                >
+                  <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>add</span>
+                  <span>添加</span>
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <a
@@ -593,26 +664,6 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
               className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
             >
               <span className="material-symbols-outlined text-[16px] leading-none">campaign</span>
-            </button>
-            <button
-              onClick={() => setTagsOpen(true)}
-              title={
-                track.userTags.length > 0
-                  ? `自定义标签：${track.userTags.join('、')}（点击编辑）`
-                  : '加自定义标签（下饭 / 通勤番 之类）'
-              }
-              className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors ${
-                track.userTags.length > 0
-                  ? 'text-primary hover:bg-primary/10'
-                  : 'text-on-surface-variant/50 hover:text-primary hover:bg-primary/10'
-              }`}
-            >
-              <span
-                className="material-symbols-outlined text-[16px] leading-none"
-                style={{ fontVariationSettings: track.userTags.length > 0 ? "'FILL' 1" : "'FILL' 0" }}
-              >
-                sell
-              </span>
             </button>
             <button
               onClick={() => setConfirmDeleteOpen(true)}
@@ -771,13 +822,6 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
           episode={track.episode}
           onChange={setGoodEpisodes}
           onClose={() => setGoodEpsOpen(false)}
-        />
-      )}
-
-      {tagsOpen && (
-        <UserTagsEditor
-          track={track}
-          onClose={() => setTagsOpen(false)}
         />
       )}
 
