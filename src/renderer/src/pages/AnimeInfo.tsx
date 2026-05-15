@@ -804,6 +804,10 @@ function DetailView({
                   totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
                   status: 'plan',
                   episode: 0,
+                  // 加追番那一刻把 BGM 当前 tag 快照写入 —— store 内 lock-on-create
+                  // 保证之后再 fetch detail 即使 tag 变了，本地这份不动。删追番
+                  // 再重加 = 重新拍快照（store 看到 prev 不存在就会接受新值）。
+                  bgmTags: data.tags,
                 })}
                 className="w-full py-4 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 text-on-surface-variant hover:text-primary font-label text-sm transition-colors flex items-center justify-center gap-2"
               >
