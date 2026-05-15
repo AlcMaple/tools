@@ -169,7 +169,11 @@ export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
   const images = (subject.images as Record<string, string>) ?? {}
 
   const cover = images.large || images.common || images.medium || ''
-  const tags = ((subject.tags as { name: string }[]) ?? []).slice(0, 8).map((t) => t.name)
+  // 只取前 4 个最热门 tag —— BGM API 返回的 tags 已经按热度排好序，4 个
+  // 就够 AnimeInfo Genre 区 + MyAnime UserTagsEditor 的 BGM 标签参考用了。
+  // 这俩地方一致显示完整 data.tags / track.bgmTags 即可，下游不再做二次
+  // slice，避免"详情页 3 个、modal 8 个" 那种数量错位的混淆（见 commit 沿革）。
+  const tags = ((subject.tags as { name: string }[]) ?? []).slice(0, 4).map((t) => t.name)
 
   let studio = infobox['动画制作'] || infobox['制作公司'] || ''
   const airDate = String(subject.date ?? '') || infobox['放送开始'] || ''
