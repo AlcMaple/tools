@@ -1,10 +1,11 @@
 import { app, ipcMain, shell, WebContents } from 'electron'
-import { readdir, stat, rm } from 'fs/promises'
+import { readdir, readFile, rm, stat } from 'fs/promises'
 import { existsSync, watch as fsWatch, FSWatcher } from 'fs'
 import { join, extname } from 'path'
-import { homedir, platform as osPlatform } from 'os'
+import { homedir, platform as osPlatform, tmpdir } from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { randomBytes } from 'crypto'
 
 // ── Directory watcher ──────────────────────────────────────────────────────────
 
@@ -148,22 +149,42 @@ function resolveSpecialFolder(input: string): string | null {
   try { return app.getPath(id) } catch { return null }
 }
 
-async function runWindowsPowerShellWithStdout(psScript: string): Promise<string> {
-  const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
+/**
+ * 跑一段 PS 脚本，**完全丢弃** stdout / stderr。从不读 PS 的输出来取数据。
+ *
+ * 历史教训：之前尝试过"PS 把 JSON 写到 stdout，Node 读 stdout 解析"——结果
+ * 在 Chinese Windows 上时不时被编码问题搞炸（PS 默认输出 OEM / GBK, Node
+ * 按 UTF-8 解码 → 中文字节序列被破坏 → JSON.parse 抛错）。试过
+ * `[Console]::OutputEncoding = UTF8` + `chcp 65001` 强制统一也并不彻底
+ * 可靠（PS 版本差异 / 外壳 hook / 防病毒 / 区域设置都能再次踩雷）。
+ *
+ * 根除方案：**数据交换走临时文件而非 stdout**。PS 用
+ * `[System.IO.File]::WriteAllText` 显式写 UTF-8 字节到文件 → Node 用
+ * `readFile(..., 'utf8')` 读 → 全程 PS string ↔ UTF-8 bytes 转换 in-process,
+ * 完全绕开 console / OEM codepage。这个 helper 只负责"让 PS 把事情做完",
+ * 失败不抛（exit code / 超时都视作"它尽力了"），由调用方根据文件系统
+ * 状态（existsSync / 读临时文件）判断真实成败。
+ */
+async function runWindowsPowerShellSilent(psScript: string): Promise<void> {
+  // 仍然加 UTF-8 prologue ——「就算 PS 内部某行 Write-Output 漏出来什么也不
+  // 会在 console 那里被 OEM 转码炸出诡异错误」是廉价保险；但我们不依赖
+  // stdout 拿数据，所以这只是 defense-in-depth。
+  const utf8Prologue = [
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+    '$OutputEncoding = [System.Text.Encoding]::UTF8',
+    'chcp 65001 *> $null',
+  ].join('\n')
+  const wrapped = `${utf8Prologue}\n${psScript}`
+  const encoded = Buffer.from(wrapped, 'utf16le').toString('base64')
   try {
-    const { stdout } = await execFileAsync(
+    await execFileAsync(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-      { timeout: 120000, maxBuffer: 16 * 1024 * 1024 }
+      { timeout: 120000, maxBuffer: 1024 * 1024 }
     )
-    return String(stdout ?? '')
-  } catch (e: unknown) {
-    // Surface stderr/stdout so the renderer can show actual cause to the user.
-    const err = e as { stdout?: unknown; stderr?: unknown; message?: string }
-    const stderr = String(err.stderr ?? '').trim()
-    const stdout = String(err.stdout ?? '').trim()
-    const detail = [stderr, stdout].filter(Boolean).join('\n').trim()
-    throw new Error(detail || err.message || 'PowerShell 执行失败')
+  } catch {
+    // 不抛错 —— 调用方只关心"文件系统状态 / 临时文件内容"，不关心 PS 自己
+    // 觉得自己成不成功。这种解耦正是这套架构的核心。
   }
 }
 
@@ -272,154 +293,159 @@ if ($startResult -eq 0) {
 if ($killed.Count -gt 0) { Start-Sleep -Milliseconds 400 }
 `
 
-interface PsDeleteResult {
+// ── Prepare-for-delete: kill processes + elevate permissions ────────────────
+//
+// 单一职责的"准备阶段"——把"可能阻止删除"的所有障碍清掉，但本身不做
+// 删除。删除留给 Node 自己干（fs.rm / shell.trashItem），这样真正的
+// 文件操作完全在 JS 层，不依赖 PS 跟外界的字节流通信。
+//
+// 数据交换：用 temp file 走 UTF-8 显式编码，**不再通过 stdout**。这一条
+// 直接消掉了"Windows 区域设置 / PS 版本 / OEM codepage 把 JSON 字符串
+// 炸花"的整一类编码 bug。即使 PS 顶部 [Console]::OutputEncoding 这些
+// 设置在某些环境下不生效，临时文件这条通路也不受影响。
+
+interface PrepareForDeleteResult {
   killed: KilledProcess[]
-  success: boolean
-  error: string | null
-  diagnostics: {
-    takeown?: string
-    icaclsUser?: string
-    icaclsAdmin?: string
-  }
 }
 
 /**
- * Parse the JSON blob emitted between `MAPLE_RESULT_BEGIN` / `MAPLE_RESULT_END`
- * markers by trashItem/permanentDelete PowerShell scripts. Defensive — returns
- * a failure shape on any parse error so callers don't crash on unexpected
- * output (e.g. PowerShell itself crashed before emit).
+ * 临时文件路径，用唯一后缀避免并发删除时碰撞。
  */
-function parsePsDeleteResult(stdout: string): PsDeleteResult {
-  const m = stdout.match(/MAPLE_RESULT_BEGIN\s*([\s\S]*?)\s*MAPLE_RESULT_END/)
-  if (!m) {
-    return { killed: [], success: false, error: '未拿到 PowerShell 结果输出', diagnostics: {} }
-  }
+function newTempPath(label: string): string {
+  return join(tmpdir(), `maple-${label}-${Date.now()}-${randomBytes(6).toString('hex')}.json`)
+}
+
+/**
+ * Best-effort 把 PS 写到临时文件的 JSON 解析成 KilledProcess 数组。
+ * 任何异常都吞掉返回 `[]`——杀进程列表只是 toast 的锦上添花，缺了也不
+ * 影响主流程。
+ */
+function parseKilledJson(text: string): KilledProcess[] {
+  const trimmed = text.trim()
+  if (!trimmed) return []
   try {
-    const parsed = JSON.parse(m[1].trim()) as {
-      killed?: Array<{ pid?: unknown; name?: unknown }>
-      success?: boolean
-      error?: string | null
-      diagnostics?: { takeown?: string; icaclsUser?: string; icaclsAdmin?: string }
-    }
-    const killed = (parsed.killed ?? []).map((p) => ({
-      pid: typeof p.pid === 'number' ? p.pid : Number(p.pid) || 0,
-      name: typeof p.name === 'string' ? p.name : String(p.name ?? ''),
-    }))
-    return {
-      killed,
-      success: parsed.success === true,
-      error: typeof parsed.error === 'string' ? parsed.error : null,
-      diagnostics: parsed.diagnostics ?? {},
-    }
+    const raw = JSON.parse(trimmed) as unknown
+    // ConvertTo-Json 在单元素时可能不包 array，统一兜成数组
+    const list: unknown[] = Array.isArray(raw) ? raw : [raw]
+    return list
+      .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+      .map(p => ({
+        pid: typeof p.pid === 'number' ? p.pid : Number(p.pid) || 0,
+        name: typeof p.name === 'string' ? p.name : String(p.name ?? ''),
+      }))
+      .filter(k => k.pid > 0)
   } catch {
-    return { killed: [], success: false, error: 'PowerShell 结果解析失败', diagnostics: {} }
+    return []
   }
-}
-
-/** Build a multi-line error message from a failed PsDeleteResult, including
- *  the takeown / icacls diagnostics so the renderer's friendlyError() can
- *  classify it and the user can read the raw cause. */
-function formatPsDeleteError(r: PsDeleteResult, opLabel: string): string {
-  const lines = [`${opLabel}: ${r.error ?? '未知错误'}`]
-  if (r.diagnostics.takeown) lines.push('--- takeown ---', r.diagnostics.takeown)
-  if (r.diagnostics.icaclsUser) lines.push('--- icacls (current user) ---', r.diagnostics.icaclsUser)
-  if (r.diagnostics.icaclsAdmin) lines.push('--- icacls (administrators) ---', r.diagnostics.icaclsAdmin)
-  return lines.join('\n')
 }
 
 /**
- * Permanent delete: kills any processes holding the target, takes ownership,
- * grants Full Control to current user + Administrators, then Remove-Item.
+ * Windows-only: 跑 PS 把所有可能阻挠删除的事都做了——杀掉持有 target 的
+ * 进程、takeown、icacls 放权——然后**只把"杀掉的进程列表"写到临时文件**,
+ * 不通过 stdout 传任何数据。Node 这边读临时文件、解析、然后自己 rm /
+ * trashItem。
  *
- * Subsumes the old `forceDeletePermanent` — there is no longer a "force vs
- * normal" distinction at this layer; permanent delete does everything it can
- * to succeed in one shot, and the caller doesn't need to retry or escalate.
- *
- * Returns the list of processes that were killed (may be empty), so the
- * renderer can disclose them post-hoc in the success toast.
- *
- * On failure: throws an Error whose message includes the underlying cause +
- * takeown/icacls diagnostics, so the renderer's friendlyError() can classify
- * it and the user can read the raw output.
+ * 不抛错：PS 跑不通 / 没杀到进程 / 写文件失败 都视作"已经尽力"，杀掉的
+ * 列表能拿就拿，拿不到返回空。真实成败靠调用方 existsSync 判定。
  */
-async function permanentDelete(targetPath: string): Promise<{ killed: KilledProcess[] }> {
-  if (osPlatform() !== 'win32') {
-    // POSIX: rm -rf already succeeds against open files (unlink while open).
-    await rm(targetPath, { recursive: true, force: true })
-    return { killed: [] }
-  }
+async function prepareForDelete(targetPath: string): Promise<PrepareForDeleteResult> {
+  if (osPlatform() !== 'win32') return { killed: [] }
 
-  // The PS script intentionally always exits 0 and reports outcome via the
-  // MAPLE_RESULT JSON block. This lets us read `killed` even on Remove-Item
-  // failure (the kill step might have legitimately killed processes before
-  // the final delete tripped on a different cause).
-  const stdout = await runWindowsPowerShellWithStdout(`
+  const tempPath = newTempPath('killed')
+  const psScript = `
 $target = @'
 ${targetPath}
+'@.Trim()
+$resultPath = @'
+${tempPath}
 '@.Trim()
 
 ${PS_KILL_PROCESSES_FRAGMENT}
 
+# Elevate permissions silently. takeown / icacls native exes 输出会走 console
+# OEM codepage —— 我们一字不读，全 *> $null 丢掉，根本没机会出编码问题。
+# 它们成功失败都不影响后续 Node 的 fs.rm / shell.trashItem 能不能干活。
 $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
-$takeownLog = (takeown /f $target /r /d y 2>&1) -join "\`n"
-$icaclsUserLog = (icacls $target /grant "*\${sid}:F" /t /c 2>&1) -join "\`n"
-$icaclsAdminLog = (icacls $target /grant administrators:F /t /c 2>&1) -join "\`n"
+takeown /f $target /r /d y *> $null
+icacls $target /grant "*\${sid}:F" /t /c *> $null
+icacls $target /grant administrators:F /t /c *> $null
 
-$success = $true
-$errMsg = $null
-try {
-  Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
-} catch {
-  $success = $false
-  $errMsg = $_.Exception.Message
-}
+# 数据回传 ✦ 走临时文件而非 stdout。WriteAllText + UTF8Encoding(no BOM) 在
+# PS 内部直接 string(UTF-16) → UTF-8 bytes，完全不经过 [Console]::OutputEncoding
+# 这条容易被环境弄花的链路。Node 那头 readFile(path, 'utf8') 同样精确按
+# UTF-8 解码。整条 round-trip 在我们的代码里完全确定，没有外部因素能搅局。
+$json = ConvertTo-Json -InputObject @($killed) -Compress -Depth 3
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($resultPath, $json, $utf8NoBom)
+`.trim()
 
-$result = @{
-  killed = @($killed)
-  success = $success
-  error = $errMsg
-  diagnostics = @{
-    takeown = $takeownLog
-    icaclsUser = $icaclsUserLog
-    icaclsAdmin = $icaclsAdminLog
+  try {
+    await runWindowsPowerShellSilent(psScript)
+    let text = ''
+    try {
+      text = await readFile(tempPath, 'utf8')
+    } catch {
+      // 文件没生成 = PS 没跑到 WriteAllText 那行。我们继续走 —— 杀进程虽然
+      // 没拿到列表，但权限和进程那两步可能已经做完了，让 Node 这边正常往下。
+      return { killed: [] }
+    }
+    return { killed: parseKilledJson(text) }
+  } finally {
+    rm(tempPath, { force: true }).catch(() => {})
   }
-}
-Write-Output 'MAPLE_RESULT_BEGIN'
-Write-Output (ConvertTo-Json -InputObject $result -Compress -Depth 5)
-Write-Output 'MAPLE_RESULT_END'
-`.trim())
-
-  const r = parsePsDeleteResult(stdout)
-  if (!r.success) throw new Error(formatPsDeleteError(r, 'Remove-Item'))
-  return { killed: r.killed }
 }
 
 /**
- * Move-to-recycle-bin. Like `permanentDelete`, this does everything it can
- * internally — kill processes, takeown, swap APIs — and either succeeds or
- * fails. Returns the list of processes that were killed (if any) so the
- * renderer can surface them in the success toast.
+ * Permanent delete: 先 prepareForDelete 清障碍，然后 Node 自己用 fs.rm 做
+ * 实际删除（POSIX 上直接走这条；Windows 上是 prepareForDelete 之后的主路径）。
  *
- * Windows trash chain (three attempts, fast → slow):
+ * 失败兜底：Node fs.rm 在 Windows 上偶尔会因为长路径 / OneDrive placeholder
+ * / NTFS 特殊属性翻车——这种情况退到 PS Remove-Item 再试一次（PS 跑完不读
+ * stdout，只看后面 existsSync 是真成功 vs 真失败）。
  *
- *   1. shell.trashItem — Electron's modern IFileOperation-based API.
- *      Fast path: no PowerShell, no killed processes, no ACL changes.
- *      Handles most normal cases.
+ * 最终判定：`existsSync(target)`。文件没了 = 成功（返回 killed 列表）；还
+ * 在 = 抛 Error，message 用 `Remove-Item:` 前缀方便 friendlyError 归类。
+ */
+async function permanentDelete(targetPath: string): Promise<{ killed: KilledProcess[] }> {
+  if (osPlatform() !== 'win32') {
+    // POSIX: rm -rf 自己就能处理 in-use 文件（unlink while open）。
+    await rm(targetPath, { recursive: true, force: true })
+    return { killed: [] }
+  }
+
+  const { killed } = await prepareForDelete(targetPath)
+
+  // 主路径：Node 原生 rm。无 shell，无编码风险，速度也快。
+  try {
+    await rm(targetPath, { recursive: true, force: true })
+  } catch {
+    // 兜底：PS Remove-Item。我们不读它输出，只看下面 existsSync。
+    await runWindowsPowerShellSilent(`
+$target = @'
+${targetPath}
+'@.Trim()
+try { Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop } catch { }
+`.trim())
+  }
+
+  if (existsSync(targetPath)) {
+    throw new Error('Remove-Item: 操作未生效，文件夹仍然存在（可能被系统驱动 / 内核 / 杀软占用）')
+  }
+  return { killed }
+}
+
+/**
+ * Move-to-recycle-bin。和 permanentDelete 同思路：让 Node / Electron 自己
+ * 做实际删除（shell.trashItem），PS 只负责"清障碍"。
  *
- *   2. PowerShell: kill processes + takeown + icacls + legacy SendToRecycleBin
- *      (Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory under the
- *      hood, which is SHFileOperation). Used for ACL-restricted / locked
- *      files. Grants Full Control to current user + Administrators so the
- *      eventual "empty recycle bin" (UAC-filtered token) still has DELETE.
+ * 链路：
+ *   1. shell.trashItem 直接试一次（绝大多数普通文件这步就成）
+ *   2. 失败 → prepareForDelete 杀进程 + 改权限
+ *   3. shell.trashItem 再试一次（90% 的硬骨头到这步搞定）
+ *   4. 还失败 → 退到 VB FileSystem.DeleteDirectory(SendToRecycleBin)，PS 跑完
+ *      不读 stdout，看 existsSync
  *
- *   3. shell.trashItem AGAIN — sometimes succeeds where step 2's legacy
- *      VB API returns "system does not support this function" (real-world
- *      report: a game-mod folder with mixed file types). IFileOperation
- *      often works after permissions + processes are cleared.
- *
- * Killed-processes from step 2 propagate even when step 2's SendToRecycleBin
- * leg failed and we recovered via step 3 — the kills were real, the user
- * deserves to see them in the toast.
+ * 最终判定还是 existsSync。失败时 Error message 加 `SendToRecycleBin:` 前缀。
  */
 async function trashItem(targetPath: string): Promise<{ killed: KilledProcess[] }> {
   if (osPlatform() !== 'win32') {
@@ -427,78 +453,41 @@ async function trashItem(targetPath: string): Promise<{ killed: KilledProcess[] 
     return { killed: [] }
   }
 
-  // Step 1
+  // Step 1: 快路径 —— IFileOperation。无 PS、无杀进程、无 ACL 改动。
   try {
     await shell.trashItem(targetPath)
     return { killed: [] }
-  } catch {
-    /* fall through to elevated path */
-  }
+  } catch { /* 继续走重路径 */ }
 
-  // Step 2: heavy machinery. PS always exits 0 and reports outcome via JSON,
-  // so we can read $killed even when SendToRecycleBin itself failed.
-  let killed: KilledProcess[] = []
-  let psFailure: string | null = null
+  // Step 2: 清障碍
+  const { killed } = await prepareForDelete(targetPath)
+
+  // Step 3: IFileOperation 重试（进程清掉、权限放开后通常就能 trash 成功）
   try {
-    const stdout = await runWindowsPowerShellWithStdout(`
+    await shell.trashItem(targetPath)
+    if (!existsSync(targetPath)) return { killed }
+  } catch { /* 继续走 VB 兜底 */ }
+
+  // Step 4: 老 VB DeleteDirectory 兜底（极少数 IFileOperation 不 work 的盘 /
+  // 文件类型组合，比如某些游戏 mod 文件夹）。PS 跑完不读 stdout，看 existsSync。
+  await runWindowsPowerShellSilent(`
 $target = @'
 ${targetPath}
 '@.Trim()
-
-${PS_KILL_PROCESSES_FRAGMENT}
-
-$sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
-$takeownLog = (takeown /f $target /r /d y 2>&1) -join "\`n"
-$icaclsUserLog = (icacls $target /grant "*\${sid}:F" /t /c 2>&1) -join "\`n"
-$icaclsAdminLog = (icacls $target /grant administrators:F /t /c 2>&1) -join "\`n"
-
 Add-Type -AssemblyName Microsoft.VisualBasic
-$success = $true
-$errMsg = $null
 try {
   if (Test-Path -LiteralPath $target -PathType Container) {
     [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($target, 'OnlyErrorDialogs', 'SendToRecycleBin')
   } else {
     [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($target, 'OnlyErrorDialogs', 'SendToRecycleBin')
   }
-} catch {
-  $success = $false
-  $errMsg = $_.Exception.Message
-}
-
-$result = @{
-  killed = @($killed)
-  success = $success
-  error = $errMsg
-  diagnostics = @{
-    takeown = $takeownLog
-    icaclsUser = $icaclsUserLog
-    icaclsAdmin = $icaclsAdminLog
-  }
-}
-Write-Output 'MAPLE_RESULT_BEGIN'
-Write-Output (ConvertTo-Json -InputObject $result -Compress -Depth 5)
-Write-Output 'MAPLE_RESULT_END'
+} catch { }
 `.trim())
 
-    const r = parsePsDeleteResult(stdout)
-    killed = r.killed
-    if (r.success) return { killed }
-    psFailure = formatPsDeleteError(r, 'SendToRecycleBin')
-  } catch (e) {
-    psFailure = (e as Error).message
+  if (existsSync(targetPath)) {
+    throw new Error('SendToRecycleBin: 操作未生效，无法移到回收站（可能磁盘格式不支持回收站、回收站满了、或被系统驱动占用）')
   }
-
-  // Step 3: IFileOperation retry now that processes are killed and permissions
-  // are wide open. Preserves the killed list from step 2 either way.
-  try {
-    await shell.trashItem(targetPath)
-    return { killed }
-  } catch {
-    // Surface step 2's diagnostic — it has the most detail about why the
-    // operation can't recycle this target.
-    throw new Error(psFailure ?? 'trashItem failed')
-  }
+  return { killed }
 }
 
 export function registerFileExplorerIpc(): void {
