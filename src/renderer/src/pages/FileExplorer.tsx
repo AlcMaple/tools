@@ -269,6 +269,59 @@ function FileExplorer(): JSX.Element {
     }
   }
 
+  /**
+   * 删完之后让 UI 退到一个还存在的目录上 —— 永远不让 cwd 卡在已删除的路径。
+   *
+   * 双保险：
+   *   1. 优先调 fs:find-existing-ancestor IPC（主进程 stat 测，一次定位）
+   *   2. IPC 不可用 / 报错 → 用 platform-aware 字符串 dirname 爬一层、用
+   *      listDir 当存在性探针，循环直到能列出来或爬到顶
+   *
+   * 一切都不行就 up() 兜底跳 home / virtual root。
+   */
+  async function navigateToSurvivingAncestor(): Promise<void> {
+    const cwd = cwdRef.current
+    if (!cwd) return
+
+    // Path 1: precise via main IPC
+    let survivor: string | null | undefined
+    try {
+      survivor = await window.fileExplorerApi.findExistingAncestor(cwd)
+    } catch {
+      survivor = undefined
+    }
+
+    // Path 2: fallback —— renderer 自己爬 dirname，每一级用 listDir 试探
+    if (survivor === undefined) {
+      let cur = cwd
+      while (true) {
+        const next = parentOf(cur, platformRef.current)
+        if (!next || next === cur) {
+          survivor = null
+          break
+        }
+        try {
+          await window.fileExplorerApi.listDir(next)
+          survivor = next
+          break
+        } catch {
+          cur = next
+        }
+      }
+    }
+
+    if (!survivor) {
+      up()
+      return
+    }
+    if (survivor === cwd) {
+      // cwd 还活着（删的是 children），照常 refresh
+      await refresh()
+      return
+    }
+    await doNavTo(survivor, false)
+  }
+
   function back(): void {
     if (hIdxRef.current > 0) {
       const i = hIdxRef.current - 1
@@ -470,7 +523,13 @@ function FileExplorer(): JSX.Element {
     }
 
     setSelected(new Set())
-    await refresh()
+
+    // 删完之后 cwd 可能已经不在（用户删了当前目录本身 / 它的祖先）。
+    // 走 navigateToSurvivingAncestor —— 先试主进程 IPC 一次性精准定位最近活
+    // 着的祖先；IPC 不可用（比如 dev 时 main 进程没热重启 handler 还没注册）
+    // 时回退到 renderer 自己用 dirname 字符串爬 + listDir 探针，one way or
+    // another 保证 UI 永远不停在不存在的路径上。
+    await navigateToSurvivingAncestor()
 
     if (failures.length) {
       // Open the rich result modal so the user can drill into per-item errors

@@ -62,6 +62,11 @@ declare global {
        * path because permanent delete now does everything it can in one shot. */
       deletePermanent: (targetPath: string) => Promise<{ killed: { pid: number; name: string }[] }>
       resolveSpecial: (input: string) => Promise<string | null>
+      /** Walk up from `targetPath` and return the closest still-existing
+       *  directory (returns `targetPath` itself if it still exists, null
+       *  only if even the filesystem root is unreachable). Used by the
+       *  delete flow to navigate away from a now-deleted cwd. */
+      findExistingAncestor: (targetPath: string) => Promise<string | null>
       onDirChange: (cb: () => void) => () => void
     }
     girigiriApi: {
