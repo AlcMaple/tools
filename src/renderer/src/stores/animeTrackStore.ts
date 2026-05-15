@@ -290,11 +290,18 @@ class AnimeTrackStore {
   upsert(patch: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     const map = this.ensure()
     const prev = map.get(patch.bgmId)
-    // bgmTags 是 lock-on-create —— 只在首次创建（prev 不存在）时从 patch 接受;
-    // 一旦 track 已存在，任何 upsert 都不会动 bgmTags。这是为了让 BGM 社区
-    // tag 漂移不会污染用户已加追番的分类（详见 AnimeTrack.bgmTags 字段注释）。
-    // 想换 bgmTags 的唯一办法：删追番再重加。
-    const lockedBgmTags = prev ? prev.bgmTags : patch.bgmTags
+    // bgmTags 是 **lock-on-first-content** —— prev.bgmTags **非空**时锁定;
+    // 空数组（或首次创建）时允许从 patch 接受新值。
+    //
+    // 早期是严格 lock-on-create（prev 存在就锁），但这导致"周历 / 搜索"
+    // 这种没 detail 数据的入口写下追番后 bgmTags 永远是空的，用户必须删
+    // 重加才能补。改成 lock-on-first-content 后：
+    //   - "周历点追番" 立即 upsert（bgmTags=[]），再异步 ensureBgmTagsFilled
+    //     补一次（patch.bgmTags 写入）—— prev.bgmTags === [] 不锁，接受
+    //   - 一旦有内容（>0 个 tag），后续 upsert 都不会动它，BGM 社区 tag
+    //     漂移仍然污染不了用户的快照
+    // 想换 bgmTags 还是得删追番再重加（删了 prev 不存在，从头来过）。
+    const lockedBgmTags = prev && prev.bgmTags.length > 0 ? prev.bgmTags : patch.bgmTags
     const merged = normalize({
       ...prev,
       ...patch,
@@ -332,6 +339,30 @@ class AnimeTrackStore {
     const next = prev.userTags.filter(t => t !== tag)
     if (next.length === prev.userTags.length) return
     this.upsert({ bgmId, userTags: next })
+  }
+
+  /**
+   * 如果 track 的 bgmTags 还是空，异步从 BGM detail 拉回完整 tag 补写。
+   *
+   * 用在那些"加追番"入口本身没有 detail 数据的地方（番剧周历 / 搜索结果
+   * 关联追番）—— 立即 upsert 让 UI 响应，再后台调一次 detail 把 bgmTags
+   * 填上。lock-on-first-content 语义保证：
+   *   - 第一次成功补写后，后续重复调用 short-circuit（已经非空，prev 锁定）
+   *   - 用户已经看到过的 BGM 标签快照不会被 BGM 社区 tag 漂移污染
+   *
+   * 失败静默（网络抖、BGM API 抽风），用户后续打开详情页 / 重新打开应用
+   * 时下个调用还会再试一次，没什么副作用。
+   */
+  async ensureBgmTagsFilled(bgmId: number): Promise<void> {
+    const existing = this.getByBgmId(bgmId)
+    if (!existing) return
+    if (existing.bgmTags.length > 0) return
+    try {
+      const detail = await window.bgmApi.detail(bgmId)
+      if (Array.isArray(detail.tags) && detail.tags.length > 0) {
+        this.upsert({ bgmId, bgmTags: detail.tags })
+      }
+    } catch { /* silent — 下次再试 */ }
   }
 
   getByBgmId(id: number): AnimeTrack | null {

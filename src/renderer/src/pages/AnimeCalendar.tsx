@@ -202,6 +202,10 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
     if (track) {
       animeTrackStore.delete(item.id)
     } else {
+      // 立即 upsert，UI 即时响应（按钮立刻翻成"已追番"状态）。
+      // BgmCalendarItem 不带 tags 字段，所以 bgmTags 会落成 [] —— 紧接着
+      // 后台异步 fetch detail 把 BGM 标签快照补上（lock-on-first-content
+      // 保证补写不会污染用户已看过的快照）。
       animeTrackStore.upsert({
         bgmId: item.id,
         title: item.name,
@@ -211,6 +215,7 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
         status: 'watching',
         episode: 0,
       })
+      void animeTrackStore.ensureBgmTagsFilled(item.id)
     }
   }
 

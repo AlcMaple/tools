@@ -930,6 +930,9 @@ function SearchDownload(): JSX.Element {
                 totalEpisodes: detail.episodes > 0 ? detail.episodes : undefined,
                 status: "plan",
                 episode: 0,
+                // detail 已经在手 —— 直接把 BGM 标签快照传给 store
+                // （store 内 lock-on-first-content 保证只在还空时写入）
+                bgmTags: detail.tags,
               },
               binding,
             );
