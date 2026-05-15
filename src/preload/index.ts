@@ -218,6 +218,31 @@ contextBridge.exposeInMainWorld('libraryApi', {
   }
 })
 
+contextBridge.exposeInMainWorld('mailApi', {
+  /** 获取邮件配置（authCode 不会原样返回，只回布尔 hasAuthCode）。 */
+  getConfig: () => ipcRenderer.invoke('mail:get-config'),
+  /**
+   * 保存邮件配置。authCode 留空表示沿用磁盘上已有的加密值（编辑场景里
+   * 用户不重新输入授权码也能改 enabled / qqEmail）。
+   */
+  setConfig: (config: { enabled: boolean; qqEmail: string; authCode: string }) =>
+    ipcRenderer.invoke('mail:set-config', config),
+  /** 手动触发周历邮件发送（用于内部自动触发逻辑，UI 一般不直接调）。 */
+  sendCalendar: () => ipcRenderer.invoke('mail:send-calendar'),
+  /** Settings 页「发送测试邮件」按钮调这个，失败会抛错让用户看到原因。 */
+  testSend: () => ipcRenderer.invoke('mail:test-send'),
+})
+
+// 仅供 screenshot 模式的渲染器使用：渲染好后上报 scrollHeight 让主进程
+// resize 隐藏窗口然后 capturePage。普通页面不应该用这个接口。
+// IPC payload 用对象包一层 —— 主进程那边解构 .height 才能拿到，直接传数字会让
+// 主进程拿到 undefined（destructure on number → undefined），导致 setBounds
+// 传入 NaN，截图整个崩在 resize 这一步。
+contextBridge.exposeInMainWorld('screenshotApi', {
+  reportCalendarReady: (height: number) =>
+    ipcRenderer.invoke('screenshot:calendar-ready', { height }),
+})
+
 contextBridge.exposeInMainWorld('webdavApi', {
   getConfig: () => ipcRenderer.invoke('webdav:get-config'),
   saveConfig: (config: { account: string; appPassword: string; remotePath: string }) =>

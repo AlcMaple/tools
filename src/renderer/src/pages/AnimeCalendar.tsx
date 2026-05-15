@@ -27,6 +27,44 @@ type State =
 
 let _cachedState: State = { status: 'loading' }
 
+// localStorage 水印：记录最后一次"自动触发邮件发送"对应的 updatedAt。
+// 同一份缓存数据在一次进程生命周期内可能被多次 setState（比如热重载、
+// 路由进出 Calendar），靠这个水印保证只发一次。
+const MAIL_SENT_WATERMARK_KEY = 'maple_mail_sent_for_calendar'
+
+/**
+ * 触发周历邮件自动发送的全部判断 + 副作用。
+ * 仅当满足"update=false（不是用户手点刷新）且 fromCache=false（确实是新拉取）"
+ * 时才进入下游逻辑；主进程那边还会再判一次 enabled / 配置完整性，所以这里
+ * 只做最便宜的去重水印检查就够了。
+ */
+function maybeTriggerMail(update: boolean, result: BgmCalendarResult): void {
+  if (update) return                 // 用户手点刷新，不发
+  if (result.fromCache) return       // 缓存命中，不发
+
+  const watermark = String(result.updatedAt)
+  if (localStorage.getItem(MAIL_SENT_WATERMARK_KEY) === watermark) return
+
+  // 先写水印再调，避免极端情况下并发触发两次 IPC
+  localStorage.setItem(MAIL_SENT_WATERMARK_KEY, watermark)
+  window.mailApi
+    .sendCalendar()
+    .then(res => {
+      if (!res.sent) {
+        // 不是真正失败的情况（用户未启用 / 未配置）不清水印；真正失败则清掉
+        // 让下次还有机会重试（虽然得等下一次 14d 过期）。
+        if (res.reason && res.reason !== 'disabled' && res.reason !== 'incomplete-config') {
+          localStorage.removeItem(MAIL_SENT_WATERMARK_KEY)
+        }
+        console.warn('[calendar mail] 未发送：', res.reason)
+      }
+    })
+    .catch(err => {
+      localStorage.removeItem(MAIL_SENT_WATERMARK_KEY)
+      console.warn('[calendar mail] IPC 异常', err)
+    })
+}
+
 export default function AnimeCalendar(): JSX.Element {
   const [state, setState] = useState<State>(_cachedState)
   const [refreshing, setRefreshing] = useState(false)
@@ -41,6 +79,7 @@ export default function AnimeCalendar(): JSX.Element {
     try {
       const result = await window.bgmApi.calendar(update)
       setState({ status: 'ready', result })
+      maybeTriggerMail(update, result)
     } catch (err) {
       setState({ status: 'error', message: String(err) })
     } finally {
