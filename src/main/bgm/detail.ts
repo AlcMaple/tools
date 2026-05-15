@@ -60,28 +60,46 @@ function fetchJson(url: string): Promise<unknown> {
 }
 
 // ── Parsers ────────────────────────────────────────────────────────────────────
+/**
+ * 从 BGM summary 提取中文部分；没中文就把日文原文整段返回。
+ *
+ * BGM 的简介有三种常见形态：
+ *   1. **中日并排（带 marker）**：「中文简介\n[简介原文]\n日文原文」
+ *      ——marker 前的就是中文，取它即可
+ *   2. **纯中文**：直接是中文段落
+ *   3. **纯日文/原文**：BGM 没人翻译时直接挂日文（噬血狂袭 IV 这种）
+ *
+ * 之前的实现按 `\n` 切段然后**逐段**用假名密度过滤：在第 3 种情况会把
+ * "假名少的段"（"物語の舞台は魔族特区"恩莱島"" —— 假名只 2 个 < 5 的阈值）
+ * 误判成中文留下，"假名多的段"过滤掉，把一篇完整日文撕得只剩三段碎句。
+ *
+ * 修法：检测到 marker → 取前半中文段；否则不切段，**整段**算假名密度判断
+ * hasChinese，text 永远原样返回。这样上层 fallback 到 moegirl 失败后，
+ * 用户至少能看到完整原文。
+ */
 function extractChineseSummary(summary: string): { text: string; hasChinese: boolean } {
   if (!summary) return { text: '', hasChinese: false }
+
+  // 形态 1：显式中日 marker
   const splitters = [
     /\[简介原文\]/, /\[簡介原文\]/, /【简介原文】/, /【簡介原文】/,
     /\n简介原文：/, /\n簡介原文：/, /\[introduction\]/i
   ]
-  let textToProcess = summary
   for (const splitter of splitters) {
-    if (splitter.test(textToProcess)) {
-      textToProcess = textToProcess.split(splitter)[0].trim()
-      break
+    if (splitter.test(summary)) {
+      const chinesePart = summary.split(splitter)[0].trim()
+      if (chinesePart) return { text: chinesePart, hasChinese: true }
     }
   }
-  const paragraphs = textToProcess.split(/\r?\n/).map((p) => p.trim()).filter(Boolean)
-  const chineseParagraphs = paragraphs.filter((p) => {
-    const kanaMatches = p.match(/[\u3040-\u309F\u30A0-\u30FF]/g) || []
-    const kanaRatio = kanaMatches.length / p.length
-    if (kanaMatches.length > 5 && kanaRatio > 0.1) return false
-    return true
-  })
-  if (chineseParagraphs.length === 0) return { text: summary, hasChinese: false }
-  return { text: chineseParagraphs.join('\n'), hasChinese: true }
+
+  // 形态 2 / 3：没 marker。整段算假名密度，绝不逐段撕。
+  // 阈值 5% 加上 10 个绝对数量是 OR 关系——日文短文也常有显著假名出现率
+  // （助词の・を・に / 连接词），>5% 基本能稳判；中文外来语夹零星假名通常
+  // 远低于 5%。
+  const kanaMatches = summary.match(/[぀-ゟ゠-ヿ]/g) || []
+  const kanaRatio = kanaMatches.length / summary.length
+  const isMostlyJapanese = kanaMatches.length > 10 || kanaRatio > 0.05
+  return { text: summary, hasChinese: !isMostlyJapanese }
 }
 
 function parseInfobox(infobox: unknown[]): Record<string, string> {
