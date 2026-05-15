@@ -243,6 +243,29 @@ declare global {
         savePath?: string
       ) => Promise<{ switched: boolean }>
     }
+    mailApi: {
+      /**
+       * 返回当前邮件配置。出于安全考虑 authCode 不会原样回传，仅有
+       * hasAuthCode 布尔位告诉 UI「磁盘上有/没有」。
+       */
+      getConfig: () => Promise<{ enabled: boolean; qqEmail: string; hasAuthCode: boolean }>
+      /**
+       * 保存邮件配置。authCode 留空时表示「沿用磁盘旧值」—— 编辑 enabled /
+       * qqEmail 时用户不必每次重新输入授权码。
+       */
+      setConfig: (config: { enabled: boolean; qqEmail: string; authCode: string }) => Promise<boolean>
+      /**
+       * 触发一次周历邮件发送（截图 + SMTP）。返回 `sent` 即是否真的成功
+       * 发出；reason 留作排错线索（disabled / incomplete-config / 错误文本）。
+       */
+      sendCalendar: () => Promise<{ sent: boolean; reason?: string }>
+      /** 发一封不带截图的测试邮件，失败会抛错。 */
+      testSend: () => Promise<boolean>
+    }
+    /** screenshot 模式渲染器专用，普通页面不应使用。 */
+    screenshotApi: {
+      reportCalendarReady: (height: number) => Promise<boolean>
+    }
     webdavApi: {
       getConfig: () => Promise<{ account: string; appPassword: string; remotePath: string } | null>
       saveConfig: (config: { account: string; appPassword: string; remotePath: string }) => Promise<boolean>

@@ -69,12 +69,14 @@
     "cheerio": "^1.2.0",
     "chokidar": "^3.6.0",
     "material-symbols": "^0.44.4",
+    "nodemailer": "^8.0.7",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "@types/nodemailer": "^8.0.0",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",
