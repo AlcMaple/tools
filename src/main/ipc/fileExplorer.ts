@@ -1,7 +1,7 @@
 import { app, ipcMain, shell, WebContents } from 'electron'
 import { readdir, readFile, rm, stat } from 'fs/promises'
 import { existsSync, watch as fsWatch, FSWatcher } from 'fs'
-import { join, extname } from 'path'
+import { join, extname, dirname } from 'path'
 import { homedir, platform as osPlatform, tmpdir } from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -523,4 +523,36 @@ export function registerFileExplorerIpc(): void {
   ipcMain.handle('fs:delete-permanent', (_event, targetPath: string) => permanentDelete(targetPath))
 
   ipcMain.handle('fs:resolve-special', (_event, input: string) => resolveSpecialFolder(input))
+
+  /**
+   * Find the closest existing ancestor directory of `targetPath` (including
+   * the path itself). Returns `targetPath` if it still exists, otherwise
+   * walks up with `dirname()` until `stat().isDirectory()` succeeds.
+   *
+   * Used by the renderer's delete flow: when the user deletes the directory
+   * they're currently viewing (or one of its ancestors via the path input
+   * box), the UI needs to navigate somewhere reachable instead of sitting on
+   * a now-nonexistent path with a silent listDir failure.
+   *
+   * Returns null only in the pathological case where even the filesystem
+   * root is unreachable — caller should fall back to home/virtual root.
+   */
+  ipcMain.handle('fs:find-existing-ancestor', async (_event, targetPath: string): Promise<string | null> => {
+    if (!targetPath) return null
+    let cur = targetPath
+    let prev = ''
+    // dirname() of a root path returns itself (e.g. '/' on POSIX, 'C:\\' on
+    // Windows), so we detect the no-progress case via `cur === prev`.
+    while (cur && cur !== prev) {
+      try {
+        const s = await stat(cur)
+        if (s.isDirectory()) return cur
+      } catch {
+        // path doesn't exist (or no permission) — keep walking up
+      }
+      prev = cur
+      cur = dirname(cur)
+    }
+    return null
+  })
 }
