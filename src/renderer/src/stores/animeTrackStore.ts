@@ -91,6 +91,12 @@ export interface AnimeTrack {
 const STORAGE_KEY = 'maple-anime-tracks-v1'
 const VALID_STATUS: ReadonlyArray<AnimeStatus> = ['plan', 'watching', 'completed', 'considering']
 const FAVORITE_MAX = 6
+/**
+ * BGM 标签每个 track 最多显示几个（前 N 个最热门）。跟主进程
+ * src/main/bgm/detail.ts 里的 slice 一致；这里 lazy migrate 老 track 的
+ * 8-元素数组，避免历史数据让 UI 看着比新数据多。
+ */
+const BGM_TAG_LIMIT = 4
 
 // ── 标签数组工具 ─────────────────────────────────────────────────────────────
 
@@ -221,7 +227,11 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   // 好看集 —— 老数据没这字段或不是数组就当空 []；过滤 ≤ 0 / NaN，去重、升序。
   const goodEpisodes = normalizeGoodEpisodes(t.goodEpisodes)
   // 两份标签数组各自 sanitize；规则一致（trim、过滤空串、去重、保留输入顺序）。
-  const bgmTags = normalizeTagList(t.bgmTags)
+  // bgmTags 额外 slice 到前 4 个 —— 早期数据是 8 个，但显示策略统一改成
+  // 4 个（详见 main/bgm/detail.ts 的注释）。这里 lazy migration 老 track
+  // 的 8-元素数组到 4，read 时一次性收敛；持久化的写入也走 normalize 所以
+  // 是 idempotent 的，老数据下次 upsert 时自动落盘成 4 个。
+  const bgmTags = normalizeTagList(t.bgmTags).slice(0, BGM_TAG_LIMIT)
   const userTags = normalizeTagList(t.userTags)
   return {
     bgmId: t.bgmId,
