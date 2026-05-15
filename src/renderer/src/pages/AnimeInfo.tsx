@@ -900,7 +900,9 @@ function DetailView({
                   Genre
                 </p>
                 <p className="font-body font-bold text-on-surface">
-                  {data.tags.slice(0, 3).join(' · ')}
+                  {/* detail.ts 已经 slice(0, 4) 了，这里直接 join 即可；
+                      数量上限跟 MyAnime 的 UserTagsEditor "BGM 标签" 区一致。 */}
+                  {data.tags.join(' · ')}
                 </p>
               </div>
             )}
