@@ -53,6 +53,12 @@ export function registerSystemIpc(): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
+  // 把"用户没设置 saveDir 时"主进程会回退到的路径暴露给 renderer。
+  // 主进程下载器（xifan / aowu / girigiri）的 fallback 都是 `app.getPath('downloads')`,
+  // Settings 页用这个值显示"留空时实际会保存到哪"，避免 UI 上写"应用同级目录"
+  // 误导用户。同一个值；只读；调用频率极低，不缓存。
+  ipcMain.handle('system:default-downloads', () => app.getPath('downloads'))
+
   ipcMain.handle('system:connectivity', () => {
     // Probe multiple endpoints in parallel — any 2xx/3xx response means online.
     // Google's generate_204 is blocked in mainland China, so we include domestic

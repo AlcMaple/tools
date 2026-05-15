@@ -9,12 +9,19 @@ import {
   ipcErrMsg, normalizeClassic, normalizeHomework, normalizeLog, normalizePjjc,
   ModalShell,
 } from './homework/shared'
-import { animeTrackStore, useAnimeTrackList, normalizeTracks, type AnimeTrack } from '../stores/animeTrackStore'
 
 type Tab = 'homework' | 'jjc' | 'pjjc' | 'classic' | 'log'
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type SyncDirection = 'push' | 'pull'
 
+/**
+ * 阵容知识库的云端 blob。
+ *
+ * 历史包袱：v5 之前这里还混着 `tracks: AnimeTrack[]`（追番列表），后来
+ * 追番拆出去走独立的 `anime.json` —— v6 起 blob 里不再写 tracks。读旧
+ * 数据时如果有 tracks 字段我们也直接忽略；追番的迁移由 MyAnime sync 那
+ * 边接管（pull anime.json 404 时它会回退读 homework.json 的 tracks）。
+ */
 interface SyncRemoteMeta {
   rev: number
   ts: string
@@ -23,8 +30,6 @@ interface SyncRemoteMeta {
   pjjc: PjjcGroup[]
   classic: ClassicGroup[]
   log: LogEntry[]
-  /** Anime追番列表 — added in blob v5. Older blobs leave this as []. */
-  tracks: AnimeTrack[]
 }
 
 interface SyncConfirmState {
@@ -51,9 +56,8 @@ function snapshotOf(
   pjjc: PjjcGroup[],
   classic: ClassicGroup[],
   log: LogEntry[],
-  tracks: AnimeTrack[],
 ): string {
-  return JSON.stringify({ homework, jjc, pjjc, classic, log, tracks })
+  return JSON.stringify({ homework, jjc, pjjc, classic, log })
 }
 
 /**
@@ -81,7 +85,6 @@ function rebuildIfSchemaDrift(stored: string, current: string): string {
       pjjc?: unknown
       classic?: unknown
       log?: unknown
-      tracks?: unknown
     }
     const renormalized = snapshotOf(
       normalizeHomework(Array.isArray(parsed.homework) ? (parsed.homework as DefenseGroup[]) : []),
@@ -89,7 +92,6 @@ function rebuildIfSchemaDrift(stored: string, current: string): string {
       normalizePjjc(parsed.pjjc),
       normalizeClassic(Array.isArray(parsed.classic) ? (parsed.classic as ClassicGroup[]) : []),
       normalizeLog(parsed.log),
-      normalizeTracks(parsed.tracks),
     )
     if (renormalized === current) return current
   } catch { /* malformed stored snapshot — fall through, keep it */ }
@@ -107,9 +109,10 @@ function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
   const remote = JSON.parse(jsonStr)
   if (Array.isArray(remote)) {
     // Legacy: array = homework only, no embedded rev/ts
-    return { rev: 0, ts: '', homework: remote as DefenseGroup[], jjc: [], pjjc: [], classic: [], log: [], tracks: [] }
+    return { rev: 0, ts: '', homework: remote as DefenseGroup[], jjc: [], pjjc: [], classic: [], log: [] }
   }
   if (remote && typeof remote === 'object') {
+    // 注意：老 blob 里可能还有 `tracks` 字段，这里故意忽略——追番走 anime.json
     return {
       rev: typeof remote._rev === 'number' ? remote._rev : 0,
       ts: typeof remote._ts === 'string' ? remote._ts : '',
@@ -118,7 +121,6 @@ function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
       pjjc: Array.isArray(remote.pjjc) ? remote.pjjc : [],
       classic: Array.isArray(remote.classic) ? remote.classic : [],
       log: Array.isArray(remote.log) ? remote.log : [],
-      tracks: normalizeTracks(remote.tracks),
     }
   }
   throw new Error('远端数据格式不识别')
@@ -149,13 +151,6 @@ function logStats(data: LogEntry[]): { count: number } {
   return { count: data.length }
 }
 
-function trackStats(data: AnimeTrack[]): { total: number; watching: number } {
-  return {
-    total: data.length,
-    watching: data.filter(t => t.status === 'watching').length,
-  }
-}
-
 function formatRemoteTs(ts: string): string {
   if (!ts) return '未知'
   const d = new Date(ts)
@@ -177,19 +172,12 @@ export default function HomeworkLookup(): JSX.Element {
   const initialPjjc = (() => normalizePjjc(readJson(PJJC_KEY, [])))()
   const initialClassic = (() => normalizeClassic(readJson(CLASSIC_KEY, [])))()
   const initialLog = (() => normalizeLog(readJson(LOG_KEY, [])))()
-  // animeTrackStore is self-persisting; pull initial state via the store API
-  // (already normalized) instead of reading localStorage twice.
-  const initialTracks = animeTrackStore.list()
 
   const [homeworkData, setHomeworkData] = useState<DefenseGroup[]>(initialHomework)
   const [jjcData, setJjcData] = useState<DefenseGroup[]>(initialJjc)
   const [pjjcData, setPjjcData] = useState<PjjcGroup[]>(initialPjjc)
   const [classicData, setClassicData] = useState<ClassicGroup[]>(initialClassic)
   const [logData, setLogData] = useState<LogEntry[]>(initialLog)
-  // Subscribe to animeTrackStore — sync chip needs to flip "本地未上传" when
-  // the user edits tracks on MyAnime. animeTrackStore persists itself, so we
-  // only need the snapshot for diff purposes here.
-  const tracksData = useAnimeTrackList()
 
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -215,7 +203,7 @@ export default function HomeworkLookup(): JSX.Element {
   // current shape but is *semantically* identical after re-normalizing, treat
   // it as pure shape drift and rebuild. See rebuildIfSchemaDrift().
   const [lastSyncedSnapshot, setLastSyncedSnapshot] = useState<string>(() => {
-    const initialSnapshot = snapshotOf(initialHomework, initialJjc, initialPjjc, initialClassic, initialLog, initialTracks)
+    const initialSnapshot = snapshotOf(initialHomework, initialJjc, initialPjjc, initialClassic, initialLog)
     const stored = localStorage.getItem(SNAPSHOT_KEY)
     if (!stored) return initialSnapshot
     return rebuildIfSchemaDrift(stored, initialSnapshot)
@@ -228,8 +216,8 @@ export default function HomeworkLookup(): JSX.Element {
   // Memoized so unrelated re-renders (search keystrokes, tab switches, sync
   // status changes) don't re-stringify the entire dataset.
   const currentSnapshot = useMemo(
-    () => snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData, tracksData),
-    [homeworkData, jjcData, pjjcData, classicData, logData, tracksData]
+    () => snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData),
+    [homeworkData, jjcData, pjjcData, classicData, logData]
   )
   const localDirty = currentSnapshot !== lastSyncedSnapshot
   const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
@@ -256,7 +244,7 @@ export default function HomeworkLookup(): JSX.Element {
     let cancelled = false
     ;(async () => {
       try {
-        const jsonStr = await window.webdavApi.pull()
+        const jsonStr = await window.webdavApi.pull('homework')
         if (cancelled) return
         const parsed = parseRemoteBlob(jsonStr)
         setRemoteRev(parsed.rev)
@@ -316,7 +304,7 @@ export default function HomeworkLookup(): JSX.Element {
     if (syncStatus === 'syncing' || syncConfirm) return
     setSyncConfirm({ direction, loading: true, remote: null, forceArmed: false })
     try {
-      const jsonStr = await window.webdavApi.pull()
+      const jsonStr = await window.webdavApi.pull('homework')
       const parsed = parseRemoteBlob(jsonStr)
       setSyncConfirm({ direction, loading: false, remote: parsed, forceArmed: false })
     } catch (e: unknown) {
@@ -340,8 +328,9 @@ export default function HomeworkLookup(): JSX.Element {
     setSyncStatus('syncing')
     setSyncMsg('')
     try {
+      // v6 起 tracks 不再出现在这个 blob —— 追番走 anime.json 独立同步
       const blob = JSON.stringify({
-        _v: 5,
+        _v: 6,
         _rev: newRev,
         _ts: new Date().toISOString(),
         homework: homeworkData,
@@ -349,14 +338,13 @@ export default function HomeworkLookup(): JSX.Element {
         pjjc: pjjcData,
         classic: classicData,
         log: logData,
-        tracks: tracksData,
       })
-      await window.webdavApi.push(blob)
+      await window.webdavApi.push('homework', blob)
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(newRev)
       setRemoteRev(newRev)
-      setLastSyncedSnapshot(snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData, tracksData))
+      setLastSyncedSnapshot(snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '上传成功')
     } catch (e: unknown) {
@@ -379,18 +367,16 @@ export default function HomeworkLookup(): JSX.Element {
       const newPjjc = normalizePjjc(remote.pjjc)
       const newClassic = normalizeClassic(remote.classic)
       const newLog = normalizeLog(remote.log)
-      const newTracks = normalizeTracks(remote.tracks)
       setHomeworkData(newHomework)
       setJjcData(newJjc)
       setPjjcData(newPjjc)
       setClassicData(newClassic)
       setLogData(newLog)
-      animeTrackStore.replaceAll(newTracks)
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(remote.rev)
       setRemoteRev(remote.rev)
-      setLastSyncedSnapshot(snapshotOf(newHomework, newJjc, newPjjc, newClassic, newLog, newTracks))
+      setLastSyncedSnapshot(snapshotOf(newHomework, newJjc, newPjjc, newClassic, newLog))
       localStorage.setItem(LAST_SYNC_KEY, String(now))
       syncSettle('synced', '拉取成功')
     } catch (e: unknown) {
@@ -416,8 +402,9 @@ export default function HomeworkLookup(): JSX.Element {
     <div className="relative min-h-full bg-background">
       <TopBar placeholder="搜索阵容、角色名…" />
       <div className="pt-16">
-        {/* Sticky page header */}
-        <div className="sticky top-0 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-8 py-5">
+        {/* Sticky page header —— top-16 让 sticky 卡在 fixed TopBar（64px）下面，
+            top-0 会让标题被 TopBar 压住露出一半。同 MyAnime / AnimeCalendar 的修法。 */}
+        <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-8 py-5">
           <div className="flex items-end justify-between gap-6 flex-wrap">
             <div>
               <div className="flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
@@ -672,7 +659,6 @@ export default function HomeworkLookup(): JSX.Element {
             localPjjc={pjjcData}
             localClassic={classicData}
             localLog={logData}
-            localTracks={tracksData}
             localDirty={localDirty}
             lastSyncedRev={lastSyncedRev}
             onConfirmPush={executePush}
@@ -687,7 +673,7 @@ export default function HomeworkLookup(): JSX.Element {
 // ── Sync confirm modal ─────────────────────────────────────────────────────
 function SyncConfirmModal({
   state, setState,
-  localHomework, localJjc, localPjjc, localClassic, localLog, localTracks, localDirty, lastSyncedRev,
+  localHomework, localJjc, localPjjc, localClassic, localLog, localDirty, lastSyncedRev,
   onConfirmPush, onConfirmPull,
 }: {
   state: SyncConfirmState
@@ -697,7 +683,6 @@ function SyncConfirmModal({
   localPjjc: PjjcGroup[]
   localClassic: ClassicGroup[]
   localLog: LogEntry[]
-  localTracks: AnimeTrack[]
   localDirty: boolean
   lastSyncedRev: number
   onConfirmPush: () => void
@@ -711,13 +696,11 @@ function SyncConfirmModal({
   const localPj = pjjcStats(localPjjc)
   const localCl = classicStats(localClassic)
   const localLg = logStats(localLog)
-  const localTr = trackStats(localTracks)
   const remoteHw = remote ? homeworkStats(remote.homework) : null
   const remoteJjcStats = remote ? homeworkStats(remote.jjc) : null
   const remotePj = remote ? pjjcStats(remote.pjjc) : null
   const remoteCl = remote ? classicStats(remote.classic) : null
   const remoteLg = remote ? logStats(remote.log) : null
-  const remoteTr = remote ? trackStats(remote.tracks) : null
 
   // Conflict logic:
   // - push: remote exists with rev > lastSyncedRev (someone updated cloud after our last sync)
@@ -822,9 +805,6 @@ function SyncConfirmModal({
                 <p className="text-xs font-mono">
                   {localLg.count} 条记录
                 </p>
-                <p className="text-xs font-mono">
-                  追番 {localTr.total} 部 / 在追 {localTr.watching}
-                </p>
                 <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
                   rev={lastSyncedRev}
                   {localDirty && <span className="ml-1 text-tertiary">+ 未同步改动</span>}
@@ -858,9 +838,6 @@ function SyncConfirmModal({
                   </p>
                   <p className="text-xs font-mono">
                     {remoteLg!.count} 条记录
-                  </p>
-                  <p className="text-xs font-mono">
-                    追番 {remoteTr!.total} 部 / 在追 {remoteTr!.watching}
                   </p>
                   <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
                     rev={remote.rev}{remote.ts && ` · ${formatRemoteTs(remote.ts)}`}
