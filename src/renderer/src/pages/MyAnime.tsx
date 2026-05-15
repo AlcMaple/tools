@@ -39,6 +39,7 @@ import { CriteriaModal } from '../components/CriteriaModal'
 import { GoodEpisodesEditor } from '../components/GoodEpisodesEditor'
 import { TagFilter } from '../components/TagFilter'
 import { UserTagsEditor } from '../components/UserTagsEditor'
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal'
 import {
   EditBindingsModal,
   isUserAddedBinding,
@@ -492,7 +493,9 @@ const BUILTIN_SOURCES: ReadonlyArray<Source> = ['Aowu', 'Xifan', 'Girigiri']
 function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const displayTitle = track.titleCn || track.title
   const nativeTitle = track.titleCn && track.title !== track.titleCn ? track.title : ''
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  // 删除追番要先弹 ConfirmDeleteModal —— 追番带着自定义标签、最爱值、好看集
+  // 等本地数据，"双击 trash icon 真删" 那种轻量模式风险太高。
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [addingBinding, setAddingBinding] = useState(false)
   // 当前正在补搜的内置源；null = 没在搜
   const [searchingSource, setSearchingSource] = useState<Source | null>(null)
@@ -612,27 +615,11 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
               </span>
             </button>
             <button
-              onClick={() => {
-                if (confirmDelete) {
-                  animeTrackStore.delete(track.bgmId)
-                } else {
-                  setConfirmDelete(true)
-                  setTimeout(() => setConfirmDelete(false), 2500)
-                }
-              }}
-              title={confirmDelete ? '再点一次确认移除' : '从追番列表移除'}
-              className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors ${
-                confirmDelete
-                  ? 'text-error bg-error/15'
-                  : 'text-on-surface-variant/50 hover:text-error hover:bg-error/10'
-              }`}
+              onClick={() => setConfirmDeleteOpen(true)}
+              title="从追番列表移除"
+              className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-error hover:bg-error/10 transition-colors"
             >
-              <span
-                className="material-symbols-outlined text-[16px] leading-none"
-                style={{ fontVariationSettings: confirmDelete ? "'FILL' 1" : "'FILL' 0" }}
-              >
-                {confirmDelete ? 'delete_forever' : 'delete'}
-              </span>
+              <span className="material-symbols-outlined text-[16px] leading-none">delete</span>
             </button>
           </div>
         </div>
@@ -791,6 +778,20 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
         <UserTagsEditor
           track={track}
           onClose={() => setTagsOpen(false)}
+        />
+      )}
+
+      {confirmDeleteOpen && (
+        <ConfirmDeleteModal
+          title="移除追番"
+          itemName={displayTitle}
+          description="这部番会从追番列表里移除，本地的自定义标签、最爱值、好看集等数据也会一起清掉。若没同步到云端就无法恢复。"
+          confirmText="移除"
+          onCancel={() => setConfirmDeleteOpen(false)}
+          onConfirm={() => {
+            animeTrackStore.delete(track.bgmId)
+            setConfirmDeleteOpen(false)
+          }}
         />
       )}
     </div>
