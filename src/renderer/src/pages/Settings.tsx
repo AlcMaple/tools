@@ -206,29 +206,51 @@ function Segment<T extends string>({
 
 function PathControl({
   value,
+  defaultPath,
   onPick,
   onClear,
+  onReveal,
 }: {
   value: string;
+  /** OS-default downloads folder, shown as a faded preview when value is empty. */
+  defaultPath: string;
   onPick: () => void;
   onClear: () => void;
+  /** Open the effective path in the OS file manager (Finder/Explorer). */
+  onReveal: () => void;
 }): JSX.Element {
   const isEmpty = !value;
+  // 留空时显示真实的系统默认下载目录（path.getPath('downloads')），不再骗用户
+  // 说"应用同级目录"。defaultPath 异步拉过来，未到位前显示一个简短占位串。
+  const previewText = isEmpty
+    ? (defaultPath ? `系统默认: ${defaultPath}` : "系统默认下载文件夹")
+    : value;
+  // 当系统默认还没拉到，"打开"按钮也没意义；同样道理 value 设了但是空字符
+  // 串这种边缘 case 也不让点。
+  const canReveal = isEmpty ? !!defaultPath : !!value;
   return (
     <div className="flex items-center gap-2 w-[320px]">
       <div
         className={`flex-1 bg-surface-container-high rounded-lg px-3 py-2 text-[12px] font-label truncate border border-outline-variant/10 ${
-          isEmpty ? "text-on-surface-variant/35" : "text-on-surface"
+          isEmpty ? "text-on-surface-variant/45" : "text-on-surface"
         }`}
-        title={value || undefined}
+        title={previewText}
       >
-        {value || "默认: 应用同级目录"}
+        {previewText}
       </div>
+      <button
+        onClick={onReveal}
+        disabled={!canReveal}
+        className="w-9 h-9 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/60 hover:text-on-surface flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        title="在系统文件管理器中打开"
+      >
+        <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>folder_open</span>
+      </button>
       {!isEmpty && (
         <button
           onClick={onClear}
           className="w-9 h-9 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/60 hover:text-on-surface flex items-center justify-center transition-colors"
-          title="清空"
+          title="清空 · 改回系统默认下载文件夹"
         >
           <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>close</span>
         </button>
@@ -546,11 +568,11 @@ function Settings(): JSX.Element {
   // WebDAV — auto-save on commit (Enter / blur).
   const [webdavAccount, setWebdavAccount] = useState("");
   const [webdavPassword, setWebdavPassword] = useState("");
-  const [webdavPath, setWebdavPath] = useState("MapleTools/homework.json");
+  const [webdavPath, setWebdavPath] = useState("MapleTools");
   const [webdavShowPwd, setWebdavShowPwd] = useState(false);
   const [webdavTestState, setWebdavTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [webdavTestMsg, setWebdavTestMsg] = useState("");
-  const lastSavedWebdav = useRef({ account: "", password: "", path: "MapleTools/homework.json" });
+  const lastSavedWebdav = useRef({ account: "", password: "", path: "MapleTools" });
 
   useEffect(() => {
     window.webdavApi
@@ -559,7 +581,10 @@ function Settings(): JSX.Element {
         if (!cfg) return;
         setWebdavAccount(cfg.account);
         setWebdavPassword(cfg.appPassword);
-        const p = cfg.remotePath || "MapleTools/homework.json";
+        // 老配置里 remotePath 可能是完整文件路径（"MapleTools/homework.json"），
+        // 主进程在 loadConfig 时已经自动剥成 base folder（"MapleTools"），这里
+        // 直接用就行；空 fallback 也用 base folder 默认。
+        const p = cfg.remotePath || "MapleTools";
         setWebdavPath(p);
         lastSavedWebdav.current = { account: cfg.account, password: cfg.appPassword, path: p };
       })
@@ -576,6 +601,15 @@ function Settings(): JSX.Element {
       lastSavedWebdav.current = { account: cur.account, password: cur.appPassword, path: cur.remotePath };
     }).catch(() => {});
   };
+
+  // 系统默认下载文件夹 —— 留空 Settings.downloadPath 时主进程下载器会回退
+  // 到这个路径。从 main 那边异步拉一次就够，进程生命周期内不变。
+  const [defaultDownloadsPath, setDefaultDownloadsPath] = useState("");
+  useEffect(() => {
+    window.systemApi.getDefaultDownloadsPath()
+      .then(setDefaultDownloadsPath)
+      .catch(() => { /* 拿不到时 UI 退化为不显示具体路径，按钮 disabled */ });
+  }, []);
 
   // Tweaks (UI meta-controls), persisted.
   const [tweaks, setTweaks] = useState<Tweaks>(readTweaks);
@@ -687,18 +721,23 @@ function Settings(): JSX.Element {
               {active === "downloads" && (
                 <Block
                   title="保存路径"
-                  hint="文件保存到 <path>/<title>/。留空时使用应用同级目录。"
+                  hint={`每集存到 <保存路径>/[源] <番剧标题>/<集>.mp4，例：${(settings.downloadPath || defaultDownloadsPath || "<保存路径>")}/[Xifan] 鬼灭之刃/鬼灭之刃 - 01.mp4`}
                 >
                   <Row
                     icon="folder_open"
                     title="默认下载目录"
-                    desc="影响所有源（西番 / Girigiri / 嗷呜）的默认保存位置。"
+                    desc="影响所有源（Xifan / Girigiri / Aowu）的默认保存位置。留空则用系统默认下载文件夹。"
                     density={tweaks.density}
                     control={
                       <PathControl
                         value={settings.downloadPath}
+                        defaultPath={defaultDownloadsPath}
                         onPick={handlePickDownloadFolder}
                         onClear={() => updateSettings({ downloadPath: "" })}
+                        onReveal={() => {
+                          const effective = settings.downloadPath || defaultDownloadsPath;
+                          if (effective) window.fileExplorerApi.open(effective);
+                        }}
                       />
                     }
                   />
@@ -774,13 +813,13 @@ function Settings(): JSX.Element {
                   />
                   <Row
                     icon="folder_zip"
-                    title="远程文件路径"
-                    desc="相对于 WebDAV 根目录，文件夹不存在时自动创建。"
+                    title="远程文件夹"
+                    desc="相对于 WebDAV 根目录的基础文件夹，会在下面分别存放 homework.json 与 anime.json（追番数据），不存在时自动创建。"
                     density={tweaks.density}
                     control={
                       <TextControl
                         value={webdavPath}
-                        placeholder="MapleTools/homework.json"
+                        placeholder="MapleTools"
                         onChange={setWebdavPath}
                         onCommit={persistWebdav}
                       />
