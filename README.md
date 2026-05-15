@@ -1,6 +1,6 @@
 # MapleTools
 
-基于 Electron + React + Tailwind 构建的桌面端动漫管理应用，整合多个流媒体源的搜索与下载、Bangumi 元数据浏览、本地媒体库扫描等能力。整体采用 Material 3 风格的深色界面。
+基于 Electron + React + Tailwind 构建的桌面端动漫管理应用。整合多源搜索与下载、Bangumi 元数据浏览、追番进度追踪、本季番剧周历、本地媒体库扫描，配合坚果云同步在多设备间保持进度一致。整体采用 Material 3 风格的深色界面。
 
 <p align="center">
   <img src="docs/screenshots/hero.png" alt="MapleTools 主界面" width="860" />
@@ -8,18 +8,20 @@
 
 ## 功能一览
 
-- **多源搜索与下载** — 同时检索 Xifan、Girigiri 两个流媒体站点的资源，串行队列下载，支持暂停 / 续传 / 个别集优先。
-- **Bangumi 详情整合** — 自动拉取 BGM 元数据、Staff、剧情简介，剧场版额外展示片长。简介为日语原文时回退到萌娘百科中文版。
+- **多源搜索与下载** — 同时检索 Aowu、Xifan、Girigiri 三个流媒体站点的资源，串行队列下载，支持暂停 / 续传 / 单集重试 / 切换备源。
+- **追番管理** — 在 BGM 详情页或搜索卡片一键追番；「我的追番」汇总页统一管理观看状态、当前集数与绑定的观看链接；总集数缺失（长寿番 / 季番初期）也能手动填写。
+- **多源绑定与跳转观看** — 一部番可同时绑定 Aowu / Xifan / Girigiri / 自定义 URL（如 B 站）多个来源，行尾一键在外部浏览器打开对应播放页继续观看。
+- **本季番剧周历** — 按周一-周日展示本季更新计划，当日列自动高亮。
+- **Bangumi 元数据整合** — 自动拉取 BGM 元数据、Staff、剧情简介，剧场版额外展示片长；简介为日语原文时回退到萌娘百科中文版。
+- **云同步（坚果云 WebDAV）** — 追番列表跨设备同步，附带冲突检测与确认弹窗，明确显示本地 / 远端差异避免误覆盖。
 - **本地媒体库** — 扫描配置好的目录树，自动提取 ffmpeg 缩略图，按番剧组织展示。
-- **文件浏览器** — 内置跨平台文件管理，支持视频 / 图片 / 文档预览。
-- **BiuSync** — 与远端配置同步，启动时探测远端 rev，dirty 状态准确化。
-- **阵容知识库** — 角色阵容查询（独立工具页）。
+- **文件浏览器** — 内置跨平台文件管理，支持视频 / 图片 / 文档预览，删除支持移到回收站 / 永久删除。
 
 ## 截图
 
-| 搜索与下载 | 下载队列 |
+| 番剧周历 | 搜索与下载 |
 |---|---|
-| <img src="docs/screenshots/search-download.png" width="420" /> | <img src="docs/screenshots/download-queue.png" width="420" /> |
+| <img src="docs/screenshots/anime-calendar.png" width="420" /> | <img src="docs/screenshots/search-download.png" width="420" /> |
 
 | 番剧详情 | 本地媒体库 |
 |---|---|
@@ -53,7 +55,6 @@
 ├── src/              Electron 源码（main / preload / renderer）
 ├── scripts/          构建脚本（Windows 打包、主题生成等）
 ├── resources/        应用图标等静态资源
-├── python/           独立的 Python / Node 原型脚本（非 Electron 应用的一部分）
 ├── docs/             设计稿、方案、排错记录
 ├── package.json
 ├── electron.vite.config.ts
