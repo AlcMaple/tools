@@ -46,46 +46,64 @@ export function ConfirmDeleteModal({
 
   return (
     <ModalShell onBackdrop={onCancel}>
-      <div className="flex flex-col max-w-md">
-        {/* Header */}
-        <div className="p-5 border-b border-outline-variant/20 bg-surface-container-low">
+      {/* 直接撑满 ModalShell 的 520px —— 不再叠 max-w-md，否则右侧会留 70+ px
+          空白，跟其他用 ModalShell 的弹窗（GoodEpisodesEditor / UserTagsEditor
+          / SearchSourceModal 等）视觉宽度也一致。 */}
+      <div className="flex flex-col">
+        {/* Header —— 警告图标 + 标题 + 对象名 + 关闭。
+            bg surface-container-highest 比 ModalShell 本身（high）再亮一档,
+            做"标题区"视觉锚点；header 跟下面 body 之间用 border 分隔。 */}
+        <div className="px-6 py-5 border-b border-outline-variant/15 bg-surface-container-highest rounded-t-xl">
           <div className="flex items-start gap-3">
-            <span
-              className={`material-symbols-outlined shrink-0 ${danger ? 'text-error' : 'text-primary'}`}
-              style={{ fontSize: 24, fontVariationSettings: "'FILL' 1" }}
+            <div
+              className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center ${
+                danger ? 'bg-error/15' : 'bg-primary/15'
+              }`}
             >
-              {danger ? 'warning' : 'help'}
-            </span>
-            <div className="min-w-0 flex-1">
-              <h3 className="font-headline font-black text-base text-on-surface">{title}</h3>
+              <span
+                className={`material-symbols-outlined ${danger ? 'text-error' : 'text-primary'}`}
+                style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}
+              >
+                {danger ? 'warning' : 'help'}
+              </span>
+            </div>
+            <div className="min-w-0 flex-1 pt-1">
+              <h3 className="font-headline font-black text-base text-on-surface leading-tight">
+                {title}
+              </h3>
               {itemName && (
-                <p className="font-body text-xs text-on-surface-variant/85 mt-1 truncate" title={itemName}>
+                <p
+                  className="font-body text-xs text-on-surface-variant mt-1.5 truncate"
+                  title={itemName}
+                >
                   {itemName}
                 </p>
               )}
             </div>
             <button
               onClick={onCancel}
-              className="text-on-surface-variant/60 hover:text-on-surface transition-colors shrink-0"
+              className="text-on-surface-variant/60 hover:text-on-surface transition-colors shrink-0 -mt-1 -mr-1 w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center"
             >
-              <span className="material-symbols-outlined leading-none">close</span>
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 18 }}>close</span>
             </button>
           </div>
         </div>
 
-        {/* Body */}
-        <div className="p-5">
+        {/* Body —— 描述文字。padding 上下 6 给文字呼吸，左侧对齐到 header 的
+            "图标盒子 + gap" 不需要做（描述是独立段落，左对齐 padding 即可）。 */}
+        <div className="px-6 py-6">
           <p className="font-body text-sm text-on-surface-variant leading-relaxed">
             {description}
           </p>
         </div>
 
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-outline-variant/15 bg-surface-container-low flex items-center justify-end gap-2">
+        {/* Footer —— 取消 / 确认按钮。padding 跟 header 对称，
+            bg 也跟 header 一致 highest，形成"上下视觉锚点夹一段透明 body"。 */}
+        <div className="px-6 py-4 border-t border-outline-variant/15 bg-surface-container-highest rounded-b-xl flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 rounded-lg text-on-surface-variant/80 hover:text-on-surface hover:bg-surface-container-high font-label text-xs uppercase tracking-widest transition-colors"
+            className="px-4 py-2 rounded-lg text-on-surface-variant/80 hover:text-on-surface hover:bg-surface-container font-label text-xs uppercase tracking-widest transition-colors"
           >
             取消
           </button>
@@ -95,8 +113,8 @@ export function ConfirmDeleteModal({
             autoFocus
             className={
               danger
-                ? 'px-4 py-2 rounded-lg bg-error/20 text-error border border-error/30 hover:bg-error/30 font-label text-xs font-bold uppercase tracking-widest transition-colors'
-                : 'px-4 py-2 rounded-lg bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 font-label text-xs font-bold uppercase tracking-widest transition-colors'
+                ? 'px-5 py-2 rounded-lg bg-error/20 text-error border border-error/35 hover:bg-error/30 hover:border-error/50 font-label text-xs font-bold uppercase tracking-widest transition-colors'
+                : 'px-5 py-2 rounded-lg bg-primary/20 text-primary border border-primary/35 hover:bg-primary/30 hover:border-primary/50 font-label text-xs font-bold uppercase tracking-widest transition-colors'
             }
           >
             {confirmText}
