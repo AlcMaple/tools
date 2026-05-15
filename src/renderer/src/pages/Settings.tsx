@@ -92,7 +92,7 @@ const PLATFORM = (() => {
 
 const NODE_ID = getOrCreateNodeId();
 
-type CategoryId = "general" | "downloads" | "sync" | "appearance" | "about";
+type CategoryId = "general" | "downloads" | "sync" | "notify" | "appearance" | "about";
 
 const CATEGORIES: ReadonlyArray<{
   id: CategoryId;
@@ -104,6 +104,7 @@ const CATEGORIES: ReadonlyArray<{
   { id: "general", label: "通用", en: "General", icon: "tune", desc: "常用偏好与基础行为" },
   { id: "downloads", label: "下载", en: "Downloads", icon: "download", desc: "保存路径与下载默认行为" },
   { id: "sync", label: "云同步", en: "Sync", icon: "cloud_sync", desc: "坚果云 WebDAV 配置" },
+  { id: "notify", label: "邮件提醒", en: "Mail", icon: "outgoing_mail", desc: "周历刷新后自动发送 QQ 邮件" },
   { id: "appearance", label: "外观", en: "Appearance", icon: "palette", desc: "主题切换" },
   { id: "about", label: "关于", en: "About", icon: "info", desc: "版本、节点与系统信息" },
 ];
@@ -272,14 +273,21 @@ function TextControl({
   type = "text",
   onChange,
   onCommit,
+  commitOnBlur = true,
   trailing,
 }: {
   value: string;
   placeholder?: string;
   type?: "text" | "password";
   onChange: (v: string) => void;
-  /** Called when input loses focus or Enter is pressed — natural commit point for auto-save. */
+  /** Called when input loses focus (if commitOnBlur) or Enter is pressed. */
   onCommit?: () => void;
+  /**
+   * 默认 blur 也会触发 commit —— 适合普通字段的"自动保存"语义。
+   * 但敏感字段（如 QQ 授权码这种 16 字符一气呵成的整串）blur 提交容易把
+   * 半成品落库覆盖旧值。这类字段传 false，让用户只能用 Enter 显式提交。
+   */
+  commitOnBlur?: boolean;
   trailing?: ReactNode;
 }): JSX.Element {
   return (
@@ -289,7 +297,7 @@ function TextControl({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        onBlur={onCommit}
+        onBlur={commitOnBlur ? onCommit : undefined}
         onKeyDown={(e) => { if (e.key === "Enter" && onCommit) onCommit(); }}
         spellCheck={false}
         autoComplete="off"
@@ -611,6 +619,94 @@ function Settings(): JSX.Element {
       .catch(() => { /* 拿不到时 UI 退化为不显示具体路径，按钮 disabled */ });
   }, []);
 
+  // 邮件提醒 —— 周历每次 14d TTL 过期触发自动发件。
+  // authCode 永远不从主进程回传明文，UI 拿到的是 hasAuthCode 布尔。用户
+  // 不重新输入授权码就提交 = 保留旧的加密值（mailApi.setConfig 把空串当
+  // "沿用旧值"处理）。
+  const [mailEnabled, setMailEnabled] = useState(false);
+  const [mailQqEmail, setMailQqEmail] = useState("");
+  const [mailAuthCode, setMailAuthCode] = useState("");
+  const [mailHasAuthCode, setMailHasAuthCode] = useState(false);
+  const [mailTestState, setMailTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [mailTestMsg, setMailTestMsg] = useState("");
+  const lastSavedMail = useRef({ enabled: false, qqEmail: "", authCodeWasSet: false });
+
+  useEffect(() => {
+    window.mailApi
+      .getConfig()
+      .then(cfg => {
+        setMailEnabled(cfg.enabled);
+        setMailQqEmail(cfg.qqEmail);
+        setMailHasAuthCode(cfg.hasAuthCode);
+        lastSavedMail.current = { enabled: cfg.enabled, qqEmail: cfg.qqEmail, authCodeWasSet: cfg.hasAuthCode };
+      })
+      .catch(() => { /* 没配置过就保持默认空状态 */ });
+  }, []);
+
+  /**
+   * 提交邮件配置。authCode 留空 = 沿用旧值（主进程逻辑保证），所以编辑邮箱/
+   * 开关时不要求用户重新输入授权码。
+   * 立即更新 lastSavedMail.authCodeWasSet 让 UI 在用户敲完授权码后正确显示
+   * "已保存"占位符。
+   */
+  const persistMail = (override?: { enabled?: boolean }): Promise<void> => {
+    const enabled = override?.enabled ?? mailEnabled;
+    const cur = {
+      enabled,
+      qqEmail: mailQqEmail.trim(),
+      authCode: mailAuthCode,
+    };
+    const last = lastSavedMail.current;
+    if (
+      cur.enabled === last.enabled &&
+      cur.qqEmail === last.qqEmail &&
+      !cur.authCode
+    ) {
+      return Promise.resolve();
+    }
+    return window.mailApi
+      .setConfig(cur)
+      .then(() => {
+        lastSavedMail.current = {
+          enabled: cur.enabled,
+          qqEmail: cur.qqEmail,
+          authCodeWasSet: cur.authCode ? true : last.authCodeWasSet,
+        };
+        if (cur.authCode) {
+          // 写入成功后清掉输入框 + 让 hasAuthCode 显示"已保存"占位符
+          setMailAuthCode("");
+          setMailHasAuthCode(true);
+        }
+      })
+      .catch(() => { /* 失败保持现状，用户自然会发现没生效 */ });
+  };
+
+  const handleMailToggle = (next: boolean): void => {
+    setMailEnabled(next);
+    void persistMail({ enabled: next });
+  };
+
+  const handleMailTest = async (): Promise<void> => {
+    setMailTestState("testing");
+    setMailTestMsg("");
+    try {
+      // 先保存当前 UI state，再发测试 —— 用户多半是输完才点测试，不能
+      // 让测试还用旧 authCode。
+      await persistMail();
+      await window.mailApi.testSend();
+      setMailTestState("ok");
+      setMailTestMsg("已发送，请到 QQ 邮箱查收");
+    } catch (e: unknown) {
+      setMailTestState("error");
+      setMailTestMsg(
+        e instanceof Error
+          ? e.message.replace(/^Error invoking remote method '[^']+': /, "")
+          : "发送失败",
+      );
+    }
+    setTimeout(() => { setMailTestState("idle"); setMailTestMsg(""); }, 6000);
+  };
+
   // Tweaks (UI meta-controls), persisted.
   const [tweaks, setTweaks] = useState<Tweaks>(readTweaks);
   const [tweaksOpen, setTweaksOpen] = useState(false);
@@ -822,6 +918,82 @@ function Settings(): JSX.Element {
                         placeholder="MapleTools"
                         onChange={setWebdavPath}
                         onCommit={persistWebdav}
+                      />
+                    }
+                  />
+                </Block>
+              )}
+
+              {active === "notify" && (
+                <Block
+                  title="番剧周历邮件提醒"
+                  hint="只在 14 天缓存到期、点开 Calendar 自动拉到新数据时发送，手点刷新不会触发。"
+                  footer={
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleMailTest}
+                        disabled={mailTestState === "testing" || !mailQqEmail.trim() || (!mailHasAuthCode && !mailAuthCode)}
+                        className={
+                          // tonal fill：rest 已有底色 + 描边，对比明显；hover 加深一档。
+                          // 跟项目里 ConfirmDeleteModal / WatchHere 等"明确动作按钮"统一风格。
+                          mailTestState === "ok"
+                            ? "inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tertiary/20 text-tertiary border border-tertiary/40 hover:bg-tertiary/30 hover:border-tertiary/55 disabled:opacity-50 disabled:cursor-not-allowed text-[12px] font-label font-bold uppercase tracking-wider transition-colors"
+                            : mailTestState === "error"
+                              ? "inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-error/20 text-error border border-error/40 hover:bg-error/30 hover:border-error/55 disabled:opacity-50 disabled:cursor-not-allowed text-[12px] font-label font-bold uppercase tracking-wider transition-colors"
+                              : "inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30 hover:border-primary/55 disabled:opacity-50 disabled:cursor-not-allowed text-[12px] font-label font-bold uppercase tracking-wider transition-colors"
+                        }
+                      >
+                        <span
+                          className={`material-symbols-outlined leading-none ${mailTestState === "testing" ? "animate-spin" : ""}`}
+                          style={{ fontSize: 16 }}
+                        >
+                          {mailTestState === "ok" ? "check_circle" : mailTestState === "error" ? "error" : "send"}
+                        </span>
+                        {mailTestState === "testing" ? "发送中…" : mailTestState === "ok" ? "已发送" : "发送测试邮件"}
+                      </button>
+                      {mailTestMsg && (
+                        <span className={`font-label text-[11px] ${mailTestState === "ok" ? "text-tertiary" : "text-error"}`}>
+                          {mailTestMsg}
+                        </span>
+                      )}
+                    </div>
+                  }
+                >
+                  <Row
+                    icon="notifications_active"
+                    title="启用自动邮件"
+                    desc="开启后，番剧周历每次 14 天缓存到期、点开 Calendar 拉到新数据时，会把整张周历表自动截图发到下面填的 QQ 邮箱。"
+                    density={tweaks.density}
+                    control={
+                      <Switch checked={mailEnabled} onChange={handleMailToggle} />
+                    }
+                  />
+                  <Row
+                    icon="mail"
+                    title="QQ 邮箱"
+                    desc="同时作为发件人和收件人（自己发给自己）。"
+                    density={tweaks.density}
+                    control={
+                      <TextControl
+                        value={mailQqEmail}
+                        placeholder="example@qq.com"
+                        onChange={setMailQqEmail}
+                        onCommit={() => void persistMail()}
+                      />
+                    }
+                  />
+                  <Row
+                    icon="key"
+                    title="授权码"
+                    desc="QQ 邮箱后台「设置 → 账号 → 安全设置 → POP3/IMAP/SMTP 服务」开启后生成的授权码，不是登录密码。输入完按 Enter 提交，本地加密存储。"
+                    density={tweaks.density}
+                    control={
+                      <TextControl
+                        value={mailAuthCode}
+                        placeholder={mailHasAuthCode ? "已保存（重新输入按 Enter 覆盖）" : "16 位授权码，输入完按 Enter"}
+                        onChange={setMailAuthCode}
+                        onCommit={() => void persistMail()}
+                        commitOnBlur={false}
                       />
                     }
                   />

@@ -6,6 +6,7 @@ import { registerLibraryIpc } from './library'
 import { registerSystemIpc } from './system'
 import { registerFileExplorerIpc } from './fileExplorer'
 import { registerWebDavIpc } from './webdav'
+import { registerMailIpc } from './mail'
 
 export function registerAllIpc(): void {
   registerBgmIpc()
@@ -16,6 +17,7 @@ export function registerAllIpc(): void {
   registerSystemIpc()
   registerFileExplorerIpc()
   registerWebDavIpc()
+  registerMailIpc()
 }
 
 export { getMinimizeOnClose } from './system'

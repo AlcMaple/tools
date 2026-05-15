@@ -6,6 +6,7 @@ import DownloadQueue from './pages/DownloadQueue'
 import AnimeInfo from './pages/AnimeInfo'
 import MyAnime from './pages/MyAnime'
 import AnimeCalendar from './pages/AnimeCalendar'
+import AnimeCalendarScreenshot from './pages/AnimeCalendarScreenshot'
 import Settings from './pages/Settings'
 import LocalLibrary from './pages/LocalLibrary'
 import FileExplorer from './pages/FileExplorer'
@@ -55,7 +56,20 @@ function Shell(): JSX.Element {
   )
 }
 
+/**
+ * Screenshot 模式：主进程开隐藏 BrowserWindow 时附带 `?screenshot=calendar`
+ * query 参数。这里在最早一刻识别这个参数并整体走极简渲染路径 —— 不挂
+ * HashRouter、不挂 Sidebar、不挂 download progress 监听，只渲染一个无 chrome
+ * 的周历视图，等图片加载完后上报 scrollHeight 让主进程 capturePage。
+ */
 function App(): JSX.Element {
+  const isCalendarScreenshot =
+    new URLSearchParams(window.location.search).get('screenshot') === 'calendar'
+
+  if (isCalendarScreenshot) {
+    return <AnimeCalendarScreenshot />
+  }
+
   return (
     <HashRouter>
       <DownloadProgressListener />
