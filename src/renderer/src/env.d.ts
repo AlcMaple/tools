@@ -104,6 +104,10 @@ declare global {
     systemApi: {
       getDiskFree: () => Promise<{ free: number; total: number }>
       pickFolder: () => Promise<string | null>
+      /** OS-default downloads folder that all downloaders fall back to when no
+       *  custom save path is set. Used by Settings UI to make the effective
+       *  path visible. */
+      getDefaultDownloadsPath: () => Promise<string>
       checkConnectivity: () => Promise<boolean>
       loadSettingsHistory: () => Promise<Array<{ text: string; time: number }>>
       saveSettingsHistory: (entries: Array<{ text: string; time: number }>) => Promise<boolean>
@@ -238,8 +242,13 @@ declare global {
       getConfig: () => Promise<{ account: string; appPassword: string; remotePath: string } | null>
       saveConfig: (config: { account: string; appPassword: string; remotePath: string }) => Promise<boolean>
       test: () => Promise<boolean>
-      push: (jsonStr: string) => Promise<boolean>
-      pull: () => Promise<string>
+      /**
+       * Push a JSON blob to the per-kind remote file. `kind` selects which
+       * file under the user's base folder is written
+       * (`homework.json` / `anime.json`). Each kind syncs independently.
+       */
+      push: (kind: 'homework' | 'anime', jsonStr: string) => Promise<boolean>
+      pull: (kind: 'homework' | 'anime') => Promise<string>
     }
     libraryApi: {
       getPaths: () => Promise<LibraryPath[]>

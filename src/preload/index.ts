@@ -37,6 +37,13 @@ contextBridge.exposeInMainWorld('downloadApi', {
 contextBridge.exposeInMainWorld('systemApi', {
   getDiskFree: () => ipcRenderer.invoke('system:disk-free'),
   pickFolder: () => ipcRenderer.invoke('system:pick-folder'),
+  /**
+   * Returns the OS default downloads folder (`app.getPath('downloads')`),
+   * which is what all downloaders silently fall back to when the user
+   * hasn't configured a custom save path. Used by Settings UI to display
+   * the actual effective path.
+   */
+  getDefaultDownloadsPath: () => ipcRenderer.invoke('system:default-downloads'),
   checkConnectivity: () => ipcRenderer.invoke('system:connectivity'),
   loadSettingsHistory: () => ipcRenderer.invoke('system:history-read'),
   saveSettingsHistory: (entries: unknown) => ipcRenderer.invoke('system:history-write', entries),
@@ -208,6 +215,11 @@ contextBridge.exposeInMainWorld('webdavApi', {
   saveConfig: (config: { account: string; appPassword: string; remotePath: string }) =>
     ipcRenderer.invoke('webdav:save-config', config),
   test: () => ipcRenderer.invoke('webdav:test'),
-  push: (jsonStr: string) => ipcRenderer.invoke('webdav:push', jsonStr),
-  pull: () => ipcRenderer.invoke('webdav:pull'),
+  /**
+   * Push a JSON blob to the per-kind remote file (e.g. `homework.json` /
+   * `anime.json` under the user's base folder). Each kind has its own rev /
+   * conflict detection; renderer pages call this only for their own kind.
+   */
+  push: (kind: 'homework' | 'anime', jsonStr: string) => ipcRenderer.invoke('webdav:push', kind, jsonStr),
+  pull: (kind: 'homework' | 'anime') => ipcRenderer.invoke('webdav:pull', kind),
 })
