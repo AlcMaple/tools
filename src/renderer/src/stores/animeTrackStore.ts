@@ -9,7 +9,13 @@
 
 import { useEffect, useState } from 'react'
 
-export type AnimeStatus = 'plan' | 'watching' | 'completed' | 'paused' | 'dropped'
+/**
+ * Tracking status —— v2 把 paused / dropped 删了（用户从来没用过这俩），
+ * 同时加了 considering（观望）：跟 plan（想看，已下决心追了等条件）不同,
+ * considering 是"候补，看看再说"，最爱值达到一定程度用户会自己手动迁到
+ * watching，不自动升级。
+ */
+export type AnimeStatus = 'plan' | 'watching' | 'completed' | 'considering'
 
 export interface AnimeBinding {
   /** Capitalised to match the existing `Source` type used by SearchDownload. */
@@ -35,6 +41,47 @@ export interface AnimeTrack {
   /** Per-source bindings — empty in step 1a, populated in step 1b. */
   bindings: AnimeBinding[]
   notes: string[]
+  /**
+   * 最爱值 0-6，用户在 UI 上点🌟设级（B 站风格的星级评分）。
+   * 0 = 全空，6 = 全亮（最爱）。源自原 PDF 的"最爱值"概念但简化成纯星级,
+   * 不再带 +1/+2 评判逻辑（但评判标准还是给用户做参考，CriteriaModal 里有）。
+   */
+  favorite: number
+  /**
+   * 来自 BGM 的题材标签 —— "恋爱 / 漫画改 / 2026年4月" 这种。
+   *
+   * **加追番那一刻锁定** —— 第一次 upsert 创建 track 时从 patch.bgmTags 写入,
+   * 之后无论 BGM detail 怎么变（社区 tag 浮动、新增、删除），本地这份永远不变,
+   * 直到用户删追番再重加。这是为了：
+   *   1. 加载速度：MyAnime 列表不会因为 tag 漂移触发集体 re-render
+   *   2. 用户预期：用户给追番打的"恋爱"分类不会某天悄悄变成"少女"消失
+   *   3. 同步友好：WebDAV 上的 bgmTags 是稳定快照，不会被新 fetch 污染
+   * 实现见 upsert() 里的 lock-on-create 分支。
+   */
+  bgmTags: string[]
+  /**
+   * 用户自定义标签 —— "下饭 / 通勤番" 这种用户自己加的分类。
+   * 跟 bgmTags 物理隔离：用户改 userTags 不会动 bgmTags，反之亦然。
+   * UI 上能加 / 删 / 任意修改，参与 WebDAV sync。
+   */
+  userTags: string[]
+  /**
+   * 好看集 —— 这部番里"哪几集"被标记为精彩的具体集号列表。
+   *
+   * 这是来自用户原 PDF 的概念，数据形式是「集号数组」（不是计数）。例如
+   * `偶像活动: 1、4-5、16-19、25-26` 在这里存成 `[1, 4, 5, 16, 17, 18, 19, 25, 26]`。
+   * 渲染时用 compressGoodEpisodes() 折回 "1、4-5、16-19、25-26"。
+   *
+   * 评判标准（CriteriaModal 里有完整文档，这里复述给后续维护者）：
+   *   - 重温有关注点（突然停止快进，看完那一段精彩部分）
+   *   - 追的过程中重看一遍某部分的集【因为推理而重看除外】
+   *   - 暂停截图
+   *
+   * normalize 时：过滤 ≤ 0 / NaN、去重、升序排序。不夹到 totalEpisodes 上限
+   * （防御性 —— totalEpisodes 可能被改小，或者数据来自迁移；越界值原样保留
+   * 让用户在 UI 上能看到再决定怎么处理）。
+   */
+  goodEpisodes: number[]
   /** ISO date when the user first tracked this anime. */
   startedAt: string
   /** ISO date of the most recent mutation. */
@@ -42,7 +89,104 @@ export interface AnimeTrack {
 }
 
 const STORAGE_KEY = 'maple-anime-tracks-v1'
-const VALID_STATUS: ReadonlyArray<AnimeStatus> = ['plan', 'watching', 'completed', 'paused', 'dropped']
+const VALID_STATUS: ReadonlyArray<AnimeStatus> = ['plan', 'watching', 'completed', 'considering']
+const FAVORITE_MAX = 6
+
+// ── 标签数组工具 ─────────────────────────────────────────────────────────────
+
+/**
+ * 标签数组规范化：trim、过滤空串 / 非字符串、去重，保留**输入顺序**。
+ * 不排序——用户期望"我加的最新 tag 在末尾"那种自然顺序；BGM tag 也保留 BGM
+ * 返回的原始顺序（按热度排好的）。
+ */
+export function normalizeTagList(input: unknown): string[] {
+  if (!Array.isArray(input)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const v of input) {
+    if (typeof v !== 'string') continue
+    const trimmed = v.trim()
+    if (!trimmed) continue
+    if (seen.has(trimmed)) continue
+    seen.add(trimmed)
+    out.push(trimmed)
+  }
+  return out
+}
+
+// ── 好看集集号工具 ──────────────────────────────────────────────────────────
+
+/**
+ * 规范化好看集集号数组：过滤掉 ≤ 0 / 非有限数 / 非整数，去重，升序排序。
+ * 单独抽出来是因为 normalize() 和 UI（编辑 modal 写入前）都要用同一套。
+ */
+export function normalizeGoodEpisodes(input: unknown): number[] {
+  if (!Array.isArray(input)) return []
+  const seen = new Set<number>()
+  for (const v of input) {
+    if (typeof v !== 'number') continue
+    if (!Number.isFinite(v)) continue
+    const n = Math.floor(v)
+    if (n <= 0) continue
+    seen.add(n)
+  }
+  return [...seen].sort((a, b) => a - b)
+}
+
+/**
+ * 把集号数组压缩成 PDF 里那种紧凑字符串，连续区间合并成 "a-b"：
+ *   [1, 4, 5, 16, 17, 18, 19] → "1、4-5、16-19"
+ * 输入应该是已经 normalize 过的（升序去重），但函数对乱序输入也能正确处理。
+ */
+export function compressGoodEpisodes(eps: number[]): string {
+  const sorted = normalizeGoodEpisodes(eps)
+  if (sorted.length === 0) return ''
+  const groups: string[] = []
+  let start = sorted[0]
+  let prev = sorted[0]
+  for (let i = 1; i < sorted.length; i++) {
+    const cur = sorted[i]
+    if (cur === prev + 1) {
+      prev = cur
+      continue
+    }
+    groups.push(start === prev ? String(start) : `${start}-${prev}`)
+    start = cur
+    prev = cur
+  }
+  groups.push(start === prev ? String(start) : `${start}-${prev}`)
+  return groups.join('、')
+}
+
+/**
+ * 解析 PDF/用户手敲的紧凑字符串成集号数组：
+ *   "1、4-5、16-19" → [1, 4, 5, 16, 17, 18, 19]
+ *   "1,4-5,16-19"  → 同上（兼容半角逗号、空格）
+ *   "1; 4 - 5"     → 同上（兼容分号、连字符两端空格）
+ * 非法 token 静默忽略；返回值已 normalize（去重升序）。本函数主要给未来的
+ * "粘贴 PDF 数据"导入路径用，当前 modal 编辑器不需要它，但放在 store 旁边
+ * 跟 compress 对仗更顺手。
+ */
+export function parseGoodEpisodes(text: string): number[] {
+  const out: number[] = []
+  const parts = text.split(/[、,;\s]+/).map(s => s.trim()).filter(Boolean)
+  for (const p of parts) {
+    const m = p.match(/^(\d+)\s*-\s*(\d+)$/)
+    if (m) {
+      const a = parseInt(m[1], 10)
+      const b = parseInt(m[2], 10)
+      if (a > 0 && b > 0) {
+        const lo = Math.min(a, b)
+        const hi = Math.max(a, b)
+        for (let i = lo; i <= hi; i++) out.push(i)
+      }
+      continue
+    }
+    const n = parseInt(p, 10)
+    if (!Number.isNaN(n) && n > 0) out.push(n)
+  }
+  return normalizeGoodEpisodes(out)
+}
 
 /**
  * Idempotent normalize for an array of unknown tracks — used both for
@@ -64,11 +208,21 @@ export function normalizeTracks(input: unknown): AnimeTrack[] {
 
 function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   const now = new Date().toISOString()
+  // 老数据里如果出现已删除的 paused/dropped，fallback 到 plan（用户说没这种
+  // 数据，但读 WebDAV 老 blob / 别人导入的数据 仍然可能有；防御性兜底）
   const status = (t.status && VALID_STATUS.includes(t.status)) ? t.status : 'plan'
   const episode = typeof t.episode === 'number' && t.episode >= 0 ? Math.floor(t.episode) : 0
   const total = typeof t.totalEpisodes === 'number' && t.totalEpisodes > 0 ? Math.floor(t.totalEpisodes) : undefined
   const notes = Array.isArray(t.notes) ? t.notes.filter((s): s is string => typeof s === 'string' && s.trim().length > 0) : []
   const bindings = Array.isArray(t.bindings) ? t.bindings.filter(b => b && typeof b === 'object') as AnimeBinding[] : []
+  // 最爱值 clamp 到 [0, FAVORITE_MAX]，老数据没这字段就当 0
+  const favoriteRaw = typeof t.favorite === 'number' && t.favorite >= 0 ? Math.floor(t.favorite) : 0
+  const favorite = Math.min(FAVORITE_MAX, favoriteRaw)
+  // 好看集 —— 老数据没这字段或不是数组就当空 []；过滤 ≤ 0 / NaN，去重、升序。
+  const goodEpisodes = normalizeGoodEpisodes(t.goodEpisodes)
+  // 两份标签数组各自 sanitize；规则一致（trim、过滤空串、去重、保留输入顺序）。
+  const bgmTags = normalizeTagList(t.bgmTags)
+  const userTags = normalizeTagList(t.userTags)
   return {
     bgmId: t.bgmId,
     title: typeof t.title === 'string' ? t.title : '',
@@ -79,6 +233,10 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     totalEpisodes: total,
     bindings,
     notes,
+    favorite,
+    bgmTags,
+    userTags,
+    goodEpisodes,
     startedAt: typeof t.startedAt === 'string' && t.startedAt ? t.startedAt : now,
     updatedAt: typeof t.updatedAt === 'string' && t.updatedAt ? t.updatedAt : now,
   }
@@ -122,9 +280,15 @@ class AnimeTrackStore {
   upsert(patch: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     const map = this.ensure()
     const prev = map.get(patch.bgmId)
+    // bgmTags 是 lock-on-create —— 只在首次创建（prev 不存在）时从 patch 接受;
+    // 一旦 track 已存在，任何 upsert 都不会动 bgmTags。这是为了让 BGM 社区
+    // tag 漂移不会污染用户已加追番的分类（详见 AnimeTrack.bgmTags 字段注释）。
+    // 想换 bgmTags 的唯一办法：删追番再重加。
+    const lockedBgmTags = prev ? prev.bgmTags : patch.bgmTags
     const merged = normalize({
       ...prev,
       ...patch,
+      bgmTags: lockedBgmTags,
       // Preserve startedAt across upserts unless explicitly overwritten.
       startedAt: prev?.startedAt ?? patch.startedAt,
       // Always bump updatedAt regardless of caller.
@@ -133,6 +297,31 @@ class AnimeTrackStore {
     map.set(patch.bgmId, merged)
     this.persist()
     return merged
+  }
+
+  /**
+   * 添加一个用户自定义 tag。trim + 大小写敏感去重；空串 / 已存在直接 no-op。
+   * 跟 setUserTags 比起来更点对点，UI 上"+ 添加"按钮直接调用。
+   * track 不存在则 no-op（caller 应先 upsert 创建 track）。
+   */
+  addUserTag(bgmId: number, tag: string): void {
+    const map = this.ensure()
+    const prev = map.get(bgmId)
+    if (!prev) return
+    const trimmed = tag.trim()
+    if (!trimmed) return
+    if (prev.userTags.includes(trimmed)) return
+    this.upsert({ bgmId, userTags: [...prev.userTags, trimmed] })
+  }
+
+  /** 删除一个用户自定义 tag。tag 不存在则 no-op。 */
+  removeUserTag(bgmId: number, tag: string): void {
+    const map = this.ensure()
+    const prev = map.get(bgmId)
+    if (!prev) return
+    const next = prev.userTags.filter(t => t !== tag)
+    if (next.length === prev.userTags.length) return
+    this.upsert({ bgmId, userTags: next })
   }
 
   getByBgmId(id: number): AnimeTrack | null {
