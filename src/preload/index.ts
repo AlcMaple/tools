@@ -229,6 +229,11 @@ contextBridge.exposeInMainWorld('mailApi', {
     ipcRenderer.invoke('mail:set-config', config),
   /** 手动触发周历邮件发送（用于内部自动触发逻辑，UI 一般不直接调）。 */
   sendCalendar: () => ipcRenderer.invoke('mail:send-calendar'),
+  /**
+   * MyAnime「发送极简报告」按钮调这个。html 参数是 renderer 拼好的完整
+   * 邮件正文（含内联样式），主进程只负责套上 from/to/subject 通过 SMTP 发送。
+   */
+  sendAnimeReport: (html: string) => ipcRenderer.invoke('mail:send-anime-report', html),
   /** Settings 页「发送测试邮件」按钮调这个，失败会抛错让用户看到原因。 */
   testSend: () => ipcRenderer.invoke('mail:test-send'),
 })

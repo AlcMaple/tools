@@ -7,6 +7,7 @@
 import { ipcMain } from 'electron'
 import { loadMailConfig, saveMailConfig, type MailConfig } from '../mail/config'
 import { sendCalendarMail, sendTestMail } from '../mail/calendar-mailer'
+import { sendAnimeReportMail } from '../mail/anime-report-mailer'
 
 export interface MailConfigForUI {
   enabled: boolean
@@ -54,6 +55,23 @@ export function registerMailIpc(): void {
       return { sent: true }
     } catch (err) {
       console.error('[mail:send-calendar] 发送失败', err)
+      return { sent: false, reason: String(err instanceof Error ? err.message : err) }
+    }
+  })
+
+  // MyAnime 「发送极简报告」按钮触发 —— renderer 已经拼好完整 HTML 正文,
+  // 主进程只负责 SMTP。跟 send-calendar 一样返回 { sent, reason? },
+  // 让 UI 根据结果决定 toast / 错误提示。
+  ipcMain.handle('mail:send-anime-report', async (_e, html: string): Promise<{ sent: boolean; reason?: string }> => {
+    const cfg = await loadMailConfig()
+    if (!cfg.enabled) return { sent: false, reason: 'disabled' }
+    if (!cfg.qqEmail || !cfg.authCode) return { sent: false, reason: 'incomplete-config' }
+    if (typeof html !== 'string' || html.length === 0) return { sent: false, reason: 'empty-html' }
+    try {
+      await sendAnimeReportMail(cfg, html)
+      return { sent: true }
+    } catch (err) {
+      console.error('[mail:send-anime-report] 发送失败', err)
       return { sent: false, reason: String(err instanceof Error ? err.message : err) }
     }
   })

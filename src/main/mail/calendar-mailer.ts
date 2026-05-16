@@ -17,8 +17,8 @@
 
 import { BrowserWindow, ipcMain, app } from 'electron'
 import { join } from 'path'
-import nodemailer from 'nodemailer'
 import type { MailConfig } from './config'
+import { buildTransporter, todayLabel } from './transport'
 
 const SCREENSHOT_WIDTH = 1280
 const DEFAULT_HEIGHT = 800
@@ -122,23 +122,8 @@ async function capturePageBuffer(): Promise<Buffer> {
 }
 
 // ── nodemailer ────────────────────────────────────────────────────────────────
-
-function buildTransporter(cfg: MailConfig): nodemailer.Transporter {
-  return nodemailer.createTransport({
-    host: 'smtp.qq.com',
-    port: 465,
-    secure: true,
-    auth: { user: cfg.qqEmail, pass: cfg.authCode },
-  })
-}
-
-function todayLabel(): string {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
+//
+// transporter + todayLabel 已抽到 ./transport.ts 共享给 anime-report-mailer。
 
 /**
  * 用当前的邮件配置发送一封带周历截图的邮件。
