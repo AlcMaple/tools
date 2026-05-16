@@ -25,6 +25,7 @@ import {
   type Recommendation,
 } from '../stores/recommendationStore'
 import { ipcErrMsg, ModalShell } from '../pages/homework/shared'
+import { buildAnimeReportHtml } from '../utils/animeReport'
 
 // ── Storage keys ────────────────────────────────────────────────────────────
 
@@ -282,6 +283,30 @@ export function AnimeSyncBar(): JSX.Element {
     }
   }
 
+  // 发送极简报告到 QQ 邮箱 —— 跟 push/pull 不同：不需要二次确认弹窗
+  // （邮件是单向的、不会覆盖任何数据），点了就发，发完用 syncMsg 通道显示
+  // 「报告已发送 / 未启用 / 配置不全 / 错误」。reason 字符串映射成中文。
+  const sendReport = async (): Promise<void> => {
+    if (syncStatus === 'syncing' || syncConfirm) return
+    setSyncStatus('syncing')
+    setSyncMsg('发送报告中…')
+    try {
+      const html = buildAnimeReportHtml({ tracks, recommendations })
+      const result = await window.mailApi.sendAnimeReport(html)
+      if (result.sent) {
+        syncSettle('synced', '报告已发送')
+        return
+      }
+      const reasonText =
+        result.reason === 'disabled' ? '请先到设置开启邮件功能' :
+        result.reason === 'incomplete-config' ? '请先到设置填邮箱与授权码' :
+        result.reason || '发送失败'
+      syncSettle('error', reasonText)
+    } catch (e: unknown) {
+      syncSettle('error', ipcErrMsg(e, '发送失败'))
+    }
+  }
+
   const executePull = async (): Promise<void> => {
     if (!syncConfirm?.remote) {
       setSyncConfirm(null)
@@ -325,6 +350,7 @@ export function AnimeSyncBar(): JSX.Element {
         disabled={syncStatus === 'syncing' || !!syncConfirm}
         onPush={() => openSyncConfirm('push')}
         onPull={() => openSyncConfirm('pull')}
+        onSendReport={sendReport}
       />
       {syncConfirm && (
         <SyncConfirmModal
@@ -345,7 +371,7 @@ export function AnimeSyncBar(): JSX.Element {
 // ── Chip ─────────────────────────────────────────────────────────────────────
 
 function SyncChip({
-  syncStatus, syncMsg, lastSyncTime, localDirty, cloudNewer, disabled, onPush, onPull,
+  syncStatus, syncMsg, lastSyncTime, localDirty, cloudNewer, disabled, onPush, onPull, onSendReport,
 }: {
   syncStatus: SyncStatus
   syncMsg: string
@@ -355,6 +381,8 @@ function SyncChip({
   disabled: boolean
   onPush: () => void
   onPull: () => void
+  /** 触发"发送极简报告到 QQ 邮箱"。复用 syncStatus 通道做进度/反馈展示。 */
+  onSendReport: () => void
 }): JSX.Element {
   type ChipKind = 'syncing' | 'synced' | 'error' | 'both' | 'remote' | 'local' | 'idle'
   const kind: ChipKind =
@@ -375,7 +403,9 @@ function SyncChip({
   const config: Record<ChipKind, { dot: JSX.Element; text: string; cls: string }> = {
     syncing: {
       dot: <span className="material-symbols-outlined text-primary animate-spin" style={{ fontSize: 13 }}>progress_activity</span>,
-      text: '同步中…',
+      // 复用 syncMsg 当自定义文案 —— sendReport 流程用 "发送报告中…",
+      // 默认 sync 流程用 "同步中…"。
+      text: syncMsg || '同步中…',
       cls: 'text-primary',
     },
     synced: {
@@ -430,6 +460,14 @@ function SyncChip({
           className="p-1 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-secondary/10 transition-colors disabled:opacity-30"
         >
           <span className="material-symbols-outlined" style={{ fontSize: 13 }}>download</span>
+        </button>
+        <button
+          onClick={onSendReport}
+          disabled={disabled}
+          title="发送极简报告到 QQ 邮箱（手机扫读）"
+          className="p-1 rounded text-on-surface-variant/50 hover:text-tertiary hover:bg-tertiary/10 transition-colors disabled:opacity-30"
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 13 }}>mail</span>
         </button>
       </div>
     </div>
