@@ -259,6 +259,11 @@ declare global {
        * 发出；reason 留作排错线索（disabled / incomplete-config / 错误文本）。
        */
       sendCalendar: () => Promise<{ sent: boolean; reason?: string }>
+      /**
+       * 发一封 MyAnime 极简报告邮件。`html` 是 renderer 已拼好的完整邮件
+       * 正文（带内联样式）。返回 `sent` 即是否成功；reason 同 sendCalendar。
+       */
+      sendAnimeReport: (html: string) => Promise<{ sent: boolean; reason?: string }>
       /** 发一封不带截图的测试邮件，失败会抛错。 */
       testSend: () => Promise<boolean>
     }
