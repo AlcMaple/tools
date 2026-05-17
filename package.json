@@ -26,6 +26,10 @@
       {
         "from": "resources/icon.ico",
         "to": "icon.ico"
+      },
+      {
+        "from": "resources/recycle-helper.ps1",
+        "to": "recycle-helper.ps1"
       }
     ],
     "win": {
