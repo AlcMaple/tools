@@ -518,12 +518,12 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const setEpisode = (ep: number): void => {
     const total = track.totalEpisodes
     const clamped = Math.max(0, total != null ? Math.min(ep, total) : ep)
-    // Auto-bump to "completed" when the user hits the final episode — small
-    // ergonomic win since the +1 click and "I'm done" intent overlap.
+    // **不**自动把 watching 切到 completed —— 用户反馈"集数填 12 不一定是
+    // 看到 12，有时候是剩下 12 还没看的备忘"，自动切 tab 会曲解用户意图。
+    // 看完了由用户自己点 status segment 切到「看完」。
     const patch: Partial<AnimeTrack> & { bgmId: number } = { bgmId: track.bgmId, episode: clamped }
-    if (total != null && clamped === total && track.status === 'watching') patch.status = 'completed'
-    // Conversely: bumping past 0 from a 'plan' state implies "I started" — auto
-    // move to watching.
+    // 「想看 → 在追」这个方向仍保留自动切：从 0 集开始 +1 表示"我开始看了",
+    // 不存在歧义（不会有人在「想看」状态填 12 表示备忘）。
     if (clamped > 0 && track.status === 'plan') patch.status = 'watching'
     animeTrackStore.upsert(patch)
   }
