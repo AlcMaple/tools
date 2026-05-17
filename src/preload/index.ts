@@ -179,7 +179,19 @@ contextBridge.exposeInMainWorld('fileExplorerApi', {
   listDir: (dirPath: string) => ipcRenderer.invoke('fs:list-dir', dirPath),
   open: (targetPath: string) => ipcRenderer.invoke('fs:open', targetPath),
   reveal: (targetPath: string) => ipcRenderer.invoke('fs:reveal', targetPath),
+  /**
+   * 「移到回收站」Stage 1（5s 整体送回收站窗口）。
+   * Stage 1 失败时返回 `{ status: 'stage1-failed' }`，renderer 据此弹用户
+   * 确认弹窗；用户点继续才调 `trashFragmented`。本接口**不**自动进 Stage 2。
+   */
   trash: (targetPath: string) => ipcRenderer.invoke('fs:trash', targetPath),
+  /**
+   * 「移到回收站」Stage 2（用户确认后的完整两阶段：Stage 1 重试 → 失败
+   * 进 Stage 2 分片回收）。`fragmented` 表示分片成功（renderer 必须强提示
+   * "回收站里是散件，可全选→还原重建结构"）。
+   */
+  trashFragmented: (targetPath: string) => ipcRenderer.invoke('fs:trash-fragmented', targetPath),
+  /** 永久删除（recycle-helper --purge 模式，三级 fallback 几乎一次必成）。 */
   deletePermanent: (targetPath: string) => ipcRenderer.invoke('fs:delete-permanent', targetPath),
   resolveSpecial: (input: string) => ipcRenderer.invoke('fs:resolve-special', input),
   /**

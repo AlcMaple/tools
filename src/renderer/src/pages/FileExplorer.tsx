@@ -112,6 +112,41 @@ interface DeleteResultState {
   succeededCount: number
   failures: DeleteFailure[]
 }
+/**
+ * 「移到回收站」Stage 1 失败后弹的中段确认弹窗的 state。
+ *
+ * - `targets`        Stage 1 失败、等用户决策的目标列表
+ * - `succeededSoFar` 同一批操作里 Stage 1 已经成功的数量（弹窗等用户决策
+ *                    期间不能丢失这部分进度，用户取消时仅 finalize 这部分）
+ * - `failuresSoFar`  同一批里 Stage 1 抛错的（spawn 失败 / 路径错等）
+ * - `totalTargets`   这一批的总目标数，用于最终 finalize 时的文案
+ */
+interface PendingStage2 {
+  targets: FsEntry[]
+  succeededSoFar: number
+  failuresSoFar: DeleteFailure[]
+  totalTargets: number
+}
+
+/**
+ * 删除进行中状态 —— 用来弹"正在删除…"的阻塞加载层。删除流程的耗时不是
+ * 立即可见的：
+ *   - trash-stage1：每个目标 5s 整体回收窗口 + 杀进程 + ACL 操作
+ *   - trash-stage2：递归枚举整棵树后逐个 IFileOperation，文件多时分钟级别
+ *   - permanent：Remove-Item → rd /s /q → robocopy /MIR 三级 fallback
+ * 没有 loader 用户只看到弹窗一关就什么动静都没了，会怀疑 app 卡死。
+ *
+ * 多目标时用 currentIndex/total/currentTarget 给个粗粒度进度感（每个目标
+ * 跨过去就更新一次），单目标时只显示目标名。这是"模糊但有"的进度反馈,
+ * 比 indeterminate spinner 强一档，比真实子步骤进度（需要 PS streaming）
+ * 弱一档但实现成本低。
+ */
+interface DeleteInProgress {
+  mode: 'trash-stage1' | 'trash-stage2' | 'permanent'
+  currentTarget: string
+  currentIndex: number
+  total: number
+}
 
 // ── Title slot ────────────────────────────────────────────────────────────────
 
@@ -153,6 +188,8 @@ function FileExplorer(): JSX.Element {
   const [pathStatus, setPathStatus] = useState<{ msg: string; tone: 'ok' | 'error' | 'info' } | null>(null)
   const [ctx, setCtx] = useState<CtxState | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DeletePending | null>(null)
+  const [pendingStage2, setPendingStage2] = useState<PendingStage2 | null>(null)
+  const [deleteInProgress, setDeleteInProgress] = useState<DeleteInProgress | null>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
   const [deleteResult, setDeleteResult] = useState<DeleteResultState | null>(null)
 
@@ -500,57 +537,216 @@ function FileExplorer(): JSX.Element {
   // Stable ref so keyboard handler can call confirmDelete without stale closure
   const confirmDeleteRef = useRef<() => void>(() => {})
 
+  /**
+   * 三段式：finalize → 永久删除一把跑 / 回收站走 Stage 1 + 可能弹 Stage 2 确认。
+   *
+   * - **永久删除**：跑完所有目标，根据 success / failures 决定 toast vs 结果弹窗。
+   *   没有 Stage 概念，行为跟旧版一致。
+   *
+   * - **回收站（默认）**：先对所有目标跑 Stage 1（每个目标 5s 整体送回收站窗口）。
+   *   Stage 1 成功 → 直接计入 succeeded；
+   *   Stage 1 失败（返回 `stage1-failed`） → 收集到 stage1Failed[]，**不**自动
+   *   进 Stage 2；
+   *   Stage 1 抛错 → 计入 failures。
+   *   循环跑完后，如果 stage1Failed 非空，弹 PendingStage2 确认弹窗让用户决策；
+   *   弹窗里继续 → 调 trashFragmented 跑完 Stage 2；取消 → 仅 finalize Stage 1
+   *   阶段的结果，**不**自动 fallback 到永久删除。
+   */
   async function confirmDelete(): Promise<void> {
     const pd = pendingDeleteRef.current
     if (!pd) return
     setPendingDelete(null)
 
+    if (pd.permanent) {
+      await runPermanentDelete(pd.targets)
+      return
+    }
+
+    // 回收站模式 —— Stage 1 pass
+    const failures: DeleteFailure[] = []
+    const stage1Failed: FsEntry[] = []
+    let succeeded = 0
+    for (let i = 0; i < pd.targets.length; i++) {
+      const t = pd.targets[i]
+      setDeleteInProgress({
+        mode: 'trash-stage1',
+        currentTarget: t.name,
+        currentIndex: i + 1,
+        total: pd.targets.length,
+      })
+      try {
+        const r = await window.fileExplorerApi.trash(t.path)
+        if (r.status === 'stage1-failed') {
+          stage1Failed.push(t)
+        } else {
+          // success / already-absent —— 都当成功
+          succeeded += 1
+        }
+      } catch (e: unknown) {
+        failures.push({ name: t.name, path: t.path, error: e })
+      }
+    }
+    setDeleteInProgress(null)
+
+    setSelected(new Set())
+    await navigateToSurvivingAncestor()
+
+    if (stage1Failed.length > 0) {
+      // 弹 Stage 2 确认弹窗，保留 Stage 1 已经累积的进度数据让取消 / 继续
+      // 都能正确 finalize。
+      setPendingStage2({
+        targets: stage1Failed,
+        succeededSoFar: succeeded,
+        failuresSoFar: failures,
+        totalTargets: pd.targets.length,
+      })
+      return
+    }
+
+    finalizeTrashResult(succeeded, failures, [], pd.targets.length)
+  }
+
+  /**
+   * 永久删除 —— 跟回收站完全分开，没有 Stage 概念。
+   *
+   * IPC 现在返回 `{ status: 'success' | 'already-absent' }`，两种都当成功；
+   * 抛错走 failures。沿用 deleteResult / toast 同一套展示路径。
+   */
+  async function runPermanentDelete(targets: FsEntry[]): Promise<void> {
     const failures: DeleteFailure[] = []
     let succeeded = 0
-    // Both operations now return `{ killed }` — accumulate so we can disclose
-    // them in the success toast ("已移到回收站，自动关闭了 N 个占用程序").
-    const allKilled: { pid: number; name: string }[] = []
-    for (const t of pd.targets) {
+    for (let i = 0; i < targets.length; i++) {
+      const t = targets[i]
+      setDeleteInProgress({
+        mode: 'permanent',
+        currentTarget: t.name,
+        currentIndex: i + 1,
+        total: targets.length,
+      })
       try {
-        const result = pd.permanent
-          ? await window.fileExplorerApi.deletePermanent(t.path)
-          : await window.fileExplorerApi.trash(t.path)
-        allKilled.push(...result.killed)
+        await window.fileExplorerApi.deletePermanent(t.path)
         succeeded += 1
       } catch (e: unknown) {
         failures.push({ name: t.name, path: t.path, error: e })
       }
     }
-
+    setDeleteInProgress(null)
     setSelected(new Set())
-
-    // 删完之后 cwd 可能已经不在（用户删了当前目录本身 / 它的祖先）。
-    // 走 navigateToSurvivingAncestor —— 先试主进程 IPC 一次性精准定位最近活
-    // 着的祖先；IPC 不可用（比如 dev 时 main 进程没热重启 handler 还没注册）
-    // 时回退到 renderer 自己用 dirname 字符串爬 + listDir 探针，one way or
-    // another 保证 UI 永远不停在不存在的路径上。
     await navigateToSurvivingAncestor()
-
     if (failures.length) {
-      // Open the rich result modal so the user can drill into per-item errors
-      // and read the causes/solutions cheatsheet.
-      setDeleteResult({ permanent: pd.permanent, succeededCount: succeeded, failures })
-    } else {
-      const baseMsg = pd.targets.length === 1
-        ? pd.targets[0].name
-        : `${pd.targets.length} 个项目`
-      // If the delete had to kill processes to free locked files, surface that
-      // post-hoc — the user clicked Delete, not "kill my editor", so they
-      // deserve to know what was closed.
-      const killMsg = allKilled.length === 0
-        ? ''
-        : `（自动关闭 ${allKilled.length} 个占用程序：${allKilled.map(k => k.name || `pid ${k.pid}`).join('、')}）`
-      setToast({
-        title: pd.permanent ? '已永久删除' : '已移到回收站',
-        msg: baseMsg + killMsg,
-        icon: pd.permanent ? 'delete_forever' : 'delete',
-      })
+      setDeleteResult({ permanent: true, succeededCount: succeeded, failures })
+      return
     }
+    setToast({
+      title: '已永久删除',
+      msg: targets.length === 1 ? targets[0].name : `${targets.length} 个项目`,
+      icon: 'delete_forever',
+    })
+  }
+
+  /**
+   * 用户在 Stage 2 弹窗点「继续走分片回收」后调。
+   *
+   * 对 `pendingStage2.targets` 里每个目标调 trashFragmented（跑完整两阶段：
+   * Stage 1 重试 → 失败进 Stage 2 分片）。`fragmented` 状态需要在 toast 里
+   * 强提示"散件可还原"。这一轮的 success / fragmented / failures 跟之前
+   * Stage 1 阶段累积的进度合并后 finalize。
+   */
+  async function confirmStage2(): Promise<void> {
+    const s2 = pendingStage2
+    if (!s2) return
+    setPendingStage2(null)
+
+    const failures = [...s2.failuresSoFar]
+    const fragmented: FsEntry[] = []
+    let succeeded = s2.succeededSoFar
+    for (let i = 0; i < s2.targets.length; i++) {
+      const t = s2.targets[i]
+      setDeleteInProgress({
+        mode: 'trash-stage2',
+        currentTarget: t.name,
+        currentIndex: i + 1,
+        total: s2.targets.length,
+      })
+      try {
+        const r = await window.fileExplorerApi.trashFragmented(t.path)
+        if (r.status === 'fragmented') fragmented.push(t)
+        succeeded += 1
+      } catch (e: unknown) {
+        failures.push({ name: t.name, path: t.path, error: e })
+      }
+    }
+    setDeleteInProgress(null)
+    await navigateToSurvivingAncestor()
+    finalizeTrashResult(succeeded, failures, fragmented, s2.totalTargets)
+  }
+
+  /**
+   * 用户在 Stage 2 弹窗点「取消」 —— 不自动 fallback 到永久删除（用户明确
+   * 决策）。Stage 1 失败的目标维持现状（文件还在），不算 failures。只 finalize
+   * 这一批里 Stage 1 已经成功的 / Stage 1 抛错的部分。
+   */
+  function cancelStage2(): void {
+    const s2 = pendingStage2
+    if (!s2) return
+    setPendingStage2(null)
+    finalizeTrashResult(
+      s2.succeededSoFar,
+      s2.failuresSoFar,
+      [],
+      s2.succeededSoFar + s2.failuresSoFar.length,
+    )
+    // 附加一行 hint：被用户取消的那批可以手动用永久删除处理。这条不弹错误弹窗,
+    // 只在 toast 里以低调形式提示。如果同时还有 failures 走 deleteResult，
+    // 后者会盖住这条 toast —— OK，那种情况下 hint 也不是最关键的信息。
+    if (s2.targets.length > 0) {
+      setTimeout(() => {
+        setToast({
+          title: '已取消分片回收',
+          msg: `${s2.targets.length} 个项目仍在原位置。如要清理，请使用「永久删除」。`,
+          icon: 'cancel',
+        })
+      }, 100)
+    }
+  }
+
+  /**
+   * 通用收尾：决定走 toast 还是 deleteResult 富错误弹窗。
+   *
+   * fragmented 列表非空时 toast 文案要区分：
+   *   - 全分片：单独的"已分片送入回收站"标题，msg 解释散件 + 还原方法
+   *   - 混合：标题保留"已移到回收站"，msg 提一句"其中 N 个为分片回收"
+   */
+  function finalizeTrashResult(
+    succeeded: number,
+    failures: DeleteFailure[],
+    fragmented: FsEntry[],
+    totalTargets: number,
+  ): void {
+    if (failures.length) {
+      setDeleteResult({ permanent: false, succeededCount: succeeded, failures })
+      return
+    }
+    const baseName = totalTargets === 1 && succeeded === 1
+      ? '已成功（详见回收站）'
+      : `${totalTargets} 个项目`
+    if (fragmented.length === 0) {
+      setToast({ title: '已移到回收站', msg: baseName, icon: 'delete' })
+      return
+    }
+    if (fragmented.length === totalTargets) {
+      setToast({
+        title: '已分片送入回收站',
+        msg: '内容仍可还原 —— 打开回收站全选 → 右键「还原」可重建目录结构',
+        icon: 'splitscreen',
+      })
+      return
+    }
+    setToast({
+      title: '已移到回收站',
+      msg: `其中 ${fragmented.length} 个为分片回收，回收站里是散件可还原`,
+      icon: 'delete',
+    })
   }
 
   confirmDeleteRef.current = confirmDelete
@@ -1029,6 +1225,25 @@ function FileExplorer(): JSX.Element {
         )
       })()}
 
+      {/* Stage 2 分片回收确认弹窗 —— Stage 1（5s 整体送回收站）失败时弹。
+          解释接下来「逐个文件 / 子目录单独送回收站」的行为，让用户决定继续 / 取消。
+          取消不会自动 fallback 到永久删除 —— 用户要永久删得回去自己点。 */}
+      {pendingStage2 && (
+        <Stage2ConfirmModal
+          state={pendingStage2}
+          onCancel={cancelStage2}
+          onConfirm={confirmStage2}
+        />
+      )}
+
+      {/* 删除进行中加载层 —— 用户点确认后到 toast 出现之间这段时间盖在所有
+          UI 上，避免"卡死"假象。z-index 比所有 modal 都高（z-[70]），因为
+          删除可能在 Stage 2 modal 关闭后立刻开始，要确保加载层叠在上层；
+          backdrop 不可点（删除一旦发出无法取消）。 */}
+      {deleteInProgress && (
+        <DeleteProgressOverlay state={deleteInProgress} />
+      )}
+
       {/* Delete result modal — shown when one or more items failed to delete.
           Read-only on purpose: trashItem and permanentDelete each already do
           everything they can (kill processes, takeown, swap APIs). When they
@@ -1060,6 +1275,164 @@ function FileExplorer(): JSX.Element {
 }
 
 export default FileExplorer
+
+// ── 删除进行中加载层 ─────────────────────────────────────────────────────
+//
+// 不可关闭（backdrop 没绑 onClick），spinner + 模式标题 + 当前目标 + 进度。
+// 多目标时显示 `(2/5) foo.txt`，单目标时只显示目标名。模式 → 中文标题映射：
+//   - trash-stage1：「正在送入回收站…」（每个目标 5s 整体窗口）
+//   - trash-stage2：「正在分片回收…」（文件多时分钟级）
+//   - permanent  ：「正在永久删除…」（三级 fallback，几乎一次必成）
+//
+// 对 stage2 额外加一行提示"文件多时可能需要一两分钟"——Stage 2 是用户在
+// Stage 2 confirm modal 主动选的，需要管理预期，不然用户等几十秒会以为卡了。
+function DeleteProgressOverlay({ state }: { state: DeleteInProgress }): JSX.Element {
+  const titleMap: Record<DeleteInProgress['mode'], string> = {
+    'trash-stage1': '正在送入回收站…',
+    'trash-stage2': '正在分片回收…',
+    'permanent':    '正在永久删除…',
+  }
+  const isMulti = state.total > 1
+  const isStage2 = state.mode === 'trash-stage2'
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="relative bg-surface-container/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl px-8 py-7 min-w-[380px] max-w-[92vw]">
+        <div className="flex flex-col items-center gap-4">
+          <span
+            className="material-symbols-outlined text-primary animate-spin"
+            style={{ fontSize: 36 }}
+          >
+            progress_activity
+          </span>
+          <p className="text-base font-bold tracking-tight">{titleMap[state.mode]}</p>
+          <div className="flex flex-col items-center gap-1 max-w-[440px]">
+            {isMulti && (
+              <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60">
+                {state.currentIndex} / {state.total}
+              </p>
+            )}
+            <p className="text-xs text-on-surface-variant/75 truncate max-w-full font-mono">
+              {state.currentTarget}
+            </p>
+          </div>
+          {isStage2 && (
+            <p className="text-[11px] text-on-surface-variant/55 leading-relaxed text-center max-w-[300px]">
+              逐个文件 / 子目录送回收站，文件数多时可能需要一两分钟，请勿关闭窗口。
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Stage 2 分片回收确认弹窗 ───────────────────────────────────────────────
+//
+// Stage 1（整体送回收站 5s 窗口）失败时弹。解释 Stage 2 会做什么、回收站里会
+// 看到什么、内容能不能恢复、不接受的话还有什么办法 —— 然后让用户拍板。
+//
+// 设计取舍：不强制把所有信息塞进单一弹窗。文案分两段：① 主提示讲清楚行为
+// 和最佳预期（"散件可还原"）；② 折叠在底下的"如果不接受"提示三条 fallback
+// （重启 / 永久删除 / 取消）。同时保持只有「继续走分片回收」和「取消」
+// 两个 action 按钮，跟项目里其它确认弹窗的两按钮节奏对齐。
+//
+// 取消按钮**不**触发任何自动 fallback —— 这是用户在 idea 文档 001 里反复
+// 强调的：「就算用户点击取消也不要自动调用永久删除，最终还是由用户来手动
+// 点击永久删除来做处理」。
+function Stage2ConfirmModal({
+  state, onCancel, onConfirm,
+}: {
+  state: PendingStage2
+  onCancel: () => void
+  onConfirm: () => void
+}): JSX.Element {
+  const count = state.targets.length
+  const isOne = count === 1
+  const t = state.targets[0]
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative bg-surface-container/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl w-[560px] max-w-[92vw]">
+        <div className="p-7 pb-5">
+          <div className="flex items-start gap-4 mb-5">
+            <div className="w-12 h-12 rounded-xl bg-tertiary/15 border border-tertiary/40 flex items-center justify-center flex-shrink-0">
+              <span className="material-symbols-outlined text-tertiary text-[24px]">splitscreen</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-black tracking-tight mb-1">无法整体送入回收站，是否分片回收?</h3>
+              <p className="text-xs text-on-surface-variant/75 leading-relaxed">
+                整体送入失败通常是被安全软件 / 系统进程拦住"整目录移动"。继续将逐个文件、
+                逐个子目录单独送进回收站，最后送空根目录 —— 杀软通常不拦单点操作，成功率
+                显著更高。
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-surface-container-lowest border border-white/5 rounded-lg p-4 space-y-2.5">
+            {isOne ? (
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg border border-white/5 flex items-center justify-center flex-shrink-0 bg-gradient-to-b from-surface-container-high/50 to-surface-container-lowest">
+                  <span
+                    className={`material-symbols-outlined ${colorFor(t)} text-[22px]`}
+                    style={t.type === 'folder' ? { fontVariationSettings: '"FILL" 1' } : undefined}
+                  >{iconFor(t)}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold truncate">{t.name}</p>
+                  <p className="text-[11px] font-mono text-on-surface-variant/70 truncate mt-0.5">{t.path}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm font-bold">{count} 个项目无法整体送入回收站</p>
+            )}
+          </div>
+
+          {/* 后果说明：散件 + 还原方法。Tertiary 色块跟弹窗主题图标对齐,
+              视觉上是"提醒注意" 不是"警告危险"。 */}
+          <div className="mt-4 rounded-lg border border-tertiary/25 bg-tertiary/[0.08] p-3.5 space-y-2">
+            <div className="flex items-start gap-2.5">
+              <span className="material-symbols-outlined text-tertiary text-[18px] mt-px">info</span>
+              <p className="text-xs text-tertiary/90 leading-relaxed font-bold">
+                回收站里看到的会是散开的条目（不是一个完整文件夹），但内容仍完整可还原。
+              </p>
+            </div>
+            <p className="text-[11px] text-on-surface-variant/70 leading-relaxed pl-7">
+              打开回收站，选中相关条目 → 右键「还原」即可重建原目录结构。
+            </p>
+          </div>
+
+          {/* 替代方案 hint：取消不会自动 fallback，告诉用户还有什么路可以走。 */}
+          <div className="mt-3 rounded-lg border border-white/5 bg-surface-container-lowest/60 p-3.5">
+            <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5">
+              不接受分片可以
+            </p>
+            <ul className="text-[11px] text-on-surface-variant/75 leading-relaxed space-y-0.5">
+              <li>· 重启电脑后再删（释放占用句柄，通常能整体回收）</li>
+              <li>· 取消后改用「永久删除」（不进回收站，不可恢复）</li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="px-7 py-4 bg-surface-container-lowest/40 border-t border-white/5 rounded-b-xl flex items-center justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-3 rounded-xl border border-tertiary/40 bg-tertiary/10 text-sm font-bold text-tertiary hover:bg-tertiary/20 transition-colors flex items-center justify-center gap-2"
+          >
+            <span className="material-symbols-outlined text-base leading-none">splitscreen</span>
+            <span>继续走分片回收</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ── Delete result modal ────────────────────────────────────────────────────
 //
