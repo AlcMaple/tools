@@ -99,7 +99,7 @@ function TopBar({ placeholder, onSearch, titleSlot }: TopBarProps): JSX.Element 
           <span className="font-label text-xs font-bold">{speedLabel}</span>
         </div>
         <div className="flex items-center space-x-4">
-          <button 
+          <button
             className="p-2 text-on-surface hover:bg-surface-variant/40 rounded-full transition-all"
             onClick={toggleTheme}
           >

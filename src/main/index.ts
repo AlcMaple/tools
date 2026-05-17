@@ -5,6 +5,7 @@ import { scanLibrary, startLibraryWatch, reconcilePaths, incrementalUpdate, type
 import { createTray, destroyTray } from './tray'
 import { registerAllIpc, getMinimizeOnClose } from './ipc'
 import { startSpeedBroadcast } from './shared/speed-tracker'
+import { setupUpdater } from './updater'
 
 // ── IPC registration ─────────────────────────────────────────
 registerAllIpc()
@@ -112,6 +113,7 @@ app.whenReady().then(() => {
 
   createWindow()
   createTray(exitApp)
+  setupUpdater()
 
   let silentScanRunning = false
   const runSilentScan = async (): Promise<void> => {

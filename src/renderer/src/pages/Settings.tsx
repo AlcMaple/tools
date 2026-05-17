@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSystemStats } from "../hooks/useSystemStats";
+import { updateStore, type UpdateState } from "../stores/updateStore";
 
 // ── persistence keys ─────────────────────────────────────────
 const NODE_ID_KEY = "xifan_node_id";
@@ -12,12 +13,16 @@ interface SavedSettings {
   downloadPath?: string;
   searchCacheEnabled?: boolean;
   minimizeOnClose?: boolean;
+  /** 是否启用启动时的自动检查更新（默认 true）。关掉之后不会自动弹更新
+   *  卡片，但用户仍能在「关于 → 检查更新」按钮手动触发。 */
+  autoUpdateCheckEnabled?: boolean;
 }
 
 const DEFAULTS: Required<SavedSettings> = {
   downloadPath: "",
   searchCacheEnabled: true,
   minimizeOnClose: false,
+  autoUpdateCheckEnabled: true,
 };
 
 // Settings-page-specific UI tweaks — meta-controls in the floating Tweaks panel.
@@ -53,6 +58,7 @@ function readSavedSettings(): Required<SavedSettings> {
       downloadPath: s.downloadPath ?? DEFAULTS.downloadPath,
       searchCacheEnabled: s.searchCacheEnabled ?? DEFAULTS.searchCacheEnabled,
       minimizeOnClose: s.minimizeOnClose ?? DEFAULTS.minimizeOnClose,
+      autoUpdateCheckEnabled: s.autoUpdateCheckEnabled ?? DEFAULTS.autoUpdateCheckEnabled,
     };
   } catch {
     return { ...DEFAULTS };
@@ -67,6 +73,7 @@ function writeSettings(s: Required<SavedSettings>): void {
         downloadPath: s.downloadPath || undefined,
         searchCacheEnabled: s.searchCacheEnabled,
         minimizeOnClose: s.minimizeOnClose,
+        autoUpdateCheckEnabled: s.autoUpdateCheckEnabled,
       }),
     );
   } catch { /* ignore */ }
@@ -310,6 +317,91 @@ function TextControl({
 
 function ReadonlyValue({ value }: { value: string }): JSX.Element {
   return <span className="font-label text-[12px] text-on-surface-variant/80 tabular-nums">{value}</span>;
+}
+
+/**
+ * 设置页「检查更新」按钮 + 状态指示。
+ *
+ * 不直接拿 updateStore 的 status 当唯一来源 —— banner 已经在显示 downloaded
+ * / available-mac 时，按钮文案仍然给一个明确的反馈（"v0.3.0 已下载"），便于
+ * 用户从设置页确认状态而不需要回到其他页面看 banner。
+ *
+ * 按钮 disabled 仅在 `checking` 阶段，防止重复触发。其他状态都允许再次点击
+ * （比如发生 error 后用户想重试）。
+ */
+function UpdateCheckControl(): JSX.Element {
+  const [state, setState] = useState<UpdateState>(updateStore.getState());
+
+  useEffect(() => {
+    return updateStore.subscribe(() => setState(updateStore.getState()));
+  }, []);
+
+  let label = "检查更新";
+  let hint = "";
+  let icon = "refresh";
+
+  switch (state.status) {
+    case "checking":
+      label = "检查中…";
+      icon = "progress_activity";
+      break;
+    case "available":
+      label = `v${state.newVersion} 下载中`;
+      hint = state.progressPercent != null ? ` ${state.progressPercent}%` : "";
+      icon = "downloading";
+      break;
+    case "downloaded":
+      label = `v${state.newVersion} 已下载`;
+      hint = "点击重启安装";
+      icon = "system_update";
+      break;
+    case "available-mac":
+      label = `v${state.newVersion} 可用`;
+      hint = "点击前往下载页";
+      icon = "system_update";
+      break;
+    case "not-available":
+      label = "已是最新版本";
+      icon = "check_circle";
+      break;
+    case "error":
+      label = "检查失败 · 重试";
+      icon = "error";
+      break;
+  }
+
+  const isBusy = state.status === "checking" || state.status === "available";
+  const isActionable = state.status === "downloaded" || state.status === "available-mac";
+
+  const onClick = (): void => {
+    if (isBusy) return;
+    if (isActionable) {
+      void updateStore.install();
+    } else {
+      void updateStore.check();
+    }
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={isBusy}
+      className={`px-3 py-1.5 rounded-lg flex items-center gap-2 font-label text-[12px] transition-colors ${
+        isActionable
+          ? "bg-tertiary-container text-on-tertiary-container hover:opacity-90"
+          : "bg-surface-container-high hover:bg-surface-bright text-on-surface-variant hover:text-on-surface"
+      } disabled:opacity-50 disabled:cursor-not-allowed`}
+      title={hint || undefined}
+    >
+      <span
+        className={`material-symbols-outlined leading-none ${state.status === "checking" ? "animate-spin" : ""}`}
+        style={{ fontSize: 16 }}
+      >
+        {icon}
+      </span>
+      <span>{label}{hint && state.status === "available" ? hint : ""}</span>
+    </button>
+  );
 }
 
 // ── header (sticky) ──────────────────────────────────────────
@@ -570,6 +662,12 @@ function Settings(): JSX.Element {
     writeSettings(next);
     if (patch.minimizeOnClose !== undefined) {
       window.systemApi.setSetting?.("minimizeOnClose", patch.minimizeOnClose).catch(() => {});
+    }
+    // autoUpdateCheckEnabled 是主进程行为开关（决定启动时要不要跑 updater
+    // 自动检查），必须同步到 app_settings.json，否则下次重启 dev/应用时
+    // 主进程读到的还是默认 true，自动检查照跑不误。
+    if (patch.autoUpdateCheckEnabled !== undefined) {
+      window.systemApi.setSetting?.("autoUpdateCheckEnabled", patch.autoUpdateCheckEnabled).catch(() => {});
     }
   };
 
@@ -1029,6 +1127,25 @@ function Settings(): JSX.Element {
                     desc="当前已安装的应用版本。"
                     density={tweaks.density}
                     control={<ReadonlyValue value={`MapleTools v${__APP_VERSION__}`} />}
+                  />
+                  <Row
+                    icon="auto_mode"
+                    title="自动检查更新"
+                    desc="启用后，启动应用时会静默从 GitHub 检查是否有新版本，发现新版本会弹窗提示。关闭后启动不再自动检查，但仍可通过下方「检查更新」按钮手动触发。"
+                    density={tweaks.density}
+                    control={
+                      <Switch
+                        checked={settings.autoUpdateCheckEnabled}
+                        onChange={(v) => updateSettings({ autoUpdateCheckEnabled: v })}
+                      />
+                    }
+                  />
+                  <Row
+                    icon="update"
+                    title="检查更新"
+                    desc="不受上面自动检查开关影响 —— 点这里永远会真的去 GitHub 跑一次检查。Windows 下会在应用内静默下载并提示重启安装；macOS 因未做代码签名，发现新版本时会引导前往下载页手动安装。"
+                    density={tweaks.density}
+                    control={<UpdateCheckControl />}
                   />
                   <Row
                     icon="devices"
