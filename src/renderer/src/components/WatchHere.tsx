@@ -37,7 +37,6 @@ export function WatchHere({ bgmId, variant = 'row', showEmpty = false }: Props):
         <SourceButton
           key={`${b.source}-${i}`}
           binding={b}
-          track={track}
           variant={variant}
         />
       ))}
@@ -102,23 +101,19 @@ function chipLabel(b: AnimeBinding): string {
 // ── Per-source button ───────────────────────────────────────────────────────
 
 function SourceButton({
-  binding, track, variant,
+  binding, variant,
 }: {
   binding: AnimeBinding
-  track: AnimeTrack
   variant: 'row' | 'inline'
 }): JSX.Element {
   // Prefer the explicit sourceUrl when provided; fall back to the per-source
   // computation. For Aowu/Xifan/Girigiri the sourceKey IS the watch URL.
   const url = resolveUrl(binding)
-  // 只在 episode > 0 时显示集数；尚未开始看（episode = 0）就不显示
-  // 任何额外文字，避免 "从头开始" 这种冗余 chip 字段。
-  const epText =
-    track.episode > 0
-      ? track.totalEpisodes
-        ? `ep ${track.episode}/${track.totalEpisodes}`
-        : `ep ${track.episode}`
-      : ''
+  // Chip 不再挂 ep 进度信息。所有源（内置三源 + 用户加的 Bilibili / Custom）
+  // 点击跳转的都是**番剧主页**，永远不会自动定位到 ep N 的播放页 ——
+  // 在 chip 上挂"ep 16/23"会让用户误以为点了能直接跳到第 16 集播放，
+  // 是错的预期。进度显示统一交给 MyAnime 行里的 EpisodeCounter（那里才有
+  // 编辑能力 + ±1 按钮），chip 自己只做"打开源"这一件事。
   const label = chipLabel(binding)
 
   // Chip 永远是纯跳转 <a>，没有删除按钮。删除入口集中在 MyAnime 的
@@ -134,7 +129,6 @@ function SourceButton({
       >
         <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>play_arrow</span>
         <span className="font-bold">{label}</span>
-        {epText && <span className="text-primary/60">{epText}</span>}
       </a>
     )
   }
@@ -149,12 +143,6 @@ function SourceButton({
     >
       <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>play_arrow</span>
       <span className="font-bold">{label}</span>
-      {epText && (
-        <>
-          <span className="text-primary/55">·</span>
-          <span className="text-primary/75 tracking-wider">{epText}</span>
-        </>
-      )}
     </a>
   )
 }
