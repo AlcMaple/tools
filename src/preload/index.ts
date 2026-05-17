@@ -260,6 +260,60 @@ contextBridge.exposeInMainWorld('screenshotApi', {
     ipcRenderer.invoke('screenshot:calendar-ready', { height }),
 })
 
+/**
+ * 应用内自动更新。事件流：
+ * - `checking`: 检查中
+ * - `available`: 发现新版本（Windows，autoUpdater 会自动开始后台下载）
+ * - `available-mac`: 发现新版本（macOS，无下载，仅供跳转）
+ * - `download-progress`: Windows 下载中（百分比）
+ * - `downloaded`: Windows 下载完成，等待用户重启安装
+ * - `not-available`: 已是最新（仅手动检查时炸）
+ * - `error`: 检查 / 下载出错（手动检查时才显示）
+ */
+contextBridge.exposeInMainWorld('updaterApi', {
+  /** 主动触发检查更新。返回 { skipped: true } 表示 dev 模式跳过。 */
+  check: () => ipcRenderer.invoke('updater:check'),
+  /** Windows: 重启并安装已下载的更新；macOS: 在浏览器打开 release 页。 */
+  install: () => ipcRenderer.invoke('updater:install'),
+  /** 备用入口：直接在浏览器打开 latest release 页。 */
+  openReleasePage: () => ipcRenderer.invoke('updater:open-release-page'),
+  onChecking: (cb: () => void) => {
+    const handler = (): void => cb()
+    ipcRenderer.on('updater:checking', handler)
+    return () => ipcRenderer.removeListener('updater:checking', handler)
+  },
+  onAvailable: (cb: (info: { version: string }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, info: { version: string }): void => cb(info)
+    ipcRenderer.on('updater:available', handler)
+    return () => ipcRenderer.removeListener('updater:available', handler)
+  },
+  onAvailableMac: (cb: (info: { version: string; releaseUrl?: string }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, info: { version: string; releaseUrl?: string }): void => cb(info)
+    ipcRenderer.on('updater:available-mac', handler)
+    return () => ipcRenderer.removeListener('updater:available-mac', handler)
+  },
+  onDownloadProgress: (cb: (p: { percent: number; bytesPerSecond: number; transferred: number; total: number }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, p: any): void => cb(p)
+    ipcRenderer.on('updater:download-progress', handler)
+    return () => ipcRenderer.removeListener('updater:download-progress', handler)
+  },
+  onDownloaded: (cb: (info: { version: string }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, info: { version: string }): void => cb(info)
+    ipcRenderer.on('updater:downloaded', handler)
+    return () => ipcRenderer.removeListener('updater:downloaded', handler)
+  },
+  onNotAvailable: (cb: (info: { version: string }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, info: { version: string }): void => cb(info)
+    ipcRenderer.on('updater:not-available', handler)
+    return () => ipcRenderer.removeListener('updater:not-available', handler)
+  },
+  onError: (cb: (info: { message: string }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, info: { message: string }): void => cb(info)
+    ipcRenderer.on('updater:error', handler)
+    return () => ipcRenderer.removeListener('updater:error', handler)
+  },
+})
+
 contextBridge.exposeInMainWorld('webdavApi', {
   getConfig: () => ipcRenderer.invoke('webdav:get-config'),
   saveConfig: (config: { account: string; appPassword: string; remotePath: string }) =>

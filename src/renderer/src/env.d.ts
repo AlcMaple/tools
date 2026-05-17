@@ -293,6 +293,22 @@ declare global {
     screenshotApi: {
       reportCalendarReady: (height: number) => Promise<boolean>
     }
+    updaterApi: {
+      /** 主动触发检查更新。dev 模式下返回 { skipped: true }。 */
+      check: () => Promise<{ skipped?: boolean; reason?: string; ok?: boolean }>
+      /** Windows: 重启并安装；macOS: shell.openExternal release 页。 */
+      install: () => Promise<{ ok: boolean; error?: string }>
+      openReleasePage: () => Promise<{ ok: boolean }>
+      onChecking: (cb: () => void) => () => void
+      onAvailable: (cb: (info: { version: string }) => void) => () => void
+      onAvailableMac: (cb: (info: { version: string; releaseUrl?: string }) => void) => () => void
+      onDownloadProgress: (
+        cb: (p: { percent: number; bytesPerSecond: number; transferred: number; total: number }) => void,
+      ) => () => void
+      onDownloaded: (cb: (info: { version: string }) => void) => () => void
+      onNotAvailable: (cb: (info: { version: string }) => void) => () => void
+      onError: (cb: (info: { message: string }) => void) => () => void
+    }
     webdavApi: {
       getConfig: () => Promise<{ account: string; appPassword: string; remotePath: string } | null>
       saveConfig: (config: { account: string; appPassword: string; remotePath: string }) => Promise<boolean>

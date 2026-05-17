@@ -11,7 +11,9 @@ import Settings from './pages/Settings'
 import LocalLibrary from './pages/LocalLibrary'
 import FileExplorer from './pages/FileExplorer'
 import HomeworkLookup from './pages/HomeworkLookup'
+import UpdateBanner from './components/UpdateBanner'
 import { downloadStore } from './stores/downloadStore'
+import { updateStore } from './stores/updateStore'
 
 function DownloadProgressListener(): null {
   useEffect(() => {
@@ -20,6 +22,13 @@ function DownloadProgressListener(): null {
       downloadStore.handleProgressEvent(taskId, event)
     })
     return unlisten
+  }, [])
+  return null
+}
+
+function UpdaterListener(): null {
+  useEffect(() => {
+    updateStore.init()
   }, [])
   return null
 }
@@ -52,6 +61,10 @@ function Shell(): JSX.Element {
           <Route path="/homework" element={<HomeworkLookup />} />
         </Routes>
       </div>
+      {/* UpdateBanner 用 fixed 定位悬浮在 TopBar 下方居中，不参与 page-scroll
+         的文档流，所以不会把任何页面内容推下去。挂在 Shell 顶层而不是
+         scroll 容器内，这样 z-index 能稳定盖住所有页面的 sticky bar。 */}
+      <UpdateBanner />
     </div>
   )
 }
@@ -73,6 +86,7 @@ function App(): JSX.Element {
   return (
     <HashRouter>
       <DownloadProgressListener />
+      <UpdaterListener />
       <Shell />
     </HashRouter>
   )

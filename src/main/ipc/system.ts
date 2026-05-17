@@ -4,11 +4,15 @@ import { statfs, readFile, writeFile } from 'fs/promises'
 import { readFileSync, writeFileSync, renameSync } from 'fs'
 
 let appMinimizeOnClose = false
+let appAutoUpdateCheckEnabled = true  // 默认开启 —— 多数用户期望被提醒新版本
 try {
   const file = join(app.getPath('userData'), 'app_settings.json')
   const settings = JSON.parse(readFileSync(file, 'utf-8'))
   if (typeof settings.minimizeOnClose === 'boolean') {
     appMinimizeOnClose = settings.minimizeOnClose
+  }
+  if (typeof settings.autoUpdateCheckEnabled === 'boolean') {
+    appAutoUpdateCheckEnabled = settings.autoUpdateCheckEnabled
   }
 } catch {
   // ignore
@@ -18,24 +22,41 @@ export function getMinimizeOnClose(): boolean {
   return appMinimizeOnClose
 }
 
+/**
+ * 是否启用启动时的自动检查更新（默认 true）。
+ * 用户关掉之后，主进程的 `setupUpdater()` 启动延迟检查不再触发，banner
+ * 永远不会自动弹出 —— 但用户在设置页主动点「检查更新」按钮依然能跑完
+ * 整个检查 / 下载 / 提示流程（手动入口不受这个开关控制）。
+ */
+export function getAutoUpdateCheckEnabled(): boolean {
+  return appAutoUpdateCheckEnabled
+}
+
 const HISTORY_FILE = (): string => join(app.getPath('userData'), 'xifan_settings_history.json')
 
 export function registerSystemIpc(): void {
   ipcMain.handle('system:get-setting', (_event, key: string) => {
     if (key === 'minimizeOnClose') return appMinimizeOnClose
+    if (key === 'autoUpdateCheckEnabled') return appAutoUpdateCheckEnabled
     return null
   })
 
   ipcMain.handle('system:set-setting', (_event, key: string, value: unknown) => {
-    if (key === 'minimizeOnClose') {
-      appMinimizeOnClose = Boolean(value)
-      const file = join(app.getPath('userData'), 'app_settings.json')
+    const file = join(app.getPath('userData'), 'app_settings.json')
+    const persist = (mutate: (settings: Record<string, unknown>) => void): void => {
       try {
         let settings: Record<string, unknown> = {}
         try { settings = JSON.parse(readFileSync(file, 'utf-8')) } catch { /* ignore */ }
-        settings.minimizeOnClose = appMinimizeOnClose
+        mutate(settings)
         writeFileSync(file, JSON.stringify(settings))
       } catch { /* ignore */ }
+    }
+    if (key === 'minimizeOnClose') {
+      appMinimizeOnClose = Boolean(value)
+      persist((s) => { s.minimizeOnClose = appMinimizeOnClose })
+    } else if (key === 'autoUpdateCheckEnabled') {
+      appAutoUpdateCheckEnabled = Boolean(value)
+      persist((s) => { s.autoUpdateCheckEnabled = appAutoUpdateCheckEnabled })
     }
   })
 
