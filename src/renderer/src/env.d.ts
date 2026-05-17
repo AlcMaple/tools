@@ -53,14 +53,36 @@ declare global {
       listDir: (dirPath: string) => Promise<{ entries: FsEntry[]; isVirtualRoot: boolean }>
       open: (targetPath: string) => Promise<void>
       reveal: (targetPath: string) => Promise<void>
-      /** Move to recycle bin. Internally kills any processes holding the
-       * target, takes ownership, and tries multiple Windows trash APIs.
-       * Returns the list of processes that were killed (may be empty). */
-      trash: (targetPath: string) => Promise<{ killed: { pid: number; name: string }[] }>
-      /** Permanent delete. Internally kills processes + takeown + Remove-Item.
-       * Subsumes the old `forceDeletePermanent` — there is no separate "force"
-       * path because permanent delete now does everything it can in one shot. */
-      deletePermanent: (targetPath: string) => Promise<{ killed: { pid: number; name: string }[] }>
+      /**
+       * 「移到回收站」Stage 1（5s 整体送回收站窗口）。
+       *   - `success`        整体送入成功
+       *   - `stage1-failed`  整体送入失败，**未**尝试 Stage 2。renderer
+       *                      据此弹「分片回收」确认弹窗；用户点继续
+       *                      才调 trashFragmented，点取消则流程终止。
+       *   - `already-absent` 路径已不存在（静默成功）
+       * 抛错 = 出现致命错误（spawn 失败 / helper 路径找不到等）。
+       */
+      trash: (
+        targetPath: string,
+      ) => Promise<{ status: 'success' | 'stage1-failed' | 'already-absent' }>
+      /**
+       * 「移到回收站」Stage 2（用户确认后调）—— 跑完整两阶段。
+       *   - `success`        Stage 1 重试中成了（运气好）
+       *   - `fragmented`     Stage 2 分片回收成功。renderer **必须**强提示
+       *                      "回收站里是散件，可全选→还原重建结构"。
+       *   - `already-absent` 路径已不存在
+       * 抛错 = Stage 1 + Stage 2 都失败。
+       */
+      trashFragmented: (
+        targetPath: string,
+      ) => Promise<{ status: 'success' | 'fragmented' | 'already-absent' }>
+      /**
+       * 永久删除（recycle-helper --purge：Remove-Item → cmd `rd /s /q` →
+       * robocopy /MIR 三级 fallback，每个策略自动重试 4 次）。几乎一次必成。
+       */
+      deletePermanent: (
+        targetPath: string,
+      ) => Promise<{ status: 'success' | 'already-absent' }>
       resolveSpecial: (input: string) => Promise<string | null>
       /** Walk up from `targetPath` and return the closest still-existing
        *  directory (returns `targetPath` itself if it still exists, null
