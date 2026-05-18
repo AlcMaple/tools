@@ -1,0 +1,94 @@
+/**
+ * 共享的 api.bgm.tv 客户端 —— 给所有 BGM REST API 请求加统一的限速 +
+ * 错误分类。三个调用方共享一个 RateLimiter：
+ *
+ *   - detail.ts          : `/v0/subjects/{id}` + `/v0/subjects/{id}/persons`
+ *   - search.ts          : fetchAliases (`/v0/subjects/{id}`，别名回退分支)
+ *   - calendar.ts        : `/calendar`
+ *
+ * 之前每处都自己 `https.get`，几个端点在同一个 IP 下连发就有可能把 BGM 那
+ * 边的 per-IP 限流触发（详情进一个 → 别名查 8 条 → 周历刷新 = 10+ 请求
+ * 一秒内打出去）。改成走这个共享 limiter 后，所有调用串行节流到 ~500ms
+ * 间隔，BGM 那边接受度高很多。
+ *
+ * 限流响应处理：
+ * - HTTP 429: 抛 `RateLimitError`（renderer 的 errorMessage 会识别）
+ * - HTTP 5xx: 抛普通 Error，由 friendly classifier 归到"服务器异常"
+ * - HTTP 4xx (非 429): 抛普通 Error
+ * - 网络层 / 超时 / JSON parse: 抛原生 Error 透传，friendly classifier 会归到
+ *   "连不上服务器"
+ *
+ * 注意：api.bgm.tv 不像 bgm.tv 搜索那样会返 HTTP 200 + 中文限流页，
+ * 它走标准 HTTP 429 + Retry-After 头，所以这里只需要 timing 节流 +
+ * HTTP 429 探测即可，不需要 body 检测层。
+ */
+import * as https from 'node:https'
+import { RateLimiter, RateLimitError } from '../shared/rate-limit'
+
+const COMMON_HEADERS = {
+  'User-Agent': 'tools/1.0 (github.com/user/tools)',
+  'Accept': 'application/json',
+} as const
+
+// 500ms 间隔 + 200ms 抖动 —— api.bgm.tv 比 HTML 搜索宽松（HTML 是 2200ms),
+// 实测 500ms 没观察到限流。再激进就有风险，再松就达不到防御目的。
+const apiLimiter = new RateLimiter({
+  minGapMs: 500,
+  jitterMs: 200,
+  name: 'bgm-api',
+})
+
+/**
+ * 拉一个 api.bgm.tv 端点的 JSON 数据。所有调用排进同一个限速队列。
+ *
+ * **不做应用层自动重试**：任何 HTTP 失败都直接抛到 UI，由用户通过
+ * Try again 按钮（5xx 错误）或倒计时按钮（429 限流）决定何时重试。这样：
+ *
+ *   - 用户始终知道发生了什么（不黑盒等几秒）
+ *   - 永远不会因为代码自动重试加剧限流
+ *   - 代码大幅简化
+ *
+ * @throws RateLimitError  HTTP 429。message 包含 Retry-After 秒数（站点没给
+ *                          就 fallback 30s）。
+ * @throws Error           HTTP 4xx（非 429）/ 5xx / 超时 / JSON parse 失败。
+ *                          原始错误信息传给上层让 errorMessage classifier 分类。
+ */
+export async function fetchBgmApiJson<T = unknown>(url: string): Promise<T> {
+  return apiLimiter.schedule(
+    () =>
+      new Promise<T>((resolve, reject) => {
+        const req = https.get(url, { headers: COMMON_HEADERS }, (res) => {
+          const status = res.statusCode ?? 0
+          if (status === 429) {
+            const retryAfter = parseInt(String(res.headers['retry-after'] ?? '30')) || 30
+            res.resume()
+            reject(
+              new RateLimitError(
+                retryAfter,
+                `BGM API 触发限流（HTTP 429），请等 ${retryAfter} 秒后再试`,
+              ),
+            )
+            return
+          }
+          if (status >= 400) {
+            res.resume()
+            reject(new Error(`BGM API HTTP ${status} for ${url}`))
+            return
+          }
+          const chunks: Buffer[] = []
+          res.on('data', (c: Buffer) => chunks.push(c))
+          res.on('end', () => {
+            try {
+              resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8')) as T)
+            } catch (e) {
+              reject(e)
+            }
+          })
+        })
+        req.on('error', reject)
+        req.setTimeout(10000, () => {
+          req.destroy(new Error('timeout'))
+        })
+      }),
+  )
+}
