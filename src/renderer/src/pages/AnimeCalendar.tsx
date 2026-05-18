@@ -17,6 +17,7 @@ import {
   useAnimeTrack,
 } from '../stores/animeTrackStore'
 import { WatchHere } from '../components/WatchHere'
+import { friendlyError } from '../utils/errorMessage'
 
 type State =
   | { status: 'loading' }
@@ -68,20 +69,72 @@ function maybeTriggerMail(update: boolean, result: BgmCalendarResult): void {
 export default function AnimeCalendar(): JSX.Element {
   const [state, setState] = useState<State>(_cachedState)
   const [refreshing, setRefreshing] = useState(false)
+  // 已经有 ready 数据时刷新失败的错误。和 state.status='error' 不同：
+  // 这条不替换主视图，只在刷新按钮旁边显示一条小提示，让用户知道
+  // "本次刷新失败、显示的还是缓存数据"，不至于丢失已有的页面状态。
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+  // 限流时显示倒计时 —— 仅作提示，**不**禁用刷新按钮。用户想提前试就提前试,
+  // 后果就是再被限一次。用绝对时间戳而不是每秒 -1 的 number —— 绝对值
+  // 不受 setInterval 漂移影响，tab 后台时也仍是真实剩余秒数。
+  const [cooldownEndAt, setCooldownEndAt] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+  // 跟踪用户在 cooldown 期间提前点击的次数。一旦 > 0，倒计时切到"已加重"
+  // 视觉态（warning 图标 + amber 色 + "约"前缀 + tooltip 解释），告诉用户
+  // 显示的秒数已不可信。每次成功刷新后清零。
+  const [prematureClickCount, setPrematureClickCount] = useState(0)
+  const cooldownRemainingSec = cooldownEndAt
+    ? Math.max(0, Math.ceil((cooldownEndAt - now) / 1000))
+    : 0
+  const cooldownAggravated = prematureClickCount > 0
+
+  // 倒计时驱动 —— 仅当 cooldown 激活时跑，节省渲染
+  useEffect(() => {
+    if (!cooldownEndAt) return
+    const tick = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(tick)
+  }, [cooldownEndAt])
+  // cooldown 走完后自动清掉 refreshError + cooldownEndAt，UI 回到"无错误"
+  // 状态。但 prematureClickCount 保留 —— 用户如果再次点 → 又限流，新的
+  // cooldown 视觉仍然标记"已加重"。只有成功刷新才完全清零。
+  useEffect(() => {
+    if (cooldownEndAt && cooldownRemainingSec === 0) {
+      setCooldownEndAt(null)
+      setRefreshError(null)
+    }
+  }, [cooldownEndAt, cooldownRemainingSec])
 
   useEffect(() => {
     _cachedState = state
   }, [state])
 
   const load = async (update = false): Promise<void> => {
+    // 在 cooldown 中点击 = 提前重试，计数 +1，让倒计时切换到"已加重"视觉
+    if (update && cooldownEndAt && Date.now() < cooldownEndAt) {
+      setPrematureClickCount((c) => c + 1)
+    }
     if (update) setRefreshing(true)
     else if (state.status !== 'ready') setState({ status: 'loading' })
+    setRefreshError(null)
+    setCooldownEndAt(null)
     try {
       const result = await window.bgmApi.calendar(update)
       setState({ status: 'ready', result })
       maybeTriggerMail(update, result)
+      // 成功一次 → 之前的"提前点击警告"清零，下次再触发限流是干净的初始态
+      setPrematureClickCount(0)
     } catch (err) {
-      setState({ status: 'error', message: String(err) })
+      // 区分两种失败：
+      // - 首次加载失败（state 还不是 ready）→ 整页面 ErrorPanel（自带倒计时）
+      // - 刷新失败但已有 ready 数据 → 行内小提示 + 按钮 cooldown，主视图保留
+      if (update && state.status === 'ready') {
+        setRefreshError(String(err))
+        const fe = friendlyError(err)
+        if (fe.retryAfterSec) {
+          setCooldownEndAt(Date.now() + fe.retryAfterSec * 1000)
+        }
+      } else {
+        setState({ status: 'error', message: String(err) })
+      }
     } finally {
       setRefreshing(false)
     }
@@ -122,6 +175,25 @@ export default function AnimeCalendar(): JSX.Element {
         {state.status === 'ready' && (
           <div className="sticky top-16 z-30 bg-surface-container-lowest border-y border-outline-variant/10 px-6 pt-1.5 pb-2">
             <div className="flex items-center justify-end gap-2 mb-1.5 h-5">
+              {/* 刷新失败的行内提示。限流时显示倒计时秒数，提前点击过则补充
+                 "已加重"警告。非限流错误就只显示 friendly title。
+                 hover 见完整 hint。 */}
+              {refreshError && !refreshing && (
+                <span
+                  className="font-label text-[10px] text-error tracking-wider whitespace-nowrap"
+                  title={
+                    cooldownAggravated
+                      ? `你已提前点过 ${prematureClickCount} 次，BGM 可能加重了限流时长。下面显示的秒数已不可信，实际等待可能更长。`
+                      : friendlyError(refreshError).hint
+                  }
+                >
+                  ⚠ {friendlyError(refreshError).title}
+                  {cooldownRemainingSec > 0 &&
+                    (cooldownAggravated
+                      ? `（约 ${cooldownRemainingSec}s 后可重试 · 已加重）`
+                      : `（${cooldownRemainingSec}s 后可重试）`)}
+                </span>
+              )}
               <span className="font-label text-[10px] text-on-surface-variant/50 tracking-wider whitespace-nowrap">
                 {state.result.fromCache ? '缓存：' : '刚拉取：'}
                 {formatRelTime(state.result.updatedAt)}
@@ -129,15 +201,41 @@ export default function AnimeCalendar(): JSX.Element {
               <button
                 onClick={() => void load(true)}
                 disabled={refreshing}
-                title="强制刷新（绕过 14 天缓存）"
+                title={
+                  cooldownRemainingSec > 0
+                    ? cooldownAggravated
+                      ? `你已提前点过 ${prematureClickCount} 次。BGM 可能已加重限流，按钮上的倒计时仅供参考，实际等待可能更长。`
+                      : `BGM 仍在限流冷却中，建议 ${cooldownRemainingSec} 秒后再试。提前点击可能加重限流。`
+                    : '强制刷新（绕过 14 天缓存）'
+                }
                 className="flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant/20 hover:bg-primary/10 hover:border-primary/30 hover:text-primary font-label text-[10px] uppercase tracking-widest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span
-                  className={`material-symbols-outlined leading-none ${refreshing ? 'animate-spin' : ''}`}
-                  style={{ fontSize: 12 }}
+                  className={`material-symbols-outlined leading-none ${refreshing ? 'animate-spin' : ''} ${
+                    cooldownRemainingSec > 0 && cooldownAggravated ? 'text-amber-500' : ''
+                  }`}
+                  style={{
+                    fontSize: 12,
+                    fontVariationSettings:
+                      cooldownRemainingSec > 0 && cooldownAggravated ? "'FILL' 1" : undefined,
+                  }}
                 >
-                  refresh
+                  {cooldownRemainingSec > 0
+                    ? cooldownAggravated
+                      ? 'warning'
+                      : 'schedule'
+                    : 'refresh'}
                 </span>
+                {cooldownRemainingSec > 0 && !refreshing && (
+                  <span
+                    className={`font-mono tabular-nums normal-case tracking-normal ${
+                      cooldownAggravated ? 'text-amber-600' : ''
+                    }`}
+                  >
+                    {cooldownAggravated && '约'}
+                    {cooldownRemainingSec}s
+                  </span>
+                )}
                 <span>{refreshing ? '更新中' : '刷新'}</span>
               </button>
             </div>

@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BgmSearchResult, BgmDetail } from '../types/bgm'
 import { ModalShell } from '../pages/homework/shared'
+import ErrorPanel from './ErrorPanel'
 
 interface Props {
   /** Initial keyword used to seed the search box. */
@@ -202,10 +203,12 @@ export function LinkTrackModal({ initialKeyword, sourceLabel, sourceTitle, onClo
           )}
 
           {state.status === 'error' && (
-            <div className="flex flex-col items-center justify-center py-10 gap-2 text-error">
-              <span className="material-symbols-outlined text-3xl">error_outline</span>
-              <p className="font-body text-xs text-on-surface-variant text-center px-6">{state.message}</p>
-            </div>
+            <ErrorPanel
+              error={state.message}
+              onRetry={() => void runSearch(keyword)}
+              retryLabel="重试搜索"
+              compact
+            />
           )}
 
           {state.status === 'results' && (
