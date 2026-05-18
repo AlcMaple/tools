@@ -21,6 +21,9 @@ interface SavedSettings {
 const DEFAULTS: Required<SavedSettings> = {
   downloadPath: "",
   searchCacheEnabled: true,
+  // 默认关闭 —— 跟 OS 惯例对齐（X = 真的退出，不是偷偷常驻）。
+  // 想要"关掉窗口仍在后台下载 / 发邮件"的用户自己进设置打开即可，
+  // 一个开关零摩擦。
   minimizeOnClose: false,
   autoUpdateCheckEnabled: true,
 };

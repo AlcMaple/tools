@@ -3,6 +3,8 @@ import { join } from 'path'
 import { statfs, readFile, writeFile } from 'fs/promises'
 import { readFileSync, writeFileSync, renameSync } from 'fs'
 
+// 默认关闭 —— 跟 OS 惯例对齐（X = 真的退出，不是偷偷常驻），新用户不会
+// 被"看似关了其实还在跑"困惑到。需要后台模式的用户进设置打开即可。
 let appMinimizeOnClose = false
 let appAutoUpdateCheckEnabled = true  // 默认开启 —— 多数用户期望被提醒新版本
 try {
