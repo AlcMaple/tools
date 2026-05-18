@@ -34,10 +34,10 @@ import { BrowserSession } from '../shared/browser-session'
 import {
   RateLimiter,
   RateLimitError,
-  withRateLimitRetry,
   type LimitDetector,
 } from '../shared/rate-limit'
 import { decodeBody, withTransientRetry } from '../shared/http-client'
+import { fetchBgmApiJson } from './api-client'
 
 const BASE_URL = 'https://bgm.tv/subject_search/{keyword}?cat=2&page={page}'
 
@@ -156,37 +156,60 @@ function rawGet(url: string): Promise<{ status: number; body: Buffer }> {
 }
 
 /**
- * Fetch one URL through all three defense layers. Throws on rate-limit
- * (after one in-band retry) or on hard HTTP failures; returns HTML otherwise.
+ * 抓一次 BGM 搜索 HTML。**不做应用层自动重试** —— 失败一律抛到 UI,
+ * 由 UI 通过 Try again 按钮 / 倒计时按钮承担重试职责。这样：
+ *
+ *   - 用户始终知道发生了什么（不是黑盒等几十秒）
+ *   - 限流期间永远不会因为代码自动重试加剧惩罚
+ *   - 代码大幅简化（去掉 5xx retry + withRateLimitRetry 两层嵌套）
+ *
+ * 唯一保留的"代码层重试"是 `withTransientRetry`（200-500ms 内 ECONNRESET
+ * 这类瞬时 socket 错误），这是网络层真透明恢复，用户根本感知不到。
+ *
+ * 错误分类：
+ *   - 限流页 body  → 抛 `RateLimitError(waitSec)`，UI 展示倒计时
+ *   - HTTP 429    → 抛 `RateLimitError(30)`（BGM 几乎不返 429，但兜底）
+ *   - HTTP 5xx    → 抛 `Error("BGM 返回 HTTP {n}")`，UI 展示「BGM 偶发故障」+ Try again
+ *   - 其他 4xx    → 抛 `Error("BGM 返回 HTTP {n}")`
+ *   - 网络层异常   → 透传给上层 friendly classifier
  */
 async function fetchHtmlWithDefenses(url: string): Promise<string> {
-  return limiter.schedule(() =>
-    withRateLimitRetry(
-      async () => {
-        const r = await withTransientRetry(() => rawGet(url))
-        if (r.status === 429) {
-          // bgm.tv almost never actually returns 429 — it uses the in-body
-          // message instead — but if it ever does, surface it the same way.
-          throw new RateLimitError(30, 'BGM 返回 HTTP 429，触发限流')
-        }
-        if (r.status >= 500) {
-          throw new Error(`BGM 返回 HTTP ${r.status}`)
-        }
-        return r.body.toString('utf-8')
-      },
-      detectLimit,
-      // Site typically asks for ~30s — add 2-6s jitter on top so we don't
-      // come back exactly on the countdown.
-      { jitterSecMin: 2, jitterSecMax: 6 },
-    ),
-  )
+  return limiter.schedule(async () => {
+    const r = await withTransientRetry(() => rawGet(url))
+    if (r.status === 429) {
+      throw new RateLimitError(30, 'BGM 返回 HTTP 429，触发限流')
+    }
+    if (r.status >= 400) {
+      throw new Error(`BGM 返回 HTTP ${r.status}`)
+    }
+    const body = r.body.toString('utf-8')
+    // 限流页 body 检测 —— BGM 搜索经常返 200 + 中文"您在 N 秒内只能进行
+    // 一次搜索"。检测到立刻抛 RateLimitError 让 UI 倒计时，**不**自动等待
+    // + 重试（自动重试反而吃掉用户的反馈机会、可能加剧惩罚）。
+    const waitSec = detectLimit(body)
+    if (waitSec != null) {
+      throw new RateLimitError(waitSec, `BGM 触发限流，请等 ${waitSec} 秒后再试`)
+    }
+    return body
+  })
 }
 
+/**
+ * 拉一页搜索结果。
+ *
+ * 成功时返回 HTML 字符串。**所有失败一律 throw**：
+ * - `RateLimitError`     站点限流（带 waitSec，UI 据此显示倒计时）
+ * - 普通 Error             网络挂 / 超时 / 5xx / 4xx 等其他失败
+ *
+ * 之前这里把非 RateLimitError 都吞成 `null` 返回，结果 caller 拿到 null 时
+ * 不知道是"网络问题"还是"页面其实是空"，统一抛个 "网络请求失败" 误导用户。
+ * 现在让 caller 拿到原始 Error，由 caller 决定 page=1 致命 / page≥2 跳过。
+ */
 async function fetchPage(
   keyword: string,
   page: number,
   update: boolean,
-): Promise<string | null> {
+): Promise<string> {
   if (!update) {
     const cached = await readCache(keyword, page)
     if (cached) return cached
@@ -197,19 +220,11 @@ async function fetchPage(
     String(page),
   )
 
-  try {
-    const html = await fetchHtmlWithDefenses(url)
-    // Defense-in-depth: detector also runs INSIDE withRateLimitRetry, but if
-    // the retry succeeded we have a clean body here. saveCache is unreachable
-    // for limit pages by construction.
-    await saveCache(html, keyword, page)
-    return html
-  } catch (e) {
-    // Rate-limit errors must propagate so the UI shows the right message.
-    if (e instanceof RateLimitError) throw e
-    // Transient/timeout errors → soft-fail. Caller decides whether to retry.
-    return null
-  }
+  // fetchHtmlWithDefenses 已经做了限流页检测 —— 这里拿到的 html 一定是干净
+  // 的搜索结果页，可以安全 saveCache。
+  const html = await fetchHtmlWithDefenses(url)
+  await saveCache(html, keyword, page)
+  return html
 }
 
 // ── HTML parsers ──────────────────────────────────────────────────────────────
@@ -343,65 +358,33 @@ function parsePage(
  * BGM 的 infobox 是 `[{key, value}]` 数组，value 可能是 string 或
  * `[{v: string}]` 数组（同一字段多别名）。两种形态都归一成 string[]。
  *
+ * 共用 api.bgm.tv 的 RateLimiter（500ms 间隔）—— 多条 alias 串行后总耗时
+ * 仍可控（8 条 ≈ 4s），换来 IP 不被限流。
+ *
  * 失败时返回空数组（网络抖 / 404 / 限流），让 caller 跳过这条而不是整个
- * 搜索崩掉。
+ * 搜索崩掉 —— 别名回退本来就是 best-effort 增强，**绝不**升级成致命错误。
  */
 async function fetchAliases(subjectId: number): Promise<string[]> {
   if (!subjectId) return []
-  return new Promise<string[]>((resolve) => {
-    const url = `https://api.bgm.tv/v0/subjects/${subjectId}`
-    const req = https.request(
-      url,
-      {
-        method: 'GET',
-        headers: {
-          'User-Agent': 'tools/1.0 (github.com/user/tools)',
-          'Accept': 'application/json',
-        },
-      },
-      (res) => {
-        if ((res.statusCode ?? 0) >= 400) {
-          res.resume()
-          resolve([])
-          return
-        }
-        const chunks: Buffer[] = []
-        res.on('data', (c: Buffer) => chunks.push(c))
-        res.on('end', () => {
-          try {
-            const data = JSON.parse(Buffer.concat(chunks).toString('utf-8'))
-            const infobox = (data.infobox ?? []) as Array<{ key: string; value: unknown }>
-            const entry = infobox.find((e) => e.key === '别名')
-            if (!entry) {
-              resolve([])
-              return
-            }
-            if (typeof entry.value === 'string') {
-              resolve([entry.value])
-              return
-            }
-            if (Array.isArray(entry.value)) {
-              resolve(
-                entry.value
-                  .map((v) => String((v as { v?: string }).v ?? ''))
-                  .filter(Boolean),
-              )
-              return
-            }
-            resolve([])
-          } catch {
-            resolve([])
-          }
-        })
-      },
+  try {
+    const data = await fetchBgmApiJson<Record<string, unknown>>(
+      `https://api.bgm.tv/v0/subjects/${subjectId}`,
     )
-    req.on('error', () => resolve([]))
-    req.setTimeout(8000, () => {
-      req.destroy()
-      resolve([])
-    })
-    req.end()
-  })
+    const infobox = (data.infobox ?? []) as Array<{ key: string; value: unknown }>
+    const entry = infobox.find((e) => e.key === '别名')
+    if (!entry) return []
+    if (typeof entry.value === 'string') return [entry.value]
+    if (Array.isArray(entry.value)) {
+      return entry.value
+        .map((v) => String((v as { v?: string }).v ?? ''))
+        .filter(Boolean)
+    }
+    return []
+  } catch {
+    // 包括 RateLimitError —— 别名回退是 best-effort，限流时静默跳过即可，
+    // 不要把"我想增强搜索准确度"的尝试升级成"搜索失败"
+    return []
+  }
 }
 
 /** 最多查多少条 BGM 排名靠前的 unmatched 条目的别名 —— 防止 API 调用爆炸。 */
@@ -429,8 +412,10 @@ export async function searchBgm(
 ): Promise<BgmSearchResult[]> {
   await initCache()
 
+  // 第一页必须成功 —— 失败直接把原始错误抛上去，UI 的 errorMessage 分类器
+  // 会按错误类型显示「BGM 限流」/「连不上服务器」/「服务器异常」等具体提示
+  // （比以前的"网络请求失败"通用误导文案准确多了）。
   const html1 = await fetchPage(keyword, 1, update)
-  if (!html1) throw new Error('网络请求失败，请检查网络连接后重试')
 
   const totalPages = parseTotalPages(html1)
   onProgress?.(1, totalPages)
@@ -441,9 +426,18 @@ export async function searchBgm(
   const allItems = [...page1Items]
 
   for (let page = 2; page <= totalPages; page++) {
-    const html = await fetchPage(keyword, page, update)
+    // 后续页面用 try/catch 区分：限流要中断整个搜索（继续抓只会加重惩罚）,
+    // 其他临时错误（5xx / timeout / 网络抖）跳过当前页继续 —— 反正已经
+    // 有 page1 的结果可用，不能因为 page 4 抖一下就把整个搜索废掉。
+    let html: string
+    try {
+      html = await fetchPage(keyword, page, update)
+    } catch (e) {
+      if (e instanceof RateLimitError) throw e
+      onProgress?.(page, totalPages)
+      continue
+    }
     onProgress?.(page, totalPages)
-    if (!html) continue
 
     const items = parsePage(html, keyword)
     if (items.length === 0) break

@@ -11,10 +11,10 @@
  * — fetching it on every page visit would be wasteful and trip BGM's polite-
  * use expectation. The `update` parameter forces a refresh.
  */
-import * as https from 'node:https'
 import { promises as fs, existsSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
+import { fetchBgmApiJson } from './api-client'
 
 const CALENDAR_URL = 'https://api.bgm.tv/calendar'
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -84,37 +84,6 @@ async function writeCache(data: CalendarWeekday[]): Promise<void> {
   }
 }
 
-// ── HTTP ──────────────────────────────────────────────────────────────────────
-
-function fetchJson(url: string): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const req = https.get(
-      url,
-      {
-        headers: {
-          'User-Agent': 'tools/1.0 (github.com/user/tools)',
-          'Accept': 'application/json',
-        },
-      },
-      (res) => {
-        if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`HTTP ${res.statusCode} for ${url}`))
-          res.resume()
-          return
-        }
-        const chunks: Buffer[] = []
-        res.on('data', (c: Buffer) => chunks.push(c))
-        res.on('end', () => {
-          try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))) }
-          catch (e) { reject(e) }
-        })
-      },
-    )
-    req.on('error', reject)
-    req.setTimeout(10000, () => { req.destroy(new Error('timeout')) })
-  })
-}
-
 // ── Parser ────────────────────────────────────────────────────────────────────
 
 function parseCalendar(raw: unknown): CalendarWeekday[] {
@@ -171,15 +140,24 @@ export async function getBgmCalendar(update = false): Promise<CalendarResult> {
   }
 
   try {
-    const raw = await fetchJson(CALENDAR_URL)
+    const raw = await fetchBgmApiJson(CALENDAR_URL)
     const data = parseCalendar(raw)
     if (data.length > 0) {
       await writeCache(data)
       return { data, updatedAt: Date.now(), fromCache: false }
     }
-    // BGM returned empty — fall through to whatever cache we have, even stale.
-  } catch {
-    // Network down etc — same fallback.
+    // BGM 返回空数组 —— fallback 到现有缓存（不抛错，因为这是 BGM 那边的问题）
+  } catch (err) {
+    // **关键区分**：
+    //
+    // update=true 是用户主动点「刷新」，必须告诉他刷新失败而不是装作成功。
+    // 之前这里静默 fallback 到旧缓存，用户点完刷新时间戳没变还以为是 UI
+    // 卡了，反复点击反而加重 BGM 限流。
+    //
+    // update=false 是自动加载（首次进入 / 缓存过期），仍 fallback —— 哪怕
+    // 数据稍旧也比白屏强，且首次失败让用户看到 14 天前的缓存是合理体验。
+    if (update) throw err
+    // 自动加载场景：吞掉错误，下面继续走 cache fallback
   }
 
   const cached = await readCache()

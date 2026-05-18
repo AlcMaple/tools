@@ -13,6 +13,12 @@ export interface FriendlyError {
   title: string
   hint: string
   raw: string
+  /**
+   * 限流错误专用：站点要求等待的秒数。UI（ErrorPanel）据此显示倒计时,
+   * 倒计时归零前 Try again 按钮禁用，避免用户在限流窗口期内重复触发。
+   * 普通错误（非限流）此字段为 undefined。
+   */
+  retryAfterSec?: number
 }
 
 function unwrap(raw: string): string {
@@ -53,6 +59,28 @@ export function friendlyError(err: unknown): FriendlyError {
       title: '播放链接解析失败',
       hint: '站点返回的 play 响应里没有可用的 mp4 URL，可能是该集刚上线还没切片完，或换源 idx 试试。',
       raw: msg,
+    }
+  }
+
+  // BGM 限流 —— 主进程抛 `RateLimitError`，message 形如：
+  //   "BGM 触发限流，请等 30 秒后再试"
+  //   "BGM API 触发限流（HTTP 429），请等 30 秒后再试"
+  //   "BGM 返回 HTTP 429，触发限流"
+  //   "您在 30 秒内只能进行一次搜索"（BGM 搜索的中文限流页内容直透）
+  // UI 据 `retryAfterSec` 显示倒计时，倒计时归零前禁用 Try again 按钮,
+  // 防止用户在限流窗口期内反复点击加重限流。
+  if (
+    msg.includes('BGM') && (msg.includes('限流') || msg.includes('429')) ||
+    msg.includes('您在') && msg.includes('秒') && msg.includes('搜索') ||
+    msg.includes('已触发限流')
+  ) {
+    const waitMatch = msg.match(/(\d+)\s*秒/)
+    const waitSec = waitMatch ? parseInt(waitMatch[1]) : 30
+    return {
+      title: 'BGM 触发限流',
+      hint: 'Bangumi 站点限制了我们的请求频率，按下方倒计时等待自然解除即可。期间反复点击会加重限流。',
+      raw: msg,
+      retryAfterSec: waitSec,
     }
   }
 
@@ -135,6 +163,24 @@ export function friendlyError(err: unknown): FriendlyError {
   if (statusMatch) {
     const code = parseInt(statusMatch[1])
     if (code >= 500) {
+      // BGM-specific 5xx —— 用户经常报告"网页能开但 app 失败"，措辞不能让
+      // 用户误以为 BGM 全站挂了。说清楚是"针对这次请求的偶发故障"，已经
+      // 重试过几次仍不行，建议稍候再来。
+      const isBgm = /\bBGM\b/.test(msg)
+      if (isBgm && code === 502) {
+        return {
+          title: 'BGM 偶发故障',
+          hint: 'BGM 那边某个 CDN 节点这会儿没响应（HTTP 502），已经替你自动重试了几次。这通常一两分钟自己就好；浏览器能打开 BGM 是因为浏览器命中了其他节点。歇一会儿再来。',
+          raw: msg,
+        }
+      }
+      if (isBgm) {
+        return {
+          title: 'BGM 站点异常',
+          hint: `BGM 暂时无响应（HTTP ${code}），已自动重试。是 BGM 那边的问题，不是你的网络。稍候再试。`,
+          raw: msg,
+        }
+      }
       return { title: '服务器异常', hint: `网站暂时有问题（HTTP ${code}），不是你的操作问题`, raw: msg }
     }
     if (code === 429) return { title: '请求太频繁', hint: '被网站限流了，歇一会儿再试', raw: msg }

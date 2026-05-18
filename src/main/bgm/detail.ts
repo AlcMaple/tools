@@ -1,11 +1,7 @@
-import * as https from 'https'
 import { getMoegirlSynopsis } from '../moegirl/synopsis'
+import { fetchBgmApiJson } from './api-client'
 
 const BASE_API = 'https://api.bgm.tv/v0'
-const HEADERS = {
-  'User-Agent': 'tools/1.0 (github.com/user/tools)',
-  'Accept': 'application/json',
-}
 
 // Staff 职位过滤（从 /persons 端点）
 const STAFF_ROLES_FROM_PERSONS = ['导演', '监督', '音乐', '系列构成', '脚本', '人物原案', '总作画监督']
@@ -35,28 +31,6 @@ export interface BgmDetail {
   studio: string
   staff: StaffEntry[]
   infobox: Record<string, string>
-}
-
-// ── HTTP helper ────────────────────────────────────────────────────────────────
-
-function fetchJson(url: string): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: HEADERS }, (res) => {
-      if (res.statusCode && res.statusCode >= 400) {
-        reject(new Error(`HTTP ${res.statusCode} for ${url}`))
-        res.resume()
-        return
-      }
-      const chunks: Buffer[] = []
-      res.on('data', (chunk: Buffer) => chunks.push(chunk))
-      res.on('end', () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))) }
-        catch (e) { reject(e) }
-      })
-    })
-    req.on('error', reject)
-    req.setTimeout(10000, () => { req.destroy(new Error('timeout')) })
-  })
 }
 
 // ── Parsers ────────────────────────────────────────────────────────────────────
@@ -162,7 +136,7 @@ function mergeStaff(fromInfobox: StaffEntry[], fromPersons: StaffEntry[]): Staff
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
-  const subject = await fetchJson(`${BASE_API}/subjects/${subjectId}`) as Record<string, unknown>
+  const subject = await fetchBgmApiJson<Record<string, unknown>>(`${BASE_API}/subjects/${subjectId}`)
 
   const infobox = parseInfobox((subject.infobox as unknown[]) ?? [])
   const rating = (subject.rating as Record<string, unknown>) ?? {}
@@ -182,7 +156,7 @@ export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
 
   let staffPersons: StaffEntry[] = []
   try {
-    const persons = await fetchJson(`${BASE_API}/subjects/${subjectId}/persons`) as unknown[]
+    const persons = await fetchBgmApiJson<unknown[]>(`${BASE_API}/subjects/${subjectId}/persons`)
     if (!studio) {
       for (const p of persons) {
         const person = p as Record<string, unknown>
