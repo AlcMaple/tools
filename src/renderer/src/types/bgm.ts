@@ -13,6 +13,13 @@ interface BgmStaff {
 
 export interface BgmDetail {
   id: number
+  /**
+   * BGM 主类目数字：1=书籍 / 2=动画 / 3=音乐 / 4=游戏 / 6=三次元。
+   * 用来配合 platform 推导 AnimeTrack.subjectType（anime / manga / novel / other）。
+   * 光看 platform 不够 —— 动画的 platform 有 TV/剧场版/OVA 等多种字符串值,
+   * 加 type 后判断更稳健。
+   */
+  type: number
   title: string
   title_cn: string
   summary: string
@@ -22,6 +29,12 @@ export interface BgmDetail {
   rank: number
   votes: number
   date: string
+  /**
+   * BGM 子类型字符串：
+   *   - 动画 (type=2): "TV" / "剧场版" / "OVA" / "WEB" / "动画" 等
+   *   - 书籍 (type=1): "漫画" / "小说" / "画集" / "其他"
+   *   - 其他类目：自有规则
+   */
   platform: string
   episodes: number
   tags: string[]
