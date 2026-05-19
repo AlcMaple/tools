@@ -23,12 +23,33 @@
  * HTTP 429 探测即可，不需要 body 检测层。
  */
 import * as https from 'node:https'
+import { app } from 'electron'
 import { RateLimiter, RateLimitError } from '../shared/rate-limit'
 
-const COMMON_HEADERS = {
-  'User-Agent': 'tools/1.0 (github.com/user/tools)',
-  'Accept': 'application/json',
-} as const
+/**
+ * BGM 官方明确要求第三方调用 api.bgm.tv 时带规范 User-Agent：
+ *
+ *     {app-name}/{version} ({contact})
+ *
+ * contact 可以是 GitHub 仓库 URL、邮箱、或主页地址 —— 用来在限流 / 滥用
+ * 排查时联系到开发者。
+ *
+ * 历史踩坑：之前用过 `tools/1.0 (github.com/user/tools)` 这种占位符:
+ *   - `user/tools` 是假 path，BGM 一查就知道是默认模板，触发风控概率高
+ *   - 1.0 写死，版本号迭代后 UA 不变，运营上没法区分版本
+ * 现在版本号走 `app.getVersion()` 自动跟 package.json 同步，contact 是
+ * 真实公开仓库地址。
+ *
+ * **不要换成 Chrome 浏览器伪装 UA** —— api.bgm.tv 跟 bgm.tv HTML 期望相反：
+ * HTML 端点要你像浏览器（见 `bgm/search.ts` 的 BrowserSession），API 端点
+ * 要你**老老实实**自报家门。混了浏览器 UA 调 API 反而更容易被风控。
+ */
+function buildHeaders(): Record<string, string> {
+  return {
+    'User-Agent': `MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)`,
+    'Accept': 'application/json',
+  }
+}
 
 // 500ms 间隔 + 200ms 抖动 —— api.bgm.tv 比 HTML 搜索宽松（HTML 是 2200ms),
 // 实测 500ms 没观察到限流。再激进就有风险，再松就达不到防御目的。
@@ -57,7 +78,7 @@ export async function fetchBgmApiJson<T = unknown>(url: string): Promise<T> {
   return apiLimiter.schedule(
     () =>
       new Promise<T>((resolve, reject) => {
-        const req = https.get(url, { headers: COMMON_HEADERS }, (res) => {
+        const req = https.get(url, { headers: buildHeaders() }, (res) => {
           const status = res.statusCode ?? 0
           if (status === 429) {
             const retryAfter = parseInt(String(res.headers['retry-after'] ?? '30')) || 30
