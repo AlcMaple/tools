@@ -138,8 +138,17 @@ export function friendlyError(err: unknown): FriendlyError {
     }
   }
 
-  // Network / TLS failures — not the user's content, the network can't reach the site
+  // Network / TLS failures — not the user's content, the network can't reach the site.
+  //
+  // 注意 `timeout` 单独一行：api-client 在 10s 超时时抛的 message 就是裸字符串
+  // "timeout"（不是 "request timeout"），早期没把这条算进来，结果用户看到的
+  // 是兜底「这个错误暂时没法自动判断来源」—— 现在覆盖到。
+  //
+  // 另：BGM 频繁 timeout 时往往不是物理网络断了，而是该 IP 在 BGM 的滑动惩罚
+  // 窗口里被悄悄丢包。文案点一下「过会儿再试」，引导用户先停手让窗口自然
+  // 衰减，而不是疯狂 Try again 把惩罚拉得更长。
   if (
+    lower === 'timeout' ||
     lower.includes('socket disconnected') ||
     lower.includes('tls connection') ||
     lower.includes('econnreset') ||
@@ -151,9 +160,12 @@ export function friendlyError(err: unknown): FriendlyError {
     lower.includes('fetch failed') ||
     lower.includes('request timeout')
   ) {
+    const isTimeout = lower === 'timeout' || lower.includes('timeout') || lower.includes('etimedout')
     return {
-      title: '连不上服务器',
-      hint: '可能是网站挂了或你网络有问题，过会儿再试，或检查代理设置',
+      title: isTimeout ? '请求超时' : '连不上服务器',
+      hint: isTimeout
+        ? '服务器 10 秒内没响应。如果浏览器能打开网站，多半是该网站对你这个 IP 暂时限速 / 丢包；先停手几分钟让窗口自然衰减，再 Try again。'
+        : '可能是网站挂了或你网络有问题，过会儿再试，或检查代理设置',
       raw: msg,
     }
   }
