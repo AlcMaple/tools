@@ -1,23 +1,26 @@
 /**
- * Per-host rate limiter + body-based limit-page detector with single-retry.
+ * Per-host rate limiter + body-based limit-page detector.
  *
- * Two layers of defense against per-IP rate limits on remote sites:
+ * 设计意图：
  *
- *   Layer 1 — RateLimiter (timing)
- *     A serial chain that guarantees a *minimum gap* between any two requests
- *     against the same site, measured from the moment the previous request
- *     STARTED (not finished). Adds randomized jitter so the cadence doesn't
- *     look bot-like. Concurrent callers serialize through the chain — if any
- *     one is mid-penalty-box wait, others sit behind it.
+ *   `RateLimiter`（timing throttle）
+ *     串行链保证同一站点两次请求之间的**最小间隔**，从上一次"开始"算起
+ *     （不是完成）。带随机抖动避免 bot-like 规律。多个调用者通过 chain
+ *     串行 —— 任何一个在 penalty-box 等待时，其他人排在它后面等。
  *
- *   Layer 2 — withRateLimitRetry (detection)
- *     Some sites (e.g. bgm.tv) respond to over-pacing with HTTP 200 + a body
- *     that says "您在 N 秒内只能搜索一次". A caller supplies a detector that
- *     extracts that wait-N; we sleep + retry once; if still limited, throw.
+ *   `LimitDetector` + `RateLimitError`
+ *     检测站点返回 HTTP 200 + 中文限流页正文（"您在 N 秒内只能搜索一次"）的
+ *     情况，提取 wait-N。检测到限流的调用方直接 throw `RateLimitError(waitN)`,
+ *     **不在网络层自动重试** —— 由 UI 通过 CountdownRetryButton 把决定权交给
+ *     用户，倒计时归零后用户主动点重试。
  *
- * IMPORTANT — the LIMIT page must NOT be cached by the caller. The detector's
- * return value signals "this body is poison, don't persist it." Callers that
- * already cache successful responses should check the detector BEFORE saving.
+ * **历史踩坑**：早期版本有 `withRateLimitRetry`（检测到限流页 → sleep → 自动
+ * 重试一次），算上网络层 retry + 5xx retry + 限流 retry 最坏 8 次请求，**严重
+ * 加剧** BGM 的滑动惩罚窗口。003 阶段全部撤掉，原函数 `withRateLimitRetry` /
+ * `RateLimitRetryOptions` 已删除，**不要再加回来**。
+ *
+ * **重要**：LIMIT 页 body 不能被调用方缓存。检测器返回非 null 即意味着"这个
+ * body 是有毒的，不要持久化"。已经走缓存的调用方应在保存前先调一次检测器。
  */
 import { sleep } from './http-client'
 
@@ -80,7 +83,11 @@ export class RateLimiter {
   }
 }
 
-// ── Layer 2: body-based limit-page detection + retry ──────────────────────────
+// ── Layer 2: body-based limit-page detection ──────────────────────────────────
+//
+// 注意：**不**在这一层做自动重试。检测器只负责"识别这是不是限流页"，
+// 调用方拿到非 null 返回值后**直接** throw `RateLimitError`，UI 显示倒计时
+// 给用户决定何时手动 retry。详细历史见文件顶部 doc comment。
 
 /**
  * Returns retry-after-seconds when the response body indicates a rate-limit
@@ -102,45 +109,4 @@ export class RateLimitError extends Error {
     super(message ?? `已触发限流，请等 ${waitSeconds} 秒后重试`)
     this.name = 'RateLimitError'
   }
-}
-
-export interface RateLimitRetryOptions {
-  /** Extra jitter (seconds) added on top of detected wait. Default: 2-6s. */
-  jitterSecMin?: number
-  jitterSecMax?: number
-  /** Observability hook fired when first attempt is detected as limited. */
-  onLimited?: (waitSec: number) => void
-}
-
-/**
- * Run `exec` once. If the resulting body trips `detect`, sleep N + jitter, run
- * `exec` again. If the second attempt is also limited, throw `RateLimitError`.
- *
- * `exec` should return the HTML/JSON body string. Callers that have richer
- * response objects (status code, headers) should still funnel just the body
- * string here, and handle HTTP-level limit signals (429/503) separately.
- */
-export async function withRateLimitRetry(
-  exec: () => Promise<string>,
-  detect: LimitDetector,
-  opts: RateLimitRetryOptions = {},
-): Promise<string> {
-  const body1 = await exec()
-  const wait1 = detect(body1)
-  if (wait1 == null) return body1
-
-  opts.onLimited?.(wait1)
-  const jitMin = opts.jitterSecMin ?? 2
-  const jitMax = opts.jitterSecMax ?? 6
-  const jitter = jitMin + Math.random() * Math.max(0, jitMax - jitMin)
-  await sleep((wait1 + jitter) * 1000)
-
-  const body2 = await exec()
-  const wait2 = detect(body2)
-  if (wait2 == null) return body2
-
-  throw new RateLimitError(
-    wait2,
-    `限流页二次返回，建议稍后再试（站点要求等待 ${wait2}s）`,
-  )
 }

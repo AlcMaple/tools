@@ -1087,11 +1087,15 @@ function AnimeInfo(): JSX.Element {
   }
 
   /**
-   * Stale-cache background refresh: user is already looking at older results,
-   * we silently fetch fresh in the background to update the cache (and the
-   * displayed list will be fresh on next search). Passes update=true so the
-   * main-side disk cache is also bypassed — otherwise we'd just re-cache the
-   * same stale HTML.
+   * Stale-cache background refresh：用户已经看到旧数据了，我们后台**单次**
+   * 请求新数据更新缓存（下次搜索就能看到新的）。`update=true` 让主进程也
+   * 跳过磁盘缓存，否则就只是重新缓存同一份旧 HTML。
+   *
+   * **失败处理**：catch 后**直接 swallow**，不重试。如果 BGM 限流了：
+   *   - 本次后台刷新作废 → 缓存仍是 stale
+   *   - 用户下次搜同一关键词 → SWR 再触发一次
+   *   - 如果还限流 → 继续作废 → 一直等到 BGM 放行
+   * 这套语义符合 docs/bgm-集成参考手册.md §3 的「失败后不试探不重试」原则。
    */
   const refreshBgmSearchInBackground = async (keyword: string): Promise<void> => {
     await dedupRefresh(`bgm:${keyword}`, async () => {
@@ -1100,7 +1104,7 @@ function AnimeInfo(): JSX.Element {
         if (!Array.isArray(fresh) || fresh.length === 0) return
         await setCachedBgmSearch(keyword, fresh)
       } catch {
-        /* swallow — next foreground search will retry */
+        /* swallow — 失败不重试，等下次用户主动搜索触发新一轮 SWR */
       }
     })
   }
@@ -1108,7 +1112,7 @@ function AnimeInfo(): JSX.Element {
   /**
    * Search semantics (matches SearchDownload / per project-wide setting):
    *   - Cache ON  + hit + fresh  → use cache, return early
-   *   - Cache ON  + hit + stale  → use cache for display, refresh in background
+   *   - Cache ON  + hit + stale  → use cache for display, refresh in background (SWR)
    *   - Cache ON  + miss         → fetch online (main may still use its disk cache)
    *   - Cache OFF                → always fetch online with update=true, bypassing
    *                                BOTH renderer and main-side caches

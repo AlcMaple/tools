@@ -93,6 +93,14 @@ export async function setCachedSearch(
 
 const inflight = new Map<string, Promise<void>>();
 
+/**
+ * 同一 key 的并发后台刷新去重 —— 一个 keyword 的 SWR 正在跑时，第二个用户
+ * 的 stale 命中复用同一个 Promise，不再发第二个请求。
+ *
+ * **失败不重试**：`run()` 内部已经 try/catch swallow 异常，inflight 清理
+ * 在 .finally 里所以下次会重新发起；具体重试时机由调用方决定（典型是
+ * "下次用户搜索同一关键词"），不在这一层做。
+ */
 export function dedupRefresh(
   key: string,
   run: () => Promise<void>,
