@@ -154,8 +154,11 @@ declare global {
     bgmApi: {
       /** `update=true` bypasses both the renderer and main-side caches and
        * refetches every page through the rate limiter. Use sparingly — meant
-       * for the manual refresh button, not background sync. */
-      search: (keyword: string, update?: boolean) => Promise<BgmSearchResult[]>
+       * for the manual refresh button, not background sync.
+       *
+       * `cat` 是 BGM 类目数字（2=动画 / 1=书籍）。缺省 = 2 保持向后兼容。
+       * 005 阶段引入用以区分搜动画 vs 搜漫画小说，更多类目暂未启用。 */
+      search: (keyword: string, update?: boolean, cat?: 1 | 2) => Promise<BgmSearchResult[]>
       detail: (subjectId: number) => Promise<BgmDetail>
       /** Subscribe to per-page progress events. Fires `(current, total)` after
        * each page completes. Returns an unsubscribe function. */

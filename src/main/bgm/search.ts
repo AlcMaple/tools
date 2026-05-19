@@ -39,7 +39,18 @@ import {
 import { decodeBody, withTransientRetry } from '../shared/http-client'
 import { fetchBgmApiJson } from './api-client'
 
-const BASE_URL = 'https://bgm.tv/subject_search/{keyword}?cat=2&page={page}'
+/**
+ * 搜索 URL 模板。`cat` 参数：
+ *   - 2 = 动画（默认）
+ *   - 1 = 书籍（漫画+小说+画集+其他混在一起，BGM 在 URL 层级不可拆）
+ *
+ * 其他 cat 值（3 音乐 / 4 游戏 / 6 三次元）当前未启用，但模板支持 ——
+ * 未来要加直接传新 cat 即可，不用改 search.ts。
+ */
+const BASE_URL = 'https://bgm.tv/subject_search/{keyword}?cat={cat}&page={page}'
+
+/** 当前支持的 cat 值 —— 005 阶段只接「动画 / 书籍」两个用户可见的类目。 */
+export type BgmSearchCat = 1 | 2
 
 // ── Defense layers ────────────────────────────────────────────────────────────
 
@@ -87,8 +98,18 @@ function getCacheDir(): string {
   return join(app.getPath('userData'), 'bgm_cache')
 }
 
-function getCachePath(keyword: string, page: number): string {
-  return join(getCacheDir(), `${safeName(keyword)}_${page}.html`)
+/**
+ * 缓存文件名按 cat 隔离：同一个关键词在动画 / 书籍 两种类目下命中的结果
+ * 不一样（比如「巨虫列岛」既是动画又是漫画），缓存必须分桶不能串味。
+ *
+ * 命名格式：`{safeKeyword}_cat{cat}_{page}.html`
+ *
+ * **历史兼容**：旧版本写出的 `{safeKeyword}_{page}.html`（不含 cat 段）
+ * 不再读取也不主动迁移 —— 老缓存文件留在磁盘上是无害的垃圾，下次搜同
+ * 关键词时自动写一个新的带 cat 的副本，旧文件自然失效。
+ */
+function getCachePath(keyword: string, page: number, cat: BgmSearchCat): string {
+  return join(getCacheDir(), `${safeName(keyword)}_cat${cat}_${page}.html`)
 }
 
 async function initCache(): Promise<void> {
@@ -100,8 +121,8 @@ async function initCache(): Promise<void> {
  * (from older code that didn't sniff), delete it and report miss so the
  * caller refetches.
  */
-async function readCache(keyword: string, page: number): Promise<string | null> {
-  const p = getCachePath(keyword, page)
+async function readCache(keyword: string, page: number, cat: BgmSearchCat): Promise<string | null> {
+  const p = getCachePath(keyword, page, cat)
   if (!existsSync(p)) return null
   const html = await fs.readFile(p, 'utf-8')
   if (detectLimit(html) != null) {
@@ -112,8 +133,8 @@ async function readCache(keyword: string, page: number): Promise<string | null> 
   return html
 }
 
-async function saveCache(html: string, keyword: string, page: number): Promise<void> {
-  await fs.writeFile(getCachePath(keyword, page), html, 'utf-8')
+async function saveCache(html: string, keyword: string, page: number, cat: BgmSearchCat): Promise<void> {
+  await fs.writeFile(getCachePath(keyword, page, cat), html, 'utf-8')
 }
 
 // ── Fetch with full defense stack ─────────────────────────────────────────────
@@ -209,21 +230,22 @@ async function fetchPage(
   keyword: string,
   page: number,
   update: boolean,
+  cat: BgmSearchCat,
 ): Promise<string> {
   if (!update) {
-    const cached = await readCache(keyword, page)
+    const cached = await readCache(keyword, page, cat)
     if (cached) return cached
   }
 
-  const url = BASE_URL.replace('{keyword}', encodeURIComponent(keyword)).replace(
-    '{page}',
-    String(page),
-  )
+  const url = BASE_URL
+    .replace('{keyword}', encodeURIComponent(keyword))
+    .replace('{cat}', String(cat))
+    .replace('{page}', String(page))
 
   // fetchHtmlWithDefenses 已经做了限流页检测 —— 这里拿到的 html 一定是干净
   // 的搜索结果页，可以安全 saveCache。
   const html = await fetchHtmlWithDefenses(url)
-  await saveCache(html, keyword, page)
+  await saveCache(html, keyword, page, cat)
   return html
 }
 
@@ -409,13 +431,14 @@ export async function searchBgm(
   keyword: string,
   update = false,
   onProgress?: SearchProgressCallback,
+  cat: BgmSearchCat = 2,
 ): Promise<BgmSearchResult[]> {
   await initCache()
 
   // 第一页必须成功 —— 失败直接把原始错误抛上去，UI 的 errorMessage 分类器
   // 会按错误类型显示「BGM 限流」/「连不上服务器」/「服务器异常」等具体提示
   // （比以前的"网络请求失败"通用误导文案准确多了）。
-  const html1 = await fetchPage(keyword, 1, update)
+  const html1 = await fetchPage(keyword, 1, update, cat)
 
   const totalPages = parseTotalPages(html1)
   onProgress?.(1, totalPages)
@@ -431,7 +454,7 @@ export async function searchBgm(
     // 有 page1 的结果可用，不能因为 page 4 抖一下就把整个搜索废掉。
     let html: string
     try {
-      html = await fetchPage(keyword, page, update)
+      html = await fetchPage(keyword, page, update, cat)
     } catch (e) {
       if (e instanceof RateLimitError) throw e
       onProgress?.(page, totalPages)

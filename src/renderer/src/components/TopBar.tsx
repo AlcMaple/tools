@@ -9,9 +9,19 @@ interface TopBarProps {
   // workflow doesn't fit a quick-find box (e.g. File Explorer renders a title block).
   // Center "Quick Stats" and the right-side controls stay the same regardless.
   titleSlot?: JSX.Element
+  /**
+   * 嵌入到搜索框**内**右侧的小控件（带左边一条竖分隔线）。给 AnimeInfo 这种
+   * 需要"搜索 + 类目下拉"二合一交互的页面用，避免在外面单独再加一行控件。
+   *
+   * 渲染位置：search 图标 + 输入框 + **slot** —— 在同一个搜索框容器里。
+   * 输入框 flex-1 自动收缩，slot 用 shrink-0 保持固定尺寸。
+   *
+   * 体积建议：≤80px 宽（搜索框总宽 w-80 = 320px，留够 input 的可用宽度）。
+   */
+  searchRightSlot?: JSX.Element
 }
 
-function TopBar({ placeholder, onSearch, titleSlot }: TopBarProps): JSX.Element {
+function TopBar({ placeholder, onSearch, titleSlot, searchRightSlot }: TopBarProps): JSX.Element {
   const [query, setQuery] = useState('')
   const navigate = useNavigate()
   const { diskFreeLabel, activeTasks, networkOnline, speedLabel } = useSystemStats()
@@ -41,20 +51,39 @@ function TopBar({ placeholder, onSearch, titleSlot }: TopBarProps): JSX.Element 
 
   return (
     <header className="fixed top-0 right-0 left-64 h-16 bg-background/80 backdrop-blur-xl flex justify-between items-center px-8 z-40">
-      {/* Left slot: titleSlot wins, otherwise the standard quick-find box */}
+      {/* Left slot: titleSlot wins, otherwise the standard quick-find box.
+          搜索框采用「分段」结构：输入分段 + 可选右侧 slot 分段。容器自身
+          **不设 padding**，由各分段自己决定内边距 —— 这样 slot 里的按钮能
+          占满整个分段高度（从顶到底），不会出现"中间漂浮着小胶囊"的丑况。
+          分段之间用 1px 竖线分隔。
+
+          **不能加 `overflow-hidden`** —— 否则会把 slot 里那些 `absolute` 定位
+          的下拉菜单一起裁掉（菜单要往容器下面伸）。圆角改到各分段自己的边
+          (`rounded-l-md` / `rounded-r-md`) 处理。 */}
       {titleSlot ?? (
-        <div className="flex items-center bg-surface-container-highest rounded-md px-4 py-2 w-80 transition-all duration-300 focus-within:bg-surface-bright focus-within:ring-1 focus-within:ring-primary/40">
-          <span className="material-symbols-outlined text-on-surface-variant text-sm mr-2 leading-none">
-            search
-          </span>
-          <input
-            type="text"
-            placeholder={placeholder}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="bg-transparent border-none text-sm focus:ring-0 p-0 w-full text-on-surface placeholder:text-on-surface-variant/40 font-body outline-none"
-          />
+        <div className="flex items-stretch bg-surface-container-highest rounded-md w-80 transition-all duration-300 focus-within:bg-surface-bright focus-within:ring-1 focus-within:ring-primary/40">
+          {/* 输入分段：图标 + 输入框，自带 py-2 撑出整个搜索框的高度。 */}
+          <div className="flex items-center flex-1 min-w-0 px-4 py-2">
+            <span className="material-symbols-outlined text-on-surface-variant text-sm mr-2 leading-none shrink-0">
+              search
+            </span>
+            <input
+              type="text"
+              placeholder={placeholder}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="bg-transparent border-none text-sm focus:ring-0 p-0 flex-1 min-w-0 text-on-surface placeholder:text-on-surface-variant/40 font-body outline-none"
+            />
+          </div>
+          {/* 右侧分段：1px 竖线 + slot。slot 内的元素通过 items-stretch（默认）
+              自动撑满整段高度。 */}
+          {searchRightSlot && (
+            <>
+              <div className="w-px bg-outline-variant/25 shrink-0" />
+              {searchRightSlot}
+            </>
+          )}
         </div>
       )}
 

@@ -101,7 +101,24 @@ function matchesTags(t: AnimeTrack, selectedTags: string[]): boolean {
 
 type FilterKey = 'all' | AnimeStatus
 type SortKey = 'addedDesc' | 'favoriteDesc'
-type Tab = 'tracks' | 'recommendations'
+/**
+ * 顶级 tab —— 005 阶段从「tracks / recommendations」拆成 4 平级：
+ *
+ *   - `anime`  → 动画追番（subjectType === 'anime'）
+ *   - `manga`  → 漫画追番（subjectType === 'manga'）
+ *   - `novel`  → 小说追番（subjectType === 'novel'）
+ *   - `recommendations` → 推荐管理
+ *
+ * `'other'` 类目（画集等）**不出现在任何 tab**，按用户决策保留数据但不展示。
+ */
+type Tab = 'anime' | 'manga' | 'novel' | 'recommendations'
+
+/** 3 个类目 tab 的元数据，用来生成顶部 tab 按钮 + filtered/counts 的过滤维度。 */
+const CATEGORY_TABS: ReadonlyArray<{ key: 'anime' | 'manga' | 'novel'; label: string; icon: string }> = [
+  { key: 'anime', label: '动画', icon: 'movie' },
+  { key: 'manga', label: '漫画', icon: 'menu_book' },
+  { key: 'novel', label: '小说', icon: 'auto_stories' },
+]
 
 const SORT_KEY = 'maple-anime-sort'
 const TAB_KEY = 'maple-anime-tab'
@@ -115,11 +132,16 @@ export default function MyAnime(): JSX.Element {
     return v === 'favoriteDesc' ? 'favoriteDesc' : 'addedDesc'
   })
   useEffect(() => { localStorage.setItem(SORT_KEY, sort) }, [sort])
-  // 顶层 tab：tracks 追番列表 / recommendations 推荐管理。
-  // 默认 tracks（用户大部分时间在这），切换时持久化，下次进来还在原 tab。
+  // 顶层 tab：动画 / 漫画 / 小说 / 推荐。
+  // 默认 'anime'（用户大部分时间在这），切换时持久化，下次进来还在原 tab。
+  //
+  // **迁移**：005 之前的 localStorage 值是 'tracks' / 'recommendations'。
+  // 看到旧的 'tracks' 自动落到 'anime'（老用户都是动画追番）。其他无效值
+  // 也回退到 'anime'。
   const [tab, setTab] = useState<Tab>(() => {
     const v = localStorage.getItem(TAB_KEY)
-    return v === 'recommendations' ? 'recommendations' : 'tracks'
+    if (v === 'recommendations' || v === 'manga' || v === 'novel' || v === 'anime') return v
+    return 'anime'
   })
   useEffect(() => { localStorage.setItem(TAB_KEY, tab) }, [tab])
   // 推荐 tab 的过滤状态 + 新建弹窗状态 —— 提到这里是为了让 sticky header
@@ -145,8 +167,16 @@ export default function MyAnime(): JSX.Element {
   //   - favoriteDesc：按 🌟 数从高到低。同 🌟 数的按添加倒序作 tie-breaker。
   // 只在显示层做排序，store 本身仍按插入顺序持久化 —— 不动 AnimeSyncBar 的
   // snapshot diff 与 WebDAV blob 格式。
+  // 当前 tab 对应的类目过滤维度。推荐 tab 不用这个（走自己的逻辑）。
+  const currentCategory = tab === 'recommendations' ? null : tab
+
   const filtered = useMemo(() => {
-    const byQ = tracks.filter(t => matchesAnime(t, query.trim()))
+    // 类目过滤先于其他 —— subjectType 决定这条记录是不是该出现在当前 tab 里。
+    // 'other'（画集等）跟任何 category tab 都不匹配，所以不会出现在任何 tab。
+    const byCat = currentCategory
+      ? tracks.filter(t => t.subjectType === currentCategory)
+      : tracks
+    const byQ = byCat.filter(t => matchesAnime(t, query.trim()))
     const byTags = byQ.filter(t => matchesTags(t, selectedTags))
     const inFilter = filter === 'all' ? byTags : byTags.filter(t => t.status === filter)
     const reversed = [...inFilter].reverse()
@@ -156,20 +186,35 @@ export default function MyAnime(): JSX.Element {
       reversed.sort((a, b) => b.favorite - a.favorite)
     }
     return reversed
-  }, [tracks, filter, query, sort, selectedTags])
+  }, [tracks, currentCategory, filter, query, sort, selectedTags])
 
   // Counts include search-narrowed + tag-filtered scope so the badges reflect
   // what would actually appear if the user clicked into each bucket.
+  // **只统计当前类目下的记录** —— 比如在「漫画」tab 看到的「在追 5」是漫画
+  // 在追的数量，不是全部类目加起来的，避免误导。
   const counts = useMemo(() => {
     const c: Record<FilterKey, number> = { all: 0, watching: 0, plan: 0, considering: 0, completed: 0 }
     for (const t of tracks) {
+      if (currentCategory && t.subjectType !== currentCategory) continue
       if (!matchesAnime(t, query.trim())) continue
       if (!matchesTags(t, selectedTags)) continue
       c.all++
       c[t.status]++
     }
     return c
-  }, [tracks, query, selectedTags])
+  }, [tracks, currentCategory, query, selectedTags])
+
+  /** 每个类目 tab 的记录总数（不带 query / status / tag 过滤），给 tab 按钮显示徽章用 */
+  const categoryCounts = useMemo(() => {
+    const c = { anime: 0, manga: 0, novel: 0 }
+    for (const t of tracks) {
+      if (t.subjectType === 'anime') c.anime++
+      else if (t.subjectType === 'manga') c.manga++
+      else if (t.subjectType === 'novel') c.novel++
+      // 'other' 不计 —— 不在任何 tab 露面
+    }
+    return c
+  }, [tracks])
 
   // 全部 tag 聚合 + 命中数 —— 给 TagFilter popover 用的输入。
   // bgmTags ∪ userTags（每个 track 里去重），跨 track 聚合后按命中数倒序。
@@ -226,7 +271,7 @@ export default function MyAnime(): JSX.Element {
 
               {/* 搜索框只在追番 tab 出现 —— 它对推荐 tab 没意义；推荐 tab 的过滤是
                   「待回应 / 已接受 / 已拒绝」chips，由 RecommendationView 自带 */}
-              {tab === 'tracks' && (
+              {tab !== 'recommendations' && (
                 <div className="relative">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">search</span>
                   <input
@@ -251,18 +296,22 @@ export default function MyAnime(): JSX.Element {
             </div>
           </div>
 
-          {/* Tab 导航行 —— 顶级切换「追番列表 / 推荐」。
-              AnimeSyncBar 永远跟着这一行（追番和推荐共用 anime.json blob 同步,
-              两个 tab 都能看到同步状态、点上传/下载）。 */}
+          {/* Tab 导航行 —— 顶级切换「动画 / 漫画 / 小说 / 推荐」(005 阶段从
+              「追番列表 / 推荐」拆出来)。
+              AnimeSyncBar 永远跟着这一行 —— 三个类目 + 推荐共用同一份 anime.json
+              blob 同步，每个 tab 都能看到同步状态、点上传/下载。 */}
           <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
             <div className="inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
-              <TabButton
-                active={tab === 'tracks'}
-                onClick={() => setTab('tracks')}
-                icon="bookmark"
-                label="追番列表"
-                count={tracks.length}
-              />
+              {CATEGORY_TABS.map(c => (
+                <TabButton
+                  key={c.key}
+                  active={tab === c.key}
+                  onClick={() => setTab(c.key)}
+                  icon={c.icon}
+                  label={c.label}
+                  count={categoryCounts[c.key]}
+                />
+              ))}
               <TabButton
                 active={tab === 'recommendations'}
                 onClick={() => setTab('recommendations')}
@@ -279,7 +328,7 @@ export default function MyAnime(): JSX.Element {
               推荐 → 新建按钮。 */}
           <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
             <div className="inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
-              {tab === 'tracks' ? (
+              {tab !== 'recommendations' ? (
                 <>
                   <FilterChip
                     active={filter === 'all'}
@@ -328,7 +377,7 @@ export default function MyAnime(): JSX.Element {
                 </>
               )}
             </div>
-            {tab === 'tracks' ? (
+            {tab !== 'recommendations' ? (
               <div className="flex items-center gap-2 flex-wrap">
                 {/* 类型过滤器 —— 比 SortSelector 高度优先,放它左边对齐 */}
                 <TagFilter
@@ -352,7 +401,7 @@ export default function MyAnime(): JSX.Element {
           {/* Row 4：已选 tag chip 行 —— 只在 tracks tab + 有选中 tag 时出现。
               让"我现在按什么过滤"在 sticky header 永远可见，不滚也能改。
               chip 点击 = 移除该 tag（跟 popover 里 toggle 同一心智）。 */}
-          {tab === 'tracks' && selectedTags.length > 0 && (
+          {tab !== 'recommendations' && selectedTags.length > 0 && (
             <div className="mt-3 flex items-center gap-1.5 flex-wrap">
               <span className="font-label text-[10px] text-on-surface-variant/45 uppercase tracking-widest mr-1">
                 已按 类型 过滤

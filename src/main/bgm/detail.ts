@@ -16,6 +16,8 @@ export interface StaffEntry {
 
 export interface BgmDetail {
   id: number
+  /** BGM 主类目数字：1=书籍 / 2=动画 / 3=音乐 / 4=游戏 / 6=三次元 */
+  type: number
   title: string
   title_cn: string
   summary: string
@@ -25,6 +27,7 @@ export interface BgmDetail {
   rank: number
   votes: number
   date: string
+  /** 子类型：动画的 TV/剧场版/OVA / 书籍的 漫画/小说/画集/其他 等 */
   platform: string
   episodes: number
   tags: string[]
@@ -253,6 +256,9 @@ export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
 
   return {
     id: Number(subject.id),
+    // BGM 主类目数字。老 detail 缓存可能没这字段 —— renderer 端 normalize 时
+    // type=0 + platform 模式匹配兜底（见 animeTrackStore deriveSubjectType）。
+    type: Number(subject.type ?? 0),
     title: String(subject.name ?? ''),
     title_cn: String(subject.name_cn ?? ''),
     summary: finalSummary,
