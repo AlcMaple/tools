@@ -7,8 +7,10 @@ contextBridge.exposeInMainWorld('versions', {
 })
 
 contextBridge.exposeInMainWorld('bgmApi', {
-  search: (keyword: string, update?: boolean) =>
-    ipcRenderer.invoke('bgm:search', keyword, update),
+  // `cat` 是 BGM 类目数字：2=动画（默认）/ 1=书籍（漫画+小说）。其他 cat
+  // 值未启用，主进程会回退到 2。老调用方不传 cat 时保持原"搜动画"行为。
+  search: (keyword: string, update?: boolean, cat?: 1 | 2) =>
+    ipcRenderer.invoke('bgm:search', keyword, update, cat),
   detail: (subjectId: number) => ipcRenderer.invoke('bgm:detail', subjectId),
   // Per-page progress for multi-page searches. Main fires `(current, total)`
   // after each page is fetched (cache hit or network). Returns an unsubscribe

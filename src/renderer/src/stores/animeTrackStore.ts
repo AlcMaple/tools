@@ -17,6 +17,50 @@ import { useEffect, useState } from 'react'
  */
 export type AnimeStatus = 'plan' | 'watching' | 'completed' | 'considering'
 
+/**
+ * BGM 条目子类型。MyAnime 用这个字段做顶部 4 tab（动画/漫画/小说 + 推荐）
+ * 的过滤维度。
+ *
+ * - `anime`  → BGM type=2（动画类目所有 platform）
+ * - `manga`  → BGM type=1 + platform='漫画'
+ * - `novel`  → BGM type=1 + platform='小说'
+ * - `other`  → 画集 / 其他书籍类目 / 不识别 —— **不**出现在任何 UI tab,
+ *              但数据保留（避免用户加了一本书后 UI 看不到）
+ *
+ * 派生规则见 `deriveSubjectType()`。老 track 无此字段时 normalize() 默认
+ * 'anime'，零手动迁移。
+ */
+export type SubjectType = 'anime' | 'manga' | 'novel' | 'other'
+
+const VALID_SUBJECT_TYPE: ReadonlyArray<SubjectType> = ['anime', 'manga', 'novel', 'other']
+
+/**
+ * 从 BGM detail 的 `type` + `platform` 推导 SubjectType。
+ *
+ *   - type === 2                          → 'anime'（动画的所有 platform 子类型都归 anime）
+ *   - type === 1 && platform === '漫画'   → 'manga'
+ *   - type === 1 && platform === '小说'   → 'novel'
+ *   - type === 1 && 其他                  → 'other'（画集/其他/null）
+ *   - 其他 type（音乐/游戏等）            → 'other'（实测我们不在 BGM 搜这些）
+ *   - type 未知（老缓存数据 type=0）       → 看 platform 模式兜底
+ */
+export function deriveSubjectType(type: number, platform: string): SubjectType {
+  if (type === 2) return 'anime'
+  if (type === 1) {
+    if (platform === '漫画') return 'manga'
+    if (platform === '小说') return 'novel'
+    return 'other'
+  }
+  // type=0 兜底：老 detail 缓存 type 缺失时用 platform 字符串猜
+  if (type === 0) {
+    if (platform === '漫画') return 'manga'
+    if (platform === '小说') return 'novel'
+    // 动画的 platform 是 TV/剧场版/OVA/WEB/动画 等，没出现"漫画/小说"就当动画
+    return 'anime'
+  }
+  return 'other'
+}
+
 export interface AnimeBinding {
   /** Capitalised to match the existing `Source` type used by SearchDownload. */
   source: 'Xifan' | 'Girigiri' | 'Aowu' | 'Bilibili' | 'Custom'
@@ -30,6 +74,14 @@ export interface AnimeBinding {
 
 export interface AnimeTrack {
   bgmId: number
+  /**
+   * BGM 条目子类型 —— MyAnime 的 4 顶部 tab 过滤就靠这个字段。
+   *
+   * 老 track 没这字段时 normalize() 默认 `'anime'`，向后兼容零手动迁移。
+   * 加新追番时由 caller 从 BGM detail 派生（`deriveSubjectType(type, platform)`）
+   * 后写入；不应该在加追番后再变化（除非用户删了重加）。
+   */
+  subjectType: SubjectType
   title: string
   titleCn?: string
   cover?: string
@@ -229,6 +281,11 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   // 老数据里如果出现已删除的 paused/dropped，fallback 到 plan（用户说没这种
   // 数据，但读 WebDAV 老 blob / 别人导入的数据 仍然可能有；防御性兜底）
   const status = (t.status && VALID_STATUS.includes(t.status)) ? t.status : 'plan'
+  // subjectType —— 005 阶段新增。老 track 没这字段时默认 'anime'（项目历史上
+  // 只有动画追番），向后兼容。非法值（外部导入数据写错）也归 'anime'。
+  const subjectType: SubjectType = (t.subjectType && VALID_SUBJECT_TYPE.includes(t.subjectType))
+    ? t.subjectType
+    : 'anime'
   const episode = typeof t.episode === 'number' && t.episode >= 0 ? Math.floor(t.episode) : 0
   const total = typeof t.totalEpisodes === 'number' && t.totalEpisodes > 0 ? Math.floor(t.totalEpisodes) : undefined
   const notes = Array.isArray(t.notes) ? t.notes.filter((s): s is string => typeof s === 'string' && s.trim().length > 0) : []
@@ -250,6 +307,7 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   const userTags = normalizeTagList(t.userTags)
   return {
     bgmId: t.bgmId,
+    subjectType,
     title: typeof t.title === 'string' ? t.title : '',
     titleCn: typeof t.titleCn === 'string' && t.titleCn.length > 0 ? t.titleCn : undefined,
     cover: typeof t.cover === 'string' && t.cover.length > 0 ? t.cover : undefined,

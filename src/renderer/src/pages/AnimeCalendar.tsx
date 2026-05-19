@@ -345,6 +345,9 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
       // 保证补写不会污染用户已看过的快照）。
       animeTrackStore.upsert({
         bgmId: item.id,
+        // BGM 周历只放动画（cat=2 入口），所以 subjectType 显式写 'anime',
+        // 防御任何"calendar 漏了非动画条目"的边缘情况。
+        subjectType: 'anime',
         title: item.name,
         titleCn: item.name_cn || undefined,
         cover: item.cover || undefined,

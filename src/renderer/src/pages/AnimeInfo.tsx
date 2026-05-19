@@ -12,7 +12,7 @@ import { GirigiriDownloadConfigModal } from '../components/GirigiriDownloadModal
 import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
-import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
+import { animeTrackStore, useAnimeTrack, deriveSubjectType } from '../stores/animeTrackStore'
 import { WatchHere } from '../components/WatchHere'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -60,21 +60,38 @@ async function setSearchCache(source: Source, keyword: string, cards: SearchCard
 // ── BGM 搜索结果缓存 ──────────────────────────────────────────
 const BGM_SEARCH_CACHE_KEY = 'search_cache_bgm'
 
+/** UI 上的"搜索类目" —— 跟 IPC 的 cat 数字对应：anime=2 / book=1 */
+export type BgmSearchKind = 'anime' | 'book'
+
+const KIND_TO_CAT: Record<BgmSearchKind, 1 | 2> = { anime: 2, book: 1 }
+
+/**
+ * 缓存里的复合 key —— 同一关键词在动画 / 书籍两种类目下命中的结果完全不同,
+ * 缓存必须按 cat 分桶不能串味（比如「巨虫列岛」既是动画又是漫画）。
+ *
+ * 命名格式：`cat{N}:{keyword}`。老缓存数据没有前缀（直接用 keyword 当 key）,
+ * 自动失效不复读 —— 老 key 仍留在 search_cache.json 里是无害的，下次搜
+ * 同关键词时写一份新的带前缀的缓存条目，老条目自然作废。
+ */
+function bgmCacheKey(keyword: string, kind: BgmSearchKind): string {
+  return `cat${KIND_TO_CAT[kind]}:${keyword}`
+}
+
 interface BgmSearchHit { data: BgmSearchResult[]; isStale: boolean }
 
-async function getCachedBgmSearch(keyword: string): Promise<BgmSearchHit | null> {
+async function getCachedBgmSearch(keyword: string, kind: BgmSearchKind): Promise<BgmSearchHit | null> {
   try {
     const c = (await window.systemApi.cacheGet(BGM_SEARCH_CACHE_KEY)) as Record<string, unknown> | null
     if (!c) return null
-    const entry = readCacheEntry<BgmSearchResult[]>(c[keyword])
+    const entry = readCacheEntry<BgmSearchResult[]>(c[bgmCacheKey(keyword, kind)])
     if (!entry) return null
     return { data: entry.data, isStale: Date.now() - entry.updatedAt > BGM_SEARCH_TTL_MS }
   } catch { return null }
 }
 
-async function setCachedBgmSearch(keyword: string, items: BgmSearchResult[]): Promise<void> {
+async function setCachedBgmSearch(keyword: string, kind: BgmSearchKind, items: BgmSearchResult[]): Promise<void> {
   try {
-    await window.systemApi.cacheSet(BGM_SEARCH_CACHE_KEY, keyword, {
+    await window.systemApi.cacheSet(BGM_SEARCH_CACHE_KEY, bgmCacheKey(keyword, kind), {
       data: items,
       updatedAt: Date.now(),
     })
@@ -627,6 +644,113 @@ function IdleState(): JSX.Element {
   )
 }
 
+const KIND_OPTIONS: ReadonlyArray<{ key: BgmSearchKind; label: string }> = [
+  { key: 'anime', label: '动画' },
+  { key: 'book', label: '漫画小说' },
+]
+
+/**
+ * BGM 搜索类目下拉 —— 嵌入到 TopBar 搜索框右侧（内切风格，仿 bgm.tv 自家
+ * 顶栏的「全部/动画/书籍/…」下拉）。
+ *
+ * 设计意图：BGM 在 URL 层级把漫画+小说+画集合并成「书籍」类目，所以这里
+ * 只暴露「动画 / 漫画小说」二选一。点击当前选项的胶囊弹出菜单，点选项关闭。
+ * 外面 click 关闭走 useEffect mousedown 监听。
+ *
+ * 设计要点（修过两次的痛苦经验）：
+ *   - **按钮固定宽度 w-24**：「动画」(2 字) 和「漫画小说」(4 字) 共用一个
+ *     宽度，避免切换时按钮跳动 + 菜单宽度对不齐
+ *   - **按钮 bg 明显区分搜索框**：搜索框是 `surface-container-highest`,
+ *     按钮用 `surface-container-low` + border，看起来像"嵌入式胶囊"而不是
+ *     裸文字
+ *   - **菜单换暗色 + shadow**：菜单用 `surface-container-lowest`（比搜索框
+ *     暗几档）+ shadow-xl 起浮感，跟搜索框拉开层次不再融在一起
+ *   - **菜单跟按钮等宽 + left-0 对齐**：避免之前菜单宽于按钮、向左凸出来
+ *     的视觉问题
+ */
+function KindDropdown({
+  value, onChange,
+}: {
+  value: BgmSearchKind
+  onChange: (k: BgmSearchKind) => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent): void => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const current = KIND_OPTIONS.find(o => o.key === value) ?? KIND_OPTIONS[0]
+
+  return (
+    // wrap div 在 TopBar 的 `items-stretch` 父容器下自动撑满分段高度;
+    // 没设具体 height，靠 flex item 的默认拉伸。
+    <div className="relative w-24 flex" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        // **rounded-r-md 不能丢** —— 容器没设 overflow-hidden（会吞下拉菜单),
+        // 圆角必须按钮自己处理右上/右下两个角。
+        //
+        // 颜色挑选历史踩坑：
+        //   - `surface-container-low`：太暗，跟页面背景（黑）几乎融在一起,
+        //     反而跟输入区（surface-container-highest）差太大，像贴上去的
+        //     暗块，**不能用**
+        //   - `surface-container-high`：仅比输入区暗一档，**同色系族微差**,
+        //     视觉上像同一个搜索框的两个分段，是最舒服的距离
+        // hover/open 时切到 `surface-container-highest` 跟输入区平齐 ——
+        // "唤醒"的视觉提示。
+        className={`w-full flex items-center justify-between gap-1 px-3 text-xs font-label text-on-surface transition-colors outline-none rounded-r-md ${
+          open
+            ? 'bg-surface-container-highest'
+            : 'bg-surface-container-high hover:bg-surface-container-highest'
+        }`}
+        title={value === 'anime' ? 'BGM 动画类目（cat=2）' : 'BGM 书籍类目，含漫画+小说（cat=1）'}
+      >
+        <span className="truncate">{current.label}</span>
+        <span
+          className={`material-symbols-outlined leading-none shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          style={{ fontSize: 14 }}
+        >
+          expand_more
+        </span>
+      </button>
+      {open && (
+        // 菜单跟搜索框同色系（surface-container-highest）—— 视觉上像是搜索框
+        // 的延伸而不是另一个独立的暗色卡片。靠 shadow + border 而不是色差
+        // 来表达"浮层"。参考 SearchDownload 的 source picker 同款配方。
+        <div className="absolute top-full left-0 mt-1.5 w-full bg-surface-container-highest border border-outline-variant/30 rounded-md overflow-hidden shadow-xl shadow-black/40 z-50">
+          {KIND_OPTIONS.map(o => (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => {
+                onChange(o.key)
+                setOpen(false)
+              }}
+              className={`w-full text-left px-3 py-2 text-xs font-label whitespace-nowrap transition-colors ${
+                o.key === value
+                  ? 'text-primary bg-primary/10 font-bold'
+                  : 'text-on-surface hover:bg-surface-container-high'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SearchResults({
   items,
   onSelect,
@@ -798,6 +922,10 @@ function DetailView({
               <button
                 onClick={() => animeTrackStore.upsert({
                   bgmId: data.id,
+                  // 005 阶段新增：从 BGM detail 的 type + platform 派生 subjectType,
+                  // 写入 track。书籍类目下 platform 决定 manga / novel；画集和其他
+                  // 归 'other'（用户决策见 005 idea doc，UI tab 不显示 other）。
+                  subjectType: deriveSubjectType(data.type, data.platform),
                   title: data.title,
                   titleCn: data.title_cn || undefined,
                   cover: data.cover || undefined,
@@ -1040,6 +1168,7 @@ function DetailView({
 let _cachedState: PageState = { status: 'idle' }
 let _cachedResults: BgmSearchResult[] = []
 let _cachedBgmKeyword = ''
+let _cachedSearchKind: BgmSearchKind = 'anime'
 let _cachedScrollY = 0
 
 // ── 主页面 ────────────────────────────────────────────────────
@@ -1052,6 +1181,20 @@ function AnimeInfo(): JSX.Element {
   // Live progress from main-process BGM search. Set by the IPC subscription
   // below; cleared at the start/end of every search invocation.
   const [searchProgress, setSearchProgress] = useState<{ current: number; total: number } | null>(null)
+  // 用户选的搜索类目（动画 vs 书籍）。模块级缓存让用户切到别的页面再回来
+  // 不丢类目选择。切类目时清空当前 results —— 类目变了，旧动画结果显示
+  // 在新书籍搜索栏下面会很怪。
+  const [searchKind, setSearchKindState] = useState<BgmSearchKind>(_cachedSearchKind)
+  const setSearchKind = (k: BgmSearchKind): void => {
+    if (k === searchKind) return
+    _cachedSearchKind = k
+    setSearchKindState(k)
+    // 切类目时把当前结果列表清掉，避免"我刚搜了动画看到结果，切到书籍
+    // 后还看着动画卡片"的视觉混乱
+    lastResults.current = []
+    _cachedResults = []
+    setState({ status: 'idle' })
+  }
 
   useEffect(() => {
     _cachedState = state
@@ -1097,12 +1240,14 @@ function AnimeInfo(): JSX.Element {
    *   - 如果还限流 → 继续作废 → 一直等到 BGM 放行
    * 这套语义符合 docs/bgm-集成参考手册.md §3 的「失败后不试探不重试」原则。
    */
-  const refreshBgmSearchInBackground = async (keyword: string): Promise<void> => {
-    await dedupRefresh(`bgm:${keyword}`, async () => {
+  const refreshBgmSearchInBackground = async (keyword: string, kind: BgmSearchKind): Promise<void> => {
+    // dedupRefresh key 也按 kind 分桶 —— 同一关键词的动画 SWR 和书籍 SWR
+    // 并发时是不同的两个请求，不能复用 inflight Promise
+    await dedupRefresh(`bgm:${kind}:${keyword}`, async () => {
       try {
-        const fresh = await window.bgmApi.search(keyword, true)
+        const fresh = await window.bgmApi.search(keyword, true, KIND_TO_CAT[kind])
         if (!Array.isArray(fresh) || fresh.length === 0) return
-        await setCachedBgmSearch(keyword, fresh)
+        await setCachedBgmSearch(keyword, kind, fresh)
       } catch {
         /* swallow — 失败不重试，等下次用户主动搜索触发新一轮 SWR */
       }
@@ -1125,9 +1270,12 @@ function AnimeInfo(): JSX.Element {
     lastBgmKeyword.current = keyword
     _cachedBgmKeyword = keyword
     const cacheEnabled = isSearchCacheEnabled()
+    // 用本地变量锁定本次搜索的类目，避免用户在请求飞行中切换类目导致
+    // setState 把书籍结果塞进动画状态里
+    const kind = searchKind
 
     if (cacheEnabled) {
-      const hit = await getCachedBgmSearch(keyword)
+      const hit = await getCachedBgmSearch(keyword, kind)
       if (hit) {
         const sorted = sortByDate(hit.data)
         if (sorted.length === 0) {
@@ -1141,7 +1289,7 @@ function AnimeInfo(): JSX.Element {
           _cachedResults = sorted
           setState({ status: 'results', items: sorted })
         }
-        if (hit.isStale) void refreshBgmSearchInBackground(keyword)
+        if (hit.isStale) void refreshBgmSearchInBackground(keyword, kind)
         return
       }
     }
@@ -1152,11 +1300,11 @@ function AnimeInfo(): JSX.Element {
       // When the cache toggle is OFF the user has explicitly asked for fresh
       // data, so we bypass main's disk cache too. When ON we allow main to
       // serve from disk (it's faster and avoids any chance of rate-limiting).
-      const results = await window.bgmApi.search(keyword, !cacheEnabled)
+      const results = await window.bgmApi.search(keyword, !cacheEnabled, KIND_TO_CAT[kind])
       if (results.length > 0) {
         // Always write through, even when cache is OFF — per user contract:
         // "关闭的时候同时更新缓存里的数据以及 ttl 这些时间"
-        void setCachedBgmSearch(keyword, results)
+        void setCachedBgmSearch(keyword, kind, results)
       }
       const sorted = sortByDate(results)
       if (sorted.length === 0) {
@@ -1200,7 +1348,13 @@ function AnimeInfo(): JSX.Element {
 
   return (
     <div className="min-h-screen bg-background">
-      <TopBar placeholder="Lookup titles from bgm.tv..." onSearch={handleSearch} />
+      <TopBar
+        placeholder="Lookup titles from bgm.tv..."
+        onSearch={handleSearch}
+        // 类目下拉嵌在搜索框右侧内切位置（仿 bgm.tv 顶栏自家的"全部/动画/
+        // 书籍"下拉）。detail 视图也保留显示，用户切类目=回到搜索流程。
+        searchRightSlot={<KindDropdown value={searchKind} onChange={setSearchKind} />}
+      />
 
       <main className="ml-0 pt-16 px-10 py-10">
         {state.status === 'idle' && <IdleState />}
