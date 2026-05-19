@@ -366,19 +366,31 @@ class AnimeTrackStore {
    *   - 第一次成功补写后，后续重复调用 short-circuit（已经非空，prev 锁定）
    *   - 用户已经看到过的 BGM 标签快照不会被 BGM 社区 tag 漂移污染
    *
-   * 失败静默（网络抖、BGM API 抽风），用户后续打开详情页 / 重新打开应用
-   * 时下个调用还会再试一次，没什么副作用。
+   * **动态延迟 800-2000ms**：用户连点 +追番 时（比如周历上一口气加好几部），
+   * 多次派生 detail 调用错峰，避免跟主进程同期的别的 BGM 调用挤在一起
+   * 触发限流。延迟期间做**二次检查**：track 可能已被删 / tag 已被别的
+   * 路径补上 → 直接 short-circuit 不发请求。
+   *
+   * **失败处理**：catch swallow，**不重试**。下次 +追番 / 打开详情页 /
+   * 重启应用时这个调用会再触发一次，符合 docs/bgm-集成参考手册.md §3
+   * 「失败后不试探不重试」原则。
    */
   async ensureBgmTagsFilled(bgmId: number): Promise<void> {
     const existing = this.getByBgmId(bgmId)
     if (!existing) return
     if (existing.bgmTags.length > 0) return
+    const jitterMs = 800 + Math.random() * 1200
+    await new Promise<void>((r) => setTimeout(r, jitterMs))
+    // 二次检查：延迟期间用户可能删了 track / 别的路径已经把 tag 补上,
+    // 这两种情况下都不需要再发请求。
+    const recheck = this.getByBgmId(bgmId)
+    if (!recheck || recheck.bgmTags.length > 0) return
     try {
       const detail = await window.bgmApi.detail(bgmId)
       if (Array.isArray(detail.tags) && detail.tags.length > 0) {
         this.upsert({ bgmId, bgmTags: detail.tags })
       }
-    } catch { /* silent — 下次再试 */ }
+    } catch { /* silent — 下次相关入口再触发时重试 */ }
   }
 
   getByBgmId(id: number): AnimeTrack | null {
