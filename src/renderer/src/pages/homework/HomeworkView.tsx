@@ -677,13 +677,6 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
           <span className="font-label text-[10px] uppercase tracking-widest text-outline">Attacks</span>
           <span className="text-base font-bold text-on-surface">{totalAttacks}</span>
         </div>
-        <span className="text-outline-variant">·</span>
-        <div className="flex items-center gap-2">
-          <span className="font-label text-[10px] uppercase tracking-widest text-outline">Showing</span>
-          <span className="text-base font-bold text-primary">
-            {totalAttacks}<span className="text-on-surface-variant font-normal text-xs"> rows</span>
-          </span>
-        </div>
         <div className="ml-auto flex items-center gap-2">
           {!hideImport && (
             <button
