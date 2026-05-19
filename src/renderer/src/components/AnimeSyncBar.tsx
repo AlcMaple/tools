@@ -114,10 +114,14 @@ function parseLegacyHomeworkBlobForTracks(jsonStr: string): RemoteAnimeBlob {
 // ── Stats ────────────────────────────────────────────────────────────────────
 
 /**
- * 5 个状态都统计 —— 早期只有 watching / completed，但确认弹窗里只显示
- * 这俩会让用户怀疑「想看 / 暂停 / 弃番」是不是没传（实际是传了，total 已
- * 经体现）。把所有状态都列出来透明化，让用户对比 local vs remote 时一眼
- * 看清楚每个桶分别多少。
+ * 5 个状态 + 3 个类目都统计 —— 早期只有 watching / completed，但确认弹窗里
+ * 只显示这俩会让用户怀疑「想看 / 暂停 / 弃番」是不是没传（实际是传了，
+ * total 已经体现）。把所有状态都列出来透明化，让用户对比 local vs remote
+ * 时一眼看清楚每个桶分别多少。
+ *
+ * 005 阶段加 subjectType 维度（动画 / 漫画 / 小说 / 其他）—— 数据层这俩
+ * 维度本来就一起上传/下载，但弹窗 stats 没显示就让用户怀疑"漫画小说没传
+ * 上去"。其他类目（画集等）归到 `other`，量级一般是 0 不单独显示。
  */
 function trackStats(data: AnimeTrack[]): {
   total: number
@@ -125,6 +129,10 @@ function trackStats(data: AnimeTrack[]): {
   plan: number
   considering: number
   completed: number
+  anime: number
+  manga: number
+  novel: number
+  other: number
 } {
   return {
     total: data.length,
@@ -132,6 +140,10 @@ function trackStats(data: AnimeTrack[]): {
     plan: data.filter(t => t.status === 'plan').length,
     considering: data.filter(t => t.status === 'considering').length,
     completed: data.filter(t => t.status === 'completed').length,
+    anime: data.filter(t => t.subjectType === 'anime').length,
+    manga: data.filter(t => t.subjectType === 'manga').length,
+    novel: data.filter(t => t.subjectType === 'novel').length,
+    other: data.filter(t => t.subjectType === 'other').length,
   }
 }
 
@@ -588,6 +600,7 @@ function SyncConfirmModal({
               <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-2">本地</p>
               <div className="space-y-1">
                 <p className="text-xs font-mono">追番 {localTr.total} 部</p>
+                <p className="text-xs font-mono">动画 {localTr.anime} · 漫画 {localTr.manga} · 小说 {localTr.novel}{localTr.other > 0 ? ` · 其他 ${localTr.other}` : ''}</p>
                 <p className="text-xs font-mono">在追 {localTr.watching} · 想看 {localTr.plan}</p>
                 <p className="text-xs font-mono">观望 {localTr.considering} · 看完 {localTr.completed}</p>
                 <p className="text-xs font-mono">推荐 {localRecCount} 条</p>
@@ -609,6 +622,7 @@ function SyncConfirmModal({
               {remote ? (
                 <div className="space-y-1">
                   <p className="text-xs font-mono">追番 {remoteTr!.total} 部</p>
+                  <p className="text-xs font-mono">动画 {remoteTr!.anime} · 漫画 {remoteTr!.manga} · 小说 {remoteTr!.novel}{remoteTr!.other > 0 ? ` · 其他 ${remoteTr!.other}` : ''}</p>
                   <p className="text-xs font-mono">在追 {remoteTr!.watching} · 想看 {remoteTr!.plan}</p>
                   <p className="text-xs font-mono">观望 {remoteTr!.considering} · 看完 {remoteTr!.completed}</p>
                   <p className="text-xs font-mono">推荐 {remoteRecCount} 条</p>
