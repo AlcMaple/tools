@@ -536,6 +536,9 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const setFavorite = (n: number): void => {
     animeTrackStore.upsert({ bgmId: track.bgmId, favorite: n })
   }
+  const setObserveCount = (n: number): void => {
+    animeTrackStore.upsert({ bgmId: track.bgmId, observeCount: Math.max(0, n) })
+  }
   // 好看集 setter —— 接 number[]（编辑器 modal 整批写回，已 normalize）。
   const setGoodEpisodes = (eps: number[]): void => {
     animeTrackStore.upsert({ bgmId: track.bgmId, goodEpisodes: eps })
@@ -679,7 +682,11 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             ✨ 和 🌟 用 ml-auto 推到右端，组成一对"评分类"控件；窄屏 flex-wrap
             自动换行。
             - ✨ Good：点 +1 累加，右键 -1，点数字 inline 编辑。
-            - 🌟 Stars：点星位 N 设 favorite=N，点已亮的那颗清回 0。 */}
+            - 🌟 Stars：点星位 N 设 favorite=N，点已亮的那颗清回 0。
+
+            观望状态特殊：右侧"评分区"显示 ObserveCounter 而不是 🌟。
+            观望次数和最爱值是不同语义（观望 = "看看再说"的次数，最爱值 =
+            整体喜爱程度），不能复用同一个 UI 元素。 */}
         <div className="flex items-center gap-4 flex-wrap">
           <StatusSegment current={track.status} onChange={setStatus} />
           <EpisodeCounter
@@ -693,7 +700,14 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
               episodes={track.goodEpisodes}
               onOpen={() => setGoodEpsOpen(true)}
             />
-            <FavoriteStars value={track.favorite} onChange={setFavorite} />
+            {track.status === 'considering' ? (
+              <ObserveCounter
+                value={track.observeCount}
+                onChange={setObserveCount}
+              />
+            ) : (
+              <FavoriteStars value={track.favorite} onChange={setFavorite} />
+            )}
           </div>
         </div>
 
@@ -1163,6 +1177,66 @@ function FavoriteStars({
           </button>
         )
       })}
+    </div>
+  )
+}
+
+// ── Observe counter ──────────────────────────────────────────────────────────
+
+/**
+ * 观望次数计数器 —— 替代观望状态下的 🌟 评分槽。
+ *
+ * 设计意图：原 PDF 里观望次数 > 3 时用户会自己手动迁到"在追"。这里把"次数"
+ * 当作头等数据展示（不是星级评分），用 −/数字/+ 三键编辑；≥4 时数字框换
+ * 主色 border + 主色字 + tooltip 提示升级，**不**长出额外按钮 —— 升级动作
+ * 走左侧已有的 StatusSegment（点"在追"即可），避免功能冗余。
+ *
+ * 视觉对齐 `EpisodeCounter` 的 −/+1 规格（w-7 h-7 圆角 + border），保证一行
+ * 里两组 −/+ 控件视觉协调，不会出现"一组明显一组隐形"的违和感。
+ *
+ * 不设上限：用户硬要继续观望 N>4 不阻止，UI 持续主色高亮。这跟「最爱值」
+ * clamp 到 [0,6] 的硬上限是有意区分的 —— 观望次数是行为统计，最爱值是评分。
+ */
+function ObserveCounter({
+  value, onChange,
+}: {
+  value: number
+  onChange: (n: number) => void
+}): JSX.Element {
+  const overThreshold = value >= 4
+  const title = overThreshold
+    ? `观望 ${value} 次（> 3，可在左侧 status 切到「在追」）`
+    : `观望 ${value} 次（点 −/+ 调整；>3 时考虑切到「在追」）`
+  return (
+    <div className="inline-flex items-center gap-1.5" title={title}>
+      <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/45">
+        观望
+      </span>
+      <button
+        type="button"
+        onClick={() => onChange(value - 1)}
+        disabled={value <= 0}
+        title="观望次数 −1"
+        className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/70 hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-30 disabled:cursor-not-allowed border border-outline-variant/15"
+      >
+        <span className="material-symbols-outlined text-[16px] leading-none">remove</span>
+      </button>
+      {/* 数字框尺寸 / border 对齐 EpisodeInput；≥4 切主色，UI 提示该升级。 */}
+      <div className={`min-w-[2rem] h-7 px-2 rounded-md flex items-center justify-center font-mono text-xs font-bold tabular-nums border transition-colors ${
+        overThreshold
+          ? 'border-primary/40 text-primary bg-primary/8'
+          : 'border-outline-variant/15 text-on-surface bg-surface'
+      }`}>
+        {value}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(value + 1)}
+        title="观望次数 +1"
+        className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/70 hover:text-on-surface hover:bg-surface-container-high transition-colors border border-outline-variant/15"
+      >
+        <span className="material-symbols-outlined text-[16px] leading-none">add</span>
+      </button>
     </div>
   )
 }
