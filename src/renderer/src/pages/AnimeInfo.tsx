@@ -13,6 +13,7 @@ import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
 import { animeTrackStore, useAnimeTrack, deriveSubjectType } from '../stores/animeTrackStore'
+import { useCover } from '../hooks/useCover'
 import coverFallback from '../assets/cover-fallback.png'
 import { WatchHere } from '../components/WatchHere'
 
@@ -805,6 +806,7 @@ function DetailView({
   const hasStaff = data.staff.length > 0
   const displayTitle = (data.title_cn || data.title).toUpperCase()
   const track = useAnimeTrack(data.id)
+  const coverSrc = useCover(String(data.id), data.cover)
 
   // 别名：infobox 的「别名」字段 + 原名（若与显示标题不同）；去重
   const aliases = (() => {
@@ -860,9 +862,9 @@ function DetailView({
             {/* 光晕 */}
             <div className="absolute -inset-4 bg-primary/5 rounded-xl blur-3xl opacity-0 group-hover:opacity-100 transition-opacity" />
 
-            {/* 封面 —— 没封面 / 加载失败都回落到本地占位图。 */}
+            {/* 封面 —— useCover 解析本地路径；没封面 / 加载失败回落占位图。 */}
             <img
-              src={data.cover || coverFallback}
+              src={coverSrc || coverFallback}
               alt={data.title_cn || data.title}
               className="relative rounded-lg shadow-2xl w-full aspect-[2/3] object-cover"
               onError={(e) => {
@@ -938,9 +940,8 @@ function DetailView({
                     // 再重加 = 重新拍快照（store 看到 prev 不存在就会接受新值）。
                     bgmTags: data.tags,
                   })
-                  // 封面本地化（方案 C）：先 upsert 让 UI 立即有图，再异步把
-                  // 封面下到本地，下次打开列表走本地、离线可看。
-                  void animeTrackStore.cacheCoverFor(data.id)
+                  // 封面本地化不在这做 —— track.cover 存可移植 URL，本地化
+                  // 在显示时由 useCover 按设备各自处理（见 hooks/useCover.ts）。
                 }}
                 className="w-full py-4 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 text-on-surface-variant hover:text-primary font-label text-sm transition-colors flex items-center justify-center gap-2"
               >
