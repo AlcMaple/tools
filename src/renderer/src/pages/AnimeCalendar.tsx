@@ -397,14 +397,19 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
           </div>
         )}
 
-        {/* Hover overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2 gap-1.5">
+        {/* Hover overlay —— 渐变整体压暗（via 也给 black/75），让坐在上半区的
+            播放源 chip / 按钮在亮色封面上也读得清，不再糊成一团。 */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/75 to-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2 gap-1.5">
+          {/* 已绑播放源 —— 单个「▶ 播放」按钮（无绑定时 WatchHere 返回 null
+              不占位）。1 源直接打开，多源弹窗挑选，所以无论几个源遮罩高度
+              恒定、跟下面追番/BGM 按钮同尺寸，最坏 4 个源也不溢出。 */}
+          <WatchHere bgmId={item.id} variant="play-menu" />
           <button
             onClick={toggleTrack}
             className={`w-full text-[10px] font-label tracking-widest uppercase py-1.5 rounded-md flex items-center justify-center gap-1 transition-colors ${
               track
-                ? 'bg-error/20 hover:bg-error/30 text-error border border-error/30'
-                : 'bg-primary/85 hover:bg-primary text-on-primary border border-primary'
+                ? 'bg-error/85 hover:bg-error text-white border border-error'
+                : 'bg-primary hover:bg-primary/90 text-on-primary border border-primary'
             }`}
           >
             <span
@@ -421,7 +426,7 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
             rel="noreferrer"
             onClick={e => e.stopPropagation()}
             title="在 Bangumi 查看"
-            className="w-full text-[10px] font-label tracking-widest uppercase py-1.5 rounded-md flex items-center justify-center gap-1 bg-surface-container-highest/85 backdrop-blur-sm hover:bg-surface-container-highest text-on-surface-variant border border-outline-variant/30 transition-colors"
+            className="w-full text-[10px] font-label tracking-widest uppercase py-1.5 rounded-md flex items-center justify-center gap-1 bg-black/55 backdrop-blur-sm hover:bg-black/70 text-white/90 border border-white/20 transition-colors"
           >
             <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>open_in_new</span>
             <span>BGM</span>
@@ -433,8 +438,8 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
           - 标题 h-[30px] = text-xs 12px × leading-tight 1.25 × 2 行
           - sub h-[14px] ≈ 10px × 1.25 × 1 行（无 sub 时空格占位防塌陷）
           - meta 行 h-[12px] 始终渲染，score/eps 缺值时占位空字符串
-          WatchHere chips 仅在已绑过源时出现，calendar 里这种卡是少数；
-          多出来的高度等同于"这部已追"的视觉信号，不强求对齐。 */}
+          播放源跳转挪进了封面 hover 遮罩（不占静态高度），所以这里每张卡
+          高度严格一致，不再因"已绑源"而参差。 */}
       <div className="px-2 py-2 flex flex-col gap-0.5">
         <h3
           className="text-xs font-bold text-on-surface line-clamp-2 leading-tight h-[30px]"
@@ -455,9 +460,6 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
           <span className="font-label text-[9px] text-on-surface-variant/40 tracking-wider leading-none">
             {item.episodes > 0 ? `${item.episodes} eps` : ''}
           </span>
-        </div>
-        <div className="mt-0.5">
-          <WatchHere bgmId={item.id} variant="inline" />
         </div>
       </div>
     </div>
