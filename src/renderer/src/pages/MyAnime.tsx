@@ -21,7 +21,10 @@ import {
   useAnimeTrackList,
   type AnimeStatus,
   type AnimeTrack,
+  type SubjectType,
 } from '../stores/animeTrackStore'
+import { ModalShell } from './homework/shared'
+import coverFallback from '../assets/cover-fallback.png'
 import { WatchHere } from '../components/WatchHere'
 import { AddBindingModal } from '../components/AddBindingModal'
 import { SearchSourceModal } from '../components/SearchSourceModal'
@@ -148,6 +151,8 @@ export default function MyAnime(): JSX.Element {
   // 跟追番 tab 结构一致（chips 在容器外，body 只是列表）。
   const [recFilter, setRecFilter] = useState<RecFilterKey>('all')
   const [newRecOpen, setNewRecOpen] = useState(false)
+  // 手动添加弹窗 —— BGM 限流时无法搜索加番的兜底入口（006 阶段）。
+  const [manualAddOpen, setManualAddOpen] = useState(false)
   const recs = useRecommendationList()
   const recCounts = useMemo(() => countRecsByStatus(recs), [recs])
   // 评判标准弹窗：给 ✨ 好看集 和 🌟 最爱值 提供"什么时候 +1"的参考文档。
@@ -386,6 +391,15 @@ export default function MyAnime(): JSX.Element {
                   onChange={setSelectedTags}
                 />
                 <SortSelector value={sort} onChange={setSort} />
+                {/* 手动添加 —— BGM 限流时的兜底入口，默认 subjectType = 当前类目 tab */}
+                <button
+                  onClick={() => setManualAddOpen(true)}
+                  title="BGM 限流搜不了时，手动添加一条追番"
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-primary/15 text-primary border border-primary/25 font-label text-xs font-bold tracking-widest uppercase hover:bg-primary/25 transition-all"
+                >
+                  <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>add</span>
+                  添加
+                </button>
               </div>
             ) : (
               <button
@@ -455,12 +469,222 @@ export default function MyAnime(): JSX.Element {
           <NewRecommendationModal onClose={() => setNewRecOpen(false)} />
         )}
 
+        {/* 手动添加弹窗（类目 tab 顶部按钮触发）—— 默认类目 = 当前 tab */}
+        {manualAddOpen && currentCategory && (
+          <ManualAddModal
+            defaultCategory={currentCategory}
+            onClose={() => setManualAddOpen(false)}
+          />
+        )}
+
         {/* 评判标准弹窗（标题旁帮助按钮触发） */}
         {criteriaOpen && (
           <CriteriaModal onClose={() => setCriteriaOpen(false)} />
         )}
       </div>
     </div>
+  )
+}
+
+// ── Manual add modal ─────────────────────────────────────────────────────────
+
+const MANUAL_CATEGORY_OPTIONS: ReadonlyArray<{ key: SubjectType; label: string }> = [
+  { key: 'anime', label: '动画' },
+  { key: 'manga', label: '漫画' },
+  { key: 'novel', label: '小说' },
+]
+
+/**
+ * 手动添加追番 —— BGM 限流搜不了时的兜底入口（006 阶段）。
+ *
+ * 设计要点：
+ *   - **bgmId 优先填真的**：用户从 bgm.tv 条目 URL（如 bgm.tv/subject/267215）
+ *     拿到 id 填进来。填了真 id → 限流恢复后进详情页自动识别为「已追番」+
+ *     拉到完整元数据（detail cache 按 bgmId 命中，跟手动 track 物理隔离，
+ *     不会污染）。填不出来 → 留空，系统给负数 id 当纯本地条目。
+ *   - **封面走方案 C**：填 URL → upsert 后异步 cacheCoverFor 下载到本地,
+ *     跟 BGM 加的封面处理一致。
+ *   - **最少必填**：标题 + 类目。其他都可选 / 给默认值。
+ */
+function ManualAddModal({
+  defaultCategory, onClose,
+}: {
+  defaultCategory: 'anime' | 'manga' | 'novel'
+  onClose: () => void
+}): JSX.Element {
+  const [bgmIdInput, setBgmIdInput] = useState('')
+  const [title, setTitle] = useState('')
+  const [titleCn, setTitleCn] = useState('')
+  const [category, setCategory] = useState<SubjectType>(defaultCategory)
+  const [coverUrl, setCoverUrl] = useState('')
+  const [totalEps, setTotalEps] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const titleRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { titleRef.current?.focus() }, [])
+
+  const submit = (): void => {
+    const trimmedTitle = title.trim()
+    if (!trimmedTitle) {
+      setError('标题不能为空')
+      return
+    }
+    // bgmId：填了正整数用真的；留空 / 非法 → 负数兜底（-Date.now()）。
+    let bgmId: number
+    const raw = bgmIdInput.trim()
+    if (raw) {
+      const parsed = parseInt(raw, 10)
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        setError('BGM ID 要么留空，要么填正整数（从 bgm.tv 条目链接里拿）')
+        return
+      }
+      if (animeTrackStore.getByBgmId(parsed)) {
+        setError(`BGM ID ${parsed} 已经在追番列表里了`)
+        return
+      }
+      bgmId = parsed
+    } else {
+      bgmId = -Date.now()
+    }
+
+    const epsParsed = parseInt(totalEps.trim(), 10)
+    animeTrackStore.upsert({
+      bgmId,
+      subjectType: category,
+      title: trimmedTitle,
+      titleCn: titleCn.trim() || undefined,
+      cover: coverUrl.trim() || undefined,
+      totalEpisodes: Number.isFinite(epsParsed) && epsParsed > 0 ? epsParsed : undefined,
+      status: 'plan',
+      episode: 0,
+    })
+    // 封面本地化 —— 跟 BGM 加追番一致，异步下载，失败保留 URL。
+    if (coverUrl.trim()) void animeTrackStore.cacheCoverFor(bgmId)
+    onClose()
+  }
+
+  const inputCls =
+    'w-full px-3 py-2 rounded-lg bg-surface border border-outline-variant/20 text-sm text-on-surface placeholder:text-on-surface-variant/35 outline-none focus:border-primary/40 transition-colors'
+  const labelCls = 'font-label text-[10px] uppercase tracking-widest text-on-surface-variant/55 mb-1.5'
+
+  return (
+    <ModalShell onBackdrop={onClose}>
+      <div className="flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-outline-variant/10">
+          <h3 className="text-base font-black tracking-tight text-on-surface">手动添加追番</h3>
+          <p className="text-[11px] text-on-surface-variant/60 mt-1 font-label leading-relaxed">
+            BGM 限流搜不了时用这个加番。填上 BGM ID（从 bgm.tv 条目链接里拿，
+            如 <span className="font-mono text-on-surface-variant/80">bgm.tv/subject/267215</span>）,
+            限流恢复后进详情页会自动识别为已追番并补全信息。
+          </p>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+          {error && (
+            <div className="rounded-lg border border-error/40 bg-error/[0.08] px-3 py-2 text-xs text-error font-label">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <p className={labelCls}>标题 *</p>
+            <input
+              ref={titleRef}
+              className={inputCls}
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submit() }}
+              placeholder="原标题，如 巨蟲列島（也可直接填中文名）"
+            />
+          </div>
+
+          <div>
+            <p className={labelCls}>中文标题（可选）</p>
+            <input
+              className={inputCls}
+              value={titleCn}
+              onChange={e => setTitleCn(e.target.value)}
+              placeholder="中文名，如 巨虫列岛（卡片会优先显示这个）"
+            />
+          </div>
+
+          <div>
+            <p className={labelCls}>类目</p>
+            <div className="inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
+              {MANUAL_CATEGORY_OPTIONS.map(o => (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => setCategory(o.key)}
+                  className={`px-3 py-1.5 rounded-md font-label text-xs tracking-widest transition-colors ${
+                    category === o.key
+                      ? 'bg-primary text-on-primary font-bold'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className={labelCls}>BGM ID（可选）</p>
+              <input
+                className={`${inputCls} font-mono`}
+                value={bgmIdInput}
+                onChange={e => setBgmIdInput(e.target.value.replace(/[^0-9]/g, ''))}
+                inputMode="numeric"
+                placeholder="如 267215"
+              />
+            </div>
+            <div>
+              <p className={labelCls}>总集 / 话数（可选）</p>
+              <input
+                className={`${inputCls} font-mono`}
+                value={totalEps}
+                onChange={e => setTotalEps(e.target.value.replace(/[^0-9]/g, ''))}
+                inputMode="numeric"
+                placeholder="留空 = 连载中"
+              />
+            </div>
+          </div>
+
+          <div>
+            <p className={labelCls}>封面图 URL（可选）</p>
+            <input
+              className={inputCls}
+              value={coverUrl}
+              onChange={e => setCoverUrl(e.target.value)}
+              placeholder="贴图片链接，添加后会自动下载到本地"
+            />
+            <p className="text-[10px] text-on-surface-variant/40 mt-1 font-label">
+              留空用占位图；填了会下载到本地，离线也能显示
+            </p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-outline-variant/10 flex items-center gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-lg border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={submit}
+            className="flex-1 py-2.5 rounded-lg border border-primary/40 bg-primary/10 text-primary font-bold text-sm hover:bg-primary/20 transition-colors flex items-center justify-center gap-2"
+          >
+            <span className="material-symbols-outlined text-base leading-none">bookmark_add</span>
+            添加到追番
+          </button>
+        </div>
+      </div>
+    </ModalShell>
   )
 }
 
@@ -610,20 +834,23 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   }
   return (
     <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex">
-      {/* Cover */}
+      {/* Cover —— 没封面 / 封面 URL 加载失败都回落到本地占位图 cover-fallback。
+          onError 处理"有 cover 但加载不出来"（手填的不稳 URL / 网络挂）的情况:
+          一旦失败就把 src 换成占位图，且清掉 onError 防止占位图也触发死循环。 */}
       <div className="w-[88px] shrink-0 bg-surface-container-high">
-        {track.cover ? (
-          <img
-            src={track.cover}
-            alt={displayTitle}
-            className="w-full aspect-[2/3] object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full aspect-[2/3] flex items-center justify-center text-on-surface-variant/20">
-            <span className="material-symbols-outlined text-2xl">image</span>
-          </div>
-        )}
+        <img
+          src={track.cover || coverFallback}
+          alt={displayTitle}
+          className="w-full aspect-[2/3] object-cover"
+          loading="lazy"
+          onError={(e) => {
+            const img = e.currentTarget
+            if (img.src !== coverFallback) {
+              img.onerror = null
+              img.src = coverFallback
+            }
+          }}
+        />
       </div>
 
       {/* Body —— padding / gap 都收紧一档，让总高度刚好等于 cover 132px,

@@ -13,6 +13,7 @@ import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
 import { animeTrackStore, useAnimeTrack, deriveSubjectType } from '../stores/animeTrackStore'
+import coverFallback from '../assets/cover-fallback.png'
 import { WatchHere } from '../components/WatchHere'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -859,20 +860,19 @@ function DetailView({
             {/* 光晕 */}
             <div className="absolute -inset-4 bg-primary/5 rounded-xl blur-3xl opacity-0 group-hover:opacity-100 transition-opacity" />
 
-            {/* 封面 */}
-            {data.cover ? (
-              <img
-                src={data.cover}
-                alt={data.title_cn || data.title}
-                className="relative rounded-lg shadow-2xl w-full aspect-[2/3] object-cover"
-              />
-            ) : (
-              <div className="relative rounded-lg w-full aspect-[2/3] bg-surface-container-high flex items-center justify-center">
-                <span className="material-symbols-outlined text-on-surface-variant/20 text-6xl">
-                  image
-                </span>
-              </div>
-            )}
+            {/* 封面 —— 没封面 / 加载失败都回落到本地占位图。 */}
+            <img
+              src={data.cover || coverFallback}
+              alt={data.title_cn || data.title}
+              className="relative rounded-lg shadow-2xl w-full aspect-[2/3] object-cover"
+              onError={(e) => {
+                const img = e.currentTarget
+                if (img.src !== coverFallback) {
+                  img.onerror = null
+                  img.src = coverFallback
+                }
+              }}
+            />
 
             {/* 评分浮层 */}
             <div className="absolute -bottom-6 -right-6 bg-surface-variant/70 backdrop-blur-2xl p-6 rounded-xl border border-outline-variant/15 shadow-2xl">
@@ -920,23 +920,28 @@ function DetailView({
               </button>
             ) : (
               <button
-                onClick={() => animeTrackStore.upsert({
-                  bgmId: data.id,
-                  // 005 阶段新增：从 BGM detail 的 type + platform 派生 subjectType,
-                  // 写入 track。书籍类目下 platform 决定 manga / novel；画集和其他
-                  // 归 'other'（用户决策见 005 idea doc，UI tab 不显示 other）。
-                  subjectType: deriveSubjectType(data.type, data.platform),
-                  title: data.title,
-                  titleCn: data.title_cn || undefined,
-                  cover: data.cover || undefined,
-                  totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
-                  status: 'plan',
-                  episode: 0,
-                  // 加追番那一刻把 BGM 当前 tag 快照写入 —— store 内 lock-on-create
-                  // 保证之后再 fetch detail 即使 tag 变了，本地这份不动。删追番
-                  // 再重加 = 重新拍快照（store 看到 prev 不存在就会接受新值）。
-                  bgmTags: data.tags,
-                })}
+                onClick={() => {
+                  animeTrackStore.upsert({
+                    bgmId: data.id,
+                    // 005 阶段新增：从 BGM detail 的 type + platform 派生 subjectType,
+                    // 写入 track。书籍类目下 platform 决定 manga / novel；画集和其他
+                    // 归 'other'（用户决策见 005 idea doc，UI tab 不显示 other）。
+                    subjectType: deriveSubjectType(data.type, data.platform),
+                    title: data.title,
+                    titleCn: data.title_cn || undefined,
+                    cover: data.cover || undefined,
+                    totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
+                    status: 'plan',
+                    episode: 0,
+                    // 加追番那一刻把 BGM 当前 tag 快照写入 —— store 内 lock-on-create
+                    // 保证之后再 fetch detail 即使 tag 变了，本地这份不动。删追番
+                    // 再重加 = 重新拍快照（store 看到 prev 不存在就会接受新值）。
+                    bgmTags: data.tags,
+                  })
+                  // 封面本地化（方案 C）：先 upsert 让 UI 立即有图，再异步把
+                  // 封面下到本地，下次打开列表走本地、离线可看。
+                  void animeTrackStore.cacheCoverFor(data.id)
+                }}
                 className="w-full py-4 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 text-on-surface-variant hover:text-primary font-label text-sm transition-colors flex items-center justify-center gap-2"
               >
                 <span className="material-symbols-outlined text-lg leading-none">bookmark_add</span>
