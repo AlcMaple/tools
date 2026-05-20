@@ -433,6 +433,29 @@ class AnimeTrackStore {
    * 重启应用时这个调用会再触发一次，符合 docs/bgm-集成参考手册.md §3
    * 「失败后不试探不重试」原则。
    */
+  /**
+   * 把 track 的封面本地化 —— 调主进程下载当前 cover URL 到 userData/covers/,
+   * 成功后把 cover 字段替换成 archivist:// 本地路径。
+   *
+   * 用在加追番（BGM / 手动）之后：先 upsert（cover=原 URL，UI 立即有图）,
+   * 再异步 cacheCoverFor 把封面落地，下次打开列表就走本地、离线也能看。
+   *
+   * 幂等：cover 已经是 archivist:// 或为空 → 主进程直接返回原值，不重复下载。
+   * 失败静默（download 失败返回 null）→ 保留原 URL，不影响使用，**不重试**。
+   */
+  async cacheCoverFor(bgmId: number): Promise<void> {
+    const t = this.getByBgmId(bgmId)
+    if (!t || !t.cover || t.cover.startsWith('archivist://')) return
+    try {
+      const local = await window.bgmApi.cacheCover(String(bgmId), t.cover)
+      // 二次检查：下载期间用户可能删了 track / 换了封面，拿最新的再判断
+      const fresh = this.getByBgmId(bgmId)
+      if (local && local.startsWith('archivist://') && fresh && fresh.cover === t.cover) {
+        this.upsert({ bgmId, cover: local })
+      }
+    } catch { /* silent —— 保留原 URL，不重试 */ }
+  }
+
   async ensureBgmTagsFilled(bgmId: number): Promise<void> {
     const existing = this.getByBgmId(bgmId)
     if (!existing) return

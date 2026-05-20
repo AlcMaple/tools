@@ -356,6 +356,8 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
         episode: 0,
       })
       void animeTrackStore.ensureBgmTagsFilled(item.id)
+      // 封面本地化（方案 C）—— 跟 ensureBgmTagsFilled 一样异步补，失败保留 URL。
+      void animeTrackStore.cacheCoverFor(item.id)
     }
   }
 
