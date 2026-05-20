@@ -24,6 +24,7 @@ import {
   type SubjectType,
 } from '../stores/animeTrackStore'
 import { ModalShell } from './homework/shared'
+import { useCover } from '../hooks/useCover'
 import coverFallback from '../assets/cover-fallback.png'
 import { WatchHere } from '../components/WatchHere'
 import { AddBindingModal } from '../components/AddBindingModal'
@@ -502,8 +503,8 @@ const MANUAL_CATEGORY_OPTIONS: ReadonlyArray<{ key: SubjectType; label: string }
  *     拿到 id 填进来。填了真 id → 限流恢复后进详情页自动识别为「已追番」+
  *     拉到完整元数据（detail cache 按 bgmId 命中，跟手动 track 物理隔离，
  *     不会污染）。填不出来 → 留空，系统给负数 id 当纯本地条目。
- *   - **封面走方案 C**：填 URL → upsert 后异步 cacheCoverFor 下载到本地,
- *     跟 BGM 加的封面处理一致。
+ *   - **封面填 URL**：track.cover 存 URL（可移植 / 同步安全）；本地化在
+ *     显示时由 useCover 按设备各自处理，不在这写本地路径。
  *   - **最少必填**：标题 + 类目。其他都可选 / 给默认值。
  */
 function ManualAddModal({
@@ -558,8 +559,7 @@ function ManualAddModal({
       status: 'plan',
       episode: 0,
     })
-    // 封面本地化 —— 跟 BGM 加追番一致，异步下载，失败保留 URL。
-    if (coverUrl.trim()) void animeTrackStore.cacheCoverFor(bgmId)
+    // 封面本地化在显示时由 useCover 处理，这里只存 URL。
     onClose()
   }
 
@@ -765,6 +765,7 @@ const BUILTIN_SOURCES: ReadonlyArray<Source> = ['Aowu', 'Xifan', 'Girigiri']
 function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const displayTitle = track.titleCn || track.title
   const nativeTitle = track.titleCn && track.title !== track.titleCn ? track.title : ''
+  const coverSrc = useCover(String(track.bgmId), track.cover)
   // 删除追番要先弹 ConfirmDeleteModal —— 追番带着自定义标签、最爱值、好看集
   // 等本地数据，"双击 trash icon 真删" 那种轻量模式风险太高。
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
@@ -834,12 +835,11 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   }
   return (
     <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex">
-      {/* Cover —— 没封面 / 封面 URL 加载失败都回落到本地占位图 cover-fallback。
-          onError 处理"有 cover 但加载不出来"（手填的不稳 URL / 网络挂）的情况:
-          一旦失败就把 src 换成占位图，且清掉 onError 防止占位图也触发死循环。 */}
+      {/* Cover —— useCover 把 URL 解析成本地 archivist://（含老数据"回填"：
+          首次渲染时后台下载，下次走本地）。没封面 / 加载失败回落占位图。 */}
       <div className="w-[88px] shrink-0 bg-surface-container-high">
         <img
-          src={track.cover || coverFallback}
+          src={coverSrc || coverFallback}
           alt={displayTitle}
           className="w-full aspect-[2/3] object-cover"
           loading="lazy"
