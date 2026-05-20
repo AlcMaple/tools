@@ -8,16 +8,19 @@
 // - 没有绑定时 (bindings 空) 返回 null —— 让父组件来决定是否显示「先去关联」。
 //
 // 三个变种：
-// - 默认 `variant="row"` 横向 chips，适合 AnimeInfo 左栏 / Calendar 卡 hover。
+// - 默认 `variant="row"` 横向 chips，适合 AnimeInfo 左栏。
 // - `variant="inline"` 紧凑横排，适合 MyAnime 行尾。
+// - `variant="play-menu"` 单个「▶ 播放」按钮，专给周历卡 hover 遮罩用 ——
+//   遮罩空间小，逐个源平铺最坏 4 个会溢出卡片。改成单按钮：1 个源直接打开,
+//   ≥2 个源弹窗挑选。无论几个源遮罩高度恒定、跟追番/BGM 按钮同尺寸。
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AnimeBinding, AnimeTrack } from '../stores/animeTrackStore'
 import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
 
 interface Props {
   bgmId: number
-  variant?: 'row' | 'inline'
+  variant?: 'row' | 'inline' | 'play-menu'
   /** When true, show the "no bindings yet" placeholder instead of returning null. */
   showEmpty?: boolean
 }
@@ -27,6 +30,10 @@ export function WatchHere({ bgmId, variant = 'row', showEmpty = false }: Props):
   useAowuShareUrlBackfill(bgmId, track)
   if (!track || track.bindings.length === 0) {
     return showEmpty ? <EmptyPlaceholder /> : null
+  }
+  // 周历遮罩：单按钮 + 多源弹窗，详见 PlayMenu。
+  if (variant === 'play-menu') {
+    return <PlayMenu bindings={track.bindings} />
   }
   return (
     <div className={variant === 'inline'
@@ -40,6 +47,80 @@ export function WatchHere({ bgmId, variant = 'row', showEmpty = false }: Props):
           variant={variant}
         />
       ))}
+    </div>
+  )
+}
+
+// ── Play menu (周历卡 hover 遮罩) ──────────────────────────────────────────────
+
+/**
+ * 单个「▶ 播放」按钮。1 个源直接 window.open（经主进程 setWindowOpenHandler
+ * 转 shell.openExternal 打开外部浏览器）；≥2 个源弹一个居中 modal 让用户挑。
+ *
+ * modal 是 fixed 顶层独立图层 —— 跟 hover 遮罩物理隔离，所以鼠标离开卡片、
+ * 遮罩消失也不影响 modal（否则没法点）。
+ */
+function PlayMenu({ bindings }: { bindings: AnimeBinding[] }): JSX.Element {
+  const [picking, setPicking] = useState(false)
+  const multi = bindings.length > 1
+
+  const handleClick = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (multi) {
+      setPicking(true)
+    } else {
+      const url = resolveUrl(bindings[0])
+      if (url) window.open(url, '_blank', 'noreferrer')
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={handleClick}
+        title={multi ? `${bindings.length} 个播放源，点击挑选` : `播放 · ${chipLabel(bindings[0])}`}
+        className="w-full text-[10px] font-label tracking-widest uppercase py-1.5 rounded-md flex items-center justify-center gap-1 bg-primary hover:bg-primary/90 text-on-primary border border-primary transition-colors"
+      >
+        <span className="material-symbols-outlined leading-none" style={{ fontSize: 12, fontVariationSettings: "'FILL' 1" }}>play_arrow</span>
+        <span>播放{multi ? ` · ${bindings.length}` : ''}</span>
+      </button>
+      {picking && <SourcePicker bindings={bindings} onClose={() => setPicking(false)} />}
+    </>
+  )
+}
+
+function SourcePicker({ bindings, onClose }: { bindings: AnimeBinding[]; onClose: () => void }): JSX.Element {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={e => { e.stopPropagation(); onClose() }}
+    >
+      <div
+        className="w-72 max-w-[90vw] bg-surface-container-high rounded-2xl border border-outline-variant/20 p-4 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-1.5 mb-3 text-on-surface">
+          <span className="material-symbols-outlined leading-none text-primary" style={{ fontSize: 18 }}>play_circle</span>
+          <span className="font-label text-sm font-bold">选择播放源</span>
+        </div>
+        <div className="flex flex-col gap-2">
+          {bindings.map((b, i) => (
+            <a
+              key={`${b.source}-${i}`}
+              href={resolveUrl(b)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => onClose()}
+              title={`${chipLabel(b)} · ${b.sourceTitle || ''}`}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/25 hover:border-primary/45 text-primary font-label text-xs font-bold tracking-wider transition-colors"
+            >
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>play_arrow</span>
+              <span className="truncate">{chipLabel(b)}</span>
+            </a>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
