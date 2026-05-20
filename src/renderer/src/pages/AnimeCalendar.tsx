@@ -17,6 +17,7 @@ import {
   useAnimeTrack,
 } from '../stores/animeTrackStore'
 import { WatchHere } from '../components/WatchHere'
+import { useCover } from '../hooks/useCover'
 import { friendlyError } from '../utils/errorMessage'
 
 type State =
@@ -333,6 +334,7 @@ function DayColumn({
 function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
   const track = useAnimeTrack(item.id)
   const displayTitle = item.name_cn || item.name
+  const coverSrc = useCover(String(item.id), item.cover)
   const sub = item.name_cn && item.name && item.name !== item.name_cn ? item.name : ''
 
   const toggleTrack = (): void => {
@@ -356,17 +358,17 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
         episode: 0,
       })
       void animeTrackStore.ensureBgmTagsFilled(item.id)
-      // 封面本地化（方案 C）—— 跟 ensureBgmTagsFilled 一样异步补，失败保留 URL。
-      void animeTrackStore.cacheCoverFor(item.id)
     }
   }
 
   return (
     <div className="group relative bg-surface-container rounded-lg border border-outline-variant/15 overflow-hidden hover:border-primary/30 transition-colors">
       <div className="aspect-[3/4] relative">
+        {/* useCover 把封面 URL 解析成本地 archivist://（首次后台下载，下次
+            走本地、离线可看）。没封面回落占位图标。 */}
         {item.cover ? (
           <img
-            src={item.cover}
+            src={coverSrc || item.cover}
             alt={displayTitle}
             className="w-full h-full object-cover"
             loading="lazy"
