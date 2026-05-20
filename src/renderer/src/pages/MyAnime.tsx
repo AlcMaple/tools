@@ -82,7 +82,13 @@ function statusMetaOf(s: AnimeStatus): StatusMeta {
 function matchesAnime(t: AnimeTrack, q: string): boolean {
   if (!q) return true
   const needle = q.toLowerCase()
-  const hay = [t.title, t.titleCn ?? '', t.bindings.map(b => b.sourceTitle).join(' ')]
+  const hay = [
+    t.title,
+    t.titleCn ?? '',
+    // BGM 别名 —— 搜「魔女」能命中别名「魔女的考验」的「魔界女王候补生」
+    (t.aliases ?? []).join(' '),
+    t.bindings.map(b => b.sourceTitle).join(' '),
+  ]
     .join(' ')
     .toLowerCase()
   return hay.includes(needle)

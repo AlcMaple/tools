@@ -12,7 +12,7 @@ import { GirigiriDownloadConfigModal } from '../components/GirigiriDownloadModal
 import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
-import { animeTrackStore, useAnimeTrack, deriveSubjectType } from '../stores/animeTrackStore'
+import { animeTrackStore, useAnimeTrack, deriveSubjectType, aliasesFromInfobox } from '../stores/animeTrackStore'
 import { useCover } from '../hooks/useCover'
 import coverFallback from '../assets/cover-fallback.png'
 import { WatchHere } from '../components/WatchHere'
@@ -931,6 +931,9 @@ function DetailView({
                     subjectType: deriveSubjectType(data.type, data.platform),
                     title: data.title,
                     titleCn: data.title_cn || undefined,
+                    // BGM 别名一并存入 —— MyAnime 本地搜索能按别名命中这条追番
+                    // （搜「魔女」也能搜到别名含「魔女」的「魔界女王候补生」）。
+                    aliases: aliasesFromInfobox(data.infobox),
                     cover: data.cover || undefined,
                     totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
                     status: 'plan',
