@@ -165,6 +165,8 @@ declare global {
       onSearchProgress: (cb: (current: number, total: number) => void) => () => void
       /** Weekly airing calendar. `update=true` bypasses the 24h cache. */
       calendar: (update?: boolean) => Promise<BgmCalendarResult>
+      /** 封面本地化：下载 url 到本地，返回 archivist:// 路径（失败 null）。 */
+      cacheCover: (key: string, url: string) => Promise<string | null>
     }
     xifanApi: {
       getCaptcha: () => Promise<{ image_b64: string }>

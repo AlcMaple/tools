@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld('bgmApi', {
   },
   /** Weekly airing calendar (本季新番). `update=true` bypasses the 24h cache. */
   calendar: (update?: boolean) => ipcRenderer.invoke('bgm:calendar', update),
+  /**
+   * 封面本地化：下载 url 到本地，返回 archivist:// 路径（失败返回 null）。
+   * key 一般传 String(bgmId)。renderer 拿到非 null 就用它替换 track.cover。
+   */
+  cacheCover: (key: string, url: string): Promise<string | null> =>
+    ipcRenderer.invoke('bgm:cache-cover', key, url),
 })
 
 // Single subscription point for download progress events. The main process
