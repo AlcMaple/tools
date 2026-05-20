@@ -84,6 +84,16 @@ export interface AnimeTrack {
   subjectType: SubjectType
   title: string
   titleCn?: string
+  /**
+   * BGM 别名 —— 来自详情页 infobox 的「别名」栏（如「魔界女王候补生」的
+   * 别名「魔女的考验」）。**纯粹给 MyAnime 本地搜索用**：用户搜别名也能命中
+   * 这条追番，不用记官方主标题。
+   *
+   * 加追番那一刻从 BGM detail 写入（AnimeInfo 追番按钮 / Calendar +追番 走
+   * ensureBgmTagsFilled 异步补）。BGM 别名基本不变，不做 lock，也不参与
+   * 跨设备同步以外的派生。老 track 没这字段时 normalize() 默认 []。
+   */
+  aliases: string[]
   cover?: string
   status: AnimeStatus
   /** Last watched episode (0 = not started). */
@@ -182,6 +192,20 @@ export function normalizeTagList(input: unknown): string[] {
     out.push(trimmed)
   }
   return out
+}
+
+/**
+ * 从 BGM detail 的 infobox 提取「别名」并归一成 string[]。
+ *
+ * BGM infobox 在主进程 detail.ts 已把多别名数组拼成「、」分隔的单串
+ * （如「魔女的考验、Witch Trial」）。这里按常见分隔符（、,，;；/）再切回
+ * 数组，复用 normalizeTagList 去空 / 去重。infobox 缺「别名」时返回 []。
+ */
+export function aliasesFromInfobox(infobox: Record<string, string> | undefined | null): string[] {
+  if (!infobox) return []
+  const raw = infobox['别名'] ?? ''
+  if (!raw) return []
+  return normalizeTagList(raw.split(/[、,，;；/]/))
 }
 
 // ── 好看集集号工具 ──────────────────────────────────────────────────────────
@@ -310,6 +334,7 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     subjectType,
     title: typeof t.title === 'string' ? t.title : '',
     titleCn: typeof t.titleCn === 'string' && t.titleCn.length > 0 ? t.titleCn : undefined,
+    aliases: normalizeTagList(t.aliases),
     cover: typeof t.cover === 'string' && t.cover.length > 0 ? t.cover : undefined,
     status,
     episode: total != null ? Math.min(episode, total) : episode,
@@ -449,9 +474,13 @@ class AnimeTrackStore {
     if (!recheck || recheck.bgmTags.length > 0) return
     try {
       const detail = await window.bgmApi.detail(bgmId)
-      if (Array.isArray(detail.tags) && detail.tags.length > 0) {
-        this.upsert({ bgmId, bgmTags: detail.tags })
-      }
+      // 同一次 detail 顺带把别名补上（零额外请求）—— 周历 +追番 没 detail,
+      // 别名要靠这里回填，之后 MyAnime 本地搜索才能按别名命中。
+      const aliases = aliasesFromInfobox(detail.infobox)
+      const patch: Partial<AnimeTrack> & { bgmId: number } = { bgmId }
+      if (Array.isArray(detail.tags) && detail.tags.length > 0) patch.bgmTags = detail.tags
+      if (aliases.length > 0) patch.aliases = aliases
+      if (patch.bgmTags || patch.aliases) this.upsert(patch)
     } catch { /* silent — 下次相关入口再触发时重试 */ }
   }
 
