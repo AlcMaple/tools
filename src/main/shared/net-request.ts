@@ -28,6 +28,10 @@ export interface NetResult {
   body: Buffer
 }
 
+// 由 Chromium 网络栈自动管理的请求头：手动 setHeader 会抛 net::ERR_INVALID_ARGUMENT
+// （或被忽略）。一律跳过，让 net 自己设。小写比较。
+const NET_MANAGED_HEADERS = new Set(['host', 'connection', 'content-length', 'accept-encoding'])
+
 export interface NetOptions {
   method?: string
   headers?: Record<string, string>
@@ -57,8 +61,12 @@ export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResul
     const request = net.request({ method, url, redirect })
 
     for (const [k, v] of Object.entries(headers)) {
-      // Accept-Encoding 交给 Chromium 自己协商 + 解压，调用方设了反而拿到原始字节
-      if (k.toLowerCase() === 'accept-encoding') continue
+      // 跳过由 Chromium 网络栈自己管理的头：手动 setHeader 它们会抛
+      // net::ERR_INVALID_ARGUMENT。Host/Connection 由 net 按 URL/连接池自动设；
+      // Content-Length 按 body 自动算；Accept-Encoding 交给 net 协商 + 自动解压
+      // （调用方设了反而拿到未解压的原始字节）。BrowserSession.headers() 会带
+      // Host/Connection，所以这层必须过滤，否则 bgm:search 直接报错。
+      if (NET_MANAGED_HEADERS.has(k.toLowerCase())) continue
       request.setHeader(k, v)
     }
 
