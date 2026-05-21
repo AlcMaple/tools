@@ -22,9 +22,9 @@
  * 它走标准 HTTP 429 + Retry-After 头，所以这里只需要 timing 节流 +
  * HTTP 429 探测即可，不需要 body 检测层。
  */
-import * as https from 'node:https'
 import { app } from 'electron'
 import { RateLimiter, RateLimitError } from '../shared/rate-limit'
+import { netRequest } from '../shared/net-request'
 
 /**
  * BGM 官方明确要求第三方调用 api.bgm.tv 时带规范 User-Agent：
@@ -75,41 +75,20 @@ const apiLimiter = new RateLimiter({
  *                          原始错误信息传给上层让 errorMessage classifier 分类。
  */
 export async function fetchBgmApiJson<T = unknown>(url: string): Promise<T> {
-  return apiLimiter.schedule(
-    () =>
-      new Promise<T>((resolve, reject) => {
-        const req = https.get(url, { headers: buildHeaders() }, (res) => {
-          const status = res.statusCode ?? 0
-          if (status === 429) {
-            const retryAfter = parseInt(String(res.headers['retry-after'] ?? '30')) || 30
-            res.resume()
-            reject(
-              new RateLimitError(
-                retryAfter,
-                `BGM API 触发限流（HTTP 429），请等 ${retryAfter} 秒后再试`,
-              ),
-            )
-            return
-          }
-          if (status >= 400) {
-            res.resume()
-            reject(new Error(`BGM API HTTP ${status} for ${url}`))
-            return
-          }
-          const chunks: Buffer[] = []
-          res.on('data', (c: Buffer) => chunks.push(c))
-          res.on('end', () => {
-            try {
-              resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8')) as T)
-            } catch (e) {
-              reject(e)
-            }
-          })
-        })
-        req.on('error', reject)
-        req.setTimeout(10000, () => {
-          req.destroy(new Error('timeout'))
-        })
-      }),
-  )
+  return apiLimiter.schedule(async () => {
+    // 走 Electron net（Chromium 网络栈）—— 自动用系统代理，修掉 Node https
+    // 不走代理、直连 fake-ip 假地址导致的冷启动超时。详见 shared/net-request.ts。
+    const res = await netRequest(url, { headers: buildHeaders(), timeoutMs: 10000 })
+    if (res.status === 429) {
+      const retryAfter = parseInt(String(res.headers['retry-after'] ?? '30')) || 30
+      throw new RateLimitError(
+        retryAfter,
+        `BGM API 触发限流（HTTP 429），请等 ${retryAfter} 秒后再试`,
+      )
+    }
+    if (res.status >= 400) {
+      throw new Error(`BGM API HTTP ${res.status} for ${url}`)
+    }
+    return JSON.parse(res.body.toString('utf-8')) as T
+  })
 }
