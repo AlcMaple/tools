@@ -1,5 +1,5 @@
-import * as https from 'https'
 import * as cheerio from 'cheerio/slim'
+import { netRequest } from '../shared/net-request'
 
 const BASE_URL = 'https://mzh.moegirl.org.cn/'
 const USER_AGENT =
@@ -52,26 +52,11 @@ interface PageInfo {
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 
-function httpsGet(url: string, timeout = 15000): Promise<{ status: number; body: string }> {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: HEADERS }, (res) => {
-      // 跟随 3xx 重定向（location 可能是相对路径）
-      const status = res.statusCode ?? 0
-      if (status >= 300 && status < 400 && res.headers.location) {
-        res.resume()
-        const next = new URL(res.headers.location, url).toString()
-        httpsGet(next, timeout).then(resolve, reject)
-        return
-      }
-      const chunks: Buffer[] = []
-      res.on('data', (c: Buffer) => chunks.push(c))
-      res.on('end', () =>
-        resolve({ status, body: Buffer.concat(chunks).toString('utf-8') }),
-      )
-    })
-    req.setTimeout(timeout, () => { req.destroy(new Error('timeout')) })
-    req.on('error', reject)
-  })
+async function httpsGet(url: string, timeout = 15000): Promise<{ status: number; body: string }> {
+  // 走 Electron net（Chromium 网络栈）—— 自动用系统代理，且自动跟随 3xx
+  // 重定向（含相对 Location），省掉手动重定向逻辑。net 自己解压成明文。
+  const res = await netRequest(url, { headers: HEADERS, timeoutMs: timeout })
+  return { status: res.status, body: res.body.toString('utf-8') }
 }
 
 // ── HTML 解析 ────────────────────────────────────────────────────────────────

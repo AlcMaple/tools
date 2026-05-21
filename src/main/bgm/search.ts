@@ -23,8 +23,6 @@
  *     pages NEVER reach saveCache (and on read, we also delete any
  *     pre-existing poisoned files left over from older code paths).
  */
-import * as https from 'node:https'
-import { URL } from 'node:url'
 import * as cheerio from 'cheerio/slim'
 import { promises as fs, existsSync } from 'fs'
 import { join } from 'path'
@@ -36,7 +34,8 @@ import {
   RateLimitError,
   type LimitDetector,
 } from '../shared/rate-limit'
-import { decodeBody, withTransientRetry } from '../shared/http-client'
+import { withTransientRetry } from '../shared/http-client'
+import { netRequest } from '../shared/net-request'
 import { fetchBgmApiJson } from './api-client'
 
 /**
@@ -139,41 +138,18 @@ async function saveCache(html: string, keyword: string, page: number, cat: BgmSe
 
 // ── Fetch with full defense stack ─────────────────────────────────────────────
 
-function rawGet(url: string): Promise<{ status: number; body: Buffer }> {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url)
-    const req = https.request(
-      {
-        method: 'GET',
-        hostname: u.hostname,
-        path: u.pathname + u.search,
-        headers: session.headers({
-          'sec-fetch-user': '?1',
-          'upgrade-insecure-requests': '1',
-        }),
-      },
-      (res) => {
-        session.ingestSetCookie(res.headers as { 'set-cookie'?: string[] })
-        const chunks: Buffer[] = []
-        res.on('data', (c: Buffer) => chunks.push(c))
-        res.on('end', () => {
-          try {
-            resolve({
-              status: res.statusCode ?? 0,
-              body: decodeBody(res.headers, Buffer.concat(chunks)),
-            })
-          } catch (e) {
-            reject(e)
-          }
-        })
-      },
-    )
-    req.setTimeout(10000, () => {
-      req.destroy(new Error('timeout'))
-    })
-    req.on('error', reject)
-    req.end()
+async function rawGet(url: string): Promise<{ status: number; body: Buffer }> {
+  // 走 Electron net（Chromium 网络栈）—— 自动用系统代理，修掉 Node https 直连
+  // fake-ip 假地址导致的冷启动超时。net 自己解压，所以不再 decodeBody。
+  const res = await netRequest(url, {
+    headers: session.headers({
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1',
+    }),
+    timeoutMs: 10000,
   })
+  session.ingestSetCookie(res.headers as { 'set-cookie'?: string[] })
+  return { status: res.status, body: res.body }
 }
 
 /**
