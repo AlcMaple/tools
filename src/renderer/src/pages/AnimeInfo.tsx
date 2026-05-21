@@ -1198,11 +1198,8 @@ function AnimeInfo(): JSX.Element {
     if (k === searchKind) return
     _cachedSearchKind = k
     setSearchKindState(k)
-    // 切类目时把当前结果列表清掉，避免"我刚搜了动画看到结果，切到书籍
-    // 后还看着动画卡片"的视觉混乱
-    lastResults.current = []
-    _cachedResults = []
-    setState({ status: 'idle' })
+    // 切类目只改"下次搜索用哪个 cat"，**不动当前已显示的结果** —— 用户要求
+    // 切换保持原样，等真正再点搜索时才换内容（按新 kind 走缓存/网络）。
   }
 
   useEffect(() => {
