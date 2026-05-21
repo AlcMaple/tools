@@ -43,6 +43,11 @@ contextBridge.exposeInMainWorld('downloadApi', {
 })
 
 contextBridge.exposeInMainWorld('systemApi', {
+  /**
+   * 渲染进程完全就绪（React 挂载完 + 字体加载完）后调一次，主进程据此
+   * 一次性显示窗口，避免首帧 show 后字体/图标陆续跳出来的"闪几下"观感。
+   */
+  signalReady: () => ipcRenderer.send('app:renderer-ready'),
   getDiskFree: () => ipcRenderer.invoke('system:disk-free'),
   pickFolder: () => ipcRenderer.invoke('system:pick-folder'),
   /**
