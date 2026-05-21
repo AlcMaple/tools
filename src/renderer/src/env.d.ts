@@ -129,6 +129,8 @@ declare global {
       onProgress: (cb: (taskId: string, event: unknown) => void) => () => void
     }
     systemApi: {
+      /** 渲染就绪后调一次，主进程据此一次性显示窗口（消除启动闪烁）。 */
+      signalReady: () => void
       getDiskFree: () => Promise<{ free: number; total: number }>
       pickFolder: () => Promise<string | null>
       /** OS-default downloads folder that all downloaders fall back to when no

@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, protocol } from 'electron'
+import { app, shell, BrowserWindow, protocol, ipcMain } from 'electron'
 import { join } from 'path'
 import { readFile } from 'fs/promises'
 import { scanLibrary, startLibraryWatch, reconcilePaths, incrementalUpdate, type LibraryEntry } from './library/api'
@@ -46,6 +46,10 @@ function createWindow(): void {
     height: 800,
     title: 'MapleTools',
     show: false,
+    // 窗口底色给暗色主题的 background(#131313)，而不是默认白 —— 否则
+    // 内容首帧画出来之前会闪一下刺眼的白。配合 index.html 里的暖色启动屏，
+    // 从第一帧起就是项目自己的暗色调。
+    backgroundColor: '#131313',
     autoHideMenuBar: true,
     icon: join(__dirname, '../../resources/icon.png'),
     webPreferences: {
@@ -54,7 +58,20 @@ function createWindow(): void {
     },
   })
 
-  mainWindow.on('ready-to-show', () => { mainWindow.show() })
+  // 一次性、无闪烁地显示窗口。不在 'ready-to-show'（首帧）就 show ——
+  // 那时字体（尤其 3.9MB 图标字体）还没加载完，show 出来后图标 / 文字会
+  // 陆续跳出来，看着像闪好几下。改成等渲染进程发 'app:renderer-ready'
+  // （它在 React 挂载完 + document.fonts.ready 后才发），窗口一次成型再亮。
+  // 兜底 4s：万一渲染信号没来（崩溃 / 老 preload），也不能永远黑窗。
+  let revealed = false
+  const reveal = (): void => {
+    if (revealed || mainWindow.isDestroyed()) return
+    revealed = true
+    clearTimeout(fallbackTimer)
+    mainWindow.show()
+  }
+  const fallbackTimer = setTimeout(reveal, 4000)
+  ipcMain.once('app:renderer-ready', reveal)
 
   mainWindow.webContents.setWindowOpenHandler((details: { url: string }) => {
     shell.openExternal(details.url)
