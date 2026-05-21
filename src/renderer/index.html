@@ -14,6 +14,14 @@
         }
       })();
     </script>
+    <style>
+      /* 只给 html/body 铺暗色主题底色，消掉默认白屏。不做启动屏 ——
+         窗口由主进程等渲染完全就绪后才一次性显示（见 main/index.ts），
+         所以这层底色只在极早期兜底，用户基本看不到中间态。 */
+      html { background: #f8f9fa; }        /* 浅色主题底色 */
+      html.dark { background: #131313; }   /* 暗色主题底色（默认） */
+      body { margin: 0; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

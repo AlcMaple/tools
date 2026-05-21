@@ -21,3 +21,20 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <App />
   </React.StrictMode>
 )
+
+// 告诉主进程"渲染就绪"，让它一次性显示窗口（避免首帧 show 后字体/图标
+// 陆续跳出来的闪烁）。等下一帧（React 已提交首屏）+ 字体加载完才发信号；
+// fonts.ready 卡住时 1.5s 兜底，主进程那边还有 4s 总兜底，双保险不黑窗。
+{
+  let signaled = false
+  const signalReady = (): void => {
+    if (signaled) return
+    signaled = true
+    window.systemApi?.signalReady?.()
+  }
+  requestAnimationFrame(() => {
+    const fontsReady = document.fonts?.ready ?? Promise.resolve()
+    fontsReady.then(signalReady).catch(signalReady)
+    setTimeout(signalReady, 1500)
+  })
+}
