@@ -160,8 +160,8 @@ export function matchesPjjc(group: PjjcGroup, q: string): boolean {
   if (!q) return true
   const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
   if (terms.length === 0) return true
-  const hay = group.defenses.flat().join(' ').toLowerCase()
-  return terms.every(t => hay.includes(t))
+  const names = charNameTokens(group.defenses.flat())
+  return terms.every(t => names.has(t))
 }
 
 // ── Log entry (做过的事记录) ───────────────────────────────────────────────────
@@ -224,13 +224,34 @@ export function cleanCharName(s: string): string {
   return stripCjkLatinSpaces(s.replace(/`/g, '').trim())
 }
 
+/**
+ * 把角色名列表拆成可**精确匹配**的 token 集合。
+ *
+ * 每个角色名是离散单位，按整名匹配，**绝不做子串包含** —— 否则搜「驴」会命中
+ * 「魔驴」（两个不同角色）。变体后缀用 "/" 分隔（如「涅比亚/ams」），拆开后
+ * 「涅比亚」和「ams」都能命中同一个角色，但「驴」仍命中不了「魔驴」。
+ */
+function charNameTokens(names: string[]): Set<string> {
+  const set = new Set<string>()
+  for (const raw of names) {
+    const name = raw.toLowerCase().trim()
+    if (!name) continue
+    set.add(name)
+    for (const part of name.split('/')) {
+      const p = part.trim()
+      if (p) set.add(p)
+    }
+  }
+  return set
+}
+
 /** Match against the defense field only. Attacks and notes are ignored. */
 export function matchesDefense(item: DefenseGroup, q: string): boolean {
   if (!q) return true
   const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
   if (terms.length === 0) return true
-  const hay = item.defense.join(' ').toLowerCase()
-  return terms.every(t => hay.includes(t))
+  const names = charNameTokens(item.defense)
+  return terms.every(t => names.has(t))
 }
 
 /** Match against the title field only. Teams and notes are ignored. */
