@@ -59,8 +59,26 @@ export function GoodEpisodesEditor({
   // 长寡番（柯南）的用户可以手动切到「仅好看集」绕开 1000+ 方块网格。
   const [view, setView] = useState<ViewMode>('all')
 
-  // 就地备注气泡：点「全部集数」里某个已标格子角上的笔图标时打开，锚定在那一格。
+  // 就地备注气泡：右键已标的集时打开，锚定在那一格。
   const [noteEditor, setNoteEditor] = useState<{ ep: number; anchor: DOMRect } | null>(null)
+
+  // 备注 hover 提示气泡 —— 自己实现而不用原生 title，因为 title 有浏览器写死的
+  // ~0.7s 延迟，慢。这里 ~120ms 防抖后即显（既快又避免扫过一堆格子时狂闪）。
+  const [hoverTip, setHoverTip] = useState<{ text: string; anchor: DOMRect } | null>(null)
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showTip = (text: string, anchor: DOMRect): void => {
+    if (tipTimer.current) clearTimeout(tipTimer.current)
+    tipTimer.current = setTimeout(() => setHoverTip({ text, anchor }), 120)
+  }
+  const hideTip = (): void => {
+    if (tipTimer.current) clearTimeout(tipTimer.current)
+    setHoverTip(null)
+  }
+  const openNote = (ep: number, anchor: DOMRect): void => {
+    hideTip()
+    setNoteEditor({ ep, anchor })
+  }
+  useEffect(() => () => { if (tipTimer.current) clearTimeout(tipTimer.current) }, [])
 
   // 网格上限：
   //   - totalEpisodes 已知 → 直接用 total
@@ -77,6 +95,9 @@ export function GoodEpisodesEditor({
   const marked = useMemo(() => new Set(episodes), [episodes])
 
   const toggle = (n: number): void => {
+    // 取消标记会连带删掉这集的备注 → 立即关掉可能正显示着的备注气泡，
+    // 否则取消后 note 变 undefined、onMouseLeave 也清不掉它，气泡会卡住。
+    hideTip()
     const next = new Set(marked)
     if (next.has(n)) next.delete(n)
     else next.add(n)
@@ -154,12 +175,18 @@ export function GoodEpisodesEditor({
               marked={marked}
               notes={notes}
               onToggle={toggle}
-              onOpenNote={(ep, anchor) => setNoteEditor({ ep, anchor })}
+              onOpenNote={openNote}
+              onHoverNote={showTip}
+              onHoverEnd={hideTip}
             />
           ) : (
             <MarkedView
               episodes={episodes}
+              notes={notes}
               onRemove={toggle}
+              onOpenNote={openNote}
+              onHoverNote={showTip}
+              onHoverEnd={hideTip}
               onSwitchToAll={() => setView('all')}
             />
           )}
@@ -193,6 +220,8 @@ export function GoodEpisodesEditor({
           </button>
         </div>
       </div>
+
+      {hoverTip && <NoteTip text={hoverTip.text} anchor={hoverTip.anchor} />}
 
       {noteEditor && (
         <NotePopover
@@ -245,13 +274,15 @@ function ViewToggleButton({
 // ── Grid view（全部集数）─────────────────────────────────────────────────────
 
 function GridView({
-  maxN, marked, notes, onToggle, onOpenNote,
+  maxN, marked, notes, onToggle, onOpenNote, onHoverNote, onHoverEnd,
 }: {
   maxN: number
   marked: Set<number>
   notes: Record<number, string>
   onToggle: (n: number) => void
   onOpenNote: (ep: number, anchor: DOMRect) => void
+  onHoverNote: (text: string, anchor: DOMRect) => void
+  onHoverEnd: () => void
 }): JSX.Element {
   return (
     <div
@@ -273,18 +304,16 @@ function GridView({
                 ? e => { e.preventDefault(); onOpenNote(n, (e.currentTarget as HTMLElement).getBoundingClientRect()) }
                 : undefined
             }
+            onMouseEnter={
+              note
+                ? e => onHoverNote(note, (e.currentTarget as HTMLElement).getBoundingClientRect())
+                : undefined
+            }
+            onMouseLeave={onHoverEnd}
           >
             <button
               type="button"
               onClick={() => onToggle(n)}
-              // 有备注的格子 title 直接显示备注内容（hover 即见）
-              title={
-                note
-                  ? `第 ${n} 集 · ${note}`
-                  : isMarked
-                    ? `第 ${n} 集（已标 · 再点取消 · 右键写备注）`
-                    : `第 ${n} 集（点击标记）`
-              }
               className={`w-full h-9 rounded-md font-mono text-xs transition-all border ${
                 isMarked
                   ? 'bg-amber-400/20 text-amber-600 border-amber-400/50 font-bold hover:bg-amber-400/30'
@@ -316,10 +345,14 @@ function GridView({
  * 写备注统一在「全部集数」里就地进行（见 GridView 的笔图标 + NotePopover）。
  */
 function MarkedView({
-  episodes, onRemove, onSwitchToAll,
+  episodes, notes, onRemove, onOpenNote, onHoverNote, onHoverEnd, onSwitchToAll,
 }: {
   episodes: number[]
+  notes: Record<number, string>
   onRemove: (n: number) => void
+  onOpenNote: (ep: number, anchor: DOMRect) => void
+  onHoverNote: (text: string, anchor: DOMRect) => void
+  onHoverEnd: () => void
   onSwitchToAll: () => void
 }): JSX.Element {
   if (episodes.length === 0) {
@@ -351,26 +384,62 @@ function MarkedView({
       className="grid gap-1.5"
       style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))' }}
     >
-      {episodes.map(n => (
-        <button
-          key={n}
-          type="button"
-          onClick={() => onRemove(n)}
-          title={`第 ${n} 集（点击移除）`}
-          className="group relative h-9 rounded-md font-mono text-xs font-bold bg-amber-400/20 text-amber-600 border border-amber-400/50 hover:bg-error/15 hover:border-error/40 hover:text-error transition-all"
-        >
-          <span className="group-hover:opacity-0 transition-opacity">{n}</span>
-          {/* hover 时显示 × 删除图标，覆盖原本的数字 */}
-          <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>close</span>
-          </span>
-        </button>
-      ))}
+      {episodes.map(n => {
+        const note = notes[n]
+        return (
+          <button
+            key={n}
+            type="button"
+            // 左键 = 移除（原行为不变）；右键 = 写/改备注（跟「全部集数」一致）
+            onClick={() => onRemove(n)}
+            onContextMenu={e => { e.preventDefault(); onOpenNote(n, e.currentTarget.getBoundingClientRect()) }}
+            onMouseEnter={note ? e => onHoverNote(note, e.currentTarget.getBoundingClientRect()) : undefined}
+            onMouseLeave={onHoverEnd}
+            className="group relative h-9 rounded-md font-mono text-xs font-bold bg-amber-400/20 text-amber-600 border border-amber-400/50 hover:bg-error/15 hover:border-error/40 hover:text-error transition-all"
+          >
+            <span className="group-hover:opacity-0 transition-opacity">{n}</span>
+            {/* hover 时显示 × 删除图标，覆盖原本的数字 */}
+            <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>close</span>
+            </span>
+            {/* 有备注 → 角上常驻琥珀圆点（跟全部集数一致） */}
+            {note && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500 pointer-events-none" />
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-// ── 就地备注气泡（全部集数里点笔图标弹出）────────────────────────────────────
+// ── 备注 hover 提示气泡（自定义，比原生 title 快）──────────────────────────────
+
+/**
+ * 只读的小气泡，hover 已标且有备注的集时显示其备注。portal 到 body（避开
+ * ModalShell 的 transform 把 fixed 定位带偏），贴在格子下方、贴底翻上方。
+ * pointer-events-none，不挡鼠标。
+ */
+function NoteTip({ text, anchor }: { text: string; anchor: DOMRect }): JSX.Element {
+  const W = 220
+  const H = 44
+  // 气泡宽度按内容自适应（maxWidth 封顶），所以用 translateX(-50%) 居中而不是
+  // 减去固定宽度 —— 否则窄气泡会被按"满宽"算偏到格子左边。center 夹到视口内
+  // （按最大可能宽度算边界，保证再宽也不溢出）。
+  const center = Math.max(W / 2 + 8, Math.min(anchor.left + anchor.width / 2, window.innerWidth - W / 2 - 8))
+  const top = anchor.bottom + 6 + H > window.innerHeight ? anchor.top - H - 6 : anchor.bottom + 6
+  return createPortal(
+    <div
+      style={{ position: 'fixed', top, left: center, maxWidth: W, transform: 'translateX(-50%)', zIndex: 9999 }}
+      className="pointer-events-none rounded-md bg-surface-container-highest border border-amber-400/40 shadow-lg px-2.5 py-1.5 font-body text-xs text-on-surface leading-snug"
+    >
+      {text}
+    </div>,
+    document.body,
+  )
+}
+
+// ── 就地备注气泡（右键已标的集弹出编辑）──────────────────────────────────────
 
 /**
  * 锚定在被点格子旁的小输入气泡。用 fixed 定位（按格子的视口坐标算），避开
