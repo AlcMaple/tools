@@ -160,8 +160,8 @@ export function matchesPjjc(group: PjjcGroup, q: string): boolean {
   if (!q) return true
   const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
   if (terms.length === 0) return true
-  const names = charNameTokens(group.defenses.flat())
-  return terms.every(t => names.has(t))
+  // 3 个防守阵容拍平成一串角色位，每个搜索词占一个不同的位（同上二分匹配规则）
+  return matchesAllRoles(group.defenses.flat(), terms)
 }
 
 // ── Log entry (做过的事记录) ───────────────────────────────────────────────────
@@ -225,24 +225,43 @@ export function cleanCharName(s: string): string {
 }
 
 /**
- * 把角色名列表拆成可**精确匹配**的 token 集合。
+ * 判断一组角色位（roles）能否满足全部搜索词（terms）——**每个词占一个不同的
+ * 角色位**（二分匹配）。
  *
- * 每个角色名是离散单位，按整名匹配，**绝不做子串包含** —— 否则搜「驴」会命中
- * 「魔驴」（两个不同角色）。变体后缀用 "/" 分隔（如「涅比亚/ams」），拆开后
- * 「涅比亚」和「ams」都能命中同一个角色，但「驴」仍命中不了「魔驴」。
+ * 规则：
+ * - 角色位整名精确匹配，**不做子串包含** —— 搜「驴」命中不了「魔驴」（两个不同角色）。
+ * - 「/」是「二选一」记号：角色位「涅比亚/ams」表示这个位填涅比亚**或** ams。
+ *   所以单搜「涅比亚」或单搜「ams」都能命中它（拆开任一别名匹配即可）。
+ * - 但搜「涅比亚、ams」要求**两个不同的位**分别是涅比亚和 ams；「涅比亚/ams」只是
+ *   一个二选一的位，不能同时算作两者 → 用二分匹配保证每个词占独立的角色位。
+ *
+ * 规模极小（角色 / 词都 ≤5），直接回溯。
  */
-function charNameTokens(names: string[]): Set<string> {
-  const set = new Set<string>()
-  for (const raw of names) {
-    const name = raw.toLowerCase().trim()
-    if (!name) continue
-    set.add(name)
-    for (const part of name.split('/')) {
+function matchesAllRoles(roles: string[], terms: string[]): boolean {
+  // 每个角色位 → 它能被哪些词命中（整名 + "/" 拆出的各别名，全小写）
+  const roleAlts = roles.map(r => {
+    const lower = r.toLowerCase().trim()
+    const alts = new Set<string>()
+    if (lower) alts.add(lower)
+    for (const part of lower.split('/')) {
       const p = part.trim()
-      if (p) set.add(p)
+      if (p) alts.add(p)
     }
+    return alts
+  })
+  const used = new Array(roleAlts.length).fill(false)
+  // 回溯：给第 i 个词找一个还没被占、且能命中它的角色位
+  const assign = (i: number): boolean => {
+    if (i >= terms.length) return true
+    for (let r = 0; r < roleAlts.length; r++) {
+      if (used[r] || !roleAlts[r].has(terms[i])) continue
+      used[r] = true
+      if (assign(i + 1)) return true
+      used[r] = false
+    }
+    return false
   }
-  return set
+  return assign(0)
 }
 
 /** Match against the defense field only. Attacks and notes are ignored. */
@@ -250,8 +269,7 @@ export function matchesDefense(item: DefenseGroup, q: string): boolean {
   if (!q) return true
   const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
   if (terms.length === 0) return true
-  const names = charNameTokens(item.defense)
-  return terms.every(t => names.has(t))
+  return matchesAllRoles(item.defense, terms)
 }
 
 /** Match against the title field only. Teams and notes are ignored. */
