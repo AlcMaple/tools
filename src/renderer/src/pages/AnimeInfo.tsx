@@ -13,6 +13,7 @@ import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { downloadStore } from '../stores/downloadStore'
 import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
 import { animeTrackStore, useAnimeTrack, deriveSubjectType, aliasesFromInfobox } from '../stores/animeTrackStore'
+import { loadBgmHistory, addBgmHistory, removeBgmHistory, clearBgmHistory } from '../utils/bgmSearchHistory'
 import { useCover } from '../hooks/useCover'
 import coverFallback from '../assets/cover-fallback.png'
 import { WatchHere } from '../components/WatchHere'
@@ -1194,6 +1195,8 @@ function AnimeInfo(): JSX.Element {
   // 不丢类目选择。切类目时清空当前 results —— 类目变了，旧动画结果显示
   // 在新书籍搜索栏下面会很怪。
   const [searchKind, setSearchKindState] = useState<BgmSearchKind>(_cachedSearchKind)
+  // 搜索历史（本地，不跨设备）。每条带 kind，点选时连类目一起恢复。
+  const [history, setHistory] = useState(() => loadBgmHistory())
   const setSearchKind = (k: BgmSearchKind): void => {
     if (k === searchKind) return
     _cachedSearchKind = k
@@ -1272,13 +1275,17 @@ function AnimeInfo(): JSX.Element {
    * regardless of the setting — so when the user flips it back on the cache is
    * already populated and the TTL clock is restarted.
    */
-  const handleSearch = async (keyword: string): Promise<void> => {
+  const handleSearch = async (keyword: string, kindOverride?: BgmSearchKind): Promise<void> => {
+    if (!keyword.trim()) return
     lastBgmKeyword.current = keyword
     _cachedBgmKeyword = keyword
     const cacheEnabled = isSearchCacheEnabled()
     // 用本地变量锁定本次搜索的类目，避免用户在请求飞行中切换类目导致
-    // setState 把书籍结果塞进动画状态里
-    const kind = searchKind
+    // setState 把书籍结果塞进动画状态里。点选历史时 kind 由历史条目带入
+    // （kindOverride），不依赖 setSearchKind 的异步 state 更新。
+    const kind = kindOverride ?? searchKind
+    // 记录历史 —— 同 keyword+kind 去重置顶，正好和按 cat 分桶的缓存对齐。
+    setHistory(addBgmHistory(keyword, kind))
 
     if (cacheEnabled) {
       const hit = await getCachedBgmSearch(keyword, kind)
@@ -1356,10 +1363,27 @@ function AnimeInfo(): JSX.Element {
     <div className="min-h-screen bg-background">
       <TopBar
         placeholder="Lookup titles from bgm.tv..."
-        onSearch={handleSearch}
+        onSearch={(kw) => void handleSearch(kw)}
         // 类目下拉嵌在搜索框右侧内切位置（仿 bgm.tv 顶栏自家的"全部/动画/
         // 书籍"下拉）。detail 视图也保留显示，用户切类目=回到搜索流程。
         searchRightSlot={<KindDropdown value={searchKind} onChange={setSearchKind} />}
+        // 历史下拉：点一条 → 恢复当时的类目 + 直接重搜（带 kind override，
+        // 不等 setSearchKind 异步生效）。
+        searchHistory={history.map((e) => ({
+          keyword: e.keyword,
+          meta: e.kind === 'anime' ? '动画' : '漫画小说',
+        }))}
+        onPickHistory={(i) => {
+          const e = history[i]
+          if (!e) return
+          setSearchKind(e.kind)
+          void handleSearch(e.keyword, e.kind)
+        }}
+        onRemoveHistory={(i) => {
+          const e = history[i]
+          if (e) setHistory(removeBgmHistory(e.keyword, e.kind))
+        }}
+        onClearHistory={() => setHistory(clearBgmHistory())}
       />
 
       <main className="ml-0 pt-16 px-10 py-10">

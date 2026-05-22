@@ -2,6 +2,16 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSystemStats } from '../hooks/useSystemStats'
 
+/**
+ * 搜索历史的「展示条目」—— TopBar 只认 keyword（主文字 + 回填输入框用）
+ * 和 meta（右侧灰色小标签，比如类目）。kind / 时间戳这些业务字段由调用方
+ * 自己持有，通过回调里的 index 取回，TopBar 不掺和。
+ */
+export interface SearchHistoryEntry {
+  keyword: string
+  meta?: string
+}
+
 interface TopBarProps {
   placeholder: string
   onSearch?: (query: string) => void
@@ -19,10 +29,32 @@ interface TopBarProps {
    * 体积建议：≤80px 宽（搜索框总宽 w-80 = 320px，留够 input 的可用宽度）。
    */
   searchRightSlot?: JSX.Element
+  /**
+   * 搜索历史（可选）。传了才渲染历史下拉：聚焦搜索框且有历史时在下方弹出。
+   * 已输入文字时按子串过滤做成 typeahead。索引一律相对**原始数组**，
+   * 过滤不打乱回调里的 index，调用方据此取回完整业务记录。
+   */
+  searchHistory?: SearchHistoryEntry[]
+  /** 点选某条历史 —— 调用方负责回填类目、发起搜索（TopBar 已回填输入框）。 */
+  onPickHistory?: (index: number) => void
+  /** 删除某条历史。 */
+  onRemoveHistory?: (index: number) => void
+  /** 清空全部历史。 */
+  onClearHistory?: () => void
 }
 
-function TopBar({ placeholder, onSearch, titleSlot, searchRightSlot }: TopBarProps): JSX.Element {
+function TopBar({
+  placeholder,
+  onSearch,
+  titleSlot,
+  searchRightSlot,
+  searchHistory,
+  onPickHistory,
+  onRemoveHistory,
+  onClearHistory,
+}: TopBarProps): JSX.Element {
   const [query, setQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
   const navigate = useNavigate()
   const { diskFreeLabel, activeTasks, networkOnline, speedLabel } = useSystemStats()
   const [isDark, setIsDark] = useState(() => {
@@ -46,7 +78,24 @@ function TopBar({ placeholder, onSearch, titleSlot, searchRightSlot }: TopBarPro
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && onSearch) {
       onSearch(query.trim())
+      setSearchFocused(false)
     }
+  }
+
+  // 历史下拉：过滤时保留**原始索引**（回调据此取回完整业务记录）。
+  // 已输入文字 → 按子串过滤做 typeahead；空输入 → 全量历史。
+  const historyMatches = (searchHistory ?? [])
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => {
+      const q = query.trim().toLowerCase()
+      return !q || entry.keyword.toLowerCase().includes(q)
+    })
+  const showHistory = searchFocused && !!onPickHistory && historyMatches.length > 0
+
+  const pickHistory = (index: number): void => {
+    setQuery(searchHistory?.[index]?.keyword ?? '')
+    setSearchFocused(false)
+    onPickHistory?.(index)
   }
 
   return (
@@ -61,7 +110,8 @@ function TopBar({ placeholder, onSearch, titleSlot, searchRightSlot }: TopBarPro
           的下拉菜单一起裁掉（菜单要往容器下面伸）。圆角改到各分段自己的边
           (`rounded-l-md` / `rounded-r-md`) 处理。 */}
       {titleSlot ?? (
-        <div className="flex items-stretch bg-surface-container-highest rounded-md w-80 transition-all duration-300 focus-within:bg-surface-bright focus-within:ring-1 focus-within:ring-primary/40">
+        // relative 给历史下拉做定位锚点（下拉用 absolute top-full）。
+        <div className="relative flex items-stretch bg-surface-container-highest rounded-md w-80 transition-all duration-300 focus-within:bg-surface-bright focus-within:ring-1 focus-within:ring-primary/40">
           {/* 输入分段：图标 + 输入框，自带 py-2 撑出整个搜索框的高度。 */}
           <div className="flex items-center flex-1 min-w-0 px-4 py-2">
             <span className="material-symbols-outlined text-on-surface-variant text-sm mr-2 leading-none shrink-0">
@@ -73,6 +123,10 @@ function TopBar({ placeholder, onSearch, titleSlot, searchRightSlot }: TopBarPro
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={() => setSearchFocused(true)}
+              // 失焦关闭下拉。下拉容器用 onMouseDown preventDefault 阻止本次
+              // blur，所以点击历史条目不会先失焦把下拉关掉吃掉点击。
+              onBlur={() => setSearchFocused(false)}
               className="bg-transparent border-none text-sm focus:ring-0 p-0 flex-1 min-w-0 text-on-surface placeholder:text-on-surface-variant/40 font-body outline-none"
             />
           </div>
@@ -83,6 +137,63 @@ function TopBar({ placeholder, onSearch, titleSlot, searchRightSlot }: TopBarPro
               <div className="w-px bg-outline-variant/25 shrink-0" />
               {searchRightSlot}
             </>
+          )}
+
+          {/* 历史下拉 —— 仅在传了 onPickHistory 且聚焦时出现，对其他页面无副作用。 */}
+          {showHistory && (
+            <div
+              onMouseDown={(e) => e.preventDefault()}
+              className="absolute top-full left-0 mt-2 w-full bg-surface-container-highest border border-outline-variant/30 rounded-md overflow-hidden shadow-xl shadow-black/40 z-50"
+            >
+              <div className="px-3 py-1.5 flex items-center justify-between border-b border-outline-variant/20">
+                <span className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest">
+                  最近搜索
+                </span>
+                {onClearHistory && (
+                  <button
+                    type="button"
+                    onClick={onClearHistory}
+                    className="font-label text-[10px] text-on-surface-variant/40 hover:text-error transition-colors"
+                  >
+                    清空
+                  </button>
+                )}
+              </div>
+              <div className="max-h-72 overflow-y-auto py-1">
+                {historyMatches.map(({ entry, index }) => (
+                  <div
+                    key={`${entry.keyword}-${index}`}
+                    className="group flex items-center gap-2 px-3 py-2 hover:bg-surface-container-high transition-colors cursor-pointer"
+                    onClick={() => pickHistory(index)}
+                  >
+                    <span className="material-symbols-outlined text-on-surface-variant/30 text-base leading-none shrink-0">
+                      history
+                    </span>
+                    <span className="flex-1 min-w-0 truncate text-sm text-on-surface">
+                      {entry.keyword}
+                    </span>
+                    {entry.meta && (
+                      <span className="font-label text-[10px] text-on-surface-variant/40 shrink-0">
+                        {entry.meta}
+                      </span>
+                    )}
+                    {onRemoveHistory && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onRemoveHistory(index)
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-on-surface-variant/30 hover:text-error transition-all shrink-0"
+                        title="删除这条历史"
+                      >
+                        <span className="material-symbols-outlined text-sm leading-none">close</span>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}
