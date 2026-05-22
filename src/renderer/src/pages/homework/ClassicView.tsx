@@ -460,9 +460,14 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 标题（组）按时间降序：最近改动的排最前。updatedAt 是 YYYY-MM-DD，同一天
+  // 的用 id（创建时的 Date.now() 毫秒）降序兜底，跟组内阵容排序保持一致。
   const filtered = data
     .filter(d => matchesClassic(d, query))
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
+    .sort((a, b) => {
+      const t = b.updatedAt.localeCompare(a.updatedAt)
+      return t !== 0 ? t : b.id - a.id
+    })
 
   const totalTeams = filtered.reduce((s, d) => s + d.teams.length, 0)
 
@@ -593,10 +598,10 @@ const ClassicView = forwardRef<ClassicViewHandle, {
       ) : (
         <div className="bg-surface-container-lowest rounded-xl border border-white/5 overflow-hidden pb-2">
           {filtered.map((item, groupIndex) => {
+            // 组内每个阵容按时间降序：最近加/改的排最前。同一天用 id 降序兜底。
             const sortedTeams = [...item.teams].sort((a, b) => {
-              const la = a.team.join('')
-              const lb = b.team.join('')
-              return la < lb ? -1 : la > lb ? 1 : 0
+              const t = b.updatedAt.localeCompare(a.updatedAt)
+              return t !== 0 ? t : b.id - a.id
             })
             const prefixLen = commonPrefixLen(sortedTeams.map(t => t.team))
             const isCollapsed = collapsedIds.has(item.id)
