@@ -156,6 +156,15 @@ export interface AnimeTrack {
    * 让用户在 UI 上能看到再决定怎么处理）。
    */
   goodEpisodes: number[]
+  /**
+   * 好看集备注 —— 键是集号，值是"为什么标它好看 / 当时哪一点吸引我"的一句话。
+   * 全部可选，不写就没有。
+   *
+   * 跟 goodEpisodes **平行存放**（不塞进集号数组，免得动压缩/解析逻辑）。
+   * normalize 时只保留「键在 goodEpisodes 里 + 值非空」的项 —— 所以取消标记
+   * 某集（集号从 goodEpisodes 移除）时，它的备注会自动被剪掉，不留孤儿。
+   */
+  goodEpisodeNotes: Record<number, string>
   /** ISO date when the user first tracked this anime. */
   startedAt: string
   /** ISO date of the most recent mutation. */
@@ -225,6 +234,24 @@ export function normalizeGoodEpisodes(input: unknown): number[] {
     seen.add(n)
   }
   return [...seen].sort((a, b) => a - b)
+}
+
+/**
+ * 规范化好看集备注 map：只保留「键是有效集号 + 在 eps 里 + 值是非空字符串」的项。
+ * 取消标记某集后（集号不在 eps 里了），它的备注在这里被自然剪掉。
+ */
+export function normalizeGoodEpisodeNotes(input: unknown, eps: number[]): Record<number, string> {
+  if (!input || typeof input !== 'object') return {}
+  const allowed = new Set(eps)
+  const out: Record<number, string> = {}
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    const ep = Number(k)
+    if (!Number.isInteger(ep) || !allowed.has(ep)) continue
+    if (typeof v !== 'string') continue
+    const trimmed = v.trim()
+    if (trimmed) out[ep] = trimmed
+  }
+  return out
 }
 
 /**
@@ -322,6 +349,8 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   const observeCount = typeof t.observeCount === 'number' && t.observeCount >= 0 ? Math.floor(t.observeCount) : 0
   // 好看集 —— 老数据没这字段或不是数组就当空 []；过滤 ≤ 0 / NaN，去重、升序。
   const goodEpisodes = normalizeGoodEpisodes(t.goodEpisodes)
+  // 备注剪到只剩"还被标记着的集" —— 取消标记某集时它的备注自动作废
+  const goodEpisodeNotes = normalizeGoodEpisodeNotes(t.goodEpisodeNotes, goodEpisodes)
   // 两份标签数组各自 sanitize；规则一致（trim、过滤空串、去重、保留输入顺序）。
   // bgmTags 额外 slice 到前 4 个 —— 早期数据是 8 个，但显示策略统一改成
   // 4 个（详见 main/bgm/detail.ts 的注释）。这里 lazy migration 老 track
@@ -346,6 +375,7 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     bgmTags,
     userTags,
     goodEpisodes,
+    goodEpisodeNotes,
     startedAt: typeof t.startedAt === 'string' && t.startedAt ? t.startedAt : now,
     updatedAt: typeof t.updatedAt === 'string' && t.updatedAt ? t.updatedAt : now,
   }
@@ -413,6 +443,21 @@ class AnimeTrackStore {
     map.set(patch.bgmId, merged)
     this.persist()
     return merged
+  }
+
+  /**
+   * 设置某一集的好看集备注。trim 后为空 → 删除该集备注；否则写入。
+   * track 不存在则 no-op。集号不在 goodEpisodes 里的备注会在 normalize 时被剪掉。
+   */
+  setGoodEpisodeNote(bgmId: number, ep: number, note: string): void {
+    const map = this.ensure()
+    const prev = map.get(bgmId)
+    if (!prev) return
+    const next = { ...prev.goodEpisodeNotes }
+    const trimmed = note.trim()
+    if (trimmed) next[ep] = trimmed
+    else delete next[ep]
+    this.upsert({ bgmId, goodEpisodeNotes: next })
   }
 
   /**
