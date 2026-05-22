@@ -823,6 +823,10 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const setGoodEpisodes = (eps: number[]): void => {
     animeTrackStore.upsert({ bgmId: track.bgmId, goodEpisodes: eps })
   }
+  // 好看集单集备注 setter（trim 后空 = 删除）。
+  const setGoodEpisodeNote = (ep: number, note: string): void => {
+    animeTrackStore.setGoodEpisodeNote(track.bgmId, ep, note)
+  }
   const [goodEpsOpen, setGoodEpsOpen] = useState(false)
   // 行内"添加自定义标签" inline 输入 —— 替代了早期的 UserTagsEditor modal,
   // 因为 BGM tag 最多 4 + 用户自定义最多 4 总数 6-8 个 chip 完全能放进
@@ -1114,9 +1118,11 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
         <GoodEpisodesEditor
           animeTitle={displayTitle}
           episodes={track.goodEpisodes}
+          notes={track.goodEpisodeNotes}
           totalEpisodes={track.totalEpisodes}
           episode={track.episode}
           onChange={setGoodEpisodes}
+          onSetNote={setGoodEpisodeNote}
           onClose={() => setGoodEpsOpen(false)}
         />
       )}

@@ -25,7 +25,8 @@
 // 集"高亮——早先版本试过给当前集加 ring-primary 轮廓做对照锚点，用户觉得
 // 那个高亮反而干扰扫视（amber 已标 / 普通未标 已经够区分），就拿掉了。
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ModalShell } from '../pages/homework/shared'
 import { compressGoodEpisodes, normalizeGoodEpisodes } from '../stores/animeTrackStore'
 
@@ -33,11 +34,15 @@ interface Props {
   animeTitle: string
   /** 当前已标的集号集合（来自 store）。modal 内部 toggle 直接通过 onChange 写回。 */
   episodes: number[]
+  /** 好看集备注 map（集号 → 备注）。在「仅好看集」视图行内编辑，全部集数网格 hover 看。 */
+  notes: Record<number, string>
   /** 总集数；未知时（连载中等）走"+12 扩展"路径。 */
   totalEpisodes: number | undefined
   /** 当前观看进度，画"当前集"轮廓提示 + 决定连载中默认渲染范围。 */
   episode: number
   onChange: (next: number[]) => void
+  /** 写某一集的备注（trim 后空 = 删除）。 */
+  onSetNote: (ep: number, note: string) => void
   onClose: () => void
 }
 
@@ -48,11 +53,14 @@ type ViewMode = 'all' | 'marked'
 const ONGOING_MIN = 1
 
 export function GoodEpisodesEditor({
-  animeTitle, episodes, totalEpisodes, episode, onChange, onClose,
+  animeTitle, episodes, notes, totalEpisodes, episode, onChange, onSetNote, onClose,
 }: Props): JSX.Element {
   // 视图切换 —— 默认「全部集数」（最常见的"想找具体某集标记"场景）。
   // 长寡番（柯南）的用户可以手动切到「仅好看集」绕开 1000+ 方块网格。
   const [view, setView] = useState<ViewMode>('all')
+
+  // 就地备注气泡：点「全部集数」里某个已标格子角上的笔图标时打开，锚定在那一格。
+  const [noteEditor, setNoteEditor] = useState<{ ep: number; anchor: DOMRect } | null>(null)
 
   // 网格上限：
   //   - totalEpisodes 已知 → 直接用 total
@@ -106,6 +114,9 @@ export function GoodEpisodesEditor({
                 <span className="text-on-surface-variant/50 ml-1">
                   参考：重温有关注点 / 重看片段 / 暂停截图。
                 </span>
+                <span className="text-amber-500/90 ml-1">
+                  已标的集右键写备注；写过的集角上有圆点，hover 看内容。
+                </span>
               </p>
             </div>
             <button
@@ -141,7 +152,9 @@ export function GoodEpisodesEditor({
             <GridView
               maxN={maxN}
               marked={marked}
+              notes={notes}
               onToggle={toggle}
+              onOpenNote={(ep, anchor) => setNoteEditor({ ep, anchor })}
             />
           ) : (
             <MarkedView
@@ -180,6 +193,16 @@ export function GoodEpisodesEditor({
           </button>
         </div>
       </div>
+
+      {noteEditor && (
+        <NotePopover
+          ep={noteEditor.ep}
+          initial={notes[noteEditor.ep] ?? ''}
+          anchor={noteEditor.anchor}
+          onSave={note => onSetNote(noteEditor.ep, note)}
+          onClose={() => setNoteEditor(null)}
+        />
+      )}
     </ModalShell>
   )
 }
@@ -222,11 +245,13 @@ function ViewToggleButton({
 // ── Grid view（全部集数）─────────────────────────────────────────────────────
 
 function GridView({
-  maxN, marked, onToggle,
+  maxN, marked, notes, onToggle, onOpenNote,
 }: {
   maxN: number
   marked: Set<number>
+  notes: Record<number, string>
   onToggle: (n: number) => void
+  onOpenNote: (ep: number, anchor: DOMRect) => void
 }): JSX.Element {
   return (
     <div
@@ -236,20 +261,44 @@ function GridView({
       {Array.from({ length: maxN }, (_, i) => {
         const n = i + 1
         const isMarked = marked.has(n)
+        const note = isMarked ? notes[n] : undefined
         return (
-          <button
+          // 一格 = 一个容器：主按钮(数字)铺满负责"点击勾选/取消"；已标格子
+          // **右键整格**打开备注弹窗(整格都是目标，好按)。备注弹窗锚定在整格位置。
+          <div
             key={n}
-            type="button"
-            onClick={() => onToggle(n)}
-            title={isMarked ? `第 ${n} 集（已标 · 再点取消）` : `第 ${n} 集（点击标记）`}
-            className={`h-9 rounded-md font-mono text-xs transition-all border ${
+            className="relative"
+            onContextMenu={
               isMarked
-                ? 'bg-amber-400/20 text-amber-600 border-amber-400/50 font-bold hover:bg-amber-400/30'
-                : 'bg-surface text-on-surface-variant/70 border-outline-variant/15 hover:bg-surface-container-high hover:text-on-surface hover:border-outline-variant/40'
-            }`}
+                ? e => { e.preventDefault(); onOpenNote(n, (e.currentTarget as HTMLElement).getBoundingClientRect()) }
+                : undefined
+            }
           >
-            {n}
-          </button>
+            <button
+              type="button"
+              onClick={() => onToggle(n)}
+              // 有备注的格子 title 直接显示备注内容（hover 即见）
+              title={
+                note
+                  ? `第 ${n} 集 · ${note}`
+                  : isMarked
+                    ? `第 ${n} 集（已标 · 再点取消 · 右键写备注）`
+                    : `第 ${n} 集（点击标记）`
+              }
+              className={`w-full h-9 rounded-md font-mono text-xs transition-all border ${
+                isMarked
+                  ? 'bg-amber-400/20 text-amber-600 border-amber-400/50 font-bold hover:bg-amber-400/30'
+                  : 'bg-surface text-on-surface-variant/70 border-outline-variant/15 hover:bg-surface-container-high hover:text-on-surface hover:border-outline-variant/40'
+              }`}
+            >
+              {n}
+            </button>
+
+            {/* 有备注的格子角上常驻一个琥珀圆点提示；写 / 改备注走右键(见 onContextMenu)。 */}
+            {note && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500 pointer-events-none" />
+            )}
+          </div>
         )
       })}
     </div>
@@ -263,10 +312,8 @@ function GridView({
  * 不用滚一千多个方块。
  *
  * 每集独立一个 chip，点击移除。删除粒度精确到单集，跟"全部集数"视图里
- * "点亮已标的方块 = 取消" 是同一个 toggle 心智模型。
- *
- * 用 auto-fill grid，60px 最小宽度的 chip 让数字字体保持一致密度（不会出现
- * "1" 和 "999" chip 一大一小）；空间够多列、不够换行。
+ * "点亮已标的方块 = 取消" 是同一个 toggle 心智模型。这里只做扫看 / 移除，
+ * 写备注统一在「全部集数」里就地进行（见 GridView 的笔图标 + NotePopover）。
  */
 function MarkedView({
   episodes, onRemove, onSwitchToAll,
@@ -320,5 +367,69 @@ function MarkedView({
         </button>
       ))}
     </div>
+  )
+}
+
+// ── 就地备注气泡（全部集数里点笔图标弹出）────────────────────────────────────
+
+/**
+ * 锚定在被点格子旁的小输入气泡。用 fixed 定位（按格子的视口坐标算），避开
+ * 网格滚动区的裁剪。回车 / 失焦 / 点外面都提交保存，Esc 取消。
+ */
+function NotePopover({
+  ep, initial, anchor, onSave, onClose,
+}: {
+  ep: number
+  initial: string
+  anchor: DOMRect
+  onSave: (note: string) => void
+  onClose: () => void
+}): JSX.Element {
+  const [draft, setDraft] = useState(initial)
+  const ref = useRef<HTMLDivElement>(null)
+
+  // 点气泡外面 → 提交并关闭
+  useEffect(() => {
+    const onDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onSave(draft)
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [draft, onSave, onClose])
+
+  // 居中贴在格子下方（贴底时翻到上方），左右夹回视口内。
+  const W = 240
+  const H = 88
+  const left = Math.max(12, Math.min(anchor.left + anchor.width / 2 - W / 2, window.innerWidth - W - 12))
+  const top = anchor.bottom + 8 + H > window.innerHeight ? Math.max(12, anchor.top - H - 8) : anchor.bottom + 8
+
+  // 关键：portal 到 document.body。否则 fixed 会相对 ModalShell 那个带 transform
+  // 的祖先定位，叠加视口坐标后弹窗会飞到右下角 / 溢出窗口。
+  return createPortal(
+    <div
+      ref={ref}
+      style={{ position: 'fixed', top, left, width: W, zIndex: 9999 }}
+      className="rounded-lg border border-amber-400/40 bg-surface-container-high shadow-2xl p-2.5"
+    >
+      <div className="flex items-center gap-1 mb-1.5">
+        <span className="material-symbols-outlined text-amber-500" style={{ fontSize: 13, fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
+        <span className="font-label text-[10px] uppercase tracking-widest text-amber-600">第 {ep} 集 备注</span>
+      </div>
+      <input
+        autoFocus
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { onSave(draft); onClose() }
+          else if (e.key === 'Escape') { onClose() }
+        }}
+        placeholder="当时哪一点吸引你…"
+        className="w-full bg-surface border border-outline-variant/20 rounded px-2 py-1.5 outline-none font-body text-xs text-on-surface placeholder:text-on-surface-variant/35 focus:border-amber-400/50 transition-colors"
+      />
+    </div>,
+    document.body,
   )
 }
