@@ -385,6 +385,21 @@ async function fetchAliases(subjectId: number): Promise<string[]> {
   }
 }
 
+/**
+ * 分页早停：连续多少页「整页没有任何 visibleMatch（主标题/副标题命中关键词）」
+ * 后停止翻页。BGM 按相关度排序，真命中聚在前几页，命中带结束后剩下的全是
+ * 字符碎片模糊命中的噪声 —— 再硬翻几十页既拿不到有效结果，每页还要在限流
+ * 红线上等 ~2.5s 反复试探（搜「光之美少女」命中带 8 页、totalPages 却有 82,
+ * 旧逻辑会把 9-82 页全抓一遍 ≈ 3 分钟纯浪费 + 限流风险）。
+ *
+ * 阈值 2 容忍命中带中间偶发的一页空档，命中带结束后最多多抓 2 页就收尾。
+ *
+ * 别名搜索（visibleMatch 全程为空）也吃这条规则、会在第 2 页就早停 —— 这
+ * **正好**：别名回退只取排名最靠前的 ALIAS_LOOKUP_LIMIT 条 unmatched 候选,
+ * 第 1 页就够了。早停前用 gate 保证至少攒够候选数才停（见 searchBgm）。
+ */
+const EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH = 2
+
 /** 最多查多少条 BGM 排名靠前的 unmatched 条目的别名 —— 防止 API 调用爆炸。 */
 const ALIAS_LOOKUP_LIMIT = 8
 /**
@@ -424,6 +439,12 @@ export async function searchBgm(
 
   const allItems = [...page1Items]
 
+  // 早停状态：visibleCount 累计有视觉命中的条目数，consecutiveNoVisible 是
+  // 连续「整页无 visibleMatch」的页数。命中带结束后快速收尾，不再硬翻到
+  // totalPages（见 EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH 注释）。
+  let visibleCount = page1Items.filter((x) => x.visibleMatch).length
+  let consecutiveNoVisible = visibleCount > 0 ? 0 : 1
+
   for (let page = 2; page <= totalPages; page++) {
     // 后续页面用 try/catch 区分：限流要中断整个搜索（继续抓只会加重惩罚）,
     // 其他临时错误（5xx / timeout / 网络抖）跳过当前页继续 —— 反正已经
@@ -442,6 +463,23 @@ export async function searchBgm(
     if (items.length === 0) break
 
     allItems.push(...items)
+
+    // 早停判定 —— 放在 push 之后：本页结果一定收进 allItems，再决定要不要
+    // 继续翻下一页。
+    const pageVisible = items.filter((x) => x.visibleMatch).length
+    visibleCount += pageVisible
+    consecutiveNoVisible = pageVisible > 0 ? 0 : consecutiveNoVisible + 1
+
+    // gate：别名回退路径（visibleCount 全程为 0）要至少攒够 ALIAS_LOOKUP_LIMIT
+    // 条候选才允许早停，避免第 1 页结果太少（<8 条）时过早停掉、导致别名
+    // 回退没东西可查。
+    const unmatchedCount = allItems.length - visibleCount
+    if (
+      consecutiveNoVisible >= EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH &&
+      (visibleCount > 0 || unmatchedCount >= ALIAS_LOOKUP_LIMIT)
+    ) {
+      break
+    }
   }
 
   // 两段式过滤：

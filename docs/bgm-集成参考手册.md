@@ -89,6 +89,16 @@ MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)
 
 **错误透传**：限流走 `RateLimitError(retryAfterSec)`，UI 据此显示倒计时。
 
+### 分页早停（搜索翻页）
+
+最好的限流防御是**少发请求**。`searchBgm` 抓搜索结果时，旧逻辑会硬翻到 BGM 报的 `totalPages`，但 BGM 是**按相关度排序**的 —— 真命中聚在前几页，命中带结束后剩下的全是字符碎片模糊命中的噪声（比如搜「光之美少女」命中带只到第 8 页，`totalPages` 却有 82，硬翻 9-82 页 ≈ 3 分钟纯浪费 + 一直在限流红线上每 ~2.5s 试探一次）。
+
+**规则**：连续 `EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH`（=2）页「整页没有任何 `visibleMatch`（主标题/副标题命中关键词）」就停止翻页。阈值 2 容忍命中带中间偶发一页空档，命中带结束后最多多抓 2 页就收尾。
+
+**与别名回退的关系**（不能破坏）：别名搜索（`visibleMatch` 全程为空）也吃这条规则、会在第 2 页就早停 —— 这**正好**，因为别名回退只取排名最靠前的 `ALIAS_LOOKUP_LIMIT`(8) 条 unmatched 候选，第 1 页就够了。早停前用 gate 卡住：`visibleCount > 0 || unmatchedCount >= ALIAS_LOOKUP_LIMIT`，保证首页结果太少（<8 条）时不会过早停掉、导致别名回退没东西可查。
+
+这条规则和别名查询自己的「连续 miss 早停」（`ALIAS_LOOKUP_MAX_CONSECUTIVE_MISSES`）是**两处独立的早停**：前者管「翻几页 HTML」，后者管「查几条 API 别名」，都基于同一个「BGM 按相关度排序，命中带结束后全是噪声」的前提。
+
 ### 不要再走的路
 
 - ❌ **失败后自动重试**（曾经的 `withRateLimitRetry` / 5xx retry）—— 限流 / 5xx 之后再发一次就是在惩罚窗口里加戳，最坏算下来 1 + 网络层 retry + 5xx retry + 限流 retry = 8 次请求。已经全部撤掉，函数体从 `shared/rate-limit.ts` **物理删除**，**不要再加回来**
@@ -412,3 +422,4 @@ node scripts/diagnose-network.mjs
   - §3 「核心原则」彻底重写，区分「A. 失败后的行为（严格禁止）」vs「B. 正常情况下的派生调用（允许，但失败即作废）」两类语义，明确判定准则
 - **2026-05-21** —— **新增 §10 网络传输层**。根因诊断「app 连不上 / 冷启动超时但浏览器正常」：Node `https` 不读系统代理，在 Clash 系 fake-ip 环境下直连 `198.18.x` 假地址、靠虚拟网卡 (TUN/tun2socks) 兜底，这条路比浏览器走的系统代理 HTTP 监听端口脆（冷启动 fake-ip DNS 竞态 / 偶发丢包）。**即使系统代理+虚拟网卡都常开，app 和浏览器仍走两条不同的路**。修复：新增 `shared/net-request.ts`（Electron `net` = Chromium 网络栈，自动走系统代理 + happy-eyeballs），迁移 `api-client.ts` / `search.ts` rawGet / `moegirl/synopsis.ts`（`cover-cache.ts` 本就是 net）。明确否决 IP 池（对连不上零作用 + §4 已否决的突破限流）/ Playwright（要的是网络栈不是 JS 引擎，BGM 不用 JS 挑战）。诊断工具 `scripts/diagnose-network.mjs` 保留。aowu/xifan/girigiri 暂未迁。无魔法用户走 net 自动直连，同样正常
 - **2026-05-21** —— net 迁移回归修复：`bgm:search` 报 `net::ERR_INVALID_ARGUMENT`。根因 `BrowserSession.headers()` 带 `Host` + `Connection`，Electron net 不允许手动 setHeader 这类网络栈自管头。`netRequest` 加 `NET_MANAGED_HEADERS` 跳过表（host/connection/content-length/accept-encoding），§10 补「不要再走的路」一条
+- **2026-05-23** —— **§3 新增「分页早停」**。`searchBgm` 翻页旧逻辑硬翻到 `totalPages`，但 BGM 按相关度排序、命中带之后全是噪声（搜「光之美少女」命中带 8 页 / `totalPages` 82，9-82 页纯浪费 ≈ 3 分钟限流红线试探）。改为连续 2 页无 `visibleMatch` 就早停，gate（`visibleCount>0 || unmatchedCount>=ALIAS_LOOKUP_LIMIT`）保证别名回退候选不被过早截断。少发请求 = 最好的限流防御
