@@ -118,7 +118,7 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto flex-1 px-3 pb-5 min-h-[180px]">
+        <div className="custom-scrollbar overflow-y-auto flex-1 px-3 pb-5 min-h-[180px]">
           {(state.status === 'searching' || state.status === 'verifying' || confirming) && (
             <div className="flex flex-col items-center justify-center py-10 gap-3">
               <span

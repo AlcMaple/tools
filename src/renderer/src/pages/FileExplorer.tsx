@@ -965,7 +965,7 @@ function FileExplorer(): JSX.Element {
       </section>
 
       {/* File list area */}
-      <section className="flex-1 overflow-y-auto px-8 py-6 select-none" tabIndex={0}>
+      <section className="custom-scrollbar flex-1 overflow-y-auto px-8 py-6 select-none" tabIndex={0}>
         {loading ? (
           <div className="h-full flex items-center justify-center">
             <div className="flex flex-col items-center gap-3 text-on-surface-variant/40">
@@ -1480,7 +1480,7 @@ function DeleteResultModal({
           </div>
         </div>
 
-        <div className="px-5 py-4 overflow-y-auto flex-1 space-y-2">
+        <div className="custom-scrollbar px-5 py-4 overflow-y-auto flex-1 space-y-2">
           {failures.map((f, i) => {
             const fe = friendlyError(f.error)
             const open = expanded.has(i)
@@ -1510,7 +1510,7 @@ function DeleteResultModal({
                     </div>
                     <div>
                       <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1">原始错误</p>
-                      <pre className="text-[11px] font-mono text-on-surface-variant/70 whitespace-pre-wrap break-all bg-surface-container-lowest/60 rounded-md px-3 py-2 border border-outline-variant/10 max-h-60 overflow-auto">{fe.raw}</pre>
+                      <pre className="custom-scrollbar text-[11px] font-mono text-on-surface-variant/70 whitespace-pre-wrap break-all bg-surface-container-lowest/60 rounded-md px-3 py-2 border border-outline-variant/10 max-h-60 overflow-auto">{fe.raw}</pre>
                     </div>
                   </div>
                 )}

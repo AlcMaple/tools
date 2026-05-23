@@ -150,7 +150,7 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
         </div>
 
         {/* 追番列表 */}
-        <div className="overflow-y-auto flex-1 px-3 pb-5 min-h-[160px]">
+        <div className="custom-scrollbar overflow-y-auto flex-1 px-3 pb-5 min-h-[160px]">
           {tracks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 gap-2 text-on-surface-variant/40">
               <span className="material-symbols-outlined text-3xl">bookmarks</span>
