@@ -21,12 +21,25 @@ import { useEffect, useState } from 'react'
  * @param key  封面缓存 key（一般 `String(bgmId)`）
  * @param url  原始封面 URL；为 archivist:// 或空时原样返回不处理
  */
+// 缓存键带尺寸 —— 同一封面的 480（列表/周历）和 600（详情页）是两条独立
+// 缓存条目，不能互相覆盖。
 const resolved = new Map<string, string>()
+const resolvedKey = (key: string, maxWidth?: number): string =>
+  maxWidth ? `${key}@${maxWidth}` : key
 
-export function useCover(key: string, url: string | undefined): string | undefined {
+/**
+ * @param maxWidth 缓存封面的最大宽度。省略 = 默认缩略尺寸（480，列表/周历用）;
+ *   AnimeInfo 详情页大封面传 600 拿更清晰的版本。
+ */
+export function useCover(
+  key: string,
+  url: string | undefined,
+  maxWidth?: number,
+): string | undefined {
+  const rkey = resolvedKey(key, maxWidth)
   const [src, setSrc] = useState<string | undefined>(() => {
     if (!url || url.startsWith('archivist://')) return url
-    return resolved.get(key) ?? url
+    return resolved.get(rkey) ?? url
   })
 
   useEffect(() => {
@@ -34,17 +47,17 @@ export function useCover(key: string, url: string | undefined): string | undefin
       setSrc(url)
       return
     }
-    const cached = resolved.get(key)
+    const cached = resolved.get(rkey)
     if (cached) {
       setSrc(cached)
       return
     }
     let cancelled = false
     window.bgmApi
-      .cacheCover(key, url)
+      .cacheCover(key, url, maxWidth)
       .then((local) => {
         if (cancelled || !local || !local.startsWith('archivist://')) return
-        resolved.set(key, local)
+        resolved.set(rkey, local)
         setSrc(local)
       })
       .catch(() => {
@@ -53,7 +66,7 @@ export function useCover(key: string, url: string | undefined): string | undefin
     return () => {
       cancelled = true
     }
-  }, [key, url])
+  }, [rkey, key, url, maxWidth])
 
   return src
 }

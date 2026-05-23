@@ -11,6 +11,21 @@ import { setupUpdater } from './updater'
 registerAllIpc()
 startSpeedBroadcast()
 
+// archivist:// 注册成 privileged + standard scheme —— 这样它的响应才会进
+// Chromium 的 HTTP 缓存、处理器里的 Cache-Control 才生效。否则（非标准 scheme）
+// 封面每次组件重挂载（切页面 / Calendar 滚动 lazy 重进视口）都重新读盘+解码,
+// 表现为"封面发黑→闪一下加载"。
+//
+// ⚠️ standard scheme **不接受空 host** 的 `archivist:///路径`（路径解析错乱、
+// 封面全 404，已踩坑）—— 所以 toArchivistUrl 用占位 host `local`，URL 形如
+// `archivist://local/Users/.../267215.jpg`。必须在 app ready 前调用。
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'archivist',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+])
+
 // ── Lifecycle state ──────────────────────────────────────────
 let isAppQuitting = false
 
@@ -112,9 +127,10 @@ if (app.isPackaged) {
 app.whenReady().then(() => {
   protocol.handle('archivist', async (request) => {
     try {
-      // URL 格式：archivist:///C:/Users/... (Windows) 或 archivist:///Users/mac/... (macOS)
-      // host 为空，完整路径在 pathname 里：/C:/Users/... 或 /Users/mac/...
-      const pathname = decodeURIComponent(request.url.slice('archivist://'.length))
+      // URL 形如 archivist://local/Users/mac/.../267215.jpg（host=local 占位,
+      // 见 cover-cache.ts toArchivistUrl）。standard scheme 下用 new URL 取
+      // pathname 最稳：/Users/... 或 /C:/Users/...（Windows 盘符）。
+      const pathname = decodeURIComponent(new URL(request.url).pathname)
       // Windows 盘符路径有引导斜杠：/C:/Users/... → C:/Users/...
       const filePath = pathname.replace(/^\/([A-Za-z]:)/, '$1')
       const data = await readFile(filePath)
@@ -125,15 +141,17 @@ app.whenReady().then(() => {
         : ext === 'webp' ? 'image/webp'
         : ext === 'gif' ? 'image/gif'
         : 'image/jpeg'
-      // ⚠️ 这条 Cache-Control 目前**不生效**：archivist 是非标准 scheme，
-      // Chromium 不缓存它的响应、直接忽略缓存头。要让它生效得把 scheme 注册成
-      // standard（registerSchemesAsPrivileged），但**已验证那样会破坏
-      // archivist:/// 空 host 的路径解析 —— 封面全部 404、回落占位图**，所以
-      // 不能走 standard scheme 这条路。保留这个头无害（被忽略），等以后找到
-      // 不破坏路径解析的缓存方案再启用。封面"切页面闪一下"的根因即在此。
+      // 长缓存头 —— 配合 standard scheme 注册才生效。封面按 bgmId 命名、内容
+      // 基本永不变（cover-cache skip-if-exists），标 immutable 让渲染进程长期
+      // 缓存：切页面 / 滚动重进视口直接命中缓存、瞬时出图，不再发黑闪一下。
+      //
+      // **Content-Length 必须显式设置**：注册成 standard scheme 后 Chromium 按
+      // HTTP 语义读响应体，没有 Content-Length 时较大的响应会被提前截断（详情页
+      // 600px 大封面只渲染上半截就停）。小图（480）能一次塞完没暴露，大图就露馅。
       return new Response(data, {
         headers: {
           'Content-Type': contentType,
+          'Content-Length': String(data.length),
           'Cache-Control': 'public, max-age=31536000, immutable',
         },
       })

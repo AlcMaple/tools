@@ -807,7 +807,8 @@ function DetailView({
   const hasStaff = data.staff.length > 0
   const displayTitle = (data.title_cn || data.title).toUpperCase()
   const track = useAnimeTrack(data.id)
-  const coverSrc = useCover(String(data.id), data.cover)
+  // 详情页大封面显示到 ~340px，用 600px 缓存（列表/周历的 480 在这里会糊）。
+  const coverSrc = useCover(String(data.id), data.cover, 600)
 
   // 别名：infobox 的「别名」字段 + 原名（若与显示标题不同）；去重
   const aliases = (() => {

@@ -47,7 +47,9 @@ export function registerBgmIpc(): void {
   )
   // 封面本地化：下载 url 到 userData/covers/{key}，返回 archivist:// 路径。
   // 失败返回 null，renderer fallback 到原 url。详见 bgm/cover-cache.ts。
-  ipcMain.handle('bgm:cache-cover', async (_event, key: string, url: string) =>
-    cacheCover(key, url),
+  ipcMain.handle(
+    'bgm:cache-cover',
+    async (_event, key: string, url: string, maxWidth?: number) =>
+      cacheCover(key, url, maxWidth),
   )
 }
