@@ -27,8 +27,8 @@ contextBridge.exposeInMainWorld('bgmApi', {
    * 封面本地化：下载 url 到本地，返回 archivist:// 路径（失败返回 null）。
    * key 一般传 String(bgmId)。renderer 拿到非 null 就用它替换 track.cover。
    */
-  cacheCover: (key: string, url: string): Promise<string | null> =>
-    ipcRenderer.invoke('bgm:cache-cover', key, url),
+  cacheCover: (key: string, url: string, maxWidth?: number): Promise<string | null> =>
+    ipcRenderer.invoke('bgm:cache-cover', key, url, maxWidth),
 })
 
 // Single subscription point for download progress events. The main process

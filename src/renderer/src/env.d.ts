@@ -168,7 +168,7 @@ declare global {
       /** Weekly airing calendar. `update=true` bypasses the 24h cache. */
       calendar: (update?: boolean) => Promise<BgmCalendarResult>
       /** 封面本地化：下载 url 到本地，返回 archivist:// 路径（失败 null）。 */
-      cacheCover: (key: string, url: string) => Promise<string | null>
+      cacheCover: (key: string, url: string, maxWidth?: number) => Promise<string | null>
     }
     xifanApi: {
       getCaptcha: () => Promise<{ image_b64: string }>
