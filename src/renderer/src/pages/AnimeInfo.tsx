@@ -868,6 +868,7 @@ function DetailView({
               src={coverSrc || coverFallback}
               alt={data.title_cn || data.title}
               className="relative rounded-lg shadow-2xl w-full aspect-[2/3] object-cover"
+              decoding="async"
               onError={(e) => {
                 const img = e.currentTarget
                 if (img.src !== coverFallback) {
