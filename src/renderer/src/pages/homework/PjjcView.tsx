@@ -511,7 +511,11 @@ const PjjcView = forwardRef<PjjcViewHandle, {
   query: string
   onClearQuery: () => void
 }>(function PjjcView({ data, setData, query, onClearQuery }, ref) {
-  const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set())
+  // 初始即折叠除第一组外的所有组（首帧就别渲染全部进攻行，避免切到本页卡顿;
+  // 详见 HomeworkView 同款注释）。
+  const [collapsedIds, setCollapsedIds] = useState<Set<number>>(
+    () => new Set(data.slice(1).map(d => d.id)),
+  )
 
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [editDefensesGroup, setEditDefensesGroup] = useState<PjjcGroup | null>(null)
@@ -673,11 +677,16 @@ const PjjcView = forwardRef<PjjcViewHandle, {
             const isCollapsed = collapsedIds.has(item.id)
             const hasAttacks = item.attacks.length > 0
             const groupNotes = item.notes ?? []
-            const sortedAttacks = [...item.attacks].sort((a, b) => {
-              const la = a.teams.flat().join('')
-              const lb = b.teams.flat().join('')
-              return la < lb ? -1 : la > lb ? 1 : 0
-            })
+            // 仅展开时才排序并渲染进攻行 —— 折叠组的进攻行不进 DOM，避免切到本页
+            // 一次性渲染全部进攻行导致卡顿。
+            const showAttacks = hasAttacks && !isCollapsed
+            const sortedAttacks = showAttacks
+              ? [...item.attacks].sort((a, b) => {
+                  const la = a.teams.flat().join('')
+                  const lb = b.teams.flat().join('')
+                  return la < lb ? -1 : la > lb ? 1 : 0
+                })
+              : []
 
             return (
               <div key={item.id} className={groupIndex > 0 ? 'border-t border-white/[0.04]' : ''}>
@@ -741,8 +750,8 @@ const PjjcView = forwardRef<PjjcViewHandle, {
                   </div>
                 </div>
 
-                {hasAttacks && (
-                <div className={`collapse-body${isCollapsed ? ' collapsed' : ''}`}>
+                {showAttacks && (
+                <div className="collapse-body">
                   <div className="inner">
                     <div className="py-1">
                       {sortedAttacks.map((atk, idx) => (
