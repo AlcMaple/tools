@@ -335,6 +335,8 @@ export default function MyAnime(): JSX.Element {
                 onClick={() => setTab('recommendations')}
                 icon="campaign"
                 label="推荐"
+                // 推荐总数（不随搜索收窄）—— 跟类目 tab 的总数徽章保持一致。
+                count={recs.length}
               />
             </div>
             <AnimeSyncBar />
