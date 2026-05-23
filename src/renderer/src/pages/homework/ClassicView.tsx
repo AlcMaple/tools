@@ -427,7 +427,11 @@ const ClassicView = forwardRef<ClassicViewHandle, {
   query: string
   onClearQuery: () => void
 }>(function ClassicView({ data, setData, query, onClearQuery }, ref) {
-  const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set())
+  // 初始即折叠除第一组外的所有组（首帧就别渲染全部阵容行，避免切到本页卡顿;
+  // 详见 HomeworkView 同款注释）。
+  const [collapsedIds, setCollapsedIds] = useState<Set<number>>(
+    () => new Set(data.slice(1).map(d => d.id)),
+  )
 
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [titleInput, setTitleInput] = useState('')
@@ -598,13 +602,17 @@ const ClassicView = forwardRef<ClassicViewHandle, {
       ) : (
         <div className="bg-surface-container-lowest rounded-xl border border-white/5 overflow-hidden pb-2">
           {filtered.map((item, groupIndex) => {
-            // 组内每个阵容按时间降序：最近加/改的排最前。同一天用 id 降序兜底。
-            const sortedTeams = [...item.teams].sort((a, b) => {
-              const t = b.updatedAt.localeCompare(a.updatedAt)
-              return t !== 0 ? t : b.id - a.id
-            })
-            const prefixLen = commonPrefixLen(sortedTeams.map(t => t.team))
             const isCollapsed = collapsedIds.has(item.id)
+            // 折叠时阵容行不进 DOM（数组置空 → 下面的 .map 渲染为空）—— 切到本页
+            // 时不再一次性渲染全部阵容行。展开时才排序 + 计算公共前缀。
+            // 组内每个阵容按时间降序：最近加/改的排最前。同一天用 id 降序兜底。
+            const sortedTeams = isCollapsed
+              ? []
+              : [...item.teams].sort((a, b) => {
+                  const t = b.updatedAt.localeCompare(a.updatedAt)
+                  return t !== 0 ? t : b.id - a.id
+                })
+            const prefixLen = isCollapsed ? 0 : commonPrefixLen(sortedTeams.map(t => t.team))
 
             return (
               <div key={item.id} className={groupIndex > 0 ? 'border-t border-white/[0.04]' : ''}>

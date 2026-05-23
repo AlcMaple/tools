@@ -508,7 +508,13 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
    */
   attackOptional?: boolean
 }>(function HomeworkView({ data, setData, query, onClearQuery, sortGroupsByTitle = false, hideImport = false, attackOptional = false }, ref) {
-  const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set())
+  // 初始就折叠除第一组外的所有组。之前初值是空 Set（=全展开），靠下面的
+  // useEffect 在**首帧之后**才折叠 —— 于是首帧把全部组的进攻行都渲染了一遍,
+  // 这正是切到本页卡顿的根源。放进初始化器让首帧就只渲染第一组的进攻行。
+  // （下面的 useEffect 保留，等效于一道幂等的兜底，不影响结果。）
+  const [collapsedIds, setCollapsedIds] = useState<Set<number>>(
+    () => new Set(data.slice(1).map(d => d.id)),
+  )
 
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [defenseInput, setDefenseInput] = useState('')
@@ -716,16 +722,21 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
       ) : (
         <div className="bg-surface-container-lowest rounded-xl border border-white/5 overflow-hidden pb-2">
           {filtered.map((item, groupIndex) => {
-            const sortedAttacks = [...item.attacks].sort((a, b) => {
-              const la = a.team.join('')
-              const lb = b.team.join('')
-              return la < lb ? -1 : la > lb ? 1 : 0
-            })
-            const prefixLen = commonPrefixLen(sortedAttacks.map(a => a.team))
             const isCollapsed = collapsedIds.has(item.id)
-
             const hasAttacks = item.attacks.length > 0
             const groupNotes = item.notes ?? []
+            // 仅展开时才计算排序/前缀并渲染进攻行 —— 折叠组的进攻行**不进 DOM**
+            // （而不是 CSS 压成 0 高度）。这是切到本页卡顿的主因：163 组 + 195
+            // 进攻行全渲染太重，默认大多折叠，只渲染展开组能砍掉绝大部分 DOM。
+            const showAttacks = hasAttacks && !isCollapsed
+            const sortedAttacks = showAttacks
+              ? [...item.attacks].sort((a, b) => {
+                  const la = a.team.join('')
+                  const lb = b.team.join('')
+                  return la < lb ? -1 : la > lb ? 1 : 0
+                })
+              : []
+            const prefixLen = showAttacks ? commonPrefixLen(sortedAttacks.map(a => a.team)) : 0
 
             return (
               <div key={item.id} className={groupIndex > 0 ? 'border-t border-white/[0.04]' : ''}>
@@ -780,8 +791,8 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
                   </div>
                 </div>
 
-                {hasAttacks && (
-                <div className={`collapse-body${isCollapsed ? ' collapsed' : ''}`}>
+                {showAttacks && (
+                <div className="collapse-body">
                   <div className="inner">
                     <div className="py-1">
                       {sortedAttacks.map((atk, idx) => (
