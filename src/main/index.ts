@@ -125,11 +125,12 @@ app.whenReady().then(() => {
         : ext === 'webp' ? 'image/webp'
         : ext === 'gif' ? 'image/gif'
         : 'image/jpeg'
-      // **关键：长缓存头**。不设 Cache-Control 时 Chromium 不缓存本协议响应,
-      // 每次组件重挂载（切页面）都会重新读盘+解码 → 封面"闪一下加载"，且因
-      // 为还有一层内存解码缓存，表现为时有时无。封面按 bgmId 命名、内容基本
-      // 永不变（cover-cache skip-if-exists），所以标 immutable 让渲染进程长期
-      // 缓存，切页面直接命中缓存、瞬时出图、不再闪。
+      // ⚠️ 这条 Cache-Control 目前**不生效**：archivist 是非标准 scheme，
+      // Chromium 不缓存它的响应、直接忽略缓存头。要让它生效得把 scheme 注册成
+      // standard（registerSchemesAsPrivileged），但**已验证那样会破坏
+      // archivist:/// 空 host 的路径解析 —— 封面全部 404、回落占位图**，所以
+      // 不能走 standard scheme 这条路。保留这个头无害（被忽略），等以后找到
+      // 不破坏路径解析的缓存方案再启用。封面"切页面闪一下"的根因即在此。
       return new Response(data, {
         headers: {
           'Content-Type': contentType,
