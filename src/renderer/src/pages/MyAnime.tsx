@@ -34,6 +34,7 @@ import {
   RecommendationView,
   REC_STATUS_META,
   countRecsByStatus,
+  matchesRecommendation,
   type RecFilterKey,
 } from '../components/RecommendationView'
 import { useRecommendationList } from '../stores/recommendationStore'
@@ -161,7 +162,12 @@ export default function MyAnime(): JSX.Element {
   // 手动添加弹窗 —— BGM 限流时无法搜索加番的兜底入口（006 阶段）。
   const [manualAddOpen, setManualAddOpen] = useState(false)
   const recs = useRecommendationList()
-  const recCounts = useMemo(() => countRecsByStatus(recs), [recs])
+  // 徽章数字按 query 收窄 —— 跟追番 tab 的 counts 语义一致（搜索后徽章反映
+  // 收窄范围，不是全量）。空 query 时 matchesRecommendation 全命中 = 全量。
+  const recCounts = useMemo(
+    () => countRecsByStatus(recs.filter(r => matchesRecommendation(r, query))),
+    [recs, query],
+  )
   // 评判标准弹窗：给 ✨ 好看集 和 🌟 最爱值 提供"什么时候 +1"的参考文档。
   // 入口是 sticky header 标题旁的 help_outline 图标。两个 tab 都能打开（最爱
   // 值在追番 tab 直接相关，但用户可能在推荐 tab 想起来要查标准，所以保持常驻）。
@@ -281,30 +287,30 @@ export default function MyAnime(): JSX.Element {
                 <span>评判标准</span>
               </button>
 
-              {/* 搜索框只在追番 tab 出现 —— 它对推荐 tab 没意义；推荐 tab 的过滤是
-                  「待回应 / 已接受 / 已拒绝」chips，由 RecommendationView 自带 */}
-              {tab !== 'recommendations' && (
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">search</span>
-                  <input
-                    spellCheck={false}
-                    autoComplete="off"
-                    autoCorrect="off"
-                    className="w-[320px] bg-surface-container-high border border-outline-variant/20 rounded-xl py-2.5 pl-10 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/40 focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/40"
-                    placeholder="搜索追番标题、别名、备注…"
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                  />
-                  {query && (
-                    <button
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-primary p-1"
-                      onClick={() => setQuery('')}
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>close</span>
-                    </button>
-                  )}
-                </div>
-              )}
+              {/* 搜索框所有 tab 常驻 —— 不再只在追番 tab 出现。之前它在推荐 tab
+                  被隐藏，导致标题行右侧动作组宽度变化、整块 sticky header 上下
+                  跳动。常驻后布局稳定；推荐 tab 下它过滤标题 / 推荐对象（见
+                  matchesRecommendation），placeholder 随 tab 自适应。 */}
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">search</span>
+                <input
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  className="w-[320px] bg-surface-container-high border border-outline-variant/20 rounded-xl py-2.5 pl-10 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/40 focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/40"
+                  placeholder={tab === 'recommendations' ? '搜索推荐标题、推荐对象…' : '搜索追番标题、别名、备注…'}
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                />
+                {query && (
+                  <button
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-primary p-1"
+                    onClick={() => setQuery('')}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>close</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -458,7 +464,7 @@ export default function MyAnime(): JSX.Element {
 
         {/* Body —— 按 tab 切换 */}
         {tab === 'recommendations' ? (
-          <RecommendationView filter={recFilter} />
+          <RecommendationView filter={recFilter} query={query} />
         ) : tracks.length === 0 ? (
           <EmptyAll />
         ) : filtered.length === 0 ? (
@@ -844,14 +850,25 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
     setAddingTag(false)
   }
   return (
-    <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex">
+    <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex min-h-[140px]">
       {/* Cover —— useCover 把 URL 解析成本地 archivist://（含老数据"回填"：
-          首次渲染时后台下载，下次走本地）。没封面 / 加载失败回落占位图。 */}
-      <div className="w-[88px] shrink-0 bg-surface-container-high">
+          首次渲染时后台下载，下次走本地）。没封面 / 加载失败回落占位图。
+
+          封面用 `absolute inset-0 object-cover` 铺满 cover 容器，**不再用
+          aspect-[2/3] 撑高度**。配合卡片 `min-h-[140px]`（统一高度下限，取自
+          内容最高的动画卡片：标题+标签 / 状态+集数+星级 / 在线观看 三行 ≈134px,
+          留余量定 140），效果：
+            - cover 永远等于卡片高度 → 不会比内容高而"突出"，也不会留灰边
+            - 动画 / 推荐两种卡片都被这条 floor 拉到同样的 140px，跟内容多少
+              无关（同 Calendar 的固定容器思路）—— 切到推荐 tab 不再因为内容
+              行数少而整块变矮、产生"挪动"感
+          `relative` 给 absolute 封面做定位锚点；`overflow-hidden rounded-l-xl`
+          裁掉左侧圆角处的封面溢出。 */}
+      <div className="w-[88px] shrink-0 bg-surface-container-high overflow-hidden rounded-l-xl relative">
         <img
           src={coverSrc || coverFallback}
           alt={displayTitle}
-          className="w-full aspect-[2/3] object-cover"
+          className="absolute inset-0 w-full h-full object-cover"
           loading="lazy"
           onError={(e) => {
             const img = e.currentTarget
