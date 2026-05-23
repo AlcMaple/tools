@@ -4,6 +4,7 @@ import HomeworkView, { HomeworkViewHandle } from './homework/HomeworkView'
 import ClassicView, { ClassicViewHandle } from './homework/ClassicView'
 import LogView, { LogViewHandle } from './homework/LogView'
 import PjjcView, { PjjcViewHandle } from './homework/PjjcView'
+import { CleanupModal } from './homework/CleanupModal'
 import {
   ClassicGroup, DefenseGroup, LogEntry, PjjcGroup,
   ipcErrMsg, normalizeClassic, normalizeHomework, normalizeLog, normalizePjjc,
@@ -178,6 +179,8 @@ export default function HomeworkLookup(): JSX.Element {
   const [pjjcData, setPjjcData] = useState<PjjcGroup[]>(initialPjjc)
   const [classicData, setClassicData] = useState<ClassicGroup[]>(initialClassic)
   const [logData, setLogData] = useState<LogEntry[]>(initialLog)
+
+  const [cleanupOpen, setCleanupOpen] = useState(false)
 
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -607,6 +610,7 @@ export default function HomeworkLookup(): JSX.Element {
             setData={setHomeworkData}
             query={debouncedQuery}
             onClearQuery={clearQuery}
+            onCleanup={() => setCleanupOpen(true)}
           />
         )}
         {activeTab === 'jjc' && (
@@ -619,6 +623,7 @@ export default function HomeworkLookup(): JSX.Element {
             sortGroupsByTitle
             hideImport
             attackOptional
+            onCleanup={() => setCleanupOpen(true)}
           />
         )}
         {activeTab === 'pjjc' && (
@@ -628,6 +633,7 @@ export default function HomeworkLookup(): JSX.Element {
             setData={setPjjcData}
             query={debouncedQuery}
             onClearQuery={clearQuery}
+            onCleanup={() => setCleanupOpen(true)}
           />
         )}
         {activeTab === 'classic' && (
@@ -637,6 +643,7 @@ export default function HomeworkLookup(): JSX.Element {
             setData={setClassicData}
             query={debouncedQuery}
             onClearQuery={clearQuery}
+            onCleanup={() => setCleanupOpen(true)}
           />
         )}
         {activeTab === 'log' && (
@@ -663,6 +670,22 @@ export default function HomeworkLookup(): JSX.Element {
             lastSyncedRev={lastSyncedRev}
             onConfirmPush={executePush}
             onConfirmPull={executePull}
+          />
+        )}
+
+        {/* 清理旧数据 modal —— 删除各类里 updatedAt 早于 cutoff 的整组。删完
+            localStorage 经现有 useEffect 落盘，sync chip 自动变「本地未上传」。 */}
+        {cleanupOpen && (
+          <CleanupModal
+            data={{ homework: homeworkData, jjc: jjcData, pjjc: pjjcData, classic: classicData }}
+            onClose={() => setCleanupOpen(false)}
+            onConfirm={(cutoff) => {
+              setHomeworkData(prev => prev.filter(g => g.updatedAt >= cutoff))
+              setJjcData(prev => prev.filter(g => g.updatedAt >= cutoff))
+              setPjjcData(prev => prev.filter(g => g.updatedAt >= cutoff))
+              setClassicData(prev => prev.filter(g => g.updatedAt >= cutoff))
+              setCleanupOpen(false)
+            }}
           />
         )}
       </div>
