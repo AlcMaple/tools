@@ -870,6 +870,7 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
           alt={displayTitle}
           className="absolute inset-0 w-full h-full object-cover"
           loading="lazy"
+          decoding="async"
           onError={(e) => {
             const img = e.currentTarget
             if (img.src !== coverFallback) {

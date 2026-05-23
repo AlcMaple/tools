@@ -372,6 +372,7 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
             alt={displayTitle}
             className="w-full h-full object-cover"
             loading="lazy"
+            decoding="async"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-surface-container-high text-on-surface-variant/20">
