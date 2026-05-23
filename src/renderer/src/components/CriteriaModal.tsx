@@ -63,7 +63,7 @@ export function CriteriaModal({ onClose }: Props): JSX.Element {
         </div>
 
         {/* Body —— 两栏，窄屏自动堆叠 */}
-        <div className="overflow-y-auto flex-1 p-5 grid gap-5 md:grid-cols-2">
+        <div className="custom-scrollbar overflow-y-auto flex-1 p-5 grid gap-5 md:grid-cols-2">
           {/* 好看集 */}
           <section className="bg-surface-container-low border border-outline-variant/15 rounded-xl p-4">
             <header className="flex items-center gap-2 mb-3">
