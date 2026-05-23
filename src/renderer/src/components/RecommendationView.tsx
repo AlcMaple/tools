@@ -52,8 +52,25 @@ export const REC_STATUS_META: Record<RecommendationStatus, {
 }
 
 /**
+ * 推荐的搜索匹配 —— 跟追番列表的搜索框共用同一个 query state（MyAnime 持有）。
+ * 匹配维度：标题 / 中文标题 / 推荐对象（toWhom）。大小写不敏感子串匹配。
+ * 空 query 视为全命中，让"没搜索"时列表完整。
+ */
+export function matchesRecommendation(rec: Recommendation, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return [rec.title, rec.titleCn ?? '', rec.toWhom]
+    .join(' ')
+    .toLowerCase()
+    .includes(q)
+}
+
+/**
  * 给 MyAnime 用的 helper：按 filter 计数。filter chips 和 visible 列表
  * 共享这个统计，避免在两个地方分别 filter 一次。
+ *
+ * 传入的 `all` 应当是**已经按 query 过滤过**的列表 —— 这样徽章数字反映
+ * 搜索收窄后的范围，跟追番 tab 的 counts 语义一致（见 MyAnime）。
  */
 export function countRecsByStatus(all: Recommendation[]): Record<RecFilterKey, number> {
   const c: Record<RecFilterKey, number> = { all: 0, pending: 0, accepted: 0, rejected: 0 }
@@ -67,18 +84,21 @@ export function countRecsByStatus(all: Recommendation[]): Record<RecFilterKey, n
 interface Props {
   /** 由 MyAnime 持有，决定当前展示哪个分类。 */
   filter: RecFilterKey
+  /** 跟追番列表共用的搜索 query（标题 / 推荐对象）。 */
+  query?: string
 }
 
-export function RecommendationView({ filter }: Props): JSX.Element {
+export function RecommendationView({ filter, query = '' }: Props): JSX.Element {
   const all = useRecommendationList()
   // 拒绝时的小弹窗：记录当前要拒绝的 recId（null = 没在拒绝中）
   const [rejectingId, setRejectingId] = useState<string | null>(null)
 
-  // 列表显示：按 createdAt 倒序（最新推荐的在顶）
+  // 列表显示：先按 query 过滤，再按 status filter，最后 createdAt 倒序（最新在顶）。
   const visible = useMemo(() => {
-    const list = filter === 'all' ? all : all.filter(r => r.status === filter)
+    const byQ = all.filter(r => matchesRecommendation(r, query))
+    const list = filter === 'all' ? byQ : byQ.filter(r => r.status === filter)
     return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  }, [all, filter])
+  }, [all, filter, query])
 
   const rejectingRec = rejectingId ? all.find(r => r.id === rejectingId) ?? null : null
 
@@ -88,7 +108,7 @@ export function RecommendationView({ filter }: Props): JSX.Element {
       {all.length === 0 ? (
         <EmptyAll />
       ) : visible.length === 0 ? (
-        <EmptyFiltered />
+        <EmptyFiltered hasQuery={!!query.trim()} />
       ) : (
         visible.map(r => (
           <RecRow
@@ -133,37 +153,44 @@ function RecRow({
   const native = rec.titleCn && rec.title && rec.title !== rec.titleCn ? rec.title : ''
   const [confirmDelete, setConfirmDelete] = useState(false)
   return (
-    <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex">
-      {/* Cover */}
-      <div className="w-[72px] shrink-0 bg-surface-container-high">
+    <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex min-h-[140px]">
+      {/* Cover —— 跟 TrackRow 完全一致：`min-h-[140px]` 统一卡片高度下限（取自
+          动画卡片三行内容的高度），封面 `absolute inset-0 object-cover` 铺满
+          卡片高度。推荐卡片内容比追番少，但靠这条 floor 拉到同样的 140px，跟
+          动画卡片等高 —— 切换 tab 不会因为推荐内容少而变矮、产生"挪动"感。 */}
+      <div className="w-[88px] shrink-0 bg-surface-container-high overflow-hidden rounded-l-xl relative">
         {rec.cover ? (
           <img
             src={rec.cover}
             alt={display}
-            className="w-full aspect-[2/3] object-cover"
+            className="absolute inset-0 w-full h-full object-cover"
             loading="lazy"
           />
         ) : (
-          <div className="w-full aspect-[2/3] flex items-center justify-center text-on-surface-variant/20">
+          <div className="absolute inset-0 flex items-center justify-center text-on-surface-variant/20">
             <span className="material-symbols-outlined text-xl">image</span>
           </div>
         )}
       </div>
 
-      {/* Body */}
-      <div className="flex-1 p-4 min-w-0 flex flex-col gap-2.5">
-        {/* Title row */}
+      {/* Body —— padding / gap 跟 TrackRow 对齐（p-3 / gap-2）。`justify-between`
+          两端对齐：首行（标题块）贴顶、跟动画卡片标题位置一致；末行（状态+操作）
+          贴底；卡片被 floor 拉到 140px 的富余高度均分到中间，而不是 justify-center
+          把内容全挤中间、顶部和底部各留一片空白。 */}
+      <div className="flex-1 p-3 min-w-0 flex flex-col gap-2 justify-between">
+        {/* Title row —— 字号跟 TrackRow 对齐：标题 text-base(16px)，副标题 text-xs，
+            推荐信息 text-[11px]，避免推荐卡片整体看起来比追番卡片"小一号"。 */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="text-sm font-bold text-on-surface truncate" title={display}>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-bold text-on-surface truncate leading-tight" title={display}>
               {display}
             </h3>
             {native && (
-              <p className="text-[11px] text-on-surface-variant/60 truncate mt-0.5" title={native}>
+              <p className="text-xs text-on-surface-variant/60 truncate mt-0.5" title={native}>
                 {native}
               </p>
             )}
-            <p className="font-label text-[10px] text-on-surface-variant/55 mt-1.5 tracking-wide">
+            <p className="font-label text-[11px] text-on-surface-variant/55 mt-1.5 tracking-wide">
               推荐给 <span className="text-on-surface/80 font-bold">{rec.toWhom}</span>
               <span className="mx-1.5 text-on-surface-variant/30">·</span>
               {formatDate(rec.createdAt)}
@@ -341,11 +368,11 @@ function EmptyAll(): JSX.Element {
   )
 }
 
-function EmptyFiltered(): JSX.Element {
+function EmptyFiltered({ hasQuery }: { hasQuery: boolean }): JSX.Element {
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-2 text-on-surface-variant/30">
-      <span className="material-symbols-outlined text-4xl">filter_alt_off</span>
-      <p className="font-label text-xs">这个分类下还没有推荐</p>
+      <span className="material-symbols-outlined text-4xl">{hasQuery ? 'search_off' : 'filter_alt_off'}</span>
+      <p className="font-label text-xs">{hasQuery ? '没有匹配搜索的推荐' : '这个分类下还没有推荐'}</p>
     </div>
   )
 }
