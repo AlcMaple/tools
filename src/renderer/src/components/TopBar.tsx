@@ -159,7 +159,7 @@ function TopBar({
                   </button>
                 )}
               </div>
-              <div className="max-h-72 overflow-y-auto py-1">
+              <div className="custom-scrollbar max-h-72 overflow-y-auto py-1">
                 {historyMatches.map(({ entry, index }) => (
                   <div
                     key={`${entry.keyword}-${index}`}

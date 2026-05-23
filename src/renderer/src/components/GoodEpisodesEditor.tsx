@@ -168,7 +168,7 @@ export function GoodEpisodesEditor({
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto flex-1 p-5">
+        <div className="custom-scrollbar overflow-y-auto flex-1 p-5">
           {view === 'all' ? (
             <GridView
               maxN={maxN}

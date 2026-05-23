@@ -157,7 +157,7 @@ export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Pro
       </div>
 
       {/* Body */}
-      <div className="px-7 py-5 max-h-[60vh] overflow-y-auto">
+      <div className="custom-scrollbar px-7 py-5 max-h-[60vh] overflow-y-auto">
         {visibleRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 gap-2 text-on-surface-variant/40">
             <span className="material-symbols-outlined text-3xl">link_off</span>

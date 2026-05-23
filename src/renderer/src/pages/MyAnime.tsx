@@ -593,7 +593,7 @@ function ManualAddModal({
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+        <div className="custom-scrollbar overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {error && (
             <div className="rounded-lg border border-error/40 bg-error/[0.08] px-3 py-2 text-xs text-error font-label">
               {error}

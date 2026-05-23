@@ -161,7 +161,7 @@ export function LinkTrackModal({ initialKeyword, sourceLabel, sourceTitle, onClo
         </div>
 
         {/* Result area — scroll inside */}
-        <div className="overflow-y-auto flex-1 px-3 pb-5 min-h-[160px]">
+        <div className="custom-scrollbar overflow-y-auto flex-1 px-3 pb-5 min-h-[160px]">
           {state.status === 'searching' && (
             <div className="flex flex-col items-center justify-center py-10 gap-3">
               <span

@@ -132,8 +132,9 @@ export function TagFilter({ allTags, selected, onChange }: Props): JSX.Element {
               </div>
             </div>
 
-            {/* Tag list */}
-            <div className="overflow-y-auto max-h-[360px] py-1">
+            {/* Tag list —— custom-scrollbar 用项目统一的 4px 细滚动条，
+                不走浏览器默认的粗灰条。 */}
+            <div className="custom-scrollbar overflow-y-auto max-h-[360px] py-1">
               {allTags.length === 0 ? (
                 <div className="px-4 py-8 text-center text-on-surface-variant/40 font-label text-[11px]">
                   追番列表里还没有任何标签

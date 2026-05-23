@@ -236,7 +236,7 @@ export function ImportModal({
               <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{copied ? 'check' : 'content_copy'}</span>
             </button>
           </summary>
-          <pre className="px-4 pb-3 pt-1 text-[11px] text-on-surface-variant/80 font-mono whitespace-pre-wrap break-words leading-relaxed max-h-60 overflow-auto">{AI_IMPORT_PROMPT}</pre>
+          <pre className="custom-scrollbar px-4 pb-3 pt-1 text-[11px] text-on-surface-variant/80 font-mono whitespace-pre-wrap break-words leading-relaxed max-h-60 overflow-auto">{AI_IMPORT_PROMPT}</pre>
         </details>
       </div>
 

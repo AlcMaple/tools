@@ -523,7 +523,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
               <span className="material-symbols-outlined leading-none">close</span>
             </button>
           </div>
-          <div className="overflow-y-auto flex-1 p-4 space-y-2">
+          <div className="custom-scrollbar overflow-y-auto flex-1 p-4 space-y-2">
             {state.cards.map(card => (
               <button
                 key={card.key}
