@@ -507,7 +507,9 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
    * JJC where defenders are recorded ahead of attack作业.
    */
   attackOptional?: boolean
-}>(function HomeworkView({ data, setData, query, onClearQuery, sortGroupsByTitle = false, hideImport = false, attackOptional = false }, ref) {
+  /** 打开「清理旧作业」弹窗（全局，由 HomeworkLookup 持有）。传了才渲染清理按钮。 */
+  onCleanup?: () => void
+}>(function HomeworkView({ data, setData, query, onClearQuery, sortGroupsByTitle = false, hideImport = false, attackOptional = false, onCleanup }, ref) {
   // 初始就折叠除第一组外的所有组。之前初值是空 Set（=全展开），靠下面的
   // useEffect 在**首帧之后**才折叠 —— 于是首帧把全部组的进攻行都渲染了一遍,
   // 这正是切到本页卡顿的根源。放进初始化器让首帧就只渲染第一组的进攻行。
@@ -684,6 +686,15 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
           <span className="text-base font-bold text-on-surface">{totalAttacks}</span>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {onCleanup && (
+            <button
+              onClick={onCleanup}
+              className="px-3 py-1 rounded-md bg-surface-container-high text-on-surface-variant border border-outline-variant/15 font-label text-[11px] uppercase tracking-widest hover:text-error hover:border-error/30 transition-colors flex items-center gap-1"
+              title="清理旧作业（按更新日期删除各类旧记录）"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>delete_sweep</span>清理
+            </button>
+          )}
           {!hideImport && (
             <button
               onClick={() => setIsImportOpen(true)}

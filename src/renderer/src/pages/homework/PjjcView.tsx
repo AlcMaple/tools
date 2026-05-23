@@ -510,7 +510,9 @@ const PjjcView = forwardRef<PjjcViewHandle, {
   setData: React.Dispatch<React.SetStateAction<PjjcGroup[]>>
   query: string
   onClearQuery: () => void
-}>(function PjjcView({ data, setData, query, onClearQuery }, ref) {
+  /** 打开「清理旧作业」弹窗（全局，由 HomeworkLookup 持有）。传了才渲染清理按钮。 */
+  onCleanup?: () => void
+}>(function PjjcView({ data, setData, query, onClearQuery, onCleanup }, ref) {
   // 初始即折叠除第一组外的所有组（首帧就别渲染全部进攻行，避免切到本页卡顿;
   // 详见 HomeworkView 同款注释）。
   const [collapsedIds, setCollapsedIds] = useState<Set<number>>(
@@ -643,6 +645,15 @@ const PjjcView = forwardRef<PjjcViewHandle, {
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {onCleanup && (
+            <button
+              onClick={onCleanup}
+              className="px-3 py-1 rounded-md bg-surface-container-high text-on-surface-variant border border-outline-variant/15 font-label text-[11px] uppercase tracking-widest hover:text-error hover:border-error/30 transition-colors flex items-center gap-1"
+              title="清理旧作业（按更新日期删除各类旧记录）"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>delete_sweep</span>清理
+            </button>
+          )}
           <button
             onClick={() => setCollapsedIds(new Set())}
             className="px-3 py-1 rounded-md bg-surface-container-high text-on-surface-variant border border-outline-variant/15 font-label text-[11px] uppercase tracking-widest hover:text-primary hover:border-primary/30 transition-colors flex items-center gap-1"
