@@ -118,7 +118,24 @@ app.whenReady().then(() => {
       // Windows 盘符路径有引导斜杠：/C:/Users/... → C:/Users/...
       const filePath = pathname.replace(/^\/([A-Za-z]:)/, '$1')
       const data = await readFile(filePath)
-      return new Response(data, { headers: { 'Content-Type': 'image/jpeg' } })
+      // 按扩展名给正确 Content-Type（封面可能是 png/webp/gif，不全是 jpeg）。
+      const ext = filePath.split('.').pop()?.toLowerCase()
+      const contentType =
+        ext === 'png' ? 'image/png'
+        : ext === 'webp' ? 'image/webp'
+        : ext === 'gif' ? 'image/gif'
+        : 'image/jpeg'
+      // **关键：长缓存头**。不设 Cache-Control 时 Chromium 不缓存本协议响应,
+      // 每次组件重挂载（切页面）都会重新读盘+解码 → 封面"闪一下加载"，且因
+      // 为还有一层内存解码缓存，表现为时有时无。封面按 bgmId 命名、内容基本
+      // 永不变（cover-cache skip-if-exists），所以标 immutable 让渲染进程长期
+      // 缓存，切页面直接命中缓存、瞬时出图、不再闪。
+      return new Response(data, {
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      })
     } catch {
       return new Response(null, { status: 404 })
     }
