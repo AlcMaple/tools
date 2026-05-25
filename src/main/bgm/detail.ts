@@ -84,6 +84,26 @@ function findJapaneseRegionStart(text: string): number {
 function extractChineseSummary(summary: string): { text: string; hasChinese: boolean } {
   if (!summary) return { text: '', hasChinese: false }
 
+  // 形态 0：显式「中文简介」marker —— 中文在 marker **之后**（与形态 1 相反）。
+  //
+  // 夏日口袋(363957)、光之美少女5GoGo剧场版 这类：日文原文在前，[中文简介]
+  // 之后才是中文。更坑的是日文段前面还有一段「PC初回限定版 2018年6月29日…」
+  // 的发售履历（汉字夹数字、不是简介），会被形态 2 的日文区检测误当成"中文
+  // 简介"整段截出来。所以这个 marker 必须**最优先**判，且取 marker 之后的部分。
+  const cnMarkers = [
+    /[[【［]\s*中文简介\s*[\]】］]/, /[[【［]\s*中文簡介\s*[\]】］]/,
+    /\n\s*中文简介\s*[:：]?\s*\n/, /\n\s*中文簡介\s*[:：]?\s*\n/
+  ]
+  for (const marker of cnMarkers) {
+    const m = summary.match(marker)
+    if (m && m.index !== undefined) {
+      const after = summary.slice(m.index + m[0].length).trim()
+      // marker 之后要真有中文才算数，否则可能是误匹配（marker 在结尾等）。
+      const hanCount = (after.match(/[一-鿿]/g) || []).length
+      if (after && hanCount >= 5) return { text: after, hasChinese: true }
+    }
+  }
+
   // 形态 1：显式中日 marker
   const splitters = [
     /\[简介原文\]/, /\[簡介原文\]/, /【简介原文】/, /【簡介原文】/,
