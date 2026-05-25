@@ -16,7 +16,6 @@ import { animeTrackStore, useAnimeTrack, deriveSubjectType, aliasesFromInfobox }
 import { loadBgmHistory, addBgmHistory, removeBgmHistory, clearBgmHistory } from '../utils/bgmSearchHistory'
 import { useCover } from '../hooks/useCover'
 import coverFallback from '../assets/cover-fallback.png'
-import { WatchHere } from '../components/WatchHere'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const BGM_SEARCH_TTL_MS = 14 * DAY_MS
@@ -955,10 +954,6 @@ function DetailView({
                 Track this anime
               </button>
             )}
-            {/* 已关联的源跳转 — 只在 bindings 非空时出现，每个源一颗 chip。
-                未追番时 useAnimeTrack 返回 null，组件自身就 return null，
-                所以这里不需要包条件分支。 */}
-            <WatchHere bgmId={data.id} variant="row" />
           </div>
         </div>
 
