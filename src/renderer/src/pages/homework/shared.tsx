@@ -564,7 +564,10 @@ export function NoteTagInput({
         value={draft}
         onChange={e => onDraftChange(e.target.value)}
         onKeyDown={e => {
-          if (e.key === 'Enter') {
+          // Ignore Enter while an IME composition is active: pinyin users press
+          // Enter to commit the composing buffer (e.g. "up" → 主), and that
+          // keystroke must not be swallowed as a chip submission.
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
             commit()
           }
