@@ -7,6 +7,9 @@ import { readFileSync, writeFileSync, renameSync } from 'fs'
 // 被"看似关了其实还在跑"困惑到。需要后台模式的用户进设置打开即可。
 let appMinimizeOnClose = false
 let appAutoUpdateCheckEnabled = true  // 默认开启 —— 多数用户期望被提醒新版本
+// 更新源：'auto' = 优先国内 ghproxy 代理链下载、失败回退 GitHub（默认，覆盖
+// 无魔法用户）；'github' = 强制直连 GitHub（有魔法用户想跳过代理时用）。
+let appUpdateSource: 'auto' | 'github' = 'auto'
 try {
   const file = join(app.getPath('userData'), 'app_settings.json')
   const settings = JSON.parse(readFileSync(file, 'utf-8'))
@@ -15,6 +18,9 @@ try {
   }
   if (typeof settings.autoUpdateCheckEnabled === 'boolean') {
     appAutoUpdateCheckEnabled = settings.autoUpdateCheckEnabled
+  }
+  if (settings.updateSource === 'auto' || settings.updateSource === 'github') {
+    appUpdateSource = settings.updateSource
   }
 } catch {
   // ignore
@@ -34,12 +40,18 @@ export function getAutoUpdateCheckEnabled(): boolean {
   return appAutoUpdateCheckEnabled
 }
 
+/** 更新源偏好（见上方变量声明）。updater 据此决定走代理链还是直连 GitHub。 */
+export function getUpdateSource(): 'auto' | 'github' {
+  return appUpdateSource
+}
+
 const HISTORY_FILE = (): string => join(app.getPath('userData'), 'xifan_settings_history.json')
 
 export function registerSystemIpc(): void {
   ipcMain.handle('system:get-setting', (_event, key: string) => {
     if (key === 'minimizeOnClose') return appMinimizeOnClose
     if (key === 'autoUpdateCheckEnabled') return appAutoUpdateCheckEnabled
+    if (key === 'updateSource') return appUpdateSource
     return null
   })
 
@@ -59,6 +71,9 @@ export function registerSystemIpc(): void {
     } else if (key === 'autoUpdateCheckEnabled') {
       appAutoUpdateCheckEnabled = Boolean(value)
       persist((s) => { s.autoUpdateCheckEnabled = appAutoUpdateCheckEnabled })
+    } else if (key === 'updateSource') {
+      appUpdateSource = value === 'github' ? 'github' : 'auto'
+      persist((s) => { s.updateSource = appUpdateSource })
     }
   })
 
