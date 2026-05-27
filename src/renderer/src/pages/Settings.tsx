@@ -16,6 +16,9 @@ interface SavedSettings {
   /** 是否启用启动时的自动检查更新（默认 true）。关掉之后不会自动弹更新
    *  卡片，但用户仍能在「关于 → 检查更新」按钮手动触发。 */
   autoUpdateCheckEnabled?: boolean;
+  /** 更新源：'auto' = 优先国内加速（ghproxy 代理链）、失败回退 GitHub（默认，
+   *  无魔法用户用这个）；'github' = 强制直连 GitHub（有魔法用户跳过代理）。 */
+  updateSource?: "auto" | "github";
 }
 
 const DEFAULTS: Required<SavedSettings> = {
@@ -26,6 +29,7 @@ const DEFAULTS: Required<SavedSettings> = {
   // 一个开关零摩擦。
   minimizeOnClose: false,
   autoUpdateCheckEnabled: true,
+  updateSource: "auto",
 };
 
 // Settings-page-specific UI tweaks — meta-controls in the floating Tweaks panel.
@@ -62,6 +66,7 @@ function readSavedSettings(): Required<SavedSettings> {
       searchCacheEnabled: s.searchCacheEnabled ?? DEFAULTS.searchCacheEnabled,
       minimizeOnClose: s.minimizeOnClose ?? DEFAULTS.minimizeOnClose,
       autoUpdateCheckEnabled: s.autoUpdateCheckEnabled ?? DEFAULTS.autoUpdateCheckEnabled,
+      updateSource: s.updateSource === "github" ? "github" : DEFAULTS.updateSource,
     };
   } catch {
     return { ...DEFAULTS };
@@ -77,6 +82,7 @@ function writeSettings(s: Required<SavedSettings>): void {
         searchCacheEnabled: s.searchCacheEnabled,
         minimizeOnClose: s.minimizeOnClose,
         autoUpdateCheckEnabled: s.autoUpdateCheckEnabled,
+        updateSource: s.updateSource,
       }),
     );
   } catch { /* ignore */ }
@@ -672,6 +678,11 @@ function Settings(): JSX.Element {
     if (patch.autoUpdateCheckEnabled !== undefined) {
       window.systemApi.setSetting?.("autoUpdateCheckEnabled", patch.autoUpdateCheckEnabled).catch(() => {});
     }
+    // updateSource 同理是主进程行为开关（updater 据此决定走代理链还是直连
+    // GitHub），必须同步到 app_settings.json。
+    if (patch.updateSource !== undefined) {
+      window.systemApi.setSetting?.("updateSource", patch.updateSource).catch(() => {});
+    }
   };
 
   // WebDAV — auto-save on commit (Enter / blur).
@@ -1134,7 +1145,7 @@ function Settings(): JSX.Element {
                   <Row
                     icon="auto_mode"
                     title="自动检查更新"
-                    desc="启用后，启动应用时会静默从 GitHub 检查是否有新版本，发现新版本会弹窗提示。关闭后启动不再自动检查，但仍可通过下方「检查更新」按钮手动触发。"
+                    desc="启用后，启动应用时会静默检查是否有新版本，发现新版本会弹窗提示。关闭后启动不再自动检查，但仍可通过下方「检查更新」按钮手动触发。"
                     density={tweaks.density}
                     control={
                       <Switch
@@ -1144,9 +1155,25 @@ function Settings(): JSX.Element {
                     }
                   />
                   <Row
+                    icon="cloud_download"
+                    title="更新源"
+                    desc="「国内加速」优先走国内可达的镜像下载、失败自动回退 GitHub —— 无魔法也能更新，推荐默认。「直连 GitHub」强制走原始源，适合有代理 / 魔法的用户。"
+                    density={tweaks.density}
+                    control={
+                      <Segment
+                        value={settings.updateSource}
+                        onChange={(v) => updateSettings({ updateSource: v })}
+                        options={[
+                          { v: "auto", l: "国内加速" },
+                          { v: "github", l: "直连 GitHub" },
+                        ]}
+                      />
+                    }
+                  />
+                  <Row
                     icon="update"
                     title="检查更新"
-                    desc="不受上面自动检查开关影响 —— 点这里永远会真的去 GitHub 跑一次检查。Windows 下会在应用内静默下载并提示重启安装；macOS 因未做代码签名，发现新版本时会引导前往下载页手动安装。"
+                    desc="不受上面自动检查开关影响 —— 点这里永远会真的跑一次检查。Windows 下会在应用内静默下载并提示重启安装；macOS 因未做代码签名，发现新版本时会引导前往下载页手动安装。"
                     density={tweaks.density}
                     control={<UpdateCheckControl />}
                   />
