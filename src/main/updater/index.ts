@@ -1,27 +1,44 @@
 /**
- * 应用内自动更新
+ * 应用内自动更新 —— 国内加速 + GitHub 回退
  *
- * 平台分两条路：
+ * ## 为什么不能直接用 electron-updater 默认的 GitHub provider
  *
- * 1. **Windows** —— 走 electron-updater 的 autoUpdater
- *    - 启动后延迟静默检查
- *    - 发现新版本 → 自动后台下载 → 下载完发 IPC `updater:downloaded` 给渲染层
- *    - 用户点 banner 「重启安装」 → 调 quitAndInstall()
+ * GitHub Release 的产物走 `objects.githubusercontent.com`，国内无魔法直接拉
+ * 不到（feed 文件 latest.yml 都下不来 → 整个更新流程死在第一步，这是上一版
+ * 走 Cloudflare 踩过的坑）。ghproxy 系镜像（`https://ghproxy.net/` 前缀反代
+ * GitHub）国内可达，但它**不认 `/releases/latest/` 重定向**（实测 502），也
+ * **不放行 `releases.atom`**（403）。能走通的只有：
+ *   - 固定 tag 的产物：`{proxy}https://github.com/owner/repo/releases/download/vX/...` ✅
+ *   - `raw.githubusercontent.com` 上的小文件（经 ghproxy / jsdelivr）✅
  *
- * 2. **macOS** —— 不调 autoUpdater（项目未做代码签名 / 公证，quitAndInstall
- *    会在 Sequoia 之后静默失败，更新落地但替换后的可执行文件被 Gatekeeper
- *    拒绝运行）。改为：
- *    - GitHub REST API 拉 latest release tag
- *    - 比对 `app.getVersion()`，更高则发 `updater:available-mac` 给渲染层
- *    - 用户点 banner 「前往下载」 → 主进程 shell.openExternal 跳到 release 页
+ * ## 方案：两步走
  *
- * dev 模式 (`!app.isPackaged`) 完全跳过，避免 autoUpdater 抛
- * "Skipping update check because application is not packaged"。
+ * 1. **查最新版本**（discoverLatest）：读 repo 根目录 `update-manifest.json`
+ *    （`{ version, proxies }`），通道带回退：ghproxy-raw → jsdelivr → 直连。
+ *    proxies 列表写在这份远程清单里 —— 哪个代理挂了直接改这文件，**所有已
+ *    安装客户端下次检查就生效，不用重新发版**（解决「挂了就换」的维护痛点）。
+ * 2. **下载安装**：拿到版本号后拼**固定 tag** 的 ghproxy URL，用
+ *    electron-updater 的 generic provider 逐个代理尝试（setFeedURL +
+ *    checkForUpdates + downloadUpdate），任一成功即止，全挂回退直连 GitHub
+ *    （有魔法用户兜底）。复用 electron-updater 的 NSIS 下载 / 安装机制。
+ *
+ * ## 平台差异
+ *
+ * - **Windows**：走 electron-updater generic provider，能真·静默下载 + 重启安装。
+ * - **macOS**：项目未签名 / 公证，quitAndInstall 在 Sequoia 后静默失败，所以
+ *   不调 autoUpdater，只「查版本 → 给一个 ghproxy 加速的 dmg 下载直链」，用户
+ *   点 banner 在浏览器里快速下到 dmg 后自行拖入 Applications。
+ *
+ * dev 模式 (`!app.isPackaged`) 完全跳过 autoUpdater。
+ *
+ * 更新源由用户设置 `updateSource` 控制：
+ *   - 'auto'   ：先国内代理链、失败回退 GitHub（默认，覆盖无魔法用户）
+ *   - 'github' ：强制直连 GitHub（有魔法用户想跳过代理时用）
  */
 
 import { app, BrowserWindow, ipcMain, shell, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { getAutoUpdateCheckEnabled } from '../ipc/system'
+import { getAutoUpdateCheckEnabled, getUpdateSource } from '../ipc/system'
 
 type Channel =
   | 'updater:checking'
@@ -32,13 +49,31 @@ type Channel =
   | 'updater:not-available'
   | 'updater:error'
 
-interface VersionInfo {
-  version: string
-  releaseUrl?: string
-}
-
 const REPO_OWNER = 'AlcMaple'
 const REPO_NAME = 'tools'
+
+// update-manifest.json 的获取通道（只拉这份很小的 JSON 用）。
+const MANIFEST_RAW = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/update-manifest.json`
+const MANIFEST_JSDELIVR = `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/update-manifest.json`
+// 引导代理：仅用于「拉 manifest」这一步的 ghproxy 前缀（大文件下载用 manifest
+// 里返回的 proxies）。这两个写死是因为 proxies 列表本身在 manifest 里，存在
+// 先有鸡还是先有蛋的问题；但 manifest 极小且有 jsdelivr + 直连两路兜底，写死
+// 一两个引导代理够用。
+const BOOTSTRAP_PROXIES = ['https://ghproxy.net/', 'https://ghfast.top/']
+
+interface UpdateManifest {
+  version: string
+  proxies: string[]
+}
+
+interface MacResult {
+  version: string
+  downloadUrl: string
+  pageUrl: string
+}
+
+const isMac = process.platform === 'darwin'
+let lastMacResult: MacResult | null = null
 
 function broadcast(channel: Channel, payload?: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -68,117 +103,149 @@ function compareVersions(a: string, b: string): number {
   return 0
 }
 
-/** macOS：从 GitHub REST API 读 latest release，比对版本号。 */
-function fetchLatestReleaseFromGitHub(): Promise<VersionInfo | null> {
+/** 用 Electron net 拉一段文本（项目约定：抓取一律走 net，自动读系统代理）。 */
+function fetchText(url: string, timeoutMs = 10000): Promise<string | null> {
   return new Promise((resolve) => {
-    const req = net.request({
-      method: 'GET',
-      url: `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`,
-      redirect: 'follow',
-    })
+    let done = false
+    const finish = (v: string | null): void => { if (!done) { done = true; resolve(v) } }
+    const req = net.request({ method: 'GET', url, redirect: 'follow' })
     req.setHeader('User-Agent', 'MapleTools-Updater')
-    req.setHeader('Accept', 'application/vnd.github+json')
-    let buf = ''
-    let timeout: NodeJS.Timeout | null = setTimeout(() => {
-      try { req.abort() } catch { /* noop */ }
-      resolve(null)
-    }, 10000)
+    const timer = setTimeout(() => { try { req.abort() } catch { /* noop */ } finish(null) }, timeoutMs)
     req.on('response', (res) => {
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        if (timeout) { clearTimeout(timeout); timeout = null }
-        resolve(null)
-        return
+        clearTimeout(timer); finish(null); return
       }
-      res.on('data', (chunk) => { buf += chunk.toString('utf-8') })
-      res.on('end', () => {
-        if (timeout) { clearTimeout(timeout); timeout = null }
-        try {
-          const json = JSON.parse(buf) as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean }
-          if (json.draft || json.prerelease) { resolve(null); return }
-          if (!json.tag_name) { resolve(null); return }
-          resolve({ version: json.tag_name, releaseUrl: json.html_url })
-        } catch {
-          resolve(null)
-        }
-      })
+      let buf = ''
+      res.on('data', (c) => { buf += c.toString('utf-8') })
+      res.on('end', () => { clearTimeout(timer); finish(buf) })
+      res.on('error', () => { clearTimeout(timer); finish(null) })
     })
-    req.on('error', () => {
-      if (timeout) { clearTimeout(timeout); timeout = null }
-      resolve(null)
-    })
+    req.on('error', () => { clearTimeout(timer); finish(null) })
     req.end()
   })
 }
 
-let isMac = process.platform === 'darwin'
-let lastMacResult: VersionInfo | null = null
+/** manifest 的获取通道顺序（按更新源偏好排）。 */
+function manifestChannels(source: 'auto' | 'github'): string[] {
+  if (source === 'github') return [MANIFEST_RAW, MANIFEST_JSDELIVR]
+  return [...BOOTSTRAP_PROXIES.map((p) => p + MANIFEST_RAW), MANIFEST_JSDELIVR, MANIFEST_RAW]
+}
+
+/** 逐通道拉 update-manifest.json，第一份合法的即返回。全失败返回 null。 */
+async function discoverLatest(source: 'auto' | 'github'): Promise<UpdateManifest | null> {
+  for (const url of manifestChannels(source)) {
+    const text = await fetchText(url)
+    if (!text) continue
+    try {
+      const json = JSON.parse(text) as Partial<UpdateManifest>
+      if (typeof json.version === 'string' && json.version) {
+        const proxies = Array.isArray(json.proxies)
+          ? json.proxies.filter((p): p is string => typeof p === 'string' && p.length > 0)
+          : []
+        return { version: json.version.replace(/^v/, ''), proxies }
+      }
+    } catch { /* 这个通道返回的不是合法 JSON，试下一个 */ }
+  }
+  return null
+}
+
+/** 拼某版本的固定 tag release 目录 URL（proxy 为 '' 表示直连 GitHub）。 */
+function releaseBase(proxy: string, version: string): string {
+  return `${proxy}https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/v${version}/`
+}
+
+/** Windows 下载阶段要依次尝试的 feed base 列表。 */
+function downloadBases(source: 'auto' | 'github', manifest: UpdateManifest): string[] {
+  const direct = releaseBase('', manifest.version)
+  if (source === 'github') return [direct]
+  // 代理链在前，直连兜底在最后（有魔法用户即便所有代理挂了也能走直连）。
+  return [...manifest.proxies.map((p) => releaseBase(p, manifest.version)), direct]
+}
 
 /**
- * macOS 检查流程。手动 / 自动共用。
- * @param manual 手动触发时，"已是最新"也会发 not-available 事件供 UI 反馈；
- *               自动触发时静默不打扰。
+ * Windows 检查 + 下载流程。autoDownload 关掉，自己驱动「逐源尝试」：
+ * 某个源的 latest.yml / exe 拉不到就换下一个，全挂才报错。
  */
-async function checkMac(manual: boolean): Promise<void> {
+async function runWin(manual: boolean): Promise<void> {
   broadcast('updater:checking')
-  const latest = await fetchLatestReleaseFromGitHub()
-  if (!latest) {
-    if (manual) broadcast('updater:error', { message: '无法连接 GitHub' })
+  const source = getUpdateSource()
+  const manifest = await discoverLatest(source)
+  if (!manifest) {
+    if (manual) broadcast('updater:error', { message: '无法获取更新信息，请检查网络后重试' })
     return
   }
   const current = app.getVersion()
-  if (compareVersions(latest.version, current) > 0) {
-    lastMacResult = latest
-    broadcast('updater:available-mac', {
-      version: latest.version.replace(/^v/, ''),
-      releaseUrl: latest.releaseUrl,
-    })
-  } else {
+  if (compareVersions(manifest.version, current) <= 0) {
     if (manual) broadcast('updater:not-available', { version: current })
+    return
   }
+  broadcast('updater:available', { version: manifest.version })
+
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = false
+
+  for (const base of downloadBases(source, manifest)) {
+    try {
+      autoUpdater.setFeedURL({ provider: 'generic', url: base })
+      const result = await autoUpdater.checkForUpdates()
+      if (!result?.updateInfo || compareVersions(result.updateInfo.version, current) <= 0) {
+        continue
+      }
+      await autoUpdater.downloadUpdate()
+      return // 成功：update-downloaded 事件已发给渲染层
+    } catch {
+      // 这个源（latest.yml 502 / exe 拉不到 / 超时）失败，换下一个
+      continue
+    }
+  }
+  broadcast('updater:error', { message: '所有更新源均不可用，请稍后重试' })
 }
 
 /**
- * Windows 检查流程。让 electron-updater 自己跑事件 loop（checking-for-update
- * → update-available → download-progress → update-downloaded），我们只
- * 转发到 IPC 给渲染层。
+ * macOS 检查流程。未签名做不了真·自动安装，只查版本 + 给一个 ghproxy 加速的
+ * dmg 直链，让用户在浏览器快速下载后自行安装。
  */
-async function checkWin(manual: boolean): Promise<void> {
-  try {
-    const result = await autoUpdater.checkForUpdates()
-    // checkForUpdates 解析成功不代表"有新版本"，它只是返回 metadata。
-    // 真正的"无可用更新"会触发 update-not-available 事件（下面注册过）。
-    // 这里手动触发时如果什么事件都没炸（result 为 null 或同版本），需要
-    // 额外发个 not-available。但 electron-updater 行为不稳定，靠下面的
-    // 事件回调判断更可靠，这里就不重复发了。
-    void result
-  } catch (err) {
-    if (manual) {
-      broadcast('updater:error', { message: (err as Error)?.message ?? '检查失败' })
-    }
+async function runMac(manual: boolean): Promise<void> {
+  broadcast('updater:checking')
+  const source = getUpdateSource()
+  const manifest = await discoverLatest(source)
+  if (!manifest) {
+    if (manual) broadcast('updater:error', { message: '无法获取更新信息，请检查网络后重试' })
+    return
   }
+  const current = app.getVersion()
+  if (compareVersions(manifest.version, current) <= 0) {
+    if (manual) broadcast('updater:not-available', { version: current })
+    return
+  }
+  const proxy = source === 'github' ? '' : (manifest.proxies[0] ?? '')
+  // dmg 文件名要和 electron-builder 的 artifactName 模板对齐：
+  // `${productName}_${version}_macos_${arch}.${ext}`（见 package.json build.dmg）
+  const dmg = `${releaseBase(proxy, manifest.version)}MapleTools_${manifest.version}_macos_arm64.dmg`
+  lastMacResult = {
+    version: manifest.version,
+    downloadUrl: dmg,
+    pageUrl: `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/v${manifest.version}`,
+  }
+  broadcast('updater:available-mac', { version: manifest.version, releaseUrl: dmg })
 }
 
-let manualNotAvailablePending = false
-
 export function setupUpdater(): void {
-  // 注册 IPC（无论 dev 还是 packaged 都注册，handler 自己判断）
+  // IPC 无论 dev / packaged 都注册，handler 自己判断。
   ipcMain.handle('updater:check', async () => {
     if (!app.isPackaged) return { skipped: true, reason: 'dev-mode' }
-    if (isMac) await checkMac(true)
-    else {
-      manualNotAvailablePending = true
-      await checkWin(true)
-    }
+    if (isMac) await runMac(true)
+    else await runWin(true)
     return { ok: true }
   })
 
   ipcMain.handle('updater:install', () => {
     if (isMac) {
-      // Mac 没下载文件，只跳浏览器
-      if (lastMacResult?.releaseUrl) shell.openExternal(lastMacResult.releaseUrl)
+      // mac 没在本地下载文件，给浏览器一个加速 dmg 直链
+      if (lastMacResult?.downloadUrl) shell.openExternal(lastMacResult.downloadUrl)
       return { ok: true }
     }
-    // Windows：autoUpdater 已下载完，触发重启安装
+    // Windows：generic provider 已下载完，触发重启安装
     try {
       autoUpdater.quitAndInstall()
       return { ok: true }
@@ -188,7 +255,7 @@ export function setupUpdater(): void {
   })
 
   ipcMain.handle('updater:open-release-page', () => {
-    const url = lastMacResult?.releaseUrl
+    const url = lastMacResult?.pageUrl
       ?? `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest`
     shell.openExternal(url)
     return { ok: true }
@@ -198,23 +265,8 @@ export function setupUpdater(): void {
   if (!app.isPackaged) return
 
   if (!isMac) {
-    // Windows: autoUpdater 配置 + 事件转发
-    autoUpdater.autoDownload = true
-    autoUpdater.autoInstallOnAppQuit = false  // 用户控制何时重启安装
-
-    autoUpdater.on('checking-for-update', () => {
-      broadcast('updater:checking')
-    })
-    autoUpdater.on('update-available', (info) => {
-      broadcast('updater:available', { version: info.version })
-    })
-    autoUpdater.on('update-not-available', (info) => {
-      // 手动触发时才报"已是最新"；自动触发不打扰用户
-      if (manualNotAvailablePending) {
-        manualNotAvailablePending = false
-        broadcast('updater:not-available', { version: info?.version ?? app.getVersion() })
-      }
-    })
+    // 进度 / 下载完成走事件转发；available / not-available / error 由上面的
+    // 编排函数手动 broadcast（避免「逐源尝试」时每次失败都炸一个 error 给 UI）。
     autoUpdater.on('download-progress', (progress) => {
       broadcast('updater:download-progress', {
         percent: progress.percent,
@@ -226,18 +278,15 @@ export function setupUpdater(): void {
     autoUpdater.on('update-downloaded', (info) => {
       broadcast('updater:downloaded', { version: info.version })
     })
-    autoUpdater.on('error', (err) => {
-      broadcast('updater:error', { message: err?.message ?? '更新出错' })
-    })
+    // 必须挂一个 error 监听，否则 electron-updater 内部 emit('error') 会变成
+    // 未捕获异常。用户可见的错误由编排函数在所有源都失败后统一报。
+    autoUpdater.on('error', () => { /* swallow; runWin 统一处理 */ })
   }
 
-  // 启动后延迟 3s 静默检查（不阻塞首屏）
-  // 受用户设置 `autoUpdateCheckEnabled` 控制 —— 关掉之后启动检查彻底跳过,
-  // banner 不会自动弹。但手动入口（设置页的「检查更新」按钮）不受影响,
-  // 所以用户即使禁用了自动检查也能在想升级时主动触发一次。
+  // 启动后延迟 3s 静默检查（不阻塞首屏），受 autoUpdateCheckEnabled 控制。
   setTimeout(() => {
     if (!getAutoUpdateCheckEnabled()) return
-    if (isMac) checkMac(false).catch(() => { /* silent */ })
-    else checkWin(false).catch(() => { /* silent */ })
+    if (isMac) runMac(false).catch(() => { /* silent */ })
+    else runWin(false).catch(() => { /* silent */ })
   }, 3000)
 }
