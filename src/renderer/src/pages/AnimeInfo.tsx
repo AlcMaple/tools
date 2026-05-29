@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import TopBar from '../components/TopBar'
 import ErrorPanel from '../components/ErrorPanel'
+import { friendlyError } from '../utils/errorMessage'
 import type { BgmSearchResult, BgmDetail } from '../types/bgm'
 import type { XifanWatchInfo } from '../types/xifan'
 import type { GirigiriEpisode, GirigiriWatchInfo } from '../types/girigiri'
@@ -549,8 +550,23 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
             <span className="material-symbols-outlined text-error text-4xl leading-none">error_outline</span>
           </div>
           <div className="text-center">
-            <p className="font-label text-xs text-error uppercase tracking-[0.2em] mb-2">Failed</p>
-            <p className="font-body text-sm text-on-surface-variant leading-relaxed">{state.message}</p>
+            {/* 这个 error 状态既装真异常（connect ETIMEDOUT 等看不懂的原始串）也装
+                友好提示（「未找到」「返回了意外的响应」）。前者过 friendlyError 翻成
+                人话；后者 friendlyError 命不中（title 仍是兜底「出错了」），直接显示原文。 */}
+            {(() => {
+              const fe = friendlyError(state.message)
+              const classified = fe.title !== '出错了'
+              return (
+                <>
+                  <p className="font-label text-xs text-error uppercase tracking-[0.2em] mb-2">
+                    {classified ? fe.title : 'Failed'}
+                  </p>
+                  <p className="font-body text-sm text-on-surface-variant leading-relaxed">
+                    {classified ? fe.hint : state.message}
+                  </p>
+                </>
+              )
+            })()}
           </div>
           <div className="w-full">
             <input
