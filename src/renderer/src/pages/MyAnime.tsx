@@ -902,7 +902,8 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
               {displayTitle}
             </h3>
             {/* 类型 chip 行：BGM 标签（primary 实色只读，加追番时的快照）+
-                自定义标签（amber 实色 hover 出 ×）+ 末尾 [+ 添加] inline 入口。
+                自定义标签（默认样式与 BGM 同主色，统一外观；hover 变红出 × 表示可删）
+                + 末尾 [+ 添加] inline 入口。
                 紧贴标题下方（mt-1）替代了之前的日文副标题位置，不增加卡片
                 高度。 BGM 限 4 + 用户实际也不超过 4，flex-wrap 兜底超长行。 */}
             <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -921,7 +922,7 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
                   type="button"
                   onClick={() => animeTrackStore.removeUserTag(track.bgmId, t)}
                   title={`自定义「${t}」（点击移除）`}
-                  className="group inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-amber-400/20 border border-amber-400/50 text-amber-600 hover:bg-error/15 hover:border-error/40 hover:text-error font-label text-[10px] font-bold tracking-wider transition-colors"
+                  className="group inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-primary/12 border border-primary/25 text-primary hover:bg-error/15 hover:border-error/40 hover:text-error font-label text-[10px] font-bold tracking-wider transition-colors"
                 >
                   <span>{t}</span>
                   <span
