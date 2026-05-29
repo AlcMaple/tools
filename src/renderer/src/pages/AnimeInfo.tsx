@@ -573,7 +573,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
               type="text"
               value={searchKeyword}
               onChange={e => setSearchKeyword(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && searchKeyword.trim()) void doSearch(searchKeyword.trim(), true) }}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && searchKeyword.trim()) void doSearch(searchKeyword.trim(), true) }}
               className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl px-4 py-2.5 font-label text-sm text-on-surface outline-none focus:border-primary/40 transition-colors placeholder:text-on-surface-variant/30 mb-3"
               placeholder="修改关键词重试..."
             />

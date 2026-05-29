@@ -66,7 +66,7 @@ export function QuickRecommendModal({ track, onClose, onCreated }: Props): JSX.E
             type="text"
             value={toWhom}
             onChange={e => setToWhom(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && canSubmit) submit() }}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && canSubmit) submit() }}
             placeholder="例：Bob / 妹妹 / 群里"
             maxLength={40}
             autoFocus

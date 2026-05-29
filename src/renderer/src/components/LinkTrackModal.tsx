@@ -140,7 +140,7 @@ export function LinkTrackModal({ initialKeyword, sourceLabel, sourceTitle, onClo
                 type="text"
                 value={keyword}
                 onChange={e => setKeyword(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') void runSearch(keyword) }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void runSearch(keyword) }}
                 placeholder="Bangumi 关键词..."
                 autoFocus
                 spellCheck={false}
