@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { ModalShell } from '../pages/homework/shared'
 import type { Source, SearchCard } from '../types/search'
 import { useSourceSearch } from '../hooks/useSourceSearch'
+import ErrorPanel from './ErrorPanel'
 
 interface Props {
   source: Source
@@ -184,10 +185,9 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
           )}
 
           {state.status === 'error' && (
-            <div className="flex flex-col items-center justify-center py-10 gap-2 text-error">
-              <span className="material-symbols-outlined text-3xl">error_outline</span>
-              <p className="font-body text-xs text-on-surface-variant text-center px-6">{state.message}</p>
-            </div>
+            // 走统一的 ErrorPanel（内部 friendlyError 分类 + Show details 看原始报错），
+            // 跟 SearchDownload 一致，不再把 connect ETIMEDOUT 这种原始串直怼给用户。
+            <ErrorPanel error={state.message} compact onRetry={() => void search(keyword)} />
           )}
 
           {state.status === 'results' && (
