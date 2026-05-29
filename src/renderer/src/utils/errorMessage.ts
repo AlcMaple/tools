@@ -160,6 +160,23 @@ export function friendlyError(err: unknown): FriendlyError {
     lower.includes('fetch failed') ||
     lower.includes('request timeout')
   ) {
+    // connect ETIMEDOUT / ECONNREFUSED / DNS 失败 = TCP 连接都建立不起来，即站点
+    // 根本不可达（站点自己挂了 / 被墙 / 本机网络或代理问题）。这和「连上了但 10s
+    // 没回包」的 request timeout 不是一回事 —— 用户看到 girigiri/xifan 官网都打不开
+    // 时就是这一类，得给「网站连不上」而不是带限速口吻的「请求超时」。
+    const isConnFailure =
+      lower.includes('connect etimedout') ||
+      lower.includes('connect timeout') ||
+      lower.includes('econnrefused') ||
+      lower.includes('enotfound') ||
+      lower.includes('getaddrinfo')
+    if (isConnFailure) {
+      return {
+        title: '网站连不上',
+        hint: '这个站点现在打不开 —— 可能是它自己挂了 / 被墙，也可能是你的网络或代理有问题。先用浏览器打开该网站确认：能打开就过会儿再试，打不开就是站点本身的问题。',
+        raw: msg,
+      }
+    }
     const isTimeout = lower === 'timeout' || lower.includes('timeout') || lower.includes('etimedout')
     return {
       title: isTimeout ? '请求超时' : '连不上服务器',
