@@ -4,7 +4,7 @@ import {
   Highlight, ModalShell, FormField, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
   createTeamPasteHandler,
-  commonPrefixLen, matchesClassic, todayStr,
+  commonPrefixLen, matchesClassic, todayStr, cleanCharName,
 } from './shared'
 
 export interface ClassicViewHandle {
@@ -219,7 +219,7 @@ function EditTeamModal({
           取消
         </button>
         <button
-          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
+          onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -292,7 +292,7 @@ function AddTeamModal({
           取消
         </button>
         <button
-          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
+          onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -487,7 +487,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
 
   const handleAdd = (notes: string[]) => {
     const title = titleInput.trim()
-    const team = teamInput.split('、').map(s => s.trim()).filter(Boolean)
+    const team = teamInput.split('、').map(s => cleanCharName(s)).filter(Boolean)
     if (!title || !team.length) return
     const now = todayStr()
     setData(prev => {
