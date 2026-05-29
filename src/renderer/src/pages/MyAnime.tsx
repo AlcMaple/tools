@@ -729,8 +729,10 @@ function TabButton({
         {icon}
       </span>
       <span>{label}</span>
+      {/* 计数 span 预留固定宽度 + 居中 + 等宽数字：位数变化（如 9→10）时盒子宽度
+          恒定，不再把 pill 撑宽、挤动整行布局。min-w 取 3.5ch 覆盖到三位数（破百不抖）。 */}
       {count !== undefined && (
-        <span className={`font-label text-[10px] ${active ? '' : 'text-on-surface-variant/40'}`}>{count}</span>
+        <span className={`font-label text-[10px] tabular-nums tracking-normal text-center inline-block min-w-[3.5ch] ${active ? '' : 'text-on-surface-variant/40'}`}>{count}</span>
       )}
     </button>
   )
@@ -765,7 +767,9 @@ function FilterChip({
         {icon}
       </span>
       <span>{label}</span>
-      <span className={`font-label text-[10px] ${active ? '' : 'text-on-surface-variant/40'}`}>{count}</span>
+      {/* 计数 span 预留固定宽度 + 居中 + 等宽数字：位数变化（如 9→10）时盒子宽度
+          恒定，不再把 pill 撑宽、挤动整行布局。min-w 取 3.5ch 覆盖到三位数（破百不抖）。 */}
+      <span className={`font-label text-[10px] tabular-nums tracking-normal text-center inline-block min-w-[3.5ch] ${active ? '' : 'text-on-surface-variant/40'}`}>{count}</span>
     </button>
   )
 }
