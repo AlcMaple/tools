@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import TopBar from '../components/TopBar'
 import { downloadStore, type DownloadTask } from '../stores/downloadStore'
+import { friendlyError } from '../utils/errorMessage'
 import {
   siteApi,
   listTaskEps,
@@ -74,7 +75,11 @@ function EpisodeGrid({
       setCopiedEp(ep)
       setTimeout(() => setCopiedEp(null), 1500)
     } catch (err) {
-      setCopyError((err as Error).message || '获取下载链接失败')
+      // 解析直链走的也是各源的网络请求；站点连不上时别把 connect ETIMEDOUT
+      // 这种原始串怼进 toast。friendlyError 命中就用人话标题，命不中再退回
+      // 这个场景更贴切的「获取下载链接失败」。
+      const fe = friendlyError(err)
+      setCopyError(fe.title === '出错了' ? '获取下载链接失败' : fe.title)
       setTimeout(() => setCopyError(null), 3500)
     } finally {
       if (spinnerTimer !== null) clearTimeout(spinnerTimer)
