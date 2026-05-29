@@ -69,23 +69,80 @@ function toArchivistUrl(absPath: string): string {
   return 'archivist://local' + encoded
 }
 
-function download(url: string): Promise<Buffer> {
+/**
+ * 直连失败时的「国内加速」图片代理。
+ *
+ * 直连 lain.bgm.tv 在国内常被墙 / 超时（实测 IPv4+IPv6 都不通）。回退到 wsrv.nl
+ * 图片代理（Cloudflare，实测国内可达且快）：由代理服务端去取原图，顺手缩到目标
+ * 宽度 + 转 jpg 省流量。代理只在主进程抓取这一步用 —— 抓到后存本地 archivist://，
+ * 渲染层读本地缓存、不直接碰 lain.bgm.tv。想换代理域名改这一处即可。
+ */
+function buildProxyUrl(originalUrl: string, maxWidth: number): string {
+  const noScheme = originalUrl.replace(/^https?:\/\//i, '')
+  return `https://wsrv.nl/?url=${noScheme}&w=${maxWidth}&output=jpg`
+}
+
+/** 拉一张图，带超时（默认 8s）。失败 / 超时 / 非 2~3xx 都 reject。 */
+function fetchBuffer(url: string, timeoutMs = 8000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (fn: () => void): void => { if (!settled) { settled = true; fn() } }
     const req = net.request(url)
+    const timer = setTimeout(() => {
+      try { req.abort() } catch { /* noop */ }
+      finish(() => reject(new Error('cover timeout')))
+    }, timeoutMs)
     req.on('response', (res) => {
       const status = res.statusCode ?? 0
       if (status < 200 || status >= 400) {
-        reject(new Error(`cover HTTP ${status}`))
+        clearTimeout(timer)
+        finish(() => reject(new Error(`cover HTTP ${status}`)))
         return
       }
       const chunks: Buffer[] = []
       res.on('data', (c: Buffer) => chunks.push(c))
-      res.on('end', () => resolve(Buffer.concat(chunks)))
-      res.on('error', reject)
+      res.on('end', () => { clearTimeout(timer); finish(() => resolve(Buffer.concat(chunks))) })
+      res.on('error', (e: Error) => { clearTimeout(timer); finish(() => reject(e)) })
     })
-    req.on('error', reject)
+    req.on('error', (e: Error) => { clearTimeout(timer); finish(() => reject(e)) })
     req.end()
   })
+}
+
+// 直连「熔断」：直连 lain.bgm.tv 连续失败到阈值，就认定当前网络直连不通，本进程
+// 内后续封面直接走代理 —— 省掉串行队列里每张图都干等 6s 超时（否则会累加成几分钟）。
+// 计数器在进程内，下次启动应用自然复位 → 网络恢复后又会先试直连。
+let consecutiveDirectFails = 0
+const DIRECT_OFF_AFTER = 3
+
+/**
+ * 先直连原图（6s），失败回退 wsrv 代理（8s）。直连连续失败 DIRECT_OFF_AFTER 次后，
+ * 本进程内跳过直连、直接走代理。
+ */
+async function download(url: string, maxWidth: number): Promise<Buffer> {
+  const canProxy = /^https?:\/\//i.test(url)
+  if (!(canProxy && consecutiveDirectFails >= DIRECT_OFF_AFTER)) {
+    try {
+      const buf = await fetchBuffer(url, 6000)
+      consecutiveDirectFails = 0
+      return buf
+    } catch {
+      if (!canProxy) throw new Error('cover unreachable')
+      consecutiveDirectFails++
+    }
+  }
+  return await fetchBuffer(buildProxyUrl(url, maxWidth), 8000)
+}
+
+// 串行队列：封面逐张拉，绝不一次性几十张并发猛拉 lain.bgm.tv —— GFW 对突发并发
+// 最敏感，单个孤立请求在限速下大概率能过（这也是「一部部加番、封面慢慢就缓存上、
+// 从没出问题」的原因）。代价是首次批量回填是逐张冒出来的，但每张只拉一次、拉到即
+// 永久缓存，完全可接受。命中本地缓存的封面在入队前就返回了，不占队列。
+let coverQueue: Promise<unknown> = Promise.resolve()
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const run = coverQueue.then(task, task)
+  coverQueue = run.then(() => undefined, () => undefined) // 单张失败不打断后续
+  return run
 }
 
 /**
@@ -120,7 +177,8 @@ export async function cacheCover(
     } catch {
       /* 不存在，继续下载 */
     }
-    const buf = await download(url)
+    // 串行入队：避免列表打开时几十张封面并发猛拉触发图床限速。
+    const buf = await enqueue(() => download(url, maxWidth))
     if (buf.length === 0) return null
     // 缩放 + 重新编码为 jpeg。封面是不透明海报，转 jpeg 不丢可见信息。
     // nativeImage 解析/缩放失败（极少见的坏图）则原样落盘，保证封面不丢。
