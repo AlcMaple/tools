@@ -76,7 +76,7 @@ function TopBar({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter' && onSearch) {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing && onSearch) {
       onSearch(query.trim())
       setSearchFocused(false)
     }

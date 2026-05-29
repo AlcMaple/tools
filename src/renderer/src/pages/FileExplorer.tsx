@@ -859,7 +859,7 @@ function FileExplorer(): JSX.Element {
             <input
               value={addressInput}
               onChange={(e) => setAddressInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') tryOpenInput() }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) tryOpenInput() }}
               placeholder={placeholder}
               spellCheck={false}
               className="flex-1 bg-transparent border-0 focus:ring-0 py-2.5 px-1 text-sm font-mono tracking-tight text-on-surface placeholder:text-on-surface-variant/40 outline-none"

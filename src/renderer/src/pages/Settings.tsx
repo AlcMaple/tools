@@ -314,7 +314,7 @@ function TextControl({
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         onBlur={commitOnBlur ? onCommit : undefined}
-        onKeyDown={(e) => { if (e.key === "Enter" && onCommit) onCommit(); }}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && onCommit) onCommit(); }}
         spellCheck={false}
         autoComplete="off"
         className="flex-1 bg-transparent py-2 outline-none placeholder-on-surface-variant/30"

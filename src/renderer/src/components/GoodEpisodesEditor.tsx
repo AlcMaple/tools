@@ -492,7 +492,7 @@ function NotePopover({
         value={draft}
         onChange={e => setDraft(e.target.value)}
         onKeyDown={e => {
-          if (e.key === 'Enter') { onSave(draft); onClose() }
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) { onSave(draft); onClose() }
           else if (e.key === 'Escape') { onClose() }
         }}
         placeholder="当时哪一点吸引你…"
