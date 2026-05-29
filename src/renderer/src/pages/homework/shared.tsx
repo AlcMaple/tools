@@ -240,7 +240,10 @@ export function cleanCharName(s: string): string {
 function matchesAllRoles(roles: string[], terms: string[]): boolean {
   // 每个角色位 → 它能被哪些词命中（整名 + "/" 拆出的各别名，全小写）
   const roleAlts = roles.map(r => {
-    const lower = r.toLowerCase().trim()
+    // stripCjkLatinSpaces 同时作用于角色位：存量数据里「水 m」这种中英文之间带
+    // 空格的名字（拼音输入法的产物），要去掉空格后再比，否则匹配不到（查询词那
+    // 边已经 strip 过了，两边都 strip 才能对上）。
+    const lower = stripCjkLatinSpaces(r.toLowerCase()).trim()
     const alts = new Set<string>()
     if (lower) alts.add(lower)
     for (const part of lower.split('/')) {

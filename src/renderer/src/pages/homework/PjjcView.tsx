@@ -4,7 +4,7 @@ import {
   Highlight, ModalShell, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
   createTeamPasteHandler,
-  matchesPjjc, todayStr,
+  matchesPjjc, todayStr, cleanCharName,
 } from './shared'
 
 export interface PjjcViewHandle {
@@ -15,7 +15,7 @@ const SLOT_LABELS = ['防 1', '防 2', '防 3'] as const
 const ATK_LABELS = ['进 1', '进 2', '进 3'] as const
 
 function parseLine(s: string): string[] {
-  return s.split('、').map(p => p.trim()).filter(Boolean)
+  return s.split('、').map(p => cleanCharName(p)).filter(Boolean)
 }
 
 function joinTeam(arr: string[]): string {

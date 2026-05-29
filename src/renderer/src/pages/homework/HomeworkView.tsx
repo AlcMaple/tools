@@ -4,7 +4,7 @@ import {
   Highlight, ModalShell, FormField, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
   createTeamPasteHandler,
-  commonPrefixLen, matchesDefense, todayStr,
+  commonPrefixLen, matchesDefense, todayStr, cleanCharName,
 } from './shared'
 import { ImportModal } from './ImportModal'
 
@@ -199,7 +199,7 @@ function EditDefenseModal({
           取消
         </button>
         <button
-          onClick={() => onSave(value.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
+          onClick={() => onSave(value.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-primary/40 bg-primary/10 text-sm font-bold text-primary hover:bg-primary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -276,7 +276,7 @@ function EditAttackModal({
           取消
         </button>
         <button
-          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
+          onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -470,7 +470,7 @@ function AddAttackModal({
           取消
         </button>
         <button
-          onClick={() => onSave(teamValue.split('、').map(s => s.trim()).filter(Boolean), noteState.finalNotes())}
+          onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())}
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -573,12 +573,12 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   }
 
   const handleAdd = (notes: string[]) => {
-    const defenseRaw = defenseInput.split('、').map(s => s.trim()).filter(Boolean)
+    const defenseRaw = defenseInput.split('、').map(s => cleanCharName(s)).filter(Boolean)
     if (!defenseRaw.length) return
     // In attackOptional mode the attack input isn't rendered at all — notes are
     // always group-level. In standard mode, both fields are required and notes
     // attach to the attack row.
-    const team = attackOptional ? [] : attackInput.split('、').map(s => s.trim()).filter(Boolean)
+    const team = attackOptional ? [] : attackInput.split('、').map(s => cleanCharName(s)).filter(Boolean)
     if (!attackOptional && !team.length) return
     // Preserve the user's character order — store the lineup exactly as typed.
     const defense = defenseRaw
