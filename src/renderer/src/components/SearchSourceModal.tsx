@@ -96,7 +96,7 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
                 type="text"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !isBusy) void search(keyword) }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !isBusy) void search(keyword) }}
                 placeholder={`${source} 关键词...`}
                 autoFocus
                 spellCheck={false}

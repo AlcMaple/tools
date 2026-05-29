@@ -609,7 +609,7 @@ function ManualAddModal({
               className={inputCls}
               value={title}
               onChange={e => setTitle(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submit() }}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit() }}
               placeholder="原标题，如 巨蟲列島（也可直接填中文名）"
             />
           </div>
@@ -941,7 +941,7 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
                   onChange={e => setTagDraft(e.target.value)}
                   onBlur={commitTag}
                   onKeyDown={e => {
-                    if (e.key === 'Enter') commitTag()
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitTag()
                     if (e.key === 'Escape') { setTagDraft(''); setAddingTag(false) }
                   }}
                   placeholder="例：下饭"

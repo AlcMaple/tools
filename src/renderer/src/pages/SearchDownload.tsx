@@ -610,7 +610,7 @@ function SearchDownload(): JSX.Element {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) =>
-                  e.key === "Enter" && handleSearch(searchQuery)
+                  e.key === "Enter" && !e.nativeEvent.isComposing && handleSearch(searchQuery)
                 }
                 placeholder="Enter anime title or keyword..."
                 className="flex-1 bg-transparent text-on-surface placeholder-on-surface-variant/40 outline-none text-sm font-label"
