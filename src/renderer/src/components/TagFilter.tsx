@@ -4,7 +4,8 @@
 //   - **多选**（BGM 只能单选 7 个站点级类型）
 //   - **可搜**（番剧多了 tag 也多，几十上百个时打字过滤一下）
 //   - **命中数显示**（每个 tag 旁标"有几部番带这个 tag"，决定要不要选）
-//   - **AND 语义**（外层 filter pipeline 实现；本组件只管选择，传 selected 数组）
+//   - **AND / OR 语义由调用方决定**（外层 filter pipeline 实现；本组件只管选择 +
+//     用 matchMode 显示文案，传 selected 数组）
 //
 // 不用 ModalShell —— 那个是全屏 backdrop 弹窗，按钮旁边一个小过滤器走不到那种
 // 量级。这里手写 anchored dropdown：fixed backdrop 截点击 + absolute 浮层挂在
@@ -24,12 +25,16 @@ interface TagWithCount {
 interface Props {
   /** 已经按命中数排好序的全部 tag 列表。 */
   allTags: TagWithCount[]
-  /** 当前选中的 tag（外层 filter pipeline 用 AND 逻辑过滤）。 */
+  /** 当前选中的 tag（实际过滤在外层 pipeline）。 */
   selected: string[]
   onChange: (next: string[]) => void
+  /** 已选项是否置顶（默认 true）。记录页要保持原顺序 → 传 false。 */
+  pinSelected?: boolean
+  /** 仅用于文案：多选语义是 AND 还是 OR（实际过滤在外层）。默认 'AND'。 */
+  matchMode?: 'AND' | 'OR'
 }
 
-export function TagFilter({ allTags, selected, onChange }: Props): JSX.Element {
+export function TagFilter({ allTags, selected, onChange, pinSelected = true, matchMode = 'AND' }: Props): JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -51,7 +56,9 @@ export function TagFilter({ allTags, selected, onChange }: Props): JSX.Element {
 
   // 已选 tag 放到列表顶部 —— 用户打开 popover 主要是 "看看选了啥 / 加 / 减"，
   // 把选中项沉到底找起来累。这里 reorder 不动外面的 sorted 数组。
+  // pinSelected=false 时（记录页要求）保持原始命中数顺序，勾选不跳位。
   const ordered = useMemo(() => {
+    if (!pinSelected) return filtered
     const selSet = new Set(selected)
     const pinned: TagWithCount[] = []
     const rest: TagWithCount[] = []
@@ -60,7 +67,7 @@ export function TagFilter({ allTags, selected, onChange }: Props): JSX.Element {
       else rest.push(t)
     }
     return [...pinned, ...rest]
-  }, [filtered, selected])
+  }, [filtered, selected, pinSelected])
 
   const toggle = (tag: string): void => {
     if (selected.includes(tag)) onChange(selected.filter(t => t !== tag))
@@ -78,7 +85,7 @@ export function TagFilter({ allTags, selected, onChange }: Props): JSX.Element {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        title={hasSelection ? `按 ${selected.length} 个类型过滤（AND）` : '按动漫类型过滤'}
+        title={hasSelection ? `按 ${selected.length} 个类型过滤（${matchMode}）` : '按类型过滤'}
         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border font-label text-[10px] uppercase tracking-widest transition-colors ${
           hasSelection
             ? 'bg-primary/15 text-primary border-primary/30 font-bold'
@@ -117,7 +124,7 @@ export function TagFilter({ allTags, selected, onChange }: Props): JSX.Element {
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
-                  placeholder="搜动漫类型…"
+                  placeholder="搜类型…"
                   spellCheck={false}
                   className="flex-1 bg-transparent outline-none text-xs text-on-surface placeholder:text-on-surface-variant/35"
                 />
@@ -137,7 +144,7 @@ export function TagFilter({ allTags, selected, onChange }: Props): JSX.Element {
             <div className="custom-scrollbar overflow-y-auto max-h-[360px] py-1">
               {allTags.length === 0 ? (
                 <div className="px-4 py-8 text-center text-on-surface-variant/40 font-label text-[11px]">
-                  追番列表里还没有任何标签
+                  还没有任何类型
                 </div>
               ) : ordered.length === 0 ? (
                 <div className="px-4 py-8 text-center text-on-surface-variant/40 font-label text-[11px]">
@@ -185,7 +192,7 @@ export function TagFilter({ allTags, selected, onChange }: Props): JSX.Element {
             {hasSelection && (
               <div className="p-2 border-t border-outline-variant/15 bg-surface-container-low flex items-center justify-between">
                 <span className="font-label text-[10px] text-on-surface-variant/55 px-2">
-                  已选 {selected.length} 个 · AND 匹配
+                  已选 {selected.length} 个 · {matchMode} 匹配
                 </span>
                 <button
                   type="button"
