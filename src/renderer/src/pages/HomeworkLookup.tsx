@@ -288,7 +288,7 @@ export default function HomeworkLookup(): JSX.Element {
     else if (activeTab === 'jjc') jjcRef.current?.openAdd()
     else if (activeTab === 'pjjc') pjjcRef.current?.openAdd()
     else if (activeTab === 'classic') classicRef.current?.openAdd()
-    else logRef.current?.focusInput()
+    else logRef.current?.openAdd()
   }
 
   const syncSettle = (status: SyncStatus, msg: string) => {
@@ -446,15 +446,13 @@ export default function HomeworkLookup(): JSX.Element {
                   </button>
                 )}
               </div>
-              {activeTab !== 'log' && (
-                <button
-                  onClick={handleAdd}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-label text-xs uppercase tracking-widest hover:bg-primary-fixed transition-all active:scale-95 shadow-lg shadow-primary/10 whitespace-nowrap"
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>add</span>
-                  {addLabel}
-                </button>
-              )}
+              <button
+                onClick={handleAdd}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-label text-xs uppercase tracking-widest hover:bg-primary-fixed transition-all active:scale-95 shadow-lg shadow-primary/10 whitespace-nowrap"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>add</span>
+                {addLabel}
+              </button>
             </div>
           </div>
 
