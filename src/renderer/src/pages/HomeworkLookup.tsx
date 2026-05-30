@@ -16,7 +16,7 @@ type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type SyncDirection = 'push' | 'pull'
 
 /**
- * 阵容知识库的云端 blob。
+ * 锦囊妙计（阵容/作业速查）的云端 blob。
  *
  * 历史包袱：v5 之前这里还混着 `tracks: AnimeTrack[]`（追番列表），后来
  * 追番拆出去走独立的 `anime.json` —— v6 起 blob 里不再写 tracks。读旧
@@ -414,9 +414,9 @@ export default function HomeworkLookup(): JSX.Element {
                 <span className="material-symbols-outlined" style={{ fontSize: 14 }}>menu_book</span>
                 <span>Tools</span>
                 <span className="text-outline-variant">/</span>
-                <span className="text-on-surface font-bold">阵容知识库</span>
+                <span className="text-on-surface font-bold">锦囊妙计</span>
               </div>
-              <h1 className="text-3xl font-black tracking-tighter text-on-surface">阵容知识库</h1>
+              <h1 className="text-3xl font-black tracking-tighter text-on-surface">锦囊妙计</h1>
               <p className="text-sm text-on-surface-variant/80 mt-1 font-label">
                 查询作业 · 浏览经典阵容 · 流水账记录
               </p>

@@ -1,4 +1,4 @@
-// 追番列表 (anime.json) 的独立 WebDAV 同步入口 —— 跟阵容知识库
+// 追番列表 (anime.json) 的独立 WebDAV 同步入口 —— 跟锦囊妙计
 // (homework.json) 各管各的 rev / 冲突检测 / 确认弹窗。
 //
 // 整页面就一个 chip + 两个按钮（上传 / 下载）；点开后弹出 SyncConfirmModal
