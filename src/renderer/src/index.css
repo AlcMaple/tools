@@ -189,6 +189,15 @@ mark.hl {
   border-radius: 2px;
 }
 
+/* 焦点描边统一处理 —— 本应用以鼠标为主：按钮在「鼠标点击后再按修饰键(Shift 等)」时，
+   会被 :focus-visible 启发式判成键盘焦点而显出原生 outline，观感像 bug。统一去掉按钮的
+   原生 outline。输入框 / 文本域不受影响（它们用 Tailwind 的 focus:ring，是 box-shadow，
+   跟 outline 无关），键盘可达性仍由那些自定义 ring 承担。 */
+button:focus,
+button:focus-visible {
+  outline: none;
+}
+
 .atk-row {
   display: grid;
   grid-template-columns: 36px 1fr auto auto;
