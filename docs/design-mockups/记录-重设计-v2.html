@@ -65,6 +65,12 @@ const E = (title, types = [], note = '') => ({ id: _id++, title, types, note });
 
 // 种子：少数带类型/备注，大量只有标题 —— 演示「没备注就是干净单行、密度高」
 const SEED = [
+  E('我、青春、恋爱物语', ['恋爱','治愈'], '演示：标题自带顿号'),
+  E('日常、轻松、摸鱼三连'),
+  E('春、夏、秋、冬'),
+  E('钢之炼金术士、嬗变之环', ['热血']),
+  E('你好、世界'),
+  E('科幻、机甲、战争编年史', ['科幻','战争']),
   E('进击的巨人', ['热血','催泪'], '最终季作画封神，结局有争议，但 WIT+MAPPA 整体值得'),
   E('紫罗兰永恒花园', ['治愈','催泪'], '京阿尼画面巅峰，第 10 集封神'),
   E('86—不存在的战区', ['科幻','战争'], 'A-1 制作，配乐顶，二期节奏更好'),
@@ -111,6 +117,31 @@ function HoverCard({ entry }) {
   );
 }
 
+// 光标锚定的浮卡（流式正文用）：fixed 定位在鼠标处，靠近右/下边缘就翻转，
+// 永不被滚动容器裁切（参考 FileExplorer 右键菜单的 flipX/flipY）。
+const CARD_W = 288, CARD_H = 160, PAD = 12, GAP = 14;
+function FloatingCard({ entry, x, y }) {
+  if (!entry.types.length && !entry.note) return null;
+  const flipX = x + CARD_W + PAD > window.innerWidth;
+  const flipY = y + CARD_H + PAD > window.innerHeight;
+  const style = {
+    position: 'fixed', width: CARD_W, zIndex: 60,
+    ...(flipX ? { right: window.innerWidth - x + GAP } : { left: x + GAP }),
+    ...(flipY ? { bottom: window.innerHeight - y + GAP } : { top: y + GAP }),
+  };
+  return (
+    <div style={style} className="pointer-events-none rounded-lg bg-surface-container-high border border-outline-variant/30 shadow-2xl shadow-black/40 p-3 pop">
+      <p className="text-[13px] font-bold text-on-surface mb-1.5 break-words">{entry.title}</p>
+      {entry.types.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">{entry.types.map(t => <TypeChip key={t} t={t} small />)}</div>
+      )}
+      {entry.note
+        ? <p className="text-[11px] leading-relaxed text-on-surface-variant/80 break-words whitespace-pre-wrap">{entry.note}</p>
+        : <p className="text-[11px] text-on-surface-variant/35 italic">无备注</p>}
+    </div>
+  );
+}
+
 // 「有内容」小圆点：提示这条标题背后还有类型/备注，引导 hover / 点开
 function Dot({ entry }) {
   if (!entry.types.length && !entry.note) return <span className="w-1.5 h-1.5 flex-shrink-0" />;
@@ -121,9 +152,10 @@ function Page() {
   const [entries, setEntries] = useState(SEED);
   const [query, setQuery] = useState('');
   const [selectedTypes, setSelectedTypes] = useState([]); // 多选，AND 匹配（同 MyAnime）
-  const [view, setView] = useState('dense'); // dense | wrap
-  const [draft, setDraft] = useState('');
-  const [detail, setDetail] = useState(null); // 弹窗目标 entry
+  const [view, setView] = useState('flow'); // flow | dense | wrap
+  const [detail, setDetail] = useState(null);    // 编辑弹窗目标 entry（单击已有记录）
+  const [creating, setCreating] = useState(false); // 新建弹窗开关
+  const [hover, setHover] = useState(null);      // 流式正文 hover 卡：{entry,x,y}（光标锚定 + 贴边翻转）
 
   const allTypes = useMemo(() => {
     const m = new Map();
@@ -141,12 +173,8 @@ function Page() {
     });
   }, [entries, query, selectedTypes]);
 
-  const add = () => {
-    const t = draft.trim();
-    if (!t) return;
-    setEntries(prev => [E(t), ...prev]);
-    setDraft('');
-  };
+  // 新增 / 编辑都走同一个弹窗（EntryModal），跟页面顶部「添加作业」一致的心智模型
+  const addEntry = ({ title, types, note }) => { setEntries(prev => [E(title, types, note), ...prev]); setCreating(false); };
 
   return (
     <div className="min-h-screen flex flex-col max-w-5xl mx-auto px-8 py-6">
@@ -157,12 +185,18 @@ function Page() {
           <h1 className="text-3xl font-black tracking-tight mt-1">记录</h1>
           <p className="text-sm text-on-surface-variant/55 mt-1">流水账 · 只看标题一目了然，类型与备注藏在 hover / 点开</p>
         </div>
-        {/* 搜索（标题 + 备注） */}
-        <div className="flex items-center gap-2 bg-surface-container border border-outline-variant/20 rounded-xl px-3.5 h-11 w-80 focus-within:border-primary/40 transition-colors">
-          <span className="material-symbols-outlined text-on-surface-variant/40" style={{fontSize:18}}>search</span>
-          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索标题、备注…"
-            className="flex-1 bg-transparent outline-none text-sm placeholder:text-on-surface-variant/35" />
-          {query && <button onClick={()=>setQuery('')} className="text-on-surface-variant/40 hover:text-on-surface"><span className="material-symbols-outlined" style={{fontSize:16}}>close</span></button>}
+        {/* 右侧：搜索（标题 + 备注）+ 添加记录（同「添加作业」粉色主按钮） */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-surface-container border border-outline-variant/20 rounded-xl px-3.5 h-11 w-72 focus-within:border-primary/40 transition-colors">
+            <span className="material-symbols-outlined text-on-surface-variant/40" style={{fontSize:18}}>search</span>
+            <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索标题、备注…"
+              className="flex-1 bg-transparent outline-none text-sm placeholder:text-on-surface-variant/35" />
+            {query && <button onClick={()=>setQuery('')} className="text-on-surface-variant/40 hover:text-on-surface"><span className="material-symbols-outlined" style={{fontSize:16}}>close</span></button>}
+          </div>
+          <button onClick={()=>setCreating(true)}
+            className="h-11 px-4 rounded-xl bg-primary text-on-primary font-bold text-sm flex items-center gap-1.5 hover:brightness-110 transition shrink-0">
+            <span className="material-symbols-outlined" style={{fontSize:18}}>add</span>添加记录
+          </button>
         </div>
       </div>
 
@@ -175,22 +209,13 @@ function Page() {
         <span className="flex-1" />
         {/* 视图切换 */}
         <div className="inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
-          {[['view_agenda','dense','紧凑列表'],['grid_view','wrap','流式标签']].map(([ic,v,t]) => (
+          {[['subject','flow','流式正文（像 Word）'],['view_agenda','dense','紧凑列表'],['grid_view','wrap','流式标签']].map(([ic,v,t]) => (
             <button key={v} onClick={()=>setView(v)} title={t}
               className={`px-2.5 h-7 rounded-md flex items-center transition-colors ${view===v?'bg-surface-container-highest text-on-surface':'text-on-surface-variant/50 hover:text-on-surface'}`}>
               <span className="material-symbols-outlined" style={{fontSize:15}}>{ic}</span>
             </button>
           ))}
         </div>
-      </div>
-
-      {/* 快速记一笔 */}
-      <div className="flex items-center gap-3 bg-surface-container/60 rounded-xl px-4 h-12 border border-outline-variant/15 focus-within:border-primary/40 mb-3">
-        <span className="material-symbols-outlined text-on-surface-variant/50" style={{fontSize:18}}>edit_note</span>
-        <input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing)add()}}
-          placeholder="记一笔（只填标题，类型/备注点开补）… 回车保存"
-          className="flex-1 bg-transparent outline-none text-sm placeholder:text-on-surface-variant/35" />
-        <button onClick={add} disabled={!draft.trim()} className="px-4 h-8 rounded-md bg-primary/15 text-primary font-label text-[10px] uppercase tracking-widest hover:bg-primary/25 disabled:opacity-30 flex items-center gap-1.5"><span className="material-symbols-outlined" style={{fontSize:13}}>add</span>添加</button>
       </div>
 
       <div className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/45 mb-2 flex items-center gap-2">
@@ -201,7 +226,38 @@ function Page() {
 
       {/* 列表（只显示标题） */}
       <div className="flex-1 nice-scroll overflow-y-auto rounded-lg" style={{maxHeight:'52vh'}}>
-        {view === 'dense' ? (
+        {view === 'flow' ? (
+          /* 流式正文 —— 复刻 Word 阅读体验：标题用顿号连排、两端对齐、松行距、
+             无边框/序号/圆点。有类型的标题用类型色着色（像 Word 里的红字），其余正文色。
+             hover 出类型/备注卡、单击进编辑。约束 measure 到 ~30 字宽，读起来不累。 */
+          <div className="bg-surface-container-low rounded-lg border border-outline-variant/15 px-7 py-6">
+            <p className="text-[15px] text-on-surface text-justify" style={{lineHeight:2.2, letterSpacing:'0.01em'}}>
+              {visible.map((e,i) => {
+                const colored = e.types.length > 0;
+                const color = colored ? (typeCls(e.types[0]).split(' ').find(c=>c.startsWith('text-')) || 'text-on-surface') : 'text-on-surface/90';
+                // 标题内的顿号：跟随标题色 + 加粗放大 → 鲜明显眼，一眼看出「这条标题自带顿号」。
+                const titleNodes = e.title.split('、').map((seg, si, arr) => (
+                  <React.Fragment key={si}>
+                    {seg}
+                    {si < arr.length-1 && <span className="font-bold" style={{fontSize:'1.15em'}}>、</span>}
+                  </React.Fragment>
+                ));
+                return (
+                  <React.Fragment key={e.id}>
+                    <span onClick={()=>setDetail(e)}
+                      onMouseEnter={ev=>setHover({entry:e, x:ev.clientX, y:ev.clientY})}
+                      onMouseLeave={()=>setHover(null)}
+                      className={`cursor-pointer ${color} ${colored?'font-semibold':''}`}>
+                      {titleNodes}
+                    </span>
+                    {/* 分隔顿号：中性灰 + 正常字重 + 留白 → 看得清即可，不用显眼 */}
+                    {i < visible.length-1 && <span className="text-on-surface-variant/45 font-normal select-none" style={{margin:'0 0.3em'}}>、</span>}
+                  </React.Fragment>
+                );
+              })}
+            </p>
+          </div>
+        ) : view === 'dense' ? (
           <div className="bg-surface-container/30 rounded-lg border border-outline-variant/10 overflow-visible">
             {visible.map((e,i) => (
               <div key={e.id} onClick={()=>setDetail(e)}
@@ -235,7 +291,13 @@ function Page() {
         {visible.length===0 && <div className="text-center py-16 text-on-surface-variant/40 text-sm">没有匹配的记录</div>}
       </div>
 
-      {detail && <DetailModal entry={detail} onClose={()=>setDetail(null)}
+      {/* 流式正文 hover 浮卡：光标锚定 + 贴边翻转（参考 FileExplorer 右键菜单） */}
+      {hover && <FloatingCard entry={hover.entry} x={hover.x} y={hover.y} />}
+
+      {creating && <EntryModal mode="create" entry={{title:'',types:[],note:''}} onClose={()=>setCreating(false)}
+        onSave={addEntry} />}
+
+      {detail && <EntryModal mode="edit" entry={detail} onClose={()=>setDetail(null)}
         onSave={(next)=>{setEntries(prev=>prev.map(x=>x.id===next.id?next:x)); setDetail(null);}}
         onDelete={(id)=>{setEntries(prev=>prev.filter(x=>x.id!==id)); setDetail(null);}} />}
     </div>
@@ -303,51 +365,69 @@ function TypeFilter({ allTypes, selected, onChange }) {
   );
 }
 
-// 单击标题 → 弹窗：编辑 标题 / 类型(tag 输入) / 备注，删除也在这
-function DetailModal({ entry, onClose, onSave, onDelete }) {
+// 类型输入子组件 —— 已加的类型显示成可删 chip，末尾一个 inline input，回车追加。
+// 录入器和编辑弹窗共用，避免两处各写一遍。
+function TypeInput({ types, setTypes, placeholder = '加类型，回车…' }) {
+  const [draft, setDraft] = useState('');
+  const add = () => { const t=draft.trim(); if(t&&!types.includes(t)) setTypes([...types,t]); setDraft(''); };
+  return (
+    <div className="flex flex-wrap gap-1.5 items-center min-h-[2.25rem] bg-surface-container-high border border-outline-variant/20 rounded-lg px-2.5 py-1.5 focus-within:border-primary/40 transition-colors">
+      {types.map(t => (
+        <span key={t} className={`inline-flex items-center gap-0.5 rounded border px-2 py-0.5 text-[10px] font-label font-bold tracking-wider ${typeCls(t)}`}>
+          {t}<button onClick={()=>setTypes(types.filter(x=>x!==t))} className="ml-0.5 opacity-50 hover:opacity-100"><span className="material-symbols-outlined" style={{fontSize:11}}>close</span></button>
+        </span>
+      ))}
+      <input value={draft} onChange={e=>setDraft(e.target.value)}
+        onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();add();}
+          else if(e.key==='Backspace'&&!draft&&types.length){setTypes(types.slice(0,-1));}}}
+        placeholder={types.length?'':placeholder} className="flex-1 min-w-[90px] bg-transparent outline-none text-[12px] py-0.5 placeholder:text-on-surface-variant/35" />
+    </div>
+  );
+}
+
+// 记录弹窗 —— 新增 / 编辑共用，跟页面顶部「添加作业」一致的弹窗心智模型。
+// mode='create'：标题 autofocus、无「删除」、主按钮「添加」；
+// mode='edit'：单击已有记录打开、带「删除」、主按钮「保存」。
+function EntryModal({ entry, mode = 'edit', onClose, onSave, onDelete }) {
   const [title, setTitle] = useState(entry.title);
   const [types, setTypes] = useState(entry.types);
   const [note, setNote] = useState(entry.note);
-  const [typeDraft, setTypeDraft] = useState('');
-  const addType = () => { const t=typeDraft.trim(); if(t&&!types.includes(t)){setTypes([...types,t]);} setTypeDraft(''); };
+  const isCreate = mode === 'create';
+  const canSave = title.trim().length > 0;
+  const save = () => { if(!canSave) return; onSave({...entry, title:title.trim(), types, note:note.trim()}); };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55" onClick={onClose}>
       <div className="pop w-[480px] max-w-[92vw] bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/15">
-          <span className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/50">编辑记录</span>
+          <span className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/50">{isCreate?'新增记录':'编辑记录'}</span>
           <button onClick={onClose} className="text-on-surface-variant/60 hover:text-on-surface"><span className="material-symbols-outlined">close</span></button>
         </div>
         <div className="p-5 space-y-4">
           <div>
             <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">标题</label>
-            <input value={title} onChange={e=>setTitle(e.target.value)}
-              className="w-full bg-surface-container-high border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-primary/40" />
+            <input value={title} onChange={e=>setTitle(e.target.value)} autoFocus={isCreate}
+              onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();save();}}}
+              placeholder="记录标题…"
+              className="w-full bg-surface-container-high border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-primary/40 placeholder:text-on-surface-variant/35" />
           </div>
           <div>
-            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">类型</label>
-            <div className="flex flex-wrap gap-1.5 items-center bg-surface-container-high border border-outline-variant/20 rounded-lg px-2.5 py-2">
-              {types.map(t => (
-                <span key={t} className={`group inline-flex items-center gap-0.5 rounded border px-2 py-0.5 text-[10px] font-label font-bold tracking-wider ${typeCls(t)}`}>
-                  {t}<button onClick={()=>setTypes(types.filter(x=>x!==t))} className="ml-0.5 opacity-50 hover:opacity-100"><span className="material-symbols-outlined" style={{fontSize:11}}>close</span></button>
-                </span>
-              ))}
-              <input value={typeDraft} onChange={e=>setTypeDraft(e.target.value)}
-                onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();addType();}}}
-                placeholder={types.length?'':'加类型，回车…'} className="flex-1 min-w-[80px] bg-transparent outline-none text-[12px] py-0.5" />
-            </div>
+            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">类型 <span className="text-on-surface-variant/30 normal-case tracking-normal">（可选）</span></label>
+            <TypeInput types={types} setTypes={setTypes} />
           </div>
           <div>
-            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">备注</label>
+            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">备注 <span className="text-on-surface-variant/30 normal-case tracking-normal">（可选）</span></label>
             <textarea value={note} onChange={e=>setNote(e.target.value)} rows={3} placeholder="随便记点什么…"
               className="w-full bg-surface-container-high border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-primary/40 resize-none placeholder:text-on-surface-variant/35" />
           </div>
         </div>
         <div className="flex items-center justify-between px-5 py-4 border-t border-outline-variant/15">
-          <button onClick={()=>onDelete(entry.id)} className="px-3 py-2 rounded-lg text-error hover:bg-error/10 font-label text-xs flex items-center gap-1.5"><span className="material-symbols-outlined" style={{fontSize:16}}>delete</span>删除</button>
+          {isCreate
+            ? <span />
+            : <button onClick={()=>onDelete(entry.id)} className="px-3 py-2 rounded-lg text-error hover:bg-error/10 font-label text-xs flex items-center gap-1.5"><span className="material-symbols-outlined" style={{fontSize:16}}>delete</span>删除</button>}
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant/70 hover:bg-surface-container-high font-label text-xs">取消</button>
-            <button onClick={()=>onSave({...entry, title:title.trim()||entry.title, types, note:note.trim()})} className="px-5 py-2 rounded-lg bg-primary text-on-primary font-bold font-label text-xs hover:brightness-110">保存</button>
+            <button onClick={save} disabled={!canSave} className="px-5 py-2 rounded-lg bg-primary text-on-primary font-bold font-label text-xs hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed">{isCreate?'添加':'保存'}</button>
           </div>
         </div>
       </div>
