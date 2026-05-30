@@ -73,20 +73,38 @@ function createWindow(): void {
     },
   })
 
-  // 一次性、无闪烁地显示窗口。不在 'ready-to-show'（首帧）就 show ——
-  // 那时字体（尤其 3.9MB 图标字体）还没加载完，show 出来后图标 / 文字会
-  // 陆续跳出来，看着像闪好几下。改成等渲染进程发 'app:renderer-ready'
-  // （它在 React 挂载完 + document.fonts.ready 后才发），窗口一次成型再亮。
-  // 兜底 4s：万一渲染信号没来（崩溃 / 老 preload），也不能永远黑窗。
+  // 一次性、无闪烁地显示窗口。两道闸都满足才 show：
+  //
+  //   painted（'ready-to-show'）—— Electron 保证"此时显示不会有视觉闪烁"，
+  //     即合成器已经有可显示的首帧。**Windows 必须等它**：否则 show() 早于
+  //     首帧合成，窗口客户区会先白一下（backgroundColor 盖不住还没合成的
+  //     surface，这正是之前 Windows 仍白屏的根因）。macOS 合成器不会白闪，
+  //     所以以前只靠 renderer-ready 在 Mac 上看着没事、Windows 却露馅。
+  //   contentReady（'app:renderer-ready'）—— 渲染进程在 React 挂载完 +
+  //     document.fonts.ready 后才发，等它是为了避免图标 / 文字（尤其 3.9MB
+  //     图标字体）加载完后陆续 pop-in 的二次闪烁。
+  //
+  // 兜底：首帧已绘制后字体最多再等到 graceTimer（6s 封顶），信号迟到也照显示；
+  // hardTimer 9s 是绝对底线，连 ready-to-show 都没来（崩溃 / 老 preload）也不黑窗。
   let revealed = false
-  const reveal = (): void => {
+  let painted = false
+  let contentReady = false
+  const maybeReveal = (): void => {
     if (revealed || mainWindow.isDestroyed()) return
+    if (!painted || !contentReady) return
     revealed = true
-    clearTimeout(fallbackTimer)
+    clearTimeout(graceTimer)
+    clearTimeout(hardTimer)
     mainWindow.show()
   }
-  const fallbackTimer = setTimeout(reveal, 4000)
-  ipcMain.once('app:renderer-ready', reveal)
+  mainWindow.once('ready-to-show', () => { painted = true; maybeReveal() })
+  ipcMain.once('app:renderer-ready', () => { contentReady = true; maybeReveal() })
+  const graceTimer = setTimeout(() => { contentReady = true; maybeReveal() }, 6000)
+  const hardTimer = setTimeout(() => {
+    painted = true
+    contentReady = true
+    maybeReveal()
+  }, 9000)
 
   mainWindow.webContents.setWindowOpenHandler((details: { url: string }) => {
     shell.openExternal(details.url)
