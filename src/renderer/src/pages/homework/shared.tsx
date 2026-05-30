@@ -165,10 +165,14 @@ export function matchesPjjc(group: PjjcGroup, q: string): boolean {
 }
 
 // ── Log entry (做过的事记录) ───────────────────────────────────────────────────
-// 极简结构：只有正文，无时间无嵌套。展示时用「、」拼接成流式文本。
+// 一条记录 = 标题 + 备注 + 类型。视图里只显示标题（密集可扫），备注/类型藏在
+// hover / 点开。types 可多个（一条可同时「热血」「催泪」）。note/types 没有时省略，
+// 落盘干净。
 export interface LogEntry {
   id: number
-  text: string
+  title: string
+  note?: string
+  types?: string[]
 }
 
 export function normalizeLog(entries: unknown): LogEntry[] {
@@ -177,22 +181,28 @@ export function normalizeLog(entries: unknown): LogEntry[] {
   return entries
     .map((raw, i) => {
       if (!raw || typeof raw !== 'object') return null
-      const e = raw as { id?: unknown; text?: unknown }
-      const text = typeof e.text === 'string' ? e.text.trim() : ''
-      if (!text) return null
+      const e = raw as { id?: unknown; text?: unknown; title?: unknown; note?: unknown; types?: unknown }
+      // 兼容旧数据：早期记录只有 text，整段迁到 title（类型/备注留空）。
+      const title = (typeof e.title === 'string' ? e.title : typeof e.text === 'string' ? e.text : '').trim()
+      if (!title) return null
       let id = typeof e.id === 'number' ? e.id : Date.now() + i
       while (seen.has(id)) id++
       seen.add(id)
-      return { id, text }
+      const note = typeof e.note === 'string' ? e.note.trim() : ''
+      const types = Array.isArray(e.types)
+        ? e.types.filter((t): t is string => typeof t === 'string' && t.trim().length > 0).map(t => t.trim())
+        : []
+      return { id, title, ...(note ? { note } : {}), ...(types.length ? { types } : {}) }
     })
     .filter((e): e is LogEntry => e !== null)
 }
 
+/** 文本搜索匹配「标题 + 备注」（类型走单独的 TagFilter，不进文本搜索）。 */
 export function matchesLog(entry: LogEntry, q: string): boolean {
   if (!q) return true
   const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
   if (terms.length === 0) return true
-  const hay = entry.text.toLowerCase()
+  const hay = (entry.title + ' ' + (entry.note ?? '')).toLowerCase()
   return terms.every(t => hay.includes(t))
 }
 
