@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MapleTools · 阵容知识库 · 记录（重设计 v2）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<script>
+  tailwind.config = { darkMode: 'class', theme: { extend: {
+    colors: {
+      primary: '#ffb3b8', 'primary-container': '#f09199',
+      'on-primary': '#5e1119', 'on-primary-container': '#3e0410',
+      'on-surface': '#e2e2e2', 'on-surface-variant': '#d9c1c1',
+      surface: '#131313', 'surface-container-low': '#1b1b1b',
+      'surface-container': '#1f1f1f', 'surface-container-high': '#2a2a2a',
+      'surface-container-highest': '#353535',
+      'outline-variant': '#544343', outline: '#a18c8c',
+      secondary: '#aac7ff', tertiary: '#c8c6c6', error: '#ffb4ab',
+    },
+    fontFamily: { headline: ['Inter','sans-serif'], body: ['Inter','sans-serif'], label: ['"Space Grotesk"','sans-serif'] },
+  }}};
+</script>
+<style>
+  body { background:#131313; color:#e2e2e2; font-family:Inter,sans-serif; -webkit-font-smoothing:antialiased; }
+  .material-symbols-outlined { font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; }
+  .nice-scroll::-webkit-scrollbar{width:8px;height:8px;} .nice-scroll::-webkit-scrollbar-thumb{background:rgba(217,193,193,.18);border-radius:999px;}
+  .nice-scroll::-webkit-scrollbar-track{background:transparent;}
+  @keyframes pop { from{opacity:0;transform:scale(.97);} to{opacity:1;transform:scale(1);} }
+  .pop { animation:pop .14s cubic-bezier(.2,.8,.2,1) both; }
+</style>
+</head>
+<body class="dark">
+<div id="root"></div>
+<script type="text/babel" data-presets="env,react">
+const { useState, useMemo } = React;
+
+// 类型 → 配色（用 MD3 调和过的几档；真实实现会从一个固定调色板按 hash 取，
+// 或让用户在弹窗里选。这里写死几个常见的够演示）。
+const TYPE_COLOR = {
+  '热血':   'text-rose-300 bg-rose-400/12 border-rose-400/25',
+  '治愈':   'text-emerald-300 bg-emerald-400/12 border-emerald-400/25',
+  '催泪':   'text-sky-300 bg-sky-400/12 border-sky-400/25',
+  '后宫':   'text-pink-300 bg-pink-400/12 border-pink-400/25',
+  '恋爱':   'text-pink-300 bg-pink-400/12 border-pink-400/25',
+  '科幻':   'text-indigo-300 bg-indigo-400/12 border-indigo-400/25',
+  '战争':   'text-amber-300 bg-amber-400/12 border-amber-400/25',
+  '战斗':   'text-amber-300 bg-amber-400/12 border-amber-400/25',
+  '搞笑':   'text-yellow-300 bg-yellow-400/12 border-yellow-400/25',
+  '日常':   'text-teal-300 bg-teal-400/12 border-teal-400/25',
+  '异世界': 'text-violet-300 bg-violet-400/12 border-violet-400/25',
+  '暗黑':   'text-zinc-300 bg-zinc-400/12 border-zinc-400/25',
+  '下饭':   'text-orange-300 bg-orange-400/12 border-orange-400/25',
+};
+const typeCls = (t) => TYPE_COLOR[t] || 'text-on-surface-variant bg-surface-container-highest border-outline-variant/30';
+
+let _id = 1;
+const E = (title, types = [], note = '') => ({ id: _id++, title, types, note });
+
+// 种子：少数带类型/备注，大量只有标题 —— 演示「没备注就是干净单行、密度高」
+const SEED = [
+  E('进击的巨人', ['热血','催泪'], '最终季作画封神，结局有争议，但 WIT+MAPPA 整体值得'),
+  E('紫罗兰永恒花园', ['治愈','催泪'], '京阿尼画面巅峰，第 10 集封神'),
+  E('86—不存在的战区', ['科幻','战争'], 'A-1 制作，配乐顶，二期节奏更好'),
+  E('间谍过家家', ['搞笑','日常'], '阿尼亚可爱，全家欢下饭番'),
+  E('咒术回战', ['热血','战斗']),
+  E('链锯人', ['热血','暗黑']),
+  E('转生史莱姆', ['异世界'], '轻松下饭，越后期越王道'),
+  E('鬼灭之刃', ['热血']),
+  E('路人女主的养成方法'),
+  E('辉夜大小姐'), E('物语系列'), E('命运石之门'), E('斯坦因之门 0'),
+  E('小林家的龙女仆'), E('紫罗兰的永恒'), E('比宇宙更远的地方', ['治愈'], '青春+南极，后劲很大'),
+  E('强风吹拂'), E('白箱'), E('冰菓'), E('吹响吧上低音号'),
+  E('齐木楠雄的灾难', ['搞笑']), E('在下坂本有何贵干'),
+  E('日常'), E('摇曳露营', ['治愈','日常']), E('动画疯'),
+  E('天才麻将少女'), E('花开伊吕波'), E('零之使魔'),
+  E('终将成为你', ['恋爱']), E('看得见的女孩'), E('侦探已死'),
+  E('Another'), E('扑杀天使朵库萝'), E('学园孤岛', ['暗黑'], '反差致郁，别被 OP 骗了'),
+  E('宝石幻想'), E('日在校园'), E('公主连接'),
+  E('86 不存在的战区·里亚德录大地'), E('魔法少女小圆', ['暗黑','催泪'], '别被前三集骗'),
+  E('凉宫春日的忧郁'), E('幸运星'), E('轻音少女', ['治愈','日常']),
+  E('CLANNAD', ['催泪','恋爱'], 'After Story 封神'), E('Air'), E('Kanon'),
+  E('四月是你的谎言', ['催泪','恋爱']), E('未闻花名', ['催泪']),
+];
+
+function TypeChip({ t, small }) {
+  return (
+    <span className={`inline-flex items-center rounded border font-label font-bold tracking-wider ${typeCls(t)} ${small ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-0.5 text-[10px]'}`}>{t}</span>
+  );
+}
+
+// hover 浮层：显示类型 + 备注（视图本体只放标题，类型/备注藏这里）
+function HoverCard({ entry }) {
+  if (!entry.types.length && !entry.note) return null;
+  return (
+    <div className="pointer-events-none absolute left-0 top-full mt-1 z-30 w-72 rounded-lg bg-surface-container-high border border-outline-variant/30 shadow-2xl p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-100">
+      <p className="text-[13px] font-bold text-on-surface mb-1.5">{entry.title}</p>
+      {entry.types.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">{entry.types.map(t => <TypeChip key={t} t={t} small />)}</div>
+      )}
+      {entry.note
+        ? <p className="text-[11px] leading-relaxed text-on-surface-variant/80">{entry.note}</p>
+        : <p className="text-[11px] text-on-surface-variant/35 italic">无备注</p>}
+    </div>
+  );
+}
+
+// 「有内容」小圆点：提示这条标题背后还有类型/备注，引导 hover / 点开
+function Dot({ entry }) {
+  if (!entry.types.length && !entry.note) return <span className="w-1.5 h-1.5 flex-shrink-0" />;
+  return <span className="w-1.5 h-1.5 rounded-full bg-primary/70 flex-shrink-0" title="有类型 / 备注" />;
+}
+
+function Page() {
+  const [entries, setEntries] = useState(SEED);
+  const [query, setQuery] = useState('');
+  const [selectedTypes, setSelectedTypes] = useState([]); // 多选，AND 匹配（同 MyAnime）
+  const [view, setView] = useState('dense'); // dense | wrap
+  const [draft, setDraft] = useState('');
+  const [detail, setDetail] = useState(null); // 弹窗目标 entry
+
+  const allTypes = useMemo(() => {
+    const m = new Map();
+    entries.forEach(e => e.types.forEach(t => m.set(t, (m.get(t) || 0) + 1)));
+    return [...m.entries()].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0])).map(([tag,count]) => ({tag,count}));
+  }, [entries]);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return entries.filter(e => {
+      // AND：选中的类型全要命中（同 MyAnime）
+      if (selectedTypes.length && !selectedTypes.every(t => e.types.includes(t))) return false;
+      if (!q) return true;
+      return (e.title + ' ' + e.note).toLowerCase().includes(q);
+    });
+  }, [entries, query, selectedTypes]);
+
+  const add = () => {
+    const t = draft.trim();
+    if (!t) return;
+    setEntries(prev => [E(t), ...prev]);
+    setDraft('');
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col max-w-5xl mx-auto px-8 py-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <p className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/45">TOOLS / 阵容知识库</p>
+          <h1 className="text-3xl font-black tracking-tight mt-1">记录</h1>
+          <p className="text-sm text-on-surface-variant/55 mt-1">流水账 · 只看标题一目了然，类型与备注藏在 hover / 点开</p>
+        </div>
+        {/* 搜索（标题 + 备注） */}
+        <div className="flex items-center gap-2 bg-surface-container border border-outline-variant/20 rounded-xl px-3.5 h-11 w-80 focus-within:border-primary/40 transition-colors">
+          <span className="material-symbols-outlined text-on-surface-variant/40" style={{fontSize:18}}>search</span>
+          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索标题、备注…"
+            className="flex-1 bg-transparent outline-none text-sm placeholder:text-on-surface-variant/35" />
+          {query && <button onClick={()=>setQuery('')} className="text-on-surface-variant/40 hover:text-on-surface"><span className="material-symbols-outlined" style={{fontSize:16}}>close</span></button>}
+        </div>
+      </div>
+
+      {/* 类型筛选：MyAnime 同款「类型」按钮 → popover（可搜 / 多选 / 命中数 / AND） */}
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <TypeFilter allTypes={allTypes} selected={selectedTypes} onChange={setSelectedTypes} />
+        {selectedTypes.length > 0 && (
+          <span className="font-label text-[10px] text-on-surface-variant/45">已选 {selectedTypes.length} 个 · AND</span>
+        )}
+        <span className="flex-1" />
+        {/* 视图切换 */}
+        <div className="inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
+          {[['view_agenda','dense','紧凑列表'],['grid_view','wrap','流式标签']].map(([ic,v,t]) => (
+            <button key={v} onClick={()=>setView(v)} title={t}
+              className={`px-2.5 h-7 rounded-md flex items-center transition-colors ${view===v?'bg-surface-container-highest text-on-surface':'text-on-surface-variant/50 hover:text-on-surface'}`}>
+              <span className="material-symbols-outlined" style={{fontSize:15}}>{ic}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 快速记一笔 */}
+      <div className="flex items-center gap-3 bg-surface-container/60 rounded-xl px-4 h-12 border border-outline-variant/15 focus-within:border-primary/40 mb-3">
+        <span className="material-symbols-outlined text-on-surface-variant/50" style={{fontSize:18}}>edit_note</span>
+        <input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing)add()}}
+          placeholder="记一笔（只填标题，类型/备注点开补）… 回车保存"
+          className="flex-1 bg-transparent outline-none text-sm placeholder:text-on-surface-variant/35" />
+        <button onClick={add} disabled={!draft.trim()} className="px-4 h-8 rounded-md bg-primary/15 text-primary font-label text-[10px] uppercase tracking-widest hover:bg-primary/25 disabled:opacity-30 flex items-center gap-1.5"><span className="material-symbols-outlined" style={{fontSize:13}}>add</span>添加</button>
+      </div>
+
+      <div className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/45 mb-2 flex items-center gap-2">
+        <span className="material-symbols-outlined" style={{fontSize:12}}>format_list_bulleted</span>
+        {(query||selectedTypes.length) ? `${visible.length} / ${entries.length} 条匹配` : `${entries.length} 条记录`}
+        <span className="text-on-surface-variant/30 normal-case tracking-normal ml-1">· hover 看类型/备注 · 单击编辑</span>
+      </div>
+
+      {/* 列表（只显示标题） */}
+      <div className="flex-1 nice-scroll overflow-y-auto rounded-lg" style={{maxHeight:'52vh'}}>
+        {view === 'dense' ? (
+          <div className="bg-surface-container/30 rounded-lg border border-outline-variant/10 overflow-visible">
+            {visible.map((e,i) => (
+              <div key={e.id} onClick={()=>setDetail(e)}
+                className="group relative flex items-center gap-2.5 h-9 px-3 border-b border-outline-variant/10 last:border-b-0 hover:bg-surface-container-high/40 cursor-pointer">
+                <span className="font-label text-[9px] tabular-nums text-on-surface-variant/30 w-6 flex-shrink-0">{String(i+1).padStart(2,'0')}</span>
+                <Dot entry={e} />
+                <span className="flex-1 text-[13px] text-on-surface truncate">{e.title}</span>
+                {/* 类型在行尾极小提示（可选，1 个 + 计数），不喧宾夺主 */}
+                {e.types.length>0 && (
+                  <span className="flex-shrink-0 flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                    <TypeChip t={e.types[0]} small />
+                    {e.types.length>1 && <span className="text-[9px] text-on-surface-variant/40">+{e.types.length-1}</span>}
+                  </span>
+                )}
+                <HoverCard entry={e} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5 p-1">
+            {visible.map(e => (
+              <div key={e.id} onClick={()=>setDetail(e)}
+                className="group relative inline-flex items-center gap-1.5 h-7 px-3 rounded-md bg-surface-container/60 border border-outline-variant/15 hover:border-primary/30 cursor-pointer">
+                <Dot entry={e} />
+                <span className="text-[12px] text-on-surface max-w-[260px] truncate">{e.title}</span>
+                <HoverCard entry={e} />
+              </div>
+            ))}
+          </div>
+        )}
+        {visible.length===0 && <div className="text-center py-16 text-on-surface-variant/40 text-sm">没有匹配的记录</div>}
+      </div>
+
+      {detail && <DetailModal entry={detail} onClose={()=>setDetail(null)}
+        onSave={(next)=>{setEntries(prev=>prev.map(x=>x.id===next.id?next:x)); setDetail(null);}}
+        onDelete={(id)=>{setEntries(prev=>prev.filter(x=>x.id!==id)); setDetail(null);}} />}
+    </div>
+  );
+}
+
+// 「类型」筛选 —— 移植 MyAnime 的 TagFilter：按钮 + anchored popover，可搜、多选、
+// 带命中数、AND 语义。这里额外给每个类型加了个小色点（沿用列表里的类型配色）。
+function TypeFilter({ allTypes, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return s ? allTypes.filter(({tag}) => tag.toLowerCase().includes(s)) : allTypes;
+  }, [allTypes, q]);
+  const ordered = useMemo(() => {
+    const sel = new Set(selected), pin = [], rest = [];
+    filtered.forEach(t => (sel.has(t.tag) ? pin : rest).push(t));
+    return [...pin, ...rest];
+  }, [filtered, selected]);
+  const toggle = (t) => onChange(selected.includes(t) ? selected.filter(x=>x!==t) : [...selected, t]);
+  const has = selected.length > 0;
+  return (
+    <div className="relative inline-block">
+      <button onClick={()=>setOpen(o=>!o)}
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border font-label text-[10px] uppercase tracking-widest transition-colors ${has?'bg-primary/15 text-primary border-primary/30 font-bold':'bg-surface-container text-on-surface-variant/70 border-outline-variant/20 hover:text-on-surface hover:bg-surface-container-high'}`}>
+        <span className="material-symbols-outlined" style={{fontSize:14, fontVariationSettings: has?"'FILL' 1":"'FILL' 0"}}>tune</span>
+        <span>类型</span>
+        {has && <span className="font-mono text-[10px] bg-primary/20 text-primary px-1 rounded">{selected.length}</span>}
+      </button>
+      {open && (<>
+        <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)} />
+        <div className="absolute left-0 top-full mt-2 z-50 w-[300px] bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl overflow-hidden">
+          <div className="p-3 border-b border-outline-variant/15 bg-surface-container-low">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-md border border-outline-variant/15 focus-within:border-primary/40">
+              <span className="material-symbols-outlined text-on-surface-variant/45" style={{fontSize:14}}>search</span>
+              <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==='Escape')setOpen(false)}} placeholder="搜类型…" autoFocus
+                className="flex-1 bg-transparent outline-none text-xs placeholder:text-on-surface-variant/35" />
+            </div>
+          </div>
+          <div className="nice-scroll overflow-y-auto max-h-[340px] py-1">
+            {ordered.length===0 ? <div className="px-4 py-8 text-center text-on-surface-variant/40 text-[11px]">没匹配到</div> :
+              ordered.map(({tag,count}) => {
+                const on = selected.includes(tag);
+                return (
+                  <button key={tag} onClick={()=>toggle(tag)}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2 text-left ${on?'bg-primary/10 hover:bg-primary/15':'hover:bg-surface-container-highest'}`}>
+                    <span className={`material-symbols-outlined shrink-0 ${on?'text-primary':'text-on-surface-variant/30'}`} style={{fontSize:16, fontVariationSettings: on?"'FILL' 1":"'FILL' 0"}}>{on?'check_box':'check_box_outline_blank'}</span>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${typeCls(tag).split(' ').find(c=>c.startsWith('bg-'))||'bg-outline-variant'}`} />
+                    <span className={`flex-1 min-w-0 text-xs truncate ${on?'text-primary font-bold':'text-on-surface'}`}>{tag}</span>
+                    <span className="font-mono text-[10px] text-on-surface-variant/40 shrink-0">{count}</span>
+                  </button>
+                );
+              })}
+          </div>
+          {has && (
+            <div className="p-2 border-t border-outline-variant/15 bg-surface-container-low flex items-center justify-between">
+              <span className="font-label text-[10px] text-on-surface-variant/55 px-2">已选 {selected.length} 个 · AND</span>
+              <button onClick={()=>onChange([])} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-on-surface-variant/60 hover:text-error hover:bg-error/10 font-label text-[10px] uppercase tracking-widest"><span className="material-symbols-outlined" style={{fontSize:12}}>backspace</span>清空</button>
+            </div>
+          )}
+        </div>
+      </>)}
+    </div>
+  );
+}
+
+// 单击标题 → 弹窗：编辑 标题 / 类型(tag 输入) / 备注，删除也在这
+function DetailModal({ entry, onClose, onSave, onDelete }) {
+  const [title, setTitle] = useState(entry.title);
+  const [types, setTypes] = useState(entry.types);
+  const [note, setNote] = useState(entry.note);
+  const [typeDraft, setTypeDraft] = useState('');
+  const addType = () => { const t=typeDraft.trim(); if(t&&!types.includes(t)){setTypes([...types,t]);} setTypeDraft(''); };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55" onClick={onClose}>
+      <div className="pop w-[480px] max-w-[92vw] bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/15">
+          <span className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/50">编辑记录</span>
+          <button onClick={onClose} className="text-on-surface-variant/60 hover:text-on-surface"><span className="material-symbols-outlined">close</span></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">标题</label>
+            <input value={title} onChange={e=>setTitle(e.target.value)}
+              className="w-full bg-surface-container-high border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-primary/40" />
+          </div>
+          <div>
+            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">类型</label>
+            <div className="flex flex-wrap gap-1.5 items-center bg-surface-container-high border border-outline-variant/20 rounded-lg px-2.5 py-2">
+              {types.map(t => (
+                <span key={t} className={`group inline-flex items-center gap-0.5 rounded border px-2 py-0.5 text-[10px] font-label font-bold tracking-wider ${typeCls(t)}`}>
+                  {t}<button onClick={()=>setTypes(types.filter(x=>x!==t))} className="ml-0.5 opacity-50 hover:opacity-100"><span className="material-symbols-outlined" style={{fontSize:11}}>close</span></button>
+                </span>
+              ))}
+              <input value={typeDraft} onChange={e=>setTypeDraft(e.target.value)}
+                onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();addType();}}}
+                placeholder={types.length?'':'加类型，回车…'} className="flex-1 min-w-[80px] bg-transparent outline-none text-[12px] py-0.5" />
+            </div>
+          </div>
+          <div>
+            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">备注</label>
+            <textarea value={note} onChange={e=>setNote(e.target.value)} rows={3} placeholder="随便记点什么…"
+              className="w-full bg-surface-container-high border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:border-primary/40 resize-none placeholder:text-on-surface-variant/35" />
+          </div>
+        </div>
+        <div className="flex items-center justify-between px-5 py-4 border-t border-outline-variant/15">
+          <button onClick={()=>onDelete(entry.id)} className="px-3 py-2 rounded-lg text-error hover:bg-error/10 font-label text-xs flex items-center gap-1.5"><span className="material-symbols-outlined" style={{fontSize:16}}>delete</span>删除</button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant/70 hover:bg-surface-container-high font-label text-xs">取消</button>
+            <button onClick={()=>onSave({...entry, title:title.trim()||entry.title, types, note:note.trim()})} className="px-5 py-2 rounded-lg bg-primary text-on-primary font-bold font-label text-xs hover:brightness-110">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Page />);
+</script>
+</body>
+</html>
