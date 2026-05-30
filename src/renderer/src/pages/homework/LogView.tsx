@@ -35,10 +35,26 @@ const TYPE_PALETTE = [
   'text-violet-400 bg-violet-400/15 border-violet-400/30',
   'text-fuchsia-400 bg-fuchsia-400/15 border-fuchsia-400/30',
 ]
-function typeColor(t: string): string {
+function hashStr(s: string): number {
   let h = 0
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0
-  return TYPE_PALETTE[h % TYPE_PALETTE.length]
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return h
+}
+function typeColor(t: string): string {
+  return TYPE_PALETTE[hashStr(t) % TYPE_PALETTE.length]
+}
+
+// 流式正文的偶发彩字：~1/3 标题上色（只看标题 hash，与有没有类型/备注无关 —— 否则
+// 100% 带类型会全彩难看）。颜色从这套 400 档里按 hash 取，暗底可读、分布不规律、
+// 颜色多样、稳定不闪，像 Word 文档里时不时冒一段彩字。其余沿用正文色。
+const FLOW_ACCENTS = [
+  'text-rose-400', 'text-orange-400', 'text-amber-400', 'text-emerald-400',
+  'text-sky-400', 'text-indigo-400', 'text-violet-400', 'text-fuchsia-400',
+]
+function flowAccent(title: string): string | null {
+  const h = hashStr(title)
+  if (h % 3 !== 0) return null
+  return FLOW_ACCENTS[(h >>> 2) % FLOW_ACCENTS.length]
 }
 
 function TypeChip({ t, small }: { t: string; small?: boolean }): JSX.Element {
@@ -174,10 +190,8 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
         <div className="bg-surface-container-low rounded-xl border border-outline-variant/10 px-6 py-5">
           <p className="text-[15px] text-on-surface text-justify" style={{ lineHeight: 2.2, letterSpacing: '0.01em' }}>
             {visible.map((entry, i) => {
-              const colored = Boolean(entry.types && entry.types.length)
-              const color = colored
-                ? (typeColor(entry.types![0]).split(' ').find(c => c.startsWith('text-')) ?? 'text-on-surface')
-                : 'text-on-surface/90'
+              // 是否上色 / 上哪个色，只看标题 hash —— 与「有没有类型/备注」无关，避免全彩
+              const accent = flowAccent(entry.title)
               const segs = entry.title.split('、')
               return (
                 <Fragment key={entry.id}>
@@ -185,7 +199,7 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
                     onClick={() => openDetail(entry)}
                     onMouseEnter={e => onEnterTitle(e, entry)}
                     onMouseLeave={() => setHover(null)}
-                    className={`cursor-pointer ${color} ${colored ? 'font-semibold' : ''} ${recentlyAddedId === entry.id ? 'bg-primary/20 rounded px-1 -mx-1' : ''}`}
+                    className={`cursor-pointer ${accent ?? 'text-on-surface/90'} ${accent ? 'font-semibold' : ''} ${recentlyAddedId === entry.id ? 'bg-primary/20 rounded px-1 -mx-1' : ''}`}
                   >
                     {segs.map((seg, si) => (
                       <Fragment key={si}>
