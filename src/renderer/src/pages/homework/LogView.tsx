@@ -1,11 +1,11 @@
 import {
-  forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState,
+  forwardRef, Fragment, useEffect, useImperativeHandle, useMemo, useState,
 } from 'react'
 import { Highlight, LogEntry, matchesLog, ModalShell } from './shared'
 import { TagFilter } from '../../components/TagFilter'
 
 export interface LogViewHandle {
-  focusInput: () => void
+  openAdd: () => void
 }
 
 interface Props {
@@ -15,7 +15,9 @@ interface Props {
   onClearQuery: () => void
 }
 
-type ViewMode = 'dense' | 'wrap'
+// 两种视图：flow=流式正文（像 Word，连排阅读）、dense=紧凑列表（带序号/圆点/类型 chip）。
+// 原来的「流式标签」卡片视图已被 flow 替换。
+type ViewMode = 'flow' | 'dense'
 const VIEW_KEY = 'maple-log-view-mode'
 
 // 类型配色：一组**字面**完整类名（Tailwind JIT 只收录源码里字面出现的类名，
@@ -52,27 +54,21 @@ const hasMeta = (e: LogEntry): boolean => Boolean((e.types && e.types.length) ||
 const LogView = forwardRef<LogViewHandle, Props>(function LogView(
   { data, setData, query, onClearQuery }, ref
 ) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [draft, setDraft] = useState('')
-  const [addError, setAddError] = useState<string | null>(null)
   const [recentlyAddedId, setRecentlyAddedId] = useState<number | null>(null)
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [detailId, setDetailId] = useState<number | null>(null)
-  // 单条 hover 浮层：fixed 定位，避开滚动容器把绝对定位的卡片裁掉的问题
+  const [creating, setCreating] = useState<LogEntry | null>(null) // 新增弹窗草稿，null=关
+  // 单条 hover 浮层：fixed 定位 + 光标锚定，避开滚动容器把绝对定位的卡片裁掉的问题
   const [hover, setHover] = useState<{ entry: LogEntry; x: number; y: number } | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const v = localStorage.getItem(VIEW_KEY)
-    return v === 'wrap' ? 'wrap' : 'dense'
+    return v === 'dense' ? 'dense' : 'flow'
   })
 
-  useImperativeHandle(ref, () => ({ focusInput: () => inputRef.current?.focus() }))
+  // 顶部「添加记录」按钮 → 打开新建弹窗（跟其他 tab 的 openAdd 一致）
+  useImperativeHandle(ref, () => ({ openAdd: () => setCreating({ id: Date.now(), title: '' }) }))
   useEffect(() => { localStorage.setItem(VIEW_KEY, viewMode) }, [viewMode])
 
-  useEffect(() => {
-    if (!addError) return
-    const t = setTimeout(() => setAddError(null), 2200)
-    return () => clearTimeout(t)
-  }, [addError])
   useEffect(() => {
     if (recentlyAddedId === null) return
     const t = setTimeout(() => setRecentlyAddedId(null), 1200)
@@ -99,19 +95,10 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
   const filtering = Boolean(query) || selectedTypes.length > 0
   const detail = detailId !== null ? data.find(e => e.id === detailId) ?? null : null
 
-  const handleAdd = (): void => {
-    const t = draft.trim()
-    if (!t) return
-    if (data.some(e => e.title === t)) {
-      setAddError('已经记过了，不重复添加')
-      return
-    }
-    const newId = Date.now()
-    setData([{ id: newId, title: t }, ...data])
-    setDraft('')
-    setAddError(null)
-    setRecentlyAddedId(newId)
-    inputRef.current?.focus()
+  const createEntry = (next: LogEntry): void => {
+    setData([next, ...data])
+    setRecentlyAddedId(next.id)
+    setCreating(null)
   }
 
   const saveEntry = (next: LogEntry): void => {
@@ -124,52 +111,16 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
   }
 
   const openDetail = (e: LogEntry): void => { setHover(null); setDetailId(e.id) }
-  const onEnterRow = (e: React.MouseEvent, entry: LogEntry): void => {
+  // hover 锚定在鼠标位置（光标左→卡片左、光标右→卡片右），由 HoverCard 贴边翻转
+  const onEnterTitle = (e: React.MouseEvent, entry: LogEntry): void => {
     if (!hasMeta(entry)) return
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setHover({ entry, x: r.left, y: r.bottom })
+    setHover({ entry, x: e.clientX, y: e.clientY })
   }
 
   return (
     <div className="px-8 py-6">
-      {/* 快速记一笔：只填标题，类型/备注点开补 */}
-      <div className={`flex items-center gap-3 bg-surface-container/60 rounded-xl px-4 h-12 border transition-colors ${
-        addError
-          ? 'border-error/50 ring-2 ring-error/20'
-          : 'border-outline-variant/15 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20'
-      }`}>
-        <span className="material-symbols-outlined text-on-surface-variant/50" style={{ fontSize: 18 }}>edit_note</span>
-        <input
-          ref={inputRef}
-          spellCheck={false} autoComplete="off" autoCorrect="off" autoCapitalize="off"
-          value={draft}
-          onChange={e => { setDraft(e.target.value); if (addError) setAddError(null) }}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleAdd() }}
-          placeholder="记一笔（先填标题，类型 / 备注点开补）… 回车保存"
-          className="flex-1 bg-transparent text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none"
-        />
-        <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/30 hidden sm:inline">↵ Enter</span>
-        <button
-          onClick={handleAdd}
-          disabled={!draft.trim()}
-          className="px-4 h-8 rounded-md bg-primary/15 text-primary font-label text-[10px] uppercase tracking-widest hover:bg-primary/25 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: 13 }}>add</span>
-          添加
-        </button>
-      </div>
-
-      {/* 错误槽（固定高度避免跳动） */}
-      <div className="h-5 mt-2 mb-3 flex items-center gap-1.5 px-1 text-[11px] font-label">
-        {addError && (
-          <>
-            <span className="material-symbols-outlined text-error" style={{ fontSize: 13 }}>error</span>
-            <span className="text-error">{addError}</span>
-          </>
-        )}
-      </div>
-
-      {/* 工具条：计数 + 类型筛选（TagFilter）+ 视图切换。文本搜索在页头上游。 */}
+      {/* 工具条：计数 + 类型筛选（TagFilter）+ 视图切换。文本搜索在页头上游。
+          新增走顶部「添加记录」按钮 → 弹窗（同其他 tab）。 */}
       <div className="flex items-center gap-3 mb-3">
         <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 flex items-center gap-2">
           <span className="material-symbols-outlined" style={{ fontSize: 12 }}>format_list_bulleted</span>
@@ -185,8 +136,8 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
         <TagFilter allTags={allTypes} selected={selectedTypes} onChange={setSelectedTypes} matchMode="OR" pinSelected={false} />
         <div className="inline-flex bg-surface-container/60 rounded-md p-0.5 border border-outline-variant/15">
           {([
+            ['subject', 'flow', '流式正文'],
             ['view_agenda', 'dense', '紧凑列表'],
-            ['grid_view', 'wrap', '流式标签'],
           ] as const).map(([icon, v, t]) => (
             <button
               key={v}
@@ -207,7 +158,7 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
         <div className="rounded-xl border border-dashed border-outline-variant/30 bg-surface-container/40 px-6 py-16 text-center">
           <span className="material-symbols-outlined text-on-surface-variant/30" style={{ fontSize: 48 }}>edit_note</span>
           <p className="mt-3 text-sm font-label text-on-surface-variant/60">还没有记录</p>
-          <p className="mt-1 text-[11px] font-label text-on-surface-variant/40">在上方输入框记一笔，回车保存</p>
+          <p className="mt-1 text-[11px] font-label text-on-surface-variant/40">点右上角「添加记录」记一笔</p>
         </div>
       ) : matched === 0 ? (
         <div className="rounded-xl border border-dashed border-outline-variant/30 bg-surface-container/40 px-6 py-12 text-center">
@@ -216,13 +167,49 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
             清除筛选
           </button>
         </div>
-      ) : viewMode === 'dense' ? (
+      ) : viewMode === 'flow' ? (
+        /* 流式正文 —— 复刻 Word 阅读体验：标题用顿号连排、两端对齐、松行距、无边框/序号。
+           标题内的顿号跟随标题色 + 加粗放大（鲜明）；标题之间的分隔顿号中性灰（看得见即可）。
+           hover 出类型/备注卡（光标锚定 + 贴边翻转），单击进编辑。 */
+        <div className="bg-surface-container-low rounded-xl border border-outline-variant/10 px-6 py-5">
+          <p className="text-[15px] text-on-surface text-justify" style={{ lineHeight: 2.2, letterSpacing: '0.01em' }}>
+            {visible.map((entry, i) => {
+              const colored = Boolean(entry.types && entry.types.length)
+              const color = colored
+                ? (typeColor(entry.types![0]).split(' ').find(c => c.startsWith('text-')) ?? 'text-on-surface')
+                : 'text-on-surface/90'
+              const segs = entry.title.split('、')
+              return (
+                <Fragment key={entry.id}>
+                  <span
+                    onClick={() => openDetail(entry)}
+                    onMouseEnter={e => onEnterTitle(e, entry)}
+                    onMouseLeave={() => setHover(null)}
+                    className={`cursor-pointer ${color} ${colored ? 'font-semibold' : ''} ${recentlyAddedId === entry.id ? 'bg-primary/20 rounded px-1 -mx-1' : ''}`}
+                  >
+                    {segs.map((seg, si) => (
+                      <Fragment key={si}>
+                        <Highlight text={seg} query={query} />
+                        {si < segs.length - 1 && <span className="font-bold" style={{ fontSize: '1.15em' }}>、</span>}
+                      </Fragment>
+                    ))}
+                  </span>
+                  {i < visible.length - 1 && (
+                    <span className="text-on-surface-variant/45 select-none" style={{ margin: '0 0.3em' }}>、</span>
+                  )}
+                </Fragment>
+              )
+            })}
+          </p>
+        </div>
+      ) : (
+        /* 紧凑列表 —— 序号 + 圆点 + 标题 + 行尾类型 chip，保留原样。 */
         <div className="bg-surface-container/30 rounded-lg border border-outline-variant/10 overflow-hidden">
           {visible.map((entry, i) => (
             <div
               key={entry.id}
               onClick={() => openDetail(entry)}
-              onMouseEnter={e => onEnterRow(e, entry)}
+              onMouseEnter={e => onEnterTitle(e, entry)}
               onMouseLeave={() => setHover(null)}
               className={`group flex items-center gap-2.5 h-9 px-3 border-b border-outline-variant/10 last:border-b-0 hover:bg-surface-container-high/40 cursor-pointer transition-colors ${recentlyAddedId === entry.id ? 'animate-fade-up' : ''}`}
             >
@@ -238,25 +225,23 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
             </div>
           ))}
         </div>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {visible.map((entry) => (
-            <div
-              key={entry.id}
-              onClick={() => openDetail(entry)}
-              onMouseEnter={e => onEnterRow(e, entry)}
-              onMouseLeave={() => setHover(null)}
-              className={`group inline-flex items-center gap-1.5 h-7 px-3 rounded-md bg-surface-container/60 border border-outline-variant/15 hover:border-primary/30 cursor-pointer transition-colors ${recentlyAddedId === entry.id ? 'animate-fade-up ring-1 ring-primary/40' : ''}`}
-            >
-              <Dot entry={entry} />
-              <span className="text-[12px] text-on-surface max-w-[260px] truncate"><Highlight text={entry.title} query={query} /></span>
-            </div>
-          ))}
-        </div>
       )}
 
       {/* hover 浮层（fixed，不被滚动容器裁切） */}
       {hover && <HoverCard entry={hover.entry} x={hover.x} y={hover.y} />}
+
+      {/* 新增弹窗（复用 DetailModal 的 create 模式） */}
+      {creating && (
+        <DetailModal
+          key="create"
+          mode="create"
+          entry={creating}
+          existingTitles={data.map(e => e.title)}
+          onClose={() => setCreating(null)}
+          onSave={createEntry}
+          onDelete={() => {}}
+        />
+      )}
 
       {/* 详情 / 编辑弹窗 */}
       {detail && (
@@ -275,7 +260,7 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
 
 export default LogView
 
-// 「有类型/备注」小圆点 —— 提示这条标题背后还有东西，引导 hover / 点开。
+// 「有类型/备注」小圆点 —— 提示这条标题背后还有东西，引导 hover / 点开（紧凑列表用）。
 // 没有就占位等宽，保持标题左缘对齐。
 function Dot({ entry }: { entry: LogEntry }): JSX.Element {
   return hasMeta(entry)
@@ -285,13 +270,20 @@ function Dot({ entry }: { entry: LogEntry }): JSX.Element {
 
 // ── hover 浮层 ────────────────────────────────────────────────────────────────
 
+// 光标锚定 + 贴边翻转（同 FileExplorer 右键菜单的 flipX/flipY）：靠近右/下边缘就
+// 朝反方向展开，fixed 定位脱离滚动容器，永不被裁切。
 function HoverCard({ entry, x, y }: { entry: LogEntry; x: number; y: number }): JSX.Element {
-  // 简单防右溢出：卡片宽 288，靠右时左移
-  const left = Math.min(x, window.innerWidth - 288 - 12)
-  const top = Math.min(y + 4, window.innerHeight - 160)
+  const CARD_W = 288, CARD_H = 160, PAD = 12, GAP = 14
+  const flipX = x + CARD_W + PAD > window.innerWidth
+  const flipY = y + CARD_H + PAD > window.innerHeight
+  const style: React.CSSProperties = {
+    position: 'fixed', width: CARD_W, zIndex: 60,
+    ...(flipX ? { right: window.innerWidth - x + GAP } : { left: x + GAP }),
+    ...(flipY ? { bottom: window.innerHeight - y + GAP } : { top: y + GAP }),
+  }
   return (
     <div
-      style={{ position: 'fixed', left: Math.max(8, left), top, width: 288, zIndex: 60 }}
+      style={style}
       className="pointer-events-none rounded-lg bg-surface-container-high border border-outline-variant/30 shadow-2xl shadow-black/40 p-3 animate-fade-up"
     >
       <p className="text-[13px] font-bold text-on-surface mb-1.5 break-words">{entry.title}</p>
@@ -308,14 +300,16 @@ function HoverCard({ entry, x, y }: { entry: LogEntry; x: number; y: number }): 
 // ── 详情 / 编辑弹窗 ───────────────────────────────────────────────────────────
 
 function DetailModal({
-  entry, existingTitles, onClose, onSave, onDelete,
+  entry, existingTitles, mode = 'edit', onClose, onSave, onDelete,
 }: {
   entry: LogEntry
   existingTitles: string[]
+  mode?: 'create' | 'edit'
   onClose: () => void
   onSave: (next: LogEntry) => void
   onDelete: (id: number) => void
 }): JSX.Element {
+  const isCreate = mode === 'create'
   const [title, setTitle] = useState(entry.title)
   const [types, setTypes] = useState<string[]>(entry.types ?? [])
   const [note, setNote] = useState(entry.note ?? '')
@@ -345,7 +339,7 @@ function DetailModal({
     <ModalShell onBackdrop={onClose}>
       <div>
         <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/15">
-          <span className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/50">编辑记录</span>
+          <span className="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/50">{isCreate ? '新增记录' : '编辑记录'}</span>
           <button onClick={onClose} className="text-on-surface-variant/60 hover:text-on-surface">
             <span className="material-symbols-outlined leading-none">close</span>
           </button>
@@ -411,12 +405,14 @@ function DetailModal({
         </div>
 
         <div className="flex items-center justify-between px-5 py-4 border-t border-outline-variant/15">
-          <button onClick={() => onDelete(entry.id)} className="px-3 py-2 rounded-lg text-on-surface-variant/60 hover:text-error hover:bg-error/10 font-label text-xs flex items-center gap-1.5 transition-colors">
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>delete</span>删除
-          </button>
+          {isCreate ? <span /> : (
+            <button onClick={() => onDelete(entry.id)} className="px-3 py-2 rounded-lg text-on-surface-variant/60 hover:text-error hover:bg-error/10 font-label text-xs flex items-center gap-1.5 transition-colors">
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>delete</span>删除
+            </button>
+          )}
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant/70 hover:bg-surface-container-high font-label text-xs">取消</button>
-            <button onClick={save} className="px-5 py-2 rounded-lg bg-primary text-on-primary font-bold font-label text-xs hover:brightness-110 active:scale-95 transition-all">保存</button>
+            <button onClick={save} className="px-5 py-2 rounded-lg bg-primary text-on-primary font-bold font-label text-xs hover:brightness-110 active:scale-95 transition-all">{isCreate ? '添加' : '保存'}</button>
           </div>
         </div>
       </div>
