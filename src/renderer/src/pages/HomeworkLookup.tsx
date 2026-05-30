@@ -392,7 +392,7 @@ export default function HomeworkLookup(): JSX.Element {
     activeTab === 'jjc' ? '模糊搜索 JJC 换防角色…' :
     activeTab === 'pjjc' ? '模糊搜索三防角色…' :
     activeTab === 'classic' ? '模糊搜索主题标题…' :
-    '模糊搜索记录正文…'
+    '搜索记录标题、备注…'
 
   const addLabel =
     activeTab === 'homework' ? '添加作业' :
