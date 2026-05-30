@@ -89,8 +89,8 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
   }, [data])
 
   const visible = useMemo(() => data.filter(e => {
-    // 类型 AND：选中的类型全要命中（同 MyAnime）
-    if (selectedTypes.length && !selectedTypes.every(t => e.types?.includes(t))) return false
+    // 类型 OR：命中所选任一类型即显示
+    if (selectedTypes.length && !selectedTypes.some(t => e.types?.includes(t))) return false
     return matchesLog(e, query)
   }), [data, query, selectedTypes])
 
@@ -182,7 +182,7 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
         )}
         <span className="flex-1" />
         <span className="font-label text-[9px] text-on-surface-variant/30 hidden md:inline">hover 看类型 / 备注 · 单击编辑</span>
-        <TagFilter allTags={allTypes} selected={selectedTypes} onChange={setSelectedTypes} />
+        <TagFilter allTags={allTypes} selected={selectedTypes} onChange={setSelectedTypes} matchMode="OR" pinSelected={false} />
         <div className="inline-flex bg-surface-container/60 rounded-md p-0.5 border border-outline-variant/15">
           {([
             ['view_agenda', 'dense', '紧凑列表'],

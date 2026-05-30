@@ -96,8 +96,8 @@ function matchesAnime(t: AnimeTrack, q: string): boolean {
 }
 
 /**
- * Tag 过滤 —— AND 语义：每个 selected tag 都必须在 track 的 (bgmTags ∪ userTags)
- * 集合里。selected 为空数组就直接放行（不过滤）。
+ * Tag 过滤 —— OR 语义：track 的 (bgmTags ∪ userTags) 命中所选**任一** tag 即放行。
+ * selected 为空数组就直接放行（不过滤）。
  *
  * 大小写敏感、完全匹配——这跟字符串模糊搜索不同，tag 是离散值，模糊匹配会
  * 让 "恋爱" 和 "恋爱漫" 互相误中，所以这里用严格 equality。
@@ -105,7 +105,8 @@ function matchesAnime(t: AnimeTrack, q: string): boolean {
 function matchesTags(t: AnimeTrack, selectedTags: string[]): boolean {
   if (selectedTags.length === 0) return true
   const trackTags = new Set([...t.bgmTags, ...t.userTags])
-  return selectedTags.every(tag => trackTags.has(tag))
+  // OR：命中所选任一类型即显示
+  return selectedTags.some(tag => trackTags.has(tag))
 }
 
 // ── Top-level page ───────────────────────────────────────────────────────────
@@ -172,7 +173,7 @@ export default function MyAnime(): JSX.Element {
   // 入口是 sticky header 标题旁的 help_outline 图标。两个 tab 都能打开（最爱
   // 值在追番 tab 直接相关，但用户可能在推荐 tab 想起来要查标准，所以保持常驻）。
   const [criteriaOpen, setCriteriaOpen] = useState(false)
-  // 类型过滤 —— sticky header row 3 的「类型」按钮选中的 tag 集合，AND 语义
+  // 类型过滤 —— sticky header row 3 的「类型」按钮选中的 tag 集合，OR 语义
   // （详见 matchesTags）。仅追番 tab 用；切到推荐 tab 时仍保留 state，回切
   // 不丢用户的过滤选择。
   const [selectedTags, setSelectedTags] = useState<string[]>([])
@@ -234,14 +235,16 @@ export default function MyAnime(): JSX.Element {
     return c
   }, [tracks])
 
-  // 全部 tag 聚合 + 命中数 —— 给 TagFilter popover 用的输入。
-  // bgmTags ∪ userTags（每个 track 里去重），跨 track 聚合后按命中数倒序。
-  // 这里不应用 query / status / selectedTags 过滤——popover 是"全集"视图,
-  // 让用户能看到自己还没选的 tag；过滤了反而让 popover 变成"已选 tag 子集"
-  // 没法发现其他选项。
+  // 当前类目的 tag 聚合 + 命中数 —— 给 TagFilter popover 用的输入。
+  // **只统计当前类目下的 track**（跟状态计数一致）：在「动画」tab 就只列动画里
+  // 出现过的类型，否则会把「漫画」类目才有的标签也列出来、选了 0 条很迷惑。
+  // bgmTags ∪ userTags（每个 track 里去重），按命中数倒序。
+  // 不应用 query / status / selectedTags 过滤——popover 是该类目的"全集"视图，
+  // 让用户能看到自己还没选的 tag。
   const allTagsWithCount = useMemo(() => {
     const counter = new Map<string, number>()
     for (const t of tracks) {
+      if (currentCategory && t.subjectType !== currentCategory) continue
       const trackTags = new Set([...t.bgmTags, ...t.userTags])
       for (const tag of trackTags) {
         counter.set(tag, (counter.get(tag) ?? 0) + 1)
@@ -250,7 +253,7 @@ export default function MyAnime(): JSX.Element {
     return [...counter.entries()]
       .map(([tag, count]) => ({ tag, count }))
       .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
-  }, [tracks])
+  }, [tracks, currentCategory])
 
   return (
     <div className="relative min-h-full bg-background">
@@ -404,6 +407,8 @@ export default function MyAnime(): JSX.Element {
                   allTags={allTagsWithCount}
                   selected={selectedTags}
                   onChange={setSelectedTags}
+                  matchMode="OR"
+                  pinSelected={false}
                 />
                 <SortSelector value={sort} onChange={setSort} />
                 {/* 手动添加 —— BGM 限流时的兜底入口，默认 subjectType = 当前类目 tab */}
