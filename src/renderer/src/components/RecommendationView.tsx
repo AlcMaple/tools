@@ -18,6 +18,8 @@ import {
   type RecommendationStatus,
 } from '../stores/recommendationStore'
 import { ModalShell } from '../pages/homework/shared'
+import { useCover } from '../hooks/useCover'
+import coverFallback from '../assets/cover-fallback.png'
 
 export type RecFilterKey = 'all' | RecommendationStatus
 
@@ -152,6 +154,9 @@ function RecRow({
   const display = rec.titleCn || rec.title
   const native = rec.titleCn && rec.title && rec.title !== rec.titleCn ? rec.title : ''
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // 封面走 useCover，key 用 bgmId —— 跟动画 TrackRow 同 key 同尺寸（默认 480），
+  // 直接命中动画那边已本地化的 {bgmId}.480.jpg，不再对着 lain.bgm.tv 重拉一遍。
+  const coverSrc = useCover(String(rec.bgmId), rec.cover)
   return (
     <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex min-h-[140px]">
       {/* Cover —— 跟 TrackRow 完全一致：`min-h-[140px]` 统一卡片高度下限（取自
@@ -161,11 +166,18 @@ function RecRow({
       <div className="w-[88px] shrink-0 bg-surface-container-high overflow-hidden rounded-l-xl relative">
         {rec.cover ? (
           <img
-            src={rec.cover}
+            src={coverSrc || coverFallback}
             alt={display}
             className="absolute inset-0 w-full h-full object-cover"
             loading="lazy"
             decoding="async"
+            onError={(e) => {
+              const img = e.currentTarget
+              if (img.src !== coverFallback) {
+                img.onerror = null
+                img.src = coverFallback
+              }
+            }}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-on-surface-variant/20">
