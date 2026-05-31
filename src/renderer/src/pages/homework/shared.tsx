@@ -202,7 +202,9 @@ export function matchesLog(entry: LogEntry, q: string): boolean {
   if (!q) return true
   const terms = stripCjkLatinSpaces(q.toLowerCase()).split(/[、\s]+/).filter(Boolean)
   if (terms.length === 0) return true
-  const hay = (entry.title + ' ' + (entry.note ?? '')).toLowerCase()
+  // hay 也要做同样的 stripCjkLatinSpaces —— 否则查询去掉了中英文之间的空格
+  // （「夏蟲 THE」→「夏蟲THE」），标题没去，两边对不上：搜完整标题反而 0 匹配。
+  const hay = stripCjkLatinSpaces((entry.title + ' ' + (entry.note ?? '')).toLowerCase())
   return terms.every(t => hay.includes(t))
 }
 
