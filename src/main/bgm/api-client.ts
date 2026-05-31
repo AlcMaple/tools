@@ -25,6 +25,7 @@
 import { app } from 'electron'
 import { RateLimiter, RateLimitError } from '../shared/rate-limit'
 import { netRequest } from '../shared/net-request'
+import { ApiCircuitBreaker } from './api-circuit'
 
 /**
  * BGM 官方明确要求第三方调用 api.bgm.tv 时带规范 User-Agent：
@@ -53,11 +54,20 @@ function buildHeaders(): Record<string, string> {
 
 // 500ms 间隔 + 200ms 抖动 —— api.bgm.tv 比 HTML 搜索宽松（HTML 是 2200ms),
 // 实测 500ms 没观察到限流。再激进就有风险，再松就达不到防御目的。
+//
+// 008 阶段加 L2 滚动窗口配额：60s 内最多 20 个请求。单次别名回退最多 4 个、
+// 详情 2 个，正常用够；连搜多次时自动拉开节奏，不会一口气吃光分钟级预算。
+// （N 是启发式，BGM 没公开确切配额，先给稳值，按体感再调。）
 const apiLimiter = new RateLimiter({
   minGapMs: 500,
   jitterMs: 200,
   name: 'bgm-api',
+  maxPerWindow: 20,
+  windowMs: 60_000,
 })
+
+// L3 熔断器：429 后停止投喂 API、阶梯冷却、半开试探恢复（详见 api-circuit.ts）。
+const apiBreaker = new ApiCircuitBreaker(apiLimiter)
 
 /**
  * 拉一个 api.bgm.tv 端点的 JSON 数据。所有调用排进同一个限速队列。
@@ -76,11 +86,15 @@ const apiLimiter = new RateLimiter({
  */
 export async function fetchBgmApiJson<T = unknown>(url: string): Promise<T> {
   return apiLimiter.schedule(async () => {
+    // 熔断闸门在 schedule 内（串行）检查 —— 冷却中直接抛 RateLimitError（UI 倒计时），
+    // 不再发请求；冷却到期后这一发即「半开试探」。
+    apiBreaker.guard()
     // 走 Electron net（Chromium 网络栈）—— 自动用系统代理，修掉 Node https
     // 不走代理、直连 fake-ip 假地址导致的冷启动超时。详见 shared/net-request.ts。
     const res = await netRequest(url, { headers: buildHeaders(), timeoutMs: 10000 })
     if (res.status === 429) {
       const retryAfter = parseInt(String(res.headers['retry-after'] ?? '30')) || 30
+      apiBreaker.recordTrip(retryAfter) // 开熔断 + 阶梯冷却 + 持久化
       throw new RateLimitError(
         retryAfter,
         `BGM API 触发限流（HTTP 429），请等 ${retryAfter} 秒后再试`,
@@ -89,6 +103,7 @@ export async function fetchBgmApiJson<T = unknown>(url: string): Promise<T> {
     if (res.status >= 400) {
       throw new Error(`BGM API HTTP ${res.status} for ${url}`)
     }
+    apiBreaker.recordSuccess() // 半开试探成功则关闸 + 软恢复
     return JSON.parse(res.body.toString('utf-8')) as T
   })
 }

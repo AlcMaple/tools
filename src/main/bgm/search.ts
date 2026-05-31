@@ -400,8 +400,13 @@ async function fetchAliases(subjectId: number): Promise<string[]> {
  */
 const EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH = 2
 
-/** 最多查多少条 BGM 排名靠前的 unmatched 条目的别名 —— 防止 API 调用爆炸。 */
-const ALIAS_LOOKUP_LIMIT = 8
+/**
+ * 最多查多少条 BGM 排名靠前的 unmatched 条目的别名 —— 防止 API 调用爆炸。
+ * 008 阶段从 8 降到 4：用户基本每次搜索都走中文别名回退，单次 2–8 个 api.bgm.tv
+ * 突发是限流主因之一。降到 4 砍半单次突发；BGM 把别名命中排在最前，目标通常
+ * 在前几位，配合 3-miss 早停，召回损失很小（不动分页，结果数不受影响）。
+ */
+const ALIAS_LOOKUP_LIMIT = 4
 /**
  * 连续 miss 多少次后早停。BGM 把别名命中按相关度排在前面，连查 N 个都没
  * 命中说明已经走出"别名命中带"进入"字符碎片模糊命中"区，再查也是浪费。
