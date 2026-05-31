@@ -538,7 +538,6 @@ function ManualAddModal({
   // 负数 id 是纯本地兜底（非真 BGM id），编辑时输入框留空；正数才回填。
   const [bgmIdInput, setBgmIdInput] = useState(editing && editing.bgmId > 0 ? String(editing.bgmId) : '')
   const [title, setTitle] = useState(editing?.title ?? '')
-  const [titleCn, setTitleCn] = useState(editing?.titleCn ?? '')
   const [category, setCategory] = useState<SubjectType>(
     editing ? (editing.subjectType === 'other' ? defaultCategory : editing.subjectType) : defaultCategory,
   )
@@ -575,10 +574,11 @@ function ManualAddModal({
     }
 
     const epsParsed = parseInt(totalEps.trim(), 10)
+    // 不再有「中文标题」输入：卡片显示用 titleCn || title 回落，手动条目直接用 title 即可
+    // （编辑时省略 titleCn，靠 upsert 的 ...prev 保留任何旧值，非破坏性）。
     const fields = {
       subjectType: category,
       title: trimmedTitle,
-      titleCn: titleCn.trim() || undefined,
       cover: coverUrl.trim() || undefined,
       totalEpisodes: Number.isFinite(epsParsed) && epsParsed > 0 ? epsParsed : undefined,
     }
@@ -635,16 +635,6 @@ function ManualAddModal({
               onChange={e => setTitle(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit() }}
               placeholder="原标题，如 巨蟲列島（也可直接填中文名）"
-            />
-          </div>
-
-          <div>
-            <p className={labelCls}>中文标题（可选）</p>
-            <input
-              className={inputCls}
-              value={titleCn}
-              onChange={e => setTitleCn(e.target.value)}
-              placeholder="中文名，如 巨虫列岛（卡片会优先显示这个）"
             />
           </div>
 
