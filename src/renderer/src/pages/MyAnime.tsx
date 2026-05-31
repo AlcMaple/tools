@@ -527,17 +527,23 @@ const MANUAL_CATEGORY_OPTIONS: ReadonlyArray<{ key: SubjectType; label: string }
  *   - **最少必填**：标题 + 类目。其他都可选 / 给默认值。
  */
 function ManualAddModal({
-  defaultCategory, onClose,
+  defaultCategory, editing, onClose,
 }: {
   defaultCategory: 'anime' | 'manga' | 'novel'
+  /** 传入则为「编辑」模式：预填该条目，保存时原地更新（保留状态/集数/标签等）。 */
+  editing?: AnimeTrack
   onClose: () => void
 }): JSX.Element {
-  const [bgmIdInput, setBgmIdInput] = useState('')
-  const [title, setTitle] = useState('')
-  const [titleCn, setTitleCn] = useState('')
-  const [category, setCategory] = useState<SubjectType>(defaultCategory)
-  const [coverUrl, setCoverUrl] = useState('')
-  const [totalEps, setTotalEps] = useState('')
+  const isEdit = !!editing
+  // 负数 id 是纯本地兜底（非真 BGM id），编辑时输入框留空；正数才回填。
+  const [bgmIdInput, setBgmIdInput] = useState(editing && editing.bgmId > 0 ? String(editing.bgmId) : '')
+  const [title, setTitle] = useState(editing?.title ?? '')
+  const [titleCn, setTitleCn] = useState(editing?.titleCn ?? '')
+  const [category, setCategory] = useState<SubjectType>(
+    editing ? (editing.subjectType === 'other' ? defaultCategory : editing.subjectType) : defaultCategory,
+  )
+  const [coverUrl, setCoverUrl] = useState(editing?.cover ?? '')
+  const [totalEps, setTotalEps] = useState(editing?.totalEpisodes != null ? String(editing.totalEpisodes) : '')
   const [error, setError] = useState<string | null>(null)
 
   const titleRef = useRef<HTMLInputElement>(null)
@@ -549,7 +555,7 @@ function ManualAddModal({
       setError('标题不能为空')
       return
     }
-    // bgmId：填了正整数用真的；留空 / 非法 → 负数兜底（-Date.now()）。
+    // bgmId：填了正整数用真的；留空 / 非法 → 编辑时保留原 id、新增时负数兜底（-Date.now()）。
     let bgmId: number
     const raw = bgmIdInput.trim()
     if (raw) {
@@ -558,26 +564,37 @@ function ManualAddModal({
         setError('BGM ID 要么留空，要么填正整数（从 bgm.tv 条目链接里拿）')
         return
       }
-      if (animeTrackStore.getByBgmId(parsed)) {
+      // 重名校验排除自己（编辑时 id 不变是正常的）。
+      if (parsed !== editing?.bgmId && animeTrackStore.getByBgmId(parsed)) {
         setError(`BGM ID ${parsed} 已经在追番列表里了`)
         return
       }
       bgmId = parsed
     } else {
-      bgmId = -Date.now()
+      bgmId = editing ? editing.bgmId : -Date.now()
     }
 
     const epsParsed = parseInt(totalEps.trim(), 10)
-    animeTrackStore.upsert({
-      bgmId,
+    const fields = {
       subjectType: category,
       title: trimmedTitle,
       titleCn: titleCn.trim() || undefined,
       cover: coverUrl.trim() || undefined,
       totalEpisodes: Number.isFinite(epsParsed) && epsParsed > 0 ? epsParsed : undefined,
-      status: 'plan',
-      episode: 0,
-    })
+    }
+
+    if (editing) {
+      // 编辑：不带 status/episode 默认值，避免重置进度；其余字段（标签/绑定/好看集等）由 upsert 合并保留。
+      if (bgmId !== editing.bgmId) {
+        // 改了 bgmId = 换 key：整条搬到新 id（保留全部进度），删掉旧的。
+        animeTrackStore.delete(editing.bgmId)
+        animeTrackStore.upsert({ ...editing, ...fields, bgmId })
+      } else {
+        animeTrackStore.upsert({ bgmId, ...fields })
+      }
+    } else {
+      animeTrackStore.upsert({ bgmId, ...fields, status: 'plan', episode: 0 })
+    }
     // 封面本地化在显示时由 useCover 处理，这里只存 URL。
     onClose()
   }
@@ -591,11 +608,13 @@ function ManualAddModal({
       <div className="flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="px-6 pt-5 pb-4 border-b border-outline-variant/10">
-          <h3 className="text-base font-black tracking-tight text-on-surface">手动添加追番</h3>
+          <h3 className="text-base font-black tracking-tight text-on-surface">{isEdit ? '编辑追番条目' : '手动添加追番'}</h3>
           <p className="text-[11px] text-on-surface-variant/60 mt-1 font-label leading-relaxed">
-            BGM 限流搜不了时用这个加番。填上 BGM ID（从 bgm.tv 条目链接里拿，
-            如 <span className="font-mono text-on-surface-variant/80">bgm.tv/subject/267215</span>）,
-            限流恢复后进详情页会自动识别为已追番并补全信息。
+            {isEdit
+              ? '修改这条手动添加的追番信息（标题 / 类目 / 封面等）。观看状态、集数、标签、绑定的播放源等进度都会保留。'
+              : <>BGM 限流搜不了时用这个加番。填上 BGM ID（从 bgm.tv 条目链接里拿，
+                  如 <span className="font-mono text-on-surface-variant/80">bgm.tv/subject/267215</span>）,
+                  限流恢复后进详情页会自动识别为已追番并补全信息。</>}
           </p>
         </div>
 
@@ -698,8 +717,8 @@ function ManualAddModal({
             onClick={submit}
             className="flex-1 py-2.5 rounded-lg border border-primary/40 bg-primary/10 text-primary font-bold text-sm hover:bg-primary/20 transition-colors flex items-center justify-center gap-2"
           >
-            <span className="material-symbols-outlined text-base leading-none">bookmark_add</span>
-            添加到追番
+            <span className="material-symbols-outlined text-base leading-none">{isEdit ? 'save' : 'bookmark_add'}</span>
+            {isEdit ? '保存修改' : '添加到追番'}
           </button>
         </div>
       </div>
@@ -799,6 +818,10 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   // 删除），物理隔离日常的"点 chip 跳转"操作，杜绝误删。
   // 内置三源（Aowu/Xifan/Girigiri）不在弹窗里，它们走「+ 搜 X」流程管理。
   const [editingOpen, setEditingOpen] = useState(false)
+  // 「编辑条目」弹窗 —— 仅手动添加的本地条目（bgmId<0）可改标题/类目/封面等，
+  // 复用 ManualAddModal 的编辑模式。BGM 同步的条目以 BGM 为准，不在这编辑。
+  const [editTrackOpen, setEditTrackOpen] = useState(false)
+  const isManual = track.bgmId < 0
   // 「推荐」按钮打开的弹窗 —— 让用户只填"推荐给谁"，番剧信息直接复用本行。
   // 用户的洞察："推荐的番一定在追番列表里"，所以推荐入口设在 TrackRow 是最
   // 自然的——免去再做一遍 BGM 搜索。
@@ -968,15 +991,26 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <a
-              href={`https://bgm.tv/subject/${track.bgmId}`}
-              target="_blank"
-              rel="noreferrer"
-              title="在 Bangumi 上查看"
-              className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
-            >
-              <span className="material-symbols-outlined text-[16px] leading-none">open_in_new</span>
-            </a>
+            {isManual ? (
+              // 手动本地条目（无真 BGM id）：链接入口换成「编辑」。
+              <button
+                onClick={() => setEditTrackOpen(true)}
+                title="编辑这条手动添加的条目"
+                className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px] leading-none">edit</span>
+              </button>
+            ) : (
+              <a
+                href={`https://bgm.tv/subject/${track.bgmId}`}
+                target="_blank"
+                rel="noreferrer"
+                title="在 Bangumi 上查看"
+                className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px] leading-none">open_in_new</span>
+              </a>
+            )}
             <button
               onClick={() => setQuickRecOpen(true)}
               title="推荐这部番给某人"
@@ -1168,6 +1202,15 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             animeTrackStore.delete(track.bgmId)
             setConfirmDeleteOpen(false)
           }}
+        />
+      )}
+
+      {/* 编辑手动条目（复用 ManualAddModal 的编辑模式） */}
+      {editTrackOpen && (
+        <ManualAddModal
+          editing={track}
+          defaultCategory={track.subjectType === 'other' ? 'anime' : track.subjectType}
+          onClose={() => setEditTrackOpen(false)}
         />
       )}
     </div>
