@@ -82,6 +82,8 @@ MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)
 
 **`api.bgm.tv`**：500ms 间隔 + 200ms 抖动的共享 `RateLimiter`，所有端点串行节流。HTTP 429 抛 `RateLimitError`，带 `Retry-After` 秒数。
 
+> **008 阶段在此基础上加了三层**（详见下文「限流熔断与降级」）：单次别名突发砍半（`ALIAS_LOOKUP_LIMIT` 8→4）、滚动窗口配额（60s 内 ≤20 个 API）、429 熔断 + 阶梯冷却 + 半开试探 + 软恢复（`api-circuit.ts`，状态持久化）。原因：500ms 间隔只压**瞬时速率**，压不住「时间窗累计预算」和「滑动惩罚计数器」（§4）—— 用户按中文别名搜时几乎每次都掉进别名回退、单次几个 API 突发，连搜就把窗口预算打满、把惩罚计数器顶起来。
+
 **`bgm.tv` HTML 搜索**：三层防御
 1. **Layer 1 Timing**：2200ms 间隔（BGM 阈值约 2000ms，留 200ms 网络抖动余量）
 2. **Layer 2 Browser fingerprint**：随机 Chrome UA + 对齐 sec-ch-ua + cookie jar
@@ -95,9 +97,25 @@ MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)
 
 **规则**：连续 `EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH`（=2）页「整页没有任何 `visibleMatch`（主标题/副标题命中关键词）」就停止翻页。阈值 2 容忍命中带中间偶发一页空档，命中带结束后最多多抓 2 页就收尾。
 
-**与别名回退的关系**（不能破坏）：别名搜索（`visibleMatch` 全程为空）也吃这条规则、会在第 2 页就早停 —— 这**正好**，因为别名回退只取排名最靠前的 `ALIAS_LOOKUP_LIMIT`(8) 条 unmatched 候选，第 1 页就够了。早停前用 gate 卡住：`visibleCount > 0 || unmatchedCount >= ALIAS_LOOKUP_LIMIT`，保证首页结果太少（<8 条）时不会过早停掉、导致别名回退没东西可查。
+**与别名回退的关系**（不能破坏）：别名搜索（`visibleMatch` 全程为空）也吃这条规则、会在第 2 页就早停 —— 这**正好**，因为别名回退只取排名最靠前的 `ALIAS_LOOKUP_LIMIT`(008 阶段 8→**4**) 条 unmatched 候选，第 1 页就够了。早停前用 gate 卡住：`visibleCount > 0 || unmatchedCount >= ALIAS_LOOKUP_LIMIT`，保证首页结果太少（<4 条）时不会过早停掉、导致别名回退没东西可查。
 
 这条规则和别名查询自己的「连续 miss 早停」（`ALIAS_LOOKUP_MAX_CONSECUTIVE_MISSES`）是**两处独立的早停**：前者管「翻几页 HTML」，后者管「查几条 API 别名」，都基于同一个「BGM 按相关度排序，命中带结束后全是噪声」的前提。
+
+### 限流熔断与降级（008 阶段）
+
+500ms 间隔是**瞬时速率**节流，管不住两件事，008 各补一层：
+
+- **L1 缩小单次突发**：`ALIAS_LOOKUP_LIMIT` 8 → 4。用户基本每次搜索都走中文别名回退、单次几个 API，是限流主因之一。降到 4 砍半突发；不动分页早停（结果数不变）。
+- **L2 窗口预算**（`RateLimiter` 的 `maxPerWindow`/`windowMs`）：60s 内最多 20 个 `api.bgm.tv` 请求，超额阻塞到窗口里最早一笔滑出。守住「连搜几次把分钟级预算打满」。N 是启发式（BGM 未公开配额），按体感调。
+- **L3 熔断 + 软恢复**（`api-circuit.ts`，状态持久化到 `userData/bgm_api_breaker.json`）：
+  - 429 → **open**，阶梯冷却 `5min → 30min → 2h → 12h → 48h`（封顶对齐 §4 惩罚窗口）；孤立触发（距上次 >24h）等级归零重算。
+  - open 期间 `guard()` 直接抛 `RateLimitError(剩余秒数)`，**不再发请求** —— 给滑动计数器衰减的时间，而不是继续投喂、把惩罚顶起来。
+  - 冷却到点 → **half-open**：放行**下一个用户自然请求**当试探，成功 → close + 给限速器 `softThrottle`（1.5s 间隔慢跑 10min，不一恢复就满速）；又 429 → 升级冷却重新 open。
+  - 持久化是关键：重启不能丢冷却状态，否则一重启又去捅 API、前功尽弃。
+
+> **半开试探 ≠「主动探测」**（别误删）：half-open 放行的是**用户自己发起**的下一个请求，不是代码自己定时发的探测包。「零主动探测」禁的是「没用户动作时代码周期性试发」；用用户请求的结果顺带判断恢复，完全合规。这条和下面「不要再走的路」不冲突。
+
+> **第一步（008）open 期间是「优雅降级」**：直接抛冷却提示，BGM 功能暂歇。**第二步**会在 open 期间改走 `bgm.tv` HTML（松端点）解析别名/详情，让冷却期搜索/详情仍可用。
 
 ### 不要再走的路
 
@@ -136,7 +154,9 @@ MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)
 
 | 检测点 | 触发条件 | 行为 | 是否自动重试 |
 |---|---|---|---|
-| `api-client.ts` HTTP 429 | 用户发起的请求收到 429 | 读 `Retry-After`，throw `RateLimitError` | ❌ 不重试 |
+| `api-client.ts` HTTP 429 | 用户发起的请求收到 429 | 读 `Retry-After`，`recordTrip` 开熔断 + throw `RateLimitError` | ❌ 不重试 |
+| `api-circuit.ts` 冷却中 | open 期间的任何请求 | `guard()` 抛 `RateLimitError(剩余秒)`，**不发请求** | ❌ 被动降级，不重试 |
+| `api-circuit.ts` 半开 | 冷却到点的**下一个用户请求** | 放行当试探，成功关闸 + 软恢复 | ❌ 非主动探测（用户请求顺带判断） |
 | `search.ts` HTTP 429 | 用户发起的搜索收到 429 | throw `RateLimitError(30)` 兜底 | ❌ 不重试 |
 | `search.ts` `detectLimit` | 响应 body 是中文限流页 | 解析 wait-N，throw `RateLimitError(waitN)` | ❌ 不重试 |
 | `calendar.ts` 失败 | refresh=true 时拉周历失败 | throw 让 UI 看到 | ❌ 不静默 fallback |

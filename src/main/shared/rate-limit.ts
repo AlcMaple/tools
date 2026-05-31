@@ -35,6 +35,11 @@ export interface RateLimiterOptions {
   jitterMs: number
   /** Display name for log messages (e.g. "bgm", "aowu"). */
   name?: string
+  /** 滚动窗口配额（可选）：`windowMs` 内最多放行 `maxPerWindow` 个请求。
+   * 用来守住"分钟级累计预算"——光靠 minGap 只压瞬时速率，连发多笔仍会把
+   * 时间窗内的总量打满。超额请求阻塞到窗口里最早一笔滑出为止。 */
+  maxPerWindow?: number
+  windowMs?: number
 }
 
 /**
@@ -45,9 +50,23 @@ export class RateLimiter {
   private chain: Promise<void> = Promise.resolve()
   private lastStartedAt = 0
   private opts: RateLimiterOptions
+  /** 滚动窗口内每个请求的"开始"时间戳（仅当配置了 maxPerWindow 才记）。 */
+  private starts: number[] = []
+  /** 软节流：`softUntil` 之前，最小间隔抬高到 `softMinGapMs`（恢复初期慢跑一段）。 */
+  private softMinGapMs = 0
+  private softUntil = 0
 
   constructor(opts: RateLimiterOptions) {
     this.opts = opts
+  }
+
+  /**
+   * 临时抬高最小间隔（软恢复用）：刚从限流冷却恢复后，先以更大的间隔慢跑
+   * `durationMs`，再自动回落到 `minGapMs`，避免一恢复就满速把滑动惩罚顶起来。
+   */
+  softThrottle(gapMs: number, durationMs: number): void {
+    this.softMinGapMs = gapMs
+    this.softUntil = Date.now() + durationMs
   }
 
   /**
@@ -62,10 +81,27 @@ export class RateLimiter {
     })
     try {
       await prev
+      // 间隔：软恢复期内取更大的 softMinGap，否则用基础 minGap，叠抖动。
+      const baseGap = Date.now() < this.softUntil
+        ? Math.max(this.opts.minGapMs, this.softMinGapMs)
+        : this.opts.minGapMs
       const elapsed = Date.now() - this.lastStartedAt
-      const target =
-        this.opts.minGapMs + Math.floor(Math.random() * (this.opts.jitterMs + 1))
+      const target = baseGap + Math.floor(Math.random() * (this.opts.jitterMs + 1))
       if (elapsed < target) await sleep(target - elapsed, signal)
+
+      // 滚动窗口配额：窗口已满则等最早一笔滑出窗口（守累计预算，不只压瞬时速率）。
+      const { maxPerWindow, windowMs } = this.opts
+      if (maxPerWindow && windowMs) {
+        for (;;) {
+          const cutoff = Date.now() - windowMs
+          this.starts = this.starts.filter((t) => t > cutoff)
+          if (this.starts.length < maxPerWindow) break
+          const waitMs = this.starts[0] + windowMs - Date.now()
+          await sleep(Math.max(1, waitMs), signal)
+        }
+        this.starts.push(Date.now())
+      }
+
       this.lastStartedAt = Date.now()
     } finally {
       release()
