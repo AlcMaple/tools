@@ -158,7 +158,12 @@ export function friendlyError(err: unknown): FriendlyError {
     lower.includes('getaddrinfo') ||
     lower.includes('network') ||
     lower.includes('fetch failed') ||
-    lower.includes('request timeout')
+    lower.includes('request timeout') ||
+    // Electron net（Chromium 网络栈）传输层错误形如 `net::ERR_NAME_NOT_RESOLVED`
+    // `net::ERR_CONNECTION_REFUSED` `net::ERR_INTERNET_DISCONNECTED` 等 —— 跟 Node 风格
+    // 的 ECONNREFUSED/getaddrinfo 长得不一样，得单独认，否则站点不可达会掉到兜底
+    // 「出错了」而不是「网站连不上」。BGM / 萌娘 都走 net，这条覆盖它们的"页面打不开"。
+    lower.includes('net::err')
   ) {
     // connect ETIMEDOUT / ECONNREFUSED / DNS 失败 = TCP 连接都建立不起来，即站点
     // 根本不可达（站点自己挂了 / 被墙 / 本机网络或代理问题）。这和「连上了但 10s
@@ -169,7 +174,11 @@ export function friendlyError(err: unknown): FriendlyError {
       lower.includes('connect timeout') ||
       lower.includes('econnrefused') ||
       lower.includes('enotfound') ||
-      lower.includes('getaddrinfo')
+      lower.includes('getaddrinfo') ||
+      // Electron net 连接层失败（DNS / 拒绝 / 断网 / 被墙 / 代理失败）——
+      // 都是"TCP 都建不起来 = 站点不可达"。我们自己的 10s 超时走 Error('timeout')
+      // 那条（连上了没回包），跟这里 net:: 连接失败是两回事。
+      lower.includes('net::err')
     if (isConnFailure) {
       return {
         title: '网站连不上',
