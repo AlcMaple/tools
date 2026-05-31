@@ -14,6 +14,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { ModalShell } from '../pages/homework/shared'
+import { useCover } from '../hooks/useCover'
 import {
   recommendationStore,
   useRecommendationList,
@@ -174,13 +175,8 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
                       className="w-full flex items-center gap-3 px-3 py-2 rounded-lg bg-surface hover:bg-surface-container-highest border border-outline-variant/10 hover:border-primary/30 text-left transition-all group"
                     >
                       {/* 封面缩略 */}
-                      <div className="w-9 h-12 shrink-0 bg-surface-container rounded overflow-hidden flex items-center justify-center">
-                        {t.cover ? (
-                          <img src={t.cover} alt={display} className="w-full h-full object-cover" loading="lazy" />
-                        ) : (
-                          <span className="material-symbols-outlined text-on-surface-variant/30 text-base">image</span>
-                        )}
-                      </div>
+                      <CoverThumb bgmId={t.bgmId} url={t.cover} alt={display} />
+
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-on-surface text-sm group-hover:text-primary transition-colors truncate">
                           {display}
@@ -208,5 +204,20 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
         </div>
       </div>
     </ModalShell>
+  )
+}
+
+// 列表项封面缩略 —— 单独成组件以便用 useCover（hook 不能在 .map 回调里调）。
+// key 用 bgmId、默认尺寸，命中动画 TrackRow 已本地化的封面，不重拉。
+function CoverThumb({ bgmId, url, alt }: { bgmId: number; url?: string; alt: string }): JSX.Element {
+  const src = useCover(String(bgmId), url)
+  return (
+    <div className="w-9 h-12 shrink-0 bg-surface-container rounded overflow-hidden flex items-center justify-center">
+      {url ? (
+        <img src={src} alt={alt} className="w-full h-full object-cover" loading="lazy" />
+      ) : (
+        <span className="material-symbols-outlined text-on-surface-variant/30 text-base">image</span>
+      )}
+    </div>
   )
 }

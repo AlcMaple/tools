@@ -19,6 +19,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BgmCalendarItem, BgmCalendarResult } from '../types/bgm'
+import { useCover } from '../hooks/useCover'
 
 const MAX_IMG_WAIT_MS = 12_000
 
@@ -155,13 +156,16 @@ function DayColumn({ items }: { items: BgmCalendarItem[] }): JSX.Element {
 function PrintCard({ item }: { item: BgmCalendarItem }): JSX.Element {
   const displayTitle = item.name_cn || item.name
   const sub = item.name_cn && item.name && item.name !== item.name_cn ? item.name : ''
+  // 跟 CalendarCard 同 key（bgmId）走 useCover —— 复用已本地化的封面，并享受
+  // 直连→国内图片代理兜底（lain.bgm.tv 在无魔法环境直连会挂，截图就缺图）。
+  const coverSrc = useCover(String(item.id), item.cover)
 
   return (
     <div className="bg-surface-container rounded-lg border border-outline-variant/15 overflow-hidden">
       <div className="aspect-[3/4] relative bg-surface-container-high">
         {item.cover ? (
           <img
-            src={item.cover}
+            src={coverSrc || item.cover}
             alt={displayTitle}
             className="w-full h-full object-cover"
           />
