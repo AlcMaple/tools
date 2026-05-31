@@ -1,5 +1,7 @@
 import { getMoegirlSynopsis } from '../moegirl/synopsis'
 import { fetchBgmApiJson } from './api-client'
+import { RateLimitError } from '../shared/rate-limit'
+import { fetchSubjectViaHtml } from './html-fallback'
 
 const BASE_API = 'https://api.bgm.tv/v0'
 
@@ -219,7 +221,19 @@ function mergeStaff(fromInfobox: StaffEntry[], fromPersons: StaffEntry[]): Staff
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
-  const subject = await fetchBgmApiJson<Record<string, unknown>>(`${BASE_API}/subjects/${subjectId}`)
+  // 限流冷却中（或刚 429）→ 降级抓 bgm.tv HTML（同形对象），其余字段解析不变。
+  // persons 端点没有 HTML 等价物，冷却期会抛 RateLimitError，被下面的 try/catch
+  // 吞掉、退回 infobox staff —— 详情核心信息仍可见。
+  let subject: Record<string, unknown>
+  try {
+    subject = await fetchBgmApiJson<Record<string, unknown>>(`${BASE_API}/subjects/${subjectId}`)
+  } catch (e) {
+    if (e instanceof RateLimitError) {
+      subject = (await fetchSubjectViaHtml(subjectId)) as unknown as Record<string, unknown>
+    } else {
+      throw e
+    }
+  }
 
   const infobox = parseInfobox((subject.infobox as unknown[]) ?? [])
   const rating = (subject.rating as Record<string, unknown>) ?? {}

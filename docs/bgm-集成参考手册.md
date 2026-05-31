@@ -115,7 +115,22 @@ MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)
 
 > **半开试探 ≠「主动探测」**（别误删）：half-open 放行的是**用户自己发起**的下一个请求，不是代码自己定时发的探测包。「零主动探测」禁的是「没用户动作时代码周期性试发」；用用户请求的结果顺带判断恢复，完全合规。这条和下面「不要再走的路」不冲突。
 
-> **第一步（008）open 期间是「优雅降级」**：直接抛冷却提示，BGM 功能暂歇。**第二步**会在 open 期间改走 `bgm.tv` HTML（松端点）解析别名/详情，让冷却期搜索/详情仍可用。
+**冷却期降级走 HTML（008 第二步，已落地 `html-fallback.ts`）**：
+
+冷却中 `fetchBgmApiJson` 会抛 `RateLimitError`，调用方 catch 后改抓 `bgm.tv/subject/{id}` 的 HTML（用户手动浏览没事的松端点），cheerio 解析成**与 api.bgm.tv `/v0/subjects/{id}` 同形**的对象（`fetchSubjectViaHtml`），所以解析逻辑几乎不用改：
+
+| 调用方 | 冷却期行为 |
+|---|---|
+| `search.ts` `fetchAliases` | catch RateLimitError → 抓 HTML 取 infobox 别名 → 按中文别名搜冷却期仍命中 |
+| `detail.ts` `getBgmDetail` | catch RateLimitError → HTML 同形 subject；`/persons` 无 HTML 等价物，冷却期抛错被吞 → 退回 infobox staff |
+| `calendar.ts` | 无 HTML 降级，冷却期抛错（周历有 14 天缓存，影响小） |
+
+约束与取舍（别再纠结）：
+- **只对 `RateLimitError` 降级**；网络 / 5xx 仍按错误处理（HTML 也救不了）。
+- HTML 是**降级不是平替**：rank / votes / platform / type 多半拿不到，给默认值（type=0 走 renderer 的 platform 兜底）。能搜到、能看核心信息即可。
+- 复用 `search.ts` 的 bgm.tv 防御栈（同一个 2200ms limiter + BrowserSession + 限流页检测），**不另起一套**，避免对 bgm.tv 也突发。
+- `search.ts` ↔ `html-fallback.ts` 是**运行时安全的循环依赖**（两边只在异步函数体内用对方导出），别为了"消除 cycle" 把 `fetchHtmlWithDefenses` 乱搬。
+- **恢复仍走 API**：冷却到点后下一个 API 调用 guard 放行 = 半开试探，成功才关闸；HTML 只在仍冷却时兜底，不会绕过 API 导致熔断永不恢复。
 
 ### 不要再走的路
 

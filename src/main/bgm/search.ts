@@ -37,6 +37,10 @@ import {
 import { withTransientRetry } from '../shared/http-client'
 import { netRequest } from '../shared/net-request'
 import { fetchBgmApiJson } from './api-client'
+// 注意：与 html-fallback 是「运行时安全」的循环依赖 —— 两边都只在异步函数体内
+// 用对方的导出（fetchHtmlWithDefenses / fetchSubjectViaHtml），模块初始化期不互相
+// 取值，ESM live binding 能正确解析。
+import { fetchSubjectViaHtml } from './html-fallback'
 
 /**
  * 搜索 URL 模板。`cat` 参数：
@@ -170,7 +174,7 @@ async function rawGet(url: string): Promise<{ status: number; body: Buffer }> {
  *   - 其他 4xx    → 抛 `Error("BGM 返回 HTTP {n}")`
  *   - 网络层异常   → 透传给上层 friendly classifier
  */
-async function fetchHtmlWithDefenses(url: string): Promise<string> {
+export async function fetchHtmlWithDefenses(url: string): Promise<string> {
   return limiter.schedule(async () => {
     const r = await withTransientRetry(() => rawGet(url))
     if (r.status === 429) {
@@ -364,25 +368,36 @@ function parsePage(
  */
 async function fetchAliases(subjectId: number): Promise<string[]> {
   if (!subjectId) return []
+  let infobox: Array<{ key: string; value: unknown }>
   try {
     const data = await fetchBgmApiJson<Record<string, unknown>>(
       `https://api.bgm.tv/v0/subjects/${subjectId}`,
     )
-    const infobox = (data.infobox ?? []) as Array<{ key: string; value: unknown }>
-    const entry = infobox.find((e) => e.key === '别名')
-    if (!entry) return []
-    if (typeof entry.value === 'string') return [entry.value]
-    if (Array.isArray(entry.value)) {
-      return entry.value
-        .map((v) => String((v as { v?: string }).v ?? ''))
-        .filter(Boolean)
+    infobox = (data.infobox ?? []) as Array<{ key: string; value: unknown }>
+  } catch (e) {
+    if (e instanceof RateLimitError) {
+      // 限流冷却中 → 降级抓 bgm.tv HTML 拿别名（同形 infobox），让按中文别名
+      // 搜索在冷却期仍能命中。HTML 也失败就静默跳过（别名回退是 best-effort）。
+      try {
+        const data = await fetchSubjectViaHtml(subjectId)
+        infobox = data.infobox
+      } catch {
+        return []
+      }
+    } else {
+      // 非限流错误（网络抖 / 404 等）—— best-effort，静默跳过，不升级成"搜索失败"
+      return []
     }
-    return []
-  } catch {
-    // 包括 RateLimitError —— 别名回退是 best-effort，限流时静默跳过即可，
-    // 不要把"我想增强搜索准确度"的尝试升级成"搜索失败"
-    return []
   }
+  const entry = infobox.find((e) => e.key === '别名')
+  if (!entry) return []
+  if (typeof entry.value === 'string') return [entry.value]
+  if (Array.isArray(entry.value)) {
+    return entry.value
+      .map((v) => String((v as { v?: string }).v ?? ''))
+      .filter(Boolean)
+  }
+  return []
 }
 
 /**
