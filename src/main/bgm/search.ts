@@ -410,24 +410,36 @@ async function fetchAliases(subjectId: number): Promise<string[]> {
  * 阈值 2 容忍命中带中间偶发的一页空档，命中带结束后最多多抓 2 页就收尾。
  *
  * 别名搜索（visibleMatch 全程为空）也吃这条规则、会在第 2 页就早停 —— 这
- * **正好**：别名回退只取排名最靠前的 ALIAS_LOOKUP_LIMIT 条 unmatched 候选,
- * 第 1 页就够了。早停前用 gate 保证至少攒够候选数才停（见 searchBgm）。
+ * **正好**：别名回退靠「连续 miss 早停」沿命中带扫，第 1 页通常就够。
+ * 早停前用 gate 保证至少攒够 ALIAS_LOOKUP_MIN_CANDIDATES 条候选才停（见 searchBgm）。
  */
 const EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH = 2
 
 /**
- * 最多查多少条 BGM 排名靠前的 unmatched 条目的别名 —— 防止 API 调用爆炸。
- * 008 阶段从 8 降到 4：用户基本每次搜索都走中文别名回退，单次 2–8 个 api.bgm.tv
- * 突发是限流主因之一。降到 4 砍半单次突发；BGM 把别名命中排在最前，目标通常
- * 在前几位，配合 3-miss 早停，召回损失很小（不动分页，结果数不受影响）。
- */
-const ALIAS_LOOKUP_LIMIT = 4
-/**
- * 连续 miss 多少次后早停。BGM 把别名命中按相关度排在前面，连查 N 个都没
- * 命中说明已经走出"别名命中带"进入"字符碎片模糊命中"区，再查也是浪费。
- * 计数器在每次 hit 时重置 —— 容忍 hit / miss / miss / hit / ... 的交错。
+ * 别名回退的主限制器：**连续** miss 多少次后早停。BGM 把别名命中按相关度排在
+ * 前面，命中聚成一个「命中带」，连撞 N 个 miss 说明已经走出命中带、进入字符
+ * 碎片模糊命中区，再查也是浪费。计数器在每次 hit 时重置 —— 容忍
+ * hit / miss / miss / hit / ... 的交错，沿整条命中带扫到底。
+ *
+ * 008 之前用 `slice(0, N)` 死板砍候选池当主限制器，结果头部一个热门噪声条目
+ * （如搜「谭雅战记」时 BGM 把高人气的「罗小黑战记2」排第 1）就占掉一个名额，
+ * 把真命中（「幼女战记 第二季」）挤出窗口、压根没机会验别名。改用连续-miss
+ * 早停后，噪声只消耗「连续 miss 预算」、命中则重置，命中带多长就扫多长 ——
+ * 该省的 API 全省在噪声上，不再误伤命中。**这是别名回退唯一的 per-search 限制器**。
+ *
+ * 为什么不再额外加一个「最多查 N 条」的硬上限：那会重新引入「砍候选池 = 砍召回」
+ * 的老问题（纯别名的大系列会被截断、漏番）。失控扫描（hit/miss/hit/miss 交错永远
+ * 触发不了连续-miss 早停）由 008 的全局护栏兜底 —— L2 滚动窗口（60s ≤20 个
+ * api.bgm.tv）会阻塞超额请求、L3 熔断会在真撞限流时降级，**不靠这里砍召回**。
+ * 加上分页早停把纯别名搜索的候选池天然限制在 ~2 页（见上），扫描量本就有界。
  */
 const ALIAS_LOOKUP_MAX_CONSECUTIVE_MISSES = 3
+/**
+ * 分页早停前，至少要攒够多少条 unmatched 候选才允许停翻页 —— 保证别名回退
+ * 有足够材料可扫（否则第 1 页结果太少时过早停掉、命中带还没扫完）。这是个
+ * 下限 floor，攒更多也无妨；实际 BGM 单页约 25 条，绝大多数搜索第 1 页就远超它。
+ */
+const ALIAS_LOOKUP_MIN_CANDIDATES = 4
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -454,7 +466,9 @@ export async function searchBgm(
   const totalPages = parseTotalPages(html1)
   onProgress?.(1, totalPages)
 
-  const page1Items = parsePage(html1, keyword)
+  // 每条 item 标上它来自第几页 —— 别名回退的「近命中保留」要按页区分：触发
+  // 连续-miss 早停时只回收**触发页**上的 miss，上一页/更早页的 miss 不算。
+  const page1Items = parsePage(html1, keyword).map((it) => ({ ...it, page: 1 }))
   if (page1Items.length === 0) return []
 
   const allItems = [...page1Items]
@@ -479,7 +493,7 @@ export async function searchBgm(
     }
     onProgress?.(page, totalPages)
 
-    const items = parsePage(html, keyword)
+    const items = parsePage(html, keyword).map((it) => ({ ...it, page }))
     if (items.length === 0) break
 
     allItems.push(...items)
@@ -490,54 +504,70 @@ export async function searchBgm(
     visibleCount += pageVisible
     consecutiveNoVisible = pageVisible > 0 ? 0 : consecutiveNoVisible + 1
 
-    // gate：别名回退路径（visibleCount 全程为 0）要至少攒够 ALIAS_LOOKUP_LIMIT
-    // 条候选才允许早停，避免第 1 页结果太少（<8 条）时过早停掉、导致别名
-    // 回退没东西可查。
+    // gate：别名回退路径（visibleCount 全程为 0）要至少攒够
+    // ALIAS_LOOKUP_MIN_CANDIDATES 条候选才允许早停，避免第 1 页结果太少时
+    // 过早停掉、导致别名回退没东西可查。
     const unmatchedCount = allItems.length - visibleCount
     if (
       consecutiveNoVisible >= EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH &&
-      (visibleCount > 0 || unmatchedCount >= ALIAS_LOOKUP_LIMIT)
+      (visibleCount > 0 || unmatchedCount >= ALIAS_LOOKUP_MIN_CANDIDATES)
     ) {
       break
     }
   }
 
-  // 两段式过滤：
-  //   1. 按 visibleMatch（主标题 / 日文副标题命中）筛 —— 大多数搜索这步就足够
-  //   2. 如果 visibleMatch 全空（用户搜的是 Chinese alias），回退到 BGM API
-  //      别名查询，针对 BGM 排名靠前的 unmatched 条目逐个验
+  // 单遍按 BGM 相关度顺序处理 allItems，每条三选一：
+  //   1. 标题 / 日文副标题命中关键词 → 直接收（零 API），重置连续 miss 计数
+  //   2. 标题没命中 → 验别名：别名命中 → 收，重置；**标题和别名都没命中 = miss**
+  //   3. 连续 N 个 miss → 触发「近命中保留」并停止再验别名（之后的可见命中仍照收）
   //
-  // 这样搜「魔界女王候补生」走第 1 步直接命中主标题，搜「魔女的考验」走第 2
-  // 步通过 API 查到「魔界女王候补生」的 Chinese alias 含此关键词，两个查询
-  // 都收敛到同一条结果。
+  // 「近命中保留」（用户拍板）：用户常按「俗称 / 大众名」或「系列名」搜，想要的续作 /
+  // 同系列（如搜「黑之契约者」想要的「DARKER THAN BLACK –流星的双子–」）标题和别名
+  // 可能都不含这个词、本会被当 miss 过滤掉 —— 但它紧挨命中带、通常正是用户想要的。
+  // 规则：被「连续 N 个 miss」早停时，把**触发那一页**上已检查过的 miss 也一并当结果
+  // 返回（含触发的 streak + 同页更早的零星 miss）。只限触发页：上一页 / 更早页的 miss
+  // 离命中带更远、不回收（item 在 parsePage 后标了 page 字段）。锚点 `sawHit`：本次
+  // 确实命中过（可见或别名）才回收，避免「整页零命中」的搜索返回一整页纯噪声。
+  //
+  // API 用量：只有「标题没命中」的条目才验别名，且连撞 N 个 miss 即停 —— 标题直接
+  // 命中的零 API，命中带后面通常 N 个就早停。不用 `slice(0,N)` 候选池硬帽（会让头部
+  // 热门噪声占名额、漏掉真命中，如「谭雅战记」漏「幼女战记 第二季」）。失控扫描由
+  // 008 全局护栏（L2 滚动窗口 + L3 熔断）+ 分页早停（候选池天然 ~2 页）兜底。
+  const kwNorm = normalizeForMatch(keyword) || keyword.toLowerCase()
   const matched: typeof allItems = []
-  const unmatched: typeof allItems = []
+  const examinedMisses: typeof allItems = []
+  let consecutiveMisses = 0
+  let stoppedByMissStreak = false
+  let breakPage = 0
+  let sawHit = false
   for (const x of allItems) {
-    if (x.visibleMatch) matched.push(x)
-    else unmatched.push(x)
-  }
-
-  // visibleMatch 全空 → 别名回退。只查 BGM 排名前 N 条（BGM 自己把别名匹配
-  // 排在最前面，越往后越是字符碎片命中的噪声）。失败 / 不含关键词的条目
-  // 静默跳过；命中的加入 matched 走最终的去重 + 日期排序。
-  //
-  // 早停：连续 N 次 miss 直接 break —— 已经走出别名命中带，剩下几位都查
-  // 也是浪费 API 调用。计数器在每次 hit 时重置，所以 hit/miss 交错的情况
-  // 仍能扫到底（最常见就是位置 1-2 同主题不同季都有相同 alias）。
-  if (matched.length === 0) {
-    const kwNorm = normalizeForMatch(keyword) || keyword.toLowerCase()
-    const candidates = unmatched.slice(0, ALIAS_LOOKUP_LIMIT)
-    let consecutiveMisses = 0
-    for (const c of candidates) {
-      const aliases = await fetchAliases(c.subjectId)
-      const aliasHit = aliases.some((a) => normalizeForMatch(a).includes(kwNorm))
-      if (aliasHit) {
-        matched.push(c)
-        consecutiveMisses = 0
-      } else {
-        consecutiveMisses++
-        if (consecutiveMisses >= ALIAS_LOOKUP_MAX_CONSECUTIVE_MISSES) break
+    if (x.visibleMatch) {
+      matched.push(x)
+      consecutiveMisses = 0
+      sawHit = true
+      continue
+    }
+    // 已触发早停 → 不再验别名 / 不再累计 miss，但循环继续以收下后面的可见命中。
+    if (stoppedByMissStreak) continue
+    // 标题没命中 → 验别名。别名也没命中才算 miss。
+    const aliases = await fetchAliases(x.subjectId)
+    const aliasHit = aliases.some((a) => normalizeForMatch(a).includes(kwNorm))
+    if (aliasHit) {
+      matched.push(x)
+      consecutiveMisses = 0
+      sawHit = true
+    } else {
+      examinedMisses.push(x)
+      consecutiveMisses++
+      if (consecutiveMisses >= ALIAS_LOOKUP_MAX_CONSECUTIVE_MISSES) {
+        stoppedByMissStreak = true
+        breakPage = x.page
       }
+    }
+  }
+  if (stoppedByMissStreak && sawHit) {
+    for (const m of examinedMisses) {
+      if (m.page === breakPage) matched.push(m)
     }
   }
 
