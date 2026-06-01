@@ -167,7 +167,12 @@ function downloadBases(source: 'auto' | 'github', manifest: UpdateManifest): str
  * 某个源的 latest.yml / exe 拉不到就换下一个，全挂才报错。
  */
 async function runWin(manual: boolean): Promise<void> {
-  broadcast('updater:checking')
+  // 「检查中…」只在用户手动点检查时显示（manual）。自动检查不发 checking —— 直接
+  // 从 idle 翻到结果（not-available「已是最新」/ available 下载）。原因：自动检查的
+  // error 是 gated by manual 的（静默、按钮留在「检查更新」让用户自己重试），若自动
+  // 也广播 checking，出错时收不到复位就会永久卡在「检查中…」。所以自动干脆不闪
+  // 「检查中…」，只在拿到结果时翻到对应终态。
+  if (manual) broadcast('updater:checking')
   const source = getUpdateSource()
   const manifest = await discoverLatest(source)
   if (!manifest) {
@@ -176,7 +181,9 @@ async function runWin(manual: boolean): Promise<void> {
   }
   const current = app.getVersion()
   if (compareVersions(manifest.version, current) <= 0) {
-    if (manual) broadcast('updater:not-available', { version: current })
+    // 无新版本：手动 / 自动都广播 → 按钮显示「已是最新版本」。自动检查靠这条从
+    // idle 翻到「已是最新」（它不发 checking，所以这里也不会有卡「检查中…」之虞）。
+    broadcast('updater:not-available', { version: current })
     return
   }
   broadcast('updater:available', { version: manifest.version })
@@ -206,7 +213,12 @@ async function runWin(manual: boolean): Promise<void> {
  * dmg 直链，让用户在浏览器快速下载后自行安装。
  */
 async function runMac(manual: boolean): Promise<void> {
-  broadcast('updater:checking')
+  // 「检查中…」只在用户手动点检查时显示（manual）。自动检查不发 checking —— 直接
+  // 从 idle 翻到结果（not-available「已是最新」/ available 下载）。原因：自动检查的
+  // error 是 gated by manual 的（静默、按钮留在「检查更新」让用户自己重试），若自动
+  // 也广播 checking，出错时收不到复位就会永久卡在「检查中…」。所以自动干脆不闪
+  // 「检查中…」，只在拿到结果时翻到对应终态。
+  if (manual) broadcast('updater:checking')
   const source = getUpdateSource()
   const manifest = await discoverLatest(source)
   if (!manifest) {
@@ -215,7 +227,9 @@ async function runMac(manual: boolean): Promise<void> {
   }
   const current = app.getVersion()
   if (compareVersions(manifest.version, current) <= 0) {
-    if (manual) broadcast('updater:not-available', { version: current })
+    // 无新版本：手动 / 自动都广播 → 按钮显示「已是最新版本」。自动检查靠这条从
+    // idle 翻到「已是最新」（它不发 checking，所以这里也不会有卡「检查中…」之虞）。
+    broadcast('updater:not-available', { version: current })
     return
   }
   const proxy = source === 'github' ? '' : (manifest.proxies[0] ?? '')
