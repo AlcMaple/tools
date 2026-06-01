@@ -84,14 +84,33 @@ const apiBreaker = new ApiCircuitBreaker(apiLimiter)
  * @throws Error           HTTP 4xx（非 429）/ 5xx / 超时 / JSON parse 失败。
  *                          原始错误信息传给上层让 errorMessage classifier 分类。
  */
+// 连续「api.bgm.tv 不回包」次数（超时 / 连接 reset / 网络层失败）。BGM 限流的典型
+// 表现就是**直接丢包不回 429**，所以超时才是真正的限流信号。连撞到阈值就开熔断。
+// 任何一次拿到 HTTP 响应（含 4xx/5xx）即归零 —— 那说明连接是通的、不是被丢包。
+let consecutiveApiTimeouts = 0
+const API_TIMEOUT_TRIP_THRESHOLD = 2
+
 export async function fetchBgmApiJson<T = unknown>(url: string): Promise<T> {
   return apiLimiter.schedule(async () => {
-    // 熔断闸门在 schedule 内（串行）检查 —— 冷却中直接抛 RateLimitError（UI 倒计时），
-    // 不再发请求；冷却到期后这一发即「半开试探」。
+    // 熔断闸门在 schedule 内（串行）检查 —— 冷却中直接抛 RateLimitError（UI 倒计时
+    // / 调用方降级 HTML），不再发请求；冷却到期后这一发即「半开试探」。
     apiBreaker.guard()
     // 走 Electron net（Chromium 网络栈）—— 自动用系统代理，修掉 Node https
     // 不走代理、直连 fake-ip 假地址导致的冷启动超时。详见 shared/net-request.ts。
-    const res = await netRequest(url, { headers: buildHeaders(), timeoutMs: 10000 })
+    let res: Awaited<ReturnType<typeof netRequest>>
+    try {
+      res = await netRequest(url, { headers: buildHeaders(), timeoutMs: 10000 })
+    } catch (e) {
+      // 不回包 = 限流典型表现。连撞 N 次就开熔断：后续调用 guard() 直接短路（不再
+      // 每次干等 10s），调用方据此降级到 bgm.tv HTML。单次容忍（可能只是网络抖），
+      // 连续才判定限流。本次仍把原始错误抛出去（调用方的 catch 会降级 HTML）。
+      consecutiveApiTimeouts++
+      if (consecutiveApiTimeouts >= API_TIMEOUT_TRIP_THRESHOLD) {
+        apiBreaker.recordTrip(0) // 超时无 Retry-After，用阶梯冷却下限
+      }
+      throw e
+    }
+    consecutiveApiTimeouts = 0 // 拿到响应 = 连接通，清零超时计数
     if (res.status === 429) {
       const retryAfter = parseInt(String(res.headers['retry-after'] ?? '30')) || 30
       apiBreaker.recordTrip(retryAfter) // 开熔断 + 阶梯冷却 + 持久化

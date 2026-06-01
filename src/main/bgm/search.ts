@@ -77,6 +77,18 @@ const limiter = new RateLimiter({
   name: 'bgm',
 })
 
+// 搜索页（bgm.tv/subject_search）只有 HTML 这一条路、没有 API 兜底，所以**不**做
+// 熔断阻断（阻断会让冷却期的 Try again 短路成空点击，违背「Try again 永远能真的
+// 重试」）。这里只做「连续超时 → 给个信息性倒计时」：BGM 搜索被严重限流时直接
+// 丢包 → 表现为连续超时（区别于「您在 N 秒内只能搜一次」那种拿得到响应的短限流页）。
+// 单次超时当网络抖（普通报错、不倒计时）；连撞阈值才判定疑似限流、给倒计时提示，
+// 但**不阻断**——用户点 Try again 仍会真的重新发起搜索（风险自负）。
+let consecutiveSearchTimeouts = 0
+const SEARCH_TIMEOUT_TRIP_THRESHOLD = 2
+// 疑似限流时给 UI 的建议等待秒数（仅提示，Try again 不禁用）。BGM 不告诉我们真实
+// 惩罚窗口，给个温和的默认值即可。
+const SEARCH_LIMIT_HINT_SEC = 60
+
 /**
  * Detect bgm.tv's in-body limit message. Returns wait-seconds when the page
  * is a limit response, null when the body is normal search results.
@@ -222,9 +234,33 @@ async function fetchPage(
     .replace('{cat}', String(cat))
     .replace('{page}', String(page))
 
-  // fetchHtmlWithDefenses 已经做了限流页检测 —— 这里拿到的 html 一定是干净
-  // 的搜索结果页，可以安全 saveCache。
-  const html = await fetchHtmlWithDefenses(url)
+  let html: string
+  try {
+    // fetchHtmlWithDefenses 已经做了限流页检测 —— 拿到的 html 一定是干净的搜索结果页。
+    html = await fetchHtmlWithDefenses(url)
+  } catch (e) {
+    if (page === 1) {
+      if (e instanceof RateLimitError) {
+        // 「您在 N 秒」短限流页 / 429 —— 连接是通的（拿到了响应），清零超时计数，
+        // 原样抛出显示它自己的（真实）倒计时。
+        consecutiveSearchTimeouts = 0
+      } else {
+        // 超时 / 连接失败 = 搜索端点不回包。单次当网络抖（原样抛普通错误、不倒计时）；
+        // 连撞阈值才判定疑似限流，转成 RateLimitError 给个信息性倒计时（**不阻断**：
+        // 用户点 Try again 仍会真的重新搜索）。
+        consecutiveSearchTimeouts++
+        if (consecutiveSearchTimeouts >= SEARCH_TIMEOUT_TRIP_THRESHOLD) {
+          throw new RateLimitError(
+            SEARCH_LIMIT_HINT_SEC,
+            `BGM 搜索连续无响应，疑似被限流，建议等约 ${SEARCH_LIMIT_HINT_SEC} 秒再试`,
+          )
+        }
+      }
+    }
+    throw e
+  }
+
+  if (page === 1) consecutiveSearchTimeouts = 0 // page 1 成功 → 清零超时计数
   await saveCache(html, keyword, page, cat)
   return html
 }
@@ -374,18 +410,16 @@ async function fetchAliases(subjectId: number): Promise<string[]> {
       `https://api.bgm.tv/v0/subjects/${subjectId}`,
     )
     infobox = (data.infobox ?? []) as Array<{ key: string; value: unknown }>
-  } catch (e) {
-    if (e instanceof RateLimitError) {
-      // 限流冷却中 → 降级抓 bgm.tv HTML 拿别名（同形 infobox），让按中文别名
-      // 搜索在冷却期仍能命中。HTML 也失败就静默跳过（别名回退是 best-effort）。
-      try {
-        const data = await fetchSubjectViaHtml(subjectId)
-        infobox = data.infobox
-      } catch {
-        return []
-      }
-    } else {
-      // 非限流错误（网络抖 / 404 等）—— best-effort，静默跳过，不升级成"搜索失败"
+  } catch {
+    // api.bgm.tv 失败（限流 / 超时 / 网络抖 / 404）→ 降级抓 bgm.tv HTML 拿别名
+    // （同形 infobox），让按中文别名搜索在 api 抽风时仍能命中。**不再只认
+    // RateLimitError** —— BGM 限流多半表现为超时而非 429，旧代码超时直接 return []
+    // 跳过，等于按别名搜索在限流期间永远命中不了。HTML 也失败才静默跳过（别名
+    // 回退是 best-effort，不升级成「搜索失败」）。
+    try {
+      const data = await fetchSubjectViaHtml(subjectId)
+      infobox = data.infobox
+    } catch {
       return []
     }
   }
