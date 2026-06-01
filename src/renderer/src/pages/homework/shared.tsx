@@ -496,8 +496,8 @@ export function notesEqual(a: string[], b: string[]): boolean {
 //   - Click ✕ on any chip        → removes that chip
 //   - To "edit" a chip, remove it and type the new value
 //   - onBlur on main input commits pending draft (no data loss on Save)
-// Backspace on empty main input is intentionally a no-op so users don't
-// accidentally wipe out chips while editing other fields.
+//   - Backspace on empty main input removes the most recent chip (mirrors the
+//     records「类型」input; lets users undo a just-added note without the ✕)
 export function NoteTagInput({
   notes, onNotesChange, draft, onDraftChange, placeholder,
 }: {
@@ -585,9 +585,18 @@ export function NoteTagInput({
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
             commit()
+          } else if (
+            e.key === 'Backspace' &&
+            draft === '' &&
+            !e.nativeEvent.isComposing &&
+            notes.length > 0
+          ) {
+            // 空输入时 Backspace 删掉最近添加的一条 chip（对齐「记录」类型输入，
+            // 无需点 ✕）。draft 为空时光标本就在最左、原生 Backspace 无事可做，
+            // 拦截它安全；!isComposing 避免拼音组字时误删 chip。
+            e.preventDefault()
+            removeAt(notes.length - 1)
           }
-          // No Backspace shortcut — chips are removed only via the ✕ button
-          // to avoid accidental deletion when the user is editing other fields.
         }}
         onBlur={commit}
         placeholder={notes.length === 0 ? placeholder : ''}
