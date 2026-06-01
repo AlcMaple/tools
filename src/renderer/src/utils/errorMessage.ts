@@ -74,11 +74,18 @@ export function friendlyError(err: unknown): FriendlyError {
     msg.includes('您在') && msg.includes('秒') && msg.includes('搜索') ||
     msg.includes('已触发限流')
   ) {
-    const waitMatch = msg.match(/(\d+)\s*秒/)
-    const waitSec = waitMatch ? parseInt(waitMatch[1]) : 30
+    // 优先认「N 秒」；熔断器冷却消息用的是「约 X 分钟后自动恢复」（无"秒"），
+    // 也要认，否则倒计时会错误回落成默认 30 秒（而真实冷却可能是 5/30 分钟）。
+    const secMatch = msg.match(/(\d+)\s*秒/)
+    const minMatch = msg.match(/(\d+)\s*分钟/)
+    const waitSec = secMatch
+      ? parseInt(secMatch[1])
+      : minMatch
+        ? parseInt(minMatch[1]) * 60
+        : 30
     return {
       title: 'BGM 触发限流',
-      hint: 'Bangumi 站点限制了我们的请求频率，按下方倒计时等待自然解除即可。期间反复点击会加重限流。',
+      hint: '已自动尝试了备用（网页）线路，仍失败说明各来源都在限流。下方倒计时是建议等待时长，到点会自然恢复；Try again 随时可点（提前重试可能无效或加重限流，风险自负）。',
       raw: msg,
       retryAfterSec: waitSec,
     }

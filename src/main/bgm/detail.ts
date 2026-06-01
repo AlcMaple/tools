@@ -1,6 +1,5 @@
 import { getMoegirlSynopsis } from '../moegirl/synopsis'
 import { fetchBgmApiJson } from './api-client'
-import { RateLimitError } from '../shared/rate-limit'
 import { fetchSubjectViaHtml } from './html-fallback'
 
 const BASE_API = 'https://api.bgm.tv/v0'
@@ -221,17 +220,25 @@ function mergeStaff(fromInfobox: StaffEntry[], fromPersons: StaffEntry[]): Staff
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
-  // 限流冷却中（或刚 429）→ 降级抓 bgm.tv HTML（同形对象），其余字段解析不变。
-  // persons 端点没有 HTML 等价物，冷却期会抛 RateLimitError，被下面的 try/catch
-  // 吞掉、退回 infobox staff —— 详情核心信息仍可见。
+  // api.bgm.tv 失败 → 降级抓 bgm.tv HTML（同形对象），其余字段解析不变。
+  //
+  // 关键：**任何** api 失败都降级，不再只认 RateLimitError。BGM 限流绝大多数时候
+  // 表现为「超时 / 丢包」而非 HTTP 429（api.bgm.tv 是独立的严格桶，被惩罚时直接
+  // 不回包）。旧代码只在 RateLimitError 时降级 → 真限流（超时）走 else throw、
+  // 直接报「请求超时」，既不降级也没倒计时。现在超时也降级到 bgm.tv HTML
+  // （温和、就是浏览器能打开的那个），HTML 也失败才抛原始 api 错误（更反映根因）。
   let subject: Record<string, unknown>
   try {
     subject = await fetchBgmApiJson<Record<string, unknown>>(`${BASE_API}/subjects/${subjectId}`)
-  } catch (e) {
-    if (e instanceof RateLimitError) {
+  } catch (apiErr) {
+    try {
       subject = (await fetchSubjectViaHtml(subjectId)) as unknown as Record<string, unknown>
-    } else {
-      throw e
+    } catch (htmlErr) {
+      // HTML 是「最后一条路」—— 抛它的错误（而非原始 api 错误），让 UI 的「禁用
+      // Try again」反映**最终路线**的状态：HTML 只是临时超时/网络抖 → 普通错误、
+      // Try again 可用（重试会再走 api→HTML，可能就通了）；HTML 也确认限流（429 /
+      // 「您在N秒」）→ 才带倒计时禁用。即「连 HTML 都不行才禁用」。
+      throw htmlErr
     }
   }
 
