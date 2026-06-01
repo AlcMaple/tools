@@ -2,22 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **AGENTS.md is the authoritative dev spec.** This file is the fast on-ramp; `AGENTS.md` (中文) holds the full conventions. When they appear to conflict, follow `AGENTS.md`. The deepest rationale for the network/scraping rules lives in `docs/bgm-集成参考手册.md`.
+
 ## Project Overview
 
-**MapleTools** is an Electron desktop app for searching, downloading, and managing anime. It integrates with three streaming sites (Xifan, Girigiri, Aowu) and pulls metadata from Bangumi (BGM) and Moegirl. Around that core sit a local library scanner (ffmpeg thumbnails), a seasonal anime calendar, WebDAV sync, mail-report jobs, a Windows recycle-bin helper, an in-app file explorer, and an auto-updater.
+**MapleTools** is an Electron desktop app for searching, downloading, and managing anime. It integrates with three streaming sites (Xifan, Girigiri, Aowu) and pulls metadata from Bangumi (BGM) and Moegirl. Around that core sit a local library scanner (ffmpeg thumbnails), a seasonal anime calendar, WebDAV sync, mail-report jobs, a Windows recycle-bin helper, an in-app file explorer, and a self-rolled auto-updater.
 
 Standalone Python scripts under `python/` are prototyping/data tools and are **not** part of the Electron app.
+
+Conventions worth knowing up front: reply in **Chinese**, write **code comments in Chinese** (explain *why*, not *what*), and when editing existing code **touch only what the change needs** — no incidental import reordering / reformatting / renames. No ESLint/Prettier is wired up; match the existing style (2-space indent, **no semicolons**, single quotes, `strict: true`, no `any`).
 
 ## Commands
 
 All commands run from the project root:
 
 ```bash
-npm install        # Install deps
-npm run dev        # Dev server with hot reload (electron-vite)
-npm run build      # Build main + preload + renderer into out/
-npm run dist       # Build + electron-builder package into dist/
-npm run build:win  # Cross/local Windows packaging (scripts/build-win.mjs)
+npm install            # Install deps
+npm run dev            # Dev server with hot reload (electron-vite)
+npm run build          # Build main + preload + renderer into out/
+npm run dist           # Build + electron-builder package into dist/
+npm run build:win      # Cross/local Windows packaging (scripts/build-win.mjs)
+npm run sync:manifest  # Sync update-manifest.json version ← package.json (run before every release)
 ```
 
 There are no tests and no linter wired into npm scripts.
@@ -28,7 +33,7 @@ There are no tests and no linter wired into npm scripts.
 
 - **Main** (`src/main/index.ts`) — Node env. Lifecycle, window creation, tray, custom protocol, updater bootstrap. All IPC handlers are registered via `registerAllIpc()` from `src/main/ipc/`.
 - **Preload** (`src/preload/index.ts`) — Bridges main ↔ renderer with `contextBridge.exposeInMainWorld`. Exposes typed APIs as `window.bgmApi`, `window.xifanApi`, `window.girigiriApi`, `window.aowuApi`, `window.downloadApi`, `window.systemApi`, `window.libraryApi`, `window.fileExplorerApi`, `window.webdavApi`, `window.mailApi`, etc.
-- **Renderer** (`src/renderer/src/`) — React + Tailwind SPA. Talks to main *only* through preload globals.
+- **Renderer** (`src/renderer/src/`) — React + Tailwind SPA. Talks to main *only* through preload globals — it never touches network / filesystem / Node APIs directly.
 
 ### Main process layout (`src/main/`)
 
@@ -38,31 +43,48 @@ There are no tests and no linter wired into npm scripts.
 | `bgm/` | Bangumi metadata: `search.ts`, `detail.ts`, calendar, cover caching. |
 | `xifan/` | Xifan site: captcha + search + watch-page scraping, HLS/mp4 downloader with Range resume. |
 | `girigiri/` | Girigiri site: api, downloader, `http-session.ts` cookie session. |
-| `aowu/` | Aowu site: api, downloader, `secure.ts`, `url-resolver.ts`. |
+| `aowu/` | Aowu site: api, downloader, `secure.ts`, `url-resolver.ts`. See `docs/aowu-FantasyKon-逆向与反爬手册.md`. |
 | `moegirl/` | `synopsis.ts` — fetch synopsis from Moegirl wiki. |
 | `library/` | Local library scanner, ffmpeg thumbnail extraction, JSON persistence, file watcher. |
 | `mail/` | SMTP transport + scheduled "anime report" and "calendar" mailers. |
 | `updater/` | electron-updater wrapper. |
 | `recycle/` | Windows-only recycle-bin helper (`runner.ts` shells out to `recycle-helper.ps1`). |
 | `tray.ts` | System tray. |
-| `shared/` | Shared utilities, including `speed-tracker.ts` broadcaster. |
+| `shared/` | Shared utilities: `net-request.ts`, `rate-limit.ts`, browser-session, `speed-tracker.ts` broadcaster. |
+
+### Networking & scraping — the red lines (most important, non-obvious)
+
+These are project red lines; violating them actively harms users. Full rationale in `docs/bgm-集成参考手册.md`.
+
+- **All main-process HTTP goes through `src/main/shared/net-request.ts` (`netRequest()`), which uses Electron `net`** — never Node `https`/`axios`/`node-fetch`. Node `https` ignores the system proxy; with a Clash fake-ip proxy this resolves to unroutable `198.18.x` addresses and black-holes. Electron `net` follows the system proxy/PAC like the browser does.
+- **No application-layer retry or probing after a failure.** A rate-limit / 5xx must `throw` up to the UI; the user decides when to retry via a countdown button. Do **not** auto-retry, do **not** periodically probe "is it back yet", do **not** silently `catch → return null`. The *only* allowed code-level retry is transport-layer transient blips (`withTransientRetry`: a single ECONNRESET-class socket jitter retry). No IP pools / proxy rotation / Playwright to "bypass" limits — all previously rejected.
+- **User-Agent is deliberately opposite by target:** API endpoints (`api.bgm.tv`) use an honest `MapleTools/<ver>` UA; HTML scraping (`bgm.tv` etc.) uses a randomized browser-spoof UA via `BrowserSession`. Don't mix them.
+- External API calls share `shared/rate-limit.ts` `RateLimiter` (interval + jitter) for serial throttling.
 
 ### Download queue design
 
-Per-source in-memory queues are kept inside each downloader module (xifan, girigiri, aowu). Each queue has `pending[]`, `priorityFront[]` (for resuming a specific episode), a `pausedEps` Set, and an `AbortController` for the currently running episode. Episodes run sequentially, one at a time. **Queue state is lost on restart** — the renderer persists task metadata in `localStorage` and recreates queues via `resume` IPCs.
+Per-source in-memory queues live inside each downloader module (xifan, girigiri, aowu). Each queue has `pending[]`, `priorityFront[]` (for resuming a specific episode), a `pausedEps` Set, and an `AbortController` for the currently running episode. Episodes run sequentially, one at a time. **Queue state is lost on restart** — the renderer persists task metadata in `localStorage` and recreates queues via `resume` IPCs.
 
 All three downloaders emit progress on a single channel `download:progress` so the renderer only needs one listener (subscribe via `window.downloadApi.onProgress`).
 
 ### Renderer (`src/renderer/src/`)
 
 - **Pages** (`pages/`): `SearchDownload`, `DownloadQueue`, `AnimeInfo`, `AnimeCalendar` (+ `AnimeCalendarScreenshot`), `MyAnime`, `LocalLibrary`, `FileExplorer`, `HomeworkLookup` (+ `homework/`), `Settings`. One per route.
-- **Stores** (`stores/`): plain observable stores — no React context, listeners + `localStorage` for persistence.
+- **Stores** (`stores/`): plain observable stores — internal `Map` + listener set + `localStorage`, no React context. Components subscribe via hooks.
   - `downloadStore.ts` — central download state for all three sources.
   - `animeTrackStore.ts` — "my anime" tracking list, BGM alias index for local search.
-  - `recommendationStore.ts` — recommendations.
-  - `siteApi.ts` — abstracts the per-site `window.*Api` surfaces behind a uniform interface used by source-agnostic UI.
-  - `updateStore.ts` — auto-update banner state.
-- `utils/searchCache.ts` wraps `cache:get` / `cache:set` IPCs; `utils/navGuard.ts` blocks navigation while downloads are active.
+  - `recommendationStore.ts`, `updateStore.ts` (auto-update banner).
+  - `siteApi.ts` — abstracts the per-site `window.*Api` surfaces behind a uniform interface for source-agnostic UI.
+- `utils/searchCache.ts` wraps `cache:get` / `cache:set` IPCs; `utils/navGuard.ts` blocks navigation while downloads are active; `utils/errorMessage.ts` `friendlyError()` classifies main-process errors into actionable UI copy.
+
+**Store persistence rules (don't regress):**
+- Each store has a `normalize()` that fills defaults for any missing field — **zero-migration backward compat**, no migration scripts.
+- Some fields (e.g. `bgmTags`) **lock on first content**: once populated, later fetches don't overwrite, so the user's snapshot stays stable across devices.
+- Track data syncs across devices via WebDAV, so **never persist machine-absolute paths** (e.g. a `archivist:///Users/.../cover.jpg` userData path). Store portable URLs; localize only at display time via `hooks/useCover.ts`.
+
+### Styling
+
+Use **MD3 color tokens only** (`bg-surface-container`, `text-on-surface`, `text-primary`, …) — no raw color values (`#xxx` / `bg-[#...]`), or dark/light theme switching breaks. Tokens are defined in `src/renderer/src/index.css`.
 
 ### Custom protocol
 
@@ -72,8 +94,7 @@ All three downloaders emit progress on a single channel `download:progress` so t
 
 - `library_paths.json`, `library_entries.json` — user library config + cached scan results
 - `thumbnails/` — extracted video thumbnails (wiped on each full scan)
-- `search_cache.json` — search result cache
-- `xifan_settings_history.json` — settings history
+- `search_cache.json`, `xifan_settings_history.json`
 - `bgm_cover_cache/` — locally cached BGM cover images served via `archivist://`
 - `anime_tracks.json`, `recommendations.json` and similar per-feature JSONs
 
@@ -83,14 +104,19 @@ All three downloaders emit progress on a single channel `download:progress` so t
 
 ## Adding a new IPC channel
 
-1. Add a `registerXxxIpc()` in a new or existing file under `src/main/ipc/`, registering `ipcMain.handle(...)` calls there.
-2. Wire it into `registerAllIpc()` in `src/main/ipc/index.ts`.
-3. Expose via `contextBridge.exposeInMainWorld('xxxApi', { ... })` in `src/preload/index.ts`.
-4. Add the type declaration in `src/renderer/src/env.d.ts`.
-5. Call from the renderer via `window.xxxApi.method(...)`.
+Four steps, none optional. Channel names use `域:动作` form (`bgm:search`, `system:disk-free`).
 
-For new download-progress sources, emit on the unified `download:progress` channel so the existing `downloadApi.onProgress` listener picks it up.
+1. **Main**: add a `registerXxxIpc()` under `src/main/ipc/`, registering `ipcMain.handle('xxx:action', ...)`.
+2. **Wire** it into `registerAllIpc()` in `src/main/ipc/index.ts`.
+3. **Preload**: expose via `contextBridge.exposeInMainWorld('xxxApi', { ... })` forwarding `ipcRenderer.invoke`.
+4. **Types**: declare the `*Api` in `src/renderer/src/env.d.ts`, then call `window.xxxApi.method(...)`.
+
+Prefer `invoke/handle` (has a return value); use `send` for one-way notifications (`app:renderer-ready`); for progress streams use `ipcRenderer.on` returning an unsubscribe fn (see `downloadApi.onProgress`). New download-progress sources must emit on the unified `download:progress` channel.
+
+## Releasing
+
+Pushing a `v*` tag triggers `.github/workflows/release.yml` (Windows + macOS parallel build → draft release). **Before tagging:** bump `package.json`, then run `npm run sync:manifest` and commit the updated `update-manifest.json` alongside the release commit. That manifest is the *only* way clients on the 国内加速 (China-mirror) updater discover a new version — skip it and every mirror-routed user stops getting updates. Mechanism + how to swap proxies: `docs/自动更新-国内加速.md`. Versioning follows SemVer; full flow in the `electron-release` skill and `docs/how-to-release.md`.
 
 ## Window startup detail (don't regress)
 
-`createWindow()` deliberately does **not** call `mainWindow.show()` on `ready-to-show`. The renderer sends `app:renderer-ready` (via `window.systemApi.signalReady()`) after React mount + `document.fonts.ready`; main shows the window then, with a 4s fallback. This avoids the icon-font pop-in flicker. `backgroundColor: '#131313'` matches the dark theme so the pre-render frame isn't white.
+`createWindow()` deliberately does **not** call `mainWindow.show()` on `ready-to-show`. The renderer sends `app:renderer-ready` (via `window.systemApi.signalReady()`) after React mount + `document.fonts.ready`; main shows the window then, with a 4s fallback. This avoids icon-font pop-in flicker. `backgroundColor: '#131313'` matches the dark theme so the pre-render frame isn't white.
