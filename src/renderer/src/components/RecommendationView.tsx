@@ -88,19 +88,24 @@ interface Props {
   filter: RecFilterKey
   /** 跟追番列表共用的搜索 query（标题 / 推荐对象）。 */
   query?: string
+  /** 按推荐人（toWhom）过滤，OR 语义：空数组 = 不过滤；非空 = 命中任一即显示。 */
+  recipients?: string[]
 }
 
-export function RecommendationView({ filter, query = '' }: Props): JSX.Element {
+export function RecommendationView({ filter, query = '', recipients = [] }: Props): JSX.Element {
   const all = useRecommendationList()
   // 拒绝时的小弹窗：记录当前要拒绝的 recId（null = 没在拒绝中）
   const [rejectingId, setRejectingId] = useState<string | null>(null)
 
-  // 列表显示：先按 query 过滤，再按 status filter，最后 createdAt 倒序（最新在顶）。
+  // 列表显示：query → status filter → 推荐人 filter（OR），最后 createdAt 倒序（最新在顶）。
   const visible = useMemo(() => {
     const byQ = all.filter(r => matchesRecommendation(r, query))
-    const list = filter === 'all' ? byQ : byQ.filter(r => r.status === filter)
+    const byStatus = filter === 'all' ? byQ : byQ.filter(r => r.status === filter)
+    const list = recipients.length === 0
+      ? byStatus
+      : byStatus.filter(r => recipients.includes(r.toWhom))
     return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  }, [all, filter, query])
+  }, [all, filter, query, recipients])
 
   const rejectingRec = rejectingId ? all.find(r => r.id === rejectingId) ?? null : null
 

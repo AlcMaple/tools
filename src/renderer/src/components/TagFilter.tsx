@@ -32,12 +32,15 @@ interface Props {
   pinSelected?: boolean
   /** 仅用于文案：多选语义是 AND 还是 OR（实际过滤在外层）。默认 'AND'。 */
   matchMode?: 'AND' | 'OR'
+  /** 过滤维度文案，默认「类型」（按钮 / 标题 / 搜索框 / 空态都用它）。 */
+  label?: string
 }
 
-export function TagFilter({ allTags, selected, onChange, pinSelected = true, matchMode = 'AND' }: Props): JSX.Element {
+export function TagFilter({ allTags, selected, onChange, pinSelected = true, matchMode = 'AND', label = '类型' }: Props): JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (open) {
@@ -45,6 +48,26 @@ export function TagFilter({ allTags, selected, onChange, pinSelected = true, mat
       setTimeout(() => searchRef.current?.focus(), 0)
     } else {
       setQuery('')
+    }
+  }, [open])
+
+  // 点击外部 / Esc 关闭 —— 用 document 监听代替「fixed inset-0 透明遮罩」。
+  // 遮罩会拦截滚轮，导致 popover 开着时滚不动下面的动漫列表（得先关弹窗）。
+  // 去掉遮罩后：滚轮事件自然落到光标下的元素 —— 在 popover 内滚 = 滚类型列表，
+  // 在 popover 外滚 = 滚动漫列表，弹窗保持打开。只有「点击」外部才关。
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
     }
   }, [open])
 
@@ -81,14 +104,16 @@ export function TagFilter({ allTags, selected, onChange, pinSelected = true, mat
   const hasSelection = selected.length > 0
 
   return (
-    <div className="relative inline-block">
+    <div ref={rootRef} className="relative inline-block">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        title={hasSelection ? `按 ${selected.length} 个类型过滤（${matchMode}）` : '按类型过滤'}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border font-label text-[10px] uppercase tracking-widest transition-colors ${
+        title={hasSelection ? `按 ${selected.length} 个${label}过滤（${matchMode}）` : `按${label}过滤`}
+        // 选中态只切颜色 / 底色，**不加 font-bold** —— 加粗会让「类型」变宽、挤动
+        // 旁边的按钮。计数角标用绝对定位（见下），不占文字流，按钮宽高选中前后完全不变。
+        className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border font-label text-[10px] uppercase tracking-widest transition-colors ${
           hasSelection
-            ? 'bg-primary/15 text-primary border-primary/30 font-bold'
+            ? 'bg-primary/15 text-primary border-primary/30'
             : 'bg-surface-container text-on-surface-variant/70 border-outline-variant/20 hover:text-on-surface hover:bg-surface-container-high'
         }`}
       >
@@ -98,9 +123,11 @@ export function TagFilter({ allTags, selected, onChange, pinSelected = true, mat
         >
           tune
         </span>
-        <span>类型</span>
+        <span>{label}</span>
+        {/* 计数角标 —— 绝对定位浮在按钮右上角，**不占文字流**：选中才出现、消失即没有，
+            按钮宽高与右侧留白完全不变（不像内联徽章那样要么挤宽、要么留白）。 */}
         {hasSelection && (
-          <span className="font-mono text-[10px] bg-primary/20 text-primary px-1 rounded">
+          <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-1 rounded-full bg-primary text-on-primary font-mono text-[9px] leading-none flex items-center justify-center">
             {selected.length}
           </span>
         )}
@@ -108,9 +135,9 @@ export function TagFilter({ allTags, selected, onChange, pinSelected = true, mat
 
       {open && (
         <>
-          {/* Click-outside backdrop —— fixed 覆盖整个 viewport 但完全透明,
-              点任意位置（除 popover 内部）即关闭。 */}
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          {/* 不用 fixed 透明遮罩 —— 它会拦滚轮，导致开着 popover 时滚不动列表。
+              改用 document 监听点击外部 / Esc 关闭（见上面 useEffect），滚轮事件
+              不被拦：在 popover 内滚动类型、在外面滚动动漫列表，弹窗保持打开。 */}
 
           {/* Popover panel —— absolute 挂在按钮下方右对齐 */}
           <div className="absolute right-0 top-full mt-2 z-50 w-[320px] bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl shadow-black/30 overflow-hidden">
@@ -124,7 +151,7 @@ export function TagFilter({ allTags, selected, onChange, pinSelected = true, mat
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
-                  placeholder="搜类型…"
+                  placeholder={`搜${label}…`}
                   spellCheck={false}
                   className="flex-1 bg-transparent outline-none text-xs text-on-surface placeholder:text-on-surface-variant/35"
                 />
@@ -144,7 +171,7 @@ export function TagFilter({ allTags, selected, onChange, pinSelected = true, mat
             <div className="custom-scrollbar overflow-y-auto max-h-[360px] py-1">
               {allTags.length === 0 ? (
                 <div className="px-4 py-8 text-center text-on-surface-variant/40 font-label text-[11px]">
-                  还没有任何类型
+                  还没有任何{label}
                 </div>
               ) : ordered.length === 0 ? (
                 <div className="px-4 py-8 text-center text-on-surface-variant/40 font-label text-[11px]">

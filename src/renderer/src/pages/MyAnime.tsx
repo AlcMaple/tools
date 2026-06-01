@@ -169,6 +169,15 @@ export default function MyAnime(): JSX.Element {
     () => countRecsByStatus(recs.filter(r => matchesRecommendation(r, query))),
     [recs, query],
   )
+  // 推荐人聚合 + 命中数 —— 给推荐 tab 的「推荐人」TagFilter popover 用。全集视图
+  // （不按 query/status/已选收窄），按命中数倒序，让用户看到所有推荐过的人。
+  const allRecipientsWithCount = useMemo(() => {
+    const counter = new Map<string, number>()
+    for (const r of recs) counter.set(r.toWhom, (counter.get(r.toWhom) ?? 0) + 1)
+    return [...counter.entries()]
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count)
+  }, [recs])
   // 评判标准弹窗：给 ✨ 好看集 和 🌟 最爱值 提供"什么时候 +1"的参考文档。
   // 入口是 sticky header 标题旁的 help_outline 图标。两个 tab 都能打开（最爱
   // 值在追番 tab 直接相关，但用户可能在推荐 tab 想起来要查标准，所以保持常驻）。
@@ -177,6 +186,9 @@ export default function MyAnime(): JSX.Element {
   // （详见 matchesTags）。仅追番 tab 用；切到推荐 tab 时仍保留 state，回切
   // 不丢用户的过滤选择。
   const [selectedTags, setSelectedTags] = useState<string[]>([])
+  // 推荐 tab 的「按推荐人过滤」—— OR 语义、勾选不置顶（保留命中数顺序），跟追番的
+  // 类型过滤共用 TagFilter 组件。仅推荐 tab 用；切走仍保留 state，回切不丢选择。
+  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([])
 
   // 排序：
   //   - addedDesc（默认）：按添加顺序倒序——最新追的排顶部。
@@ -422,56 +434,35 @@ export default function MyAnime(): JSX.Element {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={() => setNewRecOpen(true)}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-primary/15 text-primary border border-primary/25 font-label text-xs font-bold tracking-widest uppercase hover:bg-primary/25 transition-all"
-              >
-                <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>add</span>
-                新建推荐
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* 按推荐人过滤 —— OR 语义、勾选不置顶（保留命中数顺序） */}
+                <TagFilter
+                  allTags={allRecipientsWithCount}
+                  selected={selectedRecipients}
+                  onChange={setSelectedRecipients}
+                  matchMode="OR"
+                  pinSelected={false}
+                  label="推荐人"
+                />
+                <button
+                  onClick={() => setNewRecOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-primary/15 text-primary border border-primary/25 font-label text-xs font-bold tracking-widest uppercase hover:bg-primary/25 transition-all"
+                >
+                  <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>add</span>
+                  新建推荐
+                </button>
+              </div>
             )}
           </div>
 
-          {/* Row 4：已选 tag chip 行 —— 只在 tracks tab + 有选中 tag 时出现。
-              让"我现在按什么过滤"在 sticky header 永远可见，不滚也能改。
-              chip 点击 = 移除该 tag（跟 popover 里 toggle 同一心智）。 */}
-          {tab !== 'recommendations' && selectedTags.length > 0 && (
-            <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-              <span className="font-label text-[10px] text-on-surface-variant/45 uppercase tracking-widest mr-1">
-                已按 类型 过滤
-              </span>
-              {selectedTags.map(tag => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => setSelectedTags(prev => prev.filter(t => t !== tag))}
-                  title={`移除「${tag}」过滤`}
-                  className="group inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary/12 border border-primary/25 text-primary hover:bg-error/15 hover:border-error/30 hover:text-error font-label text-[10px] font-bold tracking-wider transition-colors"
-                >
-                  <span>{tag}</span>
-                  <span
-                    className="material-symbols-outlined leading-none"
-                    style={{ fontSize: 12 }}
-                  >
-                    close
-                  </span>
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setSelectedTags([])}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-on-surface-variant/55 hover:text-on-surface font-label text-[10px] uppercase tracking-widest transition-colors"
-              >
-                <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>backspace</span>
-                <span>清空</span>
-              </button>
-            </div>
-          )}
+          {/* 已选过滤项不再单独占一行（避免「选中凭空多一行挤列表」或「预留空行留白」
+              二选一的两难）—— 改由「类型 / 推荐人」按钮的右上角计数角标提示，具体选了
+              哪些、增删 / 清空都在该按钮的弹窗里完成（打钩 = 选，footer 有清空）。 */}
         </div>
 
         {/* Body —— 按 tab 切换 */}
         {tab === 'recommendations' ? (
-          <RecommendationView filter={recFilter} query={query} />
+          <RecommendationView filter={recFilter} query={query} recipients={selectedRecipients} />
         ) : tracks.length === 0 ? (
           <EmptyAll />
         ) : filtered.length === 0 ? (
