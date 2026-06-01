@@ -15,6 +15,7 @@
 // - 备注字段在 store 里仍保留（向后兼容老数据），但不再有 UI 入口。
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import TopBar from '../components/TopBar'
 import {
   animeTrackStore,
@@ -808,6 +809,8 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   // 自然的——免去再做一遍 BGM 搜索。
   const [quickRecOpen, setQuickRecOpen] = useState(false)
   const userAddedBindings = track.bindings.filter(isUserAddedBinding)
+  // 小说走「卷 + 章」两级进度，且不用好看集（只留星级）——见下方计数器 / chip 的分支。
+  const isNovel = track.subjectType === 'novel'
 
   // 哪些内置源还没绑过 —— 已绑过的隐藏「+ 搜 X」按钮，留出空间。
   const boundSources = new Set(track.bindings.map(b => b.source))
@@ -826,6 +829,22 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
     // 「想看 → 在追」这个方向仍保留自动切：从 0 集开始 +1 表示"我开始看了",
     // 不存在歧义（不会有人在「想看」状态填 12 表示备忘）。
     if (clamped > 0 && track.status === 'plan') patch.status = 'watching'
+    animeTrackStore.upsert(patch)
+  }
+  // 小说卷 / 章 setter —— 小说用「卷 + 章」两级文本进度替代 episode 数字。
+  // 跟动漫 +1 一样：从「想看」首次推进就自动切「在追」（空 / "0" 不算推进）。
+  const advancesFromPlan = (v: string): boolean => {
+    const t = v.trim()
+    return t !== '' && t !== '0' && track.status === 'plan'
+  }
+  const setNovelVolume = (v: string): void => {
+    const patch: Partial<AnimeTrack> & { bgmId: number } = { bgmId: track.bgmId, novelVolume: v }
+    if (advancesFromPlan(v)) patch.status = 'watching'
+    animeTrackStore.upsert(patch)
+  }
+  const setNovelChapter = (v: string): void => {
+    const patch: Partial<AnimeTrack> & { bgmId: number } = { bgmId: track.bgmId, novelChapter: v }
+    if (advancesFromPlan(v)) patch.status = 'watching'
     animeTrackStore.upsert(patch)
   }
   const setTotalEpisodes = (n: number | undefined): void => {
@@ -1020,17 +1039,29 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
             整体喜爱程度），不能复用同一个 UI 元素。 */}
         <div className="flex items-center gap-4 flex-wrap">
           <StatusSegment current={track.status} onChange={setStatus} />
-          <EpisodeCounter
-            episode={track.episode}
-            total={track.totalEpisodes}
-            onChange={setEpisode}
-            onTotalChange={setTotalEpisodes}
-          />
-          <div className="ml-auto flex items-center gap-3 flex-wrap">
-            <GoodEpisodesChip
-              episodes={track.goodEpisodes}
-              onOpen={() => setGoodEpsOpen(true)}
+          {isNovel ? (
+            <NovelProgress
+              volume={track.novelVolume}
+              chapter={track.novelChapter}
+              onVolumeChange={setNovelVolume}
+              onChapterChange={setNovelChapter}
             />
+          ) : (
+            <EpisodeCounter
+              episode={track.episode}
+              total={track.totalEpisodes}
+              onChange={setEpisode}
+              onTotalChange={setTotalEpisodes}
+            />
+          )}
+          <div className="ml-auto flex items-center gap-3 flex-wrap">
+            {/* 小说不用好看集（卷 / 章颗粒度跟"好看集"的单集语义对不上）——只留星级 */}
+            {!isNovel && (
+              <GoodEpisodesChip
+                episodes={track.goodEpisodes}
+                onOpen={() => setGoodEpsOpen(true)}
+              />
+            )}
             {track.status === 'considering' ? (
               <ObserveCounter
                 value={track.observeCount}
@@ -1367,6 +1398,199 @@ function EpisodeInput({
           className="w-7 bg-transparent outline-none text-center text-on-surface-variant/70 hover:text-on-surface focus:text-on-surface placeholder:text-on-surface-variant/40"
         />
       )}
+    </div>
+  )
+}
+
+// ── Novel progress（小说进度：卷 + 章 两级）──────────────────────────────────
+
+/**
+ * 小说不像动漫 / 漫画一集一个数字 —— 内容是「卷（一级）+ 章（二级）」两级，且卷 / 章
+ * 既可能是数字也可能是「SS2 / 短篇 / 后记」这种自定义文本。行内步进器塞不下变长的
+ * 文本（数字够窄、文本要么截断要么撑爆），所以这里走应用里成熟的「紧凑 chip → 点开
+ * 浮层编辑」范式（同 ✨ 好看集 / TagFilter）：
+ *   - 卡片行上只占一个 chip，显示「卷 X · 章 Y」，长文本 truncate + hover 看全（行永远整齐）
+ *   - 点 chip 弹出浮层，里头两行 NovelLevel 有充足宽度容纳自定义文本，+/- 步进只在
+ *     当前值是纯整数时可用
+ * 不显示"总数"：小说卷数没有动漫"总集数"那种确定语义（常连载 / 含番外），只记读到哪。
+ */
+function NovelProgress({
+  volume, chapter, onVolumeChange, onChapterChange,
+}: {
+  volume: string
+  chapter: string
+  onVolumeChange: (v: string) => void
+  onChapterChange: (v: string) => void
+}): JSX.Element {
+  // 浮层锚点 —— 存 chip 的视口矩形（非 null = 打开）。卡片根是 overflow-hidden，
+  // 绝对定位浮层会被裁，所以浮层 portal 到 body 用 fixed 坐标（同 NotePopover）。
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const started = volume !== '' || chapter !== ''
+  const open = anchor !== null
+
+  const toggle = (): void => {
+    if (open) { setAnchor(null); return }
+    if (btnRef.current) setAnchor(btnRef.current.getBoundingClientRect())
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        title={started ? `卷 ${volume || '—'} · 章 ${chapter || '—'}（点击编辑）` : '记录阅读进度（卷 / 章）'}
+        className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border transition-colors ${
+          started
+            ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20'
+            : 'bg-surface border-dashed border-outline-variant/30 text-on-surface-variant/55 hover:border-primary/40 hover:text-primary'
+        }`}
+      >
+        <span
+          className="material-symbols-outlined leading-none shrink-0"
+          style={{ fontSize: 14, fontVariationSettings: started ? "'FILL' 1" : "'FILL' 0" }}
+        >
+          menu_book
+        </span>
+        {started ? (
+          <span className="font-mono text-xs max-w-[15rem] truncate">
+            卷 {volume || '—'} · 章 {chapter || '—'}
+          </span>
+        ) : (
+          <span className="font-label text-[10px] uppercase tracking-widest">记录进度</span>
+        )}
+      </button>
+
+      {open && (
+        <NovelProgressPopover
+          anchor={anchor}
+          anchorEl={btnRef.current}
+          volume={volume}
+          chapter={chapter}
+          onVolumeChange={onVolumeChange}
+          onChapterChange={onChapterChange}
+          onClose={() => setAnchor(null)}
+        />
+      )}
+    </>
+  )
+}
+
+/**
+ * 卷 / 章 编辑浮层。portal 到 body（避开卡片 overflow-hidden 裁剪），fixed 坐标
+ * 锚定在 chip 下方、贴底翻上方。点浮层 + chip 以外关闭，Esc 关闭。
+ */
+function NovelProgressPopover({
+  anchor, anchorEl, volume, chapter, onVolumeChange, onChapterChange, onClose,
+}: {
+  anchor: DOMRect
+  anchorEl: HTMLElement | null
+  volume: string
+  chapter: string
+  onVolumeChange: (v: string) => void
+  onChapterChange: (v: string) => void
+  onClose: () => void
+}): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // 排除 chip 本身：点 chip 由它自己的 onClick 负责 toggle 关闭，这里若也关一次
+    // 会和 onClick 的重新打开打架（mousedown 先关、click 再开 → 关不掉）。
+    const onDown = (e: MouseEvent): void => {
+      const t = e.target as Node
+      if (ref.current && !ref.current.contains(t) && anchorEl && !anchorEl.contains(t)) onClose()
+    }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [anchorEl, onClose])
+
+  const W = 268
+  const H = 156
+  const left = Math.max(12, Math.min(anchor.left, window.innerWidth - W - 12))
+  const top = anchor.bottom + 8 + H > window.innerHeight ? Math.max(12, anchor.top - H - 8) : anchor.bottom + 8
+
+  return createPortal(
+    <div
+      ref={ref}
+      style={{ position: 'fixed', top, left, width: W, zIndex: 9999 }}
+      className="bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl shadow-black/30 p-3"
+    >
+      <div className="flex flex-col gap-2">
+        <NovelLevel label="卷" value={volume} onChange={onVolumeChange} />
+        <NovelLevel label="章" value={chapter} onChange={onChapterChange} />
+      </div>
+      <p className="mt-2.5 font-body text-[10px] text-on-surface-variant/45 leading-relaxed">
+        默认填数字，+ / − 步进；也可直接填「SS2 / 短篇 / 后记」等自定义文本（此时步进禁用）。
+      </p>
+    </div>,
+    document.body,
+  )
+}
+
+function NovelLevel({
+  label, value, onChange,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+}): JSX.Element {
+  // draft：编辑中本地态，blur / Enter 才 commit（跟 EpisodeInput 一致）。
+  const [draft, setDraft] = useState<string | null>(null)
+  const display = draft ?? value
+  // 纯整数才能 +/- 步进；"SS2" / "后记" 这类自定义文本禁用步进（直接改输入框）。
+  const num = /^\d+$/.test(value) ? parseInt(value, 10) : null
+
+  const commit = (): void => {
+    if (draft === null) return
+    onChange(draft.trim())
+    setDraft(null)
+  }
+  const step = (delta: number): void => {
+    if (num === null) return
+    onChange(String(Math.max(0, num + delta)))
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-5 shrink-0 text-center font-label text-[11px] text-on-surface-variant/60">
+        {label}
+      </span>
+      <button
+        onClick={() => step(-1)}
+        disabled={num === null || num <= 0}
+        title={`上一${label}`}
+        className="w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-on-surface-variant/70 hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-30 disabled:cursor-not-allowed border border-outline-variant/15"
+      >
+        <span className="material-symbols-outlined text-[16px] leading-none">remove</span>
+      </button>
+      {/* 浮层里输入框 flex-1 占满整行宽度 —— 自定义文本（"if「就算大家很年幼」"）
+          有充足空间显示，不再像行内方案那样被截断 / 撑爆卡片。 */}
+      <input
+        type="text"
+        value={display}
+        onChange={e => setDraft(e.target.value)}
+        onFocus={() => setDraft(value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.currentTarget.blur() }
+          if (e.key === 'Escape') { setDraft(null); e.currentTarget.blur() }
+        }}
+        placeholder="—"
+        className="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface border border-outline-variant/15 outline-none text-center font-mono text-xs text-on-surface placeholder:text-on-surface-variant/35 focus:border-primary/40 transition-colors"
+      />
+      <button
+        onClick={() => step(1)}
+        disabled={num === null}
+        title={num === null ? '当前是自定义文本，无法 +1（改成数字后可用）' : `下一${label}`}
+        className="w-7 h-7 shrink-0 rounded-md flex items-center justify-center border transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-primary border-primary/30 bg-primary/10 hover:bg-primary/20 disabled:text-on-surface-variant/30 disabled:border-outline-variant/15 disabled:bg-transparent"
+      >
+        <span className="material-symbols-outlined text-[16px] leading-none">add</span>
+      </button>
     </div>
   )
 }
