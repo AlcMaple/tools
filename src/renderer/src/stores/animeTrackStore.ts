@@ -100,6 +100,18 @@ export interface AnimeTrack {
   episode: number
   /** From BGM detail when known; left undefined for ongoing series with TBD count. */
   totalEpisodes?: number
+  /**
+   * 小说阅读进度 —— 一级=卷 / 二级=章。**仅 subjectType==='novel' 用**；
+   * 动漫 / 漫画走上面的 episode 数字模型，这俩字段保持 ''。
+   *
+   * 用 string 而非 number 是刻意的：默认是数字（"12" / "6"），但现实里第 12 卷
+   * 之后可能是「SS2 / 短篇集」、第 6 章之后可能是「后记」，纯数字表达不了，所以
+   * 允许任意文本。UI 的 +/- 步进只在当前值是纯整数时生效（非数字时禁用，让用户
+   * 直接改文本框）。老 track / 非小说没这俩字段时 normalize() 默认 ''（= 未开始），
+   * 零手动迁移。小说不用好看集（goodEpisodes 留空），只保留 favorite 星级。
+   */
+  novelVolume: string
+  novelChapter: string
   /** Per-source bindings — empty in step 1a, populated in step 1b. */
   bindings: AnimeBinding[]
   notes: string[]
@@ -339,6 +351,10 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     : 'anime'
   const episode = typeof t.episode === 'number' && t.episode >= 0 ? Math.floor(t.episode) : 0
   const total = typeof t.totalEpisodes === 'number' && t.totalEpisodes > 0 ? Math.floor(t.totalEpisodes) : undefined
+  // 小说卷 / 章进度 —— 字符串（默认数字，允许 "SS2" / "后记" 等自定义文本）。
+  // 老 track / 非小说没这俩字段时默认 ''（未开始）。只 trim 收敛，不做数字校验。
+  const novelVolume = typeof t.novelVolume === 'string' ? t.novelVolume.trim() : ''
+  const novelChapter = typeof t.novelChapter === 'string' ? t.novelChapter.trim() : ''
   const notes = Array.isArray(t.notes) ? t.notes.filter((s): s is string => typeof s === 'string' && s.trim().length > 0) : []
   const bindings = Array.isArray(t.bindings) ? t.bindings.filter(b => b && typeof b === 'object') as AnimeBinding[] : []
   // 最爱值 clamp 到 [0, FAVORITE_MAX]，老数据没这字段就当 0
@@ -368,6 +384,8 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     status,
     episode: total != null ? Math.min(episode, total) : episode,
     totalEpisodes: total,
+    novelVolume,
+    novelChapter,
     bindings,
     notes,
     favorite,
