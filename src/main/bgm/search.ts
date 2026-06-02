@@ -154,7 +154,9 @@ async function saveCache(html: string, keyword: string, page: number, cat: BgmSe
 
 // ── Fetch with full defense stack ─────────────────────────────────────────────
 
-async function rawGet(url: string): Promise<{ status: number; body: Buffer }> {
+async function rawGet(
+  url: string,
+): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: Buffer }> {
   // 走 Electron net（Chromium 网络栈）—— 自动用系统代理，修掉 Node https 直连
   // fake-ip 假地址导致的冷启动超时。net 自己解压，所以不再 decodeBody。
   const res = await netRequest(url, {
@@ -165,7 +167,42 @@ async function rawGet(url: string): Promise<{ status: number; body: Buffer }> {
     timeoutMs: 10000,
   })
   session.ingestSetCookie(res.headers as { 'set-cookie'?: string[] })
-  return { status: res.status, body: res.body }
+  return { status: res.status, headers: res.headers, body: res.body }
+}
+
+/**
+ * 【临时诊断】把失败响应的关键信号拼成一行 —— 用来判断 bgm.tv 的 502 / 4xx / 5xx
+ * 到底是「Cloudflare 盾挑战 / 防护拦截」还是「纯 CDN 网关错误」，决定要不要上
+ * 隐藏 BrowserWindow 兜底（真浏览器才有的 TLS 指纹 / cf-clearance / HTTP2 能过盾，
+ * 但对纯随机 CDN 抖动帮助有限）。既打 main 控制台、也塞进抛出的 Error，让 UI 的
+ * 「Show details」能直接看到（main 日志在打包后用户看不到，UI 能截图给开发者）。
+ *
+ * 关注的指纹：server（cloudflare?）、cf-ray / cf-mitigated / cf-cache-status（命中
+ * 了 CF 哪种处理）、via（其它 CDN）、content-type、retry-after；body 前 300 字用来
+ * 认 CF 挑战页特征（"Just a moment" / "cf-chl" / "Attention Required"）。
+ * 诊断清楚后这段可以删。
+ */
+function diagnoseFailure(
+  status: number,
+  headers: Record<string, string | string[] | undefined>,
+  body: Buffer,
+): string {
+  const h = (k: string): string => {
+    const v = headers[k.toLowerCase()]
+    return Array.isArray(v) ? v.join(',') : v ?? '-'
+  }
+  const signals = [
+    `status=${status}`,
+    `server=${h('server')}`,
+    `cf-ray=${h('cf-ray')}`,
+    `cf-mitigated=${h('cf-mitigated')}`,
+    `cf-cache-status=${h('cf-cache-status')}`,
+    `via=${h('via')}`,
+    `content-type=${h('content-type')}`,
+    `retry-after=${h('retry-after')}`,
+  ].join(' ')
+  const snippet = body.toString('utf-8').slice(0, 300).replace(/\s+/g, ' ').trim()
+  return `${signals} | body[0:300]=${snippet}`
 }
 
 /**
@@ -193,7 +230,10 @@ export async function fetchHtmlWithDefenses(url: string): Promise<string> {
       throw new RateLimitError(30, 'BGM 返回 HTTP 429，触发限流')
     }
     if (r.status >= 400) {
-      throw new Error(`BGM 返回 HTTP ${r.status}`)
+      // 【临时诊断】抓 CDN/防护指纹 + body 片段：判断 502 是 CF 盾挑战还是纯网关错误。
+      const diag = diagnoseFailure(r.status, r.headers, r.body)
+      console.warn(`[bgm-search-diag] HTTP ${r.status} on ${url}\n  ${diag}`)
+      throw new Error(`BGM 返回 HTTP ${r.status} ｜ ${diag}`)
     }
     const body = r.body.toString('utf-8')
     // 限流页 body 检测 —— BGM 搜索经常返 200 + 中文"您在 N 秒内只能进行
