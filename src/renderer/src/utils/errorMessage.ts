@@ -197,7 +197,7 @@ export function friendlyError(err: unknown): FriendlyError {
     return {
       title: isTimeout ? '请求超时' : '连不上服务器',
       hint: isTimeout
-        ? '服务器 10 秒内没响应。如果浏览器能打开网站，多半是该网站对你这个 IP 暂时限速 / 丢包；先停手几分钟让窗口自然衰减，再 Try again。'
+        ? '服务器 10 秒内没响应，可能是网络抖动或站点暂时慢。先点 Try again 重试；连续多次超时才可能是该 IP 被限速，那时再停手等几分钟。'
         : '可能是网站挂了或你网络有问题，过会儿再试，或检查代理设置',
       raw: msg,
     }
@@ -209,20 +209,22 @@ export function friendlyError(err: unknown): FriendlyError {
     const code = parseInt(statusMatch[1])
     if (code >= 500) {
       // BGM-specific 5xx —— 用户经常报告"网页能开但 app 失败"，措辞不能让
-      // 用户误以为 BGM 全站挂了。说清楚是"针对这次请求的偶发故障"，已经
-      // 重试过几次仍不行，建议稍候再来。
+      // 用户误以为 BGM 全站挂了。说清楚是"针对这次请求的偶发故障"，引导
+      // 用户点 Try again 重试或稍候再来。
+      // 注意：5xx **不做应用层自动重试**（红线，见 bgm/search.ts、api-client.ts），
+      // 所以文案不能谎称"已自动重试" —— 重试由用户点 Try again 触发。
       const isBgm = /\bBGM\b/.test(msg)
       if (isBgm && code === 502) {
         return {
           title: 'BGM 偶发故障',
-          hint: 'BGM 那边某个 CDN 节点这会儿没响应（HTTP 502），已经替你自动重试了几次。这通常一两分钟自己就好；浏览器能打开 BGM 是因为浏览器命中了其他节点。歇一会儿再来。',
+          hint: 'BGM 那边某个 CDN 节点这会儿没响应（HTTP 502）。这种偶发故障通常一两分钟自己就好；浏览器能打开 BGM 是因为命中了其他节点。点 Try again 重试，或歇一会儿再来。',
           raw: msg,
         }
       }
       if (isBgm) {
         return {
           title: 'BGM 站点异常',
-          hint: `BGM 暂时无响应（HTTP ${code}），已自动重试。是 BGM 那边的问题，不是你的网络。稍候再试。`,
+          hint: `BGM 暂时无响应（HTTP ${code}），是 BGM 那边的问题，不是你的网络。点 Try again 重试，或稍候再来。`,
           raw: msg,
         }
       }
