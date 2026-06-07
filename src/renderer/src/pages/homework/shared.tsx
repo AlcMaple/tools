@@ -1,6 +1,7 @@
 // Shared types, helpers, and primitive UI used by HomeworkView / ClassicView.
 
 import { useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 export interface Attack {
   id: number
@@ -326,13 +327,53 @@ export function Highlight({ text, query }: { text: string; query: string }): JSX
 }
 
 export function ModalShell({ onBackdrop, children }: { onBackdrop: () => void; children: React.ReactNode }): JSX.Element {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+  // 经 portal 渲染到 document.body —— 否则当弹窗被挂在带 content-visibility/contain
+  // 的祖先(如 MyAnime 的 TrackRow)内部时,`position: fixed` 会以该祖先为定位基准,
+  // 遮罩被"困"在那一行里、内嵌进列表。portal 让它脱离任何 containing block,稳定铺满视口。
+  // text-on-surface / font-body 自带 —— portal 到 body 后脱离了 App 根 div 的
+  // 继承链,不显式声明的话文字会落到浏览器默认黑色。
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center text-on-surface font-body">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onBackdrop} />
       <div className="relative bg-surface-container-high backdrop-blur rounded-xl border border-outline-variant/25 shadow-2xl w-[520px] max-w-[92vw]">
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
+  )
+}
+
+// 弹窗页脚按钮 —— 全项目弹窗(作业新增/编辑、推荐新建/拒绝…)共用同一套样式,
+// 避免每处各抄一遍导致圆角/内边距/取消按钮文案样式飘移。语义变体:
+//   - cancel:中性描边(取消/关闭)
+//   - primary:主操作(保存/创建),禁用时实底降透明
+//   - secondary / tertiary:次要保存(如"新增防守阵容""新增作业"用不同色区分)
+//   - danger:危险确认(拒绝/删除)
+// 其余按钮属性(onClick / disabled / type)透传;icon 传 material-symbols 名即可。
+type ModalButtonVariant = 'cancel' | 'primary' | 'secondary' | 'tertiary' | 'danger'
+
+const MODAL_BUTTON_VARIANT: Record<ModalButtonVariant, string> = {
+  cancel: 'border-outline-variant/20 font-label text-on-surface-variant hover:bg-surface-container-high',
+  primary: 'border-primary/40 bg-primary/10 font-bold text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed',
+  secondary: 'border-secondary/40 bg-secondary/10 font-bold text-secondary hover:bg-secondary/20 disabled:opacity-40 disabled:cursor-not-allowed',
+  tertiary: 'border-tertiary/40 bg-tertiary/10 font-bold text-tertiary hover:bg-tertiary/20 disabled:opacity-40 disabled:cursor-not-allowed',
+  danger: 'border-error/40 bg-error/10 font-bold text-error hover:bg-error/20 disabled:opacity-40 disabled:cursor-not-allowed',
+}
+
+export function ModalButton({
+  variant = 'cancel', icon, children, className = '', ...rest
+}: {
+  variant?: ModalButtonVariant
+  icon?: string
+} & React.ButtonHTMLAttributes<HTMLButtonElement>): JSX.Element {
+  return (
+    <button
+      {...rest}
+      className={`flex-1 py-3 rounded-xl border text-sm transition-colors flex items-center justify-center gap-2 ${MODAL_BUTTON_VARIANT[variant]} ${className}`}
+    >
+      {icon && <span className="material-symbols-outlined text-base leading-none">{icon}</span>}
+      {children}
+    </button>
   )
 }
 

@@ -6,7 +6,7 @@
 // 顺手推给谁"的场景，后者更高频。
 
 import { useState } from 'react'
-import { ModalShell } from '../pages/homework/shared'
+import { ModalShell, ModalButton } from '../pages/homework/shared'
 import { recommendationStore } from '../stores/recommendationStore'
 import type { AnimeTrack } from '../stores/animeTrackStore'
 
@@ -19,8 +19,10 @@ interface Props {
 }
 
 export function QuickRecommendModal({ track, onClose, onCreated }: Props): JSX.Element {
+  const [fromWhom, setFromWhom] = useState('')
   const [toWhom, setToWhom] = useState('')
-  const canSubmit = toWhom.trim().length > 0
+  // 推荐方 + 推荐对方都必填才能提交。
+  const canSubmit = fromWhom.trim().length > 0 && toWhom.trim().length > 0
   const display = track.titleCn || track.title
 
   const submit = (): void => {
@@ -30,6 +32,7 @@ export function QuickRecommendModal({ track, onClose, onCreated }: Props): JSX.E
       title: track.title,
       titleCn: track.titleCn,
       cover: track.cover,
+      fromWhom: fromWhom.trim(),
       toWhom: toWhom.trim(),
     })
     onCreated?.()
@@ -57,6 +60,23 @@ export function QuickRecommendModal({ track, onClose, onCreated }: Props): JSX.E
           </div>
         </div>
 
+        {/* 推荐方输入 */}
+        <div>
+          <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">
+            谁推荐的
+          </label>
+          <input
+            type="text"
+            value={fromWhom}
+            onChange={e => setFromWhom(e.target.value)}
+            placeholder="例：我 / 妹妹 / 群友老王"
+            maxLength={40}
+            autoFocus
+            spellCheck={false}
+            className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
+          />
+        </div>
+
         {/* 推荐对象输入 */}
         <div>
           <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">
@@ -69,7 +89,6 @@ export function QuickRecommendModal({ track, onClose, onCreated }: Props): JSX.E
             onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && canSubmit) submit() }}
             placeholder="例：Bob / 妹妹 / 群里"
             maxLength={40}
-            autoFocus
             spellCheck={false}
             className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
           />
@@ -77,20 +96,10 @@ export function QuickRecommendModal({ track, onClose, onCreated }: Props): JSX.E
 
         {/* Footer */}
         <div className="flex items-center gap-3 pt-1">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-lg border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors"
-          >
-            取消
-          </button>
-          <button
-            onClick={submit}
-            disabled={!canSubmit}
-            className="flex-1 py-2.5 rounded-lg border border-primary/40 bg-primary/10 text-primary font-bold text-sm hover:bg-primary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <span className="material-symbols-outlined text-base leading-none">campaign</span>
+          <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
+          <ModalButton variant="primary" icon="campaign" onClick={submit} disabled={!canSubmit}>
             创建推荐
-          </button>
+          </ModalButton>
         </div>
       </div>
     </ModalShell>
