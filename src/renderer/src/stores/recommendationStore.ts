@@ -24,7 +24,10 @@ export interface Recommendation {
   title: string
   titleCn?: string
   cover?: string
-  /** 推荐给谁，自由文本（"Bob" / "妹妹" / "群里"）。 */
+  /** 推荐方，谁推的，自由文本（"我" / "妹妹" / "群友老王"）。新建必填；
+   *  老数据没有这个字段 —— normalize 给空串兜底，展示层据此退回"推荐给 X"。 */
+  fromWhom: string
+  /** 推荐对方，推给谁，自由文本（"Bob" / "妹妹" / "群里"）。 */
   toWhom: string
   status: RecommendationStatus
   /** 仅在 status === 'rejected' 时有意义。 */
@@ -51,6 +54,8 @@ export function normalizeRecommendations(input: unknown): Recommendation[] {
       title: typeof r.title === 'string' ? r.title : '',
       titleCn: typeof r.titleCn === 'string' && r.titleCn.length > 0 ? r.titleCn : undefined,
       cover: typeof r.cover === 'string' && r.cover.length > 0 ? r.cover : undefined,
+      // 推荐方是后加字段:老记录没有 → 空串;展示层用空串退回"推荐给 X"。
+      fromWhom: typeof r.fromWhom === 'string' ? r.fromWhom.trim() : '',
       toWhom: r.toWhom,
       status,
       failReason:
@@ -114,6 +119,7 @@ class RecommendationStore {
     title: string
     titleCn?: string
     cover?: string
+    fromWhom: string
     toWhom: string
   }): Recommendation {
     const r: Recommendation = {
@@ -122,6 +128,7 @@ class RecommendationStore {
       title: input.title,
       titleCn: input.titleCn,
       cover: input.cover,
+      fromWhom: input.fromWhom.trim(),
       toWhom: input.toWhom.trim(),
       status: 'pending',
       createdAt: new Date().toISOString(),

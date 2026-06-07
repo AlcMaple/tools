@@ -1,7 +1,7 @@
 import { useEffect, useImperativeHandle, useState, forwardRef } from 'react'
 import {
   ClassicGroup, ClassicTeam,
-  Highlight, ModalShell, FormField, ModalInput,
+  Highlight, ModalShell, ModalButton, FormField, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
   createTeamPasteHandler,
   commonPrefixLen, matchesClassic, todayStr, cleanCharName,
@@ -88,17 +88,10 @@ function AddClassicModal({
       </div>
 
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
-        <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors">
-          取消
-        </button>
-        <button
-          onClick={() => onSave(noteState.finalNotes())}
-          disabled={!canSave}
-          className="flex-1 py-3 rounded-xl border border-tertiary/40 bg-tertiary/10 text-sm font-bold text-tertiary hover:bg-tertiary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <span className="material-symbols-outlined text-base leading-none">save</span>
+        <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
+        <ModalButton variant="tertiary" icon="save" onClick={() => onSave(noteState.finalNotes())} disabled={!canSave}>
           保存
-        </button>
+        </ModalButton>
       </div>
     </ModalShell>
   )
@@ -138,17 +131,10 @@ function EditTitleModal({
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
-        <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors">
-          取消
-        </button>
-        <button
-          onClick={() => onSave(value.trim())}
-          disabled={!canSave}
-          className="flex-1 py-3 rounded-xl border border-tertiary/40 bg-tertiary/10 text-sm font-bold text-tertiary hover:bg-tertiary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <span className="material-symbols-outlined text-base leading-none">save</span>
+        <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
+        <ModalButton variant="tertiary" icon="save" onClick={() => onSave(value.trim())} disabled={!canSave}>
           保存修改
-        </button>
+        </ModalButton>
       </div>
     </ModalShell>
   )
@@ -215,17 +201,10 @@ function EditTeamModal({
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
-        <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors">
-          取消
-        </button>
-        <button
-          onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())}
-          disabled={!canSave}
-          className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <span className="material-symbols-outlined text-base leading-none">save</span>
+        <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
+        <ModalButton variant="secondary" icon="save" onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())} disabled={!canSave}>
           保存修改
-        </button>
+        </ModalButton>
       </div>
     </ModalShell>
   )
@@ -288,17 +267,10 @@ function AddTeamModal({
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
-        <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors">
-          取消
-        </button>
-        <button
-          onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())}
-          disabled={!canSave}
-          className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <span className="material-symbols-outlined text-base leading-none">save</span>
+        <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
+        <ModalButton variant="secondary" icon="save" onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())} disabled={!canSave}>
           保存
-        </button>
+        </ModalButton>
       </div>
     </ModalShell>
   )
@@ -353,13 +325,8 @@ function DeleteClassicModal({
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
-        <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors">
-          取消
-        </button>
-        <button onClick={onConfirm} className="flex-1 py-3 rounded-xl border border-error/40 bg-error/10 text-sm font-bold text-error hover:bg-error/20 transition-colors flex items-center justify-center gap-2">
-          <span className="material-symbols-outlined text-base leading-none">delete</span>
-          删除整组
-        </button>
+        <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
+        <ModalButton variant="danger" icon="delete" onClick={onConfirm}>删除整组</ModalButton>
       </div>
     </ModalShell>
   )
@@ -408,13 +375,8 @@ function DeleteTeamModal({
         </div>
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
-        <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors">
-          取消
-        </button>
-        <button onClick={onConfirm} className="flex-1 py-3 rounded-xl border border-error/40 bg-error/10 text-sm font-bold text-error hover:bg-error/20 transition-colors flex items-center justify-center gap-2">
-          <span className="material-symbols-outlined text-base leading-none">delete</span>
-          删除该条
-        </button>
+        <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
+        <ModalButton variant="danger" icon="delete" onClick={onConfirm}>删除该条</ModalButton>
       </div>
     </ModalShell>
   )
