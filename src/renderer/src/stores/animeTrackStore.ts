@@ -294,36 +294,6 @@ export function compressGoodEpisodes(eps: number[]): string {
 }
 
 /**
- * 解析 PDF/用户手敲的紧凑字符串成集号数组：
- *   "1、4-5、16-19" → [1, 4, 5, 16, 17, 18, 19]
- *   "1,4-5,16-19"  → 同上（兼容半角逗号、空格）
- *   "1; 4 - 5"     → 同上（兼容分号、连字符两端空格）
- * 非法 token 静默忽略；返回值已 normalize（去重升序）。本函数主要给未来的
- * "粘贴 PDF 数据"导入路径用，当前 modal 编辑器不需要它，但放在 store 旁边
- * 跟 compress 对仗更顺手。
- */
-export function parseGoodEpisodes(text: string): number[] {
-  const out: number[] = []
-  const parts = text.split(/[、,;\s]+/).map(s => s.trim()).filter(Boolean)
-  for (const p of parts) {
-    const m = p.match(/^(\d+)\s*-\s*(\d+)$/)
-    if (m) {
-      const a = parseInt(m[1], 10)
-      const b = parseInt(m[2], 10)
-      if (a > 0 && b > 0) {
-        const lo = Math.min(a, b)
-        const hi = Math.max(a, b)
-        for (let i = lo; i <= hi; i++) out.push(i)
-      }
-      continue
-    }
-    const n = parseInt(p, 10)
-    if (!Number.isNaN(n) && n > 0) out.push(n)
-  }
-  return normalizeGoodEpisodes(out)
-}
-
-/**
  * Idempotent normalize for an array of unknown tracks — used both for
  * localStorage read and for the WebDAV pull path. Filters out entries
  * without a numeric bgmId, deduplicates by bgmId (keeps the last one in
