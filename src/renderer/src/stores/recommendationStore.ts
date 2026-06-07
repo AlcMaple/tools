@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react'
 import { scheduleStorageWrite } from '../utils/deferredStorage'
+import { reportError, backupCorrupt } from '../utils/reportError'
 
 export type RecommendationStatus = 'pending' | 'accepted' | 'rejected'
 
@@ -63,11 +64,14 @@ export function normalizeRecommendations(input: unknown): Recommendation[] {
 }
 
 function readAll(): Recommendation[] {
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) return []
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
     return normalizeRecommendations(JSON.parse(raw))
-  } catch {
+  } catch (err) {
+    // 解析失败不静默清空:备份坏数据 + 落盘报错(同 animeTrackStore)。
+    backupCorrupt(STORAGE_KEY, raw)
+    reportError('recommendationStore', err)
     return []
   }
 }

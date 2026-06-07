@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSystemStats } from "../hooks/useSystemStats";
 import { updateStore, type UpdateState } from "../stores/updateStore";
+import { reportError } from "../utils/reportError";
 
 // ── persistence keys ─────────────────────────────────────────
 const NODE_ID_KEY = "xifan_node_id";
@@ -719,7 +720,7 @@ function Settings(): JSX.Element {
     }
     window.webdavApi.saveConfig(cur).then(() => {
       lastSavedWebdav.current = { account: cur.account, password: cur.appPassword, path: cur.remotePath };
-    }).catch(() => {});
+    }).catch((err) => reportError("settings:webdav-save", err));
   };
 
   // 系统默认下载文件夹 —— 留空 Settings.downloadPath 时主进程下载器会回退
@@ -790,7 +791,7 @@ function Settings(): JSX.Element {
           setMailHasAuthCode(true);
         }
       })
-      .catch(() => { /* 失败保持现状，用户自然会发现没生效 */ });
+      .catch((err) => reportError("settings:mail-save", err));
   };
 
   const handleMailToggle = (next: boolean): void => {

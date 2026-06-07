@@ -12,6 +12,7 @@ import { createDecipheriv } from 'crypto'
 import { spawn } from 'child_process'
 import { BrowserWindow, session as electronSession, app } from 'electron'
 import { DESKTOP_USER_AGENT, safeName, DlEvent } from '../shared/download-types'
+import { logError } from '../shared/logger'
 
 export type { DlEvent }
 
@@ -61,7 +62,11 @@ async function captureM3u8(epUrl: string, cookieString: string): Promise<string 
         resolve(url)
       }
 
-      const timer = setTimeout(() => done(null), 30000)
+      const timer = setTimeout(() => {
+        // 30s 没截到 m3u8 —— 留痕,否则用户只看到"下载失败"不知卡在抓流这步。
+        logError('girigiri:capture', `30s 超时未截获 m3u8: ${epUrl}`)
+        done(null)
+      }, 30000)
 
       // Intercept network requests to find the real m3u8 playlist.
       // Strict: pathname (case-insensitive) must end with `.m3u8` so we don't
@@ -79,8 +84,11 @@ async function captureM3u8(epUrl: string, cookieString: string): Promise<string 
         done(details.url)
       })
 
-      win.loadURL(epUrl).catch(() => done(null))
-      win.on('closed', () => done(null))
+      win.loadURL(epUrl).catch((err) => {
+        logError('girigiri:capture', `页面加载失败 ${epUrl}: ${err}`)
+        done(null)
+      })
+      win.once('closed', () => done(null))
     })
   })
 }

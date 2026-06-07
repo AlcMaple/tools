@@ -15,6 +15,7 @@
  * fields optional on the common type; `init()` migrates those into the new
  * shape and drops anything that can't be reconstructed.
  */
+import { reportError } from '../utils/reportError'
 
 interface TaskCommon {
   id: string
@@ -152,9 +153,10 @@ export const downloadStore = {
   async init(): Promise<void> {
     try {
       const saved = await window.systemApi.loadDownloadState()
+      let dropped = 0
       for (const raw of (saved as unknown[])) {
         const t = migrateLoadedTask(raw)
-        if (!t) continue
+        if (!t) { dropped++; continue }
         if (t.status === 'running' || t.status === 'paused') {
           const newEpStatus = { ...t.epStatus }
           for (const ep of Object.keys(newEpStatus)) {
@@ -166,7 +168,11 @@ export const downloadStore = {
           tasks.set(t.id, t)
         }
       }
-    } catch { /* ignore corrupted file */ }
+      // 有任务因 schema 不全被丢弃时留痕,否则"下载任务重启后消失"无从查起。
+      if (dropped > 0) reportError('downloadStore', `${dropped} 个下载任务因数据不完整无法恢复,已跳过`)
+    } catch (err) {
+      reportError('downloadStore', err)
+    }
     flushListeners()
   },
 
