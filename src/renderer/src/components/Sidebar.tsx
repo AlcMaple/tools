@@ -9,14 +9,14 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: "Local Library", path: "/", icon: "subscriptions" },
-  { label: "Search & Download", path: "/search", icon: "search" },
-  { label: "Download Queue", path: "/queue", icon: "download_for_offline" },
-  { label: "Anime Info", path: "/anime-info", icon: "menu_book" },
-  { label: "My Anime", path: "/my-anime", icon: "bookmarks" },
-  { label: "Calendar", path: "/calendar", icon: "calendar_month" },
-  { label: "File Explorer", path: "/file-explorer", icon: "folder_managed" },
-  { label: "Homework", path: "/homework", icon: "swords" },
+  { label: "本地播放器", path: "/", icon: "subscriptions" },
+  { label: "搜索下载", path: "/search", icon: "search" },
+  { label: "下载队列", path: "/queue", icon: "download_for_offline" },
+  { label: "动漫查询", path: "/anime-info", icon: "menu_book" },
+  { label: "我的追番", path: "/my-anime", icon: "bookmarks" },
+  { label: "番剧周历表", path: "/calendar", icon: "calendar_month" },
+  { label: "资源管理器", path: "/file-explorer", icon: "folder_managed" },
+  { label: "作业查询", path: "/homework", icon: "swords" },
 ];
 
 function Sidebar(): JSX.Element {
