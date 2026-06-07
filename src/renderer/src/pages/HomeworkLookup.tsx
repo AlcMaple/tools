@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
+import { probe, probeToPaint } from '../utils/probe'
 import HomeworkView, { HomeworkViewHandle } from './homework/HomeworkView'
 import ClassicView, { ClassicViewHandle } from './homework/ClassicView'
 import LogView, { LogViewHandle } from './homework/LogView'
@@ -307,7 +308,9 @@ export default function HomeworkLookup(): JSX.Element {
     if (syncStatus === 'syncing' || syncConfirm) return
     setSyncConfirm({ direction, loading: true, remote: null, forceArmed: false })
     try {
+      const end = probe('webdav:homework-pull-fetch')
       const jsonStr = await window.webdavApi.pull('homework')
+      end(`${jsonStr.length}B`)
       const parsed = parseRemoteBlob(jsonStr)
       setSyncConfirm({ direction, loading: false, remote: parsed, forceArmed: false })
     } catch (e: unknown) {
@@ -342,7 +345,9 @@ export default function HomeworkLookup(): JSX.Element {
         classic: classicData,
         log: logData,
       })
+      const end = probe(`webdav:homework-push(${blob.length}B)`)
       await window.webdavApi.push('homework', blob)
+      end()
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(newRev)
@@ -375,6 +380,7 @@ export default function HomeworkLookup(): JSX.Element {
       setPjjcData(newPjjc)
       setClassicData(newClassic)
       setLogData(newLog)
+      probeToPaint('webdav:homework-pull-apply')
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(remote.rev)
