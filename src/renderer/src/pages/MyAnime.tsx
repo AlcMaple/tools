@@ -14,7 +14,7 @@
 //   tracks 字段做无感迁移（详见 AnimeSyncBar）。
 // - 备注字段在 store 里仍保留（向后兼容老数据），但不再有 UI 入口。
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import TopBar from '../components/TopBar'
 import {
@@ -786,7 +786,12 @@ function FilterChip({
 // 其他来源（Bilibili / Custom）走 AddBindingModal 单独的「+ 添加链接」入口。
 const BUILTIN_SOURCES: ReadonlyArray<Source> = ['Aowu', 'Xifan', 'Girigiri']
 
-function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
+// memo —— 列表里每行都订阅不到 store，渲染只依赖 `track` 这一个 prop。
+// store.upsert 只替换被改那一条 track 的对象引用（其他 key 的对象身份不变），
+// filtered 又是纯 .filter/.reverse/.sort 不克隆元素 —— 所以单条编辑 / 搜索框
+// 输入触发 MyAnime 重渲染时，未变的行 props 引用不变，memo 直接跳过，避免
+// 上百行整列重渲染的卡顿（这是进 MyAnime 后交互发顿的主因）。
+const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const displayTitle = track.titleCn || track.title
   const nativeTitle = track.titleCn && track.title !== track.titleCn ? track.title : ''
   const coverSrc = useCover(String(track.bgmId), track.cover)
@@ -884,7 +889,15 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
     setAddingTag(false)
   }
   return (
-    <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex min-h-[140px]">
+    <div
+      className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex min-h-[140px]"
+      // content-visibility:auto —— 让浏览器跳过视口外行的布局/绘制（首屏只
+      // 真正排版可见的几行），上百条追番时初次进入 MyAnime 的同步排版开销大幅
+      // 降低；contain-intrinsic-size 给出占位高度（≈卡片下限 140），让滚动条
+      // 尺寸和滚动位置保持稳定。reconciliation 仍会建全部 DOM 节点，这条只省
+      // 浏览器侧的 layout/paint —— 配合上面的 memo（省 JS 重渲染）一起减负。
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 140px' }}
+    >
       {/* Cover —— useCover 把 URL 解析成本地 archivist://（含老数据"回填"：
           首次渲染时后台下载，下次走本地）。没封面 / 加载失败回落占位图。
 
@@ -1227,7 +1240,7 @@ function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
       )}
     </div>
   )
-}
+})
 
 // ── Status segment ───────────────────────────────────────────────────────────
 

@@ -10,6 +10,7 @@
 //   - WebDAV 同步走 anime.json blob 的新字段 recommendations（AnimeSyncBar 已扩展）
 
 import { useEffect, useState } from 'react'
+import { scheduleStorageWrite } from '../utils/deferredStorage'
 
 export type RecommendationStatus = 'pending' | 'accepted' | 'rejected'
 
@@ -86,8 +87,14 @@ class RecommendationStore {
 
   private persist(): void {
     if (this.cache === null) return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.cache))
+    // 同 animeTrackStore：先同步通知 UI，再把序列化 + 写盘挪到 idle 合并执行。
     this.listeners.forEach(cb => cb())
+    scheduleStorageWrite(STORAGE_KEY, () => {
+      if (this.cache === null) return
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.cache))
+      } catch { /* ignore quota errors */ }
+    })
   }
 
   list(): Recommendation[] {
