@@ -17,7 +17,7 @@ import {
   type Recommendation,
   type RecommendationStatus,
 } from '../stores/recommendationStore'
-import { ModalShell } from '../pages/homework/shared'
+import { ModalShell, ModalButton } from '../pages/homework/shared'
 import { useCover } from '../hooks/useCover'
 import coverFallback from '../assets/cover-fallback.png'
 
@@ -55,13 +55,13 @@ export const REC_STATUS_META: Record<RecommendationStatus, {
 
 /**
  * 推荐的搜索匹配 —— 跟追番列表的搜索框共用同一个 query state（MyAnime 持有）。
- * 匹配维度：标题 / 中文标题 / 推荐对象（toWhom）。大小写不敏感子串匹配。
- * 空 query 视为全命中，让"没搜索"时列表完整。
+ * 匹配维度：标题 / 中文标题 / 推荐方（fromWhom）/ 推荐对方（toWhom）。
+ * 大小写不敏感子串匹配。空 query 视为全命中，让"没搜索"时列表完整。
  */
 export function matchesRecommendation(rec: Recommendation, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
-  return [rec.title, rec.titleCn ?? '', rec.toWhom]
+  return [rec.title, rec.titleCn ?? '', rec.fromWhom, rec.toWhom]
     .join(' ')
     .toLowerCase()
     .includes(q)
@@ -209,7 +209,15 @@ function RecRow({
               </p>
             )}
             <p className="font-label text-[11px] text-on-surface-variant/55 mt-1.5 tracking-wide">
-              推荐给 <span className="text-on-surface/80 font-bold">{rec.toWhom}</span>
+              {/* 推荐方是后加字段:老数据无 fromWhom 时退回旧文案"推荐给 X"。 */}
+              {rec.fromWhom && (
+                <>
+                  <span className="text-on-surface/80 font-bold">{rec.fromWhom}</span>
+                  <span className="mx-1">推荐给</span>
+                </>
+              )}
+              {!rec.fromWhom && '推荐给 '}
+              <span className="text-on-surface/80 font-bold">{rec.toWhom}</span>
               <span className="mx-1.5 text-on-surface-variant/30">·</span>
               {formatDate(rec.createdAt)}
             </p>
@@ -332,7 +340,7 @@ function RejectReasonModal({
             {rec.status === 'rejected' ? '改原因' : '推荐失败'}
           </h3>
           <p className="font-label text-[10px] text-on-surface-variant/55 mt-1 uppercase tracking-widest">
-            推荐给 {rec.toWhom} · {rec.titleCn || rec.title}
+            {rec.fromWhom ? `${rec.fromWhom} 推荐给 ${rec.toWhom}` : `推荐给 ${rec.toWhom}`} · {rec.titleCn || rec.title}
           </p>
         </div>
         <div>
@@ -350,20 +358,10 @@ function RejectReasonModal({
           />
         </div>
         <div className="flex items-center gap-3 pt-1">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 rounded-lg border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors"
-          >
-            取消
-          </button>
-          <button
-            onClick={() => onConfirm(reason.trim())}
-            disabled={!canConfirm}
-            className="flex-1 py-2.5 rounded-lg border border-error/40 bg-error/10 text-error font-bold text-sm hover:bg-error/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <span className="material-symbols-outlined text-base leading-none">cancel</span>
+          <ModalButton variant="cancel" onClick={onCancel}>取消</ModalButton>
+          <ModalButton variant="danger" icon="cancel" onClick={() => onConfirm(reason.trim())} disabled={!canConfirm}>
             确认拒绝
-          </button>
+          </ModalButton>
         </div>
       </div>
     </ModalShell>

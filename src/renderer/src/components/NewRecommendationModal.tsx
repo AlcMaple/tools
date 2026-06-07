@@ -33,9 +33,12 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
   // 推荐列表也订阅一份 —— 用来给每行加「已推荐过」hint，避免重复推同一部给同一个人，
   // 或者纯展示「这部已经推过 N 次」。
   const recs = useRecommendationList()
+  const [fromWhom, setFromWhom] = useState('')
   const [toWhom, setToWhom] = useState('')
   const [query, setQuery] = useState('')
+  const [fromWhomMissing, setFromWhomMissing] = useState(false)
   const [toWhomMissing, setToWhomMissing] = useState(false)
+  const fromWhomRef = useRef<HTMLInputElement>(null)
   const toWhomRef = useRef<HTMLInputElement>(null)
 
   // 每部番的"已推荐给谁"集合，给行末做提示用
@@ -59,6 +62,12 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
   }, [tracks, query])
 
   const pick = (t: AnimeTrack): void => {
+    // 推荐方 + 推荐对方都必填,缺哪个就高亮 + 聚焦哪个(推荐方在前先校验)。
+    if (!fromWhom.trim()) {
+      setFromWhomMissing(true)
+      fromWhomRef.current?.focus()
+      return
+    }
     if (!toWhom.trim()) {
       setToWhomMissing(true)
       toWhomRef.current?.focus()
@@ -69,6 +78,7 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
       title: t.title,
       titleCn: t.titleCn,
       cover: t.cover,
+      fromWhom: fromWhom.trim(),
       toWhom: toWhom.trim(),
     })
     onClose()
@@ -83,7 +93,7 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
             <div className="min-w-0">
               <h3 className="font-headline font-black text-base text-on-surface">新建推荐</h3>
               <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">
-                从追番列表里挑一部 + 写推荐对象
+                从追番列表里挑一部 + 写推荐方 / 推荐对方
               </p>
             </div>
             <button
@@ -95,33 +105,67 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
           </div>
         </div>
 
-        {/* 推荐对象 + 番剧过滤 */}
-        <div className="p-5 pb-3 shrink-0 space-y-3">
-          <div>
-            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1 block">
-              推荐给谁
-            </label>
-            <input
-              ref={toWhomRef}
-              type="text"
-              value={toWhom}
-              onChange={e => {
-                setToWhom(e.target.value)
-                if (e.target.value.trim()) setToWhomMissing(false)
-              }}
-              placeholder="例：Bob / 妹妹 / 群里"
-              maxLength={40}
-              autoFocus
-              spellCheck={false}
-              className={`w-full bg-surface-container border rounded-lg px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 transition-all ${
-                toWhomMissing
-                  ? 'border-error/60 ring-error/40 focus:ring-error/50 focus:border-error/60'
-                  : 'border-outline-variant/20 focus:ring-primary/40 focus:border-primary/30'
-              }`}
-            />
-            {toWhomMissing && (
-              <p className="mt-1 font-label text-[10px] text-error">先填写"推荐给谁"再点番剧</p>
-            )}
+        {/* 推荐方 + 推荐对方 + 番剧过滤。space-y-4 给输入行下方留余量:红字浮层
+            (绝对定位) 出现时不与「推荐的番剧」标签贴太紧。 */}
+        <div className="p-5 pb-3 shrink-0 space-y-4">
+          <div className="flex gap-3">
+            <div className="flex-1 relative">
+              <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1 block">
+                谁推荐的
+              </label>
+              <input
+                ref={fromWhomRef}
+                type="text"
+                value={fromWhom}
+                onChange={e => {
+                  setFromWhom(e.target.value)
+                  if (e.target.value.trim()) setFromWhomMissing(false)
+                }}
+                placeholder="例：我 / 妹妹 / 群友老王"
+                maxLength={40}
+                autoFocus
+                spellCheck={false}
+                className={`w-full bg-surface-container border rounded-lg px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 transition-all ${
+                  fromWhomMissing
+                    ? 'border-error/60 ring-error/40 focus:ring-error/50 focus:border-error/60'
+                    : 'border-outline-variant/20 focus:ring-primary/40 focus:border-primary/30'
+                }`}
+              />
+              {/* 绝对定位浮在输入框下方:不占文档流高度 → 既不挤压下方布局、也不留空行。 */}
+              {fromWhomMissing && (
+                <p className="absolute top-full left-0 mt-0.5 font-label text-[10px] text-error leading-tight">
+                  先填写"谁推荐的"再点番剧
+                </p>
+              )}
+            </div>
+            <div className="flex-1 relative">
+              <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1 block">
+                推荐给谁
+              </label>
+              <input
+                ref={toWhomRef}
+                type="text"
+                value={toWhom}
+                onChange={e => {
+                  setToWhom(e.target.value)
+                  if (e.target.value.trim()) setToWhomMissing(false)
+                }}
+                placeholder="例：Bob / 妹妹 / 群里"
+                maxLength={40}
+                spellCheck={false}
+                className={`w-full bg-surface-container border rounded-lg px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 transition-all ${
+                  toWhomMissing
+                    ? 'border-error/60 ring-error/40 focus:ring-error/50 focus:border-error/60'
+                    : 'border-outline-variant/20 focus:ring-primary/40 focus:border-primary/30'
+                }`}
+              />
+              {/* 同上:绝对定位,不占高度。 */}
+              {toWhomMissing && (
+                <p className="absolute top-full left-0 mt-0.5 font-label text-[10px] text-error leading-tight">
+                  先填写"推荐给谁"再点番剧
+                </p>
+              )}
+            </div>
           </div>
 
           <div>

@@ -170,7 +170,7 @@ export default function MyAnime(): JSX.Element {
     () => countRecsByStatus(recs.filter(r => matchesRecommendation(r, query))),
     [recs, query],
   )
-  // 推荐人聚合 + 命中数 —— 给推荐 tab 的「推荐人」TagFilter popover 用。全集视图
+  // 推荐对方聚合 + 命中数 —— 给推荐 tab 的「推荐对方」TagFilter popover 用。全集视图
   // （不按 query/status/已选收窄），按命中数倒序，让用户看到所有推荐过的人。
   const allRecipientsWithCount = useMemo(() => {
     const counter = new Map<string, number>()
@@ -436,14 +436,14 @@ export default function MyAnime(): JSX.Element {
               </div>
             ) : (
               <div className="flex items-center gap-2 flex-wrap">
-                {/* 按推荐人过滤 —— OR 语义、勾选不置顶（保留命中数顺序） */}
+                {/* 按被推荐人(toWhom=B)过滤 —— OR 语义、勾选不置顶（保留命中数顺序） */}
                 <TagFilter
                   allTags={allRecipientsWithCount}
                   selected={selectedRecipients}
                   onChange={setSelectedRecipients}
                   matchMode="OR"
                   pinSelected={false}
-                  label="推荐人"
+                  label="被推荐人"
                 />
                 <button
                   onClick={() => setNewRecOpen(true)}
@@ -457,7 +457,7 @@ export default function MyAnime(): JSX.Element {
           </div>
 
           {/* 已选过滤项不再单独占一行（避免「选中凭空多一行挤列表」或「预留空行留白」
-              二选一的两难）—— 改由「类型 / 推荐人」按钮的右上角计数角标提示，具体选了
+              二选一的两难）—— 改由「类型 / 被推荐人」按钮的右上角计数角标提示，具体选了
               哪些、增删 / 清空都在该按钮的弹窗里完成（打钩 = 选，footer 有清空）。 */}
         </div>
 
