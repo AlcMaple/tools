@@ -8,6 +8,7 @@
 // links a source result to the track. There is *no* fuzzy title matching.
 
 import { useEffect, useState } from 'react'
+import { scheduleStorageWrite } from '../utils/deferredStorage'
 
 /**
  * Tracking status —— v2 把 paused / dropped 删了（用户从来没用过这俩），
@@ -427,10 +428,15 @@ class AnimeTrackStore {
 
   private persist(): void {
     if (this.cache === null) return
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...this.cache.values()]))
-    } catch { /* ignore quota errors */ }
+    // UI 优先：先同步通知订阅者让界面立刻更新；重的 stringify + setItem 丢给
+    // idle 合并写盘，不再阻塞渲染线程（追番上百条时这步原本要几百 ms）。
     this.listeners.forEach(cb => cb())
+    scheduleStorageWrite(STORAGE_KEY, () => {
+      if (this.cache === null) return
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([...this.cache.values()]))
+      } catch { /* ignore quota errors */ }
+    })
   }
 
   /** Touch updatedAt and recompute all derived state. Returns the stored entry. */
