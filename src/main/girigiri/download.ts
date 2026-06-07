@@ -184,9 +184,23 @@ interface M3u8Info {
   keyInfo: { uri: string; iv: string } | null
 }
 
-async function parseM3u8(m3u8Url: string): Promise<M3u8Info> {
+// m3u8 是纯文本播放列表(KB~几 MB),20MB 已远超正常;超了视作损坏/恶意响应,
+// 不 split 成几百万行阻塞事件循环。master playlist 可能嵌套指向变体,depth 封顶
+// 防自引用死循环。
+const M3U8_MAX_BYTES = 20 * 1024 * 1024
+const M3U8_MAX_DEPTH = 5
+
+async function parseM3u8(m3u8Url: string, depth = 0): Promise<M3u8Info> {
+  if (depth > M3U8_MAX_DEPTH) {
+    logError('girigiri:m3u8', `master playlist 嵌套过深(>${M3U8_MAX_DEPTH}),疑似自引用: ${m3u8Url}`)
+    return { tsUrls: [], keyInfo: null }
+  }
   const buf = await fetchBuffer(m3u8Url)
   if (!buf) return { tsUrls: [], keyInfo: null }
+  if (buf.length > M3U8_MAX_BYTES) {
+    logError('girigiri:m3u8', `m3u8 响应过大(${buf.length}B),拒绝解析: ${m3u8Url}`)
+    return { tsUrls: [], keyInfo: null }
+  }
 
   const text = buf.toString('utf-8')
 
@@ -221,7 +235,7 @@ async function parseM3u8(m3u8Url: string): Promise<M3u8Info> {
     // Master playlists list variant playlists ending in .m3u8 (optionally with query).
     // Substring match would mistakenly recurse on segment URLs that merely contain ".m3u8".
     if (/\.m3u8($|\?)/i.test(l)) {
-      return parseM3u8(new URL(l, m3u8Url).href)
+      return parseM3u8(new URL(l, m3u8Url).href, depth + 1)
     }
 
     // A real segment URL never contains whitespace or these JS/HTML chars.
@@ -322,7 +336,7 @@ async function decryptSegments(tempDir: string, keyInfo: NonNullable<M3u8Info['k
 
 // ── ffmpeg merge ──────────────────────────────────────────────────────────────
 
-function runFfmpeg(segListPath: string, outputPath: string, cwd: string): Promise<void> {
+function runFfmpeg(segListPath: string, outputPath: string, cwd: string, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn('ffmpeg', [
       '-f', 'concat', '-safe', '0', '-i', segListPath,
@@ -331,13 +345,23 @@ function runFfmpeg(segListPath: string, outputPath: string, cwd: string): Promis
       outputPath,
     ], { cwd })
 
+    // 取消下载时把 ffmpeg 子进程一并杀掉,否则合并阶段被 abort 后进程仍在后台
+    // 空跑到结束(多次取消会累积多个 ffmpeg 吃 CPU/磁盘)。
+    const onAbort = (): void => { proc.kill() }
+    if (signal.aborted) proc.kill()
+    else signal.addEventListener('abort', onAbort, { once: true })
+
     let stderr = ''
     proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
     proc.on('close', (code) => {
+      signal.removeEventListener('abort', onAbort)
       if (code === 0) resolve()
       else reject(new Error(`FFmpeg failed: ${stderr.slice(-300)}`))
     })
-    proc.on('error', reject)
+    proc.on('error', (err) => {
+      signal.removeEventListener('abort', onAbort)
+      reject(err)
+    })
   })
 }
 
@@ -436,7 +460,7 @@ export async function downloadSingleEp(
 
   // 7. Merge with ffmpeg
   try {
-    await runFfmpeg('segments.txt', outputPath, tempDir)
+    await runFfmpeg('segments.txt', outputPath, tempDir, signal)
     rmSync(tempDir, { recursive: true, force: true })
     onEvent({ type: 'ep_done', ep: epIdx })
   } catch (e) {
