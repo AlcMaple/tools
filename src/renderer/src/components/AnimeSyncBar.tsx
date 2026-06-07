@@ -11,7 +11,7 @@
 //
 // 储存键全部加 `maple-anime-` 前缀，跟 homework 那套独立。
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   animeTrackStore,
   normalizeTracks,
@@ -217,8 +217,18 @@ export function AnimeSyncBar(): JSX.Element {
   }, [])
 
   // Local dirty: stringify current tracks + recommendations vs last synced snapshot.
-  const currentSnapshot = useMemo(() => snapshotOf(tracks, recommendations), [tracks, recommendations])
-  const localDirty = currentSnapshot !== lastSyncedSnapshot
+  // snapshotOf 要 stringify 整张表（追番多时几百 KB），原本放在 useMemo 里每次
+  // store 通知都会同步重算 —— 而 store hook 每次都返回新数组引用，memo 根本不命中,
+  // 于是 MyAnime 上每个 mutate / 重渲染都在渲染线程上卡一次序列化。改成 200ms
+  // 防抖的 effect 里算，结果写进 state；localDirty 只用于驱动「未同步」chip 的
+  // 启用态，延迟 200ms 出结果对用户无感。
+  const [localDirty, setLocalDirty] = useState(false)
+  useEffect(() => {
+    const h = window.setTimeout(() => {
+      setLocalDirty(snapshotOf(tracks, recommendations) !== lastSyncedSnapshot)
+    }, 200)
+    return () => window.clearTimeout(h)
+  }, [tracks, recommendations, lastSyncedSnapshot])
   const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
   const syncSettle = (status: SyncStatus, msg: string): void => {
