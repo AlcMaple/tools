@@ -195,11 +195,6 @@ export async function resolveAowuMp4(watchUrl: string): Promise<string> {
   return p
 }
 
-/** Drop a cached entry — e.g. after the CDN returns 403 indicating expiry. */
-export function invalidateAowuMp4(watchUrl: string): void {
-  if (urlCache.delete(watchUrl)) persist()
-}
-
 /**
  * Construct the watch URL fed to {@link resolveAowuMp4}. Pure formatter — kept
  * around so the IPC handler can build the URL once and pass it through.

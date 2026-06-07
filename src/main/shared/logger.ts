@@ -109,10 +109,6 @@ export function logError(scope: string, err: unknown): void {
   emit('ERROR', scope, describe(err))
 }
 
-export function logWarn(scope: string, message: string): void {
-  emit('WARN', scope, message)
-}
-
 export function logInfo(scope: string, message: string): void {
   emit('INFO', scope, message)
 }
