@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from 'react'
 import { scheduleStorageWrite } from '../utils/deferredStorage'
+import { reportError, backupCorrupt } from '../utils/reportError'
 
 /**
  * Tracking status —— v2 把 paused / dropped 删了（用户从来没用过这俩），
@@ -401,9 +402,9 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
 }
 
 function readAll(): Map<number, AnimeTrack> {
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) return new Map()
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return new Map()
     const arr = JSON.parse(raw) as unknown
     if (!Array.isArray(arr)) return new Map()
     const m = new Map<number, AnimeTrack>()
@@ -414,7 +415,13 @@ function readAll(): Map<number, AnimeTrack> {
       }
     }
     return m
-  } catch { return new Map() }
+  } catch (err) {
+    // 整份 JSON 解析失败(数据损坏)——不静默清空:备份坏数据 + 落盘报错,
+    // 至少能事后查 / 人工恢复,而不是用户一开 app 追番全没了还不知道为啥。
+    backupCorrupt(STORAGE_KEY, raw)
+    reportError('animeTrackStore', err)
+    return new Map()
+  }
 }
 
 class AnimeTrackStore {

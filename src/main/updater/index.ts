@@ -39,6 +39,7 @@
 import { app, BrowserWindow, ipcMain, shell, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { getAutoUpdateCheckEnabled, getUpdateSource } from '../ipc/system'
+import { logError } from '../shared/logger'
 
 type Channel =
   | 'updater:checking'
@@ -293,14 +294,15 @@ export function setupUpdater(): void {
       broadcast('updater:downloaded', { version: info.version })
     })
     // 必须挂一个 error 监听，否则 electron-updater 内部 emit('error') 会变成
-    // 未捕获异常。用户可见的错误由编排函数在所有源都失败后统一报。
-    autoUpdater.on('error', () => { /* swallow; runWin 统一处理 */ })
+    // 未捕获异常。用户可见的错误由编排函数在所有源都失败后统一报；这里只落盘留痕。
+    autoUpdater.on('error', (err) => { logError('updater:autoUpdater', err) })
   }
 
   // 启动后延迟 3s 静默检查（不阻塞首屏），受 autoUpdateCheckEnabled 控制。
   setTimeout(() => {
     if (!getAutoUpdateCheckEnabled()) return
-    if (isMac) runMac(false).catch(() => { /* silent */ })
-    else runWin(false).catch(() => { /* silent */ })
+    // 后台静默检查:不弹错给用户(不该开机就报错打扰),但失败落盘留痕可查。
+    if (isMac) runMac(false).catch((err) => logError('updater:autoCheck', err))
+    else runWin(false).catch((err) => logError('updater:autoCheck', err))
   }, 3000)
 }
