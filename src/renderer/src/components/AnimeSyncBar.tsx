@@ -26,6 +26,7 @@ import {
 } from '../stores/recommendationStore'
 import { ipcErrMsg, ModalShell } from '../pages/homework/shared'
 import { buildAnimeReportHtml } from '../utils/animeReport'
+import { probe, probeToPaint } from '../utils/probe'
 
 // ── Storage keys ────────────────────────────────────────────────────────────
 
@@ -242,7 +243,9 @@ export function AnimeSyncBar(): JSX.Element {
   // Pull remote: try anime.json, fall back to homework.json tracks on 404.
   const fetchRemote = async (): Promise<RemoteAnimeBlob | null> => {
     try {
+      const end = probe('webdav:anime-pull-fetch')
       const jsonStr = await window.webdavApi.pull('anime')
+      end(`${jsonStr.length}B`)
       return parseAnimeBlob(jsonStr)
     } catch {
       try {
@@ -292,7 +295,9 @@ export function AnimeSyncBar(): JSX.Element {
         tracks,
         recommendations,
       })
+      const end = probe(`webdav:anime-push(${blob.length}B)`)
       await window.webdavApi.push('anime', blob)
+      end()
       const now = Date.now()
       setLastSyncTime(now)
       setLastSyncedRev(newRev)
@@ -343,6 +348,8 @@ export function AnimeSyncBar(): JSX.Element {
       const newRecs = remote.recommendations
       animeTrackStore.replaceAll(newTracks)
       recommendationStore.replaceAll(newRecs)
+      // 应用数据 → 列表重渲染 → 绘制 的耗时(跟 fetch 分开,看慢在网络还是渲染)。
+      probeToPaint(`webdav:anime-pull-apply(${newTracks.length}+${newRecs.length})`)
       const now = Date.now()
       setLastSyncTime(now)
       // 兜底拉来的是老 homework.json 的 tracks 字段 → rev=0；这种数据

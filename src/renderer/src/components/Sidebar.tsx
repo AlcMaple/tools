@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { navGuard } from "../utils/navGuard";
+import { probeToPaint } from "../utils/probe";
 
 interface NavItem {
   label: string;
@@ -42,7 +43,10 @@ function Sidebar(): JSX.Element {
               if (navGuard.isActive()) {
                 e.preventDefault()
                 navGuard.requestNavigation(item.path)
+                return
               }
+              // 量"点击 → 切到的新页面绘制出来"的耗时,写进 main.log。
+              probeToPaint(`nav:${item.path}`)
             }}
             className={({ isActive }) =>
               `flex items-center px-6 py-3 space-x-3 transition-colors duration-200 ${
