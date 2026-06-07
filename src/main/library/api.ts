@@ -1,9 +1,9 @@
-import { app } from 'electron'
 import { join, sep } from 'path'
-import { readFileSync, writeFileSync, renameSync, existsSync } from 'fs'
+import { existsSync } from 'fs'
 import { readdir, stat, open } from 'fs/promises'
 import crypto from 'crypto'
 import chokidar from 'chokidar'
+import { JsonStore } from '../shared/json-store'
 
 export interface LibraryPath {
   path: string;
@@ -29,8 +29,15 @@ export interface LibraryFile {
   sizeBytes: number;
 }
 
-const getPathsFile = () => join(app.getPath('userData'), 'library_paths.json')
-const getEntriesFile = () => join(app.getPath('userData'), 'library_entries.json')
+// 路径表 + 扫描结果都走 JsonStore：内存权威值(读瞬时)、写异步合并落盘。
+// getPaths/getEntries 等保持同步签名(内部 current() 同步读内存),所有调用方不变;
+// 原本每次 setEntries 的同步 writeFileSync(entries 可能很大)改成异步,不再卡。
+const pathsStore = new JsonStore<LibraryPath[]>('library_paths.json', (raw) =>
+  Array.isArray(raw) ? (raw as LibraryPath[]) : [],
+)
+const entriesStore = new JsonStore<LibraryEntry[]>('library_entries.json', (raw) =>
+  Array.isArray(raw) ? (raw as LibraryEntry[]) : [],
+)
 
 // ==========================================
 // 动态监听器模块
@@ -85,22 +92,11 @@ export function startLibraryWatch(onLibraryChanged: (changedPaths: string[]) => 
 // 数据读写模块
 // ==========================================
 export function getPaths(): LibraryPath[] {
-  try {
-    const data = readFileSync(getPathsFile(), 'utf-8')
-    return JSON.parse(data)
-  } catch {
-    return []
-  }
+  return pathsStore.current()
 }
 
 export function setPaths(paths: LibraryPath[]): void {
-  try {
-    const target = getPathsFile()
-    writeFileSync(target + '.tmp', JSON.stringify(paths, null, 2))
-    renameSync(target + '.tmp', target)
-  } catch (err) {
-    console.error('Failed to write library paths:', err)
-  }
+  pathsStore.set(paths)
 }
 
 export function addPath(folderPath: string, label: string): LibraryPath[] {
@@ -131,22 +127,11 @@ export function reconcilePaths(): LibraryPath[] {
 }
 
 export function getEntries(): LibraryEntry[] {
-  try {
-    const data = readFileSync(getEntriesFile(), 'utf-8')
-    return JSON.parse(data)
-  } catch {
-    return []
-  }
+  return entriesStore.current()
 }
 
 export function setEntries(entries: LibraryEntry[]): void {
-  try {
-    const target = getEntriesFile()
-    writeFileSync(target + '.tmp', JSON.stringify(entries, null, 2))
-    renameSync(target + '.tmp', target)
-  } catch (err) {
-    console.error('Failed to write library entries:', err)
-  }
+  entriesStore.set(entries)
 }
 
 // ==========================================

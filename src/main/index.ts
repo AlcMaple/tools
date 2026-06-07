@@ -6,6 +6,10 @@ import { createTray, destroyTray } from './tray'
 import { registerAllIpc, getMinimizeOnClose } from './ipc'
 import { startSpeedBroadcast } from './shared/speed-tracker'
 import { setupUpdater } from './updater'
+import { initConsoleCapture } from './shared/logger'
+
+// 接管 console.error/warn → 同时落盘到 main.log,让主进程所有报错可查。
+initConsoleCapture()
 
 // ── IPC registration ─────────────────────────────────────────
 registerAllIpc()
