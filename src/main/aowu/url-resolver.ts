@@ -155,8 +155,14 @@ function persist(): void {
   saveTimer = setTimeout(() => {
     saveTimer = null
     try {
+      // 落盘时顺手剔除过期项 —— 否则常驻不重启的会话里过期条目只增不减
+      // (重启时 ensureLoaded 会按 TTL 过滤,但长开的进程没这个机会)。
+      const now = Date.now()
       const obj: Record<string, CacheEntry> = {}
-      for (const [k, v] of urlCache) obj[k] = v
+      for (const [k, v] of urlCache) {
+        if (now - v.resolvedAt >= CACHE_TTL_MS) { urlCache.delete(k); continue }
+        obj[k] = v
+      }
       writeFileSync(cacheFile!, JSON.stringify(obj))
     } catch {
       // Disk errors are non-fatal — next session just re-resolves.
