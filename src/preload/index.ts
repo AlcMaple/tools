@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('systemApi', {
   },
   // 渲染进程错误转发到主进程统一落盘(同 main.log)。
   logError: (scope: string, message: string) => ipcRenderer.invoke('log:error', scope, message),
+  // 性能探子数据,落到同一个 main.log(tag=perf)。
+  logPerf: (message: string) => ipcRenderer.invoke('log:perf', message),
   // 打开日志目录(设置→关于)。
   openLogDir: () => ipcRenderer.invoke('log:open-dir'),
 })

@@ -132,5 +132,8 @@ export function registerLogIpc(): void {
   ipcMain.handle('log:error', (_event, scope: unknown, message: unknown) => {
     logError(typeof scope === 'string' ? scope : 'renderer', String(message))
   })
+  ipcMain.handle('log:perf', (_event, message: unknown) => {
+    logInfo('perf', String(message))
+  })
   ipcMain.handle('log:open-dir', () => openLogDir())
 }
