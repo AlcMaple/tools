@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('systemApi', {
     ipcRenderer.on('system:speed', handler)
     return () => ipcRenderer.removeListener('system:speed', handler)
   },
+  // 渲染进程错误转发到主进程统一落盘(同 main.log)。
+  logError: (scope: string, message: string) => ipcRenderer.invoke('log:error', scope, message),
+  // 打开日志目录(设置→关于)。
+  openLogDir: () => ipcRenderer.invoke('log:open-dir'),
 })
 
 contextBridge.exposeInMainWorld('girigiriApi', {

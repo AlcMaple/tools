@@ -16,6 +16,16 @@ import 'material-symbols/outlined.css'
 
 import './index.css'
 
+// 渲染进程未捕获错误 / Promise rejection → 转发主进程统一落盘(同 main.log),
+// 让线上崩溃也能事后查到。best-effort,不阻断默认行为。
+window.addEventListener('error', (e) => {
+  void window.systemApi?.logError?.('renderer', e.error?.stack || e.message || String(e.error))
+})
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason as { stack?: string; message?: string } | undefined
+  void window.systemApi?.logError?.('renderer:promise', r?.stack || r?.message || String(r))
+})
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <App />

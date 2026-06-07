@@ -25,11 +25,9 @@
  * 「冷却中，约 X 分钟后恢复」。第二步会在 open 期间改走 bgm.tv HTML，让冷却期
  * 搜索/详情仍可用。
  */
-import { app } from 'electron'
-import { join } from 'node:path'
-import { readFileSync, writeFileSync } from 'node:fs'
 import { RateLimitError } from '../shared/rate-limit'
 import type { RateLimiter } from '../shared/rate-limit'
+import { JsonStore } from '../shared/json-store'
 
 // 阶梯冷却时长（毫秒），按惩罚等级 1..N 取值，封顶 48h。
 const MIN = 60_000
@@ -50,53 +48,33 @@ interface BreakerState {
   lastTripAt: number
 }
 
-const EMPTY: BreakerState = { openUntil: 0, level: 0, lastTripAt: 0 }
-
 export class ApiCircuitBreaker {
-  private state: BreakerState = { ...EMPTY }
-  private file: string | null = null
-  private loaded = false
+  // 熔断状态走 JsonStore：内存权威值(current() 同步读、请求热路径不碰盘),
+  // 触发/恢复时 set() 异步合并落盘。重启不丢(否则一重启又去捅 API,把刚要
+  // 衰减的惩罚计数器顶起来)。
+  private store = new JsonStore<BreakerState>('bgm_api_breaker.json', (raw) => {
+    const r = raw && typeof raw === 'object' ? (raw as Partial<BreakerState>) : {}
+    return {
+      openUntil: Number(r.openUntil) || 0,
+      level: Number(r.level) || 0,
+      lastTripAt: Number(r.lastTripAt) || 0,
+    }
+  })
 
   /** 软恢复要作用到的限速器（恢复后给它施加更大间隔慢跑一段）。 */
   constructor(private limiter: RateLimiter) {}
 
-  private path(): string {
-    if (!this.file) this.file = join(app.getPath('userData'), 'bgm_api_breaker.json')
-    return this.file
-  }
-
-  private ensure(): void {
-    if (this.loaded) return
-    this.loaded = true
-    try {
-      const raw = JSON.parse(readFileSync(this.path(), 'utf-8')) as Partial<BreakerState>
-      this.state = {
-        openUntil: Number(raw.openUntil) || 0,
-        level: Number(raw.level) || 0,
-        lastTripAt: Number(raw.lastTripAt) || 0,
-      }
-    } catch {
-      this.state = { ...EMPTY }
-    }
-  }
-
-  private persist(): void {
-    try {
-      writeFileSync(this.path(), JSON.stringify(this.state))
-    } catch {
-      /* ignore quota / fs errors */
-    }
+  private get state(): BreakerState {
+    return this.store.current()
   }
 
   /** 当前是否处于冷却中（open 且未到期）。 */
   isCoolingDown(): boolean {
-    this.ensure()
     return this.state.openUntil > 0 && Date.now() < this.state.openUntil
   }
 
   /** 还要冷却多少秒（向上取整，最小 1）。 */
   remainingSeconds(): number {
-    this.ensure()
     return Math.max(1, Math.ceil((this.state.openUntil - Date.now()) / 1000))
   }
 
@@ -106,7 +84,6 @@ export class ApiCircuitBreaker {
    * **必须在限速器的串行 schedule 内调用**，保证状态读写不竞争。
    */
   guard(): void {
-    this.ensure()
     if (this.isCoolingDown()) {
       const secs = this.remainingSeconds()
       const mins = Math.ceil(secs / 60)
@@ -116,7 +93,6 @@ export class ApiCircuitBreaker {
 
   /** 收到 429：开熔断、升级冷却、持久化。retryAfterSec 仅作下限参考。 */
   recordTrip(retryAfterSec: number): void {
-    this.ensure()
     const now = Date.now()
     // 孤立触发（距上次很久）→ 等级归零重算；否则逐级升级。
     if (now - this.state.lastTripAt > RESET_AFTER_MS) this.state.level = 0
@@ -126,17 +102,16 @@ export class ApiCircuitBreaker {
     const cooldownMs = Math.max(stepMs, (retryAfterSec || 0) * 1000)
     this.state.openUntil = now + cooldownMs
     this.state.lastTripAt = now
-    this.persist()
+    this.store.set(this.state)
   }
 
   /** 请求成功：若是半开试探成功，则关闸 + 给限速器施加软恢复。 */
   recordSuccess(): void {
-    this.ensure()
     // openUntil>0 且已到期 → 这次是半开试探，成功即恢复。
     if (this.state.openUntil > 0 && Date.now() >= this.state.openUntil) {
       this.state.openUntil = 0
       // level 不立刻清零：短期内再触发仍按上一级升级；靠 RESET_AFTER 自然衰减。
-      this.persist()
+      this.store.set(this.state)
       this.limiter.softThrottle(SOFT_GAP_MS, SOFT_DURATION_MS)
     }
   }

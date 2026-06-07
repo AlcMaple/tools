@@ -147,6 +147,10 @@ declare global {
       setSetting: (key: string, value: any) => Promise<void>
       loadDownloadState: () => Promise<any[]>
       saveDownloadState: (tasks: any[]) => Promise<void>
+      /** 渲染进程错误转发到主进程统一落盘(同 main.log)。 */
+      logError: (scope: string, message: string) => Promise<void>
+      /** 打开日志目录(设置→关于)。 */
+      openLogDir: () => Promise<void>
     }
     versions: {
       node: () => string
