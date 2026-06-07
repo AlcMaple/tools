@@ -1191,6 +1191,22 @@ function Settings(): JSX.Element {
                     density={tweaks.density}
                     control={<ReadonlyValue value={NODE_ID} />}
                   />
+                  <Row
+                    icon="description"
+                    title="运行日志"
+                    desc="出问题时这里能找到详细报错记录（仅本地）。排查 bug、反馈问题时可以打开看看。"
+                    density={tweaks.density}
+                    control={
+                      <button
+                        onClick={() => { void window.systemApi.openLogDir() }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/70 hover:text-on-surface font-label text-[11px] uppercase tracking-widest transition-colors"
+                        title="打开日志所在目录"
+                      >
+                        <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>folder_open</span>
+                        打开日志目录
+                      </button>
+                    }
+                  />
                 </Block>
               )}
             </div>

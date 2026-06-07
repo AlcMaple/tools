@@ -11,7 +11,7 @@
  * — fetching it on every page visit would be wasteful and trip BGM's polite-
  * use expectation. The `update` parameter forces a refresh.
  */
-import { promises as fs, existsSync } from 'fs'
+import { promises as fs } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
 import { fetchBgmApiJson } from './api-client'
@@ -61,9 +61,9 @@ function getCachePath(): string {
 
 async function readCache(): Promise<CachedCalendar | null> {
   try {
-    const p = getCachePath()
-    if (!existsSync(p)) return null
-    const raw = await fs.readFile(p, 'utf-8')
+    // 文件不存在时 readFile 直接抛 ENOENT,被 catch 接住返回 null —— 不必再多一次
+    // existsSync 同步 stat。
+    const raw = await fs.readFile(getCachePath(), 'utf-8')
     const parsed = JSON.parse(raw) as CachedCalendar
     if (!Array.isArray(parsed?.data) || typeof parsed.updatedAt !== 'number') return null
     return parsed

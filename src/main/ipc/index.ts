@@ -7,8 +7,10 @@ import { registerSystemIpc } from './system'
 import { registerFileExplorerIpc } from './fileExplorer'
 import { registerWebDavIpc } from './webdav'
 import { registerMailIpc } from './mail'
+import { registerLogIpc } from '../shared/logger'
 
 export function registerAllIpc(): void {
+  registerLogIpc()
   registerBgmIpc()
   registerXifanIpc()
   registerGirigiriIpc()
