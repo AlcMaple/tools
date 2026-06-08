@@ -12,6 +12,7 @@ import LocalLibrary from './pages/LocalLibrary'
 import FileExplorer from './pages/FileExplorer'
 import HomeworkLookup from './pages/HomeworkLookup'
 import UpdateBanner from './components/UpdateBanner'
+import EditContextMenu from './components/EditContextMenu'
 import { downloadStore } from './stores/downloadStore'
 import { updateStore } from './stores/updateStore'
 
@@ -65,6 +66,9 @@ function Shell(): JSX.Element {
          的文档流，所以不会把任何页面内容推下去。挂在 Shell 顶层而不是
          scroll 容器内，这样 z-index 能稳定盖住所有页面的 sticky bar。 */}
       <UpdateBanner />
+      {/* 全局右键编辑菜单(剪切/复制/粘贴/全选)。挂在 Shell 顶层,覆盖所有路由;
+         页面内的局部右键菜单(文件 / 备注)已 preventDefault,会自动让位。 */}
+      <EditContextMenu />
     </div>
   )
 }
