@@ -158,6 +158,17 @@ export function registerSystemIpc(): void {
     })
   })
 
+  // 右键菜单的「剪切/复制/粘贴/全选」走 webContents 自带的编辑命令 —— 它直接
+  // 作用在当前聚焦元素 / 选区上,比在渲染进程里手搓 execCommand/clipboard 更可靠
+  // (粘贴尤其,渲染层的 execCommand('paste') 常被禁)。一次性通知,无返回值用 send。
+  ipcMain.on('system:edit-command', (event, action: string) => {
+    const wc = event.sender
+    if (action === 'cut') wc.cut()
+    else if (action === 'copy') wc.copy()
+    else if (action === 'paste') wc.paste()
+    else if (action === 'selectAll') wc.selectAll()
+  })
+
   ipcMain.handle('download:load-state', () => downloadStateStore.read())
 
   ipcMain.handle('download:save-state', (_event, tasks: unknown) => {
