@@ -145,6 +145,8 @@ declare global {
       cacheSet: (key: string, valueOrSubkey: unknown, maybeValue?: unknown) => Promise<void>
       getSetting: (key: string) => Promise<any>
       setSetting: (key: string, value: any) => Promise<void>
+      /** 右键菜单编辑命令,作用在主进程 webContents 的当前聚焦元素/选区上。 */
+      editCommand: (action: 'cut' | 'copy' | 'paste' | 'selectAll') => void
       loadDownloadState: () => Promise<any[]>
       saveDownloadState: (tasks: any[]) => Promise<void>
       /** 渲染进程错误转发到主进程统一落盘(同 main.log)。 */
