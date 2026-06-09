@@ -327,7 +327,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
   return (
     <div
       className={`bg-surface-container rounded-xl overflow-hidden transition-all duration-300 hover:bg-surface-container-high/60 ${
-        isError ? 'border-l-4 border-error/50' : ''
+        isError ? 'border-l-4 border-error/50' : 'border-l-4 border-transparent'
       }`}
     >
       <div className="p-6">
