@@ -1,3 +1,5 @@
+// ⚠️ 必须是第一个 import —— 在任何 fs 异步操作前把 libuv 线程池调大(见模块注释)。
+import './shared/uv-bootstrap'
 import { app, shell, BrowserWindow, protocol, ipcMain } from 'electron'
 import { join } from 'path'
 import { readFile } from 'fs/promises'
@@ -6,7 +8,7 @@ import { createTray, destroyTray } from './tray'
 import { registerAllIpc, getMinimizeOnClose } from './ipc'
 import { startSpeedBroadcast } from './shared/speed-tracker'
 import { setupUpdater } from './updater'
-import { initConsoleCapture } from './shared/logger'
+import { initConsoleCapture, logInfo } from './shared/logger'
 
 // 接管 console.error/warn → 同时落盘到 main.log,让主进程所有报错可查。
 initConsoleCapture()
@@ -194,6 +196,9 @@ app.whenReady().then(() => {
   const runSilentScan = async (): Promise<void> => {
     if (silentScanRunning) return
     silentScanRunning = true
+    // 探子：启动期全量扫描占用主进程事件循环的总时长。冷启动首开 MyAnime 慢
+    // 的怀疑点之一 —— 这段时间内封面本地化 IPC(cacheCover)会被它挤在后面。
+    const scanT0 = Date.now()
     try {
       const newEntries = await scanLibrary((status, current, total) => {
         BrowserWindow.getAllWindows().forEach(win => {
@@ -210,31 +215,51 @@ app.whenReady().then(() => {
       })
     } finally {
       silentScanRunning = false
+      logInfo('perf', `startup:silent-scan ${Date.now() - scanT0}ms`)
     }
   }
 
-  // 启动时对账一次：剔除已被用户删除的路径，再扫描现有条目
-  reconcilePaths()
-  runSilentScan().catch(err => console.error('启动对账扫描失败:', err))
+  // 媒体库全量扫描 + chokidar 监听:对账剔除残留路径 → 全量重扫 → 起目录监听。
+  const kickLibraryWork = (): void => {
+    reconcilePaths()
+    runSilentScan().catch(err => console.error('启动对账扫描失败:', err))
 
-  // 启动后台目录变动监听（增量更新：只重扫变化发生的子目录，静默不触发全屏加载）
-  startLibraryWatch(async (changedPaths) => {
-    if (silentScanRunning) return
-    silentScanRunning = true
-    try {
-      let updatedEntries: LibraryEntry[] = []
-      for (const p of changedPaths) {
-        updatedEntries = await incrementalUpdate(p)
-      }
-      BrowserWindow.getAllWindows().forEach(win => {
-        if (!win.isDestroyed()) {
-          win.webContents.send('library-updated', updatedEntries)
+    // 启动后台目录变动监听（增量更新：只重扫变化发生的子目录，静默不触发全屏加载）
+    startLibraryWatch(async (changedPaths) => {
+      if (silentScanRunning) return
+      silentScanRunning = true
+      try {
+        let updatedEntries: LibraryEntry[] = []
+        for (const p of changedPaths) {
+          updatedEntries = await incrementalUpdate(p)
         }
-      })
-    } finally {
-      silentScanRunning = false
-    }
-  })
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('library-updated', updatedEntries)
+          }
+        })
+      } finally {
+        silentScanRunning = false
+      }
+    })
+  }
+
+  // 把库扫描 / chokidar 推迟到首屏交互之后再跑。两者会向 libuv 的 fs 线程池
+  // (默认仅 4 线程)灌入成百上千次 readdir/stat/open,冷启动时把 MyAnime 的封面
+  // 本地化(cacheCover —— 本是磁盘命中、毫秒级)挤在同一队列后面排到 1s+,首开
+  // 封面要等一秒多才齐。延后启动让首次切页/封面先抢到 fs 线程;落地页本就先
+  // 显示 JsonStore 缓存条目,重扫晚 1~2s 对用户无感。
+  //
+  // 触发:渲染就绪(app:renderer-ready)后再过一拍给首屏让路;5s 兜底,即便信号
+  // 迟到/不来(崩溃/老 preload)也照常扫一次,不会漏扫。
+  let libraryKicked = false
+  const kickLibraryOnce = (): void => {
+    if (libraryKicked) return
+    libraryKicked = true
+    kickLibraryWork()
+  }
+  ipcMain.once('app:renderer-ready', () => setTimeout(kickLibraryOnce, 1200))
+  setTimeout(kickLibraryOnce, 5000)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
