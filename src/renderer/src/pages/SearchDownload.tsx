@@ -21,6 +21,12 @@ import {
 } from "../stores/animeTrackStore";
 import { cleanForBgmSearch } from "../utils/animeTitle";
 import {
+  loadDownloadHistory,
+  addDownloadHistory,
+  removeDownloadHistory,
+  clearDownloadHistory,
+} from "../utils/downloadSearchHistory";
+import {
   isSearchCacheEnabled,
   getCachedSearch,
   setCachedSearch,
@@ -206,9 +212,21 @@ function SearchDownload(): JSX.Element {
     }
     return s;
   });
-  const [source, setSource] = useState<Source>("Aowu");
+  // 上次选的源持久化:下次启动默认显示它,不用每次都手动切回去。
+  const [source, setSource] = useState<Source>(() => {
+    const saved = localStorage.getItem("download_source");
+    return saved === "Xifan" || saved === "Girigiri" || saved === "Aowu"
+      ? saved
+      : "Aowu";
+  });
+  useEffect(() => {
+    localStorage.setItem("download_source", source);
+  }, [source]);
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false);
   const sourceDropdownRef = useRef<HTMLDivElement>(null);
+  // 搜索历史(本地,带源)。historyOpen:搜索框聚焦时弹出。
+  const [history, setHistory] = useState(() => loadDownloadHistory());
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(() => _cachedSearchQuery);
   const [captchaInput, setCaptchaInput] = useState("");
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
@@ -262,13 +280,18 @@ function SearchDownload(): JSX.Element {
 
   // ── Search ──────────────────────────────────────────────────────────────────
 
-  const handleSearch = async (keyword: string): Promise<void> => {
+  const handleSearch = async (keyword: string, srcOverride?: Source): Promise<void> => {
     if (!keyword.trim()) return;
+    // 历史里点一条会带上当时的源;override 时同步更新选中的源(不等 setState 异步生效)。
+    const src = srcOverride ?? source;
+    if (srcOverride && srcOverride !== source) setSource(srcOverride);
     currentKeyword.current = keyword;
     setSearchQuery(keyword);
+    setHistory(addDownloadHistory(keyword, src));
+    setHistoryOpen(false);
 
     if (isSearchCacheEnabled()) {
-      const hit = await getCachedSearch(keyword, source);
+      const hit = await getCachedSearch(keyword, src);
       if (hit && !hit.isStale) {
         setState({ status: "results", cards: hit.data, keyword });
         return;
@@ -277,7 +300,7 @@ function SearchDownload(): JSX.Element {
 
     setState({ status: "searching" });
     try {
-      if (source === "Girigiri") {
+      if (src === "Girigiri") {
         const result = await window.girigiriApi.search(keyword);
         if (!Array.isArray(result) && result.needs_captcha) {
           const { image_b64 } = await window.girigiriApi.getCaptcha();
@@ -290,14 +313,14 @@ function SearchDownload(): JSX.Element {
           });
         } else if (Array.isArray(result)) {
           const cards = result.map(normalizeGirigiri);
-          setCachedSearch(keyword, source, cards);
+          setCachedSearch(keyword, src, cards);
           setState({ status: "results", cards, keyword });
         }
-      } else if (source === "Aowu") {
+      } else if (src === "Aowu") {
         const { requestId, results } = await window.aowuApi.search(keyword);
         currentSearchRequestId.current = requestId;
         const cards = results.map(normalizeAowu);
-        setCachedSearch(keyword, source, cards);
+        setCachedSearch(keyword, src, cards);
         setState({ status: "results", cards, keyword });
         // Follow-up pages (if any) arrive via the onSearchPage subscription
         // installed in useEffect above and append to state.cards.
@@ -314,13 +337,29 @@ function SearchDownload(): JSX.Element {
           });
         } else if (Array.isArray(result)) {
           const cards = result.map(normalizeXifan);
-          setCachedSearch(keyword, source, cards);
+          setCachedSearch(keyword, src, cards);
           setState({ status: "results", cards, keyword });
         }
       }
     } catch (err) {
       setState({ status: "error", message: String(err) });
     }
+  };
+
+  // 历史下拉:已输入文字 → 按子串做 typeahead 过滤;空输入 → 全量。保留原始索引。
+  const historyMatches = history
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => {
+      const q = searchQuery.trim().toLowerCase();
+      return !q || entry.keyword.toLowerCase().includes(q);
+    });
+  const showHistory = historyOpen && historyMatches.length > 0;
+
+  const pickHistory = (index: number): void => {
+    const e = history[index];
+    if (!e) return;
+    setHistoryOpen(false);
+    void handleSearch(e.keyword, e.source);
   };
 
   // ── Captcha ─────────────────────────────────────────────────────────────────
@@ -605,20 +644,81 @@ function SearchDownload(): JSX.Element {
         {/* Search bar */}
         <section className="mb-10">
           <div className="flex items-center gap-3 max-w-3xl">
-            <div className="flex-1 flex items-center bg-surface-container-highest rounded-xl px-5 py-3.5 space-x-3 border border-outline-variant/30 focus-within:border-primary/40 transition-colors">
-              <span className="material-symbols-outlined text-primary text-xl leading-none">
-                travel_explore
-              </span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && !e.nativeEvent.isComposing && handleSearch(searchQuery)
-                }
-                placeholder="Enter anime title or keyword..."
-                className="flex-1 bg-transparent text-on-surface placeholder-on-surface-variant/40 outline-none text-sm font-label"
-              />
+            <div className="relative flex-1">
+              <div className="flex items-center bg-surface-container-highest rounded-xl px-5 py-3.5 space-x-3 border border-outline-variant/30 focus-within:border-primary/40 transition-colors">
+                <span className="material-symbols-outlined text-primary text-xl leading-none">
+                  travel_explore
+                </span>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setHistoryOpen(true)}
+                  // 失焦关闭;下拉容器 onMouseDown preventDefault 阻止本次 blur,
+                  // 点历史条目不会先失焦把下拉关掉吃掉点击。
+                  onBlur={() => setHistoryOpen(false)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && !e.nativeEvent.isComposing && handleSearch(searchQuery)
+                  }
+                  placeholder="Enter anime title or keyword..."
+                  className="flex-1 bg-transparent text-on-surface placeholder-on-surface-variant/40 outline-none text-sm font-label"
+                />
+              </div>
+
+              {/* 搜索历史下拉 —— 聚焦且有历史时弹出。 */}
+              {showHistory && (
+                <div
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="absolute top-full left-0 mt-1.5 w-full bg-surface-container-highest border border-outline-variant/30 rounded-xl overflow-hidden shadow-xl shadow-black/40 z-50"
+                >
+                  <div className="px-3 py-1.5 flex items-center justify-between border-b border-outline-variant/20">
+                    <span className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest">
+                      最近搜索
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setHistory(clearDownloadHistory())}
+                      className="font-label text-[10px] text-on-surface-variant/40 hover:text-error transition-colors"
+                    >
+                      清空
+                    </button>
+                  </div>
+                  <div className="custom-scrollbar max-h-72 overflow-y-auto py-1">
+                    {historyMatches.map(({ entry, index }) => (
+                      <div
+                        key={`${entry.keyword}-${entry.source}-${index}`}
+                        className="group flex items-center gap-2 px-3 py-2 hover:bg-surface-container-high transition-colors cursor-pointer"
+                        onClick={() => pickHistory(index)}
+                      >
+                        <span className="material-symbols-outlined text-on-surface-variant/30 text-base leading-none shrink-0">
+                          history
+                        </span>
+                        <span className="flex-1 min-w-0 truncate text-sm text-on-surface">
+                          {entry.keyword}
+                        </span>
+                        <span className="font-label text-[10px] text-on-surface-variant/40 shrink-0">
+                          {entry.source}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setHistory(
+                              removeDownloadHistory(entry.keyword, entry.source),
+                            );
+                          }}
+                          className="opacity-0 group-hover:opacity-100 text-on-surface-variant/30 hover:text-error transition-all shrink-0"
+                          title="删除这条历史"
+                        >
+                          <span className="material-symbols-outlined text-sm leading-none">
+                            close
+                          </span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Source selector */}
