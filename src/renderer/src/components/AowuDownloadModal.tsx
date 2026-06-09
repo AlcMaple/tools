@@ -37,10 +37,14 @@ export function AowuDownloadConfigModal({
     source: SourceOption,
     startEp: number,
     endEp: number,
+    excluded: number[],
   ): void => {
     const src = sources.find((s) => s.idx === source.id);
     if (!src) return;
-    const slice = src.episodes.slice(startEp - 1, endEp);
+    // 切片里第 i 项的序号 = startEp + i;过滤掉用户排除的序号。
+    const slice = src.episodes
+      .slice(startEp - 1, endEp)
+      .filter((_, i) => !excluded.includes(startEp + i));
     onStart(
       src.idx,
       src.episodes,

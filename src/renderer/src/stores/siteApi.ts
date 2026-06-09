@@ -100,17 +100,16 @@ export function siteApi(task: DownloadTask): SiteApi {
 // ── Per-task display helpers (also source-discriminated) ──────────────────────
 
 export function listTaskEps(task: DownloadTask): number[] {
-  if (task.source === 'girigiri' || task.source === 'aowu') {
-    return Object.keys(task.epStatus).map(Number).sort((a, b) => a - b)
-  }
+  // epStatus 是各源真正要下的集(xifan 也已写入,且会扣掉排除项)。仅当它为空
+  // ——例如旧版本持久化的 xifan 任务没存 epStatus——才回退到 startEp..endEp 区间。
+  const keys = Object.keys(task.epStatus)
+  if (keys.length > 0) return keys.map(Number).sort((a, b) => a - b)
   return Array.from({ length: task.endEp - task.startEp + 1 }, (_, i) => task.startEp + i)
 }
 
 export function taskEpCount(task: DownloadTask): number {
-  if (task.source === 'girigiri' || task.source === 'aowu') {
-    return Object.keys(task.epStatus).length
-  }
-  return task.endEp - task.startEp + 1
+  const n = Object.keys(task.epStatus).length
+  return n > 0 ? n : task.endEp - task.startEp + 1
 }
 
 export function taskEpLabel(task: DownloadTask, ep: number): string {

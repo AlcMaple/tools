@@ -10,7 +10,12 @@ interface Props {
   card: SearchCard;
   watchInfo: XifanWatchInfo;
   onClose: () => void;
-  onStart: (templates: string[], startEp: number, endEp: number) => void;
+  onStart: (
+    templates: string[],
+    startEp: number,
+    endEp: number,
+    excluded: number[],
+  ) => void;
 }
 
 export function XifanDownloadConfigModal({
@@ -32,6 +37,7 @@ export function XifanDownloadConfigModal({
     source: SourceOption,
     startEp: number,
     endEp: number,
+    excluded: number[],
   ): void => {
     const selected = validSources.find((s) => s.idx === source.id);
     if (!selected?.template) return;
@@ -42,7 +48,8 @@ export function XifanDownloadConfigModal({
         .filter((s) => s.idx !== selected.idx)
         .map((s) => s.template!),
     ];
-    onStart(ordered, startEp, endEp);
+    // Xifan 的集号 == 序号,排除项直接就是要跳过的 ep 号。
+    onStart(ordered, startEp, endEp, excluded);
   };
 
   return (

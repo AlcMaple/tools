@@ -28,8 +28,17 @@ interface Props {
   /** Shown in place of the source list when `sources` is empty. */
   noSourceMessage?: string;
   onClose: () => void;
-  /** Called with the picked source plus the validated (startEp, endEp) range. */
-  onStart: (source: SourceOption, startEp: number, endEp: number) => void;
+  /**
+   * Called with the picked source, the validated (startEp, endEp) range, and the
+   * episode ordinals the user chose to exclude within that range (sorted asc).
+   * 调用方据此过滤出真正要下的集:区间 − 排除项。
+   */
+  onStart: (
+    source: SourceOption,
+    startEp: number,
+    endEp: number,
+    excluded: number[],
+  ) => void;
 }
 
 export function DownloadConfigShell({
@@ -49,27 +58,48 @@ export function DownloadConfigShell({
   const epCount = selected?.episodeCount ?? 0;
   const [startStr, setStartStr] = useState("1");
   const [endStr, setEndStr] = useState(String(epCount || 1));
+  // 用户在区间内打叉排除的集号(序号,与 From/To 同一基准)。换源时清空。
+  const [excluded, setExcluded] = useState<Set<number>>(new Set());
 
   const clampStart = (s: string): number =>
     Math.max(1, Math.min(epCount || 1, parseInt(s, 10) || 1));
   const clampEnd = (s: string, start: number): number =>
     Math.max(start, Math.min(epCount || 1, parseInt(s, 10) || epCount || 1));
 
+  // 当前生效区间(随 From/To 实时推算)。网格固定展示全部集(1..epCount):
+  // 落在区间内且未被排除的高亮=要下;区间外的暗淡只读。
+  const rangeStart = clampStart(startStr);
+  const rangeEnd = clampEnd(endStr, rangeStart);
+  const allEps = Array.from({ length: epCount }, (_, i) => i + 1);
+  const inRange = (n: number): boolean => n >= rangeStart && n <= rangeEnd;
+  const excludedInRange = allEps.filter((n) => inRange(n) && excluded.has(n));
+  const includeCount = allEps.filter(
+    (n) => inRange(n) && !excluded.has(n),
+  ).length;
+
+  const toggleExclude = (n: number): void => {
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(n)) next.delete(n);
+      else next.add(n);
+      return next;
+    });
+  };
+
   const handleSourceChange = (i: number): void => {
     setSourceIdx(i);
     const newCount = sources[i]?.episodeCount ?? 0;
     setStartStr("1");
     setEndStr(String(newCount || 1));
+    setExcluded(new Set());
   };
 
   const handleStart = (): void => {
-    if (!selected || epCount === 0) return;
-    const s = clampStart(startStr);
-    const e = clampEnd(endStr, s);
-    onStart(selected, s, e);
+    if (!selected || epCount === 0 || includeCount === 0) return;
+    onStart(selected, rangeStart, rangeEnd, [...excludedInRange]);
   };
 
-  const startDisabled = !selected || epCount === 0;
+  const startDisabled = !selected || epCount === 0 || includeCount === 0;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-surface-container-lowest/60 backdrop-blur-sm">
@@ -172,6 +202,46 @@ export function DownloadConfigShell({
               </span>
             </div>
           </div>
+
+          {/* 集号格子:固定展示全部集。区间内高亮=要下,点击取消高亮即排除(如已下过的集);区间外暗淡只读。 */}
+          {epCount > 1 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest">
+                  点击高亮集号可排除
+                </span>
+                <span className="font-label text-[10px] text-on-surface-variant/40">
+                  将下载 {includeCount} 集
+                  {excludedInRange.length > 0 &&
+                    ` · 已排除 ${excludedInRange.join("、")}`}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                {allEps.map((n) => {
+                  const within = inRange(n);
+                  const active = within && !excluded.has(n); // 高亮=要下
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      disabled={!within}
+                      onClick={() => within && toggleExclude(n)}
+                      className={`min-w-[2.25rem] h-8 px-2 rounded-md font-mono text-xs border transition-colors ${
+                        active
+                          ? "bg-primary-container border-transparent text-on-primary-container hover:brightness-95"
+                          : within
+                            ? "bg-surface-container border-outline-variant/20 text-on-surface-variant/40 line-through"
+                            : "bg-surface-container border-outline-variant/15 text-on-surface-variant/25 cursor-default"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {footerNote && (
             <p className="font-label text-[10px] text-on-surface-variant/30 mt-3 leading-relaxed">
               {footerNote}

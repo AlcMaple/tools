@@ -282,15 +282,16 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
     } catch { /* noop */ }
   }
 
-  async function handleStartXifanDownload(templates: string[], startEp: number, endEp: number): Promise<void> {
+  async function handleStartXifanDownload(templates: string[], startEp: number, endEp: number, excluded: number[]): Promise<void> {
     if (state.status !== 'xifan_config') return
     const { card, watchInfo } = state
     const title = watchInfo.title || card.title
     const savePath = getSavePath()
+    const skip = new Set(excluded)
     try {
-      const { taskId } = await window.xifanApi.startDownload(title, templates, startEp, endEp, savePath)
+      const { taskId } = await window.xifanApi.startDownload(title, templates, startEp, endEp, savePath, excluded)
       const epStatus: Record<number, 'pending'> = {}
-      for (let ep = startEp; ep <= endEp; ep++) epStatus[ep] = 'pending'
+      for (let ep = startEp; ep <= endEp; ep++) if (!skip.has(ep)) epStatus[ep] = 'pending'
       downloadStore.addTask({
         id: taskId, source: 'xifan', title, cover: card.cover,
         startEp, endEp, templates, sourceIdx: 0, savePath,
@@ -416,7 +417,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
         card={state.card}
         watchInfo={state.watchInfo}
         onClose={onClose}
-        onStart={(templates, startEp, endEp) => void handleStartXifanDownload(templates, startEp, endEp)}
+        onStart={(templates, startEp, endEp, excluded) => void handleStartXifanDownload(templates, startEp, endEp, excluded)}
       />
     )
   }
