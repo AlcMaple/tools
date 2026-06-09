@@ -2,7 +2,7 @@
  * Xifan MP4 download — thin wrapper around shared mp4-range-downloader.
  *
  * Responsibilities here:
- *   - Resolve the per-ep URL from the source template (`template.replace('{:02d}', ep)`)
+ *   - Resolve the per-ep URL from the source template (`formatEpUrl`,按占位符位宽补零)
  *   - Apply the `[Xifan] {title}/{title} - EP.mp4` directory + filename convention
  *   - Translate the shared downloader's structured outcome into UI events
  */
@@ -15,6 +15,19 @@ import { downloadByUrl, cleanupPartsAt } from '../shared/mp4-range-downloader'
 export type { DlEvent }
 
 const LOG_TAG = 'xifan'
+
+/**
+ * 把模板里的集数占位符替换成真实集号,按占位符携带的位宽补零:
+ *   {:d}   → 不补零(1 → "1",10 → "10")
+ *   {:02d} → 补零到两位(4 → "04")
+ * 兼容历史 localStorage 里残留的旧 {:02d} 模板(语义与从前完全一致)。
+ */
+function formatEpUrl(template: string, ep: number): string {
+  return template.replace(/\{:0?(\d*)d\}/, (_, width: string) => {
+    const w = width ? parseInt(width, 10) : 0
+    return String(ep).padStart(w, '0')
+  })
+}
 
 function epSavePath(title: string, ep: number, saveDir: string | undefined): string {
   const epStr = String(ep).padStart(2, '0')
@@ -48,12 +61,11 @@ export async function downloadSingleEp(
     return
   }
 
-  const epStr = String(ep).padStart(2, '0')
   const savePath = epSavePath(title, ep, saveDir)
   const dir = dirname(savePath)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 
-  const url = template.replace('{:02d}', epStr)
+  const url = formatEpUrl(template, ep)
 
   const outcome = await downloadByUrl(url, savePath, signal, (bytes, _total, pct) => {
     onEvent({ type: 'ep_progress', ep, pct, bytes })

@@ -85,7 +85,13 @@ export function siteApi(task: DownloadTask): SiteApi {
       window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newSourceIdx, savePath),
     resolveEpUrl: async (ep) => {
       const template = task.templates[0] ?? ''
-      return template ? template.replace('{:02d}', String(ep).padStart(2, '0')) : ''
+      // 占位符按携带的位宽补零({:d} 不补零、{:0Nd} 补到 N 位);必须与主进程
+      // xifan/download.ts 的 formatEpUrl 保持一致,否则复制出来的直链拼错(见
+      // docs/xifan-下载链接-集数补零-回归用例.md)。兼容历史残留的旧 {:02d} 模板。
+      return template
+        ? template.replace(/\{:0?(\d*)d\}/, (_, w: string) =>
+            String(ep).padStart(w ? parseInt(w, 10) : 0, '0'))
+        : ''
     },
     resolveIsAsync: false,
   }
