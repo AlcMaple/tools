@@ -51,8 +51,8 @@ function Sidebar(): JSX.Element {
             className={({ isActive }) =>
               `flex items-center px-6 py-3 space-x-3 transition-colors duration-200 ${
                 isActive
-                  ? "text-primary font-bold border-r-2 border-primary bg-surface-container"
-                  : "text-on-surface/60 font-medium hover:text-on-surface hover:bg-surface-container"
+                  ? "text-primary font-medium border-r-2 border-primary bg-surface-container"
+                  : "text-on-surface/60 font-medium border-r-2 border-transparent hover:text-on-surface hover:bg-surface-container"
               }`
             }
           >

@@ -253,7 +253,7 @@ function ViewToggleButton({
       onClick={onClick}
       className={`px-3 py-1.5 rounded font-label text-[10px] uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
         active
-          ? 'bg-amber-400/15 text-amber-600 font-bold'
+          ? 'bg-amber-400/15 text-amber-600'
           : 'text-on-surface-variant/55 hover:text-on-surface hover:bg-surface-container-high'
       }`}
     >
@@ -316,7 +316,7 @@ function GridView({
               onClick={() => onToggle(n)}
               className={`w-full h-9 rounded-md font-mono text-xs transition-all border ${
                 isMarked
-                  ? 'bg-amber-400/20 text-amber-600 border-amber-400/50 font-bold hover:bg-amber-400/30'
+                  ? 'bg-amber-400/20 text-amber-600 border-amber-400/50 hover:bg-amber-400/30'
                   : 'bg-surface text-on-surface-variant/70 border-outline-variant/15 hover:bg-surface-container-high hover:text-on-surface hover:border-outline-variant/40'
               }`}
             >

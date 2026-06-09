@@ -469,7 +469,7 @@ export default function HomeworkLookup(): JSX.Element {
                 onClick={() => setActiveTab('homework')}
                 className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
                   activeTab === 'homework'
-                    ? 'bg-primary/15 text-primary border border-primary/20 font-bold'
+                    ? 'bg-primary/15 text-primary border border-primary/20'
                     : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
                 }`}
               >
@@ -480,7 +480,7 @@ export default function HomeworkLookup(): JSX.Element {
                 onClick={() => setActiveTab('jjc')}
                 className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
                   activeTab === 'jjc'
-                    ? 'bg-primary/15 text-primary border border-primary/20 font-bold'
+                    ? 'bg-primary/15 text-primary border border-primary/20'
                     : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
                 }`}
               >
@@ -491,7 +491,7 @@ export default function HomeworkLookup(): JSX.Element {
                 onClick={() => setActiveTab('pjjc')}
                 className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
                   activeTab === 'pjjc'
-                    ? 'bg-primary/15 text-primary border border-primary/20 font-bold'
+                    ? 'bg-primary/15 text-primary border border-primary/20'
                     : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
                 }`}
               >
@@ -502,7 +502,7 @@ export default function HomeworkLookup(): JSX.Element {
                 onClick={() => setActiveTab('classic')}
                 className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
                   activeTab === 'classic'
-                    ? 'bg-tertiary/15 text-tertiary border border-tertiary/20 font-bold'
+                    ? 'bg-tertiary/15 text-tertiary border border-tertiary/20'
                     : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
                 }`}
               >
@@ -513,7 +513,7 @@ export default function HomeworkLookup(): JSX.Element {
                 onClick={() => setActiveTab('log')}
                 className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
                   activeTab === 'log'
-                    ? 'bg-secondary/15 text-secondary border border-secondary/20 font-bold'
+                    ? 'bg-secondary/15 text-secondary border border-secondary/20'
                     : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
                 }`}
               >
