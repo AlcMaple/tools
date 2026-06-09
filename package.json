@@ -23,6 +23,10 @@
       "node_modules/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "out/main/scan-worker.js",
+      "out/main/chunks/**"
+    ],
     "extraResources": [
       {
         "from": "resources/icon.ico",

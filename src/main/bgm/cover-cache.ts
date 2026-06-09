@@ -19,6 +19,7 @@
 import { app, net, nativeImage } from 'electron'
 import { join } from 'path'
 import { mkdir, writeFile, access, rm } from 'fs/promises'
+import { logInfo } from '../shared/logger'
 
 // 封面缩到这个最大宽度再存。封面实际只显示到 88–340px，而 BGM 的
 // images.large 原图常达 800–1200px+，全尺寸图每次组件重挂载（切页面）
@@ -34,6 +35,19 @@ const COVER_THUMB_WIDTH = 480
 // skip-if-exists 跨重启稳定（v2 目录存在 = 已迁移），旧的全尺寸图一次性作废。
 function coversDir(): string {
   return join(app.getPath('userData'), 'covers-v2')
+}
+
+// 封面目录只建一次。否则打开 MyAnime 时几十~上百张封面各自 mkdir(recursive),
+// 在 libuv 4 线程 fs 池里和 access 抢道、平白翻倍 fs 操作量。用一个共享 promise
+// 串住"建目录"这件事;失败则清空让下次重试(不缓存失败)。
+let dirReady: Promise<void> | null = null
+function ensureCoversDir(): Promise<void> {
+  if (!dirReady) {
+    dirReady = mkdir(coversDir(), { recursive: true })
+      .then(() => undefined)
+      .catch((e) => { dirReady = null; throw e })
+  }
+  return dirReady
 }
 
 // 一次性清掉旧的全尺寸 `covers` 目录，避免迁移后残留几十 MB 垃圾。幂等：
@@ -163,23 +177,29 @@ export async function cacheCover(
   maxWidth: number = COVER_THUMB_WIDTH,
 ): Promise<string | null> {
   if (!url || url.startsWith('archivist://')) return url || null
+  // 探子：本地命中(hit)本应是两次 fs 操作、毫秒级；冷启动若主进程被启动扫描/
+  // chokidar 挤住,命中也会被拖到几百 ms~几秒。只记 >100ms 的慢调用(warm 时不刷屏),
+  // hit/dl 区分"被饿着的本地命中"还是"真在下载",直接定位冷启动卡顿归因。
+  const t0 = Date.now()
+  let outcome = 'dl'
   try {
     void cleanupLegacyCoversDir()
     const dir = coversDir()
-    await mkdir(dir, { recursive: true })
+    await ensureCoversDir()
     // 文件名带尺寸（`${key}.${maxWidth}.jpg`）—— 两档尺寸互不覆盖，且统一 jpeg
     // 让 skip-if-exists 不因原图扩展名不同（png/webp）而漏判重复下载。
     const filePath = join(dir, `${key}.${maxWidth}.jpg`)
     // 已存在 → 直接复用
     try {
       await access(filePath)
+      outcome = 'hit'
       return toArchivistUrl(filePath)
     } catch {
       /* 不存在，继续下载 */
     }
     // 串行入队：避免列表打开时几十张封面并发猛拉触发图床限速。
     const buf = await enqueue(() => download(url, maxWidth))
-    if (buf.length === 0) return null
+    if (buf.length === 0) { outcome = 'empty'; return null }
     // 缩放 + 重新编码为 jpeg。封面是不透明海报，转 jpeg 不丢可见信息。
     // nativeImage 解析/缩放失败（极少见的坏图）则原样落盘，保证封面不丢。
     let out = buf
@@ -197,6 +217,10 @@ export async function cacheCover(
     await writeFile(filePath, out)
     return toArchivistUrl(filePath)
   } catch {
+    outcome = 'err'
     return null
+  } finally {
+    const ms = Date.now() - t0
+    if (ms > 100) logInfo('perf', `cover:${key} ${ms}ms ${outcome}`)
   }
 }

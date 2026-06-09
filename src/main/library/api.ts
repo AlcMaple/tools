@@ -1,27 +1,22 @@
 import { join, sep } from 'path'
 import { existsSync } from 'fs'
-import { readdir, stat, open } from 'fs/promises'
-import crypto from 'crypto'
+import { readdir, stat } from 'fs/promises'
+import { Worker } from 'worker_threads'
 import chokidar from 'chokidar'
 import { JsonStore } from '../shared/json-store'
+import {
+  walkFolder,
+  syncLibrary,
+  isVideoFile,
+  createScanGate,
+  type LibraryPath,
+  type LibraryEntry,
+  type DirMtimes,
+} from './scan-core'
 
-export interface LibraryPath {
-  path: string;
-  label: string;
-}
-
-export interface LibraryEntry {
-  id: string;
-  title: string;
-  nativeTitle: string;
-  tags: string;
-  episodes: number;
-  specs: string;
-  image: string;
-  folderPath: string;
-  addedAt: number;
-  totalSize: number;
-}
+// 扫描相关的纯逻辑 + 类型都收敛进 scan-core（既能进 worker 又能主线程兜底）。
+// 这里 re-export 类型，所有老的 `import { LibraryEntry } from './library/api'` 不变。
+export type { LibraryPath, LibraryEntry } from './scan-core'
 
 export interface LibraryFile {
   name: string;
@@ -38,6 +33,17 @@ const pathsStore = new JsonStore<LibraryPath[]>('library_paths.json', (raw) =>
 const entriesStore = new JsonStore<LibraryEntry[]>('library_entries.json', (raw) =>
   Array.isArray(raw) ? (raw as LibraryEntry[]) : [],
 )
+// 目录 mtime 索引：增量同步的「变化检测」存档（目录路径 → 上次扫到的 mtimeMs）。
+// 跟 entries 分开存，不动 LibraryEntry 结构。空对象兜底 → 首次启动退化成全量扫描。
+const dirIndexStore = new JsonStore<DirMtimes>('library_dir_index.json', (raw) =>
+  raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as DirMtimes) : {},
+)
+function getDirIndex(): DirMtimes {
+  return dirIndexStore.current()
+}
+function setDirIndex(dirMtimes: DirMtimes): void {
+  dirIndexStore.set(dirMtimes)
+}
 
 // ==========================================
 // 动态监听器模块
@@ -112,6 +118,15 @@ export function addPath(folderPath: string, label: string): LibraryPath[] {
 export function removePath(folderPath: string): LibraryPath[] {
   const current = getPaths().filter(p => p.path !== folderPath)
   setPaths(current)
+  // 同步剔除该路径下的条目 + 目录 mtime 索引 —— 删路径只是把这块数据从索引里拿掉，
+  // 不需要扫描（正是网盘思路：路径增删 = 索引加减）。否则要等下次同步才清理干净。
+  const prefix = folderPath.endsWith(sep) ? folderPath : folderPath + sep
+  const keep = (p: string): boolean => p !== folderPath && !p.startsWith(prefix)
+  setEntries(getEntries().filter(e => keep(e.folderPath)))
+  const di = getDirIndex()
+  const nextDi: DirMtimes = {}
+  for (const k of Object.keys(di)) if (keep(k)) nextDi[k] = di[k]
+  setDirIndex(nextDi)
   if (currentWatchCallback) startLibraryWatch(currentWatchCallback, currentDetectCallback || undefined)
   return current
 }
@@ -137,86 +152,38 @@ export function setEntries(entries: LibraryEntry[]): void {
 // ==========================================
 // 核心扫描模块
 // ==========================================
+//
+// 遍历逻辑都在 scan-core.ts（纯 Node）。这里只负责：把增量同步丢进 worker_threads
+// 跑（主线程不卡）、worker 起不来时退回主线程兜底、以及 watch 的小范围重扫。
 
-const VIDEO_EXTS = ['mp4', 'mkv', 'avi', 'flv', 'mov', 'webm']
-
-// MPEG-TS 同步字节检测：0x47 出现在 offset 0 和 188（一个 TS 包长度）
-async function isMpegTs(filePath: string): Promise<boolean> {
-  let fd: Awaited<ReturnType<typeof open>> | null = null
-  try {
-    fd = await open(filePath, 'r')
-    const buf = Buffer.alloc(189)
-    const { bytesRead } = await fd.read(buf, 0, 189, 0)
-    return bytesRead === 189 && buf[0] === 0x47 && buf[188] === 0x47
-  } catch {
-    return false
-  } finally {
-    await fd?.close()
-  }
+interface SyncResult {
+  entries: LibraryEntry[]
+  dirMtimes: DirMtimes
 }
 
-async function isVideoFile(filePath: string, name: string): Promise<boolean> {
-  const ext = name.split('.').pop()?.toLowerCase() || ''
-  if (VIDEO_EXTS.includes(ext)) return true
-  if (ext === 'ts') return isMpegTs(filePath)
-  return false
-}
-
-// 递归遍历文件夹，找出直接包含视频文件的子文件夹并记录为条目
-async function walkFolder(
-  currentPath: string,
-  entries: LibraryEntry[],
-  existingMap: Map<string, LibraryEntry>
-): Promise<void> {
-  let episodeCount = 0
-  let totalSize = 0
-
-  try {
-    const items = await readdir(currentPath, { withFileTypes: true })
-    items.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
-
-    const foldersToVisit: string[] = []
-
-    for (const item of items) {
-      if (item.name.startsWith('.')) continue
-
-      if (item.isDirectory()) {
-        foldersToVisit.push(join(currentPath, item.name))
-      } else if (item.isFile()) {
-        const fullPath = join(currentPath, item.name)
-        if (await isVideoFile(fullPath, item.name)) {
-          episodeCount++
-          try {
-            const s = await stat(fullPath)
-            totalSize += s.size
-          } catch { /* ignore */ }
-        }
+// 在 worker 里跑增量同步。worker 有独立事件循环 + 独立 libuv 线程池，整棵树的遍历
+// 都在那条线程上，主进程线程全程空闲 —— 同步期间封面 / 切页 / 读盘 / 拖窗口都不被
+// 它占住。worker 脚本由 electron-vite 单独打包到 out/main/scan-worker.js。
+function syncInWorker(
+  paths: LibraryPath[],
+  prevEntries: LibraryEntry[],
+  prevDirMtimes: DirMtimes,
+): Promise<SyncResult> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (fn: () => void): void => { if (!settled) { settled = true; fn() } }
+    const worker = new Worker(join(__dirname, 'scan-worker.js'))
+    worker.once('message', (msg: { ok: boolean; entries?: LibraryEntry[]; dirMtimes?: DirMtimes; error?: string }) => {
+      void worker.terminate()
+      if (msg?.ok && Array.isArray(msg.entries) && msg.dirMtimes) {
+        finish(() => resolve({ entries: msg.entries!, dirMtimes: msg.dirMtimes! }))
+      } else {
+        finish(() => reject(new Error(msg?.error || 'scan worker failed')))
       }
-    }
-
-    if (episodeCount > 0) {
-      const id = crypto.createHash('md5').update(currentPath).digest('hex')
-      const sizeGB = (totalSize / (1024 * 1024 * 1024)).toFixed(1)
-      const folderName = currentPath.split(/[\\/]/).pop() || 'Local Folder'
-
-      entries.push({
-        id,
-        title: folderName,
-        nativeTitle: '',
-        tags: 'Local',
-        episodes: episodeCount,
-        specs: `${episodeCount > 0 ? 'Varying' : 'Unknown'} • ${sizeGB} GB`,
-        image: '',
-        folderPath: currentPath,
-        addedAt: existingMap.get(id)?.addedAt ?? Date.now(),
-        totalSize,
-      })
-    }
-
-    for (const folder of foldersToVisit) {
-      await walkFolder(folder, entries, existingMap)
-    }
-  } catch { /* path doesn't exist or not accessible */ }
+    })
+    worker.once('error', (err) => { void worker.terminate(); finish(() => reject(err)) })
+    worker.postMessage({ paths, prevEntries, prevDirMtimes })
+  })
 }
 
 export async function getFiles(folderPath: string): Promise<LibraryFile[]> {
@@ -276,9 +243,9 @@ export async function incrementalUpdate(changedPath: string): Promise<LibraryEnt
     e.folderPath !== scopePath && !e.folderPath.startsWith(scopePath + sep)
   )
 
-  // 只重扫受影响的子树
+  // 只重扫受影响的子树（增量范围小，直接主线程跑即可，不值得起 worker）
   const newEntries: LibraryEntry[] = []
-  await walkFolder(scopePath, newEntries, existingMap)
+  await walkFolder(scopePath, newEntries, existingMap, createScanGate())
 
   const result = [...unchanged, ...newEntries]
     .sort((a, b) => (a.folderPath < b.folderPath ? -1 : a.folderPath > b.folderPath ? 1 : 0))
@@ -286,23 +253,30 @@ export async function incrementalUpdate(changedPath: string): Promise<LibraryEnt
   return result
 }
 
-// 全量扫描（用于手动触发和启动时初始化）
+// 增量同步（启动 / 手动刷新 / 加路径后都走它）。基于上次的目录 mtime 索引只读变化的
+// 目录：整库没动时只剩"每目录 1 次 stat"，亚秒级；改了的目录才深扫。首次 / 索引为空
+// 时自然退化成一次全量扫描并建好索引。优先丢进 worker（主线程不卡），worker 起不来则
+// 退回主线程兜底 —— 功能不丢。
 export async function scanLibrary(
   onProgress: (status: string, currentVal: number, totalVal: number) => void
 ): Promise<LibraryEntry[]> {
   const paths = getPaths()
-  const entries: LibraryEntry[] = []
-  const existingMap = new Map(getEntries().map(e => [e.id, e]))
+  const prevEntries = getEntries()
+  const prevDirMtimes = getDirIndex()
+  onProgress('Scanning library...', 0, 1)
 
-  for (const libPath of paths) {
-    onProgress(`Starting scan for ${libPath.label}...`, 0, 1)
-    await walkFolder(libPath.path, entries, existingMap)
+  let result: SyncResult
+  try {
+    result = await syncInWorker(paths, prevEntries, prevDirMtimes)
+  } catch (err) {
+    console.error('扫描 worker 失败，退回主线程扫描:', err)
+    result = await syncLibrary(paths, prevEntries, prevDirMtimes)
   }
 
-  entries.sort((a, b) => (a.folderPath < b.folderPath ? -1 : a.folderPath > b.folderPath ? 1 : 0))
   onProgress('Saving index...', 99, 100)
-  setEntries(entries)
+  setEntries(result.entries)
+  setDirIndex(result.dirMtimes)
   onProgress('Scan complete', 100, 100)
 
-  return entries
+  return result.entries
 }

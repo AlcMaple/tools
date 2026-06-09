@@ -10,7 +10,17 @@ const versionDefine = {
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
-    define: versionDefine
+    define: versionDefine,
+    build: {
+      rollupOptions: {
+        // 主入口 + 媒体库扫描 worker 各自打包成 out/main/*.js。worker 在独立线程
+        // 跑全量扫描，主进程线程不被占（见 library/scan-worker.ts）。
+        input: {
+          index: resolve('src/main/index.ts'),
+          'scan-worker': resolve('src/main/library/scan-worker.ts')
+        }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
