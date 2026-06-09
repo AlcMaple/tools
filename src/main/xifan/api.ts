@@ -42,8 +42,15 @@ function needsCaptcha(html: string): boolean {
 }
 
 function buildTemplate(ep1Url: string): string | null {
-  const result = ep1Url.replace(/(.*?)(\d+)([^./\d]*\.[^./]+$)/, '$1{:02d}$3')
-  return result.includes('{:02d}') ? result : null
+  // 用第 1 集 URL 里集数的「原始写法」决定补零宽度,绝不能一律补成两位:
+  // 多数源是 .../01.mp4(补零两位),但有的源是 .../1.mp4(不补零)。写死
+  // 成 {:02d} 会把后者的第 4 集拼成 04.mp4 → 服务器 404(见 docs 回归用例)。
+  const m = ep1Url.match(/(.*?)(\d+)([^./\d]*\.[^./]+$)/)
+  if (!m) return null
+  const [, head, digits, tail] = m
+  // 有前导零(如 01 / 001)才保留其位宽补零,否则用 {:d} 不补零(1 → 1,10 → 10)。
+  const token = digits.length > 1 && digits.startsWith('0') ? `{:0${digits.length}d}` : '{:d}'
+  return `${head}${token}${tail}`
 }
 
 // ── captcha ────────────────────────────────────────────────────────────────────
