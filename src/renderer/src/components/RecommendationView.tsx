@@ -94,8 +94,10 @@ interface Props {
 
 export function RecommendationView({ filter, query = '', recipients = [] }: Props): JSX.Element {
   const all = useRecommendationList()
-  // 拒绝时的小弹窗：记录当前要拒绝的 recId（null = 没在拒绝中）
+  // 三个小弹窗各记一个 recId（null = 没在进行中）：拒绝写原因 / 接受写备注 / 编辑推荐方对方。
   const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [acceptingId, setAcceptingId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   // 列表显示：query → status filter → 推荐人 filter（OR），最后 createdAt 倒序（最新在顶）。
   const visible = useMemo(() => {
@@ -108,6 +110,8 @@ export function RecommendationView({ filter, query = '', recipients = [] }: Prop
   }, [all, filter, query, recipients])
 
   const rejectingRec = rejectingId ? all.find(r => r.id === rejectingId) ?? null : null
+  const acceptingRec = acceptingId ? all.find(r => r.id === acceptingId) ?? null : null
+  const editingRec = editingId ? all.find(r => r.id === editingId) ?? null : null
 
   return (
     <div className="px-8 py-6 space-y-3">
@@ -121,9 +125,10 @@ export function RecommendationView({ filter, query = '', recipients = [] }: Prop
           <RecRow
             key={r.id}
             rec={r}
-            onAccept={() => recommendationStore.markAccepted(r.id)}
+            onAcceptClick={() => setAcceptingId(r.id)}
             onRejectClick={() => setRejectingId(r.id)}
             onUnmark={() => recommendationStore.markPending(r.id)}
+            onEditClick={() => setEditingId(r.id)}
             onDelete={() => recommendationStore.delete(r.id)}
           />
         ))
@@ -140,6 +145,30 @@ export function RecommendationView({ filter, query = '', recipients = [] }: Prop
           }}
         />
       )}
+
+      {/* Accept note modal —— 备注可选 */}
+      {acceptingRec && (
+        <AcceptReasonModal
+          rec={acceptingRec}
+          onCancel={() => setAcceptingId(null)}
+          onConfirm={(reason) => {
+            recommendationStore.markAccepted(acceptingRec.id, reason)
+            setAcceptingId(null)
+          }}
+        />
+      )}
+
+      {/* Edit fromWhom / toWhom modal —— 主要给老数据补「推荐方」 */}
+      {editingRec && (
+        <EditPersonModal
+          rec={editingRec}
+          onCancel={() => setEditingId(null)}
+          onConfirm={(fromWhom, toWhom) => {
+            recommendationStore.edit(editingRec.id, { fromWhom, toWhom })
+            setEditingId(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -147,12 +176,13 @@ export function RecommendationView({ filter, query = '', recipients = [] }: Prop
 // ── Row ──────────────────────────────────────────────────────────────────────
 
 function RecRow({
-  rec, onAccept, onRejectClick, onUnmark, onDelete,
+  rec, onAcceptClick, onRejectClick, onUnmark, onEditClick, onDelete,
 }: {
   rec: Recommendation
-  onAccept: () => void
+  onAcceptClick: () => void
   onRejectClick: () => void
   onUnmark: () => void
+  onEditClick: () => void
   onDelete: () => void
 }): JSX.Element {
   const meta = REC_STATUS_META[rec.status]
@@ -233,6 +263,13 @@ function RecRow({
               <span className="material-symbols-outlined text-[16px] leading-none">open_in_new</span>
             </a>
             <button
+              onClick={onEditClick}
+              title="编辑推荐方 / 推荐对方"
+              className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px] leading-none">edit</span>
+            </button>
+            <button
               onClick={() => {
                 if (confirmDelete) {
                   onDelete()
@@ -275,7 +312,7 @@ function RecRow({
           {rec.status === 'pending' && (
             <>
               <button
-                onClick={onAccept}
+                onClick={onAcceptClick}
                 className="px-2.5 py-1 rounded-md border border-secondary/30 hover:border-secondary/50 hover:bg-secondary/10 text-secondary font-label text-[10px] uppercase tracking-widest transition-colors"
               >
                 标记接受
@@ -298,6 +335,16 @@ function RecRow({
             </button>
           )}
 
+          {rec.status === 'accepted' && (
+            <button
+              onClick={onAcceptClick}
+              title={rec.successReason ? '改成功备注' : '加成功备注'}
+              className="px-2.5 py-1 rounded-md border border-outline-variant/30 hover:border-secondary/40 hover:bg-secondary/10 text-on-surface-variant/70 hover:text-secondary font-label text-[10px] uppercase tracking-widest transition-colors"
+            >
+              {rec.successReason ? '改备注' : '加备注'}
+            </button>
+          )}
+
           {rec.status === 'rejected' && (
             <button
               onClick={onRejectClick}
@@ -314,6 +361,14 @@ function RecRow({
           <p className="font-label text-[11px] text-error/85 bg-error/[0.05] border border-error/15 rounded-md px-3 py-2">
             <span className="text-error/55 mr-1">原因：</span>
             {rec.failReason}
+          </p>
+        )}
+
+        {/* 成功原因（仅 accepted 且填了备注时显示）—— 跟失败原因同款式，换 secondary 色 */}
+        {rec.status === 'accepted' && rec.successReason && (
+          <p className="font-label text-[11px] text-secondary/85 bg-secondary/[0.05] border border-secondary/15 rounded-md px-3 py-2">
+            <span className="text-secondary/55 mr-1">成功原因：</span>
+            {rec.successReason}
           </p>
         )}
       </div>
@@ -361,6 +416,121 @@ function RejectReasonModal({
           <ModalButton variant="cancel" onClick={onCancel}>取消</ModalButton>
           <ModalButton variant="danger" icon="cancel" onClick={() => onConfirm(reason.trim())} disabled={!canConfirm}>
             确认拒绝
+          </ModalButton>
+        </div>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ── Accept note modal ────────────────────────────────────────────────────────
+
+// 标记接受时弹的小窗：写「为什么这次推荐成功了」。跟拒绝窗对称，但**备注可选**
+// —— 推荐成功本身就是好结果，不强制写理由；写了能帮日后总结"什么样的番好推"。
+function AcceptReasonModal({
+  rec, onCancel, onConfirm,
+}: {
+  rec: Recommendation
+  onCancel: () => void
+  onConfirm: (reason: string) => void
+}): JSX.Element {
+  const [reason, setReason] = useState(rec.successReason ?? '')
+  // 已是 accepted（点「改备注」进来）时标题用"改成功备注"，否则是首次标记接受。
+  const isEditingNote = rec.status === 'accepted'
+  return (
+    <ModalShell onBackdrop={onCancel}>
+      <div className="p-6 space-y-4">
+        <div>
+          <h3 className="font-headline font-black text-base text-on-surface">
+            {isEditingNote ? '成功备注' : '推荐成功'}
+          </h3>
+          <p className="font-label text-[10px] text-on-surface-variant/55 mt-1 uppercase tracking-widest">
+            {rec.fromWhom ? `${rec.fromWhom} 推荐给 ${rec.toWhom}` : `推荐给 ${rec.toWhom}`} · {rec.titleCn || rec.title}
+          </p>
+        </div>
+        <div>
+          <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1 block">
+            成功原因（可选）
+          </label>
+          <textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="例：对方正好在找新番 / 喜欢这个题材 / 被画风吸引"
+            autoFocus
+            spellCheck={false}
+            rows={3}
+            className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-secondary/40 focus:border-secondary/30 transition-all resize-none"
+          />
+        </div>
+        <div className="flex items-center gap-3 pt-1">
+          <ModalButton variant="cancel" onClick={onCancel}>取消</ModalButton>
+          <ModalButton variant="secondary" icon="check_circle" onClick={() => onConfirm(reason.trim())}>
+            {isEditingNote ? '保存备注' : '确认接受'}
+          </ModalButton>
+        </div>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ── Edit fromWhom / toWhom modal ─────────────────────────────────────────────
+
+// 编辑推荐方 / 推荐对方。主要给老数据补「推荐方」（normalize 给空串、展示退回
+// "推荐给 X"），也能纠正笔误。推荐对方必填（空串会被 normalize 丢弃），推荐方可空。
+function EditPersonModal({
+  rec, onCancel, onConfirm,
+}: {
+  rec: Recommendation
+  onCancel: () => void
+  onConfirm: (fromWhom: string, toWhom: string) => void
+}): JSX.Element {
+  const [fromWhom, setFromWhom] = useState(rec.fromWhom)
+  const [toWhom, setToWhom] = useState(rec.toWhom)
+  const canConfirm = toWhom.trim().length > 0
+  return (
+    <ModalShell onBackdrop={onCancel}>
+      <div className="p-6 space-y-4">
+        <div>
+          <h3 className="font-headline font-black text-base text-on-surface">编辑推荐人</h3>
+          <p className="font-label text-[10px] text-on-surface-variant/55 mt-1 uppercase tracking-widest">
+            {rec.titleCn || rec.title}
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1 block">
+              谁推荐的
+            </label>
+            <input
+              type="text"
+              value={fromWhom}
+              onChange={e => setFromWhom(e.target.value)}
+              placeholder="例：我 / 妹妹 / 群友老王"
+              maxLength={40}
+              autoFocus
+              spellCheck={false}
+              className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1 block">
+              推荐给谁
+            </label>
+            <input
+              type="text"
+              value={toWhom}
+              onChange={e => setToWhom(e.target.value)}
+              placeholder="例：Bob / 妹妹 / 群里"
+              maxLength={40}
+              spellCheck={false}
+              className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-3 pt-1">
+          <ModalButton variant="cancel" onClick={onCancel}>取消</ModalButton>
+          <ModalButton variant="primary" icon="check" onClick={() => onConfirm(fromWhom.trim(), toWhom.trim())} disabled={!canConfirm}>
+            保存
           </ModalButton>
         </div>
       </div>
