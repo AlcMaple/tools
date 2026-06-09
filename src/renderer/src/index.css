@@ -129,6 +129,14 @@
   background: transparent;
 }
 
+/* 主内容滚动容器始终预留滚动条宽度。否则当某个页面/tab 内容不足一屏（如
+   「我的追番」小说 tab 条目少、无需滚动）时,4px 滚动条消失 → 容器变宽 4px →
+   sticky header 用 justify-between 排布的右侧整块（搜索框 + 同步 chip）跟着
+   右移一下,切到该 tab 就"抖一下"。stable 让有无滚动条时内容宽度恒定。 */
+#page-scroll {
+  scrollbar-gutter: stable;
+}
+
 .glass-modal {
   background: rgba(53, 53, 53, 0.7);
   backdrop-filter: blur(20px);
