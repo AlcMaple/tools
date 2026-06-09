@@ -32,6 +32,10 @@ export interface Recommendation {
   status: RecommendationStatus
   /** 仅在 status === 'rejected' 时有意义。 */
   failReason?: string
+  /** 仅在 status === 'accepted' 时有意义 —— 记「为什么这次推荐成功了」
+   *  （对方正好在找新番 / 喜欢这个题材…），帮日后总结"什么样的番好推"。
+   *  老的已接受记录没有这字段 → normalize 给 undefined，展示层不显示备注块。 */
+  successReason?: string
   /** ISO date，便于将来排序 / 统计"推荐成功率随时间"。 */
   createdAt: string
 }
@@ -61,6 +65,11 @@ export function normalizeRecommendations(input: unknown): Recommendation[] {
       failReason:
         status === 'rejected' && typeof r.failReason === 'string' && r.failReason.trim().length > 0
           ? r.failReason
+          : undefined,
+      // 成功原因是后加字段（blob 里老设备没有 → undefined）；只在 accepted 时保留。
+      successReason:
+        status === 'accepted' && typeof r.successReason === 'string' && r.successReason.trim().length > 0
+          ? r.successReason
           : undefined,
       createdAt: typeof r.createdAt === 'string' && r.createdAt ? r.createdAt : new Date().toISOString(),
     })
@@ -140,14 +149,16 @@ class RecommendationStore {
   }
 
   /**
-   * 标记接受。覆盖旧的 failReason（如果之前误标过 rejected）。
+   * 标记接受，可带成功原因（可选 —— 不像拒绝那样强制）。覆盖旧的 failReason
+   * （如果之前误标过 rejected）；reason 留空则清掉成功原因。
    */
-  markAccepted(id: string): void {
+  markAccepted(id: string, successReason?: string): void {
     const list = this.ensure()
     const r = list.find(x => x.id === id)
     if (!r) return
     r.status = 'accepted'
     r.failReason = undefined
+    r.successReason = successReason && successReason.trim().length > 0 ? successReason.trim() : undefined
     this.persist()
   }
 
@@ -160,16 +171,32 @@ class RecommendationStore {
     if (!r) return
     r.status = 'rejected'
     r.failReason = failReason.trim() || undefined
+    r.successReason = undefined
     this.persist()
   }
 
-  /** 改回待回应（用户误标后撤销）。 */
+  /** 改回待回应（用户误标后撤销）。清掉成功 / 失败原因。 */
   markPending(id: string): void {
     const list = this.ensure()
     const r = list.find(x => x.id === id)
     if (!r) return
     r.status = 'pending'
     r.failReason = undefined
+    r.successReason = undefined
+    this.persist()
+  }
+
+  /**
+   * 编辑推荐方 / 推荐对方（自由文本）。主要用途：给老数据补「推荐方」，或纠正笔误。
+   * toWhom 不允许清空（空串会被 normalize 丢弃），传空白则保留原值；fromWhom 允许
+   * 清空（退回"推荐给 X"展示）。番剧本身（bgmId/标题）不在这里改 —— 那要重新选番。
+   */
+  edit(id: string, patch: { fromWhom?: string; toWhom?: string }): void {
+    const list = this.ensure()
+    const r = list.find(x => x.id === id)
+    if (!r) return
+    if (patch.fromWhom !== undefined) r.fromWhom = patch.fromWhom.trim()
+    if (patch.toWhom !== undefined && patch.toWhom.trim().length > 0) r.toWhom = patch.toWhom.trim()
     this.persist()
   }
 
