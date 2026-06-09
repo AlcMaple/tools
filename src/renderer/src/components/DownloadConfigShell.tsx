@@ -146,7 +146,7 @@ export function DownloadConfigShell({
                 value={startStr}
                 onChange={(e) => setStartStr(e.target.value)}
                 onBlur={() => setStartStr(String(clampStart(startStr)))}
-                className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors"
+                className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
             </div>
             <span className="text-on-surface-variant/30 mt-5">—</span>
@@ -163,7 +163,7 @@ export function DownloadConfigShell({
                 onBlur={() =>
                   setEndStr(String(clampEnd(endStr, clampStart(startStr))))
                 }
-                className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors"
+                className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-lg px-3 py-2.5 text-sm font-label text-on-surface outline-none focus:border-primary/40 transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
             </div>
             <div className="mt-5">
