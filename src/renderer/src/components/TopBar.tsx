@@ -236,7 +236,8 @@ function TopBar({
           >
             speed
           </span>
-          <span className="font-label text-xs font-bold">{speedLabel}</span>
+          {/* 固定最小宽度 + 等宽数字:速率位数变化(10.8 / 108 / 1.2 KB/s)时盒宽不变,不挤动右侧图标 */}
+          <span className="font-label text-xs font-bold tabular-nums inline-block min-w-[5rem]">{speedLabel}</span>
         </div>
         <div className="flex items-center space-x-4">
           <button
