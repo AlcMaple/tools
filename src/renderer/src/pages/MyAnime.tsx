@@ -640,7 +640,7 @@ function ManualAddModal({
                   onClick={() => setCategory(o.key)}
                   className={`px-3 py-1.5 rounded-md font-label text-xs tracking-widest transition-colors ${
                     category === o.key
-                      ? 'bg-primary text-on-primary font-bold'
+                      ? 'bg-primary text-on-primary'
                       : 'text-on-surface-variant hover:text-on-surface'
                   }`}
                 >
@@ -724,7 +724,7 @@ function TabButton({
       onClick={onClick}
       className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 border ${
         active
-          ? 'bg-primary/15 text-primary border-primary/25 font-bold'
+          ? 'bg-primary/15 text-primary border-primary/25'
           : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border-transparent'
       }`}
     >
@@ -1319,7 +1319,7 @@ function EpisodeCounter({
         className={`h-7 px-3 rounded-md flex items-center justify-center gap-1 font-label text-[11px] uppercase tracking-widest border transition-colors ${
           atMax
             ? 'border-outline-variant/15 text-on-surface-variant/30 cursor-not-allowed'
-            : 'border-primary/30 text-primary bg-primary/10 hover:bg-primary/20 font-bold'
+            : 'border-primary/30 text-primary bg-primary/10 hover:bg-primary/20'
         }`}
       >
         <span className="material-symbols-outlined text-[14px] leading-none">add</span>
@@ -1638,7 +1638,7 @@ function SortSelector({
             onClick={() => onChange(o.key)}
             className={`px-2 py-1 rounded font-label text-[10px] uppercase tracking-widest transition-colors flex items-center gap-1 ${
               active
-                ? 'bg-primary/15 text-primary font-bold'
+                ? 'bg-primary/15 text-primary'
                 : 'text-on-surface-variant/55 hover:text-on-surface hover:bg-surface-container-high'
             }`}
           >
@@ -1690,7 +1690,7 @@ function GoodEpisodesChip({
       className={
         isEmpty
           ? 'inline-flex items-center gap-1 h-7 px-2 rounded-md bg-surface border border-dashed border-outline-variant/30 hover:border-amber-400/50 hover:bg-amber-400/8 text-on-surface-variant/55 hover:text-amber-600 font-label text-[10px] uppercase tracking-widest transition-colors'
-          : 'inline-flex items-center gap-1 h-7 px-2 rounded-md bg-amber-400/15 border border-amber-400/40 hover:bg-amber-400/25 hover:border-amber-400/60 text-amber-600 font-label text-[10px] uppercase tracking-widest font-bold transition-colors'
+          : 'inline-flex items-center gap-1 h-7 px-2 rounded-md bg-amber-400/15 border border-amber-400/40 hover:bg-amber-400/25 hover:border-amber-400/60 text-amber-600 font-label text-[10px] uppercase tracking-widest transition-colors'
       }
     >
       <span

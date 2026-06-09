@@ -187,7 +187,7 @@ export default function LocalLibrary(): JSX.Element {
                     title={p.title}
                     className={`px-6 py-2 rounded-full font-label text-xs uppercase tracking-widest transition-all active:scale-95 max-w-[280px] truncate ${
                       active
-                        ? "bg-primary-container text-on-primary-container shadow-lg shadow-primary/10"
+                        ? "bg-primary-container text-on-primary-container border border-transparent shadow-lg shadow-primary/10"
                         : "bg-surface-container-high border border-outline-variant/10 text-on-surface hover:border-primary/50"
                     }`}
                   >

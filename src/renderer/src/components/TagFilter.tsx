@@ -201,7 +201,7 @@ export function TagFilter({ allTags, selected, onChange, pinSelected = true, mat
                       </span>
                       <span
                         className={`flex-1 min-w-0 text-xs truncate ${
-                          checked ? 'text-primary font-bold' : 'text-on-surface'
+                          checked ? 'text-primary' : 'text-on-surface'
                         }`}
                       >
                         {tag}

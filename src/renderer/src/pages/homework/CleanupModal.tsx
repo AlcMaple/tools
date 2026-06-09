@@ -84,7 +84,7 @@ export function CleanupModal({
                   onClick={() => setCutoff(v)}
                   className={`flex-1 py-2 rounded-lg border font-label text-[11px] tracking-wider transition-colors ${
                     active
-                      ? 'bg-primary/15 text-primary border-primary/30 font-bold'
+                      ? 'bg-primary/15 text-primary border-primary/30'
                       : 'bg-surface-container text-on-surface-variant/70 border-outline-variant/15 hover:text-on-surface hover:bg-surface-container-high'
                   }`}
                 >
