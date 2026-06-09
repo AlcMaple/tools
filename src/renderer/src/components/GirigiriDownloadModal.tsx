@@ -39,9 +39,14 @@ export function GirigiriDownloadConfigModal({
     source: SourceOption,
     startEp: number,
     endEp: number,
+    excluded: number[],
   ): void => {
     const eps = sources[source.id as number]?.episodes ?? [];
-    onStart(eps.slice(startEp - 1, endEp));
+    // 切片里第 i 项的序号 = startEp + i;过滤掉用户排除的序号。
+    const slice = eps
+      .slice(startEp - 1, endEp)
+      .filter((_, i) => !excluded.includes(startEp + i));
+    onStart(slice);
   };
 
   return (

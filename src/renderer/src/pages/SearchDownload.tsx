@@ -444,11 +444,13 @@ function SearchDownload(): JSX.Element {
     templates: string[],
     startEp: number,
     endEp: number,
+    excluded: number[],
   ): Promise<void> => {
     if (state.status !== "xifan_config") return;
     const { card, cards, watchInfo } = state;
     const title = watchInfo.title || card.title;
     const savePath = getSavePath();
+    const skip = new Set(excluded);
     try {
       const { taskId } = await window.xifanApi.startDownload(
         title,
@@ -456,9 +458,11 @@ function SearchDownload(): JSX.Element {
         startEp,
         endEp,
         savePath,
+        excluded,
       );
       const epStatus: Record<number, "pending"> = {};
-      for (let ep = startEp; ep <= endEp; ep++) epStatus[ep] = "pending";
+      for (let ep = startEp; ep <= endEp; ep++)
+        if (!skip.has(ep)) epStatus[ep] = "pending";
       downloadStore.addTask({
         id: taskId,
         source: "xifan",

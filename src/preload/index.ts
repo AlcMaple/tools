@@ -118,8 +118,8 @@ contextBridge.exposeInMainWorld('xifanApi', {
   verifyCaptcha: (code: string) => ipcRenderer.invoke('xifan:verify', code),
   search: (keyword: string) => ipcRenderer.invoke('xifan:search', keyword),
   getWatch: (watchUrl: string) => ipcRenderer.invoke('xifan:watch', watchUrl),
-  startDownload: (title: string, templates: string[], startEp: number, endEp: number, savePath?: string) =>
-    ipcRenderer.invoke('xifan:download', title, templates, startEp, endEp, savePath),
+  startDownload: (title: string, templates: string[], startEp: number, endEp: number, savePath?: string, excludeEps?: number[]) =>
+    ipcRenderer.invoke('xifan:download', title, templates, startEp, endEp, savePath, excludeEps),
   cancelDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-cancel', taskId),
   pauseDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-pause', taskId),
   resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number) =>

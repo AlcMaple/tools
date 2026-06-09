@@ -188,7 +188,8 @@ declare global {
         templates: string[],
         startEp: number,
         endEp: number,
-        savePath?: string
+        savePath?: string,
+        excludeEps?: number[]
       ) => Promise<{ started: boolean; taskId: string }>
       cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
       pauseDownload: (taskId: string) => Promise<{ paused: boolean }>
