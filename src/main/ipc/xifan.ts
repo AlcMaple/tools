@@ -27,9 +27,11 @@ export function registerXifanIpc(): void {
 
   ipcMain.handle(
     'xifan:download',
-    async (event, title: string, templates: string[], startEp: number, endEp: number, savePath?: string) => {
+    async (event, title: string, templates: string[], startEp: number, endEp: number, savePath?: string, excludeEps?: number[]) => {
       const taskId = newTaskId()
+      const skip = new Set(excludeEps ?? [])
       const pending = Array.from({ length: endEp - startEp + 1 }, (_, i) => startEp + i)
+        .filter((ep) => !skip.has(ep))
       xifanQueue.create(taskId, {
         title,
         savePath: savePath ?? null,
