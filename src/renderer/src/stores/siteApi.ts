@@ -88,7 +88,8 @@ export function siteApi(task: DownloadTask): SiteApi {
       // 记在 epUrls 里,优先用它(见 docs/xifan-下载链接-集数补零-回归用例.md)。
       const resolved = task.epUrls[ep]
       if (resolved) return resolved
-      const template = task.templates[0] ?? ''
+      // 用当前源的模板(换过源后 sourceIdx 已变);从前写死 [0] 会复制出原源的链接
+      const template = task.templates[task.sourceIdx] ?? task.templates[0] ?? ''
       // 占位符按携带的位宽补零({:d} 不补零、{:0Nd} 补到 N 位);必须与主进程
       // xifan/download.ts 的 formatEpUrl 保持一致,否则复制出来的直链拼错(见
       // docs/xifan-下载链接-集数补零-回归用例.md)。兼容历史残留的旧 {:02d} 模板。

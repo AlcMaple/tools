@@ -37,6 +37,17 @@ function epSavePath(title: string, ep: number, saveDir: string | undefined): str
   return join(dir, `${safeName(title)} - ${epStr}.mp4`)
 }
 
+/** 取 URL 路径里的文件名(去扩展名),如 .../OVA.mp4 → "OVA"。取不到返回 null。 */
+function nameFromUrl(u: string): string | null {
+  try {
+    const base = new URL(u).pathname.split('/').pop() ?? ''
+    const name = decodeURIComponent(base).replace(/\.[^.]+$/, '').trim()
+    return name || null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Delete part files + final mp4 for a given saved episode. Used when caller switches
  * source: the new URL is unrelated, so any partial bytes are unusable.
@@ -69,12 +80,12 @@ export async function downloadSingleEp(
 
   const url = formatEpUrl(template, ep)
 
-  const run = (u: string): ReturnType<typeof downloadByUrl> =>
-    downloadByUrl(u, savePath, signal, (bytes, _total, pct) => {
+  const run = (u: string, path: string): ReturnType<typeof downloadByUrl> =>
+    downloadByUrl(u, path, signal, (bytes, _total, pct) => {
       onEvent({ type: 'ep_progress', ep, pct, bytes })
     }, LOG_TAG)
 
-  let outcome = await run(url)
+  let outcome = await run(url, savePath)
 
   // 模板拼出的 URL 404:多半是 OVA 这类特殊集,文件名不是集号(如 .../OVA.mp4),
   // 回源拉该集播放页解析真实地址再下一次(见 docs/xifan-下载链接-集数补零-回归用例.md)。
@@ -86,7 +97,10 @@ export async function downloadSingleEp(
       if (realUrl && realUrl !== url) {
         // 真实直链先同步给渲染层,「复制 mp4 直链」得复制这条,模板拼的那条是 404
         onEvent({ type: 'ep_url', ep, url: realUrl })
-        outcome = await run(realUrl)
+        // 文件名跟着真实链接走:.../OVA.mp4 存成 {title} - OVA.mp4,不硬套集号
+        const realName = nameFromUrl(realUrl)
+        const realPath = realName ? join(dir, `${safeName(title)} - ${safeName(realName)}.mp4`) : savePath
+        outcome = await run(realUrl, realPath)
       }
     } catch { /* 回源本身失败 → 保留原 404 outcome,走下面统一错误上报 */ }
   }

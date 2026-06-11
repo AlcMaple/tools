@@ -60,7 +60,8 @@ Xifan 的下载是「拿第 1 集真实 URL → 推断出一个模板 → 用集
 ### 学园默示录 — 最后一集是 OVA，文件名不是集号 ⭐ 回源解析的起因
 - **现象**: 全 13 集，前 12 集模板正常，第 13 集按规律拼出 `.../13.mp4` → **404**。
 - **ep13 真实 URL**: `https://play.xfvod.pro/X/X-学园默示录/OVA.mp4`（文件名是 `OVA`，任何补零规则都拼不出）
-- **期望行为**: 模板拼出的 `13.mp4` 探测到 404 → 回源拉 `watch/{id}/{srcIdx}/13.html` 解析出 `OVA.mp4` → 下载成功，文件仍存为 `{title} - 13.mp4`；「复制 mp4 直链」该集复制出 `OVA.mp4` 那条（epUrls 覆盖），其他集仍走模板。
+- **期望行为**: 模板拼出的 `13.mp4` 探测到 404 → 回源拉 `watch/{id}/{srcIdx}/13.html` 解析出 `OVA.mp4` → 下载成功，**文件名跟着真实链接走**，存为 `{title} - OVA.mp4`（拿什么名字就用什么名字，不硬套集号）；「复制 mp4 直链」该集复制出 `OVA.mp4` 那条（epUrls 覆盖），其他集仍走模板。
+- **下载弹窗**: 集数网格第 13 格显示「OVA」而不是「13」——集名来自播放页选集列表（`parseEpLabels`，同一页面现成数据，零额外请求）；普通集（站点标注「第01集」/「01」这类）仍显示集号，From/To 输入框维持 1..N 序号语义。
 - **不回归点**: 普通集（模板一次就 200）不触发回源，零额外请求；限流/5xx 不触发回源，照旧抛错给 UI。
 
 ---
@@ -69,6 +70,8 @@ Xifan 的下载是「拿第 1 集真实 URL → 推断出一个模板 → 用集
 
 > 每次动 `buildTemplate` / `formatEpUrl` / 任何 xifan 拼 URL 的逻辑都在这里追一笔。
 
+- **2026-06-11（二）** —— OVA 修复的三个收尾：① 回源下载的**文件名跟着真实链接走**（`download.ts` 新增 `nameFromUrl`，`.../OVA.mp4` 存为 `{title} - OVA.mp4`，不再硬套集号）；② 下载弹窗集数网格显示站点集名（`api.ts` 新增 `parseEpLabels` 从播放页选集列表解析，`XifanSource.epLabels` 带给渲染层，特殊集显示「OVA」、普通集仍显示集号；只扫 class 含 anthology 的选集区域，避免「上一集/下一集」导航链接污染集名）；③ 修「复制 mp4 直链」写死 `templates[0]` 的既有 bug——换源后复制出的还是原源链接，改为 `templates[sourceIdx]`。
+  - 不回归验证：选集列表解析不到（模板改版等）→ `epLabels` 为空数组，网格回退显示纯集号，下载逻辑不受影响；From/To 与排除逻辑仍按序号（1..N），集名只是展示
 - **2026-06-11** —— 修复 OVA 等「文件名不是集号」的特殊集 404。模板拼出的 URL 探测到 404（仅限 404）时，回源拉该集播放页解析 `player_aaaa.url` 的真实地址再下一次：`api.ts` 新增 `XifanSource.epPage`（播放页 URL 模板）+ `resolveEpRealUrl()`；`download.ts` 接 `epPages` 做回源兜底，解析出的真实直链经新事件 `ep_url` 通知渲染层；`downloadStore` 持久化 `epPages`（与 templates 平行）+ `epUrls`（回源解析结果），旧任务 normalize 为空、行为同从前；`siteApi.ts` 的 `resolveEpUrl` 优先用 `epUrls` 覆盖，模板替换逻辑未动；`mp4-range-downloader` 的 probe_failed 带上 HTTP 状态码供区分 404 与限流/5xx。
   - 触发样本：学园默示录（13 集，末集真实文件是 `OVA.mp4`，模板拼出 `13.mp4` → 404）
   - 不回归验证：普通集一次 200 不触发回源；限流/5xx 不回源、照旧抛错（红线）；旧 localStorage 任务（无 epPages）恢复后普通集照常、特殊集报错同从前；复制直链普通集仍走模板替换
