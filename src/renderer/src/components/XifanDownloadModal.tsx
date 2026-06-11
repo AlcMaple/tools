@@ -19,6 +19,15 @@ interface Props {
   ) => void;
 }
 
+/**
+ * 站点集名 → 网格展示名:「第01集」「01」这类普通集显示集号 n,
+ * 非数字的特殊集(OVA / SP / 剧场版等)原样显示,让用户知道这一格不是正片。
+ */
+function displayEpLabel(label: string, n: number): string {
+  const core = label.replace(/^第/, "").replace(/[集话話]$/, "").trim();
+  return /^\d+$/.test(core) ? String(n) : label;
+}
+
 export function XifanDownloadConfigModal({
   card,
   watchInfo,
@@ -32,6 +41,7 @@ export function XifanDownloadConfigModal({
     // Xifan doesn't expose per-source episode counts — total is the same
     // across templates, so reuse watchInfo.total for every option.
     episodeCount: watchInfo.total,
+    epLabels: s.epLabels.map((l, i) => displayEpLabel(l, i + 1)),
   }));
 
   const handleStart = (

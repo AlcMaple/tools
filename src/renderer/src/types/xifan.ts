@@ -15,6 +15,8 @@ interface XifanSource {
   ep1: string | null
   /** 该源播放页 URL 模板({ep} 占位),模板拼出的链接 404 时(如 OVA 集)回源解析真实地址用。 */
   epPage: string
+  /** 站点标注的每集名称(下标 i = 第 i+1 集),如「第01集」「OVA」。解析不到时为空数组。 */
+  epLabels: string[]
 }
 
 export interface XifanWatchInfo {

@@ -30,6 +30,8 @@ export interface XifanSource {
   ep1: string
   /** 该源播放页 URL 模板({ep} 占位)。模板拼出的链接 404 时(如 OVA 集)回源解析真实地址用。 */
   epPage: string
+  /** 站点标注的每集名称(下标 i = 第 i+1 集),如「第01集」「OVA」。解析不到时为空数组。 */
+  epLabels: string[]
 }
 
 export interface XifanWatchInfo {
@@ -57,6 +59,43 @@ function buildTemplate(ep1Url: string): string | null {
 
 function epPageTemplate(animeId: string, sourceIdx: number): string {
   return `${BASE_URL}/watch/${animeId}/${sourceIdx}/{ep}.html`
+}
+
+/**
+ * 从播放页 HTML 的选集列表里解析「每集名称」,按源分组(集序号 → 站点标注的集名)。
+ * 站点对特殊集会直接标注真名(如最后一集是「OVA」而不是「第13集」),这是同一
+ * 页面里现成的数据,不用额外请求。
+ *
+ * 只扫 class 含 anthology 的选集区域:播放器的「上一集/下一集」按钮等导航链接
+ * 也指向 watch/{id}/{src}/{ep}.html,落在全局扫会把集名污染成「下一集」。
+ */
+function parseEpLabels(html: string, animeId: string): Map<number, Map<number, string>> {
+  const $ = cheerio.load(html)
+  const bySource = new Map<number, Map<number, string>>()
+  const hrefPat = new RegExp(`/watch/${animeId}/(\\d+)/(\\d+)\\.html$`)
+  $('[class*="anthology"] a[href]').each((_, el) => {
+    const a = $(el)
+    // 源切换 tab(vod-playerUrl / 带集数 badge)不是集数项,跳过
+    if (a.hasClass('vod-playerUrl') || a.find('span.badge').length) return
+    const m = (a.attr('href') ?? '').match(hrefPat)
+    if (!m) return
+    const src = parseInt(m[1], 10)
+    const ep = parseInt(m[2], 10)
+    // 站点会在集名里夹字体图标(PUA 码位),剥掉再存
+    const label = a.text().replace(/[\u{E000}-\u{F8FF}]/gu, '').replace(/ /g, ' ').trim()
+    if (!label || label.length > 30) return
+    let eps = bySource.get(src)
+    if (!eps) { eps = new Map(); bySource.set(src, eps) }
+    if (!eps.has(ep)) eps.set(ep, label)
+  })
+  return bySource
+}
+
+/** 集名 Map → 按序号排好的数组(下标 i = 第 i+1 集),缺口用集号补。解析不到 → []。 */
+function labelsToArray(m: Map<number, string> | undefined): string[] {
+  if (!m || m.size === 0) return []
+  const maxEp = Math.max(...m.keys())
+  return Array.from({ length: maxEp }, (_, i) => m.get(i + 1) ?? String(i + 1))
 }
 
 /**
@@ -188,16 +227,18 @@ function parsePlayerData(html: string): PlayerData | null {
   return { url: getStr('url'), from: getStr('from'), id: getStr('id'), vod_data: { vod_name: vodName } }
 }
 
-async function fetchSourceEp1(animeId: string, sourceIdx: number): Promise<{ template: string | null; ep1: string; epPage: string }> {
+async function fetchSourceEp1(animeId: string, sourceIdx: number): Promise<{ template: string | null; ep1: string; epPage: string; epLabels: string[] }> {
   const epPage = epPageTemplate(animeId, sourceIdx)
   try {
     const res = await xifanSession.get(epPage.replace('{ep}', '1'))
     const data = parsePlayerData(res.body)
-    if (!data) return { template: null, ep1: '', epPage }
+    // 该源自己的播放页上它就是激活源,选集列表一定在,顺手把集名也解析出来
+    const epLabels = labelsToArray(parseEpLabels(res.body, animeId).get(sourceIdx))
+    if (!data) return { template: null, ep1: '', epPage, epLabels }
     const ep1Url = decodeURIComponent(data.url)
-    return { template: buildTemplate(ep1Url), ep1: ep1Url, epPage }
+    return { template: buildTemplate(ep1Url), ep1: ep1Url, epPage, epLabels }
   } catch {
-    return { template: null, ep1: '', epPage }
+    return { template: null, ep1: '', epPage, epLabels: [] }
   }
 }
 
@@ -225,6 +266,9 @@ export async function watch(watchUrl: string): Promise<XifanWatchInfo> {
 
   const sourceTags = $('div.anthology-tab.nav-swiper a.vod-playerUrl')
   const sources: XifanSource[] = []
+  // \u5F53\u524D\u9875\u53EF\u80FD\u5C31\u5E26\u7740\u6240\u6709\u6E90\u7684\u9009\u96C6\u5217\u8868(\u9690\u85CF tab),\u80FD\u62FF\u5230\u7684\u76F4\u63A5\u7528,\u62FF\u4E0D\u5230\u7684\u6E90
+  // \u518D\u4ECE\u5B83\u81EA\u5DF1\u7684\u64AD\u653E\u9875(fetchSourceEp1 \u53CD\u6B63\u8981\u62C9)\u4E0A\u89E3\u6790\u3002
+  const labelsBySource = parseEpLabels(html, animeId)
 
   for (let i = 0; i < sourceTags.length; i++) {
     const tag = sourceTags.eq(i)
@@ -232,12 +276,13 @@ export async function watch(watchUrl: string): Promise<XifanWatchInfo> {
     const iconText = tag.find('i').text()
     const name = tag.text().replace(badgeText, '').replace(iconText, '').replace(/\u00A0/g, ' ').trim()
     const idx = i + 1
+    const pageLabels = labelsToArray(labelsBySource.get(idx))
 
     if (idx === 1) {
-      sources.push({ idx: 1, name, template: buildTemplate(ep1Url), ep1: ep1Url, epPage: epPageTemplate(animeId, 1) })
+      sources.push({ idx: 1, name, template: buildTemplate(ep1Url), ep1: ep1Url, epPage: epPageTemplate(animeId, 1), epLabels: pageLabels })
     } else {
-      const { template, ep1, epPage } = await fetchSourceEp1(animeId, idx)
-      sources.push({ idx, name, template, ep1: ep1, epPage })
+      const { template, ep1, epPage, epLabels } = await fetchSourceEp1(animeId, idx)
+      sources.push({ idx, name, template, ep1: ep1, epPage, epLabels: pageLabels.length > 0 ? pageLabels : epLabels })
     }
   }
 

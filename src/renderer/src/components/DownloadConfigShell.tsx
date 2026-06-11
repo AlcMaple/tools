@@ -15,6 +15,11 @@ export interface SourceOption {
   id: string | number;
   name: string;
   episodeCount: number;
+  /**
+   * 网格里每集的展示名(下标 i = 第 i+1 集)。普通集传集号字符串即可;特殊集
+   * (OVA / SP 等)传站点真名,让用户看见第 N 集其实不是正片。缺省全显示集号。
+   */
+  epLabels?: string[];
 }
 
 interface Props {
@@ -76,6 +81,9 @@ export function DownloadConfigShell({
   const includeCount = allEps.filter(
     (n) => inRange(n) && !excluded.has(n),
   ).length;
+
+  // 第 n 集在网格/排除提示里的展示名:有站点集名用集名(如 OVA),否则就是集号
+  const epLabel = (n: number): string => selected?.epLabels?.[n - 1] ?? String(n);
 
   const toggleExclude = (n: number): void => {
     setExcluded((prev) => {
@@ -213,7 +221,7 @@ export function DownloadConfigShell({
                 <span className="font-label text-[10px] text-on-surface-variant/40">
                   将下载 {includeCount} 集
                   {excludedInRange.length > 0 &&
-                    ` · 已排除 ${excludedInRange.join("、")}`}
+                    ` · 已排除 ${excludedInRange.map(epLabel).join("、")}`}
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
@@ -234,7 +242,7 @@ export function DownloadConfigShell({
                             : "bg-surface-container border-outline-variant/15 text-on-surface-variant/25 cursor-default"
                       }`}
                     >
-                      {n}
+                      {epLabel(n)}
                     </button>
                   );
                 })}
