@@ -35,8 +35,12 @@ export interface XifanTaskData {
   source: 'xifan'
   /** All valid templates for the original episode set; sourceIdx picks one. */
   templates: string[]
+  /** 与 templates 平行:各源播放页 URL 模板({ep} 占位),模板拼出 404 时回源解析用。旧任务为 []。 */
+  epPages: string[]
   /** Index into `templates`. 0 if never switched. */
   sourceIdx: number
+  /** 主进程回源解析出的特殊集真实直链(OVA 等,ep → url)。「复制 mp4 直链」优先用这里。 */
+  epUrls: Record<number, string>
 }
 
 export interface GirigiriTaskData {
@@ -145,7 +149,9 @@ function migrateLoadedTask(raw: unknown): DownloadTask | null {
     ...common,
     source: 'xifan',
     templates: Array.isArray(t.templates) ? t.templates as string[] : [],
+    epPages: Array.isArray(t.epPages) ? t.epPages as string[] : [],
     sourceIdx: typeof t.sourceIdx === 'number' ? t.sourceIdx : 0,
+    epUrls: (t.epUrls && typeof t.epUrls === 'object') ? t.epUrls as Record<number, string> : {},
   }
 }
 
@@ -265,6 +271,13 @@ export const downloadStore = {
         epStatus: { ...t.epStatus, [ep]: 'done' },
         epProgress: newProgress,
       })
+      notify()
+    } else if (event.type === 'ep_url') {
+      // 主进程回源解析出某集的真实直链(OVA 等特殊集,模板拼的那条是 404),
+      // 记到 epUrls,「复制 mp4 直链」优先用这条。
+      const t = tasks.get(taskId)
+      if (!t || t.source !== 'xifan' || typeof event.url !== 'string') return
+      tasks.set(taskId, { ...t, epUrls: { ...t.epUrls, [ep]: event.url } })
       notify()
     } else if (event.type === 'ep_error') {
       downloadStore.updateEpStatus(taskId, ep, 'error')

@@ -76,14 +76,18 @@ export function siteApi(task: DownloadTask): SiteApi {
     pause: () => window.xifanApi.pauseDownload(task.id),
     cancel: () => window.xifanApi.cancelDownload(task.id),
     resume: (pendingEps) =>
-      window.xifanApi.resumeDownload(task.id, task.title, task.templates, pendingEps, savePath, task.sourceIdx),
+      window.xifanApi.resumeDownload(task.id, task.title, task.templates, pendingEps, savePath, task.sourceIdx, task.epPages),
     retry: (eps) =>
-      window.xifanApi.retryDownload(task.id, task.title, task.templates, eps, savePath, task.sourceIdx),
+      window.xifanApi.retryDownload(task.id, task.title, task.templates, eps, savePath, task.sourceIdx, task.epPages),
     requeue: (eps) =>
-      window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, eps, savePath, task.sourceIdx),
+      window.xifanApi.requeueEpisodes(task.id, task.title, task.templates, eps, savePath, task.sourceIdx, task.epPages),
     switchSource: ({ failedEps, newSourceIdx }) =>
-      window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newSourceIdx, savePath),
+      window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newSourceIdx, savePath, task.epPages),
     resolveEpUrl: async (ep) => {
+      // OVA 等特殊集的文件名不是集号,模板拼不出来;主进程回源解析过的真实直链
+      // 记在 epUrls 里,优先用它(见 docs/xifan-下载链接-集数补零-回归用例.md)。
+      const resolved = task.epUrls[ep]
+      if (resolved) return resolved
       const template = task.templates[0] ?? ''
       // 占位符按携带的位宽补零({:d} 不补零、{:0Nd} 补到 N 位);必须与主进程
       // xifan/download.ts 的 formatEpUrl 保持一致,否则复制出来的直链拼错(见

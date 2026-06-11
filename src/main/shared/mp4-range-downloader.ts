@@ -39,6 +39,8 @@ function partPath(savePath: string, idx: number): string {
 interface ProbeResult {
   size: number
   rangeSupported: boolean
+  /** 探测失败时的 HTTP 状态码,调用方据此区分 404(链接拼错)与限流/5xx。 */
+  status?: number
 }
 
 /**
@@ -101,7 +103,7 @@ async function probe(url: string, logTag: string): Promise<ProbeResult | null> {
           resolve({ size: isNaN(size) ? 0 : size, rangeSupported: false })
         } else {
           console.warn(`[${logTag}] probe ${url} → HTTP ${status}`)
-          resolve(null)
+          resolve({ size: 0, rangeSupported: false, status })
         }
       }
     )
@@ -298,7 +300,7 @@ export function cleanupPartsAt(savePath: string): void {
 
 export type DownloadOutcome =
   | { ok: true }
-  | { ok: false; reason: 'aborted' | 'probe_failed' | 'chunks_failed' | 'merge_failed' | 'stream_failed'; msg?: string }
+  | { ok: false; reason: 'aborted' | 'probe_failed' | 'chunks_failed' | 'merge_failed' | 'stream_failed'; msg?: string; status?: number }
 
 export interface DownloadOpts {
   /**
@@ -343,7 +345,7 @@ export async function downloadByUrl(
   const info = await probe(finalUrl, logTag)
   if (!info || info.size === 0) {
     if (signal.aborted) return { ok: false, reason: 'aborted' }
-    return { ok: false, reason: 'probe_failed' }
+    return { ok: false, reason: 'probe_failed', status: info?.status }
   }
 
   // Multi-thread path
