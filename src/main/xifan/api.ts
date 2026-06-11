@@ -66,14 +66,15 @@ function epPageTemplate(animeId: string, sourceIdx: number): string {
  * 站点对特殊集会直接标注真名(如最后一集是「OVA」而不是「第13集」),这是同一
  * 页面里现成的数据,不用额外请求。
  *
- * 只扫 class 含 anthology 的选集区域:播放器的「上一集/下一集」按钮等导航链接
- * 也指向 watch/{id}/{src}/{ep}.html,落在全局扫会把集名污染成「下一集」。
+ * 只扫 class 含 anthology-list 的选集列表区域(实测页面结构:ul.anthology-list-play)。
+ * 不能放宽到 anthology:anthology-header 里的「下集」导航按钮也指向
+ * watch/{id}/{src}/{ep}.html 且出现在列表之前,会把对应集的集名污染成「下集」。
  */
 function parseEpLabels(html: string, animeId: string): Map<number, Map<number, string>> {
   const $ = cheerio.load(html)
   const bySource = new Map<number, Map<number, string>>()
   const hrefPat = new RegExp(`/watch/${animeId}/(\\d+)/(\\d+)\\.html$`)
-  $('[class*="anthology"] a[href]').each((_, el) => {
+  $('[class*="anthology-list"] a[href]').each((_, el) => {
     const a = $(el)
     // 源切换 tab(vod-playerUrl / 带集数 badge)不是集数项,跳过
     if (a.hasClass('vod-playerUrl') || a.find('span.badge').length) return
