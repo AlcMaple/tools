@@ -178,7 +178,7 @@ export async function cacheCover(
 ): Promise<string | null> {
   if (!url || url.startsWith('archivist://')) return url || null
   // 探子：本地命中(hit)本应是两次 fs 操作、毫秒级；冷启动若主进程被启动扫描/
-  // chokidar 挤住,命中也会被拖到几百 ms~几秒。只记 >100ms 的慢调用(warm 时不刷屏),
+  // 目录监听挤住,命中也会被拖到几百 ms~几秒。只记 >100ms 的慢调用(warm 时不刷屏),
   // hit/dl 区分"被饿着的本地命中"还是"真在下载",直接定位冷启动卡顿归因。
   const t0 = Date.now()
   let outcome = 'dl'
