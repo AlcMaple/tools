@@ -481,6 +481,7 @@ function SearchDownload(): JSX.Element {
 
   const handleStartXifanDownload = async (
     templates: string[],
+    epPages: string[],
     startEp: number,
     endEp: number,
     excluded: number[],
@@ -498,6 +499,7 @@ function SearchDownload(): JSX.Element {
         endEp,
         savePath,
         excluded,
+        epPages,
       );
       const epStatus: Record<number, "pending"> = {};
       for (let ep = startEp; ep <= endEp; ep++)
@@ -510,6 +512,8 @@ function SearchDownload(): JSX.Element {
         startEp,
         endEp,
         templates,
+        epPages,
+        epUrls: {},
         sourceIdx: 0,
         savePath,
         status: "running",

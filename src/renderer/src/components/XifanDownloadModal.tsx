@@ -12,6 +12,7 @@ interface Props {
   onClose: () => void;
   onStart: (
     templates: string[],
+    epPages: string[],
     startEp: number,
     endEp: number,
     excluded: number[],
@@ -42,14 +43,19 @@ export function XifanDownloadConfigModal({
     const selected = validSources.find((s) => s.idx === source.id);
     if (!selected?.template) return;
     // Pass all valid templates (selected first) so user can cycle sources if it fails.
+    // epPages 与 templates 同序平行,切换源时 sourceIdx 同时索引两个数组。
     const ordered = [
-      selected.template,
-      ...validSources
-        .filter((s) => s.idx !== selected.idx)
-        .map((s) => s.template!),
+      selected,
+      ...validSources.filter((s) => s.idx !== selected.idx),
     ];
     // Xifan 的集号 == 序号,排除项直接就是要跳过的 ep 号。
-    onStart(ordered, startEp, endEp, excluded);
+    onStart(
+      ordered.map((s) => s.template!),
+      ordered.map((s) => s.epPage),
+      startEp,
+      endEp,
+      excluded,
+    );
   };
 
   return (

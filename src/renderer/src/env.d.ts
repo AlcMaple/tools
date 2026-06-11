@@ -189,18 +189,20 @@ declare global {
         startEp: number,
         endEp: number,
         savePath?: string,
-        excludeEps?: number[]
+        excludeEps?: number[],
+        epPages?: string[]
       ) => Promise<{ started: boolean; taskId: string }>
       cancelDownload: (taskId: string) => Promise<{ cancelled: boolean }>
       pauseDownload: (taskId: string) => Promise<{ paused: boolean }>
-      resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number) => Promise<{ resumed: boolean }>
+      resumeDownload: (taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number, epPages?: string[]) => Promise<{ resumed: boolean }>
       requeueEpisodes: (
         taskId: string,
         title: string,
         templates: string[],
         eps: number[],
         savePath?: string,
-        sourceIdx?: number
+        sourceIdx?: number,
+        epPages?: string[]
       ) => Promise<{ started: boolean }>
       retryDownload: (
         taskId: string,
@@ -208,7 +210,8 @@ declare global {
         templates: string[],
         failedEps: number[],
         savePath?: string,
-        sourceIdx?: number
+        sourceIdx?: number,
+        epPages?: string[]
       ) => Promise<{ started: boolean }>
       switchSource: (
         taskId: string,
@@ -216,7 +219,8 @@ declare global {
         templates: string[],
         failedEps: number[],
         newSourceIdx: number,
-        savePath?: string
+        savePath?: string,
+        epPages?: string[]
       ) => Promise<{ switched: boolean }>
     }
     aowuApi: {
