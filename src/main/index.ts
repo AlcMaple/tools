@@ -219,12 +219,15 @@ app.whenReady().then(() => {
     }
   }
 
-  // 媒体库全量扫描 + chokidar 监听:对账剔除残留路径 → 全量重扫 → 起目录监听。
+  // 媒体库增量同步 + 目录监听:对账剔除残留路径 → 同步 → 起目录监听。
   const kickLibraryWork = (): void => {
     reconcilePaths()
     runSilentScan().catch(err => console.error('启动对账扫描失败:', err))
 
-    // 启动后台目录变动监听（增量更新：只重扫变化发生的子目录，静默不触发全屏加载）
+    // 启动后台目录变动监听(增量更新:只重扫变化发生的子目录,静默不触发全屏加载)。
+    // 探子:原生递归 fs.watch 的设置应为毫秒级(每库根 1 个句柄)。若这里出现几百 ms+,
+    // 说明监听实现又退化回"逐目录开句柄"(chokidar 旧坑,见 docs/ideas/010),主进程会冻结。
+    const watchT0 = Date.now()
     startLibraryWatch(async (changedPaths) => {
       if (silentScanRunning) return
       silentScanRunning = true
@@ -242,13 +245,14 @@ app.whenReady().then(() => {
         silentScanRunning = false
       }
     })
+    logInfo('perf', `startup:watch-setup ${Date.now() - watchT0}ms`)
   }
 
-  // 把库扫描 / chokidar 推迟到首屏交互之后再跑。两者会向 libuv 的 fs 线程池
-  // (默认仅 4 线程)灌入成百上千次 readdir/stat/open,冷启动时把 MyAnime 的封面
-  // 本地化(cacheCover —— 本是磁盘命中、毫秒级)挤在同一队列后面排到 1s+,首开
-  // 封面要等一秒多才齐。延后启动让首次切页/封面先抢到 fs 线程;落地页本就先
-  // 显示 JsonStore 缓存条目,重扫晚 1~2s 对用户无感。
+  // 把库同步 / 目录监听推迟到首屏交互之后再跑。同步会向 fs 线程池灌入大量
+  // readdir/stat/open,冷启动时把 MyAnime 的封面本地化(cacheCover —— 本是磁盘
+  // 命中、毫秒级)挤在同一队列后面排到 1s+,首开封面要等一秒多才齐。延后启动让
+  // 首次切页/封面先抢到 fs 线程;落地页本就先显示 JsonStore 缓存条目,重扫晚
+  // 1~2s 对用户无感。
   //
   // 触发:渲染就绪(app:renderer-ready)后再过一拍给首屏让路;5s 兜底,即便信号
   // 迟到/不来(崩溃/老 preload)也照常扫一次,不会漏扫。
