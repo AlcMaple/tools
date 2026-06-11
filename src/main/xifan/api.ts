@@ -28,6 +28,8 @@ export interface XifanSource {
   name: string
   template: string | null
   ep1: string
+  /** 该源播放页 URL 模板({ep} 占位)。模板拼出的链接 404 时(如 OVA 集)回源解析真实地址用。 */
+  epPage: string
 }
 
 export interface XifanWatchInfo {
@@ -51,6 +53,22 @@ function buildTemplate(ep1Url: string): string | null {
   // 有前导零(如 01 / 001)才保留其位宽补零,否则用 {:d} 不补零(1 → 1,10 → 10)。
   const token = digits.length > 1 && digits.startsWith('0') ? `{:0${digits.length}d}` : '{:d}'
   return `${head}${token}${tail}`
+}
+
+function epPageTemplate(animeId: string, sourceIdx: number): string {
+  return `${BASE_URL}/watch/${animeId}/${sourceIdx}/{ep}.html`
+}
+
+/**
+ * 回源解析某一集的真实 mp4 地址:拉该集播放页,读 player_aaaa.url。
+ * 模板只能拼出数字文件名,OVA 这类特殊集(文件名是 OVA.mp4 等)拼出来必 404,
+ * 只有播放页里才有真实地址。解析不出来返回 null,由调用方决定怎么报错。
+ */
+export async function resolveEpRealUrl(epPage: string, ep: number): Promise<string | null> {
+  const res = await xifanSession.get(epPage.replace('{ep}', String(ep)))
+  const data = parsePlayerData(res.body)
+  if (!data?.url) return null
+  return decodeURIComponent(data.url)
 }
 
 // ── captcha ────────────────────────────────────────────────────────────────────
@@ -170,16 +188,16 @@ function parsePlayerData(html: string): PlayerData | null {
   return { url: getStr('url'), from: getStr('from'), id: getStr('id'), vod_data: { vod_name: vodName } }
 }
 
-async function fetchSourceEp1(animeId: string, sourceIdx: number): Promise<{ template: string | null; ep1: string }> {
-  const url = `${BASE_URL}/watch/${animeId}/${sourceIdx}/1.html`
+async function fetchSourceEp1(animeId: string, sourceIdx: number): Promise<{ template: string | null; ep1: string; epPage: string }> {
+  const epPage = epPageTemplate(animeId, sourceIdx)
   try {
-    const res = await xifanSession.get(url)
+    const res = await xifanSession.get(epPage.replace('{ep}', '1'))
     const data = parsePlayerData(res.body)
-    if (!data) return { template: null, ep1: '' }
+    if (!data) return { template: null, ep1: '', epPage }
     const ep1Url = decodeURIComponent(data.url)
-    return { template: buildTemplate(ep1Url), ep1: ep1Url }
+    return { template: buildTemplate(ep1Url), ep1: ep1Url, epPage }
   } catch {
-    return { template: null, ep1: '' }
+    return { template: null, ep1: '', epPage }
   }
 }
 
@@ -216,10 +234,10 @@ export async function watch(watchUrl: string): Promise<XifanWatchInfo> {
     const idx = i + 1
 
     if (idx === 1) {
-      sources.push({ idx: 1, name, template: buildTemplate(ep1Url), ep1: ep1Url })
+      sources.push({ idx: 1, name, template: buildTemplate(ep1Url), ep1: ep1Url, epPage: epPageTemplate(animeId, 1) })
     } else {
-      const { template, ep1 } = await fetchSourceEp1(animeId, idx)
-      sources.push({ idx, name, template, ep1: ep1 })
+      const { template, ep1, epPage } = await fetchSourceEp1(animeId, idx)
+      sources.push({ idx, name, template, ep1: ep1, epPage })
     }
   }
 

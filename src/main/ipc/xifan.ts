@@ -6,6 +6,8 @@ import { SiteQueueRegistry, newTaskId } from '../shared/site-download-queue'
 
 interface XifanPayload {
   templates: string[]
+  /** 与 templates 平行:各源播放页 URL 模板,模板拼出 404 时回源解析用。旧任务恢复时为空数组。 */
+  epPages: string[]
   sourceIdx: number
 }
 
@@ -14,7 +16,7 @@ const xifanQueue = new SiteQueueRegistry<XifanPayload>({
   scheduler: xifanScheduler,
   runEpisode: (q, ep, signal, onEvent) =>
     downloadSingleEp(
-      q.title, ep, q.payload.templates, q.payload.sourceIdx,
+      q.title, ep, q.payload.templates, q.payload.sourceIdx, q.payload.epPages,
       q.savePath ?? undefined, signal, onEvent,
     ),
 })
@@ -27,7 +29,7 @@ export function registerXifanIpc(): void {
 
   ipcMain.handle(
     'xifan:download',
-    async (event, title: string, templates: string[], startEp: number, endEp: number, savePath?: string, excludeEps?: number[]) => {
+    async (event, title: string, templates: string[], startEp: number, endEp: number, savePath?: string, excludeEps?: number[], epPages?: string[]) => {
       const taskId = newTaskId()
       const skip = new Set(excludeEps ?? [])
       const pending = Array.from({ length: endEp - startEp + 1 }, (_, i) => startEp + i)
@@ -35,7 +37,7 @@ export function registerXifanIpc(): void {
       xifanQueue.create(taskId, {
         title,
         savePath: savePath ?? null,
-        payload: { templates, sourceIdx: 0 },
+        payload: { templates, epPages: epPages ?? [], sourceIdx: 0 },
         pending,
         sender: event.sender,
       })
@@ -54,7 +56,7 @@ export function registerXifanIpc(): void {
 
   ipcMain.handle(
     'xifan:download-resume',
-    (event, taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number) => {
+    (event, taskId: string, title?: string, templates?: string[], pendingEps?: number[], savePath?: string, sourceIdx?: number, epPages?: string[]) => {
       if (xifanQueue.has(taskId)) {
         xifanQueue.resume(taskId)
         return { resumed: true }
@@ -64,7 +66,7 @@ export function registerXifanIpc(): void {
         xifanQueue.create(taskId, {
           title,
           savePath: savePath ?? null,
-          payload: { templates, sourceIdx: sourceIdx ?? 0 },
+          payload: { templates, epPages: epPages ?? [], sourceIdx: sourceIdx ?? 0 },
           pending: [...pendingEps],
           sender: event.sender,
         })
@@ -75,7 +77,7 @@ export function registerXifanIpc(): void {
 
   ipcMain.handle(
     'xifan:download-requeue',
-    async (event, taskId: string, title: string, templates: string[], eps: number[], savePath?: string, sourceIdx?: number) => {
+    async (event, taskId: string, title: string, templates: string[], eps: number[], savePath?: string, sourceIdx?: number, epPages?: string[]) => {
       // Defensive merge: if the queue's still alive (mid-download), don't
       // overwrite it — that would orphan the AbortController and leak the
       // in-flight ep. Append eps to the front instead.
@@ -84,7 +86,7 @@ export function registerXifanIpc(): void {
         xifanQueue.create(taskId, {
           title,
           savePath: savePath ?? null,
-          payload: { templates, sourceIdx: sourceIdx ?? 0 },
+          payload: { templates, epPages: epPages ?? [], sourceIdx: sourceIdx ?? 0 },
           pending: [...eps],
           sender: event.sender,
         })
@@ -98,13 +100,13 @@ export function registerXifanIpc(): void {
 
   ipcMain.handle(
     'xifan:download-retry',
-    (event, taskId: string, title: string, templates: string[], failedEps: number[], savePath?: string, sourceIdx?: number) => {
+    (event, taskId: string, title: string, templates: string[], failedEps: number[], savePath?: string, sourceIdx?: number, epPages?: string[]) => {
       const q = xifanQueue.get(taskId)
       if (!q) {
         xifanQueue.create(taskId, {
           title,
           savePath: savePath ?? null,
-          payload: { templates, sourceIdx: sourceIdx ?? 0 },
+          payload: { templates, epPages: epPages ?? [], sourceIdx: sourceIdx ?? 0 },
           pending: [...failedEps],
           sender: event.sender,
         })
@@ -118,7 +120,7 @@ export function registerXifanIpc(): void {
 
   ipcMain.handle(
     'xifan:download-switch-source',
-    (event, taskId: string, title: string, templates: string[], failedEps: number[], newSourceIdx: number, savePath?: string) => {
+    (event, taskId: string, title: string, templates: string[], failedEps: number[], newSourceIdx: number, savePath?: string, epPages?: string[]) => {
       // Different source = different URL → existing .partN files are unusable.
       for (const ep of failedEps) cleanupParts(title, ep, savePath)
       const q = xifanQueue.get(taskId)
@@ -126,7 +128,7 @@ export function registerXifanIpc(): void {
         xifanQueue.create(taskId, {
           title,
           savePath: savePath ?? null,
-          payload: { templates, sourceIdx: newSourceIdx },
+          payload: { templates, epPages: epPages ?? [], sourceIdx: newSourceIdx },
           pending: [...failedEps],
           sender: event.sender,
         })
