@@ -1,8 +1,7 @@
 import { join, sep } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, watch, type FSWatcher } from 'fs'
 import { readdir, stat } from 'fs/promises'
 import { Worker } from 'worker_threads'
-import chokidar from 'chokidar'
 import { JsonStore } from '../shared/json-store'
 import {
   walkFolder,
@@ -48,7 +47,13 @@ function setDirIndex(dirMtimes: DirMtimes): void {
 // ==========================================
 // 动态监听器模块
 // ==========================================
-let libraryWatcher: chokidar.FSWatcher | null = null
+//
+// 用 Node 原生 fs.watch 递归监听,不用 chokidar:chokidar 不走 Windows 原生递归,
+// 而是遍历整棵树给**每个目录**开一个 fs.watch 句柄 —— uv_fs_event_start 的系统调用
+// 在主线程事件循环上同步执行,几千个目录连发就是 2-3s 的主进程冻结(实测拖不动窗口,
+// 见 docs/ideas/010)。原生 fs.watch({recursive:true}) 每个库根只开 1 个句柄
+// (Windows = ReadDirectoryChangesW 递归,macOS = FSEvents),零遍历、设置即时。
+let libraryWatchers: FSWatcher[] = []
 let currentWatchCallback: ((changedPaths: string[]) => void) | null = null
 let currentDetectCallback: (() => void) | null = null
 
@@ -56,22 +61,11 @@ export function startLibraryWatch(onLibraryChanged: (changedPaths: string[]) => 
   currentWatchCallback = onLibraryChanged
   currentDetectCallback = onEventDetected || null
 
-  if (libraryWatcher) {
-    libraryWatcher.close()
-  }
+  for (const w of libraryWatchers) w.close()
+  libraryWatchers = []
 
   const paths = getPaths().map(p => p.path)
   if (paths.length === 0) return
-
-  libraryWatcher = chokidar.watch(paths, {
-    ignored: /(^|[\/\\])\../,
-    persistent: true,
-    ignoreInitial: true,
-    awaitWriteFinish: {
-      stabilityThreshold: 2000,
-      pollInterval: 500
-    }
-  })
 
   let timeout: NodeJS.Timeout
   const pendingPaths = new Set<string>()
@@ -87,11 +81,26 @@ export function startLibraryWatch(onLibraryChanged: (changedPaths: string[]) => 
     }, 1000)
   }
 
-  libraryWatcher
-    .on('add', trigger)
-    .on('unlink', trigger)
-    .on('addDir', trigger)
-    .on('unlinkDir', trigger)
+  for (const root of paths) {
+    try {
+      const w = watch(root, { recursive: true }, (eventType, filename) => {
+        // 只听 rename(增删/改名,对应旧 chokidar 的 add/unlink/addDir/unlinkDir)。
+        // change 是内容写入 —— 旧实现也不听,且下载中的文件会高频触发,纯噪音。
+        if (eventType !== 'rename') return
+        const rel = filename ? filename.toString() : ''
+        // 隐藏文件/目录(路径任一段以 . 开头)不触发,与旧 ignored 规则一致。
+        if (rel.split(/[\\/]/).some(seg => seg.startsWith('.'))) return
+        trigger(rel ? join(root, rel) : root)
+      })
+      // 监听根被删除/失去权限时会发 error,不接住会变成未捕获异常炸主进程;
+      // 失效路径下次启动由 reconcilePaths 对账剔除。
+      w.on('error', (err) => console.error(`媒体库监听失效(${root}):`, err))
+      libraryWatchers.push(w)
+    } catch (err) {
+      // 单个路径起不来(被删 / 平台不支持递归监听)不影响其余路径与扫描功能
+      console.error(`媒体库监听启动失败(${root}):`, err)
+    }
+  }
 }
 
 // ==========================================
