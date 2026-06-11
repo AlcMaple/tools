@@ -70,7 +70,7 @@ Xifan 的下载是「拿第 1 集真实 URL → 推断出一个模板 → 用集
 
 > 每次动 `buildTemplate` / `formatEpUrl` / 任何 xifan 拼 URL 的逻辑都在这里追一笔。
 
-- **2026-06-11（二）** —— OVA 修复的三个收尾：① 回源下载的**文件名跟着真实链接走**（`download.ts` 新增 `nameFromUrl`，`.../OVA.mp4` 存为 `{title} - OVA.mp4`，不再硬套集号）；② 下载弹窗集数网格显示站点集名（`api.ts` 新增 `parseEpLabels` 从播放页选集列表解析，`XifanSource.epLabels` 带给渲染层，特殊集显示「OVA」、普通集仍显示集号；只扫 class 含 anthology 的选集区域，避免「上一集/下一集」导航链接污染集名）；③ 修「复制 mp4 直链」写死 `templates[0]` 的既有 bug——换源后复制出的还是原源链接，改为 `templates[sourceIdx]`。
+- **2026-06-11（二）** —— OVA 修复的三个收尾：① 回源下载的**文件名跟着真实链接走**（`download.ts` 新增 `nameFromUrl`，`.../OVA.mp4` 存为 `{title} - OVA.mp4`，不再硬套集号）；② 下载弹窗集数网格显示站点集名（`api.ts` 新增 `parseEpLabels` 从播放页选集列表解析，`XifanSource.epLabels` 带给渲染层，特殊集显示「OVA」、普通集仍显示集号）。选择器**必须**是 `[class*="anthology-list"]`（实测结构 `ul.anthology-list-play`），不能放宽成 `anthology`：`anthology-header` 里的「下集」按钮同样指向 `watch/{id}/{src}/{ep}.html` 且在列表之前，放宽会把对应集的集名污染成「下集」（已用学园默示录真实页面 HTML 跑过解析验证：新选择器解析出 `第01集…第12集|OVA`，宽选择器 ep2 = 「下集」）；③ 修「复制 mp4 直链」写死 `templates[0]` 的既有 bug——换源后复制出的还是原源链接，改为 `templates[sourceIdx]`。
   - 不回归验证：选集列表解析不到（模板改版等）→ `epLabels` 为空数组，网格回退显示纯集号，下载逻辑不受影响；From/To 与排除逻辑仍按序号（1..N），集名只是展示
 - **2026-06-11** —— 修复 OVA 等「文件名不是集号」的特殊集 404。模板拼出的 URL 探测到 404（仅限 404）时，回源拉该集播放页解析 `player_aaaa.url` 的真实地址再下一次：`api.ts` 新增 `XifanSource.epPage`（播放页 URL 模板）+ `resolveEpRealUrl()`；`download.ts` 接 `epPages` 做回源兜底，解析出的真实直链经新事件 `ep_url` 通知渲染层；`downloadStore` 持久化 `epPages`（与 templates 平行）+ `epUrls`（回源解析结果），旧任务 normalize 为空、行为同从前；`siteApi.ts` 的 `resolveEpUrl` 优先用 `epUrls` 覆盖，模板替换逻辑未动；`mp4-range-downloader` 的 probe_failed 带上 HTTP 状态码供区分 404 与限流/5xx。
   - 触发样本：学园默示录（13 集，末集真实文件是 `OVA.mp4`，模板拼出 `13.mp4` → 404）
