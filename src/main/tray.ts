@@ -7,9 +7,24 @@ function getMainWindow(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
 }
 
+// Dock 用的应用图标(全尺寸、非模板)。打包后在 Contents/Resources,dev 在 resources/。
+function dockIconImage(): NativeImage | null {
+  const pngPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../resources/icon.png')
+  const img = nativeImage.createFromPath(pngPath)
+  return img.isEmpty() ? null : img
+}
+
 function showWindow(): void {
   // macOS：「关闭到托盘」时我们把 Dock 图标也撤了,从托盘恢复时要先把它带回来。
-  if (process.platform === 'darwin') app.dock?.show()
+  if (process.platform === 'darwin') {
+    app.dock?.show()
+    // ⚠️ dock.hide()→show() 一轮之后,启动时 setIcon 设的自定义图标会被清掉、
+    // 回退成默认图标,所以这里重新贴回应用图标。
+    const icon = dockIconImage()
+    if (icon) app.dock?.setIcon(icon)
+  }
   const win = getMainWindow()
   if (!win) return
   if (win.isMinimized()) win.restore()
