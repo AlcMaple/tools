@@ -287,5 +287,9 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  // 窗口都关了就退出 —— 不对 macOS 做「关窗不退」的系统默认例外:本应用语义是
+  // 关掉「关闭到托盘」后,点 X 就等于退出程序。
+  // (开着「关闭到托盘」时,close 被 preventDefault + hide,窗口并未真正销毁,
+  //  本事件根本不触发,所以托盘常驻不受影响。)
+  app.quit()
 })
