@@ -1,6 +1,6 @@
 // ⚠️ 必须是第一个 import —— 在任何 fs 异步操作前把 libuv 线程池调大(见模块注释)。
 import './shared/uv-bootstrap'
-import { app, shell, BrowserWindow, protocol, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, protocol, ipcMain, nativeImage } from 'electron'
 import { join } from 'path'
 import { readFile } from 'fs/promises'
 import { scanLibrary, startLibraryWatch, reconcilePaths, incrementalUpdate, type LibraryEntry } from './library/api'
@@ -121,6 +121,9 @@ function createWindow(): void {
     if (getMinimizeOnClose() && !isAppQuitting) {
       event.preventDefault()
       mainWindow.hide()
+      // macOS：隐藏到顶部菜单栏托盘后把 Dock 图标也撤掉 —— 只留顶部 logo,不在
+      // Dock 占位(行为对齐 UU 远控)。从托盘「显示主界面」时再 show 回来。
+      if (process.platform === 'darwin') app.dock?.hide()
     }
   })
 
@@ -185,7 +188,14 @@ app.whenReady().then(() => {
   })
 
   if (process.platform === 'darwin') {
-    app.dock.setIcon(join(__dirname, '../../resources/icon.png'))
+    // Dock 图标用 nativeImage 读,读不到就跳过 —— 打包后 icon.png 在 Contents/Resources
+    // (extraResources),dev 在 resources/。⚠️ 绝不能让这里抛错:它在 createWindow()
+    // 之前执行,一抛整个 whenReady 回调中断,窗口直接出不来(只剩 Dock 图标)。
+    const dockPng = app.isPackaged
+      ? join(process.resourcesPath, 'icon.png')
+      : join(__dirname, '../../resources/icon.png')
+    const dockIcon = nativeImage.createFromPath(dockPng)
+    if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon)
   }
 
   createWindow()
@@ -266,7 +276,13 @@ app.whenReady().then(() => {
   setTimeout(kickLibraryOnce, 5000)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // 点 Dock 图标:没窗口就建,有(可能是被隐藏的)就唤回来 —— 避免「关闭到托盘」
+    // 后窗口还在但隐藏着,点 Dock 却没反应。
+    const win = BrowserWindow.getAllWindows()[0]
+    if (!win) { createWindow(); return }
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
   })
 })
 
