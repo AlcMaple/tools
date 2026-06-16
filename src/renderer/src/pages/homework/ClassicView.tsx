@@ -142,9 +142,11 @@ function EditTitleModal({
 
 // ── Edit team modal ────────────────────────────────────────
 function EditTeamModal({
-  team, onClose, onSave,
+  team, group, onClose, onSave,
 }: {
   team: ClassicTeam
+  /** 所属经典组 —— 顶部上下文展示这条阵容属于哪个主题,而不是重复下方正在编辑的阵容。 */
+  group: ClassicGroup
   onClose: () => void
   onSave: (team: string[], notes: string[]) => void
 }): JSX.Element {
@@ -169,13 +171,8 @@ function EditTeamModal({
 
         <div className="bg-surface-container rounded-lg p-5 space-y-4 border border-outline-variant/15">
           <div className="pb-4 border-b border-outline-variant/15">
-            <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5">当前阵容</p>
-            <p className="text-sm text-on-surface-variant/70 font-mono">{team.team.join('、')}</p>
-            {team.notes.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                {team.notes.map((n, i) => <NoteChip key={i} text={n} />)}
-              </div>
-            )}
+            <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5">主题</p>
+            <p className="text-sm text-on-surface-variant/70 font-mono">{group.title}</p>
           </div>
           <FormField label="阵容角色" dot="bg-secondary" hint="用顿号 、 分隔，最多 5 名角色">
             <ModalInput
@@ -402,7 +399,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
   const [teamInput, setTeamInput] = useState('')
 
   const [editTitleGroup, setEditTitleGroup] = useState<ClassicGroup | null>(null)
-  const [editTeamTarget, setEditTeamTarget] = useState<{ groupId: number; team: ClassicTeam } | null>(null)
+  const [editTeamTarget, setEditTeamTarget] = useState<{ groupId: number; team: ClassicTeam; group: ClassicGroup } | null>(null)
   const [deleteGroup, setDeleteGroup] = useState<ClassicGroup | null>(null)
   const [deleteTeamTarget, setDeleteTeamTarget] = useState<{ groupId: number; team: ClassicTeam } | null>(null)
   const [addTeamTarget, setAddTeamTarget] = useState<ClassicGroup | null>(null)
@@ -656,7 +653,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
                             >
                               <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{copiedKey === `tm-${t.id}` ? 'check' : 'content_copy'}</span>
                             </button>
-                            <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors" title="编辑" onClick={() => setEditTeamTarget({ groupId: item.id, team: t })}>
+                            <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors" title="编辑" onClick={() => setEditTeamTarget({ groupId: item.id, team: t, group: item })}>
                               <span className="material-symbols-outlined" style={{ fontSize: 15 }}>edit</span>
                             </button>
                             <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-error hover:bg-error/10 transition-colors" title="删除该条" onClick={() => setDeleteTeamTarget({ groupId: item.id, team: t })}>
@@ -686,7 +683,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
         <EditTitleModal group={editTitleGroup} onClose={() => setEditTitleGroup(null)} onSave={handleEditTitle} />
       )}
       {editTeamTarget && (
-        <EditTeamModal team={editTeamTarget.team} onClose={() => setEditTeamTarget(null)} onSave={handleEditTeam} />
+        <EditTeamModal team={editTeamTarget.team} group={editTeamTarget.group} onClose={() => setEditTeamTarget(null)} onSave={handleEditTeam} />
       )}
       {deleteGroup && (
         <DeleteClassicModal group={deleteGroup} onClose={() => setDeleteGroup(null)} onConfirm={handleDelete} />
