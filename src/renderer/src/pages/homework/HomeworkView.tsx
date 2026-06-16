@@ -199,9 +199,11 @@ function EditDefenseModal({
 
 // ── Edit attack modal ──────────────────────────────────────
 function EditAttackModal({
-  atk, onClose, onSave,
+  atk, group, onClose, onSave,
 }: {
   atk: Attack
+  /** 所属防守组 —— 顶部上下文展示「这条进攻是打哪个防守方的」,而不是重复下方正在编辑的进攻阵容。 */
+  group: DefenseGroup
   onClose: () => void
   onSave: (team: string[], notes: string[]) => void
 }): JSX.Element {
@@ -226,11 +228,11 @@ function EditAttackModal({
 
         <div className="bg-surface-container rounded-lg p-5 space-y-4 border border-outline-variant/15">
           <div className="pb-4 border-b border-outline-variant/15">
-            <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5">当前阵容</p>
-            <p className="text-sm text-on-surface-variant/70 font-mono">{atk.team.join('、')}</p>
-            {atk.notes.length > 0 && (
+            <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5">防守方</p>
+            <p className="text-sm text-on-surface-variant/70 font-mono">{group.defense.join('、')}</p>
+            {(group.notes ?? []).length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                {atk.notes.map((n, i) => <NoteChip key={i} text={n} />)}
+                {(group.notes ?? []).map((n, i) => <NoteChip key={i} text={n} />)}
               </div>
             )}
           </div>
@@ -485,7 +487,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   const [attackInput, setAttackInput] = useState('')
 
   const [editDefenseGroup, setEditDefenseGroup] = useState<DefenseGroup | null>(null)
-  const [editAttackTarget, setEditAttackTarget] = useState<{ groupId: number; atk: Attack } | null>(null)
+  const [editAttackTarget, setEditAttackTarget] = useState<{ groupId: number; atk: Attack; group: DefenseGroup } | null>(null)
   const [deleteGroup, setDeleteGroup] = useState<DefenseGroup | null>(null)
   const [deleteAttackTarget, setDeleteAttackTarget] = useState<{ groupId: number; atk: Attack } | null>(null)
   const [addAttackTarget, setAddAttackTarget] = useState<DefenseGroup | null>(null)
@@ -795,7 +797,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
                             >
                               <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{copiedKey === `atk-${atk.id}` ? 'check' : 'content_copy'}</span>
                             </button>
-                            <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors" title="编辑" onClick={() => setEditAttackTarget({ groupId: item.id, atk })}>
+                            <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors" title="编辑" onClick={() => setEditAttackTarget({ groupId: item.id, atk, group: item })}>
                               <span className="material-symbols-outlined" style={{ fontSize: 15 }}>edit</span>
                             </button>
                             <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-error hover:bg-error/10 transition-colors" title="删除该条" onClick={() => setDeleteAttackTarget({ groupId: item.id, atk })}>
@@ -832,7 +834,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
         />
       )}
       {editAttackTarget && (
-        <EditAttackModal atk={editAttackTarget.atk} onClose={() => setEditAttackTarget(null)} onSave={handleEditAttack} />
+        <EditAttackModal atk={editAttackTarget.atk} group={editAttackTarget.group} onClose={() => setEditAttackTarget(null)} onSave={handleEditAttack} />
       )}
       {deleteGroup && (
         <DeleteModal group={deleteGroup} onClose={() => setDeleteGroup(null)} onConfirm={handleDelete} />
