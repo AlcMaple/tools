@@ -23,6 +23,9 @@ interface MenuState {
   flipX: boolean
   flipY: boolean
   items: MenuItem[]
+  // 非编辑文本「全选」要选中的目标元素 —— 只选右键所在的这块文本(如标题 / 简介),
+  // 而不是 webContents.selectAll() 那样把整页都选上。编辑控件场景为 null。
+  selectTarget: HTMLElement | null
 }
 
 // mac 用 ⌘,其余用 Ctrl —— 仅快捷键提示文案,不参与逻辑。
@@ -70,6 +73,8 @@ export default function EditContextMenu(): JSX.Element | null {
         !!window.getSelection() && window.getSelection()!.toString().length > 0
 
       let items: MenuItem[]
+      // 非编辑文本「全选」的目标:右键所在元素那块文本。编辑控件下走 webContents,无需此引用。
+      let selectTarget: HTMLElement | null = null
       if (host) {
         // 右键即聚焦,保证后续 selectAll/paste 落在这个控件上。
         host.focus()
@@ -82,9 +87,11 @@ export default function EditContextMenu(): JSX.Element | null {
         ]
       } else if (winHasSelection) {
         // 普通文本(详情简介、标签等)有选区时,给「复制 / 全选」。
+        // 「全选」锁定到右键所在的元素 —— 选这一块文本(标题 / 简介…),而非整页。
+        selectTarget = e.target instanceof HTMLElement ? e.target : null
         items = [
           { label: '复制', action: 'copy', hint: `${MOD}+C`, enabled: true },
-          { label: '全选', action: 'selectAll', hint: `${MOD}+A`, enabled: true },
+          { label: '全选', action: 'selectAll', hint: `${MOD}+A`, enabled: !!selectTarget },
         ]
       } else {
         return // 空白处 / 无选区的只读区域:不弹菜单。
@@ -101,6 +108,7 @@ export default function EditContextMenu(): JSX.Element | null {
         flipX: e.clientX + MENU_W + PAD > window.innerWidth,
         flipY: e.clientY + MENU_H + PAD > window.innerHeight,
         items,
+        selectTarget,
       })
     }
 
@@ -134,7 +142,18 @@ export default function EditContextMenu(): JSX.Element | null {
 
   function run(item: MenuItem): void {
     if (!item.enabled) return
-    window.systemApi.editCommand(item.action)
+    if (item.action === 'selectAll' && menu?.selectTarget) {
+      // 非编辑文本:只选中右键所在元素的全部文本,不要 webContents.selectAll() 选整页。
+      const sel = window.getSelection()
+      if (sel) {
+        const range = document.createRange()
+        range.selectNodeContents(menu.selectTarget)
+        sel.removeAllRanges()
+        sel.addRange(range)
+      }
+    } else {
+      window.systemApi.editCommand(item.action)
+    }
     setMenu(null)
   }
 
