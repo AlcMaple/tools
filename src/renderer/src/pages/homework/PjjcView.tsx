@@ -214,9 +214,11 @@ function EditDefensesModal({
 
 // ── Edit attack modal — edits all 3 attacks of a row ──────────────────────
 function EditAttackModal({
-  atk, onClose, onSave,
+  atk, group, onClose, onSave,
 }: {
   atk: PjjcAttack
+  /** 所属换防组 —— 顶部上下文展示这套进攻对应的三个防守方,而不是只给三条进攻输入框。 */
+  group: PjjcGroup
   onClose: () => void
   onSave: (teams: string[][], notes: string[]) => void
 }): JSX.Element {
@@ -254,6 +256,19 @@ function EditAttackModal({
         </div>
 
         <div className="bg-surface-container rounded-lg p-5 space-y-3 border border-outline-variant/15">
+          <div className="pb-3 border-b border-outline-variant/15">
+            <p className="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5">防守方</p>
+            <div className="space-y-0.5">
+              {group.defenses.map((d, i) => (
+                <p key={i} className="text-sm text-on-surface-variant/70 font-mono">防 {i + 1}：{joinTeam(d)}</p>
+              ))}
+            </div>
+            {(group.notes ?? []).length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {(group.notes ?? []).map((n, i) => <NoteChip key={i} text={n} />)}
+              </div>
+            )}
+          </div>
           {ATK_LABELS.map((label, i) => (
             <div key={i}>
               <label className="flex items-center gap-2 font-label text-[10px] uppercase tracking-widest text-secondary/80 mb-1.5">
@@ -521,7 +536,7 @@ const PjjcView = forwardRef<PjjcViewHandle, {
 
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [editDefensesGroup, setEditDefensesGroup] = useState<PjjcGroup | null>(null)
-  const [editAttackTarget, setEditAttackTarget] = useState<{ groupId: number; atk: PjjcAttack } | null>(null)
+  const [editAttackTarget, setEditAttackTarget] = useState<{ groupId: number; atk: PjjcAttack; group: PjjcGroup } | null>(null)
   const [deleteGroup, setDeleteGroup] = useState<PjjcGroup | null>(null)
   const [deleteAttackTarget, setDeleteAttackTarget] = useState<{ groupId: number; atk: PjjcAttack } | null>(null)
   const [addAttackTarget, setAddAttackTarget] = useState<PjjcGroup | null>(null)
@@ -801,7 +816,7 @@ const PjjcView = forwardRef<PjjcViewHandle, {
                             >
                               <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{copiedKey === `patk-${atk.id}` ? 'check' : 'content_copy'}</span>
                             </button>
-                            <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors" title="编辑" onClick={() => setEditAttackTarget({ groupId: item.id, atk })}>
+                            <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors" title="编辑" onClick={() => setEditAttackTarget({ groupId: item.id, atk, group: item })}>
                               <span className="material-symbols-outlined" style={{ fontSize: 15 }}>edit</span>
                             </button>
                             <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-error hover:bg-error/10 transition-colors" title="删除该条" onClick={() => setDeleteAttackTarget({ groupId: item.id, atk })}>
@@ -828,7 +843,7 @@ const PjjcView = forwardRef<PjjcViewHandle, {
         <EditDefensesModal group={editDefensesGroup} onClose={() => setEditDefensesGroup(null)} onSave={handleEditDefenses} />
       )}
       {editAttackTarget && (
-        <EditAttackModal atk={editAttackTarget.atk} onClose={() => setEditAttackTarget(null)} onSave={handleEditAttack} />
+        <EditAttackModal atk={editAttackTarget.atk} group={editAttackTarget.group} onClose={() => setEditAttackTarget(null)} onSave={handleEditAttack} />
       )}
       {deleteGroup && (
         <DeleteGroupModal group={deleteGroup} onClose={() => setDeleteGroup(null)} onConfirm={handleDelete} />
