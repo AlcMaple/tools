@@ -4,7 +4,7 @@ import {
   Highlight, ModalShell, ModalButton, FormField, ModalInput,
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
   createTeamPasteHandler,
-  commonPrefixLen, matchesDefense, todayStr, cleanCharName,
+  commonPrefixLen, matchesDefense, todayStr, cleanCharName, teamDedupKey,
 } from './shared'
 import { ImportModal } from './ImportModal'
 
@@ -18,6 +18,7 @@ function AddModal({
   setDefenseInput, setAttackInput,
   onClose, onSave,
   attackOptional = false,
+  existingAttackKeys,
 }: {
   defenseInput: string; attackInput: string
   setDefenseInput: (v: string) => void
@@ -25,11 +26,20 @@ function AddModal({
   onClose: () => void; onSave: (notes: string[]) => void
   /** When true, only defense is required to save (attack may be left blank). */
   attackOptional?: boolean
+  /**
+   * 归一化后的「已存在进攻队 key」集合 —— 当输入的防守方已对应某个现有组时，
+   * 用它阻止把同一支进攻队再添加一遍。新防守方时传空集即可。
+   */
+  existingAttackKeys?: Set<string>
 }): JSX.Element {
   const noteState = useNoteTagState([])
+  const attackTeam = attackInput.split('、').map(s => cleanCharName(s)).filter(Boolean)
+  const isDuplicateAttack = !attackOptional
+    && attackTeam.length > 0
+    && (existingAttackKeys?.has(teamDedupKey(attackTeam)) ?? false)
   const canSave = attackOptional
     ? defenseInput.trim().length > 0
-    : defenseInput.trim().length > 0 && attackInput.trim().length > 0
+    : defenseInput.trim().length > 0 && attackInput.trim().length > 0 && !isDuplicateAttack
   return (
     <ModalShell onBackdrop={onClose}>
       <div className="flex items-center gap-4 px-7 pt-6 pb-5 border-b border-outline-variant/10">
@@ -88,7 +98,14 @@ function AddModal({
                   currentNotes: noteState.notes,
                 })}
               />
-              <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
+              {isDuplicateAttack ? (
+                <p className="mt-1.5 font-label text-[10px] text-error flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[12px]">error</span>
+                  该进攻队已存在于此防守组，无需重复添加
+                </p>
+              ) : (
+                <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
+              )}
             </div>
           </>
         )}
@@ -212,7 +229,11 @@ function EditAttackModal({
   const teamChanged = teamValue.trim() !== atk.team.join('、')
   const finalNotes = noteState.finalNotes()
   const notesChanged = !notesEqual(finalNotes, atk.notes)
-  const canSave = teamValue.trim().length > 0 && (teamChanged || notesChanged)
+  // 改成与同组另一条进攻队相同也算重复（排除自身）。
+  const editedTeam = teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean)
+  const isDuplicate = editedTeam.length > 0
+    && group.attacks.some(a => a.id !== atk.id && teamDedupKey(a.team) === teamDedupKey(editedTeam))
+  const canSave = teamValue.trim().length > 0 && (teamChanged || notesChanged) && !isDuplicate
   return (
     <ModalShell onBackdrop={onClose}>
       <div className="p-7 pb-5">
@@ -236,7 +257,7 @@ function EditAttackModal({
               </div>
             )}
           </div>
-          <FormField label="进攻方角色" dot="bg-secondary" hint="用顿号 、 分隔，最多 5 名角色">
+          <FormField label="进攻方角色" dot="bg-secondary" hint={isDuplicate ? undefined : '用顿号 、 分隔，最多 5 名角色'}>
             <ModalInput
               value={teamValue}
               onChange={e => setTeamValue(e.target.value)}
@@ -247,6 +268,12 @@ function EditAttackModal({
               })}
               autoFocus
             />
+            {isDuplicate && (
+              <p className="mt-1.5 font-label text-[10px] text-error flex items-center gap-1">
+                <span className="material-symbols-outlined text-[12px]">error</span>
+                该进攻队已存在于此防守组，无需重复添加
+              </p>
+            )}
           </FormField>
           <FormField label="备注（可选，可多条）" dot="bg-outline" hint="回车提交一条；点 ✕ 移除">
             <NoteTagInput
@@ -388,7 +415,11 @@ function AddAttackModal({
 }): JSX.Element {
   const [teamValue, setTeamValue] = useState('')
   const noteState = useNoteTagState([])
-  const canSave = teamValue.trim().length > 0
+  // 重复判定：把输入清洗成角色数组后取归一化 key，与本防守组已有进攻队比对。
+  // 同一支进攻队（大小写/顺序无关）不允许重复录入。
+  const team = teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean)
+  const isDuplicate = team.length > 0 && group.attacks.some(a => teamDedupKey(a.team) === teamDedupKey(team))
+  const canSave = teamValue.trim().length > 0 && !isDuplicate
   return (
     <ModalShell onBackdrop={onClose}>
       <div className="flex items-center gap-4 px-7 pt-6 pb-5 border-b border-outline-variant/10">
@@ -419,7 +450,14 @@ function AddAttackModal({
             })}
             autoFocus
           />
-          <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
+          {isDuplicate ? (
+            <p className="mt-1.5 font-label text-[10px] text-error flex items-center gap-1">
+              <span className="material-symbols-outlined text-[12px]">error</span>
+              该进攻队已存在于此防守组，无需重复添加
+            </p>
+          ) : (
+            <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">用顿号 、 分隔，最多 5 名角色</p>
+          )}
         </div>
         <div>
           <label className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-1.5">
@@ -562,6 +600,8 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
           })
         }
         // Homework: append a new attack row to the existing defense.
+        // 兜底去重：同一支进攻队（大小写/顺序无关）已在该组就不再追加。
+        if (existing.attacks.some(a => teamDedupKey(a.team) === teamDedupKey(team))) return prev
         return prev.map(d =>
           d.id === existing.id
             ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
@@ -628,11 +668,12 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   const handleAddAttack = (team: string[], notes: string[]) => {
     if (!addAttackTarget) return
     const now = todayStr()
-    setData(prev => prev.map(d =>
-      d.id === addAttackTarget.id
-        ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
-        : d
-    ))
+    setData(prev => prev.map(d => {
+      if (d.id !== addAttackTarget.id) return d
+      // 兜底去重：同一支进攻队（大小写/顺序无关）已在该组就不再追加。
+      if (d.attacks.some(a => teamDedupKey(a.team) === teamDedupKey(team))) return d
+      return { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
+    }))
     setAddAttackTarget(null)
   }
 
@@ -823,6 +864,13 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
           setDefenseInput={setDefenseInput} setAttackInput={setAttackInput}
           onClose={() => setIsAddOpen(false)} onSave={handleAdd}
           attackOptional={attackOptional}
+          existingAttackKeys={(() => {
+            // 输入的防守方若已对应某个现有组，取该组已有进攻队的归一化 key 集合，
+            // 用于在弹窗内阻止把同一支进攻队再加一遍。
+            const defKey = defenseInput.split('、').map(s => cleanCharName(s)).filter(Boolean).join('、')
+            const g = data.find(d => d.defense.join('、') === defKey)
+            return new Set((g?.attacks ?? []).map(a => teamDedupKey(a.team)))
+          })()}
         />
       )}
       {editDefenseGroup && (
