@@ -1,7 +1,5 @@
-declare module '*.png' {
-  const src: string
-  export default src
-}
+// 静态资源（*.png 等）的模块声明已移至非模块的 assets.d.ts —— 本文件含顶层
+// import/export 属于模块，通配声明放这里不会生效（见 assets.d.ts 注释）。
 
 declare global {
   const __APP_VERSION__: string

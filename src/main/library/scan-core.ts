@@ -12,6 +12,7 @@
 // 这是没有 USN journal / 原生代码下，最接近网盘「秒启动 + 全自动同步」的方案。
 
 import { readdir, stat, open } from 'fs/promises'
+import type { Dirent } from 'fs'
 import { join, dirname } from 'path'
 import crypto from 'crypto'
 
@@ -144,7 +145,9 @@ export async function walkFolder(
   existingMap: Map<string, LibraryEntry>,
   gate: ScanGate
 ): Promise<void> {
-  let items: Awaited<ReturnType<typeof readdir>>
+  // @types/node 25 起 Dirent 变成泛型；string 路径下 withFileTypes 返回 Dirent<string>[]。
+  // 用 Awaited<ReturnType<typeof readdir>> 会错选到 Buffer 重载，故显式标注。
+  let items: Dirent<string>[]
   try {
     items = await gate(() => readdir(currentPath, { withFileTypes: true }))
   } catch {
@@ -207,7 +210,9 @@ export async function syncLibrary(
     }
 
     // 变了 / 新目录：readdir 发现当前结构，深扫这一层文件，再递归子目录。
-    let items: Awaited<ReturnType<typeof readdir>>
+    // @types/node 25 起 Dirent 变成泛型；string 路径下 withFileTypes 返回 Dirent<string>[]。
+  // 用 Awaited<ReturnType<typeof readdir>> 会错选到 Buffer 重载，故显式标注。
+  let items: Dirent<string>[]
     try {
       items = await gate(() => readdir(dir, { withFileTypes: true }))
     } catch {
