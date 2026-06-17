@@ -628,7 +628,13 @@ function SearchDownload(): JSX.Element {
 
   return (
     <div className="min-h-full bg-background">
-      <TopBar placeholder="Quick find archives..." onSearch={handleSearch} />
+      {/* 顶栏搜索框删掉 —— 与页内主搜索框重复（两者都走 handleSearch）。 */}
+      <TopBar placeholder="" titleSlot={
+        <div className="flex items-center gap-4">
+          <h2 className="text-2xl font-bold tracking-tighter text-primary">搜索下载</h2>
+          <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">Multisource Downloader</span>
+        </div>
+      } />
 
       <main className="pt-16 px-8 py-8">
         {/* Hero */}
