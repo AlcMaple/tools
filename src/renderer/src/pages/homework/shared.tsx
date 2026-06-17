@@ -238,6 +238,14 @@ export function cleanCharName(s: string): string {
 }
 
 /**
+ * 归一化一支阵容用于「重复判定」——大小写无关、顺序无关。
+ * 「镜子、花凛、驴」与「驴、花凛、镜子」视为同一支队，避免同一进攻队重复录入。
+ */
+export function teamDedupKey(team: string[]): string {
+  return team.map(s => s.toLowerCase()).sort().join('、')
+}
+
+/**
  * 判断一组角色位（roles）能否满足全部搜索词（terms）——**每个词占一个不同的
  * 角色位**（二分匹配）。
  *
