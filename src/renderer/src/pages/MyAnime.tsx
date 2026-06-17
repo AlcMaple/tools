@@ -136,6 +136,17 @@ const CATEGORY_TABS: ReadonlyArray<{ key: 'anime' | 'manga' | 'novel'; label: st
 const SORT_KEY = 'maple-anime-sort'
 const TAB_KEY = 'maple-anime-tab'
 
+// 顶栏左侧标题块 —— 替换掉 TopBar 默认的搜索框。本页在 sticky header 右侧已有
+// 自己的搜索框（过滤追番/推荐），顶栏再放一个会重复，故用标题块占位。
+const TITLE_SLOT = (
+  <div className="flex items-center gap-4">
+    <h2 className="text-2xl font-bold tracking-tighter text-primary">我的追番</h2>
+    <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">
+      Anime · Manga · Novel
+    </span>
+  </div>
+)
+
 export default function MyAnime(): JSX.Element {
   const tracks = useAnimeTrackList()
   const [filter, setFilter] = useState<FilterKey>('all')
@@ -270,7 +281,7 @@ export default function MyAnime(): JSX.Element {
 
   return (
     <div className="relative min-h-full bg-background">
-      <TopBar placeholder="搜索追番标题、别名、备注…" onSearch={setQuery} />
+      <TopBar placeholder="" titleSlot={TITLE_SLOT} />
 
       <div className="pt-16">
         {/* Sticky header —— top-16 是为了让自己卡在 fixed TopBar（高 64px = pt-16）

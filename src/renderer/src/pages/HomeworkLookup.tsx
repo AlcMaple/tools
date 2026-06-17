@@ -409,7 +409,13 @@ export default function HomeworkLookup(): JSX.Element {
 
   return (
     <div className="relative min-h-full bg-background">
-      <TopBar placeholder="搜索阵容、角色名…" />
+      {/* 顶栏搜索框删掉（本就没接 onSearch、纯摆设）—— 页内已有「模糊搜索防守方角色」。 */}
+      <TopBar placeholder="" titleSlot={
+        <div className="flex items-center gap-4">
+          <h2 className="text-2xl font-bold tracking-tighter text-primary">锦囊妙计</h2>
+          <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">Homework · Lineups</span>
+        </div>
+      } />
       <div className="pt-16">
         {/* Sticky page header —— top-16 让 sticky 卡在 fixed TopBar（64px）下面，
             top-0 会让标题被 TopBar 压住露出一半。同 MyAnime / AnimeCalendar 的修法。 */}

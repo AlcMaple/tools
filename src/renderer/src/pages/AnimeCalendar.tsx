@@ -148,7 +148,13 @@ export default function AnimeCalendar(): JSX.Element {
 
   return (
     <div className="relative min-h-full bg-background">
-      <TopBar placeholder="搜索本周番剧..." />
+      {/* 顶栏搜索框删掉（本就没接 onSearch、纯摆设）—— 用标题块占位,跟 MyAnime / 文件管理器一致。 */}
+      <TopBar placeholder="" titleSlot={
+        <div className="flex items-center gap-4">
+          <h2 className="text-2xl font-bold tracking-tighter text-primary">番剧周历</h2>
+          <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">This Season · Bangumi</span>
+        </div>
+      } />
       <div className="pt-16">
         {/* Hero — 标题块随内容滚走，不 sticky。 */}
         <div className="px-8 pt-5 pb-3">
