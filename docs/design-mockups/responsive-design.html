@@ -1,0 +1,531 @@
+<!doctype html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta content="width=device-width, initial-scale=1.0" name="viewport" />
+<title>MapleTools | 响应式设计原型（平板 / 手机）</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&family=Space+Grotesk:wght@300;400;500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    darkMode: "class",
+    theme: { extend: {
+      colors: {
+        "surface-container-highest":"#353535","surface-container-high":"#2a2a2a","surface-container":"#1f1f1f",
+        "surface-container-low":"#1b1b1b","surface-container-lowest":"#0e0e0e","surface-bright":"#393939",
+        "surface-variant":"#353535",surface:"#131313",background:"#131313","on-surface":"#e2e2e2",
+        "on-surface-variant":"#d9c1c1","on-background":"#e2e2e2",outline:"#a18c8c","outline-variant":"#544343",
+        primary:"#ffb3b8","primary-container":"#f09199","primary-fixed":"#ffdadb","primary-fixed-dim":"#ffb2b8",
+        "on-primary":"#5a1923","on-primary-container":"#6e2932",secondary:"#aac7ff","secondary-container":"#004c9a",
+        "on-secondary":"#002f64","on-secondary-container":"#9ec0ff",tertiary:"#c8c6c6",error:"#ffb4ab",
+      },
+      fontFamily:{ headline:["Inter"], body:["Inter"], label:["Space Grotesk"] },
+      borderRadius:{ DEFAULT:"0.125rem", lg:"0.25rem", xl:"0.5rem", full:"0.75rem" },
+    }},
+  };
+</script>
+<style>
+  body{background:#0a0a0a;font-family:Inter,sans-serif}
+  .material-symbols-outlined{font-variation-settings:"FILL" 0,"wght" 400,"GRAD" 0,"opsz" 24}
+  .fill{font-variation-settings:"FILL" 1}
+  ::-webkit-scrollbar{width:4px;height:4px}
+  ::-webkit-scrollbar-thumb{background:#353535;border-radius:2px}
+  .pink-grad{background:linear-gradient(135deg,#ffb3b8,#f09199)}
+
+  .frame{position:relative;overflow:hidden;background:#131313;color:#e2e2e2;border:1px solid #2a2a2a;
+    border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.6);transition:width .3s,height .3s;margin:0 auto}
+  .shell{display:flex;height:100%}
+  .scr{flex:1;display:flex;flex-direction:column;min-width:0}
+  .pgwrap{flex:1;overflow-y:auto}
+  .page{display:none}.page.active{display:block}
+
+  .ham{display:none}
+  .frame.mobile .ham{display:inline-flex}
+  .frame.mobile .rail{display:none}
+  .frame.mobile .desk-stats{display:none}
+  .frame.mobile .desk-spd{display:none}
+
+  /* per-page reflow: base = tablet, .mobile overrides */
+  .poster-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .frame.mobile .poster-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .cal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .frame.mobile .cal-grid{grid-template-columns:repeat(2,1fr);gap:9px}
+  .epi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+  .frame.mobile .epi-grid{grid-template-columns:repeat(4,1fr)}
+  .two{display:grid;grid-template-columns:220px 1fr;gap:24px}
+  /* 动漫查询：平板沿用 PC 的左封面/右信息双栏；手机重构为「封面+信息并排 → 操作/简介通栏」 */
+  .anime-mobile{display:none}
+  .frame.mobile .anime-tablet{display:none}
+  .frame.mobile .anime-mobile{display:block}
+  /* 我的追番：平板两列填满卡片右侧留白，手机单列 */
+  .track-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .frame.mobile .track-grid{grid-template-columns:1fr}
+  .hdrow{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;flex-wrap:wrap}
+  .frame.mobile .acts-inline{width:100%;flex-direction:column;align-items:stretch}
+  .frame.mobile .acts-inline .srch{min-width:0;flex:1}
+  .frame.mobile .crumb{display:none}
+  .frame.mobile .subttl{display:none}
+  .frame.mobile .hero-xl{font-size:30px!important}
+  .fab{display:none}
+  .frame.mobile .fab.show{display:flex}
+
+  /* mode-switch control: 手机用下拉选择器，平板像 PC 一样用分段 tab */
+  /* 选择器写成 .modedd.dd —— 提高特异性盖过下面 .dd{display:inline-block}，否则下拉会漏到平板 */
+  .modeseg{display:block}.modedd.dd{display:none}
+  .frame.mobile .modeseg{display:none}.frame.mobile .modedd.dd{display:block}
+  .dd{position:relative;display:inline-block}
+  .dd-btn{display:flex;align-items:center;gap:8px;background:#1f1f1f;border:1px solid #2a2a2a;border-radius:11px;padding:9px 14px;font-size:13px;color:#ffb3b8;cursor:pointer}
+  .dd-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:170px;background:#1f1f1f;border:1px solid #2a2a2a;border-radius:11px;padding:5px;z-index:25;display:none;box-shadow:0 14px 36px rgba(0,0,0,.55)}
+  .dd.open .dd-menu{display:block}
+  .dd-menu b{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;font-weight:400;font-size:13px;cursor:pointer;color:rgba(226,226,226,.7)}
+  .dd-menu b.on{color:#ffb3b8;background:rgba(240,145,153,.12)}
+
+  /* drawer */
+  .drawer{position:absolute;top:0;left:0;bottom:0;width:236px;background:#0e0e0e;border-right:1px solid #2a2a2a;
+    transform:translateX(-100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);z-index:40;display:flex;flex-direction:column}
+  .drawer.open{transform:none}
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .26s;z-index:30}
+  .scrim.open{opacity:1;pointer-events:auto}
+</style>
+</head>
+<body class="text-on-surface">
+
+<div class="max-w-[980px] mx-auto px-6 py-7">
+  <div class="flex items-center gap-3 flex-wrap mb-3">
+    <span class="font-label text-[11px] tracking-[0.22em] uppercase text-on-surface-variant/60">MapleTools · 响应式原型</span>
+    <div class="ml-auto flex gap-2" id="modeCtl">
+      <button data-m="mobile" class="mbtn px-4 py-2 rounded-xl border border-outline-variant/40 text-sm flex items-center gap-2"><span class="material-symbols-outlined text-[18px]">smartphone</span>手机 390</button>
+      <button data-m="tablet" class="mbtn px-4 py-2 rounded-xl border border-outline-variant/40 text-sm flex items-center gap-2"><span class="material-symbols-outlined text-[18px]">tablet</span>平板 768</button>
+    </div>
+  </div>
+  <p id="cap" class="text-[13px] text-on-surface-variant/70 leading-relaxed mb-5 min-h-[38px]"></p>
+
+  <div class="frame mobile" id="frame" style="width:390px;height:740px">
+    <div class="scrim" id="scrim"></div>
+    <nav class="drawer" id="drawer"></nav>
+
+    <div class="shell">
+      <aside class="rail w-[64px] bg-surface-container-lowest flex flex-col items-center py-4 shrink-0" id="rail"></aside>
+      <div class="scr">
+        <header class="h-[52px] shrink-0 flex items-center gap-3 px-4 border-b border-outline-variant/30">
+          <button class="ham items-center justify-center text-on-surface" id="ham"><span class="material-symbols-outlined text-[24px]">menu</span></button>
+          <div class="min-w-0">
+            <span id="tbTitle" class="text-primary font-medium text-[16px] tracking-tight"></span>
+            <span id="tbSub" class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/55 ml-2"></span>
+          </div>
+          <div class="desk-stats flex items-center gap-5 mx-auto">
+            <div class="flex flex-col items-center"><span class="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/45">Storage</span><span class="text-[11px] font-medium">370 GB FREE</span></div>
+            <div class="flex flex-col items-center"><span class="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/45">Tasks</span><span class="text-[11px] font-medium">0 ACTIVE</span></div>
+            <div class="flex flex-col items-center"><span class="font-label text-[9px] uppercase tracking-widest text-on-surface-variant/45">Network</span><span class="text-[11px] font-medium"><span class="inline-block w-1.5 h-1.5 rounded-full bg-green-500 mr-1"></span>STABLE</span></div>
+          </div>
+          <div class="flex items-center gap-3 ml-auto">
+            <span class="desk-spd font-label text-[12px] font-medium flex items-center gap-1.5"><span class="material-symbols-outlined text-[18px]">bolt</span>0 KB/s</span>
+            <span class="desk-spd material-symbols-outlined text-[20px]">light_mode</span>
+            <span class="material-symbols-outlined text-[20px]">settings</span>
+          </div>
+        </header>
+
+        <div class="pgwrap" id="pgwrap">
+
+          <!-- ===== 作业查询 ===== -->
+          <section class="page" id="pg-homework">
+            <div class="p-4">
+              <div class="hdrow">
+                <div><div class="crumb font-label text-[10px] uppercase tracking-widest text-outline mb-1.5">Tools / 锦囊妙计</div>
+                  <h1 class="text-[26px] font-black tracking-tight">锦囊妙计</h1>
+                  <p class="subttl text-[13px] text-on-surface-variant/70 mt-1">查询作业 · 浏览经典阵容 · 流水账记录</p></div>
+                <div class="acts-inline flex items-center gap-3">
+                  <div class="srch flex items-center gap-2 bg-surface-container-high border border-outline-variant/40 rounded-xl px-3.5 py-2.5 text-[13px] text-on-surface-variant/50 min-w-[220px]"><span class="material-symbols-outlined text-[18px] text-outline">search</span>模糊搜索防守方角色…</div>
+                  <button class="desk-spd pink-grad text-on-primary font-medium rounded-xl px-4 py-2.5 text-[13px] flex items-center gap-1.5 whitespace-nowrap"><span class="material-symbols-outlined text-[18px]">add</span>添加作业</button>
+                </div>
+              </div>
+
+              <div class="my-4">
+                <div class="modeseg flex gap-1 bg-surface-container border border-outline-variant/30 rounded-xl p-1 w-max max-w-full" data-group>
+                  <b class="on px-3.5 py-2 rounded-lg text-[13px] font-normal cursor-pointer">作业查询</b><b class="px-3.5 py-2 rounded-lg text-[13px] font-normal cursor-pointer">JJC 换防</b><b class="px-3.5 py-2 rounded-lg text-[13px] font-normal cursor-pointer">PJJC 换防</b><b class="px-3.5 py-2 rounded-lg text-[13px] font-normal cursor-pointer">经典阵容</b><b class="px-3.5 py-2 rounded-lg text-[13px] font-normal cursor-pointer">记录</b>
+                </div>
+                <div class="modedd dd" data-dd>
+                  <button class="dd-btn"><span class="material-symbols-outlined text-[18px]">swap_horiz</span><span class="dd-label flex-1 text-left">作业查询</span><span class="material-symbols-outlined text-[18px]">expand_more</span></button>
+                  <div class="dd-menu">
+                    <b class="on">作业查询</b><b>JJC 换防</b><b>PJJC 换防</b><b>经典阵容</b><b>记录</b>
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-4 my-3 text-[10px] font-label uppercase tracking-widest text-outline">
+                <span>Defense <b class="text-on-surface text-[14px] ml-1">218</b></span><span>Attacks <b class="text-on-surface text-[14px] ml-1">271</b></span>
+                <span class="material-symbols-outlined ml-auto text-[20px] text-on-surface-variant/55">more_horiz</span>
+              </div>
+              <div class="bg-surface-container-lowest border border-white/5 rounded-xl overflow-hidden" data-card>
+                <div class="flex items-start gap-2.5 px-4 py-3.5 cursor-pointer" style="background:rgba(255,179,184,.05)" data-exp>
+                  <span class="material-symbols-outlined fill text-primary text-[17px] mt-0.5">shield</span>
+                  <div class="flex-1 min-w-0"><div class="text-primary font-medium text-[15px] leading-snug">镜子、魔女、水电、黑姐姐、跳跳虎</div><div class="font-label text-[10px] uppercase tracking-widest text-outline mt-1.5">2026-06-19 · 4 队</div></div>
+                  <span class="material-symbols-outlined text-outline text-[22px] exp-ic">expand_less</span>
+                </div>
+                <div class="exp-body">
+                  <div class="px-4 py-3 border-t border-white/[0.03] flex items-start gap-3">
+                    <div class="flex-1 min-w-0 text-[14.5px] leading-relaxed"><span class="text-primary font-medium">瓜眼/xcw</span><span class="text-outline-variant mx-0.5">、</span>镜子<span class="text-outline-variant mx-0.5">、</span>白猫<span class="text-outline-variant mx-0.5">、</span>妹弓<span class="text-outline-variant mx-0.5">、</span>黄骑
+                      <div class="flex items-center gap-2.5 mt-1.5"><span class="text-[11px] text-secondary border border-secondary/20 rounded-lg px-2 py-0.5" style="background:rgba(170,199,255,.1)">up主</span><span class="font-label text-[10px] uppercase tracking-wider text-outline/80">2026-06-19 · 5/5</span></div></div>
+                    <div class="flex gap-1.5 text-on-surface-variant/45"><span class="material-symbols-outlined text-[20px]">content_copy</span><span class="material-symbols-outlined text-[20px]">more_vert</span></div>
+                  </div>
+                  <div class="px-4 py-3 border-t border-white/[0.03] flex items-start gap-3">
+                    <div class="flex-1 min-w-0 text-[14.5px] leading-relaxed"><span class="text-primary font-medium">镜子</span><span class="text-outline-variant mx-0.5">、</span>阿花<span class="text-outline-variant mx-0.5">、</span>水电<span class="text-outline-variant mx-0.5">、</span>中二<span class="text-outline-variant mx-0.5">、</span>真阳
+                      <div class="flex items-center gap-2.5 mt-1.5"><span class="text-[11px] text-secondary border border-secondary/20 rounded-lg px-2 py-0.5" style="background:rgba(170,199,255,.1)">up主</span><span class="font-label text-[10px] uppercase tracking-wider text-outline/80">2026-06-19 · 5/5</span></div></div>
+                    <div class="flex gap-1.5 text-on-surface-variant/45"><span class="material-symbols-outlined text-[20px]">content_copy</span><span class="material-symbols-outlined text-[20px]">more_vert</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="bg-surface-container-lowest border border-white/5 rounded-xl mt-2.5 flex items-center gap-2.5 px-4 py-3.5" style="background:rgba(255,179,184,.04)">
+                <span class="material-symbols-outlined fill text-primary text-[17px]">shield</span>
+                <div class="flex-1 min-w-0"><div class="text-primary font-medium text-[15px]">礼千、ams、魔驴、驴、黄骑</div><div class="font-label text-[10px] uppercase tracking-widest text-outline mt-1.5">2026-06-09 · 3 队</div></div>
+                <span class="material-symbols-outlined text-outline text-[22px]">expand_more</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== 本地播放器 ===== -->
+          <section class="page" id="pg-library">
+            <div class="p-4">
+              <div class="hdrow mb-4">
+                <div><div class="crumb font-label text-[10px] uppercase tracking-widest text-outline mb-1.5">Local Storage / 全部</div>
+                  <h1 class="text-[26px] font-black tracking-tight">本地播放器</h1>
+                  <p class="subttl text-[13px] text-on-surface-variant/70 mt-1">128 部 · 1,204 集 · 最近更新刚刚</p></div>
+                <button class="desk-spd pink-grad text-on-primary font-medium rounded-full px-4 py-2.5 text-[13px] flex items-center gap-1.5 whitespace-nowrap"><span class="material-symbols-outlined text-[18px]">folder_zip</span>扫描文件夹</button>
+              </div>
+              <div class="flex flex-wrap gap-2 mb-4" data-group>
+                <b class="on px-3.5 py-1.5 rounded-full text-[12px] font-normal cursor-pointer">全部</b><b class="px-3.5 py-1.5 rounded-full text-[12px] font-normal cursor-pointer">番剧</b><b class="px-3.5 py-1.5 rounded-full text-[12px] font-normal cursor-pointer">剧场版</b>
+                <button class="w-8 h-8 rounded-full flex items-center justify-center border border-dashed border-outline-variant/40 text-outline hover:text-primary hover:border-primary/50 transition-all" title="添加文件夹"><span class="material-symbols-outlined text-[18px]">add</span></button>
+              </div>
+              <div class="bg-surface-container-lowest border border-white/5 rounded-xl overflow-hidden divide-y divide-white/[0.03]">
+                <div class="flex items-center gap-3 px-4 py-3"><span class="material-symbols-outlined text-primary/40 text-[20px]">movie</span><span class="flex-1 min-w-0 truncate text-[13.5px] font-medium">[Sakurato] 葬送的芙莉莲 - 01.mkv</span><span class="font-label text-[11px] text-on-surface-variant/60 tabular-nums">1.4 GB</span></div>
+                <div class="flex items-center gap-3 px-4 py-3"><span class="material-symbols-outlined text-primary/40 text-[20px]">movie</span><span class="flex-1 min-w-0 truncate text-[13.5px] font-medium">[ANi] 迷宫饭 - 12.mp4</span><span class="font-label text-[11px] text-on-surface-variant/60 tabular-nums">680 MB</span></div>
+                <div class="flex items-center gap-3 px-4 py-3"><span class="material-symbols-outlined text-primary/40 text-[20px]">movie</span><span class="flex-1 min-w-0 truncate text-[13.5px] font-medium">剧场版 你的名字。1080p.mkv</span><span class="font-label text-[11px] text-on-surface-variant/60 tabular-nums">3.2 GB</span></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== 搜索下载 ===== -->
+          <section class="page" id="pg-search">
+            <div class="p-4">
+              <p class="font-label text-[11px] text-primary/70 tracking-[0.25em] uppercase mb-2 mt-3">Multisource Downloader</p>
+              <h1 class="hero-xl text-[52px] font-black leading-none tracking-tighter mb-3">INDEX THE <span class="text-primary">MULTIVERSE</span></h1>
+              <p class="subttl text-[13px] text-on-surface-variant/60 mb-5">从多个站点同时搜索并拉取番剧。</p>
+              <div class="acts-inline flex items-center gap-2.5 mb-5">
+                <div class="srch flex-1 flex items-center gap-2.5 bg-surface-container-highest border border-outline-variant/40 rounded-xl px-4 py-3 text-[13px] text-on-surface-variant/50"><span class="material-symbols-outlined text-primary text-[20px]">travel_explore</span>学园默示录</div>
+                <div class="flex gap-2.5">
+                  <div class="flex items-center gap-2 bg-surface-container-high border border-outline-variant/40 rounded-xl px-3.5 py-3 text-[13px]">Aowu<span class="material-symbols-outlined text-[18px] text-outline">expand_more</span></div>
+                  <button class="pink-grad text-on-primary font-medium rounded-xl px-4 py-3 text-[12px] tracking-widest flex items-center gap-1.5 whitespace-nowrap"><span class="material-symbols-outlined text-[18px]">bolt</span>搜索</button>
+                </div>
+              </div>
+              <p class="font-label text-[11px] uppercase tracking-widest text-outline mb-3">37 entries found · 学园默示录</p>
+              <div class="poster-grid">
+                <div><div class="aspect-[2/3] rounded-xl bg-surface-container-high flex items-center justify-center"><span class="material-symbols-outlined text-outline/40 text-[32px]">image</span></div><p class="text-[12px] mt-1.5 truncate">学园默示录</p></div>
+                <div><div class="aspect-[2/3] rounded-xl bg-surface-container-high flex items-center justify-center"><span class="material-symbols-outlined text-outline/40 text-[32px]">image</span></div><p class="text-[12px] mt-1.5 truncate">学园默示录 OVA</p></div>
+                <div><div class="aspect-[2/3] rounded-xl bg-surface-container-high flex items-center justify-center"><span class="material-symbols-outlined text-outline/40 text-[32px]">image</span></div><p class="text-[12px] mt-1.5 truncate">学园保姆</p></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== 下载队列 ===== -->
+          <section class="page" id="pg-queue">
+            <div class="p-4">
+              <div class="hdrow mb-4">
+                <div><h1 class="text-[24px] font-black tracking-tight">下载队列</h1>
+                  <p class="font-label text-[11px] uppercase tracking-widest mt-1.5"><span class="text-primary">Active 01</span><span class="text-outline-variant mx-2">·</span><span class="text-secondary">Paused 00</span></p></div>
+                <button class="border border-outline-variant/30 rounded-lg px-3 py-2 text-[12px] flex items-center gap-1.5 text-on-surface-variant"><span class="material-symbols-outlined text-[16px]">pause_circle</span><span class="desk-spd">全部暂停</span></button>
+              </div>
+              <div class="bg-surface-container rounded-xl p-3.5">
+                <div class="flex items-start gap-3.5">
+                  <div class="w-16 h-24 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-outline/40">movie</span></div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-start justify-between gap-2"><div class="font-bold text-[16px] truncate">迷宫饭</div><div class="flex gap-1.5 text-on-surface-variant/60 shrink-0"><span class="material-symbols-outlined text-[18px]">pause</span><span class="material-symbols-outlined text-[18px]">close</span></div></div>
+                    <div class="mt-1.5 text-[12px] text-secondary">下载中 · 15 / 24 集</div>
+                    <div class="mt-2.5">
+                      <div class="flex justify-between font-label text-[9px] uppercase tracking-widest text-on-surface-variant/50 mb-1"><span>进度</span><span>62%</span></div>
+                      <div class="h-1.5 rounded-full bg-surface-container-high overflow-hidden"><div class="h-full bg-secondary" style="width:62%"></div></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="epi-grid mt-4">
+                  <div class="p-2 rounded-lg border-b-2 border-secondary/40 flex justify-center"><span class="material-symbols-outlined fill text-secondary/70 text-[18px]">check_circle</span></div>
+                  <div class="p-2 rounded-lg border-b-2 border-secondary/40 flex justify-center"><span class="material-symbols-outlined fill text-secondary/70 text-[18px]">check_circle</span></div>
+                  <div class="p-2 rounded-lg border-b-2 border-primary/40 flex justify-center"><span class="material-symbols-outlined text-primary/70 text-[18px]">downloading</span></div>
+                  <div class="p-2 rounded-lg border-b-2 border-outline-variant/20 flex justify-center opacity-40"><span class="material-symbols-outlined text-[18px]">hourglass_empty</span></div>
+                  <div class="p-2 rounded-lg border-b-2 border-outline-variant/20 flex justify-center opacity-40"><span class="material-symbols-outlined text-[18px]">hourglass_empty</span></div>
+                  <div class="p-2 rounded-lg border-b-2 border-outline-variant/20 flex justify-center opacity-40"><span class="material-symbols-outlined text-[18px]">hourglass_empty</span></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== 动漫查询 ===== -->
+          <section class="page" id="pg-anime">
+            <div class="p-4">
+              <div class="acts-inline flex items-center gap-2.5 mb-5">
+                <div class="srch flex-1 flex items-center gap-2.5 bg-surface-container-highest border border-outline-variant/40 rounded-xl px-4 py-2.5 text-[13px] text-on-surface-variant/50"><span class="material-symbols-outlined text-[18px] text-outline">search</span>命运石之门</div>
+                <div class="flex items-center gap-2 bg-surface-container-high border border-outline-variant/40 rounded-xl px-3 py-2.5 text-[13px] whitespace-nowrap">動畫<span class="material-symbols-outlined text-[18px] text-outline">expand_more</span></div>
+              </div>
+              <div class="two anime-tablet">
+                <div class="anime-cover">
+                  <div class="aspect-[2/3] rounded-xl bg-surface-container-high flex items-center justify-center"><span class="material-symbols-outlined text-outline/40 text-[32px]">image</span></div>
+                  <div class="space-y-2 mt-3">
+                    <button class="w-full pink-grad text-on-primary font-medium rounded-xl py-2 text-[12.5px]">加入媒体库</button>
+                    <button class="w-full border border-secondary/40 text-secondary rounded-xl py-2 text-[12.5px] flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">bookmark</span>已追番</button>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex flex-wrap gap-1.5 mb-2"><span class="font-label text-[10px] uppercase tracking-widest text-outline">TV Series</span><span class="text-[10px] bg-surface-container-high rounded px-2 py-0.5">科幻</span><span class="text-[10px] bg-surface-container-high rounded px-2 py-0.5">穿越</span><span class="font-label text-[10px] text-outline">· 24 话</span></div>
+                  <h1 class="text-[32px] font-black leading-tight tracking-tighter mb-3">命运石之门 <span class="text-primary">0</span></h1>
+                  <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div><div class="font-label text-[9px] uppercase tracking-widest text-outline">放送</div><div class="text-[13px]">2018-04</div></div>
+                    <div><div class="font-label text-[9px] uppercase tracking-widest text-outline">时长</div><div class="text-[13px]">24 min</div></div>
+                    <div><div class="font-label text-[9px] uppercase tracking-widest text-outline">制作</div><div class="text-[13px]">WHITE FOX</div></div>
+                    <div><div class="font-label text-[9px] uppercase tracking-widest text-outline">评分</div><div class="text-[13px] text-primary">★ 8.3</div></div>
+                  </div>
+                  <div class="bg-surface-container rounded-xl p-4 text-[13.5px] leading-relaxed text-on-surface-variant">2010 年夏季之后……世界线变动率 1% 的壁垒，命运石之门的选择。这是一部关于时间与抉择的故事简介占位文本。</div>
+                </div>
+              </div>
+
+              <!-- 手机版重构：封面与信息并排（不放大封面），操作按钮与简介通栏 -->
+              <div class="anime-mobile">
+                <div class="flex gap-3.5">
+                  <div class="w-[140px] shrink-0">
+                    <div class="aspect-[2/3] rounded-xl bg-surface-container-high flex items-center justify-center"><span class="material-symbols-outlined text-outline/40 text-[32px]">image</span></div>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap gap-1.5 mb-2"><span class="font-label text-[10px] uppercase tracking-widest text-outline">TV Series</span><span class="text-[10px] bg-surface-container-high rounded px-2 py-0.5">科幻</span><span class="text-[10px] bg-surface-container-high rounded px-2 py-0.5">穿越</span></div>
+                    <h1 class="text-[23px] font-black leading-tight tracking-tighter mb-2.5">命运石之门 <span class="text-primary">0</span></h1>
+                    <div class="space-y-1.5">
+                      <div class="flex items-baseline justify-between gap-2"><span class="font-label text-[10px] uppercase tracking-widest text-outline">放送</span><span class="text-[12.5px]">2018-04</span></div>
+                      <div class="flex items-baseline justify-between gap-2"><span class="font-label text-[10px] uppercase tracking-widest text-outline">时长</span><span class="text-[12.5px]">24 min · 24 话</span></div>
+                      <div class="flex items-baseline justify-between gap-2"><span class="font-label text-[10px] uppercase tracking-widest text-outline">制作</span><span class="text-[12.5px]">WHITE FOX</span></div>
+                      <div class="flex items-baseline justify-between gap-2"><span class="font-label text-[10px] uppercase tracking-widest text-outline">评分</span><span class="text-[12.5px] text-primary">★ 8.3</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex gap-2.5 mt-4">
+                  <button class="flex-1 pink-grad text-on-primary font-medium rounded-xl py-2.5 text-[12.5px]">加入媒体库</button>
+                  <button class="flex-1 border border-secondary/40 text-secondary rounded-xl py-2.5 text-[12.5px] flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">bookmark</span>已追番</button>
+                </div>
+                <div class="bg-surface-container rounded-xl p-4 text-[13.5px] leading-relaxed text-on-surface-variant mt-3">2010 年夏季之后……世界线变动率 1% 的壁垒，命运石之门的选择。这是一部关于时间与抉择的故事简介占位文本。</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== 我的追番 ===== -->
+          <section class="page" id="pg-track">
+            <div class="p-4">
+              <div class="hdrow">
+                <div><h1 class="text-[26px] font-black tracking-tight">我的追番</h1><p class="subttl text-[13px] text-on-surface-variant/70 mt-1">状态 · 集数 · 备注 全在这里。</p></div>
+                <div class="acts-inline flex items-center gap-3"><div class="srch flex items-center gap-2 bg-surface-container-high border border-outline-variant/40 rounded-xl px-3.5 py-2.5 text-[13px] text-on-surface-variant/50 min-w-[200px]"><span class="material-symbols-outlined text-[18px] text-outline">search</span>搜索追番标题…</div></div>
+              </div>
+              <div class="flex flex-wrap gap-2 my-4" data-group>
+                <b class="on px-3.5 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer">动画 92</b><b class="px-3.5 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer">漫画 4</b><b class="px-3.5 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer">小说 2</b><b class="px-3.5 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer">推荐 10</b>
+              </div>
+              <div class="flex flex-wrap gap-2 mb-4" data-group>
+                <b class="on px-3 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer">全部 2</b><b class="px-3 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer">在追 1</b><b class="px-3 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer">想看 0</b><b class="px-3 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer">看完 1</b>
+              </div>
+              <div class="track-grid">
+                <div class="bg-surface-container-lowest border border-white/5 rounded-xl p-3.5 flex gap-3.5">
+                  <div class="w-14 h-20 rounded-lg bg-surface-container-high shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-outline/40">image</span></div>
+                  <div class="flex-1 min-w-0">
+                    <div class="font-bold text-[15px] truncate">命运石之门 0</div>
+                    <div class="flex flex-wrap gap-1.5 mt-1.5"><span class="text-[10px] bg-surface-container-high rounded px-2 py-0.5">科幻</span><span class="text-[10px] bg-surface-container-high rounded px-2 py-0.5">游戏改</span></div>
+                    <div class="flex items-center gap-2 mt-3 flex-wrap">
+                      <span class="text-[11px] text-primary border border-primary/30 rounded-lg px-2.5 py-1" style="background:rgba(255,179,184,.08)">在追</span>
+                      <div class="flex items-center gap-2 bg-surface-container-high rounded-lg px-2 py-1"><span class="material-symbols-outlined text-[16px]">remove</span><span class="text-[12px] tabular-nums">2 / 24</span><span class="material-symbols-outlined text-[16px] text-primary">add</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="bg-surface-container-lowest border border-white/5 rounded-xl p-3.5 flex gap-3.5">
+                  <div class="w-14 h-20 rounded-lg bg-surface-container-high shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-outline/40">image</span></div>
+                  <div class="flex-1 min-w-0">
+                    <div class="font-bold text-[15px] truncate">迷宫饭</div>
+                    <div class="flex flex-wrap gap-1.5 mt-1.5"><span class="text-[10px] bg-surface-container-high rounded px-2 py-0.5">奇幻</span><span class="text-[10px] bg-surface-container-high rounded px-2 py-0.5">冒险</span></div>
+                    <div class="flex items-center gap-2 mt-3 flex-wrap">
+                      <span class="text-[11px] text-secondary border border-secondary/30 rounded-lg px-2.5 py-1" style="background:rgba(170,199,255,.08)">看完</span>
+                      <div class="flex items-center gap-2 bg-surface-container-high rounded-lg px-2 py-1"><span class="material-symbols-outlined text-[16px]">remove</span><span class="text-[12px] tabular-nums">24 / 24</span><span class="material-symbols-outlined text-[16px] text-primary">add</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== 番剧周历表 ===== -->
+          <section class="page" id="pg-calendar">
+            <div class="p-4">
+              <div class="crumb font-label text-[10px] uppercase tracking-widest text-outline mb-1.5">Anime / 番剧周历</div>
+              <h1 class="text-[26px] font-black tracking-tight">番剧周历</h1>
+              <p class="subttl text-[13px] text-on-surface-variant/70 mt-1 mb-4">本季正在播出 · 默认显示今天，点星期切换。</p>
+              <div class="flex gap-1.5 mb-4" id="dayRow"></div>
+              <div class="cal-grid" id="calGrid"></div>
+            </div>
+          </section>
+
+          <!-- ===== 资源管理器 ===== -->
+          <section class="page" id="pg-files">
+            <div class="p-4">
+              <h2 class="text-[22px] font-bold tracking-tight text-primary mb-3">资源管理器</h2>
+              <div class="flex items-center gap-2 mb-3">
+                <span class="material-symbols-outlined text-[18px] w-8 h-8 flex items-center justify-center rounded-md bg-surface-container-high">arrow_back</span>
+                <span class="material-symbols-outlined text-[18px] w-8 h-8 flex items-center justify-center rounded-md bg-surface-container-high opacity-40">arrow_forward</span>
+                <div class="flex-1 min-w-0 bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-[12.5px] text-on-surface-variant/70 truncate">D:\Anime\2026春</div>
+                <span class="material-symbols-outlined text-[18px] w-8 h-8 flex items-center justify-center rounded-md bg-surface-container-high">grid_view</span>
+              </div>
+              <div class="bg-surface-container-lowest border border-white/5 rounded-xl overflow-hidden divide-y divide-white/[0.03]">
+                <div class="flex items-center gap-3 px-4 py-3"><span class="material-symbols-outlined fill text-primary/70 text-[20px]">folder</span><span class="flex-1 text-[13.5px]">葬送的芙莉莲</span><span class="font-label text-[11px] text-outline">12 项</span></div>
+                <div class="flex items-center gap-3 px-4 py-3"><span class="material-symbols-outlined fill text-primary/70 text-[20px]">folder</span><span class="flex-1 text-[13.5px]">迷宫饭</span><span class="font-label text-[11px] text-outline">24 项</span></div>
+                <div class="flex items-center gap-3 px-4 py-3"><span class="material-symbols-outlined text-outline/50 text-[20px]">description</span><span class="flex-1 min-w-0 truncate text-[13.5px]">README.txt</span><span class="font-label text-[11px] text-outline tabular-nums">2 KB</span></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== 设置 ===== -->
+          <section class="page" id="pg-settings">
+            <div class="p-4">
+              <h1 class="text-[24px] font-black tracking-tight mb-1">系統偏好</h1>
+              <p class="subttl text-[13px] text-on-surface-variant/70 mb-4">外观 · 下载 · 同步 · 邮件</p>
+              <div class="mb-5">
+                <div class="modeseg flex flex-wrap gap-2" data-group>
+                  <b class="px-3 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">tune</span>通用</b>
+                  <b class="px-3 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">download</span>下载</b>
+                  <b class="px-3 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">cloud_sync</span>同步</b>
+                  <b class="on px-3 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">palette</span>外观</b>
+                  <b class="px-3 py-1.5 rounded-lg text-[12px] font-normal cursor-pointer flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">info</span>关于</b>
+                </div>
+                <div class="modedd dd" data-dd>
+                  <button class="dd-btn"><span class="material-symbols-outlined text-[18px]">palette</span><span class="dd-label flex-1 text-left">外观</span><span class="material-symbols-outlined text-[18px]">expand_more</span></button>
+                  <div class="dd-menu">
+                    <b><span class="material-symbols-outlined text-[16px]">tune</span>通用</b><b><span class="material-symbols-outlined text-[16px]">download</span>下载</b><b><span class="material-symbols-outlined text-[16px]">cloud_sync</span>同步</b><b class="on"><span class="material-symbols-outlined text-[16px]">palette</span>外观</b><b><span class="material-symbols-outlined text-[16px]">info</span>关于</b>
+                  </div>
+                </div>
+              </div>
+              <div class="bg-surface-container-lowest border border-white/5 rounded-xl divide-y divide-outline-variant/10">
+                <div class="flex items-center gap-3 px-4 py-3.5"><span class="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[18px]">contrast</span></span>
+                  <div class="flex-1 min-w-0"><div class="font-medium text-[14px]">配色模式</div><div class="text-[12px] text-on-surface-variant/60">浅色 / 深色</div></div>
+                  <div class="flex bg-surface-container-high rounded-lg p-1 text-[11px]" data-group><b class="px-3 py-1 rounded font-normal cursor-pointer">浅色</b><b class="on px-3 py-1 rounded font-normal cursor-pointer">深色</b></div>
+                </div>
+                <div class="flex items-center gap-3 px-4 py-3.5"><span class="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[18px]">cached</span></span>
+                  <div class="flex-1 min-w-0"><div class="font-medium text-[14px]">搜索缓存</div><div class="text-[12px] text-on-surface-variant/60">缓存搜索结果加速</div></div>
+                  <div class="w-11 h-6 rounded-full bg-primary-container/70 relative shrink-0"><span class="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-white"></span></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+
+    <button class="fab absolute right-5 bottom-6 w-14 h-14 rounded-full pink-grad text-on-primary items-center justify-center shadow-lg z-20" id="fab"><span class="material-symbols-outlined text-[30px]">add</span></button>
+  </div>
+</div>
+
+<script>
+  var NAV=[
+    {id:'library',label:'本地播放器',icon:'subscriptions',title:'本地播放器'},
+    {id:'search',label:'搜索下载',icon:'search',title:'搜索下载'},
+    {id:'queue',label:'下载队列',icon:'download_for_offline',title:'下载队列'},
+    {id:'anime',label:'动漫查询',icon:'travel_explore',title:'动漫查询'},
+    {id:'track',label:'我的追番',icon:'grade',title:'我的追番'},
+    {id:'calendar',label:'番剧周历表',icon:'calendar_month',title:'番剧周历'},
+    {id:'files',label:'资源管理器',icon:'folder_managed',title:'资源管理器'},
+    {id:'homework',label:'作业查询',icon:'swords',title:'锦囊妙计',sub:'Homework · Lineups'},
+  ];
+  var FAB={homework:'add',track:'add',library:'add'};
+  var frame=document.getElementById('frame'),rail=document.getElementById('rail'),drawer=document.getElementById('drawer'),
+      scrim=document.getElementById('scrim'),fab=document.getElementById('fab'),
+      tbTitle=document.getElementById('tbTitle'),tbSub=document.getElementById('tbSub'),cap=document.getElementById('cap');
+
+  rail.innerHTML='<div class="text-primary font-black text-[20px] tracking-tighter mb-5">M</div>'+
+    NAV.map(function(n){return '<a data-page="'+n.id+'" class="w-full flex justify-center py-3 cursor-pointer" style="border-right:2px solid transparent"><span class="material-symbols-outlined text-[22px]">'+n.icon+'</span></a>'}).join('')+
+    '<a data-page="settings" class="w-full flex justify-center py-3 mt-auto cursor-pointer"><span class="material-symbols-outlined text-[22px]">settings</span></a>';
+
+  drawer.innerHTML='<div class="px-6 pt-6 pb-5"><div class="text-primary font-black text-[18px] tracking-tight">MAPLE TOOLS</div><div class="font-label text-[10px] text-on-surface/40 tracking-widest mt-1">V0.10.0</div></div>'+
+    '<div class="flex-1">'+NAV.map(function(n){return '<a data-page="'+n.id+'" class="flex items-center gap-3 px-6 py-3 cursor-pointer text-on-surface/60" style="border-right:2px solid transparent"><span class="material-symbols-outlined text-[20px]">'+n.icon+'</span><span class="font-label text-[14px]">'+n.label+'</span></a>'}).join('')+'</div>'+
+    '<a data-page="settings" class="flex items-center gap-3 px-6 py-4 cursor-pointer text-on-surface/60 border-t border-outline-variant/15"><span class="material-symbols-outlined text-[20px]">settings</span><span class="font-label text-[14px]">设置</span></a>';
+
+  // calendar: 默认今天，点星期切换；只渲染当天，无数量数字
+  var DAYS=['一','二','三','四','五','六','日'];
+  var CAL={
+    0:[['尖帽子的魔法工房','6.7'],['左撇子艾伦','6.4'],['航海王','8.3']],
+    1:[['药屋少女的呢喃','9.1'],['赛马娘','7.2'],['孤独摇滚','8.8']],
+    2:[['名侦探柯南','7.5'],['钻石王牌','7.0'],['七米神物语','3.6'],['北斗神拳','6.7']],
+    3:[['迷宫饭','8.5'],['葬送的芙莉莲','9.0'],['咒术回战','7.8']],
+    4:[['关于我转生史莱姆','7.9'],['间谍过家家','8.1']],
+    5:[['异兽魔都 第二季','7.6'],['今日开局','4.5'],['盘龙','4.5'],['大道独行','4.9']],
+    6:[['魔法少女小圆','8.9'],['宝石之国','8.4'],['进击的巨人','9.2']],
+  };
+  var today=2; // 星期三
+  function renderDay(d){
+    document.getElementById('calGrid').innerHTML=CAL[d].map(function(it){
+      return '<div><div class="aspect-[3/4] rounded-xl bg-surface-container-high flex items-center justify-center"><span class="material-symbols-outlined text-outline/40 text-[28px]">image</span></div><p class="text-[12px] mt-1.5 truncate font-medium">'+it[0]+'</p><p class="text-[11px] text-primary">★ '+it[1]+'</p></div>';
+    }).join('');
+  }
+  function renderDayRow(sel){
+    document.getElementById('dayRow').innerHTML=DAYS.map(function(d,i){
+      var on=i===sel;
+      return '<b data-day="'+i+'" class="flex-1 text-center py-2 rounded-lg text-[13px] font-normal cursor-pointer" style="'+(on?'background:rgba(240,145,153,.14);color:#ffb3b8':'background:#1f1f1f;color:rgba(226,226,226,.55)')+'">'+DAYS[i]+'</b>';
+    }).join('');
+  }
+  renderDayRow(today); renderDay(today);
+
+  function closeDrawer(){drawer.classList.remove('open');scrim.classList.remove('open');}
+  function setPage(id){
+    document.querySelectorAll('.page').forEach(function(p){p.classList.toggle('active',p.id==='pg-'+id)});
+    var meta=NAV.filter(function(n){return n.id===id})[0]||{title:'设置',sub:''};
+    tbTitle.textContent=meta.title; tbSub.textContent=meta.sub||'';
+    var f=FAB[id]; if(f){fab.classList.add('show');fab.querySelector('span').textContent=f;}else{fab.classList.remove('show');}
+    document.querySelectorAll('[data-page]').forEach(function(a){
+      var on=a.getAttribute('data-page')===id;
+      a.style.color=on?'#ffb3b8':''; a.style.background=on?'#1f1f1f':''; a.style.borderRightColor=on?'#ffb3b8':'transparent';
+      a.classList.toggle('text-on-surface/60',!on);
+    });
+    closeDrawer();
+    document.getElementById('pgwrap').scrollTop=0;
+  }
+  function setMode(m){
+    frame.className='frame '+m;
+    frame.style.width=(m==='mobile'?390:768)+'px';
+    frame.style.height=(m==='mobile'?740:600)+'px';
+    document.querySelectorAll('.mbtn').forEach(function(b){
+      var on=b.getAttribute('data-m')===m;
+      b.style.borderColor=on?'#f09199':''; b.style.color=on?'#f09199':''; b.style.background=on?'rgba(240,145,153,.1)':'';
+    });
+    cap.textContent = m==='mobile'
+      ? '手机档（窄窗）：侧栏收进 ☰ 抽屉（点左上角），顶栏只留标题+设置、砍掉中部统计与速率；多列网格降到 2 列、两栏布局上下堆叠；主操作沉为右下角 + 悬浮按钮；模式标签改为下拉选择器（点试试）。'
+      : '平板档（中窗）：侧栏收成 64px 图标轨，顶栏砍掉中部统计，模式标签用分段条；其余信息密度基本同电脑。点图标轨切页。';
+    closeDrawer();
+  }
+
+  document.addEventListener('click',function(e){
+    var nav=e.target.closest('[data-page]'); if(nav){setPage(nav.getAttribute('data-page'));return;}
+    var mb=e.target.closest('.mbtn'); if(mb){setMode(mb.getAttribute('data-m'));return;}
+    if(e.target.closest('#ham')){drawer.classList.add('open');scrim.classList.add('open');return;}
+    if(e.target===scrim){closeDrawer();return;}
+
+    var day=e.target.closest('[data-day]'); if(day){var di=+day.getAttribute('data-day');renderDayRow(di);renderDay(di);return;}
+
+    // dropdown open / select
+    var ddbtn=e.target.closest('.dd-btn'); if(ddbtn){var dd=ddbtn.closest('.dd');var was=dd.classList.contains('open');document.querySelectorAll('.dd').forEach(function(x){x.classList.remove('open')});if(!was)dd.classList.add('open');return;}
+    var ddItem=e.target.closest('.dd-menu b'); if(ddItem){var dd2=ddItem.closest('.dd');dd2.querySelectorAll('.dd-menu b').forEach(function(x){x.classList.remove('on')});ddItem.classList.add('on');dd2.querySelector('.dd-label').textContent=ddItem.textContent.trim();dd2.classList.remove('open');return;}
+    document.querySelectorAll('.dd').forEach(function(x){x.classList.remove('open')});
+
+    var exp=e.target.closest('[data-exp]'); if(exp){var c=exp.closest('[data-card]');var b=c.querySelector('.exp-body');var ic=exp.querySelector('.exp-ic');
+      if(b){var h=b.style.display==='none';b.style.display=h?'':'none';if(ic)ic.textContent=h?'expand_less':'expand_more';}return;}
+    var chip=e.target.closest('[data-group] > b'); if(chip){var g=chip.parentElement;g.querySelectorAll(':scope > b').forEach(function(x){x.classList.remove('on')});chip.classList.add('on');}
+  });
+
+  var styleEl=document.createElement('style');
+  styleEl.textContent='[data-group] > b.on{background:rgba(240,145,153,.14);color:#ffb3b8}'+
+    '[data-group] > b:not(.on){color:rgba(226,226,226,.55)}'+
+    '[data-group] > b:not(.on):hover{color:#e2e2e2}'+
+    '#dayRow b:hover{color:#e2e2e2}';
+  document.head.appendChild(styleEl);
+
+  setMode('mobile'); setPage('homework');
+</script>
+</body>
+</html>
