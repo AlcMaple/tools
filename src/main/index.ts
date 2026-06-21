@@ -65,6 +65,9 @@ function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    // 最小尺寸卡在手机版设计宽度（~390），不让窗口无限缩小到布局崩坏。
+    minWidth: 390,
+    minHeight: 600,
     title: 'MapleTools',
     show: false,
     // 窗口底色给暗色主题的 background(#131313)，而不是默认白 —— 否则

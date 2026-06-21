@@ -48,7 +48,7 @@ function Shell(): JSX.Element {
       {!isFullscreen && <Sidebar />}
       <div
         id="page-scroll"
-        className={`h-full overflow-y-auto custom-scrollbar ${isFullscreen ? '' : 'ml-64'}`}
+        className={`h-full overflow-y-auto custom-scrollbar ${isFullscreen ? '' : 'ml-0 md:ml-16 lg:ml-64'}`}
       >
         <Routes>
           <Route path="/" element={<LocalLibrary />} />
