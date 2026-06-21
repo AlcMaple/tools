@@ -155,7 +155,7 @@ export function LinkTrackModal({ initialKeyword, sourceLabel, sourceTitle, onClo
               搜索
             </button>
           </div>
-          <p className="mt-2 font-label text-[10px] text-on-surface-variant/40">
+          <p className="mt-2 font-label text-[9px] text-on-surface-variant/40">
             从 BGM 搜索结果里挑一个对应条目，绑定后该来源就永久关联到这部番。
           </p>
         </div>

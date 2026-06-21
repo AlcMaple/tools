@@ -110,7 +110,7 @@ export function DownloadConfigShell({
   const startDisabled = !selected || epCount === 0 || includeCount === 0;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-surface-container-lowest/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-surface-container-lowest/60 backdrop-blur-sm">
       <div className="bg-surface-container w-full max-w-lg rounded-xl border border-outline-variant/20 p-8">
         <div className="flex items-start justify-between mb-6">
           <div>
@@ -269,10 +269,13 @@ export function DownloadConfigShell({
             disabled={startDisabled}
             className="flex-1 py-3 rounded-xl primary-gradient text-on-primary text-sm font-black tracking-widest hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            <span className="material-symbols-outlined text-base leading-none">
+            {/* 手机弹窗窄，"START DOWNLOAD" 会折成两行 —— 手机只显示 "Download" 且去掉
+                bolt 图标；≥768 保持桌面原样（bolt + START DOWNLOAD）。 */}
+            <span className="material-symbols-outlined text-base leading-none hidden md:inline">
               bolt
             </span>
-            START DOWNLOAD
+            <span className="md:hidden">Download</span>
+            <span className="hidden md:inline">START DOWNLOAD</span>
           </button>
         </div>
       </div>
