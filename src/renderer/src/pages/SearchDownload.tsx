@@ -196,6 +196,100 @@ function ResultCard({
   );
 }
 
+// 手机+平板档(<1024)专属：横向列表行。与桌面的竖向海报卡是「两种形态」而非「同一张卡缩小」——
+// 手机 1 列、平板 2 列；跨过 1024 时结果区整体从「横向卡片」换成「竖向海报网格」，配合侧栏
+// 展开/顶栏状态一起换挡，避免「只有海报忽大忽小」的孤立违和感。列表内拖动只把每行拉宽，
+// 封面是固定小图、尺寸恒定、不会忽大忽小。
+function ResultListItem({
+  card,
+  isLoading,
+  onDownload,
+  onLink,
+}: ResultCardProps): JSX.Element {
+  const track = useAnimeTrackByBinding(card.source, card.key);
+
+  return (
+    <div className="group flex gap-3 bg-surface-container rounded-xl border border-outline-variant/20 p-2.5 hover:border-primary/30 transition-colors">
+      {/* 固定宽封面缩略图(2:3)——行高由它决定，拖宽窗口它也不变大；平板略放大一档 */}
+      <div className="relative w-16 md:w-20 shrink-0 aspect-[2/3] rounded-lg overflow-hidden">
+        <CoverImage src={card.cover} alt={card.title} />
+        {isLoading && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+          </div>
+        )}
+      </div>
+
+      {/* 信息列 */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1 py-0.5">
+        <h3
+          className="text-sm md:text-base font-bold text-on-surface line-clamp-2 leading-snug"
+          title={card.title}
+        >
+          {card.title}
+        </h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-label text-on-surface-variant/50">
+            {card.year}
+            {card.tag ? ` · ${card.tag}` : ""}
+          </span>
+          {card.count && (
+            <span className="text-xs font-label text-primary/70">{card.count}</span>
+          )}
+          {track && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary-container/85 border border-primary/30 text-on-primary-container"
+              title={`BGM ${track.bgmId} · ${track.titleCn || track.title}`}
+            >
+              <span
+                className="material-symbols-outlined text-[11px] leading-none"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                bookmark
+              </span>
+              <span className="font-label text-[10px] font-bold tracking-wider whitespace-nowrap">
+                {track.episode > 0
+                  ? `EP ${track.episode}${track.totalEpisodes ? `/${track.totalEpisodes}` : ""}`
+                  : "在追"}
+              </span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 操作列——手机端用显式按钮替代桌面卡的 hover 浮层。右侧有空间，带上文字描述；
+          flex-col 默认 stretch，两个按钮等宽对齐。 */}
+      <div className="shrink-0 flex flex-col justify-center gap-1.5">
+        <button
+          onClick={onDownload}
+          disabled={isLoading}
+          className="primary-gradient text-on-primary rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
+        >
+          <span className="material-symbols-outlined text-base leading-none">
+            download
+          </span>
+          <span className="font-label text-xs font-bold tracking-wide">
+            Download
+          </span>
+        </button>
+        {!track && (
+          <button
+            onClick={onLink}
+            className="bg-surface-container-highest border border-outline-variant/30 text-on-surface-variant/70 hover:text-primary hover:border-primary/40 rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <span className="material-symbols-outlined text-base leading-none">
+              bookmark_add
+            </span>
+            <span className="font-label text-xs tracking-wide whitespace-nowrap">
+              关联追番
+            </span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 function SearchDownload(): JSX.Element {
@@ -636,13 +730,14 @@ function SearchDownload(): JSX.Element {
         </div>
       } />
 
-      <main className="pt-16 px-8 py-8">
+      <main className="pt-16 px-4 md:px-8 py-8">
         {/* Hero */}
-        <section className="mt-10 mb-12">
+        <section className="mt-6 md:mt-10 mb-8 md:mb-12">
           <p className="font-label text-xs text-primary/70 tracking-[0.3em] uppercase mb-3">
             Multisource Downloader
           </p>
-          <h1 className="text-7xl font-black leading-none tracking-tighter text-on-surface mb-4">
+          {/* 流体字号：随视口连续缩放(30px→72px)，避免 768/1024 断点处标题尺寸突跳 */}
+          <h1 className="text-[clamp(1.875rem,calc(4.7vw_+_11.6px),4.5rem)] font-black leading-none tracking-tighter text-on-surface mb-4">
             INDEX THE <span className="text-primary">MULTIVERSE</span>
           </h1>
           <p className="text-on-surface-variant/60 text-sm max-w-lg font-label">
@@ -653,8 +748,8 @@ function SearchDownload(): JSX.Element {
 
         {/* Search bar */}
         <section className="mb-10">
-          <div className="flex items-center gap-3 max-w-3xl">
-            <div className="relative flex-1">
+          <div className="flex flex-col md:flex-row md:items-center gap-3 max-w-3xl">
+            <div className="relative w-full md:flex-1">
               <div className="flex items-center bg-surface-container-highest rounded-xl px-5 py-3.5 space-x-3 border border-outline-variant/30 focus-within:border-primary/40 transition-colors">
                 <span className="material-symbols-outlined text-primary text-xl leading-none">
                   travel_explore
@@ -731,12 +826,14 @@ function SearchDownload(): JSX.Element {
               )}
             </div>
 
+            {/* 手机：选择器 + 搜索按钮并排成一行；sm 以上 display:contents，三者回到同一行 */}
+            <div className="flex gap-3 md:contents">
             {/* Source selector */}
-            <div className="relative" ref={sourceDropdownRef}>
+            <div className="relative shrink-0" ref={sourceDropdownRef}>
               <button
                 type="button"
                 onClick={() => setSourceDropdownOpen((o) => !o)}
-                className="w-36 flex items-center justify-between gap-2 bg-surface-container-highest border border-outline-variant/30 text-on-surface text-sm font-label rounded-xl px-5 py-4 outline-none cursor-pointer hover:border-primary/40 transition-colors"
+                className="w-auto md:w-36 flex items-center justify-between gap-2 bg-surface-container-highest border border-outline-variant/30 text-on-surface text-sm font-label rounded-xl px-5 py-4 outline-none cursor-pointer hover:border-primary/40 transition-colors"
               >
                 <span>{source}</span>
                 <span
@@ -783,6 +880,7 @@ function SearchDownload(): JSX.Element {
               )}
               <span>搜索</span>
             </button>
+            </div>
           </div>
         </section>
 
@@ -849,7 +947,24 @@ function SearchDownload(): JSX.Element {
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-4">
+              {/* 手机+平板档(<1024)：横向卡片列表，手机 1 列 / 平板 2 列。封面是固定小图，
+                 平板内拖宽窗口只把卡片拉宽、封面不变 —— 没有任何海报忽大忽小。 */}
+              <div className="lg:hidden grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3">
+                {state.cards.map((card, idx) => (
+                  <ResultListItem
+                    key={`${card.source}-${card.key}-${idx}`}
+                    card={card}
+                    isLoading={loadingKey === card.key}
+                    onDownload={() => handleDownloadClick(card)}
+                    onLink={() => setLinkingCard(card)}
+                  />
+                ))}
+              </div>
+
+              {/* 桌面(≥1024)：竖向海报网格 4 列（和原来完全一样）。跨过 1024 时是从「横向卡片」
+                 整体换成「竖向海报」的换挡，又赶上侧栏展开标签、顶栏冒出状态 —— 整页一起变，
+                 海报不再是孤立骤缩。桌面档内 4 列固定，海报随窗口连续放大缩小。 */}
+              <div className="hidden lg:grid grid-cols-4 gap-4">
                 {state.cards.map((card, idx) => (
                   <ResultCard
                     key={`${card.source}-${card.key}-${idx}`}
