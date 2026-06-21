@@ -860,6 +860,117 @@ function DetailView({
   const getIcon = (role: string): string =>
     Object.entries(roleIcon).find(([k]) => role.includes(k))?.[1] ?? 'person'
 
+  // ── 手机/平板分支复用的小块（桌面分支不引用这些，保持原样不受影响） ──
+  const addTrack = (): void => {
+    animeTrackStore.upsert({
+      bgmId: data.id,
+      subjectType: deriveSubjectType(data.type, data.platform),
+      title: data.title,
+      titleCn: data.title_cn || undefined,
+      aliases: aliasesFromInfobox(data.infobox),
+      cover: data.cover || undefined,
+      totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
+      status: 'plan',
+      episode: 0,
+      bgmTags: data.tags,
+    })
+  }
+  const removeTrack = (): void => {
+    animeTrackStore.delete(data.id)
+  }
+
+  const titleContent = (
+    <>
+      {restTitle && <>{restTitle} </>}
+      <span className="text-primary">{lastWord}</span>
+    </>
+  )
+  const badgeRow = (
+    <div className="flex flex-wrap items-center gap-2 mb-2">
+      <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60">
+        {data.platform || 'TV Series'}
+      </span>
+      {data.tags.slice(0, 2).map((t) => (
+        <span
+          key={t}
+          className="text-[10px] bg-surface-container-high rounded px-2 py-0.5 text-on-surface-variant/80"
+        >
+          {t}
+        </span>
+      ))}
+      {data.episodes > 0 && (
+        <span className="font-label text-[10px] text-on-surface-variant/50">· {data.episodes} 话</span>
+      )}
+    </div>
+  )
+  const duration = data.infobox?.['片长'] || data.infobox?.['时长'] || ''
+  const metaData: { label: string; value: string; primary?: boolean }[] = [
+    { label: '放送', value: data.date || '—' },
+    ...(duration ? [{ label: '时长', value: duration }] : []),
+    ...(data.studio ? [{ label: '制作', value: data.studio }] : []),
+    { label: '评分', value: data.score > 0 ? `★ ${data.score.toFixed(1)}` : '—', primary: true },
+  ]
+  const synopsisCard = (
+    <div className="bg-surface-container rounded-xl p-4 md:p-5">
+      <h3 className="font-label text-[10px] text-primary uppercase tracking-[0.2em] mb-2">
+        The Narrative
+      </h3>
+      <p className="text-on-surface-variant leading-relaxed text-[13.5px] md:text-[15px] font-light">
+        {data.summary || 'No summary available for this entry.'}
+      </p>
+    </div>
+  )
+  const coverImg = (
+    <img
+      src={coverSrc || coverFallback}
+      alt={data.title_cn || data.title}
+      className="w-full aspect-[2/3] object-cover rounded-xl shadow-xl"
+      decoding="async"
+      onError={(e) => {
+        const img = e.currentTarget
+        if (img.src !== coverFallback) {
+          img.onerror = null
+          img.src = coverFallback
+        }
+      }}
+    />
+  )
+  // 三个操作按钮统一尺寸（py-2.5 / text-[12.5px]）；cls 控制宽度（flex-1 或 w-full）
+  const archiveBtn = (cls: string): JSX.Element => (
+    <button
+      onClick={onArchive}
+      className={`py-2.5 rounded-xl bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold text-[12.5px] flex items-center justify-center gap-1.5 active:scale-95 transition-transform ${cls}`}
+    >
+      加入媒体库
+    </button>
+  )
+  const trackBtn = (cls: string): JSX.Element =>
+    track ? (
+      <button
+        onClick={removeTrack}
+        className={`py-2.5 rounded-xl bg-primary-container/15 border border-primary-container/30 text-primary font-label text-[12.5px] flex items-center justify-center gap-1.5 ${cls}`}
+      >
+        <span className="material-symbols-outlined text-[16px] leading-none" style={{ fontVariationSettings: "'FILL' 1" }}>bookmark</span>
+        已追番
+      </button>
+    ) : (
+      <button
+        onClick={addTrack}
+        className={`py-2.5 rounded-xl border border-secondary/40 text-secondary font-label text-[12.5px] flex items-center justify-center gap-1.5 ${cls}`}
+      >
+        <span className="material-symbols-outlined text-[16px] leading-none">bookmark_add</span>
+        追番
+      </button>
+    )
+  const officialBtn = (cls: string): JSX.Element => (
+    <button
+      onClick={() => window.open(data.link, '_blank')}
+      className={`py-2.5 rounded-xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 text-on-surface-variant font-label text-[12.5px] flex items-center justify-center transition-colors ${cls}`}
+    >
+      Official Site
+    </button>
+  )
+
   return (
     <div className="max-w-6xl mx-auto">
       {onBack && (
@@ -873,6 +984,124 @@ function DetailView({
           Back to results
         </button>
       )}
+      {/* ── 手机 + 平板（<1024）：参考设计原型。跨 1024 时整体换成桌面 sticky 双栏大图布局。 ── */}
+      <div className="lg:hidden">
+        {/* ===== 手机（<768）：封面+信息并排 → 两个按钮通栏（与封面底部对齐）→ 简介通栏 ===== */}
+        <div className="md:hidden">
+          <div className="flex gap-3.5">
+            <div className="w-[140px] shrink-0">{coverImg}</div>
+            <div className="flex-1 min-w-0">
+              {badgeRow}
+              <h2 className="text-2xl font-black text-on-surface tracking-tighter leading-tight mb-2.5">
+                {titleContent}
+              </h2>
+              {/* 元信息：label 左、值右对齐 */}
+              <div className="space-y-1.5">
+                {metaData.map((m) => (
+                  <div key={m.label} className="flex items-baseline justify-between gap-2">
+                    <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 shrink-0">
+                      {m.label}
+                    </span>
+                    <span className={`text-[12.5px] truncate ${m.primary ? 'text-primary' : 'text-on-surface'}`}>
+                      {m.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          {/* 操作按钮通栏：加入媒体库 + 追番 并排，Official Site 同尺寸跟在下方 */}
+          <div className="flex gap-2.5 mt-4">
+            {archiveBtn('flex-1')}
+            {trackBtn('flex-1')}
+          </div>
+          {officialBtn('w-full mt-2.5')}
+          <div className="mt-4">{synopsisCard}</div>
+        </div>
+
+        {/* ===== 平板（768–1023）：左列封面+三个按钮（紧贴封面底部、等尺寸）；右列信息+简介 ===== */}
+        <div className="hidden md:block">
+          <div className="grid grid-cols-[200px_1fr] gap-6 items-start">
+            <div>
+              {coverImg}
+              {/* 三个按钮紧跟封面下方、与封面底部对齐，全部 w-full 同尺寸 */}
+              <div className="mt-3 flex flex-col gap-2">
+                {archiveBtn('w-full')}
+                {trackBtn('w-full')}
+                {officialBtn('w-full')}
+              </div>
+            </div>
+            <div className="min-w-0">
+              {badgeRow}
+              <h2 className="text-4xl font-black text-on-surface tracking-tighter leading-tight mb-4">
+                {titleContent}
+              </h2>
+              {/* 元信息：2 列、label 在值上方堆叠 */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 mb-5">
+                {metaData.map((m) => (
+                  <div key={m.label}>
+                    <div className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-0.5">
+                      {m.label}
+                    </div>
+                    <div className={`text-sm ${m.primary ? 'text-primary' : 'text-on-surface'}`}>
+                      {m.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {synopsisCard}
+            </div>
+          </div>
+        </div>
+
+        {/* ===== 共用：别名 + Staff（通栏，手机 1 列 / 平板 2 列） ===== */}
+        {aliases.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest shrink-0">
+              Also Known As
+            </span>
+            {aliases.map((a, i) => (
+              <span key={`${a}-${i}`} className="font-body text-xs text-on-surface-variant/70">
+                {a}
+                {i < aliases.length - 1 && <span className="text-on-surface-variant/20 ml-2">·</span>}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {hasStaff && (
+          <div className="mt-6">
+            <h3 className="text-[10px] font-label text-on-surface-variant/40 tracking-widest uppercase mb-3">
+              Staff
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {data.staff.map((s) => (
+                <div
+                  key={s.role}
+                  className="flex items-center gap-3 bg-surface-container p-3 rounded-xl border border-outline-variant/20"
+                >
+                  <div className="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-on-surface-variant/30 text-base leading-none">
+                      {getIcon(s.role)}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-label text-on-surface-variant/40 uppercase tracking-widest">
+                      {s.role}
+                    </p>
+                    <p className="text-sm font-bold text-on-surface truncate">
+                      {s.name_cn || s.name}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── 桌面（≥1024）：原 sticky 双栏大图布局，保持不变 ── */}
+      <div className="hidden lg:block">
       <div className="grid grid-cols-12 gap-12 items-start">
         {/* ── 左栏：海报 + 按钮 ── */}
         <div className="col-span-4 sticky top-20">
@@ -1114,10 +1343,11 @@ function DetailView({
           )}
         </div>
       </div>
+      </div>
 
       {/* ── 底部 Metadata Strip ── */}
-      <div className="mt-20 pt-8 border-t border-outline-variant/10 flex justify-between items-center">
-        <div className="flex gap-12">
+      <div className="mt-12 lg:mt-20 pt-8 border-t border-outline-variant/10 flex flex-col gap-5 md:flex-row md:justify-between md:items-center">
+        <div className="flex flex-wrap gap-6 md:gap-12">
           <div className="flex flex-col">
             <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
               Database ID
@@ -1400,7 +1630,7 @@ function AnimeInfo(): JSX.Element {
         onClearHistory={() => setHistory(clearBgmHistory())}
       />
 
-      <main className="ml-0 pt-16 px-10 py-10">
+      <main className="ml-0 pt-16 px-4 md:px-8 lg:px-10 py-6 lg:py-10">
         {state.status === 'idle' && <IdleState />}
         {(state.status === 'searching' || state.status === 'loading') && (
           <LoadingSpinner progress={state.status === 'searching' ? searchProgress : null} />
