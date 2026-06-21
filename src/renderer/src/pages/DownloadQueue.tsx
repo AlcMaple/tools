@@ -119,7 +119,7 @@ function EpisodeGrid({
           <span className="flex-1 break-all">{copyError}</span>
         </div>
       )}
-      <div className="grid grid-cols-6 gap-2.5">
+      <div className="grid grid-cols-4 md:grid-cols-6 gap-2 md:gap-2.5">
         {eps.map((ep) => {
           const rawStatus = task.epStatus[ep] ?? 'pending'
           const pct = task.epProgress[ep] ?? 0
@@ -330,10 +330,10 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
         isError ? 'border-l-4 border-error/50' : 'border-l-4 border-transparent'
       }`}
     >
-      <div className="p-6">
-        <div className={`flex items-start space-x-6 ${isPaused ? 'opacity-60' : ''}`}>
+      <div className="p-4 md:p-6">
+        <div className={`flex items-start space-x-4 md:space-x-6 ${isPaused ? 'opacity-60' : ''}`}>
           {/* Cover */}
-          <div className="relative w-20 h-28 flex-shrink-0 rounded-lg overflow-hidden shadow-2xl">
+          <div className="relative w-16 h-24 md:w-20 md:h-28 flex-shrink-0 rounded-lg overflow-hidden shadow-2xl">
             {task.cover ? (
               <img
                 src={task.cover}
@@ -352,10 +352,10 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
           </div>
 
           {/* Info */}
-          <div className="flex-1 flex flex-col justify-between h-28">
-            <div className="flex justify-between items-start">
-              <div>
-                <h3 className="text-xl font-black tracking-tight leading-none mb-1">{task.title}</h3>
+          <div className="flex-1 min-w-0 flex flex-col gap-2 md:gap-0 md:justify-between md:h-28">
+            <div className="flex justify-between items-start gap-2">
+              <div className="min-w-0">
+                <h3 className="text-base md:text-xl font-bold md:font-black tracking-tight leading-tight md:leading-none mb-1 truncate">{task.title}</h3>
                 {isError ? (
                   canSwitchSource && switchInfo ? (
                     <button
@@ -389,7 +389,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
                   </p>
                 )}
               </div>
-              <div className="flex space-x-1">
+              <div className="flex space-x-1 shrink-0">
                 {isError ? (
                   <button
                     onClick={handleRetryAll}
@@ -428,9 +428,9 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
             </div>
 
             {/* Stats row */}
-            <div className="grid grid-cols-4 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 md:gap-4 items-end">
               <ProgressBar task={task} />
-              <div className="text-right">
+              <div className="hidden md:block text-right">
                 <p className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Status</p>
                 {isError ? (
                   <p className="text-sm font-black text-error">Failed</p>
@@ -440,7 +440,7 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
                   <p className="text-sm font-black text-secondary animate-pulse">Active</p>
                 )}
               </div>
-              <div className="text-right">
+              <div className="hidden md:block text-right">
                 <p className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Episodes</p>
                 <p className="text-sm font-black text-on-surface">{taskEpCount(task)}</p>
               </div>
@@ -521,10 +521,10 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
         isError ? 'border-l-4 border-error/50' : 'border-l-4 border-secondary/30'
       }`}
     >
-      <div className="p-6">
-        <div className="flex items-start space-x-6">
+      <div className="p-4 md:p-6">
+        <div className="flex items-start space-x-4 md:space-x-6">
           {/* Cover */}
-          <div className="relative w-20 h-28 flex-shrink-0 rounded-lg overflow-hidden shadow-2xl">
+          <div className="relative w-16 h-24 md:w-20 md:h-28 flex-shrink-0 rounded-lg overflow-hidden shadow-2xl">
             {task.cover ? (
               <img
                 src={task.cover}
@@ -541,10 +541,10 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
           </div>
 
           {/* Info */}
-          <div className="flex-1 flex flex-col justify-between h-28">
-            <div className="flex justify-between items-start">
-              <div>
-                <h3 className="text-xl font-black tracking-tight leading-none mb-1">{task.title}</h3>
+          <div className="flex-1 min-w-0 flex flex-col gap-2 md:gap-0 md:justify-between md:h-28">
+            <div className="flex justify-between items-start gap-2">
+              <div className="min-w-0">
+                <h3 className="text-base md:text-xl font-bold md:font-black tracking-tight leading-tight md:leading-none mb-1 truncate">{task.title}</h3>
                 {isError ? (
                   canSwitchSource && switchInfo ? (
                     <button
@@ -583,7 +583,7 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
                   </div>
                 )}
               </div>
-              <div className="flex space-x-1">
+              <div className="flex space-x-1 shrink-0">
                 {isError && failedEps.length > 0 && (
                   <button
                     onClick={handleRetryAll}
@@ -604,9 +604,9 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
             </div>
 
             {/* Stats row */}
-            <div className="grid grid-cols-4 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 md:gap-4 items-end">
               <ProgressBar task={task} />
-              <div className="text-right">
+              <div className="hidden md:block text-right">
                 <p className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Status</p>
                 {isError ? (
                   <p className="text-sm font-black text-error">Failed</p>
@@ -614,7 +614,7 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
                   <p className="text-sm font-black text-secondary">Done</p>
                 )}
               </div>
-              <div className="text-right">
+              <div className="hidden md:block text-right">
                 <p className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Completed</p>
                 <p className="text-xs font-bold text-on-surface-variant">{completedDate}</p>
               </div>
@@ -661,11 +661,11 @@ function DownloadQueue(): JSX.Element {
     <div className="min-h-full bg-background">
       <TopBar placeholder="Filter current downloads..." />
 
-      <main className="pt-16 px-8 py-8 max-w-6xl mx-auto">
+      <main className="pt-16 px-4 md:px-8 py-8 max-w-6xl mx-auto">
         {/* Master control bar */}
-        <div className="flex justify-between items-end mt-6 mb-10">
-          <div>
-            <h1 className="text-4xl font-black tracking-tighter mb-2">DOWNLOAD QUEUE</h1>
+        <div className="flex justify-between items-end gap-3 mt-6 mb-10">
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-4xl font-black tracking-tighter mb-2">DOWNLOAD QUEUE</h1>
             <div className="flex items-center space-x-4">
               <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
                 Active Tasks:{' '}
@@ -684,16 +684,16 @@ function DownloadQueue(): JSX.Element {
               {running.length > 0 && (
                 <button
                   onClick={handlePauseAll}
-                  className="flex items-center space-x-2 px-6 py-2.5 rounded-full bg-surface-container-high border border-outline-variant/10 hover:bg-surface-variant transition-colors text-sm font-bold font-label"
+                  className="flex items-center gap-2 px-3 md:px-6 py-2.5 rounded-full bg-surface-container-high border border-outline-variant/10 hover:bg-surface-variant transition-colors text-sm font-bold font-label shrink-0"
                 >
                   <span className="material-symbols-outlined text-sm leading-none">pause_circle</span>
-                  <span>Pause All</span>
+                  <span className="hidden md:inline">Pause All</span>
                 </button>
               )}
               {paused.length > 0 && (
                 <button
                   onClick={handleStartAll}
-                  className="flex items-center space-x-2 px-6 py-2.5 rounded-full primary-gradient text-on-primary text-sm font-bold font-label shadow-lg shadow-primary/10"
+                  className="flex items-center gap-2 px-3 md:px-6 py-2.5 rounded-full primary-gradient text-on-primary text-sm font-bold font-label shadow-lg shadow-primary/10 shrink-0"
                 >
                   <span
                     className="material-symbols-outlined text-sm leading-none"
@@ -701,7 +701,7 @@ function DownloadQueue(): JSX.Element {
                   >
                     play_arrow
                   </span>
-                  <span>Start All</span>
+                  <span className="hidden md:inline">Start All</span>
                 </button>
               )}
             </div>
