@@ -112,13 +112,13 @@ export default function LocalLibrary(): JSX.Element {
       <TopBar placeholder="Search in library..." onSearch={setSearchQuery} />
       <div className="pt-24 pb-8">
         {/* Hero Actions & Stats Area */}
-        <section className="px-12 pb-6">
-          <div className="flex justify-between items-start mb-10">
-            <div>
-              <h2 className="font-headline font-black text-5xl tracking-tighter text-on-surface mb-2">
+        <section className="px-4 md:px-8 lg:px-12 pb-6">
+          <div className="flex justify-between items-start gap-4 mb-6 md:mb-10">
+            <div className="min-w-0">
+              <h2 className="font-headline font-black text-3xl md:text-4xl lg:text-5xl tracking-tighter text-on-surface mb-2">
                 Local Library
               </h2>
-              <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-on-surface-variant font-label text-sm">
                 <span className="flex items-center gap-1.5">
                   <span className="text-primary font-bold">
                     {posters.length}
@@ -139,13 +139,13 @@ export default function LocalLibrary(): JSX.Element {
               </div>
             </div>
             <button
-              className="bg-primary text-on-primary font-label font-bold text-sm px-8 py-4 rounded-full flex items-center gap-3 shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95"
+              className="shrink-0 bg-primary text-on-primary font-label font-bold text-sm px-4 md:px-8 py-3 md:py-4 rounded-full flex items-center gap-2 md:gap-3 shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95"
               onClick={() => setIsScanModalOpen(true)}
             >
               <span className="material-symbols-outlined leading-none">
                 folder_zip
               </span>
-              SCAN LOCAL FOLDERS
+              <span className="hidden sm:inline">SCAN LOCAL FOLDERS</span>
             </button>
           </div>
         </section>
@@ -153,13 +153,13 @@ export default function LocalLibrary(): JSX.Element {
         {isRefreshing && posters.length === 0 ? (
           <SearchingState />
         ) : filteredPosters.length === 0 ? (
-          <section className="px-12 pb-32">
+          <section className="px-4 md:px-8 lg:px-12 pb-32">
             <div className="py-24 flex justify-center text-on-surface-variant/50 font-label text-sm uppercase tracking-widest">
               Library is empty
             </div>
           </section>
         ) : (
-          <section className="px-12 pb-32">
+          <section className="px-4 md:px-8 lg:px-12 pb-32">
             {/* Breadcrumb */}
             <div className="flex items-center gap-2 mb-6 text-sm font-label text-outline uppercase tracking-widest">
               <span className="material-symbols-outlined text-[16px] leading-none">
@@ -298,8 +298,8 @@ export default function LocalLibrary(): JSX.Element {
         )}
 
         {/* Floating Status Bar */}
-        <div className="fixed bottom-8 right-8 bg-surface-container-lowest/80 backdrop-blur-md ring-1 ring-outline-variant/30 rounded-full px-6 py-3 flex items-center justify-between shadow-2xl z-[55]">
-          <div className="flex items-center gap-6">
+        <div className="fixed bottom-4 right-4 md:bottom-8 md:right-8 max-w-[calc(100%-2rem)] bg-surface-container-lowest/80 backdrop-blur-md ring-1 ring-outline-variant/30 rounded-full px-4 md:px-6 py-3 flex items-center justify-between gap-3 md:gap-6 shadow-2xl z-[55]">
+          <div className="flex items-center gap-3 md:gap-6 min-w-0">
             <div className="flex items-center gap-2">
               <div
                 className={`w-2 h-2 ${isScanning || isRefreshing ? "bg-green-400 animate-pulse" : "bg-outline-variant"} rounded-full`}
@@ -319,11 +319,11 @@ export default function LocalLibrary(): JSX.Element {
             </div>
           </div>
           {isScanning && (
-            <div className="flex items-center gap-4 ml-8">
-              <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest italic">
+            <div className="flex items-center gap-3 md:gap-4 ml-2 md:ml-8 min-w-0">
+              <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest italic truncate">
                 {scanStatus.status}
               </span>
-              <div className="w-32 h-1 bg-surface-container-highest rounded-full overflow-hidden">
+              <div className="w-20 md:w-32 h-1 bg-surface-container-highest rounded-full overflow-hidden shrink-0">
                 <div
                   className="h-full bg-secondary transition-all"
                   style={{
