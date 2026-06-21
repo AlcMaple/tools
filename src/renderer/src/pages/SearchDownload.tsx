@@ -781,7 +781,7 @@ function SearchDownload(): JSX.Element {
                   bolt
                 </span>
               )}
-              <span>INITIALIZE</span>
+              <span>搜索</span>
             </button>
           </div>
         </section>
