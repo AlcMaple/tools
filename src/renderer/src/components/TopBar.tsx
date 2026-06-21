@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSystemStats } from '../hooks/useSystemStats'
+import { uiStore } from '../stores/uiStore'
 
 /**
  * 搜索历史的「展示条目」—— TopBar 只认 keyword（主文字 + 回填输入框用）
@@ -99,7 +100,20 @@ function TopBar({
   }
 
   return (
-    <header className="fixed top-0 right-0 left-64 h-16 bg-background/80 backdrop-blur-xl flex justify-between items-center px-8 z-40">
+    <header className="fixed top-0 right-0 left-0 md:left-16 lg:left-64 h-16 bg-background/80 backdrop-blur-xl flex justify-between items-center gap-2 px-4 md:px-8 z-40">
+      {/* 手机档汉堡：打开导航抽屉（平板/桌面有常驻侧栏，故 md 以上隐藏） */}
+      <button
+        type="button"
+        onClick={() => uiStore.openDrawer()}
+        className="md:hidden shrink-0 p-2 -ml-1 text-on-surface hover:bg-surface-variant/40 rounded-full transition-all"
+        aria-label="打开导航"
+      >
+        <span className="material-symbols-outlined text-2xl leading-none">menu</span>
+      </button>
+
+      {/* 左侧分段（汉堡 + 搜索/标题）打包成一个 flex 子项：手机/平板撑满、桌面定宽，
+         好让中间统计与右侧控件在 justify-between 下各就各位。 */}
+      <div className="flex items-center min-w-0 flex-1 lg:flex-none">
       {/* Left slot: titleSlot wins, otherwise the standard quick-find box.
           搜索框采用「分段」结构：输入分段 + 可选右侧 slot 分段。容器自身
           **不设 padding**，由各分段自己决定内边距 —— 这样 slot 里的按钮能
@@ -111,7 +125,7 @@ function TopBar({
           (`rounded-l-md` / `rounded-r-md`) 处理。 */}
       {titleSlot ?? (
         // relative 给历史下拉做定位锚点（下拉用 absolute top-full）。
-        <div className="relative flex items-stretch bg-surface-container-highest rounded-md w-80 transition-all duration-300 focus-within:bg-surface-bright focus-within:ring-1 focus-within:ring-primary/40">
+        <div className="relative flex items-stretch bg-surface-container-highest rounded-md w-full lg:w-80 transition-all duration-300 focus-within:bg-surface-bright focus-within:ring-1 focus-within:ring-primary/40">
           {/* 输入分段：图标 + 输入框，自带 py-2 撑出整个搜索框的高度。 */}
           <div className="flex items-center flex-1 min-w-0 px-4 py-2">
             <span className="material-symbols-outlined text-on-surface-variant text-sm mr-2 leading-none shrink-0">
@@ -197,39 +211,43 @@ function TopBar({
           )}
         </div>
       )}
+      </div>
 
-      {/* Quick Stats */}
-      <div className="flex-1 flex items-center justify-center px-8 space-x-8">
+      {/* Quick Stats —— 逐项渐隐，不一次性全消失：窗口越窄越先收次要项。
+         Network(xl ≥1280) → Tasks(≥1120) → Storage(lg ≥1024)，再窄(平板/手机)整块收起。
+         分隔线跟右侧那项一起显隐；用 gap 而非 space-x，display:none 的子项不留幽灵间距。 */}
+      <div className="hidden lg:flex flex-1 items-center justify-center px-4 gap-6">
         <div className="flex flex-col items-center">
           <span className="font-label text-[9px] text-on-surface-variant/60 uppercase tracking-widest">
             Storage
           </span>
-          <span className="text-[11px] font-bold text-on-surface">{diskFreeLabel}</span>
+          <span className="text-[11px] font-bold text-on-surface whitespace-nowrap">{diskFreeLabel}</span>
         </div>
-        <div className="h-6 w-px bg-outline-variant/10" />
-        <div className="flex flex-col items-center">
+        <div className="hidden min-[1160px]:block h-6 w-px bg-outline-variant/10" />
+        <div className="hidden min-[1160px]:flex flex-col items-center">
           <span className="font-label text-[9px] text-on-surface-variant/60 uppercase tracking-widest">
             Tasks
           </span>
-          <span className={`text-[11px] font-bold ${activeTasks > 0 ? 'text-primary' : 'text-on-surface-variant/60'}`}>
+          <span className={`text-[11px] font-bold whitespace-nowrap ${activeTasks > 0 ? 'text-primary' : 'text-on-surface-variant/60'}`}>
             {activeTasks} ACTIVE
           </span>
         </div>
-        <div className="h-6 w-px bg-outline-variant/10" />
-        <div className="flex flex-col items-center">
+        <div className="hidden xl:block h-6 w-px bg-outline-variant/10" />
+        <div className="hidden xl:flex flex-col items-center">
           <span className="font-label text-[9px] text-on-surface-variant/60 uppercase tracking-widest">
             Network
           </span>
           <div className="flex items-center space-x-2">
             <div className={`w-1.5 h-1.5 rounded-full ${networkOnline ? 'bg-green-500 animate-pulse-green' : 'bg-red-500'}`} />
-            <span className="text-[11px] font-bold text-on-surface">{networkOnline ? 'STABLE' : 'OFFLINE'}</span>
+            <span className="text-[11px] font-bold text-on-surface whitespace-nowrap">{networkOnline ? 'STABLE' : 'OFFLINE'}</span>
           </div>
         </div>
       </div>
 
       {/* Right side */}
-      <div className="flex items-center space-x-6">
-        <div className="flex items-center space-x-1">
+      <div className="flex items-center space-x-3 md:space-x-6 shrink-0">
+        {/* 速率读数：手机档隐藏（窄屏腾地方），平板/桌面显示 */}
+        <div className="hidden md:flex items-center space-x-1">
           <span
             className="material-symbols-outlined text-primary text-sm"
             style={{ fontVariationSettings: '"FILL" 1' }}
@@ -241,7 +259,7 @@ function TopBar({
         </div>
         <div className="flex items-center space-x-4">
           <button
-            className="p-2 text-on-surface hover:bg-surface-variant/40 rounded-full transition-all"
+            className="hidden md:inline-flex items-center justify-center p-2 text-on-surface hover:bg-surface-variant/40 rounded-full transition-all"
             onClick={toggleTheme}
           >
             <span className="material-symbols-outlined text-xl leading-none">{isDark ? 'light_mode' : 'dark_mode'}</span>
