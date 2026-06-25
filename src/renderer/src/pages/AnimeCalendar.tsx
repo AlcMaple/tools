@@ -18,6 +18,7 @@ import {
 } from '../stores/animeTrackStore'
 import { WatchHere } from '../components/WatchHere'
 import { useCover } from '../hooks/useCover'
+import { useIsCompact } from '../hooks/useMediaQuery'
 import { friendlyError } from '../utils/errorMessage'
 
 type State =
@@ -70,6 +71,13 @@ function maybeTriggerMail(update: boolean, result: BgmCalendarResult): void {
 export default function AnimeCalendar(): JSX.Element {
   const [state, setState] = useState<State>(_cachedState)
   const [refreshing, setRefreshing] = useState(false)
+  // 精简档（<1200）：桌面 7 列"整周一览"在窄屏每列才几十像素没法看，改成
+  // 「选某天 + 该天番剧多列网格」。selectedDay 默认今天（BGM 周一=1…周日=7）。
+  const isCompact = useIsCompact()
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const d = new Date().getDay() // 0=Sun..6=Sat
+    return d === 0 ? 7 : d
+  })
   // 已经有 ready 数据时刷新失败的错误。和 state.status='error' 不同：
   // 这条不替换主视图，只在刷新按钮旁边显示一条小提示，让用户知道
   // "本次刷新失败、显示的还是缓存数据"，不至于丢失已有的页面状态。
@@ -157,15 +165,15 @@ export default function AnimeCalendar(): JSX.Element {
       } />
       <div className="pt-16">
         {/* Hero — 标题块随内容滚走，不 sticky。 */}
-        <div className="px-8 pt-5 pb-3">
-          <div className="flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
+        <div className="px-4 md:px-8 pt-5 pb-3">
+          <div className="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
             <span className="material-symbols-outlined" style={{ fontSize: 14 }}>calendar_month</span>
             <span>Anime</span>
             <span className="text-outline-variant">/</span>
             <span className="text-on-surface font-bold">番剧周历</span>
           </div>
-          <h1 className="text-3xl font-black tracking-tighter text-on-surface">番剧周历</h1>
-          <p className="text-sm text-on-surface-variant/80 mt-1 font-label">
+          <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">番剧周历</h1>
+          <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label">
             本季正在播出，按星期排列。来源 Bangumi · 14 天缓存。
           </p>
         </div>
@@ -180,8 +188,8 @@ export default function AnimeCalendar(): JSX.Element {
                      合缝。一行结构（刷新挤在右侧）会让 chip flex-1 比 cards
                      窄出一截，造成"周日 chip 在卡片的左边"的视觉错位。 */}
         {state.status === 'ready' && (
-          <div className="sticky top-16 z-30 bg-surface-container-lowest border-y border-outline-variant/10 px-6 pt-1.5 pb-2">
-            <div className="flex items-center justify-end gap-2 mb-1.5 h-5">
+          <div className="sticky top-16 z-30 bg-surface-container-lowest border-y border-outline-variant/10 px-4 md:px-6 pt-1.5 pb-2">
+            <div className="flex flex-wrap items-center justify-end gap-2 mb-1.5 min-h-5">
               {/* 刷新失败的行内提示。限流时显示倒计时秒数，提前点击过则补充
                  "已加重"警告。非限流错误就只显示 friendly title。
                  hover 见完整 hint。 */}
@@ -246,7 +254,15 @@ export default function AnimeCalendar(): JSX.Element {
                 <span>{refreshing ? '更新中' : '刷新'}</span>
               </button>
             </div>
-            <DayChipsBar result={state.result} />
+            {isCompact ? (
+              <CompactDaySelector
+                result={state.result}
+                selected={selectedDay}
+                onSelect={setSelectedDay}
+              />
+            ) : (
+              <DayChipsBar result={state.result} />
+            )}
           </div>
         )}
 
@@ -254,7 +270,11 @@ export default function AnimeCalendar(): JSX.Element {
         {state.status === 'error' && (
           <ErrorPanel error={state.message} onRetry={() => void load(true)} />
         )}
-        {state.status === 'ready' && <CalendarGrid result={state.result} />}
+        {state.status === 'ready' && (
+          isCompact
+            ? <CompactDayGrid result={state.result} day={selectedDay} />
+            : <CalendarGrid result={state.result} />
+        )}
       </div>
     </div>
   )
@@ -291,6 +311,69 @@ function DayChipsBar({ result }: { result: BgmCalendarResult }): JSX.Element {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── Compact (平板 + 手机) ─────────────────────────────────────────────────────
+// 桌面 7 列整周一览在窄屏塞不下，改成「选某天 + 该天番剧多列网格」。
+
+// BGM weekday id（1=周一 … 7=周日）→ 单字简称：label 是「星期一」太长，
+// 7 个等宽按钮塞不进窄屏一行，用单字。
+const SHORT_DAY: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
+
+// 「选天」条 —— 7 个等宽按钮（单字 + 当天番数），选中某天。卡在 sticky bar 里
+// 跟刷新工具栏一起，滚动时常驻。
+function CompactDaySelector({
+  result, selected, onSelect,
+}: {
+  result: BgmCalendarResult
+  selected: number
+  onSelect: (id: number) => void
+}): JSX.Element {
+  return (
+    <div className="flex gap-1.5">
+      {result.data.map(day => {
+        const active = day.id === selected
+        return (
+          <button
+            key={day.id}
+            onClick={() => onSelect(day.id)}
+            title={`${day.label} · ${day.items.length} 部`}
+            className={`flex-1 min-w-0 flex flex-col items-center gap-0.5 py-1.5 rounded-md border transition-colors ${
+              active
+                ? 'bg-primary/12 border-primary/30 text-primary'
+                : 'bg-surface-container border-outline-variant/15 text-on-surface-variant/70 hover:text-on-surface'
+            }`}
+          >
+            <span className="font-headline text-sm font-black tracking-tight leading-none">
+              {SHORT_DAY[day.id] ?? day.label}
+            </span>
+            <span className="font-label text-[9px] tabular-nums leading-none opacity-60">
+              {day.items.length}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// 精简档 body —— 当前选中那天的番，多列网格（手机 2 / 大手机 3 / 平板+ 4）。
+// 复用 CalendarCard（海报卡），跟桌面 7 列里的卡片完全一致。
+function CompactDayGrid({ result, day }: { result: BgmCalendarResult; day: number }): JSX.Element {
+  const current = result.data.find(d => d.id === day) ?? result.data[0]
+  if (!current || current.items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-on-surface-variant/30">
+        <span className="material-symbols-outlined text-5xl">event_busy</span>
+        <p className="font-label text-xs uppercase tracking-widest">这天没有番</p>
+      </div>
+    )
+  }
+  return (
+    <div className="px-4 md:px-6 py-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+      {current.items.map(item => <CalendarCard key={item.id} item={item} />)}
     </div>
   )
 }
