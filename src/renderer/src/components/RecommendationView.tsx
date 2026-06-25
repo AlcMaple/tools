@@ -114,8 +114,8 @@ export function RecommendationView({ filter, query = '', recipients = [] }: Prop
   const editingRec = editingId ? all.find(r => r.id === editingId) ?? null : null
 
   return (
-    <div className="px-8 py-6 space-y-3">
-      {/* 推荐列表 */}
+    <div className="px-4 md:px-8 py-6 space-y-3">
+      {/* 推荐列表 —— 始终单列、整页左对齐铺满（不收 max-w，跟追番列表一致）。 */}
       {all.length === 0 ? (
         <EmptyAll />
       ) : visible.length === 0 ? (
