@@ -17,7 +17,7 @@ const navItems: NavItem[] = [
   { label: "我的追番", path: "/my-anime", icon: "grade" },
   { label: "番剧周历表", path: "/calendar", icon: "calendar_month" },
   { label: "资源管理器", path: "/file-explorer", icon: "folder_managed" },
-  { label: "作业查询", path: "/homework", icon: "swords" },
+  { label: "锦囊妙计", path: "/homework", icon: "swords" },
 ];
 
 /**
