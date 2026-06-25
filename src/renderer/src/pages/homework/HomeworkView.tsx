@@ -5,8 +5,10 @@ import {
   NoteChip, NoteChipList, NoteTagInput, useNoteTagState, copyTeamText, notesEqual,
   createTeamPasteHandler,
   commonPrefixLen, matchesDefense, todayStr, cleanCharName, teamDedupKey,
+  GroupMoreMenu,
 } from './shared'
 import { ImportModal } from './ImportModal'
+import { useIsPhone } from '../../hooks/useMediaQuery'
 
 export interface HomeworkViewHandle {
   openAdd: () => void
@@ -531,6 +533,11 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   const [addAttackTarget, setAddAttackTarget] = useState<DefenseGroup | null>(null)
   const [isImportOpen, setIsImportOpen] = useState(false)
 
+  // 窄手机档（<sm）：组头右侧「日期 + 4 个操作图标」太占宽、把防守方角色名挤成
+  // 一字一行。此时把四个操作收进单个「更多 ⋯」浮层（GroupMoreMenu）、日期挪到
+  // 备注后面。浮层自管开合，这里只用 isPhone 决定渲染哪一套。
+  const isPhone = useIsPhone()
+
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const copyWithFeedback = (key: string, text: string) => {
     navigator.clipboard.writeText(text)
@@ -678,9 +685,10 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   }
 
   return (
-    <div className="px-8 py-6">
-      {/* Stats strip */}
-      <div className="flex items-center gap-6 mb-5 px-1">
+    <div className="px-4 md:px-8 py-6">
+      {/* Stats strip —— 手机档允许换行（flex-wrap），右侧工具组放不下时整组落到
+          下一行右对齐，避免在窄屏被挤出容器。 */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 md:gap-6 mb-5 px-1">
         <div className="flex items-center gap-2">
           <span className="font-label text-[10px] uppercase tracking-widest text-outline">Defense</span>
           <span className="text-base font-bold text-on-surface">{filtered.length}</span>
@@ -690,7 +698,9 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
           <span className="font-label text-[10px] uppercase tracking-widest text-outline">Attacks</span>
           <span className="text-base font-bold text-on-surface">{totalAttacks}</span>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        {/* 桌面（≥lg）：带文字的分项按钮。窄屏（<lg）：全部收进单个「更多 ⋯」浮层，
+            钉在 DEFENSE·ATTACKS 同一行右侧，不再换行到第二行。 */}
+        <div className="ml-auto hidden lg:flex items-center gap-2">
           {onCleanup && (
             <button
               onClick={onCleanup}
@@ -721,6 +731,17 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
           >
             <span className="material-symbols-outlined" style={{ fontSize: 14 }}>unfold_less</span>全部折叠
           </button>
+        </div>
+        <div className="ml-auto lg:hidden pr-4">
+          <GroupMoreMenu
+            wrapperClassName="shrink-0"
+            items={[
+              { icon: 'unfold_more', label: '全部展开', tone: 'primary', onClick: () => setCollapsedIds(new Set()) },
+              { icon: 'unfold_less', label: '全部折叠', tone: 'primary', onClick: () => setCollapsedIds(new Set(filtered.map(d => d.id))) },
+              ...(!hideImport ? [{ icon: 'upload_file', label: '导入', tone: 'tertiary' as const, onClick: () => setIsImportOpen(true) }] : []),
+              ...(onCleanup ? [{ icon: 'delete_sweep', label: '清理', tone: 'danger' as const, onClick: onCleanup }] : []),
+            ]}
+          />
         </div>
       </div>
 
@@ -785,68 +806,98 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
                     {groupNotes.length > 0 && (
                       <NoteChipList notes={groupNotes} query={query} />
                     )}
+                    {/* 窄手机档：日期从右侧操作区挪到备注后面，把整行宽度让给防守方角色名 */}
+                    {isPhone && (
+                      <div className="mt-1 font-label text-[10px] uppercase tracking-widest text-outline">{item.updatedAt}</div>
+                    )}
                   </div>
-                  <div className="header-actions flex items-center gap-1 shrink-0 mt-0.5">
-                    <span className="font-label text-[10px] uppercase tracking-widest text-outline mr-2">{item.updatedAt}</span>
-                    <button className="p-1.5 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant hover:text-secondary" title="新增进攻阵容" onClick={() => setAddAttackTarget(item)}>
-                      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
-                    </button>
-                    <button
-                      className={`p-1.5 rounded-md transition-colors ${copiedKey === `def-${item.id}` ? 'text-secondary' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
-                      title="复制防守方阵容"
-                      onClick={() => copyWithFeedback(`def-${item.id}`, item.defense.join('、'))}
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>{copiedKey === `def-${item.id}` ? 'check' : 'content_copy'}</span>
-                    </button>
-                    <button className="p-1.5 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant" title="编辑防守方" onClick={() => setEditDefenseGroup(item)}>
-                      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>edit</span>
-                    </button>
-                    <button className="p-1.5 rounded-md hover:bg-error/10 transition-colors text-on-surface-variant hover:text-error" title="删除整组" onClick={() => setDeleteGroup(item)}>
-                      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>delete</span>
-                    </button>
-                  </div>
+                  {isPhone ? (
+                    <GroupMoreMenu items={[
+                      { icon: 'add', label: '新增进攻', tone: 'secondary', onClick: () => setAddAttackTarget(item) },
+                      { icon: 'content_copy', label: '复制防守方', tone: 'primary', onClick: () => copyWithFeedback(`def-${item.id}`, item.defense.join('、')) },
+                      { icon: 'edit', label: '编辑防守方', onClick: () => setEditDefenseGroup(item) },
+                      { icon: 'delete', label: '删除整组', tone: 'danger', onClick: () => setDeleteGroup(item) },
+                    ]} />
+                  ) : (
+                    <div className="header-actions flex items-center gap-1 shrink-0 mt-0.5">
+                      <span className="font-label text-[10px] uppercase tracking-widest text-outline mr-2">{item.updatedAt}</span>
+                      <button className="p-1.5 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant hover:text-secondary" title="新增进攻阵容" onClick={() => setAddAttackTarget(item)}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
+                      </button>
+                      <button
+                        className={`p-1.5 rounded-md transition-colors ${copiedKey === `def-${item.id}` ? 'text-secondary' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
+                        title="复制防守方阵容"
+                        onClick={() => copyWithFeedback(`def-${item.id}`, item.defense.join('、'))}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>{copiedKey === `def-${item.id}` ? 'check' : 'content_copy'}</span>
+                      </button>
+                      <button className="p-1.5 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant" title="编辑防守方" onClick={() => setEditDefenseGroup(item)}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>edit</span>
+                      </button>
+                      <button className="p-1.5 rounded-md hover:bg-error/10 transition-colors text-on-surface-variant hover:text-error" title="删除整组" onClick={() => setDeleteGroup(item)}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>delete</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {showAttacks && (
                 <div className="collapse-body">
                   <div className="inner">
                     <div className="py-1">
-                      {sortedAttacks.map((atk, idx) => (
-                        <div key={atk.id} className="atk-row">
-                          <div className="idx">{String(idx + 1).padStart(2, '0')}</div>
-                          <div className="min-w-0">
-                            <div className="atk-text">
-                              {atk.team.map((c, i) => (
-                                <span key={i}>
-                                  <span className={i < prefixLen ? 'core' : 'rest'}>
-                                    <Highlight text={c} query={query} />
-                                  </span>
-                                  {i < atk.team.length - 1 && <span className="sep">、</span>}
-                                </span>
-                              ))}
+                      {sortedAttacks.map((atk, idx) => {
+                        // 进攻队名 + 日期·队数抽出来，桌面网格行与手机堆叠行复用同一份。
+                        const teamSpans = atk.team.map((c, i) => (
+                          <span key={i}>
+                            <span className={i < prefixLen ? 'core' : 'rest'}>
+                              <Highlight text={c} query={query} />
+                            </span>
+                            {i < atk.team.length - 1 && <span className="sep">、</span>}
+                          </span>
+                        ))
+                        const meta = <>{atk.updatedAt}<span className="text-outline-variant/40 mx-1.5">·</span>{atk.team.length}/5</>
+                        const menuItems = [
+                          { icon: 'content_copy', label: '复制', tone: 'primary' as const, onClick: () => copyWithFeedback(`atk-${atk.id}`, copyTeamText(atk.team, atk.notes)) },
+                          { icon: 'edit', label: '编辑', tone: 'secondary' as const, onClick: () => setEditAttackTarget({ groupId: item.id, atk, group: item }) },
+                          { icon: 'delete', label: '删除', tone: 'danger' as const, onClick: () => setDeleteAttackTarget({ groupId: item.id, atk }) },
+                        ]
+                        return isPhone ? (
+                          // 手机端：队名换行铺满；日期·队数挪到下方；三个操作收进常驻「更多 ⋯」。
+                          <div key={atk.id} className="flex items-start gap-2.5 pl-3 pr-5 py-2 border-t border-white/[0.02] first:border-t-0">
+                            <div className="idx" style={{ paddingTop: 3 }}>{String(idx + 1).padStart(2, '0')}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="atk-text wrap">{teamSpans}</div>
+                              <NoteChipList notes={atk.notes} query={query} />
+                              <div className="mt-1 font-label text-[10px] uppercase tracking-widest text-outline/70">{meta}</div>
                             </div>
-                            <NoteChipList notes={atk.notes} query={query} />
+                            <GroupMoreMenu items={menuItems} />
                           </div>
-                          <div className="font-label text-[10px] uppercase tracking-widest text-outline/70 whitespace-nowrap">
-                            {atk.updatedAt}<span className="text-outline-variant/40 mx-1.5">·</span>{atk.team.length}/5
+                        ) : (
+                          <div key={atk.id} className="atk-row">
+                            <div className="idx">{String(idx + 1).padStart(2, '0')}</div>
+                            <div className="min-w-0">
+                              <div className="atk-text">{teamSpans}</div>
+                              <NoteChipList notes={atk.notes} query={query} />
+                            </div>
+                            <div className="font-label text-[10px] uppercase tracking-widest text-outline/70 whitespace-nowrap">{meta}</div>
+                            <div className="row-actions">
+                              <button
+                                className={`p-1.5 rounded transition-colors ${copiedKey === `atk-${atk.id}` ? 'text-secondary' : 'text-on-surface-variant/50 hover:text-primary hover:bg-surface-container-high'}`}
+                                title="复制进攻阵容"
+                                onClick={() => copyWithFeedback(`atk-${atk.id}`, copyTeamText(atk.team, atk.notes))}
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{copiedKey === `atk-${atk.id}` ? 'check' : 'content_copy'}</span>
+                              </button>
+                              <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors" title="编辑" onClick={() => setEditAttackTarget({ groupId: item.id, atk, group: item })}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>edit</span>
+                              </button>
+                              <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-error hover:bg-error/10 transition-colors" title="删除该条" onClick={() => setDeleteAttackTarget({ groupId: item.id, atk })}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>delete</span>
+                              </button>
+                            </div>
                           </div>
-                          <div className="row-actions">
-                            <button
-                              className={`p-1.5 rounded transition-colors ${copiedKey === `atk-${atk.id}` ? 'text-secondary' : 'text-on-surface-variant/50 hover:text-primary hover:bg-surface-container-high'}`}
-                              title="复制进攻阵容"
-                              onClick={() => copyWithFeedback(`atk-${atk.id}`, copyTeamText(atk.team, atk.notes))}
-                            >
-                              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{copiedKey === `atk-${atk.id}` ? 'check' : 'content_copy'}</span>
-                            </button>
-                            <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-surface-container-high transition-colors" title="编辑" onClick={() => setEditAttackTarget({ groupId: item.id, atk, group: item })}>
-                              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>edit</span>
-                            </button>
-                            <button className="p-1.5 rounded text-on-surface-variant/50 hover:text-error hover:bg-error/10 transition-colors" title="删除该条" onClick={() => setDeleteAttackTarget({ groupId: item.id, atk })}>
-                              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>delete</span>
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 </div>

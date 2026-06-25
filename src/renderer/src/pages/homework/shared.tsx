@@ -1,6 +1,6 @@
 // Shared types, helpers, and primitive UI used by HomeworkView / ClassicView.
 
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 export interface Attack {
@@ -684,4 +684,108 @@ export function useNoteTagState(initial: string[]): {
     setDraft,
     finalNotes: () => flushNotes(notes, draft),
   }
+}
+
+// ── Group "more" menu (mobile) ──────────────────────────────────────────────
+
+/** 浮层里一条操作。tone 决定 hover 强调色（danger 用于删除）。 */
+export interface GroupMenuItem {
+  icon: string
+  label: string
+  onClick: () => void
+  tone?: 'default' | 'primary' | 'secondary' | 'tertiary' | 'danger'
+}
+
+const GROUP_MENU_TONE: Record<NonNullable<GroupMenuItem['tone']>, string> = {
+  default: 'text-on-surface-variant/80 hover:bg-surface-container-highest hover:text-on-surface',
+  primary: 'text-on-surface-variant/80 hover:bg-surface-container-highest hover:text-primary',
+  secondary: 'text-on-surface-variant/80 hover:bg-surface-container-highest hover:text-secondary',
+  tertiary: 'text-on-surface-variant/80 hover:bg-surface-container-highest hover:text-tertiary',
+  danger: 'text-error/90 hover:bg-error/10 hover:text-error',
+}
+
+/**
+ * 窄手机档卡片组头用的「更多 ⋯」浮层 —— 把原本一排的「日期 + 新增/复制/编辑/删除」
+ * 图标收成一个按钮，给防守方角色名腾出整行宽度。
+ *
+ * 关键点：卡片根是 `overflow-hidden`，绝对定位的下拉会在最后一组被裁掉。所以菜单
+ * **portal 到 body、用 fixed 定位**（同 MyAnime 的「更多」浮层），靠近视口底部时向上
+ * 弹。点菜单外 / Esc / 任意滚动都会关。
+ *
+ * 父级组头有「点头折叠」的 onClick，靠 `closest('.header-actions')` 放行 —— 触发按钮
+ * 挂在 `.header-actions` 里所以安全；但 portal 出去的菜单项会沿 **React 树**冒泡回组头
+ * （React 事件穿 portal），故菜单项 onClick 里 `stopPropagation` 兜住，避免选操作时连带
+ * 折叠/展开整组。
+ */
+export function GroupMoreMenu({
+  items,
+  wrapperClassName = 'header-actions shrink-0 mt-0.5',
+}: {
+  items: GroupMenuItem[]
+  /** 外层容器类名。组头/进攻行默认带 header-actions（让父级折叠守卫放行）；页头工具条
+   *  传 'shrink-0' 即可，那里没有折叠守卫、也不需要 mt 偏移。 */
+  wrapperClassName?: string
+}): JSX.Element {
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!anchor) return
+    const onDown = (e: MouseEvent): void => {
+      const t = e.target as Node
+      if (panelRef.current?.contains(t) || btnRef.current?.contains(t)) return
+      setAnchor(null)
+    }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setAnchor(null) }
+    const onScroll = (): void => setAnchor(null)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true)
+    }
+  }, [anchor])
+  return (
+    <div className={wrapperClassName}>
+      <button
+        ref={btnRef}
+        type="button"
+        className="p-1.5 rounded-md hover:bg-surface-container-high transition-colors text-on-surface-variant"
+        title="更多操作"
+        onClick={() => setAnchor(anchor ? null : btnRef.current?.getBoundingClientRect() ?? null)}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 18 }}>more_vert</span>
+      </button>
+      {anchor && createPortal((() => {
+        const W = 168
+        const left = Math.max(12, Math.min(anchor.right - W, window.innerWidth - W - 12))
+        // 优先向下弹；只有下方实际放不下整张菜单时才向上（按每项约 40px 估高）。
+        const menuH = items.length * 40 + 16
+        const openUp = window.innerHeight - anchor.bottom < menuH + 12
+        const vstyle = openUp
+          ? { bottom: window.innerHeight - anchor.top + 6 }
+          : { top: anchor.bottom + 6 }
+        return (
+          <div
+            ref={panelRef}
+            style={{ position: 'fixed', left, width: W, zIndex: 9999, ...vstyle }}
+            className="bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl shadow-black/40 p-1.5"
+          >
+            {items.map((it, i) => (
+              <button
+                key={i}
+                type="button"
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-colors ${GROUP_MENU_TONE[it.tone ?? 'default']}`}
+                onClick={(e) => { e.stopPropagation(); setAnchor(null); it.onClick() }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{it.icon}</span>{it.label}
+              </button>
+            ))}
+          </div>
+        )
+      })(), document.body)}
+    </div>
+  )
 }
