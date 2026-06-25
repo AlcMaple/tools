@@ -214,7 +214,8 @@ function TopBar({
       </div>
 
       {/* Quick Stats —— 逐项渐隐，不一次性全消失：窗口越窄越先收次要项。
-         Network(xl ≥1280) → Tasks(≥1120) → Storage(lg ≥1024)，再窄(平板/手机)整块收起。
+         断点压低，让默认启动窗口（外框 1280，实际视口 ~1264）也能看到全部三项：
+         Network(≥1200) → Tasks(≥1100) → Storage(lg ≥1024)，再窄(平板/手机)整块收起。
          分隔线跟右侧那项一起显隐；用 gap 而非 space-x，display:none 的子项不留幽灵间距。 */}
       <div className="hidden lg:flex flex-1 items-center justify-center px-4 gap-6">
         <div className="flex flex-col items-center">
@@ -223,8 +224,8 @@ function TopBar({
           </span>
           <span className="text-[11px] font-bold text-on-surface whitespace-nowrap">{diskFreeLabel}</span>
         </div>
-        <div className="hidden min-[1160px]:block h-6 w-px bg-outline-variant/10" />
-        <div className="hidden min-[1160px]:flex flex-col items-center">
+        <div className="hidden min-[1100px]:block h-6 w-px bg-outline-variant/10" />
+        <div className="hidden min-[1100px]:flex flex-col items-center">
           <span className="font-label text-[9px] text-on-surface-variant/60 uppercase tracking-widest">
             Tasks
           </span>
@@ -232,8 +233,8 @@ function TopBar({
             {activeTasks} ACTIVE
           </span>
         </div>
-        <div className="hidden xl:block h-6 w-px bg-outline-variant/10" />
-        <div className="hidden xl:flex flex-col items-center">
+        <div className="hidden min-[1200px]:block h-6 w-px bg-outline-variant/10" />
+        <div className="hidden min-[1200px]:flex flex-col items-center">
           <span className="font-label text-[9px] text-on-surface-variant/60 uppercase tracking-widest">
             Network
           </span>

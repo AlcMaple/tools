@@ -26,6 +26,7 @@ import {
 } from '../stores/animeTrackStore'
 import { ModalShell } from './homework/shared'
 import { useCover } from '../hooks/useCover'
+import { useIsCompact } from '../hooks/useMediaQuery'
 import coverFallback from '../assets/cover-fallback.png'
 import { WatchHere } from '../components/WatchHere'
 import { AddBindingModal } from '../components/AddBindingModal'
@@ -286,22 +287,22 @@ export default function MyAnime(): JSX.Element {
       <div className="pt-16">
         {/* Sticky header —— top-16 是为了让自己卡在 fixed TopBar（高 64px = pt-16）
             下面，不是 top-0（会让标题被 TopBar 压住露出一半）。 */}
-        <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-8 py-5">
-          <div className="flex items-end justify-between gap-6 flex-wrap">
+        <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-4 md:px-8 py-4 md:py-5">
+          <div className="flex items-end justify-between gap-4 md:gap-6 flex-wrap">
             <div>
-              <div className="flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
+              <div className="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
                 <span className="material-symbols-outlined" style={{ fontSize: 14 }}>bookmark</span>
                 <span>Anime</span>
                 <span className="text-outline-variant">/</span>
                 <span className="text-on-surface font-bold">我的追番</span>
               </div>
-              <h1 className="text-3xl font-black tracking-tighter text-on-surface">我的追番</h1>
-              <p className="text-sm text-on-surface-variant/80 mt-1 font-label">
+              <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">我的追番</h1>
+              <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label">
                 状态 · 集数 · 备注 全在这里。在 BGM 详情页加进来，回到这里管理进度。
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto">
               {/* 评判标准帮助按钮 —— 两个 tab 都有，告诉用户"✨ 和 🌟 该什么时候 +1"。
                   PDF 里有一套用户自己定的评判规则，本应用简化了实现但把规则文档保留下来。 */}
               <button
@@ -318,13 +319,13 @@ export default function MyAnime(): JSX.Element {
                   被隐藏，导致标题行右侧动作组宽度变化、整块 sticky header 上下
                   跳动。常驻后布局稳定；推荐 tab 下它过滤标题 / 推荐对象（见
                   matchesRecommendation），placeholder 随 tab 自适应。 */}
-              <div className="relative">
+              <div className="relative flex-1 md:flex-none">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">search</span>
                 <input
                   spellCheck={false}
                   autoComplete="off"
                   autoCorrect="off"
-                  className="w-[320px] bg-surface-container-high border border-outline-variant/20 rounded-xl py-2.5 pl-10 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/40 focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/40"
+                  className="w-full md:w-[320px] bg-surface-container-high border border-outline-variant/20 rounded-xl py-2.5 pl-10 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/40 focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/40"
                   placeholder={tab === 'recommendations' ? '搜索推荐标题、推荐对象…' : '搜索追番标题、别名、备注…'}
                   value={query}
                   onChange={e => setQuery(e.target.value)}
@@ -346,7 +347,8 @@ export default function MyAnime(): JSX.Element {
               AnimeSyncBar 永远跟着这一行 —— 三个类目 + 推荐共用同一份 anime.json
               blob 同步，每个 tab 都能看到同步状态、点上传/下载。 */}
           <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
-            <div className="inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
+            {/* 平板 + 桌面：分段 tab（蓝图：平板像 PC 一样用分段条） */}
+            <div className="hidden md:inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
               {CATEGORY_TABS.map(c => (
                 <TabButton
                   key={c.key}
@@ -366,6 +368,18 @@ export default function MyAnime(): JSX.Element {
                 count={recs.length}
               />
             </div>
+            {/* 手机：类目下拉抽屉（替代分段 tab，减少窄屏视觉跳动） */}
+            <div className="md:hidden">
+              <SelectMenu
+                ariaLabel="切换类目"
+                value={tab}
+                onChange={setTab}
+                options={[
+                  ...CATEGORY_TABS.map(c => ({ key: c.key, label: c.label, icon: c.icon, count: categoryCounts[c.key] })),
+                  { key: 'recommendations' as const, label: '推荐', icon: 'campaign', count: recs.length },
+                ]}
+              />
+            </div>
             <AnimeSyncBar />
           </div>
 
@@ -374,7 +388,8 @@ export default function MyAnime(): JSX.Element {
               body 容器"那种突兀。右侧附件也根据 tab 切：追番 → 排序切换；
               推荐 → 新建按钮。 */}
           <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
-            <div className="inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
+            {/* 平板 + 桌面：分段过滤 chips */}
+            <div className="hidden md:inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
               {tab !== 'recommendations' ? (
                 <>
                   <FilterChip
@@ -422,6 +437,30 @@ export default function MyAnime(): JSX.Element {
                     )
                   })}
                 </>
+              )}
+            </div>
+            {/* 手机：观看状态 / 推荐状态过滤下拉 */}
+            <div className="md:hidden">
+              {tab !== 'recommendations' ? (
+                <SelectMenu
+                  ariaLabel="过滤观看状态"
+                  value={filter}
+                  onChange={setFilter}
+                  options={[
+                    { key: 'all' as FilterKey, label: '全部', icon: 'grid_view', count: counts.all },
+                    ...STATUS_META.map(m => ({ key: m.key as FilterKey, label: m.label, icon: m.icon, count: counts[m.key] })),
+                  ]}
+                />
+              ) : (
+                <SelectMenu
+                  ariaLabel="过滤推荐状态"
+                  value={recFilter}
+                  onChange={setRecFilter}
+                  options={[
+                    { key: 'all' as RecFilterKey, label: '全部', icon: 'grid_view', count: recCounts.all },
+                    ...(['pending', 'accepted', 'rejected'] as const).map(k => ({ key: k as RecFilterKey, label: REC_STATUS_META[k].label, icon: REC_STATUS_META[k].icon, count: recCounts[k] })),
+                  ]}
+                />
               )}
             </div>
             {tab !== 'recommendations' ? (
@@ -480,7 +519,10 @@ export default function MyAnime(): JSX.Element {
         ) : filtered.length === 0 ? (
           <EmptyFiltered hasQuery={!!query.trim()} statusLabel={filter === 'all' ? '' : statusMetaOf(filter).label} />
         ) : (
-          <div className="px-8 py-6 space-y-3">
+          // 始终单列 —— 桌面(≥1200)富信息宽行；更窄走 TrackRow 内部精简卡片
+          // （见 useIsCompact）。整页左对齐铺满，不收 max-w 居中（居中会让标题/
+          // 面包屑右移，像凭空多了一截 padding）。
+          <div className="px-4 md:px-8 py-6 space-y-3">
             {filtered.map(t => (
               <TrackRow key={t.bgmId} track={t} />
             ))}
@@ -791,6 +833,97 @@ function FilterChip({
   )
 }
 
+// ── Mobile select dropdown ───────────────────────────────────────────────────
+
+/**
+ * 手机档把「分段 tab / 过滤 chips」收成下拉，避免一排 chip 在窄屏换行 / 横向
+ * 挤压造成的视觉跳动（用户反馈「变来变去看得晕」）。平板 + 桌面仍用分段条，
+ * 故本组件只在 `md:hidden` 容器里渲染。
+ *
+ * 泛型 T = 选项 key 的联合（FilterKey / RecFilterKey / Tab）。下拉用 absolute
+ * 定位（sticky header 没有 overflow-hidden，向下溢出不会被裁），点外面 / Esc 关。
+ */
+function SelectMenu<T extends string>({
+  options, value, onChange, ariaLabel,
+}: {
+  options: ReadonlyArray<{ key: T; label: string; icon: string; count?: number }>
+  value: T
+  onChange: (k: T) => void
+  ariaLabel?: string
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  const current = options.find(o => o.key === value) ?? options[0]
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-label={ariaLabel}
+        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-surface-container border border-outline-variant/20"
+      >
+        <span
+          className="material-symbols-outlined leading-none text-primary"
+          style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}
+        >
+          {current.icon}
+        </span>
+        <span className="text-sm font-bold text-on-surface">{current.label}</span>
+        {current.count !== undefined && (
+          <span className="font-label text-[11px] tabular-nums text-on-surface-variant/50">{current.count}</span>
+        )}
+        <span className="material-symbols-outlined leading-none text-on-surface-variant/55" style={{ fontSize: 18 }}>
+          {open ? 'expand_less' : 'expand_more'}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute top-[calc(100%+6px)] left-0 z-50 min-w-[176px] bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl shadow-black/40 p-1.5">
+          {options.map(o => {
+            const active = o.key === value
+            return (
+              <button
+                key={o.key}
+                type="button"
+                onClick={() => { onChange(o.key); setOpen(false) }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                  active ? 'bg-primary/12 text-primary' : 'text-on-surface-variant/75 hover:bg-surface-container-highest hover:text-on-surface'
+                }`}
+              >
+                <span
+                  className="material-symbols-outlined leading-none"
+                  style={{ fontSize: 16, fontVariationSettings: active ? "'FILL' 1" : "'FILL' 0" }}
+                >
+                  {o.icon}
+                </span>
+                <span className="flex-1 text-sm font-medium">{o.label}</span>
+                {o.count !== undefined && (
+                  <span className="font-label text-[11px] tabular-nums text-on-surface-variant/45">{o.count}</span>
+                )}
+                {active && (
+                  <span className="material-symbols-outlined leading-none text-primary" style={{ fontSize: 16 }}>check</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Track row ────────────────────────────────────────────────────────────────
 
 // 内置三源顺序固定：常驻显示在补绑按钮里，给"还没绑过"的源画虚线按钮。
@@ -884,6 +1017,35 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
     animeTrackStore.setGoodEpisodeNote(track.bgmId, ep, note)
   }
   const [goodEpsOpen, setGoodEpsOpen] = useState(false)
+  // 精简布局（平板 + 手机，<lg）：卡片只直接显示 状态 / 集数 / 在线观看 / 标签，
+  // 其余（最爱值 / 好看集 / 标签编辑 / 推荐 / 移除）收进右上「更多」浮层。
+  // useIsCompact 用 JS 媒体查询只渲染一套卡片（不走 CSS 双树），避免上百行追番
+  // 时每行 DOM 节点翻倍拖慢首屏。
+  const isCompact = useIsCompact()
+  // 「更多」浮层锚点矩形（null = 关闭）。卡片根是 overflow-hidden，浮层必须
+  // portal 到 body 用 fixed 定位（同 NovelProgressPopover）。
+  const [moreAnchor, setMoreAnchor] = useState<DOMRect | null>(null)
+  const moreBtnRef = useRef<HTMLButtonElement>(null)
+  const morePanelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!moreAnchor) return
+    const onDown = (e: MouseEvent): void => {
+      const t = e.target as Node
+      if (
+        morePanelRef.current && !morePanelRef.current.contains(t) &&
+        moreBtnRef.current && !moreBtnRef.current.contains(t)
+      ) {
+        setMoreAnchor(null)
+      }
+    }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setMoreAnchor(null) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [moreAnchor])
   // 行内"添加自定义标签" inline 输入 —— 替代了早期的 UserTagsEditor modal,
   // 因为 BGM tag 最多 4 + 用户自定义最多 4 总数 6-8 个 chip 完全能放进
   // TrackRow 一行里，专门弹个 modal 编辑反而多此一举。
@@ -899,6 +1061,24 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
     setTagDraft('')
     setAddingTag(false)
   }
+  // 封面 <img> 抽出来给「桌面铺满 / 精简定高缩略图」两种容器复用，避免重复
+  // onError 兜底逻辑。容器各自 relative，img 用 absolute inset-0 填满容器。
+  const coverImg = (
+    <img
+      src={coverSrc || coverFallback}
+      alt={displayTitle}
+      className="absolute inset-0 w-full h-full object-cover"
+      loading="lazy"
+      decoding="async"
+      onError={(e) => {
+        const img = e.currentTarget
+        if (img.src !== coverFallback) {
+          img.onerror = null
+          img.src = coverFallback
+        }
+      }}
+    />
+  )
   return (
     <div
       className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex min-h-[140px]"
@@ -922,25 +1102,22 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
               行数少而整块变矮、产生"挪动"感
           `relative` 给 absolute 封面做定位锚点；`overflow-hidden rounded-l-xl`
           裁掉左侧圆角处的封面溢出。 */}
-      <div className="w-[88px] shrink-0 bg-surface-container-high overflow-hidden rounded-l-xl relative">
-        <img
-          src={coverSrc || coverFallback}
-          alt={displayTitle}
-          className="absolute inset-0 w-full h-full object-cover"
-          loading="lazy"
-          decoding="async"
-          onError={(e) => {
-            const img = e.currentTarget
-            if (img.src !== coverFallback) {
-              img.onerror = null
-              img.src = coverFallback
-            }
-          }}
-        />
-      </div>
+      {isCompact ? (
+        // 精简：封面铺满卡片高度（消除"小缩略图 + 下方留白"的割裂）；窄到手机
+        // （<sm/640）干脆去掉封面——此时封面会被挤成细长条很丑，去掉给内容腾地方。
+        <div className="hidden sm:block w-[96px] shrink-0 bg-surface-container-high overflow-hidden rounded-l-xl relative">
+          {coverImg}
+        </div>
+      ) : (
+        // 桌面：封面铺满卡片高度（卡片≈140，2:3 正合适），左侧圆角靠卡片 overflow-hidden 裁。
+        <div className="w-[88px] shrink-0 bg-surface-container-high overflow-hidden rounded-l-xl relative">
+          {coverImg}
+        </div>
+      )}
 
-      {/* Body —— padding / gap 都收紧一档，让总高度刚好等于 cover 132px,
-          避免 cover 容器右侧出现"img 132 + 灰色留白" 的视觉割裂。 */}
+      {/* Body（桌面富信息版，≥lg）—— padding / gap 收紧一档让总高度≈cover 132px。
+          平板 + 手机走下方 isCompact 精简版。 */}
+      {!isCompact && (
       <div className="flex-1 p-3 min-w-0 flex flex-col gap-2">
         {/* Title row —— 日文原标题不再单独占一行，挪到主标题的 title attribute
             （hover 可看），把副标题位置让给类型 chip 行。这是为了在不增加卡片
@@ -1141,6 +1318,242 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
           )}
         </div>
       </div>
+      )}
+
+      {/* Body（平板 + 手机精简版，<lg）——
+          只直接显示：标题 / 标签(只读) / 状态 / 集数·进度 / 在线观看。
+          最爱值 / 好看集 / 标签编辑 / 推荐 / 移除 收进右上「更多」浮层。 */}
+      {isCompact && (
+        <div className="flex-1 p-3 min-w-0 flex flex-col gap-2.5">
+          {/* 标题 + 更多 */}
+          <div className="flex items-start justify-between gap-2">
+            <h3
+              className="text-[15px] font-bold text-on-surface leading-snug min-w-0 line-clamp-2"
+              title={nativeTitle ? `${displayTitle}\n${nativeTitle}` : displayTitle}
+            >
+              {displayTitle}
+            </h3>
+            <button
+              ref={moreBtnRef}
+              onClick={() => setMoreAnchor(moreAnchor ? null : moreBtnRef.current?.getBoundingClientRect() ?? null)}
+              title="更多操作（最爱值 / 好看集 / 标签 / 推荐 / 移除）"
+              className="shrink-0 w-7 h-7 rounded-md flex items-center justify-center border border-outline-variant/15 text-on-surface-variant/55 hover:text-primary hover:bg-primary/10 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px] leading-none">more_vert</span>
+            </button>
+          </div>
+
+          {/* 标签（只读展示；增删在「更多」浮层里） */}
+          {(track.bgmTags.length > 0 || track.userTags.length > 0) && (
+            <div className="flex flex-wrap items-center gap-1">
+              {track.bgmTags.map(t => (
+                <span key={`bgm-${t}`} className="inline-flex items-center px-2 py-0.5 rounded bg-primary/12 border border-primary/25 text-primary font-label text-[10px] font-bold tracking-wider">{t}</span>
+              ))}
+              {track.userTags.map(t => (
+                <span key={`user-${t}`} className="inline-flex items-center px-2 py-0.5 rounded bg-primary/12 border border-primary/25 text-primary font-label text-[10px] font-bold tracking-wider">{t}</span>
+              ))}
+            </div>
+          )}
+
+          {/* 状态 + 进度同一行：平板够宽并排、手机自动换行 —— 既用上平板的横向
+              空间、又压低卡片高度（封面不会被拉太长）。状态条超窄屏可能略超 body，
+              min-w-0 + 横向滚动兜底，避免被卡片 overflow-hidden 裁掉「看完」。 */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="min-w-0 max-w-full overflow-x-auto [&::-webkit-scrollbar]:h-0">
+              <StatusSegment current={track.status} onChange={setStatus} />
+            </div>
+            {isNovel ? (
+              <NovelProgress
+                volume={track.novelVolume}
+                chapter={track.novelChapter}
+                onVolumeChange={setNovelVolume}
+                onChapterChange={setNovelChapter}
+              />
+            ) : (
+              <EpisodeCounter
+                episode={track.episode}
+                total={track.totalEpisodes}
+                onChange={setEpisode}
+                onTotalChange={setTotalEpisodes}
+              />
+            )}
+          </div>
+
+          {/* 在线观看（与桌面版同款控件） */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35 mr-0.5">在线观看</span>
+            <WatchHere bgmId={track.bgmId} variant="inline" />
+            {missingBuiltins.map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSearchingSource(s)}
+                title={`在 ${s} 里搜并关联这部番`}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
+              >
+                <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>search</span>
+                <span>搜 {s}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setAddingBinding(true)}
+              title="添加 B 站 / 自定义观看链接"
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
+            >
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>add</span>
+              <span>添加链接</span>
+            </button>
+            {userAddedBindings.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setEditingOpen(true)}
+                title="编辑 / 删除已添加的自定义链接"
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-outline-variant/30 hover:border-on-surface-variant/40 text-on-surface-variant/40 hover:text-on-surface-variant/70 font-label text-[10px] tracking-wider transition-colors"
+              >
+                <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>edit</span>
+                <span>编辑</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 「更多」浮层（仅精简卡片）—— 把次要操作集中到此。向下空间不足时贴按钮
+          上沿向上展开（用 bottom 锚定自适应高度）。 */}
+      {isCompact && moreAnchor && createPortal(
+        (() => {
+          const W = 288
+          const left = Math.max(12, Math.min(moreAnchor.right - W, window.innerWidth - W - 12))
+          const openUp = moreAnchor.bottom > window.innerHeight * 0.6
+          const vstyle = openUp
+            ? { bottom: window.innerHeight - moreAnchor.top + 8 }
+            : { top: moreAnchor.bottom + 8 }
+          return (
+            <div
+              ref={morePanelRef}
+              style={{ position: 'fixed', left, width: W, zIndex: 9999, ...vstyle }}
+              className="bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl shadow-black/40 p-3 flex flex-col gap-3"
+            >
+              {/* 最爱值 / 观望次数 */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/55">
+                  {track.status === 'considering' ? '观望次数' : '最爱值'}
+                </span>
+                {track.status === 'considering' ? (
+                  <ObserveCounter value={track.observeCount} onChange={setObserveCount} />
+                ) : (
+                  <FavoriteStars value={track.favorite} onChange={setFavorite} />
+                )}
+              </div>
+
+              {/* 好看集（小说不显示） */}
+              {!isNovel && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/55">好看集</span>
+                  <GoodEpisodesChip
+                    episodes={track.goodEpisodes}
+                    onOpen={() => { setMoreAnchor(null); setGoodEpsOpen(true) }}
+                  />
+                </div>
+              )}
+
+              {/* 标签增删 */}
+              <div className="flex flex-col gap-1.5">
+                <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/55">标签</span>
+                <div className="flex flex-wrap items-center gap-1">
+                  {track.bgmTags.map(t => (
+                    <span key={`bgm-${t}`} title="来自 Bangumi（不可编辑）" className="inline-flex items-center px-2 py-0.5 rounded bg-primary/12 border border-primary/25 text-primary font-label text-[10px] font-bold tracking-wider">{t}</span>
+                  ))}
+                  {track.userTags.map(t => (
+                    <button
+                      key={`user-${t}`}
+                      type="button"
+                      onClick={() => animeTrackStore.removeUserTag(track.bgmId, t)}
+                      title={`自定义「${t}」（点击移除）`}
+                      className="group inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-primary/12 border border-primary/25 text-primary hover:bg-error/15 hover:border-error/40 hover:text-error font-label text-[10px] font-bold tracking-wider transition-colors"
+                    >
+                      <span>{t}</span>
+                      <span className="material-symbols-outlined leading-none" style={{ fontSize: 11 }}>close</span>
+                    </button>
+                  ))}
+                  {addingTag ? (
+                    <input
+                      ref={tagInputRef}
+                      type="text"
+                      value={tagDraft}
+                      onChange={e => setTagDraft(e.target.value)}
+                      onBlur={commitTag}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitTag()
+                        if (e.key === 'Escape') { setTagDraft(''); setAddingTag(false) }
+                      }}
+                      placeholder="例：下饭"
+                      maxLength={20}
+                      spellCheck={false}
+                      className="w-24 px-2 py-0.5 rounded bg-surface border border-primary/40 outline-none focus:ring-1 focus:ring-primary/40 text-on-surface font-label text-[10px] font-bold tracking-wider"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAddingTag(true)}
+                      title="加自定义标签（下饭 / 通勤番 之类）"
+                      className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded border border-dashed border-outline-variant/35 hover:border-primary/50 hover:bg-primary/8 text-on-surface-variant/55 hover:text-primary font-label text-[10px] font-bold tracking-wider transition-colors"
+                    >
+                      <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>add</span>
+                      <span>添加</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="h-px bg-outline-variant/15 -mx-1" />
+
+              {/* 次要动作 */}
+              <div className="flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => { setMoreAnchor(null); setQuickRecOpen(true) }}
+                  className="flex items-center gap-2.5 px-2 py-2 rounded-lg text-left text-on-surface-variant/80 hover:bg-surface-container-highest hover:text-on-surface transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px] leading-none">campaign</span>
+                  <span className="text-sm">推荐这部番</span>
+                </button>
+                {isManual ? (
+                  <button
+                    type="button"
+                    onClick={() => { setMoreAnchor(null); setEditTrackOpen(true) }}
+                    className="flex items-center gap-2.5 px-2 py-2 rounded-lg text-left text-on-surface-variant/80 hover:bg-surface-container-highest hover:text-on-surface transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[16px] leading-none">edit</span>
+                    <span className="text-sm">编辑条目</span>
+                  </button>
+                ) : (
+                  <a
+                    href={`https://bgm.tv/subject/${track.bgmId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setMoreAnchor(null)}
+                    className="flex items-center gap-2.5 px-2 py-2 rounded-lg text-left text-on-surface-variant/80 hover:bg-surface-container-highest hover:text-on-surface transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[16px] leading-none">open_in_new</span>
+                    <span className="text-sm">在 Bangumi 查看</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setMoreAnchor(null); setConfirmDeleteOpen(true) }}
+                  className="flex items-center gap-2.5 px-2 py-2 rounded-lg text-left text-error/85 hover:bg-error/10 hover:text-error transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px] leading-none">delete</span>
+                  <span className="text-sm">移除追番</span>
+                </button>
+              </div>
+            </div>
+          )
+        })(),
+        document.body,
+      )}
 
       {addingBinding && (
         <AddBindingModal
@@ -1279,7 +1692,9 @@ function StatusSegment({
             >
               {m.icon}
             </span>
-            <span>{m.label}</span>
+            {/* 超窄屏（<420）只留图标、隐藏文字，避免「在追」之类被挤到第二行；
+                button 上有 title tooltip 兜底语义。桌面富卡片 ≥1200 永远显示文字。 */}
+            <span className="hidden min-[420px]:inline">{m.label}</span>
           </button>
         )
       })}
