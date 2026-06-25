@@ -16,6 +16,22 @@ type Tab = 'homework' | 'jjc' | 'pjjc' | 'classic' | 'log'
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type SyncDirection = 'push' | 'pull'
 
+// 五个分类的元数据 —— 桌面分段 tab 与手机下拉共用同一份，避免标签/图标两处维护。
+type TabMeta = { key: Tab; label: string; icon: string; accent: 'primary' | 'tertiary' | 'secondary' }
+const TABS: TabMeta[] = [
+  { key: 'homework', label: '作业查询', icon: 'shield', accent: 'primary' },
+  { key: 'jjc', label: 'JJC 换防', icon: 'military_tech', accent: 'primary' },
+  { key: 'pjjc', label: 'PJJC 换防', icon: 'swap_horiz', accent: 'primary' },
+  { key: 'classic', label: '经典阵容', icon: 'auto_awesome', accent: 'tertiary' },
+  { key: 'log', label: '记录', icon: 'edit_note', accent: 'secondary' },
+]
+// 选中态配色写成完整类名（不拼接），保证 Tailwind JIT 扫得到、不被 purge。
+const TAB_ACTIVE_CLS: Record<TabMeta['accent'], string> = {
+  primary: 'border border-primary/20 bg-primary/15 text-primary',
+  tertiary: 'border border-tertiary/20 bg-tertiary/15 text-tertiary',
+  secondary: 'border border-secondary/20 bg-secondary/15 text-secondary',
+}
+
 /**
  * 锦囊妙计（阵容/作业速查）的云端 blob。
  *
@@ -419,29 +435,31 @@ export default function HomeworkLookup(): JSX.Element {
       <div className="pt-16">
         {/* Sticky page header —— top-16 让 sticky 卡在 fixed TopBar（64px）下面，
             top-0 会让标题被 TopBar 压住露出一半。同 MyAnime / AnimeCalendar 的修法。 */}
-        <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-8 py-5">
-          <div className="flex items-end justify-between gap-6 flex-wrap">
+        <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-4 md:px-8 py-4 md:py-5">
+          <div className="flex items-end justify-between gap-4 md:gap-6 flex-wrap">
             <div>
-              <div className="flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
+              {/* 面包屑 / 副标题在手机档隐藏（窄屏只留主标题），对齐蓝图 .crumb/.subttl 收起 */}
+              <div className="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
                 <span className="material-symbols-outlined" style={{ fontSize: 14 }}>menu_book</span>
                 <span>Tools</span>
                 <span className="text-outline-variant">/</span>
                 <span className="text-on-surface font-bold">锦囊妙计</span>
               </div>
-              <h1 className="text-3xl font-black tracking-tighter text-on-surface">锦囊妙计</h1>
-              <p className="text-sm text-on-surface-variant/80 mt-1 font-label">
+              <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">锦囊妙计</h1>
+              <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label">
                 查询作业 · 浏览经典阵容 · 流水账记录
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="relative">
+            {/* 手机档整组通栏（w-full）落到标题下方一行；搜索框占满、添加按钮收成图标。 */}
+            <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto">
+              <div className="relative flex-1 md:flex-none">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">search</span>
                 <input
                   spellCheck={false}
                   autoComplete="off"
                   autoCorrect="off"
-                  className="w-[380px] bg-surface-container-high border border-outline-variant/20 rounded-xl py-2.5 pl-10 pr-20 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/40 focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/40"
+                  className="w-full md:w-[380px] bg-surface-container-high border border-outline-variant/20 rounded-xl py-2.5 pl-10 pr-20 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/40 focus:bg-surface-bright transition-all placeholder:text-on-surface-variant/40"
                   placeholder={searchPlaceholder}
                   value={query}
                   onChange={e => handleQueryChange(e.target.value)}
@@ -460,72 +478,40 @@ export default function HomeworkLookup(): JSX.Element {
               </div>
               <button
                 onClick={handleAdd}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-label text-xs uppercase tracking-widest hover:bg-primary-fixed transition-all active:scale-95 shadow-lg shadow-primary/10 whitespace-nowrap"
+                title={addLabel}
+                className="shrink-0 flex items-center gap-2 px-3.5 sm:px-5 py-2.5 rounded-xl bg-primary text-on-primary font-label text-xs uppercase tracking-widest hover:bg-primary-fixed transition-all active:scale-95 shadow-lg shadow-primary/10 whitespace-nowrap"
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>add</span>
-                {addLabel}
+                <span className="hidden sm:inline">{addLabel}</span>
               </button>
             </div>
           </div>
 
           {/* Tabs + Sync chip row */}
-          <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
-            <div className="inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
-              <button
-                onClick={() => setActiveTab('homework')}
-                className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'homework'
-                    ? 'bg-primary/15 text-primary border border-primary/20'
-                    : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
-                }`}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'homework' ? "'FILL' 1" : "'FILL' 0" }}>shield</span>
-                作业查询
-              </button>
-              <button
-                onClick={() => setActiveTab('jjc')}
-                className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'jjc'
-                    ? 'bg-primary/15 text-primary border border-primary/20'
-                    : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
-                }`}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'jjc' ? "'FILL' 1" : "'FILL' 0" }}>military_tech</span>
-                JJC 换防
-              </button>
-              <button
-                onClick={() => setActiveTab('pjjc')}
-                className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'pjjc'
-                    ? 'bg-primary/15 text-primary border border-primary/20'
-                    : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
-                }`}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'pjjc' ? "'FILL' 1" : "'FILL' 0" }}>swap_horiz</span>
-                PJJC 换防
-              </button>
-              <button
-                onClick={() => setActiveTab('classic')}
-                className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'classic'
-                    ? 'bg-tertiary/15 text-tertiary border border-tertiary/20'
-                    : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
-                }`}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'classic' ? "'FILL' 1" : "'FILL' 0" }}>auto_awesome</span>
-                经典阵容
-              </button>
-              <button
-                onClick={() => setActiveTab('log')}
-                className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'log'
-                    ? 'bg-secondary/15 text-secondary border border-secondary/20'
-                    : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
-                }`}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: activeTab === 'log' ? "'FILL' 1" : "'FILL' 0" }}>edit_note</span>
-                记录
-              </button>
+          <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+            {/* 桌面/平板：分段 tab（≥md）。手机：收成下拉选择器（见下方 TabSelect），
+                对齐蓝图 .modeseg→.modedd —— 5 个 tab 在 390 窄屏一排放不下。 */}
+            <div className="hidden md:inline-flex bg-surface-container rounded-lg p-1 border border-outline-variant/15 gap-1">
+              {TABS.map(t => {
+                const active = activeTab === t.key
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setActiveTab(t.key)}
+                    className={`px-4 py-1.5 rounded-md font-label text-xs uppercase tracking-widest transition-colors flex items-center gap-1.5 ${
+                      active
+                        ? TAB_ACTIVE_CLS[t.accent]
+                        : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high border border-transparent'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: active ? "'FILL' 1" : "'FILL' 0" }}>{t.icon}</span>
+                    {t.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="md:hidden">
+              <TabSelect tabs={TABS} value={activeTab} onChange={setActiveTab} />
             </div>
 
             {/* Sync chip (shared, sends combined blob) */}
@@ -699,6 +685,78 @@ export default function HomeworkLookup(): JSX.Element {
           />
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Mobile tab select ───────────────────────────────────────────────────────
+
+/**
+ * 手机档（<md）把分段 tab 收成下拉选择器 —— 5 个分类一排在 390 窄屏放不下，
+ * 一排 chip 横向挤压/换行会抖。平板 + 桌面仍用分段条，本组件只在 `md:hidden`
+ * 容器里渲染。结构对齐 MyAnime 的 SelectMenu：absolute 定位（sticky header 无
+ * overflow-hidden，向下溢出不被裁），点外面 / Esc 关。
+ */
+function TabSelect({
+  tabs, value, onChange,
+}: {
+  tabs: TabMeta[]
+  value: Tab
+  onChange: (k: Tab) => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  const current = tabs.find(t => t.key === value) ?? tabs[0]
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-label="切换分类"
+        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-surface-container border border-outline-variant/20"
+      >
+        <span className="material-symbols-outlined leading-none text-primary" style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}>{current.icon}</span>
+        <span className="text-sm font-bold text-on-surface">{current.label}</span>
+        <span className="material-symbols-outlined leading-none text-on-surface-variant/55" style={{ fontSize: 18 }}>
+          {open ? 'expand_less' : 'expand_more'}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute top-[calc(100%+6px)] left-0 z-50 min-w-[176px] bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl shadow-black/40 p-1.5">
+          {tabs.map(t => {
+            const active = t.key === value
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => { onChange(t.key); setOpen(false) }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                  active ? 'bg-primary/12 text-primary' : 'text-on-surface-variant/75 hover:bg-surface-container-highest hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined leading-none" style={{ fontSize: 16, fontVariationSettings: active ? "'FILL' 1" : "'FILL' 0" }}>{t.icon}</span>
+                <span className="flex-1 text-sm font-medium">{t.label}</span>
+                {active && (
+                  <span className="material-symbols-outlined leading-none text-primary" style={{ fontSize: 16 }}>check</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
