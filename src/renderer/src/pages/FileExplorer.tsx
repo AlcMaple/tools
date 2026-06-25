@@ -816,7 +816,10 @@ function FileExplorer(): JSX.Element {
       <TopBar placeholder="" titleSlot={TITLE_SLOT} />
 
       {/* Address bar */}
-      <section className="px-8 pb-3 bg-background border-b border-white/5" style={{ paddingTop: '5rem' }}>
+      <section className="px-4 md:px-8 pb-3 bg-background border-b border-white/5" style={{ paddingTop: '5rem' }}>
+        {/* 导航行：nav + 地址输入(flex-1) + Open。窄屏 Open 只留图标紧挨地址栏，
+            Delete 挪到下面控制行（跟 Sort/视图同属工具），不再出现"Open+Delete
+            孤立成一行"的丑。 */}
         <div className="flex items-center gap-2 mb-3">
           <div className="flex items-center gap-1">
             <button
@@ -845,7 +848,7 @@ function FileExplorer(): JSX.Element {
             </button>
           </div>
 
-          <div className="flex-1 flex items-stretch bg-surface-container-lowest rounded-lg border border-white/5 focus-within:border-primary/50 transition-colors overflow-hidden">
+          <div className="flex-1 min-w-0 flex items-stretch bg-surface-container-lowest rounded-lg border border-white/5 focus-within:border-primary/50 transition-colors overflow-hidden">
             <button
               onClick={async () => {
                 const picked = await window.systemApi.pickFolder()
@@ -873,52 +876,15 @@ function FileExplorer(): JSX.Element {
 
           <button
             onClick={tryOpenInput}
-            className="flex items-center gap-1.5 px-4 h-10 rounded-lg bg-primary text-on-primary font-label text-[11px] font-bold uppercase tracking-widest hover:opacity-90 active:scale-95 transition-all"
+            className="shrink-0 flex items-center gap-1.5 px-2.5 md:px-4 h-10 rounded-lg bg-primary text-on-primary font-label text-[11px] font-bold uppercase tracking-widest hover:opacity-90 active:scale-95 transition-all"
             title="打开输入框中的路径"
           >
             <span className="material-symbols-outlined text-[16px]">arrow_outward</span>
-            <span>Open</span>
+            <span className="hidden md:inline">Open</span>
           </button>
-          <div className="relative inline-flex" ref={deleteMenuRef}>
-            <button
-              onClick={() => tryDeleteInput(false)}
-              className="flex items-center gap-1.5 px-4 h-10 rounded-l-lg bg-surface-container-high border border-error/30 border-r-0 text-error font-label text-[11px] font-bold uppercase tracking-widest hover:bg-error/10 active:scale-95 transition-all"
-              title="移到回收站（默认）"
-            >
-              <span className="material-symbols-outlined text-[16px]">delete</span>
-              <span>Delete</span>
-            </button>
-            <button
-              onClick={() => setDeleteMenuOpen((o) => !o)}
-              className="flex items-center justify-center w-7 h-10 rounded-r-lg bg-surface-container-high border border-error/30 text-error hover:bg-error/10 active:scale-95 transition-all"
-              title="更多删除选项"
-            >
-              <span className={`material-symbols-outlined text-[18px] transition-transform duration-200 ${deleteMenuOpen ? 'rotate-180' : ''}`}>expand_more</span>
-            </button>
-            {deleteMenuOpen && (
-              <div className="absolute top-full right-0 mt-1.5 w-full bg-surface-container-highest border border-outline-variant/30 rounded-lg overflow-hidden shadow-lg z-50">
-                <button
-                  type="button"
-                  onClick={() => { setDeleteMenuOpen(false); tryDeleteInput(false) }}
-                  className="w-full flex items-center gap-1.5 px-3 py-2.5 text-xs font-label text-on-surface hover:bg-surface-container-high transition-colors text-left whitespace-nowrap"
-                >
-                  <span className="material-symbols-outlined text-[15px] text-on-surface-variant/70 shrink-0">delete</span>
-                  <span>移到回收站</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setDeleteMenuOpen(false); tryDeleteInput(true) }}
-                  className="w-full flex items-center gap-1.5 px-3 py-2.5 text-xs font-label text-error hover:bg-error/10 transition-colors text-left whitespace-nowrap border-t border-outline-variant/15"
-                >
-                  <span className="material-symbols-outlined text-[15px] shrink-0">delete_forever</span>
-                  <span>永久删除</span>
-                </button>
-              </div>
-            )}
-          </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex items-center justify-end gap-2 md:gap-3">
           {/* Sort selector */}
           <div className="relative w-40" ref={sortDropdownRef}>
             <button
@@ -961,11 +927,51 @@ function FileExplorer(): JSX.Element {
               </button>
             ))}
           </div>
+
+          {/* 删除（按地址栏路径）—— 从导航行挪来，跟排序/视图同属工具行。窄屏只留
+              图标；菜单固定宽度（按钮图标态太窄，w-full 会让菜单项挤）。 */}
+          <div className="relative inline-flex" ref={deleteMenuRef}>
+            <button
+              onClick={() => tryDeleteInput(false)}
+              className="flex items-center gap-1.5 px-2.5 md:px-4 h-9 rounded-l-lg bg-surface-container-high border border-error/30 border-r-0 text-error font-label text-[11px] font-bold uppercase tracking-widest hover:bg-error/10 active:scale-95 transition-all"
+              title="移到回收站（默认）"
+            >
+              <span className="material-symbols-outlined text-[16px]">delete</span>
+              <span className="hidden md:inline">Delete</span>
+            </button>
+            <button
+              onClick={() => setDeleteMenuOpen((o) => !o)}
+              className="flex items-center justify-center w-7 h-9 rounded-r-lg bg-surface-container-high border border-error/30 text-error hover:bg-error/10 active:scale-95 transition-all"
+              title="更多删除选项"
+            >
+              <span className={`material-symbols-outlined text-[18px] transition-transform duration-200 ${deleteMenuOpen ? 'rotate-180' : ''}`}>expand_more</span>
+            </button>
+            {deleteMenuOpen && (
+              <div className="absolute top-full right-0 mt-1.5 w-40 bg-surface-container-highest border border-outline-variant/30 rounded-lg overflow-hidden shadow-lg z-50">
+                <button
+                  type="button"
+                  onClick={() => { setDeleteMenuOpen(false); tryDeleteInput(false) }}
+                  className="w-full flex items-center gap-1.5 px-3 py-2.5 text-xs font-label text-on-surface hover:bg-surface-container-high transition-colors text-left whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-[15px] text-on-surface-variant/70 shrink-0">delete</span>
+                  <span>移到回收站</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDeleteMenuOpen(false); tryDeleteInput(true) }}
+                  className="w-full flex items-center gap-1.5 px-3 py-2.5 text-xs font-label text-error hover:bg-error/10 transition-colors text-left whitespace-nowrap border-t border-outline-variant/15"
+                >
+                  <span className="material-symbols-outlined text-[15px] shrink-0">delete_forever</span>
+                  <span>永久删除</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
       {/* File list area */}
-      <section className="custom-scrollbar flex-1 overflow-y-auto px-8 py-6 select-none" tabIndex={0}>
+      <section className="custom-scrollbar flex-1 overflow-y-auto px-4 md:px-8 py-6 select-none" tabIndex={0}>
         {loading ? (
           <div className="h-full flex items-center justify-center">
             <div className="flex flex-col items-center gap-3 text-on-surface-variant/40">
@@ -984,11 +990,11 @@ function FileExplorer(): JSX.Element {
         ) : view === 'list' ? (
           /* List view */
           <div className="bg-surface-container-lowest border border-white/5 rounded-lg overflow-hidden">
-            <div className="grid grid-cols-12 gap-4 px-4 py-2.5 bg-surface-container-low rounded-t-lg border-b border-white/5 font-label text-[10px] uppercase tracking-[0.15em] text-outline">
-              <div className="col-span-6">名称</div>
-              <div className="col-span-2">修改时间</div>
-              <div className="col-span-2">类型</div>
-              <div className="col-span-2 text-right">大小</div>
+            <div className="grid grid-cols-12 gap-2 md:gap-4 px-4 py-2.5 bg-surface-container-low rounded-t-lg border-b border-white/5 font-label text-[10px] uppercase tracking-[0.15em] text-outline">
+              <div className="col-span-8 md:col-span-6">名称</div>
+              <div className="hidden md:block md:col-span-2">修改时间</div>
+              <div className="hidden md:block md:col-span-2">类型</div>
+              <div className="col-span-4 md:col-span-2 text-right">大小</div>
             </div>
             <div>
               {sortedItems.map((item) => {
@@ -999,9 +1005,9 @@ function FileExplorer(): JSX.Element {
                     onClick={(e) => onRowClick(e, item.path)}
                     onDoubleClick={() => onRowDoubleClick(item)}
                     onContextMenu={(e) => onRowContextMenu(e, item.path)}
-                    className={`grid grid-cols-12 gap-4 px-4 py-2.5 items-center cursor-pointer border-b border-white/[0.03] hover:bg-surface-container-low/60 ${sel ? 'bg-primary/10 hover:bg-primary/15' : ''}`}
+                    className={`grid grid-cols-12 gap-2 md:gap-4 px-4 py-2.5 items-center cursor-pointer border-b border-white/[0.03] hover:bg-surface-container-low/60 ${sel ? 'bg-primary/10 hover:bg-primary/15' : ''}`}
                   >
-                    <div className="col-span-6 flex items-center gap-3 min-w-0">
+                    <div className="col-span-8 md:col-span-6 flex items-center gap-3 min-w-0">
                       <span
                         className={`material-symbols-outlined ${colorFor(item)} text-[20px] flex-shrink-0`}
                         style={item.type === 'folder' ? { fontVariationSettings: '"FILL" 1' } : undefined}
@@ -1010,11 +1016,11 @@ function FileExplorer(): JSX.Element {
                       </span>
                       <span className={`text-sm ${item.type === 'folder' ? 'font-bold' : 'font-medium'} text-on-surface truncate`}>{item.name}</span>
                     </div>
-                    <div className="col-span-2 font-label text-[11px] text-on-surface-variant/70">{item.mtime ?? '—'}</div>
-                    <div className="col-span-2">
+                    <div className="hidden md:block md:col-span-2 font-label text-[11px] text-on-surface-variant/70">{item.mtime ?? '—'}</div>
+                    <div className="hidden md:block md:col-span-2">
                       <span className="font-label text-[10px] uppercase tracking-wider text-on-surface-variant/60">{kindLabel(item)}</span>
                     </div>
-                    <div className="col-span-2 text-right font-label text-[11px] text-on-surface-variant/70">{item.type === 'folder' ? '—' : fmtSize(item.size)}</div>
+                    <div className="col-span-4 md:col-span-2 text-right font-label text-[11px] text-on-surface-variant/70">{item.type === 'folder' ? '—' : fmtSize(item.size)}</div>
                   </div>
                 )
               })}
@@ -1062,14 +1068,15 @@ function FileExplorer(): JSX.Element {
       </section>
 
       {/* Status bar */}
-      <footer className="bg-surface-container-lowest border-t border-white/5 px-8 py-2.5 flex items-center justify-between text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60">
-        <div className="flex items-center gap-6">
+      <footer className="bg-surface-container-lowest border-t border-white/5 px-4 md:px-8 py-2.5 flex items-center justify-between gap-3 text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60">
+        <div className="flex items-center gap-3 md:gap-6 shrink-0">
           <span>{sortedItems.length} 项</span>
           <span className="h-3 w-px bg-outline-variant/20" />
           <span>{totalSize ? `${fmtSize(totalSize)} 总大小` : '—'}</span>
         </div>
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 md:gap-6 min-w-0">
+          {/* "Filesystem · Live" 指示窄屏隐藏，把横向空间让给当前路径 */}
+          <div className="hidden md:flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
             <span>Filesystem · Live</span>
           </div>
@@ -1297,7 +1304,7 @@ function DeleteProgressOverlay({ state }: { state: DeleteInProgress }): JSX.Elem
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-      <div className="relative bg-surface-container/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl px-8 py-7 min-w-[380px] max-w-[92vw]">
+      <div className="relative bg-surface-container/95 backdrop-blur rounded-xl border border-white/10 shadow-2xl px-6 md:px-8 py-7 min-w-[280px] sm:min-w-[380px] max-w-[92vw]">
         <div className="flex flex-col items-center gap-4">
           <span
             className="material-symbols-outlined text-primary animate-spin"
