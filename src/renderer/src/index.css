@@ -232,6 +232,8 @@ button:focus-visible {
 .atk-text .rest { color: rgb(var(--color-on-surface)); font-weight: 500; }
 .atk-text .sep  { color: rgb(var(--color-outline-variant)); margin: 0 2px; font-weight: 400; }
 .atk-text mark.hl { background: rgba(255, 179, 184, 0.22); color: #ffdadb; padding: 0 3px; border-radius: 2px; }
+/* 手机端进攻行：进攻队名换行铺满，不再单行省略号截断（桌面仍是 nowrap + 省略号）。 */
+.atk-text.wrap { white-space: normal; overflow: visible; text-overflow: clip; }
 
 .idx {
   font-family: "Space Grotesk", monospace;

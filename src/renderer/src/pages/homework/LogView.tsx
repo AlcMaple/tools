@@ -134,10 +134,10 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
   }
 
   return (
-    <div className="px-8 py-6">
+    <div className="px-4 md:px-8 py-6">
       {/* 工具条：计数 + 类型筛选（TagFilter）+ 视图切换。文本搜索在页头上游。
-          新增走顶部「添加记录」按钮 → 弹窗（同其他 tab）。 */}
-      <div className="flex items-center gap-3 mb-3">
+          新增走顶部「添加记录」按钮 → 弹窗（同其他 tab）。手机档允许换行。 */}
+      <div className="flex flex-wrap items-center gap-3 mb-3">
         <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 flex items-center gap-2">
           <span className="material-symbols-outlined" style={{ fontSize: 12 }}>format_list_bulleted</span>
           {filtering ? `${matched} / ${total} 条匹配` : `${total} 条记录`}

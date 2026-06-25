@@ -31,3 +31,12 @@ export function useIsCompact(): boolean {
 export function useIsMobile(): boolean {
   return useMediaQuery('(max-width: 767.98px)')
 }
+
+/**
+ * 是否窄手机档（视口 < sm / 640）—— 锦囊妙计卡片组头在此把右侧「日期 + 4 个操作
+ * 图标」收成单个「更多 ⋯」菜单、日期挪到备注后面，给防守方角色名腾出整行宽度
+ * （否则 390 窄屏角色名会被挤成一字一行）。比 useIsMobile 更窄：640–768 的平板
+ * 抽屉态行内图标仍放得下，不必提前收。 */
+export function useIsPhone(): boolean {
+  return useMediaQuery('(max-width: 639.98px)')
+}
