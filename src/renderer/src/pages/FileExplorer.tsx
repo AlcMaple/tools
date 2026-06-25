@@ -152,7 +152,7 @@ interface DeleteInProgress {
 
 const TITLE_SLOT = (
   <div className="flex items-center gap-4">
-    <h2 className="text-2xl font-bold tracking-tighter text-primary">File Explorer</h2>
+    <h2 className="text-2xl font-bold tracking-tighter text-primary">资源管理器</h2>
     <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">
       Windows / macOS — like file system
     </span>
