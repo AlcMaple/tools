@@ -1,6 +1,6 @@
 import { ipcMain, app, nativeImage } from 'electron'
 import { join } from 'path'
-import { mkdir, writeFile, access } from 'fs/promises'
+import { mkdir, writeFile, readFile, access } from 'fs/promises'
 import { createHash } from 'crypto'
 
 /**
@@ -38,6 +38,10 @@ function toArchivistUrl(absPath: string): string {
 // 后续坚果云同步（图片以 base64 进 JSON blob）的体积可控。截图含文字，JPEG q88
 // 仍清晰可读。
 const MAX_WIDTH = 1600
+
+// 同步导入/导出只接受「内容寻址文件名」：sha1(hex) + . + 扩展名。挡掉任何带路径
+// 分隔符 / `..` 的输入，避免越权读写 miaoyu-images 之外的文件。
+const SAFE_NAME = /^[a-f0-9]{8,64}\.[a-z0-9]{1,5}$/i
 
 const EXT_BY_MIME: Record<string, string> = {
   'image/png': 'png',
@@ -84,5 +88,39 @@ export function registerMiaoyuIpc(): void {
       await writeFile(file, buf)
     }
     return { hash, ext }
+  })
+
+  // 坚果云同步用 —— 把一批图片读成 base64，供渲染端塞进同步的 JSON blob。
+  // 只接受 `hash.ext` 形式的文件名（防路径穿越），缺图静默跳过。
+  ipcMain.handle('miaoyu:export-images', async (_e, names: string[]) => {
+    const dir = imagesDir()
+    const out: Record<string, string> = {}
+    for (const name of Array.isArray(names) ? names : []) {
+      if (typeof name !== 'string' || !SAFE_NAME.test(name)) continue
+      try {
+        const buf = await readFile(join(dir, name))
+        out[name] = buf.toString('base64')
+      } catch { /* 缺图就跳过，不阻断整批 */ }
+    }
+    return out
+  })
+
+  // 坚果云同步用 —— 把云端 blob 里的 base64 图片写回本地。按文件名（内容寻址）
+  // 跳过已存在，不重新编码/缩放，保证 hash 与帖子里存的 {hash,ext} 一致。
+  ipcMain.handle('miaoyu:import-images', async (_e, map: Record<string, string>) => {
+    await ensureDir()
+    const dir = imagesDir()
+    let written = 0
+    for (const [name, b64] of Object.entries(map && typeof map === 'object' ? map : {})) {
+      if (!SAFE_NAME.test(name) || typeof b64 !== 'string') continue
+      const file = join(dir, name)
+      try {
+        await access(file) // 已有同名（同内容）→ 跳过
+      } catch {
+        await writeFile(file, Buffer.from(b64, 'base64'))
+        written++
+      }
+    }
+    return written
   })
 }
