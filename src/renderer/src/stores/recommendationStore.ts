@@ -43,6 +43,13 @@ export interface Recommendation {
 const STORAGE_KEY = 'maple-anime-recommendations-v1'
 const VALID_STATUS: ReadonlyArray<RecommendationStatus> = ['pending', 'accepted', 'rejected']
 
+// 推荐给这些人时，新建即默认「已接受」—— cwj 基本来者不拒，省去每次手动标记。
+// 大小写 / 首尾空格不敏感。
+const AUTO_ACCEPT_RECIPIENTS: ReadonlyArray<string> = ['cwj']
+function defaultStatusFor(toWhom: string): RecommendationStatus {
+  return AUTO_ACCEPT_RECIPIENTS.includes(toWhom.trim().toLowerCase()) ? 'accepted' : 'pending'
+}
+
 export function normalizeRecommendations(input: unknown): Recommendation[] {
   if (!Array.isArray(input)) return []
   const out: Recommendation[] = []
@@ -139,7 +146,8 @@ class RecommendationStore {
       cover: input.cover,
       fromWhom: input.fromWhom.trim(),
       toWhom: input.toWhom.trim(),
-      status: 'pending',
+      // 推荐给 cwj 默认已接受；其余人仍是待回应。
+      status: defaultStatusFor(input.toWhom),
       createdAt: new Date().toISOString(),
     }
     const list = this.ensure()
