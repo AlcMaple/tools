@@ -34,16 +34,14 @@ const DEFAULTS: Required<SavedSettings> = {
 };
 
 // Settings-page-specific UI tweaks — meta-controls in the floating Tweaks panel.
-type NavStyle = "rail" | "tabs";
+// 导航样式（侧栏/标签）不再让用户选 —— 改为纯响应式：宽窗用侧栏、窄窗(<lg)自动换标签条。
 type Density = "compact" | "comfortable" | "spacious";
 
 interface Tweaks {
-  navStyle: NavStyle;
   density: Density;
 }
 
 const TWEAKS_DEFAULT: Tweaks = {
-  navStyle: "rail",
   density: "comfortable",
 };
 
@@ -93,7 +91,6 @@ function readTweaks(): Tweaks {
   try {
     const raw = JSON.parse(localStorage.getItem(TWEAKS_KEY) || "{}") as Partial<Tweaks>;
     return {
-      navStyle: raw.navStyle === "tabs" ? "tabs" : "rail",
       density: raw.density === "compact" || raw.density === "spacious" ? raw.density : "comfortable",
     };
   } catch { return { ...TWEAKS_DEFAULT }; }
@@ -133,25 +130,41 @@ function Row({
   desc,
   density,
   control,
+  stack = false,
 }: {
   icon: string;
   title: string;
   desc: string;
   density: Density;
   control: ReactNode;
+  /**
+   * 较宽控件（路径选择 / 文本输入 / 分段选择）传 `stack`：窄屏（<sm）把控件挪到
+   * 描述下方、靠右下角；描述则占满整行、正常折行（否则被控件挤成一字一行很丑）。
+   * 输入框这类是整宽铺开，分段/按钮则保持本身宽度靠右。开关 / 只读值这类窄控件不传，
+   * 始终「文本左 / 控件右」—— 它们再窄也放得下，堆叠反而割裂、浪费竖向空间。
+   */
+  stack?: boolean;
 }): JSX.Element {
   const heightCls =
     density === "compact" ? "py-3.5" : density === "spacious" ? "py-7" : "py-5";
   return (
-    <div className={`group flex items-start gap-5 px-6 ${heightCls} hover:bg-on-surface/[0.02] transition-colors`}>
+    <div className={`group flex items-start gap-4 sm:gap-5 px-4 sm:px-6 ${heightCls} hover:bg-on-surface/[0.02] transition-colors`}>
       <div className="mt-0.5 w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant flex-shrink-0">
         <span className="material-symbols-outlined leading-none" style={{ fontSize: 20 }}>{icon}</span>
       </div>
-      <div className="flex-1 min-w-0 pr-4">
-        <h3 className="font-headline font-semibold text-[14px] text-on-surface tracking-tight">{title}</h3>
-        <p className="font-body text-[12px] leading-relaxed text-on-surface-variant/60 mt-1 max-w-2xl">{desc}</p>
+      <div className={`flex-1 min-w-0 flex gap-3 sm:gap-5 ${stack ? "flex-col sm:flex-row sm:items-start" : "items-center"}`}>
+        <div className="flex-1 min-w-0 pr-2 sm:pr-4">
+          <h3 className="font-headline font-semibold text-[14px] text-on-surface tracking-tight">{title}</h3>
+          <p className="font-body text-[12px] leading-relaxed text-on-surface-variant/60 mt-1 max-w-2xl">{desc}</p>
+        </div>
+        <div
+          className={`flex-shrink-0 flex justify-end sm:min-w-[180px] ${
+            stack ? "w-full sm:w-auto self-stretch sm:self-center" : "self-center"
+          }`}
+        >
+          {control}
+        </div>
       </div>
-      <div className="flex-shrink-0 self-center min-w-[180px] flex justify-end">{control}</div>
     </div>
   );
 }
@@ -169,12 +182,12 @@ function Block({
 }): JSX.Element {
   return (
     <section className="bg-surface-container/60 rounded-2xl border border-outline-variant/10 overflow-hidden">
-      <header className="px-6 pt-5 pb-3 flex items-baseline justify-between gap-4">
+      <header className="px-4 sm:px-6 pt-5 pb-3 flex items-baseline justify-between gap-4">
         <h2 className="font-headline font-bold text-[12px] uppercase tracking-[0.2em] text-on-surface-variant/60">{title}</h2>
         {hint && <span className="font-body text-[11px] text-on-surface-variant/35 max-w-md text-right hidden md:block">{hint}</span>}
       </header>
       <div className="divide-y divide-outline-variant/10">{children}</div>
-      {footer && <div className="px-6 py-4 border-t border-outline-variant/10 bg-surface-container-low/40">{footer}</div>}
+      {footer && <div className="px-4 sm:px-6 py-4 border-t border-outline-variant/10 bg-surface-container-low/40">{footer}</div>}
     </section>
   );
 }
@@ -247,9 +260,9 @@ function PathControl({
   // 串这种边缘 case 也不让点。
   const canReveal = isEmpty ? !!defaultPath : !!value;
   return (
-    <div className="flex items-center gap-2 w-[320px]">
+    <div className="flex items-center gap-2 w-full sm:w-[320px]">
       <div
-        className={`flex-1 bg-surface-container-high rounded-lg px-3 py-2 text-[12px] font-label truncate border border-outline-variant/10 ${
+        className={`flex-1 min-w-0 bg-surface-container-high rounded-lg px-3 py-2 text-[12px] font-label truncate border border-outline-variant/10 ${
           isEmpty ? "text-on-surface-variant/45" : "text-on-surface"
         }`}
         title={previewText}
@@ -308,7 +321,7 @@ function TextControl({
   trailing?: ReactNode;
 }): JSX.Element {
   return (
-    <div className="bg-surface-container-high text-on-surface text-[12px] font-label rounded-lg pl-3 pr-2 border border-outline-variant/10 hover:border-outline-variant/25 focus-within:border-primary-container/40 transition-colors w-[280px] flex items-center gap-2">
+    <div className="bg-surface-container-high text-on-surface text-[12px] font-label rounded-lg pl-3 pr-2 border border-outline-variant/10 hover:border-outline-variant/25 focus-within:border-primary-container/40 transition-colors w-full sm:w-[280px] flex items-center gap-2">
       <input
         type={type}
         value={value}
@@ -418,44 +431,58 @@ function UpdateCheckControl(): JSX.Element {
 function SettingsHeader({
   onBack,
   onOpenTweaks,
+  onOpenNav,
 }: {
   onBack: () => void;
   onOpenTweaks: () => void;
+  /** 打开分类抽屉（仅窄窗 <lg 显示触发按钮，侧栏此时收起）。 */
+  onOpenNav: () => void;
 }): JSX.Element {
   const { diskFreeLabel, activeTasks, networkOnline, speedLabel } = useSystemStats();
   return (
     <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl border-b border-outline-variant/10">
-      <div className="h-14 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="h-14 px-4 md:px-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 md:gap-4 min-w-0">
           <button
             onClick={onBack}
-            className="w-8 h-8 rounded-lg hover:bg-on-surface/[0.04] flex items-center justify-center text-on-surface-variant"
+            className="w-8 h-8 shrink-0 rounded-lg hover:bg-on-surface/[0.04] flex items-center justify-center text-on-surface-variant"
             title="返回"
           >
             <span className="material-symbols-outlined leading-none" style={{ fontSize: 18 }}>arrow_back</span>
           </button>
-          <div className="flex items-center gap-2 font-label text-[10px] uppercase tracking-[0.25em] text-on-surface-variant/60">
+          <div className="flex items-center gap-2 font-label text-[10px] uppercase tracking-[0.25em] text-on-surface-variant/60 min-w-0">
             <span className="text-on-surface/80">Dashboard</span>
             <span className="text-on-surface-variant/30">/</span>
-            <span>System Preferences</span>
+            <span className="truncate">System Preferences</span>
           </div>
         </div>
-        <div className="flex items-center gap-5">
-          <Stat icon="storage" label={diskFreeLabel} />
-          <Stat icon="downloading" label={`${activeTasks} TASKS`} active={activeTasks > 0} />
-          <Stat icon="speed" label={speedLabel} />
-          <div className={`flex items-center gap-1.5 ${networkOnline ? "text-green-400" : "text-red-500"}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? "bg-green-400 animate-pulse" : "bg-red-500"}`} />
-            <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{networkOnline ? "wifi_tethering" : "wifi_off"}</span>
-            <span className="font-label text-[10px] tracking-widest uppercase">{networkOnline ? "Online" : "Offline"}</span>
+        <div className="flex items-center gap-3 lg:gap-5 shrink-0">
+          {/* 系统统计（容量/任务/速率/网络）—— 窄窗收起，对齐全局顶栏的做法，只留分类 + 界面调节入口。 */}
+          <div className="hidden lg:flex items-center gap-5">
+            <Stat icon="storage" label={diskFreeLabel} />
+            <Stat icon="downloading" label={`${activeTasks} TASKS`} active={activeTasks > 0} />
+            <Stat icon="speed" label={speedLabel} />
+            <div className={`flex items-center gap-1.5 ${networkOnline ? "text-green-400" : "text-red-500"}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? "bg-green-400 animate-pulse" : "bg-red-500"}`} />
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{networkOnline ? "wifi_tethering" : "wifi_off"}</span>
+              <span className="font-label text-[10px] tracking-widest uppercase">{networkOnline ? "Online" : "Offline"}</span>
+            </div>
+            <span className="h-4 w-px bg-outline-variant/20" />
           </div>
-          <span className="h-4 w-px bg-outline-variant/20" />
           <button
             onClick={onOpenTweaks}
             className="w-8 h-8 rounded-lg hover:bg-on-surface/[0.04] flex items-center justify-center text-on-surface-variant"
             title="界面调节"
           >
             <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>tune</span>
+          </button>
+          {/* 分类抽屉触发 —— 仅窄窗显示，放在最右侧（抽屉就从右侧滑出），左上角返回键始终不被遮挡。 */}
+          <button
+            onClick={onOpenNav}
+            className="lg:hidden w-8 h-8 rounded-lg hover:bg-on-surface/[0.04] flex items-center justify-center text-on-surface-variant"
+            title="分类导航"
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 20 }}>menu</span>
           </button>
         </div>
       </div>
@@ -472,7 +499,52 @@ function Stat({ icon, label, active }: { icon: string; label: string; active?: b
   );
 }
 
-// ── category nav (rail or tabs based on tweak) ───────────────
+// ── category nav ─────────────────────────────────────────────
+/** 6 个分类按钮（图标 + 中文 + 英文副标） —— 侧栏与抽屉复用同一份。 */
+function CategoryList({
+  active,
+  onSelect,
+}: {
+  active: CategoryId;
+  onSelect: (id: CategoryId) => void;
+}): JSX.Element {
+  return (
+    <>
+      {CATEGORIES.map((c) => {
+        const isActive = active === c.id;
+        return (
+          <button
+            key={c.id}
+            onClick={() => onSelect(c.id)}
+            className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-0.5 text-left transition-colors ${
+              isActive
+                ? "bg-primary-container/15 text-on-surface"
+                : "text-on-surface-variant/70 hover:bg-on-surface/[0.04] hover:text-on-surface"
+            }`}
+          >
+            <span
+              className={`material-symbols-outlined leading-none flex-shrink-0 ${isActive ? "text-primary-container" : ""}`}
+              style={{ fontSize: 18 }}
+            >
+              {c.icon}
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[13px] font-headline font-semibold leading-tight truncate">{c.label}</span>
+              <span className="block text-[10px] font-label uppercase tracking-widest text-on-surface-variant/40 leading-tight mt-0.5">
+                {c.en}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * 宽屏（≥lg）的常驻分类侧栏（260px）。窄屏侧栏整体收起，改用从右侧滑出的抽屉
+ * （见 CategoryDrawer）—— PC 上不做横向滑动、也不让侧栏挤占内容。
+ */
 function CategoryRail({
   active,
   onSelect,
@@ -481,7 +553,7 @@ function CategoryRail({
   onSelect: (id: CategoryId) => void;
 }): JSX.Element {
   return (
-    <aside className="w-[260px] flex-shrink-0 border-r border-outline-variant/10 bg-surface-container-low/30 flex flex-col">
+    <aside className="hidden lg:flex w-64 flex-shrink-0 border-r border-outline-variant/10 bg-surface-container-low/30 flex-col">
       <div className="px-6 pt-8 pb-5">
         <div className="font-label text-[10px] uppercase tracking-[0.3em] text-on-surface-variant/40 mb-2">Settings</div>
         <h1 className="font-headline font-black text-[28px] tracking-tight text-on-surface leading-none">
@@ -489,33 +561,7 @@ function CategoryRail({
         </h1>
       </div>
       <nav className="px-3 flex-1 overflow-y-auto custom-scrollbar pb-6">
-        {CATEGORIES.map((c) => {
-          const isActive = active === c.id;
-          return (
-            <button
-              key={c.id}
-              onClick={() => onSelect(c.id)}
-              className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-0.5 text-left transition-colors ${
-                isActive
-                  ? "bg-primary-container/15 text-on-surface"
-                  : "text-on-surface-variant/70 hover:bg-on-surface/[0.04] hover:text-on-surface"
-              }`}
-            >
-              <span
-                className={`material-symbols-outlined leading-none flex-shrink-0 ${isActive ? "text-primary-container" : ""}`}
-                style={{ fontSize: 18 }}
-              >
-                {c.icon}
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-[13px] font-headline font-semibold leading-tight truncate">{c.label}</span>
-                <span className="block text-[10px] font-label uppercase tracking-widest text-on-surface-variant/40 leading-tight mt-0.5">
-                  {c.en}
-                </span>
-              </span>
-            </button>
-          );
-        })}
+        <CategoryList active={active} onSelect={onSelect} />
       </nav>
       <div className="px-6 py-5 border-t border-outline-variant/10">
         <div className="flex items-center gap-2 text-on-surface-variant/40">
@@ -530,33 +576,55 @@ function CategoryRail({
   );
 }
 
-function CategoryTabs({
+/**
+ * 窄屏（<lg）的分类抽屉 —— 从**右侧**滑出（左上角返回键不被遮挡），由顶栏右上的
+ * ☰ 触发，跟「界面调节」并排同样从右侧出。点遮罩 / 选分类 / Esc 关闭。
+ */
+function CategoryDrawer({
+  open,
   active,
   onSelect,
+  onClose,
 }: {
+  open: boolean;
   active: CategoryId;
   onSelect: (id: CategoryId) => void;
+  onClose: () => void;
 }): JSX.Element {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
   return (
-    <div className="border-b border-outline-variant/10 bg-surface-container-low/40 sticky top-0 z-30 backdrop-blur-xl">
-      <div className="px-8 flex items-center gap-1 overflow-x-auto custom-scrollbar">
-        {CATEGORIES.map((c) => {
-          const isActive = active === c.id;
-          return (
-            <button
-              key={c.id}
-              onClick={() => onSelect(c.id)}
-              className={`relative flex items-center gap-2 px-4 py-3 text-[13px] font-label uppercase tracking-wider whitespace-nowrap transition-colors ${
-                isActive ? "text-on-surface" : "text-on-surface-variant/55 hover:text-on-surface"
-              }`}
-            >
-              <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>{c.icon}</span>
-              {c.en}
-              {isActive && <span className="absolute left-3 right-3 -bottom-px h-0.5 bg-primary-container rounded-full" />}
-            </button>
-          );
-        })}
-      </div>
+    <div className="lg:hidden">
+      {/* 遮罩 —— 抽屉宽 w-64，左侧露出的部分即遮罩，点它关闭；返回键在左上仍可见 */}
+      <div
+        className={`fixed inset-0 bg-black/50 z-[60] transition-opacity duration-300 ${
+          open ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={onClose}
+      />
+      <aside
+        className={`fixed right-0 top-0 bottom-0 w-64 max-w-[80vw] z-[70] bg-surface-container-low border-l border-outline-variant/10 flex flex-col transition-transform duration-300 ${
+          open ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        <div className="h-14 px-5 flex items-center justify-between border-b border-outline-variant/10">
+          <span className="font-label text-[11px] uppercase tracking-[0.25em] text-on-surface-variant">Categories</span>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 -mr-2 rounded-lg hover:bg-on-surface/[0.04] flex items-center justify-center text-on-surface-variant/60 hover:text-on-surface"
+            title="关闭"
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 18 }}>close</span>
+          </button>
+        </div>
+        <nav className="px-3 py-4 flex-1 overflow-y-auto custom-scrollbar">
+          <CategoryList active={active} onSelect={(id) => { onSelect(id); onClose(); }} />
+        </nav>
+      </aside>
     </div>
   );
 }
@@ -578,7 +646,7 @@ function TweaksPanel({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="fixed top-16 right-6 z-50 w-[300px] bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 rounded-2xl shadow-2xl">
+      <div className="fixed top-16 right-4 md:right-6 z-50 w-[300px] max-w-[calc(100vw-2rem)] bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 rounded-2xl shadow-2xl">
         <div className="px-5 py-4 flex items-center justify-between border-b border-outline-variant/10">
           <span className="font-label text-[11px] uppercase tracking-[0.25em] text-on-surface-variant">Tweaks</span>
           <button onClick={onClose} className="text-on-surface-variant/60 hover:text-on-surface">
@@ -594,15 +662,6 @@ function TweaksPanel({
               { v: "dark", l: "深色" },
             ]}
             onChange={(v) => setIsDark(v === "dark")}
-          />
-          <TweakRadio
-            label="导航样式"
-            value={tweaks.navStyle}
-            options={[
-              { v: "rail", l: "侧边栏" },
-              { v: "tabs", l: "顶部标签" },
-            ]}
-            onChange={(v) => setTweak("navStyle", v as NavStyle)}
           />
           <TweakRadio
             label="界面密度"
@@ -823,6 +882,7 @@ function Settings(): JSX.Element {
   // Tweaks (UI meta-controls), persisted.
   const [tweaks, setTweaks] = useState<Tweaks>(readTweaks);
   const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const setTweak = <K extends keyof Tweaks>(k: K, v: Tweaks[K]): void => {
     setTweaks((t) => {
       const next = { ...t, [k]: v };
@@ -867,24 +927,23 @@ function Settings(): JSX.Element {
   };
 
   const cat = CATEGORIES.find((c) => c.id === active)!;
-  const useTabs = tweaks.navStyle === "tabs";
-
   return (
     <div className="h-full flex flex-col bg-background relative">
       <SettingsHeader
         onBack={() => navigate(-1)}
         onOpenTweaks={() => setTweaksOpen((o) => !o)}
+        onOpenNav={() => setNavDrawerOpen(true)}
       />
 
       <div className="flex flex-1 min-h-0">
-        {!useTabs && <CategoryRail active={active} onSelect={setActive} />}
+        {/* 宽屏（≥lg）常驻侧栏；窄屏侧栏收起，改用从右侧滑出的分类抽屉（见底部 CategoryDrawer）。 */}
+        <CategoryRail active={active} onSelect={setActive} />
 
         <main className="flex-1 overflow-y-auto custom-scrollbar">
-          {useTabs && <CategoryTabs active={active} onSelect={setActive} />}
 
-          <div className="max-w-3xl mx-auto px-8 py-10 pb-16">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10 pb-16">
             {/* Category header */}
-            <div key={active} className="mb-8 animate-fade-in">
+            <div key={active} className="mb-6 lg:mb-8 animate-fade-in">
               <div className="flex items-center gap-2 font-label text-[10px] uppercase tracking-[0.3em] text-on-surface-variant/40 mb-3">
                 <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>{cat.icon}</span>
                 {cat.en}
@@ -937,6 +996,7 @@ function Settings(): JSX.Element {
                     title="默认下载目录"
                     desc="影响所有源（Xifan / Girigiri / Aowu）的默认保存位置。留空则用系统默认下载文件夹。"
                     density={tweaks.density}
+                    stack
                     control={
                       <PathControl
                         value={settings.downloadPath}
@@ -985,6 +1045,7 @@ function Settings(): JSX.Element {
                     title="账号（注册邮箱）"
                     desc="登录坚果云的邮箱地址。"
                     density={tweaks.density}
+                    stack
                     control={
                       <TextControl
                         value={webdavAccount}
@@ -999,6 +1060,7 @@ function Settings(): JSX.Element {
                     title="应用密码"
                     desc="坚果云后台生成的第三方应用密码（不是登录密码）。"
                     density={tweaks.density}
+                    stack
                     control={
                       <TextControl
                         value={webdavPassword}
@@ -1025,6 +1087,7 @@ function Settings(): JSX.Element {
                     title="远程文件夹"
                     desc="相对于 WebDAV 根目录的基础文件夹，会在下面分别存放 homework.json 与 anime.json（追番数据），不存在时自动创建。"
                     density={tweaks.density}
+                    stack
                     control={
                       <TextControl
                         value={webdavPath}
@@ -1086,6 +1149,7 @@ function Settings(): JSX.Element {
                     title="QQ 邮箱"
                     desc="同时作为发件人和收件人（自己发给自己）。"
                     density={tweaks.density}
+                    stack
                     control={
                       <TextControl
                         value={mailQqEmail}
@@ -1100,6 +1164,7 @@ function Settings(): JSX.Element {
                     title="授权码"
                     desc="QQ 邮箱后台「设置 → 账号 → 安全设置 → POP3/IMAP/SMTP 服务」开启后生成的授权码，不是登录密码。输入完按 Enter 提交，本地加密存储。"
                     density={tweaks.density}
+                    stack
                     control={
                       <TextControl
                         value={mailAuthCode}
@@ -1120,6 +1185,7 @@ function Settings(): JSX.Element {
                     title="颜色模式"
                     desc="深色与浅色之间切换，立即生效。"
                     density={tweaks.density}
+                    stack
                     control={
                       <Segment
                         value={isDark ? "dark" : "light"}
@@ -1160,6 +1226,7 @@ function Settings(): JSX.Element {
                     title="更新源"
                     desc="「国内加速」优先走国内可达的镜像下载、失败自动回退 GitHub —— 无魔法也能更新，推荐默认。「直连 GitHub」强制走原始源，适合有代理 / 魔法的用户。"
                     density={tweaks.density}
+                    stack
                     control={
                       <Segment
                         value={settings.updateSource}
@@ -1220,6 +1287,14 @@ function Settings(): JSX.Element {
           </div>
         </main>
       </div>
+
+      {/* 窄窗分类抽屉（从右侧滑出） */}
+      <CategoryDrawer
+        open={navDrawerOpen}
+        active={active}
+        onSelect={setActive}
+        onClose={() => setNavDrawerOpen(false)}
+      />
 
       {tweaksOpen && (
         <TweaksPanel
