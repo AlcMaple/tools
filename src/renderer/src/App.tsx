@@ -11,6 +11,7 @@ import Settings from './pages/Settings'
 import LocalLibrary from './pages/LocalLibrary'
 import FileExplorer from './pages/FileExplorer'
 import HomeworkLookup from './pages/HomeworkLookup'
+import MiaoyuLibrary from './pages/MiaoyuLibrary'
 import UpdateBanner from './components/UpdateBanner'
 import EditContextMenu from './components/EditContextMenu'
 import { downloadStore } from './stores/downloadStore'
@@ -60,6 +61,7 @@ function Shell(): JSX.Element {
           <Route path="/file-explorer" element={<FileExplorer />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/homework" element={<HomeworkLookup />} />
+          <Route path="/miaoyu" element={<MiaoyuLibrary />} />
         </Routes>
       </div>
       {/* UpdateBanner 用 fixed 定位悬浮在 TopBar 下方居中，不参与 page-scroll

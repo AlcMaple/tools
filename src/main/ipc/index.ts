@@ -7,6 +7,7 @@ import { registerSystemIpc } from './system'
 import { registerFileExplorerIpc } from './fileExplorer'
 import { registerWebDavIpc } from './webdav'
 import { registerMailIpc } from './mail'
+import { registerMiaoyuIpc } from './miaoyu'
 import { registerLogIpc } from '../shared/logger'
 
 export function registerAllIpc(): void {
@@ -20,6 +21,7 @@ export function registerAllIpc(): void {
   registerFileExplorerIpc()
   registerWebDavIpc()
   registerMailIpc()
+  registerMiaoyuIpc()
 }
 
 export { getMinimizeOnClose } from './system'

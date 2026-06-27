@@ -18,6 +18,7 @@ const navItems: NavItem[] = [
   { label: "番剧周历表", path: "/calendar", icon: "calendar_month" },
   { label: "资源管理器", path: "/file-explorer", icon: "folder_managed" },
   { label: "锦囊妙计", path: "/homework", icon: "swords" },
+  { label: "妙语库", path: "/miaoyu", icon: "forum" },
 ];
 
 /**
