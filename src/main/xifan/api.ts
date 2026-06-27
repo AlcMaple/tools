@@ -4,7 +4,10 @@ import { DESKTOP_USER_AGENT } from '../shared/download-types'
 import { crawlAllPages } from '../shared/maccms-search-paginator'
 import { assertScrapePageOk } from '../shared/scrape-guard'
 
-const BASE_URL = 'https://dm.xifanacg.com'
+// 站点旧域 dm.xifanacg.com 现 301 跳到 anime.xifanacg.com,直接用新域省掉每次
+// 请求的跨域跳转。HttpSession 仍保留逐跳跟重定向能力,所以旧缓存/旧下载任务里
+// 残留的 dm.xifanacg.com 链接照样能用(命中 301 自动跟过来),向后兼容。
+const BASE_URL = 'https://anime.xifanacg.com'
 const HEADERS = {
   'User-Agent': DESKTOP_USER_AGENT,
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
