@@ -203,6 +203,18 @@ export function friendlyError(err: unknown): FriendlyError {
     }
   }
 
+  // Cloudflare 拦截 —— 站点适配器在响应里识别到 CF 人机校验 / 风控页时抛出
+  // （见 main/shared/scrape-guard.ts）。这类页面既不是验证码门也不是结果页,
+  // 早期被当成「0 结果」吞掉显示成「搜索不到结果」,现在显式分类。放在 HTTP
+  // 状态匹配之前:CF 的 JS 挑战页常是 200,message 里没有状态码可匹配。
+  if (lower.includes('cloudflare')) {
+    return {
+      title: '被 Cloudflare 拦截',
+      hint: '站点的 Cloudflare 防护这会儿弹了人机校验或风控（常因冷启动 / 代理指纹，是偶发的）。点 Try again 重试通常就过；频繁出现可换个网络或代理再试。',
+      raw: msg,
+    }
+  }
+
   // HTTP status hints
   const statusMatch = msg.match(/\b(4\d{2}|5\d{2})\b/)
   if (statusMatch) {

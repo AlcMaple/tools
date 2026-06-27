@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio/slim'
 import { HttpSession } from '../shared/http-session'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
 import { crawlAllPages } from '../shared/maccms-search-paginator'
+import { assertScrapePageOk } from '../shared/scrape-guard'
 
 const BASE_URL = 'https://dm.xifanacg.com'
 const HEADERS = {
@@ -173,6 +174,9 @@ export async function search(keyword: string): Promise<XifanSearchResult[] | { n
   const url = `${BASE_URL}/search.html?wd=${encodeURIComponent(keyword)}`
   const res = await xifanSession.get(url)
   xifanSession.save()
+
+  // CF 拦截 / 非 2xx 先显式抛错,别让异常页被解析成「0 结果 → 搜索不到结果」。
+  assertScrapePageOk(res.status, res.body, '稀饭')
 
   if (needsCaptcha(res.body)) return { needs_captcha: true }
 

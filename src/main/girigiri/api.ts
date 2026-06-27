@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio/slim'
 import { HttpSession } from '../shared/http-session'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
 import { crawlAllPages } from '../shared/maccms-search-paginator'
+import { assertScrapePageOk } from '../shared/scrape-guard'
 
 const BASE_DOMAIN = 'https://bgm.girigirilove.com'
 const HEADERS = {
@@ -170,6 +171,9 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
   const url = `${BASE_DOMAIN}/search/-------------/?wd=${encodeURIComponent(keyword)}`
   const res = await giriSession.get(url)
   giriSession.save()
+
+  // CF 拦截 / 非 2xx 先显式抛错,别让异常页被解析成「0 结果 → 搜索不到结果」。
+  assertScrapePageOk(res.status, res.body, '旗木')
 
   if (needsCaptcha(res.body)) return { needs_captcha: true }
 
