@@ -61,7 +61,7 @@ export const REC_STATUS_META: Record<RecommendationStatus, {
 export function matchesRecommendation(rec: Recommendation, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
-  return [rec.title, rec.titleCn ?? '', rec.fromWhom, rec.toWhom]
+  return [rec.title, rec.titleCn ?? '', rec.fromWhom, rec.toWhom, rec.recommendReason ?? '']
     .join(' ')
     .toLowerCase()
     .includes(q)
@@ -163,8 +163,8 @@ export function RecommendationView({ filter, query = '', recipients = [] }: Prop
         <EditPersonModal
           rec={editingRec}
           onCancel={() => setEditingId(null)}
-          onConfirm={(fromWhom, toWhom) => {
-            recommendationStore.edit(editingRec.id, { fromWhom, toWhom })
+          onConfirm={(fromWhom, toWhom, recommendReason) => {
+            recommendationStore.edit(editingRec.id, { fromWhom, toWhom, recommendReason })
             setEditingId(null)
           }}
         />
@@ -192,186 +192,208 @@ function RecRow({
   // 封面走 useCover，key 用 bgmId —— 跟动画 TrackRow 同 key 同尺寸（默认 480），
   // 直接命中动画那边已本地化的 {bgmId}.480.jpg，不再对着 lain.bgm.tv 重拉一遍。
   const coverSrc = useCover(String(rec.bgmId), rec.cover)
+  const hasNotes =
+    !!rec.recommendReason ||
+    (rec.status === 'rejected' && !!rec.failReason) ||
+    (rec.status === 'accepted' && !!rec.successReason)
   return (
-    <div className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex min-h-[140px]">
-      {/* Cover —— 跟 TrackRow 完全一致：`min-h-[140px]` 统一卡片高度下限（取自
-          动画卡片三行内容的高度），封面 `absolute inset-0 object-cover` 铺满
-          卡片高度。推荐卡片内容比追番少，但靠这条 floor 拉到同样的 140px，跟
-          动画卡片等高 —— 切换 tab 不会因为推荐内容少而变矮、产生"挪动"感。 */}
-      <div className="w-[88px] shrink-0 bg-surface-container-high overflow-hidden rounded-l-xl relative">
-        {rec.cover ? (
-          <img
-            src={coverSrc || coverFallback}
-            alt={display}
-            className="absolute inset-0 w-full h-full object-cover"
-            loading="lazy"
-            decoding="async"
-            onError={(e) => {
-              const img = e.currentTarget
-              if (img.src !== coverFallback) {
-                img.onerror = null
-                img.src = coverFallback
-              }
-            }}
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-on-surface-variant/20">
-            <span className="material-symbols-outlined text-xl">image</span>
-          </div>
-        )}
-      </div>
-
-      {/* Body —— padding / gap 跟 TrackRow 对齐（p-3 / gap-2）。`justify-between`
-          两端对齐：首行（标题块）贴顶、跟动画卡片标题位置一致；末行（状态+操作）
-          贴底；卡片被 floor 拉到 140px 的富余高度均分到中间，而不是 justify-center
-          把内容全挤中间、顶部和底部各留一片空白。 */}
-      <div className="flex-1 p-3 min-w-0 flex flex-col gap-2 justify-between">
-        {/* Title row —— 字号跟 TrackRow 对齐：标题 text-base(16px)，副标题 text-xs，
-            推荐信息 text-[11px]，避免推荐卡片整体看起来比追番卡片"小一号"。 */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h3 className="text-base font-bold text-on-surface truncate leading-tight" title={display}>
-              {display}
-            </h3>
-            {native && (
-              <p className="text-xs text-on-surface-variant/60 truncate mt-0.5" title={native}>
-                {native}
-              </p>
-            )}
-            <p className="font-label text-[11px] text-on-surface-variant/55 mt-1.5 tracking-wide">
-              {/* 推荐方是后加字段:老数据无 fromWhom 时退回旧文案"推荐给 X"。 */}
-              {rec.fromWhom && (
-                <>
-                  <span className="text-on-surface/80 font-bold">{rec.fromWhom}</span>
-                  <span className="mx-1">推荐给</span>
-                </>
-              )}
-              {!rec.fromWhom && '推荐给 '}
-              <span className="text-on-surface/80 font-bold">{rec.toWhom}</span>
-              <span className="mx-1.5 text-on-surface-variant/30">·</span>
-              {formatDate(rec.createdAt)}
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <a
-              href={`https://bgm.tv/subject/${rec.bgmId}`}
-              target="_blank"
-              rel="noreferrer"
-              title="在 Bangumi 上查看"
-              className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
-            >
-              <span className="material-symbols-outlined text-[16px] leading-none">open_in_new</span>
-            </a>
-            <button
-              onClick={onEditClick}
-              title="编辑推荐方 / 推荐对方"
-              className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
-            >
-              <span className="material-symbols-outlined text-[16px] leading-none">edit</span>
-            </button>
-            <button
-              onClick={() => {
-                if (confirmDelete) {
-                  onDelete()
-                } else {
-                  setConfirmDelete(true)
-                  setTimeout(() => setConfirmDelete(false), 2500)
+    // 社交贴式布局：上半区「封面 + 标题/状态」并排，下半区「推荐理由 / 备注」整宽
+    // 平铺。这样多出来的文字横跨封面下方，不会像并排布局那样在封面右侧堆一摞、
+    // 把封面抻高或在封面下留一大块空白。没有备注时只剩上半区，卡片自然紧凑。
+    <div className="bg-surface-container rounded-xl border border-outline-variant/15 p-3 sm:p-4">
+      {/* 上半区 */}
+      <div className="flex gap-3 sm:gap-4 items-start">
+        {/* Cover —— 固定 3:4 海报缩略图，定宽不拉伸；窄窗（平板/手机）缩到 72px。 */}
+        <div className="w-[72px] sm:w-[88px] shrink-0 aspect-[3/4] bg-surface-container-high overflow-hidden rounded-lg relative">
+          {rec.cover ? (
+            <img
+              src={coverSrc || coverFallback}
+              alt={display}
+              className="absolute inset-0 w-full h-full object-cover"
+              loading="lazy"
+              decoding="async"
+              onError={(e) => {
+                const img = e.currentTarget
+                if (img.src !== coverFallback) {
+                  img.onerror = null
+                  img.src = coverFallback
                 }
               }}
-              title={confirmDelete ? '再点一次确认删除' : '删除这条推荐'}
-              className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors ${
-                confirmDelete
-                  ? 'text-error bg-error/15'
-                  : 'text-on-surface-variant/50 hover:text-error hover:bg-error/10'
-              }`}
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-on-surface-variant/20">
+              <span className="material-symbols-outlined text-xl">image</span>
+            </div>
+          )}
+        </div>
+
+        {/* 标题 / 元信息 / 状态操作 */}
+        <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-base font-bold text-on-surface truncate leading-tight" title={display}>
+                {display}
+              </h3>
+              {native && (
+                <p className="text-xs text-on-surface-variant/60 truncate mt-0.5" title={native}>
+                  {native}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <a
+                href={`https://bgm.tv/subject/${rec.bgmId}`}
+                target="_blank"
+                rel="noreferrer"
+                title="在 Bangumi 上查看"
+                className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px] leading-none">open_in_new</span>
+              </a>
+              <button
+                onClick={onEditClick}
+                title="编辑推荐方 / 对方 / 理由"
+                className="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px] leading-none">edit</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (confirmDelete) {
+                    onDelete()
+                  } else {
+                    setConfirmDelete(true)
+                    setTimeout(() => setConfirmDelete(false), 2500)
+                  }
+                }}
+                title={confirmDelete ? '再点一次确认删除' : '删除这条推荐'}
+                className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors ${
+                  confirmDelete
+                    ? 'text-error bg-error/15'
+                    : 'text-on-surface-variant/50 hover:text-error hover:bg-error/10'
+                }`}
+              >
+                <span
+                  className="material-symbols-outlined text-[16px] leading-none"
+                  style={{ fontVariationSettings: confirmDelete ? "'FILL' 1" : "'FILL' 0" }}
+                >
+                  {confirmDelete ? 'delete_forever' : 'delete'}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* 推荐信息独占一整行 —— 移出标题左栏，不再被右上角操作图标挤窄，
+              这样「X 推荐给 Y · 日期」能整条落在一行里。 */}
+          <p className="font-label text-[11px] text-on-surface-variant/55 tracking-wide">
+            {/* 推荐方是后加字段:老数据无 fromWhom 时退回旧文案"推荐给 X"。 */}
+            {rec.fromWhom && (
+              <>
+                <span className="text-on-surface/80 font-bold">{rec.fromWhom}</span>
+                <span className="mx-1">推荐给</span>
+              </>
+            )}
+            {!rec.fromWhom && '推荐给 '}
+            <span className="text-on-surface/80 font-bold">{rec.toWhom}</span>
+            {/* 分隔点 + 日期不可断开，整体放不下才换行。 */}
+            <span className="whitespace-nowrap">
+              <span className="mx-1.5 text-on-surface-variant/30">·</span>
+              {formatDate(rec.createdAt)}
+            </span>
+          </p>
+
+          {/* Status + 操作 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border font-label text-[10px] uppercase tracking-widest ${meta.tint} ${meta.color} ${meta.border} font-bold`}
             >
               <span
-                className="material-symbols-outlined text-[16px] leading-none"
-                style={{ fontVariationSettings: confirmDelete ? "'FILL' 1" : "'FILL' 0" }}
+                className="material-symbols-outlined leading-none"
+                style={{ fontSize: 12, fontVariationSettings: "'FILL' 1" }}
               >
-                {confirmDelete ? 'delete_forever' : 'delete'}
+                {meta.icon}
               </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Status + 操作 */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span
-            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border font-label text-[10px] uppercase tracking-widest ${meta.tint} ${meta.color} ${meta.border} font-bold`}
-          >
-            <span
-              className="material-symbols-outlined leading-none"
-              style={{ fontSize: 12, fontVariationSettings: "'FILL' 1" }}
-            >
-              {meta.icon}
+              {meta.label}
             </span>
-            {meta.label}
-          </span>
 
-          {rec.status === 'pending' && (
-            <>
+            {rec.status === 'pending' && (
+              <>
+                <button
+                  onClick={onAcceptClick}
+                  className="px-2.5 py-1 rounded-md border border-secondary/30 hover:border-secondary/50 hover:bg-secondary/10 text-secondary font-label text-[10px] uppercase tracking-widest transition-colors"
+                >
+                  标记接受
+                </button>
+                <button
+                  onClick={onRejectClick}
+                  className="px-2.5 py-1 rounded-md border border-error/30 hover:border-error/50 hover:bg-error/10 text-error font-label text-[10px] uppercase tracking-widest transition-colors"
+                >
+                  标记拒绝
+                </button>
+              </>
+            )}
+
+            {(rec.status === 'accepted' || rec.status === 'rejected') && (
+              <button
+                onClick={onUnmark}
+                className="px-2.5 py-1 rounded-md border border-outline-variant/30 hover:border-on-surface-variant/40 hover:bg-surface-container-high text-on-surface-variant/70 hover:text-on-surface font-label text-[10px] uppercase tracking-widest transition-colors"
+              >
+                改回待回应
+              </button>
+            )}
+
+            {rec.status === 'accepted' && (
               <button
                 onClick={onAcceptClick}
-                className="px-2.5 py-1 rounded-md border border-secondary/30 hover:border-secondary/50 hover:bg-secondary/10 text-secondary font-label text-[10px] uppercase tracking-widest transition-colors"
+                title={rec.successReason ? '改成功备注' : '加成功备注'}
+                className="px-2.5 py-1 rounded-md border border-outline-variant/30 hover:border-secondary/40 hover:bg-secondary/10 text-on-surface-variant/70 hover:text-secondary font-label text-[10px] uppercase tracking-widest transition-colors"
               >
-                标记接受
+                {rec.successReason ? '改备注' : '加备注'}
               </button>
+            )}
+
+            {rec.status === 'rejected' && (
               <button
                 onClick={onRejectClick}
-                className="px-2.5 py-1 rounded-md border border-error/30 hover:border-error/50 hover:bg-error/10 text-error font-label text-[10px] uppercase tracking-widest transition-colors"
+                title="改原因"
+                className="px-2.5 py-1 rounded-md border border-outline-variant/30 hover:border-on-surface-variant/40 hover:bg-surface-container-high text-on-surface-variant/70 hover:text-on-surface font-label text-[10px] uppercase tracking-widest transition-colors"
               >
-                标记拒绝
+                改原因
               </button>
-            </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 下半区：推荐理由 / 备注 —— 整宽平铺，横跨封面下方，填掉封面下的空白。
+          三者都没有时整块不渲染，卡片保持紧凑。 */}
+      {hasNotes && (
+        <div className="mt-3 space-y-2">
+          {/* 推荐理由（推荐方写的，与状态无关）—— 中性底色，区别于下面对方侧的结果备注。 */}
+          {rec.recommendReason && (
+            <p className="font-label text-[11px] leading-relaxed text-on-surface-variant/85 bg-surface-container-high border border-outline-variant/20 rounded-md px-3 py-2 whitespace-pre-wrap break-words">
+              <span className="text-on-surface-variant/45 mr-1">推荐理由：</span>
+              {rec.recommendReason}
+            </p>
           )}
 
-          {(rec.status === 'accepted' || rec.status === 'rejected') && (
-            <button
-              onClick={onUnmark}
-              className="px-2.5 py-1 rounded-md border border-outline-variant/30 hover:border-on-surface-variant/40 hover:bg-surface-container-high text-on-surface-variant/70 hover:text-on-surface font-label text-[10px] uppercase tracking-widest transition-colors"
-            >
-              改回待回应
-            </button>
+          {/* 失败原因（仅 rejected 显示） */}
+          {rec.status === 'rejected' && rec.failReason && (
+            <p className="font-label text-[11px] leading-relaxed text-error/85 bg-error/[0.05] border border-error/15 rounded-md px-3 py-2 whitespace-pre-wrap break-words">
+              <span className="text-error/55 mr-1">原因：</span>
+              {rec.failReason}
+            </p>
           )}
 
-          {rec.status === 'accepted' && (
-            <button
-              onClick={onAcceptClick}
-              title={rec.successReason ? '改成功备注' : '加成功备注'}
-              className="px-2.5 py-1 rounded-md border border-outline-variant/30 hover:border-secondary/40 hover:bg-secondary/10 text-on-surface-variant/70 hover:text-secondary font-label text-[10px] uppercase tracking-widest transition-colors"
-            >
-              {rec.successReason ? '改备注' : '加备注'}
-            </button>
-          )}
-
-          {rec.status === 'rejected' && (
-            <button
-              onClick={onRejectClick}
-              title="改原因"
-              className="px-2.5 py-1 rounded-md border border-outline-variant/30 hover:border-on-surface-variant/40 hover:bg-surface-container-high text-on-surface-variant/70 hover:text-on-surface font-label text-[10px] uppercase tracking-widest transition-colors"
-            >
-              改原因
-            </button>
+          {/* 成功原因（仅 accepted 且填了备注时显示）—— 跟失败原因同款式，换 secondary 色 */}
+          {rec.status === 'accepted' && rec.successReason && (
+            <p className="font-label text-[11px] leading-relaxed text-secondary/85 bg-secondary/[0.05] border border-secondary/15 rounded-md px-3 py-2 whitespace-pre-wrap break-words">
+              <span className="text-secondary/55 mr-1">成功原因：</span>
+              {rec.successReason}
+            </p>
           )}
         </div>
-
-        {/* 失败原因（仅 rejected 显示） */}
-        {rec.status === 'rejected' && rec.failReason && (
-          <p className="font-label text-[11px] text-error/85 bg-error/[0.05] border border-error/15 rounded-md px-3 py-2">
-            <span className="text-error/55 mr-1">原因：</span>
-            {rec.failReason}
-          </p>
-        )}
-
-        {/* 成功原因（仅 accepted 且填了备注时显示）—— 跟失败原因同款式，换 secondary 色 */}
-        {rec.status === 'accepted' && rec.successReason && (
-          <p className="font-label text-[11px] text-secondary/85 bg-secondary/[0.05] border border-secondary/15 rounded-md px-3 py-2">
-            <span className="text-secondary/55 mr-1">成功原因：</span>
-            {rec.successReason}
-          </p>
-        )}
-      </div>
+      )}
     </div>
   )
 }
@@ -482,16 +504,17 @@ function EditPersonModal({
 }: {
   rec: Recommendation
   onCancel: () => void
-  onConfirm: (fromWhom: string, toWhom: string) => void
+  onConfirm: (fromWhom: string, toWhom: string, recommendReason: string) => void
 }): JSX.Element {
   const [fromWhom, setFromWhom] = useState(rec.fromWhom)
   const [toWhom, setToWhom] = useState(rec.toWhom)
+  const [reason, setReason] = useState(rec.recommendReason ?? '')
   const canConfirm = toWhom.trim().length > 0
   return (
     <ModalShell onBackdrop={onCancel}>
       <div className="p-6 space-y-4">
         <div>
-          <h3 className="font-headline font-black text-base text-on-surface">编辑推荐人</h3>
+          <h3 className="font-headline font-black text-base text-on-surface">编辑推荐</h3>
           <p className="font-label text-[10px] text-on-surface-variant/55 mt-1 uppercase tracking-widest">
             {rec.titleCn || rec.title}
           </p>
@@ -527,9 +550,23 @@ function EditPersonModal({
             />
           </div>
         </div>
+        <div>
+          <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1 block">
+            推荐理由（可选）
+          </label>
+          <textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="推荐方写：为什么推荐这部给 TA（可留空）"
+            maxLength={200}
+            rows={2}
+            spellCheck={false}
+            className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all resize-none"
+          />
+        </div>
         <div className="flex items-center gap-3 pt-1">
           <ModalButton variant="cancel" onClick={onCancel}>取消</ModalButton>
-          <ModalButton variant="primary" icon="check" onClick={() => onConfirm(fromWhom.trim(), toWhom.trim())} disabled={!canConfirm}>
+          <ModalButton variant="primary" icon="check" onClick={() => onConfirm(fromWhom.trim(), toWhom.trim(), reason.trim())} disabled={!canConfirm}>
             保存
           </ModalButton>
         </div>
