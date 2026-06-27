@@ -229,7 +229,8 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
       setState({ status: 'error', message: `${src} 未找到与"${kw}"相关的结果` })
       return
     }
-    if (cards.length === 1) { void loadWatch(cards[0]); return }
+    // 即使只命中 1 个结果也列出来让用户确认:源搜索用的是关键词而非 BGM
+    // 详情标题,单个结果未必就是用户在看的这部番,直接进选集会下错番。
     setState({ status: 'results', cards })
   }
 
