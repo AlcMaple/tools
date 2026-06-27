@@ -349,3 +349,11 @@ contextBridge.exposeInMainWorld('webdavApi', {
   push: (kind: 'homework' | 'anime', jsonStr: string) => ipcRenderer.invoke('webdav:push', kind, jsonStr),
   pull: (kind: 'homework' | 'anime') => ipcRenderer.invoke('webdav:pull', kind),
 })
+
+contextBridge.exposeInMainWorld('miaoyuApi', {
+  /** 妙语库图片目录的 archivist base URL；渲染端用 `${base}/${hash}.${ext}` 拼图片 URL。 */
+  imagesBase: () => ipcRenderer.invoke('miaoyu:images-base'),
+  /** 存一张图（data URL），主进程按内容 sha1 去重落盘，返回 {hash, ext}。 */
+  saveImage: (dataUrl: string) =>
+    ipcRenderer.invoke('miaoyu:save-image', dataUrl) as Promise<{ hash: string; ext: string }>,
+})

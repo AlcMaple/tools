@@ -159,6 +159,12 @@ declare global {
       chrome: () => string
       electron: () => string
     }
+    miaoyuApi: {
+      /** 妙语库图片目录的 archivist base URL。渲染端用 `${base}/${hash}.${ext}` 拼具体图片 URL。 */
+      imagesBase: () => Promise<string>
+      /** 存一张图（data URL）；主进程超宽则缩 + 转 JPEG，按内容 sha1 去重落盘，返回 {hash, ext}。 */
+      saveImage: (dataUrl: string) => Promise<{ hash: string; ext: string }>
+    }
     bgmApi: {
       /** `update=true` bypasses both the renderer and main-side caches and
        * refetches every page through the rate limiter. Use sparingly — meant
