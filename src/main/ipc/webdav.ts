@@ -20,7 +20,7 @@ interface WebDavConfig {
  * Sync 数据分类。每类对应坚果云上的一个独立 JSON 文件，rev / 冲突检测
  * 各自独立。新增类型时在这里加，main 自动把 kind 拼到 base 路径后面。
  */
-export type WebDavKind = 'homework' | 'anime'
+export type WebDavKind = 'homework' | 'anime' | 'miaoyu'
 
 const WEBDAV_BASE = 'https://dav.jianguoyun.com/dav/'
 
@@ -50,6 +50,7 @@ function fileNameFor(kind: WebDavKind): string {
   switch (kind) {
     case 'homework': return 'homework.json'
     case 'anime': return 'anime.json'
+    case 'miaoyu': return 'miaoyu.json'
   }
 }
 
