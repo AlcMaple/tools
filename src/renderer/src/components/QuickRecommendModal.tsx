@@ -21,7 +21,8 @@ interface Props {
 export function QuickRecommendModal({ track, onClose, onCreated }: Props): JSX.Element {
   const [fromWhom, setFromWhom] = useState('')
   const [toWhom, setToWhom] = useState('')
-  // 推荐方 + 推荐对方都必填才能提交。
+  const [reason, setReason] = useState('')
+  // 推荐方 + 推荐对方都必填才能提交；推荐理由可选。
   const canSubmit = fromWhom.trim().length > 0 && toWhom.trim().length > 0
   const display = track.titleCn || track.title
 
@@ -34,6 +35,7 @@ export function QuickRecommendModal({ track, onClose, onCreated }: Props): JSX.E
       cover: track.cover,
       fromWhom: fromWhom.trim(),
       toWhom: toWhom.trim(),
+      recommendReason: reason.trim() || undefined,
     })
     onCreated?.()
     onClose()
@@ -91,6 +93,21 @@ export function QuickRecommendModal({ track, onClose, onCreated }: Props): JSX.E
             maxLength={40}
             spellCheck={false}
             className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
+          />
+        </div>
+
+        {/* 推荐理由（可选）—— 推荐方写「为什么推荐这部给 TA」 */}
+        <div>
+          <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1.5 block">
+            推荐理由（可选）
+          </label>
+          <textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="例：你喜欢这种治愈系 / 画风很对你口味 / 打斗超燃"
+            rows={2}
+            spellCheck={false}
+            className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all resize-none"
           />
         </div>
 

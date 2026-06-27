@@ -29,6 +29,10 @@ export interface Recommendation {
   fromWhom: string
   /** 推荐对方，推给谁，自由文本（"Bob" / "妹妹" / "群里"）。 */
   toWhom: string
+  /** 推荐理由 —— **推荐方**写的「我为什么推荐这部给你」（可选）。区别于
+   *  successReason / failReason：那两个是**对方**接受 / 拒绝后的结果备注。
+   *  创建时填，也可后续在编辑弹窗里补 / 改。老数据没有 → normalize 给 undefined。 */
+  recommendReason?: string
   status: RecommendationStatus
   /** 仅在 status === 'rejected' 时有意义。 */
   failReason?: string
@@ -68,6 +72,11 @@ export function normalizeRecommendations(input: unknown): Recommendation[] {
       // 推荐方是后加字段:老记录没有 → 空串;展示层用空串退回"推荐给 X"。
       fromWhom: typeof r.fromWhom === 'string' ? r.fromWhom.trim() : '',
       toWhom: r.toWhom,
+      // 推荐理由是后加字段（可选，与状态无关，所有状态下都可能有）。
+      recommendReason:
+        typeof r.recommendReason === 'string' && r.recommendReason.trim().length > 0
+          ? r.recommendReason.trim()
+          : undefined,
       status,
       failReason:
         status === 'rejected' && typeof r.failReason === 'string' && r.failReason.trim().length > 0
@@ -137,7 +146,9 @@ class RecommendationStore {
     cover?: string
     fromWhom: string
     toWhom: string
+    recommendReason?: string
   }): Recommendation {
+    const reason = input.recommendReason?.trim()
     const r: Recommendation = {
       id: genId(),
       bgmId: input.bgmId,
@@ -146,6 +157,7 @@ class RecommendationStore {
       cover: input.cover,
       fromWhom: input.fromWhom.trim(),
       toWhom: input.toWhom.trim(),
+      recommendReason: reason && reason.length > 0 ? reason : undefined,
       // 推荐给 cwj 默认已接受；其余人仍是待回应。
       status: defaultStatusFor(input.toWhom),
       createdAt: new Date().toISOString(),
@@ -199,12 +211,17 @@ class RecommendationStore {
    * toWhom 不允许清空（空串会被 normalize 丢弃），传空白则保留原值；fromWhom 允许
    * 清空（退回"推荐给 X"展示）。番剧本身（bgmId/标题）不在这里改 —— 那要重新选番。
    */
-  edit(id: string, patch: { fromWhom?: string; toWhom?: string }): void {
+  edit(id: string, patch: { fromWhom?: string; toWhom?: string; recommendReason?: string }): void {
     const list = this.ensure()
     const r = list.find(x => x.id === id)
     if (!r) return
     if (patch.fromWhom !== undefined) r.fromWhom = patch.fromWhom.trim()
     if (patch.toWhom !== undefined && patch.toWhom.trim().length > 0) r.toWhom = patch.toWhom.trim()
+    // 推荐理由允许清空（传空白 → 去掉），跟 fromWhom 一样宽容。
+    if (patch.recommendReason !== undefined) {
+      const v = patch.recommendReason.trim()
+      r.recommendReason = v.length > 0 ? v : undefined
+    }
     this.persist()
   }
 

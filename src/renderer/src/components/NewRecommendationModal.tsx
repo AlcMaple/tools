@@ -35,6 +35,7 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
   const recs = useRecommendationList()
   const [fromWhom, setFromWhom] = useState('')
   const [toWhom, setToWhom] = useState('')
+  const [reason, setReason] = useState('')
   const [query, setQuery] = useState('')
   const [fromWhomMissing, setFromWhomMissing] = useState(false)
   const [toWhomMissing, setToWhomMissing] = useState(false)
@@ -80,6 +81,7 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
       cover: t.cover,
       fromWhom: fromWhom.trim(),
       toWhom: toWhom.trim(),
+      recommendReason: reason.trim() || undefined,
     })
     onClose()
   }
@@ -166,6 +168,21 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
                 </p>
               )}
             </div>
+          </div>
+
+          <div>
+            <label className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-1 block">
+              推荐理由（可选）
+            </label>
+            <input
+              type="text"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="推荐方写：为什么推荐这部给 TA（可留空）"
+              maxLength={200}
+              spellCheck={false}
+              className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
+            />
           </div>
 
           <div>
