@@ -346,8 +346,8 @@ contextBridge.exposeInMainWorld('webdavApi', {
    * `anime.json` under the user's base folder). Each kind has its own rev /
    * conflict detection; renderer pages call this only for their own kind.
    */
-  push: (kind: 'homework' | 'anime', jsonStr: string) => ipcRenderer.invoke('webdav:push', kind, jsonStr),
-  pull: (kind: 'homework' | 'anime') => ipcRenderer.invoke('webdav:pull', kind),
+  push: (kind: 'homework' | 'anime' | 'miaoyu', jsonStr: string) => ipcRenderer.invoke('webdav:push', kind, jsonStr),
+  pull: (kind: 'homework' | 'anime' | 'miaoyu') => ipcRenderer.invoke('webdav:pull', kind),
 })
 
 contextBridge.exposeInMainWorld('miaoyuApi', {
@@ -356,4 +356,10 @@ contextBridge.exposeInMainWorld('miaoyuApi', {
   /** 存一张图（data URL），主进程按内容 sha1 去重落盘，返回 {hash, ext}。 */
   saveImage: (dataUrl: string) =>
     ipcRenderer.invoke('miaoyu:save-image', dataUrl) as Promise<{ hash: string; ext: string }>,
+  /** 坚果云同步：把一批图片（`hash.ext`）读成 base64，塞进同步 blob。 */
+  exportImages: (names: string[]) =>
+    ipcRenderer.invoke('miaoyu:export-images', names) as Promise<Record<string, string>>,
+  /** 坚果云同步：把 blob 里的 base64 图片写回本地（按文件名跳过已存在），返回写入张数。 */
+  importImages: (map: Record<string, string>) =>
+    ipcRenderer.invoke('miaoyu:import-images', map) as Promise<number>,
 })

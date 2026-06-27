@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
-import { ModalShell, ModalButton } from './homework/shared'
+import { ModalShell, ModalButton, ipcErrMsg } from './homework/shared'
 
 /**
  * 妙语库 —— 收藏群里高明/好玩的发言，借鉴学习「怎么幽默地说话」。
@@ -104,6 +104,75 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   })
 }
 
+// ── 坚果云同步 ──────────────────────────────────────────────────────────────
+// 复用锦囊妙计那套：rev/快照/冲突确认。差别是图片要随文本一起同步 —— 推送时把
+// 被引用的图片读成 base64 塞进 blob（按 `hash.ext` 去重），拉取时写回本地文件。
+// 注意：不做后台轮询探测（blob 含 base64 图片，体积大，每次进页面都拉一遍太重），
+// 所以不主动提示「云端有更新」；冲突在点上传/拉取时拉一次远端现算。
+type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
+type SyncDirection = 'push' | 'pull'
+
+const LAST_SYNC_KEY = 'maple-miaoyu-last-sync'
+const LAST_REV_KEY = 'maple-miaoyu-last-rev'
+const SNAPSHOT_KEY = 'maple-miaoyu-last-snapshot'
+
+interface SyncRemoteMeta {
+  rev: number
+  ts: string
+  posts: MiaoyuPost[]
+  images: Record<string, string> // `hash.ext` → base64
+}
+interface SyncConfirmState {
+  direction: SyncDirection
+  loading: boolean
+  remote: SyncRemoteMeta | null
+  loadError?: string
+  forceArmed: boolean
+}
+
+const snapshotOf = (posts: MiaoyuPost[]): string => JSON.stringify(posts)
+
+/** 纯 schema 漂移（normalize 改了形状）时重建快照，避免冷启动误判「本地未上传」。 */
+function rebuildIfSchemaDrift(stored: string, current: string): string {
+  if (stored === current) return stored
+  try {
+    if (snapshotOf(normalize(JSON.parse(stored))) === current) return current
+  } catch { /* 坏快照 → 保留，让 localDirty 正常触发 */ }
+  return stored
+}
+
+function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
+  const remote = JSON.parse(jsonStr)
+  if (remote && typeof remote === 'object' && !Array.isArray(remote)) {
+    const o = remote as Record<string, unknown>
+    return {
+      rev: typeof o._rev === 'number' ? o._rev : 0,
+      ts: typeof o._ts === 'string' ? o._ts : '',
+      posts: normalize(o.posts),
+      images: o.images && typeof o.images === 'object' ? (o.images as Record<string, string>) : {},
+    }
+  }
+  throw new Error('远端数据格式不识别')
+}
+
+function postStats(posts: MiaoyuPost[]): { posts: number; comments: number; images: number } {
+  const imgs = new Set<string>()
+  let comments = 0
+  for (const p of posts) {
+    comments += p.comments.length
+    for (const im of p.images) imgs.add(`${im.hash}.${im.ext}`)
+  }
+  return { posts: posts.length, comments, images: imgs.size }
+}
+
+function fmtRemoteTs(ts: string): string {
+  if (!ts) return '未知'
+  const d = new Date(ts)
+  if (isNaN(d.getTime())) return ts
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function MiaoyuLibrary(): JSX.Element {
   const [posts, setPosts] = useState<MiaoyuPost[]>(readPosts)
   const [imgBase, setImgBase] = useState('')
@@ -117,8 +186,32 @@ export default function MiaoyuLibrary(): JSX.Element {
   const [commentModal, setCommentModal] = useState<{ postId: string; comment?: MiaoyuComment } | null>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
 
+  // ── 坚果云同步状态 ──
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
+  const [syncMsg, setSyncMsg] = useState('')
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(() => {
+    const v = localStorage.getItem(LAST_SYNC_KEY)
+    return v ? Number(v) : null
+  })
+  const [lastSyncedRev, setLastSyncedRev] = useState<number>(() => {
+    const v = localStorage.getItem(LAST_REV_KEY)
+    return v ? Number(v) : 0
+  })
+  const [lastSyncedSnapshot, setLastSyncedSnapshot] = useState<string>(() => {
+    const initial = snapshotOf(readPosts())
+    const stored = localStorage.getItem(SNAPSHOT_KEY)
+    return stored ? rebuildIfSchemaDrift(stored, initial) : initial
+  })
+  const [syncConfirm, setSyncConfirm] = useState<SyncConfirmState | null>(null)
+
   useEffect(() => { window.miaoyuApi.imagesBase().then(setImgBase).catch(() => {}) }, [])
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(posts)) }, [posts])
+  useEffect(() => { localStorage.setItem(LAST_REV_KEY, String(lastSyncedRev)) }, [lastSyncedRev])
+  useEffect(() => { localStorage.setItem(SNAPSHOT_KEY, lastSyncedSnapshot) }, [lastSyncedSnapshot])
+
+  // localDirty 由快照差异推导 —— 用户撤销改动会自动归位，无需手动打脏标记。
+  const currentSnapshot = useMemo(() => snapshotOf(posts), [posts])
+  const localDirty = currentSnapshot !== lastSyncedSnapshot
 
   const imgUrl = (img: MiaoyuImage): string => `${imgBase}/${img.hash}.${img.ext}`
 
@@ -166,6 +259,73 @@ export default function MiaoyuLibrary(): JSX.Element {
         p.id === postId ? { ...p, updatedAt: now(), comments: p.comments.filter((c) => c.id !== commentId) } : p,
       ),
     )
+  }
+
+  // ── 同步 ────────────────────────────────────────────────────────────────
+  const syncSettle = (status: SyncStatus, msg: string): void => {
+    setSyncStatus(status)
+    setSyncMsg(msg)
+    if (status === 'synced' || status === 'error') {
+      setTimeout(() => { setSyncStatus('idle'); setSyncMsg('') }, 3500)
+    }
+  }
+
+  // 点上传/拉取先拉一次远端 → 打开确认弹窗（展示双方统计 + 冲突判定）
+  const openSyncConfirm = async (direction: SyncDirection): Promise<void> => {
+    if (syncStatus === 'syncing' || syncConfirm) return
+    setSyncConfirm({ direction, loading: true, remote: null, forceArmed: false })
+    try {
+      const jsonStr = await window.webdavApi.pull('miaoyu')
+      setSyncConfirm({ direction, loading: false, remote: parseRemoteBlob(jsonStr), forceArmed: false })
+    } catch (e: unknown) {
+      // 拉取失败（404 / 网络 / 解析）当作远端无数据：push 仍可冷启动，pull 不行。
+      setSyncConfirm({ direction, loading: false, remote: null, loadError: ipcErrMsg(e, '读取远端失败'), forceArmed: false })
+    }
+  }
+
+  const executePush = async (): Promise<void> => {
+    if (!syncConfirm) return
+    const newRev = Math.max(lastSyncedRev, syncConfirm.remote?.rev ?? 0) + 1
+    setSyncConfirm(null)
+    setSyncStatus('syncing')
+    setSyncMsg('')
+    try {
+      // 收集被引用的图片文件名（去重）→ 主进程读成 base64 一并塞进 blob
+      const names = Array.from(new Set(posts.flatMap((p) => p.images.map((i) => `${i.hash}.${i.ext}`))))
+      const images = names.length ? await window.miaoyuApi.exportImages(names) : {}
+      const blob = JSON.stringify({ _v: 1, _rev: newRev, _ts: new Date().toISOString(), posts, images })
+      await window.webdavApi.push('miaoyu', blob)
+      const ts = now()
+      setLastSyncTime(ts)
+      setLastSyncedRev(newRev)
+      setLastSyncedSnapshot(snapshotOf(posts))
+      localStorage.setItem(LAST_SYNC_KEY, String(ts))
+      syncSettle('synced', '上传成功')
+    } catch (e: unknown) {
+      syncSettle('error', ipcErrMsg(e, '上传失败'))
+    }
+  }
+
+  const executePull = async (): Promise<void> => {
+    if (!syncConfirm?.remote) { setSyncConfirm(null); return }
+    const remote = syncConfirm.remote
+    setSyncConfirm(null)
+    setSyncStatus('syncing')
+    setSyncMsg('')
+    try {
+      // 先把云端图片写回本地（缺啥补啥、按文件名跳过已存在），再应用文本
+      if (Object.keys(remote.images).length) await window.miaoyuApi.importImages(remote.images)
+      const newPosts = normalize(remote.posts)
+      setPosts(newPosts)
+      const ts = now()
+      setLastSyncTime(ts)
+      setLastSyncedRev(remote.rev)
+      setLastSyncedSnapshot(snapshotOf(newPosts))
+      localStorage.setItem(LAST_SYNC_KEY, String(ts))
+      syncSettle('synced', '拉取成功')
+    } catch (e: unknown) {
+      syncSettle('error', ipcErrMsg(e, '拉取失败'))
+    }
   }
 
   // ── 搜索过滤（帖子文字 / 评论 / 思考 任一命中） ──────────────────────────
@@ -242,6 +402,19 @@ export default function MiaoyuLibrary(): JSX.Element {
               </button>
             </div>
           </div>
+
+          {/* 坚果云同步条 */}
+          <div className="mt-3 flex items-center">
+            <SyncChip
+              status={syncStatus}
+              msg={syncMsg}
+              lastSyncTime={lastSyncTime}
+              localDirty={localDirty}
+              busy={syncStatus === 'syncing' || !!syncConfirm}
+              onPush={() => openSyncConfirm('push')}
+              onPull={() => openSyncConfirm('pull')}
+            />
+          </div>
         </div>
 
         {/* 帖子流 */}
@@ -283,7 +456,207 @@ export default function MiaoyuLibrary(): JSX.Element {
         />
       )}
       {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
+      {syncConfirm && (
+        <MiaoyuSyncModal
+          state={syncConfirm}
+          setState={setSyncConfirm}
+          localPosts={posts}
+          localDirty={localDirty}
+          lastSyncedRev={lastSyncedRev}
+          onConfirmPush={executePush}
+          onConfirmPull={executePull}
+        />
+      )}
     </div>
+  )
+}
+
+// ── 同步状态 chip ────────────────────────────────────────────────────────────
+function SyncChip({
+  status, msg, lastSyncTime, localDirty, busy, onPush, onPull,
+}: {
+  status: SyncStatus
+  msg: string
+  lastSyncTime: number | null
+  localDirty: boolean
+  busy: boolean
+  onPush: () => void
+  onPull: () => void
+}): JSX.Element {
+  type ChipKind = 'syncing' | 'synced' | 'error' | 'local' | 'idle'
+  const kind: ChipKind =
+    status === 'syncing' ? 'syncing' :
+    status === 'synced' ? 'synced' :
+    status === 'error' ? 'error' :
+    localDirty ? 'local' : 'idle'
+  const idleText = lastSyncTime ? (() => {
+    const diff = Date.now() - lastSyncTime
+    if (diff < 60000) return '刚刚同步'
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
+    const d = new Date(lastSyncTime)
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  })() : '未同步'
+  const config: Record<ChipKind, { dot: JSX.Element; text: string; cls: string }> = {
+    syncing: { dot: <span className="material-symbols-outlined text-primary animate-spin" style={{ fontSize: 13 }}>progress_activity</span>, text: '同步中…', cls: 'text-primary' },
+    synced: { dot: <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />, text: msg, cls: 'text-secondary' },
+    error: { dot: <span className="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0" />, text: msg, cls: 'text-error' },
+    local: { dot: <span className="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0" />, text: '本地未上传', cls: 'text-tertiary' },
+    idle: { dot: <span className="w-1.5 h-1.5 rounded-full bg-outline/40 flex-shrink-0" />, text: idleText, cls: lastSyncTime ? 'text-on-surface-variant/50' : 'text-on-surface-variant/30' },
+  }
+  const c = config[kind]
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-high border border-outline-variant/15">
+      {c.dot}
+      <span className={`font-label text-[10px] uppercase tracking-widest ${c.cls}`}>{c.text}</span>
+      <div className="flex items-center gap-0.5 ml-0.5 border-l border-outline-variant/20 pl-1">
+        <button onClick={onPush} disabled={busy} title="上传到坚果云" className="p-1 rounded text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30">
+          <span className="material-symbols-outlined" style={{ fontSize: 13 }}>upload</span>
+        </button>
+        <button onClick={onPull} disabled={busy} title="从坚果云拉取" className="p-1 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-secondary/10 transition-colors disabled:opacity-30">
+          <span className="material-symbols-outlined" style={{ fontSize: 13 }}>download</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── 同步确认弹窗 ──────────────────────────────────────────────────────────────
+function MiaoyuSyncModal({
+  state, setState, localPosts, localDirty, lastSyncedRev, onConfirmPush, onConfirmPull,
+}: {
+  state: SyncConfirmState
+  setState: React.Dispatch<React.SetStateAction<SyncConfirmState | null>>
+  localPosts: MiaoyuPost[]
+  localDirty: boolean
+  lastSyncedRev: number
+  onConfirmPush: () => void
+  onConfirmPull: () => void
+}): JSX.Element {
+  const { direction, loading, remote, loadError, forceArmed } = state
+  const isPush = direction === 'push'
+  const local = postStats(localPosts)
+  const rem = remote ? postStats(remote.posts) : null
+
+  // 冲突：push 时云端 rev 比我最后同步新（别的设备改过）；pull 时本地有未推送改动
+  const hasConflict = !loading && (isPush ? !!remote && remote.rev > lastSyncedRev : localDirty)
+  const pullImpossible = !isPush && !loading && !remote
+
+  const close = (): void => setState(null)
+  const onConfirmClick = (): void => {
+    if (hasConflict && !forceArmed) { setState({ ...state, forceArmed: true }); return }
+    if (isPush) onConfirmPush()
+    else onConfirmPull()
+  }
+
+  return (
+    <ModalShell onBackdrop={close}>
+      <div className="flex items-center gap-4 px-7 pt-6 pb-5 border-b border-outline-variant/10">
+        <div className={`w-11 h-11 rounded-xl ${isPush ? 'bg-primary/15 border-primary/25' : 'bg-secondary/15 border-secondary/25'} border flex items-center justify-center flex-shrink-0`}>
+          <span className={`material-symbols-outlined ${isPush ? 'text-primary' : 'text-secondary'} text-[22px]`}>{isPush ? 'upload' : 'download'}</span>
+        </div>
+        <div>
+          <h3 className="text-base font-black tracking-tight">{isPush ? '上传到云端' : '从云端拉取'}</h3>
+          <p className="text-[11px] text-on-surface-variant/60 mt-0.5 font-label">
+            {isPush ? '把妙语库（文字 + 图片）推送到坚果云' : '把云端妙语库应用到本地'}
+          </p>
+        </div>
+      </div>
+
+      <div className="px-7 py-5 space-y-3">
+        {loading && (
+          <div className="rounded-xl border border-outline-variant/15 bg-surface-container px-4 py-6 flex items-center justify-center gap-3 text-on-surface-variant/70">
+            <span className="material-symbols-outlined text-primary animate-spin" style={{ fontSize: 18 }}>progress_activity</span>
+            <span className="text-sm font-label">读取远端状态…</span>
+          </div>
+        )}
+
+        {!loading && hasConflict && (
+          <div className="rounded-xl border border-error/40 bg-error/[0.08] px-4 py-3 flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-error text-[18px] mt-px">warning</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-error">{isPush ? '云端比你的最后同步新' : '本地有未同步的改动'}</p>
+              <p className="text-[11px] text-error/85 mt-0.5 font-label leading-relaxed">
+                {isPush
+                  ? `云端 rev=${remote!.rev}，你的最后同步 rev=${lastSyncedRev}。继续上传会覆盖其他设备的改动，建议先点拉取。`
+                  : '当前本地有未推送的修改，继续拉取会丢失这些改动，建议先点上传。'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!loading && pullImpossible && (
+          <div className="rounded-xl border border-outline-variant/30 bg-surface-container px-4 py-3 flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-on-surface-variant text-[18px] mt-px">cloud_off</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-on-surface-variant">远端不存在数据</p>
+              <p className="text-[11px] text-on-surface-variant/70 mt-0.5 font-label">
+                {loadError ? `读取远端失败：${loadError}` : '坚果云上还没有妙语库数据，请先在某台设备上传一次。'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!loading && (
+          <div className="rounded-xl border border-outline-variant/15 bg-surface-container px-4 py-3 grid grid-cols-[1fr_auto_1fr] gap-3 items-start">
+            <div>
+              <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-2">本地</p>
+              <div className="space-y-1">
+                <p className="text-xs font-mono">{local.posts} 帖 / {local.comments} 妙语</p>
+                <p className="text-xs font-mono">{local.images} 张图</p>
+                <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
+                  rev={lastSyncedRev}
+                  {localDirty && <span className="ml-1 text-tertiary">+ 未同步改动</span>}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-center pt-5">
+              <span className={`material-symbols-outlined ${isPush ? 'text-primary' : 'text-secondary'}`} style={{ fontSize: 20 }}>
+                {isPush ? 'arrow_forward' : 'arrow_back'}
+              </span>
+            </div>
+            <div>
+              <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50 mb-2">远端</p>
+              {rem ? (
+                <div className="space-y-1">
+                  <p className="text-xs font-mono">{rem.posts} 帖 / {rem.comments} 妙语</p>
+                  <p className="text-xs font-mono">{rem.images} 张图</p>
+                  <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
+                    rev={remote!.rev}{remote!.ts && ` · ${fmtRemoteTs(remote!.ts)}`}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs font-mono text-on-surface-variant/50">空 / 不存在</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
+        <button
+          onClick={close}
+          className="flex-1 py-3 rounded-xl border border-outline-variant/20 text-sm font-label text-on-surface-variant hover:bg-surface-container-high transition-colors"
+        >
+          {hasConflict ? (isPush ? '取消，先去拉取' : '取消，先去上传') : '取消'}
+        </button>
+        <button
+          onClick={onConfirmClick}
+          disabled={loading || pullImpossible}
+          className={`flex-1 py-3 rounded-xl border text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+            hasConflict
+              ? 'border-error/50 bg-error/15 text-error hover:bg-error/25'
+              : isPush
+                ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/20'
+                : 'border-secondary/40 bg-secondary/10 text-secondary hover:bg-secondary/20'
+          }`}
+        >
+          <span className="material-symbols-outlined text-base leading-none">
+            {hasConflict ? 'warning' : isPush ? 'upload' : 'download'}
+          </span>
+          <span>{hasConflict ? (forceArmed ? '再次确认覆盖' : '我知道风险，强制覆盖') : isPush ? '确认上传' : '确认拉取'}</span>
+        </button>
+      </div>
+    </ModalShell>
   )
 }
 

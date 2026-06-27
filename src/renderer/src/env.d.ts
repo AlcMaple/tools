@@ -164,6 +164,10 @@ declare global {
       imagesBase: () => Promise<string>
       /** 存一张图（data URL）；主进程超宽则缩 + 转 JPEG，按内容 sha1 去重落盘，返回 {hash, ext}。 */
       saveImage: (dataUrl: string) => Promise<{ hash: string; ext: string }>
+      /** 坚果云同步：把一批图片（`hash.ext`）读成 base64，缺图跳过。 */
+      exportImages: (names: string[]) => Promise<Record<string, string>>
+      /** 坚果云同步：把 base64 图片写回本地（按文件名跳过已存在），返回写入张数。 */
+      importImages: (map: Record<string, string>) => Promise<number>
     }
     bgmApi: {
       /** `update=true` bypasses both the renderer and main-side caches and
@@ -342,8 +346,8 @@ declare global {
        * file under the user's base folder is written
        * (`homework.json` / `anime.json`). Each kind syncs independently.
        */
-      push: (kind: 'homework' | 'anime', jsonStr: string) => Promise<boolean>
-      pull: (kind: 'homework' | 'anime') => Promise<string>
+      push: (kind: 'homework' | 'anime' | 'miaoyu', jsonStr: string) => Promise<boolean>
+      pull: (kind: 'homework' | 'anime' | 'miaoyu') => Promise<string>
     }
     libraryApi: {
       getPaths: () => Promise<LibraryPath[]>
