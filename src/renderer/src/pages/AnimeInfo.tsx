@@ -1631,7 +1631,11 @@ function AnimeInfo(): JSX.Element {
         onClearHistory={() => setHistory(clearBgmHistory())}
       />
 
-      <main className="ml-0 pt-16 px-4 md:px-8 lg:px-10 py-6 lg:py-10">
+      {/* pt-16 = 64px 让出 fixed 顶栏高度。顶部内边距只能用 pt-*,不能用 py-*:
+          py-6 / lg:py-10 会把 padding-top 覆盖成 24/40px(响应式变体 lg:py-10
+          在生成 CSS 里还排在 pt-16 之后),小于顶栏 64px,首个元素(返回按钮)
+          会被压到顶栏后面 —— 这正是「PC 看不到返回按钮、手机平板正常」的根因。 */}
+      <main className="ml-0 pt-16 px-4 md:px-8 lg:px-10 pb-6 lg:pb-10">
         {state.status === 'idle' && <IdleState />}
         {(state.status === 'searching' || state.status === 'loading') && (
           <LoadingSpinner progress={state.status === 'searching' ? searchProgress : null} />
