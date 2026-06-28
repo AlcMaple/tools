@@ -100,6 +100,16 @@ export function registerSystemIpc(): void {
   // 误导用户。同一个值；只读；调用频率极低，不缓存。
   ipcMain.handle('system:default-downloads', () => app.getPath('downloads'))
 
+  // DevTools(F12 那样的控制台)开关 —— 设置页给个按钮,免得用户记不住快捷键。
+  // 仅非打包(dev)生效:打包给普通用户的版本忽略,不暴露开发者工具。
+  // is-dev 让设置页据此决定要不要显示这个按钮。
+  ipcMain.handle('system:is-dev', () => !app.isPackaged)
+  ipcMain.handle('system:toggle-devtools', (event) => {
+    if (app.isPackaged) return false
+    event.sender.toggleDevTools()
+    return true
+  })
+
   ipcMain.handle('system:connectivity', () => {
     // Probe multiple endpoints in parallel — any 2xx/3xx response means online.
     // Google's generate_204 is blocked in mainland China, so we include domestic
