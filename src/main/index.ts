@@ -120,6 +120,19 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // 开发模式(非打包)下用 F12 / Ctrl+Shift+I 开关 DevTools(F12 那样的控制台)。
+  // 仅 !app.isPackaged 生效:打包给普通用户的版本不暴露开发者工具,避免误开。
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('before-input-event', (_event, input) => {
+      if (input.type !== 'keyDown') return
+      const isF12 = input.key === 'F12'
+      const isInspect = (input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i'
+      if (isF12 || isInspect) {
+        mainWindow.webContents.toggleDevTools()
+      }
+    })
+  }
+
   mainWindow.on('close', (event) => {
     if (getMinimizeOnClose() && !isAppQuitting) {
       event.preventDefault()

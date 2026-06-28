@@ -135,6 +135,10 @@ declare global {
        *  custom save path is set. Used by Settings UI to make the effective
        *  path visible. */
       getDefaultDownloadsPath: () => Promise<string>
+      /** 是否 dev(非打包)运行。设置页据此决定要不要显示「打开开发者工具」按钮。 */
+      isDev: () => Promise<boolean>
+      /** 开关 DevTools(F12 那样的控制台)。仅 dev 生效,打包版返回 false。 */
+      toggleDevTools: () => Promise<boolean>
       checkConnectivity: () => Promise<boolean>
       loadSettingsHistory: () => Promise<Array<{ text: string; time: number }>>
       saveSettingsHistory: (entries: Array<{ text: string; time: number }>) => Promise<boolean>

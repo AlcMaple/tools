@@ -791,6 +791,14 @@ function Settings(): JSX.Element {
       .catch(() => { /* 拿不到时 UI 退化为不显示具体路径，按钮 disabled */ });
   }, []);
 
+  // 是否 dev(非打包)运行 —— 决定「关于」里要不要显示「打开开发者工具」按钮。
+  const [isDev, setIsDev] = useState(false);
+  useEffect(() => {
+    window.systemApi.isDev()
+      .then(setIsDev)
+      .catch(() => { /* 拿不到当打包处理，不显示按钮 */ });
+  }, []);
+
   // 邮件提醒 —— 周历每次 14d TTL 过期触发自动发件。
   // authCode 永远不从主进程回传明文，UI 拿到的是 hasAuthCode 布尔。用户
   // 不重新输入授权码就提交 = 保留旧的加密值（mailApi.setConfig 把空串当
@@ -1275,6 +1283,26 @@ function Settings(): JSX.Element {
                       </button>
                     }
                   />
+                  {/* 开发者工具 —— 仅 dev(npm run dev)显示;打包版不暴露。
+                      等同 F12 / Ctrl+Shift+I,给记不住快捷键的人一个按钮。 */}
+                  {isDev && (
+                    <Row
+                      icon="terminal"
+                      title="开发者工具"
+                      desc="打开 / 关闭 F12 那样的控制台,用来检查页面元素、看报错。仅开发模式可见,打包版不提供。"
+                      density={tweaks.density}
+                      control={
+                        <button
+                          onClick={() => { void window.systemApi.toggleDevTools() }}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/70 hover:text-on-surface font-label text-[11px] uppercase tracking-widest transition-colors"
+                          title="开关开发者工具(F12)"
+                        >
+                          <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>terminal</span>
+                          打开控制台
+                        </button>
+                      }
+                    />
+                  )}
                 </Block>
               )}
             </div>
