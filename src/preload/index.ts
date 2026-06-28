@@ -57,6 +57,10 @@ contextBridge.exposeInMainWorld('systemApi', {
    * the actual effective path.
    */
   getDefaultDownloadsPath: () => ipcRenderer.invoke('system:default-downloads'),
+  // 是否 dev(非打包)运行 —— 设置页据此决定是否显示「打开开发者工具」按钮。
+  isDev: () => ipcRenderer.invoke('system:is-dev'),
+  // 开关 DevTools(F12 那样的控制台)。仅 dev 生效,打包版返回 false。
+  toggleDevTools: () => ipcRenderer.invoke('system:toggle-devtools'),
   checkConnectivity: () => ipcRenderer.invoke('system:connectivity'),
   loadSettingsHistory: () => ipcRenderer.invoke('system:history-read'),
   saveSettingsHistory: (entries: unknown) => ipcRenderer.invoke('system:history-write', entries),
