@@ -357,29 +357,14 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
               <div className="min-w-0">
                 <h3 className="text-base md:text-xl font-bold md:font-black tracking-tight leading-tight md:leading-none mb-1 truncate">{task.title}</h3>
                 {isError ? (
-                  canSwitchSource && switchInfo ? (
-                    <button
-                      onClick={handleSwitchSource}
-                      disabled={failedEps.length === 0}
-                      title={`Switch to source ${switchInfo.current % switchInfo.total + 1}`}
-                      className="group flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
-                        Source {switchInfo.current}/{switchInfo.total} · Failed
-                      </p>
-                      <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
-                      <span className="material-symbols-outlined text-primary/0 group-hover:text-primary/70 text-[13px] leading-none transition-colors">
-                        swap_horiz
-                      </span>
-                    </button>
-                  ) : (
-                    <div className="flex items-center space-x-1.5">
-                      <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
-                        Download Failed
-                      </p>
-                      <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
-                    </div>
-                  )
+                  <div className="flex items-center space-x-1.5">
+                    <span className="material-symbols-outlined text-error text-[12px] leading-none">error</span>
+                    <p className="font-label text-[10px] text-error uppercase tracking-widest font-bold">
+                      {canSwitchSource && switchInfo
+                        ? `Source ${switchInfo.current}/${switchInfo.total} · Failed`
+                        : 'Download Failed'}
+                    </p>
+                  </div>
                 ) : (
                   <p className="font-label text-[10px] text-primary/80 uppercase tracking-widest">
                     {isPaused ? 'Paused' : 'Downloading'} ·{' '}
@@ -389,16 +374,29 @@ function ActiveTaskCard({ task }: { task: DownloadTask }): JSX.Element {
                   </p>
                 )}
               </div>
-              <div className="flex space-x-1 shrink-0">
+              <div className="flex items-center space-x-1 shrink-0">
                 {isError ? (
-                  <button
-                    onClick={handleRetryAll}
-                    disabled={failedEps.length === 0}
-                    className="p-2 hover:bg-secondary/20 rounded-full text-secondary transition-all disabled:opacity-30"
-                    title="Retry failed episodes"
-                  >
-                    <span className="material-symbols-outlined text-lg leading-none">refresh</span>
-                  </button>
+                  <>
+                    {canSwitchSource && switchInfo && (
+                      <button
+                        onClick={handleSwitchSource}
+                        disabled={failedEps.length === 0}
+                        title={`换条线路重新下载失败的剧集(切到线路 ${switchInfo.current % switchInfo.total + 1}/${switchInfo.total})`}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-all text-xs font-bold font-label disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <span className="material-symbols-outlined text-base leading-none">swap_horiz</span>
+                        <span className="hidden md:inline">Switch Source</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={handleRetryAll}
+                      disabled={failedEps.length === 0}
+                      className="p-2 hover:bg-secondary/20 rounded-full text-secondary transition-all disabled:opacity-30"
+                      title="Retry failed episodes"
+                    >
+                      <span className="material-symbols-outlined text-lg leading-none">refresh</span>
+                    </button>
+                  </>
                 ) : (isRunning || isPaused) ? (
                   <button
                     onClick={handlePauseResume}

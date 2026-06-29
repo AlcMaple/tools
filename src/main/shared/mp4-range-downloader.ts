@@ -32,6 +32,23 @@ function headersFor(extra?: Record<string, string>): Record<string, string> {
   return { ...DL_HEADERS, ...(extra ?? {}) }
 }
 
+/**
+ * 用 URL 构造 http(s).get 的请求参数。**必须带上 u.port**:有的真实直链会 302 到
+ * 非标端口(moedot 的视频跳到 bjdownload.pan.wo.cn:30443),漏了 port 会连到默认 443
+ * → 下载 0% 失败,而 NDM / 浏览器都正常(它们 follow redirect 时保留端口)。
+ * u.port 为 '' 时给 undefined,Node 自动用协议默认端口(443/80)。
+ * 见 docs/regression/xifan-下载链接-集数补零-回归用例.md。
+ */
+function reqOptions(u: URL, extraHeaders?: Record<string, string>): https.RequestOptions {
+  return {
+    hostname: u.hostname,
+    port: u.port || undefined,
+    path: u.pathname + u.search,
+    headers: headersFor(extraHeaders),
+    rejectUnauthorized: false,
+  }
+}
+
 function partPath(savePath: string, idx: number): string {
   return `${savePath}.part${idx}`
 }
@@ -41,6 +58,22 @@ interface ProbeResult {
   rangeSupported: boolean
   /** 探测失败时的 HTTP 状态码,调用方据此区分 404(链接拼错)与限流/5xx。 */
   status?: number
+  /** 响应的 Content-Type,用于识别「HTTP 200 但回的是 JSON/HTML 错误体」的假视频。 */
+  contentType?: string
+}
+
+// 真实视频直链回的是 video/* 或 application/octet-stream;moedot 这类 CDN 在链接拼错时
+// 会用 HTTP 200 回一个几 KB 的 JSON 错误体(不是 404),只看状态码会被当成下载成功——
+// 用户最后拿到一个点开「无法打开文件或流」的假 mp4。据 Content-Type + 体积识别出来,
+// 交给上层回源解析真实直链(见 xifan/download.ts 的 not_media 回退)。
+const MIN_MEDIA_BYTES = 100 * 1024 // 正片单集都是几十~几百 MB,远大于此;错误体只有几 KB
+
+function looksLikeErrorBody(info: ProbeResult): boolean {
+  const ct = (info.contentType ?? '').toLowerCase()
+  if (ct.includes('json') || ct.includes('html') || ct.startsWith('text/')) return true
+  // 没给 Content-Type 时:不支持 Range 的纯 200 且体积小到不可能是视频 → 多半是错误体
+  if (!info.rangeSupported && info.size > 0 && info.size < MIN_MEDIA_BYTES) return true
+  return false
 }
 
 /**
@@ -54,12 +87,7 @@ async function resolveRedirects(url: string, maxHops = 5): Promise<string> {
       const u = new URL(current)
       const mod = (u.protocol === 'https:' ? https : http) as typeof https
       const req = mod.get(
-        {
-          hostname: u.hostname,
-          path: u.pathname + u.search,
-          headers: headersFor({ Range: 'bytes=0-0' }),
-          rejectUnauthorized: false,
-        },
+        reqOptions(u, { Range: 'bytes=0-0' }),
         (res) => {
           res.resume()
           const status = res.statusCode ?? 0
@@ -84,23 +112,19 @@ async function probe(url: string, logTag: string): Promise<ProbeResult | null> {
     const u = new URL(url)
     const mod = (u.protocol === 'https:' ? https : http) as typeof https
     const req = mod.get(
-      {
-        hostname: u.hostname,
-        path: u.pathname + u.search,
-        headers: headersFor({ Range: 'bytes=0-0' }),
-        rejectUnauthorized: false,
-      },
+      reqOptions(u, { Range: 'bytes=0-0' }),
       (res) => {
         res.resume() // discard body
         const status = res.statusCode ?? 0
+        const contentType = String(res.headers['content-type'] ?? '')
         if (status === 206) {
           const cr = String(res.headers['content-range'] ?? '')
           const m = /\/(\d+)/.exec(cr)
           const size = m ? parseInt(m[1]) : 0
-          resolve({ size, rangeSupported: size > 0 })
+          resolve({ size, rangeSupported: size > 0, contentType })
         } else if (status === 200) {
           const size = parseInt(String(res.headers['content-length'] ?? '0'))
-          resolve({ size: isNaN(size) ? 0 : size, rangeSupported: false })
+          resolve({ size: isNaN(size) ? 0 : size, rangeSupported: false, contentType })
         } else {
           console.warn(`[${logTag}] probe ${url} → HTTP ${status}`)
           resolve({ size: 0, rangeSupported: false, status })
@@ -142,12 +166,7 @@ async function downloadChunk(
 
     const ok = await new Promise<boolean>((resolve) => {
       const req = mod.get(
-        {
-          hostname: u.hostname,
-          path: u.pathname + u.search,
-          headers: headersFor({ Range: `bytes=${reqStart}-${end}` }),
-          rejectUnauthorized: false,
-        },
+        reqOptions(u, { Range: `bytes=${reqStart}-${end}` }),
         (res) => {
           if (res.statusCode !== 206 && res.statusCode !== 200) {
             console.warn(`[${logTag}] chunk ${reqStart}-${end} → HTTP ${res.statusCode}`)
@@ -240,7 +259,7 @@ async function streamToFile(
 
     const ok = await new Promise<boolean>((resolve) => {
       const req = mod.get(
-        { hostname: u.hostname, path: u.pathname + u.search, headers: headersFor(extra), rejectUnauthorized: false },
+        reqOptions(u, extra),
         (res) => {
           if (res.statusCode !== 200 && res.statusCode !== 206) {
             console.warn(`[${logTag}] stream ${url} → HTTP ${res.statusCode}`)
@@ -300,7 +319,7 @@ export function cleanupPartsAt(savePath: string): void {
 
 export type DownloadOutcome =
   | { ok: true }
-  | { ok: false; reason: 'aborted' | 'probe_failed' | 'chunks_failed' | 'merge_failed' | 'stream_failed'; msg?: string; status?: number }
+  | { ok: false; reason: 'aborted' | 'probe_failed' | 'not_media' | 'chunks_failed' | 'merge_failed' | 'stream_failed'; msg?: string; status?: number }
 
 export interface DownloadOpts {
   /**
@@ -334,18 +353,22 @@ export async function downloadByUrl(
   const threadCount = Math.max(1, Math.min(opts.threadCount ?? THREAD_COUNT, THREAD_COUNT))
   const finalUrl = await resolveRedirects(url)
 
-  // Already complete? Skip re-probe-and-download.
-  if (existsSync(savePath)) {
-    const head = await probe(finalUrl, logTag)
-    if (head && head.size > 0 && statSync(savePath).size >= head.size) {
-      return { ok: true }
-    }
-  }
-
   const info = await probe(finalUrl, logTag)
   if (!info || info.size === 0) {
     if (signal.aborted) return { ok: false, reason: 'aborted' }
     return { ok: false, reason: 'probe_failed', status: info?.status }
+  }
+
+  // 探测到的是错误体(假 mp4:200 回 JSON/HTML 或超小体积)→ 当作「链接拼错」上抛,
+  // 由站点层回源解析真实直链。绝不能当成功写盘,否则用户拿到几 KB 的假 mp4 还显示"完成"。
+  // 放在「已完成跳过」之前:磁盘上若残留旧的假 mp4,也要重新回源拉正确的。
+  if (looksLikeErrorBody(info)) {
+    return { ok: false, reason: 'not_media' }
+  }
+
+  // Already complete? Skip download.(上面已 probe 过,直接复用 info,省一次请求)
+  if (existsSync(savePath) && statSync(savePath).size >= info.size) {
+    return { ok: true }
   }
 
   // Multi-thread path
