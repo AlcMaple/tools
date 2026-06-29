@@ -55,7 +55,8 @@
 ├── src/              Electron 源码（main / preload / renderer）
 ├── scripts/          构建脚本（Windows 打包、主题生成等）
 ├── resources/        应用图标等静态资源
-├── docs/             设计稿、方案、排错记录
+├── docs/             开发文档（scraping/抓取手册 · regression/回归用例 · release/发布 · design/设计 · troubleshooting/排错 · archive/归档）
+├── archive/          历史原型（Python/JS 旧版，不参与构建，仅留档）
 ├── package.json
 ├── electron.vite.config.ts
 └── ...
@@ -63,13 +64,13 @@
 
 ## 依赖与运行指南
 
-### 1. 安装依赖
+### 安装依赖
 
 ```bash
 npm install
 ```
 
-### 2. 本地开发运行
+### 本地开发运行
 
 启动开发环境，支持热更新（推荐）：
 
@@ -77,7 +78,7 @@ npm install
 npm run dev
 ```
 
-### 3. 项目打包分发
+### 项目打包分发
 
 生成适用于当前操作系统的安装包及可执行文件。
 
@@ -86,3 +87,15 @@ npm run dist
 ```
 
 打包产物输出在 `dist/` 目录下（如 `.exe`, `.dmg` 等）。
+
+## 参与开发
+
+这个项目目前由我一个人维护。一个人写久了难免遇到瓶颈，很多功能也只是顺着我自己的使用习惯长出来的——所以很欢迎有新的想法、新的视角加进来一起做。
+
+- **随便提** — 有想法、踩到 Bug、想要某个功能，都欢迎开 [Issue](https://github.com/AlcMaple/tools/issues)。
+- **直接动手** — 想加功能 clone 下来该写写，写完发 [Pull Request](https://github.com/AlcMaple/tools/pulls) 就行。有活你就直接往里加。
+- **审核归我，但门槛不高** — 是否合并最终由我把关，主要是保证整体方向和代码风格一致；只要理由站得住、不破坏现有体验，基本都会采纳。
+
+不挑经验，新人完全 OK——很多时候反而是新人能带来我想不到的角度。
+上手路径：想知道某个功能的代码在哪，看 [`docs/功能索引.md`](docs/功能索引.md)（功能 → 文件地图）。
+另外 [`AGENTS.md`](AGENTS.md) 最初是写给 AI 看的——用 AI 辅助开发的话，可以让它先读一遍；不用 AI 也一样，自己翻翻就能大致了解这套代码的一些约定。这些约定只是参考，不会卡得很严，放心写就好。
