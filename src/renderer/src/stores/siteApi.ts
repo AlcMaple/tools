@@ -85,14 +85,14 @@ export function siteApi(task: DownloadTask): SiteApi {
       window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newSourceIdx, savePath, task.epPages),
     resolveEpUrl: async (ep) => {
       // OVA 等特殊集的文件名不是集号,模板拼不出来;主进程回源解析过的真实直链
-      // 记在 epUrls 里,优先用它(见 docs/xifan-下载链接-集数补零-回归用例.md)。
+      // 记在 epUrls 里,优先用它(见 docs/regression/xifan-下载链接-集数补零-回归用例.md)。
       const resolved = task.epUrls[ep]
       if (resolved) return resolved
       // 用当前源的模板(换过源后 sourceIdx 已变);从前写死 [0] 会复制出原源的链接
       const template = task.templates[task.sourceIdx] ?? task.templates[0] ?? ''
       // 占位符按携带的位宽补零({:d} 不补零、{:0Nd} 补到 N 位);必须与主进程
       // xifan/download.ts 的 formatEpUrl 保持一致,否则复制出来的直链拼错(见
-      // docs/xifan-下载链接-集数补零-回归用例.md)。兼容历史残留的旧 {:02d} 模板。
+      // docs/regression/xifan-下载链接-集数补零-回归用例.md)。兼容历史残留的旧 {:02d} 模板。
       return template
         ? template.replace(/\{:0?(\d*)d\}/, (_, w: string) =>
             String(ep).padStart(w ? parseInt(w, 10) : 0, '0'))
