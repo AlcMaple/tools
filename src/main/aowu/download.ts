@@ -90,6 +90,7 @@ export async function downloadSingleEp(
   if (outcome.reason === 'aborted') return
   const msg =
     outcome.reason === 'probe_failed' ? 'Probe failed' :
+    outcome.reason === 'not_media' ? '下载到的不是有效视频(线路返回了错误页),请切换线路重试' :
     outcome.reason === 'chunks_failed' ? (outcome.msg ?? 'One or more chunks failed after retries') :
     outcome.reason === 'merge_failed' ? `Merge failed: ${outcome.msg ?? ''}` :
     outcome.reason === 'stream_failed' ? (outcome.msg ?? 'Download failed') :
