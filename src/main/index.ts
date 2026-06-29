@@ -236,7 +236,7 @@ app.whenReady().then(() => {
 
       BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed()) {
-          win.webContents.send('library-updated', newEntries)
+          win.webContents.send('library:updated', newEntries)
         }
       })
     } finally {
@@ -264,7 +264,7 @@ app.whenReady().then(() => {
         }
         BrowserWindow.getAllWindows().forEach(win => {
           if (!win.isDestroyed()) {
-            win.webContents.send('library-updated', updatedEntries)
+            win.webContents.send('library:updated', updatedEntries)
           }
         })
       } finally {
