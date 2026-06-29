@@ -1497,7 +1497,7 @@ function AnimeInfo(): JSX.Element {
    *   - 本次后台刷新作废 → 缓存仍是 stale
    *   - 用户下次搜同一关键词 → SWR 再触发一次
    *   - 如果还限流 → 继续作废 → 一直等到 BGM 放行
-   * 这套语义符合 docs/bgm-集成参考手册.md §3 的「失败后不试探不重试」原则。
+   * 这套语义符合 docs/scraping/bgm-集成参考手册.md §3 的「失败后不试探不重试」原则。
    */
   const refreshBgmSearchInBackground = async (keyword: string, kind: BgmSearchKind): Promise<void> => {
     // dedupRefresh key 也按 kind 分桶 —— 同一关键词的动画 SWR 和书籍 SWR
