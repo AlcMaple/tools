@@ -37,6 +37,7 @@ import {
 import { withTransientRetry } from '../shared/http-client'
 import { netRequest } from '../shared/net-request'
 import { fetchBgmApiJson } from './api-client'
+import { getBgmCookie } from './credentials'
 // 注意：与 html-fallback 是「运行时安全」的循环依赖 —— 两边都只在异步函数体内
 // 用对方的导出（fetchHtmlWithDefenses / fetchSubjectViaHtml），模块初始化期不互相
 // 取值，ESM live binding 能正确解析。
@@ -154,17 +155,38 @@ async function saveCache(html: string, keyword: string, page: number, cat: BgmSe
 
 // ── Fetch with full defense stack ─────────────────────────────────────────────
 
+/** 合并两段 Cookie 头串(`a=b; c=d`),后者(extra)同名覆盖前者。 */
+function mergeCookieHeader(base: string | undefined, extra: string): string {
+  const map = new Map<string, string>()
+  for (const src of [base ?? '', extra]) {
+    for (const part of src.split(';')) {
+      const i = part.indexOf('=')
+      if (i > 0) map.set(part.slice(0, i).trim(), part.slice(i + 1).trim())
+    }
+  }
+  return Array.from(map, ([k, v]) => `${k}=${v}`).join('; ')
+}
+
 async function rawGet(
   url: string,
 ): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: Buffer }> {
   // 走 Electron net（Chromium 网络栈）—— 自动用系统代理，修掉 Node https 直连
   // fake-ip 假地址导致的冷启动超时。net 自己解压，所以不再 decodeBody。
+  const headers = session.headers({
+    'sec-fetch-user': '?1',
+    'upgrade-insecure-requests': '1',
+  })
+  // 带上网页登录 cookie（用户在设置里点过「登录 BGM」就有）。登录态下 bgm.tv
+  // 搜索 ~0.6s 秒回；匿名会被故意拖慢到 ~16s。登录 cookie 同名覆盖 jar 里的旧值。
+  const loginCookie = getBgmCookie()
+  if (loginCookie) headers['Cookie'] = mergeCookieHeader(headers['Cookie'], loginCookie)
   const res = await netRequest(url, {
-    headers: session.headers({
-      'sec-fetch-user': '?1',
-      'upgrade-insecure-requests': '1',
-    }),
-    timeoutMs: 10000,
+    headers,
+    // 25s 而非 10s：bgm.tv 对**匿名**搜索是「故意拖慢」而非拒绝 —— 实测同 IP 同时
+    // 刻,登录态 0.6s 秒回,匿名要 ~16s 才回包(都是 200)。app 是匿名请求,10s
+    // 超时会在 16s 响应到达前就掐断 → 误报「请求超时」。给到 25s 让匿名响应能等到。
+    // (要彻底变快得让请求带登录 cookie,那是另一条路;这里先保证「能搜到」。)
+    timeoutMs: 25000,
   })
   session.ingestSetCookie(res.headers as { 'set-cookie'?: string[] })
   return { status: res.status, headers: res.headers, body: res.body }
@@ -284,8 +306,14 @@ async function fetchPage(
         // 「您在 N 秒」短限流页 / 429 —— 连接是通的（拿到了响应），清零超时计数，
         // 原样抛出显示它自己的（真实）倒计时。
         consecutiveSearchTimeouts = 0
+      } else if (/\bHTTP \d{3}\b/.test((e as Error)?.message ?? '')) {
+        // 拿到了 HTTP 错误响应（如 BGM 经 Cloudflare 偶发的 502 网关错误）= 端点
+        // 其实回包了，跟「连续超时/丢包」是两回事，不能算「无响应」：不计入超时
+        // 计数、不转成限流倒计时。原样抛出 → friendlyError 归类成「BGM 偶发故障 5xx」，
+        // 用户可立刻 Try again（浏览器能开就说明源站这会儿是抽风，重试常常就成）。
+        consecutiveSearchTimeouts = 0
       } else {
-        // 超时 / 连接失败 = 搜索端点不回包。单次当网络抖（原样抛普通错误、不倒计时）；
+        // 真·超时 / 连接失败 = 搜索端点不回包。单次当网络抖（原样抛普通错误、不倒计时）；
         // 连撞阈值才判定疑似限流，转成 RateLimitError 给个信息性倒计时（**不阻断**：
         // 用户点 Try again 仍会真的重新搜索）。
         consecutiveSearchTimeouts++
