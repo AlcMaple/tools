@@ -1,8 +1,17 @@
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow } from 'electron'
 import { searchBgm, type BgmSearchCat } from '../bgm/search'
 import { getBgmDetail } from '../bgm/detail'
 import { getBgmCalendar } from '../bgm/calendar'
 import { cacheCover } from '../bgm/cover-cache'
+import {
+  getBgmAuthStatus,
+  setBgmToken,
+  openBgmLogin,
+  clearBgmCookie,
+  verifyBgmLogin,
+  getBgmCredentials,
+  setBgmCredentials,
+} from '../bgm/credentials'
 
 /**
  * 把 renderer 传来的 cat 值收敛到 `BgmSearchCat`（动画 2 / 书籍 1）。
@@ -52,4 +61,32 @@ export function registerBgmIpc(): void {
     async (_event, key: string, url: string, maxWidth?: number) =>
       cacheCover(key, url, maxWidth),
   )
+
+  // ── 鉴权(令牌 + 网页登录) ────────────────────────────────────────────────
+  // 状态查询:只回 hasToken / loggedIn 等布尔,不回 token / cookie 明文。
+  ipcMain.handle('bgm:auth-status', () => getBgmAuthStatus())
+  // 设置令牌(粘贴即用);传空串 = 清除。设置后回最新状态供 UI 刷新。
+  ipcMain.handle('bgm:set-token', (_event, token: string) => {
+    setBgmToken(typeof token === 'string' ? token : '')
+    return getBgmAuthStatus()
+  })
+  // 弹内嵌登录窗口,父窗口设为触发它的窗口。登录成功捕获 cookie 后 resolve。
+  ipcMain.handle('bgm:login', async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    return openBgmLogin(parent)
+  })
+  // 退出网页登录(清 cookie),令牌不动。
+  ipcMain.handle('bgm:logout', () => {
+    clearBgmCookie()
+    return getBgmAuthStatus()
+  })
+  // 主动校验登录态是否过期(带 cookie 拉首页看 /logout)。失效会清 cookie。
+  ipcMain.handle('bgm:verify-login', () => verifyBgmLogin())
+  // 登录邮箱/密码:供内嵌登录窗自动填充。纯本地存储(不同步、不入库),所以
+  // 明文回传给设置页做回显/小眼睛(和 WebDAV getConfig 回传应用密码同一处理)。
+  ipcMain.handle('bgm:get-credentials', () => getBgmCredentials())
+  ipcMain.handle('bgm:set-credentials', (_event, em: string, pw: string) => {
+    setBgmCredentials(typeof em === 'string' ? em : '', typeof pw === 'string' ? pw : '')
+    return getBgmCredentials()
+  })
 }

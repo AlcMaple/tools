@@ -29,6 +29,18 @@ contextBridge.exposeInMainWorld('bgmApi', {
    */
   cacheCover: (key: string, url: string, maxWidth?: number): Promise<string | null> =>
     ipcRenderer.invoke('bgm:cache-cover', key, url, maxWidth),
+  // 鉴权:状态(只含布尔)/ 设置令牌 / 弹登录窗 / 退出登录。token、cookie 明文
+  // 不出主进程。
+  authStatus: () => ipcRenderer.invoke('bgm:auth-status'),
+  setToken: (token: string) => ipcRenderer.invoke('bgm:set-token', token),
+  login: () => ipcRenderer.invoke('bgm:login'),
+  logout: () => ipcRenderer.invoke('bgm:logout'),
+  // 主动校验网页登录是否过期(失效会自动清 cookie),返回最新状态。
+  verifyLogin: () => ipcRenderer.invoke('bgm:verify-login'),
+  // 登录邮箱/密码(供登录窗自动填充)。纯本地存储,明文回传仅用于设置回显。
+  getCredentials: () => ipcRenderer.invoke('bgm:get-credentials'),
+  setCredentials: (email: string, password: string) =>
+    ipcRenderer.invoke('bgm:set-credentials', email, password),
 })
 
 // Single subscription point for download progress events. The main process
