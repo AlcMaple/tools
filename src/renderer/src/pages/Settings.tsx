@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useSystemStats } from "../hooks/useSystemStats";
 import { updateStore, type UpdateState } from "../stores/updateStore";
 import { reportError } from "../utils/reportError";
+import type { BgmAuthStatus } from "../types/bgm";
+import { setCachedAuth } from "../utils/bgmAuth";
 
 // ── persistence keys ─────────────────────────────────────────
 const NODE_ID_KEY = "xifan_node_id";
@@ -799,6 +801,66 @@ function Settings(): JSX.Element {
       .catch(() => { /* 拿不到当打包处理，不显示按钮 */ });
   }, []);
 
+  // BGM 鉴权（令牌 + 网页登录）。token / cookie 明文不出主进程，UI 只拿状态布尔。
+  const [bgmAuth, setBgmAuth] = useState<BgmAuthStatus>({ hasToken: false, loggedIn: false });
+  const [bgmTokenInput, setBgmTokenInput] = useState("");
+  const [bgmShowToken, setBgmShowToken] = useState(false);
+  const [bgmLoggingIn, setBgmLoggingIn] = useState(false);
+  const [bgmVerifying, setBgmVerifying] = useState(false);
+  // 设置里**只取状态、不自动校验**（用户要求）——是否过期由用户点「检查」手动确认。
+  // 注意:动漫查询页的 chip 会按 8 点边界自动校验,过期时主进程会清 cookie,所以这里
+  // authStatus 读到的「已登录」通常已是真实的(被 chip 校验维护过)。
+  useEffect(() => {
+    window.bgmApi.authStatus().then(setBgmAuth).catch(() => { /* 拿不到当未配置 */ });
+  }, []);
+  // 手动操作都回填共享缓存,让动漫查询页的 chip 立刻同步,不必等下个 8 点窗口。
+  const applyBgm = (s: BgmAuthStatus): void => { setBgmAuth(s); setCachedAuth(s); };
+  const recheckBgm = async (): Promise<void> => {
+    setBgmVerifying(true);
+    try { applyBgm(await window.bgmApi.verifyLogin()); }
+    finally { setBgmVerifying(false); }
+  };
+  const saveBgmToken = async (): Promise<void> => {
+    const v = bgmTokenInput.trim();
+    if (!v) return;
+    applyBgm(await window.bgmApi.setToken(v));
+    setBgmTokenInput("");
+  };
+  const clearBgmToken = async (): Promise<void> => {
+    applyBgm(await window.bgmApi.setToken(""));
+    setBgmTokenInput("");
+  };
+  const doBgmLogin = async (): Promise<void> => {
+    setBgmLoggingIn(true);
+    try { applyBgm(await window.bgmApi.login()); }
+    finally { setBgmLoggingIn(false); }
+  };
+  const doBgmLogout = async (): Promise<void> => {
+    applyBgm(await window.bgmApi.logout());
+  };
+
+  // BGM 登录邮箱/密码 —— 供内嵌登录窗自动填充。纯本地存储(不同步、不入库),
+  // 和 WebDAV 应用密码同一处理,所以明文回显 + 小眼睛。
+  const [bgmEmail, setBgmEmail] = useState("");
+  const [bgmPassword, setBgmPassword] = useState("");
+  const [bgmShowPwd, setBgmShowPwd] = useState(false);
+  const lastSavedBgmCreds = useRef({ email: "", password: "" });
+  useEffect(() => {
+    window.bgmApi.getCredentials().then((c) => {
+      setBgmEmail(c.email);
+      setBgmPassword(c.password);
+      lastSavedBgmCreds.current = { email: c.email, password: c.password };
+    }).catch(() => { /* 没存过 = 空,正常 */ });
+  }, []);
+  const persistBgmCreds = (): void => {
+    const cur = { email: bgmEmail.trim(), password: bgmPassword };
+    const last = lastSavedBgmCreds.current;
+    if (cur.email === last.email && cur.password === last.password) return; // 没变 → 不发 IPC
+    window.bgmApi.setCredentials(cur.email, cur.password).then(() => {
+      lastSavedBgmCreds.current = { email: cur.email, password: cur.password };
+    }).catch((err) => reportError("settings:bgm-creds-save", err));
+  };
+
   // 邮件提醒 —— 周历每次 14d TTL 过期触发自动发件。
   // authCode 永远不从主进程回传明文，UI 拿到的是 hasAuthCode 布尔。用户
   // 不重新输入授权码就提交 = 保留旧的加密值（mailApi.setConfig 把空串当
@@ -988,6 +1050,149 @@ function Settings(): JSX.Element {
                       <Switch
                         checked={settings.minimizeOnClose}
                         onChange={(v) => updateSettings({ minimizeOnClose: v })}
+                      />
+                    }
+                  />
+                </Block>
+              )}
+
+              {active === "general" && (
+                <Block
+                  title="BGM 账号"
+                  hint="动漫查询的数据来自 Bangumi。匿名访问会被故意拖慢/限流；配置下面任一项可显著改善（两项作用不同，建议都配）。"
+                >
+                  <Row
+                    icon="vpn_key"
+                    title="访问令牌"
+                    desc="给「番剧详情 / 按别名搜索」用（api.bgm.tv）。登录 BGM 后在 next.bgm.tv/demo/access-token 生成、粘贴到这里即可。"
+                    density={tweaks.density}
+                    stack
+                    control={
+                      <TextControl
+                        value={bgmTokenInput}
+                        placeholder={bgmAuth.hasToken ? "已配置令牌（粘贴可替换）" : "粘贴你的 BGM 访问令牌…"}
+                        type={bgmShowToken ? "text" : "password"}
+                        onChange={setBgmTokenInput}
+                        onCommit={saveBgmToken}
+                        trailing={
+                          <span className="flex items-center flex-shrink-0">
+                            <button
+                              onClick={() => setBgmShowToken((v) => !v)}
+                              className="text-on-surface-variant/40 hover:text-on-surface transition-colors px-1"
+                              type="button"
+                              title={bgmShowToken ? "隐藏" : "明文查看"}
+                            >
+                              <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>
+                                {bgmShowToken ? "visibility_off" : "visibility"}
+                              </span>
+                            </button>
+                            {bgmAuth.hasToken && (
+                              <button
+                                onClick={() => { void clearBgmToken(); }}
+                                className="text-on-surface-variant/40 hover:text-error transition-colors px-1"
+                                type="button"
+                                title="清除已保存的令牌"
+                              >
+                                <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>delete</span>
+                              </button>
+                            )}
+                          </span>
+                        }
+                      />
+                    }
+                  />
+                  <Row
+                    icon="login"
+                    title="网页登录"
+                    desc="给「主搜索」用（bgm.tv 网页）。点下面按钮弹出 BGM 登录页，登录成功后自动记住登录态，主搜索从约 16 秒提速到约 1 秒。登录态过期后再登一次即可。填了下面的邮箱/密码后，登录窗会自动填好，只剩验证码要手动输。"
+                    density={tweaks.density}
+                    control={
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        {/* 状态如实反映:打开设置已自动校验过(过期会回落成未登录) */}
+                        <span
+                          className={`inline-flex items-center gap-1 font-label text-[11px] ${bgmAuth.loggedIn ? "text-primary" : "text-on-surface-variant/50"}`}
+                          title={bgmAuth.loggedIn ? "登录态有效" : "未登录或登录态已过期"}
+                        >
+                          <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>
+                            {bgmVerifying ? "sync" : bgmAuth.loggedIn ? "check_circle" : "cancel"}
+                          </span>
+                          {bgmVerifying ? "检查中…" : bgmAuth.loggedIn ? "已登录" : "未登录"}
+                        </span>
+                        {bgmAuth.loggedIn ? (
+                          /* 已登录:只给「检查 / 退出」。登录态有效时不出现登录按钮。 */
+                          <>
+                            <button
+                              onClick={() => { void recheckBgm(); }}
+                              disabled={bgmVerifying}
+                              className="inline-flex items-center px-3 py-2 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/70 hover:text-on-surface font-label text-[11px] uppercase tracking-widest transition-colors disabled:opacity-50"
+                              type="button"
+                              title="手动校验登录态是否过期"
+                            >
+                              检查
+                            </button>
+                            <button
+                              onClick={() => { void doBgmLogout(); }}
+                              className="inline-flex items-center px-3 py-2 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/70 hover:text-on-surface font-label text-[11px] uppercase tracking-widest transition-colors"
+                              type="button"
+                            >
+                              退出
+                            </button>
+                          </>
+                        ) : (
+                          /* 未登录 / 检查后发现过期:才出现登录按钮。 */
+                          <button
+                            onClick={() => { void doBgmLogin(); }}
+                            disabled={bgmLoggingIn}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/90 hover:bg-primary text-on-primary font-label text-[11px] uppercase tracking-widest transition-colors disabled:opacity-50"
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>login</span>
+                            {bgmLoggingIn ? "登录中…" : "登录 BGM"}
+                          </button>
+                        )}
+                      </div>
+                    }
+                  />
+                  <Row
+                    icon="account_circle"
+                    title="登录邮箱"
+                    desc="点「登录 BGM」时自动填进登录页的邮箱框。纯本地保存，不上传、不同步，别人拉代码也拿不到。"
+                    density={tweaks.density}
+                    stack
+                    control={
+                      <TextControl
+                        value={bgmEmail}
+                        placeholder="登录 BGM 用的邮箱"
+                        onChange={setBgmEmail}
+                        onCommit={persistBgmCreds}
+                      />
+                    }
+                  />
+                  <Row
+                    icon="password"
+                    title="登录密码"
+                    desc="同上，自动填进密码框。验证码 BGM 防自动化，仍需你手动输入。"
+                    density={tweaks.density}
+                    stack
+                    control={
+                      <TextControl
+                        value={bgmPassword}
+                        placeholder="••••••••"
+                        type={bgmShowPwd ? "text" : "password"}
+                        onChange={setBgmPassword}
+                        onCommit={persistBgmCreds}
+                        trailing={
+                          <button
+                            onClick={() => setBgmShowPwd((v) => !v)}
+                            className="text-on-surface-variant/40 hover:text-on-surface transition-colors flex-shrink-0 px-1"
+                            type="button"
+                            title={bgmShowPwd ? "隐藏" : "明文查看"}
+                          >
+                            <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>
+                              {bgmShowPwd ? "visibility_off" : "visibility"}
+                            </span>
+                          </button>
+                        }
                       />
                     }
                   />
