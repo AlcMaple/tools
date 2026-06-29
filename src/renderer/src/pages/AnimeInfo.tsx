@@ -11,8 +11,9 @@ import { normalizeXifan, normalizeGirigiri, normalizeAowu } from '../utils/searc
 import { XifanDownloadConfigModal } from '../components/XifanDownloadModal'
 import { GirigiriDownloadConfigModal } from '../components/GirigiriDownloadModal'
 import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
+import { BgmLoginChip } from '../components/BgmLoginChip'
 import { downloadStore } from '../stores/downloadStore'
-import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled } from '../utils/searchCache'
+import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled, setCachedSearch } from '../utils/searchCache'
 import { animeTrackStore, useAnimeTrack, deriveSubjectType, aliasesFromInfobox } from '../stores/animeTrackStore'
 import { loadBgmHistory, addBgmHistory, removeBgmHistory, clearBgmHistory } from '../utils/bgmSearchHistory'
 import { useCover } from '../hooks/useCover'
@@ -58,6 +59,10 @@ async function setSearchCache(source: Source, keyword: string, cards: SearchCard
     c[keyword] = cards
     await window.systemApi.cacheSet(archiveCacheKey(source), c)
   } catch { /* noop */ }
+  // 同时写一份 SearchDownload 用的共享缓存(带 TTL 信封),让两边缓存「联动」:
+  // 否则在 BGM 详情用某源搜过后,去搜索下载搜同一标题读不到缓存 → 走网络 →
+  // 又要重新过验证码。getSearchCache 读时已会回退读共享缓存,这里把写也补上。
+  void setCachedSearch(keyword, source, cards)
 }
 
 // ── BGM 搜索结果缓存 ──────────────────────────────────────────
@@ -1636,6 +1641,10 @@ function AnimeInfo(): JSX.Element {
           在生成 CSS 里还排在 pt-16 之后),小于顶栏 64px,首个元素(返回按钮)
           会被压到顶栏后面 —— 这正是「PC 看不到返回按钮、手机平板正常」的根因。 */}
       <main className="ml-0 pt-16 px-4 md:px-8 lg:px-10 pb-6 lg:pb-10">
+        {/* BGM 登录状态:进 tab 自动检查,过期/未登录就地给登录按钮(免开设置)。 */}
+        <div className="flex justify-end mb-3 min-h-[24px] items-center">
+          <BgmLoginChip />
+        </div>
         {state.status === 'idle' && <IdleState />}
         {(state.status === 'searching' || state.status === 'loading') && (
           <LoadingSpinner progress={state.status === 'searching' ? searchProgress : null} />
