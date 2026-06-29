@@ -203,11 +203,21 @@ export function friendlyError(err: unknown): FriendlyError {
     }
   }
 
-  // Cloudflare 拦截 —— 站点适配器在响应里识别到 CF 人机校验 / 风控页时抛出
-  // （见 main/shared/scrape-guard.ts）。这类页面既不是验证码门也不是结果页,
-  // 早期被当成「0 结果」吞掉显示成「搜索不到结果」,现在显式分类。放在 HTTP
-  // 状态匹配之前:CF 的 JS 挑战页常是 200,message 里没有状态码可匹配。
-  if (lower.includes('cloudflare')) {
+  // Cloudflare 真·拦截 —— 站点适配器识别到 CF 人机校验 / 风控页时抛出
+  // （见 main/shared/scrape-guard.ts）。放在 HTTP 状态匹配之前:CF 的 JS 挑战页
+  // 常是 200,message 里没有状态码可匹配。
+  //
+  // 必须严格匹配「真被 CF 拦」的信号,不能用裸 `cloudflare` 关键词 —— BGM 的
+  // 诊断串里恒带 `server=cloudflare`,那只是 BGM 用了 CF,并不代表被拦;尤其
+  // 502/`cf-mitigated=-` 是源站网关错误而非 CF 拦截,误判成「被 Cloudflare 拦截」
+  // 会让用户以为是风控、而不是「BGM 偶发故障稍后重试」。
+  const cfBlocked =
+    msg.includes('被 Cloudflare 拦截') ||                    // scrape-guard 预判(稀饭/旗木)
+    /cf-mitigated=\s*(challenge|block|managed)/i.test(msg) || // BGM 诊断里 CF 确实出手
+    lower.includes('just a moment') ||
+    lower.includes('cf-chl') ||
+    lower.includes('attention required')
+  if (cfBlocked) {
     return {
       title: '被 Cloudflare 拦截',
       hint: '站点的 Cloudflare 防护这会儿弹了人机校验或风控（常因冷启动 / 代理指纹，是偶发的）。点 Try again 重试通常就过；频繁出现可换个网络或代理再试。',
