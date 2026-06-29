@@ -5,7 +5,7 @@ declare global {
   const __APP_VERSION__: string
 }
 
-import type { BgmSearchResult, BgmDetail, BgmCalendarResult } from './types/bgm'
+import type { BgmSearchResult, BgmDetail, BgmCalendarResult, BgmAuthStatus, BgmCredentials } from './types/bgm'
 import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 import type { AowuSearchResult, AowuEpisode, AowuWatchInfo } from './types/aowu'
@@ -189,6 +189,20 @@ declare global {
       calendar: (update?: boolean) => Promise<BgmCalendarResult>
       /** 封面本地化：下载 url 到本地，返回 archivist:// 路径（失败 null）。 */
       cacheCover: (key: string, url: string, maxWidth?: number) => Promise<string | null>
+      /** BGM 鉴权状态（只含布尔，不含 token/cookie 明文）。 */
+      authStatus: () => Promise<BgmAuthStatus>
+      /** 设置个人访问令牌（粘贴即用，传空串=清除）。返回最新状态。 */
+      setToken: (token: string) => Promise<BgmAuthStatus>
+      /** 弹内嵌 BGM 登录窗口，登录成功后捕获 cookie。返回最新状态。 */
+      login: () => Promise<BgmAuthStatus>
+      /** 退出网页登录（清 cookie，令牌保留）。返回最新状态。 */
+      logout: () => Promise<BgmAuthStatus>
+      /** 主动校验网页登录是否过期（失效会自动清 cookie）。返回最新状态。 */
+      verifyLogin: () => Promise<BgmAuthStatus>
+      /** 读已保存的登录邮箱/密码（供设置回显 + 登录窗自动填充）。 */
+      getCredentials: () => Promise<BgmCredentials>
+      /** 保存登录邮箱/密码（纯本地，供登录窗自动填充）。返回最新值。 */
+      setCredentials: (email: string, password: string) => Promise<BgmCredentials>
     }
     xifanApi: {
       getCaptcha: () => Promise<{ image_b64: string }>

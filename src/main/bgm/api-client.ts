@@ -26,6 +26,7 @@ import { app } from 'electron'
 import { RateLimiter, RateLimitError } from '../shared/rate-limit'
 import { netRequest } from '../shared/net-request'
 import { ApiCircuitBreaker } from './api-circuit'
+import { getBgmToken } from './credentials'
 
 /**
  * BGM 官方明确要求第三方调用 api.bgm.tv 时带规范 User-Agent：
@@ -46,10 +47,16 @@ import { ApiCircuitBreaker } from './api-circuit'
  * 要你**老老实实**自报家门。混了浏览器 UA 调 API 反而更容易被风控。
  */
 function buildHeaders(): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     'User-Agent': `MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)`,
     'Accept': 'application/json',
   }
+  // 个人访问令牌（可选）：设置里填了(或 .env 兜底)就带上 Authorization，
+  // api.bgm.tv 走登录态 —— 详情 / 按别名搜索限额更宽松、限流时更稳。
+  // 主搜索走的是 bgm.tv 网页、套不上 token，由 cookie 登录态负责（见 credentials.ts）。
+  const token = getBgmToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  return headers
 }
 
 // 500ms 间隔 + 200ms 抖动 —— api.bgm.tv 比 HTML 搜索宽松（HTML 是 2200ms),

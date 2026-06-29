@@ -70,3 +70,19 @@ export interface BgmCalendarResult {
   /** Whether the result came from disk cache. */
   fromCache: boolean
 }
+
+/** BGM 鉴权状态 —— 只含布尔/时间戳，不含 token/cookie 明文（见主进程 credentials.ts）。 */
+export interface BgmAuthStatus {
+  /** 已配置个人访问令牌（设置里填的，存在本地 bgm_auth.json）。 */
+  hasToken: boolean
+  /** 已捕获网页登录 cookie（点过「登录 BGM」并成功）。 */
+  loggedIn: boolean
+  /** 上次登录（捕获 cookie）的时间戳 ms。 */
+  cookieSavedAt?: number
+}
+
+/** 登录用邮箱/密码（供内嵌登录窗自动填充）。纯本地存储。 */
+export interface BgmCredentials {
+  email: string
+  password: string
+}
