@@ -87,22 +87,33 @@ export async function downloadSingleEp(
 
   let outcome = await run(url, savePath)
 
-  // 模板拼出的 URL 404:多半是 OVA 这类特殊集,文件名不是集号(如 .../OVA.mp4),
-  // 回源拉该集播放页解析真实地址再下一次(见 docs/regression/xifan-下载链接-集数补零-回归用例.md)。
-  // 只认 404(链接是我们自己拼错的);限流/5xx 仍按红线原样上抛给 UI,不在这里重试。
-  // epPages 旧任务(升级前的 localStorage)里没有,此时维持原 404 错误,行为同从前。
-  if (!outcome.ok && outcome.reason === 'probe_failed' && outcome.status === 404 && epPages[sourceIdx]) {
-    try {
+  // 模板拼出的 URL 取不到正片,两种情形都属于「我们自己拼错了链接」,回源拉该集播放页
+  // 读 player_aaaa.url 拿真实直链再下一次(见 docs/regression/xifan-下载链接-集数补零-回归用例.md):
+  //   - probe404:多半是 OVA 这类特殊集,文件名不是集号(如 .../OVA.mp4),模板必拼错;
+  //   - notMedia:服务器用 HTTP 200 回了几 KB 的 JSON 错误体(假 mp4)——moedot 这类 CDN
+  //     对同一部番不同集的文件名并不一致(ep1 是 RE1z.mp4、ep11 却是 RE11.mp4),模板按
+  //     ep1 推断就会给其它集拼出带多余字符的错链接,而播放页里才有该集真实地址。
+  // 仅限这两类;限流 / 5xx 仍按红线原样上抛给 UI,不在这里重试。
+  // epPages 旧任务(升级前的 localStorage)里没有,此时维持原错误,行为同从前。
+  if (!outcome.ok && epPages[sourceIdx]) {
+    const probe404 = outcome.reason === 'probe_failed' && outcome.status === 404
+    const notMedia = outcome.reason === 'not_media'
+    if (probe404 || notMedia) try {
       const realUrl = await resolveEpRealUrl(epPages[sourceIdx], ep)
       if (realUrl && realUrl !== url) {
-        // 真实直链先同步给渲染层,「复制 mp4 直链」得复制这条,模板拼的那条是 404
+        // 真实直链先同步给渲染层,「复制 mp4 直链」得复制这条,模板拼的那条取不到
         onEvent({ type: 'ep_url', ep, url: realUrl })
-        // 文件名跟着真实链接走:.../OVA.mp4 存成 {title} - OVA.mp4,不硬套集号
-        const realName = nameFromUrl(realUrl)
-        const realPath = realName ? join(dir, `${safeName(title)} - ${safeName(realName)}.mp4`) : savePath
+        // probe404 多为 OVA 等特殊集:文件名跟着真实链接走(.../OVA.mp4 → {title} - OVA.mp4)。
+        // notMedia 是普通集模板拼错(.../RE11.mp4):保持常规集号命名 {title} - 11.mp4,
+        // 不能把 URL 里的 RE11 当文件名,否则存成「{title} - RE11.mp4」很怪。
+        let realPath = savePath
+        if (probe404) {
+          const realName = nameFromUrl(realUrl)
+          if (realName) realPath = join(dir, `${safeName(title)} - ${safeName(realName)}.mp4`)
+        }
         outcome = await run(realUrl, realPath)
       }
-    } catch { /* 回源本身失败 → 保留原 404 outcome,走下面统一错误上报 */ }
+    } catch { /* 回源本身失败 → 保留原 outcome,走下面统一错误上报 */ }
   }
 
   if (outcome.ok) {
@@ -112,6 +123,7 @@ export async function downloadSingleEp(
   if (outcome.reason === 'aborted') return
   const msg =
     outcome.reason === 'probe_failed' ? 'Probe failed' :
+    outcome.reason === 'not_media' ? '下载到的不是有效视频(线路返回了错误页),请切换线路重试' :
     outcome.reason === 'chunks_failed' ? (outcome.msg ?? 'One or more chunks failed after retries') :
     outcome.reason === 'merge_failed' ? `Merge failed: ${outcome.msg ?? ''}` :
     outcome.reason === 'stream_failed' ? (outcome.msg ?? 'Download failed') :
