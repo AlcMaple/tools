@@ -88,7 +88,7 @@ export async function downloadSingleEp(
   let outcome = await run(url, savePath)
 
   // 模板拼出的 URL 404:多半是 OVA 这类特殊集,文件名不是集号(如 .../OVA.mp4),
-  // 回源拉该集播放页解析真实地址再下一次(见 docs/xifan-下载链接-集数补零-回归用例.md)。
+  // 回源拉该集播放页解析真实地址再下一次(见 docs/regression/xifan-下载链接-集数补零-回归用例.md)。
   // 只认 404(链接是我们自己拼错的);限流/5xx 仍按红线原样上抛给 UI,不在这里重试。
   // epPages 旧任务(升级前的 localStorage)里没有,此时维持原 404 错误,行为同从前。
   if (!outcome.ok && outcome.reason === 'probe_failed' && outcome.status === 404 && epPages[sourceIdx]) {

@@ -501,7 +501,7 @@ class AnimeTrackStore {
    * 路径补上 → 直接 short-circuit 不发请求。
    *
    * **失败处理**：catch swallow，**不重试**。下次 +追番 / 打开详情页 /
-   * 重启应用时这个调用会再触发一次，符合 docs/bgm-集成参考手册.md §3
+   * 重启应用时这个调用会再触发一次，符合 docs/scraping/bgm-集成参考手册.md §3
    * 「失败后不试探不重试」原则。
    *
    * 注：封面本地化**不**走 store —— track.cover 永远存可移植的 URL（要跨

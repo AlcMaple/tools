@@ -2,7 +2,7 @@
  * Electron `net` 封装 —— 给主进程的抓取统一一个走 **Chromium 网络栈**的
  * HTTP 客户端，替代裸 Node `https`。
  *
- * 为什么换（见 docs/bgm-集成参考手册）：Node `https` **不读系统代理**。
+ * 为什么换（见 docs/scraping/bgm-集成参考手册）：Node `https` **不读系统代理**。
  * 用户开着 Clash/Mihomo 系 fake-ip 代理时，DNS 把 bgm.tv 解析成 198.18.x
  * 假地址，Node 直连这个不可路由的地址 → 黑洞 → 冷启动超时；而浏览器走
  * 系统代理永远正常。Electron `net` 走 Chromium 网络栈，**自动读系统代理 +
