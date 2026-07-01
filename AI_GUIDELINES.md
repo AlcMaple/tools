@@ -1,0 +1,65 @@
+# AI 生成规范
+
+## 网络请求
+
+- ❌ 新增抓取逻辑用 Node `https.get`/`https.request`
+  后果：Node `https` 不读系统代理，Clash 等 fake-ip 代理下域名解析成 `198.18.x` 假地址，直连黑洞超时。
+  ✅ 一律 `import { netRequest } from '../shared/net-request'`（Electron `net`，走系统代理/PAC）。
+
+- ❌ 限流/5xx 失败后应用层自动重试、周期性探测「恢复了没」、或 catch 后静默 `return null`
+  后果：惩罚窗口里加戳会加重限流；静默吞错让用户以为「没结果」而不停手动重试，等于放大伤害。
+  ✅ 失败一律 `throw` 到 UI，由用户用倒计时按钮自己决定何时重试。唯一允许的代码层重试是传输层瞬时抖动（`withTransientRetry`，单次 ECONNRESET 级别）。
+
+- ❌ 上 Playwright 常驻浏览器去抓取
+  后果：要的是浏览器的网络栈，不是它的 JS 渲染——BGM/萌娘都是服务端渲染 HTML、没有 JS 挑战，上真浏览器只会更慢、多吃几百 MB 内存，纯属浪费。
+  ✅ 静态 HTML 解析用 cheerio 就够。
+
+## 错误处理
+
+- ❌ 统一兜底错误文案（比如所有失败都显示"网络请求失败"）
+  后果：真实事故——用户被限流时以为自己断网了，一直手动重试，反而把限流打得更狠。
+  ✅ 在 `utils/errorMessage.ts` 里按错误类型分类，每类给针对性文案 + 行动指引。
+
+- ❌ 用裸 `cloudflare` 关键词判断是否被 CF 拦截
+  后果：BGM 诊断串本来就恒带 `server=cloudflare`，裸关键词会把正常响应误判成拦截。
+  ✅ 只认 `cf-mitigated=challenge/block/managed`、`Just a moment`、`cf-chl` 这类强特征。
+
+## 数据持久化
+
+- ❌ 把本机绝对路径（如 `archivist:///Users/xxx/.../cover.jpg`）写进要跨设备同步的数据
+  后果：真事故——封面路径同步到另一台设备后路径不存在，封面全裂。
+  ✅ 落盘只存可移植 URL/相对标识，本地化路径只在显示时按设备现算（参考 `hooks/useCover.ts`）。
+
+## UI / 样式
+
+- ❌ 选中态/hover 态切换时改变盒模型尺寸（只在选中态加 border、加粗字重、改 padding）
+  后果：相邻元素被挤一下，出现布局抖动，chip/tab/pill/列表项高发。
+  ✅ 两态之间 border 宽度、字重、padding、字号、宽高必须一致，只能变颜色/底色/阴影。
+
+## 技术栈与架构边界
+
+- 构建用 electron-vite，不换 webpack/rollup——一套配置管三端，没必要拆两套。
+- TypeScript 5 `strict: true`，不关 strict、不甩 `any`——类型是唯一防线，关了等于裸奔。
+- UI 用 React 18 + Tailwind 3 函数组件+hooks，不加新 UI 库/CSS-in-JS/class 组件——两套风格混用心智负担翻倍。
+- 渲染进程状态管理用手写 `Map`+listener+`localStorage`（`stores/*.ts`），不上 Redux/Zustand/MobX/Context 全局态——现有模式够用，多一层状态库只是多一层要背的抽象。
+- 抓取场景 HTTP 用 `netRequest()`，不用 axios/undici/node-fetch/裸 Node `https`——`https` 不走系统代理会黑洞超时（见「网络请求」错题本）。
+- 抓取解析用 cheerio，不常驻 puppeteer/playwright——BGM/萌娘都是服务端渲染 HTML、没有 JS 挑战，上真浏览器只会更慢更吃内存。
+- 文件监听用 chokidar，不自写轮询——系统本身都有"文件变了主动通知你"的机制。
+- 邮件用 nodemailer，不接云邮件 SDK——本地 SMTP 够用，没必要多接一个账号依赖。
+- 更新用 electron-updater，不自研协议——需要自己处理签名校验和增量包。
+- 持久化用 JSON 文件（`shared/json-store.ts`），不上 SQLite/IndexedDB/ORM——数据量小，JSON 读写够用。
+- 没有测试框架，也不需要——不要自作主张加 Jest/Vitest，加了没人维护。
+- 渲染进程不碰网络/文件/Node API，一律走 IPC（新增 channel 四步流程见 `CLAUDE.md`「Adding a new IPC channel」）。渲染进程只能请求 IPC 写死的功能（搜索、下载等），无法请求"读任意文件""执行任意命令"这种，防止黑客和恶意代码
+- 不为不存在的需求（多租户、插件系统、国际化）预留扩展点——YAGNI，三行能写完不要抽成一层。
+
+## 提交规范
+
+- commit message 用 **Conventional Commits + 中文描述**：`<type>(<scope>): <描述>`
+  - 允许的 type：`feat` `fix` `docs` `refactor` `chore` `style` `perf` `test` `build` `ci`
+  - scope 可选，用模块名（`bgm` `ipc` `library` 等）
+- 标题写用户/开发者能看懂的**现象或结果**，不堆底层术语（术语放正文）。
+  例：`fix(bgm): 修复搜索动漫时报 net::ERR_INVALID_ARGUMENT`，不是 `netRequest 跳过 Host 头`。
+- 正文按需写：简单改动只要标题；复杂/踩过坑的改动才写正文，正文只写关键原因/决策，不堆废话。
+- **不加 AI 署名 trailer**（如 `Co-Authored-By: Claude ...`）—— 提交历史统一以开发者身份呈现。
+- 只在用户明确要求时才 commit/push。
+- **提交前先按 [DEVLOG.md](./DEVLOG.md) 的格式补一条日志** —— 这是交付前的必经步骤，不是可选项。

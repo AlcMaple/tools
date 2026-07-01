@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **AGENTS.md is the authoritative dev spec.** This file is the fast on-ramp; `AGENTS.md` (中文) holds the full conventions. When they appear to conflict, follow `AGENTS.md`. The deepest rationale for the network/scraping rules lives in `docs/scraping/bgm-集成参考手册.md`. To find where a feature lives, start at `docs/功能索引.md` (功能 → 文件地图).
+> This file is the architecture reference. Two companion docs at the repo root are maintained alongside it: `AI_GUIDELINES.md` (中文, AI 代码生成护栏 — mistake log, locked tech stack/architecture boundaries, commit convention) and `DEVLOG.md` (中文, per-change dev log written before each commit). The deepest rationale for the network/scraping rules lives in `docs/scraping/bgm-集成参考手册.md`. To find where a feature lives, start at `docs/功能索引.md` (功能 → 文件地图).
 
 ## Project Overview
 
