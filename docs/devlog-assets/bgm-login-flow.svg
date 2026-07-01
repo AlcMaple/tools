@@ -1,0 +1,96 @@
+<svg viewBox="0 0 1100 820" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+
+  <rect width="1100" height="820" fill="#ffffff"/>
+  <text x="550" y="20" text-anchor="middle" font-size="16" font-weight="700" fill="#111">BGM 内嵌登录 — 数据流程（点击"登录 BGM"之后）</text>
+
+  <!-- 泳道头 -->
+  <rect x="40" y="36" width="200" height="56" rx="10" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.5"/>
+  <text x="140" y="60" text-anchor="middle" font-size="14" font-weight="600" fill="#1B4F8C">渲染进程</text>
+  <text x="140" y="79" text-anchor="middle" font-size="11" fill="#4A6E9C">UI（chip / 设置页）</text>
+
+  <rect x="320" y="36" width="220" height="56" rx="10" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="430" y="60" text-anchor="middle" font-size="14" font-weight="600" fill="#5B2FAE">主进程</text>
+  <text x="430" y="79" text-anchor="middle" font-size="11" fill="#7550A8">credentials.ts</text>
+
+  <rect x="620" y="36" width="240" height="56" rx="10" fill="#FCF1E3" stroke="#F5A623" stroke-width="1.5"/>
+  <text x="740" y="60" text-anchor="middle" font-size="14" font-weight="600" fill="#B9720A">内嵌登录窗</text>
+  <text x="740" y="79" text-anchor="middle" font-size="11" fill="#C68B34">BrowserWindow</text>
+
+  <rect x="940" y="36" width="120" height="56" rx="10" fill="#E7F8EF" stroke="#2ECC71" stroke-width="1.5"/>
+  <text x="1000" y="70" text-anchor="middle" font-size="14" font-weight="600" fill="#1D8A4E">bgm.tv</text>
+
+  <!-- 生命线 -->
+  <line x1="140" y1="92" x2="140" y2="780" stroke="#4A90D9" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="430" y1="92" x2="430" y2="780" stroke="#8B5CF6" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="740" y1="92" x2="740" y2="780" stroke="#F5A623" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="1000" y1="92" x2="1000" y2="780" stroke="#2ECC71" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+  <!-- 步骤1: UI -> Main -->
+  <line x1="140" y1="140" x2="430" y2="140" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <circle cx="140" cy="140" r="13" fill="#333"/>
+  <text x="140" y="145" text-anchor="middle" font-size="12" fill="#fff">1</text>
+  <text x="285" y="128" text-anchor="middle" font-size="12" fill="#222">window.bgmApi.login()</text>
+
+  <!-- 步骤2: Main -> Win -->
+  <line x1="430" y1="214" x2="740" y2="214" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <circle cx="430" cy="214" r="13" fill="#333"/>
+  <text x="430" y="219" text-anchor="middle" font-size="12" fill="#fff">2</text>
+  <text x="585" y="202" text-anchor="middle" font-size="12" fill="#222">独立 session 分区创建登录窗口</text>
+
+  <!-- 步骤3: Win -> BGM -->
+  <line x1="740" y1="288" x2="1000" y2="288" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <circle cx="740" cy="288" r="13" fill="#333"/>
+  <text x="740" y="293" text-anchor="middle" font-size="12" fill="#fff">3</text>
+  <text x="870" y="276" text-anchor="middle" font-size="12" fill="#222">加载 bgm.tv 真实登录页</text>
+
+  <!-- 步骤4: Win 内部动作 -->
+  <rect x="610" y="339" width="260" height="46" rx="8" fill="#FEF6E8" stroke="#F5A623" stroke-width="1.2"/>
+  <circle cx="622" cy="351" r="13" fill="#333"/>
+  <text x="622" y="356" text-anchor="middle" font-size="12" fill="#fff">4</text>
+  <text x="740" y="358" text-anchor="middle" font-size="12" fill="#222">dom-ready 时注入脚本</text>
+  <text x="740" y="374" text-anchor="middle" font-size="12" fill="#222">自动填充邮箱 / 密码</text>
+
+  <!-- 步骤5: BGM --> Win（返回，虚线） -->
+  <line x1="1000" y1="436" x2="740" y2="436" stroke="#333" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+  <circle cx="1000" cy="436" r="13" fill="#333"/>
+  <text x="1000" y="441" text-anchor="middle" font-size="12" fill="#fff">5</text>
+  <text x="870" y="424" text-anchor="middle" font-size="12" fill="#222">用户过验证码、提交表单</text>
+
+  <!-- 步骤6: Win 内部动作 -->
+  <rect x="610" y="490" width="260" height="40" rx="8" fill="#FEF6E8" stroke="#F5A623" stroke-width="1.2"/>
+  <circle cx="622" cy="502" r="13" fill="#333"/>
+  <text x="622" y="507" text-anchor="middle" font-size="12" fill="#fff">6</text>
+  <text x="740" y="515" text-anchor="middle" font-size="12" fill="#222">监听 cookie 变化事件</text>
+
+  <!-- 步骤7: Win -> Main -->
+  <line x1="740" y1="584" x2="430" y2="584" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <circle cx="740" cy="584" r="13" fill="#333"/>
+  <text x="740" y="589" text-anchor="middle" font-size="12" fill="#fff">7</text>
+  <text x="585" y="572" text-anchor="middle" font-size="12" fill="#222">检测到 chii_auth cookie</text>
+
+  <!-- 步骤8: Main 内部动作 -->
+  <rect x="300" y="635" width="260" height="46" rx="8" fill="#F5EEFC" stroke="#8B5CF6" stroke-width="1.2"/>
+  <circle cx="312" cy="647" r="13" fill="#333"/>
+  <text x="312" y="652" text-anchor="middle" font-size="12" fill="#fff">8</text>
+  <text x="430" y="654" text-anchor="middle" font-size="12" fill="#222">存全部 cookie 到本地文件</text>
+  <text x="430" y="670" text-anchor="middle" font-size="12" fill="#222">关闭登录窗</text>
+
+  <!-- 步骤9: Main --> UI（返回，虚线） -->
+  <line x1="430" y1="732" x2="140" y2="732" stroke="#333" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+  <circle cx="430" cy="732" r="13" fill="#333"/>
+  <text x="430" y="737" text-anchor="middle" font-size="12" fill="#fff">9</text>
+  <text x="285" y="720" text-anchor="middle" font-size="12" fill="#222">返回最新登录状态</text>
+
+  <!-- 图例 -->
+  <line x1="40" y1="800" x2="80" y2="800" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="88" y="804" font-size="11" fill="#555">请求 / 加载</text>
+  <line x1="180" y1="800" x2="220" y2="800" stroke="#333" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+  <text x="228" y="804" font-size="11" fill="#555">返回 / 响应</text>
+  <rect x="320" y="792" width="16" height="16" rx="4" fill="#FEF6E8" stroke="#F5A623" stroke-width="1.2"/>
+  <text x="344" y="804" font-size="11" fill="#555">进程内部动作</text>
+</svg>

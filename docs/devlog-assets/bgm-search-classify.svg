@@ -1,0 +1,81 @@
+<svg viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="700" fill="#ffffff"/>
+  <text x="500" y="24" text-anchor="middle" font-size="16" font-weight="700" fill="#111">BGM 搜索请求 — 结果分类</text>
+
+  <!-- 起点 -->
+  <rect x="360" y="42" width="280" height="46" rx="8" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.5"/>
+  <text x="500" y="70" text-anchor="middle" font-size="13" fill="#1B4F8C">发起 BGM 网页搜索请求</text>
+
+  <line x1="500" y1="88" x2="500" y2="118" stroke="#333" stroke-width="1.8" marker-end="url(#arrow2)"/>
+
+  <!-- 判断1: 有没有 cookie -->
+  <polygon points="500,118 640,168 500,218 360,168" fill="#FCF1E3" stroke="#F5A623" stroke-width="1.5"/>
+  <text x="500" y="164" text-anchor="middle" font-size="12" fill="#B9720A">本地有登录</text>
+  <text x="500" y="180" text-anchor="middle" font-size="12" fill="#B9720A">cookie 吗？</text>
+
+  <line x1="360" y1="168" x2="200" y2="168" stroke="#333" stroke-width="1.8"/>
+  <line x1="200" y1="168" x2="200" y2="242" stroke="#333" stroke-width="1.8" marker-end="url(#arrow2)"/>
+  <text x="278" y="158" text-anchor="middle" font-size="12" fill="#222">有</text>
+
+  <line x1="640" y1="168" x2="800" y2="168" stroke="#333" stroke-width="1.8"/>
+  <line x1="800" y1="168" x2="800" y2="242" stroke="#333" stroke-width="1.8" marker-end="url(#arrow2)"/>
+  <text x="722" y="158" text-anchor="middle" font-size="12" fill="#222">无</text>
+
+  <!-- 有 cookie 分支 -->
+  <rect x="70" y="242" width="260" height="56" rx="8" fill="#E7F8EF" stroke="#2ECC71" stroke-width="1.5"/>
+  <text x="200" y="264" text-anchor="middle" font-size="12" fill="#1D8A4E">合并进 Cookie 请求头</text>
+  <text x="200" y="282" text-anchor="middle" font-size="12" fill="#1D8A4E">服务器 ~0.6s 秒回</text>
+
+  <!-- 无 cookie 分支 -->
+  <rect x="670" y="242" width="260" height="56" rx="8" fill="#FBE9E9" stroke="#E05555" stroke-width="1.5"/>
+  <text x="800" y="264" text-anchor="middle" font-size="12" fill="#A32E2E">匿名请求</text>
+  <text x="800" y="282" text-anchor="middle" font-size="12" fill="#A32E2E">服务器故意拖慢到 ~16s</text>
+
+  <!-- 汇合到"拿到响应" -->
+  <line x1="200" y1="298" x2="200" y2="330" stroke="#333" stroke-width="1.8"/>
+  <line x1="200" y1="330" x2="440" y2="330" stroke="#333" stroke-width="1.8"/>
+  <line x1="800" y1="298" x2="800" y2="330" stroke="#333" stroke-width="1.8"/>
+  <line x1="800" y1="330" x2="560" y2="330" stroke="#333" stroke-width="1.8"/>
+  <line x1="500" y1="330" x2="500" y2="360" stroke="#333" stroke-width="1.8" marker-end="url(#arrow2)"/>
+
+  <rect x="370" y="360" width="260" height="46" rx="8" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.5"/>
+  <text x="500" y="388" text-anchor="middle" font-size="13" fill="#1B4F8C">拿到响应 / 或异常</text>
+
+  <line x1="500" y1="406" x2="500" y2="436" stroke="#333" stroke-width="1.8" marker-end="url(#arrow2)"/>
+
+  <!-- 判断2: 属于哪种情况 -->
+  <polygon points="500,436 660,491 500,546 340,491" fill="#FCF1E3" stroke="#F5A623" stroke-width="1.5"/>
+  <text x="500" y="487" text-anchor="middle" font-size="12" fill="#B9720A">拿到的是</text>
+  <text x="500" y="503" text-anchor="middle" font-size="12" fill="#B9720A">哪种响应？</text>
+
+  <!-- 左分支：真限流 429 -->
+  <line x1="380" y1="470" x2="165" y2="558" stroke="#333" stroke-width="1.8" marker-end="url(#arrow2)"/>
+  <text x="230" y="535" text-anchor="middle" font-size="11" fill="#222">真限流页 429</text>
+  <rect x="10" y="558" width="310" height="70" rx="8" fill="#FBE9E9" stroke="#E05555" stroke-width="1.5"/>
+  <text x="165" y="582" text-anchor="middle" font-size="12" fill="#A32E2E">清零超时计数</text>
+  <text x="165" y="600" text-anchor="middle" font-size="12" fill="#A32E2E">抛出服务器给的</text>
+  <text x="165" y="618" text-anchor="middle" font-size="12" fill="#A32E2E">真实倒计时</text>
+
+  <!-- 中分支：HTTP 5xx -->
+  <line x1="500" y1="546" x2="500" y2="558" stroke="#333" stroke-width="1.8" marker-end="url(#arrow2)"/>
+  <text x="500" y="540" text-anchor="middle" font-size="11" fill="#222">HTTP 5xx 已回包（如CF偶发502）</text>
+  <rect x="345" y="558" width="310" height="70" rx="8" fill="#FEF6E8" stroke="#F5A623" stroke-width="1.5"/>
+  <text x="500" y="582" text-anchor="middle" font-size="12" fill="#B9720A">清零超时计数</text>
+  <text x="500" y="600" text-anchor="middle" font-size="12" fill="#B9720A">报"偶发故障，</text>
+  <text x="500" y="618" text-anchor="middle" font-size="12" fill="#B9720A">可立刻重试"</text>
+
+  <!-- 右分支：真超时 -->
+  <line x1="620" y1="470" x2="835" y2="558" stroke="#333" stroke-width="1.8" marker-end="url(#arrow2)"/>
+  <text x="770" y="535" text-anchor="middle" font-size="11" fill="#222">真超时/连接失败（无响应）</text>
+  <rect x="680" y="558" width="310" height="70" rx="8" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="835" y="582" text-anchor="middle" font-size="12" fill="#5B2FAE">计数 +1</text>
+  <text x="835" y="600" text-anchor="middle" font-size="12" fill="#5B2FAE">连续多次才</text>
+  <text x="835" y="618" text-anchor="middle" font-size="12" fill="#5B2FAE">判定为限流</text>
+
+  <text x="20" y="660" font-size="11" fill="#555">绿色 = 快路径　红色 = 慢/限流类　橙色 = 偶发故障　紫色 = 疑似限流(需连续多次)</text>
+</svg>
