@@ -36,6 +36,12 @@ import {
 } from '../shared/rate-limit'
 import { withTransientRetry } from '../shared/http-client'
 import { netRequest } from '../shared/net-request'
+import { logInfo } from '../shared/logger'
+import {
+  DESKTOP_USER_AGENT,
+  DESKTOP_SEC_CH_UA,
+  DESKTOP_SEC_CH_UA_PLATFORM,
+} from '../shared/download-types'
 import { fetchBgmApiJson } from './api-client'
 import { getBgmCookie } from './credentials'
 // 注意：与 html-fallback 是「运行时安全」的循环依赖 —— 两边都只在异步函数体内
@@ -179,7 +185,18 @@ async function rawGet(
   // 带上网页登录 cookie（用户在设置里点过「登录 BGM」就有）。登录态下 bgm.tv
   // 搜索 ~0.6s 秒回；匿名会被故意拖慢到 ~16s。登录 cookie 同名覆盖 jar 里的旧值。
   const loginCookie = getBgmCookie()
-  if (loginCookie) headers['Cookie'] = mergeCookieHeader(headers['Cookie'], loginCookie)
+  if (loginCookie) {
+    headers['Cookie'] = mergeCookieHeader(headers['Cookie'], loginCookie)
+    // BGM 把登录态绑定在登录时的 UA 上（实测：同 cookie 同 IP，仅换 UA 即被当匿
+    // 名）。带登录 cookie 时必须用登录窗同款固定 UA 顶掉 jar 的随机伪装 UA，否则
+    // 登录 cookie 形同虚设。未登录时保持随机伪装不变。
+    headers['User-Agent'] = DESKTOP_USER_AGENT
+    // sec-ch-ua 一并对齐——只换 UA 不换客户端提示会造成 (UA, sec-ch-ua) 版本
+    // 自相矛盾的指纹（jar 变体是随机 Chrome 119~123，UA 却固定 120），比不发更
+    // 可疑；DESKTOP_USER_AGENT 又写死 Windows，在 macOS 上还会平台对不上。
+    headers['sec-ch-ua'] = DESKTOP_SEC_CH_UA
+    headers['sec-ch-ua-platform'] = DESKTOP_SEC_CH_UA_PLATFORM
+  }
   const res = await netRequest(url, {
     headers,
     // 25s 而非 10s：bgm.tv 对**匿名**搜索是「故意拖慢」而非拒绝 —— 实测同 IP 同时
@@ -247,6 +264,7 @@ function diagnoseFailure(
  */
 export async function fetchHtmlWithDefenses(url: string): Promise<string> {
   return limiter.schedule(async () => {
+    const t0 = Date.now()
     const r = await withTransientRetry(() => rawGet(url))
     if (r.status === 429) {
       throw new RateLimitError(30, 'BGM 返回 HTTP 429，触发限流')
@@ -265,6 +283,13 @@ export async function fetchHtmlWithDefenses(url: string): Promise<string> {
     if (waitSec != null) {
       throw new RateLimitError(waitSec, `BGM 触发限流，请等 ${waitSec} 秒后再试`)
     }
+    // 观测:耗时 + 服务端实际按哪种身份处理(页面有无 /logout 是唯一真话——
+    // 带了 cookie 服务端也可能不认,那时依旧是 ~16s 的匿名慢速通道)。以前
+    // 这里什么都不记,登录提速有没有生效只能靠猜。
+    logInfo(
+      'bgm-search',
+      `${Date.now() - t0}ms 带登录cookie=${getBgmCookie() ? '是' : '否'} 服务端登录态=${body.includes('/logout') ? '是' : '否'} ${url}`,
+    )
     return body
   })
 }

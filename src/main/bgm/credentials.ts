@@ -16,6 +16,7 @@ import { join } from 'path'
 import { JsonStore } from '../shared/json-store'
 import { netRequest } from '../shared/net-request'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
+import { logInfo, logError } from '../shared/logger'
 
 interface BgmAuth {
   token?: string
@@ -62,6 +63,28 @@ function setBgmCookie(next: string): void {
 
 export function clearBgmCookie(): void {
   setBgmCookie('')
+  // 分区一起清:登录窗分区里残留的旧 chii_auth 若已被服务端作废,存在本身就有害——
+  // captureIfLoggedIn 只看「cookie 存在」,残留会让下次点「登录」秒判成功、把死
+  // cookie 原样存回来(实测复现的「启动掉登录→点登录假成功」死循环就是它)。
+  void clearLoginPartitionCookies()
+}
+
+/** 清掉登录窗分区(persist:bgm-login)里的全部 bgm.tv cookie,让下次登录真的走一遍登录页。 */
+async function clearLoginPartitionCookies(): Promise<void> {
+  try {
+    const part = session.fromPartition('persist:bgm-login')
+    const cookies = await part.cookies.get({ domain: 'bgm.tv' })
+    await Promise.all(
+      cookies.map((c) =>
+        part.cookies.remove(
+          `https://${(c.domain ?? 'bgm.tv').replace(/^\./, '')}${c.path ?? '/'}`,
+          c.name,
+        ),
+      ),
+    )
+  } catch (err) {
+    logError('bgm-auth', err)
+  }
 }
 
 export interface BgmCredentials {
@@ -117,8 +140,21 @@ export async function verifyBgmLogin(): Promise<BgmAuthStatus> {
       },
       timeoutMs: 12000,
     })
+    if (res.status !== 200) {
+      // 非 200(限流/502/CF 拦截)的错误页同样没有 /logout,不能当「过期」证据——
+      // 否则 BGM 偶发故障会把还有效的登录态误清掉。保持原状态,下次再查。
+      logInfo('bgm-auth', `verify 探测无效(HTTP ${res.status}),保持原登录状态`)
+      return getBgmAuthStatus()
+    }
     const html = res.body.toString('utf-8')
-    if (!html.includes('/logout')) setBgmCookie('') // cookie 已失效 → 清除
+    if (!html.includes('/logout')) {
+      // 200 且无「退出」入口 = 服务端确实不认这份 cookie(实测失效时返回的首页
+      // 和匿名访客逐字节一致)。本地 + 登录窗分区一起清,见 clearBgmCookie 注释。
+      logInfo('bgm-auth', 'verify 判定登录已失效(200 页无 /logout),清除本地与分区 cookie')
+      clearBgmCookie()
+    } else {
+      logInfo('bgm-auth', 'verify 确认登录有效')
+    }
   } catch {
     /* 网络失败:保持原状态,不误判为过期 */
   }
@@ -158,6 +194,11 @@ export async function openBgmLogin(parent?: BrowserWindow): Promise<BgmAuthStatu
     // 验证码图**点一下即换一张**(BGM 原生支持)。偶发「裂图」是换图请求被该 IP
     // 限流/源站 502 所致,缓一会再点即可 —— 不做整页重载(那样重且会丢已填内容)。
     const part = session.fromPartition('persist:bgm-login')
+    // 关键:BGM 把登录会话**绑定在登录那一刻的 User-Agent 上**(实测矩阵:同
+    // jar 同 IP,仅换 UA 即被当匿名)。登录窗必须用和 verify / 带登录 cookie 的
+    // 搜索完全相同的 UA,否则领到的令牌只在窗口里有效,拿出来全是匿名——
+    // 这就是「登录提速从上线起从未生效 + 启动即掉登录」的总根因。
+    part.setUserAgent(DESKTOP_USER_AGENT)
     const win = new BrowserWindow({
       width: 480,
       height: 720,
@@ -174,17 +215,37 @@ export async function openBgmLogin(parent?: BrowserWindow): Promise<BgmAuthStatu
     // 不让页面 <title> 覆盖窗口标题 —— 保持稳定的「登录 Bangumi」。
     win.on('page-title-updated', (e) => e.preventDefault())
     let settled = false
+    let finalizeScheduled = false
 
-    const captureIfLoggedIn = async (): Promise<void> => {
+    // 真正取 cookie 入库并关窗 —— 只能在登录后的落地页**加载完成**后调用。
+    const capture = async (): Promise<void> => {
       if (settled || win.isDestroyed()) return
       const cookies = await part.cookies.get({ domain: 'bgm.tv' })
-      // chii_auth = BGM 登录态的关键 cookie;出现即视为登录成功
       const hasAuth = cookies.some((c) => c.name === 'chii_auth' && c.value)
       if (!hasAuth) return
       settled = true
       const str = cookies.map((c) => `${c.name}=${c.value}`).join('; ')
       setBgmCookie(str)
+      logInfo('bgm-auth', `登录窗捕获登录 cookie(${cookies.length} 条),已存储`)
       if (!win.isDestroyed()) win.close()
+    }
+
+    // 看到 chii_auth ≠ 可以立刻收工。实测(2026-07-04):「即见即存即关窗」拿到的
+    // 令牌服务端**不认**——关窗掐断了登录后的落地页导航,令牌没完成服务端的
+    // 激活/轮换,存下来的是半成品(同值重放,原生 jar / 手工头 / 同 IP 全是匿名)。
+    // 必须等落地页 did-finish-load 再缓 800ms(容纳尾部 Set-Cookie/二跳),取
+    // **最终** cookie,让窗口像真实浏览器一样走完整个登录流程。10s 兜底防悬死。
+    const scheduleFinalize = (): void => {
+      if (finalizeScheduled || settled || win.isDestroyed()) return
+      finalizeScheduled = true
+      if (win.webContents.isLoading()) {
+        win.webContents.once('did-finish-load', () => {
+          setTimeout(() => { void capture() }, 800)
+        })
+        setTimeout(() => { void capture() }, 10000)
+      } else {
+        setTimeout(() => { void capture() }, 800)
+      }
     }
 
     const onCookieChanged = (
@@ -194,12 +255,16 @@ export async function openBgmLogin(parent?: BrowserWindow): Promise<BgmAuthStatu
       removed: boolean,
     ): void => {
       if (!removed && (c.domain ?? '').includes('bgm.tv') && c.name === 'chii_auth') {
-        void captureIfLoggedIn()
+        scheduleFinalize()
       }
     }
     part.cookies.on('changed', onCookieChanged)
     // 导航完成(登录提交后会跳走)时也兜一次检测,防止 cookie 事件漏接
-    win.webContents.on('did-navigate', () => { void captureIfLoggedIn() })
+    win.webContents.on('did-navigate', () => {
+      void part.cookies.get({ domain: 'bgm.tv' }).then((cs) => {
+        if (cs.some((c) => c.name === 'chii_auth' && c.value)) scheduleFinalize()
+      })
+    })
 
     // dom-ready(比 did-finish-load 早,自动填充更快)时注入脚本,做三件事,**每件只做一遍**:
     //   ① 填邮箱/密码,并在自动填了密码后「轻轻聚焦密码框一次」触发 BGM 显示验证码
@@ -272,12 +337,23 @@ export async function openBgmLogin(parent?: BrowserWindow): Promise<BgmAuthStatu
     win.on('closed', () => {
       part.cookies.removeListener('changed', onCookieChanged)
       loginWin = null
-      resolve(getBgmAuthStatus())
+      if (settled) {
+        // 捕获成功后立刻实测一次令牌在窗口外能否复用,日志立辨真伪。若服务端
+        // 仍不认(200 匿名页),verify 会如实清掉,UI 不会再显示假登录态。
+        void verifyBgmLogin().then(resolve)
+      } else {
+        resolve(getBgmAuthStatus())
+      }
     })
 
     // 先秒显加载页:bgm.tv 首字节常要等好几秒,期间 Chromium 会一直把当前文档
     // (这个 spinner)留在画面上,直到真页面提交才替换 —— 黑屏久等变成「转圈+提示」。
-    void win.loadURL(LOGIN_SPLASH).then(() => {
+    void win.loadURL(LOGIN_SPLASH).then(async () => {
+      // 本地状态是「未登录」却打开了登录窗,说明分区里残留的 chii_auth 多半已被
+      // 服务端作废(verify 判失效才会走到这一步)。必须先清干净再进登录页,否则
+      // captureIfLoggedIn 一看到残留 cookie 就秒判成功、把死 cookie 存回来,登录
+      // 形同虚设。清掉后用户真登一次,拿到的才是服务端新发的凭证。
+      if (!cookie) await clearLoginPartitionCookies()
       if (!win.isDestroyed()) void win.loadURL('https://bgm.tv/login')
     })
   })
