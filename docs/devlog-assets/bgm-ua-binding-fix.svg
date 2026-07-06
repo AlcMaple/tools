@@ -1,0 +1,104 @@
+<svg viewBox="0 0 1200 640" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="640" fill="#ffffff"/>
+  <text x="600" y="24" text-anchor="middle" font-size="16" font-weight="700" fill="#111">BGM 登录态绑定 UA —— 修复前 vs 修复后</text>
+
+  <line x1="600" y1="40" x2="600" y2="575" stroke="#ccc" stroke-width="1.5" stroke-dasharray="5 5"/>
+
+  <!-- ═══ 左：修复前 ═══ -->
+  <text x="300" y="54" text-anchor="middle" font-size="13" font-weight="700" fill="#A32E2E">修复前：登录窗 / verify / 搜索各用各的 UA</text>
+
+  <rect x="170" y="68" width="260" height="60" rx="8" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="300" y="92" text-anchor="middle" font-size="12" fill="#5B2FAE">内嵌登录窗（铸造令牌）</text>
+  <text x="300" y="110" text-anchor="middle" font-size="11" fill="#5B2FAE">UA A = Electron 默认 UA</text>
+
+  <line x1="300" y1="128" x2="300" y2="161" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+
+  <rect x="150" y="163" width="300" height="60" rx="8" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.5"/>
+  <text x="300" y="187" text-anchor="middle" font-size="12" fill="#1B4F8C">BGM 服务端发放 chii_auth</text>
+  <text x="300" y="205" text-anchor="middle" font-size="11" fill="#1B4F8C">并将它与 UA A 绑定（只认这一对）</text>
+
+  <line x1="300" y1="223" x2="300" y2="256" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+
+  <rect x="170" y="258" width="260" height="58" rx="8" fill="#F2F2F2" stroke="#999999" stroke-width="1.5"/>
+  <text x="300" y="281" text-anchor="middle" font-size="12" fill="#444">cookie 串存入 bgm_auth.json</text>
+  <text x="300" y="299" text-anchor="middle" font-size="11" fill="#444">之后所有请求都带这同一份</text>
+
+  <line x1="300" y1="316" x2="300" y2="340" stroke="#333" stroke-width="1.8"/>
+  <line x1="157" y1="340" x2="443" y2="340" stroke="#333" stroke-width="1.8"/>
+  <line x1="157" y1="340" x2="157" y2="364" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+  <line x1="443" y1="340" x2="443" y2="364" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+
+  <rect x="30" y="366" width="255" height="60" rx="8" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="157" y="390" text-anchor="middle" font-size="12" fill="#5B2FAE">启动 verify（验证令牌）</text>
+  <text x="157" y="408" text-anchor="middle" font-size="11" fill="#5B2FAE">UA B = 固定伪装 Chrome</text>
+
+  <rect x="315" y="366" width="255" height="60" rx="8" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="443" y="390" text-anchor="middle" font-size="12" fill="#5B2FAE">搜索请求（使用令牌）</text>
+  <text x="443" y="408" text-anchor="middle" font-size="11" fill="#5B2FAE">UA C = jar 随机伪装 UA</text>
+
+  <line x1="157" y1="426" x2="157" y2="459" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+  <line x1="443" y1="426" x2="443" y2="459" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+
+  <rect x="30" y="461" width="255" height="76" rx="8" fill="#FBE9E9" stroke="#E05555" stroke-width="1.5"/>
+  <text x="157" y="483" text-anchor="middle" font-size="12" fill="#A32E2E">UA B ≠ UA A → 按匿名处理</text>
+  <text x="157" y="501" text-anchor="middle" font-size="11" fill="#A32E2E">首页无 /logout → 清 cookie</text>
+  <text x="157" y="519" text-anchor="middle" font-size="11" fill="#A32E2E">表现：启动即掉登录</text>
+
+  <rect x="315" y="461" width="255" height="76" rx="8" fill="#FBE9E9" stroke="#E05555" stroke-width="1.5"/>
+  <text x="443" y="483" text-anchor="middle" font-size="12" fill="#A32E2E">UA C ≠ UA A → 按匿名处理</text>
+  <text x="443" y="501" text-anchor="middle" font-size="11" fill="#A32E2E">走匿名通道（会被间歇拖慢）</text>
+  <text x="443" y="519" text-anchor="middle" font-size="11" fill="#A32E2E">表现：提速从未生效</text>
+
+  <!-- ═══ 右：修复后 ═══ -->
+  <text x="900" y="54" text-anchor="middle" font-size="13" font-weight="700" fill="#1D8A4E">修复后：铸造与使用全部同一个 UA</text>
+
+  <rect x="770" y="68" width="260" height="60" rx="8" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="900" y="92" text-anchor="middle" font-size="12" fill="#5B2FAE">内嵌登录窗（铸造令牌）</text>
+  <text x="900" y="110" text-anchor="middle" font-size="11" fill="#5B2FAE">part.setUserAgent(DESKTOP_UA)</text>
+
+  <line x1="900" y1="128" x2="900" y2="161" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+
+  <rect x="750" y="163" width="300" height="60" rx="8" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.5"/>
+  <text x="900" y="187" text-anchor="middle" font-size="12" fill="#1B4F8C">BGM 服务端发放 chii_auth</text>
+  <text x="900" y="205" text-anchor="middle" font-size="11" fill="#1B4F8C">绑定的就是 DESKTOP_UA</text>
+
+  <line x1="900" y1="223" x2="900" y2="256" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+
+  <rect x="770" y="258" width="260" height="58" rx="8" fill="#F2F2F2" stroke="#999999" stroke-width="1.5"/>
+  <text x="900" y="281" text-anchor="middle" font-size="12" fill="#444">cookie 串存入 bgm_auth.json</text>
+  <text x="900" y="299" text-anchor="middle" font-size="11" fill="#444">关窗后立刻 verify 自证真伪</text>
+
+  <line x1="900" y1="316" x2="900" y2="340" stroke="#333" stroke-width="1.8"/>
+  <line x1="757" y1="340" x2="1043" y2="340" stroke="#333" stroke-width="1.8"/>
+  <line x1="757" y1="340" x2="757" y2="364" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+  <line x1="1043" y1="340" x2="1043" y2="364" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+
+  <rect x="630" y="366" width="255" height="60" rx="8" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="757" y="390" text-anchor="middle" font-size="12" fill="#5B2FAE">启动 verify（验证令牌）</text>
+  <text x="757" y="408" text-anchor="middle" font-size="11" fill="#5B2FAE">UA = DESKTOP_UA（同款）</text>
+
+  <rect x="915" y="366" width="255" height="60" rx="8" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="1043" y="390" text-anchor="middle" font-size="12" fill="#5B2FAE">搜索带登录 cookie</text>
+  <text x="1043" y="408" text-anchor="middle" font-size="11" fill="#5B2FAE">UA = DESKTOP_UA（同款）</text>
+
+  <line x1="757" y1="426" x2="757" y2="459" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+  <line x1="1043" y1="426" x2="1043" y2="459" stroke="#333" stroke-width="1.8" marker-end="url(#arrow5)"/>
+
+  <rect x="630" y="461" width="255" height="76" rx="8" fill="#E7F8EF" stroke="#2ECC71" stroke-width="1.5"/>
+  <text x="757" y="483" text-anchor="middle" font-size="12" fill="#1D8A4E">UA 匹配 → 登录态确认</text>
+  <text x="757" y="501" text-anchor="middle" font-size="11" fill="#1D8A4E">首页含 /logout，cookie 保留</text>
+  <text x="757" y="519" text-anchor="middle" font-size="11" fill="#1D8A4E">重启后依然有效</text>
+
+  <rect x="915" y="461" width="255" height="76" rx="8" fill="#E7F8EF" stroke="#2ECC71" stroke-width="1.5"/>
+  <text x="1043" y="483" text-anchor="middle" font-size="12" fill="#1D8A4E">UA 匹配 → 登录态搜索</text>
+  <text x="1043" y="501" text-anchor="middle" font-size="11" fill="#1D8A4E">豁免匿名拖慢（惩罚期照样亚秒）</text>
+  <text x="1043" y="519" text-anchor="middle" font-size="11" fill="#1D8A4E">未登录时仍用随机伪装 UA</text>
+
+  <text x="20" y="600" font-size="11" fill="#555">根因（2026-07-04 探针矩阵实测）：BGM 把登录会话绑定在登录那一刻的 User-Agent 上 —— 同 cookie、同 IP、同携带方式，仅 UA 不同即被判为匿名。</text>
+  <text x="20" y="620" font-size="11" fill="#555">匿名搜索不受影响（拖慢是间歇性的，不开闸时匿名也只要几百 ms），所以 UI「看起来还能搜」，把提速失效掩盖了近一周。</text>
+</svg>
