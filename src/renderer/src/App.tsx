@@ -12,6 +12,7 @@ import LocalLibrary from './pages/LocalLibrary'
 import FileExplorer from './pages/FileExplorer'
 import HomeworkLookup from './pages/HomeworkLookup'
 import MiaoyuLibrary from './pages/MiaoyuLibrary'
+import OnlinePlayer from './pages/OnlinePlayer'
 import UpdateBanner from './components/UpdateBanner'
 import EditContextMenu from './components/EditContextMenu'
 import { downloadStore } from './stores/downloadStore'
@@ -42,7 +43,9 @@ function UpdaterListener(): null {
  */
 function Shell(): JSX.Element {
   const location = useLocation()
-  const isFullscreen = location.pathname.startsWith('/settings')
+  // /settings 渲染自己的分类 rail;/play 是沉浸式播放页 —— 两者都不要全局侧边栏
+  const isFullscreen =
+    location.pathname.startsWith('/settings') || location.pathname.startsWith('/play')
 
   return (
     <div className="h-screen overflow-hidden bg-background text-on-surface font-body">
@@ -62,6 +65,8 @@ function Shell(): JSX.Element {
           <Route path="/settings" element={<Settings />} />
           <Route path="/homework" element={<HomeworkLookup />} />
           <Route path="/miaoyu" element={<MiaoyuLibrary />} />
+          {/* 在线观看播放页,无侧边栏入口 —— 只从追番卡片「播放」按钮进入 */}
+          <Route path="/play" element={<OnlinePlayer />} />
         </Routes>
       </div>
       {/* UpdateBanner 用 fixed 定位悬浮在 TopBar 下方居中，不参与 page-scroll

@@ -443,6 +443,8 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
         titleCn: item.name_cn || undefined,
         cover: item.cover || undefined,
         totalEpisodes: item.episodes > 0 ? item.episodes : undefined,
+        // 周历条目自带放送日期;缺失时留 undefined,交给 ensureBgmTagsFilled 回填
+        airDate: item.airDate || undefined,
         status: 'watching',
         episode: 0,
       })

@@ -1157,6 +1157,8 @@ function SearchDownload(): JSX.Element {
                 titleCn: detail.title_cn || undefined,
                 cover: detail.cover || undefined,
                 totalEpisodes: detail.episodes > 0 ? detail.episodes : undefined,
+                // 放送日期('' = BGM 无日期 = 未定档,播放按钮据此隐藏)
+                airDate: detail.date,
                 status: "plan",
                 episode: 0,
                 // detail 已经在手 —— 直接把 BGM 标签快照传给 store

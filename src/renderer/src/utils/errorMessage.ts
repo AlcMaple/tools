@@ -36,7 +36,7 @@ export function friendlyError(err: unknown): FriendlyError {
   if (msg.startsWith('AOWU_UNREACHABLE')) {
     return {
       title: '嗷呜动漫无法访问',
-      hint: '该站点对境外节点屏蔽，挂 VPN 时会触发 523 / 源站超时。请关闭 VPN（或对该域名设置代理直连）后再试。',
+      hint: '嗷呜源站可能挂了（523 = CDN 连不上源站），等它恢复即可，稍后可点重试。另一种少见情况：该站屏蔽境外节点，若你的网络走代理且没对嗷呜分流直连，需要先设置分流。',
       raw: msg,
     }
   }
