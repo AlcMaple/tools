@@ -1,0 +1,81 @@
+<svg viewBox="0 0 960 560" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="560" fill="#ffffff"/>
+  <text x="480" y="30" text-anchor="middle" font-size="17" font-weight="700" fill="#111">airDate 三态 —— 要不要显示「在线观看」按钮</text>
+  <text x="480" y="52" text-anchor="middle" font-size="12" fill="#777">判定统一走 utils/airDate.ts 的 trackUnaired() · 老数据零迁移</text>
+
+  <!-- 根 -->
+  <rect x="380" y="76" width="200" height="52" rx="10" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="480" y="100" text-anchor="middle" font-size="13" font-weight="700" fill="#5B2FAE">track.airDate ?</text>
+  <text x="480" y="119" text-anchor="middle" font-size="11" fill="#7550A8">三态字段</text>
+
+  <!-- 三条主干 -->
+  <line x1="480" y1="128" x2="180" y2="176" stroke="#555" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="480" y1="128" x2="480" y2="176" stroke="#555" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="480" y1="128" x2="800" y2="176" stroke="#555" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <!-- ============ 分支1: undefined ============ -->
+  <rect x="40" y="178" width="280" height="66" rx="10" fill="#FFF7E6" stroke="#F5A623" stroke-width="1.4"/>
+  <text x="180" y="204" text-anchor="middle" font-size="13" font-weight="700" fill="#B9720A">undefined</text>
+  <text x="180" y="226" text-anchor="middle" font-size="11" fill="#9a6a1a">字段引入前的老数据 → 按来源分流</text>
+
+  <line x1="180" y1="244" x2="110" y2="300" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="180" y1="244" x2="250" y2="300" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="30" y="302" width="160" height="70" rx="10" fill="#ffffff" stroke="#F5A623" stroke-width="1.2"/>
+  <text x="110" y="326" text-anchor="middle" font-size="12" font-weight="600" fill="#333">bgmId &gt; 0</text>
+  <text x="110" y="345" text-anchor="middle" font-size="10.5" fill="#777">BGM 条目</text>
+  <text x="110" y="363" text-anchor="middle" font-size="10.5" fill="#777">(有正片才会入库)</text>
+
+  <rect x="205" y="302" width="185" height="70" rx="10" fill="#ffffff" stroke="#F5A623" stroke-width="1.2"/>
+  <text x="297" y="326" text-anchor="middle" font-size="12" font-weight="600" fill="#333">bgmId &lt; 0</text>
+  <text x="297" y="345" text-anchor="middle" font-size="10.5" fill="#777">手动条目</text>
+  <text x="297" y="363" text-anchor="middle" font-size="10.5" fill="#777">(多是未播续季)</text>
+
+  <line x1="110" y1="372" x2="110" y2="430" stroke="#2E9E63" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="297" y1="372" x2="297" y2="430" stroke="#D64545" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <!-- ============ 分支2: '' ============ -->
+  <rect x="360" y="178" width="240" height="66" rx="10" fill="#FDECEC" stroke="#E05B5B" stroke-width="1.4"/>
+  <text x="480" y="204" text-anchor="middle" font-size="13" font-weight="700" fill="#B23838">'' (空串)</text>
+  <text x="480" y="226" text-anchor="middle" font-size="11" fill="#a85a5a">确认未定档</text>
+
+  <line x1="480" y1="244" x2="480" y2="430" stroke="#D64545" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <!-- ============ 分支3: 日期串 ============ -->
+  <rect x="650" y="178" width="270" height="66" rx="10" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.4"/>
+  <text x="785" y="204" text-anchor="middle" font-size="13" font-weight="700" fill="#1B4F8C">可解析日期串</text>
+  <text x="785" y="226" text-anchor="middle" font-size="11" fill="#4A6E9C">如 2026-07-09</text>
+
+  <rect x="655" y="300" width="260" height="52" rx="10" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.2"/>
+  <text x="785" y="331" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B4F8C">日期在未来?</text>
+  <line x1="785" y1="244" x2="785" y2="300" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <line x1="700" y1="352" x2="620" y2="430" stroke="#D64545" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="628" y="392" font-size="11" font-weight="600" fill="#B23838">是</text>
+  <line x1="855" y1="352" x2="870" y2="430" stroke="#2E9E63" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="878" y="392" font-size="11" font-weight="600" fill="#1F8A54">否(已播出)</text>
+
+  <!-- ============ 结果带 ============ -->
+  <rect x="50" y="432" width="130" height="52" rx="10" fill="#2E9E63"/>
+  <text x="115" y="463" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">显示 ✅</text>
+
+  <rect x="232" y="432" width="130" height="52" rx="10" fill="#D64545"/>
+  <text x="297" y="463" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">隐藏 ❌</text>
+
+  <rect x="410" y="432" width="130" height="52" rx="10" fill="#D64545"/>
+  <text x="475" y="463" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">隐藏 ❌</text>
+
+  <rect x="560" y="432" width="130" height="52" rx="10" fill="#D64545"/>
+  <text x="625" y="463" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">隐藏 ❌</text>
+
+  <rect x="800" y="432" width="130" height="52" rx="10" fill="#2E9E63"/>
+  <text x="865" y="463" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">显示 ✅</text>
+
+  <text x="480" y="520" text-anchor="middle" font-size="11.5" fill="#888">返工教训:一版把 undefined 一律当已播出 → 盾勇第五季(老手动条目)误显按钮被抓包,才改成按 bgmId 正负分流</text>
+</svg>
