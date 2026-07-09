@@ -9,6 +9,26 @@
 **流程**：
 - Git 提交规范对齐仓库里实际的提交历史（`type(scope): 中文描述`，无 AI 署名——用 `git log` 核对过近期提交）
 
+## 在线观看
+
+### 2026-07-09 feat: 011 在线观看 —— 应用内播放页 + 三源切换 + mtmedia 流代理 + 线路兜底
+
+**效果**：
+1. 追番卡片新增「在线观看」按钮，进应用内沉浸式播放页（/play）：稀饭 / Girigiri / 嗷呜三源常驻切换 + 该番自定义链接（B 站等）追加，换集 / 换源 / 全屏都在应用内；原「在线观看」行的源 chips 外跳浏览器行为保留。
+2. 稀饭 / 嗷呜解析 mp4 直链用 `<video>` 播放；B 站用 `<webview partition="persist:bili">` 嵌官方外链播放器（登录后第一方 cookie 完整观看）；Girigiri（HLS）应用内播放暂占位（TODO，待 hls.js）。
+3. 未播出条目不显示播放按钮（airDate 三态判定）。
+4. 播放失败自动切下一条线路兜底，三条都失败才报错。
+
+**底层关键决策 / 踩过的坑**：
+
+- **mtmedia 流代理（本次核心，`src/main/shared/media-proxy.ts`）**：`<video>` 能不能播远端 mp4 **取决于页面 origin**。dev 下 origin 是 `http://localhost:5173`，Chromium 拒绝播放带 `content-disposition: attachment` 的**跨源**媒体（稀饭主线的 pan.wo.cn 联通网盘签名直链正是这种）→ `<video>` 报 code 4；打包后 origin 是 `file://` 不拦，所以**只在 dev 挂**（曾误判成缓存 / HEVC / 登录，均已实测排除）。根治：媒体统一经主进程 `net.fetch` 取流、**剥掉 content-disposition**，用同源 `mtmedia://` 协议回给 `<video>`，dev / 正式都不受 origin 限制。用 net.fetch 而非 netRequest —— 后者 `Buffer.concat` 全量缓冲，视频几百 MB 会爆内存。
+- **签名链并发陷阱**：不缓存最终签名直链、每个 Range 都重走一遍 302 是**故意的** —— pan.wo.cn 对单条签名链有并发限制，复用一条链打多个并发 Range 会卡死（实测 `readyState=0` 完全停止）。每个 Range 各取一条新鲜签名链才稳。
+- **切集 / 切线路的中断**：Electron 的 `protocol.handle` 里 `request.signal` **不触发**（实测），所以自建 `AbortController`，在返回流的 `cancel()` 里 abort 上游 `net.fetch`。否则被丢弃的旧流会在后台续下、占满 pan.wo.cn 的并发连接，导致下一集一直卡加载。
+- **airDate 三态（`src/renderer/src/utils/airDate.ts`）**：`undefined`（字段引入前老数据，按条目来源分流：BGM 条目宽容显示、手动条目当未定档隐藏）/ `''`（确认未定档，隐藏）/ 可解析日期串（在未来则隐藏）。零迁移。
+- **B 站 webview**：main 开 `webviewTag`；登录窗与播放 webview 共用 `persist:bili` 分区、同 UA，cookie 第一方；分区**惰性初始化**（`session.fromPartition` 必须等 app ready）。
+
+调研 / 落地纪要与 TODO 见 `docs/ideas/011-在线观看.md`。
+
 ## BGM登陆功能
 
 ### 2026-07-06 fix: BGM 登录状态不一致bug

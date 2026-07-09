@@ -9,6 +9,7 @@ import { registerAllIpc, getMinimizeOnClose } from './ipc'
 import { startSpeedBroadcast } from './shared/speed-tracker'
 import { setupUpdater } from './updater'
 import { initConsoleCapture, logInfo } from './shared/logger'
+import { MEDIA_PROXY_SCHEME, registerMediaProxy } from './shared/media-proxy'
 
 // 接管 console.error/warn → 同时落盘到 main.log,让主进程所有报错可查。
 initConsoleCapture()
@@ -29,6 +30,12 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'archivist',
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+  {
+    // 在线播放媒体流代理(011)—— 远端 mp4 经主进程取流、以同源协议回给 <video>,
+    // 绕开渲染进程 origin 对跨源媒体的拦截。见 shared/media-proxy.ts。
+    scheme: MEDIA_PROXY_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
   },
 ])
 
@@ -79,6 +86,9 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
+      // 011 在线观看:播放页用 <webview partition="persist:bili"> 嵌 B 站
+      // 官方播放器(第一方 cookie 才能带上登录态,iframe 做不到)。
+      webviewTag: true,
     },
   })
 
@@ -168,6 +178,9 @@ if (app.isPackaged) {
 }
 
 app.whenReady().then(() => {
+  // 在线播放媒体流代理(mtmedia://)—— 必须 app ready 后注册。
+  registerMediaProxy()
+
   protocol.handle('archivist', async (request) => {
     try {
       // URL 形如 archivist://local/Users/mac/.../267215.jpg（host=local 占位,

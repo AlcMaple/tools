@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { getCaptcha, verifyCaptcha, search, watch } from '../xifan/api'
+import { getCaptcha, verifyCaptcha, search, watch, resolveEpRealUrl } from '../xifan/api'
 import { downloadSingleEp, cleanupParts } from '../xifan/download'
 import { xifanScheduler } from '../shared/download-scheduler'
 import { SiteQueueRegistry, newTaskId } from '../shared/site-download-queue'
@@ -26,6 +26,10 @@ export function registerXifanIpc(): void {
   ipcMain.handle('xifan:verify', async (_event, code: string) => verifyCaptcha(code))
   ipcMain.handle('xifan:search', async (_event, keyword: string) => search(keyword))
   ipcMain.handle('xifan:watch', async (_event, watchUrl: string) => watch(watchUrl))
+  // 在线播放:模板拼出的直链 404(OVA 等特殊集)时,回源播放页解析真实地址。
+  // 与下载流程内部的回源是同一个函数,这里只是把它开给渲染进程按需调用。
+  ipcMain.handle('xifan:resolve-ep-url', async (_event, epPage: string, ep: number) =>
+    resolveEpRealUrl(epPage, ep))
 
   ipcMain.handle(
     'xifan:download',

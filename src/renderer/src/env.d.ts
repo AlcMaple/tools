@@ -45,6 +45,21 @@ export interface FsEntry {
 }
 
 declare global {
+  // Electron <webview> 标签(011 在线观看播放页嵌 B 站播放器用)。React 的
+  // 内建 JSX 类型不认识它,这里补上最小属性集。
+  namespace JSX {
+    interface IntrinsicElements {
+      webview: React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          src?: string
+          partition?: string
+          allowpopups?: string
+        },
+        HTMLElement
+      >
+    }
+  }
+
   interface Window {
     fileExplorerApi: {
       getHomeInfo: () => Promise<{ homeDir: string; platform: string }>
@@ -209,6 +224,8 @@ declare global {
       verifyCaptcha: (code: string) => Promise<{ success: boolean }>
       search: (keyword: string) => Promise<XifanSearchResult[] | { needs_captcha: true }>
       getWatch: (watchUrl: string) => Promise<XifanWatchInfo>
+      /** 在线播放:模板直链 404 时回源播放页解析真实地址(找不到返回 null)。 */
+      resolveEpUrl: (epPage: string, ep: number) => Promise<string | null>
       startDownload: (
         title: string,
         templates: string[],
@@ -248,6 +265,14 @@ declare global {
         savePath?: string,
         epPages?: string[]
       ) => Promise<{ switched: boolean }>
+    }
+    biliApi: {
+      /** B 站登录态(persist:bili 分区里有没有有效 SESSDATA)。 */
+      status: () => Promise<{ loggedIn: boolean }>
+      /** 弹内嵌 B 站登录窗,登录成功自动关窗。返回最新登录态。 */
+      login: () => Promise<{ loggedIn: boolean }>
+      /** 清空 persist:bili 分区 cookie(退出登录)。 */
+      logout: () => Promise<{ loggedIn: boolean }>
     }
     aowuApi: {
       search: (keyword: string) => Promise<{

@@ -103,6 +103,18 @@ export interface AnimeTrack {
   /** From BGM detail when known; left undefined for ongoing series with TBD count. */
   totalEpisodes?: number
   /**
+   * 放送日期(011 在线观看,决定播放按钮显隐):
+   *   - undefined = 未知(字段引入前的老数据)—— BGM 条目宽容当已播出;
+   *                 **手动条目(负数 bgmId)当未定档隐藏**(手动加的多是
+   *                 BGM 还没有的未播出续季,如盾勇第五季)
+   *   - ''        = 确认未定档(BGM 详情无日期 / 手动条目留空)—— 隐藏按钮
+   *   - 其他      = BGM 的 date(YYYY-MM-DD)或手填文本;解析出未来日期 → 隐藏
+   * BGM 条目加追番时从 detail.date 写入;手动条目在编辑弹窗可选填写。
+   * 不做自动复查(用户决策):未定档条目播出后靠用户编辑/删重加解锁。
+   * 判定逻辑见 utils/airDate.ts 的 isUnaired()。
+   */
+  airDate?: string
+  /**
    * 小说阅读进度 —— 一级=卷 / 二级=章。**仅 subjectType==='novel' 用**；
    * 动漫 / 漫画走上面的 episode 数字模型，这俩字段保持 ''。
    *
@@ -356,6 +368,7 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     status,
     episode: total != null ? Math.min(episode, total) : episode,
     totalEpisodes: total,
+    airDate: typeof t.airDate === 'string' ? t.airDate : undefined,
     novelVolume,
     novelChapter,
     bindings,
@@ -526,7 +539,9 @@ class AnimeTrackStore {
       const patch: Partial<AnimeTrack> & { bgmId: number } = { bgmId }
       if (Array.isArray(detail.tags) && detail.tags.length > 0) patch.bgmTags = detail.tags
       if (aliases.length > 0) patch.aliases = aliases
-      if (patch.bgmTags || patch.aliases) this.upsert(patch)
+      // 同一次 detail 顺带补放送日期('' 也写 —— 那是「确认未定档」的有效结论)
+      if (recheck.airDate === undefined && typeof detail.date === 'string') patch.airDate = detail.date
+      if (patch.bgmTags || patch.aliases || 'airDate' in patch) this.upsert(patch)
     } catch { /* silent — 下次相关入口再触发时重试 */ }
   }
 
