@@ -16,6 +16,8 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
+import { trackUnaired } from '../utils/airDate'
 import TopBar from '../components/TopBar'
 import {
   animeTrackStore,
@@ -53,6 +55,28 @@ import {
 } from '../components/EditBindingsModal'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 import type { Source, SearchCard } from '../types/search'
+
+// ── 在线观看入口按钮 ──────────────────────────────────────────────────────────
+
+/**
+ * 「在线观看」行首的应用内播放入口(011 阶段)。与后面外跳浏览器的源 chips
+ * 是独立两档功能:这个按钮进 /play 播放页,chips 的外跳行为保持不变。
+ * 实底主色与描边 chips 拉开层级,一眼区分「应用内播」和「外跳」。
+ */
+function PlayOnlineButton({ bgmId }: { bgmId: number }): JSX.Element {
+  const navigate = useNavigate()
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(`/play?bgm=${bgmId}`)}
+      title="应用内在线播放"
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary hover:bg-primary/90 text-on-primary font-label text-[10px] font-bold tracking-wider transition-colors"
+    >
+      <span className="material-symbols-outlined leading-none" style={{ fontSize: 12, fontVariationSettings: "'FILL' 1" }}>play_arrow</span>
+      <span>播放</span>
+    </button>
+  )
+}
 
 // ── Status taxonomy ──────────────────────────────────────────────────────────
 
@@ -588,6 +612,7 @@ function ManualAddModal({
   )
   const [coverUrl, setCoverUrl] = useState(editing?.cover ?? '')
   const [totalEps, setTotalEps] = useState(editing?.totalEpisodes != null ? String(editing.totalEpisodes) : '')
+  const [airDateInput, setAirDateInput] = useState(editing?.airDate ?? '')
   const [error, setError] = useState<string | null>(null)
 
   const titleRef = useRef<HTMLInputElement>(null)
@@ -626,6 +651,9 @@ function ManualAddModal({
       title: trimmedTitle,
       cover: coverUrl.trim() || undefined,
       totalEpisodes: Number.isFinite(epsParsed) && epsParsed > 0 ? epsParsed : undefined,
+      // 手动条目的放送日期由这里唯一维护:留空保存 = ''(确认未定档,隐藏
+      // 播放按钮),填了日期按 utils/airDate.ts 解析判断未来/已播出。
+      airDate: airDateInput.trim(),
     }
 
     if (editing) {
@@ -723,6 +751,18 @@ function ManualAddModal({
                 inputMode="numeric"
                 placeholder="留空 = 连载中"
               />
+            </div>
+            <div className="col-span-2">
+              <p className={labelCls}>放送日期（可选）</p>
+              <input
+                className={`${inputCls} font-mono`}
+                value={airDateInput}
+                onChange={e => setAirDateInput(e.target.value)}
+                placeholder="如 2026-07-05"
+              />
+              <p className="text-[10px] text-on-surface-variant/40 mt-1 font-label">
+                留空 = 未定档；未定档或日期在未来的番不显示「播放」按钮
+              </p>
             </div>
           </div>
 
@@ -1283,6 +1323,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
           <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35 mr-0.5">
             在线观看
           </span>
+          {!trackUnaired(track.airDate, track.bgmId) && <PlayOnlineButton bgmId={track.bgmId} />}
           <WatchHere bgmId={track.bgmId} variant="inline" />
           {missingBuiltins.map(s => (
             <button
@@ -1382,6 +1423,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
           {/* 在线观看（与桌面版同款控件） */}
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/35 mr-0.5">在线观看</span>
+            {!trackUnaired(track.airDate, track.bgmId) && <PlayOnlineButton bgmId={track.bgmId} />}
             <WatchHere bgmId={track.bgmId} variant="inline" />
             {missingBuiltins.map(s => (
               <button

@@ -876,6 +876,8 @@ function DetailView({
       aliases: aliasesFromInfobox(data.infobox),
       cover: data.cover || undefined,
       totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
+      // 放送日期('' = BGM 无日期 = 未定档,播放按钮据此隐藏,见 utils/airDate.ts)
+      airDate: data.date,
       status: 'plan',
       episode: 0,
       bgmTags: data.tags,
@@ -1190,6 +1192,8 @@ function DetailView({
                     aliases: aliasesFromInfobox(data.infobox),
                     cover: data.cover || undefined,
                     totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
+                    // 放送日期('' = BGM 无日期 = 未定档,播放按钮据此隐藏)
+                    airDate: data.date,
                     status: 'plan',
                     episode: 0,
                     // 加追番那一刻把 BGM 当前 tag 快照写入 —— store 内 lock-on-create

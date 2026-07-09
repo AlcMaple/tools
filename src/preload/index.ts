@@ -134,6 +134,8 @@ contextBridge.exposeInMainWorld('xifanApi', {
   verifyCaptcha: (code: string) => ipcRenderer.invoke('xifan:verify', code),
   search: (keyword: string) => ipcRenderer.invoke('xifan:search', keyword),
   getWatch: (watchUrl: string) => ipcRenderer.invoke('xifan:watch', watchUrl),
+  // 在线播放:模板直链 404 时回源播放页解析真实地址(找不到返回 null)。
+  resolveEpUrl: (epPage: string, ep: number) => ipcRenderer.invoke('xifan:resolve-ep-url', epPage, ep),
   startDownload: (title: string, templates: string[], startEp: number, endEp: number, savePath?: string, excludeEps?: number[], epPages?: string[]) =>
     ipcRenderer.invoke('xifan:download', title, templates, startEp, endEp, savePath, excludeEps, epPages),
   cancelDownload: (taskId: string) => ipcRenderer.invoke('xifan:download-cancel', taskId),
@@ -146,6 +148,13 @@ contextBridge.exposeInMainWorld('xifanApi', {
     ipcRenderer.invoke('xifan:download-retry', taskId, title, templates, failedEps, savePath, sourceIdx, epPages),
   switchSource: (taskId: string, title: string, templates: string[], failedEps: number[], newSourceIdx: number, savePath?: string, epPages?: string[]) =>
     ipcRenderer.invoke('xifan:download-switch-source', taskId, title, templates, failedEps, newSourceIdx, savePath, epPages),
+})
+
+contextBridge.exposeInMainWorld('biliApi', {
+  // B 站登录态(011 在线观看):登录窗 + persist:bili 分区,webview 同分区复用
+  status: () => ipcRenderer.invoke('bili:status'),
+  login: () => ipcRenderer.invoke('bili:login'),
+  logout: () => ipcRenderer.invoke('bili:logout'),
 })
 
 contextBridge.exposeInMainWorld('aowuApi', {
