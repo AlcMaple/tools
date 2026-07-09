@@ -21,13 +21,21 @@
 
 **底层关键决策 / 踩过的坑**：
 
-- **mtmedia 流代理（本次核心，`src/main/shared/media-proxy.ts`）**：`<video>` 能不能播远端 mp4 **取决于页面 origin**。dev 下 origin 是 `http://localhost:5173`，Chromium 拒绝播放带 `content-disposition: attachment` 的**跨源**媒体（稀饭主线的 pan.wo.cn 联通网盘签名直链正是这种）→ `<video>` 报 code 4；打包后 origin 是 `file://` 不拦，所以**只在 dev 挂**（曾误判成缓存 / HEVC / 登录，均已实测排除）。根治：媒体统一经主进程 `net.fetch` 取流、**剥掉 content-disposition**，用同源 `mtmedia://` 协议回给 `<video>`，dev / 正式都不受 origin 限制。用 net.fetch 而非 netRequest —— 后者 `Buffer.concat` 全量缓冲，视频几百 MB 会爆内存。
-- **签名链并发陷阱**：不缓存最终签名直链、每个 Range 都重走一遍 302 是**故意的** —— pan.wo.cn 对单条签名链有并发限制，复用一条链打多个并发 Range 会卡死（实测 `readyState=0` 完全停止）。每个 Range 各取一条新鲜签名链才稳。
-- **切集 / 切线路的中断**：Electron 的 `protocol.handle` 里 `request.signal` **不触发**（实测），所以自建 `AbortController`，在返回流的 `cancel()` 里 abort 上游 `net.fetch`。否则被丢弃的旧流会在后台续下、占满 pan.wo.cn 的并发连接，导致下一集一直卡加载。
-- **airDate 三态（`src/renderer/src/utils/airDate.ts`）**：`undefined`（字段引入前老数据，按条目来源分流：BGM 条目宽容显示、手动条目当未定档隐藏）/ `''`（确认未定档，隐藏）/ 可解析日期串（在未来则隐藏）。零迁移。
-- **B 站 webview**：main 开 `webviewTag`；登录窗与播放 webview 共用 `persist:bili` 分区、同 UA，cookie 第一方；分区**惰性初始化**（`session.fromPartition` 必须等 app ready）。
+**1. mtmedia 同源流代理（`src/main/shared/media-proxy.ts`）** —— 同一条稀饭主线直链，浏览器 / 打包版能播，dev 里 `<video>` 报 code 4，差在**页面 origin**：dev 的 `http://localhost` 下 Chromium 拒绝播放带 `content-disposition: attachment` 的跨源媒体，打包后 `file://` 不拦，所以**只在 dev 复现**
 
-调研 / 落地纪要与 TODO 见 `docs/ideas/011-在线观看.md`。
+![mtmedia 同源流代理原理](docs/devlog-assets/online-media-proxy.svg)
+
+**2. 线路兜底** —— 播放失败切下一条线路的**同一集**（不是跳集），三条都试完才报错。
+
+![线路兜底状态机](docs/devlog-assets/online-line-fallback.svg)
+
+**3. airDate 三态（`src/renderer/src/utils/airDate.ts`）** —— 未播出条目不显示播放按钮，判定三态零迁移。
+
+![airDate 三态判定](docs/devlog-assets/online-airdate-states.svg)
+
+**4. B 站 webview** —— main 开 `webviewTag`；登录窗与播放 webview 共用 `persist:bili` 分区、同 UA，cookie 第一方；分区**惰性初始化**（`session.fromPartition` 必须等 app ready）。
+
+调研 / 踩坑全纪要与 TODO 见 `docs/ideas/011-在线观看.md`。
 
 ## BGM登陆功能
 
