@@ -184,9 +184,10 @@ export default function OnlinePlayer(): JSX.Element {
   const seqRef = useRef(0)
   // xifan 模板直链 404 时回源解析,同一集只回源一次,防 onError 死循环
   const fallbackTriedRef = useRef(false)
-  // 播放失败自动兜底:记本集已试过的线路下标,换下一条**还没试过**的线路
-  // (同一集、只换线路,不跳集);三条都试完才停下报错。切集 / 切源 / 手动
-  // 选线路 / Try again 时清空(见下方 effect 与 selectLine / retry)。
+  // 播放失败自动兜底:记这条线路已试过,换下一条**还没试过**、含本集的线路
+  // (同一集、只换线路,不跳集);三条都试完才停下报错。记忆在整部番的一次观看里
+  // 持续累积:换站/换番(data 重载)才清零,换集**保留**;手动切线路把切走的旧线路
+  // 计入已试;Try again 清零重来一轮(见下方 effect 与 selectLine / retry)。
   const triedLinesRef = useRef<Set<number>>(new Set())
 
   // B 站登录态(null = 还没查);webviewKey 用于登录后强制重载 webview
@@ -294,11 +295,14 @@ export default function OnlinePlayer(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, lineIdx, ep, resolveTick])
 
-  // 切集 / 切源时,自动兜底的「已试线路」记录清零(手动选线路 / Try again 也清,
-  // 见 selectLine / retry)。换线路(含自动兜底)本身**不**清,否则会死循环。
+  // 「已试线路」记录只在换站/换番(data 重新加载成新对象)时清零 —— 换集**不**清,
+  // 同一部番里一条线路整体不行就跨集一直绕开它。triedLines 存的是当前 data 的
+  // 线路下标,换站后下标语义全变、必须清;换集 data 引用不变,不触发本 effect,
+  // 保留累积。手动选线路 / 自动兜底 / Try again 各自维护(见 selectLine /
+  // tryNextLine / retry)。
   useEffect(() => {
     triedLinesRef.current = new Set()
-  }, [ep, entryKey])
+  }, [data])
 
   // 播放失败自动兜底:换下一条**还没试过**、且含本集的线路(只换线路不跳集);
   // 三条都试完才停下报错。
@@ -353,7 +357,9 @@ export default function OnlinePlayer(): JSX.Element {
 
   const selectLine = (i: number): void => {
     if (i === lineIdx) return
-    triedLinesRef.current = new Set() // 手动选线路是新意图,兜底记录清零
+    // 手动切走当前线路 = 用户放弃它,标记为已试,之后自动兜底不再回退到它;
+    // 手动想再切回来仍允许(下面直接 setLineIdx,不看标记)。不清空整份记忆。
+    triedLinesRef.current.add(lineIdx)
     setLineIdx(i)
     // 新线路没有当前集(如 BD 线只有特典)时清掉选集,交给默认选集逻辑重挑
     const eps = data?.lines[i]?.eps ?? []
