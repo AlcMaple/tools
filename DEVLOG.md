@@ -11,6 +11,43 @@
 
 ## 在线观看
 
+### 2026-07-10 fix: Girigiri 换域名后搜索与在线播放全部失败
+
+**效果**：
+
+1. Girigiri 的搜索 / 下载 / 在线播放恢复可用 —— 站点主域从 `bgm.girigirilove.com` 换到了 `ani.girigirilove.com`（旧域名现在 301 过去）。
+2. 顺带修掉一个潜伏的传输层 bug：`netRequest` 的 `redirect:'manual'` 从来没处理过 3xx，**任何**重定向都会以 `Redirect was cancelled` 失败。修完之后站点再换域名，只是多跟一跳而已。
+
+**关键代码**：
+
+① 传输层——manual 模式必须接 `redirect` 事件，把 3xx 原样交回调用方：
+
+```ts
+// shared/net-request.ts - netRequest()
+if (redirect === 'manual') {
+  request.on('redirect', (statusCode, _method, _redirectUrl, responseHeaders) => {
+    // 3xx 的 status/headers 原样 resolve 出去(body 空),让 HttpSession 自己读
+    // Location、ingest Set-Cookie 再跟下一跳。不接这个事件,请求会被作废。
+    finish(() => resolve({
+      status: statusCode,
+      headers: responseHeaders as Record<string, string | string[] | undefined>,
+      body: Buffer.alloc(0),
+    }))
+    try { request.abort() } catch { /* 已结束 */ }
+  })
+}
+```
+
+② 主域收敛成单一事实源，`download.ts` 注 cookie 时也跟着它走（写死旧域名的话，站点换域后 cookie 落在错误的 domain 上，注进去等于没注）：
+
+```ts
+// girigiri/api.ts
+export const BASE_DOMAIN = 'https://ani.girigirilove.com'
+
+// girigiri/download.ts - captureM3u8()
+ses.cookies.set({ url: BASE_DOMAIN, name, value })
+```
+
 ### 2026-07-09 refactor: 优化自动更换线路结构
 
 **效果**：

@@ -4,7 +4,10 @@ import { DESKTOP_USER_AGENT } from '../shared/download-types'
 import { crawlAllPages } from '../shared/maccms-search-paginator'
 import { assertScrapePageOk } from '../shared/scrape-guard'
 
-const BASE_DOMAIN = 'https://bgm.girigirilove.com'
+// 2026-07-10:站点主域从 bgm.girigirilove.com 换到 ani.girigirilove.com,旧域名
+// 现在 301 过来。改域名的同时也把 net-request 的 manual 重定向修了(旧代码碰到
+// 3xx 必抛 "Redirect was cancelled"),所以就算再换域名也只是多跟一跳,不会整源挂掉。
+export const BASE_DOMAIN = 'https://ani.girigirilove.com'
 const HEADERS = {
   'User-Agent': DESKTOP_USER_AGENT,
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
