@@ -35,10 +35,20 @@ const NET_MANAGED_HEADERS = new Set(['host', 'connection', 'content-length', 'ac
 export interface NetOptions {
   method?: string
   headers?: Record<string, string>
+  /** 请求体（POST/PUT）。Content-Length 由 net 自动算，别自己设。 */
+  body?: string | Buffer
   /** 默认 12000ms。到点 abort 并 reject(Error('timeout'))。 */
   timeoutMs?: number
   /** 'follow'（默认）自动跟 3xx；'manual' 返回 3xx 原始响应。 */
   redirect?: 'follow' | 'manual'
+  /**
+   * 用某个 session 的 cookie 罐发请求（如 `persist:bili` 里的 B 站登录态）。
+   * 不传走默认 session。传了就自动开 `useSessionCookies` —— net 默认**不带**
+   * 该 session 的 cookie（`useSessionCookies` 缺省 false），而传 session 进来
+   * 的唯一目的就是用它的登录态，两个开关分开只会制造「传了 session 却没带
+   * cookie」的静默失败。
+   */
+  session?: Electron.Session
 }
 
 /**
@@ -48,7 +58,7 @@ export interface NetOptions {
  * 超时 / abort / 传输层错误一律 reject 原生 Error，由调用方分类。
  */
 export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResult> {
-  const { method = 'GET', headers = {}, timeoutMs = 12000, redirect = 'follow' } = opts
+  const { method = 'GET', headers = {}, body, timeoutMs = 12000, redirect = 'follow', session } = opts
   return new Promise<NetResult>((resolve, reject) => {
     let settled = false
     const finish = (cb: () => void): void => {
@@ -58,7 +68,7 @@ export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResul
       cb()
     }
 
-    const request = net.request({ method, url, redirect })
+    const request = net.request({ method, url, redirect, session, useSessionCookies: !!session })
 
     for (const [k, v] of Object.entries(headers)) {
       // 跳过由 Chromium 网络栈自己管理的头：手动 setHeader 它们会抛
@@ -102,6 +112,7 @@ export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResul
     })
     request.on('error', (e: Error) => finish(() => reject(e)))
     request.on('abort', () => finish(() => reject(new Error('aborted'))))
+    if (body !== undefined) request.write(body)
     request.end()
   })
 }

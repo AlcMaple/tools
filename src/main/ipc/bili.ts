@@ -1,81 +1,35 @@
-// B 站登录态(011 在线观看)。播放页用 <webview partition="persist:bili"> 嵌
-// 官方外链播放器 —— webview 里 B 站页面是顶层文档,cookie 是第一方,登录态
-// 直接生效(iframe 会被第三方 cookie 分区拦住,所以不用 iframe)。
-// 这里只管三件事:弹登录窗 / 查登录态 / 退出清分区。
-import { app, BrowserWindow, ipcMain, session } from 'electron'
-import { DESKTOP_USER_AGENT } from '../shared/download-types'
-
-export const BILI_PARTITION = 'persist:bili'
-
-// session 只能在 app ready 后创建(registerAllIpc 在模块加载期就跑),所以
-// 惰性初始化;首次拿到分区时顺手固定 UA —— 沿用 BGM 的教训:登录态和 UA
-// 必须一致,登录窗、webview、后续请求都走这同一个分区同一个 UA。
-let cachedSession: Electron.Session | null = null
-function biliSession(): Electron.Session {
-  if (!cachedSession) {
-    cachedSession = session.fromPartition(BILI_PARTITION)
-    cachedSession.setUserAgent(DESKTOP_USER_AGENT)
-  }
-  return cachedSession
-}
-
-// SESSDATA 是 B 站的关键登录态 cookie(等价 BGM 的 chii_auth)。
-async function biliStatus(): Promise<{ loggedIn: boolean }> {
-  const cookies = await biliSession().cookies.get({ name: 'SESSDATA' })
-  return { loggedIn: cookies.some((c) => c.domain?.includes('bilibili.com') && c.value) }
-}
-
-let loginWin: BrowserWindow | null = null
-
-function openBiliLogin(): Promise<{ loggedIn: boolean }> {
-  // 已有登录窗时聚焦复用,不叠开第二个
-  if (loginWin && !loginWin.isDestroyed()) {
-    loginWin.focus()
-    return biliStatus()
-  }
-  return new Promise((resolve) => {
-    const part = biliSession()
-    const win = new BrowserWindow({
-      width: 1000,
-      height: 720,
-      title: '登录 B 站',
-      autoHideMenuBar: true,
-      backgroundColor: '#131313',
-      webPreferences: { partition: BILI_PARTITION, sandbox: true },
-    })
-    loginWin = win
-
-    // 检测到 SESSDATA 落地就自动关窗;真正的结论在 closed 里统一查一次,
-    // 用户手动关窗(放弃登录)也走同一条路。
-    const onCookieChanged = (
-      _e: unknown,
-      cookie: Electron.Cookie,
-      _cause: unknown,
-      removed: boolean,
-    ): void => {
-      if (removed || cookie.name !== 'SESSDATA' || !cookie.domain?.includes('bilibili.com')) return
-      // 稍缓一拍,容纳同批 Set-Cookie 里的其余凭证(bili_jct 等)落完
-      setTimeout(() => { if (!win.isDestroyed()) win.close() }, 800)
-    }
-    part.cookies.on('changed', onCookieChanged)
-
-    win.on('closed', () => {
-      part.cookies.removeListener('changed', onCookieChanged)
-      loginWin = null
-      void biliStatus().then(resolve)
-    })
-    void win.loadURL('https://passport.bilibili.com/login')
-  })
-}
+// B 站 IPC 面 —— 登录态(扫码/查/退出)、稿件分 P 列表、DASH 播放地址。
+// 站点逻辑与签名全在 ../bili/api.ts,这里只做 handler 接线。
+import { app, ipcMain } from 'electron'
+import QRCode from 'qrcode'
+import {
+  biliSession, getDash, getVideoInfo, isLoggedIn, logout, tvAuthCode, tvPoll,
+} from '../bili/api'
 
 export function registerBiliIpc(): void {
-  // ready 后立刻预热分区(设 UA),赶在播放页 webview 首次使用它之前
+  // ready 后立刻预热分区(设 UA),赶在任何请求用到它之前
   void app.whenReady().then(() => { biliSession() })
 
-  ipcMain.handle('bili:status', async () => biliStatus())
-  ipcMain.handle('bili:login', async () => openBiliLogin())
-  ipcMain.handle('bili:logout', async () => {
-    await biliSession().clearStorageData({ storages: ['cookies'] })
-    return biliStatus()
+  ipcMain.handle('bili:status', async () => ({ loggedIn: await isLoggedIn() }))
+
+  ipcMain.handle('bili:qr-create', async () => {
+    const { url, auth_code } = await tvAuthCode()
+    // 白边(margin)直接烤进 PNG —— 深色主题下 UI 不用再垫白底,也就不会出现
+    // 「反色导致手机扫不出来」。
+    const qrDataUrl = await QRCode.toDataURL(url, { margin: 2, width: 256 })
+    return { authCode: auth_code, qrDataUrl }
   })
+
+  ipcMain.handle('bili:qr-poll', async (_e, authCode: string) => {
+    const state = await tvPoll(authCode)
+    return { state, loggedIn: state === 'ok' ? await isLoggedIn() : false }
+  })
+
+  ipcMain.handle('bili:logout', async () => {
+    await logout()
+    return { loggedIn: await isLoggedIn() }
+  })
+
+  ipcMain.handle('bili:video-info', async (_e, bvid: string) => getVideoInfo(bvid))
+  ipcMain.handle('bili:dash', async (_e, aid: number, cid: number) => getDash(aid, cid))
 }

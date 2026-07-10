@@ -30,10 +30,17 @@ export const MEDIA_PROXY_SCHEME = 'mtmedia'
 const PLAYLIST_MAX_BYTES = 20 * 1024 * 1024
 const HLS_MIME = 'application/vnd.apple.mpegurl'
 
-// 渲染进程用:把 http(s) 直链包成同源代理 URL 喂给 <video>。非 http(s) 原样返回。
-export function toMediaProxyUrl(url: string): string {
+/**
+ * 把 http(s) 直链包成同源代理 URL 喂给 <video> / hls.js / shaka。非 http(s) 原样返回。
+ *
+ * `referer`:有些站的 CDN 校验防盗链(B 站 upos/bilivideo 不带 Referer 一律 403,实测),
+ * 由**取到地址的那一方**在主进程就把该带的 Referer 钉进代理 URL —— 渲染层因此永远
+ * 拿不到裸签名链,也就不可能忘了带头。稀饭/Girigiri 不需要,省略即可。
+ */
+export function toMediaProxyUrl(url: string, referer?: string): string {
   if (!/^https?:\/\//i.test(url)) return url
-  return `${MEDIA_PROXY_SCHEME}://media/?u=${encodeURIComponent(url)}`
+  const r = referer ? `&r=${encodeURIComponent(referer)}` : ''
+  return `${MEDIA_PROXY_SCHEME}://media/?u=${encodeURIComponent(url)}${r}`
 }
 
 function isPlaylistPath(url: string): boolean {
@@ -52,10 +59,11 @@ function isPlaylistType(contentType: string | null): boolean {
 // 列表、#EXT-X-KEY 的 AES 密钥、#EXT-X-MAP 的 fMP4 初始化段。不重写的话 hls.js
 // 会拿着原始 CDN 地址在渲染进程里直取,被跨源策略拦。
 // 相对地址按**重定向后的最终列表地址**解析 —— 用原始 target 解会解错 302 过的列表。
-function rewritePlaylist(text: string, baseUrl: string): string {
+function rewritePlaylist(text: string, baseUrl: string, referer?: string): string {
   const abs = (u: string): string => {
     try {
-      return toMediaProxyUrl(new URL(u, baseUrl).href)
+      // 分片/密钥继承列表本身的 Referer,否则重写完第一跳就丢了防盗链头
+      return toMediaProxyUrl(new URL(u, baseUrl).href, referer)
     } catch {
       return u
     }
@@ -75,12 +83,16 @@ function rewritePlaylist(text: string, baseUrl: string): string {
 
 export function registerMediaProxy(): void {
   protocol.handle(MEDIA_PROXY_SCHEME, async (request) => {
-    const target = new URL(request.url).searchParams.get('u')
+    const params = new URL(request.url).searchParams
+    const target = params.get('u')
     if (!target || !/^https?:\/\//i.test(target)) return new Response(null, { status: 400 })
+    // 防盗链 Referer 由生成代理 URL 的一方钉在 `r` 上(见 toMediaProxyUrl)
+    const referer = params.get('r')
 
-    // 只带 UA(与下载器一致,不带 Referer/Cookie);<video> 的 Range 原样转发,
+    // 默认只带 UA(与下载器一致,不带 Cookie);<video> 的 Range 原样转发,
     // moov 在文件尾部的非 faststart mp4 靠它取索引。
     const headers: Record<string, string> = { 'User-Agent': DESKTOP_USER_AGENT }
+    if (referer && /^https?:\/\//i.test(referer)) headers['Referer'] = referer
     const wantsPlaylist = isPlaylistPath(target)
     const range = request.headers.get('Range')
     // 播放列表要整份读出来重写,Range 对它没意义(还会把重写切断);只给分片透传。
@@ -115,7 +127,7 @@ export function registerMediaProxy(): void {
             },
           })
         }
-        return new Response(rewritePlaylist(text, res.url || target), {
+        return new Response(rewritePlaylist(text, res.url || target, referer ?? undefined), {
           status: res.status,
           // 重写后长度变了,不能透传上游 content-length,交给 Response 自己算。
           headers: { 'content-type': HLS_MIME, 'cache-control': 'no-store' },

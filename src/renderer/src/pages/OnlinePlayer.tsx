@@ -15,8 +15,13 @@
 //     main/shared/media-proxy.ts):dev 的 http://localhost origin 会拒绝带
 //     content-disposition 的跨源媒体(pan.wo.cn 联通网盘直链就是)→ code 4,
 //     经主进程取流剥头后 dev/正式都不受 origin 限制。解析类请求仍全在主进程 IPC。
-//   - Bilibili / Custom:<webview> 嵌站点播放器组件(B 站转官方外链播放器 +
-//     persist:bili 分区,登录后第一方 cookie 生效,不再只有试看)。
+//   - Bilibili(普通视频 BV):**自研播放** —— 主进程按 TV appkey 签名问 playurl 要
+//     DASH 音视频分轨,合成 MPD 交给 shaka-player 走 MSE。**别退回官方外链播放器**
+//     (player.bilibili.com/player.html):它把画质锁在 360P(菜单里列 1080P 但选了
+//     没用)、暂停弹推荐位、盖「进入哔哩哔哩观看更高清」引流层,而且合集拿不到分 P
+//     列表 —— 这四条都是它写死的,登录也解不开。分 P(&p=N)就是集数网格。
+//   - 番剧 ep 链接 / 其他自定义源:仍用 <webview> 嵌站点播放器(persist:bili 分区,
+//     登录后第一方 cookie 生效)。番剧走的是另一套 pgc playurl,暂未自研。
 //   - Girigiri:地址从播放页 HTML 的 player_aaaa 直接解析(一次 GET,与稀饭同源)。
 //     多数线路是 m3u8(HLS)—— Chromium 不原生支持,由 hls.js 接管 <video> 走 MSE
 //     逐段喂,播放列表和分片同样过 mtmedia 代理(主进程把列表里的地址重写成
@@ -26,14 +31,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
+import shaka from 'shaka-player'
+import BiliLoginModal from '../components/BiliLoginModal'
 import ErrorPanel from '../components/ErrorPanel'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
 import { useSourceSearch } from '../hooks/useSourceSearch'
+import { biliMpdUri, pickVideoTracks } from '../utils/biliMpd'
 import type { SearchCard, Source } from '../types/search'
+import type { BiliDash, BiliVideoInfo } from '../types/bili'
 import type { XifanWatchInfo } from '../types/xifan'
 import type { AowuWatchInfo } from '../types/aowu'
 import type { GirigiriWatchInfo } from '../types/girigiri'
+
+// shaka 只认自己注册过的 scheme:B 站的分片地址已被主进程包成 mtmedia://(带防盗链
+// Referer),不注册的话 shaka 直接报 UNSUPPORTED_SCHEME。用它自带的 fetch 插件即可
+// —— mtmedia 声明了 supportFetchAPI,实测 fetch/XHR 都直通(见 011 纪要)。
+shaka.polyfill.installAll()
+shaka.net.NetworkingEngine.registerScheme(
+  'mtmedia',
+  shaka.net.HttpFetchPlugin.parse,
+  shaka.net.NetworkingEngine.PluginPriority.PREFERRED,
+  true, // progressSupport
+)
 
 const BUILTINS: Source[] = ['Xifan', 'Girigiri', 'Aowu']
 
@@ -52,12 +72,14 @@ type SiteData =
   | { kind: 'xifan'; info: XifanWatchInfo; lines: PlayLine[] }
   | { kind: 'aowu'; info: AowuWatchInfo; lines: PlayLine[] }
   | { kind: 'girigiri'; info: GirigiriWatchInfo; lines: PlayLine[] }
+  | { kind: 'bili'; info: BiliVideoInfo; lines: PlayLine[] }
 
 type PlayerView =
   | { mode: 'none' }
   | { mode: 'loading' }
   | { mode: 'search' }
   | { mode: 'video'; url: string; isHls: boolean }
+  | { mode: 'dash'; dash: BiliDash }
   | { mode: 'embed'; url: string; isBili: boolean }
   | { mode: 'error'; err: unknown }
 
@@ -73,13 +95,17 @@ function bindingUrl(b: AnimeBinding): string {
   return b.sourceUrl || b.sourceKey
 }
 
-/** B 站普通视频 / 番剧链接 → 官方外链播放器 URL(转不了返回 null,原样嵌)。 */
-function biliEmbedUrl(raw: string): string | null {
+/** B 站**普通视频**链接里的 BV 号。番剧(/bangumi/play/ep…)没有 BV,返回 null。 */
+function biliBvid(raw: string): string | null {
+  if (!/bilibili\.com/i.test(raw)) return null
+  return /BV[0-9A-Za-z]{10}/.exec(raw)?.[0] ?? null
+}
+
+/** B 站**番剧**链接 → 官方外链播放器 URL。番剧走另一套 pgc playurl,暂未自研,
+ *  仍嵌外链播放器(它的画质锁死/引流层等毛病一并继承,普通视频已不走这里)。 */
+function biliBangumiEmbedUrl(raw: string): string | null {
   const ep = /bilibili\.com\/bangumi\/play\/ep(\d+)/.exec(raw)
-  if (ep) return `https://player.bilibili.com/player.html?ep_id=${ep[1]}&autoplay=0`
-  const bv = /BV[0-9A-Za-z]{10}/.exec(raw)
-  if (bv) return `https://player.bilibili.com/player.html?bvid=${bv[0]}&autoplay=0`
-  return null
+  return ep ? `https://player.bilibili.com/player.html?ep_id=${ep[1]}&autoplay=0` : null
 }
 
 /** 占位符按携带的位宽补零 —— 必须与主进程 formatEpUrl / siteApi.resolveEpUrl 一致
@@ -106,6 +132,15 @@ function epShort(e: PlayEp): string {
 
 async function loadSiteData(binding: AnimeBinding): Promise<SiteData> {
   const url = bindingUrl(binding)
+  const bvid = biliBvid(url)
+  if (bvid) {
+    // 合集/多 P 稿件的 pages 就是集数列表(page = 链接上的 &p=N)。单 P 稿件 pages
+    // 长度为 1,网格只有一格,与其他源形态一致。B 站只有一条「线路」。
+    const info = await window.biliApi.videoInfo(bvid)
+    if (info.pages.length === 0) throw new Error('这个稿件没有可播放的分 P')
+    const lines = [{ name: 'B 站', eps: info.pages.map((p) => ({ idx: p.page, label: p.part })) }]
+    return { kind: 'bili', info, lines }
+  }
   if (binding.source === 'Xifan') {
     const info = await window.xifanApi.getWatch(url)
     if (info.error) throw new Error(info.error)
@@ -136,12 +171,18 @@ async function loadSiteData(binding: AnimeBinding): Promise<SiteData> {
   return { kind: 'aowu', info, lines }
 }
 
-/** 解析某条线路某一集的播放地址:girigiri 给 m3u8(HLS),其余给 mp4 直链。 */
-async function resolveStreamUrl(
-  data: SiteData,
-  lineIdx: number,
-  ep: number,
-): Promise<{ url: string; isHls: boolean }> {
+/** 一集解析出来的播放形态:B 站是 DASH 分轨,其余是一条 url(mp4 或 m3u8)。 */
+type Stream =
+  | { kind: 'url'; url: string; isHls: boolean }
+  | { kind: 'dash'; dash: BiliDash }
+
+/** 解析某条线路某一集的播放地址:B 站给 DASH,girigiri 给 m3u8(HLS),其余给 mp4 直链。 */
+async function resolveStream(data: SiteData, lineIdx: number, ep: number): Promise<Stream> {
+  if (data.kind === 'bili') {
+    const page = data.info.pages.find((p) => p.page === ep)
+    if (!page) throw new Error('这个稿件没有这一集')
+    return { kind: 'dash', dash: await window.biliApi.dash(data.info.aid, page.cid) }
+  }
   if (data.kind === 'girigiri') {
     const line = data.info.sources[lineIdx]
     if (!line) throw new Error('线路不存在,换一条线路试试')
@@ -150,21 +191,30 @@ async function resolveStreamUrl(
     const url = await window.girigiriApi.resolveEpUrl(epInfo.url)
     if (!url) throw new Error('未能取到这一集的播放地址')
     // girigiri **不都是 HLS**:部分老番线路给的是 .mp4 直链,按后缀决定播放方式
-    return { url, isHls: /\.m3u8(\?|$)/i.test(url) }
+    return { kind: 'url', url, isHls: /\.m3u8(\?|$)/i.test(url) }
   }
   if (data.kind === 'aowu') {
     const line = data.info.sources[lineIdx]
     if (!line) throw new Error('线路不存在,换一条线路试试')
-    return { url: await window.aowuApi.resolveMp4Url(data.info.id, line.idx, ep), isHls: false }
+    const url = await window.aowuApi.resolveMp4Url(data.info.id, line.idx, ep)
+    return { kind: 'url', url, isHls: false }
   }
   const line = data.info.sources[lineIdx]
   if (!line) throw new Error('线路不存在,换一条线路试试')
-  if (line.template) return { url: xifanUrlFromTemplate(line.template, ep), isHls: false }
+  if (line.template) return { kind: 'url', url: xifanUrlFromTemplate(line.template, ep), isHls: false }
   // 这条线路连第 1 集地址都没解析出来(template null)→ 直接回源播放页解析
   if (!line.epPage) throw new Error('这条线路没有可用的播放地址,换一条线路试试')
   const real = await window.xifanApi.resolveEpUrl(line.epPage, ep)
   if (!real) throw new Error('未能解析到这一集的播放地址')
-  return { url: real, isHls: false }
+  return { kind: 'url', url: real, isHls: false }
+}
+
+/** 把选中的 qn 落到 shaka 上。B 站同档画质有多种编码,MPD 里只放了 avc1,按高度匹配。 */
+function applyQuality(player: shaka.Player, dash: BiliDash, qn: number): void {
+  const want = pickVideoTracks(dash).find((v) => v.id === qn)
+  const tracks = player.getVariantTracks()
+  const track = (want && tracks.find((t) => t.height === want.height)) ?? tracks[0]
+  if (track) player.selectVariantTrack(track, true)
 }
 
 export default function OnlinePlayer(): JSX.Element {
@@ -223,7 +273,11 @@ export default function OnlinePlayer(): JSX.Element {
 
   // B 站登录态(null = 还没查);webviewKey 用于登录后强制重载 webview
   const [biliLoggedIn, setBiliLoggedIn] = useState<boolean | null>(null)
+  const [biliQrOpen, setBiliQrOpen] = useState(false)
   const [webviewKey, setWebviewKey] = useState(0)
+  // 选中的画质(B 站 DASH)。null = 还没选,加载完取该稿件最高的一档。
+  // 换集**保留**用户选的档:切到没有该档的稿件时,load 完自动回落到最高档。
+  const [qn, setQn] = useState<number | null>(null)
 
   // 挑中候选自动关联后的轻提示
   const [toastText, setToastText] = useState<string | null>(null)
@@ -241,21 +295,22 @@ export default function OnlinePlayer(): JSX.Element {
     setLineIdx(0)
     setEp(null)
     if (!entry) return
-    if (!entry.builtin) {
-      // 自定义源:webview 嵌站点自己的播放器(B 站转官方外链播放器)
+    if (!entry.builtin && !biliBvid(bindingUrl(entry.binding!))) {
+      // 自定义源(番剧 ep / 非 B 站站点):webview 嵌站点自己的播放器。
+      // B 站**普通视频**不走这里 —— 它有 BV 号,下面按内置源一样解析 DASH 自研播放。
       const raw = bindingUrl(entry.binding!)
-      const embed = biliEmbedUrl(raw)
-      setView({ mode: 'embed', url: embed ?? raw, isBili: embed !== null || /bilibili\.com/.test(raw) })
+      const embed = biliBangumiEmbedUrl(raw)
+      setView({ mode: 'embed', url: embed ?? raw, isBili: /bilibili\.com/i.test(raw) })
       return
     }
-    if (!entry.binding) {
+    if (entry.builtin && !entry.binding) {
       // 未绑定的内置源:懒式单站搜索(面板挂在播放器区,挑中自动关联)
       setView({ mode: 'search' })
       return
     }
     setView({ mode: 'loading' })
     const seq = ++seqRef.current
-    loadSiteData(entry.binding)
+    loadSiteData(entry.binding!)
       .then((d) => {
         if (seqRef.current !== seq) return
         setData(d)
@@ -268,8 +323,9 @@ export default function OnlinePlayer(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryKey, entrySourceKey, reloadTick])
 
-  // ── B 站登录态:进入 B 站 webview 时查一次 ──────────────────────────────────
-  const needBiliAuth = view.mode === 'embed' && view.isBili
+  // ── B 站登录态:选中的是 B 站源时查一次 ────────────────────────────────────
+  // 画质由登录态决定(匿名最高 480P,登录后才有 1080P),所以自研播放的 B 站源也要查。
+  const needBiliAuth = !!entry && !entry.builtin && /bilibili\.com/i.test(bindingUrl(entry.binding!))
   useEffect(() => {
     if (!needBiliAuth) return
     let alive = true
@@ -277,18 +333,15 @@ export default function OnlinePlayer(): JSX.Element {
     return () => { alive = false }
   }, [needBiliAuth])
 
-  const handleBiliLogin = (): void => {
-    void window.biliApi.login().then((s) => {
-      setBiliLoggedIn(s.loggedIn)
-      // 登录态变了要整个重载 webview,让播放器带新 cookie 重新初始化
-      setWebviewKey((k) => k + 1)
-    })
+  // 登录态一变,画质档位跟着变 —— 重新解析这一集(自研播放),webview 那条则整个重载。
+  const handleBiliAuthChanged = (loggedIn: boolean): void => {
+    setBiliLoggedIn(loggedIn)
+    setQn(null)
+    setResolveTick((t) => t + 1)
+    setWebviewKey((k) => k + 1)
   }
   const handleBiliLogout = (): void => {
-    void window.biliApi.logout().then((s) => {
-      setBiliLoggedIn(s.loggedIn)
-      setWebviewKey((k) => k + 1)
-    })
+    void window.biliApi.logout().then((s) => handleBiliAuthChanged(s.loggedIn))
   }
 
   // ── 集列表就绪后默认选「追番卡片上显示的那一集」 ────────────────────────────
@@ -314,10 +367,10 @@ export default function OnlinePlayer(): JSX.Element {
     const seq = ++seqRef.current
     fallbackTriedRef.current = false
     setView({ mode: 'loading' })
-    resolveStreamUrl(data, lineIdx, ep)
-      .then(({ url, isHls }) => {
+    resolveStream(data, lineIdx, ep)
+      .then((s) => {
         if (seqRef.current !== seq) return
-        setView({ mode: 'video', url, isHls })
+        setView(s.kind === 'dash' ? { mode: 'dash', dash: s.dash } : { mode: 'video', url: s.url, isHls: s.isHls })
       })
       .catch((err) => {
         if (seqRef.current !== seq) return
@@ -412,6 +465,65 @@ export default function OnlinePlayer(): JSX.Element {
     return () => hls.destroy()
   }, [view])
 
+  // ── DASH(B 站):shaka-player 接管 <video> ──────────────────────────────────
+  // B 站 1080P 只存在于 DASH 音视频分轨里(mp4 直链容器封顶 720P,实测 accept_quality
+  // 只有 [64,16])。分片地址已被主进程包成 mtmedia://(带防盗链 Referer),shaka 在
+  // 渲染进程里逐段发 Range 取,同源不受跨源策略限制。
+  const playerRef = useRef<shaka.Player | null>(null)
+  // 换集时沿用上次选的画质档,不用把 qn 塞进 effect 依赖(那会重建 player 打断播放)
+  const qnRef = useRef<number | null>(null)
+  useEffect(() => { qnRef.current = qn })
+
+  useEffect(() => {
+    if (view.mode !== 'dash') return
+    const video = videoRef.current
+    if (!video) return
+    const dash = view.dash
+    let cancelled = false
+    const player = new shaka.Player()
+    playerRef.current = player
+
+    // ABR 关掉:用户在画质条上选了 1080P 就该一直是 1080P(外链播放器「选了没反应」
+    // 正是用户投诉的点),不要让自适应在背后偷偷降档。
+    player.configure({ abr: { enabled: false } })
+    player.addEventListener('error', (e) => {
+      if (cancelled) return
+      const detail = (e as unknown as { detail?: { code?: number; message?: string } }).detail
+      setView({ mode: 'error', err: new Error(`B 站播放失败(shaka ${detail?.code ?? '?'})`) })
+    })
+
+    void (async () => {
+      try {
+        await player.attach(video)
+        // MPD 是我们拼的、没有远端地址,包成 data: URI;shaka 无从推断类型,显式给 MIME。
+        await player.load(biliMpdUri(dash), undefined, 'application/dash+xml')
+        if (cancelled) return
+        const tracks = pickVideoTracks(dash)
+        // 沿用上次的档;这个稿件没有那一档(或首次进入)就取最高的
+        const target = tracks.find((t) => t.id === qnRef.current)?.id ?? tracks[0]?.id ?? 0
+        applyQuality(player, dash, target)
+        setQn(target)
+        await video.play().catch(() => { /* 自动播放被拦就等用户点一下 */ })
+      } catch (err) {
+        if (!cancelled) setView({ mode: 'error', err })
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      playerRef.current = null
+      void player.destroy()
+    }
+  }, [view])
+
+  // 用户点画质档:直接切 variant,不重新 load(shaka 会清缓冲从当前时间续播)
+  const selectQuality = (next: number): void => {
+    if (next === qn || view.mode !== 'dash') return
+    setQn(next)
+    const player = playerRef.current
+    if (player) applyQuality(player, view.dash, next)
+  }
+
   const retry = (): void => {
     triedLinesRef.current = new Set() // 手动重试:重新给所有线路一次机会
     if (!data) setReloadTick((t) => t + 1)
@@ -472,6 +584,10 @@ export default function OnlinePlayer(): JSX.Element {
                   onError={view.isHls ? undefined : handleVideoError}
                 />
               )}
+              {view.mode === 'dash' && (
+                // DASH 由 shaka 经 MSE 喂,不设 src、不挂 onError(失败走 shaka 的 error 事件)
+                <video ref={videoRef} controls autoPlay className="h-full w-full" />
+              )}
               {view.mode === 'embed' && (
                 // B 站走 persist:bili 分区(与登录窗同分区同 UA,第一方 cookie);
                 // 其他自定义站用默认分区。webview 里站点页面是顶层文档,比 iframe
@@ -514,21 +630,23 @@ export default function OnlinePlayer(): JSX.Element {
               )}
             </div>
 
-            {/* B 站登录态提示条(仅 B 站 webview 时) */}
+            {/* B 站登录态提示条 —— 画质档位由登录态决定,所以两种播放形态都要提示 */}
             {needBiliAuth && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-on-surface-variant/70">
                 <span className="material-symbols-outlined leading-none shrink-0" style={{ fontSize: 14 }}>info</span>
                 <span className="font-label text-[11px] tracking-wider">
-                  {biliLoggedIn ? 'B 站站内播放器 · 已登录' : 'B 站站内播放器 · 未登录仅可试看,登录后完整观看'}
+                  {biliLoggedIn ? 'B 站 · 已登录' : 'B 站 · 未登录最高只有 480P,登录后可选 1080P'}
                 </span>
                 {biliLoggedIn === false && (
+                  // 下划线只加在文字上:整个按钮加 underline 的话,图标是字体字形,
+                  // 它的基线与文字不同,下划线会画成高低两截(用户实拍)。
                   <button
                     type="button"
-                    onClick={handleBiliLogin}
-                    className="ml-auto inline-flex items-center gap-1 text-primary font-label text-[11px] font-bold tracking-wider hover:underline underline-offset-4"
+                    onClick={() => setBiliQrOpen(true)}
+                    className="group ml-auto inline-flex items-center gap-1 text-primary font-label text-[11px] font-bold tracking-wider"
                   >
-                    <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>login</span>
-                    <span>登录 B 站</span>
+                    <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>qr_code_2</span>
+                    <span className="group-hover:underline underline-offset-4">登录 B 站</span>
                   </button>
                 )}
                 {biliLoggedIn === true && (
@@ -569,6 +687,31 @@ export default function OnlinePlayer(): JSX.Element {
                 )
               })}
             </div>
+
+            {/* 画质(仅 B 站 DASH)。只列该稿件**真有**的档 —— 外链播放器那种「菜单里
+                摆着 1080P、点了没反应」的坑,这里靠 dash.video 与 accept_quality 求交避免。 */}
+            {view.mode === 'dash' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mr-1">画质</span>
+                {pickVideoTracks(view.dash).map((t) => {
+                  const label = view.dash.qualities.find((q) => q.qn === t.id)?.label ?? `${t.height}P`
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => selectQuality(t.id)}
+                      className={`px-2.5 py-1 rounded-md border font-label text-[10px] font-bold tracking-wider transition-colors ${
+                        t.id === qn
+                          ? 'border-primary/40 bg-primary/15 text-primary'
+                          : 'border-transparent bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
 
             {/* 站内线路(仅多线路时显示) */}
             {data && data.lines.length > 1 && (
@@ -620,6 +763,10 @@ export default function OnlinePlayer(): JSX.Element {
           </>
         )}
       </div>
+
+      {biliQrOpen && (
+        <BiliLoginModal onClose={() => setBiliQrOpen(false)} onLoggedIn={() => handleBiliAuthChanged(true)} />
+      )}
 
       {/* 自动关联轻提示 */}
       {toastText && (
