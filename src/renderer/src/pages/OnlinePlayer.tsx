@@ -17,9 +17,15 @@
 //     经主进程取流剥头后 dev/正式都不受 origin 限制。解析类请求仍全在主进程 IPC。
 //   - Bilibili / Custom:<webview> 嵌站点播放器组件(B 站转官方外链播放器 +
 //     persist:bili 分区,登录后第一方 cookie 生效,不再只有试看)。
-//   - Girigiri:HLS + cookie 会话,应用内播放暂未支持(011 TODO)。
+//   - Girigiri:地址从播放页 HTML 的 player_aaaa 直接解析(一次 GET,与稀饭同源)。
+//     多数线路是 m3u8(HLS)—— Chromium 不原生支持,由 hls.js 接管 <video> 走 MSE
+//     逐段喂,播放列表和分片同样过 mtmedia 代理(主进程把列表里的地址重写成
+//     mtmedia://,否则 hls.js 在渲染进程直取 CDN 会被跨源策略拦);**少数老番线路
+//     给的是 .mp4 直链**,那就走和稀饭一样的直喂路径。按后缀分流,别假设 girigiri
+//     一定是 HLS。
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import Hls from 'hls.js'
 import ErrorPanel from '../components/ErrorPanel'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
@@ -27,6 +33,7 @@ import { useSourceSearch } from '../hooks/useSourceSearch'
 import type { SearchCard, Source } from '../types/search'
 import type { XifanWatchInfo } from '../types/xifan'
 import type { AowuWatchInfo } from '../types/aowu'
+import type { GirigiriWatchInfo } from '../types/girigiri'
 
 const BUILTINS: Source[] = ['Xifan', 'Girigiri', 'Aowu']
 
@@ -44,14 +51,14 @@ interface PlayLine {
 type SiteData =
   | { kind: 'xifan'; info: XifanWatchInfo; lines: PlayLine[] }
   | { kind: 'aowu'; info: AowuWatchInfo; lines: PlayLine[] }
+  | { kind: 'girigiri'; info: GirigiriWatchInfo; lines: PlayLine[] }
 
 type PlayerView =
   | { mode: 'none' }
   | { mode: 'loading' }
   | { mode: 'search' }
-  | { mode: 'video'; url: string }
+  | { mode: 'video'; url: string; isHls: boolean }
   | { mode: 'embed'; url: string; isBili: boolean }
-  | { mode: 'girigiri' }
   | { mode: 'error'; err: unknown }
 
 /** 源切换器的一项:三个内置源常驻(binding 可空),自定义 binding 追加。 */
@@ -110,6 +117,16 @@ async function loadSiteData(binding: AnimeBinding): Promise<SiteData> {
     }))
     return { kind: 'xifan', info, lines }
   }
+  if (binding.source === 'Girigiri') {
+    const info = await window.girigiriApi.getWatch(url)
+    if (info.error) throw new Error(info.error)
+    const lines = info.sources.map((s) => ({
+      name: s.name,
+      eps: s.episodes.map((e) => ({ idx: e.idx, label: e.name })),
+    }))
+    if (lines.length === 0) throw new Error('没有解析到可播放的线路,换个源试试')
+    return { kind: 'girigiri', info, lines }
+  }
   const info = await window.aowuApi.getWatch(url)
   if (info.error) throw new Error(info.error)
   const lines = info.sources.map((s) => ({
@@ -119,20 +136,35 @@ async function loadSiteData(binding: AnimeBinding): Promise<SiteData> {
   return { kind: 'aowu', info, lines }
 }
 
-async function resolveMp4(data: SiteData, lineIdx: number, ep: number): Promise<string> {
+/** 解析某条线路某一集的播放地址:girigiri 给 m3u8(HLS),其余给 mp4 直链。 */
+async function resolveStreamUrl(
+  data: SiteData,
+  lineIdx: number,
+  ep: number,
+): Promise<{ url: string; isHls: boolean }> {
+  if (data.kind === 'girigiri') {
+    const line = data.info.sources[lineIdx]
+    if (!line) throw new Error('线路不存在,换一条线路试试')
+    const epInfo = line.episodes.find((e) => e.idx === ep)
+    if (!epInfo) throw new Error('这条线路没有这一集,换一条线路试试')
+    const url = await window.girigiriApi.resolveEpUrl(epInfo.url)
+    if (!url) throw new Error('未能取到这一集的播放地址')
+    // girigiri **不都是 HLS**:部分老番线路给的是 .mp4 直链,按后缀决定播放方式
+    return { url, isHls: /\.m3u8(\?|$)/i.test(url) }
+  }
   if (data.kind === 'aowu') {
     const line = data.info.sources[lineIdx]
     if (!line) throw new Error('线路不存在,换一条线路试试')
-    return window.aowuApi.resolveMp4Url(data.info.id, line.idx, ep)
+    return { url: await window.aowuApi.resolveMp4Url(data.info.id, line.idx, ep), isHls: false }
   }
   const line = data.info.sources[lineIdx]
   if (!line) throw new Error('线路不存在,换一条线路试试')
-  if (line.template) return xifanUrlFromTemplate(line.template, ep)
+  if (line.template) return { url: xifanUrlFromTemplate(line.template, ep), isHls: false }
   // 这条线路连第 1 集地址都没解析出来(template null)→ 直接回源播放页解析
   if (!line.epPage) throw new Error('这条线路没有可用的播放地址,换一条线路试试')
   const real = await window.xifanApi.resolveEpUrl(line.epPage, ep)
   if (!real) throw new Error('未能解析到这一集的播放地址')
-  return real
+  return { url: real, isHls: false }
 }
 
 export default function OnlinePlayer(): JSX.Element {
@@ -160,15 +192,14 @@ export default function OnlinePlayer(): JSX.Element {
     return [...builtinEntries, ...customEntries]
   }, [track])
 
-  // 默认选中:优先已绑定且可直接播的内置源,其次自定义源,再次已绑定的
-  // Girigiri,兜底第一个(稀饭,进去就是搜索面板)。只在初次进入时定一次。
+  // 默认选中:优先任一**已绑定的内置源**(三源现在都能应用内播了),其次自定义源,
+  // 兜底第一个(稀饭,进去就是搜索面板)。只在初次进入时定一次。
   const [selKey, setSelKey] = useState<string | null>(null)
   useEffect(() => {
     if (selKey !== null || entries.length === 0) return
     const pick =
-      entries.find((e) => (e.builtin === 'Xifan' || e.builtin === 'Aowu') && e.binding) ??
+      entries.find((e) => e.builtin && e.binding) ??
       entries.find((e) => !e.builtin) ??
-      entries.find((e) => e.binding) ??
       entries[0]
     setSelKey(pick.key)
   }, [entries, selKey])
@@ -220,10 +251,6 @@ export default function OnlinePlayer(): JSX.Element {
     if (!entry.binding) {
       // 未绑定的内置源:懒式单站搜索(面板挂在播放器区,挑中自动关联)
       setView({ mode: 'search' })
-      return
-    }
-    if (entry.builtin === 'Girigiri') {
-      setView({ mode: 'girigiri' })
       return
     }
     setView({ mode: 'loading' })
@@ -283,10 +310,10 @@ export default function OnlinePlayer(): JSX.Element {
     const seq = ++seqRef.current
     fallbackTriedRef.current = false
     setView({ mode: 'loading' })
-    resolveMp4(data, lineIdx, ep)
-      .then((url) => {
+    resolveStreamUrl(data, lineIdx, ep)
+      .then(({ url, isHls }) => {
         if (seqRef.current !== seq) return
-        setView({ mode: 'video', url })
+        setView({ mode: 'video', url, isHls })
       })
       .catch((err) => {
         if (seqRef.current !== seq) return
@@ -336,7 +363,7 @@ export default function OnlinePlayer(): JSX.Element {
         window.xifanApi.resolveEpUrl(line.epPage, ep)
           .then((real) => {
             if (seqRef.current !== seq) return
-            if (real) setView({ mode: 'video', url: real })
+            if (real) setView({ mode: 'video', url: real, isHls: false })
             else tryNextLine()
           })
           .catch(() => {
@@ -348,6 +375,38 @@ export default function OnlinePlayer(): JSX.Element {
     }
     tryNextLine()
   }
+
+  // ── HLS(Girigiri):hls.js 接管 <video> ─────────────────────────────────────
+  // Chromium 不原生支持 m3u8,靠 hls.js 走 MSE 逐段喂。列表/分片/AES 密钥全部
+  // 经 mtmedia 代理(主进程已把列表里的地址重写成 mtmedia://),同源不受跨源策略限制。
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  // 兜底回调用 ref 取最新的 —— 直接进 effect 依赖数组会让每次渲染都重建 hls 实例、打断播放。
+  const onFatalRef = useRef<() => void>(() => {})
+  useEffect(() => { onFatalRef.current = handleVideoError })
+
+  useEffect(() => {
+    if (view.mode !== 'video' || !view.isHls) return
+    const video = videoRef.current
+    if (!video) return
+    if (!Hls.isSupported()) {
+      setView({ mode: 'error', err: new Error('当前环境不支持 HLS 播放') })
+      return
+    }
+    // 用 hls.js 默认 loader(XhrLoader)。实测 mtmedia:// 上 XHR 与 fetch 都直通
+    // (该 scheme 没开 corsEnabled,不进 CORS 检查),两种 loader 都能正常播,
+    // 所以不覆盖默认值 —— 别为"自定义协议可能不支持 XHR"这种没验证的担心加配置。
+    const hls = new Hls()
+    hls.on(Hls.Events.ERROR, (_e, data) => {
+      // 只有 fatal 才走换线路兜底;非 fatal(单个分片超时等)hls.js 自己会重试。
+      if (data.fatal) onFatalRef.current()
+    })
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      void video.play().catch(() => { /* 自动播放被拦就等用户点一下 */ })
+    })
+    hls.loadSource(toMediaProxy(view.url))
+    hls.attachMedia(video)
+    return () => hls.destroy()
+  }, [view])
 
   const retry = (): void => {
     triedLinesRef.current = new Set() // 手动重试:重新给所有线路一次机会
@@ -399,11 +458,14 @@ export default function OnlinePlayer(): JSX.Element {
               {view.mode === 'video' && (
                 <video
                   key={view.url}
-                  src={toMediaProxy(view.url)}
+                  ref={videoRef}
+                  // HLS 由 hls.js 经 MSE 喂,不设 src;mp4 直链走同源流代理直接喂。
+                  src={view.isHls ? undefined : toMediaProxy(view.url)}
                   controls
                   autoPlay
                   className="h-full w-full"
-                  onError={handleVideoError}
+                  // HLS 的失败统一由 hls.js 的 fatal 事件兜底,别在这儿再触发一次换线路。
+                  onError={view.isHls ? undefined : handleVideoError}
                 />
               )}
               {view.mode === 'embed' && (
@@ -439,15 +501,6 @@ export default function OnlinePlayer(): JSX.Element {
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-on-surface-variant/50">
                   <span className="material-symbols-outlined" style={{ fontSize: 40 }}>smart_display</span>
                   <span className="font-label text-xs tracking-widest">选一集开始播放</span>
-                </div>
-              )}
-              {view.mode === 'girigiri' && (
-                <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-on-surface-variant/70">
-                  <span className="material-symbols-outlined" style={{ fontSize: 40 }}>construction</span>
-                  <p className="font-label text-xs leading-relaxed">
-                    Girigiri 的应用内播放还在开发中(HLS + 登录会话)
-                    <br />可先用追番卡片上的 Girigiri chip 在浏览器观看
-                  </p>
                 </div>
               )}
               {view.mode === 'error' && (
