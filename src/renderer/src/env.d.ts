@@ -9,6 +9,7 @@ import type { BgmSearchResult, BgmDetail, BgmCalendarResult, BgmAuthStatus, BgmC
 import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 import type { AowuSearchResult, AowuEpisode, AowuWatchInfo } from './types/aowu'
+import type { BiliVideoInfo, BiliDash } from './types/bili'
 
 export interface LibraryPath {
   path: string;
@@ -271,10 +272,19 @@ declare global {
     biliApi: {
       /** B 站登录态(persist:bili 分区里有没有有效 SESSDATA)。 */
       status: () => Promise<{ loggedIn: boolean }>
-      /** 弹内嵌 B 站登录窗,登录成功自动关窗。返回最新登录态。 */
-      login: () => Promise<{ loggedIn: boolean }>
+      /** 申请 TV 端登录二维码。qrDataUrl 是白边烤进 PNG 的 data URL,直接 <img>。 */
+      createQr: () => Promise<{ authCode: string; qrDataUrl: string }>
+      /** 查一次扫码结果。'ok' 时 cookie 已写进 persist:bili 分区。 */
+      pollQr: (authCode: string) => Promise<{
+        state: 'pending' | 'scanned' | 'expired' | 'ok'
+        loggedIn: boolean
+      }>
       /** 清空 persist:bili 分区 cookie(退出登录)。 */
       logout: () => Promise<{ loggedIn: boolean }>
+      /** BV 号 → 稿件信息。pages 就是合集的集数列表(&p=N 里的 N = page)。 */
+      videoInfo: (bvid: string) => Promise<BiliVideoInfo>
+      /** 某一分 P 的 DASH 音视频分轨。可选画质由登录态/会员权益决定。 */
+      dash: (aid: number, cid: number) => Promise<BiliDash>
     }
     aowuApi: {
       search: (keyword: string) => Promise<{

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import BiliLoginModal from "../components/BiliLoginModal";
 import { useSystemStats } from "../hooks/useSystemStats";
 import { updateStore, type UpdateState } from "../stores/updateStore";
 import { reportError } from "../utils/reportError";
@@ -861,6 +862,17 @@ function Settings(): JSX.Element {
     }).catch((err) => reportError("settings:bgm-creds-save", err));
   };
 
+  // B 站账号 —— 在线观看用。登录态(cookie)存在主进程的 persist:bili 分区里,
+  // 一次扫码长期有效,UI 只拿一个布尔。
+  const [biliLoggedIn, setBiliLoggedIn] = useState(false);
+  const [biliQrOpen, setBiliQrOpen] = useState(false);
+  useEffect(() => {
+    window.biliApi.status().then((s) => setBiliLoggedIn(s.loggedIn)).catch(() => { /* 当未登录 */ });
+  }, []);
+  const doBiliLogout = async (): Promise<void> => {
+    setBiliLoggedIn((await window.biliApi.logout()).loggedIn);
+  };
+
   // 邮件提醒 —— 周历每次 14d TTL 过期触发自动发件。
   // authCode 永远不从主进程回传明文，UI 拿到的是 hasAuthCode 布尔。用户
   // 不重新输入授权码就提交 = 保留旧的加密值（mailApi.setConfig 把空串当
@@ -1194,6 +1206,50 @@ function Settings(): JSX.Element {
                           </button>
                         }
                       />
+                    }
+                  />
+                </Block>
+              )}
+
+              {active === "general" && (
+                <Block
+                  title="B 站账号"
+                  hint="给「在线观看」里的 B 站源用。扫一次码就长期有效，登录态只存在本机；不登录只能拿到低画质。"
+                >
+                  <Row
+                    icon="smart_display"
+                    title="扫码登录"
+                    desc="用哔哩哔哩手机客户端扫码。登录后播放页才能向 B 站请求 1080P 画质。"
+                    density={tweaks.density}
+                    control={
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        <span
+                          className={`inline-flex items-center gap-1 font-label text-[11px] ${biliLoggedIn ? "text-primary" : "text-on-surface-variant/50"}`}
+                        >
+                          <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>
+                            {biliLoggedIn ? "check_circle" : "cancel"}
+                          </span>
+                          {biliLoggedIn ? "已登录" : "未登录"}
+                        </span>
+                        {biliLoggedIn ? (
+                          <button
+                            onClick={() => { void doBiliLogout(); }}
+                            className="inline-flex items-center px-3 py-2 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface-variant/70 hover:text-on-surface font-label text-[11px] uppercase tracking-widest transition-colors"
+                            type="button"
+                          >
+                            退出
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setBiliQrOpen(true)}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/90 hover:bg-primary text-on-primary font-label text-[11px] uppercase tracking-widest transition-colors"
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>qr_code_2</span>
+                            扫码登录
+                          </button>
+                        )}
+                      </div>
                     }
                   />
                 </Block>
@@ -1536,6 +1592,13 @@ function Settings(): JSX.Element {
           onClose={() => setTweaksOpen(false)}
           isDark={isDark}
           setIsDark={applyDark}
+        />
+      )}
+
+      {biliQrOpen && (
+        <BiliLoginModal
+          onClose={() => setBiliQrOpen(false)}
+          onLoggedIn={() => setBiliLoggedIn(true)}
         />
       )}
     </div>
