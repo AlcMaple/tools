@@ -32,8 +32,12 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
   {
-    // 在线播放媒体流代理(011)—— 远端 mp4 经主进程取流、以同源协议回给 <video>,
-    // 绕开渲染进程 origin 对跨源媒体的拦截。见 shared/media-proxy.ts。
+    // 在线播放媒体流代理(011)—— 远端 mp4 / HLS 经主进程取流,以自定义协议回给
+    // <video> 与 hls.js,绕开渲染进程 origin 对跨源媒体的拦截。见 shared/media-proxy.ts。
+    //
+    // ⚠️ 别"顺手"加 corsEnabled:true —— 那是**opt-in 进 CORS 检查**,加了以后
+    // hls.js 取播放列表/分片就必须让 handler 回 ACAO 头才放行。不加时该 scheme
+    // 根本不过 CORS,fetch 与 XHR 都直通(已实测:两种 loader 都能播)。
     scheme: MEDIA_PROXY_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
   },

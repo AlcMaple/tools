@@ -109,6 +109,8 @@ declare global {
       verifyCaptcha: (code: string) => Promise<{ success: boolean }>
       search: (keyword: string) => Promise<GirigiriSearchResult[] | { needs_captcha: true }>
       getWatch: (playUrl: string) => Promise<GirigiriWatchInfo>
+      /** 某一集的播放页 → 真实 m3u8(隐藏窗口截流,秒级);抓不到时抛错。 */
+      resolveEpUrl: (epPageUrl: string) => Promise<string>
       startDownload: (
         title: string,
         epList: GirigiriEpisode[],

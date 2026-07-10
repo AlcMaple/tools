@@ -88,6 +88,7 @@
     "@fontsource/space-grotesk": "^5.2.10",
     "cheerio": "^1.2.0",
     "electron-updater": "^6.8.3",
+    "hls.js": "^1.6.16",
     "material-symbols": "^0.44.4",
     "nodemailer": "^8.0.7",
     "react": "^18.2.0",

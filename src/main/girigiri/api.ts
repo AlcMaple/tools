@@ -232,6 +232,68 @@ async function resolveSourceNamesFromPlayerPage(firstEpUrls: string[]): Promise<
   }
 }
 
+// ── 播放地址解析(在线播放用) ──────────────────────────────────────────────────
+//
+// 播放地址就写在播放页 HTML 的 `player_aaaa` 里(MacCMS 通用结构,与稀饭同源),
+// **不需要**起隐藏窗口截流 —— 那条路要几秒起步、还只认 *.m3u8。
+// `encrypt` 决定 url 的编码:0=明文 / 1=percent-encode / 2=base64 再 percent-encode。
+//
+// 实测(2026-07-10,见 DEVLOG):girigiri 的播放地址是**静态路径,无签名、无时效**
+// (没有 auth_key / expires / token 之类查询串),分片只带 UA 就能匿名取。
+// 另外**并非都是 m3u8** —— 部分老番线路直接给 .mp4(如 ana.girigirilove.top/…/01.mp4),
+// 所以这里只负责给出地址,由调用方按后缀决定走 HLS 还是直接喂 <video>。
+function extractPlayerUrl(html: string): string {
+  const at = html.indexOf('player_aaaa=')
+  if (at < 0) return ''
+  const start = html.indexOf('{', at)
+  if (start < 0) return ''
+
+  // 括号配平取出 JSON。要跳过字符串内部的花括号(vod_actor 等字段是任意文本),
+  // 否则一个混在名字里的 `{` 就能把边界找歪。
+  let depth = 0
+  let inStr = false
+  let esc = false
+  let end = -1
+  for (let i = start; i < html.length; i++) {
+    const c = html[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (c === '\\') esc = true
+      else if (c === '"') inStr = false
+      continue
+    }
+    if (c === '"') inStr = true
+    else if (c === '{') depth++
+    else if (c === '}' && --depth === 0) { end = i; break }
+  }
+  if (end < 0) return ''
+
+  let data: { url?: string; encrypt?: number }
+  try {
+    data = JSON.parse(html.slice(start, end + 1))
+  } catch {
+    return ''
+  }
+  const raw = data.url ?? ''
+  if (!raw) return ''
+  try {
+    const decoded =
+      data.encrypt === 2 ? decodeURIComponent(Buffer.from(raw, 'base64').toString('utf-8'))
+      : data.encrypt === 1 ? decodeURIComponent(raw)
+      : raw
+    return /^https?:\/\//i.test(decoded) ? decoded : ''
+  } catch {
+    return ''
+  }
+}
+
+/** 某一集的播放页 → 真实播放地址(m3u8 或 mp4)。拿不到返回空串,由调用方兜底。 */
+export async function resolveEpPlayUrl(epPageUrl: string): Promise<string> {
+  const res = await giriSession.get(epPageUrl)
+  giriSession.save()
+  return extractPlayerUrl(res.body)
+}
+
 export async function watch(playUrl: string): Promise<GiriWatchInfo> {
   const res = await giriSession.get(playUrl)
   giriSession.save()
