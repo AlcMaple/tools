@@ -291,15 +291,19 @@ export default function OnlinePlayer(): JSX.Element {
     })
   }
 
-  // ── 集列表就绪后默认选「下一集」(看到第 N 集 → 选 N+1;全看完 → 最后一集) ──
+  // ── 集列表就绪后默认选「追番卡片上显示的那一集」 ────────────────────────────
+  // 用户定调:卡片写着 1/12 就从第 1 集开始播,写 2 就从第 2 集开始 —— 所见即所播。
+  // （旧逻辑选 N+1「下一集」,卡片显示 1 却从第 2 集开播,与用户心智不符。）
+  // episode=0(还没看)→ 第一集;N 超出这条线路的集数(如 BD 线只有特典)→ 最后一集。
   useEffect(() => {
     if (!data || ep !== null) return
     const eps = data.lines[lineIdx]?.eps ?? []
     if (eps.length === 0) return
-    const wanted = (track?.episode ?? 0) + 1
+    const wanted = track?.episode ?? 0
+    const last = eps[eps.length - 1]
     const target =
       eps.find((e) => e.idx === wanted) ??
-      (wanted > eps[eps.length - 1].idx ? eps[eps.length - 1] : eps[0])
+      (wanted > last.idx ? last : eps[0])
     setEp(target.idx)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, lineIdx, ep])
