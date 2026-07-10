@@ -13,6 +13,7 @@ import { spawn } from 'child_process'
 import { BrowserWindow, session as electronSession, app } from 'electron'
 import { DESKTOP_USER_AGENT, safeName, DlEvent } from '../shared/download-types'
 import { logError } from '../shared/logger'
+import { BASE_DOMAIN } from './api'
 
 export type { DlEvent }
 
@@ -41,7 +42,9 @@ async function captureM3u8(epUrl: string, cookieString: string): Promise<string 
       const eq = pair.indexOf('=')
       if (eq <= 0) return Promise.resolve()
       return ses.cookies.set({
-        url: 'https://bgm.girigirilove.com',
+        // 跟着 api.ts 的主域走 —— 写死旧域名的话站点换域后 cookie 落在错误的
+        // domain 上,注进去等于没注(2026-07-10 换域名踩过)。
+        url: BASE_DOMAIN,
         name: pair.slice(0, eq).trim(),
         value: pair.slice(eq + 1).trim(),
       }).catch(() => undefined)
