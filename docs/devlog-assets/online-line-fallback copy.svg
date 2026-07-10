@@ -1,0 +1,73 @@
+<svg viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <marker id="mR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#D64545"/>
+    </marker>
+    <marker id="mG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2E9E63"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="520" fill="#ffffff"/>
+  <text x="500" y="30" text-anchor="middle" font-size="17" font-weight="700" fill="#111">线路兜底 —— 播放失败切下一条线路,不跳集</text>
+  <text x="500" y="52" text-anchor="middle" font-size="12" fill="#777">用户定调:线路一第 N 集失败 = 换线路的第 N 集,不是跳到第二集;三条都试完才停</text>
+
+  <!-- 起始 -->
+  <rect x="60" y="88" width="230" height="64" rx="10" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.5"/>
+  <text x="175" y="114" text-anchor="middle" font-size="13" font-weight="700" fill="#1B4F8C">播放 当前线路 · 第 N 集</text>
+  <text x="175" y="135" text-anchor="middle" font-size="11" fill="#4A6E9C">&lt;video&gt; 经 mtmedia 代理拉流</text>
+
+  <!-- 成功分支 -->
+  <line x1="175" y1="152" x2="175" y2="214" stroke="#2E9E63" stroke-width="1.6" marker-end="url(#mG)"/>
+  <text x="175" y="185" text-anchor="middle" font-size="11" font-weight="600" fill="#1F8A54">canplay</text>
+  <rect x="70" y="216" width="210" height="46" rx="10" fill="#2E9E63"/>
+  <text x="175" y="244" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">正常播放 ✅</text>
+
+  <!-- 失败分支 → error -->
+  <line x1="290" y1="120" x2="392" y2="120" stroke="#D64545" stroke-width="1.7" marker-end="url(#mR)"/>
+  <text x="341" y="110" text-anchor="middle" font-size="11" font-weight="600" fill="#B23838">onerror</text>
+
+  <rect x="394" y="90" width="250" height="60" rx="10" fill="#FFF7E6" stroke="#F5A623" stroke-width="1.4"/>
+  <text x="519" y="114" text-anchor="middle" font-size="12.5" font-weight="600" fill="#B9720A">稀饭 &amp; 该集是模板拼接?</text>
+  <text x="519" y="135" text-anchor="middle" font-size="11" fill="#9a6a1a">(OVA/特殊集 URL 可能 404)</text>
+
+  <!-- 是 → 回源重试同线路一次 -->
+  <line x1="519" y1="150" x2="519" y2="206" stroke="#555" stroke-width="1.5" marker-end="url(#m)"/>
+  <text x="528" y="182" font-size="11" font-weight="600" fill="#B9720A">是</text>
+  <rect x="384" y="208" width="270" height="60" rx="10" fill="#ffffff" stroke="#F5A623" stroke-width="1.3"/>
+  <text x="519" y="232" text-anchor="middle" font-size="12" font-weight="600" fill="#333">回源解析真链 → 重试同线路一次</text>
+  <text x="519" y="252" text-anchor="middle" font-size="10.5" fill="#777">同一集只回源一次,防死循环</text>
+
+  <!-- 否 → 绕右侧下到 标记 box -->
+  <path d="M644,120 L700,120 L700,354 L682,354" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m)"/>
+  <text x="712" y="116" font-size="11" font-weight="600" fill="#777">否(直接)</text>
+
+  <!-- 回源仍失败 → 标记 box -->
+  <line x1="519" y1="268" x2="519" y2="322" stroke="#D64545" stroke-width="1.5" marker-end="url(#mR)"/>
+  <text x="528" y="298" font-size="11" font-weight="600" fill="#B23838">仍失败</text>
+
+  <rect x="360" y="324" width="320" height="60" rx="10" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.4"/>
+  <text x="520" y="348" text-anchor="middle" font-size="12.5" font-weight="700" fill="#5B2FAE">标记本线路已试(triedLinesRef Set)</text>
+  <text x="520" y="369" text-anchor="middle" font-size="11" fill="#7550A8">找下一条「含第 N 集且未试」的线路</text>
+
+  <!-- 有下一条 → 绕左侧回到起始 box -->
+  <path d="M360,354 L30,354 L30,120 L58,120" fill="none" stroke="#4A90D9" stroke-width="1.5" marker-end="url(#m)"/>
+  <text x="150" y="345" text-anchor="middle" font-size="11" font-weight="600" fill="#1B4F8C">有未试 → 切过去,重播第 N 集</text>
+
+  <!-- 无下一条 → 报错 -->
+  <line x1="520" y1="384" x2="520" y2="430" stroke="#D64545" stroke-width="1.6" marker-end="url(#mR)"/>
+  <text x="530" y="410" font-size="11" font-weight="600" fill="#B23838">无未试线路</text>
+  <rect x="330" y="432" width="380" height="52" rx="10" fill="#D64545"/>
+  <text x="520" y="463" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">所有线路都播放失败,可切网站或稍后重试</text>
+
+  <!-- 重置注释 -->
+  <rect x="740" y="330" width="235" height="130" rx="10" fill="#F6F1FC" stroke="#8B5CF6" stroke-width="1"/>
+  <text x="758" y="356" font-size="12" font-weight="700" fill="#5B2FAE">triedLinesRef 记忆规则:</text>
+  <text x="758" y="380" font-size="11" fill="#6a4a9a">· 换站/换番(data 重载)→ 清空</text>
+  <text x="758" y="402" font-size="11" fill="#6a4a9a">· 点重试 → 清空,重来一轮</text>
+  <text x="758" y="424" font-size="11" fill="#6a4a9a">· 换集 → 不清,跨集累积</text>
+  <text x="758" y="446" font-size="11" fill="#6a4a9a">· 手动切线路 → 标记旧线路</text>
+</svg>
