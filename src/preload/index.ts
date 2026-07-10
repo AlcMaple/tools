@@ -103,6 +103,7 @@ contextBridge.exposeInMainWorld('girigiriApi', {
   verifyCaptcha: (code: string) => ipcRenderer.invoke('girigiri:verify', code),
   search: (keyword: string) => ipcRenderer.invoke('girigiri:search', keyword),
   getWatch: (playUrl: string) => ipcRenderer.invoke('girigiri:watch', playUrl),
+  resolveEpUrl: (epPageUrl: string) => ipcRenderer.invoke('girigiri:resolve-ep-url', epPageUrl),
   startDownload: (
     title: string,
     epList: { idx: number; name: string; url: string }[],

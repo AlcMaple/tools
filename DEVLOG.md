@@ -48,6 +48,55 @@ export const BASE_DOMAIN = 'https://ani.girigirilove.com'
 ses.cookies.set({ url: BASE_DOMAIN, name, value })
 ```
 
+### 2026-07-10 feat: 新增Girigiri在线播放
+
+**效果**：
+1. Girigiri 源可在线播放
+2. 播放页默认选中的源改成「任一已绑定的内置源」
+
+**数据流**：
+
+播放地址直接从播放页 HTML 的 `player_aaaa` 解析（`encrypt=2` → base64 再 urldecode），一次 GET 就够，**不用起隐藏窗口截流**（截流降级为兜底，站点改版时才走）；拿到的可能是 m3u8 也可能是 mp4，按后缀分流。HLS 那条把播放列表 / 分片全部经 mtmedia 代理，主进程把列表里每条 URI 重写成 `mtmedia://` 再回给 hls.js。
+
+![Girigiri HLS 数据流](docs/devlog-assets/online-girigiri-hls.svg)
+
+**关键代码**：
+
+① 地址解析——`player_aaaa` 是 MacCMS 通用结构（与稀饭同源），`encrypt` 决定 url 的编码方式：
+
+```ts
+// girigiri/api.ts - extractPlayerUrl()
+const decoded =
+  data.encrypt === 2 ? decodeURIComponent(Buffer.from(raw, 'base64').toString('utf-8'))
+  : data.encrypt === 1 ? decodeURIComponent(raw)
+  : raw
+return /^https?:\/\//i.test(decoded) ? decoded : ''
+```
+
+② 播放列表重写——hls.js 是在**渲染进程里**逐条取变体列表 / 分片 / `#EXT-X-KEY` 密钥的，拿原始 CDN 地址会被跨源策略拦（那些 CDN 不带 CORS 头）。所以主进程把列表里每条地址都换成同源的 `mtmedia://`；相对地址按**重定向后的最终列表地址**解析，否则 302 过的列表会解错：
+
+```ts
+// shared/media-proxy.ts - rewritePlaylist()
+const abs = (u: string): string => toMediaProxyUrl(new URL(u, baseUrl).href)
+
+// # 开头是标签行:只有 #EXT-X-KEY / #EXT-X-MAP / #EXT-X-MEDIA 把地址放在 URI="..." 里
+if (line.startsWith('#')) return raw.replace(/URI="([^"]+)"/i, (_m, u) => `URI="${abs(u)}"`)
+return abs(line) // 分片,或 master 列表里的变体列表
+```
+
+③ girigiri **不全是 HLS**——部分老番线路直接给 `.mp4` 直链，按后缀分流，mp4 走和稀饭一样的直喂路径：
+
+```tsx
+// pages/OnlinePlayer.tsx - resolveStreamUrl()
+return { url, isHls: /\.m3u8(\?|$)/i.test(url) }
+```
+
+④ 失败接线——HLS 的 `fatal` 错误接到既有的线路兜底（换下一条线路的同一集）；非 fatal 交给 hls.js 自己重试。HLS 时 `<video>` 不设 `src`、不挂 `onError`，免得同一次失败触发两遍换线路：
+
+```tsx
+hls.on(Hls.Events.ERROR, (_e, data) => { if (data.fatal) onFatalRef.current() })
+```
+
 ### 2026-07-09 refactor: 优化自动更换线路结构
 
 **效果**：

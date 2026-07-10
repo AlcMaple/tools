@@ -31,7 +31,13 @@ const GIRI_HEADERS = {
 
 // ── m3u8 capture via hidden BrowserWindow ─────────────────────────────────────
 
-async function captureM3u8(epUrl: string, cookieString: string): Promise<string | null> {
+// 在线播放也复用这条路(ipc/girigiri.ts 的 girigiri:resolve-ep-url):m3u8 是播放页
+// JS 运行时拼出来的,拿不到就只能截流。下载可以慢慢等,播放等不起 30s,故超时可调。
+export async function captureM3u8(
+  epUrl: string,
+  cookieString: string,
+  timeoutMs = 30000,
+): Promise<string | null> {
   return new Promise((resolve) => {
     const partition = `girigiri-capture-${Date.now()}`
     const ses = electronSession.fromPartition(partition, { cache: false })
@@ -66,10 +72,10 @@ async function captureM3u8(epUrl: string, cookieString: string): Promise<string 
       }
 
       const timer = setTimeout(() => {
-        // 30s 没截到 m3u8 —— 留痕,否则用户只看到"下载失败"不知卡在抓流这步。
-        logError('girigiri:capture', `30s 超时未截获 m3u8: ${epUrl}`)
+        // 超时没截到 m3u8 —— 留痕,否则用户只看到"下载失败"不知卡在抓流这步。
+        logError('girigiri:capture', `${Math.round(timeoutMs / 1000)}s 超时未截获 m3u8: ${epUrl}`)
         done(null)
-      }, 30000)
+      }, timeoutMs)
 
       // Intercept network requests to find the real m3u8 playlist.
       // Strict: pathname (case-insensitive) must end with `.m3u8` so we don't
