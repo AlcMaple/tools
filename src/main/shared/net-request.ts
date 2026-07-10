@@ -75,6 +75,23 @@ export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResul
       try { request.abort() } catch { /* 已结束 */ }
     }, timeoutMs)
 
+    // redirect:'manual' 下 net **不会**把 3xx 当成 'response' 抛出来 —— 它发
+    // 'redirect' 事件并挂起请求,不调 followRedirect() 就把请求作废、从 'error'
+    // 抛 "Redirect was cancelled"。也就是说不接这个事件的话,'manual' 一碰到
+    // 3xx 必然失败(girigiri 换域名后 301,整个源直接挂,就是这么炸的)。
+    // 这里把 3xx 的 status/headers 原样 resolve 出去(body 空),让调用方
+    // (HttpSession)自己读 Location、逐跳 ingest Set-Cookie 再跟下一跳。
+    if (redirect === 'manual') {
+      request.on('redirect', (statusCode, _method, _redirectUrl, responseHeaders) => {
+        finish(() => resolve({
+          status: statusCode,
+          headers: responseHeaders as Record<string, string | string[] | undefined>,
+          body: Buffer.alloc(0),
+        }))
+        try { request.abort() } catch { /* 已结束 */ }
+      })
+    }
+
     request.on('response', (response) => {
       const status = response.statusCode ?? 0
       const resHeaders = response.headers as Record<string, string | string[] | undefined>
