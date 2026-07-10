@@ -152,10 +152,15 @@ contextBridge.exposeInMainWorld('xifanApi', {
 })
 
 contextBridge.exposeInMainWorld('biliApi', {
-  // B 站登录态(011 在线观看):登录窗 + persist:bili 分区,webview 同分区复用
+  // B 站登录态(011 在线观看):TV 端扫码 + persist:bili 分区。web 端扫码接口被 B 站
+  // 风控挡着(手机确认那步弹「API校验密匙错误」),换 TV 端,见 main/ipc/bili.ts。
   status: () => ipcRenderer.invoke('bili:status'),
-  login: () => ipcRenderer.invoke('bili:login'),
+  createQr: () => ipcRenderer.invoke('bili:qr-create'),
+  pollQr: (authCode: string) => ipcRenderer.invoke('bili:qr-poll', authCode),
   logout: () => ipcRenderer.invoke('bili:logout'),
+  // BV 号 → 稿件信息(合集的分 P 就是集数列表);cid → DASH 音视频分轨
+  videoInfo: (bvid: string) => ipcRenderer.invoke('bili:video-info', bvid),
+  dash: (aid: number, cid: number) => ipcRenderer.invoke('bili:dash', aid, cid),
 })
 
 contextBridge.exposeInMainWorld('aowuApi', {

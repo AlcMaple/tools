@@ -44,6 +44,7 @@ There are no tests and no linter wired into npm scripts.
 | `xifan/` | Xifan site: captcha + search + watch-page scraping, HLS/mp4 downloader with Range resume. |
 | `girigiri/` | Girigiri site: api, downloader, cookie session. |
 | `aowu/` | Aowu site: api, downloader, `secure.ts`, `url-resolver.ts`. See `docs/scraping/aowu-FantasyKon-逆向与反爬手册.md`. |
+| `bili/` | Bilibili: TV-appkey QR login (`persist:bili` partition), 分 P list, DASH playurl. In-app player only, no downloader. |
 | `moegirl/` | `synopsis.ts` — fetch synopsis from Moegirl wiki. |
 | `library/` | Local library scanner, ffmpeg thumbnail extraction, JSON persistence, file watcher. |
 | `mail/` | SMTP transport + scheduled "anime report" and "calendar" mailers. |
