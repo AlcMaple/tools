@@ -11,12 +11,39 @@
 
 ## 在线观看
 
+### 2026-07-10 fix: 播放页默认从「卡片上显示的那一集」开始播
+
+**效果**：
+
+1. 之前：追番卡片写着 `1 / 12`，点「播放」却从**第 2 集**开始（默认选的是「下一集」`episode + 1`）；现在：**所见即所播** —— 卡片写 1 就从第 1 集播，写 2 就从第 2 集播。
+2. 边界收敛：`episode = 0`（还没看过）→ 第 1 集；`N` 超出该线路的集数（BD 线只有特典之类）→ 最后一集。想看别的集，集数网格里照样随便点。
+
+![播放页默认选集：修复前后](docs/devlog-assets/online-default-episode.svg)
+
+**关键代码**：
+
+`track.episode` 的语义是「最后看到的那一集」，正是卡片上那个数字 —— 所以直接拿它当默认选集，不再 `+1`。选不中时 clamp，不报错：
+
+```tsx
+// pages/OnlinePlayer.tsx —— 集列表就绪后定默认选集
+const wanted = track?.episode ?? 0
+const last = eps[eps.length - 1]
+const target =
+  eps.find((e) => e.idx === wanted) ??      // 该线路有第 N 集 → 第 N 集
+  (wanted > last.idx ? last : eps[0])       // 超出 → 最后一集;否则(含 0)→ 第一集
+setEp(target.idx)
+```
+
+播放页只读 `track.episode`、**不回写**，观看进度仍由卡片上的 `+1` 手动推进（沿用原状，本次不动）。
+
 ### 2026-07-10 fix: Girigiri 换域名后搜索与在线播放全部失败
 
 **效果**：
 
 1. Girigiri 的搜索 / 下载 / 在线播放恢复可用 —— 站点主域从 `bgm.girigirilove.com` 换到了 `ani.girigirilove.com`（旧域名现在 301 过去）。
 2. 顺带修掉一个潜伏的传输层 bug：`netRequest` 的 `redirect:'manual'` 从来没处理过 3xx，**任何**重定向都会以 `Redirect was cancelled` 失败。修完之后站点再换域名，只是多跟一跳而已。
+
+![redirect:'manual' 修复前后的数据流](docs/devlog-assets/net-request-manual-redirect.svg)
 
 **关键代码**：
 

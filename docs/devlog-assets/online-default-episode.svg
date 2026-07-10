@@ -1,0 +1,82 @@
+<svg viewBox="0 0 1000 530" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <marker id="dR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#D64545"/>
+    </marker>
+    <marker id="dG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2E9E63"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="530" fill="#ffffff"/>
+  <text x="500" y="30" text-anchor="middle" font-size="17" font-weight="700" fill="#111">播放页默认选集 —— 卡片显示第几集,就从第几集播</text>
+  <text x="500" y="52" text-anchor="middle" font-size="12" fill="#777">track.episode = 「最后看到的那一集」,正是追番卡片上那个数字</text>
+
+  <!-- ── 左:旧规则 ── -->
+  <rect x="40" y="76" width="440" height="180" rx="12" fill="#FDECEC" stroke="#E05B5B" stroke-width="1.5"/>
+  <text x="260" y="104" text-anchor="middle" font-size="13" font-weight="700" fill="#B23838">❌ 旧:wanted = episode + 1(「下一集」)</text>
+
+  <rect x="70" y="128" width="140" height="56" rx="9" fill="#ffffff" stroke="#E05B5B" stroke-width="1.2"/>
+  <text x="140" y="150" text-anchor="middle" font-size="10.5" fill="#888">追番卡片</text>
+  <text x="140" y="172" text-anchor="middle" font-size="15" font-weight="700" fill="#333">1 / 12</text>
+
+  <line x1="212" y1="156" x2="298" y2="156" stroke="#D64545" stroke-width="1.8" marker-end="url(#dR)"/>
+  <text x="255" y="147" text-anchor="middle" font-size="11" font-weight="700" fill="#B23838">+1</text>
+
+  <rect x="300" y="128" width="150" height="56" rx="9" fill="#D64545"/>
+  <text x="375" y="150" text-anchor="middle" font-size="10.5" fill="#ffd9d9">播放器打开</text>
+  <text x="375" y="172" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">第 02 集</text>
+
+  <text x="260" y="214" text-anchor="middle" font-size="11.5" fill="#8a4a4a">卡片明明写着 1,一点播放却跳到第 2 集</text>
+  <text x="260" y="234" text-anchor="middle" font-size="11.5" fill="#8a4a4a">—— 与用户心智不符</text>
+
+  <!-- ── 右:新规则 ── -->
+  <rect x="520" y="76" width="440" height="180" rx="12" fill="#EAF7F0" stroke="#3BB273" stroke-width="1.5"/>
+  <text x="740" y="104" text-anchor="middle" font-size="13" font-weight="700" fill="#1F8A54">✅ 新:wanted = episode(所见即所播)</text>
+
+  <rect x="550" y="128" width="140" height="56" rx="9" fill="#ffffff" stroke="#3BB273" stroke-width="1.2"/>
+  <text x="620" y="150" text-anchor="middle" font-size="10.5" fill="#888">追番卡片</text>
+  <text x="620" y="172" text-anchor="middle" font-size="15" font-weight="700" fill="#333">1 / 12</text>
+
+  <line x1="692" y1="156" x2="778" y2="156" stroke="#2E9E63" stroke-width="1.8" marker-end="url(#dG)"/>
+  <text x="735" y="147" text-anchor="middle" font-size="11" font-weight="700" fill="#1F8A54">原样</text>
+
+  <rect x="780" y="128" width="150" height="56" rx="9" fill="#2E9E63"/>
+  <text x="855" y="150" text-anchor="middle" font-size="10.5" fill="#d7f0e2">播放器打开</text>
+  <text x="855" y="172" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">第 01 集</text>
+
+  <text x="740" y="214" text-anchor="middle" font-size="11.5" fill="#3a7a5c">卡片写 1 就从 1 播,写 2 就从 2 播</text>
+  <text x="740" y="234" text-anchor="middle" font-size="11.5" fill="#3a7a5c">想看别的集,集数网格里照样随便点</text>
+
+  <!-- ── 边界规则 ── -->
+  <rect x="40" y="286" width="920" height="212" rx="12" fill="#F7F9FB" stroke="#c9d2dc" stroke-width="1"/>
+  <text x="62" y="312" font-size="12.5" font-weight="700" fill="#41556b">边界(选不中就 clamp,不报错)</text>
+
+  <rect x="62" y="330" width="300" height="44" rx="8" fill="#ffffff" stroke="#8B5CF6" stroke-width="1.1"/>
+  <text x="212" y="357" text-anchor="middle" font-size="12" fill="#333">episode = 0(还没看过)</text>
+  <line x1="368" y1="352" x2="470" y2="352" stroke="#555" stroke-width="1.5" marker-end="url(#d)"/>
+  <rect x="476" y="330" width="200" height="44" rx="8" fill="#EEF2F7"/>
+  <text x="576" y="357" text-anchor="middle" font-size="12" font-weight="700" fill="#41556b">第 1 集</text>
+
+  <rect x="62" y="386" width="300" height="44" rx="8" fill="#ffffff" stroke="#8B5CF6" stroke-width="1.1"/>
+  <text x="212" y="413" text-anchor="middle" font-size="12" fill="#333">该线路里存在第 N 集</text>
+  <line x1="368" y1="408" x2="470" y2="408" stroke="#555" stroke-width="1.5" marker-end="url(#d)"/>
+  <rect x="476" y="386" width="200" height="44" rx="8" fill="#EEF2F7"/>
+  <text x="576" y="413" text-anchor="middle" font-size="12" font-weight="700" fill="#41556b">第 N 集</text>
+
+  <rect x="62" y="442" width="300" height="44" rx="8" fill="#ffffff" stroke="#8B5CF6" stroke-width="1.1"/>
+  <text x="212" y="469" text-anchor="middle" font-size="12" fill="#333">N &gt; 该线路的最后一集</text>
+  <line x1="368" y1="464" x2="470" y2="464" stroke="#555" stroke-width="1.5" marker-end="url(#d)"/>
+  <rect x="476" y="442" width="200" height="44" rx="8" fill="#EEF2F7"/>
+  <text x="576" y="469" text-anchor="middle" font-size="12" font-weight="700" fill="#41556b">最后一集</text>
+
+  <text x="700" y="357" font-size="11" fill="#6a7a8c">· 换线路时若新线路没有当前集,</text>
+  <text x="700" y="376" font-size="11" fill="#6a7a8c">  清空选集交回这套规则重挑</text>
+  <text x="700" y="404" font-size="11" fill="#6a7a8c">· 「N &gt; 最后一集」的典型场景:</text>
+  <text x="700" y="423" font-size="11" fill="#6a7a8c">  BD 线只有特典、剧场版单集</text>
+  <text x="700" y="455" font-size="11" fill="#6a7a8c">· 播放页不回写 episode,</text>
+  <text x="700" y="474" font-size="11" fill="#6a7a8c">  进度仍由卡片的 +1 手动推进</text>
+</svg>
