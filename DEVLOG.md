@@ -11,6 +11,29 @@
 
 ## 在线观看
 
+### 2026-07-13 style: 优化自定义源播放页样式结构
+
+**效果**：
+
+1. **双滚动条的违和感没了**。自定义源(webview 嵌真实播放页)那页原先是「16:9 矮盒子里塞整张网页」——盒子外是 app 的页面滚动条,盒子里是网页自己的滚动条,鼠标压在 webview 上滚的永远是网页那条,想滚 app 那条得把鼠标挪到盒子和窗口之间的缝里。现在**整页固定高度、页面自身不滚动**,webview 吃掉标题/切换器下方的全部剩余高度,**只剩站点自己的一条滚动条**,且永远在鼠标底下。
+2. **应用内「铺满」按钮删了**。播放区右上角那个「铺满/退出」按钮连同它的 state、Esc 监听一并去掉——它做的是「webview 铺满窗口但显示整张网页(导航/广告位都在)」,不是用户要的「只剩视频画面」。
+3. **全屏 = 只剩视频画面、覆盖整扇窗**(对齐稀饭/Girigiri/B 站原生 `<video>` 全屏)。点站点播放器自己的全屏按钮:之前 webview 只在「盒子」里全屏、顶部 app chrome 还露着(用户实拍);现在铺满整窗,只剩视频。
+
+**关键代码/决策**：
+
+**全屏靠站点自己的按钮 + 监听 webview 全屏事件把容器铺满窗口**。根因:webview 内 `<video>` 请求 HTML5 全屏时窗口是全屏了,但 app 布局把 webview 钉在 `flex-1` 盒子里、顶部标题栏没让位,所以只在盒子里全屏。修法——
+
+```tsx
+// pages/OnlinePlayer.tsx
+const [embedFs, setEmbedFs] = useState(false)
+el.addEventListener('enter-html-full-screen', () => setEmbedFs(true))
+el.addEventListener('leave-html-full-screen', () => setEmbedFs(false))
+// 容器:平时 relative 盒子,全屏时整块 fixed inset-0 铺满窗口(webview 原地不动)
+<div className={embedFs ? 'fixed inset-0 z-[80] bg-black' : 'relative flex-1 min-h-0 …'}>
+```
+
+`enter-html-full-screen` / `leave-html-full-screen` 是 Electron `<webview>` 的 DOM 事件,由站点自己的全屏按钮(guest 调 `requestFullscreen`)触发;退出(站点按钮 / Esc)自动派发 leave,**不用自己接键盘**。只切容器 class、webview 元素原地不动 ⇒ **不重载、不丢播放进度**(与被删的旧「铺满」同一套「不 remount」手法,只是触发源从我们的按钮换成站点全屏事件)。
+
 ### 2026-07-11 feat: 自定义源新增应用内播放
 
 **效果**：
