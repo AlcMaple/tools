@@ -105,10 +105,11 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 // ── 坚果云同步 ──────────────────────────────────────────────────────────────
-// 复用锦囊妙计那套：rev/快照/冲突确认。差别是图片要随文本一起同步 —— 推送时把
-// 被引用的图片读成 base64 塞进 blob（按 `hash.ext` 去重），拉取时写回本地文件。
-// 注意：不做后台轮询探测（blob 含 base64 图片，体积大，每次进页面都拉一遍太重），
-// 所以不主动提示「云端有更新」；冲突在点上传/拉取时拉一次远端现算。
+// 复用锦囊妙计那套：rev/快照/冲突确认，**行为与追番/锦囊妙计一致** —— 进页面后台探一次
+// 云端 rev，chip 主动提示「云端有更新 / 本地未上传 / 两边都改」。差别是图片要随文本一起
+// 同步：推送时把被引用的图片读成 base64 塞进 blob（按 `hash.ext` 去重），拉取时写回本地文件。
+// 代价（已与用户确认、接受）：miaoyu blob 含图片 base64，后台探测那一拉会带上全部图片、
+// 体积可能不小 —— 但只在进页面探一次、不轮询，换来与另两处一致的主动提示。
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type SyncDirection = 'push' | 'pull'
 
@@ -202,6 +203,8 @@ export default function MiaoyuLibrary(): JSX.Element {
     const stored = localStorage.getItem(SNAPSHOT_KEY)
     return stored ? rebuildIfSchemaDrift(stored, initial) : initial
   })
+  // 后台探测到的云端 rev（null = 还没探到 / 未配置）；驱动 cloudNewer。
+  const [remoteRev, setRemoteRev] = useState<number | null>(null)
   const [syncConfirm, setSyncConfirm] = useState<SyncConfirmState | null>(null)
 
   useEffect(() => { window.miaoyuApi.imagesBase().then(setImgBase).catch(() => {}) }, [])
@@ -209,9 +212,24 @@ export default function MiaoyuLibrary(): JSX.Element {
   useEffect(() => { localStorage.setItem(LAST_REV_KEY, String(lastSyncedRev)) }, [lastSyncedRev])
   useEffect(() => { localStorage.setItem(SNAPSHOT_KEY, lastSyncedSnapshot) }, [lastSyncedSnapshot])
 
+  // 进页面后台探一次云端 rev —— 与追番/锦囊妙计一致，让 chip 能主动提示「云端有更新」。
+  // 只探一次、不轮询；失败（未配置 / 404 / 网络）静默，chip 保持中性态。
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const jsonStr = await window.webdavApi.pull('miaoyu')
+        if (!cancelled) setRemoteRev(parseRemoteBlob(jsonStr).rev)
+      } catch { /* 未配置 / 无远端 / 网络失败 —— 静默 */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   // localDirty 由快照差异推导 —— 用户撤销改动会自动归位，无需手动打脏标记。
+  // cloudNewer 由后台探到的 rev 与本地最后同步 rev 比较（remoteRev 为 null 时不提示）。
   const currentSnapshot = useMemo(() => snapshotOf(posts), [posts])
   const localDirty = currentSnapshot !== lastSyncedSnapshot
+  const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
   const imgUrl = (img: MiaoyuImage): string => `${imgBase}/${img.hash}.${img.ext}`
 
@@ -298,6 +316,7 @@ export default function MiaoyuLibrary(): JSX.Element {
       const ts = now()
       setLastSyncTime(ts)
       setLastSyncedRev(newRev)
+      setRemoteRev(newRev)
       setLastSyncedSnapshot(snapshotOf(posts))
       localStorage.setItem(LAST_SYNC_KEY, String(ts))
       syncSettle('synced', '上传成功')
@@ -320,6 +339,7 @@ export default function MiaoyuLibrary(): JSX.Element {
       const ts = now()
       setLastSyncTime(ts)
       setLastSyncedRev(remote.rev)
+      setRemoteRev(remote.rev)
       setLastSyncedSnapshot(snapshotOf(newPosts))
       localStorage.setItem(LAST_SYNC_KEY, String(ts))
       syncSettle('synced', '拉取成功')
@@ -410,6 +430,7 @@ export default function MiaoyuLibrary(): JSX.Element {
               msg={syncMsg}
               lastSyncTime={lastSyncTime}
               localDirty={localDirty}
+              cloudNewer={cloudNewer}
               busy={syncStatus === 'syncing' || !!syncConfirm}
               onPush={() => openSyncConfirm('push')}
               onPull={() => openSyncConfirm('pull')}
@@ -473,21 +494,24 @@ export default function MiaoyuLibrary(): JSX.Element {
 
 // ── 同步状态 chip ────────────────────────────────────────────────────────────
 function SyncChip({
-  status, msg, lastSyncTime, localDirty, busy, onPush, onPull,
+  status, msg, lastSyncTime, localDirty, cloudNewer, busy, onPush, onPull,
 }: {
   status: SyncStatus
   msg: string
   lastSyncTime: number | null
   localDirty: boolean
+  cloudNewer: boolean
   busy: boolean
   onPush: () => void
   onPull: () => void
 }): JSX.Element {
-  type ChipKind = 'syncing' | 'synced' | 'error' | 'local' | 'idle'
+  type ChipKind = 'syncing' | 'synced' | 'error' | 'both' | 'remote' | 'local' | 'idle'
   const kind: ChipKind =
     status === 'syncing' ? 'syncing' :
     status === 'synced' ? 'synced' :
     status === 'error' ? 'error' :
+    (localDirty && cloudNewer) ? 'both' :
+    cloudNewer ? 'remote' :
     localDirty ? 'local' : 'idle'
   const idleText = lastSyncTime ? (() => {
     const diff = Date.now() - lastSyncTime
@@ -500,6 +524,8 @@ function SyncChip({
     syncing: { dot: <span className="material-symbols-outlined text-primary animate-spin" style={{ fontSize: 13 }}>progress_activity</span>, text: '同步中…', cls: 'text-primary' },
     synced: { dot: <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />, text: msg, cls: 'text-secondary' },
     error: { dot: <span className="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0" />, text: msg, cls: 'text-error' },
+    both: { dot: <span className="w-1.5 h-1.5 rounded-full bg-error flex-shrink-0" />, text: '本地与云端都有变化', cls: 'text-error' },
+    remote: { dot: <span className="w-1.5 h-1.5 rounded-full bg-secondary flex-shrink-0" />, text: '云端有更新', cls: 'text-secondary' },
     local: { dot: <span className="w-1.5 h-1.5 rounded-full bg-tertiary flex-shrink-0" />, text: '本地未上传', cls: 'text-tertiary' },
     idle: { dot: <span className="w-1.5 h-1.5 rounded-full bg-outline/40 flex-shrink-0" />, text: idleText, cls: lastSyncTime ? 'text-on-surface-variant/50' : 'text-on-surface-variant/30' },
   }
