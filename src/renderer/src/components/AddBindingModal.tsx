@@ -109,7 +109,7 @@ export function AddBindingModal({ animeTitle, existing, onClose, onConfirm }: Pr
             className="w-full bg-surface-container border border-outline-variant/20 rounded-lg px-4 py-2.5 text-sm font-mono text-on-surface placeholder:text-on-surface-variant/35 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
           />
           <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">
-            把网址栏复制过来即可。chip 点击会在外部浏览器打开这个链接。
+            把番剧播放页的网址复制过来。加好后可在「在线观看」里应用内直接播放,用站点自己的播放器和剧集列表;卡片上的 chip 仍在浏览器打开。
           </p>
         </div>
 

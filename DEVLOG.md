@@ -11,28 +11,74 @@
 
 ## 在线观看
 
-### 2026-07-10 feat: B 站源新增自研播放
+### 2026-07-11 feat: 自定义源新增应用内播放
 
 **效果**：
+
+1. 加过的自定义链接（B 站以外的番剧站，多是盗版站）现在**在应用里直接看**，不用再开浏览器进站搜番。用的是站点自己的播放页 —— 剧集列表、画质菜单、播放器全在，换任何站都有。
+2. **弹窗广告拦了**。盗版站点哪弹哪的 `window.open` 被拦死（实测 guest 里返回 `null`，不弹新窗）。
+3. **能铺满窗口全屏看**。播放区右上角一个「铺满」按钮把网页铺满整个应用窗口，Esc 退出；站点自己的全屏按钮也照常能用。
+4. 顺带做了两件隐性的：自定义站换到独立分区 `persist:webplay`（不受信站点的 cookie/storage 跟应用默认会话隔开）；「添加观看源」弹窗文案改成「应用内直接播放」（旧文案只说"chip 在浏览器打开"）。
+
+**关键代码**：
+
+① 主进程硬化（对所有 webview 生效，B 站分区也一样）：
+
+```ts
+// main/index.ts
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() === 'webview') contents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  contents.on('will-attach-webview', (_evt, webPreferences) => {
+    delete webPreferences.preload
+    webPreferences.nodeIntegration = false
+  })
+})
+```
+
+`<webview>` 不带 `allowpopups` 时默认就拦弹窗，这道 handler 是**第二层**防御（防以后手滑开 `allowpopups` + 拦 guest 自己派生的子 webContents），不是从零到一的新能力。
+
+② 铺满切换**不重载 webview**——容器 class 在「16:9 盒子 / `fixed inset-0`」间切，但 webview 保持在树里同一位置（换位置会 remount → 页面重载 → 丢播放进度）：
+
+```tsx
+// pages/OnlinePlayer.tsx
+<div className={embedExpanded ? 'fixed inset-0 z-[70] bg-black' : 'relative aspect-video …'}>
+  <webview key={`${view.url}#${webviewKey}`} src={view.url}
+    partition={view.isBili ? 'persist:bili' : 'persist:webplay'} className="h-full w-full" />
+</div>
+```
+
+### 2026-07-10 feat(bili): B 站源在线播放 —— 真 1080P + 扫码登录
+
+**效果**：
+
+播放：
 
 1. **画质是真的了**。之前用 B 站官方外链播放器（`player.bilibili.com/player.html`），它的画质菜单里明明列着 1080P，**点了没反应**——那个「进入哔哩哔哩，观看更高清」的浮层就是它在告诉你被锁在 360P，登不登录都一样。现在自己问 API 要地址，1080P/720P/480P/360P 四档任选，选哪档就是哪档。
 2. **暂停不再弹一堆推荐视频**，画面上也没有任何引流层——播放器是我们自己的 `<video>`。
 3. **合集终于有集数列表了**。像 `BV1zAQGB8Eqq` 这种「1-12 话全集」的稿件，12 个分 P 直接铺成集数网格，点第 5 集就是 `&p=5` 那一集。单 P 稿件就一格，形态和稀饭/Girigiri 一致。
 4. 番剧链接（`/bangumi/play/ep…`）仍走原来的外链播放器——它是另一套 pgc 接口，这次没动。
 
+登录：
+
+5. 扫码能登进去了。之前弹一个 BrowserWindow 加载 `passport.bilibili.com/login` 让用户扫官方页面的码，手机上点「确认」直接报 **API校验密匙错误**——B 站 2026-06 起收紧了 **web 端**扫码接口的风控（同期 downkyi 等工具一起中招）。
+6. 登录入口进了「设置 → 通用 → B 站账号」，扫一次长期有效，不用每次进播放页才能登。播放页提示条上的登录按钮还在，点开是同一个扫码弹窗。
+7. 顺手修了提示条上「登录 B 站」按钮的下划线：整个按钮加 `hover:underline`，而图标是**字体字形**、基线和文字不同，下划线被画成高低两截。改成只给文字那个 `<span>` 加下划线。
+
 ![B 站 DASH 数据流](docs/devlog-assets/online-bili-dash.svg)
 
 **关键决策（都是实测出来的，别推翻）**：
 
 - **1080P 只存在于 DASH 里**。mp4 直链（`fnval=0/1`）的 `accept_quality` 只有 `[64, 16]`，容器本身封顶 720P。想要 1080P 就必须走音视频分轨 + MSE，没有第二条路。
+- **画质由登录态决定**。匿名最高 480P，登录后 `dash.video` 里才出现 `id=80`。所以自研播放的 B 站源也要查登录态、也放登录入口，不是只有 webview 那条才需要。
 - **MPD 里只放 avc1**。B 站每档画质同时给 avc1 / hev1 / av01 三种编码；三者编码不同不能塞进同一个 AdaptationSet，而 avc1 是唯一各平台都能硬解的。
 - **画质档只列「真有」的**。`accept_quality`（账号能选的）与 `dash.video`（这个稿件实际存在的）求交后才上屏——外链播放器摆着点不动的 1080P 就是这么坑人的，别重蹈。
 - **ABR 关掉**。用户点了 1080P 就该一直是 1080P，不能让自适应在背后偷偷降档。
 - **不给 `mtmedia` 加 `corsEnabled`**（011 已经踩过一次）：shaka 的 fetch 和 hls.js 一样直通，加了反而要补 ACAO。
+- **登录改 TV 端扫码**，不走 web 扫码：TV 端（`/x/passport-tv-login/qrcode/*`）用 appkey + appsec 的 md5 签名校验，不吃 web 那套风控；代价是登录成功后**不发 `Set-Cookie`**，cookie 在响应体里，要自己逐条写进 `persist:bili` 分区。
 
 **关键代码**：
 
-① 签名——固定 appsec，参数排序拼接后 md5，不需要运行时反推：
+① 签名——固定 appsec，参数排序拼接后 md5，不需要运行时反推（登录 / playurl 共用）：
 
 ```ts
 // bili/api.ts - signParams()
@@ -40,7 +86,16 @@ const query = Object.keys(all).sort().map((k) => `${k}=${encodeURIComponent(all[
 const sign = createHash('md5').update(query + TV_APPSEC).digest('hex')
 ```
 
-② Referer 钉在代理 URL 上——B 站 CDN 不带 Referer 一律 403（实测 403 → 206），而 shaka 是在**渲染进程**里逐段发 Range 的，直取必死。所以主进程取到地址时就把 Referer 封进 `mtmedia://`，渲染层永远见不到裸签名链，也就不可能忘了带头：
+② TV 端登录不发 `Set-Cookie`，凭证在响应体里，逐条写进分区：
+
+```ts
+// bili/api.ts - tvPoll()
+for (const c of env.data.cookie_info?.cookies ?? []) {
+  await ses.cookies.set({ url: 'https://bilibili.com/', domain: '.bilibili.com', name: c.name, value: c.value, /* … */ })
+}
+```
+
+③ Referer 钉在代理 URL 上——B 站 CDN 不带 Referer 一律 403（实测 403 → 206），而 shaka 是在**渲染进程**里逐段发 Range 的，直取必死。所以主进程取到地址时就把 Referer 封进 `mtmedia://`，渲染层永远见不到裸签名链，也就不可能忘了带头：
 
 ```ts
 // bili/api.ts - toTrack()
@@ -50,7 +105,7 @@ baseUrl: toMediaProxyUrl(t.baseUrl, BILI_REFERER),
 if (referer && /^https?:\/\//i.test(referer)) headers['Referer'] = referer
 ```
 
-③ B 站只给 dash JSON 不给 MPD，但每路轨都是「单文件 fMP4 + SegmentBase 字节范围」，正好是 DASH 的 on-demand profile——一个 `<BaseURL>` 加一个 `<SegmentBase indexRange>` 就描述完了：
+④ B 站只给 dash JSON 不给 MPD，但每路轨都是「单文件 fMP4 + SegmentBase 字节范围」，正好是 DASH 的 on-demand profile——一个 `<BaseURL>` 加一个 `<SegmentBase indexRange>` 就描述完了：
 
 ```ts
 // utils/biliMpd.ts - representation()
@@ -58,31 +113,14 @@ if (referer && /^https?:\/\//i.test(referer)) headers['Referer'] = referer
 `<SegmentBase indexRange="${t.indexRange}"><Initialization range="${t.initRange}"/></SegmentBase>`,
 ```
 
-**已验**（CDP 驱动真实 app，`file://` 与 `http://127.0.0.1` 两种 origin 各跑一遍）：`BV1zAQGB8Eqq` 播起来 1920×1080、`readyState=4`、时间轴推进、零 error；集数网格 12 格；画质条 4 档；点 720P 后 `videoHeight` 真的变 720；切第 5 集正常续播且保留画质档；页面上不存在「进入哔哩哔哩」字样。脚本 `verify-bili-play.mjs` / `verify-bili-dev-origin.mjs`。
-
-### 2026-07-10 fix: B 站扫码登录报「API校验密匙错误」，设置页新增登陆入口
-
-**效果**：
-
-1. 扫码能登进去了。之前弹一个 BrowserWindow 加载 `passport.bilibili.com/login` 让用户扫官方页面的码，手机上点「确认」直接报 **API校验密匙错误**——B 站 2026-06 起收紧了 **web 端**扫码接口的风控（同期 downkyi 等工具一起中招）。
-2. 登录入口进了「设置 → 通用 → B 站账号」，扫一次长期有效，不用每次进播放页才能登。播放页提示条上的登录按钮还在，点开是同一个扫码弹窗。
-3. 顺手修了提示条上「登录 B 站」按钮的下划线：整个按钮加 `hover:underline`，而图标是**字体字形**、基线和文字不同，下划线被画成高低两截。改成只给文字那个 `<span>` 加下划线。
-
-**修法**：换 **TV 端**扫码接口（`/x/passport-tv-login/qrcode/*`）。它走 appkey + appsec 的 md5 签名校验，不吃 web 那套风控；代价是登录成功后**不发 `Set-Cookie`**，cookie 直接放在响应体里，要自己逐条写进 `persist:bili` 分区。二维码用 `qrcode` 在主进程生成 PNG data URL，渲染层只 `<img>`，不引新前端库。
-
-```ts
-// bili/api.ts - tvPoll()
-// TV 端登录**不走 Set-Cookie**,凭证在响应体里,逐条写进分区。
-for (const c of env.data.cookie_info?.cookies ?? []) {
-  await ses.cookies.set({ url: 'https://bilibili.com/', domain: '.bilibili.com', name: c.name, value: c.value, /* … */ })
-}
-```
-
 顺带给 `netRequest` 补了 **POST body** 和 **session**（用某个分区的 cookie 罐发请求）两个能力。`session` 一传就自动开 `useSessionCookies`——net 默认**不带**该 session 的 cookie，两个开关分开只会制造「传了 session 却没带 cookie」的静默失败。
 
 **这不算违反「不自动重试」红线**：扫码每 2s 问一次「扫了没」是 B 站定义的轮询协议，只在弹窗开着、二维码有效时问，关窗即停；请求真出错就停下来报错，交给用户点重试。
 
-**已验**（CDP 驱动真实 app）：`bili:qr-create` 返回合法 authCode + PNG data URL，首次 `bili:qr-poll` 返回 `pending`（不再是「API校验密匙错误」）；设置页「B 站账号」区块正常渲染并如实显示登录态。脚本 `verify-bili-qr.mjs`。
+**已验**（CDP 驱动真实 app）：
+
+- 播放：`BV1zAQGB8Eqq` 播起来 1920×1080、`readyState=4`、时间轴推进、零 error；集数网格 12 格；画质条 4 档；点 720P 后 `videoHeight` 真的变 720；切第 5 集正常续播且保留画质档；页面上不存在「进入哔哩哔哩」字样。`file://` 与 `http://127.0.0.1` 两种 origin 各跑一遍（011 早期栽在 origin 上）。脚本 `verify-bili-play.mjs` / `verify-bili-dev-origin.mjs`。
+- 登录：`bili:qr-create` 返回合法 authCode + PNG data URL，首次 `bili:qr-poll` 返回 `pending`（不再是「API校验密匙错误」）；设置页「B 站账号」区块正常渲染并如实显示登录态。脚本 `verify-bili-qr.mjs`。
 
 ### 2026-07-10 fix: 播放页默认从「卡片上显示的那一集」开始播
 
