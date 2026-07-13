@@ -275,6 +275,16 @@ export default function OnlinePlayer(): JSX.Element {
   const [biliLoggedIn, setBiliLoggedIn] = useState<boolean | null>(null)
   const [biliQrOpen, setBiliQrOpen] = useState(false)
   const [webviewKey, setWebviewKey] = useState(0)
+  // 自定义源(webview 嵌真实播放页)铺满窗口的沉浸态。离开 embed 自动收起,
+  // 免得残留的铺满态盖住切过去的别的源。
+  const [embedExpanded, setEmbedExpanded] = useState(false)
+  useEffect(() => { if (view.mode !== 'embed') setEmbedExpanded(false) }, [view.mode])
+  useEffect(() => {
+    if (!embedExpanded) return
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setEmbedExpanded(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [embedExpanded])
   // 选中的画质(B 站 DASH)。null = 还没选,加载完取该稿件最高的一档。
   // 换集**保留**用户选的档:切到没有该档的稿件时,load 完自动回落到最高档。
   const [qn, setQn] = useState<number | null>(null)
@@ -569,66 +579,96 @@ export default function OnlinePlayer(): JSX.Element {
           </div>
         ) : (
           <>
-            {/* 播放器 */}
-            <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
-              {view.mode === 'video' && (
-                <video
-                  key={view.url}
-                  ref={videoRef}
-                  // HLS 由 hls.js 经 MSE 喂,不设 src;mp4 直链走同源流代理直接喂。
-                  src={view.isHls ? undefined : toMediaProxy(view.url)}
-                  controls
-                  autoPlay
-                  className="h-full w-full"
-                  // HLS 的失败统一由 hls.js 的 fatal 事件兜底,别在这儿再触发一次换线路。
-                  onError={view.isHls ? undefined : handleVideoError}
-                />
-              )}
-              {view.mode === 'dash' && (
-                // DASH 由 shaka 经 MSE 喂,不设 src、不挂 onError(失败走 shaka 的 error 事件)
-                <video ref={videoRef} controls autoPlay className="h-full w-full" />
-              )}
-              {view.mode === 'embed' && (
-                // B 站走 persist:bili 分区(与登录窗同分区同 UA,第一方 cookie);
-                // 其他自定义站用默认分区。webview 里站点页面是顶层文档,比 iframe
-                // 兼容性好得多(不受 X-Frame-Options / 第三方 cookie 限制)。
+            {/* 播放器 —— embed(自定义源嵌真实播放页)单独一支:它能「铺满窗口」,
+                容器 class 在盒子/铺满间切换但 webview 保持挂载不重载(切走会丢进度)。 */}
+            {view.mode === 'embed' ? (
+              <div
+                className={embedExpanded
+                  ? 'fixed inset-0 z-[70] bg-black'
+                  : 'relative aspect-video w-full overflow-hidden rounded-xl bg-black'}
+              >
+                {/* B 站走 persist:bili 分区(与登录窗同分区同 UA,第一方 cookie);
+                    其他自定义站用独立的 persist:webplay 分区,把不受信站点的 cookie /
+                    storage 与应用默认会话隔开。webview 里站点页是顶层文档,不受
+                    X-Frame-Options / 第三方 cookie 限制;弹窗广告在主进程被拦死。 */}
                 <webview
                   key={`${view.url}#${webviewKey}`}
                   src={view.url}
-                  partition={view.isBili ? 'persist:bili' : undefined}
+                  partition={view.isBili ? 'persist:bili' : 'persist:webplay'}
                   className="h-full w-full"
                 />
-              )}
-              {view.mode === 'search' && entry?.builtin && track && (
-                <div className="flex h-full items-center justify-center overflow-y-auto p-4 md:p-6">
-                  <InlineSourceSearch
-                    key={entry.builtin}
-                    source={entry.builtin}
-                    bgmId={track.bgmId}
-                    initialKeyword={track.titleCn || track.title}
-                    aliases={track.aliases}
-                    onBound={(card) => setToastText(`已自动关联 ${entry.label} ·「${card.title}」,下次直接播放`)}
+                <button
+                  type="button"
+                  onClick={() => setEmbedExpanded((v) => !v)}
+                  title={embedExpanded ? '退出铺满(Esc)' : '铺满窗口'}
+                  className="absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-lg bg-black/55 hover:bg-black/75 px-2.5 py-1.5 text-white/90 backdrop-blur transition-colors"
+                >
+                  <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>
+                    {embedExpanded ? 'close_fullscreen' : 'open_in_full'}
+                  </span>
+                  <span className="font-label text-[11px] font-bold tracking-wider">{embedExpanded ? '退出' : '铺满'}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+                {view.mode === 'video' && (
+                  <video
+                    key={view.url}
+                    ref={videoRef}
+                    // HLS 由 hls.js 经 MSE 喂,不设 src;mp4 直链走同源流代理直接喂。
+                    src={view.isHls ? undefined : toMediaProxy(view.url)}
+                    controls
+                    autoPlay
+                    className="h-full w-full"
+                    // HLS 的失败统一由 hls.js 的 fatal 事件兜底,别在这儿再触发一次换线路。
+                    onError={view.isHls ? undefined : handleVideoError}
                   />
-                </div>
-              )}
-              {view.mode === 'loading' && (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-on-surface-variant/70">
-                  <span className="material-symbols-outlined animate-spin" style={{ fontSize: 32 }}>progress_activity</span>
-                  <span className="font-label text-xs tracking-widest">解析播放地址中…</span>
-                </div>
-              )}
-              {view.mode === 'none' && (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-on-surface-variant/50">
-                  <span className="material-symbols-outlined" style={{ fontSize: 40 }}>smart_display</span>
-                  <span className="font-label text-xs tracking-widest">选一集开始播放</span>
-                </div>
-              )}
-              {view.mode === 'error' && (
-                <div className="flex h-full items-center justify-center overflow-y-auto p-6">
-                  <ErrorPanel error={view.err} onRetry={retry} />
-                </div>
-              )}
-            </div>
+                )}
+                {view.mode === 'dash' && (
+                  // DASH 由 shaka 经 MSE 喂,不设 src、不挂 onError(失败走 shaka 的 error 事件)
+                  <video ref={videoRef} controls autoPlay className="h-full w-full" />
+                )}
+                {view.mode === 'search' && entry?.builtin && track && (
+                  <div className="flex h-full items-center justify-center overflow-y-auto p-4 md:p-6">
+                    <InlineSourceSearch
+                      key={entry.builtin}
+                      source={entry.builtin}
+                      bgmId={track.bgmId}
+                      initialKeyword={track.titleCn || track.title}
+                      aliases={track.aliases}
+                      onBound={(card) => setToastText(`已自动关联 ${entry.label} ·「${card.title}」,下次直接播放`)}
+                    />
+                  </div>
+                )}
+                {view.mode === 'loading' && (
+                  <div className="flex h-full flex-col items-center justify-center gap-3 text-on-surface-variant/70">
+                    <span className="material-symbols-outlined animate-spin" style={{ fontSize: 32 }}>progress_activity</span>
+                    <span className="font-label text-xs tracking-widest">解析播放地址中…</span>
+                  </div>
+                )}
+                {view.mode === 'none' && (
+                  <div className="flex h-full flex-col items-center justify-center gap-3 text-on-surface-variant/50">
+                    <span className="material-symbols-outlined" style={{ fontSize: 40 }}>smart_display</span>
+                    <span className="font-label text-xs tracking-widest">选一集开始播放</span>
+                  </div>
+                )}
+                {view.mode === 'error' && (
+                  <div className="flex h-full items-center justify-center overflow-y-auto p-6">
+                    <ErrorPanel error={view.err} onRetry={retry} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 自定义源(非 B 站)网页版提示 —— 集数列表 / 画质菜单都在站点页里 */}
+            {view.mode === 'embed' && !view.isBili && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-on-surface-variant/70">
+                <span className="material-symbols-outlined leading-none shrink-0" style={{ fontSize: 14 }}>public</span>
+                <span className="font-label text-[11px] tracking-wider">
+                  网页版播放 · 剧集列表和画质用站点自己的,点右上角「铺满」全屏看
+                </span>
+              </div>
+            )}
 
             {/* B 站登录态提示条 —— 画质档位由登录态决定,所以两种播放形态都要提示 */}
             {needBiliAuth && (

@@ -62,6 +62,27 @@ process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason)
 })
 
+// ── Webview 硬化(011 自定义源应用内播放) ────────────────────────────────────
+// 自定义源(盗版站等)用 <webview> 嵌**真实播放页**,页面里的第三方 JS 会跑起来。
+// 两道闸,越早注册越好(app 事件,不必等 ready):
+//   1. guest 的一切 window.open / target=_blank 弹窗**一律拦死** —— 盗版站最常见
+//      的广告手法就是点哪弹哪,拦掉后观感立刻干净。正经外跳本来也不该由不受信的
+//      guest 页面替用户决定。B 站分区(persist:bili)嵌的也是 webview,它不需要弹窗,
+//      同受此闸无碍。
+//   2. attach 时剥掉任何 preload、禁 nodeIntegration —— 深度防御,别让不受信页面
+//      借 webview 摸到 Node。默认本就如此,这里显式钉死防以后手滑放开。
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() === 'webview') {
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  }
+  // 在嵌主(主窗口 webContents)上净化即将 attach 的 webview 参数
+  contents.on('will-attach-webview', (_evt, webPreferences) => {
+    delete webPreferences.preload
+    webPreferences.nodeIntegration = false
+    webPreferences.contextIsolation = true
+  })
+})
+
 app.on('before-quit', () => { isAppQuitting = true })
 app.on('will-quit', () => {
   destroyTray()
