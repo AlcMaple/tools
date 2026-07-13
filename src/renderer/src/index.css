@@ -110,22 +110,29 @@
 }
 
 /* 滚动条统一 4px 粗细 —— width 控制垂直滚动条的宽度，height 控制水平
-   滚动条的高度，两者都设上才能让左侧和底部的进度条外观一致。 */
-.custom-scrollbar::-webkit-scrollbar {
+   滚动条的高度，两者都设上才能让左侧和底部的进度条外观一致。
+   textarea 一并纳入选择器：多行输入框天生会冒出原生粗滚动条，靠逐个记着加
+   .custom-scrollbar 必然漏（已踩：锦囊妙计记录备注），从源头统一，新 textarea
+   自动一致、不用再逐个加类。 */
+.custom-scrollbar::-webkit-scrollbar,
+textarea::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
+.custom-scrollbar::-webkit-scrollbar-track,
+textarea::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
+.custom-scrollbar::-webkit-scrollbar-thumb,
+textarea::-webkit-scrollbar-thumb {
   background: #353535;
   border-radius: 2px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-corner {
+.custom-scrollbar::-webkit-scrollbar-corner,
+textarea::-webkit-scrollbar-corner {
   background: transparent;
 }
 
