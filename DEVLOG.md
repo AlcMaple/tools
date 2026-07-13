@@ -9,6 +9,35 @@
 **流程**：
 - Git 提交规范对齐仓库里实际的提交历史（`type(scope): 中文描述`，无 AI 署名——用 `git log` 核对过近期提交）
 
+## 妙语库
+
+### 2026-07-13 fix: 妙语库进页面无提示「云端有更新」
+
+**效果**：
+
+1. 别的设备上传后,这台设备一进「妙语库」页,同步条就**主动**显示「云端有更新」;本地有没传的改动显示「本地未上传」,两边都改显示「本地与云端都有变化」——配色/文案跟追番、锦囊妙计一模一样。之前只有点上传/拉取时才知道云端状态。
+2. 冲突判定沿用同一套:上传时云端 rev 比上次同步新 / 拉取时本地有未推送改动 → 二次确认才覆盖。
+
+**数据 / 状态流**：
+
+![妙语库同步状态流](docs/devlog-assets/miaoyu-sync-state.svg)
+
+**关键代码**：
+
+进页面后台 pull 一次读 `_rev` → `remoteRev`,`cloudNewer = remoteRev > lastSyncedRev`;push / pull 后把 `remoteRev` 和 `lastSyncedRev` 一起改成新值,自己刚同步不误报。
+
+```tsx
+// pages/MiaoyuLibrary.tsx
+useEffect(() => {
+  window.webdavApi.pull('miaoyu')
+    .then((s) => setRemoteRev(parseRemoteBlob(s).rev))
+    .catch(() => {})            // 未配置 / 无远端 / 网络 → 静默
+}, [])
+const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
+```
+
+这一探测拉的是整份 blob（含图片 base64、体积可能不小）—— 只进页面探一次、不轮询,是为与另两处一致的主动提示而接受的代价（推翻了原来"太重不探测"的注释）。
+
 ## 在线观看
 
 ### 2026-07-13 style: 优化自定义源播放页样式结构
