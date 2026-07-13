@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* MD3 色彩 token —— 与 app 的 src/renderer/src/index.css 一致（:root 亮色，.dark 暗色）。
+   网页版默认走暗色（index.html 的 <html class="dark">），和 app 主观感一致。 */
+@layer base {
+  :root {
+    --color-on-surface: 25 28 29;
+    --color-error: 186 26 26;
+    --color-surface-container: 237 238 239;
+    --color-on-background: 28 27 27;
+    --color-primary: 148 70 79;
+    --color-on-error: 255 255 255;
+    --color-error-container: 255 218 214;
+    --color-on-primary: 255 255 255;
+    --color-on-surface-variant: 82 67 68;
+    --color-tertiary: 22 108 69;
+    --color-surface-bright: 248 249 250;
+    --color-surface-dim: 222 216 217;
+    --color-on-primary-container: 62 4 16;
+    --color-primary-container: 240 145 153;
+    --color-surface-container-high: 227 228 229;
+    --color-background: 248 249 250;
+    --color-surface: 248 249 250;
+    --color-on-error-container: 65 0 2;
+    --color-surface-container-low: 243 244 245;
+    --color-secondary: 88 96 98;
+    --color-surface-container-lowest: 255 255 255;
+    --color-surface-container-highest: 223 223 224;
+    --color-outline-variant: 217 193 193;
+    --color-outline: 132 115 116;
+  }
+
+  .dark {
+    --color-on-surface: 226 226 226;
+    --color-error: 255 180 171;
+    --color-surface-container: 31 31 31;
+    --color-on-background: 226 226 226;
+    --color-primary: 255 179 184;
+    --color-on-error: 105 0 5;
+    --color-error-container: 147 0 10;
+    --color-on-primary: 90 25 35;
+    --color-on-surface-variant: 217 193 193;
+    --color-tertiary: 200 198 198;
+    --color-surface-bright: 57 57 57;
+    --color-surface-dim: 19 19 19;
+    --color-on-primary-container: 110 41 50;
+    --color-primary-container: 240 145 153;
+    --color-surface-container-high: 42 42 42;
+    --color-background: 19 19 19;
+    --color-surface: 19 19 19;
+    --color-on-error-container: 255 218 214;
+    --color-surface-container-low: 27 27 27;
+    --color-secondary: 170 199 255;
+    --color-surface-container-lowest: 14 14 14;
+    --color-surface-container-highest: 53 53 53;
+    --color-outline-variant: 84 67 67;
+    --color-outline: 161 140 140;
+  }
+}
+
+/* 滚动条统一 4px —— 与 app 一致（见 AI_GUIDELINES「UI/样式」滚动条一致性）。 */
+.custom-scrollbar::-webkit-scrollbar,
+textarea::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track,
+textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb,
+textarea::-webkit-scrollbar-thumb {
+  background: #353535;
+  border-radius: 2px;
+}
+.custom-scrollbar::-webkit-scrollbar-corner,
+textarea::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: rgb(var(--color-background));
+  color: rgb(var(--color-on-surface));
+}
