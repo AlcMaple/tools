@@ -9,6 +9,40 @@
 **流程**：
 - Git 提交规范对齐仓库里实际的提交历史（`type(scope): 中文描述`，无 AI 署名——用 `git log` 核对过近期提交）
 
+## 网页版
+
+### 2026-07-15 feat(web): 新增网页版 - 番剧周期表
+
+**效果**：
+
+1. 新增 `web/` 子项目 = 网页版（Vite + React + Tailwind 前端 + Hono 后端），**同仓库、结构隔离**：自带独立 `package.json` / `node_modules`，根 `package.json` 一行不动，app 的 tsconfig / electron-vite / electron-builder 都扫不到它 → 对 app 零影响。开发 `cd web && npm run dev`（app 仍是根目录 `npm run dev`，两者不同目录 / 不同运行时，不会混）。
+2. 首个功能 **番剧周期表** 端到端跑通：前端 → Hono `/api/calendar` → 抓 `api.bgm.tv/calendar` → 渲染。设计**照搬 app 的 AnimeCalendar**（MD3 色 token / Inter+Space Grotesk 字体 / 3:4 海报卡 / `<1200px` 切「选天 + 多列网格」响应式）；图标改**内联 SVG**（弃 material-symbols 的 3.9MB 字体 —— 网页版按网络下载算这 3.9MB 太亏，app 本地读则无所谓）。
+3. 抓取逻辑从 app `src/main/bgm` **拷来、只换传输层**（Electron `net` → `fetch`），app 侧零改动（见 `docs/ideas/012-网页版.md`）。
+4. 服务器 / 部署定**海外香港 CN2 VPS**（阿里云大陆机实测 `curl` BGM 超时、够不着 → 走海外）；后端 Hono 一套代码本地 / Vercel / VPS 通吃（`server/node.ts` = `@hono/node-server` 服务 `dist` + `/api` 的生产入口）。
+
+**关键代码**：
+
+封面必须走服务器代理 —— **BGM 图床 `lain.bgm.tv` 国内被墙**，浏览器直连拿不到（国内免魔法用户封面会全裂）；由海外服务器代取，只放行 `bgm.tv` 防 SSRF，并取 `common` 小图（937KB → 11KB，省 6M 小机带宽）：
+
+```ts
+// server/index.ts
+const COVER_HOST_RE = /(^|\.)bgm\.tv$/
+app.get('/api/cover', async (c) => {
+  const url = new URL(c.req.query('u')!)
+  if (url.protocol !== 'https:' || !COVER_HOST_RE.test(url.hostname)) return c.text('forbidden', 403)
+  const up = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) })
+  c.header('Cache-Control', 'public, max-age=2592000, immutable')
+  return c.body(up.body)
+})
+```
+
+传输层可挂代理 —— Node 的 `fetch`（undici）默认**不读系统代理**，跟 app 当年 Node `https` 直连 fake-ip 黑洞是同一个坑；`EnvHttpProxyAgent` 认 `HTTPS_PROXY` 环境变量（本地 Clash 非 TUN 时用得上，香港机 / Vercel 没这变量 → 直连）：
+
+```ts
+// server/http.ts
+setGlobalDispatcher(new EnvHttpProxyAgent())
+```
+
 ## 妙语库
 
 ### 2026-07-13 fix: 妙语库进页面无提示「云端有更新」
@@ -603,3 +637,4 @@ if (!html.includes('/logout')) setBgmCookie('') // 页面上没有"退出"入口
 const token = getBgmToken()
 if (token) headers['Authorization'] = `Bearer ${token}`
 ```
+

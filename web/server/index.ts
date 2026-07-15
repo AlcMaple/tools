@@ -22,4 +22,35 @@ app.get('/api/calendar', async (c) => {
   }
 })
 
+// 封面代理 —— BGM（含图床 lain.bgm.tv）在国内被墙，国内免魔法用户的浏览器直连拿不到封面
+// （实测阿里云大陆机 curl BGM 超时）。由海外服务器代取再回传。**只允许 BGM 图床**，避免变成
+// 开放代理 / SSRF。封面 URL 自带内容 hash、不变 → 长缓存，浏览器只回源一次。
+const COVER_HOST_RE = /(^|\.)bgm\.tv$/
+
+app.get('/api/cover', async (c) => {
+  const u = c.req.query('u')
+  if (!u) return c.text('missing u', 400)
+  let url: URL
+  try {
+    url = new URL(u)
+  } catch {
+    return c.text('bad url', 400)
+  }
+  if (url.protocol !== 'https:' || !COVER_HOST_RE.test(url.hostname)) {
+    return c.text('forbidden host', 403)
+  }
+  try {
+    const upstream = await fetch(url.toString(), {
+      headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!upstream.ok || !upstream.body) return c.text('upstream error', 502)
+    c.header('Content-Type', upstream.headers.get('content-type') ?? 'image/jpeg')
+    c.header('Cache-Control', 'public, max-age=2592000, immutable')
+    return c.body(upstream.body)
+  } catch {
+    return c.text('fetch failed', 502)
+  }
+})
+
 export default app
