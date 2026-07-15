@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 440" font-family="-apple-system,Segoe UI,Roboto,PingFang SC,Microsoft YaHei,sans-serif">
+  <defs>
+    <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6b6b70"/>
+    </marker>
+    <marker id="ahp" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#94464f"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="778" height="438" rx="10" fill="#fbfafc" stroke="#e5e0e3"/>
+
+  <!-- 生命线头 -->
+  <g fill="#ffffff" stroke="#d9d1d4">
+    <rect x="70" y="20" width="130" height="34" rx="6"/>
+    <rect x="330" y="20" width="150" height="34" rx="6"/>
+    <rect x="610" y="20" width="120" height="34" rx="6"/>
+  </g>
+  <g fill="#2a2a2e" font-size="14" font-weight="700" text-anchor="middle">
+    <text x="135" y="42">浏览器</text>
+    <text x="405" y="42">Hono 后端</text>
+    <text x="670" y="42">SQLite</text>
+  </g>
+  <!-- 生命线 -->
+  <g stroke="#d9d1d4" stroke-dasharray="4 4">
+    <line x1="135" y1="54" x2="135" y2="410"/>
+    <line x1="405" y1="54" x2="405" y2="410"/>
+    <line x1="670" y1="54" x2="670" y2="410"/>
+  </g>
+
+  <!-- 分组标签 -->
+  <g font-size="11" font-weight="700" text-anchor="middle">
+    <rect x="18" y="78" width="34" height="52" rx="5" fill="#94464f" opacity="0.12"/>
+    <text x="35" y="98" fill="#94464f">注</text><text x="35" y="112" fill="#94464f">册</text><text x="35" y="126" fill="#94464f">登</text>
+    <rect x="18" y="250" width="34" height="52" rx="5" fill="#166c45" opacity="0.12"/>
+    <text x="35" y="270" fill="#166c45">保</text><text x="35" y="284" fill="#166c45">持</text><text x="35" y="298" fill="#166c45">态</text>
+    <rect x="18" y="358" width="34" height="34" rx="5" fill="#585862" opacity="0.12"/>
+    <text x="35" y="380" fill="#585862">登出</text>
+  </g>
+
+  <!-- 步骤 -->
+  <g font-size="12.5" fill="#404046">
+    <!-- 1 -->
+    <line x1="135" y1="92" x2="400" y2="92" stroke="#6b6b70" stroke-width="1.4" marker-end="url(#ah)"/>
+    <text x="140" y="86">POST /register ｜ /login  {用户名, 密码, 确认}</text>
+    <!-- 2 -->
+    <line x1="405" y1="128" x2="665" y2="128" stroke="#6b6b70" stroke-width="1.4" marker-end="url(#ah)"/>
+    <text x="410" y="122">查用户名 / 插入（scrypt 存 salt:hash）</text>
+    <!-- 3 -->
+    <line x1="670" y1="162" x2="410" y2="162" stroke="#a9a1a4" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#ah)"/>
+    <text x="410" y="156" fill="#7a7a80">存量 hash → 定时安全比较 / 新 uid</text>
+    <!-- 4 accent: Set-Cookie -->
+    <line x1="400" y1="200" x2="140" y2="200" stroke="#94464f" stroke-width="1.8" marker-end="url(#ahp)"/>
+    <text x="145" y="194" fill="#94464f" font-weight="700">200 + Set-Cookie mt_session（JWT, httpOnly, 30 天）</text>
+    <rect x="70" y="212" width="130" height="24" rx="5" fill="#94464f" opacity="0.1"/>
+    <text x="135" y="228" text-anchor="middle" fill="#94464f" font-weight="700" font-size="11.5">浏览器持有会话 cookie</text>
+
+    <!-- 5 /me -->
+    <line x1="135" y1="272" x2="400" y2="272" stroke="#6b6b70" stroke-width="1.4" marker-end="url(#ah)"/>
+    <text x="140" y="266">GET /me（自动带 cookie）— 刷新 / 换设备探登录态</text>
+    <!-- 6 -->
+    <line x1="400" y1="308" x2="140" y2="308" stroke="#6b6b70" stroke-width="1.4" marker-end="url(#ah)"/>
+    <text x="145" y="302">verify JWT → {username}</text>
+    <rect x="470" y="296" width="250" height="24" rx="5" fill="#166c45" opacity="0.1"/>
+    <text x="595" y="312" text-anchor="middle" fill="#166c45" font-weight="700" font-size="11.5">右上角显示 用户名 + 退出</text>
+
+    <!-- 7 logout -->
+    <line x1="135" y1="378" x2="400" y2="378" stroke="#6b6b70" stroke-width="1.4" marker-end="url(#ah)"/>
+    <text x="140" y="372">POST /logout → 清 cookie → 回未登录</text>
+  </g>
+</svg>

@@ -11,6 +11,33 @@
 
 ## 网页版
 
+### 2026-07-15 feat(web): 新增注册 / 登录
+
+**效果**：
+
+1. 网页版加**开放注册 + 登录**：注册（用户名 + 密码 + 确认密码）/ 登录（用户名 + 密码）/ 登出；会话是 httpOnly 签名 cookie，刷新 / 换设备自动保持登录态。数据落**本地 SQLite**（`better-sqlite3`），用户名大小写不敏感唯一，密码 **scrypt** 哈希（Node 内置，不加依赖）。
+2. 登录入口**融入周历页右上角**：未登录 = 「登录 / 注册」按钮 → 弹窗（压在暗化周历上、MD3 卡片、登录 / 注册分段切换）；已登录 = 用户名 chip + 退出。**周历本身公开**，登录只是附加层（app 版没有账号，这是网页版独有）。
+
+![注册 / 登录会话流](docs/devlog-assets/web-auth-flow.svg)
+
+**关键代码**：
+
+密码 scrypt 存 `salt:hash`、校验走定时安全比较（防时序侧信道）；会话不建 session 表，直接签 JWT 进 httpOnly cookie：
+
+```ts
+// server/auth.ts
+async function hashPassword(pw: string) {
+  const salt = randomBytes(16)
+  const derived = (await scryptAsync(pw, salt, 64)) as Buffer
+  return `${salt.toString('hex')}:${derived.toString('hex')}` // 存 salt:hash
+}
+// 登录 / 注册成功 → 签发会话 cookie
+const token = await sign({ uid, username, exp }, SECRET, 'HS256')
+setCookie(c, 'mt_session', token, { httpOnly: true, secure: PROD, sameSite: 'Lax', maxAge: 30 * 86400 })
+```
+
+DB 文件位置有部署铁律：必须放 `/opt/web` 之外（部署一条龙 `rm -rf /opt/web` 会清空），生产走 env `DATA_DIR=/opt/mapletools-data`、dev 落 `web/data/`；上线还要设 `AUTH_SECRET`（JWT 密钥）。详见 `docs/ideas/012-网页版.md`。
+
 ### 2026-07-15 fix(web): 修复封面无法显示问题
 
 **效果**：

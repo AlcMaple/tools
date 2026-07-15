@@ -3,7 +3,16 @@ import type { CSSProperties } from 'react'
 // 内联 SVG 图标 —— 替代 material-symbols 字体。网页版只用到这几个图标，为它们拉 3.9MB
 // 变体字体在国内（可能挂代理的慢连接）上得不偿失，直接内联对应的 Material 图标路径，
 // 观感与 app 一致、体积近乎为零、也不依赖任何字体 CDN（Google Fonts 国内被墙）。
-type IconName = 'calendar_month' | 'refresh' | 'image' | 'open_in_new' | 'event_busy' | 'error'
+type IconName =
+  | 'calendar_month'
+  | 'refresh'
+  | 'image'
+  | 'open_in_new'
+  | 'event_busy'
+  | 'error'
+  | 'person'
+  | 'logout'
+  | 'close'
 
 const PATHS: Record<IconName, string> = {
   calendar_month:
@@ -18,6 +27,12 @@ const PATHS: Record<IconName, string> = {
     'M9.31 17l2.44-2.44L14.19 17l1.06-1.06-2.44-2.44 2.44-2.44L14.19 10l-2.44 2.44L9.31 10l-1.06 1.06 2.44 2.44-2.44 2.44L9.31 17zM19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z',
   error:
     'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z',
+  person:
+    'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+  logout:
+    'M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z',
+  close:
+    'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
 }
 
 export function Icon({
