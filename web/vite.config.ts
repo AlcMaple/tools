@@ -14,4 +14,9 @@ export default defineConfig({
       exclude: [/^(?!\/api\/).*/],
     }),
   ],
+  // better-sqlite3 是原生模块（.node），Vite SSR 不能把它当普通 JS 打包 —— 标 external
+  // 让 dev-server 直接 require 原生二进制，否则 /api/auth 一被命中就崩。
+  ssr: {
+    external: ['better-sqlite3'],
+  },
 })

@@ -3,6 +3,9 @@ import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
 import { coverUrl, fetchCalendar } from './api'
 import { useIsCompact } from './useMediaQuery'
 import { Icon, Spinner } from './Icon'
+import { auth } from './auth'
+import { AuthControl } from './AuthControl'
+import { AuthModal, type AuthMode } from './AuthModal'
 
 // 设计对齐 app 的 src/renderer/src/pages/AnimeCalendar.tsx：
 //   - 桌面（≥1200px）：7 列整周一览，每列一个星期的海报卡堆叠
@@ -24,6 +27,8 @@ export default function App(): JSX.Element {
   const [refreshing, setRefreshing] = useState(false)
   const isCompact = useIsCompact()
   const [selectedDay, setSelectedDay] = useState(todayBgmId)
+  const [authOpen, setAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<AuthMode>('login')
 
   const load = (force = false): void => {
     if (force) setRefreshing(true)
@@ -39,21 +44,34 @@ export default function App(): JSX.Element {
   }
 
   useEffect(() => load(), [])
+  useEffect(() => void auth.init(), [])
+
+  const openAuth = (m: AuthMode): void => {
+    setAuthMode(m)
+    setAuthOpen(true)
+  }
 
   return (
     <div className="relative min-h-full bg-background">
-      {/* Hero —— 面包屑 + 标题 + 副标题，随内容滚走。 */}
+      {/* Hero —— 面包屑 + 标题 + 副标题 + 右上角登录入口，随内容滚走。 */}
       <div className="px-4 md:px-8 pt-6 pb-3">
-        <div className="mb-2 hidden items-center gap-2 font-label text-xs uppercase tracking-widest text-outline md:flex">
-          <Icon name="calendar_month" size={14} />
-          <span>Anime</span>
-          <span className="text-outline-variant">/</span>
-          <span className="font-bold text-on-surface">番剧周历</span>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="mb-2 hidden items-center gap-2 font-label text-xs uppercase tracking-widest text-outline md:flex">
+              <Icon name="calendar_month" size={14} />
+              <span>Anime</span>
+              <span className="text-outline-variant">/</span>
+              <span className="font-bold text-on-surface">番剧周历</span>
+            </div>
+            <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">番剧周历</h1>
+            <p className="mt-1 hidden font-label text-sm text-on-surface-variant/80 md:block">
+              本季正在播出，按星期排列。来源 Bangumi · 14 天缓存。
+            </p>
+          </div>
+          <div className="shrink-0 pt-1">
+            <AuthControl onOpen={() => openAuth('login')} />
+          </div>
         </div>
-        <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">番剧周历</h1>
-        <p className="mt-1 hidden font-label text-sm text-on-surface-variant/80 md:block">
-          本季正在播出，按星期排列。来源 Bangumi · 14 天缓存。
-        </p>
       </div>
 
       {/* 置顶栏：缓存时间 + 刷新 + 周几选择（桌面 chip 行 / 精简选天条）。 */}
@@ -95,6 +113,8 @@ export default function App(): JSX.Element {
         ) : (
           <CalendarGrid result={result} />
         ))}
+
+      <AuthModal open={authOpen} mode={authMode} onMode={setAuthMode} onClose={() => setAuthOpen(false)} />
     </div>
   )
 }
