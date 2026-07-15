@@ -23,6 +23,11 @@ export interface CalendarResult {
   fromCache: boolean
 }
 
+// 封面走后端代理 —— BGM 图床国内被墙，浏览器不能直连（见 server/index.ts 的 /api/cover）。
+export function coverUrl(raw: string): string {
+  return raw ? `/api/cover?u=${encodeURIComponent(raw)}` : ''
+}
+
 export async function fetchCalendar(force = false): Promise<CalendarResult> {
   const res = await fetch(`/api/calendar${force ? '?force=1' : ''}`)
   if (!res.ok) {
