@@ -11,6 +11,33 @@
 
 ## 网页版
 
+### 2026-07-15 fix(web): 修复封面无法显示问题
+
+**效果**：
+
+封面代理从「查询参数带完整图床 URL」（`/api/cover?u=https://lain.bgm.tv/...`）改成**路径式** `/api/cover/pic/...`：前端把图床 URL 的路径拼到 `/api/cover` 后，host 由服务器写死 `lain.bgm.tv`、只放行 `/pic/`。封面 URL 里**不出现被墙域名**，国内免魔法访问时封面也能正常显示；host 写死顺带把 SSRF 面堵死。（查询参数版为什么在国内失败，见 `docs/ideas/012-网页版.md` 的「部署纪要」。）
+
+**关键代码**：
+
+```ts
+// server/index.ts
+app.get('/api/cover/*', async (c) => {
+  const path = c.req.path.replace(/^\/api\/cover/, '')   // /pic/cover/c/48/4a/xxx.jpg
+  if (!path.startsWith('/pic/')) return c.text('forbidden', 403)
+  const up = await fetch(`https://lain.bgm.tv${path}`, { signal: AbortSignal.timeout(15000) })
+  c.header('Cache-Control', 'public, max-age=2592000, immutable')
+  return c.body(up.body)
+})
+```
+
+```tsx
+// src/api.ts —— 前端把图床 URL 重写成不含 bgm.tv 的路径
+export function coverUrl(raw: string): string {
+  const m = raw.match(/^https?:\/\/[^/]+(\/.*)$/)
+  return m ? `/api/cover${m[1]}` : ''
+}
+```
+
 ### 2026-07-15 feat(web): 新增网页版 - 番剧周期表
 
 **效果**：
