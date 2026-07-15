@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
-import { fetchCalendar } from './api'
+import { coverUrl, fetchCalendar } from './api'
 import { useIsCompact } from './useMediaQuery'
 import { Icon, Spinner } from './Icon'
 
@@ -213,7 +213,7 @@ function CalendarCard({ item }: { item: CalendarItem }): JSX.Element {
       <div className="relative aspect-[3/4]">
         {item.cover ? (
           <img
-            src={item.cover}
+            src={coverUrl(item.cover)}
             alt={displayTitle}
             loading="lazy"
             decoding="async"

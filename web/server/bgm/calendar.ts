@@ -49,7 +49,9 @@ function parseCalendar(raw: unknown): CalendarWeekday[] {
     const items: CalendarItem[] = itemsRaw.map((iRaw) => {
       const i = iRaw as Record<string, unknown>
       const images = (i.images as Record<string, string>) ?? {}
-      const cover = images.large || images.common || images.medium || ''
+      // 网页版封面走服务器代理，优先取较小的 common（≈200px，卡片够清晰）而非 large（近 1MB），
+      // 大幅省代理带宽（尤其 6Mbps 小机）。app 那边用 large 是本地缓存、不在乎。
+      const cover = images.common || images.medium || images.grid || images.large || ''
       const rating = (i.rating as Record<string, unknown>) ?? {}
       return {
         id: typeof i.id === 'number' ? i.id : 0,
