@@ -493,14 +493,6 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   query: string
   onClearQuery: () => void
   /**
-   * When true, the filtered group list is sorted lexicographically by the
-   * (joined) defense title (zh-CN locale) instead of by `updatedAt` descending.
-   * Character order **within** a single defense lineup is always preserved as
-   * the user originally typed it — this prop only affects ordering *between*
-   * groups in the rendered list.
-   */
-  sortGroupsByTitle?: boolean
-  /**
    * When true, the import button is hidden. JJC reuses HomeworkView but has
    * no JSON import path of its own.
    */
@@ -513,7 +505,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   attackOptional?: boolean
   /** 打开「清理旧作业」弹窗（全局，由 HomeworkLookup 持有）。传了才渲染清理按钮。 */
   onCleanup?: () => void
-}>(function HomeworkView({ data, setData, query, onClearQuery, sortGroupsByTitle = false, hideImport = false, attackOptional = false, onCleanup }, ref) {
+}>(function HomeworkView({ data, setData, query, onClearQuery, hideImport = false, attackOptional = false, onCleanup }, ref) {
   // 初始就折叠除第一组外的所有组。之前初值是空 Set（=全展开），靠下面的
   // useEffect 在**首帧之后**才折叠 —— 于是首帧把全部组的进攻行都渲染了一遍,
   // 这正是切到本页卡顿的根源。放进初始化器让首帧就只渲染第一组的进攻行。
@@ -559,17 +551,10 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 组间按 updatedAt 降序（最近改动的排最前）。阵容内部的角色顺序不受影响。
   const filtered = data
     .filter(d => matchesDefense(d, query))
-    .sort((a, b) => {
-      if (sortGroupsByTitle) {
-        // Lexicographic by defense title (zh-CN locale → pinyin-aware ordering).
-        // Character order **within** each lineup is left untouched — this only
-        // controls how the groups are ordered relative to each other.
-        return a.defense.join('、').localeCompare(b.defense.join('、'), 'zh-CN')
-      }
-      return a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0
-    })
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
 
   const totalAttacks = filtered.reduce((s, d) => s + d.attacks.length, 0)
 

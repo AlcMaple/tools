@@ -616,7 +616,6 @@ export default function HomeworkLookup(): JSX.Element {
             setData={setJjcData}
             query={debouncedQuery}
             onClearQuery={clearQuery}
-            sortGroupsByTitle
             hideImport
             attackOptional
             onCleanup={() => setCleanupOpen(true)}
