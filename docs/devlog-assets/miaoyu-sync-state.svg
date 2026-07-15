@@ -1,0 +1,62 @@
+<svg viewBox="0 0 900 560" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6873"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2E9E63"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="560" fill="#ffffff"/>
+  <text x="450" y="38" text-anchor="middle" font-size="18" font-weight="700" fill="#16202b">妙语库怎么知道「云端有更新」—— 其实就是比一个版本号</text>
+  <text x="450" y="63" text-anchor="middle" font-size="12.5" fill="#6b7783">每上传一次，云端版本号就 +1。本机记着「我上次同步到几号」，进页面偷看云端现在几号 —— 比我大，就是别人传过新的。</text>
+
+  <!-- ── 场景:一台设备 偷看 云端 ── -->
+  <!-- 你这台设备 -->
+  <rect x="70" y="108" width="250" height="112" rx="12" fill="#F1F4F7" stroke="#C3CDD7" stroke-width="1.4"/>
+  <text x="195" y="140" text-anchor="middle" font-size="14" font-weight="700" fill="#3a4650">你这台设备</text>
+  <text x="195" y="170" text-anchor="middle" font-size="11.5" fill="#68727d">我上次同步到</text>
+  <text x="195" y="202" text-anchor="middle" font-size="24" font-weight="800" fill="#3a4650">第 5 号</text>
+
+  <!-- 云端 -->
+  <rect x="580" y="108" width="250" height="112" rx="12" fill="#E9F1FE" stroke="#4A80D6" stroke-width="1.4"/>
+  <text x="705" y="140" text-anchor="middle" font-size="14" font-weight="700" fill="#2E5AAC">云端 miaoyu.json</text>
+  <text x="705" y="170" text-anchor="middle" font-size="11.5" fill="#5573a0">现在是</text>
+  <text x="705" y="202" text-anchor="middle" font-size="24" font-weight="800" fill="#2E5AAC">第 6 号</text>
+
+  <!-- 偷看箭头 -->
+  <text x="450" y="150" text-anchor="middle" font-size="11.5" fill="#5b6873">进页面 → 偷看一眼版本号</text>
+  <text x="450" y="168" text-anchor="middle" font-size="10.5" fill="#98a4b0">（只读号，不下载内容）</text>
+  <line x1="325" y1="176" x2="575" y2="176" stroke="#5b6873" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="705" y="242" text-anchor="middle" font-size="10.5" fill="#8a97a3">别的设备上传过一次（5 → 6）</text>
+
+  <!-- 比一比 → 结果 -->
+  <line x1="195" y1="220" x2="330" y2="272" stroke="#2E9E63" stroke-width="1.6" marker-end="url(#ag)"/>
+  <line x1="705" y1="252" x2="570" y2="272" stroke="#2E9E63" stroke-width="1.6" marker-end="url(#ag)"/>
+  <rect x="300" y="276" width="300" height="52" rx="26" fill="#E7F6EE" stroke="#2E9E63" stroke-width="1.6"/>
+  <text x="450" y="308" text-anchor="middle" font-size="15" font-weight="700" fill="#1E7A49">6 大于 5 → 提示「云端有更新」</text>
+
+  <!-- ── 四种提示 ── -->
+  <line x1="70" y1="360" x2="830" y2="360" stroke="#E3E8ED" stroke-width="1"/>
+  <text x="70" y="384" font-size="12.5" font-weight="700" fill="#7d8894">同步条会显示哪一种，就看两件事：①云端号比我大吗　②我本地改过还没传吗</text>
+
+  <circle cx="88" cy="411" r="6" fill="#BAC4CE"/>
+  <text x="106" y="416" font-size="13.5" font-weight="700" fill="#4a5762">已同步</text>
+  <text x="270" y="416" font-size="12" fill="#68727d">云端和本地都没新变化</text>
+
+  <circle cx="88" cy="445" r="6" fill="#2E9E63"/>
+  <text x="106" y="450" font-size="13.5" font-weight="700" fill="#1E7A49">云端有更新</text>
+  <text x="270" y="450" font-size="12" fill="#68727d">云端号比我大（别的设备上传过）—— 上面演的就是这种</text>
+
+  <circle cx="88" cy="479" r="6" fill="#D99A2B"/>
+  <text x="106" y="484" font-size="13.5" font-weight="700" fill="#9C6A15">本地未上传</text>
+  <text x="270" y="484" font-size="12" fill="#68727d">我在这台改了东西，还没上传</text>
+
+  <circle cx="88" cy="513" r="6" fill="#E05B5B"/>
+  <text x="106" y="518" font-size="13.5" font-weight="700" fill="#B23838">本地与云端都有变化</text>
+  <text x="270" y="518" font-size="12" fill="#68727d">上面两种同时发生</text>
+
+  <!-- 收尾一句 -->
+  <text x="70" y="548" font-size="11" fill="#98a4b0">上传 / 拉取后，把「我的号」对齐成云端最新号 → 回「已同步」；所以自己刚传的，不会被当成「云端有更新」。</text>
+</svg>

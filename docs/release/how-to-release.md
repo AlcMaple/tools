@@ -77,6 +77,29 @@ git push --tags
 
 ---
 
+## 构建成功、但最后「Create draft release」失败（Not Found）
+
+**现象**：两个 build job(Windows / macOS)全绿、包都造好了，只有汇总的 `release` job 挂在
+`Create draft release` 这步，注解报 `Not Found - .../releases/assets#update-a-release-asset`，
+往往十几秒就失败。（v0.12.0 / run#20 踩过一次。）
+
+**原因**：`softprops/action-gh-release` 的偶发抖动 —— 它先建草稿、紧接着传资产，GitHub API
+偶尔因同步延迟对刚建的 release 返回 404。**与代码 / 版本号 / workflow 无关**：`@v2` 解析到的
+action 版本和上次成功那次是同一份，唯一变量是时机。（那条 `Node.js 20 is deprecated` 是 warning，
+不是失败原因，忽略。）
+
+**修法（不用重打 tag、不用重新构建）**：
+
+1. 去 [Releases 页] 看有没有一个**残缺的 v0.12.x draft**——失败那次可能已建了半个草稿。有就
+   **Delete draft** 删掉（留着它，重跑会撞「资产已存在」再次 404）。
+2. 回到失败的那次 run → 右上角 **Re-run jobs → Re-run failed jobs**。只重跑 `release` job，
+   直接复用已造好的包(artifact 保留 7 天)，约 1 分钟。换个时机通常就过。
+
+**只有 re-run 仍反复失败**才是真回归，届时再动 workflow（把 `softprops/action-gh-release@v2`
+钉到确定可用的版本 / 加重试），别一上来就改。
+
+---
+
 ## 注意事项
 
 - `.npmrc` 里有国内镜像配置，CI 会在构建前自动清空它（见 workflow）。本地开发不受影响。

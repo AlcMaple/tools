@@ -9,7 +9,59 @@
 **流程**：
 - Git 提交规范对齐仓库里实际的提交历史（`type(scope): 中文描述`，无 AI 署名——用 `git log` 核对过近期提交）
 
+## 妙语库
+
+### 2026-07-13 fix: 妙语库进页面无提示「云端有更新」
+
+**效果**：
+
+1. 别的设备上传后,这台设备一进「妙语库」页,同步条就**主动**显示「云端有更新」;本地有没传的改动显示「本地未上传」,两边都改显示「本地与云端都有变化」——配色/文案跟追番、锦囊妙计一模一样。之前只有点上传/拉取时才知道云端状态。
+2. 冲突判定沿用同一套:上传时云端 rev 比上次同步新 / 拉取时本地有未推送改动 → 二次确认才覆盖。
+
+**数据 / 状态流**：
+
+![妙语库同步状态流](docs/devlog-assets/miaoyu-sync-state.svg)
+
+**关键代码**：
+
+进页面后台 pull 一次读 `_rev` → `remoteRev`,`cloudNewer = remoteRev > lastSyncedRev`;push / pull 后把 `remoteRev` 和 `lastSyncedRev` 一起改成新值,自己刚同步不误报。
+
+```tsx
+// pages/MiaoyuLibrary.tsx
+useEffect(() => {
+  window.webdavApi.pull('miaoyu')
+    .then((s) => setRemoteRev(parseRemoteBlob(s).rev))
+    .catch(() => {})            // 未配置 / 无远端 / 网络 → 静默
+}, [])
+const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
+```
+
+这一探测拉的是整份 blob（含图片 base64、体积可能不小）—— 只进页面探一次、不轮询,是为与另两处一致的主动提示而接受的代价（推翻了原来"太重不探测"的注释）。
+
 ## 在线观看
+
+### 2026-07-13 style: 优化自定义源播放页样式结构
+
+**效果**：
+
+1. **双滚动条的违和感没了**。自定义源(webview 嵌真实播放页)那页原先是「16:9 矮盒子里塞整张网页」——盒子外是 app 的页面滚动条,盒子里是网页自己的滚动条,鼠标压在 webview 上滚的永远是网页那条,想滚 app 那条得把鼠标挪到盒子和窗口之间的缝里。现在**整页固定高度、页面自身不滚动**,webview 吃掉标题/切换器下方的全部剩余高度,**只剩站点自己的一条滚动条**,且永远在鼠标底下。
+2. **应用内「铺满」按钮删了**。播放区右上角那个「铺满/退出」按钮连同它的 state、Esc 监听一并去掉——它做的是「webview 铺满窗口但显示整张网页(导航/广告位都在)」,不是用户要的「只剩视频画面」。
+3. **全屏 = 只剩视频画面、覆盖整扇窗**(对齐稀饭/Girigiri/B 站原生 `<video>` 全屏)。点站点播放器自己的全屏按钮:之前 webview 只在「盒子」里全屏、顶部 app chrome 还露着(用户实拍);现在铺满整窗,只剩视频。
+
+**关键代码/决策**：
+
+**全屏靠站点自己的按钮 + 监听 webview 全屏事件把容器铺满窗口**。根因:webview 内 `<video>` 请求 HTML5 全屏时窗口是全屏了,但 app 布局把 webview 钉在 `flex-1` 盒子里、顶部标题栏没让位,所以只在盒子里全屏。修法——
+
+```tsx
+// pages/OnlinePlayer.tsx
+const [embedFs, setEmbedFs] = useState(false)
+el.addEventListener('enter-html-full-screen', () => setEmbedFs(true))
+el.addEventListener('leave-html-full-screen', () => setEmbedFs(false))
+// 容器:平时 relative 盒子,全屏时整块 fixed inset-0 铺满窗口(webview 原地不动)
+<div className={embedFs ? 'fixed inset-0 z-[80] bg-black' : 'relative flex-1 min-h-0 …'}>
+```
+
+`enter-html-full-screen` / `leave-html-full-screen` 是 Electron `<webview>` 的 DOM 事件,由站点自己的全屏按钮(guest 调 `requestFullscreen`)触发;退出(站点按钮 / Esc)自动派发 leave,**不用自己接键盘**。只切容器 class、webview 元素原地不动 ⇒ **不重载、不丢播放进度**(与被删的旧「铺满」同一套「不 remount」手法,只是触发源从我们的按钮换成站点全屏事件)。
 
 ### 2026-07-11 feat: 自定义源新增应用内播放
 
