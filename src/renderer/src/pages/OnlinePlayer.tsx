@@ -275,16 +275,31 @@ export default function OnlinePlayer(): JSX.Element {
   const [biliLoggedIn, setBiliLoggedIn] = useState<boolean | null>(null)
   const [biliQrOpen, setBiliQrOpen] = useState(false)
   const [webviewKey, setWebviewKey] = useState(0)
-  // 自定义源(webview 嵌真实播放页)铺满窗口的沉浸态。离开 embed 自动收起,
-  // 免得残留的铺满态盖住切过去的别的源。
-  const [embedExpanded, setEmbedExpanded] = useState(false)
-  useEffect(() => { if (view.mode !== 'embed') setEmbedExpanded(false) }, [view.mode])
+  // 自定义源(webview 嵌真实播放页)进入「站点播放器自己的全屏」时,把 webview 容器
+  // 铺满整个窗口 —— 这样站点在 webview 内部对 <video> 请求的 HTML5 全屏(只剩视频画面)
+  // 才能覆盖整扇窗,和稀饭/Girigiri/B 站原生 <video> 全屏观感一致;否则 webview 只在
+  // 「标题/切换器下方的箱子」里全屏,顶部那排 app chrome 还露着(用户实拍反馈)。
+  //   - 由站点自己的全屏按钮驱动:webview 的 guest 请求 requestFullscreen 时,DOM 元素
+  //     派发 enter-html-full-screen / leave-html-full-screen(Electron webview 事件)。
+  //   - 只切容器 class(relative 盒子 ↔ fixed inset-0),webview 元素不换位置不重载,
+  //     不打断播放;Esc / 站点退出全屏都会派发 leave 事件收起,无需自己接键盘。
+  const [embedFs, setEmbedFs] = useState(false)
+  const [embedWebviewEl, setEmbedWebviewEl] = useState<HTMLElement | null>(null)
   useEffect(() => {
-    if (!embedExpanded) return
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setEmbedExpanded(false) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [embedExpanded])
+    const el = embedWebviewEl
+    if (!el) return
+    setEmbedFs(false) // 新挂载的 webview 一定不在全屏态,避免切源后残留铺满
+    const onEnter = (): void => setEmbedFs(true)
+    const onLeave = (): void => setEmbedFs(false)
+    el.addEventListener('enter-html-full-screen', onEnter)
+    el.addEventListener('leave-html-full-screen', onLeave)
+    return () => {
+      el.removeEventListener('enter-html-full-screen', onEnter)
+      el.removeEventListener('leave-html-full-screen', onLeave)
+    }
+  }, [embedWebviewEl])
+  // 离开 embed(切到内置源)时兜底收起,免得残留的全屏态盖住别的源
+  useEffect(() => { if (view.mode !== 'embed') setEmbedFs(false) }, [view.mode])
   // 选中的画质(B 站 DASH)。null = 还没选,加载完取该稿件最高的一档。
   // 换集**保留**用户选的档:切到没有该档的稿件时,load 完自动回落到最高档。
   const [qn, setQn] = useState<number | null>(null)
@@ -554,23 +569,148 @@ export default function OnlinePlayer(): JSX.Element {
   const title = track ? (track.titleCn || track.title) : ''
   const eps = data?.lines[lineIdx]?.eps ?? []
 
+  // ── 两种布局共用的片段(单一来源,内置源 / 嵌入页两处不各写一份) ─────────────────
+  // 返回 + 标题
+  const header = (
+    <div className="flex items-center gap-3 min-w-0">
+      <button
+        type="button"
+        onClick={() => navigate(-1)}
+        title="返回"
+        className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0"
+      >
+        <span className="material-symbols-outlined leading-none" style={{ fontSize: 20 }}>arrow_back</span>
+      </button>
+      <h1 className="text-lg md:text-2xl font-bold font-headline text-on-surface truncate">
+        {title || '在线观看'}
+      </h1>
+    </div>
+  )
+
+  // 多站切换:实线 = 已关联,虚线 + 放大镜 = 未关联(点开才搜)
+  const sourceSwitcher = (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mr-1">播放源</span>
+      {entries.map((e) => {
+        const sel = e.key === entry?.key
+        const bound = !!e.binding
+        return (
+          <button
+            key={e.key}
+            type="button"
+            onClick={() => setSelKey(e.key)}
+            title={bound ? (e.binding?.sourceTitle || e.label) : `${e.label} · 未关联,点击后在该站搜索并关联`}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border font-label text-[11px] font-bold tracking-wider transition-colors ${
+              sel
+                ? 'border-primary/40 bg-primary/15 text-primary'
+                : bound
+                  ? 'border-transparent bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                  : 'border-dashed border-outline-variant/40 bg-transparent text-on-surface-variant/50 hover:border-primary/40 hover:text-primary'
+            }`}
+          >
+            {!bound && <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>search</span>}
+            <span>{e.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  // B 站登录态提示条 —— 画质档位由登录态决定,自研播放 / 番剧 webview 都要提示
+  const biliAuthBar = needBiliAuth ? (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-on-surface-variant/70">
+      <span className="material-symbols-outlined leading-none shrink-0" style={{ fontSize: 14 }}>info</span>
+      <span className="font-label text-[11px] tracking-wider">
+        {biliLoggedIn ? 'B 站 · 已登录' : 'B 站 · 未登录最高只有 480P,登录后可选 1080P'}
+      </span>
+      {biliLoggedIn === false && (
+        // 下划线只加在文字上:整个按钮加 underline 的话,图标是字体字形,它的基线与
+        // 文字不同,下划线会画成高低两截(用户实拍)。
+        <button
+          type="button"
+          onClick={() => setBiliQrOpen(true)}
+          className="group ml-auto inline-flex items-center gap-1 text-primary font-label text-[11px] font-bold tracking-wider"
+        >
+          <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>qr_code_2</span>
+          <span className="group-hover:underline underline-offset-4">登录 B 站</span>
+        </button>
+      )}
+      {biliLoggedIn === true && (
+        <button
+          type="button"
+          onClick={handleBiliLogout}
+          className="ml-auto text-on-surface-variant/50 hover:text-on-surface font-label text-[11px] tracking-wider transition-colors"
+        >
+          退出
+        </button>
+      )}
+    </div>
+  ) : null
+
+  // 弹窗 + 自动关联轻提示
+  const overlays = (
+    <>
+      {biliQrOpen && (
+        <BiliLoginModal onClose={() => setBiliQrOpen(false)} onLoggedIn={() => handleBiliAuthChanged(true)} />
+      )}
+      {toastText && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-surface-container-high border border-outline-variant/20 px-4 py-3 shadow-2xl">
+          <span className="material-symbols-outlined text-primary leading-none" style={{ fontSize: 18 }}>link</span>
+          <span className="font-label text-xs text-on-surface">{toastText}</span>
+        </div>
+      )}
+    </>
+  )
+
+  // ── 自定义源(webview 嵌真实播放页):整页固定高度、页面自身不滚动 ──────────────
+  // webview 占满标题/切换器下方的全部剩余高度 —— 页面本身不再产生第二条滚动条,
+  // 只留站点自己的滚动条,彻底消除「应用滚动条 vs 网页滚动条」互相打架的违和感
+  // (原先 16:9 矮盒子里塞整张网页,两条滚动条并存,鼠标压在 webview 上滚的永远是
+  // 网页那条)。全屏交给站点播放器自己的全屏按钮(真·全屏),不再提供应用内「铺满」。
+  if (view.mode === 'embed') {
+    return (
+      <div className="flex h-full flex-col bg-background">
+        <div className="shrink-0 px-4 md:px-8 pt-4 pb-3 space-y-3">
+          {header}
+          {sourceSwitcher}
+          {biliAuthBar}
+          {!view.isBili && (
+            <p className="flex items-center gap-1.5 text-on-surface-variant/45">
+              <span className="material-symbols-outlined leading-none shrink-0" style={{ fontSize: 13 }}>public</span>
+              <span className="font-label text-[11px] tracking-wider">
+                网页版播放 · 剧集、画质都在站点页里;点播放器自带的全屏按钮即可全屏观看
+              </span>
+            </p>
+          )}
+        </div>
+        {/* B 站走 persist:bili 分区(与登录窗同分区同 UA,第一方 cookie);其他自定义站
+            用独立的 persist:webplay 分区,把不受信站点的 cookie/storage 与应用默认会话
+            隔开。webview 里站点页是顶层文档,不受 X-Frame-Options / 第三方 cookie 限制;
+            弹窗广告在主进程被拦死。平时占满剩余高度的盒子;站点触发全屏时整块铺满窗口
+            (embedFs),让内部 <video> 的全屏覆盖整扇窗,只剩视频画面。 */}
+        <div
+          className={embedFs
+            ? 'fixed inset-0 z-[80] bg-black'
+            : 'relative flex-1 min-h-0 mx-4 md:mx-8 mb-4 overflow-hidden rounded-xl bg-black border border-outline-variant/10'}
+        >
+          <webview
+            ref={setEmbedWebviewEl}
+            key={`${view.url}#${webviewKey}`}
+            src={view.url}
+            partition={view.isBili ? 'persist:bili' : 'persist:webplay'}
+            className="h-full w-full"
+          />
+        </div>
+        {overlays}
+      </div>
+    )
+  }
+
+  // ── 内置源(稀饭/Girigiri/嗷呜/B 站自研):16:9 播放区 + 下方集数网格,页面正常滚动 ──
   return (
     <div className="relative min-h-full bg-background">
       <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-6 space-y-5">
-        {/* 标题行:返回 + 动漫标题 */}
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            title="返回"
-            className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0"
-          >
-            <span className="material-symbols-outlined leading-none" style={{ fontSize: 20 }}>arrow_back</span>
-          </button>
-          <h1 className="text-lg md:text-2xl font-bold font-headline text-on-surface truncate">
-            {title || '在线观看'}
-          </h1>
-        </div>
+        {header}
 
         {!track ? (
           <div className="flex flex-col items-center gap-3 py-24 text-on-surface-variant/60">
@@ -579,154 +719,60 @@ export default function OnlinePlayer(): JSX.Element {
           </div>
         ) : (
           <>
-            {/* 播放器 —— embed(自定义源嵌真实播放页)单独一支:它能「铺满窗口」,
-                容器 class 在盒子/铺满间切换但 webview 保持挂载不重载(切走会丢进度)。 */}
-            {view.mode === 'embed' ? (
-              <div
-                className={embedExpanded
-                  ? 'fixed inset-0 z-[70] bg-black'
-                  : 'relative aspect-video w-full overflow-hidden rounded-xl bg-black'}
-              >
-                {/* B 站走 persist:bili 分区(与登录窗同分区同 UA,第一方 cookie);
-                    其他自定义站用独立的 persist:webplay 分区,把不受信站点的 cookie /
-                    storage 与应用默认会话隔开。webview 里站点页是顶层文档,不受
-                    X-Frame-Options / 第三方 cookie 限制;弹窗广告在主进程被拦死。 */}
-                <webview
-                  key={`${view.url}#${webviewKey}`}
-                  src={view.url}
-                  partition={view.isBili ? 'persist:bili' : 'persist:webplay'}
+            {/* 播放器 —— 16:9 播放区(video / dash / 内联搜索 / 各占位态)。
+                自定义源(webview 嵌真实页)走上面的固定高度早期 return,不到这里。 */}
+            <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+              {view.mode === 'video' && (
+                <video
+                  key={view.url}
+                  ref={videoRef}
+                  // HLS 由 hls.js 经 MSE 喂,不设 src;mp4 直链走同源流代理直接喂。
+                  src={view.isHls ? undefined : toMediaProxy(view.url)}
+                  controls
+                  autoPlay
                   className="h-full w-full"
+                  // HLS 的失败统一由 hls.js 的 fatal 事件兜底,别在这儿再触发一次换线路。
+                  onError={view.isHls ? undefined : handleVideoError}
                 />
-                <button
-                  type="button"
-                  onClick={() => setEmbedExpanded((v) => !v)}
-                  title={embedExpanded ? '退出铺满(Esc)' : '铺满窗口'}
-                  className="absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-lg bg-black/55 hover:bg-black/75 px-2.5 py-1.5 text-white/90 backdrop-blur transition-colors"
-                >
-                  <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>
-                    {embedExpanded ? 'close_fullscreen' : 'open_in_full'}
-                  </span>
-                  <span className="font-label text-[11px] font-bold tracking-wider">{embedExpanded ? '退出' : '铺满'}</span>
-                </button>
-              </div>
-            ) : (
-              <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
-                {view.mode === 'video' && (
-                  <video
-                    key={view.url}
-                    ref={videoRef}
-                    // HLS 由 hls.js 经 MSE 喂,不设 src;mp4 直链走同源流代理直接喂。
-                    src={view.isHls ? undefined : toMediaProxy(view.url)}
-                    controls
-                    autoPlay
-                    className="h-full w-full"
-                    // HLS 的失败统一由 hls.js 的 fatal 事件兜底,别在这儿再触发一次换线路。
-                    onError={view.isHls ? undefined : handleVideoError}
+              )}
+              {view.mode === 'dash' && (
+                // DASH 由 shaka 经 MSE 喂,不设 src、不挂 onError(失败走 shaka 的 error 事件)
+                <video ref={videoRef} controls autoPlay className="h-full w-full" />
+              )}
+              {view.mode === 'search' && entry?.builtin && track && (
+                <div className="flex h-full items-center justify-center overflow-y-auto p-4 md:p-6">
+                  <InlineSourceSearch
+                    key={entry.builtin}
+                    source={entry.builtin}
+                    bgmId={track.bgmId}
+                    initialKeyword={track.titleCn || track.title}
+                    aliases={track.aliases}
+                    onBound={(card) => setToastText(`已自动关联 ${entry.label} ·「${card.title}」,下次直接播放`)}
                   />
-                )}
-                {view.mode === 'dash' && (
-                  // DASH 由 shaka 经 MSE 喂,不设 src、不挂 onError(失败走 shaka 的 error 事件)
-                  <video ref={videoRef} controls autoPlay className="h-full w-full" />
-                )}
-                {view.mode === 'search' && entry?.builtin && track && (
-                  <div className="flex h-full items-center justify-center overflow-y-auto p-4 md:p-6">
-                    <InlineSourceSearch
-                      key={entry.builtin}
-                      source={entry.builtin}
-                      bgmId={track.bgmId}
-                      initialKeyword={track.titleCn || track.title}
-                      aliases={track.aliases}
-                      onBound={(card) => setToastText(`已自动关联 ${entry.label} ·「${card.title}」,下次直接播放`)}
-                    />
-                  </div>
-                )}
-                {view.mode === 'loading' && (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 text-on-surface-variant/70">
-                    <span className="material-symbols-outlined animate-spin" style={{ fontSize: 32 }}>progress_activity</span>
-                    <span className="font-label text-xs tracking-widest">解析播放地址中…</span>
-                  </div>
-                )}
-                {view.mode === 'none' && (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 text-on-surface-variant/50">
-                    <span className="material-symbols-outlined" style={{ fontSize: 40 }}>smart_display</span>
-                    <span className="font-label text-xs tracking-widest">选一集开始播放</span>
-                  </div>
-                )}
-                {view.mode === 'error' && (
-                  <div className="flex h-full items-center justify-center overflow-y-auto p-6">
-                    <ErrorPanel error={view.err} onRetry={retry} />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 自定义源(非 B 站)网页版提示 —— 集数列表 / 画质菜单都在站点页里 */}
-            {view.mode === 'embed' && !view.isBili && (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-on-surface-variant/70">
-                <span className="material-symbols-outlined leading-none shrink-0" style={{ fontSize: 14 }}>public</span>
-                <span className="font-label text-[11px] tracking-wider">
-                  网页版播放 · 剧集列表和画质用站点自己的,点右上角「铺满」全屏看
-                </span>
-              </div>
-            )}
-
-            {/* B 站登录态提示条 —— 画质档位由登录态决定,所以两种播放形态都要提示 */}
-            {needBiliAuth && (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-container px-3 py-2 text-on-surface-variant/70">
-                <span className="material-symbols-outlined leading-none shrink-0" style={{ fontSize: 14 }}>info</span>
-                <span className="font-label text-[11px] tracking-wider">
-                  {biliLoggedIn ? 'B 站 · 已登录' : 'B 站 · 未登录最高只有 480P,登录后可选 1080P'}
-                </span>
-                {biliLoggedIn === false && (
-                  // 下划线只加在文字上:整个按钮加 underline 的话,图标是字体字形,
-                  // 它的基线与文字不同,下划线会画成高低两截(用户实拍)。
-                  <button
-                    type="button"
-                    onClick={() => setBiliQrOpen(true)}
-                    className="group ml-auto inline-flex items-center gap-1 text-primary font-label text-[11px] font-bold tracking-wider"
-                  >
-                    <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>qr_code_2</span>
-                    <span className="group-hover:underline underline-offset-4">登录 B 站</span>
-                  </button>
-                )}
-                {biliLoggedIn === true && (
-                  <button
-                    type="button"
-                    onClick={handleBiliLogout}
-                    className="ml-auto text-on-surface-variant/50 hover:text-on-surface font-label text-[11px] tracking-wider transition-colors"
-                  >
-                    退出
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* 多站切换:实线 = 已关联,虚线 + 放大镜 = 未关联(点开才搜) */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mr-1">播放源</span>
-              {entries.map((e) => {
-                const sel = e.key === entry?.key
-                const bound = !!e.binding
-                return (
-                  <button
-                    key={e.key}
-                    type="button"
-                    onClick={() => setSelKey(e.key)}
-                    title={bound ? (e.binding?.sourceTitle || e.label) : `${e.label} · 未关联,点击后在该站搜索并关联`}
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border font-label text-[11px] font-bold tracking-wider transition-colors ${
-                      sel
-                        ? 'border-primary/40 bg-primary/15 text-primary'
-                        : bound
-                          ? 'border-transparent bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                          : 'border-dashed border-outline-variant/40 bg-transparent text-on-surface-variant/50 hover:border-primary/40 hover:text-primary'
-                    }`}
-                  >
-                    {!bound && <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>search</span>}
-                    <span>{e.label}</span>
-                  </button>
-                )
-              })}
+                </div>
+              )}
+              {view.mode === 'loading' && (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-on-surface-variant/70">
+                  <span className="material-symbols-outlined animate-spin" style={{ fontSize: 32 }}>progress_activity</span>
+                  <span className="font-label text-xs tracking-widest">解析播放地址中…</span>
+                </div>
+              )}
+              {view.mode === 'none' && (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-on-surface-variant/50">
+                  <span className="material-symbols-outlined" style={{ fontSize: 40 }}>smart_display</span>
+                  <span className="font-label text-xs tracking-widest">选一集开始播放</span>
+                </div>
+              )}
+              {view.mode === 'error' && (
+                <div className="flex h-full items-center justify-center overflow-y-auto p-6">
+                  <ErrorPanel error={view.err} onRetry={retry} />
+                </div>
+              )}
             </div>
+
+            {biliAuthBar}
+
+            {sourceSwitcher}
 
             {/* 画质(仅 B 站 DASH)。只列该稿件**真有**的档 —— 外链播放器那种「菜单里
                 摆着 1080P、点了没反应」的坑,这里靠 dash.video 与 accept_quality 求交避免。 */}
@@ -804,17 +850,7 @@ export default function OnlinePlayer(): JSX.Element {
         )}
       </div>
 
-      {biliQrOpen && (
-        <BiliLoginModal onClose={() => setBiliQrOpen(false)} onLoggedIn={() => handleBiliAuthChanged(true)} />
-      )}
-
-      {/* 自动关联轻提示 */}
-      {toastText && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-surface-container-high border border-outline-variant/20 px-4 py-3 shadow-2xl">
-          <span className="material-symbols-outlined text-primary leading-none" style={{ fontSize: 18 }}>link</span>
-          <span className="font-label text-xs text-on-surface">{toastText}</span>
-        </div>
-      )}
+      {overlays}
     </div>
   )
 }
