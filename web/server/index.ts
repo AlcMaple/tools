@@ -22,25 +22,16 @@ app.get('/api/calendar', async (c) => {
   }
 })
 
-// 封面代理 —— BGM（含图床 lain.bgm.tv）在国内被墙，国内免魔法用户的浏览器直连拿不到封面
-// （实测阿里云大陆机 curl BGM 超时）。由海外服务器代取再回传。**只允许 BGM 图床**，避免变成
-// 开放代理 / SSRF。封面 URL 自带内容 hash、不变 → 长缓存，浏览器只回源一次。
-const COVER_HOST_RE = /(^|\.)bgm\.tv$/
-
-app.get('/api/cover', async (c) => {
-  const u = c.req.query('u')
-  if (!u) return c.text('missing u', 400)
-  let url: URL
+// 封面代理 —— BGM 图床 lain.bgm.tv 在国内被墙，国内免魔法用户浏览器直连拿不到（实测大陆机 curl
+// BGM 超时）。由海外服务器代取再回传。**路径式**：前端把 `https://lain.bgm.tv/pic/...` 重写成
+// `/api/cover/pic/...`，URL 里**不出现 bgm.tv** —— 否则 HTTP 明文下 GFW 看到 `bgm.tv` 会把请求
+// RST（实测：手机端 /api/cover?u=…bgm.tv 全 499、随后整个 IP:80 被临时封）。host 写死 lain.bgm.tv、
+// 只放行 `/pic/` 前缀，杜绝 SSRF。封面 URL 自带内容 hash、不变 → 长缓存。
+app.get('/api/cover/*', async (c) => {
+  const path = c.req.path.replace(/^\/api\/cover/, '')
+  if (!path.startsWith('/pic/')) return c.text('forbidden', 403)
   try {
-    url = new URL(u)
-  } catch {
-    return c.text('bad url', 400)
-  }
-  if (url.protocol !== 'https:' || !COVER_HOST_RE.test(url.hostname)) {
-    return c.text('forbidden host', 403)
-  }
-  try {
-    const upstream = await fetch(url.toString(), {
+    const upstream = await fetch(`https://lain.bgm.tv${path}`, {
       headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
       signal: AbortSignal.timeout(15000),
     })

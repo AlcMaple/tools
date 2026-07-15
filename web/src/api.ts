@@ -24,8 +24,11 @@ export interface CalendarResult {
 }
 
 // 封面走后端代理 —— BGM 图床国内被墙，浏览器不能直连（见 server/index.ts 的 /api/cover）。
+// 路径式：`https://lain.bgm.tv/pic/...` → `/api/cover/pic/...`，URL 里不出现 bgm.tv，避免 HTTP
+// 明文下被 GFW 关键字 RST。
 export function coverUrl(raw: string): string {
-  return raw ? `/api/cover?u=${encodeURIComponent(raw)}` : ''
+  const m = raw.match(/^https?:\/\/[^/]+(\/.*)$/)
+  return m ? `/api/cover${m[1]}` : ''
 }
 
 export async function fetchCalendar(force = false): Promise<CalendarResult> {
