@@ -11,6 +11,46 @@
 
 ## 网页版
 
+### 2026-07-16 feat(web): 顶栏导航 + 设置页 + 找回密码
+
+**效果**：
+
+1. **顶栏导航**取代原来塞在周历页右上角的登录入口 —— app 是侧边栏（桌面应用的语言），网页的惯例是顶栏，这里不照搬 app。左边品牌 + 「番剧周历」，右边未登录 = 「登录 / 注册」，已登录 = 用户名 chip → 下拉（设置 / 退出）。周历页的面包屑一并去掉：顶栏已经指明在哪，再来一层是冗余。
+2. **设置页**（`#/settings`）：左栏身份卡 + 模块导航（个人信息 / 账号安全，「追番偏好 / 数据同步」占位待开发），右栏模块面板。加了 20 行 hash 路由 —— 只有两个页面，引 react-router 不划算，但纯 state 会让地址栏不变、设置页刷新就回周历也收藏不了。
+3. **找回密码**：账号 + 密保问题 + 答案 + 新密码。密保问题走**预设下拉**而不是自由填写 —— 自由填写找回时要一字不差重打一遍（没人记得住），按用户名把问题显示出来又等于泄露给任何知道你用户名的人；预设下拉两头都躲开。**问题和答案设置后都不回显**，只报「设没设」（问题本身也是秘密，泄露了等于告诉别人该去查什么）。答案跟密码同样走 scrypt 哈希、比对前 trim + 转小写。
+4. **账号安全设置**：新密码留空 = 只改密保。改密码和改密保**两条路都强制验原始密码** —— 否则别人借你没锁屏的电脑就能悄悄把密保换成自己的，从此随时能接管账号。
+5. **改密码 / 找回密码现在能真正踢掉所有设备**（见下图）。用户名上限 20 → **12**（顶栏 chip 按内容伸缩，12 个中文 ≈ 205px 放得下，20 个会到 ≈305px）。密保没设时登录后给一条提示条引导去设置（不强制）。
+
+![token_version 让改密码真正吊销所有会话](docs/devlog-assets/web-auth-token-version.svg)
+
+**关键代码**：
+
+无状态 JWT 默认**没法吊销** —— 它自证，验的时候不查库，所以改了 `pass_hash` 那张老 token 照样有效。加一列 `token_version` 塞进 payload，验签后再比一次，就有了真吊销：
+
+```ts
+// server/auth.ts —— 验证时多比一次 tv
+export async function getSession(c: Context): Promise<Session | null> {
+  const payload = (await verify(token, SECRET, 'HS256')) as unknown as Session
+  const row = findById.get(payload.uid) as UserRow | undefined
+  if (!row || row.token_version !== payload.tv) return null // ← 改过密码 → 老 token 当场作废
+  return { uid: row.id, username: row.username, tv: row.token_version }
+}
+
+// 改密码 → tv+1 让所有老 token 失效，但得给本机补发，否则自己也被踢下线
+bumpPassword.run(await hashSecret(next), s.uid)
+const fresh = findById.get(s.uid) as UserRow
+await issueSession(c, { uid: fresh.id, username: fresh.username, tv: fresh.token_version })
+```
+
+自绘下拉 `Select.tsx` 把 `AI_GUIDELINES`「UI/样式」新增的两条固化成组件（原生 `<select>` 展开是系统弹层跟设计系统无关；浮层宽度要对齐触发器）——顶栏用户名 chip 的下拉同一套做法：外层 `relative` 收缩包裹，浮层 `w-full` 自动跟触发器同宽，用户名多长下拉多宽。
+
+```tsx
+<div className="relative">
+  <button className="w-full …">…</button>
+  <div className="absolute left-0 w-full …">…</div>   {/* ← 100% = 触发器宽 */}
+</div>
+```
+
 ### 2026-07-15 feat(web): 新增注册 / 登录
 
 **效果**：
