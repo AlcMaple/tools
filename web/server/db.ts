@@ -32,6 +32,43 @@ db.exec(`
   );
 `)
 
+// 追番表。
+//
+// 字段分两类（见 ideas/012「同步策略」）：
+//   **瘦列** —— web 自己要查 / 要显示的（status / episode / 标题 / 封面 / 标签…），单独成列，能索引。
+//   **extra** —— app 独有的富字段（goodEpisodes / bindings / novel 进度…）原样存 JSON。web 一个字
+//                都不碰，只负责让它原样过服务器往返。**现在还没有同步，这列先空着** —— 但列先建好，
+//                将来接同步不用改表。
+//
+//   total_episodes —— **NULL = 连载中**（跟 app 的 `totalEpisodes == null` 同语义），不是 0
+//   air_weekday    —— 1-7，用来分「今天更新」组
+//   bgm_tags       —— 来自 BGM，加追番那一刻锁定，之后不再覆盖（跟 app 的 lock-on-first-content 一致）
+//   aliases        —— 跟 bgm_tags 同一次 detail 请求拿回来，本地搜索按别名命中要靠它
+//   updated_at     —— 毫秒时间戳。将来同步冲突按「后写者胜」比这个
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tracks (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    bgm_id         INTEGER NOT NULL,
+    status         TEXT    NOT NULL DEFAULT 'watching',
+    episode        INTEGER NOT NULL DEFAULT 0,
+    total_episodes INTEGER,
+    title          TEXT    NOT NULL DEFAULT '',
+    title_cn       TEXT    NOT NULL DEFAULT '',
+    cover          TEXT    NOT NULL DEFAULT '',
+    air_weekday    INTEGER NOT NULL DEFAULT 0,
+    air_date       TEXT    NOT NULL DEFAULT '',
+    score          REAL    NOT NULL DEFAULT 0,
+    bgm_tags       TEXT    NOT NULL DEFAULT '[]',
+    user_tags      TEXT    NOT NULL DEFAULT '[]',
+    aliases        TEXT    NOT NULL DEFAULT '[]',
+    extra          TEXT    NOT NULL DEFAULT '{}',
+    updated_at     INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(user_id, bgm_id),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`)
+
 // 老库补列 —— 沿用 app 那套「零迁移脚本」思路：缺哪列补哪列，不写版本号、不写迁移文件。
 function ensureColumn(table: string, column: string, decl: string): void {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
