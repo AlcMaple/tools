@@ -43,6 +43,7 @@ export function TracksPage(): JSX.Element {
   const [query, setQuery] = useState('')
   const [tags, setTags] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<number | null>(null)
+  const [confirming, setConfirming] = useState<number | null>(null)
   const today = useMemo(todayBgmId, [])
 
   useEffect(() => {
@@ -69,6 +70,7 @@ export function TracksPage(): JSX.Element {
   const remove = (bgmId: number): void => {
     setTracks((prev) => (prev ? prev.filter((t) => t.bgmId !== bgmId) : prev))
     setEditing(null)
+    setConfirming(null)
     void deleteTrack(bgmId).catch((e: Error) => setError(e.message))
   }
 
@@ -99,6 +101,7 @@ export function TracksPage(): JSX.Element {
   const todayList = filtered.filter((t) => t.airWeekday === today && t.status === 'watching')
   const rest = filtered.filter((t) => !todayList.includes(t))
   const editingTrack = tracks?.find((t) => t.bgmId === editing) ?? null
+  const confirmingTrack = tracks?.find((t) => t.bgmId === confirming) ?? null
 
   return (
     <>
@@ -185,7 +188,7 @@ export function TracksPage(): JSX.Element {
               <SectionLabel>今天更新</SectionLabel>
               <Grid>
                 {todayList.map((t) => (
-                  <Card key={t.bgmId} t={t} isToday onPatch={patch} onEdit={() => setEditing(t.bgmId)} />
+                  <Card key={t.bgmId} t={t} isToday onPatch={patch} onEdit={() => setEditing(t.bgmId)} onAskRemove={() => setConfirming(t.bgmId)} />
                 ))}
               </Grid>
             </>
@@ -195,7 +198,7 @@ export function TracksPage(): JSX.Element {
               <SectionLabel>{todayList.length ? '其余' : '全部'}</SectionLabel>
               <Grid>
                 {rest.map((t) => (
-                  <Card key={t.bgmId} t={t} isToday={false} onPatch={patch} onEdit={() => setEditing(t.bgmId)} />
+                  <Card key={t.bgmId} t={t} isToday={false} onPatch={patch} onEdit={() => setEditing(t.bgmId)} onAskRemove={() => setConfirming(t.bgmId)} />
                 ))}
               </Grid>
             </>
@@ -203,12 +206,13 @@ export function TracksPage(): JSX.Element {
         </div>
       )}
 
-      {editingTrack && (
-        <EditModal
-          t={editingTrack}
-          onPatch={patch}
-          onRemove={() => remove(editingTrack.bgmId)}
-          onClose={() => setEditing(null)}
+      {editingTrack && <EditModal t={editingTrack} onPatch={patch} onClose={() => setEditing(null)} />}
+
+      {confirmingTrack && (
+        <ConfirmRemoveModal
+          t={confirmingTrack}
+          onConfirm={() => remove(confirmingTrack.bgmId)}
+          onClose={() => setConfirming(null)}
         />
       )}
     </>
@@ -317,11 +321,13 @@ function Card({
   isToday,
   onPatch,
   onEdit,
+  onAskRemove,
 }: {
   t: Track
   isToday: boolean
   onPatch: (bgmId: number, p: TrackPatch) => void
   onEdit: () => void
+  onAskRemove: () => void
 }): JSX.Element {
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
@@ -350,6 +356,20 @@ function Card({
             更新
           </span>
         )}
+        {/* 取消追番入口 —— 右上角悬浮。删除是「针对整条记录」的操作，跟卡片对应而非编辑框内容。
+            stopPropagation 免得连带触发点封面进编辑；默认透明、hover 卡片才浮现，避免误点。 */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onAskRemove()
+          }}
+          title="取消追番"
+          aria-label="取消追番"
+          className="absolute right-1.5 top-1.5 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur-sm transition-all hover:bg-error hover:text-on-error group-hover:opacity-100"
+        >
+          <Icon name="delete" size={13} />
+        </button>
         <div className="absolute inset-0 flex flex-col justify-end gap-1.5 bg-gradient-to-t from-black/95 via-black/75 to-black/20 p-2 opacity-0 transition-opacity group-hover:opacity-100">
           {/* 在线观看 —— 播放页还没做，先占位置灰。集数就是计数器显示的那个数
               （app 的 /play?bgm= 本来就不传集数，不该在这里推算下一集）。 */}
@@ -529,12 +549,10 @@ function TagFilter({
 function EditModal({
   t,
   onPatch,
-  onRemove,
   onClose,
 }: {
   t: Track
   onPatch: (bgmId: number, p: TrackPatch) => void
-  onRemove: () => void
   onClose: () => void
 }): JSX.Element {
   const [totalDraft, setTotalDraft] = useState(t.totalEpisodes != null ? String(t.totalEpisodes) : '')
@@ -712,11 +730,69 @@ function EditModal({
           )}
         </div>
 
-        <div className="mt-5 border-t border-outline-variant/15 pt-3">
+      </div>
+    </div>
+  )
+}
+
+// 取消追番二次确认 —— 删除是不可逆操作，且追番带着进度 / 自定义标签，不能点一下就没。
+function ConfirmRemoveModal({
+  t,
+  onConfirm,
+  onClose,
+}: {
+  t: Track
+  onConfirm: () => void
+  onClose: () => void
+}): JSX.Element {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const title = t.titleCn || t.title
+  // 会一并丢失的本地数据 —— 有才提，让用户据此判断（AI_GUIDELINES：只留可行动的文案，不写空话）
+  const lost: string[] = []
+  if (t.episode > 0) lost.push(`第 ${t.episode} 集的进度`)
+  if (t.userTags.length > 0) lost.push(`${t.userTags.length} 个自定义标签`)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative m-auto w-full max-w-[340px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl"
+      >
+        <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-error/10 text-error">
+          <Icon name="delete" size={22} />
+        </div>
+        <h2 className="text-lg font-extrabold leading-tight text-on-surface">取消追番</h2>
+        <p className="mt-2 text-[13px] leading-relaxed text-on-surface-variant/70">
+          不再追踪《{title}》。
+          {lost.length > 0 && (
+            <span className="mt-1 block text-on-surface-variant/45">{lost.join(' 和 ')}会一并删除，无法恢复。</span>
+          )}
+        </p>
+        <div className="mt-5 flex gap-2">
           <button
             type="button"
-            onClick={onRemove}
-            className="font-label text-[11px] uppercase tracking-widest text-on-surface-variant/40 transition-colors hover:text-error"
+            onClick={onClose}
+            className="flex-1 rounded-lg border border-outline-variant/30 py-2 text-sm font-semibold text-on-surface-variant/80 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            保留
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 rounded-lg bg-error py-2 text-sm font-bold text-on-error transition-colors hover:brightness-110"
           >
             取消追番
           </button>
