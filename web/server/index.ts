@@ -30,10 +30,14 @@ app.get('/api/calendar', async (c) => {
 // BGM 超时）。由海外服务器代取再回传。**路径式**：前端把 `https://lain.bgm.tv/pic/...` 重写成
 // `/api/cover/pic/...`，URL 里**不出现 bgm.tv** —— 否则 HTTP 明文下 GFW 看到 `bgm.tv` 会把请求
 // RST（实测：手机端 /api/cover?u=…bgm.tv 全 499、随后整个 IP:80 被临时封）。host 写死 lain.bgm.tv、
-// 只放行 `/pic/` 前缀，杜绝 SSRF。封面 URL 自带内容 hash、不变 → 长缓存。
+// 路径按白名单放行，杜绝 SSRF。封面 URL 自带内容 hash、不变 → 长缓存。
+//
+// 两种形态都要过：`/pic/...`（原图）和 `/r/<宽>/pic/...`（图床按宽度实时缩放，周历在用，
+// 见 bgm/calendar.ts 的 COVER_WIDTH）。仍然只认 `pic/` 那一段，不放行图床上的任意路径。
+const COVER_PATH_RE = /^\/(r\/\d{2,4}\/)?pic\//
 app.get('/api/cover/*', async (c) => {
   const path = c.req.path.replace(/^\/api\/cover/, '')
-  if (!path.startsWith('/pic/')) return c.text('forbidden', 403)
+  if (!COVER_PATH_RE.test(path)) return c.text('forbidden', 403)
   try {
     const upstream = await fetch(`https://lain.bgm.tv${path}`, {
       headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
