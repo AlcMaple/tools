@@ -38,10 +38,12 @@ function aliasesFromInfobox(infobox: unknown): string[] {
   return out
 }
 
-export async function fetchSubjectDetail(bgmId: number): Promise<SubjectDetail> {
+// timeoutMs 可调：加追番时**同步**取详情用短超时（默认给 4s），别让 BGM 抖动把
+// 「追番」按钮的响应卡住；后台延迟兜底（fillDetailLater）仍用宽松的 10s。
+export async function fetchSubjectDetail(bgmId: number, timeoutMs = 10000): Promise<SubjectDetail> {
   const raw = (await fetchJson(`https://api.bgm.tv/v0/subjects/${bgmId}`, {
     headers: BGM_HEADERS,
-    timeoutMs: 10000,
+    timeoutMs,
   })) as Record<string, unknown>
 
   // tags 是 [{name, count}]，按 count 已倒序；跟 app 一样只留前 4 个
