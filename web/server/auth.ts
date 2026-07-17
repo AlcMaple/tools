@@ -132,20 +132,44 @@ export async function getSession(c: Context): Promise<Session | null> {
   }
 }
 
-// 找回密码限流 —— 密保答案熵很低（「你的出生地」猜几十次就中），不限流等于敞开暴力破解。
-const forgotHits = new Map<string, { n: number; resetAt: number }>()
-const FORGOT_MAX = 5
-const FORGOT_WINDOW = 15 * 60 * 1000
+/**
+ * 固定窗口限流 —— 凡是「拿密码/答案来猜」的入口都必须挂，不然等于敞开暴力破解。
+ * 内存 Map、单进程有效；重启即清空（可接受，攻击者拿不到重启时机）。将来上多实例得换 Redis。
+ */
+const buckets = new Map<string, { n: number; resetAt: number }>()
 
-function rateLimited(key: string): boolean {
+function rateLimited(key: string, max: number, windowMs: number): boolean {
   const now = Date.now()
-  const hit = forgotHits.get(key)
+  // 攻击者拿随机用户名刷会不停建桶 → 内存无上限。到阈值先清过期的。
+  if (buckets.size > 5000) {
+    for (const [k, b] of buckets) if (now > b.resetAt) buckets.delete(k)
+  }
+  const hit = buckets.get(key)
   if (!hit || now > hit.resetAt) {
-    forgotHits.set(key, { n: 1, resetAt: now + FORGOT_WINDOW })
+    buckets.set(key, { n: 1, resetAt: now + windowMs })
     return false
   }
   hit.n += 1
-  return hit.n > FORGOT_MAX
+  return hit.n > max
+}
+
+const WINDOW = 15 * 60 * 1000
+const LOGIN_MAX_PER_USER = 10 // 挡「盯着一个号猜密码」
+const LOGIN_MAX_PER_IP = 20 // 挡「一个来源换着号猜」
+const FORGOT_MAX = 5 // 密保答案熵很低（「你的出生地」猜几十次就中），给得比密码更紧
+const REGISTER_MAX_PER_IP = 5
+const REGISTER_WINDOW = 60 * 60 * 1000
+
+/**
+ * 取客户端 IP。只认 `X-Real-IP` —— nginx 用 `$remote_addr` 直接覆写它，客户端伪造不了；
+ * `X-Forwarded-For` 是**追加**的（伪造值在前、真 IP 在末尾），所以退化时取最后一段。
+ * 前提是 node 只绑 127.0.0.1（见 node.ts）：nginx 之外没人能进来，这两个头才可信。
+ */
+function clientIp(c: Context): string {
+  const real = c.req.header('x-real-ip')
+  if (real) return real
+  const fwd = c.req.header('x-forwarded-for')
+  return fwd?.split(',').pop()?.trim() || 'local'
 }
 
 async function readJson(c: Context): Promise<Record<string, unknown> | null> {
@@ -176,6 +200,10 @@ auth.post('/register', async (c) => {
     return c.json({ error: `密码需 ${PASSWORD_MIN}–${PASSWORD_MAX} 个字符` }, 400)
   }
   if (password !== confirm) return c.json({ error: '两次输入的密码不一致' }, 400)
+  // 开放注册 = 谁都能刷号把库撑爆。按 IP 限流：正常人一小时不会注册第 6 个号。
+  if (rateLimited(`reg:${clientIp(c)}`, REGISTER_MAX_PER_IP, REGISTER_WINDOW)) {
+    return c.json({ error: '注册太频繁，请稍后再试' }, 429)
+  }
   if (findByName.get(username)) return c.json({ error: '用户名已被占用' }, 409)
 
   const info = insertUser.run(username, await hashSecret(password), new Date().toISOString())
@@ -189,11 +217,25 @@ auth.post('/login', async (c) => {
   const username = str(body.username).trim()
   const password = str(body.password)
 
+  // 两个维度都要挡：只按用户名挡不住「换着号猜」，只按 IP 挡不住「多 IP 盯一个号猜」。
+  // 放在 verify 之前 —— scrypt 很吃 CPU，先限流也顺带挡住拿登录接口打 CPU 的玩法。
+  const ipKey = `login-ip:${clientIp(c)}`
+  const userKey = `login-user:${username.toLowerCase()}`
+  if (
+    rateLimited(ipKey, LOGIN_MAX_PER_IP, WINDOW) ||
+    rateLimited(userKey, LOGIN_MAX_PER_USER, WINDOW)
+  ) {
+    return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+  }
+
   const row = findByName.get(username) as UserRow | undefined
   // 用户名不存在也照样跑一次 verify，避免「用户名是否存在」被响应时间区分出来。
   const ok = row ? await verifySecret(password, row.pass_hash) : await verifySecret(password, 'x:x')
   if (!row || !ok) return c.json({ error: '用户名或密码错误' }, 401)
 
+  // 登录成功即清账 —— 否则自己前几次打错字，剩下的额度还替攻击者留着扣。
+  buckets.delete(ipKey)
+  buckets.delete(userKey)
   await issueSession(c, { uid: row.id, username: row.username, tv: row.token_version })
   return c.json({ username: row.username, hasSecurity: !!row.security_answer_hash })
 })
@@ -277,7 +319,10 @@ auth.post('/forgot', async (c) => {
   const next = str(body.newPassword)
   const confirm = str(body.confirm)
 
-  if (rateLimited(username.toLowerCase())) {
+  if (
+    rateLimited(`forgot-ip:${clientIp(c)}`, FORGOT_MAX, WINDOW) ||
+    rateLimited(`forgot-user:${username.toLowerCase()}`, FORGOT_MAX, WINDOW)
+  ) {
     return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
   }
   if (next.length < PASSWORD_MIN || next.length > PASSWORD_MAX) {
@@ -294,7 +339,7 @@ auth.post('/forgot', async (c) => {
   if (!row || !ok) return c.json({ error: '账号、密保问题或答案不正确' }, 401)
 
   bumpPassword.run(await hashSecret(next), row.id)
-  forgotHits.delete(username.toLowerCase())
+  buckets.delete(`forgot-user:${username.toLowerCase()}`)
   return c.json({ ok: true })
 })
 
