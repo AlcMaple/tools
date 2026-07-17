@@ -19,7 +19,9 @@ export function Nav({
   onLogin: () => void
 }): JSX.Element {
   return (
-    <nav className="sticky top-0 z-40 flex h-14 items-center gap-7 border-b border-outline-variant/10 bg-surface-container-lowest px-4 md:px-6">
+    // gap 跟着品牌字走：sm 以下「MapleTools」隐藏，只剩 20px 的枫叶，再留 28px 的空当
+    // 会让 logo 和「番剧周历」中间凭空空出一大块（NavLink 自己还有 px-3）。
+    <nav className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-outline-variant/10 bg-surface-container-lowest px-4 sm:gap-7 md:px-6">
       <button
         type="button"
         onClick={() => onNavigate('calendar')}

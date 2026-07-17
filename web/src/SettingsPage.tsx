@@ -19,34 +19,46 @@ export function SettingsPage(): JSX.Element | null {
   if (!user) return null
 
   return (
+    // md 以下退化成单列：容器全宽、内容却全挤在左边 → 右边一大片死区，左右不对称。
+    // 收进一根居中的窄列（含标题，否则标题和内容左边缘对不齐），md 起恢复「侧栏 + 面板」。
     <div className="px-4 pb-16 md:px-6">
-      <div className="pt-4 pb-3">
-        <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">设置</h1>
-      </div>
+      <div className="mx-auto w-full max-w-[560px] md:max-w-none">
+        <div className="pt-4 pb-3">
+          <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">设置</h1>
+        </div>
 
-      <div className="grid gap-6 md:grid-cols-[220px_1fr] md:gap-10">
-        <aside className="self-start md:sticky md:top-[72px]">
-          <IdCard username={user.username} />
-          <nav className="mt-3.5 flex gap-1.5 overflow-x-auto md:flex-col md:overflow-visible">
-            <SideItem icon="person" active={module === 'profile'} onClick={() => setModule('profile')}>
-              个人信息
-            </SideItem>
-            <SideItem icon="lock" active={module === 'security'} onClick={() => setModule('security')}>
-              账号安全
-            </SideItem>
-            <div className="hidden px-2.5 pb-1.5 pt-3 font-label text-[10px] uppercase tracking-[0.16em] text-on-surface-variant/35 md:block">
-              后续
-            </div>
-            <SideItem icon="favorite" ghost>
-              追番偏好
-            </SideItem>
-            <SideItem icon="sync" ghost>
-              数据同步
-            </SideItem>
-          </nav>
-        </aside>
+        <div className="grid gap-6 md:grid-cols-[220px_1fr] md:gap-10">
+          <aside className="self-start md:sticky md:top-[72px]">
+            <IdCard username={user.username} />
+            <nav className="mt-3.5 flex gap-1.5 overflow-x-auto md:flex-col md:overflow-visible">
+              <SideItem
+                icon="person"
+                active={module === 'profile'}
+                onClick={() => setModule('profile')}
+              >
+                个人信息
+              </SideItem>
+              <SideItem
+                icon="lock"
+                active={module === 'security'}
+                onClick={() => setModule('security')}
+              >
+                账号安全
+              </SideItem>
+              <div className="hidden px-2.5 pb-1.5 pt-3 font-label text-[10px] uppercase tracking-[0.16em] text-on-surface-variant/35 md:block">
+                后续
+              </div>
+              <SideItem icon="favorite" ghost>
+                追番偏好
+              </SideItem>
+              <SideItem icon="sync" ghost>
+                数据同步
+              </SideItem>
+            </nav>
+          </aside>
 
-        <div>{module === 'profile' ? <ProfileModule /> : <SecurityModule />}</div>
+          <div>{module === 'profile' ? <ProfileModule /> : <SecurityModule />}</div>
+        </div>
       </div>
     </div>
   )
@@ -54,7 +66,9 @@ export function SettingsPage(): JSX.Element | null {
 
 function IdCard({ username }: { username: string }): JSX.Element {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-outline-variant/10 bg-surface-container/70 p-4 md:flex-col md:gap-2.5 md:p-5">
+    // md 以下 w-fit 让卡片贴着内容收缩 —— 撑满整行的话内容只占左边一点点，
+    // 剩下就是一个空荡荡的长条（用户原话：矩形阴影拉长）。md 起它是 220px 侧栏，正常撑满。
+    <div className="flex w-fit items-center gap-4 rounded-xl border border-outline-variant/10 bg-surface-container/70 p-4 md:w-auto md:flex-col md:gap-2.5 md:p-5">
       <div className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-xl bg-primary/15 text-[22px] font-extrabold text-primary">
         {username.charAt(0).toUpperCase()}
       </div>
@@ -196,7 +210,8 @@ function SecurityModule(): JSX.Element {
   return (
     <>
       <PaneHead title="账号安全" />
-      <form onSubmit={submit} className="max-w-[440px] pt-4">
+      {/* md 以下不限宽：外层已经收进 560 的居中列了，再限 440 只会在右边又留一条死区 */}
+      <form onSubmit={submit} className="pt-4 md:max-w-[440px]">
         <Field label="原始密码" required>
           <input
             type="password"
@@ -209,14 +224,8 @@ function SecurityModule(): JSX.Element {
         </Field>
 
         <SegNote>修改密码</SegNote>
-        <div className="flex items-start gap-2 rounded border border-primary/15 bg-primary/5 px-3 py-2.5 text-[11.5px] leading-relaxed text-on-surface-variant/75">
-          <span>💡</span>
-          <span>
-            只想改密保、<b className="text-primary">不改密码</b>？下面两个框
-            <b className="text-primary">留空</b>就行。
-          </span>
-        </div>
-        <div className="mt-3.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* 「留空 = 不改」由 placeholder 直接说，不再另开一条提示条重复一遍 */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="新密码" tight>
             <input
               type="password"
