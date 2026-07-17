@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
-import { coverUrl, fetchCalendar } from './api'
+import { coverUrl, fetchCalendar, fetchTracks, putTrack, deleteTrack } from './api'
+import { useAuth } from './auth'
 import { useIsCompact } from './useMediaQuery'
 import { Icon, Spinner } from './Icon'
 
 // 设计对齐 app 的 src/renderer/src/pages/AnimeCalendar.tsx：
 //   - 桌面（≥1200px）：7 列整周一览，每列一个星期的海报卡堆叠
 //   - 精简（<1200px）：选某天 + 该天番剧多列网格
-// 网页版暂无「追番 / 播放」功能，海报 hover 遮罩先只放「BGM 查看」链接，
-// 结构与观感照 app，追番 / 播放到对应里程碑再补进遮罩。
+// 海报 hover 遮罩里放「追番」+「BGM 查看」；播放到对应里程碑再补进遮罩。
 
 const SHORT_DAY: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
 
@@ -24,6 +24,47 @@ export function CalendarPage(): JSX.Element {
   const [refreshing, setRefreshing] = useState(false)
   const isCompact = useIsCompact()
   const [selectedDay, setSelectedDay] = useState(todayBgmId)
+  const { user } = useAuth()
+  // 已追的 bgmId —— 用来给卡片画高亮描边 / 切按钮文案。未登录就是空集（按钮不显示）。
+  const [tracked, setTracked] = useState<Set<number>>(new Set())
+
+  useEffect(() => {
+    if (!user) {
+      setTracked(new Set())
+      return
+    }
+    void fetchTracks()
+      .then((ts) => setTracked(new Set(ts.map((t) => t.bgmId))))
+      .catch(() => setTracked(new Set())) // 拉不到就当没追，不打扰周历本身
+  }, [user])
+
+  // 先改本地再发请求 —— 点了要立刻有反馈。失败就回滚这一个 id。
+  const toggleTrack = (item: CalendarItem, weekday: number): void => {
+    const on = tracked.has(item.id)
+    setTracked((prev) => {
+      const next = new Set(prev)
+      on ? next.delete(item.id) : next.add(item.id)
+      return next
+    })
+    const req = on
+      ? deleteTrack(item.id)
+      : putTrack(item.id, {
+          status: 'watching',
+          title: item.name,
+          titleCn: item.name_cn,
+          cover: item.cover,
+          airWeekday: weekday,
+          score: item.score,
+        })
+    void req.catch((e: Error) => {
+      setError(e.message)
+      setTracked((prev) => {
+        const next = new Set(prev)
+        on ? next.add(item.id) : next.delete(item.id)
+        return next
+      })
+    })
+  }
 
   const load = (force = false): void => {
     if (force) setRefreshing(true)
@@ -39,6 +80,8 @@ export function CalendarPage(): JSX.Element {
   }
 
   useEffect(() => load(), [])
+
+  const trackProps: TrackProps = { canTrack: !!user, tracked, onToggle: toggleTrack }
 
   return (
     <>
@@ -85,12 +128,19 @@ export function CalendarPage(): JSX.Element {
       {error && !result && <ErrorState message={error} onRetry={() => load(true)} />}
       {result &&
         (isCompact ? (
-          <CompactDayGrid result={result} day={selectedDay} />
+          <CompactDayGrid result={result} day={selectedDay} track={trackProps} />
         ) : (
-          <CalendarGrid result={result} />
+          <CalendarGrid result={result} track={trackProps} />
         ))}
     </>
   )
+}
+
+/** 传给卡片的追番能力 —— 卡片在三层之下，三样东西打个包往下传。未登录时 canTrack=false，按钮不出现。 */
+interface TrackProps {
+  canTrack: boolean
+  tracked: Set<number>
+  onToggle: (item: CalendarItem, weekday: number) => void
 }
 
 // ── 桌面：周一-周日 chip 行（grid-cols-7，与卡片网格逐列对齐） ──────────────────
@@ -159,31 +209,39 @@ function CompactDaySelector({
 }
 
 // ── 精简 body：当天番剧多列网格（手机 2 / 大手机 3 / 平板 4） ───────────────────
-function CompactDayGrid({ result, day }: { result: CalendarResult; day: number }): JSX.Element {
+function CompactDayGrid({
+  result,
+  day,
+  track,
+}: {
+  result: CalendarResult
+  day: number
+  track: TrackProps
+}): JSX.Element {
   const current = result.data.find((d) => d.id === day) ?? result.data[0]
   if (!current || current.items.length === 0) return <EmptyState label="这天没有番" />
   return (
     <div className="grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-3 md:grid-cols-4 md:px-6">
       {current.items.map((item) => (
-        <CalendarCard key={item.id} item={item} />
+        <CalendarCard key={item.id} item={item} weekday={current.id} track={track} />
       ))}
     </div>
   )
 }
 
 // ── 桌面 body：7 列整周一览 ────────────────────────────────────────────────────
-function CalendarGrid({ result }: { result: CalendarResult }): JSX.Element {
+function CalendarGrid({ result, track }: { result: CalendarResult; track: TrackProps }): JSX.Element {
   if (result.data.every((d) => d.items.length === 0)) return <EmptyState label="本周没有数据" />
   return (
     <div className="grid grid-cols-7 gap-3 px-4 py-3 md:px-6">
       {result.data.map((day) => (
-        <DayColumn key={day.id} day={day} />
+        <DayColumn key={day.id} day={day} track={track} />
       ))}
     </div>
   )
 }
 
-function DayColumn({ day }: { day: CalendarWeekday }): JSX.Element {
+function DayColumn({ day, track }: { day: CalendarWeekday; track: TrackProps }): JSX.Element {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {day.items.length === 0 ? (
@@ -191,19 +249,31 @@ function DayColumn({ day }: { day: CalendarWeekday }): JSX.Element {
           空
         </div>
       ) : (
-        day.items.map((item) => <CalendarCard key={item.id} item={item} />)
+        day.items.map((item) => <CalendarCard key={item.id} item={item} weekday={day.id} track={track} />)
       )}
     </div>
   )
 }
 
 // ── 海报卡 ─────────────────────────────────────────────────────────────────────
-function CalendarCard({ item }: { item: CalendarItem }): JSX.Element {
+function CalendarCard({
+  item,
+  weekday,
+  track,
+}: {
+  item: CalendarItem
+  weekday: number
+  track: TrackProps
+}): JSX.Element {
   const displayTitle = item.name_cn || item.name
   const sub = item.name_cn && item.name && item.name !== item.name_cn ? item.name : ''
+  const on = track.tracked.has(item.id)
 
   return (
     <div className="group relative overflow-hidden rounded-lg border border-outline-variant/15 bg-surface-container transition-colors hover:border-primary/30">
+      {/* 已追 → 整卡描边高亮，逛周历时一眼看出「这部我已经在追了」。
+          pointer-events-none：它盖在整张卡上，不能吃掉底下的点击。 */}
+      {on && <div className="pointer-events-none absolute inset-0 z-20 rounded-lg border-2 border-primary" />}
       <div className="relative aspect-[3/4]">
         {item.cover ? (
           <img
@@ -219,7 +289,24 @@ function CalendarCard({ item }: { item: CalendarItem }): JSX.Element {
           </div>
         )}
 
-        {/* Hover 遮罩 —— 追番 / 播放到对应里程碑再补，这里先放 BGM 查看。 */}
+        {/* 已追 → 浮标常驻（不用 hover 也能看见状态）；没追 → 只在 hover 时出现，别糊住海报 */}
+        {track.canTrack && (
+          <button
+            type="button"
+            onClick={() => track.onToggle(item, weekday)}
+            title={on ? '取消追番' : '加入我的追番'}
+            className={`absolute right-1.5 top-1.5 z-30 flex items-center gap-1 rounded border px-1.5 py-1 font-label text-[10px] font-bold backdrop-blur-sm transition-colors ${
+              on
+                ? 'border-transparent bg-primary text-on-primary'
+                : 'border-outline-variant/30 bg-black/55 text-on-surface opacity-0 hover:border-primary/50 hover:text-primary group-hover:opacity-100'
+            }`}
+          >
+            <Icon name={on ? 'check' : 'add'} size={11} />
+            <span>{on ? '已追' : '追番'}</span>
+          </button>
+        )}
+
+        {/* Hover 遮罩 —— 播放到对应里程碑再补进来，这里先放 BGM 查看。 */}
         <div className="absolute inset-0 flex flex-col justify-end gap-1.5 bg-gradient-to-t from-black/95 via-black/75 to-black/25 p-2 opacity-0 transition-opacity group-hover:opacity-100">
           <a
             href={item.url}
