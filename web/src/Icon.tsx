@@ -26,6 +26,7 @@ type IconName =
   | 'play_arrow'
   | 'filter_list'
   | 'bookmark'
+  | 'delete'
 
 const PATHS: Record<IconName, string> = {
   calendar_month:
@@ -64,6 +65,7 @@ const PATHS: Record<IconName, string> = {
   play_arrow: 'M8 5v14l11-7z',
   filter_list: 'M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z',
   bookmark: 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z',
+  delete: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
 }
 
 export function Icon({
