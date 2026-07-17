@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 432" font-family="-apple-system,Segoe UI,Roboto,PingFang SC,Microsoft YaHei,sans-serif">
+  <defs>
+    <marker id="ccGrey" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6b6b70"/>
+    </marker>
+    <marker id="ccGreen" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#166c45"/>
+    </marker>
+    <marker id="ccRed" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#94464f"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="858" height="430" rx="10" fill="#fbfafc" stroke="#e5e0e3"/>
+
+  <text x="24" y="30" font-size="13" font-weight="700" fill="#2a2a2e">周历缓存：一次请求依次问三个地方，问到就返回</text>
+  <text x="24" y="48" font-size="11.5" fill="#7a7a80">② 是这次新增的那一层。它存在的唯一理由：重启会清空 ①，而重启是家常便饭（每次上线都要重启一次）。</text>
+
+  <!-- ══ 请求入口 ══ -->
+  <rect x="24" y="86" width="86" height="38" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="67" y="110" font-size="12" text-anchor="middle" fill="#404046">GET /api/calendar</text>
+  <path d="M67 124 L67 150" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#ccGrey)"/>
+
+  <!-- ══ ① 内存 ══ -->
+  <rect x="24" y="156" width="230" height="58" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="40" y="178" font-size="12.5" font-weight="700" fill="#404046">① 进程内存</text>
+  <text x="40" y="196" font-size="10.5" fill="#7a7a80">let cache —— 快，但跟进程同生死</text>
+  <text x="40" y="209" font-size="10.5" fill="#7a7a80">未过期？(14 天 TTL)</text>
+
+  <path d="M254 185 L560 185" stroke="#166c45" stroke-width="1.5" fill="none" marker-end="url(#ccGreen)"/>
+  <text x="407" y="178" font-size="10.5" text-anchor="middle" fill="#166c45">命中</text>
+  <rect x="566" y="166" width="270" height="38" rx="6" fill="#166c45" opacity="0.1"/>
+  <text x="582" y="190" font-size="11.5" fill="#166c45">返回 fromCache: true　·　不打扰 BGM</text>
+
+  <path d="M139 214 L139 246" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#ccGrey)"/>
+  <text x="149" y="235" font-size="10.5" fill="#7a7a80">空 —— 进程刚起来（刚部署 / 刚重启）</text>
+
+  <!-- ══ ② 磁盘（新增） ══ -->
+  <rect x="24" y="252" width="230" height="62" rx="6" fill="#ffffff" stroke="#166c45" stroke-width="1.5"/>
+  <rect x="196" y="243" width="46" height="17" rx="8" fill="#166c45"/>
+  <text x="219" y="255" font-size="9.5" font-weight="700" text-anchor="middle" fill="#ffffff">新增</text>
+  <text x="40" y="276" font-size="12.5" font-weight="700" fill="#166c45">② 磁盘</text>
+  <text x="40" y="294" font-size="10.5" fill="#7a7a80">$DATA_DIR/calendar-cache.json</text>
+  <text x="40" y="307" font-size="10.5" fill="#7a7a80">读出来先校验，坏文件当没有</text>
+
+  <path d="M254 283 L560 283" stroke="#166c45" stroke-width="1.5" fill="none" marker-end="url(#ccGreen)"/>
+  <text x="407" y="276" font-size="10.5" text-anchor="middle" fill="#166c45">文件在且校验通过</text>
+  <rect x="566" y="264" width="270" height="38" rx="6" fill="#166c45" opacity="0.1"/>
+  <text x="582" y="288" font-size="11.5" fill="#166c45">载入 ① → 返回 fromCache: true</text>
+
+  <path d="M139 314 L139 346" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#ccGrey)"/>
+  <text x="149" y="335" font-size="10.5" fill="#7a7a80">没有 / 坏了 / 过期</text>
+
+  <!-- ══ ③ BGM ══ -->
+  <rect x="24" y="352" width="230" height="52" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="40" y="374" font-size="12.5" font-weight="700" fill="#404046">③ 真去拉 BGM</text>
+  <text x="40" y="392" font-size="10.5" fill="#7a7a80">api.bgm.tv/calendar</text>
+
+  <path d="M254 378 L560 378" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#ccGrey)"/>
+  <rect x="566" y="359" width="270" height="38" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="582" y="376" font-size="11.5" fill="#404046">写 ① + 写 ②　·　返回 fromCache: false</text>
+  <text x="582" y="390" font-size="10" fill="#7a7a80">写盘先落 .tmp 再 rename（原子，杜绝半个 JSON）</text>
+
+  <!-- ══ 右侧：重启时发生什么 ══ -->
+  <rect x="566" y="86" width="270" height="62" rx="6" fill="#94464f" opacity="0.08"/>
+  <rect x="566" y="86" width="270" height="62" rx="6" fill="none" stroke="#94464f" stroke-opacity="0.3"/>
+  <text x="582" y="106" font-size="11.5" font-weight="700" fill="#94464f">重启时（每次上线都会发生）</text>
+  <text x="582" y="124" font-size="10.5" fill="#404046">① 清零　→　修复前：直接掉到 ③，打 BGM</text>
+  <text x="582" y="139" font-size="10.5" fill="#404046">② 还在　→　修复后：停在 ②，不打 BGM</text>
+
+  <!-- 说明脚注 -->
+  <text x="278" y="118" font-size="10.5" fill="#7a7a80">「14 天 TTL」修复前的真实含义是</text>
+  <text x="278" y="133" font-size="10.5" font-weight="700" fill="#94464f">「14 天 或 到下次重启为止，取先到者」</text>
+  <text x="278" y="148" font-size="10.5" fill="#7a7a80">—— 开发期重启十几次 = 向 BGM 拉十几次</text>
+</svg>

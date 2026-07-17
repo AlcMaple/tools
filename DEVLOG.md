@@ -11,6 +11,26 @@
 
 ## 网页版
 
+### 2026-07-17 fix(web): 番剧周历缓存丢失
+
+**效果**：
+
+1. **周历的 14 天缓存现在落盘**（`$DATA_DIR/calendar-cache.json`），重启后还在。之前缓存是进程内的 `let cache`，跟进程同生死 —— 而每次上线更新都要重启一次，于是「14 天 TTL」实际上是「14 天或到下次重启为止」，等于没有。开发期重启十几次就等于向 BGM 拉十几次。
+
+![一次请求依次问三个地方，② 是这次新增的那层](docs/devlog-assets/web-calendar-cache.svg)
+
+**关键代码**：
+
+`DATA_DIR` 的解析从 `db.ts` 抽到新的 `server/data-dir.ts`。不直接从 `db.ts` 导出，是因为 `calendar.ts` 只要那个目录，为此 import `db.ts` 会把 `better-sqlite3`（原生模块，`vite.config.ts` 里标了 `ssr.external`）拖进周历的 import 图。
+
+写盘先落临时文件再 `rename`——直接覆盖会在崩溃 / 满盘时留下半个 JSON，之后每次启动都读到坏文件；同分区 `rename` 是原子的，要么旧的要么新的：
+
+```ts
+const tmp = `${CACHE_FILE}.${process.pid}.tmp`
+writeFileSync(tmp, JSON.stringify(entry))
+renameSync(tmp, CACHE_FILE)
+```
+
 ### 2026-07-17 chore(web): 降低后端为低权限
 
 **效果**：
