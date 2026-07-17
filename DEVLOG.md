@@ -11,6 +11,42 @@
 
 ## 网页版
 
+### 2026-07-17 feat(web): 新增我的追番
+
+**效果**：
+
+1. **周历卡片上能追番了**：hover 海报 → 右上角「＋追番」；已追的**整卡描边高亮**，逛周历一眼看出哪些在追。未登录不显示这个按钮。
+2. **新增「我的追番」页**（`#/tracks`）：卡片墙 + 「今天更新」置顶分组（只算「在追」且今天放送的）。全部 / 在追 / 想看 / 看完四个 tab，搜索（**标题 + 别名**）、类型过滤（弹窗多选、按钮角标显示选了几个）。
+3. **点封面开编辑弹窗**：改状态 / 进度 / 总集数 / 自定义标签，**没有保存按钮，改完即生效**。BGM 带来的标签不可编辑，自定义标签点一下删。
+4. 进度 +/- 直接做在卡上。**在线观看按钮先占位置灰** —— 播放页还没做，位置是 `CalendarPage.tsx` 原注释就留好的。
+5. 沿用 app 的既定语义：`totalEpisodes == null` = **连载中**（不是 0），徽章即手填入口；进度推满**不**自动切「看完」（用户填 12 不一定是看到 12）；只有「想看」首次 +1 自动转「在追」。
+
+**关键代码**：
+
+**写入一律「字段级 patch」，绝不整条替换**（ideas/012 的同步铁律）。现在还没接 app 同步，但这条从第一天就得立住，否则将来 app 推富记录过来会被 web 的瘦数据抹掉。body 里没给的字段**保持沉默、原样不动**：
+
+```ts
+// server/tracks.ts —— 只写 body 里明确给了的字段
+if ('episode' in body) { sets.push('episode = ?'); args.push(...) }
+if ('userTags' in body) { ... }
+// 没给 → 那一列压根不进 UPDATE 语句
+```
+
+表结构同理为同步留好位置：瘦列（status / episode / 标签…）供 web 查询展示，`extra` JSON 列存 app-only 字段（goodEpisodes / bindings…）**原样过服务器往返**，现在空着但列先建好，将来接同步不用改表。
+
+周历接口**不返标签也不返别名**，只有条目详情有 —— 没有这一步「按类型过滤」永远是空的、搜别名也搜不到。所以加追番后异步补一次 detail（服务端版的 app `ensureBgmTagsFilled`），三个细节都照抄 app：
+
+```ts
+// server/tracks.ts —— 抖动 800-2000ms 再发（防连点打出一串请求）
+const jitterMs = 800 + Math.random() * 1200
+setTimeout(() => {
+  const recheck = oneStmt.get(uid, bgmId)          // ← 发前二次检查：这段时间用户可能已取消追番
+  if (!recheck || parseList(recheck.bgm_tags).length > 0) return
+  const d = await fetchSubjectDetail(bgmId)        // ← 一次请求同时拿回 标签 + 别名 + 放送日期
+  // 不动 updated_at —— 这是系统回填，不是用户操作，不该影响「后写者胜」
+}, jitterMs)
+```
+
 ### 2026-07-17 fix(web): 番剧周历封面太糊
 
 **效果**：

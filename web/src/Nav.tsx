@@ -37,6 +37,9 @@ export function Nav({
         <NavLink active={route === 'calendar'} onClick={() => onNavigate('calendar')}>
           番剧周历
         </NavLink>
+        <NavLink active={route === 'tracks'} onClick={() => onNavigate('tracks')}>
+          我的追番
+        </NavLink>
       </div>
 
       <UserArea onLogin={onLogin} onNavigate={onNavigate} />

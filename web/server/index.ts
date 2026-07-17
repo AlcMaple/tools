@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { getCalendar } from './bgm/calendar'
 import auth from './auth'
+import tracks from './tracks'
 
 // 单一 Hono 应用 = API 的唯一真相源。本地开发经 vite.config 的 dev-server 插件跑，
 // 生产经 web/api/[[...route]].ts 在 Vercel serverless 跑，将来迁 VPS 用 @hono/node-server
@@ -11,6 +12,9 @@ app.get('/api/health', (c) => c.json({ ok: true }))
 
 // 账号体系：注册 / 登录 / 登出 / me。
 app.route('/api/auth', auth)
+
+// 追番：列表 / 增改（字段级 patch）/ 删。要登录。
+app.route('/api/tracks', tracks)
 
 app.get('/api/calendar', async (c) => {
   const force = c.req.query('force') === '1'

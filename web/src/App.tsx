@@ -8,6 +8,7 @@ import { NagBar } from './NagBar'
 import { Nav } from './Nav'
 import { navigate, useRoute, type Route } from './router'
 import { SettingsPage } from './SettingsPage'
+import { TracksPage } from './TracksPage'
 
 export default function App(): JSX.Element {
   const route = useRoute()
@@ -40,7 +41,7 @@ export default function App(): JSX.Element {
       />
       <NagBar onGoSettings={() => go('settings')} />
 
-      {route === 'settings' ? <SettingsPage /> : <CalendarPage />}
+      {route === 'settings' ? <SettingsPage /> : route === 'tracks' ? <TracksPage /> : <CalendarPage />}
 
       <AuthModal
         open={authOpen}
