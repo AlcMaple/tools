@@ -11,6 +11,10 @@ app.use('/*', serveStatic({ root: './dist' }))
 app.get('*', serveStatic({ path: './dist/index.html' }))
 
 const port = Number(process.env.PORT) || 3000
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`[web] listening on http://0.0.0.0:${info.port}`)
+// 默认只绑回环 —— 这台机上 nginx 才是唯一入口（负责 HTTPS / 证书 / 转发）。
+// 曾经绑 0.0.0.0：公网直连 http://<ip>:3000 就绕开了 nginx，登录密码明文过网，
+// 且 X-Forwarded-For 随便伪造（限流形同虚设）。要对外裸跑再显式给 HOST=0.0.0.0。
+const hostname = process.env.HOST || '127.0.0.1'
+serve({ fetch: app.fetch, port, hostname }, (info) => {
+  console.log(`[web] listening on http://${hostname}:${info.port}`)
 })
