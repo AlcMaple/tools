@@ -7,7 +7,7 @@
 //   - 标签在卡片上**只读**，增删在弹窗里；BGM 标签不可编辑，自定义标签点一下删
 //
 // 页头**不置顶**，只有顶栏置顶。
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Track, TrackPatch, TrackStatus } from './api'
 import { coverUrl, deleteTrack, fetchTracks, putTrack } from './api'
 import { useAuth } from './auth'
@@ -237,6 +237,80 @@ const SectionLabel = ({ children }: { children: React.ReactNode }): JSX.Element 
 const TAG_CLS =
   'inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-px font-label text-[9px] font-bold tracking-wider text-primary/80'
 
+// ── 标签行 ───────────────────────────────────────────────────────────────────────
+// 按**可用宽度**决定显示几个标签，放不下的收成「+N」——而不是写死「前 3 个」。
+// 写死个数的老毛病：3 个长标签（2026年7月 / CloverWorks…）照样撑破盒子，最后一个被
+// overflow 裁成半个。这里量出每个标签真实宽度，累加到放不下为止。
+// 定高 15px：标签多少都不改卡片高度（AI_GUIDELINES：可变内容不得改盒模型 → 卡片墙不抖）。
+function TagRow({ tags }: { tags: string[] }): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const [count, setCount] = useState(tags.length)
+
+  const key = tags.join('')
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const recompute = (): void => {
+      const avail = el.clientWidth
+      if (!avail) return
+      const chips = Array.from(el.querySelectorAll<HTMLElement>('[data-measure] [data-chip]'))
+      if (!chips.length) return
+      const GAP = 4 // gap-1 = 0.25rem
+      const BADGE = 26 // 「+N」徽章预留宽（含它前面那个 gap），两位数也够
+      let used = 0
+      let fit = 0
+      for (let i = 0; i < chips.length; i++) {
+        const need = (i === 0 ? 0 : GAP) + chips[i].offsetWidth
+        // 不是最后一个 → 后面还得挂 +N，先给它留位
+        const reserve = i < chips.length - 1 ? BADGE : 0
+        if (used + need + reserve <= avail) {
+          used += need
+          fit = i + 1
+        } else break
+      }
+      setCount(Math.max(1, fit)) // 至少留 1 个；单个就超宽时靠 overflow-hidden 兜住
+    }
+    recompute()
+    // 字体晚加载会让首次测量偏小 → 字体就绪后再算一次
+    void document.fonts?.ready.then(recompute).catch(() => undefined)
+    const ro = new ResizeObserver(recompute)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [key])
+
+  const more = tags.length - count
+
+  return (
+    <div ref={ref} className="relative flex h-[15px] items-center gap-1 overflow-hidden">
+      {tags.slice(0, count).map((x) => (
+        <span key={x} className={TAG_CLS}>
+          {x}
+        </span>
+      ))}
+      {more > 0 && (
+        <span
+          className={`${TAG_CLS} bg-on-surface/[0.08] text-on-surface-variant/50`}
+          title={tags.slice(count).join('、')}
+        >
+          +{more}
+        </span>
+      )}
+      {/* 测量层：全部标签，不换行、不可见、绝对定位不占流 —— 只为量真实宽度 */}
+      <div
+        data-measure
+        aria-hidden
+        className="pointer-events-none invisible absolute left-0 top-0 flex gap-1 whitespace-nowrap"
+      >
+        {tags.map((x) => (
+          <span key={x} data-chip className={TAG_CLS}>
+            {x}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── 卡片 ───────────────────────────────────────────────────────────────────────
 function Card({
   t,
@@ -251,8 +325,6 @@ function Card({
 }): JSX.Element {
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
-  const shown = allTagsOf(t).slice(0, 3)
-  const more = allTagsOf(t).length - shown.length
 
   const step = (delta: number): void => {
     const ep = Math.max(0, t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode + delta) : t.episode + delta)
@@ -308,19 +380,8 @@ function Card({
         <h3 className="line-clamp-2 h-[30px] text-xs font-bold leading-tight text-on-surface" title={title}>
           {title}
         </h3>
-        {/* 标签只读，紧贴标题下方（app 的位置）。定高 → 卡片不会因标签多少而长高。 */}
-        <div className="flex h-[15px] items-center gap-1">
-          {shown.map((x) => (
-            <span key={x} className={TAG_CLS}>
-              {x}
-            </span>
-          ))}
-          {more > 0 && (
-            <span className={`${TAG_CLS} bg-on-surface/[0.08] text-on-surface-variant/50`} title={allTagsOf(t).slice(3).join('、')}>
-              +{more}
-            </span>
-          )}
-        </div>
+        {/* 标签只读，紧贴标题下方（app 的位置）。按宽度截断，放不下收成 +N，定高不抖。 */}
+        <TagRow tags={allTagsOf(t)} />
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1">
             <StepBtn icon="remove" onClick={() => step(-1)} disabled={t.episode <= 0} />
