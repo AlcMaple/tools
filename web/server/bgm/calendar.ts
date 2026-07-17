@@ -1,6 +1,8 @@
 // 从 app 的 src/main/bgm/calendar.ts 拷来 —— 解析逻辑（parseCalendar）原样保留，只换传输层
-// （Electron net → fetch）+ 缓存（磁盘 → 进程内内存，serverless 无持久盘）。app 那边一行不动
-// （见 012「抓取复用策略」）。
+// （Electron net → fetch）。app 那边一行不动（见 012「抓取复用策略」）。
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { dataDir } from '../data-dir'
 import { fetchJson } from '../http'
 
 const CALENDAR_URL = 'https://api.bgm.tv/calendar'
@@ -69,10 +71,42 @@ function parseCalendar(raw: unknown): CalendarWeekday[] {
   })
 }
 
-// serverless 没有持久磁盘 —— 进程内内存缓存（热实例复用）+ HTTP 边缘缓存（见 index.ts 的
-// Cache-Control）。周期表一季度才变，14 天 TTL 够；强制刷新走 force。
+// 周期表一季度才变，14 天 TTL 够；强制刷新走 force。
 const TTL_MS = 14 * 24 * 60 * 60 * 1000
-let cache: { data: CalendarWeekday[]; at: number } | null = null
+
+type CacheEntry = { data: CalendarWeekday[]; at: number }
+let cache: CacheEntry | null = null
+
+// 缓存落盘 —— 内存缓存跟进程同生死，而重启是家常便饭（每次上线都得重启一次），
+// 于是「14 天 TTL」实际是「14 天或到下次重启为止」，等于没有。落盘后重启也还在。
+//
+// 写不进去就静默退回纯内存（serverless 只读盘 / 权限不对）—— 那边本来就有 HTTP
+// 边缘缓存兜底（见 index.ts 的 Cache-Control），不该为此让整个周历接口挂掉。
+const CACHE_FILE = join(dataDir, 'calendar-cache.json')
+
+function readDisk(): CacheEntry | null {
+  try {
+    const raw = JSON.parse(readFileSync(CACHE_FILE, 'utf8')) as Partial<CacheEntry>
+    // 校验后再用 —— 手改坏 / 写了一半的文件不能当有效缓存，否则把坏数据当好的返回
+    if (!Array.isArray(raw.data) || raw.data.length === 0) return null
+    if (typeof raw.at !== 'number' || !Number.isFinite(raw.at)) return null
+    return { data: raw.data, at: raw.at }
+  } catch {
+    return null // 文件不存在 / 坏了 / 读不动 —— 当没缓存，下次 fetch 会重写
+  }
+}
+
+function writeDisk(entry: CacheEntry): void {
+  try {
+    // 先写临时文件再 rename：直接覆盖会在崩溃 / 满盘时留下半个 JSON，
+    // 之后每次启动都读到坏文件。同分区 rename 是原子的，要么旧的要么新的。
+    const tmp = `${CACHE_FILE}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify(entry))
+    renameSync(tmp, CACHE_FILE)
+  } catch {
+    /* 落盘失败不影响功能，内存缓存照常工作 */
+  }
+}
 
 export interface CalendarResult {
   data: CalendarWeekday[]
@@ -81,6 +115,9 @@ export interface CalendarResult {
 }
 
 export async function getCalendar(force = false): Promise<CalendarResult> {
+  // 进程刚起来时内存是空的 —— 先看盘上有没有，有就不用打扰 BGM
+  if (!cache) cache = readDisk()
+
   if (!force && cache && Date.now() - cache.at < TTL_MS) {
     return { data: cache.data, updatedAt: cache.at, fromCache: true }
   }
@@ -88,6 +125,7 @@ export async function getCalendar(force = false): Promise<CalendarResult> {
   const data = parseCalendar(raw)
   if (data.length > 0) {
     cache = { data, at: Date.now() }
+    writeDisk(cache)
     return { data, updatedAt: cache.at, fromCache: false }
   }
   // BGM 返回空数组 —— 有旧缓存就退回旧的（不抛，是 BGM 那边的问题），否则抛
