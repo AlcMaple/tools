@@ -209,18 +209,24 @@ export function AuthModal({
           )}
 
           {mode === 'login' && (
-            <div className="-mt-2 mb-3 flex justify-end">
+            // 报错跟「忘记密码」挤在同一行（左提示 / 右入口）而不是自己占一行：
+            // 这一行在登录态恒存在，报错只是填进它的空位，提交按钮不会被顶下去。
+            // 登录态只可能出 error，okMsg 是找回密码专属，两者不会在这撞车。
+            <div className="-mt-2 mb-3 flex items-center justify-between gap-3">
+              <p className="font-label text-[11px] text-error">{error}</p>
               <button
                 type="button"
                 onClick={() => onMode('forgot')}
-                className="font-label text-[11.5px] font-semibold text-primary hover:underline"
+                className="shrink-0 font-label text-[11.5px] font-semibold text-primary hover:underline"
               >
                 忘记密码？
               </button>
             </div>
           )}
 
-          {error && <p className="mb-3 font-label text-[11px] text-error">{error}</p>}
+          {mode !== 'login' && error && (
+            <p className="mb-3 font-label text-[11px] text-error">{error}</p>
+          )}
           {okMsg && <p className="mb-3 font-label text-[11px] text-primary">{okMsg}</p>}
 
           <button
