@@ -132,8 +132,26 @@ tracks.put('/:bgmId', async (c) => {
   const prev = oneStmt.get(uid, bgmId) as TrackRow | undefined
 
   if (!prev) {
-    // 新增 —— 周历点「追番」走这条。标签 / 别名此刻还没有，交给 fillDetailLater 补
+    // 新增 —— 周历点「追番」走这条。
     const status = STATUSES.includes(body.status as Status) ? (body.status as Status) : 'watching'
+
+    // 同步取一次 BGM 详情，把标签 / 别名 / 放送日期直接带进新记录 —— 用户点完「追番」
+    // 切到本页就能立刻看到标签（香港→BGM 实测 ~130ms），不必等异步回填再手动刷新。
+    // BGM 抖动 / 限流**不能让追番本身失败**：取不到就先空着插入，挂 fillDetailLater
+    // 后台兜底（沿用 app 容错，符合 CLAUDE.md 网络红线：失败不重试、附属数据不拖垮主
+    // 操作）。短超时 4s，避免慢响应把「追番」按钮卡住。
+    let bgmTags = '[]'
+    let aliases = '[]'
+    let airDate = String(body.airDate ?? '')
+    try {
+      const d = await fetchSubjectDetail(bgmId, 4000)
+      if (d.tags.length) bgmTags = JSON.stringify(d.tags)
+      if (d.aliases.length) aliases = JSON.stringify(d.aliases)
+      if (d.date && !airDate) airDate = d.date
+    } catch {
+      /* 静默 —— 下面按需挂 fillDetailLater 兜底 */
+    }
+
     insertStmt.run({
       user_id: uid,
       bgm_id: bgmId,
@@ -144,14 +162,15 @@ tracks.put('/:bgmId', async (c) => {
       title_cn: String(body.titleCn ?? ''),
       cover: String(body.cover ?? ''),
       air_weekday: Number(body.airWeekday) || 0,
-      air_date: String(body.airDate ?? ''),
+      air_date: airDate,
       score: Number(body.score) || 0,
-      bgm_tags: '[]',
+      bgm_tags: bgmTags,
       user_tags: '[]',
-      aliases: '[]',
+      aliases,
       updated_at: now,
     })
-    fillDetailLater(uid, bgmId)
+    // 同步没取到标签才挂后台兜底（取到了 fillDetailLater 会二次检查自动跳过）
+    if (bgmTags === '[]') fillDetailLater(uid, bgmId)
     return c.json(toJson(oneStmt.get(uid, bgmId) as TrackRow))
   }
 

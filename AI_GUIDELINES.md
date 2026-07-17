@@ -68,6 +68,10 @@
   # 源码里的每个 a/b 类，都应能在 css 里搜到 .a\/b
   ```
 
+- ❌ 设计稿（mockup HTML）只放在 `scratchpad/` 或某台机器本地，不提交进仓库
+  后果：真实事故——「我的追番」的设计稿写在 `scratchpad/tracks-mockup.html`（`TracksPage.tsx` 头注释还指着它），但 scratchpad 不进 git。换一台机器 / 换一个会话开发时，设计稿等于不存在，只能对着线上截图猜原设计，改样式没有基准。这个项目 **Mac 开发 + Windows 开发两头切**，尤其致命：一头写了稿，另一头看不到。
+  ✅ 定稿的设计稿一律提交进 `docs/design-mockups/`（跟 `responsive-design.html` 等现有稿并列），源码引用它时写这个仓库内路径，不写 `scratchpad/`。mockup 是「样式基准」，跟代码同等对待：进版本控制、跨设备可得。
+
 ## 服务端 / 部署（网页版）
 
 - ❌ 起 HTTP 服务用框架默认的监听地址（`serve({ fetch, port })` 默认绑 `0.0.0.0`）
