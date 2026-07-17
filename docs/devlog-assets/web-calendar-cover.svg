@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 452" font-family="-apple-system,Segoe UI,Roboto,PingFang SC,Microsoft YaHei,sans-serif">
+  <defs>
+    <marker id="cvGrey" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6b6b70"/>
+    </marker>
+    <marker id="cvGreen" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#166c45"/>
+    </marker>
+    <marker id="cvRed" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#94464f"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="858" height="450" rx="10" fill="#fbfafc" stroke="#e5e0e3"/>
+
+  <text x="24" y="30" font-size="13" font-weight="700" fill="#2a2a2e">封面：一张图从 BGM 到用户屏幕，中间换了尺寸和路径</text>
+  <text x="24" y="48" font-size="11.5" fill="#7a7a80">浏览器从头到尾只跟自己的域名说话 —— 没魔法的用户照样能看：这条链路改前改后完全一样，只是图变大了。</text>
+
+  <!-- ══ 上半：修复前 ══ -->
+  <rect x="16" y="70" width="52" height="86" rx="5" fill="#94464f" opacity="0.12"/>
+  <text x="42" y="106" font-size="11" font-weight="700" text-anchor="middle" fill="#94464f">修复</text>
+  <text x="42" y="122" font-size="11" font-weight="700" text-anchor="middle" fill="#94464f">前</text>
+
+  <rect x="84" y="78" width="150" height="70" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="100" y="98" font-size="11.5" font-weight="700" fill="#404046">周历接口给的档位</text>
+  <text x="100" y="115" font-size="10" fill="#7a7a80">images.common</text>
+  <text x="100" y="130" font-size="11.5" font-weight="700" fill="#94464f">150 × 211 · 11KB</text>
+  <text x="100" y="143" font-size="9.5" fill="#7a7a80">注释吹「≈200px，够清晰」</text>
+
+  <path d="M234 113 L286 113" stroke="#94464f" stroke-width="1.5" fill="none" marker-end="url(#cvRed)"/>
+
+  <rect x="292" y="78" width="164" height="70" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="308" y="98" font-size="11.5" font-weight="700" fill="#404046">卡片要显示多大</text>
+  <text x="308" y="115" font-size="10.5" fill="#7a7a80">CSS 宽 220px</text>
+  <text x="308" y="131" font-size="10.5" fill="#7a7a80">视网膜 ×2 =</text>
+  <text x="378" y="131" font-size="11.5" font-weight="700" fill="#404046">440 物理像素</text>
+
+  <path d="M456 113 L508 113" stroke="#94464f" stroke-width="1.5" fill="none" marker-end="url(#cvRed)"/>
+
+  <rect x="514" y="78" width="322" height="70" rx="6" fill="#94464f" opacity="0.1"/>
+  <rect x="514" y="78" width="322" height="70" rx="6" fill="none" stroke="#94464f" stroke-opacity="0.35"/>
+  <text x="530" y="100" font-size="12.5" font-weight="700" fill="#94464f">150 的图铺进 440 → 放大约 3 倍</text>
+  <text x="530" y="120" font-size="11" fill="#404046">这就是「糊」。跟带宽无关、跟缓存无关，纯粹是</text>
+  <text x="530" y="136" font-size="11" fill="#404046">拿了张不够大的图。</text>
+
+  <!-- 断崖说明 -->
+  <rect x="84" y="166" width="372" height="46" rx="6" fill="#ffffff" stroke="#d9d1d4" stroke-dasharray="3 3"/>
+  <text x="100" y="185" font-size="10.5" font-weight="700" fill="#404046">为什么不直接换大一档？周历那套路径是断崖：</text>
+  <text x="100" y="202" font-size="10.5" fill="#7a7a80">common 11KB(150×211) → 下一档 large 直接 916KB(2081×2928)，中间没有东西</text>
+
+  <!-- ══ 下半：修复后 ══ -->
+  <rect x="16" y="238" width="52" height="190" rx="5" fill="#166c45" opacity="0.12"/>
+  <text x="42" y="326" font-size="11" font-weight="700" text-anchor="middle" fill="#166c45">修复</text>
+  <text x="42" y="342" font-size="11" font-weight="700" text-anchor="middle" fill="#166c45">后</text>
+
+  <rect x="84" y="246" width="160" height="58" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="100" y="266" font-size="11.5" font-weight="700" fill="#404046">① 服务端拼 URL</text>
+  <text x="100" y="283" font-size="9.5" fill="#7a7a80">从 images.large 的路径</text>
+  <text x="100" y="296" font-size="9.5" fill="#166c45">lain.bgm.tv/r/400/pic/...</text>
+
+  <path d="M244 275 L292 275" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#cvGrey)"/>
+
+  <rect x="298" y="246" width="170" height="58" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="314" y="266" font-size="11.5" font-weight="700" fill="#404046">② 前端 coverUrl()</text>
+  <text x="314" y="283" font-size="9.5" fill="#7a7a80">砍掉域名，换成同源路径</text>
+  <text x="314" y="296" font-size="9.5" font-weight="700" fill="#166c45">/api/cover/r/400/pic/...</text>
+
+  <path d="M468 275 L516 275" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#cvGrey)"/>
+
+  <rect x="522" y="246" width="150" height="58" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="538" y="266" font-size="11.5" font-weight="700" fill="#404046">③ 浏览器</text>
+  <text x="538" y="283" font-size="9.5" fill="#7a7a80">只请求自己的域名</text>
+  <text x="538" y="296" font-size="9.5" fill="#7a7a80">没魔法也通</text>
+
+  <path d="M672 275 L720 275" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#cvGrey)"/>
+
+  <rect x="726" y="246" width="110" height="58" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="742" y="266" font-size="11.5" font-weight="700" fill="#404046">④ 海外 VPS</text>
+  <text x="742" y="283" font-size="9.5" fill="#7a7a80">代取图床</text>
+  <text x="742" y="296" font-size="9.5" font-weight="700" fill="#166c45">400×563 · 56KB</text>
+
+  <!-- 两条铁律 -->
+  <rect x="84" y="322" width="366" height="98" rx="6" fill="#94464f" opacity="0.08"/>
+  <rect x="84" y="322" width="366" height="98" rx="6" fill="none" stroke="#94464f" stroke-opacity="0.3"/>
+  <text x="100" y="343" font-size="11.5" font-weight="700" fill="#94464f">铁律 1：宽度只认白名单</text>
+  <text x="100" y="362" font-size="10.5" fill="#404046">{100, 200, 400, 600, 800, 1200}</text>
+  <text x="100" y="380" font-size="10.5" fill="#404046">填 480 这种「看着合理」的数 → HTTP 400 拿到空图，</text>
+  <text x="100" y="395" font-size="10.5" font-weight="700" fill="#94464f">全站封面一起裂。</text>
+  <text x="100" y="412" font-size="9.5" fill="#7a7a80">实测过 300/480/500/700/900/1000 全是 400。</text>
+
+  <rect x="470" y="322" width="366" height="98" rx="6" fill="#94464f" opacity="0.08"/>
+  <rect x="470" y="322" width="366" height="98" rx="6" fill="none" stroke="#94464f" stroke-opacity="0.3"/>
+  <text x="486" y="343" font-size="11.5" font-weight="700" fill="#94464f">铁律 2：URL 里不能出现 bgm.tv</text>
+  <text x="486" y="362" font-size="10.5" fill="#404046">②那一步砍域名不只是为了好看 —— HTTP 明文下</text>
+  <text x="486" y="378" font-size="10.5" fill="#404046">GFW 看到关键字会 RST。</text>
+  <text x="486" y="396" font-size="10.5" font-weight="700" fill="#94464f">已踩：整个 IP:80 被临时封。</text>
+  <text x="486" y="412" font-size="9.5" fill="#7a7a80">代理路径白名单只放行 /pic/ 和 /r/&lt;宽&gt;/pic/。</text>
+</svg>

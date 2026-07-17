@@ -36,6 +36,27 @@ function toHttps(u: string): string {
   return u.replace(/^http:\/\//, 'https://')
 }
 
+/**
+ * 封面 URL —— 走 BGM 图床的实时缩放接口 `/r/<宽>/pic/...`（底图就是 large）。
+ *
+ * **宽度只认白名单 {100, 200, 400, 600, 800, 1200}，填别的一律 HTTP 400 拿到空图** ——
+ * 想调清晰度只能在这几档里挑，别写 480 这种看着合理的数。
+ *
+ * 取 400（400×563，53KB）：卡片约 220px，视网膜 2 倍 = 440 物理像素，400 基本 1:1。
+ * 之前取周历自带的 `images.common`，注释说「≈200px」其实只有 **150×211**，铺进 440 物理
+ * 像素要放大 3 倍 —— 那就是封面糊的原因。而周历那套老式路径没有中间档：common 之上
+ * 直接跳到 large（2081×2928、916KB），只能另走 /r/ 接口。
+ */
+const COVER_WIDTH = 400
+
+function coverUrl(images: Record<string, string>): string {
+  // 从 large 的路径拼 /r/<宽>/ —— large 一定是 /pic/cover/l/... 这种原图路径
+  const m = (images.large ?? '').match(/^https?:\/\/[^/]+(\/pic\/.+)$/)
+  if (m) return `https://lain.bgm.tv/r/${COVER_WIDTH}${m[1]}`
+  // large 缺失（极少）→ 退回老式档位，糊也比没有强
+  return toHttps(images.common || images.medium || images.grid || '')
+}
+
 function parseCalendar(raw: unknown): CalendarWeekday[] {
   if (!Array.isArray(raw)) return []
   return raw.map((entry, idx) => {
@@ -51,16 +72,13 @@ function parseCalendar(raw: unknown): CalendarWeekday[] {
     const items: CalendarItem[] = itemsRaw.map((iRaw) => {
       const i = iRaw as Record<string, unknown>
       const images = (i.images as Record<string, string>) ?? {}
-      // 网页版封面走服务器代理，优先取较小的 common（≈200px，卡片够清晰）而非 large（近 1MB），
-      // 大幅省代理带宽（尤其 6Mbps 小机）。app 那边用 large 是本地缓存、不在乎。
-      const cover = images.common || images.medium || images.grid || images.large || ''
       const rating = (i.rating as Record<string, unknown>) ?? {}
       return {
         id: typeof i.id === 'number' ? i.id : 0,
         name: String(i.name ?? ''),
         name_cn: String(i.name_cn ?? ''),
         url: toHttps(String(i.url ?? (i.id ? `https://bgm.tv/subject/${i.id}` : ''))),
-        cover: toHttps(cover),
+        cover: coverUrl(images),
         airDate: String(i.air_date ?? ''),
         episodes: typeof i.eps === 'number' ? i.eps : 0,
         score: typeof rating.score === 'number' ? rating.score : 0,
