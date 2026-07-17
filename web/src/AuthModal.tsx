@@ -11,11 +11,6 @@ import { Select } from './Select'
 export type AuthMode = 'login' | 'register' | 'forgot'
 
 const TITLE: Record<AuthMode, string> = { login: '登录', register: '注册', forgot: '找回密码' }
-const SUB: Record<AuthMode, string> = {
-  login: '登录后即可把追番同步到云端，换设备也在。',
-  register: '开放注册，起个用户名和密码即可，追番数据只属于你。',
-  forgot: '用你设置过的密保问题重置密码。没设过密保就无法找回。',
-}
 
 export function AuthModal({
   open,
@@ -131,8 +126,7 @@ export function AuthModal({
         <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
           MapleTools
         </div>
-        <h2 className="mt-1.5 text-lg font-extrabold text-on-surface">{TITLE[mode]}</h2>
-        <p className="mb-4 font-label text-xs text-on-surface-variant/70">{SUB[mode]}</p>
+        <h2 className="mb-4 mt-1.5 text-lg font-extrabold text-on-surface">{TITLE[mode]}</h2>
 
         {!isForgot && (
           <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-md bg-surface-container p-1">
@@ -165,7 +159,6 @@ export function AuthModal({
               autoComplete="username"
               className={inputCls}
             />
-            {isReg && <Hint>2–12 个字符，中英文都算 1 个</Hint>}
           </Field>
 
           {isForgot && (

@@ -22,9 +22,6 @@ export function SettingsPage(): JSX.Element | null {
     <div className="px-4 pb-16 md:px-6">
       <div className="pt-4 pb-3">
         <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">设置</h1>
-        <p className="mt-1.5 font-label text-sm text-on-surface-variant/80">
-          账号与安全。你的数据只属于这个账号，和桌面版各自独立。
-        </p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-[220px_1fr] md:gap-10">
@@ -111,11 +108,10 @@ function SideItem({
   )
 }
 
-function PaneHead({ title, desc }: { title: string; desc: string }): JSX.Element {
+function PaneHead({ title }: { title: string }): JSX.Element {
   return (
     <div className="mb-1.5 border-b border-outline-variant/15 pb-3">
       <h2 className="text-base font-extrabold text-on-surface">{title}</h2>
-      <p className="mt-1 font-label text-xs text-on-surface-variant/55">{desc}</p>
     </div>
   )
 }
@@ -138,18 +134,14 @@ function ProfileModule(): JSX.Element | null {
   if (!user) return null
   return (
     <>
-      <PaneHead title="个人信息" desc="你在 MapleTools 网页版的身份。" />
-      <Kv k="用户名" v={user.username} note="登录用，创建后不可修改，最长 12 个字符" />
+      <PaneHead title="个人信息" />
+      <Kv k="用户名" v={user.username} />
       <Kv k="注册时间" v={user.createdAt.slice(0, 10)} />
-      <Kv k="数据归属" v="仅此账号" note="网页版数据存在服务器，和桌面版各自独立" />
+      {/* note 只留「没设密保」这种要用户去做点什么的警告；「已设置」不用再解释为什么不显示 */}
       <Kv
         k="密保"
         v={user.hasSecurity ? '已设置' : '未设置'}
-        note={
-          user.hasSecurity
-            ? '出于安全，问题和答案都不会显示出来'
-            : '没设密保，忘记密码将无法找回账号'
-        }
+        note={user.hasSecurity ? undefined : '忘记密码将无法找回账号'}
       />
     </>
   )
@@ -203,7 +195,7 @@ function SecurityModule(): JSX.Element {
 
   return (
     <>
-      <PaneHead title="账号安全" desc="修改密码或密保，都需要先验证原始密码。" />
+      <PaneHead title="账号安全" />
       <form onSubmit={submit} className="max-w-[440px] pt-4">
         <Field label="原始密码" required>
           <input
@@ -250,12 +242,11 @@ function SecurityModule(): JSX.Element {
 
         <SegNote>找回密码用的密保</SegNote>
         {/* 只报「设没设」，绝不回显问题和答案 —— 问题本身也是秘密 */}
-        <div className="mb-3.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded border border-outline-variant/15 bg-surface-container-high/50 px-3 py-2.5 text-xs text-on-surface-variant/75">
+        <div className="mb-3.5 flex flex-wrap items-center gap-x-1.5 rounded border border-outline-variant/15 bg-surface-container-high/50 px-3 py-2.5 text-xs text-on-surface-variant/75">
           <span>当前状态：</span>
           <span className={`font-bold ${user?.hasSecurity ? 'text-primary' : 'text-error'}`}>
             {user?.hasSecurity ? '已设置' : '未设置'}
           </span>
-          <span className="opacity-60">· 出于安全，已设置的问题和答案都不会显示出来</span>
         </div>
         <Field label="找回密码问题">
           <Select
@@ -264,9 +255,6 @@ function SecurityModule(): JSX.Element {
             onChange={setQuestionId}
             placeholder="请选择一个问题…"
           />
-          <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">
-            从预设里选而不是自己写 —— 找回时只要从同一个列表里选，不用一字不差地回忆。
-          </p>
         </Field>
         <Field label="找回密码答案">
           <input
@@ -277,13 +265,12 @@ function SecurityModule(): JSX.Element {
             className={inputCls}
           />
           <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">
-            答案会像密码一样加密保存，我们也看不到。不区分大小写和首尾空格。
+            不区分大小写和首尾空格
           </p>
         </Field>
 
-        {error && <p className="mb-3 font-label text-[11.5px] text-error">{error}</p>}
-        {okMsg && <p className="mb-3 font-label text-[11.5px] text-primary">{okMsg}</p>}
-
+        {/* 状态位固定在按钮右侧的空位里：出现/消失都不挤动任何东西。
+            原来是在按钮上方插一行 <p>，一「已保存」整行按钮就被顶下去。 */}
         <div className="mt-5 flex items-center gap-3.5">
           <button
             type="submit"
@@ -292,8 +279,8 @@ function SecurityModule(): JSX.Element {
           >
             {saving ? '保存中…' : '保存修改'}
           </button>
-          <span className="font-label text-[11.5px] text-on-surface-variant/45">
-            改密码会让其它设备上的登录立即失效。
+          <span className={`font-label text-[11.5px] ${error ? 'text-error' : 'text-primary'}`}>
+            {error || okMsg}
           </span>
         </div>
       </form>

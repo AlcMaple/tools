@@ -154,7 +154,7 @@ Prefer `invoke/handle` (has a return value); use `send` for one-way notification
 
 ## Web version (`web/`)
 
-A separate React + Vite frontend with a **Hono** backend. Design doc: `docs/ideas/012-网页版.md`; deployment: `docs/web/Vercel部署保姆教程.md`.
+A separate React + Vite frontend with a **Hono** backend. Design doc: `docs/ideas/012-网页版.md`. Live at `https://anime.alcmaple.cn` on a 唐人云 VPS (git pull + pm2 + nginx + certbot) — runbook: `docs/web/唐人云部署保姆教程.md`. `docs/web/Vercel部署保姆教程.md` and `Oracle开机保姆教程.md` are alternatives that aren't in use.
 
 - **`server/index.ts` is the single source of truth for the API.** One Hono app, three hosts: local dev mounts it into Vite via `@hono/vite-dev-server` (only `/api/*`), Vercel wraps it in `api/[[...route]].ts` (the *only* platform glue), a future VPS runs it via `@hono/node-server` (`server/node.ts`). Routes are written once.
 - **Scraping is copied from the app, not shared.** `server/bgm/calendar.ts` is a copy of `src/main/bgm` with Electron `net` swapped for `fetch` (`server/http.ts` — proxy-aware fetch + single transient retry). Node's `fetch` ignores the system proxy, so local dev behind non-TUN Clash needs `HTTPS_PROXY=http://127.0.0.1:7890 npm run dev`.

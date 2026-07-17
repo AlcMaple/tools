@@ -11,6 +11,50 @@
 
 ## 网页版
 
+### 2026-07-17 fix(web): 堵住能绕过 HTTPS 的后端直连端口 + 登录限流 + 数据库备份
+
+**效果**：
+
+1. **公网直连 `:3000` 关掉了**（见下图）。node 之前绑 `0.0.0.0` 且服务器没防火墙，`http://<ip>:3000` 从公网直接通 —— nginx 白装：登录密码明文过公网、HSTS/证书全不生效、`X-Forwarded-For` 随便伪造。改成只绑 `127.0.0.1`。
+2. **登录 / 注册加了限流**。原来只有 `/forgot` 有 —— 因为密保答案熵低、想得到；`/login` 反而裸奔，连打错密码只会一直 401，从不 429。现在登录按 **IP 20 次 + 账号 10 次 / 15 分钟**双维度挡，注册按 IP 5 次/小时。
+3. **数据库有备份了**。每天 04:00 `sqlite3 .backup` + gzip、留 14 天；库文件权限 `644 → 600`。之前线上有真用户数据、零备份。
+4. **nginx 补了 HSTS + nosniff + X-Frame-Options + Referrer-Policy**。
+5. **设置页「已保存」不再把整行按钮顶下去**，改成占按钮右边的常驻空位。删掉一批自曝式文案（数据存哪、为什么不回显问题、周历缓存多久…）—— 界面自明的东西再解释一遍只剩噪音，理由写进 docs 就够。
+6. **补上了实际在用的部署文档**：`docs/web/唐人云部署保姆教程.md`。`docs/web/` 之前只有 Vercel 和 Oracle 两份**备选**方案的教程，真正在跑的这套（git pull + pm2 + nginx + certbot）反而没有，换机器就得从头摸。
+
+![把后端从公网收回内网](docs/devlog-assets/web-loopback-bind.svg)
+
+**关键代码**：
+
+限流的 IP 只能认 `X-Real-IP`。`X-Forwarded-For` 是**追加**的（`$proxy_add_x_forwarded_for` 把真 IP 拼在客户端伪造值的**后面**），所以退化时要取最后一段；而 `X-Real-IP` 被 nginx 用 `$remote_addr` 整个覆写，伪造不了。这两个头可信的前提，正是效果 1 那条 —— nginx 之外没人进得来：
+
+```ts
+// server/node.ts —— 默认绑回环，要裸跑再显式给 HOST
+const hostname = process.env.HOST || '127.0.0.1'
+serve({ fetch: app.fetch, port, hostname }, …)
+
+// server/auth.ts
+function clientIp(c: Context): string {
+  const real = c.req.header('x-real-ip')
+  if (real) return real
+  return c.req.header('x-forwarded-for')?.split(',').pop()?.trim() || 'local'
+}
+```
+
+登录两个维度都要挡，且**放在 `verifySecret` 之前** —— scrypt 很吃 CPU，先限流顺带挡住拿登录接口打 CPU 的玩法。成功后要清账，否则用户自己打错几次的额度会留着替攻击者扣：
+
+```ts
+const ipKey = `login-ip:${clientIp(c)}`
+const userKey = `login-user:${username.toLowerCase()}`
+// 只按账号挡不住「换着号猜」，只按 IP 挡不住「多 IP 盯一个号猜」
+if (rateLimited(ipKey, LOGIN_MAX_PER_IP, WINDOW) || rateLimited(userKey, LOGIN_MAX_PER_USER, WINDOW)) {
+  return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+}
+const ok = row ? await verifySecret(password, row.pass_hash) : await verifySecret(password, 'x:x')
+if (!row || !ok) return c.json({ error: '用户名或密码错误' }, 401)
+buckets.delete(ipKey); buckets.delete(userKey)   // ← 登录成功即清账
+```
+
 ### 2026-07-16 feat(web): 顶栏导航 + 设置页 + 找回密码
 
 **效果**：

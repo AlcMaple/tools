@@ -46,7 +46,7 @@ export function CalendarPage(): JSX.Element {
       <div className="px-4 pb-3 pt-4 md:px-6">
         <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">番剧周历</h1>
         <p className="mt-1 hidden font-label text-sm text-on-surface-variant/80 md:block">
-          本季正在播出，按星期排列。来源 Bangumi · 14 天缓存。
+          本季正在播出，按星期排列。
         </p>
       </div>
 

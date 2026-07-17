@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 410" font-family="-apple-system,Segoe UI,Roboto,PingFang SC,Microsoft YaHei,sans-serif">
+  <defs>
+    <marker id="lbGrey" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6b6b70"/>
+    </marker>
+    <marker id="lbRed" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#94464f"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="818" height="408" rx="10" fill="#fbfafc" stroke="#e5e0e3"/>
+
+  <text x="24" y="30" font-size="13" font-weight="700" fill="#2a2a2e">把后端从公网收回内网 —— nginx 必须是唯一入口</text>
+  <text x="24" y="48" font-size="11.5" fill="#7a7a80">框架默认绑 0.0.0.0。反代场景下「后端能从外面访问」不是功能，是洞：它把 nginx 整个绕过去了。</text>
+
+  <!-- ══ 修复前 ══ -->
+  <rect x="16" y="68" width="52" height="82" rx="5" fill="#94464f" opacity="0.12"/>
+  <text x="42" y="103" font-size="11" font-weight="700" text-anchor="middle" fill="#94464f">修复</text>
+  <text x="42" y="119" font-size="11" font-weight="700" text-anchor="middle" fill="#94464f">前</text>
+
+  <rect x="96" y="76" width="104" height="40" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="148" y="101" font-size="12.5" text-anchor="middle" fill="#404046">浏览器</text>
+
+  <rect x="300" y="76" width="150" height="40" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="375" y="94" font-size="12.5" font-weight="700" text-anchor="middle" fill="#404046">nginx :443</text>
+  <text x="375" y="109" font-size="10.5" text-anchor="middle" fill="#7a7a80">TLS · 证书 · HSTS</text>
+
+  <rect x="570" y="76" width="160" height="40" rx="6" fill="#ffffff" stroke="#94464f" stroke-opacity="0.5"/>
+  <text x="650" y="94" font-size="12.5" font-weight="700" text-anchor="middle" fill="#404046">node</text>
+  <text x="650" y="109" font-size="11" font-weight="700" text-anchor="middle" fill="#94464f">0.0.0.0:3000</text>
+
+  <line x1="200" y1="96" x2="296" y2="96" stroke="#6b6b70" stroke-width="1.4" marker-end="url(#lbGrey)"/>
+  <text x="248" y="90" font-size="10.5" text-anchor="middle" fill="#7a7a80">HTTPS</text>
+  <line x1="450" y1="96" x2="566" y2="96" stroke="#6b6b70" stroke-width="1.4" marker-end="url(#lbGrey)"/>
+  <text x="508" y="90" font-size="10.5" text-anchor="middle" fill="#7a7a80">转发</text>
+
+  <!-- 绕过路径 -->
+  <rect x="96" y="152" width="104" height="34" rx="6" fill="#ffffff" stroke="#94464f" stroke-opacity="0.4"/>
+  <text x="148" y="174" font-size="12" text-anchor="middle" fill="#94464f">任何人</text>
+  <path d="M200 169 H 650 V 122" fill="none" stroke="#94464f" stroke-width="1.8" marker-end="url(#lbRed)"/>
+  <text x="420" y="163" font-size="11.5" font-weight="700" text-anchor="middle" fill="#94464f">http://&lt;ip&gt;:3000 —— 明文，整个绕开 nginx</text>
+
+  <rect x="96" y="198" width="634" height="24" rx="5" fill="#94464f" opacity="0.08"/>
+  <text x="110" y="214" font-size="11" fill="#404046">登录密码明文过公网 ｜ HSTS / 证书全不生效 ｜ X-Forwarded-For 随便伪造 → 按 IP 限流一文不值</text>
+
+  <!-- ══ 修复后 ══ -->
+  <rect x="16" y="252" width="52" height="82" rx="5" fill="#166c45" opacity="0.12"/>
+  <text x="42" y="287" font-size="11" font-weight="700" text-anchor="middle" fill="#166c45">修复</text>
+  <text x="42" y="303" font-size="11" font-weight="700" text-anchor="middle" fill="#166c45">后</text>
+
+  <rect x="96" y="260" width="104" height="40" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="148" y="285" font-size="12.5" text-anchor="middle" fill="#404046">浏览器</text>
+
+  <rect x="300" y="260" width="150" height="40" rx="6" fill="#ffffff" stroke="#166c45" stroke-opacity="0.4"/>
+  <text x="375" y="278" font-size="12.5" font-weight="700" text-anchor="middle" fill="#404046">nginx :443</text>
+  <text x="375" y="293" font-size="10.5" text-anchor="middle" fill="#166c45">唯一入口</text>
+
+  <rect x="570" y="260" width="160" height="40" rx="6" fill="#ffffff" stroke="#166c45" stroke-opacity="0.5"/>
+  <text x="650" y="278" font-size="12.5" font-weight="700" text-anchor="middle" fill="#404046">node</text>
+  <text x="650" y="293" font-size="11" font-weight="700" text-anchor="middle" fill="#166c45">127.0.0.1:3000</text>
+
+  <line x1="200" y1="280" x2="296" y2="280" stroke="#6b6b70" stroke-width="1.4" marker-end="url(#lbGrey)"/>
+  <text x="248" y="274" font-size="10.5" text-anchor="middle" fill="#7a7a80">HTTPS</text>
+  <line x1="450" y1="280" x2="566" y2="280" stroke="#6b6b70" stroke-width="1.4" marker-end="url(#lbGrey)"/>
+  <text x="508" y="274" font-size="10.5" text-anchor="middle" fill="#7a7a80">转发</text>
+
+  <rect x="96" y="336" width="104" height="34" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="148" y="358" font-size="12" text-anchor="middle" fill="#7a7a80">任何人</text>
+  <line x1="200" y1="353" x2="392" y2="353" stroke="#a9a1a4" stroke-width="1.6" stroke-dasharray="5 3"/>
+  <g stroke="#94464f" stroke-width="2.2">
+    <line x1="400" y1="345" x2="416" y2="361"/>
+    <line x1="416" y1="345" x2="400" y2="361"/>
+  </g>
+  <text x="430" y="357" font-size="11.5" font-weight="700" fill="#166c45">连接被拒 —— 公网上根本没在监听</text>
+
+  <text x="96" y="392" font-size="11" fill="#7a7a80">顺带：X-Real-IP 由 nginx 用 $remote_addr 覆写、伪造不了，限流终于站得住 —— 前提正是「nginx 之外没人进得来」。</text>
+</svg>
