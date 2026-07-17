@@ -19,18 +19,22 @@ export function SettingsPage(): JSX.Element | null {
   if (!user) return null
 
   return (
-    // md 以下退化成单列：容器全宽、内容却全挤在左边 → 右边一大片死区，左右不对称。
-    // 收进一根居中的窄列（含标题，否则标题和内容左边缘对不齐），md 起恢复「侧栏 + 面板」。
+    // md 以下没有侧栏可言，整页就是一条**中轴**：标题 / 头像 / tab / 主体全部居中对齐。
+    // 之前左对齐 → 右边一大片死区；只把头像居中 → 中轴和左对齐的内容各走各的，更散。
+    // md 起恢复「220px 侧栏 + 面板」，一切回到左对齐。
     <div className="px-4 pb-16 md:px-6">
-      <div className="mx-auto w-full max-w-[560px] md:max-w-none">
-        <div className="pt-4 pb-3">
-          <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">设置</h1>
-        </div>
+      {/* 标题在**居中列之外** —— 它要贴页面左边距，跟周历页的 h1 同一个位置；
+          放进居中列里就会缩到列的左边缘（页面中间偏左），两页对不上 */}
+      <div className="pt-4 pb-3">
+        <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">设置</h1>
+      </div>
 
+      <div className="mx-auto w-full max-w-[480px] md:max-w-none">
         <div className="grid gap-6 md:grid-cols-[220px_1fr] md:gap-10">
           <aside className="self-start md:sticky md:top-[72px]">
             <IdCard username={user.username} />
-            <nav className="mt-3.5 flex gap-1.5 overflow-x-auto md:flex-col md:overflow-visible">
+            {/* 窄屏：tab 居中，跟上面的头像页头对齐成一条中轴。md 起回到侧栏的竖排左对齐 */}
+            <nav className="mt-4 flex justify-center gap-1.5 md:mt-3.5 md:flex-col md:justify-start">
               <SideItem
                 icon="person"
                 active={module === 'profile'}
@@ -64,21 +68,17 @@ export function SettingsPage(): JSX.Element | null {
   )
 }
 
+// 身份区。两种形态都是「竖排居中」，差别只在**要不要卡片外观**：
+//   窄屏 = 页头，不套框 —— 套了就是页面正中一个孤零零的小盒子（撑满又是条空长条，两头不讨好）
+//   md 起 = 220px 侧栏里的身份卡，这时框才有意义（它把侧栏和右边面板分开）
 function IdCard({ username }: { username: string }): JSX.Element {
   return (
-    // md 以下 w-fit 让卡片贴着内容收缩 —— 撑满整行的话内容只占左边一点点，
-    // 剩下就是一个空荡荡的长条（用户原话：矩形阴影拉长）。md 起它是 220px 侧栏，正常撑满。
-    <div className="flex w-fit items-center gap-4 rounded-xl border border-outline-variant/10 bg-surface-container/70 p-4 md:w-auto md:flex-col md:gap-2.5 md:p-5">
-      <div className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-xl bg-primary/15 text-[22px] font-extrabold text-primary">
+    <div className="flex flex-col items-center gap-2.5 md:rounded-xl md:border md:border-outline-variant/10 md:bg-surface-container/70 md:p-5">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-[26px] font-extrabold text-primary md:h-[54px] md:w-[54px] md:rounded-xl md:text-[22px]">
         {username.charAt(0).toUpperCase()}
       </div>
-      <div className="min-w-0 md:flex md:flex-col md:items-center md:gap-2">
-        <div className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[14.5px] font-extrabold text-on-surface">
-          {username}
-        </div>
-        <span className="mt-1 inline-block rounded bg-primary/10 px-2 py-0.5 font-label text-[10px] font-bold text-primary md:mt-0">
-          网页版账号
-        </span>
+      <div className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-base font-extrabold text-on-surface md:text-[14.5px]">
+        {username}
       </div>
     </div>
   )
@@ -122,10 +122,12 @@ function SideItem({
   )
 }
 
+// 窄屏只留分隔线，不重复标题 —— 正上方那个高亮的 tab 已经说了在哪个模块，
+// 再写一遍是同一件事说两遍。md 起 tab 在侧栏里，面板才需要自己的标题。
 function PaneHead({ title }: { title: string }): JSX.Element {
   return (
-    <div className="mb-1.5 border-b border-outline-variant/15 pb-3">
-      <h2 className="text-base font-extrabold text-on-surface">{title}</h2>
+    <div className="mb-1.5 border-b border-outline-variant/15 md:pb-3">
+      <h2 className="hidden text-base font-extrabold text-on-surface md:block">{title}</h2>
     </div>
   )
 }
@@ -149,14 +151,18 @@ function ProfileModule(): JSX.Element | null {
   return (
     <>
       <PaneHead title="个人信息" />
-      <Kv k="用户名" v={user.username} />
-      <Kv k="注册时间" v={user.createdAt.slice(0, 10)} />
-      {/* note 只留「没设密保」这种要用户去做点什么的警告；「已设置」不用再解释为什么不显示 */}
-      <Kv
-        k="密保"
-        v={user.hasSecurity ? '已设置' : '未设置'}
-        note={user.hasSecurity ? undefined : '忘记密码将无法找回账号'}
-      />
+      {/* 窄屏把键值块收窄到「标签 + 值刚好填满」再整块居中 —— 铺满整列的话内容只占左边 40%，
+          右边一条死区，跟上面居中的头像/tab 对不上。md 起铺满面板（那时右边还有内容撑着）。 */}
+      <div className="mx-auto w-full max-w-[320px] md:max-w-none">
+        <Kv k="用户名" v={user.username} />
+        <Kv k="注册时间" v={user.createdAt.slice(0, 10)} />
+        {/* note 只留「没设密保」这种要用户去做点什么的警告；「已设置」不用再解释为什么不显示 */}
+        <Kv
+          k="密保"
+          v={user.hasSecurity ? '已设置' : '未设置'}
+          note={user.hasSecurity ? undefined : '忘记密码将无法找回账号'}
+        />
+      </div>
     </>
   )
 }
