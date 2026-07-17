@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 400" font-family="-apple-system,Segoe UI,Roboto,PingFang SC,Microsoft YaHei,sans-serif">
+  <defs>
+    <marker id="lpRed" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#94464f"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="818" height="398" rx="10" fill="#fbfafc" stroke="#e5e0e3"/>
+
+  <text x="24" y="30" font-size="13" font-weight="700" fill="#2a2a2e">同一个 RCE 漏洞，用什么身份跑决定了「损失多大」</text>
+  <text x="24" y="48" font-size="11.5" fill="#7a7a80">漏洞本身一模一样。变的只是：攻击者钻进来之后，站在哪个身份上。</text>
+
+  <!-- ═══ 左：root ═══ -->
+  <rect x="24" y="66" width="380" height="310" rx="8" fill="#94464f" opacity="0.05"/>
+  <rect x="24" y="66" width="380" height="310" rx="8" fill="none" stroke="#94464f" stroke-opacity="0.3"/>
+  <text x="44" y="90" font-size="12.5" font-weight="700" fill="#94464f">改之前：node 用 root 跑</text>
+
+  <rect x="44" y="104" width="120" height="34" rx="6" fill="#ffffff" stroke="#94464f" stroke-opacity="0.5"/>
+  <text x="104" y="126" font-size="12" font-weight="700" text-anchor="middle" fill="#94464f">攻击者</text>
+  <line x1="164" y1="121" x2="214" y2="121" stroke="#94464f" stroke-width="1.6" marker-end="url(#lpRed)"/>
+  <text x="189" y="114" font-size="10" text-anchor="middle" fill="#94464f">RCE</text>
+  <rect x="222" y="104" width="160" height="34" rx="6" fill="#94464f" opacity="0.15" stroke="#94464f" stroke-opacity="0.4"/>
+  <text x="302" y="126" font-size="12.5" font-weight="700" text-anchor="middle" fill="#94464f">拿到 root</text>
+
+  <text x="44" y="164" font-size="11" font-weight="700" fill="#7a7a80">他现在能做的：</text>
+  <g font-size="11.5" fill="#404046">
+    <text x="52" y="188">✗ 读 /etc/shadow（全系统密码哈希）</text>
+    <text x="52" y="212">✗ 读 root 的 SSH 私钥 → 顺藤摸到别的机器</text>
+    <text x="52" y="236">✗ <tspan font-weight="700" fill="#94464f">删掉所有数据库备份</tspan>（勒索第一步）</text>
+    <text x="52" y="260">✗ 改 nginx 配置 → 劫持你的流量、发钓鱼页</text>
+    <text x="52" y="284">✗ 装后门、加计划任务、常驻</text>
+    <text x="52" y="308">✗ 改 SSH 配置、加自己的公钥</text>
+  </g>
+  <rect x="44" y="326" width="340" height="30" rx="5" fill="#94464f" opacity="0.12"/>
+  <text x="58" y="346" font-size="11.5" font-weight="700" fill="#94464f">损失 = 整台机器，而且你很难发现</text>
+
+  <!-- ═══ 右：mapletools ═══ -->
+  <rect x="424" y="66" width="372" height="310" rx="8" fill="#166c45" opacity="0.05"/>
+  <rect x="424" y="66" width="372" height="310" rx="8" fill="none" stroke="#166c45" stroke-opacity="0.3"/>
+  <text x="444" y="90" font-size="12.5" font-weight="700" fill="#166c45">改之后：node 用 mapletools 跑</text>
+
+  <rect x="444" y="104" width="112" height="34" rx="6" fill="#ffffff" stroke="#94464f" stroke-opacity="0.5"/>
+  <text x="500" y="126" font-size="12" font-weight="700" text-anchor="middle" fill="#94464f">攻击者</text>
+  <line x1="556" y1="121" x2="602" y2="121" stroke="#94464f" stroke-width="1.6" marker-end="url(#lpRed)"/>
+  <text x="579" y="114" font-size="10" text-anchor="middle" fill="#94464f">RCE</text>
+  <rect x="610" y="104" width="164" height="34" rx="6" fill="#166c45" opacity="0.12" stroke="#166c45" stroke-opacity="0.4"/>
+  <text x="692" y="126" font-size="12.5" font-weight="700" text-anchor="middle" fill="#166c45">只拿到 mapletools</text>
+
+  <text x="444" y="164" font-size="11" font-weight="700" fill="#7a7a80">同样的漏洞，现在只剩：</text>
+  <g font-size="11.5" fill="#404046">
+    <text x="452" y="188">✓ 读写网页版自己的库（用户名 + 密码哈希）</text>
+    <text x="452" y="212" fill="#7a7a80">—— 也就这些了，下面全部 Permission denied ——</text>
+  </g>
+  <g font-size="11.5" fill="#166c45">
+    <text x="452" y="240">🔒 /etc/shadow</text>
+    <text x="452" y="262">🔒 root 的 SSH 私钥</text>
+    <text x="452" y="284">🔒 <tspan font-weight="700">备份目录（故意留给 root）</tspan></text>
+    <text x="452" y="306">🔒 nginx 配置 · sudo · 系统任何地方</text>
+  </g>
+  <rect x="444" y="326" width="332" height="30" rx="5" fill="#166c45" opacity="0.12"/>
+  <text x="458" y="346" font-size="11.5" font-weight="700" fill="#166c45">损失 = 关在盒子里，机器还是你的</text>
+</svg>

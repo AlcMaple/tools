@@ -11,6 +11,38 @@
 
 ## 网页版
 
+### 2026-07-17 chore(web): 降低后端为低权限
+
+**效果**：
+
+1. **后端不再用 root 跑**（见下图）。改用专用低权限用户 `mapletools`（系统账号、密码位锁死、无 authorized_keys，登不进来）。原来是 root：万一后端出 RCE，攻击者拿到的直接就是整台机器 —— 读 SSH 私钥顺藤摸到别的机器、删光备份、改 nginx 劫持流量。现在同样的漏洞只能拿到「读写网页版自己那个库」，`/etc/shadow`、root 的 `.ssh`、备份目录、nginx 配置、`sudo` 全部 `Permission denied`。
+2. **备份目录故意留给 root**（`/opt/mapletools-backup`，700 root:root）。应用用户读不到也删不掉 —— 勒索软件第一步就是毁备份，备份和它保护的东西不能待在同一个权限域里。
+3. **新增 [`docs/术语.md`](docs/术语.md)** —— RCE / 权限隔离 / 纵深防御 这些词的速查，只收这个项目真碰到过的。
+
+![同一个 RCE，用什么身份跑决定损失多大](docs/devlog-assets/least-privilege.svg)
+
+**关键代码**：
+
+应用换用户后，pm2 守护进程是**按用户各一份**的 —— root 敲 `pm2 list` 会是空的。正确命令得 `su` + **`cd`**，而少了那个 `cd` 会报一个指向 node 的假错误（`spawn /usr/bin/node EACCES`，其实是 cwd 继承了 root 的 `/root`、700 进不去）。这种东西靠文档提醒人早晚出事，焊进 `/usr/local/bin/mtweb`：
+
+```bash
+exec su -s /bin/bash mapletools -c "cd /opt/mapletools/web && pm2 $*"
+```
+
+root 的 cron 备份会**悄悄夺走库文件属主**：root 打开 SQLite 时若 WAL/SHM 不存在，会新建成 root 所有，应用从此写不了自己的库 —— 而且要等到凌晨 4 点之后才爆。备份脚本末尾补一行：
+
+```bash
+chown mapletools:mapletools /opt/mapletools-data/web.db{,-wal,-shm}
+```
+
+### 2026-07-17 fix(web): 设置页窄屏左右不对称，导航 logo 被落单
+
+**效果**：
+
+1. **设置页窄屏不再左右不对称**。md 以下退化成单列后，容器全宽而内容却全挤在左边：身份卡撑成一条空荡长条（用户原话「矩形阴影拉长」）、表单限宽 440 又在右边留一片死区。现在整页（含标题，否则标题和内容左边缘对不齐）收进一根居中窄列，身份卡按内容收缩，表单窄屏不限宽。桌面（md 起）维持原样：220px 侧栏 + 面板。
+2. **顶栏 logo 不再被落单**。`sm` 以下「MapleTools」字样隐藏、只剩 20px 的枫叶，但固定的 `gap-7` 还在 → 和「番剧周历」之间凭空空出一大块（NavLink 自己还有 `px-3`）。改成 gap 跟着品牌字的显隐走：`gap-2 sm:gap-7`。
+3. 删掉「只想改密保？下面两个框留空就行」提示条 —— placeholder 里已经写着「留空 = 不改」，同一件事说两遍。
+
 ### 2026-07-17 fix(web): 堵住能绕过 HTTPS 的后端直连端口 + 登录限流 + 数据库备份
 
 **效果**：
