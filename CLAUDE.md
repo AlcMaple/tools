@@ -2,175 +2,161 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> This file is the architecture reference. Two companion docs at the repo root are maintained alongside it: `AI_GUIDELINES.md` (中文, AI 代码生成护栏 — mistake log, locked tech stack/architecture boundaries, commit convention) and `DEVLOG.md` (中文, per-change dev log written before each commit). The deepest rationale for the network/scraping rules lives in `docs/scraping/bgm-集成参考手册.md`. To find where a feature lives, start at `docs/功能索引.md` (功能 → 文件地图).
-
-## Project Overview
-
-**MapleTools** is an Electron desktop app for searching, downloading, and managing anime. It integrates with three streaming sites (Xifan, Girigiri, Aowu) plus Bilibili, and pulls metadata from Bangumi (BGM) and Moegirl. Around that core sit a local library scanner (ffmpeg thumbnails), a seasonal anime calendar, an in-app online player, WebDAV sync, mail-report jobs, a Windows recycle-bin helper, an in-app file explorer, a 妙语库 (witty-reply) study deck, and a self-rolled auto-updater.
-
-Conventions worth knowing up front: reply in **Chinese**, write **code comments in Chinese** (explain *why*, not *what*), and when editing existing code **touch only what the change needs** — no incidental import reordering / reformatting / renames. No ESLint/Prettier is wired up; match the existing style (2-space indent, **no semicolons**, single quotes, `strict: true`, no `any`).
+> Companion docs at the repo root, maintained alongside this one: `AI_GUIDELINES.md` (中文, AI 代码生成护栏 — 错误日志、锁定的技术栈/架构边界、提交规范) and `DEVLOG.md` (中文, 每次提交前先补一条的开发日志). To find *where a feature lives*, use `docs/功能索引.md` (功能 → 文件地图). The deepest rationale for the scraping rules is in `docs/scraping/`.
+>
+> Conventions to internalize before writing code: reply in **中文**, write **code comments in 中文** (explain *why*, not *what*), and when editing existing code **touch only what the change needs** — no incidental import reordering / reformatting / renames. No ESLint/Prettier is wired up; match the surrounding style (2-space indent, **no semicolons**, single quotes, `strict: true`, avoid `any`).
 
 ## Two independent projects in one repo
 
-| Path | What | Deps |
+| Path | What | Deps / config |
 |---|---|---|
-| `/` (root) | The Electron desktop app. This is the main project. | root `package.json` |
-| `web/` | The **web version** (番剧周历 + accounts). A physically isolated subproject with its own `package.json` / `node_modules` / `tsconfig`. | `web/package.json` |
+| `/` (root) | **MapleTools** — the Electron desktop app. The main project. | root `package.json`, `electron.vite.config.ts` |
+| `web/` | The **web version** (番剧周历 + 账号 + 追番). A physically isolated subproject: own `package.json` / `node_modules` / `tsconfig` / `vite.config.ts`. | `web/package.json` |
 
-The root `package.json` stays untouched by web work, and vice versa. `cd web` before running any web command. See the [Web version](#web-version-web) section below.
-
-Legacy prototypes under `archive/` (`python_legacy/`, `js_legacy/`, `image-tools/`) are kept for reference only and are **not** part of any build.
+The two never share `node_modules`. `cd web` before running any web command. Legacy prototypes under `archive/` (`python_legacy/`, `js_legacy/`, `image-tools/`) are reference only and **not** part of any build.
 
 ## Commands
 
-Desktop app — from the repo root:
+**Desktop app** (repo root) — there is **no test runner and no linter** (don't add Jest/Vitest on your own initiative — see `AI_GUIDELINES.md`):
 
 ```bash
-npm install            # Install deps
-npm run dev            # Dev server with hot reload (electron-vite)
-npm run build          # Build main + preload + renderer into out/
-npm run dist           # Build + electron-builder package into dist/
-npm run build:win      # Local/cross Windows packaging (scripts/build-win.mjs)
-npm run sync:manifest  # Sync update-manifest.json version ← package.json (run before every release)
+npm install
+npm run dev            # electron-vite dev, hot reload (main + preload + renderer)
+npm run build          # electron-vite build → out/
+npm run dist           # build + electron-builder → dist/  (installer for current OS)
+npm run build:win      # scripts/build-win.mjs — Windows packaging
+npm run sync:manifest  # scripts/sync-manifest.mjs — update-manifest.json version ← package.json (before every release)
 ```
 
-Web version — from `web/`:
+**Web version** (`web/`):
 
 ```bash
 cd web && npm install
-npm run dev            # One command for both ends: Vite serves the page, Hono takes /api/*
-npm run build          # Static frontend build
-npm start              # Run the Hono server standalone on Node (tsx server/node.ts)
+npm run dev            # vite: serves the SPA + mounts Hono at /api/* in one process
+npm run build          # vite build → web/dist/
+npm start              # tsx server/node.ts — standalone Hono on Node (VPS), serves dist/ + /api/*
 ```
 
-**There are no tests and no linter wired into either project** — and per `AI_GUIDELINES.md`, don't add Jest/Vitest on your own initiative.
+Local web dev behind a non-TUN Clash proxy needs `HTTPS_PROXY=http://127.0.0.1:7890 npm run dev` (Node's undici `fetch` doesn't auto-read the system proxy; `server/http.ts` installs an `EnvHttpProxyAgent` that honors `HTTP(S)_PROXY`).
 
-## Architecture
+## Desktop architecture
 
 ### Three-process model
 
-- **Main** (`src/main/index.ts`) — Node env. Lifecycle, window creation, tray, custom protocols, updater bootstrap. All IPC handlers are registered via `registerAllIpc()` from `src/main/ipc/`.
-- **Preload** (`src/preload/index.ts`) — Bridges main ↔ renderer with `contextBridge.exposeInMainWorld`. Exposes typed APIs as `window.bgmApi`, `window.xifanApi`, `window.girigiriApi`, `window.aowuApi`, `window.biliApi`, `window.downloadApi`, `window.systemApi`, `window.libraryApi`, `window.fileExplorerApi`, `window.webdavApi`, `window.mailApi`, `window.miaoyuApi`, etc.
-- **Renderer** (`src/renderer/src/`) — React + Tailwind SPA. Talks to main *only* through preload globals — it never touches network / filesystem / Node APIs directly. This is a security boundary, not a style preference: the renderer can only invoke the capabilities IPC hard-codes (search, download, …), never "read any file" / "run any command".
+- **Main** — `src/main/index.ts`. Node env. First line is `import './shared/uv-bootstrap'` (raises `UV_THREADPOOL_SIZE` before any fs side effect — libuv freezes the pool size at first use). Registers privileged schemes *before* `app.ready`, calls `registerAllIpc()` (`src/main/ipc/index.ts`), boots the tray/updater/media-proxy, and creates the window. Library scan + directory watch are deliberately deferred until ~1.2s after `app:renderer-ready` so they don't starve the fs threadpool while first-screen covers localize.
+- **Preload** — `src/preload/index.ts`. The security boundary. `contextBridge.exposeInMainWorld` publishes one typed object per surface: `window.bgmApi`, `xifanApi`, `girigiriApi`, `aowuApi`, `biliApi`, `downloadApi`, `systemApi`, `libraryApi`, `fileExplorerApi`, `webdavApi`, `mailApi`, `miaoyuApi`, `updaterApi`, `screenshotApi`, `versions`. The renderer can only invoke the exact capabilities listed here — it never touches network/fs/Node directly. Tokens/cookies/authCodes never cross this bridge in plaintext (auth surfaces return booleans only).
+- **Renderer** — `src/renderer/src/`. React 18 + Tailwind SPA, `HashRouter`. Entry `main.tsx` self-hosts fonts (no CDN), forwards `window.error`/`unhandledrejection` to main's log, and fires `systemApi.signalReady()` after first paint + `document.fonts.ready`. Vite alias `@renderer` → `src/renderer/src/`.
+
+### Window reveal (don't regress — `src/main/index.ts:120-151`)
+
+`createWindow()` shows the window only when **both** `ready-to-show` (painted — Windows white-flashes without it) **and** `app:renderer-ready` (React mounted + fonts ready — avoids icon-font pop-in) have fired. `graceTimer` 6s and `hardTimer` 9s are the fallbacks. `backgroundColor: '#131313'` matches the dark theme so the pre-render frame isn't white. Closing to tray uses `getMinimizeOnClose()` + `event.preventDefault()` + `hide()`; on macOS it also hides the Dock icon.
 
 ### Main process layout (`src/main/`)
 
 | Dir | Purpose |
 |-----|---------|
-| `ipc/` | One file per surface (`bgm.ts`, `xifan.ts`, `girigiri.ts`, `aowu.ts`, `bili.ts`, `library.ts`, `system.ts`, `fileExplorer.ts`, `webdav.ts`, `mail.ts`, `miaoyu.ts`). `index.ts` exports `registerAllIpc()`. |
-| `bgm/` | Bangumi metadata: search, detail, calendar, cover caching. |
-| `xifan/` | Xifan site: captcha + search + watch-page scraping, HLS/mp4 downloader with Range resume. |
-| `girigiri/` | Girigiri site: api, downloader, cookie session. |
-| `aowu/` | Aowu site: api, downloader, `secure.ts`, `url-resolver.ts`. See `docs/scraping/aowu-FantasyKon-逆向与反爬手册.md`. |
-| `bili/` | Bilibili: TV-appkey QR login (`persist:bili` partition), 分 P list, DASH playurl. In-app player only, no downloader. |
-| `moegirl/` | `synopsis.ts` — fetch synopsis from Moegirl wiki. |
-| `library/` | Local library scanner, ffmpeg thumbnail extraction, JSON persistence, file watcher. `scan-worker.ts` runs a full scan on its own thread and is a **separate rollup entry** (see `electron.vite.config.ts`), packaged unpacked from asar. |
-| `mail/` | SMTP transport + scheduled "anime report" and "calendar" mailers. |
-| `updater/` | electron-updater wrapper. |
-| `recycle/` | Windows-only recycle-bin helper (shells out to `recycle-helper.ps1`). |
+| `ipc/` | One file per surface (`bgm.ts` `xifan.ts` `girigiri.ts` `aowu.ts` `bili.ts` `library.ts` `system.ts` `fileExplorer.ts` `webdav.ts` `mail.ts` `miaoyu.ts`). `index.ts` = `registerAllIpc()`. |
+| `bgm/` | Bangumi: search, detail, calendar, `cover-cache.ts` (`toArchivistUrl`), web-login window. |
+| `xifan/` `girigiri/` `aowu/` | Per-site `api.ts` (captcha + search + watch-page scrape) + `download.ts`. Aowu also has `secure.ts` / `url-resolver.ts`. |
+| `moegirl/` | `synopsis.ts` — Moegirl fallback synopsis when BGM is 日文原文. |
+| `library/` | Scanner + ffmpeg thumbnails + JSON persistence + native fs watcher. `scan-worker.ts` is a **separate rollup entry** (`electron.vite.config.ts`), runs full scans on its own thread, packaged asar-unpacked. |
+| `mail/` | SMTP transport + scheduled 番剧报告 / 周历 mailers. |
+| `updater/` | electron-updater wrapper (自建国内加速). |
+| `recycle/` | Windows-only recycle-bin helper (shells `recycle-helper.ps1`). |
+| `tray.ts` | Tray icon + menu. |
 | `shared/` | Cross-cutting utilities — see below. |
-
-Notable `shared/` modules (read the header comment before touching any of them; each encodes a hard-won incident):
-
-- `net-request.ts` — **the** HTTP entry point for scraping (Electron `net`). See red lines below.
-- `http-client.ts` — transport primitives on top: abortable `sleep`, `decodeBody`, `parseRetryAfter`, `withTransientRetry`.
-- `http-session.ts` — cookie-jar session over `netRequest`, with **manual hop-by-hop redirects** (auto-follow drops intermediate `Set-Cookie`, which the captcha gate depends on).
-- `media-proxy.ts` — `mtmedia://` streaming proxy for the in-app player. Uses `net.fetch` (not `netRequest`) because buffering a whole video would blow up memory.
-- `site-download-queue.ts` / `download-scheduler.ts` / `download-types.ts` — queue plumbing; the scheduler enforces **one running download per source** (cross-source parallel is fine).
-- `maccms-search-paginator.ts` — shared MacCMS dsn2 pagination walker (xifan / girigiri / aowu).
-- `rate-limit.ts`, `browser-session.ts`, `scrape-guard.ts`, `mp4-range-downloader.ts`, `json-store.ts`, `speed-tracker.ts`, `logger.ts`.
-- `uv-bootstrap.ts` — must stay the **first import** in `index.ts`; it raises `UV_THREADPOOL_SIZE` before any fs side effect, since libuv freezes the pool size at first use.
 
 ### Networking & scraping — the red lines (most important, non-obvious)
 
-These are project red lines; violating them actively harms users. Full rationale in `docs/scraping/bgm-集成参考手册.md` and the mistake log in `AI_GUIDELINES.md`.
+Rationale in `docs/scraping/` and the mistake log in `AI_GUIDELINES.md`. Violating these actively harms users.
 
-- **All main-process HTTP goes through `src/main/shared/net-request.ts` (`netRequest()`), which uses Electron `net`** — never Node `https`/`axios`/`node-fetch`/`undici`. Node `https` ignores the system proxy; with a Clash fake-ip proxy this resolves to unroutable `198.18.x` addresses and black-holes. Electron `net` follows the system proxy/PAC like the browser does. (`media-proxy.ts` uses `net.fetch` — same Chromium stack, streaming instead of buffering. That's the one sanctioned variant.)
-- **No application-layer retry or probing after a failure.** A rate-limit / 5xx must `throw` up to the UI; the user decides when to retry via a countdown button. Do **not** auto-retry, do **not** periodically probe "is it back yet", do **not** silently `catch → return null`. The *only* allowed code-level retry is transport-layer transient blips (`withTransientRetry`: a single ECONNRESET-class socket jitter retry). No IP pools / proxy rotation / Playwright to "bypass" limits — all previously rejected.
-- **User-Agent is deliberately opposite by target:** API endpoints (`api.bgm.tv`) use an honest `MapleTools/<ver>` UA; HTML scraping (`bgm.tv` etc.) uses a randomized browser-spoof UA via `BrowserSession`. Don't mix them. **One exception:** BGM binds a web login session to the UA it was minted under, so the login window partition, `verifyBgmLogin`, and any request carrying the login cookie must all use the same fixed `DESKTOP_USER_AGENT` (see DEVLOG 2026-07-04) — the randomized spoof UA is for anonymous scraping only. `DESKTOP_SEC_CH_UA` is *derived* from `DESKTOP_USER_AGENT` so the version can't drift between them; keep it that way.
-- **Don't classify Cloudflare blocks by the bare `cloudflare` keyword** — BGM responses always carry `server=cloudflare`, so that flags healthy traffic. Only trust strong signals: `cf-mitigated=challenge/block/managed`, `Just a moment`, `cf-chl`.
-- Static HTML parses with **cheerio**; no resident Playwright/puppeteer (BGM/Moegirl are server-rendered with no JS challenge — a real browser is just slower and fatter).
-- External API calls share `shared/rate-limit.ts` `RateLimiter` (interval + jitter) for serial throttling.
+- **All main-process HTTP goes through `src/main/shared/net-request.ts` (`netRequest()`), which uses Electron `net`** — never Node `https`/`axios`/`node-fetch`/`undici`. Node `https` ignores the system proxy; with a Clash fake-ip proxy `bgm.tv` resolves to unroutable `198.18.x` and black-holes. Electron `net` follows the system proxy/PAC like the browser. `netRequest` strips Chromium-managed headers (`host`/`connection`/`content-length`/`accept-encoding` — `NET_MANAGED_HEADERS`, net-request.ts:33) and lets `net` auto-decompress. `redirect: 'manual'` resolves the 3xx headers itself (net-request.ts:94-103) so callers can read `Location` and ingest per-hop `Set-Cookie`. The **one** sanctioned variant is `shared/media-proxy.ts`, which uses `net.fetch` (same Chromium stack, streaming instead of buffering — a whole video would blow up memory).
+- **No application-layer retry or probing after a failure.** A rate-limit / 5xx must `throw` up to the UI; the user retries via a countdown button. The *only* allowed code-level retry is transport-layer transient blips — `withTransientRetry()` in `shared/http-client.ts` retries **exactly once** on an ECONNRESET-class errno (`TRANSIENT_ERRNOS`), never on `aborted` or an HTTP status. No IP pools / proxy rotation / Playwright — all previously rejected.
+- **User-Agent is deliberately opposite by target.** API endpoints (`api.bgm.tv`) use an honest `MapleTools/<ver>` UA; HTML scraping uses a randomized browser-spoof UA (`BrowserSession`). **Exception:** BGM binds a web-login session to the UA it was minted under, so the login window, `verifyBgmLogin`, and any request carrying the login cookie must all use one fixed `DESKTOP_USER_AGENT`; `DESKTOP_SEC_CH_UA` is *derived* from it so the two can't drift.
+- **Cookie-gated sites go through `shared/http-session.ts` (`HttpSession`).** It keeps a `Map` cookie jar persisted to `.<name>_cookies.json` under `userData`, and does **manual** redirect following (up to 5 hops, http-session.ts:78) ingesting `Set-Cookie` every hop — Electron `net`'s auto-follow drops intermediate cookies, which the captcha gate depends on.
+- **Don't classify Cloudflare blocks by the bare `cloudflare` keyword** — BGM always sends `server=cloudflare`, so that flags healthy traffic. Trust only strong signals (`cf-mitigated`, `Just a moment`, `cf-chl`). This lives in `friendlyError()` (renderer) and the scrapers.
+- Static HTML parses with **cheerio**; no resident Playwright/puppeteer. External API calls share `shared/rate-limit.ts` `RateLimiter` (interval + jitter).
 
-### Download queue design
+Notable `shared/` modules (read the header comment before touching — each encodes an incident): `net-request.ts`, `http-client.ts` (`sleep`/`decodeBody`/`parseRetryAfter`/`withTransientRetry`), `http-session.ts`, `media-proxy.ts` (`mtmedia://`), `site-download-queue.ts` / `download-scheduler.ts` / `download-types.ts`, `maccms-search-paginator.ts` (shared dsn2 pagination for xifan/girigiri/aowu), `rate-limit.ts`, `browser-session.ts`, `scrape-guard.ts`, `mp4-range-downloader.ts`, `json-store.ts`, `speed-tracker.ts`, `logger.ts`, `uv-bootstrap.ts`.
 
-Per-source in-memory queues live inside each downloader module (xifan, girigiri, aowu), built on `shared/site-download-queue.ts`. Each queue has `pending[]`, `priorityFront[]` (for resuming a specific episode), a `pausedEps` Set, and an `AbortController` for the currently running episode. Episodes run sequentially, one at a time; `shared/download-scheduler.ts` additionally holds a single slot per source so two tasks of the same site can't download concurrently (that's a fast route to an IP ban). **Queue state is lost on restart** — the renderer persists task metadata in `localStorage` and recreates queues via `resume` IPCs.
+### Download pipeline (end-to-end)
 
-All downloaders emit progress on a single channel `download:progress` so the renderer only needs one listener (subscribe via `window.downloadApi.onProgress`).
+Each site's IPC module (`ipc/xifan.ts` etc.) owns a per-source `SiteDownloadQueue` (`shared/site-download-queue.ts`) whose `runEpisode` hook is wired to that site's `downloadSingleEp` (`<site>/download.ts`). Chain for one download:
 
-### Renderer (`src/renderer/src/`)
+1. `search()` → `HttpSession.get()` scrape → paginate via `maccms-search-paginator`.
+2. `watch(url)` → parse player data → `WatchInfo.sources[]` (each with a URL `template` + `epPage`).
+3. `<site>:download` IPC mints a `taskId`, builds `pending: number[]` from `startEp..endEp` minus `excludeEps`, calls `queue.create(taskId, payload)`.
+4. `startNext()` pops `priorityFront.shift() ?? pending.shift()`, then `scheduler.tryAcquire(taskId)` — **one running download per source** (`girigiriScheduler`/`xifanScheduler`/`aowuScheduler`, each a single-slot `EventEmitter`; cross-source parallel is fine, same-source is not — a fast route to an IP ban). If the slot is taken, the ep is pushed back onto `priorityFront` and waits for the `'available'` event.
+5. The ep downloads via `mp4-range-downloader` (per-part **Range resume**), emitting on the unified `download:progress` channel: `ep_start` / `ep_progress {ep,pct,bytes}` / `ep_url` / `ep_done` / `ep_error` / `ep_paused` / `all_done`.
 
-- **Pages** (`pages/`): `SearchDownload`, `DownloadQueue`, `AnimeInfo`, `AnimeCalendar` (+ `AnimeCalendarScreenshot`), `MyAnime`, `LocalLibrary`, `FileExplorer`, `OnlinePlayer` (route `/play?bgm=<bgmId>`), `HomeworkLookup` (+ `homework/`), `MiaoyuLibrary`, `Settings`. One per route.
-- **Stores** (`stores/`): plain observable stores — internal `Map` + listener set + `localStorage`, no React context, no Redux/Zustand/MobX. Components subscribe via hooks.
-  - `downloadStore.ts` — central download state for all sources.
-  - `animeTrackStore.ts` — "my anime" tracking list, BGM alias index for local search.
-  - `recommendationStore.ts`, `updateStore.ts` (auto-update banner), `uiStore.ts`.
-  - `siteApi.ts` — abstracts the per-site `window.*Api` surfaces behind a uniform interface for source-agnostic UI.
-- `utils/` holds the search cache wrapper (`cache:get` / `cache:set` IPCs), `navGuard.ts` (blocks navigation while downloads are active), and `errorMessage.ts`'s `friendlyError()`, which classifies main-process errors into actionable UI copy — **never collapse failures into one generic "网络请求失败"**; a rate-limited user who thinks their network is down will retry harder and deepen the limit.
+`QueueState` fields (site-download-queue.ts:24-36): `pending[]`, `priorityFront[]` (resume/retry/switch-source jump the line), `current`, `currentAbort: AbortController`, `taskPaused`, `cancelled`. **There is no `pausedEps` set** — pause pushes the `current` ep back onto `priorityFront` and aborts; byte-level resume lives in `mp4-range-downloader`, not the queue. **Queue state is lost on restart** — the renderer persists task metadata (via `download:save-state` IPC) and recreates queues through the `resume` IPCs. All progress flows through **one** channel so the renderer needs a single listener (`downloadApi.onProgress`).
 
-**Store persistence rules (don't regress):**
-- Each store has a `normalize()` that fills defaults for any missing field — **zero-migration backward compat**, no migration scripts.
-- Some fields (e.g. `bgmTags`) **lock on first content**: once populated, later fetches don't overwrite, so the user's snapshot stays stable across devices.
-- Track data syncs across devices via WebDAV, so **never persist machine-absolute paths** (e.g. a `archivist:///Users/.../cover.jpg` userData path). Store portable URLs; localize only at display time (`hooks/useCover.ts`).
+### Custom protocols (`src/main/index.ts`, registered privileged pre-ready)
+
+- `archivist://` — serves local files (thumbnails, cached covers). Registered **standard + secure** so Chromium caches responses (`Cache-Control: immutable`) — otherwise covers re-read+decode on every remount and flash. URLs use a placeholder host: `archivist://local/C:/Users/.../123.jpg` (empty host breaks path parsing —踩过坑). Content-Length **must** be set or large images get truncated.
+- `mtmedia://` — same-origin media streaming for the in-app player (`shared/media-proxy.ts`), so `<video>`/hls.js can play cross-origin CDN media that Chromium would otherwise block. Registered with `bypassCSP: true` but **not** `corsEnabled` (opting into CORS would force ACAO headers). The anti-hotlink Referer is pinned into the URL's `r` param by main, never exposed to the renderer.
+
+### Persistence (Electron `userData`, all via `shared/json-store.ts` — no SQLite/ORM in the desktop app)
+
+`library_paths.json`, `library_entries.json`, `thumbnails/` (wiped each full scan), `search_cache.json`, `xifan_settings_history.json`, `bgm_cover_cache/` (served via `archivist://`), `anime_tracks.json`-style per-feature JSONs, `.<session>_cookies.json`.
+
+## Renderer (`src/renderer/src/`)
+
+- **Pages** (`pages/`, one per route in `App.tsx`): `/` `LocalLibrary`, `/search` `SearchDownload`, `/queue` `DownloadQueue`, `/anime-info` `AnimeInfo`, `/my-anime` `MyAnime`, `/calendar` `AnimeCalendar` (+ headless `AnimeCalendarScreenshot`), `/file-explorer` `FileExplorer`, `/settings` `Settings`, `/homework` `HomeworkLookup`, `/miaoyu` `MiaoyuLibrary`, `/play` `OnlinePlayer`. `/settings` and `/play` are fullscreen (no global `Sidebar`). A `?screenshot=calendar` query bypasses the router entirely for the headless screenshot render.
+
+- **Stores** (`stores/`) — three flavors, no Redux/Zustand/MobX/context:
+  - **Module-singleton + IPC persistence:** `downloadStore.ts`. Module-scoped `Map<id, DownloadTask>` + `Set<Listener>`; `persist()` → `systemApi.saveDownloadState()`. State transitions call `notify()` (flush + persist); high-frequency `ep_progress` uses `notifyProgressThrottled()` (coalesce to one flush per rAF, **skip persist** — progress is ephemeral). `DownloadTask` is a discriminated union over `source` (`xifan` templates+sourceIdx / `girigiri` HLS eps / `aowu` opaque `source_id`).
+  - **Class + localStorage (deferred write):** `animeTrackStore.ts`, `recommendationStore.ts`. Private `cache` + `Set` listeners + `STORAGE_KEY`; writes deferred via `deferredStorage.ts` (`requestIdleCallback` batch, forced `flushAll()` on `pagehide`/`beforeunload`). Export their own hooks (`useAnimeTrackList`, `useAnimeTrack`, …).
+  - **Plain object, no persistence:** `uiStore.ts` (mobile drawer, via `useSyncExternalStore`), `updateStore.ts`.
+  - `siteApi.ts` — dispatch table `siteApi(task)` returning a uniform `{ pause, cancel, resume, retry, requeue, switchSource, resolveEpUrl, resolveIsAsync }` over the per-site `window.*Api`, branching on `task.source`. Adding a 4th source = one new branch, not edits everywhere.
+
+- **Subscription:** mostly manual `useEffect(() => store.subscribe(() => setX(store.get())), [])`; `useSyncExternalStore` only in `uiStore` and `useMediaQuery`.
+
+- **`utils/`:** `errorMessage.ts` `friendlyError()` — an **ordered** classifier returning `{title, hint, raw, retryAfterSec?}`; specific causes win (site markers → BGM rate-limit with parsed 秒/分钟 countdown → Windows file-ops *before* network, since PowerShell stderr contains "network" → net/TLS → strict Cloudflare → HTTP status). **Never collapse failures into one generic 「网络请求失败」** — a rate-limited user who thinks their network is down retries harder and deepens the limit. Also `navGuard.ts` (blocks nav while downloads run) and the `cache:get`/`cache:set` search-cache wrapper.
+
+### Store persistence rules (don't regress)
+
+- Each persisted store has a `normalize()` that fills defaults for every missing field — **zero-migration backward compat**, idempotent, reused for both localStorage read and WebDAV pull. Corrupt JSON is backed up + reported, not silently cleared.
+- Some fields **lock on first content**: `bgmTags` locks once non-empty (`upsert()` keeps `prev.bgmTags` if populated), so the user's community-tag snapshot stays stable across devices; `ensureBgmTagsFilled()` backfills async for entry points that lacked BGM detail at add time.
+- `aliases` (from the BGM 别名 infobox field) exists **only for local search matching** — sources join to a track solely via explicit `bindings[]`, never fuzzy title match.
+- **Never persist machine-absolute paths.** Tracks sync cross-device via WebDAV, and an `archivist://` path embeds this machine's `userData` absolute path — dead on another device. Store portable URLs (`track.cover`); localize to `archivist://` only at display time via `hooks/useCover.ts` (memoized per `key@maxWidth` so 480/600 variants stay distinct, no retry on failure).
 
 ### Styling
 
-Use **MD3 color tokens only** (`bg-surface-container`, `text-on-surface`, `text-primary`, …) — no raw color values (`#xxx` / `bg-[#...]`), or dark/light theme switching breaks. Tokens are defined in `src/renderer/src/index.css`. Mobile/responsive layouts must mirror `docs/design-mockups/responsive-design.html`, not be improvised.
-
-Three style traps with real incidents behind them (details in `AI_GUIDELINES.md`):
-- **Tailwind opacity modifiers only accept multiples of 5** (`bg-primary/12` silently generates *nothing* and falls back to a default). Use `/10`, `/15`, … or an arbitrary value `bg-primary/[0.12]`, then grep the built CSS to confirm.
-- **Hover/selected states must not change box metrics** (border width, font weight, padding, size) — only color/shadow. Otherwise neighbours jitter.
-- **No native `<select>` or native scrollbars.** Native controls that pop a system layer will never match MD3. Scrollbar styling has a single source in `index.css` (`.custom-scrollbar`); dropdowns are hand-rolled (`button` trigger + own overlay, overlay `width: 100%` of a `relative` wrapper).
-
-### Custom protocols
-
-- `archivist://` — serves arbitrary local files (thumbnails, cached covers) to the renderer. Registered in `app.whenReady()`. Usage: `archivist:///absolute/path/to/file.jpg`.
-- `mtmedia://` — same-origin media streaming for the in-app player (`shared/media-proxy.ts`). Exists because Chromium blocks cross-origin media with `content-disposition: attachment`, and hls.js can't fetch CORS-less CDN segments from the renderer. Playlists get their inner URLs rewritten to `mtmedia://` too; the Referer for anti-hotlinking is pinned into the URL's `r` param by main, so the renderer never sees a raw signed link.
-
-### Persistence (Electron `userData`)
-
-- `library_paths.json`, `library_entries.json` — user library config + cached scan results
-- `thumbnails/` — extracted video thumbnails (wiped on each full scan)
-- `search_cache.json`, `xifan_settings_history.json`
-- `bgm_cover_cache/` — locally cached BGM cover images served via `archivist://`
-- `anime_tracks.json`, `recommendations.json` and similar per-feature JSONs
-
-All of it goes through `shared/json-store.ts` — plain JSON files, no SQLite/ORM in the desktop app.
-
-### Vite alias
-
-`@renderer` → `src/renderer/src/`. Use it for all renderer imports.
+- **MD3 color tokens only** (`bg-surface-container`, `text-on-surface`, `text-primary`, …) — no raw hex / `bg-[#...]`, or theme switching breaks. Tokens are CSS vars (RGB triples) in `src/renderer/src/index.css` under `:root` and `.dark`; Tailwind maps them as `rgb(var(--color-*) / <alpha-value>)` in `tailwind.config.js` (`darkMode: 'class'`). Dark mode = a `dark` class on the root (toggled in `TopBar.tsx` / `Settings.tsx`). Fonts: `Inter` (headline/body), `Space Grotesk` (label).
+- Mobile/responsive layouts mirror `docs/design-mockups/responsive-design.html`; breakpoints/`useIsCompact` conventions are in the design mockup.
+- Three style traps with real incidents (details in `AI_GUIDELINES.md`):
+  - **Tailwind opacity modifiers only accept multiples of 5** — `bg-primary/12` silently generates nothing. Use `/10`, `/15`, or arbitrary `bg-primary/[0.12]`.
+  - **Hover/selected states must not change box metrics** (border width, font weight, padding, size) — only color/shadow, else neighbors jitter.
+  - **No native `<select>` or native scrollbars.** Scrollbars have one source (`.custom-scrollbar` + `textarea` in `index.css`, 4px); dropdowns are hand-rolled.
 
 ## Adding a new IPC channel
 
-Four steps, none optional. Channel names use `域:动作` form (`bgm:search`, `system:disk-free`, `library:updated`).
+Channel names use `域:动作` (`bgm:search`, `system:disk-free`, `library:updated`). Four steps, none optional:
 
-1. **Main**: add a `registerXxxIpc()` under `src/main/ipc/`, registering `ipcMain.handle('xxx:action', ...)`.
+1. **Main:** add `registerXxxIpc()` under `src/main/ipc/`, registering `ipcMain.handle('xxx:action', …)`.
 2. **Wire** it into `registerAllIpc()` in `src/main/ipc/index.ts`.
-3. **Preload**: expose via `contextBridge.exposeInMainWorld('xxxApi', { ... })` forwarding `ipcRenderer.invoke`.
-4. **Types**: declare the `*Api` in `src/renderer/src/env.d.ts`, then call `window.xxxApi.method(...)`.
+3. **Preload:** expose via `contextBridge.exposeInMainWorld('xxxApi', { … })` forwarding `ipcRenderer.invoke`.
+4. **Types:** declare `*Api` in `src/renderer/src/env.d.ts`, then call `window.xxxApi.method(...)`.
 
-Prefer `invoke/handle` (has a return value); use `send` for one-way notifications (`app:renderer-ready`); for progress streams use `ipcRenderer.on` returning an unsubscribe fn (see `downloadApi.onProgress`). New download-progress sources must emit on the unified `download:progress` channel.
+Prefer `invoke/handle` (has a return value); use `send` for one-way notifications (`app:renderer-ready`); for progress streams use `ipcRenderer.on` returning an unsubscribe fn (see `downloadApi.onProgress`). New download-progress sources **must** emit on the unified `download:progress` channel.
 
 ## Web version (`web/`)
 
-A separate React + Vite frontend with a **Hono** backend. Design doc: `docs/ideas/012-网页版.md`. Live at `https://anime.alcmaple.cn` on a 唐人云 VPS (git pull + pm2 + nginx + certbot) — runbook: `docs/web/唐人云部署保姆教程.md`. `docs/web/Vercel部署保姆教程.md` and `Oracle开机保姆教程.md` are alternatives that aren't in use.
+React 18 + Vite + Tailwind frontend, **Hono** backend. Design doc `docs/ideas/012-网页版.md`; live at `https://anime.alcmaple.cn` on a 唐人云 VPS (runbook `docs/web/唐人云部署保姆教程.md`).
 
-- **`server/index.ts` is the single source of truth for the API.** One Hono app, three hosts: local dev mounts it into Vite via `@hono/vite-dev-server` (only `/api/*`), Vercel wraps it in `api/[[...route]].ts` (the *only* platform glue), a future VPS runs it via `@hono/node-server` (`server/node.ts`). Routes are written once.
-- **Scraping is copied from the app, not shared.** `server/bgm/calendar.ts` is a copy of `src/main/bgm` with Electron `net` swapped for `fetch` (`server/http.ts` — proxy-aware fetch + single transient retry). Node's `fetch` ignores the system proxy, so local dev behind non-TUN Clash needs `HTTPS_PROXY=http://127.0.0.1:7890 npm run dev`.
-- **Data is SQLite** (`better-sqlite3`, `server/db.ts`) — the one place SQLite is allowed. The DB file **must live outside the deploy dir** (`DATA_DIR=/opt/mapletools-data` in prod; redeploy does `rm -rf /opt/web` and would wipe every user). `better-sqlite3` is a native module and is marked `ssr.external` in `web/vite.config.ts` — without that, `/api/auth` crashes on first hit.
-- **Auth**: scrypt password hashes, httpOnly signed-cookie JWT sessions. The `token_version` column is load-bearing — it's what makes a password change actually revoke existing sessions (stateless JWTs can't be revoked otherwise), so bump it on password/security-question change and re-issue for the current device.
-- **Cover proxy** is path-style (`/api/cover/pic/...`, host hard-coded to `lain.bgm.tv`, `/pic/` prefix only). Never put `bgm.tv` in the URL — the GFW RSTs those requests and got the origin's port 80 temporarily blocked in testing. The path form also blocks SSRF.
-- The web UI does **not** copy the app's UI wholesale: it uses a top nav (web convention) where the app uses a sidebar, and a hash router (`src/router.ts`) instead of react-router.
+- **`server/index.ts` is the single API source of truth** — one Hono `app`, mounted three ways: local dev via `@hono/vite-dev-server` (only `/api/*`, `vite.config.ts`), Vercel via `api/[[...route]].ts` (`handle(app)` — the only platform glue), VPS via `server/node.ts` (`@hono/node-server`, also `serveStatic` for `dist/` + SPA fallback, binds `127.0.0.1` behind nginx).
+- **Routes:** `GET /api/health`, `GET /api/calendar?force=1` (s-maxage cache), `GET /api/cover/*`; `/api/auth/*` (`questions` `register` `login` `logout` `me` `settings` `forgot`, `server/auth.ts`); `/api/tracks/*` (`GET /`, `PUT/DELETE /:bgmId`, login-gated, `server/tracks.ts`).
+- **Auth:** scrypt hashes (`salt:hash`, `timingSafeEqual`), httpOnly signed-JWT cookie `mt_session` (HS256, `AUTH_SECRET`). The `token_version` column is load-bearing — the JWT carries `tv`, `getSession` rejects on mismatch, and password/security-question changes bump it (revoking all old sessions, since stateless JWTs can't otherwise be revoked) and re-issue for the current device. In-memory per-user/per-IP rate limiting on login/register/forgot.
+- **Data is SQLite** (`better-sqlite3`, `server/db.ts`, WAL) — the one place SQLite is allowed. The DB file **must live outside the deploy dir** (`DATA_DIR=/opt/mapletools-data` in prod; redeploy `rm -rf`'s `/opt/web`). `better-sqlite3` is native → marked `ssr.external` in `web/vite.config.ts` (without it `/api/auth` crashes on first hit). `db.ts` uses the same zero-migration `ensureColumn` pattern.
+- **Scraping is copied from the app, not shared** — `server/bgm/*` mirrors `src/main/bgm` with Electron `net` swapped for undici `fetch` (`server/http.ts`, proxy-aware + single transient retry). Honest `MapleTools-Web/<ver>` UA.
+- **Cover proxy** is path-style (`/api/cover/*` → whitelist `/^\/(r\/\d{2,4}\/)?pic\//` → hardcoded `https://lain.bgm.tv${path}`). **Never** put `bgm.tv` in the URL — the GFW RSTs plaintext HTTP to it and got the origin's port 80 temporarily blocked in testing; the path form also blocks SSRF.
+- **Frontend** uses a hand-rolled **hash router** (`src/router.ts`, routes `calendar`/`settings`/`tracks`) and a top nav (web convention) — it does **not** copy the app's sidebar/react-router wholesale.
 
 ## Releasing
 
-Pushing a `v*` tag triggers `.github/workflows/release.yml` (Windows + macOS parallel build → draft release). **Before tagging:** bump `package.json`, then run `npm run sync:manifest` and commit the updated `update-manifest.json` alongside the release commit. That manifest is the *only* way clients on the 国内加速 (China-mirror) updater discover a new version — skip it and every mirror-routed user stops getting updates. Mechanism + how to swap proxies: `docs/release/自动更新-国内加速.md`. Versioning follows SemVer; full flow in the `electron-release` skill and `docs/release/how-to-release.md`.
+Pushing a `v*` tag triggers `.github/workflows/release.yml` (Windows + macOS parallel build → draft release). **Before tagging:** bump `package.json`, run `npm run sync:manifest`, and commit the updated `update-manifest.json` in the release commit — that manifest is the **only** way clients on the 国内加速 (China-mirror) updater discover a new version. Full flow: the `electron-release` skill, `docs/release/`. Versioning follows SemVer.
 
-## Window startup detail (don't regress)
+## Committing (`AI_GUIDELINES.md`「提交规范」)
 
-`createWindow()` deliberately does **not** call `mainWindow.show()` on `ready-to-show`. The renderer sends `app:renderer-ready` (via `window.systemApi.signalReady()`) after React mount + `document.fonts.ready`; main shows the window then, with a 4s fallback. This avoids icon-font pop-in flicker. `backgroundColor: '#131313'` matches the dark theme so the pre-render frame isn't white.
-
-## Committing
-
-Conventional Commits with Chinese descriptions (`<type>(<scope>): <描述>`); title states the user-visible symptom or result, not the low-level term. **No AI signature trailers.** Commit/push only when explicitly asked, and **add a `DEVLOG.md` entry first — that's a required step, not an optional one.** Full rules: `AI_GUIDELINES.md`「提交规范」.
+Conventional Commits with 中文 descriptions: `<type>(<scope>): <描述>`. Allowed types `feat fix docs refactor chore style perf test build ci`; scope = module name. Title states the user-visible symptom/result, not the low-level term. **No AI signature trailers.** **Only commit/push when explicitly asked** — approval of a fix is *not* approval to push (2026-07-17 incident). Run `git status`/`git diff --stat` before `git add -A` (the user may have unrelated changes in the tree). **Add a `DEVLOG.md` entry first — a required step, not optional.**
