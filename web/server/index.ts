@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { getCalendar } from './bgm/calendar'
 import auth from './auth'
 import tracks from './tracks'
+import xifan from './xifan'
 
 // 单一 Hono 应用 = API 的唯一真相源。本地开发经 vite.config 的 dev-server 插件跑，
 // 生产经 web/api/[[...route]].ts 在 Vercel serverless 跑，将来迁 VPS 用 @hono/node-server
@@ -15,6 +16,10 @@ app.route('/api/auth', auth)
 
 // 追番：列表 / 增改（字段级 patch）/ 删。要登录。
 app.route('/api/tracks', tracks)
+
+// 稀饭在线观看「浏览器直连」可行性原型（ideas/012 在线观看第一步）。probe 诊断 + 自包含试播页，
+// 不登录、不碰 SPA。验证过就会长成①定位那一档的解析后端，或被判定要走服务器代理。
+app.route('/api/xifan', xifan)
 
 app.get('/api/calendar', async (c) => {
   const force = c.req.query('force') === '1'

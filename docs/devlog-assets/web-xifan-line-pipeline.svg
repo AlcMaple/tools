@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 452" font-family="-apple-system,Segoe UI,Roboto,PingFang SC,Microsoft YaHei,sans-serif">
+  <defs>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6b6b70"/></marker>
+  </defs>
+  <rect x="1" y="1" width="778" height="450" rx="10" fill="#fbfafc" stroke="#e5e0e3"/>
+
+  <text x="24" y="30" font-size="13.5" font-weight="700" fill="#2a2a2e">稀饭在线观看流程（懒加载：默认线路 1，其余点了才抓）</text>
+  <text x="24" y="49" font-size="11.5" fill="#7a7a80">server/xifan.ts + resolve.ts。打开只抓 1 次；不并发、不自动选最优 —— 免得一串请求砸向稀饭触发反爬。</text>
+
+  <!-- ══ 第 1 步：打开 → 抓一次 → 名单 + 线路1 ══ -->
+  <text x="24" y="82" font-size="11" font-weight="700" fill="#5a6b8a">① 打开播放页</text>
+  <rect x="24" y="92" width="128" height="46" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="88" y="112" font-size="11.5" text-anchor="middle" fill="#404046">播放页 animeId</text>
+  <text x="88" y="128" font-size="10" text-anchor="middle" fill="#8a8a90">如 3543 · ep 1</text>
+
+  <path d="M152 115 L206 115" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <text x="179" y="107" font-size="9.5" text-anchor="middle" fill="#7a7a80">GET /playlist</text>
+
+  <rect x="208" y="88" width="242" height="54" rx="6" fill="#ffffff" stroke="#d9d1d4"/>
+  <text x="329" y="106" font-size="11" font-weight="600" text-anchor="middle" fill="#404046">只抓 source 1 页一次</text>
+  <text x="329" y="122" font-size="10" text-anchor="middle" fill="#7a7a80">→ 拿到 线路名单（1/2/3）</text>
+  <text x="329" y="135" font-size="10" text-anchor="middle" fill="#7a7a80">＋ 线路 1 地址（顺手解析出来）</text>
+
+  <rect x="470" y="92" width="286" height="46" rx="6" fill="#fdf1f1" stroke="#e6bcc2"/>
+  <text x="484" y="110" font-size="10" fill="#94464f">❗不并发、不预解析线路 2/3</text>
+  <text x="484" y="127" font-size="10" fill="#94464f">一串请求砸向稀饭 = 像爬虫，会触发反爬 / 限流</text>
+
+  <!-- ══ 第 2 步：默认线路1 / 手动才抓 2、3 ══ -->
+  <line x1="24" y1="162" x2="756" y2="162" stroke="#ece7ea" stroke-width="1"/>
+  <text x="24" y="184" font-size="11" font-weight="700" fill="#5a6b8a">② 选线（拿到某条线路的地址）</text>
+
+  <!-- 默认 -->
+  <rect x="24" y="198" width="330" height="60" rx="8" fill="#eaf6ef" stroke="#4a9d6f"/>
+  <text x="189" y="220" font-size="11.5" font-weight="700" text-anchor="middle" fill="#166c45">默认：直接播线路 1</text>
+  <text x="189" y="238" font-size="10.5" text-anchor="middle" fill="#2f7a54">线路 1 已在第①步抓好，打开即播，不用再请求</text>
+  <text x="189" y="251" font-size="10" text-anchor="middle" fill="#5a8a6f">（= 稀饭自己打开也默认这条）</text>
+
+  <!-- 手动 -->
+  <rect x="426" y="198" width="330" height="60" rx="8" fill="#eef3f9" stroke="#8aa8cc"/>
+  <text x="591" y="220" font-size="11.5" font-weight="700" text-anchor="middle" fill="#3a5a86">手动：点线路 2 / 3 时</text>
+  <text x="591" y="238" font-size="10.5" text-anchor="middle" fill="#456a99">GET /resolve?source=N —— 那一刻才抓这一条</text>
+  <text x="591" y="251" font-size="10" text-anchor="middle" fill="#6a86aa">（每切一条 = 多 1 次请求，用户驱动）</text>
+
+  <path d="M189 258 L189 292" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M591 258 L591 292" stroke="#6b6b70" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+
+  <!-- ══ 第 3 步：播放方式 ══ -->
+  <text x="24" y="312" font-size="11" font-weight="700" fill="#5a6b8a">③ 播放（拿到地址后，按类型播；播不了就套娃兜底）</text>
+  <rect x="24" y="322" width="732" height="112" rx="8" fill="#ffffff" stroke="#d9d1d4"/>
+
+  <rect x="40" y="338" width="228" height="80" rx="6" fill="#eaf6ef" stroke="#4a9d6f"/>
+  <text x="154" y="360" font-size="11" font-weight="700" text-anchor="middle" fill="#166c45">.mp4 → &lt;video&gt; 直连</text>
+  <text x="154" y="379" font-size="10" text-anchor="middle" fill="#2f7a54">直连源 CDN，no-cors 不吃 CORS</text>
+  <text x="154" y="393" font-size="10" text-anchor="middle" fill="#2f7a54">视频字节不经服务器</text>
+  <text x="154" y="409" font-size="9.5" text-anchor="middle" fill="#7a7a80">（零视频带宽）</text>
+
+  <rect x="278" y="338" width="228" height="80" rx="6" fill="#eaf1f8" stroke="#5a86b3"/>
+  <text x="392" y="360" font-size="11" font-weight="700" text-anchor="middle" fill="#2a5580">.m3u8 → hls.js</text>
+  <text x="392" y="379" font-size="10" text-anchor="middle" fill="#3a6a99">CDN 回 ACAO，直连分片、不用代理</text>
+  <text x="392" y="393" font-size="10" text-anchor="middle" fill="#3a6a99">深缓冲 10 分钟，暂停也灌</text>
+  <text x="392" y="409" font-size="9.5" text-anchor="middle" fill="#7a7a80">（分片预取最抗卡）</text>
+
+  <rect x="516" y="338" width="224" height="80" rx="6" fill="#fdf7e3" stroke="#d9bd58"/>
+  <text x="628" y="360" font-size="11" font-weight="700" text-anchor="middle" fill="#8a6d1a">✗ 播不了 → 套娃 iframe</text>
+  <text x="628" y="379" font-size="10" text-anchor="middle" fill="#8a7a3a">嵌稀饭自己的真实播放器</text>
+  <text x="628" y="393" font-size="9.5" text-anchor="middle" fill="#8a7a3a">index.php?code=xfdm1</text>
+  <text x="628" y="409" font-size="9.5" text-anchor="middle" fill="#94464f">兜住：content-disposition / 空壳 / 编码</text>
+</svg>
