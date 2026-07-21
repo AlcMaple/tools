@@ -11,6 +11,29 @@
 
 ## 网页版
 
+### 2026-07-21 test(web): 新增稀饭在线观看
+
+**效果**：
+
+1. web 新增稀饭在线观看后端 + 播放器原型（`server/xifan.ts` + `server/xifan/resolve.ts`）：给定稀饭 animeId → **浏览器直连源 CDN 播放，视频字节不经服务器**（零视频带宽，符合 012「视频不给服务器加码」）。目前是独立测试页 `/api/xifan/play-page`，**还没接追番卡片「继续看」按钮**。
+2. **懒加载选线**：打开只抓 **1 次**（拿线路 1 地址 + 全部线路名单），线路 2/3 **点了才解析**。不并发、不自动选最优 —— 一串请求砸向稀饭像爬虫、会触发反爬 / 限流。
+3. **按类型播 + 套娃兜底**：`.mp4` → `<video>` 直连；`.m3u8` → hls.js（CDN 回 ACAO 直连分片 + 深缓冲 10min、暂停也灌）；直连播不了 → 嵌稀饭真实播放器 iframe，兜住 content-disposition / 空壳 manifest / 编码。
+4. **免验证码 + 秒回**：验证码只在 search，播放页 / 周表页都不设 → 当季番从周表页直接拿 animeId；解析结果进共享缓存，刷新 / 换人秒回。
+
+![稀饭在线观看懒加载流程：打开抓一次（线路1+名单）→ 默认线路1 / 手动懒抓2·3 → 按类型播 + 套娃兜底](docs/devlog-assets/web-xifan-line-pipeline.svg)
+
+**关键代码**：
+
+打开只抓 **source 1 页一次**，就同时拿到「线路 1 地址」和「全部线路名单」—— 名单靠正则扒源 tab（web 侧不为几个 `<a>` 加 cheerio），**不用逐条解析**；线路 2/3 等用户点了才抓：
+
+```ts
+// server/xifan/resolve.ts —— getPlaylist
+const body  = await fetchHtml(`/watch/${animeId}/1/${ep}.html`) // 一次
+const first = parsePlayerData(body)?.url        // 线路 1 地址（顺手，打开即播）
+const lines = parseSourceTabs(body)             // 源 tab → [{source,name}]，全部线路名，零额外请求
+// 线路 N 等 resolveLine(animeId, ep, N) 在点击时才抓，绝不一次性并发（防反爬）
+```
+
 ### 2026-07-17 feat(web): 新增我的追番
 
 **效果**：
