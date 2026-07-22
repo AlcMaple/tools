@@ -93,3 +93,51 @@ export async function putTrack(bgmId: number, patch: TrackPatch): Promise<Track>
 export async function deleteTrack(bgmId: number): Promise<void> {
   await json<{ ok: boolean }>(await fetch(`/api/tracks/${bgmId}`, { method: 'DELETE' }))
 }
+
+// ── 稀饭在线观看：定位 / 绑定 ───────────────────────────────────────────────────
+// bgmId 和稀饭 animeId 是两套 id，唯一联系是标题。首次「继续看」拿追番标题去稀饭周表（免验证码）比中文名
+// 匹配出候选，用户点一个确认（建绑定）→ 落库，之后直接命中。详见 server/xifan/locate.ts。
+export interface XifanCandidate {
+  xifanId: number
+  xifanName: string
+  day: number
+  remarks: string // 如 "03|周一21:30"，更新到第几集
+  score: number
+}
+export interface XifanBinding {
+  xifanId: number
+  xifanName: string
+}
+
+/** 追番页加载时一次拿齐当前用户的绑定 —— 绑过的「继续看」直接渲染成链接，无需再定位。 */
+export async function fetchXifanBindings(): Promise<Record<number, XifanBinding>> {
+  const res = await fetch('/api/xifan/bindings')
+  if (!res.ok) return {}
+  return (await json<{ data: Record<number, XifanBinding> }>(res)).data
+}
+
+export async function locateXifan(
+  bgmId: number,
+  titles: string[]
+): Promise<{ bound?: XifanCandidate; candidates: XifanCandidate[] }> {
+  return json(
+    await fetch('/api/xifan/locate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bgmId, titles }),
+    })
+  )
+}
+
+export async function bindXifan(bgmId: number, xifanId: number, xifanName: string): Promise<void> {
+  await fetch('/api/xifan/bind', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bgmId, xifanId, xifanName }),
+  })
+}
+
+/** 播放页地址 —— 服务端返回的裸 HTML 播放器，新标签打开。 */
+export function playPageUrl(xifanId: number, ep: number): string {
+  return `/api/xifan/play-page?animeId=${xifanId}&ep=${ep}`
+}

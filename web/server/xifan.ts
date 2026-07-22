@@ -1,15 +1,22 @@
 // 稀饭在线观看 —— 懒加载播放器（用户 2026-07-21 定：不并行、不自动选最优）。
 //
-//   GET /api/xifan/playlist?animeId=&ep=          → 一次抓取：线路 1 地址 + 全部线路名单
-//   GET /api/xifan/resolve?animeId=&ep=&source=N  → 用户手动点线路 N 时才解析那一条
-//   GET /api/xifan/play-page?animeId=&ep=         → 播放器页（默认播线路 1，直连失败套娃兜底）
-//   GET /api/xifan/hls.js                         → 自托管 hls.js（不走可能被墙的 jsdelivr）
+//   GET  /api/xifan/playlist?animeId=&ep=          → 一次抓取：线路 1 地址 + 全部线路名单
+//   GET  /api/xifan/resolve?animeId=&ep=&source=N  → 用户手动点线路 N 时才解析那一条
+//   GET  /api/xifan/play-page?animeId=&ep=         → 播放器页（默认播线路 1，直连失败套娃兜底）
+//   GET  /api/xifan/hls.js                         → 自托管 hls.js（不走可能被墙的 jsdelivr）
+//   POST /api/xifan/locate                         → bgmId + 标题 → 稀饭候选（周表免验证码匹配，见 locate.ts）
+//   POST /api/xifan/bind                           → 用户点候选确认，落库绑定（要登录）
+//   GET  /api/xifan/bindings                       → 当前用户追番已建的绑定，页面加载时一次拿齐（要登录）
 //
 // 播放器页是「服务端返回的一张裸 HTML」，跟生产 SPA 同源，<video> 加载源 CDN 就是跨源＝真实场景。
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Hono } from 'hono'
 import { getPlaylist, resolveLine } from './xifan/resolve'
+import { locate } from './xifan/locate'
+import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
+import { getSession } from './auth'
+import { db } from './db'
 
 const xifan = new Hono()
 
@@ -50,6 +57,41 @@ xifan.get('/play-page', (c) => {
   return c.html(PLAY_PAGE)
 })
 
+// 定位：bgmId + 追番标题 → 周表候选（或已绑定则直接给 bound）。不写库、不要登录（纯解析）。
+xifan.post('/locate', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; titles?: unknown }
+  const bgmId = Number(body.bgmId)
+  if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
+  const titles = Array.isArray(body.titles) ? body.titles.filter((t): t is string => typeof t === 'string') : []
+  try {
+    c.header('Cache-Control', 'no-store')
+    return c.json(await locate(bgmId, titles))
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : '周表请求失败' }, 502)
+  }
+})
+
+// 建绑定：用户点候选确认才走这条，落库（全局表）。要登录 —— 防匿名乱写别人也会命中的全局绑定。
+xifan.post('/bind', async (c) => {
+  const s = await getSession(c)
+  if (!s) return c.json({ error: '未登录' }, 401)
+  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; xifanId?: number; xifanName?: string }
+  const bgmId = Number(body.bgmId)
+  const xifanId = Number(body.xifanId)
+  if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
+  if (!Number.isInteger(xifanId) || xifanId <= 0) return c.json({ error: 'xifanId 不合法' }, 400)
+  putBinding(bgmId, xifanId, String(body.xifanName ?? '').slice(0, 200))
+  return c.json({ ok: true, binding: getBinding(bgmId) })
+})
+
+// 当前用户追番里已建的绑定，一次拿齐（前端据此把绑过的「继续看」直接渲染成链接）。
+xifan.get('/bindings', async (c) => {
+  const s = await getSession(c)
+  if (!s) return c.json({ data: {} }) // 未登录没有追番，空即可，不当错误
+  const rows = db.prepare('SELECT bgm_id FROM tracks WHERE user_id = ?').all(s.uid) as { bgm_id: number }[]
+  return c.json({ data: bindingsFor(rows.map((r) => r.bgm_id)) })
+})
+
 export default xifan
 
 // 播放器页 —— 客户端 JS 只用字符串拼接（不用模板串），避开外层模板串的 ${}。<video> 不加 crossorigin。
@@ -62,67 +104,57 @@ const PLAY_PAGE = `<!doctype html>
 <title>继续看 · 稀饭</title>
 <script src="/api/xifan/hls.js"></script>
 <style>
-  :root { color-scheme: dark }
+  /* 配色对齐 app / web 暗色主题：玫瑰粉主色（--color-primary 的 dark 版）+ 分层深色卡片 */
+  :root { color-scheme: dark; --rose: #ffb3b8; --rose-dim: rgba(255,179,184,.14); --rose-bd: rgba(255,179,184,.30) }
   * { box-sizing: border-box }
-  body { margin: 0; background: #0d0d0d; color: #e6e6e6; font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 16px; max-width: 900px; margin: 0 auto }
-  h1 { font-size: 17px; margin: 0 0 2px }
-  .sub { color: #8a8a8a; font-size: 12px; margin: 0 0 12px }
-  #status { color: #9a9a9a; font-size: 12.5px; min-height: 18px; margin-bottom: 8px }
-  video { width: 100%; background: #000; border-radius: 10px; display: none; aspect-ratio: 16/9 }
-  iframe.player { width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 10px; background: #000; display: none }
-  .verdict { margin: 8px 0; padding: 10px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; display: none }
-  .verdict.ok { display: block; background: #16311a; border: 1px solid #2f6b39; color: #9ece6a }
-  .verdict.bad { display: block; background: #3a1620; border: 1px solid #7a2a3a; color: #f7768e }
-  .verdict.info { display: block; background: #1a1a1a; border: 1px solid #333; color: #b8b8b8 }
-  .lines { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 }
-  .chip { border: 1px solid #3a3a3a; background: #1a1a1a; color: #c8c8c8; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer }
-  .chip.active { border-color: #7aa2f7; background: #1a2540; color: #a9c2ff }
-  .chip .tag { font-size: 10px; opacity: .65; margin-left: 5px }
-  #play { color: #8a8a8a; font-size: 11.5px; font-family: ui-monospace, Menlo, Consolas, monospace; min-height: 18px; margin-top: 6px }
+  body { margin: 0 auto; background: #0e0e0e; color: #e2e2e2; font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 22px 18px 40px; max-width: 960px }
+  .hd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
+  h1 { font-size: 18px; font-weight: 800; letter-spacing: -.01em; margin: 0 }
+  .ep-badge { font-size: 12px; font-weight: 700; color: var(--rose); background: var(--rose-dim); border: 1px solid var(--rose-bd); border-radius: 6px; padding: 1px 9px; font-variant-numeric: tabular-nums }
+  .player-wrap { position: relative; aspect-ratio: 16/9; background: #000; border: 1px solid #242424; border-radius: 14px; overflow: hidden; margin-bottom: 12px }
+  video, iframe.player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; display: none }
+  /* 只在真出错时才现（加载失败 / 这集没更新 / 线路解析不到）—— 平时不显示任何提示文字 */
+  #err { display: none; margin: 0 0 12px; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; background: rgba(247,118,142,.12); border: 1px solid rgba(247,118,142,.35); color: #f7768e }
+  .card { background: #171717; border: 1px solid #242424; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px }
+  .card-label { font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #767676; margin-bottom: 10px }
+  .lines { display: flex; flex-wrap: wrap; gap: 7px }
+  .chip { border: 1px solid #333; background: #141414; color: #c8c8c8; border-radius: 9px; padding: 6px 13px; font-size: 12.5px; cursor: pointer; transition: border-color .12s, background .12s, color .12s }
+  .chip:hover { border-color: #565656 }
+  .chip.active { border-color: var(--rose); background: var(--rose-dim); color: var(--rose) }
+  /* 集数网格 —— 参考 app 播放页的「集数」区 */
+  .eps { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 7px }
+  .ep { border: 1px solid #2c2c2c; background: #141414; color: #bdbdbd; border-radius: 8px; padding: 8px 0; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-variant-numeric: tabular-nums; transition: border-color .12s, background .12s, color .12s }
+  .ep:hover { border-color: #565656; color: #fff }
+  .ep.cur { border-color: var(--rose); background: var(--rose); color: #5a1923 }
 </style>
 </head>
 <body>
-  <h1 id="ttl">继续看</h1>
-  <p class="sub">默认播线路 1；线路 2/3 点了才解析（不一次性并发，防反爬）。直连播不了自动套娃（稀饭自己的播放器）。</p>
-  <div id="status">准备中…</div>
-  <div class="verdict" id="verdict"></div>
-  <video id="v" controls playsinline preload="auto"></video>
-  <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
-  <div class="lines" id="lines"></div>
-  <div id="play"></div>
+  <div class="hd"><h1 id="ttl">继续看</h1><span class="ep-badge" id="epbadge">EP</span></div>
+  <div class="player-wrap">
+    <video id="v" controls playsinline preload="auto"></video>
+    <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
+  </div>
+  <div id="err"></div>
+  <div class="card"><div class="card-label">线路</div><div class="lines" id="lines"></div></div>
+  <div class="card"><div class="card-label">选集</div><div class="eps" id="eps"></div></div>
 <script>
 (function(){
   var $ = function(id){ return document.getElementById(id) }
   var q = new URLSearchParams(location.search)
   var animeId = q.get('animeId') || ''
   var ep = q.get('ep') || '1'
-  var stalls = 0, fragCount = 0, v = $('v'), frame = $('frame')
-  var lines = [], curPl = null, resolvedMap = {}, hls = null, mode = 'direct'
+  var v = $('v'), frame = $('frame')
+  var lines = [], eps = [], curPl = null, resolvedMap = {}, hls = null
 
-  function fmt(n){ return Math.round(n * 10) / 10 }
-  function setV(cls, txt){ $('verdict').className = 'verdict ' + cls; $('verdict').textContent = txt }
-  function curSrc(){ return curPl ? curPl.source : 0 }
+  function fail(txt){ var e = $('err'); e.textContent = txt; e.style.display = 'block' }
+  function clearFail(){ $('err').style.display = 'none' }
+  function inFrame(){ return frame.style.display === 'block' }
 
-  function updateReadout(){
-    if (mode !== 'direct' || !curPl) return
-    var ahead = 0
-    try { if (v.buffered.length) ahead = v.buffered.end(v.buffered.length - 1) - v.currentTime } catch (e) {}
-    $('play').textContent = '进度 ' + fmt(v.currentTime) + 's / ' + (isFinite(v.duration) ? fmt(v.duration) : '?') +
-      's　·　缓冲领先 ' + fmt(ahead) + 's' + (v.paused ? '（暂停中，仍在缓冲）' : '') +
-      (curPl.kind === 'hls' ? '　·　已载分片 ' + fragCount : '') + '　·　卡顿 ' + stalls + ' 次'
-  }
-  v.addEventListener('timeupdate', updateReadout)
-  setInterval(updateReadout, 500) // 暂停时 timeupdate 不触发，靠它才看得到缓冲还在涨
-
-  v.addEventListener('playing', function(){
-    if (mode !== 'direct') return
-    setV('ok', '✅ 直连播放中 · 线路 ' + curSrc() + (curPl && curPl.kind === 'hls' ? ' · HLS（hls.js 深缓冲）' : '') + '（视频不经服务器）')
-  })
-  v.addEventListener('waiting', function(){ if (mode === 'direct') stalls++ })
+  // mp4 直连意外失败（少数编码问题）→ 静默切套娃。HLS 失败交给 hls.js 的 fatal。
+  // 切套娃时会给 <video> removeAttribute+load，也会冒一个 error —— 用 inFrame()/有无 src 挡掉，别再回切。
   v.addEventListener('error', function(){
-    // mp4 直连失败（如 content-disposition 的 code4）→ 套娃兜底。HLS 的失败交给 hls.js 的 fatal。
-    if (mode !== 'direct' || !curPl || curPl.kind === 'hls') return
-    embed(curPl, '线路 ' + curSrc() + ' 直连播不了（多半 content-disposition / 编码），已自动切稀饭播放器')
+    if (!curPl || curPl.kind === 'hls' || inFrame() || !v.getAttribute('src')) return
+    embed(curPl)
   })
 
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
@@ -132,77 +164,91 @@ const PLAY_PAGE = `<!doctype html>
     var box = $('lines'); box.textContent = ''
     lines.forEach(function(l){
       var b = document.createElement('button')
-      var on = curPl && l.source === curPl.source
-      b.className = 'chip' + (on ? ' active' : '')
+      b.className = 'chip' + (curPl && l.source === curPl.source ? ' active' : '')
       b.textContent = '线路 ' + l.source + (l.name ? ' ' + l.name : '')
-      var rp = resolvedMap[l.source]
-      if (rp){ var s = document.createElement('span'); s.className = 'tag'; s.textContent = rp.kind === 'hls' ? 'HLS' : 'mp4'; b.appendChild(s) }
       b.onclick = function(){ selectLine(l.source) }
       box.appendChild(b)
     })
   }
 
   function playLine(pl){
-    curPl = pl; mode = 'direct'; stalls = 0; fragCount = 0
-    stopAll(); renderChips()
+    curPl = pl; clearFail(); stopAll(); renderChips()
+    // 下载型链接（网盘代理）直连必失败还触发浏览器下载 —— 服务端已判死为 iframe，直接套娃，不碰 <video>
+    if (pl.kind === 'iframe'){ embed(pl); return }
     v.style.display = 'block'; frame.style.display = 'none'
     if (pl.kind === 'hls'){
-      setV('info', '⏳ 线路 ' + pl.source + ' HLS 加载中（hls.js 预取深缓冲）…')
       if (window.Hls && Hls.isSupported()){
         // 深缓冲：目标前向 10 分钟 / 240MB（暂停也灌）；hls.js 致命错误（含空壳 manifest）→ 套娃
         hls = new Hls({ maxBufferLength: 600, maxMaxBufferLength: 900, maxBufferSize: 240 * 1000 * 1000, backBufferLength: 90 })
-        hls.on(Hls.Events.ERROR, function(e, data){ if (data && data.fatal) embed(pl, '线路 ' + pl.source + ' HLS 播不了（' + (data.details || data.type) + '），已自动切稀饭播放器') })
-        hls.on(Hls.Events.FRAG_LOADED, function(){ fragCount++ })
+        hls.on(Hls.Events.ERROR, function(e, data){ if (data && data.fatal) embed(pl) })
         hls.loadSource(pl.url); hls.attachMedia(v)
         var pp = v.play(); if (pp && pp.catch) pp.catch(function(){})
       } else if (v.canPlayType('application/vnd.apple.mpegurl')){
         v.src = pl.url; var p2 = v.play(); if (p2 && p2.catch) p2.catch(function(){}) // iOS 原生 HLS
-      } else { embed(pl, '此浏览器不支持 HLS，改用稀饭播放器') }
+      } else { embed(pl) }
     } else {
-      setV('info', '⏳ 线路 ' + pl.source + ' mp4 加载中…')
       v.src = pl.url; v.load(); var p = v.play(); if (p && p.catch) p.catch(function(){})
     }
   }
 
-  // 套娃：某条线自研播不了 → 嵌稀饭自己的真实播放器（跟你在稀饭看一样）
-  function embed(pl, why){
-    mode = 'iframe'; curPl = pl
+  // 套娃：直连播不了 → 嵌稀饭自己的真实播放器（跟你在稀饭看一样）
+  function embed(pl){
+    curPl = pl
     destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
     v.style.display = 'none'; frame.style.display = 'block'; renderChips()
-    setV('info', '🪆 ' + (why || '线路 ' + pl.source + ' 用稀饭真实播放器'))
-    $('play').textContent = '（套娃模式下拿不到跨源缓冲读数）'
     frame.src = 'https://player.moedot.net/player/index.php?code=xfdm1&from=cf&url=' + encodeURIComponent(pl.url)
   }
 
   async function selectLine(source){
-    if (curPl && curPl.source === source && mode === 'direct') return
+    if (curPl && curPl.source === source && !inFrame()) return
+    clearFail()
     var pl = resolvedMap[source]
     if (!pl){
-      setV('info', '解析线路 ' + source + '…（点了才抓，避免一次性并发）')
       try {
         var r = await fetch('/api/xifan/resolve?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep) + '&source=' + source)
         var d = await r.json()
-        if (!d || d.error || !d.url){ setV('bad', '线路 ' + source + ' 解析不到' + (d && d.error ? '：' + d.error : '')); return }
+        if (!d || d.error || !d.url){ fail('这条线路解析不到' + (d && d.error ? '：' + d.error : '')); return }
         pl = d; resolvedMap[source] = pl
-      } catch (e){ setV('bad', '解析请求失败：' + (e && e.message || e)); return }
+      } catch (e){ fail('解析请求失败：' + (e && e.message || e)); return }
     }
     playLine(pl)
   }
 
+  // 换集 —— 直接改地址重载整页（裸页，全量重启最省事、也不残留上一集的 hls/buffer 状态）
+  function goEp(n){ if (n < 1) return; location.search = '?animeId=' + encodeURIComponent(animeId) + '&ep=' + n }
+  // 集数网格（参考 app 播放页「集数」区）：当前集高亮，点其余集换过去；扒不到集数就退化成只显示当前集
+  function renderEps(){
+    var box = $('eps'); box.textContent = ''
+    var cur = Number(ep) || 1
+    if (!eps.length){
+      var one = document.createElement('div'); one.className = 'ep cur'; one.textContent = cur; box.appendChild(one)
+      return
+    }
+    eps.forEach(function(n){
+      var b = document.createElement('button'); b.type = 'button'
+      b.className = 'ep' + (n === cur ? ' cur' : '')
+      b.textContent = n
+      b.onclick = function(){ if (n !== cur) goEp(n) }
+      box.appendChild(b)
+    })
+  }
+
   async function boot(){
-    if (!/^[0-9]+$/.test(animeId)){ $('status').textContent = 'URL 里缺 animeId（例：/api/xifan/play-page?animeId=3543&ep=1）'; return }
-    $('ttl').textContent = '继续看 · EP ' + ep
-    $('status').textContent = '加载中…（只抓 1 次：线路 1 地址 + 线路名单）'
+    if (!/^[0-9]+$/.test(animeId)){ fail('URL 里缺 animeId'); return }
+    $('epbadge').textContent = 'EP ' + ep
+    renderEps() // 先按 URL 的 ep 画一版占位，拿到 playlist 的整季集数再重画
     try {
       var r = await fetch('/api/xifan/playlist?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep))
       var d = await r.json()
-      if (d.error){ $('status').textContent = '加载失败：' + d.error; return }
+      if (d.error){ fail('加载失败：' + d.error); return }
       lines = d.lines || []
-      $('status').textContent = (d.title ? d.title + ' · ' : '') + '共 ' + lines.length + ' 条线路，默认播线路 1（其余点了才解析）'
+      eps = d.eps || []
+      if (d.title){ $('ttl').textContent = d.title }
+      renderEps(); renderChips()
       if (d.first){ resolvedMap[1] = d.first; playLine(d.first) }
-      else { renderChips(); setV('bad', '线路 1 解析不到（反爬 / 页面改版 / 传错 animeId）') }
+      else { fail('这一集解析不到 —— 可能还没更新，点上面别的集试试') }
     } catch (e){
-      $('status').textContent = '请求失败：' + (e && e.message || e)
+      fail('请求失败：' + (e && e.message || e))
     }
   }
   boot()

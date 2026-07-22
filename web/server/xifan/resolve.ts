@@ -11,10 +11,10 @@
 
 import '../http' // 副作用导入：让 undici fetch 认 HTTPS_PROXY（本地 Clash 非 TUN 时用）
 
-// 与 app 的 DESKTOP_USER_AGENT 一致 —— 稀饭对 UA 敏感。
-const DESKTOP_UA =
+// 与 app 的 DESKTOP_USER_AGENT 一致 —— 稀饭对 UA 敏感。导出给 weekday.ts 复用，保证全站一个 UA。
+export const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-const BASE_URL = 'https://anime.xifanacg.com'
+export const BASE_URL = 'https://anime.xifanacg.com'
 const XIFAN_HEADERS: Record<string, string> = {
   'User-Agent': DESKTOP_UA,
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -79,9 +79,35 @@ function parseSourceTabs(html: string): LineMeta[] {
   return out
 }
 
-/** 按后缀分类（不发额外请求）。播放层据此选 <video> / hls.js。 */
-function classify(url: string): 'mp4' | 'hls' {
-  return /\.m3u8(\?|$)/i.test(url) ? 'hls' : 'mp4'
+/**
+ * 集数列表 —— 从 watch 页正则扒 `.anthology-list` 里的 `/watch/{animeId}/{src}/{ep}.html` 链接，按 ep 去重排序。
+ * 抄自 app `parseEpLabels` 思路（换正则、只要序号）：源切换 tab（`vod-playerUrl`）也长这个 href，跳过。
+ * 给播放页画「集数网格」用；扒不到 → []，播放页退化成只显示当前集（仍能靠地址栏 ep= 换集）。
+ */
+function parseEpList(html: string, animeId: string): number[] {
+  const set = new Set<number>()
+  const re = new RegExp(`<a\\b[^>]*href="/watch/${animeId}/\\d+/(\\d+)\\.html"[^>]*>`, 'gi')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) !== null) {
+    if (/vod-playerUrl/i.test(m[0])) continue // 源切换 tab 不是集数
+    const ep = parseInt(m[1], 10)
+    if (ep > 0) set.add(ep)
+  }
+  return [...set].sort((a, b) => a - b)
+}
+
+/**
+ * 按 URL 分类（不发额外请求）。播放层据此选 <video> / hls.js / 直接套娃。
+ *   - `.m3u8` → hls（hls.js 接管）
+ *   - **下载型链接** → iframe：`<video>` 喂它只会被浏览器当**附件下载**（触发下载器、还播不了），
+ *     白等一轮直连失败才切套娃。`apn.moedot.net/d/…` 是联通网盘代理，302 跳 `pan.wo.cn/openapi/download`
+ *     —— 这是**服务端行为、各端一致**（非 011 那种 localhost 专属），所以直接判死、跳过 <video>。
+ *   - 其余（xfvod 等干净直链）→ mp4：`<video>` 直连，视频不经服务器（零带宽，最优路径，别误伤）。
+ */
+function classify(url: string): 'mp4' | 'hls' | 'iframe' {
+  if (/\.m3u8(\?|$)/i.test(url)) return 'hls'
+  if (/apn\.moedot\.net|pan\.wo\.cn|\/openapi\/download/i.test(url)) return 'iframe'
+  return 'mp4'
 }
 
 async function fetchHtml(url: string): Promise<string> {
@@ -107,12 +133,13 @@ export interface LineMeta {
 export interface PlayLine {
   source: number
   url: string
-  kind: 'mp4' | 'hls'
+  kind: 'mp4' | 'hls' | 'iframe' // iframe = 下载型链接，直接套娃（见 classify）
 }
 export interface Playlist {
   title: string
   lines: LineMeta[]
   first: PlayLine | null // 线路 1（顺手解析出来，打开即可播）
+  eps: number[] // 整季集数序号（画集数网格用），扒不到就空
 }
 
 // 进程内缓存（1h）—— 刷新 / 换人秒回。但**不预解析、不并行**：缓存的只是「已经解析过的那条」。
@@ -139,7 +166,8 @@ export async function getPlaylist(animeId: string, ep: number): Promise<Playlist
   const url1 = data?.url ? decodeURIComponent(data.url) : ''
   const first: PlayLine | null = url1 ? { source: 1, url: url1, kind: classify(url1) } : null
   const lines = tabs.length ? tabs : first ? [{ source: 1, name: '线路1' }] : []
-  return put(key, { title: data?.vod_data?.vod_name ?? '', lines, first })
+  const eps = parseEpList(body, animeId)
+  return put(key, { title: data?.vod_data?.vod_name ?? '', lines, first, eps })
 }
 
 /** 用户手动点线路 N 时才调这个：只抓那一条。 */

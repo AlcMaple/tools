@@ -69,6 +69,21 @@ db.exec(`
   );
 `)
 
+// 稀饭绑定表 —— bgmId → 稀饭 animeId 的映射，「继续看」按钮靠它定位（见 xifan/locate.ts）。
+//
+// **全局、不按用户分**：bgm 主题 → 稀饭番剧是「客观事实」，对所有人一样，任一用户确认一次其余人直接命中。
+// 故主键是 bgm_id 而非 (user_id, bgm_id)。也**不塞进 tracks.extra**：那列是留给 app 富字段原样过路的
+// （见上），web 一个字都不该碰它 —— 绑定是 web 自己的数据，另立一张表干净。
+//   xifan_name —— 存一份匹配到的中文名，前端播放页 / 换绑时显示，好让用户一眼看出绑没绑错。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS xifan_binding (
+    bgm_id     INTEGER PRIMARY KEY,
+    xifan_id   INTEGER NOT NULL,
+    xifan_name TEXT    NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL DEFAULT 0
+  );
+`)
+
 // 老库补列 —— 沿用 app 那套「零迁移脚本」思路：缺哪列补哪列，不写版本号、不写迁移文件。
 function ensureColumn(table: string, column: string, decl: string): void {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]

@@ -11,6 +11,46 @@
 
 ## 网页版
 
+### 2026-07-22 fix(web): 修复稀饭直连失败问题
+
+**效果**：
+
+1. 追番卡片「继续看」按钮激活（原是灰占位）：点一下 → 定位到稀饭对应番剧 → 直接开播到**下一集**（EP = 已看 +1），跳过「开稀饭 → 搜索 → 输验证码 → 找番 → 翻集」整套。这就是 012 说的「追番 = 在线观看的快捷定位引擎」落地。
+2. **首次点弹「选择稀饭片源」**让用户确认是哪部（按名字匹配周表候选），确认即**建绑定并记住**；之后同一部直接是链接、秒开，不再弹。
+3. **绑定跨季持久**：周表换季后原番从周表消失，绑定仍在、照常开播。
+4. **播放页参考 app 播放器重做**：标题 + EP 徽标、**集数网格**（整季一格一集、当前高亮，点即换集，从 watch 页扒集数列表）、线路卡片，玫瑰主色对齐 app/web 暗色主题。
+5. **网盘下载型线路秒切 iframe**：`apn.moedot.net`→`pan.wo.cn/openapi/download` 这类**下载链接**，`<video>` 喂它会触发浏览器**下载 400MB**（还播不了）、白等几秒才切套娃 —— 现在按 URL **直接判死**走 iframe，不碰 `<video>`（`classify()` 里加的规则，各端一致、非 localhost 专属）。
+
+**关键机制**：追番存 **BGM id**，稀饭播放页要**稀饭自己的 animeId**，两套编号、无确定映射，唯一联系是标题；而稀饭 search 有验证码（过不了）。突破口 = 稀饭「追番周表」的数据接口**不设验证码**，直接给出 animeId：
+
+```
+追番卡片「继续看」
+  ├─ 已绑定 ───────────────────────────────→ 播放页(animeId, EP=已看+1)
+  └─ 未绑定 → 周表匹配(免验证码) → 候选选择框 → [点确认 = 建绑定·落库] ─┘（之后走上面那条）
+```
+
+```ts
+// server/xifan/weekday.ts —— POST 一个中文星期就回那天全部在播番，每条自带 animeId
+//   POST /index.php/ds_api/weekday   body: weekday=一   (一/二/…/日)
+//   → { code:1, list:[{ vod_id:3552, vod_name:"最强废渣皇子…", vod_remarks:"03|周一22:00" }] }
+// vod_id 就是 animeId、vod_name 是中文名 —— 拿它跟追番标题比，把 bgmId 定位到 animeId
+```
+
+```tsx
+// 卡片：绑过 → 原生 <a>（无异步、不吃弹窗拦截）；没绑 → 点了去周表定位、弹候选让用户确认
+{binding
+  ? <a href={playPageUrl(binding.xifanId, nextEp(t))} target="_blank">继续看 EP {ep}</a>
+  : <button onClick={onContinue}>继续看 EP {ep}</button>}
+```
+
+播放路由（`resolve.ts` `classify()`）—— 下载型链接直接判 iframe：
+
+```ts
+if (/\.m3u8(\?|$)/i.test(url)) return 'hls'                                   // hls.js
+if (/apn\.moedot\.net|pan\.wo\.cn|\/openapi\/download/i.test(url)) return 'iframe' // 302→网盘 download，直接套娃
+return 'mp4'                                                                  // xfvod 干净直链 → <video> 直连
+```
+
 ### 2026-07-21 test(web): 新增稀饭在线观看
 
 **效果**：
