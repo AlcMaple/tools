@@ -8,8 +8,17 @@
 //
 // 页头**不置顶**，只有顶栏置顶。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Track, TrackPatch, TrackStatus } from './api'
-import { coverUrl, deleteTrack, fetchTracks, putTrack } from './api'
+import type { Track, TrackPatch, TrackStatus, XifanBinding, XifanCandidate } from './api'
+import {
+  bindXifan,
+  coverUrl,
+  deleteTrack,
+  fetchTracks,
+  fetchXifanBindings,
+  locateXifan,
+  playPageUrl,
+  putTrack,
+} from './api'
 import { useAuth } from './auth'
 import { Icon, Spinner } from './Icon'
 
@@ -28,6 +37,21 @@ function todayBgmId(): number {
 
 const allTagsOf = (t: Track): string[] => [...t.bgmTags, ...t.userTags]
 
+// 「继续看」默认落在**下一集**（= 已看 +1）—— 「继续」就是接着往下看，周更用户打开时新集刚好是这一集。
+// 夹到总集数上限；已看 0 也从第 1 集起。真开到没更新的集，播放页会提示「按◀退一集」，不至于卡死。
+function nextEp(t: Track): number {
+  const n = t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode + 1) : t.episode + 1
+  return Math.max(1, n)
+}
+
+// 定位用的标题集合 —— 中文名 / 别名最可能对上稀饭（简体中文站），日文原名兜底。
+const titlesOf = (t: Track): string[] => [t.titleCn, ...t.aliases, t.title].filter(Boolean)
+
+interface PickerState {
+  track: Track
+  candidates: XifanCandidate[]
+}
+
 /** 标题 / 别名命中（app 还搜备注，网页版没有备注字段） */
 function matches(t: Track, q: string): boolean {
   if (!q) return true
@@ -44,18 +68,50 @@ export function TracksPage(): JSX.Element {
   const [tags, setTags] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<number | null>(null)
   const [confirming, setConfirming] = useState<number | null>(null)
+  // 稀饭绑定：bgmId → {xifanId,xifanName}。加载时一次拿齐，绑过的「继续看」直接是链接。
+  const [bindings, setBindings] = useState<Record<number, XifanBinding>>({})
+  const [locating, setLocating] = useState<number | null>(null) // 正在定位的 bgmId（转圈用）
+  const [picker, setPicker] = useState<PickerState | null>(null)
   const today = useMemo(todayBgmId, [])
 
   useEffect(() => {
     if (!ready) return
     if (!user) {
       setTracks([])
+      setBindings({})
       return
     }
     fetchTracks()
       .then(setTracks)
       .catch((e: Error) => setError(e.message))
+    // 绑定失败不影响追番展示 —— 静默，「继续看」退化成「点了现去定位」
+    fetchXifanBindings().then(setBindings).catch(() => undefined)
   }, [ready, user])
+
+  // 未绑定的「继续看」：去周表定位 → 命中候选就弹选择框让用户确认（= 建绑定），零候选也弹（说明没找到）。
+  const continueWatch = (t: Track): void => {
+    if (locating != null) return
+    setLocating(t.bgmId)
+    locateXifan(t.bgmId, titlesOf(t))
+      .then((r) => {
+        if (r.bound) {
+          // 极少见：加载后别的用户刚绑上 → 记下来（卡片下次即变链接），并尽力开一下
+          setBindings((prev) => ({ ...prev, [t.bgmId]: { xifanId: r.bound!.xifanId, xifanName: r.bound!.xifanName } }))
+          window.open(playPageUrl(r.bound.xifanId, nextEp(t)), '_blank', 'noopener')
+        } else {
+          setPicker({ track: t, candidates: r.candidates })
+        }
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLocating(null))
+  }
+
+  // 用户在选择框点了某个候选 = 确认绑定：落库 + 本地记下（卡片即变链接）。开播由候选行自身的链接完成。
+  const confirmBind = (bgmId: number, cand: XifanCandidate): void => {
+    setBindings((prev) => ({ ...prev, [bgmId]: { xifanId: cand.xifanId, xifanName: cand.xifanName } }))
+    setPicker(null)
+    void bindXifan(bgmId, cand.xifanId, cand.xifanName).catch((e: Error) => setError(e.message))
+  }
 
   // 本地先改、后端后写 —— +1 要跟手，不能等一个来回。失败就把这条重新拉回来纠正。
   const patch = (bgmId: number, p: TrackPatch): void => {
@@ -188,7 +244,17 @@ export function TracksPage(): JSX.Element {
               <SectionLabel>今天更新</SectionLabel>
               <Grid>
                 {todayList.map((t) => (
-                  <Card key={t.bgmId} t={t} isToday onPatch={patch} onEdit={() => setEditing(t.bgmId)} onAskRemove={() => setConfirming(t.bgmId)} />
+                  <Card
+                    key={t.bgmId}
+                    t={t}
+                    isToday
+                    binding={bindings[t.bgmId]}
+                    locating={locating === t.bgmId}
+                    onContinue={() => continueWatch(t)}
+                    onPatch={patch}
+                    onEdit={() => setEditing(t.bgmId)}
+                    onAskRemove={() => setConfirming(t.bgmId)}
+                  />
                 ))}
               </Grid>
             </>
@@ -198,7 +264,17 @@ export function TracksPage(): JSX.Element {
               <SectionLabel>{todayList.length ? '其余' : '全部'}</SectionLabel>
               <Grid>
                 {rest.map((t) => (
-                  <Card key={t.bgmId} t={t} isToday={false} onPatch={patch} onEdit={() => setEditing(t.bgmId)} onAskRemove={() => setConfirming(t.bgmId)} />
+                  <Card
+                    key={t.bgmId}
+                    t={t}
+                    isToday={false}
+                    binding={bindings[t.bgmId]}
+                    locating={locating === t.bgmId}
+                    onContinue={() => continueWatch(t)}
+                    onPatch={patch}
+                    onEdit={() => setEditing(t.bgmId)}
+                    onAskRemove={() => setConfirming(t.bgmId)}
+                  />
                 ))}
               </Grid>
             </>
@@ -207,6 +283,14 @@ export function TracksPage(): JSX.Element {
       )}
 
       {editingTrack && <EditModal t={editingTrack} onPatch={patch} onClose={() => setEditing(null)} />}
+
+      {picker && (
+        <BindPickerModal
+          picker={picker}
+          onPick={(cand) => confirmBind(picker.track.bgmId, cand)}
+          onClose={() => setPicker(null)}
+        />
+      )}
 
       {confirmingTrack && (
         <ConfirmRemoveModal
@@ -319,18 +403,25 @@ function TagRow({ tags }: { tags: string[] }): JSX.Element {
 function Card({
   t,
   isToday,
+  binding,
+  locating,
+  onContinue,
   onPatch,
   onEdit,
   onAskRemove,
 }: {
   t: Track
   isToday: boolean
+  binding: XifanBinding | undefined
+  locating: boolean
+  onContinue: () => void
   onPatch: (bgmId: number, p: TrackPatch) => void
   onEdit: () => void
   onAskRemove: () => void
 }): JSX.Element {
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
+  const ep = nextEp(t)
 
   const step = (delta: number): void => {
     const ep = Math.max(0, t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode + delta) : t.episode + delta)
@@ -371,18 +462,35 @@ function Card({
           <Icon name="delete" size={13} />
         </button>
         <div className="absolute inset-0 flex flex-col justify-end gap-1.5 bg-gradient-to-t from-black/95 via-black/75 to-black/20 p-2 opacity-0 transition-opacity group-hover:opacity-100">
-          {/* 在线观看 —— 播放页还没做，先占位置灰。集数就是计数器显示的那个数
-              （app 的 /play?bgm= 本来就不传集数，不该在这里推算下一集）。 */}
-          <button
-            type="button"
-            disabled
-            onClick={(e) => e.stopPropagation()}
-            title="在线观看还没做"
-            className="flex w-full cursor-not-allowed items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/5 py-1.5 font-label text-[10px] uppercase tracking-widest text-white/30"
-          >
-            <Icon name="play_arrow" size={12} />
-            <span>继续看 EP {t.episode}</span>
-          </button>
+          {/* 在线观看：绑过稀饭 → 直接链接（原生 <a>，无异步、不吃弹窗拦截）；没绑 → 点了去周表定位。
+              集数落在下一集（nextEp）—— 「继续」就是接着往下看。 */}
+          {binding ? (
+            <a
+              href={playPageUrl(binding.xifanId, ep)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title={`稀饭：${binding.xifanName || binding.xifanId}`}
+              className="flex w-full items-center justify-center gap-1 rounded-xl border border-primary/40 bg-primary/25 py-1.5 font-label text-[10px] uppercase tracking-widest text-white backdrop-blur-sm transition-colors hover:bg-primary/40"
+            >
+              <Icon name="play_arrow" size={12} />
+              <span>继续看 EP {ep}</span>
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled={locating}
+              onClick={(e) => {
+                e.stopPropagation()
+                onContinue()
+              }}
+              title="定位稀饭片源"
+              className="flex w-full items-center justify-center gap-1 rounded-xl border border-white/20 bg-white/10 py-1.5 font-label text-[10px] uppercase tracking-widest text-white/90 backdrop-blur-sm transition-colors hover:bg-white/20 disabled:cursor-wait disabled:opacity-60"
+            >
+              {locating ? <Spinner size={12} /> : <Icon name="play_arrow" size={12} />}
+              <span>{locating ? '定位中…' : `继续看 EP ${ep}`}</span>
+            </button>
+          )}
           <a
             href={`https://bgm.tv/subject/${t.bgmId}`}
             target="_blank"
@@ -797,6 +905,91 @@ function ConfirmRemoveModal({
             取消追番
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 绑定选择框 ─────────────────────────────────────────────────────────────────
+// 首次「继续看」时弹：把周表里名字相近的候选列出来，用户点一个 = 确认「这部 bgm 在稀饭里就是它」。
+// **不自动认**（跟 app「绝不模糊匹配自动绑源」一条原则）—— 名字季度后缀 / 简繁 / 日文原名都可能对不齐，
+// 让人眼确认一次最稳，之后记住、直接开。候选行本身是 <a>：点它既确认绑定、又原生开播（不吃弹窗拦截）。
+function BindPickerModal({
+  picker,
+  onPick,
+  onClose,
+}: {
+  picker: PickerState
+  onPick: (cand: XifanCandidate) => void
+  onClose: () => void
+}): JSX.Element {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const { track, candidates } = picker
+  const title = track.titleCn || track.title
+  const ep = nextEp(track)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative m-auto w-full max-w-[440px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          title="关闭"
+          className="absolute right-3.5 top-3.5 flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+        >
+          <Icon name="close" size={16} />
+        </button>
+
+        <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">选择稀饭片源</div>
+        <h2 className="mb-1 mt-1.5 line-clamp-2 pr-6 text-lg font-extrabold leading-tight text-on-surface">{title}</h2>
+        <p className="mb-4 text-[12px] leading-relaxed text-on-surface-variant/60">
+          稀饭用的是另一套编号，按名字匹配出以下几部。<b className="text-on-surface-variant/80">点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
+        </p>
+
+        {candidates.length === 0 ? (
+          <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-4 text-[12.5px] leading-relaxed text-on-surface-variant/60">
+            没在稀饭<b>本季周表</b>里找到相近的名字。多半是：这部不是当季在播（周表只列在播），或译名差得远。
+            <span className="mt-1 block text-on-surface-variant/40">在播番剧过阵子更新到周表后再试；往季旧番暂时没法自动定位。</span>
+          </div>
+        ) : (
+          <div className="custom-scrollbar flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
+            {candidates.map((c) => (
+              <a
+                key={c.xifanId}
+                href={playPageUrl(c.xifanId, ep)}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => onPick(c)}
+                className="flex items-center gap-3 rounded-lg border border-outline-variant/25 bg-surface-container px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-semibold text-on-surface">{c.xifanName || `稀饭 #${c.xifanId}`}</div>
+                  <div className="mt-0.5 font-label text-[10px] uppercase tracking-wider text-on-surface-variant/45">
+                    {c.day ? `星期${SHORT_DAY[c.day]}` : '—'}
+                    {c.remarks ? ` · ${c.remarks.replace('|', ' · ')}` : ''}
+                  </div>
+                </div>
+                <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
+              </a>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
