@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { getCalendar } from './bgm/calendar'
 import { searchAnime, indexStatus } from './bgm/anime-index'
+import { searchOnline } from './bgm/search-online'
 import auth from './auth'
 import tracks from './tracks'
 import xifan from './xifan'
@@ -22,15 +23,23 @@ app.route('/api/tracks', tracks)
 // 不登录、不碰 SPA。验证过就会长成①定位那一档的解析后端，或被判定要走服务器代理。
 app.route('/api/xifan', xifan)
 
-// 追番「搜索加番」—— 打**本地** BGM 动漫索引（bgm_index.db），零 BGM 在线请求（见 bgm/anime-index.ts）。
+// 追番「搜索加番」—— 打**本地** BGM 动漫索引（bgm_index.db），见 bgm/anime-index.ts。
 // 索引没生成时 ready=false，前端据此提示「先跑同步脚本」。
-app.get('/api/search', (c) => {
+//
+// 只有本地**一条都没搜到**时才退回一次 BGM 在线搜（离线档每周三才更新，本周新建的条目
+// 本地必然没有）。本地有结果就绝不联网 —— 单机单 IP 被 BGM 限流会把周历和封面代理一起带走。
+// 那条路自带缓存 / 限速 / 冷却，且失败不重试（bgm/search-online.ts）。
+app.get('/api/search', async (c) => {
   const q = c.req.query('q') ?? ''
   const st = indexStatus()
   c.header('Cache-Control', 'no-store')
   if (!st.ready) return c.json({ ready: false, data: [] })
   // builtAt/total 是给运维看的：q 传空就只回这两个数，等于一个「索引同步到哪天了」的健康检查
-  return c.json({ ready: true, total: st.count, builtAt: st.builtAt, data: searchAnime(q, 30) })
+  const base = { ready: true, total: st.count, builtAt: st.builtAt }
+  const local = searchAnime(q, 30)
+  if (local.length || !q.trim()) return c.json({ ...base, source: 'local', data: local })
+  const online = await searchOnline(q)
+  return c.json({ ...base, source: 'online', data: online.hits, onlineError: online.error })
 })
 
 app.get('/api/calendar', async (c) => {
