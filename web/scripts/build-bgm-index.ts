@@ -60,7 +60,25 @@ function topTags(tags: unknown): string[] {
   return named.slice(0, 10).map((t) => t.name)
 }
 
-async function buildIndex(lines: AsyncIterable<string>): Promise<void> {
+// 现有索引的条数（没有索引 / 读不出来都算 0，即「首次构建，无从比较」）
+function previousCount(): number {
+  try {
+    const old = new Database(indexDbPath, { readonly: true, fileMustExist: true })
+    const n = (old.prepare('SELECT COUNT(*) AS n FROM anime').get() as { n: number }).n
+    old.close()
+    return n
+  } catch {
+    return 0
+  }
+}
+
+// 条数护栏的阈值：新库不足上次的 90% 就拒绝替换。
+// 挡的是「**能解析但不完整**的档」—— 解析报错那种本来就走不到 rename，真正危险的是上游出了半份
+// 合法 JSON：脚本会当成功、原子替换进去，搜索直接缩水，而旧库已经没了、只能干等下周。
+// 正常周增量是几百条（本周 30502），跌破 10% 只可能是出事了。真要强推（比如上游口径变了）用 --force。
+const MIN_KEEP_RATIO = 0.9
+
+async function buildIndex(lines: AsyncIterable<string>, force = false): Promise<void> {
   const tmp = indexDbPath + '.tmp'
   rmSync(tmp, { force: true })
   const db = new Database(tmp)
@@ -122,8 +140,20 @@ async function buildIndex(lines: AsyncIterable<string>): Promise<void> {
   db.prepare(`INSERT OR REPLACE INTO meta (k,v) VALUES ('built_at', ?)`).run(String(Date.now()))
   db.prepare(`INSERT OR REPLACE INTO meta (k,v) VALUES ('count', ?)`).run(String(n))
   db.close()
+
+  // 护栏：条数骤降就**不替换**，保住线上那份旧的（宁可数据旧一周，也别让搜索凭空缩水）。
+  // 退出码非 0，cron 的日志里才留得下痕迹。
+  const prev = previousCount()
+  if (prev && n < prev * MIN_KEEP_RATIO && !force) {
+    rmSync(tmp, { force: true })
+    throw new Error(
+      `条数骤降，已拒绝替换：新 ${n} 条 < 上次 ${prev} 条的 ${MIN_KEEP_RATIO * 100}%。\n` +
+        `线上仍用旧索引（${indexDbPath}）。多半是上游档不完整；确认无误要强推加 --force。`
+    )
+  }
+
   renameSync(tmp, indexDbPath)
-  console.log(`扫描 ${seen} 条 → 收录动画 ${n} 条 → ${indexDbPath}`)
+  console.log(`扫描 ${seen} 条 → 收录动画 ${n} 条${prev ? `（上次 ${prev} 条）` : ''} → ${indexDbPath}`)
 }
 
 // ── 下载 + 解压（无 --file 时走这条）────────────────────────────────────────────
@@ -156,21 +186,23 @@ function unzipLines(zipPath: string, inner: string): AsyncIterable<string> {
 }
 
 async function main(): Promise<void> {
+  const force = process.argv.includes('--force')
   const i = process.argv.indexOf('--file')
   if (i >= 0 && process.argv[i + 1]) {
     const path = process.argv[i + 1]
     console.log(`用本地文件 ${path}（跳过下载）`)
-    await buildIndex(createInterface({ input: createReadStream(path), crlfDelay: Infinity }))
+    await buildIndex(createInterface({ input: createReadStream(path), crlfDelay: Infinity }), force)
     return
   }
   const zip = await downloadDump()
   const inner = subjectFileInZip(zip)
   console.log(`解压取 ${inner}`)
-  await buildIndex(unzipLines(zip, inner))
+  await buildIndex(unzipLines(zip, inner), force)
   rmSync(zip, { force: true })
 }
 
 main().catch((e) => {
-  console.error('构建索引失败：', e)
+  // 到这儿 = 索引没被替换（护栏拦下、或下载/解析失败）。非 0 退出让 cron 日志留痕。
+  console.error('构建索引失败：', e instanceof Error ? e.message : e)
   process.exit(1)
 })

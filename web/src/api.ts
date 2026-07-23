@@ -154,6 +154,8 @@ export interface AnimeHit {
 export interface SearchResult {
   ready: boolean // false = 服务器还没生成索引（没跑同步脚本）
   data: AnimeHit[]
+  total?: number // 索引收录条数
+  builtAt?: number // 索引生成时间（ms）—— 太久没更新说明每周的同步挂了，前端会提示
   /** local = 本地索引命中；online = 本地一条都没有，退回 BGM 在线搜的结果 */
   source?: 'local' | 'online'
   /** 在线补充没成的具体原因（限流 / 超时 / 冷却中），如实显示，不糊成「网络错误」 */
