@@ -31,6 +31,7 @@ interface TrackRow {
   bgm_tags: string
   user_tags: string
   aliases: string
+  extra: string
   updated_at: number
 }
 
@@ -63,6 +64,22 @@ function toJson(r: TrackRow): Record<string, unknown> {
   }
 }
 
+/**
+ * 同步专用视图 —— 比网页视图多一个 `extra`：app 独有的字段（bindings / notes / goodEpisodes /
+ * novelVolume / subjectType…）原样装在里面往返。网页端根本不认识它们，也**从不改写它，所以
+ * app 的富数据过服务器一圈不会被瘦记录抹掉（012 那条铁律）。
+ */
+function toSyncJson(r: TrackRow): Record<string, unknown> {
+  let extra: unknown = {}
+  try {
+    const v = JSON.parse(r.extra || '{}')
+    if (v && typeof v === 'object' && !Array.isArray(v)) extra = v
+  } catch {
+    /* 脏数据当空对象，别让一条坏记录卡住整次同步 */
+  }
+  return { ...toJson(r), extra }
+}
+
 const listStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY updated_at DESC')
 const oneStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? AND bgm_id = ?')
 const delStmt = db.prepare('DELETE FROM tracks WHERE user_id = ? AND bgm_id = ?')
@@ -70,8 +87,19 @@ const insertStmt = db.prepare(`
   INSERT INTO tracks (user_id, bgm_id, status, episode, total_episodes, title, title_cn, cover,
                       air_weekday, air_date, score, bgm_tags, user_tags, aliases, extra, updated_at)
   VALUES (@user_id, @bgm_id, @status, @episode, @total_episodes, @title, @title_cn, @cover,
-          @air_weekday, @air_date, @score, @bgm_tags, @user_tags, @aliases, '{}', @updated_at)
+          @air_weekday, @air_date, @score, @bgm_tags, @user_tags, @aliases, @extra, @updated_at)
 `)
+
+// ── 数据版本号（app 覆盖上传的冲突检测，见 db.ts 的 tracks_rev 注释）──────────────
+const revStmt = db.prepare('SELECT tracks_rev AS rev FROM users WHERE id = ?')
+const bumpRevStmt = db.prepare('UPDATE users SET tracks_rev = tracks_rev + 1 WHERE id = ?')
+
+const currentRev = (uid: number): number => (revStmt.get(uid) as { rev: number } | undefined)?.rev ?? 0
+
+/** 任何会改动该用户追番数据的写入都要调 —— 漏一处，app 就会拿着过期 rev 静默覆盖掉网页的改动 */
+const bumpRev = (uid: number): void => {
+  bumpRevStmt.run(uid)
+}
 
 async function requireUid(c: Context): Promise<number | null> {
   const s = await getSession(c)
@@ -105,7 +133,8 @@ function fillDetailLater(uid: number, bgmId: number): void {
         if (d.date && !recheck.air_date) { sets.push('air_date = ?'); args.push(d.date) }
         if (d.cover && !recheck.cover) { sets.push('cover = ?'); args.push(d.cover) }
         if (!sets.length) return
-        // 注意**不动 updated_at**：这是系统回填，不是用户操作，不该影响「后写者胜」的判定
+        // 注意**不动 updated_at、也不 bumpRev**：这是系统回填，不是用户操作。
+        // 动了 rev 的话，app 会被一次纯粹的标签补全顶出 409、误以为「网页那边有人改过」
         db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`)
           .run(...args, uid, bgmId)
       } catch {
@@ -170,8 +199,10 @@ tracks.put('/:bgmId', async (c) => {
       bgm_tags: bgmTags,
       user_tags: '[]',
       aliases,
+      extra: '{}', // 网页端建的记录没有 app 专属字段；app 上传时才会填
       updated_at: now,
     })
+    bumpRev(uid)
     // 同步没取到标签才挂后台兜底（取到了 fillDetailLater 会二次检查自动跳过）
     if (bgmTags === '[]') fillDetailLater(uid, bgmId)
     return c.json(toJson(oneStmt.get(uid, bgmId) as TrackRow))
@@ -219,6 +250,7 @@ tracks.put('/:bgmId', async (c) => {
   sets.push('updated_at = ?')
   args.push(now)
   db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`).run(...args, uid, bgmId)
+  bumpRev(uid)
   return c.json(toJson(oneStmt.get(uid, bgmId) as TrackRow))
 })
 
@@ -235,7 +267,129 @@ tracks.delete('/:bgmId', async (c) => {
   const bgmId = Number(c.req.param('bgmId'))
   if (!Number.isInteger(bgmId)) return c.json({ error: 'bgmId 不合法' }, 400)
   delStmt.run(uid, bgmId)
+  bumpRev(uid)
   return c.json({ ok: true })
+})
+
+// ── app 同步（ideas/012「追番同步 · 落地决策」）──────────────────────────────────
+//
+// 形态是**用户声明方向的整包覆盖**，不是自动 merge：网页实时直连服务器，app 手动「拉取 / 上传」。
+// 所以这里**没有删除墓碑** —— 覆盖模型下删除天然生效（整份替换），墓碑是 merge 模型才需要的。
+//
+// 但「整包」只管**集合**（谁存在），字段仍走**字段级 patch**：app 不认识 airWeekday / score，
+// 上传时不会带这两个字段，若整条替换就会把网页记录的放送星期抹成 0、周历分组就散了。
+// 所以已存在的记录只写 app 明确给了的字段。
+
+const MAX_TRACKS = 5000 // 一次上传的条数上限（正常用户几百条封顶）
+const MAX_EXTRA_BYTES = 16 * 1024 // 单条 extra 上限：这是给 app 的自由容器，得防止被当网盘用
+
+/** 拉取 —— 全量（含 extra）+ 当前 rev。app 要记住这个 rev，上传时带回来做冲突检测。 */
+tracks.get('/sync', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  return c.json({ rev: currentRev(uid), data: (listStmt.all(uid) as TrackRow[]).map(toSyncJson) })
+})
+
+/**
+ * 上传 —— 整包覆盖。body: `{ baseRev, force?, data: [...] }`
+ *
+ * `baseRev` 对不上 = 服务器上有 app 没见过的改动（多半是你在网页上改的）→ **409，不写任何东西**，
+ * 让用户去选「先拉取」还是「强制覆盖」。这是覆盖模型唯一的护栏，别为了省事默认 force。
+ */
+tracks.post('/sync', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  const list = body.data
+  if (!Array.isArray(list)) return c.json({ error: 'data 必须是数组' }, 400)
+  if (list.length > MAX_TRACKS) return c.json({ error: `一次最多同步 ${MAX_TRACKS} 条` }, 400)
+
+  const rev = currentRev(uid)
+  if (body.force !== true && Number(body.baseRev) !== rev) {
+    return c.json(
+      { error: '服务器上有你还没拉取过的改动', rev, conflict: true, serverCount: (listStmt.all(uid) as TrackRow[]).length },
+      409
+    )
+  }
+
+  // 先全部校验、再落库：一条不合法就整批拒绝，不留半套数据
+  const incoming = new Map<number, Record<string, unknown>>()
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') return c.json({ error: '记录格式不对' }, 400)
+    const t = raw as Record<string, unknown>
+    const id = Number(t.bgmId)
+    // 负数 id 是 app 的**手动条目**（BGM 还没有的未播出续季），必须放行；0 才是非法
+    if (!Number.isInteger(id) || id === 0) return c.json({ error: `bgmId 不合法：${String(t.bgmId)}` }, 400)
+    if (t.extra !== undefined && JSON.stringify(t.extra ?? {}).length > MAX_EXTRA_BYTES) {
+      return c.json({ error: `条目 ${id} 的 extra 过大` }, 400)
+    }
+    incoming.set(id, t)
+  }
+
+  const now = Date.now()
+  const apply = db.transaction(() => {
+    const existing = new Map((listStmt.all(uid) as TrackRow[]).map((r) => [r.bgm_id, r]))
+
+    for (const [id, t] of incoming) {
+      // 客户端时钟可能不准；未来的时间会让这条永远排在列表最前，夹到 now 为止
+      const ts = Number(t.updatedAt)
+      const updatedAt = Number.isFinite(ts) && ts > 0 ? Math.min(ts, now) : now
+
+      if (!existing.has(id)) {
+        insertStmt.run({
+          user_id: uid,
+          bgm_id: id,
+          status: STATUSES.includes(t.status as Status) ? (t.status as Status) : 'watching',
+          episode: Number(t.episode) || 0,
+          total_episodes: asTotal(t.totalEpisodes) ?? null,
+          title: String(t.title ?? ''),
+          title_cn: String(t.titleCn ?? ''),
+          cover: String(t.cover ?? ''),
+          air_weekday: Number(t.airWeekday) || 0,
+          air_date: String(t.airDate ?? ''),
+          score: Number(t.score) || 0,
+          bgm_tags: JSON.stringify(Array.isArray(t.bgmTags) ? t.bgmTags : []),
+          user_tags: JSON.stringify(Array.isArray(t.userTags) ? t.userTags : []),
+          aliases: JSON.stringify(Array.isArray(t.aliases) ? t.aliases : []),
+          extra: JSON.stringify(t.extra ?? {}),
+          updated_at: updatedAt,
+        })
+        continue
+      }
+
+      // 已存在 —— 只写 app 明确给了的字段（没给的保持沉默，如网页记的 airWeekday / score）
+      const sets: string[] = []
+      const args: unknown[] = []
+      const put = (col: string, v: unknown): void => {
+        sets.push(`${col} = ?`)
+        args.push(v)
+      }
+      if ('status' in t && STATUSES.includes(t.status as Status)) put('status', t.status)
+      if ('episode' in t) put('episode', Number(t.episode) || 0)
+      if ('totalEpisodes' in t) put('total_episodes', asTotal(t.totalEpisodes) ?? null)
+      if ('title' in t) put('title', String(t.title ?? ''))
+      if ('titleCn' in t) put('title_cn', String(t.titleCn ?? ''))
+      if ('cover' in t) put('cover', String(t.cover ?? ''))
+      if ('airWeekday' in t) put('air_weekday', Number(t.airWeekday) || 0)
+      if ('airDate' in t) put('air_date', String(t.airDate ?? ''))
+      if ('score' in t) put('score', Number(t.score) || 0)
+      if (Array.isArray(t.bgmTags)) put('bgm_tags', JSON.stringify(t.bgmTags))
+      if (Array.isArray(t.userTags)) put('user_tags', JSON.stringify(t.userTags))
+      if (Array.isArray(t.aliases)) put('aliases', JSON.stringify(t.aliases))
+      if ('extra' in t) put('extra', JSON.stringify(t.extra ?? {}))
+      put('updated_at', updatedAt)
+      db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`).run(...args, uid, id)
+    }
+
+    // 集合层面的覆盖：app 没带上来的，就是它那边删掉的
+    for (const id of existing.keys()) if (!incoming.has(id)) delStmt.run(uid, id)
+
+    bumpRev(uid)
+  })
+  apply()
+
+  return c.json({ rev: currentRev(uid), count: incoming.size })
 })
 
 export default tracks

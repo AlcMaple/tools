@@ -92,3 +92,11 @@ function ensureColumn(table: string, column: string, decl: string): void {
 ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0')
 ensureColumn('users', 'security_question', 'security_question TEXT')
 ensureColumn('users', 'security_answer_hash', 'security_answer_hash TEXT')
+
+// 追番数据版本号 —— app 的「覆盖上传」靠它判断「服务器上有没有我没见过的改动」（ideas/012 追番同步）。
+// **每次写入都 +1**（网页改一条、app 整包推一次，都算）。app 记住上次同步拿到的 rev，上传时带回来：
+// 对得上就直接覆盖，对不上就 409 让用户选「先拉取」还是「强制覆盖」。
+//
+// 为什么不用时间戳比：那要信两端的本地时钟，设备时间不准就会判错方向、静默覆盖掉新数据。
+// 递增号只由服务器一家发，跟时钟无关。
+ensureColumn('users', 'tracks_rev', 'tracks_rev INTEGER NOT NULL DEFAULT 0')
