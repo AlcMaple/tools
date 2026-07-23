@@ -103,6 +103,7 @@ function fillDetailLater(uid: number, bgmId: number): void {
         if (d.tags.length) { sets.push('bgm_tags = ?'); args.push(JSON.stringify(d.tags)) }
         if (d.aliases.length) { sets.push('aliases = ?'); args.push(JSON.stringify(d.aliases)) }
         if (d.date && !recheck.air_date) { sets.push('air_date = ?'); args.push(d.date) }
+        if (d.cover && !recheck.cover) { sets.push('cover = ?'); args.push(d.cover) }
         if (!sets.length) return
         // 注意**不动 updated_at**：这是系统回填，不是用户操作，不该影响「后写者胜」的判定
         db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`)
@@ -143,11 +144,13 @@ tracks.put('/:bgmId', async (c) => {
     let bgmTags = '[]'
     let aliases = '[]'
     let airDate = String(body.airDate ?? '')
+    let cover = String(body.cover ?? '') // 周历加番会带 cover；搜索加番不带 → 下面用 detail 的封面补
     try {
       const d = await fetchSubjectDetail(bgmId, 4000)
       if (d.tags.length) bgmTags = JSON.stringify(d.tags)
       if (d.aliases.length) aliases = JSON.stringify(d.aliases)
       if (d.date && !airDate) airDate = d.date
+      if (d.cover && !cover) cover = d.cover
     } catch {
       /* 静默 —— 下面按需挂 fillDetailLater 兜底 */
     }
@@ -160,7 +163,7 @@ tracks.put('/:bgmId', async (c) => {
       total_episodes: null, // 连载中 —— 周历不返 eps，由用户手填
       title: String(body.title ?? ''),
       title_cn: String(body.titleCn ?? ''),
-      cover: String(body.cover ?? ''),
+      cover,
       air_weekday: Number(body.airWeekday) || 0,
       air_date: airDate,
       score: Number(body.score) || 0,
