@@ -1047,6 +1047,10 @@ function AddSearchModal({
   const [results, setResults] = useState<AnimeHit[]>([])
   const [ready, setReady] = useState(true)
   const [loading, setLoading] = useState(false)
+  // 本地索引没命中时后端会退回一次 BGM 在线搜 —— 结果来源要标出来（这批是刚上架的新条目），
+  // 在线补充失败也要**如实**说原因（限流 / 超时 / 冷却），别让用户以为是自己名字打错了
+  const [source, setSource] = useState<'local' | 'online' | undefined>()
+  const [onlineError, setOnlineError] = useState('')
   const [added, setAdded] = useState<Set<number>>(new Set()) // 本次弹窗点过的，即时变「已追」
 
   useEffect(() => {
@@ -1073,9 +1077,13 @@ function AddSearchModal({
           if (cancelled) return
           setReady(r.ready)
           setResults(r.data)
+          setSource(r.source)
+          setOnlineError(r.onlineError ?? '')
         })
         .catch(() => {
-          if (!cancelled) setResults([])
+          if (cancelled) return
+          setResults([])
+          setOnlineError('')
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -1137,7 +1145,7 @@ function AddSearchModal({
           {!ready ? (
             <p className="px-1 py-8 text-center text-[13px] leading-relaxed text-on-surface-variant/55">
               动漫索引还没生成。<br />
-              <span className="text-on-surface-variant/40">在服务器上跑一次 <code className="rounded bg-on-surface/10 px-1">build-bgm-index</code> 同步脚本即可。</span>
+              <span className="text-on-surface-variant/40">在服务器上跑一次 <code className="rounded bg-on-surface/10 px-1">npm run sync:index</code> 即可。</span>
             </p>
           ) : loading ? (
             <div className="flex justify-center py-10">
@@ -1146,9 +1154,18 @@ function AddSearchModal({
           ) : !q ? (
             <p className="px-1 py-8 text-center text-[13px] text-on-surface-variant/40">输入番名开始搜索（覆盖 BGM 全量动漫）</p>
           ) : results.length === 0 ? (
-            <p className="px-1 py-8 text-center text-[13px] text-on-surface-variant/40">没搜到「{q}」，换个词试试</p>
+            <p className="px-1 py-8 text-center text-[13px] leading-relaxed text-on-surface-variant/40">
+              没搜到「{q}」，换个词试试
+              {/* 本地没有 + 在线补充也没成 → 说清是哪一种，用户才知道该等还是该改词 */}
+              {onlineError && <><br /><span className="text-on-surface-variant/55">{onlineError}</span></>}
+            </p>
           ) : (
             <div className="custom-scrollbar flex max-h-[46vh] flex-col gap-1 overflow-y-auto">
+              {source === 'online' && (
+                <p className="px-1 pb-1 text-[11px] leading-relaxed text-on-surface-variant/45">
+                  本地索引里没有，以下是 BGM 在线补充的结果（多半是刚上架的新条目）
+                </p>
+              )}
               {results.map((h) => {
                 const tracked = trackedIds.has(h.bgmId) || added.has(h.bgmId)
                 const year = h.date && h.date.length >= 4 ? h.date.slice(0, 4) : ''

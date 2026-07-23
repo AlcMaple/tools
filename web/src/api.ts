@@ -151,9 +151,18 @@ export interface AnimeHit {
   score: number
 }
 
-/** 搜索动漫加追番。ready=false = 服务器还没生成索引（没跑同步脚本）。 */
-export async function searchAnime(q: string): Promise<{ ready: boolean; data: AnimeHit[] }> {
+export interface SearchResult {
+  ready: boolean // false = 服务器还没生成索引（没跑同步脚本）
+  data: AnimeHit[]
+  /** local = 本地索引命中；online = 本地一条都没有，退回 BGM 在线搜的结果 */
+  source?: 'local' | 'online'
+  /** 在线补充没成的具体原因（限流 / 超时 / 冷却中），如实显示，不糊成「网络错误」 */
+  onlineError?: string
+}
+
+/** 搜索动漫加追番。 */
+export async function searchAnime(q: string): Promise<SearchResult> {
   const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
   if (!res.ok) return { ready: true, data: [] }
-  return res.json() as Promise<{ ready: boolean; data: AnimeHit[] }>
+  return res.json() as Promise<SearchResult>
 }

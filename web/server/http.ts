@@ -12,6 +12,8 @@ setGlobalDispatcher(new EnvHttpProxyAgent())
 export interface FetchJsonOptions {
   headers?: Record<string, string>
   timeoutMs?: number
+  method?: 'GET' | 'POST'
+  body?: unknown // 给了就 JSON 序列化并自动带 Content-Type（BGM 的 v0 搜索是 POST）
 }
 
 // 传输层瞬时抖动（连接被重置 / DNS 抖 / 双栈赛跑失败）允许**单次**重试 —— 这是
@@ -23,9 +25,14 @@ function isTransient(err: unknown): boolean {
 }
 
 export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions = {}): Promise<T> {
-  const { headers = {}, timeoutMs = 10000 } = opts
+  const { headers = {}, timeoutMs = 10000, method = 'GET', body } = opts
   const run = async (): Promise<T> => {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) })
+    const res = await fetch(url, {
+      method,
+      headers: body === undefined ? headers : { ...headers, 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
     return (await res.json()) as T
   }
