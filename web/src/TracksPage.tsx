@@ -1034,6 +1034,9 @@ function BindPickerModal({
 // ── 加番搜索弹窗 ───────────────────────────────────────────────────────────────
 // 打本地 BGM 动漫索引搜（不碰 BGM 在线接口）。防抖 300ms；点「追」即时加、弹窗不关（可连着加多部）；
 // 已在追的显示「已追」不可重复加。索引没生成时提示去跑同步脚本。
+// 索引超过这个天数没更新就提示。一周一档 + 3 天容错：正常同步永远碰不到，挂了才会露头
+const STALE_AFTER_DAYS = 10
+
 function AddSearchModal({
   trackedIds,
   onAdd,
@@ -1051,6 +1054,20 @@ function AddSearchModal({
   // 在线补充失败也要**如实**说原因（限流 / 超时 / 冷却），别让用户以为是自己名字打错了
   const [source, setSource] = useState<'local' | 'online' | undefined>()
   const [onlineError, setOnlineError] = useState('')
+  const [builtAt, setBuiltAt] = useState(0) // 索引生成时间，用来提示「同步是不是挂了」
+
+  // 开弹窗就先问一次索引状态（q 为空 = 只回统计、不搜也不联网）。
+  // 不等用户输入才知道 —— 「索引没生成」和「同步挂了」都该进门就看见。
+  useEffect(() => {
+    searchAnime('')
+      .then((r) => {
+        setReady(r.ready)
+        setBuiltAt(r.builtAt ?? 0)
+      })
+      .catch(() => {
+        /* 状态查不到就不提示，别让它盖住正常搜索 */
+      })
+  }, [])
   const [added, setAdded] = useState<Set<number>>(new Set()) // 本次弹窗点过的，即时变「已追」
 
   useEffect(() => {
@@ -1079,6 +1096,7 @@ function AddSearchModal({
           setResults(r.data)
           setSource(r.source)
           setOnlineError(r.onlineError ?? '')
+          if (r.builtAt) setBuiltAt(r.builtAt)
         })
         .catch(() => {
           if (cancelled) return
@@ -1101,6 +1119,7 @@ function AddSearchModal({
   }
 
   const q = query.trim()
+  const staleDays = builtAt ? Math.floor((Date.now() - builtAt) / 86400000) : 0
 
   return (
     <div
@@ -1140,6 +1159,14 @@ function AddSearchModal({
             className="w-full rounded-lg border border-outline-variant/30 bg-surface-container-high py-2 pl-9 pr-3 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70"
           />
         </div>
+
+        {/* 索引太旧 = 服务器上每周的同步任务多半挂了。不提示的话，用户只会觉得「新番搜不到」，
+            跟正常的一周滞后长得一模一样，永远发现不了。10 天 = 一周档期 + 3 天容错。 */}
+        {ready && staleDays >= STALE_AFTER_DAYS && (
+          <p className="mb-2 rounded-lg bg-error-container/50 px-3 py-2 text-[11px] leading-relaxed text-on-error-container">
+            索引已 {staleDays} 天没更新 —— 正常每周自动同步一次，多半是服务器上的同步任务挂了，新番会搜不到。
+          </p>
+        )}
 
         <div className="min-h-[120px]">
           {!ready ? (
