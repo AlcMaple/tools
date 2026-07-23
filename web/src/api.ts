@@ -141,3 +141,19 @@ export async function bindXifan(bgmId: number, xifanId: number, xifanName: strin
 export function playPageUrl(xifanId: number, ep: number): string {
   return `/api/xifan/play-page?animeId=${xifanId}&ep=${ep}`
 }
+
+// ── 加番搜索（打本地 BGM 动漫索引，见 server/bgm/anime-index.ts）───────────────
+export interface AnimeHit {
+  bgmId: number
+  name: string // 日文原名
+  nameCn: string // 中文译名
+  date: string // 放送日期
+  score: number
+}
+
+/** 搜索动漫加追番。ready=false = 服务器还没生成索引（没跑同步脚本）。 */
+export async function searchAnime(q: string): Promise<{ ready: boolean; data: AnimeHit[] }> {
+  const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+  if (!res.ok) return { ready: true, data: [] }
+  return res.json() as Promise<{ ready: boolean; data: AnimeHit[] }>
+}

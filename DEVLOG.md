@@ -11,6 +11,41 @@
 
 ## 网页版
 
+### 2026-07-22 feat(web): 追番新增搜索功能
+
+**效果**：
+
+1. 追番不再只能从周历（当季）加 —— 新增「加番」搜索，覆盖 **BGM 全量约 3 万部动画**：老番 / 剧场版 / 往季都搜得到（2007 的 sola、辉夜大小姐全季…），搜到即加。
+2. **搜索全程本地、零 BGM 在线请求** —— 搜的是本地 SQLite 索引（数据来自 BGM 官方离线档，每周同步一次，见下）。
+3. **模糊匹配**：只记大概名字也搜得到（搜「漫画咖啡厅」出「漫画咖啡屋」），像 BGM 那样按共享片段排。
+4. 加番自动补封面 + 标签（离线档没封面，加番时那一次 detail 顺带取，填进新追番）。
+
+**数据来源**：BGM 官方数据档（`bangumi/Archive`，每周三更新，419MB zip）。`scripts/build-bgm-index.ts` 下档 → 流式解压取 `subject.jsonlines` → 只留 `type=2`（动画）→ 灌进**独立只读** `bgm_index.db`（原子替换；搜索端按 mtime 变化自动重开，不必重启）：
+
+```
+扫 65.8 万条 subject → 收录 3.05 万部动画（索引仅 5.6MB）
+```
+
+**模糊搜索**（`anime-index.ts`）—— 查询拆 **CJK 相邻二元组**、按命中片段数排，就软了：
+
+```ts
+// 漫画咖啡厅 → [漫画,画咖,咖啡,啡厅]；「漫画咖啡屋」共享 漫画/画咖/咖啡 三个 → 浮上来（拉丁词整段不拆）
+const grams = queryGrams(q)
+// WHERE 任一片段命中；ORDER BY 精确 > 前缀 > 整串子串 > 部分命中, 再按命中数、BGM 评分
+```
+
+搜索**只是查询层改动、不动索引**。加番默认「想看」；封面取 detail 的 `images.large`（前端 `coverUrl` 改写成 `/api/cover` 代理）。
+
+**索引更新**：落在数据目录 `/opt/mapletools-data/bgm_index.db`，上线后先手跑一次，之后 cron 每周四（档周三更新，留一天余量）：
+
+```bash
+su -s /bin/bash mapletools -c 'cd /opt/mapletools/web && DATA_DIR=/opt/mapletools-data npm run sync:index'
+```
+
+- `DATA_DIR` **必须显式给**：那是 pm2 配置里的变量，cron / 手敲的 shell 不继承，漏了就写进部署目录里、线上永远读不到。
+- 跑的时候**站点不用停也不用重启 pm2**（写 `.tmp` → rename 原子替换 → 服务端按 mtime 自动重开句柄）。
+- `/api/search?q=` 空查询只回 `{ready,total,builtAt}`，当「索引同步到哪天了」的健康检查。
+
 ### 2026-07-22 fix(web): 修复稀饭直连失败问题
 
 **效果**：

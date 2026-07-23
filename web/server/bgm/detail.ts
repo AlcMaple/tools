@@ -18,6 +18,7 @@ export interface SubjectDetail {
   tags: string[]
   aliases: string[]
   date: string
+  cover: string // BGM 图床封面 URL（lain.bgm.tv/...）；离线档没有封面，靠这里补
 }
 
 /** infobox 里的「别名」条目 —— 值可能是字符串，也可能是 [{k,v}] 列表 */
@@ -55,9 +56,14 @@ export async function fetchSubjectDetail(bgmId: number, timeoutMs = 10000): Prom
         .slice(0, 4)
     : []
 
+  // 封面：images.large / .common 任一（都是 lain.bgm.tv 图床，前端 coverUrl() 会改写成 /api/cover 代理）
+  const images = (raw.images ?? {}) as Record<string, unknown>
+  const cover = ['large', 'common', 'medium'].map((k) => images[k]).find((v): v is string => typeof v === 'string' && !!v) ?? ''
+
   return {
     tags,
     aliases: aliasesFromInfobox(raw.infobox),
     date: typeof raw.date === 'string' ? raw.date : '',
+    cover,
   }
 }
