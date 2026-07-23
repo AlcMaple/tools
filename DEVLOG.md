@@ -11,6 +11,18 @@
 
 ## 网页版
 
+### 2026-07-23 feat(web): 新增追番同步功能
+
+**效果**：
+
+1. 服务端新增 app 同步追番的能力
+2. 网页实时直连、app 手动覆盖式拉取 / 上传
+
+```
+GET  /api/tracks/sync → { rev, data:[...含 extra] }
+POST /api/tracks/sync → { baseRev, force?, data } → baseRev 对不上 = 409，一个字节都不写
+```
+
 ### 2026-07-23 fix(web): 优化索引同步日志显示
 
 **效果**：
