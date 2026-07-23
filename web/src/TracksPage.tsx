@@ -8,7 +8,7 @@
 //
 // 页头**不置顶**，只有顶栏置顶。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Track, TrackPatch, TrackStatus, XifanBinding, XifanCandidate } from './api'
+import type { AnimeHit, Track, TrackPatch, TrackStatus, XifanBinding, XifanCandidate } from './api'
 import {
   bindXifan,
   coverUrl,
@@ -18,6 +18,7 @@ import {
   locateXifan,
   playPageUrl,
   putTrack,
+  searchAnime,
 } from './api'
 import { useAuth } from './auth'
 import { Icon, Spinner } from './Icon'
@@ -72,6 +73,7 @@ export function TracksPage(): JSX.Element {
   const [bindings, setBindings] = useState<Record<number, XifanBinding>>({})
   const [locating, setLocating] = useState<number | null>(null) // 正在定位的 bgmId（转圈用）
   const [picker, setPicker] = useState<PickerState | null>(null)
+  const [adding, setAdding] = useState(false) // 加番搜索弹窗
   const today = useMemo(todayBgmId, [])
 
   useEffect(() => {
@@ -111,6 +113,22 @@ export function TracksPage(): JSX.Element {
     setBindings((prev) => ({ ...prev, [bgmId]: { xifanId: cand.xifanId, xifanName: cand.xifanName } }))
     setPicker(null)
     void bindXifan(bgmId, cand.xifanId, cand.xifanName).catch((e: Error) => setError(e.message))
+  }
+
+  // 搜索结果加追番 —— 乐观先塞占位（默认「想看」），封面/标签由服务端 detail 补，putTrack 回来再覆盖。
+  const addFromSearch = (hit: AnimeHit): void => {
+    const optimistic: Track = {
+      bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
+      title: hit.name, titleCn: hit.nameCn, cover: '', airWeekday: 0,
+      airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [], updatedAt: Date.now(),
+    }
+    setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
+    void putTrack(hit.bgmId, { title: hit.name, titleCn: hit.nameCn, status: 'plan' })
+      .then((fresh) => setTracks((prev) => (prev ? prev.map((t) => (t.bgmId === fresh.bgmId ? fresh : t)) : [fresh])))
+      .catch((e: Error) => {
+        setError(e.message)
+        setTracks((prev) => (prev ? prev.filter((t) => t.bgmId !== hit.bgmId) : prev)) // 失败回滚
+      })
   }
 
   // 本地先改、后端后写 —— +1 要跟手，不能等一个来回。失败就把这条重新拉回来纠正。
@@ -174,6 +192,16 @@ export function TracksPage(): JSX.Element {
           </div>
 
           <div className="flex flex-1 items-center justify-end gap-2 md:flex-none">
+            {user && (
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className="flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-bold text-on-primary transition-colors hover:brightness-110"
+              >
+                <Icon name="add" size={15} />
+                <span>加番</span>
+              </button>
+            )}
             <div className="relative min-w-0 flex-1 md:flex-none">
               <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant/50">
                 <Icon name="search" size={15} />
@@ -289,6 +317,14 @@ export function TracksPage(): JSX.Element {
           picker={picker}
           onPick={(cand) => confirmBind(picker.track.bgmId, cand)}
           onClose={() => setPicker(null)}
+        />
+      )}
+
+      {adding && (
+        <AddSearchModal
+          trackedIds={new Set((tracks ?? []).map((t) => t.bgmId))}
+          onAdd={addFromSearch}
+          onClose={() => setAdding(false)}
         />
       )}
 
@@ -990,6 +1026,164 @@ function BindPickerModal({
             ))}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── 加番搜索弹窗 ───────────────────────────────────────────────────────────────
+// 打本地 BGM 动漫索引搜（不碰 BGM 在线接口）。防抖 300ms；点「追」即时加、弹窗不关（可连着加多部）；
+// 已在追的显示「已追」不可重复加。索引没生成时提示去跑同步脚本。
+function AddSearchModal({
+  trackedIds,
+  onAdd,
+  onClose,
+}: {
+  trackedIds: Set<number>
+  onAdd: (hit: AnimeHit) => void
+  onClose: () => void
+}): JSX.Element {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<AnimeHit[]>([])
+  const [ready, setReady] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [added, setAdded] = useState<Set<number>>(new Set()) // 本次弹窗点过的，即时变「已追」
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  // 防抖搜索 —— 停手 300ms 再打接口，别每个键都发；旧请求用 cancelled 作废，避免乱序覆盖
+  useEffect(() => {
+    const q = query.trim()
+    if (!q) {
+      setResults([])
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    let cancelled = false
+    const timer = setTimeout(() => {
+      searchAnime(q)
+        .then((r) => {
+          if (cancelled) return
+          setReady(r.ready)
+          setResults(r.data)
+        })
+        .catch(() => {
+          if (!cancelled) setResults([])
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [query])
+
+  const add = (hit: AnimeHit): void => {
+    setAdded((prev) => new Set(prev).add(hit.bgmId))
+    onAdd(hit)
+  }
+
+  const q = query.trim()
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-5 pt-[8vh] backdrop-blur-sm"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative m-auto w-full max-w-[480px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          title="关闭"
+          className="absolute right-3.5 top-3.5 flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+        >
+          <Icon name="close" size={16} />
+        </button>
+
+        <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">加番</div>
+        <h2 className="mb-3 mt-1.5 text-lg font-extrabold leading-tight text-on-surface">搜索动漫加入追番</h2>
+
+        <div className="relative mb-3">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50">
+            <Icon name="search" size={16} />
+          </span>
+          <input
+            autoFocus
+            spellCheck={false}
+            autoComplete="off"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="番名 / 别名（中文、日文、罗马音都行）"
+            className="w-full rounded-lg border border-outline-variant/30 bg-surface-container-high py-2 pl-9 pr-3 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70"
+          />
+        </div>
+
+        <div className="min-h-[120px]">
+          {!ready ? (
+            <p className="px-1 py-8 text-center text-[13px] leading-relaxed text-on-surface-variant/55">
+              动漫索引还没生成。<br />
+              <span className="text-on-surface-variant/40">在服务器上跑一次 <code className="rounded bg-on-surface/10 px-1">build-bgm-index</code> 同步脚本即可。</span>
+            </p>
+          ) : loading ? (
+            <div className="flex justify-center py-10">
+              <Spinner size={26} className="text-primary/60" />
+            </div>
+          ) : !q ? (
+            <p className="px-1 py-8 text-center text-[13px] text-on-surface-variant/40">输入番名开始搜索（覆盖 BGM 全量动漫）</p>
+          ) : results.length === 0 ? (
+            <p className="px-1 py-8 text-center text-[13px] text-on-surface-variant/40">没搜到「{q}」，换个词试试</p>
+          ) : (
+            <div className="custom-scrollbar flex max-h-[46vh] flex-col gap-1 overflow-y-auto">
+              {results.map((h) => {
+                const tracked = trackedIds.has(h.bgmId) || added.has(h.bgmId)
+                const year = h.date && h.date.length >= 4 ? h.date.slice(0, 4) : ''
+                const sub = [h.nameCn && h.name !== h.nameCn ? h.name : '', year ? `${year}年` : '', h.score > 0 ? `★ ${h.score.toFixed(1)}` : '']
+                  .filter(Boolean)
+                  .join('  ·  ')
+                return (
+                  <div
+                    key={h.bgmId}
+                    className="flex items-center gap-3 rounded-lg border border-transparent px-2.5 py-2 transition-colors hover:border-outline-variant/25 hover:bg-on-surface/[0.03]"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13.5px] font-semibold text-on-surface">{h.nameCn || h.name}</div>
+                      {sub && <div className="mt-0.5 truncate font-label text-[10.5px] text-on-surface-variant/50">{sub}</div>}
+                    </div>
+                    {tracked ? (
+                      <span className="shrink-0 rounded-md border border-outline-variant/30 px-2.5 py-1 font-label text-[11px] font-bold text-on-surface-variant/45">
+                        已追
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => add(h)}
+                        className="flex shrink-0 items-center gap-0.5 rounded-md bg-primary/15 px-2.5 py-1 font-label text-[11px] font-bold text-primary transition-colors hover:bg-primary/25"
+                      >
+                        <Icon name="add" size={12} />
+                        追
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

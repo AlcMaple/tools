@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "tsx server/node.ts"
+    "start": "tsx server/node.ts",
+    "sync:index": "tsx scripts/build-bgm-index.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
