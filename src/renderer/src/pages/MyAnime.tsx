@@ -34,6 +34,7 @@ import { WatchHere } from '../components/WatchHere'
 import { AddBindingModal } from '../components/AddBindingModal'
 import { SearchSourceModal } from '../components/SearchSourceModal'
 import { AnimeSyncBar } from '../components/AnimeSyncBar'
+import { WebTrackSyncBar } from '../components/WebTrackSyncBar'
 import {
   RecommendationView,
   REC_STATUS_META,
@@ -404,7 +405,10 @@ export default function MyAnime(): JSX.Element {
                 ]}
               />
             </div>
-            <AnimeSyncBar />
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <WebTrackSyncBar />
+              <AnimeSyncBar />
+            </div>
           </div>
 
           {/* 过滤 chips 行 —— 两个 tab 共用同一行位置，内容根据 tab 切换。

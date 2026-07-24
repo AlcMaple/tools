@@ -9,6 +9,7 @@ import { registerWebDavIpc } from './webdav'
 import { registerMailIpc } from './mail'
 import { registerMiaoyuIpc } from './miaoyu'
 import { registerBiliIpc } from './bili'
+import { registerWebAccountIpc } from './webAccount'
 import { registerLogIpc } from '../shared/logger'
 
 export function registerAllIpc(): void {
@@ -24,6 +25,7 @@ export function registerAllIpc(): void {
   registerMailIpc()
   registerMiaoyuIpc()
   registerBiliIpc()
+  registerWebAccountIpc()
 }
 
 export { getMinimizeOnClose } from './system'

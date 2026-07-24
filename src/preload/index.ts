@@ -381,6 +381,15 @@ contextBridge.exposeInMainWorld('webdavApi', {
   pull: (kind: 'homework' | 'anime' | 'miaoyu') => ipcRenderer.invoke('webdav:pull', kind),
 })
 
+contextBridge.exposeInMainWorld('webAccountApi', {
+  status: () => ipcRenderer.invoke('web-account:status'),
+  login: (input: { username: string; password: string }) => ipcRenderer.invoke('web-account:login', input),
+  logout: () => ipcRenderer.invoke('web-account:logout'),
+  pullTracks: () => ipcRenderer.invoke('web-account:pull-tracks'),
+  pushTracks: (input: { baseRev: number; force?: boolean; data: unknown[] }) =>
+    ipcRenderer.invoke('web-account:push-tracks', input),
+})
+
 contextBridge.exposeInMainWorld('miaoyuApi', {
   /** 妙语库图片目录的 archivist base URL；渲染端用 `${base}/${hash}.${ext}` 拼图片 URL。 */
   imagesBase: () => ipcRenderer.invoke('miaoyu:images-base'),

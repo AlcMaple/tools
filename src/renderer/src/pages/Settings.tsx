@@ -6,6 +6,7 @@ import { updateStore, type UpdateState } from "../stores/updateStore";
 import { reportError } from "../utils/reportError";
 import type { BgmAuthStatus } from "../types/bgm";
 import { setCachedAuth } from "../utils/bgmAuth";
+import { ipcErrMsg } from "./homework/shared";
 
 // ── persistence keys ─────────────────────────────────────────
 const NODE_ID_KEY = "xifan_node_id";
@@ -120,7 +121,7 @@ const CATEGORIES: ReadonlyArray<{
 }> = [
   { id: "general", label: "通用", en: "General", icon: "tune", desc: "常用偏好与基础行为" },
   { id: "downloads", label: "下载", en: "Downloads", icon: "download", desc: "保存路径与下载默认行为" },
-  { id: "sync", label: "云同步", en: "Sync", icon: "cloud_sync", desc: "坚果云 WebDAV 配置" },
+  { id: "sync", label: "云同步", en: "Sync", icon: "cloud_sync", desc: "网页版同步与 WebDAV 备份" },
   { id: "notify", label: "邮件提醒", en: "Mail", icon: "outgoing_mail", desc: "周历刷新后自动发送 QQ 邮件" },
   { id: "appearance", label: "外观", en: "Appearance", icon: "palette", desc: "主题切换" },
   { id: "about", label: "关于", en: "About", icon: "info", desc: "版本、节点与系统信息" },
@@ -785,6 +786,44 @@ function Settings(): JSX.Element {
     }).catch((err) => reportError("settings:webdav-save", err));
   };
 
+  // MapleTools 网页版账号 —— JWT 只在主进程持有，这里只拿登录状态。
+  // 密码只用于本次登录请求，不写 localStorage，也不通过 status IPC 回显。
+  const [webAccount, setWebAccount] = useState<{ loggedIn: boolean; username: string }>({
+    loggedIn: false,
+    username: "",
+  });
+  const [webUsername, setWebUsername] = useState("");
+  const [webPassword, setWebPassword] = useState("");
+  const [webShowPwd, setWebShowPwd] = useState(false);
+  const [webLoginState, setWebLoginState] = useState<"idle" | "loading" | "error">("idle");
+  const [webLoginMsg, setWebLoginMsg] = useState("");
+  useEffect(() => {
+    window.webAccountApi.status().then(setWebAccount).catch(() => { /* 当未登录 */ });
+  }, []);
+  const doWebLogin = async (): Promise<void> => {
+    if (!webUsername.trim() || !webPassword) return;
+    setWebLoginState("loading");
+    setWebLoginMsg("");
+    try {
+      const status = await window.webAccountApi.login({
+        username: webUsername.trim(),
+        password: webPassword,
+      });
+      setWebAccount(status);
+      setWebPassword("");
+      setWebLoginState("idle");
+    } catch (error: unknown) {
+      setWebLoginState("error");
+      setWebLoginMsg(ipcErrMsg(error, "登录失败"));
+    }
+  };
+  const doWebLogout = async (): Promise<void> => {
+    setWebAccount(await window.webAccountApi.logout());
+    setWebPassword("");
+    setWebLoginMsg("");
+    setWebLoginState("idle");
+  };
+
   // 系统默认下载文件夹 —— 留空 Settings.downloadPath 时主进程下载器会回退
   // 到这个路径。从 main 那边异步拉一次就够，进程生命周期内不变。
   const [defaultDownloadsPath, setDefaultDownloadsPath] = useState("");
@@ -1283,7 +1322,98 @@ function Settings(): JSX.Element {
               )}
 
               {active === "sync" && (
-                <Block
+                <>
+                  <Block
+                    title="MapleTools 网页版账号"
+                    hint="登录后可在「我的追番」页手动上传或拉取，与网页版共用追番列表。"
+                    footer={
+                      <div className="flex items-center gap-3 min-h-9">
+                        {!webAccount.loggedIn && (
+                          <button
+                            type="button"
+                            onClick={() => void doWebLogin()}
+                            disabled={webLoginState === "loading" || !webUsername.trim() || !webPassword}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30 hover:border-primary/55 disabled:opacity-50 disabled:cursor-not-allowed text-[12px] font-label font-bold uppercase tracking-wider transition-colors"
+                          >
+                            <span
+                              className={`material-symbols-outlined leading-none ${webLoginState === "loading" ? "animate-spin" : ""}`}
+                              style={{ fontSize: 16 }}
+                            >
+                              {webLoginState === "loading" ? "progress_activity" : "login"}
+                            </span>
+                            {webLoginState === "loading" ? "登录中…" : "登录"}
+                          </button>
+                        )}
+                        <span className="font-label text-[11px] text-error">{webLoginMsg}</span>
+                      </div>
+                    }
+                  >
+                    {webAccount.loggedIn ? (
+                      <Row
+                        icon="account_circle"
+                        title={webAccount.username}
+                        desc="已连接 MapleTools 网页版账号。"
+                        density={tweaks.density}
+                        control={
+                          <button
+                            type="button"
+                            onClick={() => void doWebLogout()}
+                            className="px-4 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-error hover:border-error/30 hover:bg-error/[0.08] text-[12px] font-label transition-colors"
+                          >
+                            退出
+                          </button>
+                        }
+                      />
+                    ) : (
+                      <>
+                        <Row
+                          icon="person"
+                          title="用户名"
+                          desc="填写 MapleTools 网页版的用户名。"
+                          density={tweaks.density}
+                          stack
+                          control={
+                            <TextControl
+                              value={webUsername}
+                              placeholder="用户名"
+                              onChange={setWebUsername}
+                              onCommit={() => {}}
+                            />
+                          }
+                        />
+                        <Row
+                          icon="key"
+                          title="密码"
+                          desc="用于登录网页版账号。"
+                          density={tweaks.density}
+                          stack
+                          control={
+                            <TextControl
+                              value={webPassword}
+                              placeholder="••••••••"
+                              type={webShowPwd ? "text" : "password"}
+                              onChange={setWebPassword}
+                              onCommit={() => void doWebLogin()}
+                              commitOnBlur={false}
+                              trailing={
+                                <button
+                                  type="button"
+                                  onClick={() => setWebShowPwd((v) => !v)}
+                                  className="text-on-surface-variant/40 hover:text-on-surface transition-colors flex-shrink-0 px-1"
+                                >
+                                  <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>
+                                    {webShowPwd ? "visibility_off" : "visibility"}
+                                  </span>
+                                </button>
+                              }
+                            />
+                          }
+                        />
+                      </>
+                    )}
+                  </Block>
+
+                  <Block
                   title="坚果云 WebDAV"
                   hint="应用密码在坚果云「账号信息 → 安全选项 → 第三方应用管理」生成。"
                   footer={
@@ -1366,7 +1496,8 @@ function Settings(): JSX.Element {
                       />
                     }
                   />
-                </Block>
+                  </Block>
+                </>
               )}
 
               {active === "notify" && (
