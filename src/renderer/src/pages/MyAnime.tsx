@@ -17,7 +17,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { trackUnaired } from '../utils/airDate'
+import { trackUnaired, weekdayFromAirDate } from '../utils/airDate'
 import TopBar from '../components/TopBar'
 import {
   animeTrackStore,
@@ -586,6 +586,16 @@ const MANUAL_CATEGORY_OPTIONS: ReadonlyArray<{ key: SubjectType; label: string }
   { key: 'manga', label: '漫画' },
   { key: 'novel', label: '小说' },
 ]
+const MANUAL_WEEKDAY_OPTIONS: ReadonlyArray<{ key: number; label: string }> = [
+  { key: 0, label: '未知' },
+  { key: 1, label: '一' },
+  { key: 2, label: '二' },
+  { key: 3, label: '三' },
+  { key: 4, label: '四' },
+  { key: 5, label: '五' },
+  { key: 6, label: '六' },
+  { key: 7, label: '日' },
+]
 
 /**
  * 手动添加追番 —— BGM 限流搜不了时的兜底入口（006 阶段）。
@@ -617,6 +627,9 @@ function ManualAddModal({
   const [coverUrl, setCoverUrl] = useState(editing?.cover ?? '')
   const [totalEps, setTotalEps] = useState(editing?.totalEpisodes != null ? String(editing.totalEpisodes) : '')
   const [airDateInput, setAirDateInput] = useState(editing?.airDate ?? '')
+  const [airWeekday, setAirWeekday] = useState(
+    editing?.airWeekday ?? weekdayFromAirDate(editing?.airDate),
+  )
   const [error, setError] = useState<string | null>(null)
 
   const titleRef = useRef<HTMLInputElement>(null)
@@ -658,6 +671,7 @@ function ManualAddModal({
       // 手动条目的放送日期由这里唯一维护:留空保存 = ''(确认未定档,隐藏
       // 播放按钮),填了日期按 utils/airDate.ts 解析判断未来/已播出。
       airDate: airDateInput.trim(),
+      airWeekday: airWeekday || undefined,
     }
 
     if (editing) {
@@ -767,6 +781,25 @@ function ManualAddModal({
               <p className="text-[10px] text-on-surface-variant/40 mt-1 font-label">
                 留空 = 未定档；未定档或日期在未来的番不显示「播放」按钮
               </p>
+            </div>
+            <div className="col-span-2">
+              <p className={labelCls}>每周更新（可选）</p>
+              <div className="grid grid-cols-8 gap-1 rounded-lg border border-outline-variant/15 bg-surface-container p-1">
+                {MANUAL_WEEKDAY_OPTIONS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setAirWeekday(option.key)}
+                    className={`rounded-md py-1.5 font-label text-[11px] transition-colors ${
+                      airWeekday === option.key
+                        ? 'bg-primary text-on-primary'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

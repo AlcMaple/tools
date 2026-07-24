@@ -373,7 +373,7 @@ function CompactDayGrid({ result, day }: { result: BgmCalendarResult; day: numbe
   }
   return (
     <div className="px-4 md:px-6 py-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-      {current.items.map(item => <CalendarCard key={item.id} item={item} />)}
+      {current.items.map(item => <CalendarCard key={item.id} item={item} weekday={current.id} />)}
     </div>
   )
 }
@@ -412,7 +412,7 @@ function DayColumn({
           空
         </div>
       ) : (
-        day.items.map(item => <CalendarCard key={item.id} item={item} />)
+        day.items.map(item => <CalendarCard key={item.id} item={item} weekday={day.id} />)
       )}
     </div>
   )
@@ -420,7 +420,7 @@ function DayColumn({
 
 // ── Card ─────────────────────────────────────────────────────────────────────
 
-function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
+function CalendarCard({ item, weekday }: { item: BgmCalendarItem; weekday: number }): JSX.Element {
   const track = useAnimeTrack(item.id)
   const displayTitle = item.name_cn || item.name
   const coverSrc = useCover(String(item.id), item.cover)
@@ -445,6 +445,8 @@ function CalendarCard({ item }: { item: BgmCalendarItem }): JSX.Element {
         totalEpisodes: item.episodes > 0 ? item.episodes : undefined,
         // 周历条目自带放送日期;缺失时留 undefined,交给 ensureBgmTagsFilled 回填
         airDate: item.airDate || undefined,
+        // 星期列比拿首播日期推导更准确（首播可能遇到特别编成 / 延期）。
+        airWeekday: weekday,
         status: 'watching',
         episode: 0,
       })

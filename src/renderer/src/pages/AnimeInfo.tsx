@@ -17,6 +17,7 @@ import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled, setCac
 import { animeTrackStore, useAnimeTrack, deriveSubjectType, aliasesFromInfobox } from '../stores/animeTrackStore'
 import { loadBgmHistory, addBgmHistory, removeBgmHistory, clearBgmHistory } from '../utils/bgmSearchHistory'
 import { useCover } from '../hooks/useCover'
+import { weekdayFromAirDate } from '../utils/airDate'
 import coverFallback from '../assets/cover-fallback.png'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -878,6 +879,7 @@ function DetailView({
       totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
       // 放送日期('' = BGM 无日期 = 未定档,播放按钮据此隐藏,见 utils/airDate.ts)
       airDate: data.date,
+      airWeekday: weekdayFromAirDate(data.date) || undefined,
       status: 'plan',
       episode: 0,
       bgmTags: data.tags,
@@ -1194,6 +1196,7 @@ function DetailView({
                     totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
                     // 放送日期('' = BGM 无日期 = 未定档,播放按钮据此隐藏)
                     airDate: data.date,
+                    airWeekday: weekdayFromAirDate(data.date) || undefined,
                     status: 'plan',
                     episode: 0,
                     // 加追番那一刻把 BGM 当前 tag 快照写入 —— store 内 lock-on-create

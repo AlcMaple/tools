@@ -132,6 +132,12 @@ export interface CalendarResult {
   fromCache: boolean
 }
 
+export interface CalendarMetadata {
+  weekday: number
+  airDate: string
+  cover: string
+}
+
 export async function getCalendar(force = false): Promise<CalendarResult> {
   // 进程刚起来时内存是空的 —— 先看盘上有没有，有就不用打扰 BGM
   if (!cache) cache = readDisk()
@@ -149,4 +155,24 @@ export async function getCalendar(force = false): Promise<CalendarResult> {
   // BGM 返回空数组 —— 有旧缓存就退回旧的（不抛，是 BGM 那边的问题），否则抛
   if (cache) return { data: cache.data, updatedAt: cache.at, fromCache: true }
   throw new Error('BGM 周历为空且无缓存')
+}
+
+/**
+ * 追番同步的旧数据回填视图。复用同一份 14 天落盘缓存，不额外请求 BGM；
+ * 若缓存过期，getCalendar 自己按既有规则刷新 / 回退。
+ */
+export async function getCalendarMetadata(): Promise<Map<number, CalendarMetadata>> {
+  const result = await getCalendar(false)
+  const map = new Map<number, CalendarMetadata>()
+  for (const day of result.data) {
+    for (const item of day.items) {
+      if (!item.id) continue
+      map.set(item.id, {
+        weekday: day.id,
+        airDate: item.airDate,
+        cover: item.cover,
+      })
+    }
+  }
+  return map
 }
