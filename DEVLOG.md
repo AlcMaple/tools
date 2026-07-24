@@ -11,6 +11,20 @@
 
 ## 网页版
 
+### 2026-07-24 fix(sync): 修复桌面端追番同步报错 404
+
+**效果**：
+
+1. 设置页可登录 MapleTools 网页版账号，登录后「我的追番」出现网页版上传 / 拉取入口
+2. 同步沿用服务端 `tracks_rev` 冲突保护；两端都有改动时必须二次确认，旧 rev 上传返回 409 且不写入
+3. 网页公共字段与 app 富字段分层传输，绑定、好看集、备注、小说进度和「观望」状态同步往返不丢
+4. 坚果云手动同步入口保留为独立备份通道，不与网页版 rev 混用
+
+```
+renderer 追番记录 → 公共字段（网页可编辑）+ extra（app-only）
+                  → 主进程持 JWT → /api/tracks/sync
+```
+
 ### 2026-07-23 feat(web): 新增追番同步功能
 
 **效果**：
@@ -1020,4 +1034,3 @@ if (!html.includes('/logout')) setBgmCookie('') // 页面上没有"退出"入口
 const token = getBgmToken()
 if (token) headers['Authorization'] = `Bearer ${token}`
 ```
-

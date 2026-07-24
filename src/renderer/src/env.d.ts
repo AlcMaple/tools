@@ -404,6 +404,20 @@ declare global {
       push: (kind: 'homework' | 'anime' | 'miaoyu', jsonStr: string) => Promise<boolean>
       pull: (kind: 'homework' | 'anime' | 'miaoyu') => Promise<string>
     }
+    webAccountApi: {
+      status: () => Promise<{ loggedIn: boolean; username: string }>
+      login: (input: { username: string; password: string }) => Promise<{ loggedIn: true; username: string }>
+      logout: () => Promise<{ loggedIn: false; username: string }>
+      pullTracks: () => Promise<{ rev: number; data: unknown[] }>
+      pushTracks: (input: {
+        baseRev: number
+        force?: boolean
+        data: unknown[]
+      }) => Promise<
+        | { ok: true; conflict: false; rev: number; count: number }
+        | { ok: false; conflict: true; rev: number; serverCount: number; error: string }
+      >
+    }
     libraryApi: {
       getPaths: () => Promise<LibraryPath[]>
       addPath: (folderPath: string, label: string) => Promise<LibraryPath[]>
@@ -419,4 +433,3 @@ declare global {
     }
   }
 }
-
