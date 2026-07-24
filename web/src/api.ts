@@ -23,12 +23,17 @@ export interface CalendarResult {
   fromCache: boolean
 }
 
-// 封面走后端代理 —— BGM 图床国内被墙，浏览器不能直连（见 server/index.ts 的 /api/cover）。
-// 路径式：`https://lain.bgm.tv/pic/...` → `/api/cover/pic/...`，URL 里不出现 bgm.tv，避免 HTTP
-// 明文下被 GFW 关键字 RST。
+// 只有 BGM 的 lain 图床走后端代理。手动条目允许填写其他图床 URL，不能把它们也
+// 剥掉 host 后冒充 lain 路径（/files、/resource/news… 在 lain 上必然 403）。
 export function coverUrl(raw: string): string {
-  const m = raw.match(/^https?:\/\/[^/]+(\/.*)$/)
-  return m ? `/api/cover${m[1]}` : ''
+  try {
+    const url = new URL(raw)
+    if (url.hostname === 'lain.bgm.tv') return `/api/cover${url.pathname}`
+    if (url.protocol === 'http:') url.protocol = 'https:'
+    return url.protocol === 'https:' ? url.toString() : ''
+  } catch {
+    return ''
+  }
 }
 
 export async function fetchCalendar(force = false): Promise<CalendarResult> {
@@ -64,7 +69,7 @@ export interface Track {
 
 /** 写入用的 patch —— **只带要改的字段**；没带的字段服务端保持沉默、原样不动（沉默 ≠ 置空） */
 export type TrackPatch = Partial<
-  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'score'>
+  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score'>
 >
 
 async function json<T>(res: Response): Promise<T> {

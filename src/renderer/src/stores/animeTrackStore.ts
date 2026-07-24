@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { scheduleStorageWrite } from '../utils/deferredStorage'
 import { reportError, backupCorrupt } from '../utils/reportError'
+import { weekdayFromAirDate } from '../utils/airDate'
 
 /**
  * Tracking status —— v2 把 paused / dropped 删了（用户从来没用过这俩），
@@ -114,6 +115,14 @@ export interface AnimeTrack {
    * 判定逻辑见 utils/airDate.ts 的 isUnaired()。
    */
   airDate?: string
+  /**
+   * 每周放送日：1=周一 … 7=周日，undefined=未知。
+   *
+   * BGM 周历加番时直接记周历列；详情页 / 老数据有首播日期时用日期星期兜底。
+   * 这个字段会同步到网页版，用于「今天更新」分组，不能只在上传时临时推导——
+   * 手动条目可能没有完整日期，但用户仍知道它每周哪天更新。
+   */
+  airWeekday?: number
   /**
    * 小说阅读进度 —— 一级=卷 / 二级=章。**仅 subjectType==='novel' 用**；
    * 动漫 / 漫画走上面的 episode 数字模型，这俩字段保持 ''。
@@ -358,6 +367,11 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   // 是 idempotent 的，老数据下次 upsert 时自动落盘成 4 个。
   const bgmTags = normalizeTagList(t.bgmTags).slice(0, BGM_TAG_LIMIT)
   const userTags = normalizeTagList(t.userTags)
+  const airDate = typeof t.airDate === 'string' ? t.airDate : undefined
+  const storedWeekday = typeof t.airWeekday === 'number' && Number.isInteger(t.airWeekday)
+    && t.airWeekday >= 1 && t.airWeekday <= 7
+    ? t.airWeekday
+    : 0
   return {
     bgmId: t.bgmId,
     subjectType,
@@ -368,7 +382,8 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     status,
     episode: total != null ? Math.min(episode, total) : episode,
     totalEpisodes: total,
-    airDate: typeof t.airDate === 'string' ? t.airDate : undefined,
+    airDate,
+    airWeekday: storedWeekday || weekdayFromAirDate(airDate) || undefined,
     novelVolume,
     novelChapter,
     bindings,
@@ -524,13 +539,18 @@ class AnimeTrackStore {
   async ensureBgmTagsFilled(bgmId: number): Promise<void> {
     const existing = this.getByBgmId(bgmId)
     if (!existing) return
-    if (existing.bgmTags.length > 0) return
+    const hasAirMetadata = existing.airDate !== undefined
+      && (existing.airDate === '' || existing.airWeekday !== undefined)
+    if (existing.bgmTags.length > 0 && hasAirMetadata) return
     const jitterMs = 800 + Math.random() * 1200
     await new Promise<void>((r) => setTimeout(r, jitterMs))
     // 二次检查：延迟期间用户可能删了 track / 别的路径已经把 tag 补上,
     // 这两种情况下都不需要再发请求。
     const recheck = this.getByBgmId(bgmId)
-    if (!recheck || recheck.bgmTags.length > 0) return
+    if (!recheck) return
+    const recheckHasAirMetadata = recheck.airDate !== undefined
+      && (recheck.airDate === '' || recheck.airWeekday !== undefined)
+    if (recheck.bgmTags.length > 0 && recheckHasAirMetadata) return
     try {
       const detail = await window.bgmApi.detail(bgmId)
       // 同一次 detail 顺带把别名补上（零额外请求）—— 周历 +追番 没 detail,
@@ -540,7 +560,11 @@ class AnimeTrackStore {
       if (Array.isArray(detail.tags) && detail.tags.length > 0) patch.bgmTags = detail.tags
       if (aliases.length > 0) patch.aliases = aliases
       // 同一次 detail 顺带补放送日期('' 也写 —— 那是「确认未定档」的有效结论)
-      if (recheck.airDate === undefined && typeof detail.date === 'string') patch.airDate = detail.date
+      if (recheck.airDate === undefined && typeof detail.date === 'string') {
+        patch.airDate = detail.date
+        const weekday = weekdayFromAirDate(detail.date)
+        if (weekday) patch.airWeekday = weekday
+      }
       if (patch.bgmTags || patch.aliases || 'airDate' in patch) this.upsert(patch)
     } catch { /* silent — 下次相关入口再触发时重试 */ }
   }

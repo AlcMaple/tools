@@ -5,6 +5,13 @@
 //   ''             → 确认未定档,未播出(true)
 //   可解析的日期    → 晚于今天 = 未播出
 //   解析不了的非空串 → 宽容当已播出(false),不因格式问题误伤按钮
+export function weekdayFromAirDate(airDate: string | undefined): number {
+  const match = airDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return 0
+  const day = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay()
+  return day === 0 ? 7 : day
+}
+
 export function isUnaired(airDate: string | undefined, now: Date = new Date()): boolean {
   if (airDate === undefined) return false
   const s = airDate.trim()
