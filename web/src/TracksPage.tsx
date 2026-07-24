@@ -123,7 +123,12 @@ export function TracksPage(): JSX.Element {
       airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [], updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
-    void putTrack(hit.bgmId, { title: hit.name, titleCn: hit.nameCn, status: 'plan' })
+    void putTrack(hit.bgmId, {
+      title: hit.name,
+      titleCn: hit.nameCn,
+      status: 'plan',
+      airDate: hit.date,
+    })
       .then((fresh) => setTracks((prev) => (prev ? prev.map((t) => (t.bgmId === fresh.bgmId ? fresh : t)) : [fresh])))
       .catch((e: Error) => {
         setError(e.message)
@@ -172,7 +177,9 @@ export function TracksPage(): JSX.Element {
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [tracks])
 
-  const todayList = filtered.filter((t) => t.airWeekday === today && t.status === 'watching')
+  // 「想看」也是用户关注的更新；只排除已经看完的条目。否则从 app 的「观望」
+  // 投影成 plan 后，即使星期正确也永远进不了当天分组。
+  const todayList = filtered.filter((t) => t.airWeekday === today && t.status !== 'done')
   const rest = filtered.filter((t) => !todayList.includes(t))
   const editingTrack = tracks?.find((t) => t.bgmId === editing) ?? null
   const confirmingTrack = tracks?.find((t) => t.bgmId === confirming) ?? null
