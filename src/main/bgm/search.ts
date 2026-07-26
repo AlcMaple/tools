@@ -418,6 +418,53 @@ function normalizeForMatch(s: string): string {
 }
 
 /**
+ * 「差一两个字」的近似匹配阈值。
+ *
+ * 起因（真实漏检）：搜「永久的黄昏」在 bgm.tv 上第一条就是「永远的黄昏 /
+ * 永久のユウグレ」，我们却回「未找到」—— 用户把日文名的「永久」和中文名的
+ * 「的黄昏」拼在一起，主标题、日文副标题、BGM 别名（永恒余晖 / 永遠的黃昏 /
+ * Towa no Yuugure / Dusk Beyond the End of the World）**没有任何一个**包含
+ * 「永久的黄昏」这个连续子串，substring 判定必然落空。BGM 服务端是分词/字符
+ * 级宽匹配，认得出来并排第一；我们只认 substring，比 BGM 严得多，于是把
+ * 它当噪声过滤掉了。
+ *
+ * 补一层归一化编辑距离：相似度 = 1 - 编辑距离 / 较长串长度。
+ *   - 两串都 ≥ 3 字才做（2 字关键词差一个字就是另一个词了）
+ *   - 长度差 ≤ 2（别拿短关键词去套长标题，那是子串/别名路径的活）
+ *   - 相似度 ≥ 0.7 —— 4~7 字标题实际等价于「最多差 1 个字」，10 字标题
+ *     容忍 3 个字，随长度自然放宽，不用为不同长度分别调参
+ * 「永久的黄昏」vs「永远的黄昏」：距离 1、相似度 0.8 → 命中。
+ */
+const FUZZY_MIN_LEN = 3
+const FUZZY_MAX_LEN_DIFF = 2
+const FUZZY_MIN_SIMILARITY = 0.7
+
+/** 标准 Levenshtein 距离（滚动两行，标题都是短串，开销可忽略）。 */
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      )
+    }
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+/** 两个**已 normalize** 的串是否算「近似同名」。 */
+function isNearMatch(kwNorm: string, candidateNorm: string): boolean {
+  if (kwNorm.length < FUZZY_MIN_LEN || candidateNorm.length < FUZZY_MIN_LEN) return false
+  if (Math.abs(kwNorm.length - candidateNorm.length) > FUZZY_MAX_LEN_DIFF) return false
+  const dist = editDistance(kwNorm, candidateNorm)
+  return 1 - dist / Math.max(kwNorm.length, candidateNorm.length) >= FUZZY_MIN_SIMILARITY
+}
+
+/**
  * 解析一页搜索结果 HTML 成结构化数组。每条 item 多带一个 `visibleMatch` 字段:
  * 标记 主标题 / `<small.grey>` 日文副标题 里是否能（normalize-insensitive 地）
  * 命中关键词。
@@ -461,8 +508,13 @@ function parsePage(
     const idMatch = href.match(/\/subject\/(\d+)/)
     const subjectId = idMatch ? parseInt(idMatch[1]) : 0
 
-    const visibleText = normalizeForMatch(title + smallText)
-    const visibleMatch = visibleText.includes(kwNorm)
+    // 子串命中优先（拼接主标题+副标题一起判，跨字段的连写也能中）；子串落空时
+    // 再对**单个字段**做近似匹配 —— 近似必须逐字段算，拼接串长度会把长度差 gate
+    // 直接顶掉。
+    const visibleMatch =
+      normalizeForMatch(title + smallText).includes(kwNorm) ||
+      isNearMatch(kwNorm, normalizeForMatch(title)) ||
+      isNearMatch(kwNorm, normalizeForMatch(smallText))
 
     results.push({
       title,
@@ -567,6 +619,12 @@ const ALIAS_LOOKUP_MAX_CONSECUTIVE_MISSES = 3
  * 下限 floor，攒更多也无妨；实际 BGM 单页约 25 条，绝大多数搜索第 1 页就远超它。
  */
 const ALIAS_LOOKUP_MIN_CANDIDATES = 4
+
+/**
+ * 零命中兜底返回几条（见 searchBgm 末尾）。BGM 按相关度排序，真命中基本在前几条；
+ * 取 3 条既能救回漏检，又不会把整页噪声倒给用户。
+ */
+const ZERO_MATCH_FALLBACK_LIMIT = 3
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -678,7 +736,10 @@ export async function searchBgm(
     if (stoppedByMissStreak) continue
     // 标题没命中 → 验别名。别名也没命中才算 miss。
     const aliases = await fetchAliases(x.subjectId)
-    const aliasHit = aliases.some((a) => normalizeForMatch(a).includes(kwNorm))
+    const aliasHit = aliases.some((a) => {
+      const aNorm = normalizeForMatch(a)
+      return aNorm.includes(kwNorm) || isNearMatch(kwNorm, aNorm)
+    })
     if (aliasHit) {
       matched.push(x)
       consecutiveMisses = 0
@@ -696,6 +757,18 @@ export async function searchBgm(
     for (const m of examinedMisses) {
       if (m.page === breakPage) matched.push(m)
     }
+  }
+
+  // 零命中兜底：BGM 明明回了结果、我们却一条不剩。这不代表「没有这个番」——
+  // 真没有时 BGM 自己返回空结果页，上面 `page1Items.length === 0` 已提前 return。
+  // 走到这里说明是**我们的过滤判错了**，此时返回空 = 用户看到「未找到」、
+  // 而 bgm.tv 上明明有，是最坏的结果（这正是「永久的黄昏」漏检的表现）。
+  // 退回 BGM 自己的相关度顺序取前几条，让用户至少看到 bgm.tv 上能看到的东西。
+  // 上限很小（BGM 把最相关的排在最前，真命中基本落在前几条），不会把整页噪声
+  // 倒给用户 —— 与「近命中保留」的 `sawHit` 锚点（避免整页零命中回一整页噪声）
+  // 不冲突：那条限制的是「回多少」，这里的兜底本身就只回 3 条。
+  if (matched.length === 0) {
+    matched.push(...allItems.slice(0, ZERO_MATCH_FALLBACK_LIMIT))
   }
 
   // 去重 + 按日期排序（沿用旧行为：最新的番剧在最上面）。
