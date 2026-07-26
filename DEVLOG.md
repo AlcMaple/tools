@@ -1043,3 +1043,32 @@ if (!html.includes('/logout')) setBgmCookie('') // 页面上没有"退出"入口
 const token = getBgmToken()
 if (token) headers['Authorization'] = `Bearer ${token}`
 ```
+
+## 动漫查询
+
+### 2026-07-27 fix(bgm): 修复搜「永久的黄昏」搜不到《永远的黄昏》
+
+**效果**：
+
+1. 关键词跟正式名「差一两个字」也能搜到 —— 搜「永久的黄昏」现在能出《永远的黄昏》（bgm.tv 上它排第一，之前 app 返回「未找到」）
+2. 结果被过滤到一条不剩时，不再直接报「未找到」，而是回退成 bgm.tv 自己排最前的 3 条
+
+**为什么之前搜不到**：BGM 服务端搜索是分词 / 字符级宽匹配，认得出这个词；我们只认「连续子串」，比它严得多。该番的主标题（永远的黄昏）、日文副标题（永久のユウグレ）、BGM 别名（永恒余晖 / 永遠的黃昏 / Towa no Yuugure / Dusk Beyond the End of the World）**没有任何一个**包含「永久的黄昏」这个连续子串 —— 用户是把日文名的「永久」和中文名的「的黄昏」拼在了一起。子串判定必然落空，三条 miss 连撞早停，`sawHit` 从未成立，整轮过滤返回空。
+
+**关键代码**：子串落空后补一层归一化编辑距离，逐字段算（拼接串会把长度差 gate 顶掉）：
+
+```ts
+// bgm/search.ts —— 相似度 = 1 - 编辑距离 / 较长串长度
+const visibleMatch =
+  normalizeForMatch(title + smallText).includes(kwNorm) ||
+  isNearMatch(kwNorm, normalizeForMatch(title)) ||
+  isNearMatch(kwNorm, normalizeForMatch(smallText))
+```
+
+阈值 0.7 + 长度差 ≤ 2 + 两串都 ≥ 3 字：对 4~7 字标题实际等价于「最多差 1 个字」，长标题随长度自然放宽。「永久的黄昏」vs「永远的黄昏」距离 1、相似度 0.8 → 命中。
+
+零命中兜底放在整轮过滤之后 —— 真没有这个番时 BGM 自己返回空结果页（上游已提前 return），走到这里说明是**我们判错了**：
+
+```ts
+if (matched.length === 0) matched.push(...allItems.slice(0, ZERO_MATCH_FALLBACK_LIMIT))
+```
