@@ -133,6 +133,11 @@ contextBridge.exposeInMainWorld('girigiriApi', {
 contextBridge.exposeInMainWorld('xifanApi', {
   getCaptcha: () => ipcRenderer.invoke('xifan:captcha'),
   verifyCaptcha: (code: string) => ipcRenderer.invoke('xifan:verify', code),
+  // 账号登录:登录态(cookie)存主进程 xifanSession,UI 只拿一个布尔。
+  authStatus: () => ipcRenderer.invoke('xifan:auth-status'),
+  login: (username: string, password: string, verify: string) =>
+    ipcRenderer.invoke('xifan:login', username, password, verify),
+  logout: () => ipcRenderer.invoke('xifan:logout'),
   search: (keyword: string) => ipcRenderer.invoke('xifan:search', keyword),
   getWatch: (watchUrl: string) => ipcRenderer.invoke('xifan:watch', watchUrl),
   // 在线播放:模板直链 404 时回源播放页解析真实地址(找不到返回 null)。
