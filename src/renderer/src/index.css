@@ -204,13 +204,31 @@ mark.hl {
   border-radius: 2px;
 }
 
-/* 焦点描边统一处理 —— 本应用以鼠标为主：按钮在「鼠标点击后再按修饰键(Shift 等)」时，
-   会被 :focus-visible 启发式判成键盘焦点而显出原生 outline，观感像 bug。统一去掉按钮的
-   原生 outline。输入框 / 文本域不受影响（它们用 Tailwind 的 focus:ring，是 box-shadow，
-   跟 outline 无关），键盘可达性仍由那些自定义 ring 承担。 */
-button:focus,
-button:focus-visible {
+/* 焦点描边统一处理 —— 本应用以鼠标为主：控件在「鼠标点击后再按空格 / 修饰键」时，
+   会被 :focus-visible 启发式判成键盘焦点而显出原生 outline，观感像 bug。原生 outline
+   的颜色跟随系统强调色（macOS 上常是黄色），和 MD3 配色完全对不上。
+   这里从按钮扩到全局：按 Tab 走一圈能发现链接 / tabindex 容器 / <video> 等都会冒出同一圈
+   描边，逐个加 focus:outline-none 必然漏。输入框 / 文本域不受影响（它们用 Tailwind 的
+   focus:ring，是 box-shadow，跟 outline 无关），键盘可达性仍由那些自定义 ring 承担。 */
+*:focus,
+*:focus-visible {
   outline: none;
+}
+
+/* Chromium 原生播放器控件在 UA shadow DOM 里，上面的 * 选择器够不着，只能逐个伪元素点名：
+   鼠标点过控件按钮后再按空格，那颗按钮会套一圈黄框（见在线播放页）。
+   注意这里只兜得住鼠标路径：`-webkit-*` 这批伪元素作者样式表能选中（实测改 opacity 生效），
+   但 ⋮ 溢出菜单是 `-internal-media-controls-overflow-button`，`-internal-` 前缀在作者样式表
+   里根本不匹配，写了也是死代码。Tab 路径因此不靠 CSS，改成压根不让焦点进控件，
+   见 hooks/usePlayerKeys.ts。 */
+video::-webkit-media-controls-panel,
+video::-webkit-media-controls-play-button,
+video::-webkit-media-controls-mute-button,
+video::-webkit-media-controls-fullscreen-button,
+video::-webkit-media-controls-timeline,
+video::-webkit-media-controls-volume-slider,
+video::-webkit-media-controls-toggle-closed-captions-button {
+  outline: none !important;
 }
 
 .atk-row {

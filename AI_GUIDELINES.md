@@ -68,6 +68,23 @@
   # 源码里的每个 a/b 类，都应能在 css 里搜到 .a\/b
   ```
 
+- ❌ 想用 CSS 消掉 `<video>` 原生控件的焦点描边 / 焦点态
+  后果：白写。原生控件活在 UA shadow DOM 里，实测（Electron 同款 Chromium，已踩：在线播放页黄框）——
+  `::-webkit-media-controls-*`（播放 / 静音 / 全屏 / 进度条）作者样式表**能**选中（改 `opacity` 生效）；
+  但 ⋮ 溢出菜单的伪元素是 `::-internal-media-controls-overflow-button`，`-internal-` 前缀**不匹配**，黄框够不着；
+  而焦点落在静音键上时音量条会**展开**，那是布局变化不是描边，`outline` 再怎么写都治不了。
+  ✅ 样式层只能兜 `-webkit-*` 那批（鼠标点过控件再按键的情况），Tab 路径必须改成不让焦点进控件，见 `hooks/usePlayerKeys.ts`。
+
+- ❌ 拦 `<video>` 的焦点只监听 `focusin`
+  后果：漏掉最常见的一条路径。焦点**已在** `<video>` 宿主上时（点过画面就是这个状态）再按 Tab 走进 shadow 控件，
+  shadow DOM 把 target 重定向成宿主，而宿主自始至终没变 ⇒ `focusin` **不触发**，拦截逻辑根本不执行。
+  ✅ 两条路径都要堵：焦点在外面靠 `focusin`，焦点已在 video 上靠 `keydown` 里读 `document.activeElement`。
+
+- ❌ 为了绕开原生控件，直接把 Tab 键在整页 `preventDefault`
+  后果：页内的输入框、弹窗表单全部没法用 Tab 跳转，用户明确要求「表单里的 tab 换行功能要有」。
+  ✅ 只绕开 `<video>` 本身：前后各放一个 1×1 全透明哨兵，焦点要落到 video 上时按方向交给对应一侧的哨兵，
+  Tab 序列照常继续，也不会把人困在播放区里。顺带把空格单独接管（不能靠焦点恰好在 video 上）。
+
 - ❌ 设计稿（mockup HTML）只放在 `scratchpad/` 或某台机器本地，不提交进仓库
   后果：真实事故——「我的追番」的设计稿写在 `scratchpad/tracks-mockup.html`（`TracksPage.tsx` 头注释还指着它），但 scratchpad 不进 git。换一台机器 / 换一个会话开发时，设计稿等于不存在，只能对着线上截图猜原设计，改样式没有基准。这个项目 **Mac 开发 + Windows 开发两头切**，尤其致命：一头写了稿，另一头看不到。
   ✅ 定稿的设计稿一律提交进 `docs/design-mockups/`（跟 `responsive-design.html` 等现有稿并列），源码引用它时写这个仓库内路径，不写 `scratchpad/`。mockup 是「样式基准」，跟代码同等对待：进版本控制、跨设备可得。

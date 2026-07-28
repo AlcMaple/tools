@@ -37,6 +37,7 @@ import ErrorPanel from '../components/ErrorPanel'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
 import { useSourceSearch } from '../hooks/useSourceSearch'
+import { usePlayerKeys } from '../hooks/usePlayerKeys'
 import { biliMpdUri, pickVideoTracks } from '../utils/biliMpd'
 import type { SearchCard, Source } from '../types/search'
 import type { BiliDash, BiliVideoInfo } from '../types/bili'
@@ -462,6 +463,9 @@ export default function OnlinePlayer(): JSX.Element {
   // Chromium 不原生支持 m3u8,靠 hls.js 走 MSE 逐段喂。列表/分片/AES 密钥全部
   // 经 mtmedia 代理(主进程已把列表里的地址重写成 mtmedia://),同源不受跨源策略限制。
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  // 让 Tab 绕开原生控件(否则每停一站都甩出系统色黄框)+ 自己接管空格暂停。
+  // 哨兵渲染在播放区两端,必须紧贴 <video>,焦点才能从这一侧直接跨到那一侧。
+  const { preRef: tabHopPreRef, postRef: tabHopPostRef } = usePlayerKeys(videoRef)
   // 兜底回调用 ref 取最新的 —— 直接进 effect 依赖数组会让每次渲染都重建 hls 实例、打断播放。
   const onFatalRef = useRef<() => void>(() => {})
   useEffect(() => { onFatalRef.current = handleVideoError })
@@ -722,6 +726,9 @@ export default function OnlinePlayer(): JSX.Element {
             {/* 播放器 —— 16:9 播放区(video / dash / 内联搜索 / 各占位态)。
                 自定义源(webview 嵌真实页)走上面的固定高度早期 return,不到这里。 */}
             <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+              {(view.mode === 'video' || view.mode === 'dash') && (
+                <span ref={tabHopPreRef} tabIndex={0} className="pointer-events-none absolute h-px w-px opacity-0" />
+              )}
               {view.mode === 'video' && (
                 <video
                   key={view.url}
@@ -738,6 +745,9 @@ export default function OnlinePlayer(): JSX.Element {
               {view.mode === 'dash' && (
                 // DASH 由 shaka 经 MSE 喂,不设 src、不挂 onError(失败走 shaka 的 error 事件)
                 <video ref={videoRef} controls autoPlay className="h-full w-full" />
+              )}
+              {(view.mode === 'video' || view.mode === 'dash') && (
+                <span ref={tabHopPostRef} tabIndex={0} className="pointer-events-none absolute h-px w-px opacity-0" />
               )}
               {view.mode === 'search' && entry?.builtin && track && (
                 <div className="flex h-full items-center justify-center overflow-y-auto p-4 md:p-6">
