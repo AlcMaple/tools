@@ -819,11 +819,9 @@ function SearchResults({
 
 function DetailView({
   data,
-  onBack,
   onArchive,
 }: {
   data: BgmDetail
-  onBack?: () => void
   onArchive?: () => void
 }): JSX.Element {
   const [copied, setCopied] = useState(false)
@@ -983,17 +981,6 @@ function DetailView({
 
   return (
     <div className="max-w-6xl mx-auto">
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-on-surface-variant/50 hover:text-primary transition-colors font-label text-xs uppercase tracking-wider mb-8 group"
-        >
-          <span className="material-symbols-outlined text-base leading-none group-hover:-translate-x-0.5 transition-transform">
-            arrow_back
-          </span>
-          Back to results
-        </button>
-      )}
       {/* ── 手机 + 平板（<1024）：参考设计原型。跨 1024 时整体换成桌面 sticky 双栏大图布局。 ── */}
       <div className="lg:hidden">
         {/* ===== 手机（<768）：封面+信息并排 → 两个按钮通栏（与封面底部对齐）→ 简介通栏 ===== */}
@@ -1648,8 +1635,25 @@ function AnimeInfo(): JSX.Element {
           在生成 CSS 里还排在 pt-16 之后),小于顶栏 64px,首个元素(返回按钮)
           会被压到顶栏后面 —— 这正是「PC 看不到返回按钮、手机平板正常」的根因。 */}
       <main className="ml-0 pt-16 px-4 md:px-8 lg:px-10 pb-6 lg:pb-10">
-        {/* BGM 登录状态:进 tab 自动检查,过期/未登录就地给登录按钮(免开设置)。 */}
-        <div className="flex justify-end mb-3 min-h-[24px] items-center">
+        {/* 返回按钮(仅详情页且有上次搜索结果时显示)与 BGM 登录状态同行左右分布,
+            避免各占一行导致上下大片空白。 */}
+        <div className="flex justify-between items-center mb-3 min-h-[24px]">
+          {state.status === 'detail' && lastResults.current.length > 0 ? (
+            <button
+              onClick={() => {
+                pendingScrollRestore.current = true
+                setState({ status: 'results', items: lastResults.current })
+              }}
+              className="flex items-center gap-1.5 text-on-surface-variant/50 hover:text-primary transition-colors font-label text-xs uppercase tracking-wider group"
+            >
+              <span className="material-symbols-outlined text-base leading-none group-hover:-translate-x-0.5 transition-transform">
+                arrow_back
+              </span>
+              Back to results
+            </button>
+          ) : (
+            <span />
+          )}
           <BgmLoginChip />
         </div>
         {state.status === 'idle' && <IdleState />}
@@ -1662,14 +1666,6 @@ function AnimeInfo(): JSX.Element {
         {state.status === 'detail' && (
           <DetailView
             data={state.data}
-            onBack={
-              lastResults.current.length > 0
-                ? () => {
-                    pendingScrollRestore.current = true
-                    setState({ status: 'results', items: lastResults.current })
-                  }
-                : undefined
-            }
             onArchive={() => setArchiveKeyword(lastBgmKeyword.current || state.data.title_cn || state.data.title)}
           />
         )}
