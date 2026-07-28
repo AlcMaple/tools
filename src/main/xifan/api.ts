@@ -137,6 +137,61 @@ export async function verifyCaptcha(code: string): Promise<{ success: boolean }>
   return { success }
 }
 
+// ── 账号登录 ───────────────────────────────────────────────────────────────────
+// 登录用同一个 xifanSession(与搜索验证码共用 cookie 罐)。站点是 maccms 模板,
+// 登录成功后种下 user_id cookie(非空即已登录,取自站点自己的前端逻辑
+// `EC.Cookie.Get('user_id')`);验证码图与搜索共用 /index.php/verify/index.html,
+// 复用上面的 getCaptcha 即可,不用单开一个登录验证码接口。
+
+export interface XifanAuthStatus {
+  loggedIn: boolean
+}
+
+/** 登录态:本地 cookie 罐里有没有非空的 user_id(退出/从未登录时该 cookie 不存在)。 */
+export function getXifanAuthStatus(): XifanAuthStatus {
+  const uid = xifanSession.getCookie('user_id')
+  return { loggedIn: !!uid && uid !== '0' }
+}
+
+interface XifanAjaxResult {
+  code?: number
+  msg?: string
+}
+
+function parseAjaxResult(body: string): XifanAjaxResult {
+  try {
+    return JSON.parse(body) as XifanAjaxResult
+  } catch {
+    return {}
+  }
+}
+
+/** 用户名/密码/验证码登录。成功后 cookie 落地,getXifanAuthStatus() 即反映已登录。 */
+export async function login(
+  username: string,
+  password: string,
+  verify: string,
+): Promise<{ success: boolean; message: string }> {
+  const body = new URLSearchParams({ user_name: username, user_pwd: password, verify }).toString()
+  const res = await xifanSession.post(`${BASE_URL}/index.php/user/login`, body, {
+    'X-Requested-With': 'XMLHttpRequest',
+    Accept: 'application/json, text/javascript, */*; q=0.01',
+  })
+  xifanSession.save()
+  const { code, msg } = parseAjaxResult(res.body)
+  return { success: Number(code) === 1, message: msg ?? '登录失败' }
+}
+
+export async function logout(): Promise<XifanAuthStatus> {
+  const res = await xifanSession.post(`${BASE_URL}/index.php/user/logout`, '', {
+    'X-Requested-With': 'XMLHttpRequest',
+    Accept: 'application/json, text/javascript, */*; q=0.01',
+  })
+  xifanSession.save()
+  void parseAjaxResult(res.body) // 退出接口偶尔在 cookie 已失效时也回错误 msg,不影响本地状态判断
+  return getXifanAuthStatus()
+}
+
 // ── search ─────────────────────────────────────────────────────────────────────
 
 function parseSearchPage(html: string): XifanSearchResult[] {
