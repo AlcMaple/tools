@@ -480,6 +480,55 @@ const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
 ## 在线观看
 
+### 2026-07-28 style: 消除播放页原生控件的焦点描边
+
+**效果**：
+
+1. **按 Tab 全程无感**。原先 Tab 会依次停进 Chromium 原生播放器控件,每停一站都甩出跟随系统强调色的焦点描边(macOS 上是黄框),停在静音键上还会把音量条**展开**。现在 Tab 直接从播放区一侧跨到另一侧,焦点不进控件。对齐参照站(稀饭网页版,自研播放器)的观感。
+2. **页内 Tab 该有的都还在**。只绕开 `<video>` 本身,内联搜索框、B 站登录弹窗、各类表单的 Tab 跳转不受影响,也不会把焦点困在播放区。
+3. **空格暂停变可靠**。以前只有焦点恰好落在 `<video>` 上才管用,点过下方线路按钮后空格就是翻页;现在播放页自己接管空格,不看焦点在哪。
+4. 全局去掉原生焦点描边:原来只管 `button`,Tab 走一圈会发现链接 / `tabindex` 容器 / `<video>` 都还会冒出同一圈框。
+
+**关键代码/决策**：
+
+**`<video>` 前后各放一个哨兵,焦点要落进去时按方向交给对应一侧**。原生控件在 UA shadow DOM 里,描边压不住,只能不让焦点进。
+
+```tsx
+// pages/OnlinePlayer.tsx —— 哨兵必须紧贴 <video>,焦点才能从这一侧直接跨到那一侧
+<span ref={tabHopPreRef} tabIndex={0} className="pointer-events-none absolute h-px w-px opacity-0" />
+<video ref={videoRef} controls … />
+<span ref={tabHopPostRef} tabIndex={0} className="pointer-events-none absolute h-px w-px opacity-0" />
+```
+
+```ts
+// hooks/usePlayerKeys.ts —— 两条进入路径都要堵,少一条就漏
+const onKeyDown = (e) => {
+  if (e.key === 'Tab') {
+    tabDir = e.shiftKey ? -1 : 1
+    // 路径 B:焦点已在 video 上,再按 Tab 不会触发 focusin,只能在这里截
+    if (document.activeElement?.tagName === 'VIDEO') { e.preventDefault(); hop(!e.shiftKey) }
+    return
+  }
+  …空格:preventDefault + 直接切 videoRef 的 play/pause(输入框内放行)
+}
+// 路径 A:焦点在 video 外面按 Tab
+const onFocusIn = (e) => {
+  if (!tabDir) return                                   // 鼠标点进来的不弹开
+  if (e.target.tagName !== 'VIDEO') return
+  hop(tabDir > 0)
+}
+```
+
+`tabDir` 由 `keydown`/`keyup` 在**捕获阶段**维护 —— `focusin` 是在 Tab 的默认行为里同步派发的,方向标记必须先于它落定。鼠标点击时 `tabDir` 为 0、不弹开,`document.activeElement === video` 得以保留(空格接管虽已不依赖它,但原生控件的其余键位还要用)。
+
+焦点流向
+
+```
+路径 A  前一个元素 → [video 控件] ⇢ post 哨兵 → 下一个元素     (focusin 拦)
+路径 B  video(点过画面) → [video 控件] ⇢ post 哨兵 → 下一个元素 (keydown 拦,focusin 不触发)
+Shift+Tab 同理,反向落到 pre 哨兵
+```
+
 ### 2026-07-13 style: 优化自定义源播放页样式结构
 
 **效果**：
