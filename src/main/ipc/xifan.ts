@@ -1,5 +1,8 @@
 import { ipcMain } from 'electron'
-import { getCaptcha, verifyCaptcha, search, watch, resolveEpRealUrl } from '../xifan/api'
+import {
+  getCaptcha, verifyCaptcha, search, watch, resolveEpRealUrl,
+  getXifanAuthStatus, login, logout,
+} from '../xifan/api'
 import { downloadSingleEp, cleanupParts } from '../xifan/download'
 import { xifanScheduler } from '../shared/download-scheduler'
 import { SiteQueueRegistry, newTaskId } from '../shared/site-download-queue'
@@ -25,6 +28,15 @@ export function registerXifanIpc(): void {
   ipcMain.handle('xifan:captcha', async () => getCaptcha())
   ipcMain.handle('xifan:verify', async (_event, code: string) => verifyCaptcha(code))
   ipcMain.handle('xifan:search', async (_event, keyword: string) => search(keyword))
+
+  // ── 账号登录(收藏/签到等站内功能用) ─────────────────────────────────────
+  ipcMain.handle('xifan:auth-status', () => getXifanAuthStatus())
+  ipcMain.handle(
+    'xifan:login',
+    async (_event, username: string, password: string, verify: string) => login(username, password, verify),
+  )
+  ipcMain.handle('xifan:logout', async () => logout())
+
   ipcMain.handle('xifan:watch', async (_event, watchUrl: string) => watch(watchUrl))
   // 在线播放:模板拼出的直链 404(OVA 等特殊集)时,回源播放页解析真实地址。
   // 与下载流程内部的回源是同一个函数,这里只是把它开给渲染进程按需调用。

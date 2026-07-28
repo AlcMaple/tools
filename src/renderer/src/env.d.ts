@@ -225,6 +225,10 @@ declare global {
     xifanApi: {
       getCaptcha: () => Promise<{ image_b64: string }>
       verifyCaptcha: (code: string) => Promise<{ success: boolean }>
+      /** 稀饭账号登录态(cookie 是否落地),不涉及令牌/密码明文。 */
+      authStatus: () => Promise<{ loggedIn: boolean }>
+      login: (username: string, password: string, verify: string) => Promise<{ success: boolean; message: string }>
+      logout: () => Promise<{ loggedIn: boolean }>
       search: (keyword: string) => Promise<XifanSearchResult[] | { needs_captcha: true }>
       getWatch: (watchUrl: string) => Promise<XifanWatchInfo>
       /** 在线播放:模板直链 404 时回源播放页解析真实地址(找不到返回 null)。 */

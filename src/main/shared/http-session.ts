@@ -68,12 +68,22 @@ export class HttpSession {
     }
   }
 
+  /** 读某个 cookie 的当前值(没有则 undefined)——登录态判断靠某个特定 cookie 是否存在。 */
+  getCookie(name: string): string | undefined {
+    return this.cookies.get(name)
+  }
+
   /**
    * 逐跳跟重定向(最多 5 跳),每跳都先 ingest Set-Cookie。3xx 且带 Location 就
    * 跟下一跳,否则返回该跳的 status/body。这套逻辑与历史 Node-https 版完全一致,
-   * 只是底层 fetch 换成了 netRequest。
+   * 只是底层 fetch 换成了 netRequest。get/post 共用,差别只是 method/body。
    */
-  async get(url: string, extraHeaders: Record<string, string> = {}): Promise<HttpResponse> {
+  private async request(
+    method: 'GET' | 'POST',
+    url: string,
+    body: string | undefined,
+    extraHeaders: Record<string, string>,
+  ): Promise<HttpResponse> {
     let current = url
     for (let redirectsLeft = 5; ; redirectsLeft--) {
       const headers = {
@@ -82,7 +92,7 @@ export class HttpSession {
         ...extraHeaders,
       }
       // net 自己管理重定向才能拿原始响应,这里要逐跳读 Location,所以用 manual。
-      const res = await netRequest(current, { headers, timeoutMs: 15000, redirect: 'manual' })
+      const res = await netRequest(current, { method, headers, body, timeoutMs: 15000, redirect: 'manual' })
       this.updateFromSetCookie(res.headers)
 
       if ([301, 302, 303, 307, 308].includes(res.status)) {
@@ -97,5 +107,17 @@ export class HttpSession {
 
       return { status: res.status, body: res.body.toString('utf-8'), bodyBuffer: res.body }
     }
+  }
+
+  async get(url: string, extraHeaders: Record<string, string> = {}): Promise<HttpResponse> {
+    return this.request('GET', url, undefined, extraHeaders)
+  }
+
+  /** 表单 POST(如登录):body 是 urlencoded 串,Content-Type 自动带上。 */
+  async post(url: string, body: string, extraHeaders: Record<string, string> = {}): Promise<HttpResponse> {
+    return this.request('POST', url, body, {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      ...extraHeaders,
+    })
   }
 }
