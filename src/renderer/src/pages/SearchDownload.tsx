@@ -562,7 +562,10 @@ function SearchDownload(): JSX.Element {
           setState({ status: "error", message: String(watchInfo.error) });
           return;
         }
-        setState({ status: "xifan_config", cards, card, watchInfo });
+        // watch() 只解析当前激活线路(播放器按需惰性解析,省请求);下载配置面板要
+        // 一次性展示全部线路供选,这里主动并发补全其余线路的 template。
+        const sources = await window.xifanApi.resolveAllSources(watchInfo.id, watchInfo.sources);
+        setState({ status: "xifan_config", cards, card, watchInfo: { ...watchInfo, sources } });
       }
     } catch (err) {
       setState({ status: "error", message: String(err) });

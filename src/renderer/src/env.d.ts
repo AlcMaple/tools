@@ -6,7 +6,7 @@ declare global {
 }
 
 import type { BgmSearchResult, BgmDetail, BgmCalendarResult, BgmAuthStatus, BgmCredentials } from './types/bgm'
-import type { XifanSearchResult, XifanWatchInfo } from './types/xifan'
+import type { XifanSearchResult, XifanWatchInfo, XifanSource } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 import type { AowuSearchResult, AowuEpisode, AowuWatchInfo } from './types/aowu'
 import type { BiliVideoInfo, BiliDash } from './types/bili'
@@ -233,6 +233,8 @@ declare global {
       getWatch: (watchUrl: string) => Promise<XifanWatchInfo>
       /** 在线播放:模板直链 404 时回源播放页解析真实地址(找不到返回 null)。 */
       resolveEpUrl: (epPage: string, ep: number) => Promise<string | null>
+      /** 下载配置面板专用:watch() 只解析当前激活源,这里主动并发补全其余线路。 */
+      resolveAllSources: (animeId: string, sources: XifanSource[]) => Promise<XifanSource[]>
       startDownload: (
         title: string,
         templates: string[],

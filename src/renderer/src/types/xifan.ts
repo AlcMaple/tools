@@ -8,7 +8,7 @@ export interface XifanSearchResult {
   detail_url: string
 }
 
-interface XifanSource {
+export interface XifanSource {
   idx: number
   name: string
   template: string | null
