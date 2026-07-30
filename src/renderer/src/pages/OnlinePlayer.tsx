@@ -243,12 +243,18 @@ export default function OnlinePlayer(): JSX.Element {
     return [...builtinEntries, ...customEntries]
   }, [track])
 
-  // 默认选中:优先任一**已绑定的内置源**(三源现在都能应用内播了),其次自定义源,
+  // 默认选中:用户手动绑过 B 站源就优先它(自己挑的片源比内置源搜出来的更可信),
+  // 其次任一**已绑定的内置源**(三源现在都能应用内播了),再次其他自定义源,
   // 兜底第一个(稀饭,进去就是搜索面板)。只在初次进入时定一次。
   const [selKey, setSelKey] = useState<string | null>(null)
   useEffect(() => {
     if (selKey !== null || entries.length === 0) return
     const pick =
+      entries.find(
+        (e) =>
+          !e.builtin &&
+          (e.binding?.source === 'Bilibili' || /bilibili\.com/i.test(bindingUrl(e.binding!)))
+      ) ??
       entries.find((e) => e.builtin && e.binding) ??
       entries.find((e) => !e.builtin) ??
       entries[0]
