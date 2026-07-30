@@ -480,6 +480,33 @@ const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
 ## 在线观看
 
+### 2026-07-30 perf(player): 稀饭 mp4 预抓缓存 + Girigiri 分片并发预取
+
+**效果**：
+1. 稀饭（mp4 直链）边下边看：后台一条顺序流一直往前跑，播放位置前方攒出越来越厚的缓冲，突发延迟被吃掉；整集只解析一次签名链（原先**每个 Range 都重走一次 302**）
+2. Girigiri（HLS）分片提前 6 片并发预取，不再是 hls.js 默认的「单连接一片接一片」；播放路径用上和下载路径同一档并发
+3. 离开播放页 / 换集换源 / 退出应用都会收摊：中止后台流、删临时文件、清分片内存；被强杀留下的临时文件下次启动扫掉
+
+**关键代码/决策**：两条路径卡的机制不同，所以是两个模块，不是一套「并发下载」。
+
+```
+mtmedia:// 请求进来
+├ .m3u8  → 重写地址时把分片顺序记进 hls-prefetch（rememberPlaylist）
+├ 分片   → tryServeSegment 命中内存 → 顺带并发预取后 6 片（8 路信号量，与 girigiri/download.ts 同口径）
+└ .mp4   → tryServeFromCache：开放式 Range（bytes=N-）接管，带结束位的小段（moov）放行直连
+```
+
+临时文件的清理
+
+```
+换集/换源      → 新 target 顶掉旧 session
+离开 /play     → 渲染层 media:release
+退出应用       → app 'before-quit'（**同步** rmSync：dev 下紧接着 process.exit(0)，异步 unlink 等不到）
+强杀/崩溃/占用 → 下次启动 sweepMediaCacheDir() 扫 play-*.part
+```
+
+idle 看门狗（60s 无人读）**只在没有读取流挂着时**动手：`<video>` 暂停时它那条响应流并不关，强行收摊会把流 error 掉，用户恢复播放直接变播放失败。
+
 ### 2026-07-30 perf(xifan): 修复稀饭源点开播放缓慢
 
 **效果**：

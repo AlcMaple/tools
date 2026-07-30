@@ -22,6 +22,8 @@
 // 每个 Range 各拿一条新鲜签名链才稳。302 那点开销远小于卡死的代价。
 import { protocol, net } from 'electron'
 import { DESKTOP_USER_AGENT } from './download-types'
+import { tryServeFromCache } from './media-cache'
+import { tryServeSegment, rememberPlaylist } from './hls-prefetch'
 
 export const MEDIA_PROXY_SCHEME = 'mtmedia'
 
@@ -59,11 +61,21 @@ function isPlaylistType(contentType: string | null): boolean {
 // 列表、#EXT-X-KEY 的 AES 密钥、#EXT-X-MAP 的 fMP4 初始化段。不重写的话 hls.js
 // 会拿着原始 CDN 地址在渲染进程里直取,被跨源策略拦。
 // 相对地址按**重定向后的最终列表地址**解析 —— 用原始 target 解会解错 302 过的列表。
-function rewritePlaylist(text: string, baseUrl: string, referer?: string): string {
-  const abs = (u: string): string => {
+// `segments` 出参收集**按播放顺序**的分片绝对地址(未包代理的原始地址),交给
+// hls-prefetch 做滑动窗口预取;master 列表里的变体列表地址也会落进来,但它们不会被
+// hls.js 当分片顺序取,预取层查不到索引自然不生效,无害。
+function rewritePlaylist(
+  text: string,
+  baseUrl: string,
+  referer: string | undefined,
+  segments: string[],
+): string {
+  const abs = (u: string, isSegment: boolean): string => {
     try {
+      const full = new URL(u, baseUrl).href
+      if (isSegment) segments.push(full)
       // 分片/密钥继承列表本身的 Referer,否则重写完第一跳就丢了防盗链头
-      return toMediaProxyUrl(new URL(u, baseUrl).href, referer)
+      return toMediaProxyUrl(full, referer)
     } catch {
       return u
     }
@@ -75,8 +87,10 @@ function rewritePlaylist(text: string, baseUrl: string, referer?: string): strin
       if (!line) return raw
       // # 开头是标签行:只有 #EXT-X-KEY / #EXT-X-MAP / #EXT-X-MEDIA 这类把地址放在
       // URI="..." 属性里,其余标签不含地址,原样保留。
-      if (line.startsWith('#')) return raw.replace(/URI="([^"]+)"/i, (_m, u: string) => `URI="${abs(u)}"`)
-      return abs(line)
+      if (line.startsWith('#')) {
+        return raw.replace(/URI="([^"]+)"/i, (_m, u: string) => `URI="${abs(u, false)}"`)
+      }
+      return abs(line, true)
     })
     .join('\n')
 }
@@ -97,6 +111,30 @@ export function registerMediaProxy(): void {
     const range = request.headers.get('Range')
     // 播放列表要整份读出来重写,Range 对它没意义(还会把重写切断);只给分片透传。
     if (range && !wantsPlaylist) headers['Range'] = range
+
+    // mp4 直链:先给本地预抓缓存一次机会(见 media-cache.ts)。命中就用后台顺序流
+    // 攒出的缓冲喂 <video>,整集只解析一次签名链;不命中(小段 moov 请求 / 缓存挂了)
+    // 原样走下面的直连,缓存只是加速层,失败不影响能不能播。
+    if (!wantsPlaylist) {
+      const cached = await tryServeFromCache(target, range, headers)
+      if (cached) return new Response(cached.stream, { status: cached.status, headers: cached.headers })
+      // HLS 分片:命中预取缓存就直接回内存里的那份,并把后面几片提前抓起来。
+      // 分片是完整小文件,hls.js 不对它发 Range —— 带 Range 的一律走直连不碰缓存。
+      if (!range) {
+        const seg = await tryServeSegment(target, headers)
+        if (seg) {
+          // Buffer 视图转成独立 ArrayBuffer 再回 —— Response 不收 Uint8Array 类型
+          return new Response(seg.slice().buffer as ArrayBuffer, {
+            status: 200,
+            headers: {
+              'content-type': 'video/mp2t',
+              'content-length': String(seg.byteLength),
+              'cache-control': 'no-store',
+            },
+          })
+        }
+      }
+    }
 
     // Electron 的 protocol.handle 里 request.signal **不会**在渲染进程取消时触发
     // (实测),所以自己用 AbortController:返回流的 cancel() 里 abort 上游 net.fetch。
@@ -127,7 +165,12 @@ export function registerMediaProxy(): void {
             },
           })
         }
-        return new Response(rewritePlaylist(text, res.url || target, referer ?? undefined), {
+        const finalUrl = res.url || target
+        const segments: string[] = []
+        const rewritten = rewritePlaylist(text, finalUrl, referer ?? undefined, segments)
+        // 记下分片顺序,后续分片请求就能滑动窗口并发预取(见 hls-prefetch.ts)
+        rememberPlaylist(finalUrl, segments)
+        return new Response(rewritten, {
           status: res.status,
           // 重写后长度变了,不能透传上游 content-length,交给 Response 自己算。
           headers: { 'content-type': HLS_MIME, 'cache-control': 'no-store' },
