@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('systemApi', {
    */
   signalReady: () => ipcRenderer.send('app:renderer-ready'),
   getDiskFree: () => ipcRenderer.invoke('system:disk-free'),
+  // 离开播放页时收掉在线播放的缓冲(mp4 后台顺序流 + HLS 分片预取)。一次性通知,用 send。
+  releaseMedia: () => ipcRenderer.send('media:release'),
   pickFolder: () => ipcRenderer.invoke('system:pick-folder'),
   /**
    * Returns the OS default downloads folder (`app.getPath('downloads')`),

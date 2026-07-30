@@ -355,6 +355,11 @@ export default function OnlinePlayer(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryKey, entrySourceKey, reloadTick])
 
+  // 离开播放页时通知主进程收掉在线播放的缓冲(mp4 后台顺序流 + HLS 分片预取)——
+  // 不收的话关掉播放器后台还在把整集下满,白占带宽和磁盘/内存。换集换源不用管:
+  // 目标地址一变,主进程那边旧 session 自己就被顶掉了。
+  useEffect(() => () => window.systemApi.releaseMedia(), [])
+
   // ── B 站登录态:选中的是 B 站源时查一次 ────────────────────────────────────
   // 画质由登录态决定(匿名最高 480P,登录后才有 1080P),所以自研播放的 B 站源也要查。
   const needBiliAuth = !!entry && !entry.builtin && /bilibili\.com/i.test(bindingUrl(entry.binding!))

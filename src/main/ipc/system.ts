@@ -2,6 +2,8 @@ import { ipcMain, app, dialog, net } from 'electron'
 import { join } from 'path'
 import { statfs } from 'fs/promises'
 import { JsonStore } from '../shared/json-store'
+import { disposeMediaCache } from '../shared/media-cache'
+import { disposeHlsPrefetch } from '../shared/hls-prefetch'
 
 // 默认关闭 —— 跟 OS 惯例对齐（X = 真的退出，不是偷偷常驻），新用户不会
 // 被"看似关了其实还在跑"困惑到。需要后台模式的用户进设置打开即可。
@@ -143,6 +145,14 @@ export function registerSystemIpc(): void {
         } catch { done(false) }
       }
     })
+  })
+
+  // 离开播放页时把在线播放的两层缓冲收掉:mp4 后台顺序流(中止 + 删临时文件)、
+  // HLS 分片预取(清内存)。不收的话关掉播放器后台还在下满整集、几百 MB 白占。
+  // 一次性通知,没有返回值,用 send。
+  ipcMain.on('media:release', () => {
+    disposeMediaCache()
+    disposeHlsPrefetch()
   })
 
   ipcMain.handle('system:history-read', () => historyStore.read())
