@@ -176,6 +176,25 @@ export function friendlyError(err: unknown): FriendlyError {
     // 根本不可达（站点自己挂了 / 被墙 / 本机网络或代理问题）。这和「连上了但 10s
     // 没回包」的 request timeout 不是一回事 —— 用户看到 girigiri/xifan 官网都打不开
     // 时就是这一类，得给「网站连不上」而不是带限速口吻的「请求超时」。
+    // TCP 连上了、TLS 握手被对端掐断 —— 和「站点不可达」不同:握手能开始说明路由通,
+    // 是对端主动拒绝这条连接。实测根因是**出口 IP 被站点边缘节点拉黑**(2026-07-30:
+    // 稀饭换到 hkg 边缘后,Chrome 走的代理节点通、桌面端走的另一个节点必挂,同一台机器
+    // 同一时刻两种结果),所以文案要直接把用户引到「换代理节点」,而不是「过会儿再试」——
+    // 换节点前重试多少次都是徒劳。
+    const isHandshakeKilled =
+      lower.includes('err_connection_closed') ||
+      lower.includes('err_connection_reset') ||
+      lower.includes('err_ssl') ||
+      lower.includes('handshake') ||
+      lower.includes('socket disconnected') ||
+      lower.includes('tls connection')
+    if (isHandshakeKilled) {
+      return {
+        title: '连接被对端切断',
+        hint: '能连到站点服务器,但握手时被对方主动断开 —— 多半是你当前的代理节点(出口 IP)被该站点拒绝了。换一个代理节点再试;如果浏览器能打开同一个网址而应用不行,基本可以确认就是这个原因(浏览器和应用可能走了不同的分流规则)。',
+        raw: msg,
+      }
+    }
     const isConnFailure =
       lower.includes('connect etimedout') ||
       lower.includes('connect timeout') ||
