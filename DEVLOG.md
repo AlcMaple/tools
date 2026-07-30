@@ -480,6 +480,43 @@ const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
 ## 在线观看
 
+### 2026-07-30 perf(xifan): 修复稀饭源点开播放缓慢
+
+**效果**：
+1. 稀饭在线播放点开即播（原先要先等 3~6 条线路全部解析完）——改为用户没点的线路一次请求都不发
+2. 下载配置面板照旧一次性列出全部线路,但改成并发拉齐,不再一条等一条
+3. 面板被稀饭限流 / CF 拦截时提示真实原因 + 倒计时重试,不再显示成「这几条线路没源」
+
+**关键代码/决策**：`watch()` 里除当前激活源外,每条线路的 `template` 都得各回一次它自己的播放页才能拿到。旧实现在 `for` 里逐条 `await`,一部番常见 3~6 条源,单条几百 ms 顺序累加就是几秒,而**播放器只用得到一条**——稀饭网站本身也只在用户点某条线路时才加载它。
+
+所以按调用方的真实需求分成两条路径,而不是简单把 `for` 换成 `Promise.all`(那仍是为播放器付了 N 条线路的钱)：
+
+```
+watch()  → 只解析 idx===1,其余源 template: null,name/epPage/epLabels 用本页 HTML 填(零请求)
+├ 播放器(OnlinePlayer)      → 不补全,切线路时走 resolveStream() 已有的兜底按需解析那一集
+└ 下载配置面板(AnimeInfo /   → 要展示全部线路供选,调新增 xifan:resolve-all-sources
+   SearchDownload)             → resolveAllSources() 对 template === null 的源 Promise.all 补全
+```
+
+`resolveAllSources(animeId, sources)` 幂等:已有 `template` 的源原样透传,不重复请求。`XifanSource` 因为要跨 IPC 传,从 `types/xifan.ts` 里 `export` 出来。
+
+1. **补节流**。同域一瞬间打 3~6 个是明显的 bot-like 突发,而稀饭这条链路上原本一个限流器都没有。加 `sourceLimiter`,只错开**发起时刻**、不退回排队：
+
+```ts
+// 150~400ms 远小于单条请求本身的几百 ms → 请求仍然重叠,面板照样快
+const sourceLimiter = new RateLimiter({ minGapMs: 150, jitterMs: 250, name: 'xifan-source' })
+```
+
+不设滚动窗口配额:面板是用户手点触发、低频,没有累计预算要守。
+
+2. **`fetchSourceEp1` 不再 `catch {}` 全吞**。旧实现把所有异常压成 `template: null`,于是被限流时 UI 显示的是「这几条线路没源」——用户只会去换线路反复点,把限流踩得更深。现在分两类：
+
+```
+解析不出播放数据(站点改版 / 该源真空)  → template: null,只损失这一条,其余照常展示
+HTTP 非 2xx / CF 拦截(限流、风控、故障) → assertScrapePageOk 抛错 → Promise.all reject
+                                       → ErrorPanel 走 friendlyError + 倒计时重试按钮
+```
+
 ### 2026-07-28 style: 消除播放页原生控件的焦点描边
 
 **效果**：
