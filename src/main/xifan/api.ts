@@ -3,6 +3,7 @@ import { HttpSession } from '../shared/http-session'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
 import { crawlAllPages } from '../shared/maccms-search-paginator'
 import { assertScrapePageOk } from '../shared/scrape-guard'
+import { RateLimiter } from '../shared/rate-limit'
 
 // 站点旧域 dm.xifanacg.com 现 301 跳到 anime.xifanacg.com,直接用新域省掉每次
 // 请求的跨域跳转。HttpSession 仍保留逐跳跟重定向能力,所以旧缓存/旧下载任务里
@@ -290,19 +291,37 @@ function parsePlayerData(html: string): PlayerData | null {
   return { url: getStr('url'), from: getStr('from'), id: getStr('id'), vod_data: { vod_name: vodName } }
 }
 
+// resolveAllSources 会把多条线路的播放页并发拉齐。旧代码是 for 里逐条 await,
+// 顺序性无意中给了请求间隔;改并发后这层保护消失,同域一次打 3~6 个是明显的
+// bot-like 突发。这里补一条节流:间隔只压到 150~400ms(远小于单条请求本身的
+// 几百 ms),所以请求仍然是重叠的、面板不会退回「一条等一条」,但发起时刻被
+// 错开,不再是同一瞬间的齐发。不设滚动窗口配额——面板是用户手点触发、低频。
+const sourceLimiter = new RateLimiter({
+  minGapMs: 150,
+  jitterMs: 250,
+  name: 'xifan-source',
+})
+
+/**
+ * 拉某条线路自己的播放页,解出 template/ep1/集名。
+ *
+ * 错误处理刻意分两类(旧代码一个 `catch {}` 全吞掉,导致被限流 / CF 拦截时
+ * UI 显示成「这条线路没源」,用户只会去换线路反复点、把限流踩得更深):
+ * - **解析不出播放数据**(站点结构变了 / 该源确实是空的)→ `template: null`
+ *   返回,只损失这一条线路,其余照常展示。
+ * - **HTTP 非 2xx / CF 拦截**(限流、风控、故障)→ `assertScrapePageOk` 抛出
+ *   带原因的错误,一路冒泡到 UI 走 friendlyError 的限流提示 + 倒计时重试。
+ */
 async function fetchSourceEp1(animeId: string, sourceIdx: number): Promise<{ template: string | null; ep1: string; epPage: string; epLabels: string[] }> {
   const epPage = epPageTemplate(animeId, sourceIdx)
-  try {
-    const res = await xifanSession.get(epPage.replace('{ep}', '1'))
-    const data = parsePlayerData(res.body)
-    // 该源自己的播放页上它就是激活源,选集列表一定在,顺手把集名也解析出来
-    const epLabels = labelsToArray(parseEpLabels(res.body, animeId).get(sourceIdx))
-    if (!data) return { template: null, ep1: '', epPage, epLabels }
-    const ep1Url = decodeURIComponent(data.url)
-    return { template: buildTemplate(ep1Url), ep1: ep1Url, epPage, epLabels }
-  } catch {
-    return { template: null, ep1: '', epPage, epLabels: [] }
-  }
+  const res = await sourceLimiter.schedule(() => xifanSession.get(epPage.replace('{ep}', '1')))
+  assertScrapePageOk(res.status, res.body, '稀饭')
+  const data = parsePlayerData(res.body)
+  // 该源自己的播放页上它就是激活源,选集列表一定在,顺手把集名也解析出来
+  const epLabels = labelsToArray(parseEpLabels(res.body, animeId).get(sourceIdx))
+  if (!data) return { template: null, ep1: '', epPage, epLabels }
+  const ep1Url = decodeURIComponent(data.url)
+  return { template: buildTemplate(ep1Url), ep1: ep1Url, epPage, epLabels }
 }
 
 export async function watch(watchUrl: string): Promise<XifanWatchInfo> {
@@ -328,26 +347,52 @@ export async function watch(watchUrl: string): Promise<XifanWatchInfo> {
   }
 
   const sourceTags = $('div.anthology-tab.nav-swiper a.vod-playerUrl')
-  const sources: XifanSource[] = []
-  // \u5F53\u524D\u9875\u53EF\u80FD\u5C31\u5E26\u7740\u6240\u6709\u6E90\u7684\u9009\u96C6\u5217\u8868(\u9690\u85CF tab),\u80FD\u62FF\u5230\u7684\u76F4\u63A5\u7528,\u62FF\u4E0D\u5230\u7684\u6E90
-  // \u518D\u4ECE\u5B83\u81EA\u5DF1\u7684\u64AD\u653E\u9875(fetchSourceEp1 \u53CD\u6B63\u8981\u62C9)\u4E0A\u89E3\u6790\u3002
+  // 当前页可能就带着所有源的选集列表（隐藏 tab），能拿到的直接用；拿不到的源
+  // 再从它自己的播放页（fetchSourceEp1）上解析。
   const labelsBySource = parseEpLabels(html, animeId)
 
-  for (let i = 0; i < sourceTags.length; i++) {
+  const sourceMeta = Array.from({ length: sourceTags.length }, (_, i) => {
     const tag = sourceTags.eq(i)
     const badgeText = tag.find('span.badge').text()
     const iconText = tag.find('i').text()
     const name = tag.text().replace(badgeText, '').replace(iconText, '').replace(/\u00A0/g, ' ').trim()
     const idx = i + 1
-    const pageLabels = labelsToArray(labelsBySource.get(idx))
+    return { idx, name, pageLabels: labelsToArray(labelsBySource.get(idx)) }
+  })
 
+  // 除当前激活源（idx===1，数据已在本页拿到）外，其余每条源都要各回一次它自己
+  // 的播放页（fetchSourceEp1）才能拿到 template。这里故意**不**在 watch() 里
+  // 抢先把它们全解析出来——网站本身也只在用户真的点某条线路时才去加载它，
+  // 这里跟着做同样的事：只把 name/epPage/pageLabels（这些解析本页 HTML 就有，
+  // 零请求）填进占位，template 留空。播放器切到某条线路、要播某一集时，
+  // resolveStream()（OnlinePlayer.tsx）已有的兜底路径会按需去解那一集的直链，
+  // 不需要的线路永远不会产生额外请求。下载配置面板要一次性展示全部线路，
+  // 那边改成调 resolveAllSources() 主动补全（见下）。
+  const sources: XifanSource[] = sourceMeta.map(({ idx, name, pageLabels }) => {
     if (idx === 1) {
-      sources.push({ idx: 1, name, template: buildTemplate(ep1Url), ep1: ep1Url, epPage: epPageTemplate(animeId, 1), epLabels: pageLabels })
-    } else {
-      const { template, ep1, epPage, epLabels } = await fetchSourceEp1(animeId, idx)
-      sources.push({ idx, name, template, ep1: ep1, epPage, epLabels: pageLabels.length > 0 ? pageLabels : epLabels })
+      return { idx: 1, name, template: buildTemplate(ep1Url), ep1: ep1Url, epPage: epPageTemplate(animeId, 1), epLabels: pageLabels }
     }
-  }
+    return { idx, name, template: null, ep1: '', epPage: epPageTemplate(animeId, idx), epLabels: pageLabels }
+  })
 
   return { title, id: animeId, total, sources }
+}
+
+/**
+ * 补全 watch() 里留空的源（template === null）。下载配置面板要一次性展示
+ * 全部线路供用户选，在这里主动并发拉齐；播放器不需要——它按需惰性解析
+ * （见 resolveStream 的兜底路径）。已解析过的源原样透传，不重复请求。
+ *
+ * 并发但受 `sourceLimiter` 节流（发起时刻错开，不是齐发）。任一条遇到限流 /
+ * CF 拦截会让整个 Promise.all reject —— 这是故意的：那种情况下继续展示剩下
+ * 几条只会让用户以为「这几条没源」，不如把真实原因抛到 UI 让他等倒计时。
+ */
+export async function resolveAllSources(animeId: string, sources: XifanSource[]): Promise<XifanSource[]> {
+  return Promise.all(
+    sources.map(async (s) => {
+      if (s.template) return s
+      const { template, ep1, epPage, epLabels } = await fetchSourceEp1(animeId, s.idx)
+      return { ...s, template, ep1, epPage, epLabels: s.epLabels.length > 0 ? s.epLabels : epLabels }
+    }),
+  )
 }

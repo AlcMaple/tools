@@ -1,8 +1,9 @@
 import { ipcMain } from 'electron'
 import {
-  getCaptcha, verifyCaptcha, search, watch, resolveEpRealUrl,
+  getCaptcha, verifyCaptcha, search, watch, resolveEpRealUrl, resolveAllSources,
   getXifanAuthStatus, login, logout,
 } from '../xifan/api'
+import type { XifanSource } from '../xifan/api'
 import { downloadSingleEp, cleanupParts } from '../xifan/download'
 import { xifanScheduler } from '../shared/download-scheduler'
 import { SiteQueueRegistry, newTaskId } from '../shared/site-download-queue'
@@ -42,6 +43,11 @@ export function registerXifanIpc(): void {
   // 与下载流程内部的回源是同一个函数,这里只是把它开给渲染进程按需调用。
   ipcMain.handle('xifan:resolve-ep-url', async (_event, epPage: string, ep: number) =>
     resolveEpRealUrl(epPage, ep))
+  // 下载配置面板专用:watch() 只解析当前激活源,这里主动并发补全其余线路的
+  // template/ep1/epLabels,给面板一次性展示全部线路用。播放器不调这个——
+  // 它按需惰性解析,见 xifan/api.ts watch() 的注释。
+  ipcMain.handle('xifan:resolve-all-sources', async (_event, animeId: string, sources: XifanSource[]) =>
+    resolveAllSources(animeId, sources))
 
   ipcMain.handle(
     'xifan:download',
