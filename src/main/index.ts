@@ -10,6 +10,8 @@ import { startSpeedBroadcast } from './shared/speed-tracker'
 import { setupUpdater } from './updater'
 import { initConsoleCapture, logInfo } from './shared/logger'
 import { MEDIA_PROXY_SCHEME, registerMediaProxy } from './shared/media-proxy'
+import { disposeMediaCache, sweepMediaCacheDir } from './shared/media-cache'
+import { disposeHlsPrefetch } from './shared/hls-prefetch'
 
 // 接管 console.error/warn → 同时落盘到 main.log,让主进程所有报错可查。
 initConsoleCapture()
@@ -83,7 +85,13 @@ app.on('web-contents-created', (_e, contents) => {
   })
 })
 
-app.on('before-quit', () => { isAppQuitting = true })
+app.on('before-quit', () => {
+  isAppQuitting = true
+  // 在线播放的缓冲跟着退出一起收:中止后台顺序流 + 同步删临时文件 + 清分片内存。
+  // 渲染层离开 /play 时会主动 media:release,但"看到一半直接关应用"没有那个时机。
+  disposeMediaCache()
+  disposeHlsPrefetch()
+})
 app.on('will-quit', () => {
   destroyTray()
   // dev 模式下：Ctrl+C 会让整组进程收到 SIGINT，此处强制以 code=0 退出，
@@ -205,6 +213,8 @@ if (app.isPackaged) {
 app.whenReady().then(() => {
   // 在线播放媒体流代理(mtmedia://)—— 必须 app ready 后注册。
   registerMediaProxy()
+  // 上次被强杀 / 崩溃时遗留的播放临时文件在这里收拾(几百 MB 级别,不能任其堆积)
+  void sweepMediaCacheDir()
 
   protocol.handle('archivist', async (request) => {
     try {
