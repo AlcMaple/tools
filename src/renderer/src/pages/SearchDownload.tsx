@@ -307,11 +307,11 @@ function SearchDownload(): JSX.Element {
     return s;
   });
   // 上次选的源持久化:下次启动默认显示它,不用每次都手动切回去。
+  // 嗷呜已停用(下面下拉里划掉且点不动),所以它既不能当新用户的默认值,也不能
+  // 从旧的 localStorage 里读回来——否则老用户一打开就停在一个点不动的源上。
   const [source, setSource] = useState<Source>(() => {
     const saved = localStorage.getItem("download_source");
-    return saved === "Xifan" || saved === "Girigiri" || saved === "Aowu"
-      ? saved
-      : "Aowu";
+    return saved === "Xifan" || saved === "Girigiri" ? saved : "Xifan";
   });
   useEffect(() => {
     localStorage.setItem("download_source", source);
@@ -852,11 +852,16 @@ function SearchDownload(): JSX.Element {
                     <button
                       key={opt}
                       type="button"
+                      // 嗷呜暂时不可用:划掉 + 点击不生效(仍留在列表里,让用户知道
+                      // 是这个源停了,而不是入口被删了)。
+                      disabled={opt === "Aowu"}
                       onClick={() => {
                         setSource(opt);
                         setSourceDropdownOpen(false);
                       }}
                       className={`w-full text-left px-4 py-2.5 text-sm font-label transition-colors ${
+                        opt === "Aowu" ? "line-through " : ""
+                      }${
                         source === opt
                           ? "text-primary bg-primary/8"
                           : "text-on-surface hover:bg-surface-container-high"
