@@ -1,0 +1,990 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>网页版 · 触屏友好重构设计稿</title>
+<style>
+  /* ── MD3 色彩 token —— 与 web/src/index.css / app 的 src/renderer/src/index.css 完全一致 ── */
+  :root {
+    --color-on-surface: 25 28 29;
+    --color-error: 186 26 26;
+    --color-surface-container: 237 238 239;
+    --color-on-background: 28 27 27;
+    --color-primary: 148 70 79;
+    --color-on-error: 255 255 255;
+    --color-error-container: 255 218 214;
+    --color-on-primary: 255 255 255;
+    --color-on-surface-variant: 82 67 68;
+    --color-tertiary: 22 108 69;
+    --color-surface-bright: 248 249 250;
+    --color-surface-dim: 222 216 217;
+    --color-on-primary-container: 62 4 16;
+    --color-primary-container: 240 145 153;
+    --color-surface-container-high: 227 228 229;
+    --color-background: 248 249 250;
+    --color-surface: 248 249 250;
+    --color-on-error-container: 65 0 2;
+    --color-surface-container-low: 243 244 245;
+    --color-secondary: 88 96 98;
+    --color-surface-container-lowest: 255 255 255;
+    --color-surface-container-highest: 223 223 224;
+    --color-outline-variant: 217 193 193;
+    --color-outline: 132 115 116;
+  }
+  html.dark {
+    --color-on-surface: 226 226 226;
+    --color-error: 255 180 171;
+    --color-surface-container: 31 31 31;
+    --color-on-background: 226 226 226;
+    --color-primary: 255 179 184;
+    --color-on-error: 105 0 5;
+    --color-error-container: 147 0 10;
+    --color-on-primary: 90 25 35;
+    --color-on-surface-variant: 217 193 193;
+    --color-tertiary: 200 198 198;
+    --color-surface-bright: 57 57 57;
+    --color-surface-dim: 19 19 19;
+    --color-on-primary-container: 110 41 50;
+    --color-primary-container: 240 145 153;
+    --color-surface-container-high: 42 42 42;
+    --color-background: 19 19 19;
+    --color-surface: 19 19 19;
+    --color-on-error-container: 255 218 214;
+    --color-surface-container-low: 27 27 27;
+    --color-secondary: 170 199 255;
+    --color-surface-container-lowest: 14 14 14;
+    --color-surface-container-highest: 53 53 53;
+    --color-outline-variant: 84 67 67;
+    --color-outline: 161 140 140;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: rgb(var(--color-background));
+    color: rgb(var(--color-on-surface));
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; }
+  a { color: inherit; }
+  svg.icon { display: block; flex-shrink: 0; }
+  input { font-family: inherit; }
+
+  /* 统一 4px 细滚动条 —— 与 app / 网页版 index.css 一致 */
+  .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #353535; border-radius: 2px; }
+
+  /* ── 悬浮小工具条：仅审查用，不是页面的一部分，不占布局空间 ── */
+  .devbar {
+    position: fixed; bottom: 14px; right: 14px; z-index: 999;
+    display: flex; gap: 6px;
+    background: rgb(var(--color-surface-container-lowest));
+    border: 1px solid rgb(var(--color-outline-variant) / 0.3);
+    border-radius: 10px; padding: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  }
+  .devbar button {
+    border: 1px solid rgb(var(--color-outline-variant) / 0.3);
+    background: rgb(var(--color-surface-container-high)); color: rgb(var(--color-on-surface));
+    border-radius: 6px; padding: 6px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  }
+  .devbar button.active { background: rgb(var(--color-primary)); color: rgb(var(--color-on-primary)); border-color: transparent; }
+
+  /* ══════════════════════════ Nav（复刻 web/src/Nav.tsx）══════════════════════════ */
+  .nav {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: 8px;
+    height: 56px; padding: 0 16px;
+    border-bottom: 1px solid rgb(var(--color-outline-variant) / 0.1);
+    background: rgb(var(--color-surface-container-lowest));
+  }
+  @media (min-width: 640px) { .nav { gap: 28px; padding: 0 24px; } }
+  .nav .brand { display: flex; align-items: center; gap: 8px; background: none; border: none; color: inherit; cursor: pointer; padding: 0; flex-shrink: 0; }
+  .nav .brand svg { color: rgb(var(--color-primary)); }
+  .nav .brand-text { display: none; font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+  @media (min-width: 640px) { .nav .brand-text { display: block; } }
+  .nav .links { display: flex; flex: 1; min-width: 0; gap: 4px; }
+  .nav .navlink {
+    background: none; border: none; cursor: pointer; font-size: 13.5px; font-weight: 600;
+    padding: 0 12px; height: 56px; color: rgb(var(--color-on-surface-variant) / 0.65);
+    display: flex; align-items: center; position: relative;
+  }
+  .nav .navlink.active { color: rgb(var(--color-primary)); }
+  .nav .navlink.active::after {
+    content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px;
+    border-radius: 2px 2px 0 0; background: rgb(var(--color-primary));
+  }
+  .nav .user-wrap { position: relative; flex-shrink: 0; }
+  .nav .user-chip {
+    display: flex; align-items: center; gap: 8px; min-width: 108px; height: 32px;
+    border: 1px solid rgb(var(--color-outline-variant) / 0.25); border-radius: 6px;
+    background: rgb(var(--color-surface-container)); padding: 0 10px; cursor: pointer; color: inherit; font-size: 12px; font-weight: 600;
+  }
+  .nav .dot { width: 6px; height: 6px; border-radius: 999px; background: rgb(var(--color-primary)); flex-shrink: 0; }
+  .user-menu {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 45; width: 100%; min-width: 140px;
+    border: 1px solid rgb(var(--color-outline-variant) / 0.3); border-radius: 8px;
+    background: rgb(var(--color-surface-container-low)); padding: 4px; box-shadow: 0 12px 30px rgb(0 0 0 / 0.4);
+    display: none;
+  }
+  .user-menu.open { display: block; }
+  .menu-item {
+    display: flex; align-items: center; gap: 8px; width: 100%; border: none; background: none; border-radius: 5px;
+    padding: 8px 10px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(var(--color-on-surface-variant)); cursor: pointer;
+  }
+  .menu-item.danger:hover { background: rgb(var(--color-error) / 0.1); color: rgb(var(--color-error)); }
+  @media (hover: hover) and (pointer: fine) {
+    .menu-item:hover { background: rgb(var(--color-on-surface) / 0.06); color: rgb(var(--color-on-surface)); }
+  }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ══════════════════════════ Calendar 页 ══════════════════════════ */
+  .cal-head { padding: 16px 16px 12px; }
+  @media (min-width: 768px) { .cal-head { padding: 16px 24px 12px; } }
+  .cal-head h1 { font-size: 24px; font-weight: 900; letter-spacing: -0.02em; margin: 0; }
+  @media (min-width: 768px) { .cal-head h1 { font-size: 30px; } }
+  .cal-head p { display: none; margin: 4px 0 0; font-size: 14px; color: rgb(var(--color-on-surface-variant) / 0.8); }
+  @media (min-width: 768px) { .cal-head p { display: block; } }
+
+  .cal-toolbar {
+    /* 不置顶——只有顶部导航栏（.nav）置顶就够了，跟「我的追番」页一致。
+       之前这里也 sticky，跟 .nav 叠成两层 sticky，滚动时中间的 .cal-head 一段
+       滑走后画面出现断层，看起来像内容裂成两截。 */
+    border-top: 1px solid rgb(var(--color-outline-variant) / 0.1);
+    border-bottom: 1px solid rgb(var(--color-outline-variant) / 0.1);
+    background: rgb(var(--color-surface-container-lowest));
+    padding: 6px 16px 8px;
+  }
+  @media (min-width: 768px) { .cal-toolbar { padding: 6px 24px 8px; } }
+  .cal-toolbar-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 6px; min-height: 20px; }
+  .refresh-btn {
+    display: flex; align-items: center; gap: 4px; border-radius: 6px;
+    border: 1px solid rgb(var(--color-outline-variant) / 0.2); background: rgb(var(--color-surface-container-high));
+    padding: 3px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; color: inherit;
+  }
+  .refresh-btn[disabled] { opacity: 0.5; cursor: default; }
+  .refresh-btn svg.spin { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .cache-time { font-size: 10px; letter-spacing: 0.05em; color: rgb(var(--color-on-surface-variant) / 0.5); white-space: nowrap; }
+
+  .day-selector { display: flex; gap: 6px; }
+  .day-chip {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 6px 0; border-radius: 8px; border: 1px solid rgb(var(--color-outline-variant) / 0.15);
+    background: rgb(var(--color-surface-container)); color: rgb(var(--color-on-surface-variant) / 0.7);
+    font-size: 14px; font-weight: 800; cursor: pointer;
+  }
+  .day-chip.active { border-color: rgb(var(--color-primary) / 0.3); background: rgb(var(--color-primary) / 0.1); color: rgb(var(--color-primary)); }
+  .day-chip small { font-size: 9px; font-weight: 600; opacity: 0.6; }
+
+  .day-bar { display: none; gap: 12px; }
+  .day-bar-cell {
+    flex: 1; display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    border-radius: 8px; border: 1px solid rgb(var(--color-outline-variant) / 0.15);
+    background: rgb(var(--color-surface-container)); color: rgb(var(--color-on-surface-variant) / 0.8);
+    padding: 6px 10px; font-size: 13px; font-weight: 800;
+  }
+  .day-bar-cell.active { border-color: rgb(var(--color-primary) / 0.3); background: rgb(var(--color-primary) / 0.1); color: rgb(var(--color-primary)); }
+  .day-bar-cell span.count { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.6; font-weight: 600; }
+
+  .cal-body { padding: 12px 16px 24px; }
+  @media (min-width: 768px) { .cal-body { padding: 12px 24px 24px; } }
+  .grid-cards { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); }
+  @media (min-width: 480px) { .grid-cards { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 768px) { .grid-cards { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 1200px) { .grid-cards.week { grid-template-columns: repeat(7, 1fr); } }
+
+  .poster-card {
+    position: relative; border-radius: 10px; overflow: hidden;
+    border: 2px solid rgb(var(--color-outline-variant) / 0.15);
+    background: rgb(var(--color-surface-container));
+  }
+  /* 用真正的 border（而非 inset box-shadow）—— box-shadow 会被子元素（封面 <img>）盖住，
+     只在信息区露出一截，卡片看起来"断层"。border 是盒子边缘的一部分，不会被内容覆盖。
+     未追/已追**边框宽度始终 2px**，只变颜色，避免切换时挤动相邻卡片（AI_GUIDELINES）。 */
+  .poster-card.tracked { border-color: rgb(var(--color-primary)); }
+  .poster { position: relative; aspect-ratio: 3/4; background: rgb(var(--color-surface-container-high)); overflow: hidden; }
+  .poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .poster-grad { position: absolute; inset: 0; background: linear-gradient(to top, rgb(0 0 0 / 0.65), rgb(0 0 0 / 0) 42%); pointer-events: none; }
+
+  .track-btn {
+    position: absolute; top: 6px; right: 6px; z-index: 3;
+    width: 28px; height: 28px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid rgb(255 255 255 / 0.3); background: rgb(0 0 0 / 0.5); color: #fff;
+    backdrop-filter: blur(3px); cursor: pointer;
+  }
+  .track-btn.on { border-color: transparent; background: rgb(var(--color-primary)); color: rgb(var(--color-on-primary)); }
+  .link-btn {
+    position: absolute; top: 6px; left: 6px; z-index: 3;
+    width: 24px; height: 24px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid rgb(255 255 255 / 0.25); background: rgb(0 0 0 / 0.45); color: rgb(255 255 255 / 0.85);
+    text-decoration: none;
+  }
+  .poster-info { padding: 8px; display: flex; flex-direction: column; gap: 4px; cursor: default; }
+  .poster-info h3 { margin: 0; font-size: 12px; font-weight: 700; line-height: 1.3; height: 31px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .poster-info .meta { display: flex; justify-content: space-between; font-size: 10px; }
+  .poster-info .score { color: rgb(var(--color-primary) / 0.75); }
+  .poster-info .eps { color: rgb(var(--color-on-surface-variant) / 0.4); }
+
+  /* 卡片本身不再有 hover 描边——纯装饰性描边在触屏上没有等价反馈，视觉上也显多余；
+     只保留按钮类控件的颜色/背景反馈（本来就是点击目标，鼠标用户理应看到反馈）。 */
+  @media (hover: hover) and (pointer: fine) {
+    .track-btn:hover:not(.on) { border-color: rgb(var(--color-primary) / 0.6); }
+    .link-btn:hover { background: rgb(0 0 0 / 0.7); }
+    .day-chip:hover:not(.active) { color: rgb(var(--color-on-surface)); }
+    .day-bar-cell:hover:not(.active) { color: rgb(var(--color-on-surface)); }
+    .refresh-btn:hover:not([disabled]) { border-color: rgb(var(--color-primary) / 0.3); background: rgb(var(--color-primary) / 0.1); color: rgb(var(--color-primary)); }
+  }
+
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 90px 20px; color: rgb(var(--color-on-surface-variant) / 0.35); text-align: center; }
+  .empty-state span { font-size: 12px; text-transform: uppercase; letter-spacing: 0.14em; }
+  .empty-state small { font-size: 11px; color: rgb(var(--color-on-surface-variant) / 0.25); }
+
+  /* ══════════════════════════ Tracks 页 ══════════════════════════ */
+  .tr-head { border-bottom: 1px solid rgb(var(--color-outline-variant) / 0.1); padding: 12px 16px 10px; }
+  @media (min-width: 768px) { .tr-head { padding: 12px 24px 10px; } }
+  .tr-head-row { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .tr-head-left h1 { font-size: 24px; font-weight: 900; letter-spacing: -0.02em; margin: 0; }
+  @media (min-width: 768px) { .tr-head-left h1 { font-size: 30px; } }
+  .tr-head-left p { margin: 4px 0 0; font-size: 13px; color: rgb(var(--color-on-surface-variant) / 0.8); }
+  .tr-head-actions { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; }
+  @media (min-width: 768px) { .tr-head-actions { flex: none; } }
+  .add-btn {
+    display: flex; align-items: center; gap: 4px; background: rgb(var(--color-primary)); color: rgb(var(--color-on-primary));
+    border: none; border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+  }
+  .tr-search { position: relative; flex: 1; max-width: 220px; }
+  .tr-search input {
+    width: 100%; border-radius: 8px; border: 1px solid rgb(var(--color-outline-variant) / 0.3);
+    background: rgb(var(--color-surface-container-high)); padding: 7px 26px 7px 30px; font-size: 13px; color: inherit; outline: none;
+  }
+  .tr-search input:focus { border-color: rgb(var(--color-primary) / 0.7); }
+  .tr-search svg.search-ic { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: rgb(var(--color-on-surface-variant) / 0.5); }
+  .tr-search .clear-ic { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; padding: 4px; color: rgb(var(--color-on-surface-variant) / 0.6); cursor: pointer; display: none; }
+  .tr-search .clear-ic.show { display: block; }
+
+  .filters { display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
+  .filter-chip {
+    border: none; background: none; border-radius: 8px; padding: 5px 10px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    color: rgb(var(--color-on-surface-variant) / 0.7);
+  }
+  .filter-chip.active { background: rgb(var(--color-primary) / 0.15); color: rgb(var(--color-primary)); }
+  @media (hover: hover) and (pointer: fine) { .filter-chip:hover:not(.active) { color: rgb(var(--color-on-surface)); } }
+
+  .section-label { display: flex; align-items: center; gap: 10px; margin: 20px 16px 8px; }
+  @media (min-width: 768px) { .section-label { margin-left: 24px; margin-right: 24px; } }
+  .section-label span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: rgb(var(--color-on-surface-variant) / 0.4); white-space: nowrap; }
+  .section-label i { height: 1px; flex: 1; background: rgb(var(--color-outline-variant) / 0.15); font-style: normal; }
+
+  .tr-body { padding: 4px 16px 24px; }
+  @media (min-width: 768px) { .tr-body { padding: 4px 24px 24px; } }
+  .tr-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); }
+  @media (min-width: 480px) { .tr-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 768px) { .tr-grid { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 1024px) { .tr-grid { grid-template-columns: repeat(6, 1fr); } }
+  @media (min-width: 1280px) { .tr-grid { grid-template-columns: repeat(8, 1fr); } }
+
+  .track-card { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid rgb(var(--color-outline-variant) / 0.15); background: rgb(var(--color-surface-container)); }
+  .track-card .poster { aspect-ratio: 3/4; cursor: pointer; }
+  /* 「更新」放左下角——左上角已经被「跳转 BGM」的常驻图标占了，两个都要常驻显示，别叠一起 */
+  .badge-today { position: absolute; left: 6px; bottom: 6px; z-index: 3; background: rgb(var(--color-primary)); color: rgb(var(--color-on-primary)); font-size: 9px; font-weight: 800; letter-spacing: 0.05em; padding: 3px 6px; border-radius: 4px; }
+  .del-btn {
+    position: absolute; top: 6px; right: 6px; z-index: 3;
+    width: 24px; height: 24px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    border: none; background: rgb(0 0 0 / 0.45); color: rgb(255 255 255 / 0.85); cursor: pointer;
+  }
+  @media (hover: hover) and (pointer: fine) { .del-btn:hover { background: rgb(var(--color-error)); color: rgb(var(--color-on-error)); } }
+  .track-info { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .track-info h3 { margin: 0; font-size: 12px; font-weight: 700; line-height: 1.3; height: 31px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; cursor: pointer; }
+  .tag-row { display: flex; gap: 3px; height: 15px; overflow: hidden; }
+  .tag-chip { display: inline-flex; align-items: center; border-radius: 4px; background: rgb(var(--color-primary) / 0.1); padding: 0 5px; font-size: 9px; font-weight: 700; letter-spacing: 0.03em; color: rgb(var(--color-primary) / 0.8); white-space: nowrap; }
+  .continue-btn { display: flex; align-items: center; justify-content: center; gap: 4px; border: 1px solid rgb(var(--color-primary) / 0.35); background: rgb(var(--color-primary) / 0.12); color: rgb(var(--color-primary)); border-radius: 8px; padding: 6px 0; font-size: 11px; font-weight: 700; text-decoration: none; cursor: pointer; }
+  @media (hover: hover) and (pointer: fine) { .continue-btn:hover { background: rgb(var(--color-primary) / 0.2); } }
+  .step-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px; }
+  .step-controls { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .step-btn { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgb(var(--color-outline-variant) / 0.3); background: rgb(var(--color-surface-container-high)); color: rgb(var(--color-on-surface-variant)); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .step-btn[disabled] { opacity: 0.25; cursor: not-allowed; }
+  .ep-count { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ep-count b { font-size: 13px; font-weight: 800; color: rgb(var(--color-on-surface)); }
+  .ongoing-badge { font-size: 8.5px; padding: 2px 4px; border-radius: 4px; white-space: nowrap; background: rgb(var(--color-on-surface) / 0.08); color: rgb(var(--color-on-surface-variant) / 0.5); }
+
+  /* ══════════════════════════ 弹窗（复刻 modal 外壳）══════════════════════════ */
+  .overlay { position: fixed; inset: 0; z-index: 50; display: none; align-items: flex-start; justify-content: center; overflow-y: auto; background: rgb(0 0 0 / 0.6); backdrop-filter: blur(3px); padding: 20px; padding-top: 8vh; }
+  .overlay.open { display: flex; }
+  .modal { position: relative; width: 100%; border: 1px solid rgb(var(--color-outline-variant) / 0.4); border-radius: 12px; background: rgb(var(--color-surface-container-lowest)); padding: 24px; box-shadow: 0 20px 60px rgb(0 0 0 / 0.5); margin: auto; }
+  .modal.w-sm { max-width: 340px; }
+  .modal.w-md { max-width: 420px; }
+  .modal.w-lg { max-width: 480px; }
+  .modal-close { position: absolute; right: 14px; top: 14px; width: 24px; height: 24px; border-radius: 6px; border: none; background: none; color: rgb(var(--color-on-surface-variant) / 0.5); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  @media (hover: hover) and (pointer: fine) { .modal-close:hover { background: rgb(var(--color-surface-container-high)); color: rgb(var(--color-on-surface)); } }
+  .eyebrow { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.2em; color: rgb(var(--color-primary)); }
+  .modal h2 { margin: 6px 0 16px; font-size: 18px; font-weight: 800; line-height: 1.3; color: rgb(var(--color-on-surface)); padding-right: 20px; }
+
+  .seg-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; border-radius: 8px; background: rgb(var(--color-surface-container)); padding: 4px; margin-bottom: 14px; }
+  .seg-tab { border-radius: 6px; border: 1px solid transparent; padding: 7px 0; font-size: 13.5px; font-weight: 600; cursor: pointer; background: none; color: rgb(var(--color-on-surface-variant) / 0.7); }
+  .seg-tab.active { border-color: rgb(var(--color-primary) / 0.3); background: rgb(var(--color-primary) / 0.1); color: rgb(var(--color-primary)); }
+
+  .edit-head { display: flex; gap: 12px; margin-bottom: 16px; }
+  .edit-head img { width: 68px; height: 92px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+  .edit-head .sub { font-size: 11px; line-height: 1.5; color: rgb(var(--color-on-surface-variant) / 0.5); }
+  .edit-head .meta { margin-top: 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: rgb(var(--color-on-surface-variant) / 0.4); }
+
+  .progress-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .progress-row .field-label { width: 48px; flex-shrink: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: rgb(var(--color-on-surface-variant) / 0.4); }
+  .stepper-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid rgb(var(--color-outline-variant) / 0.3); background: rgb(var(--color-surface-container-high)); display: flex; align-items: center; justify-content: center; cursor: pointer; color: inherit; }
+  .stepper-btn[disabled] { opacity: 0.25; cursor: not-allowed; }
+  .total-input { width: 104px; height: 28px; border-radius: 8px; border: 1px solid rgb(var(--color-outline-variant) / 0.3); background: rgb(var(--color-surface-container-high)); padding: 0 8px; font-size: 13px; color: inherit; outline: none; }
+  .total-input:focus { border-color: rgb(var(--color-primary) / 0.7); }
+
+  .tags-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .tags-head .field-label { width: 48px; flex-shrink: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: rgb(var(--color-on-surface-variant) / 0.4); }
+  .tags-head .hint { font-size: 10px; letter-spacing: 0.05em; color: rgb(var(--color-on-surface-variant) / 0.25); }
+  .tags-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .etag { display: inline-flex; align-items: center; gap: 3px; border-radius: 4px; border: 1px solid rgb(var(--color-primary) / 0.25); background: rgb(var(--color-primary) / 0.12); padding: 3px 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: rgb(var(--color-primary)); }
+  .etag.user { cursor: pointer; border: none; }
+  @media (hover: hover) and (pointer: fine) { .etag.user:hover { border-color: rgb(var(--color-error) / 0.4); background: rgb(var(--color-error) / 0.15); color: rgb(var(--color-error)); } }
+  .etag-add { display: inline-flex; align-items: center; gap: 3px; border-radius: 4px; border: 1px dashed rgb(var(--color-outline-variant) / 0.4); padding: 3px 8px; font-size: 10px; font-weight: 700; color: rgb(var(--color-on-surface-variant) / 0.5); cursor: pointer; background: none; }
+  .etag-input { width: 96px; border-radius: 4px; border: 1px solid rgb(var(--color-primary) / 0.4); background: rgb(var(--color-surface)); padding: 3px 8px; font-size: 10px; font-weight: 700; color: inherit; outline: none; }
+
+  .danger-icon { width: 44px; height: 44px; border-radius: 999px; background: rgb(var(--color-error) / 0.1); color: rgb(var(--color-error)); display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+  .confirm-text { font-size: 13px; line-height: 1.6; color: rgb(var(--color-on-surface-variant) / 0.7); }
+  .confirm-text .lost { display: block; margin-top: 4px; color: rgb(var(--color-on-surface-variant) / 0.45); }
+  .confirm-actions { display: flex; gap: 8px; margin-top: 20px; }
+  .btn-outline { flex: 1; border-radius: 8px; border: 1px solid rgb(var(--color-outline-variant) / 0.3); background: none; padding: 9px 0; font-size: 13.5px; font-weight: 600; color: rgb(var(--color-on-surface-variant) / 0.8); cursor: pointer; }
+  @media (hover: hover) and (pointer: fine) { .btn-outline:hover { background: rgb(var(--color-surface-container-high)); color: rgb(var(--color-on-surface)); } }
+  .btn-danger { flex: 1; border-radius: 8px; border: none; background: rgb(var(--color-error)); padding: 9px 0; font-size: 13.5px; font-weight: 700; color: rgb(var(--color-on-error)); cursor: pointer; }
+
+  .modal-search { position: relative; margin-bottom: 12px; }
+  .modal-search input { width: 100%; border-radius: 8px; border: 1px solid rgb(var(--color-outline-variant) / 0.3); background: rgb(var(--color-surface-container-high)); padding: 9px 12px 9px 34px; font-size: 13.5px; color: inherit; outline: none; }
+  .modal-search input:focus { border-color: rgb(var(--color-primary) / 0.7); }
+  .modal-search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: rgb(var(--color-on-surface-variant) / 0.5); }
+
+  .hit-row { display: flex; align-items: center; gap: 12px; border-radius: 8px; border: 1px solid transparent; padding: 8px 10px; }
+  @media (hover: hover) and (pointer: fine) { .hit-row:hover { border-color: rgb(var(--color-outline-variant) / 0.25); background: rgb(var(--color-on-surface) / 0.03); } }
+  .hit-row .name { font-size: 13.5px; font-weight: 600; color: rgb(var(--color-on-surface)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hit-row .sub { margin-top: 2px; font-size: 10.5px; color: rgb(var(--color-on-surface-variant) / 0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hit-add { flex-shrink: 0; display: flex; align-items: center; gap: 3px; border-radius: 6px; border: none; background: rgb(var(--color-primary) / 0.15); color: rgb(var(--color-primary)); padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
+  .hit-added { flex-shrink: 0; border-radius: 6px; border: 1px solid rgb(var(--color-outline-variant) / 0.3); padding: 5px 10px; font-size: 11px; font-weight: 700; color: rgb(var(--color-on-surface-variant) / 0.45); }
+
+  .cand-row { display: flex; align-items: center; gap: 12px; border-radius: 8px; border: 1px solid rgb(var(--color-outline-variant) / 0.25); background: rgb(var(--color-surface-container)); padding: 10px 12px; text-decoration: none; color: inherit; cursor: pointer; margin-bottom: 6px; }
+  @media (hover: hover) and (pointer: fine) { .cand-row:hover { border-color: rgb(var(--color-primary) / 0.5); background: rgb(var(--color-primary) / 0.05); } }
+  .cand-row .name { font-size: 13px; font-weight: 600; }
+  .cand-row .meta { margin-top: 2px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: rgb(var(--color-on-surface-variant) / 0.45); }
+  .toast-msg { font-family: "Space Grotesk", Inter, sans-serif; font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <button class="brand" onclick="go('calendar')">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 9.7 6.6l-2.3-.7.6 2.4-3.4-1 1.6 3-1.9.5 3.4 2.7-.7 1.6 4-.5-.3 4.4h1.6l-.3-4.4 4 .5-.7-1.6 3.4-2.7-1.9-.5 1.6-3-3.4 1 .6-2.4-2.3.7z"/></svg>
+    <span class="brand-text">MapleTools</span>
+  </button>
+  <div class="links">
+    <button class="navlink active" id="nav-calendar" onclick="go('calendar')">番剧周历</button>
+    <button class="navlink" id="nav-tracks" onclick="go('tracks')">我的追番</button>
+  </div>
+  <div class="user-wrap" id="user-wrap">
+    <button class="user-chip" onclick="toggleUserMenu(event)"><span class="dot"></span><span style="flex:1;text-align:left">用户名</span>
+      <svg class="icon" id="user-chevron" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="opacity:.5"><path d="M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z"/></svg>
+    </button>
+    <div class="user-menu" id="user-menu">
+      <button class="menu-item"><svg class="icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>设置</button>
+      <button class="menu-item danger"><svg class="icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>退出登录</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ══════════════════════════ 番剧周历 ══════════════════════════ -->
+<div class="page active" id="page-calendar">
+  <div class="cal-head">
+    <h1>番剧周历</h1>
+    <p>本季正在播出，按星期排列。</p>
+  </div>
+  <div class="cal-toolbar">
+    <div class="cal-toolbar-row">
+      <span class="cache-time" id="cache-time">缓存：3 分钟前</span>
+      <button class="refresh-btn" id="refresh-btn" onclick="doRefresh()">
+        <svg class="icon" id="refresh-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        <span id="refresh-label">刷新</span>
+      </button>
+    </div>
+    <div class="day-selector" id="day-selector"></div>
+    <div class="day-bar" id="day-bar"></div>
+  </div>
+  <div class="cal-body">
+    <div class="grid-cards" id="cal-grid"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ 我的追番 ══════════════════════════ -->
+<div class="page" id="page-tracks">
+  <div class="tr-head">
+    <div class="tr-head-row">
+      <div class="tr-head-left">
+        <h1>我的追番</h1>
+        <p id="tr-summary"></p>
+      </div>
+      <div class="tr-head-actions">
+        <button class="add-btn" onclick="openAddModal()">
+          <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
+          加番
+        </button>
+        <div class="tr-search">
+          <svg class="icon search-ic" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <input id="tr-query" placeholder="搜索标题、别名…" oninput="onTrQuery(this.value)" />
+          <button class="clear-ic" id="tr-query-clear" onclick="clearTrQuery()">
+            <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="filters" id="tr-filters"></div>
+  </div>
+  <div class="tr-body" id="tr-body"></div>
+</div>
+
+<!-- ══════════════════════════ 编辑追番弹窗 ══════════════════════════ -->
+<div class="overlay" id="overlay-edit" onmousedown="if(event.target===this)closeModal('edit')">
+  <div class="modal w-md" role="dialog" aria-modal="true">
+    <button class="modal-close" onclick="closeModal('edit')">
+      <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+    </button>
+    <div class="eyebrow">编辑追番</div>
+    <h2 id="edit-title"></h2>
+    <div class="edit-head">
+      <img id="edit-cover" alt="" />
+      <div class="min0">
+        <div class="sub" id="edit-sub"></div>
+        <div class="meta" id="edit-meta"></div>
+      </div>
+    </div>
+    <div class="seg-tabs" id="edit-status-tabs"></div>
+    <div class="progress-row">
+      <span class="field-label">进度</span>
+      <button class="stepper-btn" id="edit-ep-minus" onclick="editStep(-1)">
+        <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>
+      </button>
+      <b id="edit-ep-val" style="min-width:28px;text-align:center;font-size:16px;font-weight:800"></b>
+      <button class="stepper-btn" id="edit-ep-plus" onclick="editStep(1)">
+        <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
+      </button>
+      <span style="opacity:.3">/</span>
+      <input class="total-input" id="edit-total" placeholder="留空 = 连载中" inputmode="numeric" maxlength="4" oninput="this.value=this.value.replace(/[^0-9]/g,'')" onblur="commitTotal()" />
+    </div>
+    <div class="tags-head"><span class="field-label">类型</span><span class="hint">BGM 的不可改 · 自定义的点一下删</span></div>
+    <div class="tags-wrap" id="edit-tags"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ 取消追番确认 ══════════════════════════ -->
+<div class="overlay" id="overlay-confirm" onmousedown="if(event.target===this)closeModal('confirm')">
+  <div class="modal w-sm" role="dialog" aria-modal="true">
+    <div class="danger-icon">
+      <svg class="icon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+    </div>
+    <h2 style="margin-top:0">取消追番</h2>
+    <p class="confirm-text" id="confirm-text"></p>
+    <div class="confirm-actions">
+      <button class="btn-outline" onclick="closeModal('confirm')">保留</button>
+      <button class="btn-danger" onclick="confirmRemove()">取消追番</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ 绑定选择弹窗 ══════════════════════════ -->
+<div class="overlay" id="overlay-picker" onmousedown="if(event.target===this)closeModal('picker')">
+  <div class="modal w-md" role="dialog" aria-modal="true">
+    <button class="modal-close" onclick="closeModal('picker')">
+      <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+    </button>
+    <div class="eyebrow">选择稀饭片源</div>
+    <h2 id="picker-title"></h2>
+    <p style="font-size:12px;line-height:1.6;color:rgb(var(--color-on-surface-variant)/.6);margin:0 0 14px">稀饭用的是另一套编号，按名字匹配出以下几部。<b style="color:rgb(var(--color-on-surface-variant)/.8)">点一下确认是哪部</b>，之后就记住、直接开播。</p>
+    <div id="picker-list"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ 加番搜索弹窗 ══════════════════════════ -->
+<div class="overlay" id="overlay-add" onmousedown="if(event.target===this)closeModal('add')">
+  <div class="modal w-lg" role="dialog" aria-modal="true">
+    <button class="modal-close" onclick="closeModal('add')">
+      <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+    </button>
+    <div class="eyebrow">加番</div>
+    <h2>搜索动漫加入追番</h2>
+    <div class="modal-search">
+      <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input id="add-query" placeholder="番名 / 别名（中文、日文、罗马音都行）" oninput="onAddQuery(this.value)" autocomplete="off" />
+    </div>
+    <div class="custom-scrollbar" id="add-results" style="min-height:120px;max-height:46vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<div class="devbar">
+  <button onclick="document.documentElement.classList.toggle('dark')">亮/暗色</button>
+  <button id="btn-cal" class="active" onclick="go('calendar')">周历</button>
+  <button id="btn-tr" onclick="go('tracks')">追番</button>
+</div>
+
+<script>
+/* ══════════════════════════ 通用工具 ══════════════════════════ */
+const ICON = {
+  add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z',
+  minus: 'M19 13H5v-2h14v2z',
+  check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+  open: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
+  delete: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
+  play: 'M8 5v14l11-7z',
+  close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+  eventBusy: 'M9.31 17l2.44-2.44L14.19 17l1.06-1.06-2.44-2.44 2.44-2.44L14.19 10l-2.44 2.44L9.31 10l-1.06 1.06 2.44 2.44-2.44 2.44L9.31 17zM19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z',
+  bookmark: 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z',
+  search: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+};
+const svg = (d, size=13) => `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor"><path d="${d}"/></svg>`;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* 静态占位封面 —— 审查阶段没有真实番剧封面数据，用 picsum.photos 按标题生成稳定的随机
+   真实图片（不是纯色块/字母块，观感上更接近实际封面的明暗层次）占位。集成进项目时这里
+   会换成线上的 <img src={coverUrl(track.cover)}>，接的是 BGM 封面 CDN，不是这个占位服务。 */
+function posterSrc(title) {
+  return `https://picsum.photos/seed/${encodeURIComponent(title)}/240/320`;
+}
+
+function go(p) {
+  $('page-calendar').classList.toggle('active', p === 'calendar');
+  $('page-tracks').classList.toggle('active', p === 'tracks');
+  $('nav-calendar').classList.toggle('active', p === 'calendar');
+  $('nav-tracks').classList.toggle('active', p === 'tracks');
+  $('btn-cal').classList.toggle('active', p === 'calendar');
+  $('btn-tr').classList.toggle('active', p === 'tracks');
+}
+
+function toggleUserMenu(e) {
+  e.stopPropagation();
+  $('user-menu').classList.toggle('open');
+}
+document.addEventListener('click', (e) => {
+  if (!$('user-wrap').contains(e.target)) $('user-menu').classList.remove('open');
+});
+
+/* ══════════════════════════ 番剧周历 ══════════════════════════ */
+const SHORT_DAY = ['一','二','三','四','五','六','日'];
+const CAL_DAYS = [
+  { label:'星期一', items:[
+    { title:'葬送的芙莉莲 第二季', score:9.6, eps:12 },
+    { title:'我心里危险的东西', score:8.4, eps:13 },
+    { title:'孤独摇滚！第二季', score:8.9, eps:12 },
+    { title:'败犬女主太多了！', score:7.8, eps:13 },
+  ]},
+  { label:'星期二', items:[
+    { title:'間諜过家家 第三季', score:8.5, eps:12 },
+    { title:'咒术回战 第三季', score:8.7, eps:23 },
+    { title:'鬼灭之刃 无限城篇', score:9.1, eps:8 },
+    { title:'膽大黨', score:8.2, eps:24 },
+    { title:'怪兽8号 第二季', score:8.0, eps:12 },
+  ]},
+  { label:'星期三', items:[
+    { title:'関於我転生变成史莱姆这档事 第三季', score:8.1, eps:24 },
+    { title:'因为不是真正的伙伴', score:7.5, eps:12 },
+    { title:'最强阴阳师的異世界転生記', score:7.2, eps:12 },
+    { title:'药屋少女的呢喃 第二季', score:8.6, eps:24 },
+    { title:'黑之召唤士', score:6.9, eps:12 },
+    { title:'灼眼的夏娜', score:7.8, eps:24 },
+  ]},
+  { label:'星期四', items:[
+    { title:'2.5次元的诱惑', score:7.9, eps:12 },
+    { title:'防风少年', score:7.4, eps:13 },
+    { title:'败北女角太多了！', score:8.0, eps:12 },
+    { title:'愚人节的雪', score:7.6, eps:12 },
+  ]},
+  { label:'星期五', items:[
+    { title:'香格里拉·開拓異境', score:7.7, eps:12 },
+    { title:'败犬女主太多了！OVA', score:7.5, eps:2 },
+    { title:'瑪修爾', score:7.1, eps:12 },
+    { title:'龍與雀斑公主', score:8.3, eps:12 },
+    { title:'無職転生 第三季', score:8.5, eps:12 },
+    { title:'关于我转生后成为史莱姆', score:8.0, eps:12 },
+    { title:'我推的孩子 第三季', score:8.9, eps:12 },
+  ]},
+  { label:'星期六', items:[
+    { title:'排球少年 新篇章', score:8.8, eps:25 },
+    { title:'炎炎消防队 完结篇', score:7.9, eps:24 },
+    { title:'四月是你的谎言 重制', score:8.6, eps:22 },
+    { title:'食戟之灵 完全版', score:7.3, eps:24 },
+    { title:'某科学的超电磁炮 第四季', score:8.1, eps:24 },
+    { title:'东京喰种 re', score:7.0, eps:24 },
+    { title:'86 不存在的战区', score:8.4, eps:23 },
+    { title:'紫罗兰永恒花园 外传', score:8.9, eps:5 },
+    { title:'刀剑神域 Unital Ring', score:6.8, eps:12 },
+  ]},
+  { label:'星期日', items:[
+    { title:'名侦探柯南（周番）', score:8.2, eps:1 },
+    { title:'海贼王', score:9.0, eps:1 },
+    { title:'蜡笔小新', score:7.6, eps:1 },
+  ]},
+];
+let selectedDay = 0;
+let calTracked = new Set(['葬送的芙莉莲 第二季', '败犬女主太多了！', '咒术回战 第三季']);
+let calRefreshing = false;
+
+function calCard(item) {
+  const on = calTracked.has(item.title);
+  return `
+  <div class="poster-card ${on ? 'tracked' : ''}">
+    <div class="poster">
+      <img src="${posterSrc(item.title)}" alt="" loading="lazy" />
+      <div class="poster-grad"></div>
+      <a class="link-btn" href="https://bgm.tv" target="_blank" rel="noreferrer" title="在 Bangumi 查看">${svg(ICON.open, 12)}</a>
+      <button class="track-btn ${on ? 'on' : ''}" title="${on ? '取消追番' : '加入我的追番'}" onclick="toggleCalTrack('${esc(item.title).replace(/'/g,"\\'")}')">
+        ${on ? svg(ICON.check, 13) : svg(ICON.add, 14)}
+      </button>
+    </div>
+    <div class="poster-info">
+      <h3>${esc(item.title)}</h3>
+      <div class="meta"><span class="score">★ ${item.score.toFixed(1)}</span><span class="eps">${item.eps} eps</span></div>
+    </div>
+  </div>`;
+}
+
+function toggleCalTrack(title) {
+  calTracked.has(title) ? calTracked.delete(title) : calTracked.add(title);
+  renderCalendar();
+}
+
+function isCompact() { return window.matchMedia('(max-width: 1199px)').matches; }
+
+function renderCalendar() {
+  $('day-selector').innerHTML = CAL_DAYS.map((d, i) => `
+    <button class="day-chip ${i === selectedDay ? 'active' : ''}" onclick="selectedDay=${i};renderCalendar()">
+      ${SHORT_DAY[i]}<small>${d.items.length}</small>
+    </button>`).join('');
+  $('day-bar').innerHTML = CAL_DAYS.map((d, i) => `
+    <div class="day-bar-cell ${i === selectedDay ? 'active' : ''}">
+      <span>${d.label}</span><span class="count">${d.items.length} 部</span>
+    </div>`).join('');
+
+  const grid = $('cal-grid');
+  if (isCompact()) {
+    grid.classList.remove('week');
+    const day = CAL_DAYS[selectedDay];
+    grid.innerHTML = day.items.length
+      ? day.items.map(calCard).join('')
+      : `<div class="empty-state" style="grid-column:1/-1"><span>这天没有番</span></div>`;
+  } else {
+    grid.classList.add('week');
+    grid.innerHTML = CAL_DAYS.map((d) => d.items.map(calCard).join('')).join('');
+  }
+}
+window.addEventListener('resize', renderCalendar);
+
+function doRefresh() {
+  if (calRefreshing) return;
+  calRefreshing = true;
+  $('refresh-btn').disabled = true;
+  $('refresh-icon').classList.add('spin');
+  $('refresh-label').textContent = '更新中';
+  setTimeout(() => {
+    calRefreshing = false;
+    $('refresh-btn').disabled = false;
+    $('refresh-icon').classList.remove('spin');
+    $('refresh-label').textContent = '刷新';
+    $('cache-time').textContent = '刚拉取：刚刚';
+  }, 900);
+}
+renderCalendar();
+
+/* ══════════════════════════ 我的追番 ══════════════════════════ */
+let uid = 100;
+let tracks = [
+  { id: uid++, title:'葬送的芙莉莲 第二季', status:'watching', episode:8, total:12, today:true, bound:{name:'芙莉莲'}, bgmTags:['奇幻','冒险'], userTags:['下饭'] },
+  { id: uid++, title:'我心里危险的东西', status:'watching', episode:5, total:null, today:false, bound:null, bgmTags:['恋爱'], userTags:[] },
+  { id: uid++, title:'孤独摇滚！第二季', status:'watching', episode:12, total:12, today:false, bound:{name:'孤独摇滚2'}, bgmTags:['音乐','日常'], userTags:['治愈'] },
+  { id: uid++, title:'败犬女主太多了！', status:'watching', episode:2, total:13, today:true, bound:null, bgmTags:['恋爱','喜剧'], userTags:[] },
+  { id: uid++, title:'関於我転生变成史莱姆这档事 第三季', status:'watching', episode:9, total:24, today:false, bound:{name:'转生史莱姆3'}, bgmTags:['奇幻'], userTags:[] },
+  { id: uid++, title:'間諜过家家 第三季', status:'plan', episode:0, total:12, today:false, bound:null, bgmTags:['喜剧','日常'], userTags:[] },
+  { id: uid++, title:'鬼灭之刃 无限城篇', status:'plan', episode:0, total:8, today:false, bound:null, bgmTags:['战斗'], userTags:['期待'] },
+  { id: uid++, title:'药屋少女的呢喃 第二季', status:'done', episode:24, total:24, today:false, bound:{name:'药屋少女2'}, bgmTags:['悬疑','古风'], userTags:[] },
+];
+let trFilter = 'all';
+let trQuery = '';
+let editingId = null;
+let confirmingId = null;
+let pickerId = null;
+let addedIds = new Set();
+
+const STATUS_META = { watching:'在追', plan:'想看', done:'看完' };
+function nextEp(t) { const n = t.total != null ? Math.min(t.total, t.episode + 1) : t.episode + 1; return Math.max(1, n); }
+
+function renderFilters() {
+  const counts = { all: tracks.length, watching:0, plan:0, done:0 };
+  tracks.forEach((t) => counts[t.status]++);
+  $('tr-filters').innerHTML = ['all','watching','plan','done'].map((k) => `
+    <button class="filter-chip ${trFilter === k ? 'active' : ''}" onclick="trFilter='${k}';renderTracks()">
+      ${k === 'all' ? '全部' : STATUS_META[k]} ${counts[k]}
+    </button>`).join('');
+  const today = tracks.filter((t) => t.today && t.status !== 'done').length;
+  $('tr-summary').textContent = `在追 ${counts.watching} 部${today ? `，今天有 ${today} 部更新。` : '。'}`;
+}
+
+function matchQuery(t, q) {
+  if (!q) return true;
+  return t.title.toLowerCase().includes(q.toLowerCase());
+}
+
+function trackCardHtml(t) {
+  const ep = nextEp(t);
+  const tagHtml = [...t.bgmTags, ...t.userTags].slice(0, 3).map((x) => `<span class="tag-chip">${esc(x)}</span>`).join('');
+  const continueHtml = t.bound
+    ? `<a class="continue-btn" href="#" onclick="return false">${svg(ICON.play, 11)} 继续看 EP ${ep}</a>`
+    : `<button class="continue-btn" onclick="continueWatch(${t.id})" id="continue-${t.id}">${svg(ICON.play, 11)} 继续看 EP ${ep}（去定位）</button>`;
+  return `
+  <div class="track-card">
+    <div class="poster" onclick="openEdit(${t.id})">
+      <img src="${posterSrc(t.title)}" alt="" loading="lazy" />
+      <a class="link-btn" href="https://bgm.tv" target="_blank" rel="noreferrer" title="在 Bangumi 查看" onclick="event.stopPropagation()">${svg(ICON.open, 12)}</a>
+      ${t.today ? '<div class="badge-today">更新</div>' : ''}
+      <button class="del-btn" title="取消追番" onclick="event.stopPropagation();openConfirm(${t.id})">${svg(ICON.delete, 12)}</button>
+    </div>
+    <div class="track-info">
+      <h3 onclick="openEdit(${t.id})">${esc(t.title)}</h3>
+      <div class="tag-row">${tagHtml}</div>
+      ${continueHtml}
+      <div class="step-row">
+        <div class="step-controls">
+          <button class="step-btn" ${t.episode<=0?'disabled':''} onclick="stepEpisode(${t.id},-1)">${svg(ICON.minus,11)}</button>
+          <span class="ep-count"><b>${t.episode}</b> / ${t.total ?? '—'}</span>
+          <button class="step-btn" ${t.total!=null && t.episode>=t.total?'disabled':''} onclick="stepEpisode(${t.id},1)">${svg(ICON.add,11)}</button>
+        </div>
+        ${t.total == null ? '<span class="ongoing-badge">连载中</span>' : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderTracks() {
+  renderFilters();
+  let list = tracks;
+  if (trFilter !== 'all') list = list.filter((t) => t.status === trFilter);
+  if (trQuery.trim()) list = list.filter((t) => matchQuery(t, trQuery.trim()));
+
+  const todayList = list.filter((t) => t.today && t.status !== 'done');
+  const rest = list.filter((t) => !todayList.includes(t));
+  const body = $('tr-body');
+
+  if (tracks.length === 0) {
+    body.innerHTML = emptyHtml('bookmark', '还没追任何番', '去「番剧周历」点封面右上角的 ＋ 追番');
+  } else if (list.length === 0) {
+    body.innerHTML = emptyHtml('search', '没有匹配的追番', '换个词，或清掉类型过滤');
+  } else {
+    let html = '';
+    if (todayList.length) html += `<div class="section-label"><span>今天更新</span><i></i></div><div class="tr-grid">${todayList.map(trackCardHtml).join('')}</div>`;
+    if (rest.length) html += `<div class="section-label"><span>${todayList.length ? '其余' : '全部'}</span><i></i></div><div class="tr-grid">${rest.map(trackCardHtml).join('')}</div>`;
+    body.innerHTML = html;
+  }
+}
+
+function emptyHtml(icon, text, hint) {
+  return `<div class="empty-state">${svg(ICON[icon], 52)}<span>${text}</span><small>${hint}</small></div>`;
+}
+
+function onTrQuery(v) {
+  trQuery = v;
+  $('tr-query-clear').classList.toggle('show', !!v);
+  renderTracks();
+}
+function clearTrQuery() { $('tr-query').value = ''; onTrQuery(''); }
+
+function stepEpisode(id, delta) {
+  const t = tracks.find((x) => x.id === id);
+  if (!t) return;
+  let ep = Math.max(0, t.total != null ? Math.min(t.total, t.episode + delta) : t.episode + delta);
+  t.episode = ep;
+  if (ep > 0 && t.status === 'plan') t.status = 'watching';
+  renderTracks();
+}
+
+function continueWatch(id) {
+  const t = tracks.find((x) => x.id === id);
+  if (!t) return;
+  const btn = $('continue-' + id);
+  btn.disabled = true;
+  btn.innerHTML = `${svg(ICON.open,11)} 定位中…`;
+  setTimeout(() => {
+    pickerId = id;
+    openModal('picker');
+    renderPicker();
+  }, 600);
+}
+
+/* ── 弹窗通用开关 ── */
+function openModal(name) { $('overlay-' + name).classList.add('open'); }
+function closeModal(name) { $('overlay-' + name).classList.remove('open'); }
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  ['edit','confirm','picker','add'].forEach(closeModal);
+});
+
+/* ── 编辑弹窗 ── */
+function openEdit(id) {
+  editingId = id;
+  renderEdit();
+  openModal('edit');
+}
+function renderEdit() {
+  const t = tracks.find((x) => x.id === editingId);
+  if (!t) return;
+  $('edit-title').textContent = t.title;
+  $('edit-cover').src = posterSrc(t.title);
+  $('edit-sub').textContent = t.bgmTags.join(' · ') || '—';
+  $('edit-meta').textContent = t.bound ? `已绑定稀饭：${t.bound.name}` : '未绑定稀饭片源';
+  $('edit-status-tabs').innerHTML = ['watching','plan','done'].map((k) => `
+    <button class="seg-tab ${t.status===k?'active':''}" onclick="setEditStatus('${k}')">${STATUS_META[k]}</button>`).join('');
+  $('edit-ep-val').textContent = t.episode;
+  $('edit-ep-minus').disabled = t.episode <= 0;
+  $('edit-ep-plus').disabled = t.total != null && t.episode >= t.total;
+  $('edit-total').value = t.total != null ? t.total : '';
+  const bgmHtml = t.bgmTags.map((x) => `<span class="etag" title="来自 Bangumi（不可编辑）">${esc(x)}</span>`).join('');
+  const userHtml = t.userTags.map((x) => `<button class="etag user" onclick="removeUserTag('${esc(x).replace(/'/g,"\\'")}')" title="点击移除">${esc(x)} ${svg(ICON.close,9)}</button>`).join('');
+  $('edit-tags').innerHTML = bgmHtml + userHtml + `<button class="etag-add" onclick="startAddTag()">${svg(ICON.add,10)} 标签</button>`;
+}
+function setEditStatus(k) {
+  const t = tracks.find((x) => x.id === editingId);
+  t.status = k;
+  renderEdit(); renderTracks();
+}
+function editStep(delta) {
+  const t = tracks.find((x) => x.id === editingId);
+  let ep = Math.max(0, t.total != null ? Math.min(t.total, t.episode + delta) : t.episode + delta);
+  t.episode = ep;
+  if (delta > 0 && t.status === 'plan') t.status = 'watching';
+  renderEdit(); renderTracks();
+}
+function commitTotal() {
+  const t = tracks.find((x) => x.id === editingId);
+  const raw = $('edit-total').value.trim();
+  const n = parseInt(raw, 10);
+  t.total = raw === '' || !Number.isFinite(n) || n <= 0 ? null : n;
+  if (t.total != null && t.episode > t.total) t.episode = t.total;
+  renderEdit(); renderTracks();
+}
+function removeUserTag(x) {
+  const t = tracks.find((tt) => tt.id === editingId);
+  t.userTags = t.userTags.filter((y) => y !== x);
+  renderEdit(); renderTracks();
+}
+function startAddTag() {
+  const t = tracks.find((x) => x.id === editingId);
+  const bgmHtml = t.bgmTags.map((x) => `<span class="etag">${esc(x)}</span>`).join('');
+  const userHtml = t.userTags.map((x) => `<button class="etag user" onclick="removeUserTag('${esc(x).replace(/'/g,"\\'")}')">${esc(x)} ${svg(ICON.close,9)}</button>`).join('');
+  $('edit-tags').innerHTML = bgmHtml + userHtml + `<input class="etag-input" id="new-tag-input" maxlength="20" placeholder="例：下饭" onkeydown="if(event.key==='Enter')commitTag();if(event.key==='Escape')renderEdit()" onblur="commitTag()" autofocus />`;
+  setTimeout(() => $('new-tag-input') && $('new-tag-input').focus(), 0);
+}
+function commitTag() {
+  const input = $('new-tag-input');
+  if (!input) return;
+  const t = tracks.find((x) => x.id === editingId);
+  const v = input.value.trim();
+  if (v && ![...t.bgmTags, ...t.userTags].includes(v)) t.userTags.push(v);
+  renderEdit(); renderTracks();
+}
+
+/* ── 取消追番确认 ── */
+function openConfirm(id) {
+  confirmingId = id;
+  const t = tracks.find((x) => x.id === id);
+  const lost = [];
+  if (t.episode > 0) lost.push(`第 ${t.episode} 集的进度`);
+  if (t.userTags.length > 0) lost.push(`${t.userTags.length} 个自定义标签`);
+  $('confirm-text').innerHTML = `不再追踪《${esc(t.title)}》。${lost.length ? `<span class="lost">${lost.join(' 和 ')}会一并删除，无法恢复。</span>` : ''}`;
+  openModal('confirm');
+}
+function confirmRemove() {
+  tracks = tracks.filter((t) => t.id !== confirmingId);
+  closeModal('confirm');
+  renderTracks();
+}
+
+/* ── 绑定选择弹窗 ── */
+function renderPicker() {
+  const t = tracks.find((x) => x.id === pickerId);
+  if (!t) return;
+  $('picker-title').textContent = t.title;
+  const candidates = [
+    { name: t.title + ' 正片', day:'三', remarks:'蓝光 · 中字' },
+    { name: t.title.slice(0,4) + '（片段合集）', day:'五', remarks:'合集' },
+  ];
+  $('picker-list').innerHTML = candidates.map((c, i) => `
+    <a class="cand-row" href="#" onclick="pickBinding(${i});return false">
+      <div style="flex:1;min-width:0">
+        <div class="name">${esc(c.name)}</div>
+        <div class="meta">星期${c.day} · ${esc(c.remarks)}</div>
+      </div>
+      ${svg(ICON.play,16)}
+    </a>`).join('');
+}
+function pickBinding(i) {
+  const t = tracks.find((x) => x.id === pickerId);
+  t.bound = { name: i === 0 ? t.title + ' 正片' : t.title.slice(0,4) + '（片段合集）' };
+  closeModal('picker');
+  renderTracks();
+}
+
+/* ── 加番搜索弹窗 ── */
+const CATALOG = [
+  { title:'凉宫春日的忧郁', year:2006, score:8.9 },
+  { title:'命运石之门', year:2011, score:9.2 },
+  { title:'新世纪福音战士', year:1995, score:8.7 },
+  { title:'钢之炼金术师 FA', year:2009, score:9.4 },
+  { title:'进击的巨人 最终季', year:2020, score:9.0 },
+  { title:'路人女主的养成方法', year:2015, score:7.9 },
+  { title:'鲁路修 反叛的鲁路修', year:2006, score:9.1 },
+  { title:'轻音少女', year:2009, score:8.3 },
+  { title:'魔法少女小圆', year:2011, score:8.8 },
+  { title:'化物语', year:2009, score:8.5 },
+];
+function openAddModal() {
+  $('add-query').value = '';
+  addedIds = new Set();
+  renderAddResults('');
+  openModal('add');
+  setTimeout(() => $('add-query').focus(), 0);
+}
+function onAddQuery(v) { renderAddResults(v.trim()); }
+function renderAddResults(q) {
+  const box = $('add-results');
+  if (!q) { box.innerHTML = `<p style="padding:32px 4px;text-align:center;font-size:13px;color:rgb(var(--color-on-surface-variant)/.4)">输入番名开始搜索（覆盖 BGM 全量动漫）</p>`; return; }
+  const hits = CATALOG.filter((c) => c.title.includes(q));
+  if (!hits.length) { box.innerHTML = `<p style="padding:32px 4px;text-align:center;font-size:13px;color:rgb(var(--color-on-surface-variant)/.4)">没搜到「${esc(q)}」，换个词试试</p>`; return; }
+  box.innerHTML = hits.map((h) => {
+    const already = tracks.some((t) => t.title === h.title) || addedIds.has(h.title);
+    return `
+    <div class="hit-row">
+      <div style="flex:1;min-width:0">
+        <div class="name">${esc(h.title)}</div>
+        <div class="sub">${h.year}年 · ★ ${h.score.toFixed(1)}</div>
+      </div>
+      ${already
+        ? `<span class="hit-added">已追</span>`
+        : `<button class="hit-add" onclick="addFromSearch('${esc(h.title).replace(/'/g,"\\'")}')">${svg(ICON.add,12)} 追</button>`}
+    </div>`;
+  }).join('');
+}
+function addFromSearch(title) {
+  addedIds.add(title);
+  tracks.unshift({ id: uid++, title, status:'plan', episode:0, total:null, today:false, bound:null, bgmTags:[], userTags:[] });
+  renderAddResults($('add-query').value.trim());
+  renderTracks();
+}
+
+renderTracks();
+</script>
+
+</body>
+</html>
