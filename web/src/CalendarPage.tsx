@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
-import { coverUrl, fetchCalendar, fetchTracks, putTrack, deleteTrack } from './api'
+import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
 import { useAuth } from './auth'
+import { cacheGet, cacheSet } from './dataCache'
+import { loadTracks } from './tracksSync'
 import { useIsCompact } from './useMediaQuery'
 import { Icon, Spinner } from './Icon'
 
@@ -11,6 +13,11 @@ import { Icon, Spinner } from './Icon'
 // 海报 hover 遮罩里放「追番」+「BGM 查看」；播放到对应里程碑再补进遮罩。
 
 const SHORT_DAY: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
+
+// 周历数据信 14 天的缓存窗口——跟桌面端、跟服务端自己的 14 天缓存一致。BGM 是外部接口，
+// 缓存没过期就没必要发请求（唯一主动绕过缓存的入口是「刷新」按钮）。
+const CALENDAR_CACHE_KEY = 'calendar'
+const CALENDAR_TTL = 14 * 24 * 60 * 60_000
 
 function todayBgmId(): number {
   const d = new Date().getDay() // 0=周日..6=周六
@@ -28,14 +35,14 @@ export function CalendarPage(): JSX.Element {
   // 已追的 bgmId —— 用来给卡片画高亮描边 / 切按钮文案。未登录就是空集（按钮不显示）。
   const [tracked, setTracked] = useState<Set<number>>(new Set())
 
+  // 复用 TracksPage 同一套「秒开缓存 + 后台校验」逻辑（tracksSync.ts）——两页共享
+  // 同一份 tracks:<username> 缓存，谁先加载过谁就替对方省一次请求。
   useEffect(() => {
     if (!user) {
       setTracked(new Set())
       return
     }
-    void fetchTracks()
-      .then((ts) => setTracked(new Set(ts.map((t) => t.bgmId))))
-      .catch(() => setTracked(new Set())) // 拉不到就当没追，不打扰周历本身
+    return loadTracks(user.username, (ts) => setTracked(new Set(ts.map((t) => t.bgmId))))
   }, [user])
 
   // 先改本地再发请求 —— 点了要立刻有反馈。失败就回滚这一个 id。
@@ -56,6 +63,8 @@ export function CalendarPage(): JSX.Element {
           airWeekday: weekday,
           score: item.score,
         })
+    // 这里手上只有 CalendarItem，拼不出完整 Track（缺 bgmTags/aliases 等）来更新共享缓存——
+    // 不管它，下次任一页面挂载时的后台校验会用服务端最新数据把这条自然合并回去。
     void req.catch((e: Error) => {
       setError(e.message)
       setTracked((prev) => {
@@ -68,10 +77,13 @@ export function CalendarPage(): JSX.Element {
 
   const load = (force = false): void => {
     if (force) setRefreshing(true)
-    else setLoading(true)
+    else if (!result) setLoading(true)
     setError(null)
     fetchCalendar(force)
-      .then(setResult)
+      .then((r) => {
+        setResult(r)
+        cacheSet(CALENDAR_CACHE_KEY, r)
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => {
         setLoading(false)
@@ -79,7 +91,15 @@ export function CalendarPage(): JSX.Element {
       })
   }
 
-  useEffect(() => load(), [])
+  useEffect(() => {
+    const cached = cacheGet<CalendarResult>(CALENDAR_CACHE_KEY, CALENDAR_TTL)
+    if (cached) {
+      setResult(cached)
+      setLoading(false)
+      return
+    }
+    load()
+  }, [])
 
   const trackProps: TrackProps = { canTrack: !!user, tracked, onToggle: toggleTrack }
 
