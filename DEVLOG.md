@@ -28,6 +28,31 @@
 ORDER BY updated_at DESC  →  ORDER BY id ASC
 ```
 
+### 2026-08-01 perf(web): 番剧周历 / 我的追番加缓存
+
+**效果**：
+
+1. 切一次 tab（周历 ⇄ 追番）不用再重新等一轮网络
+2. 番剧周历信 14 天缓存窗口，跟服务端自己的缓存、桌面端一致；「刷新」按钮仍可强制绕过
+3. 我的追番改成「秒开缓存 + 后台校验」：有缓存立刻渲染，同时后台悄悄拉一次最新数据按 `updatedAt` 合并（谁更新用谁）——手机改完电脑看、电脑改完手机看，最终都能看到最新数据，不会一直卡在旧的上
+4. 追番列表和绑定数据按账号分开缓存，不同用户互不干扰
+5. 两页共享同一份追番列表缓存（周历卡片的「已追」高亮和追番页列表本来就是同一批数据），谁先加载过谁替对方省一次请求
+
+**关键代码**：
+
+新增 `dataCache.ts`（localStorage 持久化，刷新页面/开新标签页也能秒开）和 `tracksSync.ts`（合并逻辑）：
+
+```ts
+// tracksSync.ts —— 以 server 的 id 集合为准，同一条谁 updatedAt 更新就用谁的内容
+function mergeByUpdatedAt(server: Track[], local: Track[] | undefined): Track[] {
+  const localMap = new Map((local ?? []).map((t) => [t.bgmId, t]))
+  return server.map((s) => {
+    const l = localMap.get(s.bgmId)
+    return l && l.updatedAt > s.updatedAt ? l : s
+  })
+}
+```
+
 ### 2026-08-01 style(web): 重构番剧周历 / 我的追番布局
 
 **效果**：
