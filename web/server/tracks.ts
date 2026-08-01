@@ -81,7 +81,9 @@ function toSyncJson(r: TrackRow): Record<string, unknown> {
   return { ...toJson(r), extra }
 }
 
-const listStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY updated_at DESC')
+// id 是插入顺序（AUTOINCREMENT，UPDATE 不会挪它）—— 按它排列表就是「按加入顺序」，
+// 不会因为编辑了某条（改进度/改状态都会 bump updated_at）就把它顶到最前面重新洗牌。
+const listStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id ASC')
 const oneStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? AND bgm_id = ?')
 const delStmt = db.prepare('DELETE FROM tracks WHERE user_id = ? AND bgm_id = ?')
 const insertStmt = db.prepare(`
