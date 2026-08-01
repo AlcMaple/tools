@@ -93,9 +93,10 @@ export function CalendarPage(): JSX.Element {
         </p>
       </div>
 
-      {/* 置顶栏：缓存时间 + 刷新 + 周几选择。top-14 = 让开顶栏（h-14），不然会被压住。 */}
+      {/* 缓存时间 + 刷新 + 周几选择。不再置顶——只有顶部导航栏置顶就够了，跟「我的追番」页一致；
+          之前这里也 sticky，跟导航栏叠成两层 sticky，滚动时中间的标题区滑走后画面会断层。 */}
       {result && (
-        <div className="sticky top-14 z-30 border-y border-outline-variant/10 bg-surface-container-lowest px-4 pb-2 pt-1.5 md:px-6">
+        <div className="border-y border-outline-variant/10 bg-surface-container-lowest px-4 pb-2 pt-1.5 md:px-6">
           <div className="mb-1.5 flex min-h-5 flex-wrap items-center justify-end gap-2">
             {error && (
               <span className="whitespace-nowrap font-label text-[10px] tracking-wider text-error">
@@ -270,10 +271,13 @@ function CalendarCard({
   const on = track.tracked.has(item.id)
 
   return (
-    <div className="group relative overflow-hidden rounded-lg border border-outline-variant/15 bg-surface-container transition-colors hover:border-primary/30">
-      {/* 已追 → 整卡描边高亮，逛周历时一眼看出「这部我已经在追了」。
-          pointer-events-none：它盖在整张卡上，不能吃掉底下的点击。 */}
-      {on && <div className="pointer-events-none absolute inset-0 z-20 rounded-lg border-2 border-primary" />}
+    // 已追 → 整卡边框变主色；边框宽度两态统一 2px，只变颜色，不挤动相邻卡片（AI_GUIDELINES）。
+    // 不再有 hover 描边——纯装饰性描边在触屏上没有等价反馈，去掉更干净。
+    <div
+      className={`relative overflow-hidden rounded-lg border-2 bg-surface-container transition-colors ${
+        on ? 'border-primary' : 'border-outline-variant/15'
+      }`}
+    >
       <div className="relative aspect-[3/4]">
         {item.cover ? (
           <img
@@ -288,37 +292,35 @@ function CalendarCard({
             <Icon name="image" size={30} />
           </div>
         )}
+        {/* 常驻底部渐变——纯装饰，不依赖任何交互态 */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
 
-        {/* 已追 → 浮标常驻（不用 hover 也能看见状态）；没追 → 只在 hover 时出现，别糊住海报 */}
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          title="在 Bangumi 查看"
+          className="absolute left-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/70"
+        >
+          <Icon name="open_in_new" size={12} />
+        </a>
+
+        {/* 追番角标：始终显示，不再靠 hover 才浮现——触屏第一下点击常被浏览器当成
+            「模拟 hover」，不常驻的话核心操作在手机上几乎摸不到。 */}
         {track.canTrack && (
           <button
             type="button"
             onClick={() => track.onToggle(item, weekday)}
             title={on ? '取消追番' : '加入我的追番'}
-            className={`absolute right-1.5 top-1.5 z-30 flex items-center gap-1 rounded border px-1.5 py-1 font-label text-[10px] font-bold backdrop-blur-sm transition-colors ${
+            className={`absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${
               on
                 ? 'border-transparent bg-primary text-on-primary'
-                : 'border-outline-variant/30 bg-black/55 text-on-surface opacity-0 hover:border-primary/50 hover:text-primary group-hover:opacity-100'
+                : 'border-white/30 bg-black/50 text-white hover:border-primary/60'
             }`}
           >
-            <Icon name={on ? 'check' : 'add'} size={11} />
-            <span>{on ? '已追' : '追番'}</span>
+            <Icon name={on ? 'check' : 'add'} size={on ? 13 : 14} />
           </button>
         )}
-
-        {/* Hover 遮罩 —— 播放到对应里程碑再补进来，这里先放 BGM 查看。 */}
-        <div className="absolute inset-0 flex flex-col justify-end gap-1.5 bg-gradient-to-t from-black/95 via-black/75 to-black/25 p-2 opacity-0 transition-opacity group-hover:opacity-100">
-          <a
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            title="在 Bangumi 查看"
-            className="flex w-full items-center justify-center gap-1 rounded-md border border-white/20 bg-black/55 py-1.5 font-label text-[10px] uppercase tracking-widest text-white/90 backdrop-blur-sm transition-colors hover:bg-black/70"
-          >
-            <Icon name="open_in_new" size={12} />
-            <span>BGM</span>
-          </a>
-        </div>
       </div>
 
       {/* 信息区固定高度，保证所有卡片等高（与 app 一致）。 */}
