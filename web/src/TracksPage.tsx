@@ -9,19 +9,10 @@
 // 页头**不置顶**，只有顶栏置顶。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AnimeHit, Track, TrackPatch, TrackStatus, XifanBinding, XifanCandidate } from './api'
-import {
-  bindXifan,
-  coverUrl,
-  deleteTrack,
-  fetchTracks,
-  fetchXifanBindings,
-  locateXifan,
-  playPageUrl,
-  putTrack,
-  searchAnime,
-} from './api'
+import { bindXifan, coverUrl, deleteTrack, locateXifan, playPageUrl, putTrack, searchAnime } from './api'
 import { useAuth } from './auth'
 import { Icon, Spinner } from './Icon'
+import { loadBindings, loadTracks, saveBindingsCache, saveTracksCache } from './tracksSync'
 
 const SHORT_DAY: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
 const STATUS_META: { key: TrackStatus; label: string }[] = [
@@ -76,6 +67,9 @@ export function TracksPage(): JSX.Element {
   const [adding, setAdding] = useState(false) // 加番搜索弹窗
   const today = useMemo(todayBgmId, [])
 
+  // 秒开缓存 + 后台校验（tracksSync.ts）：有缓存立刻渲染，同时背着用户拉一次最新数据，
+  // 按 updatedAt 合并后再刷新一次——不用每次进页面都干等一轮网络，也不会因为另一台设备
+  // 改过数据而在这台设备上一直看着旧的。
   useEffect(() => {
     if (!ready) return
     if (!user) {
@@ -83,12 +77,22 @@ export function TracksPage(): JSX.Element {
       setBindings({})
       return
     }
-    fetchTracks()
-      .then(setTracks)
-      .catch((e: Error) => setError(e.message))
-    // 绑定失败不影响追番展示 —— 静默，「继续看」退化成「点了现去定位」
-    fetchXifanBindings().then(setBindings).catch(() => undefined)
+    const stopTracks = loadTracks(user.username, setTracks)
+    const stopBindings = loadBindings(user.username, setBindings)
+    return () => {
+      stopTracks()
+      stopBindings()
+    }
   }, [ready, user])
+
+  // tracks / bindings 状态一变（无论是初次加载还是后续的乐观更新）就同步写回缓存——
+  // 这样切去周历页再切回来，或者下次挂载，直接复用最新状态，不用重新等一轮网络。
+  useEffect(() => {
+    if (user && tracks) saveTracksCache(user.username, tracks)
+  }, [user, tracks])
+  useEffect(() => {
+    if (user) saveBindingsCache(user.username, bindings)
+  }, [user, bindings])
 
   // 未绑定的「继续看」：去周表定位 → 命中候选就弹选择框让用户确认（= 建绑定），零候选也弹（说明没找到）。
   const continueWatch = (t: Track): void => {
