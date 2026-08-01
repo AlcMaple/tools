@@ -269,7 +269,7 @@ export function TracksPage(): JSX.Element {
       ) : !user ? (
         <Empty icon="person" text="登录后才能追番" hint="追番数据存在账号里，换设备也在" />
       ) : counts.all === 0 ? (
-        <Empty icon="bookmark" text="还没追任何番" hint="去「番剧周历」，鼠标移到海报上点 ＋追番" />
+        <Empty icon="bookmark" text="还没追任何番" hint="去「番剧周历」，点封面右上角的 ＋ 追番" />
       ) : filtered.length === 0 ? (
         <Empty icon="search" text="没有匹配的追番" hint="换个词，或清掉类型过滤" />
       ) : (
@@ -475,8 +475,8 @@ function Card({
   }
 
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-outline-variant/15 bg-surface-container transition-colors hover:border-primary/30">
-      {/* 点封面 = 打开编辑弹窗；遮罩里的按钮各自 stopPropagation，不会连带触发 */}
+    // 不再有 hover 描边——纯装饰性描边在触屏上没有等价反馈，去掉更干净。
+    <div className="relative overflow-hidden rounded-xl border border-outline-variant/15 bg-surface-container">
       <div onClick={onEdit} title="点封面编辑" className="relative aspect-[3/4] cursor-pointer">
         {t.cover ? (
           <img src={coverUrl(t.cover)} alt={title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
@@ -485,13 +485,21 @@ function Card({
             <Icon name="image" size={30} />
           </div>
         )}
-        {isToday && (
-          <span className="absolute left-1.5 top-1.5 z-10 rounded bg-primary px-1.5 py-0.5 font-label text-[9px] font-bold uppercase tracking-wider text-on-primary">
-            更新
-          </span>
-        )}
-        {/* 取消追番入口 —— 右上角悬浮。删除是「针对整条记录」的操作，跟卡片对应而非编辑框内容。
-            stopPropagation 免得连带触发点封面进编辑；默认透明、hover 卡片才浮现，避免误点。 */}
+
+        {/* BGM 外链：常驻左上角图标，不再塞进只在 hover 时出现的整卡遮罩里 */}
+        <a
+          href={`https://bgm.tv/subject/${t.bgmId}`}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title="在 Bangumi 查看"
+          className="absolute left-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/70"
+        >
+          <Icon name="open_in_new" size={12} />
+        </a>
+
+        {/* 取消追番 —— 常驻右上角图标（不再靠 hover 才浮现）。删除是「针对整条记录」的操作，
+            跟卡片对应而非编辑框内容；stopPropagation 免得连带触发点封面进编辑。 */}
         <button
           type="button"
           onClick={(e) => {
@@ -500,59 +508,53 @@ function Card({
           }}
           title="取消追番"
           aria-label="取消追番"
-          className="absolute right-1.5 top-1.5 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur-sm transition-all hover:bg-error hover:text-on-error group-hover:opacity-100"
+          className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm transition-colors hover:bg-error hover:text-on-error"
         >
           <Icon name="delete" size={13} />
         </button>
-        <div className="absolute inset-0 flex flex-col justify-end gap-1.5 bg-gradient-to-t from-black/95 via-black/75 to-black/20 p-2 opacity-0 transition-opacity group-hover:opacity-100">
-          {/* 在线观看：绑过稀饭 → 直接链接（原生 <a>，无异步、不吃弹窗拦截）；没绑 → 点了去周表定位。
-              集数落在下一集（nextEp）—— 「继续」就是接着往下看。 */}
-          {binding ? (
-            <a
-              href={playPageUrl(binding.xifanId, ep)}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title={`稀饭：${binding.xifanName || binding.xifanId}`}
-              className="flex w-full items-center justify-center gap-1 rounded-xl border border-primary/40 bg-primary/25 py-1.5 font-label text-[10px] uppercase tracking-widest text-white backdrop-blur-sm transition-colors hover:bg-primary/40"
-            >
-              <Icon name="play_arrow" size={12} />
-              <span>继续看 EP {ep}</span>
-            </a>
-          ) : (
-            <button
-              type="button"
-              disabled={locating}
-              onClick={(e) => {
-                e.stopPropagation()
-                onContinue()
-              }}
-              title="定位稀饭片源"
-              className="flex w-full items-center justify-center gap-1 rounded-xl border border-white/20 bg-white/10 py-1.5 font-label text-[10px] uppercase tracking-widest text-white/90 backdrop-blur-sm transition-colors hover:bg-white/20 disabled:cursor-wait disabled:opacity-60"
-            >
-              {locating ? <Spinner size={12} /> : <Icon name="play_arrow" size={12} />}
-              <span>{locating ? '定位中…' : `继续看 EP ${ep}`}</span>
-            </button>
-          )}
-          <a
-            href={`https://bgm.tv/subject/${t.bgmId}`}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="flex w-full items-center justify-center gap-1 rounded-xl border border-white/20 bg-black/55 py-1.5 font-label text-[10px] uppercase tracking-widest text-white/90 backdrop-blur-sm transition-colors hover:bg-black/70"
-          >
-            <Icon name="open_in_new" size={12} />
-            <span>BGM</span>
-          </a>
-        </div>
+
+        {/* 「更新」放左下角——左上角已经被 BGM 外链图标占了 */}
+        {isToday && (
+          <span className="absolute bottom-1.5 left-1.5 z-10 rounded bg-primary px-1.5 py-0.5 font-label text-[9px] font-bold uppercase tracking-wider text-on-primary">
+            更新
+          </span>
+        )}
       </div>
 
-      <div className="flex flex-col gap-1 px-2 py-2">
+      <div className="flex flex-col gap-1.5 px-2 py-2">
         <h3 className="line-clamp-2 h-[30px] text-xs font-bold leading-tight text-on-surface" title={title}>
           {title}
         </h3>
         {/* 标签只读，紧贴标题下方（app 的位置）。按宽度截断，放不下收成 +N，定高不抖。 */}
         <TagRow tags={allTagsOf(t)} />
+
+        {/* 继续看：信息区常驻按钮，替代原来只在 hover 遮罩里才出现的两个按钮。
+            绑过稀饭 → 直接链接（原生 <a>，无异步、不吃弹窗拦截）；没绑 → 点了去周表定位。
+            集数落在下一集（nextEp）—— 「继续」就是接着往下看。 */}
+        {binding ? (
+          <a
+            href={playPageUrl(binding.xifanId, ep)}
+            target="_blank"
+            rel="noreferrer"
+            title={`稀饭：${binding.xifanName || binding.xifanId}`}
+            className="flex w-full items-center justify-center gap-1 rounded-lg border border-primary/35 bg-primary/[0.12] py-1.5 font-label text-[10px] uppercase tracking-widest text-primary transition-colors hover:bg-primary/20"
+          >
+            <Icon name="play_arrow" size={12} />
+            <span>继续看 EP {ep}</span>
+          </a>
+        ) : (
+          <button
+            type="button"
+            disabled={locating}
+            onClick={onContinue}
+            title="定位稀饭片源"
+            className="flex w-full items-center justify-center gap-1 rounded-lg border border-primary/35 bg-primary/[0.12] py-1.5 font-label text-[10px] uppercase tracking-widest text-primary transition-colors hover:bg-primary/20 disabled:cursor-wait disabled:opacity-60"
+          >
+            {locating ? <Spinner size={12} /> : <Icon name="play_arrow" size={12} />}
+            <span>{locating ? '定位中…' : `继续看 EP ${ep}`}</span>
+          </button>
+        )}
+
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1">
             <StepBtn icon="remove" onClick={() => step(-1)} disabled={t.episode <= 0} />
