@@ -896,224 +896,35 @@ function DetailView({
       <span className="text-primary">{lastWord}</span>
     </>
   )
-  const badgeRow = (
-    <div className="flex flex-wrap items-center gap-2 mb-2">
-      <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60">
-        {data.platform || 'TV Series'}
-      </span>
-      {data.tags.slice(0, 2).map((t) => (
-        <span
-          key={t}
-          className="text-[10px] bg-surface-container-high rounded px-2 py-0.5 text-on-surface-variant/80"
-        >
-          {t}
-        </span>
-      ))}
-      {data.episodes > 0 && (
-        <span className="font-label text-[10px] text-on-surface-variant/50">· {data.episodes} 话</span>
-      )}
-    </div>
-  )
   const duration = data.infobox?.['片长'] || data.infobox?.['时长'] || ''
-  const metaData: { label: string; value: string; primary?: boolean }[] = [
-    { label: '放送', value: data.date || '—' },
-    ...(duration ? [{ label: '时长', value: duration }] : []),
-    ...(data.studio ? [{ label: '制作', value: data.studio }] : []),
-    { label: '评分', value: data.score > 0 ? `★ ${data.score.toFixed(1)}` : '—', primary: true },
+  // Hero 右栏的元信息字段（评分不在这里 —— 它压在封面右下角的浮层里）
+  const metaFields: { label: string; value: string; wide?: boolean }[] = [
+    { label: 'Air Date', value: data.date || '—' },
+    ...(duration ? [{ label: 'Duration', value: duration }] : []),
+    ...(data.studio ? [{ label: 'Studio', value: data.studio }] : []),
+    ...(data.tags.length > 0
+      ? // detail.ts 已经 slice(0, 4)，这里直接 join
+        [{ label: 'Genre', value: data.tags.join(' · '), wide: true }]
+      : []),
   ]
-  const synopsisCard = (
-    <div className="bg-surface-container rounded-xl p-4 md:p-5">
-      <h3 className="font-label text-[10px] text-primary uppercase tracking-[0.2em] mb-2">
-        The Narrative
-      </h3>
-      <p className="text-on-surface-variant leading-relaxed text-[13.5px] md:text-[15px] font-light">
-        {data.summary || 'No summary available for this entry.'}
-      </p>
-    </div>
-  )
-  const coverImg = (
-    <img
-      src={coverSrc || coverFallback}
-      alt={data.title_cn || data.title}
-      className="w-full aspect-[2/3] object-cover rounded-xl shadow-xl"
-      decoding="async"
-      onError={(e) => {
-        const img = e.currentTarget
-        if (img.src !== coverFallback) {
-          img.onerror = null
-          img.src = coverFallback
-        }
-      }}
-    />
-  )
-  // 三个操作按钮统一尺寸（py-2.5 / text-[12.5px]）；cls 控制宽度（flex-1 或 w-full）
-  const archiveBtn = (cls: string): JSX.Element => (
-    <button
-      onClick={onArchive}
-      className={`py-2.5 rounded-xl bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold text-[12.5px] flex items-center justify-center gap-1.5 active:scale-95 transition-transform ${cls}`}
-    >
-      加入媒体库
-    </button>
-  )
-  const trackBtn = (cls: string): JSX.Element =>
-    track ? (
-      <button
-        onClick={removeTrack}
-        className={`py-2.5 rounded-xl bg-primary-container/15 border border-primary-container/30 text-primary font-label text-[12.5px] flex items-center justify-center gap-1.5 ${cls}`}
-      >
-        <span className="material-symbols-outlined text-[16px] leading-none" style={{ fontVariationSettings: "'FILL' 1" }}>bookmark</span>
-        已追番
-      </button>
-    ) : (
-      <button
-        onClick={addTrack}
-        className={`py-2.5 rounded-xl border border-secondary/40 text-secondary font-label text-[12.5px] flex items-center justify-center gap-1.5 ${cls}`}
-      >
-        <span className="material-symbols-outlined text-[16px] leading-none">bookmark_add</span>
-        追番
-      </button>
-    )
-  const officialBtn = (cls: string): JSX.Element => (
-    <button
-      onClick={() => window.open(data.link, '_blank')}
-      className={`py-2.5 rounded-xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 text-on-surface-variant font-label text-[12.5px] flex items-center justify-center transition-colors ${cls}`}
-    >
-      Official Site
-    </button>
-  )
 
   return (
-    <div className="max-w-6xl mx-auto">
-      {/* ── 手机 + 平板（<1024）：参考设计原型。跨 1024 时整体换成桌面 sticky 双栏大图布局。 ── */}
-      <div className="lg:hidden">
-        {/* ===== 手机（<768）：封面+信息并排 → 两个按钮通栏（与封面底部对齐）→ 简介通栏 ===== */}
-        <div className="md:hidden">
-          <div className="flex gap-3.5">
-            <div className="w-[140px] shrink-0">{coverImg}</div>
-            <div className="flex-1 min-w-0">
-              {badgeRow}
-              <h2 className="text-2xl font-black text-on-surface tracking-tighter leading-tight mb-2.5">
-                {titleContent}
-              </h2>
-              {/* 元信息：label 左、值右对齐 */}
-              <div className="space-y-1.5">
-                {metaData.map((m) => (
-                  <div key={m.label} className="flex items-baseline justify-between gap-2">
-                    <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 shrink-0">
-                      {m.label}
-                    </span>
-                    <span className={`text-[12.5px] truncate ${m.primary ? 'text-primary' : 'text-on-surface'}`}>
-                      {m.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          {/* 操作按钮通栏：加入媒体库 + 追番 并排，Official Site 同尺寸跟在下方 */}
-          <div className="flex gap-2.5 mt-4">
-            {archiveBtn('flex-1')}
-            {trackBtn('flex-1')}
-          </div>
-          {officialBtn('w-full mt-2.5')}
-          <div className="mt-4">{synopsisCard}</div>
-        </div>
-
-        {/* ===== 平板（768–1023）：左列封面+三个按钮（紧贴封面底部、等尺寸）；右列信息+简介 ===== */}
-        <div className="hidden md:block">
-          <div className="grid grid-cols-[200px_1fr] gap-6 items-start">
-            <div>
-              {coverImg}
-              {/* 三个按钮紧跟封面下方、与封面底部对齐，全部 w-full 同尺寸 */}
-              <div className="mt-3 flex flex-col gap-2">
-                {archiveBtn('w-full')}
-                {trackBtn('w-full')}
-                {officialBtn('w-full')}
-              </div>
-            </div>
-            <div className="min-w-0">
-              {badgeRow}
-              <h2 className="text-4xl font-black text-on-surface tracking-tighter leading-tight mb-4">
-                {titleContent}
-              </h2>
-              {/* 元信息：2 列、label 在值上方堆叠 */}
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3 mb-5">
-                {metaData.map((m) => (
-                  <div key={m.label}>
-                    <div className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-0.5">
-                      {m.label}
-                    </div>
-                    <div className={`text-sm ${m.primary ? 'text-primary' : 'text-on-surface'}`}>
-                      {m.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {synopsisCard}
-            </div>
-          </div>
-        </div>
-
-        {/* ===== 共用：别名 + Staff（通栏，手机 1 列 / 平板 2 列） ===== */}
-        {aliases.length > 0 && (
-          <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest shrink-0">
-              Also Known As
-            </span>
-            {aliases.map((a, i) => (
-              <span key={`${a}-${i}`} className="font-body text-xs text-on-surface-variant/70">
-                {a}
-                {i < aliases.length - 1 && <span className="text-on-surface-variant/20 ml-2">·</span>}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {hasStaff && (
-          <div className="mt-6">
-            <h3 className="text-[10px] font-label text-on-surface-variant/40 tracking-widest uppercase mb-3">
-              Staff
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {data.staff.map((s) => (
-                <div
-                  key={s.role}
-                  className="flex items-center gap-3 bg-surface-container p-3 rounded-xl border border-outline-variant/20"
-                >
-                  <div className="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-on-surface-variant/30 text-base leading-none">
-                      {getIcon(s.role)}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-label text-on-surface-variant/40 uppercase tracking-widest">
-                      {s.role}
-                    </p>
-                    <p className="text-sm font-bold text-on-surface truncate">
-                      {s.name_cn || s.name}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── 桌面（≥1024）：原 sticky 双栏大图布局，保持不变 ── */}
-      <div className="hidden lg:block">
-      <div className="grid grid-cols-12 gap-12 items-start">
-        {/* ── 左栏：海报 + 按钮 ── */}
-        <div className="col-span-4 sticky top-20">
-          <div className="relative group mb-10">
-            {/* 光晕 */}
-            <div className="absolute -inset-4 bg-primary/5 rounded-xl blur-3xl opacity-0 group-hover:opacity-100 transition-opacity" />
-
-            {/* 封面 —— useCover 解析本地路径；没封面 / 加载失败回落占位图。 */}
+    <div className="max-w-5xl mx-auto">
+      {/* ── Hero：单一结构通吃手机/平板/桌面（原来手机 / 平板 / 桌面三套分支合并）──
+          - md 以上：左封面 + 右信息，按钮 mt-auto 顶到右栏底部，与封面下沿齐平；
+            右栏比封面矮时中间空白被吃掉，比封面高时按钮自然跟在文本后面。
+          - md 以下：封面 float-left，标题/别名绕着它排（堆叠居中会让封面左右两侧
+            全空、图片过分抢戏），按钮 clear-left 后通栏。
+          - 元信息在手机端刻意不用 grid/flex：它们会建立独立格式化上下文、整块被挤到
+            封面下方，导致封面右下角空一片；inline-block 行内块才会真正绕排。 */}
+      <div className="md:flex md:flex-row md:gap-6 lg:gap-10 md:items-stretch pb-8 border-b border-outline-variant/10">
+        {/* 封面 + 评分浮层（浮层压在图内，不再 -bottom/-right 外溢撑出横向滚动） */}
+        <div className="float-left mr-5 w-[38%] max-w-[150px] md:float-none md:mr-0 md:w-[200px] md:max-w-none lg:w-[260px] md:shrink-0">
+          <div className="relative">
             <img
               src={coverSrc || coverFallback}
               alt={data.title_cn || data.title}
-              className="relative rounded-lg shadow-2xl w-full aspect-[2/3] object-cover"
+              className="w-full aspect-[2/3] object-cover rounded-xl shadow-2xl"
               decoding="async"
               onError={(e) => {
                 const img = e.currentTarget
@@ -1123,230 +934,159 @@ function DetailView({
                 }
               }}
             />
-
-            {/* 评分浮层 */}
-            <div className="absolute -bottom-6 -right-6 bg-surface-variant/70 backdrop-blur-2xl p-6 rounded-xl border border-outline-variant/15 shadow-2xl">
-              <p className="font-label text-[10px] uppercase tracking-widest text-primary mb-1">
+            <div className="absolute bottom-2 right-2 md:bottom-3 md:right-3 bg-surface-variant/70 backdrop-blur-2xl px-2.5 py-1.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border border-outline-variant/15 shadow-2xl">
+              <p className="hidden md:block font-label text-[9px] uppercase tracking-widest text-primary mb-0.5">
                 Bangumi Rating
               </p>
               <div className="flex items-baseline gap-1">
-                <span className="text-4xl font-black text-on-surface tracking-tighter">
+                <span className="text-xl md:text-3xl font-black text-on-surface tracking-tighter">
                   {data.score > 0 ? data.score.toFixed(1) : '--'}
                 </span>
-                <span className="text-on-surface-variant font-label text-sm">
-                  / 10
-                </span>
+                <span className="text-on-surface-variant font-label text-[10px] md:text-xs">/ 10</span>
               </div>
             </div>
           </div>
-
-          <div className="flex flex-col gap-4">
-            <button
-              className="w-full py-4 rounded-full bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold text-sm tracking-tight flex items-center justify-center gap-2 active:scale-95 transition-transform hover:brightness-110"
-              onClick={onArchive}
-            >
-              <span className="material-symbols-outlined text-lg leading-none">
-                download
-              </span>
-              Add to Archive
-            </button>
-            <button
-              className="w-full py-4 rounded-full bg-secondary-container/30 hover:bg-secondary-container/50 border border-secondary/20 transition-colors font-label text-sm text-on-secondary-container"
-              onClick={() => window.open(data.link, '_blank')}
-            >
-              Official Site
-            </button>
-            {/* Tracking toggle — single button flipping between "add to list" and
-                "remove from list". Status / episode / notes editing is intentionally
-                kept off this page (it would sit below the fold in the sticky column)
-                and will move to the aggregate "我的追番" view in a later step. */}
-            {track ? (
-              <button
-                onClick={() => animeTrackStore.delete(data.id)}
-                className="w-full py-4 rounded-full bg-primary-container/15 border border-primary-container/30 hover:bg-error-container/15 hover:border-error/30 text-primary hover:text-error transition-colors flex items-center justify-center gap-2"
-              >
-                <span className="material-symbols-outlined text-lg leading-none" style={{ fontVariationSettings: "'FILL' 1" }}>bookmark</span>
-                <span className="font-label text-sm">已加入追番</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  animeTrackStore.upsert({
-                    bgmId: data.id,
-                    // 005 阶段新增：从 BGM detail 的 type + platform 派生 subjectType,
-                    // 写入 track。书籍类目下 platform 决定 manga / novel；画集和其他
-                    // 归 'other'（用户决策见 005 idea doc，UI tab 不显示 other）。
-                    subjectType: deriveSubjectType(data.type, data.platform),
-                    title: data.title,
-                    titleCn: data.title_cn || undefined,
-                    // BGM 别名一并存入 —— MyAnime 本地搜索能按别名命中这条追番
-                    // （搜「魔女」也能搜到别名含「魔女」的「魔界女王候补生」）。
-                    aliases: aliasesFromInfobox(data.infobox),
-                    cover: data.cover || undefined,
-                    totalEpisodes: data.episodes > 0 ? data.episodes : undefined,
-                    // 放送日期('' = BGM 无日期 = 未定档,播放按钮据此隐藏)
-                    airDate: data.date,
-                    airWeekday: weekdayFromAirDate(data.date) || undefined,
-                    status: 'plan',
-                    episode: 0,
-                    // 加追番那一刻把 BGM 当前 tag 快照写入 —— store 内 lock-on-create
-                    // 保证之后再 fetch detail 即使 tag 变了，本地这份不动。删追番
-                    // 再重加 = 重新拍快照（store 看到 prev 不存在就会接受新值）。
-                    bgmTags: data.tags,
-                  })
-                  // 封面本地化不在这做 —— track.cover 存可移植 URL，本地化
-                  // 在显示时由 useCover 按设备各自处理（见 hooks/useCover.ts）。
-                }}
-                className="w-full py-4 rounded-full bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 text-on-surface-variant hover:text-primary font-label text-sm transition-colors flex items-center justify-center gap-2"
-              >
-                <span className="material-symbols-outlined text-lg leading-none">bookmark_add</span>
-                Track this anime
-              </button>
-            )}
-          </div>
         </div>
 
-        {/* ── 右栏：信息 ── */}
-        <div className="col-span-8">
-          {/* 状态徽章 */}
-          <div className="flex items-center gap-3 mb-4">
-            <span className="px-3 py-1 bg-secondary-container text-on-secondary-container font-label text-[10px] tracking-widest uppercase rounded-sm">
-              {data.platform || 'TV Series'}
+        {/* 右栏：类型徽章 + 标题 + 别名 + 元信息 + 底部按钮 */}
+        <div className="md:flex-1 md:min-w-0 md:w-full md:flex md:flex-col">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="px-3 py-1 bg-secondary-container text-on-secondary-container font-label text-[10px] tracking-widest uppercase rounded-sm shrink-0">
+              {data.platform || 'TV'}
             </span>
-            <span className="text-on-surface-variant font-label text-xs">
+            <span className="text-on-surface-variant font-label text-xs md:text-sm truncate">
               {data.episodes > 0 ? `${data.episodes} Episodes` : ''}
               {data.tags.length > 0 && data.episodes > 0 ? ' · ' : ''}
               {data.tags.slice(0, 2).join(' · ')}
             </span>
           </div>
 
-          {/* 标题 */}
-          <h2 className="text-7xl font-black text-on-surface tracking-tighter leading-[0.9] mb-6">
-            {restTitle && <>{restTitle}<br /></>}
-            <span className="text-primary">{lastWord}</span>
+          {/* 流体字号：窄屏是整体缩小而不是疯狂换行把右栏顶高，两栏高度才对得上 */}
+          <h2
+            className="font-black text-on-surface tracking-tighter leading-[0.95] mb-4"
+            style={{ fontSize: 'clamp(1.5rem, 4.2vw, 3.75rem)' }}
+          >
+            {titleContent}
           </h2>
 
-          {/* 别名 */}
           {aliases.length > 0 && (
-            <div className="mb-6 flex items-start gap-3">
-              <span className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest pt-1 shrink-0">
+            <div className="mb-5 flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3">
+              <span className="font-label text-[10px] text-on-surface-variant/40 uppercase tracking-widest sm:pt-1 shrink-0">
                 Also Known As
               </span>
-              <div className="flex flex-wrap gap-x-2 gap-y-1">
-                {aliases.map((a, i) => (
-                  <span
-                    key={`${a}-${i}`}
-                    className="font-body text-sm text-on-surface-variant/70"
-                  >
-                    {a}
-                    {i < aliases.length - 1 && (
-                      <span className="text-on-surface-variant/20 ml-2">·</span>
-                    )}
-                  </span>
-                ))}
-              </div>
+              <p className="font-body text-[13px] leading-relaxed text-on-surface-variant/70">
+                {aliases.join(' · ')}
+              </p>
             </div>
           )}
 
-          {/* Stats 行 */}
-          <div className="flex gap-8 mb-12">
-            <div>
-              <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">
-                Air Date
-              </p>
-              <p className="font-body font-bold text-on-surface whitespace-nowrap">
-                {data.date || '—'}
-              </p>
-            </div>
-            {(data.infobox?.['片长'] || data.infobox?.['时长']) && (
-              <div>
+          <div className="md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-x-6 md:gap-y-4">
+            {metaFields.map((m) => (
+              <div
+                key={m.label}
+                className={`inline-block align-top mr-8 mb-4 md:block md:mr-0 md:mb-0 ${
+                  m.wide ? 'md:col-span-2 lg:col-span-1' : ''
+                }`}
+              >
                 <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">
-                  Duration
+                  {m.label}
                 </p>
-                <p className="font-body font-bold text-on-surface whitespace-nowrap">
-                  {data.infobox['片长'] || data.infobox['时长']}
-                </p>
+                <p className="font-body font-bold text-on-surface text-sm md:text-base">{m.value}</p>
               </div>
-            )}
-            {data.studio && (
-              <div>
-                <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">
-                  Studio
-                </p>
-                <p className="font-body font-bold text-on-surface">
-                  {data.studio}
-                </p>
-              </div>
-            )}
-            {data.tags.length > 0 && (
-              <div>
-                <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">
-                  Genre
-                </p>
-                <p className="font-body font-bold text-on-surface">
-                  {/* detail.ts 已经 slice(0, 4) 了，这里直接 join 即可；
-                      数量上限跟 MyAnime 的 UserTagsEditor "BGM 标签" 区一致。 */}
-                  {data.tags.join(' · ')}
-                </p>
-              </div>
-            )}
+            ))}
           </div>
 
-          {/* 简介 */}
-          <div className="bg-surface-container rounded-xl p-10 mb-12">
-            <h3 className="font-label text-xs text-primary uppercase tracking-[0.2em] mb-4">
-              The Narrative
-            </h3>
-            <p className="text-on-surface-variant leading-relaxed text-xl font-light">
-              {data.summary || 'No summary available for this entry.'}
-            </p>
-          </div>
-
-          {/* Staff 区块 / 无 staff 占位 */}
-          {hasStaff ? (
-            <div>
-              <h3 className="text-[10px] font-label text-on-surface-variant/40 tracking-widest uppercase mb-4">
-                Staff
-              </h3>
-              <div className="grid grid-cols-2 gap-3">
-                {data.staff.map((s) => (
-                  <div
-                    key={s.role}
-                    className="flex items-center space-x-3 bg-surface-container p-4 rounded-xl border border-outline-variant/20"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0">
-                      <span className="material-symbols-outlined text-on-surface-variant/30 text-base leading-none">
-                        {getIcon(s.role)}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-label text-on-surface-variant/40 uppercase tracking-widest">
-                        {s.role}
-                      </p>
-                      <p className="text-sm font-bold text-on-surface">
-                        {s.name_cn || s.name}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="pt-8 border-t border-outline-variant/10">
-              <div className="flex items-center gap-4 text-on-surface-variant/40">
-                <span className="font-label text-[10px] uppercase tracking-[0.2em] whitespace-nowrap">
-                  Metadata Record
+          {/* 操作按钮：md 以上 mt-auto 顶到底部与封面对齐；sm 以下退化成竖排通栏 */}
+          <div className="clear-left md:clear-none mt-6 md:mt-auto md:pt-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <button
+              onClick={onArchive}
+              className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-b from-primary to-primary-container text-on-primary font-bold text-sm tracking-tight flex items-center justify-center gap-2 shadow-lg shadow-primary/20 active:scale-95 transition-transform hover:brightness-110"
+            >
+              <span className="material-symbols-outlined text-lg leading-none">download</span>
+              <span className="truncate">加入媒体库</span>
+            </button>
+            <button
+              onClick={() => window.open(data.link, '_blank')}
+              className="w-full py-3.5 px-4 rounded-2xl bg-secondary-container/30 hover:bg-secondary-container/50 border border-secondary/20 transition-colors font-label text-sm text-on-secondary-container flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined text-lg leading-none">public</span>
+              <span className="truncate">Official Site</span>
+            </button>
+            {track ? (
+              <button
+                onClick={removeTrack}
+                className="w-full py-3.5 px-4 rounded-2xl bg-primary-container/15 hover:bg-primary-container/25 border border-primary-container/30 text-primary transition-colors flex items-center justify-center gap-2"
+              >
+                <span
+                  className="material-symbols-outlined text-lg leading-none"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  bookmark
                 </span>
-                <span className="h-px w-8 bg-outline-variant/20" />
-                <p className="font-body text-xs italic">
-                  Staff metadata is not included in this record.
-                </p>
-              </div>
-            </div>
-          )}
+                <span className="font-label text-sm truncate">已加入追番</span>
+              </button>
+            ) : (
+              <button
+                onClick={addTrack}
+                className="w-full py-3.5 px-4 rounded-2xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 text-on-surface-variant hover:text-primary transition-colors flex items-center justify-center gap-2"
+              >
+                <span className="material-symbols-outlined text-lg leading-none">bookmark_add</span>
+                <span className="font-label text-sm truncate">追番</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* ── 通栏简介：不再挤在窄列里，长内容只是卡片变高 ── */}
+      <div className="bg-surface-container rounded-xl p-5 md:p-8 lg:p-10 my-8 lg:my-10">
+        <h3 className="font-label text-[10px] md:text-xs text-primary uppercase tracking-[0.2em] mb-3 md:mb-4">
+          The Narrative
+        </h3>
+        <p className="text-on-surface-variant leading-relaxed text-[13.5px] md:text-base lg:text-lg font-light">
+          {data.summary || 'No summary available for this entry.'}
+        </p>
       </div>
+
+      {/* ── 通栏 Staff：2/3/4 列响应式网格，人多就只是往下多几行 ── */}
+      {hasStaff ? (
+        <div>
+          <h3 className="text-[10px] font-label text-on-surface-variant/40 tracking-widest uppercase mb-4 flex items-center gap-3">
+            Staff
+            <span className="h-px flex-1 bg-outline-variant/10" />
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {data.staff.map((s) => (
+              <div
+                key={s.role}
+                className="flex items-center gap-3 bg-surface-container p-3 md:p-4 rounded-xl border border-outline-variant/20"
+              >
+                <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-surface-container-high flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-on-surface-variant/30 text-base leading-none">
+                    {getIcon(s.role)}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-label text-on-surface-variant/40 uppercase tracking-widest">
+                    {s.role}
+                  </p>
+                  <p className="text-sm font-bold text-on-surface truncate">{s.name_cn || s.name}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="pt-8 border-t border-outline-variant/10">
+          <div className="flex items-center gap-4 text-on-surface-variant/40">
+            <span className="font-label text-[10px] uppercase tracking-[0.2em] whitespace-nowrap">
+              Metadata Record
+            </span>
+            <span className="h-px w-8 bg-outline-variant/20" />
+            <p className="font-body text-xs italic">Staff metadata is not included in this record.</p>
+          </div>
+        </div>
+      )}
 
       {/* ── 底部 Metadata Strip ── */}
       <div className="mt-12 lg:mt-20 pt-8 border-t border-outline-variant/10 flex flex-col gap-5 md:flex-row md:justify-between md:items-center">
