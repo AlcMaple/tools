@@ -583,9 +583,10 @@ export default function OnlinePlayer(): JSX.Element {
 
   const title = track ? (track.titleCn || track.title) : ''
   const eps = data?.lines[lineIdx]?.eps ?? []
+  const currentEp = ep !== null ? eps.find((e) => e.idx === ep) : undefined
 
   // ── 两种布局共用的片段(单一来源,内置源 / 嵌入页两处不各写一份) ─────────────────
-  // 返回 + 标题
+  // 返回 + 标题 + 当前集数(此前只在选集网格里能看到当前集,标题旁没有任何提示)
   const header = (
     <div className="flex items-center gap-3 min-w-0">
       <button
@@ -599,6 +600,11 @@ export default function OnlinePlayer(): JSX.Element {
       <h1 className="text-lg md:text-2xl font-bold font-headline text-on-surface truncate">
         {title || '在线观看'}
       </h1>
+      {currentEp && (
+        <span className="shrink-0 font-label text-[11px] font-bold tracking-wider text-primary bg-primary/10 rounded-full px-2.5 py-1">
+          {currentEp.label}
+        </span>
+      )}
     </div>
   )
 
