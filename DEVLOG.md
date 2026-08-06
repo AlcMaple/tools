@@ -1238,3 +1238,21 @@ export function getXifanAuthStatus(): XifanAuthStatus {
 ```
 
 `HttpSession` 之前只有 `get()`，登录要发表单只能补个 `post()`——抽了个私有 `request()` 让 get/post 共用同一套「逐跳跟重定向 + 每跳 ingest Set-Cookie」逻辑。
+
+## 动漫查询
+
+### 2026-08-06 fix(bgm): 搜索无精确结果时显示前三个候选
+
+**效果**：
+
+1. 只记得大概番名时，不再因为应用的严格匹配把 BGM 已返回的候选全部过滤掉；搜「今天的猫」会显示 BGM 相关度最高的 3 条，其中包含《能干的猫今天也忧郁》
+2. BGM 本身没有返回任何条目时仍显示“未找到”，网络错误与限流错误也继续原样反馈
+
+**关键代码**：
+
+```ts
+// bgm/search.ts
+if (matched.length === 0) {
+  matched.push(...allItems.slice(0, 3))
+}
+```

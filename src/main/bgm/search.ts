@@ -568,6 +568,9 @@ const ALIAS_LOOKUP_MAX_CONSECUTIVE_MISSES = 3
  */
 const ALIAS_LOOKUP_MIN_CANDIDATES = 4
 
+/** BGM 有候选但本地过滤为零时，保留相关度最高的几条供用户辨认。 */
+const ZERO_MATCH_FALLBACK_LIMIT = 3
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -696,6 +699,12 @@ export async function searchBgm(
     for (const m of examinedMisses) {
       if (m.page === breakPage) matched.push(m)
     }
+  }
+
+  // BGM 原始列表非空却被本地严格匹配全部滤掉时，不能误报成“未找到”。
+  // 真正无结果的页面已在 page1Items 为空时提前返回，不会走到这里。
+  if (matched.length === 0) {
+    matched.push(...allItems.slice(0, ZERO_MATCH_FALLBACK_LIMIT))
   }
 
   // 去重 + 按日期排序（沿用旧行为：最新的番剧在最上面）。
