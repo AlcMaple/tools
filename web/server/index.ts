@@ -6,6 +6,24 @@ import auth from './auth'
 import tracks from './tracks'
 import xifan from './xifan'
 
+// 本地开发通常没有 5.6MB 的 bgm_index.db（生成它要下载 400MB+ 官方离线档）。
+// 仅 localhost 且本地索引未就绪时，借线上公开搜索 API 返回同形数据；追番写入、
+// 登录和稀饭会话仍全部留在本地。生产有自己的索引，不会走这里。
+const DEV_SEARCH_ORIGIN = process.env.DEV_SEARCH_ORIGIN || 'https://anime.alcmaple.cn'
+
+async function searchFromDeployedWeb(q: string): Promise<Record<string, unknown> | null> {
+  try {
+    const url = new URL('/api/search', DEV_SEARCH_ORIGIN)
+    url.searchParams.set('q', q)
+    const response = await fetch(url, { signal: AbortSignal.timeout(12000) })
+    if (!response.ok) return null
+    const data = (await response.json()) as Record<string, unknown>
+    return data.ready === true && Array.isArray(data.data) ? data : null
+  } catch {
+    return null
+  }
+}
+
 // 单一 Hono 应用 = API 的唯一真相源。本地开发经 vite.config 的 dev-server 插件跑，
 // 生产经 web/api/[[...route]].ts 在 Vercel serverless 跑，将来迁 VPS 用 @hono/node-server
 // 直接跑 —— 三处都是这一个 app，路由只写一遍。
@@ -33,7 +51,15 @@ app.get('/api/search', async (c) => {
   const q = c.req.query('q') ?? ''
   const st = indexStatus()
   c.header('Cache-Control', 'no-store')
-  if (!st.ready) return c.json({ ready: false, data: [] })
+  if (!st.ready) {
+    const hostname = new URL(c.req.url).hostname
+    const localRequest = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+    if (process.env.NODE_ENV !== 'production' && localRequest) {
+      const deployed = await searchFromDeployedWeb(q)
+      if (deployed) return c.json(deployed)
+    }
+    return c.json({ ready: false, data: [] })
+  }
   // builtAt/total 是给运维看的：q 传空就只回这两个数，等于一个「索引同步到哪天了」的健康检查
   const base = { ready: true, total: st.count, builtAt: st.builtAt }
   const local = searchAnime(q, 30)

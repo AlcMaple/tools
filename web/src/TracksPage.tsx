@@ -8,8 +8,19 @@
 //
 // 页头**不置顶**，只有顶栏置顶。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { AnimeHit, Track, TrackPatch, TrackStatus, XifanBinding, XifanCandidate } from './api'
-import { bindXifan, coverUrl, deleteTrack, locateXifan, playPageUrl, putTrack, searchAnime } from './api'
+import type { AnimeHit, Track, TrackPatch, TrackStatus, XifanBinding, XifanCandidate, XifanSearchHit } from './api'
+import {
+  bindXifan,
+  coverUrl,
+  deleteTrack,
+  fetchXifanCaptcha,
+  locateXifan,
+  playPageUrl,
+  putTrack,
+  searchAnime,
+  searchXifan,
+  verifyXifanCaptcha,
+} from './api'
 import { useAuth } from './auth'
 import { Icon, Spinner } from './Icon'
 import { loadBindings, loadTracks, saveBindingsCache, saveTracksCache } from './tracksSync'
@@ -64,6 +75,7 @@ export function TracksPage(): JSX.Element {
   const [bindings, setBindings] = useState<Record<number, XifanBinding>>({})
   const [locating, setLocating] = useState<number | null>(null) // 正在定位的 bgmId（转圈用）
   const [picker, setPicker] = useState<PickerState | null>(null)
+  const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [adding, setAdding] = useState(false) // 加番搜索弹窗
   const today = useMemo(todayBgmId, [])
 
@@ -114,9 +126,34 @@ export function TracksPage(): JSX.Element {
 
   // 用户在选择框点了某个候选 = 确认绑定：落库 + 本地记下（卡片即变链接）。开播由候选行自身的链接完成。
   const confirmBind = (bgmId: number, cand: XifanCandidate): void => {
+    const previous = bindings[bgmId]
     setBindings((prev) => ({ ...prev, [bgmId]: { xifanId: cand.xifanId, xifanName: cand.xifanName } }))
     setPicker(null)
-    void bindXifan(bgmId, cand.xifanId, cand.xifanName).catch((e: Error) => setError(e.message))
+    void bindXifan(bgmId, cand.xifanId, cand.xifanName).catch((e: Error) => {
+      setError(e.message)
+      setBindings((prev) => {
+        const next = { ...prev }
+        if (previous) next[bgmId] = previous
+        else delete next[bgmId]
+        return next
+      })
+    })
+  }
+
+  // 搜索结果也是一次显式确认：沿用周表候选的绑定语义，点结果行时先落绑定，再用
+  // 原生链接打开播放页，避免异步请求吃掉浏览器的弹窗手势。
+  const confirmSearchBind = (hit: XifanSearchHit): void => {
+    const t = searchTrack
+    if (!t) return
+    const remarks = [hit.episode, hit.year, hit.area].filter(Boolean).join(' · ')
+    setSearchTrack(null)
+    confirmBind(t.bgmId, {
+      xifanId: hit.xifanId,
+      xifanName: hit.xifanName,
+      day: 0,
+      remarks,
+      score: 0,
+    })
   }
 
   // 搜索结果加追番 —— 乐观先塞占位（默认「想看」），封面/标签由服务端 detail 补，putTrack 回来再覆盖。
@@ -327,7 +364,19 @@ export function TracksPage(): JSX.Element {
         <BindPickerModal
           picker={picker}
           onPick={(cand) => confirmBind(picker.track.bgmId, cand)}
+          onSearch={() => {
+            setPicker(null)
+            setSearchTrack(picker.track)
+          }}
           onClose={() => setPicker(null)}
+        />
+      )}
+
+      {searchTrack && (
+        <XifanSearchModal
+          track={searchTrack}
+          onPick={confirmSearchBind}
+          onClose={() => setSearchTrack(null)}
         />
       )}
 
@@ -681,7 +730,7 @@ function TagFilter({
                   <span className={`flex-1 truncate ${selected.has(t) ? 'text-primary' : 'text-on-surface-variant'}`}>{t}</span>
                   <span className="font-label text-[10px] tabular-nums text-on-surface-variant/40">{n}</span>
                 </button>
-              ))}
+            ))}
             </div>
           )}
           {selected.size > 0 && (
@@ -966,10 +1015,12 @@ function ConfirmRemoveModal({
 function BindPickerModal({
   picker,
   onPick,
+  onSearch,
   onClose,
 }: {
   picker: PickerState
   onPick: (cand: XifanCandidate) => void
+  onSearch: () => void
   onClose: () => void
 }): JSX.Element {
   useEffect(() => {
@@ -1013,8 +1064,15 @@ function BindPickerModal({
 
         {candidates.length === 0 ? (
           <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-4 text-[12.5px] leading-relaxed text-on-surface-variant/60">
-            没在稀饭<b>本季周表</b>里找到相近的名字。多半是：这部不是当季在播（周表只列在播），或译名差得远。
-            <span className="mt-1 block text-on-surface-variant/40">在播番剧过阵子更新到周表后再试；往季旧番暂时没法自动定位。</span>
+            没在稀饭<b>本季周表</b>里找到相近的名字。往季资源或非周历资源可以改用稀饭全站搜索。
+            <button
+              type="button"
+              onClick={onSearch}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/35 bg-primary/[0.12] py-2 font-label text-[11px] font-bold tracking-widest text-primary transition-colors hover:bg-primary/20"
+            >
+              <Icon name="search" size={14} />
+              搜索稀饭全站资源
+            </button>
           </div>
         ) : (
           <div className="custom-scrollbar flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
@@ -1036,9 +1094,284 @@ function BindPickerModal({
                 </div>
                 <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
               </a>
-            ))}
+              ))}
           </div>
         )}
+
+        {candidates.length > 0 && (
+          <button
+            type="button"
+            onClick={onSearch}
+            className="mt-4 flex w-full items-center justify-center gap-1.5 border-t border-outline-variant/15 pt-3 font-label text-[10px] font-semibold tracking-widest text-on-surface-variant/50 transition-colors hover:text-primary"
+          >
+            <Icon name="search" size={13} />
+            搜索稀饭全站资源
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── 稀饭全站搜索弹窗 ─────────────────────────────────────────────────────────────
+// 周表定位只覆盖当季在播；旧番 / 剧场版改走稀饭搜索。搜索页有站点验证码，流程与桌面
+// 端一致：搜索 → 验证码 → 重搜 → 用户点结果确认绑定。结果行保留原生链接，点一下同时
+// 完成绑定并打开播放页，不让异步绑定请求吃掉新标签页的用户手势。
+type XifanSearchModalStatus = 'searching' | 'captcha' | 'verifying' | 'results' | 'error'
+
+function XifanSearchModal({
+  track,
+  onPick,
+  onClose,
+}: {
+  track: Track
+  onPick: (hit: XifanSearchHit) => void
+  onClose: () => void
+}): JSX.Element {
+  const initialKeyword = track.titleCn || track.title
+  const [keyword, setKeyword] = useState(initialKeyword)
+  const [status, setStatus] = useState<XifanSearchModalStatus>('searching')
+  const [results, setResults] = useState<XifanSearchHit[]>([])
+  const [imageB64, setImageB64] = useState('')
+  const [mime, setMime] = useState('image/png')
+  const [captchaInput, setCaptchaInput] = useState('')
+  const [message, setMessage] = useState('')
+  const started = useRef(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const refreshCaptcha = async (errorMessage = ''): Promise<void> => {
+    try {
+      const captcha = await fetchXifanCaptcha()
+      setImageB64(captcha.imageB64)
+      setMime(captcha.mime || 'image/png')
+      setCaptchaInput('')
+      setMessage(errorMessage)
+      setStatus('captcha')
+    } catch (e) {
+      setStatus('error')
+      setMessage(e instanceof Error ? e.message : '验证码请求失败')
+    }
+  }
+
+  const runSearch = async (rawKeyword: string): Promise<void> => {
+    const q = rawKeyword.trim()
+    if (!q) return
+    setKeyword(q)
+    setResults([])
+    setMessage('')
+    setStatus('searching')
+    try {
+      const result = await searchXifan(q)
+      if (result.needsCaptcha) {
+        await refreshCaptcha()
+      } else {
+        setResults(result.data)
+        setStatus('results')
+      }
+    } catch (e) {
+      setStatus('error')
+      setMessage(e instanceof Error ? e.message : '稀饭搜索失败')
+    }
+  }
+
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    void runSearch(initialKeyword)
+  }, [])
+
+  const verify = async (): Promise<void> => {
+    const code = captchaInput.trim()
+    if (!code || status !== 'captcha') return
+    setStatus('verifying')
+    try {
+      const result = await verifyXifanCaptcha(code)
+      if (!result.success) {
+        await refreshCaptcha('验证码不正确，请重新输入')
+        return
+      }
+      await runSearch(keyword)
+    } catch (e) {
+      setStatus('error')
+      setMessage(e instanceof Error ? e.message : '验证码校验失败')
+    }
+  }
+
+  const title = track.titleCn || track.title
+  const ep = nextEp(track)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative m-auto flex max-h-[86vh] w-full max-w-[520px] flex-col overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container-lowest shadow-2xl"
+      >
+        <div className="flex shrink-0 items-start justify-between border-b border-outline-variant/20 bg-surface-container-low px-6 py-5">
+          <div className="min-w-0 pr-6">
+            <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">稀饭全站搜索</div>
+            <h2 className="mt-1.5 line-clamp-2 text-lg font-extrabold leading-tight text-on-surface">{title}</h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant/55">搜索非本季周历资源，点选正确条目后直接播放 EP {ep}。</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            title="关闭"
+            aria-label="关闭"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+
+        <div className="custom-scrollbar min-h-0 overflow-y-auto px-6 py-5">
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              spellCheck={false}
+              autoComplete="off"
+              maxLength={100}
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) void runSearch(keyword)
+              }}
+              placeholder="番名 / 别名"
+              disabled={status === 'searching' || status === 'verifying'}
+              className="min-w-0 flex-1 rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70 disabled:opacity-60"
+            />
+            <button
+              type="button"
+              onClick={() => { void runSearch(keyword) }}
+              disabled={status === 'searching' || status === 'verifying' || !keyword.trim()}
+              title="搜索"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 font-label text-[11px] font-bold tracking-wider text-on-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon name="search" size={14} />
+              搜索
+            </button>
+          </div>
+
+          {status === 'searching' || status === 'verifying' ? (
+            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-on-surface-variant/50">
+              <Spinner size={28} className="text-primary/60" />
+              <span className="font-label text-[10px] uppercase tracking-widest">
+                {status === 'verifying' ? '正在校验验证码' : '正在搜索稀饭'}
+              </span>
+            </div>
+          ) : status === 'captcha' ? (
+            <div className="mt-4 rounded-lg border border-outline-variant/20 bg-surface-container p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[13px] font-semibold text-on-surface">需要验证码</div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant/55">输入图片中的字符后继续搜索。</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void refreshCaptcha() }}
+                  title="刷新验证码"
+                  aria-label="刷新验证码"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-outline-variant/25 text-on-surface-variant/60 transition-colors hover:border-primary/40 hover:text-primary"
+                >
+                  <Icon name="refresh" size={14} />
+                </button>
+              </div>
+              <div className="mt-3 flex h-20 items-center justify-center overflow-hidden rounded border border-outline-variant/20 bg-surface-container-high">
+                {imageB64 && <img src={`data:${mime};base64,${imageB64}`} alt="稀饭验证码" className="h-full max-w-full object-contain" />}
+              </div>
+              {message && <p className="mt-2 text-[11px] text-error">{message}</p>}
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  autoFocus
+                  value={captchaInput}
+                  onChange={(e) => setCaptchaInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && captchaInput.trim()) void verify()
+                  }}
+                  placeholder="输入验证码"
+                  className="min-w-0 flex-1 rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-sm tracking-[0.2em] text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70"
+                />
+                <button
+                  type="button"
+                  onClick={() => { void verify() }}
+                  disabled={!captchaInput.trim()}
+                  className="shrink-0 rounded-lg bg-primary px-3 py-2 font-label text-[11px] font-bold tracking-wider text-on-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  验证
+                </button>
+              </div>
+            </div>
+          ) : status === 'error' ? (
+            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-center">
+              <Icon name="error" size={32} className="text-error/70" />
+              <p className="max-w-[360px] text-[12px] leading-relaxed text-error/80">{message || '稀饭搜索失败'}</p>
+              <button
+                type="button"
+                onClick={() => { void runSearch(keyword) }}
+                className="flex items-center gap-1.5 rounded-lg border border-outline-variant/30 px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
+              >
+                <Icon name="refresh" size={13} />
+                再试一次
+              </button>
+            </div>
+          ) : results.length === 0 ? (
+            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-center text-on-surface-variant/50">
+              <Icon name="search" size={32} className="opacity-40" />
+              <p className="text-[12px]">没有找到“{keyword}”相关的稀饭资源</p>
+              <p className="text-[11px] text-on-surface-variant/35">换一个中文名、别名或关键词再搜。</p>
+            </div>
+          ) : (
+            <div className="mt-4">
+              <div className="mb-2 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/45">
+                搜索结果 · {results.length} 部
+              </div>
+              <div className="custom-scrollbar flex max-h-[45vh] flex-col gap-1.5 overflow-y-auto">
+                {results.map((hit) => {
+                  const meta = [hit.episode, hit.year, hit.area].filter(Boolean).join(' · ')
+                  return (
+                    <a
+                      key={hit.xifanId}
+                      href={playPageUrl(hit.xifanId, ep)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => onPick(hit)}
+                      className="flex items-center gap-3 rounded-lg border border-outline-variant/25 bg-surface-container px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-semibold text-on-surface">{hit.xifanName}</div>
+                        {meta && <div className="mt-0.5 truncate font-label text-[10px] tracking-wider text-on-surface-variant/45">{meta}</div>}
+                      </div>
+                      <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
+                    </a>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 justify-end border-t border-outline-variant/15 px-6 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-outline-variant/30 px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            关闭
+          </button>
+        </div>
       </div>
     </div>
   )
