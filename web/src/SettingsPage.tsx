@@ -156,11 +156,16 @@ function ProfileModule(): JSX.Element | null {
       <div className="mx-auto w-full max-w-[320px] md:max-w-none">
         <Kv k="用户名" v={user.username} />
         <Kv k="注册时间" v={user.createdAt.slice(0, 10)} />
-        {/* note 只留「没设密保」这种要用户去做点什么的警告；「已设置」不用再解释为什么不显示 */}
+        {/* note 只在没有任何可恢复凭据时警告；已验证邮箱也能让用户重新登录。 */}
         <Kv
           k="密保"
           v={user.hasSecurity ? '已设置' : '未设置'}
-          note={user.hasSecurity ? undefined : '忘记密码将无法找回账号'}
+          note={user.hasSecurity || user.hasEmail ? undefined : '忘记密码将无法找回账号'}
+        />
+        <Kv
+          k="邮箱登录"
+          v={user.hasEmail ? '已验证' : '未绑定'}
+          note={user.hasEmail ? '可用邮箱验证码或邮箱 + 密码登录' : '邮箱快捷注册会创建独立账号'}
         />
       </div>
     </>

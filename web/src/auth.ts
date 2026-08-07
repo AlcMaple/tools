@@ -7,6 +7,7 @@ export interface AuthUser {
   createdAt: string
   /** 只知道「设没设」密保 —— 后端不回显问题和答案（问题本身也是秘密）。 */
   hasSecurity: boolean
+  hasEmail: boolean
 }
 
 export interface SecurityQuestion {
@@ -27,8 +28,8 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   return data as T
 }
 
-type MeRes = { username: string; createdAt: string; hasSecurity: boolean }
-type LoginRes = { username: string; hasSecurity: boolean }
+type MeRes = { username: string; createdAt: string; hasSecurity: boolean; hasEmail: boolean }
+type LoginRes = { username: string; hasSecurity: boolean; hasEmail: boolean }
 
 let currentUser: AuthUser | null = null
 let ready = false // 首次 /me 是否已回来（避免登录态未知时闪一下登录按钮）
@@ -51,7 +52,7 @@ export const auth = {
   async init(): Promise<void> {
     try {
       const me = await request<MeRes>('/me')
-      setUser({ username: me.username, createdAt: me.createdAt, hasSecurity: me.hasSecurity })
+      setUser({ username: me.username, createdAt: me.createdAt, hasSecurity: me.hasSecurity, hasEmail: me.hasEmail })
     } catch {
       setUser(null)
     }
@@ -61,11 +62,23 @@ export const auth = {
   },
   async register(username: string, password: string, confirm: string): Promise<void> {
     const r = await request<LoginRes>('/register', { username, password, confirm })
-    setUser({ username: r.username, createdAt: new Date().toISOString(), hasSecurity: r.hasSecurity })
+    setUser({ username: r.username, createdAt: new Date().toISOString(), hasSecurity: r.hasSecurity, hasEmail: r.hasEmail })
   },
   async login(username: string, password: string): Promise<void> {
     await request<LoginRes>('/login', { username, password })
     await auth.init() // 顺带把 createdAt / hasSecurity 拉全
+  },
+  async requestEmailCode(email: string): Promise<{ challengeId: string; expiresIn: number }> {
+    return request<{ challengeId: string; expiresIn: number }>('/email/start', { email })
+  },
+  async verifyEmailCode(challengeId: string, code: string): Promise<{ status: 'login' | 'set-password'; challengeId: string; expiresIn?: number }> {
+    const result = await request<{ status: 'login' | 'set-password'; username?: string; challengeId?: string; expiresIn?: number }>('/email/verify', { challengeId, code })
+    if (result.status === 'login') await auth.init()
+    return { status: result.status, challengeId: result.challengeId || challengeId, expiresIn: result.expiresIn }
+  },
+  async registerEmail(p: { challengeId: string; username?: string; password: string; confirm: string }): Promise<void> {
+    const r = await request<LoginRes>('/email/register', p)
+    setUser({ username: r.username, createdAt: new Date().toISOString(), hasSecurity: r.hasSecurity, hasEmail: r.hasEmail })
   },
   async logout(): Promise<void> {
     await request('/logout', {})

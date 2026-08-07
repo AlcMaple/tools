@@ -15,6 +15,7 @@ db.pragma('foreign_keys = ON')
 //
 // 字段说明：
 //   pass_hash            —— scrypt 的 `salt:hash`（见 auth.ts）
+//   email / email_verified_at —— 可选邮箱登录凭据；只有完成一次性验证码后才写入验证时间
 //   token_version        —— 改密码 / 重置密码时 +1，签发的 JWT 里带着它，验证时对不上就拒 →
 //                           **改密码能真正踢掉所有老会话**（无状态 JWT 默认做不到，加这一列才行）
 //   security_question    —— 密保问题的**预设 id**，不是自由文本（预设下拉见 auth.ts SECURITY_QUESTIONS）
@@ -25,6 +26,8 @@ db.exec(`
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     username             TEXT NOT NULL UNIQUE COLLATE NOCASE,
     pass_hash            TEXT NOT NULL,
+    email                TEXT,
+    email_verified_at    TEXT,
     token_version        INTEGER NOT NULL DEFAULT 0,
     security_question    TEXT,
     security_answer_hash TEXT,
@@ -103,6 +106,34 @@ function ensureColumn(table: string, column: string, decl: string): void {
 ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0')
 ensureColumn('users', 'security_question', 'security_question TEXT')
 ensureColumn('users', 'security_answer_hash', 'security_answer_hash TEXT')
+ensureColumn('users', 'email', 'email TEXT')
+ensureColumn('users', 'email_verified_at', 'email_verified_at TEXT')
+
+// 邮箱是可选登录凭据。旧用户没有邮箱，NULL 不参与唯一索引；新用户完成验证码后才写入。
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
+  ON users (email)
+  WHERE email IS NOT NULL;
+`)
+
+// 邮箱快捷注册 / 登录的短期挑战。验证码只存 HMAC，不存明文；verified_at 只给新用户
+// 完成设置密码时使用，成功后马上 consumed_at，不能拿同一挑战重复建号。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS email_challenge (
+    id           TEXT PRIMARY KEY,
+    email        TEXT NOT NULL,
+    code_hash    TEXT NOT NULL,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    created_at   INTEGER NOT NULL,
+    expires_at   INTEGER NOT NULL,
+    verified_at  INTEGER,
+    consumed_at  INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS email_challenge_email_idx
+  ON email_challenge (email, created_at DESC);
+  CREATE INDEX IF NOT EXISTS email_challenge_expiry_idx
+  ON email_challenge (expires_at);
+`)
 
 // 追番数据版本号 —— app 的「覆盖上传」靠它判断「服务器上有没有我没见过的改动」（ideas/012 追番同步）。
 // **每次写入都 +1**（网页改一条、app 整包推一次，都算）。app 记住上次同步拿到的 rev，上传时带回来：
