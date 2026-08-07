@@ -1,5 +1,6 @@
-// 登录 / 注册 / 找回密码 弹窗 —— 压在暗化的周历上，MD3 卡片。
+// 登录 / 注册 / 邮箱快捷登录 / 找回密码 弹窗 —— 压在暗化的周历上，MD3 卡片。
 // 登录：用户名 + 密码（带「忘记密码？」入口）；注册：多一个确认密码；
+// 邮箱：验证码确认邮箱后，已有账号直接登录，新账号设置密码（用户名可选自动生成）。
 // 找回密码：账号 + 密保问题（预设下拉）+ 答案 + 新密码 + 确认。
 // Enter 提交、ESC / 背景 / × 关闭。
 import { useEffect, useRef, useState } from 'react'
@@ -8,9 +9,9 @@ import type { SecurityQuestion } from './auth'
 import { Icon } from './Icon'
 import { Select } from './Select'
 
-export type AuthMode = 'login' | 'register' | 'forgot'
+export type AuthMode = 'login' | 'register' | 'email' | 'forgot'
 
-const TITLE: Record<AuthMode, string> = { login: '登录', register: '注册', forgot: '找回密码' }
+const TITLE: Record<AuthMode, string> = { login: '登录', register: '注册', email: '邮箱快捷登录', forgot: '找回密码' }
 
 export function AuthModal({
   open,
@@ -24,6 +25,11 @@ export function AuthModal({
   onClose: () => void
 }): JSX.Element | null {
   const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
+  const [emailStep, setEmailStep] = useState<'address' | 'code' | 'password'>('address')
+  const [emailChallengeId, setEmailChallengeId] = useState('')
+  const [emailCode, setEmailCode] = useState('')
+  const [emailCooldown, setEmailCooldown] = useState(0)
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [questionId, setQuestionId] = useState('')
@@ -36,10 +42,16 @@ export function AuthModal({
 
   const isReg = mode === 'register'
   const isForgot = mode === 'forgot'
+  const isEmail = mode === 'email'
 
   useEffect(() => {
     if (!open) return
     setUsername('')
+    setEmail('')
+    setEmailStep('address')
+    setEmailChallengeId('')
+    setEmailCode('')
+    setEmailCooldown(0)
     setPassword('')
     setConfirm('')
     setQuestionId('')
@@ -58,7 +70,19 @@ export function AuthModal({
   useEffect(() => {
     setError(null)
     setOkMsg(null)
+    if (mode === 'email') {
+      setEmailStep('address')
+      setEmailChallengeId('')
+      setEmailCode('')
+      setEmailCooldown(0)
+    }
   }, [mode])
+
+  useEffect(() => {
+    if (!emailCooldown) return
+    const timer = window.setInterval(() => setEmailCooldown((n) => Math.max(0, n - 1)), 1000)
+    return () => window.clearInterval(timer)
+  }, [emailCooldown])
 
   useEffect(() => {
     if (isForgot && questions.length === 0) {
@@ -71,13 +95,54 @@ export function AuthModal({
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()
     setError(null)
-    if ((isReg || isForgot) && password !== confirm) {
+    if (isEmail && emailStep === 'address') {
+      setSubmitting(true)
+      try {
+        const result = await auth.requestEmailCode(email.trim())
+        setEmailChallengeId(result.challengeId)
+        setEmailStep('code')
+        setEmailCooldown(60)
+        setOkMsg('验证码已发送，请检查邮箱')
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '验证码发送失败，请稍后再试')
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
+    if (isEmail && emailStep === 'code') {
+      setSubmitting(true)
+      try {
+        const result = await auth.verifyEmailCode(emailChallengeId, emailCode.trim())
+        if (result.status === 'login') {
+          onClose()
+        } else {
+          setEmailChallengeId(result.challengeId)
+          setEmailStep('password')
+          setOkMsg('邮箱已验证，请设置登录密码')
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '验证码校验失败，请重试')
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
+    if ((isReg || isForgot || (isEmail && emailStep === 'password')) && password !== confirm) {
       setError(isForgot ? '两次输入的新密码不一致' : '两次输入的密码不一致')
       return
     }
     setSubmitting(true)
     try {
-      if (isReg) {
+      if (isEmail) {
+        await auth.registerEmail({
+          challengeId: emailChallengeId,
+          username: username.trim() || undefined,
+          password,
+          confirm,
+        })
+        onClose()
+      } else if (isReg) {
         await auth.register(username.trim(), password, confirm)
         onClose()
       } else if (isForgot) {
@@ -128,7 +193,7 @@ export function AuthModal({
         </div>
         <h2 className="mb-4 mt-1.5 text-lg font-extrabold text-on-surface">{TITLE[mode]}</h2>
 
-        {!isForgot && (
+        {!isForgot && !isEmail && (
           <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-md bg-surface-container p-1">
             {(['login', 'register'] as const).map((m) => (
               <button
@@ -148,64 +213,176 @@ export function AuthModal({
         )}
 
         <form onSubmit={submit}>
-          <Field label={isForgot ? '登录账号' : '用户名'}>
-            <input
-              ref={userRef}
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder={isForgot ? '你的用户名' : '起个用户名'}
-              maxLength={12}
-              autoComplete="username"
-              className={inputCls}
-            />
-          </Field>
-
-          {isForgot && (
+          {isEmail ? (
             <>
-              <Field label="找回密码问题">
-                <Select
-                  options={questions}
-                  value={questionId}
-                  onChange={setQuestionId}
-                  placeholder="请选择你设置的问题…"
-                />
-              </Field>
-              <Field label="找回密码答案">
+              <Field label="邮箱地址">
                 <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  autoFocus={emailStep === 'address'}
+                  disabled={emailStep !== 'address'}
+                  className={inputCls}
+                />
+                {emailStep !== 'address' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmailStep('address')
+                      setEmailChallengeId('')
+                      setEmailCode('')
+                      setError(null)
+                      setOkMsg(null)
+                    }}
+                    className="mt-1.5 font-label text-[10px] font-semibold text-primary hover:underline"
+                  >
+                    更换邮箱
+                  </button>
+                )}
+              </Field>
+
+              {emailStep === 'code' && (
+                <Field label="邮箱验证码">
+                  <input
+                    type="text"
+                    value={emailCode}
+                    onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="输入 6 位验证码"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    autoFocus
+                    className={inputCls}
+                  />
+                  <div className="mt-1.5 flex items-center justify-between gap-3">
+                    <Hint>验证码 10 分钟内有效</Hint>
+                    <button
+                      type="button"
+                      disabled={submitting || emailCooldown > 0}
+                      onClick={async () => {
+                        setError(null)
+                        setSubmitting(true)
+                        try {
+                          const result = await auth.requestEmailCode(email.trim())
+                          setEmailChallengeId(result.challengeId)
+                          setEmailCooldown(60)
+                          setOkMsg('新的验证码已发送')
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : '验证码发送失败，请稍后再试')
+                        } finally {
+                          setSubmitting(false)
+                        }
+                      }}
+                      className="shrink-0 font-label text-[10px] font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {emailCooldown > 0 ? `${emailCooldown}s 后重发` : '重新发送'}
+                    </button>
+                  </div>
+                </Field>
+              )}
+
+              {emailStep === 'password' && (
+                <>
+                  <Field label="用户名（可选）">
+                    <input
+                      ref={userRef}
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="留空则自动生成"
+                      maxLength={12}
+                      autoComplete="username"
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="设置密码">
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="后续可用邮箱 + 密码登录"
+                      autoComplete="new-password"
+                      className={inputCls}
+                    />
+                    <Hint>至少 6 位</Hint>
+                  </Field>
+                  <Field label="确认密码">
+                    <input
+                      type="password"
+                      value={confirm}
+                      onChange={(e) => setConfirm(e.target.value)}
+                      placeholder="再输一次密码"
+                      autoComplete="new-password"
+                      className={inputCls}
+                    />
+                  </Field>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <Field label={isForgot ? '登录账号' : '用户名或邮箱'}>
+                <input
+                  ref={userRef}
                   type="text"
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  placeholder="输入你的答案"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder={isForgot ? '你的用户名' : '用户名或邮箱'}
+                  maxLength={isForgot ? 12 : 254}
+                  autoComplete={isForgot ? 'username' : 'username'}
                   className={inputCls}
                 />
               </Field>
+
+              {isForgot && (
+                <>
+                  <Field label="找回密码问题">
+                    <Select
+                      options={questions}
+                      value={questionId}
+                      onChange={setQuestionId}
+                      placeholder="请选择你设置的问题…"
+                    />
+                  </Field>
+                  <Field label="找回密码答案">
+                    <input
+                      type="text"
+                      value={answer}
+                      onChange={(e) => setAnswer(e.target.value)}
+                      placeholder="输入你的答案"
+                      className={inputCls}
+                    />
+                  </Field>
+                </>
+              )}
+
+              <Field label={isForgot ? '新密码' : '密码'}>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={isForgot ? '设置新密码' : '输入密码'}
+                  autoComplete={isReg || isForgot ? 'new-password' : 'current-password'}
+                  className={inputCls}
+                />
+                {(isReg || isForgot) && <Hint>至少 6 位</Hint>}
+              </Field>
+
+              {(isReg || isForgot) && (
+                <Field label={isForgot ? '确认新密码' : '确认密码'}>
+                  <input
+                    type="password"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    placeholder="再输一次密码"
+                    autoComplete="new-password"
+                    className={inputCls}
+                  />
+                </Field>
+              )}
             </>
-          )}
-
-          <Field label={isForgot ? '新密码' : '密码'}>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={isForgot ? '设置新密码' : '输入密码'}
-              autoComplete={isReg || isForgot ? 'new-password' : 'current-password'}
-              className={inputCls}
-            />
-            {(isReg || isForgot) && <Hint>至少 6 位</Hint>}
-          </Field>
-
-          {(isReg || isForgot) && (
-            <Field label={isForgot ? '确认新密码' : '确认密码'}>
-              <input
-                type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                placeholder="再输一次密码"
-                autoComplete="new-password"
-                className={inputCls}
-              />
-            </Field>
           )}
 
           {mode === 'login' && (
@@ -234,18 +411,40 @@ export function AuthModal({
             disabled={submitting}
             className="mt-0.5 w-full rounded-lg bg-primary py-2.5 text-sm font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? '请稍候…' : isForgot ? '重 置 密 码' : isReg ? '注 册' : '登 录'}
+            {submitting
+              ? '请稍候…'
+              : isEmail && emailStep === 'address'
+                ? '发送验证码'
+                : isEmail && emailStep === 'code'
+                  ? '验证邮箱'
+                  : isEmail
+                    ? '完成注册'
+                    : isForgot
+                      ? '重 置 密 码'
+                      : isReg
+                        ? '注 册'
+                        : '登 录'}
           </button>
         </form>
 
-        <div className="mt-3.5 text-center font-label text-xs text-on-surface-variant/60">
-          {isForgot ? '想起来了？' : isReg ? '已有账号？' : '还没有账号？'}
+        {!isForgot && !isEmail && (
           <button
             type="button"
-            onClick={() => onMode(isForgot || isReg ? 'login' : 'register')}
+            onClick={() => onMode('email')}
+            className="mt-3 w-full rounded-lg border border-outline-variant/30 py-2 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
+          >
+            使用邮箱快捷登录 / 注册
+          </button>
+        )}
+
+        <div className="mt-3.5 text-center font-label text-xs text-on-surface-variant/60">
+          {isEmail ? '想用用户名和密码？' : isForgot ? '想起来了？' : isReg ? '已有账号？' : '还没有账号？'}
+          <button
+            type="button"
+            onClick={() => onMode(isEmail || isForgot || isReg ? 'login' : 'register')}
             className="font-semibold text-primary hover:underline"
           >
-            {isForgot ? '回去登录' : isReg ? '去登录' : '去注册'}
+            {isEmail ? '去登录' : isForgot ? '回去登录' : isReg ? '去登录' : '去注册'}
           </button>
         </div>
       </div>

@@ -21,6 +21,23 @@ npm run dev          # 一条命令跑通前后端：Vite 出页面，Hono 接�
 
 打开 http://localhost:5173 —— 番剧周期表。
 
+### 邮箱快捷注册 / 登录（可选）
+
+邮箱入口会先发送一次性验证码：已有邮箱账号验证后直接登录，新邮箱验证后设置密码；之后可以用「邮箱 + 密码」走普通登录。它不会自动把邮箱绑定到已有的用户名账号，旧账号继续使用原登录方式。开发环境默认把验证码打印到服务端控制台，生产环境必须配置 SMTP；没有 SMTP 时不影响原有的用户名 / 密码登录，只会停用邮箱入口。
+
+```bash
+EMAIL_MODE=smtp \
+SMTP_HOST=smtp.example.com \
+SMTP_PORT=587 \
+SMTP_SECURE=false \
+SMTP_USER=mapletools@example.com \
+SMTP_PASS='不要写进仓库' \
+SMTP_FROM='MapleTools <mapletools@example.com>' \
+npm run dev
+```
+
+验证码是短时、单次、限次数的邮箱所有权确认，不把浏览器自动填充的邮箱当作身份凭据。生产部署时这些变量应放在部署目录外的进程管理器环境文件中。
+
 ### 代理（仅本地、按需）
 
 Node 的 `fetch` 默认不走系统代理。若你的 Clash 是「系统代理模式（非 TUN）」导致直连
