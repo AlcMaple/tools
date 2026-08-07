@@ -2,11 +2,19 @@
 // 但又不想每次切页面都干等一轮网络。策略：有缓存就立刻用缓存渲染，同时背着用户发一次真实请求，
 // 回来后按每条记录的 updatedAt 合并（谁更新谁赢），再刷新一次界面 + 写回缓存。
 // bgmId 级别整条覆盖，不做字段级合并——一条追番记录不会真的被两台设备同时各改一半。
-import { fetchTracks, fetchXifanBindings, type Track, type XifanBinding } from './api'
+import {
+  fetchGirigiriBindings,
+  fetchTracks,
+  fetchXifanBindings,
+  type GirigiriBinding,
+  type Track,
+  type XifanBinding,
+} from './api'
 import { cachePeek, cacheSet } from './dataCache'
 
 const tracksKey = (username: string): string => `tracks:${username}`
 const bindingsKey = (username: string): string => `xifanBindings:${username}`
+const girigiriBindingsKey = (username: string): string => `girigiriBindings:${username}`
 
 function mergeByUpdatedAt(server: Track[], local: Track[] | undefined): Track[] {
   if (!local || local.length === 0) return server
@@ -68,4 +76,29 @@ export function saveTracksCache(username: string, ts: Track[]): void {
 }
 export function saveBindingsCache(username: string, b: Record<number, XifanBinding>): void {
   cacheSet(bindingsKey(username), b)
+}
+
+export function loadGirigiriBindings(
+  username: string,
+  onData: (b: Record<number, GirigiriBinding>) => void,
+): () => void {
+  const key = girigiriBindingsKey(username)
+  const cached = cachePeek<Record<number, GirigiriBinding>>(key)
+  if (cached) onData(cached)
+
+  let cancelled = false
+  fetchGirigiriBindings()
+    .then((bindings) => {
+      if (cancelled) return
+      cacheSet(key, bindings)
+      onData(bindings)
+    })
+    .catch(() => undefined)
+  return () => {
+    cancelled = true
+  }
+}
+
+export function saveGirigiriBindingsCache(username: string, b: Record<number, GirigiriBinding>): void {
+  cacheSet(girigiriBindingsKey(username), b)
 }
