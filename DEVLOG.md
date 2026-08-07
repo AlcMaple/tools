@@ -8,6 +8,31 @@
 
 ## 网页版
 
+### 2026-08-07 fix(web): 加强 XSS 防护与会话安全
+
+**效果**：
+
+1. 存储型数据继续保留原文，但所有网页输出都走 React 文本节点；Bangumi 链接改由数字 ID 生成，封面和播放地址只接受安全协议，封面代理拒绝 HTML / SVG 等非栅格内容，避免恶意数据变成可执行资源。
+2. 反射型与 DOM 型入口收紧：播放器的 `animeId` / `ep` 先在服务端校验，播放页内联脚本改用每次响应随机 nonce；统一 CSP、`nosniff`、禁止被嵌套、来源策略和权限策略，页面代码不使用 `innerHTML` / `eval` 等危险 sink。
+3. 会话防护加固：生产缺少至少 32 字符的 `AUTH_SECRET` 时拒绝启动；会话改为 `__Host-mt_session; Secure; HttpOnly; SameSite=Strict`，账号 / 追番接口不缓存，写请求增加同源来源校验。密码修改 / 找回原有的 token version 失效机制继续生效。
+4. 修复 Hono / Node adapter / Undici 以及开发构建链的已知依赖漏洞；生产依赖和完整依赖审计均为 0 vulnerabilities，Vite 开发页的 HMR 不被生产 CSP 误伤。Node adapter 升级后网页版运行时要求 Node.js 20+。
+
+**关键代码**：
+
+```text
+用户输入 / 外部站点数据
+        │
+        ├─ JSON / SQLite ──→ React 文本节点（自动 HTML 编码）
+        ├─ href / img / video ──→ https 协议与固定站点路径校验
+        └─ 播放器 query ──→ 服务端参数校验 + URLSearchParams + textContent
+                                      │
+                                      ↓
+                    CSP（self + 本次 nonce）/ nosniff / frame-ancestors
+                                      │
+                                      ↓
+             HttpOnly + Secure + SameSite + __Host- Cookie（脚本不可读）
+```
+
 ### 2026-08-07 feat(web): 新增 Girigiri 在线观看源
 
 **效果**：

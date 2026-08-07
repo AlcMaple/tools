@@ -21,6 +21,7 @@ import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
 import { getXifanCaptcha, searchXifan, verifyXifanCaptcha, XIFAN_SEARCH_MAX_LENGTH } from './xifan/search'
 import { getSession } from './auth'
 import { db } from './db'
+import { playerPageSecurity, renderNonce } from './security'
 
 const xifan = new Hono()
 
@@ -57,8 +58,14 @@ xifan.get('/resolve', async (c) => {
 })
 
 xifan.get('/play-page', (c) => {
+  const animeId = c.req.query('animeId') ?? ''
+  const ep = Number(c.req.query('ep') ?? '1')
+  if (!/^\d+$/.test(animeId)) return c.json({ error: 'animeId 不合法' }, 400)
+  if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
   c.header('Cache-Control', 'no-store')
-  return c.html(PLAY_PAGE)
+  const page = renderNonce(PLAY_PAGE)
+  playerPageSecurity(c, page.nonce)
+  return c.html(page.html)
 })
 
 // 全站搜索的验证码 / cookie 会话按登录用户隔离；不登录就不能把服务器当成匿名搜索代理。
@@ -149,7 +156,7 @@ const PLAY_PAGE = `<!doctype html>
 <meta name="robots" content="noindex">
 <title>继续看 · 稀饭</title>
 <script src="/api/xifan/hls.js"></script>
-<style>
+<style nonce="__CSP_NONCE__">
   /* 配色对齐 app / web 暗色主题：玫瑰粉主色（--color-primary 的 dark 版）+ 分层深色卡片 */
   :root { color-scheme: dark; --rose: #ffb3b8; --rose-dim: rgba(255,179,184,.14); --rose-bd: rgba(255,179,184,.30) }
   * { box-sizing: border-box }
@@ -178,12 +185,12 @@ const PLAY_PAGE = `<!doctype html>
   <div class="hd"><h1 id="ttl">继续看</h1><span class="ep-badge" id="epbadge">EP</span></div>
   <div class="player-wrap">
     <video id="v" controls playsinline preload="auto"></video>
-    <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
+    <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
   </div>
   <div id="err"></div>
   <div class="card"><div class="card-label">线路</div><div class="lines" id="lines"></div></div>
   <div class="card"><div class="card-label">选集</div><div class="eps" id="eps"></div></div>
-<script>
+<script nonce="__CSP_NONCE__">
 (function(){
   var $ = function(id){ return document.getElementById(id) }
   var q = new URLSearchParams(location.search)
@@ -280,7 +287,7 @@ const PLAY_PAGE = `<!doctype html>
   }
 
   async function boot(){
-    if (!/^[0-9]+$/.test(animeId)){ fail('URL 里缺 animeId'); return }
+    if (!/^[0-9]+$/.test(animeId) || !/^[0-9]+$/.test(ep)){ fail('URL 参数不合法'); return }
     $('epbadge').textContent = 'EP ' + ep
     renderEps() // 先按 URL 的 ep 画一版占位，拿到 playlist 的整季集数再重画
     try {

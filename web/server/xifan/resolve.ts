@@ -110,6 +110,15 @@ function classify(url: string): 'mp4' | 'hls' | 'iframe' {
   return 'mp4'
 }
 
+function safeMediaUrl(raw: string): string {
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
 async function fetchHtml(url: string): Promise<string> {
   const run = async (): Promise<string> => {
     const res = await fetch(url, { headers: XIFAN_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(12000) })
@@ -163,7 +172,9 @@ export async function getPlaylist(animeId: string, ep: number): Promise<Playlist
   const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/1/${ep}.html`)
   const data = parsePlayerData(body)
   const tabs = parseSourceTabs(body)
-  const url1 = data?.url ? decodeURIComponent(data.url) : ''
+  let url1 = ''
+  try { url1 = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
+  url1 = safeMediaUrl(url1)
   const first: PlayLine | null = url1 ? { source: 1, url: url1, kind: classify(url1) } : null
   const lines = tabs.length ? tabs : first ? [{ source: 1, name: '线路1' }] : []
   const eps = parseEpList(body, animeId)
@@ -177,6 +188,8 @@ export async function resolveLine(animeId: string, ep: number, source: number): 
   if (c.hit) return c.v
   const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/${source}/${ep}.html`)
   const data = parsePlayerData(body)
-  const url = data?.url ? decodeURIComponent(data.url) : ''
+  let url = ''
+  try { url = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
+  url = safeMediaUrl(url)
   return put<PlayLine | null>(key, url ? { source, url, kind: classify(url) } : null)
 }

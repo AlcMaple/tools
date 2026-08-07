@@ -77,7 +77,9 @@ function parseCalendar(raw: unknown): CalendarWeekday[] {
         id: typeof i.id === 'number' ? i.id : 0,
         name: String(i.name ?? ''),
         name_cn: String(i.name_cn ?? ''),
-        url: toHttps(String(i.url ?? (i.id ? `https://bgm.tv/subject/${i.id}` : ''))),
+        // BGM 返回的 url 不是页面必须的事实；用数字 id 生成固定官方链接，避免上游 / 缓存
+        // 中出现 javascript: 等危险协议后被前端当成 href。
+        url: typeof i.id === 'number' && i.id > 0 ? `https://bgm.tv/subject/${i.id}` : '',
         cover: coverUrl(images),
         airDate: String(i.air_date ?? ''),
         episodes: typeof i.eps === 'number' ? i.eps : 0,

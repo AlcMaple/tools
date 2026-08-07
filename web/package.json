@@ -3,6 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "@hono/vite-dev-server": {
+      "@hono/node-server": "^2.1.0"
+    }
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -13,17 +21,17 @@
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
     "@fontsource/space-grotesk": "^5.2.10",
-    "@hono/node-server": "^1.13.7",
+    "@hono/node-server": "^2.1.0",
     "better-sqlite3": "^12.11.1",
     "cheerio": "^1.2.0",
     "hls.js": "^1.6.16",
-    "hono": "^4.6.14",
+    "hono": "^4.13.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "undici": "^6.21.0"
+    "undici": "^6.28.0"
   },
   "devDependencies": {
-    "@hono/vite-dev-server": "^0.17.0",
+    "@hono/vite-dev-server": "^0.26.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
@@ -33,6 +41,6 @@
     "tailwindcss": "^3.4.17",
     "tsx": "^4.23.1",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^6.4.3"
   }
 }

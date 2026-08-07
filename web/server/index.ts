@@ -6,6 +6,7 @@ import auth from './auth'
 import tracks from './tracks'
 import girigiri from './girigiri'
 import xifan from './xifan'
+import { sameOriginGuard, securityHeaders } from './security'
 
 // 本地开发通常没有 5.6MB 的 bgm_index.db（生成它要下载 400MB+ 官方离线档）。
 // 仅 localhost 且本地索引未就绪时，借线上公开搜索 API 返回同形数据；追番写入、
@@ -29,6 +30,11 @@ async function searchFromDeployedWeb(q: string): Promise<Record<string, unknown>
 // 生产经 web/api/[[...route]].ts 在 Vercel serverless 跑，将来迁 VPS 用 @hono/node-server
 // 直接跑 —— 三处都是这一个 app，路由只写一遍。
 const app = new Hono()
+
+// 先挂在所有路由上：VPS 的静态 dist、API 和 Vercel serverless 都走同一套响应头。
+app.use('*', securityHeaders())
+// 所有写请求都先过来源校验；SameSite=Strict 仍是 Cookie 层的第二道防线。
+app.use('/api/*', sameOriginGuard())
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 
@@ -104,7 +110,11 @@ app.get('/api/cover/*', async (c) => {
       signal: AbortSignal.timeout(15000),
     })
     if (!upstream.ok || !upstream.body) return c.text('upstream error', 502)
-    c.header('Content-Type', upstream.headers.get('content-type') ?? 'image/jpeg')
+    const contentType = upstream.headers.get('content-type')?.split(';', 1)[0]?.toLowerCase() ?? ''
+    // 代理只允许图片。上游异常返回 HTML 时不能把它原样挂在本站路径下，避免被浏览器当
+    // 成可执行文档或被未来的页面导航误用。
+    if (!/^image\/(?:png|jpe?g|gif|webp)$/i.test(contentType)) return c.text('upstream image type rejected', 502)
+    c.header('Content-Type', contentType)
     c.header('Cache-Control', 'public, max-age=2592000, immutable')
     return c.body(upstream.body)
   } catch {
