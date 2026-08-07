@@ -20,6 +20,7 @@ import {
   searchAnime,
   searchXifan,
   verifyXifanCaptcha,
+  XIFAN_CAPTCHA_EVENT_KEY,
 } from './api'
 import { useAuth } from './auth'
 import { Icon, Spinner } from './Icon'
@@ -1137,6 +1138,7 @@ function XifanSearchModal({
   const [captchaInput, setCaptchaInput] = useState('')
   const [message, setMessage] = useState('')
   const started = useRef(false)
+  const captchaGeneration = useRef(0)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -1146,9 +1148,24 @@ function XifanSearchModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  useEffect(() => {
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key !== XIFAN_CAPTCHA_EVENT_KEY || (status !== 'captcha' && status !== 'verifying')) return
+      captchaGeneration.current += 1
+      setImageB64('')
+      setCaptchaInput('')
+      setMessage('验证码已在其他页面刷新，请重新获取')
+      setStatus('captcha')
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [status])
+
   const refreshCaptcha = async (errorMessage = ''): Promise<void> => {
+    const generation = ++captchaGeneration.current
     try {
       const captcha = await fetchXifanCaptcha()
+      if (generation !== captchaGeneration.current) return
       setImageB64(captcha.imageB64)
       setMime(captcha.mime || 'image/png')
       setCaptchaInput('')
@@ -1191,8 +1208,10 @@ function XifanSearchModal({
     const code = captchaInput.trim()
     if (!code || status !== 'captcha') return
     setStatus('verifying')
+    const generation = captchaGeneration.current
     try {
       const result = await verifyXifanCaptcha(code)
+      if (generation !== captchaGeneration.current) return
       if (!result.success) {
         await refreshCaptcha('验证码不正确，请重新输入')
         return
@@ -1296,6 +1315,7 @@ function XifanSearchModal({
                 <input
                   type="text"
                   autoFocus
+                  disabled={!imageB64}
                   value={captchaInput}
                   onChange={(e) => setCaptchaInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -1307,7 +1327,7 @@ function XifanSearchModal({
                 <button
                   type="button"
                   onClick={() => { void verify() }}
-                  disabled={!captchaInput.trim()}
+                  disabled={!imageB64 || !captchaInput.trim()}
                   className="shrink-0 rounded-lg bg-primary px-3 py-2 font-label text-[11px] font-bold tracking-wider text-on-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   验证

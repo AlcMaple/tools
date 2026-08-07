@@ -84,6 +84,17 @@ db.exec(`
   );
 `)
 
+// 稀饭登录会话 —— 每个 MapleTools 用户独立一份。只保存加密后的 cookie 罐，
+// 用户名、密码、验证码都不落库；AUTH_SECRET 同时作为加密密钥的根材料。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS xifan_session (
+    user_id       INTEGER PRIMARY KEY,
+    cookie_cipher TEXT    NOT NULL,
+    updated_at    INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`)
+
 // 老库补列 —— 沿用 app 那套「零迁移脚本」思路：缺哪列补哪列，不写版本号、不写迁移文件。
 function ensureColumn(table: string, column: string, decl: string): void {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]

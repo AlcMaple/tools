@@ -10,11 +10,17 @@
 // 源 tab 名单改用正则扒（web 侧只为这几个 <a> 标签不值当加 cheerio 依赖）。
 
 import '../http' // 副作用导入：让 undici fetch 认 HTTPS_PROXY（本地 Clash 非 TUN 时用）
+import {
+  assertXifanHtml,
+  BASE_URL,
+  DESKTOP_UA,
+  xifanSessionFor,
+  type XifanCookieSession,
+  type XifanHttpResponse,
+} from './session'
 
-// 与 app 的 DESKTOP_USER_AGENT 一致 —— 稀饭对 UA 敏感。导出给 weekday.ts 复用，保证全站一个 UA。
-export const DESKTOP_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-export const BASE_URL = 'https://anime.xifanacg.com'
+export { BASE_URL, DESKTOP_UA } from './session'
+
 const XIFAN_HEADERS: Record<string, string> = {
   'User-Agent': DESKTOP_UA,
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -53,7 +59,12 @@ function parsePlayerData(html: string): PlayerData | null {
     if (nm) { try { vodName = JSON.parse(`"${nm[1]}"`) } catch { vodName = nm[1] } }
   }
 
-  return { url: getStr('url'), from: getStr('from'), id: getStr('id'), vod_data: { vod_name: vodName } }
+  return {
+    url: getStr('url'),
+    from: getStr('from'),
+    id: getStr('id'),
+    vod_data: { vod_name: vodName },
+  }
 }
 // ↑↑↑ 抄写结束 ↑↑↑
 
@@ -110,10 +121,84 @@ function classify(url: string): 'mp4' | 'hls' | 'iframe' {
   return 'mp4'
 }
 
-async function fetchHtml(url: string): Promise<string> {
-  const run = async (): Promise<string> => {
-    const res = await fetch(url, { headers: XIFAN_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(12000) })
-    return res.text()
+export type XifanResolveErrorCode = 'XIFAN_AUTH_REQUIRED' | 'XIFAN_ACCESS_DENIED'
+
+export class XifanResolveError extends Error {
+  constructor(
+    readonly code: XifanResolveErrorCode,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'XifanResolveError'
+  }
+}
+
+interface AccessContext {
+  uid: number | null
+  session: XifanCookieSession | null
+  authenticated: boolean
+  scope: string
+}
+
+function accessContext(uid: number | null): AccessContext {
+  if (uid === null) return { uid, session: null, authenticated: false, scope: 'anon' }
+  const session = xifanSessionFor(uid)
+  const authenticated = session.loggedIn
+  return {
+    uid,
+    session: authenticated ? session : null,
+    authenticated,
+    scope: authenticated ? `user:${uid}` : 'anon',
+  }
+}
+
+function noticeText(html: string): string {
+  const content = html.match(/<div[^>]*class="[^"]*\bmsg-content\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? ''
+  return content.replace(/<[^>]+>/g, ' ').replace(/&nbsp;| /gi, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function gateText(html: string): string {
+  const chunks = [noticeText(html)]
+  const gateClass = /class=(['"])[^'"]*(?:popedom|popeom|upgrade-gate)[^'"]*\1/gi
+  let match: RegExpExecArray | null
+  while ((match = gateClass.exec(html)) !== null && chunks.length < 6) {
+    chunks.push(html.slice(match.index, match.index + 4000).replace(/<[^>]+>/g, ' '))
+  }
+  return chunks.join(' ').replace(/&nbsp;| /gi, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function loggedOutPage(html: string): boolean {
+  const notice = noticeText(html)
+  return notice.includes('亲爱的：未登录')
+    || html.includes('class="mac_login_form')
+    || html.includes('<h1>账号登录</h1>')
+    || /请先登录|登录后(?:才可|方可|观看)/.test(notice)
+}
+
+function deniedPage(html: string): boolean {
+  return /亲爱的：您没有权限访问此数据|没有权限观看/.test(html)
+    || /没有权限访问|权限不足|升级会员|请先购买|积分不足|需要购买|付费后/.test(gateText(html))
+}
+
+function accessError(access: AccessContext): XifanResolveError {
+  return access.authenticated
+    ? new XifanResolveError('XIFAN_ACCESS_DENIED', '当前稀饭账号没有该资源的观看权限')
+    : new XifanResolveError('XIFAN_AUTH_REQUIRED', '该资源需要先登录稀饭账号')
+}
+
+async function fetchAnonymous(url: string): Promise<XifanHttpResponse> {
+  const run = async (): Promise<XifanHttpResponse> => {
+    const response = await fetch(url, {
+      headers: XIFAN_HEADERS,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000),
+    })
+    return {
+      status: response.status,
+      headers: response.headers,
+      body: Buffer.from(await response.arrayBuffer()),
+      url: response.url,
+    }
   }
   try {
     return await run()
@@ -124,6 +209,21 @@ async function fetchHtml(url: string): Promise<string> {
     if (/ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket disconnected|TLS|fetch failed|terminated/i.test(msg)) return run()
     throw err
   }
+}
+
+async function fetchHtml(url: string, access: AccessContext): Promise<string> {
+  const response = access.session
+    ? await access.session.get(url, {}, { retryTransient: true, timeoutMs: 12000 })
+    : await fetchAnonymous(url)
+  const html = assertXifanHtml(response, '稀饭播放页请求')
+
+  if (loggedOutPage(html)) {
+    access.session?.clear()
+    if (access.uid !== null) clearXifanResolveCache(access.uid)
+    throw new XifanResolveError('XIFAN_AUTH_REQUIRED', '该资源需要先登录稀饭账号')
+  }
+  if (deniedPage(html)) throw accessError(access)
+  return html
 }
 
 export interface LineMeta {
@@ -142,25 +242,46 @@ export interface Playlist {
   eps: number[] // 整季集数序号（画集数网格用），扒不到就空
 }
 
-// 进程内缓存（1h）—— 刷新 / 换人秒回。但**不预解析、不并行**：缓存的只是「已经解析过的那条」。
+// 进程内缓存（1h）—— 匿名结果共享；登录结果按 MapleTools 用户隔离，受限地址不会串账号。
+// **不预解析、不并行**：缓存的只是「已经解析过的那条」。
 const cache = new Map<string, { v: unknown; at: number }>()
 const TTL = 60 * 60 * 1000
+const MAX_CACHE_ENTRIES = 5000
 function cached<T>(key: string): { hit: true; v: T } | { hit: false } {
   const h = cache.get(key)
   if (h && Date.now() - h.at < TTL) return { hit: true, v: h.v as T }
+  if (h) cache.delete(key)
   return { hit: false }
 }
 function put<T>(key: string, v: T): T {
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const now = Date.now()
+    for (const [cacheKey, entry] of cache) {
+      if (now - entry.at >= TTL) cache.delete(cacheKey)
+    }
+    if (cache.size >= MAX_CACHE_ENTRIES) {
+      const oldest = cache.keys().next().value as string | undefined
+      if (oldest) cache.delete(oldest)
+    }
+  }
   cache.set(key, { v, at: Date.now() })
   return v
 }
 
+export function clearXifanResolveCache(uid: number): void {
+  const prefix = `user:${uid}:`
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) cache.delete(key)
+  }
+}
+
 /** 打开播放页调这个：一次抓 source 1 → 线路 1 地址 + 全部线路名单。**不碰线路 2/3**。 */
-export async function getPlaylist(animeId: string, ep: number): Promise<Playlist> {
-  const key = `pl:${animeId}:${ep}`
+export async function getPlaylist(animeId: string, ep: number, uid: number | null = null): Promise<Playlist> {
+  const access = accessContext(uid)
+  const key = `${access.scope}:pl:${animeId}:${ep}`
   const c = cached<Playlist>(key)
   if (c.hit) return c.v
-  const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/1/${ep}.html`)
+  const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/1/${ep}.html`, access)
   const data = parsePlayerData(body)
   const tabs = parseSourceTabs(body)
   const url1 = data?.url ? decodeURIComponent(data.url) : ''
@@ -171,11 +292,17 @@ export async function getPlaylist(animeId: string, ep: number): Promise<Playlist
 }
 
 /** 用户手动点线路 N 时才调这个：只抓那一条。 */
-export async function resolveLine(animeId: string, ep: number, source: number): Promise<PlayLine | null> {
-  const key = `ln:${animeId}:${ep}:${source}`
+export async function resolveLine(
+  animeId: string,
+  ep: number,
+  source: number,
+  uid: number | null = null,
+): Promise<PlayLine | null> {
+  const access = accessContext(uid)
+  const key = `${access.scope}:ln:${animeId}:${ep}:${source}`
   const c = cached<PlayLine | null>(key)
   if (c.hit) return c.v
-  const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/${source}/${ep}.html`)
+  const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/${source}/${ep}.html`, access)
   const data = parsePlayerData(body)
   const url = data?.url ? decodeURIComponent(data.url) : ''
   return put<PlayLine | null>(key, url ? { source, url, kind: classify(url) } : null)

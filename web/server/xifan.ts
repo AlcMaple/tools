@@ -5,9 +5,11 @@
 //   GET  /api/xifan/play-page?animeId=&ep=         → 播放器页（默认播线路 1，直连失败套娃兜底）
 //   GET  /api/xifan/hls.js                         → 自托管 hls.js（不走可能被墙的 jsdelivr）
 //   POST /api/xifan/locate                         → bgmId + 标题 → 稀饭候选（周表免验证码匹配，见 locate.ts）
-//   GET  /api/xifan/captcha                      → 全站搜索验证码图片（按登录用户隔离 cookie）
-//   POST /api/xifan/captcha/verify               → 校验全站搜索验证码
-//   POST /api/xifan/search                       → 搜索非周历稀饭资源（需要先过验证码）
+//   GET  /api/xifan/auth/status                    → 稀饭账号状态（远端校验）
+//   POST /api/xifan/auth/login|logout              → 稀饭账号登录 / 退出
+//   GET  /api/xifan/captcha                        → 登录 / 全站搜索共用验证码
+//   POST /api/xifan/captcha/verify                 → 校验全站搜索验证码
+//   POST /api/xifan/search                         → 搜索非周历稀饭资源（需要先过验证码）
 //   POST /api/xifan/bind                           → 用户点候选确认，落库绑定（要登录）
 //   GET  /api/xifan/bindings                       → 当前用户追番已建的绑定，页面加载时一次拿齐（要登录）
 //
@@ -15,14 +17,42 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Hono } from 'hono'
-import { getPlaylist, resolveLine } from './xifan/resolve'
+import type { Context } from 'hono'
+import {
+  clearXifanResolveCache,
+  getPlaylist,
+  resolveLine,
+  XifanResolveError,
+} from './xifan/resolve'
 import { locate } from './xifan/locate'
 import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
 import { getXifanCaptcha, searchXifan, verifyXifanCaptcha, XIFAN_SEARCH_MAX_LENGTH } from './xifan/search'
-import { getSession } from './auth'
+import { getXifanAuthStatus, loginXifan, logoutXifan } from './xifan/account'
+import { XifanLocalRateLimitError, XifanUpstreamError } from './xifan/session'
+import { clearRateLimit, clientIp, getSession, rateLimited } from './auth'
 import { db } from './db'
 
 const xifan = new Hono()
+const XIFAN_LOGIN_WINDOW_MS = 15 * 60 * 1000
+const XIFAN_LOGIN_MAX_PER_ACCOUNT = 10
+const XIFAN_LOGIN_MAX_PER_IP = 20
+
+function upstreamFailure(c: Context, error: unknown, fallback: string): Response {
+  const message = error instanceof Error ? error.message : fallback
+  if (error instanceof XifanLocalRateLimitError) {
+    c.header('Retry-After', String(error.retryAfterSec))
+    return c.json({ error: message }, 429)
+  }
+  if (error instanceof XifanUpstreamError) {
+    c.header('X-Upstream-Status', String(error.status))
+    if (error.status === 429) {
+      if (error.retryAfterSec !== null) c.header('Retry-After', String(error.retryAfterSec))
+      return c.json({ error: message, upstreamStatus: error.status }, 429)
+    }
+    return c.json({ error: message, upstreamStatus: error.status }, 502)
+  }
+  return c.json({ error: message }, 502)
+}
 
 // 自托管 hls.js —— 不走 jsdelivr（国内无魔法可能加载不到）。首次请求读一次、进程内缓存。
 let hlsJsCache: string | null = null
@@ -39,8 +69,17 @@ xifan.get('/playlist', async (c) => {
   const ep = Number(c.req.query('ep') ?? '1')
   if (!/^\d+$/.test(animeId)) return c.json({ error: 'animeId 不合法（要纯数字，如 3543）' }, 400)
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
+  const session = await getSession(c)
   c.header('Cache-Control', 'no-store')
-  return c.json(await getPlaylist(animeId, ep))
+  try {
+    return c.json(await getPlaylist(animeId, ep, session?.uid ?? null))
+  } catch (e) {
+    if (e instanceof XifanResolveError) {
+      const body = { error: e.message, code: e.code }
+      return e.code === 'XIFAN_AUTH_REQUIRED' ? c.json(body, 401) : c.json(body, 403)
+    }
+    return upstreamFailure(c, e, '稀饭播放页请求失败')
+  }
 })
 
 // 用户手动点线路 N：只抓那一条
@@ -51,9 +90,18 @@ xifan.get('/resolve', async (c) => {
   if (!/^\d+$/.test(animeId)) return c.json({ error: 'animeId 不合法' }, 400)
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
   if (!Number.isInteger(source) || source < 1) return c.json({ error: 'source 不合法' }, 400)
-  const line = await resolveLine(animeId, ep, source)
   c.header('Cache-Control', 'no-store')
-  return line ? c.json(line) : c.json({ error: '此线路解析不到（可能此线路没有这一集）' }, 404)
+  const session = await getSession(c)
+  try {
+    const line = await resolveLine(animeId, ep, source, session?.uid ?? null)
+    return line ? c.json(line) : c.json({ error: '此线路解析不到（可能此线路没有这一集）' }, 404)
+  } catch (e) {
+    if (e instanceof XifanResolveError) {
+      const body = { error: e.message, code: e.code }
+      return e.code === 'XIFAN_AUTH_REQUIRED' ? c.json(body, 401) : c.json(body, 403)
+    }
+    return upstreamFailure(c, e, '稀饭线路解析失败')
+  }
 })
 
 xifan.get('/play-page', (c) => {
@@ -61,7 +109,71 @@ xifan.get('/play-page', (c) => {
   return c.html(PLAY_PAGE)
 })
 
-// 全站搜索的验证码 / cookie 会话按登录用户隔离；不登录就不能把服务器当成匿名搜索代理。
+xifan.get('/auth/status', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  try {
+    c.header('Cache-Control', 'no-store')
+    const status = await getXifanAuthStatus(session.uid)
+    if (!status.loggedIn) clearXifanResolveCache(session.uid)
+    return c.json(status)
+  } catch (e) {
+    return upstreamFailure(c, e, '稀饭登录状态校验失败')
+  }
+})
+
+xifan.post('/auth/login', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  const body = (await c.req.json().catch(() => ({}))) as {
+    username?: unknown
+    password?: unknown
+    verify?: unknown
+  }
+  const username = typeof body.username === 'string' ? body.username.trim() : ''
+  const password = typeof body.password === 'string' ? body.password : ''
+  const verify = typeof body.verify === 'string' ? body.verify.trim() : ''
+  if (!username || username.length > 100) return c.json({ error: '账号格式不合法' }, 400)
+  if (!password || password.length > 200) return c.json({ error: '密码格式不合法' }, 400)
+  if (!verify || verify.length > 32) return c.json({ error: '验证码格式不合法' }, 400)
+
+  const ipKey = `xifan-login-ip:${clientIp(c)}`
+  const accountKey = `xifan-login-account:${username.toLowerCase()}`
+  if (
+    rateLimited(ipKey, XIFAN_LOGIN_MAX_PER_IP, XIFAN_LOGIN_WINDOW_MS)
+    || rateLimited(accountKey, XIFAN_LOGIN_MAX_PER_ACCOUNT, XIFAN_LOGIN_WINDOW_MS)
+  ) {
+    return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+  }
+
+  try {
+    const result = await loginXifan(session.uid, username, password, verify)
+    if (result.success) {
+      clearRateLimit(ipKey)
+      clearRateLimit(accountKey)
+      clearXifanResolveCache(session.uid)
+    }
+    c.header('Cache-Control', 'no-store')
+    return c.json(result)
+  } catch (e) {
+    return upstreamFailure(c, e, '稀饭登录失败')
+  }
+})
+
+xifan.post('/auth/logout', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  try {
+    const status = await logoutXifan(session.uid)
+    clearXifanResolveCache(session.uid)
+    return c.json(status)
+  } catch (e) {
+    clearXifanResolveCache(session.uid)
+    return c.json({ error: e instanceof Error ? e.message : '退出稀饭账号失败' }, 502)
+  }
+})
+
+// 登录与全站搜索复用同一个验证码 / cookie 会话；不登录就不能把服务器当成匿名代理。
 xifan.get('/captcha', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录' }, 401)
@@ -69,7 +181,7 @@ xifan.get('/captcha', async (c) => {
     c.header('Cache-Control', 'no-store')
     return c.json(await getXifanCaptcha(session.uid))
   } catch (e) {
-    return c.json({ error: e instanceof Error ? e.message : '验证码请求失败' }, 502)
+    return upstreamFailure(c, e, '验证码请求失败')
   }
 })
 
@@ -82,7 +194,7 @@ xifan.post('/captcha/verify', async (c) => {
   try {
     return c.json(await verifyXifanCaptcha(session.uid, code))
   } catch (e) {
-    return c.json({ error: e instanceof Error ? e.message : '验证码校验失败' }, 502)
+    return upstreamFailure(c, e, '验证码校验失败')
   }
 })
 
@@ -99,7 +211,7 @@ xifan.post('/search', async (c) => {
     c.header('Cache-Control', 'no-store')
     return c.json(await searchXifan(session.uid, keyword))
   } catch (e) {
-    return c.json({ error: e instanceof Error ? e.message : '稀饭搜索失败' }, 502)
+    return upstreamFailure(c, e, '稀饭搜索失败')
   }
 })
 
@@ -155,12 +267,15 @@ const PLAY_PAGE = `<!doctype html>
   * { box-sizing: border-box }
   body { margin: 0 auto; background: #0e0e0e; color: #e2e2e2; font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 22px 18px 40px; max-width: 960px }
   .hd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
-  h1 { font-size: 18px; font-weight: 800; letter-spacing: -.01em; margin: 0 }
+  h1 { font-size: 18px; font-weight: 800; letter-spacing: 0; margin: 0 }
   .ep-badge { font-size: 12px; font-weight: 700; color: var(--rose); background: var(--rose-dim); border: 1px solid var(--rose-bd); border-radius: 6px; padding: 1px 9px; font-variant-numeric: tabular-nums }
   .player-wrap { position: relative; aspect-ratio: 16/9; background: #000; border: 1px solid #242424; border-radius: 14px; overflow: hidden; margin-bottom: 12px }
   video, iframe.player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; display: none }
   /* 只在真出错时才现（加载失败 / 这集没更新 / 线路解析不到）—— 平时不显示任何提示文字 */
-  #err { display: none; margin: 0 0 12px; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; background: rgba(247,118,142,.12); border: 1px solid rgba(247,118,142,.35); color: #f7768e }
+  #err { display: none; align-items: center; gap: 12px; margin: 0 0 12px; padding: 9px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; background: rgba(247,118,142,.12); border: 1px solid rgba(247,118,142,.35); color: #f7768e }
+  #err-text { min-width: 0; flex: 1 }
+  #auth-link { display: none; flex: none; align-items: center; justify-content: center; border: 1px solid rgba(255,179,184,.45); border-radius: 7px; padding: 5px 10px; color: var(--rose); text-decoration: none; white-space: nowrap }
+  #auth-link:hover { background: var(--rose-dim) }
   .card { background: #171717; border: 1px solid #242424; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px }
   .card-label { font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #767676; margin-bottom: 10px }
   .lines { display: flex; flex-wrap: wrap; gap: 7px }
@@ -180,7 +295,7 @@ const PLAY_PAGE = `<!doctype html>
     <video id="v" controls playsinline preload="auto"></video>
     <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
   </div>
-  <div id="err"></div>
+  <div id="err" role="alert" aria-live="polite"><span id="err-text"></span><a id="auth-link" href="/#/settings/xifan" target="_blank">去登录</a></div>
   <div class="card"><div class="card-label">线路</div><div class="lines" id="lines"></div></div>
   <div class="card"><div class="card-label">选集</div><div class="eps" id="eps"></div></div>
 <script>
@@ -191,9 +306,19 @@ const PLAY_PAGE = `<!doctype html>
   var ep = q.get('ep') || '1'
   var v = $('v'), frame = $('frame')
   var lines = [], eps = [], curPl = null, resolvedMap = {}, hls = null
+  var waitingForAuth = false
 
-  function fail(txt){ var e = $('err'); e.textContent = txt; e.style.display = 'block' }
-  function clearFail(){ $('err').style.display = 'none' }
+  window.addEventListener('storage', function(e){
+    if (waitingForAuth && e.key === 'mapletools-xifan-auth-changed' && e.newValue) location.reload()
+  })
+
+  function fail(txt, code){
+    waitingForAuth = code === 'XIFAN_AUTH_REQUIRED'
+    $('err-text').textContent = txt
+    $('auth-link').style.display = waitingForAuth ? 'inline-flex' : 'none'
+    $('err').style.display = 'flex'
+  }
+  function clearFail(){ waitingForAuth = false; $('err').style.display = 'none'; $('auth-link').style.display = 'none' }
   function inFrame(){ return frame.style.display === 'block' }
 
   // mp4 直连意外失败（少数编码问题）→ 静默切套娃。HLS 失败交给 hls.js 的 fatal。
@@ -253,7 +378,10 @@ const PLAY_PAGE = `<!doctype html>
       try {
         var r = await fetch('/api/xifan/resolve?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep) + '&source=' + source)
         var d = await r.json()
-        if (!d || d.error || !d.url){ fail('这条线路解析不到' + (d && d.error ? '：' + d.error : '')); return }
+        if (!d || d.error || !d.url){
+          fail(d && d.error ? d.error : '这条线路解析不到', d && d.code)
+          return
+        }
         pl = d; resolvedMap[source] = pl
       } catch (e){ fail('解析请求失败：' + (e && e.message || e)); return }
     }
@@ -286,7 +414,7 @@ const PLAY_PAGE = `<!doctype html>
     try {
       var r = await fetch('/api/xifan/playlist?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep))
       var d = await r.json()
-      if (d.error){ fail('加载失败：' + d.error); return }
+      if (d.error){ fail(d.error, d.code); return }
       lines = d.lines || []
       eps = d.eps || []
       if (d.title){ $('ttl').textContent = d.title }

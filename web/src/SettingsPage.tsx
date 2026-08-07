@@ -4,17 +4,47 @@
 //   - 右栏**不套厚卡片边框**，靠标题 + 分隔线 + 间距分组；边框套边框正是「闷」的来源
 //   - 表单**限宽**，别把密码框拉成整个面板那么宽
 // 模块导航现在只有两个，但结构就是为了长大用的（追番偏好 / 数据同步等）。
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  fetchXifanAuthStatus,
+  fetchXifanCaptcha,
+  loginXifanAccount,
+  logoutXifanAccount,
+  signalXifanAuthChanged,
+  XIFAN_AUTH_EVENT_KEY,
+  XIFAN_CAPTCHA_EVENT_KEY,
+} from './api'
 import { auth, fetchQuestions, useAuth } from './auth'
 import type { SecurityQuestion } from './auth'
 import { Icon } from './Icon'
 import { Select } from './Select'
 
-type Module = 'profile' | 'security'
+type Module = 'profile' | 'security' | 'xifan'
 
 export function SettingsPage(): JSX.Element | null {
   const { user } = useAuth()
-  const [module, setModule] = useState<Module>('profile')
+  const [module, setModule] = useState<Module>(() => (
+    window.location.hash === '#/settings/xifan' ? 'xifan' : 'profile'
+  ))
+  const [xifanOpened, setXifanOpened] = useState(module === 'xifan')
+
+  useEffect(() => {
+    const onHashChange = (): void => {
+      if (window.location.hash === '#/settings/xifan') {
+        setXifanOpened(true)
+        setModule('xifan')
+      } else if (window.location.hash === '#/settings') setModule('profile')
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  const selectModule = (next: Module): void => {
+    setModule(next)
+    if (next === 'xifan') setXifanOpened(true)
+    const hash = next === 'xifan' ? '#/settings/xifan' : '#/settings'
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`)
+  }
 
   if (!user) return null
 
@@ -34,20 +64,27 @@ export function SettingsPage(): JSX.Element | null {
           <aside className="self-start md:sticky md:top-[72px]">
             <IdCard username={user.username} />
             {/* 窄屏：tab 居中，跟上面的头像页头对齐成一条中轴。md 起回到侧栏的竖排左对齐 */}
-            <nav className="mt-4 flex justify-center gap-1.5 md:mt-3.5 md:flex-col md:justify-start">
+            <nav className="mt-4 flex justify-center gap-1 md:mt-3.5 md:flex-col md:justify-start md:gap-1.5">
               <SideItem
                 icon="person"
                 active={module === 'profile'}
-                onClick={() => setModule('profile')}
+                onClick={() => selectModule('profile')}
               >
                 个人信息
               </SideItem>
               <SideItem
                 icon="lock"
                 active={module === 'security'}
-                onClick={() => setModule('security')}
+                onClick={() => selectModule('security')}
               >
                 账号安全
+              </SideItem>
+              <SideItem
+                icon="play_arrow"
+                active={module === 'xifan'}
+                onClick={() => selectModule('xifan')}
+              >
+                稀饭账号
               </SideItem>
               <div className="hidden px-2.5 pb-1.5 pt-3 font-label text-[10px] uppercase tracking-[0.16em] text-on-surface-variant/35 md:block">
                 后续
@@ -61,7 +98,14 @@ export function SettingsPage(): JSX.Element | null {
             </nav>
           </aside>
 
-          <div>{module === 'profile' ? <ProfileModule /> : <SecurityModule />}</div>
+          <div>
+            {module !== 'xifan' && (module === 'profile' ? <ProfileModule /> : <SecurityModule />)}
+            {xifanOpened && (
+              <div className={module === 'xifan' ? undefined : 'hidden'}>
+                <XifanAccountModule />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -91,7 +135,7 @@ function SideItem({
   onClick,
   children,
 }: {
-  icon: 'person' | 'lock' | 'favorite' | 'sync'
+  icon: 'person' | 'lock' | 'play_arrow' | 'favorite' | 'sync'
   active?: boolean
   ghost?: boolean
   onClick?: () => void
@@ -110,7 +154,8 @@ function SideItem({
     <button
       type="button"
       onClick={onClick}
-      className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-[13.5px] font-semibold transition-colors ${
+      aria-pressed={active}
+      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-2 text-left text-[12.5px] font-semibold transition-colors md:gap-2.5 md:px-2.5 md:text-[13.5px] ${
         active
           ? 'bg-primary/10 text-primary'
           : 'text-on-surface-variant/75 hover:bg-on-surface/5 hover:text-on-surface'
@@ -303,23 +348,276 @@ function SecurityModule(): JSX.Element {
   )
 }
 
+function XifanAccountModule(): JSX.Element {
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [verify, setVerify] = useState('')
+  const [captcha, setCaptcha] = useState('')
+  const [captchaLoading, setCaptchaLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const mounted = useRef(false)
+  const captchaRequest = useRef(0)
+  const statusRequest = useRef(0)
+
+  const loadCaptcha = async (clearError = true): Promise<string | null> => {
+    if (!mounted.current) return null
+    const request = ++captchaRequest.current
+    setVerify('')
+    setCaptchaLoading(true)
+    if (clearError) setError(null)
+    try {
+      const data = await fetchXifanCaptcha()
+      if (!mounted.current || request !== captchaRequest.current) return null
+      setCaptcha(`data:${data.mime};base64,${data.imageB64}`)
+      return null
+    } catch (err) {
+      if (!mounted.current || request !== captchaRequest.current) return null
+      const message = err instanceof Error ? err.message : '验证码加载失败'
+      setCaptcha('')
+      setError(message)
+      return message
+    } finally {
+      if (mounted.current && request === captchaRequest.current) setCaptchaLoading(false)
+    }
+  }
+
+  const loadStatus = async (notifyIfLoggedIn = false): Promise<void> => {
+    if (!mounted.current) return
+    const request = ++statusRequest.current
+    setLoggedIn(null)
+    setError(null)
+    try {
+      const status = await fetchXifanAuthStatus()
+      if (!mounted.current || request !== statusRequest.current) return
+      setLoggedIn(status.loggedIn)
+      if (status.loggedIn) {
+        if (notifyIfLoggedIn) signalXifanAuthChanged()
+      } else await loadCaptcha()
+    } catch (err) {
+      if (!mounted.current || request !== statusRequest.current) return
+      setError(err instanceof Error ? err.message : '登录状态校验失败')
+    }
+  }
+
+  useEffect(() => {
+    mounted.current = true
+    void loadStatus(true)
+    return () => {
+      mounted.current = false
+      captchaRequest.current += 1
+      statusRequest.current += 1
+    }
+  }, [])
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key === XIFAN_AUTH_EVENT_KEY) {
+        void loadStatus()
+      } else if (event.key === XIFAN_CAPTCHA_EVENT_KEY && loggedIn === false) {
+        captchaRequest.current += 1
+        setCaptchaLoading(false)
+        setCaptcha('')
+        setVerify('')
+        setError('验证码已在其他页面刷新，请重新获取')
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [loggedIn])
+
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault()
+    setError(null)
+    if (!username.trim() || !password || !verify.trim()) {
+      setError('请填写账号、密码和验证码')
+      return
+    }
+    setBusy(true)
+    try {
+      await loginXifanAccount(username.trim(), password, verify.trim())
+      if (!mounted.current) return
+      setLoggedIn(true)
+      setUsername('')
+      setPassword('')
+      setVerify('')
+      setCaptcha('')
+    } catch (err) {
+      if (!mounted.current) return
+      const message = err instanceof Error ? err.message : '登录失败'
+      setBusy(false)
+      setError(message)
+      const captchaError = await loadCaptcha(false)
+      if (mounted.current) setError(captchaError ? `${message}；${captchaError}` : message)
+    } finally {
+      if (mounted.current) setBusy(false)
+    }
+  }
+
+  const logout = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      await logoutXifanAccount()
+      if (!mounted.current) return
+      await loadCaptcha()
+      if (mounted.current) setLoggedIn(false)
+    } catch (err) {
+      if (!mounted.current) return
+      setError(err instanceof Error ? err.message : '退出失败')
+    } finally {
+      if (mounted.current) setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <PaneHead title="稀饭账号" />
+      <div className="pt-4 md:max-w-[440px]">
+        {loggedIn === null ? (
+          <div className="flex min-h-[132px] flex-col items-start justify-center gap-3 border-b border-outline-variant/10">
+            {error ? (
+              <>
+                <span role="alert" className="text-[12.5px] font-semibold text-error">{error}</span>
+                <button
+                  type="button"
+                  onClick={() => void loadStatus(true)}
+                  className="rounded-lg border border-outline-variant/30 px-4 py-2 text-[12.5px] font-bold text-on-surface transition-colors hover:border-primary/50 hover:text-primary"
+                >
+                  重新检查
+                </button>
+              </>
+            ) : (
+              <span className="flex items-center gap-2 text-[12.5px] font-semibold text-on-surface-variant/60">
+                <Icon name="refresh" size={16} className="animate-spin" />
+                正在校验登录状态
+              </span>
+            )}
+          </div>
+        ) : loggedIn ? (
+          <div className="flex min-h-[72px] items-center justify-between gap-4 border-b border-outline-variant/10 pb-4">
+            <div>
+              <div className="font-label text-[10px] uppercase text-on-surface-variant/55">登录状态</div>
+              <div className="mt-1.5 flex items-center gap-2 text-[13.5px] font-bold text-primary">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                已登录
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void logout()}
+              className="flex shrink-0 items-center gap-2 rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-error/45 hover:text-error disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Icon name="logout" size={15} />
+              {busy ? '退出中…' : '退出登录'}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={submit} aria-describedby="xifan-auth-error">
+            <Field label="账号" htmlFor="xifan-username" required>
+              <input
+                id="xifan-username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="手机 / 登录账号"
+                autoComplete="username"
+                aria-required="true"
+                maxLength={100}
+                className={inputCls}
+              />
+            </Field>
+            <Field label="密码" htmlFor="xifan-password" required>
+              <input
+                id="xifan-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="输入密码"
+                autoComplete="current-password"
+                aria-required="true"
+                maxLength={200}
+                className={inputCls}
+              />
+            </Field>
+            <Field label="验证码" htmlFor="xifan-verify" required>
+              <div className="grid grid-cols-[minmax(0,1fr)_104px_42px] gap-2">
+                <input
+                  id="xifan-verify"
+                  type="text"
+                  value={verify}
+                  onChange={(e) => setVerify(e.target.value)}
+                  placeholder="输入验证码"
+                  autoComplete="off"
+                  aria-required="true"
+                  maxLength={32}
+                  className={inputCls}
+                />
+                <div className="flex h-[42px] w-[104px] items-center justify-center overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-high">
+                  {captcha ? (
+                    <img src={captcha} alt="验证码" draggable={false} className="h-full w-full object-contain" />
+                  ) : (
+                    <Icon name="image" size={18} className="text-on-surface-variant/30" />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  title="刷新验证码"
+                  aria-label="刷新验证码"
+                  disabled={captchaLoading}
+                  onClick={() => void loadCaptcha()}
+                  className="flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-outline-variant/30 text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Icon name="refresh" size={17} className={captchaLoading ? 'animate-spin' : undefined} />
+                </button>
+              </div>
+            </Field>
+
+            <div className="mt-5 flex items-center gap-3.5">
+              <button
+                type="submit"
+                disabled={busy || captchaLoading || !captcha}
+                className="shrink-0 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {busy ? '登录中…' : '登录'}
+              </button>
+              <span
+                id="xifan-auth-error"
+                role="alert"
+                aria-live="polite"
+                className="min-h-[18px] min-w-0 font-label text-[11.5px] text-error"
+              >
+                {error}
+              </span>
+            </div>
+          </form>
+        )}
+      </div>
+    </>
+  )
+}
+
 const inputCls =
   'w-full rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2.5 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70'
 
 function Field({
   label,
+  htmlFor,
   required,
   tight,
   children,
 }: {
   label: string
+  htmlFor?: string
   required?: boolean
   tight?: boolean
   children: React.ReactNode
 }): JSX.Element {
   return (
     <div className={tight ? '' : 'mb-4'}>
-      <label className="mb-1.5 block font-label text-[10px] uppercase tracking-wider text-on-surface-variant/80">
+      <label htmlFor={htmlFor} className="mb-1.5 block font-label text-[10px] uppercase tracking-wider text-on-surface-variant/80">
         {label}
         {required && <span className="ml-1.5 normal-case tracking-normal text-error">必填</span>}
       </label>

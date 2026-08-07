@@ -8,12 +8,12 @@ import { sign, verify } from 'hono/jwt'
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import { db } from './db'
+import { AUTH_SECRET, DEV_AUTH_SECRET } from './secrets'
 
 const scryptAsync = promisify(scrypt)
 
 // 生产必须在 env 设 AUTH_SECRET（够长的随机串）；dev 留个占位，起服务时会告警。
-const SECRET = process.env.AUTH_SECRET || 'dev-insecure-secret-change-me'
-if (SECRET === 'dev-insecure-secret-change-me') {
+if (AUTH_SECRET === DEV_AUTH_SECRET) {
   console.warn('[auth] ⚠️  AUTH_SECRET 未设置，正在用不安全的开发占位串，生产务必设置')
 }
 
@@ -77,7 +77,7 @@ interface Session {
 // 签发会话 cookie。payload 带 exp（秒），hono/jwt verify 会据此判过期。
 async function issueSession(c: Context, s: Session): Promise<void> {
   const exp = Math.floor(Date.now() / 1000) + MAX_AGE
-  const token = await sign({ ...s, exp }, SECRET, 'HS256')
+  const token = await sign({ ...s, exp }, AUTH_SECRET, 'HS256')
   setCookie(c, COOKIE, token, {
     httpOnly: true,
     secure: SECURE,
@@ -122,7 +122,7 @@ export async function getSession(c: Context): Promise<Session | null> {
   const token = getCookie(c, COOKIE)
   if (!token) return null
   try {
-    const payload = (await verify(token, SECRET, 'HS256')) as unknown as Session
+    const payload = (await verify(token, AUTH_SECRET, 'HS256')) as unknown as Session
     // 每个已登录请求多一次索引读（微秒级）—— 换来「改密码能真正踢掉所有老会话」。
     const row = findById.get(payload.uid) as UserRow | undefined
     if (!row || row.token_version !== payload.tv) return null
@@ -138,7 +138,7 @@ export async function getSession(c: Context): Promise<Session | null> {
  */
 const buckets = new Map<string, { n: number; resetAt: number }>()
 
-function rateLimited(key: string, max: number, windowMs: number): boolean {
+export function rateLimited(key: string, max: number, windowMs: number): boolean {
   const now = Date.now()
   // 攻击者拿随机用户名刷会不停建桶 → 内存无上限。到阈值先清过期的。
   if (buckets.size > 5000) {
@@ -153,6 +153,10 @@ function rateLimited(key: string, max: number, windowMs: number): boolean {
   return hit.n > max
 }
 
+export function clearRateLimit(key: string): void {
+  buckets.delete(key)
+}
+
 const WINDOW = 15 * 60 * 1000
 const LOGIN_MAX_PER_USER = 10 // 挡「盯着一个号猜密码」
 const LOGIN_MAX_PER_IP = 20 // 挡「一个来源换着号猜」
@@ -165,7 +169,7 @@ const REGISTER_WINDOW = 60 * 60 * 1000
  * `X-Forwarded-For` 是**追加**的（伪造值在前、真 IP 在末尾），所以退化时取最后一段。
  * 前提是 node 只绑 127.0.0.1（见 node.ts）：nginx 之外没人能进来，这两个头才可信。
  */
-function clientIp(c: Context): string {
+export function clientIp(c: Context): string {
   const real = c.req.header('x-real-ip')
   if (real) return real
   const fwd = c.req.header('x-forwarded-for')

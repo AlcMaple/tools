@@ -127,6 +127,44 @@ export type XifanSearchResponse =
   | { needsCaptcha: true }
   | { needsCaptcha: false; data: XifanSearchHit[] }
 
+export interface XifanAuthStatus {
+  loggedIn: boolean
+}
+
+export const XIFAN_AUTH_EVENT_KEY = 'mapletools-xifan-auth-changed'
+export const XIFAN_CAPTCHA_EVENT_KEY = 'mapletools-xifan-captcha-changed'
+
+function signalXifanEvent(key: string): void {
+  try { localStorage.setItem(key, `${Date.now()}:${Math.random()}`) } catch {}
+}
+
+export function signalXifanAuthChanged(): void {
+  signalXifanEvent(XIFAN_AUTH_EVENT_KEY)
+}
+
+export async function fetchXifanAuthStatus(): Promise<XifanAuthStatus> {
+  return json<XifanAuthStatus>(await fetch('/api/xifan/auth/status'))
+}
+
+export async function loginXifanAccount(
+  username: string,
+  password: string,
+  verify: string,
+): Promise<void> {
+  const result = await json<{ success: boolean; message: string }>(await fetch('/api/xifan/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, verify }),
+  }))
+  if (!result.success) throw new Error(result.message)
+  signalXifanAuthChanged()
+}
+
+export async function logoutXifanAccount(): Promise<void> {
+  await json<XifanAuthStatus>(await fetch('/api/xifan/auth/logout', { method: 'POST' }))
+  signalXifanAuthChanged()
+}
+
 /** 追番页加载时一次拿齐当前用户的绑定 —— 绑过的「继续看」直接渲染成链接，无需再定位。 */
 export async function fetchXifanBindings(): Promise<Record<number, XifanBinding>> {
   const res = await fetch('/api/xifan/bindings')
@@ -165,7 +203,9 @@ export async function searchXifan(keyword: string): Promise<XifanSearchResponse>
 }
 
 export async function fetchXifanCaptcha(): Promise<{ imageB64: string; mime: string }> {
-  return json<{ imageB64: string; mime: string }>(await fetch('/api/xifan/captcha'))
+  const captcha = await json<{ imageB64: string; mime: string }>(await fetch('/api/xifan/captcha'))
+  signalXifanEvent(XIFAN_CAPTCHA_EVENT_KEY)
+  return captcha
 }
 
 export async function verifyXifanCaptcha(code: string): Promise<{ success: boolean }> {

@@ -1,34 +1,18 @@
 // 稀饭全站搜索 —— 搜索页有验证码，验证码图片、校验、搜索必须共用同一个 cookie 罐。
 //
-// 桌面端是一台机器一个 HttpSession；网页版是多用户服务，所以这里按登录用户
-// 建短时内存会话，避免 A 用户的验证码 cookie 被 B 用户拿去提交。视频播放仍走
-// resolve.ts 的浏览器直连路径，搜索只负责把稀饭 animeId 找出来。
+// 桌面端是一台机器一个 HttpSession；网页版是多用户服务，所以按登录用户隔离
+// cookie 罐，避免 A 用户的验证码或登录态被 B 用户拿走。
 import * as cheerio from 'cheerio/slim'
-import '../http'
-import { BASE_URL, DESKTOP_UA } from './resolve'
+import {
+  assertXifanHtml,
+  BASE_URL,
+  isXifanCloudflarePage,
+  xifanSessionFor,
+  type XifanHttpResponse,
+} from './session'
 
-const BASE_HEADERS: Record<string, string> = {
-  'User-Agent': DESKTOP_UA,
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'zh-CN,zh;q=0.9',
-  Referer: `${BASE_URL}/`,
-}
-
-const CF_MARKERS = [
-  'Just a moment',
-  'cf-browser-verification',
-  'challenge-platform',
-  '/cdn-cgi/challenge-platform',
-  'Attention Required! | Cloudflare',
-  'cf-error-details',
-  'Error 1020',
-  'Enable JavaScript and cookies to continue',
-]
-
-const SESSION_TTL_MS = 15 * 60 * 1000
 const MAX_PAGES = 20
 export const XIFAN_SEARCH_MAX_LENGTH = 100
-const BASE_ORIGIN = new URL(BASE_URL).origin
 
 export interface XifanSearchHit {
   xifanId: number
@@ -48,126 +32,8 @@ export interface XifanCaptcha {
   mime: string
 }
 
-interface HttpResponse {
-  status: number
-  headers: Headers
-  body: Buffer
-}
-
-// 稀饭搜索是用户主动触发的低频操作，但多个用户共用一个出口 IP，仍要把请求
-// 起始时间错开；验证码失败不在这里自动重试，交给用户刷新 / 再提交。
-let requestQueue = Promise.resolve()
-let lastStartedAt = 0
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
-function scheduleRequest<T>(fn: () => Promise<T>): Promise<T> {
-  const job = requestQueue.then(async () => {
-    const targetGap = 1000 + Math.floor(Math.random() * 301)
-    const elapsed = Date.now() - lastStartedAt
-    if (elapsed < targetGap) await sleep(targetGap - elapsed)
-    lastStartedAt = Date.now()
-    return fn()
-  })
-  requestQueue = job.then(() => undefined, () => undefined)
-  return job
-}
-
-function setCookieHeaders(headers: Headers): string[] {
-  const h = headers as Headers & { getSetCookie?: () => string[] }
-  const values = h.getSetCookie?.() ?? []
-  if (values.length > 0) return values
-  const one = headers.get('set-cookie')
-  return one ? [one] : []
-}
-
-class XifanCookieSession {
-  private readonly cookies = new Map<string, string>()
-  private lastUsedAt = Date.now()
-
-  get idleSince(): number {
-    return this.lastUsedAt
-  }
-
-  private cookieHeader(): string {
-    return [...this.cookies.entries()].map(([name, value]) => `${name}=${value}`).join('; ')
-  }
-
-  private ingest(headers: Headers): void {
-    for (const raw of setCookieHeaders(headers)) {
-      const pair = raw.split(';', 1)[0].trim()
-      const eq = pair.indexOf('=')
-      if (eq <= 0) continue
-      const name = pair.slice(0, eq).trim()
-      const value = pair.slice(eq + 1).trim()
-      if (!value || /(?:^|;)\s*max-age=0(?:;|$)/i.test(raw)) this.cookies.delete(name)
-      else this.cookies.set(name, value)
-    }
-  }
-
-  private async fetchOnce(url: string, headers: Record<string, string>): Promise<Response> {
-    return fetch(url, {
-      headers,
-      redirect: 'manual',
-      signal: AbortSignal.timeout(15000),
-    })
-  }
-
-  async get(url: string, extraHeaders: Record<string, string> = {}): Promise<HttpResponse> {
-    this.lastUsedAt = Date.now()
-    let current = url
-    for (let redirectsLeft = 5; ; redirectsLeft--) {
-      const response = await scheduleRequest(() => this.fetchOnce(current, {
-        ...BASE_HEADERS,
-        Cookie: this.cookieHeader(),
-        ...extraHeaders,
-      }))
-      this.ingest(response.headers)
-
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        const location = response.headers.get('location')
-        if (location) {
-          if (redirectsLeft <= 0) throw new Error('稀饭重定向次数过多')
-          const next = new URL(location, current)
-          if (next.origin !== BASE_ORIGIN) throw new Error('稀饭返回了不安全的跨站重定向')
-          current = next.href
-          continue
-        }
-      }
-
-      return {
-        status: response.status,
-        headers: response.headers,
-        body: Buffer.from(await response.arrayBuffer()),
-      }
-    }
-  }
-}
-
-const sessions = new Map<number, XifanCookieSession>()
-
-function sessionFor(uid: number): XifanCookieSession {
-  const now = Date.now()
-  for (const [id, session] of sessions) {
-    if (now - session.idleSince > SESSION_TTL_MS) sessions.delete(id)
-  }
-  let session = sessions.get(uid)
-  if (!session) {
-    session = new XifanCookieSession()
-    sessions.set(uid, session)
-  }
-  return session
-}
-
-function assertHtml(response: HttpResponse): string {
-  const html = response.body.toString('utf8')
-  if (CF_MARKERS.some((marker) => html.includes(marker))) {
-    throw new Error('稀饭被 Cloudflare 拦截，请稍后再试')
-  }
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(`稀饭搜索失败：服务器返回 HTTP ${response.status}`)
-  }
-  return html
+function assertHtml(response: XifanHttpResponse): string {
+  return assertXifanHtml(response, '稀饭搜索')
 }
 
 function needsCaptcha(html: string): boolean {
@@ -231,7 +97,7 @@ function nextPageUrl(html: string): string | null {
   const href = $('a.page-link[title="下一页"]').attr('href') ?? ''
   if (!href || href === 'javascript:') return null
   const next = absoluteUrl(href)
-  return next || null
+  return next && new URL(next).origin === new URL(BASE_URL).origin ? next : null
 }
 
 function uniqueHits(hits: XifanSearchHit[]): XifanSearchHit[] {
@@ -244,14 +110,14 @@ function uniqueHits(hits: XifanSearchHit[]): XifanSearchHit[] {
 }
 
 export async function getXifanCaptcha(uid: number): Promise<XifanCaptcha> {
-  const response = await sessionFor(uid).get(`${BASE_URL}/verify/index.html?t=${Date.now()}`)
+  const response = await xifanSessionFor(uid).get(`${BASE_URL}/verify/index.html?t=${Date.now()}`)
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(`稀饭验证码请求失败：服务器返回 HTTP ${response.status}`)
+    assertXifanHtml(response, '稀饭验证码请求')
   }
   const rawType = response.headers.get('content-type')?.split(';', 1)[0] || ''
   if (!/^image\/[a-z0-9.+-]+$/i.test(rawType)) {
     const body = response.body.toString('utf8')
-    if (CF_MARKERS.some((marker) => body.includes(marker))) {
+    if (isXifanCloudflarePage(body)) {
       throw new Error('稀饭被 Cloudflare 拦截，请稍后再试')
     }
     throw new Error('稀饭验证码返回了非图片内容')
@@ -260,7 +126,7 @@ export async function getXifanCaptcha(uid: number): Promise<XifanCaptcha> {
 }
 
 export async function verifyXifanCaptcha(uid: number, code: string): Promise<{ success: boolean }> {
-  const response = await sessionFor(uid).get(
+  const response = await xifanSessionFor(uid).get(
     `${BASE_URL}/index.php/ajax/verify_check?type=search&verify=${encodeURIComponent(code)}`,
     {
       'X-Requested-With': 'XMLHttpRequest',
@@ -268,7 +134,7 @@ export async function verifyXifanCaptcha(uid: number, code: string): Promise<{ s
     },
   )
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(`稀饭验证码校验失败：服务器返回 HTTP ${response.status}`)
+    assertXifanHtml(response, '稀饭验证码校验')
   }
   const body = response.body.toString('utf8')
   try {
@@ -289,7 +155,7 @@ export async function searchXifan(uid: number, keyword: string): Promise<XifanSe
     throw new Error(`搜索词长度需为 1–${XIFAN_SEARCH_MAX_LENGTH} 个字符`)
   }
 
-  const session = sessionFor(uid)
+  const session = xifanSessionFor(uid)
   const firstResponse = await session.get(`${BASE_URL}/search.html?wd=${encodeURIComponent(clean)}`)
   const firstHtml = assertHtml(firstResponse)
   if (needsCaptcha(firstHtml)) return { needsCaptcha: true }
