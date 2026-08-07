@@ -181,6 +181,82 @@ export function playPageUrl(xifanId: number, ep: number): string {
   return `/api/xifan/play-page?animeId=${xifanId}&ep=${ep}`
 }
 
+// ── Girigiri 在线观看：与稀饭分开保存绑定，不能把两个站点的编号互相推断 ────────
+export interface GirigiriCandidate {
+  girigiriId: string
+  girigiriName: string
+  day: number
+  remarks: string
+  score: number
+}
+
+export interface GirigiriBinding {
+  girigiriId: string
+  girigiriName: string
+}
+
+export interface GirigiriSearchHit {
+  girigiriId: string
+  girigiriName: string
+  cover: string
+  episode: string
+  year: string
+  area: string
+}
+
+export type GirigiriSearchResponse =
+  | { needsCaptcha: true }
+  | { needsCaptcha: false; data: GirigiriSearchHit[] }
+
+export async function fetchGirigiriBindings(): Promise<Record<number, GirigiriBinding>> {
+  const res = await fetch('/api/girigiri/bindings')
+  if (!res.ok) return {}
+  return (await json<{ data: Record<number, GirigiriBinding> }>(res)).data
+}
+
+export async function locateGirigiri(
+  bgmId: number,
+  titles: string[],
+): Promise<{ bound?: GirigiriCandidate; candidates: GirigiriCandidate[] }> {
+  return json(await fetch('/api/girigiri/locate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bgmId, titles }),
+  }))
+}
+
+export async function bindGirigiri(bgmId: number, girigiriId: string, girigiriName: string): Promise<void> {
+  await json<{ ok: boolean }>(await fetch('/api/girigiri/bind', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bgmId, girigiriId, girigiriName }),
+  }))
+}
+
+export async function searchGirigiri(keyword: string): Promise<GirigiriSearchResponse> {
+  return json<GirigiriSearchResponse>(await fetch('/api/girigiri/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keyword }),
+  }))
+}
+
+export async function fetchGirigiriCaptcha(): Promise<{ imageB64: string; mime: string }> {
+  return json<{ imageB64: string; mime: string }>(await fetch('/api/girigiri/captcha'))
+}
+
+export async function verifyGirigiriCaptcha(code: string): Promise<{ success: boolean }> {
+  return json<{ success: boolean }>(await fetch('/api/girigiri/captcha/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  }))
+}
+
+export function girigiriPlayPageUrl(girigiriId: string, ep: number): string {
+  return `/api/girigiri/play-page?animeId=${encodeURIComponent(girigiriId)}&ep=${ep}`
+}
+
 // ── 加番搜索（打本地 BGM 动漫索引，见 server/bgm/anime-index.ts）───────────────
 export interface AnimeHit {
   bgmId: number

@@ -8,22 +8,46 @@
 //
 // 页头**不置顶**，只有顶栏置顶。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { AnimeHit, Track, TrackPatch, TrackStatus, XifanBinding, XifanCandidate, XifanSearchHit } from './api'
+import type {
+  AnimeHit,
+  GirigiriBinding,
+  GirigiriCandidate,
+  GirigiriSearchHit,
+  Track,
+  TrackPatch,
+  TrackStatus,
+  XifanBinding,
+  XifanCandidate,
+  XifanSearchHit,
+} from './api'
 import {
+  bindGirigiri,
   bindXifan,
   coverUrl,
   deleteTrack,
+  fetchGirigiriCaptcha,
   fetchXifanCaptcha,
+  girigiriPlayPageUrl,
+  locateGirigiri,
   locateXifan,
   playPageUrl,
   putTrack,
   searchAnime,
+  searchGirigiri,
   searchXifan,
+  verifyGirigiriCaptcha,
   verifyXifanCaptcha,
 } from './api'
 import { useAuth } from './auth'
 import { Icon, Spinner } from './Icon'
-import { loadBindings, loadTracks, saveBindingsCache, saveTracksCache } from './tracksSync'
+import {
+  loadBindings,
+  loadGirigiriBindings,
+  loadTracks,
+  saveBindingsCache,
+  saveGirigiriBindingsCache,
+  saveTracksCache,
+} from './tracksSync'
 
 const SHORT_DAY: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
 const STATUS_META: { key: TrackStatus; label: string }[] = [
@@ -55,6 +79,11 @@ interface PickerState {
   candidates: XifanCandidate[]
 }
 
+interface GirigiriPickerState {
+  track: Track
+  candidates: GirigiriCandidate[]
+}
+
 /** 标题 / 别名命中（app 还搜备注，网页版没有备注字段） */
 function matches(t: Track, q: string): boolean {
   if (!q) return true
@@ -73,9 +102,14 @@ export function TracksPage(): JSX.Element {
   const [confirming, setConfirming] = useState<number | null>(null)
   // 稀饭绑定：bgmId → {xifanId,xifanName}。加载时一次拿齐，绑过的「继续看」直接是链接。
   const [bindings, setBindings] = useState<Record<number, XifanBinding>>({})
+  // Girigiri 绑定独立维护；两个站点的编号没有可推断关系。
+  const [girigiriBindings, setGirigiriBindings] = useState<Record<number, GirigiriBinding>>({})
   const [locating, setLocating] = useState<number | null>(null) // 正在定位的 bgmId（转圈用）
+  const [girigiriLocating, setGirigiriLocating] = useState<number | null>(null)
   const [picker, setPicker] = useState<PickerState | null>(null)
+  const [girigiriPicker, setGirigiriPicker] = useState<GirigiriPickerState | null>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
+  const [girigiriSearchTrack, setGirigiriSearchTrack] = useState<Track | null>(null)
   const [adding, setAdding] = useState(false) // 加番搜索弹窗
   const today = useMemo(todayBgmId, [])
 
@@ -87,13 +121,16 @@ export function TracksPage(): JSX.Element {
     if (!user) {
       setTracks([])
       setBindings({})
+      setGirigiriBindings({})
       return
     }
     const stopTracks = loadTracks(user.username, setTracks)
     const stopBindings = loadBindings(user.username, setBindings)
+    const stopGirigiriBindings = loadGirigiriBindings(user.username, setGirigiriBindings)
     return () => {
       stopTracks()
       stopBindings()
+      stopGirigiriBindings()
     }
   }, [ready, user])
 
@@ -105,6 +142,9 @@ export function TracksPage(): JSX.Element {
   useEffect(() => {
     if (user) saveBindingsCache(user.username, bindings)
   }, [user, bindings])
+  useEffect(() => {
+    if (user) saveGirigiriBindingsCache(user.username, girigiriBindings)
+  }, [user, girigiriBindings])
 
   // 未绑定的「继续看」：去周表定位 → 命中候选就弹选择框让用户确认（= 建绑定），零候选也弹（说明没找到）。
   const continueWatch = (t: Track): void => {
@@ -140,6 +180,44 @@ export function TracksPage(): JSX.Element {
     })
   }
 
+  // Girigiri 定位与稀饭同形，但状态、绑定和候选严格分开。
+  const continueGirigiri = (t: Track): void => {
+    if (girigiriLocating != null) return
+    setGirigiriLocating(t.bgmId)
+    locateGirigiri(t.bgmId, titlesOf(t))
+      .then((result) => {
+        if (result.bound) {
+          setGirigiriBindings((prev) => ({
+            ...prev,
+            [t.bgmId]: { girigiriId: result.bound!.girigiriId, girigiriName: result.bound!.girigiriName },
+          }))
+          window.open(girigiriPlayPageUrl(result.bound.girigiriId, watchEp(t)), '_blank', 'noopener')
+        } else {
+          setGirigiriPicker({ track: t, candidates: result.candidates })
+        }
+      })
+      .catch((error: Error) => setError(error.message))
+      .finally(() => setGirigiriLocating(null))
+  }
+
+  const confirmGirigiriBind = (bgmId: number, candidate: GirigiriCandidate): void => {
+    const previous = girigiriBindings[bgmId]
+    setGirigiriBindings((prev) => ({
+      ...prev,
+      [bgmId]: { girigiriId: candidate.girigiriId, girigiriName: candidate.girigiriName },
+    }))
+    setGirigiriPicker(null)
+    void bindGirigiri(bgmId, candidate.girigiriId, candidate.girigiriName).catch((error: Error) => {
+      setError(error.message)
+      setGirigiriBindings((prev) => {
+        const next = { ...prev }
+        if (previous) next[bgmId] = previous
+        else delete next[bgmId]
+        return next
+      })
+    })
+  }
+
   // 搜索结果也是一次显式确认：沿用周表候选的绑定语义，点结果行时先落绑定，再用
   // 原生链接打开播放页，避免异步请求吃掉浏览器的弹窗手势。
   const confirmSearchBind = (hit: XifanSearchHit): void => {
@@ -150,6 +228,20 @@ export function TracksPage(): JSX.Element {
     confirmBind(t.bgmId, {
       xifanId: hit.xifanId,
       xifanName: hit.xifanName,
+      day: 0,
+      remarks,
+      score: 0,
+    })
+  }
+
+  const confirmGirigiriSearchBind = (hit: GirigiriSearchHit): void => {
+    const track = girigiriSearchTrack
+    if (!track) return
+    const remarks = [hit.episode, hit.year, hit.area].filter(Boolean).join(' · ')
+    setGirigiriSearchTrack(null)
+    confirmGirigiriBind(track.bgmId, {
+      girigiriId: hit.girigiriId,
+      girigiriName: hit.girigiriName,
       day: 0,
       remarks,
       score: 0,
@@ -325,8 +417,11 @@ export function TracksPage(): JSX.Element {
                     t={t}
                     isToday
                     binding={bindings[t.bgmId]}
+                    girigiriBinding={girigiriBindings[t.bgmId]}
                     locating={locating === t.bgmId}
+                    girigiriLocating={girigiriLocating === t.bgmId}
                     onContinue={() => continueWatch(t)}
+                    onContinueGirigiri={() => continueGirigiri(t)}
                     onPatch={patch}
                     onEdit={() => setEditing(t.bgmId)}
                     onAskRemove={() => setConfirming(t.bgmId)}
@@ -345,8 +440,11 @@ export function TracksPage(): JSX.Element {
                     t={t}
                     isToday={false}
                     binding={bindings[t.bgmId]}
+                    girigiriBinding={girigiriBindings[t.bgmId]}
                     locating={locating === t.bgmId}
+                    girigiriLocating={girigiriLocating === t.bgmId}
                     onContinue={() => continueWatch(t)}
+                    onContinueGirigiri={() => continueGirigiri(t)}
                     onPatch={patch}
                     onEdit={() => setEditing(t.bgmId)}
                     onAskRemove={() => setConfirming(t.bgmId)}
@@ -377,6 +475,26 @@ export function TracksPage(): JSX.Element {
           track={searchTrack}
           onPick={confirmSearchBind}
           onClose={() => setSearchTrack(null)}
+        />
+      )}
+
+      {girigiriPicker && (
+        <GirigiriBindPickerModal
+          picker={girigiriPicker}
+          onPick={(candidate) => confirmGirigiriBind(girigiriPicker.track.bgmId, candidate)}
+          onSearch={() => {
+            setGirigiriPicker(null)
+            setGirigiriSearchTrack(girigiriPicker.track)
+          }}
+          onClose={() => setGirigiriPicker(null)}
+        />
+      )}
+
+      {girigiriSearchTrack && (
+        <GirigiriSearchModal
+          track={girigiriSearchTrack}
+          onPick={confirmGirigiriSearchBind}
+          onClose={() => setGirigiriSearchTrack(null)}
         />
       )}
 
@@ -500,8 +618,11 @@ function Card({
   t,
   isToday,
   binding,
+  girigiriBinding,
   locating,
+  girigiriLocating,
   onContinue,
+  onContinueGirigiri,
   onPatch,
   onEdit,
   onAskRemove,
@@ -509,8 +630,11 @@ function Card({
   t: Track
   isToday: boolean
   binding: XifanBinding | undefined
+  girigiriBinding: GirigiriBinding | undefined
   locating: boolean
+  girigiriLocating: boolean
   onContinue: () => void
+  onContinueGirigiri: () => void
   onPatch: (bgmId: number, p: TrackPatch) => void
   onEdit: () => void
   onAskRemove: () => void
@@ -581,32 +705,25 @@ function Card({
         {/* 标签只读，紧贴标题下方（app 的位置）。按宽度截断，放不下收成 +N，定高不抖。 */}
         <TagRow tags={allTagsOf(t)} />
 
-        {/* 继续看：信息区常驻按钮，替代原来只在 hover 遮罩里才出现的两个按钮。
-            绑过稀饭 → 直接链接（原生 <a>，无异步、不吃弹窗拦截）；没绑 → 点了去周表定位。
-            集数与卡片计数一致（0 时从第 1 集开始）。 */}
-        {binding ? (
-          <a
-            href={playPageUrl(binding.xifanId, ep)}
-            target="_blank"
-            rel="noreferrer"
-            title={`稀饭：${binding.xifanName || binding.xifanId}`}
-            className="flex w-full items-center justify-center gap-1 rounded-lg border border-primary/35 bg-primary/[0.12] py-1.5 font-label text-[10px] uppercase tracking-widest text-primary transition-colors hover:bg-primary/20"
-          >
-            <Icon name="play_arrow" size={12} />
-            <span>继续看 EP {ep}</span>
-          </a>
-        ) : (
-          <button
-            type="button"
-            disabled={locating}
-            onClick={onContinue}
-            title="定位稀饭片源"
-            className="flex w-full items-center justify-center gap-1 rounded-lg border border-primary/35 bg-primary/[0.12] py-1.5 font-label text-[10px] uppercase tracking-widest text-primary transition-colors hover:bg-primary/20 disabled:cursor-wait disabled:opacity-60"
-          >
-            {locating ? <Spinner size={12} /> : <Icon name="play_arrow" size={12} />}
-            <span>{locating ? '定位中…' : `继续看 EP ${ep}`}</span>
-          </button>
-        )}
+        {/* 在线源是同一组职责：两个源并列常驻，绑定后原生链接直开，未绑定才进入定位流程。 */}
+        <div className="grid grid-cols-2 gap-1">
+          <SourcePlayAction
+            label="稀饭"
+            ep={ep}
+            binding={binding ? { id: String(binding.xifanId), name: binding.xifanName } : undefined}
+            href={binding ? playPageUrl(binding.xifanId, ep) : undefined}
+            locating={locating}
+            onLocate={onContinue}
+          />
+          <SourcePlayAction
+            label="Girigiri"
+            ep={ep}
+            binding={girigiriBinding ? { id: girigiriBinding.girigiriId, name: girigiriBinding.girigiriName } : undefined}
+            href={girigiriBinding ? girigiriPlayPageUrl(girigiriBinding.girigiriId, ep) : undefined}
+            locating={girigiriLocating}
+            onLocate={onContinueGirigiri}
+          />
+        </div>
 
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1">
@@ -625,6 +742,38 @@ function Card({
         </div>
       </div>
     </div>
+  )
+}
+
+function SourcePlayAction({
+  label,
+  ep,
+  binding,
+  href,
+  locating,
+  onLocate,
+}: {
+  label: string
+  ep: number
+  binding?: { id: string; name: string }
+  href?: string
+  locating: boolean
+  onLocate: () => void
+}): JSX.Element {
+  const className = 'flex min-w-0 items-center justify-center gap-1 rounded-lg border border-primary/35 bg-primary/[0.12] px-1 py-1.5 font-label text-[9px] font-semibold uppercase tracking-wider text-primary transition-colors hover:bg-primary/20 disabled:cursor-wait disabled:opacity-60'
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" title={`${label}：${binding?.name || binding?.id || ''}`} className={className}>
+        <Icon name="play_arrow" size={12} />
+        <span className="truncate">{label} · EP {ep}</span>
+      </a>
+    )
+  }
+  return (
+    <button type="button" disabled={locating} onClick={onLocate} title={`定位${label}片源`} className={className}>
+      {locating ? <Spinner size={12} /> : <Icon name="play_arrow" size={12} />}
+      <span className="truncate">{locating ? '定位中…' : `${label} · EP ${ep}`}</span>
+    </button>
   )
 }
 
@@ -1113,6 +1262,86 @@ function BindPickerModal({
   )
 }
 
+function GirigiriBindPickerModal({
+  picker,
+  onPick,
+  onSearch,
+  onClose,
+}: {
+  picker: GirigiriPickerState
+  onPick: (candidate: GirigiriCandidate) => void
+  onSearch: () => void
+  onClose: () => void
+}): JSX.Element {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const { track, candidates } = picker
+  const title = track.titleCn || track.title
+  const ep = watchEp(track)
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div role="dialog" aria-modal="true" className="relative m-auto w-full max-w-[440px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl">
+        <button type="button" onClick={onClose} title="关闭" className="absolute right-3.5 top-3.5 flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface">
+          <Icon name="close" size={16} />
+        </button>
+        <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">选择 Girigiri 片源</div>
+        <h2 className="mb-1 mt-1.5 line-clamp-2 pr-6 text-lg font-extrabold leading-tight text-on-surface">{title}</h2>
+        <p className="mb-4 text-[12px] leading-relaxed text-on-surface-variant/60">
+          Girigiri 用的是另一套编号，按名字匹配出以下候选。<b className="text-on-surface-variant/80">点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
+        </p>
+        {candidates.length === 0 ? (
+          <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-4 text-[12.5px] leading-relaxed text-on-surface-variant/60">
+            没在 Girigiri<b>本季周表</b>里找到相近的名字。往季资源或非周历资源可以改用 Girigiri 全站搜索。
+            <button type="button" onClick={onSearch} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/35 bg-primary/[0.12] py-2 font-label text-[11px] font-bold tracking-widest text-primary transition-colors hover:bg-primary/20">
+              <Icon name="search" size={14} />
+              搜索 Girigiri 全站资源
+            </button>
+          </div>
+        ) : (
+          <div className="custom-scrollbar flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
+            {candidates.map((candidate) => (
+              <a
+                key={candidate.girigiriId}
+                href={girigiriPlayPageUrl(candidate.girigiriId, ep)}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => onPick(candidate)}
+                className="flex items-center gap-3 rounded-lg border border-outline-variant/25 bg-surface-container px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-semibold text-on-surface">{candidate.girigiriName || candidate.girigiriId}</div>
+                  <div className="mt-0.5 font-label text-[10px] uppercase tracking-wider text-on-surface-variant/45">
+                    {candidate.day ? `星期${SHORT_DAY[candidate.day]}` : '—'}
+                    {candidate.remarks ? ` · ${candidate.remarks.replace('|', ' · ')}` : ''}
+                  </div>
+                </div>
+                <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
+              </a>
+            ))}
+          </div>
+        )}
+        {candidates.length > 0 && (
+          <button type="button" onClick={onSearch} className="mt-4 flex w-full items-center justify-center gap-1.5 border-t border-outline-variant/15 pt-3 font-label text-[10px] font-semibold tracking-widest text-on-surface-variant/50 transition-colors hover:text-primary">
+            <Icon name="search" size={13} />
+            搜索 Girigiri 全站资源
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── 稀饭全站搜索弹窗 ─────────────────────────────────────────────────────────────
 // 周表定位只覆盖当季在播；旧番 / 剧场版改走稀饭搜索。搜索页有站点验证码，流程与桌面
 // 端一致：搜索 → 验证码 → 重搜 → 用户点结果确认绑定。结果行保留原生链接，点一下同时
@@ -1352,6 +1581,269 @@ function XifanSearchModal({
                     >
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-[13px] font-semibold text-on-surface">{hit.xifanName}</div>
+                        {meta && <div className="mt-0.5 truncate font-label text-[10px] tracking-wider text-on-surface-variant/45">{meta}</div>}
+                      </div>
+                      <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
+                    </a>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 justify-end border-t border-outline-variant/15 px-6 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-outline-variant/30 px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Girigiri 全站搜索弹窗 ──────────────────────────────────────────────────────
+// Girigiri 的搜索验证码和稀饭是两套会话，界面沿用同一套交互，但请求走独立的 API。
+// 结果行仍保留原生链接：点击时先建绑定，再让浏览器在用户手势内打开播放页。
+type GirigiriSearchModalStatus = 'searching' | 'captcha' | 'verifying' | 'results' | 'error'
+
+function GirigiriSearchModal({
+  track,
+  onPick,
+  onClose,
+}: {
+  track: Track
+  onPick: (hit: GirigiriSearchHit) => void
+  onClose: () => void
+}): JSX.Element {
+  const initialKeyword = track.titleCn || track.title
+  const [keyword, setKeyword] = useState(initialKeyword)
+  const [status, setStatus] = useState<GirigiriSearchModalStatus>('searching')
+  const [results, setResults] = useState<GirigiriSearchHit[]>([])
+  const [imageB64, setImageB64] = useState('')
+  const [mime, setMime] = useState('image/png')
+  const [captchaInput, setCaptchaInput] = useState('')
+  const [message, setMessage] = useState('')
+  const started = useRef(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const refreshCaptcha = async (errorMessage = ''): Promise<void> => {
+    try {
+      const captcha = await fetchGirigiriCaptcha()
+      setImageB64(captcha.imageB64)
+      setMime(captcha.mime || 'image/png')
+      setCaptchaInput('')
+      setMessage(errorMessage)
+      setStatus('captcha')
+    } catch (e) {
+      setStatus('error')
+      setMessage(e instanceof Error ? e.message : '验证码请求失败')
+    }
+  }
+
+  const runSearch = async (rawKeyword: string): Promise<void> => {
+    const q = rawKeyword.trim()
+    if (!q) return
+    setKeyword(q)
+    setResults([])
+    setMessage('')
+    setStatus('searching')
+    try {
+      const result = await searchGirigiri(q)
+      if (result.needsCaptcha) {
+        await refreshCaptcha()
+      } else {
+        setResults(result.data)
+        setStatus('results')
+      }
+    } catch (e) {
+      setStatus('error')
+      setMessage(e instanceof Error ? e.message : 'Girigiri 搜索失败')
+    }
+  }
+
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    void runSearch(initialKeyword)
+  }, [])
+
+  const verify = async (): Promise<void> => {
+    const code = captchaInput.trim()
+    if (!code || status !== 'captcha') return
+    setStatus('verifying')
+    try {
+      const result = await verifyGirigiriCaptcha(code)
+      if (!result.success) {
+        await refreshCaptcha('验证码不正确，请重新输入')
+        return
+      }
+      await runSearch(keyword)
+    } catch (e) {
+      setStatus('error')
+      setMessage(e instanceof Error ? e.message : '验证码校验失败')
+    }
+  }
+
+  const title = track.titleCn || track.title
+  const ep = watchEp(track)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative m-auto flex max-h-[86vh] w-full max-w-[520px] flex-col overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container-lowest shadow-2xl"
+      >
+        <div className="flex shrink-0 items-start justify-between border-b border-outline-variant/20 bg-surface-container-low px-6 py-5">
+          <div className="min-w-0 pr-6">
+            <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">Girigiri 全站搜索</div>
+            <h2 className="mt-1.5 line-clamp-2 text-lg font-extrabold leading-tight text-on-surface">{title}</h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant/55">搜索非本季周历资源，点选正确条目后直接播放 EP {ep}。</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            title="关闭"
+            aria-label="关闭"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+
+        <div className="custom-scrollbar min-h-0 overflow-y-auto px-6 py-5">
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              spellCheck={false}
+              autoComplete="off"
+              maxLength={100}
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) void runSearch(keyword)
+              }}
+              placeholder="番名 / 别名"
+              disabled={status === 'searching' || status === 'verifying'}
+              className="min-w-0 flex-1 rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70 disabled:opacity-60"
+            />
+            <button
+              type="button"
+              onClick={() => { void runSearch(keyword) }}
+              disabled={status === 'searching' || status === 'verifying' || !keyword.trim()}
+              title="搜索"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 font-label text-[11px] font-bold tracking-wider text-on-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon name="search" size={14} />
+              搜索
+            </button>
+          </div>
+
+          {status === 'searching' || status === 'verifying' ? (
+            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-on-surface-variant/50">
+              <Spinner size={28} className="text-primary/60" />
+              <span className="font-label text-[10px] uppercase tracking-widest">
+                {status === 'verifying' ? '正在校验验证码' : '正在搜索 Girigiri'}
+              </span>
+            </div>
+          ) : status === 'captcha' ? (
+            <div className="mt-4 rounded-lg border border-outline-variant/20 bg-surface-container p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[13px] font-semibold text-on-surface">需要验证码</div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant/55">输入图片中的字符后继续搜索。</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void refreshCaptcha() }}
+                  title="刷新验证码"
+                  aria-label="刷新验证码"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-outline-variant/25 text-on-surface-variant/60 transition-colors hover:border-primary/40 hover:text-primary"
+                >
+                  <Icon name="refresh" size={14} />
+                </button>
+              </div>
+              <div className="mt-3 flex h-20 items-center justify-center overflow-hidden rounded border border-outline-variant/20 bg-surface-container-high">
+                {imageB64 && <img src={`data:${mime};base64,${imageB64}`} alt="Girigiri 验证码" className="h-full max-w-full object-contain" />}
+              </div>
+              {message && <p className="mt-2 text-[11px] text-error">{message}</p>}
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  autoFocus
+                  value={captchaInput}
+                  onChange={(e) => setCaptchaInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && captchaInput.trim()) void verify()
+                  }}
+                  placeholder="输入验证码"
+                  className="min-w-0 flex-1 rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-sm tracking-[0.2em] text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70"
+                />
+                <button
+                  type="button"
+                  onClick={() => { void verify() }}
+                  disabled={!captchaInput.trim()}
+                  className="shrink-0 rounded-lg bg-primary px-3 py-2 font-label text-[11px] font-bold tracking-wider text-on-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  验证
+                </button>
+              </div>
+            </div>
+          ) : status === 'error' ? (
+            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-center">
+              <Icon name="error" size={32} className="text-error/70" />
+              <p className="max-w-[360px] text-[12px] leading-relaxed text-error/80">{message || 'Girigiri 搜索失败'}</p>
+              <button
+                type="button"
+                onClick={() => { void runSearch(keyword) }}
+                className="flex items-center gap-1.5 rounded-lg border border-outline-variant/30 px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
+              >
+                <Icon name="refresh" size={13} />
+                再试一次
+              </button>
+            </div>
+          ) : results.length === 0 ? (
+            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-center text-on-surface-variant/50">
+              <Icon name="search" size={32} className="opacity-40" />
+              <p className="text-[12px]">没有找到“{keyword}”相关的 Girigiri 资源</p>
+              <p className="text-[11px] text-on-surface-variant/35">换一个中文名、别名或关键词再搜。</p>
+            </div>
+          ) : (
+            <div className="mt-4">
+              <div className="mb-2 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/45">
+                搜索结果 · {results.length} 部
+              </div>
+              <div className="custom-scrollbar flex max-h-[45vh] flex-col gap-1.5 overflow-y-auto">
+                {results.map((hit) => {
+                  const meta = [hit.episode, hit.year, hit.area].filter(Boolean).join(' · ')
+                  return (
+                    <a
+                      key={hit.girigiriId}
+                      href={girigiriPlayPageUrl(hit.girigiriId, ep)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => onPick(hit)}
+                      className="flex items-center gap-3 rounded-lg border border-outline-variant/25 bg-surface-container px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-semibold text-on-surface">{hit.girigiriName}</div>
                         {meta && <div className="mt-0.5 truncate font-label text-[10px] tracking-wider text-on-surface-variant/45">{meta}</div>}
                       </div>
                       <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
