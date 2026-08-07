@@ -40,10 +40,10 @@ function todayBgmId(): number {
 
 const allTagsOf = (t: Track): string[] => [...t.bgmTags, ...t.userTags]
 
-// 「继续看」默认落在**下一集**（= 已看 +1）—— 「继续」就是接着往下看，周更用户打开时新集刚好是这一集。
-// 夹到总集数上限；已看 0 也从第 1 集起。真开到没更新的集，播放页会提示「按◀退一集」，不至于卡死。
-function nextEp(t: Track): number {
-  const n = t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode + 1) : t.episode + 1
+// 卡片计数就是当前要观看的集数：显示 N 就播放 N；尚未开始（0）才从第 1 集起。
+// 同时夹到总集数上限，避免异常同步数据生成不存在的集数链接。
+function watchEp(t: Track): number {
+  const n = t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode) : t.episode
   return Math.max(1, n)
 }
 
@@ -115,7 +115,7 @@ export function TracksPage(): JSX.Element {
         if (r.bound) {
           // 极少见：加载后别的用户刚绑上 → 记下来（卡片下次即变链接），并尽力开一下
           setBindings((prev) => ({ ...prev, [t.bgmId]: { xifanId: r.bound!.xifanId, xifanName: r.bound!.xifanName } }))
-          window.open(playPageUrl(r.bound.xifanId, nextEp(t)), '_blank', 'noopener')
+          window.open(playPageUrl(r.bound.xifanId, watchEp(t)), '_blank', 'noopener')
         } else {
           setPicker({ track: t, candidates: r.candidates })
         }
@@ -517,7 +517,7 @@ function Card({
 }): JSX.Element {
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
-  const ep = nextEp(t)
+  const ep = watchEp(t)
 
   const step = (delta: number): void => {
     const ep = Math.max(0, t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode + delta) : t.episode + delta)
@@ -583,7 +583,7 @@ function Card({
 
         {/* 继续看：信息区常驻按钮，替代原来只在 hover 遮罩里才出现的两个按钮。
             绑过稀饭 → 直接链接（原生 <a>，无异步、不吃弹窗拦截）；没绑 → 点了去周表定位。
-            集数落在下一集（nextEp）—— 「继续」就是接着往下看。 */}
+            集数与卡片计数一致（0 时从第 1 集开始）。 */}
         {binding ? (
           <a
             href={playPageUrl(binding.xifanId, ep)}
@@ -1033,7 +1033,7 @@ function BindPickerModal({
 
   const { track, candidates } = picker
   const title = track.titleCn || track.title
-  const ep = nextEp(track)
+  const ep = watchEp(track)
 
   return (
     <div
@@ -1205,7 +1205,7 @@ function XifanSearchModal({
   }
 
   const title = track.titleCn || track.title
-  const ep = nextEp(track)
+  const ep = watchEp(track)
 
   return (
     <div
