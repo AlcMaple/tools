@@ -84,6 +84,17 @@ db.exec(`
   );
 `)
 
+// Girigiri 绑定表 —— bgmId → GV… 资源编号。和稀饭一样是全局事实：用户显式确认一次后，
+// 其他用户加载同一部追番也能直接续播；不塞 tracks.extra，避免和 app 富字段混在一起。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS girigiri_binding (
+    bgm_id       INTEGER PRIMARY KEY,
+    girigiri_id  TEXT    NOT NULL,
+    girigiri_name TEXT   NOT NULL DEFAULT '',
+    updated_at   INTEGER NOT NULL DEFAULT 0
+  );
+`)
+
 // 老库补列 —— 沿用 app 那套「零迁移脚本」思路：缺哪列补哪列，不写版本号、不写迁移文件。
 function ensureColumn(table: string, column: string, decl: string): void {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]

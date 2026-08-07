@@ -4,6 +4,7 @@ import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchOnline } from './bgm/search-online'
 import auth from './auth'
 import tracks from './tracks'
+import girigiri from './girigiri'
 import xifan from './xifan'
 
 // 本地开发通常没有 5.6MB 的 bgm_index.db（生成它要下载 400MB+ 官方离线档）。
@@ -40,6 +41,9 @@ app.route('/api/tracks', tracks)
 // 稀饭在线观看「浏览器直连」可行性原型（ideas/012 在线观看第一步）。probe 诊断 + 自包含试播页，
 // 不登录、不碰 SPA。验证过就会长成①定位那一档的解析后端，或被判定要走服务器代理。
 app.route('/api/xifan', xifan)
+
+// Girigiri 在线观看：同样是服务端解析页面元数据、浏览器直连源 CDN，不中转视频。
+app.route('/api/girigiri', girigiri)
 
 // 追番「搜索加番」—— 打**本地** BGM 动漫索引（bgm_index.db），见 bgm/anime-index.ts。
 // 索引没生成时 ready=false，前端据此提示「先跑同步脚本」。

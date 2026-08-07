@@ -8,6 +8,27 @@
 
 ## 网页版
 
+### 2026-08-07 feat(web): 新增 Girigiri 在线观看源
+
+**效果**：
+
+1. 追番卡片从只有稀饭一个在线入口变成稀饭 / Girigiri 两个并列入口；两个站点分别维护绑定，已绑定的资源直接打开，未绑定的资源先按官网周表匹配并让用户确认。
+2. Girigiri 周表覆盖不到往季、剧场版时，可以进入 Girigiri 全站搜索；搜索沿用官网验证码流程，验证码 cookie 按 MapleTools 账号隔离，选中结果后保存 `bgmId ↔ GV…` 绑定。
+3. 新增 Girigiri 播放页：读取官方 `/playGV{id}-{source}-{ep}/` 的 `player_aaaa`，支持 `encrypt=2` 的地址解码、繁中 / 简中线路切换和整季选集；HLS / MP4 地址由浏览器直接播放，直连失败时回退官方播放器 iframe，视频字节不经过 MapleTools 服务器。
+
+**关键代码**：
+
+官网入口会从 `bgm.girigirilove.com` 跳转到 `ani.girigirilove.com`。周表请求使用官网的 `POST /index.php/ds_api/weekday`，播放页使用 MacCMS 路由；`player_aaaa.url` 在 `encrypt=2` 时按「Base64 → percent decode」还原为 CDN `m3u8` / `mp4` 地址。网页端新增独立的 `web/server/shared/maccms-search-paginator.ts`，不跨项目引用桌面端分页代码。
+
+```text
+追番卡片
+  ├─ 稀饭入口   → 稀饭周表 / 搜索 → 用户确认 → bgmId ↔ animeId → 稀饭播放页
+  └─ Girigiri 入口 → Girigiri 周表 / 搜索+验证码 → 用户确认 → bgmId ↔ GV… → 播放页
+                                                                    ↓
+                                      player_aaaa → CDN m3u8 / mp4 → 浏览器 video
+                                                                    └→ 直连失败 → 官方播放页 iframe
+```
+
 ### 2026-08-07 fix(web): 修复继续看集数偏移
 
 **效果**：
