@@ -16,6 +16,7 @@ import {
   verifyGirigiriCaptcha,
 } from './girigiri/search'
 import { getPlaylist, isGirigiriId, resolveLine } from './girigiri/resolve'
+import { playerPageSecurity, renderNonce } from './security'
 
 const girigiri = new Hono()
 
@@ -62,7 +63,9 @@ girigiri.get('/play-page', (c) => {
   if (!isGirigiriId(id)) return c.json({ error: 'girigiriId 不合法' }, 400)
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
   c.header('Cache-Control', 'no-store')
-  return c.html(PLAY_PAGE)
+  const page = renderNonce(PLAY_PAGE)
+  playerPageSecurity(c, page.nonce)
+  return c.html(page.html)
 })
 
 // 搜索验证码会话按 MapleTools 用户隔离；不登录不开放站点搜索代理。
@@ -149,7 +152,7 @@ const PLAY_PAGE = `<!doctype html>
 <meta name="robots" content="noindex">
 <title>继续看 · Girigiri</title>
 <script src="/api/girigiri/hls.js"></script>
-<style>
+<style nonce="__CSP_NONCE__">
   :root { color-scheme: dark; --rose: #ffb3b8; --rose-dim: rgba(255,179,184,.14); --rose-bd: rgba(255,179,184,.30) }
   * { box-sizing: border-box }
   body { margin: 0 auto; background: #0e0e0e; color: #e2e2e2; font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 22px 18px 40px; max-width: 960px }
@@ -175,12 +178,12 @@ const PLAY_PAGE = `<!doctype html>
   <div class="hd"><h1 id="ttl">继续看</h1><span class="ep-badge" id="epbadge">EP</span></div>
   <div class="player-wrap">
     <video id="v" controls playsinline preload="auto"></video>
-    <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
+    <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
   </div>
   <div id="err"></div>
   <div class="card"><div class="card-label">线路</div><div class="lines" id="lines"></div></div>
   <div class="card"><div class="card-label">选集</div><div class="eps" id="eps"></div></div>
-<script>
+<script nonce="__CSP_NONCE__">
 (function(){
   var $ = function(id){ return document.getElementById(id) }
   var q = new URLSearchParams(location.search)
@@ -248,7 +251,7 @@ const PLAY_PAGE = `<!doctype html>
     eps.forEach(function(n){ var b = document.createElement('button'); b.type = 'button'; b.className = 'ep' + (n === cur ? ' cur' : ''); b.textContent = n; b.onclick = function(){ if (n !== cur) goEp(n) }; box.appendChild(b) })
   }
   async function boot(){
-    if (!/^GV[0-9]+$/i.test(animeId)){ fail('URL 里缺少合法的 Girigiri 番号'); return }
+    if (!/^GV[0-9]+$/i.test(animeId) || !/^[0-9]+$/.test(ep)){ fail('URL 参数不合法'); return }
     $('epbadge').textContent = 'EP ' + ep; renderEps()
     try {
       var r = await fetch('/api/girigiri/playlist?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep))

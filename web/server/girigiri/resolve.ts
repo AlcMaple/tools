@@ -116,7 +116,12 @@ function decodePlayerUrl(data: PlayerData | null): string {
       : data?.encrypt === 1
         ? decodeURIComponent(raw)
         : raw
-    return /^https?:\/\//i.test(decoded) ? decoded : ''
+    try {
+      const url = new URL(decoded)
+      return url.protocol === 'https:' ? url.href : ''
+    } catch {
+      return ''
+    }
   } catch {
     return ''
   }

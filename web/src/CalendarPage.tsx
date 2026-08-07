@@ -316,7 +316,7 @@ function CalendarCard({
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
 
         <a
-          href={item.url}
+          href={item.id > 0 ? `https://bgm.tv/subject/${item.id}` : undefined}
           target="_blank"
           rel="noreferrer"
           title="在 Bangumi 查看"

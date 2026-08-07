@@ -9,6 +9,7 @@ MapleTools 桌面应用的网页版，**独立子项目**：自带 `package.json
 - 前端：React 18 + Vite + Tailwind 3
 - 后端：Hono（一套代码本地 / Vercel serverless / 未来 VPS 通吃）
 - 抓取：BGM 逻辑从 app `src/main/bgm` 拷来，只把 Electron `net` 换成 `fetch`（`server/http.ts`）
+- 运行时：Node.js 20 或更高版本
 
 ## 本地开发
 
