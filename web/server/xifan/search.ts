@@ -249,7 +249,9 @@ export async function getXifanCaptcha(uid: number): Promise<XifanCaptcha> {
     throw new Error(`稀饭验证码请求失败：服务器返回 HTTP ${response.status}`)
   }
   const rawType = response.headers.get('content-type')?.split(';', 1)[0] || ''
-  if (!/^image\/[a-z0-9.+-]+$/i.test(rawType)) {
+  // SVG / HTML 不能作为验证码回传：即便前端放进 <img>，也不把可执行矢量内容
+  // 当作跨边界数据交给浏览器。
+  if (!/^image\/(?:png|jpe?g|gif|webp)$/i.test(rawType)) {
     const body = response.body.toString('utf8')
     if (CF_MARKERS.some((marker) => body.includes(marker))) {
       throw new Error('稀饭被 Cloudflare 拦截，请稍后再试')

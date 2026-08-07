@@ -28,6 +28,7 @@ export interface CalendarResult {
 export function coverUrl(raw: string): string {
   try {
     const url = new URL(raw)
+    if (url.username || url.password) return ''
     if (url.hostname === 'lain.bgm.tv') return `/api/cover${url.pathname}`
     if (url.protocol === 'http:') url.protocol = 'https:'
     return url.protocol === 'https:' ? url.toString() : ''

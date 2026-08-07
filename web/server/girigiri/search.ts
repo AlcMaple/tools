@@ -225,7 +225,8 @@ export async function getGirigiriCaptcha(uid: number): Promise<GirigiriCaptcha> 
   const response = await sessionFor(uid).get(`${BASE_URL}/verify/index.html?t=${Date.now()}`)
   if (response.status < 200 || response.status >= 300) throw new Error(`Girigiri 验证码请求失败：服务器返回 HTTP ${response.status}`)
   const mime = response.headers.get('content-type')?.split(';', 1)[0] ?? ''
-  if (!/^image\/[a-z0-9.+-]+$/i.test(mime)) {
+  // 验证码只接受常见栅格格式，不把 SVG 等可执行矢量内容交给前端 data URL。
+  if (!/^image\/(?:png|jpe?g|gif|webp)$/i.test(mime)) {
     if (CF_MARKERS.some((marker) => response.body.toString('utf8').includes(marker))) throw new Error('Girigiri 被 Cloudflare 拦截，请稍后再试')
     throw new Error('Girigiri 验证码返回了非图片内容')
   }

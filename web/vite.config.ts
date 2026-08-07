@@ -2,13 +2,25 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import devServer from '@hono/vite-dev-server'
 
+const PRODUCTION_SECURITY_META = `
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; frame-src 'none'; upgrade-insecure-requests" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />`
+
 // 本地开发一条命令跑通前后端：@hono/vite-dev-server 把 server/index.ts 里的 Hono 应用
 // 挂进 Vite dev server，只接管 /api/*（exclude 排除所有非 /api 请求 → 交给 Vite 出页面 /
 // HMR / 静态资源）。生产（Vercel）不走这里：前端由 Vite 构建成静态站，/api 由 web/api 下的
 // serverless 函数跑同一个 Hono 应用（见 api/[[...route]].ts）。
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     react(),
+    {
+      name: 'maple-production-security-meta',
+      transformIndexHtml(html: string): string {
+        // Vite 开发页会注入 React Refresh 的内联脚本，不能让开发专用 CSP 误伤 HMR；
+        // 生产构建才把严格 CSP 写入静态 HTML。API / 播放器响应的 CSP 仍由 server/security.ts 提供。
+        return command === 'build' ? html.replace('</head>', `${PRODUCTION_SECURITY_META}\n  </head>`) : html
+      },
+    },
     devServer({
       entry: './server/index.ts',
       exclude: [/^(?!\/api\/).*/],
@@ -19,4 +31,4 @@ export default defineConfig({
   ssr: {
     external: ['better-sqlite3'],
   },
-})
+}))

@@ -11,16 +11,21 @@ import { db } from './db'
 
 const scryptAsync = promisify(scrypt)
 
-// 生产必须在 env 设 AUTH_SECRET（够长的随机串）；dev 留个占位，起服务时会告警。
-const SECRET = process.env.AUTH_SECRET || 'dev-insecure-secret-change-me'
-if (SECRET === 'dev-insecure-secret-change-me') {
-  console.warn('[auth] ⚠️  AUTH_SECRET 未设置，正在用不安全的开发占位串，生产务必设置')
+// 生产没有强随机密钥就拒绝启动。继续用公开占位串会让攻击者直接伪造 JWT，会话保护等于零。
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+const configuredSecret = process.env.AUTH_SECRET?.trim() ?? ''
+if (IS_PRODUCTION && configuredSecret.length < 32) {
+  throw new Error('[auth] 生产必须设置至少 32 个字符的随机 AUTH_SECRET')
 }
+const SECRET = configuredSecret || 'dev-insecure-secret-change-me'
 
-const COOKIE = 'mt_session'
+// 生产用 __Host- 前缀：浏览器强制 Secure、Path=/ 且不允许 Domain，降低子域 / 路径投毒风险。
+// 开发环境仍用普通名字，否则 http://localhost 不会回传 __Host- Cookie。
+const COOKIE = IS_PRODUCTION ? '__Host-mt_session' : 'mt_session'
+const LEGACY_COOKIE = 'mt_session'
 const MAX_AGE = 60 * 60 * 24 * 30 // 30 天（秒）
 // 生产走 HTTPS → secure cookie；dev 是 http://localhost，secure 会导致浏览器不回传，故按环境切。
-const SECURE = process.env.NODE_ENV === 'production'
+const SECURE = IS_PRODUCTION
 
 const USERNAME_MIN = 2
 // 12 个字符（中英文都算 1 个）。定这个数是因为顶栏用户名 chip 按内容伸缩：12 个中文 ≈ 205px，
@@ -81,7 +86,7 @@ async function issueSession(c: Context, s: Session): Promise<void> {
   setCookie(c, COOKIE, token, {
     httpOnly: true,
     secure: SECURE,
-    sameSite: 'Lax',
+    sameSite: 'Strict',
     path: '/',
     maxAge: MAX_AGE,
   })
@@ -183,6 +188,12 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 
 const auth = new Hono()
 
+// 账号响应包含会话状态，不能被浏览器或 CDN 缓存后复用到别的请求。
+auth.use('*', async (c, next) => {
+  c.header('Cache-Control', 'no-store')
+  await next()
+})
+
 // 密保问题预设列表 —— 前端下拉的单一事实源，别在前端再抄一份。
 auth.get('/questions', (c) => c.json({ questions: SECURITY_QUESTIONS }))
 
@@ -241,7 +252,9 @@ auth.post('/login', async (c) => {
 })
 
 auth.post('/logout', (c) => {
-  deleteCookie(c, COOKIE, { path: '/' })
+  deleteCookie(c, COOKIE, { path: '/', secure: SECURE, sameSite: 'Strict' })
+  // 升级到 __Host- 名字时顺便清掉旧 Cookie，避免浏览器继续携带过期的会话材料。
+  if (COOKIE !== LEGACY_COOKIE) deleteCookie(c, LEGACY_COOKIE, { path: '/', secure: SECURE, sameSite: 'Strict' })
   return c.json({ ok: true })
 })
 
