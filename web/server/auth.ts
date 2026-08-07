@@ -1,13 +1,15 @@
-// 账号体系 —— 开放注册 + 用户名/密码。规模小但开放（GitHub star 者互不认识，发不了邀请码，
+// 账号体系 —— 开放注册 + 用户名/密码，另有邮箱验证码快捷注册 / 登录。规模小但开放（GitHub star 者互不认识，发不了邀请码，
 // 所以不做邀请制，见 ideas/012 待调研 #3）。密码用 Node 内置 scrypt 哈希（不加 bcrypt 依赖），
 // 会话用 JWT httpOnly 签名 cookie（无状态，不建 session 表）。
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { sign, verify } from 'hono/jwt'
-import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
+import { createHmac, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
+import { domainToASCII } from 'node:url'
 import { db } from './db'
+import { emailDeliveryConfigured, sendEmailCode } from './email-delivery'
 
 const scryptAsync = promisify(scrypt)
 
@@ -34,6 +36,14 @@ const USERNAME_MAX = 12
 const PASSWORD_MIN = 6
 const PASSWORD_MAX = 200
 const ANSWER_MAX = 100
+const EMAIL_MAX = 254
+const EMAIL_CODE_TTL = 10 * 60 * 1000
+const EMAIL_CODE_ATTEMPTS = 5
+const EMAIL_SEND_COOLDOWN = 60 * 1000
+const EMAIL_START_MAX_PER_IP = 10
+const EMAIL_START_MAX_PER_ADDRESS = 5
+const EMAIL_REGISTER_MAX_PER_IP = 10
+const EMAIL_REGISTER_MAX_PER_ADDRESS = 10
 
 /**
  * 密保问题用**预设列表**，不让用户自由填写。两头的坑都躲开了：
@@ -94,10 +104,13 @@ async function issueSession(c: Context, s: Session): Promise<void> {
 
 // 预编译语句
 const findByName = db.prepare<[string]>(
-  'SELECT id, username, pass_hash, token_version, security_question, security_answer_hash, created_at FROM users WHERE username = ?',
+  'SELECT id, username, pass_hash, email, email_verified_at, token_version, security_question, security_answer_hash, created_at FROM users WHERE username = ?',
+)
+const findByEmail = db.prepare<[string]>(
+  'SELECT id, username, pass_hash, email, email_verified_at, token_version, security_question, security_answer_hash, created_at FROM users WHERE email = ?',
 )
 const findById = db.prepare<[number]>(
-  'SELECT id, username, pass_hash, token_version, security_question, security_answer_hash, created_at FROM users WHERE id = ?',
+  'SELECT id, username, pass_hash, email, email_verified_at, token_version, security_question, security_answer_hash, created_at FROM users WHERE id = ?',
 )
 const insertUser = db.prepare<[string, string, string]>(
   'INSERT INTO users (username, pass_hash, created_at) VALUES (?, ?, ?)',
@@ -108,11 +121,42 @@ const bumpPassword = db.prepare<[string, number]>(
 const setSecurity = db.prepare<[string, string, number]>(
   'UPDATE users SET security_question = ?, security_answer_hash = ? WHERE id = ?',
 )
+const setEmailVerified = db.prepare<[string, number]>(
+  'UPDATE users SET email_verified_at = ? WHERE id = ? AND email_verified_at IS NULL',
+)
+
+const findChallenge = db.prepare<[string]>(
+  'SELECT id, email, code_hash, attempts, created_at, expires_at, verified_at, consumed_at FROM email_challenge WHERE id = ?',
+)
+const findRecentChallenge = db.prepare<[string]>(
+  'SELECT id, created_at FROM email_challenge WHERE email = ? AND consumed_at IS NULL ORDER BY created_at DESC LIMIT 1',
+)
+const insertChallenge = db.prepare<[string, string, string, number, number]>(
+  'INSERT INTO email_challenge (id, email, code_hash, attempts, created_at, expires_at) VALUES (?, ?, ?, 0, ?, ?)',
+)
+const incrementChallengeAttempts = db.prepare<[string]>(
+  'UPDATE email_challenge SET attempts = attempts + 1 WHERE id = ?',
+)
+const markChallengeVerified = db.prepare<[number, string]>(
+  'UPDATE email_challenge SET verified_at = ? WHERE id = ? AND consumed_at IS NULL',
+)
+const consumeChallenge = db.prepare<[number, string]>(
+  'UPDATE email_challenge SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL',
+)
+const deleteChallenge = db.prepare<[string]>('DELETE FROM email_challenge WHERE id = ?')
+const cleanupChallenges = db.prepare<[number]>(
+  'DELETE FROM email_challenge WHERE expires_at < ? OR consumed_at IS NOT NULL',
+)
+const insertEmailUser = db.prepare<[string, string, string, string, string]>(
+  'INSERT INTO users (username, pass_hash, email, email_verified_at, created_at) VALUES (?, ?, ?, ?, ?)',
+)
 
 interface UserRow {
   id: number
   username: string
   pass_hash: string
+  email: string | null
+  email_verified_at: string | null
   token_version: number
   security_question: string | null
   security_answer_hash: string | null
@@ -186,6 +230,57 @@ async function readJson(c: Context): Promise<Record<string, unknown> | null> {
 }
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 
+/**
+ * 邮箱比较策略：域名和本地部分统一转小写，不做 Gmail 点号 / plus alias 合并。
+ * 这是本站自己的账号标识策略，避免同一邮箱在注册、登录、验证和找回流程里出现分歧。
+ */
+function normalizeEmail(value: string): string {
+  const raw = value.trim()
+  if (!raw || raw.length > EMAIL_MAX || /[\r\n]/.test(raw)) return ''
+  const at = raw.lastIndexOf('@')
+  if (at <= 0 || at === raw.length - 1 || raw.indexOf('@') !== at) return ''
+  const local = raw.slice(0, at)
+  const domain = domainToASCII(raw.slice(at + 1).toLowerCase())
+  if (!domain || local.length > 64 || /\s/.test(local)) return ''
+  return `${local.toLowerCase()}@${domain.toLowerCase()}`
+}
+
+function emailCodeHash(challengeId: string, code: string): Buffer {
+  return createHmac('sha256', SECRET).update(`${challengeId}:${code}`).digest()
+}
+
+function verifyEmailCodeHash(challengeId: string, code: string, storedHex: string): boolean {
+  const expected = Buffer.from(storedHex, 'hex')
+  const actual = emailCodeHash(challengeId, code)
+  return expected.length === actual.length && timingSafeEqual(actual, expected)
+}
+
+function newChallengeId(): string {
+  return randomBytes(24).toString('base64url')
+}
+
+function makeEmailUsername(email: string): string {
+  const local = email.slice(0, email.lastIndexOf('@')).replace(/[^\p{L}\p{N}_-]/gu, '')
+  const base = (local.length >= USERNAME_MIN ? local : 'user').slice(0, USERNAME_MAX)
+  let candidate = base
+  for (let i = 0; i < 10 && findByName.get(candidate); i++) {
+    const suffix = randomBytes(3).toString('hex').slice(0, 4)
+    candidate = `${base.slice(0, USERNAME_MAX - suffix.length)}${suffix}`
+  }
+  return candidate
+}
+
+interface EmailChallengeRow {
+  id: string
+  email: string
+  code_hash: string
+  attempts: number
+  created_at: number
+  expires_at: number
+  verified_at: number | null
+  consumed_at: number | null
+}
+
 const auth = new Hono()
 
 // 账号响应包含会话状态，不能被浏览器或 CDN 缓存后复用到别的请求。
@@ -219,7 +314,7 @@ auth.post('/register', async (c) => {
 
   const info = insertUser.run(username, await hashSecret(password), new Date().toISOString())
   await issueSession(c, { uid: Number(info.lastInsertRowid), username, tv: 0 })
-  return c.json({ username, hasSecurity: false })
+  return c.json({ username, hasSecurity: false, hasEmail: false })
 })
 
 auth.post('/login', async (c) => {
@@ -239,7 +334,8 @@ auth.post('/login', async (c) => {
     return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
   }
 
-  const row = findByName.get(username) as UserRow | undefined
+  const normalizedEmail = normalizeEmail(username)
+  const row = (findByName.get(username) || (normalizedEmail ? findByEmail.get(normalizedEmail) : undefined)) as UserRow | undefined
   // 用户名不存在也照样跑一次 verify，避免「用户名是否存在」被响应时间区分出来。
   const ok = row ? await verifySecret(password, row.pass_hash) : await verifySecret(password, 'x:x')
   if (!row || !ok) return c.json({ error: '用户名或密码错误' }, 401)
@@ -248,7 +344,141 @@ auth.post('/login', async (c) => {
   buckets.delete(ipKey)
   buckets.delete(userKey)
   await issueSession(c, { uid: row.id, username: row.username, tv: row.token_version })
-  return c.json({ username: row.username, hasSecurity: !!row.security_answer_hash })
+  return c.json({ username: row.username, hasSecurity: !!row.security_answer_hash, hasEmail: !!row.email && !!row.email_verified_at })
+})
+
+/**
+ * 邮箱快捷入口第一步：不区分邮箱是否已注册，统一创建短期验证码挑战。
+ * 这样响应不会成为邮箱枚举器；验证码验证成功后，已有账号登录，新邮箱进入设置密码。
+ */
+auth.post('/email/start', async (c) => {
+  if (!emailDeliveryConfigured()) return c.json({ error: '邮箱快捷登录暂不可用，请使用用户名和密码' }, 503)
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+  const email = normalizeEmail(str(body.email))
+  if (!email) return c.json({ error: '请输入有效的邮箱地址' }, 400)
+
+  const now = Date.now()
+  cleanupChallenges.run(now)
+  if (
+    rateLimited(`email-start-ip:${clientIp(c)}`, EMAIL_START_MAX_PER_IP, WINDOW) ||
+    rateLimited(`email-start-address:${email}`, EMAIL_START_MAX_PER_ADDRESS, WINDOW)
+  ) {
+    return c.json({ error: '验证码发送太频繁，请稍后再试' }, 429)
+  }
+  const recent = findRecentChallenge.get(email) as { id: string; created_at: number } | undefined
+  if (recent && now - recent.created_at < EMAIL_SEND_COOLDOWN) {
+    return c.json({ error: '验证码已发送，请稍后再试' }, 429)
+  }
+  if (recent) deleteChallenge.run(recent.id)
+
+  const challengeId = newChallengeId()
+  const code = randomInt(0, 1_000_000).toString().padStart(6, '0')
+  insertChallenge.run(
+    challengeId,
+    email,
+    emailCodeHash(challengeId, code).toString('hex'),
+    now,
+    now + EMAIL_CODE_TTL,
+  )
+  try {
+    await sendEmailCode(email, code)
+  } catch {
+    deleteChallenge.run(challengeId)
+    return c.json({ error: '验证码邮件发送失败，请稍后再试' }, 502)
+  }
+  return c.json({ challengeId, expiresIn: EMAIL_CODE_TTL / 1000 })
+})
+
+/** 邮箱快捷入口第二步：验证码正确后，已有邮箱账号直接登录，新邮箱只拿到一次性建号资格。 */
+auth.post('/email/verify', async (c) => {
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+  const challengeId = str(body.challengeId)
+  const code = str(body.code).trim()
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(challengeId) || !/^\d{6}$/.test(code)) {
+    return c.json({ error: '验证码格式不正确' }, 400)
+  }
+  if (rateLimited(`email-verify-ip:${clientIp(c)}`, EMAIL_CODE_ATTEMPTS * 4, WINDOW)) {
+    return c.json({ error: '验证码尝试太频繁，请稍后再试' }, 429)
+  }
+
+  const row = findChallenge.get(challengeId) as EmailChallengeRow | undefined
+  const now = Date.now()
+  if (!row || row.consumed_at || row.expires_at <= now || row.attempts >= EMAIL_CODE_ATTEMPTS) {
+    return c.json({ error: '验证码无效或已过期，请重新获取' }, 401)
+  }
+  if (rateLimited(`email-verify-address:${row.email}`, EMAIL_CODE_ATTEMPTS, WINDOW)) {
+    return c.json({ error: '验证码尝试太频繁，请稍后再试' }, 429)
+  }
+  if (!row.verified_at) {
+    if (!verifyEmailCodeHash(challengeId, code, row.code_hash)) {
+      incrementChallengeAttempts.run(challengeId)
+      return c.json({ error: '验证码不正确' }, 401)
+    }
+    markChallengeVerified.run(now, challengeId)
+  }
+
+  const existing = findByEmail.get(row.email) as UserRow | undefined
+  if (existing) {
+    setEmailVerified.run(new Date(now).toISOString(), existing.id)
+    consumeChallenge.run(now, challengeId)
+    await issueSession(c, { uid: existing.id, username: existing.username, tv: existing.token_version })
+    return c.json({ status: 'login', username: existing.username, hasSecurity: !!existing.security_answer_hash, hasEmail: true })
+  }
+  return c.json({ status: 'set-password', challengeId, expiresIn: Math.max(0, Math.floor((row.expires_at - now) / 1000)) })
+})
+
+/** 新邮箱完成验证码后设置密码；用户名可选，留空时从邮箱本地部分生成显示名。 */
+auth.post('/email/register', async (c) => {
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+  const challengeId = str(body.challengeId)
+  const password = str(body.password)
+  const confirm = str(body.confirm)
+  const requestedUsername = str(body.username).trim()
+  const row = findChallenge.get(challengeId) as EmailChallengeRow | undefined
+  const now = Date.now()
+
+  if (!row || !row.verified_at || row.consumed_at || row.expires_at <= now) {
+    return c.json({ error: '邮箱验证已失效，请重新获取验证码' }, 401)
+  }
+  const registerIpKey = `email-register-ip:${clientIp(c)}`
+  const registerAddressKey = `email-register-address:${row.email}`
+  if (
+    rateLimited(registerIpKey, EMAIL_REGISTER_MAX_PER_IP, WINDOW) ||
+    rateLimited(registerAddressKey, EMAIL_REGISTER_MAX_PER_ADDRESS, WINDOW)
+  ) {
+    return c.json({ error: '注册尝试太频繁，请稍后再试' }, 429)
+  }
+  if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
+    return c.json({ error: `密码需 ${PASSWORD_MIN}–${PASSWORD_MAX} 个字符` }, 400)
+  }
+  if (password !== confirm) return c.json({ error: '两次输入的密码不一致' }, 400)
+  if (requestedUsername && (requestedUsername.length < USERNAME_MIN || requestedUsername.length > USERNAME_MAX)) {
+    return c.json({ error: `用户名需 ${USERNAME_MIN}–${USERNAME_MAX} 个字符` }, 400)
+  }
+  if (findByEmail.get(row.email)) return c.json({ error: '该邮箱已经注册，请返回登录' }, 409)
+
+  const username = requestedUsername || makeEmailUsername(row.email)
+  if (findByName.get(username)) return c.json({ error: '用户名已被占用，请换一个' }, 409)
+  const passHash = await hashSecret(password)
+  const createdAt = new Date(now).toISOString()
+  try {
+    const create = db.transaction(() => {
+      insertEmailUser.run(username, passHash, row.email, createdAt, createdAt)
+      consumeChallenge.run(now, challengeId)
+    })
+    create()
+  } catch {
+    return c.json({ error: '账号创建失败，请稍后再试' }, 409)
+  }
+
+  const user = findByEmail.get(row.email) as UserRow
+  buckets.delete(registerIpKey)
+  buckets.delete(registerAddressKey)
+  await issueSession(c, { uid: user.id, username: user.username, tv: user.token_version })
+  return c.json({ username: user.username, hasSecurity: false, hasEmail: true })
 })
 
 auth.post('/logout', (c) => {
@@ -267,6 +497,7 @@ auth.get('/me', async (c) => {
     createdAt: row.created_at,
     // 只报「设没设」，**绝不回显问题和答案** —— 问题本身也是秘密，泄露了等于告诉别人该去查什么。
     hasSecurity: !!row.security_answer_hash,
+    hasEmail: !!row.email && !!row.email_verified_at,
   })
 })
 
@@ -288,6 +519,14 @@ auth.post('/settings', async (c) => {
   const answer = str(body.answer)
 
   const row = findById.get(s.uid) as UserRow
+  const settingsIpKey = `settings-ip:${clientIp(c)}`
+  const settingsUserKey = `settings-user:${s.uid}`
+  if (
+    rateLimited(settingsIpKey, LOGIN_MAX_PER_IP, WINDOW) ||
+    rateLimited(settingsUserKey, LOGIN_MAX_PER_USER, WINDOW)
+  ) {
+    return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+  }
   if (!(await verifySecret(current, row.pass_hash))) {
     return c.json({ error: '原始密码不正确' }, 401)
   }
@@ -316,6 +555,8 @@ auth.post('/settings', async (c) => {
   }
 
   const after = findById.get(s.uid) as UserRow
+  buckets.delete(settingsIpKey)
+  buckets.delete(settingsUserKey)
   return c.json({ ok: true, hasSecurity: !!after.security_answer_hash })
 })
 

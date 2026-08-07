@@ -1,5 +1,5 @@
-// 密保提示条 —— 注册表单只有「用户名 + 密码 + 确认」，密保是之后在设置里设的，所以**没设密保的
-// 用户彻底找不回密码**（没邮箱、没别的凭证），号和追番数据就永久丢了。已定的处理方式是「不强制、
+// 密保提示条 —— 注册表单只有「用户名 + 密码 + 确认」，密保是之后在设置里设的。没有密保、也没有已验证邮箱的
+// 用户彻底找不回密码，号和追番数据就永久丢了。已定的处理方式是「不强制、
 // 登录后给一条不烦人的提示引导」（见 ideas/012）。
 //
 // 只在「已登录 + 没设密保 + 本次会话没关掉」时出现。关掉只存 sessionStorage：下次开浏览器还会提醒，
@@ -14,7 +14,7 @@ export function NagBar({ onGoSettings }: { onGoSettings: () => void }): JSX.Elem
   const { user } = useAuth()
   const [dismissed, setDismissed] = useState(() => sessionStorage.getItem(DISMISS_KEY) === '1')
 
-  if (!user || user.hasSecurity || dismissed) return null
+  if (!user || user.hasSecurity || user.hasEmail || dismissed) return null
 
   return (
     <div className="flex items-center gap-2.5 border-b border-primary/20 bg-primary/10 px-4 py-2 text-xs text-primary md:px-6">
