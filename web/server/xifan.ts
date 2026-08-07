@@ -5,6 +5,9 @@
 //   GET  /api/xifan/play-page?animeId=&ep=         → 播放器页（默认播线路 1，直连失败套娃兜底）
 //   GET  /api/xifan/hls.js                         → 自托管 hls.js（不走可能被墙的 jsdelivr）
 //   POST /api/xifan/locate                         → bgmId + 标题 → 稀饭候选（周表免验证码匹配，见 locate.ts）
+//   GET  /api/xifan/captcha                      → 全站搜索验证码图片（按登录用户隔离 cookie）
+//   POST /api/xifan/captcha/verify               → 校验全站搜索验证码
+//   POST /api/xifan/search                       → 搜索非周历稀饭资源（需要先过验证码）
 //   POST /api/xifan/bind                           → 用户点候选确认，落库绑定（要登录）
 //   GET  /api/xifan/bindings                       → 当前用户追番已建的绑定，页面加载时一次拿齐（要登录）
 //
@@ -15,6 +18,7 @@ import { Hono } from 'hono'
 import { getPlaylist, resolveLine } from './xifan/resolve'
 import { locate } from './xifan/locate'
 import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
+import { getXifanCaptcha, searchXifan, verifyXifanCaptcha, XIFAN_SEARCH_MAX_LENGTH } from './xifan/search'
 import { getSession } from './auth'
 import { db } from './db'
 
@@ -55,6 +59,48 @@ xifan.get('/resolve', async (c) => {
 xifan.get('/play-page', (c) => {
   c.header('Cache-Control', 'no-store')
   return c.html(PLAY_PAGE)
+})
+
+// 全站搜索的验证码 / cookie 会话按登录用户隔离；不登录就不能把服务器当成匿名搜索代理。
+xifan.get('/captcha', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  try {
+    c.header('Cache-Control', 'no-store')
+    return c.json(await getXifanCaptcha(session.uid))
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : '验证码请求失败' }, 502)
+  }
+})
+
+xifan.post('/captcha/verify', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  const body = (await c.req.json().catch(() => ({}))) as { code?: unknown }
+  const code = typeof body.code === 'string' ? body.code.trim() : ''
+  if (!code || code.length > 32) return c.json({ error: '验证码格式不合法' }, 400)
+  try {
+    return c.json(await verifyXifanCaptcha(session.uid, code))
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : '验证码校验失败' }, 502)
+  }
+})
+
+xifan.post('/search', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  const body = (await c.req.json().catch(() => ({}))) as { keyword?: unknown }
+  const keyword = typeof body.keyword === 'string' ? body.keyword.trim() : ''
+  if (!keyword) return c.json({ error: '请输入搜索词' }, 400)
+  if (keyword.length > XIFAN_SEARCH_MAX_LENGTH) {
+    return c.json({ error: `搜索词不能超过 ${XIFAN_SEARCH_MAX_LENGTH} 个字符` }, 400)
+  }
+  try {
+    c.header('Cache-Control', 'no-store')
+    return c.json(await searchXifan(session.uid, keyword))
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : '稀饭搜索失败' }, 502)
+  }
 })
 
 // 定位：bgmId + 追番标题 → 周表候选（或已绑定则直接给 bound）。不写库、不要登录（纯解析）。

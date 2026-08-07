@@ -114,6 +114,19 @@ export interface XifanBinding {
   xifanName: string
 }
 
+export interface XifanSearchHit {
+  xifanId: number
+  xifanName: string
+  cover: string
+  episode: string
+  year: string
+  area: string
+}
+
+export type XifanSearchResponse =
+  | { needsCaptcha: true }
+  | { needsCaptcha: false; data: XifanSearchHit[] }
+
 /** 追番页加载时一次拿齐当前用户的绑定 —— 绑过的「继续看」直接渲染成链接，无需再定位。 */
 export async function fetchXifanBindings(): Promise<Record<number, XifanBinding>> {
   const res = await fetch('/api/xifan/bindings')
@@ -135,11 +148,32 @@ export async function locateXifan(
 }
 
 export async function bindXifan(bgmId: number, xifanId: number, xifanName: string): Promise<void> {
-  await fetch('/api/xifan/bind', {
+  await json<{ ok: boolean }>(await fetch('/api/xifan/bind', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ bgmId, xifanId, xifanName }),
-  })
+  }))
+}
+
+/** 搜索非周历资源。没有通过验证码时只回 needsCaptcha，不把站点验证码页当成空结果。 */
+export async function searchXifan(keyword: string): Promise<XifanSearchResponse> {
+  return json<XifanSearchResponse>(await fetch('/api/xifan/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keyword }),
+  }))
+}
+
+export async function fetchXifanCaptcha(): Promise<{ imageB64: string; mime: string }> {
+  return json<{ imageB64: string; mime: string }>(await fetch('/api/xifan/captcha'))
+}
+
+export async function verifyXifanCaptcha(code: string): Promise<{ success: boolean }> {
+  return json<{ success: boolean }>(await fetch('/api/xifan/captcha/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  }))
 }
 
 /** 播放页地址 —— 服务端返回的裸 HTML 播放器，新标签打开。 */
