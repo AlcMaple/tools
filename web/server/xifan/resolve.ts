@@ -97,16 +97,15 @@ function parseEpList(html: string, animeId: string): number[] {
 }
 
 /**
- * 按 URL 分类（不发额外请求）。播放层据此选 <video> / hls.js / 直接套娃。
+ * 按 URL 分类（不发额外请求）。播放层据此选 <video> / hls.js。
  *   - `.m3u8` → hls（hls.js 接管）
- *   - **下载型链接** → iframe：`<video>` 喂它只会被浏览器当**附件下载**（触发下载器、还播不了），
- *     白等一轮直连失败才切套娃。`apn.moedot.net/d/…` 是联通网盘代理，302 跳 `pan.wo.cn/openapi/download`
- *     —— 这是**服务端行为、各端一致**（非 011 那种 localhost 专属），所以直接判死、跳过 <video>。
- *   - 其余（xfvod 等干净直链）→ mp4：`<video>` 直连，视频不经服务器（零带宽，最优路径，别误伤）。
+ *   - 其余 → mp4：`<video>` 直连，视频不经服务器。`apn.moedot.net` 最终会跳到带
+ *     `content-disposition: attachment` 的 pan.wo；此前因此直接判成 iframe。真实 Chromium
+ *     复测确认：播放器页使用 `Referrer-Policy: no-referrer` 后可正常作为媒体加载，所以恢复
+ *     直连，拿回缓冲事件控制权；若个别浏览器仍失败，页面的 error 监听再回退官方 iframe。
  */
-function classify(url: string): 'mp4' | 'hls' | 'iframe' {
+function classify(url: string): 'mp4' | 'hls' {
   if (/\.m3u8(\?|$)/i.test(url)) return 'hls'
-  if (/apn\.moedot\.net|pan\.wo\.cn|\/openapi\/download/i.test(url)) return 'iframe'
   return 'mp4'
 }
 
@@ -142,7 +141,7 @@ export interface LineMeta {
 export interface PlayLine {
   source: number
   url: string
-  kind: 'mp4' | 'hls' | 'iframe' // iframe = 下载型链接，直接套娃（见 classify）
+  kind: 'mp4' | 'hls'
 }
 export interface Playlist {
   title: string
