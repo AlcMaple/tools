@@ -3,7 +3,7 @@ import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
 import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
 import { useAuth } from './auth'
 import { cacheGet, cacheSet } from './dataCache'
-import { loadTracks } from './tracksSync'
+import { loadTracks, markTracksMutation } from './tracksSync'
 import { useIsCompact } from './useMediaQuery'
 import { Icon, Spinner } from './Icon'
 
@@ -47,6 +47,8 @@ export function CalendarPage(): JSX.Element {
 
   // 先改本地再发请求 —— 点了要立刻有反馈。失败就回滚这一个 id。
   const toggleTrack = (item: CalendarItem, weekday: number): void => {
+    if (!user) return
+    markTracksMutation(user.username)
     const on = tracked.has(item.id)
     setTracked((prev) => {
       const next = new Set(prev)
