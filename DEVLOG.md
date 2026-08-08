@@ -647,6 +647,56 @@ const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
 ## 在线观看
 
+### 2026-08-08 feat(bili): 新增独立短信登录并重构登录入口
+
+**效果**：
+
+1. B 站「扫码登录」恢复为纯二维码功能，不再在二维码弹窗里塞短信页签或「登录窗打开中」占位；设置页与播放页都改成「扫码登录 / 短信登录」两个语义明确的并列入口。
+2. 短信登录使用独立表单：手机号 → 极验 → 发送短信 → 6 位验证码登录。关闭极验窗会立即回到可操作状态，接口失败会落在表单的常驻反馈位，不再靠整张官方登录页的窗口生命周期猜登录结果。
+3. 登录成功后，短信与 TV 扫码写入同一个 `persist:bili` 分区；设置页登录态和 B 站 DASH 播放无需分辨登录渠道。
+4. 窄窗口下登录方式会移到说明文字下方，不挤压说明、不产生横向滚动；二维码弹窗本身未改协议与轮询行为。
+
+**旧实现为什么卡住**：
+
+内测分支 `55fedd8` 只是打开 `passport.bilibili.com/login` 整张网页，再等待窗口关闭或
+`SESSDATA` cookie 变化。官方页内部的极验层、登录页与 MapleTools 外层弹窗是三套状态：
+验证层关闭不等于短信登录完成，外层 IPC 仍可能一直等 BrowserWindow，于是界面停在
+「登录窗打开中」。同时把短信入口做成扫码弹窗的页签，按钮语义也从「扫码」被偷换成了
+「任意登录」。本次没有合并这套占位实现。
+
+**短信协议照搬 Biu 的成功实践**：
+
+```text
+GET  /x/passport-login/captcha?source=main_web
+  → initGeetest({ gt, challenge, product: 'bind' })
+  → validate / seccode / challenge / token
+POST /x/passport-login/web/sms/send            (multipart/form-data)
+  → captcha_key
+POST /x/passport-login/web/login/sms           (multipart/form-data)
+  → Set-Cookie(SESSDATA …)
+```
+
+参数名、接口顺序、`source=main_web`、`keep=true` 与
+`/Users/mac/Downloads/biu/src/layout/navbar/login/code-login.tsx` 一致。只做 MapleTools 必需的
+架构适配：Biu 在 renderer 用 Axios；MapleTools 按安全边界改由主进程 `netRequest` 发送，
+统一使用 `persist:bili` 的 UA / cookie 罐。极验仍是真人交互，但只运行在
+`sandbox + contextIsolation + nodeIntegration:false` 的隔离小窗，不再给整张第三方登录页
+一个原生窗口。
+
+![B 站短信登录数据流](docs/devlog-assets/bili-sms-login-flow.svg)
+
+**状态与凭证边界**：
+
+- `captcha_key` 只在主进程内存保留 10 分钟，renderer 只拿一次性 `flowId`；手机号改变时表单立即丢弃旧 `flowId`，退出 B 站时清空主进程全部 flow。
+- 极验组件的 15 秒计时只检查「组件有没有 ready」，不限制用户完成图片 / 滑块验证的时间；取消、组件错误和 B 站接口错误都只结束本次动作，不做自动重试。
+- `login/sms` 返回成功后还会 `flushStore()` 并再次检查 `SESSDATA`；没有真正写入共享分区就不向 UI 报登录成功。
+
+**验证**：
+
+- `npm exec tsc -- --noEmit` 与 `npm run build` 通过。
+- CDP 驱动真实 Electron：1280 / 900 / 700 / 560 px 检查设置页入口，无横向滚动；扫码按钮只出现二维码弹窗；短信按钮只出现手机号表单。
+- 使用隔离临时 profile 实测 B 站 captcha 接口与极验组件：真实图片验证层成功加载；验证结果能继续到 `/web/sms/send`，无效测试号码由 B 站返回「手机号码格式不正确」而不是卡在窗口等待态。未使用真实账号和短信码完成最终登录。
+
 ### 2026-07-30 perf(player): 稀饭 mp4 预抓缓存 + Girigiri 分片并发预取
 
 **效果**：

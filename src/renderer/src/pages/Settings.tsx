@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import BiliLoginModal from "../components/BiliLoginModal";
+import BiliSmsLoginModal from "../components/BiliSmsLoginModal";
 import { useSystemStats } from "../hooks/useSystemStats";
 import { updateStore, type UpdateState } from "../stores/updateStore";
 import { reportError } from "../utils/reportError";
@@ -902,9 +903,10 @@ function Settings(): JSX.Element {
   };
 
   // B 站账号 —— 在线观看用。登录态(cookie)存在主进程的 persist:bili 分区里,
-  // 一次扫码长期有效,UI 只拿一个布尔。
+  // 扫码 / 短信最终都写进同一个分区,UI 只拿一个布尔。
   const [biliLoggedIn, setBiliLoggedIn] = useState(false);
   const [biliQrOpen, setBiliQrOpen] = useState(false);
+  const [biliSmsOpen, setBiliSmsOpen] = useState(false);
   useEffect(() => {
     window.biliApi.status().then((s) => setBiliLoggedIn(s.loggedIn)).catch(() => { /* 当未登录 */ });
   }, []);
@@ -1304,13 +1306,14 @@ function Settings(): JSX.Element {
               {active === "general" && (
                 <Block
                   title="B 站账号"
-                  hint="给「在线观看」里的 B 站源用。扫一次码就长期有效，登录态只存在本机；不登录只能拿到低画质。"
+                  hint="给「在线观看」里的 B 站源使用。登录后可请求账号可用的高清画质。"
                 >
                   <Row
                     icon="smart_display"
-                    title="扫码登录"
-                    desc="用哔哩哔哩手机客户端扫码。登录后播放页才能向 B 站请求 1080P 画质。"
+                    title="登录方式"
+                    desc="使用哔哩哔哩手机客户端扫码，或用手机号接收短信验证码。"
                     density={tweaks.density}
+                    stack
                     control={
                       <div className="flex items-center gap-2 flex-wrap justify-end">
                         <span
@@ -1330,14 +1333,24 @@ function Settings(): JSX.Element {
                             退出
                           </button>
                         ) : (
-                          <button
-                            onClick={() => setBiliQrOpen(true)}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/90 hover:bg-primary text-on-primary font-label text-[11px] uppercase tracking-widest transition-colors"
-                            type="button"
-                          >
-                            <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>qr_code_2</span>
-                            扫码登录
-                          </button>
+                          <span className="flex flex-wrap items-center justify-end gap-2">
+                            <button
+                              onClick={() => setBiliQrOpen(true)}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/90 hover:bg-primary text-on-primary font-label text-[11px] uppercase tracking-widest transition-colors"
+                              type="button"
+                            >
+                              <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>qr_code_2</span>
+                              扫码登录
+                            </button>
+                            <button
+                              onClick={() => setBiliSmsOpen(true)}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary/90 hover:bg-primary text-on-primary font-label text-[11px] uppercase tracking-widest transition-colors"
+                              type="button"
+                            >
+                              <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>sms</span>
+                              短信登录
+                            </button>
+                          </span>
                         )}
                       </div>
                     }
@@ -1906,6 +1919,12 @@ function Settings(): JSX.Element {
       {biliQrOpen && (
         <BiliLoginModal
           onClose={() => setBiliQrOpen(false)}
+          onLoggedIn={() => setBiliLoggedIn(true)}
+        />
+      )}
+      {biliSmsOpen && (
+        <BiliSmsLoginModal
+          onClose={() => setBiliSmsOpen(false)}
           onLoggedIn={() => setBiliLoggedIn(true)}
         />
       )}
