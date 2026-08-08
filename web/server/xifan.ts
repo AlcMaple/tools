@@ -65,6 +65,9 @@ xifan.get('/play-page', (c) => {
   c.header('Cache-Control', 'no-store')
   const page = renderNonce(PLAY_PAGE)
   playerPageSecurity(c, page.nonce)
+  // pan.wo 的下载响应带 attachment；保持来源信息时 Chromium 会把它判成不可播放媒体。
+  // 稀饭自己的 player.moedot 页面同样用 no-referrer，复测后可让 <video> 正常直连。
+  c.header('Referrer-Policy', 'no-referrer')
   return c.html(page.html)
 })
 
@@ -154,6 +157,7 @@ const PLAY_PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
 <title>继续看 · 稀饭</title>
 <script src="/api/xifan/hls.js"></script>
 <style nonce="__CSP_NONCE__">
@@ -166,6 +170,10 @@ const PLAY_PAGE = `<!doctype html>
   .ep-badge { font-size: 12px; font-weight: 700; color: var(--rose); background: var(--rose-dim); border: 1px solid var(--rose-bd); border-radius: 6px; padding: 1px 9px; font-variant-numeric: tabular-nums }
   .player-wrap { position: relative; aspect-ratio: 16/9; background: #000; border: 1px solid #242424; border-radius: 14px; overflow: hidden; margin-bottom: 12px }
   video, iframe.player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; display: none }
+  #buffering { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; align-items: center; gap: 9px; padding: 9px 13px; border-radius: 999px; color: #eee; background: rgba(18,18,18,.86); border: 1px solid #3a3436; box-shadow: 0 8px 24px rgba(0,0,0,.3); pointer-events: none; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums }
+  #buffering.show { display: flex }
+  .buffer-spin { width: 14px; height: 14px; border: 2px solid rgba(255,179,184,.25); border-top-color: var(--rose); border-radius: 50%; animation: spin .7s linear infinite }
+  @keyframes spin { to { transform: rotate(360deg) } }
   /* 只在真出错时才现（加载失败 / 这集没更新 / 线路解析不到）—— 平时不显示任何提示文字 */
   #err { display: none; margin: 0 0 12px; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; background: rgba(247,118,142,.12); border: 1px solid rgba(247,118,142,.35); color: #f7768e }
   .card { background: #171717; border: 1px solid #242424; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px }
@@ -186,6 +194,7 @@ const PLAY_PAGE = `<!doctype html>
   <div class="player-wrap">
     <video id="v" controls playsinline preload="auto"></video>
     <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
+    <div id="buffering" role="status" aria-live="polite"><span class="buffer-spin"></span><span id="bufferText">正在积攒缓冲</span></div>
   </div>
   <div id="err"></div>
   <div class="card"><div class="card-label">线路</div><div class="lines" id="lines"></div></div>
@@ -198,20 +207,113 @@ const PLAY_PAGE = `<!doctype html>
   var ep = q.get('ep') || '1'
   var v = $('v'), frame = $('frame')
   var lines = [], eps = [], curPl = null, resolvedMap = {}, hls = null
+  var BUFFER_TARGET = 10, BUFFER_RATE = .0625, bufferTimer = null, bufferToken = 0
+  var resumeAfterBuffer = false, bufferAnchor = 0, savedRate = 1, savedMuted = false, internalSeek = false
 
   function fail(txt){ var e = $('err'); e.textContent = txt; e.style.display = 'block' }
   function clearFail(){ $('err').style.display = 'none' }
   function inFrame(){ return frame.style.display === 'block' }
 
+  function bufferedAhead(){
+    for (var i = 0; i < v.buffered.length; i++){
+      if (v.buffered.start(i) <= v.currentTime + .05 && v.buffered.end(i) >= v.currentTime) return Math.max(0, v.buffered.end(i) - v.currentTime)
+    }
+    return 0
+  }
+
+  function bufferGoal(){
+    if (!Number.isFinite(v.duration)) return BUFFER_TARGET
+    return Math.max(0, Math.min(BUFFER_TARGET, v.duration - v.currentTime - .25))
+  }
+
+  function hideBuffer(){ $('buffering').classList.remove('show') }
+
+  function restorePlaybackState(){
+    try { v.playbackRate = savedRate } catch (e) {}
+    v.muted = savedMuted
+  }
+
+  function cancelBufferGate(resetPosition){
+    if (resetPosition === undefined) resetPosition = false
+    var wasBuffering = resumeAfterBuffer
+    bufferToken++
+    if (bufferTimer !== null) clearInterval(bufferTimer)
+    bufferTimer = null; resumeAfterBuffer = false; hideBuffer()
+    if (wasBuffering){
+      restorePlaybackState()
+      if (resetPosition && Number.isFinite(bufferAnchor)){
+        internalSeek = true
+        try { v.currentTime = bufferAnchor } catch (e) { internalSeek = false }
+      }
+    }
+  }
+
+  function finishBufferGate(token){
+    if (token !== bufferToken || !resumeAfterBuffer) return
+    if (bufferTimer !== null) clearInterval(bufferTimer)
+    bufferTimer = null; resumeAfterBuffer = false; hideBuffer()
+    // 缓冲期间用极低速静音播放来保持浏览器继续拉流；达标后回到用户 seek 的原位置，
+    // 再恢复原速与静音状态。锚点已经落在 buffered 内，不会重新走网络。
+    internalSeek = true
+    try { v.currentTime = bufferAnchor } catch (e) { internalSeek = false }
+    restorePlaybackState()
+  }
+
+  function checkBufferGate(token){
+    if (token !== bufferToken || !resumeAfterBuffer || !curPl || curPl.kind !== 'mp4' || inFrame()) return
+    // 切 src / loadedmetadata 时 Chromium 可能把 playbackRate 重置成 1；缓冲期间持续钉回
+    // 极低速，确保下载在继续而播放位置几乎不动。
+    v.muted = true
+    if (v.playbackRate !== BUFFER_RATE){
+      try { v.playbackRate = BUFFER_RATE } catch (e) { v.playbackRate = .25 }
+    }
+    var ahead = bufferedAhead(), goal = bufferGoal()
+    $('bufferText').textContent = '正在积攒缓冲 ' + Math.floor(ahead) + ' / ' + Math.ceil(goal) + ' 秒'
+    if (ahead + .25 >= goal || v.ended) finishBufferGate(token)
+  }
+
+  function beginBufferGate(fromSeek){
+    if (!curPl || curPl.kind !== 'mp4' || inFrame()) return
+    var goal = bufferGoal()
+    if (bufferedAhead() + .25 >= goal) return
+    if (bufferTimer !== null){
+      if (fromSeek) bufferAnchor = v.currentTime
+      return
+    }
+    resumeAfterBuffer = true
+    bufferAnchor = v.currentTime
+    savedRate = v.playbackRate
+    savedMuted = v.muted
+    v.muted = true
+    try { v.playbackRate = BUFFER_RATE } catch (e) { v.playbackRate = .25 }
+    var token = ++bufferToken
+    $('buffering').classList.add('show')
+    checkBufferGate(token)
+    bufferTimer = setInterval(function(){ checkBufferGate(token) }, 250)
+  }
+
   // mp4 直连意外失败（少数编码问题）→ 静默切套娃。HLS 失败交给 hls.js 的 fatal。
   // 切套娃时会给 <video> removeAttribute+load，也会冒一个 error —— 用 inFrame()/有无 src 挡掉，别再回切。
   v.addEventListener('error', function(){
     if (!curPl || curPl.kind === 'hls' || inFrame() || !v.getAttribute('src')) return
+    cancelBufferGate()
     embed(curPl)
   })
+  v.addEventListener('seeking', function(){
+    if (internalSeek) return
+    if (!v.paused || resumeAfterBuffer) beginBufferGate(true)
+  })
+  v.addEventListener('seeked', function(){ if (internalSeek) internalSeek = false })
+  v.addEventListener('waiting', function(){ if (!internalSeek && !v.paused) beginBufferGate(false) })
+  v.addEventListener('progress', function(){ if (bufferTimer !== null) checkBufferGate(bufferToken) })
+  v.addEventListener('pause', function(){
+    // 用户主动暂停时停止自动恢复，并把进度退回本次缓冲开始的位置。
+    if (bufferTimer !== null && !internalSeek) cancelBufferGate(true)
+  })
+  v.addEventListener('ended', function(){ cancelBufferGate(false) })
 
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
-  function stopAll(){ destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank' }
+  function stopAll(){ cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank' }
 
   function renderChips(){
     var box = $('lines'); box.textContent = ''
@@ -226,8 +328,6 @@ const PLAY_PAGE = `<!doctype html>
 
   function playLine(pl){
     curPl = pl; clearFail(); stopAll(); renderChips()
-    // 下载型链接（网盘代理）直连必失败还触发浏览器下载 —— 服务端已判死为 iframe，直接套娃，不碰 <video>
-    if (pl.kind === 'iframe'){ embed(pl); return }
     v.style.display = 'block'; frame.style.display = 'none'
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
@@ -247,7 +347,7 @@ const PLAY_PAGE = `<!doctype html>
   // 套娃：直连播不了 → 嵌稀饭自己的真实播放器（跟你在稀饭看一样）
   function embed(pl){
     curPl = pl
-    destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
+    cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
     v.style.display = 'none'; frame.style.display = 'block'; renderChips()
     frame.src = 'https://player.moedot.net/player/index.php?code=xfdm1&from=cf&url=' + encodeURIComponent(pl.url)
   }
