@@ -112,9 +112,9 @@ export function registerMediaProxy(): void {
     // 播放列表要整份读出来重写,Range 对它没意义(还会把重写切断);只给分片透传。
     if (range && !wantsPlaylist) headers['Range'] = range
 
-    // mp4 直链:先给本地预抓缓存一次机会(见 media-cache.ts)。命中就用后台顺序流
-    // 攒出的缓冲喂 <video>,整集只解析一次签名链;不命中(小段 moov 请求 / 缓存挂了)
-    // 原样走下面的直连,缓存只是加速层,失败不影响能不能播。
+    // mp4 直链:先给本地预抓缓存一次机会(见 media-cache.ts)。命中就用相邻 Range
+    // 滑动窗口并发攒缓冲再喂 <video>;每块各拿新签名链,规避 pan.wo 单链并发限制。
+    // 不命中(小段 moov 请求 / 首块失败)原样走下面直连,缓存只是加速层。
     if (!wantsPlaylist) {
       const cached = await tryServeFromCache(target, range, headers)
       if (cached) return new Response(cached.stream, { status: cached.status, headers: cached.headers })
