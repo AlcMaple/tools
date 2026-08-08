@@ -33,6 +33,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
 import shaka from 'shaka-player'
 import BiliLoginModal from '../components/BiliLoginModal'
+import BiliSmsLoginModal from '../components/BiliSmsLoginModal'
 import ErrorPanel from '../components/ErrorPanel'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
@@ -281,6 +282,7 @@ export default function OnlinePlayer(): JSX.Element {
   // B 站登录态(null = 还没查);webviewKey 用于登录后强制重载 webview
   const [biliLoggedIn, setBiliLoggedIn] = useState<boolean | null>(null)
   const [biliQrOpen, setBiliQrOpen] = useState(false)
+  const [biliSmsOpen, setBiliSmsOpen] = useState(false)
   const [webviewKey, setWebviewKey] = useState(0)
   // 自定义源(webview 嵌真实播放页)进入「站点播放器自己的全屏」时,把 webview 容器
   // 铺满整个窗口 —— 这样站点在 webview 内部对 <video> 请求的 HTML5 全屏(只剩视频画面)
@@ -645,16 +647,24 @@ export default function OnlinePlayer(): JSX.Element {
         {biliLoggedIn ? 'B 站 · 已登录' : 'B 站 · 未登录最高只有 480P,登录后可选 1080P'}
       </span>
       {biliLoggedIn === false && (
-        // 下划线只加在文字上:整个按钮加 underline 的话,图标是字体字形,它的基线与
-        // 文字不同,下划线会画成高低两截(用户实拍)。
-        <button
-          type="button"
-          onClick={() => setBiliQrOpen(true)}
-          className="group ml-auto inline-flex items-center gap-1 text-primary font-label text-[11px] font-bold tracking-wider"
-        >
-          <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>qr_code_2</span>
-          <span className="group-hover:underline underline-offset-4">登录 B 站</span>
-        </button>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setBiliQrOpen(true)}
+            className="group inline-flex items-center gap-1 text-primary font-label text-[11px] font-bold tracking-wider"
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>qr_code_2</span>
+            <span className="group-hover:underline underline-offset-4">扫码登录</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setBiliSmsOpen(true)}
+            className="group inline-flex items-center gap-1 text-primary font-label text-[11px] font-bold tracking-wider"
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>sms</span>
+            <span className="group-hover:underline underline-offset-4">短信登录</span>
+          </button>
+        </div>
       )}
       {biliLoggedIn === true && (
         <button
@@ -673,6 +683,9 @@ export default function OnlinePlayer(): JSX.Element {
     <>
       {biliQrOpen && (
         <BiliLoginModal onClose={() => setBiliQrOpen(false)} onLoggedIn={() => handleBiliAuthChanged(true)} />
+      )}
+      {biliSmsOpen && (
+        <BiliSmsLoginModal onClose={() => setBiliSmsOpen(false)} onLoggedIn={() => handleBiliAuthChanged(true)} />
       )}
       {toastText && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-surface-container-high border border-outline-variant/20 px-4 py-3 shadow-2xl">

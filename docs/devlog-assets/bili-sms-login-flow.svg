@@ -1,0 +1,83 @@
+<svg viewBox="0 0 1160 770" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3D3A3B"/>
+    </marker>
+    <marker id="return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2E9E63"/>
+    </marker>
+  </defs>
+
+  <rect width="1160" height="770" fill="#fff"/>
+  <text x="580" y="28" text-anchor="middle" font-size="18" font-weight="700" fill="#171415">B 站短信登录 —— Biu 协议链路 + MapleTools 进程边界</text>
+  <text x="580" y="51" text-anchor="middle" font-size="12" fill="#746D70">短信与扫码是两个独立入口；只把极验交互放进隔离小窗，不再加载整张 B 站登录页</text>
+
+  <rect x="30" y="70" width="240" height="58" rx="10" fill="#FDECEF" stroke="#E78A9D" stroke-width="1.5"/>
+  <text x="150" y="94" text-anchor="middle" font-size="14" font-weight="700" fill="#A63D55">渲染进程</text>
+  <text x="150" y="114" text-anchor="middle" font-size="11" fill="#9B6672">设置页 / 播放页 / 短信弹窗</text>
+
+  <rect x="365" y="70" width="250" height="58" rx="10" fill="#F1EAFB" stroke="#8B5CF6" stroke-width="1.5"/>
+  <text x="490" y="94" text-anchor="middle" font-size="14" font-weight="700" fill="#5B2FAE">主进程</text>
+  <text x="490" y="114" text-anchor="middle" font-size="11" fill="#7550A8">sms-login.ts · bili/api.ts</text>
+
+  <rect x="705" y="70" width="210" height="58" rx="10" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.5"/>
+  <text x="810" y="94" text-anchor="middle" font-size="14" font-weight="700" fill="#1B4F8C">隔离极验窗</text>
+  <text x="810" y="114" text-anchor="middle" font-size="11" fill="#4A6E9C">sandbox · 无 Node 权限</text>
+
+  <rect x="990" y="70" width="140" height="58" rx="10" fill="#FCF1E3" stroke="#F5A623" stroke-width="1.5"/>
+  <text x="1060" y="94" text-anchor="middle" font-size="14" font-weight="700" fill="#B9720A">B 站</text>
+  <text x="1060" y="114" text-anchor="middle" font-size="11" fill="#C68B34">passport API</text>
+
+  <line x1="150" y1="128" x2="150" y2="665" stroke="#E78A9D" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <line x1="490" y1="128" x2="490" y2="665" stroke="#8B5CF6" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <line x1="810" y1="128" x2="810" y2="665" stroke="#4A90D9" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <line x1="1060" y1="128" x2="1060" y2="665" stroke="#F5A623" stroke-width="1.3" stroke-dasharray="4 4"/>
+
+  <rect x="30" y="146" width="240" height="52" rx="9" fill="#FFF6F7" stroke="#E78A9D"/>
+  <text x="150" y="168" text-anchor="middle" font-size="12" font-weight="700" fill="#A63D55">登录方式：两个并列按钮</text>
+  <text x="150" y="186" text-anchor="middle" font-size="11" fill="#9B6672">扫码登录只开二维码 · 短信登录只开表单</text>
+
+  <line x1="150" y1="224" x2="485" y2="224" stroke="#3D3A3B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="320" y="216" text-anchor="middle" font-size="11" fill="#333">bili:sms-send(phone)</text>
+
+  <line x1="490" y1="258" x2="1055" y2="258" stroke="#3D3A3B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="775" y="250" text-anchor="middle" font-size="11" fill="#333">GET /x/passport-login/captcha?source=main_web</text>
+
+  <line x1="1055" y1="288" x2="495" y2="288" stroke="#2E9E63" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#return)"/>
+  <text x="775" y="280" text-anchor="middle" font-size="11" fill="#2E9E63">token + gt + challenge</text>
+
+  <line x1="490" y1="320" x2="805" y2="320" stroke="#3D3A3B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="650" y="312" text-anchor="middle" font-size="11" fill="#333">initGeetest(product = bind)</text>
+  <rect x="705" y="338" width="210" height="48" rx="8" fill="#EDF5FF" stroke="#4A90D9"/>
+  <text x="810" y="358" text-anchor="middle" font-size="11" font-weight="700" fill="#1B4F8C">用户完成图片 / 滑块验证</text>
+  <text x="810" y="375" text-anchor="middle" font-size="10.5" fill="#4A6E9C">ready 后停止加载计时；操作不限 15 秒</text>
+
+  <line x1="805" y1="409" x2="495" y2="409" stroke="#2E9E63" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#return)"/>
+  <text x="650" y="401" text-anchor="middle" font-size="11" fill="#2E9E63">validate + seccode + challenge</text>
+
+  <line x1="490" y1="443" x2="1055" y2="443" stroke="#3D3A3B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="775" y="435" text-anchor="middle" font-size="11" fill="#333">POST /x/passport-login/web/sms/send（multipart）</text>
+  <line x1="1055" y1="473" x2="495" y2="473" stroke="#2E9E63" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#return)"/>
+  <text x="775" y="465" text-anchor="middle" font-size="11" fill="#2E9E63">captcha_key</text>
+
+  <rect x="365" y="490" width="250" height="50" rx="8" fill="#F7F3FF" stroke="#8B5CF6"/>
+  <text x="490" y="511" text-anchor="middle" font-size="11" font-weight="700" fill="#5B2FAE">captcha_key 只留主进程 10 分钟</text>
+  <text x="490" y="528" text-anchor="middle" font-size="10.5" fill="#7550A8">渲染层只拿一次性 flowId</text>
+  <line x1="485" y1="556" x2="155" y2="556" stroke="#2E9E63" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#return)"/>
+  <text x="320" y="548" text-anchor="middle" font-size="11" fill="#2E9E63">flowId → 显示验证码已发送</text>
+
+  <line x1="150" y1="590" x2="485" y2="590" stroke="#3D3A3B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="320" y="582" text-anchor="middle" font-size="11" fill="#333">bili:sms-login(flowId, 6 位短信码)</text>
+  <line x1="490" y1="622" x2="1055" y2="622" stroke="#3D3A3B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="775" y="614" text-anchor="middle" font-size="11" fill="#333">POST /x/passport-login/web/login/sms（multipart）</text>
+  <line x1="1055" y1="652" x2="495" y2="652" stroke="#2E9E63" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#return)"/>
+  <text x="775" y="644" text-anchor="middle" font-size="11" fill="#2E9E63">Set-Cookie → persist:bili</text>
+
+  <rect x="30" y="686" width="520" height="60" rx="9" fill="#EAF7F0" stroke="#2E9E63"/>
+  <text x="48" y="709" font-size="12" font-weight="700" fill="#1F6B45">完成条件</text>
+  <text x="48" y="729" font-size="11" fill="#1F6B45">flushStore 后再次检查 SESSDATA；存在才关短信弹窗并刷新设置页 / 播放页登录态。</text>
+
+  <rect x="575" y="686" width="555" height="60" rx="9" fill="#FFF5F5" stroke="#D97070"/>
+  <text x="593" y="709" font-size="12" font-weight="700" fill="#A33">取消 / 失败不会再卡住</text>
+  <text x="593" y="729" font-size="11" fill="#A33">极验窗关闭即返回 cancelled；接口错误直接回表单反馈位，不再等待整张官方登录页的窗口生命周期。</text>
+</svg>
