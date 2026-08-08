@@ -1,4 +1,4 @@
-// B 站站点接口 —— 登录(TV 端扫码)、稿件信息(分 P 列表)、播放地址。
+// B 站站点接口 —— 登录(TV 端扫码 / web 短信)、稿件信息(分 P 列表)、播放地址。
 //
 // **为什么走 TV 端 appkey 签名,不走 web 端**:
 //   1. 登录:B 站 2026-06 起收紧 **web 扫码**接口(/x/passport-login/web/qrcode/*)风控,
@@ -11,7 +11,7 @@
 //
 // UA 沿用 BGM 的教训:登录态绑 UA,分区 / 请求统一 DESKTOP_USER_AGENT。
 import { session } from 'electron'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { netRequest } from '../shared/net-request'
 import { toMediaProxyUrl } from '../shared/media-proxy'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
@@ -136,6 +136,115 @@ export async function isLoggedIn(): Promise<boolean> {
 
 export async function logout(): Promise<void> {
   await biliSession().clearStorageData({ storages: ['cookies'] })
+}
+
+// ── 登录(短信验证码) ────────────────────────────────────────────────────────
+// 流程照搬 Biu 已跑通的 web 短信登录协议：captcha → 极验 → sms/send → login/sms。
+// 区别只在架构边界：Biu 的 renderer 直接发请求，MapleTools 必须由主进程通过
+// netRequest + persist:bili 发，确保 CORS、UA 与 cookie 罐都和后续播放请求一致。
+
+const WEB_LOGIN_SOURCE = 'main_web'
+const WEB_LOGIN_REFERER = 'https://passport.bilibili.com/login'
+
+export interface BiliGeetestChallenge {
+  token: string
+  gt: string
+  challenge: string
+}
+
+export interface BiliGeetestResult {
+  validate: string
+  seccode: string
+  challenge: string
+  token: string
+}
+
+function webLoginHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    Accept: 'application/json, text/plain, */*',
+    Origin: PASSPORT,
+    Referer: WEB_LOGIN_REFERER,
+    'User-Agent': DESKTOP_USER_AGENT,
+    ...extra,
+  }
+}
+
+function multipartForm(fields: Record<string, string>): { contentType: string; body: Buffer } {
+  const boundary = `----MapleTools${randomBytes(12).toString('hex')}`
+  const lines = Object.entries(fields).flatMap(([name, value]) => [
+    `--${boundary}\r\n`,
+    `Content-Disposition: form-data; name="${name}"\r\n\r\n`,
+    `${value}\r\n`,
+  ])
+  lines.push(`--${boundary}--\r\n`)
+  return {
+    contentType: `multipart/form-data; boundary=${boundary}`,
+    body: Buffer.from(lines.join(''), 'utf-8'),
+  }
+}
+
+async function postWebLogin<T>(path: string, fields: Record<string, string>, what: string): Promise<T> {
+  const form = multipartForm(fields)
+  const res = await netRequest(`${PASSPORT}${path}`, {
+    method: 'POST',
+    headers: webLoginHeaders({ 'Content-Type': form.contentType }),
+    body: form.body,
+    session: biliSession(),
+  })
+  return unwrap<T>(res.body, what)
+}
+
+/** Biu `getPassportLoginCaptcha()` 同款参数，返回启动极验 v3 所需的数据。 */
+export async function getWebLoginCaptcha(): Promise<BiliGeetestChallenge> {
+  const query = new URLSearchParams({ source: WEB_LOGIN_SOURCE })
+  const res = await netRequest(`${PASSPORT}/x/passport-login/captcha?${query}`, {
+    headers: webLoginHeaders(),
+    session: biliSession(),
+  })
+  const data = unwrap<{
+    token: string
+    geetest: { gt: string; challenge: string }
+  }>(res.body, '获取 B 站安全验证')
+  if (!data.token || !data.geetest?.gt || !data.geetest.challenge) {
+    throw new Error('获取 B 站安全验证失败:返回数据不完整')
+  }
+  return { token: data.token, gt: data.geetest.gt, challenge: data.geetest.challenge }
+}
+
+/** 极验完成后发送短信；返回只供下一步 login/sms 使用的 captcha_key。 */
+export async function sendWebSmsCode(phone: string, result: BiliGeetestResult): Promise<string> {
+  const data = await postWebLogin<{ captcha_key: string }>('/x/passport-login/web/sms/send', {
+    cid: '86',
+    tel: phone,
+    source: WEB_LOGIN_SOURCE,
+    token: result.token,
+    challenge: result.challenge,
+    validate: result.validate,
+    seccode: result.seccode,
+  }, '发送 B 站短信验证码')
+  if (!data.captcha_key) throw new Error('发送 B 站短信验证码失败:未返回登录凭证')
+  return data.captcha_key
+}
+
+/** 使用短信验证码登录；成功响应必须真的在共享分区写下 SESSDATA 才算完成。 */
+export async function loginWithWebSms(phone: string, code: string, captchaKey: string): Promise<void> {
+  await postWebLogin<{
+    refresh_token?: string
+  }>('/x/passport-login/web/login/sms', {
+    cid: '86',
+    tel: phone,
+    code,
+    source: WEB_LOGIN_SOURCE,
+    captcha_key: captchaKey,
+    keep: 'true',
+    go_url: 'https://www.bilibili.com',
+  }, 'B 站短信登录')
+
+  const ses = biliSession()
+  await ses.cookies.flushStore()
+  if (!(await isLoggedIn())) {
+    throw new Error('B 站短信登录未写入登录态,请重新获取验证码')
+  }
 }
 
 // ── 稿件信息(分 P) ──────────────────────────────────────────────────────────

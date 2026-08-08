@@ -5,5 +5,7 @@
  */
 export function ipcErrMsg(e: unknown, fallback: string): string {
   if (!(e instanceof Error)) return fallback
-  return e.message.replace(/^Error invoking remote method '[^']+': /, '') || fallback
+  return e.message
+    .replace(/^Error invoking remote method '[^']+': /, '')
+    .replace(/^Error: /, '') || fallback
 }

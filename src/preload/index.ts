@@ -167,6 +167,9 @@ contextBridge.exposeInMainWorld('biliApi', {
   status: () => ipcRenderer.invoke('bili:status'),
   createQr: () => ipcRenderer.invoke('bili:qr-create'),
   pollQr: (authCode: string) => ipcRenderer.invoke('bili:qr-poll', authCode),
+  // Biu 同款短信链路:先完成极验并发送验证码,再用一次性 flowId 提交短信码。
+  sendSms: (phone: string) => ipcRenderer.invoke('bili:sms-send', phone),
+  loginSms: (flowId: string, code: string) => ipcRenderer.invoke('bili:sms-login', flowId, code),
   logout: () => ipcRenderer.invoke('bili:logout'),
   // BV 号 → 稿件信息(合集的分 P 就是集数列表);cid → DASH 音视频分轨
   videoInfo: (bvid: string) => ipcRenderer.invoke('bili:video-info', bvid),

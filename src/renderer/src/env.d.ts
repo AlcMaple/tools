@@ -287,6 +287,12 @@ declare global {
         state: 'pending' | 'scanned' | 'expired' | 'ok'
         loggedIn: boolean
       }>
+      /** 完成极验并发送短信验证码；用户关闭极验窗时返回 cancelled。 */
+      sendSms: (phone: string) => Promise<
+        { cancelled: true } | { cancelled: false; flowId: string }
+      >
+      /** 用 sendSms 返回的一次性 flowId + 6 位短信码完成登录。 */
+      loginSms: (flowId: string, code: string) => Promise<{ loggedIn: true }>
       /** 清空 persist:bili 分区 cookie(退出登录)。 */
       logout: () => Promise<{ loggedIn: boolean }>
       /** BV 号 → 稿件信息。pages 就是合集的集数列表(&p=N 里的 N = page)。 */
