@@ -10,6 +10,7 @@ import { promisify } from 'node:util'
 import { domainToASCII } from 'node:url'
 import { db } from './db'
 import { emailDeliveryConfigured, sendEmailCode } from './email-delivery'
+import { USERNAME_MAX, USERNAME_MIN, usernameError } from './username'
 
 const scryptAsync = promisify(scrypt)
 
@@ -29,10 +30,6 @@ const MAX_AGE = 60 * 60 * 24 * 30 // 30 天（秒）
 // 生产走 HTTPS → secure cookie；dev 是 http://localhost，secure 会导致浏览器不回传，故按环境切。
 const SECURE = IS_PRODUCTION
 
-const USERNAME_MIN = 2
-// 12 个字符（中英文都算 1 个）。定这个数是因为顶栏用户名 chip 按内容伸缩：12 个中文 ≈ 205px，
-// 放得下；原来的 20 会到 ≈305px，太宽。
-const USERNAME_MAX = 12
 const PASSWORD_MIN = 6
 const PASSWORD_MAX = 200
 const ANSWER_MAX = 100
@@ -263,7 +260,7 @@ function makeEmailUsername(email: string): string {
   const local = email.slice(0, email.lastIndexOf('@')).replace(/[^\p{L}\p{N}_-]/gu, '')
   const base = (local.length >= USERNAME_MIN ? local : 'user').slice(0, USERNAME_MAX)
   let candidate = base
-  for (let i = 0; i < 10 && findByName.get(candidate); i++) {
+  for (let i = 0; i < 20 && (usernameError(candidate) || findByName.get(candidate)); i++) {
     const suffix = randomBytes(3).toString('hex').slice(0, 4)
     candidate = `${base.slice(0, USERNAME_MAX - suffix.length)}${suffix}`
   }
@@ -299,9 +296,8 @@ auth.post('/register', async (c) => {
   const password = str(body.password)
   const confirm = str(body.confirm)
 
-  if (username.length < USERNAME_MIN || username.length > USERNAME_MAX) {
-    return c.json({ error: `用户名需 ${USERNAME_MIN}–${USERNAME_MAX} 个字符` }, 400)
-  }
+  const usernameProblem = usernameError(username)
+  if (usernameProblem) return c.json({ error: usernameProblem }, 400)
   if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
     return c.json({ error: `密码需 ${PASSWORD_MIN}–${PASSWORD_MAX} 个字符` }, 400)
   }
@@ -455,9 +451,8 @@ auth.post('/email/register', async (c) => {
     return c.json({ error: `密码需 ${PASSWORD_MIN}–${PASSWORD_MAX} 个字符` }, 400)
   }
   if (password !== confirm) return c.json({ error: '两次输入的密码不一致' }, 400)
-  if (requestedUsername && (requestedUsername.length < USERNAME_MIN || requestedUsername.length > USERNAME_MAX)) {
-    return c.json({ error: `用户名需 ${USERNAME_MIN}–${USERNAME_MAX} 个字符` }, 400)
-  }
+  const usernameProblem = requestedUsername ? usernameError(requestedUsername) : null
+  if (usernameProblem) return c.json({ error: usernameProblem }, 400)
   if (findByEmail.get(row.email)) return c.json({ error: '该邮箱已经注册，请返回登录' }, 409)
 
   const username = requestedUsername || makeEmailUsername(row.email)

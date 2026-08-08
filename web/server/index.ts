@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { getCalendar } from './bgm/calendar'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchOnline } from './bgm/search-online'
@@ -121,5 +121,12 @@ app.get('/api/cover/*', async (c) => {
     return c.text('fetch failed', 502)
   }
 })
+
+// `/api` 是封闭的系统命名空间：未知接口始终返回 JSON 404，不能继续落进 node.ts 的
+// SPA index.html 兜底。这样客户端不会把一张页面误认成接口成功，也不会让未来的页面路由
+// 或用户标识参与 API 路径匹配。
+const apiNotFound = (c: Context) => c.json({ error: '接口不存在' }, 404)
+app.all('/api', apiNotFound)
+app.all('/api/*', apiNotFound)
 
 export default app
