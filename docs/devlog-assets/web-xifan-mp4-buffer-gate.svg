@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 430" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3.5" orient="auto">
+      <path d="M0 0 L8 3.5 L0 7 Z" fill="#777078"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#3b2830" flood-opacity=".10"/>
+    </filter>
+  </defs>
+
+  <rect x="1" y="1" width="978" height="428" rx="18" fill="#fbf9fa" stroke="#e7dfe2"/>
+  <text x="32" y="43" font-size="19" font-weight="750" fill="#302b2e">网页版稀饭线路一：直连与缓冲闸门</text>
+  <text x="32" y="68" font-size="12.5" fill="#756d72">服务器只解析播放地址；视频字节始终由浏览器直接向源 CDN 获取。</text>
+
+  <rect x="32" y="105" width="178" height="78" rx="12" fill="#fff" stroke="#dcd3d7" filter="url(#shadow)"/>
+  <text x="121" y="135" text-anchor="middle" font-size="14" font-weight="700" fill="#3b3539">线路一播放地址</text>
+  <text x="121" y="158" text-anchor="middle" font-size="11.5" fill="#7a7176">apn.moedot.net</text>
+  <text x="121" y="174" text-anchor="middle" font-size="10.5" fill="#9a9095">302 → pan.wo.cn MP4</text>
+
+  <path d="M210 144 H286" stroke="#777078" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="248" y="130" text-anchor="middle" font-size="10.5" fill="#8b8086">no-referrer</text>
+
+  <rect x="288" y="105" width="190" height="78" rx="12" fill="#fff2f3" stroke="#e9a8ae" filter="url(#shadow)"/>
+  <text x="383" y="135" text-anchor="middle" font-size="14" font-weight="750" fill="#793b43">浏览器原生 video</text>
+  <text x="383" y="158" text-anchor="middle" font-size="11.5" fill="#865b61">直接播放 · 监听 buffered</text>
+  <text x="383" y="174" text-anchor="middle" font-size="10.5" fill="#a1787d">视频不经过 VPS</text>
+
+  <path d="M478 144 H554" stroke="#777078" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="516" y="130" text-anchor="middle" font-size="10.5" fill="#8b8086">seek / waiting</text>
+
+  <rect x="556" y="96" width="196" height="96" rx="12" fill="#fff" stroke="#dcd3d7" filter="url(#shadow)"/>
+  <text x="654" y="126" text-anchor="middle" font-size="14" font-weight="700" fill="#3b3539">进入缓冲闸门</text>
+  <text x="654" y="150" text-anchor="middle" font-size="11.5" fill="#756d72">保存进度 · 倍速 · 静音状态</text>
+  <text x="654" y="171" text-anchor="middle" font-size="11.5" font-weight="650" fill="#ad5962">静音 1/16 倍速保持拉流</text>
+
+  <path d="M752 144 H826" stroke="#777078" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="789" y="130" text-anchor="middle" font-size="10.5" fill="#8b8086">缓冲 ≥ 10 秒</text>
+
+  <rect x="828" y="105" width="120" height="78" rx="12" fill="#eef8f3" stroke="#9bcbb3" filter="url(#shadow)"/>
+  <text x="888" y="135" text-anchor="middle" font-size="14" font-weight="750" fill="#34664f">恢复播放</text>
+  <text x="888" y="158" text-anchor="middle" font-size="11.5" fill="#527b68">回到原进度</text>
+  <text x="888" y="174" text-anchor="middle" font-size="10.5" fill="#668a78">恢复用户状态</text>
+
+  <path d="M888 183 V235 H383 V187" fill="none" stroke="#9b8f95" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+  <text x="638" y="226" text-anchor="middle" font-size="10.5" fill="#8b8086">继续由原生 video 播放；再次断粮才重新进闸门</text>
+
+  <rect x="32" y="280" width="916" height="105" rx="14" fill="#f5f1f3" stroke="#ded5d9"/>
+  <text x="54" y="310" font-size="12" font-weight="750" fill="#62575d">边界与兜底</text>
+  <circle cx="61" cy="337" r="4" fill="#bc6972"/>
+  <text x="75" y="341" font-size="11.5" fill="#625a5e">用户主动暂停：取消自动恢复，回到本轮缓冲锚点</text>
+  <circle cx="61" cy="362" r="4" fill="#bc6972"/>
+  <text x="75" y="366" font-size="11.5" fill="#625a5e">切集 / 换线：清理计时器与媒体状态；HLS 继续走 hls.js 深缓冲</text>
+  <circle cx="507" cy="337" r="4" fill="#bc6972"/>
+  <text x="521" y="341" font-size="11.5" fill="#625a5e">MP4 直连 error：回退 player.moedot.net iframe</text>
+  <circle cx="507" cy="362" r="4" fill="#bc6972"/>
+  <text x="521" y="366" font-size="11.5" fill="#625a5e">不新增 VPS 视频代理，不消耗服务器视频流量</text>
+
+  <text x="32" y="411" font-size="10.5" fill="#9a9095">web/server/xifan.ts · web/server/xifan/resolve.ts</text>
+</svg>
