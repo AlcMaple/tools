@@ -1,7 +1,6 @@
-// 追番数据的「秒开缓存 + 后台校验」—— 手机改完在电脑上看、电脑改完在手机上看，都得最终一致，
-// 但又不想每次切页面都干等一轮网络。策略：有缓存就立刻用缓存渲染，同时背着用户发一次真实请求，
-// 回来后按每条记录的 updatedAt 合并（谁更新谁赢），再刷新一次界面 + 写回缓存。
-// bgmId 级别整条覆盖，不做字段级合并——一条追番记录不会真的被两台设备同时各改一半。
+// 追番数据的「秒开缓存 + 后台校验」—— 缓存只负责首屏立即可见，账号服务器才是跨设备的
+// 唯一事实源。真实请求回来后整份覆盖缓存，不能拿 localStorage 的 updatedAt 反过来压服务器：
+// 旧部署、设备时钟或中途关闭页面留下的未来时间戳，会让一台设备永久停在旧状态。
 import {
   fetchGirigiriBindings,
   fetchTracks,
@@ -16,18 +15,15 @@ const tracksKey = (username: string): string => `tracks:${username}`
 const bindingsKey = (username: string): string => `xifanBindings:${username}`
 const girigiriBindingsKey = (username: string): string => `girigiriBindings:${username}`
 
-function mergeByUpdatedAt(server: Track[], local: Track[] | undefined): Track[] {
-  if (!local || local.length === 0) return server
-  const localMap = new Map(local.map((t) => [t.bgmId, t]))
-  // 以 server 的 id 集合为准（新增/删除都在服务端已经生效）；同一条谁 updatedAt 更新就用谁的内容，
-  // 这样本机一个刚落地但服务端时钟还没反应过来的乐观更新，不会被这次后台校验盖回旧值。
-  return server.map((s) => {
-    const l = localMap.get(s.bgmId)
-    return l && l.updatedAt > s.updatedAt ? l : s
-  })
+// 页面显示缓存后，用户可能在后台 GET 返回前立即改进度 / 状态。用当前会话内的递增号识别
+// 这种真实竞态；它不落 localStorage，因此历史旧缓存永远没有资格阻止服务器纠正数据。
+const mutationVersions = new Map<string, number>()
+
+export function markTracksMutation(username: string): void {
+  mutationVersions.set(username, (mutationVersions.get(username) ?? 0) + 1)
 }
 
-/** 立刻用缓存喂一次 onData（如果有），随后后台拉最新数据、合并、再喂一次并写回缓存。
+/** 立刻用缓存喂一次 onData（如果有），随后后台拉最新数据并整份覆盖缓存与页面。
  *  返回取消函数——组件卸载后不再套用迟到的响应。 */
 export function loadTracks(username: string, onData: (ts: Track[]) => void): () => void {
   const key = tracksKey(username)
@@ -35,12 +31,14 @@ export function loadTracks(username: string, onData: (ts: Track[]) => void): () 
   if (cached) onData(cached)
 
   let cancelled = false
+  const mutationVersion = mutationVersions.get(username) ?? 0
   fetchTracks()
     .then((server) => {
-      if (cancelled) return
-      const merged = mergeByUpdatedAt(server, cachePeek<Track[]>(key))
-      cacheSet(key, merged)
-      onData(merged)
+      // GET 发出后若本页已有写操作，它拿到的可能是写入前快照；等 PUT/DELETE 自己收口，
+      // 不让这份迟到的读结果把用户刚点的状态盖回去。
+      if (cancelled || (mutationVersions.get(username) ?? 0) !== mutationVersion) return
+      cacheSet(key, server)
+      onData(server)
     })
     .catch(() => undefined) // 后台校验失败不打扰——缓存的数据还能接着用
   return () => {

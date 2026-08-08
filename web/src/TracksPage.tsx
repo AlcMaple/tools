@@ -44,6 +44,7 @@ import {
   loadBindings,
   loadGirigiriBindings,
   loadTracks,
+  markTracksMutation,
   saveBindingsCache,
   saveGirigiriBindingsCache,
   saveTracksCache,
@@ -113,9 +114,8 @@ export function TracksPage(): JSX.Element {
   const [adding, setAdding] = useState(false) // 加番搜索弹窗
   const today = useMemo(todayBgmId, [])
 
-  // 秒开缓存 + 后台校验（tracksSync.ts）：有缓存立刻渲染，同时背着用户拉一次最新数据，
-  // 按 updatedAt 合并后再刷新一次——不用每次进页面都干等一轮网络，也不会因为另一台设备
-  // 改过数据而在这台设备上一直看着旧的。
+  // 秒开缓存 + 后台校验（tracksSync.ts）：缓存先渲染，服务器响应随后整份校正；缓存只是
+  // 首屏优化，不能覆盖同一账号在另一台设备上已经落库的新状态。
   useEffect(() => {
     if (!ready) return
     if (!user) {
@@ -250,6 +250,7 @@ export function TracksPage(): JSX.Element {
 
   // 搜索结果加追番 —— 乐观先塞占位（默认「想看」），封面/标签由服务端 detail 补，putTrack 回来再覆盖。
   const addFromSearch = (hit: AnimeHit): void => {
+    if (user) markTracksMutation(user.username)
     const optimistic: Track = {
       bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
       title: hit.name, titleCn: hit.nameCn, cover: '', airWeekday: 0,
@@ -271,6 +272,7 @@ export function TracksPage(): JSX.Element {
 
   // 本地先改、后端后写 —— +1 要跟手，不能等一个来回。失败就把这条重新拉回来纠正。
   const patch = (bgmId: number, p: TrackPatch): void => {
+    if (user) markTracksMutation(user.username)
     setTracks((prev) =>
       prev ? prev.map((t) => (t.bgmId === bgmId ? applyLocal(t, p) : t)) : prev
     )
@@ -280,6 +282,7 @@ export function TracksPage(): JSX.Element {
   }
 
   const remove = (bgmId: number): void => {
+    if (user) markTracksMutation(user.username)
     setTracks((prev) => (prev ? prev.filter((t) => t.bgmId !== bgmId) : prev))
     setEditing(null)
     setConfirming(null)
