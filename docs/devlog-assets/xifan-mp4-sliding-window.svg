@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 590" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/>
+    </marker>
+    <marker id="arrow-pink" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#b96372"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="998" height="588" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="18" font-weight="700" fill="#282529">稀饭线路一：从单流追赶改为有界并发滑动窗口</text>
+  <text x="32" y="61" font-size="12" fill="#756f73">真实样本「尼古喵喵」：平均播放消耗约 422 KB/s，单连接慢段仅 226–484 KB/s</text>
+
+  <rect x="32" y="82" width="936" height="72" rx="10" fill="#fff0f1" stroke="#dda7ae"/>
+  <text x="52" y="108" font-size="13" font-weight="700" fill="#923d49">旧链路为什么会“播几秒、停几秒”</text>
+  <text x="52" y="132" font-size="12" fill="#704d53">一条顺序流追着播放器写盘</text>
+  <path d="M236 127 H326" stroke="#b96372" stroke-width="1.6" marker-end="url(#arrow-pink)"/>
+  <text x="346" y="132" font-size="12" fill="#704d53">慢段吞吐 ≤ 播放消耗</text>
+  <path d="M520 127 H610" stroke="#b96372" stroke-width="1.6" marker-end="url(#arrow-pink)"/>
+  <text x="630" y="132" font-size="12" fill="#704d53">缓冲耗尽 → waiting → 暂停后才重新攒够</text>
+
+  <text x="32" y="185" font-size="13" font-weight="700" fill="#425d75">新链路</text>
+
+  <rect x="32" y="202" width="154" height="66" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="109" y="228" text-anchor="middle" font-size="12.5" font-weight="700" fill="#353136">&lt;video&gt; 跳到 53 秒</text>
+  <text x="109" y="249" text-anchor="middle" font-size="11" fill="#777176">mtmedia:// bytes=N-</text>
+
+  <path d="M186 235 H228" stroke="#6d686b" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <rect x="230" y="186" width="222" height="98" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="341" y="211" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">识别请求阶段</text>
+  <text x="248" y="235" font-size="11" fill="#4d6575">开场 / 元数据探测</text>
+  <text x="434" y="235" text-anchor="end" font-size="11" fill="#4d6575">首块单流边写边播</text>
+  <text x="248" y="258" font-size="11" fill="#4d6575">冷 seek</text>
+  <text x="434" y="258" text-anchor="end" font-size="11" fill="#4d6575">立即展开并发窗口</text>
+
+  <path d="M452 235 H494" stroke="#6d686b" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <rect x="496" y="176" width="252" height="118" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="622" y="201" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">6 个独立 Electron Session</text>
+  <g font-size="10.5" text-anchor="middle" fill="#35664b">
+    <rect x="516" y="216" width="30" height="26" rx="5" fill="#ffffff" stroke="#82af94"/><text x="531" y="234">0</text>
+    <rect x="553" y="216" width="30" height="26" rx="5" fill="#ffffff" stroke="#82af94"/><text x="568" y="234">1</text>
+    <rect x="590" y="216" width="30" height="26" rx="5" fill="#ffffff" stroke="#82af94"/><text x="605" y="234">2</text>
+    <rect x="627" y="216" width="30" height="26" rx="5" fill="#ffffff" stroke="#82af94"/><text x="642" y="234">3</text>
+    <rect x="664" y="216" width="30" height="26" rx="5" fill="#ffffff" stroke="#82af94"/><text x="679" y="234">4</text>
+    <rect x="701" y="216" width="30" height="26" rx="5" fill="#ffffff" stroke="#82af94"/><text x="716" y="234">5</text>
+  </g>
+  <text x="622" y="265" text-anchor="middle" font-size="11" fill="#4b6f5a">每块 2 MiB · 每块从原地址重取签名</text>
+  <text x="622" y="282" text-anchor="middle" font-size="10.5" fill="#698173">不复用 pan.wo 的单条签名链</text>
+
+  <path d="M748 235 H790" stroke="#6d686b" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <rect x="792" y="186" width="176" height="98" rx="9" fill="#fff8e8" stroke="#cfb66d"/>
+  <text x="880" y="211" text-anchor="middle" font-size="12.5" font-weight="700" fill="#755d1f">显式偏移写临时文件</text>
+  <text x="880" y="235" text-anchor="middle" font-size="11" fill="#786b45">快块可先落盘</text>
+  <text x="880" y="255" text-anchor="middle" font-size="11" fill="#786b45">慢块不再拖住其他连接</text>
+
+  <path d="M880 284 V326" stroke="#6d686b" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <rect x="210" y="328" width="758" height="104" rx="10" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="230" y="352" font-size="12.5" font-weight="700" fill="#353136">连续前缀闸门：块可以乱序完成，但只把无空洞的数据交给 Chromium</text>
+  <g font-size="11" text-anchor="middle">
+    <rect x="230" y="369" width="92" height="34" rx="5" fill="#dff1e5" stroke="#76a989"/><text x="276" y="391" fill="#315e42">块 0 ✓</text>
+    <rect x="327" y="369" width="92" height="34" rx="5" fill="#dff1e5" stroke="#76a989"/><text x="373" y="391" fill="#315e42">块 1 ✓</text>
+    <rect x="424" y="369" width="92" height="34" rx="5" fill="#fff0f1" stroke="#cf8992"/><text x="470" y="391" fill="#8f4550">块 2 下载中</text>
+    <rect x="521" y="369" width="92" height="34" rx="5" fill="#edf3f7" stroke="#91adc1"/><text x="567" y="391" fill="#36566d">块 3 ✓</text>
+    <rect x="618" y="369" width="92" height="34" rx="5" fill="#edf3f7" stroke="#91adc1"/><text x="664" y="391" fill="#36566d">块 4 ✓</text>
+  </g>
+  <path d="M424 414 H230" stroke="#b96372" stroke-width="1.4" marker-end="url(#arrow-pink)"/>
+  <text x="730" y="391" font-size="11" fill="#756f73">written 只到块 1 尾部</text>
+  <text x="730" y="410" font-size="10.5" fill="#8a8488">块 3/4 不会被误报成可读</text>
+
+  <path d="M589 432 V469" stroke="#6d686b" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <rect x="32" y="471" width="568" height="86" rx="10" fill="#f4eff2" stroke="#c8b9c1"/>
+  <text x="52" y="497" font-size="12.5" font-weight="700" fill="#55434c">播放前缓冲与资源上限</text>
+  <text x="52" y="520" font-size="11" fill="#665a60">冷 seek：连续 6 MiB 后再吐首字节，把反复小卡顿收敛成一次等待</text>
+  <text x="52" y="541" font-size="11" fill="#665a60">最多领先已读位置 32 MiB；最早缺口后最多 12 块；换集 / 离页立即 abort + 清盘</text>
+
+  <rect x="620" y="471" width="348" height="86" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="640" y="497" font-size="12.5" font-weight="700" fill="#316247">验证结果</text>
+  <text x="640" y="520" font-size="11" fill="#456b54">真实线路：12 MiB 从约 35 s 降到 8.6–10.2 s</text>
+  <text x="640" y="541" font-size="11" fill="#456b54">真实 &lt;video&gt;：53 s 缓冲一次后连续播放 20 s，0 次 waiting</text>
+</svg>
