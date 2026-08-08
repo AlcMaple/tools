@@ -65,7 +65,7 @@
 
 **效果**：
 
-1. 保留原有用户名 / 密码注册登录，同时增加「邮箱快捷登录 / 注册」：输入邮箱获取一次性验证码；已有邮箱账号验证后直接登录，新邮箱验证后设置密码，后续可用「邮箱 + 密码」登录。邮箱不会自动绑定旧用户名账号，避免无提示合并账号。
+1. 注册登录增加「邮箱快捷登录 / 注册」：输入邮箱获取一次性验证码；已有邮箱账号验证后直接登录，新邮箱验证后设置密码，后续可用「邮箱 + 密码」登录。邮箱不会自动绑定旧用户名账号，避免无提示合并账号。
 2. 验证码只存 HMAC，不存明文；10 分钟过期、单次使用、最多 5 次错误，按 IP / 邮箱限流，重发会使旧验证码失效；设置密码等原有凭证入口也继续按 IP / 账号限流。邮箱未配置 SMTP 时只停用新入口，不影响原有账号。
 3. 浏览器自动填充邮箱只用于减少输入，不当作真实性证明；邮箱验证后写入 `users.email_verified_at`，在个人信息页显示邮箱凭据状态，并在登录态提示条中视为可恢复凭据。
 4. 邮件通过 Nodemailer SMTP 发送：开发环境默认输出控制台验证码，生产通过部署目录外环境变量配置 SMTP。Google 登录的服务端验证边界与后续接入要求记录在 `docs/ideas/013-邮箱快捷注册与登录.md`。
@@ -115,7 +115,7 @@
 
 **关键代码**：
 
-官网入口会从 `bgm.girigirilove.com` 跳转到 `ani.girigirilove.com`。周表请求使用官网的 `POST /index.php/ds_api/weekday`，播放页使用 MacCMS 路由；`player_aaaa.url` 在 `encrypt=2` 时按「Base64 → percent decode」还原为 CDN `m3u8` / `mp4` 地址。网页端新增独立的 `web/server/shared/maccms-search-paginator.ts`，不跨项目引用桌面端分页代码。
+官网入口会从 `bgm.girigirilove.com` 跳转到 `ani.girigirilove.com`。周表请求使用官网的 `POST /index.php/ds_api/weekday`，播放页使用 MacCMS 路由；`player_aaaa.url` 在 `encrypt=2` 时按「Base64 → percent decode」还原为 CDN `m3u8` / `mp4` 地址
 
 ```text
 追番卡片
@@ -684,11 +684,7 @@ const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
 1. 稀饭线路一跳转进度后不再让一条低速连接贴着播放进度追赶；播放器先得到一段连续缓冲，再由当前位置后方的并发窗口持续补充，把「播几秒、停几秒」收敛成一次可预期的加载。
 2. 开场仍按真实落盘进度边下边播，不为并发等待首块；Chromium 的开头 / moov 尾部探测也不会立刻扇出多路请求，避免视频刚打开就白打十几次 302。
-3. 预抓最多领先播放器 32MiB、最早缺口后最多 12 块；换集、换源、离开播放页和退出应用继续立即中止并清掉临时文件，不会以「优化播放」为由在后台下完整集。
-
-**根因**：
-
-用户复现的「尼古喵喵」线路一文件为 600,466,892 bytes / 1422.004 秒，平均播放消耗约 422KB/s；单连接慢段实测只有 226~484KB/s。旧版虽然持续顺序预抓，但慢段吞吐已经低于或贴近播放消耗，缓冲会被反复吃空；暂停一会儿后变顺，正是缓冲水位重新升高的表现。
+3. 预抓最多领先播放器 32MiB、最早缺口后最多 12 块；换集、换源、离开播放页和退出应用立即中止并清掉临时文件，不会以「优化播放」为由在后台下完整集。
 
 **关键数据流**：
 
@@ -709,14 +705,6 @@ const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 
 ![稀饭 mp4 有界并发滑动窗口](docs/devlog-assets/xifan-mp4-sliding-window.svg)
 
-**验证**：
-
-- `npm exec tsc -- --noEmit`、`npm run build`、`git diff --check` 通过。
-- 真实线路同一 53 秒附近读取 12MiB：默认 Session 约 31.6~34.8 秒，独立 Session 后约 8.6~10.2 秒，吞吐高于该集约 422KB/s 的播放消耗。
-- Electron `<video>` 通过真实 `mtmedia://` 播放「尼古喵喵」线路一：元数据就绪后跳到 53 秒，一次缓冲约 9.5 秒，随后连续播放 20.3 秒，开始播放后 `waiting=0`、`stalled=0`，缓冲领先最高约 25.3 秒。
-- 再用真实 141 秒 mp4 + 本地 Range 服务人为制造慢块与乱序完成，跳到 53 秒后的 20 秒播放同样没有二次等待；开场探测收口后，请求数从 18 个降到 8 个，最大并发保持在 6 以内。
-- 独立字节回归读取 12MiB，内容逐字节一致；首批请求确认为相邻 2MiB Range，连续前缀闸门没有把空洞暴露给读取端。
-
 ### 2026-08-08 feat(bili): 新增独立短信登录并重构登录入口
 
 **效果**：
@@ -726,15 +714,7 @@ const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
 3. 登录成功后，短信与 TV 扫码写入同一个 `persist:bili` 分区；设置页登录态和 B 站 DASH 播放无需分辨登录渠道。
 4. 窄窗口下登录方式会移到说明文字下方，不挤压说明、不产生横向滚动；二维码弹窗本身未改协议与轮询行为。
 
-**旧实现为什么卡住**：
-
-内测分支 `55fedd8` 只是打开 `passport.bilibili.com/login` 整张网页，再等待窗口关闭或
-`SESSDATA` cookie 变化。官方页内部的极验层、登录页与 MapleTools 外层弹窗是三套状态：
-验证层关闭不等于短信登录完成，外层 IPC 仍可能一直等 BrowserWindow，于是界面停在
-「登录窗打开中」。同时把短信入口做成扫码弹窗的页签，按钮语义也从「扫码」被偷换成了
-「任意登录」。本次没有合并这套占位实现。
-
-**短信协议照搬 Biu 的成功实践**：
+**短信协议实践**：
 
 ```text
 GET  /x/passport-login/captcha?source=main_web
@@ -746,13 +726,6 @@ POST /x/passport-login/web/login/sms           (multipart/form-data)
   → Set-Cookie(SESSDATA …)
 ```
 
-参数名、接口顺序、`source=main_web`、`keep=true` 与
-`/Users/mac/Downloads/biu/src/layout/navbar/login/code-login.tsx` 一致。只做 MapleTools 必需的
-架构适配：Biu 在 renderer 用 Axios；MapleTools 按安全边界改由主进程 `netRequest` 发送，
-统一使用 `persist:bili` 的 UA / cookie 罐。极验仍是真人交互，但只运行在
-`sandbox + contextIsolation + nodeIntegration:false` 的隔离小窗，不再给整张第三方登录页
-一个原生窗口。
-
 ![B 站短信登录数据流](docs/devlog-assets/bili-sms-login-flow.svg)
 
 **状态与凭证边界**：
@@ -760,12 +733,6 @@ POST /x/passport-login/web/login/sms           (multipart/form-data)
 - `captcha_key` 只在主进程内存保留 10 分钟，renderer 只拿一次性 `flowId`；手机号改变时表单立即丢弃旧 `flowId`，退出 B 站时清空主进程全部 flow。
 - 极验组件的 15 秒计时只检查「组件有没有 ready」，不限制用户完成图片 / 滑块验证的时间；取消、组件错误和 B 站接口错误都只结束本次动作，不做自动重试。
 - `login/sms` 返回成功后还会 `flushStore()` 并再次检查 `SESSDATA`；没有真正写入共享分区就不向 UI 报登录成功。
-
-**验证**：
-
-- `npm exec tsc -- --noEmit` 与 `npm run build` 通过。
-- CDP 驱动真实 Electron：1280 / 900 / 700 / 560 px 检查设置页入口，无横向滚动；扫码按钮只出现二维码弹窗；短信按钮只出现手机号表单。
-- 使用隔离临时 profile 实测 B 站 captcha 接口与极验组件：真实图片验证层成功加载；验证结果能继续到 `/web/sms/send`，无效测试号码由 B 站返回「手机号码格式不正确」而不是卡在窗口等待态。未使用真实账号和短信码完成最终登录。
 
 ### 2026-07-30 perf(player): 稀饭 mp4 预抓缓存 + Girigiri 分片并发预取
 
