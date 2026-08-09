@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 980" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/>
+    </marker>
+    <marker id="a-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/>
+    </marker>
+    <marker id="a-pink" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#b96372"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1038" height="978" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">在线观看到底是怎么播的：先下到本地，播的是本地文件</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">不是"边看边问服务器要"，是"边下边写本地文件，播放器只读本地"——和真正的离线下载唯一的差别是：只留播放位置附近一小段</text>
+
+  <!-- Step 1 -->
+  <rect x="32" y="86" width="230" height="96" rx="10" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="147" y="110" text-anchor="middle" font-size="13" font-weight="700" fill="#353136">① 点开一集</text>
+  <text x="52" y="132" font-size="11" fill="#666066">向稀饭源站要播放地址，</text>
+  <text x="52" y="148" font-size="11" fill="#666066">源站跳转一次，给出视频</text>
+  <text x="52" y="164" font-size="11" fill="#666066">真正存放的服务器地址</text>
+
+  <path d="M262 134 H310" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <!-- Step 2 -->
+  <rect x="312" y="86" width="240" height="96" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="432" y="110" text-anchor="middle" font-size="13" font-weight="700" fill="#316247">② 边下边写本地文件</text>
+  <text x="332" y="132" font-size="11" fill="#456b54">开场先用 1 条连接下一小段，</text>
+  <text x="332" y="148" font-size="11" fill="#456b54">写进电脑本地的一个临时文件，</text>
+  <text x="332" y="164" font-size="11" fill="#456b54">同时喂给播放器画面</text>
+
+  <path d="M552 134 H600" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <!-- Step 3 -->
+  <rect x="602" y="86" width="210" height="96" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="707" y="110" text-anchor="middle" font-size="13" font-weight="700" fill="#36566d">③ 播放器只读本地</text>
+  <text x="622" y="132" font-size="11" fill="#4d6575">画面显示的内容，全部来自</text>
+  <text x="622" y="148" font-size="11" fill="#4d6575">这个本地临时文件，不是网络</text>
+  <text x="622" y="164" font-size="11" fill="#4d6575">响应直接怼给播放器</text>
+
+  <path d="M707 182 V208" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <!-- Step 4: 正常播放 + 暂停 -->
+  <rect x="602" y="210" width="210" height="60" rx="10" fill="#f4eff2" stroke="#c8b9c1"/>
+  <text x="707" y="232" text-anchor="middle" font-size="12" font-weight="700" fill="#55434c">正常播放 / 暂停</text>
+  <text x="622" y="252" font-size="10.5" fill="#665a60">后台继续悄悄多下一点垫缓冲，</text>
+  <text x="622" y="264" font-size="10" fill="#665a60">本地文件越写越大，继续播/恢复播都秒接</text>
+
+  <!-- Step 5: 关键 跳转 -->
+  <rect x="32" y="292" width="944" height="330" rx="12" fill="#fff8e8" stroke="#cfb66d"/>
+  <text x="54" y="320" font-size="14.5" font-weight="700" fill="#755d1f">④ 用户跳到进度条的某个时间点——分两种情况</text>
+
+  <!-- 情况A：已缓存 -->
+  <rect x="54" y="336" width="900" height="90" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="76" y="360" font-size="12.5" font-weight="700" fill="#316247">情况 A：跳到的位置，本地临时文件里已经有了（比如看过又跳回去）</text>
+  <g font-size="11" fill="#456b54">
+    <text x="76" y="384">直接读本地文件</text>
+    <text x="236" y="384">→</text>
+    <text x="256" y="384">立刻显示画面，0 等待，不发任何新请求</text>
+  </g>
+  <text x="76" y="406" font-size="10.5" fill="#5c7f6a">往回看看过的地方、或者跳到刚好已经预下载到的地方，都是这种情况</text>
+
+  <!-- 情况B：全新 -->
+  <rect x="54" y="440" width="900" height="164" rx="10" fill="#fff0f1" stroke="#dda7ae"/>
+  <text x="76" y="464" font-size="12.5" font-weight="700" fill="#923d49">情况 B：跳到的位置，本地完全没有过（比如直接跳到最后没看过的部分）</text>
+
+  <rect x="76" y="478" width="150" height="58" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="151" y="500" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">画面先卡住</text>
+  <text x="151" y="518" text-anchor="middle" font-size="10" fill="#666066">这一段之前没下过</text>
+
+  <path d="M226 507 H266" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="268" y="478" width="330" height="58" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="433" y="495" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">用①已经拿到的同一个地址，</text>
+  <text x="433" y="510" text-anchor="middle" font-size="10" fill="#666066">6 条连接错开约 40 毫秒陆续起跑</text>
+  <text x="433" y="524" text-anchor="middle" font-size="10" fill="#666066">（不是同一瞬间一起冲），分头去要</text>
+  <text x="433" y="533" text-anchor="middle" font-size="8.5" fill="#8a8488">这一小段的不同部分，不用再重新问地址</text>
+
+  <path d="M598 507 H638" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="640" y="478" width="290" height="58" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="785" y="497" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">凑够一小段（目标约 3 秒）</text>
+  <text x="785" y="514" text-anchor="middle" font-size="10.5" fill="#666066">写进本地文件，再恢复播放</text>
+  <text x="785" y="529" text-anchor="middle" font-size="9.5" fill="#8a8488">之后台继续下，垫厚缓冲，不会又追上</text>
+
+  <path d="M151 536 V556" stroke="#6d686b" stroke-width="0"/>
+  <path d="M151 552 H785" stroke="#6d686b" stroke-width="1.4" fill="none"/>
+  <path d="M785 536 V552" stroke="#6d686b" stroke-width="1.4" fill="none" marker-end="url(#a-gray)"/>
+  <path d="M151 536 V552" stroke="#6d686b" stroke-width="0"/>
+
+  <rect x="76" y="556" width="854" height="38" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="96" y="580" font-size="11" fill="#353136">对用户的实际效果：以前是「跳过去播两三秒卡一下、再播两三秒再卡一下」反复好几次；现在是「跳过去快速等一小下（目标约 3 秒），然后连续看下去，不会中途再卡」</text>
+
+  <!-- 三个补充说明 -->
+  <rect x="32" y="640" width="304" height="150" rx="12" fill="#f4eff2" stroke="#c8b9c1"/>
+  <text x="54" y="666" font-size="12.5" font-weight="700" fill="#55434c">6 条连接是去哪要数据的？</text>
+  <text x="54" y="688" font-size="10.5" fill="#665a60">都是同一个视频真正存放的</text>
+  <text x="54" y="704" font-size="10.5" fill="#665a60">服务器（不是我们自己的服务器</text>
+  <text x="54" y="720" font-size="10.5" fill="#665a60">中转），跟用户平时看视频走的</text>
+  <text x="54" y="736" font-size="10.5" fill="#665a60">是同一条路，只是切成 6 份、错峰去要</text>
+  <text x="54" y="758" font-size="10" fill="#8a8488">数据全程在用户电脑和视频服务器</text>
+  <text x="54" y="772" font-size="10" fill="#8a8488">之间传输，不经过我们自己的服务器</text>
+
+  <rect x="368" y="640" width="304" height="150" rx="12" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="390" y="666" font-size="12.5" font-weight="700" fill="#36566d">和真正「下载」的区别</text>
+  <text x="390" y="688" font-size="10.5" fill="#4d6575">下载：整集从头到尾全部搬到</text>
+  <text x="390" y="704" font-size="10.5" fill="#4d6575">硬盘，存起来以后离线看</text>
+  <text x="390" y="724" font-size="10.5" fill="#4d6575">在线观看：也是先下到本地文件</text>
+  <text x="390" y="740" font-size="10.5" fill="#4d6575">再播，但只留播放位置附近一小段</text>
+  <text x="390" y="756" font-size="10.5" fill="#4d6575">（最多领先约 30MB），不是整集</text>
+  <text x="390" y="775" font-size="10" fill="#5c7690">本质是同一套机制，只是刻意不把整集攒下来</text>
+
+  <rect x="704" y="640" width="304" height="150" rx="12" fill="#fff8e8" stroke="#cfb66d"/>
+  <text x="726" y="666" font-size="12.5" font-weight="700" fill="#755d1f">本地临时文件什么时候删？</text>
+  <text x="726" y="688" font-size="10.5" fill="#786b45">看过的部分不会被清掉——</text>
+  <text x="726" y="704" font-size="10.5" fill="#786b45">往回跳看过的地方直接秒开，</text>
+  <text x="726" y="720" font-size="10.5" fill="#786b45">不重新下载</text>
+  <text x="726" y="742" font-size="10.5" fill="#786b45">只有换集、换源、关掉播放页</text>
+  <text x="726" y="758" font-size="10.5" fill="#786b45">或退出软件，才会清掉这一集</text>
+  <text x="726" y="774" font-size="10.5" fill="#786b45">的临时文件</text>
+
+  <!-- Footer note -->
+  <rect x="32" y="808" width="976" height="150" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="54" y="834" font-size="12.5" font-weight="700" fill="#353136">这版和上一版的区别：省掉了一步"重新问地址"</text>
+  <text x="54" y="858" font-size="11" fill="#4d6575">上一版：情况 B 里的 6 条连接，每一条都要各自重新向源站问一次"真实地址"，这一步本身要花时间。</text>
+  <text x="54" y="878" font-size="11" fill="#4d6575">这一版：只有①那一次问地址，后面情况 B 的 6 条连接直接复用①已经问到的地址，省掉了 6 次里的 5 次「问地址」。</text>
+  <text x="54" y="902" font-size="11" fill="#923d49">依据：真正的「下载」功能本来就是这么干的——问一次地址、复用给多条连接，一直很稳，所以判断这一步能省。</text>
+  <text x="54" y="924" font-size="10.5" fill="#8a8488">还没有拿真机实测过这一版的真实等待秒数，3 秒是按"省掉这一步"推出来的目标，不是已经量出来的数字；</text>
+  <text x="54" y="940" font-size="10.5" fill="#8a8488">如果上线后又出现"某条连接一直卡住不动"，大概率是复用地址这步在源站那边行不通，需要退回"每条都重新问地址"。</text>
+</svg>

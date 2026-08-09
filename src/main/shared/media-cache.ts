@@ -1,14 +1,23 @@
 // 在线播放的 mp4 本地预抓缓存 —— 只服务 media-proxy 的 mp4 直链分支。
 //
-// 为什么要它(011「稀饭直链 mp4 播放卡顿」的结论,别再重新分析):
-//   1. <video> 对 mtmedia:// 是**单连接**发 Range,而代理为了拿新鲜签名链**每个 Range
-//      都重走一次 302** —— 每次 seek/续读都白付一份解析延迟。
-//   2. 旧版只开一条持续顺序流;实机在冷 seek 后仍会几秒一停,暂停一会儿等它攒够缓冲才顺。
-//      真实样本平均消耗约 422KB/s,单流慢段只有 226~484KB/s,没有抵抗抖动的余量。
-//   3. 现在从播放位置起按 2MiB 小块开 6 条相邻 Range,每条都从原始 target 重新拿一条
-//      签名链;快连接先把后续块落盘,慢连接不再决定整条下载速度。只有从 regionStart 起
-//      **连续完成**的小块才对播放器可见(开场首块除外,它边写边播以免拉长首帧),
-//      所以并发不会把文件空洞误报成已缓存。
+// 为什么要它(011「稀饭直链 mp4 播放卡顿」的结论):
+//   1. <video> 对 mtmedia:// 是**单连接**发 Range,单流吞吐追不上播放消耗时会反复
+//      「播几秒、停几秒」。真实样本平均消耗约 422KB/s,单流慢段只有 226~484KB/s,
+//      没有抵抗抖动的余量。
+//   2. 现在从播放位置起按 512KiB 小块开 6 条相邻 Range 并发抓;快连接先把后续块
+//      落盘,慢连接不再决定整条下载速度。只有从 regionStart 起**连续完成**的小块
+//      才对播放器可见(开场首块除外,它边写边播以免拉长首帧),所以并发不会把
+//      文件空洞误报成已缓存。块切得小是为了压低「凑齐起播所需连续块」这一步的
+//      最坏单块耗时,代价是同样窗口下总请求数变多。
+//   3. 只有开场那一次 302 是真的要走的:首块响应的 `Response.url` 就是跟完 302
+//      的最终地址,后续 5 个 worker 直接拿这个地址发 Range,不用每块都重新解析
+//      签名链——这份 302 延迟经测量是与带宽无关的固定开销,能省则省。这点和
+//      早期版本「每个 Range 都重新 302」的做法不同:早期那版是在**共用一个
+//      Electron Session** 时复用签名链导致 `readyState=0` 卡死,把并发写死成
+//      每块都重新解析;现在 6 个 worker 各自独立 Session(见 `getRangeSession`),
+//      结合 `mp4-range-downloader.ts` 的下载功能本来就是解析一次、复用同一条
+//      链接跑 8 路并发且稳定这一事实,判断当初的卡死更可能是「共用 Session 的
+//      HTTP/2 连接池」造成的,不是签名链本身不允许并发——2026-08-09 复测验证。
 //
 // 形态:后台滑动窗口从 `regionStart` 并发写本地临时文件,`written` 只记已落盘的连续前缀。
 // <video> 的 Range 落在 [regionStart, regionStart+written] 内就读本地文件,并**跟随写入
@@ -27,18 +36,51 @@ import { tmpdir } from 'os'
 const IDLE_MS = 60_000
 /** 单个 session 的落盘上限,正片单集远小于此;纯粹是跑飞时的保险丝。 */
 const MAX_BYTES = 4 * 1024 * 1024 * 1024
-/** 小块而不是整份静态等分:冷 seek 并发抓相邻块,连续缓冲达标后一次恢复播放。 */
-const CHUNK_BYTES = 2 * 1024 * 1024
-/** 冷 seek 先攒 3 个连续块再吐首字节,把反复小卡顿收敛成一次可预期的缓冲。 */
-const COLD_START_BYTES = 3 * CHUNK_BYTES
-/** pan.wo 同一签名链不能并发,这里每个 worker 都从原始 target 获取自己的签名链。 */
+/**
+ * 小块而不是整份静态等分:冷 seek 并发抓相邻块,连续缓冲达标后一次恢复播放。
+ * 512KiB(而不是最初的 2MiB)是为了压低「凑齐所需连续块」这一步的最坏单块耗时——
+ * 木桶效应下,决定起播等待的是所需块里最慢的那一块,块越小,慢连接单独拖住它的
+ * 时间越短。代价是同样的预抓窗口需要打更多次 302(总请求数上升),是用请求量
+ * 换起播延迟。
+ */
+const CHUNK_BYTES = 512 * 1024
+/**
+ * 冷 seek 先攒 4 个连续块(2MiB,约 4.7 秒播放量)再吐首字节。真实最慢样本单连接
+ * 约 226~484KB/s,4 个块由 6 个 worker 并行抓,最坏情况约 2.5~3 秒能凑齐,目标是把
+ * 跳转恢复播放的等待压到 3 秒左右;拿到首字节后 6 个 worker 不停手,继续把窗口填到
+ * PREFETCH_LEAD_BYTES,靠聚合吞吐(实测约 3 倍于播放消耗)甩开播放进度,不是靠这
+ * 4 个块撑到底。
+ */
+const COLD_START_BYTES = 4 * CHUNK_BYTES
+/**
+ * 6 个 worker 各自用独立的 Electron Session(见 `getRangeSession`)对同一条已解析
+ * 链接发并发 Range——独立 Session 是必须的,避免共用 Session 时 HTTP/2 连接池把
+ * 多个 Range 挤到一条连接上互相卡住;链接本身允许并发,不用每个 worker 单独解析。
+ */
 const FETCH_CONCURRENCY = 6
-/** 某个早期慢块卡住时最多在它后面预抓 12 块,避免一路跑到文件尾形成大空洞。 */
-const PREFETCH_WINDOW_CHUNKS = 12
+/** 某个早期慢块卡住时最多在它后面预抓 48 块(约 24MiB),避免一路跑到文件尾形成大空洞。 */
+const PREFETCH_WINDOW_CHUNKS = 48
 /** 最多比已经交给 Chromium 的位置领先 32MiB,避免打开一集就立刻打满整份文件。 */
 const PREFETCH_LEAD_BYTES = 32 * 1024 * 1024
 /** 读取端追上写入端时,等 progress 事件的上限;超时就再看一眼状态,防止事件丢了死等。 */
 const WAIT_TICK_MS = 5_000
+/**
+ * 冷 seek 展开并发窗口时,worker 之间错开起跑的基础间隔和随机抖动上限。6 个 worker
+ * 同一 tick 打出去,在源站日志里是「同一 IP 瞬间 6 个新连接」的强特征;固定间隔又是
+ * 另一种规律信号(到达间隔完全等长,脚本流量的典型指纹)。所以每个 worker 的延迟是
+ * `index * STAGGER_BASE_MS + 0~STAGGER_JITTER_MS 的随机量`——错峰只推迟发起时间,
+ * 不改变总并发数/总吞吐,起播闸门按连续字节数算,这几十到两百毫秒不会拖慢冷 seek
+ * 后的恢复播放。
+ */
+const WORKER_STAGGER_BASE_MS = 40
+const WORKER_STAGGER_JITTER_MS = 40
+/**
+ * 单个块(512KiB)在最慢真实样本下预估最坏也就 2~3 秒;8 秒还没完成大概率不是慢,
+ * 是卡住了。这是复用同一条已解析链接(见文件头 3)之后新增的诊断口——如果这个
+ * 假设在源站那边其实不成立,现象应该是某个 worker 长期卡在这里不动,而不是均匀变慢。
+ * 只打日志观察,不做任何自动重试/退避(仓库红线:不做应用层重试)。
+ */
+const CHUNK_STALL_WARN_MS = 8_000
 
 interface Session {
   key: string
@@ -59,6 +101,10 @@ interface Session {
   idleTimer: NodeJS.Timeout | null
   /** 还挂着几个读取流(<video> 暂停时它的那条并不会关)。>0 时 idle 看门狗不动手。 */
   readers: number
+  /** 这个 session 建立的时刻,用于算「冷 seek 到恢复播放花了多久」这条日志。 */
+  createdAt: number
+  /** 冷 seek 起播闸门的耗时日志只打一次,防止同一个 session 里重复读触发重复打印。 */
+  bufferGateLogged: boolean
 }
 
 let current: Session | null = null
@@ -144,6 +190,8 @@ interface RangeResponse {
   end: number
   total: number
   ranged: boolean
+  /** 跟完 302 之后的最终地址(Response.url);后续同一 session 的请求直接打这里,不再重新 302。 */
+  resolvedUrl: string
 }
 
 type CacheFile = Awaited<ReturnType<typeof fsp.open>>
@@ -161,12 +209,13 @@ async function openRange(
     redirect: 'follow',
     signal: s.ac.signal,
   })
+  const resolvedUrl = response.url || target
   if (response.status === 200) {
     const total = Number(response.headers.get('content-length') ?? 0)
     if (start !== 0 || !Number.isSafeInteger(total) || total <= 0 || total > MAX_BYTES) {
       throw new Error('mp4 range unsupported')
     }
-    return { response, start: 0, end: total - 1, total, ranged: false }
+    return { response, start: 0, end: total - 1, total, ranged: false, resolvedUrl }
   }
   if (response.status !== 206) throw new Error(`mp4 range status ${response.status}`)
 
@@ -182,7 +231,7 @@ async function openRange(
   ) {
     throw new Error('mp4 content-range mismatch')
   }
-  return { response, start: actualStart, end: actualEnd, total, ranged: true }
+  return { response, start: actualStart, end: actualEnd, total, ranged: true, resolvedUrl }
 }
 
 async function writeAll(file: CacheFile, value: Uint8Array, position: number): Promise<void> {
@@ -244,6 +293,15 @@ async function writeSequentialResponse(s: Session, chunk: RangeResponse): Promis
   if (s.written !== chunk.total) throw new Error('mp4 body truncated')
 }
 
+/** 可被 session 中止唤醒的 sleep;中止时直接 resolve,让调用方紧接着的 fetch 自己因 signal 报错。 */
+function staggerSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) { resolve(); return }
+    const timer = setTimeout(resolve, ms)
+    signal.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+  })
+}
+
 function waitForProgress(s: Session, timeoutMs = WAIT_TICK_MS): Promise<void> {
   return new Promise<void>((resolve) => {
     const fire = (): void => {
@@ -258,7 +316,7 @@ function waitForProgress(s: Session, timeoutMs = WAIT_TICK_MS): Promise<void> {
 
 async function writeParallelRanges(
   s: Session,
-  target: string,
+  fetchUrl: string,
   headers: Record<string, string>,
   first: RangeResponse,
 ): Promise<void> {
@@ -270,7 +328,7 @@ async function writeParallelRanges(
   let stopped = false
   let failure: unknown = null
   // 文件开场继续边写边播,保留原先的快速首帧;冷 seek 的块只推进连续落盘位置,
-  // 读取端另有 6MiB 起播闸门,不让播放器拿到几百 KB 就立刻开始、随后反复追上下载端。
+  // 读取端另有 COLD_START_BYTES 起播闸门,不让播放器拿到几百 KB 就立刻开始、随后反复追上下载端。
   const exposeFirstProgressively = s.regionStart < CHUNK_BYTES
 
   const markComplete = (index: number, bytes: number): void => {
@@ -318,9 +376,22 @@ async function writeParallelRanges(
         if (index === null) return
         const start = s.regionStart + index * CHUNK_BYTES
         const end = Math.min(s.total - 1, start + CHUNK_BYTES - 1)
-        const chunk = await openRange(s, target, headers, start, end, workerIndex)
-        if (!chunk.ranged || chunk.total !== s.total) throw new Error('mp4 range source changed')
-        markComplete(index, await writeRangeToFile(s, file, chunk))
+        const chunkStartedAt = Date.now()
+        const stallTimer = setTimeout(() => {
+          console.warn(
+            `[media-cache] worker ${workerIndex} 在块 ${index}（偏移 ${start}）上卡住超过 ` +
+            `${Math.round((Date.now() - chunkStartedAt) / 1000)}s，可能是复用已解析链接在源站` +
+            `遇到并发限制——如果频繁出现，考虑把 fetchUrl 改回逐块重新 302`,
+          )
+        }, CHUNK_STALL_WARN_MS)
+        let chunk: RangeResponse
+        try {
+          chunk = await openRange(s, fetchUrl, headers, start, end, workerIndex)
+          if (!chunk.ranged || chunk.total !== s.total) throw new Error('mp4 range source changed')
+          markComplete(index, await writeRangeToFile(s, file, chunk))
+        } finally {
+          clearTimeout(stallTimer)
+        }
       }
     } finally {
       await file.close()
@@ -329,6 +400,13 @@ async function writeParallelRanges(
 
   const guard = async (workerIndex: number, firstChunk: RangeResponse | null): Promise<void> => {
     try {
+      // firstChunk 非空的 worker(0 号)在进这里之前已经吃到一个现成响应,天然错开;
+      // 其余 worker 在第一次真正发起网络请求前按「序号基础间隔 + 随机抖动」错峰,
+      // 避免 6 路同一 tick 起跑,也避免延迟本身呈现完全等长的规律。
+      if (!firstChunk) {
+        const delay = workerIndex * WORKER_STAGGER_BASE_MS + Math.random() * WORKER_STAGGER_JITTER_MS
+        await staggerSleep(delay, s.ac.signal)
+      }
       await runWorker(workerIndex, firstChunk)
     } catch (error) {
       if (!failure) failure = error
@@ -379,7 +457,9 @@ async function runFetchLoop(s: Session, target: string, headers: Record<string, 
     s.total = first.total
     s.ev.emit('progress')
     await fsp.mkdir(cacheDir(), { recursive: true })
-    if (first.ranged) await writeParallelRanges(s, target, headers, first)
+    // 首块的响应已经替我们跟完了 302,后续 5 个 worker 直接打 first.resolvedUrl,
+    // 不用每块都再解一次签名链——这份 302 延迟是实测过的、与带宽无关的固定开销。
+    if (first.ranged) await writeParallelRanges(s, first.resolvedUrl, headers, first)
     else await writeSequentialResponse(s, first)
     s.done = true
   } catch {
@@ -398,7 +478,11 @@ function ensureSession(target: string, start: number, headers: Record<string, st
   if (current && current.key === target) {
     const s = current
     // 命中已落盘区间(含正好等于写入位置:跟着写入端往下读即可)
-    if (!s.failed && start >= s.regionStart && start <= s.regionStart + s.written) return s
+    if (!s.failed && start >= s.regionStart && start <= s.regionStart + s.written) {
+      // 情况 A:跳到的位置本地已经有,0ms 恢复——和情况 B 的耗时日志对照着看。
+      console.log(`[media-cache] 命中本地缓存，0ms 恢复播放（偏移 ${start}）`)
+      return s
+    }
     // 往后 seek 出了区间,或旧流已经废了 → 以新起点重开
     disposeMediaCache()
   } else if (current) {
@@ -419,10 +503,13 @@ function ensureSession(target: string, start: number, headers: Record<string, st
     lastReadAt: Date.now(),
     idleTimer: null,
     readers: 0,
+    createdAt: Date.now(),
+    bufferGateLogged: false,
   }
   s.ev.setMaxListeners(0)
   current = s
   armIdleTimer(s)
+  console.log(`[media-cache] 情况 B：本地没有，开始为偏移 ${start} 建新的冷 seek 缓冲`)
   void runFetchLoop(s, target, headers)
   return s
 }
@@ -493,11 +580,18 @@ export async function tryServeFromCache(
       s.lastReadAt = Date.now()
       try {
         for (;;) {
-          // 冷 seek 不把刚落下的零碎首块立即交给播放器:先攒出连续 6MiB,避免播几秒
-          // 就追上下载端再转圈。开场与已命中缓存中段的读取不走这道闸。
+          // 冷 seek 不把刚落下的零碎首块立即交给播放器:先攒出连续 COLD_START_BYTES,
+          // 避免播几秒就追上下载端再转圈。开场与已命中缓存中段的读取不走这道闸。
           if (pos === 0 && s.written < initialBufferTarget && !s.done && !s.failed) {
             await waitForProgress(s)
             continue
+          }
+          // 情况 B 的耗时日志:闸门刚放行的这一刻(不管是等出来的还是本来就够),
+          // 记一次「从建 session 到真正能恢复播放」花了多久,只打一次。
+          if (initialBufferTarget > 0 && pos === 0 && !s.bufferGateLogged) {
+            s.bufferGateLogged = true
+            const elapsedMs = Date.now() - s.createdAt
+            console.log(`[media-cache] 冷 seek 缓冲完成，耗时 ${elapsedMs}ms 后恢复播放（目标 ~3000ms）`)
           }
           const avail = s.written - pos
           if (avail > 0) {
