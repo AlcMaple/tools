@@ -22,7 +22,7 @@
 // 每个 Range 各拿一条新鲜签名链才稳。302 那点开销远小于卡死的代价。
 import { protocol, net } from 'electron'
 import { DESKTOP_USER_AGENT } from './download-types'
-import { tryServeFromCache } from './media-cache'
+import { tryServeFromCache, SUPERSEDED_SEEK } from './media-cache'
 import { tryServeSegment, rememberPlaylist } from './hls-prefetch'
 
 export const MEDIA_PROXY_SCHEME = 'mtmedia'
@@ -117,6 +117,9 @@ export function registerMediaProxy(): void {
     // 不命中(小段 moov 请求 / 首块失败)原样走下面直连,缓存只是加速层。
     if (!wantsPlaylist) {
       const cached = await tryServeFromCache(target, range, headers)
+      // 拖动进度条的中间位置,且已**观测确认**播放器换用了别的流(见 media-cache 的
+      // SUPERSEDED_HOLD_MS):直接回错误、一个字节都不取。走直连反而制造出那串请求。
+      if (cached === SUPERSEDED_SEEK) return new Response(null, { status: 503 })
       if (cached) return new Response(cached.stream, { status: cached.status, headers: cached.headers })
       // HLS 分片:命中预取缓存就直接回内存里的那份,并把后面几片提前抓起来。
       // 分片是完整小文件,hls.js 不对它发 Range —— 带 Range 的一律走直连不碰缓存。

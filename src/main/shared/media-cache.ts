@@ -31,6 +31,7 @@ import { EventEmitter } from 'events'
 import { promises as fsp, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { sleep } from './http-client'
 
 /** 没有任何读取超过这个时间就把后台流收掉(关播放器 / 切走页面)。 */
 const IDLE_MS = 60_000
@@ -81,8 +82,31 @@ const WORKER_STAGGER_JITTER_MS = 40
  * 只打日志观察,不做任何自动重试/退避(仓库红线:不做应用层重试)。
  */
 const CHUNK_STALL_WARN_MS = 8_000
+/**
+ * 拖动进度条时 Chromium 会随手指连续 seek,每个中间位置都取消上一条 Range、再发一条新的。
+ * 每来一条就重开一个 session,意味着每个中间位置都白打一次 302 + 展开 6 路并发,既拖慢
+ * 最终位置的起播,也是源站眼里的「同一 IP 短时间大量新建连接」。所以**冷 seek 才防抖**:
+ * 落在当前已缓存区间里的读取(情况 A)照旧立刻服务、仍是 0ms;只有需要重开流的那种
+ * 才先等 180ms,期间又来了更新的请求就把自己作废,只让最后停下来的那个位置真正开流。
+ * 代价:点击式跳转如果没命中本地缓存,会比原先多等这 180ms。
+ */
+const SEEK_DEBOUNCE_MS = 180
+/**
+ * 被取代的那些中间请求**不能**直接报错打发掉。曾经打算按「Chromium 发下一条 seek 前
+ * 就取消了上一条,回什么都没人消费」处理,2026-08-09 的实测日志证明这是错的:被挂起的
+ * #39~#48 后来全都变成了「命中本地缓存」——它们一直等在那里,最后被新建的流覆盖到、
+ * 正常喂了数据。所以这里是挂起观察,每 100ms 看一眼当前流是否已经覆盖自己的位置。
+ *
+ * 8 秒只是**防泄漏的上限**,不是正常路径(正常路径是被覆盖后直接服务,毫秒级)。真到点了
+ * 按当时观测到的状态收尾,不含猜测:已有别的流在喂播放器 → 本请求确属废的,回错误安全;
+ * 没有任何流在喂播放器 → 自己建流兜底(最坏是多等这 8 秒,而不是播放失败)。
+ */
+const SUPERSEDED_HOLD_MS = 8_000
+const SUPERSEDED_POLL_MS = 100
 
 interface Session {
+  /** 建流的那条请求的 seekSeq,日志里用 `#n` 把「建流 → 起播」两条串起来。 */
+  seq: number
   key: string
   file: string
   /** 本次顺序流的起点(往后 seek 会以新起点重开一个 session)。 */
@@ -109,6 +133,10 @@ interface Session {
 
 let current: Session | null = null
 let rangeSessions: ElectronSession[] | null = null
+/** 每来一次 mp4 Range 请求就 +1;冷 seek 等完防抖后发现它变了 = 自己已被更新的 seek 取代。 */
+let seekSeq = 0
+/** 距上一次真正建流为止被防抖合并掉的中间请求数,只用于日志(让「一次拖动只建一条流」可数)。 */
+let mergedSeeks = 0
 
 function getRangeSession(slot: number): ElectronSession {
   // Chromium 会把同一 Session 的请求复用到一个 HTTP/2 连接上;pan.wo 在这个形态下
@@ -474,13 +502,24 @@ async function runFetchLoop(s: Session, target: string, headers: Record<string, 
  * 确保 target 有一个覆盖 `start` 的缓存 session。
  * 返回 null = 这次请求不该走缓存(调用方直连)。
  */
-function ensureSession(target: string, start: number, headers: Record<string, string>): Session | null {
+function coversOffset(target: string, start: number): boolean {
+  const s = current
+  return !!s && s.key === target && !s.failed &&
+    start >= s.regionStart && start <= s.regionStart + s.written
+}
+
+function ensureSession(
+  target: string,
+  start: number,
+  headers: Record<string, string>,
+  seq: number,
+): Session | null {
   if (current && current.key === target) {
     const s = current
     // 命中已落盘区间(含正好等于写入位置:跟着写入端往下读即可)
-    if (!s.failed && start >= s.regionStart && start <= s.regionStart + s.written) {
+    if (coversOffset(target, start)) {
       // 情况 A:跳到的位置本地已经有,0ms 恢复——和情况 B 的耗时日志对照着看。
-      console.log(`[media-cache] 命中本地缓存，0ms 恢复播放（偏移 ${start}）`)
+      console.log(`[media-cache] #${seq} 命中本地缓存，0ms 直接续播（偏移 ${start}）`)
       return s
     }
     // 往后 seek 出了区间,或旧流已经废了 → 以新起点重开
@@ -490,6 +529,7 @@ function ensureSession(target: string, start: number, headers: Record<string, st
     disposeMediaCache()
   }
   const s: Session = {
+    seq,
     key: target,
     file: join(cacheDir(), `play-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.part`),
     regionStart: start,
@@ -509,7 +549,14 @@ function ensureSession(target: string, start: number, headers: Record<string, st
   s.ev.setMaxListeners(0)
   current = s
   armIdleTimer(s)
-  console.log(`[media-cache] 情况 B：本地没有，开始为偏移 ${start} 建新的冷 seek 缓冲`)
+  // 建流是唯一会真正发起网络请求的入口。一次拖动可能出现多条(手速慢下来、停顿超过
+  // 防抖窗口就会被当成「停下了」而开始缓冲,实测一次长拖动 4 条),看的是「合并 N 条」
+  // 这个数——N 越大说明挡掉的中间请求越多。
+  console.log(
+    `[media-cache] #${seq} 建流：本地没有，为偏移 ${start} 新建冷 seek 缓冲` +
+    `（防抖合并掉 ${mergedSeeks} 条中间请求）`,
+  )
+  mergedSeeks = 0
   void runFetchLoop(s, target, headers)
   return s
 }
@@ -518,6 +565,36 @@ export interface CachedResponse {
   stream: ReadableStream<Uint8Array>
   status: number
   headers: Record<string, string>
+}
+
+/**
+ * 「这条 Range 请求在防抖窗口里被更新的 seek 取代了」。调用方应当**什么网络请求都不发**,
+ * 直接回一个错误响应:拖动进度条时这些中间位置的请求,Chromium 在发下一条之前就已经把
+ * 它取消了,回什么都不会被消费;真去直连反而正好制造出我们想避免的那串请求。
+ */
+export const SUPERSEDED_SEEK = Symbol('media-cache superseded seek')
+
+/**
+ * 防抖窗口里被更新的 seek 取代之后的挂起观察(判据见 SUPERSEDED_HOLD_MS 的注释)。
+ * `discard` = 已确认播放器换用了别的流,回错误;`continue` = 继续往下走(要么赢家的流已经
+ * 覆盖了本位置,要么到点自愈自己建流)。
+ */
+async function holdSuperseded(target: string, start: number, seq: number): Promise<'discard' | 'continue'> {
+  mergedSeeks++
+  console.log(`[media-cache] #${seq} 拖动中：偏移 ${start} 已被更新的请求取代，挂起观察`)
+  const until = Date.now() + SUPERSEDED_HOLD_MS
+  for (;;) {
+    // 赢家的流正好覆盖了本位置(拖动幅度很小时会这样)→ 当命中缓存服务,不用重开流
+    if (coversOffset(target, start)) return 'continue'
+    if (Date.now() >= until) break
+    await sleep(SUPERSEDED_POLL_MS)
+  }
+  if (current && current.readers > 0) return 'discard'
+  console.warn(
+    `[media-cache] #${seq} 挂起 ${SUPERSEDED_HOLD_MS}ms 后仍没有任何流在喂播放器 —— ` +
+    `「被取代的请求已被 Chromium 取消」这个前提不成立，改为自己建流兜底`,
+  )
+  return 'continue'
 }
 
 /**
@@ -531,7 +608,7 @@ export async function tryServeFromCache(
   target: string,
   rangeHeader: string | null,
   headers: Record<string, string>,
-): Promise<CachedResponse | null> {
+): Promise<CachedResponse | typeof SUPERSEDED_SEEK | null> {
   let path: string
   try { path = new URL(target).pathname } catch { return null }
   if (!/\.mp4$/i.test(path)) return null
@@ -544,7 +621,17 @@ export async function tryServeFromCache(
   }
   if (!Number.isSafeInteger(start) || start < 0) return null
 
-  const s = ensureSession(target, start, headers)
+  // 拖动进度条防抖:每条请求都推进 seekSeq(命中缓存的那条也算,它同样能作废还在等待的
+  // 冷 seek);只有要重开流的冷 seek 才真的等这 180ms,等完发现序号变了就交给挂起观察。
+  const mySeq = ++seekSeq
+  if (!coversOffset(target, start)) {
+    await sleep(SEEK_DEBOUNCE_MS)
+    if (mySeq !== seekSeq && (await holdSuperseded(target, start, mySeq)) === 'discard') {
+      return SUPERSEDED_SEEK
+    }
+  }
+
+  const s = ensureSession(target, start, headers, mySeq)
   if (!s) return null
 
   // 等首个响应头落地(total 出来)或直接失败;失败就让调用方走直连。
@@ -591,7 +678,7 @@ export async function tryServeFromCache(
           if (initialBufferTarget > 0 && pos === 0 && !s.bufferGateLogged) {
             s.bufferGateLogged = true
             const elapsedMs = Date.now() - s.createdAt
-            console.log(`[media-cache] 冷 seek 缓冲完成，耗时 ${elapsedMs}ms 后恢复播放（目标 ~3000ms）`)
+            console.log(`[media-cache] #${s.seq} 起播：冷 seek 缓冲完成，等待 ${elapsedMs}ms（目标 ~3000ms）`)
           }
           const avail = s.written - pos
           if (avail > 0) {
