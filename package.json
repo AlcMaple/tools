@@ -51,7 +51,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "MapleTools"
+      "shortcutName": "MapleTools",
+      "include": "build/installer.nsh"
     },
     "mac": {
       "target": [
