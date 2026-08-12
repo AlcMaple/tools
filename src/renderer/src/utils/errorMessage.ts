@@ -222,6 +222,31 @@ export function friendlyError(err: unknown): FriendlyError {
     }
   }
 
+  // 稀饭的新 UAM 在后台 Chromium 中执行。它没有额外网页弹窗；若站点仍不放行，
+  // 给出与普通网络错误不同的原因。保留旧错误标记，方便升级中断后的旧进程提示。
+  const xifanBrowserCheck =
+    msg.includes('稀饭后台安全检查') ||
+    msg.includes('稀饭浏览器验证') ||
+    msg.includes('稀饭要求浏览器安全验证')
+  if (xifanBrowserCheck) {
+    return {
+      title: '稀饭安全检查未完成',
+      hint: '站点的后台安全检查没有在限定时间内结束。请检查网络后重试；站点的普通图片验证码仍会使用应用内的验证码界面。',
+      raw: msg,
+    }
+  }
+
+  // 源站网关错误页 —— scrape-guard 识别到边缘代理自己渲染的"源站不可用/超时"
+  // 错误页时抛出。跟站点改版（parse 失败）、CF 人机校验都不是一回事,得放在
+  // 两者之前单独认,不然会落进下面 parse 分支显示成误导性的"可能它改版了"。
+  if (msg.includes('源站网关超时') || msg.includes('源站不可用')) {
+    return {
+      title: '站点服务器暂时不可用',
+      hint: '这是站点自己的网关/源站故障（后端过载或临时宕机），不是站点改版，也不是本应用的问题。可以用浏览器直接打开该网站确认是否也看到错误页；等它恢复后再点 Try again。',
+      raw: msg,
+    }
+  }
+
   // Cloudflare 真·拦截 —— 站点适配器识别到 CF 人机校验 / 风控页时抛出
   // （见 main/shared/scrape-guard.ts）。放在 HTTP 状态匹配之前:CF 的 JS 挑战页
   // 常是 200,message 里没有状态码可匹配。

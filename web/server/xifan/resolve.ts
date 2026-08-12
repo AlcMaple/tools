@@ -22,6 +22,42 @@ const XIFAN_HEADERS: Record<string, string> = {
   Referer: `${BASE_URL}/`,
 }
 
+const CF_MARKERS = [
+  'Just a moment',
+  'cf-browser-verification',
+  'challenge-platform',
+  '/cdn-cgi/challenge-platform',
+  'Attention Required! | Cloudflare',
+  'cf-error-details',
+  'Error 1020',
+  'Enable JavaScript and cookies to continue',
+]
+const MAX_UPSTREAM_CONCURRENCY = 2
+const MAX_UPSTREAM_WAITING = 8
+const UPSTREAM_START_GAP_MS = 250
+const CACHE_TTL_MS = 60 * 60 * 1000
+const MAX_CACHE_ENTRIES = 1000
+
+export class XifanUpstreamError extends Error {
+  constructor(
+    readonly status: number,
+    readonly retryAfterSec: number | null,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'XifanUpstreamError'
+  }
+}
+
+export class XifanBusyError extends Error {
+  readonly retryAfterSec = 2
+
+  constructor() {
+    super('稀饭解析请求较多，请稍后再试')
+    this.name = 'XifanBusyError'
+  }
+}
+
 interface PlayerData {
   url: string
   from: string
@@ -105,7 +141,9 @@ function parseEpList(html: string, animeId: string): number[] {
  *     直连，拿回缓冲事件控制权；若个别浏览器仍失败，页面的 error 监听再回退官方 iframe。
  */
 function classify(url: string): 'mp4' | 'hls' {
-  if (/\.m3u8(\?|$)/i.test(url)) return 'hls'
+  try {
+    if (new URL(url).pathname.toLowerCase().endsWith('.m3u8')) return 'hls'
+  } catch { /* safeMediaUrl 会在输出前拒绝坏 URL */ }
   return 'mp4'
 }
 
@@ -118,20 +156,87 @@ function safeMediaUrl(raw: string): string {
   }
 }
 
-async function fetchHtml(url: string): Promise<string> {
-  const run = async (): Promise<string> => {
-    const res = await fetch(url, { headers: XIFAN_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(12000) })
-    return res.text()
+let upstreamActive = 0
+const upstreamWaiters: Array<() => void> = []
+let upstreamStartQueue = Promise.resolve()
+let lastUpstreamStartedAt = 0
+
+async function acquireUpstreamSlot(): Promise<void> {
+  if (upstreamActive < MAX_UPSTREAM_CONCURRENCY) {
+    upstreamActive++
+    return
   }
+  if (upstreamWaiters.length >= MAX_UPSTREAM_WAITING) throw new XifanBusyError()
+  await new Promise<void>((resolve) => upstreamWaiters.push(resolve))
+}
+
+function releaseUpstreamSlot(): void {
+  const next = upstreamWaiters.shift()
+  if (next) next()
+  else upstreamActive--
+}
+
+function scheduleUpstreamStart(): Promise<void> {
+  const gate = upstreamStartQueue.then(async () => {
+    const elapsed = Date.now() - lastUpstreamStartedAt
+    if (elapsed < UPSTREAM_START_GAP_MS) {
+      await new Promise((resolve) => setTimeout(resolve, UPSTREAM_START_GAP_MS - elapsed))
+    }
+    lastUpstreamStartedAt = Date.now()
+  })
+  upstreamStartQueue = gate.then(() => undefined, () => undefined)
+  return gate
+}
+
+async function withUpstreamSlot<T>(fn: () => Promise<T>): Promise<T> {
+  await acquireUpstreamSlot()
   try {
-    return await run()
-  } catch (err) {
-    // 传输层瞬时抖动（TLS socket 断、ECONNRESET、DNS 抖）允许**单次**重试 —— AI_GUIDELINES 唯一放行的
-    // 代码层重试。应用层失败（4xx/5xx）不在此列。稀饭偶发 "socket disconnected before TLS"，重试即好。
-    const msg = err instanceof Error ? err.message : String(err)
-    if (/ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket disconnected|TLS|fetch failed|terminated/i.test(msg)) return run()
-    throw err
+    return await fn()
+  } finally {
+    releaseUpstreamSlot()
   }
+}
+
+function retryAfterSeconds(value: string | null): number | null {
+  if (!value) return null
+  if (/^\d+$/.test(value)) return Number(value)
+  const retryAt = Date.parse(value)
+  return Number.isFinite(retryAt) ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1000)) : null
+}
+
+function assertUpstreamResponse(response: Response, html: string): void {
+  const cloudflareBlocked = CF_MARKERS.some((marker) => html.includes(marker))
+  if (response.ok && !cloudflareBlocked) return
+  const retryAfterSec = retryAfterSeconds(response.headers.get('retry-after'))
+  let message = `稀饭播放页请求失败：服务器返回 HTTP ${response.status}`
+  if (cloudflareBlocked) message = '稀饭被 Cloudflare 拦截，请稍后再试'
+  else if (response.status === 429) {
+    message = `稀饭请求过于频繁${retryAfterSec !== null ? `，请在 ${retryAfterSec} 秒后再试` : '，请稍后再试'}`
+  }
+  if (!response.ok) throw new XifanUpstreamError(response.status, retryAfterSec, message)
+  throw new Error(message)
+}
+
+async function fetchHtml(url: string): Promise<string> {
+  return withUpstreamSlot(async () => {
+    const run = async (): Promise<string> => {
+      await scheduleUpstreamStart()
+      const res = await fetch(url, { headers: XIFAN_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(12000) })
+      const html = await res.text()
+      assertUpstreamResponse(res, html)
+      return html
+    }
+    try {
+      return await run()
+    } catch (err) {
+      // 只允许传输层瞬时抖动单次重试；HTTP 429 / 5xx 已转成 XifanUpstreamError，不会走这里。
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!(err instanceof XifanUpstreamError) && /ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket disconnected|TLS|fetch failed|terminated/i.test(msg)) {
+        return run()
+      }
+      throw err
+    }
+  })
 }
 
 export interface LineMeta {
@@ -150,17 +255,45 @@ export interface Playlist {
   eps: number[] // 整季集数序号（画集数网格用），扒不到就空
 }
 
-// 进程内缓存（1h）—— 刷新 / 换人秒回。但**不预解析、不并行**：缓存的只是「已经解析过的那条」。
+// 进程内缓存（1h）+ singleflight：同一条正在解析时所有调用复用一个 Promise，不重复打上游。
 const cache = new Map<string, { v: unknown; at: number }>()
-const TTL = 60 * 60 * 1000
+const inflight = new Map<string, Promise<unknown>>()
 function cached<T>(key: string): { hit: true; v: T } | { hit: false } {
   const h = cache.get(key)
-  if (h && Date.now() - h.at < TTL) return { hit: true, v: h.v as T }
+  if (h && Date.now() - h.at < CACHE_TTL_MS) {
+    cache.delete(key)
+    cache.set(key, h)
+    return { hit: true, v: h.v as T }
+  }
+  if (h) cache.delete(key)
   return { hit: false }
 }
 function put<T>(key: string, v: T): T {
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const now = Date.now()
+    for (const [cacheKey, entry] of cache) {
+      if (now - entry.at >= CACHE_TTL_MS) cache.delete(cacheKey)
+    }
+    while (cache.size >= MAX_CACHE_ENTRIES) {
+      const oldest = cache.keys().next().value as string | undefined
+      if (!oldest) break
+      cache.delete(oldest)
+    }
+  }
   cache.set(key, { v, at: Date.now() })
   return v
+}
+
+function singleflight<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const current = inflight.get(key) as Promise<T> | undefined
+  if (current) return current
+  const job = load()
+  inflight.set(key, job)
+  const clear = (): void => {
+    if (inflight.get(key) === job) inflight.delete(key)
+  }
+  void job.then(clear, clear)
+  return job
 }
 
 /** 打开播放页调这个：一次抓 source 1 → 线路 1 地址 + 全部线路名单。**不碰线路 2/3**。 */
@@ -168,16 +301,20 @@ export async function getPlaylist(animeId: string, ep: number): Promise<Playlist
   const key = `pl:${animeId}:${ep}`
   const c = cached<Playlist>(key)
   if (c.hit) return c.v
-  const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/1/${ep}.html`)
-  const data = parsePlayerData(body)
-  const tabs = parseSourceTabs(body)
-  let url1 = ''
-  try { url1 = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
-  url1 = safeMediaUrl(url1)
-  const first: PlayLine | null = url1 ? { source: 1, url: url1, kind: classify(url1) } : null
-  const lines = tabs.length ? tabs : first ? [{ source: 1, name: '线路1' }] : []
-  const eps = parseEpList(body, animeId)
-  return put(key, { title: data?.vod_data?.vod_name ?? '', lines, first, eps })
+  return singleflight(key, async () => {
+    const latest = cached<Playlist>(key)
+    if (latest.hit) return latest.v
+    const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/1/${ep}.html`)
+    const data = parsePlayerData(body)
+    const tabs = parseSourceTabs(body)
+    let url1 = ''
+    try { url1 = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
+    url1 = safeMediaUrl(url1)
+    const first: PlayLine | null = url1 ? { source: 1, url: url1, kind: classify(url1) } : null
+    const lines = tabs.length ? tabs : first ? [{ source: 1, name: '线路1' }] : []
+    const eps = parseEpList(body, animeId)
+    return put(key, { title: data?.vod_data?.vod_name ?? '', lines, first, eps })
+  })
 }
 
 /** 用户手动点线路 N 时才调这个：只抓那一条。 */
@@ -185,10 +322,14 @@ export async function resolveLine(animeId: string, ep: number, source: number): 
   const key = `ln:${animeId}:${ep}:${source}`
   const c = cached<PlayLine | null>(key)
   if (c.hit) return c.v
-  const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/${source}/${ep}.html`)
-  const data = parsePlayerData(body)
-  let url = ''
-  try { url = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
-  url = safeMediaUrl(url)
-  return put<PlayLine | null>(key, url ? { source, url, kind: classify(url) } : null)
+  return singleflight(key, async () => {
+    const latest = cached<PlayLine | null>(key)
+    if (latest.hit) return latest.v
+    const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/${source}/${ep}.html`)
+    const data = parsePlayerData(body)
+    let url = ''
+    try { url = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
+    url = safeMediaUrl(url)
+    return put<PlayLine | null>(key, url ? { source, url, kind: classify(url) } : null)
+  })
 }

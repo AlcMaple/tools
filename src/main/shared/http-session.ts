@@ -74,6 +74,22 @@ export class HttpSession {
   }
 
   /**
+   * 兼容旧 cookie 文件时导出最小的 name/value 集合。属性原本就没有落盘，调用方
+   * 必须按目标站点重新绑定 domain/path，不能把这里当成浏览器 cookie 的完整备份。
+   */
+  getCookieEntries(): Array<{ name: string; value: string }> {
+    return Array.from(this.cookies, ([name, value]) => ({ name, value }))
+  }
+
+  /** 用同一站点的新 cookie 集合替换旧的扁平 jar，供迁移后的会话向后兼容。 */
+  replaceCookies(cookies: Iterable<{ name: string; value: string }>): void {
+    this.cookies.clear()
+    for (const cookie of cookies) {
+      if (cookie.name) this.cookies.set(cookie.name, cookie.value)
+    }
+  }
+
+  /**
    * 逐跳跟重定向(最多 5 跳),每跳都先 ingest Set-Cookie。3xx 且带 Location 就
    * 跟下一跳,否则返回该跳的 status/body。这套逻辑与历史 Node-https 版完全一致,
    * 只是底层 fetch 换成了 netRequest。get/post 共用,差别只是 method/body。
