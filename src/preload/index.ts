@@ -141,9 +141,13 @@ contextBridge.exposeInMainWorld('xifanApi', {
     ipcRenderer.invoke('xifan:login', username, password, verify),
   logout: () => ipcRenderer.invoke('xifan:logout'),
   search: (keyword: string) => ipcRenderer.invoke('xifan:search', keyword),
-  getWatch: (watchUrl: string) => ipcRenderer.invoke('xifan:watch', watchUrl),
+  getWatch: (watchUrl: string, preferCache?: boolean) =>
+    ipcRenderer.invoke('xifan:watch', watchUrl, preferCache),
   // 在线播放:模板直链 404 时回源播放页解析真实地址(找不到返回 null)。
   resolveEpUrl: (epPage: string, ep: number) => ipcRenderer.invoke('xifan:resolve-ep-url', epPage, ep),
+  // 在线播放:逐集 MP4 地址缓存 24h；video 已报错时传 true 强制回源刷新一次。
+  resolvePlayUrl: (template: string | null, epPage: string, ep: number, forceRefresh?: boolean) =>
+    ipcRenderer.invoke('xifan:resolve-play-url', template, epPage, ep, forceRefresh),
   // 下载配置面板专用:watch() 只解析当前激活源,这里主动并发补全其余线路。
   resolveAllSources: (animeId: string, sources: unknown[]) =>
     ipcRenderer.invoke('xifan:resolve-all-sources', animeId, sources),

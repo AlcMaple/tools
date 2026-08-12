@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import {
-  getCaptcha, verifyCaptcha, search, watch, resolveEpRealUrl, resolveAllSources,
+  getCaptcha, verifyCaptcha, search, watch, resolveEpRealUrl, resolveEpPlaybackUrl, resolveAllSources,
   getXifanAuthStatus, login, logout,
 } from '../xifan/api'
 import type { XifanSource } from '../xifan/api'
@@ -31,18 +31,27 @@ export function registerXifanIpc(): void {
   ipcMain.handle('xifan:search', async (_event, keyword: string) => search(keyword))
 
   // ── 账号登录(收藏/签到等站内功能用) ─────────────────────────────────────
-  ipcMain.handle('xifan:auth-status', () => getXifanAuthStatus())
+  ipcMain.handle('xifan:auth-status', async () => getXifanAuthStatus())
   ipcMain.handle(
     'xifan:login',
     async (_event, username: string, password: string, verify: string) => login(username, password, verify),
   )
   ipcMain.handle('xifan:logout', async () => logout())
 
-  ipcMain.handle('xifan:watch', async (_event, watchUrl: string) => watch(watchUrl))
+  ipcMain.handle('xifan:watch', async (_event, watchUrl: string, preferCache?: boolean) =>
+    watch(watchUrl, preferCache))
   // 在线播放:模板拼出的直链 404(OVA 等特殊集)时,回源播放页解析真实地址。
   // 与下载流程内部的回源是同一个函数,这里只是把它开给渲染进程按需调用。
   ipcMain.handle('xifan:resolve-ep-url', async (_event, epPage: string, ep: number) =>
     resolveEpRealUrl(epPage, ep))
+  // 在线播放统一先看 24h 的逐集地址缓存；只有没命中，或 video 已报错要求强制
+  // 刷新时，才到对应播放页读 player_aaaa.url。不能把这个 cache 放 renderer，避免
+  // 刷新页面 / 重启应用后又重新触发站点安全检查。
+  ipcMain.handle(
+    'xifan:resolve-play-url',
+    async (_event, template: string | null, epPage: string, ep: number, forceRefresh?: boolean) =>
+      resolveEpPlaybackUrl(template, epPage, ep, forceRefresh === true),
+  )
   // 下载配置面板专用:watch() 只解析当前激活源,这里主动并发补全其余线路的
   // template/ep1/epLabels,给面板一次性展示全部线路用。播放器不调这个——
   // 它按需惰性解析,见 xifan/api.ts watch() 的注释。

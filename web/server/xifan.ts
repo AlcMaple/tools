@@ -15,7 +15,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Hono } from 'hono'
-import { getPlaylist, resolveLine } from './xifan/resolve'
+import type { Context } from 'hono'
+import { getPlaylist, resolveLine, XifanBusyError, XifanUpstreamError } from './xifan/resolve'
 import { locate } from './xifan/locate'
 import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
 import { getXifanCaptcha, searchXifan, verifyXifanCaptcha, XIFAN_SEARCH_MAX_LENGTH } from './xifan/search'
@@ -24,6 +25,23 @@ import { db } from './db'
 import { playerPageSecurity, renderNonce } from './security'
 
 const xifan = new Hono()
+
+function upstreamFailure(c: Context, error: unknown, fallback: string): Response {
+  const message = error instanceof Error ? error.message : fallback
+  if (error instanceof XifanBusyError) {
+    c.header('Retry-After', String(error.retryAfterSec))
+    return c.json({ error: message }, 429)
+  }
+  if (error instanceof XifanUpstreamError) {
+    c.header('X-Upstream-Status', String(error.status))
+    if (error.status === 429) {
+      if (error.retryAfterSec !== null) c.header('Retry-After', String(error.retryAfterSec))
+      return c.json({ error: message, upstreamStatus: error.status }, 429)
+    }
+    return c.json({ error: message, upstreamStatus: error.status }, 502)
+  }
+  return c.json({ error: message }, 502)
+}
 
 // 自托管 hls.js —— 不走 jsdelivr（国内无魔法可能加载不到）。首次请求读一次、进程内缓存。
 let hlsJsCache: string | null = null
@@ -41,7 +59,11 @@ xifan.get('/playlist', async (c) => {
   if (!/^\d+$/.test(animeId)) return c.json({ error: 'animeId 不合法（要纯数字，如 3543）' }, 400)
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
   c.header('Cache-Control', 'no-store')
-  return c.json(await getPlaylist(animeId, ep))
+  try {
+    return c.json(await getPlaylist(animeId, ep))
+  } catch (error) {
+    return upstreamFailure(c, error, '稀饭播放页解析失败')
+  }
 })
 
 // 用户手动点线路 N：只抓那一条
@@ -52,9 +74,13 @@ xifan.get('/resolve', async (c) => {
   if (!/^\d+$/.test(animeId)) return c.json({ error: 'animeId 不合法' }, 400)
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
   if (!Number.isInteger(source) || source < 1) return c.json({ error: 'source 不合法' }, 400)
-  const line = await resolveLine(animeId, ep, source)
   c.header('Cache-Control', 'no-store')
-  return line ? c.json(line) : c.json({ error: '此线路解析不到（可能此线路没有这一集）' }, 404)
+  try {
+    const line = await resolveLine(animeId, ep, source)
+    return line ? c.json(line) : c.json({ error: '此线路解析不到（可能此线路没有这一集）' }, 404)
+  } catch (error) {
+    return upstreamFailure(c, error, '稀饭线路解析失败')
+  }
 })
 
 xifan.get('/play-page', (c) => {
@@ -206,9 +232,12 @@ const PLAY_PAGE = `<!doctype html>
   var animeId = q.get('animeId') || ''
   var ep = q.get('ep') || '1'
   var v = $('v'), frame = $('frame')
-  var lines = [], eps = [], curPl = null, resolvedMap = {}, hls = null
-  var BUFFER_TARGET = 10, BUFFER_RATE = .0625, bufferTimer = null, bufferToken = 0
+  var lines = [], eps = [], curPl = null, resolvedMap = {}, resolvingMap = {}, hls = null
+  var BUFFER_TARGET = 10, BUFFER_RATE = .0625, BUFFER_STALL_MS = 6000, BUFFER_MAX_MS = 15000
+  var BUFFER_SAMPLE_MS = 6000, BUFFER_MIN_MEDIA_RATE = 1.15, bufferTimer = null, bufferToken = 0
   var resumeAfterBuffer = false, bufferAnchor = 0, savedRate = 1, savedMuted = false, internalSeek = false
+  var bufferStartedAt = 0, bufferLastProgressAt = 0, bufferLastAhead = 0, bufferSampleAt = 0, bufferSampleAhead = 0
+  var internalSeekTimer = null, gateOnPlay = false, lineRequest = 0
 
   function fail(txt){ var e = $('err'); e.textContent = txt; e.style.display = 'block' }
   function clearFail(){ $('err').style.display = 'none' }
@@ -228,6 +257,22 @@ const PLAY_PAGE = `<!doctype html>
 
   function hideBuffer(){ $('buffering').classList.remove('show') }
 
+  function clearInternalSeek(){
+    if (internalSeekTimer !== null) clearTimeout(internalSeekTimer)
+    internalSeekTimer = null; internalSeek = false
+  }
+
+  function markInternalSeek(){
+    clearInternalSeek(); internalSeek = true
+    internalSeekTimer = setTimeout(function(){ internalSeek = false; internalSeekTimer = null }, 800)
+  }
+
+  function resetBufferWatch(ahead){
+    var now = performance.now()
+    bufferStartedAt = now; bufferLastProgressAt = now; bufferLastAhead = ahead
+    bufferSampleAt = now; bufferSampleAhead = ahead
+  }
+
   function restorePlaybackState(){
     try { v.playbackRate = savedRate } catch (e) {}
     v.muted = savedMuted
@@ -242,8 +287,8 @@ const PLAY_PAGE = `<!doctype html>
     if (wasBuffering){
       restorePlaybackState()
       if (resetPosition && Number.isFinite(bufferAnchor)){
-        internalSeek = true
-        try { v.currentTime = bufferAnchor } catch (e) { internalSeek = false }
+        markInternalSeek()
+        try { v.currentTime = bufferAnchor } catch (e) { clearInternalSeek() }
       }
     }
   }
@@ -254,9 +299,17 @@ const PLAY_PAGE = `<!doctype html>
     bufferTimer = null; resumeAfterBuffer = false; hideBuffer()
     // 缓冲期间用极低速静音播放来保持浏览器继续拉流；达标后回到用户 seek 的原位置，
     // 再恢复原速与静音状态。锚点已经落在 buffered 内，不会重新走网络。
-    internalSeek = true
-    try { v.currentTime = bufferAnchor } catch (e) { internalSeek = false }
+    markInternalSeek()
+    try { v.currentTime = bufferAnchor } catch (e) { clearInternalSeek() }
     restorePlaybackState()
+    gateOnPlay = false
+  }
+
+  function fallbackBufferGate(token){
+    if (token !== bufferToken || !resumeAfterBuffer || !curPl || inFrame()) return
+    var pl = curPl
+    cancelBufferGate(false)
+    embed(pl)
   }
 
   function checkBufferGate(token){
@@ -267,17 +320,29 @@ const PLAY_PAGE = `<!doctype html>
     if (v.playbackRate !== BUFFER_RATE){
       try { v.playbackRate = BUFFER_RATE } catch (e) { v.playbackRate = .25 }
     }
-    var ahead = bufferedAhead(), goal = bufferGoal()
+    var ahead = bufferedAhead(), goal = bufferGoal(), now = performance.now()
+    if (ahead > bufferLastAhead + .05){ bufferLastAhead = ahead; bufferLastProgressAt = now }
     $('bufferText').textContent = '正在积攒缓冲 ' + Math.floor(ahead) + ' / ' + Math.ceil(goal) + ' 秒'
-    if (ahead + .25 >= goal || v.ended) finishBufferGate(token)
+    if (ahead + .25 >= goal || v.ended){ finishBufferGate(token); return }
+    if (now - bufferLastProgressAt >= BUFFER_STALL_MS || now - bufferStartedAt >= BUFFER_MAX_MS){
+      fallbackBufferGate(token)
+      return
+    }
+    if (now - bufferSampleAt >= BUFFER_SAMPLE_MS){
+      var elapsed = Math.max(.001, (now - bufferSampleAt) / 1000)
+      var mediaRate = (ahead - bufferSampleAhead) / elapsed + BUFFER_RATE
+      if (mediaRate < BUFFER_MIN_MEDIA_RATE) fallbackBufferGate(token)
+    }
   }
 
   function beginBufferGate(fromSeek){
     if (!curPl || curPl.kind !== 'mp4' || inFrame()) return
     var goal = bufferGoal()
-    if (bufferedAhead() + .25 >= goal) return
+    var ahead = bufferedAhead()
+    gateOnPlay = false
+    if (ahead + .25 >= goal) return
     if (bufferTimer !== null){
-      if (fromSeek) bufferAnchor = v.currentTime
+      if (fromSeek){ bufferAnchor = v.currentTime; resetBufferWatch(ahead) }
       return
     }
     resumeAfterBuffer = true
@@ -287,6 +352,7 @@ const PLAY_PAGE = `<!doctype html>
     v.muted = true
     try { v.playbackRate = BUFFER_RATE } catch (e) { v.playbackRate = .25 }
     var token = ++bufferToken
+    resetBufferWatch(ahead)
     $('buffering').classList.add('show')
     checkBufferGate(token)
     bufferTimer = setInterval(function(){ checkBufferGate(token) }, 250)
@@ -295,25 +361,30 @@ const PLAY_PAGE = `<!doctype html>
   // mp4 直连意外失败（少数编码问题）→ 静默切套娃。HLS 失败交给 hls.js 的 fatal。
   // 切套娃时会给 <video> removeAttribute+load，也会冒一个 error —— 用 inFrame()/有无 src 挡掉，别再回切。
   v.addEventListener('error', function(){
-    if (!curPl || curPl.kind === 'hls' || inFrame() || !v.getAttribute('src')) return
+    if (!curPl || inFrame() || !v.getAttribute('src')) return
+    // hls.js 自己处理错误；Safari / iOS 原生 HLS 没有 hls 实例，仍需回退官方播放器。
+    if (curPl.kind === 'hls' && hls) return
     cancelBufferGate()
     embed(curPl)
   })
   v.addEventListener('seeking', function(){
     if (internalSeek) return
+    gateOnPlay = true
     if (!v.paused || resumeAfterBuffer) beginBufferGate(true)
   })
-  v.addEventListener('seeked', function(){ if (internalSeek) internalSeek = false })
-  v.addEventListener('waiting', function(){ if (!internalSeek && !v.paused) beginBufferGate(false) })
+  v.addEventListener('seeked', function(){ if (internalSeek) clearInternalSeek() })
+  v.addEventListener('playing', function(){ if (gateOnPlay && !internalSeek && !resumeAfterBuffer) beginBufferGate(false) })
+  v.addEventListener('waiting', function(){ if (!internalSeek && !v.paused){ gateOnPlay = true; beginBufferGate(false) } })
   v.addEventListener('progress', function(){ if (bufferTimer !== null) checkBufferGate(bufferToken) })
   v.addEventListener('pause', function(){
     // 用户主动暂停时停止自动恢复，并把进度退回本次缓冲开始的位置。
+    if (curPl && curPl.kind === 'mp4' && !internalSeek) gateOnPlay = true
     if (bufferTimer !== null && !internalSeek) cancelBufferGate(true)
   })
-  v.addEventListener('ended', function(){ cancelBufferGate(false) })
+  v.addEventListener('ended', function(){ gateOnPlay = false; cancelBufferGate(false) })
 
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
-  function stopAll(){ cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank' }
+  function stopAll(){ cancelBufferGate(false); clearInternalSeek(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false }
 
   function renderChips(){
     var box = $('lines'); box.textContent = ''
@@ -328,11 +399,23 @@ const PLAY_PAGE = `<!doctype html>
 
   function playLine(pl){
     curPl = pl; clearFail(); stopAll(); renderChips()
+    gateOnPlay = pl.kind === 'mp4'
     v.style.display = 'block'; frame.style.display = 'none'
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
-        // 深缓冲：目标前向 10 分钟 / 240MB（暂停也灌）；hls.js 致命错误（含空壳 manifest）→ 套娃
-        hls = new Hls({ maxBufferLength: 600, maxMaxBufferLength: 900, maxBufferSize: 240 * 1000 * 1000, backBufferLength: 90 })
+        // 90–120 秒足够覆盖网络抖动，同时避免旧配置一次抓 10–15 分钟、产生上百个分片请求。
+        hls = new Hls({
+          maxBufferLength: 90,
+          maxMaxBufferLength: 120,
+          maxBufferSize: 96 * 1000 * 1000,
+          backBufferLength: 60,
+          fragLoadPolicy: { default: {
+            maxTimeToFirstByteMs: 10000,
+            maxLoadTimeMs: 30000,
+            timeoutRetry: { maxNumRetry: 1, retryDelayMs: 500, maxRetryDelayMs: 1000 },
+            errorRetry: { maxNumRetry: 1, retryDelayMs: 1000, maxRetryDelayMs: 2000 }
+          } }
+        })
         hls.on(Hls.Events.ERROR, function(e, data){ if (data && data.fatal) embed(pl) })
         hls.loadSource(pl.url); hls.attachMedia(v)
         var pp = v.play(); if (pp && pp.catch) pp.catch(function(){})
@@ -348,22 +431,42 @@ const PLAY_PAGE = `<!doctype html>
   function embed(pl){
     curPl = pl
     cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
-    v.style.display = 'none'; frame.style.display = 'block'; renderChips()
+    gateOnPlay = false; v.style.display = 'none'; frame.style.display = 'block'; renderChips()
     frame.src = 'https://player.moedot.net/player/index.php?code=xfdm1&from=cf&url=' + encodeURIComponent(pl.url)
+  }
+
+  function resolveSource(source){
+    if (resolvingMap[source]) return resolvingMap[source]
+    var controller = new AbortController()
+    var timeout = setTimeout(function(){ controller.abort() }, 16000)
+    var url = '/api/xifan/resolve?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep) + '&source=' + source
+    var job = fetch(url, { signal: controller.signal }).then(async function(r){
+      var d = await r.json()
+      if (!r.ok || !d || d.error || !d.url) throw new Error(d && d.error ? d.error : '这条线路解析不到')
+      resolvedMap[source] = d
+      return d
+    }).catch(function(e){
+      if (e && e.name === 'AbortError') throw new Error('线路解析等待超过 16 秒')
+      throw e
+    }).finally(function(){
+      clearTimeout(timeout)
+      if (resolvingMap[source] === job) delete resolvingMap[source]
+    })
+    resolvingMap[source] = job
+    return job
   }
 
   async function selectLine(source){
     if (curPl && curPl.source === source && !inFrame()) return
+    var request = ++lineRequest
     clearFail()
     var pl = resolvedMap[source]
     if (!pl){
       try {
-        var r = await fetch('/api/xifan/resolve?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep) + '&source=' + source)
-        var d = await r.json()
-        if (!d || d.error || !d.url){ fail('这条线路解析不到' + (d && d.error ? '：' + d.error : '')); return }
-        pl = d; resolvedMap[source] = pl
-      } catch (e){ fail('解析请求失败：' + (e && e.message || e)); return }
+        pl = await resolveSource(source)
+      } catch (e){ if (request === lineRequest) fail('解析请求失败：' + (e && e.message || e)); return }
     }
+    if (request !== lineRequest) return
     playLine(pl)
   }
 

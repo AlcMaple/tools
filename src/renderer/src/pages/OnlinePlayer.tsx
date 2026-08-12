@@ -110,13 +110,6 @@ function biliBangumiEmbedUrl(raw: string): string | null {
   return ep ? `https://player.bilibili.com/player.html?ep_id=${ep[1]}&autoplay=0` : null
 }
 
-/** 占位符按携带的位宽补零 —— 必须与主进程 formatEpUrl / siteApi.resolveEpUrl 一致
- *  (见 docs/regression/xifan-下载链接-集数补零-回归用例.md),兼容旧 {:02d} 模板。 */
-function xifanUrlFromTemplate(template: string, ep: number): string {
-  return template.replace(/\{:0?(\d*)d\}/, (_, w: string) =>
-    String(ep).padStart(w ? parseInt(w, 10) : 0, '0'))
-}
-
 // mp4 直链包成同源流代理 URL 再喂 <video>(scheme 与 main/shared/media-proxy.ts
 // 的 MEDIA_PROXY_SCHEME 保持一致)。绕开渲染进程 origin 对跨源媒体的拦截,
 // dev/正式都能播;非 http(s) 原样返回。
@@ -132,7 +125,7 @@ function epShort(e: PlayEp): string {
   return e.label || String(e.idx).padStart(2, '0')
 }
 
-async function loadSiteData(binding: AnimeBinding): Promise<SiteData> {
+async function loadSiteData(binding: AnimeBinding, preferCache: boolean): Promise<SiteData> {
   const url = bindingUrl(binding)
   const bvid = biliBvid(url)
   if (bvid) {
@@ -144,7 +137,10 @@ async function loadSiteData(binding: AnimeBinding): Promise<SiteData> {
     return { kind: 'bili', info, lines }
   }
   if (binding.source === 'Xifan') {
-    const info = await window.xifanApi.getWatch(url)
+    // watch() 本身就是当前源第 1 集的播放页,一次请求同时给出总集数/线路/地址
+    // 模板——追番记录填过总集数(不再变的老番)才允许直接吃 7 天内的缓存,跳过
+    // 这次请求;连载番仍按最新结果来,不然会漏看新更新的集数。
+    const info = await window.xifanApi.getWatch(url, preferCache)
     if (info.error) throw new Error(info.error)
     const lines = info.sources.map((s) => ({
       name: s.name,
@@ -203,10 +199,10 @@ async function resolveStream(data: SiteData, lineIdx: number, ep: number): Promi
   }
   const line = data.info.sources[lineIdx]
   if (!line) throw new Error('线路不存在,换一条线路试试')
-  if (line.template) return { kind: 'url', url: xifanUrlFromTemplate(line.template, ep), isHls: false }
-  // 这条线路连第 1 集地址都没解析出来(template null)→ 直接回源播放页解析
   if (!line.epPage) throw new Error('这条线路没有可用的播放地址,换一条线路试试')
-  const real = await window.xifanApi.resolveEpUrl(line.epPage, ep)
+  // 地址缓存放主进程而非这个组件：重进播放页 / 重启应用仍可命中，且缓存未命中
+  // 才会让后台 Chromium 访问稀饭页面。模板直链也在这里归一成「按集缓存」的地址。
+  const real = await window.xifanApi.resolvePlayUrl(line.template, line.epPage, ep)
   if (!real) throw new Error('未能解析到这一集的播放地址')
   return { kind: 'url', url: real, isHls: false }
 }
@@ -344,7 +340,8 @@ export default function OnlinePlayer(): JSX.Element {
     }
     setView({ mode: 'loading' })
     const seq = ++seqRef.current
-    loadSiteData(entry.binding!)
+    const preferCache = typeof track?.totalEpisodes === 'number' && track.totalEpisodes > 0
+    loadSiteData(entry.binding!, preferCache)
       .then((d) => {
         if (seqRef.current !== seq) return
         setData(d)
@@ -445,9 +442,8 @@ export default function OnlinePlayer(): JSX.Element {
     }
   }
 
-  // xifan 模板拼接的直链对 OVA 等特殊集会 404 —— <video> 报错时先在**本线路**
-  // 回源播放页解析真实地址重试一次(与下载器内部回源同源);本线路仍不行,
-  // 就自动换下一条线路,直到三条都试完。
+  // Xifan 缓存地址或模板直链若已过期 / 是特殊集会触发 video error。此时只在**本线路**
+  // 强制回源刷新一次（绕过 24h 地址缓存），本线路仍不行才自动换下一条线路。
   const handleVideoError = (): void => {
     if (view.mode !== 'video' || !data || ep === null) return
     if (data.kind === 'xifan' && !fallbackTriedRef.current) {
@@ -456,7 +452,7 @@ export default function OnlinePlayer(): JSX.Element {
         fallbackTriedRef.current = true
         const seq = ++seqRef.current
         setView({ mode: 'loading' })
-        window.xifanApi.resolveEpUrl(line.epPage, ep)
+        window.xifanApi.resolvePlayUrl(line.template, line.epPage, ep, true)
           .then((real) => {
             if (seqRef.current !== seq) return
             if (real) setView({ mode: 'video', url: real, isHls: false })

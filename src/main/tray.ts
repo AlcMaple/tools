@@ -1,10 +1,11 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, NativeImage } from 'electron'
 import { join } from 'path'
+import { isXifanBackgroundWindow } from './xifan/browser-challenge'
 
 let appTray: Tray | null = null
 
 function getMainWindow(): BrowserWindow | null {
-  return BrowserWindow.getAllWindows()[0] ?? null
+  return BrowserWindow.getAllWindows().find((win) => !isXifanBackgroundWindow(win)) ?? null
 }
 
 // Dock 用的应用图标(全尺寸、非模板)。打包后在 Contents/Resources,dev 在 resources/。

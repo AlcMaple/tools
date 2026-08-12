@@ -1,14 +1,22 @@
 import * as cheerio from 'cheerio/slim'
 import { HttpSession } from '../shared/http-session'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
+import { JsonStore } from '../shared/json-store'
 import { crawlAllPages } from '../shared/maccms-search-paginator'
 import { assertScrapePageOk } from '../shared/scrape-guard'
 import { RateLimiter } from '../shared/rate-limit'
+import { logInfo } from '../shared/logger'
+import {
+  getXifanBrowserSession,
+  isXifanPageUrl,
+  loadXifanBrowserPage,
+  requestXifanBrowser,
+  XIFAN_ORIGIN,
+} from './browser-challenge'
 
-// 站点旧域 dm.xifanacg.com 现 301 跳到 anime.xifanacg.com,直接用新域省掉每次
-// 请求的跨域跳转。HttpSession 仍保留逐跳跟重定向能力,所以旧缓存/旧下载任务里
-// 残留的 dm.xifanacg.com 链接照样能用(命中 301 自动跟过来),向后兼容。
-const BASE_URL = 'https://anime.xifanacg.com'
+// 站点旧域 dm.xifanacg.com 现 301 跳到 anime.xifanacg.com，直接用新域省掉
+// 每次跨域跳转。后台页面仍允许该子域，旧下载任务里残留的播放页链接可继续跟随 301。
+const BASE_URL = XIFAN_ORIGIN
 const HEADERS = {
   'User-Agent': DESKTOP_USER_AGENT,
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -16,7 +24,242 @@ const HEADERS = {
   Referer: `${BASE_URL}/`,
 }
 
+// 旧版登录态原本落在这个扁平 cookie 文件。首次用浏览器分区前会单向迁入；
+// 此后所有稀饭操作共用同一个 Chromium 会话，避免验证码、登录、页面各自一罐。
 export const xifanSession = new HttpSession('xifan', HEADERS)
+let legacyCookiesImported = false
+let legacyCookieImport: Promise<void> | null = null
+
+// Xifan 的 MP4 地址不是媒体内容缓存：这里只记「某播放页最终给出的地址」，让同一集
+// 在 24 小时内重新点开时不用再进站点页面。上游随时可提前让链接失效，因此播放器
+// 一旦报错会强制回源刷新该项；不额外 probe，避免为了判断过期反而多打一笔请求。
+interface XifanUrlCacheEntry {
+  url: string
+  resolvedAt: number
+}
+
+type XifanUrlCache = Record<string, XifanUrlCacheEntry>
+
+const XIFAN_URL_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const XIFAN_URL_CACHE_MAX_ENTRIES = 500
+const xifanUrlInflight = new Map<string, Promise<string | null>>()
+
+function isHttpMediaUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+function isFreshXifanUrl(entry: XifanUrlCacheEntry, now = Date.now()): boolean {
+  return entry.resolvedAt <= now && now - entry.resolvedAt < XIFAN_URL_CACHE_TTL_MS
+}
+
+function normalizeXifanUrlCache(raw: unknown): XifanUrlCache {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const now = Date.now()
+  const normalized: XifanUrlCache = {}
+  for (const [pageUrl, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const entry = value as Partial<XifanUrlCacheEntry>
+    if (
+      typeof entry.url === 'string' &&
+      typeof entry.resolvedAt === 'number' &&
+      Number.isFinite(entry.resolvedAt) &&
+      isHttpMediaUrl(entry.url) &&
+      isFreshXifanUrl({ url: entry.url, resolvedAt: entry.resolvedAt }, now)
+    ) {
+      normalized[pageUrl] = { url: entry.url, resolvedAt: entry.resolvedAt }
+    }
+  }
+  return normalized
+}
+
+const xifanUrlCacheStore = new JsonStore<XifanUrlCache>(
+  'xifan-url-cache.json',
+  normalizeXifanUrlCache,
+)
+
+// watch() 本身就是「当前源第 1 集」的播放页：一次请求同时给出总集数、各源名称/
+// epLabels，以及当前源的地址模板——后续每一集地址都靠模板纯计算（见
+// resolveEpPlaybackUrl），不再碰网络。换句话说，进播放器时唯一真正打到稀饭
+// 服务器的就是这一次。已完结番（追番记录填过总集数）结构不会再变，允许调用方
+// 传 preferCache 跳过这次请求，直接吃缓存；连载番不传，永远按最新结果覆盖缓存。
+interface XifanWatchCacheEntry {
+  info: XifanWatchInfo
+  savedAt: number
+}
+
+type XifanWatchCache = Record<string, XifanWatchCacheEntry>
+
+const XIFAN_WATCH_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const XIFAN_WATCH_CACHE_MAX_ENTRIES = 500
+
+function isFreshXifanWatchEntry(entry: XifanWatchCacheEntry, now = Date.now()): boolean {
+  return entry.savedAt <= now && now - entry.savedAt < XIFAN_WATCH_CACHE_TTL_MS
+}
+
+function isXifanSource(value: unknown): value is XifanSource {
+  if (!value || typeof value !== 'object') return false
+  const s = value as Partial<XifanSource>
+  return (
+    typeof s.idx === 'number' &&
+    typeof s.name === 'string' &&
+    (s.template === null || typeof s.template === 'string') &&
+    typeof s.ep1 === 'string' &&
+    typeof s.epPage === 'string' &&
+    Array.isArray(s.epLabels) &&
+    s.epLabels.every((l) => typeof l === 'string')
+  )
+}
+
+function isXifanWatchInfo(value: unknown): value is XifanWatchInfo {
+  if (!value || typeof value !== 'object') return false
+  const info = value as Partial<XifanWatchInfo>
+  return (
+    typeof info.title === 'string' &&
+    typeof info.id === 'string' &&
+    typeof info.total === 'number' &&
+    Array.isArray(info.sources) &&
+    info.sources.every(isXifanSource)
+  )
+}
+
+function normalizeXifanWatchCache(raw: unknown): XifanWatchCache {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const now = Date.now()
+  const normalized: XifanWatchCache = {}
+  for (const [watchUrl, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const entry = value as Partial<XifanWatchCacheEntry>
+    if (
+      typeof entry.savedAt === 'number' &&
+      Number.isFinite(entry.savedAt) &&
+      isXifanWatchInfo(entry.info) &&
+      isFreshXifanWatchEntry({ info: entry.info, savedAt: entry.savedAt }, now)
+    ) {
+      normalized[watchUrl] = { info: entry.info, savedAt: entry.savedAt }
+    }
+  }
+  return normalized
+}
+
+const xifanWatchCacheStore = new JsonStore<XifanWatchCache>(
+  'xifan-watch-cache.json',
+  normalizeXifanWatchCache,
+)
+
+function rememberXifanWatch(watchUrl: string, info: XifanWatchInfo): void {
+  xifanWatchCacheStore.update((cache) => {
+    const now = Date.now()
+    for (const [key, entry] of Object.entries(cache)) {
+      if (!isFreshXifanWatchEntry(entry, now)) delete cache[key]
+    }
+    delete cache[watchUrl]
+    const oldestFirst = Object.entries(cache)
+      .sort(([, a], [, b]) => a.savedAt - b.savedAt)
+    const removeCount = Math.max(0, oldestFirst.length - (XIFAN_WATCH_CACHE_MAX_ENTRIES - 1))
+    for (const [key] of oldestFirst.slice(0, removeCount)) delete cache[key]
+    cache[watchUrl] = { info, savedAt: now }
+  })
+}
+
+// 所有「真的要导航到稀饭 HTML 页」的操作共用这一个节流器。后台挑战页的 250ms
+// 轮询只读 DOM，不经过这里；只有缓存未命中、用户确实需要新页面时才占一个名额。
+const xifanPageLimiter = new RateLimiter({
+  minGapMs: 400,
+  jitterMs: 200,
+  name: 'xifan-page',
+})
+
+function rememberXifanUrl(pageUrl: string, url: string): void {
+  xifanUrlCacheStore.update((cache) => {
+    const now = Date.now()
+    for (const [key, entry] of Object.entries(cache)) {
+      if (!isFreshXifanUrl(entry, now)) delete cache[key]
+    }
+    delete cache[pageUrl]
+    const oldestFirst = Object.entries(cache)
+      .sort(([, a], [, b]) => a.resolvedAt - b.resolvedAt)
+    const removeCount = Math.max(0, oldestFirst.length - (XIFAN_URL_CACHE_MAX_ENTRIES - 1))
+    for (const [key] of oldestFirst.slice(0, removeCount)) delete cache[key]
+    cache[pageUrl] = { url, resolvedAt: now }
+  })
+}
+
+function forgetXifanUrl(pageUrl: string): void {
+  xifanUrlCacheStore.update((cache) => {
+    delete cache[pageUrl]
+  })
+}
+
+async function prepareXifanBrowserCookies(): Promise<void> {
+  if (legacyCookiesImported) return
+  if (!legacyCookieImport) {
+    legacyCookieImport = (async () => {
+      const part = getXifanBrowserSession()
+      const existing = await part.cookies.get({ url: BASE_URL })
+      const existingNames = new Set(existing.map((cookie) => cookie.name))
+      await Promise.all(xifanSession.getCookieEntries()
+        .filter(({ name }) => !existingNames.has(name))
+        .map(({ name, value }) => part.cookies.set({ url: BASE_URL, name, value })))
+      legacyCookiesImported = true
+    })()
+  }
+  try {
+    await legacyCookieImport
+  } catch (err) {
+    legacyCookieImport = null
+    throw err
+  }
+}
+
+/** 浏览器登录/验证码更新 cookie 后同步回旧文件，保留升级前的跨重启登录态。 */
+async function syncXifanBrowserCookies(): Promise<void> {
+  const part = getXifanBrowserSession()
+  const cookies = await part.cookies.get({ url: BASE_URL })
+  xifanSession.replaceCookies(cookies.map(({ name, value }) => ({ name, value })))
+  xifanSession.save()
+  await part.cookies.flushStore()
+}
+
+async function requestXifanService(
+  url: string,
+  options: Parameters<typeof requestXifanBrowser>[1] = {},
+) {
+  await prepareXifanBrowserCookies()
+  return requestXifanBrowser(url, options)
+}
+
+function assertXifanServiceResponse(status: number, body: Buffer): void {
+  assertScrapePageOk(status, body.toString('utf-8'), '稀饭')
+}
+
+function responseHeader(headers: Record<string, string | string[] | undefined>, name: string): string {
+  const value = headers[name.toLowerCase()]
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '')
+}
+/**
+ * 稀饭只读页面统一入口。
+ *
+ * 新 UAM 会给 HTTP 客户端返回 200 + Checking your Browser HTML。所有可解析的
+ * 稀饭 HTML 页面统一走持久 Chromium 分区：检查在不可见 WebContents 中完成，
+ * 正常页再串行读取 DOM。这样不会用主进程 HTTP 栈在验证后补打一遍、触发异常会话。
+ */
+async function getXifanPage(url: string) {
+  if (!isXifanPageUrl(url)) throw new Error('稀饭页面地址无效')
+  await prepareXifanBrowserCookies()
+  const page = await xifanPageLimiter.schedule(() => loadXifanBrowserPage(url))
+  const res = {
+    status: 200,
+    body: page.html,
+    bodyBuffer: Buffer.from(page.html),
+  }
+  assertScrapePageOk(res.status, res.body, '稀饭')
+  return res
+}
 
 export interface XifanSearchResult {
   title: string
@@ -104,54 +347,128 @@ function labelsToArray(m: Map<number, string> | undefined): string[] {
   return Array.from({ length: maxEp }, (_, i) => m.get(i + 1) ?? String(i + 1))
 }
 
+function xifanEpisodePageUrl(epPage: string, ep: number): string {
+  if (!Number.isSafeInteger(ep) || ep < 1) throw new Error('稀饭集数无效')
+  const pageUrl = epPage.replace('{ep}', String(ep))
+  if (!isXifanPageUrl(pageUrl)) throw new Error('稀饭播放页地址无效')
+  return pageUrl
+}
+
+/** 与下载器 formatEpUrl 保持同一补零规则。 */
+function xifanUrlFromTemplate(template: string, ep: number): string {
+  return template.replace(/\{:0?(\d*)d\}/, (_, width: string) =>
+    String(ep).padStart(width ? parseInt(width, 10) : 0, '0'))
+}
+
+function decodeXifanPlayerUrl(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 /**
- * 回源解析某一集的真实 mp4 地址:拉该集播放页,读 player_aaaa.url。
- * 模板只能拼出数字文件名,OVA 这类特殊集(文件名是 OVA.mp4 等)拼出来必 404,
- * 只有播放页里才有真实地址。解析不出来返回 null,由调用方决定怎么报错。
+ * 取得一集要交给播放器的最终地址。缓存 key 是具体播放页而非标题，避免同名番 /
+ * 不同线路串用；缓存命中完全不加载站点页面。`forceRefresh` 仅供 <video> 已经
+ * 报错后的单次兜底使用：主动丢掉旧地址并回源读取 player_aaaa.url，不探活、不重试。
  */
+export async function resolveEpPlaybackUrl(
+  template: string | null,
+  epPage: string,
+  ep: number,
+  forceRefresh = false,
+): Promise<string | null> {
+  const pageUrl = xifanEpisodePageUrl(epPage, ep)
+  if (!forceRefresh) {
+    const cached = (await xifanUrlCacheStore.read())[pageUrl]
+    if (cached && isFreshXifanUrl(cached)) return cached.url
+  }
+
+  const pending = xifanUrlInflight.get(pageUrl)
+  if (pending) return pending
+  if (forceRefresh) forgetXifanUrl(pageUrl)
+
+  const task = (async (): Promise<string | null> => {
+    let url: string | null = null
+    if (template && !forceRefresh) {
+      // 常规集可以从第 1 集模板纯计算出地址，不为「确认它还有效」再打一笔站点请求。
+      const templated = xifanUrlFromTemplate(template, ep)
+      if (!isHttpMediaUrl(templated)) throw new Error('稀饭播放地址格式无效')
+      url = templated
+      logInfo('xifan-resolve', `第 ${ep} 集地址由模板计算得到（零请求）：${url}`)
+    } else {
+      // 无模板的特殊集，或已有媒体错误的旧地址，才真正回源读取该集页面。
+      logInfo('xifan-resolve', `第 ${ep} 集${forceRefresh ? '强制刷新' : '无模板'}，回源读取：${pageUrl}`)
+      const res = await getXifanPage(pageUrl)
+      const data = parsePlayerData(res.body)
+      if (!data?.url) return null
+      const resolved = decodeXifanPlayerUrl(data.url)
+      if (!isHttpMediaUrl(resolved)) throw new Error('稀饭播放页未返回有效视频地址')
+      url = resolved
+      logInfo('xifan-resolve', `第 ${ep} 集拿到地址：${url}`)
+    }
+    rememberXifanUrl(pageUrl, url)
+    return url
+  })()
+  xifanUrlInflight.set(pageUrl, task)
+  try {
+    return await task
+  } finally {
+    xifanUrlInflight.delete(pageUrl)
+  }
+}
+
+/** 下载器也走同一份 24h 地址缓存；它没有模板时始终由播放页给出真实地址。 */
 export async function resolveEpRealUrl(epPage: string, ep: number): Promise<string | null> {
-  const res = await xifanSession.get(epPage.replace('{ep}', String(ep)))
-  const data = parsePlayerData(res.body)
-  if (!data?.url) return null
-  return decodeURIComponent(data.url)
+  return resolveEpPlaybackUrl(null, epPage, ep)
 }
 
 // ── captcha ────────────────────────────────────────────────────────────────────
 
 export async function getCaptcha(): Promise<{ image_b64: string }> {
-  const res = await xifanSession.get(`${BASE_URL}/verify/index.html?t=${Date.now()}`)
-  xifanSession.save()
-  return { image_b64: res.bodyBuffer.toString('base64') }
+  const res = await requestXifanService(`${BASE_URL}/verify/index.html?t=${Date.now()}`, {
+    headers: { Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8' },
+  })
+  assertXifanServiceResponse(res.status, res.body)
+  if (!responseHeader(res.headers, 'content-type').toLowerCase().startsWith('image/')) {
+    throw new Error('稀饭验证码图片加载失败：站点没有返回图片')
+  }
+  await syncXifanBrowserCookies()
+  return { image_b64: res.body.toString('base64') }
 }
 
 // ── verify ─────────────────────────────────────────────────────────────────────
 
 export async function verifyCaptcha(code: string): Promise<{ success: boolean }> {
   const url = `${BASE_URL}/index.php/ajax/verify_check?type=search&verify=${encodeURIComponent(code)}`
-  const res = await xifanSession.get(url, {
-    'X-Requested-With': 'XMLHttpRequest',
-    Accept: 'application/json, text/javascript, */*; q=0.01',
+  const res = await requestXifanService(url, {
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest',
+      Accept: 'application/json, text/javascript, */*; q=0.01',
+    },
   })
-  xifanSession.save()
-  const t = res.body
+  assertXifanServiceResponse(res.status, res.body)
+  await syncXifanBrowserCookies()
+  const t = res.body.toString('utf-8')
   const success = t.includes('"code":1') || t.includes('成功') || t.toLowerCase().includes('"msg":"ok"')
   return { success }
 }
 
 // ── 账号登录 ───────────────────────────────────────────────────────────────────
-// 登录用同一个 xifanSession(与搜索验证码共用 cookie 罐)。站点是 maccms 模板,
-// 登录成功后种下 user_id cookie(非空即已登录,取自站点自己的前端逻辑
-// `EC.Cookie.Get('user_id')`);验证码图与搜索共用 /index.php/verify/index.html,
-// 复用上面的 getCaptcha 即可,不用单开一个登录验证码接口。
+// 登录、验证码和页面请求统一由同一个 Chromium 分区处理。旧 cookie 文件只作
+// 升级迁移与跨重启兼容；渲染进程始终只拿登录布尔值，不接触 cookie 明文。
 
 export interface XifanAuthStatus {
   loggedIn: boolean
 }
 
-/** 登录态:本地 cookie 罐里有没有非空的 user_id(退出/从未登录时该 cookie 不存在)。 */
-export function getXifanAuthStatus(): XifanAuthStatus {
-  const uid = xifanSession.getCookie('user_id')
-  return { loggedIn: !!uid && uid !== '0' }
+/** 登录态:浏览器分区里有没有非空 user_id(退出/从未登录时该 cookie 不存在)。 */
+export async function getXifanAuthStatus(): Promise<XifanAuthStatus> {
+  await prepareXifanBrowserCookies()
+  const cookies = await getXifanBrowserSession().cookies.get({ url: BASE_URL, name: 'user_id' })
+  const uid = cookies.find((cookie) => cookie.value && cookie.value !== '0')?.value
+  return { loggedIn: !!uid }
 }
 
 interface XifanAjaxResult {
@@ -174,22 +491,34 @@ export async function login(
   verify: string,
 ): Promise<{ success: boolean; message: string }> {
   const body = new URLSearchParams({ user_name: username, user_pwd: password, verify }).toString()
-  const res = await xifanSession.post(`${BASE_URL}/index.php/user/login`, body, {
-    'X-Requested-With': 'XMLHttpRequest',
-    Accept: 'application/json, text/javascript, */*; q=0.01',
+  const res = await requestXifanService(`${BASE_URL}/index.php/user/login`, {
+    method: 'POST',
+    body,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Requested-With': 'XMLHttpRequest',
+      Accept: 'application/json, text/javascript, */*; q=0.01',
+    },
   })
-  xifanSession.save()
-  const { code, msg } = parseAjaxResult(res.body)
+  assertXifanServiceResponse(res.status, res.body)
+  await syncXifanBrowserCookies()
+  const { code, msg } = parseAjaxResult(res.body.toString('utf-8'))
   return { success: Number(code) === 1, message: msg ?? '登录失败' }
 }
 
 export async function logout(): Promise<XifanAuthStatus> {
-  const res = await xifanSession.post(`${BASE_URL}/index.php/user/logout`, '', {
-    'X-Requested-With': 'XMLHttpRequest',
-    Accept: 'application/json, text/javascript, */*; q=0.01',
+  const res = await requestXifanService(`${BASE_URL}/index.php/user/logout`, {
+    method: 'POST',
+    body: '',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Requested-With': 'XMLHttpRequest',
+      Accept: 'application/json, text/javascript, */*; q=0.01',
+    },
   })
-  xifanSession.save()
-  void parseAjaxResult(res.body) // 退出接口偶尔在 cookie 已失效时也回错误 msg,不影响本地状态判断
+  assertXifanServiceResponse(res.status, res.body)
+  await syncXifanBrowserCookies()
+  void parseAjaxResult(res.body.toString('utf-8')) // 退出接口偶尔在 cookie 已失效时也回错误 msg,不影响本地状态判断
   return getXifanAuthStatus()
 }
 
@@ -231,23 +560,22 @@ function parseSearchPage(html: string): XifanSearchResult[] {
 
 export async function search(keyword: string): Promise<XifanSearchResult[] | { needs_captcha: true }> {
   const url = `${BASE_URL}/search.html?wd=${encodeURIComponent(keyword)}`
-  const res = await xifanSession.get(url)
-  xifanSession.save()
+  logInfo('xifan-search', `搜索请求：${url}`)
+  const res = await getXifanPage(url)
 
-  // CF 拦截 / 非 2xx 先显式抛错,别让异常页被解析成「0 结果 → 搜索不到结果」。
-  assertScrapePageOk(res.status, res.body, '稀饭')
-
-  if (needsCaptcha(res.body)) return { needs_captcha: true }
+  if (needsCaptcha(res.body)) {
+    logInfo('xifan-search', `站点要求输入验证码：${url}`)
+    return { needs_captcha: true }
+  }
 
   // Sequential pagination via shared helper — follows `下一页` links with 1s delay.
-  // The session cookie persists across page fetches so the captcha gate stays open.
+  // Chromium 分区会在分页之间保留会话，避免挑战完成后又回退到主进程 HTTP 栈。
   return crawlAllPages({
     firstHtml: res.body,
     baseUrl: BASE_URL,
     parsePage: parseSearchPage,
     fetchHtml: async (pageUrl) => {
-      const r = await xifanSession.get(pageUrl)
-      xifanSession.save()
+      const r = await getXifanPage(pageUrl)
       if (needsCaptcha(r.body)) throw new Error('captcha re-appeared mid-pagination')
       return r.body
     },
@@ -314,8 +642,7 @@ const sourceLimiter = new RateLimiter({
  */
 async function fetchSourceEp1(animeId: string, sourceIdx: number): Promise<{ template: string | null; ep1: string; epPage: string; epLabels: string[] }> {
   const epPage = epPageTemplate(animeId, sourceIdx)
-  const res = await sourceLimiter.schedule(() => xifanSession.get(epPage.replace('{ep}', '1')))
-  assertScrapePageOk(res.status, res.body, '稀饭')
+  const res = await sourceLimiter.schedule(() => getXifanPage(epPage.replace('{ep}', '1')))
   const data = parsePlayerData(res.body)
   // 该源自己的播放页上它就是激活源,选集列表一定在,顺手把集名也解析出来
   const epLabels = labelsToArray(parseEpLabels(res.body, animeId).get(sourceIdx))
@@ -324,9 +651,16 @@ async function fetchSourceEp1(animeId: string, sourceIdx: number): Promise<{ tem
   return { template: buildTemplate(ep1Url), ep1: ep1Url, epPage, epLabels }
 }
 
-export async function watch(watchUrl: string): Promise<XifanWatchInfo> {
-  const res = await xifanSession.get(watchUrl)
-  xifanSession.save()
+export async function watch(watchUrl: string, preferCache = false): Promise<XifanWatchInfo> {
+  if (preferCache) {
+    const cached = (await xifanWatchCacheStore.read())[watchUrl]
+    if (cached && isFreshXifanWatchEntry(cached)) {
+      logInfo('xifan-watch', `命中本地 watch 缓存,跳过请求：${watchUrl}`)
+      return cached.info
+    }
+  }
+  logInfo('xifan-watch', `请求 watch 页：${watchUrl}`)
+  const res = await getXifanPage(watchUrl)
   const html = res.body
 
   const data = parsePlayerData(html)
@@ -375,7 +709,10 @@ export async function watch(watchUrl: string): Promise<XifanWatchInfo> {
     return { idx, name, template: null, ep1: '', epPage: epPageTemplate(animeId, idx), epLabels: pageLabels }
   })
 
-  return { title, id: animeId, total, sources }
+  const info: XifanWatchInfo = { title, id: animeId, total, sources }
+  logInfo('xifan-watch', `拿到集数信息：《${title}》总集数=${total}，线路数=${sources.length}`)
+  rememberXifanWatch(watchUrl, info)
+  return info
 }
 
 /**
