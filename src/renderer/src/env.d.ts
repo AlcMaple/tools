@@ -232,9 +232,11 @@ declare global {
       login: (username: string, password: string, verify: string) => Promise<{ success: boolean; message: string }>
       logout: () => Promise<{ loggedIn: boolean }>
       search: (keyword: string) => Promise<XifanSearchResult[] | { needs_captcha: true }>
-      getWatch: (watchUrl: string) => Promise<XifanWatchInfo>
+      getWatch: (watchUrl: string, preferCache?: boolean) => Promise<XifanWatchInfo>
       /** 在线播放:模板直链 404 时回源播放页解析真实地址(找不到返回 null)。 */
       resolveEpUrl: (epPage: string, ep: number) => Promise<string | null>
+      /** 逐集 MP4 地址缓存 24h；video 已报错时 forceRefresh=true 回源更新一次。 */
+      resolvePlayUrl: (template: string | null, epPage: string, ep: number, forceRefresh?: boolean) => Promise<string | null>
       /** 下载配置面板专用:watch() 只解析当前激活源,这里主动并发补全其余线路。 */
       resolveAllSources: (animeId: string, sources: XifanSource[]) => Promise<XifanSource[]>
       startDownload: (

@@ -12,6 +12,7 @@ import { initConsoleCapture, logInfo } from './shared/logger'
 import { MEDIA_PROXY_SCHEME, registerMediaProxy } from './shared/media-proxy'
 import { disposeMediaCache, sweepMediaCacheDir } from './shared/media-cache'
 import { disposeHlsPrefetch } from './shared/hls-prefetch'
+import { disposeXifanBackgroundWindow, isXifanBackgroundWindow } from './xifan/browser-challenge'
 
 // 接管 console.error/warn → 同时落盘到 main.log,让主进程所有报错可查。
 initConsoleCapture()
@@ -185,6 +186,11 @@ function createWindow(): void {
       if (process.platform === 'darwin') app.dock?.hide()
     }
   })
+  // Xifan 的 WebContents 是无界面的后台页面，不能在主窗口真正关闭后独自留住
+  // 进程，更不能被 Dock / 托盘的「显示主界面」误当成主窗口而显示出来。
+  mainWindow.on('closed', () => {
+    disposeXifanBackgroundWindow()
+  })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -200,7 +206,7 @@ if (app.isPackaged) {
     app.quit()
   } else {
     app.on('second-instance', () => {
-      const win = BrowserWindow.getAllWindows()[0]
+      const win = BrowserWindow.getAllWindows().find((item) => !isXifanBackgroundWindow(item))
       if (win) {
         if (win.isMinimized()) win.restore()
         win.show()
@@ -342,7 +348,7 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     // 点 Dock 图标:没窗口就建,有(可能是被隐藏的)就唤回来 —— 避免「关闭到托盘」
     // 后窗口还在但隐藏着,点 Dock 却没反应。
-    const win = BrowserWindow.getAllWindows()[0]
+    const win = BrowserWindow.getAllWindows().find((item) => !isXifanBackgroundWindow(item))
     if (!win) { createWindow(); return }
     if (win.isMinimized()) win.restore()
     win.show()
