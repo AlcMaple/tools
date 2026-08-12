@@ -8,7 +8,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+build/*
 develop-eggs/
 dist/
 downloads/
@@ -212,7 +212,8 @@ __marimo__/
 # electron
 node_modules/
 dist/
-build/
+build/*
+!build/installer.nsh
 out/
 logs/
 *.tsbuildinfo
