@@ -6,6 +6,16 @@
 1. 项目根目录新增两份持续维护的文档——`AI_GUIDELINES.md`（AI 生成规范）和本文件 `DEVLOG.md`（开发日志）
 2. 每次提交前都需要在 DEVELOG.md 对改动进行白盒记录,提交从下往上是最新的提交,并且要对同一个功能进行分类,无需分类的提交单独作为二级标题
 
+## 安装包
+
+### 2026-08-12 fix(build): 更新时自动结束旧进程，避免"无法关闭"卡死安装
+
+**效果**：
+
+1. MapleTools 有"关闭到托盘"设计，用户点 × 只是隐藏窗口、进程仍在后台/托盘运行；更新时旧安装包的 NSIS 检测到同名进程占用，会弹窗"MapleTools 无法关闭，请手动关闭它后重试"，取消则报 `Failed to uninstall old application files`，安装卡死。
+2. 新增 `build/installer.nsh`，用 electron-builder 提供的 `preInit` 钩子（安装器最早期执行，早于自带的进程占用检测）静默 `taskkill /F /IM MapleTools.exe /T`，把旧进程连子进程一起结束掉，检测阶段就不会再发现运行中的实例，不再需要用户手动关闭。
+3. `package.json` 的 `build.nsis` 加了 `"include": "build/installer.nsh"` 接入该钩子。此改动只影响**安装包本身**，仅对本次发布起（0.14.1）及之后新打出的安装包生效，用户手上已下载的旧安装包不受影响。
+
 ## 网页版
 
 ### 2026-08-08 perf(web): 优化稀饭线路一跳转后卡顿
