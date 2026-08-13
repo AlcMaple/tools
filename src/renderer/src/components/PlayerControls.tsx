@@ -46,6 +46,9 @@ export default function PlayerControls({
   const [hoverRatio, setHoverRatio] = useState<number | null>(null)
   const [scrubbing, setScrubbing] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
+  // 缓冲中:自研控制条接管后就没有原生控件那个转圈了,地址解析完到真正出画面之间
+  // (稀饭冷启动要好几秒)整块是纯黑,看着像卡死 —— 这里自己补一个。
+  const [waiting, setWaiting] = useState(true)
 
   const barRef = useRef<HTMLDivElement | null>(null)
   const volRef = useRef<HTMLDivElement | null>(null)
@@ -140,6 +143,8 @@ export default function PlayerControls({
     setBuffered(readBuffered(video))
     setHoverRatio(null)
     setScrubbing(false)
+    // readyState < HAVE_FUTURE_DATA = 还不能连续播下去。换集时新元素一定是 0。
+    setWaiting(video.readyState < 3)
 
     const onPlay = (): void => {
       setPlaying(true)
@@ -148,7 +153,12 @@ export default function PlayerControls({
     const onPause = (): void => {
       setPlaying(false)
       setVisible(true)
+      // 用户主动暂停时画面停在那一帧,不该再转圈(后台仍在继续缓冲,见 media-cache)
+      setWaiting(false)
     }
+    const onWaiting = (): void => setWaiting(true)
+    const onSeeking = (): void => setWaiting(true)
+    const onReady = (): void => setWaiting(false)
     const onTime = (): void => setCurrent(video.currentTime)
     const onDuration = (): void => setDuration(Number.isFinite(video.duration) ? video.duration : 0)
     const onProgress = (): void => setBuffered(readBuffered(video))
@@ -171,6 +181,11 @@ export default function PlayerControls({
     video.addEventListener('volumechange', onVolume)
     video.addEventListener('ratechange', onRate)
     video.addEventListener('click', onClick)
+    video.addEventListener('waiting', onWaiting)
+    video.addEventListener('stalled', onWaiting)
+    video.addEventListener('seeking', onSeeking)
+    video.addEventListener('playing', onReady)
+    video.addEventListener('canplay', onReady)
     return () => {
       video.removeEventListener('play', onPlay)
       video.removeEventListener('pause', onPause)
@@ -181,9 +196,26 @@ export default function PlayerControls({
       video.removeEventListener('volumechange', onVolume)
       video.removeEventListener('ratechange', onRate)
       video.removeEventListener('click', onClick)
+      video.removeEventListener('waiting', onWaiting)
+      video.removeEventListener('stalled', onWaiting)
+      video.removeEventListener('seeking', onSeeking)
+      video.removeEventListener('playing', onReady)
+      video.removeEventListener('canplay', onReady)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoRef, videoKey])
+
+  // 几十毫秒的微小卡顿不该闪一下转圈:延迟 300ms 才真的显示,期间恢复就当没发生过。
+  // 首次进入等的是好几秒,这 300ms 无感。
+  const [showWait, setShowWait] = useState(false)
+  useEffect(() => {
+    if (!waiting) {
+      setShowWait(false)
+      return
+    }
+    const t = window.setTimeout(() => setShowWait(true), 300)
+    return () => window.clearTimeout(t)
+  }, [waiting])
 
   // 自动隐藏:鼠标在播放区移动即显示,停止 2.6s 且仍在播放则收起;暂停时强制常显
   useEffect(() => {
@@ -274,12 +306,20 @@ export default function PlayerControls({
     'pointer-events-auto p-1 rounded-md text-white/90 hover:text-primary hover:bg-white/10 transition-colors shrink-0'
 
   return (
-    <div
-      ref={rootRef}
-      className={`pointer-events-none absolute inset-0 flex flex-col justify-end transition-opacity duration-200 ${
-        visible ? 'opacity-100' : 'opacity-0'
-      }`}
-    >
+    <>
+      {/* 缓冲指示层单独放在控制条**外面** —— 控制条会随鼠标静止淡出,转圈不能跟着消失 */}
+      {showWait && (
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-white/75">
+          <span className="material-symbols-outlined animate-spin" style={{ fontSize: 32 }}>progress_activity</span>
+          <span className="font-label text-xs tracking-widest">缓冲中…</span>
+        </div>
+      )}
+      <div
+        ref={rootRef}
+        className={`pointer-events-none absolute inset-0 flex flex-col justify-end transition-opacity duration-200 ${
+          visible ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
       <div
         className={`bg-gradient-to-t from-black/85 via-black/30 to-transparent px-3 pb-2 pt-10 md:px-4 ${
           visible ? 'pointer-events-auto' : 'pointer-events-none'
@@ -394,7 +434,8 @@ export default function PlayerControls({
             </button>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
