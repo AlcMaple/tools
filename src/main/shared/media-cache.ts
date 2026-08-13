@@ -54,6 +54,12 @@ const CHUNK_BYTES = 512 * 1024
  */
 const COLD_START_BYTES = 4 * CHUNK_BYTES
 /**
+ * 距文件末尾这么近的开放式 Range 视为「Chromium 在取尾部 moov 索引」,直连放行、不建流
+ * (判据与代价见 tryServeFromCache 里的说明)。4MiB 够覆盖正片单集的索引体积,同时只让
+ * 「真的拖到最后约 1 分钟」这一种情况退化成直连。
+ */
+const TAIL_DIRECT_BYTES = 4 * 1024 * 1024
+/**
  * 6 个 worker 各自用独立的 Electron Session(见 `getRangeSession`)对同一条已解析
  * 链接发并发 Range——独立 Session 是必须的,避免共用 Session 时 HTTP/2 连接池把
  * 多个 Range 挤到一条连接上互相卡住;链接本身允许并发,不用每个 worker 单独解析。
@@ -137,6 +143,9 @@ let rangeSessions: ElectronSession[] | null = null
 let seekSeq = 0
 /** 距上一次真正建流为止被防抖合并掉的中间请求数,只用于日志(让「一次拖动只建一条流」可数)。 */
 let mergedSeeks = 0
+/** 同一地址连续建流的次数,只用于日志(见 ensureSession 里的说明)。 */
+let lastBuiltKey = ''
+let buildsForKey = 0
 
 function getRangeSession(slot: number): ElectronSession {
   // Chromium 会把同一 Session 的请求复用到一个 HTTP/2 连接上;pan.wo 在这个形态下
@@ -166,13 +175,27 @@ function disposeSession(s: Session): void {
   s.idleTimer = null
   s.ev.emit('progress') // 唤醒可能正卡在等待里的读取端
   // **同步**删:这个函数也在 app 'before-quit' 里跑,异步 unlink 的回调等不到
-  // (dev 下紧接着就是 process.exit(0))。Windows 上写句柄可能还没关 → 删不掉,
-  // 交给下次启动的 sweepMediaCacheDir 兜底。
+  // (dev 下紧接着就是 process.exit(0))。
   try {
     rmSync(s.file, { force: true })
+    return
   } catch {
-    /* 占用/已不在 —— 启动扫描会收拾 */
+    /* 多半是写句柄还没关(Windows 上 abort 到 file.close() 之间有一小段) */
   }
+  // 同步删失败**不能**就直接扔给下次启动的 sweep:退出播放页后这个文件会一直躺在
+  // temp 里(一集几百 MB),用户本次会话里再也收不掉。写句柄在 abort 后的下一个
+  // tick 就会关,所以退到后台重试几次;仍失败(应用正在退出)才由 sweep 兜底。
+  void (async () => {
+    for (const wait of [200, 800, 3000]) {
+      await sleep(wait)
+      try {
+        await fsp.rm(s.file, { force: true })
+        return
+      } catch {
+        /* 还占着,下一轮再试 */
+      }
+    }
+  })()
 }
 
 /** 换集/换源/退出播放页/退出应用时调用:中止后台流并删临时文件。 */
@@ -552,9 +575,15 @@ function ensureSession(
   // 建流是唯一会真正发起网络请求的入口。一次拖动可能出现多条(手速慢下来、停顿超过
   // 防抖窗口就会被当成「停下了」而开始缓冲,实测一次长拖动 4 条),看的是「合并 N 条」
   // 这个数——N 越大说明挡掉的中间请求越多。
+  // 「同一地址第 N 次建流」是判断有没有**重复下载**的唯一凭据:一次正常观看应当只有
+  // 第 1 次(开场),之后无论 Chromium 发多少条 Range 都该走「命中本地缓存」。同一地址
+  // 的次数持续往上涨 = 有两路在抢同一个 session(例如游离的 <video> 还在取流),不是
+  // 拖动进度条造成的 —— 拖动会换偏移,但那时用户是有操作的。
+  buildsForKey = target === lastBuiltKey ? buildsForKey + 1 : 1
+  lastBuiltKey = target
   console.log(
     `[media-cache] #${seq} 建流：本地没有，为偏移 ${start} 新建冷 seek 缓冲` +
-    `（防抖合并掉 ${mergedSeeks} 条中间请求）`,
+    `（同一地址第 ${buildsForKey} 次建流，防抖合并掉 ${mergedSeeks} 条中间请求）`,
   )
   mergedSeeks = 0
   void runFetchLoop(s, target, headers)
@@ -620,6 +649,22 @@ export async function tryServeFromCache(
     start = Number(m[1])
   }
   if (!Number.isSafeInteger(start) || start < 0) return null
+
+  // Chromium 播 mp4 的固定动作:开场先要 `bytes=0-`,紧接着要**文件尾部**的 moov 索引
+  // (这个 mp4 不是 faststart,时长/关键帧表都在末尾),拿到索引才回到开头正式播。
+  // 尾部这条同样是开放式 Range,形态和「拖到片尾」一模一样,旧代码把它当冷 seek:
+  //   - 为几百 KB 的索引按冷 seek 规格攒 COLD_START_BYTES 连续缓冲才吐首字节
+  //     (实测白等 5982ms + 2069ms,用户看到的就是「进去等半天才播」);
+  //   - 还顺手把开场那条流 dispose 掉,回到开头时开场那段得重下一遍。
+  // 现在:靠近文件末尾的开放式 Range 一律放行直连,并且**不碰现有 session** —— 索引很小,
+  // 直连一次就够;开场的预抓不被打断,Chromium 回到开头时正好命中缓存,全程只建一次流。
+  // 代价:真的拖到最后 TAIL_DIRECT_BYTES 以内时退化成直连(能播,只是没有预抓加速)。
+  if (
+    current && current.key === target && current.total > 0 &&
+    start > 0 && current.total - start <= TAIL_DIRECT_BYTES
+  ) {
+    return null
+  }
 
   // 拖动进度条防抖:每条请求都推进 seekSeq(命中缓存的那条也算,它同样能作废还在等待的
   // 冷 seek);只有要重开流的冷 seek 才真的等这 180ms,等完发现序号变了就交给挂起观察。

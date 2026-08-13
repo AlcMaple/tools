@@ -28,7 +28,7 @@
 //     mtmedia://,否则 hls.js 在渲染进程直取 CDN 会被跨源策略拦);**少数老番线路
 //     给的是 .mp4 直链**,那就走和稀饭一样的直喂路径。按后缀分流,别假设 girigiri
 //     一定是 HLS。
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
 import shaka from 'shaka-player'
@@ -117,6 +117,22 @@ function biliBangumiEmbedUrl(raw: string): string | null {
 function toMediaProxy(url: string): string {
   if (!/^https?:\/\//i.test(url)) return url
   return `mtmedia://media/?u=${encodeURIComponent(url)}`
+}
+
+/**
+ * 摘掉一个 <video> 必须**显式停掉它**:React 只是把元素从 DOM 上拿下来,而 Chromium 里
+ * 游离(detached)的 media element 会一直播到被 GC —— 声音不停、mtmedia 还在取流,于是
+ * 主进程刚被 media:release 清掉的临时文件又被它拉起来重下一份。用户实测的三个症状
+ * (暂停后仍有声音 / 恢复后两路声音叠加 / 退出播放页声音还在)都是同一个游离元素。
+ * pause + 清 src + load():load() 把当前媒体资源整个断开,顺带取消进行中的请求。
+ */
+function detachVideo(el: HTMLVideoElement): void {
+  try {
+    el.pause()
+    el.removeAttribute('src')
+    el.srcObject = null
+    el.load()
+  } catch { /* 元素已被销毁,忽略 */ }
 }
 
 /** 集数格子的短显示:「第01集/话」类标签抽出数字,OVA/BD 等特殊标签原样展示。 */
@@ -358,7 +374,13 @@ export default function OnlinePlayer(): JSX.Element {
   // 离开播放页时通知主进程收掉在线播放的缓冲(mp4 后台顺序流 + HLS 分片预取)——
   // 不收的话关掉播放器后台还在把整集下满,白占带宽和磁盘/内存。换集换源不用管:
   // 目标地址一变,主进程那边旧 session 自己就被顶掉了。
-  useEffect(() => () => window.systemApi.releaseMedia(), [])
+  // 顺序要紧:先停掉 <video>(ref 回调里的 detachVideo 已在 commit 阶段做过一遍,
+  // 这里是兜底),再通知主进程 release —— 反过来的话,还在播的元素会立刻发新的
+  // mtmedia 请求,把刚删掉的临时文件重新建出来。
+  useEffect(() => () => {
+    if (videoRef.current) detachVideo(videoRef.current)
+    window.systemApi.releaseMedia()
+  }, [])
 
   // ── B 站登录态:选中的是 B 站源时查一次 ────────────────────────────────────
   // 画质由登录态决定(匿名最高 480P,登录后才有 1080P),所以自研播放的 B 站源也要查。
@@ -473,6 +495,15 @@ export default function OnlinePlayer(): JSX.Element {
   // Chromium 不原生支持 m3u8,靠 hls.js 走 MSE 逐段喂。列表/分片/AES 密钥全部
   // 经 mtmedia 代理(主进程已把列表里的地址重写成 mtmedia://),同源不受跨源策略限制。
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  // <video> 的 ref 回调:换集/换线路(key=url 变)、换播放形态、离开播放页时,React 会
+  // 先用 null 调一次 —— 在这里把上一个元素收干净(见 detachVideo),再指向新的。
+  // **必须 useCallback**:内联的 ref 回调每次渲染都是新函数,React 会在每次渲染时
+  // 先用 null 再用元素回调一遍,那会变成「随便点个按钮就把正在播的视频掐了」。
+  const setVideoEl = useCallback((el: HTMLVideoElement | null): void => {
+    const prev = videoRef.current
+    if (prev && prev !== el) detachVideo(prev)
+    videoRef.current = el
+  }, [])
   // 播放区容器(16:9 盒子):自定义控制条的全屏目标 + 悬停时间提示的挂载点
   const playerBoxRef = useRef<HTMLDivElement | null>(null)
   const [playerFs, setPlayerFs] = useState(false)
@@ -765,7 +796,7 @@ export default function OnlinePlayer(): JSX.Element {
               {view.mode === 'video' && (
                 <video
                   key={view.url}
-                  ref={videoRef}
+                  ref={setVideoEl}
                   // HLS 由 hls.js 经 MSE 喂,不设 src;mp4 直链走同源流代理直接喂。
                   src={view.isHls ? undefined : toMediaProxy(view.url)}
                   autoPlay
@@ -776,7 +807,7 @@ export default function OnlinePlayer(): JSX.Element {
               )}
               {view.mode === 'dash' && (
                 // DASH 由 shaka 经 MSE 喂,不设 src、不挂 onError(失败走 shaka 的 error 事件)
-                <video ref={videoRef} autoPlay className="h-full w-full object-contain" />
+                <video ref={setVideoEl} autoPlay className="h-full w-full object-contain" />
               )}
               {(view.mode === 'video' || view.mode === 'dash') && (
                 <span ref={tabHopPostRef} tabIndex={0} className="pointer-events-none absolute h-px w-px opacity-0" />
