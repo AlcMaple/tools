@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 650" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/>
+    </marker>
+    <marker id="a-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/>
+    </marker>
+    <marker id="a-pink" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#b96372"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1038" height="648" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">换集 / 退出播放页时，旧播放器要亲手停掉</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">把播放器从页面上「拿掉」不等于「停下」——它会一直播到被垃圾回收：声音还在响，还在继续下载，刚删的临时文件又被它建了出来</text>
+
+  <!-- ══════════ 左：旧行为 ══════════ -->
+  <rect x="32" y="86" width="480" height="424" rx="12" fill="#fdf6f7" stroke="#e0bcc2"/>
+  <text x="52" y="110" font-size="13" font-weight="700" fill="#8e4451">旧行为（这次修掉的 bug）</text>
+
+  <rect x="52" y="126" width="440" height="42" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="272" y="152" text-anchor="middle" font-size="12" fill="#4a454a">换集 / 换线路 / 返回上一页</text>
+  <path d="M272 168 V186" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="52" y="188" width="440" height="42" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="272" y="214" text-anchor="middle" font-size="12" fill="#4a454a">页面把旧的播放器元素拿掉了</text>
+  <path d="M272 230 V248" stroke="#b96372" stroke-width="1.6" marker-end="url(#a-pink)"/>
+
+  <rect x="52" y="250" width="440" height="58" rx="9" fill="#fbeced" stroke="#d79aa4"/>
+  <text x="272" y="273" text-anchor="middle" font-size="12.5" font-weight="700" fill="#8e4451">但它还在播 —— 一直播到被垃圾回收</text>
+  <text x="272" y="294" text-anchor="middle" font-size="11" fill="#96606a">没人再看得见它，也没人能暂停它</text>
+  <path d="M132 308 V330" stroke="#b96372" stroke-width="1.4" marker-end="url(#a-pink)"/>
+  <path d="M272 308 V330" stroke="#b96372" stroke-width="1.4" marker-end="url(#a-pink)"/>
+  <path d="M412 308 V330" stroke="#b96372" stroke-width="1.4" marker-end="url(#a-pink)"/>
+
+  <rect x="52" y="332" width="138" height="60" rx="9" fill="#ffffff" stroke="#d79aa4"/>
+  <text x="121" y="356" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8e4451">声音还在响</text>
+  <text x="121" y="376" text-anchor="middle" font-size="10.5" fill="#96606a">暂停 / 退出都停不掉</text>
+
+  <rect x="203" y="332" width="138" height="60" rx="9" fill="#ffffff" stroke="#d79aa4"/>
+  <text x="272" y="356" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8e4451">还在继续下载</text>
+  <text x="272" y="376" text-anchor="middle" font-size="10.5" fill="#96606a">白占带宽</text>
+
+  <rect x="354" y="332" width="138" height="60" rx="9" fill="#ffffff" stroke="#d79aa4"/>
+  <text x="423" y="356" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8e4451">临时文件回来了</text>
+  <text x="423" y="376" text-anchor="middle" font-size="10.5" fill="#96606a">刚删掉又被它建一份</text>
+
+  <path d="M272 392 V412" stroke="#b96372" stroke-width="1.6" marker-end="url(#a-pink)"/>
+
+  <rect x="52" y="414" width="440" height="76" rx="9" fill="#fbeced" stroke="#d79aa4"/>
+  <text x="272" y="438" text-anchor="middle" font-size="12.5" font-weight="700" fill="#8e4451">新旧两个播放器同时要数据</text>
+  <text x="272" y="459" text-anchor="middle" font-size="11" fill="#96606a">它们要的位置不一样，会轮流把对方的下载掐掉重开</text>
+  <text x="272" y="478" text-anchor="middle" font-size="11" fill="#96606a">→ 同一集真的被下了两遍（日志里「建流」会反复出现）</text>
+
+  <!-- ══════════ 右：现在 ══════════ -->
+  <rect x="528" y="86" width="480" height="424" rx="12" fill="#f5faf7" stroke="#a9cbb6"/>
+  <text x="548" y="110" font-size="13" font-weight="700" fill="#316247">现在：只有「要被拿掉」的播放器才停</text>
+
+  <!-- 判据：还在不在页面上 -->
+  <rect x="548" y="124" width="440" height="126" rx="9" fill="#ffffff" stroke="#7fad91"/>
+  <text x="568" y="147" font-size="12" font-weight="700" fill="#3d6b51">判断只看一件事：这个播放器还在不在页面上</text>
+
+  <rect x="566" y="159" width="12" height="12" rx="3" fill="#dfeef4" stroke="#8fb4c8"/>
+  <text x="588" y="169" font-size="11.5" font-weight="700" fill="#2f4d66">还在 —— 按了暂停、拖进度条</text>
+  <text x="588" y="187" font-size="11" fill="#4b6377">什么都不做。后台照常继续缓冲、继续下载，恢复播放依然秒接</text>
+
+  <path d="M566 199 H970" stroke="#e2dcdf"/>
+
+  <rect x="566" y="211" width="12" height="12" rx="3" fill="#e8f3ec" stroke="#7fad91"/>
+  <text x="588" y="221" font-size="11.5" font-weight="700" fill="#316247">要被拿掉 —— 换集、换线路、换播放形态、离开播放页</text>
+  <text x="588" y="239" font-size="11" fill="#456b54">拿掉之前先亲手停掉它，别留给垃圾回收</text>
+
+  <path d="M768 250 V268" stroke="#4b8f6a" stroke-width="1.6" marker-end="url(#a-green)"/>
+
+  <!-- 怎么停 -->
+  <rect x="548" y="270" width="440" height="76" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="768" y="293" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">怎么停：让这个页面元素跟视频断开</text>
+  <text x="768" y="314" text-anchor="middle" font-size="11" fill="#456b54">声音立刻停，它在途的下载请求一并取消</text>
+  <text x="768" y="333" text-anchor="middle" font-size="11" fill="#456b54">只动页面上这个元素，主进程里的地址缓存一个都不碰</text>
+
+  <path d="M768 346 V364" stroke="#4b8f6a" stroke-width="1.6" marker-end="url(#a-green)"/>
+
+  <!-- 离开播放页多一步 -->
+  <rect x="548" y="366" width="440" height="76" rx="9" fill="#ffffff" stroke="#7fad91"/>
+  <text x="768" y="389" text-anchor="middle" font-size="12.5" font-weight="700" fill="#3d6b51">离开播放页还多一步，顺序不能反</text>
+  <text x="768" y="410" text-anchor="middle" font-size="11" fill="#5b7d68">先停播放器 → 再让主进程删临时文件</text>
+  <text x="768" y="429" text-anchor="middle" font-size="11" fill="#5b7d68">反过来的话，还在播的那个会立刻把文件重新建出来</text>
+
+  <path d="M768 442 V460" stroke="#4b8f6a" stroke-width="1.6" marker-end="url(#a-green)"/>
+
+  <!-- 结果 -->
+  <rect x="548" y="462" width="440" height="34" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="768" y="484" text-anchor="middle" font-size="12" font-weight="700" fill="#316247">任何时刻都只有一个播放器在取流</text>
+
+  <!-- ══════════ 底部：怎么自查 + 缓存归属 ══════════ -->
+  <rect x="32" y="526" width="976" height="100" rx="12" fill="#f4f7fa" stroke="#a8bccd"/>
+  <text x="52" y="552" font-size="13" font-weight="700" fill="#2f4d66">地址缓存一个都没动，看日志可以自查</text>
+  <text x="52" y="576" font-size="11.5" fill="#4b6377">停掉的只是页面上那个播放器元素。老番的 7 天播放页缓存、每一集 24 小时的播放地址缓存都在主进程里，原样保留——重新观看仍是零请求命中，不会再去问稀饭一次。</text>
+  <text x="52" y="597" font-size="11.5" fill="#4b6377">被删的只有已经下到本地的那段视频数据（签名地址一次性，留着也没用）。</text>
+  <text x="52" y="616" font-size="11.5" fill="#4b6377">main.log 里只有「建流」会真发网络请求，它带的「同一地址第 N 次」正常观看只应出现第 1 次；没动进度条却看到「命中本地缓存」是正常的，那是播放器的后续请求被本地文件挡下了。</text>
+</svg>
