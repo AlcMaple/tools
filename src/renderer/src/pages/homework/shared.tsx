@@ -1,4 +1,4 @@
-// Shared types, helpers, and primitive UI used by HomeworkView / ClassicView.
+// HomeworkView / ClassicView 共用的类型、工具函数和基础 UI。
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -16,9 +16,8 @@ export interface DefenseGroup {
   updatedAt: string
   attacks: Attack[]
   /**
-   * Group-level notes — used by JJC 换防 (attackOptional mode) when the user
-   * records a defense lineup without any attacks. They render under the group
-   * header so the user can see them on first scan. Default `[]`.
+   * 分组级备注 —— JJC 换防(attackOptional 模式)下,用户只记了防守阵容、没有进攻时用。
+   * 渲染在分组标题下方,一眼能看到。
    */
   notes?: string[]
 }
@@ -38,10 +37,7 @@ export function coerceNotes(raw: unknown): string[] {
   return []
 }
 
-/**
- * Backfill missing `updatedAt` and migrate `note` (string) → `notes` (array).
- * Idempotent.
- */
+/** 补 `updatedAt`、把老的 `note: string` 迁成 `notes: string[]`。幂等。 */
 export function normalizeHomework(groups: DefenseGroup[]): DefenseGroup[] {
   const now = todayStr()
   return groups.map(g => ({
@@ -71,9 +67,8 @@ export interface ClassicGroup {
 }
 
 /**
- * Backfill missing `updatedAt` and migrate `note` (string) → `notes` (array).
- * Idempotent: only touches teams that lack a date or still carry the legacy field.
- * After running, the user should manually push to sync the dated data to WebDAV.
+ * 补 `updatedAt`、把老的 `note: string` 迁成 `notes: string[]`。幂等,只动缺日期或还带老字段的。
+ * 跑完后用户要手动 push 一次,把带日期的数据同步到 WebDAV。
  */
 export function normalizeClassic(groups: ClassicGroup[]): ClassicGroup[] {
   const now = todayStr()
@@ -88,11 +83,9 @@ export function normalizeClassic(groups: ClassicGroup[]): ClassicGroup[] {
   }))
 }
 
-// ── PJJC (3v3 换防) ──────────────────────────────────────────────────────────
-// PJJC = "皮甲竞技场 / 巅峰竞技场" — defenders set 3 lineups simultaneously, and
-// attackers must clear all 3 (one team per defense). A PjjcGroup is therefore a
-// 3-defense bundle, and each PjjcAttack is a 3-team bundle that beats it (with
-// shared notes describing the run).
+// ── PJJC(3v3 换防) ──────────────────────────────────────────────────────────
+// 防守方同时摆 3 套阵容,进攻方要把 3 套都打过(一套对一队)。所以一个 PjjcGroup 是
+// 「3 套防守」的捆绑,一个 PjjcAttack 是能打过它的「3 支队」的捆绑。
 export interface PjjcAttack {
   id: number
   teams: string[][]   // length 3, paired 1:1 with PjjcGroup.defenses
@@ -165,10 +158,9 @@ export function matchesPjjc(group: PjjcGroup, q: string): boolean {
   return matchesAllRoles(group.defenses.flat(), terms)
 }
 
-// ── Log entry (做过的事记录) ───────────────────────────────────────────────────
-// 一条记录 = 标题 + 备注 + 类型。视图里只显示标题（密集可扫），备注/类型藏在
-// hover / 点开。types 可多个（一条可同时「热血」「催泪」）。note/types 没有时省略，
-// 落盘干净。
+// ── 做过的事记录 ─────────────────────────────────────────────────────────────
+// 一条记录 = 标题 + 备注 + 类型。列表里只显示标题(密集可扫),备注/类型藏在 hover / 点开。
+// types 可多个(一条可以同时是「热血」「催泪」)。没有的字段直接省略,落盘干净。
 export interface LogEntry {
   id: number
   title: string
@@ -213,7 +205,7 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// Re-export from the shared util so HomeworkLookup's existing import keeps working.
+// 从公共工具里再导出一次,让原有的导入路径继续可用。
 export { ipcErrMsg } from '../../utils/ipcError'
 
 export function commonPrefixLen(teams: string[][]): number {
@@ -246,24 +238,21 @@ export function teamDedupKey(team: string[]): string {
 }
 
 /**
- * 判断一组角色位（roles）能否满足全部搜索词（terms）——**每个词占一个不同的
- * 角色位**（二分匹配）。
+ * 判断一组角色位能否满足全部搜索词 —— **每个词占一个不同的角色位**(二分匹配)。
  *
- * 规则：
- * - 角色位整名精确匹配，**不做子串包含** —— 搜「驴」命中不了「魔驴」（两个不同角色）。
- * - 「/」是「二选一」记号：角色位「涅比亚/ams」表示这个位填涅比亚**或** ams。
- *   所以单搜「涅比亚」或单搜「ams」都能命中它（拆开任一别名匹配即可）。
- * - 但搜「涅比亚、ams」要求**两个不同的位**分别是涅比亚和 ams；「涅比亚/ams」只是
- *   一个二选一的位，不能同时算作两者 → 用二分匹配保证每个词占独立的角色位。
+ *   - 角色位整名精确匹配,**不做子串包含**:搜「驴」命中不了「魔驴」(是两个角色)。
+ *   - 「/」是二选一记号:角色位「涅比亚/ams」表示这个位填涅比亚**或** ams,所以单搜
+ *     任一别名都能命中。
+ *   - 但搜「涅比亚、ams」要求**两个不同的位** —— 一个二选一的位不能同时算作两者
+ *     这正是要用二分匹配的原因。
  *
- * 规模极小（角色 / 词都 ≤5），直接回溯。
+ * 角色和词都 ≤5 个,直接回溯即可。
  */
 function matchesAllRoles(roles: string[], terms: string[]): boolean {
   // 每个角色位 → 它能被哪些词命中（整名 + "/" 拆出的各别名，全小写）
   const roleAlts = roles.map(r => {
-    // stripCjkLatinSpaces 同时作用于角色位：存量数据里「水 m」这种中英文之间带
-    // 空格的名字（拼音输入法的产物），要去掉空格后再比，否则匹配不到（查询词那
-    // 边已经 strip 过了，两边都 strip 才能对上）。
+    // 角色位也要 stripCjkLatinSpaces:存量数据里有「水 m」这种中英文之间带空格的名字
+    // (拼音输入法的产物),查询词那边已经 strip 过,两边都 strip 才对得上。
     const lower = stripCjkLatinSpaces(r.toLowerCase()).trim()
     const alts = new Set<string>()
     if (lower) alts.add(lower)
@@ -306,8 +295,7 @@ export function matchesClassic(item: ClassicGroup, q: string): boolean {
 }
 
 export function todayStr(): string {
-  // Local date — toISOString() returns UTC and would roll back across midnight
-  // for users east of UTC (e.g. UTC+8 sees yesterday's date until 08:00 local).
+  // 必须用本地日期:toISOString() 给的是 UTC,UTC+8 的用户在早上 8 点前会拿到昨天。
   const d = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -335,11 +323,10 @@ export function Highlight({ text, query }: { text: string; query: string }): JSX
 }
 
 export function ModalShell({ onBackdrop, children }: { onBackdrop: () => void; children: React.ReactNode }): JSX.Element {
-  // 经 portal 渲染到 document.body —— 否则当弹窗被挂在带 content-visibility/contain
-  // 的祖先(如 MyAnime 的 TrackRow)内部时,`position: fixed` 会以该祖先为定位基准,
-  // 遮罩被"困"在那一行里、内嵌进列表。portal 让它脱离任何 containing block,稳定铺满视口。
-  // text-on-surface / font-body 自带 —— portal 到 body 后脱离了 App 根 div 的
-  // 继承链,不显式声明的话文字会落到浏览器默认黑色。
+  // portal 到 document.body —— 弹窗若挂在带 content-visibility/contain 的祖先里
+  // (如 MyAnime 的 TrackRow),`position: fixed` 会以该祖先为定位基准,遮罩被困在那一行内。
+  // text-on-surface / font-body 要显式写:portal 之后脱离了 App 根 div 的继承链
+  // 不写文字会落回浏览器默认黑色。
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center text-on-surface font-body">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onBackdrop} />
@@ -351,13 +338,8 @@ export function ModalShell({ onBackdrop, children }: { onBackdrop: () => void; c
   )
 }
 
-// 弹窗页脚按钮 —— 全项目弹窗(作业新增/编辑、推荐新建/拒绝…)共用同一套样式,
-// 避免每处各抄一遍导致圆角/内边距/取消按钮文案样式飘移。语义变体:
-//   - cancel:中性描边(取消/关闭)
-//   - primary:主操作(保存/创建),禁用时实底降透明
-//   - secondary / tertiary:次要保存(如"新增防守阵容""新增作业"用不同色区分)
-//   - danger:危险确认(拒绝/删除)
-// 其余按钮属性(onClick / disabled / type)透传;icon 传 material-symbols 名即可。
+// 弹窗页脚按钮 —— 全项目弹窗共用一套,免得各处各抄一遍导致圆角/内边距/文案样式飘移。
+// 语义变体:cancel 中性描边 / primary 主操作 / secondary、tertiary 次要保存 / danger 危险确认。
 type ModalButtonVariant = 'cancel' | 'primary' | 'secondary' | 'tertiary' | 'danger'
 
 const MODAL_BUTTON_VARIANT: Record<ModalButtonVariant, string> = {
@@ -413,12 +395,9 @@ export function ModalInput(props: React.InputHTMLAttributes<HTMLInputElement>): 
   )
 }
 
-// ── Note chip — refined editorial tag ─────────────────────────────────────────
-// Design: hairline border + gradient tonal fill + left accent bar.
-// Replaces the legacy "blue pill + dot" with something more intentional.
-// To "edit", the user removes via ✕ and re-adds — same model as GitHub labels /
-// Issue assignees. Avoids the in-place edit state machine (and the surprise
-// double-click hit area users sometimes triggered while just selecting text).
+// ── 备注 chip ────────────────────────────────────────────────────────────────
+// 「编辑」= 用 ✕ 删掉再重加,与 GitHub label / assignee 同一套模型。这样可以省掉原地编辑
+// 的状态机,也避免用户只是想选中文字却误触双击编辑。
 export function NoteChip({
   text, query, withRemove, onRemove,
 }: {
@@ -461,7 +440,7 @@ export function NoteChipList({ notes, query }: { notes: string[]; query?: string
   )
 }
 
-/** Build the "copy" payload for an attack/team line — names joined with 、, notes appended in parentheses. */
+/** Build the "copy" payload for an attack/team line — names joined with、, notes appended in parentheses. */
 export function copyTeamText(team: string[], notes: string[]): string {
   return team.join('、') + (notes.length ? ` (${notes.join(' / ')})` : '')
 }
@@ -469,17 +448,11 @@ export function copyTeamText(team: string[], notes: string[]): string {
 // ── Reverse of copyTeamText: parse pasted "<team> (note1 / note2)" payloads ──
 
 /**
- * Inverse of `copyTeamText`. Recognizes our own emitted format plus a few
- * tolerated variants:
- *   - ASCII or full-width parens: `(...)` / `（...）`
- *   - Slash separator with optional surrounding whitespace
- *
- * Returns null when the input doesn't end with a parens block — that case is
- * indistinguishable from a normal team-only paste and the default paste should
- * proceed.
+ * `copyTeamText` 的逆操作。除了自家格式,还容忍半角/全角括号、斜杠两侧的空格。
+ * 输入末尾没有括号块时返回 null —— 那种情况和普通的「只粘队伍」无法区分,应当走默认粘贴。
  */
 export function parseTeamPaste(text: string): { team: string; notes: string[] } | null {
-  // Trailing parens block, greedy team part, non-paren-containing notes body.
+  // 末尾的括号块 + 贪婪匹配的队伍部分 + 不含括号的备注正文。
   const m = text.match(/^(.+?)\s*[（(]\s*([^()（）]+?)\s*[）)]\s*$/)
   if (!m) return null
   const teamPart = m[1].trim()
@@ -494,14 +467,9 @@ export function parseTeamPaste(text: string): { team: string; notes: string[] } 
 }
 
 /**
- * Build an `onPaste` handler for a team `ModalInput` that auto-extracts a
- * trailing "(notes ...)" block into the chip-style notes field. Returns a
- * no-op handler that defers to the browser when the paste isn't a full-field
- * replace OR doesn't match our copy format, so partial inserts (e.g. user
- * editing a single character in the middle) aren't hijacked.
- *
- * Merges new notes into existing ones (dedup) rather than replacing — if the
- * user added a note before pasting, we don't want to lose it.
+ * 给队伍输入框生成 `onPaste`:自动把末尾的「(备注…)」抽到 chip 备注字段。
+ * 只在**整字段替换**(空输入或全选)时接管,中途插入字符不劫持。
+ * 新备注与已有的合并去重,而不是覆盖 —— 用户粘贴前可能已经加过备注。
  */
 export function createTeamPasteHandler(opts: {
   setTeam: (v: string) => void
@@ -513,8 +481,7 @@ export function createTeamPasteHandler(opts: {
     const valueLen = input.value.length
     const selStart = input.selectionStart ?? 0
     const selEnd = input.selectionEnd ?? 0
-    // Only intercept when paste replaces the WHOLE field (empty input, or full
-    // selection). Middle-of-text paste falls through to the browser default.
+    // 只在粘贴会替换**整个字段**(空输入或全选)时接管;中途插入走浏览器默认行为。
     const isFullReplace = valueLen === 0 || (selStart === 0 && selEnd === valueLen)
     if (!isFullReplace) return
 
@@ -539,14 +506,9 @@ export function notesEqual(a: string[], b: string[]): boolean {
   return true
 }
 
-// ── NoteTagInput — chip-style tag input for the modals ────────────────────────
-// Behavior (mirrors GitHub label / assignee pickers):
-//   - Type + Enter on main input → adds the trimmed draft as a new chip
-//   - Click ✕ on any chip        → removes that chip
-//   - To "edit" a chip, remove it and type the new value
-//   - onBlur on main input commits pending draft (no data loss on Save)
-//   - Backspace on empty main input removes the most recent chip (mirrors the
-//     records「类型」input; lets users undo a just-added note without the ✕)
+// ── NoteTagInput:弹窗里的 chip 式标签输入 ────────────────────────────────────
+// 行为对齐 GitHub 的 label / assignee 选择器:Enter 加 chip、✕ 删 chip、改就是删了重打、
+// blur 时提交未完成的草稿(免得保存时丢数据)、空输入按退格删掉最近一个 chip。
 export function NoteTagInput({
   notes, onNotesChange, draft, onDraftChange, placeholder,
 }: {
@@ -560,12 +522,8 @@ export function NoteTagInput({
   const measureRef = useRef<HTMLSpanElement>(null)
   const [inputWidth, setInputWidth] = useState<number>(140)
 
-  // Auto-size the input to fit the current draft (or placeholder when empty).
-  // The hidden measuring span shares typography with the input, so its rendered
-  // width is the natural width the input needs to display the same text.
-  // Result: the input only consumes the space it actually needs on row 1, and
-  // the flex-wrap container keeps it on row 1 as long as it fits — only
-  // wrapping to row 2 when the typed text genuinely overflows.
+  // 输入框按当前草稿宽度自适应:隐藏的测量 span 与输入框同字体,它渲染出来的宽度就是
+  // 输入框需要的自然宽度。这样输入框只占它真正需要的空间,能留在第一行就不换行。
   useLayoutEffect(() => {
     if (!measureRef.current) return
     const measured = measureRef.current.offsetWidth
@@ -586,17 +544,13 @@ export function NoteTagInput({
     onNotesChange(notes.filter((_, idx) => idx !== i))
   }
 
-  // Text the measuring span renders. Mirrors what the user sees:
-  // - draft when typing
-  // - placeholder when empty and chips are absent
-  // - empty (so the input collapses to minW) when chips are present and no draft
+  // 测量用 span 渲染的文本,与输入框里用户看到的一致。
   const measureText = draft || (notes.length === 0 ? placeholder ?? '' : '')
 
   return (
     <div
       onClick={(e) => {
-        // Only focus main input when clicking the container's whitespace,
-        // not when clicking a chip / button / inner input.
+        // 只有点容器空白处才聚焦主输入框,点 chip / 按钮 / 内部输入框时不动。
         if (e.target === e.currentTarget) inputRef.current?.focus()
       }}
       className="relative w-full bg-surface-container border border-outline-variant/20 rounded-lg px-2.5 py-2 flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary/30 transition-all min-h-[42px] cursor-text"
@@ -628,9 +582,7 @@ export function NoteTagInput({
         value={draft}
         onChange={e => onDraftChange(e.target.value)}
         onKeyDown={e => {
-          // Ignore Enter while an IME composition is active: pinyin users press
-          // Enter to commit the composing buffer (e.g. "up" → 主), and that
-          // keystroke must not be swallowed as a chip submission.
+          // 输入法组词期间忽略回车 —— 那时的回车是在选字,不是提交。
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
             commit()
@@ -650,9 +602,7 @@ export function NoteTagInput({
         onBlur={commit}
         placeholder={notes.length === 0 ? placeholder : ''}
         style={{ width: inputWidth }}
-        // flex-shrink-0 + explicit width = the input occupies exactly
-        // `inputWidth` and the flex-wrap parent will wrap it to row 2 only
-        // when row 1 cannot fit it.
+        // flex-shrink-0 + 显式宽度 = 输入框正好占 inputWidth,只有第一行放不下时才换行
         className="flex-shrink-0 bg-transparent outline-none text-sm text-on-surface placeholder:text-on-surface-variant/35 py-0.5"
       />
     </div>

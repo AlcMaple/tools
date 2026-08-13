@@ -1,6 +1,5 @@
-// 账号体系 —— 开放注册 + 用户名/密码，另有邮箱验证码快捷注册 / 登录。规模小但开放（GitHub star 者互不认识，发不了邀请码，
-// 所以不做邀请制，见 ideas/012 待调研 #3）。密码用 Node 内置 scrypt 哈希（不加 bcrypt 依赖），
-// 会话用 JWT httpOnly 签名 cookie（无状态，不建 session 表）。
+// 账号体系 —— 开放注册 + 用户名/密码,另有邮箱验证码快捷注册 / 登录。
+// 密码用 Node 内置 scrypt 哈希(不引 bcrypt 依赖),会话用 JWT httpOnly 签名 cookie(无状态,不建 session 表)。
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
@@ -14,7 +13,7 @@ import { USERNAME_MAX, USERNAME_MIN, usernameError } from './username'
 
 const scryptAsync = promisify(scrypt)
 
-// 生产没有强随机密钥就拒绝启动。继续用公开占位串会让攻击者直接伪造 JWT，会话保护等于零。
+// 生产环境没有强随机密钥就拒绝启动 —— 继续用公开占位串等于让攻击者直接伪造 JWT。
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 const configuredSecret = process.env.AUTH_SECRET?.trim() ?? ''
 if (IS_PRODUCTION && configuredSecret.length < 32) {
@@ -22,8 +21,8 @@ if (IS_PRODUCTION && configuredSecret.length < 32) {
 }
 const SECRET = configuredSecret || 'dev-insecure-secret-change-me'
 
-// 生产用 __Host- 前缀：浏览器强制 Secure、Path=/ 且不允许 Domain，降低子域 / 路径投毒风险。
-// 开发环境仍用普通名字，否则 http://localhost 不会回传 __Host- Cookie。
+// 生产用 `__Host-` 前缀:浏览器强制 Secure、Path=/ 且不允许 Domain,降低子域 / 路径投毒风险。
+// 开发环境仍用普通名字,否则 http://localhost 不会回传这种 cookie。
 const COOKIE = IS_PRODUCTION ? '__Host-mt_session' : 'mt_session'
 const LEGACY_COOKIE = 'mt_session'
 const MAX_AGE = 60 * 60 * 24 * 30 // 30 天（秒）
@@ -43,10 +42,9 @@ const EMAIL_REGISTER_MAX_PER_IP = 10
 const EMAIL_REGISTER_MAX_PER_ADDRESS = 10
 
 /**
- * 密保问题用**预设列表**，不让用户自由填写。两头的坑都躲开了：
- *   - 自由填写 → 找回时要用户一字不差地重打一遍问题，基本没人记得住
- *   - 按用户名把问题显示出来 → 等于把问题泄露给任何知道你用户名的人
- * 预设下拉：两边都从同一个列表里选，好记、且不泄露。库里存 id，不存题面。
+ * 密保问题用**预设列表**,不让用户自由填写 —— 两头的坑都要躲:自由填写的话,找回时要用户
+ * 一字不差重打一遍问题,基本没人记得住;而按用户名把问题显示出来,等于泄露给任何知道你用户名的人。
+ * 预设下拉两边都从同一个列表里选,好记又不泄露。库里存 id,不存题面。
  */
 export const SECURITY_QUESTIONS = [
   { id: 'first_anime', text: '我的第一部入坑番是？' },
@@ -57,8 +55,8 @@ export const SECURITY_QUESTIONS = [
 ]
 const QUESTION_IDS = new Set(SECURITY_QUESTIONS.map((q) => q.id))
 
-// scrypt 存成 `salt:hash`（都 hex）。密码和密保答案共用 —— 答案跟密码同级敏感（多是真实个人
-// 信息、且会跨站复用），绝不存明文。
+// scrypt 存成 `salt:hash`。密码和密保答案共用同一套 —— 答案跟密码同级敏感(多是真实个人信息、
+// 且会跨站复用),**绝不存明文**。
 async function hashSecret(v: string): Promise<string> {
   const salt = randomBytes(16)
   const derived = (await scryptAsync(v, salt, 64)) as Buffer
@@ -70,11 +68,11 @@ async function verifySecret(v: string, stored: string): Promise<boolean> {
   if (!saltHex || !hashHex) return false
   const expected = Buffer.from(hashHex, 'hex')
   const derived = (await scryptAsync(v, Buffer.from(saltHex, 'hex'), expected.length)) as Buffer
-  // 长度不等时 timingSafeEqual 会抛，先挡一下；再做定时安全比较防时序侧信道。
+  // 长度不等时 timingSafeEqual 会抛,先挡一下;再做定时安全比较防时序侧信道。
   return derived.length === expected.length && timingSafeEqual(derived, expected)
 }
 
-// 密保答案比对前归一化 —— 否则「北京」和「 北京 」、Beijing / beijing 不匹配，用户会疯。
+// 密保答案比对前要归一化 —— 否则「北京」和「 北京 」、Beijing / beijing 不匹配,用户会疯。
 function normalizeAnswer(a: string): string {
   return a.trim().toLowerCase()
 }
@@ -82,7 +80,7 @@ function normalizeAnswer(a: string): string {
 interface Session {
   uid: number
   username: string
-  /** 签发时的 token_version。校验时跟库里对不上 → 拒绝（改密码后老 token 立即失效）。 */
+  /** 签发时的 token_version。与库里对不上就拒绝 —— 改密码后老 token 立即失效。 */
   tv: number
 }
 
@@ -169,7 +167,7 @@ export async function getSession(c: Context): Promise<Session | null> {
   if (!token) return null
   try {
     const payload = (await verify(token, SECRET, 'HS256')) as unknown as Session
-    // 每个已登录请求多一次索引读（微秒级）—— 换来「改密码能真正踢掉所有老会话」。
+    // 每个已登录请求多一次索引读(微秒级),换来「改密码能真正踢掉所有老会话」。
     const row = findById.get(payload.uid) as UserRow | undefined
     if (!row || row.token_version !== payload.tv) return null
     return { uid: row.id, username: row.username, tv: row.token_version }
@@ -179,14 +177,14 @@ export async function getSession(c: Context): Promise<Session | null> {
 }
 
 /**
- * 固定窗口限流 —— 凡是「拿密码/答案来猜」的入口都必须挂，不然等于敞开暴力破解。
- * 内存 Map、单进程有效；重启即清空（可接受，攻击者拿不到重启时机）。将来上多实例得换 Redis。
+ * 固定窗口限流 —— 凡是「拿密码/答案来猜」的入口都必须挂,否则等于敞开暴力破解。
+ * 内存 Map、单进程有效,重启即清空(可接受:攻击者拿不到重启时机)。将来上多实例得换 Redis。
  */
 const buckets = new Map<string, { n: number; resetAt: number }>()
 
 function rateLimited(key: string, max: number, windowMs: number): boolean {
   const now = Date.now()
-  // 攻击者拿随机用户名刷会不停建桶 → 内存无上限。到阈值先清过期的。
+  // 攻击者拿随机用户名刷会不停建桶、内存无上限,所以到阈值先清过期的。
   if (buckets.size > 5000) {
     for (const [k, b] of buckets) if (now > b.resetAt) buckets.delete(k)
   }

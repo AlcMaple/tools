@@ -1,16 +1,12 @@
 /**
- * Cookie-aware HTTP session.
+ * 带 cookie 罐的 HTTP 会话。
  *
- * 传输层走 Electron `net`(`netRequest`)而非 Node `https` —— 跟项目其它抓取
- * 一致(见 net-request.ts 的长注释):Node `https` 不读系统代理,用户开 Clash
- * 系 fake-ip 代理时直连 198.18.x 假地址导致黑洞超时;且其 TLS 指纹更容易被
- * Cloudflare 判为可疑而频繁弹人机校验。net 走 Chromium 网络栈,自动读系统代理 +
- * 浏览器一致的指纹,从根上修掉这两类问题。
+ * 传输走 Electron `net` 而不是 Node `https`(理由见 net-request.ts):Node 不读系统代理
+ * 而且它的 TLS 指纹更容易被 Cloudflare 判为可疑、频繁弹人机校验。
  *
- * cookie jar(name=value 扁平 Map)+ 文件持久化 + **逐跳手动跟重定向**(每跳都
- * ingest Set-Cookie)的行为与历史实现保持 1:1 —— 验证码门依赖跨域 301 那一跳设
- * 的 cookie,所以这里特意用 redirect:'manual' 自己跟,而不是让 net 自动 follow
- * (自动 follow 只回最后一跳的响应头,中间跳的 Set-Cookie 会丢)。
+ * cookie 罐是扁平的 name=value Map + 文件持久化,并且**逐跳手动跟重定向**、每一跳都 ingest
+ * Set-Cookie —— 验证码门依赖跨域那一跳设的 cookie,所以这里特意用 `redirect:'manual'` 自己跟:
+ * 让 net 自动 follow 的话只能拿到最后一跳的响应头,中间跳的 Set-Cookie 会丢。
  */
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
@@ -68,20 +64,20 @@ export class HttpSession {
     }
   }
 
-  /** 读某个 cookie 的当前值(没有则 undefined)——登录态判断靠某个特定 cookie 是否存在。 */
+  /** 读某个 cookie 的当前值(没有则 undefined)—— 登录态判断就靠某个特定 cookie 在不在。 */
   getCookie(name: string): string | undefined {
     return this.cookies.get(name)
   }
 
   /**
-   * 兼容旧 cookie 文件时导出最小的 name/value 集合。属性原本就没有落盘，调用方
-   * 必须按目标站点重新绑定 domain/path，不能把这里当成浏览器 cookie 的完整备份。
+   * 导出最小的 name/value 集合以兼容旧 cookie 文件。属性本来就没落盘,调用方必须按目标站点重新
+   * 绑定 domain/path,**别把这里当成完整的浏览器 cookie 备份**。
    */
   getCookieEntries(): Array<{ name: string; value: string }> {
     return Array.from(this.cookies, ([name, value]) => ({ name, value }))
   }
 
-  /** 用同一站点的新 cookie 集合替换旧的扁平 jar，供迁移后的会话向后兼容。 */
+  /** 用同一站点的新 cookie 集合替换旧的扁平罐,供迁移后的会话向后兼容。 */
   replaceCookies(cookies: Iterable<{ name: string; value: string }>): void {
     this.cookies.clear()
     for (const cookie of cookies) {

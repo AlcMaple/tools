@@ -1,21 +1,13 @@
-// 隐藏 BrowserWindow 里专门跑的"截图模式"周历视图。
+// 隐藏窗口里专用的「截图模式」周历。
 //
-// 触发链：主进程 calendar-mailer.ts 开 BrowserWindow 加 ?screenshot=calendar
-// → App.tsx 走 query 分支挂这个组件 → 这里 fetch 周历数据 + 渲染 →
-// 等所有 <img> load 或 timeout → 调 window.screenshotApi.reportCalendarReady(height)
-// → 主进程 resize 隐藏窗口 + capturePage → PNG 走邮件。
+// 主进程开窗口时带上 `?screenshot=calendar`,路由据此挂载本组件 → 拉数据 + 渲染 →
+// 等所有 <img> load(成功失败都算)或超时 → 上报页面高度 → 主进程 resize + 截图。
 //
-// 跟 AnimeCalendar.tsx 的差异：
-//   1. 不渲染 Sidebar / TopBar / sticky 刷新栏（这些在邮件里都是噪音）
-//   2. 卡片去掉 "已追番" 角标 + hover overlay（截图里看不到 hover，但 track
-//      badge 是常驻状态，对邮件收件人无意义）
-//   3. 没有任何交互逻辑（点击、refresh 按钮、url 跳转 onClick）
-//   4. 用 max-w-screen-xl + mx-auto 控制总宽度上限，跟主窗口默认显示的视觉
-//      区域一致，避免 1280px BrowserWindow 里 grid 被拉伸成奇怪比例
+// 与正常周历页的差别:不渲染侧栏 / 顶栏 / sticky 刷新栏(邮件里都是噪音)、卡片去掉追番角标和
+// hover 遮罩(截图里看不到 hover)、没有任何交互、用固定的最大宽度控制版面,避免在 1280 宽的
+// 窗口里 grid 被拉成奇怪比例。
 //
-// 触发 ready 信号的时机：当数据 ready 且所有渲染出来的 <img> 都已经 fire
-// load 事件（成功或失败都算）后立刻上报。最多等 12s 然后强制上报，防止
-// 个别 BGM 封面被墙拖死整封邮件。
+// 最多等 12 秒就强制上报 —— 防止个别封面被墙拖死整封邮件。
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BgmCalendarItem, BgmCalendarResult } from '../types/bgm'
@@ -53,7 +45,7 @@ export default function AnimeCalendarScreenshot(): JSX.Element {
     const report = (): void => {
       if (reportedRef.current) return
       reportedRef.current = true
-      // 用 scrollHeight 而不是 offsetHeight —— 防止内部 overflow 让我们少截
+      // 用 scrollHeight 而不是 offsetHeight,免得内部 overflow 让我们少截一截
       const height = Math.max(root.scrollHeight, document.documentElement.scrollHeight)
       void window.screenshotApi.reportCalendarReady(height)
     }

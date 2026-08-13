@@ -1,18 +1,7 @@
-// 我的追番 — aggregate view + the canonical editing surface for status / episode.
+// 我的追番 —— 汇总列表,也是改状态 / 集数的唯一编辑面(AnimeInfo 那边只留追番开关
+// 左栏放不下编辑 UI)。一部番一行,行内直接编辑,没有二级详情页。
 //
-// AnimeInfo deliberately keeps only a Track / Untrack toggle (the sticky left
-// column there has no room for editing UI). All real progress management lives
-// here: a flat, scannable list grouped by status with a +1 button per row.
-//
-// Design notes:
-// - One row per anime, no separate "detail" sub-view. Editing happens inline.
-// - Status filter chips at top let the user drill into a single bucket without
-//   the page collapsing into nothing when a bucket is empty.
-// - WebDAV 同步是这里独立的事 —— 顶部 AnimeSyncBar 走 `anime.json`，跟阵容
-//   知识库的 `homework.json` 完全分开。HomeworkLookup 不再触碰追番数据。
-//   首次升级时如果 anime.json 不存在，pull 会自动从老 homework.json 的
-//   tracks 字段做无感迁移（详见 AnimeSyncBar）。
-// - 备注字段在 store 里仍保留（向后兼容老数据），但不再有 UI 入口。
+// WebDAV 同步走顶部 AnimeSyncBar 的 `anime.json`,与知识库的 `homework.json` 完全分开。
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -60,9 +49,8 @@ import type { Source, SearchCard } from '../types/search'
 // ── 在线观看入口按钮 ──────────────────────────────────────────────────────────
 
 /**
- * 「在线观看」行首的应用内播放入口(011 阶段)。与后面外跳浏览器的源 chips
- * 是独立两档功能:这个按钮进 /play 播放页,chips 的外跳行为保持不变。
- * 实底主色与描边 chips 拉开层级,一眼区分「应用内播」和「外跳」。
+ * 「在线观看」进应用内播放页(/play),与后面那排外跳浏览器的源 chips 是两档独立功能。
+ * 实底主色 vs 描边,一眼区分「应用内播」和「外跳」。
  */
 function PlayOnlineButton({ bgmId }: { bgmId: number }): JSX.Element {
   const navigate = useNavigate()
@@ -84,13 +72,13 @@ function PlayOnlineButton({ bgmId }: { bgmId: number }): JSX.Element {
 interface StatusMeta {
   key: AnimeStatus
   label: string
-  /** Material icon name. */
+  /** Material 图标名 */
   icon: string
-  /** Tailwind text-color token (no slash). */
+  /** Tailwind 文字色 token(不带斜杠) */
   color: string
-  /** Tailwind background tint token. */
+  /** Tailwind 背景色 token */
   tint: string
-  /** Tailwind border-color token. */
+  /** Tailwind 边框色 token */
   border: string
 }
 
@@ -123,11 +111,8 @@ function matchesAnime(t: AnimeTrack, q: string): boolean {
 }
 
 /**
- * Tag 过滤 —— OR 语义：track 的 (bgmTags ∪ userTags) 命中所选**任一** tag 即放行。
- * selected 为空数组就直接放行（不过滤）。
- *
- * 大小写敏感、完全匹配——这跟字符串模糊搜索不同，tag 是离散值，模糊匹配会
- * 让 "恋爱" 和 "恋爱漫" 互相误中，所以这里用严格 equality。
+ * Tag 过滤,OR 语义:命中所选任一 tag 即放行,selected 为空则不过滤。
+ * **完全匹配、不模糊** —— tag 是离散值,模糊匹配会让「恋爱」和「恋爱漫」互相误中。
  */
 function matchesTags(t: AnimeTrack, selectedTags: string[]): boolean {
   if (selectedTags.length === 0) return true
@@ -140,16 +125,7 @@ function matchesTags(t: AnimeTrack, selectedTags: string[]): boolean {
 
 type FilterKey = 'all' | AnimeStatus
 type SortKey = 'addedDesc' | 'favoriteDesc'
-/**
- * 顶级 tab —— 005 阶段从「tracks / recommendations」拆成 4 平级：
- *
- *   - `anime`  → 动画追番（subjectType === 'anime'）
- *   - `manga`  → 漫画追番（subjectType === 'manga'）
- *   - `novel`  → 小说追番（subjectType === 'novel'）
- *   - `recommendations` → 推荐管理
- *
- * `'other'` 类目（画集等）**不出现在任何 tab**，按用户决策保留数据但不展示。
- */
+/** 顶层 tab。`'other'` 类目(画集等)**不出现在任何 tab**,数据保留但不展示(用户决策)。 */
 type Tab = 'anime' | 'manga' | 'novel' | 'recommendations'
 
 /** 3 个类目 tab 的元数据，用来生成顶部 tab 按钮 + filtered/counts 的过滤维度。 */
@@ -162,8 +138,7 @@ const CATEGORY_TABS: ReadonlyArray<{ key: 'anime' | 'manga' | 'novel'; label: st
 const SORT_KEY = 'maple-anime-sort'
 const TAB_KEY = 'maple-anime-tab'
 
-// 顶栏左侧标题块 —— 替换掉 TopBar 默认的搜索框。本页在 sticky header 右侧已有
-// 自己的搜索框（过滤追番/推荐），顶栏再放一个会重复，故用标题块占位。
+// 顶栏左侧用标题块替掉 TopBar 默认的搜索框 —— 本页 sticky header 右侧已经有自己的搜索框。
 const TITLE_SLOT = (
   <div className="flex items-center gap-4">
     <h2 className="text-2xl font-bold tracking-tighter text-primary">我的追番</h2>
@@ -182,33 +157,26 @@ export default function MyAnime(): JSX.Element {
     return v === 'favoriteDesc' ? 'favoriteDesc' : 'addedDesc'
   })
   useEffect(() => { localStorage.setItem(SORT_KEY, sort) }, [sort])
-  // 顶层 tab：动画 / 漫画 / 小说 / 推荐。
-  // 默认 'anime'（用户大部分时间在这），切换时持久化，下次进来还在原 tab。
-  //
-  // **迁移**：005 之前的 localStorage 值是 'tracks' / 'recommendations'。
-  // 看到旧的 'tracks' 自动落到 'anime'（老用户都是动画追番）。其他无效值
-  // 也回退到 'anime'。
+  // 顶层 tab,切换时持久化。老版本存的是 'tracks' / 'recommendations',见到旧值或非法值
+  // 一律回落 'anime'。
   const [tab, setTab] = useState<Tab>(() => {
     const v = localStorage.getItem(TAB_KEY)
     if (v === 'recommendations' || v === 'manga' || v === 'novel' || v === 'anime') return v
     return 'anime'
   })
   useEffect(() => { localStorage.setItem(TAB_KEY, tab) }, [tab])
-  // 推荐 tab 的过滤状态 + 新建弹窗状态 —— 提到这里是为了让 sticky header
-  // 跟追番 tab 结构一致（chips 在容器外，body 只是列表）。
+  // 推荐 tab 的过滤 / 弹窗状态提到这里,让 sticky header 与追番 tab 结构一致。
   const [recFilter, setRecFilter] = useState<RecFilterKey>('all')
   const [newRecOpen, setNewRecOpen] = useState(false)
   // 手动添加弹窗 —— BGM 限流时无法搜索加番的兜底入口（006 阶段）。
   const [manualAddOpen, setManualAddOpen] = useState(false)
   const recs = useRecommendationList()
-  // 徽章数字按 query 收窄 —— 跟追番 tab 的 counts 语义一致（搜索后徽章反映
-  // 收窄范围，不是全量）。空 query 时 matchesRecommendation 全命中 = 全量。
+  // 徽章数字随 query 收窄,与追番 tab 的 counts 语义一致。
   const recCounts = useMemo(
     () => countRecsByStatus(recs.filter(r => matchesRecommendation(r, query))),
     [recs, query],
   )
-  // 推荐对方聚合 + 命中数 —— 给推荐 tab 的「推荐对方」TagFilter popover 用。全集视图
-  // （不按 query/status/已选收窄），按命中数倒序，让用户看到所有推荐过的人。
+  // 「推荐对方」popover 的输入:全集视图(不按 query/status 收窄),按命中数倒序。
   const allRecipientsWithCount = useMemo(() => {
     const counter = new Map<string, number>()
     for (const r of recs) counter.set(r.toWhom, (counter.get(r.toWhom) ?? 0) + 1)
@@ -216,27 +184,16 @@ export default function MyAnime(): JSX.Element {
       .map(([tag, count]) => ({ tag, count }))
       .sort((a, b) => b.count - a.count)
   }, [recs])
-  // 评判标准弹窗：给 ✨ 好看集 和 🌟 最爱值 提供"什么时候 +1"的参考文档。
-  // 入口是 sticky header 标题旁的 help_outline 图标。两个 tab 都能打开（最爱
-  // 值在追番 tab 直接相关，但用户可能在推荐 tab 想起来要查标准，所以保持常驻）。
+  // 评判标准弹窗,两个 tab 都能开 —— 用户可能在推荐 tab 想起来要查标准。
   const [criteriaOpen, setCriteriaOpen] = useState(false)
-  // 类型过滤 —— sticky header row 3 的「类型」按钮选中的 tag 集合，OR 语义
-  // （详见 matchesTags）。仅追番 tab 用；切到推荐 tab 时仍保留 state，回切
-  // 不丢用户的过滤选择。
+  // 类型过滤(OR 语义,见 matchesTags)。切到推荐 tab 时保留 state,回切不丢选择。
   const [selectedTags, setSelectedTags] = useState<string[]>([])
-  // 推荐 tab 的「按推荐人过滤」—— OR 语义、勾选不置顶（保留命中数顺序），跟追番的
-  // 类型过滤共用 TagFilter 组件。仅推荐 tab 用；切走仍保留 state，回切不丢选择。
+  // 「按推荐人过滤」,与类型过滤共用 TagFilter。勾选不置顶,保留命中数顺序。
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([])
 
-  // 排序：
-  //   - addedDesc（默认）：按添加顺序倒序——最新追的排顶部。
-  //     animeTrackStore.list() 是 Map 的插入顺序（老的在前），reverse 让
-  //     最新的到顶。编辑行不会改位置（upsert 的 map.set 对已有 key 保持
-  //     插入位置不变），避免"改进度被弹到顶部"的吵闹感。
-  //   - favoriteDesc：按 🌟 数从高到低。同 🌟 数的按添加倒序作 tie-breaker。
-  // 只在显示层做排序，store 本身仍按插入顺序持久化 —— 不动 AnimeSyncBar 的
-  // snapshot diff 与 WebDAV blob 格式。
-  // 当前 tab 对应的类目过滤维度。推荐 tab 不用这个（走自己的逻辑）。
+  // 排序只在显示层做,store 仍按插入顺序持久化(不动 WebDAV blob 格式)。
+  // 默认按添加倒序:最新追的在顶部,且**编辑不会改变行的位置** —— 否则改个进度就被弹到
+  // 顶部,很吵。favoriteDesc 按 🌟 数,同分时仍按添加倒序。
   const currentCategory = tab === 'recommendations' ? null : tab
 
   const filtered = useMemo(() => {
@@ -250,17 +207,14 @@ export default function MyAnime(): JSX.Element {
     const inFilter = filter === 'all' ? byTags : byTags.filter(t => t.status === filter)
     const reversed = [...inFilter].reverse()
     if (sort === 'favoriteDesc') {
-      // stable sort：JS Array.prototype.sort 是稳定的（ES2019+），同
-      // favorite 时保持 reversed 给的添加倒序。
+      // JS 的 sort 是稳定的,同 favorite 时保持上面 reverse 给的添加倒序。
       reversed.sort((a, b) => b.favorite - a.favorite)
     }
     return reversed
   }, [tracks, currentCategory, filter, query, sort, selectedTags])
 
-  // Counts include search-narrowed + tag-filtered scope so the badges reflect
-  // what would actually appear if the user clicked into each bucket.
-  // **只统计当前类目下的记录** —— 比如在「漫画」tab 看到的「在追 5」是漫画
-  // 在追的数量，不是全部类目加起来的，避免误导。
+  // 徽章只统计**当前类目**下的记录:在「漫画」tab 看到的「在追 5」是漫画的数量
+  // 不是全类目加总,否则误导。
   const counts = useMemo(() => {
     const c: Record<FilterKey, number> = { all: 0, watching: 0, plan: 0, considering: 0, completed: 0 }
     for (const t of tracks) {
@@ -285,12 +239,8 @@ export default function MyAnime(): JSX.Element {
     return c
   }, [tracks])
 
-  // 当前类目的 tag 聚合 + 命中数 —— 给 TagFilter popover 用的输入。
-  // **只统计当前类目下的 track**（跟状态计数一致）：在「动画」tab 就只列动画里
-  // 出现过的类型，否则会把「漫画」类目才有的标签也列出来、选了 0 条很迷惑。
-  // bgmTags ∪ userTags（每个 track 里去重），按命中数倒序。
-  // 不应用 query / status / selectedTags 过滤——popover 是该类目的"全集"视图，
-  // 让用户能看到自己还没选的 tag。
+  // TagFilter popover 的输入:只统计当前类目下的 track(否则会列出别的类目才有的标签
+  // 选了 0 条很迷惑),不应用 query/status/已选过滤 —— popover 是该类目的全集视图。
   const allTagsWithCount = useMemo(() => {
     const counter = new Map<string, number>()
     for (const t of tracks) {
@@ -547,9 +497,8 @@ export default function MyAnime(): JSX.Element {
         ) : filtered.length === 0 ? (
           <EmptyFiltered hasQuery={!!query.trim()} statusLabel={filter === 'all' ? '' : statusMetaOf(filter).label} />
         ) : (
-          // 始终单列 —— 桌面(≥1200)富信息宽行；更窄走 TrackRow 内部精简卡片
-          // （见 useIsCompact）。整页左对齐铺满，不收 max-w 居中（居中会让标题/
-          // 面包屑右移，像凭空多了一截 padding）。
+          // 始终单列。整页左对齐铺满,不收 max-w 居中 —— 居中会让标题/面包屑右移
+          // 看着像凭空多了一截 padding。
           <div className="px-4 md:px-8 py-6 space-y-3">
             {filtered.map(t => (
               <TrackRow key={t.bgmId} track={t} />
@@ -598,16 +547,11 @@ const MANUAL_WEEKDAY_OPTIONS: ReadonlyArray<{ key: number; label: string }> = [
 ]
 
 /**
- * 手动添加追番 —— BGM 限流搜不了时的兜底入口（006 阶段）。
+ * 手动添加追番 —— BGM 限流搜不了时的兜底入口。
  *
- * 设计要点：
- *   - **bgmId 优先填真的**：用户从 bgm.tv 条目 URL（如 bgm.tv/subject/267215）
- *     拿到 id 填进来。填了真 id → 限流恢复后进详情页自动识别为「已追番」+
- *     拉到完整元数据（detail cache 按 bgmId 命中，跟手动 track 物理隔离，
- *     不会污染）。填不出来 → 留空，系统给负数 id 当纯本地条目。
- *   - **封面填 URL**：track.cover 存 URL（可移植 / 同步安全）；本地化在
- *     显示时由 useCover 按设备各自处理，不在这写本地路径。
- *   - **最少必填**：标题 + 类目。其他都可选 / 给默认值。
+ * bgmId 尽量填真的(从 bgm.tv 条目 URL 里拿):填了真 id,限流恢复后进详情页就能自动
+ * 识别成「已追番」并拉到完整元数据;填不出就留空,系统给个负数 id 当纯本地条目。
+ * 封面存 URL(可移植 / 同步安全),本地化由 useCover 在显示时按设备各自处理。
  */
 function ManualAddModal({
   defaultCategory, editing, onClose,
@@ -661,8 +605,7 @@ function ManualAddModal({
     }
 
     const epsParsed = parseInt(totalEps.trim(), 10)
-    // 不再有「中文标题」输入：卡片显示用 titleCn || title 回落，手动条目直接用 title 即可
-    // （编辑时省略 titleCn，靠 upsert 的 ...prev 保留任何旧值，非破坏性）。
+    // 没有「中文标题」输入:显示用 titleCn || title 回落,手动条目直接用 title 即可。
     const fields = {
       subjectType: category,
       title: trimmedTitle,
@@ -884,7 +827,7 @@ function FilterChip({
   icon: string
   label: string
   count: number
-  /** Active-state composite (bg + border + text). Only applied when `active`. */
+  /** 选中态的复合样式(bg + border + text),只在 `active` 时套用 */
   accent: string
 }): JSX.Element {
   return (
@@ -913,12 +856,9 @@ function FilterChip({
 // ── Mobile select dropdown ───────────────────────────────────────────────────
 
 /**
- * 手机档把「分段 tab / 过滤 chips」收成下拉，避免一排 chip 在窄屏换行 / 横向
- * 挤压造成的视觉跳动（用户反馈「变来变去看得晕」）。平板 + 桌面仍用分段条，
- * 故本组件只在 `md:hidden` 容器里渲染。
- *
- * 泛型 T = 选项 key 的联合（FilterKey / RecFilterKey / Tab）。下拉用 absolute
- * 定位（sticky header 没有 overflow-hidden，向下溢出不会被裁），点外面 / Esc 关。
+ * 手机档把分段 tab / 过滤 chips 收成下拉,避免一排 chip 在窄屏换行造成视觉跳动
+ * (用户反馈「变来变去看得晕」)。平板 + 桌面仍用分段条,故只在 `md:hidden` 容器里渲染。
+ * 下拉用 absolute 定位(sticky header 没有 overflow-hidden,溢出不会被裁)。
  */
 function SelectMenu<T extends string>({
   options, value, onChange, ariaLabel,
@@ -1003,36 +943,28 @@ function SelectMenu<T extends string>({
 
 // ── Track row ────────────────────────────────────────────────────────────────
 
-// 内置三源顺序固定：常驻显示在补绑按钮里，给"还没绑过"的源画虚线按钮。
-// 其他来源（Bilibili / Custom）走 AddBindingModal 单独的「+ 添加链接」入口。
+// 内置三源顺序固定,常驻显示;其他来源(Bilibili / Custom)走「+ 添加链接」入口。
 const BUILTIN_SOURCES: ReadonlyArray<Source> = ['Aowu', 'Xifan', 'Girigiri']
 
-// memo —— 列表里每行都订阅不到 store，渲染只依赖 `track` 这一个 prop。
-// store.upsert 只替换被改那一条 track 的对象引用（其他 key 的对象身份不变），
-// filtered 又是纯 .filter/.reverse/.sort 不克隆元素 —— 所以单条编辑 / 搜索框
-// 输入触发 MyAnime 重渲染时，未变的行 props 引用不变，memo 直接跳过，避免
-// 上百行整列重渲染的卡顿（这是进 MyAnime 后交互发顿的主因）。
+// memo:每行只依赖 `track` 这一个 prop。store.upsert 只替换被改那条的对象引用,filtered
+// 又是纯 filter/sort 不克隆元素 —— 所以单条编辑 / 搜索框输入时,未变的行 props 引用不变
+// memo 直接跳过。**这是进 MyAnime 后交互发顿的主因**,别去掉。
 const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.Element {
   const displayTitle = track.titleCn || track.title
   const nativeTitle = track.titleCn && track.title !== track.titleCn ? track.title : ''
   const coverSrc = useCover(String(track.bgmId), track.cover)
-  // 删除追番要先弹 ConfirmDeleteModal —— 追番带着自定义标签、最爱值、好看集
-  // 等本地数据，"双击 trash icon 真删" 那种轻量模式风险太高。
+  // 删追番必须先确认 —— 它带着自定义标签、最爱值、好看集等本地数据,误删代价太高。
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [addingBinding, setAddingBinding] = useState(false)
   // 当前正在补搜的内置源；null = 没在搜
   const [searchingSource, setSearchingSource] = useState<Source | null>(null)
-  // 「编辑」按钮打开的弹窗 —— 弹窗里集中改用户手动加的链接（标题 / URL /
-  // 删除），物理隔离日常的"点 chip 跳转"操作，杜绝误删。
-  // 内置三源（Aowu/Xifan/Girigiri）不在弹窗里，它们走「+ 搜 X」流程管理。
+  // 「编辑」弹窗集中管用户手动加的链接(改标题 / URL / 删),与日常「点 chip 跳转」物理
+  // 隔离,杜绝误删。内置三源不在弹窗里,它们走「+ 搜 X」流程。
   const [editingOpen, setEditingOpen] = useState(false)
-  // 「编辑条目」弹窗 —— 仅手动添加的本地条目（bgmId<0）可改标题/类目/封面等，
-  // 复用 ManualAddModal 的编辑模式。BGM 同步的条目以 BGM 为准，不在这编辑。
+  // 仅手动添加的本地条目(bgmId<0)可改标题/类目/封面。BGM 同步的条目以 BGM 为准。
   const [editTrackOpen, setEditTrackOpen] = useState(false)
   const isManual = track.bgmId < 0
-  // 「推荐」按钮打开的弹窗 —— 让用户只填"推荐给谁"，番剧信息直接复用本行。
-  // 用户的洞察："推荐的番一定在追番列表里"，所以推荐入口设在 TrackRow 是最
-  // 自然的——免去再做一遍 BGM 搜索。
+  // 推荐入口设在行内:推荐的番一定在追番列表里,免去再做一遍 BGM 搜索(用户洞察)。
   const [quickRecOpen, setQuickRecOpen] = useState(false)
   const userAddedBindings = track.bindings.filter(isUserAddedBinding)
   // 小说走「卷 + 章」两级进度，且不用好看集（只留星级）——见下方计数器 / chip 的分支。
@@ -1048,17 +980,14 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
   const setEpisode = (ep: number): void => {
     const total = track.totalEpisodes
     const clamped = Math.max(0, total != null ? Math.min(ep, total) : ep)
-    // **不**自动把 watching 切到 completed —— 用户反馈"集数填 12 不一定是
-    // 看到 12，有时候是剩下 12 还没看的备忘"，自动切 tab 会曲解用户意图。
-    // 看完了由用户自己点 status segment 切到「看完」。
+    // **不**自动把 watching 切 completed —— 用户反馈「集数填 12 不一定是看到 12,有时是
+    // 剩 12 集没看的备忘」,自动切 tab 会曲解意图。看完了由用户自己点。
     const patch: Partial<AnimeTrack> & { bgmId: number } = { bgmId: track.bgmId, episode: clamped }
-    // 「想看 → 在追」这个方向仍保留自动切：从 0 集开始 +1 表示"我开始看了",
-    // 不存在歧义（不会有人在「想看」状态填 12 表示备忘）。
+    // 「想看 → 在追」这个方向仍自动切:从 0 集 +1 就是开始看了,没有歧义。
     if (clamped > 0 && track.status === 'plan') patch.status = 'watching'
     animeTrackStore.upsert(patch)
   }
-  // 小说卷 / 章 setter —— 小说用「卷 + 章」两级文本进度替代 episode 数字。
-  // 跟动漫 +1 一样：从「想看」首次推进就自动切「在追」（空 / "0" 不算推进）。
+  // 小说用「卷 + 章」两级文本进度替代 episode 数字;与 +1 一样,首次推进自动切「在追」。
   const advancesFromPlan = (v: string): boolean => {
     const t = v.trim()
     return t !== '' && t !== '0' && track.status === 'plan'
@@ -1074,9 +1003,8 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
     animeTrackStore.upsert(patch)
   }
   const setTotalEpisodes = (n: number | undefined): void => {
-    // 用户手动改总集数 —— BGM eps=0 时的逃生通道。store 的 normalize 会
-    // 在新 total 比 episode 小的时候自动把 episode 夹到 total 上限,
-    // 避免用户填了一个比已观看集数还小的总数导致状态不一致。
+    // 用户手动改总集数 —— BGM eps=0 时的逃生通道。normalize 会在新 total 比 episode 小时
+    // 把 episode 夹到上限,避免填了个比已看集数还小的总数导致状态不一致。
     animeTrackStore.upsert({ bgmId: track.bgmId, totalEpisodes: n })
   }
   const setFavorite = (n: number): void => {
@@ -1094,13 +1022,10 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
     animeTrackStore.setGoodEpisodeNote(track.bgmId, ep, note)
   }
   const [goodEpsOpen, setGoodEpsOpen] = useState(false)
-  // 精简布局（平板 + 手机，<lg）：卡片只直接显示 状态 / 集数 / 在线观看 / 标签，
-  // 其余（最爱值 / 好看集 / 标签编辑 / 推荐 / 移除）收进右上「更多」浮层。
-  // useIsCompact 用 JS 媒体查询只渲染一套卡片（不走 CSS 双树），避免上百行追番
-  // 时每行 DOM 节点翻倍拖慢首屏。
+  // 精简布局(<lg):卡片只留 状态 / 集数 / 在线观看 / 标签,其余收进右上「更多」浮层。
+  // useIsCompact 用 JS 媒体查询只渲染一套卡片,不走 CSS 双树 —— 否则上百行时 DOM 翻倍。
   const isCompact = useIsCompact()
-  // 「更多」浮层锚点矩形（null = 关闭）。卡片根是 overflow-hidden，浮层必须
-  // portal 到 body 用 fixed 定位（同 NovelProgressPopover）。
+  // 卡片根是 overflow-hidden,浮层必须 portal 到 body 用 fixed 定位。
   const [moreAnchor, setMoreAnchor] = useState<DOMRect | null>(null)
   const moreBtnRef = useRef<HTMLButtonElement>(null)
   const morePanelRef = useRef<HTMLDivElement>(null)
@@ -1123,9 +1048,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
       document.removeEventListener('keydown', onKey)
     }
   }, [moreAnchor])
-  // 行内"添加自定义标签" inline 输入 —— 替代了早期的 UserTagsEditor modal,
-  // 因为 BGM tag 最多 4 + 用户自定义最多 4 总数 6-8 个 chip 完全能放进
-  // TrackRow 一行里，专门弹个 modal 编辑反而多此一举。
+  // 行内加标签用 inline 输入而非 modal:总共也就 6-8 个 chip,放得进一行。
   const [addingTag, setAddingTag] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
   const tagInputRef = useRef<HTMLInputElement>(null)
@@ -1138,8 +1061,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
     setTagDraft('')
     setAddingTag(false)
   }
-  // 封面 <img> 抽出来给「桌面铺满 / 精简定高缩略图」两种容器复用，避免重复
-  // onError 兜底逻辑。容器各自 relative，img 用 absolute inset-0 填满容器。
+  // 封面 <img> 抽出来给两种容器复用,避免重复写 onError 兜底。
   const coverImg = (
     <img
       src={coverSrc || coverFallback}
@@ -1159,11 +1081,9 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
   return (
     <div
       className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden flex min-h-[140px]"
-      // content-visibility:auto —— 让浏览器跳过视口外行的布局/绘制（首屏只
-      // 真正排版可见的几行），上百条追番时初次进入 MyAnime 的同步排版开销大幅
-      // 降低；contain-intrinsic-size 给出占位高度（≈卡片下限 140），让滚动条
-      // 尺寸和滚动位置保持稳定。reconciliation 仍会建全部 DOM 节点，这条只省
-      // 浏览器侧的 layout/paint —— 配合上面的 memo（省 JS 重渲染）一起减负。
+      // content-visibility:auto 让浏览器跳过视口外行的布局/绘制,上百条追番时首屏排版开销
+      // 大幅降低;contain-intrinsic-size 给占位高度,保持滚动条尺寸稳定。这条只省浏览器侧的
+      // layout/paint,JS 重渲染由上面的 memo 负责。
       style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 140px' }}
     >
       {/* Cover —— useCover 把 URL 解析成本地 archivist://（含老数据"回填"：
@@ -1180,8 +1100,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
           `relative` 给 absolute 封面做定位锚点；`overflow-hidden rounded-l-xl`
           裁掉左侧圆角处的封面溢出。 */}
       {isCompact ? (
-        // 精简：封面铺满卡片高度（消除"小缩略图 + 下方留白"的割裂）；窄到手机
-        // （<sm/640）干脆去掉封面——此时封面会被挤成细长条很丑，去掉给内容腾地方。
+        // 精简档封面铺满卡片高度;窄到手机(<sm)干脆去掉 —— 那时封面会被挤成细长条。
         <div className="hidden sm:block w-[96px] shrink-0 bg-surface-container-high overflow-hidden rounded-l-xl relative">
           {coverImg}
         </div>
@@ -1640,8 +1559,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
           existing={track.bindings}
           onClose={() => setAddingBinding(false)}
           onConfirm={(binding: AnimeBinding) => {
-            // bind() preserves existing track fields when prev exists — passing
-            // bgmId alone is enough; we just need the binding write to land.
+            // prev 存在时 bind() 会保留 track 原有字段,这里只要让 binding 写进去就够。
             animeTrackStore.bind({ bgmId: track.bgmId }, binding)
             setAddingBinding(false)
           }}
@@ -1655,10 +1573,8 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
           animeTitle={displayTitle}
           onClose={() => setSearchingSource(null)}
           onConfirm={async (card: SearchCard) => {
-            // Aowu 的 card.key 是 /v/{numericId} 合成 URL，浏览器打开会
-            // 报错。和 SearchDownload 的关联追番一样，写 binding 前先
-            // resolveShareUrl 拿到 /w/{token}#s=&ep=1 存到 sourceUrl。
-            // Xifan / Girigiri 的 card.key 本身就是真实 watch URL，直接用。
+            // Aowu 的 card.key 是 /v/{id} 合成 URL,浏览器打不开,写 binding 前先换成 /w/{token};
+            // Xifan / Girigiri 的 key 本身就是真实 watch URL,直接用。
             let sourceUrl: string | undefined
             if (card.source === 'Aowu') {
               try {
@@ -1685,8 +1601,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
           bindings={track.bindings}
           onClose={() => setEditingOpen(false)}
           onSave={(changes: BindingEdit[]) => {
-            // 把 modal 攒下的改动一次性 commit 到 store。modal 已经做过
-            // 校验（URL 合法 / 标题非空 / URL 去重），这里只需 dispatch。
+            // modal 里已经做过校验(URL 合法 / 标题非空 / 去重),这里只负责一次性 commit。
             for (const c of changes) {
               if (c.kind === 'delete') {
                 animeTrackStore.removeBinding(track.bgmId, c.originalSource, c.originalSourceKey)
@@ -1789,8 +1704,10 @@ function EpisodeCounter({
   episode: number
   total: number | undefined
   onChange: (n: number) => void
-  /** 用户改"总集数"。BGM 长篇连载番（柯南 / 海贼）和剧场版 / OVA 那种
-   *  eps=0 的条目在我们这边会显示成 "?"，用户可以点 "?" 自己填一个目标值。 */
+  /**
+   * 用户改总集数。BGM 长篇连载(柯南/海贼)和剧场版那种 eps=0 的条目显示成「?」
+   * 点它可以自己填一个目标值。
+   */
   onTotalChange: (n: number | undefined) => void
 }): JSX.Element {
   const atMax = total != null && episode >= total
@@ -1847,9 +1764,7 @@ function EpisodeInput({
   const display = draft ?? String(episode)
   const totalDisplay = totalDraft ?? (total != null ? String(total) : '')
 
-  // total 未填 + 未在编辑：显示「连载中」徽章而不是空输入框。
-  // 这个状态对新番 / 长寿番（BGM eps=0）/ 任何还没完结的番都成立 ——
-  // 比 "?" 更明确，又同时是"点这里能填总集数"的入口（点徽章切到 input）。
+  // total 未填时显示「连载中」徽章而不是空输入框 —— 比「?」明确,同时也是填总集数的入口。
   const showOngoingBadge = totalDraft === null && total == null
 
   const commit = (): void => {
@@ -1923,14 +1838,10 @@ function EpisodeInput({
 // ── Novel progress（小说进度：卷 + 章 两级）──────────────────────────────────
 
 /**
- * 小说不像动漫 / 漫画一集一个数字 —— 内容是「卷（一级）+ 章（二级）」两级，且卷 / 章
- * 既可能是数字也可能是「SS2 / 短篇 / 后记」这种自定义文本。行内步进器塞不下变长的
- * 文本（数字够窄、文本要么截断要么撑爆），所以这里走应用里成熟的「紧凑 chip → 点开
- * 浮层编辑」范式（同 ✨ 好看集 / TagFilter）：
- *   - 卡片行上只占一个 chip，显示「卷 X · 章 Y」，长文本 truncate + hover 看全（行永远整齐）
- *   - 点 chip 弹出浮层，里头两行 NovelLevel 有充足宽度容纳自定义文本，+/- 步进只在
- *     当前值是纯整数时可用
- * 不显示"总数"：小说卷数没有动漫"总集数"那种确定语义（常连载 / 含番外），只记读到哪。
+ * 小说不像动漫一集一个数字:内容是「卷 + 章」两级,而且两级都可能是「SS2 / 后记」这类
+ * 文本。行内步进器塞不下变长文本,所以走「紧凑 chip → 点开浮层编辑」范式(同好看集):
+ * 行上只占一个 chip,点开才是有充足宽度的编辑浮层,+/- 只在当前值是纯整数时可用。
+ * 不显示「总数」—— 小说卷数没有动漫总集数那种确定语义,只记读到哪。
  */
 function NovelProgress({
   volume, chapter, onVolumeChange, onChapterChange,
@@ -1940,8 +1851,7 @@ function NovelProgress({
   onVolumeChange: (v: string) => void
   onChapterChange: (v: string) => void
 }): JSX.Element {
-  // 浮层锚点 —— 存 chip 的视口矩形（非 null = 打开）。卡片根是 overflow-hidden，
-  // 绝对定位浮层会被裁，所以浮层 portal 到 body 用 fixed 坐标（同 NotePopover）。
+  // 浮层锚点存 chip 的视口矩形。卡片根是 overflow-hidden,所以 portal 到 body 用 fixed。
   const [anchor, setAnchor] = useState<DOMRect | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const started = volume !== '' || chapter !== ''
@@ -2012,8 +1922,8 @@ function NovelProgressPopover({
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    // 排除 chip 本身：点 chip 由它自己的 onClick 负责 toggle 关闭，这里若也关一次
-    // 会和 onClick 的重新打开打架（mousedown 先关、click 再开 → 关不掉）。
+    // 排除 chip 本身:点 chip 由它的 onClick 负责 toggle,这里再关一次会打架
+    // (mousedown 先关、click 再开 → 关不掉)。
     const onDown = (e: MouseEvent): void => {
       const t = e.target as Node
       if (ref.current && !ref.current.contains(t) && anchorEl && !anchorEl.contains(t)) onClose()
@@ -2060,7 +1970,7 @@ function NovelLevel({
   // draft：编辑中本地态，blur / Enter 才 commit（跟 EpisodeInput 一致）。
   const [draft, setDraft] = useState<string | null>(null)
   const display = draft ?? value
-  // 纯整数才能 +/- 步进；"SS2" / "后记" 这类自定义文本禁用步进（直接改输入框）。
+  // 纯整数才能 +/- 步进;「SS2」「后记」这类文本禁用步进,直接改输入框。
   const num = /^\d+$/.test(value) ? parseInt(value, 10) : null
 
   const commit = (): void => {
@@ -2115,10 +2025,7 @@ function NovelLevel({
 
 // ── Sort selector ────────────────────────────────────────────────────────────
 
-/**
- * 两段排序切换：「添加日期」（最新追的在顶）/ 「🌟 数」（最爱的在顶）。
- * 持久化键是 maple-anime-sort，跟过滤 chip 一样是 UI 状态，不进 store。
- */
+/** 两段排序切换。持久化键 maple-anime-sort,跟过滤 chip 一样属于 UI 状态,不进 store。 */
 function SortSelector({
   value, onChange,
 }: {
@@ -2164,17 +2071,8 @@ function SortSelector({
 // ── Good episodes chip ───────────────────────────────────────────────────────
 
 /**
- * ✨ 好看集 chip —— 入口按钮，不展示具体集号。
- *
- * 设计取舍：早先版本在 chip 里压缩展示 "1、4-5、16-19"，但用户决定让 chip
- * 始终只做"入口"角色——具体内容到 modal 里看。这样：
- *   - 行视觉永远整齐，长寿番（柯南标到 100+）也不会撑乱 TrackRow
- *   - 跟左侧的「标这集」按钮在视觉权重上对等
- *   - 用户对 row 的快速扫描时不被一长串数字干扰
- *
- * 状态只用颜色 + 边框样式区分：
- *   - 空：虚线浅色，"还没开始用，欢迎点开"的感觉
- *   - 非空：amber 实色填充，"这里有内容，点开看"
+ * ✨ 好看集 chip 只做「入口」,不展示具体集号(用户决定)—— 长寿番标到 100+ 也不会
+ * 撑乱行,快速扫描时不被一长串数字干扰。空 = 虚线浅色,非空 = amber 实色。
  */
 function GoodEpisodesChip({
   episodes, onOpen,
@@ -2212,17 +2110,8 @@ function GoodEpisodesChip({
 // ── Favorite stars ───────────────────────────────────────────────────────────
 
 /**
- * 最爱值星级评分（B 站风格）—— 6 颗星位，点亮 N 颗代表 value=N。
- *
- * 交互：
- *   - 鼠标 hover 一颗星 → 整条预览到那颗为止的亮色（不写 store）
- *   - 点击星 N：
- *     · 若 value 已经是 N（即"再点一次同一颗"），清零回 0；
- *     · 否则 value 设为 N。
- *   这样单击既能"设到 N"，又能"清零"，不需要额外的清除按钮。
- *
- * 视觉：填充星用 amber-400 / 空星 outline，hover 预览跟最终态颜色一致避免
- * 用户被颜色变化吓到。
+ * 最爱值星级(B 站风格),6 颗星位。**再点一次已点亮的那颗 = 清零**,所以不需要额外的
+ * 清除按钮。hover 预览与最终态同色,免得颜色变化吓到用户。
  */
 function FavoriteStars({
   value, onChange,
@@ -2268,18 +2157,10 @@ function FavoriteStars({
 // ── Observe counter ──────────────────────────────────────────────────────────
 
 /**
- * 观望次数计数器 —— 替代观望状态下的 🌟 评分槽。
- *
- * 设计意图：原 PDF 里观望次数 > 3 时用户会自己手动迁到"在追"。这里把"次数"
- * 当作头等数据展示（不是星级评分），用 −/数字/+ 三键编辑；≥4 时数字框换
- * 主色 border + 主色字 + tooltip 提示升级，**不**长出额外按钮 —— 升级动作
- * 走左侧已有的 StatusSegment（点"在追"即可），避免功能冗余。
- *
- * 视觉对齐 `EpisodeCounter` 的 −/+1 规格（w-7 h-7 圆角 + border），保证一行
- * 里两组 −/+ 控件视觉协调，不会出现"一组明显一组隐形"的违和感。
- *
- * 不设上限：用户硬要继续观望 N>4 不阻止，UI 持续主色高亮。这跟「最爱值」
- * clamp 到 [0,6] 的硬上限是有意区分的 —— 观望次数是行为统计，最爱值是评分。
+ * 观望次数计数器,占据观望状态下的 🌟 评分槽。次数是头等数据(不是评分),用 −/数字/+ 编辑。
+ * ≥4 时高亮提示可以升到「在追」,但**不长出额外按钮** —— 升级走左侧已有的 StatusSegment。
+ * 不设上限:用户硬要继续观望不阻止(与最爱值 clamp 到 [0,6] 有意区分,一个是行为统计、
+ * 一个是评分)。
  */
 function ObserveCounter({
   value, onChange,

@@ -60,9 +60,8 @@ async function setSearchCache(source: Source, keyword: string, cards: SearchCard
     c[keyword] = cards
     await window.systemApi.cacheSet(archiveCacheKey(source), c)
   } catch { /* noop */ }
-  // 同时写一份 SearchDownload 用的共享缓存(带 TTL 信封),让两边缓存「联动」:
-  // 否则在 BGM 详情用某源搜过后,去搜索下载搜同一标题读不到缓存 → 走网络 →
-  // 又要重新过验证码。getSearchCache 读时已会回退读共享缓存,这里把写也补上。
+  // 同时写一份 SearchDownload 的共享缓存,让两边联动 —— 否则在详情页搜过某源后
+  // 去搜索下载搜同一标题读不到缓存,又要重新过一次验证码。
   void setCachedSearch(keyword, source, cards)
 }
 
@@ -75,12 +74,9 @@ export type BgmSearchKind = 'anime' | 'book'
 const KIND_TO_CAT: Record<BgmSearchKind, 1 | 2> = { anime: 2, book: 1 }
 
 /**
- * 缓存里的复合 key —— 同一关键词在动画 / 书籍两种类目下命中的结果完全不同,
- * 缓存必须按 cat 分桶不能串味（比如「巨虫列岛」既是动画又是漫画）。
- *
- * 命名格式：`cat{N}:{keyword}`。老缓存数据没有前缀（直接用 keyword 当 key）,
- * 自动失效不复读 —— 老 key 仍留在 search_cache.json 里是无害的，下次搜
- * 同关键词时写一份新的带前缀的缓存条目，老条目自然作废。
+ * 缓存 key 按类目分桶:同一关键词在动画 / 书籍下的结果完全不同,不分桶会串味
+ * (「巨虫列岛」既是动画又是漫画)。格式 `cat{N}:{keyword}`;老缓存没有前缀
+ * 自然失效不复读,留在文件里也无害。
  */
 function bgmCacheKey(keyword: string, kind: BgmSearchKind): string {
   return `cat${KIND_TO_CAT[kind]}:${keyword}`
@@ -181,10 +177,8 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
 
     try {
       if (src === 'Aowu') {
-        // AnimeInfo auto-selects when exactly 1 result lands, so we need the
-        // *full* result set before deciding. Streaming search returns the
-        // first page immediately and pumps subsequent pages via events; here
-        // we synchronously wait for the stream to complete (done=true).
+        // 只有 1 个结果时页面会自动选中,所以必须拿到**完整**结果集再判断。流式搜索会先回
+        // 第一页、后续页走事件,这里同步等到 done=true。
         const { requestId, results, more } = await window.aowuApi.search(kw)
         let cards = results.map(normalizeAowu)
         if (more) {
@@ -235,8 +229,8 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
       setState({ status: 'error', message: `${src} 未找到与"${kw}"相关的结果` })
       return
     }
-    // 即使只命中 1 个结果也列出来让用户确认:源搜索用的是关键词而非 BGM
-    // 详情标题,单个结果未必就是用户在看的这部番,直接进选集会下错番。
+    // **即使只命中 1 个结果也要列出来让用户确认** —— 源搜索用的是关键词而不是 BGM 详情标题
+    // 单个结果未必就是用户在看的这部番,直接进选集会下错番。
     setState({ status: 'results', cards })
   }
 
@@ -255,8 +249,8 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
         const watchInfo = await window.xifanApi.getWatch(card.key)
         const wErr = (watchInfo as { error?: unknown }).error
         if (wErr) { setState({ status: 'error', message: String(wErr) }); return }
-        // watch() 只解析当前激活线路(播放器按需惰性解析,省请求);下载配置面板要
-        // 一次性展示全部线路供选,这里主动并发补全其余线路的 template。
+        // watch() 只解析当前激活线路(播放器按需惰性解析,省请求);下载配置面板要一次性列出
+        // 全部线路,所以这里并发补齐其余线路的 template。
         const sources = await window.xifanApi.resolveAllSources(watchInfo.id, watchInfo.sources)
         setState({ status: 'xifan_config', card, watchInfo: { ...watchInfo, sources } })
       }
@@ -419,8 +413,7 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
     )
   }
 
-  // Configuring step delegates to source-specific shared modal (modal owns its
-  // own overlay, so we render it standalone, not inside ArchiveFlow's overlay).
+  // configuring 步骤交给各源自己的弹窗(弹窗自带遮罩,所以独立渲染,不套在本组件的遮罩里)。
   if (state.status === 'xifan_config') {
     return (
       <XifanDownloadConfigModal
@@ -629,10 +622,10 @@ type PageState =
 function LoadingSpinner({
   progress,
 }: {
-  /** When a multi-page BGM search is running, main fires progress events that
-   * land here. Shows "page X / Y" below the spinner so the user has feedback
-   * during ≥2s-per-page rate-limited fetches instead of staring at a blank
-   * spinner for 10+ seconds. */
+  /**
+   * 多页 BGM 搜索时主进程发来的进度,显示成「第 X / Y 页」——每页要等 ≥2s 的限速
+   * 没有这个反馈用户会对着空转的 spinner 干瞪十几秒。
+   */
   progress?: { current: number; total: number } | null
 } = {}): JSX.Element {
   return (
@@ -679,23 +672,11 @@ const KIND_OPTIONS: ReadonlyArray<{ key: BgmSearchKind; label: string }> = [
 ]
 
 /**
- * BGM 搜索类目下拉 —— 嵌入到 TopBar 搜索框右侧（内切风格，仿 bgm.tv 自家
- * 顶栏的「全部/动画/书籍/…」下拉）。
+ * BGM 搜索类目下拉,内切在 TopBar 搜索框右侧(仿 bgm.tv 自家顶栏)。BGM 在 URL 层级把
+ * 漫画+小说+画集合并成「书籍」,所以这里只有「动画 / 漫画小说」二选一。
  *
- * 设计意图：BGM 在 URL 层级把漫画+小说+画集合并成「书籍」类目，所以这里
- * 只暴露「动画 / 漫画小说」二选一。点击当前选项的胶囊弹出菜单，点选项关闭。
- * 外面 click 关闭走 useEffect mousedown 监听。
- *
- * 设计要点（修过两次的痛苦经验）：
- *   - **按钮固定宽度 w-24**：「动画」(2 字) 和「漫画小说」(4 字) 共用一个
- *     宽度，避免切换时按钮跳动 + 菜单宽度对不齐
- *   - **按钮 bg 明显区分搜索框**：搜索框是 `surface-container-highest`,
- *     按钮用 `surface-container-low` + border，看起来像"嵌入式胶囊"而不是
- *     裸文字
- *   - **菜单换暗色 + shadow**：菜单用 `surface-container-lowest`（比搜索框
- *     暗几档）+ shadow-xl 起浮感，跟搜索框拉开层次不再融在一起
- *   - **菜单跟按钮等宽 + left-0 对齐**：避免之前菜单宽于按钮、向左凸出来
- *     的视觉问题
+ * 两点样式约束(踩过两次):按钮**固定宽度**,否则「动画」和「漫画小说」切换时按钮会跳;
+ * 菜单与按钮等宽且 left-0 对齐,否则菜单会比按钮宽、向左凸出来。
  */
 function KindDropdown({
   value, onChange,
@@ -726,17 +707,9 @@ function KindDropdown({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        // **rounded-r-md 不能丢** —— 容器没设 overflow-hidden（会吞下拉菜单),
-        // 圆角必须按钮自己处理右上/右下两个角。
-        //
-        // 颜色挑选历史踩坑：
-        //   - `surface-container-low`：太暗，跟页面背景（黑）几乎融在一起,
-        //     反而跟输入区（surface-container-highest）差太大，像贴上去的
-        //     暗块，**不能用**
-        //   - `surface-container-high`：仅比输入区暗一档，**同色系族微差**,
-        //     视觉上像同一个搜索框的两个分段，是最舒服的距离
-        // hover/open 时切到 `surface-container-highest` 跟输入区平齐 ——
-        // "唤醒"的视觉提示。
+        // **rounded-r-md 不能丢** —— 容器不能设 overflow-hidden(会吞掉下拉菜单),右侧圆角只能
+        // 按钮自己处理。配色定在比输入区暗一档的同色系:再暗就跟页面背景融在一起、反而像贴上去的
+        // 暗块。hover/open 时与输入区平齐,作为「唤醒」提示。
         className={`w-full flex items-center justify-between gap-1 px-3 text-xs font-label text-on-surface transition-colors outline-none rounded-r-md ${
           open
             ? 'bg-surface-container-highest'
@@ -753,9 +726,8 @@ function KindDropdown({
         </span>
       </button>
       {open && (
-        // 菜单跟搜索框同色系（surface-container-highest）—— 视觉上像是搜索框
-        // 的延伸而不是另一个独立的暗色卡片。靠 shadow + border 而不是色差
-        // 来表达"浮层"。参考 SearchDownload 的 source picker 同款配方。
+        // 菜单与搜索框同色系,靠 shadow + border 而不是色差来表达浮层 —— 视觉上像搜索框的延伸
+        // 而不是另一张独立的暗色卡片。
         <div className="absolute top-full left-0 mt-1.5 w-full bg-surface-container-highest border border-outline-variant/30 rounded-md overflow-hidden shadow-xl shadow-black/40 z-50">
           {KIND_OPTIONS.map(o => (
             <button
@@ -1175,12 +1147,9 @@ function AnimeInfo(): JSX.Element {
   const lastBgmKeyword = useRef(_cachedBgmKeyword)
   const [archiveKeyword, setArchiveKeyword] = useState<string | null>(null)
   const pendingScrollRestore = useRef(false)
-  // Live progress from main-process BGM search. Set by the IPC subscription
-  // below; cleared at the start/end of every search invocation.
+  // 主进程 BGM 搜索的实时进度,每次搜索开始/结束时清空。
   const [searchProgress, setSearchProgress] = useState<{ current: number; total: number } | null>(null)
-  // 用户选的搜索类目（动画 vs 书籍）。模块级缓存让用户切到别的页面再回来
-  // 不丢类目选择。切类目时清空当前 results —— 类目变了，旧动画结果显示
-  // 在新书籍搜索栏下面会很怪。
+  // 用户选的搜索类目。模块级缓存让切走再回来不丢选择。
   const [searchKind, setSearchKindState] = useState<BgmSearchKind>(_cachedSearchKind)
   // 搜索历史（本地，不跨设备）。每条带 kind，点选时连类目一起恢复。
   const [history, setHistory] = useState(() => loadBgmHistory())
@@ -1188,16 +1157,15 @@ function AnimeInfo(): JSX.Element {
     if (k === searchKind) return
     _cachedSearchKind = k
     setSearchKindState(k)
-    // 切类目只改"下次搜索用哪个 cat"，**不动当前已显示的结果** —— 用户要求
-    // 切换保持原样，等真正再点搜索时才换内容（按新 kind 走缓存/网络）。
+    // 切类目只改「下次搜索用哪个 cat」,**不动当前已显示的结果** —— 用户要求切换保持原样
+    // 等真正再点搜索时才按新类目取内容。
   }
 
   useEffect(() => {
     _cachedState = state
   }, [state])
 
-  // Subscribe once for the page lifetime. Main process emits a `(current, total)`
-  // tuple after each page completes (cache hit or rate-limited network fetch).
+  // 整页生命周期只订阅一次。主进程每完成一页(命中缓存或真的抓)就发来 (current, total)。
   useEffect(() => {
     const unsub = window.bgmApi.onSearchProgress((current, total) => {
       setSearchProgress({ current, total })
@@ -1205,7 +1173,7 @@ function AnimeInfo(): JSX.Element {
     return unsub
   }, [])
 
-  // Restore scroll position after returning to results list
+  // 回到结果列表时恢复滚动位置
   useEffect(() => {
     if (state.status === 'results' && pendingScrollRestore.current) {
       pendingScrollRestore.current = false
@@ -1226,19 +1194,13 @@ function AnimeInfo(): JSX.Element {
   }
 
   /**
-   * Stale-cache background refresh：用户已经看到旧数据了，我们后台**单次**
-   * 请求新数据更新缓存（下次搜索就能看到新的）。`update=true` 让主进程也
-   * 跳过磁盘缓存，否则就只是重新缓存同一份旧 HTML。
-   *
-   * **失败处理**：catch 后**直接 swallow**，不重试。如果 BGM 限流了：
-   *   - 本次后台刷新作废 → 缓存仍是 stale
-   *   - 用户下次搜同一关键词 → SWR 再触发一次
-   *   - 如果还限流 → 继续作废 → 一直等到 BGM 放行
-   * 这套语义符合 docs/scraping/bgm-集成参考手册.md §3 的「失败后不试探不重试」原则。
+   * SWR 后台刷新:用户已经看到旧数据了,这里**单次**请求新数据更新缓存,下次搜索就是新的。
+   * `update=true` 让主进程也跳过磁盘缓存,否则只是把同一份旧 HTML 重新缓存一遍。
+   * **失败直接吞掉、不重试**(红线):缓存维持 stale,等用户下次搜同一关键词再触发一轮。
    */
   const refreshBgmSearchInBackground = async (keyword: string, kind: BgmSearchKind): Promise<void> => {
-    // dedupRefresh key 也按 kind 分桶 —— 同一关键词的动画 SWR 和书籍 SWR
-    // 并发时是不同的两个请求，不能复用 inflight Promise
+    // dedupRefresh 的 key 也要按类目分桶 —— 同一关键词的动画 SWR 和书籍 SWR 是两个不同的
+    // 请求,不能复用同一个 inflight Promise。
     await dedupRefresh(`bgm:${kind}:${keyword}`, async () => {
       try {
         const fresh = await window.bgmApi.search(keyword, true, KIND_TO_CAT[kind])
@@ -1251,25 +1213,22 @@ function AnimeInfo(): JSX.Element {
   }
 
   /**
-   * Search semantics (matches SearchDownload / per project-wide setting):
-   *   - Cache ON  + hit + fresh  → use cache, return early
-   *   - Cache ON  + hit + stale  → use cache for display, refresh in background (SWR)
-   *   - Cache ON  + miss         → fetch online (main may still use its disk cache)
-   *   - Cache OFF                → always fetch online with update=true, bypassing
-   *                                BOTH renderer and main-side caches
+   * 搜索语义(与 SearchDownload 一致):
+   *   - 开缓存 + 命中 + 新鲜 → 直接用缓存
+   *   - 开缓存 + 命中 + 过期 → 先用缓存显示,后台 SWR 刷新
+   *   - 开缓存 + 未命中     → 联网(主进程仍可能用它自己的磁盘缓存)
+   *   - 关缓存             → 一律联网并 update=true,渲染层和主进程的缓存都绕过
    *
-   * After ANY successful fetch the renderer cache is updated (data + timestamp),
-   * regardless of the setting — so when the user flips it back on the cache is
-   * already populated and the TTL clock is restarted.
+   * 任何一次成功抓取后都会写回渲染层缓存(不论开关状态),这样用户把开关拨回来时缓存已经是
+   * 热的、TTL 也重新计时。
    */
   const handleSearch = async (keyword: string, kindOverride?: BgmSearchKind): Promise<void> => {
     if (!keyword.trim()) return
     lastBgmKeyword.current = keyword
     _cachedBgmKeyword = keyword
     const cacheEnabled = isSearchCacheEnabled()
-    // 用本地变量锁定本次搜索的类目，避免用户在请求飞行中切换类目导致
-    // setState 把书籍结果塞进动画状态里。点选历史时 kind 由历史条目带入
-    // （kindOverride），不依赖 setSearchKind 的异步 state 更新。
+    // 用局部变量锁定本次搜索的类目,避免请求飞行途中用户切类目、把书籍结果塞进动画状态里。
+    // 点历史条目时类目由 kindOverride 带入,不依赖 setSearchKind 的异步更新。
     const kind = kindOverride ?? searchKind
     // 记录历史 —— 同 keyword+kind 去重置顶，正好和按 cat 分桶的缓存对齐。
     setHistory(addBgmHistory(keyword, kind))
@@ -1297,13 +1256,11 @@ function AnimeInfo(): JSX.Element {
     setSearchProgress(null)
     setState({ status: 'searching' })
     try {
-      // When the cache toggle is OFF the user has explicitly asked for fresh
-      // data, so we bypass main's disk cache too. When ON we allow main to
-      // serve from disk (it's faster and avoids any chance of rate-limiting).
+      // 缓存开关关掉 = 用户明确要新数据,所以连主进程的磁盘缓存也绕过;开着时允许主进程从磁盘
+      // 供数(更快,也避免触发限流)。
       const results = await window.bgmApi.search(keyword, !cacheEnabled, KIND_TO_CAT[kind])
       if (results.length > 0) {
-        // Always write through, even when cache is OFF — per user contract:
-        // "关闭的时候同时更新缓存里的数据以及 ttl 这些时间"
+        // **即使缓存开关是关的也要写回**(用户约定:关闭时同样更新缓存数据和 TTL)。
         void setCachedBgmSearch(keyword, kind, results)
       }
       const sorted = sortByDate(results)

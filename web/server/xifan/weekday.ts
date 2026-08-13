@@ -5,7 +5,7 @@
 //   vod_id（= animeId）、vod_name（中文名）、url（/watch/{id}/1/1.html）、vod_remarks（"03|周一21:30" = 更新到第几集）。
 // 「继续看」的绑定（bgmId → animeId）就靠把追番标题拿到这里比中文名匹配（见 locate.ts）。
 //
-// 抓法克制（CLAUDE.md 网络红线）：7 天**顺序**抓、天与天之间抖动歇一下（不并发＝不像爬虫），抓到的整体
+// 抓法克制(红线)：7 天**顺序**抓、天与天之间抖动歇一下（不并发＝不像爬虫），抓到的整体
 // 缓存 6h。单天失败就跳过，不重试、不让整体失败 —— 能匹配多少算多少。
 import '../http' // 副作用导入：让 undici fetch 认 HTTPS_PROXY（本地 Clash 非 TUN 时用）
 import { BASE_URL, DESKTOP_UA } from './resolve'

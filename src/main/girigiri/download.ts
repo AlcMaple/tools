@@ -1,7 +1,6 @@
 /**
- * Girigiri HLS/m3u8 download. The real m3u8 URL is sniffed by loading the player
- * page in a hidden BrowserWindow and intercepting requests via webRequest, which
- * avoids pulling in a headless-browser dependency just to get one URL.
+ * Girigiri 的 HLS/m3u8 下载。真实 m3u8 地址是把播放页加载进隐藏 BrowserWindow、
+ * 用 webRequest 截流拿到的 —— 为了一个地址引入 headless 浏览器依赖不划算。
  */
 import * as https from 'https'
 import * as http from 'http'
@@ -17,10 +16,8 @@ import { BASE_DOMAIN } from './api'
 
 export type { DlEvent }
 
-// Per-process session id. Used to invalidate tempDir contents from a previous
-// app run — segments only resume if they were written by this same process.
-// Prevents partial / corrupt segments left over by older buggy runs from being
-// treated as "already downloaded" and ffmpeg-merged into broken mp4 files.
+// 进程级 session id,用来作废上一次运行留下的临时目录内容:分片只有在**本次进程**写过时
+// 才允许续传。否则旧的残缺分片会被当成「已下载」,被 ffmpeg 合进一个坏 mp4。
 const SESSION_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const SESSION_FILE = '.session'
 
@@ -31,8 +28,8 @@ const GIRI_HEADERS = {
 
 // ── m3u8 capture via hidden BrowserWindow ─────────────────────────────────────
 
-// 在线播放也复用这条路(ipc/girigiri.ts 的 girigiri:resolve-ep-url):m3u8 是播放页
-// JS 运行时拼出来的,拿不到就只能截流。下载可以慢慢等,播放等不起 30s,故超时可调。
+// 在线播放也复用这条路:m3u8 是播放页 JS 运行时拼出来的,拿不到就只能截流。
+// 下载可以慢慢等,播放等不起 30s,所以超时可调。
 export async function captureM3u8(
   epUrl: string,
   cookieString: string,
@@ -42,14 +39,14 @@ export async function captureM3u8(
     const partition = `girigiri-capture-${Date.now()}`
     const ses = electronSession.fromPartition(partition, { cache: false })
 
-    // Inject cookies so the site recognises the session
+    // 注入 cookie,让站点认得这个会话
     const cookiePairs = cookieString.split(';').map((p) => p.trim()).filter(Boolean)
     const cookiePromises = cookiePairs.map((pair) => {
       const eq = pair.indexOf('=')
       if (eq <= 0) return Promise.resolve()
       return ses.cookies.set({
-        // 跟着 api.ts 的主域走 —— 写死旧域名的话站点换域后 cookie 落在错误的
-        // domain 上,注进去等于没注(2026-07-10 换域名踩过)。
+        // 域名跟着 api.ts 的主域走 —— 写死旧域名的话,站点换域后 cookie 会落在错误的 domain 上
+        // 注了等于没注。
         url: BASE_DOMAIN,
         name: pair.slice(0, eq).trim(),
         value: pair.slice(eq + 1).trim(),
@@ -72,14 +69,13 @@ export async function captureM3u8(
       }
 
       const timer = setTimeout(() => {
-        // 超时没截到 m3u8 —— 留痕,否则用户只看到"下载失败"不知卡在抓流这步。
+        // 超时没截到 m3u8 —— 留个痕,否则用户只看到「下载失败」,不知道是卡在抓流这一步。
         logError('girigiri:capture', `${Math.round(timeoutMs / 1000)}s 超时未截获 m3u8: ${epUrl}`)
         done(null)
       }, timeoutMs)
 
-      // Intercept network requests to find the real m3u8 playlist.
-      // Strict: pathname (case-insensitive) must end with `.m3u8` so we don't
-      // grab JS / HTML resources that merely contain the substring "m3u8".
+      // 截网络请求找真正的 m3u8。严格要求 pathname 以 `.m3u8` 结尾,别把只是名字里含 "m3u8" 的
+      // JS / HTML 资源也抓进来。
       ses.webRequest.onBeforeRequest((details, callback) => {
         callback({})
         if (resolved) return
@@ -104,8 +100,7 @@ export async function captureM3u8(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Sleep that wakes up immediately when the signal aborts. Used so retry/semaphore
-// loops respond to pause within milliseconds instead of dragging out for seconds.
+// 能被 abort 立刻唤醒的 sleep:让重试 / 信号量循环在毫秒内响应暂停,而不是拖上好几秒。
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve) => {
     if (signal.aborted) { resolve(); return }
@@ -118,8 +113,8 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-// http.request rejects unescaped chars in `path`. URL parser leaves [, ], |, {, }, `, space, etc. unencoded.
-// Encode them defensively so chunk URLs containing such chars don't crash mod.get synchronously.
+// http.request 不接受 path 里的未转义字符,而 URL 解析器会原样留下 [ ] | { } ` 和空格。
+// 这里防御性地编码一遍,免得含这些字符的分片地址让请求同步崩掉。
 function buildSafePath(u: URL): string {
   let out = ''
   for (const ch of u.pathname) {
@@ -193,9 +188,8 @@ interface M3u8Info {
   keyInfo: { uri: string; iv: string } | null
 }
 
-// m3u8 是纯文本播放列表(KB~几 MB),20MB 已远超正常;超了视作损坏/恶意响应,
-// 不 split 成几百万行阻塞事件循环。master playlist 可能嵌套指向变体,depth 封顶
-// 防自引用死循环。
+// m3u8 是纯文本,20MB 已远超正常 —— 超了当损坏/恶意响应,别 split 成几百万行阻塞事件循环。
+// master 列表可能嵌套指向变体列表,深度封顶防自引用死循环。
 const M3U8_MAX_BYTES = 20 * 1024 * 1024
 const M3U8_MAX_DEPTH = 5
 
@@ -213,9 +207,8 @@ async function parseM3u8(m3u8Url: string, depth = 0): Promise<M3u8Info> {
 
   const text = buf.toString('utf-8')
 
-  // A real m3u8 playlist always starts with the #EXTM3U marker.
-  // Without this guard, JS/HTML content that snuck in via the wrong URL
-  // would be parsed line-by-line as if every line were a segment URL.
+  // 真正的 m3u8 一定以 #EXTM3U 开头。没有这道闸的话,走错地址拿到的 JS/HTML 会被逐行当成
+  // 分片地址解析。
   if (!text.trimStart().startsWith('#EXTM3U')) {
     console.error(`[girigiri] not a valid m3u8 (no #EXTM3U marker): ${m3u8Url}`)
     console.error(`[girigiri] first 300 chars of response:\n${text.slice(0, 300)}`)
@@ -241,14 +234,14 @@ async function parseM3u8(m3u8Url: string, depth = 0): Promise<M3u8Info> {
       continue
     }
     if (l.startsWith('#')) continue
-    // Master playlists list variant playlists ending in .m3u8 (optionally with query).
+    // master 列表里指向的变体列表也以 .m3u8 结尾(可能带 query)。
     // Substring match would mistakenly recurse on segment URLs that merely contain ".m3u8".
     if (/\.m3u8($|\?)/i.test(l)) {
       return parseM3u8(new URL(l, m3u8Url).href, depth + 1)
     }
 
-    // A real segment URL never contains whitespace or these JS/HTML chars.
-    // Lines that match are obviously not URLs (e.g. `return new Promise(...)`).
+    // 真正的分片地址不会含空白或这些 JS/HTML 字符 —— 命中的行显然不是 URL
+    // (比如 `return new Promise(...)`)。
     if (/[\s(){}<>"'`]/.test(l)) {
       console.warn(`[girigiri] skipping non-URL line in m3u8: ${l.slice(0, 80)}`)
       continue
@@ -388,7 +381,7 @@ export async function downloadSingleEp(
 ): Promise<void> {
   onEvent({ type: 'ep_start', ep: epIdx })
 
-  // Check if already downloaded — skip the whole pipeline if the final file exists.
+  // 最终文件已存在就整条流程跳过。
   const base = saveDir ?? app.getPath('downloads')
   const animeDir = join(base, `[Girigiri] ${safeName(title)}`)
   const outputPath = join(animeDir, `${safeName(epName)}.mp4`)
@@ -397,7 +390,7 @@ export async function downloadSingleEp(
     return
   }
 
-  // Create the destination folder immediately so it's visible in Finder during download.
+  // 立刻建好目标文件夹,下载过程中用户在访达里就能看到。
   mkdirSync(animeDir, { recursive: true })
 
   onEvent({ type: 'ep_progress', ep: epIdx, pct: 2, bytes: 0 })
@@ -418,10 +411,9 @@ export async function downloadSingleEp(
   }
 
   // 3. Prepare temp dir.
-  // Segments are kept across pause/resume within the same app run.
+  // 同一次运行内,分片在暂停/继续之间保留;跨进程则作废 —— 续传守卫只看文件大小,
   // A SESSION_ID guard wipes leftovers from a previous run so corrupt partial
-  // segments don't get reused (the resume guard in downloadSegment only checks
-  // file size, which can't tell good data from garbage).
+  // 分不出好数据和垃圾数据。
   const tempDir = join(app.getPath('temp'), 'girigiri_ts', `${safeName(title)}_${String(epIdx).padStart(4, '0')}`)
   mkdirSync(tempDir, { recursive: true })
   const sessionPath = join(tempDir, SESSION_FILE)

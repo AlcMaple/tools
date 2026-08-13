@@ -1,23 +1,19 @@
 import { useState } from "react";
 
 /**
- * Shared shell for the per-source DownloadConfigModal trio (xifan / girigiri /
- * aowu). All three render the same chrome — overlay, header, source radio list,
- * Episode Range From/To inputs, footer Cancel + START — differing only in the
- * shape of `sources` / `onStart` they need from the caller.
- *
- * Each per-source wrapper collapses to ~30 lines of data shaping; visual changes
- * are made in one place here and apply to all sources at once.
+ * 三个源的下载配置弹窗共用的外壳:遮罩、标题、线路单选、集数范围、页脚按钮全在这里
+ * 各源只在 `sources` / `onStart` 的形状上不同。这样每个源的包装层只剩几十行数据整形
+ * 样式改一处就三个源同时生效。
  */
 
 export interface SourceOption {
-  /** Stable id for the radio's `value` and `onSelectSource` callback. */
+  /** 单选用的稳定 id。 */
   id: string | number;
   name: string;
   episodeCount: number;
   /**
-   * 网格里每集的展示名(下标 i = 第 i+1 集)。普通集传集号字符串即可;特殊集
-   * (OVA / SP 等)传站点真名,让用户看见第 N 集其实不是正片。缺省全显示集号。
+   * 网格里每集的显示名(下标 i = 第 i+1 集)。普通集给集号即可;特殊集(OVA / SP)给站点真名
+   * 让用户看见「第 N 集其实不是正片」。缺省全显示集号。
    */
   epLabels?: string[];
 }
@@ -26,16 +22,15 @@ interface Props {
   title: string;
   subtitle: string;
   sources: SourceOption[];
-  /** Index into `sources` of the initial pick. Default 0. */
+  /** 初始选中的线路在 `sources` 里的下标,默认 0。 */
   initialSourceIndex?: number;
-  /** Optional footnote shown below the Episode Range input. */
+  /** 集数范围下方的可选脚注。 */
   footerNote?: string;
-  /** Shown in place of the source list when `sources` is empty. */
+  /** `sources` 为空时替代线路列表显示的内容。 */
   noSourceMessage?: string;
   onClose: () => void;
   /**
-   * Called with the picked source, the validated (startEp, endEp) range, and the
-   * episode ordinals the user chose to exclude within that range (sorted asc).
+   * 回调参数:选中的线路、校验过的集数区间,以及用户在区间内排除掉的集号(升序)。
    * 调用方据此过滤出真正要下的集:区间 − 排除项。
    */
   onStart: (

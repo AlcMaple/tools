@@ -27,14 +27,14 @@ export function useSystemStats(): {
   const [networkOnline, setNetworkOnline] = useState(navigator.onLine)
   const [speedBps, setSpeedBps] = useState(0)
 
-  // Active task count
+  // 活动任务数
   useEffect(() => {
     const update = (): void => setActiveTasks(downloadStore.getActiveTasks().length)
     update()
     return downloadStore.subscribe(update)
   }, [])
 
-  // Disk free space — fetch once then every 30s
+  // 磁盘剩余空间 —— 先取一次,之后每 30s 刷新
   useEffect(() => {
     const fetchDisk = async (): Promise<void> => {
       try {
@@ -48,7 +48,7 @@ export function useSystemStats(): {
     return () => clearInterval(id)
   }, [])
 
-  // Real connectivity check via main process (every 10s)
+  // 经主进程做真实连通性检查(每 10s)
   useEffect(() => {
     const check = async (): Promise<void> => {
       try {
@@ -61,7 +61,7 @@ export function useSystemStats(): {
     return () => clearInterval(id)
   }, [])
 
-  // navigator.onLine events as immediate fallback
+  // navigator.onLine 事件作为即时兜底
   useEffect(() => {
     const onOnline = (): void => setNetworkOnline(true)
     const onOffline = (): void => setNetworkOnline(false)
@@ -73,7 +73,7 @@ export function useSystemStats(): {
     }
   }, [])
 
-  // Download speed
+  // 下载速度
   useEffect(() => {
     return window.systemApi.onSpeedUpdate(setSpeedBps)
   }, [])

@@ -1,20 +1,12 @@
 /**
- * Per-site download queue runtime, shared by xifan / girigiri / aowu IPC layers.
+ * 各站共用的下载队列运行时(xifan / girigiri / aowu 的 IPC 层都用它)。
  *
- * Each site has the same queue mechanics:
- *   - in-memory `Map<taskId, QueueState>` of in-flight tasks
- *   - per-source single-slot scheduler (so two tasks of the same source don't
- *     hammer the site in parallel)
- *   - sequential one-ep-at-a-time worker that pops `priorityFront` then `pending`
- *   - cancel / pause / resume / requeue / retry / switch-source primitives
+ * 队列机制对三个站是一样的:内存里一张 `Map<taskId, QueueState>`、每个源一个单槽调度器
+ * (同源两个任务不会并行去捶站点)、一次只跑一集的串行 worker(先取 `priorityFront` 再取
+ * `pending`),外加 取消 / 暂停 / 继续 / 重排 / 重试 / 换源 这些原语。
  *
- * The only per-source variation is the `runEpisode` hook, which knows how to
- * actually download one ep given the queue's source-specific payload (templates,
- * animeId+sourceIdx, epList, etc.). Everything else lives here.
- *
- * Replaces three near-identical 200-line ipc files (and fixes two parity bugs
- * along the way: xifan was missing the defensive .catch around runEpisode, and
- * none of the three guarded `sender.send` against a destroyed WebContents).
+ * 各站唯一不同的是 `runEpisode` 钩子 —— 它知道怎么用本站的载荷(模板、animeId+源下标、集列表)
+ * 真正下完一集。其余全在这里。
  */
 import { setMaxListeners } from 'events'
 import type { WebContents } from 'electron'
@@ -24,7 +16,7 @@ import type { DlEvent } from './download-types'
 export interface QueueState<TPayload> {
   title: string
   savePath: string | null
-  /** Per-source data the runEpisode hook needs (templates, animeId, epList, ...). */
+  /** runEpisode 钩子需要的、各站自己的数据(模板、animeId、集列表…)。 */
   payload: TPayload
   pending: number[]
   priorityFront: number[]
@@ -50,14 +42,11 @@ interface SchedulerLike {
 }
 
 export interface RegistryConfig<TPayload> {
-  /** Used as a log tag prefix ('xifan' / 'girigiri' / 'aowu'). */
+  /** 日志前缀标签('xifan' / 'girigiri' / 'aowu')。 */
   prefix: string
-  /** Per-source single-slot gate. */
+  /** 该源的单槽闸门。 */
   scheduler: SchedulerLike
-  /**
-   * Run one episode. Resolve when complete; throw to surface as ep_error so the
-   * worker advances to the next ep instead of stalling. Use `signal` for abort.
-   */
+  /** 下载一集。完成时 resolve;抛错会被转成 ep_error,worker 继续下一集而不是卡住。用 `signal` 中止。 */
   runEpisode: (
     q: QueueState<TPayload>,
     ep: number,
@@ -78,9 +67,8 @@ export class SiteQueueRegistry<TPayload> {
   private readonly queues = new Map<string, QueueState<TPayload>>()
 
   constructor(private readonly cfg: RegistryConfig<TPayload>) {
-    // When the source's slot frees up, every queued task of this source gets a
-    // chance to grab it. tryAcquire is a no-op for tasks that aren't ready
-    // (paused / cancelled / already running), so broadcasting is safe.
+    // 槽位一空,本源所有排队任务都得到一次抢占机会。对没准备好的任务(暂停 / 已取消 / 正在跑)
+    // tryAcquire 是空操作,所以广播是安全的。
     cfg.scheduler.on('available', () => {
       for (const taskId of this.queues.keys()) this.startNext(taskId)
     })
@@ -94,7 +82,7 @@ export class SiteQueueRegistry<TPayload> {
     return this.queues.get(taskId)
   }
 
-  /** Create a fresh queue and kick the worker. */
+  /** 新建一个队列并启动 worker。 */
   create(taskId: string, init: QueueInit<TPayload>): void {
     this.queues.set(taskId, {
       ...init,
@@ -108,9 +96,8 @@ export class SiteQueueRegistry<TPayload> {
   }
 
   /**
-   * Push eps onto the front of the priority queue. Used by retry / requeue /
-   * switch-source after the queue already exists. Restarts the worker if it's
-   * idle and not paused. No-op if the task is unknown.
+   * 把若干集插到优先队列前面(重试 / 重排 / 换源用)。worker 空闲且未暂停时会重新启动;
+   * 任务不存在则是空操作。
    */
   prependEps(taskId: string, eps: number[]): void {
     const q = this.queues.get(taskId)
@@ -119,7 +106,7 @@ export class SiteQueueRegistry<TPayload> {
     if (q.current === null && !q.taskPaused) this.startNext(taskId)
   }
 
-  /** Cancel the active download, drop the queue, release the slot. */
+  /** 取消当前下载、丢弃队列、释放槽位。 */
   cancel(taskId: string): void {
     const q = this.queues.get(taskId)
     if (q) {
@@ -132,10 +119,8 @@ export class SiteQueueRegistry<TPayload> {
   }
 
   /**
-   * Pause the active download — abort the in-flight ep and put it back at the
-   * front of the priority queue so it resumes where it left off (assuming the
-   * site's downloader supports per-part / per-segment resume).
-   * Returns true if the task existed.
+   * 暂停:中止正在下的那一集,并把它放回优先队列最前面,继续时接着断点往下(前提是该站的
+   * 下载器支持分片续传)。任务存在则返回 true。
    */
   pause(taskId: string): boolean {
     const q = this.queues.get(taskId)
@@ -173,7 +158,7 @@ export class SiteQueueRegistry<TPayload> {
 
     if (!this.cfg.scheduler.tryAcquire(taskId)) {
       // Another task on this source holds the slot. Put the ep back; we'll
-      // retry when 'available' fires.
+      // 等 'available' 事件再抢一次。
       q.priorityFront.unshift(ep)
       return
     }
@@ -181,8 +166,7 @@ export class SiteQueueRegistry<TPayload> {
     const capturedEp = ep
     q.current = capturedEp
     const abort = new AbortController()
-    // Many concurrent fetches inside one ep download (chunks / HLS segments,
-    // each with retry sleeps) all subscribe to the same signal. Default cap is
+    // 一集下载内部有很多并发请求(分片 / HLS 段,各自还带重试 sleep)都订阅同一个信号,
     // 10; give generous headroom so spikes don't trigger MaxListenersExceeded.
     setMaxListeners(200, abort.signal)
     q.currentAbort = abort
@@ -194,7 +178,7 @@ export class SiteQueueRegistry<TPayload> {
         }
         safeSend(q.sender, 'download:progress', taskId, ev)
       }).catch((err: unknown) => {
-        // Defensive: any unexpected throw inside runEpisode surfaces as
+        // 防御:runEpisode 里任何意外抛错都转成
         // ep_error so the worker advances instead of leaving a stuck "in
         // progress" episode and (eventually) firing all_done with bad state.
         console.error(`[${this.cfg.prefix}] download crashed for ep=${capturedEp}:`, err)

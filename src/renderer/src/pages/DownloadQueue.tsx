@@ -16,7 +16,7 @@ function useDownloadTasks(): DownloadTask[] {
   return tasks
 }
 
-// Derived runtime state for a task in the active region (status ∈ running|paused|error).
+// 活动区任务(运行中 / 暂停 / 出错)的派生状态。
 type TaskState = 'running' | 'paused' | 'error'
 function getTaskState(t: DownloadTask): TaskState {
   if (t.status === 'error') return 'error'
@@ -24,9 +24,8 @@ function getTaskState(t: DownloadTask): TaskState {
   return 'running'
 }
 
-// Resume an entire task. Treats any 'paused' ep status (left over from an app-restart
-// recovery or the currently-downloading ep being interrupted) as pending so the main
-// queue picks them up again, then flips taskPaused via resumeDownload.
+// 恢复整个任务:把所有 paused 状态的集(应用重启恢复留下的,或当前正在下载被打断的那一集)
+// 当成待下载,让主队列重新捡起来,然后再翻转任务级的暂停标志。
 async function resumeTask(t: DownloadTask): Promise<void> {
   if (t.status !== 'paused') return
   const pendingEps = Object.entries(t.epStatus)
@@ -59,11 +58,8 @@ function EpisodeGrid({
 
   async function copyEpUrl(ep: number): Promise<void> {
     setCopyError(null)
-    // Async resolvers (aowu) need a spinner — but the main process now caches
-    // resolved URLs, so a re-copy or copy-after-download returns in <1ms and
-    // a naked setState would flash the spinner for a single frame. Delay the
-    // spinner by 100ms so the slow path still shows feedback while the cache
-    // hit stays silent.
+    // 异步解析(嗷呜)需要 spinner —— 但主进程现在缓存了解析结果,重复复制会在 1ms 内返回
+    // 裸 setState 会让 spinner 闪一帧。所以延迟 100ms 再显示:慢路径照样有反馈,命中缓存则悄无声息。
     let spinnerTimer: ReturnType<typeof setTimeout> | null = null
     if (api.resolveIsAsync) {
       spinnerTimer = setTimeout(() => setResolvingEp(ep), 100)
@@ -75,9 +71,8 @@ function EpisodeGrid({
       setCopiedEp(ep)
       setTimeout(() => setCopiedEp(null), 1500)
     } catch (err) {
-      // 解析直链走的也是各源的网络请求；站点连不上时别把 connect ETIMEDOUT
-      // 这种原始串怼进 toast。friendlyError 命中就用人话标题，命不中再退回
-      // 这个场景更贴切的「获取下载链接失败」。
+      // 解析直链走的也是各源的网络请求。站点连不上时别把原始的 connect ETIMEDOUT 串怼进 toast:
+      // 能被 friendlyError 认出来就用人话标题,认不出再退回这个场景更贴切的「获取下载链接失败」。
       const fe = friendlyError(err)
       setCopyError(fe.title === '出错了' ? '获取下载链接失败' : fe.title)
       setTimeout(() => setCopyError(null), 3500)
@@ -123,9 +118,8 @@ function EpisodeGrid({
         {eps.map((ep) => {
           const rawStatus = task.epStatus[ep] ?? 'pending'
           const pct = task.epProgress[ep] ?? 0
-          // When the whole task is paused, surface every unfinished ep as paused so the
-          // grid matches the card's pause state. Otherwise mid-session pause looks like
-          // "only the abort-victim ep is paused" and the rest still show as pending.
+          // 整个任务暂停时,把所有未完成的集都显示成暂停,让网格与卡片的状态一致 —— 否则中途暂停看起来
+          // 像「只有被中断的那一集停了、其余还在等」。
           const status =
             task.status === 'paused' && (rawStatus === 'pending' || rawStatus === 'downloading')
               ? 'paused'
@@ -475,7 +469,7 @@ function CompletedTaskCard({ task }: { task: DownloadTask }): JSX.Element {
   const switchInfo = sourceSwitchInfo(task)
   const canSwitchSource = switchInfo !== null
 
-  // Both retry handlers reuse the same task.id so progress events update this card.
+  // 两个重试入口都复用同一个 task.id,好让进度事件更新到这张卡上。
   const handleRetryAll = async (): Promise<void> => {
     if (failedEps.length === 0) return
     const newEpStatus = { ...task.epStatus }
@@ -634,7 +628,7 @@ function DownloadQueue(): JSX.Element {
   const active = tasks.filter((t) => t.status === 'running' || t.status === 'paused' || t.status === 'error')
   const completed = tasks.filter((t) => t.status === 'done')
 
-  // Master bar reflects the unified runtime state, not raw task.status.
+  // 总控条反映的是统一后的运行时状态,不是裸的 task.status。
   const running = active.filter((t) => getTaskState(t) === 'running')
   const paused = active.filter((t) => getTaskState(t) === 'paused')
 

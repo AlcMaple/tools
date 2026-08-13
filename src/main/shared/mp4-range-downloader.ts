@@ -1,18 +1,12 @@
 /**
- * NDM-style multi-thread MP4 download with per-part resume.
+ * 多线程 MP4 下载,分片各自断点续传。xifan / aowu 共用(以及任何直链 mp4 且支持 Range 的站)。
+ * 本模块只关心「最终 URL + 保存路径」,拿地址、目录命名由各站模块负责。
  *
- * Shared between xifan and aowu (and any future site whose video URLs are direct mp4
- * with Range support). The orchestrator `downloadByUrl` only cares about the final URL
- * + save path; per-source modules handle URL acquisition (template, redirect, encrypted
- * lookup) and the directory naming convention before calling in.
- *
- * Strategy:
- * 1. Probe URL with `GET Range: bytes=0-0`:
- *    - 206 + Content-Range → multi-thread path (8 concurrent chunks)
- *    - 200 → single-stream fallback
- * 2. Multi-thread: each chunk downloads to `{savePath}.partN`; independent retries.
- *    Resume = existing partN size is reused; request `Range: bytes=(start+existing)-end`.
- * 3. On completion of all parts → concat into final mp4 and delete parts.
+ * 流程:
+ *   1. `GET Range: bytes=0-0` 探一次 —— 回 206 走多线程,回 200 走单流。
+ *   2. 多线程:每片下到 `{savePath}.partN`,各自独立重试;续传就是复用已存在的 partN 大小
+ *      请求 `Range: bytes=(start+已有)-end`。
+ *   3. 全部分片完成后拼成最终 mp4 并删掉分片。
  */
 import * as https from 'https'
 import * as http from 'http'
@@ -33,11 +27,9 @@ function headersFor(extra?: Record<string, string>): Record<string, string> {
 }
 
 /**
- * 用 URL 构造 http(s).get 的请求参数。**必须带上 u.port**:有的真实直链会 302 到
- * 非标端口(moedot 的视频跳到 bjdownload.pan.wo.cn:30443),漏了 port 会连到默认 443
- * → 下载 0% 失败,而 NDM / 浏览器都正常(它们 follow redirect 时保留端口)。
- * u.port 为 '' 时给 undefined,Node 自动用协议默认端口(443/80)。
- * 见 docs/regression/xifan-下载链接-集数补零-回归用例.md。
+ * 构造请求参数时**必须带上 u.port**:有的直链会 302 到非标端口(如 :30443),漏了 port 会连到
+ * 默认 443 → 下载 0% 失败,而浏览器和下载工具都正常(它们 follow redirect 时保留端口)。
+ * port 为空串时给 undefined,让 Node 用协议默认端口。
  */
 function reqOptions(u: URL, extraHeaders?: Record<string, string>): https.RequestOptions {
   return {
@@ -56,16 +48,15 @@ function partPath(savePath: string, idx: number): string {
 interface ProbeResult {
   size: number
   rangeSupported: boolean
-  /** 探测失败时的 HTTP 状态码,调用方据此区分 404(链接拼错)与限流/5xx。 */
+  /** 探测失败时的 HTTP 状态码,调用方据此区分 404(链接拼错)和限流/5xx。 */
   status?: number
-  /** 响应的 Content-Type,用于识别「HTTP 200 但回的是 JSON/HTML 错误体」的假视频。 */
+  /** 响应的 Content-Type,用来识别「HTTP 200 但回的是 JSON/HTML 错误体」这种假视频。 */
   contentType?: string
 }
 
-// 真实视频直链回的是 video/* 或 application/octet-stream;moedot 这类 CDN 在链接拼错时
-// 会用 HTTP 200 回一个几 KB 的 JSON 错误体(不是 404),只看状态码会被当成下载成功——
-// 用户最后拿到一个点开「无法打开文件或流」的假 mp4。据 Content-Type + 体积识别出来,
-// 交给上层回源解析真实直链(见 xifan/download.ts 的 not_media 回退)。
+// 真视频直链回 video/* 或 application/octet-stream。有的 CDN 在链接拼错时会用 **HTTP 200**
+// 回一个几 KB 的 JSON 错误体(不是 404),只看状态码会当成下载成功 —— 用户最后拿到一个点开
+// 提示「无法打开文件或流」的假 mp4。所以要靠 Content-Type + 体积识别,交给上层回源重解析。
 const MIN_MEDIA_BYTES = 100 * 1024 // 正片单集都是几十~几百 MB,远大于此;错误体只有几 KB
 
 function looksLikeErrorBody(info: ProbeResult): boolean {
@@ -76,10 +67,7 @@ function looksLikeErrorBody(info: ProbeResult): boolean {
   return false
 }
 
-/**
- * Resolve redirects, returning the final URL. Some MP4 URLs 302 to a CDN
- * (e.g. moedot.net for xifan); Node's http.get does not follow redirects automatically.
- */
+/** 跟完重定向返回最终 URL —— 有些 mp4 会 302 到 CDN,而 Node 的 http.get 不自动跟随。 */
 async function resolveRedirects(url: string, maxHops = 5): Promise<string> {
   let current = url
   for (let i = 0; i < maxHops; i++) {
@@ -136,10 +124,7 @@ async function probe(url: string, logTag: string): Promise<ProbeResult | null> {
   })
 }
 
-/**
- * Download one Range chunk to a part file with retries. Supports resume
- * via existing part file size.
- */
+/** 下载一个 Range 分片到 part 文件,带重试;按已存在的 part 大小续传。 */
 async function downloadChunk(
   url: string,
   partFile: string,
@@ -177,8 +162,8 @@ async function downloadChunk(
           signal.addEventListener('abort', onAbort, { once: true })
 
           res.on('data', (chunk: Buffer) => {
-            // After abort the file is destroyed but res may still emit a few queued chunks;
-            // writing to a destroyed stream throws ERR_STREAM_DESTROYED async via fs cb.
+            // abort 之后文件已销毁,但响应流可能还会吐出几个排队的块;往已销毁的流里写会在 fs 回调里
+            // 异步抛 ERR_STREAM_DESTROYED。
             if (!file.writable) return
             file.write(chunk)
             onDelta(chunk.length)
@@ -214,9 +199,7 @@ async function downloadChunk(
   return false
 }
 
-/**
- * Concatenate part files into the final save path in order, then delete parts.
- */
+/** 按顺序把分片拼成最终文件,然后删掉分片。 */
 async function mergeParts(savePath: string, count: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const out = createWriteStream(savePath, { flags: 'w' })
@@ -236,9 +219,7 @@ async function mergeParts(savePath: string, count: number): Promise<void> {
   }
 }
 
-/**
- * Single-stream fallback (server doesn't support Range). Preserves prior resume-by-size.
- */
+/** 单流回退(服务端不支持 Range),保留按文件大小续传的能力。 */
 async function streamToFile(
   url: string,
   savePath: string,
@@ -299,10 +280,7 @@ async function streamToFile(
   return fileSize > 0 ? written >= fileSize : written > 0
 }
 
-/**
- * Wipe partN files + the merged file at a given save path. Used when caller wants to
- * force re-download (e.g. switching source).
- */
+/** 清掉某个保存路径下的 partN 和已合并的文件,用于强制重新下载(如换源)。 */
 export function cleanupPartsAt(savePath: string): void {
   for (let i = 0; i < 32; i++) {
     const p = partPath(savePath, i)
@@ -323,24 +301,17 @@ export type DownloadOutcome =
 
 export interface DownloadOpts {
   /**
-   * Number of parallel Range chunks. Default 8.
+   * 并发 Range 分片数,默认 8。
    *
-   * Set to 1 for CDNs that throttle signed URLs as a whole (typical of ByteDance's
-   * imcloud-file-sign / toutiao*.com hosts used by aowu): multiple connections
-   * don't add throughput, instead they run into per-URL bandwidth caps that make
-   * one chunk crawl while others race ahead — the visible "stuck at 97%" symptom.
-   * Single-stream matches what tools like NDM do, and gets reliable completion.
+   * **对整条签名 URL 限速的 CDN 要设成 1**:多连接不会带来更高吞吐,反而会撞上「每 URL 带宽上限」
+   * 结果一个分片爬行、其他分片飞快 —— 表现就是进度卡在 97% 不动。单流反而能稳定跑完。
    */
   threadCount?: number
 }
 
 /**
- * The orchestrator. Caller provides the final URL (already resolved/decrypted) and
- * the destination savePath; we pick multi-thread or single-stream based on probe
- * and the optional threadCount hint.
- *
- * `onProgress` is called with (bytesDownloaded, totalBytes, pct). pct is -1 when
- * total size is unknown (single-stream fallback case).
+ * 总入口。调用方给最终 URL(已解析/解密)和保存路径,这里按探测结果和 threadCount 决定走
+ * 多线程还是单流。`onProgress(已下字节, 总字节, 百分比)`,总大小未知时百分比为 -1。
  */
 export async function downloadByUrl(
   url: string,
@@ -359,9 +330,9 @@ export async function downloadByUrl(
     return { ok: false, reason: 'probe_failed', status: info?.status }
   }
 
-  // 探测到的是错误体(假 mp4:200 回 JSON/HTML 或超小体积)→ 当作「链接拼错」上抛,
-  // 由站点层回源解析真实直链。绝不能当成功写盘,否则用户拿到几 KB 的假 mp4 还显示"完成"。
-  // 放在「已完成跳过」之前:磁盘上若残留旧的假 mp4,也要重新回源拉正确的。
+  // 探到的是错误体(假 mp4)→ 当「链接拼错」上抛,由站点层回源重解析。**绝不能当成功写盘**
+  // 否则用户拿到几 KB 的假 mp4 还显示「完成」。这一步放在「已完成跳过」之前:磁盘上若残留
+  // 旧的假 mp4,也要重新回源拉正确的。
   if (looksLikeErrorBody(info)) {
     return { ok: false, reason: 'not_media' }
   }
@@ -371,7 +342,7 @@ export async function downloadByUrl(
     return { ok: true }
   }
 
-  // Multi-thread path
+  // 多线程路径
   if (info.rangeSupported && threadCount > 1 && info.size > threadCount * 64 * 1024) {
     const totalBytes = info.size
     const chunkBase = Math.floor(totalBytes / threadCount)
@@ -417,10 +388,8 @@ export async function downloadByUrl(
     return { ok: false, reason: 'chunks_failed', msg: 'One or more chunks failed after retries' }
   }
 
-  // Single-stream path. If the caller went single-thread but had stale .partN
-  // files lying around from a previous multi-thread attempt, clear them so we
-  // don't leak orphaned files. The savePath itself we leave alone — streamToFile
-  // resumes from its existing size via Range.
+  // 单流路径。若调用方选了单线程、但磁盘上还残留着上次多线程尝试的 .partN,顺手清掉
+  // 免得留下孤儿文件。savePath 本身不动 —— 单流会按它已有的大小续传。
   if (threadCount === 1) {
     for (let i = 0; i < THREAD_COUNT; i++) {
       const p = partPath(savePath, i)

@@ -1,8 +1,7 @@
-// 追番 API —— 用户数据，必须登录。
+// 追番 API —— 用户数据,必须登录。
 //
-// **写入一律是「字段级 patch」，绝不整条替换**（ideas/012「同步策略」的铁律）：body 里没给的字段
-// **保持沉默、原样不动**，沉默 ≠ 置空。现在还没接 app 同步，但这条从第一天就得立住 —— 将来 app
-// 推富记录过来时，web 只写自己拥有的那几个字段，app 的 goodEpisodes / bindings 之类不会被抹掉。
+// **写入一律是字段级 patch,绝不整条替换**:body 里没给的字段保持原样,沉默 ≠ 置空。
+// 这样桌面端推富记录过来时,网页端只写自己拥有的那几个字段,对方的好看集 / 绑定之类不会被抹掉。
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { getCalendarMetadata, type CalendarMetadata } from './bgm/calendar'
@@ -50,7 +49,7 @@ function toJson(r: TrackRow): Record<string, unknown> {
     bgmId: r.bgm_id,
     status: r.status,
     episode: r.episode,
-    // NULL → null（= 连载中）。别在这里悄悄折成 0，那会把「不知道总共几集」变成「总共 0 集」
+    // NULL → null(= 连载中)。**别在这里悄悄折成 0** —— 那会把「不知道总共几集」变成「总共 0 集」。
     totalEpisodes: r.total_episodes,
     title: r.title,
     titleCn: r.title_cn,
@@ -66,9 +65,8 @@ function toJson(r: TrackRow): Record<string, unknown> {
 }
 
 /**
- * 同步专用视图 —— 比网页视图多一个 `extra`：app 独有的字段（bindings / notes / goodEpisodes /
- * novelVolume / subjectType…）原样装在里面往返。网页端根本不认识它们，也**从不改写它，所以
- * app 的富数据过服务器一圈不会被瘦记录抹掉（012 那条铁律）。
+ * 同步专用视图 —— 比网页视图多一个 `extra`:桌面端独有的字段原样装在里面往返。
+ * 网页端根本不认识它们,也**从不改写**,所以富数据过服务器一圈不会被瘦记录抹掉。
  */
 function toSyncJson(r: TrackRow): Record<string, unknown> {
   let extra: unknown = {}
@@ -81,8 +79,8 @@ function toSyncJson(r: TrackRow): Record<string, unknown> {
   return { ...toJson(r), extra }
 }
 
-// id 是插入顺序（AUTOINCREMENT，UPDATE 不会挪它）—— 按它排列表就是「按加入顺序」，
-// 不会因为编辑了某条（改进度/改状态都会 bump updated_at）就把它顶到最前面重新洗牌。
+// id 是插入顺序(自增,UPDATE 不会挪它)—— 按它排列表就是「按加入顺序」,不会因为编辑了某条
+// (改进度/改状态都会 bump updated_at)就把它顶到最前面重新洗牌。
 const listStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id ASC')
 const oneStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? AND bgm_id = ?')
 const delStmt = db.prepare('DELETE FROM tracks WHERE user_id = ? AND bgm_id = ?')
@@ -99,7 +97,7 @@ const bumpRevStmt = db.prepare('UPDATE users SET tracks_rev = tracks_rev + 1 WHE
 
 const currentRev = (uid: number): number => (revStmt.get(uid) as { rev: number } | undefined)?.rev ?? 0
 
-/** 任何会改动该用户追番数据的写入都要调 —— 漏一处，app 就会拿着过期 rev 静默覆盖掉网页的改动 */
+/** 任何会改动该用户追番数据的写入都要调 —— 漏一处,桌面端就会拿着过期 rev 静默覆盖掉网页的改动。 */
 const bumpRev = (uid: number): void => {
   bumpRevStmt.run(uid)
 }
@@ -116,7 +114,7 @@ async function calendarMetadata(): Promise<Map<number, CalendarMetadata>> {
   try {
     return await getCalendarMetadata()
   } catch {
-    // 周历只是系统元数据补全；BGM / 缓存临时不可用不能拖垮用户追番读写。
+    // 周历只是系统元数据补全;它临时不可用不能拖垮用户的追番读写。
     return new Map()
   }
 }
@@ -130,8 +128,8 @@ const fillCalendarStmt = db.prepare(`
 `)
 
 /**
- * app 旧记录没有每周放送日。用服务器已有的本季周历补齐，但不动 updated_at / rev：
- * 这是系统元数据回填，不是用户修改，否则一次打开页面就会制造虚假同步冲突。
+ * 老记录没有每周放送日,用服务器已有的本季周历补齐,但**不动 updated_at / rev**:
+ * 这是系统元数据回填、不是用户修改,否则一打开页面就会制造虚假的同步冲突。
  */
 async function fillCalendarMetadata(uid: number): Promise<Map<number, CalendarMetadata>> {
   const metadata = await calendarMetadata()
@@ -160,13 +158,11 @@ async function requireUid(c: Context): Promise<number | null> {
 }
 
 /**
- * 加追番后异步回填标签 / 别名 / 放送日期 —— 服务端版的 app `ensureBgmTagsFilled`。
- *
- * 三个细节都是从 app 那边抄的，每个都有理由：
- *   1. **抖动 800-2000ms 再发** —— 用户在周历上连点几部，不抖动就是一串请求瞬间砸向 BGM。
- *   2. **发之前二次检查** —— 延迟这段时间里用户可能已经取消追番，或别的路径已经补上了。
- *   3. **一次 detail 同时拿标签 + 别名 + 放送日期**（零额外请求）。
- * 失败就静默放过：下次相关入口会再触发，绝不重试打死对面（CLAUDE.md 网络红线）。
+ * 加追番后异步回填标签 / 别名 / 放送日期。三个细节各有理由:
+ *   1. **抖动 800~2000ms 再发** —— 用户在周历上连点几部,不抖动就是一串请求瞬间砸过去。
+ *   2. **发之前二次检查** —— 这段延迟里用户可能已经取消追番,或别的路径已经补上了。
+ *   3. **一次请求同时拿标签 + 别名 + 放送日期**,零额外开销。
+ * 失败静默放过:下次相关入口还会触发,**绝不重试打死对面**。
  */
 function fillDetailLater(uid: number, bgmId: number): void {
   const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
@@ -186,8 +182,8 @@ function fillDetailLater(uid: number, bgmId: number): void {
         if (d.date && !recheck.air_date) { sets.push('air_date = ?'); args.push(d.date) }
         if (d.cover && !recheck.cover) { sets.push('cover = ?'); args.push(d.cover) }
         if (!sets.length) return
-        // 注意**不动 updated_at、也不 bumpRev**：这是系统回填，不是用户操作。
-        // 动了 rev 的话，app 会被一次纯粹的标签补全顶出 409、误以为「网页那边有人改过」
+        // **不动 updated_at、也不 bump rev**:这是系统回填不是用户操作。动了 rev 的话,一次纯粹的
+        // 标签补全就会把桌面端顶出 409、让它误以为「网页那边有人改过」。
         db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`)
           .run(...args, uid, bgmId)
       } catch {
@@ -325,7 +321,7 @@ tracks.delete('/:bgmId', async (c) => {
   return c.json({ ok: true })
 })
 
-// ── app 同步（ideas/012「追番同步 · 落地决策」）──────────────────────────────────
+// ── app 同步──────────────────────────────────
 //
 // 形态是**用户声明方向的整包覆盖**，不是自动 merge：网页实时直连服务器，app 手动「拉取 / 上传」。
 // 所以这里**没有删除墓碑** —— 覆盖模型下删除天然生效（整份替换），墓碑是 merge 模型才需要的。

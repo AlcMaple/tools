@@ -147,7 +147,7 @@ function EditTeamModal({
   team, group, onClose, onSave,
 }: {
   team: ClassicTeam
-  /** 所属经典组 —— 顶部上下文展示这条阵容属于哪个主题,而不是重复下方正在编辑的阵容。 */
+  /** 所属经典组 —— 顶部上下文显示这条阵容属于哪个主题,而不是重复下方正在编辑的阵容。 */
   group: ClassicGroup
   onClose: () => void
   onSave: (team: string[], notes: string[]) => void
@@ -387,11 +387,10 @@ const ClassicView = forwardRef<ClassicViewHandle, {
   setData: React.Dispatch<React.SetStateAction<ClassicGroup[]>>
   query: string
   onClearQuery: () => void
-  /** 打开「清理旧作业」弹窗（全局，由 HomeworkLookup 持有）。传了才渲染清理按钮。 */
+  /** 打开「清理旧作业」弹窗(全局,由父页面持有)。传了才渲染清理按钮。 */
   onCleanup?: () => void
 }>(function ClassicView({ data, setData, query, onClearQuery, onCleanup }, ref) {
-  // 初始即折叠除第一组外的所有组（首帧就别渲染全部阵容行，避免切到本页卡顿;
-  // 详见 HomeworkView 同款注释）。
+  // 初始就把除第一组外的所有组折叠 —— 首帧别渲染全部阵容行,否则切到本页会卡。
   const [collapsedIds, setCollapsedIds] = useState<Set<number>>(
     () => new Set(data.slice(1).map(d => d.id)),
   )
@@ -458,7 +457,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     setData(prev => {
       const existing = prev.find(d => d.title === title)
       if (existing) {
-        // Adding a team to an existing group: only the new team gets a fresh date.
+        // 往已有组里加阵容:只有新加的这条拿今天的日期。
         return prev.map(d =>
           d.id === existing.id
             ? { ...d, teams: [...d.teams, { id: Date.now(), team, notes, updatedAt: now }] }

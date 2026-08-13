@@ -1,15 +1,11 @@
 /**
- * Per-source IPC dispatch table for DownloadTask.
+ * 按源分发的 IPC 适配层。
  *
- * The renderer's DownloadQueue and the resume-on-mount path each used to do
- * three-arm `if (task.source === 'xifan'/girigiri/aowu)` chains for every
- * action (pause / cancel / resume / retry / requeue / switchSource). Each new
- * source meant editing every call site. This adapter centralizes the dispatch
- * so a task gets a uniform { pause, cancel, resume, ... } surface and adding
- * a fourth source is a single new branch here.
+ * 下载队列页和挂载时的恢复流程,原本对每个动作(暂停/取消/继续/重试/重排/换源)都要写一遍
+ * 三分支的 if。集中到这里之后,任何任务都拿到统一的 { pause, cancel, resume, ... }
+ * 加第四个源只需要在这里多一个分支。
  *
- * Per-task helpers (epCount, listEps, epLabel, canSwitchSource, ...) live
- * alongside since they share the same source-discriminator pattern.
+ * 每任务的小工具(集数、集列表、集标签、能否换源…)也放在一起 —— 它们共享同一套按源判别的模式。
  */
 import type { DownloadTask } from './downloadStore'
 
@@ -19,21 +15,16 @@ interface SiteApi {
   resume: (pendingEps: number[]) => Promise<unknown>
   retry: (eps: number[]) => Promise<unknown>
   requeue: (eps: number[]) => Promise<unknown>
-  /**
-   * Switch to a different source for the failed eps (cycle through
-   * available sources). Null when this source/task can't switch — caller
-   * should hide the swap-source UI.
-   */
+  /** 给失败的集换一个源(在可用源之间轮换)。该源/任务不支持换源时为 null,调用方应隐藏换源 UI。 */
   switchSource:
     | ((args: { failedEps: number[]; newSourceIdx: number }) => Promise<unknown>)
     | null
   /**
-   * Resolve a real mp4 URL for one ep, used by the "copy URL" feature.
-   * Returns '' if the source has no clipboard-friendly URL (girigiri's
-   * stream is HLS, no single mp4).
+   * 解析某一集的真实 mp4 地址,供「复制链接」用。源本身没有可复制的单一 mp4 地址时返回空串
+   * (HLS 流就没有)。
    */
   resolveEpUrl: (ep: number) => Promise<string>
-  /** True if `resolveEpUrl` is async / costly (renderer should show a spinner). */
+  /** 为 true 表示 `resolveEpUrl` 是异步 / 有代价的,调用方该显示 spinner。 */
   resolveIsAsync: boolean
 }
 
@@ -84,15 +75,13 @@ export function siteApi(task: DownloadTask): SiteApi {
     switchSource: ({ failedEps, newSourceIdx }) =>
       window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newSourceIdx, savePath, task.epPages),
     resolveEpUrl: async (ep) => {
-      // OVA 等特殊集的文件名不是集号,模板拼不出来;主进程回源解析过的真实直链
-      // 记在 epUrls 里,优先用它(见 docs/regression/xifan-下载链接-集数补零-回归用例.md)。
+      // OVA 等特殊集的文件名不是集号、模板拼不出来;主进程回源解析过的真实直链记在 epUrls 里,优先用它。
       const resolved = task.epUrls[ep]
       if (resolved) return resolved
-      // 用当前源的模板(换过源后 sourceIdx 已变);从前写死 [0] 会复制出原源的链接
+      // 要用**当前源**的模板(换过源后 sourceIdx 已经变了);写死 [0] 会复制出原来那个源的链接。
       const template = task.templates[task.sourceIdx] ?? task.templates[0] ?? ''
-      // 占位符按携带的位宽补零({:d} 不补零、{:0Nd} 补到 N 位);必须与主进程
-      // xifan/download.ts 的 formatEpUrl 保持一致,否则复制出来的直链拼错(见
-      // docs/regression/xifan-下载链接-集数补零-回归用例.md)。兼容历史残留的旧 {:02d} 模板。
+      // 占位符按携带的位宽补零,**必须**与主进程 download.ts 的 formatEpUrl 保持一致
+      // 否则复制出来的直链是错的。
       return template
         ? template.replace(/\{:0?(\d*)d\}/, (_, w: string) =>
             String(ep).padStart(w ? parseInt(w, 10) : 0, '0'))
@@ -136,13 +125,7 @@ export interface SourceSwitch {
   next: number
 }
 
-/**
- * Return source-cycling info, or null if this task can't switch sources.
- *
- *  - xifan: cycles through `templates`, sourceIdx is the array index
- *  - aowu:  cycles through `aowuSources`, sourceIdx is the FantasyKon source_id
- *  - girigiri: never (no IPC switchSource handler)
- */
+/** 返回换源所需的信息;该任务不支持换源时返回 null。 */
 export function sourceSwitchInfo(task: DownloadTask): SourceSwitch | null {
   if (task.source === 'girigiri') return null
   if (task.source === 'aowu') {

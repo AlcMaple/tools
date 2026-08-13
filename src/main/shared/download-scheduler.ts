@@ -1,24 +1,11 @@
 import { EventEmitter } from 'events'
 
 /**
- * Per-source single-slot scheduler.
+ * 每个源一个单槽调度器:**同一个源同时只能有一个任务在下载**(跨源并行没问题
+ * 一个 girigiri + 一个 xifan 可以;两个 girigiri 不行 —— 那是被站点封 IP 的快车道)。
  *
- * Why: each source's IPC layer maintains its own per-task queue, but nothing
- * stopped two tasks of the same source from downloading concurrently — that's
- * a fast way to get the user's IP rate-limited or banned by that site.
- *
- * Granularity: one scheduler per source (girigiri / xifan), so cross-source
- * concurrency stays allowed (one girigiri + one xifan in parallel is fine,
- * two girigiri in parallel is not).
- *
- * Contract:
- * - tryAcquire(taskId) — claim the slot. Returns false if another taskId
- *   currently holds it; the caller should re-queue and wait for 'available'.
- *   Re-entrant: the holder can call tryAcquire again and still get true.
- * - release(taskId)    — drop the slot iff this taskId holds it. Emits
- *   'available' so all waiting tasks of this source can re-attempt.
- *
- * Each task should release on: all_done, pause, cancel.
+ * `tryAcquire` 抢不到时返回 false,调用方应把这一集放回队列、等 'available' 事件;
+ * 持有者重复 acquire 仍返回 true。任务在 all_done / pause / cancel 时都要 release。
  */
 class DownloadScheduler extends EventEmitter {
   private activeTaskId: string | null = null
@@ -42,8 +29,7 @@ class DownloadScheduler extends EventEmitter {
 export const girigiriScheduler = new DownloadScheduler()
 export const xifanScheduler = new DownloadScheduler()
 export const aowuScheduler = new DownloadScheduler()
-// Many tasks may subscribe to 'available' (one listener per ipc module).
-// Bump the cap so we don't trip the default-10 warning.
+// 每个 ipc 模块一个监听者,抬高上限免得触发默认 10 个的告警。
 girigiriScheduler.setMaxListeners(50)
 xifanScheduler.setMaxListeners(50)
 aowuScheduler.setMaxListeners(50)

@@ -2,13 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 
 // 全局右键编辑菜单:剪切 / 复制 / 粘贴 / 全选。
 //
-// 实现取舍:
-//  - 命令本身走主进程 webContents 的 cut/copy/paste/selectAll(见 systemApi.editCommand)——
-//    直接作用在当前聚焦元素/选区上,粘贴也不会被渲染层的 execCommand 限制挡掉。
-//  - 只在「真正有用」时才弹:可编辑控件(input/textarea/contenteditable)一定弹;
-//    普通文本只有在存在选区时才弹(给「复制 / 全选」)。空白处右键不弹,行为可预期。
-//  - 让位于页面内已有的局部右键菜单(FileExplorer 文件菜单、GoodEpisodesEditor 备注)——
-//    那些 handler 都调了 e.preventDefault(),这里见到 defaultPrevented 直接跳过。
+//   - 命令本身走主进程 webContents 的 cut/copy/paste/selectAll —— 直接作用在当前聚焦元素/选区上
+//     粘贴也不会被渲染层的 execCommand 限制挡掉。
+//   - **只在真正有用时才弹**:可编辑控件一定弹;普通文本只有存在选区时才弹(给「复制 / 全选」);
+//     空白处右键不弹,行为可预期。
+//   - 让位于页面内已有的局部右键菜单 —— 那些 handler 都调了 preventDefault,这里见到
+//     defaultPrevented 就直接跳过。
 
 interface MenuItem {
   label: string
@@ -23,12 +22,11 @@ interface MenuState {
   flipX: boolean
   flipY: boolean
   items: MenuItem[]
-  // 非编辑文本「全选」要选中的目标元素 —— 只选右键所在的这块文本(如标题 / 简介),
-  // 而不是 webContents.selectAll() 那样把整页都选上。编辑控件场景为 null。
+  // 非编辑文本的「全选」目标 —— 只选右键所在的这块文本(标题 / 简介),而不是把整页都选上。
   selectTarget: HTMLElement | null
 }
 
-// mac 用 ⌘,其余用 Ctrl —— 仅快捷键提示文案,不参与逻辑。
+// mac 用 ⌘、其余用 Ctrl —— 仅快捷键提示文案,不参与逻辑。
 const MOD = navigator.userAgent.includes('Mac') ? '⌘' : 'Ctrl'
 
 // 取最近的可编辑宿主:文本类 input / textarea / contenteditable。
@@ -37,7 +35,7 @@ function editableHost(target: EventTarget | null): HTMLElement | null {
   const el = target.closest('input, textarea, [contenteditable=""], [contenteditable="true"]')
   if (!(el instanceof HTMLElement)) return null
   if (el instanceof HTMLInputElement) {
-    // 只对文本类 input 生效;checkbox/range/button 之类没有编辑语义。
+    // 只对文本类 input 生效;checkbox / range / button 之类没有编辑语义。
     const textual = ['text', 'search', 'url', 'tel', 'password', 'email', 'number', '']
     return textual.includes(el.type) ? el : null
   }
@@ -65,7 +63,7 @@ export default function EditContextMenu(): JSX.Element | null {
 
   useEffect(() => {
     function onContextMenu(e: MouseEvent): void {
-      // 局部右键菜单(文件 / 备注等)已自行 preventDefault,让位给它们。
+      // 局部右键菜单已自行 preventDefault,让位给它们。
       if (e.defaultPrevented) return
 
       const host = editableHost(e.target)

@@ -1,14 +1,8 @@
-// Mini BGM search modal — used by SearchDownload (and later, anywhere a user
-// needs to associate a source result with a canonical Bangumi entry).
+// 迷你 BGM 搜索弹窗 —— 用户需要把一个源的搜索结果关联到规范的 BGM 条目时用。
 //
-// Flow:
-//   1. Open with a prefilled keyword (cleaned source title)
-//   2. User can edit + re-search
-//   3. Pick a result → call `onConfirm` with the BgmDetail so the caller can
-//      write the binding into animeTrackStore
-//
-// Reuses the existing BGM search progress event for "Page X / Y" feedback —
-// multi-page lookups can take ≥2s each due to the rate limiter.
+// 用预填的关键词(清洗过的源标题)打开 → 用户可以改词重搜 → 选中一条后回调把 BGM 详情交给
+// 调用方去写 binding。
+// 复用主进程的搜索进度事件显示「第 X / Y 页」—— 多页查询每页要等 2 秒以上限速,没有反馈会很难熬。
 
 import { useEffect, useRef, useState } from 'react'
 import type { BgmSearchResult, BgmDetail } from '../types/bgm'
@@ -16,13 +10,13 @@ import { ModalShell } from '../pages/homework/shared'
 import ErrorPanel from './ErrorPanel'
 
 interface Props {
-  /** Initial keyword used to seed the search box. */
+  /** 初始关键词。 */
   initialKeyword: string
-  /** What source/title we're trying to link, shown to the user as context. */
+  /** 正在关联的是哪个源 / 哪个标题,给用户看的上下文。 */
   sourceLabel: string
   sourceTitle: string
   onClose: () => void
-  /** Called with the picked BGM detail. Caller writes the binding + closes. */
+  /** 选中后回调,由调用方写 binding 并关闭弹窗。 */
   onConfirm: (detail: BgmDetail) => void
 }
 
@@ -44,9 +38,7 @@ export function LinkTrackModal({ initialKeyword, sourceLabel, sourceTitle, onClo
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null)
   const reqIdRef = useRef(0)
 
-  // Subscribe once for the modal lifetime. Progress events are page-counted by
-  // main; the BGM rate-limiter spaces requests 2.2-2.8s so this feedback is
-  // important on multi-page queries.
+  // 整个弹窗生命周期只订阅一次。
   useEffect(() => {
     const unsub = window.bgmApi.onSearchProgress((current, total) => {
       setProgress({ current, total })
@@ -55,7 +47,7 @@ export function LinkTrackModal({ initialKeyword, sourceLabel, sourceTitle, onClo
   }, [])
 
   // Initial + subsequent searches share this function. Bumps a request id so a
-  // stale (slow) result that lands after the user hit Enter again is discarded.
+  // 用户再次回车后,慢到达的旧结果会被丢弃。
   const runSearch = async (kw: string): Promise<void> => {
     const trimmed = kw.trim()
     if (!trimmed) return
@@ -64,15 +56,14 @@ export function LinkTrackModal({ initialKeyword, sourceLabel, sourceTitle, onClo
     setState({ status: 'searching' })
     try {
       // We don't pass `update=true` — the renderer cache is a fine fast path
-      // here, and the main-process disk cache further insulates us from BGM
-      // rate limits when the user re-uses the same keyword across cards.
+      // 主进程的磁盘缓存还能在用户对多张卡片反复用同一关键词时挡掉限流。
       const items = await window.bgmApi.search(trimmed)
       if (myId !== reqIdRef.current) return
       if (!Array.isArray(items) || items.length === 0) {
         setState({ status: 'empty' })
         return
       }
-      // Sort: newest air date first, undated last.
+      // 排序:放送日期新的在前,没有日期的排最后。
       const sorted = [...items].sort((a, b) => {
         const da = /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : '0000-00-00'
         const db = /^\d{4}-\d{2}-\d{2}$/.test(b.date) ? b.date : '0000-00-00'

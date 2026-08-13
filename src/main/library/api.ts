@@ -13,8 +13,7 @@ import {
   type DirMtimes,
 } from './scan-core'
 
-// 扫描相关的纯逻辑 + 类型都收敛进 scan-core（既能进 worker 又能主线程兜底）。
-// 这里 re-export 类型，所有老的 `import { LibraryEntry } from './library/api'` 不变。
+// 扫描相关的纯逻辑和类型都收敛在 scan-core(既能进 worker 也能主线程兜底),这里 re-export 类型。
 export type { LibraryPath, LibraryEntry } from './scan-core'
 
 export interface LibraryFile {
@@ -23,17 +22,16 @@ export interface LibraryFile {
   sizeBytes: number;
 }
 
-// 路径表 + 扫描结果都走 JsonStore：内存权威值(读瞬时)、写异步合并落盘。
-// getPaths/getEntries 等保持同步签名(内部 current() 同步读内存),所有调用方不变;
-// 原本每次 setEntries 的同步 writeFileSync(entries 可能很大)改成异步,不再卡。
+// 路径表和扫描结果都走 JsonStore:内存是权威值(读瞬时),写异步合并落盘 —— entries 可能很大
+// 每次 setEntries 都同步写盘会卡住主进程。
 const pathsStore = new JsonStore<LibraryPath[]>('library_paths.json', (raw) =>
   Array.isArray(raw) ? (raw as LibraryPath[]) : [],
 )
 const entriesStore = new JsonStore<LibraryEntry[]>('library_entries.json', (raw) =>
   Array.isArray(raw) ? (raw as LibraryEntry[]) : [],
 )
-// 目录 mtime 索引：增量同步的「变化检测」存档（目录路径 → 上次扫到的 mtimeMs）。
-// 跟 entries 分开存，不动 LibraryEntry 结构。空对象兜底 → 首次启动退化成全量扫描。
+// 目录 mtime 索引:增量同步的变化检测存档(目录路径 → 上次扫到的 mtimeMs)。与 entries 分开存
+// 不动 LibraryEntry 结构;空对象兜底时自然退化成全量扫描。
 const dirIndexStore = new JsonStore<DirMtimes>('library_dir_index.json', (raw) =>
   raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as DirMtimes) : {},
 )
@@ -44,15 +42,10 @@ function setDirIndex(dirMtimes: DirMtimes): void {
   dirIndexStore.set(dirMtimes)
 }
 
-// ==========================================
-// 动态监听器模块
-// ==========================================
-//
-// 用 Node 原生 fs.watch 递归监听,不用 chokidar:chokidar 不走 Windows 原生递归,
-// 而是遍历整棵树给**每个目录**开一个 fs.watch 句柄 —— uv_fs_event_start 的系统调用
-// 在主线程事件循环上同步执行,几千个目录连发就是 2-3s 的主进程冻结(实测拖不动窗口,
-// 见 docs/ideas/010)。原生 fs.watch({recursive:true}) 每个库根只开 1 个句柄
-// (Windows = ReadDirectoryChangesW 递归,macOS = FSEvents),零遍历、设置即时。
+// ── 目录监听 ──────────────────────────────────────────────────────────────
+// 用 Node 原生 `fs.watch({recursive:true})`,**不要用 chokidar**:它在 Windows 上不走原生递归
+// 而是遍历整棵树给每个目录开一个句柄 —— 那个系统调用在主线程事件循环上同步执行,几千个目录
+// 连发就是 2~3 秒的主进程冻结(窗口拖不动)。原生递归每个库根只开 1 个句柄,零遍历、设置即时。
 let libraryWatchers: FSWatcher[] = []
 let currentWatchCallback: ((changedPaths: string[]) => void) | null = null
 let currentDetectCallback: (() => void) | null = null
@@ -84,20 +77,19 @@ export function startLibraryWatch(onLibraryChanged: (changedPaths: string[]) => 
   for (const root of paths) {
     try {
       const w = watch(root, { recursive: true }, (eventType, filename) => {
-        // 只听 rename(增删/改名,对应旧 chokidar 的 add/unlink/addDir/unlinkDir)。
-        // change 是内容写入 —— 旧实现也不听,且下载中的文件会高频触发,纯噪音。
+        // 只听 rename(增删/改名)。change 是内容写入 —— 下载中的文件会高频触发,纯噪音。
         if (eventType !== 'rename') return
         const rel = filename ? filename.toString() : ''
-        // 隐藏文件/目录(路径任一段以 . 开头)不触发,与旧 ignored 规则一致。
+        // 隐藏文件/目录(路径任一段以 . 开头)不触发。
         if (rel.split(/[\\/]/).some(seg => seg.startsWith('.'))) return
         trigger(rel ? join(root, rel) : root)
       })
-      // 监听根被删除/失去权限时会发 error,不接住会变成未捕获异常炸主进程;
-      // 失效路径下次启动由 reconcilePaths 对账剔除。
+      // 监听根被删除或失去权限时会发 error,不接住会变成未捕获异常炸掉主进程;失效路径下次启动
+      // 由对账剔除。
       w.on('error', (err) => console.error(`媒体库监听失效(${root}):`, err))
       libraryWatchers.push(w)
     } catch (err) {
-      // 单个路径起不来(被删 / 平台不支持递归监听)不影响其余路径与扫描功能
+      // 单个路径起不来(被删 / 平台不支持递归监听)不影响其余路径和扫描功能
       console.error(`媒体库监听启动失败(${root}):`, err)
     }
   }
@@ -127,8 +119,8 @@ export function addPath(folderPath: string, label: string): LibraryPath[] {
 export function removePath(folderPath: string): LibraryPath[] {
   const current = getPaths().filter(p => p.path !== folderPath)
   setPaths(current)
-  // 同步剔除该路径下的条目 + 目录 mtime 索引 —— 删路径只是把这块数据从索引里拿掉，
-  // 不需要扫描（正是网盘思路：路径增删 = 索引加减）。否则要等下次同步才清理干净。
+  // 删路径只是把这块数据从索引里拿掉,不需要扫描(路径增删 = 索引加减),所以同步剔除条目和
+  // mtime 索引,不用等下次同步。
   const prefix = folderPath.endsWith(sep) ? folderPath : folderPath + sep
   const keep = (p: string): boolean => p !== folderPath && !p.startsWith(prefix)
   setEntries(getEntries().filter(e => keep(e.folderPath)))
@@ -140,7 +132,7 @@ export function removePath(folderPath: string): LibraryPath[] {
   return current
 }
 
-// 对账：剔除磁盘上已不存在的路径（用户手动删除文件夹后留下的残留条目）
+// 对账:剔除磁盘上已不存在的路径(用户手动删了文件夹后留下的残留条目)
 export function reconcilePaths(): LibraryPath[] {
   const current = getPaths()
   const alive = current.filter(p => existsSync(p.path))

@@ -1,6 +1,6 @@
 export type Source = "Xifan" | "Girigiri" | "Aowu";
 
-/** Normalized card for display — works for all sources */
+/** 归一化后的展示卡片 —— 三个源共用同一种形状。 */
 export interface SearchCard {
   title: string;
   cover: string;

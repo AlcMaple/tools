@@ -293,7 +293,7 @@ function CalendarCard({
   const on = track.tracked.has(item.id)
 
   return (
-    // 已追 → 整卡边框变主色；边框宽度两态统一 2px，只变颜色，不挤动相邻卡片（AI_GUIDELINES）。
+    // 已追 → 整卡边框变主色；边框宽度两态统一 2px，只变颜色，不挤动相邻卡片。
     // 不再有 hover 描边——纯装饰性描边在触屏上没有等价反馈，去掉更干净。
     <div
       className={`relative overflow-hidden rounded-lg border-2 bg-surface-container transition-colors ${

@@ -1,8 +1,7 @@
-// 邮件相关 IPC 通道。
+// 邮件相关的 IPC。
 //
-// 渲染器读到的配置永远不带明文 authCode —— 通过 hasAuthCode 布尔位告诉 UI
-// 「已存过一份」即可，UI 上授权码字段显示占位符。用户重新输入会再走 set-config
-// 完整覆盖。这样即便 renderer DevTools 被打开，也看不到原始授权码。
+// 渲染层读到的配置**永远不带明文授权码** —— 只给一个「已存过」的布尔位,UI 上显示占位符;
+// 用户重新输入会走完整覆盖。这样即便渲染层的 DevTools 被打开,也看不到原始授权码。
 
 import { ipcMain } from 'electron'
 import { loadMailConfig, saveMailConfig, type MailConfig } from '../mail/config'
@@ -18,7 +17,7 @@ export interface MailConfigForUI {
 interface SetConfigInput {
   enabled: boolean
   qqEmail: string
-  /** 空串表示「不改」，沿用磁盘上已加密的旧值；非空表示「改成这个新值」。 */
+  /** 空串表示「不改」,沿用磁盘上已加密的旧值;非空表示改成这个新值。 */
   authCode: string
 }
 
@@ -43,9 +42,8 @@ export function registerMailIpc(): void {
     return true
   })
 
-  // 周历刷新触发自动发件 —— 渲染器只调用、不传配置；主进程自己读磁盘。
-  // 返回 { sent: boolean, reason?: string }，reason 用于让 renderer 在 console
-  // 留个排错线索（比如「未启用」「未配置」），不会弹给用户。
+  // 周历刷新触发的自动发件 —— 渲染层只负责调用,配置由主进程自己读盘。
+  // reason 只是给渲染层留个排错线索(「未启用」「未配置」),不弹给用户。
   ipcMain.handle('mail:send-calendar', async (): Promise<{ sent: boolean; reason?: string }> => {
     const cfg = await loadMailConfig()
     if (!cfg.enabled) return { sent: false, reason: 'disabled' }
@@ -59,9 +57,7 @@ export function registerMailIpc(): void {
     }
   })
 
-  // MyAnime 「发送极简报告」按钮触发 —— renderer 已经拼好完整 HTML 正文,
-  // 主进程只负责 SMTP。跟 send-calendar 一样返回 { sent, reason? },
-  // 让 UI 根据结果决定 toast / 错误提示。
+  // 「发送追番报告」按钮触发 —— 渲染层已经拼好完整 HTML,主进程只负责 SMTP。
   ipcMain.handle('mail:send-anime-report', async (_e, html: string): Promise<{ sent: boolean; reason?: string }> => {
     const cfg = await loadMailConfig()
     if (!cfg.enabled) return { sent: false, reason: 'disabled' }
@@ -76,8 +72,7 @@ export function registerMailIpc(): void {
     }
   })
 
-  // 测试发送：跟 send-calendar 不同，这个**总是**抛错而不是吞掉
-  // —— 用户点测试就是来看错信息的。
+  // 测试发送:与自动发件不同,这个**总是**抛错而不是吞掉
   ipcMain.handle('mail:test-send', async () => {
     const cfg = await loadMailConfig()
     if (!cfg.qqEmail || !cfg.authCode) throw new Error('请先填写邮箱和授权码')

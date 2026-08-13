@@ -1,51 +1,33 @@
 /**
- * Per-host rate limiter + body-based limit-page detector.
+ * 按站点限速 + 限流页识别。
  *
- * 设计意图：
+ * `RateLimiter`:同一站点两次请求的最小间隔(从上一次**开始**算,不是完成)+ 随机抖动
+ * 多个调用方经 `chain` 串行。可选滚动窗口配额守分钟级累计预算 —— 只压瞬时速率的话
+ * 连发多笔仍会把时间窗打满。
  *
- *   `RateLimiter`（timing throttle）
- *     串行链保证同一站点两次请求之间的**最小间隔**，从上一次"开始"算起
- *     （不是完成）。带随机抖动避免 bot-like 规律。多个调用者通过 chain
- *     串行 —— 任何一个在 penalty-box 等待时，其他人排在它后面等。
+ * `LimitDetector` / `RateLimitError`:识别站点返回 HTTP 200 + 中文限流页正文的情况
+ * 取出 wait-N。**这一层绝不自动重试** —— 重试会加剧站点的滑动惩罚窗口,由 UI 用倒计时
+ * 把决定权交给用户(红线)。
  *
- *   `LimitDetector` + `RateLimitError`
- *     检测站点返回 HTTP 200 + 中文限流页正文（"您在 N 秒内只能搜索一次"）的
- *     情况，提取 wait-N。检测到限流的调用方直接 throw `RateLimitError(waitN)`,
- *     **不在网络层自动重试** —— 由 UI 通过 CountdownRetryButton 把决定权交给
- *     用户，倒计时归零后用户主动点重试。
- *
- * **历史踩坑**：早期版本有 `withRateLimitRetry`（检测到限流页 → sleep → 自动
- * 重试一次），算上网络层 retry + 5xx retry + 限流 retry 最坏 8 次请求，**严重
- * 加剧** BGM 的滑动惩罚窗口。003 阶段全部撤掉，原函数 `withRateLimitRetry` /
- * `RateLimitRetryOptions` 已删除，**不要再加回来**。
- *
- * **重要**：LIMIT 页 body 不能被调用方缓存。检测器返回非 null 即意味着"这个
- * body 是有毒的，不要持久化"。已经走缓存的调用方应在保存前先调一次检测器。
+ * 限流页的 body 有毒,调用方**不能缓存**:检测器返回非 null 就意味着别持久化这份 body。
  */
 import { sleep } from './http-client'
 
 // ── Layer 1: timing throttle ──────────────────────────────────────────────────
 
 export interface RateLimiterOptions {
-  /** Hard floor between request starts, in ms. The actual wait is
-   * `minGapMs + random(0, jitterMs)`. Set above the site's known threshold
-   * with a safety margin for network jitter (typically 100-200ms). */
+  /** 两次请求开始之间的硬下限(ms)。实际等待 = `minGapMs + random(0, jitterMs)`
+   *  要比站点已知阈值再留 100~200ms 的网络抖动余量。 */
   minGapMs: number
-  /** Random additional delay on top of `minGapMs`. Keeps cadence non-regular. */
   jitterMs: number
-  /** Display name for log messages (e.g. "bgm", "aowu"). */
+  /** 日志里的站点名(如 "bgm"、"aowu")。 */
   name?: string
-  /** 滚动窗口配额（可选）：`windowMs` 内最多放行 `maxPerWindow` 个请求。
-   * 用来守住"分钟级累计预算"——光靠 minGap 只压瞬时速率，连发多笔仍会把
-   * 时间窗内的总量打满。超额请求阻塞到窗口里最早一笔滑出为止。 */
+  /** 滚动窗口配额:`windowMs` 内最多放行 `maxPerWindow` 个,超额阻塞到最早一笔滑出。 */
   maxPerWindow?: number
   windowMs?: number
 }
 
-/**
- * Module-scope `lastStartedAt` clock with chain-serialized waiters. One
- * instance per host (don't share across hosts — they have independent limits).
- */
+/** 一个站点一个实例——各站限额独立,别跨站共享。 */
 export class RateLimiter {
   private chain: Promise<void> = Promise.resolve()
   private lastStartedAt = 0
@@ -60,19 +42,13 @@ export class RateLimiter {
     this.opts = opts
   }
 
-  /**
-   * 临时抬高最小间隔（软恢复用）：刚从限流冷却恢复后，先以更大的间隔慢跑
-   * `durationMs`，再自动回落到 `minGapMs`，避免一恢复就满速把滑动惩罚顶起来。
-   */
+  /** 软恢复:限流冷却刚过时先用更大的间隔慢跑 `durationMs`,别一恢复就满速把惩罚顶起来。 */
   softThrottle(gapMs: number, durationMs: number): void {
     this.softMinGapMs = gapMs
     this.softUntil = Date.now() + durationMs
   }
 
-  /**
-   * Block until enough time has passed since the previous call's start.
-   * Reentrancy-safe: concurrent callers serialize through `chain`.
-   */
+  /** 等到距上一次**开始**满足间隔为止;并发调用经 `chain` 串行。 */
   async wait(signal?: AbortSignal): Promise<void> {
     const prev = this.chain
     let release!: () => void
@@ -108,35 +84,17 @@ export class RateLimiter {
     }
   }
 
-  /**
-   * Convenience wrapper: wait for the gap budget, then run `fn`. Returns the
-   * function's value. The clock advances at the START of `fn`, not when it
-   * resolves — long-running fetches don't double-count against the next call.
-   */
+  /** 等够间隔再跑 `fn`。计时从 `fn` **开始**推进,慢请求不会重复占用下一次的额度。 */
   async schedule<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     await this.wait(signal)
     return fn()
   }
 }
 
-// ── Layer 2: body-based limit-page detection ──────────────────────────────────
-//
-// 注意：**不**在这一层做自动重试。检测器只负责"识别这是不是限流页"，
-// 调用方拿到非 null 返回值后**直接** throw `RateLimitError`，UI 显示倒计时
-// 给用户决定何时手动 retry。详细历史见文件顶部 doc comment。
-
-/**
- * Returns retry-after-seconds when the response body indicates a rate-limit
- * page (typically the site responded HTTP 200 with a "too fast" message),
- * or null if the body is normal.
- */
+/** body 是限流页时返回还要等几秒,正常 body 返回 null。 */
 export type LimitDetector = (body: string) => number | null
 
-/**
- * Sentinel error class. Callers can `e instanceof RateLimitError` (or the
- * renderer-side `String(err).startsWith(...)`) to surface a friendlier UI
- * message instead of a generic "search failed".
- */
+/** 渲染层靠它把「限流」和普通「搜索失败」区分开(见 utils/errorMessage.ts)。 */
 export class RateLimitError extends Error {
   constructor(
     public readonly waitSeconds: number,

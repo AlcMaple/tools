@@ -1,10 +1,6 @@
 /**
- * Xifan MP4 download — thin wrapper around shared mp4-range-downloader.
- *
- * Responsibilities here:
- *   - Resolve the per-ep URL from the source template (`formatEpUrl`,按占位符位宽补零)
- *   - Apply the `[Xifan] {title}/{title} - EP.mp4` directory + filename convention
- *   - Translate the shared downloader's structured outcome into UI events
+ * 稀饭的 mp4 下载 —— 在共享的分片下载器外面包一层,这里只负责:按模板算出每一集的 URL、
+ * 套用目录 / 文件名约定、把下载器的结构化结果翻译成 UI 事件。
  */
 import { existsSync, mkdirSync } from 'fs'
 import { dirname, join } from 'path'
@@ -17,12 +13,7 @@ export type { DlEvent }
 
 const LOG_TAG = 'xifan'
 
-/**
- * 把模板里的集数占位符替换成真实集号,按占位符携带的位宽补零:
- *   {:d}   → 不补零(1 → "1",10 → "10")
- *   {:02d} → 补零到两位(4 → "04")
- * 兼容历史 localStorage 里残留的旧 {:02d} 模板(语义与从前完全一致)。
- */
+/** 把模板里的集数占位符换成真实集号,按占位符携带的位宽补零:{:d} 不补零,{:02d} 补到两位。 */
 function formatEpUrl(template: string, ep: number): string {
   return template.replace(/\{:0?(\d*)d\}/, (_, width: string) => {
     const w = width ? parseInt(width, 10) : 0
@@ -37,7 +28,7 @@ function epSavePath(title: string, ep: number, saveDir: string | undefined): str
   return join(dir, `${safeName(title)} - ${epStr}.mp4`)
 }
 
-/** 取 URL 路径里的文件名(去扩展名),如 .../OVA.mp4 → "OVA"。取不到返回 null。 */
+/** 取 URL 路径里的文件名(去扩展名),取不到返回 null。 */
 function nameFromUrl(u: string): string | null {
   try {
     const base = new URL(u).pathname.split('/').pop() ?? ''
@@ -48,10 +39,7 @@ function nameFromUrl(u: string): string | null {
   }
 }
 
-/**
- * Delete part files + final mp4 for a given saved episode. Used when caller switches
- * source: the new URL is unrelated, so any partial bytes are unusable.
- */
+/** 删掉某一集的分片和最终 mp4。换源时用:新地址与旧的无关,已下的字节全都用不上。 */
 export function cleanupParts(title: string, ep: number, saveDir: string | undefined): void {
   cleanupPartsAt(epSavePath(title, ep, saveDir))
 }
@@ -87,14 +75,10 @@ export async function downloadSingleEp(
 
   let outcome = await run(url, savePath)
 
-  // 模板拼出的 URL 取不到正片,两种情形都属于「我们自己拼错了链接」,回源拉该集播放页
-  // 读 player_aaaa.url 拿真实直链再下一次(见 docs/regression/xifan-下载链接-集数补零-回归用例.md):
-  //   - probe404:多半是 OVA 这类特殊集,文件名不是集号(如 .../OVA.mp4),模板必拼错;
-  //   - notMedia:服务器用 HTTP 200 回了几 KB 的 JSON 错误体(假 mp4)——moedot 这类 CDN
-  //     对同一部番不同集的文件名并不一致(ep1 是 RE1z.mp4、ep11 却是 RE11.mp4),模板按
-  //     ep1 推断就会给其它集拼出带多余字符的错链接,而播放页里才有该集真实地址。
-  // 仅限这两类;限流 / 5xx 仍按红线原样上抛给 UI,不在这里重试。
-  // epPages 旧任务(升级前的 localStorage)里没有,此时维持原错误,行为同从前。
+  // 模板拼出的 URL 取不到正片,两种情形都属于「我们自己拼错了链接」,要回源读播放页拿真实直链:
+  //   - 404:多半是 OVA 这类特殊集,文件名不是集号,模板必拼错;
+  //   - 不是媒体:服务器用 HTTP 200 回了几 KB 的 JSON 错误体(假 mp4)。有的 CDN 对同一部番不同集
+  //     的文件名并不一致,按第 1 集推断出的模板会给其它集拼出错链接,而只有播放页里才有真实地址。
   if (!outcome.ok && epPages[sourceIdx]) {
     const probe404 = outcome.reason === 'probe_failed' && outcome.status === 404
     const notMedia = outcome.reason === 'not_media'

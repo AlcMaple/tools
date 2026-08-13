@@ -1,36 +1,24 @@
 /**
- * Aowu (FantasyKon) /api/site/secure protocol.
+ * 嗷呜的 /api/site/secure 协议实现:纯 HTTPS 复刻,不再开 BrowserWindow 抓页面(快 ~30 倍)。
  *
- * Reverse-engineered against the live site (2026-05). Replaces the previous
- * BrowserWindow-driven scraping with plain HTTPS — ~30× faster.
+ *   信封: { n: 12 字节 IV 的 b64, d: 密文+16 字节 GCM tag 的 b64 }
+ *   算法: AES-256-GCM
+ *   密钥: 32 字节 —— 把页面上 5 个碎片按序拼起来再 atob(每片先 trim 并去掉包裹引号):
+ *         meta[name="fk-p"].content、html[data-fk-s]、window.__FKM[0]、
+ *         CSS 变量 --fk-c、window.__FKM[1]
  *
- *   Envelope:  { n: <12-byte IV b64>, d: <ciphertext + 16-byte GCM tag b64> }
- *   Cipher:    AES-256-GCM
- *   Key:       32 bytes — atob() of 5 page-baked fragments concatenated:
- *                meta[name="fk-p"].content
- *              + html[data-fk-s]
- *              + window.__FKM[0]
- *              + getComputedStyle(html, "--fk-c")  (CSS string, strip quotes)
- *              + window.__FKM[1]
- *              Each fragment is trim()'d and stripped of wrapping quotes.
+ * 反检测(单用户桌面客户端的姿态):
+ *   - 走 BrowserSession 带浏览器化请求头 + cookie 罐,分析类 cookie 保留下来
+ *     让后续 secure POST 看起来和 SPA 是连续的。
+ *   - 全局节流:任意两次 secure POST 之间随机间隔 500~2000ms,搜索翻页共用
+ *     6 页约 6~9s,接近真人翻页。
+ *   - **429/503 一律不重试** —— 那是限流信号,原样抛成 ERR_RATE_LIMITED,让 UI 提示等几分钟。
+ *   - 401/403/解密失败允许用新密钥重试一次(部署时轮换密钥是合理原因)。
  *
- * Anti-detection posture (single-user desktop client):
- *   - Browser-y headers via shared BrowserSession (UA pool + Accept-Language +
- *     Sec-Fetch-* + Sec-Ch-Ua-* + cookie jar). Cookies persist __mxa* analytics
- *     so subsequent secure POSTs look continuous with the SPA.
- *   - Global throttle via shared RateLimiter: random 500-2000ms gap between any
- *     two secure POSTs. Search pagination uses the same throttle, so 6 pages ≈
- *     6-9s — close to a real user clicking through pages.
- *   - 429/503 are NOT retried — those are limit signals; we surface them as
- *     a distinct ERR_RATE_LIMITED so the renderer can show "等几分钟再试".
- *   - 401/403/decrypt-fail still get one retry with a fresh key (deploy-time
- *     key rotation is the legitimate cause).
- *
- * Error taxonomy (preserves "is it me or is it the protocol" distinction):
- *   ERR_UNREACHABLE       network-level failure or 5xx (transient)
- *   ERR_RATE_LIMITED      HTTP 429 (we got noticed; back off)
- *   ERR_STRUCTURE_CHANGED key extraction / decrypt / response shape failure —
- *                         likely server-side protocol change, code needs update
+ * 错误分类保留了「是我的问题还是协议变了」这个区分:
+ *   ERR_UNREACHABLE       网络层失败或 5xx(临时)
+ *   ERR_RATE_LIMITED      429,被盯上了,退避
+ *   ERR_STRUCTURE_CHANGED 取密钥 / 解密 / 响应结构失败,多半是服务端改了协议,得改代码
  */
 import https from 'node:https'
 import { URL } from 'node:url'
@@ -51,8 +39,7 @@ export const BASE_URL = 'https://www.aowu.tv'
 
 const SECURE_PATH = '/api/site/secure'
 
-// Internal-only — only the literal AOWU_* prefixes leave this module via thrown
-// Error messages, where the renderer matches them with `.startsWith(...)`.
+// 仅内部使用 —— 只有 AOWU_* 这些字面前缀会随 Error message 出去,渲染层靠 startsWith 匹配。
 const ERR_UNREACHABLE = 'AOWU_UNREACHABLE'
 const ERR_RATE_LIMITED = 'AOWU_RATE_LIMITED'
 export const ERR_STRUCTURE = 'AOWU_STRUCTURE_CHANGED'
@@ -68,17 +55,15 @@ const session = new BrowserSession({
   secFetchDest: 'empty',
 })
 
-// 500-2000ms gap between any two secure POSTs — kills the obvious bot
-// "parallel burst" signal without imposing rigid timing.
+// 两次 secure POST 之间 500~2000ms,消掉「并发突发」这个最明显的机器人特征,又不至于
+// 变成刻板的固定节奏。
 const limiter = new RateLimiter({
   minGapMs: 500,
   jitterMs: 1500,
   name: 'aowu',
 })
 
-// Wrap the shared decoder so a bad compression frame surfaces as ERR_STRUCTURE
-// (the renderer matches on this prefix to show a "site might have changed"
-// message rather than a generic network error).
+// 包一层:压缩帧坏掉时抛成 ERR_STRUCTURE,让 UI 提示「站点可能改版了」而不是通用网络错误。
 function decodeBodyOrThrow(
   headers: NodeJS.Dict<string | string[]>,
   body: Buffer,
@@ -210,15 +195,9 @@ function extractFragments(html: string): { meta: string; fkS: string; fkm: strin
 }
 
 /**
- * Replicate the browser pipeline:
- *   parts = gt(meta) + gt(fkS) + gt(fkm[0]) + gt(fkc) + gt(fkm[1])
- *   keyBytes = TextEncoder().encode(atob(parts))
- *
- * In Node: latin-1 → utf-8 round trip is `Buffer.from(latin1Str, 'utf8')`. If
- * decoded bytes are all ≤ 0x7F (today's case) the result is identical to
- * Buffer.from(parts, 'base64'). The roundtrip protects against a future
- * high-bit key — each >0x7F byte expands to 2 utf-8 bytes, mirroring the
- * browser's TextEncoder behavior.
+ * 复刻浏览器那边的密钥推导:五段碎片拼接后 atob,再按 UTF-8 编码成字节。
+ * 用 latin-1 → utf-8 的往返(而不是直接 base64 解码)是为了防将来碎片里出现非 ASCII 字节;
+ * 目前解出来全是 ≤0x7F,两种写法结果一致。
  */
 function deriveKey(html: string): Buffer {
   const { meta, fkS, fkm, fkc } = extractFragments(html)
@@ -319,16 +298,14 @@ interface CallOpts {
 }
 
 /**
- * POST an encrypted payload to /api/site/secure and return the decrypted
- * response data field. Throttled (500-2000ms gap), fingerprinted as Chrome,
- * cookies persisted.
+ * 向 /api/site/secure 发一个加密载荷,返回解密后的 data。带节流、浏览器指纹和持久 cookie。
  *
- * Retry policy:
- *   - 429/503 → no retry, throw ERR_RATE_LIMITED / ERR_UNREACHABLE
- *   - 401/403 → clear key, retry once (catches deploy-time key rotation)
- *   - decrypt fail → clear key, retry once (key may have rotated mid-flight)
- *   - 5xx other → no retry, throw ERR_UNREACHABLE
- *   - code !== 200 in decoded body → throw ERR_STRUCTURE (protocol drift)
+ * 重试策略:
+ *   429/503        不重试,抛限流 / 不可达
+ *   401/403        清掉密钥重试一次(应对部署时的密钥轮换)
+ *   解密失败        清掉密钥重试一次(密钥可能中途换了)
+ *   其他 5xx       不重试,抛不可达
+ *   body code≠200  抛结构变更(协议漂移)
  */
 export async function callSecure<T = unknown>(
   payload: { action: string; params: Record<string, unknown> },

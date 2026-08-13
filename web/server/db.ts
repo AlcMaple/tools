@@ -1,26 +1,24 @@
-// SQLite 单文件 —— 网页版的数据层。落在 VPS（持久磁盘 + root）上，本地 SQLite 最省事：
-// 同步 API、零网络跳、零额外成本，≤ 几十个用户绰绰有余（见 ideas/012 待调研 #2）。
+// SQLite 单文件数据层。落在 VPS 的持久磁盘上:同步 API、零网络跳、零额外成本,几十个用户绰绰有余。
 //
-// **DB 文件位置铁律**：必须放在 `/opt/web`（部署目录）之外 —— 见 data-dir.ts。
+// **DB 文件位置铁律**:必须放在部署目录之外 —— 见 data-dir.ts(重新部署会清空部署目录)。
 import Database from 'better-sqlite3'
 import { join } from 'node:path'
 import { dataDir } from './data-dir'
 
 export const db = new Database(join(dataDir, 'web.db'))
-// WAL：读写并发更稳（多个浏览器同时读列表 + 偶发写互不阻塞）。
+// WAL:多个浏览器同时读列表 + 偶发写互不阻塞。
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 
-// 建表（幂等）。用户名 COLLATE NOCASE → 大小写不敏感唯一（"Bob" 和 "bob" 视为同一个）。
+// 建表(幂等)。用户名 COLLATE NOCASE → 大小写不敏感唯一。
 //
-// 字段说明：
-//   pass_hash            —— scrypt 的 `salt:hash`（见 auth.ts）
-//   email / email_verified_at —— 可选邮箱登录凭据；只有完成一次性验证码后才写入验证时间
-//   token_version        —— 改密码 / 重置密码时 +1，签发的 JWT 里带着它，验证时对不上就拒 →
-//                           **改密码能真正踢掉所有老会话**（无状态 JWT 默认做不到，加这一列才行）
-//   security_question    —— 密保问题的**预设 id**，不是自由文本（预设下拉见 auth.ts SECURITY_QUESTIONS）
-//   security_answer_hash —— 密保答案同样走 scrypt 哈希，**绝不存明文**：答案多是真实个人信息、
-//                           且用户会跨站复用，DB 一泄露就是直接接管账号
+//   pass_hash             scrypt 的 `salt:hash`
+//   email / verified_at   可选的邮箱登录凭据,完成一次性验证码后才写验证时间
+//   token_version         改密码 / 重置密码时 +1,JWT 里带着它,验证时对不上就拒 ——
+//                         **这是「改密码能踢掉所有老会话」的唯一实现方式**(无状态 JWT 默认做不到)
+//   security_question     密保问题的**预设 id**,不是自由文本
+//   security_answer_hash  密保答案同样走 scrypt,**绝不存明文**:答案多是真实个人信息且会跨站复用
+//                         DB 一泄露就是直接接管账号
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,19 +33,15 @@ db.exec(`
   );
 `)
 
-// 追番表。
+// 追番表。字段分两类:
+//   **瘦列**  网页端自己要查 / 要显示的,单独成列、能索引。
+//   **extra** 桌面端独有的富字段原样存 JSON,网页端一个字都不碰,只负责让它原样过服务器往返。
 //
-// 字段分两类（见 ideas/012「同步策略」）：
-//   **瘦列** —— web 自己要查 / 要显示的（status / episode / 标题 / 封面 / 标签…），单独成列，能索引。
-//   **extra** —— app 独有的富字段（goodEpisodes / bindings / novel 进度…）原样存 JSON。web 一个字
-//                都不碰，只负责让它原样过服务器往返。**现在还没有同步，这列先空着** —— 但列先建好，
-//                将来接同步不用改表。
-//
-//   total_episodes —— **NULL = 连载中**（跟 app 的 `totalEpisodes == null` 同语义），不是 0
-//   air_weekday    —— 1-7，用来分「今天更新」组
-//   bgm_tags       —— 来自 BGM，加追番那一刻锁定，之后不再覆盖（跟 app 的 lock-on-first-content 一致）
-//   aliases        —— 跟 bgm_tags 同一次 detail 请求拿回来，本地搜索按别名命中要靠它
-//   updated_at     —— 毫秒时间戳。将来同步冲突按「后写者胜」比这个
+//   total_episodes  **NULL = 连载中**,不是 0
+//   air_weekday     1~7,用来分「今天更新」组
+//   bgm_tags        加追番那一刻锁定,之后不再覆盖
+//   aliases         与 bgm_tags 同一次请求拿回来,本地搜索按别名命中要靠它
+//   updated_at      毫秒时间戳,同步冲突按「后写者胜」比它
 db.exec(`
   CREATE TABLE IF NOT EXISTS tracks (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,12 +66,11 @@ db.exec(`
   );
 `)
 
-// 稀饭绑定表 —— bgmId → 稀饭 animeId 的映射，「继续看」按钮靠它定位（见 xifan/locate.ts）。
+// 稀饭绑定表 —— bgmId → 站内 id 的映射,「继续看」按钮靠它定位。
 //
-// **全局、不按用户分**：bgm 主题 → 稀饭番剧是「客观事实」，对所有人一样，任一用户确认一次其余人直接命中。
-// 故主键是 bgm_id 而非 (user_id, bgm_id)。也**不塞进 tracks.extra**：那列是留给 app 富字段原样过路的
-// （见上），web 一个字都不该碰它 —— 绑定是 web 自己的数据，另立一张表干净。
-//   xifan_name —— 存一份匹配到的中文名，前端播放页 / 换绑时显示，好让用户一眼看出绑没绑错。
+// **全局、不按用户分**:一个 BGM 条目对应站内哪部番是客观事实,对所有人一样,任一用户确认一次
+// 其余人直接命中,所以主键是 bgm_id 而不是 (user_id, bgm_id)。
+// 也**不塞进 tracks.extra** —— 那列是留给桌面端富字段原样过路的,绑定是网页端自己的数据,另立一张表干净。
 db.exec(`
   CREATE TABLE IF NOT EXISTS xifan_binding (
     bgm_id     INTEGER PRIMARY KEY,
@@ -87,8 +80,7 @@ db.exec(`
   );
 `)
 
-// Girigiri 绑定表 —— bgmId → GV… 资源编号。和稀饭一样是全局事实：用户显式确认一次后，
-// 其他用户加载同一部追番也能直接续播；不塞 tracks.extra，避免和 app 富字段混在一起。
+// Girigiri 绑定表,与稀饭同理:全局事实、独立成表。
 db.exec(`
   CREATE TABLE IF NOT EXISTS girigiri_binding (
     bgm_id       INTEGER PRIMARY KEY,
@@ -98,7 +90,7 @@ db.exec(`
   );
 `)
 
-// 老库补列 —— 沿用 app 那套「零迁移脚本」思路：缺哪列补哪列，不写版本号、不写迁移文件。
+// 老库补列 —— 缺哪列补哪列,不写版本号、不写迁移文件。
 function ensureColumn(table: string, column: string, decl: string): void {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
   if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${decl}`)
@@ -109,7 +101,7 @@ ensureColumn('users', 'security_answer_hash', 'security_answer_hash TEXT')
 ensureColumn('users', 'email', 'email TEXT')
 ensureColumn('users', 'email_verified_at', 'email_verified_at TEXT')
 
-// 邮箱是可选登录凭据。旧用户没有邮箱，NULL 不参与唯一索引；新用户完成验证码后才写入。
+// 邮箱是可选凭据:老用户没有,NULL 不参与唯一索引;新用户完成验证码后才写入。
 db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
   ON users (email)
@@ -135,7 +127,7 @@ db.exec(`
   ON email_challenge (expires_at);
 `)
 
-// 追番数据版本号 —— app 的「覆盖上传」靠它判断「服务器上有没有我没见过的改动」（ideas/012 追番同步）。
+// 追番数据版本号 —— app 的「覆盖上传」靠它判断「服务器上有没有我没见过的改动」。
 // **每次写入都 +1**（网页改一条、app 整包推一次，都算）。app 记住上次同步拿到的 rev，上传时带回来：
 // 对得上就直接覆盖，对不上就 409 让用户选「先拉取」还是「强制覆盖」。
 //

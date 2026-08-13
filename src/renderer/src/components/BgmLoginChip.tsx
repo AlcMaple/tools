@@ -1,11 +1,11 @@
 // 动漫查询页顶部的 BGM 登录状态小组件。
 //
-// 为什么放这儿:BGM 匿名搜索会被故意拖慢(~16s),登录态则 ~0.6s 秒回。登录态会
-// 过期,但状态以前只藏在设置里,用户没有理由天天开设置 → 过期了也不知道。这里
-// 在「进入动漫查询 tab 时」就地显示状态,过期/未登录直接给登录按钮,免去翻设置。
+// 匿名搜索会被故意拖慢到十几秒,登录态则秒回;而登录态会过期。状态如果只藏在设置里,用户没有
+// 理由天天去开设置 —— 过期了也不知道。所以在进入这个 tab 时就地显示状态,过期/未登录直接给
+// 登录按钮。
 //
-// 进 tab 自动校验一次(带 cookie 拉首页看 /logout,见主进程 verifyBgmLogin)。
-// 校验结果用模块级缓存兜 5 分钟,避免频繁切 tab 反复打扰 BGM。
+// 进 tab 自动校验一次(带 cookie 拉首页看有没有退出入口),结果用模块级缓存兜一段时间
+// 避免频繁切 tab 反复打扰站点。
 
 import { useEffect, useState } from 'react'
 import type { BgmAuthStatus } from '../types/bgm'
@@ -18,7 +18,7 @@ export function BgmLoginChip(): JSX.Element | null {
   useEffect(() => {
     let alive = true
     void (async () => {
-      // 8 点边界缓存内已查过 → 直接用,不再打扰 BGM(见 utils/bgmAuth)
+      // 在缓存窗口内已经查过 → 直接用,不再打扰站点(见 utils/bgmAuth)
       if (!needsAutoVerify()) {
         setAuth(getCachedAuth())
         return
@@ -26,7 +26,7 @@ export function BgmLoginChip(): JSX.Element | null {
       const s = await window.bgmApi.authStatus().catch(() => null)
       if (!alive || !s) return
       setAuth(s)
-      // 显示已登录的话再主动校验一次,确认没过期(过期主进程会清 cookie 并回落)
+      // 显示已登录时再主动校验一次,确认没过期(过期的话主进程会清 cookie 并回落状态)
       const fresh = s.loggedIn
         ? await window.bgmApi.verifyLogin().catch(() => s)
         : s

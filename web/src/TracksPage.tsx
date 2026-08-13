@@ -1,12 +1,12 @@
-// 我的追番 —— 卡片墙 + 「今天更新」置顶分组。设计稿：scratchpad/tracks-mockup.html（已定稿）。
+// 我的追番 —— 卡片墙 + 「今天更新」置顶分组。
 //
-// 跟 app 的 MyAnime 对齐的几条语义（都是 app 踩过坑定下来的，别改）：
-//   - `totalEpisodes == null` = **连载中**，不是 0。徽章本身就是「点这里填总集数」的入口
-//   - 进度推到满 **不**自动切「看完」——用户填 12 不一定是看到 12，可能是「还剩 12 没看」的备忘
-//   - 「想看」首次 +1 才自动转「在追」（这个方向没歧义）
-//   - 标签在卡片上**只读**，增删在弹窗里；BGM 标签不可编辑，自定义标签点一下删
+// 几条与桌面端对齐的语义(都是踩过坑定下来的,别改):
+//   - `totalEpisodes == null` = **连载中**,不是 0。徽章本身就是「点这里填总集数」的入口。
+//   - 进度推到满**不**自动切「看完」—— 用户填 12 不一定是看到 12,可能是「还剩 12 没看」的备忘。
+//   - 「想看」首次 +1 才自动转「在追」(这个方向没有歧义)。
+//   - 标签在卡片上**只读**,增删在弹窗里;BGM 标签不可编辑。
 //
-// 页头**不置顶**，只有顶栏置顶。
+// 页头不置顶,只有顶栏置顶。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   AnimeHit,
@@ -65,14 +65,14 @@ function todayBgmId(): number {
 
 const allTagsOf = (t: Track): string[] => [...t.bgmTags, ...t.userTags]
 
-// 卡片计数就是当前要观看的集数：显示 N 就播放 N；尚未开始（0）才从第 1 集起。
-// 同时夹到总集数上限，避免异常同步数据生成不存在的集数链接。
+// 卡片上的计数就是当前要看的那一集:显示 N 就播 N,还没开始(0)则从第 1 集起。
+// 同时夹到总集数上限,避免异常同步数据生成不存在的集数链接。
 function watchEp(t: Track): number {
   const n = t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode) : t.episode
   return Math.max(1, n)
 }
 
-// 定位用的标题集合 —— 中文名 / 别名最可能对上稀饭（简体中文站），日文原名兜底。
+// 定位用的标题集合 —— 中文名 / 别名最可能对上简体中文站,日文原名兜底。
 const titlesOf = (t: Track): string[] => [t.titleCn, ...t.aliases, t.title].filter(Boolean)
 
 interface PickerState {
@@ -85,7 +85,7 @@ interface GirigiriPickerState {
   candidates: GirigiriCandidate[]
 }
 
-/** 标题 / 别名命中（app 还搜备注，网页版没有备注字段） */
+/** 标题 / 别名命中(网页版没有备注字段) */
 function matches(t: Track, q: string): boolean {
   if (!q) return true
   const hay = [t.title, t.titleCn, ...t.aliases].join(' ').toLowerCase()
@@ -114,8 +114,8 @@ export function TracksPage(): JSX.Element {
   const [adding, setAdding] = useState(false) // 加番搜索弹窗
   const today = useMemo(todayBgmId, [])
 
-  // 秒开缓存 + 后台校验（tracksSync.ts）：缓存先渲染，服务器响应随后整份校正；缓存只是
-  // 首屏优化，不能覆盖同一账号在另一台设备上已经落库的新状态。
+  // 秒开缓存 + 后台校验:缓存先渲染,服务器响应随后整份校正。缓存只是首屏优化
+  // **不能覆盖**同一账号在另一台设备上已经落库的新状态。
   useEffect(() => {
     if (!ready) return
     if (!user) {
@@ -134,8 +134,8 @@ export function TracksPage(): JSX.Element {
     }
   }, [ready, user])
 
-  // tracks / bindings 状态一变（无论是初次加载还是后续的乐观更新）就同步写回缓存——
-  // 这样切去周历页再切回来，或者下次挂载，直接复用最新状态，不用重新等一轮网络。
+  // 状态一变就同步写回缓存 —— 这样切去周历页再切回来、或下次挂载,直接复用最新状态
+  // 不用再等一轮网络。
   useEffect(() => {
     if (user && tracks) saveTracksCache(user.username, tracks)
   }, [user, tracks])
@@ -218,8 +218,8 @@ export function TracksPage(): JSX.Element {
     })
   }
 
-  // 搜索结果也是一次显式确认：沿用周表候选的绑定语义，点结果行时先落绑定，再用
-  // 原生链接打开播放页，避免异步请求吃掉浏览器的弹窗手势。
+  // 搜索结果也走一次显式确认:点结果行时先落绑定,**再用原生链接**打开播放页 ——
+  // 异步请求会吃掉浏览器的弹窗手势。
   const confirmSearchBind = (hit: XifanSearchHit): void => {
     const t = searchTrack
     if (!t) return
@@ -313,8 +313,8 @@ export function TracksPage(): JSX.Element {
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [tracks])
 
-  // 「想看」也是用户关注的更新；只排除已经看完的条目。否则从 app 的「观望」
-  // 投影成 plan 后，即使星期正确也永远进不了当天分组。
+  // 「想看」也是用户关注的更新,只排除已经看完的条目。否则从桌面端的「观望」投影成 plan 之后
+  // 即使星期正确也永远进不了当天分组。
   const todayList = filtered.filter((t) => t.airWeekday === today && t.status !== 'done')
   const rest = filtered.filter((t) => !todayList.includes(t))
   const editingTrack = tracks?.find((t) => t.bgmId === editing) ?? null
@@ -379,7 +379,7 @@ export function TracksPage(): JSX.Element {
                 key={k}
                 type="button"
                 onClick={() => setFilter(k)}
-                // 两态只变颜色 —— 不动 border / 字重 / padding，否则相邻 chip 会被挤（AI_GUIDELINES）
+                // 两态只变颜色 —— 不动 border / 字重 / padding，否则相邻 chip 会被挤
                 className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12.5px] font-semibold transition-colors ${
                   filter === k ? 'bg-primary/15 text-primary' : 'text-on-surface-variant/70 hover:text-on-surface'
                 }`}
@@ -546,7 +546,7 @@ const TAG_CLS =
 // 按**可用宽度**决定显示几个标签，放不下的收成「+N」——而不是写死「前 3 个」。
 // 写死个数的老毛病：3 个长标签（2026年7月 / CloverWorks…）照样撑破盒子，最后一个被
 // overflow 裁成半个。这里量出每个标签真实宽度，累加到放不下为止。
-// 定高 15px：标签多少都不改卡片高度（AI_GUIDELINES：可变内容不得改盒模型 → 卡片墙不抖）。
+// 定高 15px：标签多少都不改卡片高度。
 function TagRow({ tags }: { tags: string[] }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const [count, setCount] = useState(tags.length)
@@ -1112,7 +1112,7 @@ function ConfirmRemoveModal({
   }, [onClose])
 
   const title = t.titleCn || t.title
-  // 会一并丢失的本地数据 —— 有才提，让用户据此判断（AI_GUIDELINES：只留可行动的文案，不写空话）
+  // 会一并丢失的本地数据 —— 有才提，让用户据此判断
   const lost: string[] = []
   if (t.episode > 0) lost.push(`第 ${t.episode} 集的进度`)
   if (t.userTags.length > 0) lost.push(`${t.userTags.length} 个自定义标签`)

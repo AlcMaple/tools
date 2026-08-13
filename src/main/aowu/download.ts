@@ -1,11 +1,6 @@
 /**
- * Aowu MP4 download — thin wrapper around shared mp4-range-downloader.
- *
- * Per-ep flow:
- *   - Resolve the real mp4 URL via the 3-step chain in url-resolver.ts (the URL is
- *     a short-lived signed CDN link).
- *   - Apply the `[Aowu] {title}/{title} - EP.mp4` directory + filename convention.
- *   - Hand off to shared downloadByUrl for chunked-Range with resume.
+ * 嗷呜的 mp4 下载 —— 在共享分片下载器外面包一层:先解析出真实 mp4 地址(短时效的签名 CDN 链接)
+ * 再套用目录 / 文件名约定,交给下载器做带续传的分片下载。
  */
 import { existsSync, mkdirSync } from 'fs'
 import { dirname, join } from 'path'
@@ -44,12 +39,9 @@ export async function downloadSingleEp(
     onEvent({ type: 'ep_error', ep, msg: 'Missing animeId or sourceIdx' })
     return
   }
-  // After the HTTP refactor, `animeId` is a numeric video id as string (e.g.
-  // "2893"). Legacy queues from before the refactor may still carry an opaque
-  // play_token like "_2jACJ3_AIQE" — both shapes match this regex and the new
-  // resolveAowuMp4 handles them (it routes legacy tokens through `route(token)`).
-  // The check rejects malformed values (slashes, empty, null-stringified) up
-  // front with a clear message instead of letting them silently fail.
+  // `animeId` 现在是字符串形式的数字 video id;老队列里可能还是不透明的 play_token —— 两种形状都能
+  // 匹配这个正则,下游会自动分辨。这道校验是为了让畸形值(带斜杠、空、字符串化的 null)当场
+  // 带着清楚的消息失败,而不是在后面悄悄挂掉。
   if (!/^[A-Za-z0-9_-]+$/.test(animeId)) {
     onEvent({ type: 'ep_error', ep, msg: `任务数据已过期（aowuId="${animeId}"）— 请删除该任务并重新搜索添加` })
     return
@@ -59,9 +51,7 @@ export async function downloadSingleEp(
   const dir = dirname(savePath)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 
-  // Step 1: resolve the watch page → real mp4 URL (signed ByteDance CDN link).
-  // resolveAowuMp4 hits /api/site/secure twice (bundle(play) → play) and
-  // returns in ~250ms over a warm key cache.
+  // 第一步:把观看页解析成真实 mp4 地址(要打两趟加密接口,密钥缓存热时约 250ms)。
   let mp4Url: string
   try {
     const watchUrl = buildAowuWatchUrl(animeId, sourceIdx, ep)
@@ -74,11 +64,7 @@ export async function downloadSingleEp(
 
   if (signal.aborted) return
 
-  // Step 2: single-stream download. Aowu's signed mp4 URLs come from ByteDance's
-  // imcloud-file-sign CDN, which throttles signed URLs as a whole — multiple
-  // parallel Range connections don't go faster, instead one chunk crawls while
-  // others race ahead, producing the "stuck at 97%" symptom. Single-stream
-  // matches what NDM-style tools do and reliably completes.
+  // 第二步:**单流下载**。签名 mp4 来自对整条 URL 限速的 CDN,多连接
   const outcome = await downloadByUrl(mp4Url, savePath, signal, (bytes, _total, pct) => {
     onEvent({ type: 'ep_progress', ep, pct, bytes })
   }, LOG_TAG, { threadCount: 1 })

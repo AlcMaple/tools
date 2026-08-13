@@ -1,13 +1,11 @@
 import type { BgmSearchKind } from '../pages/AnimeInfo'
 
 /**
- * BGM 搜索历史 —— 纯本地（localStorage），**不进 WebDAV 同步**。
- * 历史是「这台设备上我搜过什么」的私货，跨设备同步反而会把别的机器的
- * 噪音灌进来，所以刻意不挂到 anime_tracks.json 那套可移植 JSON 上。
+ * BGM 搜索历史 —— 纯本地,**不进 WebDAV 同步**:历史是「这台设备上我搜过什么」的私货
+ * 跨设备同步反而会把别的机器的噪音灌进来。
  *
- * 和搜索缓存（search_cache_bgm，按 cat 分桶）配套：历史里点一条就直接
- * 命中缓存，不用再发网络请求。所以历史条目也带 kind —— 同一关键词在
- * 动画 / 漫画小说两个类目下是两条独立历史（缓存也是分桶的）。
+ * 条目带 kind,与按类目分桶的搜索缓存配套 —— 同一关键词在动画 / 书籍下是两条独立历史
+ * 点一条就能直接命中对应的缓存,不用再发网络请求。
  */
 
 const KEY = 'bgm_search_history'
@@ -16,7 +14,7 @@ const MAX = 15
 export interface BgmHistoryEntry {
   keyword: string
   kind: BgmSearchKind
-  /** 最近一次搜索的时间戳，用于排序（最近优先） */
+  /** 最近一次搜索的时间戳,用于排序(最近优先) */
   ts: number
 }
 
@@ -46,7 +44,7 @@ function save(list: BgmHistoryEntry[]): void {
   }
 }
 
-/** 记录一次搜索：同 keyword+kind 去重后置顶，超出 MAX 截断。 */
+/** 记录一次搜索:同 keyword+kind 去重后置顶,超出上限截断。 */
 export function addBgmHistory(keyword: string, kind: BgmSearchKind): BgmHistoryEntry[] {
   const kw = keyword.trim()
   if (!kw) return loadBgmHistory()

@@ -1,14 +1,10 @@
-// 推荐管理视图 —— 嵌在「我的追番」页面的 tab 里，跟「追番列表」并列。
+// 推荐管理视图 —— 嵌在「我的追番」页的 tab 里,与追番列表并列。
 //
-// 结构上跟追番列表一致：过滤 chips + 新建按钮放在 MyAnime 的 sticky header
-// 里（由 MyAnime 持有 filter state 渲染），本组件只负责列表 body 部分。这样
-// tab 切换时整体布局保持稳定，仅 body 内容变化。
+// 过滤 chips 和新建按钮由 MyAnime 的 sticky header 持有并渲染,本组件只负责列表 body ——
+// 这样切 tab 时整体布局稳定,只有内容变。
 //
-// 每条推荐展示：封面 + 标题 + 推荐给谁 + 状态徽章 + 操作按钮。操作语义：
-//   - 待回应 → 标记接受 / 标记拒绝（拒绝弹小弹窗写原因）
-//   - 已接受 → 改回待回应（误标修正）
-//   - 已拒绝 → 改原因 / 改回待回应
-// 删除随时都能点（小垃圾桶图标）。
+// 每条展示封面 + 标题 + 推荐给谁 + 状态徽章 + 操作:待回应可标接受/拒绝(拒绝要写原因)
+// 已接受/已拒绝都能改回待回应(误标修正)。删除随时可点。
 
 import { useMemo, useState } from 'react'
 import {
@@ -54,9 +50,8 @@ export const REC_STATUS_META: Record<RecommendationStatus, {
 }
 
 /**
- * 推荐的搜索匹配 —— 跟追番列表的搜索框共用同一个 query state（MyAnime 持有）。
- * 匹配维度：标题 / 中文标题 / 推荐方（fromWhom）/ 推荐对方（toWhom）。
- * 大小写不敏感子串匹配。空 query 视为全命中，让"没搜索"时列表完整。
+ * 推荐的搜索匹配,与追番列表共用同一个 query(MyAnime 持有)。匹配标题 / 中文标题 / 推荐方 /
+ * 推荐对方,大小写不敏感子串。空 query 视为全命中。
  */
 export function matchesRecommendation(rec: Recommendation, query: string): boolean {
   const q = query.trim().toLowerCase()
@@ -68,11 +63,9 @@ export function matchesRecommendation(rec: Recommendation, query: string): boole
 }
 
 /**
- * 给 MyAnime 用的 helper：按 filter 计数。filter chips 和 visible 列表
- * 共享这个统计，避免在两个地方分别 filter 一次。
- *
- * 传入的 `all` 应当是**已经按 query 过滤过**的列表 —— 这样徽章数字反映
- * 搜索收窄后的范围，跟追番 tab 的 counts 语义一致（见 MyAnime）。
+ * 按 filter 计数,供 chips 和列表共用,避免两处各 filter 一遍。
+ * 传进来的 `all` 应该是**已经按 query 过滤过**的 —— 这样徽章反映搜索收窄后的范围
+ * 与追番 tab 的计数语义一致。
  */
 export function countRecsByStatus(all: Recommendation[]): Record<RecFilterKey, number> {
   const c: Record<RecFilterKey, number> = { all: 0, pending: 0, accepted: 0, rejected: 0 }
@@ -84,22 +77,22 @@ export function countRecsByStatus(all: Recommendation[]): Record<RecFilterKey, n
 }
 
 interface Props {
-  /** 由 MyAnime 持有，决定当前展示哪个分类。 */
+  /** 由 MyAnime 持有,决定当前展示哪个分类。 */
   filter: RecFilterKey
-  /** 跟追番列表共用的搜索 query（标题 / 推荐对象）。 */
+  /** 与追番列表共用的搜索 query。 */
   query?: string
-  /** 按推荐人（toWhom）过滤，OR 语义：空数组 = 不过滤；非空 = 命中任一即显示。 */
+  /** 按推荐人过滤,OR 语义:空数组 = 不过滤。 */
   recipients?: string[]
 }
 
 export function RecommendationView({ filter, query = '', recipients = [] }: Props): JSX.Element {
   const all = useRecommendationList()
-  // 三个小弹窗各记一个 recId（null = 没在进行中）：拒绝写原因 / 接受写备注 / 编辑推荐方对方。
+  // 三个小弹窗各记一个 recId(null = 没在进行中):写拒绝原因 / 写接受备注 / 编辑推荐方对方。
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [acceptingId, setAcceptingId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  // 列表显示：query → status filter → 推荐人 filter（OR），最后 createdAt 倒序（最新在顶）。
+  // 显示顺序:query → 状态过滤 → 推荐人过滤(OR),最后按创建时间倒序。
   const visible = useMemo(() => {
     const byQ = all.filter(r => matchesRecommendation(r, query))
     const byStatus = filter === 'all' ? byQ : byQ.filter(r => r.status === filter)

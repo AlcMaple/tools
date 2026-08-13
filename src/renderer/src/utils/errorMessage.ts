@@ -1,12 +1,12 @@
 /**
- * Translate a raw error (usually from IPC / network) into a user-friendly pair:
- * - title:   what went wrong, in plain language
- * - hint:    who likely caused it and what to do
- * - raw:     the original message, shown small for support / debugging
+ * 把原始错误(通常来自 IPC / 网络)翻译成给用户看的 title(出了什么事)+ hint(谁的锅、怎么办)
+ * + raw(原文,小字显示供排查)。
  *
- * IPC errors usually come through as
- *   `Error: Error invoking remote method 'xxx:yyy': Error: <real message>`
- * so we strip those wrappers before classifying.
+ * IPC 错误会被包成 `Error: Error invoking remote method 'xxx:yyy': Error: <真正的消息>`
+ * 分类前先把这层壳剥掉。
+ *
+ * **这是个有序分类器,顺序即优先级** —— 具体原因必须排在通用原因前面。绝不能把各种失败
+ * 统一收敛成「网络请求失败」:被限流的用户以为是自己网断了,只会更用力地重试、把限流踩得更深。
  */
 
 export interface FriendlyError {
@@ -14,9 +14,8 @@ export interface FriendlyError {
   hint: string
   raw: string
   /**
-   * 限流错误专用：站点要求等待的秒数。UI（ErrorPanel）据此显示倒计时,
-   * 倒计时归零前 Try again 按钮禁用，避免用户在限流窗口期内重复触发。
-   * 普通错误（非限流）此字段为 undefined。
+   * 限流专用:站点要求等待的秒数。UI 据此显示倒计时,归零前禁用 Try again,防止用户在限流
+   * 窗口期内反复触发。非限流错误为 undefined。
    */
   retryAfterSec?: number
 }
@@ -30,9 +29,7 @@ export function friendlyError(err: unknown): FriendlyError {
   const msg = unwrap(raw)
   const lower = msg.toLowerCase()
 
-  // Source-specific error markers — emitted by site adapters when they detect
-  // unreachable / structure-changed conditions. Match BEFORE generic classifiers
-  // so the user sees the right cause.
+  // 各站适配器在「站点不可达 / 结构变了」时打的标记。必须排在通用分类**之前**匹配。
   if (msg.startsWith('AOWU_UNREACHABLE')) {
     return {
       title: '嗷呜动漫无法访问',
@@ -62,20 +59,15 @@ export function friendlyError(err: unknown): FriendlyError {
     }
   }
 
-  // BGM 限流 —— 主进程抛 `RateLimitError`，message 形如：
-  //   "BGM 触发限流，请等 30 秒后再试"
-  //   "BGM API 触发限流（HTTP 429），请等 30 秒后再试"
-  //   "BGM 返回 HTTP 429，触发限流"
-  //   "您在 30 秒内只能进行一次搜索"（BGM 搜索的中文限流页内容直透）
-  // UI 据 `retryAfterSec` 显示倒计时，倒计时归零前禁用 Try again 按钮,
-  // 防止用户在限流窗口期内反复点击加重限流。
+  // BGM 限流 —— 主进程抛 RateLimitError,message 形如「BGM 触发限流,请等 30 秒后再试」
+  // 也可能是搜索页那句「您在 30 秒内只能进行一次搜索」直透过来。
   if (
     msg.includes('BGM') && (msg.includes('限流') || msg.includes('429')) ||
     msg.includes('您在') && msg.includes('秒') && msg.includes('搜索') ||
     msg.includes('已触发限流')
   ) {
-    // 优先认「N 秒」；熔断器冷却消息用的是「约 X 分钟后自动恢复」（无"秒"），
-    // 也要认，否则倒计时会错误回落成默认 30 秒（而真实冷却可能是 5/30 分钟）。
+    // 优先认「N 秒」;熔断冷却的消息用的是「约 X 分钟后自动恢复」(没有「秒」字),也要认 ——
+    // 否则倒计时会错误回落成默认 30 秒,而真实冷却可能是 5 或 30 分钟。
     const secMatch = msg.match(/(\d+)\s*秒/)
     const minMatch = msg.match(/(\d+)\s*分钟/)
     const waitSec = secMatch
@@ -91,9 +83,8 @@ export function friendlyError(err: unknown): FriendlyError {
     }
   }
 
-  // Windows file operations are classified FIRST. PowerShell stderr often
-  // contains paths like "...\electron\network\..." which would trip the
-  // network-keyword match below. Detect file-op markers and branch out early.
+  // **Windows 文件操作必须最先判**:PowerShell 的 stderr 里常带 `...\\electron\\network\\...`
+  // 这种路径,会命中下面的网络关键词匹配。
   const isFileOp =
     lower.includes('microsoft.visualbasic.fileio') ||
     lower.includes('sendtorecyclebin') ||
@@ -145,15 +136,11 @@ export function friendlyError(err: unknown): FriendlyError {
     }
   }
 
-  // Network / TLS failures — not the user's content, the network can't reach the site.
+  // 网络 / TLS 失败 —— 不是内容的问题,是根本连不上站点。
   //
-  // 注意 `timeout` 单独一行：api-client 在 10s 超时时抛的 message 就是裸字符串
-  // "timeout"（不是 "request timeout"），早期没把这条算进来，结果用户看到的
-  // 是兜底「这个错误暂时没法自动判断来源」—— 现在覆盖到。
-  //
-  // 另：BGM 频繁 timeout 时往往不是物理网络断了，而是该 IP 在 BGM 的滑动惩罚
-  // 窗口里被悄悄丢包。文案点一下「过会儿再试」，引导用户先停手让窗口自然
-  // 衰减，而不是疯狂 Try again 把惩罚拉得更长。
+  // `timeout` 要单独认:超时时抛的 message 就是裸字符串 "timeout",不带其他词。
+  // 另外 BGM 频繁超时往往不是物理网络断了,而是这个 IP 在它的滑动惩罚窗口里被悄悄丢包 ——
+  // 所以文案要引导用户先停手让窗口自然衰减,而不是疯狂 Try again 把惩罚拉得更长。
   if (
     lower === 'timeout' ||
     lower.includes('socket disconnected') ||
@@ -166,21 +153,16 @@ export function friendlyError(err: unknown): FriendlyError {
     lower.includes('network') ||
     lower.includes('fetch failed') ||
     lower.includes('request timeout') ||
-    // Electron net（Chromium 网络栈）传输层错误形如 `net::ERR_NAME_NOT_RESOLVED`
-    // `net::ERR_CONNECTION_REFUSED` `net::ERR_INTERNET_DISCONNECTED` 等 —— 跟 Node 风格
-    // 的 ECONNREFUSED/getaddrinfo 长得不一样，得单独认，否则站点不可达会掉到兜底
-    // 「出错了」而不是「网站连不上」。BGM / 萌娘 都走 net，这条覆盖它们的"页面打不开"。
+    // Electron net 的传输层错误形如 `net::ERR_NAME_NOT_RESOLVED`,和 Node 风格的
+    // ECONNREFUSED / getaddrinfo 长得不一样,得单独认,否则站点不可达会掉到兜底的「出错了」。
     lower.includes('net::err')
   ) {
-    // connect ETIMEDOUT / ECONNREFUSED / DNS 失败 = TCP 连接都建立不起来，即站点
-    // 根本不可达（站点自己挂了 / 被墙 / 本机网络或代理问题）。这和「连上了但 10s
-    // 没回包」的 request timeout 不是一回事 —— 用户看到 girigiri/xifan 官网都打不开
-    // 时就是这一类，得给「网站连不上」而不是带限速口吻的「请求超时」。
-    // TCP 连上了、TLS 握手被对端掐断 —— 和「站点不可达」不同:握手能开始说明路由通,
-    // 是对端主动拒绝这条连接。实测根因是**出口 IP 被站点边缘节点拉黑**(2026-07-30:
-    // 稀饭换到 hkg 边缘后,Chrome 走的代理节点通、桌面端走的另一个节点必挂,同一台机器
-    // 同一时刻两种结果),所以文案要直接把用户引到「换代理节点」,而不是「过会儿再试」——
-    // 换节点前重试多少次都是徒劳。
+    // 连不上(TCP 都建立不起来)和「连上了但没回包」是两回事:前者是站点自己挂了 / 被墙 /
+    // 本机网络或代理有问题,要给「网站连不上」,不能给带限速口吻的「请求超时」。
+    //
+    // TLS 握手被对端掐断又是第三种:握手能开始说明路由是通的,是对端主动拒绝这条连接。实测根因
+    // 是**出口 IP 被站点边缘节点拉黑**(同一台机器同一时刻,浏览器走的代理节点通、桌面端走的
+    // 另一个节点必挂),所以文案要直接把用户引到「换代理节点」,而不是「过会儿再试」——
     const isHandshakeKilled =
       lower.includes('err_connection_closed') ||
       lower.includes('err_connection_reset') ||
@@ -269,7 +251,7 @@ export function friendlyError(err: unknown): FriendlyError {
     }
   }
 
-  // HTTP status hints
+  // HTTP 状态码线索
   const statusMatch = msg.match(/\b(4\d{2}|5\d{2})\b/)
   if (statusMatch) {
     const code = parseInt(statusMatch[1])
@@ -314,7 +296,7 @@ export function friendlyError(err: unknown): FriendlyError {
     return { title: '需要验证码', hint: '按提示输入验证码继续', raw: msg }
   }
 
-  // Windows file ACL / permission errors — surfaced from PowerShell stderr
+  // Windows 文件 ACL / 权限错误 —— 来自 PowerShell 的 stderr。
   if (
     lower.includes('access is denied') ||
     lower.includes('access to the path') ||

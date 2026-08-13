@@ -1,14 +1,12 @@
-// 主进程 JSON 持久化助手 —— 把散落各处的 `readFileSync/writeFileSync` 样板收成
-// 一处,同时把同步盘 I/O 从事件循环上挪走(同步读写会阻塞**所有** IPC,renderer
-// 切 tab / 进设置时正等着这些 IPC 返回,于是放大成可感卡顿)。
+// 主进程的 JSON 持久化助手 —— 把散落各处的同步读写收成一处,并把同步盘 I/O 从事件循环上挪走
+// (同步读写会阻塞**所有** IPC,而渲染层切页面时正等着这些 IPC 返回,于是放大成可感的卡顿)。
 //
-// 语义对标 renderer 的 utils/deferredStorage.ts:
-//   - **内存为唯一权威值**:首次 load 后常驻内存,后续读直接返回内存(读永不碰盘)。
-//   - 写合并:同一 tick 内多次 set 由一个 setImmediate 合并成**一次**原子落盘
-//     (.tmp + rename),不引入人为延时。
-//   - app 退出前(before-quit)若仍有未落盘的脏值,同步兜底写一次防丢。
-//   - normalize 必填,一并承担"解析 + 容错 + 默认值"——坏数据 / 缺字段由它收敛,
-//     默认值就是 normalize 对空输入(undefined)的返回。
+// 语义:
+//   - **内存是唯一权威值**:首次 load 后常驻内存,之后读直接返回内存,读永不碰盘。
+//   - 写合并:同一 tick 内的多次 set 合并成**一次**原子落盘(.tmp + rename),不引入人为延时。
+//   - 退出前若还有未落盘的脏值,同步兜底写一次防丢。
+//   - normalize 必填,一并承担解析 + 容错 + 默认值 —— 坏数据 / 缺字段由它收敛
+//     默认值就是它对 undefined 的返回。
 
 import { app } from 'electron'
 import { readFileSync, writeFileSync, renameSync } from 'fs'
@@ -16,7 +14,7 @@ import { readFile, writeFile, rename } from 'fs/promises'
 import { join } from 'path'
 import { logError } from './logger'
 
-// 所有实例登记在册,before-quit 时统一同步 flush。
+// 所有实例登记在册,退出时统一同步 flush。
 const instances = new Set<JsonStore<unknown>>()
 let quitHookInstalled = false
 
@@ -36,8 +34,8 @@ export class JsonStore<T> {
   private filePathCache: string | null = null
 
   /**
-   * @param filename userData 下的文件名(如 'app_settings.json')。
-   * @param normalize 把磁盘原始值收敛成 T;对 undefined / 坏数据返回默认值。
+   * `filename` 是 userData 下的文件名;`normalize` 把磁盘上的原始值收敛成 T
+   * 对 undefined / 坏数据返回默认值。
    */
   constructor(
     private readonly filename: string,
@@ -47,7 +45,7 @@ export class JsonStore<T> {
     installQuitHook()
   }
 
-  // 延迟到首次使用再算路径 —— 避免在 app 路径就绪前于构造期求值。
+  // 延迟到首次使用再算路径 —— 避免在 app 路径就绪之前于构造期求值。
   private filePath(): string {
     if (this.filePathCache === null) {
       this.filePathCache = join(app.getPath('userData'), this.filename)
@@ -55,7 +53,7 @@ export class JsonStore<T> {
     return this.filePathCache
   }
 
-  /** 异步读(返回内存权威值,首次会读盘)。启动时 await 一次即可,之后走内存。 */
+  /** 异步读(返回内存权威值,首次会读盘)。启动时 await 一次即可,之后都走内存。 */
   async read(): Promise<T> {
     if (this.loaded) return this.cache as T
     try {

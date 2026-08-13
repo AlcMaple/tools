@@ -53,8 +53,7 @@ interface PageInfo {
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 
 async function httpsGet(url: string, timeout = 15000): Promise<{ status: number; body: string }> {
-  // 走 Electron net（Chromium 网络栈）—— 自动用系统代理，且自动跟随 3xx
-  // 重定向（含相对 Location），省掉手动重定向逻辑。net 自己解压成明文。
+  // 走 Electron net:自动用系统代理,自动跟随 3xx(含相对 Location),并自己解压成明文。
   const res = await netRequest(url, { headers: HEADERS, timeoutMs: timeout })
   return { status: res.status, body: res.body.toString('utf-8') }
 }
@@ -81,7 +80,7 @@ function tidy(text: string): string {
 function loadMoegirlPage(html: string): PageInfo {
   const $full = cheerio.load(html)
 
-  // displayTitle：优先 MOE_SKIN_PAGE_DATA 里的 JSON
+  // 显示标题优先取页面数据里的 JSON
   let displayTitle: string | null = null
   const pageDataEl = $full(`#${PAGE_DATA_ID}`)
   if (pageDataEl.length) {
@@ -98,7 +97,7 @@ function loadMoegirlPage(html: string): PageInfo {
   }
   if (displayTitle) displayTitle = displayTitle.replace(/<[^>]+>/g, '').trim()
 
-  // 真正的正文在 <template> 里（Moe Skin）
+  // 真正的正文在 <template> 里
   const templateHtml = extractTemplateHtml(html)
   const $body = templateHtml ? cheerio.load(templateHtml) : $full
   const rootMatch = $body('.mw-parser-output').first()
@@ -250,20 +249,12 @@ async function tryPage(title: string): Promise<PageInfo | null> {
 }
 
 /**
- * Resolve a query to Moegirl's canonical page title via MediaWiki's opensearch
- * API. Use as a fallback when direct page lookup 404s — common causes:
+ * 拿站点的 opensearch 接口把查询词解析成规范页面标题 —— 直接按标题取页面 404 时的兜底。
+ * 常见原因是大小写和全角/半角标点的差异(BGM 那边是全角「！」、维基页面用半角 "!")
+ * 而 MediaWiki 首字符之后大小写敏感、也不归一化全角标点。搜索接口在这两个维度上都是模糊的
+ * 能找到规范标题再重新取一次。
  *
- *   - BGM gives `电影 LOVELIVE！...` (all-caps + full-width "！")
- *     Moegirl page lives at `电影 LoveLive!...` (mixed case + half-width "!")
- *   - BGM has `JoJo的奇妙冒险 黄金之风` but Moegirl uses `JoJo的奇妙冒险 黄金之风`
- *     with different spacing
- *
- * MediaWiki is case-sensitive past the first character AND does not normalize
- * full-width Unicode punctuation. The search API is index-backed and fuzzy on
- * both axes, so it finds the canonical title we can then re-fetch.
- *
- * Returns null on network error / empty results / parse failure — caller falls
- * through to the next candidate.
+ * 网络错误 / 空结果 / 解析失败一律返回 null,由调用方去试下一个候选。
  */
 async function resolveCanonicalTitle(query: string): Promise<string | null> {
   const params = new URLSearchParams({
@@ -277,7 +268,7 @@ async function resolveCanonicalTitle(query: string): Promise<string | null> {
     const res = await httpsGet(`${BASE_URL}api.php?${params.toString()}`, 10000)
     if (res.status !== 200 || !res.body) return null
     const data = JSON.parse(res.body)
-    // opensearch contract: [searchTerm, [titles], [descriptions], [urls]]
+    // opensearch 的返回约定:[搜索词, [标题], [描述], [链接]]
     if (Array.isArray(data) && Array.isArray(data[1]) && data[1].length > 0) {
       const t = String(data[1][0]).trim()
       return t || null
@@ -319,7 +310,7 @@ export async function getMoegirlSynopsis(
     //    (e.g. 光之美少女, JoJo的奇妙冒险).
     let page = await tryPage(candidate)
     // 2. Opensearch fallback when direct lookup 404s. Catches casing /
-    //    full-width-punctuation mismatches between BGM and Moegirl titles.
+    //    两边标题在大小写和全角标点上的差异。
     if (!page) {
       const canonical = await resolveCanonicalTitle(candidate)
       if (canonical && canonical !== candidate) {

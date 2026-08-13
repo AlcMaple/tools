@@ -1,5 +1,5 @@
 // 从 app 的 src/main/bgm/calendar.ts 拷来 —— 解析逻辑（parseCalendar）原样保留，只换传输层
-// （Electron net → fetch）。app 那边一行不动（见 012「抓取复用策略」）。
+// （Electron net → fetch）。app 那边一行不动。
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dataDir } from '../data-dir'

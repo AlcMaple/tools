@@ -71,7 +71,7 @@ export default function LocalLibrary(): JSX.Element {
     );
   }, [searchQuery, posters]);
 
-  // Auto-select first folder when list changes
+  // 列表变化时自动选中第一个文件夹
   useEffect(() => {
     if (filteredPosters.length === 0) {
       setSelectedFolderId(null);
@@ -90,7 +90,7 @@ export default function LocalLibrary(): JSX.Element {
     [posters, selectedFolderId],
   );
 
-  // Load files of selected folder
+  // 加载选中文件夹里的文件
   const prevFolderPathRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedPoster) {

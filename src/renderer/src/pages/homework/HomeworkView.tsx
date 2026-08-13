@@ -26,11 +26,11 @@ function AddModal({
   setDefenseInput: (v: string) => void
   setAttackInput: (v: string) => void
   onClose: () => void; onSave: (notes: string[]) => void
-  /** When true, only defense is required to save (attack may be left blank). */
+  /** 为 true 时只要填了防守就能保存(进攻可留空)。 */
   attackOptional?: boolean
   /**
-   * 归一化后的「已存在进攻队 key」集合 —— 当输入的防守方已对应某个现有组时，
-   * 用它阻止把同一支进攻队再添加一遍。新防守方时传空集即可。
+   * 归一化后的「已存在进攻队」集合 —— 输入的防守方对应到某个现有组时,用它挡住同一支进攻队
+   * 被重复添加。新防守方传空集即可。
    */
   existingAttackKeys?: Set<string>
 }): JSX.Element {
@@ -145,7 +145,7 @@ function EditDefenseModal({
   group: DefenseGroup
   onClose: () => void
   onSave: (newDefense: string[], newNotes: string[]) => void
-  /** When true, also expose a NoteTagInput for editing group-level notes (JJC). */
+  /** 为 true 时额外给出编辑分组级备注的输入框(JJC 用)。 */
   withNotes?: boolean
 }): JSX.Element {
   const [value, setValue] = useState(group.defense.join('、'))
@@ -184,9 +184,8 @@ function EditDefenseModal({
               onChange={e => setValue(e.target.value)}
               onPaste={createTeamPasteHandler({
                 setTeam: setValue,
-                // Notes-update is a no-op when this modal is rendered without
-                // a notes field (PJJC defense edit) — the discarded notes are
-                // an acceptable cost vs adding a withNotes branch here.
+                // 这个弹窗不带备注字段时(PJJC 的防守编辑),更新备注是空操作 —— 丢掉的备注是可接受的代价
+                // 不值得为此多加一个分支。
                 setNotes: withNotes ? noteState.setNotes : () => {},
                 currentNotes: withNotes ? noteState.notes : [],
               })}
@@ -221,7 +220,7 @@ function EditAttackModal({
   atk, group, onClose, onSave,
 }: {
   atk: Attack
-  /** 所属防守组 —— 顶部上下文展示「这条进攻是打哪个防守方的」,而不是重复下方正在编辑的进攻阵容。 */
+  /** 所属防守组 —— 顶部上下文显示「这条进攻是打哪个防守方的」,而不是重复下方正在编辑的阵容。 */
   group: DefenseGroup
   onClose: () => void
   onSave: (team: string[], notes: string[]) => void
@@ -231,7 +230,7 @@ function EditAttackModal({
   const teamChanged = teamValue.trim() !== atk.team.join('、')
   const finalNotes = noteState.finalNotes()
   const notesChanged = !notesEqual(finalNotes, atk.notes)
-  // 改成与同组另一条进攻队相同也算重复（排除自身）。
+  // 改成与同组另一条进攻队相同也算重复(排除自身)。
   const editedTeam = teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean)
   const isDuplicate = editedTeam.length > 0
     && group.attacks.some(a => a.id !== atk.id && teamDedupKey(a.team) === teamDedupKey(editedTeam))
@@ -417,8 +416,8 @@ function AddAttackModal({
 }): JSX.Element {
   const [teamValue, setTeamValue] = useState('')
   const noteState = useNoteTagState([])
-  // 重复判定：把输入清洗成角色数组后取归一化 key，与本防守组已有进攻队比对。
-  // 同一支进攻队（大小写/顺序无关）不允许重复录入。
+  // 重复判定:把输入清洗成角色数组后取归一化 key,与本组已有的进攻队比对 —— 同一支队
+  // (大小写、顺序无关)不允许重复录入。
   const team = teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean)
   const isDuplicate = team.length > 0 && group.attacks.some(a => teamDedupKey(a.team) === teamDedupKey(team))
   const canSave = teamValue.trim().length > 0 && !isDuplicate
@@ -492,18 +491,14 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   setData: React.Dispatch<React.SetStateAction<DefenseGroup[]>>
   query: string
   onClearQuery: () => void
-  /**
-   * When true, the import button is hidden. JJC reuses HomeworkView but has
-   * no JSON import path of its own.
-   */
+  /** 为 true 时隐藏导入按钮。JJC 复用这个视图,但它没有自己的 JSON 导入路径。 */
   hideImport?: boolean
   /**
-   * When true, the Add modal allows saving with only the defense filled in
-   * (attack may be left blank → group created with empty attacks[]). Used by
-   * JJC where defenders are recorded ahead of attack作业.
+   * 为 true 时允许只填防守就保存(进攻留空 → 建一个 attacks 为空的组)。JJC 会先记防守方
+   * 进攻作业后补。
    */
   attackOptional?: boolean
-  /** 打开「清理旧作业」弹窗（全局，由 HomeworkLookup 持有）。传了才渲染清理按钮。 */
+  /** 打开「清理旧作业」弹窗(全局,由 HomeworkLookup 持有)。传了才渲染清理按钮。 */
   onCleanup?: () => void
 }>(function HomeworkView({ data, setData, query, onClearQuery, hideImport = false, attackOptional = false, onCleanup }, ref) {
   // 初始就折叠除第一组外的所有组。之前初值是空 Set（=全展开），靠下面的
@@ -569,12 +564,11 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
   const handleAdd = (notes: string[]) => {
     const defenseRaw = defenseInput.split('、').map(s => cleanCharName(s)).filter(Boolean)
     if (!defenseRaw.length) return
-    // In attackOptional mode the attack input isn't rendered at all — notes are
-    // always group-level. In standard mode, both fields are required and notes
-    // attach to the attack row.
+    // attackOptional 模式下不渲染进攻输入框,备注一律挂在分组级;标准模式下两个字段都在,
+    // 备注挂在进攻行上。
     const team = attackOptional ? [] : attackInput.split('、').map(s => cleanCharName(s)).filter(Boolean)
     if (!attackOptional && !team.length) return
-    // Preserve the user's character order — store the lineup exactly as typed.
+    // 保留用户输入的角色顺序 —— 原样拆分存下,不排序。
     const defense = defenseRaw
     const defKey = defense.join('、')
     const now = todayStr()
@@ -582,7 +576,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
       const existing = prev.find(d => d.defense.join('、') === defKey)
       if (existing) {
         if (attackOptional) {
-          // JJC: defense already exists — merge any new notes into the group.
+          // 防守方已存在 —— 把新备注并进这个组。
           if (notes.length === 0) return prev
           return prev.map(d => {
             if (d.id !== existing.id) return d
@@ -591,8 +585,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
             return { ...d, notes: merged, updatedAt: now }
           })
         }
-        // Homework: append a new attack row to the existing defense.
-        // 兜底去重：同一支进攻队（大小写/顺序无关）已在该组就不再追加。
+        // 往已有组里追加一条进攻。
         if (existing.attacks.some(a => teamDedupKey(a.team) === teamDedupKey(team))) return prev
         return prev.map(d =>
           d.id === existing.id
@@ -600,7 +593,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
             : d
         )
       }
-      // New defense.
+      // 新的防守方。
       if (attackOptional) {
         return [...prev, { id: Date.now(), defense, updatedAt: now, attacks: [], notes }]
       }

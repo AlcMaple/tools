@@ -16,7 +16,7 @@ type Tab = 'homework' | 'jjc' | 'pjjc' | 'classic' | 'log'
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type SyncDirection = 'push' | 'pull'
 
-// 五个分类的元数据 —— 桌面分段 tab 与手机下拉共用同一份，避免标签/图标两处维护。
+// 五个分类的元数据 —— 桌面分段 tab 与手机下拉共用同一份,避免标签/图标两处维护。
 type TabMeta = { key: Tab; label: string; icon: string; accent: 'primary' | 'tertiary' | 'secondary' }
 const TABS: TabMeta[] = [
   { key: 'homework', label: '作业查询', icon: 'shield', accent: 'primary' },
@@ -25,7 +25,7 @@ const TABS: TabMeta[] = [
   { key: 'classic', label: '经典阵容', icon: 'auto_awesome', accent: 'tertiary' },
   { key: 'log', label: '记录', icon: 'edit_note', accent: 'secondary' },
 ]
-// 选中态配色写成完整类名（不拼接），保证 Tailwind JIT 扫得到、不被 purge。
+// 选中态配色写成完整类名(不拼接),保证 Tailwind JIT 扫得到、不被清掉。
 const TAB_ACTIVE_CLS: Record<TabMeta['accent'], string> = {
   primary: 'border border-primary/20 bg-primary/15 text-primary',
   tertiary: 'border border-tertiary/20 bg-tertiary/15 text-tertiary',
@@ -33,12 +33,10 @@ const TAB_ACTIVE_CLS: Record<TabMeta['accent'], string> = {
 }
 
 /**
- * 锦囊妙计（阵容/作业速查）的云端 blob。
+ * 锦囊妙计(阵容/作业速查)的云端 blob。
  *
- * 历史包袱：v5 之前这里还混着 `tracks: AnimeTrack[]`（追番列表），后来
- * 追番拆出去走独立的 `anime.json` —— v6 起 blob 里不再写 tracks。读旧
- * 数据时如果有 tracks 字段我们也直接忽略；追番的迁移由 MyAnime sync 那
- * 边接管（pull anime.json 404 时它会回退读 homework.json 的 tracks）。
+ * 这里**不再写 tracks** —— 追番已经拆出去走独立的 anime.json。读到老数据里的 tracks 字段
+ * 直接忽略;追番的迁移由 MyAnime 那边接管(它 pull anime.json 拿到 404 时会回退读这份的 tracks)。
  */
 interface SyncRemoteMeta {
   rev: number
@@ -79,20 +77,15 @@ function snapshotOf(
 }
 
 /**
- * Detect schema-shape drift in the stored snapshot and rebuild if pure-shape.
+ * 识别快照的「结构漂移」并在纯结构差异时重建。
  *
- * `lastSyncedSnapshot` is a JSON string compared byte-for-byte against the
- * current data. Any code change that affects the JSON shape — adding the
- * `log` key, migrating `note: string` → `notes: string[]`, future schema
- * tweaks — silently makes every device's stored snapshot "look dirty" on
- * cold start, even when the user hasn't touched anything. That false dirty
- * combined with the background remote-rev probe is what triggers the
- * "本地与云端都有变化" red chip on a freshly-launched B device.
+ * `lastSyncedSnapshot` 是一个 JSON 字符串,逐字节和当前数据比。任何影响 JSON 形状的代码改动
+ * (加一个键、把 `note: string` 迁成 `notes: string[]`)都会让每台设备冷启动时的快照「看起来脏」
+ * 哪怕用户什么都没动。这个假脏再叠加后台的远端 rev 探测,就会在刚启动的设备上误报
+ * 「本地与云端都有变化」的红色 chip。
  *
- * Fix: re-run the stored snapshot through the *current* normalizer pipeline
- * and compare the result to `current`. If equal, the diff was pure shape and
- * we rebuild. If not equal, real local edits exist and we keep the stored
- * value so localDirty fires correctly.
+ * 办法:把存下来的快照重新过一遍**当前**的归一化管线,再和当前数据比 —— 相等说明差异纯粹是
+ * 结构漂移,直接重建;不等才是真有本地改动,保留原快照让 localDirty 正常触发。
  */
 function rebuildIfSchemaDrift(stored: string, current: string): string {
   if (stored === current) return stored
@@ -126,11 +119,11 @@ function readJson<T>(key: string, fallback: T): T {
 function parseRemoteBlob(jsonStr: string): SyncRemoteMeta {
   const remote = JSON.parse(jsonStr)
   if (Array.isArray(remote)) {
-    // Legacy: array = homework only, no embedded rev/ts
+    // 老格式:数组 = 只有作业数据,没有内嵌的 rev/ts
     return { rev: 0, ts: '', homework: remote as DefenseGroup[], jjc: [], pjjc: [], classic: [], log: [] }
   }
   if (remote && typeof remote === 'object') {
-    // 注意：老 blob 里可能还有 `tracks` 字段，这里故意忽略——追番走 anime.json
+    // 老 blob 里可能还有 `tracks` 字段,这里**故意忽略** —— 追番走 anime.json
     return {
       rev: typeof remote._rev === 'number' ? remote._rev : 0,
       ts: typeof remote._ts === 'string' ? remote._ts : '',
@@ -184,7 +177,7 @@ export default function HomeworkLookup(): JSX.Element {
     return 'homework'
   })
 
-  // Eagerly compute initial data so the snapshot init can reuse the same values.
+  // 先算好初始数据,让快照初始化能复用同一份值。
   const initialHomework = (() => normalizeHomework(readJson(HOMEWORK_KEY, [])))()
   const initialJjc = (() => normalizeHomework(readJson(JJC_KEY, [])))()
   const initialPjjc = (() => normalizePjjc(readJson(PJJC_KEY, [])))()
@@ -211,30 +204,26 @@ export default function HomeworkLookup(): JSX.Element {
     return v ? Number(v) : null
   })
 
-  // Conflict-detection state (C scheme)
+  // 冲突检测状态
   const [lastSyncedRev, setLastSyncedRev] = useState<number>(() => {
     const v = localStorage.getItem(LAST_REV_KEY)
     return v ? Number(v) : 0
   })
-  // Snapshot of data at last successful sync — drives `localDirty` via diff.
-  // Migration: if no snapshot stored, assume current state is already in sync
-  // (previously-dirty state is forgotten — one-time cost of upgrading).
-  // Schema-drift guard: if the stored snapshot is bytewise different from the
-  // current shape but is *semantically* identical after re-normalizing, treat
-  // it as pure shape drift and rebuild. See rebuildIfSchemaDrift().
+  // 上次同步成功时的数据快照,靠 diff 驱动「本地有未同步改动」。
+  // 没有快照时视为当前状态已同步(升级时一次性遗忘之前的脏状态)。
+  // 结构漂移的处理见 rebuildIfSchemaDrift()。
   const [lastSyncedSnapshot, setLastSyncedSnapshot] = useState<string>(() => {
     const initialSnapshot = snapshotOf(initialHomework, initialJjc, initialPjjc, initialClassic, initialLog)
     const stored = localStorage.getItem(SNAPSHOT_KEY)
     if (!stored) return initialSnapshot
     return rebuildIfSchemaDrift(stored, initialSnapshot)
   })
-  // Remote rev seen by background probe / last sync. null = unknown.
+  // 后台探测 / 上次同步看到的远端 rev,null = 未知。
   const [remoteRev, setRemoteRev] = useState<number | null>(null)
   const [syncConfirm, setSyncConfirm] = useState<SyncConfirmState | null>(null)
 
-  // localDirty derived from snapshot diff — auto-clears when user reverts edits.
-  // Memoized so unrelated re-renders (search keystrokes, tab switches, sync
-  // status changes) don't re-stringify the entire dataset.
+  // 本地是否有改动由快照 diff 得出,用户撤销编辑后会自动回到干净态。
+  // 必须 memo —— 否则搜索按键、切 tab、同步状态变化这些无关的重渲染都会把整份数据重新序列化一遍。
   const currentSnapshot = useMemo(
     () => snapshotOf(homeworkData, jjcData, pjjcData, classicData, logData),
     [homeworkData, jjcData, pjjcData, classicData, logData]
@@ -258,8 +247,7 @@ export default function HomeworkLookup(): JSX.Element {
   useEffect(() => { localStorage.setItem(LAST_REV_KEY, String(lastSyncedRev)) }, [lastSyncedRev])
   useEffect(() => { localStorage.setItem(SNAPSHOT_KEY, lastSyncedSnapshot) }, [lastSyncedSnapshot])
 
-  // Background probe on mount: query remote rev so the chip can show
-  // "云端有更新" without requiring the user to click anything.
+  // 挂载时后台探一次远端 rev,让 chip 能主动提示「云端有更新」,不用用户先点什么。
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -269,13 +257,13 @@ export default function HomeworkLookup(): JSX.Element {
         const parsed = parseRemoteBlob(jsonStr)
         setRemoteRev(parsed.rev)
       } catch {
-        // No network / no remote / WebDAV unconfigured — silently fall back.
+        // 没网 / 远端没有 / 未配置 —— 静默忽略。
       }
     })()
     return () => { cancelled = true }
   }, [])
 
-  // Reset query when switching tabs (avoids stale debounce ghost dot)
+  // 切 tab 时清空搜索词,避免上一档的防抖残影
   useEffect(() => {
     setQuery('')
     setDebouncedQuery('')
@@ -316,8 +304,7 @@ export default function HomeworkLookup(): JSX.Element {
     }
   }
 
-  // Views just call the raw setters — `localDirty` is recomputed from the
-  // snapshot diff each render, so no manual flagging is needed.
+  // 各视图直接调 setter 即可:「本地有改动」是每次渲染由快照 diff 算出来的,不用手动打标记。
 
   // ── Sync intent: open confirmation modal, fetch remote in background ─────
   const openSyncConfirm = async (direction: SyncDirection) => {
@@ -330,8 +317,7 @@ export default function HomeworkLookup(): JSX.Element {
       const parsed = parseRemoteBlob(jsonStr)
       setSyncConfirm({ direction, loading: false, remote: parsed, forceArmed: false })
     } catch (e: unknown) {
-      // Pull failure (404 / network / parse): treat as no remote yet.
-      // Push can still proceed (cold start); pull cannot.
+      // 拉取失败(404 / 网络 / 解析)一律当作远端没有数据。
       setSyncConfirm({
         direction,
         loading: false,
@@ -792,7 +778,7 @@ function SyncConfirmModal({
   const remoteCl = remote ? classicStats(remote.classic) : null
   const remoteLg = remote ? logStats(remote.log) : null
 
-  // Conflict logic:
+  // 冲突判定:
   // - push: remote exists with rev > lastSyncedRev (someone updated cloud after our last sync)
   // - pull: localDirty=true (we have unsynced local changes that pull would overwrite)
   const hasConflict = !loading && (
@@ -801,14 +787,14 @@ function SyncConfirmModal({
       : localDirty
   )
 
-  // Pull is impossible when remote is missing.
+  // 远端没有数据时无法拉取。
   const pullImpossible = !isPush && !loading && !remote
 
   const close = () => setState(null)
 
   const onConfirmClick = () => {
     if (hasConflict && !forceArmed) {
-      // First click on the destructive button: arm it.
+      // 危险按钮的第一次点击:先进入待确认态。
       setState({ ...state, forceArmed: true })
       return
     }
@@ -816,8 +802,7 @@ function SyncConfirmModal({
     else onConfirmPull()
   }
 
-  // Reset arm if the user clicks anywhere else (cancel button etc.) — handled
-  // implicitly by close()/state transitions.
+  // 用户点别处(取消等)时的复位,由关闭 / 状态迁移隐式处理。
 
   return (
     <ModalShell onBackdrop={close}>

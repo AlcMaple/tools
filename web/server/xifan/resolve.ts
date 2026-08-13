@@ -6,7 +6,7 @@
 //   - 用户点线路 2/3 → `resolveLine`：那时才抓那一条。
 // 不再自动选最优线路，也不预探 content-disposition / HLS 空壳 —— 播放层「直连失败就套娃兜底」。
 //
-// **拷贝复用 + 换传输层**（ideas/012）：parsePlayerData 抄自 src/main/xifan/api.ts；
+// **拷贝复用 + 换传输层**：parsePlayerData 抄自 src/main/xifan/api.ts；
 // 源 tab 名单改用正则扒（web 侧只为这几个 <a> 标签不值当加 cheerio 依赖）。
 
 import '../http' // 副作用导入：让 undici fetch 认 HTTPS_PROXY（本地 Clash 非 TUN 时用）

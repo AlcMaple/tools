@@ -14,8 +14,8 @@ import {
   XIFAN_ORIGIN,
 } from './browser-challenge'
 
-// 站点旧域 dm.xifanacg.com 现 301 跳到 anime.xifanacg.com，直接用新域省掉
-// 每次跨域跳转。后台页面仍允许该子域，旧下载任务里残留的播放页链接可继续跟随 301。
+// 旧域 dm.xifanacg.com 现在 301 到 anime.xifanacg.com,直接用新域省掉每次跨域跳转。
+// 后台页面仍允许该子域,旧下载任务里残留的播放页链接可继续跟随 301。
 const BASE_URL = XIFAN_ORIGIN
 const HEADERS = {
   'User-Agent': DESKTOP_USER_AGENT,
@@ -30,9 +30,9 @@ export const xifanSession = new HttpSession('xifan', HEADERS)
 let legacyCookiesImported = false
 let legacyCookieImport: Promise<void> | null = null
 
-// Xifan 的 MP4 地址不是媒体内容缓存：这里只记「某播放页最终给出的地址」，让同一集
-// 在 24 小时内重新点开时不用再进站点页面。上游随时可提前让链接失效，因此播放器
-// 一旦报错会强制回源刷新该项；不额外 probe，避免为了判断过期反而多打一笔请求。
+// **这不是媒体内容缓存**,只记「某播放页最终给出的地址」,让同一集 24 小时内重新点开时
+// 不用再进站点页面。上游随时可能让链接提前失效,所以播放器一旦报错就强制回源刷新;
+// 不额外探活 —— 为了判断有没有过期反而多打一笔请求,不划算。
 interface XifanUrlCacheEntry {
   url: string
   resolvedAt: number
@@ -82,11 +82,11 @@ const xifanUrlCacheStore = new JsonStore<XifanUrlCache>(
   normalizeXifanUrlCache,
 )
 
-// watch() 本身就是「当前源第 1 集」的播放页：一次请求同时给出总集数、各源名称/
-// epLabels，以及当前源的地址模板——后续每一集地址都靠模板纯计算（见
-// resolveEpPlaybackUrl），不再碰网络。换句话说，进播放器时唯一真正打到稀饭
-// 服务器的就是这一次。已完结番（追番记录填过总集数）结构不会再变，允许调用方
-// 传 preferCache 跳过这次请求，直接吃缓存；连载番不传，永远按最新结果覆盖缓存。
+// watch() 本身就是「当前源第 1 集」的播放页:一次请求同时给出总集数、各源名称/集名,以及
+// 当前源的地址模板 —— 之后每一集的地址都靠模板纯计算,不再碰网络。也就是说进播放器时
+// 真正打到稀饭服务器的只有这一次。
+// 已完结番(追番记录填过总集数)结构不会再变,允许调用方传 preferCache 跳过这次请求;
+// 连载番不传,永远按最新结果覆盖缓存。
 interface XifanWatchCacheEntry {
   info: XifanWatchInfo
   savedAt: number
@@ -166,8 +166,8 @@ function rememberXifanWatch(watchUrl: string, info: XifanWatchInfo): void {
   })
 }
 
-// 所有「真的要导航到稀饭 HTML 页」的操作共用这一个节流器。后台挑战页的 250ms
-// 轮询只读 DOM，不经过这里；只有缓存未命中、用户确实需要新页面时才占一个名额。
+// 所有「真要导航到稀饭 HTML 页」的操作共用这一个节流器。后台挑战页的 250ms 轮询只读 DOM
+// 不经过这里。
 const xifanPageLimiter = new RateLimiter({
   minGapMs: 400,
   jitterMs: 200,
@@ -242,11 +242,11 @@ function responseHeader(headers: Record<string, string | string[] | undefined>, 
   return Array.isArray(value) ? (value[0] ?? '') : (value ?? '')
 }
 /**
- * 稀饭只读页面统一入口。
+ * 稀饭只读页面的统一入口。
  *
- * 新 UAM 会给 HTTP 客户端返回 200 + Checking your Browser HTML。所有可解析的
- * 稀饭 HTML 页面统一走持久 Chromium 分区：检查在不可见 WebContents 中完成，
- * 正常页再串行读取 DOM。这样不会用主进程 HTTP 栈在验证后补打一遍、触发异常会话。
+ * 站点的 UAM 会给 HTTP 客户端返回 200 + Checking your Browser 页,所以所有可解析的稀饭页面
+ * 统一走持久 Chromium 分区:检查在不可见 WebContents 里完成,正常页再串行读 DOM。
+ * **别在验证通过后改用主进程 HTTP 栈重打一遍**,那会触发异常会话。
  */
 async function getXifanPage(url: string) {
   if (!isXifanPageUrl(url)) throw new Error('稀饭页面地址无效')
@@ -294,9 +294,8 @@ function needsCaptcha(html: string): boolean {
 }
 
 function buildTemplate(ep1Url: string): string | null {
-  // 用第 1 集 URL 里集数的「原始写法」决定补零宽度,绝不能一律补成两位:
-  // 多数源是 .../01.mp4(补零两位),但有的源是 .../1.mp4(不补零)。写死
-  // 成 {:02d} 会把后者的第 4 集拼成 04.mp4 → 服务器 404(见 docs 回归用例)。
+  // 补零宽度要看第 1 集 URL 里集数的**原始写法**,绝不能一律补成两位:多数源是 .../01.mp4
+  // 但有的源是 .../1.mp4 —— 写死两位会把后者的第 4 集拼成 04.mp4,服务器 404。
   const m = ep1Url.match(/(.*?)(\d+)([^./\d]*\.[^./]+$)/)
   if (!m) return null
   const [, head, digits, tail] = m
@@ -310,13 +309,11 @@ function epPageTemplate(animeId: string, sourceIdx: number): string {
 }
 
 /**
- * 从播放页 HTML 的选集列表里解析「每集名称」,按源分组(集序号 → 站点标注的集名)。
- * 站点对特殊集会直接标注真名(如最后一集是「OVA」而不是「第13集」),这是同一
- * 页面里现成的数据,不用额外请求。
+ * 从播放页的选集列表解析每集名称,按源分组。站点对特殊集会直接标真名(最后一集是「OVA」
+ * 而不是「第13集」),这是同一页面里现成的数据,不用额外请求。
  *
- * 只扫 class 含 anthology-list 的选集列表区域(实测页面结构:ul.anthology-list-play)。
- * 不能放宽到 anthology:anthology-header 里的「下集」导航按钮也指向
- * watch/{id}/{src}/{ep}.html 且出现在列表之前,会把对应集的集名污染成「下集」。
+ * 只扫 class 含 anthology-list 的区域:**不能放宽** —— anthology-header 里的「下集」导航按钮
+ * 也指向 watch/{id}/{src}/{ep}.html 且出现在列表之前,会把对应集的集名污染成「下集」。
  */
 function parseEpLabels(html: string, animeId: string): Map<number, Map<number, string>> {
   const $ = cheerio.load(html)
@@ -369,9 +366,8 @@ function decodeXifanPlayerUrl(raw: string): string {
 }
 
 /**
- * 取得一集要交给播放器的最终地址。缓存 key 是具体播放页而非标题，避免同名番 /
- * 不同线路串用；缓存命中完全不加载站点页面。`forceRefresh` 仅供 <video> 已经
- * 报错后的单次兜底使用：主动丢掉旧地址并回源读取 player_aaaa.url，不探活、不重试。
+ * 取一集要交给播放器的最终地址。缓存 key 用具体播放页而不是标题,避免同名番 / 不同线路串用。
+ * `forceRefresh` 只供 <video> 已经报错后的单次兜底:丢掉旧地址回源重读,不探活、不重试。
  */
 export async function resolveEpPlaybackUrl(
   template: string | null,
@@ -392,7 +388,7 @@ export async function resolveEpPlaybackUrl(
   const task = (async (): Promise<string | null> => {
     let url: string | null = null
     if (template && !forceRefresh) {
-      // 常规集可以从第 1 集模板纯计算出地址，不为「确认它还有效」再打一笔站点请求。
+      // 常规集能从第 1 集的模板纯计算出来,不为了「确认它还有效」再打一笔请求。
       const templated = xifanUrlFromTemplate(template, ep)
       if (!isHttpMediaUrl(templated)) throw new Error('稀饭播放地址格式无效')
       url = templated
@@ -456,8 +452,8 @@ export async function verifyCaptcha(code: string): Promise<{ success: boolean }>
 }
 
 // ── 账号登录 ───────────────────────────────────────────────────────────────────
-// 登录、验证码和页面请求统一由同一个 Chromium 分区处理。旧 cookie 文件只作
-// 升级迁移与跨重启兼容；渲染进程始终只拿登录布尔值，不接触 cookie 明文。
+// 登录、验证码和页面请求统一走同一个 Chromium 分区。旧 cookie 文件只用于升级迁移;
+// 渲染进程始终只拿登录布尔值,不接触 cookie 明文。
 
 export interface XifanAuthStatus {
   loggedIn: boolean
@@ -568,8 +564,8 @@ export async function search(keyword: string): Promise<XifanSearchResult[] | { n
     return { needs_captcha: true }
   }
 
-  // Sequential pagination via shared helper — follows `下一页` links with 1s delay.
-  // Chromium 分区会在分页之间保留会话，避免挑战完成后又回退到主进程 HTTP 栈。
+  // 分页靠共享 helper 跟随「下一页」链接,带 1s 间隔。Chromium 分区会在分页之间保留会话
+  // 避免挑战通过后又退回主进程 HTTP 栈。
   return crawlAllPages({
     firstHtml: res.body,
     baseUrl: BASE_URL,
@@ -592,12 +588,12 @@ interface PlayerData {
 }
 
 function parsePlayerData(html: string): PlayerData | null {
-  // Try compact JSON first
+  // 先按紧凑 JSON 试
   const m1 = html.match(/var player_aaaa\s*=\s*(\{.*?\})<\/script>/)
   if (m1) {
     try { return JSON.parse(m1[1]) as PlayerData } catch { /* fall through */ }
   }
-  // Fall back to block parsing
+  // 不行再退回逐块解析
   const m2 = html.match(/var player_aaaa\s*=\s*\{(.*?)\};/s)
   if (!m2) return null
   const block = m2[1]
@@ -619,11 +615,10 @@ function parsePlayerData(html: string): PlayerData | null {
   return { url: getStr('url'), from: getStr('from'), id: getStr('id'), vod_data: { vod_name: vodName } }
 }
 
-// resolveAllSources 会把多条线路的播放页并发拉齐。旧代码是 for 里逐条 await,
-// 顺序性无意中给了请求间隔;改并发后这层保护消失,同域一次打 3~6 个是明显的
-// bot-like 突发。这里补一条节流:间隔只压到 150~400ms(远小于单条请求本身的
-// 几百 ms),所以请求仍然是重叠的、面板不会退回「一条等一条」,但发起时刻被
-// 错开,不再是同一瞬间的齐发。不设滚动窗口配额——面板是用户手点触发、低频。
+// 多条线路的播放页是并发拉的。旧代码 for 里逐条 await,顺序性无意中给了请求间隔;改并发后
+// 这层保护消失,同域一次打 3~6 个是明显的 bot 突发。所以补一条节流:间隔只压到 150~400ms
+// (远小于单条请求本身的几百 ms),请求仍然重叠、面板不会退回「一条等一条」,但发起时刻被
+// 错开。不设滚动窗口配额 —— 这个面板是用户手点触发的,频率很低。
 const sourceLimiter = new RateLimiter({
   minGapMs: 150,
   jitterMs: 250,
@@ -631,14 +626,12 @@ const sourceLimiter = new RateLimiter({
 })
 
 /**
- * 拉某条线路自己的播放页,解出 template/ep1/集名。
+ * 拉某条线路自己的播放页,解出 template / ep1 / 集名。
  *
- * 错误处理刻意分两类(旧代码一个 `catch {}` 全吞掉,导致被限流 / CF 拦截时
- * UI 显示成「这条线路没源」,用户只会去换线路反复点、把限流踩得更深):
- * - **解析不出播放数据**(站点结构变了 / 该源确实是空的)→ `template: null`
- *   返回,只损失这一条线路,其余照常展示。
- * - **HTTP 非 2xx / CF 拦截**(限流、风控、故障)→ `assertScrapePageOk` 抛出
- *   带原因的错误,一路冒泡到 UI 走 friendlyError 的限流提示 + 倒计时重试。
+ * 错误必须分两类,**不能一个 catch 全吞**(旧代码就是,结果被限流 / CF 拦截时 UI 显示成
+ * 「这条线路没源」,用户只会去换线路反复点、把限流踩得更深):
+ * - 解析不出播放数据(站点结构变了 / 该源确实是空的)→ 返回 `template: null`,只损失这条线路
+ * - HTTP 非 2xx / CF 拦截 → 抛带原因的错误,一路冒泡到 UI 走限流提示 + 倒计时重试
  */
 async function fetchSourceEp1(animeId: string, sourceIdx: number): Promise<{ template: string | null; ep1: string; epPage: string; epLabels: string[] }> {
   const epPage = epPageTemplate(animeId, sourceIdx)

@@ -4,9 +4,8 @@ import { useSystemStats } from '../hooks/useSystemStats'
 import { uiStore } from '../stores/uiStore'
 
 /**
- * 搜索历史的「展示条目」—— TopBar 只认 keyword（主文字 + 回填输入框用）
- * 和 meta（右侧灰色小标签，比如类目）。kind / 时间戳这些业务字段由调用方
- * 自己持有，通过回调里的 index 取回，TopBar 不掺和。
+ * 搜索历史的展示条目 —— TopBar 只认 keyword(主文字 + 回填输入框)和 meta(右侧灰色小标签)。
+ * 类目、时间戳这些业务字段由调用方自己持有,通过回调里的 index 取回。
  */
 export interface SearchHistoryEntry {
   keyword: string
@@ -16,27 +15,19 @@ export interface SearchHistoryEntry {
 interface TopBarProps {
   placeholder: string
   onSearch?: (query: string) => void
-  // Optional content that replaces the left-side search input. Used by pages whose
-  // workflow doesn't fit a quick-find box (e.g. File Explorer renders a title block).
-  // Center "Quick Stats" and the right-side controls stay the same regardless.
+  // 可选内容,替换掉左侧的搜索框。给工作流不适合快速查找框的页面用(如资源管理器放标题块)。
   titleSlot?: JSX.Element
   /**
-   * 嵌入到搜索框**内**右侧的小控件（带左边一条竖分隔线）。给 AnimeInfo 这种
-   * 需要"搜索 + 类目下拉"二合一交互的页面用，避免在外面单独再加一行控件。
-   *
-   * 渲染位置：search 图标 + 输入框 + **slot** —— 在同一个搜索框容器里。
-   * 输入框 flex-1 自动收缩，slot 用 shrink-0 保持固定尺寸。
-   *
-   * 体积建议：≤80px 宽（搜索框总宽 w-80 = 320px，留够 input 的可用宽度）。
+   * 嵌在搜索框**内**右侧的小控件(带一条竖分隔线),给「搜索 + 类目下拉」二合一的页面用
+   * 免得在外面另起一行。输入框 flex-1 自动收缩,这个 slot 用 shrink-0 保持固定尺寸,建议 ≤80px。
    */
   searchRightSlot?: JSX.Element
   /**
-   * 搜索历史（可选）。传了才渲染历史下拉：聚焦搜索框且有历史时在下方弹出。
-   * 已输入文字时按子串过滤做成 typeahead。索引一律相对**原始数组**，
-   * 过滤不打乱回调里的 index，调用方据此取回完整业务记录。
+   * 搜索历史(可选),传了才渲染下拉。已输入文字时按子串过滤做 typeahead;
+   * 索引一律相对**原始数组**,过滤不打乱回调里的 index。
    */
   searchHistory?: SearchHistoryEntry[]
-  /** 点选某条历史 —— 调用方负责回填类目、发起搜索（TopBar 已回填输入框）。 */
+  /** 点选某条历史 —— 调用方负责回填类目、发起搜索(输入框 TopBar 已经填好)。 */
   onPickHistory?: (index: number) => void
   /** 删除某条历史。 */
   onRemoveHistory?: (index: number) => void

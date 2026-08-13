@@ -1,39 +1,21 @@
 /**
- * 应用内自动更新 —— 国内加速 + GitHub 回退
+ * 应用内自动更新 —— 国内加速为主,直连 GitHub 兜底。
  *
- * ## 为什么不能直接用 electron-updater 默认的 GitHub provider
+ * **不能用 electron-updater 默认的 GitHub provider**:产物走 objects.githubusercontent.com
+ * 国内无魔法连 feed 文件都拉不到,整个流程死在第一步。ghproxy 系反代国内可达,但它不认
+ * `/releases/latest/` 重定向(502)、也不放行 `releases.atom`(403)。能走通的只有两种:
+ * 固定 tag 的产物下载,和 raw.githubusercontent.com 上的小文件。
  *
- * GitHub Release 的产物走 `objects.githubusercontent.com`，国内无魔法直接拉
- * 不到（feed 文件 latest.yml 都下不来 → 整个更新流程死在第一步，这是上一版
- * 走 Cloudflare 踩过的坑）。ghproxy 系镜像（`https://ghproxy.net/` 前缀反代
- * GitHub）国内可达，但它**不认 `/releases/latest/` 重定向**（实测 502），也
- * **不放行 `releases.atom`**（403）。能走通的只有：
- *   - 固定 tag 的产物：`{proxy}https://github.com/owner/repo/releases/download/vX/...` ✅
- *   - `raw.githubusercontent.com` 上的小文件（经 ghproxy / jsdelivr）✅
+ * 所以分两步:
+ *   1. **查版本**:读仓库根目录的 `update-manifest.json`,通道依次 ghproxy-raw → jsdelivr →
+ *      直连。**代理列表写在这份远程清单里** —— 哪个代理挂了直接改这个文件,所有已安装的
+ *      客户端下次检查就生效,不用重新发版。
+ *   2. **下载安装**:拿版本号拼固定 tag 的 URL,用 generic provider 逐个代理试,任一成功即止
+ *      全挂再回退直连 GitHub。
  *
- * ## 方案：两步走
- *
- * 1. **查最新版本**（discoverLatest）：读 repo 根目录 `update-manifest.json`
- *    （`{ version, proxies }`），通道带回退：ghproxy-raw → jsdelivr → 直连。
- *    proxies 列表写在这份远程清单里 —— 哪个代理挂了直接改这文件，**所有已
- *    安装客户端下次检查就生效，不用重新发版**（解决「挂了就换」的维护痛点）。
- * 2. **下载安装**：拿到版本号后拼**固定 tag** 的 ghproxy URL，用
- *    electron-updater 的 generic provider 逐个代理尝试（setFeedURL +
- *    checkForUpdates + downloadUpdate），任一成功即止，全挂回退直连 GitHub
- *    （有魔法用户兜底）。复用 electron-updater 的 NSIS 下载 / 安装机制。
- *
- * ## 平台差异
- *
- * - **Windows**：走 electron-updater generic provider，能真·静默下载 + 重启安装。
- * - **macOS**：项目未签名 / 公证，quitAndInstall 在 Sequoia 后静默失败，所以
- *   不调 autoUpdater，只「查版本 → 给一个 ghproxy 加速的 dmg 下载直链」，用户
- *   点 banner 在浏览器里快速下到 dmg 后自行拖入 Applications。
- *
- * dev 模式 (`!app.isPackaged`) 完全跳过 autoUpdater。
- *
- * 更新源由用户设置 `updateSource` 控制：
- *   - 'auto'   ：先国内代理链、失败回退 GitHub（默认，覆盖无魔法用户）
- *   - 'github' ：强制直连 GitHub（有魔法用户想跳过代理时用）
+ * 平台差异:Windows 走 electron-updater,能静默下载 + 重启安装;macOS 未签名 / 未公证
+ * quitAndInstall 在 Sequoia 之后会静默失败,所以只查版本 + 给一条加速的 dmg 直链
+ * 用户自己下载拖进 Applications。未打包时完全跳过。
  */
 
 import { app, BrowserWindow, ipcMain, shell, net } from 'electron'
@@ -56,10 +38,8 @@ const REPO_NAME = 'tools'
 // update-manifest.json 的获取通道（只拉这份很小的 JSON 用）。
 const MANIFEST_RAW = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/update-manifest.json`
 const MANIFEST_JSDELIVR = `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/update-manifest.json`
-// 引导代理：仅用于「拉 manifest」这一步的 ghproxy 前缀（大文件下载用 manifest
-// 里返回的 proxies）。这两个写死是因为 proxies 列表本身在 manifest 里，存在
-// 先有鸡还是先有蛋的问题；但 manifest 极小且有 jsdelivr + 直连两路兜底，写死
-// 一两个引导代理够用。
+// 只用于「拉 manifest」这一步的引导代理。写死是因为代理列表本身就在 manifest 里
+// 有先有鸡还是先有蛋的问题;manifest 极小且有 jsdelivr + 直连两路兜底,写死一两个够用。
 const BOOTSTRAP_PROXIES = ['https://ghproxy.net/', 'https://ghfast.top/']
 
 interface UpdateManifest {
@@ -84,11 +64,7 @@ function broadcast(channel: Channel, payload?: unknown): void {
   }
 }
 
-/**
- * 用 `Major.Minor.Patch` 三段比对版本号。返回 1 表示 a > b，-1 表示 a < b。
- * 仅支持纯数字段；带 `-beta` / `-rc.1` 之类的预发布后缀本项目当前不发布，
- * 简化处理直接 strip 掉再比。
- */
+/** 按 `Major.Minor.Patch` 三段比;本项目不发预发布版本,带 `-beta` 之类后缀的直接 strip 再比。 */
 function compareVersions(a: string, b: string): number {
   const norm = (v: string): number[] =>
     v.replace(/^v/, '').split('-')[0].split('.').map((n) => parseInt(n, 10) || 0)
@@ -104,7 +80,7 @@ function compareVersions(a: string, b: string): number {
   return 0
 }
 
-/** 用 Electron net 拉一段文本（项目约定：抓取一律走 net，自动读系统代理）。 */
+/** 用 Electron net 拉一段文本(项目约定:抓取一律走 net,自动读系统代理)。 */
 function fetchText(url: string, timeoutMs = 10000): Promise<string | null> {
   return new Promise((resolve) => {
     let done = false
@@ -164,15 +140,13 @@ function downloadBases(source: 'auto' | 'github', manifest: UpdateManifest): str
 }
 
 /**
- * Windows 检查 + 下载流程。autoDownload 关掉，自己驱动「逐源尝试」：
- * 某个源的 latest.yml / exe 拉不到就换下一个，全挂才报错。
+ * Windows 的检查 + 下载。autoDownload 关掉,自己驱动逐源尝试:某个源的 latest.yml / exe
+ * 拉不到就换下一个,全挂才报错。
  */
 async function runWin(manual: boolean): Promise<void> {
-  // 「检查中…」只在用户手动点检查时显示（manual）。自动检查不发 checking —— 直接
-  // 从 idle 翻到结果（not-available「已是最新」/ available 下载）。原因：自动检查的
-  // error 是 gated by manual 的（静默、按钮留在「检查更新」让用户自己重试），若自动
-  // 也广播 checking，出错时收不到复位就会永久卡在「检查中…」。所以自动干脆不闪
-  // 「检查中…」，只在拿到结果时翻到对应终态。
+  // 「检查中…」只在用户手动点检查时广播。**自动检查不发 checking** —— 自动检查的错误是静默的
+  // (按钮留在「检查更新」让用户自己重试),要是自动也发 checking,出错时收不到复位就会永久卡在
+  // 「检查中…」。所以自动检查直接从 idle 翻到终态。
   if (manual) broadcast('updater:checking')
   const source = getUpdateSource()
   const manifest = await discoverLatest(source)
@@ -182,8 +156,7 @@ async function runWin(manual: boolean): Promise<void> {
   }
   const current = app.getVersion()
   if (compareVersions(manifest.version, current) <= 0) {
-    // 无新版本：手动 / 自动都广播 → 按钮显示「已是最新版本」。自动检查靠这条从
-    // idle 翻到「已是最新」（它不发 checking，所以这里也不会有卡「检查中…」之虞）。
+    // 无新版本时手动 / 自动都广播,按钮显示「已是最新版本」——自动检查靠这条从 idle 翻过去。
     broadcast('updater:not-available', { version: current })
     return
   }
@@ -202,23 +175,16 @@ async function runWin(manual: boolean): Promise<void> {
       await autoUpdater.downloadUpdate()
       return // 成功：update-downloaded 事件已发给渲染层
     } catch {
-      // 这个源（latest.yml 502 / exe 拉不到 / 超时）失败，换下一个
+      // 这个源失败(latest.yml 502 / exe 拉不到 / 超时),换下一个
       continue
     }
   }
   broadcast('updater:error', { message: '所有更新源均不可用，请稍后重试' })
 }
 
-/**
- * macOS 检查流程。未签名做不了真·自动安装，只查版本 + 给一个 ghproxy 加速的
- * dmg 直链，让用户在浏览器快速下载后自行安装。
- */
+/** macOS 的检查。未签名做不了真·自动安装,只查版本 + 给一条加速的 dmg 直链,用户自行安装。 */
 async function runMac(manual: boolean): Promise<void> {
-  // 「检查中…」只在用户手动点检查时显示（manual）。自动检查不发 checking —— 直接
-  // 从 idle 翻到结果（not-available「已是最新」/ available 下载）。原因：自动检查的
-  // error 是 gated by manual 的（静默、按钮留在「检查更新」让用户自己重试），若自动
-  // 也广播 checking，出错时收不到复位就会永久卡在「检查中…」。所以自动干脆不闪
-  // 「检查中…」，只在拿到结果时翻到对应终态。
+  // 「检查中…」只在手动检查时广播,理由同 Windows 分支。
   if (manual) broadcast('updater:checking')
   const source = getUpdateSource()
   const manifest = await discoverLatest(source)
@@ -228,14 +194,12 @@ async function runMac(manual: boolean): Promise<void> {
   }
   const current = app.getVersion()
   if (compareVersions(manifest.version, current) <= 0) {
-    // 无新版本：手动 / 自动都广播 → 按钮显示「已是最新版本」。自动检查靠这条从
-    // idle 翻到「已是最新」（它不发 checking，所以这里也不会有卡「检查中…」之虞）。
+    // 无新版本时手动 / 自动都广播。
     broadcast('updater:not-available', { version: current })
     return
   }
   const proxy = source === 'github' ? '' : (manifest.proxies[0] ?? '')
-  // dmg 文件名要和 electron-builder 的 artifactName 模板对齐：
-  // `${productName}_${version}_macos_${arch}.${ext}`（见 package.json build.dmg）
+  // dmg 文件名必须和 electron-builder 的 artifactName 模板对齐:
   const dmg = `${releaseBase(proxy, manifest.version)}MapleTools_${manifest.version}_macos_arm64.dmg`
   lastMacResult = {
     version: manifest.version,

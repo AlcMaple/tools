@@ -1,19 +1,14 @@
-// 持久化日志 —— 主进程唯一的"报错落地点"。
+// 持久化日志 —— 主进程唯一的报错落地点。
 //
-// 为什么需要：打包后的 app 里 `console.error` 没有任何可见出口,于是"报错被
-// catch 吞掉"本质上是"报错无处可查"。这里把日志追加写到 OS 惯例的日志目录
-// (`app.getPath('logs')`,macOS: ~/Library/Logs/MapleTools/,Windows:
-// %APPDATA%/MapleTools/logs/),用户能直接翻、对排查 bug / 性能回溯都有用。
-// 设置→关于 有「打开日志目录」按钮(shell.openPath)。
-//
-// 渲染进程的错误经 IPC `log:error` 转发到这同一个文件,全项目一处汇总。
+// 打包后的 app 里 `console.error` 没有任何可见出口,所以「报错被 catch 吞掉」本质上等于
+// 「报错无处可查」。这里把日志追加写到 OS 惯例的日志目录,用户能直接翻(设置→关于 有
+// 「打开日志目录」按钮)。渲染进程的错误也经 IPC 转发到同一个文件,全项目一处汇总。
 
 import { app, ipcMain, shell } from 'electron'
 import { appendFile, rename, mkdir, stat } from 'fs/promises'
 import { join } from 'path'
 
-// 在任何 patch 之前抓住原生 console 引用 —— logger 自身的 dev 回显与 console
-// 透传都用它们,避免 patch 后递归 / 重复落盘。
+// 在任何 patch 之前抓住原生 console 引用 —— logger 自己的回显和透传都用它们,避免 patch 后递归。
 const nativeError = console.error.bind(console)
 const nativeWarn = console.warn.bind(console)
 const nativeLog = console.log.bind(console)
@@ -23,19 +18,19 @@ const LOG_DIR = (): string => app.getPath('logs')
 const LOG_FILE = (): string => join(LOG_DIR(), 'main.log')
 const ROTATED_FILE = (): string => join(LOG_DIR(), 'main.1.log')
 
-// 写入串行化 —— 多处并发 logXxx 时用一条 promise 链排队,避免追加交织 / 轮转竞态。
+// 写入串行化:多处并发写日志时排进同一条 promise 链,避免追加交织 / 轮转竞态。
 let writeChain: Promise<void> = Promise.resolve()
 let dirReady = false
 
 type Level = 'INFO' | 'WARN' | 'ERROR'
 
 function format(level: Level, scope: string, message: string): string {
-  // 时间戳用本地时区可读格式,方便对照用户操作;ISO 也行但本地更直观。
+  // 时间戳用本地时区的可读格式,方便对照用户的操作时间。
   const ts = new Date().toISOString()
   return `${ts} [${level}] [${scope}] ${message}\n`
 }
 
-// err 可能是 Error / 字符串 / 任意抛出物,统一成"消息 + 栈(若有)"。
+// 抛出物可能是 Error / 字符串 / 任意值,统一成「消息 + 栈(若有)」。
 function describe(err: unknown): string {
   if (err instanceof Error) return err.stack || `${err.name}: ${err.message}`
   if (typeof err === 'string') return err
@@ -50,11 +45,11 @@ async function rotateIfNeeded(): Promise<void> {
   try {
     const { size } = await stat(LOG_FILE())
     if (size >= MAX_BYTES) {
-      // 只保留两代(main.log + main.1.log)——足够回溯近期,又不无限占盘。
+      // 只保留两代日志 —— 够回溯近期,又不无限占盘。
       await rename(LOG_FILE(), ROTATED_FILE())
     }
   } catch {
-    // 文件还不存在 → 无需轮转;其他 stat 错误也不该阻断写入,忽略。
+    // 文件还不存在就不用轮转;其他 stat 错误也不该阻断写入,忽略。
   }
 }
 
@@ -69,7 +64,7 @@ function enqueueWrite(line: string): void {
       await appendFile(LOG_FILE(), line, 'utf-8')
     })
     .catch(() => {
-      // 日志自身写失败时不能再抛(否则递归)——只在 dev 控制台兜底提示一次。
+      // 日志自身写失败时**不能再抛**(会递归),只在 dev 控制台兜底提示一次。
       if (!app.isPackaged) nativeError('[logger] 写日志失败')
     })
 }

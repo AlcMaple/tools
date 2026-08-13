@@ -89,10 +89,9 @@ function SearchingState(): JSX.Element {
   );
 }
 
-// ── Per-card sub-component ─────────────────────────────────────────────────────
-// Pulled out so each card can subscribe independently to its own track entry
-// via `useAnimeTrackByBinding`. Without this split the top-level component
-// would have to re-render every card whenever any track changes.
+// ── 单张卡片 ──────────────────────────────────────────────────────────────────
+// 拆成独立组件,让每张卡各自订阅自己那条追番记录 —— 否则任何一条 track 变化都会让顶层组件
+// 把所有卡片重渲染一遍。
 
 interface ResultCardProps {
   card: SearchCard;
@@ -196,10 +195,9 @@ function ResultCard({
   );
 }
 
-// 手机+平板档(<1024)专属：横向列表行。与桌面的竖向海报卡是「两种形态」而非「同一张卡缩小」——
-// 手机 1 列、平板 2 列；跨过 1024 时结果区整体从「横向卡片」换成「竖向海报网格」，配合侧栏
-// 展开/顶栏状态一起换挡，避免「只有海报忽大忽小」的孤立违和感。列表内拖动只把每行拉宽，
-// 封面是固定小图、尺寸恒定、不会忽大忽小。
+// 手机 + 平板档(<1024)专属的横向列表行。与桌面的竖向海报卡是**两种形态**而不是「同一张卡
+// 缩小」:跨过 1024 时结果区整体换挡,配合侧栏和顶栏一起变,避免「只有海报忽大忽小」的孤立
+// 违和感。列表内拖动只把每行拉宽,封面是固定小图、尺寸恒定。
 function ResultListItem({
   card,
   isLoading,
@@ -306,9 +304,8 @@ function SearchDownload(): JSX.Element {
     }
     return s;
   });
-  // 上次选的源持久化:下次启动默认显示它,不用每次都手动切回去。
-  // 嗷呜已停用(下面下拉里划掉且点不动),所以它既不能当新用户的默认值,也不能
-  // 从旧的 localStorage 里读回来——否则老用户一打开就停在一个点不动的源上。
+  // 上次选的源持久化,下次启动默认显示它。**已停用的源既不能当默认值、也不能从 localStorage
+  // 读回来** —— 否则老用户一打开就停在一个点不动的源上。
   const [source, setSource] = useState<Source>(() => {
     const saved = localStorage.getItem("download_source");
     return saved === "Xifan" || saved === "Girigiri" ? saved : "Xifan";
@@ -318,13 +315,13 @@ function SearchDownload(): JSX.Element {
   }, [source]);
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false);
   const sourceDropdownRef = useRef<HTMLDivElement>(null);
-  // 搜索历史(本地,带源)。historyOpen:搜索框聚焦时弹出。
+  // 搜索历史(本地,带源)。搜索框聚焦时弹出。
   const [history, setHistory] = useState(() => loadDownloadHistory());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(() => _cachedSearchQuery);
   const [captchaInput, setCaptchaInput] = useState("");
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
-  // The card the user is currently linking to a BGM entry. null = modal closed.
+  // 当前正在关联到 BGM 条目的那张卡,null = 弹窗关闭。
   const [linkingCard, setLinkingCard] = useState<SearchCard | null>(null);
 
   useEffect(() => {
@@ -343,10 +340,8 @@ function SearchDownload(): JSX.Element {
   const currentKeyword = useRef(_cachedKeyword);
   const currentSearchRequestId = useRef<string | null>(null);
 
-  // Subscribe once to streaming search-page events. The aowu source paginates
-  // search results; the first page lands via the awaited Promise, follow-up
-  // pages stream in here. We filter by requestId so a stale search doesn't
-  // pollute newer results when the user types fast.
+  // 整页只订阅一次流式搜索的分页事件:嗷呜的搜索是分页的,第一页由 await 的 Promise 带回
+  // 后续页从这里进来。**按 requestId 过滤** —— 用户打字快时,旧搜索的页不能污染新结果。
   useEffect(() => {
     return window.aowuApi.onSearchPage((requestId, more, _done) => {
       if (requestId !== currentSearchRequestId.current) return;
@@ -355,7 +350,7 @@ function SearchDownload(): JSX.Element {
       setState((prev) => {
         if (prev.status !== "results") return prev;
         const merged = [...prev.cards, ...newCards];
-        // Keep cache in sync with what's on screen so a re-search shows the full set.
+        // 顺手同步缓存,让重新搜索时看到的是完整的一整份。
         setCachedSearch(prev.keyword, "Aowu", merged);
         return { ...prev, cards: merged };
       });
@@ -376,7 +371,7 @@ function SearchDownload(): JSX.Element {
 
   const handleSearch = async (keyword: string, srcOverride?: Source): Promise<void> => {
     if (!keyword.trim()) return;
-    // 历史里点一条会带上当时的源;override 时同步更新选中的源(不等 setState 异步生效)。
+    // 从历史里点一条会带上当时的源;override 时同步更新选中的源,不等 setState 异步生效。
     const src = srcOverride ?? source;
     if (srcOverride && srcOverride !== source) setSource(srcOverride);
     currentKeyword.current = keyword;
@@ -416,8 +411,7 @@ function SearchDownload(): JSX.Element {
         const cards = results.map(normalizeAowu);
         setCachedSearch(keyword, src, cards);
         setState({ status: "results", cards, keyword });
-        // Follow-up pages (if any) arrive via the onSearchPage subscription
-        // installed in useEffect above and append to state.cards.
+        // 后续页由上面 useEffect 里装的订阅送来,追加进 cards。
       } else {
         const result = await window.xifanApi.search(keyword);
         if (!Array.isArray(result) && result.needs_captcha) {
@@ -440,7 +434,7 @@ function SearchDownload(): JSX.Element {
     }
   };
 
-  // 历史下拉:已输入文字 → 按子串做 typeahead 过滤;空输入 → 全量。保留原始索引。
+  // 历史下拉:已输入文字时按子串做 typeahead 过滤,空输入时全量。保留原始索引。
   const historyMatches = history
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => {

@@ -37,38 +37,12 @@ export interface BgmDetail {
   infobox: Record<string, string>
 }
 
-// ── Parsers ────────────────────────────────────────────────────────────────────
-/**
- * 从 BGM summary 提取中文部分；没中文就把日文原文整段返回。
- *
- * BGM 的简介有三种常见形态：
- *   1. **中日并排（带 marker）**：「中文简介\n[简介原文]\n日文原文」
- *      ——marker 前的就是中文，取它即可
- *   2. **纯中文**：直接是中文段落
- *   3. **纯日文/原文**：BGM 没人翻译时直接挂日文（噬血狂袭 IV 这种）
- *
- * 之前的实现按 `\n` 切段然后**逐段**用假名密度过滤：在第 3 种情况会把
- * "假名少的段"（"物語の舞台は魔族特区"恩莱島"" —— 假名只 2 个 < 5 的阈值）
- * 误判成中文留下，"假名多的段"过滤掉，把一篇完整日文撕得只剩三段碎句。
- *
- * 修法：检测到 marker → 取前半中文段；否则不切段，**整段**算假名密度判断
- * hasChinese，text 永远原样返回。这样上层 fallback 到 moegirl 失败后，
- * 用户至少能看到完整原文。
- */
-/**
- * 找文本里"日文区"第一次出现的位置（30 字滑动窗口里假名 ≥ JP_DENSITY_THRESHOLD
- * 个）。找不到返回 -1。
- *
- * 用滑动窗口而非按字符/按行/按句切，是为了规避两类误判：
- *
- *   - **按行切的灾难**（commit 058bde0 修过）：日文短句被误判成"中文留下"、
- *     长句被丢，整段简介剩三段碎句。本函数永远只产出一个"切点"（前面全
- *     算中文、后面全算日文），不存在"留下哪些段"的决策。
- *
- *   - **单字假名误伤**：中文里偶尔嵌「コミック」「アニメ」这种日文外来语
- *     人名/术语；窗口要求 ≥6 个假名才算"进入日文区"，单点假名 burst 不
- *     会触发。
- */
+// ── 简介解析 ──────────────────────────────────────────────────────────────────
+// 从 BGM 简介里取中文部分;没有中文就把日文原文**整段**返回。
+//
+// 简介有三种形态:中日并排(带 marker)、纯中文、纯日文(没人翻译时)。
+// **绝不逐段判断假名密度再挑段留下** —— 那样纯日文简介会被撕成几句碎片(假名少的段被当成
+// 中文留下、假名多的段被丢掉)。这里的做法是只找**一个切点**:前面全算中文、后面全算日文。
 function findJapaneseRegionStart(text: string): number {
   const WINDOW_SIZE = 30
   const JP_DENSITY_THRESHOLD = 6 // 6/30 = 20% kana → 几乎肯定是日文段
@@ -85,12 +59,9 @@ function findJapaneseRegionStart(text: string): number {
 function extractChineseSummary(summary: string): { text: string; hasChinese: boolean } {
   if (!summary) return { text: '', hasChinese: false }
 
-  // 形态 0：显式「中文简介」marker —— 中文在 marker **之后**（与形态 1 相反）。
-  //
-  // 夏日口袋(363957)、光之美少女5GoGo剧场版 这类：日文原文在前，[中文简介]
-  // 之后才是中文。更坑的是日文段前面还有一段「PC初回限定版 2018年6月29日…」
-  // 的发售履历（汉字夹数字、不是简介），会被形态 2 的日文区检测误当成"中文
-  // 简介"整段截出来。所以这个 marker 必须**最优先**判，且取 marker 之后的部分。
+  // 形态 0:显式的「中文简介」marker,中文在 marker **之后**(与形态 1 相反)。
+  // 这类条目日文原文在前,而且日文段前面还常有一段发售履历(汉字夹数字、不是简介),会被下面
+  // 形态 2 的日文区检测误当成中文整段截出来。所以这个 marker 必须**最优先**判。
   const cnMarkers = [
     /[[【［]\s*中文简介\s*[\]】］]/, /[[【［]\s*中文簡介\s*[\]】］]/,
     /\n\s*中文简介\s*[:：]?\s*\n/, /\n\s*中文簡介\s*[:：]?\s*\n/
@@ -117,22 +88,12 @@ function extractChineseSummary(summary: string): { text: string; hasChinese: boo
     }
   }
 
-  // 形态 2：「中文段 + 日文段」无 marker 直接拼（BGM 4419 这种）。
-  //
-  // 两步定位真实边界：
-  //
-  //   ① `findJapaneseRegionStart` 返回**窗口起点** jpStart —— 这个窗口里
-  //      假名 ≥ 6 个，意味着附近有"持续日文区"。但 jpStart 本身往往**还在
-  //      中文段内**（窗口跨过边界往后看了 30 字才凑够 6 个假名）。
-  //
-  //   ② 在窗口 [jpStart, jpStart+30] 里扫第一个假名字符的位置 —— 那才是
-  //      日文区真正开始的地方，也就是"中文段结束的位置"。
-  //
-  // 之前直接用 jpStart 当切点，导致中文段尾巴几个字被误截（BGM 4419 的"决战
-  // 镜之国"被切成"勇闯镜之"丢了 20+ 字）。
-  //
-  // jpStart = 0（窗口从一开始就是日文密集区）→ 没有中文段可切，直接走形态
-  // 3，**不**做任何切分（保护噬血狂袭 IV 那种纯日文场景）。
+  // 形态 2:中文段 + 日文段直接拼、没有 marker。分两步定边界:
+  //   ① findJapaneseRegionStart 返回的是**窗口起点**(该窗口里假名 ≥6),但这个点往往还在中文段内
+  //      —— 窗口是往后看了 30 字才凑够假名的。
+  //   ② 再到窗口内扫第一个假名字符,那才是日文区真正的起点、也就是中文段的结束位置。
+  // 直接拿窗口起点当切点会把中文段尾巴切掉二十来个字。
+  // 窗口起点为 0(一上来就是日文密集区)说明没有中文段可切,直接走形态 3,**不做任何切分**。
   const jpStart = findJapaneseRegionStart(summary)
   if (jpStart > 0) {
     const windowSlice = summary.slice(jpStart, Math.min(jpStart + 30, summary.length))
@@ -141,8 +102,7 @@ function extractChineseSummary(summary: string): { text: string; hasChinese: boo
     if (firstKanaInWindow >= 0) {
       const realBoundary = jpStart + firstKanaInWindow
       const chinesePart = summary.slice(0, realBoundary).trim()
-      // 防御性：切出来的"中文段"至少要有 5 个汉字才算数。否则可能是日文
-      // 段开头几个零散标点 / 拉丁字符被误切到前面。
+      // 防御:切出来的中文段至少要有 5 个汉字才算数,否则可能只是日文段开头几个零散标点被误切过来。
       const hanCount = (chinesePart.match(/[一-鿿]/g) || []).length
       if (chinesePart && hanCount >= 5) {
         return { text: chinesePart, hasChinese: true }
@@ -150,10 +110,8 @@ function extractChineseSummary(summary: string): { text: string; hasChinese: boo
     }
   }
 
-  // 形态 3：纯中文 / 纯日文。整段算假名密度，**绝不逐段撕**。
-  // 阈值 5% 加上 10 个绝对数量是 OR 关系——日文短文也常有显著假名出现率
-  // （助词の・を・に / 连接词），>5% 基本能稳判；中文外来语夹零星假名通常
-  // 远低于 5%。
+  // 形态 3:纯中文 / 纯日文。整段算假名密度,**绝不逐段撕**。
+  // 比例和绝对数量是 OR 关系 —— 日文短文的助词假名出现率本来就高,中文里夹的零星外来语则远低于阈值。
   const kanaMatches = summary.match(/[぀-ゟ゠-ヿ]/g) || []
   const kanaRatio = kanaMatches.length / summary.length
   const isMostlyJapanese = kanaMatches.length > 10 || kanaRatio > 0.05
@@ -220,13 +178,11 @@ function mergeStaff(fromInfobox: StaffEntry[], fromPersons: StaffEntry[]): Staff
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
-  // api.bgm.tv 失败 → 降级抓 bgm.tv HTML（同形对象），其余字段解析不变。
+  // api.bgm.tv 失败就降级抓 bgm.tv HTML(同形对象,其余解析不变)。
   //
-  // 关键：**任何** api 失败都降级，不再只认 RateLimitError。BGM 限流绝大多数时候
-  // 表现为「超时 / 丢包」而非 HTTP 429（api.bgm.tv 是独立的严格桶，被惩罚时直接
-  // 不回包）。旧代码只在 RateLimitError 时降级 → 真限流（超时）走 else throw、
-  // 直接报「请求超时」，既不降级也没倒计时。现在超时也降级到 bgm.tv HTML
-  // （温和、就是浏览器能打开的那个），HTML 也失败才抛原始 api 错误（更反映根因）。
+  // **任何 api 失败都要降级,不能只认 RateLimitError**:BGM 限流绝大多数时候表现为超时 / 丢包
+  // 而不是 429(被惩罚时直接不回包)。只认 429 的话,真限流会走 else 分支直接报「请求超时」
+  // 既不降级也没倒计时。HTML 也失败才抛原始 api 错误(更能反映根因)。
   let subject: Record<string, unknown>
   try {
     subject = await fetchBgmApiJson<Record<string, unknown>>(`${BASE_API}/subjects/${subjectId}`)
@@ -234,10 +190,9 @@ export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
     try {
       subject = (await fetchSubjectViaHtml(subjectId)) as unknown as Record<string, unknown>
     } catch (htmlErr) {
-      // HTML 是「最后一条路」—— 抛它的错误（而非原始 api 错误），让 UI 的「禁用
-      // Try again」反映**最终路线**的状态：HTML 只是临时超时/网络抖 → 普通错误、
-      // Try again 可用（重试会再走 api→HTML，可能就通了）；HTML 也确认限流（429 /
-      // 「您在N秒」）→ 才带倒计时禁用。即「连 HTML 都不行才禁用」。
+      // HTML 是最后一条路,所以抛它的错误而不是原始 api 错误 —— 让 UI 的「禁用 Try again」反映
+      // **最终路线**的状态:HTML 只是临时超时就给普通错误(重试会再走一遍 api→HTML,可能就通了);
+      // HTML 也确认限流才带倒计时禁用。即「连 HTML 都不行才禁用」。
       throw htmlErr
     }
   }
@@ -247,10 +202,8 @@ export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
   const images = (subject.images as Record<string, string>) ?? {}
 
   const cover = images.large || images.common || images.medium || ''
-  // 只取前 4 个最热门 tag —— BGM API 返回的 tags 已经按热度排好序，4 个
-  // 就够 AnimeInfo Genre 区 + MyAnime UserTagsEditor 的 BGM 标签参考用了。
-  // 这俩地方一致显示完整 data.tags / track.bgmTags 即可，下游不再做二次
-  // slice，避免"详情页 3 个、modal 8 个" 那种数量错位的混淆（见 commit 沿革）。
+  // 只取前 4 个最热门的 tag(API 返回时已按热度排好)。下游**不再二次 slice**,免得出现
+  // 「详情页 3 个、弹窗 8 个」那种数量错位。
   const tags = ((subject.tags as { name: string }[]) ?? []).slice(0, 4).map((t) => t.name)
 
   let studio = infobox['动画制作'] || infobox['制作公司'] || ''
@@ -297,8 +250,8 @@ export async function getBgmDetail(subjectId: number): Promise<BgmDetail> {
 
   return {
     id: Number(subject.id),
-    // BGM 主类目数字。老 detail 缓存可能没这字段 —— renderer 端 normalize 时
-    // type=0 + platform 模式匹配兜底（见 animeTrackStore deriveSubjectType）。
+    // 老 detail 缓存可能没有 type 字段,渲染层 normalize 时用 platform 模式匹配兜底
+    // (见 animeTrackStore 的 deriveSubjectType)。
     type: Number(subject.type ?? 0),
     title: String(subject.name ?? ''),
     title_cn: String(subject.name_cn ?? ''),

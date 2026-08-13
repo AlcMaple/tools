@@ -37,9 +37,8 @@ function UpdaterListener(): null {
 }
 
 /**
- * Settings is a "fullscreen" route — it renders its own category rail in place
- * of the global Sidebar, so we hide the Sidebar (and its 16rem left margin)
- * while on /settings.
+ * 设置是「全屏路由」—— 它用自己的分类导航替代全局侧栏,所以在这个路由下要把侧栏
+ * (以及它占的左边距)一起隐藏。
  */
 function Shell(): JSX.Element {
   const location = useLocation()

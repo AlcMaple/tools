@@ -6,19 +6,17 @@ interface WebDavConfig {
   account: string
   appPassword: string
   /**
-   * Base folder in 坚果云 WebDAV — the per-kind file name is appended at
-   * runtime (`{basePath}/homework.json`, `{basePath}/anime.json`, …).
+   * WebDAV 上的基准目录 —— 各类数据的文件名在运行时拼到后面。
    *
-   * Backward compat: 老配置存的是完整文件路径，比如
-   * `MapleTools/homework.json`。loadConfig() 检测到结尾是 `.json` 时会自动
-   * 取它的父目录作为 base，并把规范化后的值写回磁盘，下次启动就是干净的。
+   * 向后兼容:老配置存的是完整文件路径,加载时检测到结尾是 `.json` 就自动取父目录当基准
+   * 并把规范化后的值写回磁盘,下次启动就是干净的。
    */
   remotePath: string
 }
 
 /**
- * Sync 数据分类。每类对应坚果云上的一个独立 JSON 文件，rev / 冲突检测
- * 各自独立。新增类型时在这里加，main 自动把 kind 拼到 base 路径后面。
+ * 同步数据的分类。每类对应远端一个独立 JSON 文件,rev 和冲突检测各自独立。
+ * 新增类型在这里加即可,主进程会自动把它拼到基准路径后面。
  */
 export type WebDavKind = 'homework' | 'anime' | 'miaoyu'
 
@@ -29,16 +27,13 @@ function configPath(): string {
 }
 
 /**
- * 把"可能是老的完整文件路径"或"base 文件夹"统一规范化成 base 文件夹。
- * - `"MapleTools/homework.json"` → `"MapleTools"`
- * - `"MapleTools/"` → `"MapleTools"`
- * - `"MapleTools"` → `"MapleTools"`
- * 始终返回不带头尾斜杠的纯文件夹路径，方便后面 join 文件名。
+ * 把「可能是老的完整文件路径」或「基准目录」统一规范化成基准目录,始终返回不带头尾斜杠的
+ * 纯目录路径,方便后面 join 文件名。
  */
 function normalizeBaseFolder(raw: string): string {
   let p = (raw || '').trim().replace(/^\/+|\/+$/g, '')
   if (!p) return ''
-  // 末尾是 .json → 老配置的完整文件路径，取父目录
+  // 结尾是 .json → 老配置的完整文件路径,取父目录
   if (/\.json$/i.test(p)) {
     const slash = p.lastIndexOf('/')
     p = slash >= 0 ? p.slice(0, slash) : ''

@@ -1,41 +1,28 @@
-// Windows 删除回收站 / 永久删除的薄 TS 运行时 —— spawn PowerShell 调
-// `resources/recycle-helper.ps1`，按 exit code 翻译成业务语义。
+// Windows 回收站 / 永久删除的薄封装 —— spawn PowerShell 调 `resources/recycle-helper.ps1`
+// 按 exit code 翻译成业务语义。
 //
-// 业务流（renderer 端控制）：
-//   1. 用户点删除 → 主进程调 runRecycle(path, { stage1Only: true })
-//      - exit 0  → 整体送回收站成功
-//      - exit 3  → Stage 1 失败、Stage 2 未尝试（renderer 弹窗让用户决定）
-//      - 其它    → 抛错让 renderer 弹错误弹窗
-//   2. 用户确认 Stage 2 → 主进程调 runRecycle(path, {})（不带 stage1Only）
-//      - exit 0  → 整体回收（重试中成了，运气好）
-//      - exit 4  → 分片回收成功（renderer 必须强提示"散件"）
-//      - exit 1  → 两阶段都失败，抛错
-//   3. 永久删除 → runRecycle(path, { purge: true })
-//      - exit 0  → 成功
-//      - exit 1  → 失败，抛错
+//   stage1Only  exit 0 整体送回收站成功 / exit 3 Stage 1 失败且未尝试 Stage 2(交给用户决定)
+//   完整两阶段  exit 0 整体成功 / exit 4 分片回收成功(必须强提示「散件」) / exit 1 都失败
+//   purge       exit 0 成功 / exit 1 失败
 //
-// 设计跟旧版「prepareForDelete + Node fs.rm/shell.trashItem + existsSync」
-// 解耦方案的差别：旧版根除了 stdout 编码炸点，但**没**解 AV/Defender 拦截
-// 整目录 IFileOperation 移动的根因。新方案的 Stage 2（piecemeal recycle）
-// 是真正的根因解 —— 杀软盯的是"整目录树移动"，不盯"单文件送回收站"。
+// 为什么要有分片这一阶段:杀软盯的是「整目录树移动」这个动作,不盯「单个文件送回收站」——
+// 所以整目录 IFileOperation 被拦时,拆成单文件逐个送反而能过。
 //
-// 跟旧版一样：PS 跑完不读 stdout，不依赖输出文本解析，**仅看 exit code**。
-// 数据来源（recycle-helper.ps1 的 Write-Verbose 都是日志、不是数据通道）。
+// **只看 exit code,不读 stdout** —— 脚本里的输出都是日志,不是数据通道。
 
 import { app } from 'electron'
 import { spawn } from 'child_process'
 import { join } from 'path'
 import { existsSync } from 'fs'
 
-/** Exit codes 跟 .ps1 头部一致（EXIT_FAILED = 1 不列出 —— 是兜底分支，
- *  通过 `default` 路径处理而非 switch 显式匹配）。 */
+/** Exit code 与 .ps1 头部一致(失败码 1 不列,走 default 分支)。 */
 const EXIT_OK = 0
 const EXIT_BAD_PATH = 2
 const EXIT_STAGE1_FAILED = 3
 const EXIT_FRAGMENTED = 4
 
 export type RecycleStatus =
-  /** 路径不存在 —— 直接当成功，不 spawn PS。 */
+  /** 路径不存在 —— 直接当成功,不 spawn PowerShell。 */
   | 'already-absent'
   /** exit 0 —— 整体送回收站 / 整体永久删除成功。 */
   | 'success'
@@ -58,10 +45,8 @@ export interface RecycleResult {
 // ── 解析 helper 路径 ────────────────────────────────────────────────────────
 
 /**
- * 解析 recycle-helper.ps1 的运行时路径。
- * - dev: `__dirname/../../resources/recycle-helper.ps1`（项目根 resources/）
- * - prod (electron-builder): `process.resourcesPath/recycle-helper.ps1`
- * 跟 src/main/tray.ts 解析 icon.ico 的模式一致。
+ * 解析 recycle-helper.ps1 的运行时路径:dev 在项目根 resources/,打包后在 process.resourcesPath。
+ * 与 tray.ts 解析图标的方式一致。
  */
 function resolveHelperPath(): string {
   return app.isPackaged

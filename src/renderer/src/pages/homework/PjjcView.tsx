@@ -219,7 +219,7 @@ function EditAttackModal({
   atk, group, onClose, onSave,
 }: {
   atk: PjjcAttack
-  /** 所属换防组 —— 顶部上下文展示这套进攻对应的三个防守方,而不是只给三条进攻输入框。 */
+  /** 所属换防组 —— 顶部上下文显示这套进攻对应的三个防守方,而不是只给三条光秃秃的输入框。 */
   group: PjjcGroup
   onClose: () => void
   onSave: (teams: string[][], notes: string[]) => void
@@ -527,11 +527,10 @@ const PjjcView = forwardRef<PjjcViewHandle, {
   setData: React.Dispatch<React.SetStateAction<PjjcGroup[]>>
   query: string
   onClearQuery: () => void
-  /** 打开「清理旧作业」弹窗（全局，由 HomeworkLookup 持有）。传了才渲染清理按钮。 */
+  /** 打开「清理旧作业」弹窗(全局,由父页面持有)。传了才渲染清理按钮。 */
   onCleanup?: () => void
 }>(function PjjcView({ data, setData, query, onClearQuery, onCleanup }, ref) {
-  // 初始即折叠除第一组外的所有组（首帧就别渲染全部进攻行，避免切到本页卡顿;
-  // 详见 HomeworkView 同款注释）。
+  // 初始就把除第一组外的所有组折叠 —— 首帧别渲染全部进攻行,否则切到本页会卡。
   const [collapsedIds, setCollapsedIds] = useState<Set<number>>(
     () => new Set(data.slice(1).map(d => d.id)),
   )
@@ -585,7 +584,7 @@ const PjjcView = forwardRef<PjjcViewHandle, {
     setData(prev => {
       const existing = prev.find(d => defKey(d.defenses) === key)
       if (existing) {
-        // Group already exists — merge any new notes into the group.
+        // 组已存在 —— 把新备注并进这个组。
         if (notes.length === 0) return prev
         return prev.map(d => {
           if (d.id !== existing.id) return d

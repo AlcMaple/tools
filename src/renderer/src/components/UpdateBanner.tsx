@@ -1,22 +1,14 @@
 /**
- * 新版本提示 —— 弹窗卡片样式（不是顶部 banner 横条）。
+ * 新版本提示 —— 弹窗卡片,不是顶部横条。复用项目通用的弹窗壳(暗色遮罩、点外部 / Esc 关闭)
+ * 与其他弹窗视觉一致。
  *
- * 复用项目通用的 `ModalShell`：
- * - 全屏暗色 backdrop，点击外部 / 按 ESC 关闭
- * - 居中卡片，宽 520px，圆角 + 阴影 + border
- * - 跟 ConfirmDeleteModal / EditBindingsModal 等其他 modal 视觉一致
+ * **只在用户可操作的状态下弹**:Windows 已下载完、macOS 检出新版本。其他状态只在设置页的
+ * 「检查更新」按钮上反馈,不弹窗打扰。
  *
- * 出现条件：`downloaded`（Windows 已下载）/ `available-mac`（macOS 检出
- * 新版本）这两种用户可操作状态。其他状态在设置页"检查更新"按钮上反馈,
- * 不弹窗打扰。
+ * 配色用主题主色 —— 不用 tertiary,本主题的 tertiary 是偏冷的灰,跟品牌色脱节。
  *
- * 视觉用 primary 色调（项目主题色 = 应用品牌色），跟 SCAN LOCAL FOLDERS
- * 按钮 / Sidebar 高亮项同色系。不用 tertiary（该主题 tertiary 是偏冷的灰
- * 色，跟主品牌色脱节）。
- *
- * 关闭策略：session 内不再弹（updateStore.bannerDismissed）。下次启动 / 进
- * 程重启时若仍有未装的更新，会再次出现 —— 这是有意的"温和提醒"，让忘
- * 了的用户最终被推到点更新，但不会一次烦死他。
+ * 关闭后本次会话内不再弹;下次启动若仍有未安装的更新会再出现 —— 这是有意的温和提醒:
+ * 让忘了的用户最终被推去更新,但不会一次烦死他。
  */
 
 import { useEffect, useState } from 'react'

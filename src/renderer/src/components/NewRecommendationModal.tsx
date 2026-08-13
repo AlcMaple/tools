@@ -1,16 +1,10 @@
-// 推荐 tab 顶部「+ 新建推荐」入口的弹窗。
+// 「+ 新建推荐」弹窗。
 //
-// 设计前提（用户洞察）：**推荐的番一定已经在追番列表里**——所以不需要再
-// 做一遍 BGM 搜索，直接从用户的追番列表里挑就行。
+// 前提(用户洞察):**推荐的番一定已经在追番列表里** —— 所以不用再做一遍 BGM 搜索
+// 直接从追番列表里挑。填「推荐给谁」→ 在带搜索的追番列表里点一行 → 创建。
 //
-// 流程：
-//   1. 顶部输入「推荐给谁」（必填）
-//   2. 中间是追番列表（带搜索过滤）
-//   3. 点某一行 → 校验对象已填 → 创建推荐 → 关闭
-//
-// 行尾「推荐」按钮（TrackRow 上的那个 📣）走的是 QuickRecommendModal,
-// 因为那里已经选定番剧，只要问对象就行。本弹窗用于「我现在想新建一条推荐,
-// 让我从清单里翻翻挑一部」的场景。
+// 行尾那个 📣 走的是另一个弹窗:那里番剧已经选定,只需要问对象。本弹窗用于「我现在想新建
+// 一条推荐,让我从清单里翻翻挑一部」。
 
 import { useMemo, useRef, useState } from 'react'
 import { ModalShell } from '../pages/homework/shared'
@@ -30,8 +24,7 @@ interface Props {
 
 export function NewRecommendationModal({ onClose }: Props): JSX.Element {
   const tracks = useAnimeTrackList()
-  // 推荐列表也订阅一份 —— 用来给每行加「已推荐过」hint，避免重复推同一部给同一个人，
-  // 或者纯展示「这部已经推过 N 次」。
+  // 也订阅一份推荐列表 —— 给每行加「已推荐过」提示,避免把同一部重复推给同一个人。
   const recs = useRecommendationList()
   const [fromWhom, setFromWhom] = useState('')
   const [toWhom, setToWhom] = useState('')
@@ -42,7 +35,7 @@ export function NewRecommendationModal({ onClose }: Props): JSX.Element {
   const fromWhomRef = useRef<HTMLInputElement>(null)
   const toWhomRef = useRef<HTMLInputElement>(null)
 
-  // 每部番的"已推荐给谁"集合，给行末做提示用
+  // 每部番的「已推荐给谁」集合,给行末做提示用
   const recipientsByBgmId = useMemo(() => {
     const m = new Map<number, string[]>()
     for (const r of recs) {

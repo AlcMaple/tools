@@ -1,23 +1,11 @@
 /**
- * Shared paginator for MacCMS dsn2 search pages (used by xifan / girigiri / aowu).
+ * MacCMS 搜索结果页的共用翻页器(三个站的搜索页都是同一套模板)。
  *
- * The dsn2 template renders a uniform pagination block:
- *   <div class="page-info ...">
- *     <a class="page-link" title="首页" href=...>首页</a>
- *     <a class="page-link" title="上一页" href=...>上一页</a>
- *     <a class="page-link b-c" href="javascript:" title="第N页">N</a>     ← current
- *     <a class="page-link" title="第K页" href=...>K</a>...
- *     <a class="page-link" title="下一页" href=...>下一页</a>
- *     <a class="page-link" title="尾页" href=...>尾页</a>
- *   </div>
+ * **跟着「下一页」链接走,而不是自己拼 URL**:各站的搜索基址不一样
+ * (`/vods/?wd=`、`/search.html?wd=`、`/search/----/?wd=`),分页参数的编码方式也各不相同
+ * 跟链接走可以完全绕开这些差异。
  *
- * We walk by following the `下一页` link rather than computing URLs, because each
- * site's search base is different (`/vods/?wd=`, `/search.html?wd=`, `/search/----/?wd=`)
- * and MacCMS's URL encoding for paged results varies. Following the link sidesteps
- * that entirely.
- *
- * Sequential with a fixed inter-page delay — keeps fan-out polite so we don't trip
- * the site's rate-limit / captcha gate.
+ * 串行 + 固定的页间延迟,别把并发打上去 —— 那会撞上站点的限流 / 验证码闸门。
  */
 import * as cheerio from 'cheerio/slim'
 
@@ -32,33 +20,21 @@ export interface PaginatorOptions<T> {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-/**
- * Read the `下一页` (next page) href from a MacCMS dsn2 search results page.
- * Returns null when this is the last page (next-link points back at current or absent).
- */
+/** 读搜索结果页里「下一页」的 href;已经是最后一页时返回 null。 */
 export function getNextPageHref(html: string, baseUrl: string): string | null {
   const $ = cheerio.load(html)
   const next = $('a.page-link[title="下一页"]').attr('href')
   if (!next || next === 'javascript:') return null
-  // The "下一页" link on the LAST page often loops back to the current page. Detect by
-  // also checking if the current page is the same as the would-be next page; if equal,
-  // treat as no-next. We approximate by also requiring at least one numbered page link
-  // ahead of the current one.
+  // 最后一页的「下一页」链接常常指回当前页,所以还要求当前页之后至少存在一个编号页链接。
   const cur = $('a.page-link.b-c').attr('title') ?? ''  // e.g. "第3页"
   const curMatch = /第(\d+)页/.exec(cur)
   const nextMatch = /第(\d+)页/.exec($('a.page-link[title="下一页"]').attr('title') ?? '')
-  // title="下一页" — the title attribute is literally "下一页", not "第N页". So we
-  // can't compare via title. Instead: if there's no numbered link at idx > current,
-  // bail. For sites that don't emit "上一页/下一页" on the boundary, the absence
-  // already short-circuits above.
+  // title 属性字面量就是「下一页」,不是「第N页」。
   void curMatch; void nextMatch
   try { return new URL(next, baseUrl).href } catch { return null }
 }
 
-/**
- * Crawl all pages of a MacCMS search starting from already-fetched `firstHtml`.
- * Concatenates per-page items and returns them in page order.
- */
+/** 从已经抓到的第一页开始翻完整个搜索结果,按页序拼接返回。 */
 export async function crawlAllPages<T>(opts: PaginatorOptions<T>): Promise<T[]> {
   const { firstHtml, baseUrl, parsePage, fetchHtml, delayMs = 1000, maxPages = 20 } = opts
   const all: T[] = await Promise.resolve(parsePage(firstHtml))

@@ -1,15 +1,12 @@
-// 媒体库扫描的「纯 Node」核心 —— 只依赖 fs/path/crypto，**不碰任何 Electron API**。
-// 既能在主进程内直接调用（增量同步的兜底 / watch 增量），也能原样打包进
-// scan-worker.ts 在 worker_threads 里跑（主线程不卡）。
+// 媒体库扫描的纯 Node 核心 —— 只依赖 fs/path/crypto,**不碰任何 Electron API**
+// 所以既能在主进程直接调,也能原样打包进 worker 里跑。
 //
-// 【为什么不再全量扫描】参考网盘同步的做法：维护一份持久索引，启动只处理「变化」。
-// NTFS 在**目录的直接子项**（文件/子目录）增删改名时会更新该目录的修改时间(mtime)。
-// 于是我们持久化每个目录的 mtime；启动时只 stat 各目录、跟存档比对：
-//   - mtime 没变 → 该目录的文件集合没变 → **直接复用缓存条目，连里面的文件都不读**
-//     （跳过最贵的 .ts 探测 open + 每文件 stat），子目录列表也没变 → 用已知子目录
-//     递归，连 readdir 都省了。整库没动时启动只剩「每目录 1 次 stat」，亚秒级。
+// **不做全量扫描**:NTFS 在目录的直接子项增删改名时会更新该目录的 mtime,所以持久化每个目录的
+// mtime,启动时只 stat 一遍跟存档比:
+//   - mtime 没变 → 文件集合没变 → 直接复用缓存条目,连里面的文件都不读(跳过最贵的探测和
+//     每文件 stat),子目录列表也没变 → 用已知子目录递归,连 readdir 都省。整库没动时启动只剩
+//     「每目录 1 次 stat」,亚秒级。
 //   - mtime 变了 / 新目录 → 才 readdir + 深扫这一处。
-// 这是没有 USN journal / 原生代码下，最接近网盘「秒启动 + 全自动同步」的方案。
 
 import { readdir, stat, open } from 'fs/promises'
 import type { Dirent } from 'fs'
@@ -34,21 +31,21 @@ export interface LibraryEntry {
   totalSize: number
 }
 
-/** 目录路径 → 上次扫描时的 mtimeMs。增量同步的「变化检测」依据，单独持久化。 */
+/** 目录路径 → 上次扫描时的 mtimeMs,增量同步的变化检测依据,单独持久化。 */
 export type DirMtimes = Record<string, number>
 
 const VIDEO_EXTS = ['mp4', 'mkv', 'avi', 'flv', 'mov', 'webm']
 
-// 「低 I/O 优先级」后台爬法：不跟前台抢磁盘。增量同步下绝大多数启动只剩少量 stat，
-// 这套限速几乎无感；只有首次 / 大改动的深扫才会真正用到它，避免把慢盘打满拖卡整机。
-// 这三个值是「温柔程度」旋钮：还卡就 SLEEP 调大 / EVERY_OPS 调小。
+// 低 I/O 优先级的后台爬法,不跟前台抢磁盘。增量同步下绝大多数启动只剩少量 stat,这套限速几乎
+// 无感;只有首次 / 大改动的深扫才真正用到,避免把慢盘打满拖卡整机。三个值是「温柔程度」旋钮:
+// 还卡就把 sleep 调大 / 每批操作数调小。
 const SCAN_FS_CONCURRENCY = 2
 const YIELD_EVERY_OPS = 24
 const YIELD_SLEEP_MS = 10
 
 export type ScanGate = <T>(fn: () => Promise<T>) => Promise<T>
 
-// 直通闸（不限流）—— 给 getFiles 等按需小调用用，保持原行为。
+// 直通闸(不限流)—— 给按需的小调用用,保持原行为。
 export const passthroughGate: ScanGate = (fn) => fn()
 
 export function createScanGate(maxConcurrent: number = SCAN_FS_CONCURRENCY): ScanGate {
@@ -71,7 +68,7 @@ export function createScanGate(maxConcurrent: number = SCAN_FS_CONCURRENCY): Sca
   }
 }
 
-// MPEG-TS 同步字节检测：0x47 出现在 offset 0 和 188（一个 TS 包长度）
+// MPEG-TS 同步字节检测:0x47 出现在 offset 0 和 188(一个 TS 包长)
 async function isMpegTs(filePath: string, gate: ScanGate = passthroughGate): Promise<boolean> {
   let fd: Awaited<ReturnType<typeof open>> | null = null
   try {
@@ -93,7 +90,7 @@ export async function isVideoFile(filePath: string, name: string, gate: ScanGate
   return false
 }
 
-// 由文件夹路径 + 统计结果组装一条条目。addedAt 优先沿用旧条目（保留「加入时间」）。
+// 由文件夹路径 + 统计结果组装一条条目。addedAt 优先沿用旧条目,保留「加入时间」。
 function buildEntry(
   folderPath: string,
   episodeCount: number,
@@ -117,7 +114,7 @@ function buildEntry(
   }
 }
 
-// 深扫某目录的「直接文件」，并发判定 + 累计视频数 / 体积（顺序无关，安全）。
+// 深扫某目录的直接文件,并发判定 + 累计视频数 / 体积(顺序无关,安全)。
 async function scanDirFiles(
   dir: string,
   fileNames: string[],
@@ -137,8 +134,7 @@ async function scanDirFiles(
   return { episodeCount, totalSize }
 }
 
-// 全量深扫一个子树（不走 mtime 快捷）—— 给 watch 增量更新用：某目录确实变了，
-// 重扫它这一支。entries 顺序由调用方统一 sort。
+// 全量深扫一个子树(不走 mtime 快捷),给监听到变化时重扫这一支用。顺序由调用方统一 sort。
 export async function walkFolder(
   currentPath: string,
   entries: LibraryEntry[],

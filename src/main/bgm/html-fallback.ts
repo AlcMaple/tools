@@ -1,26 +1,19 @@
 /**
- * api.bgm.tv 限流冷却期的降级数据源（008 第二步）。
+ * api.bgm.tv 限流冷却期的降级数据源。
  *
- * 思路：抓 `bgm.tv/subject/{id}` 的**服务端渲染 HTML**（用户手动浏览没事的"松
- * 端点"），cheerio 解析成**与 api.bgm.tv `/v0/subjects/{id}` 同形**的对象。这样
- * detail.ts / search.ts 的别名回退几乎不用改解析逻辑 —— 它们拿到的字段名一样
- * （`infobox` / `name` / `images` / `rating` / `eps` / ...）。
+ * 抓 `bgm.tv/subject/{id}` 的服务端渲染 HTML(用户手动浏览没事的松端点),解析成**与 API 同形**
+ * 的对象 —— 这样调用方几乎不用改解析逻辑,拿到的字段名完全一样。
  *
- * 谁来切：调用方在 API 抛 `RateLimitError`（熔断冷却中或刚 429）时 catch → 改调
- * 这里。**只对限流降级**，其它错误（网络/5xx）仍按错误处理（HTML 也救不了）。
+ * **只对限流降级**:调用方在拿到 RateLimitError 时才切到这里;网络 / 5xx 仍按错误处理(HTML 也救不了)。
  *
- * 取舍：
- *   - HTML 字段不如 JSON 干净/全（rank / votes / platform / type 多半拿不到，给默认值）。
- *     这是**降级**，不是平替 —— 冷却期能搜到、能看核心信息即可。
- *   - 解析对 BGM 页面结构有依赖（改版会失效）。所以每个字段 best-effort + 兜底，
- *     缺字段不抛错（infobox 是关键，别的能拿就拿）。
- *   - 复用 search.ts 的 bgm.tv 防御栈（BrowserSession + 2200ms limiter + 限流页检测），
- *     不另起一套，避免对 bgm.tv 也突发。
+ * 取舍:HTML 的字段不如 JSON 干净齐全(排名、投票数、平台、类型多半拿不到,给默认值)——
+ * 这是降级不是平替,冷却期能搜到、能看核心信息就够。解析依赖页面结构,所以每个字段都是
+ * best-effort + 兜底,缺字段不抛错。防御栈复用搜索那一套(会话 + 限速 + 限流页检测),不另起一套。
  */
 import * as cheerio from 'cheerio/slim'
 import { fetchHtmlWithDefenses } from './search'
 
-/** 与 api.bgm.tv `/v0/subjects/{id}` 同形的子集（detail / 别名回退用到的字段）。 */
+/** 与 api.bgm.tv 同形的字段子集(详情和别名回退用得到的那些)。 */
 export interface ApiShapedSubject {
   id: number
   type: number

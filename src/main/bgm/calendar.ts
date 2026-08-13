@@ -1,15 +1,11 @@
 /**
- * BGM "本季新番" weekly calendar — pulled from bgm.tv's public API.
+ * BGM「本季新番」周历,来自 bgm.tv 的公开接口。
  *
- * Endpoint: GET https://api.bgm.tv/calendar
- *   Returns an array of 7 weekday objects. Each weekday has `items[]`, a list
- *   of currently-airing anime that broadcast on that day. The API is
- *   essentially BGM-internal but unauthenticated; it updates whenever bgm.tv's
- *   editors re-curate the season (~quarterly).
+ * `GET https://api.bgm.tv/calendar` 返回 7 个星期几对象,每个带当天放送的番剧列表。
+ * 这个接口不需要鉴权,内容一个季度才换一次。
  *
- * Caching policy: 24h TTL on disk. The data doesn't change minute-to-minute
- * — fetching it on every page visit would be wasteful and trip BGM's polite-
- * use expectation. The `update` parameter forces a refresh.
+ * 所以缓存 TTL 给得很长:数据不会分钟级变化,每次进页面都拉既浪费也不礼貌。用户想强制刷新
+ * 走刷新按钮(update=true)。
  */
 import { promises as fs } from 'fs'
 import { join } from 'path'
@@ -18,8 +14,7 @@ import { fetchBgmApiJson } from './api-client'
 
 const CALENDAR_URL = 'https://api.bgm.tv/calendar'
 const DAY_MS = 24 * 60 * 60 * 1000
-// 番剧周期表一季度更新一次，缓存 14 天和 BGM 搜索结果一致。
-// 用户想强制刷新走刷新按钮（update=true）即可。
+// 周期表一个季度更新一次,缓存时长与 BGM 搜索结果一致。
 const CALENDAR_TTL_MS = 14 * DAY_MS
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -28,22 +23,22 @@ export interface CalendarItem {
   id: number
   name: string
   name_cn: string
-  /** Full BGM subject URL (https://bgm.tv/subject/...). */
+  /** BGM 条目页完整 URL。 */
   url: string
-  /** Cover image (large preferred, falls back through common/medium). */
+  /** 封面图(优先大图,依次回落)。 */
   cover: string
-  /** ISO-ish "YYYY-MM-DD" when known, else empty. */
+  /** 已知时为 "YYYY-MM-DD",未知为空串。 */
   airDate: string
-  /** Total episode count if BGM knows it; 0 for ongoing-unknown. */
+  /** BGM 知道总集数时给出;连载中未知为 0。 */
   episodes: number
-  /** Bangumi rating 0-10; 0 when not yet rated. */
+  /** 评分 0~10,还没评分时为 0。 */
   score: number
 }
 
 export interface CalendarWeekday {
-  /** 1-7 — Monday-Sunday in the source data; we keep BGM's convention. */
+  /** 1~7 对应周一到周日,沿用 BGM 的约定。 */
   id: number
-  /** "星期一" / "Mon" / etc — keep the human label closest to the locale. */
+  /** 人类可读的星期标签,保留最贴近本地语言的那一个。 */
   label: string
   items: CalendarItem[]
 }
@@ -61,8 +56,7 @@ function getCachePath(): string {
 
 async function readCache(): Promise<CachedCalendar | null> {
   try {
-    // 文件不存在时 readFile 直接抛 ENOENT,被 catch 接住返回 null —— 不必再多一次
-    // existsSync 同步 stat。
+    // 文件不存在时 readFile 直接抛 ENOENT、被 catch 接住返回 null —— 不必再多一次同步 stat。
     const raw = await fs.readFile(getCachePath(), 'utf-8')
     const parsed = JSON.parse(raw) as CachedCalendar
     if (!Array.isArray(parsed?.data) || typeof parsed.updatedAt !== 'number') return null
@@ -92,7 +86,7 @@ function parseCalendar(raw: unknown): CalendarWeekday[] {
     const e = entry as Record<string, unknown>
     const weekday = (e.weekday as Record<string, unknown>) ?? {}
     const id = typeof weekday.id === 'number' ? weekday.id : idx + 1
-    // Prefer Chinese label, then English. Fallback to numeric so the UI never
+    // 优先中文标签,其次英文;都没有就用数字兜底,保证 UI 永远有东西显示。
     // shows "undefined" if BGM ever ships a stripped-down response.
     const label =
       (typeof weekday.cn === 'string' && weekday.cn) ||

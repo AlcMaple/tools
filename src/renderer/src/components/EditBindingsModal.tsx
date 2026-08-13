@@ -1,24 +1,15 @@
-// 编辑用户手动添加的观看链接 —— 只管 Custom / Bilibili 两类 binding,
-// Aowu / Xifan / Girigiri 内置三源不在这里出现（它们走「+ 搜 X」搜索
-// 流程绑定，结构性数据，没有用户能改的字段）。
+// 编辑用户手动添加的观看链接 —— **只管 Custom / Bilibili 两类**,内置三源不出现在这里
+// (它们靠搜索流程绑定,是结构性数据,没有用户能改的字段)。
 //
-// 流程：
-//   - 进来就把当前所有 user-added binding 拷一份到 local state
-//   - 每行可改标题 / URL，可点 ✕ 删除（删除是 local 操作，仅标记）
-//   - 点「保存」把 local 状态 diff 回 store；取消 / 关弹窗丢弃所有改动
-//
-// 保存策略选了显式 — 用户在表单里反复改，到最后才一次 commit，避免
-// 边输边触发 chip 重渲（auto-save on blur 会让 UI 跳动）。
+// 进来先把当前所有用户添加的 binding 拷一份到本地 state,每行可改标题 / URL、可标记删除
+// 点保存才一次性 diff 回 store,取消或关弹窗则全部丢弃。
+// 显式保存而不是 blur 自动保存:用户会在表单里反复改,边改边写会让外面的 chip 不停重渲跳动。
 
 import { useState } from 'react'
 import { ModalShell } from '../pages/homework/shared'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 
-/**
- * 视作"用户手动添加"的来源 —— 这两个都对应 AddBindingModal（B 站 preset
- * 是历史 source='Bilibili'，自定义是 'Custom'）。新版 AddBindingModal
- * 只写 'Custom' 但老数据可能有 'Bilibili'，两个一起算 user-added。
- */
+/** 算作「用户手动添加」的两种来源:新版只写 'Custom',但老数据里可能是 'Bilibili'。 */
 const USER_ADDED_SOURCES = new Set<AnimeBinding['source']>(['Custom', 'Bilibili'])
 
 export function isUserAddedBinding(b: AnimeBinding): boolean {
@@ -29,26 +20,22 @@ interface Props {
   animeTitle: string
   bindings: AnimeBinding[]
   onClose: () => void
-  /** Apply the edited list back to the store. Caller decides how (update/remove). */
+  /** 把编辑结果应用回 store,具体怎么分发由调用方决定。 */
   onSave: (changes: BindingEdit[]) => void
 }
 
-/**
- * 单条 binding 在弹窗里的编辑结果。modal 关掉时调用方拿到一份列表,
- * 自己分发 store API（updateBinding / removeBinding）。
- */
+/** 单条 binding 的编辑结果。弹窗关闭时调用方拿到一份列表,自己去调 store 的增删改。 */
 export interface BindingEdit {
   /** 用 (source, sourceKey) 在 store 里定位原 binding。 */
   originalSource: AnimeBinding['source']
   originalSourceKey: string
-  /** 'delete' 标记删除；'update' 标记字段变更（未变也可以发，store 内部
-   * 检测 noop）。modal 不发"无变化"的 update 来减少噪声。 */
+  /** 'delete' 标记删除,'update' 标记字段变更。弹窗不发「无变化」的 update,减少噪声。 */
   kind: 'update' | 'delete'
   /** kind=update 时的新字段值。 */
   patch?: Partial<Pick<AnimeBinding, 'sourceTitle' | 'sourceKey' | 'sourceUrl'>>
 }
 
-/** Local-only editing state for a single row. */
+/** 单行的本地编辑状态。 */
 interface RowDraft {
   /** Frozen at modal open — used as the diff anchor / store key. */
   original: AnimeBinding
@@ -59,8 +46,7 @@ interface RowDraft {
 }
 
 export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Props): JSX.Element {
-  // Only user-added bindings are editable. Internal three (Aowu/Xifan/Girigiri)
-  // are silently filtered out — their existence is governed by search flow.
+  // 只有用户手动添加的 binding 可编辑;内置三源直接滤掉 —— 它们由搜索流程管理。
   const [rows, setRows] = useState<RowDraft[]>(() =>
     bindings
       .filter(isUserAddedBinding)
@@ -79,7 +65,7 @@ export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Pro
   }
 
   const handleSave = (): void => {
-    // Validate URLs of non-deleted rows
+    // 校验未标记删除那些行的 URL
     for (const r of rows) {
       if (r.deleted) continue
       if (!r.title.trim()) {
@@ -92,8 +78,7 @@ export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Pro
       }
     }
 
-    // Detect duplicate URLs across non-deleted rows (otherwise updateBinding
-    // would silently lose one)
+    // 检出重复 URL,否则更新时会悄悄丢掉一条
     const seen = new Set<string>()
     for (const r of rows) {
       if (r.deleted) continue
@@ -124,8 +109,7 @@ export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Pro
       if (titleChanged) patch.sourceTitle = newTitle
       if (urlChanged) {
         // Custom-source: sourceKey IS the URL; keep them in sync. Internal
-        // sources don't hit this modal so we don't worry about their sourceKey
-        // semantics (they encode an internal id, not a URL).
+        // 内置源不走这个弹窗,不用操心它们 sourceKey 的语义(那是站内 id、不是 URL)。
         patch.sourceKey = newUrl
         patch.sourceUrl = newUrl
       }

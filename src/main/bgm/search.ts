@@ -1,27 +1,13 @@
 /**
- * BGM (bgm.tv) subject search — HTML scraping with rate-limit defense.
+ * bgm.tv 条目搜索 —— HTML 抓取 + 限流防御。
  *
- * Three layers protect us from bgm.tv's per-IP search throttle. The site
- * rejects pacing tighter than ~2s with HTTP 200 + an in-body Chinese message
- * ("您在 N 秒内只能进行一次搜索"). Once tripped, all subsequent searches in
- * the penalty window also fail, so the only safe approach is to *never* trip
- * the limit in the first place.
+ * 站点对 ~2s 以内的连发返回 HTTP 200 + 正文「您在 N 秒内只能进行一次搜索」,而且一旦触发
+ * 惩罚窗口内的后续搜索也全废 —— 所以唯一安全的做法是**从不触发**:
  *
- *   Layer 1 — timing throttle (shared RateLimiter)
- *     ≥2200ms gap between request starts + 0-600ms jitter. The floor is set
- *     above bgm.tv's 2000ms threshold with ~200ms margin for network jitter;
- *     the jitter keeps cadence non-regular.
- *
- *   Layer 2 — browser fingerprint (shared BrowserSession)
- *     Chrome UA pool + sec-ch-ua + sec-fetch-* (navigation posture) + Accept
- *     for HTML + cookie jar. Independent from aowu's cookie jar.
- *
- *   Layer 3 — limit-page detection + cache poison guard
- *     On every fetch we sniff the body for the "您在 N 秒" message. If hit,
- *     we sleep N + 2-6s jitter and retry once; if STILL limited, we throw a
- *     RateLimitError that the renderer surfaces as a friendly message. Limit
- *     pages NEVER reach saveCache (and on read, we also delete any
- *     pre-existing poisoned files left over from older code paths).
+ *   1. 限速:间隔 ≥2200ms + 抖动(站点阈值 2000ms,留 200ms 网络余量)。
+ *   2. 浏览器指纹:BrowserSession(UA 池 + sec-ch-ua + sec-fetch-* + 独立 cookie jar)。
+ *   3. 限流页识别:命中就抛 `RateLimitError` 交给 UI 倒计时,**不自动重试**;限流页
+ *      **永远不进缓存**(读缓存时还会顺手删掉旧代码留下的中毒文件)。
  */
 import * as cheerio from 'cheerio/slim'
 import { promises as fs, existsSync } from 'fs'
@@ -44,19 +30,11 @@ import {
 } from '../shared/download-types'
 import { fetchBgmApiJson } from './api-client'
 import { getBgmCookie } from './credentials'
-// 注意：与 html-fallback 是「运行时安全」的循环依赖 —— 两边都只在异步函数体内
-// 用对方的导出（fetchHtmlWithDefenses / fetchSubjectViaHtml），模块初始化期不互相
-// 取值，ESM live binding 能正确解析。
+// 与 html-fallback 是循环依赖,但运行时安全:两边都只在异步函数体内用对方的导出
+// 模块初始化期不互相取值。
 import { fetchSubjectViaHtml } from './html-fallback'
 
-/**
- * 搜索 URL 模板。`cat` 参数：
- *   - 2 = 动画（默认）
- *   - 1 = 书籍（漫画+小说+画集+其他混在一起，BGM 在 URL 层级不可拆）
- *
- * 其他 cat 值（3 音乐 / 4 游戏 / 6 三次元）当前未启用，但模板支持 ——
- * 未来要加直接传新 cat 即可，不用改 search.ts。
- */
+/** `cat`:2 = 动画,1 = 书籍(漫画/小说/画集混在一起,BGM 在 URL 层级不可拆)。 */
 const BASE_URL = 'https://bgm.tv/subject_search/{keyword}?cat={cat}&page={page}'
 
 /** 当前支持的 cat 值 —— 005 阶段只接「动画 / 书籍」两个用户可见的类目。 */
@@ -97,15 +75,10 @@ const SEARCH_TIMEOUT_TRIP_THRESHOLD = 2
 const SEARCH_LIMIT_HINT_SEC = 60
 
 /**
- * Detect bgm.tv's in-body limit message. Returns wait-seconds when the page
- * is a limit response, null when the body is normal search results.
+ * 识别正文里的限流提示,是限流页就返回还要等几秒,正常结果页返回 null。
  *
- * Forms we've seen:
- *   "对不起，您在 30 秒内只能进行一次搜索"      ← typical
- *   "您在  秒内只能进行一次搜索"                ← occasionally empty N
- *
- * We match both and fall back to a 30s default for the empty-N case (the
- * actual penalty is usually ~30s in our observations).
+ * 见过两种写法:「对不起,您在 30 秒内只能进行一次搜索」和秒数为空的「您在  秒内…」。
+ * 两种都认;秒数为空时按 30 秒兜底(实测惩罚大致就是这个量级)。
  */
 const detectLimit: LimitDetector = (html) => {
   const m = html.match(/您在\s*(\d+)\s*秒内只能进行一次搜索/)
@@ -139,16 +112,15 @@ async function initCache(): Promise<void> {
 }
 
 /**
- * Read cached HTML. If the cached body turns out to be a poisoned limit page
- * (from older code that didn't sniff), delete it and report miss so the
- * caller refetches.
+ * 读缓存的 HTML。若缓存里存的其实是被投毒的限流页(旧代码没做识别时写进去的),删掉文件并
+ * 当未命中,让调用方重新抓。
  */
 async function readCache(keyword: string, page: number, cat: BgmSearchCat): Promise<string | null> {
   const p = getCachePath(keyword, page, cat)
   if (!existsSync(p)) return null
   const html = await fs.readFile(p, 'utf-8')
   if (detectLimit(html) != null) {
-    // Poisoned — wipe and treat as miss so we refetch instead of serving garbage.
+    // 有毒 —— 删掉并当未命中,重新抓,别把垃圾喂给用户。
     await fs.unlink(p).catch(() => {})
     return null
   }
@@ -210,16 +182,9 @@ async function rawGet(
 }
 
 /**
- * 【临时诊断】把失败响应的关键信号拼成一行 —— 用来判断 bgm.tv 的 502 / 4xx / 5xx
- * 到底是「Cloudflare 盾挑战 / 防护拦截」还是「纯 CDN 网关错误」，决定要不要上
- * 隐藏 BrowserWindow 兜底（真浏览器才有的 TLS 指纹 / cf-clearance / HTTP2 能过盾，
- * 但对纯随机 CDN 抖动帮助有限）。既打 main 控制台、也塞进抛出的 Error，让 UI 的
- * 「Show details」能直接看到（main 日志在打包后用户看不到，UI 能截图给开发者）。
- *
- * 关注的指纹：server（cloudflare?）、cf-ray / cf-mitigated / cf-cache-status（命中
- * 了 CF 哪种处理）、via（其它 CDN）、content-type、retry-after；body 前 300 字用来
- * 认 CF 挑战页特征（"Just a moment" / "cf-chl" / "Attention Required"）。
- * 诊断清楚后这段可以删。
+ * 【临时诊断,查清 502 成因后可删】把失败响应的关键信号拼成一行,判断是 Cloudflare 盾
+ * 挑战还是纯 CDN 网关错误。既打 main 控制台也塞进抛出的 Error —— 打包后用户看不到
+ * main 日志,但能把 UI 的「Show details」截图给开发者。
  */
 function diagnoseFailure(
   status: number,
@@ -245,22 +210,11 @@ function diagnoseFailure(
 }
 
 /**
- * 抓一次 BGM 搜索 HTML。**不做应用层自动重试** —— 失败一律抛到 UI,
- * 由 UI 通过 Try again 按钮 / 倒计时按钮承担重试职责。这样：
+ * 抓一次 BGM 搜索 HTML。**不做应用层自动重试**(红线):失败一律抛到 UI,由用户点重试。
+ * 唯一的代码层重试是 `withTransientRetry`(ECONNRESET 这类瞬时 socket 错误),用户无感。
  *
- *   - 用户始终知道发生了什么（不是黑盒等几十秒）
- *   - 限流期间永远不会因为代码自动重试加剧惩罚
- *   - 代码大幅简化（去掉 5xx retry + withRateLimitRetry 两层嵌套）
- *
- * 唯一保留的"代码层重试"是 `withTransientRetry`（200-500ms 内 ECONNRESET
- * 这类瞬时 socket 错误），这是网络层真透明恢复，用户根本感知不到。
- *
- * 错误分类：
- *   - 限流页 body  → 抛 `RateLimitError(waitSec)`，UI 展示倒计时
- *   - HTTP 429    → 抛 `RateLimitError(30)`（BGM 几乎不返 429，但兜底）
- *   - HTTP 5xx    → 抛 `Error("BGM 返回 HTTP {n}")`，UI 展示「BGM 偶发故障」+ Try again
- *   - 其他 4xx    → 抛 `Error("BGM 返回 HTTP {n}")`
- *   - 网络层异常   → 透传给上层 friendly classifier
+ * 限流页 body / HTTP 429 → `RateLimitError`(UI 倒计时);其余 4xx/5xx/网络异常 → 普通
+ * Error,交给渲染层的 friendlyError 分类。
  */
 export async function fetchHtmlWithDefenses(url: string): Promise<string> {
   return limiter.schedule(async () => {
@@ -276,16 +230,13 @@ export async function fetchHtmlWithDefenses(url: string): Promise<string> {
       throw new Error(`BGM 返回 HTTP ${r.status} ｜ ${diag}`)
     }
     const body = r.body.toString('utf-8')
-    // 限流页 body 检测 —— BGM 搜索经常返 200 + 中文"您在 N 秒内只能进行
-    // 一次搜索"。检测到立刻抛 RateLimitError 让 UI 倒计时，**不**自动等待
-    // + 重试（自动重试反而吃掉用户的反馈机会、可能加剧惩罚）。
+    // BGM 搜索经常返 200 + 正文「您在 N 秒内只能进行一次搜索」,只能靠 body 认。
     const waitSec = detectLimit(body)
     if (waitSec != null) {
       throw new RateLimitError(waitSec, `BGM 触发限流，请等 ${waitSec} 秒后再试`)
     }
-    // 观测:耗时 + 服务端实际按哪种身份处理(页面有无 /logout 是唯一真话——
-    // 带了 cookie 服务端也可能不认,那时依旧是 ~16s 的匿名慢速通道)。以前
-    // 这里什么都不记,登录提速有没有生效只能靠猜。
+    // 页面有没有 /logout 是「服务端到底认不认这个登录态」的唯一真话:带了 cookie 也可能
+    // 不认,那时仍走 ~16s 的匿名慢速通道。不记这行,登录提速有没有生效只能靠猜。
     logInfo(
       'bgm-search',
       `${Date.now() - t0}ms 带登录cookie=${getBgmCookie() ? '是' : '否'} 服务端登录态=${body.includes('/logout') ? '是' : '否'} ${url}`,
@@ -295,15 +246,9 @@ export async function fetchHtmlWithDefenses(url: string): Promise<string> {
 }
 
 /**
- * 拉一页搜索结果。
- *
- * 成功时返回 HTML 字符串。**所有失败一律 throw**：
- * - `RateLimitError`     站点限流（带 waitSec，UI 据此显示倒计时）
- * - 普通 Error             网络挂 / 超时 / 5xx / 4xx 等其他失败
- *
- * 之前这里把非 RateLimitError 都吞成 `null` 返回，结果 caller 拿到 null 时
- * 不知道是"网络问题"还是"页面其实是空"，统一抛个 "网络请求失败" 误导用户。
- * 现在让 caller 拿到原始 Error，由 caller 决定 page=1 致命 / page≥2 跳过。
+ * 拉一页搜索结果。**失败一律 throw、不吞成 null** —— 吞掉的话 caller 分不清「网络问题」
+ * 和「这页本来就是空的」,只能统一报「网络请求失败」误导用户。由 caller 决定
+ * page=1 致命 / page≥2 跳过。
  */
 async function fetchPage(
   keyword: string,
@@ -328,19 +273,15 @@ async function fetchPage(
   } catch (e) {
     if (page === 1) {
       if (e instanceof RateLimitError) {
-        // 「您在 N 秒」短限流页 / 429 —— 连接是通的（拿到了响应），清零超时计数，
-        // 原样抛出显示它自己的（真实）倒计时。
+        // 拿到了响应 = 连接通,清零超时计数,原样抛出显示它自己的真实倒计时。
         consecutiveSearchTimeouts = 0
       } else if (/\bHTTP \d{3}\b/.test((e as Error)?.message ?? '')) {
-        // 拿到了 HTTP 错误响应（如 BGM 经 Cloudflare 偶发的 502 网关错误）= 端点
-        // 其实回包了，跟「连续超时/丢包」是两回事，不能算「无响应」：不计入超时
-        // 计数、不转成限流倒计时。原样抛出 → friendlyError 归类成「BGM 偶发故障 5xx」，
-        // 用户可立刻 Try again（浏览器能开就说明源站这会儿是抽风，重试常常就成）。
+        // 拿到 HTTP 错误响应(如经 Cloudflare 的偶发 502)= 端点其实回包了,跟「丢包」
+        // 两回事:不计入超时计数、不转成限流倒计时,让用户能立刻 Try again。
         consecutiveSearchTimeouts = 0
       } else {
-        // 真·超时 / 连接失败 = 搜索端点不回包。单次当网络抖（原样抛普通错误、不倒计时）；
-        // 连撞阈值才判定疑似限流，转成 RateLimitError 给个信息性倒计时（**不阻断**：
-        // 用户点 Try again 仍会真的重新搜索）。
+        // 真·不回包:单次当网络抖,连撞阈值才判定疑似限流,给个信息性倒计时
+        // (**不阻断**,用户点 Try again 仍会真的重新搜索)。
         consecutiveSearchTimeouts++
         if (consecutiveSearchTimeouts >= SEARCH_TIMEOUT_TRIP_THRESHOLD) {
           throw new RateLimitError(
@@ -403,38 +344,20 @@ function parseDate(text: string): { dateObj: Date; dateStr: string } {
   return { dateObj: new Date(0), dateStr: '未知日期' }
 }
 
-/**
- * Normalize a string for whitespace/punctuation-insensitive matching:
- *   - lowercase
- *   - strip all whitespace (\s)
- *   - strip Unicode punctuation (\p{P}) and symbols (\p{S})
- *
- * The intent is that the user shouldn't have to remember whether the official
- * title spells it "Love Live!" or "LoveLive!" or "love-live". CJK and Japanese
- * kana fall under \p{L} (letters), so Chinese / Japanese titles are unaffected.
- */
+/** 归一化:转小写 + 去空白 + 去标点符号,让「Love Live!」「LoveLive!」「love-live」等价。
+ *  中日文字符属 \p{L},不受影响。 */
 function normalizeForMatch(s: string): string {
   return s.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '')
 }
 
 /**
- * 解析一页搜索结果 HTML 成结构化数组。每条 item 多带一个 `visibleMatch` 字段:
- * 标记 主标题 / `<small.grey>` 日文副标题 里是否能（normalize-insensitive 地）
- * 命中关键词。
+ * 把一页搜索 HTML 解析成结构化数组,每条多带一个 `visibleMatch`:主标题 / `<small.grey>`
+ * 副标题里能不能(忽略空白标点地)命中关键词。
  *
- * BGM 服务端搜索是宽匹配 ——「魔女的考验」会拉回所有含"魔"/"女"字符的结果,
- * 包括"黑猫与魔女的教室""魔法少女奈叶"这种字符碎片命中的。但 HTML 里**只
- * 渲染主标题 + 一个日文 / 英文副标题**，BGM 真正按别名命中的 Chinese alias
- * 不出现在 HTML 中。
- *
- * 解决方案：两段式处理
- *   1. 这里先标 visibleMatch —— 主标题 / 副标题文本能命中的，是 BGM 宽匹配
- *      里"真正有视觉证据"的那部分。这是绝大多数搜索的主路径。
- *   2. visibleMatch 全空时（用户明显是按 Chinese alias 搜的），searchBgm
- *      回退到 BGM API 别名查询，针对 BGM 排名靠前的 unmatched 条目逐个验。
- *
- * 把 visibleMatch 标在 parsePage 里而不是 searchBgm 里，是为了 dateObj /
- * rate / link 这些字段只需要从 HTML 抽一次，下游分组用同一个对象。
+ * BGM 服务端是宽匹配(搜「魔女的考验」会拉回所有含「魔」「女」的条目),而 HTML 里**只有**
+ * 主标题 + 一个日/英副标题 —— BGM 真正按中文别名命中的那些别名根本不出现在页面上。
+ * 所以分两段:这里先标出「有视觉证据」的命中(主路径);全都没命中时,searchBgm 再回退到
+ * API 别名查询逐条验。
  */
 function parsePage(
   html: string,
@@ -451,8 +374,7 @@ function parsePage(
     if (!a.length) return
 
     const title = a.text().trim()
-    // BGM 主标题旁边的 <small.grey> —— 通常是日文 / 英文原标题。把它也纳入
-    // visibleMatch 范围，让搜"シュガシュガルーン"这种日文名也能直接命中。
+    // <small.grey> 通常是日/英原标题,一并纳入 visibleMatch,让搜日文名也能直接命中。
     const smallText = $(el).find('h3 > small.grey').text().trim()
     const infoText = $(el).find('p.info.tip').text().trim()
     const { dateObj, dateStr } = parseDate(infoText)
@@ -481,19 +403,10 @@ function parsePage(
 // ── BGM API alias lookup (回退分支用) ────────────────────────────────────────
 
 /**
- * 从 BGM API 拉一个 subject 的「别名」字段。
+ * 从 BGM API 拉一个 subject 的「别名」。infobox 的 value 可能是 string 也可能是
+ * `[{v}]` 数组(同字段多别名),两种都归一成 string[]。
  *
- * 用 api.bgm.tv 而非抓详情页 HTML —— JSON 比 cheerio scrape 快、字段干净,
- * 而且这是 detail.ts 已经在用的端点。
- *
- * BGM 的 infobox 是 `[{key, value}]` 数组，value 可能是 string 或
- * `[{v: string}]` 数组（同一字段多别名）。两种形态都归一成 string[]。
- *
- * 共用 api.bgm.tv 的 RateLimiter（500ms 间隔）—— 多条 alias 串行后总耗时
- * 仍可控（8 条 ≈ 4s），换来 IP 不被限流。
- *
- * 失败时返回空数组（网络抖 / 404 / 限流），让 caller 跳过这条而不是整个
- * 搜索崩掉 —— 别名回退本来就是 best-effort 增强，**绝不**升级成致命错误。
+ * 失败一律返回空数组:别名回退是 best-effort 增强,**绝不**升级成致命错误。
  */
 async function fetchAliases(subjectId: number): Promise<string[]> {
   if (!subjectId) return []
@@ -504,11 +417,9 @@ async function fetchAliases(subjectId: number): Promise<string[]> {
     )
     infobox = (data.infobox ?? []) as Array<{ key: string; value: unknown }>
   } catch {
-    // api.bgm.tv 失败（限流 / 超时 / 网络抖 / 404）→ 降级抓 bgm.tv HTML 拿别名
-    // （同形 infobox），让按中文别名搜索在 api 抽风时仍能命中。**不再只认
-    // RateLimitError** —— BGM 限流多半表现为超时而非 429，旧代码超时直接 return []
-    // 跳过，等于按别名搜索在限流期间永远命中不了。HTML 也失败才静默跳过（别名
-    // 回退是 best-effort，不升级成「搜索失败」）。
+    // API 失败就降级抓 HTML 拿同形 infobox。**任何失败都要降级、不能只认
+    // RateLimitError** —— BGM 限流多半表现为超时,只认 429 的话按别名搜索在限流期间
+    // 永远命中不了。HTML 也失败才静默跳过。
     try {
       const data = await fetchSubjectViaHtml(subjectId)
       infobox = data.infobox
@@ -528,44 +439,23 @@ async function fetchAliases(subjectId: number): Promise<string[]> {
 }
 
 /**
- * 分页早停：连续多少页「整页没有任何 visibleMatch（主标题/副标题命中关键词）」
- * 后停止翻页。BGM 按相关度排序，真命中聚在前几页，命中带结束后剩下的全是
- * 字符碎片模糊命中的噪声 —— 再硬翻几十页既拿不到有效结果，每页还要在限流
- * 红线上等 ~2.5s 反复试探（搜「光之美少女」命中带 8 页、totalPages 却有 82,
- * 旧逻辑会把 9-82 页全抓一遍 ≈ 3 分钟纯浪费 + 限流风险）。
- *
- * 阈值 2 容忍命中带中间偶发的一页空档，命中带结束后最多多抓 2 页就收尾。
- *
- * 别名搜索（visibleMatch 全程为空）也吃这条规则、会在第 2 页就早停 —— 这
- * **正好**：别名回退靠「连续 miss 早停」沿命中带扫，第 1 页通常就够。
- * 早停前用 gate 保证至少攒够 ALIAS_LOOKUP_MIN_CANDIDATES 条候选才停（见 searchBgm）。
+ * 分页早停:连续这么多页「整页没有任何 visibleMatch」就不再翻。BGM 按相关度排序,真命中
+ * 聚在前面,之后全是字符碎片噪声 —— 硬翻既没结果,每页还要在限流红线上等 ~2.5s
+ * (搜「光之美少女」命中带 8 页、totalPages 却有 82,全抓 ≈ 3 分钟纯浪费)。
+ * 阈值 2 容忍命中带中间偶发的一页空档。
  */
 const EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH = 2
 
 /**
- * 别名回退的主限制器：**连续** miss 多少次后早停。BGM 把别名命中按相关度排在
- * 前面，命中聚成一个「命中带」，连撞 N 个 miss 说明已经走出命中带、进入字符
- * 碎片模糊命中区，再查也是浪费。计数器在每次 hit 时重置 —— 容忍
- * hit / miss / miss / hit / ... 的交错，沿整条命中带扫到底。
+ * 别名回退的**唯一** per-search 限制器:连续 miss 这么多次就早停,每次 hit 重置计数
+ * 从而容忍 hit/miss 交错、沿整条命中带扫到底。
  *
- * 008 之前用 `slice(0, N)` 死板砍候选池当主限制器，结果头部一个热门噪声条目
- * （如搜「谭雅战记」时 BGM 把高人气的「罗小黑战记2」排第 1）就占掉一个名额，
- * 把真命中（「幼女战记 第二季」）挤出窗口、压根没机会验别名。改用连续-miss
- * 早停后，噪声只消耗「连续 miss 预算」、命中则重置，命中带多长就扫多长 ——
- * 该省的 API 全省在噪声上，不再误伤命中。**这是别名回退唯一的 per-search 限制器**。
- *
- * 为什么不再额外加一个「最多查 N 条」的硬上限：那会重新引入「砍候选池 = 砍召回」
- * 的老问题（纯别名的大系列会被截断、漏番）。失控扫描（hit/miss/hit/miss 交错永远
- * 触发不了连续-miss 早停）由 008 的全局护栏兜底 —— L2 滚动窗口（60s ≤20 个
- * api.bgm.tv）会阻塞超额请求、L3 熔断会在真撞限流时降级，**不靠这里砍召回**。
- * 加上分页早停把纯别名搜索的候选池天然限制在 ~2 页（见上），扫描量本就有界。
+ * **别再加「最多查 N 条」的硬上限**:砍候选池 = 砍召回,头部一个热门噪声条目(搜
+ * 「谭雅战记」时 BGM 把「罗小黑战记2」排第 1)就能把真命中挤出窗口。失控扫描由全局
+ * 护栏兜底(L2 滚动窗口 + L3 熔断),不靠这里砍召回。
  */
 const ALIAS_LOOKUP_MAX_CONSECUTIVE_MISSES = 3
-/**
- * 分页早停前，至少要攒够多少条 unmatched 候选才允许停翻页 —— 保证别名回退
- * 有足够材料可扫（否则第 1 页结果太少时过早停掉、命中带还没扫完）。这是个
- * 下限 floor，攒更多也无妨；实际 BGM 单页约 25 条，绝大多数搜索第 1 页就远超它。
- */
+/** 早停前至少要攒够这么多条 unmatched 候选,免得第 1 页结果太少时命中带还没扫完就停。 */
 const ALIAS_LOOKUP_MIN_CANDIDATES = 4
 
 /** BGM 有候选但本地过滤为零时，保留相关度最高的几条供用户辨认。 */
@@ -573,11 +463,7 @@ const ZERO_MATCH_FALLBACK_LIMIT = 3
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/**
- * Optional callback fired after each page is fetched (cache hit or network).
- * Lets the renderer show "fetching page X of Y" while a multi-page search runs.
- * `current` is 1-indexed; `total` is the total page count detected from page 1.
- */
+/** 每抓完一页(含命中缓存)回调一次,供渲染层显示「第 X / Y 页」。`current` 从 1 起。 */
 export type SearchProgressCallback = (current: number, total: number) => void
 
 export async function searchBgm(
@@ -588,31 +474,26 @@ export async function searchBgm(
 ): Promise<BgmSearchResult[]> {
   await initCache()
 
-  // 第一页必须成功 —— 失败直接把原始错误抛上去，UI 的 errorMessage 分类器
-  // 会按错误类型显示「BGM 限流」/「连不上服务器」/「服务器异常」等具体提示
-  // （比以前的"网络请求失败"通用误导文案准确多了）。
+  // 第一页必须成功:原始错误直接抛上去,让 UI 的 friendlyError 分类成「限流」/「连不上」
+  // /「服务器异常」,别collapse 成通用的「网络请求失败」。
   const html1 = await fetchPage(keyword, 1, update, cat)
 
   const totalPages = parseTotalPages(html1)
   onProgress?.(1, totalPages)
 
-  // 每条 item 标上它来自第几页 —— 别名回退的「近命中保留」要按页区分：触发
-  // 连续-miss 早停时只回收**触发页**上的 miss，上一页/更早页的 miss 不算。
+  // 标上页号:「近命中保留」只回收**触发页**上的 miss(见下方主循环)。
   const page1Items = parsePage(html1, keyword).map((it) => ({ ...it, page: 1 }))
   if (page1Items.length === 0) return []
 
   const allItems = [...page1Items]
 
-  // 早停状态：visibleCount 累计有视觉命中的条目数，consecutiveNoVisible 是
-  // 连续「整页无 visibleMatch」的页数。命中带结束后快速收尾，不再硬翻到
-  // totalPages（见 EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH 注释）。
+  // 早停状态(见 EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH)
   let visibleCount = page1Items.filter((x) => x.visibleMatch).length
   let consecutiveNoVisible = visibleCount > 0 ? 0 : 1
 
   for (let page = 2; page <= totalPages; page++) {
-    // 后续页面用 try/catch 区分：限流要中断整个搜索（继续抓只会加重惩罚）,
-    // 其他临时错误（5xx / timeout / 网络抖）跳过当前页继续 —— 反正已经
-    // 有 page1 的结果可用，不能因为 page 4 抖一下就把整个搜索废掉。
+    // 限流必须中断整个搜索(继续抓只会加重惩罚);其他临时错误跳过本页继续 ——
+    // 已经有 page1 的结果,不能因为 page 4 抖一下就把整个搜索废掉。
     let html: string
     try {
       html = await fetchPage(keyword, page, update, cat)
@@ -628,15 +509,12 @@ export async function searchBgm(
 
     allItems.push(...items)
 
-    // 早停判定 —— 放在 push 之后：本页结果一定收进 allItems，再决定要不要
-    // 继续翻下一页。
+    // 放在 push 之后:本页结果一定先收进 allItems,再决定要不要翻下一页。
     const pageVisible = items.filter((x) => x.visibleMatch).length
     visibleCount += pageVisible
     consecutiveNoVisible = pageVisible > 0 ? 0 : consecutiveNoVisible + 1
 
-    // gate：别名回退路径（visibleCount 全程为 0）要至少攒够
-    // ALIAS_LOOKUP_MIN_CANDIDATES 条候选才允许早停，避免第 1 页结果太少时
-    // 过早停掉、导致别名回退没东西可查。
+    // 别名回退路径(visibleCount 全程为 0)要攒够候选才允许早停,否则没东西可查。
     const unmatchedCount = allItems.length - visibleCount
     if (
       consecutiveNoVisible >= EARLY_STOP_PAGES_WITHOUT_VISIBLE_MATCH &&
@@ -646,23 +524,16 @@ export async function searchBgm(
     }
   }
 
-  // 单遍按 BGM 相关度顺序处理 allItems，每条三选一：
-  //   1. 标题 / 日文副标题命中关键词 → 直接收（零 API），重置连续 miss 计数
-  //   2. 标题没命中 → 验别名：别名命中 → 收，重置；**标题和别名都没命中 = miss**
-  //   3. 连续 N 个 miss → 触发「近命中保留」并停止再验别名（之后的可见命中仍照收）
+  // 按 BGM 相关度顺序单遍处理,每条三选一:
+  //   1. 标题 / 日文副标题命中 → 直接收(零 API),重置连续 miss
+  //   2. 标题没命中 → 验别名;别名也没命中 = miss
+  //   3. 连续 N 个 miss → 触发「近命中保留」并停止验别名(之后的可见命中仍照收)
   //
-  // 「近命中保留」（用户拍板）：用户常按「俗称 / 大众名」或「系列名」搜，想要的续作 /
-  // 同系列（如搜「黑之契约者」想要的「DARKER THAN BLACK –流星的双子–」）标题和别名
-  // 可能都不含这个词、本会被当 miss 过滤掉 —— 但它紧挨命中带、通常正是用户想要的。
-  // 规则：被「连续 N 个 miss」早停时，把**触发那一页**上已检查过的 miss 也一并当结果
-  // 返回（含触发的 streak + 同页更早的零星 miss）。只限触发页：上一页 / 更早页的 miss
-  // 离命中带更远、不回收（item 在 parsePage 后标了 page 字段）。锚点 `sawHit`：本次
-  // 确实命中过（可见或别名）才回收，避免「整页零命中」的搜索返回一整页纯噪声。
-  //
-  // API 用量：只有「标题没命中」的条目才验别名，且连撞 N 个 miss 即停 —— 标题直接
-  // 命中的零 API，命中带后面通常 N 个就早停。不用 `slice(0,N)` 候选池硬帽（会让头部
-  // 热门噪声占名额、漏掉真命中，如「谭雅战记」漏「幼女战记 第二季」）。失控扫描由
-  // 008 全局护栏（L2 滚动窗口 + L3 熔断）+ 分页早停（候选池天然 ~2 页）兜底。
+  // 「近命中保留」(用户拍板):用户常按俗称 / 系列名搜,想要的续作(搜「黑之契约者」
+  // 想要「DARKER THAN BLACK –流星的双子–」)标题和别名可能都不含这个词、会被当 miss
+  // 但它紧挨命中带、通常正是用户要的。所以早停时把**触发那一页**上已检查过的 miss 也
+  // 一并返回;更早的页离命中带更远,不回收。`sawHit` 是锚点:本次确实命中过才回收
+  // 免得「整页零命中」的搜索返回一整页纯噪声。
   const kwNorm = normalizeForMatch(keyword) || keyword.toLowerCase()
   const matched: typeof allItems = []
   const examinedMisses: typeof allItems = []
@@ -677,7 +548,7 @@ export async function searchBgm(
       sawHit = true
       continue
     }
-    // 已触发早停 → 不再验别名 / 不再累计 miss，但循环继续以收下后面的可见命中。
+    // 早停后不再验别名,但循环继续,后面的可见命中照收。
     if (stoppedByMissStreak) continue
     // 标题没命中 → 验别名。别名也没命中才算 miss。
     const aliases = await fetchAliases(x.subjectId)
@@ -701,13 +572,12 @@ export async function searchBgm(
     }
   }
 
-  // BGM 原始列表非空却被本地严格匹配全部滤掉时，不能误报成“未找到”。
-  // 真正无结果的页面已在 page1Items 为空时提前返回，不会走到这里。
+  // BGM 有结果却被本地严格匹配全滤掉时不能误报「未找到」;真无结果已在上面提前返回。
   if (matched.length === 0) {
     matched.push(...allItems.slice(0, ZERO_MATCH_FALLBACK_LIMIT))
   }
 
-  // 去重 + 按日期排序（沿用旧行为：最新的番剧在最上面）。
+  // 去重 + 按日期排序,最新的在最上面。
   const seen = new Set<string>()
   const deduped = matched.filter((x) => {
     if (seen.has(x.title)) return false

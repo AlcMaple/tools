@@ -1,17 +1,16 @@
 /**
  * 应用更新状态机。
  *
- * 状态语义：
- *   - `idle`        从未检查 / 已检查无更新（自动检查的默认状态）
- *   - `checking`    正在检查
- *   - `available`   Windows 下载中（autoDownload，含 progress%）
- *   - `downloaded`  Windows 已下载完，等待用户点「重启安装」
- *   - `available-mac` macOS 发现新版本，无下载，仅展示「前往下载」
- *   - `not-available` 已是最新（手动检查后才进入此状态）
- *   - `error`       检查 / 下载出错（手动检查时才显示给用户）
+ *   idle           从未检查 / 已检查无更新(自动检查的默认状态)
+ *   checking       正在检查
+ *   available      Windows 下载中(带 progress%)
+ *   downloaded     Windows 已下载完,等用户点「重启安装」
+ *   available-mac  macOS 发现新版本,只展示「前往下载」
+ *   not-available  已是最新(只有手动检查才会进这个状态)
+ *   error          出错(只在手动检查时显示给用户)
  *
- * 跟其他 store 一样：纯 observable + 监听列表，不依赖 React Context。
- * 没有持久化——banner 关闭状态只在 session 内有效（关闭后下次启动还会弹）。
+ * 纯 observable + 监听列表,不依赖 Context。**不持久化** —— banner 的关闭状态只在本次会话有效
+ * 下次启动还会弹。
  */
 
 export type UpdateStatus =
@@ -26,15 +25,15 @@ export type UpdateStatus =
 export interface UpdateState {
   status: UpdateStatus
   newVersion?: string
-  /** 0..100，仅 Windows 下载阶段有值。 */
+  /** 0..100,仅 Windows 下载阶段有值。 */
   progressPercent?: number
-  /** Bytes/s，仅 Windows 下载阶段有值。 */
+  /** 字节/秒,仅 Windows 下载阶段有值。 */
   bps?: number
-  /** macOS 用：GitHub release HTML 页面 URL。 */
+  /** macOS 用:release 页面 URL。 */
   releaseUrl?: string
   /** error 状态下显示给用户。 */
   errorMessage?: string
-  /** banner 是否被用户手动关闭（仅当前 session 有效）。 */
+  /** banner 是否被用户手动关掉(仅本次会话有效)。 */
   bannerDismissed: boolean
 }
 
