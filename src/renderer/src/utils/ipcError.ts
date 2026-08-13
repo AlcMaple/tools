@@ -1,7 +1,6 @@
 /**
- * Strip the "Error invoking remote method '<channel>': " prefix that Electron
- * adds to thrown errors crossing the IPC bridge, exposing only the underlying
- * message. Falls back to the supplied label if the input isn't an Error.
+ * 剥掉 Electron 在跨 IPC 抛错时加的「Error invoking remote method '<channel>': 」前缀
+ * 只留下真正的错误消息;传入的不是 Error 时回落到给定的标签。
  */
 export function ipcErrMsg(e: unknown, fallback: string): string {
   if (!(e instanceof Error)) return fallback

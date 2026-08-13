@@ -37,11 +37,11 @@ function appStatus(status: unknown): AnimeStatus {
 }
 
 /**
- * app 富记录 → web 瘦列 + extra。
+ * app 的富记录 → 网页版的瘦列 + extra。
  *
- * 公共字段单独投影，让网页可以正常筛选和编辑；网页不认识的字段全部进 extra。
- * `appStatus` 专门保住「观望」：网页把它展示成「想看」，若网页没有改状态，拉回
- * app 时仍恢复成观望；网页真改成在追/看完后则以网页的新状态为准。
+ * 公共字段单独投影,让网页能正常筛选和编辑;网页不认识的字段全部塞进 extra。
+ * `appStatus` 专门保住「观望」:网页把它展示成「想看」,若网页没改状态,拉回来时仍恢复成观望;
+ * 网页真改成在追/看完则以网页的新状态为准。
  */
 export function toWebSyncTracks(tracks: AnimeTrack[]): WebSyncTrack[] {
   return tracks.map((track, appOrder) => {
@@ -54,8 +54,8 @@ export function toWebSyncTracks(tracks: AnimeTrack[]): WebSyncTrack[] {
       title: track.title,
       titleCn: track.titleCn ?? '',
       cover: track.cover ?? '',
-      // 有周历列就用精确值；老记录只有首播日期时再用日期星期兜底。未知时省略，
-      // 让服务器保留 / 回填已有值，不能拿 0 把网页已经知道的星期覆盖掉。
+      // 有周历列就用精确值,老记录只有首播日期时用日期的星期兜底。未知时**省略字段** ——
+      // 让服务器保留已有值,不能拿 0 把网页已经知道的星期覆盖掉。
       ...(weekday ? { airWeekday: weekday } : {}),
       airDate: track.airDate ?? '',
       bgmTags: track.bgmTags,
@@ -74,8 +74,8 @@ export function toWebSyncTracks(tracks: AnimeTrack[]): WebSyncTrack[] {
         goodEpisodes: track.goodEpisodes,
         goodEpisodeNotes: track.goodEpisodeNotes,
         startedAt: track.startedAt,
-        // 服务端列表按 updated_at 排序，不能把那个顺序当成本地添加顺序。显式
-        // 带上 Map 插入位置，拉回时才能还原用户原来的列表。
+        // 服务端列表按更新时间排序,不能把那个顺序当成本地的添加顺序。显式带上插入位置
+        // 拉回时才能还原用户原来的列表顺序。
         appOrder,
       },
     }
@@ -83,10 +83,8 @@ export function toWebSyncTracks(tracks: AnimeTrack[]): WebSyncTrack[] {
 }
 
 /**
- * web 同步记录 → app AnimeTrack。
- *
- * 先把 extra 展开，再用公共字段覆盖，确保网页对进度、标签、标题等字段的修改
- * 能回到 app；最后统一走 store 的 normalize，老记录和缺字段记录都安全补默认。
+ * 网页记录 → app 记录。先展开 extra,再用公共字段覆盖,确保网页对进度、标签、标题的修改能回来;
+ * 最后统一走 store 的 normalize,老记录和缺字段的记录都能安全补默认值。
  */
 export function fromWebSyncTracks(input: unknown): AnimeTrack[] {
   if (!Array.isArray(input)) return []

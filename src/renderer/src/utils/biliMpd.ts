@@ -1,13 +1,11 @@
-// B 站 DASH JSON → DASH MPD(XML)。
+// B 站的 DASH JSON → DASH MPD(XML)。
 //
-// B 站的 playurl 只给一份 JSON,不给 MPD;而 shaka-player 要的是 MPD。好在 B 站的每
-// 一路轨都是「单文件 fMP4 + SegmentBase 字节范围」,正好对应 DASH 的 on-demand profile
-// (isoff-on-demand):一个 <BaseURL> + 一个 <SegmentBase indexRange> 就完整描述了它,
-// shaka 靠 indexRange 取 sidx 索引后自己发 Range 拉分片。
+// playurl 只给一份 JSON,而 shaka-player 要的是 MPD。好在每一路轨都是「单文件 fMP4 +
+// 字节范围索引」,正好对应 DASH 的 on-demand profile:一个 <BaseURL> + 一个
+// <SegmentBase indexRange> 就完整描述了它,shaka 取到索引后自己发 Range 拉分片。
 //
-// 只收 **avc1** 视轨(见 pickVideoTracks):B 站同一档画质会同时给 avc1 / hev1 / av01
-// 三种编码,三者编码不同不能塞进同一个 AdaptationSet;而 hev1(HEVC)与 av01(AV1)在
-// 各平台的 Electron 里解码支持参差,avc1 是唯一到处都能硬解的那个。
+// **只收 avc1 视轨**:同一档画质会同时给 avc1 / hev1 / av01 三种编码,编码不同不能塞进同一个
+// AdaptationSet;而 HEVC 与 AV1 在各平台 Electron 里的解码支持参差,avc1 是唯一到处都能硬解的。
 import type { BiliDash, BiliTrack } from '../types/bili'
 
 /** URL 里的 & ? 等在 XML 文本节点里必须转义,否则 MPD 解析直接失败。 */
@@ -19,10 +17,10 @@ function xmlEscape(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** 该稿件里能用的视轨:只留 avc1,按画质从高到低。 */
+/** 这个稿件里能用的视轨:只留 avc1,按画质从高到低。 */
 export function pickVideoTracks(dash: BiliDash): BiliTrack[] {
   const avc = dash.video.filter((v) => v.codecs.startsWith('avc1'))
-  // 理论上不会空(B 站每档都给 avc1);真空了就别把画质列表也弄没,原样用。
+  // 理论上不会空;真空了也别把画质列表一起弄没,原样用。
   const list = avc.length > 0 ? avc : dash.video
   return [...list].sort((a, b) => b.id - a.id)
 }
@@ -37,8 +35,8 @@ function representation(t: BiliTrack, id: string, extra: string): string {
 }
 
 /**
- * 合成一份自包含的 MPD。视轨含全部 avc1 档(切画质靠 shaka 的 selectVariantTrack,
- * 不用重新 load),音轨含 B 站给的全部 mp4a 档。
+ * 合成一份自包含的 MPD。视轨含全部 avc1 档(切画质靠 shaka 换 variant,不用重新 load)
+ * 音轨含站点给的全部档。
  */
 export function buildBiliMpd(dash: BiliDash): string {
   const dur = `PT${dash.duration}S`

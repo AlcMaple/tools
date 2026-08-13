@@ -21,26 +21,23 @@ initConsoleCapture()
 registerAllIpc()
 startSpeedBroadcast()
 
-// archivist:// 注册成 privileged + standard scheme —— 这样它的响应才会进
-// Chromium 的 HTTP 缓存、处理器里的 Cache-Control 才生效。否则（非标准 scheme）
-// 封面每次组件重挂载（切页面 / Calendar 滚动 lazy 重进视口）都重新读盘+解码,
-// 表现为"封面发黑→闪一下加载"。
+// archivist:// 注册成 privileged + standard scheme,它的响应才会进 Chromium 的 HTTP 缓存、
+// 处理器里的 Cache-Control 才生效。否则封面每次组件重挂载都要重新读盘 + 解码,表现为
+// 「封面发黑 → 闪一下加载」。
 //
-// ⚠️ standard scheme **不接受空 host** 的 `archivist:///路径`（路径解析错乱、
-// 封面全 404，已踩坑）—— 所以 toArchivistUrl 用占位 host `local`，URL 形如
-// `archivist://local/Users/.../267215.jpg`。必须在 app ready 前调用。
+// ⚠️ standard scheme **不接受空 host**(`archivist:///路径` 会解析错乱、封面全 404)
+// 所以用占位 host `local`,URL 形如 `archivist://local/Users/.../267215.jpg`。必须在 ready 前调。
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'archivist',
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
   {
-    // 在线播放媒体流代理(011)—— 远端 mp4 / HLS 经主进程取流,以自定义协议回给
-    // <video> 与 hls.js,绕开渲染进程 origin 对跨源媒体的拦截。见 shared/media-proxy.ts。
+    // 在线播放媒体流代理:远端 mp4 / HLS 经主进程取流后用自定义协议回给 <video> 和 hls.js
+    // 绕开渲染进程 origin 对跨源媒体的拦截(见 shared/media-proxy.ts)。
     //
-    // ⚠️ 别"顺手"加 corsEnabled:true —— 那是**opt-in 进 CORS 检查**,加了以后
-    // hls.js 取播放列表/分片就必须让 handler 回 ACAO 头才放行。不加时该 scheme
-    // 根本不过 CORS,fetch 与 XHR 都直通(已实测:两种 loader 都能播)。
+    // ⚠️ 别顺手加 `corsEnabled: true` —— 那是**主动 opt-in 进 CORS 检查**,加了之后 hls.js 取
+    // 播放列表/分片就必须让 handler 回 ACAO 头才放行。不加时这个 scheme 根本不过 CORS。
     scheme: MEDIA_PROXY_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
   },
@@ -57,23 +54,18 @@ function exitApp(): void {
 process.on('SIGINT', exitApp)
 
 process.on('uncaughtException', (err) => {
-  // Don't quit on stray async errors (e.g. fs writes racing past stream destroy).
-  // Surface them in the log; only quit on truly fatal startup errors via SIGINT path.
+  // 别因为零散的异步错误(如 fs 写入赛过流销毁)整个退出:记进日志即可。
   console.error('[uncaughtException]', err)
 })
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason)
 })
 
-// ── Webview 硬化(011 自定义源应用内播放) ────────────────────────────────────
-// 自定义源(盗版站等)用 <webview> 嵌**真实播放页**,页面里的第三方 JS 会跑起来。
-// 两道闸,越早注册越好(app 事件,不必等 ready):
-//   1. guest 的一切 window.open / target=_blank 弹窗**一律拦死** —— 盗版站最常见
-//      的广告手法就是点哪弹哪,拦掉后观感立刻干净。正经外跳本来也不该由不受信的
-//      guest 页面替用户决定。B 站分区(persist:bili)嵌的也是 webview,它不需要弹窗,
-//      同受此闸无碍。
-//   2. attach 时剥掉任何 preload、禁 nodeIntegration —— 深度防御,别让不受信页面
-//      借 webview 摸到 Node。默认本就如此,这里显式钉死防以后手滑放开。
+// ── Webview 硬化 ────────────────────────────────────────────────────────────
+// 自定义源用 <webview> 嵌**真实播放页**,页面里的第三方 JS 会跑起来。两道闸:
+//   1. guest 的一切 window.open / target=_blank **一律拦死** —— 盗版站最常见的广告手法
+//      就是点哪弹哪;正经外跳本来也不该由不受信页面替用户决定。
+//   2. attach 时剥掉 preload、禁 nodeIntegration。默认本就如此,显式钉死防以后手滑放开。
 app.on('web-contents-created', (_e, contents) => {
   if (contents.getType() === 'webview') {
     contents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -88,16 +80,15 @@ app.on('web-contents-created', (_e, contents) => {
 
 app.on('before-quit', () => {
   isAppQuitting = true
-  // 在线播放的缓冲跟着退出一起收:中止后台顺序流 + 同步删临时文件 + 清分片内存。
-  // 渲染层离开 /play 时会主动 media:release,但"看到一半直接关应用"没有那个时机。
+  // 退出时一并收掉在线播放的缓冲。渲染层离开 /play 会主动 media:release,但「看到一半直接
+  // 关应用」没有那个时机。
   disposeMediaCache()
   disposeHlsPrefetch()
 })
 app.on('will-quit', () => {
   destroyTray()
-  // dev 模式下：Ctrl+C 会让整组进程收到 SIGINT，此处强制以 code=0 退出，
-  // 父进程(electron-vite)看到 close(0, null) 就不会打"exited with signal"。
-  // 打包环境不能 process.exit，否则 electron-log 之类的异步写入会被截断。
+  // dev 下 Ctrl+C 会让整组进程收到 SIGINT,这里强制 code=0 退出,父进程才不会打
+  // 「exited with signal」。**打包环境不能 process.exit**,否则日志的异步写入会被截断。
   if (!app.isPackaged) process.exit(0)
 })
 
@@ -111,34 +102,26 @@ function createWindow(): void {
     minHeight: 600,
     title: 'MapleTools',
     show: false,
-    // 窗口底色给暗色主题的 background(#131313)，而不是默认白 —— 否则
-    // 内容首帧画出来之前会闪一下刺眼的白。配合 index.html 里的暖色启动屏，
-    // 从第一帧起就是项目自己的暗色调。
+    // 窗口底色给暗色主题的背景色而不是默认白 —— 否则首帧画出来之前会闪一下刺眼的白。
     backgroundColor: '#131313',
     autoHideMenuBar: true,
     icon: join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
-      // 011 在线观看:播放页用 <webview partition="persist:bili"> 嵌 B 站
-      // 官方播放器(第一方 cookie 才能带上登录态,iframe 做不到)。
+      // 播放页用 <webview partition="persist:bili"> 嵌 B 站播放器:第一方 cookie 才能带上登录态
+      // iframe 做不到。
       webviewTag: true,
     },
   })
 
-  // 一次性、无闪烁地显示窗口。两道闸都满足才 show：
-  //
-  //   painted（'ready-to-show'）—— Electron 保证"此时显示不会有视觉闪烁"，
-  //     即合成器已经有可显示的首帧。**Windows 必须等它**：否则 show() 早于
-  //     首帧合成，窗口客户区会先白一下（backgroundColor 盖不住还没合成的
-  //     surface，这正是之前 Windows 仍白屏的根因）。macOS 合成器不会白闪，
-  //     所以以前只靠 renderer-ready 在 Mac 上看着没事、Windows 却露馅。
-  //   contentReady（'app:renderer-ready'）—— 渲染进程在 React 挂载完 +
-  //     document.fonts.ready 后才发，等它是为了避免图标 / 文字（尤其 3.9MB
-  //     图标字体）加载完后陆续 pop-in 的二次闪烁。
-  //
-  // 兜底：首帧已绘制后字体最多再等到 graceTimer（6s 封顶），信号迟到也照显示；
-  // hardTimer 9s 是绝对底线，连 ready-to-show 都没来（崩溃 / 老 preload）也不黑窗。
+  // 一次性、无闪烁地显示窗口,两道闸都满足才 show:
+  //   - `ready-to-show`:合成器已有可显示的首帧。**Windows 必须等它** —— 否则 show() 早于
+  //     首帧合成,客户区会先白一下(backgroundColor 盖不住还没合成的 surface)。macOS 合成器
+  //     不白闪,所以只等 renderer-ready 时 Mac 看着没事、Windows 露馅。
+  //   - `app:renderer-ready`:渲染进程在 React 挂载完 + document.fonts.ready 之后才发
+  //     等它是为了避免图标字体(3.9MB)加载完后陆续 pop-in 的二次闪烁。
+  // 兜底:graceTimer 6s 封顶,hardTimer 9s 是绝对底线 —— 连 ready-to-show 都没来也不黑窗。
   let revealed = false
   let painted = false
   let contentReady = false
@@ -164,8 +147,7 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // 开发模式(非打包)下用 F12 / Ctrl+Shift+I 开关 DevTools(F12 那样的控制台)。
-  // 仅 !app.isPackaged 生效:打包给普通用户的版本不暴露开发者工具,避免误开。
+  // F12 / Ctrl+Shift+I 开关 DevTools,仅未打包时生效 —— 打包版不给普通用户暴露开发者工具。
   if (!app.isPackaged) {
     mainWindow.webContents.on('before-input-event', (_event, input) => {
       if (input.type !== 'keyDown') return
@@ -181,13 +163,12 @@ function createWindow(): void {
     if (getMinimizeOnClose() && !isAppQuitting) {
       event.preventDefault()
       mainWindow.hide()
-      // macOS：隐藏到顶部菜单栏托盘后把 Dock 图标也撤掉 —— 只留顶部 logo,不在
-      // Dock 占位(行为对齐 UU 远控)。从托盘「显示主界面」时再 show 回来。
+      // macOS:隐藏到托盘后把 Dock 图标也撤掉,只留顶部 logo、不在 Dock 占位。
       if (process.platform === 'darwin') app.dock?.hide()
     }
   })
-  // Xifan 的 WebContents 是无界面的后台页面，不能在主窗口真正关闭后独自留住
-  // 进程，更不能被 Dock / 托盘的「显示主界面」误当成主窗口而显示出来。
+  // Xifan 那个无界面后台页面不能在主窗口关闭后独自留住进程,更不能被托盘的「显示主界面」
+  // 误当成主窗口显示出来。
   mainWindow.on('closed', () => {
     disposeXifanBackgroundWindow()
   })
@@ -224,9 +205,8 @@ app.whenReady().then(() => {
 
   protocol.handle('archivist', async (request) => {
     try {
-      // URL 形如 archivist://local/Users/mac/.../267215.jpg（host=local 占位,
-      // 见 cover-cache.ts toArchivistUrl）。standard scheme 下用 new URL 取
-      // pathname 最稳：/Users/... 或 /C:/Users/...（Windows 盘符）。
+      // URL 形如 archivist://local/Users/.../267215.jpg(host=local 是占位)。standard scheme 下
+      // 用 new URL 取 pathname 最稳:/Users/... 或 /C:/Users/...(Windows 盘符)。
       const pathname = decodeURIComponent(new URL(request.url).pathname)
       // Windows 盘符路径有引导斜杠：/C:/Users/... → C:/Users/...
       const filePath = pathname.replace(/^\/([A-Za-z]:)/, '$1')
@@ -238,13 +218,11 @@ app.whenReady().then(() => {
         : ext === 'webp' ? 'image/webp'
         : ext === 'gif' ? 'image/gif'
         : 'image/jpeg'
-      // 长缓存头 —— 配合 standard scheme 注册才生效。封面按 bgmId 命名、内容
-      // 基本永不变（cover-cache skip-if-exists），标 immutable 让渲染进程长期
-      // 缓存：切页面 / 滚动重进视口直接命中缓存、瞬时出图，不再发黑闪一下。
+      // 长缓存头 —— 要配合 standard scheme 注册才生效。封面按 bgmId 命名、内容基本不变,标
+      // immutable 让渲染进程长期缓存,切页面 / 滚动重进视口直接命中、瞬时出图。
       //
-      // **Content-Length 必须显式设置**：注册成 standard scheme 后 Chromium 按
-      // HTTP 语义读响应体，没有 Content-Length 时较大的响应会被提前截断（详情页
-      // 600px 大封面只渲染上半截就停）。小图（480）能一次塞完没暴露，大图就露馅。
+      // **Content-Length 必须显式设置**:注册成 standard scheme 后 Chromium 按 HTTP 语义读响应体
+      // 没有它时较大的响应会被提前截断(详情页 600px 大封面只渲染上半截就停)。
       return new Response(data, {
         headers: {
           'Content-Type': contentType,
@@ -258,9 +236,8 @@ app.whenReady().then(() => {
   })
 
   if (process.platform === 'darwin') {
-    // Dock 图标用 nativeImage 读,读不到就跳过 —— 打包后 icon.png 在 Contents/Resources
-    // (extraResources),dev 在 resources/。⚠️ 绝不能让这里抛错:它在 createWindow()
-    // 之前执行,一抛整个 whenReady 回调中断,窗口直接出不来(只剩 Dock 图标)。
+    // Dock 图标读不到就跳过。⚠️ **绝不能让这里抛错** —— 它在 createWindow() 之前执行
+    // 一抛整个 whenReady 回调中断,窗口直接出不来,只剩一个 Dock 图标。
     const dockPng = app.isPackaged
       ? join(process.resourcesPath, 'icon.png')
       : join(__dirname, '../../resources/icon.png')
@@ -276,8 +253,8 @@ app.whenReady().then(() => {
   const runSilentScan = async (): Promise<void> => {
     if (silentScanRunning) return
     silentScanRunning = true
-    // 探子：启动期全量扫描占用主进程事件循环的总时长。冷启动首开 MyAnime 慢
-    // 的怀疑点之一 —— 这段时间内封面本地化 IPC(cacheCover)会被它挤在后面。
+    // 探子:启动期全量扫描占用主进程事件循环的总时长。冷启动首开 MyAnime 慢的怀疑点之一 ——
+    // 这段时间里封面本地化的 IPC 会被它挤在后面。
     const scanT0 = Date.now()
     try {
       const newEntries = await scanLibrary((status, current, total) => {
@@ -306,7 +283,7 @@ app.whenReady().then(() => {
 
     // 启动后台目录变动监听(增量更新:只重扫变化发生的子目录,静默不触发全屏加载)。
     // 探子:原生递归 fs.watch 的设置应为毫秒级(每库根 1 个句柄)。若这里出现几百 ms+,
-    // 说明监听实现又退化回"逐目录开句柄"(chokidar 旧坑,见 docs/ideas/010),主进程会冻结。
+    // 说明监听实现又退化回"逐目录开句柄",主进程会冻结。
     const watchT0 = Date.now()
     startLibraryWatch(async (changedPaths) => {
       if (silentScanRunning) return

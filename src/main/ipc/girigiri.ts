@@ -14,8 +14,7 @@ const giriQueue = new SiteQueueRegistry<GirigiriPayload>({
   runEpisode: async (q, ep, signal, onEvent) => {
     const epInfo = q.payload.epList.find((e) => e.idx === ep)
     if (!epInfo) {
-      // Shouldn't happen — renderer constructs epList itself. Log and let the
-      // worker advance (the queue's .finally will pick up the next ep).
+      // 理论上不会走到这里(集列表由渲染层自己构造)。记一行日志后让 worker 继续下一集。
       console.warn(`[girigiri] ep ${ep} not in epList; skipping`)
       return
     }
@@ -94,7 +93,7 @@ export function registerGirigiriIpc(): void {
   ipcMain.handle(
     'girigiri:download-requeue',
     async (event, taskId: string, title: string, epList: GiriEpisode[], eps: number[], savePath?: string) => {
-      // Same defensive merge as xifan:download-requeue — see comment there.
+      // 与 xifan 的 requeue 同一套防御性合并,见那边的说明。
       const q = giriQueue.get(taskId)
       if (!q) {
         giriQueue.create(taskId, {

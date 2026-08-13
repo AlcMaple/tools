@@ -1,18 +1,13 @@
 /**
- * Aowu video URL resolver — FantasyKon (post-2026-05) flow.
- *
- * Two-step protocol against the encrypted /api/site/secure endpoint:
+ * 嗷呜的视频地址解析。对着加密的 /api/site/secure 走两步:
  *   1. bundle(bundle_page="play", id, source_id, episode) → { play_token: { token } }
- *   2. play(id, token=play_token)                          → { url: <signed CDN mp4> }
+ *   2. play(id, token=play_token)                          → { url: 签名后的 CDN mp4 }
  *
- * The resolved URL is a signed ByteDance CDN link (lf*-imcloud-file-sign.bytetos.com),
- * supports HTTP Range, and stays valid for several hours — long enough for the
- * downstream chunked-Range download to complete.
+ * 解出来的是签名 CDN 直链,支持 HTTP Range,有效期几个小时 —— 足够下游分片下载跑完。
  *
- * `watchUrl` is `${BASE_URL}/w/{idOrToken}#s={src}&ep={ep}`. The hash carries
- * source_id and episode; the path tail carries our `id`. After the BrowserWindow
- * → HTTP refactor we put numeric video ids in the path; legacy queues may carry
- * an opaque play_token there, in which case we route() it first.
+ * `watchUrl` 形如 `${BASE_URL}/w/{idOrToken}#s={src}&ep={ep}`:hash 带 source_id 和集数
+ * 路径尾部带 id。现在路径里放的是数字 video id,老队列里可能还是不透明的 play_token
+ * 那种情况先 route 一次换回来。
  */
 import { BASE_URL, callSecure, ERR_STRUCTURE } from './secure'
 import { URL } from 'node:url'
@@ -50,7 +45,7 @@ async function parseWatchUrl(watchUrl: string): Promise<WatchPathParts> {
   }
   const tail = decodeURIComponent(pathM[1])
 
-  // Hash carries `s=...&ep=...`. URL parses hash as a single string starting with `#`.
+  // hash 带 `s=...&ep=...`;URL 解析出来的 hash 是以 `#` 开头的整串。
   const hash = u.hash.replace(/^#/, '')
   const sM = /(?:^|&)s=(\d+)/.exec(hash)
   const epM = /(?:^|&)ep=(\d+)/.exec(hash)
@@ -64,7 +59,7 @@ async function parseWatchUrl(watchUrl: string): Promise<WatchPathParts> {
   if (/^\d+$/.test(tail)) {
     id = parseInt(tail, 10)
   } else {
-    // Legacy: tail is an opaque play token. Route it.
+    // 老格式:尾部是不透明的 play token,先 route 一次。
     const r = await callSecure<RouteData>({ action: 'route', params: { token: tail } })
     if (!r?.video_id) {
       throw new Error(`${ERR_STRUCTURE}: route 未返回 video_id (token=${tail})`)
@@ -97,29 +92,15 @@ async function computeAowuMp4(watchUrl: string): Promise<string> {
   return url
 }
 
-// ── Resolved-URL cache (persisted across Electron restarts) ─────────────────
-// The signed ByteDance CDN URLs returned by play() stay valid for at least
-// 24h in practice (verified by pasting into NDM after a day — still works).
-// Both the download flow (download.ts) and the "copy mp4 link" flow
-// (ipc/aowu.ts via the renderer) call resolveAowuMp4 with the *same* watch
-// URL — yet without a cache, every call hits the encrypted endpoint twice
-// (bundle + play, ~3-5s of round-trips).
+// ── 已解析地址的缓存(跨重启保留) ──────────────────────────────────────────
+// 签名 CDN 直链实测至少 24h 内有效。下载流程和「复制 mp4 链接」都会拿**同一个** watch URL
+// 来解析 —— 没有缓存的话每次都要打两趟加密接口(bundle + play,来回 3~5s)。
 //
-// With this cache:
-//   • Once download.ts resolves ep 1's URL to kick off the download, a
-//     subsequent "copy URL" click on ep 1 returns instantly from disk.
-//   • Resolving ep 2 to copy its URL while ep 1 is still downloading also
-//     populates the cache, so when ep 1 finishes and ep 2 starts, the
-//     download flow gets the cached URL — no second resolve.
-//   • Concurrent calls for the same watchUrl coalesce on a single promise.
-//   • Restarting Electron does NOT invalidate the cache — entries written
-//     within the last 24h survive and resume the "instant copy" experience.
+// 有了缓存:下载开始时解析过的地址,再点「复制链接」就是秒回;下一集在前一集下载时被解析过
+// 轮到它下载时也直接命中。同一个 watch URL 的并发调用会合并到同一个 promise 上。
 //
-// Storage: a JSON map in `userData/aowu-url-cache.json`. Loaded lazily on
-// first access (so the module can be imported before `app.whenReady()`).
-// Writes are debounced (1s) so a burst of resolves coalesce into one flush.
-// Stale (>24h) entries are filtered on load. If the file is corrupt the
-// cache simply starts fresh — no hard failure.
+// 存成 userData 下的一个 JSON map,首次访问时惰性加载(这样模块可以在 app ready 之前被 import)
+// 写入防抖 1s 合并。加载时过滤掉超过 24h 的条目;文件损坏就当空缓存重来,不算失败。
 interface CacheEntry { url: string; resolvedAt: number }
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24h — verified safe via NDM testing
 const PERSIST_DEBOUNCE_MS = 1000
@@ -145,7 +126,7 @@ function ensureLoaded(): void {
       }
     }
   } catch {
-    // Corrupt cache or app not ready — fall through, in-memory map stays empty.
+    // 缓存损坏或 app 未就绪 —— 放过,内存里的表保持为空。
   }
 }
 
@@ -165,7 +146,7 @@ function persist(): void {
       }
       writeFileSync(cacheFile!, JSON.stringify(obj))
     } catch {
-      // Disk errors are non-fatal — next session just re-resolves.
+      // 落盘失败不致命 —— 下次会话重新解析一遍就是了。
     }
   }, PERSIST_DEBOUNCE_MS)
 }
@@ -197,7 +178,7 @@ export async function resolveAowuMp4(watchUrl: string): Promise<string> {
 
 /**
  * Construct the watch URL fed to {@link resolveAowuMp4}. Pure formatter — kept
- * around so the IPC handler can build the URL once and pass it through.
+ * 传下去,让 IPC handler 只构造一次 URL 再往下透传。
  */
 export function buildAowuWatchUrl(animeToken: string, sourceId: number, epNum: number): string {
   return `${BASE_URL}/w/${animeToken}#s=${sourceId}&ep=${epNum}`

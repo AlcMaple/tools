@@ -46,8 +46,7 @@ export interface FsEntry {
 }
 
 declare global {
-  // Electron <webview> 标签(011 在线观看播放页嵌 B 站播放器用)。React 的
-  // 内建 JSX 类型不认识它,这里补上最小属性集。
+  // Electron 的 <webview> 标签。React 的内建 JSX 类型不认识它,这里补上最小属性集。
   namespace JSX {
     interface IntrinsicElements {
       webview: React.DetailedHTMLProps<
@@ -68,40 +67,29 @@ declare global {
       open: (targetPath: string) => Promise<void>
       reveal: (targetPath: string) => Promise<void>
       /**
-       * 「移到回收站」Stage 1（5s 整体送回收站窗口）。
-       *   - `success`        整体送入成功
-       *   - `stage1-failed`  整体送入失败，**未**尝试 Stage 2。renderer
-       *                      据此弹「分片回收」确认弹窗；用户点继续
-       *                      才调 trashFragmented，点取消则流程终止。
-       *   - `already-absent` 路径已不存在（静默成功）
-       * 抛错 = 出现致命错误（spawn 失败 / helper 路径找不到等）。
+       * 「移到回收站」Stage 1(5s 整体送回收站窗口)。返回 `stage1-failed` 表示整体送入失败且
+       * **没有**尝试 Stage 2 —— 渲染层据此弹确认弹窗,用户点继续才调 trashFragmented。
+       * 抛错 = 出现致命错误(spawn 失败 / helper 找不到)。
        */
       trash: (
         targetPath: string,
       ) => Promise<{ status: 'success' | 'stage1-failed' | 'already-absent' }>
       /**
-       * 「移到回收站」Stage 2（用户确认后调）—— 跑完整两阶段。
-       *   - `success`        Stage 1 重试中成了（运气好）
-       *   - `fragmented`     Stage 2 分片回收成功。renderer **必须**强提示
-       *                      "回收站里是散件，可全选→还原重建结构"。
-       *   - `already-absent` 路径已不存在
-       * 抛错 = Stage 1 + Stage 2 都失败。
+       * 「移到回收站」Stage 2(用户确认后调),跑完整两阶段。返回 `fragmented` 时渲染层**必须**
+       * 强提示「回收站里是散件,可全选→还原重建结构」。抛错 = 两阶段都失败。
        */
       trashFragmented: (
         targetPath: string,
       ) => Promise<{ status: 'success' | 'fragmented' | 'already-absent' }>
-      /**
-       * 永久删除（recycle-helper --purge：Remove-Item → cmd `rd /s /q` →
-       * robocopy /MIR 三级 fallback，每个策略自动重试 4 次）。几乎一次必成。
-       */
+      /** 永久删除(三级 fallback,每级自动重试),几乎一次必成。 */
       deletePermanent: (
         targetPath: string,
       ) => Promise<{ status: 'success' | 'already-absent' }>
       resolveSpecial: (input: string) => Promise<string | null>
-      /** Walk up from `targetPath` and return the closest still-existing
-       *  directory (returns `targetPath` itself if it still exists, null
-       *  only if even the filesystem root is unreachable). Used by the
-       *  delete flow to navigate away from a now-deleted cwd. */
+      /**
+       * 从 `targetPath` 往上找最近的、仍然存在的目录(自身还在就返回自身)。删除流程用它把 UI
+       * 从已删除的 cwd 上撤走。
+       */
       findExistingAncestor: (targetPath: string) => Promise<string | null>
       onDirChange: (cb: () => void) => () => void
     }
@@ -136,11 +124,7 @@ declare global {
         savePath?: string
       ) => Promise<{ started: boolean }>
     }
-    /**
-     * Single subscription point for download progress events. The main process
-     * emits all three sources (xifan / girigiri / aowu) onto the unified
-     * 'download:progress' channel — only one listener is needed.
-     */
+    /** 下载进度的唯一订阅点 —— 三个源都发到同一个频道,渲染层只需要一个监听器。 */
     downloadApi: {
       onProgress: (cb: (taskId: string, event: unknown) => void) => () => void
     }
@@ -151,9 +135,7 @@ declare global {
       /** 离开播放页时收掉在线播放的缓冲(mp4 后台流 + HLS 分片预取)。 */
       releaseMedia: () => void
       pickFolder: () => Promise<string | null>
-      /** OS-default downloads folder that all downloaders fall back to when no
-       *  custom save path is set. Used by Settings UI to make the effective
-       *  path visible. */
+      /** 系统默认下载目录:没配自定义保存路径时所有下载器都回退到它,设置页要显示实际生效的路径。 */
       getDefaultDownloadsPath: () => Promise<string>
       /** 是否 dev(非打包)运行。设置页据此决定要不要显示「打开开发者工具」按钮。 */
       isDev: () => Promise<boolean>
@@ -194,18 +176,15 @@ declare global {
       importImages: (map: Record<string, string>) => Promise<number>
     }
     bgmApi: {
-      /** `update=true` bypasses both the renderer and main-side caches and
-       * refetches every page through the rate limiter. Use sparingly — meant
-       * for the manual refresh button, not background sync.
-       *
-       * `cat` 是 BGM 类目数字（2=动画 / 1=书籍）。缺省 = 2 保持向后兼容。
-       * 005 阶段引入用以区分搜动画 vs 搜漫画小说，更多类目暂未启用。 */
+      /**
+       * `update=true` 同时绕过渲染层和主进程的缓存,每一页都重新抓 —— 只给手动刷新按钮用
+       * 别拿它做后台同步。`cat` 是 BGM 类目(2=动画 / 1=书籍),缺省 2。
+       */
       search: (keyword: string, update?: boolean, cat?: 1 | 2) => Promise<BgmSearchResult[]>
       detail: (subjectId: number) => Promise<BgmDetail>
-      /** Subscribe to per-page progress events. Fires `(current, total)` after
-       * each page completes. Returns an unsubscribe function. */
+      /** 订阅分页进度,每完成一页触发 `(current, total)`;返回取消订阅函数。 */
       onSearchProgress: (cb: (current: number, total: number) => void) => () => void
-      /** Weekly airing calendar. `update=true` bypasses the 24h cache. */
+      /** 本季新番周历。`update=true` 绕过 24h 缓存。 */
       calendar: (update?: boolean) => Promise<BgmCalendarResult>
       /** 封面本地化：下载 url 到本地，返回 archivist:// 路径（失败 null）。 */
       cacheCover: (key: string, url: string, maxWidth?: number) => Promise<string | null>
@@ -307,14 +286,14 @@ declare global {
         requestId: string
         results: AowuSearchResult[]
         total: number
-        /** True if more pages will arrive via onSearchPage. */
+        /** 为 true 表示还有后续页会通过 onSearchPage 送来。 */
         more: boolean
       }>
       onSearchPage: (
         cb: (requestId: string, results: AowuSearchResult[], done: boolean) => void
       ) => () => void
       getWatch: (watchUrl: string) => Promise<AowuWatchInfo>
-      /** Convert search-time /v/{id} URL → user-facing /w/{token} URL. */
+      /** 搜索期的 /v/{id} URL → 用户可用的 /w/{token} URL。 */
       resolveShareUrl: (input: string) => Promise<string>
       resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) => Promise<string>
       startDownload: (
@@ -365,25 +344,13 @@ declare global {
       ) => Promise<{ switched: boolean }>
     }
     mailApi: {
-      /**
-       * 返回当前邮件配置。出于安全考虑 authCode 不会原样回传，仅有
-       * hasAuthCode 布尔位告诉 UI「磁盘上有/没有」。
-       */
+      /** 读当前邮件配置。出于安全,授权码不原样回传,只给一个「磁盘上有没有」的布尔位。 */
       getConfig: () => Promise<{ enabled: boolean; qqEmail: string; hasAuthCode: boolean }>
-      /**
-       * 保存邮件配置。authCode 留空时表示「沿用磁盘旧值」—— 编辑 enabled /
-       * qqEmail 时用户不必每次重新输入授权码。
-       */
+      /** 保存邮件配置。授权码留空表示沿用磁盘旧值 —— 改开关或邮箱时不必每次重输。 */
       setConfig: (config: { enabled: boolean; qqEmail: string; authCode: string }) => Promise<boolean>
-      /**
-       * 触发一次周历邮件发送（截图 + SMTP）。返回 `sent` 即是否真的成功
-       * 发出；reason 留作排错线索（disabled / incomplete-config / 错误文本）。
-       */
+      /** 触发一次周历邮件发送(截图 + SMTP)。`sent` 表示是否真的发出,reason 留作排错线索。 */
       sendCalendar: () => Promise<{ sent: boolean; reason?: string }>
-      /**
-       * 发一封 MyAnime 极简报告邮件。`html` 是 renderer 已拼好的完整邮件
-       * 正文（带内联样式）。返回 `sent` 即是否成功；reason 同 sendCalendar。
-       */
+      /** 发一封追番报告邮件。`html` 是渲染层已经拼好的完整正文(带内联样式)。 */
       sendAnimeReport: (html: string) => Promise<{ sent: boolean; reason?: string }>
       /** 发一封不带截图的测试邮件，失败会抛错。 */
       testSend: () => Promise<boolean>
@@ -412,11 +379,7 @@ declare global {
       getConfig: () => Promise<{ account: string; appPassword: string; remotePath: string } | null>
       saveConfig: (config: { account: string; appPassword: string; remotePath: string }) => Promise<boolean>
       test: () => Promise<boolean>
-      /**
-       * Push a JSON blob to the per-kind remote file. `kind` selects which
-       * file under the user's base folder is written
-       * (`homework.json` / `anime.json`). Each kind syncs independently.
-       */
+      /** 把一份 JSON 推到该类别对应的远端文件,`kind` 决定写基准目录下的哪一个。 */
       push: (kind: 'homework' | 'anime' | 'miaoyu', jsonStr: string) => Promise<boolean>
       pull: (kind: 'homework' | 'anime' | 'miaoyu') => Promise<string>
     }

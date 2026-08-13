@@ -1,52 +1,24 @@
-// Anime tracking store — backs the "我的状态" card on AnimeInfo and (later)
-// the aggregate view + per-source bindings. Mirrors homework's storage shape:
-// localStorage-only, plain class with manual subscribe, normalize on read.
+// 追番记录 store —— localStorage-only,普通 class + 手动 subscribe,读时 normalize。
 //
-// The canonical key is `bgmId` (Bangumi subject id) — every other surface in
-// the app (xifan/girigiri/aowu search results, schedule, etc.) joins back to
-// this id via a per-track `bindings[]` list, populated when the user actively
-// links a source result to the track. There is *no* fuzzy title matching.
+// 主键是 `bgmId`。应用里其他所有面(搜索结果、周历……)都靠每条 track 的 `bindings[]`
+// 关联回来,而 binding 只在用户**亲手**挑选片源时写入 —— **不做模糊标题匹配**。
 
 import { useEffect, useState } from 'react'
 import { scheduleStorageWrite } from '../utils/deferredStorage'
 import { reportError, backupCorrupt } from '../utils/reportError'
 import { weekdayFromAirDate } from '../utils/airDate'
 
-/**
- * Tracking status —— v2 把 paused / dropped 删了（用户从来没用过这俩），
- * 同时加了 considering（观望）：跟 plan（想看，已下决心追了等条件）不同,
- * considering 是"候补，看看再说"，最爱值达到一定程度用户会自己手动迁到
- * watching，不自动升级。
- */
+/** 观看状态。`considering`(观望,候补看看再说)与 `plan`(想看,已决定追)不同
+ *  两者之间**不自动升级**,由用户手动迁。 */
 export type AnimeStatus = 'plan' | 'watching' | 'completed' | 'considering'
 
-/**
- * BGM 条目子类型。MyAnime 用这个字段做顶部 4 tab（动画/漫画/小说 + 推荐）
- * 的过滤维度。
- *
- * - `anime`  → BGM type=2（动画类目所有 platform）
- * - `manga`  → BGM type=1 + platform='漫画'
- * - `novel`  → BGM type=1 + platform='小说'
- * - `other`  → 画集 / 其他书籍类目 / 不识别 —— **不**出现在任何 UI tab,
- *              但数据保留（避免用户加了一本书后 UI 看不到）
- *
- * 派生规则见 `deriveSubjectType()`。老 track 无此字段时 normalize() 默认
- * 'anime'，零手动迁移。
- */
+/** MyAnime 顶部 tab 的过滤维度。`other`(画集/其他)**不出现在任何 tab**,但数据保留
+ *  免得用户加了一本书之后 UI 里再也看不到。派生规则见 `deriveSubjectType()`。 */
 export type SubjectType = 'anime' | 'manga' | 'novel' | 'other'
 
 const VALID_SUBJECT_TYPE: ReadonlyArray<SubjectType> = ['anime', 'manga', 'novel', 'other']
 
-/**
- * 从 BGM detail 的 `type` + `platform` 推导 SubjectType。
- *
- *   - type === 2                          → 'anime'（动画的所有 platform 子类型都归 anime）
- *   - type === 1 && platform === '漫画'   → 'manga'
- *   - type === 1 && platform === '小说'   → 'novel'
- *   - type === 1 && 其他                  → 'other'（画集/其他/null）
- *   - 其他 type（音乐/游戏等）            → 'other'（实测我们不在 BGM 搜这些）
- *   - type 未知（老缓存数据 type=0）       → 看 platform 模式兜底
- */
+/** 从 BGM detail 的 `type` + `platform` 推导 SubjectType;老缓存 type=0 时看 platform 兜底。 */
 export function deriveSubjectType(type: number, platform: string): SubjectType {
   if (type === 2) return 'anime'
   if (type === 1) {
@@ -54,73 +26,55 @@ export function deriveSubjectType(type: number, platform: string): SubjectType {
     if (platform === '小说') return 'novel'
     return 'other'
   }
-  // type=0 兜底：老 detail 缓存 type 缺失时用 platform 字符串猜
+  // 老 detail 缓存没有 type,只能靠 platform 字符串猜
   if (type === 0) {
     if (platform === '漫画') return 'manga'
     if (platform === '小说') return 'novel'
-    // 动画的 platform 是 TV/剧场版/OVA/WEB/动画 等，没出现"漫画/小说"就当动画
+    // 动画的 platform 是 TV/剧场版/OVA/WEB 等,没出现「漫画/小说」就当动画
     return 'anime'
   }
   return 'other'
 }
 
 export interface AnimeBinding {
-  /** Capitalised to match the existing `Source` type used by SearchDownload. */
+  /** 首字母大写,与 SearchDownload 的 `Source` 类型一致。 */
   source: 'Xifan' | 'Girigiri' | 'Aowu' | 'Bilibili' | 'Custom'
-  /** Title as it appears on that source — kept for display when the user reviews their bindings. */
+  /** 在该站上的标题,用户回看绑定时显示。 */
   sourceTitle: string
-  /** Either the per-source slug/key or a full URL. */
+  /** 站内 slug/key,或整条 URL。 */
   sourceKey: string
-  /** Optional explicit URL; if omitted, callers compute it from sourceKey + source convention. */
+  /** 显式 URL;没有时由调用方按各站约定从 sourceKey 拼。 */
   sourceUrl?: string
 }
 
 export interface AnimeTrack {
   bgmId: number
-  /**
-   * BGM 条目子类型 —— MyAnime 的 4 顶部 tab 过滤就靠这个字段。
-   *
-   * 老 track 没这字段时 normalize() 默认 `'anime'`，向后兼容零手动迁移。
-   * 加新追番时由 caller 从 BGM detail 派生（`deriveSubjectType(type, platform)`）
-   * 后写入；不应该在加追番后再变化（除非用户删了重加）。
-   */
+  /** 加追番时从 BGM detail 派生后写入,之后不再变化(除非删了重加)。老数据默认 'anime'。 */
   subjectType: SubjectType
   title: string
   titleCn?: string
-  /**
-   * BGM 别名 —— 来自详情页 infobox 的「别名」栏（如「魔界女王候补生」的
-   * 别名「魔女的考验」）。**纯粹给 MyAnime 本地搜索用**：用户搜别名也能命中
-   * 这条追番，不用记官方主标题。
-   *
-   * 加追番那一刻从 BGM detail 写入（AnimeInfo 追番按钮 / Calendar +追番 走
-   * ensureBgmTagsFilled 异步补）。BGM 别名基本不变，不做 lock，也不参与
-   * 跨设备同步以外的派生。老 track 没这字段时 normalize() 默认 []。
-   */
+  /** BGM 详情 infobox 的「别名」栏。**只给本地搜索用**(搜别名也能命中这条追番)
+   *  绝不参与片源关联 —— 片源只认用户亲手挑的 `bindings[]`。 */
   aliases: string[]
   cover?: string
   status: AnimeStatus
-  /** Last watched episode (0 = not started). */
+  /** 看到第几集,0 = 还没开始。 */
   episode: number
-  /** From BGM detail when known; left undefined for ongoing series with TBD count. */
+  /** BGM 给得出就填;连载中集数待定时留 undefined。 */
   totalEpisodes?: number
   /**
-   * 放送日期(011 在线观看,决定播放按钮显隐):
-   *   - undefined = 未知(字段引入前的老数据)—— BGM 条目宽容当已播出;
-   *                 **手动条目(负数 bgmId)当未定档隐藏**(手动加的多是
-   *                 BGM 还没有的未播出续季,如盾勇第五季)
-   *   - ''        = 确认未定档(BGM 详情无日期 / 手动条目留空)—— 隐藏按钮
-   *   - 其他      = BGM 的 date(YYYY-MM-DD)或手填文本;解析出未来日期 → 隐藏
-   * BGM 条目加追番时从 detail.date 写入;手动条目在编辑弹窗可选填写。
-   * 不做自动复查(用户决策):未定档条目播出后靠用户编辑/删重加解锁。
-   * 判定逻辑见 utils/airDate.ts 的 isUnaired()。
+   * 放送日期,决定在线观看按钮显不显示(判定见 utils/airDate.ts 的 isUnaired):
+   *   - undefined = 老数据。BGM 条目宽容当已播出,**手动条目(负数 bgmId)当未定档**
+   *                 —— 手动加的多是 BGM 还没收录的未播出续季。
+   *   - ''        = 确认未定档 → 隐藏
+   *   - 其他      = YYYY-MM-DD 或手填文本,解析出未来日期 → 隐藏
+   * 不做自动复查(用户决策):未定档条目播出后靠用户编辑或删了重加解锁。
    */
   airDate?: string
   /**
-   * 每周放送日：1=周一 … 7=周日，undefined=未知。
-   *
-   * BGM 周历加番时直接记周历列；详情页 / 老数据有首播日期时用日期星期兜底。
-   * 这个字段会同步到网页版，用于「今天更新」分组，不能只在上传时临时推导——
-   * 手动条目可能没有完整日期，但用户仍知道它每周哪天更新。
+   * 每周放送日:1=周一 … 7=周日。周历加番时直接记周历列,其余用首播日期的星期兜底。
+   * **必须落库、不能上传时临时推导**:手动条目可能没有完整日期,但用户仍知道它周几更新
+   * 网页版的「今天更新」分组要用。
    */
   airWeekday?: number
   /**
@@ -157,72 +111,37 @@ export interface AnimeTrack {
    */
   observeCount: number
   /**
-   * 来自 BGM 的题材标签 —— "恋爱 / 漫画改 / 2026年4月" 这种。
-   *
-   * **加追番那一刻锁定** —— 第一次 upsert 创建 track 时从 patch.bgmTags 写入,
-   * 之后无论 BGM detail 怎么变（社区 tag 浮动、新增、删除），本地这份永远不变,
-   * 直到用户删追番再重加。这是为了：
-   *   1. 加载速度：MyAnime 列表不会因为 tag 漂移触发集体 re-render
-   *   2. 用户预期：用户给追番打的"恋爱"分类不会某天悄悄变成"少女"消失
-   *   3. 同步友好：WebDAV 上的 bgmTags 是稳定快照，不会被新 fetch 污染
-   * 实现见 upsert() 里的 lock-on-create 分支。
+   * BGM 题材标签。**第一次拿到内容后就锁死**(见 upsert):BGM 社区 tag 会浮动,锁住才能
+   * 保证用户看到的分类不会某天自己变掉、列表不会因 tag 漂移集体 re-render、WebDAV 上
+   * 是稳定快照。想更新只能删了重加。
    */
   bgmTags: string[]
-  /**
-   * 用户自定义标签 —— "下饭 / 通勤番" 这种用户自己加的分类。
-   * 跟 bgmTags 物理隔离：用户改 userTags 不会动 bgmTags，反之亦然。
-   * UI 上能加 / 删 / 任意修改，参与 WebDAV sync。
-   */
+  /** 用户自己加的标签,与 bgmTags 物理隔离,互不影响。 */
   userTags: string[]
   /**
-   * 好看集 —— 这部番里"哪几集"被标记为精彩的具体集号列表。
-   *
-   * 这是来自用户原 PDF 的概念，数据形式是「集号数组」（不是计数）。例如
-   * `偶像活动: 1、4-5、16-19、25-26` 在这里存成 `[1, 4, 5, 16, 17, 18, 19, 25, 26]`。
-   * 渲染时用 compressGoodEpisodes() 折回 "1、4-5、16-19、25-26"。
-   *
-   * 评判标准（CriteriaModal 里有完整文档，这里复述给后续维护者）：
-   *   - 重温有关注点（突然停止快进，看完那一段精彩部分）
-   *   - 追的过程中重看一遍某部分的集【因为推理而重看除外】
-   *   - 暂停截图
-   *
-   * normalize 时：过滤 ≤ 0 / NaN、去重、升序排序。不夹到 totalEpisodes 上限
-   * （防御性 —— totalEpisodes 可能被改小，或者数据来自迁移；越界值原样保留
-   * 让用户在 UI 上能看到再决定怎么处理）。
+   * 好看集:**具体集号的数组**(不是计数),`[1,4,5,16,17]` 渲染时由 compressGoodEpisodes()
+   * 折回「1、4-5、16-17」。评判标准见 CriteriaModal。
+   * 不夹到 totalEpisodes 上限 —— 总集数可能被用户改小,越界值原样留着让用户自己处理。
    */
   goodEpisodes: number[]
-  /**
-   * 好看集备注 —— 键是集号，值是"为什么标它好看 / 当时哪一点吸引我"的一句话。
-   * 全部可选，不写就没有。
-   *
-   * 跟 goodEpisodes **平行存放**（不塞进集号数组，免得动压缩/解析逻辑）。
-   * normalize 时只保留「键在 goodEpisodes 里 + 值非空」的项 —— 所以取消标记
-   * 某集（集号从 goodEpisodes 移除）时，它的备注会自动被剪掉，不留孤儿。
-   */
+  /** 好看集备注,键是集号。与 goodEpisodes 平行存放;normalize 只保留仍被标记的集
+   *  取消标记时备注自动剪掉,不留孤儿。 */
   goodEpisodeNotes: Record<number, string>
-  /** ISO date when the user first tracked this anime. */
+  /** 首次追番的日期。 */
   startedAt: string
-  /** ISO date of the most recent mutation. */
+  /** 最后一次改动的日期。 */
   updatedAt: string
 }
 
 const STORAGE_KEY = 'maple-anime-tracks-v1'
 const VALID_STATUS: ReadonlyArray<AnimeStatus> = ['plan', 'watching', 'completed', 'considering']
 const FAVORITE_MAX = 6
-/**
- * BGM 标签每个 track 最多显示几个（前 N 个最热门）。跟主进程
- * src/main/bgm/detail.ts 里的 slice 一致；这里 lazy migrate 老 track 的
- * 8-元素数组，避免历史数据让 UI 看着比新数据多。
- */
+/** 每条 track 最多显示几个 BGM 标签,与 main/bgm/detail.ts 的 slice 一致。 */
 const BGM_TAG_LIMIT = 4
 
 // ── 标签数组工具 ─────────────────────────────────────────────────────────────
 
-/**
- * 标签数组规范化：trim、过滤空串 / 非字符串、去重，保留**输入顺序**。
- * 不排序——用户期望"我加的最新 tag 在末尾"那种自然顺序；BGM tag 也保留 BGM
- * 返回的原始顺序（按热度排好的）。
- */
+/** 标签数组归一:trim、去空、去重,**保留输入顺序**(BGM 那份是按热度排好的,别排序)。 */
 export function normalizeTagList(input: unknown): string[] {
   if (!Array.isArray(input)) return []
   const seen = new Set<string>()
@@ -238,13 +157,7 @@ export function normalizeTagList(input: unknown): string[] {
   return out
 }
 
-/**
- * 从 BGM detail 的 infobox 提取「别名」并归一成 string[]。
- *
- * BGM infobox 在主进程 detail.ts 已把多别名数组拼成「、」分隔的单串
- * （如「魔女的考验、Witch Trial」）。这里按常见分隔符（、,，;；/）再切回
- * 数组，复用 normalizeTagList 去空 / 去重。infobox 缺「别名」时返回 []。
- */
+/** 从 infobox 取「别名」。主进程已把多别名拼成单串,这里按常见分隔符切回数组。 */
 export function aliasesFromInfobox(infobox: Record<string, string> | undefined | null): string[] {
   if (!infobox) return []
   const raw = infobox['别名'] ?? ''
@@ -254,10 +167,7 @@ export function aliasesFromInfobox(infobox: Record<string, string> | undefined |
 
 // ── 好看集集号工具 ──────────────────────────────────────────────────────────
 
-/**
- * 规范化好看集集号数组：过滤掉 ≤ 0 / 非有限数 / 非整数，去重，升序排序。
- * 单独抽出来是因为 normalize() 和 UI（编辑 modal 写入前）都要用同一套。
- */
+/** 好看集集号归一:去掉 ≤0 / 非整数,去重升序。normalize 和编辑弹窗共用同一套。 */
 export function normalizeGoodEpisodes(input: unknown): number[] {
   if (!Array.isArray(input)) return []
   const seen = new Set<number>()
@@ -271,10 +181,7 @@ export function normalizeGoodEpisodes(input: unknown): number[] {
   return [...seen].sort((a, b) => a - b)
 }
 
-/**
- * 规范化好看集备注 map：只保留「键是有效集号 + 在 eps 里 + 值是非空字符串」的项。
- * 取消标记某集后（集号不在 eps 里了），它的备注在这里被自然剪掉。
- */
+/** 备注只保留「集号仍在 eps 里 + 值非空」的项,取消标记的集其备注自然被剪掉。 */
 export function normalizeGoodEpisodeNotes(input: unknown, eps: number[]): Record<number, string> {
   if (!input || typeof input !== 'object') return {}
   const allowed = new Set(eps)
@@ -289,11 +196,7 @@ export function normalizeGoodEpisodeNotes(input: unknown, eps: number[]): Record
   return out
 }
 
-/**
- * 把集号数组压缩成 PDF 里那种紧凑字符串，连续区间合并成 "a-b"：
- *   [1, 4, 5, 16, 17, 18, 19] → "1、4-5、16-19"
- * 输入应该是已经 normalize 过的（升序去重），但函数对乱序输入也能正确处理。
- */
+/** 集号数组压成紧凑串,连续区间合并:`[1,4,5,16,17,18,19]` → 「1、4-5、16-19」。 */
 export function compressGoodEpisodes(eps: number[]): string {
   const sorted = normalizeGoodEpisodes(eps)
   if (sorted.length === 0) return ''
@@ -315,10 +218,8 @@ export function compressGoodEpisodes(eps: number[]): string {
 }
 
 /**
- * Idempotent normalize for an array of unknown tracks — used both for
- * localStorage read and for the WebDAV pull path. Filters out entries
- * without a numeric bgmId, deduplicates by bgmId (keeps the last one in
- * iteration order), and routes each through the per-entry normalizer.
+ * 幂等归一,localStorage 读取和 WebDAV 拉取共用。丢掉没有数字 bgmId 的条目,按 bgmId
+ * 去重(保留靠后的),逐条过 normalizeTrack。
  */
 export function normalizeTracks(input: unknown): AnimeTrack[] {
   if (!Array.isArray(input)) return []
@@ -334,18 +235,15 @@ export function normalizeTracks(input: unknown): AnimeTrack[] {
 
 function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   const now = new Date().toISOString()
-  // 老数据里如果出现已删除的 paused/dropped，fallback 到 plan（用户说没这种
-  // 数据，但读 WebDAV 老 blob / 别人导入的数据 仍然可能有；防御性兜底）
+  // 老 blob / 外部导入的数据里可能还有已删除的 paused/dropped,兜底到 plan
   const status = (t.status && VALID_STATUS.includes(t.status)) ? t.status : 'plan'
-  // subjectType —— 005 阶段新增。老 track 没这字段时默认 'anime'（项目历史上
-  // 只有动画追番），向后兼容。非法值（外部导入数据写错）也归 'anime'。
+  // 老 track / 非法值一律当 anime
   const subjectType: SubjectType = (t.subjectType && VALID_SUBJECT_TYPE.includes(t.subjectType))
     ? t.subjectType
     : 'anime'
   const episode = typeof t.episode === 'number' && t.episode >= 0 ? Math.floor(t.episode) : 0
   const total = typeof t.totalEpisodes === 'number' && t.totalEpisodes > 0 ? Math.floor(t.totalEpisodes) : undefined
-  // 小说卷 / 章进度 —— 字符串（默认数字，允许 "SS2" / "后记" 等自定义文本）。
-  // 老 track / 非小说没这俩字段时默认 ''（未开始）。只 trim 收敛，不做数字校验。
+  // 小说卷/章进度是字符串,允许 "SS2"「后记」这类文本,所以只 trim、不做数字校验
   const novelVolume = typeof t.novelVolume === 'string' ? t.novelVolume.trim() : ''
   const novelChapter = typeof t.novelChapter === 'string' ? t.novelChapter.trim() : ''
   const notes = Array.isArray(t.notes) ? t.notes.filter((s): s is string => typeof s === 'string' && s.trim().length > 0) : []
@@ -360,11 +258,7 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   const goodEpisodes = normalizeGoodEpisodes(t.goodEpisodes)
   // 备注剪到只剩"还被标记着的集" —— 取消标记某集时它的备注自动作废
   const goodEpisodeNotes = normalizeGoodEpisodeNotes(t.goodEpisodeNotes, goodEpisodes)
-  // 两份标签数组各自 sanitize；规则一致（trim、过滤空串、去重、保留输入顺序）。
-  // bgmTags 额外 slice 到前 4 个 —— 早期数据是 8 个，但显示策略统一改成
-  // 4 个（详见 main/bgm/detail.ts 的注释）。这里 lazy migration 老 track
-  // 的 8-元素数组到 4，read 时一次性收敛；持久化的写入也走 normalize 所以
-  // 是 idempotent 的，老数据下次 upsert 时自动落盘成 4 个。
+  // bgmTags 额外 slice 到 BGM_TAGS_MAX:老数据存了 8 个,read 时顺手收敛到 4 个。
   const bgmTags = normalizeTagList(t.bgmTags).slice(0, BGM_TAG_LIMIT)
   const userTags = normalizeTagList(t.userTags)
   const airDate = typeof t.airDate === 'string' ? t.airDate : undefined
@@ -414,8 +308,7 @@ function readAll(): Map<number, AnimeTrack> {
     }
     return m
   } catch (err) {
-    // 整份 JSON 解析失败(数据损坏)——不静默清空:备份坏数据 + 落盘报错,
-    // 至少能事后查 / 人工恢复,而不是用户一开 app 追番全没了还不知道为啥。
+    // 数据损坏时**绝不静默清空**:备份坏数据 + 落盘报错,至少能人工恢复。
     backupCorrupt(STORAGE_KEY, raw)
     reportError('animeTrackStore', err)
     return new Map()
@@ -433,8 +326,8 @@ class AnimeTrackStore {
 
   private persist(): void {
     if (this.cache === null) return
-    // UI 优先：先同步通知订阅者让界面立刻更新；重的 stringify + setItem 丢给
-    // idle 合并写盘，不再阻塞渲染线程（追番上百条时这步原本要几百 ms）。
+    // 先同步通知订阅者让界面立刻更新,重的 stringify + setItem 丢给 idle 合并写盘
+    // (追番上百条时这步要几百 ms,不能阻塞渲染)。
     this.listeners.forEach(cb => cb())
     scheduleStorageWrite(STORAGE_KEY, () => {
       if (this.cache === null) return
@@ -444,29 +337,21 @@ class AnimeTrackStore {
     })
   }
 
-  /** Touch updatedAt and recompute all derived state. Returns the stored entry. */
+  /** 更新 updatedAt 并重算派生状态,返回落库后的条目。 */
   upsert(patch: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
     const map = this.ensure()
     const prev = map.get(patch.bgmId)
-    // bgmTags 是 **lock-on-first-content** —— prev.bgmTags **非空**时锁定;
-    // 空数组（或首次创建）时允许从 patch 接受新值。
-    //
-    // 早期是严格 lock-on-create（prev 存在就锁），但这导致"周历 / 搜索"
-    // 这种没 detail 数据的入口写下追番后 bgmTags 永远是空的，用户必须删
-    // 重加才能补。改成 lock-on-first-content 后：
-    //   - "周历点追番" 立即 upsert（bgmTags=[]），再异步 ensureBgmTagsFilled
-    //     补一次（patch.bgmTags 写入）—— prev.bgmTags === [] 不锁，接受
-    //   - 一旦有内容（>0 个 tag），后续 upsert 都不会动它，BGM 社区 tag
-    //     漂移仍然污染不了用户的快照
-    // 想换 bgmTags 还是得删追番再重加（删了 prev 不存在，从头来过）。
+    // bgmTags 锁在**第一次有内容**时,不是第一次创建时 —— 周历 / 搜索这类入口手上没有
+    // detail,先写空数组再由 ensureBgmTagsFilled 异步补;锁在 create 的话这些入口的
+    // 追番永远补不上 tag。一旦非空,后续 upsert 都不动它,社区 tag 漂移污染不了快照。
     const lockedBgmTags = prev && prev.bgmTags.length > 0 ? prev.bgmTags : patch.bgmTags
     const merged = normalize({
       ...prev,
       ...patch,
       bgmTags: lockedBgmTags,
-      // Preserve startedAt across upserts unless explicitly overwritten.
+      // 除非显式覆盖,否则保留原来的 startedAt
       startedAt: prev?.startedAt ?? patch.startedAt,
-      // Always bump updatedAt regardless of caller.
+
       updatedAt: new Date().toISOString(),
     })
     map.set(patch.bgmId, merged)
@@ -474,10 +359,7 @@ class AnimeTrackStore {
     return merged
   }
 
-  /**
-   * 设置某一集的好看集备注。trim 后为空 → 删除该集备注；否则写入。
-   * track 不存在则 no-op。集号不在 goodEpisodes 里的备注会在 normalize 时被剪掉。
-   */
+  /** 设置某一集的好看集备注,trim 后为空则删除。track 不存在时 no-op。 */
   setGoodEpisodeNote(bgmId: number, ep: number, note: string): void {
     const map = this.ensure()
     const prev = map.get(bgmId)
@@ -489,11 +371,7 @@ class AnimeTrackStore {
     this.upsert({ bgmId, goodEpisodeNotes: next })
   }
 
-  /**
-   * 添加一个用户自定义 tag。trim + 大小写敏感去重；空串 / 已存在直接 no-op。
-   * 跟 setUserTags 比起来更点对点，UI 上"+ 添加"按钮直接调用。
-   * track 不存在则 no-op（caller 应先 upsert 创建 track）。
-   */
+  /** 加一个用户 tag(trim + 去重,空串或已存在则 no-op)。track 不存在时 no-op。 */
   addUserTag(bgmId: number, tag: string): void {
     const map = this.ensure()
     const prev = map.get(bgmId)
@@ -515,26 +393,12 @@ class AnimeTrackStore {
   }
 
   /**
-   * 如果 track 的 bgmTags 还是空，异步从 BGM detail 拉回完整 tag 补写。
+   * bgmTags 还空着时,异步拉一次 BGM detail 补上。给周历 / 搜索这类手上没有 detail 的
+   * 加追番入口用:先 upsert 让 UI 立刻响应,再后台补。
    *
-   * 用在那些"加追番"入口本身没有 detail 数据的地方（番剧周历 / 搜索结果
-   * 关联追番）—— 立即 upsert 让 UI 响应，再后台调一次 detail 把 bgmTags
-   * 填上。lock-on-first-content 语义保证：
-   *   - 第一次成功补写后，后续重复调用 short-circuit（已经非空，prev 锁定）
-   *   - 用户已经看到过的 BGM 标签快照不会被 BGM 社区 tag 漂移污染
-   *
-   * **动态延迟 800-2000ms**：用户连点 +追番 时（比如周历上一口气加好几部），
-   * 多次派生 detail 调用错峰，避免跟主进程同期的别的 BGM 调用挤在一起
-   * 触发限流。延迟期间做**二次检查**：track 可能已被删 / tag 已被别的
-   * 路径补上 → 直接 short-circuit 不发请求。
-   *
-   * **失败处理**：catch swallow，**不重试**。下次 +追番 / 打开详情页 /
-   * 重启应用时这个调用会再触发一次，符合 docs/scraping/bgm-集成参考手册.md §3
-   * 「失败后不试探不重试」原则。
-   *
-   * 注：封面本地化**不**走 store —— track.cover 永远存可移植的 URL（要跨
-   * 设备同步，存 archivist:// 本机绝对路径到别的设备会失效）。本地化只在
-   * 显示时按设备各自做，见 `hooks/useCover.ts`。
+   * 随机延迟 800-2000ms 让用户连点 +追番 时的多次 detail 调用错峰,避免撞限流;延迟期间
+   * 二次检查(track 可能已被删 / tag 已被别处补上)再决定发不发请求。
+   * **失败不重试**(红线):下次 +追番 / 打开详情页 / 重启时自然会再触发一次。
    */
   async ensureBgmTagsFilled(bgmId: number): Promise<void> {
     const existing = this.getByBgmId(bgmId)
@@ -544,8 +408,7 @@ class AnimeTrackStore {
     if (existing.bgmTags.length > 0 && hasAirMetadata) return
     const jitterMs = 800 + Math.random() * 1200
     await new Promise<void>((r) => setTimeout(r, jitterMs))
-    // 二次检查：延迟期间用户可能删了 track / 别的路径已经把 tag 补上,
-    // 这两种情况下都不需要再发请求。
+
     const recheck = this.getByBgmId(bgmId)
     if (!recheck) return
     const recheckHasAirMetadata = recheck.airDate !== undefined
@@ -553,13 +416,12 @@ class AnimeTrackStore {
     if (recheck.bgmTags.length > 0 && recheckHasAirMetadata) return
     try {
       const detail = await window.bgmApi.detail(bgmId)
-      // 同一次 detail 顺带把别名补上（零额外请求）—— 周历 +追番 没 detail,
-      // 别名要靠这里回填，之后 MyAnime 本地搜索才能按别名命中。
+      // 顺带把别名补上,零额外请求 —— 之后 MyAnime 本地搜索才能按别名命中
       const aliases = aliasesFromInfobox(detail.infobox)
       const patch: Partial<AnimeTrack> & { bgmId: number } = { bgmId }
       if (Array.isArray(detail.tags) && detail.tags.length > 0) patch.bgmTags = detail.tags
       if (aliases.length > 0) patch.aliases = aliases
-      // 同一次 detail 顺带补放送日期('' 也写 —— 那是「确认未定档」的有效结论)
+      // 顺带补放送日期。空串也要写 —— 那是「确认未定档」这个有效结论
       if (recheck.airDate === undefined && typeof detail.date === 'string') {
         patch.airDate = detail.date
         const weekday = weekdayFromAirDate(detail.date)
@@ -573,12 +435,8 @@ class AnimeTrackStore {
     return this.ensure().get(id) ?? null
   }
 
-  /**
-   * Resolve `(source, sourceKey)` → the track that owns this binding, if any.
-   * Used by SearchDownload to draw "已追" badges on cards the user has linked
-   * before. We compare sourceKey loosely (trim) since both Aowu / Xifan watch
-   * URLs and Girigiri play URLs are sometimes pasted with extra whitespace.
-   */
+  /** `(source, sourceKey)` → 拥有这条 binding 的 track。sourceKey 只 trim 后比较
+   *  —— 各站 URL 常被带着多余空白粘进来。 */
   findByBinding(source: AnimeBinding['source'], sourceKey: string): AnimeTrack | null {
     const key = sourceKey.trim()
     if (!key) return null
@@ -588,11 +446,7 @@ class AnimeTrackStore {
     return null
   }
 
-  /**
-   * Append a binding to an existing track or create a new one. Idempotent on
-   * (source, sourceKey) — duplicate bindings are filtered out. Returns the
-   * resulting track.
-   */
+  /** 给已有 track 追加 binding,没有就新建。按 (source, sourceKey) 幂等,重复的会被滤掉。 */
   bind(patch: Partial<AnimeTrack> & { bgmId: number }, binding: AnimeBinding): AnimeTrack {
     const map = this.ensure()
     const prev = map.get(patch.bgmId)
@@ -604,12 +458,7 @@ class AnimeTrackStore {
     return this.upsert({ ...patch, bindings })
   }
 
-  /**
-   * Edit an existing binding in place by (source, sourceKey). Caller can patch
-   * sourceTitle / sourceKey / sourceUrl together. Used by EditBindingsModal so
-   * users can rename custom labels and fix typo'd URLs without losing the
-   * binding's position. No-op if no matching binding exists.
-   */
+  /** 原地改一条 binding(标题 / key / URL 可一起改),**保持它在列表里的位置**。 */
   updateBinding(
     bgmId: number,
     oldSource: AnimeBinding['source'],
@@ -633,12 +482,8 @@ class AnimeTrackStore {
     return true
   }
 
-  /**
-   * Patch a single binding's `sourceUrl` in place. Used by lazy migrations —
-   * e.g. resolving Aowu's synthetic /v/{id} URL to the user-facing /w/{token}
-   * form on first chip render, so subsequent clicks have a working link.
-   * No-op if no matching binding is found.
-   */
+  /** 只改一条 binding 的 `sourceUrl`。用于懒迁移,比如首次渲染时把 Aowu 的合成
+   *  /v/{id} 换成用户可分享的 /w/{token}。 */
   setBindingSourceUrl(
     bgmId: number,
     source: AnimeBinding['source'],
@@ -661,10 +506,7 @@ class AnimeTrackStore {
     this.upsert({ bgmId, bindings: next })
   }
 
-  /**
-   * Remove a single binding by (source, sourceKey). No-op if the track or the
-   * matching binding doesn't exist. Returns true if a binding was removed.
-   */
+  /** 按 (source, sourceKey) 删一条 binding,删掉了返回 true。 */
   removeBinding(bgmId: number, source: AnimeBinding['source'], sourceKey: string): boolean {
     const map = this.ensure()
     const prev = map.get(bgmId)
@@ -687,10 +529,7 @@ class AnimeTrackStore {
     return [...this.ensure().values()]
   }
 
-  /**
-   * Wholesale replace — used by the WebDAV pull path. Input is normalized so
-   * partial / legacy entries still land cleanly. Persists + notifies subscribers.
-   */
+  /** 整份替换(WebDAV 拉取用)。输入会过 normalize,残缺 / 老格式的数据也能安全落地。 */
   replaceAll(tracks: AnimeTrack[]): void {
     const next = new Map<number, AnimeTrack>()
     for (const t of tracks) next.set(t.bgmId, t)
@@ -706,10 +545,7 @@ class AnimeTrackStore {
 
 export const animeTrackStore = new AnimeTrackStore()
 
-/**
- * React hook — subscribes to the full list of tracked anime. Used by the
- * aggregate "我的追番" page. Returns a stable snapshot per change event.
- */
+/** 订阅整份追番列表。 */
 export function useAnimeTrackList(): AnimeTrack[] {
   const [tracks, setTracks] = useState<AnimeTrack[]>(() => animeTrackStore.list())
   useEffect(() => {
@@ -719,10 +555,7 @@ export function useAnimeTrackList(): AnimeTrack[] {
   return tracks
 }
 
-/**
- * React hook — subscribes to a single track entry by BGM id.
- * Returns null when the user has not added this anime to their list yet.
- */
+/** 按 bgmId 订阅单条追番,没加过则返回 null。 */
 export function useAnimeTrack(bgmId: number | null | undefined): AnimeTrack | null {
   const [track, setTrack] = useState<AnimeTrack | null>(() =>
     bgmId != null ? animeTrackStore.getByBgmId(bgmId) : null
@@ -737,11 +570,7 @@ export function useAnimeTrack(bgmId: number | null | undefined): AnimeTrack | nu
   return track
 }
 
-/**
- * React hook — subscribes to a track entry by (source, sourceKey) binding.
- * Re-renders when the underlying binding list changes (e.g. user just linked
- * the card on this page). Returns null when no track owns this binding yet.
- */
+/** 按 (source, sourceKey) 订阅追番,binding 列表变化时会重新渲染;没有则返回 null。 */
 export function useAnimeTrackByBinding(
   source: AnimeBinding['source'] | null | undefined,
   sourceKey: string | null | undefined,

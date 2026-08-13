@@ -1,19 +1,15 @@
 /**
- * Download task store.
+ * 下载任务 store。
  *
- * `DownloadTask` is a discriminated union over `source`. The common fields
- * (id / title / cover / status / epStatus / ...) are the same for every site;
- * the per-source variants carry whatever each downloader needs to resume:
- *
- *   - xifan    → templates[] + sourceIdx  (sourceIdx is the templates array index)
- *   - girigiri → girigiriEps[]            (HLS m3u8, no source switching)
+ * `DownloadTask` 是按 `source` 判别的联合类型:公共字段(id / 标题 / 封面 / 状态 / 每集状态)
+ * 三个站一样,各站变体带的是**各自续传所需**的东西:
+ *   - xifan    → templates[] + sourceIdx(sourceIdx 是 templates 的数组下标)
+ *   - girigiri → girigiriEps[](HLS,不支持换源)
  *   - aowu     → aowuId + sourceIdx + aowuEps + aowuSources
- *                (sourceIdx is FantasyKon's opaque source_id, e.g. 4116)
+ *                (这里的 sourceIdx 是站点不透明的 source_id,**不是下标**)
  *
- * Tasks persist to localStorage via `download:save-state` IPC. Old tasks (saved
- * before the discriminated union landed) had a flat shape with all per-source
- * fields optional on the common type; `init()` migrates those into the new
- * shape and drops anything that can't be reconstructed.
+ * 任务通过 IPC 持久化到本地。老任务是所有字段可选的扁平结构,`init()` 会把它们迁到新形状
+ * 重建不出来的直接丢弃。
  */
 import { reportError } from '../utils/reportError'
 
@@ -33,13 +29,13 @@ interface TaskCommon {
 
 export interface XifanTaskData {
   source: 'xifan'
-  /** All valid templates for the original episode set; sourceIdx picks one. */
+  /** 原始集数范围对应的全部线路模板,sourceIdx 决定用哪一条。 */
   templates: string[]
-  /** 与 templates 平行:各源播放页 URL 模板({ep} 占位),模板拼出 404 时回源解析用。旧任务为 []。 */
+  /** 与 templates 平行:各线路播放页的 URL 模板({ep} 占位),模板拼出来 404 时用它回源解析。 */
   epPages: string[]
-  /** Index into `templates`. 0 if never switched. */
+  /** templates 的下标,没换过源就是 0。 */
   sourceIdx: number
-  /** 主进程回源解析出的特殊集真实直链(OVA 等,ep → url)。「复制 mp4 直链」优先用这里。 */
+  /** 主进程回源解析出的特殊集真实直链(OVA 等)。「复制 mp4 直链」优先用这里的。 */
   epUrls: Record<number, string>
 }
 
@@ -50,12 +46,12 @@ export interface GirigiriTaskData {
 
 export interface AowuTaskData {
   source: 'aowu'
-  /** Numeric video id as a string (FantasyKon's `id`), e.g. "2893". */
+  /** 站点的数字 video id(字符串形式)。 */
   aowuId: string
-  /** FantasyKon source_id, e.g. 4116. NOT an index — opaque. */
+  /** 站点的 source_id,**不透明、不是下标**。 */
   sourceIdx: number
   aowuEps: { idx: number; label: string }[]
-  /** All sources discovered on the watch page, used by source-cycling UI. */
+  /** 播放页上发现的全部线路,供换源 UI 使用。 */
   aowuSources: { idx: number; name: string }[]
 }
 
@@ -70,15 +66,10 @@ function persist(): void {
   window.systemApi.saveDownloadState([...tasks.values()])
 }
 
-// Heavy ep_progress events fire at >30Hz per concurrent ep. Notifying + persisting on
-// every one would block the renderer's main thread (full re-render + JSON.stringify +
-// IPC write each time), making clicks like "Pause All" feel sluggish.
-//
-// Strategy:
-//   - state transitions  → notify() : immediate listener flush + persist
-//   - progress updates   → notifyProgressThrottled() : coalesce to one flush per frame,
-//                                                     skip persist (progress is ephemeral —
-//                                                     resume continues from on-disk size)
+// 每个并发集的 ep_progress 事件超过 30Hz。每来一条就通知 + 落盘会卡住渲染主线程(整树重渲染 +
+// 序列化 + IPC 写),点「全部暂停」都会发顿。
+// 所以分两条路:**状态变化**立即 flush + 落盘;**进度更新**合并到每帧一次,并且**跳过落盘** ——
+// 进度是易失的,续传本来就按磁盘上已有的字节数接着走。
 let progressRaf: number | null = null
 
 function flushListeners(): void {
@@ -103,17 +94,15 @@ function notifyProgressThrottled(): void {
 }
 
 /**
- * Coerce a localStorage-loaded payload (which may predate the discriminated
- * union and have missing or extra fields) into a valid DownloadTask. Returns
- * null if the task can't be reconstructed (e.g. girigiri task without
- * girigiriEps — we can't resume without the URLs).
+ * 把从 localStorage 读出来的旧结构收敛成合法的 DownloadTask;重建不出来的返回 null
+ * (比如缺集列表的 HLS 任务 —— 没有地址就没法续传)。
  */
 function migrateLoadedTask(raw: unknown): DownloadTask | null {
   if (!raw || typeof raw !== 'object') return null
   const t = raw as Partial<DownloadTask> & Record<string, unknown>
   if (typeof t.id !== 'string' || typeof t.title !== 'string') return null
 
-  // Common fields with safe defaults.
+  // 公共字段,带安全默认值。
   const common: TaskCommon = {
     id: t.id,
     title: t.title,
@@ -207,8 +196,7 @@ export const downloadStore = {
   updateTask(id: string, updates: Partial<DownloadTask>): void {
     const t = tasks.get(id)
     if (!t) return
-    // Cast: TS can't prove the partial keeps the discriminator narrow, but
-    // every callsite either omits `source` or passes the same one.
+    // TS 证明不了 partial 会保持判别字段不变,但所有调用点要么不传 source、要么传同一个。
     tasks.set(id, { ...t, ...updates } as DownloadTask)
     notify()
   },

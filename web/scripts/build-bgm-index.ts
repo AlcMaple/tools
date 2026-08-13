@@ -5,7 +5,7 @@
 //   cd web && npx tsx scripts/build-bgm-index.ts --file a.jsonlines   用本地已解压的 jsonlines（测试用，不下载）
 //
 // 索引**不在 git 里、也不是 build 产物**，`git pull + npm run build` 不会更新它 —— 生产靠 cron 每周跑本脚本，
-// 首次部署也必须手跑一次，否则 /api/search 一直 ready=false。整套线上流程见 docs/web/唐人云部署保姆教程.md。
+// 首次部署也必须手跑一次，否则 /api/search 一直 ready=false。
 // 本地跑带 HTTPS_PROXY 走 Clash。依赖系统 `unzip`（流式取压缩包里的 subject 文件，不整包落盘解压）。
 //
 // **原子替换**：先写 `bgm_index.db.tmp`，成了再 rename 覆盖 —— 搜索端要么读旧库、要么读新库，绝不读半成品。

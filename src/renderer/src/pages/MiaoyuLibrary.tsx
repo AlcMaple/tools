@@ -105,11 +105,11 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 // ── 坚果云同步 ──────────────────────────────────────────────────────────────
-// 复用锦囊妙计那套：rev/快照/冲突确认，**行为与追番/锦囊妙计一致** —— 进页面后台探一次
-// 云端 rev，chip 主动提示「云端有更新 / 本地未上传 / 两边都改」。差别是图片要随文本一起
-// 同步：推送时把被引用的图片读成 base64 塞进 blob（按 `hash.ext` 去重），拉取时写回本地文件。
-// 代价（已与用户确认、接受）：miaoyu blob 含图片 base64，后台探测那一拉会带上全部图片、
-// 体积可能不小 —— 但只在进页面探一次、不轮询，换来与另两处一致的主动提示。
+// 复用锦囊妙计那套 rev / 快照 / 冲突确认,行为与追番、锦囊妙计**保持一致**:进页面后台探一次
+// 云端 rev,chip 主动提示「云端有更新 / 本地未上传 / 两边都改」。
+// 差别是图片要随文本一起同步:推送时把被引用的图片读成 base64 塞进 blob(按 hash.ext 去重)
+// 拉取时写回本地文件。代价是这份 blob 含图片 base64、体积可能不小,后台那一探会整份拉下来 ——
+// 已与用户确认接受,换来与另两处一致的主动提示;只在进页面探一次,不轮询。
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 type SyncDirection = 'push' | 'pull'
 
@@ -133,7 +133,7 @@ interface SyncConfirmState {
 
 const snapshotOf = (posts: MiaoyuPost[]): string => JSON.stringify(posts)
 
-/** 纯 schema 漂移（normalize 改了形状）时重建快照，避免冷启动误判「本地未上传」。 */
+/** 纯结构漂移(normalize 改了形状)时重建快照,避免冷启动误判「本地未上传」。 */
 function rebuildIfSchemaDrift(stored: string, current: string): string {
   if (stored === current) return stored
   try {
@@ -203,7 +203,7 @@ export default function MiaoyuLibrary(): JSX.Element {
     const stored = localStorage.getItem(SNAPSHOT_KEY)
     return stored ? rebuildIfSchemaDrift(stored, initial) : initial
   })
-  // 后台探测到的云端 rev（null = 还没探到 / 未配置）；驱动 cloudNewer。
+  // 后台探到的云端 rev(null = 没探到 / 未配置),驱动「云端有更新」提示。
   const [remoteRev, setRemoteRev] = useState<number | null>(null)
   const [syncConfirm, setSyncConfirm] = useState<SyncConfirmState | null>(null)
 
@@ -212,8 +212,7 @@ export default function MiaoyuLibrary(): JSX.Element {
   useEffect(() => { localStorage.setItem(LAST_REV_KEY, String(lastSyncedRev)) }, [lastSyncedRev])
   useEffect(() => { localStorage.setItem(SNAPSHOT_KEY, lastSyncedSnapshot) }, [lastSyncedSnapshot])
 
-  // 进页面后台探一次云端 rev —— 与追番/锦囊妙计一致，让 chip 能主动提示「云端有更新」。
-  // 只探一次、不轮询；失败（未配置 / 404 / 网络）静默，chip 保持中性态。
+  // 进页面后台探一次云端 rev。只探一次、不轮询;失败(未配置 / 404 / 网络)静默,chip 保持中性。
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -225,8 +224,7 @@ export default function MiaoyuLibrary(): JSX.Element {
     return () => { cancelled = true }
   }, [])
 
-  // localDirty 由快照差异推导 —— 用户撤销改动会自动归位，无需手动打脏标记。
-  // cloudNewer 由后台探到的 rev 与本地最后同步 rev 比较（remoteRev 为 null 时不提示）。
+  // 本地是否有改动由快照差异推导,用户撤销改动会自动归位,不用手动打脏标记。
   const currentSnapshot = useMemo(() => snapshotOf(posts), [posts])
   const localDirty = currentSnapshot !== lastSyncedSnapshot
   const cloudNewer = remoteRev !== null && remoteRev > lastSyncedRev
@@ -288,7 +286,7 @@ export default function MiaoyuLibrary(): JSX.Element {
     }
   }
 
-  // 点上传/拉取先拉一次远端 → 打开确认弹窗（展示双方统计 + 冲突判定）
+  // 点上传/拉取时先拉一次远端,再开确认弹窗(展示双方统计 + 冲突判定)
   const openSyncConfirm = async (direction: SyncDirection): Promise<void> => {
     if (syncStatus === 'syncing' || syncConfirm) return
     setSyncConfirm({ direction, loading: true, remote: null, forceArmed: false })

@@ -41,7 +41,7 @@ function parseImportJson(text: string): ImportParseResult {
       }
       const team = a.team.map(c => cleanCharName(String(c))).filter(Boolean)
       if (team.length === 0) return { error: `第 ${i + 1} 项第 ${j + 1} 条攻击 team 为空` }
-      // Accept legacy `note: string` or fresh `notes: string[]` from external JSON.
+      // 外部 JSON 里可能是老的 `note: string` 也可能是新的 `notes: string[]`,两种都接受。
       const notes = coerceNotes(a.notes ?? a.note)
       attacks.push({ team, notes })
     }
@@ -70,7 +70,7 @@ function computeImportMerge(items: ImportItem[], current: DefenseGroup[]): Impor
     const defKey = item.defense.join('、')
     const existing = result.find(d => d.defense.join('、') === defKey)
     if (existing) {
-      // Defense's own updatedAt is left untouched — only attacks get a fresh date.
+      // 防守方自己的更新时间保持不变 —— 只有进攻队会拿到新日期。
       const existingTeams = new Set(existing.attacks.map(a => a.team.join('、')))
       for (const atk of item.attacks) {
         const teamKey = atk.team.join('、')
@@ -90,7 +90,7 @@ function computeImportMerge(items: ImportItem[], current: DefenseGroup[]): Impor
         newAttackCount++
       }
       if (newAttacks.length > 0) {
-        // Brand-new defense: defense + first batch of attacks share today's date.
+        // 全新的防守方:防守和第一批进攻共用今天的日期。
         result.push({ id: nextId(), defense: item.defense, updatedAt: now, attacks: newAttacks })
         newDefenseCount++
       }

@@ -12,7 +12,7 @@
 //   ├ 冷却中（连挂 3 次）→ 不联网，直接告诉前端「在线补充暂停中」
 //   ├ 超过每小时上限 → 不联网
 //   ├ 距上次不足 2s → 不联网（不排队等：让用户干等还不如让他改个词）
-//   └ 以上都过 → 打一次，**失败不重试**（传输层抖动由 fetchJson 兜一次，见 AI_GUIDELINES）
+//   └ 以上都过 → 打一次，**失败不重试**（传输层抖动由 fetchJson 兜一次）
 //
 // 结果只放内存缓存，**不写进 bgm_index.db** —— 那库每周被整体原子替换，写了也会被冲掉，
 // 而且它是只读打开的。
@@ -21,7 +21,7 @@ import type { AnimeHit } from './anime-index'
 
 const API = 'https://api.bgm.tv/v0/search/subjects?limit=10'
 
-// UA 跟 detail.ts 一致：api.bgm.tv 要的是**诚实标识**，不是浏览器伪装（跟抓 HTML 相反，见 CLAUDE.md）
+// UA 跟 detail.ts 一致：api.bgm.tv 要的是**诚实标识**，不是浏览器伪装（跟抓 HTML 相反）
 const HEADERS = {
   'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)',
   Accept: 'application/json',

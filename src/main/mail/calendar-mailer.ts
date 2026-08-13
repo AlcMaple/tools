@@ -1,19 +1,12 @@
-// 周历邮件发送 —— 开一个隐藏 BrowserWindow 把 AnimeCalendar 渲染到完整高度后
-// capturePage，把 PNG 内嵌进 nodemailer 邮件正文 + 作为附件一起发出。
+// 周历邮件 —— 开一个隐藏窗口把周历页渲染到完整高度后截图,PNG 内嵌进邮件正文并附带附件发出。
 //
-// 流程：
-//   1. createOffscreenWindow()  - 隐藏 BrowserWindow，1280×800
-//   2. 加载渲染器 URL，附 ?screenshot=calendar
-//   3. App.tsx 看到 query 参数后只渲染 AnimeCalendarScreenshot
-//        - 不渲染 Sidebar / TopBar / sticky 工具栏
-//        - 数据走主进程已有的 14d 缓存（fromCache=true 立即返回）
-//        - 等所有 <img> load 完成后通过 screenshot:calendar-ready
-//          IPC 向主进程上报 scrollHeight
-//   4. 主进程 setBounds(1280, height) 后 capturePage()
-//   5. nodemailer 通过 smtp.qq.com:465 发邮件
-//   6. 关闭隐藏窗口
+//   1. 隐藏窗口加载渲染器 URL,带上 `?screenshot=calendar`
+//   2. 渲染层看到这个参数就只渲染截图专用组件(不要侧栏 / 顶栏 / sticky 工具栏),数据走已有缓存
+//   3. 所有 <img> 加载完后通过 IPC 上报页面实际高度
+//   4. 主进程按这个高度 setBounds 再截图
+//   5. 走 SMTP 发信,最后关掉隐藏窗口
 //
-// 任何环节失败都抛错，调用方决定是否记水印。
+// 任何一环失败都抛错,由调用方决定要不要记水印。
 
 import { BrowserWindow, ipcMain, app } from 'electron'
 import { join } from 'path'
@@ -28,8 +21,7 @@ const POST_RESIZE_DELAY_MS = 250  // resize 之后给浏览器一个 layout/pain
 
 let busy = false
 
-// 兼容老 preload（直接传 number）和新 preload（传 { height }）两种形态。
-// 落到 capturePageBuffer 里再统一归一化。
+// 兼容老 preload(直接传 number)和新 preload(传 { height })两种形态,在下游统一归一化。
 type ReadyPayload = number | { height: number }
 
 // ── 隐藏窗口工厂 ────────────────────────────────────────────────────────────────
@@ -88,9 +80,8 @@ async function capturePageBuffer(): Promise<Buffer> {
   if (busy) throw new Error('已经有一个截图任务在跑了')
   busy = true
 
-  // win 在 try 块内创建 —— 之前写在外面，如果 new BrowserWindow 本身抛错
-  // 就会跳过 finally，让 busy 永久卡在 true 上，后续所有发送都会被"已经
-  // 有一个截图任务在跑了"挡掉。
+  // **窗口必须在 try 块内创建**:写在外面的话,一旦 new BrowserWindow 本身抛错就会跳过 finally
+  // busy 永久卡在 true,之后所有发送都会被「已经有一个截图任务在跑」挡掉。
   let win: BrowserWindow | null = null
   try {
     console.log('[calendar-mailer] 开始截图：打开隐藏窗口')

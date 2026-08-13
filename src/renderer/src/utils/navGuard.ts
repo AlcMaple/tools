@@ -1,7 +1,6 @@
 /**
- * Module-level navigation guard for HashRouter environments.
- * Settings registers a listener when dirty; Sidebar calls requestNavigation
- * before proceeding so Settings can show its unsaved-changes dialog.
+ * 模块级的导航拦截 —— 设置页有未保存改动时注册监听,侧栏在跳转前先询问
+ * 好让设置页弹出「有未保存的更改」对话框。
  */
 type Listener = (to: string) => void
 
@@ -12,7 +11,7 @@ export const navGuard = {
     _listener = fn
   },
   isActive: (): boolean => _listener !== null,
-  /** Returns true if navigation should proceed, false if blocked. */
+  /** 返回 true 表示可以跳转,false 表示被拦下。 */
   requestNavigation: (to: string): boolean => {
     if (_listener) {
       _listener(to)

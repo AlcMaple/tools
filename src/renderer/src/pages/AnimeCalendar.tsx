@@ -1,12 +1,6 @@
-// 番剧周历 — week-at-a-glance of what's currently airing, fetched from BGM.
-//
-// Layout: 7-day grid (Mon-Sun in BGM order), one column per weekday, anime
-// cards stacked inside. Each card shows cover + title + a "Track" hover
-// affordance so the user can fold this week's interesting shows into their
-// list without leaving the page.
-//
-// The main process owns the 24h disk cache; this page just renders whatever
-// it gets back. Calling refresh forces an update path via `update=true`.
+// 番剧周历 —— 本季在播的一周总览。7 列(周一~周日)网格,每列堆该天的番剧卡片,卡片上可以
+// 直接加进追番,不用离开页面。24h 磁盘缓存归主进程管,这里只负责渲染拿到的东西;点刷新会
+// 带 update=true 强制走新拉取。
 
 import { useEffect, useMemo, useState } from 'react'
 import TopBar from '../components/TopBar'
@@ -30,16 +24,13 @@ type State =
 
 let _cachedState: State = { status: 'loading' }
 
-// localStorage 水印：记录最后一次"自动触发邮件发送"对应的 updatedAt。
-// 同一份缓存数据在一次进程生命周期内可能被多次 setState（比如热重载、
-// 路由进出 Calendar），靠这个水印保证只发一次。
+// 水印:记下最后一次「自动触发邮件」对应的 updatedAt。同一份缓存在一次进程生命周期内可能被
+// 多次 setState(热重载、路由进出),靠它保证只发一次。
 const MAIL_SENT_WATERMARK_KEY = 'maple_mail_sent_for_calendar'
 
 /**
- * 触发周历邮件自动发送的全部判断 + 副作用。
- * 仅当满足"update=false（不是用户手点刷新）且 fromCache=false（确实是新拉取）"
- * 时才进入下游逻辑；主进程那边还会再判一次 enabled / 配置完整性，所以这里
- * 只做最便宜的去重水印检查就够了。
+ * 周历邮件自动发送的全部判断与副作用。只有「不是用户手点刷新」且「确实是新拉取」时才往下走;
+ * 主进程那边还会再判一次是否启用和配置完整,所以这里只做最便宜的水印去重。
  */
 function maybeTriggerMail(update: boolean, result: BgmCalendarResult): void {
   if (update) return                 // 用户手点刷新，不发
@@ -48,14 +39,13 @@ function maybeTriggerMail(update: boolean, result: BgmCalendarResult): void {
   const watermark = String(result.updatedAt)
   if (localStorage.getItem(MAIL_SENT_WATERMARK_KEY) === watermark) return
 
-  // 先写水印再调，避免极端情况下并发触发两次 IPC
+  // 先写水印再调,避免极端情况下并发触发两次 IPC
   localStorage.setItem(MAIL_SENT_WATERMARK_KEY, watermark)
   window.mailApi
     .sendCalendar()
     .then(res => {
       if (!res.sent) {
-        // 不是真正失败的情况（用户未启用 / 未配置）不清水印；真正失败则清掉
-        // 让下次还有机会重试（虽然得等下一次 14d 过期）。
+        // 「未启用 / 未配置」不算真失败,不清水印;真失败才清掉,让下次还有机会重试。
         if (res.reason && res.reason !== 'disabled' && res.reason !== 'incomplete-config') {
           localStorage.removeItem(MAIL_SENT_WATERMARK_KEY)
         }
@@ -71,40 +61,36 @@ function maybeTriggerMail(update: boolean, result: BgmCalendarResult): void {
 export default function AnimeCalendar(): JSX.Element {
   const [state, setState] = useState<State>(_cachedState)
   const [refreshing, setRefreshing] = useState(false)
-  // 精简档（<1200）：桌面 7 列"整周一览"在窄屏每列才几十像素没法看，改成
-  // 「选某天 + 该天番剧多列网格」。selectedDay 默认今天（BGM 周一=1…周日=7）。
+  // 精简档(<1200):桌面那套 7 列整周一览在窄屏每列只剩几十像素没法看,改成「选某一天 +
+  // 该天番剧多列网格」。默认选今天。
   const isCompact = useIsCompact()
   const [selectedDay, setSelectedDay] = useState(() => {
     const d = new Date().getDay() // 0=Sun..6=Sat
     return d === 0 ? 7 : d
   })
-  // 已经有 ready 数据时刷新失败的错误。和 state.status='error' 不同：
-  // 这条不替换主视图，只在刷新按钮旁边显示一条小提示，让用户知道
-  // "本次刷新失败、显示的还是缓存数据"，不至于丢失已有的页面状态。
+  // 已有数据时刷新失败的错误。和整页 error 状态不同:它**不替换主视图**,只在刷新按钮旁边显示
+  // 一条小提示,告诉用户「这次刷新失败、看到的还是缓存」,不至于把已有页面状态弄丢。
   const [refreshError, setRefreshError] = useState<string | null>(null)
-  // 限流时显示倒计时 —— 仅作提示，**不**禁用刷新按钮。用户想提前试就提前试,
-  // 后果就是再被限一次。用绝对时间戳而不是每秒 -1 的 number —— 绝对值
-  // 不受 setInterval 漂移影响，tab 后台时也仍是真实剩余秒数。
+  // 限流时显示倒计时,但**不禁用刷新按钮** —— 用户想提前试就让他试,后果是再被限一次。
+  // 存绝对时间戳而不是每秒减一的数字:不受 setInterval 漂移影响,标签页切到后台再回来也是真实剩余。
   const [cooldownEndAt, setCooldownEndAt] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
-  // 跟踪用户在 cooldown 期间提前点击的次数。一旦 > 0，倒计时切到"已加重"
-  // 视觉态（warning 图标 + amber 色 + "约"前缀 + tooltip 解释），告诉用户
-  // 显示的秒数已不可信。每次成功刷新后清零。
+  // 记录用户在冷却期内提前点击的次数。一旦大于 0,倒计时切到「已加重」的视觉态,告诉用户
+  // 显示的秒数已经不可信。成功刷新后清零。
   const [prematureClickCount, setPrematureClickCount] = useState(0)
   const cooldownRemainingSec = cooldownEndAt
     ? Math.max(0, Math.ceil((cooldownEndAt - now) / 1000))
     : 0
   const cooldownAggravated = prematureClickCount > 0
 
-  // 倒计时驱动 —— 仅当 cooldown 激活时跑，节省渲染
+  // 只在冷却激活时跑,省渲染
   useEffect(() => {
     if (!cooldownEndAt) return
     const tick = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(tick)
   }, [cooldownEndAt])
-  // cooldown 走完后自动清掉 refreshError + cooldownEndAt，UI 回到"无错误"
-  // 状态。但 prematureClickCount 保留 —— 用户如果再次点 → 又限流，新的
-  // cooldown 视觉仍然标记"已加重"。只有成功刷新才完全清零。
+  // 冷却走完自动清掉错误和结束时间,UI 回到无错误态。但提前点击的计数保留 —— 用户要是再点、
+  // 又被限流,新的倒计时仍然标记「已加重」。只有成功刷新才完全清零。
   useEffect(() => {
     if (cooldownEndAt && cooldownRemainingSec === 0) {
       setCooldownEndAt(null)
@@ -117,7 +103,7 @@ export default function AnimeCalendar(): JSX.Element {
   }, [state])
 
   const load = async (update = false): Promise<void> => {
-    // 在 cooldown 中点击 = 提前重试，计数 +1，让倒计时切换到"已加重"视觉
+    // 冷却期内点击 = 提前重试,计数 +1,倒计时切到「已加重」视觉
     if (update && cooldownEndAt && Date.now() < cooldownEndAt) {
       setPrematureClickCount((c) => c + 1)
     }
@@ -129,12 +115,11 @@ export default function AnimeCalendar(): JSX.Element {
       const result = await window.bgmApi.calendar(update)
       setState({ status: 'ready', result })
       maybeTriggerMail(update, result)
-      // 成功一次 → 之前的"提前点击警告"清零，下次再触发限流是干净的初始态
+      // 成功一次就把「提前点击」警告清零,下次再限流是干净的初始态
       setPrematureClickCount(0)
     } catch (err) {
-      // 区分两种失败：
-      // - 首次加载失败（state 还不是 ready）→ 整页面 ErrorPanel（自带倒计时）
-      // - 刷新失败但已有 ready 数据 → 行内小提示 + 按钮 cooldown，主视图保留
+      // 两种失败要分开:首次加载失败 → 整页 ErrorPanel(自带倒计时);已有数据时刷新失败 →
+      // 行内小提示 + 按钮冷却,主视图保留。
       if (update && state.status === 'ready') {
         setRefreshError(String(err))
         const fe = friendlyError(err)
@@ -282,7 +267,7 @@ export default function AnimeCalendar(): JSX.Element {
 
 // ── Day chips bar ────────────────────────────────────────────────────────────
 // 7 day chips on a single grid row. Sticks at top-16 with the refresh cluster.
-// Uses grid-cols-7 to align column-by-column with the cards grid below.
+// 用 7 列栅格与下方卡片网格逐列对齐。
 
 function DayChipsBar({ result }: { result: BgmCalendarResult }): JSX.Element {
   const todayBgmId = useMemo(() => {

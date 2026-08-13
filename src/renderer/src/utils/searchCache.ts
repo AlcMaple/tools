@@ -59,10 +59,8 @@ export async function getCachedSearch(
     if (!all) return null;
     const entry = readCacheEntry<SearchCard[]>(all[keyword]);
     if (!entry) return null;
-    // Treat empty-result entries as a cache MISS. They are commonly artifacts
-    // of transient failures (site改版 / network blip) that produced 0 cards
-    // without throwing; serving such an entry locks the user out of real
-    // results until TTL. Force a re-fetch by returning null.
+    // **空结果一律当缓存未命中**:它们多半是临时故障(站点改版 / 网络抖)产生的 0 条结果、
+    // 又没有抛错;把这种条目当命中会让用户在整个 TTL 内都搜不到真结果。
     if (!Array.isArray(entry.data) || entry.data.length === 0) return null;
     return {
       data: entry.data,
@@ -78,7 +76,7 @@ export async function setCachedSearch(
   source: Source,
   cards: SearchCard[],
 ): Promise<void> {
-  // Don't cache empty results — see getCachedSearch comment for rationale.
+  // 同理,空结果也不写缓存。
   if (!Array.isArray(cards) || cards.length === 0) return;
   const key = `search_cache_${source.toLowerCase()}`;
   try {
@@ -94,12 +92,10 @@ export async function setCachedSearch(
 const inflight = new Map<string, Promise<void>>();
 
 /**
- * 同一 key 的并发后台刷新去重 —— 一个 keyword 的 SWR 正在跑时，第二个用户
- * 的 stale 命中复用同一个 Promise，不再发第二个请求。
- *
- * **失败不重试**：`run()` 内部已经 try/catch swallow 异常，inflight 清理
- * 在 .finally 里所以下次会重新发起；具体重试时机由调用方决定（典型是
- * "下次用户搜索同一关键词"），不在这一层做。
+ * 同一个 key 的并发后台刷新去重:一个关键词的 SWR 正在跑时,第二次 stale 命中复用同一个
+ * Promise,不再发第二个请求。
+ * **失败不重试**:异常在内部被吞掉,inflight 在 finally 里清理,所以下次还会重新发起 ——
+ * 具体什么时候重试由调用方决定(典型是「下次用户搜同一关键词」),不在这一层做。
  */
 export function dedupRefresh(
   key: string,

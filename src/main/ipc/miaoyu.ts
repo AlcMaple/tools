@@ -6,16 +6,14 @@ import { createHash } from 'crypto'
 /**
  * 妙语库的用户上传图片落地。
  *
- * 设计：帖子/评论/思考这些文本走 localStorage（后续坚果云同步），**图片走本地
- * 文件 + archivist:// 显示**。数据里只存 `{hash, ext}`（内容寻址、可移植），显示
- * 时用本目录的 archivist base 拼出 URL —— 不持久化任何机器绝对路径（同封面缓存
- * 的本地化思路，见 bgm/cover-cache.ts）。
+ * 文字走 localStorage,**图片走本地文件 + archivist:// 显示**:数据里只存 `{hash, ext}`
+ * (内容寻址、可移植),显示时才拼出 URL —— 不持久化任何机器绝对路径。
  */
 function imagesDir(): string {
   return join(app.getPath('userData'), 'miaoyu-images')
 }
 
-// 目录只建一次；失败清空 promise 让下次重试（不缓存失败）。
+// 目录只建一次;失败时清空 promise 让下次重试,不缓存失败。
 let dirReady: Promise<void> | null = null
 function ensureDir(): Promise<void> {
   if (!dirReady) {
@@ -26,21 +24,19 @@ function ensureDir(): Promise<void> {
   return dirReady
 }
 
-// 绝对路径 → archivist:// URL（逐段 encode，host 占位 `local`）。同 cover-cache
-// 的 toArchivistUrl —— standard scheme 不接受空 host，必须给非空 host 占位。
+// 绝对路径 → archivist:// URL(逐段编码,host 用占位的 `local`)—— standard scheme 不接受空 host。
 function toArchivistUrl(absPath: string): string {
   const fwd = absPath.replace(/\\/g, '/')
   const withSlash = fwd.startsWith('/') ? fwd : '/' + fwd
   return 'archivist://local' + withSlash.split('/').map(encodeURIComponent).join('/')
 }
 
-// 上传图最大宽度 —— 截图普遍 ≤1290（手机）/2K（桌面），超过就缩。既省盘，又让
-// 后续坚果云同步（图片以 base64 进 JSON blob）的体积可控。截图含文字，JPEG q88
-// 仍清晰可读。
+// 上传图的最大宽度:截图普遍不超过 2K,超了就缩。既省盘,也让后续同步(图片以 base64 进 JSON)
+// 的体积可控。截图含文字,这个质量下仍清晰可读。
 const MAX_WIDTH = 1600
 
-// 同步导入/导出只接受「内容寻址文件名」：sha1(hex) + . + 扩展名。挡掉任何带路径
-// 分隔符 / `..` 的输入，避免越权读写 miaoyu-images 之外的文件。
+// 导入/导出只接受**内容寻址的文件名**(sha1 + 扩展名),挡掉任何带路径分隔符或 `..` 的输入
+// 避免越权读写图片目录之外的文件。
 const SAFE_NAME = /^[a-f0-9]{8,64}\.[a-z0-9]{1,5}$/i
 
 const EXT_BY_MIME: Record<string, string> = {
@@ -59,8 +55,8 @@ function parseDataUrl(dataUrl: string): { buf: Buffer; ext: string } {
 }
 
 export function registerMiaoyuIpc(): void {
-  // 返回图片目录的 archivist base URL（已编码）。渲染端拿到后用 `${base}/${hash}.${ext}`
-  // 拼具体图片 URL（hash 是 hex、ext 是字母，无需再编码）。只在页面挂载时取一次。
+  // 返回图片目录的 archivist base(已编码),渲染层用 `${base}/${hash}.${ext}` 拼具体 URL。
+  // 只在页面挂载时取一次。
   ipcMain.handle('miaoyu:images-base', async () => {
     await ensureDir()
     return toArchivistUrl(imagesDir())

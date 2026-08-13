@@ -1,13 +1,9 @@
-// 推荐记录 store —— 跟踪「我把哪部番推荐给了谁，对方接受还是拒绝了，
-// 拒绝原因是啥」。目的是逐渐找到"什么样的番容易推荐成功"的规律。
+// 推荐记录 store —— 记「我把哪部番推荐给了谁、对方接受还是拒绝、原因是什么」
+// 目的是慢慢摸出「什么样的番容易推荐成功」。
 //
-// 设计：
-//   - 一条推荐 = (bgmId, toWhom, status, [failReason])，每条独立 id
-//     (Date.now() + random 拼出来，碰撞概率极低)
-//   - status: pending（待回应）/ accepted（采纳）/ rejected（拒绝，必填原因）
-//   - 同一部番可以推荐给多个人，所以不按 bgmId 去重
-//   - localStorage 持久化，跟 animeTrackStore 同款"plain class + subscribe"模式
-//   - WebDAV 同步走 anime.json blob 的新字段 recommendations（AnimeSyncBar 已扩展）
+// 一条推荐 = (bgmId, toWhom, status, 原因),各自独立 id。同一部番可以推给多个人
+// 所以**不按 bgmId 去重**。localStorage 持久化,与 animeTrackStore 同款 class + subscribe;
+// WebDAV 同步搭 anime.json 的 recommendations 字段。
 
 import { useEffect, useState } from 'react'
 import { scheduleStorageWrite } from '../utils/deferredStorage'
@@ -16,29 +12,30 @@ import { reportError, backupCorrupt } from '../utils/reportError'
 export type RecommendationStatus = 'pending' | 'accepted' | 'rejected'
 
 export interface Recommendation {
-  /** 唯一 id，本地生成，跨设备同步时保持稳定。 */
+  /** 本地生成的唯一 id,跨设备同步时保持稳定。 */
   id: string
   /** 被推荐的番剧 bgmId —— 通过 BGM 搜索弹窗选定。 */
   bgmId: number
-  /** 这条 anime 的展示信息（冗余但同步起来更稳，BGM 在线查也省一次往返）。 */
+  /** 冗余存一份展示信息 —— 同步起来更稳,也省一次 BGM 往返。 */
   title: string
   titleCn?: string
   cover?: string
-  /** 推荐方，谁推的，自由文本（"我" / "妹妹" / "群友老王"）。新建必填；
-   *  老数据没有这个字段 —— normalize 给空串兜底，展示层据此退回"推荐给 X"。 */
+  /** 谁推的,自由文本。老数据没有这个字段,normalize 给空串,展示层据此退回「推荐给 X」。 */
   fromWhom: string
-  /** 推荐对方，推给谁，自由文本（"Bob" / "妹妹" / "群里"）。 */
+  /** 推给谁,自由文本。 */
   toWhom: string
-  /** 推荐理由 —— **推荐方**写的「我为什么推荐这部给你」（可选）。区别于
-   *  successReason / failReason：那两个是**对方**接受 / 拒绝后的结果备注。
-   *  创建时填，也可后续在编辑弹窗里补 / 改。老数据没有 → normalize 给 undefined。 */
+  /**
+   * **推荐方**写的「我为什么推荐这部给你」。区别于 successReason / failReason —— 那两个是
+   * **对方**接受 / 拒绝之后的结果备注。
+   */
   recommendReason?: string
   status: RecommendationStatus
-  /** 仅在 status === 'rejected' 时有意义。 */
+  /** 仅在 rejected 时有意义。 */
   failReason?: string
-  /** 仅在 status === 'accepted' 时有意义 —— 记「为什么这次推荐成功了」
-   *  （对方正好在找新番 / 喜欢这个题材…），帮日后总结"什么样的番好推"。
-   *  老的已接受记录没有这字段 → normalize 给 undefined，展示层不显示备注块。 */
+  /**
+   * 仅在 accepted 时有意义 —— 记「这次为什么推成了」(对方正好在找新番 / 喜欢这个题材…)
+   * 方便日后总结什么样的番好推。
+   */
   successReason?: string
   /** ISO date，便于将来排序 / 统计"推荐成功率随时间"。 */
   createdAt: string
@@ -47,8 +44,7 @@ export interface Recommendation {
 const STORAGE_KEY = 'maple-anime-recommendations-v1'
 const VALID_STATUS: ReadonlyArray<RecommendationStatus> = ['pending', 'accepted', 'rejected']
 
-// 推荐给这些人时，新建即默认「已接受」—— cwj 基本来者不拒，省去每次手动标记。
-// 大小写 / 首尾空格不敏感。
+// 推荐给这些人时新建即默认「已接受」—— 对方基本来者不拒,省去每次手动标记。大小写和首尾空格不敏感。
 const AUTO_ACCEPT_RECIPIENTS: ReadonlyArray<string> = ['cwj']
 function defaultStatusFor(toWhom: string): RecommendationStatus {
   return AUTO_ACCEPT_RECIPIENTS.includes(toWhom.trim().toLowerCase()) ? 'accepted' : 'pending'
@@ -99,7 +95,7 @@ function readAll(): Recommendation[] {
   try {
     return normalizeRecommendations(JSON.parse(raw))
   } catch (err) {
-    // 解析失败不静默清空:备份坏数据 + 落盘报错(同 animeTrackStore)。
+    // 解析失败**不静默清空**:备份坏数据 + 落盘报错(同 animeTrackStore)。
     backupCorrupt(STORAGE_KEY, raw)
     reportError('recommendationStore', err)
     return []
@@ -121,7 +117,7 @@ class RecommendationStore {
 
   private persist(): void {
     if (this.cache === null) return
-    // 同 animeTrackStore：先同步通知 UI，再把序列化 + 写盘挪到 idle 合并执行。
+    // 同 animeTrackStore:先同步通知 UI,序列化 + 写盘挪到 idle 合并执行。
     this.listeners.forEach(cb => cb())
     scheduleStorageWrite(STORAGE_KEY, () => {
       if (this.cache === null) return

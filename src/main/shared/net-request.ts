@@ -1,24 +1,16 @@
 /**
- * Electron `net` 封装 —— 给主进程的抓取统一一个走 **Chromium 网络栈**的
- * HTTP 客户端，替代裸 Node `https`。
+ * 主进程 HTTP 客户端 —— 走 Electron `net`(Chromium 网络栈)。
  *
- * 为什么换（见 docs/scraping/bgm-集成参考手册）：Node `https` **不读系统代理**。
- * 用户开着 Clash/Mihomo 系 fake-ip 代理时，DNS 把 bgm.tv 解析成 198.18.x
- * 假地址，Node 直连这个不可路由的地址 → 黑洞 → 冷启动超时；而浏览器走
- * 系统代理永远正常。Electron `net` 走 Chromium 网络栈，**自动读系统代理 +
- * PAC + IPv4/IPv6 赛跑**，行为跟浏览器一致，从根上修掉「app 连不上但浏览器
- * 能开」。
+ * **红线:主进程所有 HTTP 都必须走这里,不许用 Node `https` / axios / node-fetch。**
+ * Node `https` 不读系统代理:用户开着 Clash 系 fake-ip 代理时,bgm.tv 被解析成不可路由的
+ * 198.18.x,直连就是黑洞;`net` 自动跟随系统代理 / PAC,行为与浏览器一致。
  *
- * 设计要点：
- *   - **剔除调用方的 Accept-Encoding**：手动设了这个头，Chromium 就不替你
- *     自动解压（它以为你要原始字节）。剔掉后 net 用自己那套真实的压缩协商
- *     并自动解压，返回的 body 已是明文 —— 调用方不用再 decodeBody。
- *   - **自己实现 timeout**：net 的 ClientRequest 没有 setTimeout，用 setTimeout
- *     + request.abort() 兜。
- *   - **redirect 默认 follow**：net 自动跟 3xx（萌娘那种相对 Location 也照跟），
- *     省掉手动重定向逻辑。要拿 3xx 原始响应（比如读 Location）传 'manual'。
- *   - **不接 RateLimiter / 不自动重试**：节流和重试策略留在各调用方
- *     （api-client 的 RateLimiter、search 的 withTransientRetry），这层只管传输。
+ * 几个约定:
+ *   - 调用方的 `Accept-Encoding` 会被剔掉 —— 手动设了它 Chromium 就不再自动解压
+ *     剔掉后拿到的 body 已是明文,不用再 decodeBody。
+ *   - timeout 自己实现(net 的 ClientRequest 没有 setTimeout)。
+ *   - 重定向默认 follow;要读 3xx 的 Location 传 'manual'。
+ *   - 这层只管传输:限速和重试都留在调用方。
  */
 import { net } from 'electron'
 
@@ -28,8 +20,7 @@ export interface NetResult {
   body: Buffer
 }
 
-// 由 Chromium 网络栈自动管理的请求头：手动 setHeader 会抛 net::ERR_INVALID_ARGUMENT
-// （或被忽略）。一律跳过，让 net 自己设。小写比较。
+// Chromium 自己管的头,手动 setHeader 会抛 net::ERR_INVALID_ARGUMENT 或被忽略。
 const NET_MANAGED_HEADERS = new Set(['host', 'connection', 'content-length', 'accept-encoding'])
 
 export interface NetOptions {

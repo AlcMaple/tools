@@ -1,22 +1,15 @@
-// 三大动漫源（Aowu / Xifan / Girigiri）的搜索状态机 hook。
+// 三个内置源的搜索状态机。
 //
-// 抽出来是因为 SearchDownload（用户输入关键词主动搜）和 MyAnime 的
-// SearchSourceModal（补搜其他源，自动用 BGM 标题预填）走的是完全同一
-// 套流程：缓存命中早返 → API 搜索 → 必要时验证码 → 写缓存 → 出结果。
-// 任何一处行为漂移都要改两处，所以集中到这一个文件。
+// 抽出来是因为「搜索下载页」和「补搜其他源」走的是完全同一套流程:命中缓存早返 → 搜索 →
+// 必要时验证码 → 写缓存 → 出结果。放两份的话任何行为漂移都要改两处。
 //
-// 涵盖：
-//   - 搜索缓存读写（isSearchCacheEnabled + getCachedSearch + setCachedSearch）
-//   - Xifan / Girigiri 验证码流（getCaptcha → setState captcha → verifyCaptcha
-//     → 成功后自动重跑上一次的 keyword）
-//   - Aowu 流式分页（onSearchPage 增量 push 进 results.cards，并把合并后的
-//     完整列表回写缓存，让下次命中就是全量）
-//   - reqIdRef 串行化：用户连点搜索 / strict mode 双 fire / 异步竞速都不会
-//     让旧请求覆盖新状态
-//   - aowuStreamUnsubRef：上一次搜索的 onSearchPage 监听在新搜索开始时取消,
-//     防止 stale 页 push 到新的 cards
-//   - 可选 initialKeyword：传了就 mount 时自动搜一次（含 startedRef 守 strict
-//     mode 双 fire）；不传就静默等用户主动调 search()
+// 涵盖:
+//   - 搜索缓存读写
+//   - 验证码流(取图 → 进 captcha 态 → 提交 → 成功后自动重跑上一次的关键词)
+//   - 嗷呜的流式分页(后续页增量 push 进结果,并把合并后的完整列表回写缓存,让下次命中即全量)
+//   - `reqIdRef` 串行化:连点搜索、strict mode 双触发、异步竞速都不会让旧请求覆盖新状态
+//   - 新搜索开始时取消上一次的流式监听,防止旧页 push 进新结果
+//   - 可选 initialKeyword:传了就在挂载时自动搜一次
 
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -42,18 +35,18 @@ export type SourceSearchState =
 
 export interface UseSourceSearchResult {
   state: SourceSearchState
-  /** Trigger a search. Idempotent; latest call wins via reqId. */
+  /** 发起搜索。幂等,按 reqId 后来者胜。 */
   search: (keyword: string) => Promise<void>
-  /** Refresh the captcha image while in captcha state. No-op otherwise. */
+  /** 在验证码状态下换一张图,其他状态是空操作。 */
   refreshCaptcha: () => Promise<void>
-  /** Submit captcha code; on success re-runs the last keyword. */
+  /** 提交验证码;成功后自动重跑上一次的关键词。 */
   verifyCaptcha: (code: string) => Promise<void>
-  /** Manually reset to idle (e.g. when caller closes a modal). */
+  /** 手动复位到 idle(比如调用方关掉了弹窗)。 */
   reset: () => void
 }
 
 interface UseSourceSearchOptions {
-  /** If provided, auto-search this keyword once on mount (strict-mode-safe). */
+  /** 传了就在挂载时自动搜这个词一次(对 strict mode 双触发安全)。 */
   initialKeyword?: string
 }
 
@@ -61,9 +54,8 @@ export function useSourceSearch(
   source: Source,
   opts: UseSourceSearchOptions = {},
 ): UseSourceSearchResult {
-  // Initial state defaults to 'searching' when there's an initial keyword,
-  // so the first render shows a spinner instead of empty space — users
-  // mistake empty space for "no results found".
+  // 有初始关键词时初始状态直接是 searching,让首屏显示 spinner 而不是空白 —— 用户会把空白
+  // 误当成「没搜到结果」。
   const [state, setState] = useState<SourceSearchState>(() =>
     opts.initialKeyword && opts.initialKeyword.trim()
       ? { status: 'searching' }
@@ -75,8 +67,7 @@ export function useSourceSearch(
   const currentAowuReqIdRef = useRef<string | null>(null)
   const startedRef = useRef(false)
 
-  // Cleanup stream listener on unmount so a closing modal doesn't keep
-  // receiving onSearchPage events into a dead state setter.
+  // 卸载时取消流式监听,免得弹窗关掉后还在往一个已失效的 setState 里推事件。
   useEffect(() => {
     return () => {
       aowuStreamUnsubRef.current?.()
@@ -90,8 +81,7 @@ export function useSourceSearch(
     lastKeywordRef.current = kw
     const myId = ++reqIdRef.current
 
-    // Any in-flight Aowu stream belongs to the previous search; kill it
-    // before we start collecting new pages.
+    // 还在飞的嗷呜流属于上一次搜索,开始收新页之前先掐掉。
     aowuStreamUnsubRef.current?.()
     aowuStreamUnsubRef.current = null
     currentAowuReqIdRef.current = null
@@ -101,10 +91,7 @@ export function useSourceSearch(
       setState(next)
     }
 
-    // Cache lookup first. A non-stale hit returns synchronously without
-    // touching the network. Stale hits fall through to fetch — we could
-    // also kick off a background refresh here but for simplicity the modal
-    // / page just shows the new results when they arrive.
+    // 先查缓存:未过期的命中直接同步返回、不碰网络;过期的落到下面照常联网。
     if (isSearchCacheEnabled()) {
       const hit = await getCachedSearch(kw, source)
       if (myId !== reqIdRef.current) return
@@ -138,8 +125,7 @@ export function useSourceSearch(
                 setState((prev) => {
                   if (prev.status !== 'results') return prev
                   const merged = [...prev.cards, ...morecards]
-                  // Write through after every page so a kill mid-stream
-                  // still leaves the cache with what we've collected so far.
+                  // 每页都写一次缓存 —— 中途被打断时,已收到的部分仍留在缓存里。
                   void setCachedSearch(kw, source, merged)
                   return { ...prev, cards: merged }
                 })
@@ -216,8 +202,7 @@ export function useSourceSearch(
     try {
       const { success } = await api.verifyCaptcha(code.trim())
       if (success) {
-        // Re-run the keyword that originally tripped captcha. search() bumps
-        // reqId so any leftover from before-verify is invalidated.
+        // 重跑当初触发验证码的那个关键词;search() 会推进 reqId,验证前的残留自动作废。
         await search(lastKeywordRef.current)
       } else {
         const { image_b64 } = await api.getCaptcha()
@@ -239,9 +224,7 @@ export function useSourceSearch(
     setState({ status: 'idle' })
   }
 
-  // Auto-search on mount when initialKeyword is provided. startedRef +
-  // refs persist across strict-mode fake-unmount/remount so we only kick
-  // off one search even though useEffect fires twice in dev.
+  // ref 在 strict mode 的假卸载/重挂之间保留,所以 dev 下 effect 触发两次也只会真搜一次。
   useEffect(() => {
     if (startedRef.current) return
     startedRef.current = true

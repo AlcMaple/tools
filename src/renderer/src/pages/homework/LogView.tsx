@@ -20,9 +20,8 @@ interface Props {
 type ViewMode = 'flow' | 'dense'
 const VIEW_KEY = 'maple-log-view-mode'
 
-// 类型配色：一组**字面**完整类名（Tailwind JIT 只收录源码里字面出现的类名，
-// 动态拼 `bg-${c}-400` 不会被打进 CSS），按类型名 hash 取一档 —— 任意新类型
-// 都有稳定颜色。用 400 档：浅深主题下都还算能读。
+// 类型配色必须是一组**字面完整类名** —— Tailwind 只收录源码里字面出现的类名,动态拼
+// `bg-${c}-400` 不会被打进 CSS。按类型名 hash 取一档,任意新类型都有稳定颜色。
 const TYPE_PALETTE = [
   'text-rose-400 bg-rose-400/15 border-rose-400/30',
   'text-orange-400 bg-orange-400/15 border-orange-400/30',
@@ -44,9 +43,9 @@ function typeColor(t: string): string {
   return TYPE_PALETTE[hashStr(t) % TYPE_PALETTE.length]
 }
 
-// 流式正文的偶发彩字：~1/3 标题上色（只看标题 hash，与有没有类型/备注无关 —— 否则
-// 100% 带类型会全彩难看）。颜色从这套 400 档里按 hash 取，暗底可读、分布不规律、
-// 颜色多样、稳定不闪，像 Word 文档里时不时冒一段彩字。其余沿用正文色。
+// 流式正文的偶发彩字:约三分之一的标题上色,**只看标题 hash**、与有没有类型或备注无关 ——
+// 否则「100% 带类型」的数据会全彩、很难看。颜色分布不规律、稳定不闪,像 Word 文档里时不时
+// 冒一段彩字。
 const FLOW_ACCENTS = [
   'text-rose-400', 'text-orange-400', 'text-amber-400', 'text-emerald-400',
   'text-sky-400', 'text-indigo-400', 'text-violet-400', 'text-fuchsia-400',
@@ -74,7 +73,7 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [detailId, setDetailId] = useState<number | null>(null)
   const [creating, setCreating] = useState<LogEntry | null>(null) // 新增弹窗草稿，null=关
-  // 单条 hover 浮层：fixed 定位 + 光标锚定，避开滚动容器把绝对定位的卡片裁掉的问题
+  // 单条 hover 浮层用 fixed 定位 + 光标锚定,避开滚动容器把绝对定位的卡片裁掉的问题
   const [hover, setHover] = useState<{ entry: LogEntry; x: number; y: number } | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const v = localStorage.getItem(VIEW_KEY)
@@ -91,7 +90,7 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
     return () => clearTimeout(t)
   }, [recentlyAddedId])
 
-  // 所有类型 + 命中数（给 TagFilter）—— 按命中数降序，跟 MyAnime 一致
+  // 所有类型 + 命中数(给过滤器),按命中数降序
   const allTypes = useMemo(() => {
     const m = new Map<string, number>()
     data.forEach(e => e.types?.forEach(t => m.set(t, (m.get(t) || 0) + 1)))
@@ -127,7 +126,7 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
   }
 
   const openDetail = (e: LogEntry): void => { setHover(null); setDetailId(e.id) }
-  // hover 锚定在鼠标位置（光标左→卡片左、光标右→卡片右），由 HoverCard 贴边翻转
+  // hover 锚定在鼠标位置(光标左→卡片左、光标右→卡片右),由卡片自己贴边翻转
   const onEnterTitle = (e: React.MouseEvent, entry: LogEntry): void => {
     if (!hasMeta(entry)) return
     setHover({ entry, x: e.clientX, y: e.clientY })

@@ -5,9 +5,8 @@ import { isScrapeChallengePage } from '../shared/scrape-guard'
 import { logInfo } from '../shared/logger'
 
 const XIFAN_PARTITION = 'persist:xifan-browser-check'
-// 这条链路没有用户要在外部窗口里完成的步骤：正常安全检查约 5 秒，但实测站点偶尔
-// 会把首个无登录态页面拖到约 28 秒。45 秒给最终 refresh 留余量，仍不沿用可见验证
-// 时代的 90 秒挂起，也不在超时后自动重试。
+// 这条链路没有需要用户在外部窗口里完成的步骤:正常安全检查约 5 秒,但站点偶尔会把首个
+// 无登录态页面拖到约 28 秒。45 秒是给最终 refresh 留的余量;超时后**不自动重试**。
 const PAGE_TIMEOUT_MS = 45_000
 const DOCUMENT_SETTLE_DELAY_MS = 120
 const CHALLENGE_POLL_DELAY_MS = 250
@@ -17,7 +16,7 @@ export interface XifanBrowserPage {
   html: string
 }
 
-// 所有页面读取和同源接口请求顺序执行，避免一个 WebContents 同时被多次导航。
+// 所有页面读取和同源接口请求顺序执行,避免一个 WebContents 同时被多次导航。
 let pageQueue: Promise<void> = Promise.resolve()
 let cachedSession: Electron.Session | null = null
 let activeBrowserWindow: BrowserWindow | null = null
@@ -64,9 +63,9 @@ export function isXifanPageUrl(url: string): boolean {
 }
 
 /**
- * 稀饭自己的倒计时刷新会主动取消旧文档。macOS 的 Electron 有时只把它报成
- * `(-3) loading ...`，不带 `ERR_ABORTED` 文本；两种写法都是同一个正常导航交接，
- * 不能当作页面打不开，更不能因此重新 loadURL 额外发一次请求。
+ * 站点自己的倒计时刷新会主动取消旧文档。macOS 上 Electron 有时只报成 `(-3) loading ...`、
+ * 不带 ERR_ABORTED 文本 —— 两种写法都是同一次正常的导航交接,不能当成页面打不开
+ * 更不能因此重新 loadURL 多发一次请求。
  */
 function isNavigationAbort(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
@@ -74,10 +73,9 @@ function isNavigationAbort(error: unknown): boolean {
 }
 
 /**
- * 复用通过验证的同一张后台页面。它始终不显示：站点自己的脚本仍在真实 Chromium
- * WebContents 中执行，但播放页只保留「解析播放地址中…」这一层应用 UI。
- * 正常页面与后续 fetch 都留在这里，不能为验证码再新开一张首页，否则站点可能把它
- * 当新的首次访问。
+ * 复用同一张已通过验证的后台页面,它**始终不显示**:站点脚本仍在真实 WebContents 里执行
+ * 播放页只留「解析播放地址中…」这一层应用 UI。正常页面和后续 fetch 都留在这张页面上 ——
+ * **不要为验证码另开一张首页**,那可能被站点当成新的首次访问。
  */
 function getXifanBrowserWindow(): BrowserWindow {
   if (activeBrowserWindow && !activeBrowserWindow.isDestroyed()) return activeBrowserWindow
@@ -97,8 +95,8 @@ function getXifanBrowserWindow(): BrowserWindow {
       sandbox: true,
     },
   })
-  // show:false 的页面可能被 Chromium 降低定时器优先级；稀饭的检查正是靠倒计时
-  // 和页面脚本刷新完成，因此明确保持它的正常页面节奏，不额外等待前台窗口。
+  // show:false 的页面可能被 Chromium 降低定时器优先级,而站点的检查正是靠倒计时和脚本刷新
+  // 完成的,所以明确保持它的正常节奏,不去等前台窗口。
   win.webContents.setBackgroundThrottling(false)
   win.on('page-title-updated', (event) => event.preventDefault())
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -120,8 +118,8 @@ function queueXifanBrowserTask<T>(task: () => Promise<T>): Promise<T> {
 }
 
 /**
- * 在持久同源 WebContents 中完成一次页面读取或 fetch。`targetUrl` 为空时不导航，
- * 直接在前一次已验证的页面内运行接口请求。
+ * 在这张持久的同源 WebContents 里完成一次页面读取或 fetch。`targetUrl` 为空时不导航
+ * 直接在上一次已验证的页面里发接口请求。
  */
 function runXifanBrowserTask<T>(
   targetUrl: string | null,
@@ -133,7 +131,7 @@ function runXifanBrowserTask<T>(
     let settled = false
     let actionStarted = false
     let checkTimer: ReturnType<typeof setTimeout> | null = null
-    // 阶段日志:进度只在阶段**切换**时落一行,不跟着 250ms 轮询刷屏。
+    // 阶段日志只在**切换**时落一行,不跟着 250ms 轮询刷屏。
     let challengeLogged = false
     const stageLabel = targetUrl ?? '(复用当前页)'
     const cleanup = (): void => {

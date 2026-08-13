@@ -1,29 +1,17 @@
-// 好看集编辑器 modal —— 点 ✨ chip 打开，让用户标 / 看 / 改这部番的好看集。
+// 好看集编辑器 —— 点 ✨ chip 打开,标 / 看 / 改这部番的好看集。
 //
-// 数据形态是 number[]（具体集号列表，源自用户原 PDF "好看集" 概念），点即生
-// 效不走 draft —— 这个操作是"勾几集"那种细碎动作，每点一下都立即写 store 才
-// 符合"勾选清单"的手感（draft 反而强迫用户多走一步"保存"，违反直觉）。
+// 数据是 number[](具体集号)。**点即生效、不走草稿** —— 这是「勾清单」那种细碎动作
+// 每点一下立刻写 store 才符合手感,草稿反而强迫用户多走一步保存。
 //
-// ── 两种视图（顶部 toggle 切换）──────────────────────────────────────────────
+// 两种视图:
+//   - **全部集数**:1..maxN 的方块网格,亮 = 已标,再点取消。适合边追边勾。
+//   - **仅好看集**:只列已标的集号,点 chip 移除。适合柯南这种 1000+ 集、只想看自己标过的几十集。
 //
-// **全部集数（all）** —— 1..maxN 的方块网格，方块亮表示已标，再点取消。
-// 适合：边追番边对照集号打勾、找具体某一集的位置。
-// 总集数情况：
-//   - 已知（最常见）：1 到 total
-//   - 未知（连载中 / OVA）：1 到 max(episode, 已标最高集, 1)
-//     "看到哪显示到哪"：episode=0（还没看）只显示 1 个方块，episode=5 显示 5 个,
-//     已标过更高集号（数据导入）也撑到那里。不做"+N 扩展"按钮 —— 好看集语义
-//     上是"看过的集才标"（重温 / 重看 / 暂停截图都发生在看过之后），所以上限
-//     锁在"已看到 / 已标过"是合理的；想标更后面的集，看到了再回来标。
-//   - 长寡番（柯南 1000+）：max-h + overflow-y-auto 撑住，没做虚拟化
+// 总集数未知(连载中 / OVA)时网格上限取 max(当前观看集, 已标最高集, 1),即「看到哪显示到哪」。
+// **不提供「+N 扩展」按钮** —— 好看集语义上必须先看过那一集才能标,上限锁在「已看到 / 已标过」
+// 是合理的;想标更后面的,看到了再回来标。
 //
-// **仅好看集（marked）** —— 只列已标的集号，每集一个 chip，点 chip 移除。
-// 适合：柯南这种 1000+ 集的番，用户只想看自己标过的几十集；不用滚长长的网格。
-// 空状态：提示用户切到「全部集数」开始勾选。
-//
-// `episode` 仅用于决定连载中场景的网格上限（见 maxN 计算），不在 UI 上画"当前
-// 集"高亮——早先版本试过给当前集加 ring-primary 轮廓做对照锚点，用户觉得
-// 那个高亮反而干扰扫视（amber 已标 / 普通未标 已经够区分），就拿掉了。
+// 不给当前集画高亮轮廓:试过,用户觉得那个高亮反而干扰扫视(amber 已标 / 普通未标 已经够区分)。
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -32,38 +20,37 @@ import { compressGoodEpisodes, normalizeGoodEpisodes } from '../stores/animeTrac
 
 interface Props {
   animeTitle: string
-  /** 当前已标的集号集合（来自 store）。modal 内部 toggle 直接通过 onChange 写回。 */
+  /** 当前已标的集号(来自 store)。弹窗内 toggle 直接通过 onChange 写回。 */
   episodes: number[]
-  /** 好看集备注 map（集号 → 备注）。在「仅好看集」视图行内编辑，全部集数网格 hover 看。 */
+  /** 集号 → 备注。「仅好看集」视图里行内编辑,网格视图 hover 查看。 */
   notes: Record<number, string>
-  /** 总集数；未知时（连载中等）走"+12 扩展"路径。 */
+  /** 总集数;未知时走「看到哪显示到哪」的上限计算。 */
   totalEpisodes: number | undefined
-  /** 当前观看进度，画"当前集"轮廓提示 + 决定连载中默认渲染范围。 */
+  /** 当前观看进度,用来决定连载中场景的网格上限。 */
   episode: number
   onChange: (next: number[]) => void
-  /** 写某一集的备注（trim 后空 = 删除）。 */
+  /** 写某一集的备注(trim 后为空 = 删除)。 */
   onSetNote: (ep: number, note: string) => void
   onClose: () => void
 }
 
 type ViewMode = 'all' | 'marked'
 
-// 连载中场景下网格至少显示 1 个方块——用户还没看过任何一集（episode=0）时
-// 也得有个"门面"格子在那里，否则空网格特别突兀。1 是最克制的默认。
+// 连载中场景下至少显示 1 个方块 —— 用户还没看过任何一集时也得有个门面格子,否则空网格很突兀。
 const ONGOING_MIN = 1
 
 export function GoodEpisodesEditor({
   animeTitle, episodes, notes, totalEpisodes, episode, onChange, onSetNote, onClose,
 }: Props): JSX.Element {
-  // 视图切换 —— 默认「全部集数」（最常见的"想找具体某集标记"场景）。
-  // 长寡番（柯南）的用户可以手动切到「仅好看集」绕开 1000+ 方块网格。
+  // 默认「全部集数」(最常见的「找某一集来标」场景);长寿番用户可以手动切到「仅好看集」
+  // 绕开 1000+ 方块的网格。
   const [view, setView] = useState<ViewMode>('all')
 
   // 就地备注气泡：右键已标的集时打开，锚定在那一格。
   const [noteEditor, setNoteEditor] = useState<{ ep: number; anchor: DOMRect } | null>(null)
 
-  // 备注 hover 提示气泡 —— 自己实现而不用原生 title，因为 title 有浏览器写死的
-  // ~0.7s 延迟，慢。这里 ~120ms 防抖后即显（既快又避免扫过一堆格子时狂闪）。
+  // 备注提示气泡自己实现而不用原生 title:后者有浏览器写死的 ~0.7s 延迟,太慢。
+  // 这里 ~120ms 防抖后即显 —— 既快,又不会在扫过一堆格子时狂闪。
   const [hoverTip, setHoverTip] = useState<{ text: string; anchor: DOMRect } | null>(null)
   const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const showTip = (text: string, anchor: DOMRect): void => {
@@ -80,12 +67,7 @@ export function GoodEpisodesEditor({
   }
   useEffect(() => () => { if (tipTimer.current) clearTimeout(tipTimer.current) }, [])
 
-  // 网格上限：
-  //   - totalEpisodes 已知 → 直接用 total
-  //   - 未知（连载中）→ max(当前观看集, 已标最高集, 1)
-  //     "看到哪显示到哪"：episode=0 时只显示 1 个方块；用户标过更高集号（数据
-  //     导入）也会撑到那里。不提供手动扩展按钮：好看集语义上必须先看过那一集
-  //     才能标，所以上限锁在"已看到 / 已标过"是合理的。
+  // 网格上限:总集数已知就用它;未知则取 max(当前观看集, 已标最高集, 1)。
   const maxN = useMemo(() => {
     if (totalEpisodes != null) return totalEpisodes
     const highestMarked = episodes.length > 0 ? episodes[episodes.length - 1] : 0

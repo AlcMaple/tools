@@ -1,22 +1,17 @@
 // 「添加观看源」弹窗 —— 自由粘贴任意 URL 作为额外的跳转链接。
 //
-// 触发场景：用户在 MyAnime 行尾点「+ 添加链接」时打开。SearchDownload 的
-// 关联追番 + MyAnime 的「+ 搜 X」入口已经覆盖三个内置源；这里给的是真正
-// "自由格式"的入口 —— 用户填一个标题（chip 显示文字）+ URL，就这两个字段。
-//
-// 写出的 binding：
-//   { source: 'Custom', sourceKey: url, sourceUrl: url, sourceTitle: label }
-// 始终 source='Custom'，sourceTitle 兼任 chip 显示标签 —— WatchHere 看到
-// Custom 来源会优先用 sourceTitle 渲染 chip 名称。
+// 三个内置源已经由搜索关联流程覆盖,这里给的是真正自由格式的入口:一个标题(chip 上的显示文字)
+// + 一个 URL,就这两个字段。
+// 写出的 binding 固定 `source: 'Custom'`,`sourceTitle` 兼任 chip 的显示标签。
 
 import { useState } from 'react'
 import { ModalShell } from '../pages/homework/shared'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 
 interface Props {
-  /** Shown in the header so the user knows which anime they're binding to. */
+  /** 显示在标题栏,让用户知道正在给哪部番加链接。 */
   animeTitle: string
-  /** Existing bindings — used only to dedup by URL on save. */
+  /** 已有的 binding,只用于保存时按 URL 去重。 */
   existing: AnimeBinding[]
   onClose: () => void
   onConfirm: (binding: AnimeBinding) => void
@@ -34,15 +29,13 @@ export function AddBindingModal({ animeTitle, existing, onClose, onConfirm }: Pr
   const submit = (): void => {
     if (!canSave) return
 
-    // URL hygiene — `http://`/`https://` only; otherwise we'd open `about:` /
-    // `file:` URLs which is a privacy leak (and 99% of the time it's a typo).
+    // 只接受 http/https —— 否则会打开 `about:` / `file:` 这类 URL,既是隐私泄漏,也几乎总是笔误。
     if (!/^https?:\/\//i.test(trimmedUrl)) {
       setError('链接必须以 http:// 或 https:// 开头')
       return
     }
 
-    // Dedup on sourceKey only — same URL is never linked twice regardless
-    // of label. (Different labels pointing at same URL would be confusing.)
+    // 只按 sourceKey 去重:同一个 URL 不会被绑两次
     if (existing.some(b => b.sourceKey.trim() === trimmedUrl)) {
       setError('已经添加过这个链接了')
       return

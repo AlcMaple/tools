@@ -1,15 +1,8 @@
-// MyAnime 极简报告 —— 生成 QQ 邮箱用的 HTML 邮件正文，仿原 PDF 视觉：
-// 米白底 + 黑色正文 + 红色编号 + 大号黑色 section 标题 + 红色加粗 section 分隔。
+// 追番报告 —— 生成邮件用的 HTML 正文,仿原 PDF 视觉(米白底 + 黑正文 + 红编号 + 大号 section 标题)。
 //
-// 所有样式都内联（style="..."）—— QQ 邮箱 / 主流手机邮件 app 会激进剥离
-// <style> 块和外部样式表，inline style 是唯一稳定的样式通道。
-//
-// 字体：用 `-apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif`
-// 系统栈，让 iOS / macOS / Windows / Android 各看各的本地字体，PDF 的"中文宋体
-// 偏正经"那种风格保留下来（PingFang/微软雅黑而不是 Arial）。
-//
-// 宽度：max-width 600px 居中。手机邮件 app 会按视口宽度自动适配（< 600 时
-// 容器自适应填满），桌面上保持 PDF 那种"窄页面、易读行长"的感觉。
+// **所有样式必须内联**:QQ 邮箱和主流手机邮件 app 会激进剥离 <style> 块和外部样式表
+// inline style 是唯一稳定的样式通道。
+// 字体用系统栈,让各平台各用各的本地中文字体。宽度 max-width 600px 居中,手机端自适应填满。
 
 import type { AnimeTrack } from '../stores/animeTrackStore'
 import { compressGoodEpisodes } from '../stores/animeTrackStore'
@@ -30,20 +23,14 @@ function displayTitle(t: { title: string; titleCn?: string }): string {
   return t.titleCn || t.title
 }
 
-// ── 集数文本 ────────────────────────────────────────────────────────────────
-//
-// 极简报告只关心"看到第几集"，不显示总集数 —— 总集数信息冗余（在追番列表
-// 里的番都没看完，看到几就是几），手机扫读时去掉 "/12" 这种尾巴行更短更清爽。
+// 只显示「看到第几集」,不显示总集数 —— 追番列表里的番本来就没看完,看到几就是几
+// 去掉 "/12" 这种尾巴,手机扫读时行更短更清爽。
 
 function episodeText(episode: number): string {
   return `${episode}`
 }
 
-// ── 排序 ────────────────────────────────────────────────────────────────────
-//
-// 用户要求"统一按添加日期"——新加的在最上面（倒序）。
-// tracks 用 startedAt，recs 用 createdAt，都是 ISO，字符串比较即可（ISO 字符串
-// 的字典序跟时间序一致）。
+// 统一按添加日期倒序,新加的在最上面。两边存的都是 ISO 字符串,字典序即时间序,直接比较。
 
 function sortByAddedDesc<T extends { startedAt?: string; createdAt?: string }>(arr: T[]): T[] {
   return [...arr].sort((a, b) => {
@@ -53,12 +40,9 @@ function sortByAddedDesc<T extends { startedAt?: string; createdAt?: string }>(a
   })
 }
 
-// ── Section 渲染 ────────────────────────────────────────────────────────────
-//
-// 每个 section 都是「红色装饰条 + 黑色标题 + 计数徽章 + 内容」的三段式,
-// 跟原 PDF 的"加粗黑色 section header"对齐。
-// 空数据时显示一行米色"（本期无新增）"提示，不删 section —— 保持邮件结构稳定,
-// 让用户每次都看到一致的"这三块都在"心智地图。
+// 每个 section 都是「红色装饰条 + 黑色标题 + 计数徽章 + 内容」的三段式。
+// 空数据时显示一行「(本期无新增)」而**不删掉 section** —— 保持邮件结构稳定,让用户每次都看到
+// 一致的「这三块都在」。
 
 function sectionHeader(label: string, count: number): string {
   return `
@@ -76,9 +60,7 @@ function emptyLine(): string {
   `
 }
 
-// ── 追番列表 ────────────────────────────────────────────────────────────────
-//
-// 仿 PDF "1、动漫名：集数" 格式。number 用红色加粗，名字黑色，集数低饱和灰。
+// 仿 PDF 的「1、动漫名:集数」格式:编号红色加粗,名字黑色,集数低饱和灰。
 
 function renderWatchingList(tracks: AnimeTrack[]): string {
   if (tracks.length === 0) return emptyLine()
@@ -91,9 +73,7 @@ function renderWatchingList(tracks: AnimeTrack[]): string {
   `).join('')
 }
 
-// ── 推荐列表 ────────────────────────────────────────────────────────────────
-//
-// 推荐只要"看一眼名字"，所以更紧凑：编号 + 名字，省去状态 / 推荐对象等冗余。
+// 推荐只需要「看一眼名字」,所以更紧凑:编号 + 名字,省掉状态 / 推荐对象这些。
 
 function renderRecommendList(recs: Recommendation[]): string {
   if (recs.length === 0) return emptyLine()
