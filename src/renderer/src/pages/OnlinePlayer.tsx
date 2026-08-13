@@ -45,6 +45,7 @@ import type { BiliDash, BiliVideoInfo } from '../types/bili'
 import type { XifanWatchInfo } from '../types/xifan'
 import type { AowuWatchInfo } from '../types/aowu'
 import type { GirigiriWatchInfo } from '../types/girigiri'
+import PlayerControls from '../components/PlayerControls'
 
 // shaka 只认自己注册过的 scheme:B 站的分片地址已被主进程包成 mtmedia://(带防盗链
 // Referer),不注册的话 shaka 直接报 UNSUPPORTED_SCHEME。用它自带的 fetch 插件即可
@@ -472,6 +473,9 @@ export default function OnlinePlayer(): JSX.Element {
   // Chromium 不原生支持 m3u8,靠 hls.js 走 MSE 逐段喂。列表/分片/AES 密钥全部
   // 经 mtmedia 代理(主进程已把列表里的地址重写成 mtmedia://),同源不受跨源策略限制。
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  // 播放区容器(16:9 盒子):自定义控制条的全屏目标 + 悬停时间提示的挂载点
+  const playerBoxRef = useRef<HTMLDivElement | null>(null)
+  const [playerFs, setPlayerFs] = useState(false)
   // 让 Tab 绕开原生控件(否则每停一站都甩出系统色黄框)+ 自己接管空格暂停。
   // 哨兵渲染在播放区两端,必须紧贴 <video>,焦点才能从这一侧直接跨到那一侧。
   const { preRef: tabHopPreRef, postRef: tabHopPostRef } = usePlayerKeys(videoRef)
@@ -751,7 +755,10 @@ export default function OnlinePlayer(): JSX.Element {
           <>
             {/* 播放器 —— 16:9 播放区(video / dash / 内联搜索 / 各占位态)。
                 自定义源(webview 嵌真实页)走上面的固定高度早期 return,不到这里。 */}
-            <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+            <div
+              ref={playerBoxRef}
+              className={`relative w-full overflow-hidden bg-black ${playerFs ? 'h-full' : 'aspect-video rounded-xl'}`}
+            >
               {(view.mode === 'video' || view.mode === 'dash') && (
                 <span ref={tabHopPreRef} tabIndex={0} className="pointer-events-none absolute h-px w-px opacity-0" />
               )}
@@ -761,19 +768,26 @@ export default function OnlinePlayer(): JSX.Element {
                   ref={videoRef}
                   // HLS 由 hls.js 经 MSE 喂,不设 src;mp4 直链走同源流代理直接喂。
                   src={view.isHls ? undefined : toMediaProxy(view.url)}
-                  controls
                   autoPlay
-                  className="h-full w-full"
+                  className="h-full w-full object-contain"
                   // HLS 的失败统一由 hls.js 的 fatal 事件兜底,别在这儿再触发一次换线路。
                   onError={view.isHls ? undefined : handleVideoError}
                 />
               )}
               {view.mode === 'dash' && (
                 // DASH 由 shaka 经 MSE 喂,不设 src、不挂 onError(失败走 shaka 的 error 事件)
-                <video ref={videoRef} controls autoPlay className="h-full w-full" />
+                <video ref={videoRef} autoPlay className="h-full w-full object-contain" />
               )}
               {(view.mode === 'video' || view.mode === 'dash') && (
                 <span ref={tabHopPostRef} tabIndex={0} className="pointer-events-none absolute h-px w-px opacity-0" />
+              )}
+              {(view.mode === 'video' || view.mode === 'dash') && (
+                <PlayerControls
+                  videoRef={videoRef}
+                  containerRef={playerBoxRef}
+                  videoKey={view.mode === 'dash' ? 'dash' : view.mode === 'video' ? view.url : ''}
+                  onFullscreenChange={setPlayerFs}
+                />
               )}
               {view.mode === 'search' && entry?.builtin && track && (
                 <div className="flex h-full items-center justify-center overflow-y-auto p-4 md:p-6">
