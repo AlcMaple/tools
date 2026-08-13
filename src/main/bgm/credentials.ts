@@ -1,15 +1,13 @@
 /**
  * BGM 鉴权信息(令牌 + 网页登录 cookie)的持久化与内嵌登录。
  *
- * 两套身份、两个用途,缺一不可:
- *   - **token**(个人访问令牌)：给 `api.bgm.tv` 用,作 `Authorization: Bearer`。
- *     管「详情 / 按别名搜索」走登录态(更宽松更稳)。用户在设置里粘贴。
- *   - **cookie**(bgm.tv 网页登录态)：给 `bgm.tv` HTML 抓取用,作 `Cookie` 头。
- *     管「主搜索」—— 匿名搜索被 BGM 故意拖慢到 ~16s,登录态则 ~0.6s 秒回。
- *     由「登录 BGM」按钮弹出的内嵌窗口在登录成功后自动捕获。
+ * 两套身份缺一不可:
+ *   - **token**(个人访问令牌,用户在设置里粘贴)→ 给 api.bgm.tv 当 `Authorization: Bearer`
+ *     让「详情 / 按别名搜索」走登录态,限额更宽松。
+ *   - **cookie**(网页登录态,由内嵌登录窗捕获)→ 给 bgm.tv HTML 抓取当 Cookie 头。
+ *     匿名搜索会被 BGM 故意拖慢到 ~16s,登录态 ~0.6s 秒回。
  *
- * 都存进 userData/bgm_auth.json。token 不回传明文给 renderer(只回 hasToken,
- * 对齐邮件授权码的处理);cookie 同理不外泄。
+ * 都存 userData/bgm_auth.json。两者都**不回传明文给渲染层**,只回布尔。
  */
 import { BrowserWindow, session } from 'electron'
 import { join } from 'path'
@@ -63,9 +61,9 @@ function setBgmCookie(next: string): void {
 
 export function clearBgmCookie(): void {
   setBgmCookie('')
-  // 分区一起清:登录窗分区里残留的旧 chii_auth 若已被服务端作废,存在本身就有害——
-  // captureIfLoggedIn 只看「cookie 存在」,残留会让下次点「登录」秒判成功、把死
-  // cookie 原样存回来(实测复现的「启动掉登录→点登录假成功」死循环就是它)。
+  // 分区里的 cookie 要一起清:登录窗分区残留的旧 chii_auth 若已被服务端作废,存在本身就有害
+  // —— captureIfLoggedIn 只看「cookie 存在」,残留会让下次点登录秒判成功、把死 cookie 原样
+  // 存回来,形成「启动掉登录 → 点登录假成功」的死循环。
   void clearLoginPartitionCookies()
 }
 
@@ -124,10 +122,9 @@ export function getBgmAuthStatus(): BgmAuthStatus {
 }
 
 /**
- * 主动校验网页登录是否仍有效 —— 怎么判断「过期」靠这个,不靠猜 cookie 寿命。
- * 带 cookie 拉一次 bgm.tv 首页,看 HTML 里有没有登录态标志 `/logout`
- * (实测:登录页有、匿名/过期页没有)。失效就清掉 cookie,让状态如实回落成
- * 「未登录」,UI 据此提示重新登录。网络失败不动 cookie(可能只是网络抖,别误清)。
+ * 主动校验网页登录是否仍有效 —— 判断「过期」靠这个,不靠猜 cookie 寿命。带 cookie 拉一次
+ * 首页,看 HTML 里有没有 `/logout`(登录页有、匿名页没有)。失效就清 cookie 让状态如实回落。
+ * 网络失败时不动 cookie —— 可能只是网络抖,别误清。
  */
 export async function verifyBgmLogin(): Promise<BgmAuthStatus> {
   if (!cookie) return getBgmAuthStatus()
@@ -141,15 +138,15 @@ export async function verifyBgmLogin(): Promise<BgmAuthStatus> {
       timeoutMs: 12000,
     })
     if (res.status !== 200) {
-      // 非 200(限流/502/CF 拦截)的错误页同样没有 /logout,不能当「过期」证据——
-      // 否则 BGM 偶发故障会把还有效的登录态误清掉。保持原状态,下次再查。
+      // 非 200(限流/502/CF 拦截)的错误页同样没有 /logout,**不能当过期证据** —— 否则 BGM 偶发
+      // 故障会把还有效的登录态误清掉。
       logInfo('bgm-auth', `verify 探测无效(HTTP ${res.status}),保持原登录状态`)
       return getBgmAuthStatus()
     }
     const html = res.body.toString('utf-8')
     if (!html.includes('/logout')) {
-      // 200 且无「退出」入口 = 服务端确实不认这份 cookie(实测失效时返回的首页
-      // 和匿名访客逐字节一致)。本地 + 登录窗分区一起清,见 clearBgmCookie 注释。
+      // 200 且没有退出入口 = 服务端确实不认这份 cookie(失效时返回的首页与匿名访客逐字节一致)。
+      // 本地和登录窗分区一起清。
       logInfo('bgm-auth', 'verify 判定登录已失效(200 页无 /logout),清除本地与分区 cookie')
       clearBgmCookie()
     } else {
@@ -165,8 +162,7 @@ export async function verifyBgmLogin(): Promise<BgmAuthStatus> {
 
 let loginWin: BrowserWindow | null = null
 
-// 登录页首字节常要等好几秒,先放这个内联加载页占位(秒显),避免久等黑屏像没反应。
-// 深色底对齐 app 主题;真页面提交后会自动盖掉它。
+// 登录页首字节常要等好几秒,先用这个内联页秒显占位,免得久等黑屏像没反应。真页面会盖掉它。
 const LOGIN_SPLASH =
   'data:text/html;charset=utf-8,' +
   encodeURIComponent(
@@ -177,9 +173,8 @@ const LOGIN_SPLASH =
   )
 
 /**
- * 弹一个内嵌的 BGM 登录窗口(就是真的 bgm.tv 登录页,验证码/二步验证都由用户
- * 自己完成)。检测到登录成功(出现 chii_auth cookie)即捕获全部 bgm.tv cookie
- * 存好、自动关窗。窗口已开则聚焦,避免重复弹(「防止一直刷重复登录」)。
+ * 弹内嵌的 BGM 登录窗(就是真的登录页,验证码 / 二步验证都由用户自己完成)。出现 chii_auth
+ * cookie 即视为登录成功,捕获全部 cookie 并自动关窗。窗口已开则聚焦,不重复弹。
  */
 export async function openBgmLogin(parent?: BrowserWindow): Promise<BgmAuthStatus> {
   if (loginWin && !loginWin.isDestroyed()) {
@@ -188,11 +183,10 @@ export async function openBgmLogin(parent?: BrowserWindow): Promise<BgmAuthStatu
   }
 
   return new Promise<BgmAuthStatus>((resolve) => {
-    // 独立持久化 session 分区:不沾 app 默认 session 的自定义协议(archivist)/
-    // 残留 cookie —— 行为像一个全新浏览器。cookie 也在此分区,登录态可持久,
-    // 下次少重登。注:BGM 验证码是「密码框聚焦才显示」的(实测),且
-    // 验证码图**点一下即换一张**(BGM 原生支持)。偶发「裂图」是换图请求被该 IP
-    // 限流/源站 502 所致,缓一会再点即可 —— 不做整页重载(那样重且会丢已填内容)。
+    // 用独立的持久化 session 分区:不沾 app 默认 session 的自定义协议和残留 cookie,行为像一个
+    // 全新浏览器;cookie 也存在这个分区,登录态可持久。
+    // 注:BGM 的验证码要**密码框聚焦**才显示,且图**点一下就换一张**。偶发裂图是换图请求被限流
+    // 或源站 502,缓一会再点即可 —— 不要做整页重载,那样又重又会丢已填内容。
     const part = session.fromPartition('persist:bgm-login')
     // 关键:BGM 把登录会话**绑定在登录那一刻的 User-Agent 上**(实测矩阵:同
     // jar 同 IP,仅换 UA 即被当匿名)。登录窗必须用和 verify / 带登录 cookie 的

@@ -38,8 +38,7 @@ export function XifanDownloadConfigModal({
   const options: SourceOption[] = validSources.map((s) => ({
     id: s.idx,
     name: cleanSourceName(s.name),
-    // Xifan doesn't expose per-source episode counts — total is the same
-    // across templates, so reuse watchInfo.total for every option.
+    // 稀饭不给每条线路各自的集数 —— 各线路总集数相同,所以每个选项都复用同一个 total。
     episodeCount: watchInfo.total,
     epLabels: s.epLabels.map((l, i) => displayEpLabel(l, i + 1)),
   }));
@@ -52,8 +51,8 @@ export function XifanDownloadConfigModal({
   ): void => {
     const selected = validSources.find((s) => s.idx === source.id);
     if (!selected?.template) return;
-    // Pass all valid templates (selected first) so user can cycle sources if it fails.
-    // epPages 与 templates 同序平行,切换源时 sourceIdx 同时索引两个数组。
+    // 把全部可用模板都传下去(选中的排第一),失败时用户可以换线路。
+    // epPages 与 templates 同序平行,换源时 sourceIdx 同时索引这两个数组。
     const ordered = [
       selected,
       ...validSources.filter((s) => s.idx !== selected.idx),

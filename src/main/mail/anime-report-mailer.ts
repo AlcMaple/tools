@@ -1,21 +1,16 @@
-// 追番极简报告邮件 —— 跟 calendar-mailer 不同，这里完全不截图、不开隐藏
-// 窗口；renderer 拼好 HTML 直接通过 IPC 传过来，主进程只负责套上 from/to/
-// subject 把 SMTP 发出去。
+// 追番报告邮件 —— 与周历邮件不同,这里**完全不截图、不开隐藏窗口**:渲染层拼好 HTML 经 IPC
+// 传过来,主进程只负责套上收发件人和主题、走 SMTP 发出去。
 //
-// 这么设计的理由：报告是为"手机扫读"服务的，文字 / HTML 比 PNG 更友好
-// （手机邮件 app 自适应字号、可复制可搜索、邮件体积 KB 级）。同时省掉了
-// 截图链路所有的等渲染就绪 / 等 layout / 等 capture 细节。
+// 理由:报告是给「手机扫读」用的,HTML 比 PNG 友好得多(自适应字号、可复制可搜索、体积 KB 级)
+// 同时省掉了截图链路里等渲染、等布局、等抓帧那一堆细节。
 
 import { app } from 'electron'
 import type { MailConfig } from './config'
 import { buildTransporter, todayLabel } from './transport'
 
 /**
- * 发送一封追番极简报告邮件。
- * - html: renderer 拼好的完整邮件正文（已含内联样式 + footer）
- * - 主题固定为「我的追番 — YYYY-MM-DD」
- *
- * 调用方应自行确保 cfg.enabled === true 且 qqEmail/authCode 都已填。
+ * 发一封追番报告邮件。`html` 是渲染层拼好的完整正文(含内联样式和页脚),主题固定带上日期。
+ * 调用方需自行确保邮件功能已启用且配置完整。
  */
 export async function sendAnimeReportMail(cfg: MailConfig, html: string): Promise<void> {
   if (!cfg.qqEmail || !cfg.authCode) {

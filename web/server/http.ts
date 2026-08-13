@@ -1,7 +1,7 @@
 import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici'
 
 // Node 的全局 fetch（undici）默认**不读系统代理** —— 和 app 当年 Node https 直连
-// fake-ip 假地址黑洞是同一个坑（见 CLAUDE.md 网络红线）。这里让 fetch 认
+// fake-ip 假地址黑洞是同一个坑(红线)。这里让 fetch 认
 // HTTP_PROXY / HTTPS_PROXY / NO_PROXY 环境变量：
 //   - 本地开发若 Clash 是「系统代理模式(非 TUN)」导致直连黑洞，跑之前设
 //     `HTTPS_PROXY=http://127.0.0.1:7890`（换成你 Clash 的 HTTP 端口）即可。

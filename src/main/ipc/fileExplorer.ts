@@ -48,7 +48,7 @@ function kindFromExt(ext: string): FsEntry['kind'] | undefined {
   return undefined
 }
 
-// Sentinel path used on Windows to represent the "all drives" virtual root
+// Windows 上表示「所有磁盘」这个虚拟根的哨兵路径
 export const VIRTUAL_ROOT = '__root__'
 
 async function listWindowsDrives(): Promise<FsEntry[]> {
@@ -92,7 +92,7 @@ async function listDirEntries(dirPath: string): Promise<{ entries: FsEntry[]; is
             kind: ext ? kindFromExt(ext) : undefined,
           })
         } catch {
-          // skip permission-denied entries and broken symlinks
+          // 跳过没有权限的条目和坏掉的符号链接
         }
       })
   )
@@ -100,20 +100,17 @@ async function listDirEntries(dirPath: string): Promise<{ entries: FsEntry[]; is
   return { entries, isVirtualRoot: false }
 }
 
-// ── Special-folder alias resolution ────────────────────────────────────────────
+// ── 特殊文件夹别名解析 ────────────────────────────────────────────────────────
 //
-// Windows Explorer shows known folders by localized display name (e.g. "下载" for
-// Downloads), and the address bar's "Copy as path" returns just the display name
-// rather than the absolute path. Same on macOS Finder for some folders ("文稿" for
-// Documents, "影片" for Movies). When users paste those names into our address bar
-// we'd otherwise fail with ENOENT — translate first via Electron's app.getPath().
+// 资源管理器 / 访达按**本地化显示名**展示已知文件夹(下载、文稿、影片…),而地址栏「复制为
+// 路径」拿到的就是这个显示名而不是绝对路径。用户把它粘进我们的地址栏时会直接 ENOENT
+// 所以先用 app.getPath() 翻译一次。
 //
-// Mapping is exhaustively keyed (English / Simplified / Traditional / mac variants)
-// because each system / language combo surfaces a slightly different label.
+// 映射表把英文 / 简体 / 繁体 / mac 各种写法都列全了 —— 每种系统和语言组合给出的标签都略有不同。
 type SpecialFolderId = 'downloads' | 'desktop' | 'documents' | 'pictures' | 'videos' | 'music'
 
 const ALIAS_MAP: Record<string, SpecialFolderId> = {
-  // English (lower-cased before lookup)
+  // 英文(查表前会转小写)
   'downloads': 'downloads',
   'desktop': 'desktop',
   'documents': 'documents',
@@ -121,7 +118,7 @@ const ALIAS_MAP: Record<string, SpecialFolderId> = {
   'videos': 'videos',
   'movies': 'videos',  // macOS English
   'music': 'music',
-  // Simplified Chinese (Windows / macOS zh-CN)
+  // 简体中文
   '下载': 'downloads',
   '桌面': 'desktop',
   '文档': 'documents',
@@ -130,7 +127,7 @@ const ALIAS_MAP: Record<string, SpecialFolderId> = {
   '视频': 'videos',
   '影片': 'videos',     // macOS Chinese
   '音乐': 'music',
-  // Traditional Chinese (zh-TW)
+  // 繁体中文
   '下載': 'downloads',
   '文檔': 'documents',
   '圖片': 'pictures',
@@ -147,14 +144,9 @@ function resolveSpecialFolder(input: string): string | null {
 
 
 /**
- * 永久删除：Windows 走 recycle-helper 的 `--purge` 模式
- * （Remove-Item → cmd `rd /s /q` → robocopy /MIR 三级 fallback，每个策略
- * 自动重试 4 次，每次重试前自动清属性 + takeown + icacls + 杀进程）。
- * 几乎一次必成；真失败抛 Error，message 用 `Purge:` 前缀方便 renderer
- * friendlyError 归类。
- *
- * POSIX 上不需要这些花活——`fs.rm({recursive,force})` 自己就能处理 in-use
- * 文件（unlink while open），直接调即可。
+ * 永久删除。Windows 走 recycle-helper 的 `--purge`(Remove-Item → `rd /s /q` → robocopy /MIR
+ * 三级 fallback,每级自动重试 4 次,重试前清属性 + takeown + icacls + 杀进程),几乎一次必成。
+ * POSIX 上不需要这些花活:`fs.rm({recursive,force})` 本身就能处理正被打开的文件。
  */
 async function permanentDelete(
   targetPath: string,
@@ -166,23 +158,21 @@ async function permanentDelete(
   }
   const r = await runRecycle(targetPath, { purge: true })
   if (r.status === 'fragmented' || r.status === 'stage1-failed') {
-    // purge 模式不会返回这两种状态，防御性兜底当 success。
+    // purge 模式不会返回这两种状态,防御性兜底当成功。
     return { status: 'success' }
   }
   return { status: r.status }
 }
 
 /**
- * 「移到回收站」的两个阶段入口：
- *   trashStage1     —— 只跑 Stage 1（5s 整体送回收站窗口），Stage 1 失败时
- *                      返回 `stage1-failed`，**不**自动进 Stage 2。renderer
- *                      会读到这个状态去弹用户确认弹窗。
- *   trashFragmented —— 用户确认 Stage 2 后调这个，跑完整两阶段（Stage 1
- *                      重试一次，失败就进 Stage 2 分片回收）。exit 4 时
- *                      返回 `fragmented`，renderer 必须强提示"散件"。
+ * 「移到回收站」的两个阶段:
+ *   trashStage1     只跑 Stage 1(5s 整体送回收站窗口),失败返回 `stage1-failed` 并**停在这里**
+ *                   由渲染层弹确认弹窗问用户。
+ *   trashFragmented 用户确认后才调,跑完整两阶段(Stage 1 再试一次,失败进 Stage 2 分片回收)。
+ *                   返回 `fragmented` 时渲染层必须强提示「回收站里是散件」。
  *
- * non-Windows 平台直接走 Electron 原生 `shell.trashItem`（一次过没有分片
- * 概念，Stage 1 / 2 概念是 Windows AV 拦截整目录移动这个具体问题催生的）。
+ * 非 Windows 平台直接用 Electron 的 `shell.trashItem` —— Stage 1/2 这套是为了绕开 Windows 上
+ * 杀软拦截整目录移动才有的,别的平台没这问题。
  */
 async function trashStage1(
   targetPath: string,
@@ -194,8 +184,7 @@ async function trashStage1(
   }
   const r = await runRecycle(targetPath, { stage1Only: true })
   if (r.status === 'fragmented') {
-    // 在 stage1Only 模式下永不返回 fragmented，理论上不会进这条分支；
-    // 真出现就当 success（文件确实进回收站了）。
+    // stage1Only 模式下不会返回 fragmented,这条是防御性;真出现就当成功(文件确实进回收站了)。
     return { status: 'success' }
   }
   return { status: r.status }
@@ -211,7 +200,7 @@ async function trashFragmented(
   }
   const r = await runRecycle(targetPath, {})
   if (r.status === 'stage1-failed') {
-    // 不带 stage1Only 时不会返回 stage1-failed，这条是防御性；按未发生算。
+    // 不带 stage1Only 时不会返回 stage1-failed,防御性分支。
     throw new Error('Recycle: 内部状态异常（stage1-failed in full mode）')
   }
   return { status: r.status }
@@ -225,7 +214,7 @@ export function registerFileExplorerIpc(): void {
 
   ipcMain.handle('fs:list-dir', async (event, dirPath: string) => {
     const result = await listDirEntries(dirPath)
-    // Watch the actual directory (VIRTUAL_ROOT on non-Windows resolves to /)
+    // 监听真实目录(非 Windows 上虚拟根解析成 /)
     const watchPath = dirPath === VIRTUAL_ROOT
       ? (osPlatform() !== 'win32' ? '/' : null)
       : dirPath
@@ -261,17 +250,13 @@ export function registerFileExplorerIpc(): void {
   ipcMain.handle('fs:resolve-special', (_event, input: string) => resolveSpecialFolder(input))
 
   /**
-   * Find the closest existing ancestor directory of `targetPath` (including
-   * the path itself). Returns `targetPath` if it still exists, otherwise
-   * walks up with `dirname()` until `stat().isDirectory()` succeeds.
+   * 找 `targetPath` 最近的、仍然存在的祖先目录(自身还在就返回自身),否则用 dirname 一层层
+   * 往上爬到能 stat 成目录为止。
    *
-   * Used by the renderer's delete flow: when the user deletes the directory
-   * they're currently viewing (or one of its ancestors via the path input
-   * box), the UI needs to navigate somewhere reachable instead of sitting on
-   * a now-nonexistent path with a silent listDir failure.
+   * 给删除流程用:用户删掉了正在浏览的目录(或它的某个祖先)时,UI 得跳到一个还能打开的地方,
+   * 而不是停在一个已经不存在的路径上、静默地列不出东西。
    *
-   * Returns null only in the pathological case where even the filesystem
-   * root is unreachable — caller should fall back to home/virtual root.
+   * 只有连文件系统根都不可达这种极端情况才返回 null,调用方应回落到 home 或虚拟根。
    */
   ipcMain.handle('fs:find-existing-ancestor', async (_event, targetPath: string): Promise<string | null> => {
     if (!targetPath) return null
@@ -284,7 +269,7 @@ export function registerFileExplorerIpc(): void {
         const s = await stat(cur)
         if (s.isDirectory()) return cur
       } catch {
-        // path doesn't exist (or no permission) — keep walking up
+        // 路径不存在或没权限 —— 继续往上爬
       }
       prev = cur
       cur = dirname(cur)

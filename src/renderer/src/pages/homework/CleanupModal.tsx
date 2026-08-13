@@ -1,19 +1,17 @@
-// 数据清理弹窗 —— 按「最后更新日期」删除整组旧数据，用于版本更替时清掉
-// 上个版本作废的作业，把数据量压在几百条量级（配合 Layer 1 渲染优化即可
-// 流畅，不必上虚拟列表）。
+// 数据清理弹窗 —— 按「最后更新日期」整组删除旧数据,用于版本更替时清掉作废的作业
+// 把数据量压在几百条量级(配合渲染优化就够流畅,不必上虚拟列表)。
 //
-// 设计要点：
-//   - **手动 + 二次确认**：删除不可逆，不做定时自动删；用户按版本节奏自己点。
-//   - **跨全部 4 类**（作业 / JJC / PJJC / 经典）一次清理，弹窗里分类预览数量。
-//   - 日志（LogEntry）没有 updatedAt、性质不同，不参与清理。
-//   - 整组删除（按 group.updatedAt）：group.updatedAt 反映该组最近活动，
-//     连续 N 天没动的组视为旧数据整组删；不在活跃组里挑单条删（语义复杂）。
+//   - **手动 + 二次确认**:删除不可逆,不做定时自动删,用户按版本节奏自己点。
+//   - 跨全部四类一次清理,弹窗里分类预览数量。
+//   - 日志没有更新时间、性质也不同,不参与清理。
+//   - **整组删**(按组的 updatedAt):组的更新时间反映该组最近活动,连续 N 天没动的整组删;
+//     不在活跃组里挑单条删 —— 那个语义太复杂。
 
 import { useState } from 'react'
 import { ModalShell } from './shared'
 import type { DefenseGroup, PjjcGroup, ClassicGroup } from './shared'
 
-/** 返回 n 天前的本地日期串（YYYY-MM-DD，跟 todayStr 同格式，可直接字典序比较）。 */
+/** 返回 n 天前的本地日期串(与今天同格式,可直接字典序比较)。 */
 function daysAgoStr(n: number): string {
   const d = new Date()
   d.setHours(0, 0, 0, 0)
@@ -49,7 +47,7 @@ export function CleanupModal({
 }: {
   data: CleanupData
   onClose: () => void
-  /** cutoff = YYYY-MM-DD；调用方删除各类里 updatedAt < cutoff 的组。 */
+  /** cutoff 是日期串,调用方删除各类里 updatedAt 小于它的组。 */
   onConfirm: (cutoff: string) => void
 }): JSX.Element {
   const [cutoff, setCutoff] = useState(() => daysAgoStr(30))

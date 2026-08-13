@@ -1,14 +1,11 @@
 /**
- * Aowu (嗷呜动漫) API — search + watch.
+ * 嗷呜动漫的搜索与详情。
  *
- * 2026-05 site overhaul: switched from MacCMS dsn2 to a custom "FantasyKon" frontend
- * with everything behind an encrypted POST /api/site/secure. We replicate the
- * protocol directly in Node (see ./secure.ts) and skip the browser entirely.
- *
- * Verbs we issue here:
- *   - bundle({bundle_page:"search", anime})         search results
- *   - route({token})                                URL token → numeric video_id
- *   - bundle({bundle_page:"video", id})             detail incl. sources & episodes
+ * 站点是自研前端,所有数据都走加密的 POST /api/site/secure(协议实现见 ./secure.ts)
+ * 不开浏览器。这里用到三个动作:
+ *   - bundle({bundle_page:"search", anime})  搜索结果
+ *   - route({token})                        URL token → 数字 video_id
+ *   - bundle({bundle_page:"video", id})     详情,含线路与集数
  */
 import { BASE_URL, callSecure, ERR_STRUCTURE } from './secure'
 
@@ -54,9 +51,8 @@ interface BundleSearchData {
   data: { query: string; list: SearchListItem[]; page: number; limit: number; total: number }
 }
 
-// Defensive cap. With limit=10/page this is 100 results — more than any real
-// search. The throttle in secure.ts pushes 6 pages to ~6-9s; capping at 10
-// keeps the worst case under 15s.
+// 防跑飞的上限。每页 10 条,10 页 = 100 条,比任何真实搜索都多;secure.ts 的节流下
+// 6 页约 6~9s,封在 10 页能让最坏情况保持在 15s 以内。
 const MAX_SEARCH_PAGES = 10
 
 const NAMED_ENTITIES: Record<string, string> = {
@@ -64,9 +60,8 @@ const NAMED_ENTITIES: Record<string, string> = {
 }
 
 /**
- * Decode HTML entities (named + numeric, dec/hex). Iterative because the API
- * sometimes returns double-encoded values (e.g. `&amp;#039;` → `&#039;` → `'`).
- * Bounded at 3 passes to defuse pathological loops.
+ * 解 HTML 实体(命名 + 十进制/十六进制)。要迭代是因为接口偶尔返回双重编码
+ * (`&amp;#039;` → `&#039;` → `'`);最多 3 轮,防病态输入死循环。
  */
 function decodeEntities(s: string): string {
   let prev = ''
@@ -92,36 +87,31 @@ function toResult(it: SearchListItem): AowuSearchResult {
     cover: it.pic ?? '',
     year: it.year != null ? String(it.year) : '',
     area: it.area ?? '',
-    // We anchor on the numeric id. The /v/{id} URL is synthetic — we never
-    // visit it, just round-trip it back into watch() which reads the path tail.
+    // 以数字 id 为锚。`/v/{id}` 这个 URL 是合成的,我们从不访问它,只是把它塞回 watch()
+    // 再从路径尾部读回 id。
     watch_url: `${BASE_URL}/v/${it.id}`,
   }
 }
 
 export interface SearchPaging {
-  /** Called when a follow-up page (2..N) lands. Final call has done=true. */
+  /** 后续页(2..N)到达时回调,最后一次带 done=true。 */
   onPage: (results: AowuSearchResult[], done: boolean) => void
 }
 
 export interface SearchFirstPage {
   results: AowuSearchResult[]
   total: number
-  /** True if pages 2..N will arrive via the onPage callback. */
+  /** 为 true 表示第 2..N 页会通过 onPage 回调陆续送达。 */
   more: boolean
 }
 
 /**
- * Fetch search results.
+ * 拉搜索结果,两种模式:
+ *   - 传了 opts.onPage:只等第一页就返回,后续页走回调(每次回调之间隔着全局节流
+ *     中位约 1.25s,像人在翻页)。
+ *   - 没传:等所有页都到齐再返回。
  *
- * Two-mode return:
- *   - With opts.onPage: resolves with FIRST PAGE only; subsequent pages stream
- *     via callback. Each callback fires after the global throttle (~1.25s
- *     median between calls), mimicking a user paging through results.
- *   - Without opts.onPage: resolves only after all pages are in (synchronous
- *     batch mode for callers that don't want to deal with streaming).
- *
- * Errors on individual follow-up pages are swallowed (logged + skipped).
- * Partial results are better than none. The first-page error always propagates.
+ * 后续页单页失败会被吞掉(记日志 + 跳过)—— 有部分结果好过没有;第一页的错误一律上抛。
  */
 export async function search(
   keyword: string,
@@ -147,8 +137,7 @@ export async function search(
     return { results: firstResults, total, more: false }
   }
 
-  // Background fetch of pages 2..N. Sequential — each call goes through the
-  // secure.ts throttle so two adjacent calls have a randomized 500-2000ms gap.
+  // 后台拉第 2..N 页。串行 —— 每次调用都过 secure.ts 的节流,相邻两次间隔 500~2000ms 随机。
   const fetchRest = async (): Promise<AowuSearchResult[]> => {
     const all: AowuSearchResult[] = []
     for (let p = 2; p <= totalPages; p++) {
@@ -167,8 +156,7 @@ export async function search(
         opts?.onPage?.(pageResults, /* done */ p === totalPages)
       } catch (e) {
         console.error(`[aowu] search page ${p} failed:`, e instanceof Error ? e.message : e)
-        // On a stream caller, signal "done" early so UI clears the loading state.
-        // The error itself is non-fatal — we keep whatever we collected.
+        // 流式模式下提前发一次 done,让 UI 收掉 loading;错误本身不致命,已收到的结果保留。
         if (opts?.onPage && p === totalPages) opts.onPage([], true)
       }
     }
@@ -176,12 +164,12 @@ export async function search(
   }
 
   if (opts?.onPage) {
-    // Streaming mode: kick off background fetch, return first page immediately.
+    // 流式模式:后台开始拉后续页,先把第一页返回。
     void fetchRest()
     return { results: firstResults, total, more: true }
   }
 
-  // Synchronous batch mode: wait for everything.
+  // 批量模式:等所有页到齐。
   const rest = await fetchRest()
   return { results: [...firstResults, ...rest], total, more: false }
 }
@@ -201,7 +189,7 @@ interface BundleVideoData {
   }
 }
 
-/** Pull the path tail out of /v/{x} or /w/{x}. Does not throw. */
+/** 取 /v/{x} 或 /w/{x} 的路径尾部。不抛错。 */
 function parsePathTail(watchUrl: string): string {
   try {
     const u = new URL(watchUrl)
@@ -213,42 +201,30 @@ function parsePathTail(watchUrl: string): string {
 }
 
 /**
- * Resolve a numeric video id (or a /v/{id} synthetic URL) to the user-facing
- * /w/{token}#s={source_id}&ep=1 watch URL — exactly the destination of the
- * SPA's "立即播放" button. One click in our app, one tap to start playing.
+ * 把数字 video id(或 /v/{id} 合成 URL)解析成用户可用的 /w/{token}#s={source_id}&ep=1
+ * —— 也就是站点「立即播放」按钮的落点,拿到就能直接开播。
  *
- * Background: search() returns `aowu.tv/v/{numericId}` which is a synthetic
- * URL we use to round-trip through watch(). The user-visible SPA URL uses
- * an opaque per-video token like `NebBNVu3UvfN`. Opening /v/{numericId} in
- * a browser yields the site's "页面令牌生成失败" error.
+ * 必须换成 token 形式:搜索给的是 `/v/{数字id}`,那是我们自己合成的;站点真正认的是
+ * 每个视频一个的不透明 token,拿数字 id 直接在浏览器里打开会得到「页面令牌生成失败」。
  *
- * Two API calls in parallel:
- *   - route-tokens(["/play/{id}"]) → token
- *   - bundle("video", id)          → sources[0].id (source_id)
+ * 并发两个请求:route-tokens 拿 token,bundle("video") 拿 sources[0].id。
+ * 后者失败(限流/网络)就退回 `/v/{token}` 列表页 —— 只要有 token 它总能打开,用户自己点
+ * 「立即播放」也一样。
  *
- * If bundle("video") fails (rate limit / network), we fall back to
- * `/v/{token}` (the listing page where the user can hit "立即播放" manually).
- * /v/{token} always works as long as we have the token.
- *
- * Input forms accepted:
- *   - `"2997"`                          raw numeric id
- *   - `"https://aowu.tv/v/2997"`        synthetic search URL
- *   - `"https://aowu.tv/v/jRDdniK8..."` already a token URL → list page form
+ * 入参可以是裸数字 id、`/v/{数字id}`,或已经是 token 形式的 URL。
  */
 export async function resolveSharePath(input: string): Promise<string> {
   const raw = input.trim()
   if (!raw) throw new Error('resolveSharePath: empty input')
 
-  // Already token form (path tail is opaque, not numeric). We can't construct
-  // /w/{token}#s=&ep= without the numeric id (which we'd need to route() to
-  // get back), and that round-trip is rarely worth it on already-tokenized
-  // input. Just return /v/{token} listing page.
+  // 已经是 token 形式(路径尾部不是数字):要拼 /w/{token}#s=&ep= 还得先 route 回数字 id
+  // 这一趟往返不划算,直接返回 /v/{token} 列表页。
   const tail = parsePathTail(raw)
   if (tail && !/^\d+$/.test(tail)) {
     return `${BASE_URL}/v/${tail}`
   }
 
-  // Numeric id form. Two parallel API calls.
+  // 数字 id 形式,两个请求并发发。
   const id = /^\d+$/.test(raw) ? raw : tail
   if (!/^\d+$/.test(id)) {
     throw new Error(`resolveSharePath: not a numeric id or token URL: ${raw}`)
@@ -273,8 +249,7 @@ export async function resolveSharePath(input: string): Promise<string> {
     )
   }
 
-  // Have token. Try to also get source_id for the direct /w/ player URL.
-  // If watchInfo failed, fall back to /v/{token} (listing page).
+  // 有 token 了,再尽量拿 source_id 拼直达播放页;拿不到就退回列表页。
   if (watchInfoRes.status === 'fulfilled' && watchInfoRes.value.sources.length > 0) {
     const sourceId = watchInfoRes.value.sources[0].idx
     return `${BASE_URL}/w/${token}#s=${sourceId}&ep=1`
@@ -288,20 +263,15 @@ export async function resolveSharePath(input: string): Promise<string> {
 }
 
 /**
- * Extract the token string from `route-tokens` response. The observed shape
- * (logged on first run) is `{ "/play/{id}": { token: "...", expires_in: N } }`
- * — the path is the top-level key and the value is an object with `token`.
- *
- * We also keep a few fallback shapes in case the API ever returns a flat-
- * string form or wraps things under `data` / `tokens`. Returns null if no
- * shape yields a token; caller throws with the raw response in the error.
+ * 从 route-tokens 响应里取 token。实际形状是 `{ "/play/{id}": { token, expires_in } }`
+ * 路径是顶层 key。另外几种兜底形状(扁平字符串、包在 data / tokens 下)是防接口变形;
+ * 都取不到就返回 null,由调用方带上原始响应抛错。
  */
 function extractTokenFromRouteTokens(res: unknown, path: string): string | null {
   if (!res || typeof res !== 'object') return null
   const r = res as Record<string, unknown>
 
-  // Helper: pull `.token` out of an entry that may itself be a string OR
-  // an object `{ token: "..." }`.
+  // entry 本身可能是字符串,也可能是 `{ token: "..." }`。
   const stringify = (v: unknown): string | null => {
     if (typeof v === 'string' && v) return v
     if (v && typeof v === 'object') {
@@ -348,9 +318,8 @@ function extractTokenFromRouteTokens(res: unknown, path: string): string | null 
 }
 
 /**
- * Resolve a watch URL (`/v/{id-or-token}`) to detail. Both the new numeric form
- * (from search() above) and any legacy token form (from queues created before
- * this refactor) work — we route(token) once if the tail isn't numeric.
+ * 把 watch URL(`/v/{数字id}` 或 `/v/{token}`)解析成详情。路径尾部不是数字时先 route 一次
+ * 换回数字 id —— 老队列里存的就是 token 形式。
  */
 export async function watch(watchUrl: string): Promise<AowuWatchInfo> {
   const tail = parsePathTail(watchUrl)

@@ -23,7 +23,7 @@ export function GirigiriDownloadConfigModal({
   onClose,
   onStart,
 }: Props): JSX.Element {
-  // Fall back to a synthetic single source if the watch page didn't expose any.
+  // 播放页没暴露任何线路时,合成一条兜底线路。
   const sources: GirigiriSource[] =
     watchInfo.sources.length > 0
       ? watchInfo.sources

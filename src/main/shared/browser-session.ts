@@ -1,22 +1,14 @@
 /**
- * Per-site browser-like HTTP session: UA pool, cookie jar, header builder.
+ * 按站点隔离的「浏览器化」HTTP 会话:UA 池 + cookie 罐 + 请求头构造。
  *
- * Each BrowserSession instance is bound to ONE host and maintains its own
- * cookie jar. Different sites get different instances — cookies don't leak
- * between hosts, and per-site UAs stay independently random.
+ * 一个实例绑一个 host、各有各的 cookie 罐 —— cookie 不会在站点之间串,各站的随机 UA 也互相独立。
  *
- * Anti-detection posture:
- *   - UA + sec-ch-ua + sec-ch-ua-platform are aligned to the *same* Chrome
- *     major version, picked randomly when the session is constructed, and
- *     fixed for the rest of the app lifetime (real browsers don't swap UA
- *     mid-session).
- *   - sec-fetch-* values default to a "same-origin XHR/fetch" posture, but
- *     callers can override per-request for navigation-style requests
- *     (e.g. an HTML page GET wants `mode: navigate, dest: document`).
- *   - Cookie jar captures Set-Cookie name=value pairs and replays them via
- *     the Cookie header. Cookie attributes (Path / Expires / Secure) are
- *     ignored — sufficient for the typical analytics + session-id cookies
- *     scraped sites set.
+ * 反检测姿态:
+ *   - UA、sec-ch-ua、sec-ch-ua-platform 对齐到**同一个** Chrome 大版本,构造时随机挑一次
+ *     之后整个应用生命周期固定不变(真浏览器不会中途换 UA)。
+ *   - sec-fetch-* 默认是「同源 XHR」的姿态,取 HTML 页面这类导航式请求时由调用方逐次覆盖。
+ *   - cookie 罐只记 name=value 并通过 Cookie 头回放;Path / Expires / Secure 这些属性一律忽略 ——
+ *     对付抓取站点常见的分析 + 会话 id cookie 足够了。
  */
 
 // ── UA pool ───────────────────────────────────────────────────────────────────
@@ -28,9 +20,8 @@ interface UAVariant {
 }
 
 function chromeVariants(platform: NodeJS.Platform): UAVariant[] {
-  // Five recent Chrome majors. `secChUa` is kept aligned with the UA's major
-  // — fingerprinting tools that hash the (UA, secChUa) pair want them
-  // internally consistent.
+  // 几个较新的 Chrome 大版本。secChUa 必须与 UA 的大版本一致 —— 指纹工具会把 (UA, secChUa)
+  // 这一对拿去哈希,不一致比不发还可疑。
   const versions = [119, 120, 121, 122, 123]
   if (platform === 'win32') {
     return versions.map((v) => ({
@@ -39,8 +30,7 @@ function chromeVariants(platform: NodeJS.Platform): UAVariant[] {
       secChUaPlatform: '"Windows"',
     }))
   }
-  // darwin / linux / others → macOS UA (Linux desktop Electron clients are rare
-  // enough that this looks more authentic than a Linux UA).
+  // darwin / linux / 其他一律用 macOS 的 UA(Linux 桌面客户端太少见,报 Linux 反而不自然)。
   return versions.map((v) => ({
     ua: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v}.0.0.0 Safari/537.36`,
     secChUa: `"Not.A/Brand";v="8", "Chromium";v="${v}", "Google Chrome";v="${v}"`,
@@ -56,18 +46,13 @@ function pickRandomVariant(): UAVariant {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export interface BrowserSessionOptions {
-  /** Bare host (e.g. 'bgm.tv' or 'www.aowu.tv'). Used as the `Host` header. */
+  /** 裸主机名(如 'bgm.tv'),用作 Host 头。 */
   host: string
-  /** Origin URL (e.g. 'https://bgm.tv'). Used as default Referer. */
+  /** 站点 Origin,用作默认 Referer。 */
   baseUrl: string
-  /**
-   * Default `Accept` value. Override per-request when needed (e.g. JSON APIs
-   * want `application/json, text/plain, *_/_*`; HTML pages want a full
-   * text/html accept string). Underscores in the example are placeholders —
-   * the literal value should use the standard star-slash-star wildcard.
-   */
+  /** 默认的 `Accept`。JSON 接口和 HTML 页面需要的值不同,由调用方逐次覆盖。 */
   accept?: string
-  /** Default Accept-Language. */
+  /** 默认 Accept-Language。 */
   acceptLanguage?: string
   /** Default sec-fetch-site. */
   secFetchSite?: 'same-origin' | 'same-site' | 'cross-site' | 'none'
@@ -99,9 +84,8 @@ export class BrowserSession {
   }
 
   /**
-   * Build the request header map. `extra` overrides any default field —
-   * callers commonly pass `{ Accept, sec-fetch-* }` for navigation requests
-   * and `{ Origin, Content-Type, Content-Length }` for POSTs.
+   * 构造请求头。`extra` 覆盖同名默认值 —— 导航式请求常传 Accept / sec-fetch-*,
+   * POST 常传 Origin / Content-Type。
    */
   headers(extra: Record<string, string> = {}): Record<string, string> {
     const h: Record<string, string> = {
@@ -126,8 +110,7 @@ export class BrowserSession {
   }
 
   /**
-   * Ingest Set-Cookie headers from a response. Captures only name=value;
-   * attributes (Path / Expires / Secure / SameSite) are ignored.
+   * 把响应的 Set-Cookie 收进罐子。只保留 name=value,属性(Path / Expires / Secure)一律忽略。
    */
   ingestSetCookie(headers: { 'set-cookie'?: string[] | string }): void {
     const raw = headers['set-cookie']

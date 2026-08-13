@@ -1,15 +1,11 @@
-// 追番列表 (anime.json) 的独立 WebDAV 同步入口 —— 跟锦囊妙计
-// (homework.json) 各管各的 rev / 冲突检测 / 确认弹窗。
+// 追番列表(anime.json)的 WebDAV 同步入口 —— 与锦囊妙计(homework.json)各管各的 rev /
+// 冲突检测 / 确认弹窗。一个 chip + 上传/下载两个按钮,点开弹 SyncConfirmModal 让用户在
+// 「本地 vs 远端」的对比里二次确认,避免一键覆盖。
 //
-// 整页面就一个 chip + 两个按钮（上传 / 下载）；点开后弹出 SyncConfirmModal
-// 让用户在「本地 vs 远端」对比里二次确认，避免一键覆盖。
+// 迁移兜底:远端还没有 anime.json(404)时,pull 会回退去读 homework.json 里的老 `tracks` 字段
+// 升级前的数据不丢;一旦 push 过一次 anime.json,之后就只走 anime.json。
 //
-// 迁移兜底：anime.json 在远端还不存在（404）时，pull 会回退去读
-// homework.json 的老 `tracks` 字段 —— 升级前的数据不丢。一旦用户在新版
-// 里 push 过一次 anime.json，之后的 pull 都走 anime.json，homework.json
-// 里残留的老 tracks 字段就被忽略掉了。
-//
-// 储存键全部加 `maple-anime-` 前缀，跟 homework 那套独立。
+// 所有存储键带 `maple-anime-` 前缀,与 homework 那套独立。
 
 import { useEffect, useState } from 'react'
 import {
@@ -44,13 +40,11 @@ interface RemoteAnimeBlob {
   ts: string
   tracks: AnimeTrack[]
   /**
-   * 推荐记录 —— blob v2 加入。老 blob（v1 或 homework.json 迁移）这里是 []。
-   * 跟 tracks 共用同一份 rev/ts，因为它们语义同源（都是「我的追番相关」数据），
-   * 拆成两个文件 sync 反而会带来"改了 tracks 但 recommendations 不变要不要
-   * push"的纠结。
+   * 推荐记录。老 blob 里这里是 []。与 tracks 共用同一份 rev/ts —— 它们语义同源,拆成两个文件
+   * 反而会带来「改了 tracks 但 recommendations 没变,要不要 push」的纠结。
    */
   recommendations: Recommendation[]
-  /** True = 数据来自老的 homework.json 的 tracks 字段（迁移兜底）。 */
+  /** 为 true 表示数据来自老 homework.json 的 tracks 字段(迁移兜底)。 */
   fromLegacyHomework: boolean
 }
 
@@ -69,13 +63,8 @@ function snapshotOf(tracks: AnimeTrack[], recommendations: Recommendation[]): st
 }
 
 /**
- * 解析 anime.json blob。
- *
- * - v1: `{ _v: 1, _rev, _ts, tracks }` —— 没有 recommendations 字段
- * - v2: `{ _v: 2, _rev, _ts, tracks, recommendations }`
- *
- * 新版本读 v1 时 recommendations fallback 为 []，老版本读 v2 时直接忽略
- * 新字段（无害）。所以可以渐进升级，不需要单独的 migration step。
+ * 解析 anime.json。v1 没有 recommendations 字段,读到时回落成 [];老版本读到 v2 会直接忽略
+ * 新字段。两边都无害,所以可以渐进升级,不需要单独的迁移步骤。
  */
 function parseAnimeBlob(jsonStr: string): RemoteAnimeBlob {
   const raw = JSON.parse(jsonStr)
@@ -92,11 +81,8 @@ function parseAnimeBlob(jsonStr: string): RemoteAnimeBlob {
 }
 
 /**
- * 兜底解析 homework.json 的老 blob，把 `tracks` 字段抽出来当作初始 anime
- * 数据用。rev 标 0（让"远端比本地新"的冲突判定永远倒向本地数据），ts
- * 也清空 —— 用户拉取一次后再 push，才算建立 anime.json 的真正 rev 链。
- *
- * recommendations 这条迁移路径下永远是 []（老 homework.json 从来不带这字段）。
+ * 兜底解析老的 homework.json,把 `tracks` 抽出来当初始数据。rev 标 0 让「远端比本地新」的
+ * 冲突判定永远倒向本地;用户拉取一次再 push,才算建立起 anime.json 自己的 rev 链。
  */
 function parseLegacyHomeworkBlobForTracks(jsonStr: string): RemoteAnimeBlob {
   const raw = JSON.parse(jsonStr)
@@ -115,14 +101,9 @@ function parseLegacyHomeworkBlobForTracks(jsonStr: string): RemoteAnimeBlob {
 // ── Stats ────────────────────────────────────────────────────────────────────
 
 /**
- * 5 个状态 + 3 个类目都统计 —— 早期只有 watching / completed，但确认弹窗里
- * 只显示这俩会让用户怀疑「想看 / 暂停 / 弃番」是不是没传（实际是传了，
- * total 已经体现）。把所有状态都列出来透明化，让用户对比 local vs remote
- * 时一眼看清楚每个桶分别多少。
- *
- * 005 阶段加 subjectType 维度（动画 / 漫画 / 小说 / 其他）—— 数据层这俩
- * 维度本来就一起上传/下载，但弹窗 stats 没显示就让用户怀疑"漫画小说没传
- * 上去"。其他类目（画集等）归到 `other`，量级一般是 0 不单独显示。
+ * 5 个状态 + 3 个类目全都统计。只显示 watching / completed 会让用户怀疑「想看 / 观望」
+ * 是不是没传(其实传了,只是没列出来);类目维度同理 —— 数据层本来就一起传,不显示就让人
+ * 怀疑漫画小说没上去。全列出来,用户对比本地和远端时一眼看清每个桶各多少。
  */
 function trackStats(data: AnimeTrack[]): {
   total: number
@@ -180,13 +161,12 @@ export function AnimeSyncBar(): JSX.Element {
   const [remoteRev, setRemoteRev] = useState<number | null>(null)
   const [syncConfirm, setSyncConfirm] = useState<SyncConfirmState | null>(null)
 
-  // Persist sync state mirrors
+  // 同步状态镜像落盘
   useEffect(() => { localStorage.setItem(LAST_REV_KEY, String(lastSyncedRev)) }, [lastSyncedRev])
   useEffect(() => { localStorage.setItem(SNAPSHOT_KEY, lastSyncedSnapshot) }, [lastSyncedSnapshot])
 
-  // Background probe: try anime.json's rev; fall back to homework.json's tracks
-  // only to detect "remote has data we haven't migrated yet". Doesn't write
-  // anything — purely informational so the chip can decide if cloudNewer.
+  // 后台探测远端 rev。拉不到 anime.json 时看一眼 homework.json,只为判断「远端有尚未迁移的
+  // 数据」。**不写任何东西**,纯信息性,供 chip 决定要不要提示云端更新。
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -203,9 +183,8 @@ export function AnimeSyncBar(): JSX.Element {
           if (cancelled) return
           const parsed = parseLegacyHomeworkBlobForTracks(homeworkStr)
           if (parsed.tracks.length > 0) {
-            // 让 cloudNewer 永远为 true → chip 显示「云端有更新」，提示用户
-            // 这边其实有可迁移的老数据。实际拉取时 openSyncConfirm 会重走
-            // fetchRemote，再次命中这条迁移分支。
+            // 让 cloudNewer 恒为 true,chip 提示有可迁移的老数据。真正拉取时会重走一遍 fetchRemote
+            // 再次命中这条迁移分支。
             setRemoteRev(Math.max(lastSyncedRev + 1, 1))
           }
         } catch {
@@ -217,12 +196,10 @@ export function AnimeSyncBar(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Local dirty: stringify current tracks + recommendations vs last synced snapshot.
-  // snapshotOf 要 stringify 整张表（追番多时几百 KB），原本放在 useMemo 里每次
-  // store 通知都会同步重算 —— 而 store hook 每次都返回新数组引用，memo 根本不命中,
-  // 于是 MyAnime 上每个 mutate / 重渲染都在渲染线程上卡一次序列化。改成 200ms
-  // 防抖的 effect 里算，结果写进 state；localDirty 只用于驱动「未同步」chip 的
-  // 启用态，延迟 200ms 出结果对用户无感。
+  // 本地是否有未同步改动:把当前 tracks + recommendations 序列化后与上次同步的快照比。
+  // 序列化整张表(追番多时几百 KB)**不能放在 useMemo 里** —— store hook 每次都返回新数组引用
+  // memo 根本不命中,于是每次 mutate / 重渲染都在渲染线程上卡一次序列化。改成 200ms 防抖的
+  // effect 里算、结果写进 state;这个值只驱动「未同步」chip 的启用态,延迟 200ms 用户无感。
   const [localDirty, setLocalDirty] = useState(false)
   useEffect(() => {
     const h = window.setTimeout(() => {
@@ -240,7 +217,7 @@ export function AnimeSyncBar(): JSX.Element {
     }
   }
 
-  // Pull remote: try anime.json, fall back to homework.json tracks on 404.
+  // 拉远端:先试 anime.json,404 时回落到老 homework.json 里的 tracks。
   const fetchRemote = async (): Promise<RemoteAnimeBlob | null> => {
     try {
       const end = probe('webdav:anime-pull-fetch')
@@ -251,8 +228,7 @@ export function AnimeSyncBar(): JSX.Element {
       try {
         const homeworkStr = await window.webdavApi.pull('homework')
         const parsed = parseLegacyHomeworkBlobForTracks(homeworkStr)
-        // 当 homework.json 也存在但 tracks 字段是空 / 不存在，视作"远端没有
-        // 追番数据"——返回 null，触发 confirm 弹窗的"远端不存在"分支。
+        // homework.json 存在但 tracks 为空 → 视作远端没有追番数据,返回 null 走「远端不存在」分支。
         return parsed.tracks.length > 0 ? parsed : null
       } catch {
         return null

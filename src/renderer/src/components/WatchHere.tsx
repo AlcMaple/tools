@@ -1,18 +1,12 @@
-// 跳转按钮组件 — 给定 BGM id，列出此番已绑定的源，每个源一个按钮，
-// 点击即在外部浏览器打开对应详情页。
+// 跳转按钮组:列出这部番已绑定的源,点一个就在外部浏览器打开对应详情页。
 //
-// 设计取舍：
-// - 不为每个源调 API 算「ep N+1」的具体播放页 URL —— 那会需要 watchInfo 全量
-//   抓取一遍，重得离谱。直接打开源详情页（已绑定的 sourceKey/sourceUrl），
-//   用户在那里手动选下一集。组件用 chip 上的 "ep N" 提醒用户进度。
-// - 没有绑定时 (bindings 空) 返回 null —— 让父组件来决定是否显示「先去关联」。
+// **不为每个源去算「下一集」的具体播放页 URL** —— 那要把 watchInfo 全量抓一遍,重得离谱。
+// 直接开源站详情页,让用户在那儿自己选集;chip 上的 "ep N" 用来提醒进度。
+// 没有任何绑定时返回 null,由父组件决定要不要显示「先去关联」。
 //
-// 三个变种：
-// - 默认 `variant="row"` 横向 chips，适合 AnimeInfo 左栏。
-// - `variant="inline"` 紧凑横排，适合 MyAnime 行尾。
-// - `variant="play-menu"` 单个「▶ 播放」按钮，专给周历卡 hover 遮罩用 ——
-//   遮罩空间小，逐个源平铺最坏 4 个会溢出卡片。改成单按钮：1 个源直接打开,
-//   ≥2 个源弹窗挑选。无论几个源遮罩高度恒定、跟追番/BGM 按钮同尺寸。
+// 三个变种:`row` 横向 chips(详情页左栏)、`inline` 紧凑横排(追番行尾)、
+// `play-menu` 单个「▶ 播放」按钮(周历卡 hover 遮罩)—— 遮罩空间小,平铺最多 4 个源会溢出卡片
+// 所以改成单按钮:1 个源直接打开,≥2 个源弹窗挑选,这样无论几个源遮罩高度都恒定。
 
 import { useEffect, useRef, useState } from 'react'
 import type { AnimeBinding, AnimeTrack } from '../stores/animeTrackStore'
@@ -21,7 +15,7 @@ import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
 interface Props {
   bgmId: number
   variant?: 'row' | 'inline' | 'play-menu'
-  /** When true, show the "no bindings yet" placeholder instead of returning null. */
+  /** 为 true 时显示「还没关联」的占位,而不是返回 null。 */
   showEmpty?: boolean
 }
 
@@ -54,11 +48,8 @@ export function WatchHere({ bgmId, variant = 'row', showEmpty = false }: Props):
 // ── Play menu (周历卡 hover 遮罩) ──────────────────────────────────────────────
 
 /**
- * 单个「▶ 播放」按钮。1 个源直接 window.open（经主进程 setWindowOpenHandler
- * 转 shell.openExternal 打开外部浏览器）；≥2 个源弹一个居中 modal 让用户挑。
- *
- * modal 是 fixed 顶层独立图层 —— 跟 hover 遮罩物理隔离，所以鼠标离开卡片、
- * 遮罩消失也不影响 modal（否则没法点）。
+ * 单个「▶ 播放」按钮。1 个源直接 window.open(主进程会转成外部浏览器打开);≥2 个源弹居中弹窗。
+ * 弹窗是 fixed 的顶层独立图层,与 hover 遮罩物理隔离 —— 否则鼠标一离开卡片遮罩消失,弹窗就点不着了。
  */
 function PlayMenu({ bindings }: { bindings: AnimeBinding[] }): JSX.Element {
   const [picking, setPicking] = useState(false)
@@ -126,16 +117,10 @@ function SourcePicker({ bindings, onClose }: { bindings: AnimeBinding[]; onClose
 }
 
 /**
- * Lazy migration: bindings created before the Aowu URL resolver landed store
- * the synthetic /v/{id} URL as sourceKey with no sourceUrl. On first render
- * of any WatchHere with such a binding, we silently call resolveShareUrl
- * once per (bgmId, sourceKey) and patch the binding via the store. The
- * `attemptedRef` guard prevents re-trying within the same session if the
- * backfill failed (e.g. network down) — next app restart will try again.
- *
- * After backfill, sourceUrl points at /w/{token} and the chip's `<a href>`
- * lands the user on the real watch page. No flicker since the patch happens
- * via store.subscribe — the chip re-renders with the new href in place.
+ * 懒迁移:早期创建的 Aowu 绑定只存了合成的 /v/{id},没有 sourceUrl。首次渲染到这类绑定时
+ * 按 (bgmId, sourceKey) 静默调一次 resolveShareUrl 把它补成 /w/{token} 并写回 store。
+ * `attemptedRef` 保证同一会话内失败(如断网)不重试,下次启动应用再试。
+ * 补完后 chip 的链接就落在真正的观看页;因为是走 store.subscribe 更新,不会闪。
  */
 const attemptedAowuBackfill = new Set<string>()
 
@@ -159,8 +144,7 @@ function useAowuShareUrlBackfill(bgmId: number, track: AnimeTrack | null): void 
           if (url) animeTrackStore.setBindingSourceUrl(bgmId, b.source, b.sourceKey, url)
         })
         .catch(err => {
-          // Leave it broken for this session — next launch will retry. Logging
-          // here keeps the failure debuggable without spamming a toast.
+          // 本次会话就让它保持原样,下次启动再试。记日志便于排查,但不弹 toast 打扰用户。
           console.warn(`[WatchHere] aowu sourceUrl backfill failed for ${b.sourceKey}:`, err)
         })
     }
@@ -168,10 +152,8 @@ function useAowuShareUrlBackfill(bgmId: number, track: AnimeTrack | null): void 
 }
 
 /**
- * Chip display label. For built-in scraped sources (Aowu/Xifan/Girigiri) we
- * trust the source enum. For Bilibili/Custom — where the binding came from
- * AddBindingModal — `sourceTitle` is the user-chosen label and gets priority
- * because "Custom" alone is meaningless on screen.
+ * chip 的显示名。内置抓取源直接用源枚举;Bilibili / 自定义源用户自己填的 `sourceTitle` 优先 ——
+ * 光显示一个「Custom」在界面上毫无意义。
  */
 function chipLabel(b: AnimeBinding): string {
   if (b.source === 'Custom') return b.sourceTitle || '自定义'
@@ -188,7 +170,7 @@ function SourceButton({
   variant: 'row' | 'inline'
 }): JSX.Element {
   // Prefer the explicit sourceUrl when provided; fall back to the per-source
-  // computation. For Aowu/Xifan/Girigiri the sourceKey IS the watch URL.
+  // 内置三源的 sourceKey 本身就是观看页 URL。
   const url = resolveUrl(binding)
   // Chip 不再挂 ep 进度信息。所有源（内置三源 + 用户加的 Bilibili / Custom）
   // 点击跳转的都是**番剧主页**，永远不会自动定位到 ep N 的播放页 ——
@@ -245,10 +227,8 @@ function resolveUrl(b: AnimeBinding): string {
   if (b.sourceUrl) return b.sourceUrl
   const k = b.sourceKey.trim()
   if (!k) return ''
-  // Aowu / Xifan / Girigiri — sourceKey is the show URL (watch_url / play_url).
-  // SearchDownload writes these as full URLs starting with https://.
+  // 这些地方写进来的都是完整的 http(s) URL,所以不需要各站的 URL 模板;自定义绑定原样使用,
+  // 格式不对交给浏览器报错。
   if (/^https?:\/\//.test(k)) return k
-  // Bilibili / Custom — assume the user pasted a partial path; let it through
-  // verbatim and trust the browser to error if it's malformed.
   return k
 }

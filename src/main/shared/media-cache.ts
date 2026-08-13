@@ -1,28 +1,19 @@
-// 在线播放的 mp4 本地预抓缓存 —— 只服务 media-proxy 的 mp4 直链分支。
+// 在线播放 mp4 的本地预抓缓存(只服务 media-proxy 的 mp4 分支)。
 //
-// 为什么要它(011「稀饭直链 mp4 播放卡顿」的结论):
-//   1. <video> 对 mtmedia:// 是**单连接**发 Range,单流吞吐追不上播放消耗时会反复
-//      「播几秒、停几秒」。真实样本平均消耗约 422KB/s,单流慢段只有 226~484KB/s,
-//      没有抵抗抖动的余量。
-//   2. 现在从播放位置起按 512KiB 小块开 6 条相邻 Range 并发抓;快连接先把后续块
-//      落盘,慢连接不再决定整条下载速度。只有从 regionStart 起**连续完成**的小块
-//      才对播放器可见(开场首块除外,它边写边播以免拉长首帧),所以并发不会把
-//      文件空洞误报成已缓存。块切得小是为了压低「凑齐起播所需连续块」这一步的
-//      最坏单块耗时,代价是同样窗口下总请求数变多。
-//   3. 只有开场那一次 302 是真的要走的:首块响应的 `Response.url` 就是跟完 302
-//      的最终地址,后续 5 个 worker 直接拿这个地址发 Range,不用每块都重新解析
-//      签名链——这份 302 延迟经测量是与带宽无关的固定开销,能省则省。这点和
-//      早期版本「每个 Range 都重新 302」的做法不同:早期那版是在**共用一个
-//      Electron Session** 时复用签名链导致 `readyState=0` 卡死,把并发写死成
-//      每块都重新解析;现在 6 个 worker 各自独立 Session(见 `getRangeSession`),
-//      结合 `mp4-range-downloader.ts` 的下载功能本来就是解析一次、复用同一条
-//      链接跑 8 路并发且稳定这一事实,判断当初的卡死更可能是「共用 Session 的
-//      HTTP/2 连接池」造成的,不是签名链本身不允许并发——2026-08-09 复测验证。
+// 为什么要:<video> 对 mtmedia:// 是**单连接**发 Range,单流吞吐追不上播放消耗就会
+// 「播几秒、停几秒」(实测消耗约 422KB/s,慢段只有 226~484KB/s,没有抗抖动余量)。
 //
-// 形态:后台滑动窗口从 `regionStart` 并发写本地临时文件,`written` 只记已落盘的连续前缀。
-// <video> 的 Range 落在 [regionStart, regionStart+written] 内就读本地文件,并**跟随写入
-// 端继续吐**(读到写入位置就等 progress 事件),所以一个请求就能喂完整集,不会退化成
-// 无数个小 Range。落在区间外(往后 seek)就以新起点重开一条流。
+// 形态:从播放位置起开 FETCH_CONCURRENCY 条相邻 Range 并发写同一个本地临时文件
+// `written` 只记从 `regionStart` 起**连续**落盘的前缀 —— 所以并发不会把文件空洞误报成
+// 已缓存。<video> 的 Range 落在 [regionStart, regionStart+written] 内就读本地文件,并
+// **跟着写入端继续吐**(读到写入位置就等 progress 事件),一个请求能喂完整集;落在区间外
+// (往后 seek)才以新起点重开一条流。
+//
+// 两个别改回去的点:
+//   - 每个 worker 用**独立的 Electron Session**:共用 Session 时 Chromium 会把多个 Range
+//     复用到同一条 HTTP/2 连接上互相卡住,写了 6 个 Promise 也拿不到 6 条有效下载。
+//   - 只有开场首块要走 302,后续 worker 直接打首块响应的 `Response.url`(已解析的最终
+//     地址)——链接本身允许并发,不用每块重解一次签名链。
 //
 // 生命周期:同一时刻只留一个 session(换集/换源 = target 变了 → 旧的中止 + 删文件);
 // 没人读超过 IDLE_MS 也自动收摊,避免关掉播放器后还在后台默默下满几百 MB。
@@ -37,21 +28,10 @@ import { sleep } from './http-client'
 const IDLE_MS = 60_000
 /** 单个 session 的落盘上限,正片单集远小于此;纯粹是跑飞时的保险丝。 */
 const MAX_BYTES = 4 * 1024 * 1024 * 1024
-/**
- * 小块而不是整份静态等分:冷 seek 并发抓相邻块,连续缓冲达标后一次恢复播放。
- * 512KiB(而不是最初的 2MiB)是为了压低「凑齐所需连续块」这一步的最坏单块耗时——
- * 木桶效应下,决定起播等待的是所需块里最慢的那一块,块越小,慢连接单独拖住它的
- * 时间越短。代价是同样的预抓窗口需要打更多次 302(总请求数上升),是用请求量
- * 换起播延迟。
- */
+/** 块切小是为了压低「凑齐起播所需连续块」的最坏单块耗时(木桶效应),代价是请求数变多。 */
 const CHUNK_BYTES = 512 * 1024
-/**
- * 冷 seek 先攒 4 个连续块(2MiB,约 4.7 秒播放量)再吐首字节。真实最慢样本单连接
- * 约 226~484KB/s,4 个块由 6 个 worker 并行抓,最坏情况约 2.5~3 秒能凑齐,目标是把
- * 跳转恢复播放的等待压到 3 秒左右;拿到首字节后 6 个 worker 不停手,继续把窗口填到
- * PREFETCH_LEAD_BYTES,靠聚合吞吐(实测约 3 倍于播放消耗)甩开播放进度,不是靠这
- * 4 个块撑到底。
- */
+/** 冷 seek 先攒够这么多连续字节(约 4.7 秒播放量)再吐首字节;之后 worker 不停手
+ *  继续把窗口填到 PREFETCH_LEAD_BYTES,靠聚合吞吐甩开播放进度。 */
 const COLD_START_BYTES = 4 * CHUNK_BYTES
 /**
  * 距文件末尾这么近的开放式 Range 视为「Chromium 在取尾部 moov 索引」,直连放行、不建流
@@ -59,11 +39,7 @@ const COLD_START_BYTES = 4 * CHUNK_BYTES
  * 「真的拖到最后约 1 分钟」这一种情况退化成直连。
  */
 const TAIL_DIRECT_BYTES = 4 * 1024 * 1024
-/**
- * 6 个 worker 各自用独立的 Electron Session(见 `getRangeSession`)对同一条已解析
- * 链接发并发 Range——独立 Session 是必须的,避免共用 Session 时 HTTP/2 连接池把
- * 多个 Range 挤到一条连接上互相卡住;链接本身允许并发,不用每个 worker 单独解析。
- */
+/** 并发 worker 数,每个用独立 Electron Session(理由见文件头)。 */
 const FETCH_CONCURRENCY = 6
 /** 某个早期慢块卡住时最多在它后面预抓 48 块(约 24MiB),避免一路跑到文件尾形成大空洞。 */
 const PREFETCH_WINDOW_CHUNKS = 48
@@ -72,40 +48,25 @@ const PREFETCH_LEAD_BYTES = 32 * 1024 * 1024
 /** 读取端追上写入端时,等 progress 事件的上限;超时就再看一眼状态,防止事件丢了死等。 */
 const WAIT_TICK_MS = 5_000
 /**
- * 冷 seek 展开并发窗口时,worker 之间错开起跑的基础间隔和随机抖动上限。6 个 worker
- * 同一 tick 打出去,在源站日志里是「同一 IP 瞬间 6 个新连接」的强特征;固定间隔又是
- * 另一种规律信号(到达间隔完全等长,脚本流量的典型指纹)。所以每个 worker 的延迟是
- * `index * STAGGER_BASE_MS + 0~STAGGER_JITTER_MS 的随机量`——错峰只推迟发起时间,
- * 不改变总并发数/总吞吐,起播闸门按连续字节数算,这几十到两百毫秒不会拖慢冷 seek
- * 后的恢复播放。
+ * worker 之间错峰起跑:`index * BASE + 0~JITTER 随机`。同一 tick 打出 6 个连接在源站眼里
+ * 是强特征,完全等长的间隔又是另一种脚本指纹。只推迟发起时间,不改变总并发和吞吐。
  */
 const WORKER_STAGGER_BASE_MS = 40
 const WORKER_STAGGER_JITTER_MS = 40
-/**
- * 单个块(512KiB)在最慢真实样本下预估最坏也就 2~3 秒;8 秒还没完成大概率不是慢,
- * 是卡住了。这是复用同一条已解析链接(见文件头 3)之后新增的诊断口——如果这个
- * 假设在源站那边其实不成立,现象应该是某个 worker 长期卡在这里不动,而不是均匀变慢。
- * 只打日志观察,不做任何自动重试/退避(仓库红线:不做应用层重试)。
- */
+/** 单块最慢样本也就 2~3 秒,超过这个时长大概率是卡住而不是慢。只打日志,不重试(红线)。 */
 const CHUNK_STALL_WARN_MS = 8_000
 /**
- * 拖动进度条时 Chromium 会随手指连续 seek,每个中间位置都取消上一条 Range、再发一条新的。
- * 每来一条就重开一个 session,意味着每个中间位置都白打一次 302 + 展开 6 路并发,既拖慢
- * 最终位置的起播,也是源站眼里的「同一 IP 短时间大量新建连接」。所以**冷 seek 才防抖**:
- * 落在当前已缓存区间里的读取(情况 A)照旧立刻服务、仍是 0ms;只有需要重开流的那种
- * 才先等 180ms,期间又来了更新的请求就把自己作废,只让最后停下来的那个位置真正开流。
- * 代价:点击式跳转如果没命中本地缓存,会比原先多等这 180ms。
+ * 拖动进度条时 Chromium 会对每个中间位置各发一条 Range,条条重开 session 的话,每个中间
+ * 位置都要白打一次 302 + 展开并发。所以**只有需要重开流的冷 seek 才防抖**:命中已缓存
+ * 区间的读取仍是 0ms;防抖期间来了更新的请求就把自己作废,只让手停下来的位置真正开流。
+ * 代价:点击式跳转且没命中缓存时多等这 180ms。
  */
 const SEEK_DEBOUNCE_MS = 180
 /**
- * 被取代的那些中间请求**不能**直接报错打发掉。曾经打算按「Chromium 发下一条 seek 前
- * 就取消了上一条,回什么都没人消费」处理,2026-08-09 的实测日志证明这是错的:被挂起的
- * #39~#48 后来全都变成了「命中本地缓存」——它们一直等在那里,最后被新建的流覆盖到、
- * 正常喂了数据。所以这里是挂起观察,每 100ms 看一眼当前流是否已经覆盖自己的位置。
- *
- * 8 秒只是**防泄漏的上限**,不是正常路径(正常路径是被覆盖后直接服务,毫秒级)。真到点了
- * 按当时观测到的状态收尾,不含猜测:已有别的流在喂播放器 → 本请求确属废的,回错误安全;
- * 没有任何流在喂播放器 → 自己建流兜底(最坏是多等这 8 秒,而不是播放失败)。
+ * 被取代的中间请求**不能直接报错打发掉** —— 实测它们并没有被 Chromium 取消,而是一直等
+ * 在那里、最后被新建的流覆盖到并正常喂了数据。所以这里挂起观察,每 100ms 看一眼当前流
+ * 有没有覆盖自己的位置。8 秒只是防泄漏上限(正常路径是毫秒级);到点后按**当时观测到的
+ * 状态**收尾:已有别的流在喂播放器 → 回错误;没有 → 自己建流兜底。
  */
 const SUPERSEDED_HOLD_MS = 8_000
 const SUPERSEDED_POLL_MS = 100
@@ -129,7 +90,7 @@ interface Session {
   ev: EventEmitter
   lastReadAt: number
   idleTimer: NodeJS.Timeout | null
-  /** 还挂着几个读取流(<video> 暂停时它的那条并不会关)。>0 时 idle 看门狗不动手。 */
+  /** 挂着的读取流数量。<video> 暂停时它那条并不会关,所以 >0 时 idle 看门狗不动手。 */
   readers: number
   /** 这个 session 建立的时刻,用于算「冷 seek 到恢复播放花了多久」这条日志。 */
   createdAt: number
@@ -148,9 +109,8 @@ let lastBuiltKey = ''
 let buildsForKey = 0
 
 function getRangeSession(slot: number): ElectronSession {
-  // Chromium 会把同一 Session 的请求复用到一个 HTTP/2 连接上;pan.wo 在这个形态下
-  // 6 个 Range 的总吞吐仍接近单流。每个固定 worker 使用独立的内存 Session,才能得到
-  // 真正独立的连接;Session 只建 6 个并在应用生命周期内复用,不会随分块无限增长。
+  // 独立的内存 Session 才能拿到真正独立的连接(同 Session 会被复用到一条 HTTP/2 上)。
+  // 只建 FETCH_CONCURRENCY 个并在应用生命周期内复用,不随分块增长。
   if (!rangeSessions) {
     rangeSessions = Array.from(
       { length: FETCH_CONCURRENCY },
@@ -227,8 +187,7 @@ export async function sweepMediaCacheDir(): Promise<void> {
 function armIdleTimer(s: Session): void {
   if (s.idleTimer) clearTimeout(s.idleTimer)
   s.idleTimer = setTimeout(() => {
-    // 还有读取流挂着就不动手 —— 那多半是<video> 暂停(它的响应流一直开着)。
-    // 强行收摊会把它的流 error 掉,用户恢复播放时直接变成播放失败。
+    // 还有读取流挂着多半是 <video> 暂停(响应流一直开着),强行收摊会让它恢复播放时直接失败。
     if (s.readers > 0 || Date.now() - s.lastReadAt < IDLE_MS) { armIdleTimer(s); return }
     if (current === s) current = null
     disposeSession(s)

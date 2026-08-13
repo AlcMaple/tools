@@ -4,9 +4,8 @@ import { DESKTOP_USER_AGENT } from '../shared/download-types'
 import { crawlAllPages } from '../shared/maccms-search-paginator'
 import { assertScrapePageOk } from '../shared/scrape-guard'
 
-// 2026-07-10:站点主域从 bgm.girigirilove.com 换到 ani.girigirilove.com,旧域名
-// 现在 301 过来。改域名的同时也把 net-request 的 manual 重定向修了(旧代码碰到
-// 3xx 必抛 "Redirect was cancelled"),所以就算再换域名也只是多跟一跳,不会整源挂掉。
+// 站点旧域现在 301 到新域。net-request 的 manual 重定向已经修好(旧代码碰到 3xx 必抛
+// "Redirect was cancelled"),所以就算再换域名也只是多跟一跳,不会整个源挂掉。
 export const BASE_DOMAIN = 'https://ani.girigirilove.com'
 const HEADERS = {
   'User-Agent': DESKTOP_USER_AGENT,
@@ -152,7 +151,7 @@ async function parseSearchPage(html: string): Promise<GiriSearchResult[]> {
     })
   }
 
-  // Fallback: scan for /watch/ or /GV links when primary selectors return nothing.
+  // 主选择器什么都没返回时,退而扫描页面里的 /watch/ 或 /GV 链接。
   if (!results.length) {
     $('a[href]').each((_, el) => {
       const href = $(el).attr('href') ?? ''
@@ -175,13 +174,12 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
   const res = await giriSession.get(url)
   giriSession.save()
 
-  // CF 拦截 / 非 2xx 先显式抛错,别让异常页被解析成「0 结果 → 搜索不到结果」。
+  // CF 拦截 / 非 2xx 要先显式抛错,别让异常页被解析成「0 结果 → 搜索不到」。
   assertScrapePageOk(res.status, res.body, '旗木')
 
   if (needsCaptcha(res.body)) return { needs_captcha: true }
 
-  // Sequential pagination via shared helper — follows `下一页` links with 1s delay.
-  // Cookie-based session keeps the captcha gate open across pages.
+  // 翻页跟着「下一页」链接走,带 1s 间隔;cookie 会话让验证码闸门在翻页之间保持打开。
   return crawlAllPages({
     firstHtml: res.body,
     baseUrl: BASE_DOMAIN,
@@ -200,15 +198,13 @@ export async function search(keyword: string): Promise<GiriSearchResult[] | { ne
 const DATA_FORM_MAP: Record<string, string> = { cht: '繁中', chs: '簡中' }
 
 /**
- * 从播放页（如 /playGV26879-1-1/）提取片源名列表。
- *
- * 列表页（/GV26879/）的 tab 是由 Swiper JS 动态插入的，原始 HTML 里没有；
- * 但播放页是 PHP 服务端渲染的，包含所有片源 tab，因此可以从这里拿到名称。
+ * 从播放页提取片源名列表。列表页的 tab 是 JS 动态插入的、原始 HTML 里没有;播放页是服务端
+ * 渲染的,包含全部片源 tab,所以名称只能从这里拿。
  */
 async function resolveSourceNamesFromPlayerPage(firstEpUrls: string[]): Promise<string[]> {
   if (!firstEpUrls.length) return []
   try {
-    // 只需抓第一个片源的第一集，页面里会列出所有片源 tab
+    // 只需要抓第一个片源的第一集,页面里就会列出所有片源 tab
     const res = await giriSession.get(firstEpUrls[0])
     const $p = cheerio.load(res.body)
     const names: string[] = []
@@ -233,15 +229,9 @@ async function resolveSourceNamesFromPlayerPage(firstEpUrls: string[]): Promise<
 }
 
 // ── 播放地址解析(在线播放用) ──────────────────────────────────────────────────
-//
 // 播放地址就写在播放页 HTML 的 `player_aaaa` 里(MacCMS 通用结构,与稀饭同源),
-// **不需要**起隐藏窗口截流 —— 那条路要几秒起步、还只认 *.m3u8。
+// **不需要**起隐藏窗口截流 —— 那条路要几秒起步,而且只认 *.m3u8。
 // `encrypt` 决定 url 的编码:0=明文 / 1=percent-encode / 2=base64 再 percent-encode。
-//
-// 实测(2026-07-10,见 DEVLOG):girigiri 的播放地址是**静态路径,无签名、无时效**
-// (没有 auth_key / expires / token 之类查询串),分片只带 UA 就能匿名取。
-// 另外**并非都是 m3u8** —— 部分老番线路直接给 .mp4(如 ana.girigirilove.top/…/01.mp4),
-// 所以这里只负责给出地址,由调用方按后缀决定走 HLS 还是直接喂 <video>。
 function extractPlayerUrl(html: string): string {
   const at = html.indexOf('player_aaaa=')
   if (at < 0) return ''

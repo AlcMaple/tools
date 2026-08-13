@@ -1,13 +1,11 @@
 /**
- * Lower-level HTTP utilities shared across site clients (aowu / bgm / future).
+ * 各站客户端共用的底层 HTTP 工具:
+ *   1. 可中止的 `sleep` —— 重试和限速器用
+ *   2. `decodeBody` —— gzip / brotli / deflate 解压
+ *   3. `parseRetryAfter` —— Retry-After 头解析(秒数或 HTTP 日期两种形态)
+ *   4. `withTransientRetry` —— 只重试一次的瞬时网络错误恢复
  *
- * Three things live here:
- *   1. Abortable `sleep` — used by retries and rate limiters.
- *   2. `decodeBody` — gunzip / brotli / inflate for Accept-Encoding-aware sites.
- *   3. `parseRetryAfter` — RFC 7231 Retry-After header parser (delta-seconds or HTTP-date).
- *   4. `withTransientRetry` — single-shot retry for flaky-wifi / DNS / RST errors.
- *
- * Anything site-specific (cookies, UA pool, encryption protocol) lives elsewhere.
+ * 站点相关的东西(cookie、UA 池、加密协议)不放这里。
  */
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib'
 
@@ -33,11 +31,7 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 // ── Response body decoding ────────────────────────────────────────────────────
 
-/**
- * Decode a response body per the `content-encoding` header. Throws on bad frames
- * so the caller can surface the structural failure rather than handing back
- * garbled bytes.
- */
+/** 按 `content-encoding` 解压。坏帧直接抛错,让调用方能报出结构性失败,而不是拿到一堆乱码字节。 */
 export function decodeBody(headers: NodeJS.Dict<string | string[]>, body: Buffer): Buffer {
   const enc = String(headers['content-encoding'] || '').toLowerCase()
   if (enc === 'gzip') return gunzipSync(body)
@@ -48,10 +42,7 @@ export function decodeBody(headers: NodeJS.Dict<string | string[]>, body: Buffer
 
 // ── Retry-After parser ────────────────────────────────────────────────────────
 
-/**
- * Parse a Retry-After header. Returns seconds-from-now (>= 0) or null if absent
- * / unparseable. Accepts both delta-seconds and HTTP-date forms.
- */
+/** 解析 Retry-After,返回距现在多少秒(≥0);缺失或解析不了返回 null。两种形态都支持。 */
 export function parseRetryAfter(v: string | string[] | undefined): number | null {
   if (!v) return null
   const s = Array.isArray(v) ? v[0] : v
@@ -62,11 +53,9 @@ export function parseRetryAfter(v: string | string[] | undefined): number | null
   return null
 }
 
-// ── Transient-network retry ───────────────────────────────────────────────────
-// Wi-Fi blips, brief DNS hiccups, and stray RST packets are normal background
-// noise on consumer networks. One quick retry recovers from the vast majority
-// without the user noticing. Anything else (true outages, aborts, server errors)
-// is surfaced so the caller can decide.
+// ── 瞬时网络错误重试 ──────────────────────────────────────────────────────────
+// Wi-Fi 抖一下、DNS 短暂卡顿、偶发的 RST 是家用网络的正常噪音,快速重试一次就能恢复,用户无感。
+// 其他情况(真的断网、主动中止、服务端错误)
 
 const TRANSIENT_ERRNOS = new Set([
   'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE',
@@ -81,9 +70,8 @@ export function isTransientError(e: unknown): boolean {
 }
 
 /**
- * Run `fn`. On transient error (ECONNRESET / ENOTFOUND / etc.) sleep 200-500ms
- * then retry exactly once. Non-transient errors and abort signals bubble out
- * immediately.
+ * 跑 `fn`。遇到瞬时错误(ECONNRESET / ENOTFOUND 等)睡 200~500ms 后**只重试一次**;
+ * 非瞬时错误和中止信号立即冒泡出去。
  */
 export async function withTransientRetry<T>(
   fn: () => Promise<T>,

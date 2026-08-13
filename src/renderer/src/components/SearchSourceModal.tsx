@@ -1,8 +1,6 @@
-// 补搜其他源弹窗 —— MyAnime「+ 搜 Xifan / + 搜 Girigiri / + 搜 Aowu」入口。
-//
-// 这里只负责 UI：搜索框 / 加载 / 结果列表 / 验证码。搜索 / 缓存 / 验证码 /
-// Aowu 流式 / 请求竞速等业务逻辑全在 useSourceSearch hook 里，和
-// SearchDownload 共用同一套实现，行为不会漂移。
+// 补搜其他源的弹窗。这里**只负责 UI**:搜索框 / 加载 / 结果列表 / 验证码。
+// 搜索、缓存、验证码、流式分页、请求竞速这些业务逻辑全在 useSourceSearch 里
+// 与搜索下载页共用同一套实现,行为不会漂移。
 
 import { useState } from 'react'
 import { ModalShell } from '../pages/homework/shared'
@@ -12,12 +10,12 @@ import ErrorPanel from './ErrorPanel'
 
 interface Props {
   source: Source
-  /** 初始关键词，一般传 track.titleCn || track.title。 */
+  /** 初始关键词,一般传追番记录的标题。 */
   initialKeyword: string
-  /** 头部展示用，让用户知道在为哪部番找。 */
+  /** 头部展示用,让用户知道在为哪部番找。 */
   animeTitle: string
   onClose: () => void
-  /** 用户挑了一个结果。调用方根据 source 自己处理（Aowu 要再 resolveShareUrl）。 */
+  /** 用户挑了一个结果,调用方按 source 自行处理。 */
   onConfirm: (card: SearchCard) => void | Promise<void>
 }
 
@@ -29,7 +27,7 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
     initialKeyword,
   })
 
-  // Captcha 切到下一题时清空输入，避免上次的错误码残留
+  // 换下一题验证码时清空输入,避免上次的错误码残留
   const handleRefreshCaptcha = async (): Promise<void> => {
     setCaptchaInput('')
     await refreshCaptcha()
@@ -46,9 +44,8 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
     setConfirming(true)
     try {
       await onConfirm(card)
-      // 不在这里 setConfirming(false)：onConfirm 通常会 setSearching(null) 关
-      // 父组件的 modal state，本组件直接被卸载。失败时调用方一般 console.warn,
-      // 这里走 finally 兜底防止悬挂。
+      // 这里**不** setConfirming(false):onConfirm 通常会关掉父组件的弹窗,本组件直接被卸载。
+      // finally 只是兜底,防止失败时状态悬挂。
     } catch (err) {
       console.error('[SearchSourceModal] confirm failed:', err)
     } finally {

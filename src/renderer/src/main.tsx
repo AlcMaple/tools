@@ -2,8 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 
-// Self-hosted fonts — no CDN dependency at runtime. Fixes blank icons / fallback
-// glyphs when the device has no internet (or no VPN against blocked CDNs).
+// 字体自托管,运行时不依赖 CDN —— 否则设备没网(或 CDN 被墙)时图标会变成空白或回退字形。
 import '@fontsource/inter/400.css'
 import '@fontsource/inter/500.css'
 import '@fontsource/inter/700.css'

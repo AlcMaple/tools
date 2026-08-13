@@ -28,12 +28,8 @@ const aowuQueue = new SiteQueueRegistry<AowuPayload>({
 })
 
 export function registerAowuIpc(): void {
-  // Streaming search:
-  //   - Returns { requestId, results: <page 1>, total, more }.
-  //   - If `more=true`, emits 'aowu:search-page' events on the same sender for
-  //     each subsequent page, with payload (requestId, results, done).
-  //   - The renderer should track the latest requestId and discard events from
-  //     stale searches (user typing fast).
+  // 流式搜索:返回第一页 + requestId;`more=true` 时后续每页通过事件发回。
+  // 渲染层要记住最新的 requestId 并丢弃旧搜索的事件(用户打字快时会有)。
   ipcMain.handle('aowu:search', async (event, keyword: string) => {
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const sender = event.sender
@@ -48,19 +44,14 @@ export function registerAowuIpc(): void {
 
   ipcMain.handle('aowu:watch', async (_event, watchUrl: string) => watch(watchUrl))
 
-  // Convert search-time synthetic /v/{id} URL → user-facing /w/{token} URL.
-  // Used by WatchHere chips so the user lands on the SPA's real watch page
-  // instead of the "页面令牌生成失败" error page. Single-shot, no caching here
-  // since it's only called when the user clicks a chip (and the renderer
-  // persists the resolved URL to the binding's sourceUrl after the first hit).
+  // 把搜索期的合成 URL 换成用户可用的观看页 URL —— 否则用户点开会落到「页面令牌生成失败」。
+  // 这里不缓存:只有用户点 chip 时才调,而渲染层拿到结果后会持久化进 binding。
   ipcMain.handle('aowu:resolve-share-url', async (_event, input: string) => {
     return resolveSharePath(input)
   })
 
-  // Resolve a watch (animeId, sourceIdx, ep) tuple to the signed ByteDance CDN
-  // direct URL. Used by the queue's "copy URL" feature so the user can paste
-  // into external downloaders (NDM 等) and actually get the mp4. Sub-second
-  // typically — two encrypted POSTs (bundle/play → play) over the warm key cache.
+  // 把 (animeId, 线路, 集数) 解析成签名后的 CDN 直链,供队列的「复制链接」用 ——
+  // 用户粘进外部下载器才拿得到真正的 mp4。
   ipcMain.handle(
     'aowu:resolve-mp4-url',
     async (_event, animeId: string, sourceIdx: number, ep: number): Promise<string> => {
@@ -104,7 +95,7 @@ export function registerAowuIpc(): void {
         aowuQueue.resume(taskId)
         return { resumed: true }
       }
-      // Queue lost (e.g. after app restart) — recreate from caller-supplied state.
+      // 队列丢了(比如应用重启过)—— 用调用方带来的状态重建。
       if (title && animeId && sourceIdx && epList && pendingEps?.length) {
         aowuQueue.create(taskId, {
           title,
@@ -121,7 +112,7 @@ export function registerAowuIpc(): void {
   ipcMain.handle(
     'aowu:download-requeue',
     async (event, taskId: string, title: string, animeId: string, sourceIdx: number, epList: AowuEpisode[], eps: number[], savePath?: string) => {
-      // Defensive merge — see xifan:download-requeue comment.
+      // 防御性合并 —— 见 xifan 那边同名 handler 的说明。
       const q = aowuQueue.get(taskId)
       if (!q) {
         aowuQueue.create(taskId, {

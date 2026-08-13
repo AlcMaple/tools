@@ -19,27 +19,23 @@ interface SavedSettings {
   downloadPath?: string;
   searchCacheEnabled?: boolean;
   minimizeOnClose?: boolean;
-  /** 是否启用启动时的自动检查更新（默认 true）。关掉之后不会自动弹更新
-   *  卡片，但用户仍能在「关于 → 检查更新」按钮手动触发。 */
+  /** 启动时是否自动检查更新(默认开)。关掉后不再自动弹更新卡片,仍可在「关于」手动检查。 */
   autoUpdateCheckEnabled?: boolean;
-  /** 更新源：'auto' = 优先国内加速（ghproxy 代理链）、失败回退 GitHub（默认，
-   *  无魔法用户用这个）；'github' = 强制直连 GitHub（有魔法用户跳过代理）。 */
+  /** 更新源:'auto' 优先国内加速、失败回退 GitHub;'github' 强制直连。 */
   updateSource?: "auto" | "github";
 }
 
 const DEFAULTS: Required<SavedSettings> = {
   downloadPath: "",
   searchCacheEnabled: true,
-  // 默认关闭 —— 跟 OS 惯例对齐（X = 真的退出，不是偷偷常驻）。
-  // 想要"关掉窗口仍在后台下载 / 发邮件"的用户自己进设置打开即可，
-  // 一个开关零摩擦。
+  // 默认关闭 —— 与 OS 惯例一致(× 就是真的退出,不是偷偷常驻)。想要关窗后继续下载 / 发邮件的
+  // 用户自己进设置打开。
   minimizeOnClose: false,
   autoUpdateCheckEnabled: true,
   updateSource: "auto",
 };
 
-// Settings-page-specific UI tweaks — meta-controls in the floating Tweaks panel.
-// 导航样式（侧栏/标签）不再让用户选 —— 改为纯响应式：宽窗用侧栏、窄窗(<lg)自动换标签条。
+// 导航样式不给用户选,纯响应式:宽窗侧栏、窄窗(<lg)自动换成标签条。
 type Density = "compact" | "comfortable" | "spacious";
 
 interface Tweaks {
@@ -143,10 +139,9 @@ function Row({
   density: Density;
   control: ReactNode;
   /**
-   * 较宽控件（路径选择 / 文本输入 / 分段选择）传 `stack`：窄屏（<sm）把控件挪到
-   * 描述下方、靠右下角；描述则占满整行、正常折行（否则被控件挤成一字一行很丑）。
-   * 输入框这类是整宽铺开，分段/按钮则保持本身宽度靠右。开关 / 只读值这类窄控件不传，
-   * 始终「文本左 / 控件右」—— 它们再窄也放得下，堆叠反而割裂、浪费竖向空间。
+   * 较宽的控件(路径选择 / 文本输入 / 分段选择)传 `stack`:窄屏时把控件挪到描述下方靠右
+   * 描述占满整行正常折行 —— 否则描述会被控件挤成一字一行。开关、只读值这类窄控件不传
+   * 始终「文本左、控件右」:它们再窄也放得下,堆叠反而割裂又浪费竖向空间。
    */
   stack?: boolean;
 }): JSX.Element {
@@ -248,7 +243,7 @@ function PathControl({
   onReveal,
 }: {
   value: string;
-  /** OS-default downloads folder, shown as a faded preview when value is empty. */
+  /** 系统默认下载目录,value 为空时作为灰色预览显示。 */
   defaultPath: string;
   onPick: () => void;
   onClear: () => void;
@@ -256,8 +251,8 @@ function PathControl({
   onReveal: () => void;
 }): JSX.Element {
   const isEmpty = !value;
-  // 留空时显示真实的系统默认下载目录（path.getPath('downloads')），不再骗用户
-  // 说"应用同级目录"。defaultPath 异步拉过来，未到位前显示一个简短占位串。
+  // 留空时显示**真实的**系统默认下载目录,不再骗用户说「应用同级目录」。这个值是异步拉的
+  // 没到位前先显示一个简短占位串。
   const previewText = isEmpty
     ? (defaultPath ? `系统默认: ${defaultPath}` : "系统默认下载文件夹")
     : value;
@@ -318,9 +313,8 @@ function TextControl({
   /** Called when input loses focus (if commitOnBlur) or Enter is pressed. */
   onCommit?: () => void;
   /**
-   * 默认 blur 也会触发 commit —— 适合普通字段的"自动保存"语义。
-   * 但敏感字段（如 QQ 授权码这种 16 字符一气呵成的整串）blur 提交容易把
-   * 半成品落库覆盖旧值。这类字段传 false，让用户只能用 Enter 显式提交。
+   * 默认 blur 也提交,适合普通字段的自动保存语义。但敏感字段(如一气呵成的 16 位授权码)
+   * blur 提交容易把半成品落库覆盖旧值 —— 这类传 false,只允许 Enter 显式提交。
    */
   commitOnBlur?: boolean;
   trailing?: ReactNode;
@@ -348,14 +342,9 @@ function ReadonlyValue({ value }: { value: string }): JSX.Element {
 }
 
 /**
- * 设置页「检查更新」按钮 + 状态指示。
- *
- * 不直接拿 updateStore 的 status 当唯一来源 —— banner 已经在显示 downloaded
- * / available-mac 时，按钮文案仍然给一个明确的反馈（"v0.3.0 已下载"），便于
- * 用户从设置页确认状态而不需要回到其他页面看 banner。
- *
- * 按钮 disabled 仅在 `checking` 阶段，防止重复触发。其他状态都允许再次点击
- * （比如发生 error 后用户想重试）。
+ * 「检查更新」按钮 + 状态。不只看 updateStore 的 status:banner 已经在显示时,按钮仍要给出
+ * 明确文案(如「v0.3.0 已下载」),让用户在设置页就能确认状态。
+ * 只在 checking 阶段禁用,其余状态都允许再点(比如出错后想重试)。
  */
 function UpdateCheckControl(): JSX.Element {
   const [state, setState] = useState<UpdateState>(updateStore.getState());
@@ -546,10 +535,7 @@ function CategoryList({
   );
 }
 
-/**
- * 宽屏（≥lg）的常驻分类侧栏（260px）。窄屏侧栏整体收起，改用从右侧滑出的抽屉
- * （见 CategoryDrawer）—— PC 上不做横向滑动、也不让侧栏挤占内容。
- */
+/** 宽屏(≥lg)常驻的分类侧栏。窄屏整体收起改用右侧抽屉 —— PC 上不做横向滑动,也不让侧栏挤内容。 */
 function CategoryRail({
   active,
   onSelect,
@@ -581,10 +567,7 @@ function CategoryRail({
   );
 }
 
-/**
- * 窄屏（<lg）的分类抽屉 —— 从**右侧**滑出（左上角返回键不被遮挡），由顶栏右上的
- * ☰ 触发，跟「界面调节」并排同样从右侧出。点遮罩 / 选分类 / Esc 关闭。
- */
+/** 窄屏(<lg)的分类抽屉,从**右侧**滑出(左上角返回键不被遮挡),与「界面调节」同侧。 */
 function CategoryDrawer({
   open,
   active,
@@ -721,14 +704,14 @@ function TweakRadio({
 function Settings(): JSX.Element {
   const navigate = useNavigate();
 
-  // Active category, persisted across sessions.
+  // 当前分类,跨会话持久化。
   const [active, setActive] = useState<CategoryId>(() => {
     const v = localStorage.getItem(ACTIVE_CATEGORY_KEY) as CategoryId | null;
     return v && CATEGORIES.some((c) => c.id === v) ? v : "general";
   });
   useEffect(() => { localStorage.setItem(ACTIVE_CATEGORY_KEY, active); }, [active]);
 
-  // Settings — auto-save on every change.
+  // 设置项:每次改动即自动保存。
   const [settings, setSettingsState] = useState<Required<SavedSettings>>(readSavedSettings);
   const updateSettings = (patch: Partial<Required<SavedSettings>>): void => {
     const next = { ...settings, ...patch };
@@ -737,20 +720,18 @@ function Settings(): JSX.Element {
     if (patch.minimizeOnClose !== undefined) {
       window.systemApi.setSetting?.("minimizeOnClose", patch.minimizeOnClose).catch(() => {});
     }
-    // autoUpdateCheckEnabled 是主进程行为开关（决定启动时要不要跑 updater
-    // 自动检查），必须同步到 app_settings.json，否则下次重启 dev/应用时
-    // 主进程读到的还是默认 true，自动检查照跑不误。
+    // autoUpdateCheckEnabled 是主进程的行为开关,必须同步进 app_settings.json —— 否则下次重启后
+    // 主进程读到的还是默认值,自动检查照跑不误。
     if (patch.autoUpdateCheckEnabled !== undefined) {
       window.systemApi.setSetting?.("autoUpdateCheckEnabled", patch.autoUpdateCheckEnabled).catch(() => {});
     }
-    // updateSource 同理是主进程行为开关（updater 据此决定走代理链还是直连
-    // GitHub），必须同步到 app_settings.json。
+    // updateSource 同理是主进程行为开关,必须同步进 app_settings.json。
     if (patch.updateSource !== undefined) {
       window.systemApi.setSetting?.("updateSource", patch.updateSource).catch(() => {});
     }
   };
 
-  // WebDAV — auto-save on commit (Enter / blur).
+  // WebDAV:提交(回车 / 失焦)时保存。
   const [webdavAccount, setWebdavAccount] = useState("");
   const [webdavPassword, setWebdavPassword] = useState("");
   const [webdavPath, setWebdavPath] = useState("MapleTools");
@@ -766,9 +747,7 @@ function Settings(): JSX.Element {
         if (!cfg) return;
         setWebdavAccount(cfg.account);
         setWebdavPassword(cfg.appPassword);
-        // 老配置里 remotePath 可能是完整文件路径（"MapleTools/homework.json"），
-        // 主进程在 loadConfig 时已经自动剥成 base folder（"MapleTools"），这里
-        // 直接用就行；空 fallback 也用 base folder 默认。
+        // 老配置里 remotePath 可能是完整文件路径,主进程 loadConfig 时已经剥成基准目录,这里直接用。
         const p = cfg.remotePath || "MapleTools";
         setWebdavPath(p);
         lastSavedWebdav.current = { account: cfg.account, password: cfg.appPassword, path: p };
@@ -787,8 +766,8 @@ function Settings(): JSX.Element {
     }).catch((err) => reportError("settings:webdav-save", err));
   };
 
-  // MapleTools 网页版账号 —— JWT 只在主进程持有，这里只拿登录状态。
-  // 密码只用于本次登录请求，不写 localStorage，也不通过 status IPC 回显。
+  // 网页版账号 —— JWT 只在主进程持有,这里只拿登录状态。密码只用于本次登录请求
+  // 不写 localStorage,也不通过 status IPC 回显。
   const [webAccount, setWebAccount] = useState<{ loggedIn: boolean; username: string }>({
     loggedIn: false,
     username: "",
@@ -825,8 +804,7 @@ function Settings(): JSX.Element {
     setWebLoginState("idle");
   };
 
-  // 系统默认下载文件夹 —— 留空 Settings.downloadPath 时主进程下载器会回退
-  // 到这个路径。从 main 那边异步拉一次就够，进程生命周期内不变。
+  // 系统默认下载目录:Settings.downloadPath 留空时下载器会回退到它。进程生命周期内不变,拉一次即可。
   const [defaultDownloadsPath, setDefaultDownloadsPath] = useState("");
   useEffect(() => {
     window.systemApi.getDefaultDownloadsPath()
@@ -842,19 +820,19 @@ function Settings(): JSX.Element {
       .catch(() => { /* 拿不到当打包处理，不显示按钮 */ });
   }, []);
 
-  // BGM 鉴权（令牌 + 网页登录）。token / cookie 明文不出主进程，UI 只拿状态布尔。
+  // BGM 鉴权(令牌 + 网页登录)。token / cookie 明文不出主进程,UI 只拿布尔。
   const [bgmAuth, setBgmAuth] = useState<BgmAuthStatus>({ hasToken: false, loggedIn: false });
   const [bgmTokenInput, setBgmTokenInput] = useState("");
   const [bgmShowToken, setBgmShowToken] = useState(false);
   const [bgmLoggingIn, setBgmLoggingIn] = useState(false);
   const [bgmVerifying, setBgmVerifying] = useState(false);
-  // 设置里**只取状态、不自动校验**（用户要求）——是否过期由用户点「检查」手动确认。
-  // 注意:动漫查询页的 chip 会按 8 点边界自动校验,过期时主进程会清 cookie,所以这里
-  // authStatus 读到的「已登录」通常已是真实的(被 chip 校验维护过)。
+  // 设置页**只取状态、不自动校验**(用户要求):是否过期由用户点「检查」手动确认。
+  // 动漫查询页的 chip 会按 8 点边界自动校验并在过期时清 cookie,所以这里读到的「已登录」
+  // 通常已经是被维护过的真实状态。
   useEffect(() => {
     window.bgmApi.authStatus().then(setBgmAuth).catch(() => { /* 拿不到当未配置 */ });
   }, []);
-  // 手动操作都回填共享缓存,让动漫查询页的 chip 立刻同步,不必等下个 8 点窗口。
+  // 手动操作回填共享缓存,让动漫查询页的 chip 立刻同步,不必等下个 8 点窗口。
   const applyBgm = (s: BgmAuthStatus): void => { setBgmAuth(s); setCachedAuth(s); };
   const recheckBgm = async (): Promise<void> => {
     setBgmVerifying(true);
@@ -880,8 +858,8 @@ function Settings(): JSX.Element {
     applyBgm(await window.bgmApi.logout());
   };
 
-  // BGM 登录邮箱/密码 —— 供内嵌登录窗自动填充。纯本地存储(不同步、不入库),
-  // 和 WebDAV 应用密码同一处理,所以明文回显 + 小眼睛。
+  // BGM 登录邮箱/密码,供内嵌登录窗自动填充。纯本地、不同步,与 WebDAV 应用密码同一处理
+  // 所以明文回显 + 小眼睛。
   const [bgmEmail, setBgmEmail] = useState("");
   const [bgmPassword, setBgmPassword] = useState("");
   const [bgmShowPwd, setBgmShowPwd] = useState(false);
@@ -902,8 +880,7 @@ function Settings(): JSX.Element {
     }).catch((err) => reportError("settings:bgm-creds-save", err));
   };
 
-  // B 站账号 —— 在线观看用。登录态(cookie)存在主进程的 persist:bili 分区里,
-  // 扫码 / 短信最终都写进同一个分区,UI 只拿一个布尔。
+  // B 站账号。登录态存在主进程的 persist:bili 分区,扫码 / 短信最终都写进同一分区,UI 只拿布尔。
   const [biliLoggedIn, setBiliLoggedIn] = useState(false);
   const [biliQrOpen, setBiliQrOpen] = useState(false);
   const [biliSmsOpen, setBiliSmsOpen] = useState(false);
@@ -914,8 +891,7 @@ function Settings(): JSX.Element {
     setBiliLoggedIn((await window.biliApi.logout()).loggedIn);
   };
 
-  // 稀饭账号 —— 收藏/签到等站内功能用。登录态(cookie)存在主进程的 xifanSession
-  // 里,cookie 罐持久化到本地文件,不存用户名/密码明文。
+  // 稀饭账号。登录态存在主进程的 xifanSession,cookie 罐持久化到本地文件,不存用户名/密码明文。
   const [xifanAuth, setXifanAuth] = useState({ loggedIn: false });
   const [xifanUsername, setXifanUsername] = useState("");
   const [xifanPassword, setXifanPassword] = useState("");
@@ -932,7 +908,7 @@ function Settings(): JSX.Element {
       .then(({ image_b64 }) => setXifanCaptcha(`data:image/png;base64,${image_b64}`))
       .catch(() => setXifanCaptcha(""));
   };
-  // 展开登录表单(未登录且还没拉过验证码)时秒显一张,免得用户先看到空白框。
+  // 展开登录表单时先秒显一张验证码,免得用户先看到空白框。
   useEffect(() => {
     if (!xifanAuth.loggedIn && !xifanCaptcha) refreshXifanCaptcha();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1065,7 +1041,7 @@ function Settings(): JSX.Element {
     });
   };
 
-  // Theme — same global state as the rest of the app uses.
+  // 主题:与应用其余部分共用同一份全局状态。
   const [isDark, setIsDark] = useState(() => {
     const stored = localStorage.getItem("theme");
     if (stored) return stored === "dark";

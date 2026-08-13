@@ -1,15 +1,13 @@
 // B 站站点接口 —— 登录(TV 端扫码 / web 短信)、稿件信息(分 P 列表)、播放地址。
 //
-// **为什么走 TV 端 appkey 签名,不走 web 端**:
-//   1. 登录:B 站 2026-06 起收紧 **web 扫码**接口(/x/passport-login/web/qrcode/*)风控,
-//      手机确认那步直接弹「API校验密匙错误」(同期 downkyi 等一起中招)。TV 端
-//      (/x/passport-tv-login/qrcode/*)是 appkey+appsec 的 md5 签名,不吃这套风控,
-//      而且登录成功后 **cookie 直接在响应体里**返回(不靠 Set-Cookie)。
-//   2. 播放地址:web 端 playurl 要 WBI 签名 —— 那套盐值藏在页面 JS 里、隔三差五就换,
-//      是 011 当初否掉「自研播放器」的主要理由。TV appkey 的 appsec 是固定常量、
-//      多年未动,签名只是「参数排序拼接 + md5」,不需要运行时反推。
+// **为什么走 TV 端 appkey 签名而不是 web 端**:
+//   1. 登录:web 扫码接口风控收紧,手机确认那一步直接弹「API校验密匙错误」。TV 端走
+//      appkey+appsec 的 md5 签名,不吃这套风控,而且登录成功后 **cookie 直接在响应体里**返回
+//      不靠 Set-Cookie。
+//   2. 播放地址:web 端 playurl 要 WBI 签名,盐值藏在页面 JS 里、隔三差五就换 —— 这正是当初
+//      否掉自研播放器的主要理由。TV 的 appsec 是固定常量,签名只是「参数排序拼接 + md5」。
 //
-// UA 沿用 BGM 的教训:登录态绑 UA,分区 / 请求统一 DESKTOP_USER_AGENT。
+// UA 沿用 BGM 的教训:登录态绑 UA,分区和请求统一用同一个 UA。
 import { session } from 'electron'
 import { createHash, randomBytes } from 'node:crypto'
 import { netRequest } from '../shared/net-request'
@@ -25,11 +23,11 @@ const TV_APPSEC = '59b43e04ad6965f34319062b478f83dd'
 const PASSPORT = 'https://passport.bilibili.com'
 const API = 'https://api.bilibili.com'
 
-/** B 站 CDN 对 upos/bilivideo 直链校验防盗链:不带这个 Referer 一律 403(实测)。 */
+/** B 站 CDN 对 upos/bilivideo 直链校验防盗链,不带这个 Referer 一律 403。 */
 export const BILI_REFERER = 'https://www.bilibili.com'
 
-// session 只能在 app ready 后创建(registerAllIpc 在模块加载期就跑)→ 惰性初始化;
-// 首次拿到分区时顺手固定 UA。
+// session 只能在 app ready 之后创建(而 IPC 注册在模块加载期就跑),所以惰性初始化;
+// 首次拿到分区时顺手把 UA 固定下来。
 let cachedSession: Electron.Session | null = null
 export function biliSession(): Electron.Session {
   if (!cachedSession) {
@@ -60,7 +58,7 @@ interface BiliEnvelope<T> {
   data: T | null
 }
 
-/** 拆 B 站统一响应信封:非 0 一律 throw 到 UI(红线:不静默吞错、不自动重试)。 */
+/** 拆 B 站的统一响应信封:非 0 一律 throw 到 UI(红线:不静默吞错、不自动重试)。 */
 function unwrap<T>(raw: Buffer, what: string): T {
   const env = JSON.parse(raw.toString('utf-8')) as BiliEnvelope<T>
   if (env.code !== 0 || !env.data) throw new Error(`${what}失败:${env.message || env.code}`)
@@ -98,9 +96,8 @@ export async function tvAuthCode(): Promise<{ url: string; auth_code: string }> 
 }
 
 /**
- * 查一次扫码结果。**不是「失败后自动重试/周期性探测」**(AI_GUIDELINES 网络红线)——
- * 扫码本就是 B 站定义的轮询协议,UI 在二维码亮着时每 2s 问一次、关窗即停;
- * 请求真出错就 throw,由用户决定重来。
+ * 查一次扫码结果。**这不是「失败后自动重试」**:扫码本来就是 B 站定义的轮询协议,UI 在二维码
+ * 亮着时每 2s 问一次、关窗即停;请求真出错就 throw,由用户决定重来。
  */
 export async function tvPoll(authCode: string): Promise<QrState> {
   const env = await postForm<TvPollData>('/x/passport-tv-login/qrcode/poll', { auth_code: authCode })
@@ -128,7 +125,7 @@ export async function tvPoll(authCode: string): Promise<QrState> {
   return 'ok'
 }
 
-/** SESSDATA 是 B 站的关键登录态 cookie(等价 BGM 的 chii_auth)。 */
+/** SESSDATA 是 B 站的关键登录态 cookie。 */
 export async function isLoggedIn(): Promise<boolean> {
   const cookies = await biliSession().cookies.get({ name: 'SESSDATA' })
   return cookies.some((c) => c.domain?.includes('bilibili.com') && c.value)
@@ -139,9 +136,8 @@ export async function logout(): Promise<void> {
 }
 
 // ── 登录(短信验证码) ────────────────────────────────────────────────────────
-// 流程照搬 Biu 已跑通的 web 短信登录协议：captcha → 极验 → sms/send → login/sms。
-// 区别只在架构边界：Biu 的 renderer 直接发请求，MapleTools 必须由主进程通过
-// netRequest + persist:bili 发，确保 CORS、UA 与 cookie 罐都和后续播放请求一致。
+// 流程:captcha → 极验 → sms/send → login/sms。请求必须由**主进程**发,并走 persist:bili 分区
+// 保证 UA 和 cookie 罐与后续播放请求一致。
 
 const WEB_LOGIN_SOURCE = 'main_web'
 const WEB_LOGIN_REFERER = 'https://passport.bilibili.com/login'
@@ -211,7 +207,7 @@ export async function getWebLoginCaptcha(): Promise<BiliGeetestChallenge> {
   return { token: data.token, gt: data.geetest.gt, challenge: data.geetest.challenge }
 }
 
-/** 极验完成后发送短信；返回只供下一步 login/sms 使用的 captcha_key。 */
+/** 极验完成后发送短信;返回的 captcha_key 只供下一步 login/sms 使用。 */
 export async function sendWebSmsCode(phone: string, result: BiliGeetestResult): Promise<string> {
   const data = await postWebLogin<{ captcha_key: string }>('/x/passport-login/web/sms/send', {
     cid: '86',
@@ -226,7 +222,7 @@ export async function sendWebSmsCode(phone: string, result: BiliGeetestResult): 
   return data.captcha_key
 }
 
-/** 使用短信验证码登录；成功响应必须真的在共享分区写下 SESSDATA 才算完成。 */
+/** 用短信验证码登录;必须真的在共享分区里写下 SESSDATA 才算成功。 */
 export async function loginWithWebSms(phone: string, code: string, captchaKey: string): Promise<void> {
   await postWebLogin<{
     refresh_token?: string

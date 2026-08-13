@@ -1,26 +1,11 @@
 /**
- * 共享的 api.bgm.tv 客户端 —— 给所有 BGM REST API 请求加统一的限速 +
- * 错误分类。三个调用方共享一个 RateLimiter：
+ * api.bgm.tv 的共享客户端:统一限速 + 错误分类。detail / search(别名回退) / calendar
+ * 三处共用一个 limiter —— 各自 `https.get` 时,详情 1 + 别名 8 + 周历 1 能在一秒内打出
+ * 10+ 请求,直接顶到 per-IP 限流。
  *
- *   - detail.ts          : `/v0/subjects/{id}` + `/v0/subjects/{id}/persons`
- *   - search.ts          : fetchAliases (`/v0/subjects/{id}`，别名回退分支)
- *   - calendar.ts        : `/calendar`
- *
- * 之前每处都自己 `https.get`，几个端点在同一个 IP 下连发就有可能把 BGM 那
- * 边的 per-IP 限流触发（详情进一个 → 别名查 8 条 → 周历刷新 = 10+ 请求
- * 一秒内打出去）。改成走这个共享 limiter 后，所有调用串行节流到 ~500ms
- * 间隔，BGM 那边接受度高很多。
- *
- * 限流响应处理：
- * - HTTP 429: 抛 `RateLimitError`（renderer 的 errorMessage 会识别）
- * - HTTP 5xx: 抛普通 Error，由 friendly classifier 归到"服务器异常"
- * - HTTP 4xx (非 429): 抛普通 Error
- * - 网络层 / 超时 / JSON parse: 抛原生 Error 透传，friendly classifier 会归到
- *   "连不上服务器"
- *
- * 注意：api.bgm.tv 不像 bgm.tv 搜索那样会返 HTTP 200 + 中文限流页，
- * 它走标准 HTTP 429 + Retry-After 头，所以这里只需要 timing 节流 +
- * HTTP 429 探测即可，不需要 body 检测层。
+ * 限流分层:L1 限速(本文件) → L2 滚动窗口配额 → L3 熔断(api-circuit.ts)。
+ * api.bgm.tv 走标准 429 + Retry-After,不像 bgm.tv HTML 那样返 200 + 中文限流页
+ * 所以这里不需要 body 检测层。
  */
 import { app } from 'electron'
 import { RateLimiter, RateLimitError } from '../shared/rate-limit'
@@ -29,42 +14,26 @@ import { ApiCircuitBreaker } from './api-circuit'
 import { getBgmToken } from './credentials'
 
 /**
- * BGM 官方明确要求第三方调用 api.bgm.tv 时带规范 User-Agent：
+ * UA 必须是 BGM 要求的 `{app-name}/{version} ({contact})`,contact 用真实公开仓库地址
+ * (占位符 UA 一看就是默认模板,更容易触发风控),版本号走 `app.getVersion()` 自动同步。
  *
- *     {app-name}/{version} ({contact})
- *
- * contact 可以是 GitHub 仓库 URL、邮箱、或主页地址 —— 用来在限流 / 滥用
- * 排查时联系到开发者。
- *
- * 历史踩坑：之前用过 `tools/1.0 (github.com/user/tools)` 这种占位符:
- *   - `user/tools` 是假 path，BGM 一查就知道是默认模板，触发风控概率高
- *   - 1.0 写死，版本号迭代后 UA 不变，运营上没法区分版本
- * 现在版本号走 `app.getVersion()` 自动跟 package.json 同步，contact 是
- * 真实公开仓库地址。
- *
- * **不要换成 Chrome 浏览器伪装 UA** —— api.bgm.tv 跟 bgm.tv HTML 期望相反：
- * HTML 端点要你像浏览器（见 `bgm/search.ts` 的 BrowserSession），API 端点
- * 要你**老老实实**自报家门。混了浏览器 UA 调 API 反而更容易被风控。
+ * **不要换成浏览器伪装 UA**:API 端点要老实自报家门,HTML 端点才要像浏览器
+ * (见 `bgm/search.ts` 的 BrowserSession)——两边期望相反。
  */
 function buildHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'User-Agent': `MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)`,
     'Accept': 'application/json',
   }
-  // 个人访问令牌（可选）：设置里填了(或 .env 兜底)就带上 Authorization，
-  // api.bgm.tv 走登录态 —— 详情 / 按别名搜索限额更宽松、限流时更稳。
-  // 主搜索走的是 bgm.tv 网页、套不上 token，由 cookie 登录态负责（见 credentials.ts）。
+  // 填了个人访问令牌就走登录态,限额更宽松。主搜索走 bgm.tv 网页、套不上 token
+  // 由 cookie 登录态负责(见 credentials.ts)。
   const token = getBgmToken()
   if (token) headers['Authorization'] = `Bearer ${token}`
   return headers
 }
 
-// 500ms 间隔 + 200ms 抖动 —— api.bgm.tv 比 HTML 搜索宽松（HTML 是 2200ms),
-// 实测 500ms 没观察到限流。再激进就有风险，再松就达不到防御目的。
-//
-// 008 阶段加 L2 滚动窗口配额：60s 内最多 20 个请求。单次别名回退最多 4 个、
-// 详情 2 个，正常用够；连搜多次时自动拉开节奏，不会一口气吃光分钟级预算。
-// （N 是启发式，BGM 没公开确切配额，先给稳值，按体感再调。）
+// 500ms + 抖动:api.bgm.tv 比 HTML 搜索(2200ms)宽松,实测 500ms 没观察到限流。
+// 60s / 20 个是启发式配额(BGM 没公开确切值),够正常使用,连搜多次时自动拉开节奏。
 const apiLimiter = new RateLimiter({
   minGapMs: 500,
   jitterMs: 200,
@@ -73,54 +42,33 @@ const apiLimiter = new RateLimiter({
   windowMs: 60_000,
 })
 
-// L3 熔断器：429 后停止投喂 API、阶梯冷却、半开试探恢复（详见 api-circuit.ts）。
 const apiBreaker = new ApiCircuitBreaker(apiLimiter)
 
-/**
- * 拉一个 api.bgm.tv 端点的 JSON 数据。所有调用排进同一个限速队列。
- *
- * **不做应用层自动重试**：任何 HTTP 失败都直接抛到 UI，由用户通过
- * Try again 按钮（5xx 错误）或倒计时按钮（429 限流）决定何时重试。这样：
- *
- *   - 用户始终知道发生了什么（不黑盒等几秒）
- *   - 永远不会因为代码自动重试加剧限流
- *   - 代码大幅简化
- *
- * @throws RateLimitError  HTTP 429。message 包含 Retry-After 秒数（站点没给
- *                          就 fallback 30s）。
- * @throws Error           HTTP 4xx（非 429）/ 5xx / 超时 / JSON parse 失败。
- *                          原始错误信息传给上层让 errorMessage classifier 分类。
- */
-// 连续「api.bgm.tv 不回包」次数（超时 / 连接 reset / 网络层失败）。BGM 限流的典型
-// 表现就是**直接丢包不回 429**，所以超时才是真正的限流信号。连撞到阈值就开熔断。
-// 任何一次拿到 HTTP 响应（含 4xx/5xx）即归零 —— 那说明连接是通的、不是被丢包。
+// 连续「不回包」次数。BGM 限流的典型表现是**直接丢包、不回 429**,所以超时才是真正的
+// 限流信号;拿到任何 HTTP 响应(含 4xx/5xx)即归零 —— 那说明连接是通的。
 let consecutiveApiTimeouts = 0
 const API_TIMEOUT_TRIP_THRESHOLD = 2
 
 export async function fetchBgmApiJson<T = unknown>(url: string): Promise<T> {
   return apiLimiter.schedule(async () => {
-    // 熔断闸门在 schedule 内（串行）检查 —— 冷却中直接抛 RateLimitError（UI 倒计时
-    // / 调用方降级 HTML），不再发请求；冷却到期后这一发即「半开试探」。
+    // 熔断闸门在 schedule 内(串行)检查:冷却中直接抛,不发请求;到期后这一发即半开试探。
     apiBreaker.guard()
-    // 走 Electron net（Chromium 网络栈）—— 自动用系统代理，修掉 Node https
-    // 不走代理、直连 fake-ip 假地址导致的冷启动超时。详见 shared/net-request.ts。
     let res: Awaited<ReturnType<typeof netRequest>>
     try {
       res = await netRequest(url, { headers: buildHeaders(), timeoutMs: 10000 })
     } catch (e) {
-      // 不回包 = 限流典型表现。连撞 N 次就开熔断：后续调用 guard() 直接短路（不再
-      // 每次干等 10s），调用方据此降级到 bgm.tv HTML。单次容忍（可能只是网络抖），
-      // 连续才判定限流。本次仍把原始错误抛出去（调用方的 catch 会降级 HTML）。
+      // 单次容忍(可能只是网络抖),连撞 N 次才开熔断 —— 之后 guard() 直接短路
+      // 不用每次干等 10s,调用方据此降级到 bgm.tv HTML。
       consecutiveApiTimeouts++
       if (consecutiveApiTimeouts >= API_TIMEOUT_TRIP_THRESHOLD) {
-        apiBreaker.recordTrip(0) // 超时无 Retry-After，用阶梯冷却下限
+        apiBreaker.recordTrip(0) // 超时没有 Retry-After,用阶梯冷却下限
       }
       throw e
     }
-    consecutiveApiTimeouts = 0 // 拿到响应 = 连接通，清零超时计数
+    consecutiveApiTimeouts = 0
     if (res.status === 429) {
       const retryAfter = parseInt(String(res.headers['retry-after'] ?? '30')) || 30
-      apiBreaker.recordTrip(retryAfter) // 开熔断 + 阶梯冷却 + 持久化
+      apiBreaker.recordTrip(retryAfter)
       throw new RateLimitError(
         retryAfter,
         `BGM API 触发限流（HTTP 429），请等 ${retryAfter} 秒后再试`,
@@ -129,7 +77,7 @@ export async function fetchBgmApiJson<T = unknown>(url: string): Promise<T> {
     if (res.status >= 400) {
       throw new Error(`BGM API HTTP ${res.status} for ${url}`)
     }
-    apiBreaker.recordSuccess() // 半开试探成功则关闸 + 软恢复
+    apiBreaker.recordSuccess()
     return JSON.parse(res.body.toString('utf-8')) as T
   })
 }

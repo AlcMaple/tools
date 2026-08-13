@@ -1,21 +1,17 @@
-// 把 localStorage 的同步 `JSON.stringify` + `setItem` 从渲染热路径里挪走。
+// 把 localStorage 的同步序列化 + 写入从渲染热路径上挪走。
 //
-// 为什么需要：plain-store（animeTrackStore / recommendationStore）每次 mutate
-// 都要序列化整张表再写盘，追番上百条时单次 stringify 能到几百 KB —— 这步同步
-// 跑在渲染线程上，叠加订阅者一次性重渲染，就成了切 tab / 进设置时那段几百 ms
-// 到 1s 的卡顿。
+// 那两个 plain store 每次 mutate 都要把整张表序列化再写盘,追番上百条时单次能到几百 KB ——
+// 这一步同步跑在渲染线程上,叠加订阅者的一次性重渲染,就是切页面时那几百毫秒到 1 秒的卡顿。
 //
-// 策略：调用方先**同步**通知订阅者（UI 立刻响应），把真正的写盘闭包丢给这里，
-// 由 requestIdleCallback 在空闲帧合并执行。同 key 多次 schedule 只保留最后一个
-// 闭包 —— 连续 mutate 合并成一次写。闭包在 flush 时才读 store，捕获到的永远是
-// 最新状态，所以合并不会丢更新。
+// 策略:调用方先**同步**通知订阅者(UI 立刻响应),把真正的写盘闭包丢给这里,在空闲帧合并执行。
+// 同一个 key 多次注册只保留最后一个闭包 —— 闭包在 flush 时才去读 store,拿到的永远是最新状态
+// 所以合并不会丢更新。
 //
-// 数据安全：页面隐藏 / 卸载（关窗到托盘、退出）时强制 flush，避免还没落地的写入
-// 丢失。
+// 页面隐藏 / 卸载(关窗到托盘、退出)时强制 flush,避免还没落地的写入丢掉。
 
 type WriteFn = () => void
 
-// 待写入的闭包表，按 storage key 去重合并。
+// 待写入的闭包表,按 storage key 去重合并。
 const pending = new Map<string, WriteFn>()
 let idleHandle: number | null = null
 
@@ -27,7 +23,7 @@ const scheduleIdle: (cb: () => void) => number =
 const cancelIdle: (h: number) => void =
   typeof cancelIdleCallback === 'function' ? cancelIdleCallback : (h) => clearTimeout(h)
 
-/** 立即把所有挂起的写入落盘（idle flush 或 页面隐藏时调用）。 */
+/** 立即把所有挂起的写入落盘(空闲帧或页面隐藏时调用)。 */
 function flushAll(): void {
   if (idleHandle !== null) {
     cancelIdle(idleHandle)

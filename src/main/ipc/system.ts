@@ -5,12 +5,10 @@ import { JsonStore } from '../shared/json-store'
 import { disposeMediaCache } from '../shared/media-cache'
 import { disposeHlsPrefetch } from '../shared/hls-prefetch'
 
-// 默认关闭 —— 跟 OS 惯例对齐（X = 真的退出，不是偷偷常驻），新用户不会
-// 被"看似关了其实还在跑"困惑到。需要后台模式的用户进设置打开即可。
+// 默认关闭 —— 与 OS 惯例一致(× 就是真的退出),新用户不会被「看似关了其实还在跑」困惑。
 let appMinimizeOnClose = false
 let appAutoUpdateCheckEnabled = true  // 默认开启 —— 多数用户期望被提醒新版本
-// 更新源：'auto' = 优先国内 ghproxy 代理链下载、失败回退 GitHub（默认，覆盖
-// 无魔法用户）；'github' = 强制直连 GitHub（有魔法用户想跳过代理时用）。
+// 更新源:'auto' 优先国内代理链、失败回退 GitHub;'github' 强制直连。
 let appUpdateSource: 'auto' | 'github' = 'auto'
 
 interface AppSettings {
@@ -22,8 +20,8 @@ interface AppSettings {
 const settingsStore = new JsonStore<AppSettings>('app_settings.json', (raw) =>
   raw && typeof raw === 'object' ? (raw as AppSettings) : {},
 )
-// 启动期 bootstrap —— 早于 app-ready、且窗口关闭逻辑(getMinimizeOnClose)同步依赖
-// 这几个值,所以用 current() 同步读一次进内存;后续写走异步合并。
+// 启动期 bootstrap:窗口关闭逻辑同步依赖这几个值,所以用 current() 同步读一次进内存
+// 后续写走异步合并。
 {
   const s = settingsStore.current()
   if (typeof s.minimizeOnClose === 'boolean') appMinimizeOnClose = s.minimizeOnClose
@@ -36,21 +34,19 @@ export function getMinimizeOnClose(): boolean {
 }
 
 /**
- * 是否启用启动时的自动检查更新（默认 true）。
- * 用户关掉之后，主进程的 `setupUpdater()` 启动延迟检查不再触发，banner
- * 永远不会自动弹出 —— 但用户在设置页主动点「检查更新」按钮依然能跑完
- * 整个检查 / 下载 / 提示流程（手动入口不受这个开关控制）。
+ * 启动时是否自动检查更新(默认 true)。关掉后主进程的启动延迟检查不再触发、banner 不会自动弹
+ * 但设置页里手动点「检查更新」仍然照常走完整流程 —— 手动入口不受这个开关控制。
  */
 export function getAutoUpdateCheckEnabled(): boolean {
   return appAutoUpdateCheckEnabled
 }
 
-/** 更新源偏好（见上方变量声明）。updater 据此决定走代理链还是直连 GitHub。 */
+/** 更新源偏好,updater 据此决定走代理链还是直连。 */
 export function getUpdateSource(): 'auto' | 'github' {
   return appUpdateSource
 }
 
-// 各 JSON 持久化都走 JsonStore：内存权威值、异步合并落盘,不再阻塞事件循环。
+// 各 JSON 持久化都走 JsonStore:内存是权威值,异步合并落盘,不阻塞事件循环。
 const historyStore = new JsonStore<unknown[]>('xifan_settings_history.json', (raw) =>
   Array.isArray(raw) ? raw : [],
 )
@@ -96,15 +92,11 @@ export function registerSystemIpc(): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
-  // 把"用户没设置 saveDir 时"主进程会回退到的路径暴露给 renderer。
-  // 主进程下载器（xifan / aowu / girigiri）的 fallback 都是 `app.getPath('downloads')`,
-  // Settings 页用这个值显示"留空时实际会保存到哪"，避免 UI 上写"应用同级目录"
-  // 误导用户。同一个值；只读；调用频率极低，不缓存。
+  // 把「用户没设置保存目录时主进程会回退到的路径」暴露给渲染层,让设置页显示「留空时实际存到哪」
+  // 避免 UI 上写「应用同级目录」误导用户。
   ipcMain.handle('system:default-downloads', () => app.getPath('downloads'))
 
-  // DevTools(F12 那样的控制台)开关 —— 设置页给个按钮,免得用户记不住快捷键。
-  // 仅非打包(dev)生效:打包给普通用户的版本忽略,不暴露开发者工具。
-  // is-dev 让设置页据此决定要不要显示这个按钮。
+  // DevTools 开关 —— 设置页给个按钮,免得用户记不住快捷键。仅未打包时生效。
   ipcMain.handle('system:is-dev', () => !app.isPackaged)
   ipcMain.handle('system:toggle-devtools', (event) => {
     if (app.isPackaged) return false
@@ -113,7 +105,7 @@ export function registerSystemIpc(): void {
   })
 
   ipcMain.handle('system:connectivity', () => {
-    // Probe multiple endpoints in parallel — any 2xx/3xx response means online.
+    // 并发探多个端点 —— 任何一个回 2xx/3xx 就算在线。
     // Google's generate_204 is blocked in mainland China, so we include domestic
     // alternatives. First success wins; resolve false only if all fail/timeout.
     const PROBES = [

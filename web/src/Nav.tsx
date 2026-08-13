@@ -3,7 +3,7 @@
 //
 // 右侧账号区：未登录 = 「登录 / 注册」按钮；已登录 = 用户名 chip → 下拉（设置 / 退出）。
 // chip 按内容伸缩、只给下限 min-w（刚够下拉里「退出登录」放下），下拉 `w-full` 自动跟 chip 同宽
-// （见 AI_GUIDELINES「UI/样式」：浮层宽度对齐触发器）。用户名上限 12 字符 → chip 最宽 ≈205px。
+//。用户名上限 12 字符 → chip 最宽 ≈205px。
 import { useEffect, useRef, useState } from 'react'
 import { auth, useAuth } from './auth'
 import { Icon } from './Icon'

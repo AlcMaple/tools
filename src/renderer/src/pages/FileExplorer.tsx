@@ -39,20 +39,14 @@ function parentOf(p: string, plat: string): string | null {
 }
 
 /**
- * Whether `s` looks like a single token without path structure — candidate for
- * a special-folder alias resolution (e.g. "下载", "Downloads"). Inputs that
- * already contain separators or a Windows drive prefix are real paths and
- * shouldn't be aliased.
+ * `s` 看着像不含路径结构的单个词(如「下载」「Downloads」)—— 这种才有资格去查
+ * 特殊文件夹别名。已经带分隔符或盘符的是真路径,不做别名解析。
  */
 function looksLikeAlias(s: string): boolean {
   return !s.includes('/') && !s.includes('\\') && !/^[a-z]:/i.test(s)
 }
 
-/**
- * Paths the user must never be able to delete: the virtual "我的电脑" root,
- * Windows drive roots (C:\, D:\, ...), and POSIX root /. Deleting any of these
- * either makes no semantic sense or is catastrophic.
- */
+/** 永远不允许删的路径:虚拟的「我的电脑」根、Windows 盘符根、POSIX 根 `/`。 */
 function isProtectedPath(p: string, plat: string): boolean {
   if (!p || p === VIRTUAL_ROOT) return true
   if (plat === 'win32') return /^[A-Z]:\\?$/i.test(p)
@@ -113,13 +107,9 @@ interface DeleteResultState {
   failures: DeleteFailure[]
 }
 /**
- * 「移到回收站」Stage 1 失败后弹的中段确认弹窗的 state。
- *
- * - `targets`        Stage 1 失败、等用户决策的目标列表
- * - `succeededSoFar` 同一批操作里 Stage 1 已经成功的数量（弹窗等用户决策
- *                    期间不能丢失这部分进度，用户取消时仅 finalize 这部分）
- * - `failuresSoFar`  同一批里 Stage 1 抛错的（spawn 失败 / 路径错等）
- * - `totalTargets`   这一批的总目标数，用于最终 finalize 时的文案
+ * 「移到回收站」Stage 1 失败后那个中段确认弹窗的 state。`succeededSoFar` / `failuresSoFar`
+ * 是同一批里 Stage 1 已有的结果 —— 弹窗等用户决策期间不能把这部分进度弄丢
+ * 用户取消时只 finalize 这部分。
  */
 interface PendingStage2 {
   targets: FsEntry[]
@@ -129,17 +119,9 @@ interface PendingStage2 {
 }
 
 /**
- * 删除进行中状态 —— 用来弹"正在删除…"的阻塞加载层。删除流程的耗时不是
- * 立即可见的：
- *   - trash-stage1：每个目标 5s 整体回收窗口 + 杀进程 + ACL 操作
- *   - trash-stage2：递归枚举整棵树后逐个 IFileOperation，文件多时分钟级别
- *   - permanent：Remove-Item → rd /s /q → robocopy /MIR 三级 fallback
- * 没有 loader 用户只看到弹窗一关就什么动静都没了，会怀疑 app 卡死。
- *
- * 多目标时用 currentIndex/total/currentTarget 给个粗粒度进度感（每个目标
- * 跨过去就更新一次），单目标时只显示目标名。这是"模糊但有"的进度反馈,
- * 比 indeterminate spinner 强一档，比真实子步骤进度（需要 PS streaming）
- * 弱一档但实现成本低。
+ * 删除进行中的阻塞加载层状态。这几步都不是瞬时的(stage1 每个目标 5s 窗口 + 杀进程 +
+ * ACL;stage2 递归枚举整棵树,文件多时分钟级;permanent 三级 fallback),没有 loader 的话
+ * 用户看到弹窗一关就没动静,会以为卡死。多目标时用 currentIndex/total 给个粗粒度进度。
  */
 interface DeleteInProgress {
   mode: 'trash-stage1' | 'trash-stage2' | 'permanent'
@@ -193,7 +175,7 @@ function FileExplorer(): JSX.Element {
   const [toast, setToast] = useState<ToastState | null>(null)
   const [deleteResult, setDeleteResult] = useState<DeleteResultState | null>(null)
 
-  // Refs so stable callbacks (keyboard handler) always read fresh state
+  // 用 ref 让稳定回调(键盘处理)总能读到最新 state
   const platformRef = useRef('darwin')
   const homeDirRef = useRef('')
   const cwdRef = useRef('')
@@ -212,26 +194,26 @@ function FileExplorer(): JSX.Element {
   itemsRef.current = items
   pendingDeleteRef.current = pendingDelete
 
-  // Keep address input in sync with cwd
+  // 地址栏跟随当前目录
   useEffect(() => {
     setAddressInput(cwd === VIRTUAL_ROOT ? '' : cwd)
   }, [cwd])
 
-  // Auto-dismiss status flash
+  // 状态提示自动消失
   useEffect(() => {
     if (!pathStatus) return
     const t = setTimeout(() => setPathStatus(null), 2200)
     return () => clearTimeout(t)
   }, [pathStatus])
 
-  // Auto-dismiss toast
+  // toast 自动消失
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 3500)
     return () => clearTimeout(t)
   }, [toast])
 
-  // Sort dropdown click-away
+  // 排序下拉:点外部关闭
   useEffect(() => {
     if (!sortDropdownOpen) return
     const onClickAway = (e: MouseEvent): void => {
@@ -243,7 +225,7 @@ function FileExplorer(): JSX.Element {
     return () => document.removeEventListener('mousedown', onClickAway)
   }, [sortDropdownOpen])
 
-  // Delete split-button menu click-away
+  // 删除按钮的下拉菜单:点外部关闭
   useEffect(() => {
     if (!deleteMenuOpen) return
     const onClickAway = (e: MouseEvent): void => {
@@ -255,7 +237,7 @@ function FileExplorer(): JSX.Element {
     return () => document.removeEventListener('mousedown', onClickAway)
   }, [deleteMenuOpen])
 
-  // Context menu dismissal
+  // 关闭右键菜单
   useEffect(() => {
     if (!ctx) return
     const onClickAway = (e: MouseEvent): void => {
@@ -271,7 +253,7 @@ function FileExplorer(): JSX.Element {
     }
   }, [ctx])
 
-  // ── Navigation ──
+  // ── 导航 ──
 
   async function doNavTo(path: string, fromHistory: boolean): Promise<void> {
     setLoading(true)
@@ -300,27 +282,22 @@ function FileExplorer(): JSX.Element {
       const result = await window.fileExplorerApi.listDir(cwdRef.current)
       setItems(result.entries)
     } catch {
-      // ignore
+      // 忽略
     } finally {
       setLoading(false)
     }
   }
 
   /**
-   * 删完之后让 UI 退到一个还存在的目录上 —— 永远不让 cwd 卡在已删除的路径。
-   *
-   * 双保险：
-   *   1. 优先调 fs:find-existing-ancestor IPC（主进程 stat 测，一次定位）
-   *   2. IPC 不可用 / 报错 → 用 platform-aware 字符串 dirname 爬一层、用
-   *      listDir 当存在性探针，循环直到能列出来或爬到顶
-   *
-   * 一切都不行就 up() 兜底跳 home / virtual root。
+   * 删完之后让 UI 退到一个**还存在**的目录 —— 永远不让 cwd 卡在已删除的路径上。
+   * 双保险:优先走 fs:find-existing-ancestor(主进程 stat,一次定位);IPC 不可用就自己爬
+   * dirname、用 listDir 当存在性探针。都不行就 up() 跳 home。
    */
   async function navigateToSurvivingAncestor(): Promise<void> {
     const cwd = cwdRef.current
     if (!cwd) return
 
-    // Path 1: precise via main IPC
+    // 路径一:走主进程 IPC 精确定位
     let survivor: string | null | undefined
     try {
       survivor = await window.fileExplorerApi.findExistingAncestor(cwd)
@@ -328,7 +305,7 @@ function FileExplorer(): JSX.Element {
       survivor = undefined
     }
 
-    // Path 2: fallback —— renderer 自己爬 dirname，每一级用 listDir 试探
+    // 回退路径:渲染层自己爬 dirname,每一级用 listDir 试探
     if (survivor === undefined) {
       let cur = cwd
       while (true) {
@@ -380,12 +357,12 @@ function FileExplorer(): JSX.Element {
     if (root && cwdRef.current !== root) doNavTo(root, false)
   }
 
-  // Persist sort/view/path to localStorage on every change
+  // 排序 / 视图 / 路径每次变化都落 localStorage
   useEffect(() => { svPref('sort', sort) }, [sort])
   useEffect(() => { svPref('view', view) }, [view])
   useEffect(() => { if (cwd) svPref('lastPath', cwd) }, [cwd])
 
-  // Initial load — platform info + navigate to last path (sort/view already init'd from localStorage)
+  // 首次加载:取平台信息 + 跳到上次的路径(排序/视图已从 localStorage 初始化)
   useEffect(() => {
     window.fileExplorerApi.getHomeInfo().then(async ({ homeDir: hd, platform: plat }) => {
       setPlatform(plat)
@@ -411,14 +388,14 @@ function FileExplorer(): JSX.Element {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Auto-refresh when the current directory changes on disk
+  // 当前目录在磁盘上有变化时自动刷新
   useEffect(() => {
     const unsub = window.fileExplorerApi.onDirChange(() => refresh())
     return unsub
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Keyboard shortcuts (stable — reads via refs) ──
+  // ── 键盘快捷键(稳定回调,状态经 ref 读取) ──
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const tag = (e.target as HTMLElement | null)?.tagName
@@ -438,7 +415,7 @@ function FileExplorer(): JSX.Element {
         else if (item) window.fileExplorerApi.open(p)
       }
       else if (e.key === 'Delete' && selectedRef.current.size) {
-        // Filter out drive roots / virtual root — never deletable.
+        // 滤掉盘符根 / 虚拟根 —— 它们永远不可删。
         const allowed = [...selectedRef.current].filter((p) => !isProtectedPath(p, platformRef.current))
         if (allowed.length) openDeleteDialog(allowed, e.shiftKey)
       }
@@ -449,16 +426,14 @@ function FileExplorer(): JSX.Element {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Address bar actions ──
+  // ── 地址栏操作 ──
 
   async function tryOpenInput(): Promise<void> {
     const raw = addressInput.trim()
     if (!raw) { setPathStatus({ msg: '请输入路径', tone: 'error' }); return }
 
-    // Try special-folder alias resolution first when the input looks like a bare
-    // localized name (e.g. "下载" copied from Windows Explorer's address bar).
-    // On hit, expand the address bar to the real path so the user sees what was
-    // resolved.
+    // 地址栏输入看着像个裸的本地化名字(从资源管理器地址栏复制来的「下载」)时,先试别名解析。
+    // 命中后把地址栏展开成真实路径,让用户看清解析结果。
     let p = normPath(raw, platform)
     if (looksLikeAlias(raw)) {
       const resolved = await window.fileExplorerApi.resolveSpecial(raw)
@@ -479,7 +454,7 @@ function FileExplorer(): JSX.Element {
       setHIdx(next.length - 1)
       setPathStatus({ msg: '已打开', tone: 'ok' })
     } catch {
-      // might be a file — navigate to parent and select
+      // 可能是个文件 —— 跳到父目录并选中它
       const parent = parentOf(p, platform)
       if (parent) {
         try {
@@ -505,9 +480,7 @@ function FileExplorer(): JSX.Element {
     const raw = addressInput.trim()
     if (!raw) { setPathStatus({ msg: '请输入要删除的路径', tone: 'error' }); return }
 
-    // Same alias resolution as Open — pasting "下载" should target the real
-    // Downloads folder. The confirmation dialog will display the resolved path,
-    // so the user can still abort if it's not what they intended.
+    // 跟 Open 一样先做别名解析。确认弹窗里显示的是解析后的路径,用户仍可反悔。
     let p = normPath(raw, platform)
     if (looksLikeAlias(raw)) {
       const resolved = await window.fileExplorerApi.resolveSpecial(raw)
@@ -526,7 +499,7 @@ function FileExplorer(): JSX.Element {
     openDeleteDialog([p], permanent, [found])
   }
 
-  // ── Delete flow ──
+  // ── 删除流程 ──
 
   function openDeleteDialog(paths: string[], permanent: boolean, overrideTargets?: FsEntry[]): void {
     const targets = overrideTargets ?? paths.map((p) => items.find((i) => i.path === p)).filter(Boolean) as FsEntry[]
@@ -534,23 +507,14 @@ function FileExplorer(): JSX.Element {
     setPendingDelete({ targets, permanent })
   }
 
-  // Stable ref so keyboard handler can call confirmDelete without stale closure
+  // 用 ref 保证键盘处理里调到的永远是最新的 confirmDelete
   const confirmDeleteRef = useRef<() => void>(() => {})
 
   /**
-   * 三段式：finalize → 永久删除一把跑 / 回收站走 Stage 1 + 可能弹 Stage 2 确认。
-   *
-   * - **永久删除**：跑完所有目标，根据 success / failures 决定 toast vs 结果弹窗。
-   *   没有 Stage 概念，行为跟旧版一致。
-   *
-   * - **回收站（默认）**：先对所有目标跑 Stage 1（每个目标 5s 整体送回收站窗口）。
-   *   Stage 1 成功 → 直接计入 succeeded；
-   *   Stage 1 失败（返回 `stage1-failed`） → 收集到 stage1Failed[]，**不**自动
-   *   进 Stage 2；
-   *   Stage 1 抛错 → 计入 failures。
-   *   循环跑完后，如果 stage1Failed 非空，弹 PendingStage2 确认弹窗让用户决策；
-   *   弹窗里继续 → 调 trashFragmented 跑完 Stage 2；取消 → 仅 finalize Stage 1
-   *   阶段的结果，**不**自动 fallback 到永久删除。
+   * 三段式。**永久删除**:跑完所有目标即结束,没有 Stage 概念。
+   * **回收站(默认)**:先对所有目标跑 Stage 1(每个目标 5s 整体送回收站窗口),失败的收进
+   * stage1Failed[] 而**不**自动进 Stage 2 —— 跑完后弹确认弹窗让用户拍板;用户取消就只
+   * finalize Stage 1 的结果,**绝不**自动 fallback 到永久删除。
    */
   async function confirmDelete(): Promise<void> {
     const pd = pendingDeleteRef.current
@@ -579,7 +543,7 @@ function FileExplorer(): JSX.Element {
         if (r.status === 'stage1-failed') {
           stage1Failed.push(t)
         } else {
-          // success / already-absent —— 都当成功
+          // 成功 / 本来就不存在 —— 都算成功
           succeeded += 1
         }
       } catch (e: unknown) {
@@ -606,12 +570,7 @@ function FileExplorer(): JSX.Element {
     finalizeTrashResult(succeeded, failures, [], pd.targets.length)
   }
 
-  /**
-   * 永久删除 —— 跟回收站完全分开，没有 Stage 概念。
-   *
-   * IPC 现在返回 `{ status: 'success' | 'already-absent' }`，两种都当成功；
-   * 抛错走 failures。沿用 deleteResult / toast 同一套展示路径。
-   */
+  /** 永久删除,与回收站完全分开。IPC 返回的 success / already-absent 都当成功。 */
   async function runPermanentDelete(targets: FsEntry[]): Promise<void> {
     const failures: DeleteFailure[] = []
     let succeeded = 0
@@ -645,12 +604,8 @@ function FileExplorer(): JSX.Element {
   }
 
   /**
-   * 用户在 Stage 2 弹窗点「继续走分片回收」后调。
-   *
-   * 对 `pendingStage2.targets` 里每个目标调 trashFragmented（跑完整两阶段：
-   * Stage 1 重试 → 失败进 Stage 2 分片）。`fragmented` 状态需要在 toast 里
-   * 强提示"散件可还原"。这一轮的 success / fragmented / failures 跟之前
-   * Stage 1 阶段累积的进度合并后 finalize。
+   * 用户在 Stage 2 弹窗点「继续」后调:对每个目标跑完整两阶段。`fragmented` 状态要在
+   * toast 里强提示「散件可还原」。本轮结果与之前 Stage 1 的进度合并后 finalize。
    */
   async function confirmStage2(): Promise<void> {
     const s2 = pendingStage2
@@ -682,9 +637,8 @@ function FileExplorer(): JSX.Element {
   }
 
   /**
-   * 用户在 Stage 2 弹窗点「取消」 —— 不自动 fallback 到永久删除（用户明确
-   * 决策）。Stage 1 失败的目标维持现状（文件还在），不算 failures。只 finalize
-   * 这一批里 Stage 1 已经成功的 / Stage 1 抛错的部分。
+   * 用户点「取消」——**不自动 fallback 到永久删除**(用户明确决策)。Stage 1 失败的目标
+   * 维持现状(文件还在),不算 failures。
    */
   function cancelStage2(): void {
     const s2 = pendingStage2
@@ -696,9 +650,8 @@ function FileExplorer(): JSX.Element {
       [],
       s2.succeededSoFar + s2.failuresSoFar.length,
     )
-    // 附加一行 hint：被用户取消的那批可以手动用永久删除处理。这条不弹错误弹窗,
-    // 只在 toast 里以低调形式提示。如果同时还有 failures 走 deleteResult，
-    // 后者会盖住这条 toast —— OK，那种情况下 hint 也不是最关键的信息。
+    // 低调提示被取消的那批可以手动用永久删除处理。若同时有 failures 走 deleteResult
+    // 那个弹窗会盖住这条 toast —— 可以接受,那种情况下这条也不是最关键的信息。
     if (s2.targets.length > 0) {
       setTimeout(() => {
         setToast({
@@ -710,13 +663,7 @@ function FileExplorer(): JSX.Element {
     }
   }
 
-  /**
-   * 通用收尾：决定走 toast 还是 deleteResult 富错误弹窗。
-   *
-   * fragmented 列表非空时 toast 文案要区分：
-   *   - 全分片：单独的"已分片送入回收站"标题，msg 解释散件 + 还原方法
-   *   - 混合：标题保留"已移到回收站"，msg 提一句"其中 N 个为分片回收"
-   */
+  /** 收尾:决定走 toast 还是富错误弹窗。全部分片 / 部分分片两种文案要分开。 */
   function finalizeTrashResult(
     succeeded: number,
     failures: DeleteFailure[],
@@ -750,10 +697,10 @@ function FileExplorer(): JSX.Element {
   }
 
   confirmDeleteRef.current = confirmDelete
-  // Expose stable wrapper for keyboard handler
+  // 给键盘处理暴露一个稳定的包装
   function confirmDeleteStable(): void { confirmDeleteRef.current() }
 
-  // ── Sorted items ──
+  // ── 排序后的条目 ──
 
   const sortedItems = useMemo(() => {
     const folders = items.filter((i) => i.type === 'folder')
@@ -770,7 +717,7 @@ function FileExplorer(): JSX.Element {
 
   const totalSize = sortedItems.reduce((s, i) => s + (i.size ?? 0), 0)
 
-  // ── Row interactions ──
+  // ── 行交互 ──
 
   function onRowClick(e: React.MouseEvent, path: string): void {
     if (e.metaKey || e.ctrlKey) {
@@ -790,9 +737,8 @@ function FileExplorer(): JSX.Element {
   function onRowContextMenu(e: React.MouseEvent, path: string): void {
     e.preventDefault()
     if (!selected.has(path)) setSelected(new Set([path]))
-    // Native-style flipping: when the menu would overflow on the right/bottom,
-    // anchor the OPPOSITE corner of the menu to the cursor instead of shifting
-    // the whole thing. The cursor always sits at one of the menu's four corners.
+    // 原生风格的翻转:菜单会在右/下溢出时,把菜单的**对角**锚到光标上,而不是整体平移 ——
+    // 光标永远落在菜单四角之一。
     const MENU_W = 260
     const MENU_H = 220
     const PAD = 8
@@ -805,7 +751,7 @@ function FileExplorer(): JSX.Element {
     return tone === 'error' ? 'text-error' : tone === 'ok' ? 'text-green-400' : 'text-on-surface-variant/60'
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
 
   const placeholder = platform === 'win32'
     ? '输入绝对路径，例如 C:\\Users\\Yuming\\Videos'
@@ -988,7 +934,7 @@ function FileExplorer(): JSX.Element {
             <p className="text-xs text-on-surface-variant/40 mt-2">此目录下没有项目</p>
           </div>
         ) : view === 'list' ? (
-          /* List view */
+          /* 列表视图 */
           <div className="bg-surface-container-lowest border border-white/5 rounded-lg overflow-hidden">
             <div className="grid grid-cols-12 gap-2 md:gap-4 px-4 py-2.5 bg-surface-container-low rounded-t-lg border-b border-white/5 font-label text-[10px] uppercase tracking-[0.15em] text-outline">
               <div className="col-span-8 md:col-span-6">名称</div>
@@ -1027,7 +973,7 @@ function FileExplorer(): JSX.Element {
             </div>
           </div>
         ) : (
-          /* Grid view */
+          /* 网格视图 */
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {sortedItems.map((item) => {
               const sel = selected.has(item.path)
@@ -1285,14 +1231,8 @@ export default FileExplorer
 
 // ── 删除进行中加载层 ─────────────────────────────────────────────────────
 //
-// 不可关闭（backdrop 没绑 onClick），spinner + 模式标题 + 当前目标 + 进度。
-// 多目标时显示 `(2/5) foo.txt`，单目标时只显示目标名。模式 → 中文标题映射：
-//   - trash-stage1：「正在送入回收站…」（每个目标 5s 整体窗口）
-//   - trash-stage2：「正在分片回收…」（文件多时分钟级）
-//   - permanent  ：「正在永久删除…」（三级 fallback，几乎一次必成）
-//
-// 对 stage2 额外加一行提示"文件多时可能需要一两分钟"——Stage 2 是用户在
-// Stage 2 confirm modal 主动选的，需要管理预期，不然用户等几十秒会以为卡了。
+// 不可关闭(backdrop 没绑 onClick)。stage2 额外提示「文件多时可能要一两分钟」——
+// 那是用户自己在确认弹窗里选的,得管理预期,不然等几十秒会以为卡了。
 function DeleteProgressOverlay({ state }: { state: DeleteInProgress }): JSX.Element {
   const titleMap: Record<DeleteInProgress['mode'], string> = {
     'trash-stage1': '正在送入回收站…',
@@ -1336,17 +1276,11 @@ function DeleteProgressOverlay({ state }: { state: DeleteInProgress }): JSX.Elem
 
 // ── Stage 2 分片回收确认弹窗 ───────────────────────────────────────────────
 //
-// Stage 1（整体送回收站 5s 窗口）失败时弹。解释 Stage 2 会做什么、回收站里会
-// 看到什么、内容能不能恢复、不接受的话还有什么办法 —— 然后让用户拍板。
+// Stage 1 失败时弹,讲清楚 Stage 2 会做什么、回收站里会看到什么、能不能恢复,然后让用户
+// 拍板。文案分两段:主提示讲行为和最佳预期,折叠区放「不接受的话还有什么办法」。
 //
-// 设计取舍：不强制把所有信息塞进单一弹窗。文案分两段：① 主提示讲清楚行为
-// 和最佳预期（"散件可还原"）；② 折叠在底下的"如果不接受"提示三条 fallback
-// （重启 / 永久删除 / 取消）。同时保持只有「继续走分片回收」和「取消」
-// 两个 action 按钮，跟项目里其它确认弹窗的两按钮节奏对齐。
-//
-// 取消按钮**不**触发任何自动 fallback —— 这是用户在 idea 文档 001 里反复
-// 强调的：「就算用户点击取消也不要自动调用永久删除，最终还是由用户来手动
-// 点击永久删除来做处理」。
+// 取消按钮**不触发任何自动 fallback** —— 这是 idea 001 里反复强调的:就算用户点取消
+// 也要由用户自己去点永久删除,不能替他决定。
 function Stage2ConfirmModal({
   state, onCancel, onConfirm,
 }: {
@@ -1441,12 +1375,10 @@ function Stage2ConfirmModal({
   )
 }
 
-// ── Delete result modal ────────────────────────────────────────────────────
+// ── 删除结果弹窗 ────────────────────────────────────────────────────────
 //
-// Read-only. trashItem / permanentDelete already attempted everything in
-// their power (kill processes, takeown, swap APIs). Anything that still
-// reaches this modal is a root cause the user must fix themselves, so the
-// modal explains *why* it failed and *how* to fix it — no extra buttons.
+// 只读。能走到这个弹窗的失败,都是删除流程已经尽力(杀进程 / takeown / 换 API)之后仍然
+// 解决不了、必须用户自己处理的根因 —— 所以这里只解释「为什么失败」和「怎么修」,不放按钮。
 function DeleteResultModal({
   state, onClose,
 }: {
@@ -1553,11 +1485,8 @@ interface CauseItem {
   fix: string
 }
 
-// Recycle-bin failure causes. The app already auto-handles "被进程占用" and
-// "ACL 受限" internally (kill processes + takeown), so those don't appear
-// here — the only failures that reach the user are root causes they need
-// to fix themselves OR cases where the recycle bin fundamentally can't be
-// used (then switch to 永久删除 manually from the main delete UI).
+// 回收站失败原因表。被进程占用、ACL 受限这两类已经在内部自动处理掉了,不会出现在这里;
+// 能到用户面前的要么是他自己才能修的根因,要么是回收站根本用不了(那就手动改永久删除)。
 const RECYCLE_CAUSES: readonly CauseItem[] = [
   {
     cause: '文件系统不支持回收站',
@@ -1585,9 +1514,7 @@ const RECYCLE_CAUSES: readonly CauseItem[] = [
   },
 ]
 
-// Permanent-delete failure causes. Same principle — process locks and ACL
-// are auto-handled; what reaches the user is the genuinely unfixable-from-
-// inside category.
+// 永久删除失败原因表。同上:进程锁和 ACL 自动处理,列在这里的是真正没法从内部解决的。
 const PERMANENT_CAUSES: readonly CauseItem[] = [
   {
     cause: 'Windows 系统保护文件',

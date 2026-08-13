@@ -1,33 +1,21 @@
-// 在线观看播放页 —— 追番卡片「播放」按钮进入(/play?bgm=<bgmId>)。沉浸式,无侧边栏。
+// 在线观看播放页(/play?bgm=<bgmId>)。沉浸式,无侧边栏。
 //
-// 设计从简,四要素:动漫标题 / 多站切换 / 站内线路 / 集数网格(011 阶段决策)。
-// 交互定稿见 docs/design-mockups/在线观看-源切换交互.html。
-//
-// 源切换与绑定的关系(011 定调,别回退成「切换器=bindings」):
+// 源切换与绑定的关系(别回退成「切换器 = bindings」):
 //   - 稀饭/Girigiri/嗷呜三个 chips **常驻**,与有没有绑定无关;自定义链接追加在后。
-//   - 未绑定的站是虚线 chip,点开才**懒式搜索这一个站**(绝不并发搜三站——
-//     xifan/girigiri 有验证码);挑中候选**自动写回 binding**,下次直接播。
+//   - 未绑定的站是虚线 chip,点开才**懒式搜索这一个站**(绝不并发搜三站——那两站有
+//     验证码);挑中候选自动写回 binding,下次直接播。
 //   - 跨站不做自动推断:每个站的关联都是用户第一次点它时亲手挑的。
 //
-// 播放形态按源分三种:
-//   - Xifan / Aowu:解析 mp4 直链,<video> 播放(Chromium 原生控件)。直链**不**
-//     直接喂 <video>,而是包成同源的 mtmedia:// 走主进程流代理(见 toMediaProxy /
-//     main/shared/media-proxy.ts):dev 的 http://localhost origin 会拒绝带
-//     content-disposition 的跨源媒体(pan.wo.cn 联通网盘直链就是)→ code 4,
-//     经主进程取流剥头后 dev/正式都不受 origin 限制。解析类请求仍全在主进程 IPC。
-//   - Bilibili(普通视频 BV):**自研播放** —— 主进程按 TV appkey 签名问 playurl 要
-//     DASH 音视频分轨,合成 MPD 交给 shaka-player 走 MSE。**别退回官方外链播放器**
-//     (player.bilibili.com/player.html):它把画质锁在 360P(菜单里列 1080P 但选了
-//     没用)、暂停弹推荐位、盖「进入哔哩哔哩观看更高清」引流层,而且合集拿不到分 P
-//     列表 —— 这四条都是它写死的,登录也解不开。分 P(&p=N)就是集数网格。
-//   - 番剧 ep 链接 / 其他自定义源:仍用 <webview> 嵌站点播放器(persist:bili 分区,
-//     登录后第一方 cookie 生效)。番剧走的是另一套 pgc playurl,暂未自研。
-//   - Girigiri:地址从播放页 HTML 的 player_aaaa 直接解析(一次 GET,与稀饭同源)。
-//     多数线路是 m3u8(HLS)—— Chromium 不原生支持,由 hls.js 接管 <video> 走 MSE
-//     逐段喂,播放列表和分片同样过 mtmedia 代理(主进程把列表里的地址重写成
-//     mtmedia://,否则 hls.js 在渲染进程直取 CDN 会被跨源策略拦);**少数老番线路
-//     给的是 .mp4 直链**,那就走和稀饭一样的直喂路径。按后缀分流,别假设 girigiri
-//     一定是 HLS。
+// 播放形态按源分四种:
+//   - Xifan / Aowu:解析出 mp4 直链,包成同源的 mtmedia:// 走主进程流代理再喂 <video>
+//     (直链直接喂会被 origin 拦,见 main/shared/media-proxy.ts)。
+//   - Girigiri:按后缀分流 —— 多数线路是 m3u8,由 hls.js 走 MSE;**少数老番线路给的是
+//     .mp4 直链**,走和稀饭一样的路径。别假设 girigiri 一定是 HLS。
+//   - B 站普通视频(BV):**自研播放** —— 主进程要 DASH 分轨、拼 MPD 交给 shaka。
+//     **别退回官方外链播放器**(player.bilibili.com):它把画质锁在 360P、暂停弹推荐位、
+//     盖引流层、合集拿不到分 P 列表,四条都是写死的,登录也解不开。
+//   - 番剧 ep 链接 / 其他自定义源:<webview> 嵌站点自己的播放器(番剧走另一套 pgc
+//     playurl,暂未自研)。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
@@ -47,9 +35,7 @@ import type { AowuWatchInfo } from '../types/aowu'
 import type { GirigiriWatchInfo } from '../types/girigiri'
 import PlayerControls from '../components/PlayerControls'
 
-// shaka 只认自己注册过的 scheme:B 站的分片地址已被主进程包成 mtmedia://(带防盗链
-// Referer),不注册的话 shaka 直接报 UNSUPPORTED_SCHEME。用它自带的 fetch 插件即可
-// —— mtmedia 声明了 supportFetchAPI,实测 fetch/XHR 都直通(见 011 纪要)。
+// shaka 只认注册过的 scheme,不注册会直接报 UNSUPPORTED_SCHEME。用它自带的 fetch 插件。
 shaka.polyfill.installAll()
 shaka.net.NetworkingEngine.registerScheme(
   'mtmedia',
@@ -98,22 +84,19 @@ function bindingUrl(b: AnimeBinding): string {
   return b.sourceUrl || b.sourceKey
 }
 
-/** B 站**普通视频**链接里的 BV 号。番剧(/bangumi/play/ep…)没有 BV,返回 null。 */
+/** B 站普通视频链接里的 BV 号;番剧(/bangumi/play/ep…)没有 BV,返回 null。 */
 function biliBvid(raw: string): string | null {
   if (!/bilibili\.com/i.test(raw)) return null
   return /BV[0-9A-Za-z]{10}/.exec(raw)?.[0] ?? null
 }
 
-/** B 站**番剧**链接 → 官方外链播放器 URL。番剧走另一套 pgc playurl,暂未自研,
- *  仍嵌外链播放器(它的画质锁死/引流层等毛病一并继承,普通视频已不走这里)。 */
+/** B 站番剧链接 → 官方外链播放器 URL(番剧暂未自研,画质锁死等毛病一并继承)。 */
 function biliBangumiEmbedUrl(raw: string): string | null {
   const ep = /bilibili\.com\/bangumi\/play\/ep(\d+)/.exec(raw)
   return ep ? `https://player.bilibili.com/player.html?ep_id=${ep[1]}&autoplay=0` : null
 }
 
-// mp4 直链包成同源流代理 URL 再喂 <video>(scheme 与 main/shared/media-proxy.ts
-// 的 MEDIA_PROXY_SCHEME 保持一致)。绕开渲染进程 origin 对跨源媒体的拦截,
-// dev/正式都能播;非 http(s) 原样返回。
+// 包成同源代理 URL 再喂 <video>(scheme 要与 media-proxy.ts 的 MEDIA_PROXY_SCHEME 一致)。
 function toMediaProxy(url: string): string {
   if (!/^https?:\/\//i.test(url)) return url
   return `mtmedia://media/?u=${encodeURIComponent(url)}`
@@ -154,9 +137,8 @@ async function loadSiteData(binding: AnimeBinding, preferCache: boolean): Promis
     return { kind: 'bili', info, lines }
   }
   if (binding.source === 'Xifan') {
-    // watch() 本身就是当前源第 1 集的播放页,一次请求同时给出总集数/线路/地址
-    // 模板——追番记录填过总集数(不再变的老番)才允许直接吃 7 天内的缓存,跳过
-    // 这次请求;连载番仍按最新结果来,不然会漏看新更新的集数。
+    // 只有追番记录填过总集数(= 不再更新的老番)才允许吃 7 天缓存跳过这次请求;
+    // 连载番必须按最新结果来,否则会漏掉新更新的集数。
     const info = await window.xifanApi.getWatch(url, preferCache)
     if (info.error) throw new Error(info.error)
     const lines = info.sources.map((s) => ({
@@ -257,9 +239,8 @@ export default function OnlinePlayer(): JSX.Element {
     return [...builtinEntries, ...customEntries]
   }, [track])
 
-  // 默认选中:用户手动绑过 B 站源就优先它(自己挑的片源比内置源搜出来的更可信),
-  // 其次任一**已绑定的内置源**(三源现在都能应用内播了),再次其他自定义源,
-  // 兜底第一个(稀饭,进去就是搜索面板)。只在初次进入时定一次。
+  // 默认选中优先级:手动绑的 B 站源(用户自己挑的比搜出来的可信)→ 已绑定的内置源 →
+  // 其他自定义源 → 第一个。只在初次进入时定一次。
   const [selKey, setSelKey] = useState<string | null>(null)
   useEffect(() => {
     if (selKey !== null || entries.length === 0) return
@@ -282,14 +263,12 @@ export default function OnlinePlayer(): JSX.Element {
   const [view, setView] = useState<PlayerView>({ mode: 'none' })
   const [reloadTick, setReloadTick] = useState(0)
   const [resolveTick, setResolveTick] = useState(0)
-  // 竞态防护:站点数据加载 / 地址解析都是异步,切站切集后旧结果作废
+  // 竞态防护:切站/切集后,旧的异步结果作废
   const seqRef = useRef(0)
   // xifan 模板直链 404 时回源解析,同一集只回源一次,防 onError 死循环
   const fallbackTriedRef = useRef(false)
-  // 播放失败自动兜底:记这条线路已试过,换下一条**还没试过**、含本集的线路
-  // (同一集、只换线路,不跳集);三条都试完才停下报错。记忆在整部番的一次观看里
-  // 持续累积:换站/换番(data 重载)才清零,换集**保留**;手动切线路把切走的旧线路
-  // 计入已试;Try again 清零重来一轮(见下方 effect 与 selectLine / retry)。
+  // 已试过的线路。换站/换番才清零,**换集保留** —— 一条线路整体不行就跨集一直绕开它。
+  // 手动切走的线路也计入;Try again 清零重来一轮。
   const triedLinesRef = useRef<Set<number>>(new Set())
 
   // B 站登录态(null = 还没查);webviewKey 用于登录后强制重载 webview
@@ -297,14 +276,9 @@ export default function OnlinePlayer(): JSX.Element {
   const [biliQrOpen, setBiliQrOpen] = useState(false)
   const [biliSmsOpen, setBiliSmsOpen] = useState(false)
   const [webviewKey, setWebviewKey] = useState(0)
-  // 自定义源(webview 嵌真实播放页)进入「站点播放器自己的全屏」时,把 webview 容器
-  // 铺满整个窗口 —— 这样站点在 webview 内部对 <video> 请求的 HTML5 全屏(只剩视频画面)
-  // 才能覆盖整扇窗,和稀饭/Girigiri/B 站原生 <video> 全屏观感一致;否则 webview 只在
-  // 「标题/切换器下方的箱子」里全屏,顶部那排 app chrome 还露着(用户实拍反馈)。
-  //   - 由站点自己的全屏按钮驱动:webview 的 guest 请求 requestFullscreen 时,DOM 元素
-  //     派发 enter-html-full-screen / leave-html-full-screen(Electron webview 事件)。
-  //   - 只切容器 class(relative 盒子 ↔ fixed inset-0),webview 元素不换位置不重载,
-  //     不打断播放;Esc / 站点退出全屏都会派发 leave 事件收起,无需自己接键盘。
+  // 站点播放器请求全屏时,把 webview 容器铺满整扇窗 —— 否则它只在「标题下方那个箱子」里
+  // 全屏,顶部 app chrome 还露着。只切容器 class,webview 元素不换位置不重载、不打断播放;
+  // Esc / 站点退出全屏会派发 leave 事件收起,不用自己接键盘。
   const [embedFs, setEmbedFs] = useState(false)
   const [embedWebviewEl, setEmbedWebviewEl] = useState<HTMLElement | null>(null)
   useEffect(() => {
@@ -403,10 +377,8 @@ export default function OnlinePlayer(): JSX.Element {
     void window.biliApi.logout().then((s) => handleBiliAuthChanged(s.loggedIn))
   }
 
-  // ── 集列表就绪后默认选「追番卡片上显示的那一集」 ────────────────────────────
-  // 用户定调:卡片写着 1/12 就从第 1 集开始播,写 2 就从第 2 集开始 —— 所见即所播。
-  // （旧逻辑选 N+1「下一集」,卡片显示 1 却从第 2 集开播,与用户心智不符。）
-  // episode=0(还没看)→ 第一集;N 超出这条线路的集数(如 BD 线只有特典)→ 最后一集。
+  // 默认选「追番卡片上显示的那一集」——所见即所播,**不是**「下一集」(用户定调)。
+  // episode=0 → 第一集;超出这条线路的集数(如 BD 线只有特典)→ 最后一集。
   useEffect(() => {
     if (!data || ep !== null) return
     const eps = data.lines[lineIdx]?.eps ?? []
@@ -491,9 +463,7 @@ export default function OnlinePlayer(): JSX.Element {
     tryNextLine()
   }
 
-  // ── HLS(Girigiri):hls.js 接管 <video> ─────────────────────────────────────
-  // Chromium 不原生支持 m3u8,靠 hls.js 走 MSE 逐段喂。列表/分片/AES 密钥全部
-  // 经 mtmedia 代理(主进程已把列表里的地址重写成 mtmedia://),同源不受跨源策略限制。
+  // ── HLS(Girigiri):hls.js 走 MSE 逐段喂,列表/分片/密钥全部经 mtmedia 代理 ──────
   const videoRef = useRef<HTMLVideoElement | null>(null)
   // <video> 的 ref 回调:换集/换线路(key=url 变)、换播放形态、离开播放页时,React 会
   // 先用 null 调一次 —— 在这里把上一个元素收干净(见 detachVideo),再指向新的。
@@ -522,9 +492,8 @@ export default function OnlinePlayer(): JSX.Element {
       setView({ mode: 'error', err: new Error('当前环境不支持 HLS 播放') })
       return
     }
-    // 用 hls.js 默认 loader(XhrLoader)。实测 mtmedia:// 上 XHR 与 fetch 都直通
-    // (该 scheme 没开 corsEnabled,不进 CORS 检查),两种 loader 都能正常播,
-    // 所以不覆盖默认值 —— 别为"自定义协议可能不支持 XHR"这种没验证的担心加配置。
+    // 用默认 loader:mtmedia:// 上 XHR 和 fetch 都直通(该 scheme 没开 corsEnabled)
+    // 别为「自定义协议可能不支持 XHR」这种没验证的担心加配置。
     const hls = new Hls()
     hls.on(Hls.Events.ERROR, (_e, data) => {
       // 只有 fatal 才走换线路兜底;非 fatal(单个分片超时等)hls.js 自己会重试。
@@ -538,10 +507,7 @@ export default function OnlinePlayer(): JSX.Element {
     return () => hls.destroy()
   }, [view])
 
-  // ── DASH(B 站):shaka-player 接管 <video> ──────────────────────────────────
-  // B 站 1080P 只存在于 DASH 音视频分轨里(mp4 直链容器封顶 720P,实测 accept_quality
-  // 只有 [64,16])。分片地址已被主进程包成 mtmedia://(带防盗链 Referer),shaka 在
-  // 渲染进程里逐段发 Range 取,同源不受跨源策略限制。
+  // ── DASH(B 站):1080P 只存在于音视频分轨里(mp4 直链容器封顶 720P) ─────────────
   const playerRef = useRef<shaka.Player | null>(null)
   // 换集时沿用上次选的画质档,不用把 qn 塞进 effect 依赖(那会重建 player 打断播放)
   const qnRef = useRef<number | null>(null)
@@ -556,8 +522,8 @@ export default function OnlinePlayer(): JSX.Element {
     const player = new shaka.Player()
     playerRef.current = player
 
-    // ABR 关掉:用户在画质条上选了 1080P 就该一直是 1080P(外链播放器「选了没反应」
-    // 正是用户投诉的点),不要让自适应在背后偷偷降档。
+    // ABR 必须关:选了 1080P 就该一直是 1080P,不能让自适应在背后偷偷降档
+    // (外链播放器「选了没反应」正是用户投诉的点)。
     player.configure({ abr: { enabled: false } })
     player.addEventListener('error', (e) => {
       if (cancelled) return
@@ -568,7 +534,7 @@ export default function OnlinePlayer(): JSX.Element {
     void (async () => {
       try {
         await player.attach(video)
-        // MPD 是我们拼的、没有远端地址,包成 data: URI;shaka 无从推断类型,显式给 MIME。
+        // MPD 是自己拼的、没有远端地址,包成 data: URI 时 shaka 推断不出类型,要显式给 MIME。
         await player.load(biliMpdUri(dash), undefined, 'application/dash+xml')
         if (cancelled) return
         const tracks = pickVideoTracks(dash)
@@ -589,7 +555,7 @@ export default function OnlinePlayer(): JSX.Element {
     }
   }, [view])
 
-  // 用户点画质档:直接切 variant,不重新 load(shaka 会清缓冲从当前时间续播)
+  // 切画质直接换 variant,不重新 load
   const selectQuality = (next: number): void => {
     if (next === qn || view.mode !== 'dash') return
     setQn(next)
@@ -605,8 +571,7 @@ export default function OnlinePlayer(): JSX.Element {
 
   const selectLine = (i: number): void => {
     if (i === lineIdx) return
-    // 手动切走当前线路 = 用户放弃它,标记为已试,之后自动兜底不再回退到它;
-    // 手动想再切回来仍允许(下面直接 setLineIdx,不看标记)。不清空整份记忆。
+    // 手动切走 = 用户放弃它,记为已试,之后自动兜底不再回到它;手动切回来仍允许。
     triedLinesRef.current.add(lineIdx)
     setLineIdx(i)
     // 新线路没有当前集(如 BD 线只有特典)时清掉选集,交给默认选集逻辑重挑
@@ -618,8 +583,7 @@ export default function OnlinePlayer(): JSX.Element {
   const eps = data?.lines[lineIdx]?.eps ?? []
   const currentEp = ep !== null ? eps.find((e) => e.idx === ep) : undefined
 
-  // ── 两种布局共用的片段(单一来源,内置源 / 嵌入页两处不各写一份) ─────────────────
-  // 返回 + 标题 + 当前集数(此前只在选集网格里能看到当前集,标题旁没有任何提示)
+  // ── 两种布局共用的片段(内置源 / 嵌入页不各写一份) ──────────────────────────
   const header = (
     <div className="flex items-center gap-3 min-w-0">
       <button
@@ -728,10 +692,8 @@ export default function OnlinePlayer(): JSX.Element {
   )
 
   // ── 自定义源(webview 嵌真实播放页):整页固定高度、页面自身不滚动 ──────────────
-  // webview 占满标题/切换器下方的全部剩余高度 —— 页面本身不再产生第二条滚动条,
-  // 只留站点自己的滚动条,彻底消除「应用滚动条 vs 网页滚动条」互相打架的违和感
-  // (原先 16:9 矮盒子里塞整张网页,两条滚动条并存,鼠标压在 webview 上滚的永远是
-  // 网页那条)。全屏交给站点播放器自己的全屏按钮(真·全屏),不再提供应用内「铺满」。
+  // webview 占满剩余高度,页面本身不产生第二条滚动条 —— 否则应用和网页两条滚动条并存
+  // 鼠标压在 webview 上滚的永远是网页那条。全屏交给站点播放器自己的按钮。
   if (view.mode === 'embed') {
     return (
       <div className="flex h-full flex-col bg-background">
@@ -748,11 +710,8 @@ export default function OnlinePlayer(): JSX.Element {
             </p>
           )}
         </div>
-        {/* B 站走 persist:bili 分区(与登录窗同分区同 UA,第一方 cookie);其他自定义站
-            用独立的 persist:webplay 分区,把不受信站点的 cookie/storage 与应用默认会话
-            隔开。webview 里站点页是顶层文档,不受 X-Frame-Options / 第三方 cookie 限制;
-            弹窗广告在主进程被拦死。平时占满剩余高度的盒子;站点触发全屏时整块铺满窗口
-            (embedFs),让内部 <video> 的全屏覆盖整扇窗,只剩视频画面。 */}
+        {/* B 站走 persist:bili(与登录窗同分区同 UA,第一方 cookie);其他站用独立的
+            persist:webplay,把不受信站点的 cookie/storage 与应用默认会话隔开。 */}
         <div
           className={embedFs
             ? 'fixed inset-0 z-[80] bg-black'
@@ -784,8 +743,7 @@ export default function OnlinePlayer(): JSX.Element {
           </div>
         ) : (
           <>
-            {/* 播放器 —— 16:9 播放区(video / dash / 内联搜索 / 各占位态)。
-                自定义源(webview 嵌真实页)走上面的固定高度早期 return,不到这里。 */}
+            {/* 16:9 播放区(video / dash / 内联搜索 / 各占位态) */}
             <div
               ref={playerBoxRef}
               className={`relative w-full overflow-hidden bg-black ${playerFs ? 'h-full' : 'aspect-video rounded-xl'}`}
@@ -855,8 +813,8 @@ export default function OnlinePlayer(): JSX.Element {
 
             {sourceSwitcher}
 
-            {/* 画质(仅 B 站 DASH)。只列该稿件**真有**的档 —— 外链播放器那种「菜单里
-                摆着 1080P、点了没反应」的坑,这里靠 dash.video 与 accept_quality 求交避免。 */}
+            {/* 画质:只列该稿件**真有**的档(dash.video 与 accept_quality 求交),
+                避免外链播放器那种「菜单里摆着 1080P、点了没反应」。 */}
             {view.mode === 'dash' && (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mr-1">画质</span>
@@ -936,12 +894,9 @@ export default function OnlinePlayer(): JSX.Element {
   )
 }
 
-// ── 未绑定内置源的内联搜索面板(挂在播放器区中央) ────────────────────────────
-//
-// 业务逻辑(搜索/缓存/验证码/Aowu 流式/竞速)全在 useSourceSearch,与
-// SearchDownload / SearchSourceModal 共用同一套实现;这里只是播放页形态的 UI。
-// 挑中候选 → 写回 binding(自动关联,与「搜 Xifan」补绑流程同效)→ 父组件
-// 的 entry 因 track 更新而带上 binding,自动进入加载播放流程。
+// ── 未绑定内置源的内联搜索面板 ──────────────────────────────────────────────
+// 业务逻辑全在 useSourceSearch(与 SearchDownload / SearchSourceModal 共用),这里只是
+// 播放页形态的 UI。挑中候选 → 写回 binding → 父组件的 entry 带上 binding → 自动开播。
 function InlineSourceSearch({
   source, bgmId, initialKeyword, aliases, onBound,
 }: {

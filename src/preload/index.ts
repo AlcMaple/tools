@@ -12,21 +12,16 @@ contextBridge.exposeInMainWorld('bgmApi', {
   search: (keyword: string, update?: boolean, cat?: 1 | 2) =>
     ipcRenderer.invoke('bgm:search', keyword, update, cat),
   detail: (subjectId: number) => ipcRenderer.invoke('bgm:detail', subjectId),
-  // Per-page progress for multi-page searches. Main fires `(current, total)`
-  // after each page is fetched (cache hit or network). Returns an unsubscribe
-  // function so callers can clean up in their useEffect teardown.
+  // 多页搜索的分页进度,主进程每抓完一页发一次 (current, total)。返回取消订阅函数。
   onSearchProgress: (cb: (current: number, total: number) => void) => {
     const handler = (_: Electron.IpcRendererEvent, current: number, total: number): void =>
       cb(current, total)
     ipcRenderer.on('bgm:search-progress', handler)
     return () => ipcRenderer.removeListener('bgm:search-progress', handler)
   },
-  /** Weekly airing calendar (本季新番). `update=true` bypasses the 24h cache. */
+  /** 本季新番周历。`update=true` 绕过 24h 缓存。 */
   calendar: (update?: boolean) => ipcRenderer.invoke('bgm:calendar', update),
-  /**
-   * 封面本地化：下载 url 到本地，返回 archivist:// 路径（失败返回 null）。
-   * key 一般传 String(bgmId)。renderer 拿到非 null 就用它替换 track.cover。
-   */
+  /** 封面本地化:下载到本地并返回 archivist:// 路径(失败返回 null)。key 一般传 String(bgmId)。 */
   cacheCover: (key: string, url: string, maxWidth?: number): Promise<string | null> =>
     ipcRenderer.invoke('bgm:cache-cover', key, url, maxWidth),
   // 鉴权:状态(只含布尔)/ 设置令牌 / 弹登录窗 / 退出登录。token、cookie 明文
@@ -43,9 +38,8 @@ contextBridge.exposeInMainWorld('bgmApi', {
     ipcRenderer.invoke('bgm:set-credentials', email, password),
 })
 
-// Single subscription point for download progress events. The main process
-// emits all three sources (xifan / girigiri / aowu) onto the unified
-// 'download:progress' channel, so the renderer only needs one listener.
+// 下载进度的唯一订阅点 —— 三个源都发到统一的 'download:progress' 频道
+// 渲染层只需要一个监听器。
 contextBridge.exposeInMainWorld('downloadApi', {
   onProgress: (cb: (taskId: string, event: unknown) => void) => {
     const handler = (_: Electron.IpcRendererEvent, taskId: string, ev: unknown): void => cb(taskId, ev)
@@ -56,20 +50,15 @@ contextBridge.exposeInMainWorld('downloadApi', {
 
 contextBridge.exposeInMainWorld('systemApi', {
   /**
-   * 渲染进程完全就绪（React 挂载完 + 字体加载完）后调一次，主进程据此
-   * 一次性显示窗口，避免首帧 show 后字体/图标陆续跳出来的"闪几下"观感。
+   * 渲染进程完全就绪(React 挂载完 + 字体加载完)后调一次,主进程据此一次性显示窗口
+   * 避免首帧 show 之后字体/图标陆续跳出来的闪烁。
    */
   signalReady: () => ipcRenderer.send('app:renderer-ready'),
   getDiskFree: () => ipcRenderer.invoke('system:disk-free'),
   // 离开播放页时收掉在线播放的缓冲(mp4 后台顺序流 + HLS 分片预取)。一次性通知,用 send。
   releaseMedia: () => ipcRenderer.send('media:release'),
   pickFolder: () => ipcRenderer.invoke('system:pick-folder'),
-  /**
-   * Returns the OS default downloads folder (`app.getPath('downloads')`),
-   * which is what all downloaders silently fall back to when the user
-   * hasn't configured a custom save path. Used by Settings UI to display
-   * the actual effective path.
-   */
+  /** 系统默认下载目录 —— 用户没配保存路径时所有下载器都静默落到这里,设置页要显示实际生效的路径。 */
   getDefaultDownloadsPath: () => ipcRenderer.invoke('system:default-downloads'),
   // 是否 dev(非打包)运行 —— 设置页据此决定是否显示「打开开发者工具」按钮。
   isDev: () => ipcRenderer.invoke('system:is-dev'),
@@ -181,8 +170,7 @@ contextBridge.exposeInMainWorld('biliApi', {
 })
 
 contextBridge.exposeInMainWorld('aowuApi', {
-  // Streaming search. Returns first page immediately; further pages stream
-  // through onSearchPage events. See registerAowuIpc('aowu:search') for shape.
+  // 流式搜索:立刻返回第一页,后续页通过 onSearchPage 事件推送。
   search: (keyword: string) => ipcRenderer.invoke('aowu:search', keyword),
   onSearchPage: (cb: (requestId: string, results: unknown[], done: boolean) => void) => {
     const handler = (_: Electron.IpcRendererEvent, requestId: string, results: unknown[], done: boolean): void =>
@@ -191,7 +179,7 @@ contextBridge.exposeInMainWorld('aowuApi', {
     return () => ipcRenderer.removeListener('aowu:search-page', handler)
   },
   getWatch: (watchUrl: string) => ipcRenderer.invoke('aowu:watch', watchUrl),
-  /** Convert search-time /v/{id} URL → user-facing /w/{token} URL. */
+  /** 搜索期的 /v/{id} URL → 用户可分享的 /w/{token} URL。 */
   resolveShareUrl: (input: string) =>
     ipcRenderer.invoke('aowu:resolve-share-url', input) as Promise<string>,
   resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) =>
@@ -250,25 +238,21 @@ contextBridge.exposeInMainWorld('fileExplorerApi', {
   open: (targetPath: string) => ipcRenderer.invoke('fs:open', targetPath),
   reveal: (targetPath: string) => ipcRenderer.invoke('fs:reveal', targetPath),
   /**
-   * 「移到回收站」Stage 1（5s 整体送回收站窗口）。
-   * Stage 1 失败时返回 `{ status: 'stage1-failed' }`，renderer 据此弹用户
-   * 确认弹窗；用户点继续才调 `trashFragmented`。本接口**不**自动进 Stage 2。
+   * 「移到回收站」Stage 1(5s 整体送回收站窗口)。失败时返回 `stage1-failed`,由渲染层弹确认
+   * 用户点继续才调 `trashFragmented` —— 本接口**不**自动进 Stage 2。
    */
   trash: (targetPath: string) => ipcRenderer.invoke('fs:trash', targetPath),
   /**
-   * 「移到回收站」Stage 2（用户确认后的完整两阶段：Stage 1 重试 → 失败
-   * 进 Stage 2 分片回收）。`fragmented` 表示分片成功（renderer 必须强提示
-   * "回收站里是散件，可全选→还原重建结构"）。
+   * 「移到回收站」Stage 2(用户确认后跑完整两阶段)。返回 `fragmented` 表示分片成功
+   * 渲染层必须强提示「回收站里是散件,可全选→还原重建结构」。
    */
   trashFragmented: (targetPath: string) => ipcRenderer.invoke('fs:trash-fragmented', targetPath),
   /** 永久删除（recycle-helper --purge 模式，三级 fallback 几乎一次必成）。 */
   deletePermanent: (targetPath: string) => ipcRenderer.invoke('fs:delete-permanent', targetPath),
   resolveSpecial: (input: string) => ipcRenderer.invoke('fs:resolve-special', input),
   /**
-   * Walk up from `targetPath` and return the closest still-existing directory
-   * (returns `targetPath` itself if it still exists). Used by the delete flow
-   * to navigate away from a now-deleted cwd without leaving the UI stranded
-   * on an unreachable path.
+   * 从 `targetPath` 往上找最近的、仍然存在的目录(自身还在就返回自身)。
+   * 删除流程用它把 UI 从已删除的 cwd 上撤走,不至于卡在打不开的路径。
    */
   findExistingAncestor: (targetPath: string): Promise<string | null> =>
     ipcRenderer.invoke('fs:find-existing-ancestor', targetPath),
@@ -390,9 +374,8 @@ contextBridge.exposeInMainWorld('webdavApi', {
     ipcRenderer.invoke('webdav:save-config', config),
   test: () => ipcRenderer.invoke('webdav:test'),
   /**
-   * Push a JSON blob to the per-kind remote file (e.g. `homework.json` /
-   * `anime.json` under the user's base folder). Each kind has its own rev /
-   * conflict detection; renderer pages call this only for their own kind.
+   * 把一份 JSON 推到该类别对应的远端文件。每一类各有自己的 rev 和冲突检测,
+   * 各个页面只推自己那一类。
    */
   push: (kind: 'homework' | 'anime' | 'miaoyu', jsonStr: string) => ipcRenderer.invoke('webdav:push', kind, jsonStr),
   pull: (kind: 'homework' | 'anime' | 'miaoyu') => ipcRenderer.invoke('webdav:pull', kind),

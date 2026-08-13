@@ -1,38 +1,33 @@
-// 追番列表的"按类型过滤"组件 —— 一个 button + anchored popover。
+// 「按类型过滤」—— 一个按钮 + 锚定浮层。
 //
-// 设计目标：替代 BGM 站点上那种原生 `<select>` 的丑下拉，提供：
-//   - **多选**（BGM 只能单选 7 个站点级类型）
-//   - **可搜**（番剧多了 tag 也多，几十上百个时打字过滤一下）
-//   - **命中数显示**（每个 tag 旁标"有几部番带这个 tag"，决定要不要选）
-//   - **AND / OR 语义由调用方决定**（外层 filter pipeline 实现；本组件只管选择 +
-//     用 matchMode 显示文案，传 selected 数组）
+// 相比原生 `<select>` 多了:多选、可搜(tag 几十上百个时打字过滤)、命中数显示(每个 tag 旁标
+// 有几部番带它,决定要不要选)。AND / OR 语义由外层的 filter pipeline 决定,本组件只管选择
+// 并按 matchMode 显示对应文案。
 //
-// 不用 ModalShell —— 那个是全屏 backdrop 弹窗，按钮旁边一个小过滤器走不到那种
-// 量级。这里手写 anchored dropdown：fixed backdrop 截点击 + absolute 浮层挂在
-// 触发按钮的相对父容器下。
+// 不用全屏弹窗壳:按钮旁边一个小过滤器走不到那种量级,这里是手写的锚定下拉(fixed 遮罩截点击 +
+// absolute 浮层挂在触发按钮的相对父容器下)。
 //
-// 高频 tag 沉底排序 —— 命中数最多的排在最上面，用户日常用的就那几个，常用项
-// 不需要每次都搜。
+// 按命中数排序,常用的那几个自然浮到最上面,不用每次都搜。
 
 import { useMemo, useRef, useState, useEffect } from 'react'
 
 interface TagWithCount {
   tag: string
-  /** 这个 tag 出现在多少个 track 里（bgmTags + userTags 合并去重后计数）。 */
+  /** 这个 tag 出现在多少条记录里(两类标签合并去重后计数)。 */
   count: number
 }
 
 interface Props {
-  /** 已经按命中数排好序的全部 tag 列表。 */
+  /** 已经按命中数排好序的全部 tag。 */
   allTags: TagWithCount[]
-  /** 当前选中的 tag（实际过滤在外层 pipeline）。 */
+  /** 当前选中的 tag(实际过滤在外层)。 */
   selected: string[]
   onChange: (next: string[]) => void
-  /** 已选项是否置顶（默认 true）。记录页要保持原顺序 → 传 false。 */
+  /** 已选项是否置顶(默认 true)。要保持原顺序的地方传 false。 */
   pinSelected?: boolean
-  /** 仅用于文案：多选语义是 AND 还是 OR（实际过滤在外层）。默认 'AND'。 */
+  /** 仅用于文案:多选语义是 AND 还是 OR。 */
   matchMode?: 'AND' | 'OR'
-  /** 过滤维度文案，默认「类型」（按钮 / 标题 / 搜索框 / 空态都用它）。 */
+  /** 过滤维度的文案,按钮 / 标题 / 搜索框 / 空态都用它。 */
   label?: string
 }
 
@@ -44,7 +39,7 @@ export function TagFilter({ allTags, selected, onChange, pinSelected = true, mat
 
   useEffect(() => {
     if (open) {
-      // 打开 popover 自动 focus 搜索框 —— 用户大概率是想"找某个 tag"才点开
+      // 打开就自动聚焦搜索框 —— 用户点开大概率就是想找某个 tag
       setTimeout(() => searchRef.current?.focus(), 0)
     } else {
       setQuery('')
