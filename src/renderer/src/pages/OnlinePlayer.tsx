@@ -34,6 +34,7 @@ import type { XifanWatchInfo } from '../types/xifan'
 import type { AowuWatchInfo } from '../types/aowu'
 import type { GirigiriWatchInfo } from '../types/girigiri'
 import PlayerControls from '../components/PlayerControls'
+import { auditVideos, startVideoAudit, trackVideo, trackedVideos, untrackVideo } from '../utils/videoAudit'
 
 // shaka 只认注册过的 scheme,不注册会直接报 UNSUPPORTED_SCHEME。用它自带的 fetch 插件。
 shaka.polyfill.installAll()
@@ -103,19 +104,25 @@ function toMediaProxy(url: string): string {
 }
 
 /**
- * 摘掉一个 <video> 必须**显式停掉它**:React 只是把元素从 DOM 上拿下来,而 Chromium 里
- * 游离(detached)的 media element 会一直播到被 GC —— 声音不停、mtmedia 还在取流,于是
- * 主进程刚被 media:release 清掉的临时文件又被它拉起来重下一份。用户实测的三个症状
- * (暂停后仍有声音 / 恢复后两路声音叠加 / 退出播放页声音还在)都是同一个游离元素。
- * pause + 清 src + load():load() 把当前媒体资源整个断开,顺带取消进行中的请求。
+ * 摘掉一个 <video> 时把它收干净。React 只是把元素从 DOM 上拿下来,不保证媒体停下。
+ *
+ * **第一步先静音**:muted 是同步生效的,不管底层拆解多慢,声音立刻断。后面 pause / 清 src /
+ * load() 才是真正断开资源。之所以要这个顺序——「暂停/退出后仍有声音」在 Windows 上仍未修复、
+ * 根因未知(mac 不复现,见 docs/ideas/011),静音是与根因无关也能止住声音的兜底。
+ * 别把 muted 挪到后面或删掉,除非根因已经定位并修掉。
  */
 function detachVideo(el: HTMLVideoElement): void {
   try {
+    el.muted = true
+    el.volume = 0
     el.pause()
     el.removeAttribute('src')
     el.srcObject = null
     el.load()
   } catch { /* 元素已被销毁,忽略 */ }
+  // 收完再打一次:对比 detach 前后的 paused/readyState,才能看出到底停没停住
+  auditVideos('after-detach')
+  if (el.paused) untrackVideo(el)
 }
 
 /** 集数格子的短显示:「第01集/话」类标签抽出数字,OVA/BD 等特殊标签原样展示。 */
@@ -351,8 +358,10 @@ export default function OnlinePlayer(): JSX.Element {
   // 顺序要紧:先停掉 <video>(ref 回调里的 detachVideo 已在 commit 阶段做过一遍,
   // 这里是兜底),再通知主进程 release —— 反过来的话,还在播的元素会立刻发新的
   // mtmedia 请求,把刚删掉的临时文件重新建出来。
+  // 收**所有**登记过的元素,不只是 videoRef 当前指着的那个:ref 只记得住最后一个,
+  // 之前没收干净的会留在 tracked 里,而声音恰恰可能来自那些。
   useEffect(() => () => {
-    if (videoRef.current) detachVideo(videoRef.current)
+    for (const el of trackedVideos()) detachVideo(el)
     window.systemApi.releaseMedia()
   }, [])
 
@@ -473,7 +482,11 @@ export default function OnlinePlayer(): JSX.Element {
     const prev = videoRef.current
     if (prev && prev !== el) detachVideo(prev)
     videoRef.current = el
+    if (el) trackVideo(el)
   }, [])
+
+  // 播放页在场期间每秒审计一次媒体元素状态,离开后再多观察 10 秒(排查用,见 videoAudit)
+  useEffect(() => startVideoAudit(), [])
   // 播放区容器(16:9 盒子):自定义控制条的全屏目标 + 悬停时间提示的挂载点
   const playerBoxRef = useRef<HTMLDivElement | null>(null)
   const [playerFs, setPlayerFs] = useState(false)
