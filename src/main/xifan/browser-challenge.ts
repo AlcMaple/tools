@@ -261,7 +261,25 @@ function runXifanBrowserTask<T>(
       logInfo('xifan-challenge', `失败：${stageLabel} —— ${error.message}`)
       reject(error)
     }
+    // 排查用:超时那一刻,页面到底还在等哪些请求。首字节只要几百毫秒却仍卡满 45 秒,
+    // 说明 HTML 早到了、DOMContentLoaded 被页面自己的同步脚本挡住 —— 这里把还没结束的
+    // 请求点名打出来,才能知道是被谁挡的。
+    const inflightReq = new Map<string, number>()
+    const wr = win.webContents.session.webRequest
+    wr.onBeforeRequest((d, cb) => { inflightReq.set(d.url, Date.now()); cb({}) })
+    const clearReq = (d: { url: string }): void => { inflightReq.delete(d.url) }
+    wr.onCompleted(clearReq)
+    wr.onErrorOccurred(clearReq)
+    const dumpInflight = (): void => {
+      const now = Date.now()
+      const rows = [...inflightReq.entries()]
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, 8)
+        .map(([url, t]) => `\n    ${now - t}ms 未完成  ${url.slice(0, 120)}`)
+      logInfo('xifan-challenge', rows.length ? `超时时仍在等的请求：${rows.join('')}` : '超时时没有未完成的请求')
+    }
     const timeout = setTimeout(() => {
+      dumpInflight()
       fail(new Error(`稀饭后台页在 ${Math.round(timeoutMs / 1000)} 秒内没能就绪（卡在：${stage}），请稍后重试`))
     }, timeoutMs)
     const runAction = async (html: string): Promise<void> => {
