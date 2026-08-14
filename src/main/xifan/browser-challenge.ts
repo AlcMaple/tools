@@ -43,6 +43,7 @@ export function getXifanBrowserSession(): Electron.Session {
   if (!cachedSession) {
     cachedSession = session.fromPartition(XIFAN_PARTITION)
     cachedSession.setUserAgent(DESKTOP_USER_AGENT)
+    installSubresourceFilter(cachedSession)
     // 排查用:这个分区实际给稀饭选了哪条代理路径。2026-08-14 实测每张页要 10~30 秒,
     // 全耗在 TLS 握手失败重试上(net_error -100,间隔精确 5.002s),而同一 URL 浏览器
     // 秒开 —— 先确认两边走的是不是同一条路,再谈别的。DIRECT 表示直连。
@@ -52,6 +53,42 @@ export function getXifanBrowserSession(): Electron.Session {
     )
   }
   return cachedSession
+}
+
+/** 当前这张页还没结束的请求（超时时点名用，见 dumpInflight）。 */
+const inflightRequests = new Map<string, number>()
+
+/**
+ * 后台页只用来**读 HTML**：页面的图片、字体、第三方脚本一个都不需要。
+ *
+ * 2026-08-14 实测：稀饭页里挂着 `https://polyfill-js.cn/v3/polyfill.min.js`，这个域名连不上，
+ * 而它是同步脚本 —— `DOMContentLoaded`（也就是 `dom-ready`）会一直等它，整整卡满 45 秒超时，
+ * 而稀饭自己的 HTML 首字节只用了 1.2 秒。用户在浏览器里同样的操作早就播上了。
+ *
+ * 因此：**跨源子资源一律拦掉，同源一律放行**。稀饭自己的 UAM 脚本、Cloudflare 的
+ * `/cdn-cgi/` 挑战都是同源，不会被误伤；主文档、子框架、XHR/fetch 也一律放行，
+ * 免得挡掉安全检查要用的接口。顺带：polyfill.io 那条线 2024 年出过供应链投毒，
+ * 不去连它本身也是安全上的净收益。
+ */
+function installSubresourceFilter(ses: Electron.Session): void {
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    const passthrough = details.resourceType === 'mainFrame' ||
+      details.resourceType === 'subFrame' ||
+      details.resourceType === 'xhr'
+    let sameOrigin = false
+    try {
+      sameOrigin = isXifanHost(new URL(details.url).hostname)
+    } catch { /* 非 http(s) 的怪地址,当跨源处理 */ }
+    if (!passthrough && !sameOrigin) {
+      callback({ cancel: true })
+      return
+    }
+    inflightRequests.set(details.url, Date.now())
+    callback({})
+  })
+  const clear = (d: { url: string }): void => { inflightRequests.delete(d.url) }
+  ses.webRequest.onCompleted(clear)
+  ses.webRequest.onErrorOccurred(clear)
 }
 
 function isXifanHost(hostname: string): boolean {
@@ -264,15 +301,9 @@ function runXifanBrowserTask<T>(
     // 排查用:超时那一刻,页面到底还在等哪些请求。首字节只要几百毫秒却仍卡满 45 秒,
     // 说明 HTML 早到了、DOMContentLoaded 被页面自己的同步脚本挡住 —— 这里把还没结束的
     // 请求点名打出来,才能知道是被谁挡的。
-    const inflightReq = new Map<string, number>()
-    const wr = win.webContents.session.webRequest
-    wr.onBeforeRequest((d, cb) => { inflightReq.set(d.url, Date.now()); cb({}) })
-    const clearReq = (d: { url: string }): void => { inflightReq.delete(d.url) }
-    wr.onCompleted(clearReq)
-    wr.onErrorOccurred(clearReq)
     const dumpInflight = (): void => {
       const now = Date.now()
-      const rows = [...inflightReq.entries()]
+      const rows = [...inflightRequests.entries()]
         .sort((a, b) => a[1] - b[1])
         .slice(0, 8)
         .map(([url, t]) => `\n    ${now - t}ms 未完成  ${url.slice(0, 120)}`)
