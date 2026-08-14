@@ -98,6 +98,12 @@ function getXifanBrowserWindow(): BrowserWindow {
   // show:false 的页面可能被 Chromium 降低定时器优先级,而站点的检查正是靠倒计时和脚本刷新
   // 完成的,所以明确保持它的正常节奏,不去等前台窗口。
   win.webContents.setBackgroundThrottling(false)
+  // **必须静音**:这里加载的 watch 页里有稀饭站点自己的播放器,会自动播放。窗口不可见,
+  // 于是表现为「只有声音没画面」;它属于主进程,播放页的暂停按钮 / detachVideo /
+  // media:release 全都够不着它 —— 暂停后仍有声音、退出播放页声音还在,根因就是这个,
+  // 与我们自己的 <video> 无关(2026-08-14 用 video-audit 日志定位:出声时
+  // tracked=0、dom<video>=0,页面上根本没有播放器元素)。这是纯抓取窗口,永远不该出声。
+  win.webContents.setAudioMuted(true)
   win.on('page-title-updated', (event) => event.preventDefault())
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-navigate', (event, nextUrl) => {
@@ -111,9 +117,72 @@ function getXifanBrowserWindow(): BrowserWindow {
   return win
 }
 
+/**
+ * 停掉后台页里站点自己的播放器。
+ *
+ * 这张页面是 watch 页,站点的播放器会自动播:窗口不可见 → 表现为「只有声音没画面」;
+ * 更要紧的是拿到地址之后窗口**并不关**(要留住同源 JS 上下文给 requestXifanBrowser 用),
+ * 于是它和我们自己的播放器**一人一份流同时在下**。静音只解决听感,这里才是真的停掉。
+ *
+ * 只动媒体元素、不导航:一导航就是给站点多发一次请求,也会丢掉已验证的文档上下文。
+ */
+function stopPageMedia(webContents: Electron.WebContents): void {
+  webContents.executeJavaScript(`(() => {
+    for (const el of document.querySelectorAll('video,audio')) {
+      try { el.pause(); el.removeAttribute('src'); el.load() } catch {}
+    }
+    return document.querySelectorAll('video,audio').length
+  })()`).then(
+    (n) => logInfo('xifan-challenge', `已停掉后台页内置播放器（${n} 个媒体元素）`),
+    () => undefined, // 文档正在被站点刷新走 —— 下一次任务结束时还会再停一次
+  )
+}
+
+/**
+ * 后台窗口的存活策略:**默认用完就销毁**。
+ *
+ * 它是一张真实的站点页面(watch 页里就有站点自己的播放器),留着 = 白占一个 Chromium
+ * 进程 + 继续播继续下,和播放器抢带宽。cookie 存在持久分区里,**销毁窗口不会丢掉已通过的
+ * 检查**,只是 browserSessionVerified 归 false —— 而那个标志只被验证码/登录用到。
+ *
+ * 唯一必须跨任务留住文档的是 requestXifanBrowser(复用当前文档发同源 fetch,见其注释),
+ * 它会显式续期。播放链路(loadXifanBrowserPage)全程用不到,读完 HTML 就该关。
+ */
+let pendingTasks = 0
+let keepAliveUntil = 0
+
+/** 验证码/登录那条路要连着发好几个同源 fetch，显式把窗口留一会儿。 */
+function keepBrowserWindowAlive(ms = 60_000): void {
+  keepAliveUntil = Math.max(keepAliveUntil, Date.now() + ms)
+}
+
+let idleCloseTimer: ReturnType<typeof setTimeout> | null = null
+
+function closeBrowserWindowIfIdle(): void {
+  if (idleCloseTimer) {
+    clearTimeout(idleCloseTimer)
+    idleCloseTimer = null
+  }
+  if (pendingTasks > 0) return
+  // 还在续期内(验证码/登录):等到期再来收一次,否则没有后续任务时窗口会一直留到退出应用。
+  const remain = keepAliveUntil - Date.now()
+  if (remain > 0) {
+    idleCloseTimer = setTimeout(closeBrowserWindowIfIdle, remain + 100)
+    return
+  }
+  const win = activeBrowserWindow
+  if (!win || win.isDestroyed()) return
+  logInfo('xifan-challenge', '任务结束，销毁后台窗口')
+  win.destroy() // closed 回调里会清 activeBrowserWindow / browserSessionVerified
+}
+
 function queueXifanBrowserTask<T>(task: () => Promise<T>): Promise<T> {
+  pendingTasks++
   const queued = pageQueue.then(task)
-  pageQueue = queued.then(() => undefined, () => undefined)
+  pageQueue = queued.then(() => undefined, () => undefined).then(() => {
+    pendingTasks--
+    closeBrowserWindowIfIdle()
+  })
   return queued
 }
 
@@ -134,6 +203,15 @@ function runXifanBrowserTask<T>(
     // 阶段日志只在**切换**时落一行,不跟着 250ms 轮询刷屏。
     let challengeLogged = false
     const stageLabel = targetUrl ?? '(复用当前页)'
+    // 超时那句话必须说**当时真的卡在哪**。旧代码不管什么原因都报「安全检查未完成」,
+    // 而 inspect() 里有两条静默重排路径(URL 还没落到稀饭域 / JS 上下文被刷新销毁)
+    // 根本没判定过安全检查 —— 用户看到的是一个程序自己都不知道的结论。
+    let stage = '等待页面首次加载'
+    const setStage = (next: string): void => {
+      if (stage === next) return
+      stage = next
+      logInfo('xifan-challenge', `${stageLabel} → ${next}`)
+    }
     const cleanup = (): void => {
       clearTimeout(timeout)
       if (checkTimer) clearTimeout(checkTimer)
@@ -151,6 +229,9 @@ function runXifanBrowserTask<T>(
       browserSessionVerified = true
       cleanup()
       hide()
+      // 我们要的 HTML 已经拿到,页面接下来只用于同源 fetch —— 立刻停掉它的播放器,
+      // 别让它和播放页的 <video> 各下一份。
+      if (!win.isDestroyed()) stopPageMedia(win.webContents)
       logInfo('xifan-challenge', `页面就绪：${stageLabel}`)
       resolve(value)
     }
@@ -160,11 +241,13 @@ function runXifanBrowserTask<T>(
       browserSessionVerified = false
       cleanup()
       hide()
+      // 失败同样要停:超时那 45 秒里页面很可能一直在播、一直在下。
+      if (!win.isDestroyed()) stopPageMedia(win.webContents)
       logInfo('xifan-challenge', `失败：${stageLabel} —— ${error.message}`)
       reject(error)
     }
     const timeout = setTimeout(() => {
-      fail(new Error('稀饭后台安全检查在限定时间内未完成，请检查网络后重试'))
+      fail(new Error(`稀饭后台页在 ${Math.round(timeoutMs / 1000)} 秒内没能就绪（卡在：${stage}），请稍后重试`))
     }, timeoutMs)
     const runAction = async (html: string): Promise<void> => {
       if (settled || actionStarted) return
@@ -189,6 +272,7 @@ function runXifanBrowserTask<T>(
       if (!isXifanPageUrl(win.webContents.getURL())) {
         // loadURL 刚被站点自己的 refresh 接走时，WebContents 会短暂回到空 URL。
         // 此处只安排下一次本地状态查看，不再次导航、不增加站点请求。
+        setStage('等待导航落到稀饭域名')
         scheduleInspect(DOCUMENT_SETTLE_DELAY_MS)
         return
       }
@@ -198,6 +282,7 @@ function runXifanBrowserTask<T>(
         ))
         if (settled) return
         if (isScrapeChallengePage(html)) {
+          setStage('站点安全检查中，等它自行放行')
           if (!challengeLogged) {
             challengeLogged = true
             logInfo('xifan-challenge', `命中安全检查页,后台轮询等待站点自行放行：${stageLabel}`)
@@ -215,6 +300,7 @@ function runXifanBrowserTask<T>(
         // 倒计时刷新的一瞬间，旧文档的 JS 上下文会被 Chromium 销毁；这不是读取
         // 失败。等新文档稳定后再看一次，仍不正常才由总超时收口。
         if (/execution context.*destroyed|context.*destroyed|ERR_ABORTED/i.test(message)) {
+          setStage('页面正在被站点刷新，等新文档稳定')
           scheduleInspect(DOCUMENT_SETTLE_DELAY_MS)
           return
         }
@@ -274,9 +360,15 @@ export function loadXifanBrowserPage(targetUrl: string): Promise<XifanBrowserPag
   ))
 }
 
-/** 首次设置页直接拿验证码时，也先加载真实页面完成 UAM。 */
+/**
+ * 首次设置页直接拿验证码时，也先加载真实页面完成 UAM。
+ *
+ * 这里**必须先续期**:后面的同源 fetch 要复用这次加载出来的文档,不续期的话首页读完
+ * 队列就空了,窗口会被 closeBrowserWindowIfIdle 销毁,fetch 那步就没有文档可用了。
+ */
 async function ensureXifanBrowserSession(): Promise<void> {
   getXifanBrowserSession()
+  keepBrowserWindowAlive()
   if (!browserSessionVerified) await loadXifanBrowserPage(`${XIFAN_ORIGIN}/`)
 }
 
