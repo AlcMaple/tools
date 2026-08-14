@@ -44,13 +44,6 @@ export function getXifanBrowserSession(): Electron.Session {
     cachedSession = session.fromPartition(XIFAN_PARTITION)
     cachedSession.setUserAgent(DESKTOP_USER_AGENT)
     installSubresourceFilter(cachedSession)
-    // 排查用:这个分区实际给稀饭选了哪条代理路径。2026-08-14 实测每张页要 10~30 秒,
-    // 全耗在 TLS 握手失败重试上(net_error -100,间隔精确 5.002s),而同一 URL 浏览器
-    // 秒开 —— 先确认两边走的是不是同一条路,再谈别的。DIRECT 表示直连。
-    void cachedSession.resolveProxy(`${XIFAN_ORIGIN}/`).then(
-      (proxy) => logInfo('xifan-challenge', `分区代理路径：${proxy}`),
-      () => undefined,
-    )
   }
   return cachedSession
 }
@@ -117,9 +110,11 @@ function isNavigationAbort(error: unknown): boolean {
 }
 
 /**
- * 复用同一张已通过验证的后台页面,它**始终不显示**:站点脚本仍在真实 WebContents 里执行
- * 播放页只留「解析播放地址中…」这一层应用 UI。正常页面和后续 fetch 都留在这张页面上 ——
- * **不要为验证码另开一张首页**,那可能被站点当成新的首次访问。
+ * 后台页面,**始终不显示**:站点脚本仍在真实 WebContents 里执行,播放页只留
+ * 「解析播放地址中…」这一层应用 UI。
+ *
+ * 生命周期见 closeBrowserWindowIfIdle —— 默认读完就销毁,只有验证码/登录会显式续期。
+ * 续期期间**不要为验证码另开一张首页**,那可能被站点当成新的首次访问。
  */
 function getXifanBrowserWindow(): BrowserWindow {
   if (activeBrowserWindow && !activeBrowserWindow.isDestroyed()) return activeBrowserWindow
@@ -142,11 +137,9 @@ function getXifanBrowserWindow(): BrowserWindow {
   // show:false 的页面可能被 Chromium 降低定时器优先级,而站点的检查正是靠倒计时和脚本刷新
   // 完成的,所以明确保持它的正常节奏,不去等前台窗口。
   win.webContents.setBackgroundThrottling(false)
-  // **必须静音**:这里加载的 watch 页里有稀饭站点自己的播放器,会自动播放。窗口不可见,
-  // 于是表现为「只有声音没画面」;它属于主进程,播放页的暂停按钮 / detachVideo /
-  // media:release 全都够不着它 —— 暂停后仍有声音、退出播放页声音还在,根因就是这个,
-  // 与我们自己的 <video> 无关(2026-08-14 用 video-audit 日志定位:出声时
-  // tracked=0、dom<video>=0,页面上根本没有播放器元素)。这是纯抓取窗口,永远不该出声。
+  // **必须静音**:加载的 watch 页里有站点自己的播放器会自动播。窗口不可见,于是表现为
+  // 「只有声音没画面」,而且渲染层的暂停 / detachVideo / media:release 都够不着它。
+  // 这是纯抓取窗口,任何平台上都不该出声。真正停播靠下面的 stopPageMedia,静音只是兜底。
   win.webContents.setAudioMuted(true)
   win.on('page-title-updated', (event) => event.preventDefault())
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -164,9 +157,9 @@ function getXifanBrowserWindow(): BrowserWindow {
 /**
  * 停掉后台页里站点自己的播放器。
  *
- * 这张页面是 watch 页,站点的播放器会自动播:窗口不可见 → 表现为「只有声音没画面」;
- * 更要紧的是拿到地址之后窗口**并不关**(要留住同源 JS 上下文给 requestXifanBrowser 用),
- * 于是它和我们自己的播放器**一人一份流同时在下**。静音只解决听感,这里才是真的停掉。
+ * watch 页里有站点自己的播放器会自动播。窗口现在读完即销毁,但验证码/登录会让它多活
+ * 10 分钟 —— 那段时间里它会一直播、一直下,和我们自己的播放器一人一份流。静音只解决
+ * 听感,这里才是真的停掉。
  *
  * 只动媒体元素、不导航:一导航就是给站点多发一次请求,也会丢掉已验证的文档上下文。
  */
@@ -298,9 +291,8 @@ function runXifanBrowserTask<T>(
       logInfo('xifan-challenge', `失败：${stageLabel} —— ${error.message}`)
       reject(error)
     }
-    // 排查用:超时那一刻,页面到底还在等哪些请求。首字节只要几百毫秒却仍卡满 45 秒,
-    // 说明 HTML 早到了、DOMContentLoaded 被页面自己的同步脚本挡住 —— 这里把还没结束的
-    // 请求点名打出来,才能知道是被谁挡的。
+    // 超时时把还没结束的请求点名打出来。2026-08-14 就是靠它抓到 polyfill-js.cn 卡了 43 秒;
+    // 只在失败时打一次,不刷屏,下次再有第三方资源拖垮加载也能立刻看出是谁。
     const dumpInflight = (): void => {
       const now = Date.now()
       const rows = [...inflightRequests.entries()]
@@ -404,15 +396,6 @@ function runXifanBrowserTask<T>(
     win.on('closed', onClosed)
 
     if (targetUrl) {
-      // 排查用:把「开始加载 → DOM 就绪」这段切成两半 —— 等服务器第一个字节(网络/代理/站点)
-      // 与拿到响应之后的下载+解析(本地)。两段的修法完全不同,不切开只能靠猜。
-      const navStart = Date.now()
-      const onFirstByte = (details: Electron.OnResponseStartedListenerDetails): void => {
-        if (details.resourceType !== 'mainFrame') return
-        logInfo('xifan-challenge', `首字节 ${Date.now() - navStart}ms（HTTP ${details.statusCode}）：${details.url}`)
-        win.webContents.session.webRequest.onResponseStarted(null)
-      }
-      win.webContents.session.webRequest.onResponseStarted(onFirstByte)
       logInfo('xifan-challenge', `开始加载：${targetUrl}`)
       void win.loadURL(targetUrl).catch((err: unknown) => {
         // UAM 自己 reload 会让首次 loadURL 带 ERR_ABORTED / (-3)。真正结果由当前
