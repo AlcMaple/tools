@@ -34,7 +34,6 @@ import type { XifanWatchInfo } from '../types/xifan'
 import type { AowuWatchInfo } from '../types/aowu'
 import type { GirigiriWatchInfo } from '../types/girigiri'
 import PlayerControls from '../components/PlayerControls'
-import { auditVideos, startVideoAudit, trackVideo, trackedVideos, untrackVideo } from '../utils/videoAudit'
 
 // shaka 只认注册过的 scheme,不注册会直接报 UNSUPPORTED_SCHEME。用它自带的 fetch 插件。
 shaka.polyfill.installAll()
@@ -121,9 +120,6 @@ function detachVideo(el: HTMLVideoElement): void {
     el.srcObject = null
     el.load()
   } catch { /* 元素已被销毁,忽略 */ }
-  // 收完再打一次:对比 detach 前后的 paused/readyState,才能看出到底停没停住
-  auditVideos('after-detach')
-  if (el.paused) untrackVideo(el)
 }
 
 /** 集数格子的短显示:「第01集/话」类标签抽出数字,OVA/BD 等特殊标签原样展示。 */
@@ -362,7 +358,7 @@ export default function OnlinePlayer(): JSX.Element {
   // 收**所有**登记过的元素,不只是 videoRef 当前指着的那个:ref 只记得住最后一个,
   // 之前没收干净的会留在 tracked 里,而声音恰恰可能来自那些。
   useEffect(() => () => {
-    for (const el of trackedVideos()) detachVideo(el)
+    if (videoRef.current) detachVideo(videoRef.current)
     window.systemApi.releaseMedia()
   }, [])
 
@@ -483,11 +479,8 @@ export default function OnlinePlayer(): JSX.Element {
     const prev = videoRef.current
     if (prev && prev !== el) detachVideo(prev)
     videoRef.current = el
-    if (el) trackVideo(el)
   }, [])
 
-  // 播放页在场期间每秒审计一次媒体元素状态,离开后再多观察 10 秒(排查用,见 videoAudit)
-  useEffect(() => startVideoAudit(), [])
   // 播放区容器(16:9 盒子):自定义控制条的全屏目标 + 悬停时间提示的挂载点
   const playerBoxRef = useRef<HTMLDivElement | null>(null)
   const [playerFs, setPlayerFs] = useState(false)
