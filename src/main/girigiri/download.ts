@@ -58,6 +58,9 @@ export async function captureM3u8(
         show: false,
         webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true },
       })
+      // 加载的是站点播放页,里面的播放器会自动播 —— 窗口不可见,就成了「凭空冒出的声音」,
+      // 且渲染层完全够不着它。抓 m3u8 不需要出声,建完立刻静音(同 xifan/browser-challenge)。
+      win.webContents.setAudioMuted(true)
 
       let resolved = false
       const done = (url: string | null): void => {

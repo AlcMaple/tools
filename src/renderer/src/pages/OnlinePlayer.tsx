@@ -106,10 +106,11 @@ function toMediaProxy(url: string): string {
 /**
  * 摘掉一个 <video> 时把它收干净。React 只是把元素从 DOM 上拿下来,不保证媒体停下。
  *
- * **第一步先静音**:muted 是同步生效的,不管底层拆解多慢,声音立刻断。后面 pause / 清 src /
- * load() 才是真正断开资源。之所以要这个顺序——「暂停/退出后仍有声音」在 Windows 上仍未修复、
- * 根因未知(mac 不复现,见 docs/ideas/011),静音是与根因无关也能止住声音的兜底。
- * 别把 muted 挪到后面或删掉,除非根因已经定位并修掉。
+ * 先静音再 pause / 清 src / load():muted 同步生效,底层拆解多慢声音都立刻断。
+ *
+ * 注意:曾经长期被当成「暂停/退出后仍有声音」的元凶,**并不是**。那个 bug 的根因是稀饭
+ * 安全检查的隐藏 BrowserWindow 在后台播站点自己的播放器(见 xifan/browser-challenge.ts),
+ * 与这里无关。这个函数负责的只是换集/换线路/离开播放页时把自家 <video> 收干净。
  */
 function detachVideo(el: HTMLVideoElement): void {
   try {
