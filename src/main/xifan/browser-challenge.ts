@@ -355,6 +355,15 @@ function runXifanBrowserTask<T>(
     win.on('closed', onClosed)
 
     if (targetUrl) {
+      // 排查用:把「开始加载 → DOM 就绪」这段切成两半 —— 等服务器第一个字节(网络/代理/站点)
+      // 与拿到响应之后的下载+解析(本地)。两段的修法完全不同,不切开只能靠猜。
+      const navStart = Date.now()
+      const onFirstByte = (details: Electron.OnResponseStartedListenerDetails): void => {
+        if (details.resourceType !== 'mainFrame') return
+        logInfo('xifan-challenge', `首字节 ${Date.now() - navStart}ms（HTTP ${details.statusCode}）：${details.url}`)
+        win.webContents.session.webRequest.onResponseStarted(null)
+      }
+      win.webContents.session.webRequest.onResponseStarted(onFirstByte)
       logInfo('xifan-challenge', `开始加载：${targetUrl}`)
       void win.loadURL(targetUrl).catch((err: unknown) => {
         // UAM 自己 reload 会让首次 loadURL 带 ERR_ABORTED / (-3)。真正结果由当前
