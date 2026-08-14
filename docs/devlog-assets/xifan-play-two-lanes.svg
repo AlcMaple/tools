@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 700" width="1040" height="700" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+  <rect width="1040" height="700" fill="#ffffff"/>
+
+  <text x="20" y="30" font-size="17" font-weight="700" fill="#111">点一次「播放」（稀饭源）到底发生了什么</text>
+  <text x="20" y="52" font-size="12" fill="#666">时间数据来自 2026-08-14 Windows 实测日志，非估算</text>
+
+  <!-- lane headers -->
+  <rect x="20" y="70" width="480" height="30" fill="#e8f0fe" stroke="#c6d9f7"/>
+  <text x="34" y="90" font-size="13" font-weight="700" fill="#1a4f9c">主进程 · 隐藏抓取窗口</text>
+  <rect x="540" y="70" width="480" height="30" fill="#fdeeee" stroke="#f5cccc"/>
+  <text x="554" y="90" font-size="13" font-weight="700" fill="#a12c2c">渲染进程 · 播放器</text>
+
+  <!-- left lane boxes -->
+  <rect x="20" y="115" width="480" height="52" fill="#f7f9fc" stroke="#ccd6e4"/>
+  <text x="34" y="136" font-size="12.5" fill="#111">① 新建 BrowserWindow（show:false）</text>
+  <text x="34" y="155" font-size="11.5" fill="#666">建完立刻 setAudioMuted(true) — 页面里有站点自己的播放器</text>
+
+  <rect x="20" y="177" width="480" height="70" fill="#f7f9fc" stroke="#ccd6e4"/>
+  <text x="34" y="198" font-size="12.5" fill="#111">② loadURL(watch 页) → 等 dom-ready</text>
+  <text x="34" y="217" font-size="11.5" fill="#666">不能只等 did-finish-load：它要等子资源，而页里的视频</text>
+  <text x="34" y="234" font-size="11.5" fill="#666">在自动播，永远等不完 → 曾卡满 45s 超时</text>
+
+  <rect x="20" y="257" width="480" height="70" fill="#fff8e6" stroke="#e8d9a8"/>
+  <text x="34" y="278" font-size="12.5" fill="#111">③ 轮询 DOM，判断是不是安全检查页</text>
+  <text x="34" y="297" font-size="11.5" fill="#666">是 → 250ms 再看一次（不发请求、不模拟点击）</text>
+  <text x="34" y="314" font-size="11.5" fill="#666">否 → 读 HTML 交给解析器</text>
+
+  <rect x="20" y="337" width="480" height="70" fill="#eaf7ee" stroke="#bfe0ca"/>
+  <text x="34" y="358" font-size="12.5" fill="#111">④ 读到 HTML → 停掉页内播放器 → 销毁窗口</text>
+  <text x="34" y="377" font-size="11.5" fill="#666">stopPageMedia：pause + 清 src（不导航，省一次请求）</text>
+  <text x="34" y="394" font-size="11.5" fill="#666">队列跑空即 destroy —— 窗口不再常驻</text>
+
+  <!-- right lane boxes -->
+  <rect x="540" y="115" width="480" height="52" fill="#fdf7f7" stroke="#eccccc"/>
+  <text x="554" y="136" font-size="12.5" fill="#111">Ⓐ 播放页挂载 → 调 xifan:watch</text>
+  <text x="554" y="155" font-size="11.5" fill="#666">dev 下 StrictMode 会挂载两次；飞行中去重合并为一次</text>
+
+  <rect x="540" y="177" width="480" height="70" fill="#fdf7f7" stroke="#eccccc"/>
+  <text x="554" y="198" font-size="12.5" fill="#111">Ⓑ 等待期间只显示「解析播放地址中…」</text>
+  <text x="554" y="217" font-size="11.5" fill="#666">此时页面上没有 &lt;video&gt; 元素</text>
+  <text x="554" y="234" font-size="11.5" fill="#666">（曾经这阶段有声音 —— 那是左边那个窗口发出的）</text>
+
+  <rect x="540" y="257" width="480" height="70" fill="#fdf7f7" stroke="#eccccc"/>
+  <text x="554" y="278" font-size="12.5" fill="#111">Ⓒ 拿到集数 → 用模板推算本集地址</text>
+  <text x="554" y="297" font-size="11.5" fill="#666">epPage.replace('{ep}', N)，零请求</text>
+  <text x="554" y="314" font-size="11.5" fill="#666">所以不需要留住 watch 页来「记住」地址</text>
+
+  <rect x="540" y="337" width="480" height="70" fill="#eaf7ee" stroke="#bfe0ca"/>
+  <text x="554" y="358" font-size="12.5" fill="#111">Ⓓ 包成 mtmedia:// 喂 &lt;video&gt; → 建流 1 次</text>
+  <text x="554" y="377" font-size="11.5" fill="#666">离开播放页：detachVideo 收干净 + media:release</text>
+  <text x="554" y="394" font-size="11.5" fill="#666">实测退出后 tracked=0、dom&lt;video&gt;=0</text>
+
+  <!-- arrow between lanes -->
+  <path d="M500 372 L540 372" stroke="#7a7a7a" stroke-width="1.5" marker-end="url(#a)"/>
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#7a7a7a"/>
+    </marker>
+  </defs>
+  <text x="503" y="365" font-size="10.5" fill="#666">HTML</text>
+
+  <!-- key invariant -->
+  <rect x="20" y="432" width="1000" height="58" fill="#f2f2f2" stroke="#d5d5d5"/>
+  <text x="34" y="454" font-size="12.5" font-weight="700" fill="#111">关键不变量：任何时刻只有一个播放器在跑</text>
+  <text x="34" y="475" font-size="11.5" fill="#555">左边那张页是站点自己的播放页，它的播放器一旦活着就会和右边的 &lt;video&gt; 各下一份流。所以左边读完 HTML 就必须停播放器并销毁窗口。</text>
+
+  <!-- timing -->
+  <rect x="20" y="505" width="1000" height="175" fill="#ffffff" stroke="#d5d5d5"/>
+  <text x="34" y="527" font-size="12.5" font-weight="700" fill="#111">实测耗时（2026-08-14 Windows，冷缓存完整走一遍）</text>
+
+  <text x="34" y="551" font-size="11.5" fill="#555">search.html</text>
+  <rect x="150" y="542" width="107" height="12" fill="#e05c5c"/>
+  <text x="265" y="552" font-size="11" fill="#555">10.7s</text>
+
+  <text x="34" y="573" font-size="11.5" fill="#555">首页（验证码前置）</text>
+  <rect x="150" y="564" width="107" height="12" fill="#e05c5c"/>
+  <text x="265" y="574" font-size="11" fill="#555">10.7s</text>
+
+  <text x="34" y="595" font-size="11.5" fill="#555">search.html（重试）</text>
+  <rect x="150" y="586" width="302" height="12" fill="#e05c5c"/>
+  <text x="460" y="596" font-size="11" fill="#555">30.2s</text>
+
+  <text x="34" y="617" font-size="11.5" fill="#555">watch 页</text>
+  <rect x="150" y="608" width="303" height="12" fill="#e05c5c"/>
+  <text x="461" y="618" font-size="11" fill="#555">30.3s</text>
+
+  <text x="34" y="645" font-size="11.5" fill="#a12c2c">这段时间几乎全部消耗在 TLS 握手失败重试上（net_error -100，错误间隔精确 5.002s），</text>
+  <text x="34" y="663" font-size="11.5" fill="#a12c2c">不是解析、不是安全检查、不是轮询：最后一次握手报错后 5～9ms 就「页面就绪」。原因待查（浏览器直开同一 URL 秒开）。</text>
+</svg>

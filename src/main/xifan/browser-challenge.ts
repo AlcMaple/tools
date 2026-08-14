@@ -43,6 +43,13 @@ export function getXifanBrowserSession(): Electron.Session {
   if (!cachedSession) {
     cachedSession = session.fromPartition(XIFAN_PARTITION)
     cachedSession.setUserAgent(DESKTOP_USER_AGENT)
+    // 排查用:这个分区实际给稀饭选了哪条代理路径。2026-08-14 实测每张页要 10~30 秒,
+    // 全耗在 TLS 握手失败重试上(net_error -100,间隔精确 5.002s),而同一 URL 浏览器
+    // 秒开 —— 先确认两边走的是不是同一条路,再谈别的。DIRECT 表示直连。
+    void cachedSession.resolveProxy(`${XIFAN_ORIGIN}/`).then(
+      (proxy) => logInfo('xifan-challenge', `分区代理路径：${proxy}`),
+      () => undefined,
+    )
   }
   return cachedSession
 }
@@ -151,8 +158,15 @@ function stopPageMedia(webContents: Electron.WebContents): void {
 let pendingTasks = 0
 let keepAliveUntil = 0
 
-/** 验证码/登录那条路要连着发好几个同源 fetch，显式把窗口留一会儿。 */
-function keepBrowserWindowAlive(ms = 60_000): void {
+/**
+ * 验证码/登录那条路要复用同一张文档连着发好几个同源 fetch，显式把窗口留住。
+ *
+ * 时长要覆盖的**不是几个请求，而是人**:getCaptcha 取到图 → 用户盯着看、输入 → verifyCaptcha
+ * 提交,中间整段是人的速度。取太短会正好卡在用户输入的中途把窗口销毁,验证码上下文就没了。
+ * 10 分钟是给「看图 + 输入 + 输错重来」留的余量;窗口里此时是验证码/设置页,已被
+ * stopPageMedia 停掉媒体,留着几乎不耗资源。**别为了「省资源」把它调回秒级。**
+ */
+function keepBrowserWindowAlive(ms = 10 * 60_000): void {
   keepAliveUntil = Math.max(keepAliveUntil, Date.now() + ms)
 }
 
