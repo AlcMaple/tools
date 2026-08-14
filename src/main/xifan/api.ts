@@ -43,6 +43,12 @@ type XifanUrlCache = Record<string, XifanUrlCacheEntry>
 const XIFAN_URL_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const XIFAN_URL_CACHE_MAX_ENTRIES = 500
 const xifanUrlInflight = new Map<string, Promise<string | null>>()
+// 同一张 watch 页在飞行中只请求一次。播放页会挂载→卸载→再挂载(严格模式/重挂),
+// 两次挂载各打一发 xifan:watch;而后台页面任务是**串行**的,于是第二发要等第一发跑完。
+// 2026-08-14 实测:两发相隔 3ms,第一发在「等待页面首次加载」上耗到 45 秒超时、把
+// 「稀饭安全检查未完成」弹到了界面上,第二发随后 27 秒正常拿到数据 —— 用户看到的就是
+// 「报错了但其实能播」。合并之后一次点击只对站点发一次页面请求。
+const xifanWatchInflight = new Map<string, Promise<XifanWatchInfo>>()
 
 function isHttpMediaUrl(value: string): boolean {
   try {
@@ -644,7 +650,24 @@ async function fetchSourceEp1(animeId: string, sourceIdx: number): Promise<{ tem
   return { template: buildTemplate(ep1Url), ep1: ep1Url, epPage, epLabels }
 }
 
-export async function watch(watchUrl: string, preferCache = false): Promise<XifanWatchInfo> {
+export function watch(watchUrl: string, preferCache = false): Promise<XifanWatchInfo> {
+  const pending = xifanWatchInflight.get(watchUrl)
+  // 已有同一张页在飞:直接搭车。注意**不看 preferCache** —— 两次调用的 preferCache 即使
+  // 不同,结果也是同一页的同一份数据,没有再打一次的理由。
+  if (pending) {
+    logInfo('xifan-watch', `已有相同 watch 页在请求中,合并本次调用：${watchUrl}`)
+    return pending
+  }
+  const task = watchUncached(watchUrl, preferCache)
+  xifanWatchInflight.set(watchUrl, task)
+  // 成功失败都要摘掉,否则一次失败会把这张页永久钉在失败的 Promise 上,用户点重试也没用。
+  void task.catch(() => undefined).finally(() => {
+    xifanWatchInflight.delete(watchUrl)
+  })
+  return task
+}
+
+async function watchUncached(watchUrl: string, preferCache: boolean): Promise<XifanWatchInfo> {
   if (preferCache) {
     const cached = (await xifanWatchCacheStore.read())[watchUrl]
     if (cached && isFreshXifanWatchEntry(cached)) {
