@@ -216,6 +216,7 @@ function runXifanBrowserTask<T>(
       clearTimeout(timeout)
       if (checkTimer) clearTimeout(checkTimer)
       checkTimer = null
+      win.webContents.removeListener('dom-ready', onLoad)
       win.webContents.removeListener('did-finish-load', onLoad)
       win.webContents.removeListener('did-fail-load', onFail)
       win.removeListener('closed', onClosed)
@@ -330,6 +331,11 @@ function runXifanBrowserTask<T>(
     const onClosed = (): void => {
       fail(new Error('稀饭后台安全检查已中断，请重新发起操作'))
     }
+    // **不能只等 did-finish-load**:它要主框架连同子资源全部加载完才触发,而 watch 页里
+    // 有个自动播放的视频,只要它还在拉流这个事件就可能一直不来 —— 表现为卡在「等待页面
+    // 首次加载」直到 45 秒超时,而页面其实早就能读了(2026-08-14 日志实证)。
+    // dom-ready 在文档解析完就触发,和子资源无关,正是我们要的时机。
+    win.webContents.on('dom-ready', onLoad)
     win.webContents.on('did-finish-load', onLoad)
     win.webContents.on('did-fail-load', onFail)
     win.on('closed', onClosed)
