@@ -30,6 +30,11 @@ export interface NetOptions {
   body?: string | Buffer
   /** 默认 12000ms。到点 abort 并 reject(Error('timeout'))。 */
   timeoutMs?: number
+  /**
+   * 响应体硬上限（字节）。收到 Content-Length 超限或流式累计超过上限时立即 abort，
+   * 不会先把整段响应收进内存再检查。缺省不限制，保持旧调用行为。
+   */
+  maxBytes?: number
   /** 'follow'（默认）自动跟 3xx；'manual' 返回 3xx 原始响应。 */
   redirect?: 'follow' | 'manual'
   /**
@@ -49,8 +54,24 @@ export interface NetOptions {
  * 超时 / abort / 传输层错误一律 reject 原生 Error，由调用方分类。
  */
 export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResult> {
-  const { method = 'GET', headers = {}, body, timeoutMs = 12000, redirect = 'follow', session } = opts
+  const {
+    method = 'GET',
+    headers = {},
+    body,
+    timeoutMs = 12000,
+    maxBytes,
+    redirect = 'follow',
+    session,
+  } = opts
   return new Promise<NetResult>((resolve, reject) => {
+    if (
+      maxBytes !== undefined
+      && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)
+    ) {
+      reject(new Error(`invalid maxBytes: ${String(maxBytes)}`))
+      return
+    }
+
     let settled = false
     const finish = (cb: () => void): void => {
       if (settled) return
@@ -96,10 +117,42 @@ export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResul
     request.on('response', (response) => {
       const status = response.statusCode ?? 0
       const resHeaders = response.headers as Record<string, string | string[] | undefined>
-      const chunks: Buffer[] = []
-      response.on('data', (c: Buffer) => chunks.push(c))
-      response.on('end', () => finish(() => resolve({ status, headers: resHeaders, body: Buffer.concat(chunks) })))
+      response.on('aborted', () => finish(() => reject(new Error('aborted'))))
       response.on('error', (e: Error) => finish(() => reject(e)))
+      const rawLength = resHeaders['content-length']
+      const lengthValue = Array.isArray(rawLength) ? rawLength[0] : rawLength
+      if (
+        maxBytes !== undefined
+        && typeof lengthValue === 'string'
+        && /^\d+$/.test(lengthValue)
+        && Number(lengthValue) > maxBytes
+      ) {
+        finish(() => reject(
+          new Error(`response Content-Length ${lengthValue} exceeds maxBytes ${maxBytes}`),
+        ))
+        try { request.abort() } catch { /* 已结束 */ }
+        return
+      }
+
+      const chunks: Buffer[] = []
+      let receivedBytes = 0
+      response.on('data', (chunk: Buffer) => {
+        if (settled) return
+        receivedBytes += chunk.byteLength
+        if (maxBytes !== undefined && receivedBytes > maxBytes) {
+          finish(() => reject(
+            new Error(`response body exceeds maxBytes ${maxBytes}`),
+          ))
+          try { request.abort() } catch { /* 已结束 */ }
+          return
+        }
+        chunks.push(chunk)
+      })
+      response.on('end', () => finish(() => resolve({
+        status,
+        headers: resHeaders,
+        body: Buffer.concat(chunks, receivedBytes),
+      })))
     })
     request.on('error', (e: Error) => finish(() => reject(e)))
     request.on('abort', () => finish(() => reject(new Error('aborted'))))

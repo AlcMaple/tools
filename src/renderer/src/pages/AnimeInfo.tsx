@@ -13,15 +13,12 @@ import { GirigiriDownloadConfigModal } from '../components/GirigiriDownloadModal
 import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { BgmLoginChip } from '../components/BgmLoginChip'
 import { downloadStore } from '../stores/downloadStore'
-import { readCacheEntry, dedupRefresh, getSavePath, isSearchCacheEnabled, setCachedSearch } from '../utils/searchCache'
+import { readCacheEntry, getSavePath, isSearchCacheEnabled, setCachedSearch } from '../utils/searchCache'
 import { animeTrackStore, useAnimeTrack, deriveSubjectType, aliasesFromInfobox } from '../stores/animeTrackStore'
 import { loadBgmHistory, addBgmHistory, removeBgmHistory, clearBgmHistory } from '../utils/bgmSearchHistory'
 import { useCover } from '../hooks/useCover'
 import { weekdayFromAirDate } from '../utils/airDate'
 import coverFallback from '../assets/cover-fallback.png'
-
-const DAY_MS = 24 * 60 * 60 * 1000
-const BGM_SEARCH_TTL_MS = 14 * DAY_MS
 
 // ── 工具函数 ──────────────────────────────────────────────────
 function extractSubjectId(link: string): number | null {
@@ -65,43 +62,10 @@ async function setSearchCache(source: Source, keyword: string, cards: SearchCard
   void setCachedSearch(keyword, source, cards)
 }
 
-// ── BGM 搜索结果缓存 ──────────────────────────────────────────
-const BGM_SEARCH_CACHE_KEY = 'search_cache_bgm'
-
 /** UI 上的"搜索类目" —— 跟 IPC 的 cat 数字对应：anime=2 / book=1 */
 export type BgmSearchKind = 'anime' | 'book'
 
 const KIND_TO_CAT: Record<BgmSearchKind, 1 | 2> = { anime: 2, book: 1 }
-
-/**
- * 缓存 key 按类目分桶:同一关键词在动画 / 书籍下的结果完全不同,不分桶会串味
- * (「巨虫列岛」既是动画又是漫画)。格式 `cat{N}:{keyword}`;老缓存没有前缀
- * 自然失效不复读,留在文件里也无害。
- */
-function bgmCacheKey(keyword: string, kind: BgmSearchKind): string {
-  return `cat${KIND_TO_CAT[kind]}:${keyword}`
-}
-
-interface BgmSearchHit { data: BgmSearchResult[]; isStale: boolean }
-
-async function getCachedBgmSearch(keyword: string, kind: BgmSearchKind): Promise<BgmSearchHit | null> {
-  try {
-    const c = (await window.systemApi.cacheGet(BGM_SEARCH_CACHE_KEY)) as Record<string, unknown> | null
-    if (!c) return null
-    const entry = readCacheEntry<BgmSearchResult[]>(c[bgmCacheKey(keyword, kind)])
-    if (!entry) return null
-    return { data: entry.data, isStale: Date.now() - entry.updatedAt > BGM_SEARCH_TTL_MS }
-  } catch { return null }
-}
-
-async function setCachedBgmSearch(keyword: string, kind: BgmSearchKind, items: BgmSearchResult[]): Promise<void> {
-  try {
-    await window.systemApi.cacheSet(BGM_SEARCH_CACHE_KEY, bgmCacheKey(keyword, kind), {
-      data: items,
-      updatedAt: Date.now(),
-    })
-  } catch { /* noop */ }
-}
 
 const BGM_DETAIL_CACHE_KEY = 'bgm_detail_cache'
 
@@ -612,21 +576,42 @@ function ArchiveFlow({ keyword: initialKeyword, onClose }: {
 // ── 状态机类型 ────────────────────────────────────────────────
 type PageState =
   | { status: 'idle' }
-  | { status: 'searching' }
-  | { status: 'results'; items: BgmSearchResult[] }
+  | { status: 'searching'; mode: 'offline' | 'online' }
+  | {
+      status: 'results'
+      items: BgmSearchResult[]
+      mode: 'offline' | 'online'
+      keyword: string
+      kind: BgmSearchKind
+    }
+  | {
+      status: 'empty'
+      mode: 'offline' | 'online'
+      keyword: string
+      kind: BgmSearchKind
+      message: string
+    }
   | { status: 'loading' }
   | { status: 'detail'; data: BgmDetail }
-  | { status: 'error'; message: string }
+  | {
+      status: 'error'
+      message: string
+      mode?: 'offline' | 'online'
+      keyword?: string
+      kind?: BgmSearchKind
+    }
 
 // ── 子组件 ────────────────────────────────────────────────────
 function LoadingSpinner({
   progress,
+  label = 'Loading...',
 }: {
   /**
    * 多页 BGM 搜索时主进程发来的进度,显示成「第 X / Y 页」——每页要等 ≥2s 的限速
    * 没有这个反馈用户会对着空转的 spinner 干瞪十几秒。
    */
   progress?: { current: number; total: number } | null
+  label?: string
 } = {}): JSX.Element {
   return (
     <div className="flex flex-col items-center justify-center py-32 gap-4">
@@ -637,7 +622,7 @@ function LoadingSpinner({
         progress_activity
       </span>
       <p className="font-label text-xs text-on-surface-variant/40 tracking-widest uppercase">
-        Accessing Archive...
+        {label}
       </p>
       {progress && progress.total > 1 && (
         <p className="font-label text-[11px] text-on-surface-variant/60 tracking-wider">
@@ -754,16 +739,32 @@ function KindDropdown({
 
 function SearchResults({
   items,
+  mode,
+  onOnlineSearch,
   onSelect,
 }: {
   items: BgmSearchResult[]
+  mode: 'offline' | 'online'
+  onOnlineSearch?: () => void
   onSelect: (item: BgmSearchResult) => void
 }): JSX.Element {
   return (
     <div className="max-w-3xl mx-auto">
-      <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40 mb-6">
-        {items.length} result{items.length !== 1 ? 's' : ''} found
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40">
+          {items.length} result{items.length !== 1 ? 's' : ''} found · {mode === 'offline' ? '本地结果' : '在线结果'}
+        </p>
+        {mode === 'offline' && onOnlineSearch && (
+          <button
+            type="button"
+            onClick={onOnlineSearch}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-outline-variant/25 bg-surface-container text-on-surface-variant hover:text-primary hover:border-primary/35 transition-colors font-label text-xs"
+          >
+            <span className="material-symbols-outlined text-base leading-none">language</span>
+            在线搜索
+          </button>
+        )}
+      </div>
       <div className="space-y-2">
         {items.map((item) => (
           <button
@@ -788,6 +789,38 @@ function SearchResults({
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+function EmptySearchState({
+  message,
+  mode,
+  onOnlineSearch,
+}: {
+  message: string
+  mode: 'offline' | 'online'
+  onOnlineSearch?: () => void
+}): JSX.Element {
+  return (
+    <div className="max-w-3xl mx-auto flex flex-col items-center justify-center py-32 gap-5 text-center">
+      <span className="material-symbols-outlined text-on-surface-variant/35 text-5xl">search_off</span>
+      <div>
+        <p className="font-headline text-base font-bold text-on-surface">{message}</p>
+        <p className="font-label text-[11px] text-on-surface-variant/45 mt-2">
+          {mode === 'offline' ? '可调整关键词，或继续在线搜索' : '可以换个关键词再试'}
+        </p>
+      </div>
+      {mode === 'offline' && onOnlineSearch && (
+        <button
+          type="button"
+          onClick={onOnlineSearch}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-primary/35 bg-primary/10 text-primary hover:bg-primary/15 transition-colors font-label text-sm font-bold"
+        >
+          <span className="material-symbols-outlined text-lg leading-none">language</span>
+          在线搜索
+        </button>
+      )}
     </div>
   )
 }
@@ -1135,19 +1168,26 @@ function DetailView({
 
 // ── 模块级缓存：页面切换后恢复状态 ───────────────────────────
 let _cachedState: PageState = { status: 'idle' }
-let _cachedResults: BgmSearchResult[] = []
+let _cachedResultState: Extract<PageState, { status: 'results' }> | null = null
 let _cachedBgmKeyword = ''
 let _cachedSearchKind: BgmSearchKind = 'anime'
 let _cachedScrollY = 0
 
 // ── 主页面 ────────────────────────────────────────────────────
 function AnimeInfo(): JSX.Element {
-  const [state, setState] = useState<PageState>(_cachedState)
-  const lastResults = { current: _cachedResults }
+  const [state, setState] = useState<PageState>(() =>
+    _cachedState.status === 'searching' || _cachedState.status === 'loading'
+      ? (_cachedResultState ?? { status: 'idle' })
+      : _cachedState,
+  )
+  const lastResultState = useRef(_cachedResultState)
   const lastBgmKeyword = useRef(_cachedBgmKeyword)
   const [archiveKeyword, setArchiveKeyword] = useState<string | null>(null)
   const pendingScrollRestore = useRef(false)
-  // 主进程 BGM 搜索的实时进度,每次搜索开始/结束时清空。
+  const requestIdRef = useRef(0)
+  // 显式在线搜索的互斥锁，同时控制分页进度接收。在 Promise settle 前，顶栏 Enter、
+  // 历史记录和其他在线入口都只能返回，不能再发第二个搜索请求。
+  const onlineSearchActiveRef = useRef(false)
   const [searchProgress, setSearchProgress] = useState<{ current: number; total: number } | null>(null)
   // 用户选的搜索类目。模块级缓存让切走再回来不丢选择。
   const [searchKind, setSearchKindState] = useState<BgmSearchKind>(_cachedSearchKind)
@@ -1165,12 +1205,16 @@ function AnimeInfo(): JSX.Element {
     _cachedState = state
   }, [state])
 
-  // 整页生命周期只订阅一次。主进程每完成一页(命中缓存或真的抓)就发来 (current, total)。
+  // 整页生命周期只订阅一次。离线查询不显示也不接收在线分页进度。
   useEffect(() => {
     const unsub = window.bgmApi.onSearchProgress((current, total) => {
-      setSearchProgress({ current, total })
+      if (onlineSearchActiveRef.current) setSearchProgress({ current, total })
     })
-    return unsub
+    return () => {
+      onlineSearchActiveRef.current = false
+      requestIdRef.current += 1
+      unsub()
+    }
   }, [])
 
   // 回到结果列表时恢复滚动位置
@@ -1185,104 +1229,109 @@ function AnimeInfo(): JSX.Element {
   }, [state.status])
 
   const sortByDate = (items: BgmSearchResult[]): BgmSearchResult[] => {
-    items.sort((a, b) => {
+    return [...items].sort((a, b) => {
       const da = /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : '0000-00-00'
       const db = /^\d{4}-\d{2}-\d{2}$/.test(b.date) ? b.date : '0000-00-00'
       return db.localeCompare(da)
     })
-    return items
   }
 
-  /**
-   * SWR 后台刷新:用户已经看到旧数据了,这里**单次**请求新数据更新缓存,下次搜索就是新的。
-   * `update=true` 让主进程也跳过磁盘缓存,否则只是把同一份旧 HTML 重新缓存一遍。
-   * **失败直接吞掉、不重试**(红线):缓存维持 stale,等用户下次搜同一关键词再触发一轮。
-   */
-  const refreshBgmSearchInBackground = async (keyword: string, kind: BgmSearchKind): Promise<void> => {
-    // dedupRefresh 的 key 也要按类目分桶 —— 同一关键词的动画 SWR 和书籍 SWR 是两个不同的
-    // 请求,不能复用同一个 inflight Promise。
-    await dedupRefresh(`bgm:${kind}:${keyword}`, async () => {
-      try {
-        const fresh = await window.bgmApi.search(keyword, true, KIND_TO_CAT[kind])
-        if (!Array.isArray(fresh) || fresh.length === 0) return
-        await setCachedBgmSearch(keyword, kind, fresh)
-      } catch {
-        /* swallow — 失败不重试，等下次用户主动搜索触发新一轮 SWR */
-      }
-    })
+  const showResults = (
+    items: BgmSearchResult[],
+    mode: 'offline' | 'online',
+    keyword: string,
+    kind: BgmSearchKind,
+  ): void => {
+    const next: Extract<PageState, { status: 'results' }> = {
+      status: 'results', items, mode, keyword, kind,
+    }
+    lastResultState.current = next
+    _cachedResultState = next
+    setState(next)
   }
 
-  /**
-   * 搜索语义(与 SearchDownload 一致):
-   *   - 开缓存 + 命中 + 新鲜 → 直接用缓存
-   *   - 开缓存 + 命中 + 过期 → 先用缓存显示,后台 SWR 刷新
-   *   - 开缓存 + 未命中     → 联网(主进程仍可能用它自己的磁盘缓存)
-   *   - 关缓存             → 一律联网并 update=true,渲染层和主进程的缓存都绕过
-   *
-   * 任何一次成功抓取后都会写回渲染层缓存(不论开关状态),这样用户把开关拨回来时缓存已经是
-   * 热的、TTL 也重新计时。
-   */
-  const handleSearch = async (keyword: string, kindOverride?: BgmSearchKind): Promise<void> => {
-    if (!keyword.trim()) return
+  const rememberSearch = (keyword: string, kind: BgmSearchKind): void => {
     lastBgmKeyword.current = keyword
     _cachedBgmKeyword = keyword
-    const cacheEnabled = isSearchCacheEnabled()
-    // 用局部变量锁定本次搜索的类目,避免请求飞行途中用户切类目、把书籍结果塞进动画状态里。
-    // 点历史条目时类目由 kindOverride 带入,不依赖 setSearchKind 的异步更新。
-    const kind = kindOverride ?? searchKind
-    // 记录历史 —— 同 keyword+kind 去重置顶，正好和按 cat 分桶的缓存对齐。
     setHistory(addBgmHistory(keyword, kind))
+  }
 
-    if (cacheEnabled) {
-      const hit = await getCachedBgmSearch(keyword, kind)
-      if (hit) {
-        const sorted = sortByDate(hit.data)
-        if (sorted.length === 0) {
-          setState({ status: 'error', message: `未找到与"${keyword}"相关的结果` })
-        } else if (sorted.length === 1) {
-          lastResults.current = []
-          _cachedResults = []
-          await loadDetail(sorted[0])
-        } else {
-          lastResults.current = sorted
-          _cachedResults = sorted
-          setState({ status: 'results', items: sorted })
-        }
-        if (hit.isStale) void refreshBgmSearchInBackground(keyword, kind)
-        return
-      }
-    }
-
+  // 默认搜索只读本地索引。无结果、索引未就绪或类目不支持时都停在当前页，绝不自动联网。
+  const handleOfflineSearch = async (rawKeyword: string, kindOverride?: BgmSearchKind): Promise<void> => {
+    if (onlineSearchActiveRef.current) return
+    const keyword = rawKeyword.trim()
+    if (!keyword) return
+    const kind = kindOverride ?? searchKind
+    rememberSearch(keyword, kind)
+    const myId = ++requestIdRef.current
+    onlineSearchActiveRef.current = false
     setSearchProgress(null)
-    setState({ status: 'searching' })
+    setState({ status: 'searching', mode: 'offline' })
     try {
-      // 缓存开关关掉 = 用户明确要新数据,所以连主进程的磁盘缓存也绕过;开着时允许主进程从磁盘
-      // 供数(更快,也避免触发限流)。
-      const results = await window.bgmApi.search(keyword, !cacheEnabled, KIND_TO_CAT[kind])
-      if (results.length > 0) {
-        // **即使缓存开关是关的也要写回**(用户约定:关闭时同样更新缓存数据和 TTL)。
-        void setCachedBgmSearch(keyword, kind, results)
-      }
-      const sorted = sortByDate(results)
-      if (sorted.length === 0) {
-        setState({ status: 'error', message: `未找到与"${keyword}"相关的结果` })
-      } else if (sorted.length === 1) {
-        lastResults.current = []
-        _cachedResults = []
-        await loadDetail(sorted[0])
+      const result = await window.bgmApi.searchOffline(keyword, KIND_TO_CAT[kind])
+      if (myId !== requestIdRef.current) return
+      if (!result.supported) {
+        setState({
+          status: 'empty', mode: 'offline', keyword, kind,
+          message: kind === 'book' ? '漫画小说请使用在线搜索' : '当前类目请使用在线搜索',
+        })
+      } else if (!result.ready) {
+        setState({
+          status: 'empty', mode: 'offline', keyword, kind,
+          message: '本地数据正在准备',
+        })
+      } else if (!Array.isArray(result.items) || result.items.length === 0) {
+        setState({
+          status: 'empty', mode: 'offline', keyword, kind,
+          message: `离线库未找到与“${keyword}”相关的结果`,
+        })
       } else {
-        lastResults.current = sorted
-        _cachedResults = sorted
-        setState({ status: 'results', items: sorted })
+        // 本地索引已经按相关度排序；不要再按日期打乱。
+        showResults(result.items, 'offline', keyword, kind)
       }
     } catch (err) {
-      setState({ status: 'error', message: String(err) })
+      if (myId !== requestIdRef.current) return
+      setState({ status: 'error', message: String(err), mode: 'offline', keyword, kind })
+    }
+  }
+
+  // 只有这个显式入口会访问 BGM；update=true 跳过旧在线缓存，交给现有限速与风控逻辑处理。
+  const handleOnlineSearch = async (rawKeyword: string, kind: BgmSearchKind): Promise<void> => {
+    if (onlineSearchActiveRef.current) return
+    const keyword = rawKeyword.trim()
+    if (!keyword) return
+    rememberSearch(keyword, kind)
+    const myId = ++requestIdRef.current
+    onlineSearchActiveRef.current = true
+    setSearchProgress(null)
+    setState({ status: 'searching', mode: 'online' })
+    try {
+      const results = await window.bgmApi.searchOnline(keyword, true, KIND_TO_CAT[kind])
+      if (myId !== requestIdRef.current) return
+      const sorted = sortByDate(Array.isArray(results) ? results : [])
+      if (sorted.length === 0) {
+        setState({
+          status: 'empty', mode: 'online', keyword, kind,
+          message: `BGM 在线搜索未找到与“${keyword}”相关的结果`,
+        })
+      } else {
+        showResults(sorted, 'online', keyword, kind)
+      }
+    } catch (err) {
+      if (myId !== requestIdRef.current) return
+      setState({ status: 'error', message: String(err), mode: 'online', keyword, kind })
     } finally {
-      setSearchProgress(null)
+      if (myId === requestIdRef.current) {
+        onlineSearchActiveRef.current = false
+        setSearchProgress(null)
+      }
     }
   }
 
   const loadDetail = async (item: BgmSearchResult): Promise<void> => {
+    const myId = ++requestIdRef.current
+    onlineSearchActiveRef.current = false
+    setSearchProgress(null)
     _cachedScrollY = document.getElementById('page-scroll')?.scrollTop ?? 0
     const sid = extractSubjectId(item.link)
     if (!sid) {
@@ -1294,20 +1343,24 @@ function AnimeInfo(): JSX.Element {
       const cacheEnabled = isSearchCacheEnabled()
       const cached = cacheEnabled ? await getCachedBgmDetail(sid) : null
       const detail = cached ?? (await window.bgmApi.detail(sid))
+      if (myId !== requestIdRef.current) return
       if (cacheEnabled && !cached) {
         void setCachedBgmDetail(sid, detail)
       }
       setState({ status: 'detail', data: detail })
     } catch (err) {
+      if (myId !== requestIdRef.current) return
       setState({ status: 'error', message: String(err) })
     }
   }
 
+  const onlineSearching = state.status === 'searching' && state.mode === 'online'
+
   return (
     <div className="min-h-screen bg-background">
       <TopBar
-        placeholder="Lookup titles from bgm.tv..."
-        onSearch={(kw) => void handleSearch(kw)}
+        placeholder="搜索动画或漫画小说…"
+        onSearch={onlineSearching ? undefined : (kw) => void handleOfflineSearch(kw)}
         // 类目下拉嵌在搜索框右侧内切位置（仿 bgm.tv 顶栏自家的"全部/动画/
         // 书籍"下拉）。detail 视图也保留显示，用户切类目=回到搜索流程。
         searchRightSlot={<KindDropdown value={searchKind} onChange={setSearchKind} />}
@@ -1317,11 +1370,11 @@ function AnimeInfo(): JSX.Element {
           keyword: e.keyword,
           meta: e.kind === 'anime' ? '动画' : '漫画小说',
         }))}
-        onPickHistory={(i) => {
+        onPickHistory={onlineSearching ? undefined : (i) => {
           const e = history[i]
           if (!e) return
           setSearchKind(e.kind)
-          void handleSearch(e.keyword, e.kind)
+          void handleOfflineSearch(e.keyword, e.kind)
         }}
         onRemoveHistory={(i) => {
           const e = history[i]
@@ -1338,11 +1391,11 @@ function AnimeInfo(): JSX.Element {
         {/* 返回按钮(仅详情页且有上次搜索结果时显示)与 BGM 登录状态同行左右分布,
             避免各占一行导致上下大片空白。 */}
         <div className="flex justify-between items-center mb-3 min-h-[24px]">
-          {state.status === 'detail' && lastResults.current.length > 0 ? (
+          {state.status === 'detail' && lastResultState.current ? (
             <button
               onClick={() => {
                 pendingScrollRestore.current = true
-                setState({ status: 'results', items: lastResults.current })
+                setState(lastResultState.current!)
               }}
               className="flex items-center gap-1.5 text-on-surface-variant/50 hover:text-primary transition-colors font-label text-xs uppercase tracking-wider group"
             >
@@ -1358,10 +1411,31 @@ function AnimeInfo(): JSX.Element {
         </div>
         {state.status === 'idle' && <IdleState />}
         {(state.status === 'searching' || state.status === 'loading') && (
-          <LoadingSpinner progress={state.status === 'searching' ? searchProgress : null} />
+          <LoadingSpinner
+            progress={state.status === 'searching' && state.mode === 'online' ? searchProgress : null}
+            label={
+              state.status === 'loading'
+                ? 'Loading detail...'
+                : state.mode === 'online'
+                  ? '正在在线搜索…'
+                  : '正在搜索本地数据…'
+            }
+          />
         )}
         {state.status === 'results' && (
-          <SearchResults items={state.items} onSelect={loadDetail} />
+          <SearchResults
+            items={state.items}
+            mode={state.mode}
+            onOnlineSearch={() => void handleOnlineSearch(state.keyword, state.kind)}
+            onSelect={loadDetail}
+          />
+        )}
+        {state.status === 'empty' && (
+          <EmptySearchState
+            message={state.message}
+            mode={state.mode}
+            onOnlineSearch={() => void handleOnlineSearch(state.keyword, state.kind)}
+          />
         )}
         {state.status === 'detail' && (
           <DetailView
@@ -1370,7 +1444,31 @@ function AnimeInfo(): JSX.Element {
           />
         )}
         {state.status === 'error' && (
-          <ErrorPanel error={state.message} onRetry={() => setState({ status: 'idle' })} />
+          <div className="max-w-3xl mx-auto">
+            <ErrorPanel
+              error={state.message}
+              onRetry={
+                state.keyword && state.kind
+                  ? () => void (state.mode === 'online'
+                    ? handleOnlineSearch(state.keyword!, state.kind!)
+                    : handleOfflineSearch(state.keyword!, state.kind!))
+                  : () => setState({ status: 'idle' })
+              }
+              retryLabel={state.mode === 'online' ? '重试在线搜索' : '重试'}
+            />
+            {state.mode === 'offline' && state.keyword && state.kind && (
+              <div className="flex justify-center mt-4">
+                <button
+                  type="button"
+                  onClick={() => void handleOnlineSearch(state.keyword!, state.kind!)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-primary/35 bg-primary/10 text-primary hover:bg-primary/15 transition-colors font-label text-sm font-bold"
+                >
+                  <span className="material-symbols-outlined text-lg leading-none">language</span>
+                  在线搜索
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </main>
 
