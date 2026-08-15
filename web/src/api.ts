@@ -218,9 +218,11 @@ export async function verifyXifanCaptcha(code: string): Promise<{ success: boole
   }))
 }
 
-/** 播放页地址 —— 服务端返回的裸 HTML 播放器，新标签打开。 */
-export function playPageUrl(xifanId: number, ep: number): string {
-  return `/api/xifan/play-page?animeId=${xifanId}&ep=${ep}`
+/** 播放页地址 —— bgmId 让裸 HTML 播放器能分别读取两站绑定并保持跨源切换。 */
+export function playPageUrl(xifanId: number, ep: number, bgmId?: number): string {
+  const query = new URLSearchParams({ animeId: String(xifanId), ep: String(ep) })
+  if (bgmId != null) query.set('bgmId', String(bgmId))
+  return `/api/xifan/play-page?${query.toString()}`
 }
 
 // ── Girigiri 在线观看：与稀饭分开保存绑定，不能把两个站点的编号互相推断 ────────
@@ -295,8 +297,10 @@ export async function verifyGirigiriCaptcha(code: string): Promise<{ success: bo
   }))
 }
 
-export function girigiriPlayPageUrl(girigiriId: string, ep: number): string {
-  return `/api/girigiri/play-page?animeId=${encodeURIComponent(girigiriId)}&ep=${ep}`
+export function girigiriPlayPageUrl(girigiriId: string, ep: number, bgmId?: number): string {
+  const query = new URLSearchParams({ animeId: girigiriId, ep: String(ep) })
+  if (bgmId != null) query.set('bgmId', String(bgmId))
+  return `/api/girigiri/play-page?${query.toString()}`
 }
 
 // ── 加番搜索（打本地 BGM 动漫索引，见 server/bgm/anime-index.ts）───────────────
