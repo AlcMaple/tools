@@ -6,7 +6,8 @@ export type Route = 'calendar' | 'settings' | 'tracks'
 
 function parse(): Route {
   const h = window.location.hash.replace(/^#\/?/, '')
-  return h === 'settings' || h === 'tracks' ? h : 'calendar'
+  if (h === 'settings' || h.startsWith('settings/')) return 'settings'
+  return h === 'tracks' ? 'tracks' : 'calendar'
 }
 
 export function navigate(r: Route): void {
