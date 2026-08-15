@@ -45,7 +45,7 @@ import {
   loadBindings,
   loadGirigiriBindings,
   loadTracks,
-  markTracksMutation,
+  runTracksMutation,
   saveBindingsCache,
   saveGirigiriBindingsCache,
   saveTracksCache,
@@ -97,6 +97,7 @@ export function TracksPage(): JSX.Element {
   const { user, ready } = useAuth()
   const [tracks, setTracks] = useState<Track[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [tracksError, setTracksError] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [query, setQuery] = useState('')
   const [tags, setTags] = useState<Set<string>>(new Set())
@@ -121,11 +122,12 @@ export function TracksPage(): JSX.Element {
     if (!ready) return
     if (!user) {
       setTracks([])
+      setTracksError(null)
       setBindings({})
       setGirigiriBindings({})
       return
     }
-    const stopTracks = loadTracks(user.username, setTracks)
+    const stopTracks = loadTracks(user.username, setTracks, setTracksError)
     const stopBindings = loadBindings(user.username, setBindings)
     const stopGirigiriBindings = loadGirigiriBindings(user.username, setGirigiriBindings)
     return () => {
@@ -249,45 +251,47 @@ export function TracksPage(): JSX.Element {
     })
   }
 
-  // 搜索结果加追番 —— 乐观先塞占位（默认「想看」），封面/标签由服务端 detail 补，putTrack 回来再覆盖。
+  // 搜索结果加追番 —— 乐观先塞占位（默认「想看」），最后统一用权威全量 GET 收口。
+  // 单条 PUT 响应可能比随后一次操作更晚回来，不能拿它覆盖较新的页面状态。
   const addFromSearch = (hit: AnimeHit): void => {
-    if (user) markTracksMutation(user.username)
+    if (!user) return
+    setError(null)
     const optimistic: Track = {
       bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
       title: hit.name, titleCn: hit.nameCn, cover: '', airWeekday: 0,
       airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [], updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
-    void putTrack(hit.bgmId, {
-      title: hit.name,
-      titleCn: hit.nameCn,
-      status: 'plan',
-      airDate: hit.date,
-    })
-      .then((fresh) => setTracks((prev) => (prev ? prev.map((t) => (t.bgmId === fresh.bgmId ? fresh : t)) : [fresh])))
-      .catch((e: Error) => {
-        setError(e.message)
-        setTracks((prev) => (prev ? prev.filter((t) => t.bgmId !== hit.bgmId) : prev)) // 失败回滚
+    void runTracksMutation(user.username, () =>
+      putTrack(hit.bgmId, {
+        title: hit.name,
+        titleCn: hit.nameCn,
+        status: 'plan',
+        airDate: hit.date,
       })
+    ).catch((e: Error) => setError(e.message))
   }
 
-  // 本地先改、后端后写 —— +1 要跟手，不能等一个来回。失败就把这条重新拉回来纠正。
+  // 本地先改、后端后写 —— +1 要跟手，不能等一个来回。成功与失败都由最后一次全量 GET
+  // 校正整份列表，快速连续点击时不会被较早返回的 PUT 盖回去。
   const patch = (bgmId: number, p: TrackPatch): void => {
-    if (user) markTracksMutation(user.username)
+    if (!user) return
+    setError(null)
     setTracks((prev) =>
       prev ? prev.map((t) => (t.bgmId === bgmId ? applyLocal(t, p) : t)) : prev
     )
-    void putTrack(bgmId, p)
-      .then((fresh) => setTracks((prev) => (prev ? prev.map((t) => (t.bgmId === bgmId ? fresh : t)) : prev)))
+    void runTracksMutation(user.username, () => putTrack(bgmId, p))
       .catch((e: Error) => setError(e.message))
   }
 
   const remove = (bgmId: number): void => {
-    if (user) markTracksMutation(user.username)
+    if (!user) return
+    setError(null)
     setTracks((prev) => (prev ? prev.filter((t) => t.bgmId !== bgmId) : prev))
     setEditing(null)
     setConfirming(null)
-    void deleteTrack(bgmId).catch((e: Error) => setError(e.message))
+    void runTracksMutation(user.username, () => deleteTrack(bgmId))
+      .catch((e: Error) => setError(e.message))
   }
 
   const counts = useMemo(() => {
@@ -393,9 +397,9 @@ export function TracksPage(): JSX.Element {
         </div>
       </div>
 
-      {error && (
+      {(error ?? tracksError) && (
         <div className="px-4 pt-3 md:px-6">
-          <p className="font-label text-xs text-error">⚠ {error}</p>
+          <p className="font-label text-xs text-error">⚠ {error ?? tracksError}</p>
         </div>
       )}
 

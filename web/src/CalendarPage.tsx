@@ -3,7 +3,7 @@ import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
 import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
 import { useAuth } from './auth'
 import { cacheGet, cacheSet } from './dataCache'
-import { loadTracks, markTracksMutation } from './tracksSync'
+import { loadTracks, runTracksMutation } from './tracksSync'
 import { useIsCompact } from './useMediaQuery'
 import { Icon, Spinner } from './Icon'
 
@@ -27,6 +27,7 @@ function todayBgmId(): number {
 export function CalendarPage(): JSX.Element {
   const [result, setResult] = useState<CalendarResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [tracksError, setTracksError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const isCompact = useIsCompact()
@@ -40,24 +41,32 @@ export function CalendarPage(): JSX.Element {
   useEffect(() => {
     if (!user) {
       setTracked(new Set())
+      setTracksError(null)
       return
     }
-    return loadTracks(user.username, (ts) => setTracked(new Set(ts.map((t) => t.bgmId))))
+    return loadTracks(
+      user.username,
+      (ts) => setTracked(new Set(ts.map((t) => t.bgmId))),
+      setTracksError,
+    )
   }, [user])
 
-  // 先改本地再发请求 —— 点了要立刻有反馈。失败就回滚这一个 id。
+  // 先改本地再发请求 —— 点了要立刻有反馈。单条响应不直接落页面；最后一个并行写结束后
+  // tracksSync 会拉权威全量列表，成功和失败都据此校正角标。
   const toggleTrack = (item: CalendarItem, weekday: number): void => {
     if (!user) return
-    markTracksMutation(user.username)
+    setError(null)
     const on = tracked.has(item.id)
     setTracked((prev) => {
       const next = new Set(prev)
       on ? next.delete(item.id) : next.add(item.id)
       return next
     })
-    const req = on
-      ? deleteTrack(item.id)
-      : putTrack(item.id, {
+    void runTracksMutation(user.username, async () => {
+      if (on) {
+        await deleteTrack(item.id)
+      } else {
+        await putTrack(item.id, {
           status: 'watching',
           title: item.name,
           titleCn: item.name_cn,
@@ -65,16 +74,8 @@ export function CalendarPage(): JSX.Element {
           airWeekday: weekday,
           score: item.score,
         })
-    // 这里手上只有 CalendarItem，拼不出完整 Track（缺 bgmTags/aliases 等）来更新共享缓存——
-    // 不管它，下次任一页面挂载时的后台校验会用服务端最新数据把这条自然合并回去。
-    void req.catch((e: Error) => {
-      setError(e.message)
-      setTracked((prev) => {
-        const next = new Set(prev)
-        on ? next.add(item.id) : next.delete(item.id)
-        return next
-      })
-    })
+      }
+    }).catch((e: Error) => setError(e.message))
   }
 
   const load = (force = false): void => {
@@ -120,9 +121,9 @@ export function CalendarPage(): JSX.Element {
       {result && (
         <div className="border-y border-outline-variant/10 bg-surface-container-lowest px-4 pb-2 pt-1.5 md:px-6">
           <div className="mb-1.5 flex min-h-5 flex-wrap items-center justify-end gap-2">
-            {error && (
+            {(error ?? tracksError) && (
               <span className="whitespace-nowrap font-label text-[10px] tracking-wider text-error">
-                ⚠ {error}
+                ⚠ {error ?? tracksError}
               </span>
             )}
             <span className="whitespace-nowrap font-label text-[10px] tracking-wider text-on-surface-variant/50">
