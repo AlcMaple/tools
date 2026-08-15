@@ -319,9 +319,11 @@ export function TracksPage(): JSX.Element {
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [tracks])
 
-  // 「想看」也是用户关注的更新,只排除已经看完的条目。否则从桌面端的「观望」投影成 plan 之后
-  // 即使星期正确也永远进不了当天分组。
-  const todayList = filtered.filter((t) => t.airWeekday === today && t.status !== 'done')
+  // 「想看」中的连载番也是用户关注的更新；但已填写总集数就不再属于「连载中」，
+  // 即使还保留原放送星期，也不能每周重复进入当天分组。
+  const todayList = filtered.filter(
+    (t) => t.airWeekday === today && t.status !== 'done' && t.totalEpisodes == null,
+  )
   const rest = filtered.filter((t) => !todayList.includes(t))
   const editingTrack = tracks?.find((t) => t.bgmId === editing) ?? null
   const confirmingTrack = tracks?.find((t) => t.bgmId === confirming) ?? null
