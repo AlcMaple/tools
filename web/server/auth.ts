@@ -9,17 +9,10 @@ import { promisify } from 'node:util'
 import { domainToASCII } from 'node:url'
 import { db } from './db'
 import { emailDeliveryConfigured, sendEmailCode } from './email-delivery'
+import { AUTH_SECRET, IS_PRODUCTION } from './secrets'
 import { USERNAME_MAX, USERNAME_MIN, usernameError } from './username'
 
 const scryptAsync = promisify(scrypt)
-
-// 生产环境没有强随机密钥就拒绝启动 —— 继续用公开占位串等于让攻击者直接伪造 JWT。
-const IS_PRODUCTION = process.env.NODE_ENV === 'production'
-const configuredSecret = process.env.AUTH_SECRET?.trim() ?? ''
-if (IS_PRODUCTION && configuredSecret.length < 32) {
-  throw new Error('[auth] 生产必须设置至少 32 个字符的随机 AUTH_SECRET')
-}
-const SECRET = configuredSecret || 'dev-insecure-secret-change-me'
 
 // 生产用 `__Host-` 前缀:浏览器强制 Secure、Path=/ 且不允许 Domain,降低子域 / 路径投毒风险。
 // 开发环境仍用普通名字,否则 http://localhost 不会回传这种 cookie。
@@ -87,7 +80,7 @@ interface Session {
 // 签发会话 cookie。payload 带 exp（秒），hono/jwt verify 会据此判过期。
 async function issueSession(c: Context, s: Session): Promise<void> {
   const exp = Math.floor(Date.now() / 1000) + MAX_AGE
-  const token = await sign({ ...s, exp }, SECRET, 'HS256')
+  const token = await sign({ ...s, exp }, AUTH_SECRET, 'HS256')
   setCookie(c, COOKIE, token, {
     httpOnly: true,
     secure: SECURE,
@@ -166,7 +159,7 @@ export async function getSession(c: Context): Promise<Session | null> {
   const token = getCookie(c, COOKIE)
   if (!token) return null
   try {
-    const payload = (await verify(token, SECRET, 'HS256')) as unknown as Session
+    const payload = (await verify(token, AUTH_SECRET, 'HS256')) as unknown as Session
     // 每个已登录请求多一次索引读(微秒级),换来「改密码能真正踢掉所有老会话」。
     const row = findById.get(payload.uid) as UserRow | undefined
     if (!row || row.token_version !== payload.tv) return null
@@ -182,7 +175,7 @@ export async function getSession(c: Context): Promise<Session | null> {
  */
 const buckets = new Map<string, { n: number; resetAt: number }>()
 
-function rateLimited(key: string, max: number, windowMs: number): boolean {
+export function rateLimited(key: string, max: number, windowMs: number): boolean {
   const now = Date.now()
   // 攻击者拿随机用户名刷会不停建桶、内存无上限,所以到阈值先清过期的。
   if (buckets.size > 5000) {
@@ -197,6 +190,10 @@ function rateLimited(key: string, max: number, windowMs: number): boolean {
   return hit.n > max
 }
 
+export function clearRateLimit(key: string): void {
+  buckets.delete(key)
+}
+
 const WINDOW = 15 * 60 * 1000
 const LOGIN_MAX_PER_USER = 10 // 挡「盯着一个号猜密码」
 const LOGIN_MAX_PER_IP = 20 // 挡「一个来源换着号猜」
@@ -209,7 +206,7 @@ const REGISTER_WINDOW = 60 * 60 * 1000
  * `X-Forwarded-For` 是**追加**的（伪造值在前、真 IP 在末尾），所以退化时取最后一段。
  * 前提是 node 只绑 127.0.0.1（见 node.ts）：nginx 之外没人能进来，这两个头才可信。
  */
-function clientIp(c: Context): string {
+export function clientIp(c: Context): string {
   const real = c.req.header('x-real-ip')
   if (real) return real
   const fwd = c.req.header('x-forwarded-for')
@@ -241,7 +238,7 @@ function normalizeEmail(value: string): string {
 }
 
 function emailCodeHash(challengeId: string, code: string): Buffer {
-  return createHmac('sha256', SECRET).update(`${challengeId}:${code}`).digest()
+  return createHmac('sha256', AUTH_SECRET).update(`${challengeId}:${code}`).digest()
 }
 
 function verifyEmailCodeHash(challengeId: string, code: string, storedHex: string): boolean {
