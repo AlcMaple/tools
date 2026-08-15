@@ -102,6 +102,16 @@ const bumpRev = (uid: number): void => {
   bumpRevStmt.run(uid)
 }
 
+const readTracksSnapshot = db.transaction((uid: number) => ({
+  rev: currentRev(uid),
+  data: (listStmt.all(uid) as TrackRow[]).map(toJson),
+}))
+
+const readSyncSnapshot = db.transaction((uid: number) => ({
+  rev: currentRev(uid),
+  data: (listStmt.all(uid) as TrackRow[]).map(toSyncJson),
+}))
+
 function weekdayFromDate(date: unknown): number {
   if (typeof date !== 'string') return 0
   const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/)
@@ -148,8 +158,22 @@ async function fillCalendarMetadata(uid: number): Promise<Map<number, CalendarMe
       })
     }
   })
-  apply()
+  apply.immediate()
   return metadata
+}
+
+const calendarFillInFlight = new Set<number>()
+
+function fillCalendarMetadataLater(uid: number): void {
+  if (calendarFillInFlight.has(uid)) return
+  calendarFillInFlight.add(uid)
+  void fillCalendarMetadata(uid)
+    .catch(() => {
+      /* 系统元数据后台回填失败不影响已经返回的用户状态，也不制造未处理 rejection。 */
+    })
+    .finally(() => {
+      calendarFillInFlight.delete(uid)
+    })
 }
 
 async function requireUid(c: Context): Promise<number | null> {
@@ -175,17 +199,38 @@ function fillDetailLater(uid: number, bgmId: number): void {
       if (!recheck || parseList(recheck.bgm_tags).length > 0) return
       try {
         const d = await fetchSubjectDetail(bgmId)
-        const sets: string[] = []
-        const args: unknown[] = []
-        if (d.tags.length) { sets.push('bgm_tags = ?'); args.push(JSON.stringify(d.tags)) }
-        if (d.aliases.length) { sets.push('aliases = ?'); args.push(JSON.stringify(d.aliases)) }
-        if (d.date && !recheck.air_date) { sets.push('air_date = ?'); args.push(d.date) }
-        if (d.cover && !recheck.cover) { sets.push('cover = ?'); args.push(d.cover) }
-        if (!sets.length) return
-        // **不动 updated_at、也不 bump rev**:这是系统回填不是用户操作。动了 rev 的话,一次纯粹的
-        // 标签补全就会把桌面端顶出 409、让它误以为「网页那边有人改过」。
-        db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`)
-          .run(...args, uid, bgmId)
+        const apply = db.transaction(() => {
+          // 网络返回后必须重新读。等待期间 app 同步可能已经写入了更完整的数据，后台补全只填
+          // 此刻仍为空的字段，绝不拿请求前的旧快照覆盖新值。
+          const current = oneStmt.get(uid, bgmId) as TrackRow | undefined
+          if (!current) return
+
+          const sets: string[] = []
+          const args: unknown[] = []
+          if (d.tags.length && parseList(current.bgm_tags).length === 0) {
+            sets.push('bgm_tags = ?')
+            args.push(JSON.stringify(d.tags))
+          }
+          if (d.aliases.length && parseList(current.aliases).length === 0) {
+            sets.push('aliases = ?')
+            args.push(JSON.stringify(d.aliases))
+          }
+          if (d.date && !current.air_date) {
+            sets.push('air_date = ?')
+            args.push(d.date)
+          }
+          if (d.cover && !current.cover) {
+            sets.push('cover = ?')
+            args.push(d.cover)
+          }
+          if (!sets.length) return
+
+          // **不动 updated_at、也不 bump rev**:这是系统回填不是用户操作。动了 rev 的话,一次纯粹的
+          // 标签补全就会把桌面端顶出 409、让它误以为「网页那边有人改过」。
+          db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`)
+            .run(...args, uid, bgmId)
+        })
+        apply.immediate()
       } catch {
         /* 静默 —— 下次再加 / 再打开时还有机会补上 */
       }
@@ -196,8 +241,15 @@ function fillDetailLater(uid: number, bgmId: number): void {
 tracks.get('/', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
-  await fillCalendarMetadata(uid)
-  return c.json({ data: (listStmt.all(uid) as TrackRow[]).map(toJson) })
+  const snapshot = readTracksSnapshot(uid)
+  fillCalendarMetadataLater(uid)
+  return c.json(snapshot)
+})
+
+tracks.get('/revision', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  return c.json({ rev: currentRev(uid) })
 })
 
 tracks.put('/:bgmId', async (c) => {
@@ -209,99 +261,108 @@ tracks.put('/:bgmId', async (c) => {
 
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
   const now = Date.now()
-  const prev = oneStmt.get(uid, bgmId) as TrackRow | undefined
 
-  if (!prev) {
-    // 新增 —— 周历点「追番」走这条。
-    const status = STATUSES.includes(body.status as Status) ? (body.status as Status) : 'watching'
+  const hasStatus = 'status' in body
+  const nextStatus = hasStatus && STATUSES.includes(body.status as Status)
+    ? (body.status as Status)
+    : undefined
+  if (hasStatus && !nextStatus) return c.json({ error: 'status 不合法' }, 400)
 
-    // 同步取一次 BGM 详情，把标签 / 别名 / 放送日期直接带进新记录 —— 用户点完「追番」
-    // 切到本页就能立刻看到标签（香港→BGM 实测 ~130ms），不必等异步回填再手动刷新。
-    // BGM 抖动 / 限流**不能让追番本身失败**：取不到就先空着插入，挂 fillDetailLater
-    // 后台兜底（沿用 app 容错，符合 CLAUDE.md 网络红线：失败不重试、附属数据不拖垮主
-    // 操作）。短超时 4s，避免慢响应把「追番」按钮卡住。
-    let bgmTags = '[]'
-    let aliases = '[]'
-    let airDate = String(body.airDate ?? '')
-    let cover = String(body.cover ?? '') // 周历加番会带 cover；搜索加番不带 → 下面用 detail 的封面补
-    try {
-      const d = await fetchSubjectDetail(bgmId, 4000)
-      if (d.tags.length) bgmTags = JSON.stringify(d.tags)
-      if (d.aliases.length) aliases = JSON.stringify(d.aliases)
-      if (d.date && !airDate) airDate = d.date
-      if (d.cover && !cover) cover = d.cover
-    } catch {
-      /* 静默 —— 下面按需挂 fillDetailLater 兜底 */
-    }
-
-    insertStmt.run({
-      user_id: uid,
-      bgm_id: bgmId,
-      status,
-      episode: 0,
-      total_episodes: null, // 连载中 —— 周历不返 eps，由用户手填
-      title: String(body.title ?? ''),
-      title_cn: String(body.titleCn ?? ''),
-      cover,
-      air_weekday: Number(body.airWeekday) || weekdayFromDate(airDate),
-      air_date: airDate,
-      score: Number(body.score) || 0,
-      bgm_tags: bgmTags,
-      user_tags: '[]',
-      aliases,
-      extra: '{}', // 网页端建的记录没有 app 专属字段；app 上传时才会填
-      updated_at: now,
-    })
-    bumpRev(uid)
-    // 同步没取到标签才挂后台兜底（取到了 fillDetailLater 会二次检查自动跳过）
-    if (bgmTags === '[]') fillDetailLater(uid, bgmId)
-    return c.json(toJson(oneStmt.get(uid, bgmId) as TrackRow))
+  const hasEpisode = 'episode' in body
+  const nextEpisode = Number(body.episode)
+  if (hasEpisode && (!Number.isInteger(nextEpisode) || nextEpisode < 0)) {
+    return c.json({ error: 'episode 不合法' }, 400)
   }
 
-  // ── 更新 —— 只写 body 里**明确给了**的字段；没给的一个都不碰 ──
-  const sets: string[] = []
-  const args: unknown[] = []
+  const hasTotal = 'totalEpisodes' in body
+  const nextTotal = hasTotal ? asTotal(body.totalEpisodes) : null
+  if (hasTotal && nextTotal === undefined) return c.json({ error: 'totalEpisodes 不合法' }, 400)
 
-  if ('status' in body) {
-    if (!STATUSES.includes(body.status as Status)) return c.json({ error: 'status 不合法' }, 400)
-    sets.push('status = ?')
-    args.push(body.status)
-  }
-  if ('episode' in body) {
-    const n = Number(body.episode)
-    if (!Number.isInteger(n) || n < 0) return c.json({ error: 'episode 不合法' }, 400)
-    // 夹到总集数上限 —— 跟 app 的 normalize 一致（用户可能把总集数改小到已看集数以下）
-    const total = 'totalEpisodes' in body ? asTotal(body.totalEpisodes) : prev.total_episodes
-    sets.push('episode = ?')
-    args.push(total != null && total > 0 ? Math.min(n, total) : n)
-  }
-  if ('totalEpisodes' in body) {
-    const total = asTotal(body.totalEpisodes)
-    if (total === undefined) return c.json({ error: 'totalEpisodes 不合法' }, 400)
-    sets.push('total_episodes = ?')
-    args.push(total)
-    // 总集数改小了 → 已看集数跟着夹住（body 里没同时给 episode 时也要处理）
-    if (total != null && !('episode' in body) && prev.episode > total) {
-      sets.push('episode = ?')
-      args.push(total)
-    }
-  }
+  let nextUserTags: string[] | undefined
   if ('userTags' in body) {
     const list = Array.isArray(body.userTags) ? body.userTags : null
     if (!list) return c.json({ error: 'userTags 不合法' }, 400)
-    const clean = [...new Set(list.filter((t): t is string => typeof t === 'string').map((t) => t.trim()).filter(Boolean))]
-    if (clean.length > USER_TAG_MAX_COUNT) return c.json({ error: `自定义标签最多 ${USER_TAG_MAX_COUNT} 个` }, 400)
-    if (clean.some((t) => [...t].length > USER_TAG_MAX_LEN)) return c.json({ error: `单个标签最长 ${USER_TAG_MAX_LEN} 字` }, 400)
-    sets.push('user_tags = ?')
-    args.push(JSON.stringify(clean))
+    nextUserTags = [...new Set(
+      list
+        .filter((t): t is string => typeof t === 'string')
+        .map((t) => t.trim())
+        .filter(Boolean),
+    )]
+    if (nextUserTags.length > USER_TAG_MAX_COUNT) {
+      return c.json({ error: `自定义标签最多 ${USER_TAG_MAX_COUNT} 个` }, 400)
+    }
+    if (nextUserTags.some((t) => [...t].length > USER_TAG_MAX_LEN)) {
+      return c.json({ error: `单个标签最长 ${USER_TAG_MAX_LEN} 字` }, 400)
+    }
   }
 
-  if (!sets.length) return c.json(toJson(prev))
-  sets.push('updated_at = ?')
-  args.push(now)
-  db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`).run(...args, uid, bgmId)
-  bumpRev(uid)
-  return c.json(toJson(oneStmt.get(uid, bgmId) as TrackRow))
+  // BGM 详情不再阻塞用户写入。事务拿到写锁后重新判断记录是否存在，因此即使两个设备
+  // 同时新增同一条，也不会使用 await 前的旧判断撞 UNIQUE；数据写入和 rev 永远一起提交。
+  const write = db.transaction(() => {
+    const prev = oneStmt.get(uid, bgmId) as TrackRow | undefined
+    if (!prev) {
+      const airDate = String(body.airDate ?? '')
+      insertStmt.run({
+        user_id: uid,
+        bgm_id: bgmId,
+        status: nextStatus ?? 'watching',
+        episode: 0,
+        total_episodes: null, // 连载中 —— 周历不返 eps，由用户手填
+        title: String(body.title ?? ''),
+        title_cn: String(body.titleCn ?? ''),
+        cover: String(body.cover ?? ''),
+        air_weekday: Number(body.airWeekday) || weekdayFromDate(airDate),
+        air_date: airDate,
+        score: Number(body.score) || 0,
+        bgm_tags: '[]',
+        user_tags: '[]',
+        aliases: '[]',
+        extra: '{}', // 网页端建的记录没有 app 专属字段；app 上传时才会填
+        updated_at: now,
+      })
+      bumpRev(uid)
+      return { row: oneStmt.get(uid, bgmId) as TrackRow, fillDetail: true }
+    }
+
+    // 更新只写 body 里明确给了的字段；没给的一个都不碰。
+    const sets: string[] = []
+    const args: unknown[] = []
+    if (hasStatus) {
+      sets.push('status = ?')
+      args.push(nextStatus)
+    }
+    if (hasEpisode) {
+      // 夹到总集数上限 —— 跟 app 的 normalize 一致（用户可能把总集数改小到已看集数以下）
+      const total = hasTotal ? nextTotal : prev.total_episodes
+      sets.push('episode = ?')
+      args.push(total != null && total > 0 ? Math.min(nextEpisode, total) : nextEpisode)
+    }
+    if (hasTotal) {
+      sets.push('total_episodes = ?')
+      args.push(nextTotal)
+      // 总集数改小了 → 已看集数跟着夹住（body 里没同时给 episode 时也要处理）
+      if (nextTotal != null && !hasEpisode && prev.episode > nextTotal) {
+        sets.push('episode = ?')
+        args.push(nextTotal)
+      }
+    }
+    if (nextUserTags !== undefined) {
+      sets.push('user_tags = ?')
+      args.push(JSON.stringify(nextUserTags))
+    }
+
+    if (!sets.length) return { row: prev, fillDetail: false }
+    sets.push('updated_at = ?')
+    args.push(now)
+    db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`)
+      .run(...args, uid, bgmId)
+    bumpRev(uid)
+    return { row: oneStmt.get(uid, bgmId) as TrackRow, fillDetail: false }
+  })
+  const result = write.immediate()
+
+  if (result.fillDetail) fillDetailLater(uid, bgmId)
+  return c.json(toJson(result.row))
 })
 
 /** null / '' → null（连载中）；正整数 → 它自己；其余 → undefined（= 不合法） */
@@ -316,8 +377,11 @@ tracks.delete('/:bgmId', async (c) => {
   if (!uid) return c.json({ error: '未登录' }, 401)
   const bgmId = Number(c.req.param('bgmId'))
   if (!Number.isInteger(bgmId)) return c.json({ error: 'bgmId 不合法' }, 400)
-  delStmt.run(uid, bgmId)
-  bumpRev(uid)
+  const remove = db.transaction(() => {
+    const result = delStmt.run(uid, bgmId)
+    if (result.changes > 0) bumpRev(uid)
+  })
+  remove.immediate()
   return c.json({ ok: true })
 })
 
@@ -337,8 +401,9 @@ const MAX_EXTRA_BYTES = 16 * 1024 // 单条 extra 上限：这是给 app 的自�
 tracks.get('/sync', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
-  await fillCalendarMetadata(uid)
-  return c.json({ rev: currentRev(uid), data: (listStmt.all(uid) as TrackRow[]).map(toSyncJson) })
+  const snapshot = readSyncSnapshot(uid)
+  fillCalendarMetadataLater(uid)
+  return c.json(snapshot)
 })
 
 /**
@@ -356,18 +421,6 @@ tracks.post('/sync', async (c) => {
   if (!Array.isArray(list)) return c.json({ error: 'data 必须是数组' }, 400)
   if (list.length > MAX_TRACKS) return c.json({ error: `一次最多同步 ${MAX_TRACKS} 条` }, 400)
 
-  const rev = currentRev(uid)
-  if (body.force !== true && Number(body.baseRev) !== rev) {
-    return c.json(
-      { error: '服务器上有你还没拉取过的改动', rev, conflict: true, serverCount: (listStmt.all(uid) as TrackRow[]).length },
-      409
-    )
-  }
-
-  // 上传前先拿本季周历映射：旧 app 只会传 airWeekday=0，服务器不能让这个 0
-  // 覆盖掉已知星期；新插入的本季条目也可以直接从周历补全。
-  const calendar = await fillCalendarMetadata(uid)
-
   // 先全部校验、再落库：一条不合法就整批拒绝，不留半套数据
   const incoming = new Map<number, Record<string, unknown>>()
   for (const raw of list) {
@@ -384,13 +437,23 @@ tracks.post('/sync', async (c) => {
 
   const now = Date.now()
   const apply = db.transaction(() => {
+    // baseRev 比对必须在拿到写锁后发生。否则比对与真正覆盖之间穿插一个网页 PUT，
+    // 旧整包仍会通过检查并静默抹掉刚写入的数据。
+    const rev = currentRev(uid)
+    if (body.force !== true && Number(body.baseRev) !== rev) {
+      return {
+        conflict: true as const,
+        rev,
+        serverCount: (listStmt.all(uid) as TrackRow[]).length,
+      }
+    }
+
     const existing = new Map((listStmt.all(uid) as TrackRow[]).map((r) => [r.bgm_id, r]))
 
     for (const [id, t] of incoming) {
       // 客户端时钟可能不准；未来的时间会让这条永远排在列表最前，夹到 now 为止
       const ts = Number(t.updatedAt)
       const updatedAt = Number.isFinite(ts) && ts > 0 ? Math.min(ts, now) : now
-      const knownCalendar = calendar.get(id)
       const incomingWeekday = Number(t.airWeekday)
       const validIncomingWeekday = Number.isInteger(incomingWeekday)
         && incomingWeekday >= 1 && incomingWeekday <= 7
@@ -398,7 +461,6 @@ tracks.post('/sync', async (c) => {
         : 0
       const incomingAirDate = String(t.airDate ?? '')
       const resolvedWeekday = validIncomingWeekday
-        || knownCalendar?.weekday
         || weekdayFromDate(incomingAirDate)
 
       if (!existing.has(id)) {
@@ -410,9 +472,9 @@ tracks.post('/sync', async (c) => {
           total_episodes: asTotal(t.totalEpisodes) ?? null,
           title: String(t.title ?? ''),
           title_cn: String(t.titleCn ?? ''),
-          cover: String(t.cover ?? '') || knownCalendar?.cover || '',
+          cover: String(t.cover ?? ''),
           air_weekday: resolvedWeekday,
-          air_date: incomingAirDate || knownCalendar?.airDate || '',
+          air_date: incomingAirDate,
           score: Number(t.score) || 0,
           bgm_tags: JSON.stringify(Array.isArray(t.bgmTags) ? t.bgmTags : []),
           user_tags: JSON.stringify(Array.isArray(t.userTags) ? t.userTags : []),
@@ -453,10 +515,25 @@ tracks.post('/sync', async (c) => {
     for (const id of existing.keys()) if (!incoming.has(id)) delStmt.run(uid, id)
 
     bumpRev(uid)
+    return { conflict: false as const, rev: currentRev(uid), count: incoming.size }
   })
-  apply()
+  const result = apply.immediate()
 
-  return c.json({ rev: currentRev(uid), count: incoming.size })
+  if (result.conflict) {
+    return c.json(
+      {
+        error: '服务器上有你还没拉取过的改动',
+        rev: result.rev,
+        conflict: true,
+        serverCount: result.serverCount,
+      },
+      409,
+    )
+  }
+
+  // 用户数据和 rev 已经原子提交；周历只在响应关键路径之外补空字段，并按用户单飞去重。
+  fillCalendarMetadataLater(uid)
+  return c.json({ rev: result.rev, count: result.count })
 })
 
 export default tracks
