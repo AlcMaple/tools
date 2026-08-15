@@ -13,6 +13,25 @@ export type AuthMode = 'login' | 'register' | 'email' | 'forgot'
 
 const TITLE: Record<AuthMode, string> = { login: '登录', register: '注册', email: '邮箱验证码登录', forgot: '找回密码' }
 
+const QUICK_EMAIL_DOMAINS = ['gmail.com', 'outlook.com', 'qq.com', '163.com'] as const
+
+type InboxLink = { text: string; href: string }
+
+function inboxLinkFor(address: string): InboxLink | null {
+  const domain = address.trim().split('@').pop()?.toLowerCase()
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    return { text: '打开 Gmail 查收验证码', href: 'https://mail.google.com/' }
+  }
+  if (domain === 'outlook.com' || domain === 'hotmail.com' || domain === 'live.com') {
+    return { text: '打开 Outlook 查收验证码', href: 'https://outlook.live.com/mail/0/' }
+  }
+  if (domain === 'qq.com') return { text: '打开 QQ 邮箱查收验证码', href: 'https://mail.qq.com/' }
+  if (domain === '163.com') return { text: '打开 163 邮箱查收验证码', href: 'https://mail.163.com/' }
+  if (domain === '126.com') return { text: '打开 126 邮箱查收验证码', href: 'https://mail.126.com/' }
+  if (domain === 'yeah.net') return { text: '打开 Yeah 邮箱查收验证码', href: 'https://mail.yeah.net/' }
+  return null
+}
+
 export function AuthModal({
   open,
   mode,
@@ -39,6 +58,7 @@ export function AuthModal({
   const [okMsg, setOkMsg] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const userRef = useRef<HTMLInputElement>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
 
   const isReg = mode === 'register'
   const isForgot = mode === 'forgot'
@@ -91,6 +111,23 @@ export function AuthModal({
   }, [isForgot, questions.length])
 
   if (!open) return null
+
+  const useEmailDomain = (domain: string): void => {
+    const raw = email.trim()
+    const at = raw.indexOf('@')
+    const local = (at < 0 ? raw : raw.slice(0, at)).trim()
+    const next = `${local}@${domain}`
+    setEmail(next)
+    window.requestAnimationFrame(() => {
+      const input = emailRef.current
+      if (!input) return
+      input.focus()
+      const cursor = local ? next.length : 0
+      input.setSelectionRange(cursor, cursor)
+    })
+  }
+
+  const inboxLink = emailStep === 'code' ? inboxLinkFor(email) : null
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()
@@ -203,7 +240,9 @@ export function AuthModal({
             <>
               <Field label="邮箱地址">
                 <input
-                  type="email"
+                  ref={emailRef}
+                  type="text"
+                  inputMode="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
@@ -212,6 +251,20 @@ export function AuthModal({
                   disabled={emailStep !== 'address'}
                   className={inputCls}
                 />
+                {emailStep === 'address' && (
+                  <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="快捷补全邮箱后缀">
+                    {QUICK_EMAIL_DOMAINS.map((domain) => (
+                      <button
+                        key={domain}
+                        type="button"
+                        onClick={() => useEmailDomain(domain)}
+                        className="rounded border border-outline-variant/25 bg-surface-container px-2 py-1 font-label text-[10px] text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
+                      >
+                        @{domain}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {emailStep !== 'address' && (
                   <button
                     type="button"
@@ -266,6 +319,17 @@ export function AuthModal({
                       {emailCooldown > 0 ? `${emailCooldown}s 后重发` : '重新发送'}
                     </button>
                   </div>
+                  {inboxLink && (
+                    <a
+                      href={inboxLink.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      referrerPolicy="no-referrer"
+                      className="mt-2 inline-flex font-label text-[10px] font-semibold text-primary hover:underline"
+                    >
+                      {inboxLink.text}
+                    </a>
+                  )}
                 </Field>
               )}
 
@@ -351,10 +415,18 @@ export function AuthModal({
             </div>
           )}
 
-          {mode !== 'login' && error && (
+          {isEmail ? (
+            <div className="custom-scrollbar mb-3 h-9 overflow-y-auto" aria-live="polite">
+              {(error || okMsg) && (
+                <p className={`font-label text-[11px] ${error ? 'text-error' : 'text-primary'}`}>
+                  {error || okMsg}
+                </p>
+              )}
+            </div>
+          ) : mode !== 'login' && error ? (
             <p className="mb-3 font-label text-[11px] text-error">{error}</p>
-          )}
-          {okMsg && <p className="mb-3 font-label text-[11px] text-primary">{okMsg}</p>}
+          ) : null}
+          {!isEmail && okMsg && <p className="mb-3 font-label text-[11px] text-primary">{okMsg}</p>}
 
           <button
             type="submit"
