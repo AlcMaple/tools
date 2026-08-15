@@ -39,6 +39,10 @@
       {
         "from": "resources/recycle-helper.ps1",
         "to": "recycle-helper.ps1"
+      },
+      {
+        "from": "resources/bgm-offline-index",
+        "to": "bgm-offline-index"
       }
     ],
     "win": {

@@ -9,7 +9,32 @@ permissions:
   contents: write
 
 jobs:
+  bgm-offline-index:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build offline index seed
+        run: node scripts/build-bgm-offline-index.mjs --out-dir dist/bgm-offline-index
+
+      - name: Upload offline index seed
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgm-offline-index-seed
+          path: |
+            dist/bgm-offline-index/bgm-offline-index-v1.json.gz
+            dist/bgm-offline-index/bgm-offline-index-manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
   build:
+    needs: bgm-offline-index
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +61,12 @@ jobs:
       - name: Clear .npmrc for CI
         shell: bash
         run: echo "" > .npmrc
+
+      - name: Download offline index seed
+        uses: actions/download-artifact@v4
+        with:
+          name: bgm-offline-index-seed
+          path: resources/bgm-offline-index
 
       - name: Install dependencies
         run: npm ci
