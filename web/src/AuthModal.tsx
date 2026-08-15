@@ -1,6 +1,6 @@
-// 登录 / 注册 / 邮箱快捷登录 / 找回密码 弹窗 —— 压在暗化的周历上，MD3 卡片。
+// 登录 / 注册 / 邮箱验证码登录 / 找回密码 弹窗 —— 压在暗化的周历上，MD3 卡片。
 // 登录：用户名 + 密码（带「忘记密码？」入口）；注册：多一个确认密码；
-// 邮箱：验证码确认邮箱后，已有账号直接登录，新账号设置密码（用户名可选自动生成）。
+// 邮箱：验证码确认地址后，无论新旧账号都直接登录，不额外收集用户名或密码。
 // 找回密码：账号 + 密保问题（预设下拉）+ 答案 + 新密码 + 确认。
 // Enter 提交、ESC / 背景 / × 关闭。
 import { useEffect, useRef, useState } from 'react'
@@ -11,7 +11,7 @@ import { Select } from './Select'
 
 export type AuthMode = 'login' | 'register' | 'email' | 'forgot'
 
-const TITLE: Record<AuthMode, string> = { login: '登录', register: '注册', email: '邮箱快捷登录', forgot: '找回密码' }
+const TITLE: Record<AuthMode, string> = { login: '登录', register: '注册', email: '邮箱验证码登录', forgot: '找回密码' }
 
 export function AuthModal({
   open,
@@ -26,7 +26,7 @@ export function AuthModal({
 }): JSX.Element | null {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
-  const [emailStep, setEmailStep] = useState<'address' | 'code' | 'password'>('address')
+  const [emailStep, setEmailStep] = useState<'address' | 'code'>('address')
   const [emailChallengeId, setEmailChallengeId] = useState('')
   const [emailCode, setEmailCode] = useState('')
   const [emailCooldown, setEmailCooldown] = useState(0)
@@ -113,14 +113,8 @@ export function AuthModal({
     if (isEmail && emailStep === 'code') {
       setSubmitting(true)
       try {
-        const result = await auth.verifyEmailCode(emailChallengeId, emailCode.trim())
-        if (result.status === 'login') {
-          onClose()
-        } else {
-          setEmailChallengeId(result.challengeId)
-          setEmailStep('password')
-          setOkMsg('邮箱已验证，请设置登录密码')
-        }
+        await auth.verifyEmailCode(emailChallengeId, emailCode.trim())
+        onClose()
       } catch (err) {
         setError(err instanceof Error ? err.message : '验证码校验失败，请重试')
       } finally {
@@ -128,21 +122,13 @@ export function AuthModal({
       }
       return
     }
-    if ((isReg || isForgot || (isEmail && emailStep === 'password')) && password !== confirm) {
+    if ((isReg || isForgot) && password !== confirm) {
       setError(isForgot ? '两次输入的新密码不一致' : '两次输入的密码不一致')
       return
     }
     setSubmitting(true)
     try {
-      if (isEmail) {
-        await auth.registerEmail({
-          challengeId: emailChallengeId,
-          username: username.trim() || undefined,
-          password,
-          confirm,
-        })
-        onClose()
-      } else if (isReg) {
+      if (isReg) {
         await auth.register(username.trim(), password, confirm)
         onClose()
       } else if (isForgot) {
@@ -283,55 +269,19 @@ export function AuthModal({
                 </Field>
               )}
 
-              {emailStep === 'password' && (
-                <>
-                  <Field label="用户名（可选）">
-                    <input
-                      ref={userRef}
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="留空则自动生成"
-                      maxLength={12}
-                      autoComplete="username"
-                      className={inputCls}
-                    />
-                  </Field>
-                  <Field label="设置密码">
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="后续可用邮箱 + 密码登录"
-                      autoComplete="new-password"
-                      className={inputCls}
-                    />
-                    <Hint>至少 6 位</Hint>
-                  </Field>
-                  <Field label="确认密码">
-                    <input
-                      type="password"
-                      value={confirm}
-                      onChange={(e) => setConfirm(e.target.value)}
-                      placeholder="再输一次密码"
-                      autoComplete="new-password"
-                      className={inputCls}
-                    />
-                  </Field>
-                </>
-              )}
             </>
           ) : (
             <>
-              <Field label={isForgot ? '登录账号' : '用户名或邮箱'}>
+              <Field label={isForgot ? '登录账号' : '用户名'}>
+                {/* 新流程只提示用户名；登录态仍容纳历史「邮箱 + 密码」账号的长标识。 */}
                 <input
                   ref={userRef}
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder={isForgot ? '你的用户名' : '用户名或邮箱'}
-                  maxLength={isForgot ? 12 : 254}
-                  autoComplete={isForgot ? 'username' : 'username'}
+                  placeholder={isForgot ? '你的用户名' : '用户名'}
+                  maxLength={mode === 'login' ? 254 : 12}
+                  autoComplete="username"
                   className={inputCls}
                 />
               </Field>
@@ -413,17 +363,13 @@ export function AuthModal({
           >
             {submitting
               ? '请稍候…'
-              : isEmail && emailStep === 'address'
-                ? '发送验证码'
-                : isEmail && emailStep === 'code'
-                  ? '验证邮箱'
-                  : isEmail
-                    ? '完成注册'
-                    : isForgot
-                      ? '重 置 密 码'
-                      : isReg
-                        ? '注 册'
-                        : '登 录'}
+              : isEmail
+                ? emailStep === 'address' ? '发送验证码' : '验证码登录'
+                : isForgot
+                  ? '重 置 密 码'
+                  : isReg
+                    ? '注 册'
+                    : '登 录'}
           </button>
         </form>
 
@@ -433,7 +379,7 @@ export function AuthModal({
             onClick={() => onMode('email')}
             className="mt-3 w-full rounded-lg border border-outline-variant/30 py-2 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
           >
-            使用邮箱快捷登录 / 注册
+            使用邮箱验证码登录
           </button>
         )}
 

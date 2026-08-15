@@ -72,13 +72,15 @@ export function SettingsPage(): JSX.Element | null {
               >
                 个人信息
               </SideItem>
-              <SideItem
-                icon="lock"
-                active={module === 'security'}
-                onClick={() => selectModule('security')}
-              >
-                账号安全
-              </SideItem>
+              {user.hasPassword && (
+                <SideItem
+                  icon="lock"
+                  active={module === 'security'}
+                  onClick={() => selectModule('security')}
+                >
+                  账号安全
+                </SideItem>
+              )}
               <SideItem
                 icon="play_arrow"
                 active={module === 'xifan'}
@@ -99,7 +101,9 @@ export function SettingsPage(): JSX.Element | null {
           </aside>
 
           <div>
-            {module !== 'xifan' && (module === 'profile' ? <ProfileModule /> : <SecurityModule />)}
+            {module !== 'xifan' && (
+              module === 'profile' || !user.hasPassword ? <ProfileModule /> : <SecurityModule />
+            )}
             {xifanOpened && (
               <div className={module === 'xifan' ? undefined : 'hidden'}>
                 <XifanAccountModule />
@@ -193,6 +197,9 @@ function Kv({ k, v, note }: { k: string; v: string; note?: string }): JSX.Elemen
 function ProfileModule(): JSX.Element | null {
   const { user } = useAuth()
   if (!user) return null
+  const loginMethod = user.hasPassword
+    ? user.hasEmail ? '用户名密码、邮箱验证码' : '用户名密码'
+    : '邮箱验证码'
   return (
     <>
       <PaneHead title="个人信息" />
@@ -201,17 +208,15 @@ function ProfileModule(): JSX.Element | null {
       <div className="mx-auto w-full max-w-[320px] md:max-w-none">
         <Kv k="用户名" v={user.username} />
         <Kv k="注册时间" v={user.createdAt.slice(0, 10)} />
-        {/* note 只在没有任何可恢复凭据时警告；已验证邮箱也能让用户重新登录。 */}
-        <Kv
-          k="密保"
-          v={user.hasSecurity ? '已设置' : '未设置'}
-          note={user.hasSecurity || user.hasEmail ? undefined : '忘记密码将无法找回账号'}
-        />
-        <Kv
-          k="邮箱登录"
-          v={user.hasEmail ? '已验证' : '未绑定'}
-          note={user.hasEmail ? '可用邮箱验证码或邮箱 + 密码登录' : '邮箱快捷注册会创建独立账号'}
-        />
+        <Kv k="登录方式" v={loginMethod} />
+        {/* 无密码的验证码账号不能使用依赖原始密码的密保设置，也不展示一条无从处理的状态。 */}
+        {user.hasPassword && (
+          <Kv
+            k="密保"
+            v={user.hasSecurity ? '已设置' : '未设置'}
+            note={user.hasSecurity || user.hasEmail ? undefined : '忘记密码将无法找回账号'}
+          />
+        )}
       </div>
     </>
   )
