@@ -68,6 +68,21 @@ db.exec(`
   );
 `)
 
+// BGM 在线搜索候选的共享补充表。只有用户**确实新增追番**时才写，单纯搜索不落库；
+// 全局、不按用户分，也不随用户删追番而删。离线 bgm_index.db 每周整体替换，这张表放在
+// 持久 web.db 里，既不会被同步覆盖，也能让之后的用户直接复用已确认过的新条目。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS bgm_search_additions (
+    bgm_id  INTEGER PRIMARY KEY,
+    name    TEXT    NOT NULL DEFAULT '',
+    name_cn TEXT    NOT NULL DEFAULT '',
+    aliases TEXT    NOT NULL DEFAULT '[]',
+    date    TEXT    NOT NULL DEFAULT '',
+    score   REAL    NOT NULL DEFAULT 0,
+    added_at INTEGER NOT NULL
+  );
+`)
+
 // 稀饭绑定表 —— bgmId → 站内 id 的映射,「继续看」按钮靠它定位。
 //
 // **全局、不按用户分**:一个 BGM 条目对应站内哪部番是客观事实,对所有人一样,任一用户确认一次

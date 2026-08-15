@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono'
 import { getCalendar } from './bgm/calendar'
 import { searchAnime, indexStatus } from './bgm/anime-index'
+import { searchAdditions } from './bgm/search-additions'
 import { searchOnline } from './bgm/search-online'
 import auth from './auth'
 import tracks from './tracks'
@@ -54,9 +55,10 @@ app.route('/api/girigiri', girigiri)
 // 追番「搜索加番」—— 打**本地** BGM 动漫索引（bgm_index.db），见 bgm/anime-index.ts。
 // 索引没生成时 ready=false，前端据此提示「先跑同步脚本」。
 //
-// 只有本地**一条都没搜到**时才退回一次 BGM 在线搜（离线档每周三才更新，本周新建的条目
-// 本地必然没有）。本地有结果就绝不联网 —— 单机单 IP 被 BGM 限流会把周历和封面代理一起带走。
-// 那条路自带缓存 / 限速 / 冷却，且失败不重试（bgm/search-online.ts）。
+// 只有本地**一条都没搜到**时，才查「用户实际加过」的持久补充表；它也没有才退回一次
+// BGM 在线搜（离线档每周三才更新，本周新建的条目本地必然没有）。本地或补充表有结果就
+// 绝不联网 —— 单机单 IP 被 BGM 限流会把周历和封面代理一起带走。在线那条路仍保留原有
+// 缓存 / 限速 / 冷却，且失败不重试（bgm/search-online.ts）。
 app.get('/api/search', async (c) => {
   const q = c.req.query('q') ?? ''
   const st = indexStatus()
@@ -74,6 +76,8 @@ app.get('/api/search', async (c) => {
   const base = { ready: true, total: st.count, builtAt: st.builtAt }
   const local = searchAnime(q, 30)
   if (local.length || !q.trim()) return c.json({ ...base, source: 'local', data: local })
+  const learned = searchAdditions(q, 30)
+  if (learned.length) return c.json({ ...base, source: 'learned', data: learned })
   const online = await searchOnline(q)
   return c.json({ ...base, source: 'online', data: online.hits, onlineError: online.error })
 })
