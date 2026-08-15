@@ -18,6 +18,22 @@
 
 ## 网页版
 
+### 2026-08-15 feat(web): 持久化稀饭账号会话
+
+**效果**：
+
+1. 每个 MapleTools 网页账号拥有独立的稀饭 Cookie 会话，服务重启后仍可恢复有效登录态。
+2. Cookie 由 `AUTH_SECRET` 派生的密钥以 AES-256-GCM 加密写入 SQLite；账号、密码和验证码不落库。
+3. 生产环境继续强制至少 32 字符的 `AUTH_SECRET`，轮换密钥会使 MapleTools JWT 与稀饭 Cookie 一起失效。
+
+**关键流程**：
+
+```text
+MapleTools uid → 稀饭 Set-Cookie → AES-256-GCM 密文 → xifan_session
+       ↑                                                    │
+       └────────────── 服务重启后按 uid 解密恢复 ────────────┘
+```
+
 ### 2026-08-08 perf(web): 优化稀饭线路一跳转后卡顿
 
 **效果**：
