@@ -1,15 +1,10 @@
-// 动漫查询页顶部的 BGM 登录状态小组件。
-//
-// 匿名搜索会被故意拖慢到十几秒,登录态则秒回;而登录态会过期。状态如果只藏在设置里,用户没有
-// 理由天天去开设置 —— 过期了也不知道。所以在进入这个 tab 时就地显示状态,过期/未登录直接给
-// 登录按钮。
-//
-// 进 tab 自动校验一次(带 cookie 拉首页看有没有退出入口),结果用模块级缓存兜一段时间
-// 避免频繁切 tab 反复打扰站点。
+// 动漫查询页顶部的 BGM 在线登录状态小组件。
+// 默认搜索使用本地数据；只有用户主动在线搜索时登录态才相关。挂载时仅读取本地状态，
+// 真正的登录和重新校验都由用户点击触发。
 
 import { useEffect, useState } from 'react'
 import type { BgmAuthStatus } from '../types/bgm'
-import { needsAutoVerify, getCachedAuth, setCachedAuth } from '../utils/bgmAuth'
+import { getCachedAuth, setCachedAuth } from '../utils/bgmAuth'
 
 export function BgmLoginChip(): JSX.Element | null {
   const [auth, setAuth] = useState<BgmAuthStatus | null>(getCachedAuth())
@@ -18,21 +13,10 @@ export function BgmLoginChip(): JSX.Element | null {
   useEffect(() => {
     let alive = true
     void (async () => {
-      // 在缓存窗口内已经查过 → 直接用,不再打扰站点(见 utils/bgmAuth)
-      if (!needsAutoVerify()) {
-        setAuth(getCachedAuth())
-        return
-      }
       const s = await window.bgmApi.authStatus().catch(() => null)
       if (!alive || !s) return
+      setCachedAuth(s)
       setAuth(s)
-      // 显示已登录时再主动校验一次,确认没过期(过期的话主进程会清 cookie 并回落状态)
-      const fresh = s.loggedIn
-        ? await window.bgmApi.verifyLogin().catch(() => s)
-        : s
-      if (!alive) return
-      setCachedAuth(fresh)
-      setAuth(fresh)
     })()
     return () => { alive = false }
   }, [])
@@ -71,11 +55,11 @@ export function BgmLoginChip(): JSX.Element | null {
       <button
         onClick={() => { void recheck() }}
         className="inline-flex items-center gap-1 font-label text-[11px] text-on-surface-variant/45 hover:text-primary transition-colors"
-        title="BGM 已登录(搜索走登录态、秒回)。点击重新校验是否过期。"
+        title="BGM 在线搜索已登录。点击重新校验是否过期。"
         type="button"
       >
         <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>check_circle</span>
-        BGM 已登录
+        BGM 在线已登录
       </button>
     )
   }
@@ -85,11 +69,11 @@ export function BgmLoginChip(): JSX.Element | null {
     <button
       onClick={() => { void login() }}
       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-label text-[11px] transition-colors"
-      title="未登录时 BGM 会把搜索拖慢到十几秒。点此登录,搜索即可秒回。"
+      title="BGM 在线搜索尚未登录。点击登录可减少等待。"
       type="button"
     >
       <span className="material-symbols-outlined leading-none" style={{ fontSize: 15 }}>login</span>
-      BGM 未登录 · 点此登录提速
+      BGM 在线未登录 · 点击登录
     </button>
   )
 }

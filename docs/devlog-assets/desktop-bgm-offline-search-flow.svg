@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">桌面 BGM 离线索引更新与搜索数据流</title>
+  <desc id="desc">官方 Archive 经 GitHub Actions 生成离线索引；客户端校验后原子切换。普通搜索只读本地，用户点击在线搜索后才访问 BGM。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#64748b"/>
+    </marker>
+    <style>
+      .title { font: 700 28px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; fill: #0f172a; }
+      .section { font: 700 17px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; fill: #334155; }
+      .label { font: 650 15px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; fill: #0f172a; }
+      .small { font: 13px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; fill: #475569; }
+      .note { font: 12px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; fill: #64748b; }
+      .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; rx: 14; }
+      .local { fill: #ecfdf5; stroke: #34d399; stroke-width: 1.8; rx: 14; }
+      .online { fill: #fff7ed; stroke: #fb923c; stroke-width: 1.8; rx: 14; }
+      .guard { fill: #eff6ff; stroke: #60a5fa; stroke-width: 1.8; rx: 14; }
+      .arrow { fill: none; stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+      .dash { fill: none; stroke: #94a3b8; stroke-width: 1.7; stroke-dasharray: 7 6; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1200" height="720" fill="#f8fafc"/>
+  <text x="54" y="54" class="title">桌面 BGM：离线索引更新与搜索数据流</text>
+
+  <text x="54" y="102" class="section">每周生成与客户端更新</text>
+  <rect x="54" y="126" width="210" height="92" class="box"/>
+  <text x="159" y="160" text-anchor="middle" class="label">Bangumi Archive</text>
+  <text x="159" y="186" text-anchor="middle" class="small">每周官方 subject 档</text>
+
+  <rect x="330" y="126" width="230" height="92" class="box"/>
+  <text x="445" y="157" text-anchor="middle" class="label">GitHub Actions</text>
+  <text x="445" y="181" text-anchor="middle" class="small">仅提取 type=2 动画</text>
+  <text x="445" y="201" text-anchor="middle" class="small">生成 gzip + manifest</text>
+
+  <rect x="626" y="126" width="230" height="92" class="box"/>
+  <text x="741" y="157" text-anchor="middle" class="label">固定预发布资产</text>
+  <text x="741" y="181" text-anchor="middle" class="small">索引 / SHA-256 / 条数</text>
+  <text x="741" y="201" text-anchor="middle" class="small">安装包同时携带种子</text>
+
+  <rect x="922" y="114" width="224" height="116" class="guard"/>
+  <text x="1034" y="147" text-anchor="middle" class="label">客户端校验</text>
+  <text x="1034" y="172" text-anchor="middle" class="small">大小 / hash / schema / ID</text>
+  <text x="1034" y="194" text-anchor="middle" class="small">条数不得低于旧库 90%</text>
+  <text x="1034" y="214" text-anchor="middle" class="small">失败继续使用旧快照</text>
+
+  <path d="M264 172H330" class="arrow"/>
+  <path d="M560 172H626" class="arrow"/>
+  <path d="M856 172H922" class="arrow"/>
+
+  <rect x="922" y="268" width="224" height="94" class="local"/>
+  <text x="1034" y="301" text-anchor="middle" class="label">本地当前版本</text>
+  <text x="1034" y="326" text-anchor="middle" class="small">版本化 gzip</text>
+  <text x="1034" y="347" text-anchor="middle" class="small">原子 pointer → 内存快照</text>
+  <path d="M1034 230V268" class="arrow"/>
+
+  <text x="54" y="424" class="section">用户搜索</text>
+  <rect x="54" y="452" width="192" height="88" class="box"/>
+  <text x="150" y="486" text-anchor="middle" class="label">输入关键词 / 回车</text>
+  <text x="150" y="512" text-anchor="middle" class="small">默认动作</text>
+
+  <rect x="312" y="452" width="230" height="88" class="local"/>
+  <text x="427" y="484" text-anchor="middle" class="label">searchOffline</text>
+  <text x="427" y="509" text-anchor="middle" class="small">只扫描内存快照</text>
+  <text x="427" y="529" text-anchor="middle" class="note">0 次 BGM 搜索请求</text>
+
+  <rect x="608" y="452" width="230" height="88" class="local"/>
+  <text x="723" y="484" text-anchor="middle" class="label">展示全部本地命中</text>
+  <text x="723" y="509" text-anchor="middle" class="small">精确 / 前缀 / 子串 / 二元组</text>
+  <text x="723" y="529" text-anchor="middle" class="note">单条也先展示，不自动进详情</text>
+
+  <path d="M246 496H312" class="arrow"/>
+  <path d="M542 496H608" class="arrow"/>
+  <path d="M1034 362V398H427V452" class="dash"/>
+
+  <rect x="608" y="594" width="230" height="82" class="online"/>
+  <text x="723" y="626" text-anchor="middle" class="label">用户点击“在线搜索”</text>
+  <text x="723" y="651" text-anchor="middle" class="small">唯一的搜索联网入口</text>
+
+  <rect x="904" y="594" width="242" height="82" class="online"/>
+  <text x="1025" y="626" text-anchor="middle" class="label">现有 BGM 在线链路</text>
+  <text x="1025" y="651" text-anchor="middle" class="small">登录 / 限速 / 分页 / 错误分类</text>
+
+  <path d="M723 540V594" class="arrow"/>
+  <path d="M838 635H904" class="arrow"/>
+
+  <text x="54" y="690" class="note">边界：离线库只替代动画“搜索”；用户选择条目后的详情、封面与周历仍沿用原有按需联网或缓存。</text>
+</svg>

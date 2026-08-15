@@ -8,6 +8,7 @@ import { createTray, destroyTray } from './tray'
 import { registerAllIpc, getMinimizeOnClose } from './ipc'
 import { startSpeedBroadcast } from './shared/speed-tracker'
 import { setupUpdater } from './updater'
+import { setupBgmOfflineIndex } from './bgm/offline-index'
 import { initConsoleCapture, logInfo } from './shared/logger'
 import { MEDIA_PROXY_SCHEME, registerMediaProxy } from './shared/media-proxy'
 import { disposeMediaCache, sweepMediaCacheDir } from './shared/media-cache'
@@ -248,6 +249,7 @@ app.whenReady().then(() => {
   createWindow()
   createTray(exitApp)
   setupUpdater()
+  setupBgmOfflineIndex()
 
   let silentScanRunning = false
   const runSilentScan = async (): Promise<void> => {

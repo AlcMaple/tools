@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { searchBgm, type BgmSearchCat } from '../bgm/search'
+import { searchBgmOffline } from '../bgm/offline-index'
 import { getBgmDetail } from '../bgm/detail'
 import { getBgmCalendar } from '../bgm/calendar'
 import { cacheCover } from '../bgm/cover-cache'
@@ -21,6 +22,12 @@ function coerceCat(raw: unknown): BgmSearchCat {
 }
 
 export function registerBgmIpc(): void {
+  // 默认搜索只查主进程已加载的离线快照；这条 IPC 绝不触发 BGM 请求。
+  ipcMain.handle('bgm:search-offline', (_event, keyword: unknown, cat?: number) =>
+    searchBgmOffline(typeof keyword === 'string' ? keyword : '', coerceCat(cat)),
+  )
+
+  // 在线搜索是独立、显式的通道，只由用户点「在线搜索」后调用。
   ipcMain.handle(
     'bgm:search',
     async (event, keyword: string, update?: boolean, cat?: number) => {

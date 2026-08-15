@@ -826,9 +826,8 @@ function Settings(): JSX.Element {
   const [bgmShowToken, setBgmShowToken] = useState(false);
   const [bgmLoggingIn, setBgmLoggingIn] = useState(false);
   const [bgmVerifying, setBgmVerifying] = useState(false);
-  // 设置页**只取状态、不自动校验**(用户要求):是否过期由用户点「检查」手动确认。
-  // 动漫查询页的 chip 会按 8 点边界自动校验并在过期时清 cookie,所以这里读到的「已登录」
-  // 通常已经是被维护过的真实状态。
+  // 设置页与动漫查询页都只读本地状态，不因进入页面自动访问 BGM；是否过期由用户点
+  // 「检查」手动确认。
   useEffect(() => {
     window.bgmApi.authStatus().then(setBgmAuth).catch(() => { /* 拿不到当未配置 */ });
   }, []);
@@ -1111,8 +1110,8 @@ function Settings(): JSX.Element {
                 <Block title="搜索与缓存">
                   <Row
                     icon="cached"
-                    title="启用搜索缓存"
-                    desc="已搜索过的标题将从本地即时加载；禁用则每次都重新抓取。"
+                    title="启用联网结果缓存"
+                    desc="已搜索过的下载源与 BGM 详情将从本地加载；禁用时重新请求对应站点。"
                     density={tweaks.density}
                     control={
                       <Switch
@@ -1139,12 +1138,12 @@ function Settings(): JSX.Element {
               {active === "general" && (
                 <Block
                   title="BGM 账号"
-                  hint="动漫查询的数据来自 Bangumi。匿名访问会被故意拖慢/限流；配置下面任一项可显著改善（两项作用不同，建议都配）。"
+                  hint="本地搜索无需登录；在线搜索与条目详情使用 Bangumi 账号后等待更短（两项作用不同）。"
                 >
                   <Row
                     icon="vpn_key"
                     title="访问令牌"
-                    desc="给「番剧详情 / 按别名搜索」用（api.bgm.tv）。登录 BGM 后在 next.bgm.tv/demo/access-token 生成、粘贴到这里即可。"
+                    desc="给番剧详情等 API 请求用。登录 BGM 后在 next.bgm.tv/demo/access-token 生成、粘贴到这里即可。"
                     density={tweaks.density}
                     stack
                     control={
@@ -1184,22 +1183,22 @@ function Settings(): JSX.Element {
                   <Row
                     icon="login"
                     title="网页登录"
-                    desc="给「主搜索」用（bgm.tv 网页）。点下面按钮弹出 BGM 登录页，登录成功后自动记住登录态，主搜索从约 16 秒提速到约 1 秒。登录态过期后再登一次即可。填了下面的邮箱/密码后，登录窗会自动填好，只剩验证码要手动输。"
+                    desc="给手动在线搜索用。点下面按钮弹出 BGM 登录页，登录成功后会记住登录态；过期后再登录一次即可。填好邮箱和密码后，登录窗会自动填写，只需手动完成验证码。"
                     density={tweaks.density}
                     control={
                       <div className="flex items-center gap-2 flex-wrap justify-end">
-                        {/* 状态如实反映:打开设置已自动校验过(过期会回落成未登录) */}
+                        {/* 这里只显示本地状态；是否过期由右侧「检查」按钮主动确认。 */}
                         <span
                           className={`inline-flex items-center gap-1 font-label text-[11px] ${bgmAuth.loggedIn ? "text-primary" : "text-on-surface-variant/50"}`}
-                          title={bgmAuth.loggedIn ? "登录态有效" : "未登录或登录态已过期"}
+                          title={bgmAuth.loggedIn ? "本地已保存登录态；可点「检查」确认是否过期" : "未保存登录态"}
                         >
                           <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>
                             {bgmVerifying ? "sync" : bgmAuth.loggedIn ? "check_circle" : "cancel"}
                           </span>
-                          {bgmVerifying ? "检查中…" : bgmAuth.loggedIn ? "已登录" : "未登录"}
+                          {bgmVerifying ? "检查中…" : bgmAuth.loggedIn ? "已保存登录" : "未登录"}
                         </span>
                         {bgmAuth.loggedIn ? (
-                          /* 已登录:只给「检查 / 退出」。登录态有效时不出现登录按钮。 */
+                          /* 本地已保存：只给「检查 / 退出」，有效性由用户主动检查。 */
                           <>
                             <button
                               onClick={() => { void recheckBgm(); }}

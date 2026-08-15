@@ -7,9 +7,12 @@ contextBridge.exposeInMainWorld('versions', {
 })
 
 contextBridge.exposeInMainWorld('bgmApi', {
-  // `cat` 是 BGM 类目数字：2=动画（默认）/ 1=书籍（漫画+小说）。其他 cat
-  // 值未启用，主进程会回退到 2。老调用方不传 cat 时保持原"搜动画"行为。
-  search: (keyword: string, update?: boolean, cat?: 1 | 2) =>
+  // 默认通道：只搜本地动画索引，不会向 BGM 发请求。书籍库暂不支持，
+  // 返回值的 supported=false 由 UI 明确引导用户点「在线搜索」。
+  searchOffline: (keyword: string, cat?: 1 | 2) =>
+    ipcRenderer.invoke('bgm:search-offline', keyword, cat),
+  // 显式在线通道；`update` 仍只表示绕过原有在线缓存，不和离线/在线语义混用。
+  searchOnline: (keyword: string, update?: boolean, cat?: 1 | 2) =>
     ipcRenderer.invoke('bgm:search', keyword, update, cat),
   detail: (subjectId: number) => ipcRenderer.invoke('bgm:detail', subjectId),
   // 多页搜索的分页进度,主进程每抓完一页发一次 (current, total)。返回取消订阅函数。

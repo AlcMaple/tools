@@ -5,6 +5,15 @@ export interface BgmSearchResult {
   link: string
 }
 
+/** 桌面本地 BGM 索引搜索的结果包装。 */
+export interface BgmOfflineSearchResponse {
+  items: BgmSearchResult[]
+  /** 动画索引已在主进程加载完成。 */
+  ready: boolean
+  /** 当前类目有离线库；目前仅 cat=2 动画为 true。 */
+  supported: boolean
+}
+
 interface BgmStaff {
   role: string
   name: string
