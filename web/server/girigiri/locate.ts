@@ -83,7 +83,10 @@ export async function locate(bgmId: number, titles: string[]): Promise<GirigiriL
   const scored = new Map<string, GirigiriCandidate>()
   for (const item of items) {
     const score = scoreItem(item.name, clean)
-    if (score < 0.2) continue
+    // 0.2 会让只共享「第二季」两个二元组的无关标题混进来：
+    // 「少主溜得快 第二季」vs「幼女战记 第二季」约 0.22。
+    // 真正可供人眼确认的模糊命中应至少达到 0.4；更弱的情况交给全站搜索兜底。
+    if (score < 0.4) continue
     const previous = scored.get(item.girigiriId)
     if (!previous || score > previous.score) {
       scored.set(item.girigiriId, {
