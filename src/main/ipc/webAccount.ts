@@ -8,6 +8,8 @@ import { JsonStore } from '../shared/json-store'
 import { netRequest, type NetResult } from '../shared/net-request'
 
 const WEB_BASE = process.env.MAPLETOOLS_WEB_URL || 'https://anime.alcmaple.cn'
+const WEB_SESSION_COOKIE = '__Host-mt_session'
+const LEGACY_WEB_SESSION_COOKIE = 'mt_session'
 
 interface WebAccountState {
   token: string
@@ -62,7 +64,9 @@ function sessionCookie(res: NetResult): string {
   const entry = Object.entries(res.headers).find(([key]) => key.toLowerCase() === 'set-cookie')
   const values = Array.isArray(entry?.[1]) ? entry[1] : entry?.[1] ? [entry[1]] : []
   for (const value of values) {
-    const match = value.match(/(?:^|;\s*)mt_session=([^;]+)/)
+    // 线上服务使用浏览器安全前缀 `__Host-mt_session`；本地开发仍会返回旧名。
+    // `Set-Cookie` 一项的第一个 name=value 才是 cookie 本体，后面的分号内容均为属性。
+    const match = value.match(/^(?:__Host-)?mt_session=([^;]+)/)
     if (match?.[1]) return match[1]
   }
   return ''
@@ -74,7 +78,11 @@ function requestHeaders(token = ''): Record<string, string> {
     'Content-Type': 'application/json; charset=utf-8',
     'User-Agent': `MapleTools/${app.getVersion()}`,
   }
-  if (token) headers.Cookie = `mt_session=${token}`
+  if (token) {
+    // 生产端只读取 __Host-mt_session，开发端仍读取 mt_session。Electron 是手动构造
+    // Cookie 请求头，不受浏览器对 __Host- 前缀的写入限制；同一 JWT 同时带两名可兼容两端。
+    headers.Cookie = `${WEB_SESSION_COOKIE}=${token}; ${LEGACY_WEB_SESSION_COOKIE}=${token}`
+  }
   return headers
 }
 
