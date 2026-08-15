@@ -268,7 +268,8 @@ export function TracksPage(): JSX.Element {
         titleCn: hit.nameCn,
         status: 'plan',
         airDate: hit.date,
-      })
+        score: hit.score,
+      }, { searchAdditionToken: hit.searchAdditionToken })
     ).catch((e: Error) => setError(e.message))
   }
 
@@ -1909,8 +1910,8 @@ function GirigiriSearchModal({
 }
 
 // ── 加番搜索弹窗 ───────────────────────────────────────────────────────────────
-// 打本地 BGM 动漫索引搜（不碰 BGM 在线接口）。防抖 300ms；点「追」即时加、弹窗不关（可连着加多部）；
-// 已在追的显示「已追」不可重复加。索引没生成时提示去跑同步脚本。
+// 搜索顺序由服务端统一控制：离线索引 → 已加番共享补充 → BGM 在线兜底。防抖 300ms；
+// 点「追」即时加、弹窗不关（可连着加多部）；已在追的显示「已追」不可重复加。
 // 索引超过这个天数没更新就提示。一周一档 + 3 天容错：正常同步永远碰不到，挂了才会露头
 const STALE_AFTER_DAYS = 10
 
@@ -1927,9 +1928,9 @@ function AddSearchModal({
   const [results, setResults] = useState<AnimeHit[]>([])
   const [ready, setReady] = useState(true)
   const [loading, setLoading] = useState(false)
-  // 本地索引没命中时后端会退回一次 BGM 在线搜 —— 结果来源要标出来（这批是刚上架的新条目），
-  // 在线补充失败也要**如实**说原因（限流 / 超时 / 冷却），别让用户以为是自己名字打错了
-  const [source, setSource] = useState<'local' | 'online' | undefined>()
+  // 离线索引和共享补充都没命中时，后端才退回一次 BGM 在线搜。在线结果要标来源，
+  // 失败也要**如实**说原因（限流 / 超时 / 冷却），别让用户以为是自己名字打错了。
+  const [source, setSource] = useState<'local' | 'learned' | 'online' | undefined>()
   const [onlineError, setOnlineError] = useState('')
   const [builtAt, setBuiltAt] = useState(0) // 索引生成时间，用来提示「同步是不是挂了」
 

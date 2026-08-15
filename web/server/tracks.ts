@@ -6,6 +6,11 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { getCalendarMetadata, type CalendarMetadata } from './bgm/calendar'
 import { fetchSubjectDetail } from './bgm/detail'
+import {
+  enrichSearchAddition,
+  saveSearchAddition,
+  verifySearchAdditionToken,
+} from './bgm/search-additions'
 import { db } from './db'
 import { getSession } from './auth'
 
@@ -223,6 +228,9 @@ function fillDetailLater(uid: number, bgmId: number): void {
             sets.push('cover = ?')
             args.push(d.cover)
           }
+          // 详情请求本来就会执行；顺手把权威别名补进已晋升的共享条目，不增加任何 BGM 请求。
+          // 该 UPDATE 只命中已有补充行，本地索引加番或普通详情回填不会凭空创建共享记录。
+          enrichSearchAddition(bgmId, d.aliases, d.date)
           if (!sets.length) return
 
           // **不动 updated_at、也不 bump rev**:这是系统回填不是用户操作。动了 rev 的话,一次纯粹的
@@ -261,6 +269,9 @@ tracks.put('/:bgmId', async (c) => {
 
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
   const now = Date.now()
+  // 客户端提交的标题不能直接进入全站共享目录。只有服务端在线搜索签发过、且 bgmId
+  // 与当前路径一致的候选才有资格在「确实插入新追番」时晋升为持久补充记录。
+  const searchAddition = verifySearchAdditionToken(body.searchAdditionToken, bgmId, now)
 
   const hasStatus = 'status' in body
   const nextStatus = hasStatus && STATUSES.includes(body.status as Status)
@@ -320,6 +331,7 @@ tracks.put('/:bgmId', async (c) => {
         extra: '{}', // 网页端建的记录没有 app 专属字段；app 上传时才会填
         updated_at: now,
       })
+      if (searchAddition) saveSearchAddition(searchAddition, now)
       bumpRev(uid)
       return { row: oneStmt.get(uid, bgmId) as TrackRow, fillDetail: true }
     }
