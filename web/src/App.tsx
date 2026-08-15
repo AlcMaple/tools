@@ -18,10 +18,9 @@ export default function App(): JSX.Element {
 
   useEffect(() => void auth.init(), [])
 
-  // 设置页要登录才有意义：未登录直接踢回周历并弹登录（比如别人分享了 #/settings 链接）
+  // 设置页要登录才有意义：先保留目标地址并弹登录，成功后直接落在原模块。
   useEffect(() => {
     if (ready && route === 'settings' && !user) {
-      navigate('calendar')
       setAuthMode('login')
       setAuthOpen(true)
     }
@@ -47,7 +46,10 @@ export default function App(): JSX.Element {
         open={authOpen}
         mode={authMode}
         onMode={setAuthMode}
-        onClose={() => setAuthOpen(false)}
+        onClose={() => {
+          setAuthOpen(false)
+          if (route === 'settings' && !auth.user) navigate('calendar')
+        }}
       />
     </div>
   )
