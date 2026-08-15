@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="500" viewBox="0 0 1080 500" role="img" aria-labelledby="title desc">
+  <title id="title">网页版多端追番状态校正流程</title>
+  <desc id="desc">电脑写入服务器并递增版本；手机从后台恢复时立即拉取完整快照，持续前台时每十五秒检查版本，只有版本变化才拉取完整数据。本地缓存只负责首屏展示。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#151313"/>
+      <stop offset="1" stop-color="#0d0d0d"/>
+    </linearGradient>
+    <linearGradient id="focus" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb3b8" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#ffb3b8" stop-opacity=".06"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#aa9092"/>
+    </marker>
+    <style>
+      .box{fill:#1b1a1a;stroke:#574548;stroke-width:1}.hot{fill:url(#focus);stroke:#ffb3b8;stroke-width:1.2}
+      .title{fill:#eee5e6;font:700 15px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .body{fill:#d7c5c7;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .muted{fill:#a68f91;font:11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .label{fill:#ffb3b8;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;letter-spacing:1px}
+      .line{fill:none;stroke:#aa9092;stroke-width:1.4;marker-end:url(#arrow)}
+      .dash{fill:none;stroke:#806d70;stroke-width:1.2;stroke-dasharray:5 5;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1080" height="500" rx="18" fill="url(#bg)"/>
+  <text x="36" y="40" class="label">WEB TRACKS · SERVER AUTHORITATIVE</text>
+  <text x="36" y="66" class="title">缓存只负责秒开；写后、切回页面与版本变化都回到服务器权威快照</text>
+
+  <rect x="36" y="104" width="202" height="98" rx="12" class="box"/>
+  <text x="54" y="134" class="title">设备 A · 电脑</text>
+  <text x="54" y="159" class="body">修改集数 / 状态 / 标签</text>
+  <text x="54" y="181" class="muted">PUT /api/tracks/:bgmId</text>
+
+  <path d="M238 153H301" class="line"/>
+  <rect x="303" y="102" width="252" height="104" rx="12" class="hot"/>
+  <text x="321" y="132" class="title">SQLite 立即事务</text>
+  <text x="321" y="157" class="body">写追番状态 + tracks_rev 加一</text>
+  <text x="321" y="179" class="muted">数据和版本号原子提交</text>
+  <text x="321" y="196" class="muted">返回同一份已提交结果</text>
+
+  <rect x="638" y="92" width="204" height="118" rx="12" class="box"/>
+  <text x="656" y="122" class="title">设备 B · 手机缓存</text>
+  <text x="656" y="147" class="body">localStorage 立即首屏</text>
+  <text x="656" y="169" class="muted">可能暂时是上次离开时状态</text>
+  <text x="656" y="190" class="muted">没有资格覆盖服务器</text>
+
+  <path d="M842 151H906" class="line"/>
+  <rect x="908" y="92" width="136" height="118" rx="12" class="hot"/>
+  <text x="926" y="122" class="title">手机页面</text>
+  <text x="926" y="147" class="body">整份校正 UI</text>
+  <text x="926" y="169" class="muted">覆盖本地缓存</text>
+  <text x="926" y="190" class="muted">服务器为最终状态</text>
+
+  <rect x="36" y="280" width="226" height="126" rx="12" class="box"/>
+  <text x="54" y="310" class="title">恢复触发</text>
+  <text x="54" y="336" class="body">focus · visible · pageshow</text>
+  <text x="54" y="359" class="muted">设备依次使用时，切回来立即触发</text>
+  <text x="54" y="380" class="body">直接 GET /api/tracks</text>
+
+  <rect x="303" y="280" width="252" height="126" rx="12" class="box"/>
+  <text x="321" y="310" class="title">持续前台触发</text>
+  <text x="321" y="336" class="body">每 15 秒 GET /revision</text>
+  <text x="321" y="359" class="muted">revision 相同：不下载完整列表</text>
+  <text x="321" y="380" class="body">revision 变化：GET /api/tracks</text>
+
+  <rect x="638" y="280" width="204" height="126" rx="12" class="box"/>
+  <text x="656" y="310" class="title">当前页面写入</text>
+  <text x="656" y="336" class="body">先乐观显示操作结果</text>
+  <text x="656" y="359" class="muted">连续写按账号队列顺序执行</text>
+  <text x="656" y="380" class="body">最后一写结束：全量 GET</text>
+
+  <path d="M262 343H588V225H739V210" class="dash"/>
+  <path d="M555 343H588V225H739V210" class="dash"/>
+  <path d="M740 280V210" class="dash"/>
+  <path d="M638 343H588V225H430V206" class="dash"/>
+  <path d="M555 154H603V151H638" class="line"/>
+
+  <rect x="36" y="444" width="1008" height="28" rx="8" fill="#211c1d" stroke="#4a3c3e"/>
+  <text x="540" y="463" text-anchor="middle" class="muted">目标是顺序使用多设备时可靠看到最新服务器状态；若未来要求两台设备同时亚秒联动，再增加 SSE / WebSocket 推送</text>
+</svg>

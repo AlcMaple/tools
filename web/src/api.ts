@@ -73,6 +73,11 @@ export type TrackPatch = Partial<
   Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score'>
 >
 
+export interface TracksSnapshot {
+  rev: number
+  data: Track[]
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }
@@ -81,10 +86,20 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function fetchTracks(): Promise<Track[]> {
-  const res = await fetch('/api/tracks')
-  if (res.status === 401) return [] // 未登录 —— 页面自己会提示，不当异常抛
-  return (await json<{ data: Track[] }>(res)).data
+export async function fetchTracks(): Promise<TracksSnapshot> {
+  // 401 必须作为读取失败抛出。把「会话失效」解释成空列表会用空数据覆盖本地缓存，
+  // 用户重新登录后首屏也会误以为自己从未追过番。
+  const snapshot = await json<TracksSnapshot>(await fetch('/api/tracks'))
+  if (!Number.isSafeInteger(snapshot.rev) || snapshot.rev < 0 || !Array.isArray(snapshot.data)) {
+    throw new Error('追番数据响应无效')
+  }
+  return snapshot
+}
+
+export async function fetchTracksRevision(): Promise<number> {
+  const { rev } = await json<{ rev: number }>(await fetch('/api/tracks/revision'))
+  if (!Number.isSafeInteger(rev) || rev < 0) throw new Error('追番数据版本无效')
+  return rev
 }
 
 export async function putTrack(bgmId: number, patch: TrackPatch): Promise<Track> {
