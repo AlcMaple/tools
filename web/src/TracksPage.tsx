@@ -156,7 +156,7 @@ export function TracksPage(): JSX.Element {
         if (r.bound) {
           // 极少见：加载后别的用户刚绑上 → 记下来（卡片下次即变链接），并尽力开一下
           setBindings((prev) => ({ ...prev, [t.bgmId]: { xifanId: r.bound!.xifanId, xifanName: r.bound!.xifanName } }))
-          window.open(playPageUrl(r.bound.xifanId, watchEp(t)), '_blank', 'noopener')
+          window.open(playPageUrl(r.bound.xifanId, watchEp(t), t.bgmId), '_blank', 'noopener')
         } else {
           setPicker({ track: t, candidates: r.candidates })
         }
@@ -192,7 +192,7 @@ export function TracksPage(): JSX.Element {
             ...prev,
             [t.bgmId]: { girigiriId: result.bound!.girigiriId, girigiriName: result.bound!.girigiriName },
           }))
-          window.open(girigiriPlayPageUrl(result.bound.girigiriId, watchEp(t)), '_blank', 'noopener')
+          window.open(girigiriPlayPageUrl(result.bound.girigiriId, watchEp(t), t.bgmId), '_blank', 'noopener')
         } else {
           setGirigiriPicker({ track: t, candidates: result.candidates })
         }
@@ -715,7 +715,7 @@ function Card({
             label="稀饭"
             ep={ep}
             binding={binding ? { id: String(binding.xifanId), name: binding.xifanName } : undefined}
-            href={binding ? playPageUrl(binding.xifanId, ep) : undefined}
+            href={binding ? playPageUrl(binding.xifanId, ep, t.bgmId) : undefined}
             locating={locating}
             onLocate={onContinue}
           />
@@ -723,7 +723,7 @@ function Card({
             label="Girigiri"
             ep={ep}
             binding={girigiriBinding ? { id: girigiriBinding.girigiriId, name: girigiriBinding.girigiriName } : undefined}
-            href={girigiriBinding ? girigiriPlayPageUrl(girigiriBinding.girigiriId, ep) : undefined}
+            href={girigiriBinding ? girigiriPlayPageUrl(girigiriBinding.girigiriId, ep, t.bgmId) : undefined}
             locating={girigiriLocating}
             onLocate={onContinueGirigiri}
           />
@@ -1232,7 +1232,7 @@ function BindPickerModal({
             {candidates.map((c) => (
               <a
                 key={c.xifanId}
-                href={playPageUrl(c.xifanId, ep)}
+                href={playPageUrl(c.xifanId, ep, track.bgmId)}
                 target="_blank"
                 rel="noreferrer"
                 onClick={() => onPick(c)}
@@ -1317,7 +1317,7 @@ function GirigiriBindPickerModal({
             {candidates.map((candidate) => (
               <a
                 key={candidate.girigiriId}
-                href={girigiriPlayPageUrl(candidate.girigiriId, ep)}
+                href={girigiriPlayPageUrl(candidate.girigiriId, ep, track.bgmId)}
                 target="_blank"
                 rel="noreferrer"
                 onClick={() => onPick(candidate)}
@@ -1608,7 +1608,7 @@ function XifanSearchModal({
                   return (
                     <a
                       key={hit.xifanId}
-                      href={playPageUrl(hit.xifanId, ep)}
+                      href={playPageUrl(hit.xifanId, ep, track.bgmId)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => onPick(hit)}
@@ -1871,7 +1871,7 @@ function GirigiriSearchModal({
                   return (
                     <a
                       key={hit.girigiriId}
-                      href={girigiriPlayPageUrl(hit.girigiriId, ep)}
+                      href={girigiriPlayPageUrl(hit.girigiriId, ep, track.bgmId)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => onPick(hit)}

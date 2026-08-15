@@ -17,6 +17,7 @@ import {
 } from './girigiri/search'
 import { getPlaylist, isGirigiriId, resolveLine } from './girigiri/resolve'
 import { playerPageSecurity, renderNonce } from './security'
+import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources } from './player-sources'
 
 const girigiri = new Hono()
 
@@ -60,10 +61,14 @@ girigiri.get('/resolve', async (c) => {
 girigiri.get('/play-page', (c) => {
   const id = (c.req.query('animeId') ?? '').trim().toUpperCase()
   const ep = Number(c.req.query('ep') ?? '1')
+  const bgmIdRaw = c.req.query('bgmId')
+  const bgmId = parsePlayerBgmId(bgmIdRaw)
   if (!isGirigiriId(id)) return c.json({ error: 'girigiriId 不合法' }, 400)
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
+  if (bgmIdRaw && bgmId == null) return c.json({ error: 'bgmId 不合法' }, 400)
   c.header('Cache-Control', 'no-store')
-  const page = renderNonce(PLAY_PAGE)
+  const sources = serializePlayerSources(playerSourceOptions('girigiri', id, ep, bgmId))
+  const page = renderNonce(PLAY_PAGE.replace('__PLAYER_SOURCES__', sources))
   playerPageSecurity(c, page.nonce)
   return c.html(page.html)
 })
@@ -164,10 +169,11 @@ const PLAY_PAGE = `<!doctype html>
   #err { display: none; margin: 0 0 12px; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; background: rgba(247,118,142,.12); border: 1px solid rgba(247,118,142,.35); color: #f7768e }
   .card { background: #171717; border: 1px solid #242424; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px }
   .card-label { font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #767676; margin-bottom: 10px }
-  .lines { display: flex; flex-wrap: wrap; gap: 7px }
-  .chip { border: 1px solid #333; background: #141414; color: #c8c8c8; border-radius: 9px; padding: 6px 13px; font-size: 12.5px; cursor: pointer; transition: border-color .12s, background .12s, color .12s }
+  .sources, .lines { display: flex; flex-wrap: wrap; gap: 7px }
+  .chip { display: inline-flex; align-items: center; justify-content: center; border: 1px solid #333; background: #141414; color: #c8c8c8; border-radius: 9px; padding: 6px 13px; font: inherit; font-size: 12.5px; line-height: 1.5; text-decoration: none; cursor: pointer; transition: border-color .12s, background .12s, color .12s }
   .chip:hover { border-color: #565656 }
-  .chip.active { border-color: var(--rose); background: var(--rose-dim); color: var(--rose) }
+  .chip.active { border-color: var(--rose); background: var(--rose-dim); color: var(--rose); cursor: default }
+  .chip.unbound { border-style: dashed; color: #767676 }
   .eps { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 7px }
   .ep { border: 1px solid #2c2c2c; background: #141414; color: #bdbdbd; border-radius: 8px; padding: 8px 0; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-variant-numeric: tabular-nums; transition: border-color .12s, background .12s, color .12s }
   .ep:hover { border-color: #565656; color: #fff }
@@ -181,6 +187,7 @@ const PLAY_PAGE = `<!doctype html>
     <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
   </div>
   <div id="err"></div>
+  <div class="card"><div class="card-label">播放源</div><div class="sources" id="sources"></div></div>
   <div class="card"><div class="card-label">线路</div><div class="lines" id="lines"></div></div>
   <div class="card"><div class="card-label">选集</div><div class="eps" id="eps"></div></div>
 <script nonce="__CSP_NONCE__">
@@ -189,14 +196,33 @@ const PLAY_PAGE = `<!doctype html>
   var q = new URLSearchParams(location.search)
   var animeId = q.get('animeId') || ''
   var ep = q.get('ep') || '1'
+  var bgmId = q.get('bgmId') || ''
+  var sourceOptions = __PLAYER_SOURCES__
   var v = $('v'), frame = $('frame')
   var lines = [], eps = [], curPl = null, resolvedMap = {}, hls = null
+
+  window.addEventListener('pagehide', function(){ stopAll() })
+  window.addEventListener('pageshow', function(e){ if (e.persisted) location.reload() })
 
   function fail(txt){ var e = $('err'); e.textContent = txt; e.style.display = 'block' }
   function clearFail(){ $('err').style.display = 'none' }
   function inFrame(){ return frame.style.display === 'block' }
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
   function stopAll(){ destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank' }
+  function renderSources(){
+    var box = $('sources'); box.textContent = ''
+    sourceOptions.forEach(function(source){
+      var control = document.createElement('button')
+      control.type = 'button'
+      control.className = 'chip' + (source.active ? ' active' : '') + (!source.href ? ' unbound' : '')
+      control.textContent = source.label + (!source.href ? ' · 未关联' : '')
+      control.title = source.href ? source.label : source.label + ' 尚未关联，请先在“我的追番”选择片源'
+      if (source.active) control.setAttribute('aria-current', 'true')
+      else if (source.href) control.onclick = function(){ stopAll(); location.assign(source.href) }
+      else control.onclick = function(){ fail(source.label + ' 尚未关联，请回“我的追番”选择片源') }
+      box.appendChild(control)
+    })
+  }
   function renderChips(){
     var box = $('lines'); box.textContent = ''
     lines.forEach(function(l){
@@ -244,7 +270,12 @@ const PLAY_PAGE = `<!doctype html>
     }
     playLine(pl)
   }
-  function goEp(n){ if (n < 1) return; location.search = '?animeId=' + encodeURIComponent(animeId) + '&ep=' + n }
+  function goEp(n){
+    if (n < 1) return
+    var next = new URLSearchParams({ animeId: animeId, ep: String(n) })
+    if (/^[0-9]+$/.test(bgmId)) next.set('bgmId', bgmId)
+    stopAll(); location.search = '?' + next.toString()
+  }
   function renderEps(){
     var box = $('eps'); box.textContent = ''; var cur = Number(ep) || 1
     if (!eps.length){ var one = document.createElement('div'); one.className = 'ep cur'; one.textContent = cur; box.appendChild(one); return }
@@ -252,6 +283,7 @@ const PLAY_PAGE = `<!doctype html>
   }
   async function boot(){
     if (!/^GV[0-9]+$/i.test(animeId) || !/^[0-9]+$/.test(ep)){ fail('URL 参数不合法'); return }
+    renderSources()
     $('epbadge').textContent = 'EP ' + ep; renderEps()
     try {
       var r = await fetch('/api/girigiri/playlist?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep))

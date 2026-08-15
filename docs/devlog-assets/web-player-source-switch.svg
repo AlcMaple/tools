@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="390" viewBox="0 0 960 390" role="img" aria-labelledby="title desc">
+  <title id="title">网页版在线播放源切换流程</title>
+  <desc id="desc">播放链接携带 BGM 编号和集数，服务端读取稀饭与 Girigiri 独立绑定，用户在播放源层切换后进入对应既有播放器。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#131313"/>
+      <stop offset="1" stop-color="#0e0e0e"/>
+    </linearGradient>
+    <linearGradient id="rose" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb3b8" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#f09199" stop-opacity=".08"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#a18c8c"/>
+    </marker>
+    <style>
+      .box { fill:#1b1b1b; stroke:#544343; stroke-width:1 }
+      .focus { fill:url(#rose); stroke:#ffb3b8; stroke-width:1.2 }
+      .title { fill:#e2e2e2; font:700 15px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif }
+      .body { fill:#d9c1c1; font:12px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif }
+      .muted { fill:#a18c8c; font:11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif }
+      .label { fill:#ffb3b8; font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; letter-spacing:1px }
+      .line { fill:none; stroke:#a18c8c; stroke-width:1.4; marker-end:url(#arrow) }
+    </style>
+  </defs>
+  <rect width="960" height="390" rx="18" fill="url(#bg)"/>
+  <text x="36" y="42" class="label">WEB PLAYER · SOURCE SWITCH</text>
+  <text x="36" y="68" class="title">播放源与站内线路分层，切源只换播放器，不改媒体链路</text>
+
+  <rect x="36" y="105" width="190" height="92" rx="12" class="box"/>
+  <text x="54" y="132" class="title">我的追番</text>
+  <text x="54" y="156" class="body">打开已确认的片源</text>
+  <text x="54" y="178" class="muted">bgmId · sourceId · ep</text>
+
+  <path d="M226 151H282" class="line"/>
+
+  <rect x="284" y="105" width="224" height="92" rx="12" class="focus"/>
+  <text x="302" y="132" class="title">独立绑定查询</text>
+  <text x="302" y="156" class="body">xifan_binding</text>
+  <text x="407" y="156" class="body">girigiri_binding</text>
+  <text x="302" y="178" class="muted">只按稳定 bgmId 读取，不跨站猜编号</text>
+
+  <path d="M508 151H564" class="line"/>
+
+  <rect x="566" y="105" width="358" height="92" rx="12" class="box"/>
+  <text x="584" y="132" class="title">播放源</text>
+  <rect x="584" y="146" width="92" height="31" rx="8" fill="#ffb3b8" fill-opacity=".14" stroke="#ffb3b8"/>
+  <text x="614" y="166" class="body" fill="#ffb3b8">稀饭</text>
+  <rect x="686" y="146" width="112" height="31" rx="8" fill="#141414" stroke="#544343"/>
+  <text x="709" y="166" class="body">Girigiri</text>
+  <rect x="808" y="146" width="98" height="31" rx="8" fill="none" stroke="#544343" stroke-dasharray="4 3"/>
+  <text x="824" y="166" class="muted">未关联</text>
+
+  <path d="M654 197V244H345" class="line"/>
+  <path d="M744 197V244H729" class="line"/>
+
+  <rect x="180" y="246" width="330" height="104" rx="12" class="box"/>
+  <text x="200" y="274" class="title">稀饭既有播放器</text>
+  <text x="200" y="299" class="body">线路 1 / 2 / 3 · MP4 / HLS · iframe 兜底</text>
+  <text x="200" y="323" class="muted">切源与换集前清理 video / HLS / 缓冲状态</text>
+
+  <rect x="566" y="246" width="330" height="104" rx="12" class="box"/>
+  <text x="586" y="274" class="title">Girigiri 既有播放器</text>
+  <text x="586" y="299" class="body">繁中 / 简中线路 · HLS / MP4 · iframe 兜底</text>
+  <text x="586" y="323" class="muted">切源保持同一 ep，目标缺集则显示真实错误</text>
+
+  <text x="480" y="376" text-anchor="middle" class="muted">两侧媒体字节均为 浏览器 ↔ 源 CDN；MapleTools 服务只解析播放元数据</text>
+</svg>
