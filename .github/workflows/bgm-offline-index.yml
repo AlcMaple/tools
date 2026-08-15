@@ -1,0 +1,54 @@
+name: BGM Offline Index
+
+on:
+  schedule:
+    # 官方档每周三 05:00（GMT+8）更新；14:30（GMT+8）运行，留出约 9.5 小时余量。
+    - cron: '30 6 * * 3'
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/build-bgm-offline-index.mjs'
+      - '.github/workflows/bgm-offline-index.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bgm-offline-index
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build offline index
+        run: node scripts/build-bgm-offline-index.mjs --out-dir dist/bgm-offline-index
+
+      - name: Publish fixed prerelease assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: bgm-offline-index
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --prerelease --latest=false
+          else
+            gh release create "$TAG" \
+              --title "BGM Offline Index" \
+              --notes "MapleTools 桌面端自动更新的 BGM 离线动画索引。" \
+              --prerelease \
+              --latest=false
+          fi
+          gh release upload "$TAG" \
+            dist/bgm-offline-index/bgm-offline-index-v1.json.gz \
+            dist/bgm-offline-index/bgm-offline-index-manifest.json \
+            --clobber
