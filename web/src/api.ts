@@ -73,6 +73,11 @@ export type TrackPatch = Partial<
   Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score'>
 >
 
+interface TrackWriteOptions {
+  /** 服务端在线搜索签发的候选凭证；仅用于把成功新增的条目晋升到共享补充库。 */
+  searchAdditionToken?: string
+}
+
 export interface TracksSnapshot {
   rev: number
   data: Track[]
@@ -102,11 +107,13 @@ export async function fetchTracksRevision(): Promise<number> {
   return rev
 }
 
-export async function putTrack(bgmId: number, patch: TrackPatch): Promise<Track> {
+export async function putTrack(bgmId: number, patch: TrackPatch, options: TrackWriteOptions = {}): Promise<Track> {
   const res = await fetch(`/api/tracks/${bgmId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
+    body: JSON.stringify(options.searchAdditionToken
+      ? { ...patch, searchAdditionToken: options.searchAdditionToken }
+      : patch),
   })
   return json<Track>(res)
 }
@@ -325,6 +332,8 @@ export interface AnimeHit {
   nameCn: string // 中文译名
   date: string // 放送日期
   score: number
+  /** 只在 BGM 在线候选上存在；加番成功后由服务端验签，客户端不能自行构造共享数据。 */
+  searchAdditionToken?: string
 }
 
 export interface SearchResult {
@@ -332,8 +341,8 @@ export interface SearchResult {
   data: AnimeHit[]
   total?: number // 索引收录条数
   builtAt?: number // 索引生成时间（ms）—— 太久没更新说明每周的同步挂了，前端会提示
-  /** local = 本地索引命中；online = 本地一条都没有，退回 BGM 在线搜的结果 */
-  source?: 'local' | 'online'
+  /** local = 离线索引；learned = 已成功加过的共享补充；online = BGM 在线结果 */
+  source?: 'local' | 'learned' | 'online'
   /** 在线补充没成的具体原因（限流 / 超时 / 冷却中），如实显示，不糊成「网络错误」 */
   onlineError?: string
 }

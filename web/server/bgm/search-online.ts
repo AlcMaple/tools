@@ -14,10 +14,11 @@
 //   ├ 距上次不足 2s → 不联网（不排队等：让用户干等还不如让他改个词）
 //   └ 以上都过 → 打一次，**失败不重试**（传输层抖动由 fetchJson 兜一次）
 //
-// 结果只放内存缓存，**不写进 bgm_index.db** —— 那库每周被整体原子替换，写了也会被冲掉，
-// 而且它是只读打开的。
+// 仅仅搜到的结果仍只放内存，**不写进 bgm_index.db** —— 那库每周被整体原子替换，写了也会被冲掉，
+// 而且它是只读打开的。只有用户随后真正加番，签名候选才会进入 web.db 的独立共享补充表。
 import { fetchJson } from '../http'
 import type { AnimeHit } from './anime-index'
+import { signSearchAddition } from './search-additions'
 
 const API = 'https://api.bgm.tv/v0/search/subjects?limit=10'
 
@@ -102,7 +103,12 @@ export async function searchOnline(query: string, now = Date.now()): Promise<Onl
       timeoutMs: 6000, // 短超时：这是「加分项」，不能让加番搜索框卡住
       body: { keyword: q, sort: 'match', filter: { type: [2] } }, // type=2 只要动画
     })) as { data?: unknown }
-    const hits = (Array.isArray(raw.data) ? raw.data : []).map(toHit).filter((h): h is AnimeHit => !!h)
+    const hits = (Array.isArray(raw.data) ? raw.data : [])
+      .map(toHit)
+      .filter((h): h is AnimeHit => !!h)
+      // 凭证只证明「这是服务端刚从 BGM 返回过的候选」，本身不是登录凭据。
+      // 前端真正加番时把它带回，tracks 路由验签后才允许进入全局补充库。
+      .map((hit) => ({ ...hit, searchAdditionToken: signSearchAddition(hit, now) }))
     failStreak = 0
     if (cache.size >= CACHE_MAX) cache.clear() // 简单粗暴：满了整清，反正是纯加速
     cache.set(q, { at: now, hits })
