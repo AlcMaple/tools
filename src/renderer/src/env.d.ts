@@ -5,7 +5,7 @@ declare global {
   const __APP_VERSION__: string
 }
 
-import type { BgmSearchResult, BgmDetail, BgmCalendarResult, BgmAuthStatus, BgmCredentials } from './types/bgm'
+import type { BgmSearchResult, BgmOfflineSearchResponse, BgmDetail, BgmCalendarResult, BgmAuthStatus, BgmCredentials } from './types/bgm'
 import type { XifanSearchResult, XifanWatchInfo, XifanSource } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 import type { AowuSearchResult, AowuEpisode, AowuWatchInfo } from './types/aowu'
@@ -177,10 +177,14 @@ declare global {
     }
     bgmApi: {
       /**
-       * `update=true` 同时绕过渲染层和主进程的缓存,每一页都重新抓 —— 只给手动刷新按钮用
-       * 别拿它做后台同步。`cat` 是 BGM 类目(2=动画 / 1=书籍),缺省 2。
+       * 只查本地离线快照，绝不发 BGM 网络请求。目前离线库只包含动画(cat=2)。
        */
-      search: (keyword: string, update?: boolean, cat?: 1 | 2) => Promise<BgmSearchResult[]>
+      searchOffline: (keyword: string, cat?: 1 | 2) => Promise<BgmOfflineSearchResponse>
+      /**
+       * 显式在线搜索。`update=true` 绕过主进程在线缓存，只给用户主动点击用；
+       * `cat` 是 BGM 类目(2=动画 / 1=书籍)，缺省 2。
+       */
+      searchOnline: (keyword: string, update?: boolean, cat?: 1 | 2) => Promise<BgmSearchResult[]>
       detail: (subjectId: number) => Promise<BgmDetail>
       /** 订阅分页进度,每完成一页触发 `(current, total)`;返回取消订阅函数。 */
       onSearchProgress: (cb: (current: number, total: number) => void) => () => void

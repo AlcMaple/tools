@@ -163,7 +163,6 @@ MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)
 
 | 场景 | 实现 | 失败时的行为 |
 |---|---|---|
-| **SWR 后台刷新** stale 缓存（`refreshBgmSearchInBackground`） | 用户命中 stale → 后台**单次**调 BGM 刷新 | catch swallow，缓存仍 stale，**等下次用户主动搜同关键词**再触发 SWR |
 | **+追番 派生 detail**（`ensureBgmTagsFilled`） | 用户加追番时数据缺 tag → 异步**单次**调 detail 补全 | catch swallow，下次 +追番 / 打开详情时再触发，加 800-2000ms 随机延迟错峰 |
 | **邮件触发周历**（`calendar-mailer.ts`） | 用户配的定时任务触发周历 cache hit | 用户预先授权过，是用户行为的延时执行 |
 
@@ -183,7 +182,7 @@ MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)
 | `search.ts` HTTP 429 | 用户发起的搜索收到 429 | throw `RateLimitError(30)` 兜底 | ❌ 不重试 |
 | `search.ts` `detectLimit` | 响应 body 是中文限流页 | 解析 wait-N，throw `RateLimitError(waitN)` | ❌ 不重试 |
 | `calendar.ts` 失败 | refresh=true 时拉周历失败 | throw 让 UI 看到 | ❌ 不静默 fallback |
-| **整个 BGM 代码路径** | —— | —— | **零自动重试 / 零自动探测** |
+| **BGM 站点 / API 在线路径** | —— | —— | **零自动重试 / 零自动探测** |
 
 所有"重试"都来自 **UI 上用户主动点击** `CountdownRetryButton`。倒计时归零之前按钮**可见但视觉警示**（强制点的话用户自己承担风险）。
 
@@ -318,7 +317,7 @@ BGM 不是简单的"窗口内 N 次"限流，它对触发过限流的 IP 维护�
 | 数据 | TTL | 过期行为 |
 |---|---|---|
 | Xifan / Girigiri 搜索卡片 | 30 天 | 当 miss，走完整流程 |
-| **BGM 搜索** | **14 天** | **SWR**：先显示旧结果，后台**单次**静默刷缓存。**失败直接作废**（catch swallow），等下次用户主动搜同关键词再触发 SWR，不重试不探测 |
+| **BGM 搜索** | **可替换离线索引** | 默认只查主进程内存快照，不读旧 `search_cache_bgm`，不访问 BGM；只有用户点「在线搜索」才走原在线搜索路径 |
 | **BGM 详情** | **永久** | 命中就用（官方元数据几乎不变） |
 | **BGM 周历** | **14 天** | `update=true` 强制刷新（用户点刷新按钮触发），失败抛错让 UI 看到（不静默 fallback） |
 | Xifan watch（集数列表） | **不缓存** | 每次实时拉，连载新集数必须可见 |
@@ -327,7 +326,7 @@ BGM 不是简单的"窗口内 N 次"限流，它对触发过限流的 IP 维护�
 
 - ❌ **BGM 详情不缓存** —— 元数据几乎不变，每次拉浪费 + 容易触发限流。已经踩过，永久缓存最合适
 - ❌ **周历 refresh=true 失败静默 fallback 到旧缓存** —— 用户点刷新后以为成功了实际没刷新，时间戳没变但用户没看到 → 困惑。003 阶段改成失败抛错，UI 明确反馈
-- ❌ **SWR 失败后周期性重试** —— SWR 单次失败必须作废，等下一次用户行为触发新一轮，**不要**加 setTimeout / setInterval 周期性试探
+- ❌ **默认离线搜索失败后自动改走在线** —— 空结果、索引未就绪或本地异常都要留在页面等用户主动选择，不能借「兜底」重新引入隐式 BGM 请求
 
 ### 触发重启条件
 
@@ -455,6 +454,7 @@ node scripts/diagnose-network.mjs
 
 > 每次动 BGM 相关代码 / 决策时在这里追一笔。
 
+- **2026-08-15** —— 默认 BGM 搜索改为桌面本地动画索引：旧 `search_cache_bgm` / SWR 不再读取，空结果也不自动访问 BGM；只有用户显式点「在线搜索」才进入原在线限速与熔断路径。详情、周历、封面等现有按需请求不变。
 - **2026-05-18** 初版 —— 汇总 003 / 004 阶段沉淀 + UA 规范 + 诊断 playbook
 - **2026-05-18** `2f76820` —— `errorMessage.ts` 修 timeout 分类漏匹配，归到「请求超时」并引导停手
 - **2026-05-18** —— `api-client.ts` UA 从占位符 `tools/1.0 (github.com/user/tools)` 改成规范的 `MapleTools/${app.getVersion()} (https://github.com/AlcMaple/tools)`
