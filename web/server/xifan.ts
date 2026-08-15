@@ -33,6 +33,7 @@ import { XifanLocalRateLimitError, XifanUpstreamError } from './xifan/session'
 import { clearRateLimit, clientIp, getSession, rateLimited } from './auth'
 import { db } from './db'
 import { playerPageSecurity, renderNonce } from './security'
+import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources } from './player-sources'
 
 const xifan = new Hono()
 const XIFAN_LOGIN_WINDOW_MS = 15 * 60 * 1000
@@ -119,10 +120,14 @@ xifan.get('/resolve', async (c) => {
 xifan.get('/play-page', (c) => {
   const animeId = c.req.query('animeId') ?? ''
   const ep = Number(c.req.query('ep') ?? '1')
+  const bgmIdRaw = c.req.query('bgmId')
+  const bgmId = parsePlayerBgmId(bgmIdRaw)
   if (!/^\d+$/.test(animeId)) return c.json({ error: 'animeId 不合法' }, 400)
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
+  if (bgmIdRaw && bgmId == null) return c.json({ error: 'bgmId 不合法' }, 400)
   c.header('Cache-Control', 'no-store')
-  const page = renderNonce(PLAY_PAGE)
+  const sources = serializePlayerSources(playerSourceOptions('xifan', Number(animeId), ep, bgmId))
+  const page = renderNonce(PLAY_PAGE.replace('__PLAYER_SOURCES__', sources))
   playerPageSecurity(c, page.nonce)
   // pan.wo 的下载响应带 attachment；保持来源信息时 Chromium 会把它判成不可播放媒体。
   // 稀饭自己的 player.moedot 页面同样用 no-referrer，复测后可让 <video> 正常直连。
@@ -298,10 +303,11 @@ const PLAY_PAGE = `<!doctype html>
   #auth-link:hover { background: var(--rose-dim) }
   .card { background: #171717; border: 1px solid #242424; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px }
   .card-label { font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #767676; margin-bottom: 10px }
-  .lines { display: flex; flex-wrap: wrap; gap: 7px }
-  .chip { border: 1px solid #333; background: #141414; color: #c8c8c8; border-radius: 9px; padding: 6px 13px; font-size: 12.5px; cursor: pointer; transition: border-color .12s, background .12s, color .12s }
+  .sources, .lines { display: flex; flex-wrap: wrap; gap: 7px }
+  .chip { display: inline-flex; align-items: center; justify-content: center; border: 1px solid #333; background: #141414; color: #c8c8c8; border-radius: 9px; padding: 6px 13px; font: inherit; font-size: 12.5px; line-height: 1.5; text-decoration: none; cursor: pointer; transition: border-color .12s, background .12s, color .12s }
   .chip:hover { border-color: #565656 }
-  .chip.active { border-color: var(--rose); background: var(--rose-dim); color: var(--rose) }
+  .chip.active { border-color: var(--rose); background: var(--rose-dim); color: var(--rose); cursor: default }
+  .chip.unbound { border-style: dashed; color: #767676 }
   /* 集数网格 —— 参考 app 播放页的「集数」区 */
   .eps { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 7px }
   .ep { border: 1px solid #2c2c2c; background: #141414; color: #bdbdbd; border-radius: 8px; padding: 8px 0; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-variant-numeric: tabular-nums; transition: border-color .12s, background .12s, color .12s }
@@ -317,6 +323,7 @@ const PLAY_PAGE = `<!doctype html>
     <div id="buffering" role="status" aria-live="polite"><span class="buffer-spin"></span><span id="bufferText">正在积攒缓冲</span></div>
   </div>
   <div id="err" role="alert" aria-live="polite"><span id="err-text"></span><a id="auth-link" href="/#/settings/xifan" target="_blank" rel="noopener">去登录</a></div>
+  <div class="card"><div class="card-label">播放源</div><div class="sources" id="sources"></div></div>
   <div class="card"><div class="card-label">线路</div><div class="lines" id="lines"></div></div>
   <div class="card"><div class="card-label">选集</div><div class="eps" id="eps"></div></div>
 <script nonce="__CSP_NONCE__">
@@ -325,6 +332,8 @@ const PLAY_PAGE = `<!doctype html>
   var q = new URLSearchParams(location.search)
   var animeId = q.get('animeId') || ''
   var ep = q.get('ep') || '1'
+  var bgmId = q.get('bgmId') || ''
+  var sourceOptions = __PLAYER_SOURCES__
   var v = $('v'), frame = $('frame')
   var lines = [], eps = [], curPl = null, resolvedMap = {}, resolvingMap = {}, hls = null
   var waitingForAuth = false
@@ -337,6 +346,8 @@ const PLAY_PAGE = `<!doctype html>
   window.addEventListener('storage', function(e){
     if (waitingForAuth && e.key === 'mapletools-xifan-auth-changed' && e.newValue) location.reload()
   })
+  window.addEventListener('pagehide', function(){ stopAll() })
+  window.addEventListener('pageshow', function(e){ if (e.persisted) location.reload() })
 
   function fail(txt, code){
     waitingForAuth = code === 'XIFAN_AUTH_REQUIRED'
@@ -490,6 +501,21 @@ const PLAY_PAGE = `<!doctype html>
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
   function stopAll(){ cancelBufferGate(false); clearInternalSeek(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false }
 
+  function renderSources(){
+    var box = $('sources'); box.textContent = ''
+    sourceOptions.forEach(function(source){
+      var control = document.createElement('button')
+      control.type = 'button'
+      control.className = 'chip' + (source.active ? ' active' : '') + (!source.href ? ' unbound' : '')
+      control.textContent = source.label + (!source.href ? ' · 未关联' : '')
+      control.title = source.href ? source.label : source.label + ' 尚未关联，请先在“我的追番”选择片源'
+      if (source.active) control.setAttribute('aria-current', 'true')
+      else if (source.href) control.onclick = function(){ stopAll(); location.assign(source.href) }
+      else control.onclick = function(){ fail(source.label + ' 尚未关联，请回“我的追番”选择片源') }
+      box.appendChild(control)
+    })
+  }
+
   function renderChips(){
     var box = $('lines'); box.textContent = ''
     lines.forEach(function(l){
@@ -579,7 +605,12 @@ const PLAY_PAGE = `<!doctype html>
   }
 
   // 换集 —— 直接改地址重载整页（裸页，全量重启最省事、也不残留上一集的 hls/buffer 状态）
-  function goEp(n){ if (n < 1) return; location.search = '?animeId=' + encodeURIComponent(animeId) + '&ep=' + n }
+  function goEp(n){
+    if (n < 1) return
+    var next = new URLSearchParams({ animeId: animeId, ep: String(n) })
+    if (/^[0-9]+$/.test(bgmId)) next.set('bgmId', bgmId)
+    stopAll(); location.search = '?' + next.toString()
+  }
   // 集数网格（参考 app 播放页「集数」区）：当前集高亮，点其余集换过去；扒不到集数就退化成只显示当前集
   function renderEps(){
     var box = $('eps'); box.textContent = ''
@@ -599,6 +630,7 @@ const PLAY_PAGE = `<!doctype html>
 
   async function boot(){
     if (!/^[0-9]+$/.test(animeId) || !/^[0-9]+$/.test(ep)){ fail('URL 参数不合法'); return }
+    renderSources()
     $('epbadge').textContent = 'EP ' + ep
     renderEps() // 先按 URL 的 ep 画一版占位，拿到 playlist 的整季集数再重画
     try {
