@@ -12,7 +12,8 @@ db.pragma('foreign_keys = ON')
 
 // 建表(幂等)。用户名 COLLATE NOCASE → 大小写不敏感唯一。
 //
-//   pass_hash             scrypt 的 `salt:hash`
+//   pass_hash             scrypt 的 `salt:hash`;无密码邮箱账号写不可用随机值,由 password_enabled 明确区分
+//   password_enabled      1 = 可用用户名 / 密码登录;0 = 只能用邮箱验证码登录
 //   email / verified_at   可选的邮箱登录凭据,完成一次性验证码后才写验证时间
 //   token_version         改密码 / 重置密码时 +1,JWT 里带着它,验证时对不上就拒 ——
 //                         **这是「改密码能踢掉所有老会话」的唯一实现方式**(无状态 JWT 默认做不到)
@@ -24,6 +25,7 @@ db.exec(`
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     username             TEXT NOT NULL UNIQUE COLLATE NOCASE,
     pass_hash            TEXT NOT NULL,
+    password_enabled     INTEGER NOT NULL DEFAULT 1 CHECK (password_enabled IN (0, 1)),
     email                TEXT,
     email_verified_at    TEXT,
     token_version        INTEGER NOT NULL DEFAULT 0,
@@ -111,6 +113,12 @@ ensureColumn('users', 'security_question', 'security_question TEXT')
 ensureColumn('users', 'security_answer_hash', 'security_answer_hash TEXT')
 ensureColumn('users', 'email', 'email TEXT')
 ensureColumn('users', 'email_verified_at', 'email_verified_at TEXT')
+// 老账号都有真实密码,迁移时统一保持可用;只有新建的邮箱验证码账号显式写 0。
+ensureColumn(
+  'users',
+  'password_enabled',
+  'password_enabled INTEGER NOT NULL DEFAULT 1 CHECK (password_enabled IN (0, 1))',
+)
 
 // 邮箱是可选凭据:老用户没有,NULL 不参与唯一索引;新用户完成验证码后才写入。
 db.exec(`
@@ -119,8 +127,8 @@ db.exec(`
   WHERE email IS NOT NULL;
 `)
 
-// 邮箱快捷注册 / 登录的短期挑战。验证码只存 HMAC，不存明文；verified_at 只给新用户
-// 完成设置密码时使用，成功后马上 consumed_at，不能拿同一挑战重复建号。
+// 邮箱快捷注册 / 登录的短期挑战。验证码只存 HMAC，不存明文；验证成功后在同一事务内
+// 消费 challenge 并查找 / 创建账号，不能拿同一挑战重复建号或登录。
 db.exec(`
   CREATE TABLE IF NOT EXISTS email_challenge (
     id           TEXT PRIMARY KEY,
