@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta
+      name="description"
+      content="MapleTools 网页版二次元编辑部新波普粗野主义交互设计原型"
+    />
+    <title>MapleTools Web — 二次元编辑部</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+
+    <div class="site-shell">
+      <aside class="editorial-rail" aria-label="主导航">
+        <div class="rail-noise" aria-hidden="true"></div>
+        <a class="brand-lockup" href="#calendar" data-view-link="calendar" aria-label="MapleTools 首页">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span>
+            <strong>MAPLE<br />TOOLS</strong>
+            <small>WEB EDITORIAL</small>
+          </span>
+        </a>
+
+        <div class="mascot-card" aria-hidden="true">
+          <span class="tape tape-pink"></span>
+          <span class="mascot-caption">OUR<br />COVER<br />GIRL</span>
+          <img src="./assets/sagiri-mascot.png" alt="" />
+          <span class="mascot-stamp">SAGIRI<br />ISSUE 06</span>
+        </div>
+
+        <nav class="rail-nav" aria-label="功能区">
+          <button type="button" class="nav-item is-active" data-view="calendar" aria-current="page">
+            <span class="nav-index">01</span>
+            <span class="nav-copy"><strong>番剧周历</strong><small>WEEKLY</small></span>
+            <span class="nav-arrow" aria-hidden="true">↗</span>
+          </button>
+          <button type="button" class="nav-item" data-view="tracks">
+            <span class="nav-index">02</span>
+            <span class="nav-copy"><strong>我的追番</strong><small>MY LIST</small></span>
+            <span class="nav-arrow" aria-hidden="true">↗</span>
+          </button>
+          <button type="button" class="nav-item" data-view="player">
+            <span class="nav-index">03</span>
+            <span class="nav-copy"><strong>在线播放</strong><small>ON AIR</small></span>
+            <span class="nav-arrow" aria-hidden="true">↗</span>
+          </button>
+          <button type="button" class="nav-item" data-view="settings">
+            <span class="nav-index">04</span>
+            <span class="nav-copy"><strong>设置</strong><small>SETTINGS</small></span>
+            <span class="nav-arrow" aria-hidden="true">↗</span>
+          </button>
+        </nav>
+
+        <button type="button" class="rail-account" data-auth-open>
+          <span class="account-avatar" aria-hidden="true">纱</span>
+          <span class="account-copy">
+            <small>EDITOR ACCOUNT</small>
+            <strong data-account-label>登录 / 注册</strong>
+          </span>
+          <span aria-hidden="true">→</span>
+        </button>
+
+        <div class="prototype-ticket" aria-label="原型说明">
+          <strong>REVIEW COPY</strong>
+          <span>交互视觉审查稿</span>
+          <small>仅展示设计与状态，不连接真实服务</small>
+        </div>
+      </aside>
+
+      <header class="mobile-header">
+        <button type="button" class="mobile-brand" data-view="calendar" aria-label="回到番剧周历">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span><strong>MAPLETOOLS</strong><small>二次元编辑部</small></span>
+        </button>
+        <button type="button" class="mobile-account" data-auth-open aria-label="登录或查看账号">
+          <span aria-hidden="true">纱</span>
+          <span data-account-label>登录</span>
+        </button>
+      </header>
+
+      <main class="workspace" id="main-content" tabindex="-1">
+        <div class="utility-strip">
+          <p class="utility-kicker" id="view-kicker">WEEKLY BOARD · VOL. 06</p>
+          <div class="toast-reserve" aria-live="polite" aria-atomic="true">
+            <div class="toast" id="toast" role="status" aria-hidden="true">
+              <span class="toast-dot" aria-hidden="true"></span>
+              <span id="toast-message">状态已更新</span>
+            </div>
+          </div>
+          <p class="utility-date">2026 / SUMMER <span>●</span> TAIPEI</p>
+        </div>
+
+        <div class="review-banner">
+          <span class="review-label">PROTOTYPE</span>
+          <p><strong>视觉审查模式</strong> — 所有操作仅在当前页面模拟，不会写入真实账号。</p>
+          <span class="review-code">MT-WEB-06</span>
+        </div>
+
+        <section class="view-panel is-active" id="view-calendar" data-view-panel="calendar" aria-labelledby="calendar-title">
+          <div class="page-intro calendar-intro">
+            <div class="intro-copy">
+              <p class="eyebrow"><span>01</span> THIS WEEK'S LINEUP</p>
+              <h1 id="calendar-title">番剧<br /><em>周历</em></h1>
+              <p class="lead">把这一季的期待，贴满每一天。</p>
+            </div>
+            <div class="intro-collage" aria-hidden="true">
+              <span class="sun-shape"></span>
+              <span class="grid-shape"></span>
+              <span class="scribble">ON<br />AIR!</span>
+              <span class="issue-card">SUMMER<br /><strong>06</strong></span>
+            </div>
+          </div>
+
+          <div class="paper-panel calendar-toolbar" aria-label="周历筛选">
+            <div class="toolbar-heading">
+              <div>
+                <span class="section-no">WEEK / 32</span>
+                <h2>按播出日翻页</h2>
+              </div>
+              <p><span id="calendar-count">8</span> 部正在播出</p>
+            </div>
+            <div class="day-filter" role="group" aria-label="按星期筛选">
+              <button type="button" class="day-chip is-active" data-day="all" aria-pressed="true">
+                <span>ALL</span><strong>全部</strong>
+              </button>
+              <button type="button" class="day-chip" data-day="1" aria-pressed="false"><span>MON</span><strong>一</strong></button>
+              <button type="button" class="day-chip" data-day="2" aria-pressed="false"><span>TUE</span><strong>二</strong></button>
+              <button type="button" class="day-chip" data-day="3" aria-pressed="false"><span>WED</span><strong>三</strong></button>
+              <button type="button" class="day-chip" data-day="4" aria-pressed="false"><span>THU</span><strong>四</strong></button>
+              <button type="button" class="day-chip" data-day="5" aria-pressed="false"><span>FRI</span><strong>五</strong></button>
+              <button type="button" class="day-chip" data-day="6" aria-pressed="false"><span>SAT</span><strong>六</strong></button>
+              <button type="button" class="day-chip" data-day="7" aria-pressed="false"><span>SUN</span><strong>日</strong></button>
+            </div>
+          </div>
+
+          <div class="calendar-grid" id="calendar-grid">
+            <article class="anime-card" data-calendar-card data-day="1">
+              <div class="card-topline"><span>MON / 21:30</span><span>★ 8.1</span></div>
+              <div class="poster-art poster-a" role="img" aria-label="败犬女主太多了海报风格图形">
+                <span class="poster-kana">負けヒロイン</span><span class="poster-number">01</span><span class="poster-title">败犬女主<br />太多了！</span>
+              </div>
+              <div class="anime-info"><p>Make Heroine ga Oosugiru!</p><h3>败犬女主太多了！</h3><button type="button" class="follow-button is-following" data-follow aria-pressed="true"><span>✓</span><strong>已追番</strong></button></div>
+            </article>
+            <article class="anime-card" data-calendar-card data-day="1">
+              <div class="card-topline"><span>MON / 23:00</span><span>★ 7.6</span></div>
+              <div class="poster-art poster-b" role="img" aria-label="义妹生活海报风格图形">
+                <span class="poster-kana">義妹生活</span><span class="poster-number">02</span><span class="poster-title">义妹<br />生活</span>
+              </div>
+              <div class="anime-info"><p>Gimai Seikatsu</p><h3>义妹生活</h3><button type="button" class="follow-button" data-follow aria-pressed="false"><span>＋</span><strong>追番</strong></button></div>
+            </article>
+            <article class="anime-card" data-calendar-card data-day="2">
+              <div class="card-topline"><span>TUE / 22:00</span><span>★ 8.4</span></div>
+              <div class="poster-art poster-c" role="img" aria-label="胆大党海报风格图形">
+                <span class="poster-kana">ダンダダン</span><span class="poster-number">03</span><span class="poster-title">胆大党</span>
+              </div>
+              <div class="anime-info"><p>DAN DA DAN</p><h3>胆大党</h3><button type="button" class="follow-button" data-follow aria-pressed="false"><span>＋</span><strong>追番</strong></button></div>
+            </article>
+            <article class="anime-card" data-calendar-card data-day="3">
+              <div class="card-topline"><span>WED / 20:00</span><span>★ 8.9</span></div>
+              <div class="poster-art poster-d" role="img" aria-label="葬送的芙莉莲海报风格图形">
+                <span class="poster-kana">葬送のフリーレン</span><span class="poster-number">04</span><span class="poster-title">葬送的<br />芙莉莲</span>
+              </div>
+              <div class="anime-info"><p>Frieren: Beyond Journey's End</p><h3>葬送的芙莉莲</h3><button type="button" class="follow-button is-following" data-follow aria-pressed="true"><span>✓</span><strong>已追番</strong></button></div>
+            </article>
+            <article class="anime-card" data-calendar-card data-day="4">
+              <div class="card-topline"><span>THU / 21:00</span><span>★ 8.2</span></div>
+              <div class="poster-art poster-e" role="img" aria-label="迷宫饭海报风格图形">
+                <span class="poster-kana">ダンジョン飯</span><span class="poster-number">05</span><span class="poster-title">迷宫饭</span>
+              </div>
+              <div class="anime-info"><p>Delicious in Dungeon</p><h3>迷宫饭</h3><button type="button" class="follow-button is-following" data-follow aria-pressed="true"><span>✓</span><strong>已追番</strong></button></div>
+            </article>
+            <article class="anime-card" data-calendar-card data-day="5">
+              <div class="card-topline"><span>FRI / 22:30</span><span>★ 7.9</span></div>
+              <div class="poster-art poster-f" role="img" aria-label="青之箱海报风格图形">
+                <span class="poster-kana">アオのハコ</span><span class="poster-number">06</span><span class="poster-title">青之箱</span>
+              </div>
+              <div class="anime-info"><p>Blue Box</p><h3>青之箱</h3><button type="button" class="follow-button is-following" data-follow aria-pressed="true"><span>✓</span><strong>已追番</strong></button></div>
+            </article>
+            <article class="anime-card" data-calendar-card data-day="6">
+              <div class="card-topline"><span>SAT / 23:30</span><span>★ 8.0</span></div>
+              <div class="poster-art poster-g" role="img" aria-label="九龙大众浪漫海报风格图形">
+                <span class="poster-kana">九龍ジェネリック</span><span class="poster-number">07</span><span class="poster-title">九龙<br />大众浪漫</span>
+              </div>
+              <div class="anime-info"><p>Kowloon Generic Romance</p><h3>九龙大众浪漫</h3><button type="button" class="follow-button" data-follow aria-pressed="false"><span>＋</span><strong>追番</strong></button></div>
+            </article>
+            <article class="anime-card" data-calendar-card data-day="7">
+              <div class="card-topline"><span>SUN / 20:30</span><span>★ 7.7</span></div>
+              <div class="poster-art poster-h" role="img" aria-label="紫云寺家的孩子们海报风格图形">
+                <span class="poster-kana">紫雲寺家の子供たち</span><span class="poster-number">08</span><span class="poster-title">紫云寺家的<br />孩子们</span>
+              </div>
+              <div class="anime-info"><p>Shiunji-ke no Kodomotachi</p><h3>紫云寺家的孩子们</h3><button type="button" class="follow-button" data-follow aria-pressed="false"><span>＋</span><strong>追番</strong></button></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view-panel" id="view-tracks" data-view-panel="tracks" aria-labelledby="tracks-title" hidden>
+          <div class="tracks-heading">
+            <div>
+              <p class="eyebrow"><span>02</span> PERSONAL WATCH DESK</p>
+              <h1 id="tracks-title">我的追番<span>!</span></h1>
+              <p class="lead">今天有 2 部更新，继续从上次的位置开始。</p>
+            </div>
+            <button type="button" class="primary-action" data-open-add><span aria-hidden="true">＋</span> 加番</button>
+          </div>
+
+          <div class="tracks-controls paper-panel">
+            <div class="status-filter" role="group" aria-label="按追番状态筛选">
+              <button type="button" class="status-chip is-active" data-track-filter="all" aria-pressed="true">全部 <span data-count="all">6</span></button>
+              <button type="button" class="status-chip" data-track-filter="watching" aria-pressed="false">在追 <span data-count="watching">3</span></button>
+              <button type="button" class="status-chip" data-track-filter="plan" aria-pressed="false">想看 <span data-count="plan">2</span></button>
+              <button type="button" class="status-chip" data-track-filter="done" aria-pressed="false">看完 <span data-count="done">1</span></button>
+            </div>
+            <label class="search-field">
+              <span aria-hidden="true">⌕</span>
+              <span class="sr-only">搜索追番</span>
+              <input type="search" id="track-search" placeholder="搜索标题、别名、标签…" autocomplete="off" />
+              <kbd>⌘ K</kbd>
+            </label>
+          </div>
+
+          <div class="track-section-heading">
+            <span>MY EDITORIAL PICKS</span>
+            <strong id="track-result-count">6 部</strong>
+          </div>
+          <div class="track-grid" id="track-grid">
+            <article class="track-card" data-track="makeine" data-title="败犬女主太多了 Make Heroine ga Oosugiru 恋爱 校园" data-status="watching" data-episode="7" data-total="12" data-added="true" data-poster="a">
+              <button type="button" class="track-cover poster-art poster-a" data-edit-track="makeine" aria-label="编辑败犬女主太多了">
+                <span class="poster-kana">負けヒロイン</span><span class="poster-number">01</span><span class="poster-title">败犬女主<br />太多了！</span><span class="edit-corner">编辑 ↗</span>
+              </button>
+              <div class="track-body">
+                <div class="track-meta"><span class="track-status" data-status-label>在追</span><span>MON · ★ 8.1</span></div>
+                <h2>败犬女主太多了！</h2><p>Make Heroine ga Oosugiru!</p>
+                <div class="tag-row"><span>恋爱</span><span>校园</span><span>2024</span></div>
+                <div class="track-progress" aria-label="观看进度">
+                  <button type="button" data-step="-1" aria-label="减少一集">−</button><output><strong data-episode-value>7</strong><span> / </span><span data-total-value>12</span></output><button type="button" data-step="1" aria-label="增加一集">＋</button>
+                </div>
+                <button type="button" class="continue-button" data-continue="makeine"><span aria-hidden="true">▶</span><span>继续看 EP.7</span></button>
+              </div>
+            </article>
+
+            <article class="track-card" data-track="frieren" data-title="葬送的芙莉莲 Frieren 奇幻 旅行" data-status="done" data-episode="28" data-total="28" data-added="true" data-poster="d">
+              <button type="button" class="track-cover poster-art poster-d" data-edit-track="frieren" aria-label="编辑葬送的芙莉莲">
+                <span class="poster-kana">葬送のフリーレン</span><span class="poster-number">04</span><span class="poster-title">葬送的<br />芙莉莲</span><span class="edit-corner">编辑 ↗</span>
+              </button>
+              <div class="track-body">
+                <div class="track-meta"><span class="track-status" data-status-label>看完</span><span>WED · ★ 8.9</span></div>
+                <h2>葬送的芙莉莲</h2><p>Frieren: Beyond Journey's End</p>
+                <div class="tag-row"><span>奇幻</span><span>旅行</span></div>
+                <div class="track-progress"><button type="button" data-step="-1" aria-label="减少一集">−</button><output><strong data-episode-value>28</strong><span> / </span><span data-total-value>28</span></output><button type="button" data-step="1" aria-label="增加一集">＋</button></div>
+                <button type="button" class="continue-button" data-continue="frieren"><span aria-hidden="true">▶</span><span>重温 EP.28</span></button>
+              </div>
+            </article>
+
+            <article class="track-card" data-track="dandadan" data-title="胆大党 DAN DA DAN 奇幻 超自然" data-status="plan" data-episode="0" data-total="12" data-added="true" data-poster="c">
+              <button type="button" class="track-cover poster-art poster-c" data-edit-track="dandadan" aria-label="编辑胆大党">
+                <span class="poster-kana">ダンダダン</span><span class="poster-number">03</span><span class="poster-title">胆大党</span><span class="edit-corner">编辑 ↗</span>
+              </button>
+              <div class="track-body">
+                <div class="track-meta"><span class="track-status" data-status-label>想看</span><span>TUE · ★ 8.4</span></div>
+                <h2>胆大党</h2><p>DAN DA DAN</p>
+                <div class="tag-row"><span>奇幻</span><span>超自然</span></div>
+                <div class="track-progress"><button type="button" data-step="-1" aria-label="减少一集">−</button><output><strong data-episode-value>0</strong><span> / </span><span data-total-value>12</span></output><button type="button" data-step="1" aria-label="增加一集">＋</button></div>
+                <button type="button" class="continue-button" data-continue="dandadan"><span aria-hidden="true">▶</span><span>从 EP.1 开始</span></button>
+              </div>
+            </article>
+
+            <article class="track-card" data-track="dungeon" data-title="迷宫饭 Delicious in Dungeon 奇幻 美食" data-status="watching" data-episode="18" data-total="24" data-added="true" data-poster="e">
+              <button type="button" class="track-cover poster-art poster-e" data-edit-track="dungeon" aria-label="编辑迷宫饭">
+                <span class="poster-kana">ダンジョン飯</span><span class="poster-number">05</span><span class="poster-title">迷宫饭</span><span class="edit-corner">编辑 ↗</span>
+              </button>
+              <div class="track-body">
+                <div class="track-meta"><span class="track-status" data-status-label>在追</span><span>THU · ★ 8.2</span></div>
+                <h2>迷宫饭</h2><p>Delicious in Dungeon</p>
+                <div class="tag-row"><span>奇幻</span><span>美食</span></div>
+                <div class="track-progress"><button type="button" data-step="-1" aria-label="减少一集">−</button><output><strong data-episode-value>18</strong><span> / </span><span data-total-value>24</span></output><button type="button" data-step="1" aria-label="增加一集">＋</button></div>
+                <button type="button" class="continue-button" data-continue="dungeon"><span aria-hidden="true">▶</span><span>继续看 EP.18</span></button>
+              </div>
+            </article>
+
+            <article class="track-card" data-track="gimai" data-title="义妹生活 Gimai Seikatsu 日常 恋爱" data-status="plan" data-episode="0" data-total="12" data-added="true" data-poster="b">
+              <button type="button" class="track-cover poster-art poster-b" data-edit-track="gimai" aria-label="编辑义妹生活">
+                <span class="poster-kana">義妹生活</span><span class="poster-number">02</span><span class="poster-title">义妹<br />生活</span><span class="edit-corner">编辑 ↗</span>
+              </button>
+              <div class="track-body">
+                <div class="track-meta"><span class="track-status" data-status-label>想看</span><span>MON · ★ 7.6</span></div>
+                <h2>义妹生活</h2><p>Gimai Seikatsu</p>
+                <div class="tag-row"><span>日常</span><span>恋爱</span></div>
+                <div class="track-progress"><button type="button" data-step="-1" aria-label="减少一集">−</button><output><strong data-episode-value>0</strong><span> / </span><span data-total-value>12</span></output><button type="button" data-step="1" aria-label="增加一集">＋</button></div>
+                <button type="button" class="continue-button" data-continue="gimai"><span aria-hidden="true">▶</span><span>从 EP.1 开始</span></button>
+              </div>
+            </article>
+
+            <article class="track-card" data-track="bluebox" data-title="青之箱 Blue Box 青春 运动 恋爱" data-status="watching" data-episode="9" data-total="" data-added="true" data-poster="f">
+              <button type="button" class="track-cover poster-art poster-f" data-edit-track="bluebox" aria-label="编辑青之箱">
+                <span class="poster-kana">アオのハコ</span><span class="poster-number">06</span><span class="poster-title">青之箱</span><span class="edit-corner">编辑 ↗</span>
+              </button>
+              <div class="track-body">
+                <div class="track-meta"><span class="track-status" data-status-label>在追</span><span>FRI · ★ 7.9</span></div>
+                <h2>青之箱</h2><p>Blue Box</p>
+                <div class="tag-row"><span>青春</span><span>运动</span><span>恋爱</span></div>
+                <div class="track-progress"><button type="button" data-step="-1" aria-label="减少一集">−</button><output><strong data-episode-value>9</strong><span> / </span><span data-total-value>连载中</span></output><button type="button" data-step="1" aria-label="增加一集">＋</button></div>
+                <button type="button" class="continue-button" data-continue="bluebox"><span aria-hidden="true">▶</span><span>继续看 EP.9</span></button>
+              </div>
+            </article>
+
+            <article class="track-card" data-track="shiunji" data-title="紫云寺家的孩子们 Shiunji-ke Love 家庭 喜剧" data-status="plan" data-episode="0" data-total="12" data-added="false" data-poster="h" hidden>
+              <button type="button" class="track-cover poster-art poster-h" data-edit-track="shiunji" aria-label="编辑紫云寺家的孩子们">
+                <span class="poster-kana">紫雲寺家の子供たち</span><span class="poster-number">08</span><span class="poster-title">紫云寺家的<br />孩子们</span><span class="edit-corner">编辑 ↗</span>
+              </button>
+              <div class="track-body"><div class="track-meta"><span class="track-status" data-status-label>想看</span><span>SUN · ★ 7.7</span></div><h2>紫云寺家的孩子们</h2><p>Shiunji-ke no Kodomotachi</p><div class="tag-row"><span>家庭</span><span>喜剧</span></div><div class="track-progress"><button type="button" data-step="-1" aria-label="减少一集">−</button><output><strong data-episode-value>0</strong><span> / </span><span data-total-value>12</span></output><button type="button" data-step="1" aria-label="增加一集">＋</button></div><button type="button" class="continue-button" data-continue="shiunji"><span aria-hidden="true">▶</span><span>从 EP.1 开始</span></button></div>
+            </article>
+          </div>
+          <div class="empty-result" id="track-empty" hidden><span>404?</span><strong>这期没有符合条件的番剧</strong><button type="button" data-clear-track-filter>清空筛选</button></div>
+        </section>
+
+        <section class="view-panel" id="view-player" data-view-panel="player" aria-labelledby="player-title" hidden>
+          <div class="player-heading">
+            <button type="button" class="back-link" data-view="tracks">← 返回追番</button>
+            <p class="eyebrow"><span>03</span> NOW SCREENING</p>
+            <h1 id="player-title">败犬女主太多了！</h1>
+            <p id="player-subtitle">Make Heroine ga Oosugiru! · EP.7</p>
+          </div>
+
+          <div class="player-layout">
+            <div class="video-column">
+              <div class="video-stage poster-a" id="video-stage" data-playing="false">
+                <div class="video-grain" aria-hidden="true"></div>
+                <div class="stage-copy"><span>MAPLE SCREENING ROOM</span><strong id="stage-episode">EP.07</strong><small id="stage-status">PAUSED / 已暂停</small></div>
+                <button type="button" class="big-play" id="play-toggle" aria-pressed="false" aria-label="播放"><span aria-hidden="true">▶</span></button>
+                <div class="stage-progress" aria-hidden="true"><span></span></div>
+                <span class="screening-sticker" aria-hidden="true">ON<br />AIR</span>
+              </div>
+              <div class="player-controls paper-panel">
+                <button type="button" class="play-control" id="play-control" aria-pressed="false"><span aria-hidden="true">▶</span><strong>播放</strong></button>
+                <div class="fake-timeline"><span></span></div>
+                <time>08:42 / 24:10</time>
+                <button type="button" class="square-control" aria-label="静音">⌁</button>
+                <button type="button" class="square-control" aria-label="全屏">⛶</button>
+              </div>
+            </div>
+
+            <aside class="episode-desk" aria-label="播放选项">
+              <div class="desk-header"><span>SOURCE DESK</span><strong>放映单</strong></div>
+              <div class="control-group">
+                <label>播放源</label>
+                <div class="neo-select" data-select>
+                  <button type="button" class="select-trigger" data-select-trigger aria-expanded="false" aria-haspopup="listbox"><span data-select-label>稀饭 / Xifan</span><b aria-hidden="true">⌄</b></button>
+                  <div class="select-menu" role="listbox" aria-label="选择播放源" hidden>
+                    <button type="button" role="option" aria-selected="true" data-value="稀饭 / Xifan">稀饭 / Xifan <small>MP4</small></button>
+                    <button type="button" role="option" aria-selected="false" data-value="Girigiri">Girigiri <small>HLS</small></button>
+                  </div>
+                </div>
+              </div>
+              <div class="control-group"><label>线路</label><div class="line-switch" role="group" aria-label="选择线路"><button type="button" class="is-active" data-line aria-pressed="true">线路 1</button><button type="button" data-line aria-pressed="false">线路 2</button><button type="button" data-line aria-pressed="false">备用</button></div></div>
+              <div class="control-group episode-group"><div class="episode-label"><label>选集</label><span id="episode-selection">EP.7 / 12</span></div><div class="episode-grid" id="episode-grid" role="group" aria-label="选择集数"></div></div>
+              <div class="desk-note"><span aria-hidden="true">✦</span><p>选集从追番记录当前进度开始，不自动跳到下一集。</p></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view-panel" id="view-settings" data-view-panel="settings" aria-labelledby="settings-title" hidden>
+          <div class="settings-heading"><p class="eyebrow"><span>04</span> CONTROL ROOM</p><h1 id="settings-title">设置 / SETTINGS</h1><p class="lead">把账号、播放与数据习惯整理成自己的编辑台。</p></div>
+          <div class="settings-layout">
+            <nav class="settings-nav paper-panel" aria-label="设置分类" role="tablist" aria-orientation="vertical">
+              <button type="button" class="is-active" role="tab" aria-selected="true" aria-controls="settings-account" data-settings-pane="account"><span>01</span><strong>账号与身份</strong><small>ACCOUNT</small></button>
+              <button type="button" role="tab" aria-selected="false" aria-controls="settings-playback" data-settings-pane="playback"><span>02</span><strong>播放偏好</strong><small>PLAYBACK</small></button>
+              <button type="button" role="tab" aria-selected="false" aria-controls="settings-data" data-settings-pane="data"><span>03</span><strong>数据与同步</strong><small>DATA</small></button>
+            </nav>
+            <div class="settings-content">
+              <section class="settings-pane is-active" id="settings-account" data-settings-content="account" role="tabpanel">
+                <div class="pane-title"><span>IDENTITY CARD</span><h2>账号与身份</h2></div>
+                <div class="identity-card">
+                  <div class="identity-avatar">纱</div><div><small>MAPLE EDITOR</small><strong data-settings-account>尚未登录</strong><p>登录后同步你的追番记录与播放进度。</p></div><button type="button" data-auth-open>邮箱登录</button>
+                </div>
+                <div class="setting-list">
+                  <label class="setting-row"><span><strong>编辑部昵称</strong><small>显示在个人追番页</small></span><input type="text" value="雾中编辑" maxlength="20" /></label>
+                  <div class="setting-row"><span><strong>每周摘要</strong><small>汇总当周新番更新</small></span><label class="neo-switch"><input type="checkbox" checked /><span aria-hidden="true"></span><span class="sr-only">开启每周摘要</span></label></div>
+                </div>
+              </section>
+              <section class="settings-pane" id="settings-playback" data-settings-content="playback" role="tabpanel" hidden>
+                <div class="pane-title"><span>SCREENING PREFS</span><h2>播放偏好</h2></div>
+                <div class="setting-list">
+                  <div class="setting-row"><span><strong>默认播放源</strong><small>进入播放器时优先选择</small></span><div class="neo-select compact-select" data-select><button type="button" class="select-trigger" data-select-trigger aria-expanded="false" aria-haspopup="listbox"><span data-select-label>稀饭 / Xifan</span><b aria-hidden="true">⌄</b></button><div class="select-menu" role="listbox" aria-label="默认播放源" hidden><button type="button" role="option" aria-selected="true" data-value="稀饭 / Xifan">稀饭 / Xifan</button><button type="button" role="option" aria-selected="false" data-value="Girigiri">Girigiri</button></div></div></div>
+                  <div class="setting-row"><span><strong>自动记录进度</strong><small>播放时更新当前集数</small></span><label class="neo-switch"><input type="checkbox" checked /><span aria-hidden="true"></span><span class="sr-only">自动记录进度</span></label></div>
+                  <div class="setting-row"><span><strong>优先高画质</strong><small>线路可用时选择高清</small></span><label class="neo-switch"><input type="checkbox" /><span aria-hidden="true"></span><span class="sr-only">优先高画质</span></label></div>
+                </div>
+              </section>
+              <section class="settings-pane" id="settings-data" data-settings-content="data" role="tabpanel" hidden>
+                <div class="pane-title"><span>SYNC SHELF</span><h2>数据与同步</h2></div>
+                <div class="sync-board"><div><span class="sync-light"></span><p><strong>网页版记录</strong><small>刚刚更新 · 6 部番剧</small></p></div><button type="button" data-mock-sync>立即同步</button></div>
+                <div class="setting-list"><div class="setting-row"><span><strong>冲突处理</strong><small>发现其他设备有新记录时</small></span><div class="neo-select compact-select" data-select><button type="button" class="select-trigger" data-select-trigger aria-expanded="false" aria-haspopup="listbox"><span data-select-label>先询问我</span><b aria-hidden="true">⌄</b></button><div class="select-menu" role="listbox" aria-label="冲突处理方式" hidden><button type="button" role="option" aria-selected="true" data-value="先询问我">先询问我</button><button type="button" role="option" aria-selected="false" data-value="保留较新记录">保留较新记录</button></div></div></div></div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <footer class="page-footer"><span>MAPLETOOLS WEB / EDITORIAL SYSTEM</span><span>DESIGN REVIEW · 2026</span></footer>
+      </main>
+
+      <nav class="bottom-nav" aria-label="移动端主导航">
+        <button type="button" class="is-active" data-view="calendar" aria-current="page"><span aria-hidden="true">週</span><strong>周历</strong></button>
+        <button type="button" data-view="tracks"><span aria-hidden="true">追</span><strong>追番</strong></button>
+        <button type="button" data-view="player"><span aria-hidden="true">▶</span><strong>播放</strong></button>
+        <button type="button" data-view="settings"><span aria-hidden="true">設</span><strong>设置</strong></button>
+      </nav>
+    </div>
+
+    <div class="modal-backdrop" id="edit-modal" data-modal hidden>
+      <section class="modal-card edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+        <span class="modal-tape" aria-hidden="true"></span>
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭编辑弹窗">×</button>
+        <p class="modal-kicker">EDIT MY PICK / 追番编辑</p>
+        <div class="edit-head"><div class="mini-poster poster-a" id="edit-poster" aria-hidden="true"><span>EDIT</span></div><div><h2 id="edit-modal-title">败犬女主太多了！</h2><p id="edit-modal-subtitle">Make Heroine ga Oosugiru!</p></div></div>
+        <div class="field-group"><span class="field-label">状态</span><div class="modal-status" role="group" aria-label="追番状态"><button type="button" data-edit-status="watching">在追</button><button type="button" data-edit-status="plan">想看</button><button type="button" data-edit-status="done">看完</button></div></div>
+        <div class="field-group progress-editor"><span class="field-label">观看进度</span><div><button type="button" data-edit-step="-1" aria-label="减少一集">−</button><output id="edit-episode">7</output><button type="button" data-edit-step="1" aria-label="增加一集">＋</button></div><span>/</span><label><span class="sr-only">总集数</span><input id="edit-total" inputmode="numeric" pattern="[0-9]*" placeholder="连载中" maxlength="4" /></label></div>
+        <div class="field-group tag-editor"><label class="field-label" for="edit-tag-input">自定义标签</label><div class="edit-tags" id="edit-tags"><span>恋爱</span><span>校园</span></div><div class="tag-input-row"><input id="edit-tag-input" type="text" placeholder="输入标签" maxlength="12" /><button type="button" id="add-tag-button">添加</button></div></div>
+        <div class="modal-footer"><p><span aria-hidden="true">●</span> 修改会即时反映在设计稿中</p><button type="button" class="primary-action" data-modal-close>完成</button></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="add-modal" data-modal hidden>
+      <section class="modal-card add-modal-card" role="dialog" aria-modal="true" aria-labelledby="add-modal-title">
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭加番弹窗">×</button>
+        <p class="modal-kicker">ADD TO THE BOARD / 加番</p>
+        <h2 id="add-modal-title">找到下一部想看的番</h2>
+        <label class="modal-search"><span aria-hidden="true">⌕</span><span class="sr-only">搜索番剧</span><input type="search" id="add-search" placeholder="输入中文、日文或别名…" autocomplete="off" /></label>
+        <div class="search-results" id="add-results" aria-live="polite">
+          <article data-add-result data-search="紫云寺家的孩子们 shiunji family comedy"><div class="result-poster poster-h"><span>08</span></div><div><strong>紫云寺家的孩子们</strong><p>紫雲寺家の子供たち · 2025</p><span>家庭 · 喜剧 · ★ 7.7</span></div><button type="button" data-add-track="shiunji">＋ 想看</button></article>
+          <article data-add-result data-search="九龙大众浪漫 kowloon romance"><div class="result-poster poster-g"><span>07</span></div><div><strong>九龙大众浪漫</strong><p>九龍ジェネリックロマンス · 2025</p><span>恋爱 · 科幻 · ★ 8.0</span></div><button type="button" data-add-demo>＋ 想看</button></article>
+          <article data-add-result data-search="mono girl photography 日常"><div class="result-poster poster-f"><span>09</span></div><div><strong>mono女孩</strong><p>mono · 2025</p><span>日常 · 摄影 · ★ 7.5</span></div><button type="button" data-add-demo>＋ 想看</button></article>
+        </div>
+        <p class="search-empty" id="add-empty" hidden>没有找到，换一个关键词试试。</p>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="auth-modal" data-modal hidden>
+      <section class="modal-card auth-modal-card" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭登录弹窗">×</button>
+        <div class="auth-art" aria-hidden="true"><span class="auth-burst">LOGIN!</span><img src="./assets/sagiri-mascot.png" alt="" /></div>
+        <div class="auth-content">
+          <p class="modal-kicker">EDITOR PASS / 邮箱登录</p>
+          <div id="auth-step-email">
+            <h2 id="auth-modal-title">欢迎回到编辑部</h2><p>输入邮箱，我们会发送一枚 6 位验证码。</p>
+            <form id="email-form"><label for="email-input">邮箱地址</label><input id="email-input" type="email" autocomplete="email" placeholder="you@example.com" required /><button type="submit" class="primary-action">发送验证码 →</button></form>
+          </div>
+          <div id="auth-step-code" hidden>
+            <button type="button" class="auth-back" id="auth-back">← 修改邮箱</button><h2>检查你的邮箱</h2><p>验证码已发送至 <strong id="sent-email">you@example.com</strong></p>
+            <form id="code-form"><label for="code-input">6 位验证码</label><input id="code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="· · · · · ·" required /><span class="demo-code">交互稿验证码：062626</span><button type="submit" class="primary-action">进入编辑部 →</button></form>
+          </div>
+          <p class="auth-status" id="auth-status" role="status">&nbsp;</p>
+        </div>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
