@@ -2,8 +2,8 @@
 // 用户彻底找不回密码，号和追番数据就永久丢了。已定的处理方式是「不强制、
 // 登录后给一条不烦人的提示引导」。
 //
-// 只在「已登录 + 没设密保 + 本次会话没关掉」时出现。关掉只存 sessionStorage：下次开浏览器还会提醒，
-// 毕竟真丢号是不可逆的；但同一次浏览里不会反复烦人。
+// 只在「用户名密码账号 + 没有其它恢复凭据 + 本次会话没关掉」时出现。邮箱验证码账号不依赖密码，
+// 也不能进入账号安全模块。关掉只存 sessionStorage：下次开浏览器还会提醒，但同一次浏览里不会反复烦人。
 import { useState } from 'react'
 import { useAuth } from './auth'
 import { Icon } from './Icon'
@@ -14,7 +14,7 @@ export function NagBar({ onGoSettings }: { onGoSettings: () => void }): JSX.Elem
   const { user } = useAuth()
   const [dismissed, setDismissed] = useState(() => sessionStorage.getItem(DISMISS_KEY) === '1')
 
-  if (!user || user.hasSecurity || user.hasEmail || dismissed) return null
+  if (!user || !user.hasPassword || user.hasSecurity || user.hasEmail || dismissed) return null
 
   return (
     <div className="flex items-center gap-2.5 border-b border-primary/20 bg-primary/10 px-4 py-2 text-xs text-primary md:px-6">
