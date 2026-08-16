@@ -11,6 +11,9 @@ const SMTP_SECURE = process.env.SMTP_SECURE === 'true' || SMTP_PORT === 465
 const SMTP_USER = process.env.SMTP_USER?.trim() || ''
 const SMTP_PASS = process.env.SMTP_PASS || ''
 const SMTP_FROM = process.env.SMTP_FROM?.trim() || SMTP_USER
+// 显示名让收件箱列表里显示「MapleTools」而不是裸地址；行业里的 noreply@ 是发信域名所有者
+// 自己配的地址，个人邮箱冒充 noreply 会被 SPF/DKIM 判为伪造进垃圾箱，所以这里只加显示名。
+const SMTP_FROM_NAME = process.env.SMTP_FROM_NAME?.trim() || 'MapleTools'
 
 let transporter: Transporter | null = null
 
@@ -47,7 +50,7 @@ export async function sendEmailCode(email: string, code: string): Promise<void> 
   }
 
   await getTransporter().sendMail({
-    from: SMTP_FROM,
+    from: `"${SMTP_FROM_NAME.replace(/["\\]/g, '')}" <${SMTP_FROM}>`,
     to: email,
     subject: 'MapleTools 邮箱验证码',
     text: `你的 MapleTools 邮箱验证码是：${code}\n\n验证码 10 分钟内有效，且只能使用一次。如果不是你本人操作，请忽略此邮件。`,

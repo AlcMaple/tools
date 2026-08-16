@@ -4,6 +4,7 @@ import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
 import { searchOnline } from './bgm/search-online'
 import auth from './auth'
+import oauth from './oauth'
 import tracks from './tracks'
 import girigiri from './girigiri'
 import xifan from './xifan'
@@ -41,6 +42,10 @@ app.get('/api/health', (c) => c.json({ ok: true }))
 
 // 账号体系：注册 / 登录 / 登出 / me。
 app.route('/api/auth', auth)
+
+// 第三方 OIDC 登录（Google，凭据未配时入口自动隐藏）。回调路径与 Google 控制台登记的
+// https://anime.alcmaple.cn/api/auth/oauth/google/callback 一致，本地联调需另登记 localhost URI。
+app.route('/api/auth/oauth', oauth)
 
 // 追番：列表 / 增改（字段级 patch）/ 删。要登录。
 app.route('/api/tracks', tracks)

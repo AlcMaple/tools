@@ -161,6 +161,22 @@ db.exec(`
   ON email_challenge (expires_at);
 `)
 
+// 第三方登录身份表 —— 账号键是 provider + subject（Google 的 sub），**不是邮箱**：
+// 邮箱会改名、回收、复用，subject 才是身份提供方保证终身不变的标识。email 只存快照，
+// 供设置页展示「这个 Google 账号当时用什么邮箱登录的」，不参与查找与匹配。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS oauth_identity (
+    provider    TEXT NOT NULL,
+    subject     TEXT NOT NULL,
+    user_id     INTEGER NOT NULL,
+    email       TEXT,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (provider, subject),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS oauth_identity_user_idx ON oauth_identity (user_id);
+`)
+
 // 追番数据版本号 —— app 的「覆盖上传」靠它判断「服务器上有没有我没见过的改动」。
 // **每次写入都 +1**（网页改一条、app 整包推一次，都算）。app 记住上次同步拿到的 rev，上传时带回来：
 // 对得上就直接覆盖，对不上就 409 让用户选「先拉取」还是「强制覆盖」。
