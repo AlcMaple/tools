@@ -1,4 +1,6 @@
 // 登录 / 注册 / 邮箱验证码登录 / 找回密码 弹窗 —— 压在暗化的周历上，MD3 卡片。
+// 顶部「使用 Google 继续」品牌按钮（凭据未配时整体不出现）：Google 是 Gmail 的免验证码
+// 通道，与「该邮箱收验证码登录」进同一个账号。
 // 登录：用户名 + 密码（带「忘记密码？」入口）；注册：多一个确认密码；
 // 邮箱：验证码确认地址后，无论新旧账号都直接登录，不额外收集用户名或密码。
 // 找回密码：账号 + 密保问题（预设下拉）+ 答案 + 新密码 + 确认。
@@ -6,7 +8,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { auth, fetchOauthProviders, fetchQuestions } from './auth'
 import type { SecurityQuestion } from './auth'
-import { Icon } from './Icon'
+import { GoogleMark, Icon } from './Icon'
+import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 
 export type AuthMode = 'login' | 'register' | 'email' | 'forgot'
@@ -432,26 +435,22 @@ export function AuthModal({
               )}
 
               <Field label={isForgot ? '新密码' : '密码'}>
-                <input
-                  type="password"
+                <PasswordInput
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={setPassword}
                   placeholder={isForgot ? '设置新密码' : '输入密码'}
                   autoComplete={isReg || isForgot ? 'new-password' : 'current-password'}
-                  className={inputCls}
                 />
                 {(isReg || isForgot) && <Hint>至少 6 位</Hint>}
               </Field>
 
               {(isReg || isForgot) && (
                 <Field label={isForgot ? '确认新密码' : '确认密码'}>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
+                    onChange={setConfirm}
                     placeholder="再输一次密码"
                     autoComplete="new-password"
-                    className={inputCls}
                   />
                 </Field>
               )}
@@ -545,28 +544,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Hint({ children }: { children: React.ReactNode }): JSX.Element {
   return <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">{children}</p>
-}
-
-// Google 品牌四色「G」—— 单色 currentColor 套不进 Icon 的单 path 设计，且用错配色就不像官方入口了。
-function GoogleMark(): JSX.Element {
-  return (
-    <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden>
-      <path
-        fill="#4285F4"
-        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92a8.78 8.78 0 0 0 2.68-6.62z"
-      />
-      <path
-        fill="#34A853"
-        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M3.97 10.72A5.41 5.41 0 0 1 3.68 9c0-.6.1-1.18.28-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.05l3.01-2.33z"
-      />
-      <path
-        fill="#EA4335"
-        d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.9 11.42 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"
-      />
-    </svg>
-  )
 }

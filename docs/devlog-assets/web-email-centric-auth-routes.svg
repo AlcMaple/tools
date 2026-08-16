@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1180" viewBox="0 0 1080 1180" role="img" aria-labelledby="title desc">
+  <title id="title">邮箱中心账号体系 · 全路线图</title>
+  <desc id="desc">一个账号一个邮箱（Gmail 或非 Gmail）加一个密码；Google 是 Gmail 的免验证码通道。覆盖 Google 快捷登录、验证码登录、账密登录、首次设密码、绑定 / 换绑 / 解绑邮箱（验证码与 Google 两条路）的全部用户操作顺序。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#151313"/>
+      <stop offset="1" stop-color="#0e0e0e"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#aa9092"/>
+    </marker>
+    <marker id="arrowG" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#8ab4f8"/>
+    </marker>
+    <style>
+      .box{fill:#1b1a1a;stroke:#574548;stroke-width:1}
+      .userbox{fill:#22161a;stroke:#ffb3b8;stroke-width:1.2}
+      .gbox{fill:#161c26;stroke:#5a6b8c;stroke-width:1.2}
+      .db{fill:#171d17;stroke:#5b7a5e;stroke-width:1.2}
+      .title{fill:#eee5e6;font:700 16px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .body{fill:#d7c5c7;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .small{fill:#a68f91;font:11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .muted{fill:#8b7375;font:10.5px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .label{fill:#ffb3b8;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;letter-spacing:1px}
+      .glabel{fill:#8ab4f8;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;letter-spacing:1px}
+      .gtext{fill:#a8c2f0;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .gpath{fill:none;stroke:#8ab4f8;stroke-width:1.4;stroke-dasharray:5 3;marker-end:url(#arrowG)}
+      .line{fill:none;stroke:#aa9092;stroke-width:1.4;marker-end:url(#arrow)}
+      .num{fill:#ffb3b8;font:700 10px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .pill{fill:#2a2124;stroke:#574548;stroke-width:.8}
+    </style>
+  </defs>
+  <rect width="1080" height="1180" rx="18" fill="url(#bg)"/>
+  <text x="36" y="40" class="label">WEB AUTH · 邮箱中心 · 全路线</text>
+  <text x="36" y="66" class="title">一个账号 = 一个邮箱（Gmail 或非 Gmail）+ 一个密码</text>
+  <text x="36" y="88" class="small">Google 登录不是独立凭据，是 Gmail 的免验证码通道；走 Google 还是走验证码，进的都是同一个账号</text>
+
+  <!-- 中央账号 -->
+  <rect x="380" y="120" width="320" height="74" rx="12" class="db"/>
+  <text x="540" y="148" text-anchor="middle" class="title" font-size="14">账号（users 表）</text>
+  <text x="540" y="170" text-anchor="middle" class="small">email = 身份（唯一）· password = 可选</text>
+  <text x="540" y="186" text-anchor="middle" class="muted">追番等数据挂在账号上，换绑 / 解绑邮箱不动数据</text>
+
+  <!-- ═══ 第一行：三条登录路线 ═══ -->
+  <text x="36" y="238" class="label">一 · 登录（谁都能走，无需事先设置）</text>
+
+  <!-- Google 登录 -->
+  <rect x="36" y="256" width="310" height="150" rx="12" class="box"/>
+  <text x="52" y="282" class="title" font-size="13">Google 快捷登录</text>
+  <text x="52" y="306" class="body">1. 登录弹窗点「使用 Google 继续」</text>
+  <text x="52" y="326" class="body">2. Google 页面选账号 / 授权</text>
+  <text x="52" y="346" class="body">3. 回跳本站，自动登录</text>
+  <text x="52" y="370" class="muted">邮箱命中账号 → 进该账号</text>
+  <text x="52" y="386" class="muted">邮箱没人用 → 以该邮箱自动建号</text>
+
+  <!-- 验证码登录 -->
+  <rect x="385" y="256" width="310" height="150" rx="12" class="box"/>
+  <text x="401" y="282" class="title" font-size="13">邮箱验证码登录</text>
+  <text x="401" y="306" class="body">1. 登录弹窗点「使用邮箱验证码登录」</text>
+  <text x="401" y="326" class="body">2. 输入邮箱（快捷后缀补全）→ 发码</text>
+  <text x="401" y="346" class="body">3. 收件箱直达链接打开邮箱查码</text>
+  <text x="401" y="366" class="body">4. 输 6 位验证码 → 登录</text>
+  <text x="401" y="390" class="muted">与 Google 快捷登录殊途同归：</text>
+  <text x="401" y="404" class="muted">同一个邮箱，同一个账号</text>
+
+  <!-- 账密登录 -->
+  <rect x="734" y="256" width="310" height="150" rx="12" class="box"/>
+  <text x="750" y="282" class="title" font-size="13">用户名 + 密码登录（老账号）</text>
+  <text x="750" y="306" class="body">1. 登录弹窗输用户名 + 密码</text>
+  <text x="750" y="326" class="body">2. 提交 → 登录</text>
+  <text x="750" y="350" class="muted">仅对注册时设过密码 / 后来补了</text>
+  <text x="750" y="366" class="muted">密码的账号可用；密码忘了走</text>
+  <text x="750" y="382" class="muted">密保找回，与本图无关</text>
+
+  <path d="M191 406 V452 H470" class="line"/>
+  <path d="M540 406 V452" class="line"/>
+  <path d="M889 406 V452 H610" class="line"/>
+  <text x="540" y="446" text-anchor="middle" class="muted">三条路殊途同归 —— 都拿到同一个 30 天会话</text>
+
+  <!-- ═══ 第二行：登录后设置 ═══ -->
+  <text x="36" y="498" class="label">二 · 登录后的设置（设置 → 个人信息 → 登录方式）</text>
+
+  <rect x="36" y="516" width="310" height="118" rx="12" class="userbox"/>
+  <text x="52" y="542" class="title" font-size="13">首次设置密码（无密码账号）</text>
+  <text x="52" y="566" class="body">1. 密码行点「设置」</text>
+  <text x="52" y="586" class="body">2. 输新密码 + 确认 → 完成</text>
+  <text x="52" y="610" class="muted">之后：可用用户名 + 密码登录，侧栏</text>
+  <text x="52" y="626" class="muted">出现「账号安全」（改密码 / 密保）</text>
+
+  <rect x="385" y="516" width="310" height="118" rx="12" class="userbox"/>
+  <text x="401" y="542" class="title" font-size="13">绑定邮箱（账密老账号，从未绑过邮箱）</text>
+  <text x="401" y="566" class="body">1. 邮箱行点「绑定」</text>
+  <text x="401" y="586" class="body">2. 输邮箱 + 当前密码 → 发码 → 验证</text>
+  <text x="401" y="610" class="muted">绑完即可用验证码登录；邮箱若是</text>
+  <text x="401" y="626" class="muted">Gmail，Google 通道自动可走</text>
+
+  <rect x="734" y="516" width="310" height="118" rx="12" class="userbox"/>
+  <text x="750" y="542" class="title" font-size="13">前提卡片：为什么动邮箱要先有密码</text>
+  <text x="750" y="566" class="muted">邮箱是身份本身。没密码的账号，</text>
+  <text x="750" y="582" class="muted">邮箱就是唯一入口（Google 通道也</text>
+  <text x="750" y="598" class="muted">依赖它），换掉 = 账号换没了。</text>
+  <text x="750" y="614" class="muted">所以换绑 / 解绑 / Google 换绑一律</text>
+  <text x="750" y="630" class="muted">先要求设置密码，服务端强制。</text>
+
+  <!-- ═══ 第三行：换绑 ═══ -->
+  <text x="36" y="678" class="label">三 · 换绑邮箱（前提：已设密码；目标邮箱没被别的账号占用）</text>
+
+  <!-- 换绑-验证码路径 -->
+  <rect x="36" y="696" width="490" height="196" rx="12" class="box"/>
+  <text x="52" y="722" class="title" font-size="13">路径 A：验证码换绑（任意邮箱）</text>
+  <text x="52" y="746" class="body">1. 邮箱行点「换绑」</text>
+  <text x="52" y="766" class="body">2. 输新邮箱地址（163 / QQ / outlook / Gmail 都行）</text>
+  <text x="52" y="786" class="body">3. 输当前密码 → 「发送验证码」（发给新邮箱）</text>
+  <text x="52" y="806" class="body">4. 到新邮箱收 6 位验证码 → 输入 → 「确认换绑」</text>
+  <text x="52" y="832" class="muted">旧邮箱不需要验证码（安全上验密码即证明主人，</text>
+  <text x="52" y="848" class="muted">也避免被盗旧邮箱的人锁死迁移）。</text>
+  <text x="52" y="868" class="muted">换绑成功：账号身份 = 新邮箱；旧邮箱上的 Google</text>
+  <text x="52" y="884" class="muted">关联同时清理；旧邮箱从此变回「路人」。</text>
+
+  <!-- 换绑-Google 路径 -->
+  <rect x="556" y="696" width="488" height="196" rx="12" class="gbox"/>
+  <text x="572" y="722" class="glabel">路径 B：Google 授权换绑（免验证码，目标须是 Gmail）</text>
+  <text x="572" y="746" class="gtext">1. 邮箱行点「换绑」→ 顶部「换绑为 Google 邮箱」</text>
+  <text x="572" y="766" class="gtext">2. 输当前密码 → 「去 Google 授权」</text>
+  <text x="572" y="786" class="gtext">3. Google 页选要换绑成的那个 Gmail 账号</text>
+  <text x="572" y="806" class="gtext">4. 授权回跳 → 自动完成，回设置页提示成功</text>
+  <text x="572" y="832" class="muted">授权即证明你控制该 Gmail，无需验证码；</text>
+  <text x="572" y="848" class="muted">163 → Gmail 同样能走这条路。换完该 Gmail</text>
+  <text x="572" y="864" class="muted">即可用 Google 快捷登录进本账号。</text>
+
+  <!-- ═══ 第四行：解绑 ═══ -->
+  <text x="36" y="936" class="label">四 · 解绑邮箱（账号从此只剩密码登录，数据保留）</text>
+  <rect x="36" y="954" width="1008" height="120" rx="12" class="box"/>
+  <text x="52" y="980" class="title" font-size="13">唯一路径：当前邮箱验证码</text>
+  <text x="52" y="1004" class="body">1. 邮箱行点「解绑」→ 向**当前绑定的邮箱**发验证码（证明你仍控制即将放弃的身份）</text>
+  <text x="52" y="1024" class="body">2. 收码输入 → 「确认解绑」→ 邮箱清空，账号与数据原样保留</text>
+  <text x="52" y="1052" class="muted">解绑 ≠ 注销：随时可重新「绑定」新邮箱；期间登录只剩用户名 + 密码。前提同上：已设密码（唯一入口不能自己拆）。</text>
+
+  <!-- 底部要点 -->
+  <rect x="36" y="1102" width="1008" height="54" rx="12" class="pill"/>
+  <text x="54" y="1124" class="label">全图不变式</text>
+  <text x="150" y="1124" class="small">同一邮箱永远只属于一个账号 · 验证码一次性（事务内消费，防并发重放） · 密码改动才踢会话，补密码不踢</text>
+  <text x="150" y="1142" class="small">Google 仅认 Google 已核验的邮箱（email_verified）；未配 GOOGLE_CLIENT_ID/SECRET 时 Google 相关入口整体消失</text>
+</svg>

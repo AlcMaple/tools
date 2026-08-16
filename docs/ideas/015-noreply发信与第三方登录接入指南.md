@@ -94,7 +94,8 @@ Google 已于 2026-08-16 接入（见 [`docs/devlog/2026-网页版.md`](../devlo
 1. Microsoft：token 端点与 JWKS 地址不同，账号类型选「任何组织 + 个人」；client_secret 有有效期需轮换
 2. Apple：需 Apple Developer Program（约 99 美元 / 年），client_secret 要用 `.p8` 私钥以 ES256 现签 JWT
 3. QQ：OAuth2 拿不到邮箱与 OIDC 声明，账号键用 `provider + openid`，不参与邮箱并号
-4. 设置页展示「已连接的第三方登录」及解绑入口；解绑后要求至少保留一种可登录方式
+
+设置页的第三方登录管理已于 2026-08-16 实现：个人信息模块展示已连接的 Google 账号（邮箱快照）、提供绑定入口（账密 / 验证码账号绑完即可快捷登录）、解绑需至少保留一种登录方式（见 `docs/devlog/2026-网页版.md` 对应记录）。
 
 ## 优先级建议
 
