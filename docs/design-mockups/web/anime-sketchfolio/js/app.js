@@ -107,11 +107,14 @@
     $$('.dlg-backdrop').forEach((w) => w.addEventListener('click', (e) => { if (e.target === w) w.classList.remove('open'); }));
   }
 
-  /* ---------- 便签 Toast ---------- */
+  /* ---------- 便签 Toast（单例：右下角始终一张，后来的直接顶掉先来的） ---------- */
   let toastRoot = null;
+  let toastCur = null;
+  let toastTimer = 0;
   function toast(text, opt) {
     opt = opt || {};
     if (!toastRoot) { toastRoot = document.createElement('div'); toastRoot.id = 'toast-root'; document.body.appendChild(toastRoot); }
+    if (toastCur) { clearTimeout(toastTimer); toastCur.remove(); }
     const el = document.createElement('div');
     el.className = 'toast-note' + (opt.err ? ' err' : '');
     el.innerHTML = `
@@ -125,9 +128,13 @@
     toastRoot.appendChild(el);
     const st = $('.toast-stamp', el);
     st.classList.remove('pop'); void st.offsetWidth; st.classList.add('pop');
-    setTimeout(() => {
+    toastCur = el;
+    toastTimer = setTimeout(() => {
       el.classList.add('out');
-      el.addEventListener('animationend', () => el.remove(), { once: true });
+      // 动画可能被 prefers-reduced-motion 关掉（animationend 不来），兜一个定时移除
+      const drop = () => { el.remove(); if (toastCur === el) toastCur = null; };
+      el.addEventListener('animationend', drop, { once: true });
+      setTimeout(drop, 400);
     }, opt.err ? 3600 : 2700);
   }
 
@@ -301,7 +308,7 @@
       b.type = 'button';
       b.innerHTML = `
         <span class="dw">${d.d}</span>
-        <span class="dd">${d.date}</span>
+        <span class="dnum">${d.date}</span>
         <span class="dc">${d.shows.length} 部</span>
         ${d.today ? '<svg class="clip-today" aria-hidden="true"><use href="#i-clip"></use></svg>' : ''}`;
       b.addEventListener('click', () => { selDay = i; renderDay(); });
@@ -428,13 +435,12 @@
           <div class="trk-actions">
             <a class="btn btn-sm btn-primary" href="player.html">${ic('play', 'ic ic-sm')}继续看</a>
             <button class="btn btn-sm btn-ghost" type="button">${ic('external', 'ic ic-sm')}BGM</button>
-            <div class="dd-host" style="margin-left:auto">
-              <button class="icon-btn" type="button" aria-label="更多操作">${ic('dots', 'ic')}</button>
-              <div class="dd">
-                <button class="dd-item" type="button" data-menu="done">${ic('check', 'ic ic-sm')}标记为看完</button>
-                <button class="dd-item" type="button" data-menu="remove" style="color:var(--sakura)">${ic('x', 'ic ic-sm')}移出追番</button>
-              </div>
+            <div class="status-seg" role="group" aria-label="追番状态">
+              <button class="seg-btn${t.status === 'wish' ? ' on' : ''}" type="button" data-status="wish" aria-pressed="${t.status === 'wish'}">想看</button>
+              <button class="seg-btn${t.status === 'doing' ? ' on' : ''}" type="button" data-status="doing" aria-pressed="${t.status === 'doing'}">在看</button>
+              <button class="seg-btn${t.status === 'done' ? ' on' : ''}" type="button" data-status="done" aria-pressed="${t.status === 'done'}">看完</button>
             </div>
+            <button class="btn btn-sm btn-danger trk-rm" type="button" data-menu="remove">${ic('x', 'ic ic-sm')}移出</button>
           </div>
         </div>
         <div class="tagpop"></div>
@@ -533,11 +539,14 @@
       } else if (e.target.closest('.ep-minus')) {
         if (t.ep > 0) t.ep -= 1;
         rerenderCard(t); renderCounts();
-      } else if (e.target.closest('[data-menu="done"]')) {
-        t.status = 'done';
-        if (t.total === null) t.total = t.ep;
-        rerenderCard(t); renderCounts();
-        toast(`『${t.t}』标记为看完`);
+      } else if (e.target.closest('[data-status]')) {
+        const next = e.target.closest('[data-status]').dataset.status;
+        if (next !== t.status) {
+          t.status = next;
+          if (next === 'done' && t.total === null) t.total = t.ep;
+          rerenderCard(t); renderCounts();
+          toast(`『${t.t}』已标为「${STATUS[next]}」`);
+        }
       } else if (e.target.closest('[data-menu="remove"]')) {
         openDialog('rmDlg');
         $('#rmName').textContent = t.t;
