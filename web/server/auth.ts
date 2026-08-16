@@ -20,7 +20,8 @@ const COOKIE = IS_PRODUCTION ? '__Host-mt_session' : 'mt_session'
 const LEGACY_COOKIE = 'mt_session'
 const MAX_AGE = 60 * 60 * 24 * 30 // 30 天（秒）
 // 生产走 HTTPS → secure cookie；dev 是 http://localhost，secure 会导致浏览器不回传，故按环境切。
-const SECURE = IS_PRODUCTION
+// oauth.ts 的短期跳转 cookie 沿用同一个标记。
+export const SECURE = IS_PRODUCTION
 
 const PASSWORD_MIN = 6
 const PASSWORD_MAX = 200
@@ -80,7 +81,8 @@ interface Session {
 }
 
 // 签发会话 cookie。payload 带 exp（秒），hono/jwt verify 会据此判过期。
-async function issueSession(c: Context, s: Session): Promise<void> {
+// oauth.ts（第三方登录回调）也复用它签发同一套会话。
+export async function issueSession(c: Context, s: Session): Promise<void> {
   const exp = Math.floor(Date.now() / 1000) + MAX_AGE
   const token = await sign({ ...s, exp }, AUTH_SECRET, 'HS256')
   setCookie(c, COOKIE, token, {
@@ -92,14 +94,14 @@ async function issueSession(c: Context, s: Session): Promise<void> {
   })
 }
 
-// 预编译语句
-const findByName = db.prepare<[string]>(
+// 预编译语句（oauth.ts 复用其中带 export 的几条）
+export const findByName = db.prepare<[string]>(
   'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, token_version, security_question, security_answer_hash, created_at FROM users WHERE username = ?',
 )
-const findByEmail = db.prepare<[string]>(
+export const findByEmail = db.prepare<[string]>(
   'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, token_version, security_question, security_answer_hash, created_at FROM users WHERE email = ?',
 )
-const findById = db.prepare<[number]>(
+export const findById = db.prepare<[number]>(
   'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, token_version, security_question, security_answer_hash, created_at FROM users WHERE id = ?',
 )
 const insertUser = db.prepare<[string, string, string]>(
@@ -137,12 +139,12 @@ const deleteChallenge = db.prepare<[string]>('DELETE FROM email_challenge WHERE 
 const cleanupChallenges = db.prepare<[number]>(
   'DELETE FROM email_challenge WHERE expires_at < ? OR consumed_at IS NOT NULL',
 )
-const insertPasswordlessEmailUser = db.prepare<[string, string, string, string, string]>(
+export const insertPasswordlessEmailUser = db.prepare<[string, string, string, string, string]>(
   `INSERT INTO users (username, pass_hash, password_enabled, email, email_verified_at, created_at)
    VALUES (?, ?, 0, ?, ?, ?)`,
 )
 
-interface UserRow {
+export interface UserRow {
   id: number
   username: string
   pass_hash: string
@@ -202,8 +204,9 @@ const WINDOW = 15 * 60 * 1000
 const LOGIN_MAX_PER_USER = 10 // 挡「盯着一个号猜密码」
 const LOGIN_MAX_PER_IP = 20 // 挡「一个来源换着号猜」
 const FORGOT_MAX = 5 // 密保答案熵很低（「你的出生地」猜几十次就中），给得比密码更紧
-const REGISTER_MAX_PER_IP = 5
-const REGISTER_WINDOW = 60 * 60 * 1000
+// oauth.ts 复用：第三方登录首次建号与邮箱验证码建号共用同一份注册限流，防刷号旁路。
+export const REGISTER_MAX_PER_IP = 5
+export const REGISTER_WINDOW = 60 * 60 * 1000
 
 /**
  * 取客户端 IP。只认 `X-Real-IP` —— nginx 用 `$remote_addr` 直接覆写它，客户端伪造不了；
@@ -230,7 +233,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '')
  * 邮箱比较策略：域名和本地部分统一转小写，不做 Gmail 点号 / plus alias 合并。
  * 这是本站自己的账号标识策略，避免同一邮箱在注册、登录、验证和找回流程里出现分歧。
  */
-function normalizeEmail(value: string): string {
+export function normalizeEmail(value: string): string {
   const raw = value.trim()
   if (!raw || raw.length > EMAIL_MAX || /[\r\n]/.test(raw)) return ''
   const at = raw.lastIndexOf('@')
@@ -255,7 +258,7 @@ function newChallengeId(): string {
   return randomBytes(24).toString('base64url')
 }
 
-function makeEmailUsername(): string {
+export function makeEmailUsername(): string {
   // 显示名不能从邮箱 local-part 派生:导航栏和设置页都会展示 username,那会间接泄露邮箱。
   for (let i = 0; i < 50; i++) {
     const candidate = `maple-${randomBytes(3).toString('hex')}`
@@ -264,7 +267,7 @@ function makeEmailUsername(): string {
   throw new Error('无法生成唯一用户名')
 }
 
-function makeUnusablePasswordHash(): string {
+export function makeUnusablePasswordHash(): string {
   // 继续满足 pass_hash 的 salt:hash 结构，但两段都用随机字节生成，不存在用户知道的原始密码。
   // password_enabled 才是权限边界；这个不可用哈希是防止未来漏判标志时意外出现空值快路径。
   return `${randomBytes(16).toString('hex')}:${randomBytes(64).toString('hex')}`
