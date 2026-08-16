@@ -23,8 +23,9 @@
 
 1. [brevo.com](https://www.brevo.com/) 注册免费套餐（手机号验证激活，不用绑卡）。注册引导依次问：组织信息（「组织名称」必填但**不核验**，个人项目填站名 `MapleTools`，「我的业务是」选与软件 / IT 最接近的一项）→ 地址（地址 / 邮编 / 城市 / 国家，全必填，填自己的真实大致地址即可，国家选中国，个人账号不核验）→ 方案选择（选 **Free 免费套餐**）。网站字段可填 `https://anime.alcmaple.cn` 也可选「我没有网站」。
    - **「地址」框是 Google 地址联想组件**：手打是填不进去的，输入几个字后要点选下拉建议（或按 ↓ 选中再回车）才算填上；若点选没反应，换无痕窗口或让代理走全局再打开这一页（联想脚本加载不全会点不动）。地址不核验，选哪条建议都不影响发信。
-2. 右上角头像 →「SMTP & API」→「SMTP」标签 → 生成 SMTP 密钥（`xkeysib-` 开头，只显示一次，立即保存）。连接必须用这个 **SMTP 密钥**，不是 API v3 密钥；SMTP 登录名和参数同一页面有显示（主机 `smtp-relay.brevo.com`，端口 587 / 2525，465 走 SSL/TLS）。
-3. 「Senders & IP」→「Domains」→ 添加 `alcmaple.cn`，按控制台给出的记录到阿里云「云解析 DNS」逐条添加并回 Brevo 验证（DNS 生效几分钟到几小时）：
+2. 右上角头像 →「SMTP & API」→「SMTP」标签 → 生成 SMTP 密钥（**2026 年实测为 `xsmtpsib-` 开头**，旧教程写的 `xkeysib-` 已过时；只显示一次，立即保存）。连接必须用这个 **SMTP 密钥**，不是 API v3 密钥；**SMTP 登录名是页面上显示的自动生成地址**（形如 `smtp-user@example.com`），不是注册邮箱。主机 `smtp-relay.brevo.com`，端口 587。页面上「Activate for SMTP keys / 授权 IP」的加固提示**不要开**——开了之后未列入白名单的服务器 IP 会被拒发，保持默认「不限制」即可。
+   - 注意：SMTP 密钥**90 天不用会自动过期**（与设置的 1 年有效期无关）。站点长期没人登录发验证码的话密钥会静默失效，表现为邮箱入口重新报「暂不可用」——去同页面重新生成一个换 env 即可。
+3. 「Senders & IP」→「Domains」→ 添加 `alcmaple.cn`，按控制台给出的记录到阿里云「云解析 DNS」逐条添加并回 Brevo 验证（DNS 生效几分钟到几小时）。2026-08 实际要加 4 条：`@` TXT（brevo-code）、`brevo1._domainkey` / `brevo2._domainkey` 两条 CNAME、`_dmarc` TXT；解析请求来源选「默认」，TTL 默认。**这一步是 outlook/hotmail 能收到信的前提**——163 等宽松服务在未认证时也会收，微软直接拒收（Brevo 日志表现为 Sent 后跟 Error 事件）；认证完成后日志出现 Delivered 事件即通：
    - SPF：`@` TXT `v=spf1 include:spf.brevo.com ~all`
    - DKIM：`brevo._domainkey` 等记录，类型与值以控制台为准
    - 建议补 DMARC：`_dmarc` TXT `v=DMARC1; p=none`
