@@ -23,6 +23,29 @@
 
 ## 当前未归类记录（2026-08）
 
+## 2026-08-16 fix(app): 修复退出时因下载速度广播导致孤儿进程空转
+
+**效果**：
+
+1. 退出时不再出现「终端已关、Electron 还在后台 97.5% CPU 空转」的孤儿进程
+
+**根因与修法**：
+
+```text
+事故链：Ctrl+C → SIGINT → app 开始退出 → 渲染帧销毁
+  → speed-tracker 每秒心跳还在向「帧已没了」的窗口 webContents.send
+  → 抛 Render frame was disposed → 退出流程被绊住（该实例再无日志）
+  → 进程活着但父链已死 → 孤儿 + 空转
+```
+
+1. `speed-tracker.ts`：发送前 `isDestroyed()` 跳过 + `try/catch` 兜「帧先走一步」的竞态窗口；新增 `stopSpeedBroadcast()`，`before-quit` 时停表——常驻心跳本身是有意设计（顶栏网速显示，空闲时每秒广播 0 的成本可忽略），缺陷只在「不设防」而非「不停」
+2. `index.ts` dev-only 孤儿看护：每 5 秒查 `process.ppid === 1`（被过继给 launchd = 父链已死）就 `app.quit()`；`unref()` 不阻事件循环，开销为一次系统调用级。打包版不启用（Finder/Dock 启动父进程本来就是 launchd）
+
+**边界 / 风险**：
+
+1. 用户实例卡死时无任何日志产出，speed-tracker 是唯一抓到的退出期现行犯，不排除 WebDAV 同步收尾亦有参与——看护兜底保证即使再卡也不再烤机
+2. 竞态窗口仅毫秒级宽（帧销毁瞬间撞上每秒 tick），4-24 引入以来首次踩中属概率事件
+
 ## 2026-08-15 fix(sync): 修复桌面端网页登录成功报未识别会话令牌
 
 **效果**：

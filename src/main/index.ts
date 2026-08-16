@@ -6,7 +6,7 @@ import { readFile } from 'fs/promises'
 import { scanLibrary, startLibraryWatch, reconcilePaths, incrementalUpdate, type LibraryEntry } from './library/api'
 import { createTray, destroyTray } from './tray'
 import { registerAllIpc, getMinimizeOnClose } from './ipc'
-import { startSpeedBroadcast } from './shared/speed-tracker'
+import { startSpeedBroadcast, stopSpeedBroadcast } from './shared/speed-tracker'
 import { setupUpdater } from './updater'
 import { setupBgmOfflineIndex } from './bgm/offline-index'
 import { initConsoleCapture, logInfo } from './shared/logger'
@@ -21,6 +21,17 @@ initConsoleCapture()
 // ── IPC registration ─────────────────────────────────────────
 registerAllIpc()
 startSpeedBroadcast()
+
+// dev 看护：父进程（electron-vite / npm）没了就自己退出，避免孤儿进程空转烤机
+// （2026-08-16 事故：主进程卡在退出流程，被过继给 launchd 后 97.5% CPU 挂后台）。
+// 打包版不启用 —— Finder/Dock 启动时父进程本来就是 launchd（ppid 恒为 1）。
+// 每 5 秒一次 kill(ppid,0) 级别的探测，开销可忽略；unref 掉，不阻止事件循环自然退出。
+if (!app.isPackaged) {
+  const orphanWatch = setInterval(() => {
+    if (process.ppid === 1) app.quit()
+  }, 5000)
+  orphanWatch.unref()
+}
 
 // archivist:// 注册成 privileged + standard scheme,它的响应才会进 Chromium 的 HTTP 缓存、
 // 处理器里的 Cache-Control 才生效。否则封面每次组件重挂载都要重新读盘 + 解码,表现为
@@ -85,6 +96,9 @@ app.on('before-quit', () => {
   // 关应用」没有那个时机。
   disposeMediaCache()
   disposeHlsPrefetch()
+  // 速度广播是常驻心跳，退出时停掉 —— 它每秒向所有窗口发送，退出竞态窗口里
+  // 会向已销毁的渲染帧发送并抛错，别让它参与退出流程。
+  stopSpeedBroadcast()
 })
 app.on('will-quit', () => {
   destroyTray()
