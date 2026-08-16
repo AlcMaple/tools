@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 400" font-family="PingFang SC, Microsoft YaHei, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8a93b8"/>
+    </marker>
+  </defs>
+
+  <rect width="920" height="400" fill="#ffffff"/>
+  <text x="30" y="42" font-size="19" font-weight="700" fill="#3a466e">网页版视觉重构「雾境梦璃」— PM 视角交付流程</text>
+  <text x="30" y="64" font-size="12" fill="#8a93b8">原则：不再随意设计 → 先定风格 → 设计稿进仓库当基线 → 审查通过才动真实代码 → 线上效果与设计稿一致</text>
+
+  <!-- 阶段 1：风格定稿 -->
+  <rect x="30" y="92" width="250" height="118" rx="14" fill="#eef4fd" stroke="#8fb3e8" stroke-width="1.5"/>
+  <text x="48" y="118" font-size="13" font-weight="700" fill="#5b87c7">① 风格定稿（已完成）</text>
+  <text x="48" y="140" font-size="11.5" fill="#3a466e">自研二次元主题「雾境梦璃」</text>
+  <text x="48" y="158" font-size="11.5" fill="#3a466e">配方：梦可爱 × 玻璃拟态 × 视觉小说 UI</text>
+  <text x="48" y="176" font-size="11.5" fill="#3a466e">代表角色：和泉纱雾（官方立绘）</text>
+  <text x="48" y="194" font-size="11" fill="#8a93b8">刻意避开孟菲斯/新波普粗野主义 loud 路线</text>
+
+  <!-- 阶段 2：设计稿 -->
+  <rect x="336" y="92" width="250" height="118" rx="14" fill="#fdf1f6" stroke="#f4a8c4" stroke-width="1.5"/>
+  <text x="354" y="118" font-size="13" font-weight="700" fill="#d8739a">② HTML 设计稿（本轮交付）</text>
+  <text x="354" y="140" font-size="11.5" fill="#3a466e">web/design/ 5 页可交互：登录 / 周历 /</text>
+  <text x="354" y="158" font-size="11.5" fill="#3a466e">追番 / 设置 / 说明书</text>
+  <text x="354" y="176" font-size="11.5" fill="#3a466e">夜雾 + 晨雾双主题 token，全部资源本地化</text>
+  <text x="354" y="194" font-size="11" fill="#8a93b8">留仓库做备份与后续重构视觉基准</text>
+
+  <!-- 审查关卡 -->
+  <rect x="642" y="100" width="248" height="102" rx="14" fill="#fff8e6" stroke="#f6c957" stroke-width="1.5"/>
+  <text x="660" y="128" font-size="13" font-weight="700" fill="#c79a1d">③ 用户审查（当前关卡）</text>
+  <text x="660" y="150" font-size="11.5" fill="#3a466e">打开设计稿逐页体验：布局、配色、</text>
+  <text x="660" y="168" font-size="11.5" fill="#3a466e">交互手感、纱雾出场分寸</text>
+  <text x="660" y="186" font-size="11" fill="#8a93b8">不通过 → 只改设计稿，不动真实代码</text>
+
+  <line x1="280" y1="151" x2="332" y2="151" stroke="#8a93b8" stroke-width="1.5" marker-end="url(#ar)"/>
+  <line x1="586" y1="151" x2="638" y2="151" stroke="#8a93b8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- 阶段 4/5 -->
+  <rect x="30" y="252" width="420" height="110" rx="14" fill="#eefaf3" stroke="#8cd9b0" stroke-width="1.5"/>
+  <text x="48" y="278" font-size="13" font-weight="700" fill="#3f9e6e">④ 重构真实代码（审查通过后）</text>
+  <text x="48" y="300" font-size="11.5" fill="#3a466e">按设计稿逐页重构 web/src：Nav/对话盒Toast → 登录弹窗</text>
+  <text x="48" y="318" font-size="11.5" fill="#3a466e">→ 周历 → 追番 → 设置；token 双主题替换 MD3 变量</text>
+  <text x="48" y="336" font-size="11" fill="#8a93b8">对照执行清单见 web/design/README.md「迁移到真实代码」</text>
+
+  <rect x="500" y="252" width="390" height="110" rx="14" fill="#f3effc" stroke="#b9a3ec" stroke-width="1.5"/>
+  <text x="518" y="278" font-size="13" font-weight="700" fill="#8468c8">⑤ 一致性验收</text>
+  <text x="518" y="300" font-size="11.5" fill="#3a466e">同视口截图并排对比设计稿 ↔ 线上，交互逐条对表；</text>
+  <text x="518" y="318" font-size="11.5" fill="#3a466e">设计稿是唯一视觉真相源，改样式先改稿再改代码</text>
+  <text x="518" y="336" font-size="11" fill="#8a93b8">立绘为官方素材，仅个人自用，不做公开分发</text>
+
+  <path d="M766 206 L766 226 L430 226 L430 248" fill="none" stroke="#8a93b8" stroke-width="1.5" marker-end="url(#ar)"/>
+  <line x1="450" y1="307" x2="496" y2="307" stroke="#8a93b8" stroke-width="1.5" marker-end="url(#ar)"/>
+  <path d="M890 307 C 908 307 908 151 892 151" fill="none" stroke="#8a93b8" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#ar)"/>
+  <text x="700" y="220" font-size="10.5" fill="#8a93b8">通过</text>
+  <text x="872" y="238" font-size="10.5" fill="#8a93b8">样式回归：以稿为准</text>
+</svg>

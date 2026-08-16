@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mist="night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的追番 · MapleTools「雾境梦璃」设计稿</title>
+<script>try{const t=localStorage.getItem('mist-theme');if(t)document.documentElement.dataset.mist=t}catch(e){}</script>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/mist-ui.css">
+<style>
+  /* ===== 追番页 ===== */
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 22px; flex-wrap: wrap; }
+  .search-add { position: relative; flex: 1; min-width: 260px; max-width: 460px; }
+  .search-add .input-wrap { height: 44px; }
+  .sug {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0; right: 0;
+    z-index: 55;
+    padding: 6px;
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-2);
+    display: none;
+  }
+  .sug.show { display: block; animation: mode-in .22s var(--ease-moe); }
+  .sug .s-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    font-size: 14px;
+    color: var(--ink-sub);
+    background: none; border: none; border-radius: var(--r-xs);
+    cursor: pointer; text-align: left;
+    transition: background-color .15s, color .15s;
+  }
+  .sug .s-item:hover { background: var(--glass); color: var(--ink); }
+  .sug .s-item .s-src { margin-left: auto; font-size: 11.5px; color: var(--ink-faint); }
+
+  /* 今天更新 */
+  .today-row { margin-bottom: 30px; }
+  .group-h { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .group-h .line { flex: 1; height: 1px; background: var(--glass-border); }
+  .today-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+
+  /* 追番卡 */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
+
+  .tcard {
+    position: relative;
+    display: grid;
+    grid-template-columns: 118px 1fr;
+    gap: 16px;
+    padding: 14px;
+    transition: transform .22s var(--ease-moe), box-shadow .22s var(--ease-dream), border-color .22s;
+  }
+  .tcard:hover { transform: translateY(-3px); box-shadow: var(--shadow-2); border-color: var(--glass-border-strong); }
+  .tcard.enter { animation: card-enter .45s var(--ease-moe); }
+  @keyframes card-enter {
+    from { opacity: 0; transform: translateY(14px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  .tcard .poster { aspect-ratio: 2/3; }
+  .tcard .glyph { font-size: 56px; }
+
+  .t-info { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+  .t-title {
+    font-size: 16.5px;
+    font-weight: 700;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .t-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .prog-row { display: flex; align-items: center; gap: 10px; }
+  .prog-row .num { font-family: var(--font-round); font-weight: 700; font-size: 13.5px; color: var(--ink-sub); white-space: nowrap; }
+  .prog-row .num b { color: var(--mist-strong); font-size: 16px; }
+  html[data-mist='day'] .prog-row .num b { color: var(--mist-deep); }
+  .prog-row .progress { flex: 1; }
+  .step {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .step button {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--glass-border);
+    background: var(--glass-soft);
+    color: var(--ink-sub);
+    cursor: pointer;
+    transition: all .16s var(--ease-moe);
+  }
+  .step button:hover { color: #fff; background: linear-gradient(135deg, var(--mist-strong), var(--mist-deep)); border-color: transparent; transform: translateY(-1px); }
+  .step button.minus:hover { background: linear-gradient(135deg, var(--coral), #d76a86); }
+  .step button:active { transform: scale(.88); }
+
+  .t-tags { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
+
+  .t-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; padding-top: 4px; }
+  .t-foot .grow { flex: 1; }
+  .bind-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--matcha); box-shadow: 0 0 8px rgba(140,217,176,.8); }
+  .bind-dot.off { background: var(--ink-faint); box-shadow: none; }
+
+  /* 卡片菜单（⋮） */
+  .card-dd .dd-menu { min-width: 150px; width: auto; left: auto; right: 0; }
+
+  /* 标签输入小泡 */
+  .tag-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 56;
+    width: 180px;
+    padding: 10px;
+    border-radius: var(--r-sm);
+    display: none;
+  }
+  .tag-pop.show { display: block; animation: mode-in .2s var(--ease-moe); }
+  .tag-pop input {
+    width: 100%;
+    height: 34px;
+    padding: 0 10px;
+    border-radius: var(--r-xs);
+    border: 1px solid var(--glass-border);
+    background: var(--field-bg);
+    color: var(--ink);
+    font-size: 13px;
+    outline: none;
+  }
+  .tag-pop input:focus { border-color: var(--mist); }
+
+  .empty-mini { padding: 20px 0; }
+
+  .spin .ic { animation: rot 1s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  @media (max-width: 520px) {
+    .cards { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="mist-bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+  <canvas id="mist-particles"></canvas>
+
+  <header class="nav">
+    <a class="brand" href="index.html"><span class="star-mark">✦</span>MapleTools</a>
+    <nav class="nav-links">
+      <a class="nav-link" href="calendar.html"><svg class="ic sm"><use href="#i-calendar"/></svg>番剧周历</a>
+      <a class="nav-link on" href="tracks.html"><svg class="ic sm"><use href="#i-heart"/></svg>我的追番</a>
+      <a class="nav-link" href="settings.html"><svg class="ic sm"><use href="#i-tune"/></svg>设置</a>
+    </nav>
+    <div class="nav-right">
+      <button class="btn-ico" data-mist-toggle title="切换到晨雾"><svg class="ic"><use href="#i-moon"/></svg></button>
+      <div class="dd user-dd">
+        <button class="user-chip dd-btn" style="background:transparent;border:none;padding-right:4px">
+          <img class="ava" src="assets/sagiri-face.png" alt="头像">
+          Alcm
+          <svg class="ic chev" style="width:15px"><use href="#i-chev"/></svg>
+        </button>
+        <div class="dd-menu">
+          <button class="dd-item" onclick="location.href='settings.html'"><svg class="ic sm"><use href="#i-tune"/></svg>设置</button>
+          <button class="dd-item" onclick="location.href='login.html'"><svg class="ic sm"><use href="#i-logout"/></svg>退出登录</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="h-page">
+      <span class="kicker"><span class="star-mark">✦</span>MY TRACKS</span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost btn-sm" id="syncBtn"><svg class="ic sm"><use href="#i-refresh"/></svg>同步</button>
+    </div>
+    <h1 style="font-family:var(--font-round);font-weight:800;font-size:30px;margin:-16px 0 22px">我的追番</h1>
+
+    <div class="toolbar">
+      <div class="search-add">
+        <div class="input-wrap">
+          <span class="lead-ic"><svg class="ic"><use href="#i-search"/></svg></span>
+          <input id="q" placeholder="搜索番剧加入追番…" autocomplete="off">
+        </div>
+        <div class="sug" id="sug"></div>
+      </div>
+    </div>
+
+    <div id="list"></div>
+  </main>
+
+  <!-- 移除确认 -->
+  <div class="dim" id="rmDialog">
+    <div class="glass-strong dialog">
+      <h3>移出追番列表？</h3>
+      <p class="sub" id="rmName">《》的观看进度和标签会一起移除，之后可以重新加入。</p>
+      <div class="row-btns">
+        <button class="btn btn-ghost" data-dialog-close>先留着</button>
+        <button class="btn btn-danger" id="rmYes">移除</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    /* ===== 假数据 ===== */
+    let tracks = [
+      { id: 1, t: '药屋少女的呢喃 第2期', now: 18, total: 24, g: ['#7ea8eb', '#b7a3ec'], tags: ['后宫', '推理'], xifan: true, giri: false, today: false, year: 2026 },
+      { id: 2, t: '迷宫饭 第2期', now: 14, total: 20, g: ['#8cd9b0', '#7ea8eb'], tags: ['奇幻', '美食'], xifan: true, giri: true, today: false, year: 2026 },
+      { id: 3, t: '葬送的芙莉莲 第2期', now: 12, total: 16, g: ['#7ea8eb', '#8cd9b0'], tags: ['奇幻', '旅途'], xifan: false, giri: true, today: false, year: 2026 },
+      { id: 4, t: '关于我转生变成史莱姆这件事 第4期', now: 7, total: 7, g: ['#7ea8eb', '#f6c957'], tags: ['异世界'], xifan: false, giri: false, today: false, year: 2026 },
+      { id: 5, t: '孤独摇滚！ 再放送', now: 9, total: 12, g: ['#f58fa5', '#f6c957'], tags: ['日常', '乐队'], xifan: true, giri: false, today: true, year: 2026 },
+      { id: 6, t: '摇曳露营△ 第4期', now: 3, total: 8, g: ['#8cd9b0', '#f4a8c4'], tags: ['日常', '露营'], xifan: false, giri: false, today: true, year: 2026 },
+    ];
+    let nextId = 7;
+
+    const POOL = [
+      { t: '败犬女主太多了！ 第2期', total: 12, g: ['#f4a8c4', '#f6c957'], src: '本地索引' },
+      { t: '时不时用俄语小声示好的邻座艾莉同学', total: 12, g: ['#b9a3ec', '#f4a8c4'], src: '本地索引' },
+      { t: '无职转生 Ⅲ', total: 24, g: ['#b9a3ec', '#7ea8eb'], src: 'BGM 在线' },
+      { t: '我推的孩子 第3期', total: 11, g: ['#f58fa5', '#b7a3ec'], src: 'BGM 在线' },
+      { t: '间谍过家家 PART.2', total: 13, g: ['#f6c957', '#8cd9b0'], src: 'BGM 在线' },
+    ];
+
+    const listEl = document.getElementById('list');
+
+    function badge(x) {
+      return x
+        ? '<span class="badge b-matcha"><span class="bind-dot"></span>稀饭已绑定</span>'
+        : '';
+    }
+
+    function cardHTML(s) {
+      const pct = Math.min(100, Math.round((s.now / s.total) * 100));
+      const done = s.now >= s.total;
+      return `
+      <article class="glass tcard" data-id="${s.id}">
+        <div class="poster">
+          ${s.today ? '<span class="ribbon">今日更新</span>' : ''}
+          <div class="ph" style="background:linear-gradient(160deg,${s.g[0]},${s.g[1]})">
+            <span class="glyph">${s.t[0]}</span>
+            <span class="mini-star" style="top:12%;left:16%">✦</span>
+          </div>
+        </div>
+        <div class="t-info">
+          <h3 class="t-title">${s.t}</h3>
+          <div class="t-meta">
+            <span class="badge">${s.year} · TV</span>
+            ${done ? '<span class="badge b-star"><svg class="ic sm"><use href="#i-check"/></svg>已追完</span>' : ''}
+            ${s.today && !done ? '<span class="badge b-sakura">今天有更新</span>' : ''}
+          </div>
+          <div class="prog-row">
+            <span class="step"><button class="minus" data-act="minus" title="减一集">−</button>
+            <button data-act="plus" title="加一集">＋</button></span>
+            <div class="progress ${s.today ? 'sakura' : ''}"><div class="bar" style="width:${pct}%"></div>
+              <span class="knob" style="left:${pct}%">✦</span></div>
+            <span class="num"><b>${s.now}</b>/${s.total}</span>
+          </div>
+          <div class="t-tags" data-id="${s.id}">
+            ${s.tags.map((t) => `<span class="tag">${t}<span class="tag-x" data-tag="${t}" title="移除标签">✕</span></span>`).join('')}
+            <button class="tag-add" data-act="tagadd">＋ 标签</button>
+            <div class="glass tag-pop"><input placeholder="回车添加，≤6 字" maxlength="6"></div>
+          </div>
+          <div class="t-foot">
+            <button class="btn btn-primary btn-sm watch-btn"><svg class="ic sm"><use href="#i-play"/></svg>在线看</button>
+            <button class="btn btn-ghost btn-sm bgm-btn">Bangumi</button>
+            <span class="grow"></span>
+            ${badge(s.xifan)}
+            <div class="dd card-dd">
+              <button class="btn-ico dd-btn" title="更多"><svg class="ic sm"><use href="#i-chev"/></svg></button>
+              <div class="dd-menu">
+                <button class="dd-item" data-act="bind">${s.xifan ? '管理稀饭绑定' : '绑定稀饭账号'}</button>
+                <button class="dd-item" data-act="giri">${s.giri ? '查看 Girigiri 绑定' : '绑定 Girigiri'}</button>
+                <button class="dd-item" data-act="remove" style="color:var(--coral)">移出追番</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>`;
+    }
+
+    function render(filter = '') {
+      const f = filter.trim().toLowerCase();
+      const shown = tracks.filter((s) => !f || s.t.toLowerCase().includes(f));
+      const today = shown.filter((s) => s.today);
+      const rest = shown.filter((s) => !s.today);
+
+      listEl.innerHTML = `
+        ${today.length ? `
+        <section class="today-row">
+          <div class="group-h"><span class="kicker" style="color:var(--sakura-strong)"><span class="star-mark" style="color:var(--star)">✦</span>今天更新</span><span class="line"></span></div>
+          <div class="today-strip">${today.map(cardHTML).join('')}</div>
+        </section>` : ''}
+        ${rest.length ? `
+        <section>
+          <div class="group-h"><span class="kicker"><span class="star-mark">✦</span>全部追番</span><span class="badge">${shown.length} 部</span><span class="line"></span></div>
+          <div class="cards">${rest.map(cardHTML).join('')}</div>
+        </section>` : ''}
+        ${!shown.length ? `
+        <div class="glass empty empty-mini">
+          <img class="empty-face" src="assets/sagiri-face.png" alt="和泉纱雾">
+          <div class="empty-say">没找到「${filter}」……要不要换个关键词？</div>
+        </div>` : ''}`;
+    }
+    render();
+
+    /* ---- 卡片交互（事件委托） ---- */
+    let rmTarget = null;
+    listEl.addEventListener('click', (e) => {
+      const card = e.target.closest('.tcard');
+      if (!card) return;
+      const s = tracks.find((x) => x.id == card.dataset.id);
+      if (!s) return;
+
+      const actBtn = e.target.closest('[data-act]');
+      const act = actBtn?.dataset.act;
+
+      if (act === 'plus' || act === 'minus') {
+        s.now = Math.max(0, Math.min(s.total, s.now + (act === 'plus' ? 1 : -1)));
+        const pct = Math.min(100, Math.round((s.now / s.total) * 100));
+        card.querySelector('.bar').style.width = pct + '%';
+        card.querySelector('.knob').style.left = pct + '%';
+        card.querySelector('.num').innerHTML = `<b>${s.now}</b>/${s.total}`;
+        if (act === 'plus' && s.now === s.total) {
+          render(); // 换成「已追完」徽标态
+          Say.say(`《${s.t}》追完了！辛苦收看～`);
+        } else if (act === 'plus') Say.say(`《${s.t}》看到第 ${s.now} 话。`);
+      }
+
+      if (act === 'tagadd') {
+        const pop = actBtn.closest('.t-tags').querySelector('.tag-pop');
+        document.querySelectorAll('.tag-pop.show').forEach((p) => p !== pop && p.classList.remove('show'));
+        pop.classList.toggle('show');
+        const inp = pop.querySelector('input');
+        inp.value = ''; inp.focus();
+        inp.onkeydown = (ev) => {
+          if (ev.key === 'Enter' && inp.value.trim()) {
+            s.tags.push(inp.value.trim());
+            render();
+            Say.say(`给《${s.t}》加了标签「${inp.value.trim()}」。`);
+          }
+          if (ev.key === 'Escape') pop.classList.remove('show');
+        };
+      }
+
+      if (e.target.closest('.tag-x')) {
+        const tag = e.target.dataset.tag;
+        s.tags = s.tags.filter((x) => x !== tag);
+        render();
+        Say.say(`移掉了标签「${tag}」。`);
+      }
+
+      if (act === 'remove') {
+        rmTarget = s;
+        document.getElementById('rmName').textContent = `《${s.t}》的观看进度和标签会一起移除，之后可以重新加入。`;
+        document.getElementById('rmDialog').classList.add('show');
+      }
+      if (act === 'bind') Say.say('稀饭绑定入口在设置 › 稀饭账号，这里可以先去设置页看效果。');
+      if (act === 'giri') Say.say(`《${s.t}》的 Girigiri ${s.giri ? '已绑定，可以在在线看里选线路' : '还没绑定'}。`);
+
+      if (e.target.closest('.watch-btn')) Say.say(`打开《${s.t}》的在线播放面板（设计稿内为示意）。`);
+      if (e.target.closest('.bgm-btn')) Say.say(`查看《${s.t}》的 Bangumi 条目（设计稿内不跳转）。`);
+    });
+
+    document.getElementById('rmYes').addEventListener('click', () => {
+      if (rmTarget) {
+        tracks = tracks.filter((x) => x !== rmTarget);
+        Say.say(`《${rmTarget.t}》已移出追番列表。`);
+        render();
+      }
+      document.getElementById('rmDialog').classList.remove('show');
+    });
+
+    /* ---- 搜索：筛选卡片墙 + 加番建议 ---- */
+    const q = document.getElementById('q'), sug = document.getElementById('sug');
+    q.addEventListener('input', () => {
+      const v = q.value.trim().toLowerCase();
+      render(q.value.trim());           // 同步筛选已追的番
+      if (!v) { sug.classList.remove('show'); return; }
+      const hits = POOL.filter((p) => p.t.toLowerCase().includes(v)).slice(0, 5);
+      sug.innerHTML = hits.length
+        ? hits.map((p, i) => `<button class="s-item" data-i="${POOL.indexOf(p)}"><span class="star-mark">✦</span>${p.t}<span class="s-src">${p.src}</span></button>`).join('')
+        : '<div class="s-item" style="cursor:default">没有匹配的结果</div>';
+      sug.classList.add('show');
+    });
+    sug.addEventListener('click', (e) => {
+      const b = e.target.closest('.s-item[data-i]');
+      if (!b) return;
+      const p = POOL[b.dataset.i];
+      tracks.push({ id: nextId++, t: p.t, now: 0, total: p.total, g: p.g, tags: [], xifan: false, giri: false, today: false, year: 2026 });
+      q.value = '';
+      sug.classList.remove('show');
+      render();
+      const cards = document.querySelectorAll('.tcard');
+      cards[cards.length - 1]?.classList.add('enter');
+      Say.say(`《${p.t}》加入追番，从第 1 话开始吧。`);
+    });
+    document.addEventListener('click', (e) => { if (!e.target.closest('.search-add')) sug.classList.remove('show'); });
+
+    /* ---- 同步 ---- */
+    document.getElementById('syncBtn').addEventListener('click', (e) => {
+      e.currentTarget.classList.add('spin');
+      setTimeout(() => { e.currentTarget.classList.remove('spin'); Say.say('追番列表已同步，云端没有新的改动。'); }, 1100);
+    });
+  </script>
+</body>
+</html>
