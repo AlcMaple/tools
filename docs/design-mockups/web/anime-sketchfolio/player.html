@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MapleTools · 在线播放</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23fbf6ec' stroke='%231f7680' stroke-width='1.5'/%3E%3Cpath d='M7 16.5l.8-2.8 6-6a1.4 1.4 0 012 2l-6 6-2.8.8z' fill='none' stroke='%232e97a0' stroke-width='1.5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/sketch-ui.css">
+</head>
+<body data-page="player" data-auth="in">
+
+<header class="m-top">
+  <a class="brand" href="index.html" style="font-size:18px">
+    <svg class="ic" aria-hidden="true"><use href="#i-pencil"></use></svg>
+    MapleTools
+  </a>
+  <span style="margin-left:auto"></span>
+  <a class="btn btn-sm btn-primary auth-out" href="index.html">登录 / 注册</a>
+  <span class="auth-in"><img class="avatar" style="width:30px;height:30px" src="assets/sagiri-face.png" alt="maple-feng"></span>
+</header>
+
+<div class="shell">
+  <aside class="spine">
+    <span class="tape tl sakura" style="width:88px"></span>
+    <div>
+      <a class="brand" href="index.html">
+        <svg class="ic" aria-hidden="true"><use href="#i-pencil"></use></svg>
+        MapleTools <span class="sparkle">✦</span>
+      </a>
+      <div class="brand-sub">SAGIRI · SKETCHFOLIO</div>
+    </div>
+
+    <nav class="idx-nav">
+      <a class="idx-a" href="index.html">
+        <svg class="ic"><use href="#i-calendar"></use></svg>番剧周历
+      </a>
+      <a class="idx-a on" href="tracks.html">
+        <svg class="ic"><use href="#i-tracks"></use></svg>我的追番
+      </a>
+      <a class="idx-a" href="settings.html">
+        <svg class="ic"><use href="#i-settings"></use></svg>设置
+      </a>
+    </nav>
+
+    <div class="spine-deco">
+      <span class="kira" style="top:0;left:26px">ワクワク…</span>
+      <span class="stamp st-teal" style="position:absolute;top:6px;right:14px">再生</span>
+      <span class="sparkle s2" style="position:absolute;top:52px;left:40px;font-size:13px">✦</span>
+    </div>
+
+    <div class="spine-foot">
+      <div class="spine-user auth-in">
+        <img class="avatar" src="assets/sagiri-face.png" alt="">
+        <div><b>maple-feng</b><span class="faint">Gmail 快捷登录</span></div>
+      </div>
+      <div class="spine-acts auth-in">
+        <a class="btn btn-sm btn-ghost" href="settings.html">设置</a>
+        <button class="btn btn-sm btn-danger" type="button" data-logout>退出</button>
+      </div>
+      <a class="btn btn-primary auth-out" href="index.html">登录 / 注册</a>
+    </div>
+  </aside>
+
+  <main class="sheet">
+    <div class="sheet-wrap">
+      <a class="btn btn-sm btn-ghost" href="tracks.html">
+        <svg class="ic ic-sm"><use href="#i-back"></use></svg>回到我的追番
+      </a>
+
+      <div class="spread mt16" style="align-items:flex-end">
+        <div>
+          <h1 class="title-sketch" style="font-size:27px">葬送のフリーレン 第２期</h1>
+          <p class="muted small mt8">
+            <span class="stamp small st-teal" style="vertical-align:-9px">在看</span>
+            <b id="epBadge" class="font-hand" style="font-size:16px">EP 8</b>
+            · 周日更新 · 已看到第 7 集
+          </p>
+        </div>
+        <div class="seg src-seg">
+          <button class="on" data-src="xifan" type="button">稀饭源</button>
+          <button data-src="girigiri" type="button">Girigiri 源</button>
+        </div>
+      </div>
+
+      <div class="player-video mt16" id="pvBox">
+        <div class="pv-center">
+          <button class="player-play" id="playBtn" type="button" aria-label="播放 / 暂停">
+            <svg class="ic"><use id="playUse" href="#i-play"></use></svg>
+          </button>
+          <div class="pv-bar"><i></i></div>
+          <span class="pv-time">17:42 / 24:00</span>
+          <span class="faint small">原型演示 · 真实页面由浏览器直连源站 CDN 播放</span>
+        </div>
+      </div>
+
+      <div class="spread mt24">
+        <h2 class="title-sketch" style="font-size:20px">选集</h2>
+        <span class="faint small">✓ = 已看 · 当前集高亮</span>
+      </div>
+      <div class="ep-grid mt16" id="epGrid">
+        <button class="ep-cell seen" type="button">1</button>
+        <button class="ep-cell seen" type="button">2</button>
+        <button class="ep-cell seen" type="button">3</button>
+        <button class="ep-cell seen" type="button">4</button>
+        <button class="ep-cell seen" type="button">5</button>
+        <button class="ep-cell seen" type="button">6</button>
+        <button class="ep-cell seen" type="button">7</button>
+        <button class="ep-cell on" type="button">8</button>
+        <button class="ep-cell" type="button">9</button>
+        <button class="ep-cell" type="button">10</button>
+        <button class="ep-cell" type="button">11</button>
+        <button class="ep-cell" type="button">12</button>
+      </div>
+
+      <h2 class="title-sketch mt24" style="font-size:20px">线路</h2>
+      <div id="lineList" style="display:flex;flex-direction:column;gap:10px;margin-top:14px"></div>
+    </div>
+  </main>
+</div>
+
+<nav class="m-tabs">
+  <a class="m-tab" href="index.html">
+    <svg class="ic"><use href="#i-calendar"></use></svg>番剧周历
+  </a>
+  <a class="m-tab on" href="tracks.html">
+    <svg class="ic"><use href="#i-tracks"></use></svg>我的追番
+  </a>
+  <a class="m-tab" href="settings.html">
+    <svg class="ic"><use href="#i-settings"></use></svg>设置
+  </a>
+</nav>
+
+<script src="js/app.js"></script>
+</body>
+</html>

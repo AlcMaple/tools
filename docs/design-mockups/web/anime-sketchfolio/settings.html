@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MapleTools · 设置</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23fbf6ec' stroke='%231f7680' stroke-width='1.5'/%3E%3Cpath d='M7 16.5l.8-2.8 6-6a1.4 1.4 0 012 2l-6 6-2.8.8z' fill='none' stroke='%232e97a0' stroke-width='1.5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/sketch-ui.css">
+</head>
+<body data-page="settings" data-auth="in">
+
+<header class="m-top">
+  <a class="brand" href="index.html" style="font-size:18px">
+    <svg class="ic" aria-hidden="true"><use href="#i-pencil"></use></svg>
+    MapleTools
+  </a>
+  <span style="margin-left:auto"></span>
+  <a class="btn btn-sm btn-primary auth-out" href="index.html">登录 / 注册</a>
+  <span class="auth-in"><img class="avatar" style="width:30px;height:30px" src="assets/sagiri-face.png" alt="maple-feng"></span>
+</header>
+
+<div class="shell">
+  <aside class="spine">
+    <span class="tape tl" style="width:88px"></span>
+    <div>
+      <a class="brand" href="index.html">
+        <svg class="ic" aria-hidden="true"><use href="#i-pencil"></use></svg>
+        MapleTools <span class="sparkle">✦</span>
+      </a>
+      <div class="brand-sub">SAGIRI · SKETCHFOLIO</div>
+    </div>
+
+    <nav class="idx-nav">
+      <a class="idx-a" href="index.html">
+        <svg class="ic"><use href="#i-calendar"></use></svg>番剧周历
+      </a>
+      <a class="idx-a" href="tracks.html">
+        <svg class="ic"><use href="#i-tracks"></use></svg>我的追番
+      </a>
+      <a class="idx-a on" href="settings.html">
+        <svg class="ic"><use href="#i-settings"></use></svg>设置
+      </a>
+    </nav>
+
+    <div class="spine-deco">
+      <span class="kira" style="top:0;left:26px">サラサラ…</span>
+      <span class="stamp st-gold" style="position:absolute;top:6px;right:14px">整理</span>
+      <span class="sparkle s2" style="position:absolute;top:52px;left:40px;font-size:13px">✦</span>
+    </div>
+
+    <div class="spine-foot">
+      <div class="spine-user auth-in">
+        <img class="avatar" src="assets/sagiri-face.png" alt="">
+        <div><b>maple-feng</b><span class="faint">Gmail 快捷登录</span></div>
+      </div>
+      <div class="spine-acts auth-in">
+        <button class="btn btn-sm btn-danger w100" type="button" data-logout>
+          <svg class="ic ic-sm"><use href="#i-logout"></use></svg>退出登录
+        </button>
+      </div>
+      <a class="btn btn-primary auth-out" href="index.html">登录 / 注册</a>
+    </div>
+  </aside>
+
+  <main class="sheet">
+    <div class="sheet-wrap">
+      <div class="spread" style="align-items:flex-end">
+        <div>
+          <h1 class="title-sketch" style="font-size:34px">设置</h1>
+          <p class="muted small mt8">账号、安全和播放源，都收在这几个口袋里</p>
+        </div>
+      </div>
+
+      <div class="rig-inline mt16">
+        <img class="rig" src="assets/chara_04.png" alt="千寿ムラマサ · 官方立绘">
+        <div class="bubble rig-bubble"><span>书架整理好了，接下来交给我吧。</span></div>
+      </div>
+
+      <div class="hero-split top mt16">
+        <div style="flex:1;min-width:0">
+          <div class="id-card">
+            <span class="tape tr gold"></span>
+            <img class="avatar" src="assets/sagiri-face.png" alt="">
+            <div class="id-lines">
+              <b>maple-feng</b> <span class="faint font-hand">no.20260816</span><br>
+              邮箱 <b>you@example.com</b> · 密码 <b>已设置</b> · 密保 <b>已设置</b>
+            </div>
+            <span class="tagx mine" style="align-self:center">
+              <svg class="ic ic-sm"><use href="#i-check"></use></svg>Gmail 快捷登录已开通
+            </span>
+          </div>
+
+          <!-- 个人信息 -->
+          <section class="pocket open" data-mod="profile" style="margin-top:14px">
+            <button class="pocket-tab" type="button">
+              <svg class="ic"><use href="#i-user"></use></svg>个人信息
+              <span class="pocket-hint">用户名 · 邮箱 · 登录方式</span>
+              <svg class="ic chev"><use href="#i-chev"></use></svg>
+            </button>
+            <div class="pocket-body">
+              <div class="kv-row">
+                <span class="kv-label">用户名</span>
+                <span class="kv-val">maple-feng</span>
+                <span class="kv-act">
+                  <button class="btn btn-sm btn-ghost save-btn" type="button">修改</button>
+                  <span class="save-note">✓ 已保存</span>
+                </span>
+              </div>
+              <div class="kv-row">
+                <span class="kv-label">邮箱</span>
+                <span class="kv-val">you@example.com<span class="muted">Gmail 快捷登录已开通</span></span>
+                <span class="kv-act row" style="gap:8px">
+                  <button class="btn btn-sm btn-ghost" data-dialog-open="rebindDlg" type="button">换绑</button>
+                  <button class="btn btn-sm btn-ghost" data-dialog-open="unbindDlg" type="button">解绑</button>
+                </span>
+              </div>
+              <div class="kv-row">
+                <span class="kv-label">密码</span>
+                <span class="kv-val">●●●●●●●●</span>
+                <span class="kv-act"><a class="btn btn-sm btn-ghost" href="#security">修改</a></span>
+              </div>
+              <div class="kv-row">
+                <span class="kv-label">登录方式</span>
+                <span class="kv-val">用户名 · 邮箱验证码 · Google</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- 账号安全 -->
+          <section class="pocket" data-mod="security">
+            <button class="pocket-tab" type="button">
+              <svg class="ic"><use href="#i-pencil"></use></svg>账号安全
+              <span class="pocket-hint">密码 · 密保问题</span>
+              <svg class="ic chev"><use href="#i-chev"></use></svg>
+            </button>
+            <div class="pocket-body">
+              <form novalidate style="display:flex;flex-direction:column;gap:16px;max-width:400px;padding-top:16px">
+                <label class="field">
+                  <span class="field-label">当前密码</span>
+                  <span class="field-row">
+                    <input required type="password" placeholder="现在的密码">
+                    <button class="eye" type="button" aria-pressed="false" title="明文 / 暗文切换">
+                      <svg class="ic"><use href="#i-eye"></use></svg>
+                    </button>
+                    <span class="field-msg" style="right:40px;left:auto">要验证当前密码</span>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field-label">新密码</span>
+                  <span class="field-row">
+                    <input required type="password" placeholder="至少 8 位">
+                    <button class="eye" type="button" aria-pressed="false" title="明文 / 暗文切换">
+                      <svg class="ic"><use href="#i-eye"></use></svg>
+                    </button>
+                    <span class="field-msg" style="right:40px;left:auto">新密码不能为空</span>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field-label">确认新密码</span>
+                  <span class="field-row">
+                    <input required type="password" placeholder="再输入一次">
+                    <span class="field-msg">再写一遍</span>
+                  </span>
+                </label>
+                <div class="row">
+                  <button class="btn btn-primary save-btn" type="button">保存新密码</button>
+                  <span class="save-note" style="position:static;margin-left:10px">✓ 已保存，其它设备已下线</span>
+                </div>
+              </form>
+
+              <hr class="hr-dash mt24 mb16">
+              <div style="display:flex;flex-direction:column;gap:16px;max-width:400px">
+                <div class="field">
+                  <span class="field-label">密保问题</span>
+                  <div class="dd-host">
+                    <button class="dd-trigger" type="button">
+                      <span class="dd-val">你的代表角色是</span>
+                      <svg class="ic"><use href="#i-chev"></use></svg>
+                    </button>
+                    <div class="dd">
+                      <button class="dd-item" type="button" data-val="最喜欢的动画作品">最喜欢的动画作品</button>
+                      <button class="dd-item on" type="button" data-val="你的代表角色是">你的代表角色是</button>
+                      <button class="dd-item" type="button" data-val="第一只宠物的名字">第一只宠物的名字</button>
+                    </div>
+                  </div>
+                </div>
+                <label class="field">
+                  <span class="field-label">答案</span>
+                  <span class="field-row">
+                    <input placeholder="想一句只有自己知道的话">
+                    <span class="field-msg"></span>
+                  </span>
+                </label>
+                <div class="row">
+                  <button class="btn save-btn" type="button">保存密保</button>
+                  <span class="save-note" style="position:static;margin-left:10px">✓ 已保存</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 稀饭账号 -->
+          <section class="pocket" data-mod="xifan">
+            <button class="pocket-tab" type="button">
+              <svg class="ic"><use href="#i-play"></use></svg>稀饭账号
+              <span class="pocket-hint">在线播放源的登录态</span>
+              <svg class="ic chev"><use href="#i-chev"></use></svg>
+            </button>
+            <div class="pocket-body">
+              <form id="xfForm" novalidate style="display:flex;flex-direction:column;gap:16px;max-width:400px;padding-top:16px">
+                <label class="field">
+                  <span class="field-label">账号</span>
+                  <span class="field-row">
+                    <input id="xfUser" required placeholder="手机号或用户名">
+                    <span class="field-msg">先填账号</span>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field-label">密码</span>
+                  <span class="field-row">
+                    <input required type="password" placeholder="密码">
+                    <button class="eye" type="button" aria-pressed="false" title="明文 / 暗文切换">
+                      <svg class="ic"><use href="#i-eye"></use></svg>
+                    </button>
+                    <span class="field-msg" style="right:40px;left:auto">密码不能为空</span>
+                  </span>
+                </label>
+                <div class="field">
+                  <span class="field-label">验证码（大小写不敏感）</span>
+                  <div class="row">
+                    <span class="captcha"><span>R</span><span>r</span><span>5</span><span>K</span></span>
+                    <label class="field" style="flex:1">
+                      <span class="field-row">
+                        <input required placeholder="输入图中字符">
+                        <span class="field-msg">照着画就行</span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <button class="btn btn-primary" id="xfLoginBtn" type="button">登录稀饭</button>
+                </div>
+              </form>
+
+              <div id="xfOk" style="display:none;padding-top:16px" class="xf-ok-row">
+                <img class="avatar" src="assets/sagiri-face.png" alt="">
+                <div>
+                  <div style="font-weight:600">已登录 · feng****@163.com</div>
+                  <div class="faint small">会员线路可用</div>
+                </div>
+                <button class="btn btn-sm btn-ghost" style="margin-left:auto" type="button">检查状态</button>
+                <button class="btn btn-sm btn-danger" id="xfLogout" type="button">退出</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- 追番偏好（占位） -->
+          <section class="pocket" data-mod="pref">
+            <button class="pocket-tab" type="button">
+              <svg class="ic"><use href="#i-star"></use></svg>追番偏好
+              <span class="pocket-hint">还没画好这一页</span>
+              <svg class="ic chev"><use href="#i-chev"></use></svg>
+            </button>
+            <div class="pocket-body">
+              <div class="placeholder-mod">
+                <img class="mascot" src="assets/sagiri-mascot.png" alt="">
+                <div class="bubble">这一页还没有画好，先看看别的吧</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 数据同步（占位） -->
+          <section class="pocket" data-mod="sync">
+            <button class="pocket-tab" type="button">
+              <svg class="ic"><use href="#i-refresh"></use></svg>数据同步
+              <span class="pocket-hint">还没画好这一页</span>
+              <svg class="ic chev"><use href="#i-chev"></use></svg>
+            </button>
+            <div class="pocket-body">
+              <div class="placeholder-mod">
+                <img class="mascot" src="assets/sagiri-mascot.png" alt="">
+                <div class="bubble">桌面端的同步口令还没抄到这里</div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="rig-box">
+          <div class="bubble rig-bubble"><span>书架整理好了，接下来交给我吧。</span></div>
+          <img class="rig" src="assets/chara_04.png" alt="千寿ムラマサ · 官方立绘" style="height:320px">
+          <span class="kira" style="bottom:26px;right:-14px;transform:rotate(5deg)">ムラマサ</span>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<nav class="m-tabs">
+  <a class="m-tab" href="index.html">
+    <svg class="ic"><use href="#i-calendar"></use></svg>番剧周历
+  </a>
+  <a class="m-tab" href="tracks.html">
+    <svg class="ic"><use href="#i-tracks"></use></svg>我的追番
+  </a>
+  <a class="m-tab on" href="settings.html">
+    <svg class="ic"><use href="#i-settings"></use></svg>设置
+  </a>
+</nav>
+
+<!-- 换绑两步 -->
+<div class="dlg-backdrop" id="rebindDlg">
+  <div class="dlg" role="dialog" aria-modal="true" aria-label="换绑邮箱">
+    <span class="tape tl teal"></span>
+    <button class="dlg-close" data-dialog-close type="button" aria-label="关闭">
+      <svg class="ic"><use href="#i-x"></use></svg>
+    </button>
+    <h3 class="dlg-title">换绑邮箱</h3>
+    <p class="dlg-sub">新邮箱会成为这个账号的身份，登录和通知都跟着走</p>
+
+    <div id="rbStep1" style="display:flex;flex-direction:column;gap:16px">
+      <label class="field">
+        <span class="field-label">新邮箱</span>
+        <span class="field-row">
+          <input id="rbMail" type="email" placeholder="new@example.com">
+          <span class="field-msg">新邮箱写在这里</span>
+        </span>
+      </label>
+      <button class="link row" type="button" style="align-self:flex-start">
+        <svg class="ic ic-sm"><use href="#i-google"></use></svg>
+        是 Gmail？用 Google 授权换绑，免验证码
+      </button>
+    </div>
+
+    <div id="rbStep2" style="display:none;flex-direction:column;gap:16px">
+      <label class="field">
+        <span class="field-label">验证码</span>
+        <span class="field-row">
+          <input class="has-tail" placeholder="邮件里的 6 位数字" inputmode="numeric" maxlength="6">
+          <button class="tail-btn send" type="button">重新发送</button>
+          <span class="field-msg">查收新邮箱</span>
+        </span>
+      </label>
+    </div>
+
+    <div class="dlg-actions">
+      <button class="btn btn-ghost" id="rbBack" type="button">上一步</button>
+      <button class="btn btn-primary" id="rbNext" type="button">下一步</button>
+    </div>
+  </div>
+</div>
+
+<!-- 解绑 -->
+<div class="dlg-backdrop" id="unbindDlg">
+  <div class="dlg" role="dialog" aria-modal="true" aria-label="解绑邮箱">
+    <span class="tape tl sakura"></span>
+    <button class="dlg-close" data-dialog-close type="button" aria-label="关闭">
+      <svg class="ic"><use href="#i-x"></use></svg>
+    </button>
+    <h3 class="dlg-title">解绑邮箱</h3>
+    <p class="dlg-sub">验证码会发到当前邮箱 <b>you@example.com</b>，证明它还是你的</p>
+    <label class="field">
+      <span class="field-label">验证码</span>
+      <span class="field-row">
+        <input class="has-tail" placeholder="邮件里的 6 位数字" inputmode="numeric" maxlength="6">
+        <button class="tail-btn send" type="button">发送验证码</button>
+        <span class="field-msg">先点发送</span>
+      </span>
+    </label>
+    <div class="dlg-actions">
+      <button class="btn btn-ghost" data-dialog-close type="button">取消</button>
+      <button class="btn btn-danger" id="ubDone" type="button">
+        <svg class="ic ic-sm"><use href="#i-x"></use></svg>解绑
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

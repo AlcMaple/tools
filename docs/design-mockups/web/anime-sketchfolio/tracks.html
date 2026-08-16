@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MapleTools · 我的追番</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23fbf6ec' stroke='%231f7680' stroke-width='1.5'/%3E%3Cpath d='M7 16.5l.8-2.8 6-6a1.4 1.4 0 012 2l-6 6-2.8.8z' fill='none' stroke='%232e97a0' stroke-width='1.5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/sketch-ui.css">
+</head>
+<body data-page="tracks" data-auth="in">
+
+<header class="m-top">
+  <a class="brand" href="index.html" style="font-size:18px">
+    <svg class="ic" aria-hidden="true"><use href="#i-pencil"></use></svg>
+    MapleTools
+  </a>
+  <span style="margin-left:auto"></span>
+  <a class="btn btn-sm btn-primary auth-out" href="index.html">登录 / 注册</a>
+  <span class="auth-in"><img class="avatar" style="width:30px;height:30px" src="assets/sagiri-face.png" alt="maple-feng"></span>
+</header>
+
+<div class="shell">
+  <aside class="spine">
+    <span class="tape tl gold" style="width:88px"></span>
+    <div>
+      <a class="brand" href="index.html">
+        <svg class="ic" aria-hidden="true"><use href="#i-pencil"></use></svg>
+        MapleTools <span class="sparkle">✦</span>
+      </a>
+      <div class="brand-sub">SAGIRI · SKETCHFOLIO</div>
+    </div>
+
+    <nav class="idx-nav">
+      <a class="idx-a" href="index.html">
+        <svg class="ic"><use href="#i-calendar"></use></svg>番剧周历
+      </a>
+      <a class="idx-a on" href="tracks.html">
+        <svg class="ic"><use href="#i-tracks"></use></svg>我的追番
+      </a>
+      <a class="idx-a" href="settings.html">
+        <svg class="ic"><use href="#i-settings"></use></svg>设置
+      </a>
+    </nav>
+
+    <div class="spine-deco">
+      <span class="kira" style="top:0;left:26px">キラキラ…</span>
+      <span class="stamp st-teal" style="position:absolute;top:6px;right:14px">在看</span>
+      <span class="sparkle s2" style="position:absolute;top:52px;left:40px;font-size:13px">✦</span>
+    </div>
+
+    <div class="spine-foot">
+      <div class="spine-user auth-in">
+        <img class="avatar" src="assets/sagiri-face.png" alt="">
+        <div><b>maple-feng</b><span class="faint">Gmail 快捷登录</span></div>
+      </div>
+      <div class="spine-acts auth-in">
+        <a class="btn btn-sm btn-ghost" href="settings.html">设置</a>
+        <button class="btn btn-sm btn-danger" type="button" data-logout>退出</button>
+      </div>
+      <a class="btn btn-primary auth-out" href="index.html">登录 / 注册</a>
+    </div>
+  </aside>
+
+  <main class="sheet">
+    <div class="sheet-wrap">
+      <div class="spread" style="align-items:flex-end">
+        <div>
+          <h1 class="title-sketch" style="font-size:34px">我的追番</h1>
+          <p class="muted small mt8">把每一集都记在这一页上 · 今天有 <span class="hl" style="font-weight:600"><span id="todayCnt">2</span> 部更新</span></p>
+        </div>
+        <div class="row">
+          <button class="btn btn-sm" data-dialog-open="addDlg" type="button">
+            <svg class="ic ic-sm"><use href="#i-plus"></use></svg>加番
+          </button>
+          <button class="btn btn-sm btn-ghost" id="syncBtn" type="button">
+            <svg class="ic ic-sm"><use href="#i-refresh"></use></svg>同步
+          </button>
+        </div>
+      </div>
+
+      <div class="rig-inline mt16">
+        <img class="rig" src="assets/chara_03.png" alt="山田エルフ · 官方立绘">
+        <div class="bubble rig-bubble"><span>今天有 2 部更新，快去看快去看！</span></div>
+      </div>
+
+      <div class="row mb16" style="flex-wrap:wrap">
+        <div class="searchbar">
+          <svg class="ic" aria-hidden="true"><use href="#i-search"></use></svg>
+          <input id="trkSearch" placeholder="在这页里搜番名…" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="tabf-row">
+        <button class="tabf on" data-tab="all" type="button">全部 <span class="badge-num">10</span></button>
+        <button class="tabf" data-tab="doing" type="button">在追 <span class="badge-num">6</span></button>
+        <button class="tabf" data-tab="wish" type="button">想看 <span class="badge-num">2</span></button>
+        <button class="tabf" data-tab="done" type="button">看完 <span class="badge-num">1</span></button>
+      </div>
+
+      <div class="trk-grid" id="trkGrid"></div>
+
+      <div class="rig-slot">
+        <div class="rig-box">
+          <div class="bubble rig-bubble"><span>今天有 2 部更新，快去看快去看！</span></div>
+          <img class="rig rig-click" src="assets/chara_03.png" alt="山田エルフ · 官方立绘">
+          <span class="kira" style="bottom:22px;right:-12px;transform:rotate(7deg)">エルフ先生</span>
+        </div>
+      </div>
+
+      <div class="empty panel mt16" id="trkEmpty" style="display:none">
+        <img class="mascot" src="assets/sagiri-mascot.png" alt="">
+        <div class="bubble">这一页还空着呢……要不要去周历那边贴几张照片回来？</div>
+        <a class="btn btn-primary" href="index.html">去番剧周历</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<nav class="m-tabs">
+  <a class="m-tab" href="index.html">
+    <svg class="ic"><use href="#i-calendar"></use></svg>番剧周历
+  </a>
+  <a class="m-tab on" href="tracks.html">
+    <svg class="ic"><use href="#i-tracks"></use></svg>我的追番
+  </a>
+  <a class="m-tab" href="settings.html">
+    <svg class="ic"><use href="#i-settings"></use></svg>设置
+  </a>
+</nav>
+
+<!-- 加番 -->
+<div class="dlg-backdrop" id="addDlg">
+  <div class="dlg" role="dialog" aria-modal="true" aria-label="加入新番">
+    <span class="tape tl teal"></span>
+    <button class="dlg-close" data-dialog-close type="button" aria-label="关闭">
+      <svg class="ic"><use href="#i-x"></use></svg>
+    </button>
+    <h3 class="dlg-title">加番</h3>
+    <p class="dlg-sub">从索引里挑一部贴进手帐，加进来默认是「想看」</p>
+    <label class="field mb16">
+      <span class="field-label">搜索（本地索引演示 · 约 3 万部动画）</span>
+      <span class="field-row">
+        <input id="addSearch" placeholder="搜番名，日文原名或中文都可以" autocomplete="off">
+      </span>
+    </label>
+    <div id="addList"></div>
+  </div>
+</div>
+
+<!-- 移除确认 -->
+<div class="dlg-backdrop" id="rmDlg">
+  <div class="dlg" role="dialog" aria-modal="true" aria-label="移出追番">
+    <span class="tape tl sakura"></span>
+    <button class="dlg-close" data-dialog-close type="button" aria-label="关闭">
+      <svg class="ic"><use href="#i-x"></use></svg>
+    </button>
+    <h3 class="dlg-title">移出追番</h3>
+    <p class="dlg-sub">确定把『<b id="rmName" style="color:var(--sakura)"></b>』从手帐里撕掉吗？进度和标签会一起丢掉。</p>
+    <div class="dlg-actions">
+      <button class="btn btn-ghost" data-dialog-close type="button">先留着</button>
+      <button class="btn btn-danger" id="rmYes" type="button">
+        <svg class="ic ic-sm"><use href="#i-x"></use></svg>移除
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
