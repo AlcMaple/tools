@@ -63,7 +63,7 @@
   cursor: pointer;
   transition: border-color .2s, color .2s, background-color .2s, transform .2s var(--ease-page);
 }
-.idx-a:hover { color: var(--ink); }
+@media (hover: hover) { .idx-a:hover { color: var(--ink); } }
 .idx-a.on {
   color: var(--teal);
   border-color: var(--teal-line);
@@ -215,27 +215,27 @@
   text-decoration: none;
   transition: transform .18s var(--ease-stick), box-shadow .18s, background-color .18s, border-color .18s, color .18s;
 }
-.btn:hover { transform: translateY(-2px) rotate(-.6deg); box-shadow: var(--shadow-stick); }
+@media (hover: hover) { .btn:hover { transform: translateY(-2px) rotate(-.6deg); box-shadow: var(--shadow-stick); } }
 .btn:active { transform: translateY(1px); box-shadow: var(--shadow-1); }
 .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
 .btn-primary { background: var(--teal-mid); border-color: var(--teal); color: #f7fbfb; }
-.btn-primary:hover { background: var(--teal); }
+@media (hover: hover) { .btn-primary:hover { background: var(--teal); } }
 
 .btn-sakura { background: var(--sakura-mid); border-color: var(--sakura); color: #fff; }
-.btn-sakura:hover { background: var(--sakura); }
+@media (hover: hover) { .btn-sakura:hover { background: var(--sakura); } }
 
 .btn-ghost { background: transparent; box-shadow: none; }
-.btn-ghost:hover { background: var(--card); box-shadow: var(--shadow-1); }
+@media (hover: hover) { .btn-ghost:hover { background: var(--card); box-shadow: var(--shadow-1); } }
 
 .btn-danger { color: var(--sakura); border-color: var(--sakura); background: transparent; box-shadow: none; }
-.btn-danger:hover { background: var(--sakura-wash); border-color: var(--sakura); }
+@media (hover: hover) { .btn-danger:hover { background: var(--sakura-wash); border-color: var(--sakura); } }
 
 .btn-sm { min-height: 36px; padding: 5px 12px; font-size: 12.5px; }
 .btn-block { width: 100%; }
 
 .btn-google { background: #fff; border-color: #565c6c; color: #1f1f1f; }
-.btn-google:hover { background: #fff; }
+@media (hover: hover) { .btn-google:hover { background: #fff; } }
 
 .icon-btn {
   width: 40px;
@@ -249,7 +249,7 @@
   cursor: pointer;
   transition: transform .2s var(--ease-stick), color .2s, border-color .2s, box-shadow .2s;
 }
-.icon-btn:hover { transform: translateY(-2px) rotate(-6deg); color: var(--teal); border-color: var(--teal-line); box-shadow: var(--shadow-stick); }
+@media (hover: hover) { .icon-btn:hover { transform: translateY(-2px) rotate(-6deg); color: var(--teal); border-color: var(--teal-line); box-shadow: var(--shadow-stick); } }
 
 /* ---------- 表单：稿纸输入框 ---------- */
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -282,7 +282,7 @@
   cursor: pointer;
   transition: color .2s, border-color .2s, transform .2s;
 }
-.field-row > .tail-btn:hover { transform: translateY(-1px); }
+@media (hover: hover) { .field-row > .tail-btn:hover { transform: translateY(-1px); } }
 .field-row > .tail-btn:disabled { color: var(--ink-faint); border-color: var(--line); cursor: default; transform: none; }
 .field-row > .tail-btn.counting { border-style: solid; }
 .field-row > input.has-tail { padding-right: 96px; }
@@ -299,7 +299,7 @@
   cursor: pointer;
   border-radius: 6px;
 }
-.field-row > .eye:hover { color: var(--teal); }
+@media (hover: hover) { .field-row > .eye:hover { color: var(--teal); } }
 
 .field-msg {
   position: absolute;
@@ -482,12 +482,15 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 .dstamp {
   flex: none;
-  width: 78px;
-  min-height: 74px;
-  padding: 10px 6px 8px;
+  width: 84px;
+  /* 正方形日期章：宽高锁定 1:1，内容垂直居中（日期数字类名用 dnum，
+     不能叫 dd —— 会撞上全局下拉面板 .dd 的 display:none，数字直接消失） */
+  aspect-ratio: 1 / 1;
+  padding: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   border: 1.5px solid var(--line);
   border-radius: 14px;
@@ -499,14 +502,14 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   position: relative;
   transition: border-color .2s, background-color .2s, color .2s, transform .2s var(--ease-stick);
 }
-.dstamp:hover { transform: translateY(-2px); }
+@media (hover: hover) { .dstamp:hover { transform: translateY(-2px); } }
 .dstamp .dw { font-size: 12px; }
-.dstamp .dd { font-family: var(--font-hand); font-size: 26px; line-height: 1.1; color: var(--ink); }
+.dstamp .dnum { font-family: var(--font-hand); font-size: 26px; line-height: 1.1; color: var(--ink); }
 .dstamp .dc { font-size: 10.5px; color: var(--ink-faint); }
 .dstamp.on { border-color: var(--teal-line); background: var(--teal-wash); color: var(--teal); }
-.dstamp.on .dd { color: var(--teal); }
+.dstamp.on .dnum { color: var(--teal); }
 .dstamp.today { border-color: var(--sakura); }
-.dstamp.today .dd { background-image: linear-gradient(104deg, transparent 2%, var(--gold-hl) 8%, var(--gold-hl) 92%, transparent 98%); background-repeat: no-repeat; background-size: 100% 52%; background-position: 0 70%; }
+.dstamp.today .dnum { background-image: linear-gradient(104deg, transparent 2%, var(--gold-hl) 8%, var(--gold-hl) 92%, transparent 98%); background-repeat: no-repeat; background-size: 100% 52%; background-position: 0 70%; }
 .dstamp .clip-today { position: absolute; top: -13px; right: -4px; width: 14px; height: 30px; color: var(--sakura); transform: rotate(12deg); }
 
 .day-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
@@ -612,7 +615,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   box-shadow: 0 2px 8px rgba(20, 26, 40, .25);
   z-index: 2;
 }
-.track-btn:hover { transform: scale(1.08) rotate(-6deg); }
+@media (hover: hover) { .track-btn:hover { transform: scale(1.08) rotate(-6deg); } }
 .track-btn.on { background: var(--teal-mid); color: #f7fbfb; }
 .poster.tracked { border: 2px solid var(--teal-line); padding: 5px 5px 8px; }
 
@@ -666,7 +669,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 .tagx.mine { background: var(--teal-wash); color: var(--teal); border-color: var(--teal-line); }
 .tagx > button { border: none; background: none; padding: 2px; color: inherit; font-size: 12px; line-height: 1; cursor: pointer; opacity: .7; }
-.tagx > button:hover { opacity: 1; }
+@media (hover: hover) { .tagx > button:hover { opacity: 1; } }
 .tagx-add { border: 1px dashed var(--line-strong); background: none; color: var(--ink-faint); font: inherit; cursor: pointer; }
 
 /* ---------- 自绘下拉（与触发器同宽） ---------- */
@@ -689,7 +692,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   cursor: pointer;
   transition: border-color .2s, box-shadow .2s;
 }
-.dd-trigger:hover, .dd-host.open .dd-trigger { border-color: var(--teal-line); }
+.dd-host.open .dd-trigger { border-color: var(--teal-line); }
+@media (hover: hover) { .dd-trigger:hover { border-color: var(--teal-line); } }
 .dd-trigger .ic { color: var(--ink-faint); transition: transform .2s; }
 .dd-host.open .dd-trigger .ic { transform: rotate(180deg); color: var(--teal); }
 .dd {
@@ -726,7 +730,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   text-decoration: none;
   transition: background-color .15s, color .15s;
 }
-.dd-item:hover { background: var(--teal-wash); color: var(--ink); }
+@media (hover: hover) { .dd-item:hover { background: var(--teal-wash); color: var(--ink); } }
 .dd-item.on { color: var(--teal); font-weight: 600; }
 .dd-item .ic { flex: none; }
 
@@ -777,7 +781,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   transition: transform .18s var(--ease-stick), color .18s, border-color .18s, box-shadow .18s;
 }
 .dlg-close .ic { width: 18px; height: 18px; }
-.dlg-close:hover { color: var(--sakura); border-color: var(--sakura); transform: rotate(8deg) scale(1.06); box-shadow: var(--shadow-stick); }
+@media (hover: hover) { .dlg-close:hover { color: var(--sakura); border-color: var(--sakura); transform: rotate(8deg) scale(1.06); box-shadow: var(--shadow-stick); } }
 .dlg-close:focus-visible { outline: 3px solid var(--teal-wash); outline-offset: 2px; }
 .dlg-title { font-family: var(--font-hand); font-size: 20px; margin-bottom: 6px; }
 .dlg-sub { font-size: 13px; color: var(--ink-sub); margin-bottom: 16px; }
@@ -966,6 +970,36 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .ep-ctrl .btn { padding: 3px 12px; font-size: 16px; min-height: 36px; }
 .ep-num { font-family: var(--font-hand); font-size: 16px; min-width: 56px; text-align: center; color: var(--ink); }
 .trk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+/* 状态分段：想看/在看/看完 常驻直点，替换原「···」下拉（下拉被钉成触发器同宽 40px，
+   菜单文字竖排没法看，且只有看完/移除、切不了想看在看）。整组无 hover，只认点击 */
+.status-seg {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--wob-1);
+  background: var(--field-bg);
+}
+.status-seg .seg-btn {
+  min-width: 52px;
+  min-height: 36px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink-sub);
+  background: none;
+  border: 1.5px dashed transparent;
+  border-radius: 8px 12px 8px 12px;
+  cursor: pointer;
+}
+.status-seg .seg-btn.on { background: var(--card); font-weight: 600; box-shadow: var(--shadow-1); }
+.status-seg .seg-btn.on[data-status='wish'] { color: var(--silver); border-color: var(--silver-line); }
+.status-seg .seg-btn.on[data-status='doing'] { color: var(--teal); border-color: var(--teal-line); }
+.status-seg .seg-btn.on[data-status='done'] { color: var(--gold); border-color: var(--gold); }
+.status-seg .seg-btn:active { transform: translateY(1px); }
+.trk-rm { flex: none; }
 /* 「今天更新」贴纸：只有仍在连载、且更新日落在今天的番才有 */
 .chip-today {
   display: inline-flex;
@@ -1049,7 +1083,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   text-align: left;
   cursor: pointer;
 }
-.sugg-item:hover { background: var(--teal-wash); }
+@media (hover: hover) { .sugg-item:hover { background: var(--teal-wash); } }
 .sugg-item .sugg-meta { margin-left: auto; font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; }
 .sugg-note { padding: 8px 10px; font-size: 12px; color: var(--ink-faint); }
 
@@ -1072,7 +1106,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   position: relative;
   transition: color .2s, background-color .2s, border-color .2s;
 }
-.tabf:hover { color: var(--ink); }
+@media (hover: hover) { .tabf:hover { color: var(--ink); } }
 .tabf.on {
   color: var(--teal);
   background: var(--card);
@@ -1201,7 +1235,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 .ic-sm { width: 14px; height: 14px; }
 .link { color: var(--teal); text-decoration: underline wavy var(--teal-wash); text-underline-offset: 4px; cursor: pointer; background: none; border: none; font: inherit; font-size: inherit; padding: 0; }
-.link:hover { color: var(--sakura); }
+@media (hover: hover) { .link:hover { color: var(--sakura); } }
 .kira {
   position: absolute;
   font-family: var(--font-hand);
@@ -1270,7 +1304,7 @@ body[data-auth='out'] .track-btn { display: none; }
   cursor: pointer;
   transition: background-color .15s, transform .15s var(--ease-stick);
 }
-.stepper > button:hover { background: var(--teal-wash); }
+@media (hover: hover) { .stepper > button:hover { background: var(--teal-wash); } }
 .stepper > button:active { transform: scale(.88); }
 .stepper > .ep-num { min-width: 60px; text-align: center; border-left: 1.5px dashed var(--line); border-right: 1.5px dashed var(--line); margin: 0; }
 
@@ -1311,7 +1345,7 @@ body[data-auth='out'] .track-btn { display: none; }
   cursor: pointer;
   transition: transform .2s var(--ease-stick), background-color .2s, color .2s;
 }
-.player-play:hover { transform: scale(1.07) rotate(-4deg); }
+@media (hover: hover) { .player-play:hover { transform: scale(1.07) rotate(-4deg); } }
 .player-play .ic { width: 34px; height: 34px; }
 .player-video.playing .player-play { background: var(--teal-mid); color: #f7fbfb; border-color: var(--teal); }
 .pv-bar { width: min(420px, 80%); height: 10px; border: 1.5px solid var(--line-strong); border-radius: 6px; background: var(--field-bg); overflow: hidden; }
@@ -1334,7 +1368,7 @@ body[data-auth='out'] .track-btn { display: none; }
   text-decoration: none;
   transition: border-color .2s, color .2s, background-color .2s, transform .15s var(--ease-stick);
 }
-.ep-cell:hover { transform: translateY(-2px); }
+@media (hover: hover) { .ep-cell:hover { transform: translateY(-2px); } }
 .ep-cell.on { color: #f7fbfb; background: var(--teal-mid); border-color: var(--teal); font-weight: 600; }
 .ep-cell.seen::after { content: '✓'; margin-left: 3px; font-size: 10px; color: var(--gold); }
 .ep-cell.on.seen::after { color: #fff; }
@@ -1353,7 +1387,7 @@ body[data-auth='out'] .track-btn { display: none; }
   text-align: left;
   transition: border-color .2s, background-color .2s;
 }
-.line-card:hover { border-color: var(--teal-line); }
+@media (hover: hover) { .line-card:hover { border-color: var(--teal-line); } }
 .line-card.on { border-color: var(--teal-line); background: var(--teal-wash); }
 .line-card .lc-name { font-weight: 600; font-size: 13.5px; }
 .line-card .lc-meta { margin-left: auto; font-size: 11.5px; color: var(--ink-faint); }
