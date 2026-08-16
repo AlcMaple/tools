@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MapleTools · 番剧周历</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23fbf6ec' stroke='%231f7680' stroke-width='1.5'/%3E%3Cpath d='M7 16.5l.8-2.8 6-6a1.4 1.4 0 012 2l-6 6-2.8.8z' fill='none' stroke='%232e97a0' stroke-width='1.5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/sketch-ui.css">
+</head>
+<body data-page="calendar" data-auth="in">
+
+<!-- 移动端顶栏 -->
+<header class="m-top">
+  <a class="brand" href="index.html" style="font-size:18px">
+    <svg class="ic" aria-hidden="true"><use href="#i-pencil"></use></svg>
+    MapleTools
+  </a>
+  <span style="margin-left:auto"></span>
+  <a class="btn btn-sm btn-primary auth-out" href="index.html" data-dialog-open="authDlg">登录 / 注册</a>
+  <span class="auth-in"><img class="avatar" style="width:30px;height:30px" src="assets/sagiri-face.png" alt="maple-feng"></span>
+</header>
+
+<div class="shell">
+  <!-- 书脊（桌面侧栏） -->
+  <aside class="spine">
+    <span class="tape tl teal" style="width:88px"></span>
+    <div>
+      <a class="brand" href="index.html">
+        <svg class="ic" aria-hidden="true"><use href="#i-pencil"></use></svg>
+        MapleTools <span class="sparkle">✦</span>
+      </a>
+      <div class="brand-sub">SAGIRI · SKETCHFOLIO</div>
+    </div>
+
+    <nav class="idx-nav">
+      <a class="idx-a on" href="index.html">
+        <svg class="ic"><use href="#i-calendar"></use></svg>番剧周历
+      </a>
+      <a class="idx-a" href="tracks.html">
+        <svg class="ic"><use href="#i-tracks"></use></svg>我的追番
+      </a>
+      <a class="idx-a" href="settings.html">
+        <svg class="ic"><use href="#i-settings"></use></svg>设置
+      </a>
+    </nav>
+
+    <div class="spine-deco">
+      <span class="kira" style="top:0;left:26px">キラキラ…</span>
+      <span class="stamp st-sakura" style="position:absolute;top:6px;right:14px">紗霧</span>
+      <span class="sparkle s2" style="position:absolute;top:52px;left:40px;font-size:13px">✦</span>
+    </div>
+
+    <div class="spine-foot">
+      <div class="spine-user auth-in">
+        <img class="avatar" src="assets/sagiri-face.png" alt="">
+        <div><b>maple-feng</b><span class="faint">Gmail 快捷登录</span></div>
+      </div>
+      <div class="spine-acts auth-in">
+        <a class="btn btn-sm btn-ghost" href="settings.html">设置</a>
+        <button class="btn btn-sm btn-danger" type="button" data-logout>退出</button>
+      </div>
+      <a class="btn btn-primary auth-out" href="index.html" data-dialog-open="authDlg">登录 / 注册</a>
+    </div>
+  </aside>
+
+  <!-- 内页 -->
+  <main class="sheet">
+    <div class="sheet-wrap">
+      <div class="nag mb16">
+        <svg class="ic" aria-hidden="true"><use href="#i-alert"></use></svg>
+        账号还没有设置密保问题，找回密码会少一条路
+        <a class="btn btn-sm btn-ghost" href="settings.html#security">去设置</a>
+      </div>
+
+      <div class="spread" style="align-items:flex-end">
+        <div>
+          <h1 class="title-sketch" style="font-size:34px">番剧周历</h1>
+          <p class="muted small mt8">2026 年夏季 · 8/10 – 8/16 · 点日期章，翻到想看的那一天</p>
+        </div>
+        <div class="row">
+          <button class="icon-btn" id="refreshCal" type="button" title="刷新周历" aria-label="刷新周历">
+            <svg class="ic"><use href="#i-refresh"></use></svg>
+          </button>
+          <button class="btn btn-sm" id="backToday" type="button">
+            <svg class="ic ic-sm"><use href="#i-calendar"></use></svg>回到今天
+          </button>
+        </div>
+      </div>
+
+      <!-- 移动端：立绘内联展示（桌面在右侧驻场） -->
+      <div class="rig-inline mt16">
+        <img class="rig" src="assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘">
+        <div class="bubble rig-bubble"><span>点下面的日期章，翻到想看的那一天～</span></div>
+      </div>
+
+      <div class="hero-split mt16">
+        <div style="flex:1;min-width:0">
+          <div class="date-strip" id="dateStrip" role="tablist" aria-label="选择日期"></div>
+          <div class="day-head" id="dayHead"></div>
+          <div class="film" id="dayFilm" aria-label="当日在播番剧"></div>
+        </div>
+        <div class="rig-box">
+          <div class="bubble rig-bubble"><span>点日期章，翻到想看的那一天～</span></div>
+          <img class="rig rig-click" src="assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘（全身）">
+          <span class="kira" style="bottom:30px;right:-10px;transform:rotate(6deg)">サラサラ</span>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 移动端底部标签栏 -->
+<nav class="m-tabs">
+  <a class="m-tab on" href="index.html">
+    <svg class="ic"><use href="#i-calendar"></use></svg>番剧周历
+  </a>
+  <a class="m-tab" href="tracks.html">
+    <svg class="ic"><use href="#i-tracks"></use></svg>我的追番
+  </a>
+  <a class="m-tab" href="settings.html">
+    <svg class="ic"><use href="#i-settings"></use></svg>设置
+  </a>
+</nav>
+
+<!-- 登录弹窗：真实产品形态（AuthModal），左侧立绘栏 + 右侧表单 -->
+<div class="dlg-backdrop" id="authDlg">
+  <div class="dlg auth-dlg" role="dialog" aria-modal="true" aria-label="登录 MapleTools">
+    <span class="tape tl teal"></span>
+    <button class="dlg-close" data-dialog-close type="button" aria-label="关闭">
+      <svg class="ic"><use href="#i-x"></use></svg>
+    </button>
+
+    <aside class="auth-side">
+      <span class="halftone-wash"></span>
+      <img src="assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘">
+      <p class="auth-side-cap">「才、才不是在等你登录……」</p>
+    </aside>
+
+    <div class="auth-main">
+      <div class="auth-tabs">
+        <button class="auth-tab on" data-tab="pwd" type="button">密码登录</button>
+        <button class="auth-tab" data-tab="code" type="button">验证码登录</button>
+      </div>
+
+      <form id="loginForm" class="auth-pane show" data-pane="pwd" novalidate>
+        <label class="field">
+          <span class="field-label">用户名</span>
+          <span class="field-row">
+            <input required placeholder="你的用户名" autocomplete="username">
+            <span class="field-msg">要写用户名哦</span>
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">密码</span>
+          <span class="field-row">
+            <input required type="password" placeholder="密码" autocomplete="current-password">
+            <button class="eye" type="button" aria-pressed="false" title="明文 / 暗文切换">
+              <svg class="ic"><use href="#i-eye"></use></svg>
+            </button>
+            <span class="field-msg" style="right:40px;left:auto">密码不能为空</span>
+          </span>
+        </label>
+        <button class="btn btn-primary btn-block" type="submit">登录</button>
+        <div class="auth-foot">
+          <button class="link" type="button" data-pane-link="reg">注册新账号</button>
+          <button class="link" type="button" data-pane-link="forgot">忘记密码</button>
+        </div>
+      </form>
+
+      <form id="codeForm" class="auth-pane" data-pane="code" novalidate>
+        <label class="field">
+          <span class="field-label">邮箱</span>
+          <span class="field-row">
+            <input required type="email" placeholder="you@example.com" autocomplete="email">
+            <span class="field-msg">邮箱写在这里</span>
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">验证码</span>
+          <span class="field-row">
+            <input required class="has-tail" placeholder="邮件里的 6 位数字" inputmode="numeric" maxlength="6">
+            <button class="tail-btn send" type="button">发送验证码</button>
+            <span class="field-msg">先填邮箱再发码</span>
+          </span>
+        </label>
+        <button class="btn btn-primary btn-block" type="submit">验证并登录</button>
+        <div class="auth-foot">
+          <span class="faint">新邮箱验证后自动注册</span>
+        </div>
+      </form>
+
+      <form id="regForm" class="auth-pane" data-pane="reg" novalidate>
+        <label class="field">
+          <span class="field-label">用户名</span>
+          <span class="field-row">
+            <input required placeholder="给自己起个名字（2–12 字）">
+            <span class="field-msg">先起个名字吧</span>
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">密码</span>
+          <span class="field-row">
+            <input required type="password" placeholder="至少 8 位" autocomplete="new-password">
+            <button class="eye" type="button" aria-pressed="false" title="明文 / 暗文切换">
+              <svg class="ic"><use href="#i-eye"></use></svg>
+            </button>
+            <span class="field-msg" style="right:40px;left:auto">密码不能为空</span>
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">确认密码</span>
+          <span class="field-row">
+            <input required type="password" placeholder="再输入一次" autocomplete="new-password">
+            <span class="field-msg">再写一遍密码</span>
+          </span>
+        </label>
+        <button class="btn btn-primary btn-block" type="submit">注册</button>
+        <div class="auth-foot">
+          <button class="link" type="button" data-pane-link="pwd">已有账号？去登录</button>
+        </div>
+      </form>
+
+      <form id="forgotForm" class="auth-pane" data-pane="forgot" novalidate>
+        <label class="field">
+          <span class="field-label">要找回的账号</span>
+          <span class="field-row">
+            <input required placeholder="用户名">
+            <span class="field-msg">填要找回的用户名</span>
+          </span>
+        </label>
+        <div class="field">
+          <span class="field-label">密保问题</span>
+          <div class="dd-host">
+            <button class="dd-trigger" type="button">
+              <span class="dd-val">你的代表角色是</span>
+              <svg class="ic"><use href="#i-chev"></use></svg>
+            </button>
+            <div class="dd">
+              <button class="dd-item" type="button" data-val="最喜欢的动画作品">最喜欢的动画作品</button>
+              <button class="dd-item on" type="button" data-val="你的代表角色是">你的代表角色是</button>
+              <button class="dd-item" type="button" data-val="第一只宠物的名字">第一只宠物的名字</button>
+            </div>
+          </div>
+        </div>
+        <label class="field">
+          <span class="field-label">答案</span>
+          <span class="field-row">
+            <input required placeholder="当年写下的答案">
+            <span class="field-msg">答案要对得上</span>
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">新密码</span>
+          <span class="field-row">
+            <input required type="password" placeholder="至少 8 位">
+            <button class="eye" type="button" aria-pressed="false" title="明文 / 暗文切换">
+              <svg class="ic"><use href="#i-eye"></use></svg>
+            </button>
+            <span class="field-msg" style="right:40px;left:auto">新密码不能为空</span>
+          </span>
+        </label>
+        <button class="btn btn-primary btn-block" type="submit">重置密码</button>
+        <div class="auth-foot">
+          <button class="link" type="button" data-pane-link="pwd">想起来了？去登录</button>
+        </div>
+      </form>
+
+      <div class="or-line mt8">或</div>
+      <button class="btn btn-google btn-block mt16" type="button">
+        <svg class="ic" aria-hidden="true"><use href="#i-google"></use></svg>
+        使用 Google 继续
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
