@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="620" viewBox="0 0 960 620" role="img" aria-labelledby="title desc">
+  <title id="title">Google 快捷登录 · 产品视角流程</title>
+  <desc id="desc">用户点按钮后由 Google 验明身份，网站核对回执后按会员档案直接登录或自动开号；绑定关系永久保存，会话过期后重新授权仍是原账号。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#151313"/>
+      <stop offset="1" stop-color="#0e0e0e"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#aa9092"/>
+    </marker>
+    <style>
+      .box{fill:#1b1a1a;stroke:#574548;stroke-width:1}
+      .gbox{fill:#1b1a1a;stroke:#5a6b8c;stroke-width:1}
+      .title{fill:#eee5e6;font:700 15px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .body{fill:#d7c5c7;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .muted{fill:#a68f91;font:11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .label{fill:#ffb3b8;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;letter-spacing:1px}
+      .step{fill:#ffb3b8;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .badge{fill:#ffb3b8}
+      .badge-t{fill:#151313;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+      .life{fill:none;stroke:#574548;stroke-width:1;stroke-dasharray:3 5}
+      .line{fill:none;stroke:#aa9092;stroke-width:1.4;marker-end:url(#arrow)}
+      .note{fill:#8ab4f8;font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+    </style>
+  </defs>
+  <rect width="960" height="620" rx="18" fill="url(#bg)"/>
+  <text x="36" y="40" class="label">WEB AUTH · GOOGLE LOGIN（产品视角）</text>
+  <text x="36" y="66" class="title">Google 负责验明身份，网站按会员档案直接登录或自动开号</text>
+
+  <!-- 三个角色 -->
+  <rect x="55" y="96" width="230" height="44" rx="10" class="box"/>
+  <text x="170" y="123" text-anchor="middle" class="title" font-size="13">用户（浏览器）</text>
+  <rect x="365" y="96" width="230" height="44" rx="10" class="box"/>
+  <text x="480" y="123" text-anchor="middle" class="title" font-size="13">MapleTools 网站</text>
+  <rect x="675" y="96" width="230" height="44" rx="10" class="gbox"/>
+  <text x="790" y="123" text-anchor="middle" class="title" font-size="13">Google</text>
+
+  <!-- 生命线 -->
+  <path d="M170 140 V470" class="life"/>
+  <path d="M480 140 V470" class="life"/>
+  <path d="M790 140 V470" class="life"/>
+
+  <!-- 步骤 -->
+  <circle cx="60" cy="172" r="9" class="badge"/><text x="60" y="176" text-anchor="middle" class="badge-t">1</text>
+  <path d="M180 172 H460" class="line"/>
+  <text x="320" y="162" text-anchor="middle" class="body">点击「使用 Google 继续」</text>
+
+  <circle cx="60" cy="222" r="9" class="badge"/><text x="60" y="226" text-anchor="middle" class="badge-t">2</text>
+  <path d="M470 222 H190" class="line"/>
+  <text x="330" y="212" text-anchor="middle" class="body">网站发一张 5 分钟有效的一次性「门票」，跳转 Google</text>
+
+  <circle cx="60" cy="272" r="9" class="badge"/><text x="60" y="276" text-anchor="middle" class="badge-t">3</text>
+  <path d="M185 272 H770" class="line"/>
+  <text x="478" y="262" text-anchor="middle" class="body">在 Google 页面确认身份（密码 / 指纹由 Google 自己验证，网站接触不到）</text>
+
+  <circle cx="60" cy="322" r="9" class="badge"/><text x="60" y="326" text-anchor="middle" class="badge-t">4</text>
+  <path d="M775 322 H500" class="line"/>
+  <text x="638" y="312" text-anchor="middle" class="body">Google 出具盖了章的「回执」，跳回网站</text>
+
+  <circle cx="60" cy="372" r="9" class="badge"/><text x="60" y="376" text-anchor="middle" class="badge-t">5</text>
+  <path d="M490 372 H770" class="line"/>
+  <text x="630" y="362" text-anchor="middle" class="body">网站向 Google 当面核验回执真伪（伪造 / 过期一律拒收）</text>
+
+  <circle cx="60" cy="422" r="9" class="badge"/><text x="60" y="426" text-anchor="middle" class="badge-t">6</text>
+  <rect x="300" y="402" width="360" height="56" rx="10" class="box"/>
+  <text x="480" y="424" text-anchor="middle" class="body">查会员档案：已登记 Google → 直接登录</text>
+  <text x="480" y="444" text-anchor="middle" class="body">新用户 → 自动开号；同邮箱老账号 → 自动并入</text>
+
+  <circle cx="60" cy="492" r="9" class="badge"/><text x="60" y="496" text-anchor="middle" class="badge-t">7</text>
+  <path d="M470 492 H190" class="line"/>
+  <text x="330" y="482" text-anchor="middle" class="body">登录成功，本设备 30 天内免登录</text>
+
+  <!-- 产品要点 -->
+  <rect x="36" y="524" width="888" height="76" rx="12" class="box"/>
+  <text x="56" y="548" class="step">产品要点</text>
+  <text x="56" y="570" class="muted">· 绑定关系永久存档：登录过期 / 换设备后重新授权，仍是原账号，数据不丢、不会重复开号</text>
+  <text x="56" y="588" class="muted">· 网站全程拿不到 Google 密码，只收到 Google 盖章的身份证明；未配置凭据的环境按钮自动隐藏</text>
+</svg>

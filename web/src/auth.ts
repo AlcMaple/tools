@@ -129,6 +129,15 @@ export async function fetchQuestions(): Promise<SecurityQuestion[]> {
   return questionsCache
 }
 
+// 第三方登录是否启用 —— 服务端按环境变量（GOOGLE_CLIENT_ID/SECRET）决定，未配置时前端不画入口。
+// 登录走整页跳转（/api/auth/oauth/google/start → Google → 回调设会话 cookie 后跳回），
+// 前端无需也不应经手任何令牌。失败时回调带 ?oauth=failed 回来，由 App 弹登录框提示。
+let providersCache: { google: boolean } | null = null
+export async function fetchOauthProviders(): Promise<{ google: boolean }> {
+  if (!providersCache) providersCache = await request<{ google: boolean }>('/oauth/providers')
+  return providersCache
+}
+
 // 组件里订阅登录态。返回 { user, ready }，配合 auth.login/register/logout 用。
 export function useAuth(): { user: AuthUser | null; ready: boolean } {
   const [, force] = useState(0)

@@ -4,7 +4,7 @@
 // 找回密码：账号 + 密保问题（预设下拉）+ 答案 + 新密码 + 确认。
 // Enter 提交、ESC / 背景 / × 关闭。
 import { useEffect, useRef, useState } from 'react'
-import { auth, fetchQuestions } from './auth'
+import { auth, fetchOauthProviders, fetchQuestions } from './auth'
 import type { SecurityQuestion } from './auth'
 import { Icon } from './Icon'
 import { Select } from './Select'
@@ -13,7 +13,15 @@ export type AuthMode = 'login' | 'register' | 'email' | 'forgot'
 
 const TITLE: Record<AuthMode, string> = { login: '登录', register: '注册', email: '邮箱验证码登录', forgot: '找回密码' }
 
-const QUICK_EMAIL_DOMAINS = ['gmail.com', 'outlook.com', 'qq.com', '163.com'] as const
+const QUICK_EMAIL_DOMAINS = [
+  'gmail.com',
+  'outlook.com',
+  'qq.com',
+  '163.com',
+  '126.com',
+  'foxmail.com',
+  'icloud.com',
+] as const
 
 type InboxLink = { text: string; href: string }
 
@@ -25,10 +33,14 @@ function inboxLinkFor(address: string): InboxLink | null {
   if (domain === 'outlook.com' || domain === 'hotmail.com' || domain === 'live.com') {
     return { text: '打开 Outlook 查收验证码', href: 'https://outlook.live.com/mail/0/' }
   }
-  if (domain === 'qq.com') return { text: '打开 QQ 邮箱查收验证码', href: 'https://mail.qq.com/' }
+  // foxmail 的收件箱就是 QQ 邮箱网页版；icloud 走自家邮件入口。
+  if (domain === 'qq.com' || domain === 'foxmail.com') {
+    return { text: '打开 QQ 邮箱查收验证码', href: 'https://mail.qq.com/' }
+  }
   if (domain === '163.com') return { text: '打开 163 邮箱查收验证码', href: 'https://mail.163.com/' }
   if (domain === '126.com') return { text: '打开 126 邮箱查收验证码', href: 'https://mail.126.com/' }
   if (domain === 'yeah.net') return { text: '打开 Yeah 邮箱查收验证码', href: 'https://mail.yeah.net/' }
+  if (domain === 'icloud.com') return { text: '打开 iCloud 邮箱查收验证码', href: 'https://www.icloud.com/mail' }
   return null
 }
 
@@ -37,11 +49,14 @@ export function AuthModal({
   mode,
   onMode,
   onClose,
+  presetError = null,
 }: {
   open: boolean
   mode: AuthMode
   onMode: (m: AuthMode) => void
   onClose: () => void
+  /** 打开弹窗时就带上的错误（如第三方登录回调失败回跳后由 App 传入）。 */
+  presetError?: string | null
 }): JSX.Element | null {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -57,6 +72,7 @@ export function AuthModal({
   const [error, setError] = useState<string | null>(null)
   const [okMsg, setOkMsg] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [googleEnabled, setGoogleEnabled] = useState(false)
   const userRef = useRef<HTMLInputElement>(null)
   const emailRef = useRef<HTMLInputElement>(null)
 
@@ -76,7 +92,7 @@ export function AuthModal({
     setConfirm('')
     setQuestionId('')
     setAnswer('')
-    setError(null)
+    setError(presetError)
     setOkMsg(null)
     setSubmitting(false)
     userRef.current?.focus()
@@ -110,6 +126,20 @@ export function AuthModal({
     }
   }, [isForgot, questions.length])
 
+  // 第三方入口按服务端配置显示：未配凭据就不出现，本地和线上行为一致。
+  useEffect(() => {
+    if (!open || isForgot) return
+    let alive = true
+    void fetchOauthProviders()
+      .then((r) => {
+        if (alive) setGoogleEnabled(r.google)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [open, isForgot])
+
   if (!open) return null
 
   const useEmailDomain = (domain: string): void => {
@@ -128,6 +158,15 @@ export function AuthModal({
   }
 
   const inboxLink = emailStep === 'code' ? inboxLinkFor(email) : null
+
+  // 整页跳转授权 —— 回来后会话 cookie 已就位，auth.init() 恢复登录态；前端不经手任何令牌。
+  const startGoogleLogin = (): void => {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('oauth')
+    window.location.href = `/api/auth/oauth/google/start?returnTo=${encodeURIComponent(
+      url.pathname + url.search + url.hash,
+    )}`
+  }
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()
@@ -233,6 +272,26 @@ export function AuthModal({
               </button>
             ))}
           </div>
+        )}
+
+        {googleEnabled && !isForgot && (
+          <>
+            {/* 品牌按钮按 Google 官方规范用白底黑字（深色界面下也是最醒目的官方样式）， */}
+            {/* 放在表单顶部 —— 与任务参考图一致：第三方入口优先，再「或」分隔，再本地凭据。 */}
+            <button
+              type="button"
+              onClick={startGoogleLogin}
+              className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-white py-2.5 text-sm font-semibold text-[#1f1f1f] transition hover:brightness-95"
+            >
+              <GoogleMark />
+              使用 Google 继续
+            </button>
+            <div className="mb-4 mt-3 flex items-center gap-3" aria-hidden="true">
+              <span className="h-px flex-1 bg-outline-variant/30" />
+              <span className="font-label text-[10px] text-on-surface-variant/50">或</span>
+              <span className="h-px flex-1 bg-outline-variant/30" />
+            </div>
+          </>
         )}
 
         <form onSubmit={submit}>
@@ -486,4 +545,28 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Hint({ children }: { children: React.ReactNode }): JSX.Element {
   return <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">{children}</p>
+}
+
+// Google 品牌四色「G」—— 单色 currentColor 套不进 Icon 的单 path 设计，且用错配色就不像官方入口了。
+function GoogleMark(): JSX.Element {
+  return (
+    <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden>
+      <path
+        fill="#4285F4"
+        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92a8.78 8.78 0 0 0 2.68-6.62z"
+      />
+      <path
+        fill="#34A853"
+        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M3.97 10.72A5.41 5.41 0 0 1 3.68 9c0-.6.1-1.18.28-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.05l3.01-2.33z"
+      />
+      <path
+        fill="#EA4335"
+        d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.9 11.42 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"
+      />
+    </svg>
+  )
 }
