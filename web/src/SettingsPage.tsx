@@ -14,9 +14,20 @@ import {
   XIFAN_AUTH_EVENT_KEY,
   XIFAN_CAPTCHA_EVENT_KEY,
 } from './api'
-import { auth, fetchQuestions, useAuth } from './auth'
+import {
+  auth,
+  bindEmailStart,
+  bindEmailVerify,
+  fetchOauthProviders,
+  fetchQuestions,
+  rebindEmailViaGoogle,
+  unbindEmailStart,
+  unbindEmailVerify,
+  useAuth,
+} from './auth'
 import type { SecurityQuestion } from './auth'
-import { Icon } from './Icon'
+import { GoogleMark, Icon } from './Icon'
+import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 
 type Module = 'profile' | 'security' | 'xifan'
@@ -102,7 +113,11 @@ export function SettingsPage(): JSX.Element | null {
 
           <div>
             {module !== 'xifan' && (
-              module === 'profile' || !user.hasPassword ? <ProfileModule /> : <SecurityModule />
+              module === 'profile' || !user.hasPassword ? (
+                <ProfileModule onGoSecurity={() => selectModule('security')} />
+              ) : (
+                <SecurityModule />
+              )
             )}
             {xifanOpened && (
               <div className={module === 'xifan' ? undefined : 'hidden'}>
@@ -194,21 +209,59 @@ function Kv({ k, v, note }: { k: string; v: string; note?: string }): JSX.Elemen
   )
 }
 
-function ProfileModule(): JSX.Element | null {
+function ProfileModule({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Element | null {
   const { user } = useAuth()
+  const [providers, setProviders] = useState<{ google: boolean; email: boolean } | null>(null)
+  const [flash, setFlash] = useState<{ msg: string; error: boolean } | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    // Google 绑定回跳结果（登录流程的 oauth=failed 由 App 处理，不会走到这）。
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get('oauth')
+    if (
+      result === 'bound' ||
+      result === 'conflict' ||
+      result === 'bind_failed' ||
+      result === 'already_bound'
+    ) {
+      params.delete('oauth')
+      const qs = params.toString()
+      window.history.replaceState(
+        null,
+        '',
+        window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
+      )
+      setFlash(
+        result === 'bound'
+          ? { msg: 'Google 账号已绑定', error: false }
+          : result === 'conflict'
+            ? { msg: '该 Google 账号已绑定其它用户', error: true }
+            : result === 'already_bound'
+              ? { msg: '本账号已绑定 Google，请先解绑再绑定新的', error: true }
+              : { msg: 'Google 绑定未完成，请重试', error: true },
+      )
+    }
+    void fetchOauthProviders()
+      .then((r) => {
+        if (alive) setProviders(r)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
   if (!user) return null
-  const loginMethod = user.hasPassword
-    ? user.hasEmail ? '用户名密码、邮箱验证码' : '用户名密码'
-    : '邮箱验证码'
+
   return (
     <>
       <PaneHead title="个人信息" />
-      {/* 窄屏把键值块收窄到「标签 + 值刚好填满」再整块居中 —— 铺满整列的话内容只占左边 40%，
-          右边一条死区，跟上面居中的头像/tab 对不上。md 起铺满面板（那时右边还有内容撑着）。 */}
-      <div className="mx-auto w-full max-w-[320px] md:max-w-none">
-        <Kv k="用户名" v={user.username} />
+      {/* 窄屏整块居中但给足宽度（400px）：键值行能放下，登录方式行的标题 + 按钮也能同行不换行。
+          md 起铺满面板（那时右边还有内容撑着）。 */}
+      <div className="mx-auto w-full max-w-[400px] md:max-w-none">
+        <UsernameRow />
         <Kv k="注册时间" v={user.createdAt.slice(0, 10)} />
-        <Kv k="登录方式" v={loginMethod} />
         {/* 无密码的验证码账号不能使用依赖原始密码的密保设置，也不展示一条无从处理的状态。 */}
         {user.hasPassword && (
           <Kv
@@ -217,8 +270,746 @@ function ProfileModule(): JSX.Element | null {
             note={user.hasSecurity || user.hasEmail ? undefined : '忘记密码将无法找回账号'}
           />
         )}
+
+        {/* 登录方式统一管理：一个账号 = 密码 ×1 + 邮箱 ×1（邮箱即身份，
+            Gmail 可额外走 Google 快捷登录免验证码） */}
+        <div className="mt-5 border-t border-outline-variant/10 pt-4">
+          <div className="mb-1 font-label text-[10px] uppercase tracking-[0.16em] text-on-surface-variant/45">
+            登录方式
+          </div>
+          <div className="divide-y divide-outline-variant/10">
+            <PasswordRow onGoSecurity={onGoSecurity} />
+            <EmailLoginCard emailEnabled={providers?.email === true} googleEnabled={providers?.google === true} flash={flash} />
+          </div>
+        </div>
       </div>
     </>
+  )
+}
+
+/** 用户名行：随机 maple-xxxx 是系统起的，用户应该能改一个记得住的。
+ *  凭据门槛与换绑同级：有密码账号验密码，无密码账号用当前邮箱验证码（改用户名不换身份）。
+ *  另一行内可展开，与登录方式区块同款交互。 */
+function UsernameRow(): JSX.Element | null {
+  const { user } = useAuth()
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState('')
+  const [password, setPassword] = useState('')
+  const [challengeId, setChallengeId] = useState('')
+  const [code, setCode] = useState('')
+  const [sentTo, setSentTo] = useState('')
+  const [cooldown, setCooldown] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [okMsg, setOkMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!cooldown) return
+    const timer = window.setInterval(() => setCooldown((n) => Math.max(0, n - 1)), 1000)
+    return () => window.clearInterval(timer)
+  }, [cooldown])
+
+  if (!user) return null
+
+  const reset = (): void => {
+    setEditing(false)
+    setName('')
+    setPassword('')
+    setChallengeId('')
+    setCode('')
+    setSentTo('')
+    setError(null)
+    setOkMsg(null)
+  }
+
+  const sendCode = async (): Promise<void> => {
+    setError(null)
+    setBusy(true)
+    try {
+      const r = await auth.requestCodeForCurrentEmail()
+      setChallengeId(r.challengeId)
+      setSentTo(r.email)
+      setCooldown(60)
+      setOkMsg(`验证码已发送至 ${r.email}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '验证码发送失败，请稍后再试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const submit = async (): Promise<void> => {
+    setError(null)
+    if (!name.trim()) {
+      setError('请输入新用户名')
+      return
+    }
+    setBusy(true)
+    try {
+      const next = await auth.changeUsername(
+        user.hasPassword
+          ? { username: name.trim(), currentPassword: password || undefined }
+          : { username: name.trim(), challengeId, code: code.trim() },
+      )
+      setOkMsg(`用户名已改为 ${next}`)
+      reset()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '修改失败，请重试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="border-b border-outline-variant/10 py-3.5">
+      <div className="grid grid-cols-[96px_1fr] items-baseline gap-4">
+        <div className="text-[13px] font-semibold text-on-surface-variant/70">用户名</div>
+        <div className="flex min-h-[28px] flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="text-[13.5px] text-on-surface">{user.username}</span>
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setName('')
+                setPassword('')
+                setCode('')
+                setChallengeId('')
+                setError(null)
+                setOkMsg(null)
+                setEditing(true)
+              }}
+              className="shrink-0 rounded-lg border border-outline-variant/30 px-3 py-1.5 text-[12px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
+            >
+              修改
+            </button>
+          )}
+        </div>
+      </div>
+
+      {editing && (
+        <div className="mt-3 space-y-3 md:max-w-[360px]">
+          <Field label="新用户名" tight>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="2–12 个字符：中文 / 字母 / 数字 / _ -"
+              maxLength={12}
+              className={inputCls}
+            />
+          </Field>
+          {user.hasPassword ? (
+            <Field label="当前密码" tight>
+              <PasswordInput
+                value={password}
+                onChange={setPassword}
+                placeholder="输入当前密码"
+              />
+            </Field>
+          ) : (
+            <Field label="邮箱验证码" tight>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder={sentTo ? '输入 6 位验证码' : '先发送验证码'}
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  disabled={busy || cooldown > 0}
+                  onClick={() => void sendCode()}
+                  className="shrink-0 rounded-lg border border-outline-variant/30 px-3 text-[12px] font-bold text-primary transition-colors hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {cooldown > 0 ? `${cooldown}s` : sentTo ? '重发' : '发验证码'}
+                </button>
+              </div>
+              {sentTo && <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">已发送至 {sentTo}</p>}
+            </Field>
+          )}
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              disabled={busy || (user.hasPassword ? !password : code.length !== 6)}
+              onClick={() => void submit()}
+              className="rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? '修改中…' : '确认修改'}
+            </button>
+            <button
+              type="button"
+              onClick={reset}
+              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      <p
+        role="status"
+        aria-live="polite"
+        className={`min-h-[18px] pt-1.5 font-label text-[11px] ${error ? 'text-error' : 'text-primary'}`}
+      >
+        {error || okMsg}
+      </p>
+    </div>
+  )
+}
+
+/** 密码行：无密码账号（Google / 验证码注册）在此首次设置密码；已设置的跳账号安全修改。 */
+function PasswordRow({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Element | null {
+  const { user } = useAuth()
+  const [editing, setEditing] = useState(false)
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [okMsg, setOkMsg] = useState<string | null>(null)
+
+  if (!user) return null
+
+  const submit = async (): Promise<void> => {
+    setError(null)
+    setOkMsg(null)
+    if (next.length < 6) {
+      setError('密码至少 6 位')
+      return
+    }
+    if (next !== confirm) {
+      setError('两次输入的密码不一致')
+      return
+    }
+    setBusy(true)
+    try {
+      await auth.setPassword(next, confirm)
+      setOkMsg('密码已设置，现在可以用用户名 + 密码登录')
+      setEditing(false)
+      setNext('')
+      setConfirm('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '设置失败，请重试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="py-3">
+      <div className="flex min-h-[46px] flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Icon name="lock" size={18} className="shrink-0 text-on-surface-variant/70" />
+          <div className="min-w-0">
+            <div className="text-[13px] font-bold text-on-surface">密码</div>
+            <div className="truncate text-[11.5px] text-on-surface-variant/55">
+              {user.hasPassword ? '已设置，登录页可用用户名 + 密码登录' : '未设置，设置后可用用户名 + 密码登录'}
+            </div>
+          </div>
+        </div>
+        {user.hasPassword ? (
+          <button
+            type="button"
+            onClick={onGoSecurity}
+            className="shrink-0 rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            修改
+          </button>
+        ) : (
+          !editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setError(null)
+                setOkMsg(null)
+                setEditing(true)
+              }}
+              className="shrink-0 rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
+            >
+              设置
+            </button>
+          )
+        )}
+      </div>
+
+      {editing && !user.hasPassword && (
+        <div className="mt-3 space-y-3 md:max-w-[360px]">
+          <Field label="新密码" tight>
+            <PasswordInput
+              value={next}
+              onChange={setNext}
+              placeholder="设置密码（至少 6 位）"
+              autoComplete="new-password"
+            />
+          </Field>
+          <Field label="确认新密码" tight>
+            <PasswordInput
+              value={confirm}
+              onChange={setConfirm}
+              placeholder="再输一次"
+              autoComplete="new-password"
+            />
+          </Field>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void submit()}
+              className="rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? '设置中…' : '确认设置'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false)
+                setNext('')
+                setConfirm('')
+                setError(null)
+                setOkMsg(null)
+              }}
+              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      <p
+        role="status"
+        aria-live="polite"
+        className={`min-h-[18px] pt-1.5 font-label text-[11px] ${error ? 'text-error' : 'text-primary'}`}
+      >
+        {error || okMsg}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * 邮箱登录行 —— 邮箱即身份，一个账号一个邮箱（Gmail 或非 Gmail 皆可）：
+ *  - 换绑：Gmail 且 Google 启用时可走「Google 授权」免验证码（授权即证明控制该邮箱）；
+ *    其它邮箱走验证码。两者都是先证明控制新邮箱再替换。
+ *  - 解绑：向**当前邮箱**发验证码证明仍控制它，且要求账号已设密码（否则解掉身份本身）。
+ */
+function EmailLoginCard({
+  emailEnabled,
+  googleEnabled,
+  flash,
+}: {
+  emailEnabled: boolean
+  googleEnabled: boolean
+  flash: { msg: string; error: boolean } | null
+}): JSX.Element | null {
+  const { user } = useAuth()
+  const [status, setStatus] = useState<string | null>(flash?.msg ?? null)
+  const [statusError, setStatusError] = useState(flash?.error ?? false)
+  // 绑定 / 换绑（验证码路径）
+  const [bindStep, setBindStep] = useState<'idle' | 'address' | 'code'>('idle')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [challengeId, setChallengeId] = useState('')
+  const [code, setCode] = useState('')
+  const [cooldown, setCooldown] = useState(0)
+  // Google 换绑（需先验密码）
+  const [googlePwdOpen, setGooglePwdOpen] = useState(false)
+  const [googlePwd, setGooglePwd] = useState('')
+  // 解绑
+  const [unbindStep, setUnbindStep] = useState<'idle' | 'code'>('idle')
+  const [unbindId, setUnbindId] = useState('')
+  const [unbindCode, setUnbindCode] = useState('')
+  const [unbindEmail, setUnbindEmail] = useState('')
+  const [unbindCooldown, setUnbindCooldown] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!cooldown) return
+    const timer = window.setInterval(() => setCooldown((n) => Math.max(0, n - 1)), 1000)
+    return () => window.clearInterval(timer)
+  }, [cooldown])
+  useEffect(() => {
+    if (!unbindCooldown) return
+    const timer = window.setInterval(() => setUnbindCooldown((n) => Math.max(0, n - 1)), 1000)
+    return () => window.clearInterval(timer)
+  }, [unbindCooldown])
+
+  if (!user) return null
+
+  const say = (msg: string, isError: boolean): void => {
+    setStatus(msg)
+    setStatusError(isError)
+  }
+  const resetAll = (): void => {
+    setBindStep('idle')
+    setGooglePwdOpen(false)
+    setGooglePwd('')
+    setUnbindStep('idle')
+    setChallengeId('')
+    setCode('')
+    setUnbindId('')
+    setUnbindCode('')
+    setEmail('')
+    setPassword('')
+    setError(null)
+  }
+
+  const sendBindCode = async (): Promise<void> => {
+    setError(null)
+    if (!email.trim()) {
+      setError('请输入邮箱地址')
+      return
+    }
+    setBusy(true)
+    try {
+      const r = await bindEmailStart(email.trim(), password || undefined)
+      setChallengeId(r.challengeId)
+      setBindStep('code')
+      setCooldown(60)
+      say(`验证码已发送至 ${email.trim()}`, false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '验证码发送失败，请稍后再试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmBind = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await bindEmailVerify(challengeId, code.trim())
+      say(`邮箱已更新为 ${r.email}`, false)
+      resetAll()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '验证失败，请重试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const goGoogleRebind = async (): Promise<void> => {
+    setError(null)
+    setBusy(true)
+    try {
+      const url = await rebindEmailViaGoogle(googlePwd)
+      window.location.href = url // 整页跳 Google，回来带 ?oauth= 结果码
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '发起 Google 授权失败')
+      setBusy(false)
+    }
+  }
+
+  const sendUnbindCode = async (): Promise<void> => {
+    setError(null)
+    setBusy(true)
+    try {
+      const r = await unbindEmailStart()
+      setUnbindId(r.challengeId)
+      setUnbindEmail(r.email)
+      setUnbindStep('code')
+      setUnbindCooldown(60)
+      say(`验证码已发送至 ${r.email}`, false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '验证码发送失败，请稍后再试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmUnbind = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      await unbindEmailVerify(unbindId, unbindCode.trim())
+      say('邮箱已解绑，账号数据保留，可重新绑定新邮箱', false)
+      resetAll()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '解绑失败，请重试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const isGmail = (user.email ?? '').endsWith('@gmail.com') || (user.email ?? '').endsWith('@googlemail.com')
+  // Google 换绑入口只看服务端是否启用——密码门槛在下一步（输密码 / 提示先设密码）处理，
+  // 不在入口处隐藏：163 换 Gmail 同样能走免验证码路径。
+  const canGoogleRebind = googleEnabled
+  const showBind = bindStep === 'address'
+  const showCode = bindStep === 'code'
+  const showUnbindCode = unbindStep === 'code'
+
+  return (
+    <div className="py-3">
+      {/* 按钮紧跟文字左聚拢（本页设计原则：别用 space-between 把操作甩到最右） */}
+      <div className="flex min-h-[46px] flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Icon name="mail" size={18} className="shrink-0 text-on-surface-variant/70" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-bold text-on-surface">邮箱</span>
+              {isGmail && (
+                <span className="flex items-center gap-1 rounded bg-surface-container-high px-1.5 py-0.5 font-label text-[9px] font-semibold text-on-surface-variant/70">
+                  <GoogleMark size={9} /> 快捷登录已开通
+                </span>
+              )}
+            </div>
+            <div className="truncate text-[11.5px] text-on-surface-variant/55">
+              {user.email ?? '未绑定，绑定后可用邮箱验证码登录'}
+            </div>
+          </div>
+        </div>
+        {bindStep === 'idle' && unbindStep === 'idle' && !googlePwdOpen && (
+          <div className="flex shrink-0 items-center gap-2">
+            {user.email && (
+              <button
+                type="button"
+                onClick={() => {
+                  say(null as unknown as string, false)
+                  setBindStep('address')
+                }}
+                className="rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
+              >
+                换绑
+              </button>
+            )}
+            {!user.email && (
+              <button
+                type="button"
+                onClick={() => {
+                  say(null as unknown as string, false)
+                  setBindStep('address')
+                }}
+                className="rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
+              >
+                绑定
+              </button>
+            )}
+            {user.email && user.hasPassword && (
+              <button
+                type="button"
+                onClick={() => void sendUnbindCode()}
+                disabled={busy}
+                className="rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-error/45 hover:text-error disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {busy ? '发送中…' : '解绑'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 换绑第一步：选路径 */}
+      {showBind && (
+        <div className="mt-3 space-y-3 md:max-w-[360px]">
+          {canGoogleRebind && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setBindStep('idle')
+                  setGooglePwdOpen(true)
+                }}
+                className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-white py-2.5 text-[12.5px] font-semibold text-[#1f1f1f] transition hover:brightness-95"
+              >
+                <GoogleMark size={16} />
+                使用 Google 继续
+              </button>
+              <div className="flex items-center gap-3" aria-hidden="true">
+                <span className="h-px flex-1 bg-outline-variant/30" />
+                <span className="font-label text-[10px] text-on-surface-variant/50">或</span>
+                <span className="h-px flex-1 bg-outline-variant/30" />
+              </div>
+            </>
+          )}
+          <Field label="新邮箱地址" tight>
+            <input
+              type="text"
+              inputMode="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="输入要换绑的邮箱地址"
+              autoComplete="email"
+              maxLength={254}
+              className={inputCls}
+            />
+          </Field>
+          {user.hasPassword && (
+            <Field label="当前密码" tight>
+              <PasswordInput
+                value={password}
+                onChange={setPassword}
+                placeholder="输入当前密码"
+              />
+              <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">
+                验证当前密码后才会发送验证码
+              </p>
+            </Field>
+          )}
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              disabled={busy || !emailEnabled}
+              onClick={() => void sendBindCode()}
+              className="rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? '发送中…' : '发送验证码'}
+            </button>
+            <button
+              type="button"
+              onClick={resetAll}
+              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 换绑第二步：验证码 */}
+      {showCode && (
+        <div className="mt-3 space-y-3 md:max-w-[360px]">
+          <Field label="邮箱验证码" tight>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="输入 6 位验证码"
+              autoComplete="one-time-code"
+              maxLength={6}
+              className={inputCls}
+            />
+            <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">已发送至 {email.trim()}</p>
+          </Field>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              disabled={busy || code.length !== 6}
+              onClick={() => void confirmBind()}
+              className="rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? '验证中…' : '确认换绑'}
+            </button>
+            <button
+              type="button"
+              disabled={busy || cooldown > 0}
+              onClick={() => void sendBindCode()}
+              className="rounded-lg px-2 py-2 font-label text-[11px] font-semibold text-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {cooldown > 0 ? `${cooldown}s 后重发` : '重新发送'}
+            </button>
+            <button
+              type="button"
+              onClick={resetAll}
+              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Google 换绑：验密码后整页跳授权 */}
+      {googlePwdOpen && (
+        <div className="mt-3 space-y-3 md:max-w-[360px]">
+          {user.hasPassword ? (
+            <Field label="当前密码" tight>
+              <PasswordInput
+                value={googlePwd}
+                onChange={setGooglePwd}
+                placeholder="输入当前密码"
+              />
+              <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">
+                验证后跳转 Google 授权，授权即完成换绑，无需验证码
+              </p>
+            </Field>
+          ) : (
+            <p className="rounded-lg border border-outline-variant/15 bg-surface-container-high/50 px-3 py-2.5 text-[12px] text-on-surface-variant/75">
+              更换邮箱前需要先在上方「密码」行设置密码——邮箱是账号的身份标识，没有密码的账号不能更换它。
+            </p>
+          )}
+          <div className="flex items-center gap-2.5">
+            {user.hasPassword && (
+              <button
+                type="button"
+                disabled={busy || !googlePwd}
+                onClick={() => void goGoogleRebind()}
+                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {busy ? '跳转中…' : '去 Google 授权'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={resetAll}
+              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 解绑第二步：验证码 */}
+      {showUnbindCode && (
+        <div className="mt-3 space-y-3 md:max-w-[360px]">
+          <Field label="邮箱验证码" tight>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={unbindCode}
+              onChange={(e) => setUnbindCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="输入 6 位验证码"
+              autoComplete="one-time-code"
+              maxLength={6}
+              className={inputCls}
+            />
+            <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">
+              已发送至 {unbindEmail}，验证后解绑
+            </p>
+          </Field>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              disabled={busy || unbindCode.length !== 6}
+              onClick={() => void confirmUnbind()}
+              className="rounded-lg bg-error/90 px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? '解绑中…' : '确认解绑'}
+            </button>
+            <button
+              type="button"
+              disabled={busy || unbindCooldown > 0}
+              onClick={() => void sendUnbindCode()}
+              className="rounded-lg px-2 py-2 font-label text-[11px] font-semibold text-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {unbindCooldown > 0 ? `${unbindCooldown}s 后重发` : '重新发送'}
+            </button>
+            <button
+              type="button"
+              onClick={resetAll}
+              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      <p
+        role="status"
+        aria-live="polite"
+        className={`min-h-[18px] pt-1.5 font-label text-[11px] ${error || statusError ? 'text-error' : 'text-primary'}`}
+      >
+        {error || status}
+      </p>
+    </div>
   )
 }
 
@@ -274,13 +1065,10 @@ function SecurityModule(): JSX.Element {
       {/* md 以下不限宽：外层已经收进 560 的居中列了，再限 440 只会在右边又留一条死区 */}
       <form onSubmit={submit} className="pt-4 md:max-w-[440px]">
         <Field label="原始密码" required>
-          <input
-            type="password"
+          <PasswordInput
             value={current}
-            onChange={(e) => setCurrent(e.target.value)}
+            onChange={setCurrent}
             placeholder="输入当前密码以验证身份"
-            autoComplete="current-password"
-            className={inputCls}
           />
         </Field>
 
@@ -288,24 +1076,20 @@ function SecurityModule(): JSX.Element {
         {/* 「留空 = 不改」由 placeholder 直接说，不再另开一条提示条重复一遍 */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="新密码" tight>
-            <input
-              type="password"
+            <PasswordInput
               value={next}
-              onChange={(e) => setNext(e.target.value)}
+              onChange={setNext}
               placeholder="留空 = 不改"
               autoComplete="new-password"
-              className={inputCls}
             />
             <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">至少 6 位</p>
           </Field>
           <Field label="确认新密码" tight>
-            <input
-              type="password"
+            <PasswordInput
               value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
+              onChange={setConfirm}
               placeholder="留空 = 不改"
               autoComplete="new-password"
-              className={inputCls}
             />
           </Field>
         </div>
@@ -539,16 +1323,10 @@ function XifanAccountModule(): JSX.Element {
               />
             </Field>
             <Field label="密码" htmlFor="xifan-password" required>
-              <input
-                id="xifan-password"
-                type="password"
+              <PasswordInput
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={setPassword}
                 placeholder="输入密码"
-                autoComplete="current-password"
-                aria-required="true"
-                maxLength={200}
-                className={inputCls}
               />
             </Field>
             <Field label="验证码" htmlFor="xifan-verify" required>

@@ -59,7 +59,7 @@ async function hashSecret(v: string): Promise<string> {
   return `${salt.toString('hex')}:${derived.toString('hex')}`
 }
 
-async function verifySecret(v: string, stored: string): Promise<boolean> {
+export async function verifySecret(v: string, stored: string): Promise<boolean> {
   const [saltHex, hashHex] = stored.split(':')
   if (!saltHex || !hashHex) return false
   const expected = Buffer.from(hashHex, 'hex')
@@ -110,6 +110,15 @@ const insertUser = db.prepare<[string, string, string]>(
 const bumpPassword = db.prepare<[string, number]>(
   'UPDATE users SET pass_hash = ?, token_version = token_version + 1 WHERE id = ? AND password_enabled = 1',
 )
+// 无密码账号（Google / 验证码注册）首次补密码：不 bump token_version —— 补密码不是
+// 「旧凭据泄露」事件，不该把现有会话全部踢下线。
+const enablePassword = db.prepare<[string, number]>(
+  'UPDATE users SET pass_hash = ?, password_enabled = 1 WHERE id = ? AND password_enabled = 0',
+)
+// 改用户名：条件更新防并发撞名（NOCASE 唯一索引是最后防线）。
+const renameUser = db.prepare<[string, string, number]>(
+  'UPDATE users SET username = ? WHERE username = ? AND id = ?',
+)
 const setSecurity = db.prepare<[string, string, number]>(
   'UPDATE users SET security_question = ?, security_answer_hash = ? WHERE id = ? AND password_enabled = 1',
 )
@@ -142,6 +151,17 @@ const cleanupChallenges = db.prepare<[number]>(
 export const insertPasswordlessEmailUser = db.prepare<[string, string, string, string, string]>(
   `INSERT INTO users (username, pass_hash, password_enabled, email, email_verified_at, created_at)
    VALUES (?, ?, 0, ?, ?, ?)`,
+)
+export const updateUserEmail = db.prepare<[string, string, number]>(
+  'UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?',
+)
+const clearUserEmail = db.prepare<[number, string]>(
+  'UPDATE users SET email = NULL, email_verified_at = NULL WHERE id = ? AND email = ?',
+)
+// 换绑/解绑邮箱时清掉旧的身份记录 —— 邮箱变了，挂在旧邮箱上的 Google 关联即失效
+//（oauth_identity 表已不参与登录匹配，清理只是不留僵尸数据）。
+export const deleteIdentitiesForUser = db.prepare<[number]>(
+  'DELETE FROM oauth_identity WHERE user_id = ?',
 )
 
 export interface UserRow {
@@ -285,6 +305,67 @@ interface EmailChallengeRow {
 }
 
 class EmailChallengeUnavailableError extends Error {}
+class EmailTakenError extends Error {}
+
+/** 邮箱绑定 / 换绑的最终落点：先独占 challenge，再占邮箱；被并发抢先占用时整体回滚。
+ *  换绑同时清掉旧邮箱上的 Google 身份记录 —— 邮箱是身份，换了邮箱旧关联即失效。 */
+const bindUserEmail = db.transaction(
+  (uid: number, challengeId: string, email: string, now: number): void => {
+    const claimed = consumeChallenge.run(now, challengeId, email, now)
+    if (claimed.changes !== 1) throw new EmailChallengeUnavailableError()
+    const existing = findByEmail.get(email) as UserRow | undefined
+    if (existing && existing.id !== uid) throw new EmailTakenError()
+    updateUserEmail.run(email, new Date(now).toISOString(), uid)
+    deleteIdentitiesForUser.run(uid)
+  },
+)
+
+/** 解绑邮箱的最终落点：先独占 challenge，再清邮箱。前置条件（已设密码）在 start 与此双重校验。 */
+const unbindUserEmail = db.transaction(
+  (uid: number, challengeId: string, email: string, now: number): void => {
+    const claimed = consumeChallenge.run(now, challengeId, email, now)
+    if (claimed.changes !== 1) throw new EmailChallengeUnavailableError()
+    const cleared = clearUserEmail.run(uid, email)
+    if (cleared.changes !== 1) throw new EmailChallengeUnavailableError()
+    deleteIdentitiesForUser.run(uid)
+  },
+)
+
+/**
+ * 验证码校验的公共段（/email/verify 与 /email/bind-verify 共用）：
+ * 格式 → IP / 地址限流 → 挑战存在性与时效 → HMAC 比对（错则计一次）→ 标记已验证。
+ * 只读 + 计次，不消费挑战；消费（单次使用）由各流程自己的事务完成。
+ */
+type CodeCheck = { ok: true; row: EmailChallengeRow } | { ok: false; status: 400 | 401 | 429; error: string }
+
+function checkEmailCode(c: Context, challengeId: string, code: string): CodeCheck {
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(challengeId) || !/^\d{6}$/.test(code)) {
+    return { ok: false, status: 400, error: '验证码格式不正确' }
+  }
+  if (rateLimited(`email-verify-ip:${clientIp(c)}`, EMAIL_CODE_ATTEMPTS * 4, WINDOW)) {
+    return { ok: false, status: 429, error: '验证码尝试太频繁，请稍后再试' }
+  }
+  const row = findChallenge.get(challengeId) as EmailChallengeRow | undefined
+  const now = Date.now()
+  if (!row || row.consumed_at || row.expires_at <= now || row.attempts >= EMAIL_CODE_ATTEMPTS) {
+    return { ok: false, status: 401, error: '验证码无效或已过期，请重新获取' }
+  }
+  if (rateLimited(`email-verify-address:${row.email}`, EMAIL_CODE_ATTEMPTS, WINDOW)) {
+    return { ok: false, status: 429, error: '验证码尝试太频繁，请稍后再试' }
+  }
+  // 即使是旧版本留下的 verified_at challenge,也重新核对验证码；verified_at 不能单独当登录凭据。
+  if (!verifyEmailCodeHash(challengeId, code, row.code_hash)) {
+    incrementChallengeAttempts.run(challengeId)
+    return { ok: false, status: 401, error: '验证码不正确' }
+  }
+  if (!row.verified_at) {
+    const verified = markChallengeVerified.run(now, challengeId, now, EMAIL_CODE_ATTEMPTS)
+    if (verified.changes !== 1) {
+      return { ok: false, status: 401, error: '验证码无效或已过期，请重新获取' }
+    }
+  }
+  return { ok: true, row }
+}
 
 /**
  * 正确验证码的最终领取点。先用条件 UPDATE 独占 challenge,再在同一个事务里查找 / 创建账号:
@@ -431,34 +512,11 @@ auth.post('/email/verify', async (c) => {
   if (!body) return c.json({ error: '请求格式错误' }, 400)
   const challengeId = str(body.challengeId)
   const code = str(body.code).trim()
-  if (!/^[A-Za-z0-9_-]{20,64}$/.test(challengeId) || !/^\d{6}$/.test(code)) {
-    return c.json({ error: '验证码格式不正确' }, 400)
-  }
-  const verifyIpKey = `email-verify-ip:${clientIp(c)}`
-  if (rateLimited(verifyIpKey, EMAIL_CODE_ATTEMPTS * 4, WINDOW)) {
-    return c.json({ error: '验证码尝试太频繁，请稍后再试' }, 429)
-  }
 
-  const row = findChallenge.get(challengeId) as EmailChallengeRow | undefined
+  const check = checkEmailCode(c, challengeId, code)
+  if (!check.ok) return c.json({ error: check.error }, check.status)
+  const row = check.row
   const now = Date.now()
-  if (!row || row.consumed_at || row.expires_at <= now || row.attempts >= EMAIL_CODE_ATTEMPTS) {
-    return c.json({ error: '验证码无效或已过期，请重新获取' }, 401)
-  }
-  const verifyAddressKey = `email-verify-address:${row.email}`
-  if (rateLimited(verifyAddressKey, EMAIL_CODE_ATTEMPTS, WINDOW)) {
-    return c.json({ error: '验证码尝试太频繁，请稍后再试' }, 429)
-  }
-  // 即使是旧版本留下的 verified_at challenge,也重新核对验证码；verified_at 不能单独当登录凭据。
-  if (!verifyEmailCodeHash(challengeId, code, row.code_hash)) {
-    incrementChallengeAttempts.run(challengeId)
-    return c.json({ error: '验证码不正确' }, 401)
-  }
-  if (!row.verified_at) {
-    const verified = markChallengeVerified.run(now, challengeId, now, EMAIL_CODE_ATTEMPTS)
-    if (verified.changes !== 1) {
-      return c.json({ error: '验证码无效或已过期，请重新获取' }, 401)
-    }
-  }
 
   // 新邮箱建号与旧用户名注册共用同一小时 / IP 限流,避免验证码入口成为刷号旁路。
   const existing = findByEmail.get(row.email) as UserRow | undefined
@@ -476,8 +534,8 @@ auth.post('/email/verify', async (c) => {
     return c.json({ error: '账号创建失败，请稍后再试' }, 409)
   }
 
-  buckets.delete(verifyIpKey)
-  buckets.delete(verifyAddressKey)
+  buckets.delete(`email-verify-ip:${clientIp(c)}`)
+  buckets.delete(`email-verify-address:${row.email}`)
   await issueSession(c, { uid: user.id, username: user.username, tv: user.token_version })
   return c.json({
     status: 'login',
@@ -486,6 +544,186 @@ auth.post('/email/verify', async (c) => {
     hasEmail: true,
     hasPassword: user.password_enabled === 1,
   })
+})
+
+/**
+ * 已登录账号绑定 / 换绑邮箱第一步（验证码路径）：验密码 → 查占用 → 向**新邮箱**发验证码。
+ * 邮箱是身份本身，动它一律先证明账号主人：有密码必须验原始密码（同 /settings）；
+ * 没密码的账号拒绝 —— 邮箱是其唯一登录方式（Google 通道也依赖它），先去 /password/set。
+ * Gmail 的免验证码换绑走 POST /oauth/google/rebind-email，不经这里。
+ */
+auth.post('/email/bind-start', async (c) => {
+  const s = await getSession(c)
+  if (!s) return c.json({ error: '未登录' }, 401)
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+  const email = normalizeEmail(str(body.email))
+  if (!email) return c.json({ error: '请输入有效的邮箱地址' }, 400)
+
+  const row = findById.get(s.uid) as UserRow
+  if (row.password_enabled === 1) {
+    if (rateLimited(`email-bind-user:${s.uid}`, LOGIN_MAX_PER_USER, WINDOW)) {
+      return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+    }
+    if (!(await verifySecret(str(body.currentPassword), row.pass_hash))) {
+      return c.json({ error: '原始密码不正确' }, 401)
+    }
+  } else {
+    // 邮箱即身份：无密码账号的邮箱是唯一登录方式（Google 也依赖它），动邮箱前必须先设密码。
+    return c.json({ error: '请先设置密码，再更换或解绑邮箱' }, 403)
+  }
+
+  const other = findByEmail.get(email) as UserRow | undefined
+  if (other && other.id !== s.uid) return c.json({ error: '该邮箱已绑定其它账号' }, 409)
+
+  // 发送节奏与登录入口共用同一套冷却与限流（同邮箱 60 秒冷却、按 IP / 地址限频）。
+  const now = Date.now()
+  cleanupChallenges.run(now)
+  if (
+    rateLimited(`email-start-ip:${clientIp(c)}`, EMAIL_START_MAX_PER_IP, WINDOW) ||
+    rateLimited(`email-start-address:${email}`, EMAIL_START_MAX_PER_ADDRESS, WINDOW)
+  ) {
+    return c.json({ error: '验证码发送太频繁，请稍后再试' }, 429)
+  }
+  const recent = findRecentChallenge.get(email) as { id: string; created_at: number } | undefined
+  if (recent && now - recent.created_at < EMAIL_SEND_COOLDOWN) {
+    return c.json({ error: '验证码已发送，请稍后再试' }, 429)
+  }
+  if (recent) deleteChallenge.run(recent.id)
+
+  const challengeId = newChallengeId()
+  const code = randomInt(0, 1_000_000).toString().padStart(6, '0')
+  insertChallenge.run(
+    challengeId,
+    email,
+    emailCodeHash(challengeId, code).toString('hex'),
+    now,
+    now + EMAIL_CODE_TTL,
+  )
+  try {
+    await sendEmailCode(email, code)
+  } catch {
+    deleteChallenge.run(challengeId)
+    return c.json({ error: '验证码邮件发送失败，请稍后再试' }, 502)
+  }
+  return c.json({ challengeId, expiresIn: EMAIL_CODE_TTL / 1000 })
+})
+
+/** 绑定 / 更换邮箱第二步：验证码正确后把邮箱写进当前账号（事务内防并发占用）。 */
+auth.post('/email/bind-verify', async (c) => {
+  const s = await getSession(c)
+  if (!s) return c.json({ error: '未登录' }, 401)
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+
+  const check = checkEmailCode(c, str(body.challengeId), str(body.code).trim())
+  if (!check.ok) return c.json({ error: check.error }, check.status)
+  try {
+    bindUserEmail(s.uid, check.row.id, check.row.email, Date.now())
+  } catch (error) {
+    if (error instanceof EmailChallengeUnavailableError) {
+      return c.json({ error: '验证码无效或已过期，请重新获取' }, 401)
+    }
+    if (error instanceof EmailTakenError) {
+      return c.json({ error: '该邮箱已绑定其它账号' }, 409)
+    }
+    return c.json({ error: '邮箱绑定失败，请稍后再试' }, 409)
+  }
+  buckets.delete(`email-verify-ip:${clientIp(c)}`)
+  buckets.delete(`email-verify-address:${check.row.email}`)
+  return c.json({ ok: true, email: check.row.email })
+})
+
+/** 向 row.email 发验证码的公共段（解绑 / 改用户名共用）：
+ *  冷却 / 限流与登录入口同套。业务前置（解绑要密码、改名不要）由各调用方把关。
+ *  返回 null = 发送成功（挑战 id 由调用方查最近一条拿）。 */
+async function sendCurrentEmailCode(c: Context, row: UserRow & { email: string }): Promise<Response | null> {
+  const now = Date.now()
+  cleanupChallenges.run(now)
+  if (
+    rateLimited(`email-start-ip:${clientIp(c)}`, EMAIL_START_MAX_PER_IP, WINDOW) ||
+    rateLimited(`email-start-address:${row.email}`, EMAIL_START_MAX_PER_ADDRESS, WINDOW)
+  ) {
+    return c.json({ error: '验证码发送太频繁，请稍后再试' }, 429)
+  }
+  const recent = findRecentChallenge.get(row.email) as { id: string; created_at: number } | undefined
+  if (recent && now - recent.created_at < EMAIL_SEND_COOLDOWN) {
+    return c.json({ error: '验证码已发送，请稍后再试' }, 429)
+  }
+  if (recent) deleteChallenge.run(recent.id)
+
+  const challengeId = newChallengeId()
+  const code = randomInt(0, 1_000_000).toString().padStart(6, '0')
+  insertChallenge.run(
+    challengeId,
+    row.email as string,
+    emailCodeHash(challengeId, code).toString('hex'),
+    now,
+    now + EMAIL_CODE_TTL,
+  )
+  try {
+    await sendEmailCode(row.email, code)
+  } catch {
+    deleteChallenge.run(challengeId)
+    return c.json({ error: '验证码邮件发送失败，请稍后再试' }, 502)
+  }
+  return null // 发送成功；挑战 id 由调用方重新查最近一条拿（见 current-start 路由）
+}
+
+/** 向**当前绑定的邮箱**发验证码（证明仍控制现身份）：解绑与改用户名共用入口。 */
+auth.post('/email/current-start', async (c) => {
+  const s = await getSession(c)
+  if (!s) return c.json({ error: '未登录' }, 401)
+  const row = findById.get(s.uid) as UserRow
+  if (!row.email || !row.email_verified_at) return c.json({ error: '该账号未绑定邮箱' }, 400)
+  const sent = await sendCurrentEmailCode(c, row as UserRow & { email: string })
+  if (sent) return sent
+  const recent = findRecentChallenge.get(row.email) as { id: string } | undefined
+  return c.json({ challengeId: recent?.id ?? '', expiresIn: EMAIL_CODE_TTL / 1000, email: row.email })
+})
+
+/**
+ * 解绑邮箱第一步（兼容旧名）：改用户名与解绑都改走 /email/current-start，
+ * 保留此路由转发语义，前置校验（已设密码）不变。
+ */
+auth.post('/email/unbind-start', async (c) => {
+  const s = await getSession(c)
+  if (!s) return c.json({ error: '未登录' }, 401)
+  const row = findById.get(s.uid) as UserRow
+  if (row.password_enabled !== 1) {
+    return c.json({ error: '请先设置密码，再解绑邮箱' }, 403)
+  }
+  if (!row.email || !row.email_verified_at) return c.json({ error: '该账号未绑定邮箱' }, 400)
+  const sent = await sendCurrentEmailCode(c, row as UserRow & { email: string })
+  if (sent) return sent
+  const recent = findRecentChallenge.get(row.email) as { id: string } | undefined
+  return c.json({ challengeId: recent?.id ?? '', expiresIn: EMAIL_CODE_TTL / 1000, email: row.email })
+})
+
+/** 解绑邮箱第二步：验证码正确后清空邮箱与关联身份记录（账号与数据保留，仅剩密码登录）。 */
+auth.post('/email/unbind-verify', async (c) => {
+  const s = await getSession(c)
+  if (!s) return c.json({ error: '未登录' }, 401)
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+
+  const row = findById.get(s.uid) as UserRow
+  if (row.password_enabled !== 1) {
+    return c.json({ error: '请先设置密码，再解绑邮箱' }, 403)
+  }
+  const check = checkEmailCode(c, str(body.challengeId), str(body.code).trim())
+  if (!check.ok) return c.json({ error: check.error }, check.status)
+  try {
+    unbindUserEmail(s.uid, check.row.id, check.row.email, Date.now())
+  } catch (error) {
+    if (error instanceof EmailChallengeUnavailableError) {
+      return c.json({ error: '验证码无效或已过期，请重新获取' }, 401)
+    }
+    return c.json({ error: '解绑失败，请稍后再试' }, 409)
+  }
+  buckets.delete(`email-verify-ip:${clientIp(c)}`)
+  buckets.delete(`email-verify-address:${check.row.email}`)
+  return c.json({ ok: true })
 })
 
 // 旧前端若仍提交密码,必须明确失败；不能把收到的密码静默丢掉后创建成无密码账号。
@@ -507,7 +745,9 @@ auth.get('/me', async (c) => {
   return c.json({
     username: row.username,
     createdAt: row.created_at,
-    // 只报「设没设」，**绝不回显问题和答案** —— 问题本身也是秘密，泄露了等于告诉别人该去查什么。
+    // 只回显已核验的邮箱地址本身（设置页展示用）；密保仍只报「设没设」，
+    // **绝不回显问题和答案** —— 问题本身也是秘密，泄露了等于告诉别人该去查什么。
+    email: row.email && row.email_verified_at ? row.email : null,
     hasSecurity: !!row.security_answer_hash,
     hasEmail: !!row.email && !!row.email_verified_at,
     hasPassword: row.password_enabled === 1,
@@ -515,10 +755,105 @@ auth.get('/me', async (c) => {
 })
 
 /**
+ * 修改用户名。凭据门槛与换绑邮箱同级：账号主人证明 = 密码（有密码的账号），
+ * 或登录态 + 当前邮箱验证码（没密码也能改 —— 用户名不是登录凭据，改它不换身份；
+ * 随机 maple-xxxx 用户名是系统起的，用户应该能改成一个记得住的）。
+ */
+auth.post('/username/change', async (c) => {
+  const s = await getSession(c)
+  if (!s) return c.json({ error: '未登录' }, 401)
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+  const next = str(body.username).trim()
+
+  const row = findById.get(s.uid) as UserRow
+  if (next === row.username) return c.json({ error: '新用户名与当前相同' }, 400)
+  const problem = usernameError(next)
+  if (problem) return c.json({ error: problem }, 400)
+  // 撞名与保留词：usernameError 只查保留词，占用在这里查（NOCASE 唯一索引兜底并发）。
+  if (findByName.get(next)) return c.json({ error: '用户名已被占用' }, 409)
+
+  const userKey = `username-user:${s.uid}`
+  if (rateLimited(userKey, LOGIN_MAX_PER_USER, WINDOW)) {
+    return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+  }
+
+  // 路径一：验密码（有密码账号的默认路径）
+  const currentPassword = str(body.currentPassword)
+  const code = str(body.code).trim()
+  const challengeId = str(body.challengeId)
+  if (row.password_enabled === 1) {
+    if (currentPassword) {
+      if (!(await verifySecret(currentPassword, row.pass_hash))) {
+        return c.json({ error: '原始密码不正确' }, 401)
+      }
+    } else if (row.email && row.email_verified_at) {
+      // 不想输密码 / 忘了密码时：当前邮箱验证码同样证明主人身份
+      const check = checkEmailCode(c, challengeId, code)
+      if (!check.ok) return c.json({ error: check.error }, check.status)
+      if (check.row.email !== row.email) {
+        return c.json({ error: '验证码与当前邮箱不匹配' }, 401)
+      }
+      consumeChallenge.run(Date.now(), check.row.id, row.email, Date.now())
+    } else {
+      return c.json({ error: '请输入当前密码，或先绑定邮箱' }, 400)
+    }
+  } else if (row.email && row.email_verified_at) {
+    // 路径二：无密码账号（验证码 / Google 注册）—— 当前邮箱验证码
+    const check = checkEmailCode(c, challengeId, code)
+    if (!check.ok) return c.json({ error: check.error }, check.status)
+    if (check.row.email !== row.email) {
+      return c.json({ error: '验证码与当前邮箱不匹配' }, 401)
+    }
+    consumeChallenge.run(Date.now(), check.row.id, row.email, Date.now())
+  } else {
+    // 既没密码也没邮箱：理论不可达（账密注册必有密码，其余必有邮箱），防御性兜底
+    return c.json({ error: '请先设置密码或绑定邮箱' }, 400)
+  }
+
+  const applied = renameUser.run(next, row.username, s.uid)
+  if (applied.changes !== 1) {
+    return c.json({ error: '用户名已被占用' }, 409)
+  }
+  buckets.delete(userKey)
+  // 用户名变了，旧会话 JWT 里的 username 过期了 —— 补发新会话，不用重新登录。
+  await issueSession(c, { uid: row.id, username: next, tv: row.token_version })
+  return c.json({ ok: true, username: next })
+})
+
+/**
  * 账号安全设置 —— 改密码 和 / 或 改密保。
  * 新密码留空 = 不改密码（只改密保）。**两条路都强制验原始密码**：否则别人借你没锁屏的电脑
  * 就能悄悄把密保换成自己的，从此随时能接管账号。
  */
+/**
+ * 无密码账号（Google / 邮箱验证码注册）首次设置密码。与账密账号的 /settings 不同，
+ * 没有「原始密码」可验，门槛是登录态本身——与绑定邮箱 / Google 同一等级：
+ * 会话 + 新凭据验证后生效。设置成功后即可用用户名 + 密码登录、走账号安全改密保。
+ */
+auth.post('/password/set', async (c) => {
+  const s = await getSession(c)
+  if (!s) return c.json({ error: '未登录' }, 401)
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+  const next = str(body.newPassword)
+  const confirm = str(body.confirm)
+  if (next.length < PASSWORD_MIN || next.length > PASSWORD_MAX) {
+    return c.json({ error: `密码需 ${PASSWORD_MIN}–${PASSWORD_MAX} 个字符` }, 400)
+  }
+  if (next !== confirm) return c.json({ error: '两次输入的密码不一致' }, 400)
+  if (rateLimited(`pwd-set-user:${s.uid}`, LOGIN_MAX_PER_USER, WINDOW)) {
+    return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+  }
+  const row = findById.get(s.uid) as UserRow
+  if (row.password_enabled === 1) {
+    return c.json({ error: '该账号已设置密码，请在账号安全中修改' }, 409)
+  }
+  const applied = enablePassword.run(await hashSecret(next), s.uid)
+  if (applied.changes !== 1) return c.json({ error: '该账号已设置密码，请在账号安全中修改' }, 409)
+  return c.json({ ok: true, hasPassword: true })
+})
+
 auth.post('/settings', async (c) => {
   const s = await getSession(c)
   if (!s) return c.json({ error: '未登录' }, 401)

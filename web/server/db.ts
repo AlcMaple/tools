@@ -161,9 +161,9 @@ db.exec(`
   ON email_challenge (expires_at);
 `)
 
-// 第三方登录身份表 —— 账号键是 provider + subject（Google 的 sub），**不是邮箱**：
-// 邮箱会改名、回收、复用，subject 才是身份提供方保证终身不变的标识。email 只存快照，
-// 供设置页展示「这个 Google 账号当时用什么邮箱登录的」，不参与查找与匹配。
+// 第三方登录身份表（**遗留**）—— 登录匹配已改为「邮箱中心」（users.email 是唯一身份，
+// Google 只是 Gmail 的免验证码通道，见 server/oauth.ts），本表不再参与任何登录 / 绑定逻辑。
+// 保留只为兼容老库；换绑 / 解绑邮箱时会顺带清掉对应旧行（DELETE ... WHERE user_id）。
 db.exec(`
   CREATE TABLE IF NOT EXISTS oauth_identity (
     provider    TEXT NOT NULL,

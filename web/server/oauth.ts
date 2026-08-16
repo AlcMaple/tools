@@ -1,14 +1,17 @@
-// Google OIDC 登录 —— 授权码 + PKCE，浏览器整页跳进 Google、整页跳回来，服务端换 token
-// 并对 id_token 做 JWKS 验签。挂在 /api/auth/oauth（index.ts），回调地址与 Google 控制台
-// 登记的一致：/api/auth/oauth/google/callback。
+// Google OIDC —— 授权码 + PKCE，浏览器整页跳进 Google、整页跳回来，服务端换 token
+// 并对 id_token 做 JWKS 验签。挂在 /api/auth/oauth（index.ts）。
+//
+// 模型（2026-08-16 定稿）：**邮箱是身份本身，Google 只是 Gmail 的免验证码通道**。
+//  - 登录：Google 已核验邮箱命中本站账号 → 直接登录；没命中 → 以该邮箱建号并登录。
+//    「Google 快捷登录」和「该邮箱收验证码登录」永远进同一个账号，不存在第二种绑定。
+//  - 换绑：设置页发起，Google 路径免验证码（OAuth 即证明控制新邮箱），验证码路径照旧。
+//  - 早期按 oauth_identity(provider+subject) 匹配的登录逻辑已移除；表保留但不再读写，
+//    换绑/解绑邮箱时顺手清掉旧记录，避免留下与邮箱脱节的僵尸关联。
 //
 // 设计约束：
-//  - GOOGLE_CLIENT_ID / SECRET 任一未配则整个入口不出现（/providers 回 google:false，前端不画按钮）；
+//  - GOOGLE_CLIENT_ID / SECRET 任一未配则入口不出现（/providers 回 google:false）；
 //  - state / nonce / PKCE verifier 不落库，塞进 5 分钟短效 HMAC 签名 cookie，回调时一次性消费；
-//  - 账号键是 provider + subject（Google 的 sub，不随邮箱改名漂移）。Google 已核验（email_verified）
-//    的邮箱与本站「验证码证明邮箱控制权」证明的是同一事实，允许直接并入现有邮箱账号，其余一律新建；
 //  - 跳转 cookie 必须 SameSite=Lax：回调是 Google 发起的跨站顶层 GET 跳转，Strict 根本不会带上 cookie。
-//    会话 cookie 本身仍是 Strict，不受影响。
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { createHash, createHmac, createPublicKey, randomBytes, timingSafeEqual, verify as verifySignature } from 'node:crypto'
@@ -18,17 +21,21 @@ import {
   REGISTER_WINDOW,
   SECURE,
   clientIp,
+  deleteIdentitiesForUser,
   findByEmail,
   findById,
-  findByName,
+  getSession,
   insertPasswordlessEmailUser,
   issueSession,
   makeEmailUsername,
   makeUnusablePasswordHash,
   normalizeEmail,
   rateLimited,
+  updateUserEmail,
+  verifySecret,
   type UserRow,
 } from './auth'
+import { emailDeliveryConfigured } from './email-delivery'
 import { AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from './secrets'
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -73,9 +80,14 @@ interface OAuthTx {
   n: string
   /** PKCE code_verifier。 */
   v: string
-  /** 登录完回跳的站内路径。 */
+  /** 完成后回跳的站内路径。 */
   r: string
   exp: number
+  /** 换绑模式：目标用户与签发时的 token_version。回调时会话 cookie（SameSite=Strict）
+   *  不随 Google 发起的跨站顶层 GET 回传，读不到登录态，所以把身份放进这枚签名短效
+   *  cookie 里带过去；tv 对不上（改过密码/被踢）即拒绝。 */
+  u?: number
+  tv?: number
 }
 
 function encodeTx(tx: OAuthTx): string {
@@ -166,80 +178,40 @@ async function verifyGoogleIdToken(idToken: string, nonce: string): Promise<Goog
   return claims
 }
 
-const findIdentity = db.prepare<[string, string]>(
-  'SELECT provider, subject, user_id FROM oauth_identity WHERE provider = ? AND subject = ?',
-)
-const insertIdentity = db.prepare<[string, string, number, string | null, string]>(
-  'INSERT INTO oauth_identity (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?)',
-)
-const insertIdentityOnlyUser = db.prepare<[string, string, string]>(
-  'INSERT INTO users (username, pass_hash, password_enabled, created_at) VALUES (?, ?, 0, ?)',
-)
-
-/**
- * subject → 用户的最终落点，事务保证同一 subject 并发回调只有一个建号成功：
- *  - 已绑过 → 直接返回用户；
- *  - Google 已核验的邮箱命中现有账号 → 并入（证明的是同一事实：控制那个邮箱）；
- *  - 否则新建无密码账号（有已核验邮箱则带上邮箱，没有就不带）。
- */
-const resolveGoogleUser = db.transaction((subject: string, email: string | null, now: number): UserRow => {
-  const bound = findIdentity.get('google', subject) as { user_id: number } | undefined
-  if (bound) {
-    const user = findById.get(bound.user_id) as UserRow | undefined
-    if (user) return user
-    throw new Error('第三方身份指向的用户不存在')
-  }
-
-  let user = (email ? findByEmail.get(email) : undefined) as UserRow | undefined
+/** 邮箱落点（登录路径）：命中即登录，未命中建号。邮箱就是身份。 */
+const resolveGoogleLogin = db.transaction((email: string, now: number): UserRow => {
+  let user = findByEmail.get(email) as UserRow | undefined
   if (!user) {
     const username = makeEmailUsername()
     const createdAt = new Date(now).toISOString()
-    if (email) {
-      insertPasswordlessEmailUser.run(username, makeUnusablePasswordHash(), email, createdAt, createdAt)
-      user = findByEmail.get(email) as UserRow | undefined
-    } else {
-      insertIdentityOnlyUser.run(username, makeUnusablePasswordHash(), createdAt)
-      user = findByName.get(username) as UserRow | undefined
-    }
+    insertPasswordlessEmailUser.run(username, makeUnusablePasswordHash(), email, createdAt, createdAt)
+    user = findByEmail.get(email) as UserRow | undefined
     if (!user) throw new Error('账号创建后读取失败')
   }
-  insertIdentity.run('google', subject, user.id, email, new Date(now).toISOString())
   return user
 })
 
-/** 收尾：清跳转 cookie，回 returnTo；失败时带 oauth=failed 让前端弹登录框提示。 */
-function finish(c: Context, tx: OAuthTx | null, ok: boolean, silent = false): Response {
+/** 收尾：清跳转 cookie，回 returnTo。结果码区分登录与换绑两条流程：
+ *  登录失败 oauth=failed（App 弹登录框）；换绑结果 bound / conflict / bind_failed
+ *  由设置页就地提示，不会误触登录框。silent = 用户在 Google 页主动取消，静默回去。 */
+type FinishCode = 'ok' | 'failed' | 'bound' | 'conflict' | 'bind_failed'
+
+function finish(c: Context, tx: OAuthTx | null, code: FinishCode, silent = false): Response {
   deleteCookie(c, TX_COOKIE, { path: TX_COOKIE_PATH, secure: SECURE, sameSite: 'Lax' })
   const base = tx?.r ?? '/'
-  if (ok || silent) return c.redirect(base)
-  return c.redirect(`${base}${base.includes('?') ? '&' : '?'}oauth=failed`)
+  if (code === 'ok' || silent) return c.redirect(base)
+  const sep = base.includes('?') ? '&' : '?'
+  return c.redirect(`${base}${sep}oauth=${code}`)
 }
 
 const oauth = new Hono()
 
-oauth.get('/providers', (c) => c.json({ google: googleConfigured() }))
+oauth.get('/providers', (c) =>
+  c.json({ google: googleConfigured(), email: emailDeliveryConfigured() }),
+)
 
-oauth.get('/google/start', (c) => {
-  if (!googleConfigured()) return c.json({ error: 'Google 登录未启用' }, 404)
-  if (rateLimited(`oauth-start-ip:${clientIp(c)}`, OAUTH_START_MAX_PER_IP, 15 * 60 * 1000)) {
-    return c.json({ error: '操作太频繁，请稍后再试' }, 429)
-  }
-
-  const tx: OAuthTx = {
-    s: randomBytes(24).toString('base64url'),
-    n: randomBytes(16).toString('base64url'),
-    v: randomBytes(32).toString('base64url'),
-    r: sanitizeReturnTo(c.req.query('returnTo')),
-    exp: Date.now() + TX_TTL,
-  }
-  setCookie(c, TX_COOKIE, encodeTx(tx), {
-    httpOnly: true,
-    secure: SECURE,
-    sameSite: 'Lax',
-    path: TX_COOKIE_PATH,
-    maxAge: Math.ceil(TX_TTL / 1000),
-  })
-
+/** 组 Google 授权 URL（登录 / 换绑通用 —— 差异全在 tx 里：换绑模式带 u/tv）。 */
+function googleAuthUrl(c: Context, tx: OAuthTx): string {
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: `${requestOrigin(c)}${CALLBACK_PATH}`,
@@ -251,20 +223,84 @@ oauth.get('/google/start', (c) => {
     code_challenge_method: 'S256',
     prompt: 'select_account',
   })
-  return c.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`)
+  return `${GOOGLE_AUTH_URL}?${params.toString()}`
+}
+
+/** 生成一张新票据（登录模式：不带 u/tv）。 */
+function freshLoginTx(returnTo: string | undefined): OAuthTx {
+  return {
+    s: randomBytes(24).toString('base64url'),
+    n: randomBytes(16).toString('base64url'),
+    v: randomBytes(32).toString('base64url'),
+    r: sanitizeReturnTo(returnTo),
+    exp: Date.now() + TX_TTL,
+  }
+}
+
+function setTxCookie(c: Context, tx: OAuthTx): void {
+  setCookie(c, TX_COOKIE, encodeTx(tx), {
+    httpOnly: true,
+    secure: SECURE,
+    sameSite: 'Lax',
+    path: TX_COOKIE_PATH,
+    maxAge: Math.ceil(TX_TTL / 1000),
+  })
+}
+
+oauth.get('/google/start', (c) => {
+  if (!googleConfigured()) return c.json({ error: 'Google 登录未启用' }, 404)
+  if (rateLimited(`oauth-start-ip:${clientIp(c)}`, OAUTH_START_MAX_PER_IP, 15 * 60 * 1000)) {
+    return c.json({ error: '操作太频繁，请稍后再试' }, 429)
+  }
+  const tx = freshLoginTx(c.req.query('returnTo'))
+  setTxCookie(c, tx)
+  return c.redirect(googleAuthUrl(c, tx))
+})
+
+/**
+ * 换绑邮箱的 Google 路径：授权即证明控制新 Gmail，免验证码。
+ * POST 而非 GET 直跳 —— 前置门槛在这里把守：账号必须已设密码且验密码正确
+ * （邮箱是身份，借来的会话换不了），过了才发授权 URL 给前端整页跳。
+ */
+oauth.post('/google/rebind-email', async (c) => {
+  if (!googleConfigured()) return c.json({ error: 'Google 登录未启用' }, 404)
+  const s = await getSession(c)
+  if (!s) return c.json({ error: '未登录' }, 401)
+  const row = findById.get(s.uid) as UserRow | undefined
+  if (!row || row.token_version !== s.tv) return c.json({ error: '登录状态已失效' }, 401)
+  if (rateLimited(`oauth-start-ip:${clientIp(c)}`, OAUTH_START_MAX_PER_IP, 15 * 60 * 1000)) {
+    return c.json({ error: '操作太频繁，请稍后再试' }, 429)
+  }
+  if (row.password_enabled !== 1) {
+    return c.json({ error: '请先设置密码，再更换或解绑邮箱' }, 403)
+  }
+  const body = (await c.req.json().catch(() => null)) as { currentPassword?: string } | null
+  if (!(await verifySecret(body?.currentPassword ?? '', row.pass_hash))) {
+    return c.json({ error: '原始密码不正确' }, 401)
+  }
+
+  const tx: OAuthTx = {
+    ...freshLoginTx(c.req.query('returnTo')),
+    u: row.id,
+    tv: row.token_version,
+  }
+  setTxCookie(c, tx)
+  return c.json({ url: googleAuthUrl(c, tx) })
 })
 
 oauth.get('/google/callback', async (c) => {
-  if (!googleConfigured()) return finish(c, null, false)
+  if (!googleConfigured()) return finish(c, null, 'failed')
 
   const tx = decodeTx(getCookie(c, TX_COOKIE))
   const state = c.req.query('state') ?? ''
   const code = c.req.query('code') ?? ''
   const denied = c.req.query('error') ?? ''
+  const bindMode = tx?.u !== undefined // 票据带 u/tv = 换绑模式
   // 用户在 Google 页面点了取消 —— 不是错误，静默回去，别拿红字吓人。
-  if (denied) return finish(c, tx, false, denied === 'access_denied')
-  if (!tx || !code || !safeEqualStr(tx.s, state)) return finish(c, tx, false)
+  if (denied) return finish(c, tx, bindMode ? 'bind_failed' : 'failed', denied === 'access_denied')
+  if (!tx || !code || !safeEqualStr(tx.s, state)) return finish(c, tx, bindMode ? 'bind_failed' : 'failed')
 
+  // 换 token：授权码 + PKCE verifier 一次性换取 id_token 并验签核对。
   let claims: GoogleClaims
   try {
     const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
@@ -285,25 +321,38 @@ oauth.get('/google/callback', async (c) => {
     if (!tokens.id_token) throw new Error('响应缺少 id_token')
     claims = await verifyGoogleIdToken(tokens.id_token, tx.n)
   } catch {
-    return finish(c, tx, false)
+    return finish(c, tx, bindMode ? 'bind_failed' : 'failed')
   }
 
-  // 只有 Google 明确核验过的邮箱才参与匹配与建号；未核验的邮箱当没有处理。
+  // 邮箱就是身份：只有 Google 明确核验过的邮箱才参与命中 / 写入，未核验一律当失败。
   const verifiedEmail = claims.email && claims.email_verified === true ? normalizeEmail(claims.email) : ''
-  const bound = findIdentity.get('google', claims.sub as string) as { user_id: number } | undefined
-  if (!bound && rateLimited(`reg:${clientIp(c)}`, REGISTER_MAX_PER_IP, REGISTER_WINDOW)) {
-    return finish(c, tx, false)
+  if (!verifiedEmail) return finish(c, tx, bindMode ? 'bind_failed' : 'failed')
+
+  // 换绑模式：把授权得到的 Gmail 写进目标账号（密码已在 rebind-email 前置验证过）。
+  if (bindMode) {
+    const user = findById.get(tx.u as number) as UserRow | undefined
+    if (!user || user.token_version !== tx.tv) return finish(c, tx, 'bind_failed')
+    const owner = findByEmail.get(verifiedEmail) as UserRow | undefined
+    if (owner && owner.id !== user.id) return finish(c, tx, 'conflict')
+    updateUserEmail.run(verifiedEmail, new Date().toISOString(), user.id)
+    deleteIdentitiesForUser.run(user.id)
+    return finish(c, tx, 'bound')
+  }
+
+  // 登录模式：按邮箱落点 —— 命中账号直接登录，新邮箱建号（与验证码登录进同一个账号）。
+  if (rateLimited(`reg:${clientIp(c)}`, REGISTER_MAX_PER_IP, REGISTER_WINDOW)) {
+    return finish(c, tx, 'failed')
   }
 
   let user: UserRow
   try {
-    user = resolveGoogleUser(claims.sub as string, verifiedEmail || null, Date.now())
+    user = resolveGoogleLogin(verifiedEmail, Date.now())
   } catch {
-    return finish(c, tx, false)
+    return finish(c, tx, 'failed')
   }
 
   await issueSession(c, { uid: user.id, username: user.username, tv: user.token_version })
-  return finish(c, tx, true)
+  return finish(c, tx, 'ok')
 })
 
 export default oauth

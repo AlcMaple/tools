@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react'
 export interface AuthUser {
   username: string
   createdAt: string
+  /** 已核验的邮箱地址（设置页展示用）；未绑定为 null。 */
+  email: string | null
   /** 只知道「设没设」密保 —— 后端不回显问题和答案（问题本身也是秘密）。 */
   hasSecurity: boolean
   hasEmail: boolean
@@ -30,7 +32,14 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   return data as T
 }
 
-type MeRes = { username: string; createdAt: string; hasSecurity: boolean; hasEmail: boolean; hasPassword: boolean }
+type MeRes = {
+  username: string
+  createdAt: string
+  email: string | null
+  hasSecurity: boolean
+  hasEmail: boolean
+  hasPassword: boolean
+}
 type LoginRes = { username: string; hasSecurity: boolean; hasEmail: boolean; hasPassword: boolean }
 
 let currentUser: AuthUser | null = null
@@ -57,6 +66,7 @@ export const auth = {
       setUser({
         username: me.username,
         createdAt: me.createdAt,
+        email: me.email,
         hasSecurity: me.hasSecurity,
         hasEmail: me.hasEmail,
         hasPassword: me.hasPassword,
@@ -73,6 +83,7 @@ export const auth = {
     setUser({
       username: r.username,
       createdAt: new Date().toISOString(),
+      email: null,
       hasSecurity: r.hasSecurity,
       hasEmail: r.hasEmail,
       hasPassword: r.hasPassword,
@@ -84,6 +95,10 @@ export const auth = {
   },
   async requestEmailCode(email: string): Promise<{ challengeId: string; expiresIn: number }> {
     return request<{ challengeId: string; expiresIn: number }>('/email/start', { email })
+  },
+  /** 向**当前绑定邮箱**发验证码（改用户名 / 解绑共用的「证明仍控制现身份」通道）。 */
+  async requestCodeForCurrentEmail(): Promise<{ challengeId: string; expiresIn: number; email: string }> {
+    return request<{ challengeId: string; expiresIn: number; email: string }>('/email/current-start', {})
   },
   async verifyEmailCode(challengeId: string, code: string): Promise<void> {
     await request<LoginRes>('/email/verify', { challengeId, code })
@@ -114,6 +129,22 @@ export const auth = {
     await request('/settings', p)
     await auth.init()
   },
+  /** 无密码账号（Google / 验证码注册）首次设置密码。 */
+  async setPassword(newPassword: string, confirm: string): Promise<void> {
+    await request('/password/set', { newPassword, confirm })
+    await auth.init()
+  },
+  /** 改用户名：有密码账号验密码，或当前邮箱验证码（无密码账号的主路径）。 */
+  async changeUsername(p: {
+    username: string
+    currentPassword?: string
+    challengeId?: string
+    code?: string
+  }): Promise<string> {
+    const r = await request<{ ok: boolean; username: string }>('/username/change', p)
+    await auth.init()
+    return r.username
+  },
   subscribe(fn: () => void): () => void {
     listeners.add(fn)
     return () => listeners.delete(fn)
@@ -129,13 +160,53 @@ export async function fetchQuestions(): Promise<SecurityQuestion[]> {
   return questionsCache
 }
 
-// 第三方登录是否启用 —— 服务端按环境变量（GOOGLE_CLIENT_ID/SECRET）决定，未配置时前端不画入口。
+// 第三方登录 / 邮箱能力是否启用 —— 服务端按环境变量决定，未配置时前端不画对应入口。
 // 登录走整页跳转（/api/auth/oauth/google/start → Google → 回调设会话 cookie 后跳回），
 // 前端无需也不应经手任何令牌。失败时回调带 ?oauth=failed 回来，由 App 弹登录框提示。
-let providersCache: { google: boolean } | null = null
-export async function fetchOauthProviders(): Promise<{ google: boolean }> {
-  if (!providersCache) providersCache = await request<{ google: boolean }>('/oauth/providers')
+let providersCache: { google: boolean; email: boolean } | null = null
+export async function fetchOauthProviders(): Promise<{ google: boolean; email: boolean }> {
+  if (!providersCache) providersCache = await request<{ google: boolean; email: boolean }>('/oauth/providers')
   return providersCache
+}
+
+/** 已登录账号绑定 / 换绑邮箱第一步（验证码路径，任意邮箱）：有密码的账号要带原始密码。 */
+export async function bindEmailStart(
+  email: string,
+  currentPassword?: string,
+): Promise<{ challengeId: string; expiresIn: number }> {
+  return request<{ challengeId: string; expiresIn: number }>('/email/bind-start', { email, currentPassword })
+}
+
+export async function bindEmailVerify(challengeId: string, code: string): Promise<{ email: string }> {
+  const r = await request<{ ok: boolean; email: string }>('/email/bind-verify', { challengeId, code })
+  await auth.init() // 顺带把 /me 的 email 拉全
+  return { email: r.email }
+}
+
+// 换绑 / 解绑邮箱与首次设密码 —— 邮箱是身份本身（详见 server/auth.ts 各路由注释）。
+// 换绑有两条路：验证码（任意邮箱）与 Google 授权（仅 Gmail，免验证码）。
+
+/** 换绑邮箱的 Google 路径：授权即证明控制新邮箱，免验证码。
+ *  返回 Google 授权页地址，前端整页跳转过去，回来后带 ?oauth= 结果码。 */
+export async function rebindEmailViaGoogle(currentPassword: string): Promise<string> {
+  const url = new URL(window.location.href)
+  url.searchParams.delete('oauth')
+  const returnTo = url.pathname + url.search + url.hash
+  const r = await request<{ url: string }>(
+    `/oauth/google/rebind-email?returnTo=${encodeURIComponent(returnTo)}`,
+    { currentPassword },
+  )
+  return r.url
+}
+
+/** 解绑邮箱：先向当前邮箱发验证码证明仍控制它，再验证解绑（需已设置密码）。 */
+export async function unbindEmailStart(): Promise<{ challengeId: string; expiresIn: number; email: string }> {
+  return auth.requestCodeForCurrentEmail()
+}
+
+export async function unbindEmailVerify(challengeId: string, code: string): Promise<void> {
+  await request<{ ok: boolean }>('/email/unbind-verify', { challengeId, code })
+  await auth.init()
 }
 
 // 组件里订阅登录态。返回 { user, ready }，配合 auth.login/register/logout 用。
