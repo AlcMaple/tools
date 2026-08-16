@@ -61,6 +61,15 @@ TUN 模式 / Vercel 上不需要
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` | 可选 | Google 登录（[Google Cloud 凭据页](https://console.cloud.google.com/apis/credentials)），**二者齐配登录按钮才出现**。OAuth 客户端登记的重定向 URI：`https://<你的域名>/api/auth/oauth/google/callback`；本地联调另加 `http://localhost:5173/api/auth/oauth/google/callback` |
 | `DEV_SEARCH_ORIGIN` | 仅本地 dev | 本地没有离线索引时借哪个线上站补搜索 |
 
+本地开发嫌每次命令前缀麻烦，可把密钥 `export` 进 `~/.zshrc` / `~/.bashrc` 持久生效（新开终端 `npm run dev` 自动带上；密钥只在本机，不进仓库）：
+
+```bash
+export GOOGLE_CLIENT_ID="xxx.apps.googleusercontent.com"
+export GOOGLE_CLIENT_SECRET="GOCSPX-xxx"
+```
+
+Google 登录的重定向 URI 按环境各登记一条，同一客户端可登记多条，服务端按请求来源自动选用：本地 `http://localhost:5173/api/auth/oauth/google/callback`，生产 `https://<你的域名>/api/auth/oauth/google/callback`。
+
 ## 目录
 
 ```
