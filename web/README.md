@@ -49,10 +49,32 @@ HTTPS_PROXY=http://127.0.0.1:7890 npm run dev
 
 TUN 模式 / Vercel 上不需要。
 
-## 部署（Vercel）
+## 环境变量
 
-见 [docs/web/Vercel部署保姆教程.md](../docs/web/Vercel部署保姆教程.md)。要点：Root Directory
-设 `web`、Framework 选 Vite，`api/` 下的 Hono 自动成为 serverless 函数。
+代码**只读进程环境变量，不读任何 `.env` 文件**（没有 dotenv）。本地开发在命令前临时注入（见上面邮箱示例），生产放在部署目录外的进程环境里（systemd `EnvironmentFile=` / pm2 ecosystem / Vercel 控制台）——密钥永远不进仓库，`.gitignore` 已忽略 `.env`。
+
+| 变量 | 必需 | 说明 |
+| --- | --- | --- |
+| `AUTH_SECRET` | 生产必需 | 会话 JWT、验证码 HMAC、OAuth 跳转 cookie 共用的根密钥，至少 32 个随机字符；生产缺失会拒绝启动 |
+| `DATA_DIR` | 生产建议 | SQLite（`web.db`）与周历缓存的目录，**必须在部署目录外**（重新部署会清空部署目录），如 `/opt/mapletools-data`；dev 默认 `web/data/` |
+| `NODE_ENV` | 生产设 `production` | 切换生产 cookie 名与关掉 dev 专用兜底 |
+| `PORT` / `HOST` | 可选 | 默认 `3000` / `127.0.0.1`；nginx 反代场景保持回环默认即可，别绑 `0.0.0.0` |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_SECURE` `SMTP_USER` `SMTP_PASS` | 可选 | 邮箱验证码发信的 SMTP 凭证（如 Brevo 的 `smtp-relay.brevo.com:587`）。未配置时停用邮箱入口，不影响用户名 / 密码登录 |
+| `SMTP_FROM` `SMTP_FROM_NAME` | 可选 | 发件地址与显示名，如 `noreply@example.com` / `MapleTools`。`SMTP_FROM` 需先在发信服务完成自有域名的 DNS 验证（SPF / DKIM），步骤见 [docs/ideas/015](../docs/ideas/015-noreply发信与第三方登录接入指南.md) |
+| `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` | 可选 | Google 登录（[Google Cloud 凭据页](https://console.cloud.google.com/apis/credentials)），**二者齐配登录按钮才出现**。OAuth 客户端登记的重定向 URI：`https://<你的域名>/api/auth/oauth/google/callback`；本地联调另加 `http://localhost:5173/api/auth/oauth/google/callback` |
+| `DEV_SEARCH_ORIGIN` | 仅本地 dev | 本地没有离线索引时借哪个线上站补搜索 |
+
+## 部署
+
+**VPS（自管 nginx + node）**：
+
+1. `npm ci && npm run build` 产出 `dist/`
+2. 环境变量写进部署目录外的文件（如 systemd unit 配 `EnvironmentFile=/etc/mapletools-web.env`，或 pm2 ecosystem），至少 `NODE_ENV=production`、`AUTH_SECRET`、`DATA_DIR`，按需加 `SMTP_*`、`GOOGLE_*`
+3. `npm start` 跑 `server/node.ts`：默认只绑 `127.0.0.1:3000`，由 nginx 负责 HTTPS 与转发，并把 `X-Real-IP` 传给 node（限流按它计数）
+4. 重新部署 `rm -rf` 部署目录前，确认 `DATA_DIR` 指向的目录和环境文件都在部署目录**之外**
+
+**Vercel（备选）**：见 [docs/web/Vercel部署保姆教程.md](../docs/web/Vercel部署保姆教程.md)。要点：Root Directory
+设 `web`、Framework 选 Vite，`api/` 下的 Hono 自动成为 serverless 函数，环境变量在 Vercel 控制台配置。
 
 ## 目录
 
