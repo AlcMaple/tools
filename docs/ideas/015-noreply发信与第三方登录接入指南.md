@@ -58,12 +58,16 @@
 2. 「API 和服务」→「凭据」→ 顶部「+ 创建凭据」→「OAuth 客户端 ID」→ 应用类型选 **Web 应用** →「已获授权的重定向 URI」填 `https://anime.alcmaple.cn/api/auth/oauth/google/callback` → 创建，弹窗里**当场复制客户端 ID 和客户端密钥**（Google 的密钥关掉弹窗就再也看不到，丢了只能重置）。
 3. 同意屏的「受众」页把发布状态从「测试」推到「正式」——发布时可能要求补应用主页（`https://anime.alcmaple.cn`）和隐私政策链接，先放一个简单页面即可。**注意：处于「测试」状态时只有加进测试用户列表的 Google 账号能登录**，联调阶段先把自己的 Gmail 加为测试用户。
 
-### Microsoft（免费，Outlook / Hotmail / Live 账号）
+### Microsoft（Outlook / Hotmail / Live 账号）—— 个人账号已无法直接注册，建议暂缓
 
-1. 打开 [portal.azure.com](https://portal.azure.com/) → Microsoft Entra ID → **应用注册** → 新注册。
-2. 「支持的帐户类型」选 **任何组织目录中的帐户 + 个人 Microsoft 帐户**（个人 outlook.com / hotmail.com 必须选这个或「仅个人」）。
-3. 重定向 URI：平台选 **Web**，填 `https://anime.alcmaple.cn/api/auth/oauth/microsoft/callback`。
-4. 概页拿「应用程序(客户端) ID」；「证书和密码」→ 新客户端密码 → 立刻复制 Value（只显示一次）。注意机密有有效期（6/12/24 个月），到期要换，实现时会做环境变量热替换。
+**2026-08-16 实测**（浏览器直进 Entra 管理中心验证）：微软已**弃用「无目录个人账号直接创建应用注册」**——个人账号在 [entra.microsoft.com](https://entra.microsoft.com) → 应用注册 → 新注册时，弹窗明确提示「在目录外创建应用的能力已被弃用」，只剩两条官方出路：
+
+1. **加入 M365 开发者计划**（[aka.ms/joinM365DeveloperProgram](https://aka.ms/joinM365DeveloperProgram)，免费）：送一个开发者租户，应用注册住在里面。**风险：沙盒租户 90 天不活跃可能被回收**，届时应用注册随之失效，线上微软登录按钮会突然断掉——对生产登录入口是实际运维负担。
+2. **注册 Azure 账号**（[aka.ms/signUpForAzure](https://aka.ms/signUpForAzure)）：需要一张国际信用卡做身份验证。
+
+**结论：暂缓接入微软登录。** outlook / hotmail / live 用户已被「邮箱验证码」入口完整覆盖（Brevo 发信实测可达，快捷后缀与收件箱直达齐备），少一个按钮不影响这些用户登录。将来确有需要再走 M365 开发者计划，接入时复用 Google 的 OAuth 骨架（换 token/JWKS 端点，回调地址 `/api/auth/oauth/microsoft/callback`，帐户类型选「任何组织 + 个人 Microsoft 帐户」）。
+
+> 踩坑记录：Azure 门户对无目录个人账号还会报 `AADSTS16000`（账号不存在于「Microsoft Services」租户），门户内反复重新登录无法解决；**Entra 管理中心（entra.microsoft.com）能正常进入**并给出上述弃用提示，排查时走这个入口。
 
 ### Apple（需 Apple Developer Program，约 99 美元 / 年）
 
