@@ -2,7 +2,8 @@
 //
 // 用法：
 //   cd web && npm run sync:index                                 下最新档（bangumi/Archive，~400MB zip）重建
-//   cd web && npx tsx scripts/build-bgm-index.ts --file a.jsonlines   用本地已解压的 jsonlines（测试用，不下载）
+//   cd web && npx tsx scripts/build-bgm-index.ts --file a.jsonlines [--episode-file e.jsonlines]
+//                                                                用本地已解压的 jsonlines（测试用，不下载）
 //
 // 索引**不在 git 里、也不是 build 产物**，`git pull + npm run build` 不会更新它 —— 生产靠 cron 每周跑本脚本，
 // 首次部署也必须手跑一次，否则 /api/search 一直 ready=false。
@@ -31,6 +32,12 @@ interface Row {
   date: string
   score: number
 }
+
+// 归档的 subject 档里**没有**总集数字段（官方 schema 只有 id/type/name/name_cn/infobox/platform/
+// summary/nsfw/date/favorite/series/tags/score/score_details/rank/meta_tags）。集数在**另一个成员文件**
+// episode.jsonlines 里逐集一行，靠 subject_id 关联、type=0 表示本篇 —— 数一遍就是 BGM 自己
+// total_episodes 的口径。所以建索引要扫两个文件（zip 已在本地，只多一次解压，不重新下载）。
+const EPISODE_TYPE_MAIN = 0
 
 // 档里的 infobox 是**原始 wiki 字符串**（跟在线 API 已解析成数组不同），得自己抠「别名」。
 // 两种写法都兼容：`|别名= 单值` 或 `|别名={ [别名一] [别名二|注释] }`。抠不到就空（加番时 detail 会补）。
@@ -78,7 +85,37 @@ function previousCount(): number {
 // 正常周增量是几百条（本周 30502），跌破 10% 只可能是出事了。真要强推（比如上游口径变了）用 --force。
 const MIN_KEEP_RATIO = 0.9
 
-async function buildIndex(lines: AsyncIterable<string>, force = false): Promise<void> {
+/**
+ * 第二遍：数每部动画的本篇集数。
+ *
+ * 只统计 `animeIds` 里的 subject_id —— 档里的 episode 覆盖漫画/游戏等所有类型，全收的话 Map 会涨到
+ * 百万级；限定动画后只有约 3 万条，内存可忽略。
+ */
+async function countEpisodes(lines: AsyncIterable<string>, animeIds: Set<number>): Promise<Map<number, number>> {
+  const counts = new Map<number, number>()
+  for await (const line of lines) {
+    if (!line) continue
+    let o: Record<string, unknown>
+    try {
+      o = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (Number(o.type) !== EPISODE_TYPE_MAIN) continue // SP/OP/ED/PV 不计入总集数
+    const sid = Number(o.subject_id)
+    if (!sid || !animeIds.has(sid)) continue
+    counts.set(sid, (counts.get(sid) ?? 0) + 1)
+  }
+  return counts
+}
+
+// episodeLines 传的是**工厂**而不是流：两个成员各要一个 unzip 子进程，急切建好的话 episode 那个会从
+// 头卡在写满的管道上等我们扫完 subject。用工厂就能等真要用时再 spawn。
+async function buildIndex(
+  lines: AsyncIterable<string>,
+  episodeLines: (() => AsyncIterable<string>) | null,
+  force = false,
+): Promise<void> {
   const tmp = indexDbPath + '.tmp'
   rmSync(tmp, { force: true })
   const db = new Database(tmp)
@@ -92,7 +129,10 @@ async function buildIndex(lines: AsyncIterable<string>, force = false): Promise<
       aliases TEXT NOT NULL DEFAULT '',
       tags    TEXT NOT NULL DEFAULT '[]',
       date    TEXT NOT NULL DEFAULT '',
-      score   REAL NOT NULL DEFAULT 0
+      score   REAL NOT NULL DEFAULT 0,
+      -- 本篇集数。0 = 档里数不出来（没有章节数据 / 没扫 episode 文件），**不是**「0 集」；
+      -- 读取方（server/bgm/anime-index.ts epsOf）把 0 当「不知道」，退回在线详情补。
+      eps     INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT);
   `)
@@ -106,6 +146,7 @@ async function buildIndex(lines: AsyncIterable<string>, force = false): Promise<
   let n = 0
   let seen = 0
   let batch: Row[] = []
+  const animeIds = new Set<number>()
   for await (const line of lines) {
     if (!line) continue
     seen++
@@ -118,6 +159,7 @@ async function buildIndex(lines: AsyncIterable<string>, force = false): Promise<
     if (Number(o.type) !== 2) continue // 只要动画（1漫画 2动画 3音乐 4游戏 6三次元）
     const id = Number(o.id)
     if (!id) continue
+    animeIds.add(id)
     batch.push({
       bgm_id: id,
       name: String(o.name ?? ''),
@@ -137,8 +179,21 @@ async function buildIndex(lines: AsyncIterable<string>, force = false): Promise<
     flush(batch)
     n += batch.length
   }
+  // 第二遍：本篇集数。拿不到 episode 文件就整列留 0 —— 索引照常可用，加番时退回在线详情补集数，
+  // 不让「集数缺一块」把整次重建搞失败。
+  let withEps = 0
+  if (episodeLines) {
+    const counts = await countEpisodes(episodeLines(), animeIds)
+    const upd = db.prepare('UPDATE anime SET eps = ? WHERE bgm_id = ?')
+    db.transaction((m: Map<number, number>) => {
+      for (const [sid, c] of m) upd.run(c, sid)
+    })(counts)
+    withEps = counts.size
+  }
+
   db.prepare(`INSERT OR REPLACE INTO meta (k,v) VALUES ('built_at', ?)`).run(String(Date.now()))
   db.prepare(`INSERT OR REPLACE INTO meta (k,v) VALUES ('count', ?)`).run(String(n))
+  db.prepare(`INSERT OR REPLACE INTO meta (k,v) VALUES ('eps_count', ?)`).run(String(withEps))
   db.close()
 
   // 护栏：条数骤降就**不替换**，保住线上那份旧的（宁可数据旧一周，也别让搜索凭空缩水）。
@@ -153,7 +208,10 @@ async function buildIndex(lines: AsyncIterable<string>, force = false): Promise<
   }
 
   renameSync(tmp, indexDbPath)
-  console.log(`扫描 ${seen} 条 → 收录动画 ${n} 条${prev ? `（上次 ${prev} 条）` : ''} → ${indexDbPath}`)
+  console.log(
+    `扫描 ${seen} 条 → 收录动画 ${n} 条${prev ? `（上次 ${prev} 条）` : ''}` +
+      `，其中 ${withEps} 条数出了本篇集数 → ${indexDbPath}`
+  )
 }
 
 // ── 下载 + 解压（无 --file 时走这条）────────────────────────────────────────────
@@ -170,11 +228,22 @@ async function downloadDump(): Promise<string> {
   return zipPath
 }
 
-function subjectFileInZip(zipPath: string): string {
-  const list = execFileSync('unzip', ['-Z1', zipPath], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).split('\n')
-  const f = list.find((x) => /subject.*\.jsonlines$/i.test(x.trim()))
-  if (!f) throw new Error('压缩包里找不到 subject*.jsonlines，实际文件：' + list.filter(Boolean).join(', '))
-  return f.trim()
+function zipMembers(zipPath: string): string[] {
+  return execFileSync('unzip', ['-Z1', zipPath], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+    .split('\n')
+    .map((x) => x.trim())
+    .filter(Boolean)
+}
+
+function subjectFileInZip(members: string[]): string {
+  const f = members.find((x) => /subject.*\.jsonlines$/i.test(x))
+  if (!f) throw new Error('压缩包里找不到 subject*.jsonlines，实际文件：' + members.join(', '))
+  return f
+}
+
+// episode 文件缺失**不致命**：集数整列留 0，加番时退回在线详情。所以返回 null 而不是抛错。
+function episodeFileInZip(members: string[]): string | null {
+  return members.find((x) => /episode.*\.jsonlines$/i.test(x)) ?? null
 }
 
 function unzipLines(zipPath: string, inner: string): AsyncIterable<string> {
@@ -190,14 +259,22 @@ async function main(): Promise<void> {
   const i = process.argv.indexOf('--file')
   if (i >= 0 && process.argv[i + 1]) {
     const path = process.argv[i + 1]
-    console.log(`用本地文件 ${path}（跳过下载）`)
-    await buildIndex(createInterface({ input: createReadStream(path), crlfDelay: Infinity }), force)
+    const j = process.argv.indexOf('--episode-file')
+    const epPath = j >= 0 ? process.argv[j + 1] : undefined
+    console.log(`用本地文件 ${path}${epPath ? ` + ${epPath}` : '（无 episode 档，集数留空）'}（跳过下载）`)
+    await buildIndex(
+      createInterface({ input: createReadStream(path), crlfDelay: Infinity }),
+      epPath ? () => createInterface({ input: createReadStream(epPath), crlfDelay: Infinity }) : null,
+      force,
+    )
     return
   }
   const zip = await downloadDump()
-  const inner = subjectFileInZip(zip)
-  console.log(`解压取 ${inner}`)
-  await buildIndex(unzipLines(zip, inner), force)
+  const members = zipMembers(zip)
+  const inner = subjectFileInZip(members)
+  const epInner = episodeFileInZip(members)
+  console.log(`解压取 ${inner}${epInner ? ` + ${epInner}` : '（压缩包里没有 episode 档，集数留空）'}`)
+  await buildIndex(unzipLines(zip, inner), epInner ? () => unzipLines(zip, epInner) : null, force)
   rmSync(zip, { force: true })
 }
 

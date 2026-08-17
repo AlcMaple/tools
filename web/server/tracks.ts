@@ -4,6 +4,8 @@
 // 这样桌面端推富记录过来时,网页端只写自己拥有的那几个字段,对方的好看集 / 绑定之类不会被抹掉。
 import { Hono } from 'hono'
 import type { Context } from 'hono'
+import { isRecentAir } from '../shared/anime-age'
+import { epsOf } from './bgm/anime-index'
 import { getCalendarMetadata, type CalendarMetadata } from './bgm/calendar'
 import { fetchSubjectDetail } from './bgm/detail'
 import {
@@ -187,10 +189,27 @@ async function requireUid(c: Context): Promise<number | null> {
 }
 
 /**
- * 加追番后异步回填标签 / 别名 / 放送日期。三个细节各有理由:
+ * 加番那一刻定总集数。
+ *
+ * 规则（判据只看 airDate，与 total 本身解耦，见 shared/anime-age.ts）：
+ *   - 新番 → 一律 null。**哪怕这里查得到集数也不填** —— 在播番的集数 BGM 自己常常还没定，
+ *     填一个会让「进度 / 总数」显示成假的确定值；`null` = 连载中、用户想填自己填。
+ *   - 老番 → 查本地离线索引。命中就直接落库，用户加完番立刻看到集数，不用等后台那一轮回填。
+ *   - 老番但离线索引给不出（还没重建 / 档里没这条的章节数据）→ 先 null，交给 fillDetailLater
+ *     用在线详情补。
+ *
+ * 查的是本机 SQLite 单行主键命中，微秒级，不会拖慢「追番」按钮。
+ */
+function initialTotal(bgmId: number, airDate: string): number | null {
+  if (isRecentAir(airDate)) return null
+  return epsOf(bgmId) || null
+}
+
+/**
+ * 加追番后异步回填标签 / 别名 / 放送日期 / 老番总集数。三个细节各有理由:
  *   1. **抖动 800~2000ms 再发** —— 用户在周历上连点几部,不抖动就是一串请求瞬间砸过去。
  *   2. **发之前二次检查** —— 这段延迟里用户可能已经取消追番,或别的路径已经补上了。
- *   3. **一次请求同时拿标签 + 别名 + 放送日期**,零额外开销。
+ *   3. **一次请求同时拿标签 + 别名 + 放送日期 + 集数**,零额外开销。
  * 失败静默放过:下次相关入口还会触发,**绝不重试打死对面**。
  */
 function fillDetailLater(uid: number, bgmId: number): void {
@@ -227,6 +246,15 @@ function fillDetailLater(uid: number, bgmId: number): void {
           if (d.cover && !current.cover) {
             sets.push('cover = ?')
             args.push(d.cover)
+          }
+          // 老番集数兜底 —— 走到这儿说明 initialTotal 时离线索引没给出值（索引还没重建 / 档里没这条的
+          // 章节数据）。**用 d.date 而不是 current.air_date 判新老**：详情刚把日期补上，此刻库里
+          // 那列可能还是空的，空串会被当成新番、白白错过这次补集数的机会。
+          // 仍为空才写：用户在这 800~2000ms 里手填了的话，以用户为准。
+          const total = current.total_episodes
+          if (d.eps > 0 && total == null && !isRecentAir(d.date || current.air_date)) {
+            sets.push('total_episodes = ?')
+            args.push(d.eps)
           }
           // 详情请求本来就会执行；顺手把权威别名补进已晋升的共享条目，不增加任何 BGM 请求。
           // 该 UPDATE 只命中已有补充行，本地索引加番或普通详情回填不会凭空创建共享记录。
@@ -318,7 +346,7 @@ tracks.put('/:bgmId', async (c) => {
         bgm_id: bgmId,
         status: nextStatus ?? 'watching',
         episode: 0,
-        total_episodes: null, // 连载中 —— 周历不返 eps，由用户手填
+        total_episodes: initialTotal(bgmId, airDate),
         title: String(body.title ?? ''),
         title_cn: String(body.titleCn ?? ''),
         cover: String(body.cover ?? ''),
