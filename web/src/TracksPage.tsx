@@ -92,6 +92,19 @@ function watchEp(t: Track): number {
 // 定位用的标题集合 —— 中文名 / 别名最可能对上简体中文站,日文原名兜底。
 const titlesOf = (t: Track): string[] => [t.titleCn, ...t.aliases, t.title].filter(Boolean)
 
+// 「新番 / 老番」分流 —— 源站的番剧周表只列**在播**的番,老番在里面必然查不到,
+// 拿老番去走一趟周表定位是纯浪费(冷缓存那次还要等源站抓 7 天)。用本地已有的 airDate
+// 判断,零网络零延迟:
+//   - airDate 为空(老记录没回填)→ 当新番,退回周表路径。周表是进程内缓存的,判错也不亏。
+//   - 首播距今半年以内(含未播的负值)→ 新番。半年 ≈ 两季,跨季续看的番也兜得住。
+//   - 其余 → 老番,「继续看」直接进全站搜索,省掉一次等待和一次多余点击。
+const RECENT_MS = 180 * 24 * 60 * 60 * 1000
+function isRecentAnime(t: Track): boolean {
+  const ms = Date.parse(t.airDate)
+  if (Number.isNaN(ms)) return true
+  return Date.now() - ms < RECENT_MS
+}
+
 interface PickerState {
   track: Track
   candidates: XifanCandidate[]
@@ -165,9 +178,15 @@ export function TracksPage(): JSX.Element {
     if (user) saveGirigiriBindingsCache(user.username, girigiriBindings)
   }, [user, girigiriBindings])
 
-  // 未绑定的「继续看」：去周表定位 → 命中候选就弹选择框让用户确认（= 建绑定），零候选也弹（说明没找到）。
+  // 未绑定的「继续看」：老番跳过周表直接进搜索；新番去周表定位 → 有候选就弹选择框让用户确认
+  // （= 建绑定）。零候选说明周表里没有（名字对不上 / 判新老判错了），**不弹空框**，直接落到
+  // 搜索 —— 空框的唯一用途就是让用户再点一次「去搜索」。
   const continueWatch = (t: Track): void => {
     if (locating != null) return
+    if (!isRecentAnime(t)) {
+      setSearchTrack(t)
+      return
+    }
     setLocating(t.bgmId)
     locateXifan(t.bgmId, titlesOf(t))
       .then((r) => {
@@ -175,8 +194,10 @@ export function TracksPage(): JSX.Element {
           // 极少见：加载后别的用户刚绑上 → 记下来（卡片下次即变链接），并尽力开一下
           setBindings((prev) => ({ ...prev, [t.bgmId]: { xifanId: r.bound!.xifanId, xifanName: r.bound!.xifanName } }))
           window.open(playPageUrl(r.bound.xifanId, watchEp(t), t.bgmId), '_blank', 'noopener')
-        } else {
+        } else if (r.candidates.length) {
           setPicker({ track: t, candidates: r.candidates })
+        } else {
+          setSearchTrack(t)
         }
       })
       .catch((e: Error) => setError(e.message))
@@ -202,6 +223,10 @@ export function TracksPage(): JSX.Element {
   // Girigiri 定位与稀饭同形，但状态、绑定和候选严格分开。
   const continueGirigiri = (t: Track): void => {
     if (girigiriLocating != null) return
+    if (!isRecentAnime(t)) {
+      setGirigiriSearchTrack(t)
+      return
+    }
     setGirigiriLocating(t.bgmId)
     locateGirigiri(t.bgmId, titlesOf(t))
       .then((result) => {
@@ -211,8 +236,10 @@ export function TracksPage(): JSX.Element {
             [t.bgmId]: { girigiriId: result.bound!.girigiriId, girigiriName: result.bound!.girigiriName },
           }))
           window.open(girigiriPlayPageUrl(result.bound.girigiriId, watchEp(t), t.bgmId), '_blank', 'noopener')
-        } else {
+        } else if (result.candidates.length) {
           setGirigiriPicker({ track: t, candidates: result.candidates })
+        } else {
+          setGirigiriSearchTrack(t)
         }
       })
       .catch((error: Error) => setError(error.message))
@@ -1212,33 +1239,28 @@ function BindPickerModal({
           稀饭用的是另一套编号，按名字匹配出以下几部。<b>点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
         </p>
 
-        {candidates.length === 0 ? (
-          <div className="sugg-note" style={{ textAlign: 'left' }}>
-            没在稀饭<b>本季周表</b>里找到相近的名字。往季资源或非周历资源可以改用稀饭全站搜索。
-          </div>
-        ) : (
-          <div className="cand-list custom-scrollbar">
-            {candidates.map((c) => (
-              <a
-                key={c.xifanId}
-                className="sugg-item"
-                href={playPageUrl(c.xifanId, ep, track.bgmId)}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => onPick(c)}
-              >
-                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                  {c.xifanName || `稀饭 #${c.xifanId}`}
-                </span>
-                <span className="sugg-meta">
-                  {c.day ? `周${SHORT_DAY[c.day]}` : ''}
-                  {c.remarks ? `${c.day ? ' · ' : ''}${c.remarks.replace('|', ' · ')}` : ''}
-                </span>
-                <Ic name="play" cls="ic ic-sm" />
-              </a>
-            ))}
-          </div>
-        )}
+        {/* candidates 必非空：零候选由 continueWatch 直接落到搜索弹窗，不会走到这里 */}
+        <div className="cand-list custom-scrollbar">
+          {candidates.map((c) => (
+            <a
+              key={c.xifanId}
+              className="sugg-item"
+              href={playPageUrl(c.xifanId, ep, track.bgmId)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => onPick(c)}
+            >
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                {c.xifanName || `稀饭 #${c.xifanId}`}
+              </span>
+              <span className="sugg-meta">
+                {c.day ? `周${SHORT_DAY[c.day]}` : ''}
+                {c.remarks ? `${c.day ? ' · ' : ''}${c.remarks.replace('|', ' · ')}` : ''}
+              </span>
+              <Ic name="play" cls="ic ic-sm" />
+            </a>
+          ))}
+        </div>
 
         <button className="btn btn-sm btn-ghost btn-block mt16" type="button" onClick={onSearch}>
           <Ic name="search" cls="ic ic-sm" />
@@ -1287,33 +1309,28 @@ function GirigiriBindPickerModal({
         <p className="dlg-sub">
           Girigiri 用的是另一套编号，按名字匹配出以下候选。<b>点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
         </p>
-        {candidates.length === 0 ? (
-          <div className="sugg-note" style={{ textAlign: 'left' }}>
-            没在 Girigiri<b>本季周表</b>里找到相近的名字。往季资源或非周历资源可以改用 Girigiri 全站搜索。
-          </div>
-        ) : (
-          <div className="cand-list custom-scrollbar">
-            {candidates.map((candidate) => (
-              <a
-                key={candidate.girigiriId}
-                className="sugg-item"
-                href={girigiriPlayPageUrl(candidate.girigiriId, ep, track.bgmId)}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => onPick(candidate)}
-              >
-                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                  {candidate.girigiriName || candidate.girigiriId}
-                </span>
-                <span className="sugg-meta">
-                  {candidate.day ? `周${SHORT_DAY[candidate.day]}` : ''}
-                  {candidate.remarks ? `${candidate.day ? ' · ' : ''}${candidate.remarks.replace('|', ' · ')}` : ''}
-                </span>
-                <Ic name="play" cls="ic ic-sm" />
-              </a>
-            ))}
-          </div>
-        )}
+        {/* candidates 必非空：零候选由 continueGirigiri 直接落到搜索弹窗，不会走到这里 */}
+        <div className="cand-list custom-scrollbar">
+          {candidates.map((candidate) => (
+            <a
+              key={candidate.girigiriId}
+              className="sugg-item"
+              href={girigiriPlayPageUrl(candidate.girigiriId, ep, track.bgmId)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => onPick(candidate)}
+            >
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                {candidate.girigiriName || candidate.girigiriId}
+              </span>
+              <span className="sugg-meta">
+                {candidate.day ? `周${SHORT_DAY[candidate.day]}` : ''}
+                {candidate.remarks ? `${candidate.day ? ' · ' : ''}${candidate.remarks.replace('|', ' · ')}` : ''}
+              </span>
+              <Ic name="play" cls="ic ic-sm" />
+            </a>
+          ))}
+        </div>
         <button className="btn btn-sm btn-ghost btn-block mt16" type="button" onClick={onSearch}>
           <Ic name="search" cls="ic ic-sm" />
           搜索 Girigiri 全站资源
