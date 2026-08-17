@@ -149,6 +149,8 @@ girigiri.get('/bindings', async (c) => {
 
 export default girigiri
 
+// 视觉照「纱雾画稿 Sagiri Sketchfolio」设计系统（docs/design-mockups/web/anime-sketchfolio/player.html）：
+// tokens/组件 CSS 引用同一份静态副本（web/public/styles/，见该目录文件头注释），与 xifan 播放页同一套。
 const PLAY_PAGE = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -157,39 +159,53 @@ const PLAY_PAGE = `<!doctype html>
 <meta name="robots" content="noindex">
 <title>继续看 · Girigiri</title>
 <script src="/api/girigiri/hls.js"></script>
+<link rel="stylesheet" href="/styles/sketch-tokens.css">
+<link rel="stylesheet" href="/styles/sketch-ui.css">
 <style nonce="__CSP_NONCE__">
-  :root { color-scheme: dark; --rose: #ffb3b8; --rose-dim: rgba(255,179,184,.14); --rose-bd: rgba(255,179,184,.30) }
-  * { box-sizing: border-box }
-  body { margin: 0 auto; background: #0e0e0e; color: #e2e2e2; font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 22px 18px 40px; max-width: 960px }
-  .hd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
-  h1 { font-size: 18px; font-weight: 800; letter-spacing: -.01em; margin: 0 }
-  .ep-badge { font-size: 12px; font-weight: 700; color: var(--rose); background: var(--rose-dim); border: 1px solid var(--rose-bd); border-radius: 6px; padding: 1px 9px; font-variant-numeric: tabular-nums }
-  .player-wrap { position: relative; aspect-ratio: 16/9; background: #000; border: 1px solid #242424; border-radius: 14px; overflow: hidden; margin-bottom: 12px }
+  .sheet-wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 60px; position: relative; z-index: 1 }
+  .player-frame { position: relative; aspect-ratio: 16/9; background: #000; border: 1.5px solid var(--line-strong); border-radius: var(--r-card); overflow: hidden; box-shadow: var(--shadow-1) }
   video, iframe.player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; display: none }
-  #err { display: none; margin: 0 0 12px; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; background: rgba(247,118,142,.12); border: 1px solid rgba(247,118,142,.35); color: #f7768e }
-  .card { background: #171717; border: 1px solid #242424; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px }
-  .card-label { font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #767676; margin-bottom: 10px }
-  .sources, .lines { display: flex; flex-wrap: wrap; gap: 7px }
-  .chip { display: inline-flex; align-items: center; justify-content: center; border: 1px solid #333; background: #141414; color: #c8c8c8; border-radius: 9px; padding: 6px 13px; font: inherit; font-size: 12.5px; line-height: 1.5; text-decoration: none; cursor: pointer; transition: border-color .12s, background .12s, color .12s }
-  .chip:hover { border-color: #565656 }
-  .chip.active { border-color: var(--rose); background: var(--rose-dim); color: var(--rose); cursor: default }
-  .chip.unbound { border-style: dashed; color: #767676 }
-  .eps { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 7px }
-  .ep { border: 1px solid #2c2c2c; background: #141414; color: #bdbdbd; border-radius: 8px; padding: 8px 0; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-variant-numeric: tabular-nums; transition: border-color .12s, background .12s, color .12s }
-  .ep:hover { border-color: #565656; color: #fff }
-  .ep.cur { border-color: var(--rose); background: var(--rose); color: #5a1923 }
+  /* video/iframe/err 用 classList 切换而不是 JS 里直接写 el.style.display —— 后者是内联样式，
+     同样受 style-src 这条 CSP 约束，没有 nonce/hash 会被浏览器悄悄吞掉，表现成「怎么切都不生效」。 */
+  video.on, iframe.player.on { display: block }
+  .ep-badge-pill { display: inline-flex; align-items: center; font-family: var(--font-hand); font-size: 14px; color: var(--teal); background: var(--teal-wash); border: 1.5px solid var(--teal-line); border-radius: var(--r-pill); padding: 2px 12px; font-variant-numeric: tabular-nums }
+  #err { display: none; align-items: center; gap: 12px; margin: 16px 0; padding: 10px 14px; border-radius: var(--r-card); font-size: 13px; font-weight: 600; background: var(--sakura-wash); border: 1.5px solid var(--sakura); color: #923d49 }
+  #err.show { display: flex }
+  .src-seg > button.unbound { color: var(--ink-faint); border: 1.5px dashed var(--line); border-radius: var(--r-pill) }
+  .lines-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px }
+  /* CSP style-src 不放行内联 style 属性（nonce 只保护 <style>/<script> 标签本身），
+     所以原型稿里随手写的内联字号/对齐这里都得落成类。 */
+  .hd-row { align-items: flex-end }
+  .player-title { font-size: 24px }
+  .section-title { font-size: 18px }
+  .icon-sprite { display: none }
 </style>
 </head>
-<body>
-  <div class="hd"><h1 id="ttl">继续看</h1><span class="ep-badge" id="epbadge">EP</span></div>
-  <div class="player-wrap">
+<body data-page="player">
+<div class="sheet-wrap">
+  <a class="btn btn-sm btn-ghost" href="/#/tracks">
+    <svg class="ic ic-sm"><use href="#i-back"></use></svg>回到我的追番
+  </a>
+  <div class="spread hd-row mt16">
+    <div>
+      <h1 class="title-sketch player-title" id="ttl">继续看</h1>
+      <p class="muted small mt8"><span class="ep-badge-pill font-hand" id="epbadge">EP</span></p>
+    </div>
+    <div class="seg src-seg" id="sources"></div>
+  </div>
+  <div class="player-frame mt16">
     <video id="v" controls playsinline preload="auto"></video>
     <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
   </div>
   <div id="err"></div>
-  <div class="card"><div class="card-label">播放源</div><div class="sources" id="sources"></div></div>
-  <div class="card"><div class="card-label">线路</div><div class="lines" id="lines"></div></div>
-  <div class="card"><div class="card-label">选集</div><div class="eps" id="eps"></div></div>
+  <div class="spread mt24">
+    <h2 class="title-sketch section-title">选集</h2>
+  </div>
+  <div class="ep-grid mt16" id="eps"></div>
+  <h2 class="title-sketch section-title mt24">线路</h2>
+  <div class="lines-list" id="lines"></div>
+</div>
+<svg class="icon-sprite" aria-hidden="true"><symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 5.5L8 12l6.5 6.5"/></symbol></svg>
 <script nonce="__CSP_NONCE__">
 (function(){
   var $ = function(id){ return document.getElementById(id) }
@@ -204,9 +220,9 @@ const PLAY_PAGE = `<!doctype html>
   window.addEventListener('pagehide', function(){ stopAll() })
   window.addEventListener('pageshow', function(e){ if (e.persisted) location.reload() })
 
-  function fail(txt){ var e = $('err'); e.textContent = txt; e.style.display = 'block' }
-  function clearFail(){ $('err').style.display = 'none' }
-  function inFrame(){ return frame.style.display === 'block' }
+  function fail(txt){ var e = $('err'); e.textContent = txt; e.classList.add('show') }
+  function clearFail(){ $('err').classList.remove('show') }
+  function inFrame(){ return frame.classList.contains('on') }
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
   function stopAll(){ destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank' }
   function renderSources(){
@@ -214,7 +230,7 @@ const PLAY_PAGE = `<!doctype html>
     sourceOptions.forEach(function(source){
       var control = document.createElement('button')
       control.type = 'button'
-      control.className = 'chip' + (source.active ? ' active' : '') + (!source.href ? ' unbound' : '')
+      control.className = (source.active ? 'on' : '') + (!source.href ? ' unbound' : '')
       control.textContent = source.label + (!source.href ? ' · 未关联' : '')
       control.title = source.href ? source.label : source.label + ' 尚未关联，请先在“我的追番”选择片源'
       if (source.active) control.setAttribute('aria-current', 'true')
@@ -227,8 +243,12 @@ const PLAY_PAGE = `<!doctype html>
     var box = $('lines'); box.textContent = ''
     lines.forEach(function(l){
       var b = document.createElement('button')
-      b.className = 'chip' + (curPl && l.source === curPl.source ? ' active' : '')
-      b.textContent = '线路 ' + l.source + (l.name ? ' ' + l.name : '')
+      b.type = 'button'
+      b.className = 'line-card' + (curPl && l.source === curPl.source ? ' on' : '')
+      var dot = document.createElement('span'); dot.className = 'lc-dot'
+      var name = document.createElement('span'); name.className = 'lc-name'
+      name.textContent = '线路 ' + l.source + (l.name ? ' ' + l.name : '')
+      b.appendChild(dot); b.appendChild(name)
       b.onclick = function(){ selectLine(l.source) }
       box.appendChild(b)
     })
@@ -237,12 +257,12 @@ const PLAY_PAGE = `<!doctype html>
   function embed(){
     curPl = curPl || { source: 1 }
     destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
-    v.style.display = 'none'; frame.style.display = 'block'; renderChips(); frame.src = officialPage()
+    v.classList.remove('on'); frame.classList.add('on'); renderChips(); frame.src = officialPage()
   }
   v.addEventListener('error', function(){ if (curPl && !inFrame() && v.getAttribute('src')) embed() })
   function playLine(pl){
     curPl = pl; clearFail(); stopAll(); renderChips()
-    v.style.display = 'block'; frame.style.display = 'none'
+    v.classList.add('on'); frame.classList.remove('on')
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
         hls = new Hls({ maxBufferLength: 600, maxMaxBufferLength: 900, maxBufferSize: 240 * 1000 * 1000, backBufferLength: 90 })
@@ -278,8 +298,8 @@ const PLAY_PAGE = `<!doctype html>
   }
   function renderEps(){
     var box = $('eps'); box.textContent = ''; var cur = Number(ep) || 1
-    if (!eps.length){ var one = document.createElement('div'); one.className = 'ep cur'; one.textContent = cur; box.appendChild(one); return }
-    eps.forEach(function(n){ var b = document.createElement('button'); b.type = 'button'; b.className = 'ep' + (n === cur ? ' cur' : ''); b.textContent = n; b.onclick = function(){ if (n !== cur) goEp(n) }; box.appendChild(b) })
+    if (!eps.length){ var one = document.createElement('div'); one.className = 'ep-cell on'; one.textContent = cur; box.appendChild(one); return }
+    eps.forEach(function(n){ var b = document.createElement('button'); b.type = 'button'; b.className = 'ep-cell' + (n === cur ? ' on' : ''); b.textContent = n; b.onclick = function(){ if (n !== cur) goEp(n) }; box.appendChild(b) })
   }
   async function boot(){
     if (!/^GV[0-9]+$/i.test(animeId) || !/^[0-9]+$/.test(ep)){ fail('URL 参数不合法'); return }
