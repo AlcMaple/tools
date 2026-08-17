@@ -75,8 +75,10 @@
 .spine-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
 .spine-user { display: flex; align-items: center; gap: 9px; padding: 10px 12px; background: var(--card); border: 1.5px solid var(--line); border-radius: var(--wob-2); }
 .spine-user .avatar { width: 34px; height: 34px; }
-.spine-user b { font-size: 13.5px; display: block; }
-.spine-user .faint { font-size: 11px; }
+.spine-user > div { min-width: 0; }
+/* 用户名 / 邮箱是无空格长串：不截就撑破 wob 圆角卡，超出收成省略号 */
+.spine-user b { font-size: 13.5px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spine-user .faint { font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .spine-acts { display: flex; gap: 8px; }
 .spine-acts .btn { flex: 1; }
 .spine-deco { position: relative; min-height: 40px; }
@@ -90,6 +92,21 @@
   object-fit: cover;
   background: var(--silver-wash);
   flex: none;
+}
+
+/* 用户首字圆章：拿用户名首字当头像（青底墨字），尺寸由使用处内联定 */
+.avatar-init {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--teal-line);
+  background: var(--teal-wash);
+  color: var(--teal);
+  font-family: var(--font-hand);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
 }
 
 /* 移动端：顶栏 + 底部标签栏 */
@@ -151,7 +168,7 @@
 @media (max-width: 960px) { .hero-split { display: block; } }
 
 /* ---------- 立绘驻场（idle 待机动作） ---------- */
-.rig-box { position: relative; flex: none; }
+.rig-box { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; }
 .rig {
   display: block;
   height: 340px;
@@ -167,8 +184,12 @@
   from { transform: rotate(-1.1deg) translateY(2px); }
   to   { transform: rotate(1.2deg) translateY(-7px); }
 }
-.rig-bubble { position: absolute; top: -6px; left: -14px; max-width: 220px; }
-.rig-inline .rig-bubble { position: static; max-width: 240px; }
+/* 驻场立绘：气泡挂在人物下方、尾巴朝上指人物（人物在上、气泡在下，不再叠头顶戳脸） */
+.rig-bubble { position: static; max-width: 220px; margin: -30px 0 0; z-index: 1; }
+.rig-box .rig-bubble::after { top: -7px; bottom: auto; left: 50%; margin-left: -6px; transform: rotate(225deg) skew(8deg, 8deg); }
+.rig-inline .rig-bubble { margin: 0; max-width: 240px; }
+/* 内联立绘：人物在左、气泡在右并排，尾巴从气泡左缘指回人物 */
+.rig-inline .rig-bubble::after { left: -7px; bottom: 22px; transform: rotate(135deg) skew(8deg, 8deg); }
 
 .bubble {
   position: relative;
@@ -515,6 +536,13 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .day-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
 .day-head .hr-dash { flex: 1; min-width: 30px; }
 
+/* 桌面整周纵览：每天一小节（章头 + 胶片），节与节之间留出翻页呼吸 */
+.day-sec + .day-sec { margin-top: 26px; }
+@media (min-width: 961px) {
+  /* 一季番剧多，桌面海报收窄一点，让每天的胶片一行尽量放满（右侧还有立绘驻场） */
+  .film .poster { width: 176px; }
+}
+
 .film {
   display: flex;
   gap: 18px;
@@ -794,6 +822,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   width: min(700px, 100%);
   max-height: min(88vh, 780px);
   overflow: hidden;
+  /* 密码 / 验证码两个页签内容高度不同，锁一个下限，切页签时容器不再一缩一胀 */
+  min-height: 492px;
 }
 .auth-side {
   position: relative;
@@ -1153,7 +1183,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   box-shadow: var(--shadow-1);
 }
 .id-card .avatar { width: 58px; height: 58px; border-width: 2px; }
-.id-lines { border-top: 1.5px dashed var(--line); padding-top: 8px; margin-top: 10px; font-size: 12.5px; color: var(--ink-sub); line-height: 2; flex: 1 1 220px; min-width: 200px; }
+.id-lines { border-top: 1.5px dashed var(--line); padding-top: 8px; margin-top: 10px; font-size: 12.5px; color: var(--ink-sub); line-height: 2; flex: 1 1 220px; min-width: 200px; overflow-wrap: anywhere; }
 .id-lines b { color: var(--ink); font-weight: 600; }
 
 .pocket { background: var(--card); border: 1.5px solid var(--line); border-radius: var(--r-card); box-shadow: var(--shadow-1); overflow: hidden; }
@@ -1255,7 +1285,10 @@ body[data-auth='out'] .track-btn { display: none; }
 /* ---------- 装饰性横滑/定高列表：隐藏滚动条（内容照常滚） ---------- */
 .date-strip, .film, #addList { scrollbar-width: none; -ms-overflow-style: none; }
 .date-strip::-webkit-scrollbar, .film::-webkit-scrollbar, #addList::-webkit-scrollbar { display: none; }
-#addList { height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+#addList { height: 300px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 6px; }
+/* 候选行内容一律不许横向撑宽（长日文原名 / 长副信息走省略号） */
+.sugg-item { min-width: 0; }
+.sugg-item > * { min-width: 0; }
 
 /* 加番候选里的小封面（类里的样式而不是内联，确保必渲染） */
 .mini-cover {

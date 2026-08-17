@@ -18,7 +18,7 @@
   </a>
   <span style="margin-left:auto"></span>
   <a class="btn btn-sm btn-primary auth-out" href="index.html" data-dialog-open="authDlg">登录 / 注册</a>
-  <span class="auth-in"><img class="avatar" style="width:30px;height:30px" src="assets/sagiri-face.png" alt="maple-feng"></span>
+  <span class="auth-in"><span class="avatar-init" style="width:30px;height:30px;font-size:15px" title="maple-feng">M</span></span>
 </header>
 
 <div class="shell">
@@ -53,12 +53,11 @@
 
     <div class="spine-foot">
       <div class="spine-user auth-in">
-        <img class="avatar" src="assets/sagiri-face.png" alt="">
+        <span class="avatar-init" style="width:34px;height:34px;font-size:17px">M</span>
         <div><b>maple-feng</b><span class="faint">Gmail 快捷登录</span></div>
       </div>
       <div class="spine-acts auth-in">
-        <a class="btn btn-sm btn-ghost" href="settings.html">设置</a>
-        <button class="btn btn-sm btn-danger" type="button" data-logout>退出</button>
+        <button class="btn btn-sm btn-danger w100" type="button" data-logout><svg class="ic ic-sm"><use href="#i-logout"></use></svg>退出登录</button>
       </div>
       <a class="btn btn-primary auth-out" href="index.html" data-dialog-open="authDlg">登录 / 注册</a>
     </div>
@@ -96,14 +95,13 @@
 
       <div class="hero-split mt16">
         <div style="flex:1;min-width:0">
-          <div class="date-strip" id="dateStrip" role="tablist" aria-label="选择日期"></div>
-          <div class="day-head" id="dayHead"></div>
-          <div class="film" id="dayFilm" aria-label="当日在播番剧"></div>
+          <!-- 桌面=整周纵览（七天 章头+胶片 竖排）/ 手机=日期章选天+单日胶片，由 js/app.js 按断点渲染 -->
+          <div id="calBody"></div>
         </div>
         <div class="rig-box">
-          <div class="bubble rig-bubble"><span>点日期章，翻到想看的那一天～</span></div>
           <img class="rig rig-click" src="assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘（全身）">
-          <span class="kira" style="bottom:30px;right:-10px;transform:rotate(6deg)">サラサラ</span>
+          <div class="bubble rig-bubble"><span>点日期章，翻到想看的那一天～</span></div>
+          <span class="kira" style="bottom: 74px;right:-10px;transform:rotate(6deg)">サラサラ</span>
         </div>
       </div>
     </div>
