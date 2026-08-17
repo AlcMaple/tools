@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 560" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1038" height="558" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">用户点开 girigiri 的一集，播放地址是怎么来的</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">girigiri 每集都得先问源站要地址，和稀饭不一样（稀饭多数集能自己算出来，不用问）——这次加的缓存省的就是「同一集反复问」这一步</text>
+
+  <!-- Step 1 -->
+  <rect x="32" y="86" width="200" height="80" rx="10" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="132" y="110" text-anchor="middle" font-size="13" font-weight="700" fill="#353136">① 点开一集</text>
+  <text x="52" y="132" font-size="11" fill="#666066">在选集列表里点某一集</text>
+  <text x="52" y="148" font-size="11" fill="#666066">的播放按钮</text>
+
+  <path d="M232 126 H272" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray1)"/>
+
+  <!-- Step 2 -->
+  <rect x="274" y="86" width="260" height="80" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="404" y="110" text-anchor="middle" font-size="13" font-weight="700" fill="#36566d">② 这一集最近 24 小时内</text>
+  <text x="404" y="128" text-anchor="middle" font-size="13" font-weight="700" fill="#36566d">播过、地址还记着吗？</text>
+  <text x="294" y="150" font-size="10.5" fill="#4d6575">记着 → 直接用，往下看情况 A</text>
+  <text x="294" y="164" font-size="10.5" fill="#4d6575">没记着 → 往下看情况 B</text>
+
+  <path d="M404 166 V196" stroke="#6d686b" stroke-width="0"/>
+
+  <!-- 情况A -->
+  <rect x="32" y="200" width="470" height="150" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="54" y="224" font-size="12.5" font-weight="700" fill="#316247">情况 A：记着（24 小时内点过这一集）</text>
+  <g font-size="11" fill="#456b54">
+    <text x="54" y="248">不问源站，直接用记住的地址</text>
+    <text x="266" y="248">→</text>
+    <text x="286" y="248">画面秒开，没有等待</text>
+  </g>
+  <text x="54" y="264" font-size="10" fill="#5c7f6a">重复点开同一集来回看，只有第一次要等</text>
+
+  <path d="M266 278 V296" stroke="#6d686b" stroke-width="1.4" marker-end="url(#a-gray1)"/>
+  <rect x="54" y="298" width="428" height="44" rx="8" fill="#ffffff" stroke="#c8b9c1"/>
+  <text x="66" y="316" font-size="10.5" font-weight="700" fill="#55434c">万一记住的地址其实已经被源站换掉了呢？</text>
+  <text x="66" y="332" font-size="10" fill="#665a60">不会无声播放失败 —— 播放器会报错，自动触发"报错重试"（见第三张图），原地问一个新地址</text>
+
+  <!-- 情况B -->
+  <rect x="536" y="200" width="472" height="290" rx="10" fill="#fff0f1" stroke="#dda7ae"/>
+  <text x="558" y="224" font-size="12.5" font-weight="700" fill="#923d49">情况 B：没记着（第一次点，或超过 24 小时了）</text>
+
+  <rect x="558" y="238" width="200" height="68" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="658" y="258" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">直接读这一集播放页的</text>
+  <text x="658" y="274" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">网页内容，从里面解析地址</text>
+  <text x="658" y="292" text-anchor="middle" font-size="9.5" fill="#666066">短时间内被问了两次也只真的问一次源站</text>
+
+  <path d="M758 272 H798" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray1)"/>
+
+  <rect x="800" y="238" width="196" height="68" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="898" y="258" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">拿到地址了</text>
+  <text x="898" y="276" text-anchor="middle" font-size="10" fill="#666066">记下来（24 小时内有效）</text>
+  <text x="898" y="292" text-anchor="middle" font-size="10" fill="#666066">→ 播放</text>
+
+  <path d="M658 306 V328" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray1)"/>
+  <text x="672" y="322" font-size="10" fill="#923d49">极少数没拿到（页面结构变了）</text>
+
+  <rect x="558" y="330" width="438" height="90" rx="8" fill="#fff8e8" stroke="#cfb66d"/>
+  <text x="577" y="350" font-size="11" font-weight="700" fill="#755d1f">退回老办法：开一个用户看不见的窗口，真的把页面加载起来</text>
+  <text x="577" y="367" font-size="10.5" fill="#786b45">让页面自己的代码跑起来，然后在后台"偷听"它自己发出的网络请求，</text>
+  <text x="577" y="383" font-size="10.5" fill="#786b45">截一个视频地址下来——最多等 15 秒，而且只认得出一种格式（m3u8），</text>
+  <text x="577" y="399" font-size="10.5" fill="#786b45">碰到另一种格式（mp4 直链）会白等到超时；这次靠"偷听"拿到的地址不会被记下来</text>
+
+  <text x="577" y="440" font-size="10.5" fill="#a12c2c">15 秒还是没拿到，才会提示用户「换一条线路或稍后重试」</text>
+
+  <!-- footer -->
+  <text x="32" y="486" font-size="10.5" fill="#8a8488">对照测试：本地记的地址存在 userData/girigiri-url-cache.json 里；main.log 里搜 girigiri-resolve 能看到每一步走到哪、是不是命中了记忆</text>
+  <text x="32" y="504" font-size="10.5" fill="#8a8488">"直接读网页解析地址"和"开隐藏窗口偷听请求"是两套完全不同的办法：前者快（几百毫秒、一次 HTTP 请求），后者慢且只认 m3u8，只在前者失败时才用</text>
+</svg>

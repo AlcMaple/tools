@@ -97,9 +97,12 @@ declare global {
       getCaptcha: () => Promise<{ image_b64: string }>
       verifyCaptcha: (code: string) => Promise<{ success: boolean }>
       search: (keyword: string) => Promise<GirigiriSearchResult[] | { needs_captcha: true }>
-      getWatch: (playUrl: string) => Promise<GirigiriWatchInfo>
-      /** 某一集的播放页 → 真实 m3u8(隐藏窗口截流,秒级);抓不到时抛错。 */
-      resolveEpUrl: (epPageUrl: string) => Promise<string>
+      getWatch: (playUrl: string, preferCache?: boolean) => Promise<GirigiriWatchInfo>
+      /**
+       * 某一集的播放页 → 真实播放地址(m3u8 或 mp4)。与稀饭同一套 24h 地址缓存;
+       * video 已报错时传 true 强制回源刷新一次。
+       */
+      resolveEpUrl: (epPageUrl: string, forceRefresh?: boolean) => Promise<string>
       startDownload: (
         title: string,
         epList: GirigiriEpisode[],

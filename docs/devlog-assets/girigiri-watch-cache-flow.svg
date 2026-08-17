@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 400" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1038" height="398" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">用户打开一部 girigiri 番的播放页，集数列表是怎么来的</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">这一步只影响「进播放页要不要等」，不影响具体某一集的地址（那是上一张图的事）</text>
+
+  <!-- Step 1 -->
+  <rect x="32" y="86" width="220" height="72" rx="10" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="142" y="110" text-anchor="middle" font-size="13" font-weight="700" fill="#353136">① 打开这部番的播放页</text>
+  <text x="52" y="132" font-size="11" fill="#666066">比如在追番列表里点</text>
+  <text x="52" y="148" font-size="11" fill="#666066">"继续观看"</text>
+
+  <path d="M252 122 H292" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray2)"/>
+
+  <!-- Step 2 -->
+  <rect x="294" y="86" width="290" height="72" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="439" y="108" text-anchor="middle" font-size="13" font-weight="700" fill="#36566d">② 追番记录里这部番</text>
+  <text x="439" y="126" text-anchor="middle" font-size="13" font-weight="700" fill="#36566d">已经填过总集数了吗？</text>
+  <text x="314" y="148" font-size="10" fill="#4d6575">填过 = 已经出完、不会再更新（情况 A）</text>
+
+  <path d="M439 158 V184" stroke="#6d686b" stroke-width="0"/>
+
+  <!-- 情况A -->
+  <rect x="32" y="186" width="480" height="150" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="54" y="210" font-size="12.5" font-weight="700" fill="#316247">情况 A：已完结（总集数填过了）</text>
+  <text x="54" y="232" font-size="11" fill="#456b54">这部番的集数、线路信息不会再变了，所以：</text>
+
+  <rect x="54" y="242" width="200" height="76" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="154" y="264" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">本地记着，还没超过 7 天</text>
+  <text x="154" y="282" text-anchor="middle" font-size="10" fill="#666066">直接用记住的结果</text>
+  <text x="154" y="298" text-anchor="middle" font-size="10" fill="#666066">不发请求，进页面不用等</text>
+
+  <path d="M254 280 H294" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray2)"/>
+
+  <rect x="296" y="242" width="200" height="76" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="396" y="264" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">没记着 / 超过 7 天了</text>
+  <text x="396" y="282" text-anchor="middle" font-size="10" fill="#666066">照常问源站要一次，拿到</text>
+  <text x="396" y="298" text-anchor="middle" font-size="10" fill="#666066">结果后记下来，供下次用</text>
+
+  <!-- 情况B -->
+  <rect x="536" y="186" width="472" height="150" rx="10" fill="#fff0f1" stroke="#dda7ae"/>
+  <text x="558" y="210" font-size="12.5" font-weight="700" fill="#923d49">情况 B：还在更新（总集数没填 / 连载中）</text>
+  <text x="558" y="234" font-size="11" fill="#665058">不看本地记的结果，每次打开都直接问源站要最新的</text>
+  <rect x="558" y="248" width="428" height="70" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="772" y="272" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">保证不会因为吃了旧结果而漏看新出的一集</text>
+  <text x="772" y="292" text-anchor="middle" font-size="10" fill="#666066">代价是这部番每次进播放页都要发一次请求，没有「秒开」</text>
+  <text x="772" y="306" text-anchor="middle" font-size="10" fill="#a12c2c">这是刻意选择：宁可多等一下，也不能让用户看漏更新</text>
+
+  <!-- footer -->
+  <text x="32" y="368" font-size="10.5" fill="#8a8488">对照测试：本地记的结果存在 userData/girigiri-watch-cache.json 里；main.log 里搜 girigiri-watch 能看到命中没命中</text>
+  <text x="32" y="386" font-size="10.5" fill="#8a8488">追番记录填不填总集数是既有功能，不是这次改的；这次改的只是"填过了就能吃缓存"这一步</text>
+</svg>
