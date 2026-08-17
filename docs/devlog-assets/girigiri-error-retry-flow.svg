@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 400" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1038" height="398" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">播放中途报错了，girigiri 现在怎么处理（本次新增，之前直接换线路）</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">常见诱因：上一张图里"记住的地址"过期了、或源站给的地址本身就时好时坏</text>
+
+  <!-- Step 1 -->
+  <rect x="32" y="86" width="230" height="80" rx="10" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="147" y="110" text-anchor="middle" font-size="13" font-weight="700" fill="#353136">① 播放器报错了</text>
+  <text x="52" y="132" font-size="11" fill="#666066">画面卡住 / 加载失败，</text>
+  <text x="52" y="148" font-size="11" fill="#666066">&lt;video&gt; 元素抛出 error</text>
+
+  <path d="M262 126 H302" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray3)"/>
+
+  <!-- Step 2 -->
+  <rect x="304" y="86" width="290" height="80" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="449" y="108" text-anchor="middle" font-size="13" font-weight="700" fill="#36566d">② 这一集这条线路，已经</text>
+  <text x="449" y="126" text-anchor="middle" font-size="13" font-weight="700" fill="#36566d">因为报错重试过一次了吗？</text>
+  <text x="324" y="150" font-size="10" fill="#4d6575">换一集 / 手动换线路会清零这个记号</text>
+
+  <path d="M449 166 V192" stroke="#6d686b" stroke-width="0"/>
+
+  <!-- 情况A：没试过 -->
+  <rect x="32" y="196" width="480" height="188" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="54" y="220" font-size="12.5" font-weight="700" fill="#316247">情况 A：还没试过（第一次报错）</text>
+
+  <rect x="54" y="234" width="440" height="60" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="274" y="256" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">丢掉本地记住的旧地址，原地问源站要一个新地址</text>
+  <text x="274" y="274" text-anchor="middle" font-size="10" fill="#666066">还是同一集、同一条线路，只是重新问了一次</text>
+
+  <path d="M274 294 V310" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray3)"/>
+
+  <rect x="54" y="312" width="440" height="60" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="274" y="334" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">新地址能播 → 接着看，用户只感觉转了一下圈</text>
+  <text x="274" y="352" text-anchor="middle" font-size="10" fill="#a12c2c">还是不行 → 往右边情况 B 走（换线路）</text>
+
+  <!-- 情况B：已试过或情况A重试失败 -->
+  <rect x="536" y="196" width="472" height="188" rx="10" fill="#fff0f1" stroke="#dda7ae"/>
+  <text x="558" y="220" font-size="12.5" font-weight="700" fill="#923d49">情况 B：已经试过一次了 / 原地重试还是不行</text>
+
+  <rect x="558" y="234" width="428" height="60" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="772" y="256" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">不再原地重试，自动切到下一条没试过的线路</text>
+  <text x="772" y="274" text-anchor="middle" font-size="10" fill="#666066">还是放这一集，只是换了个源</text>
+
+  <path d="M772 294 V310" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray3)"/>
+
+  <rect x="558" y="312" width="428" height="60" rx="8" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="772" y="334" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">全部线路都这样试过一遍还是不行</text>
+  <text x="772" y="352" text-anchor="middle" font-size="10" fill="#a12c2c">才提示用户「所有线路都播放失败了」</text>
+
+  <!-- footer -->
+  <text x="32" y="398" font-size="10.5" fill="#8a8488" transform="translate(0,-8)">main.log 里搜 girigiri-resolve，看到「强制刷新，回源读取」这一行就是走到了情况 A；一报错就直接看到换线路的提示，说明情况 A 没生效</text>
+</svg>

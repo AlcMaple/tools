@@ -96,8 +96,11 @@ contextBridge.exposeInMainWorld('girigiriApi', {
   getCaptcha: () => ipcRenderer.invoke('girigiri:captcha'),
   verifyCaptcha: (code: string) => ipcRenderer.invoke('girigiri:verify', code),
   search: (keyword: string) => ipcRenderer.invoke('girigiri:search', keyword),
-  getWatch: (playUrl: string) => ipcRenderer.invoke('girigiri:watch', playUrl),
-  resolveEpUrl: (epPageUrl: string) => ipcRenderer.invoke('girigiri:resolve-ep-url', epPageUrl),
+  getWatch: (playUrl: string, preferCache?: boolean) =>
+    ipcRenderer.invoke('girigiri:watch', playUrl, preferCache),
+  // 在线播放:逐集播放地址缓存 24h(与稀饭同一套做法);video 已报错时传 true 强制回源刷新一次。
+  resolveEpUrl: (epPageUrl: string, forceRefresh?: boolean) =>
+    ipcRenderer.invoke('girigiri:resolve-ep-url', epPageUrl, forceRefresh),
   startDownload: (
     title: string,
     epList: { idx: number; name: string; url: string }[],
