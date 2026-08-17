@@ -273,6 +273,8 @@ xifan.get('/bindings', async (c) => {
 export default xifan
 
 // 播放器页 —— 客户端 JS 只用字符串拼接（不用模板串），避开外层模板串的 ${}。<video> 不加 crossorigin。
+// 视觉照「纱雾画稿 Sagiri Sketchfolio」设计系统（docs/design-mockups/web/anime-sketchfolio/player.html）：
+// tokens/组件 CSS 引用同一份静态副本（web/public/styles/，见该目录文件头注释），不是另起一套配色。
 const PLAY_PAGE = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -282,50 +284,66 @@ const PLAY_PAGE = `<!doctype html>
 <meta name="referrer" content="no-referrer">
 <title>继续看 · 稀饭</title>
 <script src="/api/xifan/hls.js"></script>
+<link rel="stylesheet" href="/styles/sketch-tokens.css">
+<link rel="stylesheet" href="/styles/sketch-ui.css">
 <style nonce="__CSP_NONCE__">
-  /* 配色对齐 app / web 暗色主题：玫瑰粉主色（--color-primary 的 dark 版）+ 分层深色卡片 */
-  :root { color-scheme: dark; --rose: #ffb3b8; --rose-dim: rgba(255,179,184,.14); --rose-bd: rgba(255,179,184,.30) }
-  * { box-sizing: border-box }
-  body { margin: 0 auto; background: #0e0e0e; color: #e2e2e2; font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 22px 18px 40px; max-width: 960px }
-  .hd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
-  h1 { font-size: 18px; font-weight: 800; letter-spacing: -.01em; margin: 0 }
-  .ep-badge { font-size: 12px; font-weight: 700; color: var(--rose); background: var(--rose-dim); border: 1px solid var(--rose-bd); border-radius: 6px; padding: 1px 9px; font-variant-numeric: tabular-nums }
-  .player-wrap { position: relative; aspect-ratio: 16/9; background: #000; border: 1px solid #242424; border-radius: 14px; overflow: hidden; margin-bottom: 12px }
+  /* 播放页专属：真实 <video>/<iframe> 填满播放框（原型里那块是演示占位，这里要放真内容），
+     其余外观（选集格 / 线路卡 / 分段器 / 手写标题）全部复用 sketch-ui.css 组件，不重新定义。 */
+  .sheet-wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 60px; position: relative; z-index: 1 }
+  .player-frame { position: relative; aspect-ratio: 16/9; background: #000; border: 1.5px solid var(--line-strong); border-radius: var(--r-card); overflow: hidden; box-shadow: var(--shadow-1) }
   video, iframe.player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; display: none }
-  #buffering { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; align-items: center; gap: 9px; padding: 9px 13px; border-radius: 999px; color: #eee; background: rgba(18,18,18,.86); border: 1px solid #3a3436; box-shadow: 0 8px 24px rgba(0,0,0,.3); pointer-events: none; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums }
+  .ep-badge-pill { display: inline-flex; align-items: center; font-family: var(--font-hand); font-size: 14px; color: var(--teal); background: var(--teal-wash); border: 1.5px solid var(--teal-line); border-radius: var(--r-pill); padding: 2px 12px; font-variant-numeric: tabular-nums }
+  #buffering { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; align-items: center; gap: 9px; padding: 9px 14px; border-radius: var(--r-pill); color: var(--ink); background: var(--card); border: 1.5px solid var(--line-strong); box-shadow: var(--shadow-stick); pointer-events: none; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums }
   #buffering.show { display: flex }
-  .buffer-spin { width: 14px; height: 14px; border: 2px solid rgba(255,179,184,.25); border-top-color: var(--rose); border-radius: 50%; animation: spin .7s linear infinite }
+  .buffer-spin { width: 14px; height: 14px; border: 2px solid var(--teal-wash); border-top-color: var(--teal-mid); border-radius: 50%; animation: spin .7s linear infinite }
   @keyframes spin { to { transform: rotate(360deg) } }
-  /* 只在真出错时才现（加载失败 / 这集没更新 / 线路解析不到）—— 平时不显示任何提示文字 */
-  #err { display: none; align-items: center; gap: 12px; margin: 0 0 12px; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; background: rgba(247,118,142,.12); border: 1px solid rgba(247,118,142,.35); color: #f7768e }
+  /* 只在真出错时才现（加载失败 / 这集没更新 / 线路解析不到）—— 平时不显示任何提示文字。
+     用 classList 切换而不是 JS 里直接写 el.style.display —— 后者是内联样式，同样受
+     style-src 这条 CSP 约束，没有 nonce/hash 会被浏览器悄悄吞掉，表现成「怎么切都不生效」。 */
+  #err { display: none; align-items: center; gap: 12px; margin: 16px 0; padding: 10px 14px; border-radius: var(--r-card); font-size: 13px; font-weight: 600; background: var(--sakura-wash); border: 1.5px solid var(--sakura); color: #923d49 }
+  #err.show { display: flex }
   #err-text { min-width: 0; flex: 1 }
-  #auth-link { display: none; flex: none; align-items: center; justify-content: center; border: 1px solid rgba(255,179,184,.45); border-radius: 7px; padding: 5px 10px; color: var(--rose); text-decoration: none; white-space: nowrap }
-  #auth-link:hover { background: var(--rose-dim) }
-  .card { background: #171717; border: 1px solid #242424; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px }
-  .card-label { font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #767676; margin-bottom: 10px }
-  .sources, .lines { display: flex; flex-wrap: wrap; gap: 7px }
-  .chip { display: inline-flex; align-items: center; justify-content: center; border: 1px solid #333; background: #141414; color: #c8c8c8; border-radius: 9px; padding: 6px 13px; font: inherit; font-size: 12.5px; line-height: 1.5; text-decoration: none; cursor: pointer; transition: border-color .12s, background .12s, color .12s }
-  .chip:hover { border-color: #565656 }
-  .chip.active { border-color: var(--rose); background: var(--rose-dim); color: var(--rose); cursor: default }
-  .chip.unbound { border-style: dashed; color: #767676 }
-  /* 集数网格 —— 参考 app 播放页的「集数」区 */
-  .eps { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 7px }
-  .ep { border: 1px solid #2c2c2c; background: #141414; color: #bdbdbd; border-radius: 8px; padding: 8px 0; font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; font-variant-numeric: tabular-nums; transition: border-color .12s, background .12s, color .12s }
-  .ep:hover { border-color: #565656; color: #fff }
-  .ep.cur { border-color: var(--rose); background: var(--rose); color: #5a1923 }
+  #auth-link { display: none }
+  #auth-link.show { display: inline-flex }
+  video.on, iframe.player.on { display: block }
+  /* 播放源分段器：未关联的源需要一种「虚线、可点」的第三态，seg 组件本身没有 */
+  .src-seg > button.unbound { color: var(--ink-faint); border: 1.5px dashed var(--line); border-radius: var(--r-pill) }
+  .lines-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px }
+  /* CSP style-src 不放行内联 style 属性（nonce 只保护 <style>/<script> 标签本身），
+     所以原型稿里随手写的内联字号/对齐这里都得落成类。 */
+  .hd-row { align-items: flex-end }
+  .player-title { font-size: 24px }
+  .section-title { font-size: 18px }
+  .icon-sprite { display: none }
 </style>
 </head>
-<body>
-  <div class="hd"><h1 id="ttl">继续看</h1><span class="ep-badge" id="epbadge">EP</span></div>
-  <div class="player-wrap">
+<body data-page="player">
+<div class="sheet-wrap">
+  <a class="btn btn-sm btn-ghost" href="/#/tracks">
+    <svg class="ic ic-sm"><use href="#i-back"></use></svg>回到我的追番
+  </a>
+  <div class="spread hd-row mt16">
+    <div>
+      <h1 class="title-sketch player-title" id="ttl">继续看</h1>
+      <p class="muted small mt8"><span class="ep-badge-pill font-hand" id="epbadge">EP</span></p>
+    </div>
+    <div class="seg src-seg" id="sources"></div>
+  </div>
+  <div class="player-frame mt16">
     <video id="v" controls playsinline preload="auto"></video>
     <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
-    <div id="buffering" role="status" aria-live="polite"><span class="buffer-spin"></span><span id="bufferText">正在积攒缓冲</span></div>
+    <div id="buffering" role="status" aria-live="polite"><span class="buffer-spin"></span><span id="bufferText">描线中…</span></div>
   </div>
-  <div id="err" role="alert" aria-live="polite"><span id="err-text"></span><a id="auth-link" href="/#/settings/xifan" target="_blank" rel="noopener">去登录</a></div>
-  <div class="card"><div class="card-label">播放源</div><div class="sources" id="sources"></div></div>
-  <div class="card"><div class="card-label">线路</div><div class="lines" id="lines"></div></div>
-  <div class="card"><div class="card-label">选集</div><div class="eps" id="eps"></div></div>
+  <div id="err" role="alert" aria-live="polite"><span id="err-text"></span><a id="auth-link" class="btn btn-sm btn-ghost" href="/#/settings/xifan" target="_blank" rel="noopener">去登录</a></div>
+  <div class="spread mt24">
+    <h2 class="title-sketch section-title">选集</h2>
+    <span class="faint small">当前集高亮</span>
+  </div>
+  <div class="ep-grid mt16" id="eps"></div>
+  <h2 class="title-sketch section-title mt24">线路</h2>
+  <div class="lines-list" id="lines"></div>
+</div>
+<svg class="icon-sprite" aria-hidden="true"><symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 5.5L8 12l6.5 6.5"/></symbol></svg>
 <script nonce="__CSP_NONCE__">
 (function(){
   var $ = function(id){ return document.getElementById(id) }
@@ -352,11 +370,11 @@ const PLAY_PAGE = `<!doctype html>
   function fail(txt, code){
     waitingForAuth = code === 'XIFAN_AUTH_REQUIRED'
     $('err-text').textContent = txt
-    $('auth-link').style.display = waitingForAuth ? 'inline-flex' : 'none'
-    $('err').style.display = 'flex'
+    $('auth-link').classList.toggle('show', waitingForAuth)
+    $('err').classList.add('show')
   }
-  function clearFail(){ waitingForAuth = false; $('err').style.display = 'none'; $('auth-link').style.display = 'none' }
-  function inFrame(){ return frame.style.display === 'block' }
+  function clearFail(){ waitingForAuth = false; $('err').classList.remove('show'); $('auth-link').classList.remove('show') }
+  function inFrame(){ return frame.classList.contains('on') }
 
   function bufferedAhead(){
     for (var i = 0; i < v.buffered.length; i++){
@@ -437,7 +455,7 @@ const PLAY_PAGE = `<!doctype html>
     }
     var ahead = bufferedAhead(), goal = bufferGoal(), now = performance.now()
     if (ahead > bufferLastAhead + .05){ bufferLastAhead = ahead; bufferLastProgressAt = now }
-    $('bufferText').textContent = '正在积攒缓冲 ' + Math.floor(ahead) + ' / ' + Math.ceil(goal) + ' 秒'
+    $('bufferText').textContent = '描线中 · 还差 ' + Math.max(0, Math.ceil(goal - ahead)) + ' 秒'
     if (ahead + .25 >= goal || v.ended){ finishBufferGate(token); return }
     if (now - bufferLastProgressAt >= BUFFER_STALL_MS || now - bufferStartedAt >= BUFFER_MAX_MS){
       fallbackBufferGate(token)
@@ -506,7 +524,7 @@ const PLAY_PAGE = `<!doctype html>
     sourceOptions.forEach(function(source){
       var control = document.createElement('button')
       control.type = 'button'
-      control.className = 'chip' + (source.active ? ' active' : '') + (!source.href ? ' unbound' : '')
+      control.className = (source.active ? 'on' : '') + (!source.href ? ' unbound' : '')
       control.textContent = source.label + (!source.href ? ' · 未关联' : '')
       control.title = source.href ? source.label : source.label + ' 尚未关联，请先在“我的追番”选择片源'
       if (source.active) control.setAttribute('aria-current', 'true')
@@ -520,8 +538,12 @@ const PLAY_PAGE = `<!doctype html>
     var box = $('lines'); box.textContent = ''
     lines.forEach(function(l){
       var b = document.createElement('button')
-      b.className = 'chip' + (curPl && l.source === curPl.source ? ' active' : '')
-      b.textContent = '线路 ' + l.source + (l.name ? ' ' + l.name : '')
+      b.type = 'button'
+      b.className = 'line-card' + (curPl && l.source === curPl.source ? ' on' : '')
+      var dot = document.createElement('span'); dot.className = 'lc-dot'
+      var name = document.createElement('span'); name.className = 'lc-name'
+      name.textContent = '线路 ' + l.source + (l.name ? ' ' + l.name : '')
+      b.appendChild(dot); b.appendChild(name)
       b.onclick = function(){ selectLine(l.source) }
       box.appendChild(b)
     })
@@ -530,7 +552,7 @@ const PLAY_PAGE = `<!doctype html>
   function playLine(pl){
     curPl = pl; clearFail(); stopAll(); renderChips()
     gateOnPlay = pl.kind === 'mp4'
-    v.style.display = 'block'; frame.style.display = 'none'
+    v.classList.add('on'); frame.classList.remove('on')
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
         // 90–120 秒足够覆盖网络抖动，同时避免旧配置一次抓 10–15 分钟、产生上百个分片请求。
@@ -561,7 +583,7 @@ const PLAY_PAGE = `<!doctype html>
   function embed(pl){
     curPl = pl
     cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
-    gateOnPlay = false; v.style.display = 'none'; frame.style.display = 'block'; renderChips()
+    gateOnPlay = false; v.classList.remove('on'); frame.classList.add('on'); renderChips()
     frame.src = 'https://player.moedot.net/player/index.php?code=xfdm1&from=cf&url=' + encodeURIComponent(pl.url)
   }
 
@@ -616,12 +638,12 @@ const PLAY_PAGE = `<!doctype html>
     var box = $('eps'); box.textContent = ''
     var cur = Number(ep) || 1
     if (!eps.length){
-      var one = document.createElement('div'); one.className = 'ep cur'; one.textContent = cur; box.appendChild(one)
+      var one = document.createElement('div'); one.className = 'ep-cell on'; one.textContent = cur; box.appendChild(one)
       return
     }
     eps.forEach(function(n){
       var b = document.createElement('button'); b.type = 'button'
-      b.className = 'ep' + (n === cur ? ' cur' : '')
+      b.className = 'ep-cell' + (n === cur ? ' on' : '')
       b.textContent = n
       b.onclick = function(){ if (n !== cur) goEp(n) }
       box.appendChild(b)
