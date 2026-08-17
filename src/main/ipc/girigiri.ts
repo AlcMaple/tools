@@ -3,6 +3,7 @@ import { getCaptcha, verifyCaptcha, search, watch, resolveEpPlayUrl, giriSession
 import { downloadSingleEp, captureM3u8 } from '../girigiri/download'
 import { girigiriScheduler } from '../shared/download-scheduler'
 import { SiteQueueRegistry, newTaskId } from '../shared/site-download-queue'
+import { logInfo } from '../shared/logger'
 
 interface GirigiriPayload {
   epList: GiriEpisode[]
@@ -30,7 +31,8 @@ export function registerGirigiriIpc(): void {
   ipcMain.handle('girigiri:captcha', async () => getCaptcha())
   ipcMain.handle('girigiri:verify', async (_event, code: string) => verifyCaptcha(code))
   ipcMain.handle('girigiri:search', async (_event, keyword: string) => search(keyword))
-  ipcMain.handle('girigiri:watch', async (_event, playUrl: string) => watch(playUrl))
+  ipcMain.handle('girigiri:watch', async (_event, playUrl: string, preferCache?: boolean) =>
+    watch(playUrl, preferCache))
 
   // 在线播放:某一集的播放页 → 真实播放地址(m3u8 或 mp4)。
   //
@@ -38,11 +40,16 @@ export function registerGirigiriIpc(): void {
   // **非 m3u8 线路**(部分老番给的是 .mp4 直链)的路子 —— 截流那条只认 *.m3u8,
   // 碰到 mp4 线路会白等到超时。兜底才退回下载器的隐藏窗口截流(站点改版时救命),
   // 播放场景等不起下载那 30s,超时收紧到 15s。失败直接抛给 UI(不自动重试,红线)。
-  ipcMain.handle('girigiri:resolve-ep-url', async (_event, epPageUrl: string) => {
-    const direct = await resolveEpPlayUrl(epPageUrl)
+  // 与稀饭同一套 24h 地址缓存;video 报错时传 forceRefresh 绕过缓存强刷本线路。
+  ipcMain.handle('girigiri:resolve-ep-url', async (_event, epPageUrl: string, forceRefresh?: boolean) => {
+    const direct = await resolveEpPlayUrl(epPageUrl, forceRefresh === true)
     if (direct) return direct
+    logInfo('girigiri-resolve', `直接解析未拿到地址,退回隐藏窗口截流(15s)：${epPageUrl}`)
     const sniffed = await captureM3u8(epPageUrl, giriSession.getCookieString(), 15000)
-    if (!sniffed) throw new Error('未能取到这一集的播放地址,换一条线路或稍后重试')
+    if (!sniffed) {
+      logInfo('girigiri-resolve', `截流也未拿到地址,抛错给 UI：${epPageUrl}`)
+      throw new Error('未能取到这一集的播放地址,换一条线路或稍后重试')
+    }
     return sniffed
   })
 

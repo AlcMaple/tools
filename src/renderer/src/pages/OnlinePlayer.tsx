@@ -154,7 +154,8 @@ async function loadSiteData(binding: AnimeBinding, preferCache: boolean): Promis
     return { kind: 'xifan', info, lines }
   }
   if (binding.source === 'Girigiri') {
-    const info = await window.girigiriApi.getWatch(url)
+    // 与稀饭同一套约定:只有追番记录填过总集数(= 不再更新的老番)才允许吃 7 天缓存。
+    const info = await window.girigiriApi.getWatch(url, preferCache)
     if (info.error) throw new Error(info.error)
     const lines = info.sources.map((s) => ({
       name: s.name,
@@ -443,8 +444,8 @@ export default function OnlinePlayer(): JSX.Element {
     }
   }
 
-  // Xifan 缓存地址或模板直链若已过期 / 是特殊集会触发 video error。此时只在**本线路**
-  // 强制回源刷新一次（绕过 24h 地址缓存），本线路仍不行才自动换下一条线路。
+  // Xifan/Girigiri 缓存地址若已过期会触发 video error。此时只在**本线路**强制回源
+  // 刷新一次（绕过 24h 地址缓存），本线路仍不行才自动换下一条线路。
   const handleVideoError = (): void => {
     if (view.mode !== 'video' || !data || ep === null) return
     if (data.kind === 'xifan' && !fallbackTriedRef.current) {
@@ -457,6 +458,26 @@ export default function OnlinePlayer(): JSX.Element {
           .then((real) => {
             if (seqRef.current !== seq) return
             if (real) setView({ mode: 'video', url: real, isHls: false })
+            else tryNextLine()
+          })
+          .catch(() => {
+            if (seqRef.current !== seq) return
+            tryNextLine()
+          })
+        return
+      }
+    }
+    if (data.kind === 'girigiri' && !fallbackTriedRef.current) {
+      const line = data.info.sources[lineIdx]
+      const epInfo = line?.episodes.find((e) => e.idx === ep)
+      if (epInfo) {
+        fallbackTriedRef.current = true
+        const seq = ++seqRef.current
+        setView({ mode: 'loading' })
+        window.girigiriApi.resolveEpUrl(epInfo.url, true)
+          .then((real) => {
+            if (seqRef.current !== seq) return
+            if (real) setView({ mode: 'video', url: real, isHls: /\.m3u8(\?|$)/i.test(real) })
             else tryNextLine()
           })
           .catch(() => {

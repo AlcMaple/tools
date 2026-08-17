@@ -1,8 +1,10 @@
 import * as cheerio from 'cheerio/slim'
 import { HttpSession } from '../shared/http-session'
 import { DESKTOP_USER_AGENT } from '../shared/download-types'
+import { JsonStore } from '../shared/json-store'
 import { crawlAllPages } from '../shared/maccms-search-paginator'
 import { assertScrapePageOk } from '../shared/scrape-guard'
+import { logInfo } from '../shared/logger'
 
 // 站点旧域现在 301 到新域。net-request 的 manual 重定向已经修好(旧代码碰到 3xx 必抛
 // "Redirect was cancelled"),所以就算再换域名也只是多跟一跳,不会整个源挂掉。
@@ -41,6 +43,151 @@ export interface GiriWatchInfo {
   title: string
   sources: GiriSource[]
   episodes: GiriEpisode[]  // = sources[0].episodes
+}
+
+// 与稀饭同一套做法（见 xifan/api.ts）：只记「某播放页最终给出的地址」，24h 内重开同一集
+// 不用再回源解析。girigiri 没有模板可算，每次解析本来就要打一次请求，缓存收益就是把
+// 重复点开同一集时的这一次请求省掉。播放器报错时可传 forceRefresh 绕过缓存强刷。
+interface GiriUrlCacheEntry {
+  url: string
+  resolvedAt: number
+}
+
+type GiriUrlCache = Record<string, GiriUrlCacheEntry>
+
+const GIRI_URL_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const GIRI_URL_CACHE_MAX_ENTRIES = 500
+const giriUrlInflight = new Map<string, Promise<string>>()
+
+function isHttpMediaUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+function isFreshGiriUrl(entry: GiriUrlCacheEntry, now = Date.now()): boolean {
+  return entry.resolvedAt <= now && now - entry.resolvedAt < GIRI_URL_CACHE_TTL_MS
+}
+
+function normalizeGiriUrlCache(raw: unknown): GiriUrlCache {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const now = Date.now()
+  const normalized: GiriUrlCache = {}
+  for (const [pageUrl, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const entry = value as Partial<GiriUrlCacheEntry>
+    if (
+      typeof entry.url === 'string' &&
+      typeof entry.resolvedAt === 'number' &&
+      Number.isFinite(entry.resolvedAt) &&
+      isHttpMediaUrl(entry.url) &&
+      isFreshGiriUrl({ url: entry.url, resolvedAt: entry.resolvedAt }, now)
+    ) {
+      normalized[pageUrl] = { url: entry.url, resolvedAt: entry.resolvedAt }
+    }
+  }
+  return normalized
+}
+
+const giriUrlCacheStore = new JsonStore<GiriUrlCache>('girigiri-url-cache.json', normalizeGiriUrlCache)
+
+function rememberGiriUrl(pageUrl: string, url: string): void {
+  giriUrlCacheStore.update((cache) => {
+    const now = Date.now()
+    for (const [key, entry] of Object.entries(cache)) {
+      if (!isFreshGiriUrl(entry, now)) delete cache[key]
+    }
+    delete cache[pageUrl]
+    const oldestFirst = Object.entries(cache).sort(([, a], [, b]) => a.resolvedAt - b.resolvedAt)
+    const removeCount = Math.max(0, oldestFirst.length - (GIRI_URL_CACHE_MAX_ENTRIES - 1))
+    for (const [key] of oldestFirst.slice(0, removeCount)) delete cache[key]
+    cache[pageUrl] = { url, resolvedAt: now }
+  })
+}
+
+function forgetGiriUrl(pageUrl: string): void {
+  giriUrlCacheStore.update((cache) => {
+    delete cache[pageUrl]
+  })
+}
+
+// watch() 解出的集数信息：已完结番结构不会再变，允许调用方传 preferCache 跳过这次请求；
+// 连载番不传，永远按最新结果覆盖缓存。同一张播放页在飞行中只请求一次。
+interface GiriWatchCacheEntry {
+  info: GiriWatchInfo
+  savedAt: number
+}
+
+type GiriWatchCache = Record<string, GiriWatchCacheEntry>
+
+const GIRI_WATCH_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const GIRI_WATCH_CACHE_MAX_ENTRIES = 500
+const giriWatchInflight = new Map<string, Promise<GiriWatchInfo>>()
+
+function isFreshGiriWatchEntry(entry: GiriWatchCacheEntry, now = Date.now()): boolean {
+  return entry.savedAt <= now && now - entry.savedAt < GIRI_WATCH_CACHE_TTL_MS
+}
+
+function isGiriEpisode(value: unknown): value is GiriEpisode {
+  if (!value || typeof value !== 'object') return false
+  const e = value as Partial<GiriEpisode>
+  return typeof e.idx === 'number' && typeof e.name === 'string' && typeof e.url === 'string'
+}
+
+function isGiriSource(value: unknown): value is GiriSource {
+  if (!value || typeof value !== 'object') return false
+  const s = value as Partial<GiriSource>
+  return typeof s.name === 'string' && Array.isArray(s.episodes) && s.episodes.every(isGiriEpisode)
+}
+
+function isGiriWatchInfo(value: unknown): value is GiriWatchInfo {
+  if (!value || typeof value !== 'object') return false
+  const info = value as Partial<GiriWatchInfo>
+  return (
+    typeof info.title === 'string' &&
+    Array.isArray(info.sources) &&
+    info.sources.every(isGiriSource) &&
+    Array.isArray(info.episodes) &&
+    info.episodes.every(isGiriEpisode)
+  )
+}
+
+function normalizeGiriWatchCache(raw: unknown): GiriWatchCache {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const now = Date.now()
+  const normalized: GiriWatchCache = {}
+  for (const [playUrl, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const entry = value as Partial<GiriWatchCacheEntry>
+    if (
+      typeof entry.savedAt === 'number' &&
+      Number.isFinite(entry.savedAt) &&
+      isGiriWatchInfo(entry.info) &&
+      isFreshGiriWatchEntry({ info: entry.info, savedAt: entry.savedAt }, now)
+    ) {
+      normalized[playUrl] = { info: entry.info, savedAt: entry.savedAt }
+    }
+  }
+  return normalized
+}
+
+const giriWatchCacheStore = new JsonStore<GiriWatchCache>('girigiri-watch-cache.json', normalizeGiriWatchCache)
+
+function rememberGiriWatch(playUrl: string, info: GiriWatchInfo): void {
+  giriWatchCacheStore.update((cache) => {
+    const now = Date.now()
+    for (const [key, entry] of Object.entries(cache)) {
+      if (!isFreshGiriWatchEntry(entry, now)) delete cache[key]
+    }
+    delete cache[playUrl]
+    const oldestFirst = Object.entries(cache).sort(([, a], [, b]) => a.savedAt - b.savedAt)
+    const removeCount = Math.max(0, oldestFirst.length - (GIRI_WATCH_CACHE_MAX_ENTRIES - 1))
+    for (const [key] of oldestFirst.slice(0, removeCount)) delete cache[key]
+    cache[playUrl] = { info, savedAt: now }
+  })
 }
 
 function needsCaptcha(html: string): boolean {
@@ -277,14 +424,70 @@ function extractPlayerUrl(html: string): string {
   }
 }
 
-/** 某一集的播放页 → 真实播放地址(m3u8 或 mp4)。拿不到返回空串,由调用方兜底。 */
-export async function resolveEpPlayUrl(epPageUrl: string): Promise<string> {
-  const res = await giriSession.get(epPageUrl)
-  giriSession.save()
-  return extractPlayerUrl(res.body)
+/**
+ * 某一集的播放页 → 真实播放地址(m3u8 或 mp4)。拿不到返回空串,由调用方兜底。
+ * 结果按播放页 URL 缓存 24h;`forceRefresh` 供 <video> 报错后绕过缓存强刷一次。
+ */
+export async function resolveEpPlayUrl(epPageUrl: string, forceRefresh = false): Promise<string> {
+  if (!forceRefresh) {
+    const cached = (await giriUrlCacheStore.read())[epPageUrl]
+    if (cached && isFreshGiriUrl(cached)) {
+      logInfo('girigiri-resolve', `命中 24h 地址缓存：${epPageUrl}`)
+      return cached.url
+    }
+  }
+
+  const pending = giriUrlInflight.get(epPageUrl)
+  if (pending) {
+    logInfo('girigiri-resolve', `已有相同播放页在请求中,合并本次调用：${epPageUrl}`)
+    return pending
+  }
+  if (forceRefresh) forgetGiriUrl(epPageUrl)
+
+  const task = (async (): Promise<string> => {
+    logInfo('girigiri-resolve', `${forceRefresh ? '强制刷新' : '缓存未命中'},回源读取：${epPageUrl}`)
+    const res = await giriSession.get(epPageUrl)
+    giriSession.save()
+    const url = extractPlayerUrl(res.body)
+    if (url) {
+      logInfo('girigiri-resolve', `拿到地址：${url}`)
+      rememberGiriUrl(epPageUrl, url)
+    } else {
+      logInfo('girigiri-resolve', `播放页未解析出地址,交给截流兜底：${epPageUrl}`)
+    }
+    return url
+  })()
+  giriUrlInflight.set(epPageUrl, task)
+  try {
+    return await task
+  } finally {
+    giriUrlInflight.delete(epPageUrl)
+  }
 }
 
-export async function watch(playUrl: string): Promise<GiriWatchInfo> {
+export function watch(playUrl: string, preferCache = false): Promise<GiriWatchInfo> {
+  const pending = giriWatchInflight.get(playUrl)
+  if (pending) {
+    logInfo('girigiri-watch', `已有相同 watch 页在请求中,合并本次调用：${playUrl}`)
+    return pending
+  }
+  const task = watchUncached(playUrl, preferCache)
+  giriWatchInflight.set(playUrl, task)
+  void task.catch(() => undefined).finally(() => {
+    giriWatchInflight.delete(playUrl)
+  })
+  return task
+}
+
+async function watchUncached(playUrl: string, preferCache: boolean): Promise<GiriWatchInfo> {
+  if (preferCache) {
+    const cached = (await giriWatchCacheStore.read())[playUrl]
+    if (cached && isFreshGiriWatchEntry(cached)) {
+      logInfo('girigiri-watch', `命中本地 watch 缓存,跳过请求：${playUrl}`)
+      return cached.info
+    }
+  }
+  logInfo('girigiri-watch', `请求 watch 页：${playUrl}`)
   const res = await giriSession.get(playUrl)
   giriSession.save()
   const $ = cheerio.load(res.body)
@@ -382,5 +585,12 @@ export async function watch(playUrl: string): Promise<GiriWatchInfo> {
     console.warn('[girigiri:watch] 0 episodes parsed. URL:', playUrl)
   }
 
-  return { title, sources, episodes: sources[0]?.episodes ?? [] }
+  const info: GiriWatchInfo = { title, sources, episodes: sources[0]?.episodes ?? [] }
+  if (sources.length > 0) {
+    logInfo('girigiri-watch', `拿到集数信息：《${title}》线路数=${sources.length}，主线路集数=${info.episodes.length}`)
+    rememberGiriWatch(playUrl, info)
+  } else {
+    logInfo('girigiri-watch', `未解析到任何线路,不写入缓存：${playUrl}`)
+  }
+  return info
 }
