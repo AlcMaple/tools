@@ -258,10 +258,12 @@
         { id: 'bocchiday', t: 'ぼっち・ざ・ろっく！ 再放送', ep: 3, hue: 268 } ] }
     ];
     const tracked = new Set(WEEK.flatMap((d) => d.shows.filter((s) => s.tracked).map((s) => s.id)));
-    const strip = $('#dateStrip');
-    const film = $('#dayFilm');
-    const dayHead = $('#dayHead');
-    let selDay = 0;
+    const calBody = $('#calBody');
+    // 桌面（≥961px）= 整周纵览：七天「章头 + 胶片」竖排，一季番剧一屏纵览；
+    // 手机 = 日期章选天 + 单日胶片（横滑）。与真实代码 CalendarPage 同一双形态。
+    const mqWide = window.matchMedia('(min-width: 961px)');
+    let selDay = WEEK.findIndex((d) => d.today);
+    if (selDay < 0) selDay = 0;
 
     const RIG_LINES = {
       onTrack: ['哦哦，这部我也在追！', '贴上了贴上了～', '这周就等它了！', '眼光不错嘛。'],
@@ -292,32 +294,49 @@
         <div class="poster-ep">EP ${s.ep}</div>
       </article>`;
     }
-    function renderDay() {
-      const d = WEEK[selDay];
-      $$('.dstamp', strip).forEach((b, i) => b.classList.toggle('on', i === selDay));
-      dayHead.innerHTML = `
-        <span class="ribbon${d.today ? ' sakura' : ''}">${d.today ? ic('star', 'ic ic-sm') + '今天' : d.d}</span>
-        <span class="font-hand muted">8/${d.date} · ${d.shows.length} 部在播</span>
-        <hr class="hr-dash">
-        <span class="sparkle">✦</span>`;
-      film.innerHTML = d.shows.map(posterHTML).join('');
+    function dayHeadHTML(d) {
+      return `
+        <div class="day-head">
+          <span class="ribbon${d.today ? ' sakura' : ''}">${d.today ? ic('star', 'ic ic-sm') + '今天' : d.d}</span>
+          <span class="font-hand muted">8/${d.date} · ${d.shows.length} 部在播</span>
+          <hr class="hr-dash">
+          <span class="sparkle">✦</span>
+        </div>`;
     }
-    WEEK.forEach((d, i) => {
-      const b = document.createElement('button');
-      b.className = 'dstamp' + (d.today ? ' today' : '');
-      b.type = 'button';
-      b.innerHTML = `
-        <span class="dw">${d.d}</span>
-        <span class="dnum">${d.date}</span>
-        <span class="dc">${d.shows.length} 部</span>
-        ${d.today ? '<svg class="clip-today" aria-hidden="true"><use href="#i-clip"></use></svg>' : ''}`;
-      b.addEventListener('click', () => { selDay = i; renderDay(); });
-      if (d.today) selDay = i;
-      strip.appendChild(b);
-    });
-    renderDay();
+    function filmHTML(d) {
+      return d.shows.length ? d.shows.map(posterHTML).join('') : '<div class="film-empty faint">这一天没有排片</div>';
+    }
+    function renderCal() {
+      if (mqWide.matches) {
+        calBody.innerHTML = WEEK.map((d) => `
+          <section class="day-sec" id="day-sec-${d.date}">
+            ${dayHeadHTML(d)}
+            <div class="film" aria-label="${d.d}在播番剧">${filmHTML(d)}</div>
+          </section>`).join('');
+      } else {
+        calBody.innerHTML = `
+          <div class="date-strip" role="tablist" aria-label="选择日期">${WEEK.map((d, i) => `
+            <button class="dstamp${i === selDay ? ' on' : ''}${d.today ? ' today' : ''}" type="button" data-i="${i}" title="${d.d} · ${d.shows.length} 部">
+              <span class="dw">${d.d}</span>
+              <span class="dnum">${d.date}</span>
+              <span class="dc">${d.shows.length} 部</span>
+              ${d.today ? '<svg class="clip-today" aria-hidden="true"><use href="#i-clip"></use></svg>' : ''}
+            </button>`).join('')}
+          </div>
+          ${dayHeadHTML(WEEK[selDay])}
+          <div class="film" aria-label="当日在播番剧">${filmHTML(WEEK[selDay])}</div>`;
+      }
+    }
+    mqWide.addEventListener('change', renderCal);
+    renderCal();
 
-    film.addEventListener('click', (e) => {
+    calBody.addEventListener('click', (e) => {
+      const stamp = e.target.closest('.dstamp');
+      if (stamp) {
+        selDay = +stamp.dataset.i;
+        renderCal();
+        return;
+      }
       const bgm = e.target.closest('.bgm-link');
       if (bgm) {
         e.preventDefault();
@@ -345,10 +364,16 @@
     });
 
     $('#backToday').addEventListener('click', () => {
-      selDay = WEEK.findIndex((d) => d.today);
-      renderDay();
-      const t = $$('.dstamp', strip)[selDay];
-      if (t) t.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      const idx = WEEK.findIndex((d) => d.today);
+      if (mqWide.matches) {
+        const sec = document.getElementById('day-sec-' + WEEK[idx].date);
+        if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        selDay = idx;
+        renderCal();
+        const t = $$('.dstamp', calBody)[selDay];
+        if (t) t.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
       toast('已回到今天 · 8/16 周日');
     });
     $('#refreshCal').addEventListener('click', function () {
