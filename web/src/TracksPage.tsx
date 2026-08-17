@@ -41,6 +41,7 @@ import {
   verifyXifanCaptcha,
   XIFAN_CAPTCHA_EVENT_KEY,
 } from './api'
+import { isRecentAir } from '../shared/anime-age'
 import { useAuth } from './auth'
 import { cacheGet } from './dataCache'
 import type { CalendarResult } from './api'
@@ -93,17 +94,9 @@ function watchEp(t: Track): number {
 const titlesOf = (t: Track): string[] => [t.titleCn, ...t.aliases, t.title].filter(Boolean)
 
 // 「新番 / 老番」分流 —— 源站的番剧周表只列**在播**的番,老番在里面必然查不到,
-// 拿老番去走一趟周表定位是纯浪费(冷缓存那次还要等源站抓 7 天)。用本地已有的 airDate
-// 判断,零网络零延迟:
-//   - airDate 为空(老记录没回填)→ 当新番,退回周表路径。周表是进程内缓存的,判错也不亏。
-//   - 首播距今半年以内(含未播的负值)→ 新番。半年 ≈ 两季,跨季续看的番也兜得住。
-//   - 其余 → 老番,「继续看」直接进全站搜索,省掉一次等待和一次多余点击。
-const RECENT_MS = 180 * 24 * 60 * 60 * 1000
-function isRecentAnime(t: Track): boolean {
-  const ms = Date.parse(t.airDate)
-  if (Number.isNaN(ms)) return true
-  return Date.now() - ms < RECENT_MS
-}
+// 拿老番去走一趟周表定位是纯浪费(冷缓存那次还要等源站抓 7 天)。判据见 shared/anime-age.ts,
+// 跟服务端「要不要自动填总集数」用的是同一把尺,不要在这儿另立一套。
+const isRecentAnime = (t: Track): boolean => isRecentAir(t.airDate)
 
 interface PickerState {
   track: Track
@@ -383,13 +376,17 @@ export function TracksPage(): JSX.Element {
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [tracks])
 
-  // 「想看」中的连载番也是用户关注的更新；但已填写总集数就不再属于「连载中」，
-  // 即使还保留原放送星期，也不能每周重复进入当天分组。
+  // 「想看」中的在播番也是用户关注的更新。
+  //
+  // 判据是 airDate 而**不是**「总集数为空」：老番自动补上集数之后，原判据会把「有没有填集数」
+  // 和「是不是在播」混为一谈 —— 新番一旦被用户手填集数就掉出当天分组，而这跟它在不在播没关系。
+  // 现在两件事彻底分开：在播看 airDate，进度看 totalEpisodes。
+  // 顺带修掉一个旧毛病：往季老番只要放送星期恰好是今天，过去会一直顶着「今天更新」。
   const todayIds = useMemo(
     () =>
       new Set(
         filtered
-          .filter((t) => t.airWeekday === today && t.status !== 'done' && t.totalEpisodes == null)
+          .filter((t) => t.airWeekday === today && t.status !== 'done' && isRecentAir(t.airDate))
           .map((t) => t.bgmId),
       ),
     [filtered, today],
