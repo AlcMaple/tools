@@ -152,12 +152,13 @@ function useAowuShareUrlBackfill(bgmId: number, track: AnimeTrack | null): void 
 }
 
 /**
- * chip 的显示名。内置抓取源直接用源枚举;Bilibili / 自定义源用户自己填的 `sourceTitle` 优先 ——
- * 光显示一个「Custom」在界面上毫无意义。
+ * chip 的显示名。内置抓取源统一用源名(Bilibili 现在也是搜索关联出来的内置源,不再显示挑中
+ * 的那条视频标题——那个标题在 tooltip 里还看得到);只有 Custom 才用用户自己填的
+ * `sourceTitle`,因为光显示一个「Custom」在界面上毫无意义。
  */
 function chipLabel(b: AnimeBinding): string {
   if (b.source === 'Custom') return b.sourceTitle || '自定义'
-  if (b.source === 'Bilibili') return b.sourceTitle || 'B 站'
+  if (b.source === 'Bilibili') return 'B 站'
   return b.source
 }
 

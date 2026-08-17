@@ -173,6 +173,8 @@ contextBridge.exposeInMainWorld('biliApi', {
   // BV 号 → 稿件信息(合集的分 P 就是集数列表);cid → DASH 音视频分轨
   videoInfo: (bvid: string) => ipcRenderer.invoke('bili:video-info', bvid),
   dash: (aid: number, cid: number) => ipcRenderer.invoke('bili:dash', aid, cid),
+  // 关联番剧用:关键词搜视频(不支持合集识别,搜到的都是单条 BV)。
+  search: (keyword: string, page?: number) => ipcRenderer.invoke('bili:search', keyword, page),
 })
 
 contextBridge.exposeInMainWorld('aowuApi', {

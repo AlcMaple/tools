@@ -20,6 +20,7 @@
 - [BGM 登录功能](docs/devlog/2026-BGM登录功能.md)
 - [稀饭账号](docs/devlog/2026-稀饭账号.md)
 - [动漫查询](docs/devlog/2026-动漫查询.md)
+- [B 站源](docs/devlog/2026-B站源.md)
 
 ## 当前未归类记录（2026-08）
 

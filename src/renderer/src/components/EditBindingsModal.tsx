@@ -1,5 +1,5 @@
-// 编辑用户手动添加的观看链接 —— **只管 Custom / Bilibili 两类**,内置三源不出现在这里
-// (它们靠搜索流程绑定,是结构性数据,没有用户能改的字段)。
+// 编辑用户手动添加的观看链接 —— **只管 Custom 一类**,内置四源(Xifan/Girigiri/Aowu/
+// Bilibili)不出现在这里,它们都靠搜索流程绑定/改绑,是结构性数据,没有用户能手改的字段。
 //
 // 进来先把当前所有用户添加的 binding 拷一份到本地 state,每行可改标题 / URL、可标记删除
 // 点保存才一次性 diff 回 store,取消或关弹窗则全部丢弃。
@@ -9,8 +9,13 @@ import { useState } from 'react'
 import { ModalShell } from '../pages/homework/shared'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 
-/** 算作「用户手动添加」的两种来源:新版只写 'Custom',但老数据里可能是 'Bilibili'。 */
-const USER_ADDED_SOURCES = new Set<AnimeBinding['source']>(['Custom', 'Bilibili'])
+/**
+ * 算作「用户手动添加、可在这里改标题/URL」的来源。**不含 'Bilibili'**——它现在靠搜索
+ * 关联,想换视频走 MyAnime 行内的「换 B 站视频」重新搜一遍,不是在这改 URL(避免手滑改出
+ * 一个不合法的 BV 链接)。老数据里若真存在 source:'Bilibili' 的 binding,不在这里编辑,
+ * 但仍会正常显示/播放,只是改不了——用户可以在 MyAnime 上用「换 B 站视频」重新搜索覆盖。
+ */
+const USER_ADDED_SOURCES = new Set<AnimeBinding['source']>(['Custom'])
 
 export function isUserAddedBinding(b: AnimeBinding): boolean {
   return USER_ADDED_SOURCES.has(b.source)

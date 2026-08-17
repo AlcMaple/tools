@@ -44,7 +44,9 @@ shaka.net.NetworkingEngine.registerScheme(
   true, // progressSupport
 )
 
-const BUILTINS: Source[] = ['Xifan', 'Girigiri', 'Aowu']
+// Bilibili 排第一:default-pick 依这个顺序找「第一个已绑定的内置源」,保留了
+// 「手动挑的 B 站源比搜出来的可信」这个原有优先级,不用再单独判一次。
+const BUILTINS: Source[] = ['Bilibili', 'Xifan', 'Girigiri', 'Aowu']
 
 interface PlayEp {
   idx: number
@@ -230,33 +232,31 @@ export default function OnlinePlayer(): JSX.Element {
     const bindings = track?.bindings ?? []
     const builtinEntries = BUILTINS.map((s) => ({
       key: `b:${s}`,
-      label: s === 'Xifan' ? '稀饭' : s === 'Aowu' ? '嗷呜' : s,
+      label: s === 'Xifan' ? '稀饭' : s === 'Aowu' ? '嗷呜' : s === 'Bilibili' ? 'B 站' : s,
       builtin: s,
       binding: bindings.find((b) => b.source === s),
     }))
+    // Bilibili 已经是内置源(靠搜索关联,见 MyAnime「搜 Bilibili」);这里只剩老数据里
+    // 手动贴过 bilibili.com 链接的 Custom 条目(下面还按 biliBvid() 识别、走自研播放）。
     const customEntries = bindings
-      .filter((b) => b.source === 'Bilibili' || b.source === 'Custom')
+      .filter((b) => b.source === 'Custom')
       .map((b, i) => ({
         key: `c:${i}:${b.sourceKey}`,
-        label: b.source === 'Bilibili' ? (b.sourceTitle || 'B 站') : (b.sourceTitle || '自定义'),
+        label: b.sourceTitle || '自定义',
         binding: b,
       }))
     return [...builtinEntries, ...customEntries]
   }, [track])
 
-  // 默认选中优先级:手动绑的 B 站源(用户自己挑的比搜出来的可信)→ 已绑定的内置源 →
-  // 其他自定义源 → 第一个。只在初次进入时定一次。
+  // 默认选中优先级:第一个已绑定的内置源(BUILTINS 顺序把 Bilibili 排最前,保留
+  // 「用户手动挑的源比搜出来的可信」这个原有意图)→ 第一个内置源(未绑,进懒搜索)→
+  // 第一个自定义条目。只在初次进入时定一次。
   const [selKey, setSelKey] = useState<string | null>(null)
   useEffect(() => {
     if (selKey !== null || entries.length === 0) return
     const pick =
-      entries.find(
-        (e) =>
-          !e.builtin &&
-          (e.binding?.source === 'Bilibili' || /bilibili\.com/i.test(bindingUrl(e.binding!)))
-      ) ??
       entries.find((e) => e.builtin && e.binding) ??
-      entries.find((e) => !e.builtin) ??
+      entries.find((e) => e.builtin) ??
       entries[0]
     setSelKey(pick.key)
   }, [entries, selKey])
@@ -365,7 +365,9 @@ export default function OnlinePlayer(): JSX.Element {
 
   // ── B 站登录态:选中的是 B 站源时查一次 ────────────────────────────────────
   // 画质由登录态决定(匿名最高 480P,登录后才有 1080P),所以自研播放的 B 站源也要查。
-  const needBiliAuth = !!entry && !entry.builtin && /bilibili\.com/i.test(bindingUrl(entry.binding!))
+  // 用 biliBvid() 而不是「builtin === Bilibili」:老数据里手动贴的 bilibili.com
+  // Custom 链接也要走这条(同样自研播放,同样需要登录态查画质)。
+  const needBiliAuth = !!entry?.binding && biliBvid(bindingUrl(entry.binding)) !== null
   useEffect(() => {
     if (!needBiliAuth) return
     let alive = true

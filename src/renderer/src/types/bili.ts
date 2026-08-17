@@ -38,3 +38,12 @@ export interface BiliDash {
   /** 该账号在这个稿件上**真正拿得到**的画质档(已与 dash.video 求交)。 */
   qualities: { qn: number; label: string }[]
 }
+
+/** 关联番剧用的搜索候选(仅普通投稿视频,不识别合集)。 */
+export interface BiliSearchResult {
+  bvid: string
+  title: string
+  cover: string
+  author: string
+  duration: string
+}

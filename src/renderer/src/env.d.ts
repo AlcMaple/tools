@@ -9,7 +9,7 @@ import type { BgmSearchResult, BgmOfflineSearchResponse, BgmDetail, BgmCalendarR
 import type { XifanSearchResult, XifanWatchInfo, XifanSource } from './types/xifan'
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 import type { AowuSearchResult, AowuEpisode, AowuWatchInfo } from './types/aowu'
-import type { BiliVideoInfo, BiliDash } from './types/bili'
+import type { BiliVideoInfo, BiliDash, BiliSearchResult } from './types/bili'
 
 export interface LibraryPath {
   path: string;
@@ -287,6 +287,8 @@ declare global {
       videoInfo: (bvid: string) => Promise<BiliVideoInfo>
       /** 某一分 P 的 DASH 音视频分轨。可选画质由登录态/会员权益决定。 */
       dash: (aid: number, cid: number) => Promise<BiliDash>
+      /** 关联番剧用:关键词搜视频。不识别合集,搜到的都是单条 BV。 */
+      search: (keyword: string, page?: number) => Promise<BiliSearchResult[]>
     }
     aowuApi: {
       search: (keyword: string) => Promise<{
