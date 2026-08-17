@@ -1,14 +1,12 @@
-// 登录 / 注册 / 邮箱验证码登录 / 找回密码 弹窗 —— 压在暗化的周历上，MD3 卡片。
-// 顶部「使用 Google 继续」品牌按钮（凭据未配时整体不出现）：Google 是 Gmail 的免验证码
-// 通道，与「该邮箱收验证码登录」进同一个账号。
-// 登录：用户名 + 密码（带「忘记密码？」入口）；注册：多一个确认密码；
-// 邮箱：验证码确认地址后，无论新旧账号都直接登录，不额外收集用户名或密码。
-// 找回密码：账号 + 密保问题（预设下拉）+ 答案 + 新密码 + 确认。
-// Enter 提交、ESC / 背景 / × 关闭。
+// 登录 / 注册 / 邮箱验证码登录 / 找回密码 弹窗 —— 皮肤 = 原型稿 .auth-dlg：
+// 左侧纱雾立绘栏（halftone 网点渐隐）+ 右侧稿纸表单；「密码登录 / 验证码登录」页签，
+// 注册 / 找回由底部链接进入；Google 品牌按钮在表单下方（或分隔线隔开）。
+// 逻辑与旧版一致：邮箱验证码确认地址后新旧账号都直接登录；找回 = 账号 + 密保问题 + 答案 + 新密码×2；
+// Enter 提交、ESC / 背景 / × 关闭；第三方入口按服务端配置显示（未配凭据整体不出现）。
 import { useEffect, useRef, useState } from 'react'
 import { auth, fetchOauthProviders, fetchQuestions } from './auth'
 import type { SecurityQuestion } from './auth'
-import { GoogleMark, Icon } from './Icon'
+import { Ic } from './SketchIcon'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 
@@ -232,95 +230,89 @@ export function AuthModal({
     }
   }
 
+  const resendCode = async (): Promise<void> => {
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = await auth.requestEmailCode(email.trim())
+      setEmailChallengeId(result.challengeId)
+      setEmailCooldown(60)
+      setOkMsg('新的验证码已发送')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '验证码发送失败，请稍后再试')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      className="dlg-backdrop open"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative m-auto w-full max-w-[366px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          title="关闭"
-          className="absolute right-3.5 top-3.5 flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
-        >
-          <Icon name="close" size={16} />
+      <div role="dialog" aria-modal="true" aria-label="登录 MapleTools" className="dlg auth-dlg">
+        <span className="tape tl teal" />
+        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <Ic name="x" cls="ic" />
         </button>
 
-        <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
-          MapleTools
-        </div>
-        <h2 className="mb-4 mt-1.5 text-lg font-extrabold text-on-surface">{TITLE[mode]}</h2>
+        <aside className="auth-side">
+          <span className="halftone-wash" />
+          <img src="/assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘" />
+          <p className="auth-side-cap">「才、才不是在等你登录……」</p>
+        </aside>
 
-        {!isForgot && !isEmail && (
-          <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-md bg-surface-container p-1">
-            {(['login', 'register'] as const).map((m) => (
+        <div className="auth-main">
+          {!isReg && !isForgot ? (
+            <div className="auth-tabs">
               <button
-                key={m}
                 type="button"
-                onClick={() => onMode(m)}
-                className={`rounded border py-1.5 text-sm font-semibold transition-colors ${
-                  mode === m
-                    ? 'border-primary/30 bg-primary/10 text-primary'
-                    : 'border-transparent text-on-surface-variant/70 hover:text-on-surface'
-                }`}
+                className={`auth-tab${mode === 'login' ? ' on' : ''}`}
+                onClick={() => onMode('login')}
               >
-                {m === 'login' ? '登录' : '注册'}
+                密码登录
               </button>
-            ))}
-          </div>
-        )}
-
-        {googleEnabled && !isForgot && (
-          <>
-            {/* 品牌按钮按 Google 官方规范用白底黑字（深色界面下也是最醒目的官方样式）， */}
-            {/* 放在表单顶部 —— 与任务参考图一致：第三方入口优先，再「或」分隔，再本地凭据。 */}
-            <button
-              type="button"
-              onClick={startGoogleLogin}
-              className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-white py-2.5 text-sm font-semibold text-[#1f1f1f] transition hover:brightness-95"
-            >
-              <GoogleMark />
-              使用 Google 继续
-            </button>
-            <div className="mb-4 mt-3 flex items-center gap-3" aria-hidden="true">
-              <span className="h-px flex-1 bg-outline-variant/30" />
-              <span className="font-label text-[10px] text-on-surface-variant/50">或</span>
-              <span className="h-px flex-1 bg-outline-variant/30" />
+              <button
+                type="button"
+                className={`auth-tab${mode === 'email' ? ' on' : ''}`}
+                onClick={() => onMode('email')}
+              >
+                验证码登录
+              </button>
             </div>
-          </>
-        )}
+          ) : (
+            <div className="auth-head font-hand">{TITLE[mode]}</div>
+          )}
 
-        <form onSubmit={submit}>
-          {isEmail ? (
-            <>
-              <Field label="邮箱地址">
-                <input
-                  ref={emailRef}
-                  type="text"
-                  inputMode="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  autoFocus={emailStep === 'address'}
-                  disabled={emailStep !== 'address'}
-                  className={inputCls}
-                />
+          <form onSubmit={submit} className="auth-pane show">
+            {isEmail ? (
+              <>
+                <label className="field">
+                  <span className="field-label">邮箱</span>
+                  <span className="field-row">
+                    <input
+                      ref={emailRef}
+                      type="text"
+                      inputMode="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      autoComplete="email"
+                      autoFocus={emailStep === 'address'}
+                      disabled={emailStep !== 'address'}
+                    />
+                  </span>
+                </label>
                 {emailStep === 'address' && (
-                  <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="快捷补全邮箱后缀">
+                  <div className="mail-chips" role="group" aria-label="快捷补全邮箱后缀">
                     {QUICK_EMAIL_DOMAINS.map((domain) => (
                       <button
                         key={domain}
                         type="button"
+                        className="tagx"
                         onClick={() => useEmailDomain(domain)}
-                        className="rounded border border-outline-variant/25 bg-surface-container px-2 py-1 font-label text-[10px] text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
                       >
                         @{domain}
                       </button>
@@ -330,6 +322,7 @@ export function AuthModal({
                 {emailStep !== 'address' && (
                   <button
                     type="button"
+                    className="link mail-swap"
                     onClick={() => {
                       setEmailStep('address')
                       setEmailChallengeId('')
@@ -337,211 +330,174 @@ export function AuthModal({
                       setError(null)
                       setOkMsg(null)
                     }}
-                    className="mt-1.5 font-label text-[10px] font-semibold text-primary hover:underline"
                   >
                     更换邮箱
                   </button>
                 )}
-              </Field>
 
-              {emailStep === 'code' && (
-                <Field label="邮箱验证码">
-                  <input
-                    type="text"
-                    value={emailCode}
-                    onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="输入 6 位验证码"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    autoFocus
-                    className={inputCls}
-                  />
-                  <div className="mt-1.5 flex items-center justify-between gap-3">
-                    <Hint>验证码 10 分钟内有效</Hint>
-                    <button
-                      type="button"
-                      disabled={submitting || emailCooldown > 0}
-                      onClick={async () => {
-                        setError(null)
-                        setSubmitting(true)
-                        try {
-                          const result = await auth.requestEmailCode(email.trim())
-                          setEmailChallengeId(result.challengeId)
-                          setEmailCooldown(60)
-                          setOkMsg('新的验证码已发送')
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : '验证码发送失败，请稍后再试')
-                        } finally {
-                          setSubmitting(false)
-                        }
-                      }}
-                      className="shrink-0 font-label text-[10px] font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {emailCooldown > 0 ? `${emailCooldown}s 后重发` : '重新发送'}
-                    </button>
-                  </div>
-                  {inboxLink && (
-                    <a
-                      href={inboxLink.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      referrerPolicy="no-referrer"
-                      className="mt-2 inline-flex font-label text-[10px] font-semibold text-primary hover:underline"
-                    >
-                      {inboxLink.text}
-                    </a>
-                  )}
-                </Field>
-              )}
-
-            </>
-          ) : (
-            <>
-              <Field label={isForgot ? '登录账号' : '用户名'}>
-                {/* 新流程只提示用户名；登录态仍容纳历史「邮箱 + 密码」账号的长标识。 */}
-                <input
-                  ref={userRef}
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder={isForgot ? '你的用户名' : '用户名'}
-                  maxLength={mode === 'login' ? 254 : 12}
-                  autoComplete="username"
-                  className={inputCls}
-                />
-              </Field>
-
-              {isForgot && (
-                <>
-                  <Field label="找回密码问题">
-                    <Select
-                      options={questions}
-                      value={questionId}
-                      onChange={setQuestionId}
-                      placeholder="请选择你设置的问题…"
-                    />
-                  </Field>
-                  <Field label="找回密码答案">
+                {emailStep === 'code' && (
+                  <label className="field">
+                    <span className="field-label">邮箱验证码</span>
+                    <span className="field-row">
+                      <input
+                        type="text"
+                        className="has-tail"
+                        value={emailCode}
+                        onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="邮件里的 6 位数字"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        className={`tail-btn send${emailCooldown > 0 ? ' counting' : ''}`}
+                        disabled={submitting || emailCooldown > 0}
+                        onClick={() => void resendCode()}
+                      >
+                        {emailCooldown > 0 ? `${emailCooldown}s 后重发` : '重新发送'}
+                      </button>
+                    </span>
+                  </label>
+                )}
+                <p className="faint small mt8">验证码 10 分钟内有效 · 新邮箱验证后自动注册</p>
+                {inboxLink && (
+                  <a
+                    className="link mt8"
+                    style={{ display: 'inline-block' }}
+                    href={inboxLink.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    referrerPolicy="no-referrer"
+                  >
+                    {inboxLink.text}
+                  </a>
+                )}
+              </>
+            ) : (
+              <>
+                <label className="field">
+                  <span className="field-label">{isForgot ? '要找回的账号' : '用户名'}</span>
+                  <span className="field-row">
+                    {/* 新流程只提示用户名；登录态仍容纳历史「邮箱 + 密码」账号的长标识。 */}
                     <input
+                      ref={userRef}
                       type="text"
-                      value={answer}
-                      onChange={(e) => setAnswer(e.target.value)}
-                      placeholder="输入你的答案"
-                      className={inputCls}
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder={isForgot ? '你的用户名' : '用户名'}
+                      maxLength={mode === 'login' ? 254 : 12}
+                      autoComplete="username"
                     />
-                  </Field>
+                  </span>
+                </label>
+
+                {isForgot && (
+                  <>
+                    <div className="field">
+                      <span className="field-label">密保问题</span>
+                      <Select
+                        options={questions}
+                        value={questionId}
+                        onChange={setQuestionId}
+                        placeholder="请选择你设置的问题…"
+                      />
+                    </div>
+                    <label className="field">
+                      <span className="field-label">答案</span>
+                      <span className="field-row">
+                        <input
+                          type="text"
+                          value={answer}
+                          onChange={(e) => setAnswer(e.target.value)}
+                          placeholder="当年写下的答案"
+                        />
+                      </span>
+                    </label>
+                  </>
+                )}
+
+                <label className="field">
+                  <span className="field-label">{isForgot ? '新密码' : '密码'}</span>
+                  <PasswordInput
+                    value={password}
+                    onChange={setPassword}
+                    placeholder={isForgot ? '设置新密码' : '输入密码'}
+                    autoComplete={isReg || isForgot ? 'new-password' : 'current-password'}
+                  />
+                  {(isReg || isForgot) && <span className="field-hint">至少 6 位</span>}
+                </label>
+
+                {(isReg || isForgot) && (
+                  <label className="field">
+                    <span className="field-label">{isForgot ? '确认新密码' : '确认密码'}</span>
+                    <PasswordInput
+                      value={confirm}
+                      onChange={setConfirm}
+                      placeholder="再输一次密码"
+                      autoComplete="new-password"
+                    />
+                  </label>
+                )}
+              </>
+            )}
+
+            {(error || okMsg) && (
+              <p className={`form-note${error ? ' err' : ''}`} aria-live="polite">
+                {error || okMsg}
+              </p>
+            )}
+
+            <button type="submit" disabled={submitting} className="btn btn-primary btn-block mt8">
+              {submitting
+                ? '请稍候…'
+                : isEmail
+                  ? emailStep === 'address' ? '发送验证码' : '验证并登录'
+                  : isForgot
+                    ? '重置密码'
+                    : isReg
+                      ? '注册'
+                      : '登录'}
+            </button>
+
+            <div className="auth-foot">
+              {mode === 'login' && (
+                <>
+                  <button type="button" className="link" onClick={() => onMode('register')}>
+                    注册新账号
+                  </button>
+                  <button type="button" className="link" onClick={() => onMode('forgot')}>
+                    忘记密码
+                  </button>
                 </>
               )}
-
-              <Field label={isForgot ? '新密码' : '密码'}>
-                <PasswordInput
-                  value={password}
-                  onChange={setPassword}
-                  placeholder={isForgot ? '设置新密码' : '输入密码'}
-                  autoComplete={isReg || isForgot ? 'new-password' : 'current-password'}
-                />
-                {(isReg || isForgot) && <Hint>至少 6 位</Hint>}
-              </Field>
-
-              {(isReg || isForgot) && (
-                <Field label={isForgot ? '确认新密码' : '确认密码'}>
-                  <PasswordInput
-                    value={confirm}
-                    onChange={setConfirm}
-                    placeholder="再输一次密码"
-                    autoComplete="new-password"
-                  />
-                </Field>
+              {isReg && (
+                <button type="button" className="link" onClick={() => onMode('login')}>
+                  已有账号？去登录
+                </button>
               )}
+              {isForgot && (
+                <button type="button" className="link" onClick={() => onMode('login')}>
+                  想起来了？去登录
+                </button>
+              )}
+            </div>
+          </form>
+
+          {googleEnabled && !isForgot && (
+            <>
+              <div className="or-line mt8" aria-hidden="true">
+                或
+              </div>
+              <button type="button" className="btn btn-google btn-block mt16" onClick={startGoogleLogin}>
+                <Ic name="google" cls="ic" />
+                使用 Google 继续
+              </button>
             </>
           )}
-
-          {mode === 'login' && (
-            // 报错跟「忘记密码」挤在同一行（左提示 / 右入口）而不是自己占一行：
-            // 这一行在登录态恒存在，报错只是填进它的空位，提交按钮不会被顶下去。
-            // 登录态只可能出 error，okMsg 是找回密码专属，两者不会在这撞车。
-            <div className="-mt-2 mb-3 flex items-center justify-between gap-3">
-              <p className="font-label text-[11px] text-error">{error}</p>
-              <button
-                type="button"
-                onClick={() => onMode('forgot')}
-                className="shrink-0 font-label text-[11.5px] font-semibold text-primary hover:underline"
-              >
-                忘记密码？
-              </button>
-            </div>
-          )}
-
-          {isEmail ? (
-            <div className="custom-scrollbar mb-3 h-9 overflow-y-auto" aria-live="polite">
-              {(error || okMsg) && (
-                <p className={`font-label text-[11px] ${error ? 'text-error' : 'text-primary'}`}>
-                  {error || okMsg}
-                </p>
-              )}
-            </div>
-          ) : mode !== 'login' && error ? (
-            <p className="mb-3 font-label text-[11px] text-error">{error}</p>
-          ) : null}
-          {!isEmail && okMsg && <p className="mb-3 font-label text-[11px] text-primary">{okMsg}</p>}
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-0.5 w-full rounded-lg bg-primary py-2.5 text-sm font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting
-              ? '请稍候…'
-              : isEmail
-                ? emailStep === 'address' ? '发送验证码' : '验证码登录'
-                : isForgot
-                  ? '重 置 密 码'
-                  : isReg
-                    ? '注 册'
-                    : '登 录'}
-          </button>
-        </form>
-
-        {!isForgot && !isEmail && (
-          <button
-            type="button"
-            onClick={() => onMode('email')}
-            className="mt-3 w-full rounded-lg border border-outline-variant/30 py-2 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
-          >
-            使用邮箱验证码登录
-          </button>
-        )}
-
-        <div className="mt-3.5 text-center font-label text-xs text-on-surface-variant/60">
-          {isEmail ? '想用用户名和密码？' : isForgot ? '想起来了？' : isReg ? '已有账号？' : '还没有账号？'}
-          <button
-            type="button"
-            onClick={() => onMode(isEmail || isForgot || isReg ? 'login' : 'register')}
-            className="font-semibold text-primary hover:underline"
-          >
-            {isEmail ? '去登录' : isForgot ? '回去登录' : isReg ? '去登录' : '去注册'}
-          </button>
         </div>
       </div>
     </div>
   )
-}
-
-const inputCls =
-  'w-full rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2.5 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70'
-
-function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
-  return (
-    <div className="mb-3.5">
-      <label className="mb-1.5 block font-label text-[10px] uppercase tracking-wider text-on-surface-variant/80">
-        {label}
-      </label>
-      {children}
-    </div>
-  )
-}
-
-function Hint({ children }: { children: React.ReactNode }): JSX.Element {
-  return <p className="mt-1.5 font-label text-[10px] text-on-surface-variant/40">{children}</p>
 }

@@ -1,8 +1,5 @@
-// 设置页 —— 左栏「身份卡 + 模块导航」，右栏模块面板。设计取自参考站的思路（对比后定的）：
-//   - 键值用**两列紧挨着**（标签固定窄宽 + 值紧跟其后），不用 space-between 把值甩到最右，
-//     否则眼睛要横跳几百 px
-//   - 右栏**不套厚卡片边框**，靠标题 + 分隔线 + 间距分组；边框套边框正是「闷」的来源
-//   - 表单**限宽**，别把密码框拉成整个面板那么宽
+// 设置页 —— 皮肤 = 原型稿 settings.html：借书卡身份页 + 纸口袋手风琴（hash 深链），
+// 键值行两列紧挨着（标签固定窄宽 + 值紧跟其后），表单限宽、稿纸输入框。
 // 模块导航按可独立加载的面板组织，后续还能继续增加追番偏好 / 数据同步等。
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -26,7 +23,7 @@ import {
   useAuth,
 } from './auth'
 import type { SecurityQuestion } from './auth'
-import { GoogleMark, Icon } from './Icon'
+import { Ic, Spinner } from './SketchIcon'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 
@@ -59,157 +56,155 @@ export function SettingsPage(): JSX.Element | null {
 
   if (!user) return null
 
+  const isGmail =
+    (user.email ?? '').endsWith('@gmail.com') || (user.email ?? '').endsWith('@googlemail.com')
+
   return (
-    // md 以下没有侧栏可言，整页就是一条**中轴**：标题 / 头像 / tab / 主体全部居中对齐。
-    // 之前左对齐 → 右边一大片死区；只把头像居中 → 中轴和左对齐的内容各走各的，更散。
-    // md 起恢复「220px 侧栏 + 面板」，一切回到左对齐。
-    <div className="px-4 pb-16 md:px-6">
-      {/* 标题在**居中列之外** —— 它要贴页面左边距，跟周历页的 h1 同一个位置；
-          放进居中列里就会缩到列的左边缘（页面中间偏左），两页对不上 */}
-      <div className="pt-4 pb-3">
-        <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">设置</h1>
-      </div>
-
-      <div className="mx-auto w-full max-w-[480px] md:max-w-none">
-        <div className="grid gap-6 md:grid-cols-[220px_1fr] md:gap-10">
-          <aside className="self-start md:sticky md:top-[72px]">
-            <IdCard username={user.username} />
-            {/* 窄屏：tab 居中，跟上面的头像页头对齐成一条中轴。md 起回到侧栏的竖排左对齐 */}
-            <nav className="mt-4 flex justify-center gap-1 md:mt-3.5 md:flex-col md:justify-start md:gap-1.5">
-              <SideItem
-                icon="person"
-                active={module === 'profile'}
-                onClick={() => selectModule('profile')}
-              >
-                个人信息
-              </SideItem>
-              {user.hasPassword && (
-                <SideItem
-                  icon="lock"
-                  active={module === 'security'}
-                  onClick={() => selectModule('security')}
-                >
-                  账号安全
-                </SideItem>
-              )}
-              <SideItem
-                icon="play_arrow"
-                active={module === 'xifan'}
-                onClick={() => selectModule('xifan')}
-              >
-                稀饭账号
-              </SideItem>
-              <div className="hidden px-2.5 pb-1.5 pt-3 font-label text-[10px] uppercase tracking-[0.16em] text-on-surface-variant/35 md:block">
-                后续
-              </div>
-              <SideItem icon="favorite" ghost>
-                追番偏好
-              </SideItem>
-              <SideItem icon="sync" ghost>
-                数据同步
-              </SideItem>
-            </nav>
-          </aside>
-
-          <div>
-            {module !== 'xifan' && (
-              module === 'profile' || !user.hasPassword ? (
-                <ProfileModule onGoSecurity={() => selectModule('security')} />
-              ) : (
-                <SecurityModule />
-              )
-            )}
-            {xifanOpened && (
-              <div className={module === 'xifan' ? undefined : 'hidden'}>
-                <XifanAccountModule />
-              </div>
-            )}
-          </div>
+    <>
+      <div className="spread" style={{ alignItems: 'flex-end' }}>
+        <div>
+          <h1 className="title-sketch" style={{ fontSize: 34 }}>
+            设置
+          </h1>
+          <p className="muted small mt8">账号、安全和播放源，都收在这几个口袋里</p>
         </div>
       </div>
-    </div>
-  )
-}
 
-// 身份区。两种形态都是「竖排居中」，差别只在**要不要卡片外观**：
-//   窄屏 = 页头，不套框 —— 套了就是页面正中一个孤零零的小盒子（撑满又是条空长条，两头不讨好）
-//   md 起 = 220px 侧栏里的身份卡，这时框才有意义（它把侧栏和右边面板分开）
-function IdCard({ username }: { username: string }): JSX.Element {
-  return (
-    <div className="flex flex-col items-center gap-2.5 md:rounded-xl md:border md:border-outline-variant/10 md:bg-surface-container/70 md:p-5">
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-[26px] font-extrabold text-primary md:h-[54px] md:w-[54px] md:rounded-xl md:text-[22px]">
-        {username.charAt(0).toUpperCase()}
+      {/* 手机：立绘内联（桌面在右侧驻场，CSS 切换） */}
+      <div className="rig-inline mt16">
+        <img className="rig" src="/assets/chara_04.png" alt="千寿ムラマサ · 官方立绘" />
+        <div className="bubble rig-bubble">
+          <span>书架整理好了，接下来交给我吧。</span>
+        </div>
       </div>
-      <div className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-base font-extrabold text-on-surface md:text-[14.5px]">
-        {username}
+
+      <div className="hero-split top mt16">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* 借书卡身份页 */}
+          <div className="id-card">
+            <span className="tape tr gold" />
+            <span className="avatar-init" style={{ width: 58, height: 58, fontSize: 26 }} aria-hidden="true">
+              {user.username.charAt(0).toUpperCase()}
+            </span>
+            <div className="id-lines">
+              <b>{user.username}</b> <span className="faint font-hand">no.{user.createdAt.slice(0, 10).replace(/-/g, '')}</span>
+              <br />
+              邮箱 <b>{user.email ?? '未绑定'}</b> · 密码 <b>{user.hasPassword ? '已设置' : '未设置'}</b>
+              {user.hasPassword && (
+                <>
+                  {' '}· 密保 <b>{user.hasSecurity ? '已设置' : '未设置'}</b>
+                </>
+              )}
+            </div>
+            {isGmail && (
+              <span className="tagx mine" style={{ alignSelf: 'center' }}>
+                <Ic name="google" cls="ic ic-sm" />
+                Gmail 快捷登录已开通
+              </span>
+            )}
+          </div>
+
+          {/* 个人信息 */}
+          <section className={`pocket${module === 'profile' ? ' open' : ''}`} data-mod="profile" style={{ marginTop: 14 }}>
+            <button className="pocket-tab" type="button" onClick={() => selectModule('profile')}>
+              <Ic name="user" />
+              个人信息
+              <span className="pocket-hint">用户名 · 邮箱 · 登录方式</span>
+              <Ic name="chev" cls="ic chev" />
+            </button>
+            <div className="pocket-body">
+              {module === 'profile' && (
+                <div style={{ paddingTop: 6 }}>
+                  <UsernameRow />
+                  <Kv k="注册时间" v={user.createdAt.slice(0, 10)} />
+                  {/* 无密码的验证码账号不能使用依赖原始密码的密保设置，也不展示一条无从处理的状态。 */}
+                  {user.hasPassword && (
+                    <Kv
+                      k="密保"
+                      v={user.hasSecurity ? '已设置' : '未设置'}
+                      note={user.hasSecurity || user.hasEmail ? undefined : '忘记密码将无法找回账号'}
+                    />
+                  )}
+
+                  {/* 登录方式统一管理：一个账号 = 密码 ×1 + 邮箱 ×1（邮箱即身份，
+                      Gmail 可额外走 Google 快捷登录免验证码） */}
+                  <div className="pocket-sub"><span className="hl font-hand">登录方式</span></div>
+                  <ProfileLoginWays onGoSecurity={() => selectModule('security')} />
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* 账号安全（无密码账号不依赖原始密码，进不了这页） */}
+          {user.hasPassword && (
+            <section className={`pocket${module === 'security' ? ' open' : ''}`} data-mod="security">
+              <button className="pocket-tab" type="button" onClick={() => selectModule('security')}>
+                <Ic name="pencil" />
+                账号安全
+                <span className="pocket-hint">密码 · 密保问题</span>
+                <Ic name="chev" cls="ic chev" />
+              </button>
+              <div className="pocket-body">{module === 'security' && <SecurityModule />}</div>
+            </section>
+          )}
+
+          {/* 稀饭账号：打开过就保持挂载（验证码状态不丢），开合由口袋 CSS 管 */}
+          <section className={`pocket${module === 'xifan' ? ' open' : ''}`} data-mod="xifan">
+            <button className="pocket-tab" type="button" onClick={() => selectModule('xifan')}>
+              <Ic name="play" />
+              稀饭账号
+              <span className="pocket-hint">在线播放源 · 验证码登录</span>
+              <Ic name="chev" cls="ic chev" />
+            </button>
+            <div className="pocket-body">{xifanOpened && <XifanAccountModule />}</div>
+          </section>
+
+          {/* 后续预留 */}
+          <section className="pocket">
+            <button className="pocket-tab" type="button" disabled style={{ cursor: 'default' }}>
+              <Ic name="star" />
+              追番偏好
+              <span className="pocket-hint">待开发</span>
+            </button>
+          </section>
+          <section className="pocket">
+            <button className="pocket-tab" type="button" disabled style={{ cursor: 'default' }}>
+              <Ic name="refresh" />
+              数据同步
+              <span className="pocket-hint">待开发</span>
+            </button>
+          </section>
+        </div>
+
+        <div className="rig-box">
+          <img className="rig" src="/assets/chara_04.png" alt="千寿ムラマサ · 官方立绘" />
+          <div className="bubble rig-bubble">
+            <span>书架整理好了，接下来交给我吧。</span>
+          </div>
+          <span className="kira" style={{ bottom: 74, right: -8, transform: 'rotate(5deg)' }}>
+            ムラママ
+          </span>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 
-function SideItem({
-  icon,
-  active,
-  ghost,
-  onClick,
-  children,
-}: {
-  icon: 'person' | 'lock' | 'play_arrow' | 'favorite' | 'sync'
-  active?: boolean
-  ghost?: boolean
-  onClick?: () => void
-  children: React.ReactNode
-}): JSX.Element {
-  if (ghost) {
-    return (
-      <span className="hidden items-center gap-2.5 rounded-md px-2.5 py-2 text-[13.5px] font-semibold text-on-surface-variant/30 md:flex">
-        <Icon name={icon} size={15} className="shrink-0" />
-        {children}
-        <span className="ml-auto rounded bg-on-surface-variant/10 px-1 py-px font-label text-[9px]">待开发</span>
-      </span>
-    )
-  }
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-2 text-left text-[12.5px] font-semibold transition-colors md:gap-2.5 md:px-2.5 md:text-[13.5px] ${
-        active
-          ? 'bg-primary/10 text-primary'
-          : 'text-on-surface-variant/75 hover:bg-on-surface/5 hover:text-on-surface'
-      }`}
-    >
-      <Icon name={icon} size={15} className="shrink-0" />
-      {children}
-    </button>
-  )
-}
-
-// 窄屏只留分隔线，不重复标题 —— 正上方那个高亮的 tab 已经说了在哪个模块，
-// 再写一遍是同一件事说两遍。md 起 tab 在侧栏里，面板才需要自己的标题。
-function PaneHead({ title }: { title: string }): JSX.Element {
-  return (
-    <div className="mb-1.5 border-b border-outline-variant/15 md:pb-3">
-      <h2 className="hidden text-base font-extrabold text-on-surface md:block">{title}</h2>
-    </div>
-  )
-}
-
-// 键值行 —— 两列紧挨着（标签 96px + 值），值左对齐紧跟标签
+// 键值行 —— 两列紧挨着（标签 92px + 值），值左对齐紧跟标签（原型稿 .kv-row）
 function Kv({ k, v, note }: { k: string; v: string; note?: string }): JSX.Element {
   return (
-    <div className="grid grid-cols-[96px_1fr] items-baseline gap-4 border-b border-outline-variant/10 py-3.5 last:border-b-0">
-      <div className="text-[13px] font-semibold text-on-surface-variant/70">{k}</div>
-      <div className="text-[13.5px] text-on-surface">
+    <div className="kv-row">
+      <span className="kv-label">{k}</span>
+      <span className="kv-val">
         {v}
-        {note && <span className="mt-1 block text-[11.5px] text-on-surface-variant/40">{note}</span>}
-      </div>
+        {note && <span className="muted">{note}</span>}
+      </span>
     </div>
   )
 }
 
-function ProfileModule({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Element | null {
+/** 登录方式区块：密码行 + 邮箱行（拉 providers 决定 Google / 邮箱通道是否可用）。 */
+function ProfileLoginWays({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Element | null {
   const { user } = useAuth()
   const [providers, setProviders] = useState<{ google: boolean; email: boolean } | null>(null)
   const [flash, setFlash] = useState<{ msg: string; error: boolean } | null>(null)
@@ -256,33 +251,8 @@ function ProfileModule({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Elem
 
   return (
     <>
-      <PaneHead title="个人信息" />
-      {/* 窄屏整块居中但给足宽度（400px）：键值行能放下，登录方式行的标题 + 按钮也能同行不换行。
-          md 起铺满面板（那时右边还有内容撑着）。 */}
-      <div className="mx-auto w-full max-w-[400px] md:max-w-none">
-        <UsernameRow />
-        <Kv k="注册时间" v={user.createdAt.slice(0, 10)} />
-        {/* 无密码的验证码账号不能使用依赖原始密码的密保设置，也不展示一条无从处理的状态。 */}
-        {user.hasPassword && (
-          <Kv
-            k="密保"
-            v={user.hasSecurity ? '已设置' : '未设置'}
-            note={user.hasSecurity || user.hasEmail ? undefined : '忘记密码将无法找回账号'}
-          />
-        )}
-
-        {/* 登录方式统一管理：一个账号 = 密码 ×1 + 邮箱 ×1（邮箱即身份，
-            Gmail 可额外走 Google 快捷登录免验证码） */}
-        <div className="mt-5 border-t border-outline-variant/10 pt-4">
-          <div className="mb-1 font-label text-[10px] uppercase tracking-[0.16em] text-on-surface-variant/45">
-            登录方式
-          </div>
-          <div className="divide-y divide-outline-variant/10">
-            <PasswordRow onGoSecurity={onGoSecurity} />
-            <EmailLoginCard emailEnabled={providers?.email === true} googleEnabled={providers?.google === true} flash={flash} />
-          </div>
-        </div>
-      </div>
+      <PasswordRow onGoSecurity={onGoSecurity} />
+      <EmailLoginCard emailEnabled={providers?.email === true} googleEnabled={providers?.google === true} flash={flash} />
     </>
   )
 }
@@ -361,14 +331,15 @@ function UsernameRow(): JSX.Element | null {
   }
 
   return (
-    <div className="border-b border-outline-variant/10 py-3.5">
-      <div className="grid grid-cols-[96px_1fr] items-baseline gap-4">
-        <div className="text-[13px] font-semibold text-on-surface-variant/70">用户名</div>
-        <div className="flex min-h-[28px] flex-wrap items-center gap-x-4 gap-y-2">
-          <span className="text-[13.5px] text-on-surface">{user.username}</span>
+    <div className="kv-row" style={{ display: 'block' }}>
+      <div className="kv-row" style={{ border: 'none', padding: '13px 0' }}>
+        <span className="kv-label">用户名</span>
+        <span className="kv-val">{user.username}</span>
+        <span className="kv-act">
           {!editing && (
             <button
               type="button"
+              className="btn btn-sm btn-ghost"
               onClick={() => {
                 setName('')
                 setPassword('')
@@ -378,37 +349,33 @@ function UsernameRow(): JSX.Element | null {
                 setOkMsg(null)
                 setEditing(true)
               }}
-              className="shrink-0 rounded-lg border border-outline-variant/30 px-3 py-1.5 text-[12px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
             >
               修改
             </button>
           )}
-        </div>
+        </span>
       </div>
 
       {editing && (
-        <div className="mt-3 space-y-3 md:max-w-[360px]">
-          <Field label="新用户名" tight>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="2–12 个字符：中文 / 字母 / 数字 / _ -"
-              maxLength={12}
-              className={inputCls}
-            />
+        <div className="field-stack">
+          <Field label="新用户名">
+            <span className="field-row">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="2–12 个字符：中文 / 字母 / 数字 / _ -"
+                maxLength={12}
+              />
+            </span>
           </Field>
           {user.hasPassword ? (
-            <Field label="当前密码" tight>
-              <PasswordInput
-                value={password}
-                onChange={setPassword}
-                placeholder="输入当前密码"
-              />
+            <Field label="当前密码">
+              <PasswordInput value={password} onChange={setPassword} placeholder="输入当前密码" />
             </Field>
           ) : (
-            <Field label="邮箱验证码" tight>
-              <div className="flex gap-2">
+            <Field label="邮箱验证码">
+              <span className="field-row">
                 <input
                   type="text"
                   inputMode="numeric"
@@ -417,47 +384,41 @@ function UsernameRow(): JSX.Element | null {
                   placeholder={sentTo ? '输入 6 位验证码' : '先发送验证码'}
                   autoComplete="one-time-code"
                   maxLength={6}
-                  className={inputCls}
                 />
                 <button
                   type="button"
+                  className="btn btn-sm"
+                  style={{ flex: 'none', marginLeft: 8 }}
                   disabled={busy || cooldown > 0}
                   onClick={() => void sendCode()}
-                  className="shrink-0 rounded-lg border border-outline-variant/30 px-3 text-[12px] font-bold text-primary transition-colors hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {cooldown > 0 ? `${cooldown}s` : sentTo ? '重发' : '发验证码'}
                 </button>
-              </div>
-              {sentTo && <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">已发送至 {sentTo}</p>}
+              </span>
+              {sentTo && <span className="field-hint">已发送至 {sentTo}</span>}
             </Field>
           )}
-          <div className="flex items-center gap-2.5">
+          <div className="row">
             <button
               type="button"
+              className="btn btn-sm btn-primary"
               disabled={busy || (user.hasPassword ? !password : code.length !== 6)}
               onClick={() => void submit()}
-              className="rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? '修改中…' : '确认修改'}
             </button>
-            <button
-              type="button"
-              onClick={reset}
-              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
-            >
+            <button type="button" className="btn btn-sm btn-ghost" onClick={reset}>
               取消
             </button>
           </div>
         </div>
       )}
 
-      <p
-        role="status"
-        aria-live="polite"
-        className={`min-h-[18px] pt-1.5 font-label text-[11px] ${error ? 'text-error' : 'text-primary'}`}
-      >
-        {error || okMsg}
-      </p>
+      {(error || okMsg) && (
+        <p className={`form-note${error ? ' err' : ''}`} role="status" aria-live="polite">
+          {error || okMsg}
+        </p>
+      )}
     </div>
   )
 }
@@ -500,71 +461,50 @@ function PasswordRow({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Elemen
   }
 
   return (
-    <div className="py-3">
-      <div className="flex min-h-[46px] flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Icon name="lock" size={18} className="shrink-0 text-on-surface-variant/70" />
-          <div className="min-w-0">
-            <div className="text-[13px] font-bold text-on-surface">密码</div>
-            <div className="truncate text-[11.5px] text-on-surface-variant/55">
-              {user.hasPassword ? '已设置，登录页可用用户名 + 密码登录' : '未设置，设置后可用用户名 + 密码登录'}
-            </div>
-          </div>
-        </div>
-        {user.hasPassword ? (
-          <button
-            type="button"
-            onClick={onGoSecurity}
-            className="shrink-0 rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
-          >
-            修改
-          </button>
-        ) : (
-          !editing && (
-            <button
-              type="button"
-              onClick={() => {
-                setError(null)
-                setOkMsg(null)
-                setEditing(true)
-              }}
-              className="shrink-0 rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
-            >
-              设置
+      <div className="kv-row" style={{ display: 'block' }}>
+      <div className="kv-row" style={{ border: 'none', padding: '13px 0' }}>
+        <span className="kv-label">密码</span>
+        <span className="kv-val">
+          {user.hasPassword ? '已设置，登录页可用用户名 + 密码登录' : '未设置，设置后可用用户名 + 密码登录'}
+        </span>
+        <span className="kv-act">
+          {user.hasPassword ? (
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onGoSecurity}>
+              修改
             </button>
-          )
-        )}
+          ) : (
+            !editing && (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  setError(null)
+                  setOkMsg(null)
+                  setEditing(true)
+                }}
+              >
+                设置
+              </button>
+            )
+          )}
+        </span>
       </div>
 
       {editing && !user.hasPassword && (
-        <div className="mt-3 space-y-3 md:max-w-[360px]">
-          <Field label="新密码" tight>
-            <PasswordInput
-              value={next}
-              onChange={setNext}
-              placeholder="设置密码（至少 6 位）"
-              autoComplete="new-password"
-            />
+        <div className="field-stack">
+          <Field label="新密码">
+            <PasswordInput value={next} onChange={setNext} placeholder="设置密码（至少 6 位）" autoComplete="new-password" />
           </Field>
-          <Field label="确认新密码" tight>
-            <PasswordInput
-              value={confirm}
-              onChange={setConfirm}
-              placeholder="再输一次"
-              autoComplete="new-password"
-            />
+          <Field label="确认新密码">
+            <PasswordInput value={confirm} onChange={setConfirm} placeholder="再输一次" autoComplete="new-password" />
           </Field>
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void submit()}
-              className="rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-            >
+          <div className="row">
+            <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void submit()}>
               {busy ? '设置中…' : '确认设置'}
             </button>
             <button
               type="button"
+              className="btn btn-sm btn-ghost"
               onClick={() => {
                 setEditing(false)
                 setNext('')
@@ -572,7 +512,6 @@ function PasswordRow({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Elemen
                 setError(null)
                 setOkMsg(null)
               }}
-              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
             >
               取消
             </button>
@@ -580,13 +519,11 @@ function PasswordRow({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Elemen
         </div>
       )}
 
-      <p
-        role="status"
-        aria-live="polite"
-        className={`min-h-[18px] pt-1.5 font-label text-[11px] ${error ? 'text-error' : 'text-primary'}`}
-      >
-        {error || okMsg}
-      </p>
+      {(error || okMsg) && (
+        <p className={`form-note${error ? ' err' : ''}`} role="status" aria-live="polite">
+          {error || okMsg}
+        </p>
+      )}
     </div>
   )
 }
@@ -745,126 +682,92 @@ function EmailLoginCard({
   const showUnbindCode = unbindStep === 'code'
 
   return (
-    <div className="py-3">
-      {/* 按钮紧跟文字左聚拢（本页设计原则：别用 space-between 把操作甩到最右） */}
-      <div className="flex min-h-[46px] flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Icon name="mail" size={18} className="shrink-0 text-on-surface-variant/70" />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-bold text-on-surface">邮箱</span>
-              {isGmail && (
-                <span className="flex items-center gap-1 rounded bg-surface-container-high px-1.5 py-0.5 font-label text-[9px] font-semibold text-on-surface-variant/70">
-                  <GoogleMark size={9} /> 快捷登录已开通
-                </span>
+      <div className="kv-row" style={{ display: 'block' }}>
+      <div className="kv-row" style={{ border: 'none', padding: '13px 0' }}>
+        <span className="kv-label">邮箱</span>
+        <span className="kv-val">
+          {user.email ?? '未绑定，绑定后可用邮箱验证码登录'}
+          {isGmail && <span className="muted">Gmail 快捷登录已开通</span>}
+        </span>
+        <span className="kv-act row" style={{ gap: 8 }}>
+          {bindStep === 'idle' && unbindStep === 'idle' && !googlePwdOpen && (
+            <>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  setStatus(null)
+                  setStatusError(false)
+                  setBindStep('address')
+                }}
+              >
+                {user.email ? '换绑' : '绑定'}
+              </button>
+              {user.email && user.hasPassword && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-danger"
+                  onClick={() => void sendUnbindCode()}
+                  disabled={busy}
+                >
+                  {busy ? '发送中…' : '解绑'}
+                </button>
               )}
-            </div>
-            <div className="truncate text-[11.5px] text-on-surface-variant/55">
-              {user.email ?? '未绑定，绑定后可用邮箱验证码登录'}
-            </div>
-          </div>
-        </div>
-        {bindStep === 'idle' && unbindStep === 'idle' && !googlePwdOpen && (
-          <div className="flex shrink-0 items-center gap-2">
-            {user.email && (
-              <button
-                type="button"
-                onClick={() => {
-                  say(null as unknown as string, false)
-                  setBindStep('address')
-                }}
-                className="rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
-              >
-                换绑
-              </button>
-            )}
-            {!user.email && (
-              <button
-                type="button"
-                onClick={() => {
-                  say(null as unknown as string, false)
-                  setBindStep('address')
-                }}
-                className="rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary"
-              >
-                绑定
-              </button>
-            )}
-            {user.email && user.hasPassword && (
-              <button
-                type="button"
-                onClick={() => void sendUnbindCode()}
-                disabled={busy}
-                className="rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-error/45 hover:text-error disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {busy ? '发送中…' : '解绑'}
-              </button>
-            )}
-          </div>
-        )}
+            </>
+          )}
+        </span>
       </div>
 
       {/* 换绑第一步：选路径 */}
       {showBind && (
-        <div className="mt-3 space-y-3 md:max-w-[360px]">
+        <div className="field-stack">
           {canGoogleRebind && (
             <>
               <button
                 type="button"
+                className="btn btn-google btn-block"
                 onClick={() => {
                   setBindStep('idle')
                   setGooglePwdOpen(true)
                 }}
-                className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-white py-2.5 text-[12.5px] font-semibold text-[#1f1f1f] transition hover:brightness-95"
               >
-                <GoogleMark size={16} />
+                <Ic name="google" cls="ic" />
                 使用 Google 继续
               </button>
-              <div className="flex items-center gap-3" aria-hidden="true">
-                <span className="h-px flex-1 bg-outline-variant/30" />
-                <span className="font-label text-[10px] text-on-surface-variant/50">或</span>
-                <span className="h-px flex-1 bg-outline-variant/30" />
+              <div className="or-line" aria-hidden="true">
+                或
               </div>
             </>
           )}
-          <Field label="新邮箱地址" tight>
-            <input
-              type="text"
-              inputMode="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="输入要换绑的邮箱地址"
-              autoComplete="email"
-              maxLength={254}
-              className={inputCls}
-            />
+          <Field label="新邮箱地址">
+            <span className="field-row">
+              <input
+                type="text"
+                inputMode="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="输入要换绑的邮箱地址"
+                autoComplete="email"
+                maxLength={254}
+              />
+            </span>
           </Field>
           {user.hasPassword && (
-            <Field label="当前密码" tight>
-              <PasswordInput
-                value={password}
-                onChange={setPassword}
-                placeholder="输入当前密码"
-              />
-              <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">
-                验证当前密码后才会发送验证码
-              </p>
+            <Field label="当前密码">
+              <PasswordInput value={password} onChange={setPassword} placeholder="输入当前密码" />
+              <span className="field-hint">验证当前密码后才会发送验证码</span>
             </Field>
           )}
-          <div className="flex items-center gap-2.5">
+          <div className="row">
             <button
               type="button"
+              className="btn btn-sm btn-primary"
               disabled={busy || !emailEnabled}
               onClick={() => void sendBindCode()}
-              className="rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? '发送中…' : '发送验证码'}
             </button>
-            <button
-              type="button"
-              onClick={resetAll}
-              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
-            >
+            <button type="button" className="btn btn-sm btn-ghost" onClick={resetAll}>
               取消
             </button>
           </div>
@@ -873,42 +776,39 @@ function EmailLoginCard({
 
       {/* 换绑第二步：验证码 */}
       {showCode && (
-        <div className="mt-3 space-y-3 md:max-w-[360px]">
-          <Field label="邮箱验证码" tight>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="输入 6 位验证码"
-              autoComplete="one-time-code"
-              maxLength={6}
-              className={inputCls}
-            />
-            <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">已发送至 {email.trim()}</p>
+        <div className="field-stack">
+          <Field label="邮箱验证码">
+            <span className="field-row">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="输入 6 位验证码"
+                autoComplete="one-time-code"
+                maxLength={6}
+              />
+            </span>
+            <span className="field-hint">已发送至 {email.trim()}</span>
           </Field>
-          <div className="flex items-center gap-2.5">
+          <div className="row">
             <button
               type="button"
+              className="btn btn-sm btn-primary"
               disabled={busy || code.length !== 6}
               onClick={() => void confirmBind()}
-              className="rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? '验证中…' : '确认换绑'}
             </button>
             <button
               type="button"
+              className="link"
               disabled={busy || cooldown > 0}
               onClick={() => void sendBindCode()}
-              className="rounded-lg px-2 py-2 font-label text-[11px] font-semibold text-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {cooldown > 0 ? `${cooldown}s 后重发` : '重新发送'}
             </button>
-            <button
-              type="button"
-              onClick={resetAll}
-              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
-            >
+            <button type="button" className="btn btn-sm btn-ghost" onClick={resetAll}>
               取消
             </button>
           </div>
@@ -917,39 +817,29 @@ function EmailLoginCard({
 
       {/* Google 换绑：验密码后整页跳授权 */}
       {googlePwdOpen && (
-        <div className="mt-3 space-y-3 md:max-w-[360px]">
+        <div className="field-stack">
           {user.hasPassword ? (
-            <Field label="当前密码" tight>
-              <PasswordInput
-                value={googlePwd}
-                onChange={setGooglePwd}
-                placeholder="输入当前密码"
-              />
-              <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">
-                验证后跳转 Google 授权，授权即完成换绑，无需验证码
-              </p>
+            <Field label="当前密码">
+              <PasswordInput value={googlePwd} onChange={setGooglePwd} placeholder="输入当前密码" />
+              <span className="field-hint">验证后跳转 Google 授权，授权即完成换绑，无需验证码</span>
             </Field>
           ) : (
-            <p className="rounded-lg border border-outline-variant/15 bg-surface-container-high/50 px-3 py-2.5 text-[12px] text-on-surface-variant/75">
+            <p className="sugg-note" style={{ textAlign: 'left' }}>
               更换邮箱前需要先在上方「密码」行设置密码——邮箱是账号的身份标识，没有密码的账号不能更换它。
             </p>
           )}
-          <div className="flex items-center gap-2.5">
+          <div className="row">
             {user.hasPassword && (
               <button
                 type="button"
+                className="btn btn-sm btn-primary"
                 disabled={busy || !googlePwd}
                 onClick={() => void goGoogleRebind()}
-                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {busy ? '跳转中…' : '去 Google 授权'}
               </button>
             )}
-            <button
-              type="button"
-              onClick={resetAll}
-              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
-            >
+            <button type="button" className="btn btn-sm btn-ghost" onClick={resetAll}>
               取消
             </button>
           </div>
@@ -958,57 +848,50 @@ function EmailLoginCard({
 
       {/* 解绑第二步：验证码 */}
       {showUnbindCode && (
-        <div className="mt-3 space-y-3 md:max-w-[360px]">
-          <Field label="邮箱验证码" tight>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={unbindCode}
-              onChange={(e) => setUnbindCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="输入 6 位验证码"
-              autoComplete="one-time-code"
-              maxLength={6}
-              className={inputCls}
-            />
-            <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">
-              已发送至 {unbindEmail}，验证后解绑
-            </p>
+        <div className="field-stack">
+          <Field label="邮箱验证码">
+            <span className="field-row">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={unbindCode}
+                onChange={(e) => setUnbindCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="输入 6 位验证码"
+                autoComplete="one-time-code"
+                maxLength={6}
+              />
+            </span>
+            <span className="field-hint">已发送至 {unbindEmail}，验证后解绑</span>
           </Field>
-          <div className="flex items-center gap-2.5">
+          <div className="row">
             <button
               type="button"
+              className="btn btn-sm btn-danger"
               disabled={busy || unbindCode.length !== 6}
               onClick={() => void confirmUnbind()}
-              className="rounded-lg bg-error/90 px-4 py-2 text-[12.5px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? '解绑中…' : '确认解绑'}
             </button>
             <button
               type="button"
+              className="link"
               disabled={busy || unbindCooldown > 0}
               onClick={() => void sendUnbindCode()}
-              className="rounded-lg px-2 py-2 font-label text-[11px] font-semibold text-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {unbindCooldown > 0 ? `${unbindCooldown}s 后重发` : '重新发送'}
             </button>
-            <button
-              type="button"
-              onClick={resetAll}
-              className="rounded-lg px-2 py-2 text-[12.5px] font-semibold text-on-surface-variant/70 transition-colors hover:text-on-surface"
-            >
+            <button type="button" className="btn btn-sm btn-ghost" onClick={resetAll}>
               取消
             </button>
           </div>
         </div>
       )}
 
-      <p
-        role="status"
-        aria-live="polite"
-        className={`min-h-[18px] pt-1.5 font-label text-[11px] ${error || statusError ? 'text-error' : 'text-primary'}`}
-      >
-        {error || status}
-      </p>
+      {(error || status) && (
+        <p className={`form-note${error || statusError ? ' err' : ''}`} role="status" aria-live="polite">
+          {error || status}
+        </p>
+      )}
     </div>
   )
 }
@@ -1060,85 +943,56 @@ function SecurityModule(): JSX.Element {
   }
 
   return (
-    <>
-      <PaneHead title="账号安全" />
-      {/* md 以下不限宽：外层已经收进 560 的居中列了，再限 440 只会在右边又留一条死区 */}
-      <form onSubmit={submit} className="pt-4 md:max-w-[440px]">
-        <Field label="原始密码" required>
-          <PasswordInput
-            value={current}
-            onChange={setCurrent}
-            placeholder="输入当前密码以验证身份"
-          />
-        </Field>
+    <form onSubmit={submit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 400, paddingTop: 16 }}>
+      <Field label="当前密码" required>
+        <PasswordInput value={current} onChange={setCurrent} placeholder="输入当前密码以验证身份" />
+      </Field>
 
-        <SegNote>修改密码</SegNote>
-        {/* 「留空 = 不改」由 placeholder 直接说，不再另开一条提示条重复一遍 */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="新密码" tight>
-            <PasswordInput
-              value={next}
-              onChange={setNext}
-              placeholder="留空 = 不改"
-              autoComplete="new-password"
-            />
-            <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">至少 6 位</p>
-          </Field>
-          <Field label="确认新密码" tight>
-            <PasswordInput
-              value={confirm}
-              onChange={setConfirm}
-              placeholder="留空 = 不改"
-              autoComplete="new-password"
-            />
-          </Field>
-        </div>
-
-        <SegNote>找回密码用的密保</SegNote>
-        {/* 只报「设没设」，绝不回显问题和答案 —— 问题本身也是秘密 */}
-        <div className="mb-3.5 flex flex-wrap items-center gap-x-1.5 rounded border border-outline-variant/15 bg-surface-container-high/50 px-3 py-2.5 text-xs text-on-surface-variant/75">
-          <span>当前状态：</span>
-          <span className={`font-bold ${user?.hasSecurity ? 'text-primary' : 'text-error'}`}>
-            {user?.hasSecurity ? '已设置' : '未设置'}
-          </span>
-        </div>
-        <Field label="找回密码问题">
-          <Select
-            options={questions}
-            value={questionId}
-            onChange={setQuestionId}
-            placeholder="请选择一个问题…"
-          />
+      <div className="pocket-sub" style={{ margin: '4px 0 2px' }}><span className="hl font-hand">修改密码</span></div>
+      {/* 「留空 = 不改」由 placeholder 直接说，不再另开一条提示条重复一遍 */}
+      <div className="field-grid">
+        <Field label="新密码">
+          <PasswordInput value={next} onChange={setNext} placeholder="留空 = 不改" autoComplete="new-password" />
+          <span className="field-hint">至少 6 位</span>
         </Field>
-        <Field label="找回密码答案">
+        <Field label="确认新密码">
+          <PasswordInput value={confirm} onChange={setConfirm} placeholder="留空 = 不改" autoComplete="new-password" />
+        </Field>
+      </div>
+
+      <div className="pocket-sub" style={{ margin: '4px 0 2px' }}><span className="hl font-hand">找回密码用的密保</span></div>
+      {/* 只报「设没设」，绝不回显问题和答案 —— 问题本身也是秘密 */}
+      <p className="faint small">
+        当前状态：
+        <b style={{ color: user?.hasSecurity ? 'var(--teal)' : 'var(--sakura)' }}>
+          {user?.hasSecurity ? '已设置' : '未设置'}
+        </b>
+      </p>
+      <Field label="找回密码问题">
+        <Select options={questions} value={questionId} onChange={setQuestionId} placeholder="请选择一个问题…" />
+      </Field>
+      <Field label="找回密码答案">
+        <span className="field-row">
           <input
             type="text"
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
             placeholder="输入答案"
-            className={inputCls}
           />
-          <p className="mt-1.5 font-label text-[11px] text-on-surface-variant/40">
-            不区分大小写和首尾空格
-          </p>
-        </Field>
+        </span>
+        <span className="field-hint">不区分大小写和首尾空格</span>
+      </Field>
 
-        {/* 状态位固定在按钮右侧的空位里：出现/消失都不挤动任何东西。
-            原来是在按钮上方插一行 <p>，一「已保存」整行按钮就被顶下去。 */}
-        <div className="mt-5 flex items-center gap-3.5">
-          <button
-            type="submit"
-            disabled={saving}
-            className="shrink-0 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {saving ? '保存中…' : '保存修改'}
-          </button>
-          <span className={`font-label text-[11.5px] ${error ? 'text-error' : 'text-primary'}`}>
-            {error || okMsg}
-          </span>
-        </div>
-      </form>
-    </>
+      {/* 状态位固定在按钮右侧的空位里：出现/消失都不挤动任何东西 */}
+      <div className="row">
+        <button type="submit" className="btn btn-primary" disabled={saving}>
+          {saving ? '保存中…' : '保存修改'}
+        </button>
+        <span className={`form-note${error ? ' err' : ''}`} style={{ margin: 0 }}>
+          {error || okMsg}
+        </span>
+      </div>
+    </form>
   )
 }
 
@@ -1265,51 +1119,42 @@ function XifanAccountModule(): JSX.Element {
   }
 
   return (
-    <>
-      <PaneHead title="稀饭账号" />
-      <div className="pt-4 md:max-w-[440px]">
-        {loggedIn === null ? (
-          <div className="flex min-h-[132px] flex-col items-start justify-center gap-3 border-b border-outline-variant/10">
-            {error ? (
-              <>
-                <span role="alert" className="text-[12.5px] font-semibold text-error">{error}</span>
-                <button
-                  type="button"
-                  onClick={() => void loadStatus(true)}
-                  className="rounded-lg border border-outline-variant/30 px-4 py-2 text-[12.5px] font-bold text-on-surface transition-colors hover:border-primary/50 hover:text-primary"
-                >
-                  重新检查
-                </button>
-              </>
-            ) : (
-              <span className="flex items-center gap-2 text-[12.5px] font-semibold text-on-surface-variant/60">
-                <Icon name="refresh" size={16} className="animate-spin" />
-                正在校验登录状态
+    <div style={{ paddingTop: 10 }}>
+      {loggedIn === null ? (
+        <div className="page-state" style={{ padding: '36px 8px' }}>
+          {error ? (
+            <>
+              <span role="alert" className="form-note err" style={{ margin: 0 }}>
+                {error}
               </span>
-            )}
-          </div>
-        ) : loggedIn ? (
-          <div className="flex min-h-[72px] items-center justify-between gap-4 border-b border-outline-variant/10 pb-4">
-            <div>
-              <div className="font-label text-[10px] uppercase text-on-surface-variant/55">登录状态</div>
-              <div className="mt-1.5 flex items-center gap-2 text-[13.5px] font-bold text-primary">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                已登录
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void logout()}
-              className="flex shrink-0 items-center gap-2 rounded-lg border border-outline-variant/30 px-3.5 py-2 text-[12.5px] font-bold text-on-surface-variant transition-colors hover:border-error/45 hover:text-error disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Icon name="logout" size={15} />
+              <button type="button" className="btn btn-sm" onClick={() => void loadStatus(true)}>
+                重新检查
+              </button>
+            </>
+          ) : (
+            <span className="row faint small">
+              <Spinner size={16} />
+              正在校验登录状态
+            </span>
+          )}
+        </div>
+      ) : loggedIn ? (
+        <div className="kv-row">
+          <span className="kv-label">登录状态</span>
+          <span className="kv-val" style={{ color: 'var(--teal)', fontWeight: 600 }}>
+            已登录
+          </span>
+          <span className="kv-act">
+            <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={() => void logout()}>
+              <Ic name="logout" cls="ic ic-sm" />
               {busy ? '退出中…' : '退出登录'}
             </button>
-          </div>
-        ) : (
-          <form onSubmit={submit} aria-describedby="xifan-auth-error">
-            <Field label="账号" htmlFor="xifan-username" required>
+          </span>
+        </div>
+      ) : (
+        <form onSubmit={submit} aria-describedby="xifan-auth-error" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Field label="账号" htmlFor="xifan-username" required>
+            <span className="field-row">
               <input
                 id="xifan-username"
                 type="text"
@@ -1319,18 +1164,15 @@ function XifanAccountModule(): JSX.Element {
                 autoComplete="username"
                 aria-required="true"
                 maxLength={100}
-                className={inputCls}
               />
-            </Field>
-            <Field label="密码" htmlFor="xifan-password" required>
-              <PasswordInput
-                value={password}
-                onChange={setPassword}
-                placeholder="输入密码"
-              />
-            </Field>
-            <Field label="验证码" htmlFor="xifan-verify" required>
-              <div className="grid grid-cols-[minmax(0,1fr)_104px_42px] gap-2">
+            </span>
+          </Field>
+          <Field label="密码" htmlFor="xifan-password" required>
+            <PasswordInput id="xifan-password" value={password} onChange={setPassword} placeholder="输入密码" />
+          </Field>
+          <Field label="验证码" htmlFor="xifan-verify" required>
+            <div className="row" style={{ alignItems: 'stretch' }}>
+              <span className="field-row" style={{ flex: 1 }}>
                 <input
                   id="xifan-verify"
                   type="text"
@@ -1340,83 +1182,62 @@ function XifanAccountModule(): JSX.Element {
                   autoComplete="off"
                   aria-required="true"
                   maxLength={32}
-                  className={inputCls}
                 />
-                <div className="flex h-[42px] w-[104px] items-center justify-center overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-high">
-                  {captcha ? (
-                    <img src={captcha} alt="验证码" draggable={false} className="h-full w-full object-contain" />
-                  ) : (
-                    <Icon name="image" size={18} className="text-on-surface-variant/30" />
-                  )}
-                </div>
-                <button
-                  type="button"
-                  title="刷新验证码"
-                  aria-label="刷新验证码"
-                  disabled={captchaLoading}
-                  onClick={() => void loadCaptcha()}
-                  className="flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-outline-variant/30 text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Icon name="refresh" size={17} className={captchaLoading ? 'animate-spin' : undefined} />
-                </button>
-              </div>
-            </Field>
-
-            <div className="mt-5 flex min-h-[42px] items-center gap-3.5">
-              <button
-                type="submit"
-                disabled={busy || captchaLoading || !captcha}
-                className="shrink-0 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-on-primary transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {busy ? '登录中…' : '登录'}
-              </button>
-              <span
-                id="xifan-auth-error"
-                role="alert"
-                aria-live="polite"
-                className="min-w-0 font-label text-[11.5px] text-error"
-              >
-                {error}
               </span>
+              <span className="captcha-img" style={{ width: 104, height: 42, flex: 'none' }}>
+                {captcha ? (
+                  <img src={captcha} alt="验证码" draggable={false} />
+                ) : (
+                  <Ic name="search" cls="ic ic-sm" />
+                )}
+              </span>
+              <button
+                type="button"
+                className="icon-btn"
+                style={{ width: 42, height: 42, flex: 'none' }}
+                title="刷新验证码"
+                aria-label="刷新验证码"
+                disabled={captchaLoading}
+                onClick={() => void loadCaptcha()}
+              >
+                <Ic name="refresh" cls={captchaLoading ? 'ic animate-spin' : 'ic'} />
+              </button>
             </div>
-          </form>
-        )}
-      </div>
-    </>
+          </Field>
+
+          <div className="row">
+            <button type="submit" className="btn btn-primary" disabled={busy || captchaLoading || !captcha}>
+              {busy ? '登录中…' : '登录'}
+            </button>
+            <span id="xifan-auth-error" role="alert" aria-live="polite" className={`form-note err${error ? '' : ' empty'}`} style={{ margin: 0 }}>
+              {error}
+            </span>
+          </div>
+        </form>
+      )}
+    </div>
   )
 }
 
-const inputCls =
-  'w-full rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2.5 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70'
-
+// 稿纸表单字段（原型稿 .field），tight 场景由调用方自己控制外距
 function Field({
   label,
   htmlFor,
   required,
-  tight,
   children,
 }: {
   label: string
   htmlFor?: string
   required?: boolean
-  tight?: boolean
   children: React.ReactNode
 }): JSX.Element {
   return (
-    <div className={tight ? '' : 'mb-4'}>
-      <label htmlFor={htmlFor} className="mb-1.5 block font-label text-[10px] uppercase tracking-wider text-on-surface-variant/80">
+    <label className="field" htmlFor={htmlFor}>
+      <span className="field-label">
         {label}
-        {required && <span className="ml-1.5 normal-case tracking-normal text-error">必填</span>}
-      </label>
+        {required && <span style={{ color: 'var(--sakura)', marginLeft: 6 }}>必填</span>}
+      </span>
       {children}
-    </div>
-  )
-}
-
-function SegNote({ children }: { children: React.ReactNode }): JSX.Element {
-  return (
-    <div className="my-4 flex items-center gap-2.5 font-label text-[10.5px] uppercase tracking-[0.14em] text-on-surface-variant/40 before:h-px before:flex-1 before:bg-outline-variant/15 after:h-px after:flex-1 after:bg-outline-variant/15">
-      {children}
-    </div>
+    </label>
   )
 }

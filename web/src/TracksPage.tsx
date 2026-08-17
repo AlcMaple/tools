@@ -1,4 +1,6 @@
-// 我的追番 —— 卡片墙 + 「今天更新」置顶分组。
+// 我的追番 —— 皮肤 = 原型稿 tracks.html：等宽卡片网格（不按更新日分组，今天更新的番贴
+// 「今天更新」小贴纸）、一体式步进器 + 铅笔排线进度条钉同一行、状态分段（想看/在追/看完）
+// 常驻直点、纸片弹窗。便签 Toast 做操作反馈。
 //
 // 几条与桌面端对齐的语义(都是踩过坑定下来的,别改):
 //   - `totalEpisodes == null` = **连载中**,不是 0。徽章本身就是「点这里填总集数」的入口。
@@ -40,7 +42,10 @@ import {
   XIFAN_CAPTCHA_EVENT_KEY,
 } from './api'
 import { useAuth } from './auth'
-import { Icon, Spinner } from './Icon'
+import { cacheGet } from './dataCache'
+import type { CalendarResult } from './api'
+import { Ic, Spinner } from './SketchIcon'
+import { toast } from './Toast'
 import {
   loadBindings,
   loadGirigiriBindings,
@@ -57,6 +62,9 @@ const STATUS_META: { key: TrackStatus; label: string }[] = [
   { key: 'plan', label: '想看' },
   { key: 'done', label: '看完' },
 ]
+// 状态分段的展示顺序（想看 → 在追 → 看完）与印章配色（银 / 青 / 金）
+const SEG_ORDER: TrackStatus[] = ['plan', 'watching', 'done']
+const SEG_CLS: Record<TrackStatus, string> = { plan: 'wish', watching: 'doing', done: 'done' }
 type FilterKey = 'all' | TrackStatus
 
 function todayBgmId(): number {
@@ -65,6 +73,14 @@ function todayBgmId(): number {
 }
 
 const allTagsOf = (t: Track): string[] => [...t.bgmTags, ...t.userTags]
+
+// 与 server/tracks.ts 的 USER_TAG_MAX_COUNT 对齐。前端先拦一道：不拦的话乐观更新会先
+// 贴上第 13 个标签、再被后端 400 回滚，用户看到的是「贴上了又消失」。
+const USER_TAG_MAX = 12
+/** 超限时的统一反馈：走便签 Toast（红字警示条离标签输入太远，看不见） */
+function tagLimitToast(): void {
+  toast(`这部番的自定义标签已经贴满 ${USER_TAG_MAX} 个啦，先撕掉一张再贴吧`, { err: true })
+}
 
 // 卡片上的计数就是当前要看的那一集:显示 N 就播 N,还没开始(0)则从第 1 集起。
 // 同时夹到总集数上限,避免异常同步数据生成不存在的集数链接。
@@ -256,12 +272,18 @@ export function TracksPage(): JSX.Element {
   const addFromSearch = (hit: AnimeHit): void => {
     if (!user) return
     setError(null)
+    // 周历缓存里若有这部（加番大多加当季新番），封面 / 放送星期立刻带上：
+    // 乐观卡片即时有图，cover 随 PUT 落库，不用等服务端后台补
+    const cal = cacheGet<CalendarResult>('calendar', 14 * 24 * 60 * 60_000)
+    const calDay = cal?.data.find((d) => d.items.some((i) => i.id === hit.bgmId))
+    const calItem = calDay?.items.find((i) => i.id === hit.bgmId)
     const optimistic: Track = {
       bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
-      title: hit.name, titleCn: hit.nameCn, cover: '', airWeekday: 0,
+      title: hit.name, titleCn: hit.nameCn, cover: calItem?.cover ?? '', airWeekday: calDay?.id ?? 0,
       airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [], updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
+    toast(`已加入『${hit.nameCn || hit.name}』，默认想看`)
     void runTracksMutation(user.username, () =>
       putTrack(hit.bgmId, {
         title: hit.name,
@@ -269,6 +291,8 @@ export function TracksPage(): JSX.Element {
         status: 'plan',
         airDate: hit.date,
         score: hit.score,
+        ...(calItem?.cover ? { cover: calItem.cover } : {}),
+        ...(calDay ? { airWeekday: calDay.id } : {}),
       }, { searchAdditionToken: hit.searchAdditionToken })
     ).catch((e: Error) => setError(e.message))
   }
@@ -281,16 +305,29 @@ export function TracksPage(): JSX.Element {
     setTracks((prev) =>
       prev ? prev.map((t) => (t.bgmId === bgmId ? applyLocal(t, p) : t)) : prev
     )
-    void runTracksMutation(user.username, () => putTrack(bgmId, p))
-      .catch((e: Error) => setError(e.message))
+    void runTracksMutation(user.username, () => putTrack(bgmId, p)).catch((e: Error) => {
+      // 标签超限（前端已拦一道，这里兜底并发写）：走便签，不挂页头红字警示条
+      if (e.message.includes('标签')) tagLimitToast()
+      else setError(e.message)
+    })
+  }
+
+  // 状态分段直点：与编辑弹窗同一入口；已是当前状态的点击不产生请求
+  const setStatus = (t: Track, status: TrackStatus): void => {
+    if (t.status === status) return
+    const label = STATUS_META.find((m) => m.key === status)?.label ?? ''
+    patch(t.bgmId, { status })
+    toast(`『${t.titleCn || t.title}』已标为「${label}」`)
   }
 
   const remove = (bgmId: number): void => {
     if (!user) return
     setError(null)
-    setTracks((prev) => (prev ? prev.filter((t) => t.bgmId !== bgmId) : prev))
+    const t = tracks?.find((x) => x.bgmId === bgmId)
+    setTracks((prev) => (prev ? prev.filter((x) => x.bgmId !== bgmId) : prev))
     setEditing(null)
     setConfirming(null)
+    if (t) toast(`已移出『${t.titleCn || t.title}』`)
     void runTracksMutation(user.username, () => deleteTrack(bgmId))
       .catch((e: Error) => setError(e.message))
   }
@@ -321,153 +358,168 @@ export function TracksPage(): JSX.Element {
 
   // 「想看」中的连载番也是用户关注的更新；但已填写总集数就不再属于「连载中」，
   // 即使还保留原放送星期，也不能每周重复进入当天分组。
-  const todayList = filtered.filter(
-    (t) => t.airWeekday === today && t.status !== 'done' && t.totalEpisodes == null,
+  const todayIds = useMemo(
+    () =>
+      new Set(
+        filtered
+          .filter((t) => t.airWeekday === today && t.status !== 'done' && t.totalEpisodes == null)
+          .map((t) => t.bgmId),
+      ),
+    [filtered, today],
   )
-  const rest = filtered.filter((t) => !todayList.includes(t))
+  const todayCount = todayIds.size
   const editingTrack = tracks?.find((t) => t.bgmId === editing) ?? null
   const confirmingTrack = tracks?.find((t) => t.bgmId === confirming) ?? null
 
   return (
     <>
-      {/* 页头不置顶 —— 只有顶栏置顶。标题和搜索同一行：标题右边本来空着一大片。 */}
-      <div className="border-b border-outline-variant/10 px-4 pb-2.5 pt-3 md:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">我的追番</h1>
-            <p className="mt-1 hidden font-label text-sm text-on-surface-variant/80 md:block">
-              {user
-                ? `在追 ${counts.watching} 部${todayList.length ? `，今天有 ${todayList.length} 部更新。` : '。'}`
-                : '登录后才能追番。'}
-            </p>
-          </div>
-
-          <div className="flex flex-1 items-center justify-end gap-2 md:flex-none">
-            {user && (
-              <button
-                type="button"
-                onClick={() => setAdding(true)}
-                className="flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-bold text-on-primary transition-colors hover:brightness-110"
-              >
-                <Icon name="add" size={15} />
-                <span>加番</span>
-              </button>
+      <div className="spread" style={{ alignItems: 'flex-end' }}>
+        <div>
+          <h1 className="title-sketch" style={{ fontSize: 34 }}>
+            我的追番
+          </h1>
+          <p className="muted small mt8">
+            {user ? (
+              <>
+                在追 {counts.watching} 部
+                {todayCount > 0 && (
+                  <>
+                    ，今天有 <span className="hl" style={{ fontWeight: 600 }}>{todayCount} 部更新</span>
+                  </>
+                )}
+              </>
+            ) : (
+              '登录后，这一页就是你的手帐'
             )}
-            <div className="relative min-w-0 flex-1 md:flex-none">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant/50">
-                <Icon name="search" size={15} />
-              </span>
-              <input
-                spellCheck={false}
-                autoComplete="off"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索标题、别名…"
-                className="w-full rounded-lg border border-outline-variant/30 bg-surface-container-high py-1.5 pl-8 pr-7 text-[13px] text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70 md:w-[196px]"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery('')}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-on-surface-variant/60 transition-colors hover:text-primary"
-                >
-                  <Icon name="close" size={13} />
-                </button>
-              )}
-            </div>
-
-            <TagFilter all={allTags} selected={tags} onChange={setTags} />
-          </div>
+          </p>
         </div>
+        {user && (
+          <div className="row">
+            <button className="btn btn-sm btn-primary" type="button" onClick={() => setAdding(true)}>
+              <Ic name="plus" cls="ic ic-sm" />
+              加番
+            </button>
+          </div>
+        )}
+      </div>
 
-        <div className="mt-2.5 flex flex-wrap gap-1">
-          {([['all', '全部'], ...STATUS_META.map((m) => [m.key, m.label])] as [FilterKey, string][]).map(
-            ([k, label]) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setFilter(k)}
-                // 两态只变颜色 —— 不动 border / 字重 / padding，否则相邻 chip 会被挤
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12.5px] font-semibold transition-colors ${
-                  filter === k ? 'bg-primary/15 text-primary' : 'text-on-surface-variant/70 hover:text-on-surface'
-                }`}
-              >
-                {label}
-                <span className="font-label text-[10px] tabular-nums opacity-60">{counts[k]}</span>
-              </button>
-            )
+      {/* 立绘只在「当前列表真的有卡片」时驻场：任何空态（没追过 / 搜索无结果 / 过滤无结果）
+          都只留 Q 版纱雾空态面板，不叠第二个角色 */}
+      {user && filtered.length > 0 && (
+        <>
+          {/* 手机：立绘内联（桌面为页尾驻场，CSS 切换） */}
+          <div className="rig-inline mt16">
+            <img className="rig" src="/assets/chara_03.png" alt="山田エルフ · 官方立绘" />
+            <div className="bubble rig-bubble">
+              <span>
+                {todayCount > 0
+                  ? `今天有 ${todayCount} 部更新，快去看快去看！`
+                  : '今天没有更新，慢慢补番也好～'}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="row mb16" style={{ flexWrap: 'wrap' }}>
+        <div className="searchbar">
+          <Ic name="search" cls="ic" />
+          <input
+            id="trkSearch"
+            spellCheck={false}
+            autoComplete="off"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="在这页里搜番名…"
+          />
+          {query && (
+            <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="清空搜索">
+              <Ic name="x" cls="ic ic-sm" />
+            </button>
           )}
         </div>
+        <TagFilter all={allTags} selected={tags} onChange={setTags} />
+      </div>
+
+      <div className="tabf-row">
+        {([['all', '全部'], ...STATUS_META.map((m) => [m.key, m.label])] as [FilterKey, string][]).map(
+          ([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              className={`tabf${filter === k ? ' on' : ''}`}
+              onClick={() => setFilter(k)}
+            >
+              {label} <span className="badge-num">{counts[k]}</span>
+            </button>
+          )
+        )}
       </div>
 
       {(error ?? tracksError) && (
-        <div className="px-4 pt-3 md:px-6">
-          <p className="font-label text-xs text-error">⚠ {error ?? tracksError}</p>
-        </div>
+        <p className="form-note err mt8" aria-live="polite">
+          ⚠ {error ?? tracksError}
+        </p>
       )}
 
       {!ready || tracks === null ? (
-        <div className="flex justify-center py-32">
-          <Spinner size={38} className="text-primary/60" />
+        <div className="page-state">
+          <Spinner size={36} />
+          <p className="faint small">正在翻开追番手帐…</p>
         </div>
       ) : !user ? (
-        <Empty icon="person" text="登录后才能追番" hint="追番数据存在账号里，换设备也在" />
+        <EmptyState text="登录后才能追番" hint="追番数据存在账号里，换设备也在" goCalendar />
       ) : counts.all === 0 ? (
-        <Empty icon="bookmark" text="还没追任何番" hint="去「番剧周历」，点封面右上角的 ＋ 追番" />
+        <EmptyState text="还没追任何番" hint="去「番剧周历」，点封面上的 ＋ 追番" goCalendar />
       ) : filtered.length === 0 ? (
-        <Empty icon="search" text="没有匹配的追番" hint="换个词，或清掉类型过滤" />
+        <EmptyState text="没有匹配的追番" hint="换个词，或清掉类型过滤" />
       ) : (
-        <div className="px-4 py-3 md:px-6">
-          {todayList.length > 0 && (
-            <>
-              <SectionLabel>今天更新</SectionLabel>
-              <Grid>
-                {todayList.map((t) => (
-                  <Card
-                    key={t.bgmId}
-                    t={t}
-                    isToday
-                    binding={bindings[t.bgmId]}
-                    girigiriBinding={girigiriBindings[t.bgmId]}
-                    locating={locating === t.bgmId}
-                    girigiriLocating={girigiriLocating === t.bgmId}
-                    onContinue={() => continueWatch(t)}
-                    onContinueGirigiri={() => continueGirigiri(t)}
-                    onPatch={patch}
-                    onEdit={() => setEditing(t.bgmId)}
-                    onAskRemove={() => setConfirming(t.bgmId)}
-                  />
-                ))}
-              </Grid>
-            </>
-          )}
-          {rest.length > 0 && (
-            <>
-              <SectionLabel>{todayList.length ? '其余' : '全部'}</SectionLabel>
-              <Grid>
-                {rest.map((t) => (
-                  <Card
-                    key={t.bgmId}
-                    t={t}
-                    isToday={false}
-                    binding={bindings[t.bgmId]}
-                    girigiriBinding={girigiriBindings[t.bgmId]}
-                    locating={locating === t.bgmId}
-                    girigiriLocating={girigiriLocating === t.bgmId}
-                    onContinue={() => continueWatch(t)}
-                    onContinueGirigiri={() => continueGirigiri(t)}
-                    onPatch={patch}
-                    onEdit={() => setEditing(t.bgmId)}
-                    onAskRemove={() => setConfirming(t.bgmId)}
-                  />
-                ))}
-              </Grid>
-            </>
-          )}
+        <div className="trk-grid">
+          {filtered.map((t) => (
+            <Card
+              key={t.bgmId}
+              t={t}
+              isToday={todayIds.has(t.bgmId)}
+              binding={bindings[t.bgmId]}
+              girigiriBinding={girigiriBindings[t.bgmId]}
+              locating={locating === t.bgmId}
+              girigiriLocating={girigiriLocating === t.bgmId}
+              onContinue={() => continueWatch(t)}
+              onContinueGirigiri={() => continueGirigiri(t)}
+              onPatch={patch}
+              onStatus={(s) => setStatus(t, s)}
+              onEdit={() => setEditing(t.bgmId)}
+              onAskRemove={() => setConfirming(t.bgmId)}
+            />
+          ))}
         </div>
       )}
 
-      {editingTrack && <EditModal t={editingTrack} onPatch={patch} onClose={() => setEditing(null)} />}
+      {user && filtered.length > 0 && (
+        <div className="rig-slot">
+          <div className="rig-box">
+            <img className="rig" src="/assets/chara_03.png" alt="山田エルフ · 官方立绘" />
+            <div className="bubble rig-bubble">
+              <span>
+                {todayCount > 0
+                  ? `今天有 ${todayCount} 部更新，快去看快去看！`
+                  : '今天没有更新，慢慢补番也好～'}
+              </span>
+            </div>
+            <span className="kira" style={{ bottom: 70, right: -12, transform: 'rotate(7deg)' }}>
+              エルフ先生
+            </span>
+          </div>
+        </div>
+      )}
+
+      {editingTrack && (
+        <EditModal
+          t={editingTrack}
+          onPatch={patch}
+          onClose={() => setEditing(null)}
+        />
+      )}
 
       {picker && (
         <BindPickerModal
@@ -536,95 +588,7 @@ function applyLocal(t: Track, p: TrackPatch): Track {
   return next
 }
 
-const Grid = ({ children }: { children: React.ReactNode }): JSX.Element => (
-  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">{children}</div>
-)
-
-const SectionLabel = ({ children }: { children: React.ReactNode }): JSX.Element => (
-  <div className="mb-2 mt-5 flex items-center gap-2.5 first:mt-0">
-    <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40">{children}</span>
-    <span className="h-px flex-1 bg-outline-variant/15" />
-  </div>
-)
-
-const TAG_CLS =
-  'inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-px font-label text-[9px] font-bold tracking-wider text-primary/80'
-
-// ── 标签行 ───────────────────────────────────────────────────────────────────────
-// 按**可用宽度**决定显示几个标签，放不下的收成「+N」——而不是写死「前 3 个」。
-// 写死个数的老毛病：3 个长标签（2026年7月 / CloverWorks…）照样撑破盒子，最后一个被
-// overflow 裁成半个。这里量出每个标签真实宽度，累加到放不下为止。
-// 定高 15px：标签多少都不改卡片高度。
-function TagRow({ tags }: { tags: string[] }): JSX.Element {
-  const ref = useRef<HTMLDivElement>(null)
-  const [count, setCount] = useState(tags.length)
-
-  const key = tags.join('')
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const recompute = (): void => {
-      const avail = el.clientWidth
-      if (!avail) return
-      const chips = Array.from(el.querySelectorAll<HTMLElement>('[data-measure] [data-chip]'))
-      if (!chips.length) return
-      const GAP = 4 // gap-1 = 0.25rem
-      const BADGE = 26 // 「+N」徽章预留宽（含它前面那个 gap），两位数也够
-      let used = 0
-      let fit = 0
-      for (let i = 0; i < chips.length; i++) {
-        const need = (i === 0 ? 0 : GAP) + chips[i].offsetWidth
-        // 不是最后一个 → 后面还得挂 +N，先给它留位
-        const reserve = i < chips.length - 1 ? BADGE : 0
-        if (used + need + reserve <= avail) {
-          used += need
-          fit = i + 1
-        } else break
-      }
-      setCount(Math.max(1, fit)) // 至少留 1 个；单个就超宽时靠 overflow-hidden 兜住
-    }
-    recompute()
-    // 字体晚加载会让首次测量偏小 → 字体就绪后再算一次
-    void document.fonts?.ready.then(recompute).catch(() => undefined)
-    const ro = new ResizeObserver(recompute)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [key])
-
-  const more = tags.length - count
-
-  return (
-    <div ref={ref} className="relative flex h-[15px] items-center gap-1 overflow-hidden">
-      {tags.slice(0, count).map((x) => (
-        <span key={x} className={TAG_CLS}>
-          {x}
-        </span>
-      ))}
-      {more > 0 && (
-        <span
-          className={`${TAG_CLS} bg-on-surface/[0.08] text-on-surface-variant/50`}
-          title={tags.slice(count).join('、')}
-        >
-          +{more}
-        </span>
-      )}
-      {/* 测量层：全部标签，不换行、不可见、绝对定位不占流 —— 只为量真实宽度 */}
-      <div
-        data-measure
-        aria-hidden
-        className="pointer-events-none invisible absolute left-0 top-0 flex gap-1 whitespace-nowrap"
-      >
-        {tags.map((x) => (
-          <span key={x} data-chip className={TAG_CLS}>
-            {x}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ── 卡片 ───────────────────────────────────────────────────────────────────────
+// ── 卡片（手帐内页行卡） ───────────────────────────────────────────────────────
 function Card({
   t,
   isToday,
@@ -635,6 +599,7 @@ function Card({
   onContinue,
   onContinueGirigiri,
   onPatch,
+  onStatus,
   onEdit,
   onAskRemove,
 }: {
@@ -647,116 +612,211 @@ function Card({
   onContinue: () => void
   onContinueGirigiri: () => void
   onPatch: (bgmId: number, p: TrackPatch) => void
+  onStatus: (s: TrackStatus) => void
   onEdit: () => void
   onAskRemove: () => void
 }): JSX.Element {
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
   const ep = watchEp(t)
+  // 卡片上的行内标签输入（＋ 标签 → 回车贴上）
+  const [addingTag, setAddingTag] = useState(false)
+  const [tagDraft, setTagDraft] = useState('')
+  // 进度条：有总集数按比例；连载中给个「看过的集数」渐增（原型稿同款公式）
+  const pct =
+    t.totalEpisodes != null
+      ? Math.min(100, Math.round((t.episode / t.totalEpisodes) * 100))
+      : t.episode > 0
+        ? Math.min(100, 8 + t.episode * 6)
+        : 0
+
+  const commitTag = (): void => {
+    const v = tagDraft.trim()
+    if (v && !allTagsOf(t).includes(v)) {
+      if (t.userTags.length >= USER_TAG_MAX) {
+        tagLimitToast()
+      } else {
+        onPatch(t.bgmId, { userTags: [...t.userTags, v] })
+        toast(`贴上了『${v}』标签`)
+      }
+    }
+    setTagDraft('')
+    setAddingTag(false)
+  }
 
   const step = (delta: number): void => {
     const ep = Math.max(0, t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode + delta) : t.episode + delta)
     const p: TrackPatch = { episode: ep }
     // 「想看」首次推进 → 自动转「在追」。反方向（推满 → 看完）**不**自动，见文件头注释。
-    if (ep > 0 && t.status === 'plan') p.status = 'watching'
+    if (ep > 0 && t.status === 'plan') {
+      p.status = 'watching'
+      toast(`『${title}』开始追啦`)
+    }
     onPatch(t.bgmId, p)
   }
 
   return (
-    // 不再有 hover 描边——纯装饰性描边在触屏上没有等价反馈，去掉更干净。
-    <div className="relative overflow-hidden rounded-xl border border-outline-variant/15 bg-surface-container">
-      <div onClick={onEdit} title="点封面编辑" className="relative aspect-[3/4] cursor-pointer">
+    <article className="trk-row">
+      <span className={`tape tr ${isToday ? 'sakura' : 'teal'}`} />
+      <div className="trk-cover" onClick={onEdit} title="点封面编辑" style={{ cursor: 'pointer' }}>
+        {/* 「详情」角标是压在封面图上的浮层：没有封面时它会裸露在空白占位格上，
+            像张贴歪的标签；此时卡片正文里的「BGM」按钮已经是同一个入口，直接不渲染 */}
         {t.cover ? (
-          <img src={coverUrl(t.cover)} alt={title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+          <>
+            <img className="cover-img" src={coverUrl(t.cover)} alt={title} loading="lazy" decoding="async" />
+            <a
+              className="bgm-link"
+              href={`https://bgm.tv/subject/${t.bgmId}`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="在 Bangumi 查看"
+            >
+              <Ic name="external" cls="ic ic-sm" />
+              详情
+            </a>
+          </>
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-surface-container-high text-on-surface-variant/20">
-            <Icon name="image" size={30} />
-          </div>
-        )}
-
-        {/* BGM 外链：常驻左上角图标，不再塞进只在 hover 时出现的整卡遮罩里 */}
-        <a
-          href={`https://bgm.tv/subject/${t.bgmId}`}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          title="在 Bangumi 查看"
-          className="absolute left-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/70"
-        >
-          <Icon name="open_in_new" size={12} />
-        </a>
-
-        {/* 取消追番 —— 常驻右上角图标（不再靠 hover 才浮现）。删除是「针对整条记录」的操作，
-            跟卡片对应而非编辑框内容；stopPropagation 免得连带触发点封面进编辑。 */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onAskRemove()
-          }}
-          title="取消追番"
-          aria-label="取消追番"
-          className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm transition-colors hover:bg-error hover:text-on-error"
-        >
-          <Icon name="delete" size={13} />
-        </button>
-
-        {/* 「更新」放左下角——左上角已经被 BGM 外链图标占了 */}
-        {isToday && (
-          <span className="absolute bottom-1.5 left-1.5 z-10 rounded bg-primary px-1.5 py-0.5 font-label text-[9px] font-bold uppercase tracking-wider text-on-primary">
-            更新
-          </span>
+          <div className="cover-ph">☆</div>
         )}
       </div>
+      <div className="trk-body">
+        <div className="trk-head">
+          <div className="trk-marks">
+            <span
+              className={`stamp small ${t.status === 'watching' ? 'st-teal' : t.status === 'done' ? 'st-gold' : 'st-silver'}`}
+            >
+              {STATUS_META.find((m) => m.key === t.status)?.label}
+            </span>
+            {isToday && <span className="chip-today">今天更新</span>}
+          </div>
+          <div className="trk-title" title={title}>
+            {title}
+          </div>
+          <span className="trk-ep">
+            {t.totalEpisodes != null ? `${t.episode} / ${t.totalEpisodes}` : `${t.episode} 集`}
+          </span>
+        </div>
 
-      <div className="flex flex-col gap-1.5 px-2 py-2">
-        <h3 className="line-clamp-2 h-[30px] text-xs font-bold leading-tight text-on-surface" title={title}>
-          {title}
-        </h3>
-        {/* 标签只读，紧贴标题下方（app 的位置）。按宽度截断，放不下收成 +N，定高不抖。 */}
-        <TagRow tags={allTagsOf(t)} />
+        <div className="ep-ctrl">
+          <div className="stepper">
+            <button
+              type="button"
+              className="ep-minus"
+              aria-label="减一集"
+              onClick={() => step(-1)}
+              disabled={t.episode <= 0}
+            >
+              <Ic name="minus" cls="ic ic-sm" />
+            </button>
+            <span className="ep-num">EP {t.episode}</span>
+            <button
+              type="button"
+              className="ep-plus"
+              aria-label="加一集"
+              onClick={() => step(1)}
+              disabled={capped}
+            >
+              <Ic name="plus" cls="ic ic-sm" />
+            </button>
+          </div>
+          <div className={`prog${t.status === 'done' ? ' done' : ''}`}>
+            <i style={{ width: `${pct}%` }} />
+          </div>
+        </div>
 
-        {/* 在线源是同一组职责：两个源并列常驻，绑定后原生链接直开，未绑定才进入定位流程。 */}
-        <div className="grid grid-cols-2 gap-1">
+        {/* 标签：BGM 标签只读；自定义标签卡片上直接增删（原型稿形态） */}
+        <div className="tagx-row">
+          {t.bgmTags.map((x) => (
+            <span key={`b-${x}`} className="tagx" title="来自 Bangumi（不可编辑）">
+              {x}
+            </span>
+          ))}
+          {t.userTags.map((x) => (
+            <span key={`u-${x}`} className="tagx mine" title={`自定义「${x}」（点击移除）`}>
+              {x}
+              <button
+                type="button"
+                aria-label={`删除标签 ${x}`}
+                onClick={() => onPatch(t.bgmId, { userTags: t.userTags.filter((y) => y !== x) })}
+              >
+                <Ic name="x" cls="ic ic-sm" />
+              </button>
+            </span>
+          ))}
+          {addingTag ? (
+            <input
+              className="tagx-input"
+              style={{ borderStyle: 'dashed', borderColor: 'var(--teal-line)' }}
+              autoFocus
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              onBlur={commitTag}
+              onKeyDown={(e) => {
+                // isComposing 守卫 —— 中文输入法按回车是「确认拼音」，不是「提交标签」
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitTag()
+                if (e.key === 'Escape') {
+                  setTagDraft('')
+                  setAddingTag(false)
+                }
+              }}
+              placeholder="回车贴上，≤20 字"
+              maxLength={20}
+              spellCheck={false}
+            />
+          ) : (
+            <button type="button" className="tagx tagx-add" onClick={() => setAddingTag(true)}>
+              ＋ 标签
+            </button>
+          )}
+        </div>
+
+        <div className="trk-actions">
           <SourcePlayAction
-            label="稀饭"
+            cls="btn btn-sm btn-primary"
+            label="继续看"
             ep={ep}
             binding={binding ? { id: String(binding.xifanId), name: binding.xifanName } : undefined}
             href={binding ? playPageUrl(binding.xifanId, ep, t.bgmId) : undefined}
             locating={locating}
             onLocate={onContinue}
           />
-          <SourcePlayAction
-            label="Girigiri"
-            ep={ep}
-            binding={girigiriBinding ? { id: girigiriBinding.girigiriId, name: girigiriBinding.girigiriName } : undefined}
-            href={girigiriBinding ? girigiriPlayPageUrl(girigiriBinding.girigiriId, ep, t.bgmId) : undefined}
-            locating={girigiriLocating}
-            onLocate={onContinueGirigiri}
-          />
-        </div>
-
-        <div className="flex items-center justify-between gap-1">
-          <div className="flex items-center gap-1">
-            <StepBtn icon="remove" onClick={() => step(-1)} disabled={t.episode <= 0} />
-            <span className="text-center font-label text-[11px] tabular-nums">
-              <b className="text-[13px] font-extrabold text-on-surface">{t.episode}</b>
-              <span className="text-on-surface-variant/40"> / {t.totalEpisodes ?? '—'}</span>
-            </span>
-            <StepBtn icon="add" onClick={() => step(1)} disabled={capped} />
+          <a
+            className="btn btn-sm btn-ghost"
+            href={`https://bgm.tv/subject/${t.bgmId}`}
+            target="_blank"
+            rel="noreferrer"
+            title="在 Bangumi 查看详情"
+          >
+            <Ic name="external" cls="ic ic-sm" />
+            BGM
+          </a>
+          <div className="status-seg" role="group" aria-label="追番状态">
+            {SEG_ORDER.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`seg-btn${t.status === s ? ' on' : ''}`}
+                data-status={SEG_CLS[s]}
+                aria-pressed={t.status === s}
+                onClick={() => onStatus(s)}
+              >
+                {STATUS_META.find((m) => m.key === s)?.label}
+              </button>
+            ))}
           </div>
-          {t.totalEpisodes == null && (
-            <span className="shrink-0 rounded bg-on-surface/[0.08] px-1.5 py-0.5 font-label text-[9px] uppercase tracking-wider text-on-surface-variant/50">
-              连载中
-            </span>
-          )}
+          <button className="btn btn-sm btn-danger trk-rm" type="button" onClick={onAskRemove}>
+            <Ic name="x" cls="ic ic-sm" />
+            移出
+          </button>
         </div>
       </div>
-    </div>
+    </article>
   )
 }
 
 function SourcePlayAction({
+  cls,
   label,
   ep,
   binding,
@@ -764,6 +824,7 @@ function SourcePlayAction({
   locating,
   onLocate,
 }: {
+  cls: string
   label: string
   ep: number
   binding?: { id: string; name: string }
@@ -771,40 +832,24 @@ function SourcePlayAction({
   locating: boolean
   onLocate: () => void
 }): JSX.Element {
-  const className = 'flex min-w-0 items-center justify-center gap-1 rounded-lg border border-primary/35 bg-primary/[0.12] px-1 py-1.5 font-label text-[9px] font-semibold uppercase tracking-wider text-primary transition-colors hover:bg-primary/20 disabled:cursor-wait disabled:opacity-60'
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noreferrer" title={`${label}：${binding?.name || binding?.id || ''}`} className={className}>
-        <Icon name="play_arrow" size={12} />
-        <span className="truncate">{label} · EP {ep}</span>
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        title={`继续看：${binding?.name || binding?.id || ''} · EP ${ep}`}
+        className={cls}
+      >
+        <Ic name="play" cls="ic ic-sm" />
+        {label}
       </a>
     )
   }
   return (
-    <button type="button" disabled={locating} onClick={onLocate} title={`定位${label}片源`} className={className}>
-      {locating ? <Spinner size={12} /> : <Icon name="play_arrow" size={12} />}
-      <span className="truncate">{locating ? '定位中…' : `${label} · EP ${ep}`}</span>
-    </button>
-  )
-}
-
-function StepBtn({
-  icon,
-  onClick,
-  disabled,
-}: {
-  icon: 'add' | 'remove'
-  onClick: () => void
-  disabled?: boolean
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded border border-outline-variant/25 bg-surface-container-high text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-25"
-    >
-      <Icon name={icon} size={13} />
+    <button type="button" disabled={locating} onClick={onLocate} title={`定位稀饭片源`} className={cls}>
+      {locating ? <Spinner size={12} /> : <Ic name="play" cls="ic ic-sm" />}
+      <span>{locating ? '定位中…' : label}</span>
     </button>
   )
 }
@@ -847,62 +892,43 @@ function TagFilter({
   }
 
   return (
-    <div ref={box} className="relative shrink-0">
+    <div ref={box} className={`dd-host${open ? ' open' : ''}`}>
       <button
         type="button"
+        className="dd-trigger"
+        style={{ minWidth: 128 }}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-lg border border-outline-variant/30 bg-surface-container-high px-2.5 py-1.5 text-left text-[13px] transition-colors hover:border-primary/40"
       >
-        <span className="text-on-surface-variant/60">类型</span>
-        {/* invisible 不用 hidden，且写死宽度 —— hidden 会脱离文档流，角标一出现就把按钮撑宽、
-            把搜索框挤走（AI_GUIDELINES「UI/样式」：临时状态要留常驻空位，两态盒子尺寸不变）。 */}
-        <span
-          className={`w-3.5 rounded bg-primary text-center font-label text-[10px] font-bold leading-[14px] text-on-primary ${
-            selected.size ? '' : 'invisible'
-          }`}
-        >
+        <span className="dd-val">类型</span>
+        {/* invisible 不用 hidden —— hidden 脱离文档流，角标一出现就把按钮撑宽（AI_GUIDELINES：
+            临时状态要留常驻空位，两态盒子尺寸不变） */}
+        <span className="tagx mine" style={{ visibility: selected.size ? 'visible' : 'hidden' }}>
           {selected.size}
         </span>
-        <Icon name="expand_more" size={14} className={`opacity-50 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <Ic name="chev" cls="ic" />
       </button>
 
       {open && (
-        // z-30：盖住卡片，但不盖顶栏（顶栏 z-40）
-        <div className="absolute right-0 top-[calc(100%+5px)] z-30 w-[176px] rounded-md border border-outline-variant/35 bg-surface-container-low p-1 shadow-2xl">
+        <div className="dd">
           {all.length === 0 ? (
-            <p className="px-2.5 py-2 text-[12px] text-on-surface-variant/40">还没有标签</p>
+            <p className="sugg-note">还没有标签</p>
           ) : (
-            <div className="custom-scrollbar max-h-[260px] overflow-y-auto">
-              {all.map(([t, n]) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => toggle(t)}
-                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-on-surface/5"
-                >
-                  <span
-                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
-                      selected.has(t) ? 'border-primary bg-primary text-on-primary' : 'border-outline-variant/40'
-                    }`}
-                  >
-                    {selected.has(t) && <Icon name="check" size={10} />}
-                  </span>
-                  <span className={`flex-1 truncate ${selected.has(t) ? 'text-primary' : 'text-on-surface-variant'}`}>{t}</span>
-                  <span className="font-label text-[10px] tabular-nums text-on-surface-variant/40">{n}</span>
-                </button>
-            ))}
-            </div>
+            all.map(([t, n]) => (
+              <button key={t} type="button" className={`dd-item${selected.has(t) ? ' on' : ''}`} onClick={() => toggle(t)}>
+                <span className={`dd-check${selected.has(t) ? ' on' : ''}`}>
+                  {selected.has(t) && <Ic name="check" cls="ic ic-sm" />}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {t}
+                </span>
+                <span className="faint">{n}</span>
+              </button>
+            ))
           )}
           {selected.size > 0 && (
-            <div className="mt-1 border-t border-outline-variant/15 pt-1">
-              <button
-                type="button"
-                onClick={() => onChange(new Set())}
-                className="w-full rounded px-2.5 py-1.5 text-left text-[13px] text-on-surface-variant/60 transition-colors hover:bg-on-surface/5 hover:text-error"
-              >
-                清空
-              </button>
-            </div>
+            <button type="button" className="dd-item" style={{ color: 'var(--sakura)' }} onClick={() => onChange(new Set())}>
+              清空过滤
+            </button>
           )}
         </div>
       )}
@@ -911,7 +937,7 @@ function TagFilter({
 }
 
 // ── 编辑弹窗 ───────────────────────────────────────────────────────────────────
-// 没有保存按钮 —— 改完即生效。外壳照抄 AuthModal。
+// 没有保存按钮 —— 改完即生效。
 function EditModal({
   t,
   onPatch,
@@ -946,156 +972,141 @@ function EditModal({
 
   const commitTag = (): void => {
     const v = tagDraft.trim()
-    if (v && !allTagsOf(t).includes(v)) onPatch(t.bgmId, { userTags: [...t.userTags, v] })
+    if (v && !allTagsOf(t).includes(v)) {
+      if (t.userTags.length >= USER_TAG_MAX) tagLimitToast()
+      else onPatch(t.bgmId, { userTags: [...t.userTags, v] })
+    }
     setTagDraft('')
     setAdding(false)
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      className="dlg-backdrop open"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative m-auto w-full max-w-[420px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          title="关闭"
-          className="absolute right-3.5 top-3.5 flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
-        >
-          <Icon name="close" size={16} />
+      <div role="dialog" aria-modal="true" aria-label="编辑追番" className="dlg">
+        <span className="tape tl teal" />
+        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <Ic name="x" cls="ic" />
         </button>
 
-        <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">编辑追番</div>
-        <h2 className="mb-4 mt-1.5 line-clamp-2 pr-6 text-lg font-extrabold leading-tight text-on-surface">{title}</h2>
+        <h3 className="dlg-title">{title}</h3>
+        <p className="dlg-sub">
+          {sub || '—'}
+          {t.airWeekday ? ` · 周${SHORT_DAY[t.airWeekday]}更新` : ''}
+          {t.score > 0 ? ` · ★ ${t.score.toFixed(1)}` : ''}
+        </p>
 
-        <div className="mb-4 flex gap-3">
-          {t.cover && <img src={coverUrl(t.cover)} alt="" className="h-[92px] w-[68px] shrink-0 rounded object-cover" />}
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="line-clamp-2 text-[11px] leading-snug text-on-surface-variant/50">{sub || '—'}</div>
-            <div className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40">
-              {t.airWeekday ? `星期${SHORT_DAY[t.airWeekday]}` : ''}
-              {t.score > 0 ? ` · ★ ${t.score.toFixed(1)}` : ''}
+        <div className="mb16" style={{ display: 'flex', gap: 14 }}>
+          {t.cover && <img className="dlg-cover" src={coverUrl(t.cover)} alt="" />}
+          <div className="field" style={{ flex: 1, minWidth: 0 }}>
+            <span className="field-label">状态</span>
+            <div className="status-seg" style={{ marginLeft: 0 }} role="group" aria-label="追番状态">
+              {SEG_ORDER.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={`seg-btn${t.status === s ? ' on' : ''}`}
+                  data-status={SEG_CLS[s]}
+                  aria-pressed={t.status === s}
+                  onClick={() => onPatch(t.bgmId, { status: s })}
+                >
+                  {STATUS_META.find((m) => m.key === s)?.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
-        <div className="mb-3 grid grid-cols-3 gap-1.5 rounded-md bg-surface-container p-1">
-          {STATUS_META.map((m) => (
-            <button
-              key={m.key}
-              type="button"
-              onClick={() => onPatch(t.bgmId, { status: m.key })}
-              className={`rounded border py-1.5 text-sm font-semibold transition-colors ${
-                t.status === m.key
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-transparent text-on-surface-variant/70 hover:text-on-surface'
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="mb-4 flex items-center gap-3">
-          <span className="w-12 shrink-0 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40">进度</span>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              disabled={t.episode <= 0}
-              onClick={() => onPatch(t.bgmId, { episode: Math.max(0, t.episode - 1) })}
-              className="flex h-7 w-7 items-center justify-center rounded border border-outline-variant/30 bg-surface-container-high transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-25"
-            >
-              <Icon name="remove" size={14} />
-            </button>
-            <b className="min-w-[28px] text-center text-base font-extrabold tabular-nums text-on-surface">{t.episode}</b>
-            <button
-              type="button"
-              disabled={t.totalEpisodes != null && t.episode >= t.totalEpisodes}
-              onClick={() => onPatch(t.bgmId, { episode: t.episode + 1, ...(t.status === 'plan' ? { status: 'watching' as const } : {}) })}
-              className="flex h-7 w-7 items-center justify-center rounded border border-outline-variant/30 bg-surface-container-high transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-25"
-            >
-              <Icon name="add" size={14} />
-            </button>
-          </div>
-          <span className="text-on-surface-variant/30">/</span>
-          <input
-            value={totalDraft}
-            onChange={(e) => setTotalDraft(e.target.value.replace(/[^0-9]/g, ''))}
-            onBlur={commitTotal}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitTotal()
-            }}
-            placeholder="留空 = 连载中"
-            inputMode="numeric"
-            maxLength={4}
-            className="h-7 w-[104px] rounded-lg border border-outline-variant/30 bg-surface-container-high px-2 text-[13px] text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70"
-          />
-        </div>
-
-        <div className="mb-1.5 flex items-center gap-3">
-          <span className="w-12 shrink-0 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/40">类型</span>
-          <span className="font-label text-[10px] tracking-wider text-on-surface-variant/25">BGM 的不可改 · 自定义的点一下删</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {t.bgmTags.map((x) => (
-            <span
-              key={`b-${x}`}
-              title="来自 Bangumi（不可编辑）"
-              className="inline-flex items-center rounded border border-primary/25 bg-primary/[0.12] px-2 py-0.5 font-label text-[10px] font-bold tracking-wider text-primary"
-            >
-              {x}
-            </span>
-          ))}
-          {t.userTags.map((x) => (
-            <button
-              key={`u-${x}`}
-              type="button"
-              onClick={() => onPatch(t.bgmId, { userTags: t.userTags.filter((y) => y !== x) })}
-              title={`自定义「${x}」（点击移除）`}
-              className="group inline-flex items-center gap-0.5 rounded border border-primary/25 bg-primary/[0.12] px-2 py-0.5 font-label text-[10px] font-bold tracking-wider text-primary transition-colors hover:border-error/40 hover:bg-error/15 hover:text-error"
-            >
-              <span>{x}</span>
-              <Icon name="close" size={11} className="-mr-0.5 opacity-0 transition-opacity group-hover:opacity-100" />
-            </button>
-          ))}
-          {adding ? (
-            <input
-              autoFocus
-              value={tagDraft}
-              onChange={(e) => setTagDraft(e.target.value)}
-              onBlur={commitTag}
-              onKeyDown={(e) => {
-                // isComposing 守卫 —— 中文输入法按回车是「确认拼音」，不是「提交标签」
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitTag()
-                if (e.key === 'Escape') {
-                  setTagDraft('')
-                  setAdding(false)
+        <div className="field mb16">
+          <span className="field-label">进度</span>
+          <div className="ep-ctrl">
+            <div className="stepper">
+              <button
+                type="button"
+                className="ep-minus"
+                aria-label="减一集"
+                disabled={t.episode <= 0}
+                onClick={() => onPatch(t.bgmId, { episode: Math.max(0, t.episode - 1) })}
+              >
+                <Ic name="minus" cls="ic ic-sm" />
+              </button>
+              <span className="ep-num">EP {t.episode}</span>
+              <button
+                type="button"
+                className="ep-plus"
+                aria-label="加一集"
+                disabled={t.totalEpisodes != null && t.episode >= t.totalEpisodes}
+                onClick={() =>
+                  onPatch(t.bgmId, { episode: t.episode + 1, ...(t.status === 'plan' ? { status: 'watching' as const } : {}) })
                 }
-              }}
-              placeholder="例：下饭"
-              maxLength={20}
-              spellCheck={false}
-              className="w-24 rounded border border-primary/40 bg-surface px-2 py-0.5 font-label text-[10px] font-bold tracking-wider text-on-surface outline-none"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              className="inline-flex items-center gap-0.5 rounded border border-dashed border-outline-variant/40 px-2 py-0.5 font-label text-[10px] font-bold tracking-wider text-on-surface-variant/50 transition-colors hover:border-primary/40 hover:text-primary"
-            >
-              <Icon name="add" size={11} />
-              <span>标签</span>
-            </button>
-          )}
+              >
+                <Ic name="plus" cls="ic ic-sm" />
+              </button>
+            </div>
+            <span className="field-row" style={{ flex: 1 }}>
+              <input
+                value={totalDraft}
+                onChange={(e) => setTotalDraft(e.target.value.replace(/[^0-9]/g, ''))}
+                onBlur={commitTotal}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitTotal()
+                }}
+                placeholder="总集数，留空 = 连载中"
+                inputMode="numeric"
+                maxLength={4}
+                style={{ width: '100%', maxWidth: 180 }}
+              />
+            </span>
+          </div>
         </div>
 
+        <div className="field">
+          <span className="field-label">类型标签（BGM 的不可改 · 自定义的点一下删）</span>
+          <div className="tagx-row">
+            {t.bgmTags.map((x) => (
+              <span key={`b-${x}`} className="tagx" title="来自 Bangumi（不可编辑）">
+                {x}
+              </span>
+            ))}
+            {t.userTags.map((x) => (
+              <span key={`u-${x}`} className="tagx mine" title={`自定义「${x}」（点击移除）`}>
+                {x}
+                <button type="button" aria-label={`删除标签 ${x}`} onClick={() => onPatch(t.bgmId, { userTags: t.userTags.filter((y) => y !== x) })}>
+                  <Ic name="x" cls="ic ic-sm" />
+                </button>
+              </span>
+            ))}
+            {adding ? (
+              <input
+                className="tagx-input"
+                style={{ borderStyle: 'dashed', borderColor: 'var(--teal-line)' }}
+                autoFocus
+                value={tagDraft}
+                onChange={(e) => setTagDraft(e.target.value)}
+                onBlur={commitTag}
+                onKeyDown={(e) => {
+                  // isComposing 守卫 —— 中文输入法按回车是「确认拼音」，不是「提交标签」
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitTag()
+                  if (e.key === 'Escape') {
+                    setTagDraft('')
+                    setAdding(false)
+                  }
+                }}
+                placeholder="例：下饭"
+                maxLength={20}
+                spellCheck={false}
+              />
+            ) : (
+              <button type="button" className="tagx tagx-add" onClick={() => setAdding(true)}>
+                ＋ 标签
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -1127,40 +1138,28 @@ function ConfirmRemoveModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      className="dlg-backdrop open"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative m-auto w-full max-w-[340px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl"
-      >
-        <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-error/10 text-error">
-          <Icon name="delete" size={22} />
-        </div>
-        <h2 className="text-lg font-extrabold leading-tight text-on-surface">取消追番</h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-on-surface-variant/70">
-          不再追踪《{title}》。
-          {lost.length > 0 && (
-            <span className="mt-1 block text-on-surface-variant/45">{lost.join(' 和 ')}会一并删除，无法恢复。</span>
-          )}
+      <div role="dialog" aria-modal="true" aria-label="移出追番" className="dlg">
+        <span className="tape tl sakura" />
+        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <Ic name="x" cls="ic" />
+        </button>
+        <h3 className="dlg-title">移出追番</h3>
+        <p className="dlg-sub">
+          确定把『<b style={{ color: 'var(--sakura)' }}>{title}</b>』从手帐里撕掉吗？
+          {lost.length > 0 && <span className="faint">{lost.join(' 和 ')}会一并删除，无法恢复。</span>}
         </p>
-        <div className="mt-5 flex gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 rounded-lg border border-outline-variant/30 py-2 text-sm font-semibold text-on-surface-variant/80 transition-colors hover:bg-surface-container-high hover:text-on-surface"
-          >
-            保留
+        <div className="dlg-actions">
+          <button className="btn btn-ghost" type="button" onClick={onClose}>
+            先留着
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="flex-1 rounded-lg bg-error py-2 text-sm font-bold text-on-error transition-colors hover:brightness-110"
-          >
-            取消追番
+          <button className="btn btn-danger" type="button" onClick={onConfirm}>
+            <Ic name="x" cls="ic ic-sm" />
+            移除
           </button>
         </div>
       </div>
@@ -1197,77 +1196,54 @@ function BindPickerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      className="dlg-backdrop open"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative m-auto w-full max-w-[440px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          title="关闭"
-          className="absolute right-3.5 top-3.5 flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
-        >
-          <Icon name="close" size={16} />
+      <div role="dialog" aria-modal="true" aria-label="选择稀饭片源" className="dlg">
+        <span className="tape tl teal" />
+        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <Ic name="x" cls="ic" />
         </button>
 
-        <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">选择稀饭片源</div>
-        <h2 className="mb-1 mt-1.5 line-clamp-2 pr-6 text-lg font-extrabold leading-tight text-on-surface">{title}</h2>
-        <p className="mb-4 text-[12px] leading-relaxed text-on-surface-variant/60">
-          稀饭用的是另一套编号，按名字匹配出以下几部。<b className="text-on-surface-variant/80">点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
+        <h3 className="dlg-title">{title}</h3>
+        <p className="dlg-sub">
+          稀饭用的是另一套编号，按名字匹配出以下几部。<b>点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
         </p>
 
         {candidates.length === 0 ? (
-          <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-4 text-[12.5px] leading-relaxed text-on-surface-variant/60">
+          <div className="sugg-note" style={{ textAlign: 'left' }}>
             没在稀饭<b>本季周表</b>里找到相近的名字。往季资源或非周历资源可以改用稀饭全站搜索。
-            <button
-              type="button"
-              onClick={onSearch}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/35 bg-primary/[0.12] py-2 font-label text-[11px] font-bold tracking-widest text-primary transition-colors hover:bg-primary/20"
-            >
-              <Icon name="search" size={14} />
-              搜索稀饭全站资源
-            </button>
           </div>
         ) : (
-          <div className="custom-scrollbar flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
+          <div className="cand-list custom-scrollbar">
             {candidates.map((c) => (
               <a
                 key={c.xifanId}
+                className="sugg-item"
                 href={playPageUrl(c.xifanId, ep, track.bgmId)}
                 target="_blank"
                 rel="noreferrer"
                 onClick={() => onPick(c)}
-                className="flex items-center gap-3 rounded-lg border border-outline-variant/25 bg-surface-container px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-semibold text-on-surface">{c.xifanName || `稀饭 #${c.xifanId}`}</div>
-                  <div className="mt-0.5 font-label text-[10px] uppercase tracking-wider text-on-surface-variant/45">
-                    {c.day ? `星期${SHORT_DAY[c.day]}` : '—'}
-                    {c.remarks ? ` · ${c.remarks.replace('|', ' · ')}` : ''}
-                  </div>
-                </div>
-                <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {c.xifanName || `稀饭 #${c.xifanId}`}
+                </span>
+                <span className="sugg-meta">
+                  {c.day ? `周${SHORT_DAY[c.day]}` : ''}
+                  {c.remarks ? `${c.day ? ' · ' : ''}${c.remarks.replace('|', ' · ')}` : ''}
+                </span>
+                <Ic name="play" cls="ic ic-sm" />
               </a>
-              ))}
+            ))}
           </div>
         )}
 
-        {candidates.length > 0 && (
-          <button
-            type="button"
-            onClick={onSearch}
-            className="mt-4 flex w-full items-center justify-center gap-1.5 border-t border-outline-variant/15 pt-3 font-label text-[10px] font-semibold tracking-widest text-on-surface-variant/50 transition-colors hover:text-primary"
-          >
-            <Icon name="search" size={13} />
-            搜索稀饭全站资源
-          </button>
-        )}
+        <button className="btn btn-sm btn-ghost btn-block mt16" type="button" onClick={onSearch}>
+          <Ic name="search" cls="ic ic-sm" />
+          搜索稀饭全站资源
+        </button>
       </div>
     </div>
   )
@@ -1297,57 +1273,51 @@ function GirigiriBindPickerModal({
   const ep = watchEp(track)
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      className="dlg-backdrop open"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div role="dialog" aria-modal="true" className="relative m-auto w-full max-w-[440px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl">
-        <button type="button" onClick={onClose} title="关闭" className="absolute right-3.5 top-3.5 flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface">
-          <Icon name="close" size={16} />
+      <div role="dialog" aria-modal="true" aria-label="选择 Girigiri 片源" className="dlg">
+        <span className="tape tl teal" />
+        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <Ic name="x" cls="ic" />
         </button>
-        <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">选择 Girigiri 片源</div>
-        <h2 className="mb-1 mt-1.5 line-clamp-2 pr-6 text-lg font-extrabold leading-tight text-on-surface">{title}</h2>
-        <p className="mb-4 text-[12px] leading-relaxed text-on-surface-variant/60">
-          Girigiri 用的是另一套编号，按名字匹配出以下候选。<b className="text-on-surface-variant/80">点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
+        <h3 className="dlg-title">{title}</h3>
+        <p className="dlg-sub">
+          Girigiri 用的是另一套编号，按名字匹配出以下候选。<b>点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
         </p>
         {candidates.length === 0 ? (
-          <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-4 text-[12.5px] leading-relaxed text-on-surface-variant/60">
+          <div className="sugg-note" style={{ textAlign: 'left' }}>
             没在 Girigiri<b>本季周表</b>里找到相近的名字。往季资源或非周历资源可以改用 Girigiri 全站搜索。
-            <button type="button" onClick={onSearch} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/35 bg-primary/[0.12] py-2 font-label text-[11px] font-bold tracking-widest text-primary transition-colors hover:bg-primary/20">
-              <Icon name="search" size={14} />
-              搜索 Girigiri 全站资源
-            </button>
           </div>
         ) : (
-          <div className="custom-scrollbar flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
+          <div className="cand-list custom-scrollbar">
             {candidates.map((candidate) => (
               <a
                 key={candidate.girigiriId}
+                className="sugg-item"
                 href={girigiriPlayPageUrl(candidate.girigiriId, ep, track.bgmId)}
                 target="_blank"
                 rel="noreferrer"
                 onClick={() => onPick(candidate)}
-                className="flex items-center gap-3 rounded-lg border border-outline-variant/25 bg-surface-container px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-semibold text-on-surface">{candidate.girigiriName || candidate.girigiriId}</div>
-                  <div className="mt-0.5 font-label text-[10px] uppercase tracking-wider text-on-surface-variant/45">
-                    {candidate.day ? `星期${SHORT_DAY[candidate.day]}` : '—'}
-                    {candidate.remarks ? ` · ${candidate.remarks.replace('|', ' · ')}` : ''}
-                  </div>
-                </div>
-                <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {candidate.girigiriName || candidate.girigiriId}
+                </span>
+                <span className="sugg-meta">
+                  {candidate.day ? `周${SHORT_DAY[candidate.day]}` : ''}
+                  {candidate.remarks ? `${candidate.day ? ' · ' : ''}${candidate.remarks.replace('|', ' · ')}` : ''}
+                </span>
+                <Ic name="play" cls="ic ic-sm" />
               </a>
             ))}
           </div>
         )}
-        {candidates.length > 0 && (
-          <button type="button" onClick={onSearch} className="mt-4 flex w-full items-center justify-center gap-1.5 border-t border-outline-variant/15 pt-3 font-label text-[10px] font-semibold tracking-widest text-on-surface-variant/50 transition-colors hover:text-primary">
-            <Icon name="search" size={13} />
-            搜索 Girigiri 全站资源
-          </button>
-        )}
+        <button className="btn btn-sm btn-ghost btn-block mt16" type="button" onClick={onSearch}>
+          <Ic name="search" cls="ic ic-sm" />
+          搜索 Girigiri 全站资源
+        </button>
       </div>
     </div>
   )
@@ -1479,7 +1449,7 @@ function XifanSearchModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      className="dlg-backdrop open"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -1487,82 +1457,74 @@ function XifanSearchModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative m-auto flex max-h-[86vh] w-full max-w-[520px] flex-col overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container-lowest shadow-2xl"
+        aria-label="稀饭全站搜索"
+        className="dlg"
+        style={{ display: 'flex', flexDirection: 'column', maxHeight: '86vh' }}
       >
-        <div className="flex shrink-0 items-start justify-between border-b border-outline-variant/20 bg-surface-container-low px-6 py-5">
-          <div className="min-w-0 pr-6">
-            <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">稀饭全站搜索</div>
-            <h2 className="mt-1.5 line-clamp-2 text-lg font-extrabold leading-tight text-on-surface">{title}</h2>
-            <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant/55">搜索非本季周历资源，点选正确条目后直接播放 EP {ep}。</p>
-          </div>
+        <span className="tape tl teal" />
+        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <Ic name="x" cls="ic" />
+        </button>
+
+        <h3 className="dlg-title">稀饭全站搜索</h3>
+        <p className="dlg-sub">
+          {title} · 点选正确条目后直接播放 EP {ep}
+        </p>
+
+        <div className="field-row mb16">
+          <input
+            value={keyword}
+            spellCheck={false}
+            autoComplete="off"
+            maxLength={100}
+            onChange={(e) => setKeyword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) void runSearch(keyword)
+            }}
+            placeholder="番名 / 别名"
+            disabled={status === 'searching' || status === 'verifying'}
+          />
           <button
+            className="btn btn-sm btn-primary"
+            style={{ flex: 'none', marginLeft: 8 }}
             type="button"
-            onClick={onClose}
-            title="关闭"
-            aria-label="关闭"
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            onClick={() => { void runSearch(keyword) }}
+            disabled={status === 'searching' || status === 'verifying' || !keyword.trim()}
           >
-            <Icon name="close" size={16} />
+            <Ic name="search" cls="ic ic-sm" />
+            搜索
           </button>
         </div>
 
-        <div className="custom-scrollbar min-h-0 overflow-y-auto px-6 py-5">
-          <div className="flex gap-2">
-            <input
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-              maxLength={100}
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing) void runSearch(keyword)
-              }}
-              placeholder="番名 / 别名"
-              disabled={status === 'searching' || status === 'verifying'}
-              className="min-w-0 flex-1 rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70 disabled:opacity-60"
-            />
-            <button
-              type="button"
-              onClick={() => { void runSearch(keyword) }}
-              disabled={status === 'searching' || status === 'verifying' || !keyword.trim()}
-              title="搜索"
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 font-label text-[11px] font-bold tracking-wider text-on-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Icon name="search" size={14} />
-              搜索
-            </button>
-          </div>
-
+        <div className="dlg-scroll custom-scrollbar">
           {status === 'searching' || status === 'verifying' ? (
-            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-on-surface-variant/50">
-              <Spinner size={28} className="text-primary/60" />
-              <span className="font-label text-[10px] uppercase tracking-widest">
-                {status === 'verifying' ? '正在校验验证码' : '正在搜索稀饭'}
-              </span>
+            <div className="page-state" style={{ padding: '48px 12px' }}>
+              <Spinner size={28} />
+              <span className="faint small">{status === 'verifying' ? '正在校验验证码' : '正在搜索稀饭'}</span>
             </div>
           ) : status === 'captcha' ? (
-            <div className="mt-4 rounded-lg border border-outline-variant/20 bg-surface-container p-4">
-              <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="row mb16" style={{ justifyContent: 'space-between' }}>
                 <div>
-                  <div className="text-[13px] font-semibold text-on-surface">需要验证码</div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant/55">输入图片中的字符后继续搜索。</p>
+                  <b>需要验证码</b>
+                  <p className="faint small mt8">输入图片中的字符后继续搜索。</p>
                 </div>
                 <button
                   type="button"
+                  className="icon-btn"
+                  style={{ width: 34, height: 34 }}
                   onClick={() => { void refreshCaptcha() }}
                   title="刷新验证码"
                   aria-label="刷新验证码"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-outline-variant/25 text-on-surface-variant/60 transition-colors hover:border-primary/40 hover:text-primary"
                 >
-                  <Icon name="refresh" size={14} />
+                  <Ic name="refresh" cls="ic ic-sm" />
                 </button>
               </div>
-              <div className="mt-3 flex h-20 items-center justify-center overflow-hidden rounded border border-outline-variant/20 bg-surface-container-high">
-                {imageB64 && <img src={`data:${mime};base64,${imageB64}`} alt="稀饭验证码" className="h-full max-w-full object-contain" />}
+              <div className="captcha-img mb16">
+                {imageB64 && <img src={`data:${mime};base64,${imageB64}`} alt="稀饭验证码" />}
               </div>
-              {message && <p className="mt-2 text-[11px] text-error">{message}</p>}
-              <div className="mt-3 flex gap-2">
+              {message && <p className="form-note err" style={{ marginTop: 0 }}>{message}</p>}
+              <div className="field-row">
                 <input
                   type="text"
                   autoFocus
@@ -1573,75 +1535,60 @@ function XifanSearchModal({
                     if (e.key === 'Enter' && captchaInput.trim()) void verify()
                   }}
                   placeholder="输入验证码"
-                  className="min-w-0 flex-1 rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-sm tracking-[0.2em] text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70"
+                  style={{ letterSpacing: '.2em' }}
                 />
                 <button
+                  className="btn btn-sm btn-primary"
+                  style={{ flex: 'none', marginLeft: 8 }}
                   type="button"
                   onClick={() => { void verify() }}
                   disabled={!imageB64 || !captchaInput.trim()}
-                  className="shrink-0 rounded-lg bg-primary px-3 py-2 font-label text-[11px] font-bold tracking-wider text-on-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   验证
                 </button>
               </div>
             </div>
           ) : status === 'error' ? (
-            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-center">
-              <Icon name="error" size={32} className="text-error/70" />
-              <p className="max-w-[360px] text-[12px] leading-relaxed text-error/80">{message || '稀饭搜索失败'}</p>
-              <button
-                type="button"
-                onClick={() => { void runSearch(keyword) }}
-                className="flex items-center gap-1.5 rounded-lg border border-outline-variant/30 px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
-              >
-                <Icon name="refresh" size={13} />
+            <div className="page-state" style={{ padding: '48px 12px' }}>
+              <Ic name="alert" cls="ic" />
+              <p className="small" style={{ color: 'var(--sakura)', maxWidth: 360 }}>{message || '稀饭搜索失败'}</p>
+              <button className="btn btn-sm" type="button" onClick={() => { void runSearch(keyword) }}>
+                <Ic name="refresh" cls="ic ic-sm" />
                 再试一次
               </button>
             </div>
           ) : results.length === 0 ? (
-            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-center text-on-surface-variant/50">
-              <Icon name="search" size={32} className="opacity-40" />
-              <p className="text-[12px]">没有找到“{keyword}”相关的稀饭资源</p>
-              <p className="text-[11px] text-on-surface-variant/35">换一个中文名、别名或关键词再搜。</p>
+            <div className="page-state" style={{ padding: '48px 12px' }}>
+              <Ic name="search" cls="ic" />
+              <p className="small">没有找到“{keyword}”相关的稀饭资源</p>
+              <p className="faint small">换一个中文名、别名或关键词再搜。</p>
             </div>
           ) : (
-            <div className="mt-4">
-              <div className="mb-2 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/45">
-                搜索结果 · {results.length} 部
-              </div>
-              <div className="custom-scrollbar flex max-h-[45vh] flex-col gap-1.5 overflow-y-auto">
+            <div>
+              <p className="field-label mb16">搜索结果 · {results.length} 部</p>
+              <div className="cand-list custom-scrollbar" style={{ maxHeight: '45vh' }}>
                 {results.map((hit) => {
                   const meta = [hit.episode, hit.year, hit.area].filter(Boolean).join(' · ')
                   return (
                     <a
                       key={hit.xifanId}
+                      className="sugg-item"
                       href={playPageUrl(hit.xifanId, ep, track.bgmId)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => onPick(hit)}
-                      className="flex items-center gap-3 rounded-lg border border-outline-variant/25 bg-surface-container px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[13px] font-semibold text-on-surface">{hit.xifanName}</div>
-                        {meta && <div className="mt-0.5 truncate font-label text-[10px] tracking-wider text-on-surface-variant/45">{meta}</div>}
-                      </div>
-                      <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                        {hit.xifanName}
+                      </span>
+                      {meta && <span className="sugg-meta">{meta}</span>}
+                      <Ic name="play" cls="ic ic-sm" />
                     </a>
                   )
                 })}
               </div>
             </div>
           )}
-        </div>
-
-        <div className="flex shrink-0 justify-end border-t border-outline-variant/15 px-6 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-outline-variant/30 px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
-          >
-            关闭
-          </button>
         </div>
       </div>
     </div>
@@ -1743,7 +1690,7 @@ function GirigiriSearchModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-5 backdrop-blur-sm"
+      className="dlg-backdrop open"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -1751,82 +1698,74 @@ function GirigiriSearchModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative m-auto flex max-h-[86vh] w-full max-w-[520px] flex-col overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container-lowest shadow-2xl"
+        aria-label="Girigiri 全站搜索"
+        className="dlg"
+        style={{ display: 'flex', flexDirection: 'column', maxHeight: '86vh' }}
       >
-        <div className="flex shrink-0 items-start justify-between border-b border-outline-variant/20 bg-surface-container-low px-6 py-5">
-          <div className="min-w-0 pr-6">
-            <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">Girigiri 全站搜索</div>
-            <h2 className="mt-1.5 line-clamp-2 text-lg font-extrabold leading-tight text-on-surface">{title}</h2>
-            <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant/55">搜索非本季周历资源，点选正确条目后直接播放 EP {ep}。</p>
-          </div>
+        <span className="tape tl teal" />
+        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <Ic name="x" cls="ic" />
+        </button>
+
+        <h3 className="dlg-title">Girigiri 全站搜索</h3>
+        <p className="dlg-sub">
+          {title} · 点选正确条目后直接播放 EP {ep}
+        </p>
+
+        <div className="field-row mb16">
+          <input
+            value={keyword}
+            spellCheck={false}
+            autoComplete="off"
+            maxLength={100}
+            onChange={(e) => setKeyword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) void runSearch(keyword)
+            }}
+            placeholder="番名 / 别名"
+            disabled={status === 'searching' || status === 'verifying'}
+          />
           <button
+            className="btn btn-sm btn-primary"
+            style={{ flex: 'none', marginLeft: 8 }}
             type="button"
-            onClick={onClose}
-            title="关闭"
-            aria-label="关闭"
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            onClick={() => { void runSearch(keyword) }}
+            disabled={status === 'searching' || status === 'verifying' || !keyword.trim()}
           >
-            <Icon name="close" size={16} />
+            <Ic name="search" cls="ic ic-sm" />
+            搜索
           </button>
         </div>
 
-        <div className="custom-scrollbar min-h-0 overflow-y-auto px-6 py-5">
-          <div className="flex gap-2">
-            <input
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-              maxLength={100}
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing) void runSearch(keyword)
-              }}
-              placeholder="番名 / 别名"
-              disabled={status === 'searching' || status === 'verifying'}
-              className="min-w-0 flex-1 rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70 disabled:opacity-60"
-            />
-            <button
-              type="button"
-              onClick={() => { void runSearch(keyword) }}
-              disabled={status === 'searching' || status === 'verifying' || !keyword.trim()}
-              title="搜索"
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 font-label text-[11px] font-bold tracking-wider text-on-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Icon name="search" size={14} />
-              搜索
-            </button>
-          </div>
-
+        <div className="dlg-scroll custom-scrollbar">
           {status === 'searching' || status === 'verifying' ? (
-            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-on-surface-variant/50">
-              <Spinner size={28} className="text-primary/60" />
-              <span className="font-label text-[10px] uppercase tracking-widest">
-                {status === 'verifying' ? '正在校验验证码' : '正在搜索 Girigiri'}
-              </span>
+            <div className="page-state" style={{ padding: '48px 12px' }}>
+              <Spinner size={28} />
+              <span className="faint small">{status === 'verifying' ? '正在校验验证码' : '正在搜索 Girigiri'}</span>
             </div>
           ) : status === 'captcha' ? (
-            <div className="mt-4 rounded-lg border border-outline-variant/20 bg-surface-container p-4">
-              <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="row mb16" style={{ justifyContent: 'space-between' }}>
                 <div>
-                  <div className="text-[13px] font-semibold text-on-surface">需要验证码</div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant/55">输入图片中的字符后继续搜索。</p>
+                  <b>需要验证码</b>
+                  <p className="faint small mt8">输入图片中的字符后继续搜索。</p>
                 </div>
                 <button
                   type="button"
+                  className="icon-btn"
+                  style={{ width: 34, height: 34 }}
                   onClick={() => { void refreshCaptcha() }}
                   title="刷新验证码"
                   aria-label="刷新验证码"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-outline-variant/25 text-on-surface-variant/60 transition-colors hover:border-primary/40 hover:text-primary"
                 >
-                  <Icon name="refresh" size={14} />
+                  <Ic name="refresh" cls="ic ic-sm" />
                 </button>
               </div>
-              <div className="mt-3 flex h-20 items-center justify-center overflow-hidden rounded border border-outline-variant/20 bg-surface-container-high">
-                {imageB64 && <img src={`data:${mime};base64,${imageB64}`} alt="Girigiri 验证码" className="h-full max-w-full object-contain" />}
+              <div className="captcha-img mb16">
+                {imageB64 && <img src={`data:${mime};base64,${imageB64}`} alt="Girigiri 验证码" />}
               </div>
-              {message && <p className="mt-2 text-[11px] text-error">{message}</p>}
-              <div className="mt-3 flex gap-2">
+              {message && <p className="form-note err" style={{ marginTop: 0 }}>{message}</p>}
+              <div className="field-row">
                 <input
                   type="text"
                   autoFocus
@@ -1836,75 +1775,60 @@ function GirigiriSearchModal({
                     if (e.key === 'Enter' && captchaInput.trim()) void verify()
                   }}
                   placeholder="输入验证码"
-                  className="min-w-0 flex-1 rounded-lg border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-sm tracking-[0.2em] text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70"
+                  style={{ letterSpacing: '.2em' }}
                 />
                 <button
+                  className="btn btn-sm btn-primary"
+                  style={{ flex: 'none', marginLeft: 8 }}
                   type="button"
                   onClick={() => { void verify() }}
                   disabled={!captchaInput.trim()}
-                  className="shrink-0 rounded-lg bg-primary px-3 py-2 font-label text-[11px] font-bold tracking-wider text-on-primary transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   验证
                 </button>
               </div>
             </div>
           ) : status === 'error' ? (
-            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-center">
-              <Icon name="error" size={32} className="text-error/70" />
-              <p className="max-w-[360px] text-[12px] leading-relaxed text-error/80">{message || 'Girigiri 搜索失败'}</p>
-              <button
-                type="button"
-                onClick={() => { void runSearch(keyword) }}
-                className="flex items-center gap-1.5 rounded-lg border border-outline-variant/30 px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
-              >
-                <Icon name="refresh" size={13} />
+            <div className="page-state" style={{ padding: '48px 12px' }}>
+              <Ic name="alert" cls="ic" />
+              <p className="small" style={{ color: 'var(--sakura)', maxWidth: 360 }}>{message || 'Girigiri 搜索失败'}</p>
+              <button className="btn btn-sm" type="button" onClick={() => { void runSearch(keyword) }}>
+                <Ic name="refresh" cls="ic ic-sm" />
                 再试一次
               </button>
             </div>
           ) : results.length === 0 ? (
-            <div className="flex min-h-[190px] flex-col items-center justify-center gap-3 text-center text-on-surface-variant/50">
-              <Icon name="search" size={32} className="opacity-40" />
-              <p className="text-[12px]">没有找到“{keyword}”相关的 Girigiri 资源</p>
-              <p className="text-[11px] text-on-surface-variant/35">换一个中文名、别名或关键词再搜。</p>
+            <div className="page-state" style={{ padding: '48px 12px' }}>
+              <Ic name="search" cls="ic" />
+              <p className="small">没有找到“{keyword}”相关的 Girigiri 资源</p>
+              <p className="faint small">换一个中文名、别名或关键词再搜。</p>
             </div>
           ) : (
-            <div className="mt-4">
-              <div className="mb-2 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/45">
-                搜索结果 · {results.length} 部
-              </div>
-              <div className="custom-scrollbar flex max-h-[45vh] flex-col gap-1.5 overflow-y-auto">
+            <div>
+              <p className="field-label mb16">搜索结果 · {results.length} 部</p>
+              <div className="cand-list custom-scrollbar" style={{ maxHeight: '45vh' }}>
                 {results.map((hit) => {
                   const meta = [hit.episode, hit.year, hit.area].filter(Boolean).join(' · ')
                   return (
                     <a
                       key={hit.girigiriId}
+                      className="sugg-item"
                       href={girigiriPlayPageUrl(hit.girigiriId, ep, track.bgmId)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => onPick(hit)}
-                      className="flex items-center gap-3 rounded-lg border border-outline-variant/25 bg-surface-container px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[13px] font-semibold text-on-surface">{hit.girigiriName}</div>
-                        {meta && <div className="mt-0.5 truncate font-label text-[10px] tracking-wider text-on-surface-variant/45">{meta}</div>}
-                      </div>
-                      <Icon name="play_arrow" size={16} className="shrink-0 text-primary/70" />
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                        {hit.girigiriName}
+                      </span>
+                      {meta && <span className="sugg-meta">{meta}</span>}
+                      <Ic name="play" cls="ic ic-sm" />
                     </a>
                   )
                 })}
               </div>
             </div>
           )}
-        </div>
-
-        <div className="flex shrink-0 justify-end border-t border-outline-variant/15 px-6 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-outline-variant/30 px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
-          >
-            关闭
-          </button>
         </div>
       </div>
     </div>
@@ -2003,32 +1927,22 @@ function AddSearchModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-5 pt-[8vh] backdrop-blur-sm"
+      className="dlg-backdrop open"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative m-auto w-full max-w-[480px] rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 shadow-2xl"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          title="关闭"
-          className="absolute right-3.5 top-3.5 flex h-6 w-6 items-center justify-center rounded text-on-surface-variant/50 transition-colors hover:bg-surface-container-high hover:text-on-surface"
-        >
-          <Icon name="close" size={16} />
+      <div role="dialog" aria-modal="true" aria-label="加番" className="dlg">
+        <span className="tape tl teal" />
+        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <Ic name="x" cls="ic" />
         </button>
 
-        <div className="font-label text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">加番</div>
-        <h2 className="mb-3 mt-1.5 text-lg font-extrabold leading-tight text-on-surface">搜索动漫加入追番</h2>
+        <h3 className="dlg-title">加番</h3>
+        <p className="dlg-sub">从索引里挑一部贴进手帐，加进来默认是「想看」</p>
 
-        <div className="relative mb-3">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50">
-            <Icon name="search" size={16} />
-          </span>
+        <div className="searchbar mb16" style={{ maxWidth: 'none' }}>
+          <Ic name="search" cls="ic" />
           <input
             autoFocus
             spellCheck={false}
@@ -2036,70 +1950,84 @@ function AddSearchModal({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="番名 / 别名（中文、日文、罗马音都行）"
-            className="w-full rounded-lg border border-outline-variant/30 bg-surface-container-high py-2 pl-9 pr-3 text-sm text-on-surface outline-none transition-colors placeholder:text-on-surface-variant/35 focus:border-primary/70"
           />
         </div>
 
         {/* 索引太旧 = 服务器上每周的同步任务多半挂了。不提示的话，用户只会觉得「新番搜不到」，
             跟正常的一周滞后长得一模一样，永远发现不了。10 天 = 一周档期 + 3 天容错。 */}
         {ready && staleDays >= STALE_AFTER_DAYS && (
-          <p className="mb-2 rounded-lg bg-error-container/50 px-3 py-2 text-[11px] leading-relaxed text-on-error-container">
+          <p className="form-note err mb16">
             索引已 {staleDays} 天没更新 —— 正常每周自动同步一次，多半是服务器上的同步任务挂了，新番会搜不到。
           </p>
         )}
 
-        <div className="min-h-[120px]">
+        {/* 定高结果区：弹窗尺寸不随「空搜索 / 搜到 8 条 / 没搜到」跳动 —— 输入时容器
+            忽大忽小，视线要跟着窗口重新找位置 */}
+        <div className="add-pane">
           {!ready ? (
-            <p className="px-1 py-8 text-center text-[13px] leading-relaxed text-on-surface-variant/55">
-              动漫索引还没生成。<br />
-              <span className="text-on-surface-variant/40">在服务器上跑一次 <code className="rounded bg-on-surface/10 px-1">npm run sync:index</code> 即可。</span>
+            <p className="faint small">
+              动漫索引还没生成。
+              <br />
+              在服务器上跑一次 <code>npm run sync:index</code> 即可。
             </p>
           ) : loading ? (
-            <div className="flex justify-center py-10">
-              <Spinner size={26} className="text-primary/60" />
+            <div className="page-state">
+              <Spinner size={26} />
             </div>
           ) : !q ? (
-            <p className="px-1 py-8 text-center text-[13px] text-on-surface-variant/40">输入番名开始搜索（覆盖 BGM 全量动漫）</p>
+            <p className="faint small">
+              输入番名开始搜索（覆盖 BGM 全量动漫）
+            </p>
           ) : results.length === 0 ? (
-            <p className="px-1 py-8 text-center text-[13px] leading-relaxed text-on-surface-variant/40">
+            <p className="faint small">
               没搜到「{q}」，换个词试试
               {/* 本地没有 + 在线补充也没成 → 说清是哪一种，用户才知道该等还是该改词 */}
-              {onlineError && <><br /><span className="text-on-surface-variant/55">{onlineError}</span></>}
+              {onlineError && (
+                <>
+                  <br />
+                  <span style={{ color: 'var(--ink-sub)' }}>{onlineError}</span>
+                </>
+              )}
             </p>
           ) : (
-            <div className="custom-scrollbar flex max-h-[46vh] flex-col gap-1 overflow-y-auto">
+            /* 定高列表（原型稿 #addList）：容器不随结果条数变高变矮，多出来的走竖向滚动 */
+            <div id="addList">
               {source === 'online' && (
-                <p className="px-1 pb-1 text-[11px] leading-relaxed text-on-surface-variant/45">
-                  本地索引里没有，以下是 BGM 在线补充的结果（多半是刚上架的新条目）
-                </p>
+                <p className="faint small">本地索引里没有，以下是 BGM 在线补充的结果（多半是刚上架的新条目）</p>
               )}
               {results.map((h) => {
                 const tracked = trackedIds.has(h.bgmId) || added.has(h.bgmId)
                 const year = h.date && h.date.length >= 4 ? h.date.slice(0, 4) : ''
+                // 主标题要一眼可读：中文译名优先；副信息（原名 / 年份 / 评分）弱化成第二行
+                const mainTitle = h.nameCn || h.name
                 const sub = [h.nameCn && h.name !== h.nameCn ? h.name : '', year ? `${year}年` : '', h.score > 0 ? `★ ${h.score.toFixed(1)}` : '']
                   .filter(Boolean)
-                  .join('  ·  ')
+                  .join(' · ')
                 return (
-                  <div
-                    key={h.bgmId}
-                    className="flex items-center gap-3 rounded-lg border border-transparent px-2.5 py-2 transition-colors hover:border-outline-variant/25 hover:bg-on-surface/[0.03]"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13.5px] font-semibold text-on-surface">{h.nameCn || h.name}</div>
-                      {sub && <div className="mt-0.5 truncate font-label text-[10.5px] text-on-surface-variant/50">{sub}</div>}
+                  <div key={h.bgmId} className="sugg-item">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={mainTitle}>
+                        {mainTitle}
+                      </div>
+                      {sub && (
+                        <div className="faint small" style={{ fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sub}>
+                          {sub}
+                        </div>
+                      )}
                     </div>
                     {tracked ? (
-                      <span className="shrink-0 rounded-md border border-outline-variant/30 px-2.5 py-1 font-label text-[11px] font-bold text-on-surface-variant/45">
-                        已追
+                      <span className="tagx mine" style={{ flex: 'none' }}>
+                        已在追番
                       </span>
                     ) : (
                       <button
                         type="button"
+                        className="btn btn-sm btn-primary"
+                        style={{ flex: 'none' }}
                         onClick={() => add(h)}
-                        className="flex shrink-0 items-center gap-0.5 rounded-md bg-primary/15 px-2.5 py-1 font-label text-[11px] font-bold text-primary transition-colors hover:bg-primary/25"
                       >
-                        <Icon name="add" size={12} />
-                        追
+                        <Ic name="plus" cls="ic ic-sm" />
+                        加入
                       </button>
                     )}
                   </div>
@@ -2113,12 +2041,23 @@ function AddSearchModal({
   )
 }
 
-function Empty({ icon, text, hint }: { icon: 'person' | 'bookmark' | 'search'; text: string; hint: string }): JSX.Element {
+// ── 空态（Q 版纱雾 + 气泡） ─────────────────────────────────────────────────────
+function EmptyState({ text, hint, goCalendar }: { text: string; hint: string; goCalendar?: boolean }): JSX.Element {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-28 text-on-surface-variant/30">
-      <Icon name={icon} size={52} />
-      <p className="font-label text-xs uppercase tracking-widest">{text}</p>
-      <p className="font-label text-[11px] text-on-surface-variant/25">{hint}</p>
+    /* 横排：立绘在左、气泡在右，尾巴从气泡左缘指回人物（竖排时尾巴悬在人物脚边的空气里，
+       而且整块面板被撑得又高又空） */
+    <div className="empty panel mt16">
+      <img className="mascot" src="/assets/sagiri-mascot.png" alt="" />
+      <div className="empty-say">
+        <div className="bubble empty-bubble">
+          {text}。{hint}
+        </div>
+        {goCalendar && (
+          <a className="btn btn-primary" href="#/">
+            去番剧周历
+          </a>
+        )}
+      </div>
     </div>
   )
 }

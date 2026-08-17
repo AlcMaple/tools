@@ -56,9 +56,10 @@ export default {
         'inverse-surface': 'rgb(var(--color-inverse-surface) / <alpha-value>)',
       },
       fontFamily: {
-        headline: ['Inter', 'sans-serif'],
-        body: ['Inter', 'sans-serif'],
-        label: ['Space Grotesk', 'sans-serif'],
+        // 手帐主题：正文系统栈、手写体走 sketch-tokens.css 的 .font-hand（不经 Tailwind 字体键）
+        headline: ['var(--font-body)'],
+        body: ['var(--font-body)'],
+        label: ['var(--font-hand)'],
       },
       borderRadius: {
         DEFAULT: '0.125rem',
