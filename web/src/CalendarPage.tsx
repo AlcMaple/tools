@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
+import type { CalendarItem, CalendarResult } from './api'
 import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
 import { useAuth } from './auth'
 import { cacheGet, cacheSet } from './dataCache'
 import { loadTracks, runTracksMutation } from './tracksSync'
-import { useIsCompact } from './useMediaQuery'
-import { Icon, Spinner } from './Icon'
+import { Ic, Spinner } from './SketchIcon'
+import { toast } from './Toast'
+import { useIsWide } from './useMediaQuery'
 
-// 设计对齐 app 的 src/renderer/src/pages/AnimeCalendar.tsx：
-//   - 桌面（≥1200px）：7 列整周一览，每列一个星期的海报卡堆叠
-//   - 精简（<1200px）：选某天 + 该天番剧多列网格
-// 海报 hover 遮罩里放「追番」+「BGM 查看」；播放到对应里程碑再补进遮罩。
-
-const SHORT_DAY: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
+// 皮肤 = 原型稿 index.html（番剧周历）：日期章横滑选天 + 单日海报胶片 + 立绘驻场。
+// 布局单一（桌面/手机同构，响应式全交给 CSS）；数据流与旧版一致：
+// 14 天缓存窗口 + 刷新绕过缓存；追番角标常驻（不依赖 hover），乐观更新后由 tracksSync 校正。
 
 // 周历数据信 14 天的缓存窗口——跟桌面端、跟服务端自己的 14 天缓存一致。BGM 是外部接口，
 // 缓存没过期就没必要发请求（唯一主动绕过缓存的入口是「刷新」按钮）。
@@ -24,17 +22,34 @@ function todayBgmId(): number {
   return d === 0 ? 7 : d
 }
 
+// 本周（含今天的自然周）周一到周日的月/日 —— 日期章上的手写数字。
+function weekDates(): Record<number, { m: number; d: number }> {
+  const now = new Date()
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+  const out: Record<number, { m: number; d: number }> = {}
+  for (let i = 1; i <= 7; i++) {
+    const dt = new Date(monday)
+    dt.setDate(monday.getDate() + (i - 1))
+    out[i] = { m: dt.getMonth() + 1, d: dt.getDate() }
+  }
+  return out
+}
+
 export function CalendarPage(): JSX.Element {
   const [result, setResult] = useState<CalendarResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tracksError, setTracksError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const isCompact = useIsCompact()
   const [selectedDay, setSelectedDay] = useState(todayBgmId)
   const { user } = useAuth()
-  // 已追的 bgmId —— 用来给卡片画高亮描边 / 切按钮文案。未登录就是空集（按钮不显示）。
+  // 已追的 bgmId —— 用来给海报画「已收藏」描边 / 切圆章按钮图标。未登录就是空集（按钮不显示）。
   const [tracked, setTracked] = useState<Set<number>>(new Set())
+  const dates = useMemo(weekDates, [])
+  const todayId = useMemo(todayBgmId, [])
+  // 桌面 = 整周纵览（七天的胶片竖着排，一眼看全一季）；手机 = 日期章选天 + 单日胶片
+  const wide = useIsWide()
 
   // 复用 TracksPage 同一套「秒开缓存 + 后台校验」逻辑（tracksSync.ts）——两页共享
   // 同一份 tracks:<username> 缓存，谁先加载过谁就替对方省一次请求。
@@ -57,11 +72,13 @@ export function CalendarPage(): JSX.Element {
     if (!user) return
     setError(null)
     const on = tracked.has(item.id)
+    const title = item.name_cn || item.name
     setTracked((prev) => {
       const next = new Set(prev)
       on ? next.delete(item.id) : next.add(item.id)
       return next
     })
+    toast(on ? '已取消追番' : `已把『${title}』加入追番`)
     void runTracksMutation(user.username, async () => {
       if (on) {
         await deleteTrack(item.id)
@@ -104,308 +121,273 @@ export function CalendarPage(): JSX.Element {
     load()
   }, [])
 
-  const trackProps: TrackProps = { canTrack: !!user, tracked, onToggle: toggleTrack }
+  const selected = result?.data.find((d) => d.id === selectedDay)
+  const range = result
+    ? `${dates[1].m}/${dates[1].d} – ${dates[7].m}/${dates[7].d}`
+    : ''
 
   return (
     <>
-      {/* Hero —— 标题 + 副标题（面包屑去掉了：顶栏已经指明在哪，再来一层是冗余） */}
-      <div className="px-4 pb-3 pt-4 md:px-6">
-        <h1 className="text-2xl font-black tracking-tighter text-on-surface md:text-3xl">番剧周历</h1>
-        <p className="mt-1 hidden font-label text-sm text-on-surface-variant/80 md:block">
-          本季正在播出，按星期排列。
-        </p>
+      <div className="spread" style={{ alignItems: 'flex-end' }}>
+        <div>
+          <h1 className="title-sketch" style={{ fontSize: 34 }}>
+            番剧周历
+          </h1>
+          <p className="muted small mt8">
+            {range && <>本季 · {range} · 点日期章，翻到想看的那一天</>}
+            {result && (
+              <>
+                {' '}
+                <span className="faint">
+                  （{result.fromCache ? '缓存' : '刚拉取'}：{formatRelTime(result.updatedAt)}）
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="row">
+          <button
+            className="icon-btn"
+            onClick={() => load(true)}
+            disabled={refreshing}
+            title="刷新周历（绕过缓存）"
+            aria-label="刷新周历"
+          >
+            <Ic name="refresh" cls={refreshing ? 'ic animate-spin' : 'ic'} />
+          </button>
+          <button
+            className="btn btn-sm"
+            type="button"
+            onClick={() => {
+              if (wide) {
+                document.getElementById(`day-sec-${todayId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              } else {
+                setSelectedDay(todayId)
+              }
+              toast('已回到今天')
+            }}
+          >
+            <Ic name="calendar" cls="ic ic-sm" />
+            回到今天
+          </button>
+        </div>
       </div>
 
-      {/* 缓存时间 + 刷新 + 周几选择。不再置顶——只有顶部导航栏置顶就够了，跟「我的追番」页一致；
-          之前这里也 sticky，跟导航栏叠成两层 sticky，滚动时中间的标题区滑走后画面会断层。 */}
-      {result && (
-        <div className="border-y border-outline-variant/10 bg-surface-container-lowest px-4 pb-2 pt-1.5 md:px-6">
-          <div className="mb-1.5 flex min-h-5 flex-wrap items-center justify-end gap-2">
-            {(error ?? tracksError) && (
-              <span className="whitespace-nowrap font-label text-[10px] tracking-wider text-error">
-                ⚠ {error ?? tracksError}
-              </span>
-            )}
-            <span className="whitespace-nowrap font-label text-[10px] tracking-wider text-on-surface-variant/50">
-              {result.fromCache ? '缓存：' : '刚拉取：'}
-              {formatRelTime(result.updatedAt)}
-            </span>
-            <button
-              onClick={() => load(true)}
-              disabled={refreshing}
-              title="强制刷新（绕过 14 天缓存）"
-              className="flex items-center gap-1 rounded border border-outline-variant/20 bg-surface-container-high px-2 py-0.5 font-label text-[10px] uppercase tracking-widest transition-colors hover:border-primary/30 hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Icon name="refresh" size={12} className={refreshing ? 'animate-spin' : ''} />
-              <span>{refreshing ? '更新中' : '刷新'}</span>
-            </button>
-          </div>
-          {isCompact ? (
-            <CompactDaySelector result={result} selected={selectedDay} onSelect={setSelectedDay} />
-          ) : (
-            <DayChipsBar result={result} />
-          )}
-        </div>
+      {(error || tracksError) && (
+        <p className="form-note err mt8" aria-live="polite">
+          ⚠ {error ?? tracksError}
+        </p>
       )}
 
-      {loading && !result && <LoadingState />}
-      {error && !result && <ErrorState message={error} onRetry={() => load(true)} />}
-      {result &&
-        (isCompact ? (
-          <CompactDayGrid result={result} day={selectedDay} track={trackProps} />
-        ) : (
-          <CalendarGrid result={result} track={trackProps} />
-        ))}
+      {/* 手机：立绘内联（桌面在右侧驻场，CSS 切换） */}
+      <div className="rig-inline mt16">
+        <img className="rig" src="/assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘" />
+        <div className="bubble rig-bubble">
+          <span>点下面的日期章，翻到想看的那一天～</span>
+        </div>
+      </div>
+
+      <div className="hero-split mt16">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {wide ? (
+            // 桌面：整周纵览 —— 一季番剧不少，横滑选天翻起来太累；
+            // 七天的「章头 + 胶片」竖排，昨天/前天补番、按周几找番都一眼可查
+            result?.data.map((day) => (
+              <section key={day.id} id={`day-sec-${day.id}`} className="day-sec">
+                <DayHead day={day} date={dates[day.id]} today={day.id === todayId} />
+                <div className="film" aria-label={`${day.label}在播番剧`}>
+                  <DayFilm
+                    day={day}
+                    canTrack={!!user}
+                    tracked={tracked}
+                    onToggle={toggleTrack}
+                  />
+                </div>
+              </section>
+            ))
+          ) : (
+            <>
+              <div className="date-strip" role="tablist" aria-label="选择日期">
+                {result?.data.map((day) => (
+                  <button
+                    key={day.id}
+                    type="button"
+                    className={`dstamp${day.id === selectedDay ? ' on' : ''}${day.id === todayId ? ' today' : ''}`}
+                    onClick={() => setSelectedDay(day.id)}
+                    title={`${day.label} · ${day.items.length} 部`}
+                  >
+                    <span className="dw">{day.label}</span>
+                    <span className="dnum">{dates[day.id]?.d ?? ''}</span>
+                    <span className="dc">{day.items.length} 部</span>
+                    {day.id === todayId && (
+                      <svg className="clip-today" aria-hidden="true">
+                        <use href="#i-clip" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {selected && (
+                <>
+                  <DayHead day={selected} date={dates[selected.id]} today={selected.id === todayId} />
+                  <div className="film" aria-label="当日在播番剧">
+                    <DayFilm
+                      day={selected}
+                      canTrack={!!user}
+                      tracked={tracked}
+                      onToggle={toggleTrack}
+                    />
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="rig-box">
+          <img className="rig" src="/assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘（全身）" />
+          <div className="bubble rig-bubble">
+            <span>{wide ? '一周的排片都在这页上，慢慢挑吧～' : '点日期章，翻到想看的那一天～'}</span>
+          </div>
+          <span className="kira" style={{ bottom: 78, right: -10, transform: 'rotate(6deg)' }}>
+            サラサラ
+          </span>
+        </div>
+      </div>
+
+      {loading && !result && (
+        <div className="page-state">
+          <Spinner size={36} />
+          <p className="faint small">正在翻开这周的画稿…</p>
+        </div>
+      )}
+      {error && !result && (
+        <div className="page-state">
+          <Ic name="alert" cls="ic" />
+          <p className="small">周历加载失败：{error}</p>
+          <button className="btn btn-sm" type="button" onClick={() => load(true)}>
+            重试
+          </button>
+        </div>
+      )}
     </>
   )
 }
 
-/** 传给卡片的追番能力 —— 卡片在三层之下，三样东西打个包往下传。未登录时 canTrack=false，按钮不出现。 */
-interface TrackProps {
+// ── 日节头（缎带 + 日期 + 部数），整周纵览与手机选天共用 ────────────────────────
+function DayHead({ day, date, today }: { day: { id: number; label: string; items: CalendarItem[] }; date: { m: number; d: number }; today: boolean }): JSX.Element {
+  return (
+    <div className="day-head">
+      <span className={`ribbon${today ? ' sakura' : ''}`}>
+        {today ? (
+          <>
+            <Ic name="star" cls="ic ic-sm" />
+            今天
+          </>
+        ) : (
+          day.label
+        )}
+      </span>
+      <span className="font-hand muted">
+        {date.m}/{date.d} · {day.items.length} 部在播
+      </span>
+      <hr className="hr-dash" />
+      <span className="sparkle">✦</span>
+    </div>
+  )
+}
+
+function DayFilm({
+  day,
+  canTrack,
+  tracked,
+  onToggle,
+}: {
+  day: { id: number; items: CalendarItem[] }
   canTrack: boolean
   tracked: Set<number>
   onToggle: (item: CalendarItem, weekday: number) => void
-}
-
-// ── 桌面：周一-周日 chip 行（grid-cols-7，与卡片网格逐列对齐） ──────────────────
-function DayChipsBar({ result }: { result: CalendarResult }): JSX.Element {
-  const today = useMemo(todayBgmId, [])
-  return (
-    <div className="grid min-w-0 grid-cols-7 gap-3">
-      {result.data.map((day) => {
-        const active = day.id === today
-        return (
-          <div
-            key={day.id}
-            className={`flex items-baseline justify-between gap-2 rounded-md border px-2.5 py-1.5 ${
-              active
-                ? 'border-primary/30 bg-primary/10 text-primary'
-                : 'border-outline-variant/15 bg-surface-container text-on-surface-variant/80'
-            }`}
-          >
-            <span className="font-headline text-xs font-black tracking-tight">{day.label}</span>
-            <span className="font-label text-[10px] uppercase tracking-widest opacity-60">
-              {day.items.length} 部
-            </span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── 精简：选天条（7 等宽单字按钮） ─────────────────────────────────────────────
-function CompactDaySelector({
-  result,
-  selected,
-  onSelect,
-}: {
-  result: CalendarResult
-  selected: number
-  onSelect: (id: number) => void
 }): JSX.Element {
+  if (day.items.length === 0) {
+    return <div className="film-empty faint">这一天没有排片</div>
+  }
   return (
-    <div className="flex gap-1.5">
-      {result.data.map((day) => {
-        const active = day.id === selected
-        return (
-          <button
-            key={day.id}
-            onClick={() => onSelect(day.id)}
-            title={`${day.label} · ${day.items.length} 部`}
-            className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-md border py-1.5 transition-colors ${
-              active
-                ? 'border-primary/30 bg-primary/10 text-primary'
-                : 'border-outline-variant/15 bg-surface-container text-on-surface-variant/70 hover:text-on-surface'
-            }`}
-          >
-            <span className="font-headline text-sm font-black leading-none tracking-tight">
-              {SHORT_DAY[day.id] ?? day.label}
-            </span>
-            <span className="font-label text-[9px] leading-none tabular-nums opacity-60">
-              {day.items.length}
-            </span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── 精简 body：当天番剧多列网格（手机 2 / 大手机 3 / 平板 4） ───────────────────
-function CompactDayGrid({
-  result,
-  day,
-  track,
-}: {
-  result: CalendarResult
-  day: number
-  track: TrackProps
-}): JSX.Element {
-  const current = result.data.find((d) => d.id === day) ?? result.data[0]
-  if (!current || current.items.length === 0) return <EmptyState label="这天没有番" />
-  return (
-    <div className="grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-3 md:grid-cols-4 md:px-6">
-      {current.items.map((item) => (
-        <CalendarCard key={item.id} item={item} weekday={current.id} track={track} />
+    <>
+      {day.items.map((item) => (
+        <Poster
+          key={item.id}
+          item={item}
+          weekday={day.id}
+          canTrack={canTrack}
+          tracked={tracked.has(item.id)}
+          onToggle={onToggle}
+        />
       ))}
-    </div>
+    </>
   )
 }
 
-// ── 桌面 body：7 列整周一览 ────────────────────────────────────────────────────
-function CalendarGrid({ result, track }: { result: CalendarResult; track: TrackProps }): JSX.Element {
-  if (result.data.every((d) => d.items.length === 0)) return <EmptyState label="本周没有数据" />
-  return (
-    <div className="grid grid-cols-7 gap-3 px-4 py-3 md:px-6">
-      {result.data.map((day) => (
-        <DayColumn key={day.id} day={day} track={track} />
-      ))}
-    </div>
-  )
-}
-
-function DayColumn({ day, track }: { day: CalendarWeekday; track: TrackProps }): JSX.Element {
-  return (
-    <div className="flex min-w-0 flex-col gap-2">
-      {day.items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-outline-variant/20 px-3 py-6 text-center font-label text-[10px] uppercase tracking-widest text-on-surface-variant/30">
-          空
-        </div>
-      ) : (
-        day.items.map((item) => <CalendarCard key={item.id} item={item} weekday={day.id} track={track} />)
-      )}
-    </div>
-  )
-}
-
-// ── 海报卡 ─────────────────────────────────────────────────────────────────────
-function CalendarCard({
+// ── 拍立得海报卡（追番圆章 / BGM 详情常驻，无 hover 依赖） ──────────────────────
+function Poster({
   item,
   weekday,
-  track,
+  canTrack,
+  tracked,
+  onToggle,
 }: {
   item: CalendarItem
   weekday: number
-  track: TrackProps
+  canTrack: boolean
+  tracked: boolean
+  onToggle: (item: CalendarItem, weekday: number) => void
 }): JSX.Element {
   const displayTitle = item.name_cn || item.name
-  const sub = item.name_cn && item.name && item.name !== item.name_cn ? item.name : ''
-  const on = track.tracked.has(item.id)
+  const on = tracked
 
   return (
-    // 已追 → 整卡边框变主色；边框宽度两态统一 2px，只变颜色，不挤动相邻卡片。
-    // 不再有 hover 描边——纯装饰性描边在触屏上没有等价反馈，去掉更干净。
-    <div
-      className={`relative overflow-hidden rounded-lg border-2 bg-surface-container transition-colors ${
-        on ? 'border-primary' : 'border-outline-variant/15'
-      }`}
-    >
-      <div className="relative aspect-[3/4]">
+    <article className={`poster${on ? ' tracked' : ''}`}>
+      <div className="cover">
         {item.cover ? (
           <img
+            className="cover-img"
             src={coverUrl(item.cover)}
-            alt={displayTitle}
+            alt={`${displayTitle} 封面`}
             loading="lazy"
             decoding="async"
-            className="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-surface-container-high text-on-surface-variant/20">
-            <Icon name="image" size={30} />
-          </div>
+          <div className="cover-ph">☆</div>
         )}
-        {/* 常驻底部渐变——纯装饰，不依赖任何交互态 */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
-
-        <a
-          href={item.id > 0 ? `https://bgm.tv/subject/${item.id}` : undefined}
-          target="_blank"
-          rel="noreferrer"
-          title="在 Bangumi 查看"
-          className="absolute left-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/70"
-        >
-          <Icon name="open_in_new" size={12} />
-        </a>
-
-        {/* 追番角标：始终显示，不再靠 hover 才浮现——触屏第一下点击常被浏览器当成
-            「模拟 hover」，不常驻的话核心操作在手机上几乎摸不到。 */}
-        {track.canTrack && (
+        {canTrack && (
           <button
             type="button"
-            onClick={() => track.onToggle(item, weekday)}
+            className={`track-btn${on ? ' on' : ''}`}
+            onClick={() => onToggle(item, weekday)}
+            aria-label={on ? '取消追番' : '追番'}
             title={on ? '取消追番' : '加入我的追番'}
-            className={`absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${
-              on
-                ? 'border-transparent bg-primary text-on-primary'
-                : 'border-white/30 bg-black/50 text-white hover:border-primary/60'
-            }`}
           >
-            <Icon name={on ? 'check' : 'add'} size={on ? 13 : 14} />
+            <Ic name={on ? 'check' : 'plus'} cls="ic" />
           </button>
         )}
+        {item.id > 0 && (
+          <a
+            className="bgm-link"
+            href={`https://bgm.tv/subject/${item.id}`}
+            target="_blank"
+            rel="noreferrer"
+            title="在 Bangumi 查看"
+          >
+            <Ic name="external" cls="ic ic-sm" />
+            详情
+          </a>
+        )}
       </div>
-
-      {/* 信息区固定高度，保证所有卡片等高（与 app 一致）。 */}
-      <div className="flex flex-col gap-0.5 px-2 py-2">
-        <h3
-          className="line-clamp-2 h-[30px] text-xs font-bold leading-tight text-on-surface"
-          title={displayTitle}
-        >
-          {displayTitle}
-        </h3>
-        <p
-          className="line-clamp-1 h-[14px] text-[10px] leading-tight text-on-surface-variant/40"
-          title={sub || undefined}
-        >
-          {sub || ' '}
-        </p>
-        <div className="flex h-[12px] items-center justify-between gap-1">
-          <span className="font-label text-[9px] leading-none text-primary/70">
-            {item.score > 0 ? `★ ${item.score.toFixed(1)}` : ''}
-          </span>
-          <span className="font-label text-[9px] leading-none tracking-wider text-on-surface-variant/40">
-            {item.episodes > 0 ? `${item.episodes} eps` : ''}
-          </span>
-        </div>
+      <div className="poster-title" title={displayTitle}>
+        {displayTitle}
       </div>
-    </div>
-  )
-}
-
-// ── 状态 ───────────────────────────────────────────────────────────────────────
-function LoadingState(): JSX.Element {
-  return (
-    <div className="flex flex-col items-center justify-center gap-4 py-32">
-      <Spinner size={40} className="text-primary/60" />
-      <p className="font-label text-xs uppercase tracking-widest text-on-surface-variant/40">
-        Loading calendar...
-      </p>
-    </div>
-  )
-}
-
-function EmptyState({ label }: { label: string }): JSX.Element {
-  return (
-    <div className="flex flex-col items-center justify-center gap-4 py-32 text-on-surface-variant/30">
-      <Icon name="event_busy" size={60} />
-      <p className="font-label text-xs uppercase tracking-widest">{label}</p>
-    </div>
-  )
-}
-
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }): JSX.Element {
-  return (
-    <div className="flex flex-col items-center justify-center gap-4 py-32 text-on-surface-variant/60">
-      <Icon name="error" size={48} className="text-error/70" />
-      <p className="max-w-md text-center font-label text-sm">加载失败：{message}</p>
-      <button
-        onClick={onRetry}
-        className="rounded-md border border-outline-variant/30 bg-surface-container-high px-4 py-1.5 font-label text-xs uppercase tracking-widest transition-colors hover:border-primary/30 hover:text-primary"
-      >
-        重试
-      </button>
-    </div>
+      <div className="poster-ep">{item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中'}</div>
+    </article>
   )
 }
 

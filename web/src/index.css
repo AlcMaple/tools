@@ -1,83 +1,45 @@
+/* 设计系统 = 「纱雾画稿 Sagiri Sketchfolio」（docs/design-mockups/web/anime-sketchfolio，
+   唯一视觉真相源；重构说明见该目录 README 的迁移清单）。
+   —— 手帐主题组件层（字体 / 方眼纸底 / 组件样式）原样来自原型稿。
+   @import 必须置顶；置于此处的另一个目的：让 @tailwind utilities 排在组件层之后，
+   页面里可用工具类微调而不被组件类压住。 */
+@import './styles/sketch-tokens.css';
+@import './styles/sketch-ui.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* MD3 色彩 token —— 与 app 的 src/renderer/src/index.css 一致（:root 亮色，.dark 暗色）。
-   网页版默认走暗色（index.html 的 <html class="dark">），和 app 主观感一致。 */
+/* Tailwind 色彩桥：--color-* 三元组保持 RGB 空格分隔（供 /alpha 修饰符），
+   值从 MD3 玫瑰暗色换成手帐素纸配色（映射到原型 token，见 sketch-tokens.css）。
+   单一光色主题：手帐风不做明暗切换（原型如此），.dark 不再覆盖。 */
 @layer base {
   :root {
-    --color-on-surface: 25 28 29;
-    --color-error: 186 26 26;
-    --color-surface-container: 237 238 239;
-    --color-on-background: 28 27 27;
-    --color-primary: 148 70 79;
+    --color-background: 251 246 236;          /* paper */
+    --color-on-background: 62 67 80;          /* ink */
+    --color-surface: 244 237 220;             /* paper-2 */
+    --color-on-surface: 62 67 80;             /* ink */
+    --color-on-surface-variant: 111 114 121;  /* ink-sub 落在纸上的实色 */
+    --color-surface-dim: 236 230 212;
+    --color-surface-bright: 255 253 247;      /* card */
+    --color-surface-container-lowest: 255 253 247;  /* card（卡片/浮层） */
+    --color-surface-container-low: 246 242 230;
+    --color-surface-container: 244 237 220;   /* paper-2 */
+    --color-surface-container-high: 240 233 215;
+    --color-surface-container-highest: 234 227 207;
+    --color-primary: 31 118 128;              /* teal */
+    --color-on-primary: 247 251 251;
+    --color-primary-container: 46 151 160;    /* teal-mid */
+    --color-on-primary-container: 23 85 92;
+    --color-secondary: 124 116 168;           /* lav */
+    --color-tertiary: 184 134 29;             /* gold */
+    --color-error: 214 79 122;                /* sakura（深档） */
     --color-on-error: 255 255 255;
-    --color-error-container: 255 218 214;
-    --color-on-primary: 255 255 255;
-    --color-on-surface-variant: 82 67 68;
-    --color-tertiary: 22 108 69;
-    --color-surface-bright: 248 249 250;
-    --color-surface-dim: 222 216 217;
-    --color-on-primary-container: 62 4 16;
-    --color-primary-container: 240 145 153;
-    --color-surface-container-high: 227 228 229;
-    --color-background: 248 249 250;
-    --color-surface: 248 249 250;
-    --color-on-error-container: 65 0 2;
-    --color-surface-container-low: 243 244 245;
-    --color-secondary: 88 96 98;
-    --color-surface-container-lowest: 255 255 255;
-    --color-surface-container-highest: 223 223 224;
-    --color-outline-variant: 217 193 193;
-    --color-outline: 132 115 116;
+    --color-error-container: 252 232 235;     /* sakura-wash 落纸 */
+    --color-on-error-container: 176 44 86;
+    --color-outline: 86 92 108;               /* line-strong */
+    --color-outline-variant: 199 205 217;     /* silver-line */
   }
-
-  .dark {
-    --color-on-surface: 226 226 226;
-    --color-error: 255 180 171;
-    --color-surface-container: 31 31 31;
-    --color-on-background: 226 226 226;
-    --color-primary: 255 179 184;
-    --color-on-error: 105 0 5;
-    --color-error-container: 147 0 10;
-    --color-on-primary: 90 25 35;
-    --color-on-surface-variant: 217 193 193;
-    --color-tertiary: 200 198 198;
-    --color-surface-bright: 57 57 57;
-    --color-surface-dim: 19 19 19;
-    --color-on-primary-container: 110 41 50;
-    --color-primary-container: 240 145 153;
-    --color-surface-container-high: 42 42 42;
-    --color-background: 19 19 19;
-    --color-surface: 19 19 19;
-    --color-on-error-container: 255 218 214;
-    --color-surface-container-low: 27 27 27;
-    --color-secondary: 170 199 255;
-    --color-surface-container-lowest: 14 14 14;
-    --color-surface-container-highest: 53 53 53;
-    --color-outline-variant: 84 67 67;
-    --color-outline: 161 140 140;
-  }
-}
-
-/* 滚动条统一 4px —— 与 app 一致（见 AI_GUIDELINES「UI/样式」滚动条一致性）。 */
-.custom-scrollbar::-webkit-scrollbar,
-textarea::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-.custom-scrollbar::-webkit-scrollbar-track,
-textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb,
-textarea::-webkit-scrollbar-thumb {
-  background: #353535;
-  border-radius: 2px;
-}
-.custom-scrollbar::-webkit-scrollbar-corner,
-textarea::-webkit-scrollbar-corner {
-  background: transparent;
 }
 
 html,
@@ -86,7 +48,131 @@ body,
   height: 100%;
 }
 
-body {
-  background: rgb(var(--color-background));
-  color: rgb(var(--color-on-surface));
+/* 噪点覆盖层（body::after，z-index:0）会盖住未定位的普通流内容；
+   原型稿靠 body > .shell 提层，React 挂在 #root 下，给 #root 提同样的层级。 */
+#root {
+  position: relative;
+  z-index: 1;
 }
+
+/* —— 真实源码在手帐皮肤上的少量补笔（原型稿没有对应组件的小件） —— */
+
+/* AuthModal：注册 / 找回页的小标题（页签只在 密码 / 验证码 两态出现） */
+.auth-head { font-size: 22px; margin-bottom: 14px; color: var(--ink); }
+
+/* 邮箱快捷后缀 chips（原型稿没有该功能件，借用标签贴纸的观感用 .tagx） */
+.mail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.mail-swap { margin: 6px 0 10px; font-size: 12px; }
+
+/* 表单级提示行（整表一条的 error/ok，原型稿只有字段级 .field-msg） */
+.form-note { min-height: 18px; margin: 8px 0 2px; font-size: 12.5px; color: var(--teal); }
+.form-note.err { color: var(--sakura); }
+
+/* 字段下的常驻小注（「至少 6 位」） */
+.field-hint { display: block; margin-top: 5px; font-size: 11.5px; color: var(--ink-faint); }
+
+/* 验证码第二步里锁定的邮箱输入 */
+.field-row > input:disabled { opacity: .62; }
+
+/* 周历：胶片区空态 / 页面级加载与错误态（原型稿无对应件） */
+.film-empty { flex: none; width: 100%; padding: 48px 8px; text-align: center; font-size: 13px; }
+.page-state { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 64px 20px; }
+
+/* —— 追番页补笔 —— */
+
+/* 搜索框的清空钮（原型稿搜索框无清空） */
+.search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+/* 步进器的不可用态 */
+.stepper > button:disabled { opacity: .35; cursor: default; }
+
+/* 弹窗里的小封面 / 候选与搜索结果列表 / 弹窗内滚动区 */
+.dlg-cover { width: 68px; height: 92px; flex: none; object-fit: cover; border: 1.5px solid var(--line); border-radius: 6px; }
+.cand-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.dlg-scroll { min-height: 0; overflow-y: auto; }
+.field-row > input { min-width: 0; } /* 与行内按钮共存时可收缩（原型稿输入框都是独占一行） */
+
+/* 编辑弹窗里的标签输入（借用标签贴纸外形） */
+.tagx-input {
+  width: 108px;
+  min-height: 24px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--ink);
+  background: var(--card);
+  outline: none;
+}
+
+/* 类型过滤下拉的勾选小框 */
+.dd-check {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 4px;
+  color: #fff;
+}
+.dd-check.on { background: var(--teal); border-color: var(--teal); }
+
+/* 稀饭 / Girigiri 验证码图片框 */
+.captcha-img {
+  height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--field-bg);
+  border: 1.5px dashed var(--line);
+  border-radius: 8px;
+}
+.captcha-img img { height: 100%; max-width: 100%; object-fit: contain; }
+
+/* —— 设置页补笔 —— */
+
+/* 口袋内的小节标题（右侧接虚线）；文字走手写体 + 荧光笔（<span class="hl font-hand">） */
+.pocket-sub {
+  margin: 16px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pocket-sub::after { content: ''; flex: 1; border-top: 1.5px dashed var(--line); }
+.pocket-sub > span { font-size: 16px; line-height: 1.5; padding: 0 3px; }
+
+/* 行内展开的编辑表单栈 / 双列字段（新密码 × 确认） */
+.field-stack { display: flex; flex-direction: column; gap: 12px; max-width: 400px; padding: 4px 0 6px; }
+.field-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+
+/* 密保提示条的关闭钮（原型稿 .nag 自带「去设置」，没有关闭叉） */
+.nag-x {
+  margin-left: 2px;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  background: none;
+  color: var(--teal);
+  opacity: .6;
+  cursor: pointer;
+  border-radius: 6px;
+}
+

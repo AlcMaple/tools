@@ -16,3 +16,20 @@ export function useIsCompact(): boolean {
   }, [])
   return match
 }
+
+// 手帐骨架的分界线（书脊 ↔ 顶栏+底部标签 同一条）：≥961px 桌面态。
+// 周历用它切换「整周纵览（桌面）/ 日期章选天（手机）」。
+export function useIsWide(): boolean {
+  const query = '(min-width: 961px)'
+  const [match, setMatch] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const on = (): void => setMatch(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return match
+}
