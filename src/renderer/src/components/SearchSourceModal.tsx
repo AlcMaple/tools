@@ -8,6 +8,11 @@ import type { Source, SearchCard } from '../types/search'
 import { useSourceSearch } from '../hooks/useSourceSearch'
 import ErrorPanel from './ErrorPanel'
 
+/** 界面文案里显示的源名——Bilibili 念作「B 站」，其余源保留原样(既有习惯)。 */
+function sourceLabel(source: Source): string {
+  return source === 'Bilibili' ? 'B 站' : source
+}
+
 interface Props {
   source: Source
   /** 初始关键词,一般传追番记录的标题。 */
@@ -66,13 +71,13 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="font-headline font-black text-base text-on-surface">
-                补绑 {source} 源
+                补绑 {sourceLabel(source)} 源
               </h3>
               <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">
                 {animeTitle}
               </p>
               <p className="font-body text-[11px] text-on-surface-variant/60 mt-1.5">
-                从 {source} 的搜索结果里挑一个对应条目，绑定后这个源也会出现在「在线观看」chip 里。
+                从 {sourceLabel(source)} 的搜索结果里挑一个对应条目，绑定后这个源也会出现在「在线观看」chip 里。
               </p>
             </div>
             <button
@@ -94,7 +99,7 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !isBusy) void search(keyword) }}
-                placeholder={`${source} 关键词...`}
+                placeholder={`${sourceLabel(source)} 关键词...`}
                 autoFocus
                 spellCheck={false}
                 className="flex-1 bg-transparent outline-none text-sm text-on-surface placeholder:text-on-surface-variant/35"
@@ -130,7 +135,7 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
                   ? 'Verifying captcha...'
                   : confirming
                     ? 'Binding...'
-                    : `Querying ${source}...`}
+                    : `Querying ${sourceLabel(source)}...`}
               </p>
             </div>
           )}
@@ -138,7 +143,7 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
           {state.status === 'captcha' && (
             <div className="px-2 pt-2 flex flex-col gap-3">
               <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest">
-                {source} 需要先过验证码
+                {sourceLabel(source)} 需要先过验证码
               </p>
               <img
                 src={`data:image/gif;base64,${state.imageB64}`}
@@ -177,7 +182,7 @@ export function SearchSourceModal({ source, initialKeyword, animeTitle, onClose,
           {state.status === 'empty' && (
             <div className="flex flex-col items-center justify-center py-10 gap-2 text-on-surface-variant/40">
               <span className="material-symbols-outlined text-3xl">search_off</span>
-              <p className="font-label text-xs">{source} 里没找到，换关键词试试</p>
+              <p className="font-label text-xs">{sourceLabel(source)} 里没找到，换关键词试试</p>
             </div>
           )}
 

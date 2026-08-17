@@ -325,6 +325,147 @@ interface RawTrack {
  * 1080P 高码率(112)还要大会员。所以这里必须带 `persist:bili` 分区的 cookie。
  * `fnval=4048` = DASH + 8K/HDR/杜比等全开(取到什么由账号权益定),`fourk=1` 同理。
  */
+// ── 搜索(关键词 → 视频候选) ────────────────────────────────────────────────
+// web 端搜索接口要 WBI 签名(和登录/播放走的 TV appkey 签名是两套完全不同的机制)。
+// 盐值本身不公开,但取法公开且稳定:img_key/sub_key 从 /x/web-interface/nav 的
+// wbi_img 里现取,按固定表打乱拼接成 mixin_key,再对参数排序后 md5(query+mixin_key)。
+// 参照 biu 项目 electron/ipc/api/wbi.ts 的同一套算法。
+
+const WBI_MIXIN_KEY_ENC_TAB = [
+  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41,
+  13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34,
+  44, 52,
+]
+
+interface WbiKeys { imgKey: string; subKey: string }
+
+// 密钥按天轮换,进程内缓存一份;真被拒了(风控/密钥过期)才强制重取一次,不是每次搜索都打 nav。
+let cachedWbiKeys: WbiKeys | null = null
+
+function wbiKeyFromUrl(url: string): string {
+  return url.slice(url.lastIndexOf('/') + 1, url.lastIndexOf('.'))
+}
+
+async function fetchWbiKeys(): Promise<WbiKeys> {
+  // nav 匿名也能拿到 wbi_img(未登录时 code=-101,但 data 仍在),不能用 unwrap() 的
+  // 「非 0 即抛」逻辑,得原样解出 data。
+  const res = await netRequest(`${API}/x/web-interface/nav`, {
+    headers: { 'User-Agent': DESKTOP_USER_AGENT, Referer: BILI_REFERER },
+    session: biliSession(),
+  })
+  const env = JSON.parse(res.body.toString('utf-8')) as {
+    data?: { wbi_img?: { img_url?: string; sub_url?: string } }
+  }
+  const imgUrl = env.data?.wbi_img?.img_url ?? ''
+  const subUrl = env.data?.wbi_img?.sub_url ?? ''
+  const keys = { imgKey: wbiKeyFromUrl(imgUrl), subKey: wbiKeyFromUrl(subUrl) }
+  if (!keys.imgKey || !keys.subKey) throw new Error('取 B 站搜索签名密钥失败')
+  return keys
+}
+
+async function getWbiKeys(forceRefresh = false): Promise<WbiKeys> {
+  if (forceRefresh) cachedWbiKeys = null
+  if (!cachedWbiKeys) cachedWbiKeys = await fetchWbiKeys()
+  return cachedWbiKeys
+}
+
+function mixinKey(imgKey: string, subKey: string): string {
+  const orig = imgKey + subKey
+  return WBI_MIXIN_KEY_ENC_TAB.map((n) => orig[n]).join('').slice(0, 32)
+}
+
+/** WBI 签名:参数按 key 排序、过滤 `!'()*`、拼上 wts,md5(query + mixin_key) 得到 w_rid。 */
+async function signWbi(params: Record<string, string>, forceRefresh = false): Promise<string> {
+  const { imgKey, subKey } = await getWbiKeys(forceRefresh)
+  const mixin = mixinKey(imgKey, subKey)
+  const all: Record<string, string> = { ...params, wts: String(Math.floor(Date.now() / 1000)) }
+  const stripped = /[!'()*]/g
+  const query = Object.keys(all)
+    .sort()
+    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(all[k].replace(stripped, ''))}`)
+    .join('&')
+  const wRid = createHash('md5').update(query + mixin).digest('hex')
+  return `${query}&w_rid=${wRid}`
+}
+
+export interface BiliSearchResult {
+  bvid: string
+  title: string
+  cover: string
+  author: string
+  /** 「12:34」这种时长文本,原样透传。 */
+  duration: string
+}
+
+interface RawSearchItem {
+  bvid?: string
+  title?: string
+  pic?: string
+  author?: string
+  duration?: string | number
+}
+
+function stripHighlightTags(title: string): string {
+  // 搜索结果标题里命中的关键词包着 <em class="keyword">…</em>,界面只要纯文本。
+  return title.replace(/<[^>]+>/g, '')
+}
+
+function normalizeCover(pic: string): string {
+  if (!pic) return ''
+  // 协议相对地址(//i0.hdslb.com/…)先补全。渲染进程直接裸连 hdslb.com 拿不到图——
+  // 走的是应用自己的 origin,没有 B 站要的 Referer,一律 403。和视频直链同一个毛病,
+  // 同一个解法:包成 mtmedia:// 代理,由主进程带着 Referer 转发(见 media-proxy.ts)。
+  const full = pic.startsWith('//') ? `https:${pic}` : pic
+  return toMediaProxyUrl(full, BILI_REFERER)
+}
+
+/** 账号已注销/找不到时,B 站把作者名兜底成「BILI_<uid数字>」——这类稿件的上传者已经
+ *  没有主页、投稿数是 0,通常是账号被封后遗留的搬运/失效内容,直接从搜索结果里滤掉。 */
+function isGhostAuthor(author: string): boolean {
+  return /^BILI_\d+$/i.test(author.trim())
+}
+
+async function requestSearchPage(keyword: string, page: number, forceRefresh: boolean): Promise<{
+  code: number
+  message: string
+  result: RawSearchItem[]
+}> {
+  const query = await signWbi({ search_type: 'video', keyword, page: String(page) }, forceRefresh)
+  const res = await netRequest(`${API}/x/web-interface/wbi/search/type?${query}`, {
+    headers: { 'User-Agent': DESKTOP_USER_AGENT, Referer: BILI_REFERER },
+    session: biliSession(),
+  })
+  const env = JSON.parse(res.body.toString('utf-8')) as {
+    code: number
+    message: string
+    data?: { result?: RawSearchItem[] }
+  }
+  return { code: env.code, message: env.message, result: env.data?.result ?? [] }
+}
+
+/**
+ * 关键词搜视频(search_type=video)。只搜普通投稿,合集(多个独立 BV 号归到同一
+ * season)不做特殊识别——命中合集里的某一集时,用户挑的就是那一条 BV,和分 P 稿件
+ * 一样处理;要是选错了,走「重新搜索」覆盖即可,不在这一层猜。
+ */
+export async function search(keyword: string, page = 1): Promise<BiliSearchResult[]> {
+  let res = await requestSearchPage(keyword, page, false)
+  // -403/-352 是签名被拒(密钥过期或风控),强刷一次密钥重试;别的错误直接抛给 UI。
+  if (res.code === -403 || res.code === -352) {
+    res = await requestSearchPage(keyword, page, true)
+  }
+  if (res.code !== 0) throw new Error(`B 站搜索失败:${res.message || res.code}`)
+  return res.result
+    .filter((it) => it.bvid && it.title && !isGhostAuthor(it.author ?? ''))
+    .map((it) => ({
+      bvid: it.bvid!,
+      title: stripHighlightTags(it.title!),
+      cover: normalizeCover(it.pic ?? ''),
+      author: it.author ?? '',
+      duration: String(it.duration ?? ''),
+    }))
+}
+
 export async function getDash(aid: number, cid: number): Promise<BiliDash> {
   const query = signParams({
     avid: String(aid),

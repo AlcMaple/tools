@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 620" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1038" height="618" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">用户搜 B 站、挑一个视频关联番剧，底层怎么走</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">和稀饭/girigiri共用同一套搜索UI组件，B站不一样的地方只有两处：签名算法、以及"重新搜索会覆盖旧绑定"</text>
+
+  <!-- Step 1 -->
+  <rect x="32" y="86" width="230" height="80" rx="10" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="147" y="110" text-anchor="middle" font-size="13" font-weight="700" fill="#353136">① 用户输入关键词</text>
+  <text x="52" y="132" font-size="11" fill="#666066">"搜 B 站" 或已绑定时</text>
+  <text x="52" y="148" font-size="11" fill="#666066">点"换 B 站视频"</text>
+  <text x="52" y="163" font-size="9.5" fill="#a12c2c">同关键词 1 天内命中过缓存 → 直接出结果,不联网,跳到④</text>
+
+  <path d="M262 126 H302" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <!-- Step 2 -->
+  <rect x="304" y="86" width="290" height="80" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="449" y="108" text-anchor="middle" font-size="13" font-weight="700" fill="#36566d">② 主进程签名后请求</text>
+  <text x="449" y="126" text-anchor="middle" font-size="13" font-weight="700" fill="#36566d">B 站搜索接口</text>
+  <text x="324" y="150" font-size="10" fill="#4d6575">WBI 签名，和登录/播放走的签名是两套完全不同的算法</text>
+
+  <path d="M449 166 V196" stroke="#6d686b" stroke-width="0"/>
+
+  <!-- WBI box -->
+  <rect x="32" y="200" width="562" height="150" rx="10" fill="#fff8e8" stroke="#cfb66d"/>
+  <text x="54" y="224" font-size="12.5" font-weight="700" fill="#755d1f">WBI 签名怎么来的（这次唯一新引入的机制）</text>
+  <rect x="54" y="238" width="240" height="50" rx="8" fill="#ffffff" stroke="#e0d4a8"/>
+  <text x="174" y="258" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">取密钥</text>
+  <text x="174" y="275" text-anchor="middle" font-size="10" fill="#666066">/x/web-interface/nav 拿 img_key/sub_key</text>
+  <path d="M294 263 H326" stroke="#786b45" stroke-width="1.4" marker-end="url(#a-gray)"/>
+  <rect x="328" y="238" width="240" height="50" rx="8" fill="#ffffff" stroke="#e0d4a8"/>
+  <text x="448" y="258" text-anchor="middle" font-size="11" font-weight="700" fill="#353136">按固定表打乱拼接</text>
+  <text x="448" y="275" text-anchor="middle" font-size="10" fill="#666066">得到 32 位 mixin_key</text>
+  <path d="M448 288 V300" stroke="#786b45" stroke-width="1.4" marker-end="url(#a-gray)"/>
+  <rect x="54" y="302" width="514" height="34" rx="8" fill="#ffffff" stroke="#e0d4a8"/>
+  <text x="311" y="324" text-anchor="middle" font-size="10.5" fill="#353136">参数排序拼接 + wts 时间戳 → md5(query + mixin_key) = w_rid</text>
+  <text x="54" y="346" font-size="10" fill="#a12c2c">密钥按天轮换，进程内缓存一份；真被拒了（-403/-352）才强刷一次重试，不是每次搜索都打 nav</text>
+
+  <!-- Step 3 -->
+  <rect x="614" y="200" width="394" height="150" rx="10" fill="#fdf6f6" stroke="#ecd4d4"/>
+  <text x="636" y="224" font-size="12.5" font-weight="700" fill="#a12c2c">③ 结果整理（渲染层看到的已经是干净数据）</text>
+  <text x="636" y="248" font-size="11" fill="#665058">标题剥掉 &lt;em class="keyword"&gt; 高亮标签</text>
+  <text x="636" y="268" font-size="11" fill="#665058">封面包成 mtmedia:// 代理（直连 hdslb.com 没有</text>
+  <text x="636" y="284" font-size="11" fill="#665058">Referer，跟视频直链同一个防盗链毛病）</text>
+  <text x="636" y="306" font-size="11" fill="#a12c2c" font-weight="700">滤掉作者名是 "BILI_&lt;数字&gt;" 的结果</text>
+  <text x="636" y="324" font-size="10.5" fill="#786b45">账号已注销/找不到时 B 站的兜底名，这类稿件</text>
+  <text x="636" y="340" font-size="10.5" fill="#786b45">多半是账号被封后遗留的搬运/失效内容</text>
+  <text x="636" y="357" font-size="9.5" fill="#666066">→ 写入缓存，TTL 只给 1 天（B 站随时有新投稿，不能像稀饭那样存 30 天）</text>
+
+  <path d="M449 350 V376" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <!-- Step 4: pick -->
+  <rect x="32" y="378" width="976" height="90" rx="10" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="54" y="400" font-size="12.5" font-weight="700" fill="#353136">④ 用户点一个结果</text>
+  <text x="54" y="420" font-size="11" fill="#666066">卡片的 key 就是完整的 https://www.bilibili.com/video/BV… 地址——落地时不用像 Aowu 那样再换一次链接</text>
+  <text x="54" y="438" font-size="11" fill="#666066">存进 sourceKey，播放页用同一个正则从里面抠 BV 号，走自研 DASH 播放，和分 P 稿件一视同仁</text>
+  <text x="54" y="456" font-size="10" fill="#a12c2c">不识别"合集"(跨 BV 号的 season)：选到合集里的某一条 BV，就按它自己的分 P 当集数用，不在这一层猜</text>
+
+  <path d="M520 468 V494" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <!-- Step 5: single slot -->
+  <rect x="32" y="496" width="976" height="106" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="54" y="518" font-size="12.5" font-weight="700" fill="#316247">⑤ 落地：Bilibili 只留一个槽位</text>
+  <text x="54" y="540" font-size="11" fill="#456b54">第一次绑定：直接 bind()。已经绑过、这次是"换 B 站视频"重新搜出来的：先把旧的 Bilibili binding 全部</text>
+  <text x="54" y="558" font-size="11" fill="#456b54">删掉，再 bind() 新的——因为新旧两次选的 bvid 大概率不一样，bind() 本身只按 (source, sourceKey) 去重，</text>
+  <text x="54" y="576" font-size="11" fill="#456b54">不清理旧的话会攒出两个 B 站 chip。这也是"视频失效了 / 选错了怎么办"的答案：重新搜、重新选、自动覆盖。</text>
+  <text x="54" y="594" font-size="10" fill="#5c7f6a">EditBindingsModal(手动改标题/URL 的弹窗) 不管 Bilibili——想改就走这条重新搜索的路，不能手改出一个不合法的链接；绑定后 chip 上统一显示"B 站",不显示挑中的视频标题(标题挪进 tooltip)</text>
+</svg>

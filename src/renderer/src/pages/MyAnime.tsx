@@ -943,8 +943,15 @@ function SelectMenu<T extends string>({
 
 // ── Track row ────────────────────────────────────────────────────────────────
 
-// 内置三源顺序固定,常驻显示;其他来源(Bilibili / Custom)走「+ 添加链接」入口。
-const BUILTIN_SOURCES: ReadonlyArray<Source> = ['Aowu', 'Xifan', 'Girigiri']
+// 内置四源顺序固定;Bilibili 靠关键词搜视频关联(不是手填 URL),缺了显「+ 搜 X」,
+// 绑过了换成「换 B 站视频」重新搜一遍——它只留一个槽位,见下方 onConfirm 的说明。
+// 其余自由格式的链接走「+ 添加链接」入口,只落到 source:'Custom'。
+const BUILTIN_SOURCES: ReadonlyArray<Source> = ['Aowu', 'Xifan', 'Girigiri', 'Bilibili']
+
+/** 按钮上显示的源名——Bilibili 中文界面里念作「B 站」，其余源保留原样(既有习惯)。 */
+function sourceLabel(s: Source): string {
+  return s === 'Bilibili' ? 'B 站' : s
+}
 
 // memo:每行只依赖 `track` 这一个 prop。store.upsert 只替换被改那条的对象引用,filtered
 // 又是纯 filter/sort 不克隆元素 —— 所以单条编辑 / 搜索框输入时,未变的行 props 引用不变
@@ -1286,13 +1293,26 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
               key={s}
               type="button"
               onClick={() => setSearchingSource(s)}
-              title={`在 ${s} 里搜并关联这部番`}
+              title={`在 ${sourceLabel(s)} 里搜并关联这部番`}
               className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
             >
               <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>search</span>
-              <span>搜 {s}</span>
+              <span>搜 {sourceLabel(s)}</span>
             </button>
           ))}
+          {/* Bilibili 绑过之后按钮不消失,换成「重新搜」——视频失效/选错了都靠重搜覆盖,
+              不像 EditBindingsModal 那样手改 URL(那边已经不管 Bilibili 了)。 */}
+          {boundSources.has('Bilibili') && (
+            <button
+              type="button"
+              onClick={() => setSearchingSource('Bilibili')}
+              title="重新搜索并更换关联的 B 站视频（视频失效、选错、想指定分P所在的稿件都可以改）"
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/40 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
+            >
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>sync</span>
+              <span>换 B 站视频</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setAddingBinding(true)}
@@ -1386,13 +1406,24 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
                 key={s}
                 type="button"
                 onClick={() => setSearchingSource(s)}
-                title={`在 ${s} 里搜并关联这部番`}
+                title={`在 ${sourceLabel(s)} 里搜并关联这部番`}
                 className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/50 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
               >
                 <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>search</span>
-                <span>搜 {s}</span>
+                <span>搜 {sourceLabel(s)}</span>
               </button>
             ))}
+            {boundSources.has('Bilibili') && (
+              <button
+                type="button"
+                onClick={() => setSearchingSource('Bilibili')}
+                title="重新搜索并更换关联的 B 站视频（视频失效、选错、想指定分P所在的稿件都可以改）"
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-outline-variant/30 hover:border-primary/40 hover:bg-primary/8 text-on-surface-variant/40 hover:text-primary font-label text-[10px] tracking-wider transition-colors"
+              >
+                <span className="material-symbols-outlined leading-none" style={{ fontSize: 12 }}>sync</span>
+                <span>换 B 站视频</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setAddingBinding(true)}
@@ -1574,13 +1605,22 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
           onClose={() => setSearchingSource(null)}
           onConfirm={async (card: SearchCard) => {
             // Aowu 的 card.key 是 /v/{id} 合成 URL,浏览器打不开,写 binding 前先换成 /w/{token};
-            // Xifan / Girigiri 的 key 本身就是真实 watch URL,直接用。
+            // Xifan / Girigiri / Bilibili 的 key 本身就是真实观看页 URL,直接用。
             let sourceUrl: string | undefined
             if (card.source === 'Aowu') {
               try {
                 sourceUrl = await window.aowuApi.resolveShareUrl(card.key)
               } catch (err) {
                 console.warn('[MyAnime] aowu resolveShareUrl failed:', err)
+              }
+            }
+            // Bilibili 只留一个槽位:视频失效/选错了都靠重新搜索覆盖,不是靠手改 URL
+            // (EditBindingsModal 也不管它,见那边注释)。这里重新搜到的不一定是同一个
+            // bvid,所以不能用 bind() 的按 (source,sourceKey) 幂等——先干掉旧的那条,
+            // 免得留出两个 Bilibili chip。
+            if (card.source === 'Bilibili') {
+              for (const b of track.bindings.filter(x => x.source === 'Bilibili')) {
+                animeTrackStore.removeBinding(track.bgmId, 'Bilibili', b.sourceKey)
               }
             }
             const binding: AnimeBinding = {

@@ -3,7 +3,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import QRCode from 'qrcode'
 import {
-  biliSession, getDash, getVideoInfo, isLoggedIn, logout, tvAuthCode, tvPoll,
+  biliSession, getDash, getVideoInfo, isLoggedIn, logout, search, tvAuthCode, tvPoll,
 } from '../bili/api'
 import { clearSmsLoginFlows, completeSmsLogin, requestSmsCode } from '../bili/sms-login'
 
@@ -42,4 +42,6 @@ export function registerBiliIpc(): void {
 
   ipcMain.handle('bili:video-info', async (_e, bvid: string) => getVideoInfo(bvid))
   ipcMain.handle('bili:dash', async (_e, aid: number, cid: number) => getDash(aid, cid))
+  // 关联番剧用:关键词搜视频,渲染层挑一条落地成 binding。
+  ipcMain.handle('bili:search', async (_e, keyword: string, page?: number) => search(keyword, page))
 }
