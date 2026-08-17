@@ -68,6 +68,9 @@ CSS 变量在 `css/tokens.css`（单主题）：
 
 ## 迁移到真实代码（重构执行清单）
 
+> **状态：已于 2026-08-17 完成**——`web/src` 已按本稿重构（见 `docs/devlog/2026-网页版.md` 对应条目）。
+> 本目录仍保留为视觉真相源：后续改版先改这里、验收口径不变。
+
 1. `web/src/index.css`：MD3 变量 → 本主题变量（RGB 三元组格式保持，供 Tailwind alpha 修饰符）；
    body 换方眼纸底 + 噪点覆盖层；圆角刻度按 `--wob-*` / 直角两档替换
 2. 字体：`npm i @fontsource/yusei-magic`（或直接拷 woff2），叠加在系统中文栈前
