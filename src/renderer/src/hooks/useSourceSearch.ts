@@ -19,6 +19,7 @@ import {
 } from '../utils/searchCache'
 import {
   normalizeAowu,
+  normalizeBilibili,
   normalizeGirigiri,
   normalizeXifan,
 } from '../utils/searchNormalize'
@@ -136,6 +137,17 @@ export function useSourceSearch(
               }
             },
           )
+        }
+      } else if (source === 'Bilibili') {
+        // 没有验证码这一关,直接搜、直接出结果。
+        const results = await window.biliApi.search(kw)
+        if (myId !== reqIdRef.current) return
+        const cards = results.map(normalizeBilibili)
+        if (cards.length === 0) {
+          safeSet({ status: 'empty' })
+        } else {
+          safeSet({ status: 'results', cards, fromCache: false })
+          void setCachedSearch(kw, source, cards)
         }
       } else if (source === 'Girigiri') {
         const result = await window.girigiriApi.search(kw)

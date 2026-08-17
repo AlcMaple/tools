@@ -6,8 +6,29 @@ const TTL_BY_SOURCE: Record<string, number> = {
   xifan: 30 * DAY,
   girigiri: 30 * DAY,
   aowu: 30 * DAY,
+  // 稀饭/Girigiri/嗷呜是站内已收录的固定条目,新老关键词命中的都是同一批老番,长 TTL 没问题。
+  // B 站是全站实时投稿索引,同一关键词随时可能冒出新视频,缓存太久等于让新投稿"隐身",
+  // 只给 1 天——命中缓存图个"秒出结果"的快,但不该压过"能搜到新东西"。
+  bilibili: 1 * DAY,
   bgm: 14 * DAY,
 };
+
+/**
+ * 缓存桶版本号。只有当某个源的 SearchCard 归一化逻辑变了(字段含义变化,不只是新增可选字段)
+ * 才需要给它加版本——旧版本号写入的缓存桶会被当作"不存在",不再读取,相当于强制失效,
+ * 不用等 TTL 过期。默认版本 1,不出现在 key 里,保持旧数据继续可读。
+ */
+const CACHE_VERSION_BY_SOURCE: Record<string, number> = {
+  // v2: 封面改走 mtmedia:// 代理(之前是裸 https 链接,拿不到 Referer 会 403)+ 补了
+  // "BILI_<数字>"僵尸账号过滤——v1 缓存里的条目两个都没有,必须失效重搜。
+  bilibili: 2,
+};
+
+function cacheKeyFor(source: Source): string {
+  const s = source.toLowerCase()
+  const v = CACHE_VERSION_BY_SOURCE[s] ?? 1
+  return v > 1 ? `search_cache_${s}_v${v}` : `search_cache_${s}`
+}
 
 export function isSearchCacheEnabled(): boolean {
   try {
@@ -51,7 +72,7 @@ export async function getCachedSearch(
   source: Source,
 ): Promise<CachedSearchHit | null> {
   try {
-    const key = `search_cache_${source.toLowerCase()}`;
+    const key = cacheKeyFor(source);
     const all = (await window.systemApi.cacheGet(key)) as Record<
       string,
       unknown
@@ -78,7 +99,7 @@ export async function setCachedSearch(
 ): Promise<void> {
   // 同理,空结果也不写缓存。
   if (!Array.isArray(cards) || cards.length === 0) return;
-  const key = `search_cache_${source.toLowerCase()}`;
+  const key = cacheKeyFor(source);
   try {
     await window.systemApi.cacheSet(key, keyword, {
       data: cards,
