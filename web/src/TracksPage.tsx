@@ -10,6 +10,7 @@
 //
 // 页头不置顶,只有顶栏置顶。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import type {
   AnimeHit,
   GirigiriBinding,
@@ -37,6 +38,7 @@ import {
   searchAnime,
   searchGirigiri,
   searchXifan,
+  uploadTrackCover,
   verifyGirigiriCaptcha,
   verifyXifanCaptcha,
   XIFAN_CAPTCHA_EVENT_KEY,
@@ -332,6 +334,19 @@ export function TracksPage(): JSX.Element {
     })
   }
 
+  // 本地图片上传封面 —— 不走 patch()：写入的是文件而不是字段，服务端存完盘才知道最终
+  // URL（/api/tracks/<id>/cover-file），所以拿服务端返回的整条记录覆盖本地，而不是乐观先改。
+  const uploadCover = async (bgmId: number, file: File): Promise<void> => {
+    if (!user) return
+    setError(null)
+    try {
+      const updated = await uploadTrackCover(bgmId, file)
+      setTracks((prev) => (prev ? prev.map((t) => (t.bgmId === bgmId ? updated : t)) : prev))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   // 状态分段直点：与编辑弹窗同一入口；已是当前状态的点击不产生请求
   const setStatus = (t: Track, status: TrackStatus): void => {
     if (t.status === status) return
@@ -542,6 +557,7 @@ export function TracksPage(): JSX.Element {
         <EditModal
           t={editingTrack}
           onPatch={patch}
+          onUploadCover={uploadCover}
           onClose={() => setEditing(null)}
         />
       )}
@@ -966,17 +982,42 @@ function TagFilter({
 function EditModal({
   t,
   onPatch,
+  onUploadCover,
   onClose,
 }: {
   t: Track
   onPatch: (bgmId: number, p: TrackPatch) => void
+  onUploadCover: (bgmId: number, file: File) => Promise<void>
   onClose: () => void
 }): JSX.Element {
   const [totalDraft, setTotalDraft] = useState(t.totalEpisodes != null ? String(t.totalEpisodes) : '')
   const [adding, setAdding] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
+  const [coverEditing, setCoverEditing] = useState(false)
+  const [coverUrlDraft, setCoverUrlDraft] = useState('')
+  const [coverUploading, setCoverUploading] = useState(false)
+  const coverFileRef = useRef<HTMLInputElement>(null)
   const title = t.titleCn || t.title
   const sub = t.titleCn && t.title !== t.titleCn ? t.title : ''
+  // 副标题行只在真有内容时才占位 —— 没有副标题也没有放送日 / 评分,就当这行容器不存在。
+  const subLine = [sub, t.airWeekday ? `周${SHORT_DAY[t.airWeekday]}更新` : '', t.score > 0 ? `★ ${t.score.toFixed(1)}` : '']
+    .filter(Boolean)
+    .join(' · ')
+
+  const commitCoverUrl = (): void => {
+    const v = coverUrlDraft.trim()
+    setCoverEditing(false)
+    setCoverUrlDraft('')
+    if (v && v !== t.cover) onPatch(t.bgmId, { cover: v })
+  }
+
+  const pickCoverFile = (e: ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setCoverUploading(true)
+    void onUploadCover(t.bgmId, file).finally(() => setCoverUploading(false))
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -1019,14 +1060,55 @@ function EditModal({
         </button>
 
         <h3 className="dlg-title">{title}</h3>
-        <p className="dlg-sub">
-          {sub || '—'}
-          {t.airWeekday ? ` · 周${SHORT_DAY[t.airWeekday]}更新` : ''}
-          {t.score > 0 ? ` · ★ ${t.score.toFixed(1)}` : ''}
-        </p>
+        {subLine && <p className="dlg-sub">{subLine}</p>}
 
         <div className="mb16" style={{ display: 'flex', gap: 14 }}>
-          {t.cover && <img className="dlg-cover" src={coverUrl(t.cover)} alt="" />}
+          <div className="dlg-cover-edit">
+            <button
+              type="button"
+              className="dlg-cover-btn"
+              onClick={() => {
+                setCoverUrlDraft(t.cover && !t.cover.startsWith('/api/tracks/') ? t.cover : '')
+                setCoverEditing((v) => !v)
+              }}
+              title="点击编辑封面"
+              disabled={coverUploading}
+            >
+              {t.cover ? (
+                <img className="dlg-cover" src={coverUrl(t.cover)} alt="" />
+              ) : (
+                <span className="dlg-cover dlg-cover-ph">{coverUploading ? <Spinner /> : '＋ 封面'}</span>
+              )}
+            </button>
+            {coverEditing && (
+              <div className="dlg-cover-pop">
+                <input
+                  value={coverUrlDraft}
+                  onChange={(e) => setCoverUrlDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitCoverUrl()
+                    if (e.key === 'Escape') setCoverEditing(false)
+                  }}
+                  placeholder="网图 URL"
+                  autoFocus
+                />
+                <div className="dlg-cover-pop-actions">
+                  <button type="button" onClick={commitCoverUrl}>确定</button>
+                  <button type="button" onClick={() => coverFileRef.current?.click()}>本地上传</button>
+                </div>
+                <input
+                  ref={coverFileRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    setCoverEditing(false)
+                    pickCoverFile(e)
+                  }}
+                />
+              </div>
+            )}
+          </div>
           <div className="field" style={{ flex: 1, minWidth: 0 }}>
             <span className="field-label">状态</span>
             <div className="status-seg" style={{ marginLeft: 0 }} role="group" aria-label="追番状态">

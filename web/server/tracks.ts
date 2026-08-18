@@ -4,6 +4,8 @@
 // 这样桌面端推富记录过来时,网页端只写自己拥有的那几个字段,对方的好看集 / 绑定之类不会被抹掉。
 import { Hono } from 'hono'
 import type { Context } from 'hono'
+import { readFile, unlink, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { isRecentAir } from '../shared/anime-age'
 import { epsOf } from './bgm/anime-index'
 import { getCalendarMetadata, type CalendarMetadata } from './bgm/calendar'
@@ -14,6 +16,7 @@ import {
   verifySearchAdditionToken,
 } from './bgm/search-additions'
 import { db } from './db'
+import { coversDir } from './data-dir'
 import { getSession } from './auth'
 
 const tracks = new Hono()
@@ -40,7 +43,13 @@ interface TrackRow {
   aliases: string
   extra: string
   updated_at: number
+  cover_mime: string
 }
+
+// 本地上传封面：文件按 `<uid>_<bgmId>` 落 coversDir，不带扩展名 —— 实际类型看 cover_mime 那一列。
+const coverFilePath = (uid: number, bgmId: number): string => join(coversDir, `${uid}_${bgmId}`)
+const COVER_UPLOAD_MAX_BYTES = 4 * 1024 * 1024
+const COVER_UPLOAD_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
 const parseList = (s: string): string[] => {
   try {
@@ -317,6 +326,12 @@ tracks.put('/:bgmId', async (c) => {
   const nextTotal = hasTotal ? asTotal(body.totalEpisodes) : null
   if (hasTotal && nextTotal === undefined) return c.json({ error: 'totalEpisodes 不合法' }, 400)
 
+  // 网图 URL 编辑封面。本地文件上传走单独的 POST /:bgmId/cover（multipart），不经这里 ——
+  // 这条 PUT 是纯 JSON body，塞不下二进制。
+  const hasCover = 'cover' in body
+  const nextCover = hasCover ? String(body.cover ?? '').trim() : ''
+  if (hasCover && nextCover.length > 2000) return c.json({ error: '封面地址过长' }, 400)
+
   let nextUserTags: string[] | undefined
   if ('userTags' in body) {
     const list = Array.isArray(body.userTags) ? body.userTags : null
@@ -390,6 +405,11 @@ tracks.put('/:bgmId', async (c) => {
       sets.push('user_tags = ?')
       args.push(JSON.stringify(nextUserTags))
     }
+    if (hasCover) {
+      sets.push('cover = ?', 'cover_mime = ?')
+      // 手填网图 URL 顶替掉本地上传：这条不再是 local 哨兵值，cover_mime 归零。
+      args.push(nextCover, '')
+    }
 
     if (!sets.length) return { row: prev, fillDetail: false }
     sets.push('updated_at = ?')
@@ -397,6 +417,8 @@ tracks.put('/:bgmId', async (c) => {
     db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`)
       .run(...args, uid, bgmId)
     bumpRev(uid)
+    // 换成网图 URL 后，原先本地上传的文件成了孤儿，顺手删掉（失败不影响这次写入）。
+    if (hasCover && prev.cover_mime) void unlink(coverFilePath(uid, bgmId)).catch(() => {})
     return { row: oneStmt.get(uid, bgmId) as TrackRow, fillDetail: false }
   })
   const result = write.immediate()
@@ -422,7 +444,54 @@ tracks.delete('/:bgmId', async (c) => {
     if (result.changes > 0) bumpRev(uid)
   })
   remove.immediate()
+  void unlink(coverFilePath(uid, bgmId)).catch(() => {})
   return c.json({ ok: true })
+})
+
+/**
+ * 本地图片上传封面。multipart，字段名 `file`。图片直接落 coversDir，DB 只存一个
+ * `/api/tracks/<bgmId>/cover-file` 哨兵路径 + cover_mime，真正字节从不进 SQLite。
+ */
+tracks.post('/:bgmId/cover', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  const bgmId = Number(c.req.param('bgmId'))
+  if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
+  if (!oneStmt.get(uid, bgmId)) return c.json({ error: '未追这部番' }, 404)
+
+  const body = await c.req.parseBody().catch(() => null)
+  const file = body?.file
+  if (!(file instanceof File)) return c.json({ error: '没有收到图片' }, 400)
+  if (!COVER_UPLOAD_MIME.has(file.type)) return c.json({ error: '只支持 PNG / JPEG / WebP / GIF' }, 400)
+  if (file.size > COVER_UPLOAD_MAX_BYTES) return c.json({ error: '图片不能超过 4MB' }, 400)
+
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  await writeFile(coverFilePath(uid, bgmId), bytes)
+
+  const now = Date.now()
+  const cover = `/api/tracks/${bgmId}/cover-file`
+  db.prepare('UPDATE tracks SET cover = ?, cover_mime = ?, updated_at = ? WHERE user_id = ? AND bgm_id = ?')
+    .run(cover, file.type, now, uid, bgmId)
+  bumpRev(uid)
+  return c.json(toJson(oneStmt.get(uid, bgmId) as TrackRow))
+})
+
+/** 本地上传封面的读取端。要登录、且只能读自己那份 —— uid 从会话拿，不信路径。 */
+tracks.get('/:bgmId/cover-file', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  const bgmId = Number(c.req.param('bgmId'))
+  if (!Number.isInteger(bgmId)) return c.json({ error: 'bgmId 不合法' }, 400)
+  const row = oneStmt.get(uid, bgmId) as TrackRow | undefined
+  if (!row || !row.cover_mime) return c.json({ error: '没有本地封面' }, 404)
+  try {
+    const bytes = await readFile(coverFilePath(uid, bgmId))
+    c.header('Content-Type', row.cover_mime)
+    c.header('Cache-Control', 'private, max-age=3600')
+    return c.body(bytes)
+  } catch {
+    return c.json({ error: '封面文件丢失' }, 404)
+  }
 })
 
 // ── app 同步──────────────────────────────────

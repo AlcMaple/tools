@@ -16,3 +16,7 @@ export const dataDir = process.env.DATA_DIR
   : join(process.cwd(), 'data')
 
 mkdirSync(dataDir, { recursive: true })
+
+// 用户上传的本地封面 —— 同样落 dataDir，不进部署目录（重新部署不丢）。见 server/tracks.ts。
+export const coversDir = join(dataDir, 'covers')
+mkdirSync(coversDir, { recursive: true })
