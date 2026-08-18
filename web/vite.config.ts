@@ -26,6 +26,20 @@ export default defineConfig(({ command }) => ({
       exclude: [/^(?!\/api\/).*/],
     }),
   ],
+  build: {
+    // 字体一律产出成独立文件，**不许内联成 data: URI**。
+    //
+    // Vite 默认把小于 4096 字节的资源内联，而我们的 CSP 是 `font-src 'self'` —— data: 不在其中。
+    // 于是 `yusei-magic-latin-ext-400-normal.woff2`（2,844 字节）被内联后**在线上被 CSP 直接拦掉**，
+    // 扩展拉丁字符（ā ē ō 等带音标的字形）静默掉回 fallback 字体，控制台只留一条 CSP 报错。
+    // 同目录的 latin 正常子集是 17,412 字节、超过阈值，所以一直是好的 —— 这就是「只坏了一半、
+    // 页面看着还行」的原因，很难靠肉眼发现。
+    //
+    // 修构建而不是往 CSP 里加 `data:`：CSP 本身是对的，内联才是那个越界的行为；
+    // 放开 `data:` 等于为一个 2.8KB 的字体永久削弱一条策略。
+    assetsInlineLimit: (filePath: string): boolean | undefined =>
+      /\.(woff2?|ttf|otf|eot)$/i.test(filePath) ? false : undefined,
+  },
   // better-sqlite3 是原生模块（.node），Vite SSR 不能把它当普通 JS 打包 —— 标 external
   // 让 dev-server 直接 require 原生二进制，否则 /api/auth 一被命中就崩。
   ssr: {
