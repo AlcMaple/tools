@@ -449,7 +449,7 @@ export function TracksPage(): JSX.Element {
         <>
           {/* 手机：立绘内联（桌面为页尾驻场，CSS 切换） */}
           <div className="rig-inline mt16">
-            <img className="rig" src="/assets/chara_03.png" alt="山田エルフ · 官方立绘" />
+            <img className="rig" src="/assets/chara_03.webp" alt="山田エルフ · 官方立绘" />
             <div className="bubble rig-bubble">
               <span>
                 {todayCount > 0
@@ -538,7 +538,7 @@ export function TracksPage(): JSX.Element {
       {user && filtered.length > 0 && (
         <div className="rig-slot">
           <div className="rig-box">
-            <img className="rig" src="/assets/chara_03.png" alt="山田エルフ · 官方立绘" />
+            <img className="rig" src="/assets/chara_03.webp" alt="山田エルフ · 官方立绘" />
             <div className="bubble rig-bubble">
               <span>
                 {todayCount > 0
@@ -2144,7 +2144,7 @@ function EmptyState({ text, hint, goCalendar }: { text: string; hint: string; go
     /* 横排：立绘在左、气泡在右，尾巴从气泡左缘指回人物（竖排时尾巴悬在人物脚边的空气里，
        而且整块面板被撑得又高又空） */
     <div className="empty panel mt16">
-      <img className="mascot" src="/assets/sagiri-mascot.png" alt="" />
+      <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />
       <div className="empty-say">
         <div className="bubble empty-bubble">
           {text}。{hint}
