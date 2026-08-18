@@ -34,6 +34,7 @@ import type { XifanWatchInfo } from '../types/xifan'
 import type { AowuWatchInfo } from '../types/aowu'
 import type { GirigiriWatchInfo } from '../types/girigiri'
 import PlayerControls from '../components/PlayerControls'
+import { GoodEpisodesEditor, NoteTip } from '../components/GoodEpisodesEditor'
 
 // shaka 只认注册过的 scheme,不注册会直接报 UNSUPPORTED_SCHEME。用它自带的 fetch 插件。
 shaka.polyfill.installAll()
@@ -226,6 +227,20 @@ export default function OnlinePlayer(): JSX.Element {
   const [params] = useSearchParams()
   const bgmId = Number(params.get('bgm') ?? 0)
   const track = useAnimeTrack(bgmId)
+  const [goodEpsOpen, setGoodEpsOpen] = useState(false)
+  const [onlyGoodEps, setOnlyGoodEps] = useState(false)
+  // 好看集备注 hover 提示：同 GoodEpisodesEditor 的 NoteTip,~120ms 防抖后即显,比原生 title 快。
+  const [noteHoverTip, setNoteHoverTip] = useState<{ text: string; anchor: DOMRect } | null>(null)
+  const noteTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showNoteTip = useCallback((text: string, anchor: DOMRect) => {
+    if (noteTipTimer.current) clearTimeout(noteTipTimer.current)
+    noteTipTimer.current = setTimeout(() => setNoteHoverTip({ text, anchor }), 120)
+  }, [])
+  const hideNoteTip = useCallback(() => {
+    if (noteTipTimer.current) clearTimeout(noteTipTimer.current)
+    setNoteHoverTip(null)
+  }, [])
+  useEffect(() => () => { if (noteTipTimer.current) clearTimeout(noteTipTimer.current) }, [])
 
   // ── 源切换器条目:三个内置源常驻 + 自定义 binding 追加 ──────────────────────
   const entries = useMemo<SourceEntry[]>(() => {
@@ -892,28 +907,93 @@ export default function OnlinePlayer(): JSX.Element {
             {/* 集数网格 */}
             {data && eps.length > 0 && (
               <section className="space-y-3">
-                <div className="flex items-baseline gap-2 border-b border-outline-variant/20 pb-2">
-                  <h2 className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant">选集</h2>
-                  <span className="font-label text-[10px] text-on-surface-variant/40">{eps.length} 集</span>
+                <div className="flex items-center justify-between gap-2 border-b border-outline-variant/20 pb-2 flex-wrap">
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant">选集</h2>
+                    <span className="font-label text-[10px] text-on-surface-variant/40">{eps.length} 集</span>
+                  </div>
+                  {track && (
+                    <div className="flex items-center gap-1.5">
+                      {track.goodEpisodes.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setOnlyGoodEps((v) => !v)}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md font-label text-[10px] uppercase tracking-widest transition-colors ${
+                            onlyGoodEps
+                              ? 'bg-amber-400/15 text-amber-600'
+                              : 'text-on-surface-variant/55 hover:text-on-surface hover:bg-surface-container-high'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>filter_alt</span>
+                          <span>仅看好看集</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setGoodEpsOpen(true)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-on-surface-variant/55 hover:text-amber-600 hover:bg-amber-400/10 font-label text-[10px] uppercase tracking-widest transition-colors"
+                      >
+                        <span
+                          className="material-symbols-outlined leading-none"
+                          style={{ fontSize: 13, fontVariationSettings: track.goodEpisodes.length > 0 ? "'FILL' 1" : "'FILL' 0" }}
+                        >
+                          auto_awesome
+                        </span>
+                        <span>标记好看集</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(3rem,1fr))] gap-2">
-                  {eps.map((e) => (
-                    <button
-                      key={e.idx}
-                      type="button"
-                      onClick={() => setEp(e.idx)}
-                      title={e.label}
-                      className={`aspect-square rounded-lg px-1 flex items-center justify-center font-label text-xs font-medium transition-colors overflow-hidden ${
-                        e.idx === ep
-                          ? 'bg-primary text-on-primary'
-                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                      }`}
-                    >
-                      <span className="truncate">{epShort(e)}</span>
-                    </button>
-                  ))}
+                  {(onlyGoodEps && track ? eps.filter((e) => track.goodEpisodes.includes(e.idx)) : eps).map((e) => {
+                    const isGood = track?.goodEpisodes.includes(e.idx) ?? false
+                    const note = isGood ? track?.goodEpisodeNotes[e.idx] : undefined
+                    // 有备注的走自定义 NoteTip(hover 快、内容完整);没备注的沿用原生 title 显示集标签就够了。
+                    return (
+                      <button
+                        key={e.idx}
+                        type="button"
+                        onClick={() => setEp(e.idx)}
+                        title={note ? undefined : e.label}
+                        onMouseEnter={note ? (ev) => showNoteTip(note, ev.currentTarget.getBoundingClientRect()) : undefined}
+                        onMouseLeave={note ? hideNoteTip : undefined}
+                        className={`relative aspect-square rounded-lg px-1 flex items-center justify-center font-label text-xs font-medium transition-colors overflow-hidden ${
+                          e.idx === ep
+                            ? 'bg-primary text-on-primary'
+                            : isGood
+                              ? 'bg-amber-400/15 text-amber-600 hover:bg-amber-400/25'
+                              : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                        }`}
+                      >
+                        <span className="truncate">{epShort(e)}</span>
+                        {isGood && (
+                          <span
+                            className={`material-symbols-outlined absolute top-0.5 right-0.5 leading-none pointer-events-none ${
+                              e.idx === ep ? 'text-on-primary' : 'text-amber-500'
+                            }`}
+                            style={{ fontSize: 10, fontVariationSettings: "'FILL' 1" }}
+                          >
+                            auto_awesome
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               </section>
+            )}
+            {noteHoverTip && <NoteTip text={noteHoverTip.text} anchor={noteHoverTip.anchor} />}
+            {goodEpsOpen && track && (
+              <GoodEpisodesEditor
+                animeTitle={track.titleCn || track.title}
+                episodes={track.goodEpisodes}
+                notes={track.goodEpisodeNotes}
+                totalEpisodes={track.totalEpisodes}
+                episode={track.episode}
+                onChange={(next) => animeTrackStore.upsert({ bgmId: track.bgmId, goodEpisodes: next })}
+                onSetNote={(epNum, note) => animeTrackStore.setGoodEpisodeNote(track.bgmId, epNum, note)}
+                onClose={() => setGoodEpsOpen(false)}
+              />
             )}
           </>
         )}

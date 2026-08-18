@@ -402,7 +402,7 @@ function MarkedView({
  * ModalShell 的 transform 把 fixed 定位带偏），贴在格子下方、贴底翻上方。
  * pointer-events-none，不挡鼠标。
  */
-function NoteTip({ text, anchor }: { text: string; anchor: DOMRect }): JSX.Element {
+export function NoteTip({ text, anchor }: { text: string; anchor: DOMRect }): JSX.Element {
   const W = 220
   const H = 44
   // 气泡宽度按内容自适应（maxWidth 封顶），所以用 translateX(-50%) 居中而不是
