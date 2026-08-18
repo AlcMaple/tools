@@ -22,15 +22,21 @@
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 24px 24px;
-  animation: sp-paper .38s var(--ease-page) both;
 }
+
+/* 首帧就必须是不透明的：淡入的话，那零点几秒里应用会从半透明的纸底下透出来，
+   看着就是「先闪一下页面再进开屏」。同源的兜底见 index.html 的 html[data-splash] */
+
+/* 卡片这一层的动画一律钉在暂停态，由 Splash.tsx 逐帧设 currentTime 来推进：
+   按墙上时间跑的话，首屏卡顿掉的帧不会补，观众看到的就是「一个画框，然后就没了」。
+   .sp 自己的翻页离场不在此列，仍由 CSS 直接跑 */
+.sp-card, .sp-card *, .sp-title, .sp-title *, .sp-skip { animation-play-state: paused; }
 
 /* 翻页离场：以左边缘为轴掀起来，露出下面的应用 */
 .sp.out {
   pointer-events: none;
   animation: sp-out .62s var(--ease-page) forwards;
 }
-@keyframes sp-paper { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sp-out {
   from { opacity: 1; transform: none; }
   to { opacity: 0; transform: rotate(-3.2deg) translate(-6%, -5%) scale(1.07); }
