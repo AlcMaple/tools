@@ -63,11 +63,13 @@ const SHORT_DAY: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '�
 const STATUS_META: { key: TrackStatus; label: string }[] = [
   { key: 'watching', label: '在追' },
   { key: 'plan', label: '想看' },
+  { key: 'considering', label: '观望' },
   { key: 'done', label: '看完' },
 ]
-// 状态分段的展示顺序（想看 → 在追 → 看完）与印章配色（银 / 青 / 金）
-const SEG_ORDER: TrackStatus[] = ['plan', 'watching', 'done']
-const SEG_CLS: Record<TrackStatus, string> = { plan: 'wish', watching: 'doing', done: 'done' }
+// 状态分段的展示顺序（想看 → 观望 → 在追 → 看完）与印章配色（银 / 薰衣草 / 青 / 金）
+const SEG_ORDER: TrackStatus[] = ['plan', 'considering', 'watching', 'done']
+const SEG_CLS: Record<TrackStatus, string> = { plan: 'wish', considering: 'watch', watching: 'doing', done: 'done' }
+const STAMP_CLS: Record<TrackStatus, string> = { plan: 'st-silver', considering: 'st-lav', watching: 'st-teal', done: 'st-gold' }
 type FilterKey = 'all' | TrackStatus
 
 function todayBgmId(): number {
@@ -302,7 +304,8 @@ export function TracksPage(): JSX.Element {
     const optimistic: Track = {
       bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
       title: hit.name, titleCn: hit.nameCn, cover: calItem?.cover ?? '', airWeekday: calDay?.id ?? 0,
-      airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [], updatedAt: Date.now(),
+      airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [],
+      observeCount: 0, updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
     toast(`已加入『${hit.nameCn || hit.name}』，默认想看`)
@@ -368,7 +371,7 @@ export function TracksPage(): JSX.Element {
   }
 
   const counts = useMemo(() => {
-    const c = { all: 0, watching: 0, plan: 0, done: 0 }
+    const c = { all: 0, watching: 0, plan: 0, considering: 0, done: 0 }
     for (const t of tracks ?? []) {
       c.all++
       c[t.status]++
@@ -696,9 +699,14 @@ function Card({
     onPatch(t.bgmId, p)
   }
 
+  const considering = t.status === 'considering'
+  // 0–5：翻旧的档位。次数再多也只到 5，痕迹不会无限堆下去。
+  const heat = considering ? Math.min(5, t.observeCount) : undefined
+
   return (
-    <article className="trk-row">
-      <span className={`tape tr ${isToday ? 'sakura' : 'teal'}`} />
+    <article className={`trk-row${considering ? ' is-considering' : ''}`} data-heat={heat}>
+      <span className={`tape tr ${considering ? 'lav' : isToday ? 'sakura' : 'teal'}`} />
+      {considering && <WearLayer />}
       <div className="trk-cover" onClick={onEdit} title="点封面编辑" style={{ cursor: 'pointer' }}>
         {/* 「详情」角标是压在封面图上的浮层：没有封面时它会裸露在空白占位格上，
             像张贴歪的标签；此时卡片正文里的「BGM」按钮已经是同一个入口，直接不渲染 */}
@@ -720,12 +728,13 @@ function Card({
         ) : (
           <div className="cover-ph">☆</div>
         )}
+        {considering && <span className="cover-seal">観望中</span>}
       </div>
       <div className="trk-body">
         <div className="trk-head">
           <div className="trk-marks">
             <span
-              className={`stamp small ${t.status === 'watching' ? 'st-teal' : t.status === 'done' ? 'st-gold' : 'st-silver'}`}
+              className={`stamp small ${STAMP_CLS[t.status]}`}
             >
               {STATUS_META.find((m) => m.key === t.status)?.label}
             </span>
@@ -735,11 +744,21 @@ function Card({
             {title}
           </div>
           <span className="trk-ep">
-            {t.totalEpisodes != null ? `${t.episode} / ${t.totalEpisodes}` : `${t.episode} 集`}
+            {considering
+              ? '还没开动'
+              : t.totalEpisodes != null ? `${t.episode} / ${t.totalEpisodes}` : `${t.episode} 集`}
           </span>
         </div>
 
         <div className="ep-ctrl">
+          {/* 观望：不放集数、不放步进器、不放进度条 —— 那一套是「看到第几集」的语义 */}
+          {t.status === 'considering' ? (
+            <>
+              <WatchMarks value={t.observeCount} onChange={(n) => onPatch(t.bgmId, { observeCount: Math.max(0, n) })} />
+              <span className="wm-rule" />
+            </>
+          ) : (
+          <>
           <div className="stepper">
             <button
               type="button"
@@ -764,6 +783,8 @@ function Card({
           <div className={`prog${t.status === 'done' ? ' done' : ''}`}>
             <i style={{ width: `${pct}%` }} />
           </div>
+          </>
+          )}
         </div>
 
         {/* 标签：BGM 标签只读；自定义标签卡片上直接增删（原型稿形态） */}
@@ -815,7 +836,7 @@ function Card({
         <div className="trk-actions">
           <SourcePlayAction
             cls="btn btn-sm btn-primary"
-            label="继续看"
+            label={considering ? '试看一集' : '继续看'}
             ep={ep}
             binding={binding ? { id: String(binding.xifanId), name: binding.xifanName } : undefined}
             href={binding ? playPageUrl(binding.xifanId, ep, t.bgmId) : undefined}
@@ -842,6 +863,7 @@ function Card({
                 aria-pressed={t.status === s}
                 onClick={() => onStatus(s)}
               >
+                {s === 'watching' && considering && t.observeCount >= NUDGE_AT && <Nudge />}
                 {STATUS_META.find((m) => m.key === s)?.label}
               </button>
             ))}
@@ -853,6 +875,67 @@ function Card({
         </div>
       </div>
     </article>
+  )
+}
+
+/**
+ * 「瞄了一眼」印记条 —— 观望态下替掉集数步进器和进度条那一整行。
+ *
+ * 观望的番压根没在看，「看到第几集」的那套控件在这儿全是空转。点第 N 枚眼睛章直接记成
+ * N 次，点当前最后一枚退回 N−1；盖满 5 枚之后章不再增加，靠末尾的 ＋ 继续累计，总数写成
+ * 右上角那个手写小字。总数**绝对定位**：插进流里会在盖第 6 章的瞬间把 ＋ 往右顶，
+ * 按钮从指尖底下跑掉。次数不设上限（跟评分类字段有意区分：一个是行为统计，一个是评分）。
+ */
+const WM_SLOTS = 5
+function WatchMarks({ value, onChange }: { value: number; onChange: (n: number) => void }): JSX.Element {
+  return (
+    <div className="watchmarks" title={`观望 ${value} 次`}>
+      <span className="wm-cap">瞄了</span>
+      {Array.from({ length: WM_SLOTS }, (_, i) => i + 1).map((n) => (
+        <button
+          key={n}
+          type="button"
+          className={`wm-eye${n <= value ? ' on' : ''}`}
+          aria-label={`记成观望 ${n} 次`}
+          // 点当前最后一枚 = 撤回一次，省掉一个专门的「−」按钮
+          onClick={() => onChange(value === n ? n - 1 : n)}
+        >
+          <Ic name="eye" cls="ic ic-sm" />
+        </button>
+      ))}
+      <button type="button" className="wm-add" aria-label="再瞄一眼" onClick={() => onChange(value + 1)}>
+        <Ic name="plus" cls="ic ic-sm" />
+      </button>
+      {value > WM_SLOTS && <span className="wm-more">{value}</span>}
+    </div>
+  )
+}
+
+/**
+ * 翻旧痕迹层 —— 观望次数越多，这一页被翻回来看过的证据越多（铅笔线 / 补的胶带 /
+ * 圈一圈 / 茶渍 / 折角）。哪一档显示哪几样全在 CSS 的 `[data-heat]` 里，这里只负责
+ * 把这些痕迹摆进 DOM。整层 `pointer-events:none` 且绝对定位，翻得再旧也不动布局。
+ * 铅笔波浪线和圈是 CSS 伪元素，长在标题和印记条自己身上，不在这儿。
+ */
+function WearLayer(): JSX.Element {
+  return (
+    <div className="wear" aria-hidden="true">
+      <span className="w-stain s1" />
+      <span className="w-stain s2" />
+      <span className="w-tape" />
+      <span className="w-dogear" />
+    </div>
+  )
+}
+
+/** 观望次数够多时，纱雾从「在追」上方探头催一句。沿用页尾立绘那套「头像 + 手写气泡」。 */
+const NUDGE_AT = 4
+function Nudge(): JSX.Element {
+  return (
+    <span className="nudge" aria-hidden="true">
+      <img className="nudge-face" src="/assets/sagiri-nudge.webp" alt="" />
+      <span className="bubble">追吧！</span>
+    </span>
   )
 }
 

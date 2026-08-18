@@ -435,6 +435,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .tape.teal { background: var(--tape-teal); }
 .tape.sakura { background: var(--tape-sakura); }
 .tape.gold { background: var(--tape-gold); }
+.tape.lav { background: var(--tape-lav); }
 
 /* ---------- 缎带标题 ---------- */
 .ribbon {
@@ -494,6 +495,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .stamp.st-sakura { color: var(--sakura); }
 .stamp.st-gold { color: var(--gold); }
 .stamp.st-silver { color: var(--silver); }
+.stamp.st-lav { color: var(--lav); }
 .stamp.small { width: 30px; height: 30px; font-size: 11px; }
 @keyframes stamp-in {
   0% { transform: rotate(-8deg) scale(2.1); opacity: 0; }
@@ -1023,6 +1025,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 /* ---------- 追番：手帐内页行卡 ---------- */
 .trk-row {
   --trk-cover-w: clamp(136px, 16vw, 156px);
+  /* 容器查询锚点：卡片窄不窄跟视口宽不宽是两回事（宽屏双列时卡片一样窄） */
+  container: trk / inline-size;
   position: relative;
   display: grid;
   grid-template-columns: var(--trk-cover-w) minmax(0, 1fr);
@@ -1033,6 +1037,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   border-radius: var(--r-card);
   box-shadow: var(--shadow-1);
 }
+.trk-row.is-considering .trk-body { position: relative; z-index: 1; }
 .trk-cover {
   position: relative;
   align-self: stretch;
@@ -1089,9 +1094,312 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 .status-seg .seg-btn.on { background: var(--card); font-weight: 600; box-shadow: var(--shadow-1); }
 .status-seg .seg-btn.on[data-status='wish'] { color: var(--silver); border-color: var(--silver-line); }
+.status-seg .seg-btn.on[data-status='watch'] { color: var(--lav); border-color: var(--lav); }
 .status-seg .seg-btn.on[data-status='doing'] { color: var(--teal); border-color: var(--teal-line); }
 .status-seg .seg-btn.on[data-status='done'] { color: var(--gold); border-color: var(--gold); }
 .status-seg .seg-btn:active { transform: translateY(1px); }
+/* ── 观望：「瞄了一眼」印记条 ────────────────────────────────────────────────
+   观望的番压根没在看，所以这一行**不放集数、不放步进器、不放进度条**（那一整套是
+   「看到第几集」的语义，观望态下全是空转）。取而代之的是一排眼睛章：又去瞄了一眼就
+   盖一枚，点第 N 枚直接记成 N 次，点当前最后一枚退回 N−1（比 −/+ 少一次瞄准）。 */
+.watchmarks {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  /* 跟 .stepper 同高（按钮 40px）——矮一截的话，切「观望」整张卡就缩一下，
+     等高网格里连同一行的邻居一起缩 */
+  min-height: 43px;
+  padding: 2px 8px;
+  border: 1.5px dashed var(--lav);
+  border-radius: var(--wob-1);
+  background: var(--lav-wash);
+}
+.wm-cap { flex: none; font-family: var(--font-hand); font-size: 13px; color: var(--lav); opacity: .85; }
+.wm-eye {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--ink-faint);
+  background: none;
+  border: 1.5px dashed transparent;
+  border-radius: 50%;
+  opacity: .35;
+  cursor: pointer;
+  transition: opacity .12s, transform .12s var(--ease-stick), color .12s;
+}
+.wm-eye.on { color: var(--lav); opacity: 1; border-color: var(--lav); border-style: solid; }
+/* 章是一枚枚盖上去的：每枚比上一枚多歪一点，整排就有手盖的参差 */
+.wm-eye:nth-child(3n) { transform: rotate(-7deg); }
+.wm-eye:nth-child(3n+1) { transform: rotate(5deg); }
+@media (hover: hover) { .wm-eye:not(.on):hover { opacity: .7; color: var(--lav); } }
+.wm-eye:active { transform: scale(.9); }
+/* 溢出计数：盖满 5 枚之后不再无限长，改记「正」字数字 */
+.wm-add {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-left: 1px;
+  color: var(--lav);
+  background: none;
+  border: 1.5px dashed currentColor;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: .6;
+}
+@media (hover: hover) { .wm-add:hover { opacity: 1; } }
+.wm-add:active { transform: scale(.9); }
+.trk-row.is-considering[data-heat] .wm-add { color: var(--heat-edge); }
+/* 超过 5 次的总数：手写小字**浮在印记条右上角**，绝对定位不占流。
+   插进流里会把后面的「＋」往右顶——盖第 6 章的瞬间按钮从指尖跑掉，最难受的一种抖动。 */
+.wm-more {
+  position: absolute;
+  right: -2px;
+  top: -11px;
+  padding: 0 4px;
+  font-family: var(--font-hand);
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--lav);
+  background: var(--card);
+  border-radius: 6px;
+  transform: rotate(-5deg);
+  pointer-events: none;
+}
+.wm-more::before { content: '×'; margin-right: 1px; opacity: .7; }
+/* 印记条比进度条短，右边空出来的一截用手帐里那种「还没写完」的点线收尾 */
+.wm-rule { flex: 1; min-width: 24px; height: 0; border-bottom: 1.5px dotted var(--line); }
+/* ≥4 次：整条转金，暗示该升「在追」了 —— 只换色，不长按钮（升级走右侧状态分段） */
+.watchmarks.hot { border-color: var(--gold); background: var(--gold-hl); }
+.watchmarks.hot .wm-cap, .watchmarks.hot .wm-more { color: var(--gold); }
+.watchmarks.hot .wm-eye.on { color: var(--gold); border-color: var(--gold); }
+/* ── 泛黄：连续量，纸随翻看次数变旧 ─────────────────────────────────────────
+   `data-heat` 由观望次数夹到 0–5。这一档只管**纸色和墨色**：新纸 → 米白 → 陈纸 →
+   旧纸 → 茶色，边框、封面朱印、状态印章、印记条全都跟着同一个 `--heat-edge` 走，
+   所以整张卡是一起变旧的，不是某个小控件单独换了皮。只动颜色，不动尺寸。 */
+.trk-row.is-considering {
+  --heat-edge: var(--lav);
+  transition: background .45s ease, border-color .45s ease, box-shadow .45s ease;
+}
+.trk-row.is-considering[data-heat='1'] { background: linear-gradient(180deg, #fffdf7 0%, #fdf8ec 100%); --heat-edge: #9a8fbe; }
+.trk-row.is-considering[data-heat='2'] { background: linear-gradient(180deg, #fffcf2 0%, #faf3e0 100%); --heat-edge: #a08a72; }
+.trk-row.is-considering[data-heat='3'] { background: linear-gradient(180deg, #fefaea 0%, #f6ecd6 100%); --heat-edge: #94764f; }
+.trk-row.is-considering[data-heat='4'] {
+  background: linear-gradient(180deg, #fcf5e2 0%, #f0e2c6 100%);
+  --heat-edge: #86653c;
+  box-shadow: var(--shadow-1), 0 6px 20px -12px rgba(110, 82, 40, .5);
+}
+.trk-row.is-considering[data-heat='5'] {
+  background: linear-gradient(180deg, #f8eed8 0%, #e9d6b3 100%);
+  --heat-edge: #6f5330;
+  box-shadow: var(--shadow-1), 0 8px 26px -12px rgba(90, 66, 30, .6);
+}
+.trk-row.is-considering[data-heat] { border-color: var(--heat-edge); }
+.trk-row.is-considering[data-heat] .cover-seal { color: var(--heat-edge); border-color: var(--heat-edge); }
+.trk-row.is-considering[data-heat] .stamp.st-lav { color: var(--heat-edge); }
+.trk-row.is-considering[data-heat] .watchmarks { border-color: var(--heat-edge); }
+.trk-row.is-considering[data-heat] .watchmarks .wm-eye.on,
+.trk-row.is-considering[data-heat] .watchmarks .wm-cap,
+.trk-row.is-considering[data-heat] .watchmarks .wm-more { color: var(--heat-edge); }
+.trk-row.is-considering[data-heat='4'] .watchmarks,
+.trk-row.is-considering[data-heat='5'] .watchmarks { background: rgba(255, 253, 247, .55); }
+
+/* ── 翻旧：观望次数 = 这一页被翻回来看过几次 ────────────────────────────────
+   逐级变化不做「滤镜」，做**痕迹累积**：每多瞄一眼，纸上就多一样翻旧的证据
+   （铅笔波浪线 → 补一条胶带 → 圈一圈 + 茶渍 → 折角 → 心跳）。所有痕迹共享同一套
+   铅笔/茶渍色，来源是同一个动作，所以看得出是一条线上的东西，而不是各自为政的特效。
+   连续量是纸色本身：新纸一路泛黄到旧纸。整层绝对定位 + pointer-events:none，
+   翻得再旧也不动布局。 */
+.wear {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: var(--r-card);
+  pointer-events: none;
+}
+.wear > * { position: absolute; opacity: 0; transition: opacity .55s ease; }
+/* 铅笔痕迹**长在被划的东西上**（标题的 ::after、印记条的 ::before），不靠
+   「距卡片左上角 46px」这种魔数——卡片宽度、封面列宽、断点一变，魔数就全废。 */
+.trk-row.is-considering .trk-title { position: relative; }
+.trk-row.is-considering .trk-title::after,
+.trk-row.is-considering .watchmarks::before {
+  content: '';
+  position: absolute;
+  opacity: 0;
+  transition: opacity .55s ease;
+  pointer-events: none;
+}
+/* 手抖的波浪线，划在标题底下 */
+.trk-row.is-considering .trk-title::after {
+  left: 0;
+  width: min(62%, 196px);
+  bottom: -6px;
+  height: 10px;
+  background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20168%2010%22%3E%3Cpath%20d%3D%22M3%206q9-5%2018%200t18%200q9-5%2018%200t18%200q9-5%2018%200t18%200q9-5%2018%200t18-1%22%20fill%3D%22none%22%20stroke%3D%22%23786854%22%20stroke-width%3D%221.4%22%20stroke-linecap%3D%22round%22%20opacity%3D%220.62%22%2F%3E%3C%2Fsvg%3E") repeat-x left center / 168px 10px;
+}
+/* 把印记条整个圈起来（两笔叠一起才像手画的圈） */
+.trk-row.is-considering .watchmarks::before {
+  left: -10px;
+  right: -12px;
+  top: -8px;
+  bottom: -9px;
+  background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20250%2060%22%20preserveAspectRatio%3D%22none%22%3E%3Cpath%20d%3D%22M234%2014C216%204%20150%202%2096%204%2042%206%208%2015%206%2029c-2%2014%2034%2026%2092%2027%2052%201%20118-4%20137-15%206-3%208-8%205-12%22%20fill%3D%22none%22%20stroke%3D%22%23786854%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20opacity%3D%220.5%22%2F%3E%3Cpath%20d%3D%22M230%2010C208%203%20140%201%2088%204%2040%207%2010%2017%209%2030%22%20fill%3D%22none%22%20stroke%3D%22%23786854%22%20stroke-width%3D%221.2%22%20stroke-linecap%3D%22round%22%20opacity%3D%220.3%22%2F%3E%3C%2Fsvg%3E") no-repeat center / 100% 100%;
+  transform: rotate(-1deg);
+}
+/* 茶渍：杯底压出来的一圈，中间比边缘淡 */
+.w-stain {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(150, 108, 58, .0) 52%, rgba(150, 108, 58, .22) 56%, rgba(150, 108, 58, .10) 64%, rgba(150, 108, 58, 0) 68%),
+    radial-gradient(circle, rgba(150, 108, 58, .07) 0 52%, transparent 53%);
+}
+.w-stain.s1 { left: 14px; bottom: 12px; transform: rotate(8deg); }
+.w-stain.s2 { right: 16px; top: 6px; width: 40px; height: 40px; }
+/* 补的第二条纸胶带：贴歪一点，压住卡片左下角 */
+.w-tape {
+  left: -14px;
+  bottom: 26px;
+  width: 84px;
+  height: 22px;
+  background: var(--tape-gold);
+  transform: rotate(-24deg);
+  clip-path: polygon(1% 8%, 4% 0, 96% 2%, 100% 12%, 98% 92%, 95% 100%, 5% 98%, 0 88%);
+}
+.w-tape::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, .28) 0 2px, transparent 2px 7px);
+}
+/* 折角：右下角被反复捏起来的那一角 */
+.w-dogear {
+  right: 0;
+  bottom: 0;
+  width: 34px;
+  height: 34px;
+  background: linear-gradient(135deg, transparent 0 49%, rgba(120, 96, 56, .5) 49% 50.5%, #efdfbe 50.5% 100%);
+  border-bottom-right-radius: var(--r-card);
+  box-shadow: -3px -3px 6px rgba(90, 70, 40, .22) inset;
+}
+/* 逐级点亮：每一档只加一样东西，加了就不撤 */
+/* 逐级点亮：每一档只加一样东西，加了就不撤 */
+.trk-row.is-considering[data-heat='1'] .trk-title::after { opacity: .55; }
+.trk-row.is-considering[data-heat='2'] .trk-title::after,
+.trk-row.is-considering[data-heat='3'] .trk-title::after,
+.trk-row.is-considering[data-heat='4'] .trk-title::after,
+.trk-row.is-considering[data-heat='5'] .trk-title::after { opacity: 1; }
+.trk-row.is-considering[data-heat='2'] .w-tape,
+.trk-row.is-considering[data-heat='3'] .w-tape,
+.trk-row.is-considering[data-heat='4'] .w-tape,
+.trk-row.is-considering[data-heat='5'] .w-tape { opacity: 1; }
+.trk-row.is-considering[data-heat='3'] .watchmarks::before,
+.trk-row.is-considering[data-heat='4'] .watchmarks::before,
+.trk-row.is-considering[data-heat='5'] .watchmarks::before { opacity: 1; }
+.trk-row.is-considering[data-heat='3'] .w-stain.s1,
+.trk-row.is-considering[data-heat='4'] .w-stain.s1,
+.trk-row.is-considering[data-heat='5'] .w-stain.s1 { opacity: 1; }
+.trk-row.is-considering[data-heat='4'] .w-dogear,
+.trk-row.is-considering[data-heat='5'] .w-dogear { opacity: 1; }
+.trk-row.is-considering[data-heat='5'] .w-stain.s2 { opacity: 1; }
+/* 第 5 档：整张卡开始「心动」。走 transform —— 不参与布局，卡片怎么胀缩都不会挪动邻居，
+   也不会撑高等高网格的那一行（会挪邻居的是「切状态时内容高度变了」，那是另一回事，
+   已由印记条与步进器等高解决）。 */
+.trk-row.is-considering[data-heat='5'] { animation: paper-throb 1.9s ease-in-out infinite; }
+@keyframes paper-throb {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  18% { transform: scale(1.012) rotate(-.25deg); }
+  32% { transform: scale(1.004) rotate(.15deg); }
+  50% { transform: scale(1.014) rotate(.2deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trk-row.is-considering[data-heat='5'] { animation: none; }
+}
+
+/* ── ≥4 次：纱雾探头催你 ─────────────────────────────────────────────────────
+   不用凭空发明一套箭头语汇 —— 这一页本来就有「立绘 + 手写气泡」的说话方式
+   （页尾那位山田エルフ），催促也用同一套：小头像从按钮上方探出来，气泡尾巴
+   直接扎在「在追」上。绝对定位、不占流，挂在按钮自己身上才不会指错人。 */
+.nudge {
+  position: absolute;
+  /* 宽度必须 shrink-wrap：不给 max-content 的话绝对定位盒子按「左侧可用空间」收缩，
+     气泡会从盒子右边溢出去，尾巴跟着偏出按钮（第一版就偏了 35px）。
+     right:50% 把盒子右缘钉在按钮中线，再补回尾巴到右缘的距离，尾巴才正对中线。 */
+  width: max-content;
+  right: 50%;
+  margin-right: -20px;
+  bottom: calc(100% + 7px);
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  pointer-events: none;
+  animation: nudge-lean 2.4s var(--ease-stick) infinite;
+}
+.nudge-face {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  object-position: top center;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  background: var(--card);
+  transform: rotate(-6deg);
+}
+.nudge .bubble {
+  max-width: none;
+  padding: 4px 10px 5px;
+  font-family: var(--font-hand);
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  border-radius: 12px 14px 12px 4px;
+}
+/* 尾巴改指向正下方的按钮中线 */
+.nudge .bubble::after { left: auto; right: 14px; bottom: -7px; }
+/* 探头：像人从纸边探出来看你一眼，不是机械上下弹 */
+@keyframes nudge-lean {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  12% { transform: translate(-2px, 3px) rotate(-2deg); }
+  26% { transform: translate(0, 1px) rotate(1deg); }
+  40% { transform: translate(-1px, 2px) rotate(-1deg); }
+}
+/* 箭头锚在「在追」按钮上方，所以按钮要成为定位上下文（分段本身裁不掉溢出） */
+.status-seg .seg-btn { position: relative; }
+@media (prefers-reduced-motion: reduce) {
+  .trk-row.is-considering[data-heat='5'] { animation: none; }
+  .nudge { animation: none; }
+}
+
+/* 观望卡：封面褪成半灰 —— 「还没入坑」的一眼可辨，鼠标压上去恢复原色 */
+.trk-row.is-considering .cover-img { filter: grayscale(.55) contrast(.96); transition: filter .18s; }
+@media (hover: hover) { .trk-row.is-considering:hover .cover-img { filter: none; } }
+/* 封面朱印：压在封面上的「観望」手写章，比状态徽章更远也更醒目 */
+.cover-seal {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: inline-grid;
+  place-items: center;
+  padding: 3px 9px 4px;
+  font-family: var(--font-hand);
+  font-size: 13px;
+  letter-spacing: .1em;
+  color: var(--lav);
+  background: rgba(255, 253, 247, .82);
+  border: 1.5px solid var(--lav);
+  border-radius: 3px 10px 4px 9px;
+  transform: rotate(-6deg);
+  pointer-events: none;
+}
 .trk-rm { flex: none; }
 /* 「今天更新」贴纸：只有仍在连载、且更新日落在今天的番才有 */
 .chip-today {
@@ -1119,6 +1427,27 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .ep-ctrl .prog { min-width: 56px; }
   .stepper > button { width: 40px; }
   .stepper > .ep-num { min-width: 44px; font-size: 14px; }
+  /* 窄屏让划记本身吃掉剩余宽度：「观望」字头省掉（左边印章已经写着观望了） */
+  .watchmarks { gap: 3px; padding: 2px 6px; }
+  .wm-cap { display: none; }
+  /* 状态分段从 3 段变 4 段后，窄卡里按固定 52px 会顶出卡片边缘：占满整行、四等分 */
+  .status-seg { margin-left: 0; width: 100%; }
+  .status-seg .seg-btn { flex: 1; min-width: 0; padding: 4px 6px; font-size: 12px; }
+}
+
+/* 卡片一窄，操作行就折行、状态分段独占一行，气泡会压到上一行的「试看一集 / BGM」上。
+   给观望卡固定留出气泡的高度 —— 只看状态、不看观望次数，所以气泡出现那一刻不会顶动布局。 */
+@container trk (max-width: 620px) {
+  /* 卡片一窄，操作行就折行、状态分段独占一行，气泡浮在分段上方，压住的正是第一行的
+     「试看一集 / BGM」。要撑开的是**行与行之间**（给整块加 padding-top 只会把两行一起
+     往下推，压还是压着）。
+     这个行距给**所有**卡片，不只观望卡 —— 只给观望卡的话，切一次状态卡片就高一截，
+     等高网格里同一行的邻居跟着一起变，看上去就是「容器忽大忽小」。 */
+  .trk-actions { row-gap: 32px; }
+  /* 窄卡里气泡收一号，并让它压低到分段边框上，省出来的高度就是上一行按钮的余量 */
+  .nudge { bottom: calc(100% - 3px); }
+  .nudge-face { width: 28px; height: 28px; }
+  .nudge .bubble { padding: 3px 8px 4px; font-size: 13px; }
 }
 
 /* 平板保持阅读页比例：不把单列追番卡和操作区无边界拉满。 */
@@ -1221,7 +1550,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 /* 手机：四个页签等分一行，不再横向滚动 */
 @media (max-width: 640px) {
-  .tabf-row { display: grid; grid-template-columns: repeat(4, 1fr); padding: 0; }
+  /* 5 个中文页签横排在 375px 上会压成竖排字，改两行三列（全部/想看/观望 + 在追/看完） */
+  .tabf-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 6px; padding: 0; }
   .tabf { min-height: 40px; padding: 6px 2px; font-size: 12px; }
   .tabf .badge-num { min-width: 15px; margin-left: 3px; padding: 0 4px; font-size: 10px; }
 }

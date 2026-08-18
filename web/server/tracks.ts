@@ -21,7 +21,8 @@ import { getSession } from './auth'
 
 const tracks = new Hono()
 
-const STATUSES = ['watching', 'plan', 'done'] as const
+// `considering`（观望）跟 `plan`（想看）是两件事：前者「候补，看看再说」，后者「已决定追」。
+const STATUSES = ['watching', 'plan', 'considering', 'done'] as const
 type Status = (typeof STATUSES)[number]
 
 const USER_TAG_MAX_LEN = 20
@@ -42,6 +43,7 @@ interface TrackRow {
   user_tags: string
   aliases: string
   extra: string
+  observe_count: number
   updated_at: number
   cover_mime: string
 }
@@ -54,6 +56,16 @@ const coverFilePath = (uid: number, bgmId: number): string => join(coversDir, `$
 const coverSentinel = (bgmId: number): string => `/api/tracks/${bgmId}/cover-file`
 const COVER_UPLOAD_MAX_BYTES = 4 * 1024 * 1024
 const COVER_UPLOAD_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+
+/** 观望次数取值：先认正式字段，再认老同步数据留在 extra 里的那份（app 曾经只写那儿）。 */
+function asObserve(value: unknown, extra: unknown): number {
+  const direct = Number(value)
+  if (Number.isInteger(direct) && direct >= 0) return direct
+  const legacy = Number((extra as Record<string, unknown> | undefined)?.observeCount)
+  return Number.isInteger(legacy) && legacy >= 0 ? legacy : 0
+}
+const hasLegacyObserve = (extra: unknown): boolean =>
+  !!extra && typeof extra === 'object' && 'observeCount' in (extra as Record<string, unknown>)
 
 const parseList = (s: string): string[] => {
   try {
@@ -80,6 +92,7 @@ function toJson(r: TrackRow): Record<string, unknown> {
     bgmTags: parseList(r.bgm_tags),
     userTags: parseList(r.user_tags),
     aliases: parseList(r.aliases),
+    observeCount: r.observe_count,
     updatedAt: r.updated_at,
   }
 }
@@ -106,9 +119,11 @@ const oneStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? AND bgm_id = 
 const delStmt = db.prepare('DELETE FROM tracks WHERE user_id = ? AND bgm_id = ?')
 const insertStmt = db.prepare(`
   INSERT INTO tracks (user_id, bgm_id, status, episode, total_episodes, title, title_cn, cover,
-                      air_weekday, air_date, score, bgm_tags, user_tags, aliases, extra, updated_at)
+                      air_weekday, air_date, score, bgm_tags, user_tags, aliases, extra,
+                      observe_count, updated_at)
   VALUES (@user_id, @bgm_id, @status, @episode, @total_episodes, @title, @title_cn, @cover,
-          @air_weekday, @air_date, @score, @bgm_tags, @user_tags, @aliases, @extra, @updated_at)
+          @air_weekday, @air_date, @score, @bgm_tags, @user_tags, @aliases, @extra,
+          @observe_count, @updated_at)
 `)
 
 // ── 数据版本号（app 覆盖上传的冲突检测，见 db.ts 的 tracks_rev 注释）──────────────
@@ -320,6 +335,13 @@ tracks.put('/:bgmId', async (c) => {
     : undefined
   if (hasStatus && !nextStatus) return c.json({ error: 'status 不合法' }, 400)
 
+  // 观望次数：非负整数，不设上限（用户硬要一直观望不拦；跟评分类字段有意区分）
+  const hasObserve = 'observeCount' in body
+  const nextObserve = Number(body.observeCount)
+  if (hasObserve && (!Number.isInteger(nextObserve) || nextObserve < 0)) {
+    return c.json({ error: 'observeCount 不合法' }, 400)
+  }
+
   const hasEpisode = 'episode' in body
   const nextEpisode = Number(body.episode)
   if (hasEpisode && (!Number.isInteger(nextEpisode) || nextEpisode < 0)) {
@@ -376,6 +398,7 @@ tracks.put('/:bgmId', async (c) => {
         user_tags: '[]',
         aliases: '[]',
         extra: '{}', // 网页端建的记录没有 app 专属字段；app 上传时才会填
+        observe_count: hasObserve ? nextObserve : 0,
         updated_at: now,
       })
       if (searchAddition) saveSearchAddition(searchAddition, now)
@@ -404,6 +427,10 @@ tracks.put('/:bgmId', async (c) => {
         sets.push('episode = ?')
         args.push(nextTotal)
       }
+    }
+    if (hasObserve) {
+      sets.push('observe_count = ?')
+      args.push(nextObserve)
     }
     if (nextUserTags !== undefined) {
       sets.push('user_tags = ?')
@@ -596,6 +623,7 @@ tracks.post('/sync', async (c) => {
           user_tags: JSON.stringify(Array.isArray(t.userTags) ? t.userTags : []),
           aliases: JSON.stringify(Array.isArray(t.aliases) ? t.aliases : []),
           extra: JSON.stringify(t.extra ?? {}),
+          observe_count: asObserve(t.observeCount, t.extra),
           updated_at: updatedAt,
         })
         continue
@@ -634,6 +662,7 @@ tracks.post('/sync', async (c) => {
       if (Array.isArray(t.userTags)) put('user_tags', JSON.stringify(t.userTags))
       if (Array.isArray(t.aliases)) put('aliases', JSON.stringify(t.aliases))
       if ('extra' in t) put('extra', JSON.stringify(t.extra ?? {}))
+      if ('observeCount' in t || hasLegacyObserve(t.extra)) put('observe_count', asObserve(t.observeCount, t.extra))
       put('updated_at', updatedAt)
       db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`).run(...args, uid, id)
     }

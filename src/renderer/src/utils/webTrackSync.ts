@@ -7,7 +7,7 @@ import { weekdayFromAirDate } from './airDate'
 
 interface WebSyncTrack {
   bgmId: number
-  status: 'watching' | 'plan' | 'done'
+  status: 'watching' | 'plan' | 'considering' | 'done'
   episode: number
   totalEpisodes: number | null
   title: string
@@ -18,6 +18,7 @@ interface WebSyncTrack {
   bgmTags: string[]
   userTags: string[]
   aliases: string[]
+  observeCount: number
   updatedAt: number
   extra: Record<string, unknown>
 }
@@ -25,14 +26,13 @@ interface WebSyncTrack {
 const APP_STATUSES: ReadonlyArray<AnimeStatus> = ['plan', 'watching', 'completed', 'considering']
 
 function webStatus(status: AnimeStatus): WebSyncTrack['status'] {
-  if (status === 'completed') return 'done'
-  if (status === 'considering') return 'plan'
-  return status
+  return status === 'completed' ? 'done' : status
 }
 
 function appStatus(status: unknown): AnimeStatus {
   if (status === 'done') return 'completed'
   if (status === 'watching') return 'watching'
+  if (status === 'considering') return 'considering'
   return 'plan'
 }
 
@@ -40,8 +40,8 @@ function appStatus(status: unknown): AnimeStatus {
  * app 的富记录 → 网页版的瘦列 + extra。
  *
  * 公共字段单独投影,让网页能正常筛选和编辑;网页不认识的字段全部塞进 extra。
- * `appStatus` 专门保住「观望」:网页把它展示成「想看」,若网页没改状态,拉回来时仍恢复成观望;
- * 网页真改成在追/看完则以网页的新状态为准。
+ * 网页端现在自己也有「观望」和观望次数,两边状态一一对应,不再需要折叠 + `extra.appStatus`
+ * 兜回来那套(老数据里的 `extra.appStatus` 仍然认,见 fromWebSyncTracks)。
  */
 export function toWebSyncTracks(tracks: AnimeTrack[]): WebSyncTrack[] {
   return tracks.map((track, appOrder) => {
@@ -61,6 +61,9 @@ export function toWebSyncTracks(tracks: AnimeTrack[]): WebSyncTrack[] {
       bgmTags: track.bgmTags,
       userTags: track.userTags,
       aliases: track.aliases,
+      // 观望次数是网页也要读写的正式字段。**不再往 extra 里塞一份** —— 一份数据两处存,
+      // 迟早对不上(见 AI_GUIDELINES「一份数据拆成两半」)。
+      observeCount: track.observeCount,
       updatedAt: new Date(track.updatedAt).getTime() || Date.now(),
       extra: {
         appStatus: track.status,
@@ -68,7 +71,6 @@ export function toWebSyncTracks(tracks: AnimeTrack[]): WebSyncTrack[] {
         bindings: track.bindings,
         notes: track.notes,
         favorite: track.favorite,
-        observeCount: track.observeCount,
         novelVolume: track.novelVolume,
         novelChapter: track.novelChapter,
         goodEpisodes: track.goodEpisodes,
@@ -97,7 +99,11 @@ export function fromWebSyncTracks(input: unknown): AnimeTrack[] {
     const preserved = APP_STATUSES.includes(extra.appStatus as AnimeStatus)
       ? extra.appStatus as AnimeStatus
       : null
-    const status = preserved && webStatus(preserved) === row.status
+    // 老同步数据里「观望」是被折成 `plan` 存的,真状态藏在 `extra.appStatus`。那批数据
+    // 必须继续认,否则升级后所有观望记录一次性退化成想看(下次上传就会写成正式的
+    // `considering` + observeCount,自动痊愈)。
+    const legacyConsidering = preserved === 'considering' && row.status === 'plan'
+    const status = preserved && (webStatus(preserved) === row.status || legacyConsidering)
       ? preserved
       : appStatus(row.status)
     const updatedAtMs = Number(row.updatedAt)
@@ -125,6 +131,10 @@ export function fromWebSyncTracks(input: unknown): AnimeTrack[] {
           && Number(row.airWeekday) >= 1 && Number(row.airWeekday) <= 7
           ? Number(row.airWeekday)
           : undefined,
+        // 正式列优先;老同步数据只有 extra 里那份,靠 ...extra 展开兜底
+        ...(Number.isInteger(Number(row.observeCount)) && Number(row.observeCount) >= 0
+          ? { observeCount: Number(row.observeCount) }
+          : {}),
         bgmTags: Array.isArray(row.bgmTags) ? row.bgmTags : [],
         userTags: Array.isArray(row.userTags) ? row.userTags : [],
         aliases: Array.isArray(row.aliases) ? row.aliases : [],
