@@ -57,11 +57,25 @@
   // 原型页的「重放」：CSS 动画都是 forwards，跑完不会自己回头，
   // 用整段节点克隆替换才能真正从第一帧重来
   const tpl = document.getElementById('sp').cloneNode(true)
-  let timer
+  const HOLD = 2600, STEP_CAP = 34, HARD = 8000
+
+  // 卡片这一层的动画被 CSS 钉在暂停态，时间轴逐帧手推：
+  // 掉帧只让动画变慢，不会像墙上时间那样把绘画过程直接跳过去
   function arm(node) {
-    const out = () => { clearTimeout(timer); node.classList.add('out'); setTimeout(() => node.remove(), 620) }
+    const anims = node.getAnimations({ subtree: true }).filter((a) => a.effect.target !== node)
+    const seek = (v) => anims.forEach((a) => { try { a.currentTime = v } catch (e) {} })
+    let t = 0, last = performance.now(), raf = 0
+    const out = () => {
+      cancelAnimationFrame(raf); clearTimeout(bail)
+      node.classList.add('out'); setTimeout(() => node.remove(), 620)
+    }
+    const tick = (now) => {
+      t += Math.min(now - last, STEP_CAP); last = now; seek(t)
+      if (t >= HOLD) out(); else raf = requestAnimationFrame(tick)
+    }
+    const bail = setTimeout(out, HARD) // 页面在后台 rAF 不跑，留一条墙上时间的退路
     node.addEventListener('click', out)
-    timer = setTimeout(out, 2600)
+    seek(0); raf = requestAnimationFrame(tick)
   }
   function replay() {
     document.querySelectorAll('.sp').forEach((n) => n.remove())
