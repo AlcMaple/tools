@@ -62,6 +62,7 @@ db.exec(`
     user_tags      TEXT    NOT NULL DEFAULT '[]',
     aliases        TEXT    NOT NULL DEFAULT '[]',
     extra          TEXT    NOT NULL DEFAULT '{}',
+    observe_count  INTEGER NOT NULL DEFAULT 0,
     updated_at     INTEGER NOT NULL DEFAULT 0,
     UNIQUE(user_id, bgm_id),
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -123,6 +124,9 @@ function ensureColumn(table: string, column: string, decl: string): void {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
   if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${decl}`)
 }
+// 观望次数（status='considering' 时才有意义）。提升为正式列而不是继续躺在 extra 里：
+// 网页端现在也要读写它，两处各存一份必然对不上（见 AI_GUIDELINES「一份数据拆成两半」）。
+ensureColumn('tracks', 'observe_count', 'observe_count INTEGER NOT NULL DEFAULT 0')
 ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0')
 ensureColumn('users', 'security_question', 'security_question TEXT')
 ensureColumn('users', 'security_answer_hash', 'security_answer_hash TEXT')

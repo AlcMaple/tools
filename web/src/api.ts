@@ -51,7 +51,8 @@ export async function fetchCalendar(force = false): Promise<CalendarResult> {
 }
 
 // ── 追番 ───────────────────────────────────────────────────────────────────────
-export type TrackStatus = 'watching' | 'plan' | 'done'
+// `considering`(观望) = 「候补，看看再说」，与 `plan`(想看，已决定追)是两件事，别合并
+export type TrackStatus = 'watching' | 'plan' | 'considering' | 'done'
 
 export interface Track {
   bgmId: number
@@ -69,12 +70,14 @@ export interface Track {
   bgmTags: string[]
   userTags: string[]
   aliases: string[]
+  /** 观望次数 —— 只在 status='considering' 时有意义；不设上限，状态切走也不清零 */
+  observeCount: number
   updatedAt: number
 }
 
 /** 写入用的 patch —— **只带要改的字段**；没带的字段服务端保持沉默、原样不动（沉默 ≠ 置空） */
 export type TrackPatch = Partial<
-  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score'>
+  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score' | 'observeCount'>
 >
 
 interface TrackWriteOptions {
