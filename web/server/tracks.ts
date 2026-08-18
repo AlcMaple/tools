@@ -48,6 +48,10 @@ interface TrackRow {
 
 // 本地上传封面：文件按 `<uid>_<bgmId>` 落 coversDir，不带扩展名 —— 实际类型看 cover_mime 那一列。
 const coverFilePath = (uid: number, bgmId: number): string => join(coversDir, `${uid}_${bgmId}`)
+// DB 的 cover 列存这个哨兵路径时，才代表「图在 coversDir 里」（另一半凭据是 cover_mime 非空）。
+// app 拉取时会原样拿到它、上传时又原样推回来 —— 同步那边要靠它把「推回自己的路径」和
+// 「用网图顶替掉本地图」区分开，所以抽成函数，别再各处手写这个字符串。
+const coverSentinel = (bgmId: number): string => `/api/tracks/${bgmId}/cover-file`
 const COVER_UPLOAD_MAX_BYTES = 4 * 1024 * 1024
 const COVER_UPLOAD_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
@@ -469,9 +473,8 @@ tracks.post('/:bgmId/cover', async (c) => {
   await writeFile(coverFilePath(uid, bgmId), bytes)
 
   const now = Date.now()
-  const cover = `/api/tracks/${bgmId}/cover-file`
   db.prepare('UPDATE tracks SET cover = ?, cover_mime = ?, updated_at = ? WHERE user_id = ? AND bgm_id = ?')
-    .run(cover, file.type, now, uid, bgmId)
+    .run(coverSentinel(bgmId), file.type, now, uid, bgmId)
   bumpRev(uid)
   return c.json(toJson(oneStmt.get(uid, bgmId) as TrackRow))
 })
@@ -545,7 +548,11 @@ tracks.post('/sync', async (c) => {
   }
 
   const now = Date.now()
+  // 这一趟同步里失去本地封面的 bgmId（被网图顶替、或整条被删）。文件删除是异步的、且不该
+  // 参与事务：事务一旦回滚，图已经删了就找不回来。所以只在这里记账，等提交成功后再落地。
+  const orphaned: number[] = []
   const apply = db.transaction(() => {
+    orphaned.length = 0 // 事务体可能被重入，别把上一趟的账带进来
     // baseRev 比对必须在拿到写锁后发生。否则比对与真正覆盖之间穿插一个网页 PUT，
     // 旧整包仍会通过检查并静默抹掉刚写入的数据。
     const rev = currentRev(uid)
@@ -606,7 +613,18 @@ tracks.post('/sync', async (c) => {
       if ('totalEpisodes' in t) put('total_episodes', asTotal(t.totalEpisodes) ?? null)
       if ('title' in t) put('title', String(t.title ?? ''))
       if ('titleCn' in t) put('title_cn', String(t.titleCn ?? ''))
-      if ('cover' in t && String(t.cover ?? '')) put('cover', String(t.cover))
+      // 本地上传的封面被 app 推来的网图顶替时，cover_mime 必须跟着归零、盘上的文件跟着删。
+      // 只写 cover 会落到「cover 是网址、cover_mime 却说本地还有文件」的错位态：孤儿文件永久留盘，
+      // 且 GET /cover-file 仍然认 cover_mime、继续把旧图吐出来。PUT 那条路径一直是这么处理的。
+      // 但 app 把拉取到的哨兵路径**原样推回来**不算顶替 —— 那正是本地图自己，清了就把图删没了。
+      if ('cover' in t && String(t.cover ?? '')) {
+        const nextCover = String(t.cover)
+        put('cover', nextCover)
+        if (existing.get(id)?.cover_mime && nextCover !== coverSentinel(id)) {
+          put('cover_mime', '')
+          orphaned.push(id)
+        }
+      }
       // 0 / 缺失代表 app 不知道，不得把服务器从周历得到的正确信息抹掉。
       if (validIncomingWeekday) put('air_weekday', validIncomingWeekday)
       else if (existing.get(id)?.air_weekday === 0 && resolvedWeekday) put('air_weekday', resolvedWeekday)
@@ -621,7 +639,13 @@ tracks.post('/sync', async (c) => {
     }
 
     // 集合层面的覆盖：app 没带上来的，就是它那边删掉的
-    for (const id of existing.keys()) if (!incoming.has(id)) delStmt.run(uid, id)
+    // 单条 DELETE /:bgmId 一直会顺手 unlink 本地封面；这条批量删除以前漏了，
+    // 于是从 app 删番 = 图片文件永久留在 coversDir 里只增不减。
+    for (const id of existing.keys()) {
+      if (incoming.has(id)) continue
+      delStmt.run(uid, id)
+      if (existing.get(id)?.cover_mime) orphaned.push(id)
+    }
 
     bumpRev(uid)
     return { conflict: false as const, rev: currentRev(uid), count: incoming.size }
@@ -639,6 +663,9 @@ tracks.post('/sync', async (c) => {
       409,
     )
   }
+
+  // 事务已提交，这批本地封面确定没人再引用了 —— 现在删文件才是安全的（删失败不影响这次同步）。
+  for (const id of orphaned) void unlink(coverFilePath(uid, id)).catch(() => {})
 
   // 用户数据和 rev 已经原子提交；周历只在响应关键路径之外补空字段，并按用户单飞去重。
   fillCalendarMetadataLater(uid)
