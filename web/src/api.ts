@@ -25,7 +25,11 @@ export interface CalendarResult {
 
 // 只有 BGM 的 lain 图床走后端代理。手动条目允许填写其他图床 URL，不能把它们也
 // 剥掉 host 后冒充 lain 路径（/files、/resource/news… 在 lain 上必然 403）。
+//
+// 本地上传的封面在库里存的就是一条同源相对路径（/api/tracks/<id>/cover-file，见
+// server/tracks.ts），不是绝对 URL —— `new URL()` 会直接抛，得在那之前放行。
 export function coverUrl(raw: string): string {
+  if (raw.startsWith('/api/tracks/') && raw.endsWith('/cover-file')) return raw
   try {
     const url = new URL(raw)
     if (url.username || url.password) return ''
@@ -120,6 +124,14 @@ export async function putTrack(bgmId: number, patch: TrackPatch, options: TrackW
 
 export async function deleteTrack(bgmId: number): Promise<void> {
   await json<{ ok: boolean }>(await fetch(`/api/tracks/${bgmId}`, { method: 'DELETE' }))
+}
+
+/** 本地图片上传封面（PNG/JPEG/WebP/GIF，≤4MB，见 server/tracks.ts 的校验）。 */
+export async function uploadTrackCover(bgmId: number, file: File): Promise<Track> {
+  const form = new FormData()
+  form.set('file', file)
+  const res = await fetch(`/api/tracks/${bgmId}/cover`, { method: 'POST', body: form })
+  return json<Track>(res)
 }
 
 // ── 稀饭在线观看：定位 / 绑定 ───────────────────────────────────────────────────
