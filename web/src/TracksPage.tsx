@@ -367,8 +367,9 @@ export function TracksPage(): JSX.Element {
     const q = query.trim()
     if (q) list = list.filter((t) => matches(t, q))
     if (tags.size) list = list.filter((t) => allTagsOf(t).some((x) => tags.has(x)))
-    return list
-  }, [tracks, filter, query, tags])
+    const isToday = (t: Track) => t.airWeekday === today && t.status !== 'done' && isRecentAir(t.airDate)
+    return [...list].sort((a, b) => Number(isToday(b)) - Number(isToday(a)))
+  }, [tracks, filter, query, tags, today])
 
   const allTags = useMemo(() => {
     const m = new Map<string, number>()
