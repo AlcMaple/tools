@@ -10,6 +10,7 @@ import { navigate, useRoute, type Route } from './router'
 import { SettingsPage } from './SettingsPage'
 import { TracksPage } from './TracksPage'
 import { Ic, SketchSprite, type SketchIconName } from './SketchIcon'
+import { Splash } from './Splash'
 import { toast, ToastRoot } from './Toast'
 
 // 各页书脊的小 accents：胶带色 / 印章 / 拟声词（原型稿逐页配置）
@@ -61,6 +62,7 @@ export default function App(): JSX.Element {
   return (
     <>
       <SketchSprite />
+      <Splash />
 
       {/* 移动端顶栏（桌面隐藏） */}
       <header className="m-top">
