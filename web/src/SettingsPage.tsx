@@ -73,7 +73,7 @@ export function SettingsPage(): JSX.Element | null {
 
       {/* 手机：立绘内联（桌面在右侧驻场，CSS 切换） */}
       <div className="rig-inline mt16">
-        <img className="rig" src="/assets/chara_04.png" alt="千寿ムラマサ · 官方立绘" />
+        <img className="rig" src="/assets/chara_04.webp" alt="千寿ムラマサ · 官方立绘" />
         <div className="bubble rig-bubble">
           <span>书架整理好了，接下来交给我吧。</span>
         </div>
@@ -178,7 +178,7 @@ export function SettingsPage(): JSX.Element | null {
         </div>
 
         <div className="rig-box">
-          <img className="rig" src="/assets/chara_04.png" alt="千寿ムラマサ · 官方立绘" />
+          <img className="rig" src="/assets/chara_04.webp" alt="千寿ムラマサ · 官方立绘" />
           <div className="bubble rig-bubble">
             <span>书架整理好了，接下来交给我吧。</span>
           </div>
