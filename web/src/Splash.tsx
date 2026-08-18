@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Ic } from './SketchIcon'
 
 const SEEN_KEY = 'mt-splash-seen'
-const ART = '/assets/sagiri-full.png'
+const ART = '/assets/sagiri-full.webp'
 const HOLD_MS = 2600 // 时间轴总长：画完 + 停一拍
 const OUT_MS = 620 // 翻页离场（与 .sp.out 动画同长）
 const WAIT_MS = 1500 // 等立绘解码的上限，超时就照画（宁可卡片空一点，也不能干等白纸）

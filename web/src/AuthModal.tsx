@@ -260,7 +260,7 @@ export function AuthModal({
 
         <aside className="auth-side">
           <span className="halftone-wash" />
-          <img src="/assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘" />
+          <img src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘" />
           <p className="auth-side-cap">「才、才不是在等你登录……」</p>
         </aside>
 

@@ -181,7 +181,7 @@ export function CalendarPage(): JSX.Element {
 
       {/* 手机：立绘内联（桌面在右侧驻场，CSS 切换） */}
       <div className="rig-inline mt16">
-        <img className="rig" src="/assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘" />
+        <img className="rig" src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘" />
         <div className="bubble rig-bubble">
           <span>点下面的日期章，翻到想看的那一天～</span>
         </div>
@@ -246,7 +246,7 @@ export function CalendarPage(): JSX.Element {
         </div>
 
         <div className="rig-box">
-          <img className="rig" src="/assets/sagiri-full.png" alt="和泉纱雾 · 官方立绘（全身）" />
+          <img className="rig" src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘（全身）" />
           <div className="bubble rig-bubble">
             <span>{wide ? '一周的排片都在这页上，慢慢挑吧～' : '点日期章，翻到想看的那一天～'}</span>
           </div>
