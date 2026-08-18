@@ -1,22 +1,20 @@
 // 在线播放 mp4 的本地预抓缓存(只服务 media-proxy 的 mp4 分支)。
 //
-// 为什么要:<video> 对 mtmedia:// 是**单连接**发 Range,单流吞吐追不上播放消耗就会
-// 「播几秒、停几秒」(实测消耗约 422KB/s,慢段只有 226~484KB/s,没有抗抖动余量)。
+// 为什么要:<video> 对 mtmedia:// 是单连接发 Range,单流吞吐追不上播放消耗就会「播几秒、停几秒」。
 //
-// 形态:从播放位置起开 FETCH_CONCURRENCY 条相邻 Range 并发写同一个本地临时文件
-// `written` 只记从 `regionStart` 起**连续**落盘的前缀 —— 所以并发不会把文件空洞误报成
-// 已缓存。<video> 的 Range 落在 [regionStart, regionStart+written] 内就读本地文件,并
-// **跟着写入端继续吐**(读到写入位置就等 progress 事件),一个请求能喂完整集;落在区间外
-// (往后 seek)才以新起点重开一条流。
+// 形态:从播放位置起开 FETCH_CONCURRENCY 条相邻 Range 并发写同一个临时文件。核心不变量是
+// `written` 只记从 `regionStart` 起**连续**落盘的前缀 —— 并发因此不会把空洞误报成已缓存。
+// 读取端跟着写入端吐,一个请求喂完整集;Range 落在区间外(往后 seek)才以新起点重开一条流。
 //
-// 两个别改回去的点:
+// 三个别改回去的点:
 //   - 每个 worker 用**独立的 Electron Session**:共用 Session 时 Chromium 会把多个 Range
 //     复用到同一条 HTTP/2 连接上互相卡住,写了 6 个 Promise 也拿不到 6 条有效下载。
 //   - 只有开场首块要走 302,后续 worker 直接打首块响应的 `Response.url`(已解析的最终
 //     地址)——链接本身允许并发,不用每块重解一次签名链。
+//   - 块调大之前必须先有前沿优先级(见 FRONTIER_URGENT_BYTES),否则带宽会被远端大块抢走。
 //
 // 生命周期:同一时刻只留一个 session(换集/换源 = target 变了 → 旧的中止 + 删文件);
-// 没人读超过 IDLE_MS 也自动收摊,避免关掉播放器后还在后台默默下满几百 MB。
+// 离开播放页(media:release)、退出应用各有一道确定性回收,idle 看门狗只是兜底(见 IDLE_MS)。
 import { app, session as electronSession, type Session as ElectronSession } from 'electron'
 import { EventEmitter } from 'events'
 import { promises as fsp, rmSync } from 'fs'
@@ -24,12 +22,47 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { sleep } from './http-client'
 
-/** 没有任何读取超过这个时间就把后台流收掉(关播放器 / 切走页面)。 */
+/**
+ * 看门狗只是兜底 —— 回收靠三条确定性路径(换集/换源、media:release、before-quit + 启动 sweep)。
+ *
+ * 分两档的原因:Chromium 在「暂停 + 缓冲已喂饱」时会主动取消响应流,readers 因此归 0。
+ * 用一个 60 秒会把**正在暂停**的 session 连临时文件一起收掉,恢复播放被迫冷 seek 重来。
+ * 所以喂过播放器的按暂停对待(PAUSED_IDLE_MS),没喂过的才是孤儿。
+ */
 const IDLE_MS = 60_000
+/** 已经服务过播放器的 session(暂停场景)的收摊宽限,理由见 IDLE_MS。 */
+const PAUSED_IDLE_MS = 30 * 60_000
 /** 单个 session 的落盘上限,正片单集远小于此;纯粹是跑飞时的保险丝。 */
 const MAX_BYTES = 4 * 1024 * 1024 * 1024
-/** 块切小是为了压低「凑齐起播所需连续块」的最坏单块耗时(木桶效应),代价是请求数变多。 */
+/**
+ * 块越大整集请求数越少,但读取端只能吃连续前缀 —— 掉队一块前沿就停住,所以块大小按
+ * 缓冲垫厚度升档,4MB 封顶(最坏单块 18s,仍小于缓冲垫)。取舍推导见 DEVLOG 2026-08-18。
+ *
+ * 距离必须量「离 readThrough(已交给播放器的位置)多远」而不是「离连续前沿多远」:后者只反映
+ * 在途块跨度(恒为几 MB),档位永远升不上去。附带好处是 seek 后自动回到小块,不用降档状态机。
+ */
 const CHUNK_BYTES = 512 * 1024
+const CHUNK_MID_BYTES = 2 * 1024 * 1024
+const CHUNK_FAR_BYTES = 4 * 1024 * 1024
+/** 缓冲垫薄于 8MiB 算「近」,24MiB 内算「中」,再厚算「远」。 */
+const CHUNK_NEAR_LEAD_BYTES = 8 * 1024 * 1024
+const CHUNK_MID_LEAD_BYTES = 24 * 1024 * 1024
+
+function chunkSizeAt(bufferAhead: number): number {
+  if (bufferAhead < CHUNK_NEAR_LEAD_BYTES) return CHUNK_BYTES
+  if (bufferAhead < CHUNK_MID_LEAD_BYTES) return CHUNK_MID_BYTES
+  return CHUNK_FAR_BYTES
+}
+
+/**
+ * 前沿优先级:缓冲垫薄于此就算告急,所有 worker 收回前沿窄带、只取小块。
+ *
+ * 没有这道闸,分档在源站限流时**必卡**(不是概率问题):worker 平权领块,会散布在 32MiB 跨度上
+ * 啃大块,前沿只分到 1/6 带宽 —— 播放器饿死,带宽却在下几分钟后才用得上的数据。
+ */
+const FRONTIER_URGENT_BYTES = 12 * 1024 * 1024
+/** 告急时只允许在前沿之后这么窄的一带里分配(6 个 worker × 512KB 还富余)。 */
+const FRONTIER_BAND_BYTES = 4 * 1024 * 1024
 /** 冷 seek 先攒够这么多连续字节(约 4.7 秒播放量)再吐首字节;之后 worker 不停手
  *  继续把窗口填到 PREFETCH_LEAD_BYTES,靠聚合吞吐甩开播放进度。 */
 const COLD_START_BYTES = 4 * CHUNK_BYTES
@@ -41,8 +74,8 @@ const COLD_START_BYTES = 4 * CHUNK_BYTES
 const TAIL_DIRECT_BYTES = 4 * 1024 * 1024
 /** 并发 worker 数,每个用独立 Electron Session(理由见文件头)。 */
 const FETCH_CONCURRENCY = 6
-/** 某个早期慢块卡住时最多在它后面预抓 48 块(约 24MiB),避免一路跑到文件尾形成大空洞。 */
-const PREFETCH_WINDOW_CHUNKS = 48
+/** 某个早期慢块卡住时最多在它后面预抓 24MiB,避免一路跑到文件尾形成大空洞。 */
+const PREFETCH_WINDOW_BYTES = 24 * 1024 * 1024
 /** 最多比已经交给 Chromium 的位置领先 32MiB,避免打开一集就立刻打满整份文件。 */
 const PREFETCH_LEAD_BYTES = 32 * 1024 * 1024
 /** 读取端追上写入端时,等 progress 事件的上限;超时就再看一眼状态,防止事件丢了死等。 */
@@ -53,8 +86,24 @@ const WAIT_TICK_MS = 5_000
  */
 const WORKER_STAGGER_BASE_MS = 40
 const WORKER_STAGGER_JITTER_MS = 40
-/** 单块最慢样本也就 2~3 秒,超过这个时长大概率是卡住而不是慢。只打日志,不重试(红线)。 */
+/** 单块最慢样本也就 2~3 秒,超过这个时长值得记一笔。只打日志,不干预(判据见 CHUNK_SILENCE_MS)。 */
 const CHUNK_STALL_WARN_MS = 8_000
+/**
+ * 单块多久没收到**新字节**就判定连接已死。红线是「**慢不动它,死才换连接**」:判据必须是
+ * 字节静默而非单块总耗时 —— 打断一条还在慢慢吐数据的连接,已下字节全白费、请求数反涨。
+ */
+const CHUNK_SILENCE_MS = 15_000
+/** 一块最多重发几次(带断点续传,不重下已收部分);用尽则整条 session 失败,回落到换线路。 */
+const CHUNK_RETRY_LIMIT = 2
+/**
+ * 闲置这么久的 slot,下次发请求前先清掉**它自己**的连接池:闲置期间源站会单方面掐掉连接
+ * (实测 net_error -100),复用到死 socket 会一直挂到 CHUNK_SILENCE_MS 才被发现。
+ *
+ * 清池不产生任何 HTTP 请求,只是让本来就要发的请求走新连接。只清即将发请求的那个 slot ——
+ * 它此刻按定义空闲,碰不到其余在途下载。判据用闲置时长而非「用户是否暂停」:worker 停在
+ * leadLimit 上时用户在正常观看,没有暂停事件可捕获。
+ */
+const STALE_CONN_IDLE_MS = 30_000
 /**
  * 拖动进度条时 Chromium 会对每个中间位置各发一条 Range,条条重开 session 的话,每个中间
  * 位置都要白打一次 302 + 展开并发。所以**只有需要重开流的冷 seek 才防抖**:命中已缓存
@@ -90,7 +139,11 @@ interface Session {
   ev: EventEmitter
   lastReadAt: number
   idleTimer: NodeJS.Timeout | null
-  /** 挂着的读取流数量。<video> 暂停时它那条并不会关,所以 >0 时 idle 看门狗不动手。 */
+  /**
+   * 挂着的读取流数量。>0 时 idle 看门狗不动手。
+   * 注意**不能**反过来假设「归 0 = 播放器不要了」:Chromium 在暂停且内部缓冲喂饱时会主动
+   * 取消这条响应流,恢复播放时再发一条新的 Range —— 那期间 readers 就是 0(见 IDLE_MS)。
+   */
   readers: number
   /** 这个 session 建立的时刻,用于算「冷 seek 到恢复播放花了多久」这条日志。 */
   createdAt: number
@@ -107,6 +160,21 @@ let mergedSeeks = 0
 /** 同一地址连续建流的次数,只用于日志(见 ensureSession 里的说明)。 */
 let lastBuiltKey = ''
 let buildsForKey = 0
+
+/** 每个 slot 上次成功收到字节的时刻,用于判断连接池是否已经闲置到可能被源站掐掉。 */
+const slotLastDataAt: number[] = []
+
+/** 闲置过久就清掉该 slot 的连接池(理由与代价见 STALE_CONN_IDLE_MS)。 */
+async function dropStaleConnections(slot: number): Promise<void> {
+  const last = slotLastDataAt[slot] ?? 0
+  if (last === 0 || Date.now() - last < STALE_CONN_IDLE_MS) return
+  slotLastDataAt[slot] = Date.now() // 先记时,避免清池失败时每块都重清
+  try {
+    await getRangeSession(slot).closeAllConnections()
+  } catch {
+    /* 清不掉就让请求自己撞死连接,有 CHUNK_SILENCE_MS 兜底 */
+  }
+}
 
 function getRangeSession(slot: number): ElectronSession {
   // 独立的内存 Session 才能拿到真正独立的连接(同 Session 会被复用到一条 HTTP/2 上)。
@@ -187,8 +255,10 @@ export async function sweepMediaCacheDir(): Promise<void> {
 function armIdleTimer(s: Session): void {
   if (s.idleTimer) clearTimeout(s.idleTimer)
   s.idleTimer = setTimeout(() => {
-    // 还有读取流挂着多半是 <video> 暂停(响应流一直开着),强行收摊会让它恢复播放时直接失败。
-    if (s.readers > 0 || Date.now() - s.lastReadAt < IDLE_MS) { armIdleTimer(s); return }
+    // 还有读取流挂着 = 播放器正连着,强行收摊会让它恢复播放时直接失败。
+    // readThrough > 0 = 这条流真的喂过播放器 → 按「用户暂停」对待,给长宽限(见 IDLE_MS)。
+    const grace = s.readThrough > 0 ? PAUSED_IDLE_MS : IDLE_MS
+    if (s.readers > 0 || Date.now() - s.lastReadAt < grace) { armIdleTimer(s); return }
     if (current === s) current = null
     disposeSession(s)
   }, IDLE_MS)
@@ -213,11 +283,13 @@ async function openRange(
   start: number,
   end: number,
   networkSlot: number,
+  /** 单块自己的 signal(字节静默看门狗用),它已经串接了 session 的 abort。 */
+  signal: AbortSignal = s.ac.signal,
 ): Promise<RangeResponse> {
   const response = await getRangeSession(networkSlot).fetch(target, {
     headers: { ...headers, Range: `bytes=${start}-${end}` },
     redirect: 'follow',
-    signal: s.ac.signal,
+    signal,
   })
   const resolvedUrl = response.url || target
   if (response.status === 200) {
@@ -253,10 +325,18 @@ async function writeAll(file: CacheFile, value: Uint8Array, position: number): P
   }
 }
 
+/**
+ * 把一次 Range 响应写进缓存文件。**收足才算数**:少一字节就抛错,绝不能标记完成 —— 否则文件
+ * 留下空洞而 `written` 越过它,播放器读到垃圾数据(花屏),不报错、最难查。
+ *
+ * 但检测与恢复要分开:已收字节已按正确偏移落盘,抛错时用 `progress.received` 交回调用方续传。
+ */
 async function writeRangeToFile(
   s: Session,
   file: CacheFile,
   chunk: RangeResponse,
+  /** 出参:本次已落盘字节数。抛错时调用方读它续传。 */
+  progress: { received: number },
   onProgress?: (received: number) => void,
 ): Promise<number> {
   const reader = chunk.response.body?.getReader()
@@ -272,6 +352,7 @@ async function writeRangeToFile(
       if (received + value.byteLength > expected) throw new Error('mp4 range overflow')
       await writeAll(file, value, fileOffset + received)
       received += value.byteLength
+      progress.received = received
       onProgress?.(received)
     }
   } catch (error) {
@@ -331,39 +412,114 @@ async function writeParallelRanges(
   first: RangeResponse,
 ): Promise<void> {
   const regionLength = s.total - s.regionStart
-  const chunkCount = Math.ceil(regionLength / CHUNK_BYTES)
+  /**
+   * 调度用**字节游标**而不是块序号 —— 块是变长的,而且续传后一次响应只覆盖块的一部分,
+   * 按序号记账对不上。三个量都以「相对 regionStart 的字节偏移」为单位:
+   *   - contiguousEnd:从 0 起**连续**落盘到哪里(= s.written,读取端只能吃到这里)
+   *   - nextOffset:下一块从哪里开始分配
+   *   - completed:已完成但前面还有缺口的块,key = 起始偏移,value = 长度
+   */
+  let contiguousEnd = 0
+  let nextOffset = 0
   const completed = new Map<number, number>()
-  let contiguousChunk = 0
-  let nextChunk = 1
   let stopped = false
   let failure: unknown = null
   // 文件开场继续边写边播,保留原先的快速首帧;冷 seek 的块只推进连续落盘位置,
   // 读取端另有 COLD_START_BYTES 起播闸门,不让播放器拿到几百 KB 就立刻开始、随后反复追上下载端。
   const exposeFirstProgressively = s.regionStart < CHUNK_BYTES
 
-  const markComplete = (index: number, bytes: number): void => {
-    if (index === 0 && exposeFirstProgressively) {
-      s.written = bytes
-      contiguousChunk = 1
-    } else {
-      completed.set(index, bytes)
+  const markComplete = (relStart: number, bytes: number): void => {
+    completed.set(relStart, bytes)
+    while (completed.has(contiguousEnd)) {
+      const len = completed.get(contiguousEnd)!
+      completed.delete(contiguousEnd)
+      contiguousEnd += len
     }
-    while (completed.has(contiguousChunk)) {
-      s.written += completed.get(contiguousChunk)!
-      completed.delete(contiguousChunk)
-      contiguousChunk++
-    }
+    s.written = contiguousEnd
     s.ev.emit('progress')
   }
 
-  const claimChunk = async (): Promise<number | null> => {
+  const claimChunk = async (): Promise<{ relStart: number; len: number } | null> => {
     for (;;) {
-      if (stopped || nextChunk >= chunkCount) return null
-      // 只围绕最早缺口保留有界窗口;前面的慢块没完成时,后面的 worker 在窗口边缘等。
-      const gapLimit = contiguousChunk + PREFETCH_WINDOW_CHUNKS
-      const leadLimit = Math.ceil((s.readThrough + PREFETCH_LEAD_BYTES) / CHUNK_BYTES)
-      if (nextChunk < Math.min(gapLimit, leadLimit)) return nextChunk++
+      if (stopped || nextOffset >= regionLength) return null
+      // 缓冲垫 = 连续前缀比播放器已消费位置领先多少。它同时决定「能不能跑远」和「块能多大」。
+      const bufferAhead = Math.max(0, contiguousEnd - s.readThrough)
+      const urgent = bufferAhead < FRONTIER_URGENT_BYTES
+      // 两道闸都以字节计:只围绕最早缺口保留有界窗口(前面的慢块没完成时后面的 worker 在窗口边缘等),
+      // 同时不比「已交给 Chromium 的位置」领先太多。**前沿告急时把窗口再收窄到一条窄带** ——
+      // 让全部带宽都砸在播放器马上要吃的那几块上(理由见 FRONTIER_URGENT_BYTES)。
+      const gapLimit = contiguousEnd + (urgent ? FRONTIER_BAND_BYTES : PREFETCH_WINDOW_BYTES)
+      const leadLimit = s.readThrough + PREFETCH_LEAD_BYTES
+      if (nextOffset < Math.min(gapLimit, leadLimit)) {
+        const relStart = nextOffset
+        // 告急时一律小块(掉队只赔 2.3s);富余时按缓冲垫厚度升档。
+        const want = urgent ? CHUNK_BYTES : chunkSizeAt(relStart - s.readThrough)
+        const len = Math.min(want, regionLength - relStart)
+        nextOffset = relStart + len
+        return { relStart, len }
+      }
       await waitForProgress(s)
+    }
+  }
+
+  /**
+   * 取一块,带断点续传:断了从已落盘字节数接着要。每次尝试有自己的 AbortController,
+   * 交给字节静默看门狗掌控(判据见 CHUNK_SILENCE_MS)。
+   */
+  const fetchChunk = async (
+    workerIndex: number,
+    file: CacheFile,
+    relStart: number,
+    len: number,
+  ): Promise<void> => {
+    const absStart = s.regionStart + relStart
+    const absEnd = absStart + len - 1
+    let received = 0
+    for (let attempt = 0; ; attempt++) {
+      if (s.ac.signal.aborted) throw new Error('media cache aborted')
+      await dropStaleConnections(workerIndex)
+
+      const ctl = new AbortController()
+      const onSessionAbort = (): void => ctl.abort()
+      s.ac.signal.addEventListener('abort', onSessionAbort, { once: true })
+      let lastByteAt = Date.now()
+      const progress = { received: 0 }
+      const silenceTimer = setInterval(() => {
+        if (Date.now() - lastByteAt >= CHUNK_SILENCE_MS) ctl.abort()
+      }, 1_000)
+      const stallTimer = setTimeout(() => {
+        console.warn(
+          `[media-cache] worker ${workerIndex} 在偏移 ${absStart + received} 上超过 ` +
+          `${Math.round(CHUNK_STALL_WARN_MS / 1000)}s 没取完这一块（块长 ${len}）`,
+        )
+      }, CHUNK_STALL_WARN_MS)
+
+      try {
+        const chunk = await openRange(s, fetchUrl, headers, absStart + received, absEnd, workerIndex, ctl.signal)
+        if (!chunk.ranged || chunk.total !== s.total) throw new Error('mp4 range source changed')
+        await writeRangeToFile(s, file, chunk, progress, (bytes) => {
+          void bytes
+          lastByteAt = Date.now()
+          slotLastDataAt[workerIndex] = lastByteAt
+        })
+        received += progress.received
+        if (received !== len) throw new Error('mp4 range truncated')
+        return
+      } catch (error) {
+        received += progress.received // 已落盘的部分留着,下一次尝试从这里续
+        if (s.ac.signal.aborted || attempt >= CHUNK_RETRY_LIMIT) throw error
+        console.warn(
+          `[media-cache] worker ${workerIndex} 偏移 ${absStart + received} 断流，` +
+          `第 ${attempt + 1} 次换连接续传（已收 ${received}/${len}）`,
+        )
+        // 这条连接已经证明不可用,下一次尝试前强制新建(不等 STALE_CONN_IDLE_MS)
+        slotLastDataAt[workerIndex] = 0
+        await getRangeSession(workerIndex).closeAllConnections().catch(() => { /* 无所谓 */ })
+      } finally {
+        clearInterval(silenceTimer)
+        clearTimeout(stallTimer)
+        s.ac.signal.removeEventListener('abort', onSessionAbort)
+      }
     }
   }
 
@@ -371,37 +527,16 @@ async function writeParallelRanges(
     const file = await fsp.open(s.file, 'r+')
     try {
       if (firstChunk) {
-        const firstBytes = await writeRangeToFile(
-          s,
-          file,
-          firstChunk,
-          exposeFirstProgressively
-            ? (received) => { s.written = received; s.ev.emit('progress') }
-            : undefined,
-        )
+        const progress = { received: 0 }
+        const firstBytes = await writeRangeToFile(s, file, firstChunk, progress)
+        slotLastDataAt[workerIndex] = Date.now()
         markComplete(0, firstBytes)
       }
       for (;;) {
-        const index = await claimChunk()
-        if (index === null) return
-        const start = s.regionStart + index * CHUNK_BYTES
-        const end = Math.min(s.total - 1, start + CHUNK_BYTES - 1)
-        const chunkStartedAt = Date.now()
-        const stallTimer = setTimeout(() => {
-          console.warn(
-            `[media-cache] worker ${workerIndex} 在块 ${index}（偏移 ${start}）上卡住超过 ` +
-            `${Math.round((Date.now() - chunkStartedAt) / 1000)}s，可能是复用已解析链接在源站` +
-            `遇到并发限制——如果频繁出现，考虑把 fetchUrl 改回逐块重新 302`,
-          )
-        }, CHUNK_STALL_WARN_MS)
-        let chunk: RangeResponse
-        try {
-          chunk = await openRange(s, fetchUrl, headers, start, end, workerIndex)
-          if (!chunk.ranged || chunk.total !== s.total) throw new Error('mp4 range source changed')
-          markComplete(index, await writeRangeToFile(s, file, chunk))
-        } finally {
-          clearTimeout(stallTimer)
-        }
+        const claim = await claimChunk()
+        if (claim === null) return
+        await fetchChunk(workerIndex, file, claim.relStart, claim.len)
+        markComplete(claim.relStart, claim.len)
       }
     } finally {
       await file.close()
@@ -435,25 +570,35 @@ async function writeParallelRanges(
   if (exposeFirstProgressively) {
     const file = await fsp.open(s.file, 'r+')
     try {
+      const progress = { received: 0 }
       const firstBytes = await writeRangeToFile(
         s,
         file,
         first,
+        progress,
         (received) => { s.written = received; s.ev.emit('progress') },
       )
+      slotLastDataAt[0] = Date.now()
       markComplete(0, firstBytes)
     } finally {
       await file.close()
     }
   }
+  // 首块由 0 号 worker 直接吃掉那个现成响应(见下面 guard 的 firstChunk),必须先把它占掉,
+  // 否则 claimChunk 会把 [0, 首块长) 再分配给别人 —— 重复下载 + 铺不齐区间。
+  nextOffset = exposeFirstProgressively ? contiguousEnd : first.end - first.start + 1
 
-  const remainingChunks = chunkCount - contiguousChunk
-  const workers = Math.min(FETCH_CONCURRENCY, remainingChunks)
+  const workers = Math.min(FETCH_CONCURRENCY, Math.ceil((regionLength - nextOffset) / CHUNK_BYTES))
   await Promise.all(Array.from(
-    { length: workers },
+    { length: Math.max(workers, 1) },
     (_, index) => guard(index, !exposeFirstProgressively && index === 0 ? first : null),
   ))
   if (failure) throw failure
+  // 变长块调度动的正是「连续前缀」这个核心不变量,写错了不会报错、只会把带空洞的文件喂给
+  // 播放器(花屏)。所以收尾必须双向确认:连续前缀刚好铺满整个区间,且没有落单的孤岛块。
+  if (contiguousEnd !== regionLength || completed.size > 0) {
+    throw new Error(`media cache has a range gap (${contiguousEnd}/${regionLength}, ${completed.size} islands)`)
+  }
   if (s.written !== regionLength) throw new Error('media cache has a range gap')
 }
 

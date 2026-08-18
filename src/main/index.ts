@@ -162,6 +162,17 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // 未打包时把渲染进程的 console 转发到跑 `npm run dev` 的终端 —— 渲染层的日志本来只在
+  // DevTools 里,查问题要先 F12 很不顺手,而且「白打一发站点搜索」这类 bug 全程在渲染进程,
+  // 不转发就等于没有线索。只转 warn/error(level 2/3),info/log 量太大会淹掉主进程日志。
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+      if (level < 2) return
+      const where = sourceId ? ` (${sourceId.split('/').pop()}:${line})` : ''
+      console.log(`[renderer] ${message}${where}`)
+    })
+  }
+
   // F12 / Ctrl+Shift+I 开关 DevTools,仅未打包时生效 —— 打包版不给普通用户暴露开发者工具。
   if (!app.isPackaged) {
     mainWindow.webContents.on('before-input-event', (_event, input) => {

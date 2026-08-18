@@ -330,9 +330,8 @@ export async function downloadByUrl(
     return { ok: false, reason: 'probe_failed', status: info?.status }
   }
 
-  // 探到的是错误体(假 mp4)→ 当「链接拼错」上抛,由站点层回源重解析。**绝不能当成功写盘**
-  // 否则用户拿到几 KB 的假 mp4 还显示「完成」。这一步放在「已完成跳过」之前:磁盘上若残留
-  // 旧的假 mp4,也要重新回源拉正确的。
+  // 探到错误体(判据见 looksLikeErrorBody)→ 当「链接拼错」上抛,由站点层回源重解析。
+  // 必须放在「已完成跳过」之前:磁盘上若残留旧的假 mp4,也要重新回源拉正确的。
   if (looksLikeErrorBody(info)) {
     return { ok: false, reason: 'not_media' }
   }

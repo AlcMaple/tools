@@ -1,0 +1,76 @@
+<svg viewBox="0 0 1000 620" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="620" fill="#ffffff"/>
+  <text x="500" y="26" text-anchor="middle" font-size="16" font-weight="700" fill="#111">在线播放预抓 — 缓冲垫决定「能跑多远」和「块能多大」</text>
+
+  <!-- 图例 -->
+  <rect x="60" y="44" width="16" height="12" fill="#BFE3C6" stroke="#3E8E52"/>
+  <text x="84" y="55" font-size="12" fill="#333">已连续落盘（读取端只能吃到这里）</text>
+  <rect x="330" y="44" width="16" height="12" fill="#FCE3B4" stroke="#D08A1E"/>
+  <text x="354" y="55" font-size="12" fill="#333">在途 / 已分配</text>
+  <rect x="500" y="44" width="16" height="12" fill="#F2F2F2" stroke="#AAA"/>
+  <text x="524" y="55" font-size="12" fill="#333">未分配</text>
+
+  <!-- ── 情况 A：前沿告急 ── -->
+  <text x="60" y="98" font-size="14" font-weight="700" fill="#B3261E">情况 A　缓冲垫 &lt; 12MiB＝前沿告急（源站限流 / 刚 seek 完）</text>
+  <rect x="60" y="112" width="880" height="46" fill="#F2F2F2" stroke="#AAA"/>
+  <rect x="60" y="112" width="150" height="46" fill="#BFE3C6" stroke="#3E8E52"/>
+  <rect x="210" y="112" width="70" height="46" fill="#FCE3B4" stroke="#D08A1E"/>
+  <line x1="222" y1="112" x2="222" y2="158" stroke="#D08A1E"/>
+  <line x1="234" y1="112" x2="234" y2="158" stroke="#D08A1E"/>
+  <line x1="246" y1="112" x2="246" y2="158" stroke="#D08A1E"/>
+  <line x1="258" y1="112" x2="258" y2="158" stroke="#D08A1E"/>
+  <line x1="270" y1="112" x2="270" y2="158" stroke="#D08A1E"/>
+  <text x="245" y="103" text-anchor="middle" font-size="11" fill="#8A5A00">6 个 worker 全挤在这条窄带里，块一律 512KB</text>
+
+  <line x1="105" y1="158" x2="105" y2="182" stroke="#333" stroke-width="1.5"/>
+  <text x="105" y="196" text-anchor="middle" font-size="11" fill="#111">readThrough</text>
+  <text x="105" y="210" text-anchor="middle" font-size="10" fill="#777">已交给播放器</text>
+  <line x1="210" y1="158" x2="210" y2="182" stroke="#3E8E52" stroke-width="1.5"/>
+  <text x="210" y="196" text-anchor="middle" font-size="11" fill="#3E8E52">连续前沿</text>
+  <line x1="280" y1="112" x2="280" y2="96" stroke="#B3261E" stroke-width="1.5" stroke-dasharray="3 2"/>
+  <text x="286" y="106" font-size="11" fill="#B3261E">窄带闸 = 前沿 + 4MiB</text>
+
+  <path d="M105,224 L210,224" stroke="#B3261E" stroke-width="1.4" marker-start="url(#ar)" marker-end="url(#ar)"/>
+  <text x="157" y="240" text-anchor="middle" font-size="11" fill="#B3261E">缓冲垫 &lt; 12MiB</text>
+  <text x="330" y="140" font-size="12" fill="#B3261E">→ 全部带宽砸在播放器马上要吃的那几块上；掉队一块只赔 2.3s</text>
+  <text x="330" y="158" font-size="11" fill="#777">这就是分档之前的行为，实测能扛住源站限流</text>
+
+  <!-- ── 情况 B：富余 ── -->
+  <text x="60" y="300" font-size="14" font-weight="700" fill="#1B6E2E">情况 B　缓冲垫 ≥ 12MiB＝富余（正常观看，带宽跟得上）</text>
+  <rect x="60" y="314" width="880" height="46" fill="#F2F2F2" stroke="#AAA"/>
+  <rect x="60" y="314" width="430" height="46" fill="#BFE3C6" stroke="#3E8E52"/>
+  <rect x="490" y="314" width="290" height="46" fill="#FCE3B4" stroke="#D08A1E"/>
+  <line x1="530" y1="314" x2="530" y2="360" stroke="#D08A1E"/>
+  <line x1="570" y1="314" x2="570" y2="360" stroke="#D08A1E"/>
+  <line x1="650" y1="314" x2="650" y2="360" stroke="#D08A1E"/>
+  <line x1="715" y1="314" x2="715" y2="360" stroke="#D08A1E"/>
+
+  <line x1="150" y1="360" x2="150" y2="384" stroke="#333" stroke-width="1.5"/>
+  <text x="150" y="398" text-anchor="middle" font-size="11" fill="#111">readThrough</text>
+  <line x1="490" y1="360" x2="490" y2="384" stroke="#3E8E52" stroke-width="1.5"/>
+  <text x="490" y="398" text-anchor="middle" font-size="11" fill="#3E8E52">连续前沿</text>
+  <line x1="780" y1="314" x2="780" y2="296" stroke="#1B6E2E" stroke-width="1.5" stroke-dasharray="3 2"/>
+  <text x="700" y="292" font-size="11" fill="#1B6E2E">窗口闸 = 前沿 + 24MiB，且不超过 readThrough + 32MiB</text>
+
+  <path d="M150,412 L490,412" stroke="#1B6E2E" stroke-width="1.4" marker-start="url(#ar)" marker-end="url(#ar)"/>
+  <text x="320" y="428" text-anchor="middle" font-size="11" fill="#1B6E2E">缓冲垫 ≥ 12MiB（≈28 秒播放量）</text>
+
+  <!-- 档位刻度 -->
+  <text x="60" y="462" font-size="13" font-weight="700" fill="#111">块大小按「这块离 readThrough 多远」升档（离播放器越远，赔得起越大的掉队）</text>
+  <rect x="150" y="474" width="150" height="26" fill="#E8F1FC" stroke="#4A90D9"/>
+  <text x="225" y="492" text-anchor="middle" font-size="12" fill="#1B4F8C">&lt; 8MiB → 512KB</text>
+  <rect x="300" y="474" width="150" height="26" fill="#D6E9FA" stroke="#4A90D9"/>
+  <text x="375" y="492" text-anchor="middle" font-size="12" fill="#1B4F8C">8~24MiB → 2MB</text>
+  <rect x="450" y="474" width="200" height="26" fill="#C2DEF7" stroke="#4A90D9"/>
+  <text x="550" y="492" text-anchor="middle" font-size="12" fill="#1B4F8C">&gt; 24MiB → 4MB</text>
+  <text x="662" y="492" font-size="11" fill="#777">4MB 封顶：最慢连接 226KB/s → 单块最坏 18s，仍小于缓冲垫</text>
+
+  <text x="60" y="536" font-size="12" fill="#333">seek 后 readThrough 重置 → 自动回到 512KB，不需要额外的降档状态机。</text>
+  <text x="60" y="556" font-size="12" fill="#333">读取端只能吃「连续前缀」，所以某块掉队＝前沿停住；窄带 + 小块正是为了让掉队赔得起。</text>
+  <text x="60" y="576" font-size="12" fill="#B3261E">先做前沿优先级、再开分档，顺序反了就是「带宽在下载几分钟后才用得上的数据，播放器却饿死」。</text>
+</svg>

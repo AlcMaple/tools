@@ -3,15 +3,12 @@
  * mtmedia:// 协议回给渲染进程的 <video> / hls.js。
  *
  * 为什么必须经主进程转一手:
- *   - mp4:dev 下页面 origin 是 http://localhost,Chromium 拒绝播放带
- *     `content-disposition: attachment` 的跨源媒体(稀饭主线的 pan.wo.cn 签名直链
- *     正是这种)→ <video> 报 code 4。剥掉这个头就能播。
- *   - HLS:hls.js 在渲染进程里逐条取列表 / 分片 / 密钥,直连 CDN 会被跨源策略拦
- *     (那些 CDN 不带 CORS 头)。播放列表还要把里面的地址重写成 mtmedia://
- *     (见 rewritePlaylist),否则 hls.js 拿到的仍是原始跨源地址。
+ *   - mp4:带 `content-disposition: attachment` 的跨源媒体会被 Chromium 拒播(<video> code 4),
+ *     剥掉这个头就能播。
+ *   - HLS:CDN 不带 CORS 头,渲染进程直连取列表/分片/密钥会被拦;列表里的地址还得重写成
+ *     mtmedia://(见 rewritePlaylist),否则 hls.js 拿到的仍是原始跨源地址。
  *
- * 这里用 `net.fetch` 而不是 `netRequest()`:后者把整个 body 缓冲进内存,几百 MB 的视频
- * 会爆;`net.fetch` 同样走 Chromium 网络栈,但返回可读流可以直接透传。
+ * 必须用 `net.fetch` 而不是 `netRequest()`:后者把整个 body 缓冲进内存,几百 MB 的视频会爆。
  */
 import { protocol, net } from 'electron'
 import { DESKTOP_USER_AGENT } from './download-types'
@@ -27,8 +24,8 @@ const HLS_MIME = 'application/vnd.apple.mpegurl'
 /**
  * 把 http(s) 直链包成同源代理 URL。非 http(s) 原样返回。
  *
- * `referer`:防盗链用(B 站 upos/bilivideo 不带 Referer 一律 403)。由**取到地址的那一方**
- * 在主进程钉进 URL —— 渲染层因此永远拿不到裸签名链,也就不可能忘了带头。
+ * `referer` 防盗链用(B 站 upos/bilivideo 不带 Referer 一律 403),由取到地址的那一方在主进程
+ * 钉进 URL —— 渲染层拿不到裸签名链,也就不可能忘了带头。
  */
 export function toMediaProxyUrl(url: string, referer?: string): string {
   if (!/^https?:\/\//i.test(url)) return url
