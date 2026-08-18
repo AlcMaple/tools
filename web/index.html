@@ -4,8 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MapleTools 网页版 · 番剧周期表</title>
-    <!-- 开屏动画要画的就是这张立绘：不先拿到它，动画会在空卡片上白跑一遍 -->
-    <link rel="preload" as="image" href="/assets/sagiri-full.png" />
+    <!-- 开屏动画要画的就是这张立绘：不先拿到它，动画会在空卡片上白跑一遍。
+         fetchpriority=high 把它抬到和 JS/CSS 同一档 —— 否则图片默认低优先级，
+         要排在首屏那堆资源后面，正是「第一次进来立绘迟迟不出现」的那一段等待。 -->
+    <link rel="preload" as="image" fetchpriority="high" href="/assets/sagiri-full.webp" />
   </head>
   <body>
     <div id="root"></div>

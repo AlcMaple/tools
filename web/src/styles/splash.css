@@ -2,7 +2,7 @@
    开屏动画「なぞる（描一遍）」—— 视角是和泉纱雾本人：
    她是插画家，开屏就是她在画稿本上画自己：先描线 → 再上色 → 盖章收工 → 翻页进站。
    手法沿用成熟做法（SVG stroke-dashoffset 自绘线 + clip-path 擦除式上色），
-   素材用官方立绘（public/assets/sagiri-full.png），配色/纸面全部取 sketch-tokens.css。
+   素材用官方立绘（public/assets/sagiri-full.webp），配色/纸面全部取 sketch-tokens.css。
    只在一次会话里放一次，prefers-reduced-motion 下整段不挂载（见 Splash.tsx）。
    ============================================================ */
 
