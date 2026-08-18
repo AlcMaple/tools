@@ -50,7 +50,7 @@ export function ToastRoot(): JSX.Element | null {
   return (
     <div id="toast-root">
       <div className={`toast-note${item.opt.err ? ' err' : ''}`} key={item.seq}>
-        <img className="avatar" src="/assets/sagiri-face.png" alt="" />
+        <img className="avatar" src="/assets/sagiri-face.webp" alt="" />
         <div className="toast-body">
           <div className="toast-name">纱雾{item.opt.err ? ' · 小声' : ''}</div>
           <div className="toast-text">{item.text}</div>
