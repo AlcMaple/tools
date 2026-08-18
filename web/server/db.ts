@@ -184,3 +184,7 @@ db.exec(`
 // 为什么不用时间戳比：那要信两端的本地时钟，设备时间不准就会判错方向、静默覆盖掉新数据。
 // 递增号只由服务器一家发，跟时钟无关。
 ensureColumn('users', 'tracks_rev', 'tracks_rev INTEGER NOT NULL DEFAULT 0')
+
+// 本地上传封面的 MIME —— cover 列存 `local:<bgmId>` 哨兵值时，实际图片文件落在
+// data-dir.ts 的 coversDir 下，这一列记它的 Content-Type（服务端流式转发要用）。
+ensureColumn('tracks', 'cover_mime', "cover_mime TEXT NOT NULL DEFAULT ''")

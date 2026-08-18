@@ -827,9 +827,47 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .dlg-close .ic { width: 18px; height: 18px; }
 @media (hover: hover) { .dlg-close:hover { color: var(--sakura); border-color: var(--sakura); transform: rotate(8deg) scale(1.06); box-shadow: var(--shadow-stick); } }
 .dlg-close:focus-visible { outline: 3px solid var(--teal-wash); outline-offset: 2px; }
-.dlg-title { font-family: var(--font-hand); font-size: 20px; margin-bottom: 6px; }
+.dlg-title { font-family: var(--font-hand); font-size: 20px; margin-bottom: 6px; padding-right: 46px; }
 .dlg-sub { font-size: 13px; color: var(--ink-sub); margin-bottom: 16px; }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+/* ---------- 编辑弹窗：封面点击编辑（网图 URL / 本地上传） ---------- */
+.dlg-cover-edit { position: relative; flex: none; }
+.dlg-cover-btn { display: block; padding: 0; border: none; background: none; cursor: pointer; }
+.dlg-cover-ph {
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed var(--line);
+  border-radius: 6px;
+  color: var(--ink-sub);
+  font-size: 12px;
+  text-align: center;
+  background: var(--card);
+}
+.dlg-cover-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 3;
+  width: 220px;
+  padding: 10px;
+  background: var(--card);
+  border: 1.5px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-2);
+}
+.dlg-cover-pop input[type='text'], .dlg-cover-pop input:not([type]) { width: 100%; box-sizing: border-box; }
+.dlg-cover-pop-actions { display: flex; gap: 8px; margin-top: 8px; }
+.dlg-cover-pop-actions button {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 0;
+  border: 1.5px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+}
+@media (hover: hover) { .dlg-cover-pop-actions button:hover { border-color: var(--teal); color: var(--teal); } }
 
 /* ---------- 登录弹窗（AuthModal 真实形态：左立绘栏 + 右表单） ---------- */
 .auth-dlg {
