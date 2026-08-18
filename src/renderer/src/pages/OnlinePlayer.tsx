@@ -275,7 +275,15 @@ export default function OnlinePlayer(): JSX.Element {
       entries[0]
     setSelKey(pick.key)
   }, [entries, selKey])
-  const entry = entries.find((e) => e.key === selKey) ?? entries[0]
+  // 回落顺序必须与上面 effect 的挑选优先级**一致**:effect 要等一帧才把 selKey 落下,
+  // 而这一帧里 `entry` 若回落到 entries[0](未绑定的 B 站)就会把 view 置成 search;
+  // 下一帧 entry 已经变成真正选中的源,view 却还停在 search —— 于是用**那个源**挂出搜索面板,
+  // 面板一挂载自动搜,白打一发站点搜索(还会撞出验证码)。让第一帧就选对源,这个窗口就不存在。
+  const entry =
+    entries.find((e) => e.key === selKey) ??
+    entries.find((e) => e.builtin && e.binding) ??
+    entries.find((e) => e.builtin) ??
+    entries[0]
 
   const [data, setData] = useState<SiteData | null>(null)
   const [lineIdx, setLineIdx] = useState(0)
@@ -823,7 +831,9 @@ export default function OnlinePlayer(): JSX.Element {
                   onFullscreenChange={setPlayerFs}
                 />
               )}
-              {view.mode === 'search' && entry?.builtin && track && (
+              {/* `!entry.binding` 是兜底不变量:view 与 entry 分属两次 setState,可能差一帧,
+                  已绑定的源绝不该挂搜索面板(它一挂载就会自动发搜索请求)。 */}
+              {view.mode === 'search' && entry?.builtin && !entry.binding && track && (
                 <div className="flex h-full items-center justify-center overflow-y-auto p-4 md:p-6">
                   <InlineSourceSearch
                     key={entry.builtin}

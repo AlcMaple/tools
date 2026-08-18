@@ -1,0 +1,57 @@
+<svg viewBox="0 0 1000 660" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="660" fill="#ffffff"/>
+  <text x="500" y="26" text-anchor="middle" font-size="16" font-weight="700" fill="#111">暂停几分钟再播 — 修复前 vs 修复后</text>
+
+  <!-- 共同的起点 -->
+  <rect x="330" y="46" width="340" height="40" rx="8" fill="#E8F1FC" stroke="#4A90D9" stroke-width="1.5"/>
+  <text x="500" y="71" text-anchor="middle" font-size="13" fill="#1B4F8C">用户按暂停，Chromium 内部缓冲已喂饱</text>
+  <line x1="500" y1="86" x2="500" y2="112" stroke="#333" stroke-width="1.6" marker-end="url(#a)"/>
+  <rect x="300" y="112" width="400" height="56" rx="8" fill="#FCE3B4" stroke="#D08A1E" stroke-width="1.5"/>
+  <text x="500" y="134" text-anchor="middle" font-size="13" fill="#8A5A00">Chromium 主动取消我们这条响应流</text>
+  <text x="500" y="154" text-anchor="middle" font-size="12" fill="#8A5A00">（不是保持挂着）→ readers 归 0，idle 开始计时</text>
+  <text x="500" y="186" text-anchor="middle" font-size="11" fill="#777">原代码的假设「暂停时那条流不会关」在这里就已经不成立</text>
+
+  <line x1="500" y1="196" x2="260" y2="224" stroke="#333" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="500" y1="196" x2="740" y2="224" stroke="#333" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- 左：修复前 -->
+  <text x="260" y="248" text-anchor="middle" font-size="14" font-weight="700" fill="#B3261E">修复前</text>
+  <rect x="80" y="262" width="360" height="40" rx="6" fill="#FBE3E1" stroke="#B3261E"/>
+  <text x="260" y="287" text-anchor="middle" font-size="12" fill="#B3261E">idle 看门狗 60 秒到点，不区分暂停与孤儿</text>
+  <line x1="260" y1="302" x2="260" y2="326" stroke="#333" stroke-width="1.4" marker-end="url(#a)"/>
+  <rect x="80" y="326" width="360" height="40" rx="6" fill="#FBE3E1" stroke="#B3261E"/>
+  <text x="260" y="351" text-anchor="middle" font-size="12" fill="#B3261E">abort 后台流 ＋ 同步删掉临时文件</text>
+  <line x1="260" y1="366" x2="260" y2="390" stroke="#333" stroke-width="1.4" marker-end="url(#a)"/>
+  <rect x="80" y="390" width="360" height="58" rx="6" fill="#FBE3E1" stroke="#B3261E"/>
+  <text x="260" y="412" text-anchor="middle" font-size="12" fill="#B3261E">恢复播放 → 本地什么都没了 → 冷 seek 重来</text>
+  <text x="260" y="432" text-anchor="middle" font-size="11" fill="#B3261E">180ms 防抖 ＋ 攒够 2MB 才吐首字节 ＋ 重新握手</text>
+  <rect x="80" y="462" width="360" height="34" rx="6" fill="#fff" stroke="#B3261E" stroke-dasharray="4 3"/>
+  <text x="260" y="484" text-anchor="middle" font-size="12" fill="#B3261E">实测：明明在缓冲区间内，白等 5622ms</text>
+
+  <!-- 右：修复后 -->
+  <text x="740" y="248" text-anchor="middle" font-size="14" font-weight="700" fill="#1B6E2E">修复后</text>
+  <rect x="560" y="262" width="380" height="58" rx="6" fill="#E6F4EA" stroke="#1B6E2E"/>
+  <text x="750" y="284" text-anchor="middle" font-size="12" fill="#1B6E2E">看门狗按「这条流喂过播放器没有」分两档</text>
+  <text x="750" y="304" text-anchor="middle" font-size="11" fill="#1B6E2E">喂过（＝暂停）30 分钟　·　没喂过（＝孤儿）仍 60 秒</text>
+  <line x1="750" y1="320" x2="750" y2="344" stroke="#333" stroke-width="1.4" marker-end="url(#a)"/>
+  <rect x="560" y="344" width="380" height="40" rx="6" fill="#E6F4EA" stroke="#1B6E2E"/>
+  <text x="750" y="369" text-anchor="middle" font-size="12" fill="#1B6E2E">临时文件留着；worker 停在 leadLimit，不再取数</text>
+  <line x1="750" y1="384" x2="750" y2="408" stroke="#333" stroke-width="1.4" marker-end="url(#a)"/>
+  <rect x="560" y="408" width="380" height="58" rx="6" fill="#E6F4EA" stroke="#1B6E2E"/>
+  <text x="750" y="430" text-anchor="middle" font-size="12" fill="#1B6E2E">恢复播放 → 命中本地缓存，0ms 直接续播</text>
+  <text x="750" y="450" text-anchor="middle" font-size="11" fill="#1B6E2E">该 slot 闲置 &gt; 30s → 发请求前先清自己的连接池</text>
+  <rect x="560" y="480" width="380" height="34" rx="6" fill="#fff" stroke="#1B6E2E" stroke-dasharray="4 3"/>
+  <text x="750" y="502" text-anchor="middle" font-size="12" fill="#1B6E2E">实测：暂停 3 分钟后 0ms 续播，无建流</text>
+
+  <!-- 底部说明 -->
+  <line x1="60" y1="540" x2="940" y2="540" stroke="#DDD"/>
+  <text x="60" y="566" font-size="12" fill="#333">放宽 idle 不会让缓存不回收：回收靠三条确定性路径 —— 换集/换源（key 变则 dispose）、离开播放页（media:release）、退出应用（before-quit ＋ 启动 sweep）。</text>
+  <text x="60" y="586" font-size="12" fill="#333">看门狗只是兜底，所以「喂过播放器」的那一档放长是安全的：磁盘上同一时刻仍只有一个临时文件，后台取数量另有 32MiB 领先上限封顶。</text>
+  <text x="60" y="612" font-size="12" fill="#333">清池不产生任何 HTTP 请求，只是让本来就要发的那条请求走新连接；只清即将发请求的那个 slot，不碰其余 5 条在途下载。</text>
+  <text x="60" y="632" font-size="12" fill="#777">连接为什么会死：闲置期间源站单方面掐掉（实测 net_error -100），复用到死 socket 就会挂住，直到 15 秒「字节静默」看门狗才发现。</text>
+</svg>
