@@ -200,8 +200,14 @@ function finish(c: Context, tx: OAuthTx | null, code: FinishCode, silent = false
   deleteCookie(c, TX_COOKIE, { path: TX_COOKIE_PATH, secure: SECURE, sameSite: 'Lax' })
   const base = tx?.r ?? '/'
   if (code === 'ok' || silent) return c.redirect(base)
-  const sep = base.includes('?') ? '&' : '?'
-  return c.redirect(`${base}${sep}oauth=${code}`)
+  // 前端是 hash 路由（/#/settings），base 里的 hash 在最后——直接把 ?oauth= 拼在
+  // 字符串末尾会落进 hash 内部（/#/settings?oauth=conflict），location.search 读不到，
+  // 前端就永远看不到这个结果码。必须插在 hash 前面，回落到真正的 query string 里。
+  const hashIdx = base.indexOf('#')
+  const head = hashIdx === -1 ? base : base.slice(0, hashIdx)
+  const hash = hashIdx === -1 ? '' : base.slice(hashIdx)
+  const sep = head.includes('?') ? '&' : '?'
+  return c.redirect(`${head}${sep}oauth=${code}${hash}`)
 }
 
 const oauth = new Hono()

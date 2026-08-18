@@ -24,6 +24,7 @@ import {
 } from './auth'
 import type { SecurityQuestion } from './auth'
 import { Ic, Spinner } from './SketchIcon'
+import { toast } from './Toast'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 
@@ -207,11 +208,13 @@ function Kv({ k, v, note }: { k: string; v: string; note?: string }): JSX.Elemen
 function ProfileLoginWays({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Element | null {
   const { user } = useAuth()
   const [providers, setProviders] = useState<{ google: boolean; email: boolean } | null>(null)
-  const [flash, setFlash] = useState<{ msg: string; error: boolean } | null>(null)
 
   useEffect(() => {
     let alive = true
     // Google 绑定回跳结果（登录流程的 oauth=failed 由 App 处理，不会走到这）。
+    // 走全局 toast（右下角），别再塞 flash prop 给子组件——子组件的 status 是
+    // useState(flash?.msg) 只在挂载时取一次初值，这个 effect 是挂载后才 setFlash，
+    // 子组件根本收不到，之前就是这样悄无声息地把提示丢了。
     const params = new URLSearchParams(window.location.search)
     const result = params.get('oauth')
     if (
@@ -227,15 +230,15 @@ function ProfileLoginWays({ onGoSecurity }: { onGoSecurity: () => void }): JSX.E
         '',
         window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
       )
-      setFlash(
-        result === 'bound'
-          ? { msg: 'Google 账号已绑定', error: false }
-          : result === 'conflict'
-            ? { msg: '该 Google 账号已绑定其它用户', error: true }
-            : result === 'already_bound'
-              ? { msg: '本账号已绑定 Google，请先解绑再绑定新的', error: true }
-              : { msg: 'Google 绑定未完成，请重试', error: true },
-      )
+      if (result === 'bound') {
+        toast('Google 账号已绑定')
+      } else if (result === 'conflict') {
+        toast('该 Google 账号已绑定其它账号，如需覆盖请先用那个账号解绑', { err: true })
+      } else if (result === 'already_bound') {
+        toast('本账号已绑定 Google，请先解绑再绑定新的', { err: true })
+      } else {
+        toast('Google 绑定未完成，请重试', { err: true })
+      }
     }
     void fetchOauthProviders()
       .then((r) => {
@@ -252,7 +255,7 @@ function ProfileLoginWays({ onGoSecurity }: { onGoSecurity: () => void }): JSX.E
   return (
     <>
       <PasswordRow onGoSecurity={onGoSecurity} />
-      <EmailLoginCard emailEnabled={providers?.email === true} googleEnabled={providers?.google === true} flash={flash} />
+      <EmailLoginCard emailEnabled={providers?.email === true} googleEnabled={providers?.google === true} />
     </>
   )
 }
@@ -537,15 +540,13 @@ function PasswordRow({ onGoSecurity }: { onGoSecurity: () => void }): JSX.Elemen
 function EmailLoginCard({
   emailEnabled,
   googleEnabled,
-  flash,
 }: {
   emailEnabled: boolean
   googleEnabled: boolean
-  flash: { msg: string; error: boolean } | null
 }): JSX.Element | null {
   const { user } = useAuth()
-  const [status, setStatus] = useState<string | null>(flash?.msg ?? null)
-  const [statusError, setStatusError] = useState(flash?.error ?? false)
+  const [status, setStatus] = useState<string | null>(null)
+  const [statusError, setStatusError] = useState(false)
   // 绑定 / 换绑（验证码路径）
   const [bindStep, setBindStep] = useState<'idle' | 'address' | 'code'>('idle')
   const [email, setEmail] = useState('')
