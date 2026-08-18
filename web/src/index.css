@@ -5,6 +5,7 @@
    页面里可用工具类微调而不被组件类压住。 */
 @import './styles/sketch-tokens.css';
 @import './styles/sketch-ui.css';
+@import './styles/splash.css';
 
 @tailwind base;
 @tailwind components;

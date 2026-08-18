@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>纱雾画稿 · 开屏动画「なぞる」</title>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/sketch-ui.css">
+<link rel="stylesheet" href="css/splash.css">
+<style>
+  /* 原型页专用：给动画一个「重放」按钮，真实站点里是进站放一次就走 */
+  .demo { position: fixed; left: 18px; bottom: 16px; z-index: 200; }
+</style>
+</head>
+<body>
+  <div class="shell" style="padding:40px">
+    <p class="font-hand" style="font-size:20px">（这里是应用本体，开屏翻页后露出来的东西）</p>
+  </div>
+
+  <div class="sp" id="sp" role="presentation" aria-hidden="true">
+    <div class="sp-card">
+      <span class="tape tl teal" style="width:92px"></span>
+      <svg class="sp-frame" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <rect x="0.8" y="0.8" width="98.4" height="98.4" rx="1.2" pathLength="100"></rect>
+      </svg>
+      <span class="sp-tone halftone-wash"></span>
+      <span class="sp-focus focus-lines"></span>
+
+      <div class="sp-art">
+        <!-- 同一张官方立绘叠两层：线稿先「描」出来，彩稿晚半拍追上来上色 -->
+        <img class="sp-color" src="assets/sagiri-full.png" alt="">
+        <img class="sp-line" src="assets/sagiri-full.png" alt="">
+        <span class="sp-pen">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 20l1.2-4.2L15.6 5.4a2.1 2.1 0 0 1 3 3L8.2 18.8 4 20z"/><path d="M13.6 7.4l3 3"/></svg>
+        </span>
+      </div>
+
+      <span class="kira sp-kira k1">サラサラ…</span>
+      <span class="kira sp-kira k2">キラキラ…</span>
+      <span class="sparkle a">✦</span>
+      <span class="sparkle b">✦</span>
+      <span class="sparkle c">✦</span>
+      <span class="stamp st-sakura sp-stamp">紗霧</span>
+    </div>
+
+    <div class="sp-title">
+      <b>MapleTools</b>
+      <i class="sp-rule"></i>
+      <small class="sp-sub">SAGIRI · SKETCHFOLIO</small>
+    </div>
+
+    <span class="sp-skip">点一下跳过</span>
+  </div>
+
+  <button class="btn btn-sm demo" type="button" onclick="replay()">重放开屏</button>
+<script>
+  // 原型页的「重放」：CSS 动画都是 forwards，跑完不会自己回头，
+  // 用整段节点克隆替换才能真正从第一帧重来
+  const tpl = document.getElementById('sp').cloneNode(true)
+  let timer
+  function arm(node) {
+    const out = () => { clearTimeout(timer); node.classList.add('out'); setTimeout(() => node.remove(), 620) }
+    node.addEventListener('click', out)
+    timer = setTimeout(out, 2600)
+  }
+  function replay() {
+    document.querySelectorAll('.sp').forEach((n) => n.remove())
+    const node = tpl.cloneNode(true)
+    document.body.appendChild(node)
+    arm(node)
+  }
+  arm(document.getElementById('sp'))
+</script>
+</body>
+</html>
