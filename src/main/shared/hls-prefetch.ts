@@ -23,7 +23,11 @@ interface Entry {
   /** 抓取中的 promise,完成后 bytes 落位;失败为 null,调用方退回直连。 */
   p: Promise<Uint8Array | null>
   bytes: Uint8Array | null
+  upstreamRejected: boolean
 }
+
+/** 预取已经拿到确定 HTTP 失败，代理不得再直连重发同一片。 */
+export const HLS_SEGMENT_UPSTREAM_REJECTED = Symbol('hls segment upstream rejected')
 
 /** 当前播放列表的分片顺序(原始绝对地址)。 */
 let order: string[] = []
@@ -33,8 +37,13 @@ const cache = new Map<string, Entry>()
 let cacheBytes = 0
 let running = 0
 const queue: (() => void)[] = []
+let generation = 0
+let generationAbort = new AbortController()
 
 function reset(): void {
+  generation++
+  generationAbort.abort()
+  generationAbort = new AbortController()
   order = []
   indexOf = new Map()
   cache.clear()
@@ -87,15 +96,22 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
 function fetchSegment(url: string, headers: Record<string, string>): Entry {
   const existing = cache.get(url)
   if (existing) return existing
-  const entry: Entry = { bytes: null, p: Promise.resolve(null) }
+  const entry: Entry = { bytes: null, upstreamRejected: false, p: Promise.resolve(null) }
+  const ownGeneration = generation
+  const signal = generationAbort.signal
   entry.p = withSlot(async () => {
+    if (signal.aborted || ownGeneration !== generation || !net.isOnline()) return null
     try {
-      const res = await net.fetch(url, { headers, redirect: 'follow' })
-      if (!res.ok) return null
+      const res = await net.fetch(url, { headers, redirect: 'follow', signal })
+      if (!res.ok) {
+        entry.upstreamRejected = true
+        return null
+      }
       const declared = Number(res.headers.get('content-length') ?? 0)
       if (declared > MAX_SEGMENT_BYTES) return null
       const buf = new Uint8Array(await res.arrayBuffer())
       if (buf.byteLength > MAX_SEGMENT_BYTES) return null
+      if (signal.aborted || ownGeneration !== generation || cache.get(url) !== entry) return null
       // 预取失败不重试:失败要么是链接过期(重取列表就好),要么是站点在限速 ——
       // 都不该由预取层去加压(红线)。
       entry.bytes = buf
@@ -107,13 +123,16 @@ function fetchSegment(url: string, headers: Record<string, string>): Entry {
     }
   })
   // 失败的条目不留在缓存里,否则后面每次都命中一个 null
-  void entry.p.then((b) => { if (!b) cache.delete(url) })
+  void entry.p.then((b) => {
+    if (!b && !entry.upstreamRejected && cache.get(url) === entry) cache.delete(url)
+  })
   cache.set(url, entry)
   return entry
 }
 
 /** hls.js 要到第 N 片时,把 N+1..N+PREFETCH_AHEAD 提前抓起来(已在缓存/抓取中的跳过)。 */
 export function prefetchAround(url: string, headers: Record<string, string>): void {
+  if (!net.isOnline()) return
   const i = indexOf.get(url)
   if (i === undefined) return
   for (let n = i + 1; n <= i + PREFETCH_AHEAD && n < order.length; n++) {
@@ -129,11 +148,17 @@ export function prefetchAround(url: string, headers: Record<string, string>): vo
 export async function tryServeSegment(
   url: string,
   headers: Record<string, string>,
-): Promise<Uint8Array | null> {
+): Promise<Uint8Array | typeof HLS_SEGMENT_UPSTREAM_REJECTED | null> {
   if (!indexOf.has(url)) return null
-  const entry = cache.get(url) ?? fetchSegment(url, headers)
+  // 当前片没有预取时直接交给代理取一次；这里只预取后续片，避免“预取失败 → 同片立刻直连”
+  // 把每次故障放大成两条并发请求。
+  const entry = cache.get(url)
+  if (!entry) {
+    prefetchAround(url, headers)
+    return null
+  }
   const bytes = entry.bytes ?? (await entry.p)
-  if (!bytes) return null
+  if (!bytes) return entry.upstreamRejected ? HLS_SEGMENT_UPSTREAM_REJECTED : null
   prefetchAround(url, headers)
   return bytes
 }

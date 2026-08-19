@@ -295,6 +295,7 @@ const PLAY_PAGE = `<!doctype html>
   .ep-badge-pill { display: inline-flex; align-items: center; font-family: var(--font-hand); font-size: 14px; color: var(--teal); background: var(--teal-wash); border: 1.5px solid var(--teal-line); border-radius: var(--r-pill); padding: 2px 12px; font-variant-numeric: tabular-nums }
   #buffering { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; align-items: center; gap: 9px; padding: 9px 14px; border-radius: var(--r-pill); color: var(--ink); background: var(--card); border: 1.5px solid var(--line-strong); box-shadow: var(--shadow-stick); pointer-events: none; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums }
   #buffering.show { display: flex }
+  #buffering.retryable { pointer-events: auto; cursor: pointer }
   .buffer-spin { width: 14px; height: 14px; border: 2px solid var(--teal-wash); border-top-color: var(--teal-mid); border-radius: 50%; animation: spin .7s linear infinite }
   @keyframes spin { to { transform: rotate(360deg) } }
   /* 只在真出错时才现（加载失败 / 这集没更新 / 线路解析不到）—— 平时不显示任何提示文字。
@@ -359,13 +360,27 @@ const PLAY_PAGE = `<!doctype html>
   var BUFFER_SAMPLE_MS = 6000, BUFFER_MIN_MEDIA_RATE = 1.15, bufferTimer = null, bufferToken = 0
   var resumeAfterBuffer = false, bufferAnchor = 0, savedRate = 1, savedMuted = false, internalSeek = false
   var bufferStartedAt = 0, bufferLastProgressAt = 0, bufferLastAhead = 0, bufferSampleAt = 0, bufferSampleAhead = 0
-  var internalSeekTimer = null, gateOnPlay = false, lineRequest = 0
+  var internalSeekTimer = null, gateOnPlay = false, lineRequest = 0, playGeneration = 0
+  var networkInterrupted = false, networkCheck = null, networkRetry = null, failureGeneration = -1
+  var resumeTime = 0, resumeWasPlaying = false, resumePending = false, resumeKey = '', recoverTimer = null
 
   window.addEventListener('storage', function(e){
     if (waitingForAuth && e.key === 'mapletools-xifan-auth-changed' && e.newValue) location.reload()
   })
   window.addEventListener('pagehide', function(){ stopAll() })
   window.addEventListener('pageshow', function(e){ if (e.persisted) location.reload() })
+  window.addEventListener('offline', function(){ rememberNetworkPosition(); networkInterrupted = true })
+  window.addEventListener('online', function(){
+    if (!networkInterrupted){ resumePending = false; resumeWasPlaying = false; return }
+    if (recoverTimer !== null) clearTimeout(recoverTimer)
+    var attempt = async function(second){
+      recoverTimer = null
+      if (!networkInterrupted) return
+      if (await checkNetwork()){ recoverCurrentLine(); return }
+      if (!second) recoverTimer = setTimeout(function(){ attempt(true) }, 3000)
+    }
+    recoverTimer = setTimeout(function(){ attempt(false) }, 600)
+  })
 
   function fail(txt, code){
     waitingForAuth = code === 'XIFAN_AUTH_REQUIRED'
@@ -375,6 +390,67 @@ const PLAY_PAGE = `<!doctype html>
   }
   function clearFail(){ waitingForAuth = false; $('err').classList.remove('show'); $('auth-link').classList.remove('show') }
   function inFrame(){ return frame.classList.contains('on') }
+
+  function rememberNetworkPosition(){
+    if (Number.isFinite(v.currentTime)) resumeTime = v.currentTime
+    resumeWasPlaying = resumeWasPlaying || !v.paused || resumeAfterBuffer
+    resumePending = true
+    resumeKey = (curPl ? curPl.source : 'none') + ':' + ep
+  }
+
+  function checkNetwork(){
+    if (!navigator.onLine) return Promise.resolve(false)
+    if (networkCheck) return networkCheck
+    var controller = new AbortController()
+    var timeout = setTimeout(function(){ controller.abort() }, 3000)
+    networkCheck = fetch('/api/health?playback=1', { cache: 'no-store', signal: controller.signal })
+      .then(function(r){ return r.ok })
+      .catch(function(){ return false })
+      .finally(function(){ clearTimeout(timeout); networkCheck = null })
+    return networkCheck
+  }
+
+  function holdForNetwork(retry){
+    rememberNetworkPosition()
+    networkInterrupted = true
+    if (retry) networkRetry = retry
+    cancelBufferGate(false)
+    try { v.pause() } catch (e) {}
+    $('bufferText').textContent = '网络已断开 · 恢复后继续当前线路'
+    var overlay = $('buffering')
+    overlay.classList.add('show', 'retryable')
+    overlay.onclick = function(){ checkNetwork().then(function(online){ if (online) recoverCurrentLine() }) }
+  }
+
+  function classifyMediaFailure(fallback, retry){
+    var generation = playGeneration
+    if (failureGeneration === generation) return
+    if (!navigator.onLine){ holdForNetwork(retry); return }
+    failureGeneration = generation
+    checkNetwork().then(function(online){
+      if (generation !== playGeneration) return
+      if (online) fallback()
+      else holdForNetwork(retry)
+    }).finally(function(){ if (failureGeneration === generation) failureGeneration = -1 })
+  }
+
+  function recoverCurrentLine(){
+    if (!networkInterrupted) return
+    var retry = networkRetry
+    var pl = curPl
+    networkInterrupted = false; networkRetry = null; clearFail(); hideBuffer()
+    $('buffering').onclick = null; $('buffering').classList.remove('retryable')
+    if (retry) retry()
+    else if (pl) playLine(pl)
+  }
+
+  v.addEventListener('loadedmetadata', function(){
+    if (!resumePending) return
+    if (resumeKey !== (curPl ? curPl.source : 'none') + ':' + ep){ resumePending = false; resumeWasPlaying = false; return }
+    try { v.currentTime = Math.min(resumeTime, Number.isFinite(v.duration) ? Math.max(0, v.duration - .25) : resumeTime) } catch (e) {}
+    if (resumeWasPlaying){ var rp = v.play(); if (rp && rp.catch) rp.catch(function(){}) }
+  })
+  v.addEventListener('playing', function(){ resumePending = false; resumeWasPlaying = false; networkInterrupted = false })
 
   function bufferedAhead(){
     for (var i = 0; i < v.buffered.length; i++){
@@ -388,7 +464,7 @@ const PLAY_PAGE = `<!doctype html>
     return Math.max(0, Math.min(BUFFER_TARGET, v.duration - v.currentTime - .25))
   }
 
-  function hideBuffer(){ $('buffering').classList.remove('show') }
+  function hideBuffer(){ var b = $('buffering'); b.classList.remove('show', 'retryable'); b.onclick = null }
 
   function clearInternalSeek(){
     if (internalSeekTimer !== null) clearTimeout(internalSeekTimer)
@@ -458,13 +534,15 @@ const PLAY_PAGE = `<!doctype html>
     $('bufferText').textContent = '描线中 · 还差 ' + Math.max(0, Math.ceil(goal - ahead)) + ' 秒'
     if (ahead + .25 >= goal || v.ended){ finishBufferGate(token); return }
     if (now - bufferLastProgressAt >= BUFFER_STALL_MS || now - bufferStartedAt >= BUFFER_MAX_MS){
-      fallbackBufferGate(token)
+      classifyMediaFailure(function(){ fallbackBufferGate(token) }, function(){ if (curPl) playLine(curPl) })
       return
     }
     if (now - bufferSampleAt >= BUFFER_SAMPLE_MS){
       var elapsed = Math.max(.001, (now - bufferSampleAt) / 1000)
       var mediaRate = (ahead - bufferSampleAhead) / elapsed + BUFFER_RATE
-      if (mediaRate < BUFFER_MIN_MEDIA_RATE) fallbackBufferGate(token)
+      if (mediaRate < BUFFER_MIN_MEDIA_RATE) {
+        classifyMediaFailure(function(){ fallbackBufferGate(token) }, function(){ if (curPl) playLine(curPl) })
+      }
     }
   }
 
@@ -497,8 +575,8 @@ const PLAY_PAGE = `<!doctype html>
     if (!curPl || inFrame() || !v.getAttribute('src')) return
     // hls.js 自己处理错误；Safari / iOS 原生 HLS 没有 hls 实例，仍需回退官方播放器。
     if (curPl.kind === 'hls' && hls) return
-    cancelBufferGate()
-    embed(curPl)
+    var failed = curPl
+    classifyMediaFailure(function(){ cancelBufferGate(); embed(failed) }, function(){ playLine(failed) })
   })
   v.addEventListener('seeking', function(){
     if (internalSeek) return
@@ -507,7 +585,11 @@ const PLAY_PAGE = `<!doctype html>
   })
   v.addEventListener('seeked', function(){ if (internalSeek) clearInternalSeek() })
   v.addEventListener('playing', function(){ if (gateOnPlay && !internalSeek && !resumeAfterBuffer) beginBufferGate(false) })
-  v.addEventListener('waiting', function(){ if (!internalSeek && !v.paused){ gateOnPlay = true; beginBufferGate(false) } })
+  v.addEventListener('waiting', function(){
+    if (internalSeek || v.paused) return
+    if (!navigator.onLine){ holdForNetwork(function(){ if (curPl) playLine(curPl) }); return }
+    gateOnPlay = true; beginBufferGate(false)
+  })
   v.addEventListener('progress', function(){ if (bufferTimer !== null) checkBufferGate(bufferToken) })
   v.addEventListener('pause', function(){
     // 用户主动暂停时停止自动恢复，并把进度退回本次缓冲开始的位置。
@@ -517,7 +599,7 @@ const PLAY_PAGE = `<!doctype html>
   v.addEventListener('ended', function(){ gateOnPlay = false; cancelBufferGate(false) })
 
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
-  function stopAll(){ cancelBufferGate(false); clearInternalSeek(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false }
+  function stopAll(){ playGeneration++; cancelBufferGate(false); clearInternalSeek(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false }
 
   function renderSources(){
     var box = $('sources'); box.textContent = ''
@@ -556,19 +638,34 @@ const PLAY_PAGE = `<!doctype html>
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
         // 90–120 秒足够覆盖网络抖动，同时避免旧配置一次抓 10–15 分钟、产生上百个分片请求。
+        var noRetry = { maxNumRetry: 0, retryDelayMs: 0, maxRetryDelayMs: 0 }
         hls = new Hls({
           maxBufferLength: 90,
           maxMaxBufferLength: 120,
           maxBufferSize: 96 * 1000 * 1000,
           backBufferLength: 60,
+          manifestLoadPolicy: { default: {
+            maxTimeToFirstByteMs: 10000, maxLoadTimeMs: 30000,
+            timeoutRetry: noRetry, errorRetry: noRetry
+          } },
+          playlistLoadPolicy: { default: {
+            maxTimeToFirstByteMs: 10000, maxLoadTimeMs: 30000,
+            timeoutRetry: noRetry, errorRetry: noRetry
+          } },
+          keyLoadPolicy: { default: {
+            maxTimeToFirstByteMs: 10000, maxLoadTimeMs: 30000,
+            timeoutRetry: noRetry, errorRetry: noRetry
+          } },
           fragLoadPolicy: { default: {
             maxTimeToFirstByteMs: 10000,
             maxLoadTimeMs: 30000,
-            timeoutRetry: { maxNumRetry: 1, retryDelayMs: 500, maxRetryDelayMs: 1000 },
-            errorRetry: { maxNumRetry: 1, retryDelayMs: 1000, maxRetryDelayMs: 2000 }
+            timeoutRetry: noRetry,
+            errorRetry: noRetry
           } }
         })
-        hls.on(Hls.Events.ERROR, function(e, data){ if (data && data.fatal) embed(pl) })
+        hls.on(Hls.Events.ERROR, function(e, data){
+          if (data && data.fatal) classifyMediaFailure(function(){ embed(pl) }, function(){ playLine(pl) })
+        })
         hls.loadSource(pl.url); hls.attachMedia(v)
         var pp = v.play(); if (pp && pp.catch) pp.catch(function(){})
       } else if (v.canPlayType('application/vnd.apple.mpegurl')){
@@ -613,14 +710,22 @@ const PLAY_PAGE = `<!doctype html>
   }
 
   async function selectLine(source){
-    if (curPl && curPl.source === source && !inFrame()) return
+    if (curPl && curPl.source === source && !inFrame() && !networkInterrupted) return
     var request = ++lineRequest
     clearFail()
+    stopAll()
     var pl = resolvedMap[source]
     if (!pl){
       try {
         pl = await resolveSource(source)
-      } catch (e){ if (request === lineRequest) fail('解析请求失败：' + (e && e.message || e), e && e.code); return }
+      } catch (e){
+        if (request !== lineRequest) return
+        classifyMediaFailure(
+          function(){ if (request === lineRequest) fail('解析请求失败：' + (e && e.message || e), e && e.code) },
+          function(){ if (request === lineRequest) selectLine(source) }
+        )
+        return
+      }
     }
     if (request !== lineRequest) return
     playLine(pl)
@@ -666,7 +771,10 @@ const PLAY_PAGE = `<!doctype html>
       if (d.first){ resolvedMap[1] = d.first; playLine(d.first) }
       else { fail('这一集解析不到 —— 可能还没更新，点上面别的集试试') }
     } catch (e){
-      fail('请求失败：' + (e && e.message || e))
+      classifyMediaFailure(
+        function(){ fail('请求失败：' + (e && e.message || e)) },
+        function(){ boot() }
+      )
     }
   }
   boot()

@@ -195,12 +195,6 @@ function rememberXifanUrl(pageUrl: string, url: string): void {
   })
 }
 
-function forgetXifanUrl(pageUrl: string): void {
-  xifanUrlCacheStore.update((cache) => {
-    delete cache[pageUrl]
-  })
-}
-
 async function prepareXifanBrowserCookies(): Promise<void> {
   if (legacyCookiesImported) return
   if (!legacyCookieImport) {
@@ -373,7 +367,7 @@ function decodeXifanPlayerUrl(raw: string): string {
 
 /**
  * 取一集要交给播放器的最终地址。缓存 key 用具体播放页而不是标题,避免同名番 / 不同线路串用。
- * `forceRefresh` 只供 <video> 已经报错后的单次兜底:丢掉旧地址回源重读,不探活、不重试。
+ * `forceRefresh` 只供 <video> 已经报错后的单次兜底:绕过旧地址回源重读,成功后才替换缓存。
  */
 export async function resolveEpPlaybackUrl(
   template: string | null,
@@ -389,8 +383,6 @@ export async function resolveEpPlaybackUrl(
 
   const pending = xifanUrlInflight.get(pageUrl)
   if (pending) return pending
-  if (forceRefresh) forgetXifanUrl(pageUrl)
-
   const task = (async (): Promise<string | null> => {
     let url: string | null = null
     if (template && !forceRefresh) {

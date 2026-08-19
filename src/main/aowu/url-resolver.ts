@@ -152,14 +152,16 @@ function persist(): void {
 }
 
 /** Resolve a watch URL to its signed CDN mp4 URL. Cached (TTL 24h, on disk) + coalesced. */
-export async function resolveAowuMp4(watchUrl: string): Promise<string> {
+export async function resolveAowuMp4(watchUrl: string, forceRefresh = false): Promise<string> {
   ensureLoaded()
   const cached = urlCache.get(watchUrl)
-  if (cached && Date.now() - cached.resolvedAt < CACHE_TTL_MS) {
+  if (!forceRefresh && cached && Date.now() - cached.resolvedAt < CACHE_TTL_MS) {
     return cached.url
   }
 
-  const existing = inflight.get(watchUrl)
+  // 强刷与普通解析分开合并；失败时旧缓存仍保留，只有拿到新地址才原子覆盖。
+  const inflightKey = `${watchUrl}\n${forceRefresh ? 'refresh' : 'normal'}`
+  const existing = inflight.get(inflightKey)
   if (existing) return existing
 
   const p = (async (): Promise<string> => {
@@ -169,10 +171,10 @@ export async function resolveAowuMp4(watchUrl: string): Promise<string> {
       persist()
       return url
     } finally {
-      inflight.delete(watchUrl)
+      inflight.delete(inflightKey)
     }
   })()
-  inflight.set(watchUrl, p)
+  inflight.set(inflightKey, p)
   return p
 }
 

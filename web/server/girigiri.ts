@@ -171,6 +171,7 @@ const PLAY_PAGE = `<!doctype html>
   .ep-badge-pill { display: inline-flex; align-items: center; font-family: var(--font-hand); font-size: 14px; color: var(--teal); background: var(--teal-wash); border: 1.5px solid var(--teal-line); border-radius: var(--r-pill); padding: 2px 12px; font-variant-numeric: tabular-nums }
   #err { display: none; align-items: center; gap: 12px; margin: 16px 0; padding: 10px 14px; border-radius: var(--r-card); font-size: 13px; font-weight: 600; background: var(--sakura-wash); border: 1.5px solid var(--sakura); color: #923d49 }
   #err.show { display: flex }
+  #err.retryable { cursor: pointer }
   .src-seg > button.unbound { color: var(--ink-faint); border: 1.5px dashed var(--line); border-radius: var(--r-pill) }
   .lines-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px }
   /* CSP style-src 不放行内联 style 属性（nonce 只保护 <style>/<script> 标签本身），
@@ -215,16 +216,82 @@ const PLAY_PAGE = `<!doctype html>
   var bgmId = q.get('bgmId') || ''
   var sourceOptions = __PLAYER_SOURCES__
   var v = $('v'), frame = $('frame')
-  var lines = [], eps = [], curPl = null, resolvedMap = {}, hls = null
+  var lines = [], eps = [], curPl = null, resolvedMap = {}, hls = null, lineRequest = 0, playGeneration = 0
+  var networkInterrupted = false, networkCheck = null, networkRetry = null, failureGeneration = -1
+  var resumeTime = 0, resumeWasPlaying = false, resumePending = false, resumeKey = '', recoverTimer = null
 
   window.addEventListener('pagehide', function(){ stopAll() })
   window.addEventListener('pageshow', function(e){ if (e.persisted) location.reload() })
+  window.addEventListener('offline', function(){ rememberNetworkPosition(); networkInterrupted = true })
+  window.addEventListener('online', function(){
+    if (!networkInterrupted){ resumePending = false; resumeWasPlaying = false; return }
+    if (recoverTimer !== null) clearTimeout(recoverTimer)
+    var attempt = async function(second){
+      recoverTimer = null
+      if (!networkInterrupted) return
+      if (await checkNetwork()){ recoverCurrentLine(); return }
+      if (!second) recoverTimer = setTimeout(function(){ attempt(true) }, 3000)
+    }
+    recoverTimer = setTimeout(function(){ attempt(false) }, 600)
+  })
 
   function fail(txt){ var e = $('err'); e.textContent = txt; e.classList.add('show') }
-  function clearFail(){ $('err').classList.remove('show') }
+  function clearFail(){ var e = $('err'); e.classList.remove('show', 'retryable'); e.onclick = null }
   function inFrame(){ return frame.classList.contains('on') }
+  function rememberNetworkPosition(){
+    if (Number.isFinite(v.currentTime)) resumeTime = v.currentTime
+    resumeWasPlaying = resumeWasPlaying || !v.paused
+    resumePending = true
+    resumeKey = (curPl ? curPl.source : 'none') + ':' + ep
+  }
+  function checkNetwork(){
+    if (!navigator.onLine) return Promise.resolve(false)
+    if (networkCheck) return networkCheck
+    var controller = new AbortController()
+    var timeout = setTimeout(function(){ controller.abort() }, 3000)
+    networkCheck = fetch('/api/health?playback=1', { cache: 'no-store', signal: controller.signal })
+      .then(function(r){ return r.ok })
+      .catch(function(){ return false })
+      .finally(function(){ clearTimeout(timeout); networkCheck = null })
+    return networkCheck
+  }
+  function holdForNetwork(retry){
+    rememberNetworkPosition()
+    networkInterrupted = true
+    if (retry) networkRetry = retry
+    try { v.pause() } catch (e) {}
+    fail('网络已断开，恢复后继续当前线路（点击此处可重试）')
+    var box = $('err'); box.classList.add('retryable')
+    box.onclick = function(){ checkNetwork().then(function(online){ if (online) recoverCurrentLine() }) }
+  }
+  function classifyMediaFailure(fallback, retry){
+    var generation = playGeneration
+    if (failureGeneration === generation) return
+    if (!navigator.onLine){ holdForNetwork(retry); return }
+    failureGeneration = generation
+    checkNetwork().then(function(online){
+      if (generation !== playGeneration) return
+      if (online) fallback()
+      else holdForNetwork(retry)
+    }).finally(function(){ if (failureGeneration === generation) failureGeneration = -1 })
+  }
+  function recoverCurrentLine(){
+    if (!networkInterrupted) return
+    var retry = networkRetry
+    var pl = curPl
+    networkInterrupted = false; networkRetry = null; clearFail()
+    if (retry) retry()
+    else if (pl) playLine(pl)
+  }
+  v.addEventListener('loadedmetadata', function(){
+    if (!resumePending) return
+    if (resumeKey !== (curPl ? curPl.source : 'none') + ':' + ep){ resumePending = false; resumeWasPlaying = false; return }
+    try { v.currentTime = Math.min(resumeTime, Number.isFinite(v.duration) ? Math.max(0, v.duration - .25) : resumeTime) } catch (e) {}
+    if (resumeWasPlaying){ var rp = v.play(); if (rp && rp.catch) rp.catch(function(){}) }
+  })
+  v.addEventListener('playing', function(){ resumePending = false; resumeWasPlaying = false; networkInterrupted = false })
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
-  function stopAll(){ destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank' }
+  function stopAll(){ playGeneration++; destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank' }
   function renderSources(){
     var box = $('sources'); box.textContent = ''
     sourceOptions.forEach(function(source){
@@ -259,14 +326,44 @@ const PLAY_PAGE = `<!doctype html>
     destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
     v.classList.remove('on'); frame.classList.add('on'); renderChips(); frame.src = officialPage()
   }
-  v.addEventListener('error', function(){ if (curPl && !inFrame() && v.getAttribute('src')) embed() })
+  v.addEventListener('error', function(){
+    if (!curPl || inFrame() || !v.getAttribute('src')) return
+    var failed = curPl
+    classifyMediaFailure(function(){ embed() }, function(){ playLine(failed) })
+  })
   function playLine(pl){
     curPl = pl; clearFail(); stopAll(); renderChips()
     v.classList.add('on'); frame.classList.remove('on')
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
-        hls = new Hls({ maxBufferLength: 600, maxMaxBufferLength: 900, maxBufferSize: 240 * 1000 * 1000, backBufferLength: 90 })
-        hls.on(Hls.Events.ERROR, function(e, data){ if (data && data.fatal) embed() })
+        var noRetry = { maxNumRetry: 0, retryDelayMs: 0, maxRetryDelayMs: 0 }
+        hls = new Hls({
+          maxBufferLength: 90,
+          maxMaxBufferLength: 120,
+          maxBufferSize: 96 * 1000 * 1000,
+          backBufferLength: 60,
+          manifestLoadPolicy: { default: {
+            maxTimeToFirstByteMs: 10000, maxLoadTimeMs: 30000,
+            timeoutRetry: noRetry, errorRetry: noRetry
+          } },
+          playlistLoadPolicy: { default: {
+            maxTimeToFirstByteMs: 10000, maxLoadTimeMs: 30000,
+            timeoutRetry: noRetry, errorRetry: noRetry
+          } },
+          keyLoadPolicy: { default: {
+            maxTimeToFirstByteMs: 10000, maxLoadTimeMs: 30000,
+            timeoutRetry: noRetry, errorRetry: noRetry
+          } },
+          fragLoadPolicy: { default: {
+            maxTimeToFirstByteMs: 10000,
+            maxLoadTimeMs: 30000,
+            timeoutRetry: noRetry,
+            errorRetry: noRetry
+          } }
+        })
+        hls.on(Hls.Events.ERROR, function(e, data){
+          if (data && data.fatal) classifyMediaFailure(function(){ embed() }, function(){ playLine(pl) })
+        })
         hls.loadSource(pl.url); hls.attachMedia(v)
         var pp = v.play(); if (pp && pp.catch) pp.catch(function(){})
       } else if (v.canPlayType('application/vnd.apple.mpegurl')) {
@@ -277,17 +374,27 @@ const PLAY_PAGE = `<!doctype html>
     }
   }
   async function selectLine(source){
-    if (curPl && curPl.source === source && !inFrame()) return
+    if (curPl && curPl.source === source && !inFrame() && !networkInterrupted) return
+    var request = ++lineRequest
     clearFail()
+    stopAll()
     var pl = resolvedMap[source]
     if (!pl){
       try {
         var r = await fetch('/api/girigiri/resolve?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep) + '&source=' + source)
         var d = await r.json()
-        if (!r.ok || !d || d.error || !d.url){ fail(d && d.error ? d.error : '这条线路解析不到'); return }
+        if (!r.ok || !d || d.error || !d.url){ if (request === lineRequest) fail(d && d.error ? d.error : '这条线路解析不到'); return }
         pl = d; resolvedMap[source] = pl
-      } catch (e){ fail('解析请求失败：' + (e && e.message || e)); return }
+      } catch (e){
+        if (request !== lineRequest) return
+        classifyMediaFailure(
+          function(){ if (request === lineRequest) fail('解析请求失败：' + (e && e.message || e)) },
+          function(){ if (request === lineRequest) selectLine(source) }
+        )
+        return
+      }
     }
+    if (request !== lineRequest) return
     playLine(pl)
   }
   function goEp(n){
@@ -312,7 +419,12 @@ const PLAY_PAGE = `<!doctype html>
       lines = d.lines || []; eps = d.eps || []; if (d.title) $('ttl').textContent = d.title
       renderEps(); renderChips()
       if (d.first){ resolvedMap[1] = d.first; playLine(d.first) } else fail('这一集解析不到，点上面其他线路试试')
-    } catch (e){ fail('请求失败：' + (e && e.message || e)) }
+    } catch (e){
+      classifyMediaFailure(
+        function(){ fail('请求失败：' + (e && e.message || e)) },
+        function(){ boot() }
+      )
+    }
   }
   boot()
 })();

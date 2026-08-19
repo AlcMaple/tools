@@ -1,5 +1,5 @@
 /**
- * 嗷呜的 /api/site/secure 协议实现:纯 HTTPS 复刻,不再开 BrowserWindow 抓页面(快 ~30 倍)。
+ * 嗷呜的 /api/site/secure 协议实现:走 Electron net 复刻,不再开 BrowserWindow 抓页面(快 ~30 倍)。
  *
  *   信封: { n: 12 字节 IV 的 b64, d: 密文+16 字节 GCM tag 的 b64 }
  *   算法: AES-256-GCM
@@ -13,15 +13,13 @@
  *   - 全局节流:任意两次 secure POST 之间随机间隔 500~2000ms,搜索翻页共用
  *     6 页约 6~9s,接近真人翻页。
  *   - **429/503 一律不重试** —— 那是限流信号,原样抛成 ERR_RATE_LIMITED,让 UI 提示等几分钟。
- *   - 401/403/解密失败允许用新密钥重试一次(部署时轮换密钥是合理原因)。
+ *   - 401/403/5xx 一律不重试；只有成功响应无法解密时允许换新密钥再试一次。
  *
  * 错误分类保留了「是我的问题还是协议变了」这个区分:
  *   ERR_UNREACHABLE       网络层失败或 5xx(临时)
  *   ERR_RATE_LIMITED      429,被盯上了,退避
  *   ERR_STRUCTURE_CHANGED 取密钥 / 解密 / 响应结构失败,多半是服务端改了协议,得改代码
  */
-import https from 'node:https'
-import { URL } from 'node:url'
 import {
   createCipheriv,
   createDecipheriv,
@@ -30,10 +28,9 @@ import {
 import { BrowserSession } from '../shared/browser-session'
 import { RateLimiter } from '../shared/rate-limit'
 import {
-  decodeBody,
   parseRetryAfter,
-  withTransientRetry,
 } from '../shared/http-client'
+import { netRequest } from '../shared/net-request'
 
 export const BASE_URL = 'https://www.aowu.tv'
 
@@ -63,18 +60,6 @@ const limiter = new RateLimiter({
   name: 'aowu',
 })
 
-// 包一层:压缩帧坏掉时抛成 ERR_STRUCTURE,让 UI 提示「站点可能改版了」而不是通用网络错误。
-function decodeBodyOrThrow(
-  headers: NodeJS.Dict<string | string[]>,
-  body: Buffer,
-): Buffer {
-  try {
-    return decodeBody(headers, body)
-  } catch (e) {
-    throw new Error(`${ERR_STRUCTURE}: 响应解压失败: ${(e as Error).message}`)
-  }
-}
-
 // ── HTTP primitives ───────────────────────────────────────────────────────────
 
 interface RawResponse {
@@ -83,91 +68,48 @@ interface RawResponse {
   retryAfter: number | null
 }
 
-function rawGet(url: string, signal?: AbortSignal): Promise<RawResponse> {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url)
-    const req = https.request(
-      {
-        method: 'GET',
-        hostname: u.hostname,
-        path: u.pathname + u.search,
-        headers: session.headers({
-          'sec-fetch-mode': 'navigate',
-          'sec-fetch-dest': 'document',
-          'sec-fetch-site': 'none',
-          'sec-fetch-user': '?1',
-          'upgrade-insecure-requests': '1',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        }),
-      },
-      (res) => {
-        session.ingestSetCookie(res.headers as { 'set-cookie'?: string[] })
-        const chunks: Buffer[] = []
-        res.on('data', (c) => chunks.push(c))
-        res.on('end', () => {
-          try {
-            resolve({
-              status: res.statusCode ?? 0,
-              body: decodeBodyOrThrow(res.headers, Buffer.concat(chunks)),
-              retryAfter: parseRetryAfter(res.headers['retry-after']),
-            })
-          } catch (e) {
-            reject(e)
-          }
-        })
-      }
-    )
-    req.on('error', reject)
-    if (signal) {
-      const onAbort = (): void => { req.destroy(new Error('aborted')) }
-      signal.addEventListener('abort', onAbort, { once: true })
-      req.once('close', () => signal.removeEventListener('abort', onAbort))
-    }
-    req.end()
+async function rawGet(url: string, signal?: AbortSignal): Promise<RawResponse> {
+  const res = await netRequest(url, {
+    method: 'GET',
+    headers: session.headers({
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-dest': 'document',
+      'sec-fetch-site': 'none',
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    }),
+    timeoutMs: 15_000,
+    maxBytes: 20 * 1024 * 1024,
+    signal,
   })
+  session.ingestSetCookie(res.headers)
+  return {
+    status: res.status,
+    body: res.body,
+    retryAfter: parseRetryAfter(res.headers['retry-after']),
+  }
 }
 
-function rawPost(url: string, body: string, signal?: AbortSignal): Promise<RawResponse> {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url)
-    const req = https.request(
-      {
-        method: 'POST',
-        hostname: u.hostname,
-        path: u.pathname + u.search,
-        headers: session.headers({
-          'Origin': BASE_URL,
-          'Content-Type': 'application/json',
-          'Content-Length': String(Buffer.byteLength(body)),
-          'Accept': 'application/json, text/plain, */*',
-        }),
-      },
-      (res) => {
-        session.ingestSetCookie(res.headers as { 'set-cookie'?: string[] })
-        const chunks: Buffer[] = []
-        res.on('data', (c) => chunks.push(c))
-        res.on('end', () => {
-          try {
-            resolve({
-              status: res.statusCode ?? 0,
-              body: decodeBodyOrThrow(res.headers, Buffer.concat(chunks)),
-              retryAfter: parseRetryAfter(res.headers['retry-after']),
-            })
-          } catch (e) {
-            reject(e)
-          }
-        })
-      }
-    )
-    req.on('error', reject)
-    if (signal) {
-      const onAbort = (): void => { req.destroy(new Error('aborted')) }
-      signal.addEventListener('abort', onAbort, { once: true })
-      req.once('close', () => signal.removeEventListener('abort', onAbort))
-    }
-    req.write(body)
-    req.end()
+async function rawPost(url: string, body: string, signal?: AbortSignal): Promise<RawResponse> {
+  const res = await netRequest(url, {
+    method: 'POST',
+    headers: session.headers({
+      'Origin': BASE_URL,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/plain, */*',
+    }),
+    body,
+    timeoutMs: 15_000,
+    maxBytes: 20 * 1024 * 1024,
+    signal,
   })
+  session.ingestSetCookie(res.headers)
+  return {
+    status: res.status,
+    body: res.body,
+    retryAfter: parseRetryAfter(res.headers['retry-after']),
+  }
 }
 
 // ── Key derivation ────────────────────────────────────────────────────────────
@@ -255,7 +197,7 @@ async function bootstrapKey(signal?: AbortSignal): Promise<Buffer> {
   _keyPromise = (async () => {
     let res: RawResponse
     try {
-      res = await withTransientRetry(() => rawGet(BASE_URL + '/', signal), signal)
+      res = await rawGet(BASE_URL + '/', signal)
     } catch (e) {
       throw new Error(`${ERR_UNREACHABLE}: 主页加载失败 (${(e as Error).message})`)
     }
@@ -302,7 +244,7 @@ interface CallOpts {
  *
  * 重试策略:
  *   429/503        不重试,抛限流 / 不可达
- *   401/403        清掉密钥重试一次(应对部署时的密钥轮换)
+ *   401/403        不重试,按协议 / 凭据失败上抛
  *   解密失败        清掉密钥重试一次(密钥可能中途换了)
  *   其他 5xx       不重试,抛不可达
  *   body code≠200  抛结构变更(协议漂移)
@@ -317,10 +259,7 @@ export async function callSecure<T = unknown>(
     const env = encryptEnvelope(key, payload)
     let r: RawResponse
     try {
-      r = await withTransientRetry(
-        () => rawPost(BASE_URL + SECURE_PATH, JSON.stringify(env), opts.signal),
-        opts.signal,
-      )
+      r = await rawPost(BASE_URL + SECURE_PATH, JSON.stringify(env), opts.signal)
     } catch (e) {
       throw new Error(`${ERR_UNREACHABLE}: ${(e as Error).message}`)
     }
@@ -333,7 +272,7 @@ export async function callSecure<T = unknown>(
       throw new Error(`${ERR_UNREACHABLE}: 服务器返回 HTTP 503${tail} — 服务暂时不可用`)
     }
     if (r.status === 401 || r.status === 403) {
-      throw new SecureRetryable(`HTTP ${r.status}: ${r.body.toString('utf8').slice(0, 200)}`)
+      throw new Error(`${ERR_STRUCTURE}: HTTP ${r.status}: ${r.body.toString('utf8').slice(0, 200)}`)
     }
     if (r.status >= 500) {
       throw new Error(`${ERR_UNREACHABLE}: HTTP ${r.status}`)
