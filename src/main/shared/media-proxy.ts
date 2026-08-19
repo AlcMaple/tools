@@ -12,14 +12,25 @@
  */
 import { protocol, net } from 'electron'
 import { DESKTOP_USER_AGENT } from './download-types'
-import { tryServeFromCache, SUPERSEDED_SEEK } from './media-cache'
-import { tryServeSegment, rememberPlaylist } from './hls-prefetch'
+import { MEDIA_CACHE_UPSTREAM_REJECTED, tryServeFromCache, SUPERSEDED_SEEK } from './media-cache'
+import { HLS_SEGMENT_UPSTREAM_REJECTED, tryServeSegment, rememberPlaylist } from './hls-prefetch'
 
 export const MEDIA_PROXY_SCHEME = 'mtmedia'
 
 // 播放列表是纯文本,20MB 已远超正常 —— 超了当损坏/恶意响应拒掉,不整份读进内存。
 const PLAYLIST_MAX_BYTES = 20 * 1024 * 1024
 const HLS_MIME = 'application/vnd.apple.mpegurl'
+const RESPONSE_HEADER_TIMEOUT_MS = 15_000
+const PLAYLIST_BODY_TIMEOUT_MS = 30_000
+const activeProxyRequests = new Set<AbortController>()
+let proxyGeneration = 0
+
+/** 换集 / 换源 / 退出时中止还没拿到响应头或仍在透传的旧媒体请求。 */
+export function disposeMediaProxyRequests(): void {
+  proxyGeneration++
+  for (const controller of activeProxyRequests) controller.abort()
+  activeProxyRequests.clear()
+}
 
 /**
  * 把 http(s) 直链包成同源代理 URL。非 http(s) 原样返回。
@@ -81,6 +92,7 @@ function rewritePlaylist(
 
 export function registerMediaProxy(): void {
   protocol.handle(MEDIA_PROXY_SCHEME, async (request) => {
+    const requestGeneration = proxyGeneration
     const params = new URL(request.url).searchParams
     const target = params.get('u')
     if (!target || !/^https?:\/\//i.test(target)) return new Response(null, { status: 400 })
@@ -98,14 +110,23 @@ export function registerMediaProxy(): void {
     // mp4:先给本地预抓缓存一次机会(见 media-cache.ts),不命中就走下面直连 —— 缓存
     // 只是加速层,不是必经之路。
     if (!wantsPlaylist) {
-      const cached = await tryServeFromCache(target, range, headers)
+      const cached = await tryServeFromCache(
+        target,
+        range,
+        headers,
+        () => requestGeneration !== proxyGeneration,
+      )
+      if (requestGeneration !== proxyGeneration) return new Response(null, { status: 503 })
       // 拖动进度条的中间位置,且已**观测确认**播放器换用了别的流(见 media-cache 的
       // SUPERSEDED_HOLD_MS):直接回错误、一个字节都不取。走直连反而制造出那串请求。
       if (cached === SUPERSEDED_SEEK) return new Response(null, { status: 503 })
+      if (cached === MEDIA_CACHE_UPSTREAM_REJECTED) return new Response(null, { status: 502 })
       if (cached) return new Response(cached.stream, { status: cached.status, headers: cached.headers })
       // HLS 分片是完整小文件,hls.js 不对它发 Range —— 带 Range 的一律直连不碰缓存。
       if (!range) {
         const seg = await tryServeSegment(target, headers)
+        if (requestGeneration !== proxyGeneration) return new Response(null, { status: 503 })
+        if (seg === HLS_SEGMENT_UPSTREAM_REJECTED) return new Response(null, { status: 502 })
         if (seg) {
           // Buffer 视图转成独立 ArrayBuffer 再回 —— Response 不收 Uint8Array 类型
           return new Response(seg.slice().buffer as ArrayBuffer, {
@@ -124,21 +145,44 @@ export function registerMediaProxy(): void {
     // AbortController(在返回流的 cancel() 里 abort)。否则 seek / 切集时被丢弃的那条流
     // 会在后台继续下载,占满源站并发连接,下一个视频直接卡死。
     const ac = new AbortController()
+    activeProxyRequests.add(ac)
+    let headerTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => ac.abort(), RESPONSE_HEADER_TIMEOUT_MS)
+    function onAbort(): void { release() }
+    function release(): void {
+      if (headerTimer) clearTimeout(headerTimer)
+      headerTimer = null
+      activeProxyRequests.delete(ac)
+      ac.signal.removeEventListener('abort', onAbort)
+    }
+    ac.signal.addEventListener('abort', onAbort, { once: true })
     try {
       const res = await net.fetch(target, { headers, redirect: 'follow', signal: ac.signal })
+      if (headerTimer) clearTimeout(headerTimer)
+      headerTimer = null
 
       // ── HLS 播放列表:整份读出来重写地址后回,不走流式透传 ─────────────────────
       if (wantsPlaylist || isPlaylistType(res.headers.get('content-type'))) {
         const declared = Number(res.headers.get('content-length') ?? 0)
         if (declared > PLAYLIST_MAX_BYTES) {
           ac.abort()
+          release()
           return new Response(null, { status: 502 })
         }
-        const buf = new Uint8Array(await res.arrayBuffer())
-        if (buf.byteLength > PLAYLIST_MAX_BYTES) return new Response(null, { status: 502 })
+        const bodyTimer = setTimeout(() => ac.abort(), PLAYLIST_BODY_TIMEOUT_MS)
+        let buf: Uint8Array
+        try {
+          buf = new Uint8Array(await res.arrayBuffer())
+        } finally {
+          clearTimeout(bodyTimer)
+        }
+        if (buf.byteLength > PLAYLIST_MAX_BYTES) {
+          release()
+          return new Response(null, { status: 502 })
+        }
         const text = new TextDecoder().decode(buf)
         // 真列表必以 #EXTM3U 开头。拿到 404 页 / 反爬 HTML 时原样回,别逐行当分片重写。
         if (!text.trimStart().startsWith('#EXTM3U')) {
+          release()
           return new Response(text, {
             status: res.status,
             headers: {
@@ -152,6 +196,7 @@ export function registerMediaProxy(): void {
         const rewritten = rewritePlaylist(text, finalUrl, referer ?? undefined, segments)
         // 记下分片顺序,后续分片请求就能滑动窗口并发预取(见 hls-prefetch.ts)
         rememberPlaylist(finalUrl, segments)
+        release()
         return new Response(rewritten, {
           status: res.status,
           // 重写后长度变了,不能透传上游 content-length,交给 Response 自己算。
@@ -170,22 +215,27 @@ export function registerMediaProxy(): void {
       out.set('cache-control', 'no-store')
 
       const reader = res.body?.getReader()
-      if (!reader) return new Response(null, { status: 502 })
+      if (!reader) {
+        release()
+        return new Response(null, { status: 502 })
+      }
       const stream = new ReadableStream<Uint8Array>({
         async pull(ctrl) {
           try {
             const { done, value } = await reader.read()
-            if (done) { ctrl.close(); return }
+            if (done) { release(); ctrl.close(); return }
             ctrl.enqueue(value)
-          } catch (e) { ctrl.error(e as Error) }
+          } catch (e) { release(); ctrl.error(e as Error) }
         },
         cancel() {
           ac.abort()
           reader.cancel().catch(() => { /* 已断开 */ })
+          release()
         },
       })
       return new Response(stream, { status: res.status, headers: out })
     } catch {
+      release()
       return new Response(null, { status: 502 })
     }
   })

@@ -304,7 +304,8 @@ declare global {
       getWatch: (watchUrl: string) => Promise<AowuWatchInfo>
       /** 搜索期的 /v/{id} URL → 用户可用的 /w/{token} URL。 */
       resolveShareUrl: (input: string) => Promise<string>
-      resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) => Promise<string>
+      /** 播放地址报错时 forceRefresh=true 绕过旧签名；成功后才替换缓存。 */
+      resolveMp4Url: (animeId: string, sourceIdx: number, ep: number, forceRefresh?: boolean) => Promise<string>
       startDownload: (
         title: string,
         animeId: string,

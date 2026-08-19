@@ -37,6 +37,8 @@ export interface NetOptions {
   maxBytes?: number
   /** 'follow'（默认）自动跟 3xx；'manual' 返回 3xx 原始响应。 */
   redirect?: 'follow' | 'manual'
+  /** 调用方生命周期结束时主动中止；与 timeout 共用同一条收口路径。 */
+  signal?: AbortSignal
   /**
    * 用某个 session 的 cookie 罐发请求（如 `persist:bili` 里的 B 站登录态）。
    * 不传走默认 session。传了就自动开 `useSessionCookies` —— net 默认**不带**
@@ -62,6 +64,7 @@ export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResul
     maxBytes,
     redirect = 'follow',
     session,
+    signal,
   } = opts
   return new Promise<NetResult>((resolve, reject) => {
     if (
@@ -71,16 +74,26 @@ export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResul
       reject(new Error(`invalid maxBytes: ${String(maxBytes)}`))
       return
     }
+    if (signal?.aborted) {
+      reject(new Error('aborted'))
+      return
+    }
 
     let settled = false
+    let timer: ReturnType<typeof setTimeout>
     const finish = (cb: () => void): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
       cb()
     }
 
     const request = net.request({ method, url, redirect, session, useSessionCookies: !!session })
+    const onAbort = (): void => {
+      finish(() => reject(new Error('aborted')))
+      try { request.abort() } catch { /* 已结束 */ }
+    }
 
     for (const [k, v] of Object.entries(headers)) {
       // 跳过由 Chromium 网络栈自己管理的头：手动 setHeader 它们会抛
@@ -92,10 +105,11 @@ export function netRequest(url: string, opts: NetOptions = {}): Promise<NetResul
       request.setHeader(k, v)
     }
 
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       finish(() => reject(new Error('timeout')))
       try { request.abort() } catch { /* 已结束 */ }
     }, timeoutMs)
+    signal?.addEventListener('abort', onAbort, { once: true })
 
     // redirect:'manual' 下 net **不会**把 3xx 当成 'response' 抛出来 —— 它发
     // 'redirect' 事件并挂起请求,不调 followRedirect() 就把请求作废、从 'error'

@@ -10,7 +10,7 @@ import { startSpeedBroadcast, stopSpeedBroadcast } from './shared/speed-tracker'
 import { setupUpdater } from './updater'
 import { setupBgmOfflineIndex } from './bgm/offline-index'
 import { initConsoleCapture, logInfo } from './shared/logger'
-import { MEDIA_PROXY_SCHEME, registerMediaProxy } from './shared/media-proxy'
+import { disposeMediaProxyRequests, MEDIA_PROXY_SCHEME, registerMediaProxy } from './shared/media-proxy'
 import { disposeMediaCache, sweepMediaCacheDir } from './shared/media-cache'
 import { disposeHlsPrefetch } from './shared/hls-prefetch'
 import { disposeXifanBackgroundWindow, isXifanBackgroundWindow } from './xifan/browser-challenge'
@@ -96,6 +96,7 @@ app.on('before-quit', () => {
   // 关应用」没有那个时机。
   disposeMediaCache()
   disposeHlsPrefetch()
+  disposeMediaProxyRequests()
   // 速度广播是常驻心跳，退出时停掉 —— 它每秒向所有窗口发送，退出竞态窗口里
   // 会向已销毁的渲染帧发送并抛错，别让它参与退出流程。
   stopSpeedBroadcast()

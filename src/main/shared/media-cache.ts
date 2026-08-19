@@ -15,7 +15,7 @@
 //
 // 生命周期:同一时刻只留一个 session(换集/换源 = target 变了 → 旧的中止 + 删文件);
 // 离开播放页(media:release)、退出应用各有一道确定性回收,idle 看门狗只是兜底(见 IDLE_MS)。
-import { app, session as electronSession, type Session as ElectronSession } from 'electron'
+import { app, net, session as electronSession, type Session as ElectronSession } from 'electron'
 import { EventEmitter } from 'events'
 import { promises as fsp, rmSync } from 'fs'
 import { join } from 'path'
@@ -135,6 +135,8 @@ interface Session {
   total: number
   done: boolean
   failed: boolean
+  /** 首个 / 分块请求拿到确定 HTTP 失败；代理不得再把同一请求直连重发。 */
+  upstreamRejected: boolean
   ac: AbortController
   ev: EventEmitter
   lastReadAt: number
@@ -149,6 +151,8 @@ interface Session {
   createdAt: number
   /** 冷 seek 起播闸门的耗时日志只打一次,防止同一个 session 里重复读触发重复打印。 */
   bufferGateLogged: boolean
+  /** 六个 worker 共用的下一次重连时刻，断网时把重试摊开，不能同一 tick 一起冲。 */
+  nextRetryAt: number
 }
 
 let current: Session | null = null
@@ -274,6 +278,20 @@ interface RangeResponse {
   resolvedUrl: string
 }
 
+class RangeHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`mp4 range status ${status}`)
+  }
+}
+
+class RangeTransportError extends Error {
+  constructor(readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause))
+  }
+}
+
+class RangeTruncatedError extends Error {}
+
 type CacheFile = Awaited<ReturnType<typeof fsp.open>>
 
 async function openRange(
@@ -286,11 +304,16 @@ async function openRange(
   /** 单块自己的 signal(字节静默看门狗用),它已经串接了 session 的 abort。 */
   signal: AbortSignal = s.ac.signal,
 ): Promise<RangeResponse> {
-  const response = await getRangeSession(networkSlot).fetch(target, {
-    headers: { ...headers, Range: `bytes=${start}-${end}` },
-    redirect: 'follow',
-    signal,
-  })
+  let response: Response
+  try {
+    response = await getRangeSession(networkSlot).fetch(target, {
+      headers: { ...headers, Range: `bytes=${start}-${end}` },
+      redirect: 'follow',
+      signal,
+    })
+  } catch (error) {
+    throw new RangeTransportError(error)
+  }
   const resolvedUrl = response.url || target
   if (response.status === 200) {
     const total = Number(response.headers.get('content-length') ?? 0)
@@ -299,7 +322,7 @@ async function openRange(
     }
     return { response, start: 0, end: total - 1, total, ranged: false, resolvedUrl }
   }
-  if (response.status !== 206) throw new Error(`mp4 range status ${response.status}`)
+  if (response.status !== 206) throw new RangeHttpError(response.status)
 
   const match = /^bytes\s+(\d+)-(\d+)\/(\d+)$/i.exec(response.headers.get('content-range') ?? '')
   if (!match) throw new Error('mp4 content-range missing')
@@ -346,7 +369,13 @@ async function writeRangeToFile(
   let received = 0
   try {
     for (;;) {
-      const { done, value } = await reader.read()
+      let read: ReadableStreamReadResult<Uint8Array>
+      try {
+        read = await reader.read()
+      } catch (error) {
+        throw new RangeTransportError(error)
+      }
+      const { done, value } = read
       if (done) break
       if (!value) continue
       if (received + value.byteLength > expected) throw new Error('mp4 range overflow')
@@ -359,7 +388,7 @@ async function writeRangeToFile(
     await reader.cancel().catch(() => { /* 上游已经断开 */ })
     throw error
   }
-  if (received !== expected) throw new Error('mp4 range truncated')
+  if (received !== expected) throw new RangeTruncatedError('mp4 range truncated')
   return received
 }
 
@@ -391,6 +420,20 @@ function staggerSleep(ms: number, signal: AbortSignal): Promise<void> {
     const timer = setTimeout(resolve, ms)
     signal.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
   })
+}
+
+function isChunkRetryable(error: unknown, attemptSignal: AbortSignal): boolean {
+  if (!net.isOnline()) return false
+  return attemptSignal.aborted || error instanceof RangeTransportError || error instanceof RangeTruncatedError
+}
+
+async function waitForChunkRetry(s: Session, attempt: number): Promise<number> {
+  const backoff = 1000 * (2 ** attempt) + Math.floor(Math.random() * 500)
+  const retryAt = Math.max(Date.now() + backoff, s.nextRetryAt)
+  s.nextRetryAt = retryAt + 500 // 多 worker 至少错开半秒
+  const waitMs = Math.max(0, retryAt - Date.now())
+  await staggerSleep(waitMs, s.ac.signal)
+  return waitMs
 }
 
 function waitForProgress(s: Session, timeoutMs = WAIT_TICK_MS): Promise<void> {
@@ -503,14 +546,19 @@ async function writeParallelRanges(
           slotLastDataAt[workerIndex] = lastByteAt
         })
         received += progress.received
-        if (received !== len) throw new Error('mp4 range truncated')
+        if (received !== len) throw new RangeTruncatedError('mp4 range truncated')
         return
       } catch (error) {
         received += progress.received // 已落盘的部分留着,下一次尝试从这里续
-        if (s.ac.signal.aborted || attempt >= CHUNK_RETRY_LIMIT) throw error
+        if (
+          s.ac.signal.aborted ||
+          attempt >= CHUNK_RETRY_LIMIT ||
+          !isChunkRetryable(error, ctl.signal)
+        ) throw error
+        const waitMs = await waitForChunkRetry(s, attempt)
         console.warn(
           `[media-cache] worker ${workerIndex} 偏移 ${absStart + received} 断流，` +
-          `第 ${attempt + 1} 次换连接续传（已收 ${received}/${len}）`,
+          `${Math.round(waitMs)}ms 后第 ${attempt + 1} 次换连接续传（已收 ${received}/${len}）`,
         )
         // 这条连接已经证明不可用,下一次尝试前强制新建(不等 STALE_CONN_IDLE_MS)
         slotLastDataAt[workerIndex] = 0
@@ -617,7 +665,8 @@ async function runFetchLoop(s: Session, target: string, headers: Record<string, 
     if (first.ranged) await writeParallelRanges(s, first.resolvedUrl, headers, first)
     else await writeSequentialResponse(s, first)
     s.done = true
-  } catch {
+  } catch (error) {
+    s.upstreamRejected = error instanceof RangeHttpError || error instanceof RangeTransportError
     s.failed = true
     s.ac.abort()
   } finally {
@@ -665,6 +714,7 @@ function ensureSession(
     total: 0,
     done: false,
     failed: false,
+    upstreamRejected: false,
     ac: new AbortController(),
     ev: new EventEmitter(),
     lastReadAt: Date.now(),
@@ -672,6 +722,7 @@ function ensureSession(
     readers: 0,
     createdAt: Date.now(),
     bufferGateLogged: false,
+    nextRetryAt: 0,
   }
   s.ev.setMaxListeners(0)
   current = s
@@ -706,6 +757,8 @@ export interface CachedResponse {
  * 它取消了,回什么都不会被消费;真去直连反而正好制造出我们想避免的那串请求。
  */
 export const SUPERSEDED_SEEK = Symbol('media-cache superseded seek')
+/** 缓存层已经拿到确定 HTTP 失败，代理不得再直连重发同一个 Range。 */
+export const MEDIA_CACHE_UPSTREAM_REJECTED = Symbol('media-cache upstream rejected')
 
 /**
  * 防抖窗口里被更新的 seek 取代之后的挂起观察(判据见 SUPERSEDED_HOLD_MS 的注释)。
@@ -741,7 +794,8 @@ export async function tryServeFromCache(
   target: string,
   rangeHeader: string | null,
   headers: Record<string, string>,
-): Promise<CachedResponse | typeof SUPERSEDED_SEEK | null> {
+  isStale: () => boolean = () => false,
+): Promise<CachedResponse | typeof SUPERSEDED_SEEK | typeof MEDIA_CACHE_UPSTREAM_REJECTED | null> {
   let path: string
   try { path = new URL(target).pathname } catch { return null }
   if (!/\.mp4$/i.test(path)) return null
@@ -775,11 +829,13 @@ export async function tryServeFromCache(
   const mySeq = ++seekSeq
   if (!coversOffset(target, start)) {
     await sleep(SEEK_DEBOUNCE_MS)
+    if (isStale()) return SUPERSEDED_SEEK
     if (mySeq !== seekSeq && (await holdSuperseded(target, start, mySeq)) === 'discard') {
       return SUPERSEDED_SEEK
     }
   }
 
+  if (isStale()) return SUPERSEDED_SEEK
   const s = ensureSession(target, start, headers, mySeq)
   if (!s) return null
 
@@ -792,7 +848,8 @@ export async function tryServeFromCache(
       s.ev.once('progress', done)
     })
   }
-  if (s.failed || s.total === 0) return null
+  if (s.failed) return s.upstreamRejected ? MEDIA_CACHE_UPSTREAM_REJECTED : null
+  if (s.total === 0) return null
 
   // s.total = 资源总长度(content-range 尾部的 `/N`)。本次响应从 start 一直给到文件尾,
   // 读取端跟着写入端走,所以一个请求就能喂完整集。

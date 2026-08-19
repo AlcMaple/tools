@@ -54,13 +54,13 @@ export function registerAowuIpc(): void {
   // 用户粘进外部下载器才拿得到真正的 mp4。
   ipcMain.handle(
     'aowu:resolve-mp4-url',
-    async (_event, animeId: string, sourceIdx: number, ep: number): Promise<string> => {
+    async (_event, animeId: string, sourceIdx: number, ep: number, forceRefresh = false): Promise<string> => {
       if (!animeId || !sourceIdx) throw new Error('Missing animeId or sourceIdx')
       if (!/^[A-Za-z0-9_-]+$/.test(animeId)) {
         throw new Error(`任务数据已过期（aowuId="${animeId}"）— 请删除该任务并重新搜索添加`)
       }
       const watchUrl = buildAowuWatchUrl(animeId, sourceIdx, ep)
-      return resolveAowuMp4(watchUrl)
+      return resolveAowuMp4(watchUrl, forceRefresh)
     }
   )
 
