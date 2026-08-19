@@ -96,13 +96,13 @@ export async function issueSession(c: Context, s: Session): Promise<void> {
 
 // 预编译语句（oauth.ts 复用其中带 export 的几条）
 export const findByName = db.prepare<[string]>(
-  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, token_version, security_question, security_answer_hash, created_at FROM users WHERE username = ?',
+  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, token_version, security_question, security_answer_hash, created_at FROM users WHERE username = ?',
 )
 export const findByEmail = db.prepare<[string]>(
-  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, token_version, security_question, security_answer_hash, created_at FROM users WHERE email = ?',
+  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, token_version, security_question, security_answer_hash, created_at FROM users WHERE email = ?',
 )
 export const findById = db.prepare<[number]>(
-  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, token_version, security_question, security_answer_hash, created_at FROM users WHERE id = ?',
+  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, token_version, security_question, security_answer_hash, created_at FROM users WHERE id = ?',
 )
 const insertUser = db.prepare<[string, string, string]>(
   'INSERT INTO users (username, pass_hash, password_enabled, created_at) VALUES (?, ?, 1, ?)',
@@ -125,6 +125,7 @@ const setSecurity = db.prepare<[string, string, number]>(
 const setEmailVerified = db.prepare<[string, number]>(
   'UPDATE users SET email_verified_at = ? WHERE id = ? AND email_verified_at IS NULL',
 )
+const setBgmUid = db.prepare<[string, number]>('UPDATE users SET bgm_uid = ? WHERE id = ?')
 
 const findChallenge = db.prepare<[string]>(
   'SELECT id, email, code_hash, attempts, created_at, expires_at, verified_at, consumed_at FROM email_challenge WHERE id = ?',
@@ -171,6 +172,7 @@ export interface UserRow {
   password_enabled: number
   email: string | null
   email_verified_at: string | null
+  bgm_uid: string
   token_version: number
   security_question: string | null
   security_answer_hash: string | null
@@ -242,7 +244,10 @@ export function clientIp(c: Context): string {
 
 async function readJson(c: Context): Promise<Record<string, unknown> | null> {
   try {
-    return (await c.req.json()) as Record<string, unknown>
+    const body = await c.req.json() as unknown
+    return body && typeof body === 'object' && !Array.isArray(body)
+      ? body as Record<string, unknown>
+      : null
   } catch {
     return null
   }
@@ -748,6 +753,7 @@ auth.get('/me', async (c) => {
     // 只回显已核验的邮箱地址本身（设置页展示用）；密保仍只报「设没设」，
     // **绝不回显问题和答案** —— 问题本身也是秘密，泄露了等于告诉别人该去查什么。
     email: row.email && row.email_verified_at ? row.email : null,
+    bgmUid: row.bgm_uid,
     hasSecurity: !!row.security_answer_hash,
     hasEmail: !!row.email && !!row.email_verified_at,
     hasPassword: row.password_enabled === 1,
@@ -858,14 +864,15 @@ auth.post('/settings', async (c) => {
   const s = await getSession(c)
   if (!s) return c.json({ error: '未登录' }, 401)
   const row = findById.get(s.uid) as UserRow
-  if (row.password_enabled !== 1) {
-    return c.json(
-      { error: '该账号使用邮箱验证码登录，不支持密码与密保设置', hasPassword: false },
-      403,
-    )
-  }
   const body = await readJson(c)
   if (!body) return c.json({ error: '请求格式错误' }, 400)
+
+  const hasBgmUid = 'bgmUid' in body
+  if (hasBgmUid && typeof body.bgmUid !== 'string') return c.json({ error: 'Bangumi 用户标识不合法' }, 400)
+  const bgmUid = hasBgmUid ? str(body.bgmUid).trim() : ''
+  if (bgmUid.length > 100 || /[\u0000-\u001f\u007f]/.test(bgmUid)) {
+    return c.json({ error: 'Bangumi 用户标识不合法' }, 400)
+  }
 
   const current = str(body.currentPassword)
   const next = str(body.newPassword)
@@ -873,45 +880,62 @@ auth.post('/settings', async (c) => {
   const questionId = str(body.questionId)
   const answer = str(body.answer)
 
-  const settingsIpKey = `settings-ip:${clientIp(c)}`
-  const settingsUserKey = `settings-user:${s.uid}`
-  if (
-    rateLimited(settingsIpKey, LOGIN_MAX_PER_IP, WINDOW) ||
-    rateLimited(settingsUserKey, LOGIN_MAX_PER_USER, WINDOW)
-  ) {
-    return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
-  }
-  if (!(await verifySecret(current, row.pass_hash))) {
-    return c.json({ error: '原始密码不正确' }, 401)
-  }
-
   const wantPassword = next.length > 0 || confirm.length > 0
   const wantSecurity = questionId.length > 0 || answer.length > 0
-  if (!wantPassword && !wantSecurity) return c.json({ error: '没有要修改的内容' }, 400)
+  const wantAccountSecurity = wantPassword || wantSecurity
+  if (!wantAccountSecurity && !hasBgmUid) return c.json({ error: '没有要修改的内容' }, 400)
 
-  if (wantSecurity) {
-    if (!QUESTION_IDS.has(questionId)) return c.json({ error: '请选择一个密保问题' }, 400)
-    const a = normalizeAnswer(answer)
-    if (!a || a.length > ANSWER_MAX) return c.json({ error: '请填写密保答案' }, 400)
-    setSecurity.run(questionId, await hashSecret(a), s.uid)
-  }
-
-  if (wantPassword) {
-    if (next.length < PASSWORD_MIN || next.length > PASSWORD_MAX) {
-      return c.json({ error: `新密码需 ${PASSWORD_MIN}–${PASSWORD_MAX} 个字符` }, 400)
+  if (wantAccountSecurity) {
+    if (row.password_enabled !== 1) {
+      return c.json(
+        { error: '该账号使用邮箱验证码登录，不支持密码与密保设置', hasPassword: false },
+        403,
+      )
     }
-    if (next !== confirm) return c.json({ error: '两次输入的新密码不一致' }, 400)
-    bumpPassword.run(await hashSecret(next), s.uid)
-    // token_version 变了 → 刚才那张 token（含当前这台设备的）全废，给本机补发一张新的，
-    // 否则改完密码自己也被踢下线。其它设备上的老 token 依然失效，正是我们要的。
-    const fresh = findById.get(s.uid) as UserRow
-    await issueSession(c, { uid: fresh.id, username: fresh.username, tv: fresh.token_version })
+
+    const settingsIpKey = `settings-ip:${clientIp(c)}`
+    const settingsUserKey = `settings-user:${s.uid}`
+    if (
+      rateLimited(settingsIpKey, LOGIN_MAX_PER_IP, WINDOW) ||
+      rateLimited(settingsUserKey, LOGIN_MAX_PER_USER, WINDOW)
+    ) {
+      return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+    }
+    if (!(await verifySecret(current, row.pass_hash))) {
+      return c.json({ error: '原始密码不正确' }, 401)
+    }
+
+    if (wantSecurity) {
+      if (!QUESTION_IDS.has(questionId)) return c.json({ error: '请选择一个密保问题' }, 400)
+      const a = normalizeAnswer(answer)
+      if (!a || a.length > ANSWER_MAX) return c.json({ error: '请填写密保答案' }, 400)
+      setSecurity.run(questionId, await hashSecret(a), s.uid)
+    }
+
+    if (wantPassword) {
+      if (next.length < PASSWORD_MIN || next.length > PASSWORD_MAX) {
+        return c.json({ error: `新密码需 ${PASSWORD_MIN}–${PASSWORD_MAX} 个字符` }, 400)
+      }
+      if (next !== confirm) return c.json({ error: '两次输入的新密码不一致' }, 400)
+      bumpPassword.run(await hashSecret(next), s.uid)
+      // token_version 变了 → 刚才那张 token（含当前这台设备的）全废，给本机补发一张新的，
+      // 否则改完密码自己也被踢下线。其它设备上的老 token 依然失效，正是我们要的。
+      const fresh = findById.get(s.uid) as UserRow
+      await issueSession(c, { uid: fresh.id, username: fresh.username, tv: fresh.token_version })
+    }
+
+    buckets.delete(settingsIpKey)
+    buckets.delete(settingsUserKey)
   }
 
+  if (hasBgmUid) setBgmUid.run(bgmUid, s.uid)
   const after = findById.get(s.uid) as UserRow
-  buckets.delete(settingsIpKey)
-  buckets.delete(settingsUserKey)
-  return c.json({ ok: true, hasSecurity: !!after.security_answer_hash, hasPassword: true })
+  return c.json({
+    ok: true,
+    bgmUid: after.bgm_uid,
+    hasSecurity: !!after.security_answer_hash,
+    hasPassword: after.password_enabled === 1,
+  })
 })
 
 /**

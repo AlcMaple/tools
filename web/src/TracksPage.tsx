@@ -13,6 +13,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import type {
   AnimeHit,
+  BgmImportStatus,
   GirigiriBinding,
   GirigiriCandidate,
   GirigiriSearchHit,
@@ -31,6 +32,7 @@ import {
   fetchGirigiriCaptcha,
   fetchXifanCaptcha,
   girigiriPlayPageUrl,
+  importTracksFromBgm,
   locateGirigiri,
   locateXifan,
   playPageUrl,
@@ -140,6 +142,7 @@ export function TracksPage(): JSX.Element {
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [girigiriSearchTrack, setGirigiriSearchTrack] = useState<Track | null>(null)
   const [adding, setAdding] = useState(false) // 加番搜索弹窗
+  const [importOpen, setImportOpen] = useState(false)
   const today = useMemo(todayBgmId, [])
 
   // 秒开缓存 + 后台校验:缓存先渲染,服务器响应随后整份校正。缓存只是首屏优化
@@ -370,6 +373,15 @@ export function TracksPage(): JSX.Element {
       .catch((e: Error) => setError(e.message))
   }
 
+  const importFromBgm = (
+    bgmUserId: string,
+    onProgress: (status: BgmImportStatus) => void,
+  ): Promise<BgmImportStatus> => {
+    if (!user) return Promise.reject(new Error('未登录'))
+    setError(null)
+    return runTracksMutation(user.username, () => importTracksFromBgm(bgmUserId, onProgress))
+  }
+
   const counts = useMemo(() => {
     const c = { all: 0, watching: 0, plan: 0, considering: 0, done: 0 }
     for (const t of tracks ?? []) {
@@ -438,6 +450,10 @@ export function TracksPage(): JSX.Element {
         </div>
         {user && (
           <div className="row">
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setImportOpen(true)}>
+              <Ic name="refresh" cls="ic ic-sm" />
+              从 Bangumi 导入
+            </button>
             <button className="btn btn-sm btn-primary" type="button" onClick={() => setAdding(true)}>
               <Ic name="plus" cls="ic ic-sm" />
               加番
@@ -613,6 +629,14 @@ export function TracksPage(): JSX.Element {
         />
       )}
 
+      {importOpen && user && (
+        <BgmImportModal
+          initialUserId={user.bgmUid}
+          onImport={importFromBgm}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
+
       {confirmingTrack && (
         <ConfirmRemoveModal
           t={confirmingTrack}
@@ -621,6 +645,164 @@ export function TracksPage(): JSX.Element {
         />
       )}
     </>
+  )
+}
+
+function emptyImportStatus(state: BgmImportStatus['state'] = 'running'): BgmImportStatus {
+  return { state, total: 0, processed: 0, added: 0, updated: 0, failed: 0, error: null }
+}
+
+function BgmImportModal({
+  initialUserId,
+  onImport,
+  onClose,
+}: {
+  initialUserId: string
+  onImport: (bgmUserId: string, onProgress: (status: BgmImportStatus) => void) => Promise<BgmImportStatus>
+  onClose: () => void
+}): JSX.Element {
+  const [bgmUserId, setBgmUserId] = useState(initialUserId)
+  const [view, setView] = useState<'idle' | BgmImportStatus['state']>('idle')
+  const [status, setStatus] = useState<BgmImportStatus>(() => emptyImportStatus())
+  const mounted = useRef(true)
+  const busy = view === 'running'
+
+  useEffect(() => {
+    // StrictMode 会执行 setup → cleanup → setup；第二次 setup 必须把标记恢复。
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !busy) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, onClose])
+
+  const start = async (): Promise<void> => {
+    const userId = bgmUserId.trim()
+    if (!userId) {
+      setView('error')
+      setStatus({ ...emptyImportStatus('error'), error: '请输入 Bangumi UID 或用户名' })
+      return
+    }
+
+    setView('running')
+    setStatus(emptyImportStatus())
+    try {
+      const result = await onImport(userId, (next) => {
+        if (!mounted.current) return
+        setStatus(next)
+        setView(next.state)
+      })
+      if (!mounted.current) return
+      setStatus(result)
+      setView(result.state)
+      if (result.state === 'done') {
+        toast(`Bangumi 导入完成：新增 ${result.added} 部，更新 ${result.updated} 部`)
+      }
+    } catch (error) {
+      if (!mounted.current) return
+      setView('error')
+      setStatus((previous) => ({
+        ...previous,
+        state: 'error',
+        error: error instanceof Error ? error.message : 'Bangumi 导入失败',
+      }))
+    }
+  }
+
+  const percentage = status.total > 0
+    ? Math.min(100, Math.round((status.processed / status.total) * 100))
+    : view === 'done' ? 100 : 0
+  const progressText = view === 'idle'
+    ? '等待开始导入'
+    : view === 'running'
+      ? status.total > 0
+        ? `已处理 ${status.processed}/${status.total} 部${status.processed < status.total ? ` · 正在处理第 ${status.processed + 1} 部` : ''}`
+        : '正在读取 Bangumi 收藏…'
+      : view === 'done'
+        ? `导入完成 · 共处理 ${status.processed}/${status.total} 部`
+        : status.error || '导入没有完成'
+
+  return (
+    <div
+      className="dlg-backdrop open"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose()
+      }}
+    >
+      <div role="dialog" aria-modal="true" aria-label="从 Bangumi 导入" className="dlg bgm-import-dlg">
+        <span className="tape tl teal" />
+        <button
+          type="button"
+          className="dlg-close"
+          onClick={onClose}
+          disabled={busy}
+          aria-label="关闭"
+          title={busy ? '导入完成后可关闭' : '关闭'}
+        >
+          <Ic name="x" cls="ic" />
+        </button>
+
+        <h3 className="dlg-title">从 Bangumi 导入</h3>
+        <p className="dlg-sub">再次导入时，Bangumi 有值的标题、进度、状态和封面会覆盖本站；自定义标签与播放绑定会保留。</p>
+
+        <label className="field mb16" htmlFor="bgm-import-user-id">
+          <span className="field-label">Bangumi UID / 用户名</span>
+          <span className="field-row">
+            <input
+              id="bgm-import-user-id"
+              type="text"
+              value={bgmUserId}
+              onChange={(event) => setBgmUserId(event.target.value)}
+              placeholder="数字 UID 或自定义用户名"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={100}
+              disabled={busy}
+              autoFocus
+            />
+          </span>
+        </label>
+
+        <div className={`bgm-import-progress${view === 'error' ? ' has-error' : ''}`}>
+          <div className="bgm-import-progress-head" aria-live="polite">
+            <span>{progressText}</span>
+            <b>{percentage}%</b>
+          </div>
+          <div
+            className="prog"
+            role="progressbar"
+            aria-label="Bangumi 导入进度"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percentage}
+          >
+            <i style={{ width: `${percentage}%` }} />
+          </div>
+          <div className="bgm-import-counts">
+            <div><b>{status.added}</b><span>新增</span></div>
+            <div><b>{status.updated}</b><span>更新</span></div>
+            <div><b>{status.failed}</b><span>失败</span></div>
+          </div>
+        </div>
+
+        <div className="dlg-actions bgm-import-actions">
+          <button className="btn btn-ghost" type="button" onClick={onClose} disabled={busy}>
+            {view === 'idle' ? '取消' : busy ? '导入中' : '关闭'}
+          </button>
+          <button className="btn btn-primary" type="button" onClick={() => void start()} disabled={busy}>
+            {busy ? <Spinner size={16} /> : <Ic name="refresh" cls="ic ic-sm" />}
+            {busy ? '正在导入' : view === 'done' ? '再次导入' : view === 'error' ? '重新尝试' : '开始导入'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

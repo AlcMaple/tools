@@ -28,21 +28,25 @@ import { toast } from './Toast'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 
-type Module = 'profile' | 'security' | 'xifan'
+type Module = 'profile' | 'security' | 'xifan' | 'sync'
+
+function moduleFromHash(): Module {
+  if (window.location.hash === '#/settings/xifan') return 'xifan'
+  if (window.location.hash === '#/settings/security') return 'security'
+  if (window.location.hash === '#/settings/sync') return 'sync'
+  return 'profile'
+}
 
 export function SettingsPage(): JSX.Element | null {
   const { user } = useAuth()
-  const [module, setModule] = useState<Module>(() => (
-    window.location.hash === '#/settings/xifan' ? 'xifan' : 'profile'
-  ))
+  const [module, setModule] = useState<Module>(moduleFromHash)
   const [xifanOpened, setXifanOpened] = useState(module === 'xifan')
 
   useEffect(() => {
     const onHashChange = (): void => {
-      if (window.location.hash === '#/settings/xifan') {
-        setXifanOpened(true)
-        setModule('xifan')
-      } else if (window.location.hash === '#/settings') setModule('profile')
+      const next = moduleFromHash()
+      if (next === 'xifan') setXifanOpened(true)
+      setModule(next)
     }
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
@@ -51,7 +55,7 @@ export function SettingsPage(): JSX.Element | null {
   const selectModule = (next: Module): void => {
     setModule(next)
     if (next === 'xifan') setXifanOpened(true)
-    const hash = next === 'xifan' ? '#/settings/xifan' : '#/settings'
+    const hash = next === 'profile' ? '#/settings' : `#/settings/${next}`
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`)
   }
 
@@ -168,12 +172,14 @@ export function SettingsPage(): JSX.Element | null {
               <span className="pocket-hint">待开发</span>
             </button>
           </section>
-          <section className="pocket">
-            <button className="pocket-tab" type="button" disabled style={{ cursor: 'default' }}>
+          <section className={`pocket${module === 'sync' ? ' open' : ''}`} data-mod="sync">
+            <button className="pocket-tab" type="button" onClick={() => selectModule('sync')}>
               <Ic name="refresh" />
               数据同步
-              <span className="pocket-hint">待开发</span>
+              <span className="pocket-hint">Bangumi 收藏导入</span>
+              <Ic name="chev" cls="ic chev" />
             </button>
+            <div className="pocket-body">{module === 'sync' && <BangumiSyncModule />}</div>
           </section>
         </div>
 
@@ -201,6 +207,87 @@ function Kv({ k, v, note }: { k: string; v: string; note?: string }): JSX.Elemen
         {note && <span className="muted">{note}</span>}
       </span>
     </div>
+  )
+}
+
+function BangumiSyncModule(): JSX.Element | null {
+  const { user } = useAuth()
+  const [bgmUid, setBgmUid] = useState(user?.bgmUid ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (user) setBgmUid(user.bgmUid)
+  }, [user])
+
+  if (!user) return null
+  const changed = bgmUid.trim() !== user.bgmUid
+
+  const submit = async (): Promise<void> => {
+    const next = bgmUid.trim()
+    setBusy(true)
+    setError('')
+    setSaved(false)
+    try {
+      await auth.saveBgmUid(next)
+      setBgmUid(next)
+      setSaved(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存失败，请稍后再试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form
+      className="field-stack"
+      style={{ paddingTop: 12 }}
+      onSubmit={(event) => {
+        event.preventDefault()
+        void submit()
+      }}
+    >
+      <Field label="Bangumi UID / 用户名" htmlFor="settings-bgm-uid">
+        <span className="field-row">
+          <input
+            id="settings-bgm-uid"
+            type="text"
+            value={bgmUid}
+            onChange={(event) => {
+              setBgmUid(event.target.value)
+              setSaved(false)
+              setError('')
+            }}
+            placeholder="数字 UID 或自定义用户名"
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={100}
+            aria-describedby="settings-bgm-hint"
+          />
+        </span>
+        <span id="settings-bgm-hint" className="field-hint">追番页导入时会自动带上这个值</span>
+      </Field>
+      <div className="row">
+        <span className="kv-act">
+          <button className="btn btn-sm btn-primary" type="submit" disabled={busy || !changed}>
+            {busy ? '保存中…' : '保存'}
+          </button>
+          <span
+            className={`save-note${saved ? ' show' : ''}`}
+            role="status"
+            aria-live="polite"
+            style={{ left: 'calc(100% + 10px)', right: 'auto', top: '50%', transform: 'translateY(-50%)' }}
+          >
+            已保存
+          </span>
+        </span>
+      </div>
+      <p className={`form-note err${error ? '' : ' empty'}`} role="alert" aria-live="polite">
+        {error}
+      </p>
+    </form>
   )
 }
 

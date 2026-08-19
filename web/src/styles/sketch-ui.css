@@ -200,6 +200,8 @@
 .rig-inline .rig-bubble { margin: 0; max-width: 240px; }
 /* 内联立绘：人物在左、气泡在右并排，尾巴从气泡左缘指回人物 */
 .rig-inline .rig-bubble::after { left: -7px; bottom: 22px; transform: rotate(135deg) skew(8deg, 8deg); }
+/* 基础 .rig-box 定义在窄屏规则之后，需在这里重新收口，否则手机会同时出现内联与桌面驻场两张立绘。 */
+@media (max-width: 960px) { .rig-box { display: none; } }
 
 .bubble {
   position: relative;
