@@ -132,6 +132,7 @@ ensureColumn('users', 'security_question', 'security_question TEXT')
 ensureColumn('users', 'security_answer_hash', 'security_answer_hash TEXT')
 ensureColumn('users', 'email', 'email TEXT')
 ensureColumn('users', 'email_verified_at', 'email_verified_at TEXT')
+ensureColumn('users', 'bgm_uid', "bgm_uid TEXT NOT NULL DEFAULT ''")
 // 老账号都有真实密码,迁移时统一保持可用;只有新建的邮箱验证码账号显式写 0。
 ensureColumn(
   'users',

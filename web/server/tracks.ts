@@ -9,6 +9,13 @@ import { join } from 'node:path'
 import { isRecentAir } from '../shared/anime-age'
 import { epsOf } from './bgm/anime-index'
 import { getCalendarMetadata, type CalendarMetadata } from './bgm/calendar'
+import {
+  BGM_COLLECTION_PAGE_SIZE,
+  BgmCollectionError,
+  fetchBgmCollectionPage,
+  normalizeBgmCollectionAnime,
+  type BgmCollectionAnime,
+} from './bgm/collections'
 import { fetchSubjectDetail } from './bgm/detail'
 import {
   enrichSearchAddition,
@@ -27,6 +34,7 @@ type Status = (typeof STATUSES)[number]
 
 const USER_TAG_MAX_LEN = 20
 const USER_TAG_MAX_COUNT = 12
+const MAX_TRACKS = 5000 // 单次同步 / 导入的条数上限（正常用户几百条封顶）
 
 interface TrackRow {
   bgm_id: number
@@ -125,6 +133,49 @@ const insertStmt = db.prepare(`
           @air_weekday, @air_date, @score, @bgm_tags, @user_tags, @aliases, @extra,
           @observe_count, @updated_at)
 `)
+const importUpdateStmt = db.prepare(`
+  UPDATE tracks
+  SET status = @status,
+      episode = @episode,
+      total_episodes = @total_episodes,
+      title = @title,
+      title_cn = @title_cn,
+      cover = @cover,
+      cover_mime = @cover_mime,
+      air_weekday = @air_weekday,
+      air_date = @air_date,
+      score = @score,
+      updated_at = @updated_at
+  WHERE user_id = @user_id AND bgm_id = @bgm_id
+`)
+
+// 同一份本地封面文件的写入 / 删除必须串行。否则导入提交后发起的异步 unlink 可能晚于
+// 用户紧接着上传的新文件完成，最终把刚上传的字节删掉。删除真正执行前再看一次 DB：
+// cover_mime 已恢复说明新的本地封面已经生效，这次旧孤儿清理就应作废。
+const coverFileTails = new Map<string, Promise<void>>()
+
+async function withCoverFileLock<T>(uid: number, bgmId: number, run: () => Promise<T>): Promise<T> {
+  const key = `${uid}:${bgmId}`
+  const previous = coverFileTails.get(key) ?? Promise.resolve()
+  const operation = previous.then(run, run)
+  const tail = operation.then(
+    () => undefined,
+    () => undefined,
+  )
+  coverFileTails.set(key, tail)
+  void tail.then(() => {
+    if (coverFileTails.get(key) === tail) coverFileTails.delete(key)
+  })
+  return operation
+}
+
+function cleanupOrphanedCover(uid: number, bgmId: number): void {
+  void withCoverFileLock(uid, bgmId, async () => {
+    const current = oneStmt.get(uid, bgmId) as TrackRow | undefined
+    if (current?.cover_mime) return
+    await unlink(coverFilePath(uid, bgmId))
+  }).catch(() => {})
+}
 
 // ── 数据版本号（app 覆盖上传的冲突检测，见 db.ts 的 tracks_rev 注释）──────────────
 const revStmt = db.prepare('SELECT tracks_rev AS rev FROM users WHERE id = ?')
@@ -302,6 +353,222 @@ function fillDetailLater(uid: number, bgmId: number): void {
   }, jitterMs)
 }
 
+// ── 从 Bangumi 导入 ────────────────────────────────────────────────────────────
+
+export interface BgmImportStatus {
+  state: 'running' | 'done' | 'error'
+  total: number
+  processed: number
+  added: number
+  updated: number
+  failed: number
+  error: string | null
+}
+
+const BGM_STATUS: Record<BgmCollectionAnime['collectionType'], Status> = {
+  1: 'plan',
+  2: 'done',
+  3: 'watching',
+  4: 'considering',
+  5: 'considering',
+}
+
+const importTasks = new Map<number, BgmImportStatus>()
+const importTaskTargets = new Map<number, string>()
+const importInFlight = new Set<number>()
+const IMPORT_HOURLY_CAP = 12
+const IMPORT_FAIL_STREAK_LIMIT = 3
+const IMPORT_COOLDOWN_MS = 10 * 60_000
+let importHourStart = 0
+let importHourCount = 0
+let importFailStreak = 0
+let importCooldownUntil = 0
+
+function idleImportStatus(): BgmImportStatus {
+  return { state: 'done', total: 0, processed: 0, added: 0, updated: 0, failed: 0, error: null }
+}
+
+function importGate(now: number): string | null {
+  if (now < importCooldownUntil) {
+    return `Bangumi 导入暂时冷却中，约 ${Math.ceil((importCooldownUntil - now) / 60000)} 分钟后再试`
+  }
+  if (now - importHourStart >= 3600_000) {
+    importHourStart = now
+    importHourCount = 0
+  }
+  if (importHourCount >= IMPORT_HOURLY_CAP) return 'Bangumi 导入已达本小时上限，请稍后再试'
+  return null
+}
+
+function importedTotal(item: BgmCollectionAnime, airDate: string, previous: number | null): number | null {
+  if (isRecentAir(airDate)) return null
+  return item.eps > 0 ? item.eps : previous
+}
+
+function applyBgmImport(uid: number, items: BgmCollectionAnime[]): { added: number; updated: number; orphaned: number[] } {
+  const now = Date.now()
+  const orphaned: number[] = []
+  const apply = db.transaction(() => {
+    orphaned.length = 0
+    let added = 0
+    let updated = 0
+
+    for (const item of items) {
+      const previous = oneStmt.get(uid, item.bgmId) as TrackRow | undefined
+      const status = BGM_STATUS[item.collectionType]
+      if (!previous) {
+        const total = importedTotal(item, item.airDate, null)
+        insertStmt.run({
+          user_id: uid,
+          bgm_id: item.bgmId,
+          status,
+          episode: item.episode > 0 && total != null ? Math.min(item.episode, total) : item.episode,
+          total_episodes: total,
+          title: item.title,
+          title_cn: item.titleCn,
+          cover: item.cover,
+          air_weekday: weekdayFromDate(item.airDate),
+          air_date: item.airDate,
+          score: item.score,
+          bgm_tags: '[]',
+          user_tags: '[]',
+          aliases: '[]',
+          extra: '{}',
+          observe_count: 0,
+          updated_at: now,
+        })
+        added++
+        continue
+      }
+
+      const airDate = item.airDate || previous.air_date
+      const total = importedTotal(item, airDate, previous.total_episodes)
+      const derivedWeekday = weekdayFromDate(airDate)
+      const hasBgmCover = item.cover.length > 0
+      importUpdateStmt.run({
+        user_id: uid,
+        bgm_id: item.bgmId,
+        status,
+        episode: item.episode > 0
+          ? total != null && total > 0 ? Math.min(item.episode, total) : item.episode
+          : previous.episode,
+        total_episodes: total,
+        title: item.title || previous.title,
+        title_cn: item.titleCn || previous.title_cn,
+        cover: item.cover || previous.cover,
+        cover_mime: hasBgmCover ? '' : previous.cover_mime,
+        air_weekday: derivedWeekday || previous.air_weekday,
+        air_date: airDate,
+        score: item.score > 0 ? item.score : previous.score,
+        updated_at: now,
+      })
+      if (hasBgmCover && previous.cover_mime) orphaned.push(item.bgmId)
+      updated++
+    }
+
+    // 重复导入也属于一次明确的用户写入：已有行会按 BGM 再合并，并且 rev 每批只递增一次。
+    if (items.length > 0) bumpRev(uid)
+    return { added, updated }
+  })
+  const result = apply.immediate()
+  return { ...result, orphaned: [...orphaned] }
+}
+
+function noteImportFailure(error: unknown, now: number): void {
+  if (!(error instanceof BgmCollectionError)) return
+  if (!['rate_limited', 'network', 'upstream', 'invalid_response'].includes(error.kind)) return
+  importFailStreak++
+  if (importFailStreak >= IMPORT_FAIL_STREAK_LIMIT) {
+    importCooldownUntil = now + IMPORT_COOLDOWN_MS
+    importFailStreak = 0
+  }
+}
+
+async function runBgmImport(uid: number, bgmUserId: string, task: BgmImportStatus): Promise<void> {
+  const items: BgmCollectionAnime[] = []
+  const seen = new Set<number>()
+  let offset = 0
+  let requestCount = 0
+  try {
+    while (task.total === 0 || task.processed < task.total) {
+      requestCount++
+      console.info(`[bgm-import] uid=${uid} page=${requestCount} offset=${offset}`)
+      const page = await fetchBgmCollectionPage(bgmUserId, offset)
+      if (offset === 0) {
+        if (page.total > MAX_TRACKS) throw new Error(`Bangumi 收藏超过 ${MAX_TRACKS} 部，无法一次导入`)
+        task.total = page.total
+        if (page.total === 0) break
+      } else if (page.total !== task.total) {
+        throw new BgmCollectionError('Bangumi 收藏在导入期间发生了变化，请重新导入', 'invalid_response')
+      }
+
+      const expected = Math.min(BGM_COLLECTION_PAGE_SIZE, task.total - offset)
+      if (page.data.length < expected) {
+        throw new BgmCollectionError('Bangumi 返回的收藏数据不完整，请稍后再试', 'invalid_response')
+      }
+      for (const raw of page.data.slice(0, expected)) {
+        task.processed++
+        const item = normalizeBgmCollectionAnime(raw)
+        if (!item || seen.has(item.bgmId)) {
+          task.failed++
+          continue
+        }
+        seen.add(item.bgmId)
+        items.push(item)
+      }
+      offset += BGM_COLLECTION_PAGE_SIZE
+    }
+
+    const result = applyBgmImport(uid, items)
+    task.added = result.added
+    task.updated = result.updated
+    task.state = 'done'
+    task.error = null
+    importFailStreak = 0
+    for (const bgmId of result.orphaned) cleanupOrphanedCover(uid, bgmId)
+    console.info(
+      `[bgm-import] uid=${uid} done total=${task.total} added=${task.added} updated=${task.updated} failed=${task.failed} requests=${requestCount}`,
+    )
+  } catch (error) {
+    task.state = 'error'
+    task.error = error instanceof Error ? error.message : 'Bangumi 导入失败'
+    noteImportFailure(error, Date.now())
+    console.warn(`[bgm-import] uid=${uid} failed requests=${requestCount}: ${task.error}`)
+  } finally {
+    importInFlight.delete(uid)
+  }
+}
+
+function startBgmImport(
+  uid: number,
+  bgmUserId: string,
+  now = Date.now(),
+): { status?: BgmImportStatus; error?: string; statusCode?: 409 | 429 } {
+  if (importInFlight.has(uid)) {
+    const current = importTasks.get(uid)
+    if (importTaskTargets.get(uid) === bgmUserId && current?.state === 'running') return { status: current }
+    return { error: '已有另一个 Bangumi 导入任务正在进行', statusCode: 409 }
+  }
+  const gateError = importGate(now)
+  if (gateError) return { error: gateError, statusCode: 429 }
+
+  const status: BgmImportStatus = {
+    state: 'running',
+    total: 0,
+    processed: 0,
+    added: 0,
+    updated: 0,
+    failed: 0,
+    error: null,
+  }
+  importHourCount++
+  importTasks.set(uid, status)
+  importTaskTargets.set(uid, bgmUserId)
+  importInFlight.add(uid)
+  void runBgmImport(uid, bgmUserId, status)
+  return { status }
+}
+
 tracks.get('/', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
@@ -314,6 +581,28 @@ tracks.get('/revision', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
   return c.json({ rev: currentRev(uid) })
+})
+
+tracks.post('/import/bgm', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+  const bgmUserId = typeof body.bgmUserId === 'string' ? body.bgmUserId.trim() : ''
+  if (!bgmUserId) return c.json({ error: '请输入 Bangumi UID 或用户名' }, 400)
+  if (bgmUserId.length > 100 || /[\u0000-\u001f\u007f]/.test(bgmUserId)) {
+    return c.json({ error: 'Bangumi UID 或用户名不合法' }, 400)
+  }
+
+  const started = startBgmImport(uid, bgmUserId)
+  if (started.error) return c.json({ error: started.error }, started.statusCode ?? 429)
+  return c.json(started.status!, 202)
+})
+
+tracks.get('/import/bgm/status', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  return c.json(importTasks.get(uid) ?? idleImportStatus())
 })
 
 tracks.put('/:bgmId', async (c) => {
@@ -403,7 +692,7 @@ tracks.put('/:bgmId', async (c) => {
       })
       if (searchAddition) saveSearchAddition(searchAddition, now)
       bumpRev(uid)
-      return { row: oneStmt.get(uid, bgmId) as TrackRow, fillDetail: true }
+      return { row: oneStmt.get(uid, bgmId) as TrackRow, fillDetail: true, orphanedCover: false }
     }
 
     // 更新只写 body 里明确给了的字段；没给的一个都不碰。
@@ -442,18 +731,21 @@ tracks.put('/:bgmId', async (c) => {
       args.push(nextCover, '')
     }
 
-    if (!sets.length) return { row: prev, fillDetail: false }
+    if (!sets.length) return { row: prev, fillDetail: false, orphanedCover: false }
     sets.push('updated_at = ?')
     args.push(now)
     db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`)
       .run(...args, uid, bgmId)
     bumpRev(uid)
-    // 换成网图 URL 后，原先本地上传的文件成了孤儿，顺手删掉（失败不影响这次写入）。
-    if (hasCover && prev.cover_mime) void unlink(coverFilePath(uid, bgmId)).catch(() => {})
-    return { row: oneStmt.get(uid, bgmId) as TrackRow, fillDetail: false }
+    return {
+      row: oneStmt.get(uid, bgmId) as TrackRow,
+      fillDetail: false,
+      orphanedCover: hasCover && !!prev.cover_mime,
+    }
   })
   const result = write.immediate()
 
+  if (result.orphanedCover) cleanupOrphanedCover(uid, bgmId)
   if (result.fillDetail) fillDetailLater(uid, bgmId)
   return c.json(toJson(result.row))
 })
@@ -475,7 +767,7 @@ tracks.delete('/:bgmId', async (c) => {
     if (result.changes > 0) bumpRev(uid)
   })
   remove.immediate()
-  void unlink(coverFilePath(uid, bgmId)).catch(() => {})
+  cleanupOrphanedCover(uid, bgmId)
   return c.json({ ok: true })
 })
 
@@ -497,13 +789,21 @@ tracks.post('/:bgmId/cover', async (c) => {
   if (file.size > COVER_UPLOAD_MAX_BYTES) return c.json({ error: '图片不能超过 4MB' }, 400)
 
   const bytes = new Uint8Array(await file.arrayBuffer())
-  await writeFile(coverFilePath(uid, bgmId), bytes)
-
-  const now = Date.now()
-  db.prepare('UPDATE tracks SET cover = ?, cover_mime = ?, updated_at = ? WHERE user_id = ? AND bgm_id = ?')
-    .run(coverSentinel(bgmId), file.type, now, uid, bgmId)
-  bumpRev(uid)
-  return c.json(toJson(oneStmt.get(uid, bgmId) as TrackRow))
+  const updated = await withCoverFileLock(uid, bgmId, async () => {
+    await writeFile(coverFilePath(uid, bgmId), bytes)
+    const apply = db.transaction(() => {
+      if (!oneStmt.get(uid, bgmId)) return undefined
+      db.prepare('UPDATE tracks SET cover = ?, cover_mime = ?, updated_at = ? WHERE user_id = ? AND bgm_id = ?')
+        .run(coverSentinel(bgmId), file.type, Date.now(), uid, bgmId)
+      bumpRev(uid)
+      return oneStmt.get(uid, bgmId) as TrackRow
+    })
+    const row = apply.immediate()
+    if (!row) await unlink(coverFilePath(uid, bgmId)).catch(() => {})
+    return row
+  })
+  if (!updated) return c.json({ error: '未追这部番' }, 404)
+  return c.json(toJson(updated))
 })
 
 /** 本地上传封面的读取端。要登录、且只能读自己那份 —— uid 从会话拿，不信路径。 */
@@ -533,7 +833,6 @@ tracks.get('/:bgmId/cover-file', async (c) => {
 // 上传时不会带这两个字段，若整条替换就会把网页记录的放送星期抹成 0、周历分组就散了。
 // 所以已存在的记录只写 app 明确给了的字段。
 
-const MAX_TRACKS = 5000 // 一次上传的条数上限（正常用户几百条封顶）
 const MAX_EXTRA_BYTES = 16 * 1024 // 单条 extra 上限：这是给 app 的自由容器，得防止被当网盘用
 
 /** 拉取 —— 全量（含 extra）+ 当前 rev。app 要记住这个 rev，上传时带回来做冲突检测。 */
@@ -694,7 +993,7 @@ tracks.post('/sync', async (c) => {
   }
 
   // 事务已提交，这批本地封面确定没人再引用了 —— 现在删文件才是安全的（删失败不影响这次同步）。
-  for (const id of orphaned) void unlink(coverFilePath(uid, id)).catch(() => {})
+  for (const id of orphaned) cleanupOrphanedCover(uid, id)
 
   // 用户数据和 rev 已经原子提交；周历只在响应关键路径之外补空字段，并按用户单飞去重。
   fillCalendarMetadataLater(uid)

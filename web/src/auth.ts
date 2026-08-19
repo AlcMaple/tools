@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react'
 export interface AuthUser {
   username: string
   createdAt: string
+  /** Bangumi 数字 UID 或自定义用户名；空串表示尚未设置。 */
+  bgmUid: string
   /** 已核验的邮箱地址（设置页展示用）；未绑定为 null。 */
   email: string | null
   /** 只知道「设没设」密保 —— 后端不回显问题和答案（问题本身也是秘密）。 */
@@ -35,6 +37,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 type MeRes = {
   username: string
   createdAt: string
+  bgmUid: string
   email: string | null
   hasSecurity: boolean
   hasEmail: boolean
@@ -66,6 +69,7 @@ export const auth = {
       setUser({
         username: me.username,
         createdAt: me.createdAt,
+        bgmUid: me.bgmUid,
         email: me.email,
         hasSecurity: me.hasSecurity,
         hasEmail: me.hasEmail,
@@ -83,6 +87,7 @@ export const auth = {
     setUser({
       username: r.username,
       createdAt: new Date().toISOString(),
+      bgmUid: '',
       email: null,
       hasSecurity: r.hasSecurity,
       hasEmail: r.hasEmail,
@@ -127,6 +132,11 @@ export const auth = {
     answer?: string
   }): Promise<void> {
     await request('/settings', p)
+    await auth.init()
+  },
+  /** 导入追番时默认使用的 Bangumi 数字 UID 或自定义用户名。 */
+  async saveBgmUid(bgmUid: string): Promise<void> {
+    await request('/settings', { bgmUid })
     await auth.init()
   },
   /** 无密码账号（Google / 验证码注册）首次设置密码。 */
