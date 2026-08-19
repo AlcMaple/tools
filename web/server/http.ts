@@ -21,6 +21,8 @@ export interface FetchJsonOptions {
 // 由 UI 让用户决定何时重试，绝不自动重试加重限流。
 function isTransient(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
+  // HTTP 错误后面带完整 URL；用户名里若恰好含 network/timeout，不能因此把 4xx 误判成传输抖动。
+  if (/^HTTP \d{3}\b/.test(msg)) return false
   return /ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|fetch failed|terminated|network/i.test(msg)
 }
 

@@ -137,6 +137,46 @@ export async function uploadTrackCover(bgmId: number, file: File): Promise<Track
   return json<Track>(res)
 }
 
+export interface BgmImportStatus {
+  state: 'running' | 'done' | 'error'
+  total: number
+  processed: number
+  added: number
+  updated: number
+  failed: number
+  error: string | null
+}
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms))
+
+/** 启动后台导入并每秒读取进度；终态（含业务错误）原样返回给弹窗。 */
+export async function importTracksFromBgm(
+  bgmUserId: string,
+  onProgress: (status: BgmImportStatus) => void,
+): Promise<BgmImportStatus> {
+  let status = await json<BgmImportStatus>(await fetch('/api/tracks/import/bgm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bgmUserId }),
+  }))
+  onProgress(status)
+
+  let statusFailures = 0
+  while (status.state === 'running') {
+    await wait(1000)
+    try {
+      status = await json<BgmImportStatus>(await fetch('/api/tracks/import/bgm/status'))
+      statusFailures = 0
+      onProgress(status)
+    } catch (error) {
+      // 这里只是读取本站任务状态，不会重复请求 BGM；短暂断线时保留原进度继续轮询。
+      statusFailures++
+      if (statusFailures >= 5) throw error
+    }
+  }
+  return status
+}
+
 // ── 稀饭在线观看：定位 / 绑定 ───────────────────────────────────────────────────
 // bgmId 和稀饭 animeId 是两套 id，唯一联系是标题。首次「继续看」拿追番标题去稀饭周表（免验证码）比中文名
 // 匹配出候选，用户点一个确认（建绑定）→ 落库，之后直接命中。详见 server/xifan/locate.ts。
