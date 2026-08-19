@@ -190,8 +190,8 @@ contextBridge.exposeInMainWorld('aowuApi', {
   /** 搜索期的 /v/{id} URL → 用户可分享的 /w/{token} URL。 */
   resolveShareUrl: (input: string) =>
     ipcRenderer.invoke('aowu:resolve-share-url', input) as Promise<string>,
-  resolveMp4Url: (animeId: string, sourceIdx: number, ep: number) =>
-    ipcRenderer.invoke('aowu:resolve-mp4-url', animeId, sourceIdx, ep) as Promise<string>,
+  resolveMp4Url: (animeId: string, sourceIdx: number, ep: number, forceRefresh?: boolean) =>
+    ipcRenderer.invoke('aowu:resolve-mp4-url', animeId, sourceIdx, ep, forceRefresh) as Promise<string>,
   startDownload: (
     title: string,
     animeId: string,

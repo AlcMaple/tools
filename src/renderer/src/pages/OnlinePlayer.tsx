@@ -75,6 +75,14 @@ type PlayerView =
   | { mode: 'embed'; url: string; isBili: boolean }
   | { mode: 'error'; err: unknown }
 
+type ConnectivityState = 'online' | 'checking' | 'offline' | 'recovering'
+
+interface ResumePoint {
+  key: string
+  time: number
+  shouldPlay: boolean
+}
+
 /** 源切换器的一项:三个内置源常驻(binding 可空),自定义 binding 追加。 */
 interface SourceEntry {
   key: string
@@ -291,6 +299,9 @@ export default function OnlinePlayer(): JSX.Element {
   const [view, setView] = useState<PlayerView>({ mode: 'none' })
   const [reloadTick, setReloadTick] = useState(0)
   const [resolveTick, setResolveTick] = useState(0)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const hlsRef = useRef<Hls | null>(null)
+  const playerRef = useRef<shaka.Player | null>(null)
   // 竞态防护:切站/切集后,旧的异步结果作废
   const seqRef = useRef(0)
   // xifan 模板直链 404 时回源解析,同一集只回源一次,防 onError 死循环
@@ -298,6 +309,18 @@ export default function OnlinePlayer(): JSX.Element {
   // 已试过的线路。换站/换番才清零,**换集保留** —— 一条线路整体不行就跨集一直绕开它。
   // 手动切走的线路也计入;Try again 清零重来一轮。
   const triedLinesRef = useRef<Set<number>>(new Set())
+  const [connectivity, setConnectivity] = useState<ConnectivityState>(navigator.onLine ? 'online' : 'offline')
+  const networkInterruptedRef = useRef(false)
+  const connectivityCheckRef = useRef<Promise<boolean> | null>(null)
+  const handlingFailureRef = useRef<number | null>(null)
+  const resumePointRef = useRef<ResumePoint | null>(null)
+  const playbackKeyRef = useRef('')
+  const mountedVideoKeyRef = useRef('')
+  const networkRecoveryGraceUntilRef = useRef(0)
+  const outageGenerationRef = useRef(0)
+  const recoveredOutageRef = useRef(-1)
+  const terminalMediaErrorRef = useRef(false)
+  playbackKeyRef.current = `${bgmId}:${entry?.key ?? 'none'}:${entry?.binding?.sourceKey ?? 'none'}:${lineIdx}:${ep ?? 'none'}`
 
   // B 站登录态(null = 还没查);webviewKey 用于登录后强制重载 webview
   const [biliLoggedIn, setBiliLoggedIn] = useState<boolean | null>(null)
@@ -336,10 +359,124 @@ export default function OnlinePlayer(): JSX.Element {
     return () => clearTimeout(t)
   }, [toastText])
 
+  const stopActivePlayback = useCallback(() => {
+    const hls = hlsRef.current
+    hlsRef.current = null
+    if (hls) hls.destroy()
+    const player = playerRef.current
+    playerRef.current = null
+    if (player) void player.destroy()
+    if (videoRef.current) detachVideo(videoRef.current)
+    window.systemApi.releaseMedia()
+  }, [])
+
+  const rememberPlaybackPoint = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    const previous = resumePointRef.current
+    resumePointRef.current = {
+      key: mountedVideoKeyRef.current || playbackKeyRef.current,
+      time: Number.isFinite(video.currentTime) ? video.currentTime : previous?.time ?? 0,
+      // error 事件到来时 paused 可能已经变 true；保留断流前记下的“本来在播放”。
+      shouldPlay: previous?.shouldPlay === true || !video.paused,
+    }
+  }, [])
+
+  const markNetworkInterrupted = useCallback(() => {
+    rememberPlaybackPoint()
+    if (!networkInterruptedRef.current) outageGenerationRef.current++
+    networkInterruptedRef.current = true
+    setConnectivity('offline')
+  }, [rememberPlaybackPoint])
+
+  const checkConnectivity = useCallback(async (): Promise<boolean> => {
+    if (!navigator.onLine) return false
+    if (connectivityCheckRef.current) return connectivityCheckRef.current
+    const job = window.systemApi.checkConnectivity().catch(() => false)
+    connectivityCheckRef.current = job
+    try {
+      return await job
+    } finally {
+      if (connectivityCheckRef.current === job) connectivityCheckRef.current = null
+    }
+  }, [])
+
+  const resumeCurrentLine = useCallback(() => {
+    if (!networkInterruptedRef.current) return
+    const generation = outageGenerationRef.current
+    if (recoveredOutageRef.current === generation) return
+    recoveredOutageRef.current = generation
+    networkInterruptedRef.current = false
+    setConnectivity('recovering')
+    stopActivePlayback()
+    if (data) setResolveTick((tick) => tick + 1)
+    else setReloadTick((tick) => tick + 1)
+  }, [data, stopActivePlayback])
+
+  /** 网络恢复只重开当前源 / 当前线路一次，不刷新其它线路，也不周期探测。 */
+  useEffect(() => {
+    let timer: number | null = null
+    const onOffline = (): void => {
+      if (timer !== null) window.clearTimeout(timer)
+      timer = null
+      markNetworkInterrupted()
+    }
+    const onOnline = (): void => {
+      networkRecoveryGraceUntilRef.current = Date.now() + 5000
+      const video = videoRef.current
+      const point = resumePointRef.current
+      const stillHealthy = !terminalMediaErrorRef.current && !!video && !video.error && video.readyState >= 2
+        && (point?.shouldPlay !== true || video.readyState >= 3)
+      if (stillHealthy) {
+        networkInterruptedRef.current = false
+        resumePointRef.current = null
+        setConnectivity('online')
+        return
+      }
+      if (playerRef.current) {
+        recoveredOutageRef.current = outageGenerationRef.current
+        networkInterruptedRef.current = false
+        setConnectivity('recovering')
+        return // Shaka 自己监听 online 并 retryStreaming；这里不能再重建第二份 DASH 请求。
+      }
+      if (!networkInterruptedRef.current) return
+      setConnectivity('recovering')
+      if (timer !== null) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        timer = null
+        if (!navigator.onLine) {
+          setConnectivity('offline')
+          return
+        }
+        void checkConnectivity().then((online) => {
+          if (online) resumeCurrentLine()
+          else setConnectivity('offline')
+        })
+      }, 600)
+    }
+    window.addEventListener('offline', onOffline)
+    window.addEventListener('online', onOnline)
+    if (!navigator.onLine) onOffline()
+    return () => {
+      if (timer !== null) window.clearTimeout(timer)
+      window.removeEventListener('offline', onOffline)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [checkConnectivity, markNetworkInterrupted, resumeCurrentLine])
+
+  const retryConnectivity = useCallback(async () => {
+    setConnectivity('checking')
+    if (await checkConnectivity()) resumeCurrentLine()
+    else setConnectivity('offline')
+  }, [checkConnectivity, resumeCurrentLine])
+
   // ── 切换源(或绑定落地 / 手动重试)时决定播放器形态 ───────────────────────────
   const entryKey = entry?.key
   const entrySourceKey = entry?.binding?.sourceKey
   useEffect(() => {
+    // 每条分支之前先让旧异步结果失效并收掉旧媒体请求；自定义 / 未绑定分支也不能漏。
+    const seq = ++seqRef.current
+    stopActivePlayback()
     setData(null)
     setLineIdx(0)
     setEp(null)
@@ -350,24 +487,37 @@ export default function OnlinePlayer(): JSX.Element {
       const raw = bindingUrl(entry.binding!)
       const embed = biliBangumiEmbedUrl(raw)
       setView({ mode: 'embed', url: embed ?? raw, isBili: /bilibili\.com/i.test(raw) })
+      setConnectivity(navigator.onLine ? 'online' : 'offline')
       return
     }
     if (entry.builtin && !entry.binding) {
       // 未绑定的内置源:懒式单站搜索(面板挂在播放器区,挑中自动关联)
       setView({ mode: 'search' })
+      setConnectivity(navigator.onLine ? 'online' : 'offline')
       return
     }
     setView({ mode: 'loading' })
-    const seq = ++seqRef.current
+    if (!navigator.onLine) {
+      markNetworkInterrupted()
+      return
+    }
     const preferCache = typeof track?.totalEpisodes === 'number' && track.totalEpisodes > 0
     loadSiteData(entry.binding!, preferCache)
       .then((d) => {
         if (seqRef.current !== seq) return
         setData(d)
         setView({ mode: 'none' })
+        setConnectivity('online')
       })
-      .catch((err) => {
+      .catch(async (err) => {
         if (seqRef.current !== seq) return
+        const online = await checkConnectivity()
+        if (seqRef.current !== seq) return
+        if (!online) {
+          markNetworkInterrupted()
+          return
+        }
+        setConnectivity('online')
         setView({ mode: 'error', err })
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -381,10 +531,7 @@ export default function OnlinePlayer(): JSX.Element {
   // mtmedia 请求,把刚删掉的临时文件重新建出来。
   // 收**所有**登记过的元素,不只是 videoRef 当前指着的那个:ref 只记得住最后一个,
   // 之前没收干净的会留在 tracked 里,而声音恰恰可能来自那些。
-  useEffect(() => () => {
-    if (videoRef.current) detachVideo(videoRef.current)
-    window.systemApi.releaseMedia()
-  }, [])
+  useEffect(() => () => stopActivePlayback(), [stopActivePlayback])
 
   // ── B 站登录态:选中的是 B 站源时查一次 ────────────────────────────────────
   // 画质由登录态决定(匿名最高 480P,登录后才有 1080P),所以自研播放的 B 站源也要查。
@@ -428,15 +575,28 @@ export default function OnlinePlayer(): JSX.Element {
   useEffect(() => {
     if (!data || ep === null) return
     const seq = ++seqRef.current
+    stopActivePlayback()
     fallbackTriedRef.current = false
     setView({ mode: 'loading' })
+    if (!navigator.onLine) {
+      markNetworkInterrupted()
+      return
+    }
     resolveStream(data, lineIdx, ep)
       .then((s) => {
         if (seqRef.current !== seq) return
+        terminalMediaErrorRef.current = false
         setView(s.kind === 'dash' ? { mode: 'dash', dash: s.dash } : { mode: 'video', url: s.url, isHls: s.isHls })
       })
-      .catch((err) => {
+      .catch(async (err) => {
         if (seqRef.current !== seq) return
+        const online = await checkConnectivity()
+        if (seqRef.current !== seq) return
+        if (!online) {
+          markNetworkInterrupted()
+          return
+        }
+        setConnectivity('online')
         setView({ mode: 'error', err })
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -450,6 +610,45 @@ export default function OnlinePlayer(): JSX.Element {
   useEffect(() => {
     triedLinesRef.current = new Set()
   }, [data])
+
+  /** 只有确认全局网络可用后，才允许把一次媒体错误归因到当前线路。 */
+  const handleNetworkSensitiveFailure = (onConnectedFailure: () => void): void => {
+    const failureSeq = seqRef.current
+    if (handlingFailureRef.current === failureSeq) return
+    rememberPlaybackPoint()
+    if (navigator.onLine && Date.now() < networkRecoveryGraceUntilRef.current) {
+      if (recoveredOutageRef.current !== outageGenerationRef.current) {
+        networkInterruptedRef.current = true
+        setConnectivity('offline')
+        resumeCurrentLine()
+      } else {
+        setConnectivity('online')
+        onConnectedFailure()
+      }
+      return
+    }
+    if (!navigator.onLine) {
+      markNetworkInterrupted()
+      return
+    }
+    handlingFailureRef.current = failureSeq
+    const outageGeneration = outageGenerationRef.current
+    setConnectivity('checking')
+    void checkConnectivity()
+      .then((online) => {
+        if (seqRef.current !== failureSeq) return
+        if (outageGenerationRef.current !== outageGeneration) return
+        if (!online) {
+          markNetworkInterrupted()
+          return
+        }
+        setConnectivity('online')
+        onConnectedFailure()
+      })
+      .finally(() => {
+        if (handlingFailureRef.current === failureSeq) handlingFailureRef.current = null
+      })
+  }
 
   // 播放失败自动兜底:换下一条**还没试过**、且含本集的线路(只换线路不跳集);
   // 三条都试完才停下报错。
@@ -471,8 +670,9 @@ export default function OnlinePlayer(): JSX.Element {
 
   // Xifan/Girigiri 缓存地址若已过期会触发 video error。此时只在**本线路**强制回源
   // 刷新一次（绕过 24h 地址缓存），本线路仍不行才自动换下一条线路。
-  const handleVideoError = (): void => {
+  const handleConfirmedVideoError = (): void => {
     if (view.mode !== 'video' || !data || ep === null) return
+    stopActivePlayback()
     if (data.kind === 'xifan' && !fallbackTriedRef.current) {
       const line = data.info.sources[lineIdx]
       if (line?.epPage) {
@@ -482,12 +682,15 @@ export default function OnlinePlayer(): JSX.Element {
         window.xifanApi.resolvePlayUrl(line.template, line.epPage, ep, true)
           .then((real) => {
             if (seqRef.current !== seq) return
-            if (real) setView({ mode: 'video', url: real, isHls: false })
+            if (real) {
+              terminalMediaErrorRef.current = false
+              setView({ mode: 'video', url: real, isHls: false })
+            }
             else tryNextLine()
           })
           .catch(() => {
             if (seqRef.current !== seq) return
-            tryNextLine()
+            handleNetworkSensitiveFailure(tryNextLine)
           })
         return
       }
@@ -502,12 +705,37 @@ export default function OnlinePlayer(): JSX.Element {
         window.girigiriApi.resolveEpUrl(epInfo.url, true)
           .then((real) => {
             if (seqRef.current !== seq) return
-            if (real) setView({ mode: 'video', url: real, isHls: /\.m3u8(\?|$)/i.test(real) })
+            if (real) {
+              terminalMediaErrorRef.current = false
+              setView({ mode: 'video', url: real, isHls: /\.m3u8(\?|$)/i.test(real) })
+            }
             else tryNextLine()
           })
           .catch(() => {
             if (seqRef.current !== seq) return
-            tryNextLine()
+            handleNetworkSensitiveFailure(tryNextLine)
+          })
+        return
+      }
+    }
+    if (data.kind === 'aowu' && !fallbackTriedRef.current) {
+      const line = data.info.sources[lineIdx]
+      if (line) {
+        fallbackTriedRef.current = true
+        const seq = ++seqRef.current
+        setView({ mode: 'loading' })
+        window.aowuApi.resolveMp4Url(data.info.id, line.idx, ep, true)
+          .then((real) => {
+            if (seqRef.current !== seq) return
+            if (real) {
+              terminalMediaErrorRef.current = false
+              setView({ mode: 'video', url: real, isHls: false })
+            }
+            else tryNextLine()
+          })
+          .catch(() => {
+            if (seqRef.current !== seq) return
+            handleNetworkSensitiveFailure(tryNextLine)
           })
         return
       }
@@ -515,8 +743,12 @@ export default function OnlinePlayer(): JSX.Element {
     tryNextLine()
   }
 
+  const handleVideoError = (): void => {
+    terminalMediaErrorRef.current = true
+    handleNetworkSensitiveFailure(handleConfirmedVideoError)
+  }
+
   // ── HLS(Girigiri):hls.js 走 MSE 逐段喂,列表/分片/密钥全部经 mtmedia 代理 ──────
-  const videoRef = useRef<HTMLVideoElement | null>(null)
   // <video> 的 ref 回调:换集/换线路(key=url 变)、换播放形态、离开播放页时,React 会
   // 先用 null 调一次 —— 在这里把上一个元素收干净(见 detachVideo),再指向新的。
   // **必须 useCallback**:内联的 ref 回调每次渲染都是新函数,React 会在每次渲染时
@@ -525,7 +757,36 @@ export default function OnlinePlayer(): JSX.Element {
     const prev = videoRef.current
     if (prev && prev !== el) detachVideo(prev)
     videoRef.current = el
+    mountedVideoKeyRef.current = el ? playbackKeyRef.current : ''
   }, [])
+
+  const restorePlaybackPoint = useCallback(() => {
+    const video = videoRef.current
+    const point = resumePointRef.current
+    if (!video || !point) return
+    if (point.key !== playbackKeyRef.current) {
+      resumePointRef.current = null
+      return
+    }
+    try {
+      const max = Number.isFinite(video.duration) && video.duration > 0
+        ? Math.max(0, video.duration - 0.25)
+        : point.time
+      video.currentTime = Math.min(point.time, max)
+    } catch { /* 元数据刚落地但时间轴尚不可写，等用户播放时继续 */ }
+    if (point.shouldPlay) void video.play().catch(() => { /* 自动播放被拦就等用户点 */ })
+  }, [])
+
+  const handleMediaPlaying = useCallback(() => {
+    resumePointRef.current = null
+    networkInterruptedRef.current = false
+    terminalMediaErrorRef.current = false
+    if (navigator.onLine) setConnectivity('online')
+  }, [])
+
+  const handleMediaWaiting = useCallback(() => {
+    if (!navigator.onLine) markNetworkInterrupted()
+  }, [markNetworkInterrupted])
 
   // 播放区容器(16:9 盒子):自定义控制条的全屏目标 + 悬停时间提示的挂载点
   const playerBoxRef = useRef<HTMLDivElement | null>(null)
@@ -536,6 +797,16 @@ export default function OnlinePlayer(): JSX.Element {
   // 兜底回调用 ref 取最新的 —— 直接进 effect 依赖数组会让每次渲染都重建 hls 实例、打断播放。
   const onFatalRef = useRef<() => void>(() => {})
   useEffect(() => { onFatalRef.current = handleVideoError })
+  const onDashFailureRef = useRef<(error: unknown) => void>(() => {})
+  useEffect(() => {
+    onDashFailureRef.current = (error) => {
+      terminalMediaErrorRef.current = true
+      handleNetworkSensitiveFailure(() => {
+        stopActivePlayback()
+        setView({ mode: 'error', err: error })
+      })
+    }
+  })
 
   useEffect(() => {
     if (view.mode !== 'video' || !view.isHls) return
@@ -547,21 +818,54 @@ export default function OnlinePlayer(): JSX.Element {
     }
     // 用默认 loader:mtmedia:// 上 XHR 和 fetch 都直通(该 scheme 没开 corsEnabled)
     // 别为「自定义协议可能不支持 XHR」这种没验证的担心加配置。
-    const hls = new Hls()
+    const noRetry = { maxNumRetry: 0, retryDelayMs: 0, maxRetryDelayMs: 0 }
+    const hls = new Hls({
+      maxBufferLength: 90,
+      maxMaxBufferLength: 120,
+      maxBufferSize: 96 * 1000 * 1000,
+      backBufferLength: 60,
+      manifestLoadPolicy: { default: {
+        maxTimeToFirstByteMs: 10_000,
+        maxLoadTimeMs: 30_000,
+        timeoutRetry: noRetry,
+        errorRetry: noRetry,
+      } },
+      playlistLoadPolicy: { default: {
+        maxTimeToFirstByteMs: 10_000,
+        maxLoadTimeMs: 30_000,
+        timeoutRetry: noRetry,
+        errorRetry: noRetry,
+      } },
+      keyLoadPolicy: { default: {
+        maxTimeToFirstByteMs: 10_000,
+        maxLoadTimeMs: 30_000,
+        timeoutRetry: noRetry,
+        errorRetry: noRetry,
+      } },
+      fragLoadPolicy: { default: {
+        maxTimeToFirstByteMs: 10_000,
+        maxLoadTimeMs: 30_000,
+        timeoutRetry: noRetry,
+        errorRetry: noRetry,
+      } },
+    })
+    hlsRef.current = hls
     hls.on(Hls.Events.ERROR, (_e, data) => {
       // 只有 fatal 才走换线路兜底;非 fatal(单个分片超时等)hls.js 自己会重试。
-      if (data.fatal) onFatalRef.current()
+      if (data.fatal && hlsRef.current === hls) onFatalRef.current()
     })
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       void video.play().catch(() => { /* 自动播放被拦就等用户点一下 */ })
     })
     hls.loadSource(toMediaProxy(view.url))
     hls.attachMedia(video)
-    return () => hls.destroy()
+    return () => {
+      if (hlsRef.current === hls) hlsRef.current = null
+      hls.destroy()
+    }
   }, [view])
 
   // ── DASH(B 站):1080P 只存在于音视频分轨里(mp4 直链容器封顶 720P) ─────────────
-  const playerRef = useRef<shaka.Player | null>(null)
   // 换集时沿用上次选的画质档,不用把 qn 塞进 effect 依赖(那会重建 player 打断播放)
   const qnRef = useRef<number | null>(null)
   useEffect(() => { qnRef.current = qn })
@@ -571,17 +875,22 @@ export default function OnlinePlayer(): JSX.Element {
     const video = videoRef.current
     if (!video) return
     const dash = view.dash
+    const playbackSeq = seqRef.current
     let cancelled = false
     const player = new shaka.Player()
     playerRef.current = player
 
     // ABR 必须关:选了 1080P 就该一直是 1080P,不能让自适应在背后偷偷降档
     // (外链播放器「选了没反应」正是用户投诉的点)。
-    player.configure({ abr: { enabled: false } })
+    player.configure({
+      abr: { enabled: false },
+      manifest: { retryParameters: { maxAttempts: 1 } },
+      streaming: { retryParameters: { maxAttempts: 1 } },
+    })
     player.addEventListener('error', (e) => {
-      if (cancelled) return
+      if (cancelled || playerRef.current !== player || seqRef.current !== playbackSeq) return
       const detail = (e as unknown as { detail?: { code?: number; message?: string } }).detail
-      setView({ mode: 'error', err: new Error(`B 站播放失败(shaka ${detail?.code ?? '?'})`) })
+      onDashFailureRef.current(new Error(`B 站播放失败(shaka ${detail?.code ?? '?'})`))
     })
 
     void (async () => {
@@ -597,13 +906,15 @@ export default function OnlinePlayer(): JSX.Element {
         setQn(target)
         await video.play().catch(() => { /* 自动播放被拦就等用户点一下 */ })
       } catch (err) {
-        if (!cancelled) setView({ mode: 'error', err })
+        if (!cancelled && playerRef.current === player && seqRef.current === playbackSeq) {
+          onDashFailureRef.current(err)
+        }
       }
     })()
 
     return () => {
       cancelled = true
-      playerRef.current = null
+      if (playerRef.current === player) playerRef.current = null
       void player.destroy()
     }
   }, [view])
@@ -617,6 +928,8 @@ export default function OnlinePlayer(): JSX.Element {
   }
 
   const retry = (): void => {
+    networkInterruptedRef.current = false
+    setConnectivity(navigator.onLine ? 'recovering' : 'offline')
     triedLinesRef.current = new Set() // 手动重试:重新给所有线路一次机会
     if (!data) setReloadTick((t) => t + 1)
     else setResolveTick((t) => t + 1)
@@ -814,11 +1127,23 @@ export default function OnlinePlayer(): JSX.Element {
                   className="h-full w-full object-contain"
                   // HLS 的失败统一由 hls.js 的 fatal 事件兜底,别在这儿再触发一次换线路。
                   onError={view.isHls ? undefined : handleVideoError}
+                  onLoadedMetadata={restorePlaybackPoint}
+                  onWaiting={handleMediaWaiting}
+                  onStalled={handleMediaWaiting}
+                  onPlaying={handleMediaPlaying}
                 />
               )}
               {view.mode === 'dash' && (
                 // DASH 由 shaka 经 MSE 喂,不设 src、不挂 onError(失败走 shaka 的 error 事件)
-                <video ref={setVideoEl} autoPlay className="h-full w-full object-contain" />
+                <video
+                  ref={setVideoEl}
+                  autoPlay
+                  className="h-full w-full object-contain"
+                  onLoadedMetadata={restorePlaybackPoint}
+                  onWaiting={handleMediaWaiting}
+                  onStalled={handleMediaWaiting}
+                  onPlaying={handleMediaPlaying}
+                />
               )}
               {(view.mode === 'video' || view.mode === 'dash') && (
                 <span ref={tabHopPostRef} tabIndex={0} className="pointer-events-none absolute h-px w-px opacity-0" />
@@ -830,6 +1155,31 @@ export default function OnlinePlayer(): JSX.Element {
                   videoKey={view.mode === 'dash' ? 'dash' : view.mode === 'video' ? view.url : ''}
                   onFullscreenChange={setPlayerFs}
                 />
+              )}
+              {connectivity !== 'online' && ['video', 'dash', 'loading'].includes(view.mode) && (
+                <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/15 bg-black/70 px-3 py-1.5 text-white shadow-lg backdrop-blur-sm">
+                  <span className="flex items-center gap-1.5 font-label text-[11px] tracking-wider whitespace-nowrap">
+                    <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>
+                      {connectivity === 'offline' ? 'wifi_off' : 'sync'}
+                    </span>
+                    {connectivity === 'offline'
+                      ? '网络已断开，恢复后继续当前线路'
+                      : connectivity === 'checking'
+                        ? '正在确认网络状态…'
+                        : '网络已恢复，正在续播…'}
+                  </span>
+                  {connectivity === 'offline' && (
+                    <button
+                      type="button"
+                      onClick={() => void retryConnectivity()}
+                      className="ml-1 inline-grid h-6 w-6 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
+                      title="重试当前线路"
+                      aria-label="重试当前线路"
+                    >
+                      <span className="material-symbols-outlined leading-none" style={{ fontSize: 14 }}>refresh</span>
+                    </button>
+                  )}
+                </div>
               )}
               {/* `!entry.binding` 是兜底不变量:view 与 entry 分属两次 setState,可能差一帧,
                   已绑定的源绝不该挂搜索面板(它一挂载就会自动发搜索请求)。 */}

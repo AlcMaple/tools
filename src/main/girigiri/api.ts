@@ -108,12 +108,6 @@ function rememberGiriUrl(pageUrl: string, url: string): void {
   })
 }
 
-function forgetGiriUrl(pageUrl: string): void {
-  giriUrlCacheStore.update((cache) => {
-    delete cache[pageUrl]
-  })
-}
-
 // watch() 解出的集数信息：已完结番结构不会再变，允许调用方传 preferCache 跳过这次请求；
 // 连载番不传，永远按最新结果覆盖缓存。同一张播放页在飞行中只请求一次。
 interface GiriWatchCacheEntry {
@@ -442,8 +436,6 @@ export async function resolveEpPlayUrl(epPageUrl: string, forceRefresh = false):
     logInfo('girigiri-resolve', `已有相同播放页在请求中,合并本次调用：${epPageUrl}`)
     return pending
   }
-  if (forceRefresh) forgetGiriUrl(epPageUrl)
-
   const task = (async (): Promise<string> => {
     logInfo('girigiri-resolve', `${forceRefresh ? '强制刷新' : '缓存未命中'},回源读取：${epPageUrl}`)
     const res = await giriSession.get(epPageUrl)

@@ -4,6 +4,7 @@ import { statfs } from 'fs/promises'
 import { JsonStore } from '../shared/json-store'
 import { disposeMediaCache } from '../shared/media-cache'
 import { disposeHlsPrefetch } from '../shared/hls-prefetch'
+import { disposeMediaProxyRequests } from '../shared/media-proxy'
 
 // 默认关闭 —— 与 OS 惯例一致(× 就是真的退出),新用户不会被「看似关了其实还在跑」困惑。
 let appMinimizeOnClose = false
@@ -115,10 +116,14 @@ export function registerSystemIpc(): void {
     return new Promise<boolean>((resolve) => {
       let settled = false
       let failures = 0
+      const requests: ReturnType<typeof net.request>[] = []
       const finish = (ok: boolean): void => {
         if (settled) return
         settled = true
         clearTimeout(timer)
+        for (const request of requests) {
+          try { request.abort() } catch { /* 已结束 */ }
+        }
         resolve(ok)
       }
       const done = (ok: boolean): void => {
@@ -131,6 +136,7 @@ export function registerSystemIpc(): void {
       for (const url of PROBES) {
         try {
           const req = net.request({ method: 'HEAD', url })
+          requests.push(req)
           req.on('response', (res) => done(res.statusCode >= 200 && res.statusCode < 400))
           req.on('error', () => done(false))
           req.end()
@@ -145,6 +151,7 @@ export function registerSystemIpc(): void {
   ipcMain.on('media:release', () => {
     disposeMediaCache()
     disposeHlsPrefetch()
+    disposeMediaProxyRequests()
   })
 
   ipcMain.handle('system:history-read', () => historyStore.read())
