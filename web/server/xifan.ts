@@ -26,6 +26,9 @@ import {
   XifanResolveError,
 } from './xifan/resolve'
 import { serveStream } from './xifan/stream'
+import {
+  dropPrepared, listPrepared, PrepareRejected, resolveAsset, startPrepare, statusOf,
+} from './xifan/prepare'
 import { locate } from './xifan/locate'
 import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
 import { getXifanCaptcha, searchXifan, verifyXifanCaptcha, XIFAN_SEARCH_MAX_LENGTH } from './xifan/search'
@@ -149,6 +152,56 @@ xifan.get('/stream', async (c) => {
   } catch (error) {
     return upstreamFailure(c, error, '稀饭流代理失败')
   }
+})
+
+// 预转 HLS —— 为什么需要它、为什么不能边下边切，见 xifan/prepare.ts 顶部注释。
+xifan.get('/prepared', (c) => {
+  const raw = c.req.query('u') ?? ''
+  if (!raw) return c.json({ error: '缺少 u' }, 400)
+  c.header('Cache-Control', 'no-store')
+  try {
+    return c.json(statusOf(raw))
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : '查询失败' }, 400)
+  }
+})
+
+xifan.post('/prepare', async (c) => {
+  // 预转会写几百 MB 磁盘、长时间占满入口带宽，**必须要登录**：不设防的话这个端点
+  // 就是一个「任何人都能让你的服务器免费下片」的按钮。查询状态无副作用，不设限。
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '请先登录再用预转' }, 401)
+  const body = await c.req.json().catch(() => null) as { u?: string } | null
+  const raw = body?.u ?? ''
+  if (!raw) return c.json({ error: '缺少 u' }, 400)
+  // ffmpeg 的输入指回本进程的流代理，所以要拿到自己的对外地址。
+  const url = new URL(c.req.url)
+  const origin = `http://127.0.0.1:${url.port || process.env.PORT || '3000'}`
+  try {
+    return c.json(startPrepare(raw, origin))
+  } catch (error) {
+    if (error instanceof PrepareRejected) return c.json({ error: error.message }, 429)
+    return c.json({ error: error instanceof Error ? error.message : '预转失败' }, 400)
+  }
+})
+
+xifan.get('/hls/:key/:file', async (c) => {
+  const p = resolveAsset(c.req.param('key'), c.req.param('file'))
+  if (!p) return c.json({ error: '没有这个分片' }, 404)
+  const file = c.req.param('file')
+  const { createReadStream } = await import('node:fs')
+  const type = file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/iso.segment'
+  return new Response(createReadStream(p) as unknown as ReadableStream, {
+    headers: { 'Content-Type': type, 'Cache-Control': file.endsWith('.m3u8') ? 'no-store' : 'public, max-age=86400' },
+  })
+})
+
+xifan.get('/prepared/list', (c) => c.json({ items: listPrepared() }))
+
+xifan.delete('/prepared/:key', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '请先登录' }, 401)
+  return dropPrepared(c.req.param('key')) ? c.json({ ok: true }) : c.json({ error: '没有这一份' }, 404)
 })
 
 xifan.get('/play-page', (c) => {
@@ -348,6 +401,12 @@ const PLAY_PAGE = `<!doctype html>
   #auth-link { display: none }
   #auth-link.show { display: inline-flex }
   video.on, iframe.player.on { display: block }
+  /* 预转状态条：跟播放框同宽，贴在下面。不抢戏，但失败/进行中要看得见。 */
+  .prep { margin-top: 10px; font-size: 13px; color: #6b6558; display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+  .prep:empty { display: none }
+  .prep.ok { color: #2f7d5e }
+  .prep.busy { color: #8a6d2f }
+  .prep.bad { color: #b4483c }
   /* 播放源分段器：未关联的源需要一种「虚线、可点」的第三态，seg 组件本身没有 */
   .src-seg > button.unbound { color: var(--ink-faint); border: 1.5px dashed var(--line); border-radius: var(--r-pill) }
   .lines-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px }
@@ -381,6 +440,7 @@ const PLAY_PAGE = `<!doctype html>
       </div>
     </div>
   </div>
+  <div id="prepareBox" class="prep"></div>
   <div id="err" role="alert" aria-live="polite"><span id="err-text"></span><a id="auth-link" class="btn btn-sm btn-ghost" href="/#/settings/xifan" target="_blank" rel="noopener">去登录</a></div>
   <div class="spread mt24">
     <h2 class="title-sketch section-title">选集</h2>
@@ -418,6 +478,7 @@ const PLAY_PAGE = `<!doctype html>
   var bufferStartedAt = 0, bufferLastProgressAt = 0, bufferLastAhead = 0, bufferSampleAt = 0, bufferSampleAhead = 0
   var internalSeekTimer = null, gateOnPlay = false, lineRequest = 0, playGeneration = 0
   var networkInterrupted = false, networkCheck = null, networkRetry = null, failureGeneration = -1
+  var preparedKey = null, preparedFor = null, prepareTimer = null
   var resumeTime = 0, resumeWasPlaying = false, resumePending = false, resumeKey = '', recoverTimer = null
 
   window.addEventListener('storage', function(e){
@@ -670,6 +731,72 @@ const PLAY_PAGE = `<!doctype html>
   })
   v.addEventListener('ended', function(){ gateOnPlay = false; cancelBufferGate(false) })
 
+  // ——— 预转 HLS（最小可用版：手动触发 + 轮询状态）———
+  function prepareBox(){ return $('prepareBox') }
+
+  function renderPrepare(st, url){
+    var box = prepareBox()
+    if (!box) return
+    if (!url){ box.textContent = ''; box.className = 'prep'; return }
+    var mb = st.bytes ? Math.round(st.bytes / 1048576) + 'MB' : ''
+    if (st.state === 'ready'){
+      box.className = 'prep ok'
+      box.textContent = '已预转为分片版 · ' + mb + '（本集走多连接，不受单连接限速）'
+    } else if (st.state === 'running'){
+      box.className = 'prep busy'
+      box.textContent = '服务器预转中… ' + mb + '（转好后本集会自动改用分片版）'
+    } else if (st.state === 'failed'){
+      box.className = 'prep bad'
+      box.textContent = '预转失败：' + (st.error || '未知原因')
+      box.appendChild(prepareButton(url, '重试'))
+    } else {
+      box.className = 'prep'
+      box.textContent = '这一集直连可能不够快 · '
+      box.appendChild(prepareButton(url, '让服务器预转成分片版'))
+    }
+  }
+
+  function prepareButton(url, label){
+    var b = document.createElement('button')
+    b.className = 'btn btn-sm'
+    b.textContent = label
+    b.onclick = function(){
+      b.disabled = true
+      fetch('/api/xifan/prepare', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ u: url })
+      }).then(function(r){ return r.json() }).then(function(d){
+        if (d && d.error){ renderPrepare({ state: 'failed', error: d.error }, url); return }
+        pollPrepare(url)
+      }).catch(function(){ b.disabled = false })
+    }
+    return b
+  }
+
+  function pollPrepare(url){
+    if (prepareTimer){ clearTimeout(prepareTimer); prepareTimer = null }
+    if (!url) return
+    fetch('/api/xifan/prepared?u=' + encodeURIComponent(url), { cache: 'no-store' })
+      .then(function(r){ return r.json() })
+      .then(function(st){
+        if (!st || st.error) return
+        renderPrepare(st, url)
+        if (st.state === 'ready'){
+          var wasNew = preparedKey !== st.key
+          preparedKey = st.key; preparedFor = url
+          // 转好时若正播着这一集的 mp4 直连版，就地切到分片版（记住播放位置）。
+          if (wasNew && curPl && curPl.kind === 'mp4' && curPl.url === url){
+            resumeTime = v.currentTime; resumeWasPlaying = !v.paused
+            resumePending = true; resumeKey = curPl.source + ':' + ep
+            playLine(curPl)
+          }
+          return
+        }
+        if (st.state === 'running') prepareTimer = setTimeout(function(){ pollPrepare(url) }, 5000)
+      })
+      .catch(function(){})
+  }
+
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
   function stopAll(){ playGeneration++; cancelBufferGate(false); clearInternalSeek(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false }
 
@@ -704,6 +831,14 @@ const PLAY_PAGE = `<!doctype html>
   }
 
   function playLine(pl){
+    // mp4 线路：查一下这一集有没有预转好的分片版，顺带把状态条渲染出来。
+    if (pl.kind === 'mp4') pollPrepare(pl.url)
+    // 这一集若已经预转成 HLS，就改播分片版：<video> 直连服务器只开一条连接，跨境
+    // 单连接只有 2.2Mbps（低于 2.67Mbps 码率），而 HLS 播放器会并发拉多片，
+    // 同一条链路能跑到 5.22Mbps。细节见 xifan/prepare.ts。
+    if (pl.kind === 'mp4' && preparedKey && preparedFor === pl.url){
+      pl = { source: pl.source, kind: 'hls', url: '/api/xifan/hls/' + preparedKey + '/index.m3u8', viaPrepared: true }
+    }
     curPl = pl; clearFail(); stopAll(); renderChips()
     gateOnPlay = pl.kind === 'mp4'
     v.classList.add('on'); frame.classList.remove('on')
