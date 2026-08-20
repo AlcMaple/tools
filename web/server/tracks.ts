@@ -14,6 +14,7 @@ import {
   BgmCollectionError,
   fetchBgmCollectionPage,
   normalizeBgmCollectionAnime,
+  pacedRequest,
   type BgmCollectionAnime,
 } from './bgm/collections'
 import { fetchSubjectDetail } from './bgm/detail'
@@ -500,6 +501,32 @@ function applyBgmImport(uid: number, items: BgmCollectionAnime[]): { added: numb
   return { ...result, orphaned: [...orphaned] }
 }
 
+/**
+ * 收藏列表接口本身不带标签（`normalizeBgmCollectionAnime` 刻意不取），导入完直接落库就是
+ * 一批「有进度没标签」的记录——类型筛选、标签统计全部落空。逐条详情请求补回来，但绝不能
+ * 在导入收尾时一次性并发砸出去：改走 `pacedRequest`，跟收藏分页共用同一条节流队列，
+ * 对 BGM 来说导入前后就是同一个人在慢慢翻页 + 慢慢点详情。
+ *
+ * 静默失败、不重试——下次这条记录被详情请求命中（比如用户点开编辑）还有机会补上，
+ * 见 `fillDetailLater` 同样的哲学。也不 bump rev：这是系统回填，不是用户操作。
+ */
+async function backfillImportTags(uid: number, bgmIds: number[]): Promise<void> {
+  for (const bgmId of bgmIds) {
+    const current = oneStmt.get(uid, bgmId) as TrackRow | undefined
+    if (!current || parseList(current.bgm_tags).length > 0) continue
+    try {
+      const detail = await pacedRequest(() => fetchSubjectDetail(bgmId))
+      if (!detail.tags.length) continue
+      const recheck = oneStmt.get(uid, bgmId) as TrackRow | undefined
+      if (!recheck || parseList(recheck.bgm_tags).length > 0) continue
+      db.prepare('UPDATE tracks SET bgm_tags = ? WHERE user_id = ? AND bgm_id = ?')
+        .run(JSON.stringify(detail.tags), uid, bgmId)
+    } catch {
+      /* 静默过——缺标签不影响导入本身 */
+    }
+  }
+}
+
 function noteImportFailure(error: unknown, now: number): void {
   if (!(error instanceof BgmCollectionError)) return
   if (!['rate_limited', 'network', 'upstream', 'invalid_response'].includes(error.kind)) return
@@ -555,6 +582,9 @@ async function runBgmImport(uid: number, bgmUserId: string, task: BgmImportStatu
     console.info(
       `[bgm-import] uid=${uid} done total=${task.total} added=${task.added} updated=${task.updated} failed=${task.failed} requests=${requestCount}`,
     )
+    // 不 await：任务已标记 done，finally 马上释放导入锁；标签回填留在后台慢慢跑，
+    // 不拖导入本身的完成时间，用户可以立刻发起下一次导入。
+    void backfillImportTags(uid, items.map((item) => item.bgmId))
   } catch (error) {
     task.state = 'error'
     task.error = error instanceof Error ? error.message : 'Bangumi 导入失败'
