@@ -513,8 +513,11 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   overflow-x: auto;
   /* 顶部留出回形针的高度：横向滚动容器会同时裁掉溢出的纵向内容 */
   padding: 16px 2px 16px;
-  scroll-snap-type: x proximity;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
 }
+.date-strip:active { cursor: grabbing; }
 .dstamp {
   flex: none;
   width: 84px;
@@ -533,7 +536,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   color: var(--ink-sub);
   font: inherit;
   cursor: pointer;
-  scroll-snap-align: center;
   position: relative;
   transition: border-color .2s, background-color .2s, color .2s, transform .2s var(--ease-stick);
 }
@@ -568,9 +570,15 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   gap: var(--film-gap);
   overflow-x: auto;
   padding: 12px 4px 28px;
-  scroll-snap-type: x mandatory;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
 }
-.film .poster { width: auto; scroll-snap-align: start; }
+.film:active { cursor: grabbing; }
+.film .poster { width: auto; }
+/* 标题要能拖蓝选字复制，所以把它从整条胶片的 user-select:none 里摘出来 —— 拖拽 hook
+   在 pointerdown 落在它上面时也会直接放弃接管，两边配合才不会打架 */
+.poster-title { user-select: text; cursor: text; }
 
 /* ---------- 拍立得海报卡（操作常驻，无 hover 依赖） ---------- */
 .poster {
@@ -608,6 +616,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   object-position: center;
   transform: scale(1.01);
   filter: saturate(1.04) contrast(1.02);
+  -webkit-user-drag: none;
+  user-select: none;
 }
 .cover-ph {
   position: absolute;
