@@ -8,7 +8,7 @@ import {
   type AnimeTrack,
 } from '../stores/animeTrackStore'
 import { ipcErrMsg, ModalShell } from '../pages/homework/shared'
-import { fromWebSyncTracks, toWebSyncTracks } from '../utils/webTrackSync'
+import { fromWebSyncTracks, toWebSyncTracks, webTrackSyncFingerprint } from '../utils/webTrackSync'
 
 type SyncState = 'idle' | 'syncing' | 'synced' | 'error'
 type Direction = 'push' | 'pull'
@@ -27,7 +27,7 @@ interface ConfirmState {
 const revKey = (username: string): string => `maple-web-tracks-rev:${username.toLowerCase()}`
 const snapshotKey = (username: string): string => `maple-web-tracks-snapshot:${username.toLowerCase()}`
 const timeKey = (username: string): string => `maple-web-tracks-time:${username.toLowerCase()}`
-const snapshotOf = (tracks: AnimeTrack[]): string => JSON.stringify(tracks)
+const snapshotOf = webTrackSyncFingerprint
 
 export function WebTrackSyncBar(): JSX.Element | null {
   const tracks = useAnimeTrackList()
@@ -125,7 +125,7 @@ export function WebTrackSyncBar(): JSX.Element | null {
         settle('error', '网页版刚有新改动，请先拉取或重新确认强制覆盖')
         return
       }
-      remember(result.rev, tracks)
+      remember(result.rev, fromWebSyncTracks(result.data))
       settle('synced', '网页版上传成功')
     } catch (error: unknown) {
       settle('error', ipcErrMsg(error, '上传网页版失败'))

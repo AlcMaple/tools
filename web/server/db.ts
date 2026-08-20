@@ -193,3 +193,55 @@ ensureColumn('users', 'tracks_rev', 'tracks_rev INTEGER NOT NULL DEFAULT 0')
 // 本地上传封面的 MIME —— cover 列存 `local:<bgmId>` 哨兵值时，实际图片文件落在
 // data-dir.ts 的 coversDir 下，这一列记它的 Content-Type（服务端流式转发要用）。
 ensureColumn('tracks', 'cover_mime', "cover_mime TEXT NOT NULL DEFAULT ''")
+
+// `v0.16.0` 把观望折成 status='plan'，真状态 / 次数放在 extra；正式列上线时旧行只拿到
+// DEFAULT 0，不能靠每次启动反复猜（用户后来真改成 0 会被旧 extra 覆盖）。用一次性 marker
+// 晋升历史数据，并按受影响用户各 bump 一次 rev，让桌面端看到服务器确实发生过迁移。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schema_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`)
+const LEGACY_CONSIDERING_MIGRATION = 'tracks-legacy-considering-v1'
+const migrationDone = db.prepare('SELECT 1 FROM schema_meta WHERE key = ?').get(LEGACY_CONSIDERING_MIGRATION)
+if (!migrationDone) {
+  const rows = db.prepare(`
+    SELECT user_id, bgm_id, status, observe_count, extra
+    FROM tracks
+    WHERE status = 'plan' OR observe_count = 0
+  `).all() as { user_id: number; bgm_id: number; status: string; observe_count: number; extra: string }[]
+  const updateLegacy = db.prepare(`
+    UPDATE tracks SET status = ?, observe_count = ? WHERE user_id = ? AND bgm_id = ?
+  `)
+  const markMigration = db.prepare('INSERT INTO schema_meta (key, value) VALUES (?, ?)')
+  const migrate = db.transaction(() => {
+    const affectedUsers = new Set<number>()
+    for (const row of rows) {
+      let extra: Record<string, unknown>
+      try {
+        const parsed = JSON.parse(row.extra || '{}') as unknown
+        extra = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? parsed as Record<string, unknown>
+          : {}
+      } catch {
+        continue
+      }
+      const status = row.status === 'plan' && extra.appStatus === 'considering'
+        ? 'considering'
+        : row.status
+      const legacyObserve = Number(extra.observeCount)
+      const observe = row.observe_count === 0 && Number.isInteger(legacyObserve) && legacyObserve > 0
+        ? legacyObserve
+        : row.observe_count
+      if (status === row.status && observe === row.observe_count) continue
+      updateLegacy.run(status, observe, row.user_id, row.bgm_id)
+      affectedUsers.add(row.user_id)
+    }
+    for (const uid of affectedUsers) {
+      db.prepare('UPDATE users SET tracks_rev = tracks_rev + 1 WHERE id = ?').run(uid)
+    }
+    markMigration.run(LEGACY_CONSIDERING_MIGRATION, new Date().toISOString())
+  })
+  migrate.immediate()
+}

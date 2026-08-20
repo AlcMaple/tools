@@ -53,6 +53,7 @@ export async function fetchCalendar(force = false): Promise<CalendarResult> {
 // ── 追番 ───────────────────────────────────────────────────────────────────────
 // `considering`(观望) = 「候补，看看再说」，与 `plan`(想看，已决定追)是两件事，别合并
 export type TrackStatus = 'watching' | 'plan' | 'considering' | 'done'
+export type TrackSubjectType = 'anime' | 'manga' | 'novel' | 'other'
 
 export interface Track {
   bgmId: number
@@ -72,6 +73,8 @@ export interface Track {
   aliases: string[]
   /** 观望次数 —— 只在 status='considering' 时有意义；不设上限，状态切走也不清零 */
   observeCount: number
+  /** 桌面端全量同步会带漫画 / 小说；网页版追番页当前只展示 anime。 */
+  subjectType: TrackSubjectType
   updatedAt: number
 }
 
@@ -105,7 +108,16 @@ export async function fetchTracks(): Promise<TracksSnapshot> {
   if (!Number.isSafeInteger(snapshot.rev) || snapshot.rev < 0 || !Array.isArray(snapshot.data)) {
     throw new Error('追番数据响应无效')
   }
-  return snapshot
+  return {
+    ...snapshot,
+    // 兼容字段上线前的服务端 / 缓存；缺失类别的网页记录本来就是动画。
+    data: snapshot.data.map((track) => ({
+      ...track,
+      subjectType: ['anime', 'manga', 'novel', 'other'].includes(track.subjectType)
+        ? track.subjectType
+        : 'anime',
+    })),
+  }
 }
 
 export async function fetchTracksRevision(): Promise<number> {

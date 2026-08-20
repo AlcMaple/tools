@@ -394,16 +394,33 @@ declare global {
       pull: (kind: 'homework' | 'anime' | 'miaoyu') => Promise<string>
     }
     webAccountApi: {
-      status: () => Promise<{ loggedIn: boolean; username: string }>
-      login: (input: { username: string; password: string }) => Promise<{ loggedIn: true; username: string }>
-      logout: () => Promise<{ loggedIn: false; username: string }>
-      pullTracks: () => Promise<{ rev: number; data: unknown[] }>
+      status: () => Promise<{ loggedIn: boolean; username: string; origin: string; accountId: number }>
+      login: (input: { username: string; password: string }) => Promise<{ loggedIn: true; username: string; origin: string; accountId: number }>
+      logout: () => Promise<{ loggedIn: false; username: string; origin: string; accountId: number }>
+      pullTracks: () => Promise<{
+        rev: number
+        data: unknown[]
+        syncSchema: number
+        accountId: number
+        username: string
+        origin: string
+      }>
       pushTracks: (input: {
         baseRev: number
         force?: boolean
         data: unknown[]
       }) => Promise<
-        | { ok: true; conflict: false; rev: number; count: number }
+        | {
+            ok: true
+            conflict: false
+            rev: number
+            count: number
+            data: unknown[]
+            syncSchema: number
+            accountId: number
+            username: string
+            origin: string
+          }
         | { ok: false; conflict: true; rev: number; serverCount: number; error: string }
       >
     }

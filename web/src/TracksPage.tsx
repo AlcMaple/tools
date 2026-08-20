@@ -308,7 +308,7 @@ export function TracksPage(): JSX.Element {
       bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
       title: hit.name, titleCn: hit.nameCn, cover: calItem?.cover ?? '', airWeekday: calDay?.id ?? 0,
       airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [],
-      observeCount: 0, updatedAt: Date.now(),
+      observeCount: 0, subjectType: 'anime', updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
     toast(`已加入『${hit.nameCn || hit.name}』，默认想看`)
@@ -382,30 +382,35 @@ export function TracksPage(): JSX.Element {
     return runTracksMutation(user.username, () => importTracksFromBgm(bgmUserId, onProgress))
   }
 
+  const animeTracks = useMemo(
+    () => (tracks ?? []).filter((track) => (track.subjectType ?? 'anime') === 'anime'),
+    [tracks],
+  )
+
   const counts = useMemo(() => {
     const c = { all: 0, watching: 0, plan: 0, considering: 0, done: 0 }
-    for (const t of tracks ?? []) {
+    for (const t of animeTracks) {
       c.all++
       c[t.status]++
     }
     return c
-  }, [tracks])
+  }, [animeTracks])
 
   const filtered = useMemo(() => {
-    let list = tracks ?? []
+    let list = animeTracks
     if (filter !== 'all') list = list.filter((t) => t.status === filter)
     const q = query.trim()
     if (q) list = list.filter((t) => matches(t, q))
     if (tags.size) list = list.filter((t) => allTagsOf(t).some((x) => tags.has(x)))
     const isToday = (t: Track) => t.airWeekday === today && t.status !== 'done' && isRecentAir(t.airDate)
     return [...list].sort((a, b) => Number(isToday(b)) - Number(isToday(a)))
-  }, [tracks, filter, query, tags, today])
+  }, [animeTracks, filter, query, tags, today])
 
   const allTags = useMemo(() => {
     const m = new Map<string, number>()
-    for (const t of tracks ?? []) for (const x of allTagsOf(t)) m.set(x, (m.get(x) ?? 0) + 1)
+    for (const t of animeTracks) for (const x of allTagsOf(t)) m.set(x, (m.get(x) ?? 0) + 1)
     return [...m.entries()].sort((a, b) => b[1] - a[1])
-  }, [tracks])
+  }, [animeTracks])
 
   // 「想看」中的在播番也是用户关注的更新。
   //
@@ -423,8 +428,8 @@ export function TracksPage(): JSX.Element {
     [filtered, today],
   )
   const todayCount = todayIds.size
-  const editingTrack = tracks?.find((t) => t.bgmId === editing) ?? null
-  const confirmingTrack = tracks?.find((t) => t.bgmId === confirming) ?? null
+  const editingTrack = animeTracks.find((t) => t.bgmId === editing) ?? null
+  const confirmingTrack = animeTracks.find((t) => t.bgmId === confirming) ?? null
 
   return (
     <>
@@ -623,7 +628,7 @@ export function TracksPage(): JSX.Element {
 
       {adding && (
         <AddSearchModal
-          trackedIds={new Set((tracks ?? []).map((t) => t.bgmId))}
+          trackedIds={new Set(animeTracks.map((t) => t.bgmId))}
           onAdd={addFromSearch}
           onClose={() => setAdding(false)}
         />

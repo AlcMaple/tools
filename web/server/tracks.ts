@@ -84,7 +84,25 @@ const parseList = (s: string): string[] => {
   }
 }
 
+function parseExtra(s: string): Record<string, unknown> {
+  try {
+    const value = JSON.parse(s || '{}') as unknown
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+function subjectTypeOf(extra: Record<string, unknown>): 'anime' | 'manga' | 'novel' | 'other' {
+  return ['anime', 'manga', 'novel', 'other'].includes(String(extra.subjectType))
+    ? extra.subjectType as 'anime' | 'manga' | 'novel' | 'other'
+    : 'anime'
+}
+
 function toJson(r: TrackRow): Record<string, unknown> {
+  const extra = parseExtra(r.extra)
   return {
     bgmId: r.bgm_id,
     status: r.status,
@@ -101,6 +119,9 @@ function toJson(r: TrackRow): Record<string, unknown> {
     userTags: parseList(r.user_tags),
     aliases: parseList(r.aliases),
     observeCount: r.observe_count,
+    // 网页版当前只展示动画，但全量同步必须保留漫画 / 小说。普通列表带上类别让前端过滤，
+    // 不能在服务端 SELECT 时丢掉，否则桌面端下一次整包拉取会误删隐藏类别。
+    subjectType: subjectTypeOf(extra),
     updatedAt: r.updated_at,
   }
 }
@@ -110,14 +131,19 @@ function toJson(r: TrackRow): Record<string, unknown> {
  * 网页端根本不认识它们,也**从不改写**,所以富数据过服务器一圈不会被瘦记录抹掉。
  */
 function toSyncJson(r: TrackRow): Record<string, unknown> {
-  let extra: unknown = {}
-  try {
-    const v = JSON.parse(r.extra || '{}')
-    if (v && typeof v === 'object' && !Array.isArray(v)) extra = v
-  } catch {
-    /* 脏数据当空对象，别让一条坏记录卡住整次同步 */
+  const extra = parseExtra(r.extra)
+  // 已发布的 v0.16.0 只认识三态：观望必须继续投影成 plan + extra.appStatus，当前客户端
+  // fromWebSyncTracks 也认这套 legacy wire。observeCount 同步镜像给旧客户端读取。
+  const wireExtra = {
+    ...extra,
+    ...(r.status === 'considering' ? { appStatus: 'considering' } : {}),
+    observeCount: r.observe_count,
   }
-  return { ...toJson(r), extra }
+  return {
+    ...toJson(r),
+    status: r.status === 'considering' ? 'plan' : r.status,
+    extra: wireExtra,
+  }
 }
 
 // id 是插入顺序(自增,UPDATE 不会挪它)—— 按它排列表就是「按加入顺序」,不会因为编辑了某条
@@ -834,14 +860,40 @@ tracks.get('/:bgmId/cover-file', async (c) => {
 // 所以已存在的记录只写 app 明确给了的字段。
 
 const MAX_EXTRA_BYTES = 16 * 1024 // 单条 extra 上限：这是给 app 的自由容器，得防止被当网盘用
+const SYNC_SCHEMA = 2
+
+function syncExtra(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function syncStatus(status: unknown, extra: Record<string, unknown>): Status | null {
+  if (status === 'plan' && extra.appStatus === 'considering') return 'considering'
+  return STATUSES.includes(status as Status) ? status as Status : null
+}
+
+function statusCounts(uid: number): Record<Status, number> {
+  const counts: Record<Status, number> = { watching: 0, plan: 0, considering: 0, done: 0 }
+  for (const row of listStmt.all(uid) as TrackRow[]) {
+    if (STATUSES.includes(row.status as Status)) counts[row.status as Status]++
+  }
+  return counts
+}
 
 /** 拉取 —— 全量（含 extra）+ 当前 rev。app 要记住这个 rev，上传时带回来做冲突检测。 */
 tracks.get('/sync', async (c) => {
-  const uid = await requireUid(c)
-  if (!uid) return c.json({ error: '未登录' }, 401)
-  const snapshot = readSyncSnapshot(uid)
-  fillCalendarMetadataLater(uid)
-  return c.json(snapshot)
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  const snapshot = readSyncSnapshot(session.uid)
+  fillCalendarMetadataLater(session.uid)
+  return c.json({
+    ...snapshot,
+    syncSchema: SYNC_SCHEMA,
+    accountId: session.uid,
+    username: session.username,
+    statusCounts: statusCounts(session.uid),
+  })
 })
 
 /**
@@ -851,8 +903,9 @@ tracks.get('/sync', async (c) => {
  * 让用户去选「先拉取」还是「强制覆盖」。这是覆盖模型唯一的护栏，别为了省事默认 force。
  */
 tracks.post('/sync', async (c) => {
-  const uid = await requireUid(c)
-  if (!uid) return c.json({ error: '未登录' }, 401)
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  const uid = session.uid
 
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
   const list = body.data
@@ -867,10 +920,14 @@ tracks.post('/sync', async (c) => {
     const id = Number(t.bgmId)
     // 负数 id 是 app 的**手动条目**（BGM 还没有的未播出续季），必须放行；0 才是非法
     if (!Number.isInteger(id) || id === 0) return c.json({ error: `bgmId 不合法：${String(t.bgmId)}` }, 400)
+    if (incoming.has(id)) return c.json({ error: `bgmId 重复：${id}` }, 400)
     if (t.extra !== undefined && JSON.stringify(t.extra ?? {}).length > MAX_EXTRA_BYTES) {
       return c.json({ error: `条目 ${id} 的 extra 过大` }, 400)
     }
-    incoming.set(id, t)
+    const extra = syncExtra(t.extra)
+    const status = syncStatus(t.status, extra)
+    if (!status) return c.json({ error: `条目 ${id} 的 status 不受支持：${String(t.status)}` }, 400)
+    incoming.set(id, { ...t, status, ...('extra' in t ? { extra } : {}) })
   }
 
   const now = Date.now()
@@ -935,7 +992,7 @@ tracks.post('/sync', async (c) => {
         sets.push(`${col} = ?`)
         args.push(v)
       }
-      if ('status' in t && STATUSES.includes(t.status as Status)) put('status', t.status)
+      put('status', t.status)
       if ('episode' in t) put('episode', Number(t.episode) || 0)
       if ('totalEpisodes' in t) put('total_episodes', asTotal(t.totalEpisodes) ?? null)
       if ('title' in t) put('title', String(t.title ?? ''))
@@ -987,6 +1044,9 @@ tracks.post('/sync', async (c) => {
         rev: result.rev,
         conflict: true,
         serverCount: result.serverCount,
+        syncSchema: SYNC_SCHEMA,
+        accountId: uid,
+        username: session.username,
       },
       409,
     )
@@ -997,7 +1057,14 @@ tracks.post('/sync', async (c) => {
 
   // 用户数据和 rev 已经原子提交；周历只在响应关键路径之外补空字段，并按用户单飞去重。
   fillCalendarMetadataLater(uid)
-  return c.json({ rev: result.rev, count: result.count })
+  return c.json({
+    rev: result.rev,
+    count: result.count,
+    syncSchema: SYNC_SCHEMA,
+    accountId: uid,
+    username: session.username,
+    statusCounts: statusCounts(uid),
+  })
 })
 
 export default tracks
