@@ -28,6 +28,7 @@ import { animeTrackStore, useAnimeTrack } from '../stores/animeTrackStore'
 import { useSourceSearch } from '../hooks/useSourceSearch'
 import { usePlayerKeys } from '../hooks/usePlayerKeys'
 import { biliMpdUri, pickVideoTracks } from '../utils/biliMpd'
+import { isLegacyBilibiliBinding } from '../utils/bilibiliBinding'
 import type { SearchCard, Source } from '../types/search'
 import type { BiliDash, BiliVideoInfo } from '../types/bili'
 import type { XifanWatchInfo } from '../types/xifan'
@@ -253,16 +254,18 @@ export default function OnlinePlayer(): JSX.Element {
   // ── 源切换器条目:三个内置源常驻 + 自定义 binding 追加 ──────────────────────
   const entries = useMemo<SourceEntry[]>(() => {
     const bindings = track?.bindings ?? []
+    // Bilibili 源重构前,手动加的链接没有专属 source,存成 Custom + bilibili.com 链接
+    // (isLegacyBilibiliBinding)。让它顶进 Bilibili 内置槽位,而不是掉进下面的自定义
+    // 条目里——否则默认选中逻辑找不到"已绑的 Bilibili"，会回落去选空的 B 站搜索位。
     const builtinEntries = BUILTINS.map((s) => ({
       key: `b:${s}`,
       label: s === 'Xifan' ? '稀饭' : s === 'Aowu' ? '嗷呜' : s === 'Bilibili' ? 'B 站' : s,
       builtin: s,
-      binding: bindings.find((b) => b.source === s),
+      binding: bindings.find((b) => b.source === s) ??
+        (s === 'Bilibili' ? bindings.find(isLegacyBilibiliBinding) : undefined),
     }))
-    // Bilibili 已经是内置源(靠搜索关联,见 MyAnime「搜 Bilibili」);这里只剩老数据里
-    // 手动贴过 bilibili.com 链接的 Custom 条目(下面还按 biliBvid() 识别、走自研播放）。
     const customEntries = bindings
-      .filter((b) => b.source === 'Custom')
+      .filter((b) => b.source === 'Custom' && !isLegacyBilibiliBinding(b))
       .map((b, i) => ({
         key: `c:${i}:${b.sourceKey}`,
         label: b.sourceTitle || '自定义',
