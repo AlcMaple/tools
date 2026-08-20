@@ -25,6 +25,7 @@ import {
   XifanBusyError,
   XifanResolveError,
 } from './xifan/resolve'
+import { serveStream } from './xifan/stream'
 import { locate } from './xifan/locate'
 import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
 import { getXifanCaptcha, searchXifan, verifyXifanCaptcha, XIFAN_SEARCH_MAX_LENGTH } from './xifan/search'
@@ -48,6 +49,12 @@ xifan.use('/auth/*', async (c, next) => {
 
 function upstreamFailure(c: Context, error: unknown, fallback: string): Response {
   const message = error instanceof Error ? error.message : fallback
+  // undici 的 "fetch failed" 是外壳，真实原因（ENOTFOUND / ECONNREFUSED / 证书握手失败……）
+  // 挂在 error.cause 上；只吐外壳到终端等于没日志，这里把 cause 一起打出来。
+  if (error instanceof Error) {
+    const cause = (error as { cause?: unknown }).cause
+    console.error('[xifan] ' + fallback + ': ' + message + (cause ? ' | cause=' + String(cause) : ''))
+  }
   if (error instanceof XifanLocalRateLimitError) {
     c.header('Retry-After', String(error.retryAfterSec))
     return c.json({ error: message }, 429)
@@ -74,6 +81,21 @@ xifan.get('/hls.js', (c) => {
   c.header('Content-Type', 'application/javascript; charset=utf-8')
   c.header('Cache-Control', 'public, max-age=86400')
   return c.body(hlsJsCache)
+})
+
+// 播放页调试日志出口——用户只看终端，不看网页 devtools；<video> 的 error/回退套娃这些
+// 只在浏览器里发生的事件，改用 sendBeacon 把摘要丢过来，落进这个 Node 进程的 stdout。
+const XIFAN_CLIENT_LOG_MAX = 300
+xifan.post('/client-log', async (c) => {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.body(null, 204)
+  }
+  const msg = body && typeof body === 'object' && 'msg' in body ? String((body as { msg: unknown }).msg) : ''
+  if (msg) console.log('[xifan:client] ' + msg.slice(0, XIFAN_CLIENT_LOG_MAX))
+  return c.body(null, 204)
 })
 
 // 打开播放页：一次抓 source 1 → 线路 1 地址 + 全部线路名单（不碰线路 2/3）
@@ -114,6 +136,18 @@ xifan.get('/resolve', async (c) => {
       return error.code === 'XIFAN_AUTH_REQUIRED' ? c.json(body, 401) : c.json(body, 403)
     }
     return upstreamFailure(c, error, '稀饭线路解析失败')
+  }
+})
+
+// mp4 并发分片流代理 —— 为什么必须在服务端、为什么要多路，见 xifan/stream.ts 顶部注释。
+xifan.get('/stream', async (c) => {
+  const raw = c.req.query('u') ?? ''
+  if (!raw) return c.json({ error: '缺少 u' }, 400)
+  try {
+    const r = await serveStream(raw, c.req.header('range'))
+    return new Response(r.body, { status: r.status, headers: r.headers })
+  } catch (error) {
+    return upstreamFailure(c, error, '稀饭流代理失败')
   }
 })
 
@@ -292,12 +326,19 @@ const PLAY_PAGE = `<!doctype html>
   .sheet-wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 60px; position: relative; z-index: 1 }
   .player-frame { position: relative; aspect-ratio: 16/9; background: #000; border: 1.5px solid var(--line-strong); border-radius: var(--r-card); overflow: hidden; box-shadow: var(--shadow-1) }
   video, iframe.player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; display: none }
+  /* 浏览器原生的黑色缓冲转圈（Chrome/Safari 在 <video controls> 卡顿时自己画的那个）藏在
+     UA shadow DOM 里，靠伪元素关不干净——版本一多就失效。唯一稳的办法是拿一块不透明的
+     「画纸」把整个播放框盖住，原生转圈画在下面也露不出来；控制条（播放/进度条）不受影响。 */
+  video::-webkit-media-controls-loading-panel { display: none !important }
   .ep-badge-pill { display: inline-flex; align-items: center; font-family: var(--font-hand); font-size: 14px; color: var(--teal); background: var(--teal-wash); border: 1.5px solid var(--teal-line); border-radius: var(--r-pill); padding: 2px 12px; font-variant-numeric: tabular-nums }
-  #buffering { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; align-items: center; gap: 9px; padding: 9px 14px; border-radius: var(--r-pill); color: var(--ink); background: var(--card); border: 1.5px solid var(--line-strong); box-shadow: var(--shadow-stick); pointer-events: none; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums }
+  #buffering { position: absolute; inset: 0; z-index: 3; display: none; align-items: center; justify-content: center; background: var(--paper); pointer-events: none }
   #buffering.show { display: flex }
   #buffering.retryable { pointer-events: auto; cursor: pointer }
-  .buffer-spin { width: 14px; height: 14px; border: 2px solid var(--teal-wash); border-top-color: var(--teal-mid); border-radius: 50%; animation: spin .7s linear infinite }
-  @keyframes spin { to { transform: rotate(360deg) } }
+  .buf-card { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 26px; border-radius: var(--r-card); background: var(--card); border: 1.5px dashed var(--teal-line); box-shadow: var(--shadow-stick); transform: rotate(-1.3deg); animation: buffer-wobble 2.6s ease-in-out infinite }
+  .buf-ring { width: 32px; height: 32px; fill: none; stroke: var(--teal-mid); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 34 22; transform-origin: center; animation: buf-draw 1.4s linear infinite }
+  #bufferText { font-family: var(--font-hand); font-size: 14px; color: var(--ink); font-variant-numeric: tabular-nums }
+  @keyframes buf-draw { to { transform: rotate(360deg) } }
+  @keyframes buffer-wobble { 0%, 100% { transform: rotate(-1.3deg) translateY(0) } 50% { transform: rotate(1deg) translateY(-3px) } }
   /* 只在真出错时才现（加载失败 / 这集没更新 / 线路解析不到）—— 平时不显示任何提示文字。
      用 classList 切换而不是 JS 里直接写 el.style.display —— 后者是内联样式，同样受
      style-src 这条 CSP 约束，没有 nonce/hash 会被浏览器悄悄吞掉，表现成「怎么切都不生效」。 */
@@ -333,12 +374,16 @@ const PLAY_PAGE = `<!doctype html>
   <div class="player-frame mt16">
     <video id="v" controls playsinline preload="auto"></video>
     <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
-    <div id="buffering" role="status" aria-live="polite"><span class="buffer-spin"></span><span id="bufferText">描线中…</span></div>
+    <div id="buffering" role="status" aria-live="polite">
+      <div class="buf-card">
+        <svg class="buf-ring" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle></svg>
+        <span id="bufferText" class="font-hand">描线中…</span>
+      </div>
+    </div>
   </div>
   <div id="err" role="alert" aria-live="polite"><span id="err-text"></span><a id="auth-link" class="btn btn-sm btn-ghost" href="/#/settings/xifan" target="_blank" rel="noopener">去登录</a></div>
   <div class="spread mt24">
     <h2 class="title-sketch section-title">选集</h2>
-    <span class="faint small">当前集高亮</span>
   </div>
   <div class="ep-grid mt16" id="eps"></div>
   <h2 class="title-sketch section-title mt24">线路</h2>
@@ -348,6 +393,14 @@ const PLAY_PAGE = `<!doctype html>
 <script nonce="__CSP_NONCE__">
 (function(){
   var $ = function(id){ return document.getElementById(id) }
+  // 排查用日志一律走这里 → 落 Node 终端的 stdout，不进浏览器 devtools（那边看不到）。
+  var slog = function(msg){
+    try {
+      var body = JSON.stringify({ msg: msg })
+      if (navigator.sendBeacon) navigator.sendBeacon('/api/xifan/client-log', new Blob([body], { type: 'application/json' }))
+      else fetch('/api/xifan/client-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true })
+    } catch (e) {}
+  }
   var q = new URLSearchParams(location.search)
   var animeId = q.get('animeId') || ''
   var ep = q.get('ep') || '1'
@@ -356,8 +409,11 @@ const PLAY_PAGE = `<!doctype html>
   var v = $('v'), frame = $('frame')
   var lines = [], eps = [], curPl = null, resolvedMap = {}, resolvingMap = {}, hls = null
   var waitingForAuth = false
-  var BUFFER_TARGET = 10, BUFFER_RATE = .0625, BUFFER_STALL_MS = 6000, BUFFER_MAX_MS = 15000
-  var BUFFER_SAMPLE_MS = 6000, BUFFER_MIN_MEDIA_RATE = 1.15, bufferTimer = null, bufferToken = 0
+  var BUFFER_TARGET = 10, BUFFER_RATE = .0625, BUFFER_STALL_MS = 10000, BUFFER_MAX_MS = 30000
+  // 冷启动（跨源 TCP 慢启动 + moov 定位）前 10 秒不做速率裁决，之后每 6 秒滚动采样一次；
+  // 门槛 1.0 = 只要下载不比实时播放慢就继续等，不再因为「不够快 15%」就退套娃。
+  var BUFFER_WARMUP_MS = 10000, BUFFER_SAMPLE_MS = 6000, BUFFER_MIN_MEDIA_RATE = 1
+  var bufferSampled = false, bufferTimer = null, bufferToken = 0
   var resumeAfterBuffer = false, bufferAnchor = 0, savedRate = 1, savedMuted = false, internalSeek = false
   var bufferStartedAt = 0, bufferLastProgressAt = 0, bufferLastAhead = 0, bufferSampleAt = 0, bufferSampleAhead = 0
   var internalSeekTimer = null, gateOnPlay = false, lineRequest = 0, playGeneration = 0
@@ -451,6 +507,13 @@ const PLAY_PAGE = `<!doctype html>
     if (resumeWasPlaying){ var rp = v.play(); if (rp && rp.catch) rp.catch(function(){}) }
   })
   v.addEventListener('playing', function(){ resumePending = false; resumeWasPlaying = false; networkInterrupted = false })
+  // 首次真正可播（不是 bufferGate 那种「已经在播中途卡了」）就收起初始浮层；
+  // 中途 waiting/seeking 触发的 bufferGate 有自己的一套 show/hide，不受这里影响。
+  // 这里曾经加过「canplay 后低速静音静默预缓冲」，实测**有害，已移除**：0.0625 倍速会让
+  // 浏览器判定「缓冲远超消费速度」而主动限流，10.9 秒只攒到 2.7 秒缓冲；同一时刻用
+  // fetch 直接读同一个代理地址能跑 772KB/s(6.3Mbps)。起播慢的真正原因是带宽不是时机，
+  // 已由 /api/xifan/stream 的并发代理解决，不需要再抢跑。
+  v.addEventListener('canplay', function(){ if (!resumeAfterBuffer) hideBuffer() })
 
   function bufferedAhead(){
     for (var i = 0; i < v.buffered.length; i++){
@@ -479,7 +542,7 @@ const PLAY_PAGE = `<!doctype html>
   function resetBufferWatch(ahead){
     var now = performance.now()
     bufferStartedAt = now; bufferLastProgressAt = now; bufferLastAhead = ahead
-    bufferSampleAt = now; bufferSampleAhead = ahead
+    bufferSampleAt = now; bufferSampleAhead = ahead; bufferSampled = false
   }
 
   function restorePlaybackState(){
@@ -514,9 +577,12 @@ const PLAY_PAGE = `<!doctype html>
     gateOnPlay = false
   }
 
-  function fallbackBufferGate(token){
+  // 直连本身没报错、只是攒不够缓冲被判出局。日志要写清判定快照，否则和 <video> error
+  // 那条路径混在一起没法区分（那条会先打 direct play failed, code=N）。
+  function fallbackBufferGate(token, why){
     if (token !== bufferToken || !resumeAfterBuffer || !curPl || inFrame()) return
     var pl = curPl
+    slog('buffer gate gave up (' + (why || 'unknown') + ') after ' + Math.round(performance.now() - bufferStartedAt) + 'ms url=' + pl.url)
     cancelBufferGate(false)
     embed(pl)
   }
@@ -534,15 +600,18 @@ const PLAY_PAGE = `<!doctype html>
     $('bufferText').textContent = '描线中 · 还差 ' + Math.max(0, Math.ceil(goal - ahead)) + ' 秒'
     if (ahead + .25 >= goal || v.ended){ finishBufferGate(token); return }
     if (now - bufferLastProgressAt >= BUFFER_STALL_MS || now - bufferStartedAt >= BUFFER_MAX_MS){
-      classifyMediaFailure(function(){ fallbackBufferGate(token) }, function(){ if (curPl) playLine(curPl) })
+      var why = now - bufferLastProgressAt >= BUFFER_STALL_MS ? 'stall' : 'max wait'
+      classifyMediaFailure(function(){ fallbackBufferGate(token, why + ' ahead=' + ahead.toFixed(1) + '/' + goal.toFixed(1)) }, function(){ if (curPl) playLine(curPl) })
       return
     }
-    if (now - bufferSampleAt >= BUFFER_SAMPLE_MS){
+    if (now - bufferSampleAt >= (bufferSampled ? BUFFER_SAMPLE_MS : BUFFER_WARMUP_MS)){
       var elapsed = Math.max(.001, (now - bufferSampleAt) / 1000)
       var mediaRate = (ahead - bufferSampleAhead) / elapsed + BUFFER_RATE
       if (mediaRate < BUFFER_MIN_MEDIA_RATE) {
-        classifyMediaFailure(function(){ fallbackBufferGate(token) }, function(){ if (curPl) playLine(curPl) })
+        classifyMediaFailure(function(){ fallbackBufferGate(token, 'rate ' + mediaRate.toFixed(2) + 'x') }, function(){ if (curPl) playLine(curPl) })
+        return
       }
+      bufferSampled = true; bufferSampleAt = now; bufferSampleAhead = ahead
     }
   }
 
@@ -575,6 +644,9 @@ const PLAY_PAGE = `<!doctype html>
     if (!curPl || inFrame() || !v.getAttribute('src')) return
     // hls.js 自己处理错误；Safari / iOS 原生 HLS 没有 hls 实例，仍需回退官方播放器。
     if (curPl.kind === 'hls' && hls) return
+    // 排查「总是回退官方 iframe」用：MediaError.code（1 abort/2 network/3 decode/4 src not supported）
+    // 直接暴露在控制台，不用每次都翻源码猜是 CDN 拒了还是别的。
+    if (v.error) slog('direct play failed, code=' + v.error.code + ' url=' + curPl.url)
     var failed = curPl
     classifyMediaFailure(function(){ cancelBufferGate(); embed(failed) }, function(){ playLine(failed) })
   })
@@ -635,6 +707,13 @@ const PLAY_PAGE = `<!doctype html>
     curPl = pl; clearFail(); stopAll(); renderChips()
     gateOnPlay = pl.kind === 'mp4'
     v.classList.add('on'); frame.classList.remove('on')
+    // stopAll() 里的 cancelBufferGate 已经把上一条线路的浮层收掉；这里立刻重新盖上——
+    // 从「设 src」到浏览器第一次 canplay 之间那段没有任何 waiting/playing 事件，
+    // bufferGate 完全不知道，只能靠浏览器自己画黑色原生 loading，就是「点了播放还有 loading」
+    // 那个体感的根：不是逻辑重复弹了两次，是这段空档我们的浮层压根没盖上过。
+    $('bufferText').textContent = '描线中…'
+    $('buffering').classList.remove('retryable'); $('buffering').onclick = null
+    $('buffering').classList.add('show')
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
         // 90–120 秒足够覆盖网络抖动，同时避免旧配置一次抓 10–15 分钟、产生上百个分片请求。
@@ -672,12 +751,16 @@ const PLAY_PAGE = `<!doctype html>
         v.src = pl.url; var p2 = v.play(); if (p2 && p2.catch) p2.catch(function(){}) // iOS 原生 HLS
       } else { embed(pl) }
     } else {
-      v.src = pl.url; v.load(); var p = v.play(); if (p && p.catch) p.catch(function(){})
+      // mp4 不再裸直连：源站按连接限速，单路 ~1.4Mbps 追不上 2.6Mbps 的码率。
+      // 走服务端 /stream 由 6 路并发聚合后同源喂给 <video>（细节见 xifan/stream.ts）。
+      v.src = '/api/xifan/stream?u=' + encodeURIComponent(pl.url)
+      v.load(); var p = v.play(); if (p && p.catch) p.catch(function(){})
     }
   }
 
   // 套娃：直连播不了 → 嵌稀饭自己的真实播放器（跟你在稀饭看一样）
   function embed(pl){
+    slog('fallback to official iframe, source=' + pl.source + ' kind=' + pl.kind + ' url=' + pl.url)
     curPl = pl
     cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
     gateOnPlay = false; v.classList.remove('on'); frame.classList.add('on'); renderChips()
@@ -719,6 +802,7 @@ const PLAY_PAGE = `<!doctype html>
       try {
         pl = await resolveSource(source)
       } catch (e){
+        slog('resolveSource failed, source=' + source + ' msg=' + (e && e.message || e))
         if (request !== lineRequest) return
         classifyMediaFailure(
           function(){ if (request === lineRequest) fail('解析请求失败：' + (e && e.message || e), e && e.code) },
