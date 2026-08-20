@@ -1,17 +1,18 @@
-// 开屏动画「なぞる」—— 从和泉纱雾（插画家）的视角：她在画稿本上把自己画出来。
-// 描线 → 上色 → 盖章 → 翻页进站，画面部分全在 styles/splash.css。
+// 开屏动画「パシャッ」—— 一张立绘照片被啪地贴上稿本：卡片带回弹地落位、立绘随落位
+// 一道斜光扫出显影、印章跟着 punch 下去、标题弹出，全挤在同一拍里，然后翻页进站。
+// 画面部分全在 styles/splash.css。之前是「描线→上色→盖章→标题」的连续叙事，时长压不
+// 下去——分步骤的仪式感只在长时长才立得住，短时长看着像被剪掉了几帧，所以改成单拍手感。
 //
 // 时间轴由 JS 按「真正画出来的帧」推进，不走墙上时间：首屏那阵子（包解析 + 周历数据 +
 // 一堆海报解码）主线程被占住，CSS 动画照走不误，等松手时早跑到尾了——这就是
-// 「第一次进来只看到一个画框、绘画和盖章全没了」的原因。掉帧只让动画变慢，不让它跳过。
+// 「第一次进来只看到一个画框、贴纸和盖章全没了」的原因。掉帧只让动画变慢，不让它跳过。
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Ic } from './SketchIcon'
 
 const SEEN_KEY = 'mt-splash-seen'
 const ART = '/assets/sagiri-full.webp'
-const HOLD_MS = 2600 // 时间轴总长：画完 + 停一拍
-const OUT_MS = 620 // 翻页离场（与 .sp.out 动画同长）
-const WAIT_MS = 1500 // 等立绘解码的上限，超时就照画（宁可卡片空一点，也不能干等白纸）
+const HOLD_MS = 700 // 时间轴总长：单拍动作演完 + 停一瞬
+const OUT_MS = 320 // 翻页离场（与 .sp.out 动画同长）
+const WAIT_MS = 800 // 等立绘解码的上限，超时就照画（宁可卡片空一点，也不能干等白纸）
 const STEP_CAP = 34 // 单帧最多推进两帧的量：卡一下就慢一点，不跳帧
 const HARD_MS = 8000 // 兜底：无论帧跑成什么样，最多占屏这么久（rAF 完全不来时也能退场）
 
@@ -125,12 +126,9 @@ export function Splash(): JSX.Element | null {
         <span className="sp-focus focus-lines" />
 
         <div className="sp-art">
-          {/* 同一张官方立绘叠两层：上层线稿先「描」出来，下层彩稿晚半拍追上来上色 */}
-          <img className="sp-color" src={ART} alt="" />
-          <img className="sp-line" src={ART} alt="" />
-          <span className="sp-pen">
-            <Ic name="pencil" />
-          </span>
+          <img src={ART} alt="" />
+          {/* 显影瞬间扫过去的那道斜光，配合立绘一起淡入，制造「啪」地贴上去的手感 */}
+          <span className="sp-pen" />
         </div>
 
         <span className="kira sp-kira k1">サラサラ…</span>

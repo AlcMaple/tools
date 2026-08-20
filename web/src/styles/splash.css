@@ -1,7 +1,8 @@
 /* ============================================================
-   开屏动画「なぞる（描一遍）」—— 视角是和泉纱雾本人：
-   她是插画家，开屏就是她在画稿本上画自己：先描线 → 再上色 → 盖章收工 → 翻页进站。
-   手法沿用成熟做法（SVG stroke-dashoffset 自绘线 + clip-path 擦除式上色），
+   开屏动画「パシャッ（啪嗒一下）」—— 一张立绘照片被啪地贴上稿本：
+   卡片带一点回弹地落位、立绘随落位瞬间一道斜向亮光扫出、印章跟着punch下去、
+   标题弹出，全部挤在同一拍里，不再是「先描线→再上色→再盖章」的连续叙事。
+   短时长动画撑不起分步骤的仪式感，改成一个动作到位的「贴照片」手感。
    素材用官方立绘（public/assets/sagiri-full.webp），配色/纸面全部取 sketch-tokens.css。
    只在一次会话里放一次，prefers-reduced-motion 下整段不挂载（见 Splash.tsx）。
    ============================================================ */
@@ -28,14 +29,14 @@
    看着就是「先闪一下页面再进开屏」。同源的兜底见 index.html 的 html[data-splash] */
 
 /* 卡片这一层的动画一律钉在暂停态，由 Splash.tsx 逐帧设 currentTime 来推进：
-   按墙上时间跑的话，首屏卡顿掉的帧不会补，观众看到的就是「一个画框，然后就没了」。
+   按墙上时间跑的话，首屏卡顿掉的帧不会补，观众看到的就是「贴纸半路卡住」。
    .sp 自己的翻页离场不在此列，仍由 CSS 直接跑 */
 .sp-card, .sp-card *, .sp-title, .sp-title *, .sp-skip { animation-play-state: paused; }
 
 /* 翻页离场：以左边缘为轴掀起来，露出下面的应用 */
 .sp.out {
   pointer-events: none;
-  animation: sp-out .62s var(--ease-page) forwards;
+  animation: sp-out .32s var(--ease-page) forwards;
 }
 @keyframes sp-out {
   from { opacity: 1; transform: none; }
@@ -44,6 +45,7 @@
 .sp.out { transform-origin: 6% 50%; }
 
 /* ---------- 画稿卡（相片纸 + 和纸胶带） ---------- */
+/* 带一点回弹地「啪」落位：略过冲、再弹回正——这一下就是整段动画的主动作 */
 .sp-card {
   position: relative;
   width: min(74vw, 300px);
@@ -51,15 +53,16 @@
   background: var(--card);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-2);
-  animation: sp-card-in .5s var(--ease-stick) both;
+  animation: sp-card-in .3s var(--ease-stick) both;
 }
 @keyframes sp-card-in {
-  from { opacity: 0; transform: rotate(-2.5deg) scale(.9); }
-  to { opacity: 1; transform: rotate(-1.2deg) scale(1); }
+  0% { opacity: 0; transform: rotate(5deg) scale(.7) translateY(-14px); }
+  62% { opacity: 1; transform: rotate(-2.6deg) scale(1.04) translateY(0); }
+  100% { opacity: 1; transform: rotate(-1.2deg) scale(1) translateY(0); }
 }
 .sp-card .tape { z-index: 3; }
 
-/* 自绘的铅笔画框（stroke-dashoffset 走一圈） */
+/* 自绘的铅笔画框（stroke-dashoffset 走一圈，与卡片落位同拍画完） */
 .sp-frame {
   position: absolute;
   inset: 7px;
@@ -76,24 +79,24 @@
 .sp-frame rect {
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
-  animation: sp-draw .85s var(--ease-page) .06s forwards;
+  animation: sp-draw .26s var(--ease-page) forwards;
 }
 @keyframes sp-draw { to { stroke-dashoffset: 0; } }
 
-/* 背景网点 + 集中线：她起稿时贴的网点纸 */
+/* 背景网点 + 集中线：贴上去那一下带出的气氛，不再单独等一拍 */
 .sp-tone {
   position: absolute;
   inset: 10px;
   border-radius: 6px;
   opacity: 0;
-  animation: sp-fade .6s var(--ease-page) .8s forwards;
+  animation: sp-fade .22s var(--ease-page) .04s forwards;
 }
 /* 集中线本体是全屏级的强效果，压到 .5 并收窄外扩，只当卡片背后的一层气氛 */
-.sp-focus { inset: -16%; opacity: 0; animation: sp-focus-in .7s var(--ease-page) 1s forwards; }
+.sp-focus { inset: -16%; opacity: 0; animation: sp-focus-in .24s var(--ease-page) .06s forwards; }
 @keyframes sp-focus-in { to { opacity: .5; } }
 @keyframes sp-fade { to { opacity: 1; } }
 
-/* ---------- 立绘：线稿 →（擦除式）上色 ---------- */
+/* ---------- 立绘：一道斜向亮光扫过，瞬间显影（不再分线稿/上色两层） ---------- */
 .sp-art { position: absolute; inset: 12px 12px 0; overflow: hidden; }
 .sp-art img {
   position: absolute;
@@ -104,41 +107,30 @@
   object-position: bottom center;
   user-select: none;
   -webkit-user-drag: none;
-}
-/* 线稿层：把官方立绘压成铅笔稿（去色 + 提对比），由下往上「描」出来 */
-.sp-line {
-  filter: grayscale(1) contrast(1.8) brightness(1.06) opacity(.6);
-  clip-path: inset(100% 0 0 0);
-  animation: sp-wipe .78s var(--ease-page) .28s forwards;
-}
-/* 上色层：晚 0.42s 追上来，就是「先描线、后上色」 */
-.sp-color {
-  clip-path: inset(100% 0 0 0);
-  animation: sp-wipe .8s var(--ease-page) .7s forwards;
+  opacity: 0;
   filter: drop-shadow(0 8px 12px rgba(30, 36, 52, .16));
+  animation: sp-reveal .22s var(--ease-page) .1s forwards;
 }
-@keyframes sp-wipe { to { clip-path: inset(0 0 0 0); } }
+@keyframes sp-reveal { to { opacity: 1; } }
 
-/* 笔尖：跟着描线的那道边一起往上走（这就是「她的手」） */
+/* 扫光条：跟着立绘显影斜切过去一次，落位的「啪」感 */
 .sp-pen {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--teal-line) 12%, var(--teal-line) 88%, transparent);
+  inset: -20% -60%;
+  background: linear-gradient(78deg, transparent 42%, rgba(255, 255, 255, .55) 50%, transparent 58%);
   opacity: 0;
-  animation: sp-pen-run .78s var(--ease-page) .28s forwards;
+  transform: translateX(-60%);
+  animation: sp-sweep .3s var(--ease-page) .08s forwards;
 }
-.sp-pen .ic { position: absolute; right: 8px; top: -20px; width: 22px; height: 22px; color: var(--ink); }
-@keyframes sp-pen-run {
-  0% { bottom: 0; opacity: 0; }
-  10% { opacity: 1; }
-  82% { opacity: 1; }
-  100% { bottom: 100%; opacity: 0; }
+.sp-pen .ic { display: none; }
+@keyframes sp-sweep {
+  0% { opacity: 0; transform: translateX(-60%); }
+  18% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(60%); }
 }
 
-/* ---------- 收工的小装饰 ---------- */
+/* ---------- 收工的小装饰：紧跟着立绘落位 punch 下去 ---------- */
 .sp-stamp {
   position: absolute;
   right: -14px;
@@ -146,21 +138,21 @@
   z-index: 4;
   background: var(--card);
   opacity: 0;
-  animation: sp-stamp-in .5s var(--ease-stick) 1.42s forwards;
+  animation: sp-stamp-in .26s var(--ease-stick) .22s forwards;
 }
 @keyframes sp-stamp-in {
-  0% { opacity: 0; transform: rotate(-8deg) scale(2.1); }
-  55% { opacity: 1; transform: rotate(-8deg) scale(.94); }
+  0% { opacity: 0; transform: rotate(-8deg) scale(2.4); }
+  60% { opacity: 1; transform: rotate(-8deg) scale(.92); }
   100% { opacity: 1; transform: rotate(-8deg) scale(1); }
 }
 
 .sp-kira {
   z-index: 4;
   opacity: 0;
-  animation: sp-note-in .5s var(--ease-page) forwards;
+  animation: sp-note-in .22s var(--ease-page) forwards;
 }
-.sp-kira.k1 { left: 16px; top: 26px; animation-delay: .55s; }
-.sp-kira.k2 { right: 6px; top: 92px; transform: rotate(7deg); animation-delay: 1.5s; color: var(--sakura); }
+.sp-kira.k1 { left: 16px; top: 26px; animation-delay: .26s; }
+.sp-kira.k2 { right: 6px; top: 92px; transform: rotate(7deg); animation-delay: .34s; color: var(--sakura); }
 @keyframes sp-note-in {
   from { opacity: 0; transform: translateY(6px) rotate(-8deg); }
   to { opacity: 1; }
@@ -171,17 +163,17 @@
   z-index: 4;
   font-size: 16px;
   opacity: 0;
-  animation: sp-fade .4s var(--ease-page) forwards, twinkle 2.8s ease-in-out 1.6s infinite;
+  animation: sp-fade .18s var(--ease-page) forwards, twinkle 2.8s ease-in-out .5s infinite;
 }
-.sp-card .sparkle.a { left: 12px; bottom: 76px; animation-delay: 1.3s, 1.6s; }
-.sp-card .sparkle.b { right: 18px; top: 22px; font-size: 20px; animation-delay: 1.45s, 1.7s; }
-.sp-card .sparkle.c { right: 46px; bottom: 40px; font-size: 13px; animation-delay: 1.6s, 1.9s; }
+.sp-card .sparkle.a { left: 12px; bottom: 76px; animation-delay: .26s, .5s; }
+.sp-card .sparkle.b { right: 18px; top: 22px; font-size: 20px; animation-delay: .3s, .54s; }
+.sp-card .sparkle.c { right: 46px; bottom: 40px; font-size: 13px; animation-delay: .34s, .58s; }
 
-/* ---------- 标题（手写体 + 铅笔双线） ---------- */
+/* ---------- 标题（手写体 + 铅笔双线）：紧接着卡片弹出来，同一拍收尾 ---------- */
 .sp-title {
   text-align: center;
   opacity: 0;
-  animation: sp-note-in .5s var(--ease-page) 1.6s forwards;
+  animation: sp-note-in .24s var(--ease-page) .32s forwards;
 }
 .sp-title b {
   font-family: var(--font-hand);
@@ -200,7 +192,7 @@
   background:
     linear-gradient(90deg, transparent, var(--teal-line) 6%, var(--teal-line) 96%, transparent) top / 100% 2px no-repeat,
     linear-gradient(90deg, transparent, var(--sakura-mid) 18%, var(--sakura-mid) 86%, transparent) bottom / 100% 2px no-repeat;
-  animation: sp-rule-in .5s var(--ease-page) 1.78s forwards;
+  animation: sp-rule-in .22s var(--ease-page) .4s forwards;
 }
 @keyframes sp-rule-in { to { transform: scaleX(1); } }
 .sp-sub {
@@ -211,7 +203,7 @@
   color: var(--ink-faint);
 }
 
-/* 「点一下跳过」：不打扰，1.2s 后才淡出现 */
+/* 「点一下跳过」：不打扰，紧跟标题淡出现 */
 .sp-skip {
   position: fixed;
   right: 18px;
@@ -219,7 +211,7 @@
   font-size: 11.5px;
   color: var(--ink-faint);
   opacity: 0;
-  animation: sp-fade .5s var(--ease-page) 1.2s forwards;
+  animation: sp-fade .22s var(--ease-page) .3s forwards;
 }
 
 @media (max-width: 480px) {
