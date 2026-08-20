@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarItem, CalendarResult } from './api'
 import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
 import { useAuth } from './auth'
@@ -34,6 +34,121 @@ function weekDates(): Record<number, { m: number; d: number }> {
     out[i] = { m: dt.getMonth() + 1, d: dt.getDate() }
   }
   return out
+}
+
+// Windows 上原生 overflow-x 容器左键拖拽不滚动（会变成文本/元素选区），右键拖拽又因为
+// scroll-snap 冲过头 —— 这里用 pointer 事件接管左键拖拽，直接改 scrollLeft，两侧都跟手，
+// 松手后按最近几帧的速度做惯性滑行（配合 CSS 关掉 scroll-snap），才是触控板/触屏那种
+// "跟手 + 滑一段再停" 的手感，而不是原来那种松手就一整张地对齐跳过去。
+// 卡片标题（.poster-title）要能正常拖蓝选字，所以按下时若落在它上面就整个放弃接管，
+// 交还给浏览器原生的文字选区。
+const NO_DRAG_SELECTOR = '.poster-title'
+const FRICTION = 0.95
+const MIN_VELOCITY = 0.05
+
+function useDragScroll<T extends HTMLElement>(): {
+  ref: React.RefObject<T>
+  onPointerDown: (e: React.PointerEvent<T>) => void
+  onPointerMove: (e: React.PointerEvent<T>) => void
+  onPointerUp: (e: React.PointerEvent<T>) => void
+  onClickCapture: (e: React.MouseEvent<T>) => void
+} {
+  const ref = useRef<T>(null)
+  const drag = useRef<{
+    startX: number
+    startScroll: number
+    moved: boolean
+    lastX: number
+    lastT: number
+    velocity: number
+  } | null>(null)
+  const suppressClick = useRef(false)
+  const momentumFrame = useRef<number | null>(null)
+
+  const stopMomentum = (): void => {
+    if (momentumFrame.current !== null) {
+      cancelAnimationFrame(momentumFrame.current)
+      momentumFrame.current = null
+    }
+  }
+
+  const runMomentum = (velocity: number): void => {
+    const el = ref.current
+    if (!el) return
+    let v = velocity
+    const step = (): void => {
+      if (!el || Math.abs(v) < MIN_VELOCITY) {
+        momentumFrame.current = null
+        return
+      }
+      el.scrollLeft -= v * 16
+      v *= FRICTION
+      momentumFrame.current = requestAnimationFrame(step)
+    }
+    momentumFrame.current = requestAnimationFrame(step)
+  }
+
+  const onPointerDown = (e: React.PointerEvent<T>): void => {
+    if (e.button !== 0 || !ref.current) return
+    if ((e.target as HTMLElement).closest?.(NO_DRAG_SELECTOR)) return
+    stopMomentum()
+    const now = performance.now()
+    drag.current = {
+      startX: e.clientX,
+      startScroll: ref.current.scrollLeft,
+      moved: false,
+      lastX: e.clientX,
+      lastT: now,
+      velocity: 0,
+    }
+  }
+
+  const onPointerMove = (e: React.PointerEvent<T>): void => {
+    const d = drag.current
+    const el = ref.current
+    if (!d || !el) return
+    const dx = e.clientX - d.startX
+    if (!d.moved && Math.abs(dx) < 4) return
+    if (!d.moved) {
+      d.moved = true
+      el.setPointerCapture(e.pointerId)
+    }
+    e.preventDefault()
+    el.scrollLeft = d.startScroll - dx
+
+    const now = performance.now()
+    const dt = now - d.lastT
+    if (dt > 0) {
+      // 瞬时速度，指数平滑一下避免抖动被最后一帧的噪声带偏
+      const instant = (e.clientX - d.lastX) / dt
+      d.velocity = d.velocity * 0.7 + instant * 0.3
+    }
+    d.lastX = e.clientX
+    d.lastT = now
+  }
+
+  const onPointerUp = (e: React.PointerEvent<T>): void => {
+    const d = drag.current
+    if (d?.moved) {
+      suppressClick.current = true
+      if (ref.current?.hasPointerCapture(e.pointerId)) {
+        ref.current.releasePointerCapture(e.pointerId)
+      }
+      if (Math.abs(d.velocity) > MIN_VELOCITY) runMomentum(d.velocity)
+    }
+    drag.current = null
+  }
+
+  // 拖拽结束时松手落在按钮（日期章）上会顺带触发一次 click —— 拖过了就吞掉这次点击。
+  const onClickCapture = (e: React.MouseEvent<T>): void => {
+    if (suppressClick.current) {
+      suppressClick.current = false
+      e.preventDefault()
+      e.stopPropagation()
+    }
+  }
+
+  return { ref, onPointerDown, onPointerMove, onPointerUp, onClickCapture }
 }
 
 export function CalendarPage(): JSX.Element {
@@ -195,19 +310,19 @@ export function CalendarPage(): JSX.Element {
             result?.data.map((day) => (
               <section key={day.id} id={`day-sec-${day.id}`} className="day-sec">
                 <DayHead day={day} date={dates[day.id]} today={day.id === todayId} />
-                <div className="film" aria-label={`${day.label}在播番剧`}>
+                <FilmRow label={`${day.label}在播番剧`}>
                   <DayFilm
                     day={day}
                     canTrack={!!user}
                     tracked={tracked}
                     onToggle={toggleTrack}
                   />
-                </div>
+                </FilmRow>
               </section>
             ))
           ) : (
             <>
-              <div className="date-strip" role="tablist" aria-label="选择日期">
+              <DateStrip>
                 {result?.data.map((day) => (
                   <button
                     key={day.id}
@@ -226,19 +341,19 @@ export function CalendarPage(): JSX.Element {
                     )}
                   </button>
                 ))}
-              </div>
+              </DateStrip>
 
               {selected && (
                 <>
                   <DayHead day={selected} date={dates[selected.id]} today={selected.id === todayId} />
-                  <div className="film" aria-label="当日在播番剧">
+                  <FilmRow label="当日在播番剧">
                     <DayFilm
                       day={selected}
                       canTrack={!!user}
                       tracked={tracked}
                       onToggle={toggleTrack}
                     />
-                  </div>
+                  </FilmRow>
                 </>
               )}
             </>
@@ -272,6 +387,43 @@ export function CalendarPage(): JSX.Element {
         </div>
       )}
     </>
+  )
+}
+
+function FilmRow({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
+  const drag = useDragScroll<HTMLDivElement>()
+  return (
+    <div
+      className="film"
+      aria-label={label}
+      ref={drag.ref}
+      onPointerDown={drag.onPointerDown}
+      onPointerMove={drag.onPointerMove}
+      onPointerUp={drag.onPointerUp}
+      onPointerCancel={drag.onPointerUp}
+      onClickCapture={drag.onClickCapture}
+    >
+      {children}
+    </div>
+  )
+}
+
+function DateStrip({ children }: { children: React.ReactNode }): JSX.Element {
+  const drag = useDragScroll<HTMLDivElement>()
+  return (
+    <div
+      className="date-strip"
+      role="tablist"
+      aria-label="选择日期"
+      ref={drag.ref}
+      onPointerDown={drag.onPointerDown}
+      onPointerMove={drag.onPointerMove}
+      onPointerUp={drag.onPointerUp}
+      onPointerCancel={drag.onPointerUp}
+      onClickCapture={drag.onClickCapture}
+    >
+      {children}
+    </div>
   )
 }
 
@@ -355,6 +507,7 @@ function Poster({
             alt={`${displayTitle} 封面`}
             loading="lazy"
             decoding="async"
+            draggable={false}
           />
         ) : (
           <div className="cover-ph">☆</div>
