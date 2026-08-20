@@ -17,17 +17,28 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, rmSync, statSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, statSync, readdirSync, writeFileSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { statfsSync } from 'node:fs'
 import { dataDir } from '../data-dir'
-import { assertStreamableUrl } from './stream'
+import { assertStreamableUrl, INTERNAL_TOKEN, viewerCount } from './stream'
 
 export const hlsDir = join(dataDir, 'hls')
 mkdirSync(hlsDir, { recursive: true })
 
-// 一集 HLS 约 490MB。低于这个余量就不再接新任务，别把盘写满拖垮整个服务。
+// 一集 HLS 约 452MB（实测和源 mp4 等大，fMP4 几乎无封装开销）。
+const EPISODE_BYTES = 452 * 1024 * 1024
+// **总配额**：预转产物占用的上限。这是硬闸——超了就先按 LRU 淘汰，淘汰不动就拒绝新任务。
+// 25G 可用空间给到 15G 约合 34 集，剩下的留给数据库、日志和构建产物，别把盘吃干净：
+// 磁盘写满会把整个服务拖垮，那是这套东西唯一有「炸掉」风险的地方。
+const QUOTA_BYTES = Number(process.env.XIFAN_HLS_QUOTA_BYTES ?? 15 * 1024 * 1024 * 1024)
+// 除了自身配额，也得给系统留活路：磁盘剩余低于此值一律不再接新任务。
 const MIN_FREE_BYTES = 3 * 1024 * 1024 * 1024
+// 最近被读过的**绝不淘汰**——正在看的人删掉就是直接播放中断。
+const RECENT_GUARD_MS = 30 * 60_000
+// 预转前若有人正在观看，先等；等过这个上限还没空就放弃这一轮（下次调度再来）。
+const IDLE_WAIT_MAX_MS = 10 * 60_000
+const IDLE_POLL_MS = 20_000
 // remux 是 IO 密集不是 CPU 密集（实测 CPU 0~1%），但**入口带宽只有一份**：
 // 同时转两集 = 两边都慢一半，还会跟正在观看的人抢。所以串行。
 const MAX_CONCURRENT = 1
@@ -74,6 +85,43 @@ function freeBytes(): number {
   }
 }
 
+/** 分片被读到就更新完成标记的 mtime —— LRU 靠它排序（「最后真的被看过」而不是「什么时候转的」）。 */
+export function touch(key: string): void {
+  const mark = join(dirFor(key), READY_MARK)
+  try {
+    const now = new Date()
+    utimesSync(mark, now, now)
+  } catch { /* 标记没了说明这份已被清掉，不用管 */ }
+}
+
+function totalBytes(): number {
+  return listPrepared().reduce((n, it) => n + it.bytes, 0)
+}
+
+/**
+ * 腾出 need 字节：按最后访问时间从旧到新淘汰，跳过正在转的和刚被看过的。
+ * 返回是否腾够。腾不够的情况是「留着的全都在保护期内」——此时只能拒绝新任务，
+ * 绝不能去删正在被人看的那份。
+ */
+export function reclaim(need: number): boolean {
+  const running = new Set([...jobs.values()].filter((j) => j.state === 'running').map((j) => j.key))
+  const now = Date.now()
+  let free = QUOTA_BYTES - totalBytes()
+  if (free >= need) return true
+  const victims = listPrepared()
+    .filter((it) => !running.has(it.key) && now - it.at > RECENT_GUARD_MS)
+    .sort((a, b) => a.at - b.at) // 最久没被看的先走
+  for (const v of victims) {
+    if (free >= need) break
+    if (dropPrepared(v.key)) {
+      free += v.bytes
+      console.log(`[xifan:prepare] 配额回收 ${v.key}，${(v.bytes / 1048576).toFixed(0)}MB，` +
+        `最后访问 ${Math.round((now - v.at) / 60000)} 分钟前`)
+    }
+  }
+  return free >= need
+}
+
 export function statusOf(url: string): { key: string; state: JobState; bytes: number; error?: string } {
   const key = keyFor(url)
   // 磁盘上的完成标记优先于内存 —— 重启后内存里的 job 没了，但转好的分片还在。
@@ -89,6 +137,40 @@ export function statusOf(url: string): { key: string; state: JobState; bytes: nu
 
 export class PrepareRejected extends Error {}
 
+/**
+ * 预转让位给观众。
+ *
+ * 入口带宽只有一份（12 路并发合起来约 5Mbps），预转会把它吃满，而观看只要 2.67Mbps ——
+ * 两者同时跑必然互相拖慢，用户看到的就是「莫名其妙开始卡」。所以只要检测到有人在真看，
+ * 就给 ffmpeg 发 SIGSTOP 把它冻住，人走了再 SIGCONT 解冻。
+ *
+ * 为什么用 SIGSTOP 而不是杀掉重来：ffmpeg 一杀，已经转好的那部分全废（分片可以留，
+ * 但 playlist 要重头生成），而暂停是零成本的——它的 TCP 连接会闲置，stream.ts 那边
+ * 有 CHUNK_SILENCE_MS 看门狗兜底，恢复时自己会重连。
+ */
+function guardViewers(job: Job): void {
+  let paused = false
+  const timer = setInterval(() => {
+    if (!job.proc || job.state !== 'running') {
+      clearInterval(timer)
+      return
+    }
+    const watching = viewerCount() > 0
+    try {
+      if (watching && !paused) {
+        job.proc.kill('SIGSTOP')
+        paused = true
+        console.log(`[xifan:prepare] ${job.key} 有人在看，暂停预转让出带宽`)
+      } else if (!watching && paused) {
+        job.proc.kill('SIGCONT')
+        paused = false
+        console.log(`[xifan:prepare] ${job.key} 观众已散，恢复预转`)
+      }
+    } catch { /* 进程已退出，下一轮 clearInterval */ }
+  }, 5_000)
+  timer.unref?.()
+}
+
 export function startPrepare(rawUrl: string, streamOrigin: string): { key: string; state: JobState } {
   const url = assertStreamableUrl(rawUrl).toString() // 白名单校验，顺带挡掉 SSRF
   const key = keyFor(url)
@@ -101,13 +183,16 @@ export function startPrepare(rawUrl: string, streamOrigin: string): { key: strin
   if (freeBytes() < MIN_FREE_BYTES) {
     throw new PrepareRejected('磁盘剩余空间不足，先清理已转好的剧集')
   }
+  if (!reclaim(EPISODE_BYTES)) {
+    throw new PrepareRejected('预转空间已满，且留着的都是最近在看的，暂时腾不出位置')
+  }
 
   const dir = dirFor(key)
   rmSync(dir, { recursive: true, force: true }) // 失败残留的半成品先清掉
   mkdirSync(dir, { recursive: true })
 
   // 输入走**自己的并发代理**而不是源站直连：源站单路只有 1.4Mbps，remux 会被入口饿死。
-  const input = `${streamOrigin}/api/xifan/stream?u=${encodeURIComponent(url)}`
+  const input = `${streamOrigin}/api/xifan/stream?u=${encodeURIComponent(url)}&t=${INTERNAL_TOKEN}`
   const args = [
     '-nostdin', '-loglevel', 'error',
     '-i', input,
@@ -120,9 +205,11 @@ export function startPrepare(rawUrl: string, streamOrigin: string): { key: strin
     '-hls_segment_filename', join(dir, 'seg%05d.m4s'),
     join(dir, 'index.m3u8'),
   ]
-  const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
-  const job: Job = { key, url, state: 'running', startedAt: Date.now(), bytes: 0, proc }
+  const job: Job = { key, url, state: 'running', startedAt: Date.now(), bytes: 0 }
   jobs.set(key, job)
+  const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
+  job.proc = proc
+  guardViewers(job)
 
   let stderr = ''
   proc.stderr?.on('data', (d: Buffer) => { stderr = (stderr + d.toString()).slice(-2000) })
