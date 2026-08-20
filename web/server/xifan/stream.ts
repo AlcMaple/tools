@@ -292,6 +292,13 @@ function runWorkers(s: Session): void {
   const claim = async (): Promise<{ relStart: number; len: number } | null> => {
     for (;;) {
       if (s.ac.signal.aborted || nextOffset >= regionLength) return null
+      // 没有活跃读取端就**停手**，只留着已下好的窗口等人回来（idle 看门狗另行收摊）。
+      // 否则每 seek 一次都留下一个后台会话继续下满窗口，反过来抢新会话的带宽——
+      // 实测连续三次冷 seek，速度从 4.03Mbps 一路掉到 0.17Mbps，就是被残留会话吃掉的。
+      if (liveReaders(s).length === 0) {
+        await waitProgress(s)
+        continue
+      }
       const front = frontCursor(s)
       const bufferAhead = Math.max(0, s.contiguousEnd - front)
       const urgent = bufferAhead < FRONTIER_URGENT_BYTES
