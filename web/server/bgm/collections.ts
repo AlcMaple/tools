@@ -52,7 +52,9 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 let requestTail: Promise<unknown> = Promise.resolve()
 let nextRequestAt = 0
 
-async function pacedRequest<T>(run: () => Promise<T>): Promise<T> {
+// 导出给 tracks.ts 的导入标签回填复用——那批 detail 请求必须排进同一条队列,
+// 不能单开一条并发通道去砸同一个出口 IP。
+export async function pacedRequest<T>(run: () => Promise<T>): Promise<T> {
   const request = requestTail.then(async () => {
     const waitMs = Math.max(0, nextRequestAt - Date.now())
     if (waitMs > 0) await sleep(waitMs)

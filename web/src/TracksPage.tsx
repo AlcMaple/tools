@@ -708,7 +708,7 @@ function BgmImportModal({
       setStatus(result)
       setView(result.state)
       if (result.state === 'done') {
-        toast(`Bangumi 导入完成：新增 ${result.added} 部，更新 ${result.updated} 部`)
+        toast(`Bangumi 导入完成：新增 ${result.added} 部，更新 ${result.updated} 部。标签我还在后台慢慢贴，晚点再回来看`)
       }
     } catch (error) {
       if (!mounted.current) return
@@ -731,7 +731,7 @@ function BgmImportModal({
         ? `已处理 ${status.processed}/${status.total} 部${status.processed < status.total ? ` · 正在处理第 ${status.processed + 1} 部` : ''}`
         : '正在读取 Bangumi 收藏…'
       : view === 'done'
-        ? `导入完成 · 共处理 ${status.processed}/${status.total} 部`
+        ? `导入完成 · 共处理 ${status.processed}/${status.total} 部 · 标签还在后台慢慢贴，晚点回来看`
         : status.error || '导入没有完成'
 
   return (
@@ -755,7 +755,10 @@ function BgmImportModal({
         </button>
 
         <h3 className="dlg-title">从 Bangumi 导入</h3>
-        <p className="dlg-sub">再次导入时，Bangumi 有值的标题、进度、状态和封面会覆盖本站；自定义标签与播放绑定会保留。</p>
+        <p className="dlg-sub">
+          再次导入时，Bangumi 有值的标题、进度、状态和封面会覆盖本站；自定义标签与播放绑定会保留。
+          标签要我一条一条问 Bangumi 要来，导入完成不会立刻贴好——晚一点再回来看，应该就贴齐了，不是漏掉了。
+        </p>
 
         <label className="field mb16" htmlFor="bgm-import-user-id">
           <span className="field-label">Bangumi UID / 用户名</span>
