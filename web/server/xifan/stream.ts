@@ -17,6 +17,7 @@
 //   2. **一个会话可以有多个读取端** —— 见下面 Reader 的注释。
 
 import '../http'
+import { randomUUID } from 'node:crypto'
 import { Agent, request } from 'undici'
 
 // 只代理稀饭这条链路上的已知域名 —— 否则这个端点就是一个开放 SSRF 跳板。
@@ -85,6 +86,8 @@ interface Reader {
   id: number
   cursor: number // 相对 regionStart
   evicted: boolean
+  /** 预转（ffmpeg）自己拉的那条，不算「观众」——否则预转会把自己当观众冻住自己。 */
+  internal: boolean
 }
 
 interface Session {
@@ -428,6 +431,23 @@ async function passthrough(url: string, start: number, end: number, total: numbe
   }
 }
 
+/**
+ * 当前有多少人正在真看。预转会把入口带宽吃满，必须让位给正在观看的人（见 prepare.ts）。
+ *
+ * **按读取端标记而不是按 URL 排除**：用户很可能正在看的就是正在预转的那一集
+ * （边看直连版边后台转），按 URL 排除会把真观众一起漏掉，让位就失效了。
+ */
+export function viewerCount(): number {
+  let n = 0
+  for (const list of sessions.values()) {
+    for (const s of list) n += liveReaders(s).filter((r) => !r.internal).length
+  }
+  return n
+}
+
+/** 只有本进程知道的一次性令牌：预转拉流时带上，外部无法伪造成「不算观众」。 */
+export const INTERNAL_TOKEN = randomUUID()
+
 export function assertStreamableUrl(raw: string): URL {
   const u = new URL(raw)
   if (u.protocol !== 'https:' || !ALLOWED_HOSTS.has(u.hostname)) {
@@ -442,7 +462,11 @@ export interface StreamResult {
   body: ReadableStream<Uint8Array> | null
 }
 
-export async function serveStream(rawUrl: string, rangeHeader: string | undefined): Promise<StreamResult> {
+export async function serveStream(
+  rawUrl: string,
+  rangeHeader: string | undefined,
+  internal = false,
+): Promise<StreamResult> {
   const url = assertStreamableUrl(rawUrl).toString()
   const { start, end, ranged } = parseRange(rangeHeader)
 
@@ -477,7 +501,7 @@ export async function serveStream(rawUrl: string, rangeHeader: string | undefine
     log(`复用已有区间 start=${session.regionStart} 供给 ${start}（省掉一次回源）`)
   }
 
-  const reader: Reader = { id: nextReaderId++, cursor: start - session.regionStart, evicted: false }
+  const reader: Reader = { id: nextReaderId++, cursor: start - session.regionStart, evicted: false, internal }
   session.readers.set(reader.id, reader)
   armIdle(session)
   notify(session) // 新读取端可能把下载前沿推远，叫醒 claim
