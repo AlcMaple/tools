@@ -109,6 +109,13 @@ export function fromWebSyncTracks(input: unknown): AnimeTrack[] {
     const updatedAtMs = Number(row.updatedAt)
     const startedAtMs = typeof extra.startedAt === 'string' ? Date.parse(extra.startedAt) : NaN
     const appOrder = Number(extra.appOrder)
+    const formalObserve = Number(row.observeCount)
+    const legacyObserve = Number(extra.observeCount)
+    const observeCount = Number.isInteger(formalObserve) && formalObserve >= 0
+      ? legacyConsidering && formalObserve === 0 && Number.isInteger(legacyObserve) && legacyObserve > 0
+        ? legacyObserve
+        : formalObserve
+      : Number.isInteger(legacyObserve) && legacyObserve >= 0 ? legacyObserve : 0
     return {
       appOrder: Number.isInteger(appOrder) && appOrder >= 0 ? appOrder : null,
       remoteIndex,
@@ -131,10 +138,7 @@ export function fromWebSyncTracks(input: unknown): AnimeTrack[] {
           && Number(row.airWeekday) >= 1 && Number(row.airWeekday) <= 7
           ? Number(row.airWeekday)
           : undefined,
-        // 正式列优先;老同步数据只有 extra 里那份,靠 ...extra 展开兜底
-        ...(Number.isInteger(Number(row.observeCount)) && Number(row.observeCount) >= 0
-          ? { observeCount: Number(row.observeCount) }
-          : {}),
+        observeCount,
         bgmTags: Array.isArray(row.bgmTags) ? row.bgmTags : [],
         userTags: Array.isArray(row.userTags) ? row.userTags : [],
         aliases: Array.isArray(row.aliases) ? row.aliases : [],
@@ -151,4 +155,34 @@ export function fromWebSyncTracks(input: unknown): AnimeTrack[] {
     return a.createdAt - b.createdAt || a.remoteIndex - b.remoteIndex
   })
   return normalizeTracks(projected.map((entry) => entry.value))
+}
+
+/** 上传后回读只比较跨端协议拥有的语义；不含 updatedAt（服务器会夹掉未来时钟）。 */
+export function webTrackSyncFingerprint(tracks: AnimeTrack[]): string {
+  const projected = tracks.map((track) => ({
+    bgmId: track.bgmId,
+    subjectType: track.subjectType,
+    status: track.status,
+    episode: track.episode,
+    totalEpisodes: track.totalEpisodes ?? null,
+    title: track.title,
+    titleCn: track.titleCn ?? '',
+    cover: track.cover ?? '',
+    airDate: track.airDate ?? '',
+    airWeekday: track.airWeekday ?? 0,
+    bgmTags: track.bgmTags,
+    userTags: track.userTags,
+    aliases: track.aliases,
+    observeCount: track.observeCount,
+    bindings: track.bindings,
+    notes: track.notes,
+    favorite: track.favorite,
+    novelVolume: track.novelVolume,
+    novelChapter: track.novelChapter,
+    goodEpisodes: track.goodEpisodes,
+    goodEpisodeNotes: track.goodEpisodeNotes,
+    startedAt: track.startedAt,
+  }))
+  projected.sort((a, b) => a.bgmId - b.bgmId)
+  return JSON.stringify(projected)
 }

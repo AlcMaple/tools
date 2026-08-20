@@ -7,13 +7,16 @@ import { app, ipcMain } from 'electron'
 import { JsonStore } from '../shared/json-store'
 import { netRequest, type NetResult } from '../shared/net-request'
 
-const WEB_BASE = process.env.MAPLETOOLS_WEB_URL || 'https://anime.alcmaple.cn'
+const WEB_BASE = (process.env.MAPLETOOLS_WEB_URL || 'https://anime.alcmaple.cn').replace(/\/+$/, '')
+const SYNC_SCHEMA = 2
 const WEB_SESSION_COOKIE = '__Host-mt_session'
 const LEGACY_WEB_SESSION_COOKIE = 'mt_session'
 
 interface WebAccountState {
   token: string
   username: string
+  origin: string
+  accountId: number
 }
 
 interface SyncPushInput {
@@ -22,11 +25,26 @@ interface SyncPushInput {
   data: unknown[]
 }
 
+interface SyncIdentity {
+  syncSchema: number
+  accountId: number
+  username: string
+}
+
+interface SyncSnapshot extends SyncIdentity {
+  rev: number
+  data: unknown[]
+}
+
 const accountStore = new JsonStore<WebAccountState>('web_account.json', (raw) => {
   const value = raw && typeof raw === 'object' ? raw as Partial<WebAccountState> : {}
   return {
     token: typeof value.token === 'string' ? value.token : '',
     username: typeof value.username === 'string' ? value.username : '',
+    origin: typeof value.origin === 'string' ? value.origin : '',
+    accountId: Number.isSafeInteger(Number(value.accountId)) && Number(value.accountId) > 0
+      ? Number(value.accountId)
+      : 0,
   }
 })
 
@@ -39,6 +57,31 @@ function responseJson(res: NetResult): Record<string, unknown> {
   } catch {
     return {}
   }
+}
+
+function syncIdentity(body: Record<string, unknown>): SyncIdentity {
+  const syncSchema = Number(body.syncSchema)
+  const accountId = Number(body.accountId)
+  const username = typeof body.username === 'string' ? body.username : ''
+  if (syncSchema !== SYNC_SCHEMA) throw new Error('网页版同步协议版本不匹配，请先更新两端')
+  if (!Number.isSafeInteger(accountId) || accountId <= 0 || !username) {
+    throw new Error('网页版同步响应缺少账号身份，请先更新网页版服务')
+  }
+  return { syncSchema, accountId, username }
+}
+
+function syncSnapshot(body: Record<string, unknown>): SyncSnapshot {
+  const identity = syncIdentity(body)
+  const rev = Number(body.rev)
+  if (!Number.isSafeInteger(rev) || rev < 0 || !Array.isArray(body.data)) {
+    throw new Error('网页版同步响应格式无效')
+  }
+  return { ...identity, rev, data: body.data }
+}
+
+async function rememberVerifiedAccount(username: string, accountId: number): Promise<void> {
+  const current = await accountStore.read()
+  accountStore.set({ ...current, username, origin: WEB_BASE, accountId })
 }
 
 function responseError(res: NetResult, fallback: string): Error {
@@ -92,6 +135,9 @@ async function authedRequest(path: string, options: {
 } = {}): Promise<NetResult> {
   const account = await accountStore.read()
   if (!account.token) throw new Error('请先在设置中登录网页版账号')
+  if (account.origin && account.origin !== WEB_BASE) {
+    throw new Error(`网页版同步目标已从 ${account.origin} 变为 ${WEB_BASE}，请重新登录确认`)
+  }
   const res = await netRequest(`${WEB_BASE}${path}`, {
     method: options.method,
     body: options.body,
@@ -99,7 +145,7 @@ async function authedRequest(path: string, options: {
     timeoutMs: 15000,
   })
   if (res.status === 401) {
-    accountStore.set({ token: '', username: '' })
+    accountStore.set({ token: '', username: '', origin: '', accountId: 0 })
     throw new Error('网页版登录已失效，请重新登录')
   }
   return res
@@ -108,7 +154,12 @@ async function authedRequest(path: string, options: {
 export function registerWebAccountIpc(): void {
   ipcMain.handle('web-account:status', async () => {
     const account = await accountStore.read()
-    return { loggedIn: !!account.token, username: account.token ? account.username : '' }
+    return {
+      loggedIn: !!account.token,
+      username: account.token ? account.username : '',
+      origin: WEB_BASE,
+      accountId: account.token ? account.accountId : 0,
+    }
   })
 
   ipcMain.handle('web-account:login', async (_event, input: { username: string; password: string }) => {
@@ -128,31 +179,38 @@ export function registerWebAccountIpc(): void {
     const body = responseJson(res)
     if (!token) throw new Error('登录成功但没有收到会话令牌')
     const canonicalName = typeof body.username === 'string' ? body.username : username
-    accountStore.set({ token, username: canonicalName })
-    return { loggedIn: true, username: canonicalName }
+    accountStore.set({ token, username: canonicalName, origin: WEB_BASE, accountId: 0 })
+    return { loggedIn: true, username: canonicalName, origin: WEB_BASE, accountId: 0 }
   })
 
   ipcMain.handle('web-account:logout', async () => {
-    accountStore.set({ token: '', username: '' })
-    return { loggedIn: false, username: '' }
+    accountStore.set({ token: '', username: '', origin: '', accountId: 0 })
+    return { loggedIn: false, username: '', origin: WEB_BASE, accountId: 0 }
   })
 
   ipcMain.handle('web-account:pull-tracks', async () => {
     const res = await authedRequest('/api/tracks/sync')
     ensureSyncEndpoint(res)
     if (res.status !== 200) throw responseError(res, '读取网页版追番失败')
-    const body = responseJson(res)
-    return {
-      rev: Number(body.rev) || 0,
-      data: Array.isArray(body.data) ? body.data : [],
-    }
+    const snapshot = syncSnapshot(responseJson(res))
+    await rememberVerifiedAccount(snapshot.username, snapshot.accountId)
+    return { ...snapshot, origin: WEB_BASE }
   })
 
   ipcMain.handle('web-account:push-tracks', async (_event, input: SyncPushInput) => {
+    const data = Array.isArray(input?.data) ? input.data : []
+    const ids = new Set<number>()
+    for (const raw of data) {
+      const id = raw && typeof raw === 'object' ? Number((raw as Record<string, unknown>).bgmId) : 0
+      if (!Number.isInteger(id) || id === 0) throw new Error(`上传记录的 bgmId 不合法：${String(id)}`)
+      if (ids.has(id)) throw new Error(`上传记录的 bgmId 重复：${id}`)
+      ids.add(id)
+    }
     const payload = {
+      syncSchema: SYNC_SCHEMA,
       baseRev: Number(input?.baseRev) || 0,
       force: input?.force === true,
-      data: Array.isArray(input?.data) ? input.data : [],
+      data,
     }
     const res = await authedRequest('/api/tracks/sync', {
       method: 'POST',
@@ -170,11 +228,39 @@ export function registerWebAccountIpc(): void {
       }
     }
     if (res.status !== 200) throw responseError(res, '上传网页版追番失败')
+    const identity = syncIdentity(body)
+    const rev = Number(body.rev)
+    const count = Number(body.count)
+    if (!Number.isSafeInteger(rev) || rev < 0 || !Number.isSafeInteger(count) || count < 0) {
+      throw new Error('网页版上传响应格式无效')
+    }
+    if (count !== ids.size) throw new Error(`网页版只保存了 ${count}/${ids.size} 条，上传未通过校验`)
+
+    // HTTP 200 只表示事务提交；立刻从同一 Cookie / origin 回读，防协议降级、账号串线或后续写入
+    // 被误报成“已同步”。回读失败时不更新本地同步基线。
+    const verifyRes = await authedRequest('/api/tracks/sync')
+    ensureSyncEndpoint(verifyRes)
+    if (verifyRes.status !== 200) throw responseError(verifyRes, '上传后校验失败')
+    const verified = syncSnapshot(responseJson(verifyRes))
+    if (
+      verified.rev !== rev ||
+      verified.data.length !== count ||
+      verified.accountId !== identity.accountId ||
+      verified.username !== identity.username
+    ) {
+      throw new Error('网页版数据在上传后发生变化，请重新读取并确认')
+    }
+    await rememberVerifiedAccount(verified.username, verified.accountId)
     return {
       ok: true,
       conflict: false,
-      rev: Number(body.rev) || 0,
-      count: Number(body.count) || 0,
+      rev,
+      count,
+      data: verified.data,
+      syncSchema: identity.syncSchema,
+      accountId: identity.accountId,
+      username: identity.username,
+      origin: WEB_BASE,
     }
   })
 }
