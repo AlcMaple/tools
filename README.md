@@ -91,6 +91,14 @@ npm install
 npm run dev
 ```
 
+#### 联调本地网页版（网页版账号同步功能）
+
+桌面应用的「网页版账号」登录 / 同步默认连的是线上 `https://anime.alcmaple.cn`。如果你在本地 `web/` 起了一个开发环境（`npm run dev`，默认 `http://localhost:5173`），要用同一份数据联调，必须把桌面应用指向这个本地地址，否则用本地注册的账号登录桌面应用会报"用户名或密码错误"（查的是线上库，不是本地库）：
+
+```bash
+MAPLETOOLS_WEB_URL=http://localhost:5173 npm run dev
+```
+
 ### 项目打包分发
 
 生成适用于当前操作系统的安装包及可执行文件。
