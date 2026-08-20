@@ -61,8 +61,13 @@ function chunkSizeAt(bufferAhead: number): number {
  * 啃大块,前沿只分到 1/6 带宽 —— 播放器饿死,带宽却在下几分钟后才用得上的数据。
  */
 const FRONTIER_URGENT_BYTES = 12 * 1024 * 1024
-/** 告急时只允许在前沿之后这么窄的一带里分配(6 个 worker × 512KB 还富余)。 */
-const FRONTIER_BAND_BYTES = 4 * 1024 * 1024
+/**
+ * 告急时只允许在前沿之后这么窄的一带里分配。**必须喂得饱所有 worker**：
+ * FETCH_CONCURRENCY × CHUNK_BYTES 是一轮的量,留 2 倍余量让下一轮也已在路上。
+ * 12 路 × 512KiB = 6MiB,旧值 4MiB 会让一半 worker 在窗口边缘干等 —— 网页版那边
+ * 实测过这个坑:光把并发从 6 提到 12、不动这道窗口,吞吐反而只有 1.9Mbps。
+ */
+const FRONTIER_BAND_BYTES = 12 * 1024 * 1024
 /** 冷 seek 先攒够这么多连续字节(约 4.7 秒播放量)再吐首字节;之后 worker 不停手
  *  继续把窗口填到 PREFETCH_LEAD_BYTES,靠聚合吞吐甩开播放进度。 */
 const COLD_START_BYTES = 4 * CHUNK_BYTES
@@ -72,8 +77,16 @@ const COLD_START_BYTES = 4 * CHUNK_BYTES
  * 「真的拖到最后约 1 分钟」这一种情况退化成直连。
  */
 const TAIL_DIRECT_BYTES = 4 * 1024 * 1024
-/** 并发 worker 数,每个用独立 Electron Session(理由见文件头)。 */
-const FETCH_CONCURRENCY = 6
+/**
+ * 并发 worker 数,每个用独立 Electron Session(理由见文件头)。
+ *
+ * 2026-08-20 实测并发叠加曲线(稀饭线路一,每路 12s,无一失败):
+ *   本机      6 路 5.25Mbps → 12 路 18.8Mbps → 24 路 34.7Mbps
+ *   香港 VPS  6 路 3.53Mbps → 12 路 4.93Mbps → 24 路 4.59Mbps(已饱和,再加只是摊薄)
+ * 该集平均码率 2.67Mbps(VBR 峰值更高,实践上要 3.5~4Mbps 才稳),12 路已是码率的 7 倍,
+ * 再往上对播放没有意义,只是多占源站连接、徒增被风控的面。**上限取 12 是有意为之。**
+ */
+const FETCH_CONCURRENCY = 12
 /** 某个早期慢块卡住时最多在它后面预抓 24MiB,避免一路跑到文件尾形成大空洞。 */
 const PREFETCH_WINDOW_BYTES = 24 * 1024 * 1024
 /** 最多比已经交给 Chromium 的位置领先 32MiB,避免打开一集就立刻打满整份文件。 */
