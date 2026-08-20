@@ -25,9 +25,9 @@ import {
   XifanBusyError,
   XifanResolveError,
 } from './xifan/resolve'
-import { serveStream } from './xifan/stream'
+import { INTERNAL_TOKEN, serveStream } from './xifan/stream'
 import {
-  dropPrepared, listPrepared, PrepareRejected, resolveAsset, startPrepare, statusOf,
+  dropPrepared, listPrepared, PrepareRejected, resolveAsset, startPrepare, statusOf, touch,
 } from './xifan/prepare'
 import { locate } from './xifan/locate'
 import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
@@ -147,7 +147,8 @@ xifan.get('/stream', async (c) => {
   const raw = c.req.query('u') ?? ''
   if (!raw) return c.json({ error: '缺少 u' }, 400)
   try {
-    const r = await serveStream(raw, c.req.header('range'))
+    // 带对令牌的才是预转自己拉的流，不计入「观众」（令牌只存在于本进程内存，外部伪造不了）。
+    const r = await serveStream(raw, c.req.header('range'), c.req.query('t') === INTERNAL_TOKEN)
     return new Response(r.body, { status: r.status, headers: r.headers })
   } catch (error) {
     return upstreamFailure(c, error, '稀饭流代理失败')
@@ -174,9 +175,13 @@ xifan.post('/prepare', async (c) => {
   const body = await c.req.json().catch(() => null) as { u?: string } | null
   const raw = body?.u ?? ''
   if (!raw) return c.json({ error: '缺少 u' }, 400)
-  // ffmpeg 的输入指回本进程的流代理，所以要拿到自己的对外地址。
+  // ffmpeg 的输入指回**本进程自己**的流代理（不是源站直连——源站单路只有 1.4Mbps
+  // 会把 remux 饿死），所以要拿到自己的内网地址。
+  // 生产 node 绑 127.0.0.1:3000；但 vite dev 只监听 [::1]，写死 IPv4 会 Connection refused，
+  // 所以留一个 env 口子给 dev 覆盖。
   const url = new URL(c.req.url)
-  const origin = `http://127.0.0.1:${url.port || process.env.PORT || '3000'}`
+  const origin = process.env.XIFAN_INTERNAL_ORIGIN
+    ?? `http://127.0.0.1:${url.port || process.env.PORT || '3000'}`
   try {
     return c.json(startPrepare(raw, origin))
   } catch (error) {
@@ -189,6 +194,7 @@ xifan.get('/hls/:key/:file', async (c) => {
   const p = resolveAsset(c.req.param('key'), c.req.param('file'))
   if (!p) return c.json({ error: '没有这个分片' }, 404)
   const file = c.req.param('file')
+  touch(c.req.param('key')) // LRU 按「最后真的被看过」排序，不是按转好的时间
   const { createReadStream } = await import('node:fs')
   const type = file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/iso.segment'
   return new Response(createReadStream(p) as unknown as ReadableStream, {
