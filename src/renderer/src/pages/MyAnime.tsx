@@ -45,6 +45,7 @@ import {
 } from '../components/EditBindingsModal'
 import type { AnimeBinding } from '../stores/animeTrackStore'
 import type { Source, SearchCard } from '../types/search'
+import { isLegacyBilibiliBinding } from '../utils/bilibiliBinding'
 
 // ── 在线观看入口按钮 ──────────────────────────────────────────────────────────
 
@@ -978,7 +979,10 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
   const isNovel = track.subjectType === 'novel'
 
   // 哪些内置源还没绑过 —— 已绑过的隐藏「+ 搜 X」按钮，留出空间。
+  // Bilibili 源重构前手动加的链接存成 source:'Custom'，靠 URL 里的 bilibili.com
+  // 识别出来一并算作已绑，不然老数据会被误判成"没搜过"(见 isLegacyBilibiliBinding)。
   const boundSources = new Set(track.bindings.map(b => b.source))
+  if (track.bindings.some(isLegacyBilibiliBinding)) boundSources.add('Bilibili')
   const missingBuiltins = BUILTIN_SOURCES.filter(s => !boundSources.has(s))
 
   const setStatus = (s: AnimeStatus): void => {
@@ -1619,8 +1623,8 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
             // bvid,所以不能用 bind() 的按 (source,sourceKey) 幂等——先干掉旧的那条,
             // 免得留出两个 Bilibili chip。
             if (card.source === 'Bilibili') {
-              for (const b of track.bindings.filter(x => x.source === 'Bilibili')) {
-                animeTrackStore.removeBinding(track.bgmId, 'Bilibili', b.sourceKey)
+              for (const b of track.bindings.filter(x => x.source === 'Bilibili' || isLegacyBilibiliBinding(x))) {
+                animeTrackStore.removeBinding(track.bgmId, b.source, b.sourceKey)
               }
             }
             const binding: AnimeBinding = {
