@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1140" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="w-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="w-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+    <marker id="w-red" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#b96372"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="1138" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">网页版看稀饭：慢源为什么要在服务器上转一道，用户实际会经历什么</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：96% 的番根本不碰服务器；只有「唯一可选的线路是慢源」时才走下面这条路，用户等约 1 分钟，之后全程流畅。</text>
+
+  <!-- ============ 区块1：三段带宽账 ============ -->
+  <rect x="32" y="84" width="1056" height="176" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、先看清瓶颈在哪：三段路，卡在最后一段</text>
+
+  <rect x="56" y="126" width="290" height="72" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="201" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">① 源站 → 我们的服务器</text>
+  <text x="201" y="169" text-anchor="middle" font-size="11" fill="#456b54">单条连接只有 1.4Mbps（源站限速）</text>
+  <text x="201" y="187" text-anchor="middle" font-size="11" font-weight="700" fill="#316247">开 12 条 → 5.3Mbps ✓ 够</text>
+
+  <path d="M350 162 H392" stroke="#6d686b" stroke-width="1.6" marker-end="url(#w-gray)"/>
+
+  <rect x="396" y="126" width="290" height="72" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="541" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">② 服务器 → 手机（真正的瓶颈）</text>
+  <text x="541" y="169" text-anchor="middle" font-size="11" fill="#8a5a62">单条连接只有 2.2Mbps（跨境限速）</text>
+  <text x="541" y="187" text-anchor="middle" font-size="11" font-weight="700" fill="#96434f">开 8 条 → 5.2Mbps ✓</text>
+
+  <path d="M690 162 H732" stroke="#6d686b" stroke-width="1.6" marker-end="url(#w-gray)"/>
+
+  <rect x="736" y="126" width="316" height="72" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="894" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">③ 播放这一集需要多少</text>
+  <text x="894" y="169" text-anchor="middle" font-size="11" fill="#4d6575">视频平均码率 2.67Mbps</text>
+  <text x="894" y="187" text-anchor="middle" font-size="11" fill="#4d6575">（452MB ÷ 23 分 42 秒，峰值更高）</text>
+
+  <rect x="56" y="212" width="996" height="34" rx="8" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="72" y="234" font-size="11.5" fill="#7a6234">关键：普通播放器只会开 <tspan font-weight="700">一条</tspan> 连接，所以拿到的是 2.2Mbps —— 比 2.67 还低，必然卡。带宽不是不够，是<tspan font-weight="700">一条连接用不完</tspan>。把整集切成小分片，播放器才会同时开多条去拿。</text>
+
+  <!-- ============ 区块2：打开播放页的分叉 ============ -->
+  <rect x="32" y="278" width="1056" height="212" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="304" font-size="14" font-weight="700" fill="#353136">二、打开播放页：先挑线路，多数情况根本用不到服务器</text>
+
+  <rect x="56" y="320" width="228" height="66" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="170" y="343" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">用户点开某一集</text>
+  <text x="170" y="364" text-anchor="middle" font-size="11" fill="#6a6470">服务端拿到这一集的全部线路</text>
+
+  <path d="M288 353 H330" stroke="#6d686b" stroke-width="1.6" marker-end="url(#w-gray)"/>
+
+  <rect x="334" y="312" width="286" height="82" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="477" y="335" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">按「视频存在哪个网站」挑</text>
+  <text x="477" y="356" text-anchor="middle" font-size="11" fill="#6a6470">不看线路编号 —— 线路一不一定是慢源，</text>
+  <text x="477" y="374" text-anchor="middle" font-size="11" fill="#6a6470">实测有的番线路一就是快源</text>
+
+  <path d="M624 336 H690" stroke="#4b8f6a" stroke-width="1.8" marker-end="url(#w-green)"/>
+  <path d="M624 372 H690" stroke="#b96372" stroke-width="1.8" marker-end="url(#w-red)"/>
+
+  <rect x="694" y="312" width="358" height="52" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="712" y="333" font-size="12" font-weight="700" fill="#316247">有快源（约 96%）→ 手机直连，全程不经过服务器</text>
+  <text x="712" y="352" font-size="11" fill="#456b54">不占服务器带宽、不占名额、不用转码，和以前一样快</text>
+
+  <rect x="694" y="370" width="358" height="52" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="712" y="391" font-size="12" font-weight="700" fill="#96434f">只有慢源（约 4%）→ 才走下面这条路</text>
+  <text x="712" y="410" font-size="11" fill="#8a5a62">这时手机直连必卡，只能由服务器代劳</text>
+
+  <rect x="56" y="440" width="996" height="34" rx="8" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="72" y="462" font-size="11.5" fill="#7a6234">这一步是整套方案里性价比最高的：它把 96% 的流量挡在服务器之外。服务器出口只有 6Mbps（约 2.2 人份），是最稀缺的资源。</text>
+
+  <!-- ============ 区块3：慢源路径时间轴 ============ -->
+  <rect x="32" y="508" width="1056" height="352" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="534" font-size="14" font-weight="700" fill="#353136">三、只有慢源时：用户等约 1 分钟，之后全程流畅</text>
+
+  <text x="56" y="562" font-size="11.5" font-weight="700" fill="#8a7f88">用户看到的</text>
+  <text x="56" y="700" font-size="11.5" font-weight="700" fill="#8a7f88">背后在做的</text>
+  <line x1="150" y1="548" x2="150" y2="846" stroke="#e2dcdf" stroke-width="1"/>
+
+  <!-- 时间轴 -->
+  <line x1="170" y1="676" x2="1060" y2="676" stroke="#cfc7cb" stroke-width="1.5"/>
+  <text x="176" y="694" font-size="10.5" fill="#8a7f88">0 秒</text>
+  <text x="470" y="694" font-size="10.5" fill="#8a7f88">约 60 秒</text>
+  <text x="800" y="694" font-size="10.5" fill="#8a7f88">之后一直到看完</text>
+
+  <!-- 用户视角 -->
+  <rect x="170" y="572" width="280" height="86" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="310" y="594" text-anchor="middle" font-size="12" font-weight="700" fill="#4a4450">画面中央：起稿提示</text>
+  <text x="310" y="616" text-anchor="middle" font-size="11" fill="#6a6470">「这张底稿难描了点 · 大约 1 分钟就好」</text>
+  <text x="310" y="637" text-anchor="middle" font-size="10.5" fill="#7a7480">下方按钮：等不及？线路 N 那边有现成的</text>
+  <text x="310" y="653" text-anchor="middle" font-size="10" fill="#9a949e">（只在确实有快源时才出现）</text>
+
+  <rect x="466" y="572" width="298" height="86" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="615" y="594" text-anchor="middle" font-size="12" font-weight="700" fill="#316247">自动开始播放，不用手动操作</text>
+  <text x="615" y="616" text-anchor="middle" font-size="11" fill="#456b54">状态条：「边描边看 · 已描好 N 分钟」</text>
+  <text x="615" y="637" text-anchor="middle" font-size="11" fill="#456b54">画面正常，可以拖进度条跳 OP</text>
+
+  <rect x="780" y="572" width="280" height="86" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="920" y="594" text-anchor="middle" font-size="12" font-weight="700" fill="#316247">全程不卡</text>
+  <text x="920" y="616" text-anchor="middle" font-size="11" fill="#456b54">转码跑得比播放快，越看领先越多</text>
+  <text x="920" y="637" text-anchor="middle" font-size="11" fill="#456b54">看完时整集也已经转好</text>
+
+  <!-- 背后 -->
+  <rect x="170" y="710" width="280" height="120" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="310" y="732" text-anchor="middle" font-size="12" font-weight="700" fill="#36566d">服务器开 12 条连接拉片</text>
+  <text x="186" y="754" font-size="11" fill="#4d6575">· 边拉边用 ffmpeg 切成小分片</text>
+  <text x="186" y="773" font-size="11" fill="#4d6575">· 只是换个包装，不重新编码</text>
+  <text x="186" y="792" font-size="11" fill="#4d6575">· CPU 占用 0~1%，几乎不耗性能</text>
+  <text x="186" y="811" font-size="11" fill="#4d6575">· 这段时间不建播放连接（见下）</text>
+
+  <rect x="466" y="710" width="298" height="120" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="615" y="732" text-anchor="middle" font-size="12" font-weight="700" fill="#36566d">攒够 90 秒内容就放行</text>
+  <text x="482" y="754" font-size="11" fill="#4d6575">· 不等整集转完（那要 12 分钟）</text>
+  <text x="482" y="773" font-size="11" fill="#4d6575">· 播放列表边转边追加</text>
+  <text x="482" y="792" font-size="11" fill="#4d6575">· 播放页自动切过去，用户无感</text>
+  <text x="482" y="811" font-size="11" fill="#4d6575">· 先攒一截，免得播放追上转码</text>
+
+  <rect x="780" y="710" width="280" height="120" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="920" y="732" text-anchor="middle" font-size="12" font-weight="700" fill="#36566d">手机同时开多条拿分片</text>
+  <text x="796" y="754" font-size="11" fill="#4d6575">· 这才用得上 5.2Mbps 的出口</text>
+  <text x="796" y="773" font-size="11" fill="#4d6575">· 分片存在服务器磁盘上</text>
+  <text x="796" y="792" font-size="11" fill="#4d6575">· 别人看同一集可以直接复用</text>
+  <text x="796" y="811" font-size="11" fill="#4d6575">· 转完后整集可随意拖动</text>
+
+  <!-- 拖进度条 -->
+  <rect x="170" y="838" width="890" height="14" rx="0" fill="none"/>
+  <text x="170" y="850" font-size="11.5" font-weight="700" fill="#7a6234">还没描到的地方，拖不过去（不是卡在那里等）</text>
+  <text x="170" y="868" font-size="11" fill="#8a7f88">进度条只有「已经描好」那么长，会随着描的进度慢慢变长。硬拖到后面会被拉回已描好的末尾，不会卡死也不会报错（实测：拖到 8 分钟 → 落回 2 分 42 秒）。整集描完后进度条恢复完整 23 分 42 秒，随便拖。</text>
+
+  <!-- ============ 区块4：两个反直觉的设计 ============ -->
+  <rect x="32" y="898" width="1056" height="212" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="924" font-size="14" font-weight="700" fill="#353136">四、两个容易踩坑、也容易被改错的地方</text>
+
+  <rect x="56" y="940" width="496" height="152" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="304" y="963" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">为什么等待时不让用户「先凑合看着」？</text>
+  <text x="72" y="987" font-size="11" fill="#8a5a62">因为凑合看会把整件事卡死：</text>
+  <text x="72" y="1008" font-size="11" fill="#8a5a62">① 凑合看 = 服务器要一边下载一边直接喂给手机</text>
+  <text x="72" y="1028" font-size="11" fill="#8a5a62">② 下载带宽被这条占满 → 转码抢不到带宽</text>
+  <text x="72" y="1048" font-size="11" fill="#8a5a62">③ 转码永远转不完 → 用户永远只能凑合看</text>
+  <text x="72" y="1072" font-size="11" font-weight="700" fill="#96434f">所以宁可让他等 1 分钟，换全程流畅。</text>
+
+  <rect x="568" y="940" width="484" height="152" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="810" y="963" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">有两种「要等」，别混为一谈</text>
+  <text x="584" y="987" font-size="11" font-weight="700" fill="#96434f">① 看的人满了（画桌坐满）</text>
+  <text x="598" y="1006" font-size="11" fill="#8a5a62">出口 6Mbps ÷ 2.67 ≈ 2.2 人份。第三个人挤进来</text>
+  <text x="598" y="1024" font-size="11" fill="#8a5a62">是<tspan font-weight="700">三个人一起卡</tspan>，所以拦住他。只算慢源，直连不占。</text>
+  <text x="584" y="1048" font-size="11" font-weight="700" fill="#96434f">② 转码在排队（前面还有一张在描）</text>
+  <text x="598" y="1067" font-size="11" fill="#8a5a62">服务器同时只转一集，免得两集互抢带宽。跟①无关。</text>
+</svg>
