@@ -20,8 +20,21 @@ import '../http'
 import { randomUUID } from 'node:crypto'
 import { Agent, request } from 'undici'
 
-// 只代理稀饭这条链路上的已知域名 —— 否则这个端点就是一个开放 SSRF 跳板。
+/**
+ * 只代理**确实需要加速的慢源**，而不是所有 mp4。
+ *
+ * 两个理由，缺一不可：
+ *   1. 安全 —— 不设白名单，这个端点就是一个开放 SSRF 跳板。
+ *   2. 带宽 —— 走代理的每一路都要吃服务器的入口和出口（出口只有 6Mbps，约 2.2 人份）。
+ *      线路二（play.xfvod.pro）浏览器直连实测 30Mbps、给全套 CORS、不按连接限速，
+ *      让它走代理是纯粹的浪费，还会把服务器名额占掉。
+ *
+ * 线路一（apn.moedot.net → 联通网盘）才是那个单路只有 1.4Mbps、非并发不可的源。
+ */
 const ALLOWED_HOSTS = new Set(['apn.moedot.net'])
+
+/** 给播放页用：这个地址要不要走代理。不在名单里的一律浏览器直连。 */
+export const PROXY_HOSTS = [...ALLOWED_HOSTS]
 
 // 12 路。并发叠加曲线实测（每路 12s，无一失败）：
 //   本机     6 路 5.25Mbps → 12 路 18.8Mbps → 24 路 34.7Mbps
