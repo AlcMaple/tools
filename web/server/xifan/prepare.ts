@@ -219,6 +219,13 @@ export function startPrepare(rawUrl: string, streamOrigin: string): { key: strin
   const input = `${streamOrigin}/api/xifan/stream?u=${encodeURIComponent(url)}&t=${INTERNAL_TOKEN}`
   const args = [
     '-nostdin', '-loglevel', 'error',
+    // **必须允许重连**：让位逻辑会 SIGSTOP 冻住 ffmpeg，冻超过 60 秒时代理那边的会话
+    // 会被 idle 看门狗收摊，输入流就断了。ffmpeg 的 HTTP 输入默认**不会**自己重连，
+    // 于是解冻后直接退出码 255 —— 实测反复失败、一个分片都产不出来就是这个原因。
+    '-reconnect', '1',
+    '-reconnect_streamed', '1',
+    '-reconnect_on_network_error', '1',
+    '-reconnect_delay_max', '60',
     '-i', input,
     '-c', 'copy',
     '-f', 'hls',
@@ -228,13 +235,15 @@ export function startPrepare(rawUrl: string, streamOrigin: string): { key: strin
     '-hls_playlist_type', 'event',
     '-hls_list_size', '0', // 0 = 保留全部分片，别把前面的从 playlist 里滚掉
     '-hls_segment_type', 'fmp4',
-    '-hls_fmp4_init_filename', 'init.mp4',
+    // 绝对路径：相对文件名会写到**进程的工作目录**（部署目录）而不是分片目录，
+    // playlist 里引用的却是同目录的 init.mp4，两边对不上。
+    '-hls_fmp4_init_filename', join(dir, 'init.mp4'),
     '-hls_segment_filename', join(dir, 'seg%05d.m4s'),
     join(dir, 'index.m3u8'),
   ]
   const job: Job = { key, url, state: 'running', startedAt: Date.now(), bytes: 0 }
   jobs.set(key, job)
-  const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
+  const proc = spawn('ffmpeg', args, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'] })
   job.proc = proc
   guardViewers(job)
 

@@ -805,40 +805,36 @@ const PLAY_PAGE = `<!doctype html>
     var mb = st.bytes ? Math.round(st.bytes / 1048576) + 'MB' : ''
     if (st.state === 'ready'){
       box.className = 'prep ok'
-      box.textContent = '已上色完毕 · 分片版 ' + mb + '（走多连接，不受单连接限速）'
+      box.textContent = '这张已经上完色了 · ' + mb
     } else if (st.state === 'running' && st.playable){
       // 边转边播：已经攒够缓冲垫，可以一边看一边继续转。
       box.className = 'prep ok'
-      box.textContent = '边描边看 · 已描好 ' + Math.round((st.segments || 0) * 6 / 60) + ' 分钟，后面的还在描'
+      box.textContent = '边描边看 · 已描好 ' + Math.round((st.segments || 0) * 6 / 60) + ' 分钟，后面的还在赶'
     } else if (st.state === 'running'){
       box.className = 'prep busy'
-      box.textContent = '起稿中… 已描好 ' + Math.round((st.segments || 0) * 6) + ' 秒，攒够一截就能开始看'
+      box.textContent = '起稿中… 已描好 ' + Math.round((st.segments || 0) * 6) + ' 秒'
     } else if (st.state === 'failed'){
+      // 转失败后代码会自动退回直连播放（卡但能看），所以文案要同时说清
+      // 「出问题了」和「你现在能怎么办」——只说「没描成」看不出是报错。
       box.className = 'prep bad'
-      box.textContent = '预转失败：' + (st.error || '未知原因')
-      box.appendChild(prepareButton(url, '重试'))
+      box.textContent = '这张描废了，先将就着看 · '
+      var fast = findFastLine()
+      if (fast){
+        var jump = document.createElement('button')
+        jump.className = 'btn btn-sm'
+        jump.textContent = '换线路 ' + fast.source + ' 会顺畅些'
+        jump.onclick = function(){ selectLine(fast.source) }
+        box.appendChild(jump)
+      } else {
+        box.appendChild(document.createTextNode('这条线路本来就慢，只能这样了'))
+      }
     } else {
-      // 走到这儿说明后台还没开始转（配额满/并发满），或者刚点开还没来得及。
+      // state=none：后台还没开始转。多半是**转码队列**在排（服务器同时只转一集，
+      // 免得两集互相抢带宽），也可能是刚点开、轮询还没来得及触发。
+      // 别用「排队」二字——那会和「观看名额满」撞车，用户分不清是哪种排队。
       box.className = 'prep'
-      box.textContent = '这一集的源比较慢 · 已在排队起稿，稍等一会儿会自动切到分片版'
+      box.textContent = '前面还有一张在描 · 轮到这张就开始'
     }
-  }
-
-  function prepareButton(url, label){
-    var b = document.createElement('button')
-    b.className = 'btn btn-sm'
-    b.textContent = label
-    b.onclick = function(){
-      b.disabled = true
-      fetch('/api/xifan/prepare', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ u: url })
-      }).then(function(r){ return r.json() }).then(function(d){
-        if (d && d.error){ renderPrepare({ state: 'failed', error: d.error }, url); return }
-        pollPrepare(url)
-      }).catch(function(){ b.disabled = false })
-    }
-    return b
   }
 
   function pollPrepare(url){
@@ -941,7 +937,7 @@ const PLAY_PAGE = `<!doctype html>
     v.classList.remove('on'); frame.classList.remove('on')
     renderChips()
     $('buffering').classList.remove('retryable'); $('buffering').onclick = null
-    $('bufferText').textContent = '这条线路的源比较慢，正在起稿 · 大约 1 分钟后开始，之后全程不卡'
+    $('bufferText').textContent = '这张底稿难描了点 · 大约 1 分钟就好'
     var acts = $('bufferActions')
     acts.textContent = ''
     // 只有**确实存在**已知快源时才给这个出口。没有还劝人家去换，那是把提示写成 bug。
@@ -949,7 +945,7 @@ const PLAY_PAGE = `<!doctype html>
     if (fast){
       var btn = document.createElement('button')
       btn.className = 'btn btn-sm'
-      btn.textContent = '等不及？换线路 ' + fast.source + ' 立刻开看'
+      btn.textContent = '等不及？线路 ' + fast.source + ' 那边有现成的'
       btn.onclick = function(){ hideBuffer(); selectLine(fast.source) }
       acts.appendChild(btn)
     }
@@ -973,8 +969,8 @@ const PLAY_PAGE = `<!doctype html>
     var box = $('buffering')
     box.classList.remove('retryable')
     $('bufferText').textContent = hasOther
-      ? '画桌前满员了 · 已有 ' + slots.current + ' 位在描稿，换条线路能立刻开画，或者点这里再等等'
-      : '画桌前满员了 · 已有 ' + slots.current + ' 位在描稿，点这里再看看有没有空位'
+      ? '画桌前坐满了 · 已经有 ' + slots.current + ' 位在描，换条线路，或者点一下再等等'
+      : '画桌前坐满了 · 已经有 ' + slots.current + ' 位在描，点一下看看空出来没有'
     box.classList.add('show', 'retryable')
     box.onclick = function(){
       checkSlots(function(s){
