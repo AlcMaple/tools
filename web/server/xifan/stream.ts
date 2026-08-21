@@ -18,6 +18,7 @@
 
 import '../http'
 import { randomUUID } from 'node:crypto'
+import { setMaxListeners } from 'node:events'
 import { Agent, request } from 'undici'
 import { PROXY_HOSTS } from './proxy-hosts'
 
@@ -364,7 +365,9 @@ function startSession(url: string, total: number, regionStart: number): Session 
     createdAt: Date.now(),
     readers: new Map(),
     ac: new AbortController(),
-    ev: new EventTarget(),
+    // 12 个 worker + 读取端都在这上面等 progress，默认上限 10 会刷
+    // MaxListenersExceededWarning。这里的监听器都是 once + 用完即摘，不是泄漏。
+    ev: (() => { const t = new EventTarget(); setMaxListeners(WORKERS + 8, t); return t })(),
     idleTimer: null,
     failure: null,
     done: false,
