@@ -445,6 +445,9 @@ const PLAY_PAGE = `<!doctype html>
   .prep.ok { color: #2f7d5e }
   .prep.busy { color: #8a6d2f }
   .prep.bad { color: #b4483c }
+  /* 浮层里的出口按钮（等起稿时给个「不想等就换快源」的去处）。 */
+  #bufferActions:empty { display: none }
+  #bufferActions { margin-top: 10px; display: flex; gap: 8px; justify-content: center }
   /* 播放源分段器：未关联的源需要一种「虚线、可点」的第三态，seg 组件本身没有 */
   .src-seg > button.unbound { color: var(--ink-faint); border: 1.5px dashed var(--line); border-radius: var(--r-pill) }
   .lines-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px }
@@ -475,6 +478,7 @@ const PLAY_PAGE = `<!doctype html>
       <div class="buf-card">
         <svg class="buf-ring" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle></svg>
         <span id="bufferText" class="font-hand">描线中…</span>
+        <div id="bufferActions"></div>
       </div>
     </div>
   </div>
@@ -632,7 +636,23 @@ const PLAY_PAGE = `<!doctype html>
     return Math.max(0, Math.min(BUFFER_TARGET, v.duration - v.currentTime - .25))
   }
 
-  function hideBuffer(){ var b = $('buffering'); b.classList.remove('show', 'retryable'); b.onclick = null }
+  function hideBuffer(){
+    var b = $('buffering'); b.classList.remove('show', 'retryable'); b.onclick = null
+    $('bufferActions').textContent = ''
+  }
+
+  /**
+   * 在**已经解析过**的线路里找一条不需要代理的（快源）。
+   * 只看已知的：没解析过的线路不知道快慢，凭线路号猜会猜错（实测 3498 的线路一就是快源），
+   * 猜错就成了「让用户换到另一条同样慢的线路」——那比不提示更糟。
+   */
+  function findFastLine(){
+    for (var k in resolvedMap){
+      var pl = resolvedMap[k]
+      if (pl && pl.url && !needsProxy(pl.url)) return pl
+    }
+    return null
+  }
 
   function clearInternalSeek(){
     if (internalSeekTimer !== null) clearTimeout(internalSeekTimer)
@@ -921,7 +941,18 @@ const PLAY_PAGE = `<!doctype html>
     v.classList.remove('on'); frame.classList.remove('on')
     renderChips()
     $('buffering').classList.remove('retryable'); $('buffering').onclick = null
-    $('bufferText').textContent = '这条线路的源比较慢，正在起稿 · 约 1 分钟后开始'
+    $('bufferText').textContent = '这条线路的源比较慢，正在起稿 · 大约 1 分钟后开始，之后全程不卡'
+    var acts = $('bufferActions')
+    acts.textContent = ''
+    // 只有**确实存在**已知快源时才给这个出口。没有还劝人家去换，那是把提示写成 bug。
+    var fast = findFastLine()
+    if (fast){
+      var btn = document.createElement('button')
+      btn.className = 'btn btn-sm'
+      btn.textContent = '等不及？换线路 ' + fast.source + ' 立刻开看'
+      btn.onclick = function(){ hideBuffer(); selectLine(fast.source) }
+      acts.appendChild(btn)
+    }
     $('buffering').classList.add('show')
     pollPrepare(pl.url)
   }
