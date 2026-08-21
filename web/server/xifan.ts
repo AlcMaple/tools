@@ -155,6 +155,12 @@ xifan.get('/stream', async (c) => {
       c.req.query('t') === INTERNAL_TOKEN,
       clientIp(c),
     )
+    // **有人真的在看慢源 = 该预转它了**。这是最准确的触发信号，比让用户去点按钮靠谱：
+    // 预转本来就该是后台调度的事。幂等——已在转/已转好会直接返回，配额和串行闸门都在
+    // startPrepare 里，失败也不影响这次播放（用户照常走代理直连，只是会慢些）。
+    if (c.req.query('t') !== INTERNAL_TOKEN) {
+      try { startPrepare(raw, internalOrigin(c)) } catch { /* 名额满/磁盘满，下次再说 */ }
+    }
     return new Response(r.body, { status: r.status, headers: r.headers })
   } catch (error) {
     if (error instanceof ViewerLimitReached) {
@@ -184,21 +190,25 @@ xifan.get('/prepared', (c) => {
   }
 })
 
+// ffmpeg 的输入指回**本进程自己**的流代理（不是源站直连——源站单路只有 1.4Mbps
+// 会把 remux 饿死），所以要拿到自己的内网地址。
+// 生产 node 绑 127.0.0.1:3000；但 vite dev 只监听 [::1]，写死 IPv4 会 Connection refused，
+// 所以留一个 env 口子给 dev 覆盖。
+function internalOrigin(c: Context): string {
+  const url = new URL(c.req.url)
+  return process.env.XIFAN_INTERNAL_ORIGIN
+    ?? `http://127.0.0.1:${url.port || process.env.PORT || '3000'}`
+}
+
 xifan.post('/prepare', async (c) => {
-  // 预转会写几百 MB 磁盘、长时间占满入口带宽，**必须要登录**：不设防的话这个端点
-  // 就是一个「任何人都能让你的服务器免费下片」的按钮。查询状态无副作用，不设限。
+  // 手动触发口子（调试用）。要登录：它会写几百 MB、长时间占入口带宽，不设防就是
+  // 一个「任何人都能让你的服务器免费下片」的按钮。正常路径是下面 /stream 里自动触发。
   const session = await getSession(c)
   if (!session) return c.json({ error: '请先登录再用预转' }, 401)
   const body = await c.req.json().catch(() => null) as { u?: string } | null
   const raw = body?.u ?? ''
   if (!raw) return c.json({ error: '缺少 u' }, 400)
-  // ffmpeg 的输入指回**本进程自己**的流代理（不是源站直连——源站单路只有 1.4Mbps
-  // 会把 remux 饿死），所以要拿到自己的内网地址。
-  // 生产 node 绑 127.0.0.1:3000；但 vite dev 只监听 [::1]，写死 IPv4 会 Connection refused，
-  // 所以留一个 env 口子给 dev 覆盖。
-  const url = new URL(c.req.url)
-  const origin = process.env.XIFAN_INTERNAL_ORIGIN
-    ?? `http://127.0.0.1:${url.port || process.env.PORT || '3000'}`
+  const origin = internalOrigin(c)
   try {
     return c.json(startPrepare(raw, origin))
   } catch (error) {
@@ -787,9 +797,9 @@ const PLAY_PAGE = `<!doctype html>
       box.textContent = '预转失败：' + (st.error || '未知原因')
       box.appendChild(prepareButton(url, '重试'))
     } else {
+      // 走到这儿说明后台还没开始转（配额满/并发满），或者刚点开还没来得及。
       box.className = 'prep'
-      box.textContent = '这一集直连可能不够快 · '
-      box.appendChild(prepareButton(url, '让服务器预转成分片版'))
+      box.textContent = '这一集的源比较慢 · 已在排队起稿，稍等一会儿会自动切到分片版'
     }
   }
 
