@@ -1067,7 +1067,10 @@ const PLAY_PAGE = `<!doctype html>
       eps = d.eps || []
       if (d.title){ $('ttl').textContent = d.title }
       renderEps(); renderChips()
-      if (d.first){ resolvedMap[1] = d.first; playLine(d.first) }
+      // 按 first.source 存，**不能写死 1**：服务端返回的 first 是「最优线路」，
+      // 未必是线路 1（它会跳过需要代理的慢源）。写死会让 resolvedMap[1] 装着别条线路的
+      // 地址，点线路 1 拿到的却是那条——表现为「点了没反应」。
+      if (d.first){ resolvedMap[d.first.source] = d.first; playLine(d.first) }
       else { fail('这一集解析不到 —— 可能还没更新，点上面别的集试试') }
     } catch (e){
       classifyMediaFailure(
