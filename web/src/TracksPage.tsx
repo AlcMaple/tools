@@ -898,23 +898,8 @@ function Card({
       <span className={`tape tr ${considering ? 'lav' : isToday ? 'sakura' : 'teal'}`} />
       {considering && <WearLayer />}
       <div className="trk-cover" onClick={onEdit} title="点封面编辑" style={{ cursor: 'pointer' }}>
-        {/* 「详情」角标是压在封面图上的浮层：没有封面时它会裸露在空白占位格上，
-            像张贴歪的标签；此时卡片正文里的「BGM」按钮已经是同一个入口，直接不渲染 */}
         {t.cover ? (
-          <>
-            <img className="cover-img" src={coverUrl(t.cover)} alt={title} loading="lazy" decoding="async" />
-            <a
-              className="bgm-link"
-              href={`https://bgm.tv/subject/${t.bgmId}`}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title="在 Bangumi 查看"
-            >
-              <Ic name="external" cls="ic ic-sm" />
-              详情
-            </a>
-          </>
+          <img className="cover-img" src={coverUrl(t.cover)} alt={title} loading="lazy" decoding="async" />
         ) : (
           <div className="cover-ph">☆</div>
         )}

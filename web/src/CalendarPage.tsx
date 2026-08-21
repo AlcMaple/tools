@@ -480,7 +480,7 @@ function DayFilm({
   )
 }
 
-// ── 拍立得海报卡（追番圆章 / BGM 详情常驻，无 hover 依赖） ──────────────────────
+// ── 拍立得海报卡（追番圆章常驻，无 hover 依赖） ──────────────────────────────────
 function Poster({
   item,
   weekday,
@@ -522,18 +522,6 @@ function Poster({
           >
             <Ic name={on ? 'check' : 'plus'} cls="ic" />
           </button>
-        )}
-        {item.id > 0 && (
-          <a
-            className="bgm-link"
-            href={`https://bgm.tv/subject/${item.id}`}
-            target="_blank"
-            rel="noreferrer"
-            title="在 Bangumi 查看"
-          >
-            <Ic name="external" cls="ic ic-sm" />
-            详情
-          </a>
         )}
       </div>
       <div className="poster-title" title={displayTitle}>
