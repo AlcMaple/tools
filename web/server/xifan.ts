@@ -25,7 +25,7 @@ import {
   XifanBusyError,
   XifanResolveError,
 } from './xifan/resolve'
-import { INTERNAL_TOKEN, serveStream } from './xifan/stream'
+import { INTERNAL_TOKEN, PROXY_HOSTS, serveStream } from './xifan/stream'
 import {
   dropPrepared, listPrepared, PrepareRejected, resolveAsset, startPrepare, statusOf, touch,
 } from './xifan/prepare'
@@ -220,7 +220,11 @@ xifan.get('/play-page', (c) => {
   if (bgmIdRaw && bgmId == null) return c.json({ error: 'bgmId 不合法' }, 400)
   c.header('Cache-Control', 'no-store')
   const sources = serializePlayerSources(playerSourceOptions('xifan', Number(animeId), ep, bgmId))
-  const page = renderNonce(PLAY_PAGE.replace('__PLAYER_SOURCES__', sources))
+  const page = renderNonce(
+    PLAY_PAGE
+      .replace('__PLAYER_SOURCES__', sources)
+      .replace('__PROXY_HOSTS__', JSON.stringify(PROXY_HOSTS)),
+  )
   playerPageSecurity(c, page.nonce)
   // pan.wo 的下载响应带 attachment；保持来源信息时 Chromium 会把它判成不可播放媒体。
   // 稀饭自己的 player.moedot 页面同样用 no-referrer，复测后可让 <video> 正常直连。
@@ -472,6 +476,12 @@ const PLAY_PAGE = `<!doctype html>
   var ep = q.get('ep') || '1'
   var bgmId = q.get('bgmId') || ''
   var sourceOptions = __PLAYER_SOURCES__
+  // 只有这些域名的 mp4 要走服务端并发代理；其余（如线路二 play.xfvod.pro）浏览器直连——
+  // 直连实测 30Mbps 且不占服务器那 6Mbps 的出口，让它走代理纯属浪费还挤占名额。
+  var PROXY_HOSTS = __PROXY_HOSTS__
+  function needsProxy(u){
+    try { return PROXY_HOSTS.indexOf(new URL(u).hostname) >= 0 } catch (e) { return false }
+  }
   var v = $('v'), frame = $('frame')
   var lines = [], eps = [], curPl = null, resolvedMap = {}, resolvingMap = {}, hls = null
   var waitingForAuth = false
@@ -837,8 +847,9 @@ const PLAY_PAGE = `<!doctype html>
   }
 
   function playLine(pl){
-    // mp4 线路：查一下这一集有没有预转好的分片版，顺带把状态条渲染出来。
-    if (pl.kind === 'mp4') pollPrepare(pl.url)
+    // 只有走代理的慢源才谈得上预转；直连线路（线路二）不需要，也别去占服务器空间。
+    if (pl.kind === 'mp4' && needsProxy(pl.url)) pollPrepare(pl.url)
+    else renderPrepare({ state: 'none' }, null)
     // 这一集若已经预转成 HLS，就改播分片版：<video> 直连服务器只开一条连接，跨境
     // 单连接只有 2.2Mbps（低于 2.67Mbps 码率），而 HLS 播放器会并发拉多片，
     // 同一条链路能跑到 5.22Mbps。细节见 xifan/prepare.ts。
@@ -892,9 +903,9 @@ const PLAY_PAGE = `<!doctype html>
         v.src = pl.url; var p2 = v.play(); if (p2 && p2.catch) p2.catch(function(){}) // iOS 原生 HLS
       } else { embed(pl) }
     } else {
-      // mp4 不再裸直连：源站按连接限速，单路 ~1.4Mbps 追不上 2.6Mbps 的码率。
-      // 走服务端 /stream 由 6 路并发聚合后同源喂给 <video>（细节见 xifan/stream.ts）。
-      v.src = '/api/xifan/stream?u=' + encodeURIComponent(pl.url)
+      // 慢源（线路一）走服务端 /stream 并发聚合；其余 mp4 保持裸直连——
+      // 线路二直连 30Mbps 比走代理快得多，也不占服务器出口。
+      v.src = needsProxy(pl.url) ? '/api/xifan/stream?u=' + encodeURIComponent(pl.url) : pl.url
       v.load(); var p = v.play(); if (p && p.catch) p.catch(function(){})
     }
   }
