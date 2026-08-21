@@ -774,10 +774,14 @@ const PLAY_PAGE = `<!doctype html>
     var mb = st.bytes ? Math.round(st.bytes / 1048576) + 'MB' : ''
     if (st.state === 'ready'){
       box.className = 'prep ok'
-      box.textContent = '已预转为分片版 · ' + mb + '（本集走多连接，不受单连接限速）'
+      box.textContent = '已上色完毕 · 分片版 ' + mb + '（走多连接，不受单连接限速）'
+    } else if (st.state === 'running' && st.playable){
+      // 边转边播：已经攒够缓冲垫，可以一边看一边继续转。
+      box.className = 'prep ok'
+      box.textContent = '边描边看 · 已描好 ' + Math.round((st.segments || 0) * 6 / 60) + ' 分钟，后面的还在描'
     } else if (st.state === 'running'){
       box.className = 'prep busy'
-      box.textContent = '服务器预转中… ' + mb + '（转好后本集会自动改用分片版）'
+      box.textContent = '起稿中… 已描好 ' + Math.round((st.segments || 0) * 6) + ' 秒，攒够一截就能开始看'
     } else if (st.state === 'failed'){
       box.className = 'prep bad'
       box.textContent = '预转失败：' + (st.error || '未知原因')
@@ -814,15 +818,17 @@ const PLAY_PAGE = `<!doctype html>
       .then(function(st){
         if (!st || st.error) return
         renderPrepare(st, url)
-        if (st.state === 'ready'){
+        if (st.playable){
           var wasNew = preparedKey !== st.key
           preparedKey = st.key; preparedFor = url
-          // 转好时若正播着这一集的 mp4 直连版，就地切到分片版（记住播放位置）。
+          // 能播了就切（不必等整集转完），若正播着这一集的直连版则记住进度就地切换。
           if (wasNew && curPl && curPl.kind === 'mp4' && curPl.url === url){
             resumeTime = v.currentTime; resumeWasPlaying = !v.paused
             resumePending = true; resumeKey = curPl.source + ':' + ep
             playLine(curPl)
           }
+          // 还在转的话继续轮询，好让状态条跟着走；转完了就停。
+          if (st.state === 'running') prepareTimer = setTimeout(function(){ pollPrepare(url) }, 10000)
           return
         }
         if (st.state === 'running') prepareTimer = setTimeout(function(){ pollPrepare(url) }, 5000)
