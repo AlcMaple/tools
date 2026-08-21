@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 880" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect x="1" y="1" width="1118" height="878" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">播放页每句提示分别在什么情况下出现</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">两个位置：<tspan font-weight="700">画面中央的浮层</tspan>（挡住画面，表示现在还看不了）和 <tspan font-weight="700">播放框下方的状态条</tspan>（不挡画面，只是说明后台在忙什么）。</text>
+
+  <!-- 表头 -->
+  <rect x="32" y="84" width="1056" height="34" rx="8" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="52" y="106" font-size="12" font-weight="700" fill="#4a4450">用户看到的字</text>
+  <text x="450" y="106" font-size="12" font-weight="700" fill="#4a4450">什么时候出现</text>
+  <text x="830" y="106" font-size="12" font-weight="700" fill="#4a4450">这时能做什么</text>
+
+  <!-- 1 描线中 -->
+  <rect x="32" y="124" width="1056" height="62" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <rect x="44" y="134" width="46" height="18" rx="4" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="67" y="147" text-anchor="middle" font-size="10" fill="#36566d">浮层</text>
+  <text x="100" y="149" font-size="12.5" font-weight="700" fill="#353136">描线中…　/　描线中 · 还差 N 秒</text>
+  <text x="450" y="145" font-size="11" fill="#666066">正常播放时网络卡了一下，在等缓冲</text>
+  <text x="450" y="164" font-size="11" fill="#8a848a">跟慢源那套无关，快源直连时也会出现</text>
+  <text x="830" y="145" font-size="11" fill="#666066">等几秒自动继续</text>
+  <text x="830" y="164" font-size="11" fill="#8a848a">这是老早就有的行为</text>
+
+  <!-- 2 起稿浮层 -->
+  <rect x="32" y="192" width="1056" height="80" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <rect x="44" y="202" width="46" height="18" rx="4" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="67" y="215" text-anchor="middle" font-size="10" fill="#36566d">浮层</text>
+  <text x="100" y="217" font-size="12.5" font-weight="700" fill="#353136">这张底稿难描了点 · 大约 1 分钟就好</text>
+  <text x="100" y="240" font-size="11.5" fill="#5a5560">下方按钮：<tspan font-weight="700">等不及？线路 N 那边有现成的</tspan></text>
+  <text x="100" y="260" font-size="10.5" fill="#9a949e">按钮只在确实有快源时出现；没有就只显示上面那句</text>
+  <text x="450" y="221" font-size="11" fill="#666066">这一集只有慢源可选，服务器正在转</text>
+  <text x="450" y="240" font-size="11" fill="#8a848a">这段时间画面是空的（故意不播）</text>
+  <text x="830" y="221" font-size="11" fill="#666066">等约 1 分钟自动开播</text>
+  <text x="830" y="240" font-size="11" fill="#666066">或点按钮换到快源立刻看</text>
+
+  <!-- 3 起稿中状态条 -->
+  <rect x="32" y="278" width="1056" height="62" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <rect x="44" y="288" width="60" height="18" rx="4" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="74" y="301" text-anchor="middle" font-size="10" fill="#4a4450">状态条</text>
+  <text x="114" y="303" font-size="12.5" font-weight="700" fill="#8a6d2f">起稿中… 已描好 N 秒</text>
+  <text x="450" y="299" font-size="11" fill="#666066">配合上面那个浮层，显示转了多少</text>
+  <text x="450" y="318" font-size="11" fill="#8a848a">攒够 90 秒就会自动开播</text>
+  <text x="830" y="299" font-size="11" fill="#666066">看着数字涨就行</text>
+
+  <!-- 4 边描边看 -->
+  <rect x="32" y="346" width="1056" height="62" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <rect x="44" y="356" width="60" height="18" rx="4" fill="#ffffff" stroke="#7fad91"/>
+  <text x="74" y="369" text-anchor="middle" font-size="10" fill="#316247">状态条</text>
+  <text x="114" y="371" font-size="12.5" font-weight="700" fill="#316247">边描边看 · 已描好 N 分钟，后面的还在赶</text>
+  <text x="450" y="367" font-size="11" fill="#456b54">已经在正常播放了，后台还在继续转</text>
+  <text x="450" y="386" font-size="11" fill="#5d7d69">进度条只有「已描好」那么长，会慢慢变长</text>
+  <text x="830" y="367" font-size="11" fill="#456b54">正常看。可以往回拖</text>
+  <text x="830" y="386" font-size="11" fill="#5d7d69">往后拖会被拉回已描好的末尾</text>
+
+  <!-- 5 上完色 -->
+  <rect x="32" y="414" width="1056" height="62" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <rect x="44" y="424" width="60" height="18" rx="4" fill="#ffffff" stroke="#7fad91"/>
+  <text x="74" y="437" text-anchor="middle" font-size="10" fill="#316247">状态条</text>
+  <text x="114" y="439" font-size="12.5" font-weight="700" fill="#316247">这张已经上完色了 · 452MB</text>
+  <text x="450" y="435" font-size="11" fill="#456b54">整集已经转完，或者之前就转好过</text>
+  <text x="450" y="454" font-size="11" fill="#5d7d69">再打开这一集是秒开，不用重转</text>
+  <text x="830" y="435" font-size="11" fill="#456b54">和普通视频一样，随便拖</text>
+
+  <!-- 6 前面还有一张 -->
+  <rect x="32" y="482" width="1056" height="62" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <rect x="44" y="492" width="60" height="18" rx="4" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="74" y="505" text-anchor="middle" font-size="10" fill="#4a4450">状态条</text>
+  <text x="114" y="507" font-size="12.5" font-weight="700" fill="#353136">前面还有一张在描 · 轮到这张就开始</text>
+  <text x="450" y="503" font-size="11" fill="#666066">服务器同时只转一集，别的集正在转</text>
+  <text x="450" y="522" font-size="11" fill="#8a848a">和「看的人满了」是两回事，别混</text>
+  <text x="830" y="503" font-size="11" fill="#666066">等前面那集转完</text>
+  <text x="830" y="522" font-size="11" fill="#8a848a">或者换快源线路</text>
+
+  <!-- 7 描废了 -->
+  <rect x="32" y="550" width="1056" height="62" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <rect x="44" y="560" width="60" height="18" rx="4" fill="#ffffff" stroke="#d99aa5"/>
+  <text x="74" y="573" text-anchor="middle" font-size="10" fill="#96434f">状态条</text>
+  <text x="114" y="575" font-size="12.5" font-weight="700" fill="#96434f">这张描废了，先将就着看 · [换线路 N 会顺畅些]</text>
+  <text x="450" y="571" font-size="11" fill="#8a5a62">转码出错了（磁盘满、源站抽风等）</text>
+  <text x="450" y="590" font-size="11" fill="#a2757c">此时会自动退回直连播放，能看但会卡</text>
+  <text x="830" y="571" font-size="11" fill="#8a5a62">点按钮换快源</text>
+  <text x="830" y="590" font-size="11" fill="#a2757c">没有快源时显示「只能这样了」</text>
+
+  <!-- 8 画桌坐满 -->
+  <rect x="32" y="618" width="1056" height="72" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <rect x="44" y="628" width="46" height="18" rx="4" fill="#ffffff" stroke="#d99aa5"/>
+  <text x="67" y="641" text-anchor="middle" font-size="10" fill="#96434f">浮层</text>
+  <text x="100" y="643" font-size="12.5" font-weight="700" fill="#96434f">画桌前坐满了 · 已经有 N 位在描，换条线路，或者点一下再等等</text>
+  <text x="100" y="666" font-size="10.5" fill="#a2757c">没有别的线路时，后半句变成「点一下看看空出来没有」——不会劝用户去换一条不存在的线路</text>
+  <text x="450" y="647" font-size="11" fill="#8a5a62">已经有 2 个人在用慢源看了</text>
+  <text x="830" y="647" font-size="11" fill="#8a5a62">点浮层重试，或换快源</text>
+
+  <!-- 9 网络断开 -->
+  <rect x="32" y="696" width="1056" height="52" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <rect x="44" y="706" width="46" height="18" rx="4" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="67" y="719" text-anchor="middle" font-size="10" fill="#36566d">浮层</text>
+  <text x="100" y="721" font-size="12.5" font-weight="700" fill="#353136">网络已断开 · 恢复后继续当前线路</text>
+  <text x="450" y="721" font-size="11" fill="#666066">用户自己断网了</text>
+  <text x="830" y="721" font-size="11" fill="#666066">连上网点一下浮层</text>
+
+  <!-- 底部说明 -->
+  <rect x="32" y="762" width="1056" height="90" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="52" y="786" font-size="12.5" font-weight="700" fill="#7a6234">看不到这些提示，才是最常见的情况</text>
+  <text x="52" y="810" font-size="11.5" fill="#7a6234">约 96% 的番有快源，打开就直接播，上面这些字一个都不会出现——它们只服务于「这一集唯一能选的线路是慢源」那少数情况。</text>
+  <text x="52" y="834" font-size="11.5" fill="#7a6234">所以评估这套东西的价值时，别按「用户看到几次提示」算，要按「原本会卡到看不下去的那几集，现在能不能顺畅看完」算。</text>
+</svg>
