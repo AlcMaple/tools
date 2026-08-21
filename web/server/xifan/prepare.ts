@@ -235,9 +235,10 @@ export function startPrepare(rawUrl: string, streamOrigin: string): { key: strin
     '-hls_playlist_type', 'event',
     '-hls_list_size', '0', // 0 = 保留全部分片，别把前面的从 playlist 里滚掉
     '-hls_segment_type', 'fmp4',
-    // 绝对路径：相对文件名会写到**进程的工作目录**（部署目录）而不是分片目录，
-    // playlist 里引用的却是同目录的 init.mp4，两边对不上。
-    '-hls_fmp4_init_filename', join(dir, 'init.mp4'),
+    // 保持**相对**文件名：它同时是写入路径和 playlist 里的引用名，给绝对路径会让
+    // ffmpeg 写 header 时直接失败（Could not write header ... No such file or directory）。
+    // 写到哪儿由上面 spawn 的 cwd 决定——加 cwd 就是为了让它落在分片目录而不是部署目录。
+    '-hls_fmp4_init_filename', 'init.mp4',
     '-hls_segment_filename', join(dir, 'seg%05d.m4s'),
     join(dir, 'index.m3u8'),
   ]
