@@ -26,7 +26,7 @@ import {
   XifanResolveError,
 } from './xifan/resolve'
 import { INTERNAL_TOKEN, serveStream, slotInfo, ViewerLimitReached } from './xifan/stream'
-import { PROXY_HOSTS } from './xifan/proxy-hosts'
+import { needsProxy, PROXY_HOSTS } from './xifan/proxy-hosts'
 import {
   dropPrepared, listPrepared, PrepareRejected, resolveAsset, startPrepare, statusOf, touch,
 } from './xifan/prepare'
@@ -155,12 +155,6 @@ xifan.get('/stream', async (c) => {
       c.req.query('t') === INTERNAL_TOKEN,
       clientIp(c),
     )
-    // **有人真的在看慢源 = 该预转它了**。这是最准确的触发信号，比让用户去点按钮靠谱：
-    // 预转本来就该是后台调度的事。幂等——已在转/已转好会直接返回，配额和串行闸门都在
-    // startPrepare 里，失败也不影响这次播放（用户照常走代理直连，只是会慢些）。
-    if (c.req.query('t') !== INTERNAL_TOKEN) {
-      try { startPrepare(raw, internalOrigin(c)) } catch { /* 名额满/磁盘满，下次再说 */ }
-    }
     return new Response(r.body, { status: r.status, headers: r.headers })
   } catch (error) {
     if (error instanceof ViewerLimitReached) {
@@ -184,7 +178,14 @@ xifan.get('/prepared', (c) => {
   if (!raw) return c.json({ error: '缺少 u' }, 400)
   c.header('Cache-Control', 'no-store')
   try {
-    return c.json(statusOf(raw))
+    const st = statusOf(raw)
+    // 播放页一轮询就顺手开工。**触发点必须放在这里而不是 /stream**：慢源的代理直连
+    // 会占满入口，预转就被让位逻辑冻住，形成「越想转越转不动」的死锁（实测日志：
+    // 开始预转 → 有人在看，暂停 → 永远转不出来）。轮询不占入口，所以能一直跑。
+    if (st.state === 'none' && needsProxy(raw)) {
+      try { startPrepare(raw, internalOrigin(c)) } catch { /* 配额/并发满，下次轮询再说 */ }
+    }
+    return c.json(st)
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : '查询失败' }, 400)
   }
@@ -521,7 +522,7 @@ const PLAY_PAGE = `<!doctype html>
   var bufferStartedAt = 0, bufferLastProgressAt = 0, bufferLastAhead = 0, bufferSampleAt = 0, bufferSampleAhead = 0
   var internalSeekTimer = null, gateOnPlay = false, lineRequest = 0, playGeneration = 0
   var networkInterrupted = false, networkCheck = null, networkRetry = null, failureGeneration = -1
-  var preparedKey = null, preparedFor = null, prepareTimer = null
+  var preparedKey = null, preparedFor = null, prepareTimer = null, prepareFailed = null
   var resumeTime = 0, resumeWasPlaying = false, resumePending = false, resumeKey = '', recoverTimer = null
 
   window.addEventListener('storage', function(e){
@@ -828,13 +829,21 @@ const PLAY_PAGE = `<!doctype html>
       .then(function(st){
         if (!st || st.error) return
         renderPrepare(st, url)
+        if (st.state === 'failed' && curPl && curPl.url === url && prepareFailed !== url){
+          prepareFailed = url
+          playLine(curPl) // 转不出来只能退回代理直连，卡也比看不了强
+          return
+        }
         if (st.playable){
           var wasNew = preparedKey !== st.key
           preparedKey = st.key; preparedFor = url
-          // 能播了就切（不必等整集转完），若正播着这一集的直连版则记住进度就地切换。
+          // 能播了就切（不必等整集转完）。两种情形：正等在起稿浮层里，或正播着直连版。
           if (wasNew && curPl && curPl.kind === 'mp4' && curPl.url === url){
-            resumeTime = v.currentTime; resumeWasPlaying = !v.paused
-            resumePending = true; resumeKey = curPl.source + ':' + ep
+            if (v.getAttribute('src')){
+              resumeTime = v.currentTime; resumeWasPlaying = !v.paused
+              resumePending = true; resumeKey = curPl.source + ':' + ep
+            }
+            hideBuffer()
             playLine(curPl)
           }
           // 还在转的话继续轮询，好让状态条跟着走；转完了就停。
@@ -889,16 +898,32 @@ const PLAY_PAGE = `<!doctype html>
     if (pl.kind === 'mp4' && preparedKey && preparedFor === pl.url){
       pl = { source: pl.source, kind: 'hls', url: '/api/xifan/hls/' + preparedKey + '/index.m3u8', viaPrepared: true }
     }
-    // 预转好的走 HLS(读本地磁盘)不占代理名额；只有真要走代理的才需要先问一句有没有位置。
+    // 慢源且还没转出可播部分时：**不要去播代理直连**。
+    // 它注定不够快（<video> 单连接跨境 2.2Mbps < 2.67Mbps 码率），播了既卡、又会占满
+    // 入口把预转冻住，形成「越想转越转不动」的死锁。老实等 1 分钟换全程流畅。
     if (pl.kind === 'mp4' && needsProxy(pl.url)){
       var pending = pl
       checkSlots(function(slots){
         if (slots && !slots.mine && slots.current >= slots.limit){ showQueue(slots); return }
-        reallyPlay(pending)
+        // 预转失败（配额满等）时才退回代理直连——聊胜于无，且有 iframe 兜底。
+        if (prepareFailed === pending.url){ reallyPlay(pending); return }
+        showDrafting(pending)
       })
       return
     }
     reallyPlay(pl)
+  }
+
+  // 等待预转攒够缓冲垫。这段时间不建代理连接，入口全留给 remux。
+  function showDrafting(pl){
+    curPl = pl
+    stopAll()
+    v.classList.remove('on'); frame.classList.remove('on')
+    renderChips()
+    $('buffering').classList.remove('retryable'); $('buffering').onclick = null
+    $('bufferText').textContent = '这条线路的源比较慢，正在起稿 · 约 1 分钟后开始'
+    $('buffering').classList.add('show')
+    pollPrepare(pl.url)
   }
 
   function checkSlots(cb){
