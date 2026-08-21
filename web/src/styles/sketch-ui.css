@@ -677,22 +677,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .track-btn.on { background: var(--teal-mid); color: #f7fbfb; }
 .poster.tracked { border: 2px solid var(--teal-line); padding: 5px 5px 8px; }
 
-.poster .bgm-link {
-  position: absolute;
-  bottom: 8px;
-  left: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 9px;
-  font-size: 11px;
-  color: #fff;
-  text-decoration: none;
-  background: rgba(41, 48, 66, .62);
-  border-radius: var(--r-pill);
-  z-index: 2;
-}
-
 /* ---------- 铅笔排线进度条 ---------- */
 .prog {
   height: 12px;
