@@ -43,8 +43,21 @@ const IDLE_POLL_MS = 20_000
 // 同时转两集 = 两边都慢一半，还会跟正在观看的人抢。所以串行。
 const MAX_CONCURRENT = 1
 const READY_MARK = 'done'
+// 边转边播的缓冲垫：转出这么多分片（6s 一片 ≈ 90 秒内容）就放行开播。
+// remux 只有 1.3x 实时余量（入口 3.7Mbps ÷ 2.67Mbps 码率），领先量增长很慢，
+// 所以开播前先攒一截，别让播放进度贴着转码前沿跑。
+const PLAYABLE_SEGMENTS = 15
 
 export type JobState = 'none' | 'running' | 'ready' | 'failed'
+
+/** 已经转出多少个分片 —— 边转边播靠它判断能不能开播。 */
+function segmentCount(key: string): number {
+  try {
+    return readdirSync(dirFor(key)).filter((f) => f.endsWith('.m4s')).length
+  } catch {
+    return 0
+  }
+}
 
 interface Job {
   key: string
@@ -122,17 +135,28 @@ export function reclaim(need: number): boolean {
   return free >= need
 }
 
-export function statusOf(url: string): { key: string; state: JobState; bytes: number; error?: string } {
+export function statusOf(url: string): {
+  key: string; state: JobState; bytes: number; playable: boolean; segments: number; error?: string
+} {
   const key = keyFor(url)
   // 磁盘上的完成标记优先于内存 —— 重启后内存里的 job 没了，但转好的分片还在。
   if (existsSync(join(dirFor(key), READY_MARK))) {
-    return { key, state: 'ready', bytes: dirSize(dirFor(key)) }
+    return { key, state: 'ready', bytes: dirSize(dirFor(key)), playable: true, segments: segmentCount(key) }
   }
   const job = jobs.get(key)
-  if (!job) return { key, state: 'none', bytes: 0 }
+  if (!job) return { key, state: 'none', bytes: 0, playable: false, segments: 0 }
+  const segs = job.state === 'running' ? segmentCount(key) : 0
   // ffmpeg 的 stderr 里常带服务端绝对路径，别原样吐给浏览器。
   const safeError = job.error ? job.error.replace(/\/[^\s'"]+/g, '<path>').slice(0, 200) : undefined
-  return { key, state: job.state, bytes: job.state === 'running' ? dirSize(dirFor(key)) : job.bytes, error: safeError }
+  return {
+    key,
+    state: job.state,
+    bytes: job.state === 'running' ? dirSize(dirFor(key)) : job.bytes,
+    // 转到一半也能播：EVENT playlist 会持续追加，播放器边播边等后面的分片。
+    playable: job.state === 'running' && segs >= PLAYABLE_SEGMENTS,
+    segments: segs,
+    error: safeError,
+  }
 }
 
 export class PrepareRejected extends Error {}
@@ -199,7 +223,10 @@ export function startPrepare(rawUrl: string, streamOrigin: string): { key: strin
     '-c', 'copy',
     '-f', 'hls',
     '-hls_time', '6',
-    '-hls_playlist_type', 'vod',
+    // event 而非 vod：playlist 边转边追加，用户不必等整集转完（12 分钟）才能开播；
+    // ffmpeg 正常结束时会自己补上 #EXT-X-ENDLIST，届时它就是一份完整 VOD，可以随意 seek。
+    '-hls_playlist_type', 'event',
+    '-hls_list_size', '0', // 0 = 保留全部分片，别把前面的从 playlist 里滚掉
     '-hls_segment_type', 'fmp4',
     '-hls_fmp4_init_filename', 'init.mp4',
     '-hls_segment_filename', join(dir, 'seg%05d.m4s'),
