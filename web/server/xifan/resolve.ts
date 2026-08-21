@@ -10,6 +10,7 @@
 // 源 tab 名单改用正则扒（web 侧只为这几个 <a> 标签不值当加 cheerio 依赖）。
 
 import '../http' // 副作用导入：让 undici fetch 认 HTTPS_PROXY（本地 Clash 非 TUN 时用）
+import { needsProxy } from './proxy-hosts'
 import {
   assertXifanResponse,
   BASE_URL,
@@ -363,7 +364,16 @@ export function clearXifanResolveCache(uid: number): void {
   }
 }
 
-/** 打开播放页调这个：一次抓 source 1 → 线路 1 地址 + 全部线路名单。**不碰线路 2/3**。 */
+/**
+ * 打开播放页调这个：抓 source 1 → 拿到线路 1 地址 + 全部线路名单 + 集数。
+ *
+ * **默认线路的选法：按域名挑「不需要代理的」，不是按线路编号。** 线路号和源站没有
+ * 固定对应关系（实测 3498 的线路一就是 play.xfvod.pro 快源，3535 的线路一才是
+ * apn.moedot.net 慢源）。所以只有当 source 1 恰好是慢源时，才多花一次请求去看看
+ * 下一条是不是直连快源——直连不占服务器那 6Mbps 出口，能不占就别占。
+ *
+ * source 1 本来就是快源时**不多打任何请求**，懒加载的原意保持不变。
+ */
 export async function getPlaylist(animeId: string, ep: number, uid: number | null = null): Promise<Playlist> {
   const access = accessContext(uid)
   const key = `${access.scope}:pl:${animeId}:${ep}`
@@ -378,9 +388,23 @@ export async function getPlaylist(animeId: string, ep: number, uid: number | nul
     let url1 = ''
     try { url1 = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
     url1 = safeMediaUrl(url1)
-    const first: PlayLine | null = url1 ? { source: 1, url: url1, kind: classify(url1) } : null
-    const lines = tabs.length ? tabs : first ? [{ source: 1, name: '线路1' }] : []
+    const line1: PlayLine | null = url1 ? { source: 1, url: url1, kind: classify(url1) } : null
+    const lines = tabs.length ? tabs : line1 ? [{ source: 1, name: '线路1' }] : []
     const eps = parseEpList(body, animeId)
+
+    // 只有「线路 1 是慢源 且 还有别的线路」时才多试一条。失败/也是慢源就老实用线路 1。
+    let first = line1
+    if (line1 && needsProxy(line1.url) && lines.length > 1) {
+      const next = lines.find((l) => l.source !== 1)
+      if (next) {
+        try {
+          const alt = await resolveLine(animeId, ep, next.source, uid)
+          if (alt && !needsProxy(alt.url)) first = alt
+        } catch {
+          /* 备选线路解析不出来不影响主流程，继续用线路 1 */
+        }
+      }
+    }
     return put(key, { title: data?.vod_data?.vod_name ?? '', lines, first, eps })
   })
 }

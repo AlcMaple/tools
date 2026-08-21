@@ -25,7 +25,8 @@ import {
   XifanBusyError,
   XifanResolveError,
 } from './xifan/resolve'
-import { INTERNAL_TOKEN, PROXY_HOSTS, serveStream } from './xifan/stream'
+import { INTERNAL_TOKEN, serveStream, slotInfo, ViewerLimitReached } from './xifan/stream'
+import { PROXY_HOSTS } from './xifan/proxy-hosts'
 import {
   dropPrepared, listPrepared, PrepareRejected, resolveAsset, startPrepare, statusOf, touch,
 } from './xifan/prepare'
@@ -148,11 +149,27 @@ xifan.get('/stream', async (c) => {
   if (!raw) return c.json({ error: '缺少 u' }, 400)
   try {
     // 带对令牌的才是预转自己拉的流，不计入「观众」（令牌只存在于本进程内存，外部伪造不了）。
-    const r = await serveStream(raw, c.req.header('range'), c.req.query('t') === INTERNAL_TOKEN)
+    const r = await serveStream(
+      raw,
+      c.req.header('range'),
+      c.req.query('t') === INTERNAL_TOKEN,
+      clientIp(c),
+    )
     return new Response(r.body, { status: r.status, headers: r.headers })
   } catch (error) {
+    if (error instanceof ViewerLimitReached) {
+      // 503 + 结构化 code：播放页据此显示排队提示，而不是当成播放失败去回退 iframe。
+      return c.json({ error: error.message, code: 'VIEWER_LIMIT', current: error.current, limit: error.limit }, 503)
+    }
     return upstreamFailure(c, error, '稀饭流代理失败')
   }
+})
+
+// 代理观看名额 —— 播放页在真去播之前先问一句。<video> 收到 503 只会触发一个没有响应体的
+// error 事件，分不清是「名额满」还是「真播不了」，所以名额必须能单独查。这个查询无副作用。
+xifan.get('/slots', (c) => {
+  c.header('Cache-Control', 'no-store')
+  return c.json(slotInfo(clientIp(c)))
 })
 
 // 预转 HLS —— 为什么需要它、为什么不能边下边切，见 xifan/prepare.ts 顶部注释。
@@ -847,7 +864,7 @@ const PLAY_PAGE = `<!doctype html>
   }
 
   function playLine(pl){
-    // 只有走代理的慢源才谈得上预转；直连线路（线路二）不需要，也别去占服务器空间。
+    // 只有走代理的慢源才谈得上预转；直连线路不需要，也别去占服务器空间。
     if (pl.kind === 'mp4' && needsProxy(pl.url)) pollPrepare(pl.url)
     else renderPrepare({ state: 'none' }, null)
     // 这一集若已经预转成 HLS，就改播分片版：<video> 直连服务器只开一条连接，跨境
@@ -856,6 +873,46 @@ const PLAY_PAGE = `<!doctype html>
     if (pl.kind === 'mp4' && preparedKey && preparedFor === pl.url){
       pl = { source: pl.source, kind: 'hls', url: '/api/xifan/hls/' + preparedKey + '/index.m3u8', viaPrepared: true }
     }
+    // 预转好的走 HLS(读本地磁盘)不占代理名额；只有真要走代理的才需要先问一句有没有位置。
+    if (pl.kind === 'mp4' && needsProxy(pl.url)){
+      var pending = pl
+      checkSlots(function(slots){
+        if (slots && !slots.mine && slots.current >= slots.limit){ showQueue(slots); return }
+        reallyPlay(pending)
+      })
+      return
+    }
+    reallyPlay(pl)
+  }
+
+  function checkSlots(cb){
+    fetch('/api/xifan/slots', { cache: 'no-store' })
+      .then(function(r){ return r.json() })
+      .then(cb)
+      .catch(function(){ cb(null) }) // 问不到就别拦着，让它照常去播
+  }
+
+  // 名额满时不是「他自己卡」——出口带宽被三条连接平分，是**三个人一起卡**。
+  // 所以宁可拦住新来的，也不能让正在看的两位跟着崩。
+  function showQueue(slots){
+    stopAll()
+    v.classList.remove('on'); frame.classList.remove('on')
+    var hasOther = lines.length > 1
+    var box = $('buffering')
+    box.classList.remove('retryable')
+    $('bufferText').textContent = hasOther
+      ? '画桌前满员了 · 已有 ' + slots.current + ' 位在描稿，换条线路能立刻开画，或者点这里再等等'
+      : '画桌前满员了 · 已有 ' + slots.current + ' 位在描稿，点这里再看看有没有空位'
+    box.classList.add('show', 'retryable')
+    box.onclick = function(){
+      checkSlots(function(s){
+        if (s && (s.mine || s.current < s.limit)){ hideBuffer(); if (curPl) playLine(curPl) }
+        else if (s) showQueue(s)
+      })
+    }
+  }
+
+  function reallyPlay(pl){
     curPl = pl; clearFail(); stopAll(); renderChips()
     gateOnPlay = pl.kind === 'mp4'
     v.classList.add('on'); frame.classList.remove('on')
