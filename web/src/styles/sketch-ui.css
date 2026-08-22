@@ -554,10 +554,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 
 /* 桌面整周纵览：每天一小节（章头 + 胶片），节与节之间留出翻页呼吸 */
 .day-sec + .day-sec { margin-top: 26px; }
-/* 一屏几张：靠视口宽定，保证单张不会窄到封面糊、也不会宽到一天只看得见两部 */
-@media (min-width: 1500px) { .film { --film-cols: 5; } }
-@media (max-width: 960px) { .film { --film-cols: 3; } }
-@media (max-width: 640px) { .film { --film-cols: 2; --film-gap: 12px; } }
 
 /* 胶片条：整版翻页 —— 海报宽度由「一屏放几张」反推（容器宽 ÷ 列数），
    所以任何时候右缘都停在一张完整卡片上，不会切出半张、也就不用再拿渐隐去糊它 */
@@ -574,6 +570,12 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   touch-action: pan-y;
   user-select: none;
 }
+/* 一屏几张：靠视口宽定，保证单张不会窄到封面糊、也不会宽到一天只看得见两部。
+   必须放在 .film 基础规则之后 —— 两者同是 .film，源顺序后者生效，挪到前面会被
+   基础的 --film-cols:4 盖掉，手机永远按 4 列排窄卡，追番圆章和「详情」就会重叠。 */
+@media (min-width: 1500px) { .film { --film-cols: 5; } }
+@media (max-width: 960px) { .film { --film-cols: 3; } }
+@media (max-width: 640px) { .film { --film-cols: 2; --film-gap: 12px; } }
 .film:active { cursor: grabbing; }
 .film .poster { width: auto; }
 /* 标题要能拖蓝选字复制，所以把它从整条胶片的 user-select:none 里摘出来 —— 拖拽 hook
@@ -691,6 +693,9 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   background: rgba(41, 48, 66, .62);
   border-radius: var(--r-pill);
   z-index: 2;
+  /* 窄卡片上若留默认折行，「详情」会变两行（详/情）碰到右上角追番圆章；
+     这里不换行，让它在最窄一栏里也保持一排胶囊 */
+  white-space: nowrap;
 }
 
 /* ---------- 铅笔排线进度条 ---------- */
@@ -1622,6 +1627,14 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .kv-val { flex: 1; min-width: 160px; font-size: 14px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kv-val .muted { color: var(--ink-faint); font-size: 12.5px; margin-left: 6px; }
 .kv-act { flex: none; position: relative; }
+/* 手机上键值行按视口堆：标签列从固定 92px 收窄成内容宽，值列允许换行。
+   原来的 92px 标签列在窄栏里空出一大段，值列被挤到只剩一小截，密码/邮箱的长描述
+   就出现省略号；收窄标签 + 换行后整段内容放得下，不再截断。 */
+@media (max-width: 640px) {
+  .kv-row { gap: 10px; }
+  .kv-label { width: auto; min-width: 56px; }
+  .kv-val { white-space: normal; }
+}
 
 .save-note {
   position: absolute;
