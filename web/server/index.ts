@@ -4,6 +4,7 @@ import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
 import { searchOnline } from './bgm/search-online'
 import auth from './auth'
+import announcements from './announcement'
 import oauth from './oauth'
 import tracks from './tracks'
 import girigiri from './girigiri'
@@ -46,6 +47,9 @@ app.route('/api/auth', auth)
 // 第三方 OIDC 登录（Google，凭据未配时入口自动隐藏）。回调路径与 Google 控制台登记的
 // https://anime.alcmaple.cn/api/auth/oauth/google/callback 一致，本地联调需另登记 localhost URI。
 app.route('/api/auth/oauth', oauth)
+
+// 首页开屏后的站内公告：登录账号可为当前公告版本保存“暂不再显示”偏好。
+app.route('/api/announcements', announcements)
 
 // 追番：列表 / 增改（字段级 patch）/ 删。要登录。
 app.route('/api/tracks', tracks)

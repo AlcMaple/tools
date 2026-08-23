@@ -93,12 +93,27 @@ export interface TracksSnapshot {
   data: Track[]
 }
 
+export interface AnnouncementStatus {
+  id: string
+  muted: boolean
+  authenticated: boolean
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }
     throw new Error(body.error || `HTTP ${res.status}`)
   }
   return res.json() as Promise<T>
+}
+
+/** 当前公告只返回显示偏好；正文与版本在 shared/announcement.ts，前后端共用同一 id。 */
+export async function fetchAnnouncementStatus(): Promise<AnnouncementStatus> {
+  return json<AnnouncementStatus>(await fetch('/api/announcements/current'))
+}
+
+export async function dismissCurrentAnnouncement(): Promise<void> {
+  await json<{ ok: boolean }>(await fetch('/api/announcements/current/dismiss', { method: 'POST' }))
 }
 
 export async function fetchTracks(): Promise<TracksSnapshot> {
