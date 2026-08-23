@@ -17,6 +17,12 @@ import { useIsWide } from './useMediaQuery'
 const CALENDAR_CACHE_KEY = 'calendar'
 const CALENDAR_TTL = 14 * 24 * 60 * 60_000
 
+// 纱雾驻场气泡的两句台词：一句引导向右（因为看不到右边还有内容正是这页的痛点），
+// 一句是原来的「一周的排片都在这页上」。每隔几秒换一句；减少动态效果时固定第一句。
+const SAGIRI_A = '右边的番剧还有好多呢…\n点那颗小箭头，就能一直看下去啦'
+const SAGIRI_B = '一周的排片都在这页上，慢慢挑吧～'
+const SAGIRI_SWAP_MS = 4200
+
 function todayBgmId(): number {
   const d = new Date().getDay() // 0=周日..6=周六
   return d === 0 ? 7 : d
@@ -46,14 +52,12 @@ const NO_DRAG_SELECTOR = '.poster-title'
 const FRICTION = 0.95
 const MIN_VELOCITY = 0.05
 
-function useDragScroll<T extends HTMLElement>(): {
-  ref: React.RefObject<T>
+function useDragScroll<T extends HTMLElement>(ref: React.RefObject<T>): {
   onPointerDown: (e: React.PointerEvent<T>) => void
   onPointerMove: (e: React.PointerEvent<T>) => void
   onPointerUp: (e: React.PointerEvent<T>) => void
   onClickCapture: (e: React.MouseEvent<T>) => void
 } {
-  const ref = useRef<T>(null)
   const drag = useRef<{
     startX: number
     startScroll: number
@@ -148,7 +152,70 @@ function useDragScroll<T extends HTMLElement>(): {
     }
   }
 
-  return { ref, onPointerDown, onPointerMove, onPointerUp, onClickCapture }
+  return { onPointerDown, onPointerMove, onPointerUp, onClickCapture }
+}
+
+// 胶片翻页器的滚动状态：能否往左 / 往右翻、右边还有几部没露出。
+// 只在内容溢出（scrollWidth > clientWidth）时才算「还有」，否则两侧箭头都隐藏。
+// 翻页按「一屏宽度」推进，一次一屏，跟拖拽后停在整张卡的既定手感不冲突。
+// 到边后就收起对应按钮，省得出现一个点了没反应的箭头。
+function useFilmPager(el: React.RefObject<HTMLDivElement>, itemCount: number): {
+  canPrev: boolean
+  canNext: boolean
+  remainingNext: number
+  goPrev: () => void
+  goNext: () => void
+} {
+  const [canPrev, setCanPrev] = useState(false)
+  const [canNext, setCanNext] = useState(false)
+  const [remainingNext, setRemainingNext] = useState(0)
+
+  const update = (): void => {
+    const c = el.current
+    if (!c) return
+    const max = c.scrollWidth - c.clientWidth
+    setCanPrev(c.scrollLeft > 4)
+    setCanNext(c.scrollLeft < max - 4)
+    // 数一下还有几张卡片完全露不出来：取 .poster 子元素，右缘超出可视右缘的都算「还在外面」。
+    const cards = Array.from(c.querySelectorAll<HTMLElement>('.poster'))
+    const right = c.scrollLeft + c.clientWidth
+    let outside = 0
+    for (const card of cards) {
+      if (card.offsetLeft + card.offsetWidth > right + 4) outside++
+    }
+    setRemainingNext(outside)
+  }
+
+  useEffect(() => {
+    const c = el.current
+    if (!c) return
+    update()
+    c.addEventListener('scroll', update, { passive: true })
+    // 刷新后 itemCount 会让 effect 重跑；断点切换改 --film-cols 时则由观察器校准宽度。
+    const ro = new ResizeObserver(() => update())
+    ro.observe(c)
+    return () => {
+      c.removeEventListener('scroll', update)
+      ro.disconnect()
+    }
+  }, [el, itemCount])
+
+  const go = (dir: 1 | -1): void => {
+    const c = el.current
+    if (!c) return
+    const max = Math.max(c.scrollWidth - c.clientWidth, 0)
+    const target =
+      dir === 1
+        ? c.scrollLeft >= max - 4
+          ? max
+          : c.scrollLeft + c.clientWidth
+        : c.scrollLeft <= 4
+          ? 0
+          : c.scrollLeft - c.clientWidth
+    c.scrollTo({ left: target, behavior: 'smooth' })
+  }
+
+  return { canPrev, canNext, remainingNext, goPrev: () => go(-1), goNext: () => go(1) }
 }
 
 export function CalendarPage(): JSX.Element {
@@ -161,6 +228,14 @@ export function CalendarPage(): JSX.Element {
   const { user } = useAuth()
   // 已追的 bgmId —— 用来给海报画「已收藏」描边 / 切圆章按钮图标。未登录就是空集（按钮不显示）。
   const [tracked, setTracked] = useState<Set<number>>(new Set())
+  // 纱雾驻场气泡两句话轮换：一会儿引导向右（这页的痛点），一会儿回到「慢慢挑」的闲适。
+  const [sagiriLine, setSagiriLine] = useState<'a' | 'b'>('a')
+  useEffect(() => {
+    // 系统要求减少动态效果时，保留最关键的右翻提示，不再轮换台词。
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const t = window.setInterval(() => setSagiriLine((p) => (p === 'a' ? 'b' : 'a')), SAGIRI_SWAP_MS)
+    return () => window.clearInterval(t)
+  }, [])
   const dates = useMemo(weekDates, [])
   const todayId = useMemo(todayBgmId, [])
   // 桌面 = 整周纵览（七天的胶片竖着排，一眼看全一季）；手机 = 日期章选天 + 单日胶片
@@ -310,7 +385,7 @@ export function CalendarPage(): JSX.Element {
             result?.data.map((day) => (
               <section key={day.id} id={`day-sec-${day.id}`} className="day-sec">
                 <DayHead day={day} date={dates[day.id]} today={day.id === todayId} />
-                <FilmRow label={`${day.label}在播番剧`}>
+                <FilmRow label={`${day.label}在播番剧`} itemCount={day.items.length}>
                   <DayFilm
                     day={day}
                     canTrack={!!user}
@@ -346,7 +421,7 @@ export function CalendarPage(): JSX.Element {
               {selected && (
                 <>
                   <DayHead day={selected} date={dates[selected.id]} today={selected.id === todayId} />
-                  <FilmRow label="当日在播番剧">
+                  <FilmRow label="当日在播番剧" itemCount={selected.items.length}>
                     <DayFilm
                       day={selected}
                       canTrack={!!user}
@@ -360,10 +435,15 @@ export function CalendarPage(): JSX.Element {
           )}
         </div>
 
-        <div className="rig-box">
+        <div className="rig-box calendar-rig-box">
           <img className="rig" src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘（全身）" />
           <div className="bubble rig-bubble">
-            <span>{wide ? '一周的排片都在这页上，慢慢挑吧～' : '点日期章，翻到想看的那一天～'}</span>
+            <span className={`sagiri-line${sagiriLine === 'a' ? ' show' : ''}`}>
+              {SAGIRI_A}
+            </span>
+            <span className={`sagiri-line${sagiriLine === 'b' ? ' show' : ''}`}>
+              {SAGIRI_B}
+            </span>
           </div>
           <span className="kira" style={{ bottom: 78, right: -10, transform: 'rotate(6deg)' }}>
             サラサラ
@@ -390,32 +470,80 @@ export function CalendarPage(): JSX.Element {
   )
 }
 
-function FilmRow({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
-  const drag = useDragScroll<HTMLDivElement>()
+const ArrowIcon = ({ dir }: { dir: 'prev' | 'next' }): JSX.Element => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d={dir === 'prev' ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'} />
+  </svg>
+)
+
+function FilmRow({
+  label,
+  itemCount,
+  children,
+}: {
+  label: string
+  itemCount: number
+  children: React.ReactNode
+}): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const drag = useDragScroll(ref)
+  const pager = useFilmPager(ref, itemCount)
+
+  // 拖动默认走 pointer 手势；箭头按钮是独立按钮，不冲突。
+  const countLabel = pager.canNext
+    ? `右边还有 ${pager.remainingNext} 部，点箭头继续看～`
+    : '翻到最右边啦，往左看看吧～'
+
   return (
-    <div
-      className="film"
-      aria-label={label}
-      ref={drag.ref}
-      onPointerDown={drag.onPointerDown}
-      onPointerMove={drag.onPointerMove}
-      onPointerUp={drag.onPointerUp}
-      onPointerCancel={drag.onPointerUp}
-      onClickCapture={drag.onClickCapture}
-    >
-      {children}
+    <div className="film-wrap">
+      <span className="film-count" hidden={!pager.canNext && !pager.canPrev} aria-hidden="true">
+        {countLabel}
+      </span>
+      <button
+        type="button"
+        className="film-nav prev"
+        onClick={pager.goPrev}
+        aria-label="上一屏番剧"
+        hidden={!pager.canPrev}
+      >
+        <span className="nav-tape" />
+        <ArrowIcon dir="prev" />
+      </button>
+      <div
+        className="film"
+        aria-label={label}
+        ref={ref}
+        onPointerDown={drag.onPointerDown}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
+        onPointerCancel={drag.onPointerUp}
+        onClickCapture={drag.onClickCapture}
+      >
+        {children}
+      </div>
+      <button
+        type="button"
+        className="film-nav next"
+        onClick={pager.goNext}
+        aria-label="下一屏番剧"
+        hidden={!pager.canNext}
+      >
+        <span className="nav-tape" />
+        <ArrowIcon dir="next" />
+      </button>
     </div>
   )
 }
 
 function DateStrip({ children }: { children: React.ReactNode }): JSX.Element {
-  const drag = useDragScroll<HTMLDivElement>()
+  const ref = useRef<HTMLDivElement>(null)
+  const drag = useDragScroll(ref)
   return (
     <div
       className="date-strip"
       role="tablist"
       aria-label="选择日期"
-      ref={drag.ref}
+      ref={ref}
       onPointerDown={drag.onPointerDown}
       onPointerMove={drag.onPointerMove}
       onPointerUp={drag.onPointerUp}
