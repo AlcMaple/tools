@@ -147,9 +147,11 @@ function toSyncJson(r: TrackRow): Record<string, unknown> {
   }
 }
 
-// id 是插入顺序(自增,UPDATE 不会挪它)—— 按它排列表就是「按加入顺序」,不会因为编辑了某条
-// (改进度/改状态都会 bump updated_at)就把它顶到最前面重新洗牌。
-const listStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id ASC')
+// id 是插入顺序（自增，UPDATE 不会挪它）。网页列表按它倒序就是「最新加入在前」；编辑进度、
+// 标签或状态只会 bump updated_at，绝不能借此把旧番顶回最前。同步快照仍保留原有插入顺序，
+// 桌面端会依据 extra.appOrder 还原自己的列表次序。
+const listByInsertStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id ASC')
+const listNewestFirstStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id DESC')
 const oneStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? AND bgm_id = ?')
 const delStmt = db.prepare('DELETE FROM tracks WHERE user_id = ? AND bgm_id = ?')
 const insertStmt = db.prepare(`
@@ -217,12 +219,12 @@ const bumpRev = (uid: number): void => {
 
 const readTracksSnapshot = db.transaction((uid: number) => ({
   rev: currentRev(uid),
-  data: (listStmt.all(uid) as TrackRow[]).map(toJson),
+  data: (listNewestFirstStmt.all(uid) as TrackRow[]).map(toJson),
 }))
 
 const readSyncSnapshot = db.transaction((uid: number) => ({
   rev: currentRev(uid),
-  data: (listStmt.all(uid) as TrackRow[]).map(toSyncJson),
+  data: (listByInsertStmt.all(uid) as TrackRow[]).map(toSyncJson),
 }))
 
 function weekdayFromDate(date: unknown): number {
@@ -258,7 +260,7 @@ async function fillCalendarMetadata(uid: number): Promise<Map<number, CalendarMe
   const metadata = await calendarMetadata()
   if (!metadata.size) return metadata
   const apply = db.transaction(() => {
-    for (const row of listStmt.all(uid) as TrackRow[]) {
+    for (const row of listByInsertStmt.all(uid) as TrackRow[]) {
       const item = metadata.get(row.bgm_id)
       if (!item) continue
       if (row.air_weekday && row.air_date && row.cover) continue
@@ -905,7 +907,7 @@ function syncStatus(status: unknown, extra: Record<string, unknown>): Status | n
 
 function statusCounts(uid: number): Record<Status, number> {
   const counts: Record<Status, number> = { watching: 0, plan: 0, considering: 0, done: 0 }
-  for (const row of listStmt.all(uid) as TrackRow[]) {
+  for (const row of listByInsertStmt.all(uid) as TrackRow[]) {
     if (STATUSES.includes(row.status as Status)) counts[row.status as Status]++
   }
   return counts
@@ -973,11 +975,11 @@ tracks.post('/sync', async (c) => {
       return {
         conflict: true as const,
         rev,
-        serverCount: (listStmt.all(uid) as TrackRow[]).length,
+        serverCount: (listByInsertStmt.all(uid) as TrackRow[]).length,
       }
     }
 
-    const existing = new Map((listStmt.all(uid) as TrackRow[]).map((r) => [r.bgm_id, r]))
+    const existing = new Map((listByInsertStmt.all(uid) as TrackRow[]).map((r) => [r.bgm_id, r]))
 
     for (const [id, t] of incoming) {
       // 客户端时钟可能不准；未来的时间会让这条永远排在列表最前，夹到 now 为止
