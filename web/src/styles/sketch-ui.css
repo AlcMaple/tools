@@ -227,6 +227,26 @@
   transform: rotate(45deg) skew(8deg, 8deg);
 }
 
+/* 周历的两句驻场台词长短不同。右栏和气泡都固定为同一宽度，切换时不挤压胶片区。 */
+.calendar-rig-box {
+  flex: 0 0 260px;
+  width: 260px;
+}
+.calendar-rig-box .rig-bubble {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+/* 纱雾驻场气泡的两句轮换：每次只显示一句（.show 切换）。
+   white-space: pre-line 让带 \n 的台词能换行；min-height 稳住气泡高度，换句时不跳一下。 */
+.rig-bubble .sagiri-line {
+  white-space: pre-line;
+  display: none;
+  min-height: 3.4em;
+}
+.rig-bubble .sagiri-line.show { display: block; }
+
 /* ---------- 贴纸按钮（触控 ≥40px） ---------- */
 .btn {
   display: inline-flex;
@@ -581,6 +601,70 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 /* 标题要能拖蓝选字复制，所以把它从整条胶片的 user-select:none 里摘出来 —— 拖拽 hook
    在 pointerdown 落在它上面时也会直接放弃接管，两边配合才不会打架 */
 .poster-title { user-select: text; cursor: text; }
+
+/* 胶片翻页器：手帐贴纸感圆角方块箭头，浮在胶片两侧。绝对定位 → 不参与排版、不顶卡片；
+   只在「还能往那翻」的方向出现，滚到边直接收起，避免出现一个点了没反应的按钮。
+   不用原生滚动条：一是粗糙、二来滚动条往下压会跟卡片抢垂直空间，翻页箭头更直白。 */
+.film-wrap { position: relative; }
+.film-nav {
+  position: absolute;
+  top: 118px;
+  z-index: 5;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 13px 17px 11px 17px;   /* 手绘贴纸的抖动圆角，非正圆 */
+  background: var(--card);
+  color: var(--ink-sub);
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: transform .18s var(--ease-stick), color .18s, border-color .18s, box-shadow .18s, opacity .2s;
+}
+.film-nav svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.film-nav.prev { left: -14px; transform: rotate(-4deg); }
+.film-nav.next { right: -14px; transform: rotate(4deg); }
+@media (hover: hover) { .film-nav:hover { transform: translateY(-2px) rotate(0deg); color: var(--teal); border-color: var(--teal-line); box-shadow: var(--shadow-stick); } }
+.film-nav[hidden] { display: none; }
+.film-nav .nav-tape {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  margin-left: -10px;
+  width: 20px;
+  height: 6px;
+  background: var(--tape-teal);
+  border-radius: 2px;
+  transform: rotate(-6deg);
+}
+.film-nav.next .nav-tape { transform: rotate(6deg); }
+
+/* 胶片右上角的手写数量提示：还剩几部可翻。绝对定位浮於卡片排之上，不占行。
+   数字用主题青强调，只在有未露出内容时显示（无溢出时整个隐藏）。 */
+.film-count {
+  position: absolute;
+  top: -10px;
+  right: 2px;
+  z-index: 4;
+  font-family: var(--font-hand);
+  font-size: 13px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.film-count[hidden] { display: none; }
+@media (max-width: 640px) {
+  /* 手机上贴卡更窄，箭头缩小、贴得更近，避免盖住封面太多 */
+  .film-nav { width: 38px; height: 38px; top: 100px; }
+  .film-nav.prev { left: -10px; }
+  .film-nav.next { right: -10px; }
+  .film-nav svg { width: 18px; height: 18px; }
+  .film-count { font-size: 11.5px; }
+}
 
 /* ---------- 拍立得海报卡（操作常驻，无 hover 依赖） ---------- */
 .poster {
