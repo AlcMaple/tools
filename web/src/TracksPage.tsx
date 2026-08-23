@@ -403,7 +403,9 @@ export function TracksPage(): JSX.Element {
     if (q) list = list.filter((t) => matches(t, q))
     if (tags.size) list = list.filter((t) => allTagsOf(t).some((x) => tags.has(x)))
     const isToday = (t: Track) => t.airWeekday === today && t.status !== 'done' && isRecentAir(t.airDate)
-    return [...list].sort((a, b) => Number(isToday(b)) - Number(isToday(a)))
+    // 服务端已按加入顺序倒序返回；分成两段而不是按 updatedAt 重排，今天更新仍置顶，
+    // 其余卡片则保持真正的创建顺序（新加的更靠前）。
+    return [...list.filter(isToday), ...list.filter((t) => !isToday(t))]
   }, [animeTracks, filter, query, tags, today])
 
   const allTags = useMemo(() => {
