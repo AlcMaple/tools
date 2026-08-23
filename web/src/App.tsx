@@ -1,7 +1,8 @@
 // 应用外壳 —— 皮肤 = 原型稿的「书脊 + 内页」骨架：桌面左侧书脊侧栏（索引贴导航 + 用户卡），
 // 移动端顶栏 + 底部标签栏（CSS 切换，不写 JS 分支）。页面本体在 CalendarPage / TracksPage /
 // SettingsPage；这里只管壳、路由、全局登录弹窗、密保提示和便签 Toast。
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { AnnouncementModal } from './AnnouncementModal'
 import { auth, useAuth } from './auth'
 import { AuthModal, type AuthMode } from './AuthModal'
 import { CalendarPage } from './CalendarPage'
@@ -28,6 +29,7 @@ export default function App(): JSX.Element {
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [oauthError, setOauthError] = useState<string | null>(null)
+  const [announcementArmed, setAnnouncementArmed] = useState(false)
 
   useEffect(() => void auth.init(), [])
 
@@ -52,7 +54,16 @@ export default function App(): JSX.Element {
     }
   }, [ready, route, user])
 
+  // 公告只属于本次开场的首页：开屏途中切到别页、或公告已出现后离开首页，都不在返回时补弹。
+  useEffect(() => {
+    if (route !== 'calendar') setAnnouncementArmed(false)
+  }, [route])
+
   const go = (r: Route): void => navigate(r)
+  const closeAnnouncement = useCallback(() => setAnnouncementArmed(false), [])
+  const announceAfterSplash = useCallback(() => {
+    if (route === 'calendar') setAnnouncementArmed(true)
+  }, [route])
   const openLogin = (): void => {
     setAuthMode('login')
     setAuthOpen(true)
@@ -62,7 +73,8 @@ export default function App(): JSX.Element {
   return (
     <>
       <SketchSprite />
-      <Splash />
+      <Splash onComplete={announceAfterSplash} />
+      <AnnouncementModal active={announcementArmed && route === 'calendar'} onClose={closeAnnouncement} />
 
       {/* 移动端顶栏（桌面隐藏） */}
       <header className="m-top">

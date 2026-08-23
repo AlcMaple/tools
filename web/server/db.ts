@@ -35,6 +35,18 @@ db.exec(`
   );
 `)
 
+// 公告的「这条先别再出现」按账号保存。公告 id 是版本号：换一条公告只需改 id，旧的静音记录
+// 自然不会影响新公告；匿名访客则由前端用本机存储兜底，不在服务端伪造账号。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS announcement_dismissals (
+    user_id         INTEGER NOT NULL,
+    announcement_id TEXT    NOT NULL,
+    dismissed_at    INTEGER NOT NULL,
+    PRIMARY KEY(user_id, announcement_id),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`)
+
 // 追番表。字段分两类:
 //   **瘦列**  网页端自己要查 / 要显示的,单独成列、能索引。
 //   **extra** 桌面端独有的富字段原样存 JSON,网页端一个字都不碰,只负责让它原样过服务器往返。

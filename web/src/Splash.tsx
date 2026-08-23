@@ -31,10 +31,11 @@ function shouldPlay(): boolean {
 // 第二遍读到自己刚写的 sessionStorage，开屏永远不放
 const PLAY = shouldPlay()
 
-export function Splash(): JSX.Element | null {
+export function Splash({ onComplete }: { onComplete?: () => void }): JSX.Element | null {
   // wait = 纸已铺好、立绘还没解码完（此时时间轴停在第一帧）
   const [state, setState] = useState<'wait' | 'play' | 'out' | 'done'>(PLAY ? 'wait' : 'done')
   const ref = useRef<HTMLDivElement>(null)
+  const notified = useRef(false)
 
   // 等立绘就位：图没到就开画，画的是一张空卡片
   useEffect(() => {
@@ -98,6 +99,14 @@ export function Splash(): JSX.Element | null {
     const t = window.setTimeout(() => setState('done'), OUT_MS)
     return () => window.clearTimeout(t)
   }, [state])
+
+  // 公告只能跟在一段真实播放过的开屏后面：刷新时本会话已经看过开屏，PLAY=false，就不再
+  // 补弹；并用 ref 抵住开发环境 StrictMode / 父组件重渲染带来的重复通知。
+  useEffect(() => {
+    if (state !== 'done' || !PLAY || notified.current) return
+    notified.current = true
+    onComplete?.()
+  }, [state, onComplete])
 
   // 跳过：点一下 / 按任意键都算
   useEffect(() => {
