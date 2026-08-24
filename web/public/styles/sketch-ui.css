@@ -1438,6 +1438,9 @@ body[data-auth='out'] .track-btn { display: none; }
 .ep-cell.on { color: #f7fbfb; background: var(--teal-mid); border-color: var(--teal); font-weight: 600; }
 .ep-cell.seen::after { content: '✓'; margin-left: 3px; font-size: 10px; color: var(--gold); }
 .ep-cell.on.seen::after { color: #fff; }
+/* 在线播放页「选集」网格：这集是不是我标过的好看集，跟 .seen 同一个视觉语汇（角标追加）。 */
+.ep-cell.good::after { content: '★'; margin-left: 3px; font-size: 10px; color: var(--gold); }
+.ep-cell.on.good::after { color: #fff; }
 .line-card {
   display: flex;
   align-items: center;

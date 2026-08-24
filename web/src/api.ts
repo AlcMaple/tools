@@ -75,13 +75,52 @@ export interface Track {
   observeCount: number
   /** 桌面端全量同步会带漫画 / 小说；网页版追番页当前只展示 anime。 */
   subjectType: TrackSubjectType
+  /** 好看集：具体集号数组（不是计数），渲染时由 compressGoodEpisodes() 折成「1、4-5、16-17」。 */
+  goodEpisodes: number[]
+  /** 好看集备注，键是集号，与 goodEpisodes 平行存放。取消标记某集时它的备注自动作废。 */
+  goodEpisodeNotes: Record<number, string>
   updatedAt: number
 }
 
 /** 写入用的 patch —— **只带要改的字段**；没带的字段服务端保持沉默、原样不动（沉默 ≠ 置空） */
 export type TrackPatch = Partial<
-  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score' | 'observeCount'>
+  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score' | 'observeCount' | 'goodEpisodes' | 'goodEpisodeNotes'>
 >
+
+// ── 好看集集号工具（与桌面端 animeTrackStore 同一套规则，网页端独立声明一份） ──────
+
+/** 好看集集号归一：去掉 ≤0 / 非整数，去重升序。 */
+export function normalizeGoodEpisodes(input: number[]): number[] {
+  const seen = new Set<number>()
+  for (const v of input) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) continue
+    const n = Math.floor(v)
+    if (n <= 0) continue
+    seen.add(n)
+  }
+  return [...seen].sort((a, b) => a - b)
+}
+
+/** 集号数组压成紧凑串，连续区间合并：`[1,4,5,16,17,18,19]` → 「1、4-5、16-19」。 */
+export function compressGoodEpisodes(eps: number[]): string {
+  const sorted = normalizeGoodEpisodes(eps)
+  if (sorted.length === 0) return ''
+  const groups: string[] = []
+  let start = sorted[0]
+  let prev = sorted[0]
+  for (let i = 1; i < sorted.length; i++) {
+    const cur = sorted[i]
+    if (cur === prev + 1) {
+      prev = cur
+      continue
+    }
+    groups.push(start === prev ? String(start) : `${start}-${prev}`)
+    start = cur
+    prev = cur
+  }
+  groups.push(start === prev ? String(start) : `${start}-${prev}`)
+  return groups.join('、')
+}
 
 interface TrackWriteOptions {
   /** 服务端在线搜索签发的候选凭证；仅用于把成功新增的条目晋升到共享补充库。 */
@@ -131,6 +170,8 @@ export async function fetchTracks(): Promise<TracksSnapshot> {
       subjectType: ['anime', 'manga', 'novel', 'other'].includes(track.subjectType)
         ? track.subjectType
         : 'anime',
+      goodEpisodes: Array.isArray(track.goodEpisodes) ? track.goodEpisodes : [],
+      goodEpisodeNotes: track.goodEpisodeNotes && typeof track.goodEpisodeNotes === 'object' ? track.goodEpisodeNotes : {},
     })),
   }
 }

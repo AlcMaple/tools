@@ -180,6 +180,11 @@ const PLAY_PAGE = `<!doctype html>
   .player-title { font-size: 24px }
   .section-title { font-size: 18px }
   .icon-sprite { display: none }
+  /* 好看集提示条：这集是不是我标过的，不用 hover——手机上根本没有 hover。
+     文字可能比较长（备注），不截断、正常换行，卡片跟着撑高。 */
+  .ep-good-note { display: none; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 14px; border-radius: var(--r-card); background: var(--gold-hl); border: 1.5px solid var(--gold); color: #6b5416; font-size: 13px; line-height: 1.6; }
+  .ep-good-note.show { display: flex }
+  .ep-good-note::before { content: '★'; flex: none; margin-top: 1px; color: var(--gold); }
 </style>
 </head>
 <body data-page="player">
@@ -194,6 +199,7 @@ const PLAY_PAGE = `<!doctype html>
     </div>
     <div class="seg src-seg" id="sources"></div>
   </div>
+  <div class="ep-good-note" id="epgood"></div>
   <div class="player-frame mt16">
     <video id="v" controls playsinline preload="auto"></video>
     <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
@@ -217,6 +223,7 @@ const PLAY_PAGE = `<!doctype html>
   var sourceOptions = __PLAYER_SOURCES__
   var v = $('v'), frame = $('frame')
   var lines = [], eps = [], curPl = null, resolvedMap = {}, hls = null, lineRequest = 0, playGeneration = 0
+  var goodEps = {}, goodNotes = {}
   var networkInterrupted = false, networkCheck = null, networkRetry = null, failureGeneration = -1
   var resumeTime = 0, resumeWasPlaying = false, resumePending = false, resumeKey = '', recoverTimer = null
 
@@ -406,18 +413,41 @@ const PLAY_PAGE = `<!doctype html>
   function renderEps(){
     var box = $('eps'); box.textContent = ''; var cur = Number(ep) || 1
     if (!eps.length){ var one = document.createElement('div'); one.className = 'ep-cell on'; one.textContent = cur; box.appendChild(one); return }
-    eps.forEach(function(n){ var b = document.createElement('button'); b.type = 'button'; b.className = 'ep-cell' + (n === cur ? ' on' : ''); b.textContent = n; b.onclick = function(){ if (n !== cur) goEp(n) }; box.appendChild(b) })
+    eps.forEach(function(n){ var b = document.createElement('button'); b.type = 'button'; b.className = 'ep-cell' + (n === cur ? ' on' : '') + (goodEps[n] ? ' good' : ''); b.textContent = n; b.onclick = function(){ if (n !== cur) goEp(n) }; box.appendChild(b) })
+  }
+  // 这集是不是我标过的好看集——不用 hover（手机没有 hover），直接常驻在播放框上方一条。
+  // 没登录 / 没带 bgmId / 没追这部番时接口都只返回空，安安静静不显示，不算错误。
+  function loadGoodEpisodes(){
+    if (!/^[0-9]+$/.test(bgmId)) return Promise.resolve()
+    return fetch('/api/tracks/' + bgmId + '/good-episodes', { cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.json() : null })
+      .then(function(d){
+        if (!d) return
+        ;(d.goodEpisodes || []).forEach(function(n){ goodEps[n] = true })
+        goodNotes = d.goodEpisodeNotes || {}
+      })
+      .catch(function(){})
+  }
+  function renderGoodNote(){
+    var box = $('epgood')
+    var cur = Number(ep) || 1
+    if (!goodEps[cur]){ box.classList.remove('show'); box.textContent = ''; return }
+    var note = goodNotes[cur]
+    box.textContent = note ? ('这集我标过好看：' + note) : '这集我标过好看，就是没留下备注'
+    box.classList.add('show')
   }
   async function boot(){
     if (!/^GV[0-9]+$/i.test(animeId) || !/^[0-9]+$/.test(ep)){ fail('URL 参数不合法'); return }
     renderSources()
     $('epbadge').textContent = 'EP ' + ep; renderEps()
+    var goodPromise = loadGoodEpisodes()
     try {
       var r = await fetch('/api/girigiri/playlist?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep))
       var d = await r.json()
       if (!r.ok || d.error){ fail('加载失败：' + (d.error || 'Girigiri 播放页解析失败')); return }
       lines = d.lines || []; eps = d.eps || []; if (d.title) $('ttl').textContent = d.title
-      renderEps(); renderChips()
+      await goodPromise
+      renderEps(); renderChips(); renderGoodNote()
       if (d.first){ resolvedMap[1] = d.first; playLine(d.first) } else fail('这一集解析不到，点上面其他线路试试')
     } catch (e){
       classifyMediaFailure(
