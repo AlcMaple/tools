@@ -457,6 +457,11 @@ const PLAY_PAGE = `<!doctype html>
   .player-title { font-size: 24px }
   .section-title { font-size: 18px }
   .icon-sprite { display: none }
+  /* 好看集提示条：这集是不是我标过的，不用 hover——手机上根本没有 hover。
+     文字可能比较长（备注），不截断、正常换行，卡片跟着撑高。 */
+  .ep-good-note { display: none; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 14px; border-radius: var(--r-card); background: var(--gold-hl); border: 1.5px solid var(--gold); color: #6b5416; font-size: 13px; line-height: 1.6; }
+  .ep-good-note.show { display: flex }
+  .ep-good-note::before { content: '★'; flex: none; margin-top: 1px; color: var(--gold); }
 </style>
 </head>
 <body data-page="player">
@@ -471,6 +476,7 @@ const PLAY_PAGE = `<!doctype html>
     </div>
     <div class="seg src-seg" id="sources"></div>
   </div>
+  <div class="ep-good-note" id="epgood"></div>
   <div class="player-frame mt16">
     <video id="v" controls playsinline preload="auto"></video>
     <iframe id="frame" class="player" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
@@ -516,6 +522,7 @@ const PLAY_PAGE = `<!doctype html>
   }
   var v = $('v'), frame = $('frame')
   var lines = [], eps = [], curPl = null, resolvedMap = {}, resolvingMap = {}, hls = null
+  var goodEps = {}, goodNotes = {}
   var waitingForAuth = false
   var BUFFER_TARGET = 10, BUFFER_RATE = .0625, BUFFER_STALL_MS = 10000, BUFFER_MAX_MS = 30000
   // 冷启动（跨源 TCP 慢启动 + moov 定位）前 10 秒不做速率裁决，之后每 6 秒滚动采样一次；
@@ -1109,11 +1116,33 @@ const PLAY_PAGE = `<!doctype html>
     }
     eps.forEach(function(n){
       var b = document.createElement('button'); b.type = 'button'
-      b.className = 'ep-cell' + (n === cur ? ' on' : '')
+      b.className = 'ep-cell' + (n === cur ? ' on' : '') + (goodEps[n] ? ' good' : '')
       b.textContent = n
       b.onclick = function(){ if (n !== cur) goEp(n) }
       box.appendChild(b)
     })
+  }
+
+  // 这集是不是我标过的好看集——不用 hover（手机没有 hover），直接常驻在播放框上方一条。
+  // 没登录 / 没带 bgmId / 没追这部番时接口都只返回空，安安静静不显示，不算错误。
+  function loadGoodEpisodes(){
+    if (!/^[0-9]+$/.test(bgmId)) return Promise.resolve()
+    return fetch('/api/tracks/' + bgmId + '/good-episodes', { cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.json() : null })
+      .then(function(d){
+        if (!d) return
+        ;(d.goodEpisodes || []).forEach(function(n){ goodEps[n] = true })
+        goodNotes = d.goodEpisodeNotes || {}
+      })
+      .catch(function(){})
+  }
+  function renderGoodNote(){
+    var box = $('epgood')
+    var cur = Number(ep) || 1
+    if (!goodEps[cur]){ box.classList.remove('show'); box.textContent = ''; return }
+    var note = goodNotes[cur]
+    box.textContent = note ? ('这集我标过好看：' + note) : '这集我标过好看，就是没留下备注'
+    box.classList.add('show')
   }
 
   async function boot(){
@@ -1121,6 +1150,7 @@ const PLAY_PAGE = `<!doctype html>
     renderSources()
     $('epbadge').textContent = 'EP ' + ep
     renderEps() // 先按 URL 的 ep 画一版占位，拿到 playlist 的整季集数再重画
+    var goodPromise = loadGoodEpisodes()
     try {
       var r = await fetch('/api/xifan/playlist?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep))
       var d = await r.json()
@@ -1128,7 +1158,8 @@ const PLAY_PAGE = `<!doctype html>
       lines = d.lines || []
       eps = d.eps || []
       if (d.title){ $('ttl').textContent = d.title }
-      renderEps(); renderChips()
+      await goodPromise
+      renderEps(); renderChips(); renderGoodNote()
       // 按 first.source 存，**不能写死 1**：服务端返回的 first 是「最优线路」，
       // 未必是线路 1（它会跳过需要代理的慢源）。写死会让 resolvedMap[1] 装着别条线路的
       // 地址，点线路 1 拿到的却是那条——表现为「点了没反应」。

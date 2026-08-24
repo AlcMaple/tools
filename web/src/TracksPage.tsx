@@ -51,6 +51,7 @@ import { cacheGet } from './dataCache'
 import type { CalendarResult } from './api'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
+import { GoodEpisodesModal } from './GoodEpisodesModal'
 import {
   loadBindings,
   loadGirigiriBindings,
@@ -131,6 +132,7 @@ export function TracksPage(): JSX.Element {
   const [tags, setTags] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<number | null>(null)
   const [confirming, setConfirming] = useState<number | null>(null)
+  const [markingGood, setMarkingGood] = useState<number | null>(null)
   // 稀饭绑定：bgmId → {xifanId,xifanName}。加载时一次拿齐，绑过的「继续看」直接是链接。
   const [bindings, setBindings] = useState<Record<number, XifanBinding>>({})
   // Girigiri 绑定独立维护；两个站点的编号没有可推断关系。
@@ -308,7 +310,7 @@ export function TracksPage(): JSX.Element {
       bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
       title: hit.name, titleCn: hit.nameCn, cover: calItem?.cover ?? '', airWeekday: calDay?.id ?? 0,
       airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [],
-      observeCount: 0, subjectType: 'anime', updatedAt: Date.now(),
+      observeCount: 0, subjectType: 'anime', goodEpisodes: [], goodEpisodeNotes: {}, updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
     toast(`已加入『${hit.nameCn || hit.name}』，默认想看`)
@@ -432,6 +434,7 @@ export function TracksPage(): JSX.Element {
   const todayCount = todayIds.size
   const editingTrack = animeTracks.find((t) => t.bgmId === editing) ?? null
   const confirmingTrack = animeTracks.find((t) => t.bgmId === confirming) ?? null
+  const markingGoodTrack = animeTracks.find((t) => t.bgmId === markingGood) ?? null
 
   return (
     <>
@@ -556,6 +559,7 @@ export function TracksPage(): JSX.Element {
               onStatus={(s) => setStatus(t, s)}
               onEdit={() => setEditing(t.bgmId)}
               onAskRemove={() => setConfirming(t.bgmId)}
+              onMarkGood={() => setMarkingGood(t.bgmId)}
             />
           ))}
         </div>
@@ -650,6 +654,10 @@ export function TracksPage(): JSX.Element {
           onConfirm={() => remove(confirmingTrack.bgmId)}
           onClose={() => setConfirming(null)}
         />
+      )}
+
+      {markingGoodTrack && (
+        <GoodEpisodesModal t={markingGoodTrack} onPatch={patch} onClose={() => setMarkingGood(null)} />
       )}
     </>
   )
@@ -838,6 +846,7 @@ function Card({
   onStatus,
   onEdit,
   onAskRemove,
+  onMarkGood,
 }: {
   t: Track
   isToday: boolean
@@ -851,6 +860,7 @@ function Card({
   onStatus: (s: TrackStatus) => void
   onEdit: () => void
   onAskRemove: () => void
+  onMarkGood: () => void
 }): JSX.Element {
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
@@ -1030,6 +1040,15 @@ function Card({
             <Ic name="external" cls="ic ic-sm" />
             BGM
           </a>
+          <button
+            type="button"
+            className={`btn btn-sm btn-ghost${t.goodEpisodes.length > 0 ? ' ge-trigger-on' : ''}`}
+            onClick={onMarkGood}
+            title={t.goodEpisodes.length > 0 ? `已标 ${t.goodEpisodes.length} 集好看` : '标记好看集'}
+          >
+            <Ic name="star" cls="ic ic-sm" />
+            {t.goodEpisodes.length > 0 ? t.goodEpisodes.length : '好看集'}
+          </button>
           <div className="status-seg" role="group" aria-label="追番状态">
             {SEG_ORDER.map((s) => (
               <button
