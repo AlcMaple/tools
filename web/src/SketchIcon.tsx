@@ -30,6 +30,7 @@ const SYMBOLS = `
 <symbol id="i-google" viewBox="0 0 24 24"><path fill="#4285F4" stroke="none" d="M23.5 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.46a5.53 5.53 0 0 1-2.4 3.63v3h3.87c2.27-2.09 3.57-5.17 3.57-8.82z"/><path fill="#34A853" stroke="none" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.87-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.72-4.96H1.28v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" stroke="none" d="M5.28 14.28A7.2 7.2 0 0 1 4.9 12c0-.79.14-1.56.38-2.28v-3.1H1.28a12 12 0 0 0 0 10.76l4-3.1z"/><path fill="#EA4335" stroke="none" d="M12 4.77c1.76 0 3.35.61 4.6 1.8l3.43-3.43C17.95 1.19 15.23 0 12 0A12 12 0 0 0 1.28 6.62l4 3.1c.94-2.85 3.59-4.95 6.72-4.95z"/></symbol>
 <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5.5v13M15 5.5v13"/></symbol>
 <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 5.5L8 12l6.5 6.5"/></symbol>
+<symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.2S3.5 14.8 3.5 8.9A4.4 4.4 0 0 1 12 6.6a4.4 4.4 0 0 1 8.5 2.3c0 5.9-8.5 11.3-8.5 11.3z"/></symbol>
 `
 
 export function SketchSprite(): JSX.Element {
@@ -46,7 +47,7 @@ export function SketchSprite(): JSX.Element {
 export type SketchIconName =
   | 'pencil' | 'calendar' | 'tracks' | 'settings' | 'search' | 'user' | 'plus' | 'minus'
   | 'play' | 'star' | 'x' | 'check' | 'alert' | 'chev' | 'eye' | 'eye-off' | 'refresh'
-  | 'external' | 'dots' | 'logout' | 'clip' | 'tag' | 'edit' | 'mail' | 'google' | 'pause' | 'back'
+  | 'external' | 'dots' | 'logout' | 'clip' | 'tag' | 'edit' | 'mail' | 'google' | 'pause' | 'back' | 'heart'
 
 export function Ic({ name, cls = 'ic' }: { name: SketchIconName; cls?: string }): JSX.Element {
   return (

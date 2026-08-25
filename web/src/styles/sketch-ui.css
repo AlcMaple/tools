@@ -1252,6 +1252,24 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .trk-body { min-width: 0; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .trk-head { display: flex; align-items: flex-start; gap: 10px; }
 .trk-marks { display: flex; align-items: center; gap: 6px; flex: none; }
+/* 最爱程度：纱雾贴纸风爱心，跟状态章、今日章挤在同一排，不点亮时几乎隐形，别抢戏 */
+.fav-hearts { display: flex; align-items: center; gap: 1px; flex: none; }
+.fav-heart {
+  display: flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; padding: 0; border: none; background: none; cursor: pointer;
+  color: var(--ink-faint); opacity: .35; transition: color .15s, opacity .15s, transform .15s;
+}
+.fav-heart .ic { width: 12px; height: 12px; }
+.fav-heart.on { color: var(--sakura); opacity: 1; }
+.fav-heart:nth-child(2n) { transform: rotate(-6deg); }
+.fav-heart:nth-child(2n+1) { transform: rotate(4deg); }
+.fav-heart.on:nth-child(2n) { transform: rotate(-6deg) scale(1.08); }
+.fav-heart.on:nth-child(2n+1) { transform: rotate(4deg) scale(1.08); }
+@media (hover: hover) {
+  .fav-heart:hover { color: var(--sakura-mid); opacity: .85; }
+  .fav-heart.on:hover { color: var(--sakura); }
+}
+.fav-heart:active { transform: scale(.85); }
 .trk-title { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600; line-height: 1.35; color: var(--ink); }
 .trk-ep { font-family: var(--font-hand); font-size: 13px; color: var(--ink-sub); white-space: nowrap; margin-top: 2px; }
 /* 步进器和进度条钉在同一行：窄卡也不换行，进度条吃剩余宽度 */

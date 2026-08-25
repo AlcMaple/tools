@@ -310,7 +310,7 @@ export function TracksPage(): JSX.Element {
       bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
       title: hit.name, titleCn: hit.nameCn, cover: calItem?.cover ?? '', airWeekday: calDay?.id ?? 0,
       airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [],
-      observeCount: 0, subjectType: 'anime', goodEpisodes: [], goodEpisodeNotes: {}, updatedAt: Date.now(),
+      observeCount: 0, subjectType: 'anime', goodEpisodes: [], goodEpisodeNotes: {}, favorite: 0, updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
     toast(`已加入『${hit.nameCn || hit.name}』，默认想看`)
@@ -926,6 +926,7 @@ function Card({
               {STATUS_META.find((m) => m.key === t.status)?.label}
             </span>
             {isToday && <span className="chip-today">今天更新</span>}
+            <FavHearts value={t.favorite} onChange={(n) => onPatch(t.bgmId, { favorite: n })} />
           </div>
           <div className="trk-title" title={title}>
             {title}
@@ -1071,6 +1072,48 @@ function Card({
         </div>
       </div>
     </article>
+  )
+}
+
+// ── 最爱程度（纱雾贴纸）───────────────────────────────────────────────────────
+
+/**
+ * 最爱程度：6 颗爱心贴纸，纱雾口吻。点亮到第 N 颗＝喜欢程度 N；再点同一颗＝清零，
+ * 省得单独放个「清除」按钮（跟桌面端 FavoriteStars 同一套交互）。
+ */
+const FAV_LINES = [
+  '……才没有很喜欢啦',
+  '唔……稍微、有一点点在意而已',
+  '……还、还可以吧',
+  '算是……蛮喜欢的了',
+  '真的很喜欢呢……不要笑我',
+  '全部点亮了……笨蛋，是最喜欢的意思啦！！',
+]
+function FavHearts({ value, onChange }: { value: number; onChange: (n: number) => void }): JSX.Element {
+  const pick = (n: number): void => {
+    const next = value === n ? 0 : n
+    onChange(next)
+    // 点击才是真触发（手机没有 hover），所以气泡话靠 toast 念出来，不靠 title
+    toast(next > 0 ? `纱雾：${FAV_LINES[next - 1]}` : '纱雾把爱心擦掉了……')
+  }
+  return (
+    <div className="fav-hearts" title={value > 0 ? `喜欢程度 ${value}/6（点同一颗清空）` : '点颗心，把喜欢程度告诉纱雾嘛…'}>
+      {Array.from({ length: 6 }, (_, i) => {
+        const n = i + 1
+        const filled = n <= value
+        return (
+          <button
+            key={n}
+            type="button"
+            className={`fav-heart${filled ? ' on' : ''}`}
+            onClick={() => pick(n)}
+            aria-label={`设为喜欢程度 ${n}`}
+          >
+            <Ic name="heart" cls="ic ic-sm" />
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

@@ -90,6 +90,17 @@ function normalizeGoodEpisodes(input: unknown): number[] {
   return [...seen].sort((a, b) => a - b)
 }
 
+const FAVORITE_MAX = 6
+
+/** 最爱值归一：夹到 0-6 的整数，跟桌面端 animeTrackStore.FAVORITE_MAX 同一套规则。 */
+function normalizeFavorite(input: unknown): number {
+  const n = Number(input)
+  if (!Number.isFinite(n)) return 0
+  const i = Math.floor(n)
+  if (i <= 0) return 0
+  return Math.min(i, FAVORITE_MAX)
+}
+
 /** 备注只保留「集号仍在 eps 里 + 值非空」的项，取消标记的集其备注自动作废。 */
 function normalizeGoodEpisodeNotes(input: unknown, eps: number[]): Record<number, string> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
@@ -156,6 +167,8 @@ function toJson(r: TrackRow): Record<string, unknown> {
     // 其余 extra 字段仍然原样透传、不认识、不改写。
     goodEpisodes: normalizeGoodEpisodes(extra.goodEpisodes),
     goodEpisodeNotes: normalizeGoodEpisodeNotes(extra.goodEpisodeNotes, normalizeGoodEpisodes(extra.goodEpisodes)),
+    // 最爱值同样是桌面端专属字段（存在 extra 里），网页版现在也能读写它。
+    favorite: normalizeFavorite(extra.favorite),
     updatedAt: r.updated_at,
   }
 }
@@ -747,6 +760,10 @@ tracks.put('/:bgmId', async (c) => {
     return c.json({ error: 'goodEpisodeNotes 不合法' }, 400)
   }
 
+  // 最爱值：同样收在 extra 里，跟好看集一套逻辑。
+  const hasFavorite = 'favorite' in body
+  if (hasFavorite && !Number.isFinite(Number(body.favorite))) return c.json({ error: 'favorite 不合法' }, 400)
+
   let nextUserTags: string[] | undefined
   if ('userTags' in body) {
     const list = Array.isArray(body.userTags) ? body.userTags : null
@@ -786,10 +803,11 @@ tracks.put('/:bgmId', async (c) => {
         bgm_tags: '[]',
         user_tags: '[]',
         aliases: '[]',
-        extra: (hasGoodEpisodes || hasGoodEpisodeNotes)
+        extra: (hasGoodEpisodes || hasGoodEpisodeNotes || hasFavorite)
           ? JSON.stringify({
               goodEpisodes: normalizeGoodEpisodes(body.goodEpisodes),
               goodEpisodeNotes: normalizeGoodEpisodeNotes(body.goodEpisodeNotes, normalizeGoodEpisodes(body.goodEpisodes)),
+              ...(hasFavorite ? { favorite: normalizeFavorite(body.favorite) } : {}),
             })
           : '{}', // 网页端建的记录默认没有 app 专属字段；app 上传时才会填
         observe_count: hasObserve ? nextObserve : 0,
@@ -835,14 +853,15 @@ tracks.put('/:bgmId', async (c) => {
       // 手填网图 URL 顶替掉本地上传：这条不再是 local 哨兵值，cover_mime 归零。
       args.push(nextCover, '')
     }
-    if (hasGoodEpisodes || hasGoodEpisodeNotes) {
+    if (hasGoodEpisodes || hasGoodEpisodeNotes || hasFavorite) {
       const prevExtra = parseExtra(prev.extra)
       const nextEpisodes = hasGoodEpisodes ? normalizeGoodEpisodes(body.goodEpisodes) : normalizeGoodEpisodes(prevExtra.goodEpisodes)
       const nextNotes = normalizeGoodEpisodeNotes(
         hasGoodEpisodeNotes ? body.goodEpisodeNotes : prevExtra.goodEpisodeNotes,
         nextEpisodes,
       )
-      const nextExtraStr = JSON.stringify({ ...prevExtra, goodEpisodes: nextEpisodes, goodEpisodeNotes: nextNotes })
+      const nextFavorite = hasFavorite ? normalizeFavorite(body.favorite) : normalizeFavorite(prevExtra.favorite)
+      const nextExtraStr = JSON.stringify({ ...prevExtra, goodEpisodes: nextEpisodes, goodEpisodeNotes: nextNotes, favorite: nextFavorite })
       if (nextExtraStr.length > MAX_EXTRA_BYTES) {
         return { row: prev, fillDetail: false, orphanedCover: false, error: '好看集数据过大' }
       }
