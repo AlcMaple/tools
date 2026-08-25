@@ -79,13 +79,24 @@ export interface Track {
   goodEpisodes: number[]
   /** 好看集备注，键是集号，与 goodEpisodes 平行存放。取消标记某集时它的备注自动作废。 */
   goodEpisodeNotes: Record<number, string>
+  /** 最爱程度：0-6 颗星，跟桌面端 animeTrackStore.favorite 同语义，独立存放。 */
+  favorite: number
   updatedAt: number
 }
 
 /** 写入用的 patch —— **只带要改的字段**；没带的字段服务端保持沉默、原样不动（沉默 ≠ 置空） */
 export type TrackPatch = Partial<
-  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score' | 'observeCount' | 'goodEpisodes' | 'goodEpisodeNotes'>
+  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score' | 'observeCount' | 'goodEpisodes' | 'goodEpisodeNotes' | 'favorite'>
 >
+
+const FAVORITE_MAX = 6
+
+/** 最爱值归一：夹到 0-6 的整数，跟桌面端 FAVORITE_MAX 同一套规则。 */
+export function normalizeFavorite(input: number): number {
+  const n = Math.floor(Number(input))
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return Math.min(n, FAVORITE_MAX)
+}
 
 // ── 好看集集号工具（与桌面端 animeTrackStore 同一套规则，网页端独立声明一份） ──────
 
@@ -172,6 +183,8 @@ export async function fetchTracks(): Promise<TracksSnapshot> {
         : 'anime',
       goodEpisodes: Array.isArray(track.goodEpisodes) ? track.goodEpisodes : [],
       goodEpisodeNotes: track.goodEpisodeNotes && typeof track.goodEpisodeNotes === 'object' ? track.goodEpisodeNotes : {},
+      // 兼容字段上线前缓存的旧快照；没这个字段就当作还没标过最爱。
+      favorite: normalizeFavorite(Number(track.favorite) || 0),
     })),
   }
 }
