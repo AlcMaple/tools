@@ -1,5 +1,8 @@
 .claude/
 
+# Local review-only originals; never publish these files.
+ops/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
