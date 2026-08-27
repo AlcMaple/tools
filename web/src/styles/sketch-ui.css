@@ -862,6 +862,35 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .dd-item.on { color: var(--teal); font-weight: 600; }
 .dd-item .ic { flex: none; }
 
+/* ---------- 「继续看」挑源弹窗（手帐便签口吻）---------- */
+.dlg-wsrc { width: min(400px, 100%); }
+.wsrc-list { display: grid; gap: 12px; }
+.wsrc-grp {
+  padding: 12px 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px 13px 10px 14px;
+  background: var(--paper-2);
+}
+.wsrc-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 9px;
+  font-family: var(--font-hand);
+  font-size: 15px;
+  color: var(--ink);
+}
+.wsrc-tag {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.wsrc-btns { display: flex; gap: 8px; }
+.wsrc-btns .btn { flex: 1; justify-content: center; }
+@media (max-width: 360px) {
+  .wsrc-btns { flex-direction: column; }
+}
+
 /* ---------- 弹窗：画稿本翻页 ---------- */
 .dlg-backdrop {
   position: fixed;

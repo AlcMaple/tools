@@ -32,6 +32,7 @@ import {
   fetchGirigiriCaptcha,
   fetchXifanCaptcha,
   girigiriPlayPageUrl,
+  girigiriSourcePageUrl,
   importTracksFromBgm,
   locateGirigiri,
   locateXifan,
@@ -43,6 +44,7 @@ import {
   uploadTrackCover,
   verifyGirigiriCaptcha,
   verifyXifanCaptcha,
+  xifanSourcePageUrl,
   XIFAN_CAPTCHA_EVENT_KEY,
 } from './api'
 import { isRecentAir } from '../shared/anime-age'
@@ -105,14 +107,20 @@ const titlesOf = (t: Track): string[] => [t.titleCn, ...t.aliases, t.title].filt
 // 跟服务端「要不要自动填总集数」用的是同一把尺,不要在这儿另立一套。
 const isRecentAnime = (t: Track): boolean => isRecentAir(t.airDate)
 
+// 「在线看」= 走我们的播放页；「去源站」= 新标签直接跳源站站内页。
+// 首次继续看两者都要先定位/绑定，绑定后才知道跳哪个 URL，所以 mode 一路带到候选/搜索弹窗。
+type WatchMode = 'online' | 'source'
+
 interface PickerState {
   track: Track
   candidates: XifanCandidate[]
+  mode: WatchMode
 }
 
 interface GirigiriPickerState {
   track: Track
   candidates: GirigiriCandidate[]
+  mode: WatchMode
 }
 
 /** 标题 / 别名命中(网页版没有备注字段) */
@@ -143,6 +151,9 @@ export function TracksPage(): JSX.Element {
   const [girigiriPicker, setGirigiriPicker] = useState<GirigiriPickerState | null>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [girigiriSearchTrack, setGirigiriSearchTrack] = useState<Track | null>(null)
+  // 搜索弹窗打开时带着的 mode —— 决定结果行点下去开播放页还是源站页。
+  const [searchMode, setSearchMode] = useState<WatchMode>('online')
+  const [girigiriSearchMode, setGirigiriSearchMode] = useState<WatchMode>('online')
   const [adding, setAdding] = useState(false) // 加番搜索弹窗
   const [importOpen, setImportOpen] = useState(false)
   const today = useMemo(todayBgmId, [])
@@ -183,9 +194,19 @@ export function TracksPage(): JSX.Element {
   // 未绑定的「继续看」：老番跳过周表直接进搜索；新番去周表定位 → 有候选就弹选择框让用户确认
   // （= 建绑定）。零候选说明周表里没有（名字对不上 / 判新老判错了），**不弹空框**，直接落到
   // 搜索 —— 空框的唯一用途就是让用户再点一次「去搜索」。
-  const continueWatch = (t: Track): void => {
+  const continueWatch = (t: Track, mode: WatchMode = 'online'): void => {
     if (locating != null) return
+    // 已绑定：直接开 —— online 走播放页，source 跳源站站内页（都在用户点击手势内，不吃弹窗拦截）
+    const bound = bindings[t.bgmId]
+    if (bound) {
+      const url = mode === 'source'
+        ? xifanSourcePageUrl(bound.xifanId, watchEp(t))
+        : playPageUrl(bound.xifanId, watchEp(t), t.bgmId)
+      window.open(url, '_blank', 'noopener')
+      return
+    }
     if (!isRecentAnime(t)) {
+      setSearchMode(mode)
       setSearchTrack(t)
       return
     }
@@ -195,10 +216,14 @@ export function TracksPage(): JSX.Element {
         if (r.bound) {
           // 极少见：加载后别的用户刚绑上 → 记下来（卡片下次即变链接），并尽力开一下
           setBindings((prev) => ({ ...prev, [t.bgmId]: { xifanId: r.bound!.xifanId, xifanName: r.bound!.xifanName } }))
-          window.open(playPageUrl(r.bound.xifanId, watchEp(t), t.bgmId), '_blank', 'noopener')
+          const url = mode === 'source'
+            ? xifanSourcePageUrl(r.bound.xifanId, watchEp(t))
+            : playPageUrl(r.bound.xifanId, watchEp(t), t.bgmId)
+          window.open(url, '_blank', 'noopener')
         } else if (r.candidates.length) {
-          setPicker({ track: t, candidates: r.candidates })
+          setPicker({ track: t, candidates: r.candidates, mode })
         } else {
+          setSearchMode(mode)
           setSearchTrack(t)
         }
       })
@@ -223,9 +248,18 @@ export function TracksPage(): JSX.Element {
   }
 
   // Girigiri 定位与稀饭同形，但状态、绑定和候选严格分开。
-  const continueGirigiri = (t: Track): void => {
+  const continueGirigiri = (t: Track, mode: WatchMode = 'online'): void => {
     if (girigiriLocating != null) return
+    const bound = girigiriBindings[t.bgmId]
+    if (bound) {
+      const url = mode === 'source'
+        ? girigiriSourcePageUrl(bound.girigiriId, watchEp(t))
+        : girigiriPlayPageUrl(bound.girigiriId, watchEp(t), t.bgmId)
+      window.open(url, '_blank', 'noopener')
+      return
+    }
     if (!isRecentAnime(t)) {
+      setGirigiriSearchMode(mode)
       setGirigiriSearchTrack(t)
       return
     }
@@ -237,10 +271,14 @@ export function TracksPage(): JSX.Element {
             ...prev,
             [t.bgmId]: { girigiriId: result.bound!.girigiriId, girigiriName: result.bound!.girigiriName },
           }))
-          window.open(girigiriPlayPageUrl(result.bound.girigiriId, watchEp(t), t.bgmId), '_blank', 'noopener')
+          const url = mode === 'source'
+            ? girigiriSourcePageUrl(result.bound.girigiriId, watchEp(t))
+            : girigiriPlayPageUrl(result.bound.girigiriId, watchEp(t), t.bgmId)
+          window.open(url, '_blank', 'noopener')
         } else if (result.candidates.length) {
-          setGirigiriPicker({ track: t, candidates: result.candidates })
+          setGirigiriPicker({ track: t, candidates: result.candidates, mode })
         } else {
+          setGirigiriSearchMode(mode)
           setGirigiriSearchTrack(t)
         }
       })
@@ -553,8 +591,8 @@ export function TracksPage(): JSX.Element {
               girigiriBinding={girigiriBindings[t.bgmId]}
               locating={locating === t.bgmId}
               girigiriLocating={girigiriLocating === t.bgmId}
-              onContinue={() => continueWatch(t)}
-              onContinueGirigiri={() => continueGirigiri(t)}
+              onContinue={(mode) => continueWatch(t, mode)}
+              onContinueGirigiri={(mode) => continueGirigiri(t, mode)}
               onPatch={patch}
               onStatus={(s) => setStatus(t, s)}
               onEdit={() => setEditing(t.bgmId)}
@@ -597,6 +635,7 @@ export function TracksPage(): JSX.Element {
           picker={picker}
           onPick={(cand) => confirmBind(picker.track.bgmId, cand)}
           onSearch={() => {
+            setSearchMode(picker.mode)
             setPicker(null)
             setSearchTrack(picker.track)
           }}
@@ -607,6 +646,7 @@ export function TracksPage(): JSX.Element {
       {searchTrack && (
         <XifanSearchModal
           track={searchTrack}
+          mode={searchMode}
           onPick={confirmSearchBind}
           onClose={() => setSearchTrack(null)}
         />
@@ -617,6 +657,7 @@ export function TracksPage(): JSX.Element {
           picker={girigiriPicker}
           onPick={(candidate) => confirmGirigiriBind(girigiriPicker.track.bgmId, candidate)}
           onSearch={() => {
+            setGirigiriSearchMode(girigiriPicker.mode)
             setGirigiriPicker(null)
             setGirigiriSearchTrack(girigiriPicker.track)
           }}
@@ -627,6 +668,7 @@ export function TracksPage(): JSX.Element {
       {girigiriSearchTrack && (
         <GirigiriSearchModal
           track={girigiriSearchTrack}
+          mode={girigiriSearchMode}
           onPick={confirmGirigiriSearchBind}
           onClose={() => setGirigiriSearchTrack(null)}
         />
@@ -854,8 +896,8 @@ function Card({
   girigiriBinding: GirigiriBinding | undefined
   locating: boolean
   girigiriLocating: boolean
-  onContinue: () => void
-  onContinueGirigiri: () => void
+  onContinue: (mode: WatchMode) => void
+  onContinueGirigiri: (mode: WatchMode) => void
   onPatch: (bgmId: number, p: TrackPatch) => void
   onStatus: (s: TrackStatus) => void
   onEdit: () => void
@@ -1022,14 +1064,13 @@ function Card({
         </div>
 
         <div className="trk-actions">
-          <SourcePlayAction
-            cls="btn btn-sm btn-primary"
+          <ContinueWatchAction
             label={considering ? '试看一集' : '继续看'}
             ep={ep}
-            binding={binding ? { id: String(binding.xifanId), name: binding.xifanName } : undefined}
-            href={binding ? playPageUrl(binding.xifanId, ep, t.bgmId) : undefined}
-            locating={locating}
-            onLocate={onContinue}
+            xifanBinding={binding}
+            girigiriBinding={girigiriBinding}
+            locating={locating || girigiriLocating}
+            onPick={(source, mode) => (source === 'xifan' ? onContinue(mode) : onContinueGirigiri(mode))}
           />
           <a
             className="btn btn-sm btn-ghost"
@@ -1178,42 +1219,101 @@ function Nudge(): JSX.Element {
   )
 }
 
-function SourcePlayAction({
-  cls,
+/**
+ * 「继续看」入口 —— 点一下不直接开，先弹个便签问纱雾：用哪个源、在站内看还是跳源站。
+ * 用弹窗而非下拉：窄屏（iPhone SE 375）下卡片里塞不下 2×2 的按钮网格，会挤成换行；
+ * 弹窗跟本页其它绑定 / 搜索流程也是同一套 .dlg 语汇。
+ * 文案统一走和泉纱雾口吻（傲娇 + 手帐语气）。已认出来的源直接开；没认出来的
+ * 走定位/搜索流程（验证码在我们站里过），认出来后按当时选的「站内 / 源站」落地。
+ */
+function ContinueWatchAction({
   label,
   ep,
-  binding,
-  href,
+  xifanBinding,
+  girigiriBinding,
   locating,
-  onLocate,
+  onPick,
 }: {
-  cls: string
   label: string
   ep: number
-  binding?: { id: string; name: string }
-  href?: string
+  xifanBinding?: XifanBinding
+  girigiriBinding?: GirigiriBinding
   locating: boolean
-  onLocate: () => void
+  onPick: (source: 'xifan' | 'girigiri', mode: WatchMode) => void
 }): JSX.Element {
-  if (href) {
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        title={`继续看：${binding?.name || binding?.id || ''} · EP ${ep}`}
-        className={cls}
-      >
-        <Ic name="play" cls="ic ic-sm" />
-        {label}
-      </a>
-    )
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
+  const choose = (source: 'xifan' | 'girigiri', mode: WatchMode): void => {
+    setOpen(false)
+    onPick(source, mode)
   }
+
+  const rows: [source: 'xifan' | 'girigiri', name: string, bound: boolean][] = [
+    ['xifan', '稀饭', !!xifanBinding],
+    ['girigiri', 'Girigiri', !!girigiriBinding],
+  ]
+
   return (
-    <button type="button" disabled={locating} onClick={onLocate} title={`定位稀饭片源`} className={cls}>
-      {locating ? <Spinner size={12} /> : <Ic name="play" cls="ic ic-sm" />}
-      <span>{locating ? '定位中…' : label}</span>
-    </button>
+    <>
+      <button
+        type="button"
+        className="btn btn-sm btn-primary"
+        disabled={locating}
+        onClick={() => setOpen(true)}
+        title={`挑个源看第 ${ep} 话`}
+      >
+        {locating ? <Spinner size={12} /> : <Ic name="play" cls="ic ic-sm" />}
+        <span>{locating ? '找片源中…' : label}</span>
+      </button>
+      {open && (
+        <div
+          className="dlg-backdrop open"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setOpen(false)
+          }}
+        >
+          <div role="dialog" aria-modal="true" aria-label="挑个播放源" className="dlg dlg-wsrc">
+            <span className="tape tl teal" />
+            <button type="button" className="dlg-close" onClick={() => setOpen(false)} aria-label="关闭" title="关闭">
+              <Ic name="x" cls="ic" />
+            </button>
+            <h3 className="dlg-title">要看第 {ep} 话啦</h3>
+            <p className="dlg-sub">
+              从哪儿看呀……笨、笨蛋，才不是催你。挑个源，再挑「在纱雾这儿看」还是「跳去源站」。
+            </p>
+            <div className="wsrc-list">
+              {rows.map(([source, name, bound]) => (
+                <div key={source} className="wsrc-grp">
+                  <span className="wsrc-name">
+                    {name}
+                    {!bound && <em className="wsrc-tag">还没认出来</em>}
+                  </span>
+                  <div className="wsrc-btns">
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => choose(source, 'online')}>
+                      <Ic name="play" cls="ic ic-sm" />
+                      在纱雾这儿看
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => choose(source, 'source')}>
+                      <Ic name="external" cls="ic ic-sm" />
+                      跳去源站看
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -1619,7 +1719,7 @@ function BindPickerModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const { track, candidates } = picker
+  const { track, candidates, mode } = picker
   const title = track.titleCn || track.title
   const ep = watchEp(track)
 
@@ -1638,7 +1738,8 @@ function BindPickerModal({
 
         <h3 className="dlg-title">{title}</h3>
         <p className="dlg-sub">
-          稀饭用的是另一套编号，按名字匹配出以下几部。<b>点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
+          稀饭用的是另一套编号，纱雾按名字挑出了这几部。<b>点一下告诉我是哪部</b>，之后就记住、
+          {mode === 'source' ? '直接送你去源站' : '直接开播'}（EP {ep}）。
         </p>
 
         {/* candidates 必非空：零候选由 continueWatch 直接落到搜索弹窗，不会走到这里 */}
@@ -1647,7 +1748,7 @@ function BindPickerModal({
             <a
               key={c.xifanId}
               className="sugg-item"
-              href={playPageUrl(c.xifanId, ep, track.bgmId)}
+              href={mode === 'source' ? xifanSourcePageUrl(c.xifanId, ep) : playPageUrl(c.xifanId, ep, track.bgmId)}
               target="_blank"
               rel="noreferrer"
               onClick={() => onPick(c)}
@@ -1692,7 +1793,7 @@ function GirigiriBindPickerModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const { track, candidates } = picker
+  const { track, candidates, mode } = picker
   const title = track.titleCn || track.title
   const ep = watchEp(track)
   return (
@@ -1709,7 +1810,8 @@ function GirigiriBindPickerModal({
         </button>
         <h3 className="dlg-title">{title}</h3>
         <p className="dlg-sub">
-          Girigiri 用的是另一套编号，按名字匹配出以下候选。<b>点一下确认是哪部</b>，之后就记住、直接开播（EP {ep}）。
+          Girigiri 用的是另一套编号，纱雾按名字挑出了这几部。<b>点一下告诉我是哪部</b>，之后就记住、
+          {mode === 'source' ? '直接送你去源站' : '直接开播'}（EP {ep}）。
         </p>
         {/* candidates 必非空：零候选由 continueGirigiri 直接落到搜索弹窗，不会走到这里 */}
         <div className="cand-list custom-scrollbar">
@@ -1717,7 +1819,7 @@ function GirigiriBindPickerModal({
             <a
               key={candidate.girigiriId}
               className="sugg-item"
-              href={girigiriPlayPageUrl(candidate.girigiriId, ep, track.bgmId)}
+              href={mode === 'source' ? girigiriSourcePageUrl(candidate.girigiriId, ep) : girigiriPlayPageUrl(candidate.girigiriId, ep, track.bgmId)}
               target="_blank"
               rel="noreferrer"
               onClick={() => onPick(candidate)}
@@ -1750,10 +1852,12 @@ type XifanSearchModalStatus = 'searching' | 'captcha' | 'verifying' | 'results' 
 
 function XifanSearchModal({
   track,
+  mode,
   onPick,
   onClose,
 }: {
   track: Track
+  mode: WatchMode
   onPick: (hit: XifanSearchHit) => void
   onClose: () => void
 }): JSX.Element {
@@ -1992,7 +2096,7 @@ function XifanSearchModal({
                     <a
                       key={hit.xifanId}
                       className="sugg-item"
-                      href={playPageUrl(hit.xifanId, ep, track.bgmId)}
+                      href={mode === 'source' ? xifanSourcePageUrl(hit.xifanId, ep) : playPageUrl(hit.xifanId, ep, track.bgmId)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => onPick(hit)}
@@ -2021,10 +2125,12 @@ type GirigiriSearchModalStatus = 'searching' | 'captcha' | 'verifying' | 'result
 
 function GirigiriSearchModal({
   track,
+  mode,
   onPick,
   onClose,
 }: {
   track: Track
+  mode: WatchMode
   onPick: (hit: GirigiriSearchHit) => void
   onClose: () => void
 }): JSX.Element {
@@ -2232,7 +2338,7 @@ function GirigiriSearchModal({
                     <a
                       key={hit.girigiriId}
                       className="sugg-item"
-                      href={girigiriPlayPageUrl(hit.girigiriId, ep, track.bgmId)}
+                      href={mode === 'source' ? girigiriSourcePageUrl(hit.girigiriId, ep) : girigiriPlayPageUrl(hit.girigiriId, ep, track.bgmId)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => onPick(hit)}

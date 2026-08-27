@@ -383,6 +383,15 @@ export function playPageUrl(xifanId: number, ep: number, bgmId?: number): string
   return `/api/xifan/play-page?${query.toString()}`
 }
 
+/**
+ * 稀饭源站的在线观看页 —— 直接跳到稀饭站内看，不经我们的播放页。
+ * 路径同 server/xifan/resolve.ts 里扒集数用的 `/watch/{animeId}/{source}/{ep}.html`，
+ * 域名同 server/xifan/session.ts 的 BASE_URL。source 固定给 1（默认线路，站内可再切）。
+ */
+export function xifanSourcePageUrl(xifanId: number, ep: number): string {
+  return `https://anime.xifanacg.com/watch/${xifanId}/1/${ep}.html`
+}
+
 // ── Girigiri 在线观看：与稀饭分开保存绑定，不能把两个站点的编号互相推断 ────────
 export interface GirigiriCandidate {
   girigiriId: string
@@ -459,6 +468,14 @@ export function girigiriPlayPageUrl(girigiriId: string, ep: number, bgmId?: numb
   const query = new URLSearchParams({ animeId: girigiriId, ep: String(ep) })
   if (bgmId != null) query.set('bgmId', String(bgmId))
   return `/api/girigiri/play-page?${query.toString()}`
+}
+
+/**
+ * Girigiri 源站的在线观看页 —— 直接跳到 girigirilove 站内看。
+ * 拼法同 server/girigiri.ts 播放页里的 `officialPage()`：`/play{animeId}-{source}-{ep}/`，source 固定 1。
+ */
+export function girigiriSourcePageUrl(girigiriId: string, ep: number): string {
+  return `https://ani.girigirilove.com/play${girigiriId}-1-${ep}/`
 }
 
 // ── 加番搜索（打本地 BGM 动漫索引，见 server/bgm/anime-index.ts）───────────────

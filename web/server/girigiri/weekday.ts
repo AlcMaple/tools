@@ -1,6 +1,6 @@
 // Girigiri 番剧周期表 —— 官方首页/周期表页通过 POST /index.php/ds_api/weekday 取数据，免验证码。
 // 这里和稀饭的周表定位保持同一条产品语义：只用来给 bgmId 找候选，绝不因为模糊命中自动建绑定。
-import '../http'
+import { proxyReady } from '../http'
 import { BASE_URL, GIRIGIRI_UA } from './resolve'
 
 export interface WeekItem {
@@ -59,6 +59,7 @@ const TTL = 6 * 60 * 60 * 1000
 
 export async function fetchWeekday(): Promise<WeekItem[]> {
   if (cache && Date.now() - cache.at < TTL) return cache.items
+  await proxyReady
   const all: WeekItem[] = []
   for (let day = 1; day <= 7; day++) {
     try {

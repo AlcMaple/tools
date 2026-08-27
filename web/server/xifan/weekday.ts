@@ -7,7 +7,7 @@
 //
 // 抓法克制(红线)：7 天**顺序**抓、天与天之间抖动歇一下（不并发＝不像爬虫），抓到的整体
 // 缓存 6h。单天失败就跳过，不重试、不让整体失败 —— 能匹配多少算多少。
-import '../http' // 副作用导入：让 undici fetch 认 HTTPS_PROXY（本地 Clash 非 TUN 时用）
+import { proxyReady } from '../http' // 本地开发：等代理探测定盘（Clash TUN / 非 TUN 都自动对齐浏览器）
 import { BASE_URL, DESKTOP_UA } from './resolve'
 
 export interface WeekItem {
@@ -61,6 +61,7 @@ const TTL = 6 * 60 * 60 * 1000
 
 export async function fetchWeekday(): Promise<WeekItem[]> {
   if (cache && Date.now() - cache.at < TTL) return cache.items
+  await proxyReady
   const all: WeekItem[] = []
   for (let day = 1; day <= 7; day++) {
     try {
