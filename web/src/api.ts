@@ -506,3 +506,104 @@ export async function searchAnime(q: string): Promise<SearchResult> {
   if (!res.ok) return { ready: true, data: [] }
   return res.json() as Promise<SearchResult>
 }
+
+// ── 在线源统一适配器 ──────────────────────────────────────────────────────────
+// 稀饭 / Girigiri（以后还有嗷呜 / B站）对追番页只暴露这一个形状：定位 / 绑定 / 搜索 /
+// 验证码 / 两种观看地址。上面每个站的原始函数保持不动，这里只做「转调 + id 归一成 string」
+// —— 稀饭 id 是数字、Girigiri 是字符串，统一成 string，收口到各自 API 时再转回去。
+export type SourceId = 'xifan' | 'girigiri'
+/** 「在线看」= 走我们的播放页；「去源站」= 新标签直接跳源站站内页。 */
+export type WatchMode = 'online' | 'source'
+
+export interface SourceCandidate {
+  id: string
+  name: string
+  day: number
+  remarks: string
+  score: number
+}
+export interface SourceBinding {
+  id: string
+  name: string
+}
+export interface SourceSearchHit {
+  id: string
+  name: string
+  cover: string
+  episode: string
+  year: string
+  area: string
+}
+export type SourceSearchResult = { needsCaptcha: true } | { needsCaptcha: false; data: SourceSearchHit[] }
+
+export interface OnlineSource {
+  id: SourceId
+  label: string
+  /** 仅稀饭：跨标签验证码作废用的 storage key（Girigiri 没有这套会话联动）。 */
+  captchaEventKey?: string
+  fetchBindings(): Promise<Record<number, SourceBinding>>
+  locate(bgmId: number, titles: string[]): Promise<{ bound?: SourceCandidate; candidates: SourceCandidate[] }>
+  bind(bgmId: number, id: string, name: string): Promise<void>
+  search(keyword: string): Promise<SourceSearchResult>
+  fetchCaptcha(): Promise<{ imageB64: string; mime: string }>
+  verifyCaptcha(code: string): Promise<{ success: boolean }>
+  playPageUrl(id: string, ep: number, bgmId: number): string
+  sourcePageUrl(id: string, ep: number): string
+}
+
+const XIFAN_SOURCE: OnlineSource = {
+  id: 'xifan',
+  label: '稀饭',
+  captchaEventKey: XIFAN_CAPTCHA_EVENT_KEY,
+  fetchBindings: async () => {
+    const raw = await fetchXifanBindings()
+    const out: Record<number, SourceBinding> = {}
+    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: String(b.xifanId), name: b.xifanName }
+    return out
+  },
+  locate: async (bgmId, titles) => {
+    const toCand = (c: XifanCandidate): SourceCandidate => ({ id: String(c.xifanId), name: c.xifanName, day: c.day, remarks: c.remarks, score: c.score })
+    const r = await locateXifan(bgmId, titles)
+    return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
+  },
+  bind: (bgmId, id, name) => bindXifan(bgmId, Number(id), name),
+  search: async (keyword) => {
+    const r = await searchXifan(keyword)
+    if (r.needsCaptcha) return r
+    return { needsCaptcha: false, data: r.data.map((h) => ({ id: String(h.xifanId), name: h.xifanName, cover: h.cover, episode: h.episode, year: h.year, area: h.area })) }
+  },
+  fetchCaptcha: fetchXifanCaptcha,
+  verifyCaptcha: verifyXifanCaptcha,
+  playPageUrl: (id, ep, bgmId) => playPageUrl(Number(id), ep, bgmId),
+  sourcePageUrl: (id, ep) => xifanSourcePageUrl(Number(id), ep),
+}
+
+const GIRIGIRI_SOURCE: OnlineSource = {
+  id: 'girigiri',
+  label: 'Girigiri',
+  fetchBindings: async () => {
+    const raw = await fetchGirigiriBindings()
+    const out: Record<number, SourceBinding> = {}
+    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: b.girigiriId, name: b.girigiriName }
+    return out
+  },
+  locate: async (bgmId, titles) => {
+    const toCand = (c: GirigiriCandidate): SourceCandidate => ({ id: c.girigiriId, name: c.girigiriName, day: c.day, remarks: c.remarks, score: c.score })
+    const r = await locateGirigiri(bgmId, titles)
+    return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
+  },
+  bind: (bgmId, id, name) => bindGirigiri(bgmId, id, name),
+  search: async (keyword) => {
+    const r = await searchGirigiri(keyword)
+    if (r.needsCaptcha) return r
+    return { needsCaptcha: false, data: r.data.map((h) => ({ id: h.girigiriId, name: h.girigiriName, cover: h.cover, episode: h.episode, year: h.year, area: h.area })) }
+  },
+  fetchCaptcha: fetchGirigiriCaptcha,
+  verifyCaptcha: verifyGirigiriCaptcha,
+  playPageUrl: (id, ep, bgmId) => girigiriPlayPageUrl(id, ep, bgmId),
+  sourcePageUrl: (id, ep) => girigiriSourcePageUrl(id, ep),
+}
+
+/** 追番卡片「继续看」菜单里列出的源，顺序即展示顺序。 */
+export const SOURCES: OnlineSource[] = [XIFAN_SOURCE, GIRIGIRI_SOURCE]
+export const sourceById = (id: SourceId): OnlineSource => SOURCES.find((s) => s.id === id) ?? XIFAN_SOURCE
