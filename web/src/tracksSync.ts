@@ -2,21 +2,20 @@
 // 唯一事实源。真实请求回来后整份覆盖缓存，不能拿 localStorage 的 updatedAt 反过来压服务器：
 // 旧部署、设备时钟或中途关闭页面留下的未来时间戳，会让一台设备永久停在旧状态。
 import {
-  fetchGirigiriBindings,
   fetchTracks,
   fetchTracksRevision,
-  fetchXifanBindings,
-  type GirigiriBinding,
+  sourceById,
+  type SourceBinding,
+  type SourceId,
   type Track,
   type TracksSnapshot,
-  type XifanBinding,
 } from './api'
 import { cachePeek, cacheSet } from './dataCache'
 
 const tracksKey = (username: string): string => `tracks:${username}`
 const tracksServerKey = (username: string): string => `tracksServer:${username}`
-const bindingsKey = (username: string): string => `xifanBindings:${username}`
-const girigiriBindingsKey = (username: string): string => `girigiriBindings:${username}`
+// 缓存 key 保持不变：`xifanBindings:` / `girigiriBindings:`
+const bindingsKey = (source: SourceId, username: string): string => `${source}Bindings:${username}`
 const TRACKS_STORAGE_PREFIX = 'mt_cache:'
 const REVISION_INTERVAL_MS = 15_000
 const LIFECYCLE_COALESCE_MS = 500
@@ -322,17 +321,21 @@ export function loadTracks(
   }
 }
 
-/** 绑定关系没有跨端冲突的场景（建绑定是一次性动作），后台校验直接整份覆盖即可。 */
+/**
+ * 某个在线源的绑定：秒开缓存 + 后台整份覆盖。绑定是一次性动作、没有跨端冲突，
+ * 直接覆盖即可。缓存 key 按源分开（`xifanBindings:` / `girigiriBindings:`）。
+ */
 export function loadBindings(
+  source: SourceId,
   username: string,
-  onData: (b: Record<number, XifanBinding>) => void
+  onData: (b: Record<number, SourceBinding>) => void,
 ): () => void {
-  const key = bindingsKey(username)
-  const cached = cachePeek<Record<number, XifanBinding>>(key)
+  const key = bindingsKey(source, username)
+  const cached = cachePeek<Record<number, SourceBinding>>(key)
   if (cached) onData(cached)
 
   let cancelled = false
-  fetchXifanBindings()
+  sourceById(source).fetchBindings()
     .then((b) => {
       if (cancelled) return
       cacheSet(key, b)
@@ -359,31 +362,6 @@ export function saveTracksCache(username: string, ts: Track[]): void {
   if (cached && tracksSignature(cached) === signature) return
   cacheSet(tracksKey(username), ts)
 }
-export function saveBindingsCache(username: string, b: Record<number, XifanBinding>): void {
-  cacheSet(bindingsKey(username), b)
-}
-
-export function loadGirigiriBindings(
-  username: string,
-  onData: (b: Record<number, GirigiriBinding>) => void,
-): () => void {
-  const key = girigiriBindingsKey(username)
-  const cached = cachePeek<Record<number, GirigiriBinding>>(key)
-  if (cached) onData(cached)
-
-  let cancelled = false
-  fetchGirigiriBindings()
-    .then((bindings) => {
-      if (cancelled) return
-      cacheSet(key, bindings)
-      onData(bindings)
-    })
-    .catch(() => undefined)
-  return () => {
-    cancelled = true
-  }
-}
-
-export function saveGirigiriBindingsCache(username: string, b: Record<number, GirigiriBinding>): void {
-  cacheSet(girigiriBindingsKey(username), b)
+export function saveBindingsCache(source: SourceId, username: string, b: Record<number, SourceBinding>): void {
+  cacheSet(bindingsKey(source, username), b)
 }
