@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
-import '../http'
+import { proxyReady } from '../http'
 import { db } from '../db'
 import { AUTH_SECRET } from '../secrets'
 
@@ -285,6 +285,7 @@ export class XifanCookieSession {
   }
 
   private async requestOnce(url: string, options: RequestOptions): Promise<XifanHttpResponse> {
+    await proxyReady // 本地开发：等代理探测定盘，避免首个请求走错传输层
     let current = url
     if (new URL(current).origin !== BASE_ORIGIN) throw new Error('拒绝向稀饭站外发送登录会话')
     let method = options.method ?? 'GET'

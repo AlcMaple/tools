@@ -6,7 +6,7 @@
 //
 // 和网页版稀饭保持同一个用户体验边界：打开先抓第 1 条线路，线路列表和集数一起拿到；其余线路
 // 只有用户点选时才请求，避免一次打开就向站点发一串无用请求。
-import '../http'
+import { proxyReady } from '../http'
 
 export const BASE_URL = 'https://ani.girigirilove.com'
 const BASE_ORIGIN = new URL(BASE_URL).origin
@@ -162,6 +162,7 @@ function parseEpisodes(html: string, id: string): number[] {
 }
 
 async function fetchHtml(url: string): Promise<string> {
+  await proxyReady // 本地开发：等代理探测定盘，和浏览器走同一条出口
   const run = async (): Promise<string> => {
     const response = await fetch(url, {
       headers: HEADERS,

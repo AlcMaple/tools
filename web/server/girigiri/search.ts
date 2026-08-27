@@ -3,7 +3,7 @@
 // 网页版是多用户服务，按 MapleTools 用户隔离短时会话；不会把 A 用户的验证码 cookie
 // 交给 B 用户。播放页不依赖这个会话，仍走 resolve.ts 的匿名浏览器直连路径。
 import * as cheerio from 'cheerio/slim'
-import '../http'
+import { proxyReady } from '../http'
 import { crawlAllPages } from '../shared/maccms-search-paginator'
 import { BASE_URL, GIRIGIRI_UA } from './resolve'
 
@@ -102,6 +102,7 @@ class GirigiriCookieSession {
   }
 
   async get(url: string, extraHeaders: Record<string, string> = {}): Promise<HttpResponse> {
+    await proxyReady // 本地开发：等代理探测定盘
     this.lastUsedAt = Date.now()
     let current = url
     for (let redirectsLeft = 5; ; redirectsLeft--) {

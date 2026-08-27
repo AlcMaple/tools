@@ -9,7 +9,7 @@
 // **拷贝复用 + 换传输层**：parsePlayerData 抄自 src/main/xifan/api.ts；
 // 源 tab 名单改用正则扒（web 侧只为这几个 <a> 标签不值当加 cheerio 依赖）。
 
-import '../http' // 副作用导入：让 undici fetch 认 HTTPS_PROXY（本地 Clash 非 TUN 时用）
+import { proxyReady } from '../http' // 本地开发：等代理探测定盘，和浏览器走同一条出口
 import { needsProxy } from './proxy-hosts'
 import {
   assertXifanResponse,
@@ -253,6 +253,7 @@ async function withUpstreamSlot<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function fetchAnonymous(url: string): Promise<XifanHttpResponse> {
+  await proxyReady
   const run = async (): Promise<XifanHttpResponse> => {
     await scheduleUpstreamStart()
     const response = await fetch(url, {

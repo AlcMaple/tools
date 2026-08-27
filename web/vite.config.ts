@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import devServer from '@hono/vite-dev-server'
 
 const PRODUCTION_SECURITY_META = `
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; frame-src 'none'; upgrade-insecure-requests" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://user.alcmaple.cn; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; frame-src 'none'; upgrade-insecure-requests" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />`
 
 // 本地开发一条命令跑通前后端：@hono/vite-dev-server 把 server/index.ts 里的 Hono 应用

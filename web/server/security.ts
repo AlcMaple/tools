@@ -10,7 +10,7 @@ const DEFAULT_CSP = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self'",
+  "script-src 'self' https://user.alcmaple.cn",
   "style-src 'self'",
   "img-src 'self' https: data:",
   "font-src 'self'",
