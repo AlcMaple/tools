@@ -304,6 +304,12 @@ export interface PlayLine {
   source: number
   url: string
   kind: 'mp4' | 'hls'
+  /**
+   * `player_aaaa.from` —— 源站用它在 `/static/js/playerconfig.js` 的 `MacPlayerConfig.player_list`
+   * 里查这条线路该用哪个官方播放器地址（xfy2/AL/CS → `code=xfdm1&from=cf`，xfxf1 → `code=xfdm2`）。
+   * 直连播放用不到它，只有回退官方 iframe 时要照着拼，拼错就是一个永远转圈的空播放器。
+   */
+  from: string
 }
 export interface Playlist {
   title: string
@@ -389,7 +395,9 @@ export async function getPlaylist(animeId: string, ep: number, uid: number | nul
     let url1 = ''
     try { url1 = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
     url1 = safeMediaUrl(url1)
-    const line1: PlayLine | null = url1 ? { source: 1, url: url1, kind: classify(url1) } : null
+    const line1: PlayLine | null = url1
+      ? { source: 1, url: url1, kind: classify(url1), from: data?.from ?? '' }
+      : null
     const lines = tabs.length ? tabs : line1 ? [{ source: 1, name: '线路1' }] : []
     const eps = parseEpList(body, animeId)
 
@@ -429,6 +437,6 @@ export async function resolveLine(
     let url = ''
     try { url = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
     url = safeMediaUrl(url)
-    return put<PlayLine | null>(key, url ? { source, url, kind: classify(url) } : null)
+    return put<PlayLine | null>(key, url ? { source, url, kind: classify(url), from: data?.from ?? '' } : null)
   })
 }

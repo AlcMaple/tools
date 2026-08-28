@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1010" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect x="1" y="1" width="1118" height="1008" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">手机上「一直转圈」，其实是四个坑叠在一起</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">四个坑<tspan font-weight="700">只在手机上现形</tspan>：电脑有自动播放豁免、直连也能正常播，四条路一条都走不到，所以藏了很久。修完之后，快源（约 96% 的番）在手机上点一下就能看。</text>
+  <text x="32" y="80" font-size="12.5" fill="#756f73">剩下的顿挫不归我们管 —— 那是源站供片跟不上，在源站自己看也一样卡。</text>
+
+  <rect x="32" y="98" width="1056" height="30" rx="8" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="52" y="118" font-size="12" font-weight="700" fill="#4a4450">用户看到的</text>
+  <text x="452" y="118" font-size="12" font-weight="700" fill="#4a4450">背后真正发生的事</text>
+  <text x="792" y="118" font-size="12" font-weight="700" fill="#4a4450">改成什么样</text>
+
+  <!-- 坑 1 -->
+  <rect x="32" y="136" width="1056" height="140" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <rect x="44" y="148" width="132" height="20" rx="5" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="110" y="162" text-anchor="middle" font-size="10.5" font-weight="700" fill="#96434f">坑 1 · 点了没反应</text>
+  <text x="48" y="192" font-size="12.5" font-weight="700" fill="#353136">画面是一张空白画纸，中间</text>
+  <text x="48" y="211" font-size="12.5" font-weight="700" fill="#353136">转着圈写「描线中…」，永远不动</text>
+  <text x="48" y="236" font-size="11" fill="#8a848a">播放键其实就在画纸底下 ——</text>
+  <text x="48" y="253" font-size="11" fill="#8a848a">既看不见，也点不到</text>
+  <text x="452" y="192" font-size="11" fill="#666066">手机一律不给带声音的视频自动播放。</text>
+  <text x="452" y="211" font-size="11" fill="#666066">而被拒之后，浏览器<tspan font-weight="700">既不报错、也不说</tspan></text>
+  <text x="452" y="230" font-size="11" font-weight="700" fill="#666066">「准备好了」</text>
+  <text x="452" y="253" font-size="11" fill="#8a848a">收起画纸恰好只认这两个信号</text>
+  <rect x="780" y="176" width="296" height="86" rx="8" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="794" y="197" font-size="11.5" font-weight="700" fill="#316247">被拒不算「播放失败」</text>
+  <text x="794" y="217" font-size="11" fill="#316247">收起画纸、露出播放键，等用户点一下</text>
+  <text x="794" y="236" font-size="10.5" fill="#4a7a5e">用流量时 iOS 干脆不预加载，</text>
+  <text x="794" y="252" font-size="10.5" fill="#4a7a5e">所以再加一道 12 秒兜底走同一条路</text>
+
+  <!-- 坑 2 -->
+  <rect x="32" y="288" width="1056" height="140" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <rect x="44" y="300" width="132" height="20" rx="5" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="110" y="314" text-anchor="middle" font-size="10.5" font-weight="700" fill="#96434f">坑 2 · 备用方案也空转</text>
+  <text x="48" y="344" font-size="12.5" font-weight="700" fill="#353136">退到源站自己的播放器之后，</text>
+  <text x="48" y="363" font-size="12.5" font-weight="700" fill="#353136">黑底上写着 Waiting parameters</text>
+  <text x="48" y="388" font-size="11" fill="#8a848a">同样一直转圈，一帧都出不来</text>
+  <text x="48" y="405" font-size="11" fill="#8a848a">但同一部片在源站网页上是好的</text>
+  <text x="452" y="344" font-size="11" fill="#666066">那个播放器有两种用法：<tspan font-weight="700">等外面把参数递进来</tspan>，</text>
+  <text x="452" y="363" font-size="11" fill="#666066">或者<tspan font-weight="700">自己从网址里取</tspan>。</text>
+  <text x="452" y="386" font-size="11" fill="#666066">我们只把它嵌进来，从没递过参数 ——</text>
+  <text x="452" y="405" font-size="11" fill="#666066">它就一直站在那儿等。</text>
+  <rect x="780" y="328" width="296" height="86" rx="8" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="794" y="349" font-size="11.5" font-weight="700" fill="#316247">让它走「自己从网址取」那条路</text>
+  <text x="794" y="370" font-size="11" fill="#316247">顺带修正：不同线路对应的播放器</text>
+  <text x="794" y="387" font-size="11" fill="#316247">地址本来就不一样，之前写死成一种</text>
+  <text x="794" y="405" font-size="10.5" fill="#4a7a5e">这条在电脑上同样是坏的，只是走不到</text>
+
+  <!-- 坑 3 -->
+  <rect x="32" y="440" width="1056" height="150" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <rect x="44" y="452" width="132" height="20" rx="5" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="110" y="466" text-anchor="middle" font-size="10.5" font-weight="700" fill="#96434f">坑 3 · 越等越没有</text>
+  <text x="48" y="496" font-size="12.5" font-weight="700" fill="#353136">转圈约 10 秒，然后自己跳到</text>
+  <text x="48" y="515" font-size="12.5" font-weight="700" fill="#353136">源站播放器（接着撞上坑 2）</text>
+  <text x="48" y="540" font-size="11" fill="#8a848a">从头到尾没有任何报错 ——</text>
+  <text x="48" y="557" font-size="11" fill="#8a848a">它不是播不了，是压根没在下载</text>
+  <text x="452" y="496" font-size="11" fill="#666066">卡顿时我们会用 <tspan font-weight="700">1/16 倍速悄悄预热</tspan>。</text>
+  <text x="452" y="517" font-size="11" fill="#666066">电脑吃这套；手机看到「只消费 1/16」</text>
+  <text x="452" y="536" font-size="11" fill="#666066">直接判定不需要数据，<tspan font-weight="700">干脆不下了</tspan>。</text>
+  <text x="452" y="559" font-size="11" fill="#96434f">实测：10.2 秒里缓冲增长 0.0 秒</text>
+  <rect x="780" y="480" width="296" height="96" rx="8" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="794" y="501" font-size="11.5" font-weight="700" fill="#316247">触屏上不降速，预热只看不动手</text>
+  <text x="794" y="522" font-size="11" fill="#316247">而且手机上不再因为「攒不够」就跳到</text>
+  <text x="794" y="539" font-size="11" fill="#316247">源站播放器 —— 跳过去也是卡</text>
+  <text x="794" y="560" font-size="10.5" fill="#4a7a5e">改成把「换线路 / 去源站看这一集」</text>
+  <text x="794" y="576" font-size="10.5" fill="#4a7a5e">两个出口摆出来，让用户自己挑</text>
+
+  <!-- 坑 4 -->
+  <rect x="32" y="602" width="1056" height="150" rx="9" fill="#ffffff" stroke="#cfc7cb"/>
+  <rect x="44" y="614" width="132" height="20" rx="5" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="110" y="628" text-anchor="middle" font-size="10.5" font-weight="700" fill="#96434f">坑 4 · 进度自己倒退</text>
+  <text x="48" y="658" font-size="12.5" font-weight="700" fill="#353136">卡一下之后，进度条从 1:33</text>
+  <text x="48" y="677" font-size="12.5" font-weight="700" fill="#353136">退回 1:31，来回跳</text>
+  <text x="48" y="702" font-size="11" fill="#8a848a">画面却没退 —— 卡住时画面本来就</text>
+  <text x="48" y="719" font-size="11" fill="#8a848a">停在那一帧，所以只有进度条在动</text>
+  <text x="452" y="658" font-size="11" fill="#666066">预热结束要把位置<tspan font-weight="700">退回预热前</tspan> —— 因为</text>
+  <text x="452" y="677" font-size="11" fill="#666066">1/16 倍速期间位置会往前漂一点点。</text>
+  <text x="452" y="700" font-size="11" fill="#666066">手机上不降速之后，播放是<tspan font-weight="700">真的在走</tspan>，</text>
+  <text x="452" y="719" font-size="11" fill="#96434f">这个「退回」就成了把进度往回拽</text>
+  <rect x="780" y="642" width="296" height="96" rx="8" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="794" y="663" font-size="11.5" font-weight="700" fill="#316247">触屏上一个进度都不写</text>
+  <text x="794" y="684" font-size="11" fill="#316247">没降速就没有漂移要纠正，</text>
+  <text x="794" y="701" font-size="11" fill="#316247">那一步本来就不该存在</text>
+  <text x="794" y="722" font-size="10.5" fill="#4a7a5e">另加哨兵：进度只要无故倒退就自动</text>
+  <text x="794" y="738" font-size="10.5" fill="#4a7a5e">上报，免得以后改回去没人发现</text>
+
+  <!-- 为什么电脑上一直没发现 -->
+  <rect x="32" y="768" width="516" height="118" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="48" y="792" font-size="14" font-weight="700" fill="#7a6234">为什么电脑上一直没发现</text>
+  <text x="48" y="816" font-size="11.5" fill="#7a6234">电脑有自动播放豁免 → 坑 1 不触发</text>
+  <text x="48" y="836" font-size="11.5" fill="#7a6234">电脑直连能正常播 → 坑 3、坑 4 不触发</text>
+  <text x="48" y="856" font-size="11.5" fill="#7a6234">于是几乎走不到源站播放器 → 坑 2 也不触发</text>
+  <text x="48" y="876" font-size="11" fill="#9a7f4a">四个坑在电脑上一个都不现形，只有手机同时踩满</text>
+
+  <!-- 修完之后还剩什么 -->
+  <rect x="572" y="768" width="516" height="118" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="588" y="792" font-size="14" font-weight="700" fill="#36566d">修完之后还剩什么</text>
+  <text x="588" y="816" font-size="11.5" fill="#36566d">1:31 那种顿一下：源站供片跟不上，源站自己看也一样，不碰</text>
+  <text x="588" y="836" font-size="11.5" fill="#36566d">只有慢源的番仍然要等约 1 分钟才开播（老行为不变）</text>
+  <text x="588" y="856" font-size="11.5" fill="#36566d">真播不动时，浮层给「换线路 / 去源站看这一集」两个出口</text>
+  <text x="588" y="876" font-size="11" fill="#5c7f96">播放页没有装网页监控，出问题只靠我们自己打回来的日志</text>
+
+  <!-- 底部：新增的排查能力 -->
+  <rect x="32" y="898" width="1056" height="86" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="48" y="922" font-size="14" font-weight="700" fill="#4a4450">顺带补上：手机上出问题，这次能看见了</text>
+  <text x="48" y="946" font-size="11.5" fill="#4a4450">播放期间每 2 秒记一格状态（播到哪、缓冲多少、在不在等），只留最近一分钟；出问题时把这一卷连同报错一起送回来。</text>
+  <text x="48" y="967" font-size="11.5" fill="#4a4450">另外会自动打一枪探针，直接回答「手机到底能不能连上这个片源」—— 分清是网络不通，还是播放器自己不干活。</text>
+</svg>

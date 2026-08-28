@@ -38,6 +38,7 @@ import { XifanLocalRateLimitError, XifanUpstreamError } from './xifan/session'
 import { clearRateLimit, clientIp, getSession, rateLimited } from './auth'
 import { db } from './db'
 import { playerPageSecurity, renderNonce } from './security'
+import { captureClientLog } from './monitoring'
 import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources } from './player-sources'
 
 const xifan = new Hono()
@@ -87,9 +88,30 @@ xifan.get('/hls.js', (c) => {
   return c.body(hlsJsCache)
 })
 
+// 播放页专用的浏览器监控 bundle —— 由 npm run build 的第二步产出（scripts/build-player-monitor.ts）。
+// 跟 hls.js 一样自托管：CSP 只放行 'self'，国内也加载不到 Sentry 的 CDN。
+// **dev 下 dist 不存在是正常的**，发一段空脚本让播放页照常跑（页面里所有 playerMonitor 调用都做了判空）。
+let monitorJsCache: string | null = null
+xifan.get('/monitor.js', (c) => {
+  if (monitorJsCache === null) {
+    try {
+      monitorJsCache = readFileSync(join(process.cwd(), 'dist/player-monitor.js'), 'utf8')
+    } catch {
+      monitorJsCache = '/* player monitor not built (dev) */'
+    }
+  }
+  c.header('Content-Type', 'application/javascript; charset=utf-8')
+  c.header('Cache-Control', 'public, max-age=86400')
+  return c.body(monitorJsCache)
+})
+
 // 播放页调试日志出口——用户只看终端，不看网页 devtools；<video> 的 error/回退套娃这些
 // 只在浏览器里发生的事件，改用 sendBeacon 把摘要丢过来，落进这个 Node 进程的 stdout。
 const XIFAN_CLIENT_LOG_MAX = 300
+// 遥测「胶片」：播放页每 2 秒采一格 <video> 状态，失败时把最近这一分钟一起送上来。
+// 上限按最坏情况卡死（30 格 × 120 字），别让这条无鉴权的口子变成写日志的入口。
+const XIFAN_TAPE_MAX_LINES = 40
+const XIFAN_TAPE_MAX_CHARS = 120
 xifan.post('/client-log', async (c) => {
   let body: unknown
   try {
@@ -98,7 +120,19 @@ xifan.post('/client-log', async (c) => {
     return c.body(null, 204)
   }
   const msg = body && typeof body === 'object' && 'msg' in body ? String((body as { msg: unknown }).msg) : ''
-  if (msg) console.log('[xifan:client] ' + msg.slice(0, XIFAN_CLIENT_LOG_MAX))
+  const rawTape = body && typeof body === 'object' ? (body as { tape?: unknown }).tape : undefined
+  // 页面自己的监控已经把这条报上去了（带面包屑和设备上下文，比这边全）——服务端只留 stdout，
+  // 不再重复上报。SDK 没加载起来时页面不会带这个标记，服务端这条就还是唯一通路。
+  const reportedByPage = Boolean(body && typeof body === 'object' && (body as { sdk?: unknown }).sdk)
+  const tape = Array.isArray(rawTape)
+    ? rawTape.slice(-XIFAN_TAPE_MAX_LINES).map((line) => String(line).slice(0, XIFAN_TAPE_MAX_CHARS))
+    : undefined
+  if (msg) {
+    const line = msg.slice(0, XIFAN_CLIENT_LOG_MAX)
+    console.log('[xifan:client] ' + line)
+    if (tape?.length) console.log('[xifan:client]   tape: ' + tape.join(' | '))
+    if (!reportedByPage) captureClientLog(line, c.req.header('user-agent'), tape)
+  }
   return c.body(null, 204)
 })
 
@@ -238,6 +272,16 @@ xifan.delete('/prepared/:key', async (c) => {
   return dropPrepared(c.req.param('key')) ? c.json({ ok: true }) : c.json({ error: '没有这一份' }, 404)
 })
 
+// 浏览器端 DSN 是公开值（跟服务端那份是**两个项目**，别混用，否则同名 issue 会糊在一起）。
+// 运行时读环境变量而不是构建时打进去：播放页是服务端渲染的，换 release 不用重新构建前端。
+function playerMonitorConfig(): { dsn: string; environment: string; release: string } {
+  return {
+    dsn: process.env.PLAYER_SENTRY_DSN?.trim() ?? '',
+    environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
+    release: process.env.SENTRY_RELEASE || '',
+  }
+}
+
 xifan.get('/play-page', (c) => {
   const animeId = c.req.query('animeId') ?? ''
   const ep = Number(c.req.query('ep') ?? '1')
@@ -251,7 +295,8 @@ xifan.get('/play-page', (c) => {
   const page = renderNonce(
     PLAY_PAGE
       .replace('__PLAYER_SOURCES__', sources)
-      .replace('__PROXY_HOSTS__', JSON.stringify(PROXY_HOSTS)),
+      .replace('__PROXY_HOSTS__', JSON.stringify(PROXY_HOSTS))
+      .replace('__MONITOR_CONFIG__', JSON.stringify(playerMonitorConfig())),
   )
   playerPageSecurity(c, page.nonce)
   // pan.wo 的下载响应带 attachment；保持来源信息时 Chromium 会把它判成不可播放媒体。
@@ -409,6 +454,8 @@ const PLAY_PAGE = `<!doctype html>
 <meta name="referrer" content="no-referrer">
 <title>继续看 · 稀饭</title>
 <script src="/api/xifan/hls.js"></script>
+<script nonce="__CSP_NONCE__">window.__PLAYER_MONITOR__ = __MONITOR_CONFIG__</script>
+<script src="/api/xifan/monitor.js"></script>
 <link rel="stylesheet" href="/styles/sketch-tokens.css">
 <link rel="stylesheet" href="/styles/sketch-ui.css">
 <style nonce="__CSP_NONCE__">
@@ -448,6 +495,9 @@ const PLAY_PAGE = `<!doctype html>
   /* 浮层里的出口按钮（等起稿时给个「不想等就换快源」的去处）。 */
   #bufferActions:empty { display: none }
   #bufferActions { margin-top: 10px; display: flex; gap: 8px; justify-content: center }
+  /* 浮层本身 pointer-events:none（好让原生控制条能被点到），但里面的出口按钮必须能点——
+     少了这行，showDrafting / 慢线路提示里的按钮全是摆设。 */
+  #bufferActions > * { pointer-events: auto }
   /* 播放源分段器：未关联的源需要一种「虚线、可点」的第三态，seg 组件本身没有 */
   .src-seg > button.unbound { color: var(--ink-faint); border: 1.5px dashed var(--line); border-radius: var(--r-pill) }
   .lines-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px }
@@ -489,6 +539,7 @@ const PLAY_PAGE = `<!doctype html>
     </div>
   </div>
   <div id="prepareBox" class="prep"></div>
+  <div id="openSource" class="prep"></div>
   <div id="err" role="alert" aria-live="polite"><span id="err-text"></span><a id="auth-link" class="btn btn-sm btn-ghost" href="/#/settings/xifan" target="_blank" rel="noopener">去登录</a></div>
   <div class="spread mt24">
     <h2 class="title-sketch section-title">选集</h2>
@@ -501,14 +552,35 @@ const PLAY_PAGE = `<!doctype html>
 <script nonce="__CSP_NONCE__">
 (function(){
   var $ = function(id){ return document.getElementById(id) }
-  // 排查用日志一律走这里 → 落 Node 终端的 stdout，不进浏览器 devtools（那边看不到）。
-  var slog = function(msg){
+  // 排查用日志一律走这里。三个去处，各管一段：
+  //   1. 面包屑 —— 页面自己的监控攒着，出异常时**整条时间线**跟着一起走（而不是散成 N 条独立记录）
+  //   2. 上报   —— 只有失败类日志（带胶片那些）才真的开一条，普通日志不值当占配额
+  //   3. 服务端 —— 始终打一份进 Node 的 stdout；页面监控没加载起来时它就是唯一通路
+  var slog = function(msg, withTape){
+    var reported = false
     try {
-      var body = JSON.stringify({ msg: msg })
+      if (window.playerMonitor){
+        window.playerMonitor.breadcrumb(msg)
+        if (withTape){
+          window.playerMonitor.report(msg, { tape: tape.slice() })
+          reported = true
+        }
+      }
+    } catch (e) {}
+    try {
+      var payload = withTape && tape.length ? { msg: msg, tape: tape.slice() } : { msg: msg }
+      if (reported) payload.sdk = 1
+      var body = JSON.stringify(payload)
       if (navigator.sendBeacon) navigator.sendBeacon('/api/xifan/client-log', new Blob([body], { type: 'application/json' }))
       else fetch('/api/xifan/client-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true })
     } catch (e) {}
   }
+  // ——— 播放遥测「胶片」———
+  // <video> 出问题时只会给一个 error code，什么上下文都没有。每 2 秒采一格状态存进环形缓冲，
+  // 失败日志上报时把最近这一分钟一起带走 —— 「进度倒退了 2 秒」这种事只有连着看才看得出来。
+  var TAPE_MAX = 30, TAPE_INTERVAL_MS = 2000
+  var tape = [], tapeTimer = null, tapeAt = 0, tapeLastTime = 0, userSeekAt = 0, rewindLoggedAt = 0
+
   var q = new URLSearchParams(location.search)
   var animeId = q.get('animeId') || ''
   var ep = q.get('ep') || '1'
@@ -534,6 +606,71 @@ const PLAY_PAGE = `<!doctype html>
   var internalSeekTimer = null, gateOnPlay = false, lineRequest = 0, playGeneration = 0
   var networkInterrupted = false, networkCheck = null, networkRetry = null, failureGeneration = -1
   var preparedKey = null, preparedFor = null, prepareTimer = null, prepareFailed = null
+  var needsGesture = false, startWatchTimer = null, START_WATCH_MS = 12000
+  // 手机 ≠ 「小屏桌面」：缓冲闸门那套低速静音预热是照桌面调的，手机上会**反过来饿死播放**
+  // （实测 5G 上 10.2 秒 buffered 一个字节都没涨）。所以触屏设备走另一套，判据用输入方式
+  // 不用 UA —— 平板 / 触屏本同样吃这套策略。
+  var IS_TOUCH = false
+  try { IS_TOUCH = (navigator.maxTouchPoints || 0) > 1 || matchMedia('(pointer: coarse)').matches } catch (e) {}
+  var probedUrl = null
+
+  // 起播失败时最要紧的一句话是「手机到底能不能碰到这个 CDN」。<video> 什么都不说，
+  // 只好自己拿 Range 请求打一枪：能回 206 就是播放器的问题，回不来就是网络 / 端口的问题。
+  // 每个地址只打一次，别把诊断本身变成负担。
+  function probeMedia(url){
+    if (probedUrl === url) return
+    probedUrl = url
+    var at = performance.now()
+    fetch(url, { headers: { Range: 'bytes=0-65535' }, cache: 'no-store' })
+      .then(function(r){
+        return r.arrayBuffer().then(function(b){
+          slog('probe ok status=' + r.status + ' bytes=' + b.byteLength + ' in ' + Math.round(performance.now() - at) + 'ms url=' + url, true)
+        })
+      })
+      .catch(function(e){
+        // 普通 fetch 失败分不清「跨域被拦」和「真连不上」——再打一枪 no-cors：
+        // 它拿不到状态码，但**只要 resolve 就说明请求真的出去并回来了**，是 CORS 的锅；
+        // 连它都失败才是网络 / 端口层面的不通。
+        var why = ((e && e.name) || '?') + ': ' + ((e && e.message) || '')
+        fetch(url, { mode: 'no-cors', headers: {}, cache: 'no-store' })
+          .then(function(){ slog('probe cors-blocked but reachable (' + why + ') in ' + Math.round(performance.now() - at) + 'ms url=' + url, true) })
+          .catch(function(e2){ slog('probe unreachable (' + why + ' / ' + ((e2 && e2.name) || '?') + ') after ' + Math.round(performance.now() - at) + 'ms url=' + url, true) })
+      })
+  }
+
+  function startTape(){
+    stopTape()
+    tape = []; tapeAt = performance.now(); tapeLastTime = v.currentTime || 0; rewindLoggedAt = 0
+    tapeTimer = setInterval(sampleTape, TAPE_INTERVAL_MS)
+  }
+
+  function stopTape(){
+    if (tapeTimer !== null) clearInterval(tapeTimer)
+    tapeTimer = null
+  }
+
+  function sampleTape(){
+    var t = v.currentTime || 0
+    tape.push(Math.round((performance.now() - tapeAt) / 100) / 10 + 's t=' + t.toFixed(1)
+      + ' ahead=' + bufferedAhead().toFixed(1) + ' rs=' + v.readyState + ' ns=' + v.networkState
+      + ' r=' + v.playbackRate + (v.paused ? ' paused' : '') + (resumeAfterBuffer ? ' gate' : ''))
+    if (tape.length > TAPE_MAX) tape.shift()
+    // 进度倒退探测：不是内部 seek、用户也没刚拖过 —— 那就是我们自己把进度拽回去了。
+    // 这个 bug 犯过一次（触屏上闸门回锚点），留个哨兵免得改回去没人发现。
+    var now = performance.now()
+    if (t < tapeLastTime - .35 && !internalSeek && !v.seeking && now - userSeekAt > 1500
+        && now - rewindLoggedAt > 15000){
+      rewindLoggedAt = now
+      slog('playback rewound ' + tapeLastTime.toFixed(1) + ' -> ' + t.toFixed(1) + ' ' + mediaSnapshot(), true)
+    }
+    tapeLastTime = t
+  }
+
+  function mediaSnapshot(){
+    return 'readyState=' + v.readyState + ' networkState=' + v.networkState
+      + ' err=' + (v.error ? v.error.code : '-') + ' t=' + (v.currentTime || 0).toFixed(1)
+      + ' ranges=' + v.buffered.length + ' paused=' + v.paused + ' rate=' + v.playbackRate
+  }
   var resumeTime = 0, resumeWasPlaying = false, resumePending = false, resumeKey = '', recoverTimer = null
 
   window.addEventListener('storage', function(e){
@@ -620,7 +757,7 @@ const PLAY_PAGE = `<!doctype html>
     if (!resumePending) return
     if (resumeKey !== (curPl ? curPl.source : 'none') + ':' + ep){ resumePending = false; resumeWasPlaying = false; return }
     try { v.currentTime = Math.min(resumeTime, Number.isFinite(v.duration) ? Math.max(0, v.duration - .25) : resumeTime) } catch (e) {}
-    if (resumeWasPlaying){ var rp = v.play(); if (rp && rp.catch) rp.catch(function(){}) }
+    if (resumeWasPlaying) tryPlay()
   })
   v.addEventListener('playing', function(){ resumePending = false; resumeWasPlaying = false; networkInterrupted = false })
   // 首次真正可播（不是 bufferGate 那种「已经在播中途卡了」）就收起初始浮层；
@@ -629,7 +766,10 @@ const PLAY_PAGE = `<!doctype html>
   // 浏览器判定「缓冲远超消费速度」而主动限流，10.9 秒只攒到 2.7 秒缓冲；同一时刻用
   // fetch 直接读同一个代理地址能跑 772KB/s(6.3Mbps)。起播慢的真正原因是带宽不是时机，
   // 已由 /api/xifan/stream 的并发代理解决，不需要再抢跑。
-  v.addEventListener('canplay', function(){ if (!resumeAfterBuffer) hideBuffer() })
+  v.addEventListener('canplay', function(){ clearStartWatch(); if (!resumeAfterBuffer) hideBuffer() })
+  // 只认 playing，不认 play：play 事件在 play() 被拒之前就已经冒出来了，
+  // 拿它清看门狗等于把兜底也一起关掉。
+  v.addEventListener('playing', function(){ needsGesture = false; clearStartWatch() })
 
   function bufferedAhead(){
     for (var i = 0; i < v.buffered.length; i++){
@@ -646,6 +786,48 @@ const PLAY_PAGE = `<!doctype html>
   function hideBuffer(){
     var b = $('buffering'); b.classList.remove('show', 'retryable'); b.onclick = null
     $('bufferActions').textContent = ''
+  }
+
+  // ——— 移动端起播：自动播放被拒 / 根本不预加载 ———
+  // 手机浏览器不给非静音的 play() 放行（桌面端多半有 MEI 豁免，所以 PC 一切正常）。
+  // 被拒之后既不会冒 error 也不会冒 canplay：起播浮层永远收不掉，还是块不透明的画纸，
+  // 把原生播放按钮整个盖住——用户看到的就是「一直卡在加载」。
+  // 关键：**这不是播放失败**，不能退官方 iframe（退了同样要手势，只是换个地方卡）。
+  // 正确处理是收掉浮层、露出控制条，等用户点一下。
+  function tryPlay(){
+    var p
+    try { p = v.play() } catch (e) { awaitGesture(e); return }
+    if (p && p.catch) p.catch(function(e){ awaitGesture(e) })
+  }
+
+  function awaitGesture(e){
+    if (needsGesture) return
+    // src 被换掉导致的 AbortError 会紧跟着新的一次 play()，不是手势问题；
+    // 判据统一用「此刻仍停着、且 src 还在」，避免切线路时误收浮层。
+    if (inFrame() || !v.paused || !v.getAttribute('src')) return
+    needsGesture = true
+    slog('autoplay rejected (' + ((e && e.name) || 'unknown') + '), waiting for user gesture')
+    clearStartWatch()
+    hideBuffer()
+  }
+
+  function clearStartWatch(){
+    if (startWatchTimer !== null) clearTimeout(startWatchTimer)
+    startWatchTimer = null
+  }
+
+  // iOS 在蜂窝网下会把 preload="auto" 当 none：不点播放就一个字节都不拉，
+  // canplay 永远不来，play() 也可能既不 resolve 也不 reject。兜底：起播若干秒后
+  // 还停在 readyState=0，就把浮层收掉交还给用户，别让它自己转到天荒地老。
+  function armStartWatch(){
+    clearStartWatch()
+    startWatchTimer = setTimeout(function(){
+      startWatchTimer = null
+      if (needsGesture || inFrame() || resumeAfterBuffer || !v.paused || v.readyState > 0) return
+      slog('no media progress in ' + START_WATCH_MS + 'ms (readyState=0), release overlay for manual play')
+      needsGesture = true
+      hideBuffer()
+    }, START_WATCH_MS)
   }
 
   /**
@@ -690,7 +872,11 @@ const PLAY_PAGE = `<!doctype html>
     bufferTimer = null; resumeAfterBuffer = false; hideBuffer()
     if (wasBuffering){
       restorePlaybackState()
-      if (resetPosition && Number.isFinite(bufferAnchor)){
+      // 回锚点是**低速预热的配套动作**：桌面上缓冲期间以 0.0625 倍速播，位置会往前漂一点，
+      // 结束时要退回用户原来的位置。触屏上不降速、播放是真的在走，这时回锚点就成了
+      // **把用户的进度往回拽**（实测 1:33 → 1:31 来回跳，画面却没退——因为卡住时画面本来
+      // 就停在锚点那一帧）。没降速就没有漂移要纠正，一个 currentTime 都不该写。
+      if (!IS_TOUCH && resetPosition && Number.isFinite(bufferAnchor)){
         markInternalSeek()
         try { v.currentTime = bufferAnchor } catch (e) { clearInternalSeek() }
       }
@@ -703,8 +889,11 @@ const PLAY_PAGE = `<!doctype html>
     bufferTimer = null; resumeAfterBuffer = false; hideBuffer()
     // 缓冲期间用极低速静音播放来保持浏览器继续拉流；达标后回到用户 seek 的原位置，
     // 再恢复原速与静音状态。锚点已经落在 buffered 内，不会重新走网络。
-    markInternalSeek()
-    try { v.currentTime = bufferAnchor } catch (e) { clearInternalSeek() }
+    // 触屏上没降速、也就没有漂移要纠正 —— 回锚点在那里纯粹是把进度往回拽（见 cancelBufferGate）。
+    if (!IS_TOUCH){
+      markInternalSeek()
+      try { v.currentTime = bufferAnchor } catch (e) { clearInternalSeek() }
+    }
     restorePlaybackState()
     gateOnPlay = false
   }
@@ -714,7 +903,38 @@ const PLAY_PAGE = `<!doctype html>
   function fallbackBufferGate(token, why){
     if (token !== bufferToken || !resumeAfterBuffer || !curPl || inFrame()) return
     var pl = curPl
-    slog('buffer gate gave up (' + (why || 'unknown') + ') after ' + Math.round(performance.now() - bufferStartedAt) + 'ms url=' + pl.url)
+    slog('buffer gate gave up (' + (why || 'unknown') + ') after ' + Math.round(performance.now() - bufferStartedAt) + 'ms ' + mediaSnapshot() + ' url=' + pl.url, true)
+    probeMedia(pl.origin || pl.url)
+    // 手机上**不退套娃**：官方播放器要么解析失败要么同样要手势，退过去只是换个地方卡；
+    // 而闸门在触屏上本来就没有裁决权（它不降速、只是看着）。所以撤掉闸门、把 <video>
+    // 原样留给浏览器自己缓冲，同时把「换线路 / 去源站」两个出口摆出来让用户自己选。
+    if (IS_TOUCH){
+      cancelBufferGate(false)
+      $('bufferText').textContent = '这条线路读得很慢 · 可以再等等，或者换个地方看'
+      var acts = $('bufferActions')
+      acts.textContent = ''
+      var fast = findFastLine()
+      if (fast && fast.source !== pl.source){
+        var jump = document.createElement('button')
+        jump.className = 'btn btn-sm'
+        jump.textContent = '换线路 ' + fast.source
+        jump.onclick = function(){ hideBuffer(); selectLine(fast.source) }
+        acts.appendChild(jump)
+      }
+      var href = sourceHref()
+      if (href){
+        var go = document.createElement('a')
+        go.className = 'btn btn-sm'
+        go.href = href
+        go.target = '_blank'
+        go.rel = 'noopener'
+        go.textContent = '去源站看这一集'
+        acts.appendChild(go)
+      }
+      renderOpenSource(pl)
+      $('buffering').classList.add('show')
+      return
+    }
     cancelBufferGate(false)
     embed(pl)
   }
@@ -723,9 +943,14 @@ const PLAY_PAGE = `<!doctype html>
     if (token !== bufferToken || !resumeAfterBuffer || !curPl || curPl.kind !== 'mp4' || inFrame()) return
     // 切 src / loadedmetadata 时 Chromium 可能把 playbackRate 重置成 1；缓冲期间持续钉回
     // 极低速，确保下载在继续而播放位置几乎不动。
-    v.muted = true
-    if (v.playbackRate !== BUFFER_RATE){
-      try { v.playbackRate = BUFFER_RATE } catch (e) { v.playbackRate = .25 }
+    // **触屏设备跳过这一步**：手机的缓冲策略比桌面激进得多，看到「消费速度只有 1/16」
+    // 就直接不拉流了，闸门反而把它饿死（实测 10.2 秒 buffered 零增长）。
+    // 手机上闸门只负责显示和记日志，不碰播放参数。
+    if (!IS_TOUCH){
+      v.muted = true
+      if (v.playbackRate !== BUFFER_RATE){
+        try { v.playbackRate = BUFFER_RATE } catch (e) { v.playbackRate = .25 }
+      }
     }
     var ahead = bufferedAhead(), goal = bufferGoal(), now = performance.now()
     if (ahead > bufferLastAhead + .05){ bufferLastAhead = ahead; bufferLastProgressAt = now }
@@ -738,7 +963,7 @@ const PLAY_PAGE = `<!doctype html>
     }
     if (now - bufferSampleAt >= (bufferSampled ? BUFFER_SAMPLE_MS : BUFFER_WARMUP_MS)){
       var elapsed = Math.max(.001, (now - bufferSampleAt) / 1000)
-      var mediaRate = (ahead - bufferSampleAhead) / elapsed + BUFFER_RATE
+      var mediaRate = (ahead - bufferSampleAhead) / elapsed + (IS_TOUCH ? 1 : BUFFER_RATE)
       if (mediaRate < BUFFER_MIN_MEDIA_RATE) {
         classifyMediaFailure(function(){ fallbackBufferGate(token, 'rate ' + mediaRate.toFixed(2) + 'x') }, function(){ if (curPl) playLine(curPl) })
         return
@@ -761,11 +986,22 @@ const PLAY_PAGE = `<!doctype html>
     bufferAnchor = v.currentTime
     savedRate = v.playbackRate
     savedMuted = v.muted
-    v.muted = true
-    try { v.playbackRate = BUFFER_RATE } catch (e) { v.playbackRate = .25 }
+    if (!IS_TOUCH){
+      v.muted = true
+      try { v.playbackRate = BUFFER_RATE } catch (e) { v.playbackRate = .25 }
+    }
     var token = ++bufferToken
     resetBufferWatch(ahead)
-    $('buffering').classList.add('show')
+    // 触屏上闸门不再冻结播放，所以一次一两秒的源站抖动会被 waiting 事件带出来。
+    // 立刻盖浮层的话就是「画面正常、纸片一闪一闪」，比卡顿本身更晃眼。
+    // 等 1.2 秒还没缓过来才盖；短抖动用户只会觉得顿一下，跟在源站看到的一样。
+    if (IS_TOUCH){
+      setTimeout(function(){
+        if (token === bufferToken && resumeAfterBuffer) $('buffering').classList.add('show')
+      }, 1200)
+    } else {
+      $('buffering').classList.add('show')
+    }
     checkBufferGate(token)
     bufferTimer = setInterval(function(){ checkBufferGate(token) }, 250)
   }
@@ -778,12 +1014,14 @@ const PLAY_PAGE = `<!doctype html>
     if (curPl.kind === 'hls' && hls) return
     // 排查「总是回退官方 iframe」用：MediaError.code（1 abort/2 network/3 decode/4 src not supported）
     // 直接暴露在控制台，不用每次都翻源码猜是 CDN 拒了还是别的。
-    if (v.error) slog('direct play failed, code=' + v.error.code + ' url=' + curPl.url)
+    if (v.error) slog('direct play failed, code=' + v.error.code + ' ' + mediaSnapshot() + ' url=' + curPl.url, true)
+    probeMedia(curPl.origin || curPl.url)
     var failed = curPl
     classifyMediaFailure(function(){ cancelBufferGate(); embed(failed) }, function(){ playLine(failed) })
   })
   v.addEventListener('seeking', function(){
     if (internalSeek) return
+    userSeekAt = performance.now()
     gateOnPlay = true
     if (!v.paused || resumeAfterBuffer) beginBufferGate(true)
   })
@@ -879,7 +1117,7 @@ const PLAY_PAGE = `<!doctype html>
   }
 
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
-  function stopAll(){ playGeneration++; cancelBufferGate(false); clearInternalSeek(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false }
+  function stopAll(){ playGeneration++; needsGesture = false; clearStartWatch(); stopTape(); cancelBufferGate(false); clearInternalSeek(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false }
 
   function renderSources(){
     var box = $('sources'); box.textContent = ''
@@ -919,7 +1157,7 @@ const PLAY_PAGE = `<!doctype html>
     // 单连接只有 2.2Mbps（低于 2.67Mbps 码率），而 HLS 播放器会并发拉多片，
     // 同一条链路能跑到 5.22Mbps。细节见 xifan/prepare.ts。
     if (pl.kind === 'mp4' && preparedKey && preparedFor === pl.url){
-      pl = { source: pl.source, kind: 'hls', url: '/api/xifan/hls/' + preparedKey + '/index.m3u8', viaPrepared: true }
+      pl = { source: pl.source, kind: 'hls', url: '/api/xifan/hls/' + preparedKey + '/index.m3u8', viaPrepared: true, origin: pl.url, from: pl.from }
     }
     // 慢源且还没转出可播部分时：**不要去播代理直连**。
     // 它注定不够快（<video> 单连接跨境 2.2Mbps < 2.67Mbps 码率），播了既卡、又会占满
@@ -998,6 +1236,9 @@ const PLAY_PAGE = `<!doctype html>
     $('bufferText').textContent = '描线中…'
     $('buffering').classList.remove('retryable'); $('buffering').onclick = null
     $('buffering').classList.add('show')
+    startTape()
+    armStartWatch()
+    renderOpenSource(null)
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
         // 90–120 秒足够覆盖网络抖动，同时避免旧配置一次抓 10–15 分钟、产生上百个分片请求。
@@ -1030,25 +1271,73 @@ const PLAY_PAGE = `<!doctype html>
           if (data && data.fatal) classifyMediaFailure(function(){ embed(pl) }, function(){ playLine(pl) })
         })
         hls.loadSource(pl.url); hls.attachMedia(v)
-        var pp = v.play(); if (pp && pp.catch) pp.catch(function(){})
+        tryPlay()
       } else if (v.canPlayType('application/vnd.apple.mpegurl')){
-        v.src = pl.url; var p2 = v.play(); if (p2 && p2.catch) p2.catch(function(){}) // iOS 原生 HLS
+        v.src = pl.url; tryPlay() // iOS 原生 HLS
       } else { embed(pl) }
     } else {
       // 慢源（线路一）走服务端 /stream 并发聚合；其余 mp4 保持裸直连——
       // 线路二直连 30Mbps 比走代理快得多，也不占服务器出口。
       v.src = needsProxy(pl.url) ? '/api/xifan/stream?u=' + encodeURIComponent(pl.url) : pl.url
-      v.load(); var p = v.play(); if (p && p.catch) p.catch(function(){})
+      v.load(); tryPlay()
     }
+  }
+
+  // 官方播放器地址表 —— 抄自源站 /static/js/playerconfig.js 的 MacPlayerConfig.player_list：
+  // 每条线路用哪个播放器由 player_aaaa.from 决定，**不是所有线路都是 code=xfdm1&from=cf**
+  // （xfxf1「稀饭新番主线-1」走的是 code=xfdm2，没有 from）。写死一个拼法会喂错播放器。
+  var OFFICIAL_PLAYERS = {
+    xfxf1: 'https://player.moedot.net/player/index.php?code=xfdm2&url=',
+    AL: 'https://player.moedot.net/player/index.php?code=xfdm1&from=cf&url=',
+    xfy2: 'https://player.moedot.net/player/index.php?code=xfdm1&from=cf&url=',
+    CS: 'https://player.moedot.net/player/index.php?code=xfdm1&from=cf&url='
+  }
+  var OFFICIAL_PLAYER_FALLBACK = 'https://player.moedot.net/player/index.php?code=xfdm1&from=cf&url='
+
+  function officialPlayerUrl(pl){
+    var base = (pl.from && OFFICIAL_PLAYERS[pl.from]) || OFFICIAL_PLAYER_FALLBACK
+    // **if=1 不能省。** 官方播放器（player/js/art/EcPlayer1.js）开头就分两路：
+    //   GetRequest()['if'] === '1'  → 自己从 url 参数起播（独立嵌入模式）
+    //   否则                        → 画一张 "Waiting parameters" 转圈图，
+    //                                 挂上 message 监听，**干等父页面 postMessage**
+    // 源站自己的 watch 页走的是后一路（它在 iframe onload 里 postMessage 一包 id/name/next）。
+    // 我们没有那一步，所以必须走前一路——否则就是手机上看到的那个永远转圈的空播放器。
+    // 这个坑在 PC 上藏着：PC 直连能播，几乎走不到套娃这条路。
+    return base + encodeURIComponent(pl.origin || pl.url) + '&if=1'
   }
 
   // 套娃：直连播不了 → 嵌稀饭自己的真实播放器（跟你在稀饭看一样）
   function embed(pl){
-    slog('fallback to official iframe, source=' + pl.source + ' kind=' + pl.kind + ' url=' + pl.url)
+    slog('fallback to official iframe, source=' + pl.source + ' kind=' + pl.kind + ' from=' + (pl.from || '-') + ' url=' + (pl.origin || pl.url), true)
     curPl = pl
     cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
+    clearStartWatch()
     gateOnPlay = false; v.classList.remove('on'); frame.classList.add('on'); renderChips()
-    frame.src = 'https://player.moedot.net/player/index.php?code=xfdm1&from=cf&url=' + encodeURIComponent(pl.url)
+    frame.src = officialPlayerUrl(pl)
+    // 套娃是第三方页面，我们既控制不了它的自动播放，也看不见它内部为什么卡（手机上实测会
+    // 一直停在 Waiting parameters）。所以只要退到套娃，就同时给一条源站直达——那边是好的。
+    renderOpenSource(pl)
+  }
+
+  // 源站站内页拼法与服务端保持一份（见 server/xifan/resolve.ts）。
+  function sourceHref(){
+    if (!animeId) return ''
+    return 'https://anime.xifanacg.com/watch/' + encodeURIComponent(animeId) + '/1/' + encodeURIComponent(ep) + '.html'
+  }
+
+  function renderOpenSource(pl){
+    var box = $('openSource')
+    if (!box) return
+    box.textContent = ''
+    if (!pl || !animeId) return
+    box.appendChild(document.createTextNode('这里播不动的话 · '))
+    var a = document.createElement('a')
+    a.className = 'btn btn-sm btn-ghost'
+    a.href = sourceHref()
+    a.target = '_blank'
+    a.rel = 'noopener'
+    a.textContent = '去源站看这一集'
+    box.appendChild(a)
   }
 
   function resolveSource(source){
