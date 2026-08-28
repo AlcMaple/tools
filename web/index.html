@@ -13,5 +13,7 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <!-- 白屏兜底探针：外部文件（CSP 不允许内联脚本），主包渲染失败时兜底上报，见 public/white-screen-probe.js -->
+    <script src="/white-screen-probe.js"></script>
   </body>
 </html>

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import devServer from '@hono/vite-dev-server'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 
 const PRODUCTION_SECURITY_META = `
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://user.alcmaple.cn; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; frame-src 'none'; upgrade-insecure-requests" />
@@ -10,6 +11,13 @@ const PRODUCTION_SECURITY_META = `
 // 挂进 Vite dev server，只接管 /api/*（exclude 排除所有非 /api 请求 → 交给 Vite 出页面 /
 // HMR / 静态资源）。生产（Vercel）不走这里：前端由 Vite 构建成静态站，/api 由 web/api 下的
 // serverless 函数跑同一个 Hono 应用（见 api/[[...route]].ts）。
+// Source map 上传：仅在构建、且注入了 SENTRY_AUTH_TOKEN 时启用（token 在部署目录外，
+// 见 web/README.md）。`sourcemap: 'hidden'` 让 Vite 产出 .map 但不写 sourceMappingURL 注释；
+// 插件靠 debug id 关联，上传后 filesToDeleteAfterUpload 立刻把 .map 从 dist 删掉 ——
+// server/node.ts 的 serveStatic 会把整个 dist 对外暴露，留一个 .map 就是源码泄露。
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN?.trim()
+const uploadSourceMaps = (command: string): boolean => command === 'build' && Boolean(sentryAuthToken)
+
 export default defineConfig(({ command }) => ({
   plugins: [
     react(),
@@ -25,8 +33,24 @@ export default defineConfig(({ command }) => ({
       entry: './server/index.ts',
       exclude: [/^(?!\/api\/).*/],
     }),
+    ...(uploadSourceMaps(command)
+      ? [
+          sentryVitePlugin({
+            org: process.env.SENTRY_ORG,
+            project: process.env.SENTRY_PROJECT,
+            authToken: sentryAuthToken,
+            telemetry: false,
+            release: process.env.VITE_SENTRY_RELEASE
+              ? { name: process.env.VITE_SENTRY_RELEASE }
+              : undefined,
+            sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
+          }),
+        ]
+      : []),
   ],
   build: {
+    // 只有要上传时才产出 map；否则保持关闭，dist 里根本不出现 .map。
+    sourcemap: uploadSourceMaps(command) ? 'hidden' : false,
     // 字体一律产出成独立文件，**不许内联成 data: URI**。
     //
     // Vite 默认把小于 4096 字节的资源内联，而我们的 CSP 是 `font-src 'self'` —— data: 不在其中。

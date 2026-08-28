@@ -60,6 +60,13 @@ TUN 模式 / Vercel 上不需要
 | `SMTP_FROM` `SMTP_FROM_NAME` | 可选 | 发件地址与显示名，如 `noreply@example.com` / `MapleTools`。`SMTP_FROM` 需先在发信服务完成自有域名的 DNS 验证（SPF / DKIM），步骤见 [docs/ideas/015](../docs/ideas/015-noreply发信与第三方登录接入指南.md) |
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` | 可选 | Google 登录（[Google Cloud 凭据页](https://console.cloud.google.com/apis/credentials)），**二者齐配登录按钮才出现**。OAuth 客户端登记的重定向 URI：`https://<你的域名>/api/auth/oauth/google/callback`；本地联调另加 `http://localhost:5173/api/auth/oauth/google/callback` |
 | `DEV_SEARCH_ORIGIN` | 仅本地 dev | 本地没有离线索引时借哪个线上站补搜索 |
+| `SENTRY_DSN` | 可选 | 服务端异常与 API 性能监控；不配置时不初始化 SDK、不上传数据 |
+| `VITE_SENTRY_DSN` | 可选、构建时 | 浏览器异常、React 可恢复错误、页面 / 请求性能与 Web Vitals；必须在 `npm run build` 时提供，构建后再改 pm2 环境不会生效 |
+| `SENTRY_ENVIRONMENT` / `VITE_SENTRY_ENVIRONMENT` | 可选 | 服务端 / 浏览器环境名；默认分别取 `NODE_ENV` / Vite mode |
+| `SENTRY_RELEASE` / `VITE_SENTRY_RELEASE` | 生产建议 | 两端使用同一个发布标识（如 Git commit），用于把同一版本的异常与性能数据归组 |
+| `SENTRY_TRACES_SAMPLE_RATE` / `VITE_SENTRY_TRACES_SAMPLE_RATE` | 可选 | 性能采样率 `0..1`，默认 `0.05`；异常不受该比例影响 |
+| `SENTRY_AUTH_TOKEN` | 可选、构建时 | 浏览器 source map 上传凭证（需 `project:releases` 权限）。**极敏感，不进仓库**；只在 `npm run build` 前注入。不提供时构建不产出、也不上传 map，Sentry 里是压缩栈 |
+| `SENTRY_ORG` / `SENTRY_PROJECT` | 配 `SENTRY_AUTH_TOKEN` 时必需 | Sentry 组织与浏览器项目的 slug，供 `@sentry/vite-plugin` 定位上传目标 |
 
 本地开发嫌每次命令前缀麻烦，可把密钥 `export` 进 `~/.zshrc` / `~/.bashrc` 持久生效（新开终端 `npm run dev` 自动带上；密钥只在本机，不进仓库）：
 
@@ -69,6 +76,36 @@ export GOOGLE_CLIENT_SECRET="GOCSPX-xxx"
 ```
 
 Google 登录的重定向 URI 按环境各登记一条，同一客户端可登记多条，服务端按请求来源自动选用：本地 `http://localhost:5173/api/auth/oauth/google/callback`，生产 `https://<你的域名>/api/auth/oauth/google/callback`。
+
+### 异常与性能监控（可选）
+
+浏览器与服务端建议放在两个 Sentry 项目，避免同名 issue 混在一起。前端监控按需动态加载；没有 `VITE_SENTRY_DSN` 的普通构建不会把浏览器 SDK 打进首屏包。`public/white-screen-probe.js` 是独立静态脚本（CSP 不允许内联），主包渲染失败、`#root` 4 秒后仍为空时兜底上报一条 `fatal`。两端都关闭默认 PII，事件发送前还会清掉 URL 查询串、Cookie、请求体和用户身份，请求头里**只保留 `User-Agent`**（Sentry 服务端据此还原 browser / os / device 上下文，排障常用；Cookie / Authorization / Referer 全丢）；只把 trace 头传播给本站 `/api`，不发给视频源或图床，也不启用 Session Replay。服务端只采样 API，静态资源和 `/api/health` 健康探测不生成性能 span。
+
+```bash
+RELEASE="$(git rev-parse --short HEAD)"
+VITE_SENTRY_DSN='https://<browser-dsn>' \
+VITE_SENTRY_ENVIRONMENT=production \
+VITE_SENTRY_RELEASE="$RELEASE" \
+VITE_SENTRY_TRACES_SAMPLE_RATE=0.05 \
+SENTRY_AUTH_TOKEN='sntrys_...' SENTRY_ORG='<org>' SENTRY_PROJECT='<browser-project>' \
+npm run build
+```
+
+`SENTRY_AUTH_TOKEN` 存在时，`@sentry/vite-plugin` 会开启 `sourcemap: 'hidden'` 构建、
+把 `.map` 上传到 Sentry，再按 `vite.config.ts` 的 `filesToDeleteAfterUpload` 立即从 `dist`
+删掉（`server/node.ts` 直接对外 serve 整个 `dist`，留一个 `.map` 就是源码泄露）。不带该
+token 时构建行为不变、不产出 map。
+
+服务端变量放在部署目录外的 pm2 / systemd 环境中：
+
+```text
+SENTRY_DSN=https://<server-dsn>
+SENTRY_ENVIRONMENT=production
+SENTRY_RELEASE=<与前端构建相同的 commit>
+SENTRY_TRACES_SAMPLE_RATE=0.05
+```
+
+每个服务端响应都会带 `X-Request-ID`；Sentry 启用后，同一个 ID 也会写入对应异常和性能 span，未处理异常同时在 pm2 终端日志打印该 ID。浏览器 source map 由 `@sentry/vite-plugin` 在构建时上传（见上，需 `SENTRY_AUTH_TOKEN`）；不注入该 token 时监控照常工作，只是生产压缩栈不还原到 TypeScript。服务端目前不上传 map（未压缩、栈已可读）。
 
 ## 目录
 

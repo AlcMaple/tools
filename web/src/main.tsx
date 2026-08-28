@@ -6,10 +6,29 @@ import App from './App'
 import { registerCoverCacheWorker } from './coverCache'
 import './index.css'
 
-registerCoverCacheWorker()
+async function bootstrap(): Promise<void> {
+  let captureRecoverableError: ((error: unknown, componentStack?: string) => void) | undefined
+  if (import.meta.env.VITE_SENTRY_DSN?.trim()) {
+    try {
+      const monitoring = await import('./monitoring')
+      monitoring.initBrowserMonitoring()
+      captureRecoverableError = monitoring.captureRecoverableReactError
+    } catch (error) {
+      // 监控脚本加载失败不能挡住产品本身启动；此时还没有可用的上报通道，只能留在控制台。
+      console.error('[monitoring] browser initialization failed', error)
+    }
+  }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+  registerCoverCacheWorker()
+  createRoot(document.getElementById('root')!, {
+    onRecoverableError: captureRecoverableError
+      ? (error, info) => captureRecoverableError?.(error, info.componentStack ?? undefined)
+      : undefined,
+  }).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}
+
+void bootstrap()
