@@ -2,7 +2,8 @@
 
 一次接入的经验抽成可复用的东西。本项目（`anime.alcmaple.cn`）已按此实现，代码见
 `web/src/monitoring.ts` / `web/server/monitoring.ts` / `web/vite.config.ts` /
-`web/public/white-screen-probe.js`；本机落地步骤见
+`web/public/white-screen-probe.js`，SPA 之外那张裸 HTML 页另见
+`web/src/player-monitoring.ts` / `web/scripts/build-player-monitor.ts`（§7）；本机落地步骤见
 [`唐人云部署保姆教程.md`](唐人云部署保姆教程.md) 的「异常与性能监控」节。
 
 这份文档的用法：
@@ -10,6 +11,8 @@
 - **落地本项目** —— 照「§4 本项目落地值」那张表填，代码已经写好，不用动。
 - **接一个新项目 / 新服务器** —— 「§1 照抄」整段搬过去，「§2 每实例单独生成」逐项走一遍生成流程，
   再按「§5 换个项目 / 服务器」的顺序拼起来。
+- **项目里有 SPA 之外的页面**（服务端渲染的裸 HTML、独立入口）—— 上面那套**覆盖不到它**，
+  补 §7；页面里自己打的日志怎么进 Sentry 见 §8；Sentry 天生看不到、必须自己造遥测的那类问题见 §9。
 
 ---
 
@@ -37,6 +40,9 @@
 
 两端都 `sendDefaultPii:false`，事件出站前再清一遍：URL 查询串、Cookie、请求体、用户身份全去掉，
 请求头**只留 `User-Agent`**（Sentry 服务端靠它还原 browser/os/device，排障常用）。不启用 Session Replay。
+
+> **这张图只覆盖「SPA + 服务端」。** 浏览器那一路的 DSN 是**构建时**注入 SPA bundle 的，
+> 所以任何**不由 SPA bundle 驱动**的页面都在盲区外面 —— 见 §7。
 
 ---
 
@@ -229,6 +235,7 @@ SENTRY_RELEASE=            # 留空/占位；由部署脚本 export 后进程读
 | G 密钥文件 | `/opt/mapletools-data/.env.sentry`（600 root）+ `ecosystem.config.cjs` 的 `env` |
 | H 重启 | `SENTRY_RELEASE=$RELEASE mtweb start /opt/mapletools-data/ecosystem.config.cjs --update-env` |
 | I 挂载点 | `#root` |
+| §7 裸 HTML 页 | 播放页 `/api/xifan/play-page`；DSN 走 `PLAYER_SENTRY_DSN`（= 前端 DSN，写在 `ecosystem.config.cjs`），tag `surface: xifan-player`，bundle 由 `/api/xifan/monitor.js` 发 |
 | J glob | `./dist/**/*.map`（`web/server/node.ts` 用 `serveStatic({root:'./dist'})` 对外发整个 dist） |
 
 发布步骤见 [`唐人云部署保姆教程.md`](唐人云部署保姆教程.md) 的「日常发布」。
@@ -246,6 +253,7 @@ SENTRY_RELEASE=            # 留空/占位；由部署脚本 export 后进程读
    还要确认 `script-src` 允许你的构建产物加载白屏探针（本项目 `'self'` 够用，探针是同源静态文件）。
 7. **接进发布流程**（§1 末的形状 + §2-H 的平台命令）。
 8. **首次部署验收**（下）。
+9. **盘一遍项目里有没有 SPA 之外的页面**（§7 开头那张判据表），有就按 §7 单独接一条。
 
 ### 验收（通用，跟平台无关）
 
@@ -298,3 +306,152 @@ instrumentation 依赖 Node ESM loader hook，VPS 常驻进程和 serverless 冷
 **为什么无 DSN 的构建不该有 SDK**：`main.tsx` 里 `if (import.meta.env.VITE_SENTRY_DSN?.trim())`
 构建时被静态替换成 `if (undefined)`，整个 `import('./monitoring')` 分支被 Rollup 消除 ——
 没配 Sentry 的构建首屏包里连 SDK 的字节都没有。
+
+---
+
+## §7 SPA 之外的页面（服务端渲染的裸 HTML、独立入口）
+
+**这一节是踩出来的**：本项目的在线播放页（`/api/xifan/play-page`）是服务端返回的一张裸 HTML，
+不由 SPA bundle 驱动。它上线后连着**四个 bug** 一个都没进 Sentry —— 页面里未捕获异常一条都不上报，
+只能靠用户口述现象。补完这一节之后，同类问题当场就能在 Issues 里看到现场。
+
+### 先判断项目里有没有这种页面
+
+| 典型 | 为什么在盲区 |
+|---|---|
+| 服务端渲染 / 模板返回的独立页（播放页、打印页、分享页、落地页） | 不加载 SPA 的 JS 入口，`VITE_SENTRY_DSN` 那条构建时注入的链跟它无关 |
+| OAuth / 支付回调中转页、错误页、维护页 | 通常是几行内联脚本，越简单越没人想到要监控 —— 而它们恰恰跑在最关键的路径上 |
+| iframe 里的子页面、Service Worker、独立 Worker | 不共享主文档的 SDK 实例 |
+
+判据一句话：**这个页面出未捕获异常时，有没有任何一处会知道？** 答不上来就得接。
+
+### 接法（四步，跟 §1 那套并行，不互相干扰）
+
+```
+1  单独一个入口文件         只 init + 暴露两个方法（记面包屑 / 主动上报），不掺业务
+      ↓
+2  打成自托管 IIFE          npm 包里没有现成 CDN bundle，<script src> 引不动
+      ↓  （用 esbuild 几行脚本即可，产物进构建输出目录、不进 git）
+3  自己的路由发出去          CSP 常见是 script-src 'self'；国内也加载不到 Sentry 的 CDN
+      ↓
+4  配置运行时注入            服务端渲染的页面可以把 DSN/env/release 直接写进 HTML
+```
+
+**四个必须注意的点**（每一条都是当时踩到或差点踩到的）：
+
+1. **构建顺序**：这一步必须排在 SPA 构建**之后** —— 打包器（vite 等）通常会先清空输出目录，
+   顺序反了产物当场被删。写进 `"build": "<spa build> && <这一步>"`，别指望人记得。
+2. **产物缺失要优雅降级**：本地 dev 没跑过完整构建时那个文件不存在。路由发一段空脚本，
+   页面里所有调用做判空 —— **不能白屏**，监控本身不值得赔上页面。
+3. **配置走运行时不走构建时**：SPA 那边 DSN 是构建期快照（§1 环境变量契约），但这类页面是服务端
+   渲染的，直接读进程环境注进 HTML 即可。好处：换 release 不用重新构建前端。
+4. **剪裁**：只留「抓未捕获异常 + 记面包屑」，把 Tracing / Replay / Feedback / Profiling 全过滤掉，
+   `tracesSampleRate: 0`。这类页面通常就几个接口，采上来没人看；bundle 也小一半。
+
+### 复用哪个 Sentry 项目
+
+**复用 `<app>-web`，不要为它再建第三个项目。** 它本来就是浏览器错误，分开只会让告警规则和额度更碎。
+用 tag 区分即可（本项目是 `surface: xifan-player`），Issues 里按 tag 一筛就只剩这个页面的。
+
+### 环境变量
+
+沿用 §1 的契约，只多一个**运行时**变量（服务端读了注进 HTML）：
+
+| 变量 | 端 | 时机 | 值 |
+|---|---|---|---|
+| `<PAGE>_SENTRY_DSN`（本项目 `PLAYER_SENTRY_DSN`） | 服务端读、浏览器用 | **运行时** | **浏览器项目**的 DSN，跟 `VITE_SENTRY_DSN` 同一个值 |
+
+`environment` / `release` 直接复用服务端进程已有的 `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE` ——
+**顺带解决了「两端 release 必须同值」那条**（§2-E）：同一个进程环境变量，想不一致都难。
+
+> ⚠️ 别把**服务端** DSN 填进来。两个 DSN 长得几乎一样，填错的结果是浏览器错误跑进 server 项目，
+> 而且没有任何报错提示。
+
+### 本项目落地位置（照着找对应文件）
+
+| 角色 | 本项目 |
+|---|---|
+| 入口 | `web/src/player-monitoring.ts`（**不被 SPA import**，独立于 `src/monitoring.ts`） |
+| 打包脚本 | `web/scripts/build-player-monitor.ts`（esbuild → IIFE，87 KB） |
+| 构建链 | `package.json` 的 `"build": "vite build && tsx scripts/build-player-monitor.ts"` |
+| 发布路由 | `web/server/xifan.ts` 的 `/api/xifan/monitor.js`（同 `/api/xifan/hls.js` 的自托管路子） |
+| 配置注入 | 同文件 `playerMonitorConfig()` → 模板占位 `__MONITOR_CONFIG__` |
+
+**source map 不生成**：这类页面真正会出错的是**页面自己那段内联脚本**（写在 HTML 里，本来就没压缩，
+栈里是原样行号），SDK 内部的帧压不压缩都不用读。省一次上传，也少一份泄露源码的风险（§6）。
+
+---
+
+## §8 页面里自己打的日志怎么进 Sentry（三个去处 + 去重）
+
+很多页面在装 SDK 之前就有一套「自己打点回传服务端」的土办法（本项目是 `slog()` → `POST /client-log`
+→ 服务端 `console.log`）。装了 SDK **不要把它删掉**，改成三个去处分工：
+
+| 去处 | 收什么 | 为什么 |
+|---|---|---|
+| **面包屑**（页面 SDK） | 每一条 | 出异常时**整条时间线**跟着事件一起走，而不是散成 N 条互不相干的记录 |
+| **上报**（页面 SDK 主动 capture） | 只有失败类 | 普通日志开 issue 纯属占配额 |
+| **服务端 stdout** | 每一条 | 页面 SDK 没加载起来时（被拦截 / 产物缺失 / 老浏览器），它是唯一通路 |
+
+**去重是必须的**：服务端那条通路通常也会顺手转发一份到 Sentry。页面自己报过的，请求里带个
+标记（本项目是 `sdk: 1`），服务端见到就跳过 —— 否则**同一件事在浏览器项目和服务端项目各开一个 issue**，
+两边还都不完整。
+
+**这个回传接口通常无鉴权**，三道闸必须有：
+
+```text
+单条长度上限        （本项目 300 字）
+附带数据的条数 × 单条长度上限   （本项目 40 行 × 120 字）
+服务端转发 Sentry 的频率上限    （本项目每小时 80 条，超出仍进 stdout）
+```
+
+否则它就是一个「任何人都能往你日志和 Sentry 配额里写东西」的入口。
+
+---
+
+## §9 Sentry 天生看不到的那类问题（要自己造遥测）
+
+**先记住这条判据**：Sentry（含 Session Replay）看得见的是 **DOM 和抛出来的异常**。
+凡是「没有异常、状态又不在 DOM 里」的问题，它一概看不见。
+
+本项目最贵的一次教训：播放时进度条来回倒退（1:33 → 1:31），**没有任何报错**，
+而 `currentTime` / `buffered` / `readyState` 都是 `<video>` 的内部状态，
+**Session Replay 录下来也只是「一个几乎不动的页面」**。同类还有：canvas、WebGL、音视频、
+IndexedDB 状态、Worker 内部进度。
+
+### 三个补位手段（都跟 Sentry 无关，是你自己写的几十行）
+
+| 手段 | 做什么 | 解决什么 |
+|---|---|---|
+| **环形缓冲「胶片」** | 每 N 秒采一格关键状态（本项目 2 秒一格、留最近 30 格 ≈ 一分钟），失败上报时整卷随事件送走 | 「只有连着看才看得出来」的问题 —— 单帧快照全是正常值 |
+| **主动探针** | 失败时对同一个地址补打一次请求，把状态码/字节数/耗时报上来 | 分清「网络根本不通」和「组件自己不干活」。跨域读不到响应时，再补一枪 `no-cors`：**只要它 resolve 就说明请求真的出去又回来了** |
+| **哨兵** | 把「已经修过的 bug 的现象」写成自动检测（本项目：进度无故倒退就上报） | 回归时自动喊，不用等下一个用户来告诉你 |
+
+胶片和探针都要**限流**（本项目哨兵 15 秒内只报一次、探针每个地址只打一次），
+否则一个循环失败就能把配额烧光。
+
+### 要不要装 Session Replay
+
+本项目的结论是**不装**，判据可以直接抄：
+
+- 问题状态**在不在 DOM 里**？不在（媒体、canvas、Worker）→ 装了也白装。
+- 主要用户在**移动端**吗？Replay 的持续上报对流量和电量都不便宜。
+- 配额扛得住吗？Replay 是按会话计费的大头。
+
+三条里中两条就别装 —— 把同样的精力放到上面那三个手段上，回报高得多。
+
+---
+
+## §10 验收补充（有 §7 那类页面时加做）
+
+在 §5 的 5 条验收之外，对每一个裸 HTML 页面再走一遍：
+
+1. 打开该页面，控制台敲 `typeof window.<你暴露的全局>` → 是 `object`（不是 `undefined`）。
+   是 `undefined` 说明 DSN 没注进去或 bundle 没加载 —— 看页面源码里那段配置和
+   `<script src>` 的响应码。
+2. 主动报一条 → **确认它进的是浏览器项目**（`<app>-web`），不是服务端项目。进错了就是 DSN 填反了。
+3. 点进那条 issue 确认三件事：URL **不带 query**（脱敏生效）、`release` 是本次 commit、
+   **面包屑里有页面加载时那几条自动记录的请求** —— 这条最能说明「装 SDK 而不是继续手打日志」值在哪。
+4. 再打开一次该页面，触发一条**普通日志**（非失败类），确认它**没有**在浏览器项目里开 issue，
+   而是在服务端日志里 —— §8 的分工和去重生效。
+5. 给该页面的 bundle URL 加 `.map` 后缀访问 → 404（§7 那套本来就不生成 map）。
