@@ -1,4 +1,7 @@
 import { Hono, type Context } from 'hono'
+// 监控要最先加载：Sentry.init 是这个模块的导入副作用，必须早于它可能包裹的业务模块，
+// 否则将来任何一个自动 integration 被重新打开都会因为加载顺序而静默失效。
+import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
@@ -34,6 +37,9 @@ async function searchFromDeployedWeb(q: string): Promise<Record<string, unknown>
 // 直接跑 —— 三处都是这一个 app，路由只写一遍。
 const app = new Hono()
 
+// 最外层先给每个请求 request id，并在配置 SENTRY_DSN 时采集未处理异常与低采样性能 trace。
+app.use('*', monitoringMiddleware())
+app.onError(monitoringErrorHandler())
 // 先挂在所有路由上：VPS 的静态 dist、API 和 Vercel serverless 都走同一套响应头。
 app.use('*', securityHeaders())
 // 所有写请求都先过来源校验；SameSite=Strict 仍是 Cookie 层的第二道防线。
