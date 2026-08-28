@@ -86,6 +86,30 @@ if (enabled) {
  * 所有响应都带 request id；启用 Sentry 后再为每个请求建立隔离 scope 和低采样性能 span。
  * scope 隔离是硬边界：并发用户的 tag / context 不能串到彼此事件里。
  */
+// 播放页是一张裸 HTML（不加载 SPA 的浏览器 SDK），它的 slog 只能落 stdout —— 真机调试时
+// 看不见。转成 Sentry 的 info 事件，就能带着当前 release 在 Issues 里直接看到手机上发生了什么。
+// 加个进程内限速：某个循环失败时别把配额烧光（超额的仍然照常进 stdout）。
+const CLIENT_LOG_QUOTA = 80
+const CLIENT_LOG_WINDOW_MS = 60 * 60 * 1000
+let clientLogWindowAt = 0
+let clientLogCount = 0
+
+export function captureClientLog(msg: string, userAgent?: string, tape?: string[]): void {
+  if (!enabled) return
+  const now = Date.now()
+  if (now - clientLogWindowAt > CLIENT_LOG_WINDOW_MS) {
+    clientLogWindowAt = now
+    clientLogCount = 0
+  }
+  if (++clientLogCount > CLIENT_LOG_QUOTA) return
+  Sentry.captureMessage(`[player] ${msg}`, {
+    level: 'info',
+    tags: { channel: 'xifan-client' },
+    // 胶片放 extra：Sentry 的 Additional Data 会整段展开，一眼能看出进度 / 缓冲怎么走的。
+    extra: userAgent || tape?.length ? { userAgent, tape } : undefined,
+  })
+}
+
 export function monitoringMiddleware(): MiddlewareHandler {
   return async (c, next) => {
     const requestId = randomUUID()
