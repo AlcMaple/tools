@@ -21,7 +21,8 @@ import { existsSync, mkdirSync, rmSync, statSync, readdirSync, writeFileSync, ut
 import { join } from 'node:path'
 import { statfsSync } from 'node:fs'
 import { dataDir } from '../data-dir'
-import { assertStreamableUrl, INTERNAL_TOKEN, viewerCount } from './stream'
+import { activeAdmissionCount, GLOBAL_SLOW_POOL } from '../slow-playback'
+import { assertStreamableUrl, INTERNAL_TOKEN } from './stream'
 
 export const hlsDir = join(dataDir, 'hls')
 mkdirSync(hlsDir, { recursive: true })
@@ -179,7 +180,7 @@ function guardViewers(job: Job): void {
       clearInterval(timer)
       return
     }
-    const watching = viewerCount() > 0
+    const watching = activeAdmissionCount(GLOBAL_SLOW_POOL) > 0
     try {
       if (watching && !paused) {
         job.proc.kill('SIGSTOP')

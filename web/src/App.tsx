@@ -6,6 +6,7 @@ import { AnnouncementModal } from './AnnouncementModal'
 import { auth, captureInviteFromLocation, useAuth } from './auth'
 import { AuthModal, type AuthMode } from './AuthModal'
 import { CalendarPage } from './CalendarPage'
+import { fetchSlowAdmissionStatus } from './api'
 import { NagBar } from './NagBar'
 import { navigate, useRoute, type Route } from './router'
 import { SettingsPage } from './SettingsPage'
@@ -35,6 +36,32 @@ export default function App(): JSX.Element {
     captureInviteFromLocation()
     void auth.init()
   }, [])
+
+  // 播放页可关闭后继续候补；只要本站仍有页面开着，就在站内提示轮到的五分钟名额。
+  useEffect(() => {
+    if (!user) return
+    let alive = true
+    let lastReservation = 0
+    const check = (): void => {
+      const clientId = window.localStorage.getItem('mapletools-slow-client') ?? ''
+      if (!/^[A-Za-z0-9_-]{12,80}$/.test(clientId)) return
+      void fetchSlowAdmissionStatus('slow-proxy-global', clientId)
+        .then((admission) => {
+          if (!alive || !admission?.owner) return
+          if (admission.state === 'reserved' && admission.reservedUntil && admission.reservedUntil !== lastReservation) {
+            lastReservation = admission.reservedUntil
+            toast('慢源名额已经轮到你了，已保留 5 分钟')
+          }
+        })
+        .catch(() => undefined)
+    }
+    check()
+    const timer = window.setInterval(check, 10_000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [user])
 
   // 第三方登录失败回跳：服务端带回 ?oauth=failed（用户在 Google 页面主动取消时不带）。
   // 摘掉参数避免刷新重复触发，弹登录框说明原因。
