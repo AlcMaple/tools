@@ -59,6 +59,14 @@ TUN 模式 / Vercel 上不需要
 | `SMTP_HOST` `SMTP_PORT` `SMTP_SECURE` `SMTP_USER` `SMTP_PASS` | 可选 | 邮箱验证码发信的 SMTP 凭证（如 Brevo 的 `smtp-relay.brevo.com:587`）。未配置时停用邮箱入口，不影响用户名 / 密码登录 |
 | `SMTP_FROM` `SMTP_FROM_NAME` | 可选 | 发件地址与显示名，如 `noreply@example.com` / `MapleTools`。`SMTP_FROM` 需先在发信服务完成自有域名的 DNS 验证（SPF / DKIM），步骤见 [docs/ideas/015](../docs/ideas/015-noreply发信与第三方登录接入指南.md) |
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` | 可选 | Google 登录（[Google Cloud 凭据页](https://console.cloud.google.com/apis/credentials)），**二者齐配登录按钮才出现**。OAuth 客户端登记的重定向 URI：`https://<你的域名>/api/auth/oauth/google/callback`；本地联调另加 `http://localhost:5173/api/auth/oauth/google/callback` |
+| `SLOW_PLAYBACK_MAX_VIEWERS` | 可选 | 公共慢源容量池的同时观看上限，默认 `2`；只能按真实出口带宽测试结果调整 |
+| `SLOW_PLAYBACK_QUEUE_ENABLED` | 可选 | 慢源候补开关，默认开启；关闭后已有空位仍可观看，满员时不再接受新候补 |
+| `WEB_PUBLIC_ORIGIN` | 生产建议 | 慢源空位邮件里的站点来源，如 `https://anime.alcmaple.cn`；默认使用该生产域名 |
+| `REWARDS_ENABLED` | 生产显式开启 | 积分、权益和兑换总开关；开发默认开启，生产默认关闭 |
+| `INVITES_ENABLED` | 生产显式开启 | 邀请码与邀请奖励开关，同时受 `REWARDS_ENABLED` 控制 |
+| `LOTTERY_ENABLED` | 生产显式开启 | 幸运扭蛋开关，同时受 `REWARDS_ENABLED` 控制 |
+| `REWARD_TEST_USERS` | 测试可选 | 逗号分隔的测试用户名；配置后只有名单账号能使用积分、邀请和扭蛋 |
+| `REWARD_TIME_ZONE` | 可选 | 每日首次登录与邮件时间使用的时区，默认 `Asia/Taipei` |
 | `DEV_SEARCH_ORIGIN` | 仅本地 dev | 本地没有离线索引时借哪个线上站补搜索 |
 | `SENTRY_DSN` | 可选 | 服务端异常与 API 性能监控；不配置时不初始化 SDK、不上传数据 |
 | `VITE_SENTRY_DSN` | 可选、构建时 | 浏览器异常、React 可恢复错误、页面 / 请求性能与 Web Vitals；必须在 `npm run build` 时提供，构建后再改 pm2 环境不会生效 |

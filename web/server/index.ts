@@ -12,6 +12,8 @@ import oauth from './oauth'
 import tracks from './tracks'
 import girigiri from './girigiri'
 import xifan from './xifan'
+import rewards from './rewards-api'
+import slowPlayback from './slow-playback-api'
 import { sameOriginGuard, securityHeaders } from './security'
 
 // 本地开发通常没有 5.6MB 的 bgm_index.db（生成它要下载 400MB+ 官方离线档）。
@@ -53,6 +55,12 @@ app.route('/api/auth', auth)
 // 第三方 OIDC 登录（Google，凭据未配时入口自动隐藏）。回调路径与 Google 控制台登记的
 // https://anime.alcmaple.cn/api/auth/oauth/google/callback 一致，本地联调需另登记 localhost URI。
 app.route('/api/auth/oauth', oauth)
+
+// 积分、邀请、权益兑换与幸运扭蛋。页面视觉另行设计，服务端合同先保持独立。
+app.route('/api/rewards', rewards)
+
+// 与来源无关的慢源容量、候补、保留和观看会话。
+app.route('/api/slow-playback', slowPlayback)
 
 // 首页开屏后的站内公告：登录账号可为当前公告版本保存“暂不再显示”偏好。
 app.route('/api/announcements', announcements)
