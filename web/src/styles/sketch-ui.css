@@ -1640,6 +1640,23 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   pointer-events: none;
 }
 .trk-rm { flex: none; }
+.trk-edit-mobile {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 3px 8px;
+  color: var(--teal);
+  background: transparent;
+  border: 1.5px dashed var(--teal-line);
+  border-radius: 8px 11px 8px 11px;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.trk-edit-mobile .ic { width: 14px; height: 14px; }
+@media (hover: hover) { .trk-edit-mobile:hover { background: var(--teal-wash); } }
 /* 「今天更新」贴纸：只有仍在连载、且更新日落在今天的番才有 */
 .chip-today {
   display: inline-flex;
@@ -1654,14 +1671,19 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   border-radius: var(--r-pill);
   white-space: nowrap;
 }
-/* 手机：保持“书签栏”结构，封面加宽且铺满卡高，而不是缩成小缩略图。 */
+/* 手机：卡片改成信息优先的单栏，封面和标签收进详情弹窗。
+   窄屏最需要的是标题、进度、状态和继续看；保留独立详情按钮，避免隐藏封面后
+   失去进入编辑弹窗的入口。 */
 @media (max-width: 640px) {
-  .trk-row { --trk-cover-w: clamp(118px, 30vw, 148px); }
-  .trk-body { padding: 12px 12px 12px 14px; }
-  .trk-cover .cover-ph { font-size: 24px; }
+  .trk-row { display: block; }
+  .trk-cover { display: none; }
+  .trk-row .tagx-row { display: none; }
+  .trk-body { padding: 14px 14px 12px; gap: 9px; }
   .trk-head { display: block; }
-  .trk-marks { margin-bottom: 4px; }
-  .trk-ep { display: block; margin: 2px 0 0; }
+  .trk-marks { margin-bottom: 7px; gap: 5px; flex-wrap: wrap; }
+  .trk-edit-mobile { display: inline-flex; }
+  .trk-title { font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+  .trk-ep { display: block; margin: 3px 0 0; font-size: 13px; }
   .ep-ctrl { gap: 6px; }
   .ep-ctrl .prog { min-width: 56px; }
   .stepper > button { width: 40px; }
@@ -1669,9 +1691,25 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   /* 窄屏让划记本身吃掉剩余宽度：「观望」字头省掉（左边印章已经写着观望了） */
   .watchmarks { gap: 3px; padding: 2px 6px; }
   .wm-cap { display: none; }
-  /* 状态分段从 3 段变 4 段后，窄卡里按固定 52px 会顶出卡片边缘：占满整行、四等分 */
-  .status-seg { margin-left: 0; width: 100%; }
+  /* 三个常用入口保持一行：继续看仍用主色强调，但不再独占整行；状态分段单独
+     占一行，便于快速记录。 */
+  .trk-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .trk-actions > .btn { width: 100%; }
+  .trk-actions > .status-seg { grid-column: 1 / -1; width: 100%; }
+  .trk-actions > .trk-rm { grid-column: 1 / -1; justify-self: start; width: auto; }
+  /* 状态分段从 4 段变窄后按等分排列，仍保持足够的触控高度。 */
+  .status-seg { margin-left: 0; }
   .status-seg .seg-btn { flex: 1; min-width: 0; padding: 4px 6px; font-size: 12px; }
+}
+
+@media (max-width: 360px) {
+  /* iPhone SE 等更窄视口仍保持三按钮一行，收紧内边距而不缩小触控高度。 */
+  .trk-actions > .btn-sm { gap: 4px; padding-inline: 6px; font-size: 12px; }
 }
 
 /* 卡片一窄，操作行就折行、状态分段独占一行，气泡会压到上一行的「试看一集 / BGM」上。
