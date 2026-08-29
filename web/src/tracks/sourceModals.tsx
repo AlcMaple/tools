@@ -6,7 +6,7 @@
 //   站点验证码，流程与桌面端一致：搜索 → 验证码 → 重搜 → 点结果确认绑定。
 //
 // 两个弹窗的候选 / 结果行都保留原生 <a>：点一下同时完成绑定并在用户手势内打开新标签，
-// 不让异步绑定请求吃掉浏览器的弹窗手势。href 按 mode 在「我们的播放页 / 源站站内页」间切。
+// 不让异步绑定请求吃掉浏览器的弹窗手势。href 按 mode 在「我们的播放页 / 源站重定向入口」间切。
 import { useEffect, useRef, useState } from 'react'
 import type { OnlineSource, SourceCandidate, SourceId, SourceSearchHit, Track, WatchMode } from '../api'
 import { Ic, Spinner } from '../SketchIcon'

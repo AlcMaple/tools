@@ -384,12 +384,13 @@ export function playPageUrl(xifanId: number, ep: number, bgmId?: number): string
 }
 
 /**
- * 稀饭源站的在线观看页 —— 直接跳到稀饭站内看，不经我们的播放页。
- * 路径同 server/xifan/resolve.ts 里扒集数用的 `/watch/{animeId}/{source}/{ep}.html`，
- * 域名同 server/xifan/session.ts 的 BASE_URL。source 固定给 1（默认线路，站内可再切）。
+ * 稀饭源站的在线观看页 —— 先由服务端按线路策略挑快源，再跳到稀饭站内看。
+ * 仍返回同源地址，保证用户点击时先打开标签页，后台解析完成后再 302 到源站，避免
+ * 异步定位吃掉浏览器的弹窗手势。
  */
 export function xifanSourcePageUrl(xifanId: number, ep: number): string {
-  return `https://anime.xifanacg.com/watch/${xifanId}/1/${ep}.html`
+  const query = new URLSearchParams({ animeId: String(xifanId), ep: String(ep) })
+  return `/api/xifan/source-page?${query.toString()}`
 }
 
 // ── Girigiri 在线观看：与稀饭分开保存绑定，不能把两个站点的编号互相推断 ────────
@@ -471,11 +472,12 @@ export function girigiriPlayPageUrl(girigiriId: string, ep: number, bgmId?: numb
 }
 
 /**
- * Girigiri 源站的在线观看页 —— 直接跳到 girigirilove 站内看。
- * 拼法同 server/girigiri.ts 播放页里的 `officialPage()`：`/play{animeId}-{source}-{ep}/`，source 固定 1。
+ * Girigiri 源站的在线观看页 —— 先由服务端确定默认线路，再跳到 girigirilove 站内看。
+ * 同样走同源重定向地址，保留点击手势；服务端失败时会回落线路 1。
  */
 export function girigiriSourcePageUrl(girigiriId: string, ep: number): string {
-  return `https://ani.girigirilove.com/play${girigiriId}-1-${ep}/`
+  const query = new URLSearchParams({ animeId: girigiriId, ep: String(ep) })
+  return `/api/girigiri/source-page?${query.toString()}`
 }
 
 // ── 加番搜索（打本地 BGM 动漫索引，见 server/bgm/anime-index.ts）───────────────

@@ -15,7 +15,7 @@ import {
   searchGirigiri,
   verifyGirigiriCaptcha,
 } from './girigiri/search'
-import { getPlaylist, isGirigiriId, resolveLine } from './girigiri/resolve'
+import { BASE_URL, getPlaylist, isGirigiriId, resolveLine } from './girigiri/resolve'
 import { playerPageSecurity, renderNonce } from './security'
 import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources } from './player-sources'
 
@@ -55,6 +55,26 @@ girigiri.get('/resolve', async (c) => {
     return line ? c.json(line) : c.json({ error: '此线路解析不到这一集' }, 404)
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : 'Girigiri 线路解析失败' }, 502)
+  }
+})
+
+// 与稀饭的 source-page 保持同一点击链路：前端先打开本站地址，服务端确定默认线路后
+// 302 到 Girigiri 源站。当前 Girigiri 播放页的默认线路仍是线路 1，失败时也明确回落。
+girigiri.get('/source-page', async (c) => {
+  const id = (c.req.query('animeId') ?? '').trim().toUpperCase()
+  const ep = Number(c.req.query('ep') ?? '1')
+  if (!isGirigiriId(id)) return c.json({ error: 'girigiriId 不合法（应为 GV 开头的编号）' }, 400)
+  if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
+
+  c.header('Cache-Control', 'no-store')
+  try {
+    const playlist = await getPlaylist(id, ep)
+    const source = playlist.first?.source
+    const selected = typeof source === 'number' && Number.isInteger(source) && source > 0 ? source : 1
+    return c.redirect(`${BASE_URL}/play${id}-${selected}-${ep}/`, 302)
+  } catch (error) {
+    console.warn('[girigiri] 默认线路定位失败，回落线路 1：', error)
+    return c.redirect(`${BASE_URL}/play${id}-1-${ep}/`, 302)
   }
 })
 
