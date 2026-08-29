@@ -10,7 +10,7 @@
 //
 // 页头不置顶,只有顶栏置顶。
 //
-// 卡片 / 弹窗 / 在线源逻辑拆到 src/tracks/*；稀饭 / Girigiri（以后还有嗷呜 / B站）统一走
+// 卡片 / 列表 / 弹窗 / 在线源逻辑拆到 src/tracks/*；稀饭 / Girigiri（以后还有嗷呜 / B站）统一走
 // api.ts 的 OnlineSource 适配器，这里的 state / handler / 弹窗都参数化到 `source`。
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
@@ -43,6 +43,7 @@ import {
 } from './tracksSync'
 import { STATUS_META, allTagsOf, tagLimitToast, watchEp } from './tracks/common'
 import { TrackCard } from './tracks/TrackCard'
+import { TrackListRow } from './tracks/TrackList'
 import { BgmImportModal } from './tracks/importModal'
 import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
 import { AddSearchModal } from './tracks/addSearchModal'
@@ -54,6 +55,7 @@ import {
 } from './tracks/sourceModals'
 
 type FilterKey = 'all' | TrackStatus
+type TrackView = 'cards' | 'list'
 
 function todayBgmId(): number {
   const d = new Date().getDay()
@@ -91,6 +93,7 @@ export function TracksPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [tracksError, setTracksError] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
+  const [view, setView] = useState<TrackView>('cards')
   const [query, setQuery] = useState('')
   const [tags, setTags] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<number | null>(null)
@@ -411,6 +414,7 @@ export function TracksPage(): JSX.Element {
           )}
         </div>
         <TagFilter all={allTags} selected={tags} onChange={setTags} />
+        <ViewModeToggle value={view} onChange={setView} />
       </div>
 
       <div className="tabf-row">
@@ -446,22 +450,42 @@ export function TracksPage(): JSX.Element {
       ) : filtered.length === 0 ? (
         <EmptyState text="没有匹配的追番" hint="换个词，或清掉类型过滤" />
       ) : (
-        <div className="trk-grid">
-          {filtered.map((t) => (
-            <TrackCard
-              key={t.bgmId}
-              t={t}
-              isToday={todayIds.has(t.bgmId)}
-              boundSources={new Set(SOURCES.filter((s) => bindings[s.id][t.bgmId]).map((s) => s.id))}
-              locating={locating?.bgmId === t.bgmId}
-              onContinue={(sourceId, mode) => continueWatch(sourceById(sourceId), t, mode)}
-              onPatch={patch}
-              onStatus={(s) => setStatus(t, s)}
-              onEdit={() => setEditing(t.bgmId)}
-              onAskRemove={() => setConfirming(t.bgmId)}
-              onMarkGood={() => setMarkingGood(t.bgmId)}
-            />
-          ))}
+        <div className={view === 'list' ? 'trk-list' : 'trk-grid'}>
+          {filtered.map((t) => {
+            const boundSources = new Set(SOURCES.filter((s) => bindings[s.id][t.bgmId]).map((s) => s.id))
+            const locatingThis = locating?.bgmId === t.bgmId
+            const onContinue = (sourceId: SourceId, mode: WatchMode): void => {
+              continueWatch(sourceById(sourceId), t, mode)
+            }
+            const onMarkGood = (): void => setMarkingGood(t.bgmId)
+            if (view === 'list') {
+              return (
+                <TrackListRow
+                  key={t.bgmId}
+                  t={t}
+                  boundSources={boundSources}
+                  locating={locatingThis}
+                  onContinue={onContinue}
+                  onMarkGood={onMarkGood}
+                />
+              )
+            }
+            return (
+              <TrackCard
+                key={t.bgmId}
+                t={t}
+                isToday={todayIds.has(t.bgmId)}
+                boundSources={boundSources}
+                locating={locatingThis}
+                onContinue={onContinue}
+                onPatch={patch}
+                onStatus={(s) => setStatus(t, s)}
+                onEdit={() => setEditing(t.bgmId)}
+                onAskRemove={() => setConfirming(t.bgmId)}
+                onMarkGood={onMarkGood}
+              />
+            )
+          })}
         </div>
       )}
 
@@ -623,6 +647,26 @@ function TagFilter({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── 查看方式 ──────────────────────────────────────────────────────────────────
+function ViewModeToggle({
+  value,
+  onChange,
+}: {
+  value: TrackView
+  onChange: (value: TrackView) => void
+}): JSX.Element {
+  return (
+    <div className="view-mode" role="group" aria-label="追番查看方式">
+      <button type="button" className={value === 'cards' ? 'on' : ''} aria-pressed={value === 'cards'} onClick={() => onChange('cards')}>
+        卡片
+      </button>
+      <button type="button" className={value === 'list' ? 'on' : ''} aria-pressed={value === 'list'} onClick={() => onChange('list')}>
+        列表
+      </button>
     </div>
   )
 }

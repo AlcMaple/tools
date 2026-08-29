@@ -359,7 +359,7 @@ function Nudge(): JSX.Element {
  * 文案统一走和泉纱雾口吻（傲娇 + 手帐语气）。已认出来的源直接开；没认出来的
  * 走定位/搜索流程（验证码在我们站里过），认出来后按当时选的「站内 / 源站」落地。
  */
-function ContinueWatchAction({
+export function ContinueWatchAction({
   label,
   ep,
   boundSources,
