@@ -54,12 +54,6 @@ const SESSION_MEM_CAP = 64 * 1024 * 1024
 // 全局内存预算。2G 的机器上 Node 堆不敢放肆，超了就先淘汰没人读的会话。
 const TOTAL_MEM_CAP = 192 * 1024 * 1024
 const MAX_SESSIONS_PER_URL = 3
-/**
- * 同时能有几个人走代理看。**出口 6Mbps ÷ 2.67Mbps 码率 ≈ 2.2 人**，第 3 个人挤进来
- * 不是「他自己卡」——三条连接公平分带宽，每人只剩 2Mbps，**三个人一起卡**。
- * 所以必须在他开始之前就拦住：卡死三个人远比拦住一个人糟糕。
- */
-const MAX_VIEWERS = Number(process.env.XIFAN_MAX_VIEWERS ?? 2)
 // Chromium 打开 mp4 会先探一次**文件尾部**找 moov。这种小请求绝不能去顶掉正在跑的
 // 会话（顶掉一次 = 前面攒的窗口全丢，播放器立刻 stall 回退 iframe），单路直连透传即可。
 const TAIL_DIRECT_BYTES = 4 * 1024 * 1024
@@ -94,8 +88,8 @@ interface Reader {
   id: number
   cursor: number // 相对 regionStart
   evicted: boolean
-  /** 按 IP 计人头：同一个人 seek / 重连会开好几条流，按流数算会把他当成好几个人。 */
-  ip: string
+  /** 公共慢源准入按账号释放时，用它截断该账号仍挂着的长响应。 */
+  viewerKey: string
   /** 预转（ffmpeg）自己拉的那条，不算「观众」——否则预转会把自己当观众冻住自己。 */
   internal: boolean
 }
@@ -216,6 +210,21 @@ function disposeSession(s: Session): void {
 
 export function disposeXifanStream(): void {
   for (const list of [...sessions.values()]) for (const s of [...list]) disposeSession(s)
+}
+
+export function evictStreamViewer(viewerKey: string): void {
+  for (const list of sessions.values()) {
+    for (const session of list) {
+      let changed = false
+      for (const reader of liveReaders(session)) {
+        if (!reader.internal && reader.viewerKey === viewerKey) {
+          reader.evicted = true
+          changed = true
+        }
+      }
+      if (changed) notify(session)
+    }
+  }
 }
 
 function chunkSizeAt(bufferAhead: number): number {
@@ -443,40 +452,6 @@ async function passthrough(url: string, start: number, end: number, total: numbe
   }
 }
 
-/**
- * 当前有多少人正在真看。预转会把入口带宽吃满，必须让位给正在观看的人（见 prepare.ts）。
- *
- * **按读取端标记而不是按 URL 排除**：用户很可能正在看的就是正在预转的那一集
- * （边看直连版边后台转），按 URL 排除会把真观众一起漏掉，让位就失效了。
- */
-/** 当前有几个**人**在走代理看（按 IP 去重，不含预转自己拉的那条）。 */
-export function viewerIps(): Set<string> {
-  const ips = new Set<string>()
-  for (const list of sessions.values()) {
-    for (const s of list) {
-      for (const r of liveReaders(s)) if (!r.internal) ips.add(r.ip)
-    }
-  }
-  return ips
-}
-
-export function viewerCount(): number {
-  return viewerIps().size
-}
-
-export function slotInfo(clientIp: string): { current: number; limit: number; mine: boolean } {
-  const ips = viewerIps()
-  return { current: ips.size, limit: MAX_VIEWERS, mine: ips.has(clientIp) }
-}
-
-/** 出口名额满了。播放页据此显示排队提示，而不是让所有人一起卡。 */
-export class ViewerLimitReached extends Error {
-  constructor(readonly current: number, readonly limit: number) {
-    super('观看名额已满')
-    this.name = 'ViewerLimitReached'
-  }
-}
-
 /** 只有本进程知道的一次性令牌：预转拉流时带上，外部无法伪造成「不算观众」。 */
 export const INTERNAL_TOKEN = randomUUID()
 
@@ -498,7 +473,7 @@ export async function serveStream(
   rawUrl: string,
   rangeHeader: string | undefined,
   internal = false,
-  clientIp = 'unknown',
+  viewerKey = 'unknown',
 ): Promise<StreamResult> {
   const url = assertStreamableUrl(rawUrl).toString()
   const { start, end, ranged } = parseRange(rangeHeader)
@@ -518,14 +493,6 @@ export async function serveStream(
     return passthrough(url, start, realEnd, total)
   }
 
-  // 名额检查只挡**新面孔**：已经在看的人 seek / 重连会反复建流，不能把他自己挤出去。
-  if (!internal) {
-    const ips = viewerIps()
-    if (!ips.has(clientIp) && ips.size >= MAX_VIEWERS) {
-      throw new ViewerLimitReached(ips.size, MAX_VIEWERS)
-    }
-  }
-
   reclaimMemory()
   // 能接上就接上（后来者直接吃前面那位攒下的窗口）；接不上就为这段进度另开一个区间，
   // **绝不顶掉正在被人看的会话** —— 顶掉就意味着那位观众正看着突然卡住。
@@ -543,7 +510,7 @@ export async function serveStream(
   }
 
   const reader: Reader = {
-    id: nextReaderId++, cursor: start - session.regionStart, evicted: false, internal, ip: clientIp,
+    id: nextReaderId++, cursor: start - session.regionStart, evicted: false, internal, viewerKey,
   }
   session.readers.set(reader.id, reader)
   armIdle(session)

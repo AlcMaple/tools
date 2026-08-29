@@ -30,6 +30,8 @@ girigiri.get('/hls.js', (c) => {
 })
 
 girigiri.get('/playlist', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
   const id = (c.req.query('animeId') ?? '').trim().toUpperCase()
   const ep = Number(c.req.query('ep') ?? '1')
   if (!isGirigiriId(id)) return c.json({ error: 'girigiriId 不合法（应为 GV 开头的编号）' }, 400)
@@ -43,6 +45,8 @@ girigiri.get('/playlist', async (c) => {
 })
 
 girigiri.get('/resolve', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
   const id = (c.req.query('animeId') ?? '').trim().toUpperCase()
   const ep = Number(c.req.query('ep') ?? '1')
   const source = Number(c.req.query('source') ?? '0')
@@ -61,6 +65,8 @@ girigiri.get('/resolve', async (c) => {
 // 与稀饭的 source-page 保持同一点击链路：前端先打开本站地址，服务端确定默认线路后
 // 302 到 Girigiri 源站。当前 Girigiri 播放页的默认线路仍是线路 1，失败时也明确回落。
 girigiri.get('/source-page', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
   const id = (c.req.query('animeId') ?? '').trim().toUpperCase()
   const ep = Number(c.req.query('ep') ?? '1')
   if (!isGirigiriId(id)) return c.json({ error: 'girigiriId 不合法（应为 GV 开头的编号）' }, 400)
@@ -78,7 +84,9 @@ girigiri.get('/source-page', async (c) => {
   }
 })
 
-girigiri.get('/play-page', (c) => {
+girigiri.get('/play-page', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
   const id = (c.req.query('animeId') ?? '').trim().toUpperCase()
   const ep = Number(c.req.query('ep') ?? '1')
   const bgmIdRaw = c.req.query('bgmId')

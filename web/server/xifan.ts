@@ -28,7 +28,7 @@ import {
   XifanBusyError,
   XifanResolveError,
 } from './xifan/resolve'
-import { INTERNAL_TOKEN, serveStream, slotInfo, ViewerLimitReached } from './xifan/stream'
+import { evictStreamViewer, INTERNAL_TOKEN, serveStream } from './xifan/stream'
 import { needsProxy, PROXY_HOSTS } from './xifan/proxy-hosts'
 import {
   dropPrepared, listPrepared, PrepareRejected, resolveAsset, startPrepare, statusOf, touch,
@@ -43,8 +43,16 @@ import { db } from './db'
 import { playerPageSecurity, renderNonce } from './security'
 import { captureClientLog } from './monitoring'
 import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources } from './player-sources'
+import {
+  AdmissionRequired,
+  claimAdmission,
+  GLOBAL_SLOW_POOL,
+  registerSlowPoolReleaseHook,
+} from './slow-playback'
 
 const xifan = new Hono()
+
+registerSlowPoolReleaseHook(GLOBAL_SLOW_POOL, (uid) => evictStreamViewer(String(uid)))
 const XIFAN_LOGIN_WINDOW_MS = 15 * 60 * 1000
 const XIFAN_LOGIN_MAX_PER_ACCOUNT = 10
 const XIFAN_LOGIN_MAX_PER_IP = 20
@@ -146,9 +154,10 @@ xifan.get('/playlist', async (c) => {
   if (!/^\d+$/.test(animeId)) return c.json({ error: 'animeId 不合法（要纯数字，如 3543）' }, 400)
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
   const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
   c.header('Cache-Control', 'no-store')
   try {
-    return c.json(await getPlaylist(animeId, ep, session?.uid ?? null))
+    return c.json(await getPlaylist(animeId, ep, session.uid))
   } catch (error) {
     if (error instanceof XifanResolveError) {
       const body = { error: error.message, code: error.code }
@@ -167,9 +176,10 @@ xifan.get('/resolve', async (c) => {
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
   if (!Number.isInteger(source) || source < 1) return c.json({ error: 'source 不合法' }, 400)
   const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
   c.header('Cache-Control', 'no-store')
   try {
-    const line = await resolveLine(animeId, ep, source, session?.uid ?? null)
+    const line = await resolveLine(animeId, ep, source, session.uid)
     return line ? c.json(line) : c.json({ error: '此线路解析不到（可能此线路没有这一集）' }, 404)
   } catch (error) {
     if (error instanceof XifanResolveError) {
@@ -190,9 +200,10 @@ xifan.get('/source-page', async (c) => {
   if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
 
   const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
   c.header('Cache-Control', 'no-store')
   try {
-    const playlist = await getPlaylist(animeId, ep, session?.uid ?? null)
+    const playlist = await getPlaylist(animeId, ep, session.uid)
     const source = playlist.first?.source
     const selected = typeof source === 'number' && Number.isInteger(source) && source > 0 ? source : 1
     return c.redirect(`${BASE_URL}/watch/${animeId}/${selected}/${ep}.html`, 302)
@@ -209,32 +220,34 @@ xifan.get('/stream', async (c) => {
   const raw = c.req.query('u') ?? ''
   if (!raw) return c.json({ error: '缺少 u' }, 400)
   try {
+    const internal = c.req.query('t') === INTERNAL_TOKEN
+    let viewerKey = 'internal'
+    if (!internal) {
+      const session = await getSession(c)
+      if (!session) return c.json({ error: '未登录' }, 401)
+      claimAdmission(session.uid, GLOBAL_SLOW_POOL, c.req.query('clientId') ?? '')
+      viewerKey = String(session.uid)
+    }
     // 带对令牌的才是预转自己拉的流，不计入「观众」（令牌只存在于本进程内存，外部伪造不了）。
     const r = await serveStream(
       raw,
       c.req.header('range'),
-      c.req.query('t') === INTERNAL_TOKEN,
-      clientIp(c),
+      internal,
+      viewerKey,
     )
     return new Response(r.body, { status: r.status, headers: r.headers })
   } catch (error) {
-    if (error instanceof ViewerLimitReached) {
-      // 503 + 结构化 code：播放页据此显示排队提示，而不是当成播放失败去回退 iframe。
-      return c.json({ error: error.message, code: 'VIEWER_LIMIT', current: error.current, limit: error.limit }, 503)
+    if (error instanceof AdmissionRequired) {
+      return c.json({ error: error.message, code: 'SLOW_ADMISSION_REQUIRED', admission: error.status }, 503)
     }
     return upstreamFailure(c, error, '稀饭流代理失败')
   }
 })
 
-// 代理观看名额 —— 播放页在真去播之前先问一句。<video> 收到 503 只会触发一个没有响应体的
-// error 事件，分不清是「名额满」还是「真播不了」，所以名额必须能单独查。这个查询无副作用。
-xifan.get('/slots', (c) => {
-  c.header('Cache-Control', 'no-store')
-  return c.json(slotInfo(clientIp(c)))
-})
-
 // 预转 HLS —— 为什么需要它、为什么不能边下边切，见 xifan/prepare.ts 顶部注释。
-xifan.get('/prepared', (c) => {
+xifan.get('/prepared', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
   const raw = c.req.query('u') ?? ''
   if (!raw) return c.json({ error: '缺少 u' }, 400)
   c.header('Cache-Control', 'no-store')
@@ -280,14 +293,43 @@ xifan.post('/prepare', async (c) => {
 })
 
 xifan.get('/hls/:key/:file', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  const clientId = c.req.query('clientId') ?? ''
+  try {
+    claimAdmission(session.uid, GLOBAL_SLOW_POOL, clientId)
+  } catch (error) {
+    if (error instanceof AdmissionRequired) {
+      return c.json({ error: error.message, code: 'SLOW_ADMISSION_REQUIRED', admission: error.status }, 503)
+    }
+    return c.json({ error: error instanceof Error ? error.message : '慢源名额无效' }, 403)
+  }
   const p = resolveAsset(c.req.param('key'), c.req.param('file'))
   if (!p) return c.json({ error: '没有这个分片' }, 404)
   const file = c.req.param('file')
   touch(c.req.param('key')) // LRU 按「最后真的被看过」排序，不是按转好的时间
+  if (file.endsWith('.m3u8')) {
+    const { readFile } = await import('node:fs/promises')
+    const query = `clientId=${encodeURIComponent(clientId)}`
+    const playlist = (await readFile(p, 'utf8'))
+      .split('\n')
+      .map((line) => {
+        if (!line) return line
+        if (line.startsWith('#')) {
+          return line.replace(/URI="([^"]+)"/g, (_all, uri: string) =>
+            `URI="${uri}${uri.includes('?') ? '&' : '?'}${query}"`)
+        }
+        return `${line}${line.includes('?') ? '&' : '?'}${query}`
+      })
+      .join('\n')
+    return c.body(playlist, 200, {
+      'Content-Type': 'application/vnd.apple.mpegurl',
+      'Cache-Control': 'no-store',
+    })
+  }
   const { createReadStream } = await import('node:fs')
-  const type = file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/iso.segment'
   return new Response(createReadStream(p) as unknown as ReadableStream, {
-    headers: { 'Content-Type': type, 'Cache-Control': file.endsWith('.m3u8') ? 'no-store' : 'public, max-age=86400' },
+    headers: { 'Content-Type': 'video/iso.segment', 'Cache-Control': 'private, max-age=86400' },
   })
 })
 
@@ -309,7 +351,9 @@ function playerMonitorConfig(): { dsn: string; environment: string; release: str
   }
 }
 
-xifan.get('/play-page', (c) => {
+xifan.get('/play-page', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
   const animeId = c.req.query('animeId') ?? ''
   const ep = Number(c.req.query('ep') ?? '1')
   const bgmIdRaw = c.req.query('bgmId')
@@ -633,6 +677,10 @@ const PLAY_PAGE = `<!doctype html>
   var internalSeekTimer = null, gateOnPlay = false, lineRequest = 0, playGeneration = 0
   var networkInterrupted = false, networkCheck = null, networkRetry = null, failureGeneration = -1
   var preparedKey = null, preparedFor = null, prepareTimer = null, prepareFailed = null
+  var admissionTimer = null, slowSession = false
+  var SLOW_POOL = 'slow-proxy-global'
+  var slowClientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
+    'player_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2)
   var needsGesture = false, startWatchTimer = null, START_WATCH_MS = 12000
   // 手机 ≠ 「小屏桌面」：缓冲闸门那套低速静音预热是照桌面调的，手机上会**反过来饿死播放**
   // （实测 5G 上 10.2 秒 buffered 一个字节都没涨）。所以触屏设备走另一套，判据用输入方式
@@ -1144,7 +1192,8 @@ const PLAY_PAGE = `<!doctype html>
   }
 
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
-  function stopAll(){ playGeneration++; needsGesture = false; clearStartWatch(); stopTape(); cancelBufferGate(false); clearInternalSeek(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false }
+  function clearAdmissionTimer(){ if (admissionTimer !== null) clearTimeout(admissionTimer); admissionTimer = null }
+  function stopAll(){ playGeneration++; needsGesture = false; clearStartWatch(); stopTape(); cancelBufferGate(false); clearInternalSeek(); clearAdmissionTimer(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false; slowSession = false }
 
   function renderSources(){
     var box = $('sources'); box.textContent = ''
@@ -1178,23 +1227,28 @@ const PLAY_PAGE = `<!doctype html>
 
   function playLine(pl){
     // 只有走代理的慢源才谈得上预转；直连线路不需要，也别去占服务器空间。
-    if (pl.kind === 'mp4' && needsProxy(pl.url)) pollPrepare(pl.url)
+    var slow = pl.kind === 'mp4' && needsProxy(pl.url)
+    if (!slow && slowSession){
+      fetch('/api/slow-playback/release', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ poolId: SLOW_POOL, clientId: slowClientId })
+      }).catch(function(){})
+    }
+    if (slow) pollPrepare(pl.url)
     else renderPrepare({ state: 'none' }, null)
     // 这一集若已经预转成 HLS，就改播分片版：<video> 直连服务器只开一条连接，跨境
     // 单连接只有 2.2Mbps（低于 2.67Mbps 码率），而 HLS 播放器会并发拉多片，
     // 同一条链路能跑到 5.22Mbps。细节见 xifan/prepare.ts。
-    if (pl.kind === 'mp4' && preparedKey && preparedFor === pl.url){
-      pl = { source: pl.source, kind: 'hls', url: '/api/xifan/hls/' + preparedKey + '/index.m3u8', viaPrepared: true, origin: pl.url, from: pl.from }
+    if (slow && preparedKey && preparedFor === pl.url){
+      pl = { source: pl.source, kind: 'hls', url: '/api/xifan/hls/' + preparedKey + '/index.m3u8?clientId=' + encodeURIComponent(slowClientId), viaPrepared: true, origin: pl.url, from: pl.from }
     }
-    // 慢源且还没转出可播部分时：**不要去播代理直连**。
-    // 它注定不够快（<video> 单连接跨境 2.2Mbps < 2.67Mbps 码率），播了既卡、又会占满
-    // 入口把预转冻住，形成「越想转越转不动」的死锁。老实等 1 分钟换全程流畅。
-    if (pl.kind === 'mp4' && needsProxy(pl.url)){
+    if (slow){
       var pending = pl
-      checkSlots(function(slots){
-        if (slots && !slots.mine && slots.current >= slots.limit){ showQueue(slots); return }
+      requestAdmission(function(admission){
+        if (!admission || admission.state === 'waiting'){ showQueue(admission, pending); return }
         // 预转失败（配额满等）时才退回代理直连——聊胜于无，且有 iframe 兜底。
-        if (prepareFailed === pending.url){ reallyPlay(pending); return }
+        if (pending.kind === 'mp4' && prepareFailed === pending.url){ reallyPlay(pending); return }
+        if (pending.viaPrepared){ reallyPlay(pending); return }
         showDrafting(pending)
       })
       return
@@ -1222,39 +1276,90 @@ const PLAY_PAGE = `<!doctype html>
       acts.appendChild(btn)
     }
     $('buffering').classList.add('show')
+    watchAdmission()
     pollPrepare(pl.url)
   }
 
-  function checkSlots(cb){
-    fetch('/api/xifan/slots', { cache: 'no-store' })
-      .then(function(r){ return r.json() })
+  function admissionResource(){ return 'xifan:' + animeId + ':' + ep }
+
+  function requestAdmission(cb){
+    try { localStorage.setItem('mapletools-slow-client', slowClientId) } catch (e) {}
+    fetch('/api/slow-playback/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ poolId: SLOW_POOL, source: 'xifan', resourceKey: admissionResource(), returnTo: location.pathname + location.search + location.hash, clientId: slowClientId })
+    })
+      .then(function(r){ return r.json().then(function(d){ if (!r.ok) throw new Error(d.error || '候补失败'); return d }) })
       .then(cb)
-      .catch(function(){ cb(null) }) // 问不到就别拦着，让它照常去播
+      .catch(function(e){ fail(e && e.message || '候补失败，请稍后再试') })
   }
 
-  // 名额满时不是「他自己卡」——出口带宽被三条连接平分，是**三个人一起卡**。
-  // 所以宁可拦住新来的，也不能让正在看的两位跟着崩。
-  function showQueue(slots){
+  function fetchAdmission(cb){
+    fetch('/api/slow-playback/status?poolId=' + encodeURIComponent(SLOW_POOL) + '&clientId=' + encodeURIComponent(slowClientId), { cache: 'no-store' })
+      .then(function(r){ return r.json() })
+      .then(function(d){ cb(d.admission || null) })
+      .catch(function(){ cb(null) })
+  }
+
+  function watchAdmission(){
+    clearAdmissionTimer()
+    admissionTimer = setTimeout(function(){
+      admissionTimer = null
+      fetchAdmission(function(admission){
+        if (!admission){ showMissedAdmission(); return }
+        if (!admission.owner){ showTakenOverAdmission(); return }
+        if (admission.state === 'waiting'){ showQueue(admission, curPl); return }
+        if (admission.state === 'reserved' && curPl && !$('buffering').classList.contains('retryable')) watchAdmission()
+      })
+    }, 5000)
+  }
+
+  // 慢源满员时进入服务端候补；关闭页面后位置仍保留，轮到时由邮件通知并留位五分钟。
+  function showQueue(admission, pending){
+    curPl = pending || curPl
     stopAll()
     v.classList.remove('on'); frame.classList.remove('on')
-    var hasOther = lines.length > 1
     var box = $('buffering')
-    box.classList.remove('retryable')
-    $('bufferText').textContent = hasOther
-      ? '画桌前坐满了 · 已经有 ' + slots.current + ' 位在描，换条线路，或者点一下再等等'
-      : '画桌前坐满了 · 已经有 ' + slots.current + ' 位在描，点一下看看空出来没有'
-    box.classList.add('show', 'retryable')
-    box.onclick = function(){
-      checkSlots(function(s){
-        if (s && (s.mine || s.current < s.limit)){ hideBuffer(); if (curPl) playLine(curPl) }
-        else if (s) showQueue(s)
+    box.classList.remove('retryable'); box.onclick = null
+    var tier = admission && admission.tier === 'priority' ? '优先候补' : '普通候补'
+    var position = admission && admission.position ? '第 ' + admission.position + ' 位' : '等待分配'
+    $('bufferText').textContent = '画桌前坐满了 · ' + tier + position + '，轮到后为你保留 5 分钟'
+    box.classList.add('show')
+    clearAdmissionTimer()
+    admissionTimer = setTimeout(function(){
+      admissionTimer = null
+      fetchAdmission(function(next){
+        if (!next){ showMissedAdmission(); return }
+        if (!next.owner){ showTakenOverAdmission(); return }
+        if (next.state === 'reserved' || next.state === 'active'){
+          hideBuffer(); if (curPl) playLine(curPl); return
+        }
+        showQueue(next, curPl)
       })
-    }
+    }, 5000)
+  }
+
+  function showMissedAdmission(){
+    clearAdmissionTimer()
+    stopAll()
+    var box = $('buffering')
+    $('bufferText').textContent = '这次保留的画桌已经让给下一位 · 点一下重新候补'
+    box.classList.add('show', 'retryable')
+    box.onclick = function(){ hideBuffer(); if (curPl) playLine(curPl) }
+  }
+
+  function showTakenOverAdmission(){
+    clearAdmissionTimer()
+    stopAll()
+    var box = $('buffering')
+    $('bufferText').textContent = '这个账号已经在另一个播放器继续慢源观看'
+    box.classList.add('show')
   }
 
   function reallyPlay(pl){
     curPl = pl; clearFail(); stopAll(); renderChips()
     gateOnPlay = pl.kind === 'mp4'
+    slowSession = !!pl.viaPrepared || (pl.kind === 'mp4' && needsProxy(pl.url))
     v.classList.add('on'); frame.classList.remove('on')
     // stopAll() 里的 cancelBufferGate 已经把上一条线路的浮层收掉；这里立刻重新盖上——
     // 从「设 src」到浏览器第一次 canplay 之间那段没有任何 waiting/playing 事件，
@@ -1305,10 +1410,30 @@ const PLAY_PAGE = `<!doctype html>
     } else {
       // 慢源（线路一）走服务端 /stream 并发聚合；其余 mp4 保持裸直连——
       // 线路二直连 30Mbps 比走代理快得多，也不占服务器出口。
-      v.src = needsProxy(pl.url) ? '/api/xifan/stream?u=' + encodeURIComponent(pl.url) : pl.url
+      v.src = needsProxy(pl.url) ? '/api/xifan/stream?u=' + encodeURIComponent(pl.url) + '&clientId=' + encodeURIComponent(slowClientId) : pl.url
       v.load(); tryPlay()
     }
   }
+
+  function heartbeatAdmission(){
+    if (!slowSession) return
+    fetch('/api/slow-playback/heartbeat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ poolId: SLOW_POOL, clientId: slowClientId, paused: v.paused })
+    }).then(function(r){ return r.json() }).then(function(d){
+      if (d && d.admission && d.admission.state === 'active') return
+      slowSession = false
+      if (d && d.admission && !d.admission.owner){ showTakenOverAdmission(); return }
+      if (!v.paused && curPl) playLine(curPl)
+    }).catch(function(){})
+  }
+  setInterval(heartbeatAdmission, 15000)
+  v.addEventListener('play', function(){
+    var needsAdmission = curPl && (curPl.viaPrepared || (curPl.kind === 'mp4' && needsProxy(curPl.url)))
+    if (!needsAdmission || slowSession) return
+    try { v.pause() } catch (e) {}
+    playLine(curPl)
+  })
 
   // 官方播放器地址表 —— 抄自源站 /static/js/playerconfig.js 的 MacPlayerConfig.player_list：
   // 每条线路用哪个播放器由 player_aaaa.from 决定，**不是所有线路都是 code=xfdm1&from=cf**
@@ -1337,6 +1462,13 @@ const PLAY_PAGE = `<!doctype html>
   function embed(pl){
     slog('fallback to official iframe, source=' + pl.source + ' kind=' + pl.kind + ' from=' + (pl.from || '-') + ' url=' + (pl.origin || pl.url), true)
     curPl = pl
+    if (slowSession){
+      slowSession = false
+      fetch('/api/slow-playback/release', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ poolId: SLOW_POOL, clientId: slowClientId })
+      }).catch(function(){})
+    }
     cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
     clearStartWatch()
     gateOnPlay = false; v.classList.remove('on'); frame.classList.add('on'); renderChips()
