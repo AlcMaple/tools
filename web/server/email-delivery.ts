@@ -57,3 +57,23 @@ export async function sendEmailCode(email: string, code: string): Promise<void> 
     html: `<p>你的 MapleTools 邮箱验证码是：</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>验证码 10 分钟内有效，且只能使用一次。如果不是你本人操作，请忽略此邮件。</p>`,
   })
 }
+
+export async function sendSlowPlaybackReady(email: string, link: string, expiresAt: number): Promise<void> {
+  const expires = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: process.env.REWARD_TIME_ZONE || 'Asia/Taipei',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(expiresAt))
+  const safeLink = link.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+  if (MODE === 'console' && !IS_PRODUCTION) {
+    console.info(`[slow-playback-email] ${email} 的慢源名额已保留到 ${expires}：${link}`)
+    return
+  }
+  await getTransporter().sendMail({
+    from: `"${SMTP_FROM_NAME.replace(/["\\]/g, '')}" <${SMTP_FROM}>`,
+    to: email,
+    subject: 'MapleTools 慢源名额已经轮到你了',
+    text: `你的慢源观看名额已经空出来，并为你保留到 ${expires}。\n\n请在五分钟内打开：${link}\n\n链接不会自动登录，需使用排队时的 MapleTools 账号。`,
+    html: `<p>你的慢源观看名额已经空出来，并为你保留到 <b>${expires}</b>。</p><p><a href="${safeLink}">五分钟内返回观看</a></p><p>链接不会自动登录，需使用排队时的 MapleTools 账号。</p>`,
+  })
+}

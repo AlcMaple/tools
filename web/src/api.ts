@@ -258,6 +258,70 @@ export async function importTracksFromBgm(
   return status
 }
 
+export interface RewardSummary {
+  enabled: boolean
+  lotteryEnabled: boolean
+  points: number
+  tickets: number
+  priorityUntil: number | null
+  inviteCode: string | null
+}
+
+export type RewardShopItem = 'ticket_1' | 'ticket_5' | 'priority_7d' | 'priority_30d'
+
+export async function fetchRewardSummary(): Promise<RewardSummary> {
+  return json<RewardSummary>(await fetch('/api/rewards/me', { cache: 'no-store' }))
+}
+
+export async function redeemReward(
+  requestId: string,
+  item: RewardShopItem,
+): Promise<Record<string, unknown>> {
+  return json<Record<string, unknown>>(await fetch('/api/rewards/redeem', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, item }),
+  }))
+}
+
+export async function drawReward(requestId: string): Promise<Record<string, unknown>> {
+  return json<Record<string, unknown>>(await fetch('/api/rewards/draw', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId }),
+  }))
+}
+
+export function newRewardRequestId(): string {
+  return crypto.randomUUID()
+}
+
+export interface SlowAdmissionStatus {
+  state: 'waiting' | 'reserved' | 'active' | 'missed'
+  tier: 'priority' | 'normal'
+  current: number
+  reserved: number
+  limit: number
+  position: number | null
+  reservedUntil: number | null
+  ticketLocked: boolean
+  source: string
+  resourceKey: string
+  returnTo: string
+  owner: boolean
+}
+
+export async function fetchSlowAdmissionStatus(
+  poolId: string,
+  clientId: string,
+): Promise<SlowAdmissionStatus | null> {
+  const query = new URLSearchParams({ poolId, clientId })
+  const result = await json<{ admission: SlowAdmissionStatus | null }>(
+    await fetch(`/api/slow-playback/status?${query.toString()}`, { cache: 'no-store' }),
+  )
+  return result.admission
+}
+
 // ── 稀饭在线观看：定位 / 绑定 ───────────────────────────────────────────────────
 // bgmId 和稀饭 animeId 是两套 id，唯一联系是标题。首次「继续看」拿追番标题去稀饭周表（免验证码）比中文名
 // 匹配出候选，用户点一个确认（建绑定）→ 落库，之后直接命中。详见 server/xifan/locate.ts。

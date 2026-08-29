@@ -194,6 +194,125 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS oauth_identity_user_idx ON oauth_identity (user_id);
 `)
 
+// 抽奖营销与公共慢源准入。积分只通过不可变账本增减；放映券 / 时效优先资格单独记权益，
+// 候补位置属于容量池而不是某部番，因此切集、换番时无需重排。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS reward_ledger (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL,
+    event_key  TEXT    NOT NULL UNIQUE,
+    kind       TEXT    NOT NULL,
+    delta      INTEGER NOT NULL,
+    detail     TEXT    NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS reward_ledger_user_idx
+  ON reward_ledger (user_id, id DESC);
+
+  CREATE TABLE IF NOT EXISTS reward_entitlements (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    kind        TEXT    NOT NULL CHECK (kind IN ('ticket', 'priority')),
+    status      TEXT    NOT NULL CHECK (status IN ('available', 'locked', 'used', 'active')),
+    source      TEXT    NOT NULL,
+    source_ref  TEXT    NOT NULL DEFAULT '',
+    starts_at   INTEGER,
+    ends_at     INTEGER,
+    lock_ref    TEXT,
+    created_at  INTEGER NOT NULL,
+    used_at     INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS reward_entitlements_user_idx
+  ON reward_entitlements (user_id, kind, status, ends_at);
+  CREATE UNIQUE INDEX IF NOT EXISTS reward_entitlements_lock_unique
+  ON reward_entitlements (lock_ref)
+  WHERE lock_ref IS NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS invite_codes (
+    user_id    INTEGER PRIMARY KEY,
+    code       TEXT    NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS invite_relations (
+    invitee_id INTEGER PRIMARY KEY,
+    inviter_id INTEGER NOT NULL,
+    code       TEXT    NOT NULL,
+    rewarded   INTEGER NOT NULL DEFAULT 0 CHECK (rewarded IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(invitee_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(inviter_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS invite_relations_inviter_idx
+  ON invite_relations (inviter_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS reward_redemptions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    request_id  TEXT    NOT NULL,
+    item        TEXT    NOT NULL,
+    result_json TEXT    NOT NULL,
+    created_at  INTEGER NOT NULL,
+    UNIQUE(user_id, request_id),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS draw_results (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    request_id  TEXT    NOT NULL,
+    prize       TEXT    NOT NULL,
+    result_json TEXT    NOT NULL,
+    created_at  INTEGER NOT NULL,
+    UNIQUE(user_id, request_id),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS slow_admissions (
+    id             TEXT PRIMARY KEY,
+    user_id        INTEGER NOT NULL,
+    pool_id        TEXT    NOT NULL,
+    client_id      TEXT    NOT NULL DEFAULT '',
+    state          TEXT    NOT NULL CHECK (state IN ('waiting', 'reserved', 'active', 'missed')),
+    tier           TEXT    NOT NULL CHECK (tier IN ('priority', 'normal')),
+    ticket_id      INTEGER,
+    source         TEXT    NOT NULL,
+    resource_key   TEXT    NOT NULL,
+    return_to      TEXT    NOT NULL DEFAULT '/',
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL,
+    reserved_until INTEGER,
+    last_seen_at   INTEGER,
+    paused_at      INTEGER,
+    notified_at    INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(ticket_id) REFERENCES reward_entitlements(id) ON DELETE SET NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS slow_admissions_user_pool_current
+  ON slow_admissions (user_id, pool_id)
+  WHERE state IN ('waiting', 'reserved', 'active');
+  CREATE INDEX IF NOT EXISTS slow_admissions_pool_queue
+  ON slow_admissions (pool_id, state, tier, created_at);
+
+  CREATE TABLE IF NOT EXISTS slow_pool_state (
+    pool_id         TEXT PRIMARY KEY,
+    priority_streak INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS slow_notification_log (
+    admission_id TEXT    NOT NULL,
+    channel      TEXT    NOT NULL,
+    status       TEXT    NOT NULL,
+    detail       TEXT    NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    PRIMARY KEY(admission_id, channel)
+  );
+`)
+ensureColumn('slow_admissions', 'client_id', "client_id TEXT NOT NULL DEFAULT ''")
+
 // 追番数据版本号 —— app 的「覆盖上传」靠它判断「服务器上有没有我没见过的改动」。
 // **每次写入都 +1**（网页改一条、app 整包推一次，都算）。app 记住上次同步拿到的 rev，上传时带回来：
 // 对得上就直接覆盖，对不上就 409 让用户选「先拉取」还是「强制覆盖」。
