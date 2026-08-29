@@ -2,6 +2,26 @@
 // 不需要拿；登录态靠 /me 探。极简 store：单个 user 值 + 订阅，够登录入口和后续追番用。
 import { useEffect, useState } from 'react'
 
+const INVITE_STORAGE_KEY = 'mapletools-pending-invite'
+
+function normalizeInviteCode(value: string | null | undefined): string {
+  const code = (value ?? '').trim().toUpperCase()
+  return /^[A-Z0-9]{6,16}$/.test(code) ? code : ''
+}
+
+export function captureInviteFromLocation(): void {
+  const code = normalizeInviteCode(new URL(window.location.href).searchParams.get('invite'))
+  if (code) window.localStorage.setItem(INVITE_STORAGE_KEY, code)
+}
+
+export function pendingInviteCode(): string {
+  return normalizeInviteCode(window.localStorage.getItem(INVITE_STORAGE_KEY))
+}
+
+export function clearPendingInvite(): void {
+  window.localStorage.removeItem(INVITE_STORAGE_KEY)
+}
+
 export interface AuthUser {
   username: string
   createdAt: string
@@ -66,6 +86,7 @@ export const auth = {
   async init(): Promise<void> {
     try {
       const me = await request<MeRes>('/me')
+      clearPendingInvite()
       setUser({
         username: me.username,
         createdAt: me.createdAt,
@@ -83,7 +104,8 @@ export const auth = {
     await auth.init()
   },
   async register(username: string, password: string, confirm: string): Promise<void> {
-    const r = await request<LoginRes>('/register', { username, password, confirm })
+    const r = await request<LoginRes>('/register', { username, password, confirm, inviteCode: pendingInviteCode() })
+    clearPendingInvite()
     setUser({
       username: r.username,
       createdAt: new Date().toISOString(),
@@ -106,7 +128,8 @@ export const auth = {
     return request<{ challengeId: string; expiresIn: number; email: string }>('/email/current-start', {})
   },
   async verifyEmailCode(challengeId: string, code: string): Promise<void> {
-    await request<LoginRes>('/email/verify', { challengeId, code })
+    await request<LoginRes>('/email/verify', { challengeId, code, inviteCode: pendingInviteCode() })
+    clearPendingInvite()
     await auth.init()
   },
   async logout(): Promise<void> {

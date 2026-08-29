@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import { domainToASCII } from 'node:url'
 import { db } from './db'
 import { emailDeliveryConfigured, sendEmailCode } from './email-delivery'
+import { applyInvite, awardDailyLogin } from './rewards'
 import { AUTH_SECRET, IS_PRODUCTION } from './secrets'
 import { usernameError } from './username'
 
@@ -92,6 +93,7 @@ export async function issueSession(c: Context, s: Session): Promise<void> {
     path: '/',
     maxAge: MAX_AGE,
   })
+  awardDailyLogin(s.uid)
 }
 
 // 预编译语句（oauth.ts 复用其中带 export 的几条）
@@ -378,11 +380,12 @@ function checkEmailCode(c: Context, challengeId: string, code: string): CodeChec
  * - 不同 challenge 同时验证同一邮箱时,后拿锁的请求会看到已有账号并直接登录,不会重复建号。
  */
 const completeEmailVerification = db.transaction(
-  (challengeId: string, email: string, now: number): UserRow => {
+  (challengeId: string, email: string, now: number): { user: UserRow; created: boolean } => {
     const claimed = consumeChallenge.run(now, challengeId, email, now)
     if (claimed.changes !== 1) throw new EmailChallengeUnavailableError()
 
     let user = findByEmail.get(email) as UserRow | undefined
+    let created = false
     if (user) {
       setEmailVerified.run(new Date(now).toISOString(), user.id)
     } else {
@@ -391,8 +394,9 @@ const completeEmailVerification = db.transaction(
       insertPasswordlessEmailUser.run(username, makeUnusablePasswordHash(), email, createdAt, createdAt)
       user = findByEmail.get(email) as UserRow | undefined
       if (!user) throw new Error('账号创建后读取失败')
+      created = true
     }
-    return user
+    return { user, created }
   },
 )
 
@@ -413,6 +417,7 @@ auth.post('/register', async (c) => {
   const username = str(body.username).trim()
   const password = str(body.password)
   const confirm = str(body.confirm)
+  const inviteCode = str(body.inviteCode)
 
   const usernameProblem = usernameError(username)
   if (usernameProblem) return c.json({ error: usernameProblem }, 400)
@@ -427,7 +432,9 @@ auth.post('/register', async (c) => {
   if (findByName.get(username)) return c.json({ error: '用户名已被占用' }, 409)
 
   const info = insertUser.run(username, await hashSecret(password), new Date().toISOString())
-  await issueSession(c, { uid: Number(info.lastInsertRowid), username, tv: 0 })
+  const uid = Number(info.lastInsertRowid)
+  applyInvite(uid, inviteCode)
+  await issueSession(c, { uid, username, tv: 0 })
   return c.json({ username, hasSecurity: false, hasEmail: false, hasPassword: true })
 })
 
@@ -517,6 +524,7 @@ auth.post('/email/verify', async (c) => {
   if (!body) return c.json({ error: '请求格式错误' }, 400)
   const challengeId = str(body.challengeId)
   const code = str(body.code).trim()
+  const inviteCode = str(body.inviteCode)
 
   const check = checkEmailCode(c, challengeId, code)
   if (!check.ok) return c.json({ error: check.error }, check.status)
@@ -529,15 +537,17 @@ auth.post('/email/verify', async (c) => {
     return c.json({ error: '注册太频繁，请稍后再试' }, 429)
   }
 
-  let user: UserRow
+  let completed: { user: UserRow; created: boolean }
   try {
-    user = completeEmailVerification(challengeId, row.email, now)
+    completed = completeEmailVerification(challengeId, row.email, now)
   } catch (error) {
     if (error instanceof EmailChallengeUnavailableError) {
       return c.json({ error: '验证码无效或已过期，请重新获取' }, 401)
     }
     return c.json({ error: '账号创建失败，请稍后再试' }, 409)
   }
+  const user = completed.user
+  if (completed.created) applyInvite(user.id, inviteCode)
 
   buckets.delete(`email-verify-ip:${clientIp(c)}`)
   buckets.delete(`email-verify-address:${row.email}`)
@@ -746,6 +756,7 @@ auth.post('/logout', (c) => {
 auth.get('/me', async (c) => {
   const s = await getSession(c)
   if (!s) return c.json({ error: '未登录' }, 401)
+  awardDailyLogin(s.uid)
   const row = findById.get(s.uid) as UserRow
   return c.json({
     username: row.username,

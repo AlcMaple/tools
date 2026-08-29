@@ -36,6 +36,7 @@ import {
   type UserRow,
 } from './auth'
 import { emailDeliveryConfigured } from './email-delivery'
+import { applyInvite } from './rewards'
 import { AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from './secrets'
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -88,6 +89,8 @@ interface OAuthTx {
    *  cookie 里带过去；tv 对不上（改过密码/被踢）即拒绝。 */
   u?: number
   tv?: number
+  /** 登录模式下由邀请链接带入；只在本次确实创建新账号时生效。 */
+  i?: string
 }
 
 function encodeTx(tx: OAuthTx): string {
@@ -179,16 +182,18 @@ async function verifyGoogleIdToken(idToken: string, nonce: string): Promise<Goog
 }
 
 /** 邮箱落点（登录路径）：命中即登录，未命中建号。邮箱就是身份。 */
-const resolveGoogleLogin = db.transaction((email: string, now: number): UserRow => {
+const resolveGoogleLogin = db.transaction((email: string, now: number): { user: UserRow; created: boolean } => {
   let user = findByEmail.get(email) as UserRow | undefined
+  let created = false
   if (!user) {
     const username = makeEmailUsername()
     const createdAt = new Date(now).toISOString()
     insertPasswordlessEmailUser.run(username, makeUnusablePasswordHash(), email, createdAt, createdAt)
     user = findByEmail.get(email) as UserRow | undefined
     if (!user) throw new Error('账号创建后读取失败')
+    created = true
   }
-  return user
+  return { user, created }
 })
 
 /** 收尾：清跳转 cookie，回 returnTo。结果码区分登录与换绑两条流程：
@@ -233,13 +238,15 @@ function googleAuthUrl(c: Context, tx: OAuthTx): string {
 }
 
 /** 生成一张新票据（登录模式：不带 u/tv）。 */
-function freshLoginTx(returnTo: string | undefined): OAuthTx {
+function freshLoginTx(returnTo: string | undefined, inviteCode?: string): OAuthTx {
+  const normalizedInvite = inviteCode?.trim().toUpperCase() ?? ''
   return {
     s: randomBytes(24).toString('base64url'),
     n: randomBytes(16).toString('base64url'),
     v: randomBytes(32).toString('base64url'),
     r: sanitizeReturnTo(returnTo),
     exp: Date.now() + TX_TTL,
+    ...(normalizedInvite && /^[A-Z0-9]{6,16}$/.test(normalizedInvite) ? { i: normalizedInvite } : {}),
   }
 }
 
@@ -258,7 +265,7 @@ oauth.get('/google/start', (c) => {
   if (rateLimited(`oauth-start-ip:${clientIp(c)}`, OAUTH_START_MAX_PER_IP, 15 * 60 * 1000)) {
     return c.json({ error: '操作太频繁，请稍后再试' }, 429)
   }
-  const tx = freshLoginTx(c.req.query('returnTo'))
+  const tx = freshLoginTx(c.req.query('returnTo'), c.req.query('invite'))
   setTxCookie(c, tx)
   return c.redirect(googleAuthUrl(c, tx))
 })
@@ -350,12 +357,14 @@ oauth.get('/google/callback', async (c) => {
     return finish(c, tx, 'failed')
   }
 
-  let user: UserRow
+  let completed: { user: UserRow; created: boolean }
   try {
-    user = resolveGoogleLogin(verifiedEmail, Date.now())
+    completed = resolveGoogleLogin(verifiedEmail, Date.now())
   } catch {
     return finish(c, tx, 'failed')
   }
+  const user = completed.user
+  if (completed.created) applyInvite(user.id, tx.i)
 
   await issueSession(c, { uid: user.id, username: user.username, tv: user.token_version })
   return finish(c, tx, 'ok')
