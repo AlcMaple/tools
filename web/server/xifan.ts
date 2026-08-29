@@ -1,7 +1,9 @@
-// 稀饭在线观看 —— 懒加载播放器（用户 2026-07-21 定：不并行、不自动选最优）。
+// 稀饭在线观看 —— 播放器仍是懒加载（不并行、不自动选最优）；用户明确选择「跳去源站」时，
+// 另走 source-page 复用已有的快源策略，再重定向到稀饭站内页。
 //
 //   GET  /api/xifan/playlist?animeId=&ep=          → 一次抓取：线路 1 地址 + 全部线路名单
 //   GET  /api/xifan/resolve?animeId=&ep=&source=N  → 用户手动点线路 N 时才解析那一条
+//   GET  /api/xifan/source-page?animeId=&ep=       → 按快源策略选线路后 302 到稀饭站内页
 //   GET  /api/xifan/play-page?animeId=&ep=         → 播放器页（默认播线路 1，直连失败套娃兜底）
 //   GET  /api/xifan/hls.js                         → 自托管 hls.js（不走可能被墙的 jsdelivr）
 //   POST /api/xifan/locate                         → bgmId + 标题 → 稀饭候选（周表免验证码匹配，见 locate.ts）
@@ -19,6 +21,7 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import {
+  BASE_URL,
   clearXifanResolveCache,
   getPlaylist,
   resolveLine,
@@ -174,6 +177,30 @@ xifan.get('/resolve', async (c) => {
       return error.code === 'XIFAN_AUTH_REQUIRED' ? c.json(body, 401) : c.json(body, 403)
     }
     return upstreamFailure(c, error, '稀饭线路解析失败')
+  }
+})
+
+// 用户明确选择「跳去源站」时才走这里：复用 getPlaylist 的快源判定，避免让用户进站后
+// 再手动试线路。先打开的是本站地址，策略请求完成后由 302 落到具体的稀饭线路页，
+// 这样前端仍在原始点击手势里 window.open，不会被浏览器当成异步弹窗拦截。
+xifan.get('/source-page', async (c) => {
+  const animeId = c.req.query('animeId') ?? ''
+  const ep = Number(c.req.query('ep') ?? '1')
+  if (!/^\d+$/.test(animeId)) return c.json({ error: 'animeId 不合法（要纯数字，如 3543）' }, 400)
+  if (!Number.isInteger(ep) || ep < 1) return c.json({ error: 'ep 不合法' }, 400)
+
+  const session = await getSession(c)
+  c.header('Cache-Control', 'no-store')
+  try {
+    const playlist = await getPlaylist(animeId, ep, session?.uid ?? null)
+    const source = playlist.first?.source
+    const selected = typeof source === 'number' && Number.isInteger(source) && source > 0 ? source : 1
+    return c.redirect(`${BASE_URL}/watch/${animeId}/${selected}/${ep}.html`, 302)
+  } catch (error) {
+    // 定位失败不让「跳去源站」变成空白页；线路 1 是源站原生默认回落。
+    // 真实原因仍落终端，不能把限流 / 验证 / 源站错误伪装成成功定位。
+    console.warn('[xifan] 快源定位失败，回落线路 1：', error)
+    return c.redirect(`${BASE_URL}/watch/${animeId}/1/${ep}.html`, 302)
   }
 })
 
