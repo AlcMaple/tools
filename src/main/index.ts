@@ -10,6 +10,7 @@ import { startSpeedBroadcast, stopSpeedBroadcast } from './shared/speed-tracker'
 import { setupUpdater } from './updater'
 import { setupBgmOfflineIndex } from './bgm/offline-index'
 import { initConsoleCapture, logInfo } from './shared/logger'
+import { initUmamiActivity } from './shared/umami'
 import { disposeMediaProxyRequests, MEDIA_PROXY_SCHEME, registerMediaProxy } from './shared/media-proxy'
 import { disposeMediaCache, sweepMediaCacheDir } from './shared/media-cache'
 import { disposeHlsPrefetch } from './shared/hls-prefetch'
@@ -272,6 +273,7 @@ app.whenReady().then(() => {
     if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon)
   }
 
+  initUmamiActivity()
   createWindow()
   createTray(exitApp)
   setupUpdater()
