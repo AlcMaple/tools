@@ -3,7 +3,7 @@
 // SettingsPage；这里只管壳、路由、全局登录弹窗、密保提示和便签 Toast。
 import { useCallback, useEffect, useState } from 'react'
 import { AnnouncementModal } from './AnnouncementModal'
-import { auth, useAuth } from './auth'
+import { auth, captureInviteFromLocation, useAuth } from './auth'
 import { AuthModal, type AuthMode } from './AuthModal'
 import { CalendarPage } from './CalendarPage'
 import { NagBar } from './NagBar'
@@ -31,7 +31,10 @@ export default function App(): JSX.Element {
   const [oauthError, setOauthError] = useState<string | null>(null)
   const [announcementArmed, setAnnouncementArmed] = useState(false)
 
-  useEffect(() => void auth.init(), [])
+  useEffect(() => {
+    captureInviteFromLocation()
+    void auth.init()
+  }, [])
 
   // 第三方登录失败回跳：服务端带回 ?oauth=failed（用户在 Google 页面主动取消时不带）。
   // 摘掉参数避免刷新重复触发，弹登录框说明原因。

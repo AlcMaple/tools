@@ -4,7 +4,7 @@
 // 逻辑与旧版一致：邮箱验证码确认地址后新旧账号都直接登录；找回 = 账号 + 密保问题 + 答案 + 新密码×2；
 // Enter 提交、ESC / 背景 / × 关闭；第三方入口按服务端配置显示（未配凭据整体不出现）。
 import { useEffect, useRef, useState } from 'react'
-import { auth, fetchOauthProviders, fetchQuestions } from './auth'
+import { auth, fetchOauthProviders, fetchQuestions, pendingInviteCode } from './auth'
 import type { SecurityQuestion } from './auth'
 import { Ic } from './SketchIcon'
 import { PasswordInput } from './PasswordInput'
@@ -164,9 +164,11 @@ export function AuthModal({
   const startGoogleLogin = (): void => {
     const url = new URL(window.location.href)
     url.searchParams.delete('oauth')
-    window.location.href = `/api/auth/oauth/google/start?returnTo=${encodeURIComponent(
-      url.pathname + url.search + url.hash,
-    )}`
+    url.searchParams.delete('invite')
+    const inviteCode = pendingInviteCode()
+    const params = new URLSearchParams({ returnTo: url.pathname + url.search + url.hash })
+    if (inviteCode) params.set('invite', inviteCode)
+    window.location.href = `/api/auth/oauth/google/start?${params.toString()}`
   }
 
   const submit = async (e: React.FormEvent): Promise<void> => {
