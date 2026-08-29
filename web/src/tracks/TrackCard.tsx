@@ -93,6 +93,16 @@ export function TrackCard({
             </span>
             {isToday && <span className="chip-today">今天更新</span>}
             <FavHearts value={t.favorite} onChange={(n) => onPatch(t.bgmId, { favorite: n })} />
+            <button
+              type="button"
+              className="trk-edit-mobile"
+              onClick={onEdit}
+              title="查看封面和标签"
+              aria-label={`编辑『${title}』的封面和标签`}
+            >
+              <Ic name="edit" cls="ic ic-sm" />
+              <span>详情</span>
+            </button>
           </div>
           <div className="trk-title" title={title}>
             {title}
