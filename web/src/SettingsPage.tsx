@@ -1,6 +1,6 @@
 // 设置页 —— 皮肤 = 原型稿 settings.html：借书卡身份页 + 纸口袋手风琴（hash 深链），
 // 键值行两列紧挨着（标签固定窄宽 + 值紧跟其后），表单限宽、稿纸输入框。
-// 模块导航按可独立加载的面板组织，后续还能继续增加追番偏好 / 数据同步等。
+// 模块导航按可独立加载的面板组织，后续还能继续增加追番偏好等设置。
 import { useEffect, useRef, useState } from 'react'
 import {
   fetchXifanAuthStatus,
@@ -28,13 +28,17 @@ import { toast } from './Toast'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 
-type Module = 'profile' | 'security' | 'xifan' | 'sync'
+type Module = 'profile' | 'security' | 'xifan'
 
 function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/xifan') return 'xifan'
   if (window.location.hash === '#/settings/security') return 'security'
-  if (window.location.hash === '#/settings/sync') return 'sync'
   return 'profile'
+}
+
+function normalizeLegacySettingsHash(): void {
+  if (window.location.hash !== '#/settings/sync') return
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/settings`)
 }
 
 export function SettingsPage(): JSX.Element | null {
@@ -43,7 +47,9 @@ export function SettingsPage(): JSX.Element | null {
   const [xifanOpened, setXifanOpened] = useState(module === 'xifan')
 
   useEffect(() => {
+    normalizeLegacySettingsHash()
     const onHashChange = (): void => {
+      normalizeLegacySettingsHash()
       const next = moduleFromHash()
       if (next === 'xifan') setXifanOpened(true)
       setModule(next)
@@ -172,15 +178,6 @@ export function SettingsPage(): JSX.Element | null {
               <span className="pocket-hint">待开发</span>
             </button>
           </section>
-          <section className={`pocket${module === 'sync' ? ' open' : ''}`} data-mod="sync">
-            <button className="pocket-tab" type="button" onClick={() => selectModule('sync')}>
-              <Ic name="refresh" />
-              数据同步
-              <span className="pocket-hint">Bangumi 收藏导入</span>
-              <Ic name="chev" cls="ic chev" />
-            </button>
-            <div className="pocket-body">{module === 'sync' && <BangumiSyncModule />}</div>
-          </section>
         </div>
 
         <div className="rig-box">
@@ -207,87 +204,6 @@ function Kv({ k, v, note }: { k: string; v: string; note?: string }): JSX.Elemen
         {note && <span className="muted">{note}</span>}
       </span>
     </div>
-  )
-}
-
-function BangumiSyncModule(): JSX.Element | null {
-  const { user } = useAuth()
-  const [bgmUid, setBgmUid] = useState(user?.bgmUid ?? '')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    if (user) setBgmUid(user.bgmUid)
-  }, [user])
-
-  if (!user) return null
-  const changed = bgmUid.trim() !== user.bgmUid
-
-  const submit = async (): Promise<void> => {
-    const next = bgmUid.trim()
-    setBusy(true)
-    setError('')
-    setSaved(false)
-    try {
-      await auth.saveBgmUid(next)
-      setBgmUid(next)
-      setSaved(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败，请稍后再试')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <form
-      className="field-stack"
-      style={{ paddingTop: 12 }}
-      onSubmit={(event) => {
-        event.preventDefault()
-        void submit()
-      }}
-    >
-      <Field label="Bangumi UID / 用户名" htmlFor="settings-bgm-uid">
-        <span className="field-row">
-          <input
-            id="settings-bgm-uid"
-            type="text"
-            value={bgmUid}
-            onChange={(event) => {
-              setBgmUid(event.target.value)
-              setSaved(false)
-              setError('')
-            }}
-            placeholder="数字 UID 或自定义用户名"
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={100}
-            aria-describedby="settings-bgm-hint"
-          />
-        </span>
-        <span id="settings-bgm-hint" className="field-hint">追番页导入时会自动带上这个值</span>
-      </Field>
-      <div className="row">
-        <span className="kv-act">
-          <button className="btn btn-sm btn-primary" type="submit" disabled={busy || !changed}>
-            {busy ? '保存中…' : '保存'}
-          </button>
-          <span
-            className={`save-note${saved ? ' show' : ''}`}
-            role="status"
-            aria-live="polite"
-            style={{ left: 'calc(100% + 10px)', right: 'auto', top: '50%', transform: 'translateY(-50%)' }}
-          >
-            已保存
-          </span>
-        </span>
-      </div>
-      <p className={`form-note err${error ? '' : ' empty'}`} role="alert" aria-live="polite">
-        {error}
-      </p>
-    </form>
   )
 }
 
