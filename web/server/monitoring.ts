@@ -1,6 +1,8 @@
 import * as Sentry from '@sentry/node'
 import { randomUUID } from 'node:crypto'
 import type { Context, ErrorHandler, MiddlewareHandler } from 'hono'
+import { getSession } from './auth'
+import { sanitizeSentryUser } from '../shared/sentry-user'
 
 const DEFAULT_TRACES_SAMPLE_RATE = 0.05
 const dsn = process.env.SENTRY_DSN?.trim()
@@ -57,6 +59,14 @@ function stablePath(path: string): string {
     .replace(/\/[A-Za-z0-9_-]{32,}(?=\/|$)/g, '/:token')
 }
 
+async function verifiedSentryUser(c: Context) {
+  try {
+    return sanitizeSentryUser(await getSession(c))
+  } catch {
+    return undefined
+  }
+}
+
 if (enabled) {
   Sentry.init({
     dsn,
@@ -69,12 +79,12 @@ if (enabled) {
     integrations: (defaults) => defaults.filter((integration) => integration.name !== 'Http'),
     tracesSampleRate: sampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE),
     beforeSend(event) {
-      event.user = undefined
+      event.user = sanitizeSentryUser(event.user)
       redactRequest(event.request)
       return event
     },
     beforeSendTransaction(event) {
-      event.user = undefined
+      event.user = sanitizeSentryUser(event.user)
       redactRequest(event.request)
       if (event.transaction) event.transaction = cleanUrl(event.transaction) ?? event.transaction
       return event
@@ -127,6 +137,8 @@ export function monitoringMiddleware(): MiddlewareHandler {
       scope.setTag('request_id', requestId)
       scope.setTag('http.method', method)
       scope.setContext('request', { id: requestId, method, path })
+      const user = await verifiedSentryUser(c)
+      if (user) scope.setUser(user)
 
       await Sentry.continueTrace(
         {
@@ -164,10 +176,12 @@ async function captureUnhandledError(error: Error, c: Context): Promise<Response
   console.error(`[web] request failed id=${requestId} ${method} ${path}`, error)
 
   if (enabled) {
-    Sentry.withScope((scope) => {
+    await Sentry.withIsolationScope(async (scope) => {
       scope.setTag('request_id', requestId)
       scope.setTag('http.method', method)
       scope.setContext('request', { id: requestId, method, path })
+      const user = await verifiedSentryUser(c)
+      if (user) scope.setUser(user)
       Sentry.captureException(error)
     })
     // 常驻 VPS 通常会自行发送；serverless 可能在响应后冻结，异常路径短暂 flush 一次。

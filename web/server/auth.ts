@@ -758,6 +758,7 @@ auth.get('/me', async (c) => {
   const dailyReward = awardDailyLogin(s.uid) ? 5 : 0
   const row = findById.get(s.uid) as UserRow
   return c.json({
+    id: s.uid,
     username: row.username,
     createdAt: row.created_at,
     // 只回显已核验的邮箱地址本身（设置页展示用）；密保仍只报「设没设」，

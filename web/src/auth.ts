@@ -23,6 +23,7 @@ export function clearPendingInvite(): void {
 }
 
 export interface AuthUser {
+  id: number
   username: string
   createdAt: string
   /** Bangumi 数字 UID 或自定义用户名；空串表示尚未设置。 */
@@ -55,6 +56,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 }
 
 type MeRes = {
+  id: number
   username: string
   createdAt: string
   bgmUid: string
@@ -73,6 +75,7 @@ const listeners = new Set<() => void>()
 
 function setUser(u: AuthUser | null, dailyReward = 0): void {
   currentUser = u
+  window.__mapleMonitoring?.setUser(u ? { id: u.id, username: u.username } : null)
   ready = true
   if (dailyReward > 0) dailyRewardEvent = { seq: dailyRewardEvent.seq + 1, points: dailyReward }
   listeners.forEach((fn) => fn())
@@ -97,6 +100,7 @@ export const auth = {
       const me = await request<MeRes>('/me')
       clearPendingInvite()
       setUser({
+        id: me.id,
         username: me.username,
         createdAt: me.createdAt,
         bgmUid: me.bgmUid,

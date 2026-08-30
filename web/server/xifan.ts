@@ -42,6 +42,7 @@ import { clearRateLimit, clientIp, getSession, rateLimited } from './auth'
 import { db } from './db'
 import { playerPageSecurity, renderNonce } from './security'
 import { captureClientLog } from './monitoring'
+import { sanitizeSentryUser } from '../shared/sentry-user'
 import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources } from './player-sources'
 import {
   AdmissionRequired,
@@ -343,12 +344,26 @@ xifan.delete('/prepared/:key', async (c) => {
 
 // 浏览器端 DSN 是公开值（跟服务端那份是**两个项目**，别混用，否则同名 issue 会糊在一起）。
 // 运行时读环境变量而不是构建时打进去：播放页是服务端渲染的，换 release 不用重新构建前端。
-function playerMonitorConfig(): { dsn: string; environment: string; release: string } {
+function playerMonitorConfig(session: { uid: number; username: string }) {
+  const dsn = process.env.PLAYER_SENTRY_DSN?.trim() ?? ''
   return {
-    dsn: process.env.PLAYER_SENTRY_DSN?.trim() ?? '',
+    dsn,
     environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
     release: process.env.SENTRY_RELEASE || '',
+    ...(dsn ? { user: sanitizeSentryUser(session) } : {}),
   }
+}
+
+const INLINE_JSON_ESCAPES: Record<string, string> = {
+  '<': '\\u003c',
+  '>': '\\u003e',
+  '&': '\\u0026',
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029',
+}
+
+function inlineScriptJson(value: unknown): string {
+  return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (char) => INLINE_JSON_ESCAPES[char]!)
 }
 
 xifan.get('/play-page', async (c) => {
@@ -367,7 +382,7 @@ xifan.get('/play-page', async (c) => {
     PLAY_PAGE
       .replace('__PLAYER_SOURCES__', sources)
       .replace('__PROXY_HOSTS__', JSON.stringify(PROXY_HOSTS))
-      .replace('__MONITOR_CONFIG__', JSON.stringify(playerMonitorConfig())),
+      .replace('__MONITOR_CONFIG__', inlineScriptJson(playerMonitorConfig(session))),
   )
   playerPageSecurity(c, page.nonce)
   // pan.wo 的下载响应带 attachment；保持来源信息时 Chromium 会把它判成不可播放媒体。
