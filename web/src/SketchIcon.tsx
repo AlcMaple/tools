@@ -31,6 +31,8 @@ const SYMBOLS = `
 <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5.5v13M15 5.5v13"/></symbol>
 <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 5.5L8 12l6.5 6.5"/></symbol>
 <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.2S3.5 14.8 3.5 8.9A4.4 4.4 0 0 1 12 6.6a4.4 4.4 0 0 1 8.5 2.3c0 5.9-8.5 11.3-8.5 11.3z"/></symbol>
+<symbol id="i-ticket" viewBox="0 0 24 24"><path d="M4 6.5h16v4a2.1 2.1 0 0 0 0 4v3H4v-3a2.1 2.1 0 0 0 0-4z"/><path d="M9 8.5v7"/></symbol>
+<symbol id="i-gift" viewBox="0 0 24 24"><path d="M4 10h16v10H4zM3 6.5h18V10H3zM12 6.5V20"/><path d="M12 6.5C9.2 6.5 7 5.5 7 3.9c0-1 1-1.7 2.1-1.4C10.8 3 12 6.5 12 6.5zM12 6.5c2.8 0 5-1 5-2.6 0-1-1-1.7-2.1-1.4C13.2 3 12 6.5 12 6.5z"/></symbol>
 `
 
 export function SketchSprite(): JSX.Element {
@@ -48,6 +50,7 @@ export type SketchIconName =
   | 'pencil' | 'calendar' | 'tracks' | 'settings' | 'search' | 'user' | 'plus' | 'minus'
   | 'play' | 'star' | 'x' | 'check' | 'alert' | 'chev' | 'eye' | 'eye-off' | 'refresh'
   | 'external' | 'dots' | 'logout' | 'clip' | 'tag' | 'edit' | 'mail' | 'google' | 'pause' | 'back' | 'heart'
+  | 'ticket' | 'gift'
 
 export function Ic({ name, cls = 'ic' }: { name: SketchIconName; cls?: string }): JSX.Element {
   return (

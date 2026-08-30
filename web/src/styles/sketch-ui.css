@@ -2361,3 +2361,166 @@ body[data-auth='out'] .track-btn { display: none; }
 .ge-compressed { display: flex; align-items: center; gap: 4px; min-width: 0; font-family: var(--font-hand); font-size: 13px; color: var(--gold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ge-compressed .ic { color: var(--gold); flex: none; }
 .line-card.on .lc-dot { background: var(--teal-mid); }
+
+/* ---------- 放映福利：票夹 / 扭蛋 / 积分兑换 ---------- */
+.reward-page { max-width: 980px; margin: 0 auto; }
+.reward-title { margin-bottom: 0; }
+.reward-title .head-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1.5px dashed var(--sakura);
+  border-radius: 50%;
+  background: var(--sakura-wash);
+  color: var(--sakura);
+  transform: rotate(-5deg);
+}
+.reward-title .head-ico .ic { width: 26px; height: 26px; }
+.reward-loading { min-height: 55vh; justify-content: center; }
+.reward-empty { margin: 70px auto 0; max-width: 620px; }
+
+.reward-hero { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 20px; align-items: center; }
+.reward-wallet { min-width: 0; padding: 22px 24px 24px; overflow: visible; }
+.reward-wallet::before,
+.reward-wallet::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 34px;
+  margin-top: -17px;
+  background: var(--paper);
+  border: 1.5px solid var(--line);
+}
+.reward-wallet::before { left: -10px; border-radius: 0 18px 18px 0; border-left: 0; }
+.reward-wallet::after { right: -10px; border-radius: 18px 0 0 18px; border-right: 0; }
+.reward-wallet-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.reward-wallet-head h2 { margin-top: 4px; font-family: var(--font-hand); font-size: 23px; font-weight: 500; }
+.reward-balances { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.reward-balance {
+  min-width: 0;
+  min-height: 118px;
+  display: flex;
+  flex-direction: column;
+  padding: 13px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--wob-3);
+  background: var(--paper);
+}
+.reward-balance > span { font-size: 12px; color: var(--ink-sub); }
+.reward-balance strong { margin: 7px 0 3px; font-family: var(--font-hand); font-size: 29px; line-height: 1; }
+.reward-balance strong.date { margin-block: 10px 7px; font-size: 18px; line-height: 1.25; }
+.reward-balance small { margin-top: auto; font-size: 10.5px; line-height: 1.45; color: var(--ink-faint); }
+.reward-balance.gold { border-color: rgba(184, 134, 29, .55); background: rgba(255, 226, 130, .23); }
+.reward-balance.gold strong { color: var(--gold); }
+.reward-balance.teal { border-color: var(--teal-line); background: var(--teal-wash); }
+.reward-balance.teal strong { color: var(--teal); }
+.reward-balance.sakura { border-color: var(--sakura-mid); background: var(--sakura-wash); }
+.reward-balance.sakura strong { color: var(--sakura); }
+
+.reward-guide { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.reward-guide img { display: block; width: 146px; height: 146px; object-fit: contain; filter: drop-shadow(0 8px 12px rgba(30, 36, 52, .14)); }
+.reward-guide .bubble { width: 190px; max-width: 190px; margin-top: -10px; font-size: 12.5px; }
+.reward-guide .bubble::after { top: -7px; bottom: auto; left: 50%; margin-left: -6px; transform: rotate(225deg) skew(8deg, 8deg); }
+
+.reward-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .92fr); gap: 16px; align-items: stretch; }
+.reward-layout > .panel { min-width: 0; height: 100%; }
+.reward-copy { min-height: 50px; color: var(--ink-sub); font-size: 13px; line-height: 1.75; }
+.reward-copy b { color: var(--teal); }
+.invite-code-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-top: 14px; }
+.invite-code {
+  min-width: 0;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0 14px;
+  border: 1.5px dashed var(--teal-line);
+  border-radius: 8px;
+  background: var(--teal-wash);
+  color: var(--teal);
+  font-family: var(--font-hand);
+  font-size: 21px;
+  letter-spacing: .16em;
+  white-space: nowrap;
+}
+.reward-rest { min-height: 106px; display: grid; place-items: center; color: var(--ink-faint); font-size: 13px; }
+.reward-cost { margin-left: auto; color: var(--sakura); font-family: var(--font-body); font-size: 11.5px; }
+
+.gacha-stage { min-height: 140px; display: grid; grid-template-columns: 118px minmax(0, 1fr); align-items: center; gap: 10px; }
+.gacha-capsule { position: relative; width: 88px; height: 112px; margin: 0 auto; filter: drop-shadow(0 7px 7px rgba(62, 67, 80, .14)); }
+.capsule-top,
+.capsule-bottom { position: absolute; left: 4px; width: 80px; height: 52px; border: 2px solid var(--line-strong); }
+.capsule-top { top: 4px; border-radius: 42px 42px 8px 8px; background: var(--sakura-mid); }
+.capsule-bottom { top: 56px; border-radius: 8px 8px 42px 42px; background: var(--card); }
+.capsule-star { position: absolute; z-index: 2; top: 43px; left: 31px; width: 28px; height: 28px; display: grid; place-items: center; border: 2px solid var(--gold); border-radius: 50%; background: var(--gold-hl); color: var(--gold); font-size: 17px; }
+.gacha-capsule.rolling { animation: gacha-roll .22s ease-in-out infinite alternate; }
+@keyframes gacha-roll {
+  from { transform: rotate(-7deg) translateY(1px); }
+  to { transform: rotate(8deg) translateY(-3px); }
+}
+.gacha-result { min-width: 0; min-height: 72px; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 10px 12px; border-left: 1.5px dashed var(--line); }
+.gacha-result span { font-size: 11.5px; color: var(--ink-faint); }
+.gacha-result strong { min-height: 2.6em; color: var(--ink-sub); font-family: var(--font-hand); font-size: 18px; line-height: 1.3; }
+.gacha-result.show strong { color: var(--sakura); animation: stamp-in .45s var(--ease-stick); }
+.prize-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-top: 12px; }
+.prize-grid > span { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 5px 7px; border-radius: 5px; background: var(--paper-2); font-size: 10px; }
+.prize-grid b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.prize-grid small { flex: none; color: var(--sakura); }
+
+.reward-shop { padding: 18px 0 0; border-top: 1.5px dashed var(--line-strong); }
+.reward-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 14px; padding-inline: 10px; }
+.reward-section-head p { margin-top: 10px; color: var(--ink-sub); font-size: 12.5px; }
+.reward-points-left { flex: none; color: var(--ink-sub); font-size: 12.5px; }
+.reward-points-left b { color: var(--gold); font-family: var(--font-hand); font-size: 19px; }
+.reward-shop-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.reward-shop-card {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+  padding: 15px;
+  border: 1.5px solid var(--line);
+  border-top-width: 4px;
+  border-radius: var(--r-card);
+  background: var(--card);
+  box-shadow: var(--shadow-1);
+}
+.reward-shop-card.teal { border-top-color: var(--teal-mid); }
+.reward-shop-card.gold { border-top-color: var(--gold); }
+.reward-shop-card.sakura { border-top-color: var(--sakura-mid); }
+.reward-shop-card.lav { border-top-color: var(--lav); }
+.shop-card-top { display: flex; align-items: center; justify-content: space-between; min-height: 34px; }
+.shop-card-top > .ic { width: 31px; height: 31px; color: var(--ink-faint); }
+.reward-shop-card h3 { margin-top: 14px; font-family: var(--font-hand); font-size: 16px; font-weight: 500; }
+.reward-shop-card p { margin: 7px 0 14px; color: var(--ink-sub); font-size: 11.5px; line-height: 1.6; }
+.reward-shop-card .btn { margin-top: auto; padding-inline: 8px; }
+
+@media (max-width: 960px) {
+  .reward-page { max-width: 760px; }
+  .reward-hero { grid-template-columns: minmax(0, 1fr); }
+  .reward-guide { flex-direction: row; justify-content: center; margin-top: -4px; }
+  .reward-guide img { width: 96px; height: 96px; }
+  .reward-guide .bubble { margin: 0; max-width: 260px; width: max-content; }
+  .reward-guide .bubble::after { left: -7px; top: auto; bottom: 22px; margin: 0; transform: rotate(135deg) skew(8deg, 8deg); }
+  .reward-shop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 680px) {
+  .reward-title .head-ico { width: 42px; height: 42px; }
+  .reward-wallet { padding: 20px 17px 18px; }
+  .reward-balances { grid-template-columns: 1fr; }
+  .reward-balance { min-height: 92px; }
+  .reward-balance strong { font-size: 25px; }
+  .reward-balance small { margin-top: 5px; }
+  .reward-layout { grid-template-columns: minmax(0, 1fr); }
+  .invite-code-row { grid-template-columns: minmax(0, 1fr); }
+  .invite-code-row .btn { width: 100%; }
+  .gacha-stage { grid-template-columns: 112px minmax(0, 1fr); }
+  .prize-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reward-section-head { align-items: flex-start; }
+  .reward-points-left { padding-top: 5px; }
+  .reward-shop-grid { grid-template-columns: minmax(0, 1fr); }
+  .reward-shop-card { min-height: 196px; }
+}

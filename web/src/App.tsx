@@ -1,6 +1,6 @@
 // 应用外壳 —— 皮肤 = 原型稿的「书脊 + 内页」骨架：桌面左侧书脊侧栏（索引贴导航 + 用户卡），
-// 移动端顶栏 + 底部标签栏（CSS 切换，不写 JS 分支）。页面本体在 CalendarPage / TracksPage /
-// SettingsPage；这里只管壳、路由、全局登录弹窗、密保提示和便签 Toast。
+// 移动端顶栏 + 底部标签栏（CSS 切换，不写 JS 分支）。这里只管壳、固定页面路由、
+// 全局登录弹窗、密保提示和便签 Toast。
 import { useCallback, useEffect, useState } from 'react'
 import { AnnouncementModal } from './AnnouncementModal'
 import { auth, captureInviteFromLocation, useAuth } from './auth'
@@ -9,6 +9,7 @@ import { CalendarPage } from './CalendarPage'
 import { fetchSlowAdmissionStatus } from './api'
 import { NagBar } from './NagBar'
 import { navigate, useRoute, type Route } from './router'
+import { RewardsPage } from './RewardsPage'
 import { SettingsPage } from './SettingsPage'
 import { TracksPage } from './TracksPage'
 import { Ic, SketchSprite, type SketchIconName } from './SketchIcon'
@@ -19,10 +20,16 @@ import { toast, ToastRoot } from './Toast'
 const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira: string }> = {
   calendar: { tape: 'tape tl teal', stamp: '紗霧', stampCls: 'st-sakura', kira: 'キラキラ…' },
   tracks: { tape: 'tape tl gold', stamp: '在看', stampCls: 'st-teal', kira: 'キラキラ…' },
+  rewards: { tape: 'tape tl lav', stamp: '福利', stampCls: 'st-sakura', kira: 'ポンッ…' },
   settings: { tape: 'tape tl', stamp: '整理', stampCls: 'st-gold', kira: 'サラサラ…' },
 }
 
-const ROUTE_HREF: Record<Route, string> = { calendar: '#/', tracks: '#/tracks', settings: '#/settings' }
+const ROUTE_HREF: Record<Route, string> = {
+  calendar: '#/',
+  tracks: '#/tracks',
+  rewards: '#/rewards',
+  settings: '#/settings',
+}
 
 export default function App(): JSX.Element {
   const route = useRoute()
@@ -78,7 +85,7 @@ export default function App(): JSX.Element {
 
   // 设置页要登录才有意义：先保留目标地址并弹登录，成功后直接落在原模块。
   useEffect(() => {
-    if (ready && route === 'settings' && !user) {
+    if (ready && (route === 'settings' || route === 'rewards') && !user) {
       setAuthMode('login')
       setAuthOpen(true)
     }
@@ -148,6 +155,9 @@ export default function App(): JSX.Element {
             <IdxLink route="tracks" active={route === 'tracks'} icon="tracks">
               我的追番
             </IdxLink>
+            <IdxLink route="rewards" active={route === 'rewards'} icon="gift">
+              放映福利
+            </IdxLink>
             <IdxLink route="settings" active={route === 'settings'} icon="settings">
               设置
             </IdxLink>
@@ -206,7 +216,13 @@ export default function App(): JSX.Element {
         <main className="sheet">
           <div className="sheet-wrap">
             <NagBar onGoSettings={() => go('settings')} />
-            {route === 'settings' ? <SettingsPage /> : route === 'tracks' ? <TracksPage /> : <CalendarPage />}
+            {route === 'settings'
+              ? <SettingsPage />
+              : route === 'tracks'
+                ? <TracksPage />
+                : route === 'rewards'
+                  ? <RewardsPage />
+                  : <CalendarPage />}
           </div>
         </main>
       </div>
@@ -218,6 +234,9 @@ export default function App(): JSX.Element {
         </MTab>
         <MTab route="tracks" active={route === 'tracks'} icon="tracks">
           我的追番
+        </MTab>
+        <MTab route="rewards" active={route === 'rewards'} icon="gift">
+          放映福利
         </MTab>
         <MTab route="settings" active={route === 'settings'} icon="settings">
           设置
@@ -232,7 +251,7 @@ export default function App(): JSX.Element {
         onClose={() => {
           setAuthOpen(false)
           setOauthError(null)
-          if (route === 'settings' && !auth.user) navigate('calendar')
+          if ((route === 'settings' || route === 'rewards') && !auth.user) navigate('calendar')
         }}
       />
       <ToastRoot />

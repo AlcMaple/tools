@@ -1,12 +1,13 @@
-// 极简 hash 路由 —— 网页版目前只有两个页面（周历 / 设置），为此引 react-router 不划算（YAGNI），
+// 极简 hash 路由 —— 网页版只有少量固定页面，为此引 react-router 不划算（YAGNI），
 // 但也不能只用 state：那样地址栏不变，设置页刷新就回周历、也收藏不了。hash 路由 20 行拿到真实 URL。
 import { useEffect, useState } from 'react'
 
-export type Route = 'calendar' | 'settings' | 'tracks'
+export type Route = 'calendar' | 'settings' | 'tracks' | 'rewards'
 
 function parse(): Route {
   const h = window.location.hash.replace(/^#\/?/, '')
   if (h === 'settings' || h.startsWith('settings/')) return 'settings'
+  if (h === 'rewards') return 'rewards'
   return h === 'tracks' ? 'tracks' : 'calendar'
 }
 
