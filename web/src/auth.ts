@@ -62,16 +62,19 @@ type MeRes = {
   hasSecurity: boolean
   hasEmail: boolean
   hasPassword: boolean
+  dailyReward: number
 }
 type LoginRes = { username: string; hasSecurity: boolean; hasEmail: boolean; hasPassword: boolean }
 
 let currentUser: AuthUser | null = null
 let ready = false // 首次 /me 是否已回来（避免登录态未知时闪一下登录按钮）
+let dailyRewardEvent = { seq: 0, points: 0 }
 const listeners = new Set<() => void>()
 
-function setUser(u: AuthUser | null): void {
+function setUser(u: AuthUser | null, dailyReward = 0): void {
   currentUser = u
   ready = true
+  if (dailyReward > 0) dailyRewardEvent = { seq: dailyRewardEvent.seq + 1, points: dailyReward }
   listeners.forEach((fn) => fn())
 }
 
@@ -81,6 +84,12 @@ export const auth = {
   },
   get ready(): boolean {
     return ready
+  },
+  consumeDailyReward(seq: number): number {
+    if (dailyRewardEvent.seq !== seq || dailyRewardEvent.points <= 0) return 0
+    const points = dailyRewardEvent.points
+    dailyRewardEvent = { seq, points: 0 }
+    return points
   },
   // 启动时探一次登录态；/me 401 时静默置未登录（未登录不是错误）。
   async init(): Promise<void> {
@@ -95,7 +104,7 @@ export const auth = {
         hasSecurity: me.hasSecurity,
         hasEmail: me.hasEmail,
         hasPassword: me.hasPassword,
-      })
+      }, me.dailyReward)
     } catch {
       setUser(null)
     }
@@ -104,17 +113,9 @@ export const auth = {
     await auth.init()
   },
   async register(username: string, password: string, confirm: string): Promise<void> {
-    const r = await request<LoginRes>('/register', { username, password, confirm, inviteCode: pendingInviteCode() })
+    await request<LoginRes>('/register', { username, password, confirm, inviteCode: pendingInviteCode() })
     clearPendingInvite()
-    setUser({
-      username: r.username,
-      createdAt: new Date().toISOString(),
-      bgmUid: '',
-      email: null,
-      hasSecurity: r.hasSecurity,
-      hasEmail: r.hasEmail,
-      hasPassword: r.hasPassword,
-    })
+    await auth.init()
   },
   async login(username: string, password: string): Promise<void> {
     await request<LoginRes>('/login', { username, password })
@@ -243,8 +244,12 @@ export async function unbindEmailVerify(challengeId: string, code: string): Prom
 }
 
 // 组件里订阅登录态。返回 { user, ready }，配合 auth.login/register/logout 用。
-export function useAuth(): { user: AuthUser | null; ready: boolean } {
+export function useAuth(): {
+  user: AuthUser | null
+  ready: boolean
+  dailyReward: { seq: number; points: number }
+} {
   const [, force] = useState(0)
   useEffect(() => auth.subscribe(() => force((n) => n + 1)), [])
-  return { user: currentUser, ready }
+  return { user: currentUser, ready, dailyReward: dailyRewardEvent }
 }

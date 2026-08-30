@@ -105,15 +105,16 @@ function grantPriority(uid: number, days: number, source: string, sourceRef: str
   return { startsAt, endsAt }
 }
 
-export function awardDailyLogin(uid: number): void {
-  if (!rewardsEnabled(uid)) return
+export function awardDailyLogin(uid: number): boolean {
+  if (!rewardsEnabled(uid)) return false
   const day = TAIPEI_DAY.format(new Date())
   const eventKey = `daily-login:${uid}:${day}`
-  db.prepare(
+  const result = db.prepare(
     `INSERT OR IGNORE INTO reward_ledger
       (user_id, event_key, kind, delta, detail, created_at)
      VALUES (?, ?, 'daily_login', 5, ?, ?)`,
   ).run(uid, eventKey, day, Date.now())
+  return result.changes === 1
 }
 
 function newInviteCode(): string {

@@ -93,7 +93,6 @@ export async function issueSession(c: Context, s: Session): Promise<void> {
     path: '/',
     maxAge: MAX_AGE,
   })
-  awardDailyLogin(s.uid)
 }
 
 // 预编译语句（oauth.ts 复用其中带 export 的几条）
@@ -756,7 +755,7 @@ auth.post('/logout', (c) => {
 auth.get('/me', async (c) => {
   const s = await getSession(c)
   if (!s) return c.json({ error: '未登录' }, 401)
-  awardDailyLogin(s.uid)
+  const dailyReward = awardDailyLogin(s.uid) ? 5 : 0
   const row = findById.get(s.uid) as UserRow
   return c.json({
     username: row.username,
@@ -768,6 +767,7 @@ auth.get('/me', async (c) => {
     hasSecurity: !!row.security_answer_hash,
     hasEmail: !!row.email && !!row.email_verified_at,
     hasPassword: row.password_enabled === 1,
+    dailyReward,
   })
 })
 
