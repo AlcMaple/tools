@@ -19,15 +19,15 @@ const SHOP: Array<{
   accent: string
   mark: string
 }> = [
-  { item: 'ticket_1', title: '放映券 ×1', note: '先替你收好一张。', cost: 50, accent: 'teal', mark: '×1' },
-  { item: 'ticket_5', title: '放映券 ×5', note: '多备几张，不许一下用光哦。', cost: 200, accent: 'gold', mark: '×5' },
-  { item: 'priority_7d', title: '7 天免券', note: '这一周，优先候补不收券。', cost: 300, accent: 'sakura', mark: '7日' },
-  { item: 'priority_30d', title: '30 天免券', note: '整整三十天，都不用交券。', cost: 900, accent: 'lav', mark: '30日' },
+  { item: 'ticket_1', title: '放映券 ×1', note: '先替你收好一张', cost: 50, accent: 'teal', mark: '×1' },
+  { item: 'ticket_5', title: '放映券 ×5', note: '多备几张，不许一下用光哦', cost: 200, accent: 'gold', mark: '×5' },
+  { item: 'priority_7d', title: '7 天免券', note: '这一周，不收券', cost: 300, accent: 'sakura', mark: '7日' },
+  { item: 'priority_30d', title: '30 天免券', note: '整整三十天，都不用交券', cost: 900, accent: 'lav', mark: '30日' },
 ]
 
 const PRIZES = [
   ['10 星光', '45%'],
-  ['返还 20 星光', '25%'],
+  ['20 星光', '25%'],
   ['放映券 ×1', '20%'],
   ['放映券 ×2', '8%'],
   ['7 天免券', '1.8%'],
@@ -124,7 +124,7 @@ export function RewardsPage(): JSX.Element {
         <div className="empty panel reward-empty mt16">
           <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />
           <div className="empty-say">
-            <div className="bubble empty-bubble"><span>这页今天先不给你看。开放的时候我会说的。</span></div>
+            <div className="bubble empty-bubble"><span>这页今天先不给你看。开放的时候我会说的</span></div>
           </div>
         </div>
       </>
@@ -150,7 +150,7 @@ export function RewardsPage(): JSX.Element {
       return
     }
     if (summary.points < 20) {
-      toast(`还差 ${20 - summary.points} 星光，再攒一点嘛。`)
+      toast(`还差 ${20 - summary.points} 星光，再攒一点嘛`)
       return
     }
     setBusy('draw')
@@ -202,7 +202,7 @@ export function RewardsPage(): JSX.Element {
 
         <div className="reward-guide">
           <img src="/assets/sagiri-mascot.webp" alt="和泉纱雾" />
-          <div className="bubble"><span>想要哪张券？先说好，不许一次全花掉。</span></div>
+          <div className="bubble"><span>想要哪张券？先说好，不许一次全花掉</span></div>
         </div>
       </div>
 
@@ -212,13 +212,13 @@ export function RewardsPage(): JSX.Element {
           <div className="panel-title"><Ic name="mail" />邀请有礼</div>
           {summary.inviteCode ? (
             <>
-              <p className="reward-copy">叫一位新朋友来，我就给你 <b>100</b> 星光。</p>
+              <p className="reward-copy">叫一位新朋友来，我就给你 <b>100</b> 星光</p>
               <div className="invite-code-row">
                 <span className="invite-code">{summary.inviteCode}</span>
                 <button
                   className="btn btn-primary"
                   type="button"
-                  onClick={() => void copyText(inviteLink).then(() => toast('链接抄好啦，快叫人来。'))}
+                  onClick={() => void copyText(inviteLink).then(() => toast('链接抄好啦，快叫人来'))}
                 >
                   <Ic name="clip" cls="ic ic-sm" />复制邀请链接
                 </button>
@@ -239,7 +239,7 @@ export function RewardsPage(): JSX.Element {
               <span className="capsule-bottom" />
             </div>
             <div className={`gacha-result${drawResult ? ' show' : ''}`} aria-live="polite">
-              <span>{drawResult ? '给你这个' : '哼，才不会先告诉你。'}</span>
+              <span>{drawResult ? '给你这个' : '哼，才不会先告诉你'}</span>
               <strong>{drawResult || '？'}</strong>
             </div>
           </div>
@@ -279,7 +279,7 @@ export function RewardsPage(): JSX.Element {
                 disabled={busy !== null}
                 onClick={() => {
                   if (summary.points < item.cost) {
-                    toast(`还差 ${item.cost - summary.points} 星光，再攒一点嘛。`)
+                    toast(`还差 ${item.cost - summary.points} 星光，再攒一点嘛`)
                     return
                   }
                   void redeem(item.item, item.title)
@@ -302,7 +302,7 @@ function PageTitle(): JSX.Element {
         <span className="head-ico"><Ic name="gift" /></span>
         <div>
           <h1 className="title-sketch" style={{ fontSize: 34 }}>放映福利</h1>
-          <p className="muted small mt8">今天的星光，也替你收好啦。</p>
+          <p className="muted small mt8">今天的星光，也替你收好啦</p>
         </div>
       </div>
     </div>
