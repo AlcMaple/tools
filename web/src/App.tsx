@@ -33,7 +33,7 @@ const ROUTE_HREF: Record<Route, string> = {
 
 export default function App(): JSX.Element {
   const route = useRoute()
-  const { user, ready } = useAuth()
+  const { user, ready, dailyReward } = useAuth()
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [oauthError, setOauthError] = useState<string | null>(null)
@@ -43,6 +43,12 @@ export default function App(): JSX.Element {
     captureInviteFromLocation()
     void auth.init()
   }, [])
+
+  useEffect(() => {
+    if (!dailyReward.seq) return
+    const points = auth.consumeDailyReward(dailyReward.seq)
+    if (points > 0) toast(`今天的 ${points} 星光，我替你收好啦`)
+  }, [dailyReward.seq])
 
   // 播放页可关闭后继续候补；只要本站仍有页面开着，就在站内提示轮到的五分钟名额。
   useEffect(() => {
