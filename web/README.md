@@ -89,7 +89,7 @@ Google 登录的重定向 URI 按环境各登记一条，同一客户端可登�
 
 > 跨项目复用、「哪些能抄哪些要单独生成」的完整说明见 [`docs/web/Sentry监控接入通用指南.md`](../docs/web/Sentry监控接入通用指南.md)。本机部署步骤见 [`docs/web/唐人云部署保姆教程.md`](../docs/web/唐人云部署保姆教程.md)。
 
-浏览器与服务端建议放在两个 Sentry 项目，避免同名 issue 混在一起。前端监控按需动态加载；没有 `VITE_SENTRY_DSN` 的普通构建不会把浏览器 SDK 打进首屏包。`public/white-screen-probe.js` 是独立静态脚本（CSP 不允许内联），主包渲染失败、`#root` 4 秒后仍为空时兜底上报一条 `fatal`。两端都关闭默认 PII，事件发送前还会清掉 URL 查询串、Cookie、请求体和用户身份，请求头里**只保留 `User-Agent`**（Sentry 服务端据此还原 browser / os / device 上下文，排障常用；Cookie / Authorization / Referer 全丢）；只把 trace 头传播给本站 `/api`，不发给视频源或图床，也不启用 Session Replay。服务端只采样 API，静态资源和 `/api/health` 健康探测不生成性能 span。
+浏览器与服务端建议放在两个 Sentry 项目，避免同名 issue 混在一起。前端监控按需动态加载；没有 `VITE_SENTRY_DSN` 的普通构建不会把浏览器 SDK 打进首屏包。`public/white-screen-probe.js` 是独立静态脚本（CSP 不允许内联），主包渲染失败、`#root` 4 秒后仍为空时兜底上报一条 `fatal`。两端都关闭默认 PII，事件发送前还会清掉 URL 查询串、Cookie、请求体和未主动设置的用户字段，请求头里**只保留 `User-Agent`**（Sentry 服务端据此还原 browser / os / device 上下文，排障常用；Cookie / Authorization / Referer 全丢）；已验证的登录账号只关联稳定主键与清理、限长的用户名，不上传邮箱、手机号、Cookie、JWT、IP 或请求体。退出、会话失效和账号切换会清空或更新用户；匿名事件没有 user。只把 trace 头传播给本站 `/api`，不发给视频源或图床，也不启用 Session Replay。服务端只采样 API，静态资源和 `/api/health` 健康探测不生成性能 span。
 
 ```bash
 RELEASE="$(git rev-parse --short HEAD)"

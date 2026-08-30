@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/react'
+import { sanitizeSentryUser } from '../shared/sentry-user'
 
 const DEFAULT_TRACES_SAMPLE_RATE = 0.05
 
@@ -65,6 +66,10 @@ function redactSpanUrls(spans: unknown): void {
   }
 }
 
+function syncSentryUser(user: unknown): void {
+  Sentry.setUser(sanitizeSentryUser(user) ?? null)
+}
+
 export function initBrowserMonitoring(): void {
   const dsn = import.meta.env.VITE_SENTRY_DSN?.trim()
   if (!dsn) return
@@ -91,12 +96,12 @@ export function initBrowserMonitoring(): void {
       return breadcrumb
     },
     beforeSend(event) {
-      event.user = undefined
+      event.user = sanitizeSentryUser(event.user)
       redactRequest(event.request)
       return event
     },
     beforeSendTransaction(event) {
-      event.user = undefined
+      event.user = sanitizeSentryUser(event.user)
       redactRequest(event.request)
       redactSpanUrls(event.spans)
       if (event.transaction) event.transaction = event.transaction.split(/[?#]/, 1)[0]
@@ -108,6 +113,7 @@ export function initBrowserMonitoring(): void {
   // 只暴露一个窄接口，不把整个 Sentry 挂到 window 上。
   window.__mapleMonitoring = {
     captureMessage: (message: string) => Sentry.captureMessage(message, 'fatal'),
+    setUser: syncSentryUser,
   }
 }
 

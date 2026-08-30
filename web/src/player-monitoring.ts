@@ -12,14 +12,17 @@ import {
   captureMessage,
   init,
   setTag,
+  setUser,
   type BrowserOptions,
   type ErrorEvent,
 } from '@sentry/browser'
+import { sanitizeSentryUser, type SentryUser } from '../shared/sentry-user'
 
 interface PlayerMonitorConfig {
   dsn?: string
   environment?: string
   release?: string
+  user?: SentryUser
 }
 
 interface PlayerMonitor {
@@ -49,7 +52,7 @@ function cleanUrl(raw: string | undefined): string | undefined {
 
 const beforeSend: NonNullable<BrowserOptions['beforeSend']> = (event) => {
   const typed = event as ErrorEvent & { request?: { url?: string; headers?: unknown } }
-  typed.user = undefined
+  typed.user = sanitizeSentryUser(typed.user)
   if (typed.request) {
     typed.request.url = cleanUrl(typed.request.url)
     typed.request.headers = undefined
@@ -59,6 +62,19 @@ const beforeSend: NonNullable<BrowserOptions['beforeSend']> = (event) => {
     if (data && typeof data.url === 'string') data.url = cleanUrl(data.url)
   }
   return typed
+}
+
+async function refreshSentryUserFromSession(): Promise<void> {
+  try {
+    const response = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' })
+    if (!response.ok) {
+      setUser(null)
+      return
+    }
+    setUser(sanitizeSentryUser(await response.json()) ?? null)
+  } catch {
+    setUser(null)
+  }
 }
 
 const config = window.__PLAYER_MONITOR__
@@ -77,6 +93,11 @@ if (config?.dsn) {
     beforeSend,
   })
   setTag('surface', 'xifan-player')
+  setUser(sanitizeSentryUser(config.user) ?? null)
+  window.addEventListener('focus', () => { void refreshSentryUserFromSession() })
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void refreshSentryUserFromSession()
+  })
 
   window.playerMonitor = {
     breadcrumb(message) {

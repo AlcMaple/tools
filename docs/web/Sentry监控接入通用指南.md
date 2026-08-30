@@ -1,6 +1,6 @@
 # Sentry 监控接入通用指南
 
-一次接入的经验抽成可复用的东西。本项目（`anime.alcmaple.cn`）已按此实现，代码见
+一次接入的经验抽成可复用的东西。本项目（`anime.alcmaple.cn`）已按此实现监控骨架；用户关联是否完成以 §1 的契约和验收为准，代码见
 `web/src/monitoring.ts` / `web/server/monitoring.ts` / `web/vite.config.ts` /
 `web/public/white-screen-probe.js`，SPA 之外那张裸 HTML 页另见
 `web/src/player-monitoring.ts` / `web/scripts/build-player-monitor.ts`（§7）；本机落地步骤见
@@ -8,11 +8,13 @@
 
 这份文档的用法：
 
-- **落地本项目** —— 照「§4 本项目落地值」那张表填，代码已经写好，不用动。
+- **落地本项目** —— 照「§4 本项目落地值」那张表填；基础监控代码已经写好，用户关联按 §1 补齐并重新验收。
 - **接一个新项目 / 新服务器** —— 「§1 照抄」整段搬过去，「§2 每实例单独生成」逐项走一遍生成流程，
   再按「§5 换个项目 / 服务器」的顺序拼起来。
 - **项目里有 SPA 之外的页面**（服务端渲染的裸 HTML、独立入口）—— 上面那套**覆盖不到它**，
   补 §7；页面里自己打的日志怎么进 Sentry 见 §8；Sentry 天生看不到、必须自己造遥测的那类问题见 §9。
+
+> **重要更正（2026-08-30）**：早期版本把“用户身份全去掉”写成了默认规则，导致按旧文档接入的项目在 Sentry 的“用户”列长期显示 0。`sendDefaultPii:false` 只表示关闭 SDK 自动采集 PII，**不等于不能主动设置已验证的用户上下文**。本指南现在要求：登录用户主动关联稳定账号 ID，匿名事件继续没有用户。
 
 ---
 
@@ -20,14 +22,14 @@
 
 ```
 浏览器：@sentry/react，懒加载（无 DSN 的构建不打进首屏包）
-          │  未处理异常 + React 可恢复错误 + 低采样 trace + Web Vitals
+          │  未处理异常 + React 可恢复错误 + 低采样 trace + Web Vitals + 已验证 user.id
           │  只向本站 /api 传播 trace，不发第三方
           ▼
         Sentry 项目 A（<app>-web）
                                         ← 两个项目，issue 不混
         Sentry 项目 B（<app>-server）
           ▲
-          │  未处理异常（强制 capture）+ 每请求 X-Request-ID + 低采样 trace
+          │  未处理异常（强制 capture）+ 每请求 X-Request-ID + 低采样 trace + 已验证 user.id
           │  只采样 /api，静态资源和健康探测不计额度
 服务端：@sentry/node，模块加载即 init，手动埋 Hono 请求 span
           （不依赖自动 HTTP integration → VPS / serverless 行为一致）
@@ -38,8 +40,9 @@
           → filesToDeleteAfterUpload 立刻从 dist 删掉 .map
 ```
 
-两端都 `sendDefaultPii:false`，事件出站前再清一遍：URL 查询串、Cookie、请求体、用户身份全去掉，
-请求头**只留 `User-Agent`**（Sentry 服务端靠它还原 browser/os/device，排障常用）。不启用 Session Replay。
+两端都 `sendDefaultPii:false`，事件出站前再清一遍自动采集字段：URL 查询串、Cookie、请求体和未主动设置的用户字段都去掉，
+请求头**只留 `User-Agent`**（Sentry 服务端靠它还原 browser/os/device，排障常用）。登录身份按 §1 的契约主动关联，
+不启用 Session Replay。
 
 > **这张图只覆盖「SPA + 服务端」。** 浏览器那一路的 DSN 是**构建时**注入 SPA bundle 的，
 > 所以任何**不由 SPA bundle 驱动**的页面都在盲区外面 —— 见 §7。
@@ -53,12 +56,12 @@
 | # | 文件 | 作用 | 换项目要动的地方 |
 |---|---|---|---|
 | 1 | `package.json` deps | `@sentry/react` `@sentry/node`（dep）、`@sentry/vite-plugin`（devDep） | 无 |
-| 2 | `web/src/monitoring.ts` | 浏览器 init + PII 清洗 + 白屏探针接口 | **仅** `tracePropagationTargets` 里的域名正则（§2-F） |
-| 3 | `web/server/monitoring.ts` | 服务端 init + 请求中间件 + 未处理异常兜底 | 无（除非不是 Hono，见 §3） |
+| 2 | `web/src/monitoring.ts` | 浏览器 init + PII 清洗 + 用户上下文 + 白屏探针接口 | **仅** `tracePropagationTargets` 里的域名正则（§2-F） |
+| 3 | `web/server/monitoring.ts` | 服务端 init + 请求中间件 + 用户上下文 + 未处理异常兜底 | 无（除非不是 Hono，见 §3） |
 | 4 | `web/vite.config.ts` 的 `sentryVitePlugin(...)` 段 + `build.sourcemap` | source map 上传，token 缺失时自动跳过 | **仅** `filesToDeleteAfterUpload` 的 glob 要匹配你的构建输出目录（§2-J） |
 | 5 | `web/src/main.tsx` 的 `bootstrap()` | 有 `VITE_SENTRY_DSN` 才动态 import 监控模块 | 无 |
 | 6 | `web/index.html` 末尾 `<script src="/white-screen-probe.js">` + `web/public/white-screen-probe.js` | 主包渲染失败兜底 | **仅** 探针里的挂载点 id（`#root` / `#app`…，§2-I） |
-| 7 | `web/src/vite-env.d.ts` 的 `Window.__mapleMonitoring` 声明 | 类型 | 无 |
+| 7 | `web/src/vite-env.d.ts` 的 `Window.__mapleMonitoring` 声明 | 类型（含 `setUser`） | 无 |
 
 ### 环境变量契约（名字和语义固定，值见 §2）
 
@@ -71,6 +74,58 @@
 | `SENTRY_RELEASE` / `VITE_SENTRY_RELEASE` | 服务端 / 浏览器 | 运行时 / **构建时** | 无 release 分组，其余正常。**两个值必须相等**（同一次部署的前后端） |
 | `SENTRY_ENVIRONMENT` / `VITE_SENTRY_ENVIRONMENT` | 各自 | — | 退回 `NODE_ENV` / Vite mode |
 | `SENTRY_TRACES_SAMPLE_RATE` / `VITE_SENTRY_TRACES_SAMPLE_RATE` | 各自 | — | 默认 `0.05`（异常不受采样影响） |
+
+### 用户关联契约（必须显式实现）
+
+`sendDefaultPii:false` 关闭的是 SDK 的自动 PII 采集，不会自动知道“哪个登录账号触发了错误”。如果排障需要定位账号，必须在身份已由应用自己的登录系统验证后，主动调用 Sentry 的用户上下文 API（官方说明见 [Enriching Events](https://docs.sentry.io/platforms/javascript/guides/tanstackstart-react/enriching-events)）。
+
+两端统一遵守以下约定：
+
+1. **用户 ID 取已验证的账号 ID**：使用应用账号主键或 B 站 `mid`，转成字符串放在 `user.id`。不要把随机 session、Cookie、IP 当成账号 ID；它们最多只能说明一次浏览器会话或网络来源，不能回答“哪个用户”。
+2. **昵称只作为辅助显示**：需要时放在 `user.username`，限制长度并清理；不填邮箱、手机号、真实姓名、Cookie、JWT、请求体或完整上游用户对象。`id` 是定位的主依据，昵称变化不会影响同一用户归并。
+3. **前端在登录态变化时同步**：用户信息接口成功且确认已登录后调用 `Sentry.setUser({ id, username })`；退出登录、会话失效或切换账号时调用 `Sentry.setUser(null)`。不要只在应用首次加载时设置一次。
+4. **服务端从可信会话解析**：服务端必须从自己校验过的 session/JWT/登录结果取 ID，在每请求的 isolation scope 内设置用户；不要信任浏览器提交的 `X-User-Id` 等自定义 header。登录签发、会话读取/刷新后应缓存或更新该映射，避免每个 API 请求都额外回查上游用户信息。
+5. **匿名是明确状态**：没有登录用户时不设置 user，Sentry 的 Users 计数为 0 是预期结果；不能用“匿名设备 ID”冒充账号。历史匿名事件也不会在后来登录后自动补上用户。
+6. **触发路径要靠面包屑补齐**：用户 ID 只能回答“谁”，不能回答“怎么触发”。在搜索、点播、登录、同步等关键动作开始/结束处记录有限、可读的 breadcrumb（路由、动作名、阶段、结果），必要状态用白名单 context/tag；不要记录原始搜索词、完整 URL、Cookie、JWT 或请求体。
+
+浏览器侧的最小形态：
+
+```ts
+function syncSentryUser(user: { mid: number; uname?: string } | null) {
+  Sentry.setUser(
+    user
+      ? { id: String(user.mid), ...(user.uname ? { username: user.uname.slice(0, 128) } : {}) }
+      : null,
+  );
+}
+
+// 登录/刷新用户信息成功后
+syncSentryUser(authenticatedUser);
+// 退出登录或会话失效
+syncSentryUser(null);
+```
+
+服务端侧的关键不是复制浏览器字段，而是把可信会话身份放进请求作用域：
+
+```ts
+return Sentry.withIsolationScope(async scope => {
+  const user = await resolveVerifiedSessionUser(request);
+  if (user) scope.setUser({ id: String(user.id), ...(user.username ? { username: user.username } : {}) });
+  return handleRequest(request, response);
+});
+```
+
+`beforeSend` 和 `beforeSendTransaction` 仍要做最后一道白名单清洗，只保留 `id` / `username`。测试至少覆盖：登录事件有正确 ID、切换账号不会串用户、退出后事件无用户、匿名事件 Users 为 0、恶意或超长用户字段被丢弃。
+
+触发路径的最小形态：
+
+```ts
+Sentry.addBreadcrumb({
+  category: "ui",
+  message: "playback.start",
+  data: { route: "search-result", source: "user-click" },
+});
+```
 
 ### 发布流程的形状（平台无关）
 
@@ -212,7 +267,7 @@ SENTRY_RELEASE=            # 留空/占位；由部署脚本 export 后进程读
   的 PII 清洗、过滤掉自动 `Http` integration，这些跟框架无关。
 - **中间件换成目标框架的等价物**：Express 用 `Sentry.expressErrorHandler()` + 一个塞 request id 的
   中间件；Fastify 用 `onError` hook；等等。保持「每请求一个隔离 scope、路由名归一化（`stablePath`）、
-  只采样业务路由」这三点不变。
+  只采样业务路由」这三点不变；如果请求已认证，再在同一个隔离 scope 设置 §1 的 `user.id` / `user.username`。
 - 想省事也可以直接用官方对应框架的 SDK（`@sentry/node` 的 Express/Fastify/NestJS 集成），
   但那样就回到「依赖自动 instrumentation」，serverless / 常驻进程行为差异要自己趟。
 
@@ -238,6 +293,8 @@ SENTRY_RELEASE=            # 留空/占位；由部署脚本 export 后进程读
 | §7 裸 HTML 页 | 播放页 `/api/xifan/play-page`；DSN 走 `PLAYER_SENTRY_DSN`（= 前端 DSN，写在 `ecosystem.config.cjs`），tag `surface: xifan-player`，bundle 由 `/api/xifan/monitor.js` 发 |
 | J glob | `./dist/**/*.map`（`web/server/node.ts` 用 `serveStatic({root:'./dist'})` 对外发整个 dist） |
 
+> **当前项目的用户关联**：SPA 在 `/api/auth/me` 确认登录后同步已验证账号；服务端从 httpOnly 会话在每个 API 请求的隔离 scope 设置同一身份；播放页由服务端只注入这两个字段，并在回到前台时复核会话。若 Sentry issue 的 Users 仍显示 0，依次检查部署是否带了对应 DSN、受控账号的 `/api/auth/me` 是否成功、以及登录、刷新、切换账号和退出登录生命周期是否实际发生。
+
 发布步骤见 [`唐人云部署保姆教程.md`](唐人云部署保姆教程.md) 的「日常发布」。
 
 ---
@@ -257,18 +314,19 @@ SENTRY_RELEASE=            # 留空/占位；由部署脚本 export 后进程读
 
 ### 验收（通用，跟平台无关）
 
-1. 打开站点，控制台敲 `setTimeout(() => { throw new Error('sentry test') })`
+1. 先用受控测试账号登录，等待用户信息接口成功，再打开一个真实业务页面。
+2. 从**真实业务代码**触发一次受控错误（控制台 `eval` 只能验证 SDK 是否加载，不能验证源码栈和登录态）
    → `<app>-web` 项目 Issues 里几秒内出现。
-2. 点进那条 issue：
+3. 点进那条 issue：
    - **Context 有 browser / os / device** —— 没有的话是请求头被清光了（本项目 `redactRequest` 特意留了 `User-Agent`）。
    - `release` tag = 你这次的 commit —— 没有的话前端构建没注入 `VITE_SENTRY_RELEASE`。
-   - `user` 是 `?`、breadcrumb 里 URL 是 `[Filtered]` —— PII 清洗生效。
-3. 从**真实业务代码**触发一个错误（不是控制台 eval —— eval 没有源文件，栈只会是 `<anonymous>`），
-   确认栈还原到原始 `.ts/.tsx` 行 → source map 通了。
-4. 给任意 JS 资源 URL 加 `.map` 后缀访问：SPA 项目会返回 `index.html`（`content-type: text/html`），
+   - `user.id` 是受控测试账号的稳定 ID，`user.username` 是昵称（如果有）—— **不是** `?` 或 0；这一步验证“哪个用户”。
+   - breadcrumb 里有触发前的动作/阶段（例如 `playback.start`），URL 是 `[Filtered]` —— 这一步验证“怎么触发”与 PII 清洗同时生效。
+4. 确认栈还原到原始 `.ts/.tsx` 行 → source map 通了。
+5. 服务端制造一个真实 500（或等自然发生），确认 `<app>-server` 项目收到、带同一个用户 `id` / `username` 和 `X-Request-ID`；这一步验证“服务端也没有丢用户”。
+6. 退出登录后再触发一次匿名错误：事件应没有 user，Users 计数为 0；重新登录另一个受控账号再触发，`user.id` 必须变成第二个账号，不能串号。
+7. 给任意 JS 资源 URL 加 `.map` 后缀访问：SPA 项目会返回 `index.html`（`content-type: text/html`），
    **不是** JSON source map；非 SPA 应返回 404。任一情况都说明 `.map` 没落在对外目录里。
-5. 后端：制造一个真实 500（或等自然发生），确认 `<app>-server` 项目收到、带 `X-Request-ID`、
-   同一个 id 也在进程日志里。
 
 ---
 
@@ -289,6 +347,10 @@ Sentry 靠打进 bundle 的 debug id 关联，不需要那条注释。
 `os` / `device`（浏览器 SDK 不在客户端算这些）。把 headers 整个删掉 → 这三个上下文全空、排障时
 「只有 iOS Safari 会崩」这种线索就没了。UA 不算敏感（Cookie / Authorization / Referer 才是），
 所以单独放行它一个。
+
+**为什么 `sendDefaultPii:false` 仍要主动 `setUser`**：默认 PII 开关控制的是 SDK 自动收集的邮箱、IP、Cookie
+等环境信息，不会从登录态推断业务账号。要回答“哪个用户触发”，只能在应用完成身份校验后主动设置最小 `{ id, username? }`；
+`beforeSend` 再做白名单清洗。把 `event.user` 无条件删掉，或只传随机 session ID，都会让 Users 变成 0 或失去账号归属。
 
 **为什么服务端手动埋 span、还把自动 `Http` integration 过滤掉**：`@sentry/node` 的自动 HTTP
 instrumentation 依赖 Node ESM loader hook，VPS 常驻进程和 serverless 冷启动行为不一致、还可能跟
@@ -366,6 +428,10 @@ instrumentation 依赖 Node ESM loader hook，VPS 常驻进程和 serverless 冷
 
 > ⚠️ 别把**服务端** DSN 填进来。两个 DSN 长得几乎一样，填错的结果是浏览器错误跑进 server 项目，
 > 而且没有任何报错提示。
+
+裸页没有 SPA 的用户 store，不能直接“顺便”获得登录账号。若它有登录态，服务端渲染时只注入已校验的账号 `id` / `username`，
+或由页面调用同源会话接口后再执行 `Sentry.setUser`；不要把 session Cookie、JWT、手机号或邮箱写进 HTML。退出登录和会话失效时同样调用
+`Sentry.setUser(null)`，否则同一个标签页切换账号会把前一个用户带到后续事件里。
 
 ### 本项目落地位置（照着找对应文件）
 
@@ -452,6 +518,7 @@ IndexedDB 状态、Worker 内部进度。
 2. 主动报一条 → **确认它进的是浏览器项目**（`<app>-web`），不是服务端项目。进错了就是 DSN 填反了。
 3. 点进那条 issue 确认三件事：URL **不带 query**（脱敏生效）、`release` 是本次 commit、
    **面包屑里有页面加载时那几条自动记录的请求** —— 这条最能说明「装 SDK 而不是继续手打日志」值在哪。
-4. 再打开一次该页面，触发一条**普通日志**（非失败类），确认它**没有**在浏览器项目里开 issue，
+4. 如果页面支持登录，先用受控账号触发一次错误，确认 issue 的 `user.id` / `user.username` 对得上；退出后再触发匿名错误，确认不会沿用上一个账号。
+5. 再打开一次该页面，触发一条**普通日志**（非失败类），确认它**没有**在浏览器项目里开 issue，
    而是在服务端日志里 —— §8 的分工和去重生效。
-5. 给该页面的 bundle URL 加 `.map` 后缀访问 → 404（§7 那套本来就不生成 map）。
+6. 给该页面的 bundle URL 加 `.map` 后缀访问 → 404（§7 那套本来就不生成 map）。
