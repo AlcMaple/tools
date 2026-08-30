@@ -144,13 +144,13 @@ girigiri.post('/search', async (c) => {
 })
 
 girigiri.post('/locate', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; titles?: unknown }
+  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; titles?: unknown; rebind?: unknown }
   const bgmId = Number(body.bgmId)
   if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
   const titles = Array.isArray(body.titles) ? body.titles.filter((title): title is string => typeof title === 'string') : []
   try {
     c.header('Cache-Control', 'no-store')
-    return c.json(await locate(bgmId, titles))
+    return c.json(await locate(bgmId, titles, { rebind: body.rebind === true }))
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : 'Girigiri 周表请求失败' }, 502)
   }

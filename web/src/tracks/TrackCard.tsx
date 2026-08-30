@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SOURCES, coverUrl, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
+import { SOURCES, coverUrl, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
 import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast, watchEp } from './common'
@@ -8,7 +8,7 @@ import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, ta
 export function TrackCard({
   t,
   isToday,
-  boundSources,
+  bound,
   locating,
   onContinue,
   onPatch,
@@ -19,9 +19,9 @@ export function TrackCard({
 }: {
   t: Track
   isToday: boolean
-  boundSources: Set<SourceId>
+  bound: Partial<Record<SourceId, SourceBinding>>
   locating: boolean
-  onContinue: (source: SourceId, mode: WatchMode) => void
+  onContinue: (source: SourceId, mode: WatchMode, rebind?: boolean) => void
   onPatch: (bgmId: number, p: TrackPatch) => void
   onStatus: (s: TrackStatus) => void
   onEdit: () => void
@@ -201,7 +201,7 @@ export function TrackCard({
           <ContinueWatchAction
             label={considering ? '试看一集' : '继续看'}
             ep={ep}
-            boundSources={boundSources}
+            bound={bound}
             locating={locating}
             onPick={onContinue}
           />
@@ -362,15 +362,15 @@ function Nudge(): JSX.Element {
 export function ContinueWatchAction({
   label,
   ep,
-  boundSources,
+  bound,
   locating,
   onPick,
 }: {
   label: string
   ep: number
-  boundSources: Set<SourceId>
+  bound: Partial<Record<SourceId, SourceBinding>>
   locating: boolean
-  onPick: (source: SourceId, mode: WatchMode) => void
+  onPick: (source: SourceId, mode: WatchMode, rebind?: boolean) => void
 }): JSX.Element {
   const [open, setOpen] = useState(false)
 
@@ -386,6 +386,10 @@ export function ContinueWatchAction({
   const choose = (source: SourceId, mode: WatchMode): void => {
     setOpen(false)
     onPick(source, mode)
+  }
+  const rebind = (source: SourceId): void => {
+    setOpen(false)
+    onPick(source, 'online', true)
   }
 
   return (
@@ -417,24 +421,36 @@ export function ContinueWatchAction({
               从哪儿看呀……笨、笨蛋，才不是催你。挑个源，再挑「在纱雾这儿看」还是「跳去源站」。
             </p>
             <div className="wsrc-list">
-              {SOURCES.map((s) => (
-                <div key={s.id} className="wsrc-grp">
-                  <span className="wsrc-name">
-                    {s.label}
-                    {!boundSources.has(s.id) && <em className="wsrc-tag">还没认出来</em>}
-                  </span>
-                  <div className="wsrc-btns">
-                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => choose(s.id, 'online')}>
-                      <Ic name="play" cls="ic ic-sm" />
-                      在纱雾这儿看
-                    </button>
-                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => choose(s.id, 'source')}>
-                      <Ic name="external" cls="ic ic-sm" />
-                      跳去源站看
-                    </button>
+              {SOURCES.map((s) => {
+                const b = bound[s.id]
+                return (
+                  <div key={s.id} className="wsrc-grp">
+                    <div className="wsrc-head">
+                      <span className="wsrc-name">{s.label}</span>
+                      {b
+                        ? (
+                          <>
+                            <span className="wsrc-bound" title={`已认作《${b.name}》`}>《{b.name}》</span>
+                            <button type="button" className="wsrc-relink" onClick={() => rebind(s.id)} title="认错了？重新挑一个">
+                              不对，重认
+                            </button>
+                          </>
+                        )
+                        : <em className="wsrc-tag">还没认出来</em>}
+                    </div>
+                    <div className="wsrc-btns">
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => choose(s.id, 'online')}>
+                        <Ic name="play" cls="ic ic-sm" />
+                        在纱雾这儿看
+                      </button>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => choose(s.id, 'source')}>
+                        <Ic name="external" cls="ic ic-sm" />
+                        跳去源站看
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>

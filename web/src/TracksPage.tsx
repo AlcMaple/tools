@@ -140,25 +140,29 @@ export function TracksPage(): JSX.Element {
   // 未绑定的「继续看」：老番跳过周表直接进搜索；新番去周表定位 → 有候选就弹选择框让用户确认
   // （= 建绑定）。零候选说明周表里没有（名字对不上 / 判新老判错了），**不弹空框**，直接落到
   // 搜索 —— 空框的唯一用途就是让用户再点一次「去搜索」。
-  const continueWatch = (source: OnlineSource, t: Track, mode: WatchMode): void => {
+  const continueWatch = (source: OnlineSource, t: Track, mode: WatchMode, rebind = false): void => {
     if (locating != null) return
-    // 已绑定：直接开 —— online 走播放页，source 跳源站站内页（都在用户点击手势内，不吃弹窗拦截）
+    // 已绑定：直接开 —— online 走播放页，source 跳源站站内页（都在用户点击手势内，不吃弹窗拦截）。
+    // rebind = 用户在弹窗里点了「不对，重认」，此时**不**走这条直开分支，照常拉候选让他重挑。
     const bound = bindings[source.id][t.bgmId]
-    if (bound) {
+    if (bound && !rebind) {
       const url = mode === 'source'
         ? source.sourcePageUrl(bound.id, watchEp(t))
         : source.playPageUrl(bound.id, watchEp(t), t.bgmId)
       window.open(url, '_blank', 'noopener')
       return
     }
+    // 新老分流不受 rebind 影响：只有「像是本季在播」的番才值得去打一趟稀饭周表
+    // （周表只列在播番，老番必然查不到，白等一次冷缓存抓 7 天）。老番——含换绑——
+    // 直接全站搜索。注意稀饭周表 ≠ BGM 番剧周历：BGM 才是全量，稀饭那份是它自己的在播清单。
     if (!isRecentAnime(t)) {
       setSearchFlow({ source: source.id, track: t, mode })
       return
     }
     setLocating({ source: source.id, bgmId: t.bgmId })
-    source.locate(t.bgmId, titlesOf(t))
+    source.locate(t.bgmId, titlesOf(t), rebind)
       .then((r) => {
-        if (r.bound) {
+        if (r.bound && !rebind) {
           // 极少见：加载后别的用户刚绑上 → 记下来（卡片下次即变链接），并尽力开一下
           const b = r.bound
           setBindings((prev) => ({ ...prev, [source.id]: { ...prev[source.id], [t.bgmId]: { id: b.id, name: b.name } } }))
@@ -452,10 +456,14 @@ export function TracksPage(): JSX.Element {
       ) : (
         <div className={view === 'list' ? 'trk-list' : 'trk-grid'}>
           {filtered.map((t) => {
-            const boundSources = new Set(SOURCES.filter((s) => bindings[s.id][t.bgmId]).map((s) => s.id))
+            const bound: Partial<Record<SourceId, SourceBinding>> = {}
+            for (const s of SOURCES) {
+              const b = bindings[s.id][t.bgmId]
+              if (b) bound[s.id] = b
+            }
             const locatingThis = locating?.bgmId === t.bgmId
-            const onContinue = (sourceId: SourceId, mode: WatchMode): void => {
-              continueWatch(sourceById(sourceId), t, mode)
+            const onContinue = (sourceId: SourceId, mode: WatchMode, rebind?: boolean): void => {
+              continueWatch(sourceById(sourceId), t, mode, rebind)
             }
             const onMarkGood = (): void => setMarkingGood(t.bgmId)
             if (view === 'list') {
@@ -463,7 +471,7 @@ export function TracksPage(): JSX.Element {
                 <TrackListRow
                   key={t.bgmId}
                   t={t}
-                  boundSources={boundSources}
+                  bound={bound}
                   locating={locatingThis}
                   onContinue={onContinue}
                   onMarkGood={onMarkGood}
@@ -475,7 +483,7 @@ export function TracksPage(): JSX.Element {
                 key={t.bgmId}
                 t={t}
                 isToday={todayIds.has(t.bgmId)}
-                boundSources={boundSources}
+                bound={bound}
                 locating={locatingThis}
                 onContinue={onContinue}
                 onPatch={patch}
