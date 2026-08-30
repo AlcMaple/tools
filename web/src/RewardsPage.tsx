@@ -19,10 +19,10 @@ const SHOP: Array<{
   accent: string
   mark: string
 }> = [
-  { item: 'ticket_1', title: '优先放映券', note: '满员时自动走优先候补', cost: 50, accent: 'teal', mark: '×1' },
-  { item: 'ticket_5', title: '放映券小册', note: '五张装，比单张省 50 星光', cost: 200, accent: 'gold', mark: '×5' },
-  { item: 'priority_7d', title: '七日优先通行', note: '连续七天自动进入优先候补', cost: 300, accent: 'sakura', mark: '7日' },
-  { item: 'priority_30d', title: '月度优先通行', note: '三十天都不用逐张消耗券', cost: 900, accent: 'lav', mark: '30日' },
+  { item: 'ticket_1', title: '放映券 ×1', note: '先替你收好一张。', cost: 50, accent: 'teal', mark: '×1' },
+  { item: 'ticket_5', title: '放映券 ×5', note: '多备几张，不许一下用光哦。', cost: 200, accent: 'gold', mark: '×5' },
+  { item: 'priority_7d', title: '7 天免券', note: '这一周，优先候补不收券。', cost: 300, accent: 'sakura', mark: '7日' },
+  { item: 'priority_30d', title: '30 天免券', note: '整整三十天，都不用交券。', cost: 900, accent: 'lav', mark: '30日' },
 ]
 
 const PRIZES = [
@@ -30,8 +30,8 @@ const PRIZES = [
   ['返还 20 星光', '25%'],
   ['放映券 ×1', '20%'],
   ['放映券 ×2', '8%'],
-  ['七日优先', '1.8%'],
-  ['月度优先', '0.2%'],
+  ['7 天免券', '1.8%'],
+  ['30 天免券', '0.2%'],
 ] as const
 
 const PRIZE_LABEL: Record<string, string> = {
@@ -39,13 +39,18 @@ const PRIZE_LABEL: Record<string, string> = {
   points_20: '20 星光全数返还',
   ticket_1: '优先放映券 ×1',
   ticket_2: '优先放映券 ×2',
-  priority_7d: '七日优先通行',
-  priority_30d: '月度优先通行',
+  priority_7d: '7 天免券',
+  priority_30d: '30 天免券',
 }
 
 function priorityText(until: number | null): string {
-  if (!until || until <= Date.now()) return '未启用'
-  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' }).format(new Date(until)) + ' 到期'
+  if (!until || until <= Date.now()) return '0 天'
+  return `${Math.max(1, Math.ceil((until - Date.now()) / 86_400_000))} 天`
+}
+
+function priorityTitle(until: number | null): string | undefined {
+  if (!until || until <= Date.now()) return undefined
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(until)) + ' 到期'
 }
 
 function copyText(text: string): Promise<void> {
@@ -95,7 +100,7 @@ export function RewardsPage(): JSX.Element {
     return (
       <div className="page-state reward-loading">
         <Spinner size={38} />
-        <p className="faint small">正在数今天收下的星光…</p>
+        <p className="faint small">等等，我还在数星光…</p>
       </div>
     )
   }
@@ -105,8 +110,8 @@ export function RewardsPage(): JSX.Element {
       <div className="empty panel reward-empty">
         <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />
         <div className="empty-say">
-          <div className="bubble empty-bubble"><span>{error || '福利手册暂时翻不开'}</span></div>
-          <button className="btn btn-primary" type="button" onClick={() => void load()}>再翻一次</button>
+          <div className="bubble empty-bubble"><span>{error || '这页卡住了…'}</span></div>
+          <button className="btn btn-primary" type="button" onClick={() => void load()}>再试一次</button>
         </div>
       </div>
     )
@@ -119,7 +124,7 @@ export function RewardsPage(): JSX.Element {
         <div className="empty panel reward-empty mt16">
           <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />
           <div className="empty-say">
-            <div className="bubble empty-bubble"><span>放映福利暂时收进抽屉啦，开放时这里会亮起来。</span></div>
+            <div className="bubble empty-bubble"><span>这页今天先不给你看。开放的时候我会说的。</span></div>
           </div>
         </div>
       </>
@@ -130,7 +135,7 @@ export function RewardsPage(): JSX.Element {
     setBusy(item)
     try {
       await redeemReward(newRewardRequestId(), item)
-      toast(`${title}已经收进福利手册`)
+      toast(`给你收好了：${title}`)
       await load()
     } catch (err) {
       toast(err instanceof Error ? err.message : '兑换没有完成', { err: true })
@@ -140,6 +145,14 @@ export function RewardsPage(): JSX.Element {
   }
 
   const draw = async (): Promise<void> => {
+    if (!summary.lotteryEnabled) {
+      toast('扭蛋机今天不转。')
+      return
+    }
+    if (summary.points < 20) {
+      toast(`还差 ${20 - summary.points} 星光，再攒一点嘛。`)
+      return
+    }
     setBusy('draw')
     setDrawResult('')
     try {
@@ -148,10 +161,10 @@ export function RewardsPage(): JSX.Element {
         new Promise((resolve) => window.setTimeout(resolve, 850)),
       ])
       const prize = String(result.prize ?? '')
-      setDrawResult(PRIZE_LABEL[prize] ?? '一份神秘福利')
+      setDrawResult(PRIZE_LABEL[prize] ?? '一份藏起来的福利')
       await load()
     } catch (err) {
-      toast(err instanceof Error ? err.message : '扭蛋没有掉出来', { err: true })
+      toast(err instanceof Error ? err.message : '唔，扭蛋卡住了。', { err: true })
     } finally {
       setBusy(null)
     }
@@ -167,55 +180,52 @@ export function RewardsPage(): JSX.Element {
           <div className="reward-wallet-head">
             <div>
               <span className="font-hand faint small">MY SCREENING WALLET</span>
-              <h2>星光放映手册</h2>
+              <h2>星光口袋</h2>
             </div>
             <span className="stamp st-sakura pop">福利</span>
           </div>
           <div className="reward-balances">
             <div className="reward-balance gold">
-              <span>星光积分</span>
+              <span>星光</span>
               <strong>{summary.points}</strong>
-              <small>每天来看看，自动收下 5 星光</small>
             </div>
             <div className="reward-balance teal">
               <span>放映券</span>
               <strong>{summary.tickets}</strong>
-              <small>满员时自动锁定并进入优先候补</small>
             </div>
             <div className="reward-balance sakura">
-              <span>优先通行</span>
-              <strong className="date">{priorityText(summary.priorityUntil)}</strong>
-              <small>正在观看的人不会被打断</small>
+              <span>免券剩余</span>
+              <strong className="date" title={priorityTitle(summary.priorityUntil)}>{priorityText(summary.priorityUntil)}</strong>
             </div>
           </div>
         </section>
 
         <div className="reward-guide">
           <img src="/assets/sagiri-mascot.webp" alt="和泉纱雾" />
-          <div className="bubble"><span>星光攒好了，就来换一张放映券吧～</span></div>
+          <div className="bubble"><span>想要哪张券？先说好，不许一次全花掉。</span></div>
         </div>
       </div>
 
       <div className="reward-layout mt16">
         <section className="panel reward-invite">
           <span className="tape tr teal" />
-          <div className="panel-title"><Ic name="mail" />好友招待券</div>
+          <div className="panel-title"><Ic name="mail" />邀请有礼</div>
           {summary.inviteCode ? (
             <>
-              <p className="reward-copy">新朋友从你的链接注册，你得 <b>100</b> 星光，对方得 <b>50</b> 星光。</p>
+              <p className="reward-copy">叫一位新朋友来，我就给你 <b>100</b> 星光。</p>
               <div className="invite-code-row">
                 <span className="invite-code">{summary.inviteCode}</span>
                 <button
                   className="btn btn-primary"
                   type="button"
-                  onClick={() => void copyText(inviteLink).then(() => toast('邀请链接已复制'))}
+                  onClick={() => void copyText(inviteLink).then(() => toast('链接抄好啦，快叫人来。'))}
                 >
                   <Ic name="clip" cls="ic ic-sm" />复制邀请链接
                 </button>
               </div>
             </>
           ) : (
-            <div className="reward-rest">好友招待活动今天休息。</div>
+            <div className="reward-rest">今天不招待新朋友。</div>
           )}
         </section>
 
@@ -229,17 +239,17 @@ export function RewardsPage(): JSX.Element {
               <span className="capsule-bottom" />
             </div>
             <div className={`gacha-result${drawResult ? ' show' : ''}`} aria-live="polite">
-              <span>{drawResult ? '抽到了' : '下一颗会是什么呢？'}</span>
+              <span>{drawResult ? '给你这个' : '哼，才不会先告诉你。'}</span>
               <strong>{drawResult || '？'}</strong>
             </div>
           </div>
           <button
             className="btn btn-sakura btn-block"
             type="button"
-            disabled={!summary.lotteryEnabled || summary.points < 20 || busy !== null}
+            disabled={!summary.lotteryEnabled || busy !== null}
             onClick={() => void draw()}
           >
-            {busy === 'draw' ? <><Spinner size={18} />正在转…</> : summary.lotteryEnabled ? '投进 20 星光' : '扭蛋机休息中'}
+            {busy === 'draw' ? <><Spinner size={18} />等、等一下…</> : summary.lotteryEnabled ? '20 星光 · 转一次' : '今天不转'}
           </button>
           <div className="prize-grid" aria-label="奖品概率">
             {PRIZES.map(([name, rate]) => <span key={name}><b>{name}</b><small>{rate}</small></span>)}
@@ -250,10 +260,9 @@ export function RewardsPage(): JSX.Element {
       <section className="reward-shop mt16">
         <div className="reward-section-head">
           <div>
-            <span className="ribbon">积分兑换所</span>
-            <p>想稳稳拿到，就在这里直接兑换。</p>
+            <span className="ribbon">星光兑换所</span>
           </div>
-          <span className="reward-points-left">现有 <b>{summary.points}</b> 星光</span>
+          <span className="reward-points-left">还剩 <b>{summary.points}</b> 星光</span>
         </div>
         <div className="reward-shop-grid">
           {SHOP.map((item) => (
@@ -267,10 +276,16 @@ export function RewardsPage(): JSX.Element {
               <button
                 className="btn btn-sm btn-block"
                 type="button"
-                disabled={summary.points < item.cost || busy !== null}
-                onClick={() => void redeem(item.item, item.title)}
+                disabled={busy !== null}
+                onClick={() => {
+                  if (summary.points < item.cost) {
+                    toast(`还差 ${item.cost - summary.points} 星光，再攒一点嘛。`)
+                    return
+                  }
+                  void redeem(item.item, item.title)
+                }}
               >
-                {busy === item.item ? <><Spinner size={16} />兑换中…</> : `${item.cost} 星光兑换`}
+                {busy === item.item ? <><Spinner size={16} />收进来…</> : `${item.cost} 星光 · 收下`}
               </button>
             </article>
           ))}
@@ -287,7 +302,7 @@ function PageTitle(): JSX.Element {
         <span className="head-ico"><Ic name="gift" /></span>
         <div>
           <h1 className="title-sketch" style={{ fontSize: 34 }}>放映福利</h1>
-          <p className="muted small mt8">攒星光、领放映券，好片开场时快一步</p>
+          <p className="muted small mt8">今天的星光，也替你收好啦。</p>
         </div>
       </div>
     </div>
