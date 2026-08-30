@@ -397,13 +397,14 @@ export async function fetchXifanBindings(): Promise<Record<number, XifanBinding>
 
 export async function locateXifan(
   bgmId: number,
-  titles: string[]
+  titles: string[],
+  rebind = false
 ): Promise<{ bound?: XifanCandidate; candidates: XifanCandidate[] }> {
   return json(
     await fetch('/api/xifan/locate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bgmId, titles }),
+      body: JSON.stringify({ bgmId, titles, rebind }),
     })
   )
 }
@@ -493,11 +494,12 @@ export async function fetchGirigiriBindings(): Promise<Record<number, GirigiriBi
 export async function locateGirigiri(
   bgmId: number,
   titles: string[],
+  rebind = false,
 ): Promise<{ bound?: GirigiriCandidate; candidates: GirigiriCandidate[] }> {
   return json(await fetch('/api/girigiri/locate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bgmId, titles }),
+    body: JSON.stringify({ bgmId, titles, rebind }),
   }))
 }
 
@@ -608,7 +610,7 @@ export interface OnlineSource {
   /** 仅稀饭：跨标签验证码作废用的 storage key（Girigiri 没有这套会话联动）。 */
   captchaEventKey?: string
   fetchBindings(): Promise<Record<number, SourceBinding>>
-  locate(bgmId: number, titles: string[]): Promise<{ bound?: SourceCandidate; candidates: SourceCandidate[] }>
+  locate(bgmId: number, titles: string[], rebind?: boolean): Promise<{ bound?: SourceCandidate; candidates: SourceCandidate[] }>
   bind(bgmId: number, id: string, name: string): Promise<void>
   search(keyword: string): Promise<SourceSearchResult>
   fetchCaptcha(): Promise<{ imageB64: string; mime: string }>
@@ -627,9 +629,9 @@ const XIFAN_SOURCE: OnlineSource = {
     for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: String(b.xifanId), name: b.xifanName }
     return out
   },
-  locate: async (bgmId, titles) => {
+  locate: async (bgmId, titles, rebind) => {
     const toCand = (c: XifanCandidate): SourceCandidate => ({ id: String(c.xifanId), name: c.xifanName, day: c.day, remarks: c.remarks, score: c.score })
-    const r = await locateXifan(bgmId, titles)
+    const r = await locateXifan(bgmId, titles, rebind)
     return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
   },
   bind: (bgmId, id, name) => bindXifan(bgmId, Number(id), name),
@@ -653,9 +655,9 @@ const GIRIGIRI_SOURCE: OnlineSource = {
     for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: b.girigiriId, name: b.girigiriName }
     return out
   },
-  locate: async (bgmId, titles) => {
+  locate: async (bgmId, titles, rebind) => {
     const toCand = (c: GirigiriCandidate): SourceCandidate => ({ id: c.girigiriId, name: c.girigiriName, day: c.day, remarks: c.remarks, score: c.score })
-    const r = await locateGirigiri(bgmId, titles)
+    const r = await locateGirigiri(bgmId, titles, rebind)
     return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
   },
   bind: (bgmId, id, name) => bindGirigiri(bgmId, id, name),

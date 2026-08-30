@@ -62,10 +62,15 @@ export interface GirigiriLocateResult {
   candidates: GirigiriCandidate[]
 }
 
-export async function locate(bgmId: number, titles: string[]): Promise<GirigiriLocateResult> {
+export async function locate(
+  bgmId: number,
+  titles: string[],
+  opts: { rebind?: boolean } = {},
+): Promise<GirigiriLocateResult> {
   const clean = titles.map((title) => title.trim()).filter(Boolean)
   const items = await fetchWeekday()
-  const bound = getBinding(bgmId)
+  // rebind = 用户明确要改这条绑定，跳过已绑短路，照常给周表候选重新挑。
+  const bound = opts.rebind ? null : getBinding(bgmId)
   if (bound) {
     const hit = items.find((item) => item.girigiriId === bound.girigiriId)
     return {

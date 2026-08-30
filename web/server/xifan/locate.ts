@@ -72,12 +72,16 @@ export interface LocateResult {
   candidates: Candidate[] // 未绑定时的候选，按分降序，让用户挑一个确认
 }
 
-export async function locate(bgmId: number, titles: string[]): Promise<LocateResult> {
+export async function locate(
+  bgmId: number,
+  titles: string[],
+  opts: { rebind?: boolean } = {},
+): Promise<LocateResult> {
   const clean = titles.map((t) => t.trim()).filter(Boolean)
   const items = await fetchWeekday()
 
   // 已绑定：直接返回。顺带从周表补一份最新 day/remarks（周表里没有就给占位），前端可显示但不依赖。
-  const bound = getBinding(bgmId)
+  const bound = opts.rebind ? null : getBinding(bgmId)
   if (bound) {
     const hit = items.find((i) => i.xifanId === bound.xifanId)
     return {
@@ -96,7 +100,10 @@ export async function locate(bgmId: number, titles: string[]): Promise<LocateRes
   const scored = new Map<number, Candidate>()
   for (const it of items) {
     const s = scoreItem(it.name, clean)
-    if (s < 0.2) continue // 分太低的不当候选，免得列一堆牛头不对马嘴的（真匹配远在此之上：包含≥0.8、像样的模糊≥0.4）
+    // 0.2 会让只共享「第二季」两个二元组的无关标题混进来：
+    // 「少主溜得快 第二季」vs「幼女战记 第二季」约 0.22。
+    // 真正可供人眼确认的模糊命中应至少达到 0.4；更弱的情况交给全站搜索兜底。
+    if (s < 0.4) continue
     const prev = scored.get(it.xifanId)
     if (!prev || s > prev.score) {
       scored.set(it.xifanId, {

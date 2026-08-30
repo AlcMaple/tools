@@ -1,4 +1,4 @@
-import type { SourceId, Track, WatchMode } from '../api'
+import type { SourceBinding, SourceId, Track, WatchMode } from '../api'
 import { Ic } from '../SketchIcon'
 import { ContinueWatchAction } from './TrackCard'
 import { watchEp } from './common'
@@ -8,15 +8,15 @@ import { watchEp } from './common'
 // 三个按钮仍沿用卡片上的入口：继续看、BGM、好看集。
 export function TrackListRow({
   t,
-  boundSources,
+  bound,
   locating,
   onContinue,
   onMarkGood,
 }: {
   t: Track
-  boundSources: Set<SourceId>
+  bound: Partial<Record<SourceId, SourceBinding>>
   locating: boolean
-  onContinue: (source: SourceId, mode: WatchMode) => void
+  onContinue: (source: SourceId, mode: WatchMode, rebind?: boolean) => void
   onMarkGood: () => void
 }): JSX.Element {
   const title = t.titleCn || t.title
@@ -42,7 +42,7 @@ export function TrackListRow({
         <ContinueWatchAction
           label={t.status === 'considering' ? '试看一集' : '继续看'}
           ep={ep}
-          boundSources={boundSources}
+          bound={bound}
           locating={locating}
           onPick={onContinue}
         />
