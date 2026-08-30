@@ -49,9 +49,13 @@ function report(name: string, data: EventData = {}): void {
     data: { ...baseData(), ...data },
   }
 
-  // Umami 要求有效的 User-Agent；Electron 自带的 fallback 是浏览器式 UA，保留它比
-  // 伪造一个与实际运行环境矛盾的固定 UA 更稳。这里只追加应用版本便于排查版本差异。
-  const userAgent = `${app.userAgentFallback || 'Mozilla/5.0'} MapleTools/${app.getVersion()}`
+  // Umami 用 isbot 过滤 UA，命中就静默丢弃事件（仍回 200 + {"beep":"boop"}，客户端察觉不到）。
+  // "MapleTools/x.y.z" 里的 "Tools/" 会被 isbot 判成爬虫 —— Electron 默认 fallback 本身就带
+  // 这段 productName 标记，所以必须剥掉；platform / Chrome / Electron 段保留（实测都不触发）。
+  // 应用版本走 payload.data.appVersion，不靠 UA 传。
+  const userAgent = (app.userAgentFallback || 'Mozilla/5.0')
+    .replace(/\s*MapleTools\/\S+/gi, '')
+    .trim() || 'Mozilla/5.0'
   void netRequest(UMAMI_ENDPOINT, {
     method: 'POST',
     headers: {
