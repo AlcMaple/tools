@@ -92,13 +92,10 @@ if (enabled) {
   })
 }
 
-/**
- * 所有响应都带 request id；启用 Sentry 后再为每个请求建立隔离 scope 和低采样性能 span。
- * scope 隔离是硬边界：并发用户的 tag / context 不能串到彼此事件里。
- */
-// 播放页是一张裸 HTML（不加载 SPA 的浏览器 SDK），它的 slog 只能落 stdout —— 真机调试时
-// 看不见。转成 Sentry 的 info 事件，就能带着当前 release 在 Issues 里直接看到手机上发生了什么。
-// 加个进程内限速：某个循环失败时别把配额烧光（超额的仍然照常进 stdout）。
+// 所有响应都带 request id；启用 Sentry 后为每个请求建立隔离 scope 和低采样性能 span。
+// scope 隔离是硬边界：并发用户的 tag / context 不能串到彼此事件里。
+// 播放页是一张裸 HTML；client-log 始终落 stdout，失败或需要浏览器上下文的日志优先由页面 SDK
+// 直接上报并带标记去重。其余日志（含 SDK 未加载的情况）由这里按配额转成 Sentry info 兜底。
 const CLIENT_LOG_QUOTA = 80
 const CLIENT_LOG_WINDOW_MS = 60 * 60 * 1000
 let clientLogWindowAt = 0
@@ -191,7 +188,7 @@ async function captureUnhandledError(error: Error, c: Context): Promise<Response
   return c.json({ error: '服务器内部错误', requestId }, 500)
 }
 
-/** Hono 会在下游异常回到外层 middleware 前先调用 onError；异常捕获必须挂在这里。 */
+// Hono 会在下游异常回到外层 middleware 前先调用 onError；异常捕获必须挂在这里。
 export function monitoringErrorHandler(): ErrorHandler {
   return captureUnhandledError
 }

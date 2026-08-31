@@ -6,7 +6,7 @@
 //
 // 和网页版稀饭保持同一个用户体验边界：打开先抓第 1 条线路，线路列表和集数一起拿到；其余线路
 // 只有用户点选时才请求，避免一次打开就向站点发一串无用请求。
-import { proxyReady } from '../http'
+import { proxyReady, refreshProxyAfterFailure } from '../http'
 
 export const BASE_URL = 'https://ani.girigirilove.com'
 const BASE_ORIGIN = new URL(BASE_URL).origin
@@ -127,7 +127,7 @@ function decodePlayerUrl(data: PlayerData | null): string {
   }
 }
 
-/** 片源 tab 是服务端 HTML，data-form 的 cht/chs 与 source 序号一一对应。 */
+// 站点没有稳定的 source 字段；按 tab 出现顺序编号，才能和用户看到的线路顺序一致。
 function parseSourceTabs(html: string): GirigiriLineMeta[] {
   const out: GirigiriLineMeta[] = []
   const re = /<a\b([^>]*\bvod-playerUrl\b[^>]*)>([\s\S]*?)<\/a>/gi
@@ -148,7 +148,7 @@ function parseSourceTabs(html: string): GirigiriLineMeta[] {
   return out
 }
 
-/** 从 anthology-list 中抠出整季集数；同一集的繁中/简中只保留一个数字。 */
+// 繁中 / 简中 tab 可能重复同一集；按集数去重排序，避免集数网格出现两个相同按钮。
 function parseEpisodes(html: string, id: string): number[] {
   const out = new Set<number>()
   const re = /href\s*=\s*(["'])\/play(GV\d+)-(\d+)-(\d+)\/\1/gi
@@ -182,7 +182,10 @@ async function fetchHtml(url: string): Promise<string> {
   } catch (err) {
     // 仅允许传输层瞬时抖动单次重试；HTTP 错误和站点限流直接交给 UI。
     const message = err instanceof Error ? err.message : String(err)
-    if (/ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket disconnected|TLS|fetch failed|terminated/i.test(message)) return run()
+    if (/ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket disconnected|TLS|fetch failed|terminated/i.test(message)) {
+      await refreshProxyAfterFailure()
+      return run()
+    }
     throw err
   }
 }
@@ -221,7 +224,7 @@ function assertArgs(id: string, ep: number): void {
   if (!Number.isInteger(ep) || ep < 1) throw new Error('ep 不合法')
 }
 
-/** 打开播放页：抓 source 1 的一集，同时拿到标题、线路名单和集数网格。 */
+// 首次只抓 source 1，同时取回线路名单和集数；其余线路留给用户点击时再抓，避免无用请求。
 export async function getPlaylist(id: string, ep: number): Promise<GirigiriPlaylist> {
   assertArgs(id, ep)
   const key = `pl:${id.toUpperCase()}:${ep}`
@@ -241,7 +244,7 @@ export async function getPlaylist(id: string, ep: number): Promise<GirigiriPlayl
   })
 }
 
-/** 用户点选线路 N 时才抓取对应播放页。 */
+// 只有用户点选线路时才抓该播放页，保持打开播放页时的单次上游请求预算。
 export async function resolveLine(id: string, ep: number, source: number): Promise<GirigiriPlayLine | null> {
   assertArgs(id, ep)
   if (!Number.isInteger(source) || source < 1) throw new Error('source 不合法')

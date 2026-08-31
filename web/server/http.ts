@@ -1,28 +1,38 @@
 import { execFile } from 'node:child_process'
+import { createConnection } from 'node:net'
 import { promisify } from 'node:util'
-import { EnvHttpProxyAgent, fetch as undiciFetch, ProxyAgent, setGlobalDispatcher } from 'undici'
+import { Agent, EnvHttpProxyAgent, fetch as undiciFetch, ProxyAgent, setGlobalDispatcher } from 'undici'
 
-// Node 的全局 fetch（undici）默认**不读系统代理** —— 和 app 当年 Node https 直连
-// fake-ip 假地址黑洞是同一个坑(红线)。
-//
-// 先让 fetch 认 HTTP_PROXY / HTTPS_PROXY / NO_PROXY 环境变量（显式给了就完全尊重）。
-// 生产（Vercel / VPS）到此为止：那里直连能通，或由运维显式给 env。
-setGlobalDispatcher(new EnvHttpProxyAgent())
-
-// 本地开发再加一层「自动对齐浏览器」：如果没设代理 env、且直连稀饭不通（Clash TUN /
-// fake-ip 黑洞），就探测本地代理并整体切过去 —— 浏览器能开稀饭，服务端就能开，不用每次
-// 手动 `HTTPS_PROXY=... npm run dev`。探测顺序：macOS 系统代理 → Clash/Mihomo 外部控制器
-// 报的混合端口 → 常见端口兜底；每个候选都真发一次 HEAD 验证过才启用。
 const IS_PRODUCTION = process.env.NODE_ENV === 'production' || !!process.env.VERCEL
 const HAS_PROXY_ENV = !!(
   process.env.HTTPS_PROXY || process.env.https_proxy
   || process.env.HTTP_PROXY || process.env.http_proxy
   || process.env.ALL_PROXY || process.env.all_proxy
 )
+
+// Node 的全局 fetch（undici）默认**不读系统代理** —— 和 app 当年 Node https 直连
+// fake-ip 假地址黑洞是同一个坑(红线)。
+//
+// 先让 fetch 认 HTTP_PROXY / HTTPS_PROXY / NO_PROXY 环境变量（显式给了就完全尊重）。
+// 生产（Vercel / VPS）到此为止：那里直连能通，或由运维显式给 env。
+// 没有代理 env 时不构造实验性的 EnvHttpProxyAgent，避免本地 TUN 每次启动都刷警告；
+// 自动对齐会在下面按需安装 ProxyAgent。
+if (HAS_PROXY_ENV) setGlobalDispatcher(new EnvHttpProxyAgent())
+
+// 本地开发再加一层「自动对齐浏览器」：如果没设代理 env、且直连稀饭不通（Clash TUN /
+// fake-ip 黑洞），就探测本地代理并整体切过去 —— 浏览器能开稀饭，服务端就能开，不用每次
+// 手动 `HTTPS_PROXY=... npm run dev`。探测顺序：macOS 系统代理 → Clash/Mihomo 外部控制器
+// 报的混合端口 → 常见端口兜底；启动时每个候选都真发一次 HEAD 验证过才启用，
+// 请求失败后的重新对齐只检查本地端口，再让原请求承担唯一重试。
 const PROBE_URL = 'https://anime.xifanacg.com/'
 const execFileAsync = promisify(execFile)
+const DIRECT_AGENT = new Agent()
+const PROXY_REFRESH_COOLDOWN_MS = 5_000
+let activeProxyUrl: string | null = null
+let proxyRefreshAt = 0
+let proxyRefreshPromise: Promise<void> | null = null
 
-/** 传输层通没通只看能不能拿到响应（4xx/403 也算通，说明握手 + HTTP 层是活的）。 */
+// 传输层通没通只看能不能拿到响应（4xx/403 也算通，说明握手 + HTTP 层是活的）。
 async function transportWorks(dispatcher?: ProxyAgent): Promise<boolean> {
   try {
     const res = await undiciFetch(PROBE_URL, {
@@ -67,28 +77,71 @@ async function candidateProxies(): Promise<string[]> {
   return [...found]
 }
 
-async function autoAlignProxy(): Promise<void> {
-  if (IS_PRODUCTION || HAS_PROXY_ENV) return
-  if (await transportWorks()) return // 直连能通，不折腾
+function localProxyReachable(url: string): Promise<boolean> {
+  try {
+    const target = new URL(url)
+    const port = Number(target.port)
+    if (!target.hostname || !Number.isInteger(port) || port < 1 || port > 65535) return Promise.resolve(false)
+    return new Promise((resolve) => {
+      const socket = createConnection({ host: target.hostname, port })
+      const finish = (ok: boolean): void => {
+        socket.removeAllListeners()
+        socket.destroy()
+        resolve(ok)
+      }
+      socket.setTimeout(500, () => finish(false))
+      socket.once('connect', () => finish(true))
+      socket.once('error', () => finish(false))
+    })
+  } catch {
+    return Promise.resolve(false)
+  }
+}
+
+async function alignProxy(mode: 'startup' | 'recovery'): Promise<boolean> {
+  if (IS_PRODUCTION || HAS_PROXY_ENV) return false
+  if (activeProxyUrl && await localProxyReachable(activeProxyUrl)) return true
+  if (activeProxyUrl) setGlobalDispatcher(DIRECT_AGENT)
+  activeProxyUrl = null
+  if (mode === 'startup' && await transportWorks()) return true // 直连能通，不折腾
 
   for (const url of await candidateProxies()) {
+    if (!await localProxyReachable(url)) continue
     let agent: ProxyAgent
     try {
       agent = new ProxyAgent(url)
     } catch {
       continue
     }
-    if (await transportWorks(agent)) {
-      setGlobalDispatcher(new ProxyAgent(url))
+    if (mode === 'recovery' || await transportWorks(agent)) {
+      setGlobalDispatcher(agent)
+      activeProxyUrl = url
       console.log(`[http] 直连稀饭不通，已自动改走本地代理 ${url}（与浏览器一致）`)
-      return
+      return true
     }
   }
-  console.warn('[http] 直连稀饭不通，也没探到可用的本地代理 —— 用 Clash TUN 时请设 HTTPS_PROXY 或开启混合端口')
+  if (mode === 'startup') {
+    console.warn('[http] 直连稀饭不通，也没探到可用的本地代理 —— 用 Clash TUN 时请设 HTTPS_PROXY 或开启混合端口')
+  }
+  return false
 }
 
-/** 抓取型请求发出前 await 一下，确保代理探测已定盘（生产 / 已设 env 时立即 resolve）。 */
-export const proxyReady: Promise<void> = autoAlignProxy().catch(() => {})
+// 各抓取模块先等启动探测定盘，避免首个请求抢在本地代理对齐前走直连。
+export const proxyReady: Promise<void> = alignProxy('startup').then(() => undefined, () => undefined)
+
+// 只在真实请求出现传输层失败时重新对齐一次；并发请求共用同一个探测，5 秒内不重复。
+// 不做定时探活，也不在这里额外访问源站；候选端口确认后由原请求承担唯一重试。
+export function refreshProxyAfterFailure(): Promise<void> {
+  if (IS_PRODUCTION || HAS_PROXY_ENV) return Promise.resolve()
+  const now = Date.now()
+  if (proxyRefreshPromise) return proxyRefreshPromise
+  if (now - proxyRefreshAt < PROXY_REFRESH_COOLDOWN_MS) return Promise.resolve()
+  proxyRefreshAt = now
+  proxyRefreshPromise = alignProxy('recovery')
+    .then(() => undefined, () => undefined)
+    .finally(() => { proxyRefreshPromise = null })
+  return proxyRefreshPromise
+}
 
 export interface FetchJsonOptions {
   headers?: Record<string, string>
@@ -122,7 +175,10 @@ export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions
   try {
     return await run()
   } catch (err) {
-    if (isTransient(err)) return run() // 单次瞬时重试
+    if (isTransient(err)) {
+      await refreshProxyAfterFailure()
+      return run() // 单次瞬时重试；重新对齐不另加一轮
+    }
     throw err
   }
 }

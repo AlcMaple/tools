@@ -640,7 +640,7 @@ const PLAY_PAGE = `<!doctype html>
   var $ = function(id){ return document.getElementById(id) }
   // 排查用日志一律走这里。三个去处，各管一段：
   //   1. 面包屑 —— 页面自己的监控攒着，出异常时**整条时间线**跟着一起走（而不是散成 N 条独立记录）
-  //   2. 上报   —— 只有失败类日志（带胶片那些）才真的开一条，普通日志不值当占配额
+  //   2. 上报   —— 失败诊断由浏览器 SDK 直接上报
   //   3. 服务端 —— 始终打一份进 Node 的 stdout；页面监控没加载起来时它就是唯一通路
   var slog = function(msg, withTape){
     var reported = false
@@ -689,14 +689,13 @@ const PLAY_PAGE = `<!doctype html>
   var bufferSampled = false, bufferTimer = null, bufferToken = 0
   var resumeAfterBuffer = false, bufferAnchor = 0, savedRate = 1, savedMuted = false, internalSeek = false
   var bufferStartedAt = 0, bufferLastProgressAt = 0, bufferLastAhead = 0, bufferSampleAt = 0, bufferSampleAhead = 0
-  var internalSeekTimer = null, gateOnPlay = false, lineRequest = 0, playGeneration = 0
+  var internalSeekTimer = null, gateOnPlay = false, playbackStarted = false, lineRequest = 0, playGeneration = 0
   var networkInterrupted = false, networkCheck = null, networkRetry = null, failureGeneration = -1
   var preparedKey = null, preparedFor = null, prepareTimer = null, prepareFailed = null
   var admissionTimer = null, slowSession = false
   var SLOW_POOL = 'slow-proxy-global'
   var slowClientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
     'player_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2)
-  var needsGesture = false, startWatchTimer = null, START_WATCH_MS = 12000
   // 手机 ≠ 「小屏桌面」：缓冲闸门那套低速静音预热是照桌面调的，手机上会**反过来饿死播放**
   // （实测 5G 上 10.2 秒 buffered 一个字节都没涨）。所以触屏设备走另一套，判据用输入方式
   // 不用 UA —— 平板 / 触屏本同样吃这套策略。
@@ -847,19 +846,29 @@ const PLAY_PAGE = `<!doctype html>
     if (!resumePending) return
     if (resumeKey !== (curPl ? curPl.source : 'none') + ':' + ep){ resumePending = false; resumeWasPlaying = false; return }
     try { v.currentTime = Math.min(resumeTime, Number.isFinite(v.duration) ? Math.max(0, v.duration - .25) : resumeTime) } catch (e) {}
-    if (resumeWasPlaying) tryPlay()
+    if (resumeWasPlaying){
+      var p = v.play()
+      if (p && p.catch) p.catch(function(){})
+    }
   })
-  v.addEventListener('playing', function(){ resumePending = false; resumeWasPlaying = false; networkInterrupted = false })
-  // 首次真正可播（不是 bufferGate 那种「已经在播中途卡了」）就收起初始浮层；
+  v.addEventListener('playing', function(){
+    // 首次 playing 只是用户刚按下原生播放控件，不是中途卡顿；不要在这里启动缓冲闸门。
+    // 后续 waiting / seek 才会把 gateOnPlay 置 true，进入真正的缓冲处理。
+    var firstPlayback = !playbackStarted
+    playbackStarted = true
+    resumePending = false; resumeWasPlaying = false; networkInterrupted = false
+    if (firstPlayback) gateOnPlay = false
+  })
+  // canplay 只表示媒体已准备好；用户尚未点播放时也要先收起初始纸片，让
+  // <video controls> 的浏览器原生播放控件可见（桌面通常在底部左侧，移动端位置由浏览器决定）。
+  // 这里不创建画面中央的自定义播放键。
   // 中途 waiting/seeking 触发的 bufferGate 有自己的一套 show/hide，不受这里影响。
   // 这里曾经加过「canplay 后低速静音静默预缓冲」，实测**有害，已移除**：0.0625 倍速会让
   // 浏览器判定「缓冲远超消费速度」而主动限流，10.9 秒只攒到 2.7 秒缓冲；同一时刻用
   // fetch 直接读同一个代理地址能跑 772KB/s(6.3Mbps)。起播慢的真正原因是带宽不是时机，
   // 已由 /api/xifan/stream 的并发代理解决，不需要再抢跑。
-  v.addEventListener('canplay', function(){ clearStartWatch(); if (!resumeAfterBuffer) hideBuffer() })
-  // 只认 playing，不认 play：play 事件在 play() 被拒之前就已经冒出来了，
-  // 拿它清看门狗等于把兜底也一起关掉。
-  v.addEventListener('playing', function(){ needsGesture = false; clearStartWatch() })
+  v.addEventListener('canplay', function(){ if (!resumeAfterBuffer) hideBuffer() })
+  v.addEventListener('playing', function(){ if (!resumeAfterBuffer) hideBuffer() })
 
   function bufferedAhead(){
     for (var i = 0; i < v.buffered.length; i++){
@@ -878,53 +887,7 @@ const PLAY_PAGE = `<!doctype html>
     $('bufferActions').textContent = ''
   }
 
-  // ——— 移动端起播：自动播放被拒 / 根本不预加载 ———
-  // 手机浏览器不给非静音的 play() 放行（桌面端多半有 MEI 豁免，所以 PC 一切正常）。
-  // 被拒之后既不会冒 error 也不会冒 canplay：起播浮层永远收不掉，还是块不透明的画纸，
-  // 把原生播放按钮整个盖住——用户看到的就是「一直卡在加载」。
-  // 关键：**这不是播放失败**，不能退官方 iframe（退了同样要手势，只是换个地方卡）。
-  // 正确处理是收掉浮层、露出控制条，等用户点一下。
-  function tryPlay(){
-    var p
-    try { p = v.play() } catch (e) { awaitGesture(e); return }
-    if (p && p.catch) p.catch(function(e){ awaitGesture(e) })
-  }
-
-  function awaitGesture(e){
-    if (needsGesture) return
-    // src 被换掉导致的 AbortError 会紧跟着新的一次 play()，不是手势问题；
-    // 判据统一用「此刻仍停着、且 src 还在」，避免切线路时误收浮层。
-    if (inFrame() || !v.paused || !v.getAttribute('src')) return
-    needsGesture = true
-    slog('autoplay rejected (' + ((e && e.name) || 'unknown') + '), waiting for user gesture')
-    clearStartWatch()
-    hideBuffer()
-  }
-
-  function clearStartWatch(){
-    if (startWatchTimer !== null) clearTimeout(startWatchTimer)
-    startWatchTimer = null
-  }
-
-  // iOS 在蜂窝网下会把 preload="auto" 当 none：不点播放就一个字节都不拉，
-  // canplay 永远不来，play() 也可能既不 resolve 也不 reject。兜底：起播若干秒后
-  // 还停在 readyState=0，就把浮层收掉交还给用户，别让它自己转到天荒地老。
-  function armStartWatch(){
-    clearStartWatch()
-    startWatchTimer = setTimeout(function(){
-      startWatchTimer = null
-      if (needsGesture || inFrame() || resumeAfterBuffer || !v.paused || v.readyState > 0) return
-      slog('no media progress in ' + START_WATCH_MS + 'ms (readyState=0), release overlay for manual play')
-      needsGesture = true
-      hideBuffer()
-    }, START_WATCH_MS)
-  }
-
-  /**
-   * 在**已经解析过**的线路里找一条不需要代理的（快源）。
-   * 只看已知的：没解析过的线路不知道快慢，凭线路号猜会猜错（实测 3498 的线路一就是快源），
-   * 猜错就成了「让用户换到另一条同样慢的线路」——那比不提示更糟。
-   */
+  // 只从已解析的线路里找不需要代理的快源；没解析过的线路不能按编号猜，避免给用户错误换线建议。
   function findFastLine(){
     for (var k in resolvedMap){
       var pl = resolvedMap[k]
@@ -1120,6 +1083,8 @@ const PLAY_PAGE = `<!doctype html>
   v.addEventListener('waiting', function(){
     if (internalSeek || v.paused) return
     if (!navigator.onLine){ holdForNetwork(function(){ if (curPl) playLine(curPl) }); return }
+    // 首次点击后的起播等待交给浏览器原生控件处理，不要把它误画成中途缓冲纸片。
+    if (!playbackStarted) return
     gateOnPlay = true; beginBufferGate(false)
   })
   v.addEventListener('progress', function(){ if (bufferTimer !== null) checkBufferGate(bufferToken) })
@@ -1208,7 +1173,7 @@ const PLAY_PAGE = `<!doctype html>
 
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
   function clearAdmissionTimer(){ if (admissionTimer !== null) clearTimeout(admissionTimer); admissionTimer = null }
-  function stopAll(){ playGeneration++; needsGesture = false; clearStartWatch(); stopTape(); cancelBufferGate(false); clearInternalSeek(); clearAdmissionTimer(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false; slowSession = false }
+  function stopAll(){ playGeneration++; stopTape(); cancelBufferGate(false); clearInternalSeek(); clearAdmissionTimer(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false; slowSession = false }
 
   function renderSources(){
     var box = $('sources'); box.textContent = ''
@@ -1372,8 +1337,12 @@ const PLAY_PAGE = `<!doctype html>
   }
 
   function reallyPlay(pl){
+    var resumingPlayback = resumePending && resumeWasPlaying
     curPl = pl; clearFail(); stopAll(); renderChips()
-    gateOnPlay = pl.kind === 'mp4'
+    // 首次打开保持暂停；首次用户点击后也直接播放，不预先开启中途缓冲闸门。
+    // 只有断网恢复 / 已经在播的媒体重挂载时，才把 playbackStarted 带回来。
+    playbackStarted = !!resumingPlayback
+    gateOnPlay = false
     slowSession = !!pl.viaPrepared || (pl.kind === 'mp4' && needsProxy(pl.url))
     v.classList.add('on'); frame.classList.remove('on')
     // stopAll() 里的 cancelBufferGate 已经把上一条线路的浮层收掉；这里立刻重新盖上——
@@ -1384,8 +1353,10 @@ const PLAY_PAGE = `<!doctype html>
     $('buffering').classList.remove('retryable'); $('buffering').onclick = null
     $('buffering').classList.add('show')
     startTape()
-    armStartWatch()
     renderOpenSource(null)
+    // 首次起播不调用 play()：等用户点击 <video controls> 的浏览器原生播放控件。
+    // 桌面通常是底部控制条左侧按钮，移动端位置由浏览器自己的布局决定。
+    // 如果后面退到官方 iframe，父页面也不模拟点击，由 iframe 内自己的控件接管。
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
         // 90–120 秒足够覆盖网络抖动，同时避免旧配置一次抓 10–15 分钟、产生上百个分片请求。
@@ -1418,15 +1389,14 @@ const PLAY_PAGE = `<!doctype html>
           if (data && data.fatal) classifyMediaFailure(function(){ embed(pl) }, function(){ playLine(pl) })
         })
         hls.loadSource(pl.url); hls.attachMedia(v)
-        tryPlay()
       } else if (v.canPlayType('application/vnd.apple.mpegurl')){
-        v.src = pl.url; tryPlay() // iOS 原生 HLS
+        v.src = pl.url // Safari 可直接接 HLS；不调用 play()，首次起播仍交给用户手势。
       } else { embed(pl) }
     } else {
       // 慢源（线路一）走服务端 /stream 并发聚合；其余 mp4 保持裸直连——
       // 线路二直连 30Mbps 比走代理快得多，也不占服务器出口。
       v.src = needsProxy(pl.url) ? '/api/xifan/stream?u=' + encodeURIComponent(pl.url) + '&clientId=' + encodeURIComponent(slowClientId) : pl.url
-      v.load(); tryPlay()
+      v.load()
     }
   }
 
@@ -1444,6 +1414,9 @@ const PLAY_PAGE = `<!doctype html>
   }
   setInterval(heartbeatAdmission, 15000)
   v.addEventListener('play', function(){
+    // iOS / 蜂窝网络可能不预加载，用户第一次点原生控件时未必先收到 canplay；
+    // 这个手势本身就足够把初始纸片收起，不能让它挡住正在起播的画面。
+    if (!resumeAfterBuffer) hideBuffer()
     var needsAdmission = curPl && (curPl.viaPrepared || (curPl.kind === 'mp4' && needsProxy(curPl.url)))
     if (!needsAdmission || slowSession) return
     try { v.pause() } catch (e) {}
@@ -1485,11 +1458,10 @@ const PLAY_PAGE = `<!doctype html>
       }).catch(function(){})
     }
     cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
-    clearStartWatch()
     gateOnPlay = false; v.classList.remove('on'); frame.classList.add('on'); renderChips()
     frame.src = officialPlayerUrl(pl)
-    // 套娃是第三方页面，我们既控制不了它的自动播放，也看不见它内部为什么卡（手机上实测会
-    // 一直停在 Waiting parameters）。所以只要退到套娃，就同时给一条源站直达——那边是好的。
+    // iframe 内的播放按钮完全由官方播放器绘制；父页面不寻找、不模拟点击画面中央按钮，
+    // 也读不到跨域 iframe 的播放状态。套娃若卡在 Waiting parameters，就同时给一条源站直达——那边是好的。
     renderOpenSource(pl)
   }
 
