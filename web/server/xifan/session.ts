@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
-import { proxyReady } from '../http'
+import { proxyReady, refreshProxyAfterFailure } from '../http'
 import { db } from '../db'
 import { AUTH_SECRET } from '../secrets'
 
@@ -346,7 +346,10 @@ export class XifanCookieSession {
       try {
         return await this.requestOnce(url, options)
       } catch (error) {
-        if (options.retryTransient && isTransient(error)) return this.requestOnce(url, options)
+        if (options.retryTransient && isTransient(error)) {
+          await refreshProxyAfterFailure()
+          return this.requestOnce(url, options)
+        }
         throw error
       }
     }

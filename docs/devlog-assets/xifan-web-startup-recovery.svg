@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1120" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0L8 4L0 8Z" fill="#8f8790"/>
+    </marker>
+    <style>
+      .title { font-size: 19px; font-weight: 700; fill: #282529 }
+      .sub { font-size: 12.5px; fill: #756f73 }
+      .section { font-size: 12px; font-weight: 700; fill: #4a4450 }
+      .label { font-size: 10.5px; font-weight: 700 }
+      .card-title { font-size: 12.5px; font-weight: 700; fill: #353136 }
+      .body { font-size: 11px; fill: #666066 }
+      .muted { font-size: 10.5px; fill: #8a848a }
+      .arrow { fill: none; stroke: #9b939b; stroke-width: 1.5; marker-end: url(#arrow) }
+      .dashed { stroke-dasharray: 5 4 }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="1118" height="1118" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="39" class="title">拿线路先死掉，和点播放不是同一个坑</text>
+  <text x="32" y="62" class="sub">一张播放页有两道门：先让服务端拿到线路，再等用户点 video 自带播放控件。</text>
+  <text x="32" y="81" class="sub">第一道失败会卡在「选集」之前；线路就绪后默认暂停，不额外制造自动播放失败。</text>
+
+  <rect x="32" y="101" width="1056" height="32" rx="8" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="52" y="122" class="section">用户看到的</text>
+  <text x="373" y="122" class="section">服务端 / 浏览器真正发生的事</text>
+  <text x="790" y="122" class="section">修好后的出口</text>
+
+  <!-- 线路解析故障 -->
+  <rect x="32" y="148" width="300" height="150" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <rect x="46" y="161" width="122" height="20" rx="5" fill="#ffffff" stroke="#d99aa5"/>
+  <text x="107" y="175" text-anchor="middle" class="label" fill="#96434f">① 线路还没拿到</text>
+  <text x="50" y="207" class="card-title">播放框先出现，线路区却空着</text>
+  <text x="50" y="229" class="body">等一会儿只剩「加载失败：</text>
+  <text x="50" y="247" class="body">fetch failed」，连选集都没画完</text>
+  <text x="50" y="275" class="muted">这时还没进入播放状态</text>
+
+  <rect x="352" y="148" width="392" height="150" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="370" y="177" class="card-title">启动探测只跑了一次</text>
+  <text x="370" y="201" class="body">直连稀饭失败时，Clash/TUN 的控制器或混合端口</text>
+  <text x="370" y="220" class="body">可能还没就绪；旧 proxyReady 随后直接结束。</text>
+  <text x="370" y="248" class="body">Clash 后来恢复了，下一次 /playlist 仍然走直连，</text>
+  <text x="370" y="267" class="body">于是 TLS 断开，服务端只回一个 fetch failed。</text>
+
+  <rect x="760" y="148" width="328" height="150" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <rect x="776" y="161" width="132" height="20" rx="5" fill="#ffffff" stroke="#7fad91"/>
+  <text x="842" y="175" text-anchor="middle" class="label" fill="#316247">失败时再对齐一次</text>
+  <text x="778" y="207" class="card-title">第一次真实传输失败</text>
+  <text x="778" y="229" class="body">只检查本地代理端口，找到就切过去</text>
+  <text x="778" y="248" class="body">再用原本那一次传输重试</text>
+  <text x="778" y="276" class="muted">不定时探测，不额外打源站</text>
+
+  <path d="M338 223H346" class="arrow"/>
+  <path d="M750 223H754" class="arrow"/>
+
+  <!-- 代理时间线 -->
+  <rect x="32" y="322" width="1056" height="170" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="52" y="350" class="card-title" fill="#7a6234">代理恢复的时间线：只在真的失败时动手</text>
+  <rect x="52" y="373" width="160" height="70" rx="8" fill="#ffffff" stroke="#c3bcc6"/>
+  <text x="132" y="401" text-anchor="middle" class="card-title">服务启动</text>
+  <text x="132" y="422" text-anchor="middle" class="muted">先试直连</text>
+  <path d="M218 408H238" class="arrow"/>
+
+  <rect x="250" y="373" width="210" height="70" rx="8" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="355" y="398" text-anchor="middle" class="card-title" fill="#96434f">直连失败</text>
+  <text x="355" y="420" text-anchor="middle" class="muted">代理还没就绪 → 先放行启动</text>
+  <path d="M466 408H486" class="arrow"/>
+
+  <rect x="498" y="373" width="150" height="70" rx="8" fill="#ffffff" stroke="#c3bcc6"/>
+  <text x="573" y="398" text-anchor="middle" class="card-title">Clash 恢复</text>
+  <text x="573" y="420" text-anchor="middle" class="muted">9090 / 7890 可用</text>
+  <path d="M654 408H674" class="arrow"/>
+
+  <rect x="686" y="373" width="210" height="70" rx="8" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="791" y="398" text-anchor="middle" class="card-title" fill="#36566d">真实请求报传输错</text>
+  <text x="791" y="420" text-anchor="middle" class="muted">触发本地端口重新对齐</text>
+  <path d="M902 408H922" class="arrow"/>
+
+  <rect x="934" y="373" width="136" height="70" rx="8" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="1002" y="398" text-anchor="middle" class="card-title" fill="#316247">原请求重试</text>
+  <text x="1002" y="420" text-anchor="middle" class="muted">仍只有一次</text>
+  <text x="52" y="469" class="muted">并发请求共享一次端口检查，5 秒内不重复；HTTP 4xx/5xx 不会走这条传输层重试。</text>
+
+  <!-- 手动起播状态 -->
+  <rect x="32" y="514" width="1056" height="210" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="52" y="543" class="card-title">② 线路拿到了，先停在暂停状态</text>
+
+  <rect x="32" y="558" width="300" height="150" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <rect x="46" y="571" width="104" height="20" rx="5" fill="#ffffff" stroke="#91adc1"/>
+  <text x="98" y="585" text-anchor="middle" class="label" fill="#36566d">媒体已就绪</text>
+  <text x="50" y="617" class="card-title">拿到地址后只设置 src / load</text>
+  <text x="50" y="640" class="body">不主动调用 video.play()</text>
+  <text x="50" y="663" class="body">浏览器原生播放控件保持可见</text>
+  <text x="50" y="687" class="muted">用户自己决定什么时候开始</text>
+
+  <rect x="352" y="558" width="392" height="150" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="370" y="588" class="card-title">canplay 只代表“可以试播”</text>
+  <text x="370" y="614" class="body">它负责收起「描线中」纸片，</text>
+  <text x="370" y="633" class="body">不会替用户按下播放键。</text>
+  <text x="370" y="659" class="body">首次加载没有自动播放请求，</text>
+  <text x="370" y="678" class="body">不会把“保持暂停”误报成故障。</text>
+
+  <rect x="760" y="558" width="328" height="150" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <rect x="776" y="571" width="126" height="20" rx="5" fill="#ffffff" stroke="#7fad91"/>
+  <text x="839" y="585" text-anchor="middle" class="label" fill="#316247">用户点原生播放控件</text>
+  <text x="778" y="617" class="card-title" fill="#316247">收到 playing 才算开始播放</text>
+  <text x="778" y="641" class="body" fill="#316247">首次起播不进闸门，后续 waiting / seek 才进入</text>
+  <text x="778" y="660" class="body" fill="#316247">桌面通常在左下，移动端位置由浏览器决定</text>
+  <text x="778" y="677" class="muted">断网恢复只恢复此前确实在播的会话</text>
+  <text x="778" y="695" class="muted">退到 iframe 则由对方自己的控件接管</text>
+
+  <path d="M338 633H346" class="arrow"/>
+  <path d="M750 633H754" class="arrow"/>
+
+  <!-- Sentry 链路 -->
+  <rect x="32" y="746" width="1056" height="198" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="52" y="775" class="card-title" fill="#36566d">Sentry：媒体故障为什么要让浏览器自己上报</text>
+  <text x="52" y="796" class="muted">服务端收到的 User-Agent 放在 extra 里，不能自动变成 browser / os / device；页面 SDK 才知道用户此刻的浏览器。</text>
+
+  <rect x="52" y="817" width="230" height="55" rx="8" fill="#ffffff" stroke="#91adc1"/>
+  <text x="167" y="840" text-anchor="middle" class="card-title" fill="#36566d">页面 SDK captureMessage</text>
+  <text x="167" y="858" text-anchor="middle" class="muted">失败诊断 / 需要设备上下文</text>
+  <path d="M288 844H310" class="arrow"/>
+
+  <rect x="322" y="817" width="230" height="55" rx="8" fill="#ffffff" stroke="#91adc1"/>
+  <text x="437" y="840" text-anchor="middle" class="card-title" fill="#36566d">出站事件</text>
+  <text x="437" y="858" text-anchor="middle" class="muted">只留 User-Agent，URL 去 query</text>
+  <path d="M558 844H580" class="arrow"/>
+
+  <rect x="592" y="817" width="230" height="55" rx="8" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="707" y="840" text-anchor="middle" class="card-title" fill="#316247">浏览器项目</text>
+  <text x="707" y="858" text-anchor="middle" class="muted">Sentry 解析 browser / os / device</text>
+  <path d="M828 844H850" class="arrow"/>
+
+  <rect x="862" y="817" width="208" height="55" rx="8" fill="#ffffff" stroke="#7fad91"/>
+  <text x="966" y="840" text-anchor="middle" class="card-title" fill="#316247">四类设备</text>
+  <text x="966" y="858" text-anchor="middle" font-size="10.5px" class="muted">macOS、iPhone、Android、Windows</text>
+
+  <rect x="52" y="887" width="1018" height="40" rx="8" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="70" y="912" class="body">SDK 未加载 → client-log → 服务端 stdout + Sentry 兜底；这条只能得到 Node / Ubuntu 上下文，不冒充用户设备。</text>
+
+  <!-- 边界 -->
+  <rect x="32" y="966" width="1056" height="122" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="52" y="995" class="card-title" fill="#7a6234">边界：修复的是路径，不是把源站当测试靶场</text>
+  <text x="52" y="1022" class="body">✓ 手机 / 平板仍走触屏播放逻辑　　✓ HTTP 4xx/5xx 不自动重试　　✓ 不周期探测、不并发压测</text>
+  <text x="52" y="1046" class="body">✓ 首次打开默认暂停、不换线路、不退 iframe　　✓ 原生控件只复用当前媒体地址　　✓ Sentry 设备验收用受控事件</text>
+  <text x="52" y="1072" class="muted">一句话：先把线路拿到，再等用户点播放；两道门各自失败，各自给出口。</text>
+</svg>

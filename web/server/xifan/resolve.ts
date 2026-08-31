@@ -9,7 +9,7 @@
 // **拷贝复用 + 换传输层**：parsePlayerData 抄自 src/main/xifan/api.ts；
 // 源 tab 名单改用正则扒（web 侧只为这几个 <a> 标签不值当加 cheerio 依赖）。
 
-import { proxyReady } from '../http' // 本地开发：等代理探测定盘，和浏览器走同一条出口
+import { proxyReady, refreshProxyAfterFailure } from '../http' // 本地开发：等代理探测定盘，和浏览器走同一条出口
 import { needsProxy } from './proxy-hosts'
 import {
   assertXifanResponse,
@@ -80,11 +80,8 @@ function parsePlayerData(html: string): PlayerData | null {
 }
 // ↑↑↑ 抄写结束 ↑↑↑
 
-/**
- * 源 tab 名单 —— 从 source 1 页 HTML 里**正则**扒出（不引 cheerio）。一次抓取就拿到全部线路名，不逐条解析。
- * `vod-playerUrl` 是稀饭源切换 tab 专用 class；名字里的集数徽章 `<span class="badge">` 和图标 `<i>` 剥掉。
- * 扒不到就回空 → getPlaylist 兜底只留线路 1（不会崩，最多少了换线入口）。
- */
+// 一次抓 source 1 就取回全部线路名，不逐条解析；站点 tab 没有稳定数据字段，只能从专用 class 读顺序。
+// 去掉 tab 里的集数徽章和图标，避免把装饰文字当线路名；解析不到时保留线路 1 兜底。
 function parseSourceTabs(html: string): LineMeta[] {
   const out: LineMeta[] = []
   const re = /<a[^>]*class="[^"]*\bvod-playerUrl\b[^"]*"[^>]*>([\s\S]*?)<\/a>/gi
@@ -102,11 +99,8 @@ function parseSourceTabs(html: string): LineMeta[] {
   return out
 }
 
-/**
- * 集数列表 —— 从 watch 页正则扒 `.anthology-list` 里的 `/watch/{animeId}/{src}/{ep}.html` 链接，按 ep 去重排序。
- * 抄自 app `parseEpLabels` 思路（换正则、只要序号）：源切换 tab（`vod-playerUrl`）也长这个 href，跳过。
- * 给播放页画「集数网格」用；扒不到 → []，播放页退化成只显示当前集（仍能靠地址栏 ep= 换集）。
- */
+// tab 和集数链接共用 href 形状；跳过带 vod-playerUrl 的 tab，再按 ep 去重排序，避免集数网格重复。
+// 扒不到时返回空，让播放页退化成当前集，仍可通过地址栏 ep 切集。
 function parseEpList(html: string, animeId: string): number[] {
   const set = new Set<number>()
   const re = new RegExp(`<a\\b[^>]*href="/watch/${animeId}/\\d+/(\\d+)\\.html"[^>]*>`, 'gi')
@@ -119,14 +113,9 @@ function parseEpList(html: string, animeId: string): number[] {
   return [...set].sort((a, b) => a - b)
 }
 
-/**
- * 按 URL 分类（不发额外请求）。播放层据此选 <video> / hls.js。
- *   - `.m3u8` → hls（hls.js 接管）
- *   - 其余 → mp4：`<video>` 直连，视频不经服务器。`apn.moedot.net` 最终会跳到带
- *     `content-disposition: attachment` 的 pan.wo；此前因此直接判成 iframe。真实 Chromium
- *     复测确认：播放器页使用 `Referrer-Policy: no-referrer` 后可正常作为媒体加载，所以恢复
- *     直连，拿回缓冲事件控制权；若个别浏览器仍失败，页面的 error 监听再回退官方 iframe。
- */
+// 只看 URL 后缀，不为分类再发请求：m3u8 交给 hls.js，其余交给 <video> 直连。
+// pan.wo 的 attachment 跳转在播放页使用 no-referrer 后可作为媒体加载；若个别浏览器仍失败，
+// 页面 error 监听会回退官方 iframe。坏 URL 由 safeMediaUrl 在输出前拦住。
 function classify(url: string): 'mp4' | 'hls' {
   try {
     if (new URL(url).pathname.toLowerCase().endsWith('.m3u8')) return 'hls'
@@ -274,6 +263,7 @@ async function fetchAnonymous(url: string): Promise<XifanHttpResponse> {
     // 只允许 GET 的传输层瞬时抖动单次重试；HTTP 429 / 5xx 不在这里重试。
     const message = error instanceof Error ? error.message : String(error)
     if (/ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket disconnected|TLS|fetch failed|terminated/i.test(message)) {
+      await refreshProxyAfterFailure()
       return run()
     }
     throw error
@@ -304,11 +294,7 @@ export interface PlayLine {
   source: number
   url: string
   kind: 'mp4' | 'hls'
-  /**
-   * `player_aaaa.from` —— 源站用它在 `/static/js/playerconfig.js` 的 `MacPlayerConfig.player_list`
-   * 里查这条线路该用哪个官方播放器地址（xfy2/AL/CS → `code=xfdm1&from=cf`，xfxf1 → `code=xfdm2`）。
-   * 直连播放用不到它，只有回退官方 iframe 时要照着拼，拼错就是一个永远转圈的空播放器。
-   */
+  // 直连不需要 from；回退官方 iframe 时必须按它选择播放器地址，写错会得到空的 Waiting parameters 页面。
   from: string
 }
 export interface Playlist {
@@ -359,7 +345,7 @@ function singleflight<T>(key: string, load: () => Promise<T>): Promise<T> {
   return job
 }
 
-/** 登录、退出或远端失效后轮换代次；旧请求即使稍后完成，也不会被新会话命中。 */
+// 登录、退出或远端失效后轮换代次，避免稍后完成的旧请求重新污染新会话缓存。
 export function clearXifanResolveCache(uid: number): void {
   sessionGenerations.set(uid, (sessionGenerations.get(uid) ?? 0) + 1)
   const prefix = `user:${uid}:`
@@ -371,16 +357,8 @@ export function clearXifanResolveCache(uid: number): void {
   }
 }
 
-/**
- * 打开播放页调这个：抓 source 1 → 拿到线路 1 地址 + 全部线路名单 + 集数。
- *
- * **默认线路的选法：按域名挑「不需要代理的」，不是按线路编号。** 线路号和源站没有
- * 固定对应关系（实测 3498 的线路一就是 play.xfvod.pro 快源，3535 的线路一才是
- * apn.moedot.net 慢源）。所以只有当 source 1 恰好是慢源时，才多花一次请求去看看
- * 下一条是不是直连快源——直连不占服务器那 6Mbps 出口，能不占就别占。
- *
- * source 1 本来就是快源时**不多打任何请求**，懒加载的原意保持不变。
- */
+// source 1 恰好是慢源时才多解析一条线路，用域名判断快慢而不是猜线路编号；快源不占服务器出口。
+// source 1 已经是快源时不追加请求，保持懒加载和对源站的最小访问量。
 export async function getPlaylist(animeId: string, ep: number, uid: number | null = null): Promise<Playlist> {
   const access = accessContext(uid)
   const key = `${access.scope}:pl:${animeId}:${ep}`
@@ -418,7 +396,7 @@ export async function getPlaylist(animeId: string, ep: number, uid: number | nul
   })
 }
 
-/** 用户手动点线路 N 时才调这个：只抓那一条。 */
+// 只有用户手动点线路时才抓那一条，避免打开播放页并行请求所有线路。
 export async function resolveLine(
   animeId: string,
   ep: number,

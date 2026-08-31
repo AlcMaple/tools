@@ -37,7 +37,7 @@ declare global {
   }
 }
 
-/** 播放页地址带 animeId / ep / bgmId，跟 SPA 那边一样只留路径，不把 query 送出去。 */
+// 播放页地址带 animeId / ep / bgmId，跟 SPA 那边一样只留路径，不把 query 送出去。
 function cleanUrl(raw: string | undefined): string | undefined {
   if (!raw) return raw
   try {
@@ -51,11 +51,16 @@ function cleanUrl(raw: string | undefined): string | undefined {
 }
 
 const beforeSend: NonNullable<BrowserOptions['beforeSend']> = (event) => {
-  const typed = event as ErrorEvent & { request?: { url?: string; headers?: unknown } }
+  const typed = event as ErrorEvent & { request?: { url?: string; headers?: Record<string, unknown> } }
   typed.user = sanitizeSentryUser(typed.user)
   if (typed.request) {
     typed.request.url = cleanUrl(typed.request.url)
-    typed.request.headers = undefined
+    // 只留 User-Agent：Sentry 服务端据此解析 browser / os / device；Referer、Cookie、Authorization 全部丢弃。
+    const headers = typed.request.headers
+    const ua = headers && typeof headers === 'object'
+      ? (headers['User-Agent'] ?? headers['user-agent'])
+      : undefined
+    typed.request.headers = typeof ua === 'string' ? { 'User-Agent': ua } : undefined
   }
   for (const crumb of typed.breadcrumbs ?? []) {
     const data = crumb.data as { url?: unknown } | undefined
