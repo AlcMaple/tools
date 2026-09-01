@@ -28,11 +28,12 @@ import { toast } from './Toast'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 
-type Module = 'profile' | 'security' | 'xifan'
+type Module = 'profile' | 'security' | 'xifan' | 'privacy'
 
 function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/xifan') return 'xifan'
   if (window.location.hash === '#/settings/security') return 'security'
+  if (window.location.hash === '#/settings/privacy') return 'privacy'
   return 'profile'
 }
 
@@ -170,6 +171,16 @@ export function SettingsPage(): JSX.Element | null {
             <div className="pocket-body">{xifanOpened && <XifanAccountModule />}</div>
           </section>
 
+          <section className={`pocket${module === 'privacy' ? ' open' : ''}`} data-mod="privacy">
+            <button className="pocket-tab" type="button" onClick={() => selectModule('privacy')}>
+              <Ic name="eye" />
+              公开追番
+              <span className="pocket-hint">给同好留一页</span>
+              <Ic name="chev" cls="ic chev" />
+            </button>
+            <div className="pocket-body">{module === 'privacy' && <PrivacyModule />}</div>
+          </section>
+
           {/* 后续预留 */}
           <section className="pocket">
             <button className="pocket-tab" type="button" disabled style={{ cursor: 'default' }}>
@@ -203,6 +214,61 @@ function Kv({ k, v, note }: { k: string; v: string; note?: string }): JSX.Elemen
         {v}
         {note && <span className="muted">{note}</span>}
       </span>
+    </div>
+  )
+}
+
+function PrivacyModule(): JSX.Element | null {
+  const { user } = useAuth()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (!user) return null
+
+  const toggle = async (): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await auth.saveTracksPublic(!user.tracksPublic)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存失败，请稍后再试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="privacy-module">
+      <div className="privacy-card-head">
+        <div className="privacy-copy">
+          <b>要把手帐摊开吗？</b>
+          <p className="muted small mt8">哼……让同好看看你最近在追什么？</p>
+        </div>
+        <div className="privacy-action">
+          <span className="privacy-state" aria-live="polite">{user.tracksPublic ? '已摊开' : '收进抽屉'}</span>
+          <button
+            type="button"
+            className={`privacy-switch${user.tracksPublic ? ' on' : ''}`}
+            role="switch"
+            aria-checked={user.tracksPublic}
+            aria-label="公开我的追番"
+            disabled={busy}
+            onClick={() => void toggle()}
+          >
+            <span className="privacy-switch-knob" />
+          </button>
+          <a
+            className={`privacy-public-slot${user.tracksPublic ? '' : ' is-hidden'}`}
+            href={`/u/${encodeURIComponent(user.username)}`}
+            aria-hidden={!user.tracksPublic}
+            tabIndex={user.tracksPublic ? 0 : -1}
+          >
+            看看我的公开页 ↗
+          </a>
+        </div>
+      </div>
+      {error && <p className="form-note err" aria-live="polite">{error}</p>}
     </div>
   )
 }

@@ -691,7 +691,7 @@ function EmptyState({ text, hint, goCalendar }: { text: string; hint: string; go
           {text}。{hint}
         </div>
         {goCalendar && (
-          <a className="btn btn-primary" href="#/">
+          <a className="btn btn-primary" href="/#/">
             去番剧周历
           </a>
         )}

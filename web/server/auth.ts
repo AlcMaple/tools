@@ -97,13 +97,13 @@ export async function issueSession(c: Context, s: Session): Promise<void> {
 
 // 预编译语句（oauth.ts 复用其中带 export 的几条）
 export const findByName = db.prepare<[string]>(
-  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, token_version, security_question, security_answer_hash, created_at FROM users WHERE username = ?',
+  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, tracks_public, token_version, security_question, security_answer_hash, created_at FROM users WHERE username = ?',
 )
 export const findByEmail = db.prepare<[string]>(
-  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, token_version, security_question, security_answer_hash, created_at FROM users WHERE email = ?',
+  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, tracks_public, token_version, security_question, security_answer_hash, created_at FROM users WHERE email = ?',
 )
 export const findById = db.prepare<[number]>(
-  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, token_version, security_question, security_answer_hash, created_at FROM users WHERE id = ?',
+  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, tracks_public, token_version, security_question, security_answer_hash, created_at FROM users WHERE id = ?',
 )
 const insertUser = db.prepare<[string, string, string]>(
   'INSERT INTO users (username, pass_hash, password_enabled, created_at) VALUES (?, ?, 1, ?)',
@@ -127,6 +127,7 @@ const setEmailVerified = db.prepare<[string, number]>(
   'UPDATE users SET email_verified_at = ? WHERE id = ? AND email_verified_at IS NULL',
 )
 const setBgmUid = db.prepare<[string, number]>('UPDATE users SET bgm_uid = ? WHERE id = ?')
+const setTracksPublic = db.prepare<[number, number]>('UPDATE users SET tracks_public = ? WHERE id = ?')
 
 const findChallenge = db.prepare<[string]>(
   'SELECT id, email, code_hash, attempts, created_at, expires_at, verified_at, consumed_at FROM email_challenge WHERE id = ?',
@@ -174,6 +175,7 @@ export interface UserRow {
   email: string | null
   email_verified_at: string | null
   bgm_uid: string
+  tracks_public: number
   token_version: number
   security_question: string | null
   security_answer_hash: string | null
@@ -765,6 +767,7 @@ auth.get('/me', async (c) => {
     // **绝不回显问题和答案** —— 问题本身也是秘密，泄露了等于告诉别人该去查什么。
     email: row.email && row.email_verified_at ? row.email : null,
     bgmUid: row.bgm_uid,
+    tracksPublic: row.tracks_public === 1,
     hasSecurity: !!row.security_answer_hash,
     hasEmail: !!row.email && !!row.email_verified_at,
     hasPassword: row.password_enabled === 1,
@@ -886,6 +889,11 @@ auth.post('/settings', async (c) => {
     return c.json({ error: 'Bangumi 用户标识不合法' }, 400)
   }
 
+  const hasTracksPublic = 'tracksPublic' in body
+  if (hasTracksPublic && typeof body.tracksPublic !== 'boolean') {
+    return c.json({ error: '追番公开设置不合法' }, 400)
+  }
+
   const current = str(body.currentPassword)
   const next = str(body.newPassword)
   const confirm = str(body.confirm)
@@ -895,7 +903,7 @@ auth.post('/settings', async (c) => {
   const wantPassword = next.length > 0 || confirm.length > 0
   const wantSecurity = questionId.length > 0 || answer.length > 0
   const wantAccountSecurity = wantPassword || wantSecurity
-  if (!wantAccountSecurity && !hasBgmUid) return c.json({ error: '没有要修改的内容' }, 400)
+  if (!wantAccountSecurity && !hasBgmUid && !hasTracksPublic) return c.json({ error: '没有要修改的内容' }, 400)
 
   if (wantAccountSecurity) {
     if (row.password_enabled !== 1) {
@@ -941,10 +949,12 @@ auth.post('/settings', async (c) => {
   }
 
   if (hasBgmUid) setBgmUid.run(bgmUid, s.uid)
+  if (hasTracksPublic) setTracksPublic.run(body.tracksPublic === true ? 1 : 0, s.uid)
   const after = findById.get(s.uid) as UserRow
   return c.json({
     ok: true,
     bgmUid: after.bgm_uid,
+    tracksPublic: after.tracks_public === 1,
     hasSecurity: !!after.security_answer_hash,
     hasPassword: after.password_enabled === 1,
   })

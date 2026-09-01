@@ -14,6 +14,7 @@ import girigiri from './girigiri'
 import xifan from './xifan'
 import rewards from './rewards-api'
 import slowPlayback from './slow-playback-api'
+import community from './community'
 import { sameOriginGuard, securityHeaders } from './security'
 
 // 本地开发通常没有 5.6MB 的 bgm_index.db（生成它要下载 400MB+ 官方离线档）。
@@ -61,6 +62,9 @@ app.route('/api/rewards', rewards)
 
 // 与来源无关的慢源容量、候补、保留和观看会话。
 app.route('/api/slow-playback', slowPlayback)
+
+// 公开追番大厅：只读、无需登录；具体用户是否可见由 users.tracks_public 控制。
+app.route('/api/community', community)
 
 // 首页开屏后的站内公告：登录账号可为当前公告版本保存“暂不再显示”偏好。
 app.route('/api/announcements', announcements)

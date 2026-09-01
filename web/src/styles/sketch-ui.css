@@ -2408,8 +2408,9 @@ body[data-auth='out'] .track-btn { display: none; }
   padding-top: 12px;
   border-top: 1px dashed var(--line);
 }
-.ge-compressed { display: flex; align-items: center; gap: 4px; min-width: 0; font-family: var(--font-hand); font-size: 13px; color: var(--gold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ge-compressed .ic { color: var(--gold); flex: none; }
+.ge-count { display: flex; align-items: center; gap: 4px; min-width: 0; font-family: var(--font-hand); font-size: 13px; color: var(--gold); overflow: hidden; white-space: nowrap; }
+.ge-count .ic { color: var(--gold); flex: none; }
+.ge-footer > button { flex: none; min-width: 96px; white-space: nowrap; }
 .line-card.on .lc-dot { background: var(--teal-mid); }
 
 /* ---------- 放映福利：票夹 / 扭蛋 / 积分兑换 ---------- */
