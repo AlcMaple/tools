@@ -35,6 +35,8 @@ export interface AuthUser {
   hasEmail: boolean
   /** 是否拥有用户名密码凭据；邮箱验证码账号没有密码，也不能走密码设置流程。 */
   hasPassword: boolean
+  // 默认 false；只有用户明确打开后才进入公开追番大厅。
+  tracksPublic: boolean
 }
 
 export interface SecurityQuestion {
@@ -64,6 +66,7 @@ type MeRes = {
   hasSecurity: boolean
   hasEmail: boolean
   hasPassword: boolean
+  tracksPublic: boolean
   dailyReward: number
 }
 type LoginRes = { username: string; hasSecurity: boolean; hasEmail: boolean; hasPassword: boolean }
@@ -108,6 +111,7 @@ export const auth = {
         hasSecurity: me.hasSecurity,
         hasEmail: me.hasEmail,
         hasPassword: me.hasPassword,
+        tracksPublic: me.tracksPublic === true,
       }, me.dailyReward)
     } catch {
       setUser(null)
@@ -158,6 +162,7 @@ export const auth = {
     confirm?: string
     questionId?: string
     answer?: string
+    tracksPublic?: boolean
   }): Promise<void> {
     await request('/settings', p)
     await auth.init()
@@ -165,6 +170,11 @@ export const auth = {
   /** 导入追番时默认使用的 Bangumi 数字 UID 或自定义用户名。 */
   async saveBgmUid(bgmUid: string): Promise<void> {
     await request('/settings', { bgmUid })
+    await auth.init()
+  },
+  // 公开开关不涉及账号凭据，因此不要求再次输入密码。
+  async saveTracksPublic(tracksPublic: boolean): Promise<void> {
+    await request('/settings', { tracksPublic })
     await auth.init()
   },
   /** 无密码账号（Google / 验证码注册）首次设置密码。 */

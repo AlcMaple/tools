@@ -26,10 +26,14 @@ export interface CalendarResult {
 // 只有 BGM 的 lain 图床走后端代理。手动条目允许填写其他图床 URL，不能把它们也
 // 剥掉 host 后冒充 lain 路径（/files、/resource/news… 在 lain 上必然 403）。
 //
-// 本地上传的封面在库里存的就是一条同源相对路径（/api/tracks/<id>/cover-file，见
-// server/tracks.ts），不是绝对 URL —— `new URL()` 会直接抛，得在那之前放行。
+// 本地上传的封面在库里存的就是同源相对路径（私有页是 /api/tracks/<id>/cover-file，
+// 公开页是 /api/community/<username>/<id>/cover-file），不是绝对 URL —— `new URL()`
+// 会直接抛，得在那之前放行。
 export function coverUrl(raw: string): string {
-  if (raw.startsWith('/api/tracks/') && raw.endsWith('/cover-file')) return raw
+  if (
+    (raw.startsWith('/api/tracks/') || raw.startsWith('/api/community/'))
+    && raw.endsWith('/cover-file')
+  ) return raw
   try {
     const url = new URL(raw)
     if (url.username || url.password) return ''
@@ -208,6 +212,55 @@ export async function putTrack(bgmId: number, patch: TrackPatch, options: TrackW
 
 export async function deleteTrack(bgmId: number): Promise<void> {
   await json<{ ok: boolean }>(await fetch(`/api/tracks/${bgmId}`, { method: 'DELETE' }))
+}
+
+// ── 公开追番大厅 ───────────────────────────────────────────────────────────────
+// 公开投影只包含服务端明确允许展示的字段；不要把 Track 当作这里的响应类型，
+// 因为这里仍然不包含账号邮箱等身份字段。
+export interface PublicTrack {
+  bgmId: number
+  status: TrackStatus
+  episode: number
+  totalEpisodes: number | null
+  title: string
+  titleCn: string
+  cover: string
+  airDate: string
+  score: number
+  bgmTags: string[]
+  userTags: string[]
+  aliases: string[]
+  goodEpisodes: number[]
+  goodEpisodeNotes: Record<number, string>
+  favorite: number
+  bindings: {
+    xifan: { id: number; name: string } | null
+    girigiri: { id: string; name: string } | null
+  }
+}
+
+export interface CommunityUserSummary {
+  username: string
+  trackCount: number
+}
+
+export interface CommunityUsersResult {
+  data: CommunityUserSummary[]
+  hasMore: boolean
+}
+
+export interface CommunityProfile {
+  user: CommunityUserSummary
+  data: PublicTrack[]
+}
+
+export async function fetchCommunityUsers(limit = 100): Promise<CommunityUsersResult> {
+  const safeLimit = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 100
+  return json<CommunityUsersResult>(await fetch(`/api/community?limit=${safeLimit}`, { cache: 'no-store' }))
+}
+
+export async function fetchCommunityProfile(username: string): Promise<CommunityProfile> {
+  return json<CommunityProfile>(await fetch(`/api/community/${encodeURIComponent(username)}`, { cache: 'no-store' }))
 }
 
 /** 本地图片上传封面（PNG/JPEG/WebP/GIF，≤4MB，见 server/tracks.ts 的校验）。 */

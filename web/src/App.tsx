@@ -6,6 +6,7 @@ import { AnnouncementModal } from './AnnouncementModal'
 import { auth, captureInviteFromLocation, useAuth } from './auth'
 import { AuthModal, type AuthMode } from './AuthModal'
 import { CalendarPage } from './CalendarPage'
+import { CommunityPage } from './CommunityPage'
 import { fetchSlowAdmissionStatus } from './api'
 import { NagBar } from './NagBar'
 import { navigate, useRoute, type Route } from './router'
@@ -21,14 +22,17 @@ const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira
   calendar: { tape: 'tape tl teal', stamp: '紗霧', stampCls: 'st-sakura', kira: 'キラキラ…' },
   tracks: { tape: 'tape tl gold', stamp: '在看', stampCls: 'st-teal', kira: 'キラキラ…' },
   rewards: { tape: 'tape tl lav', stamp: '福利', stampCls: 'st-sakura', kira: 'ポンッ…' },
+  community: { tape: 'tape tl teal', stamp: '同好', stampCls: 'st-sakura', kira: 'わくわく…' },
   settings: { tape: 'tape tl', stamp: '整理', stampCls: 'st-gold', kira: 'サラサラ…' },
 }
 
 const ROUTE_HREF: Record<Route, string> = {
-  calendar: '#/',
-  tracks: '#/tracks',
-  rewards: '#/rewards',
-  settings: '#/settings',
+  // 用根路径作为站内入口，避免从 `/u/:username` 打开时把用户 pathname 带到别的页面。
+  calendar: '/#/',
+  tracks: '/#/tracks',
+  rewards: '/#/rewards',
+  community: '/#/community',
+  settings: '/#/settings',
 }
 
 export default function App(): JSX.Element {
@@ -102,6 +106,12 @@ export default function App(): JSX.Element {
     if (route !== 'calendar') setAnnouncementArmed(false)
   }, [route])
 
+  // hash 页面之间切换时浏览器不会主动回到页首，尤其从公开用户页进入设置时容易
+  // 把标题留在视口上沿之外；每次功能页切换都从手帐页首开始。
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [route])
+
   const go = (r: Route): void => navigate(r)
   const closeAnnouncement = useCallback(() => setAnnouncementArmed(false), [])
   const announceAfterSplash = useCallback(() => {
@@ -121,7 +131,7 @@ export default function App(): JSX.Element {
 
       {/* 移动端顶栏（桌面隐藏） */}
       <header className="m-top">
-        <a className="brand" href="#/" style={{ fontSize: 18 }}>
+        <a className="brand" href={ROUTE_HREF.calendar} style={{ fontSize: 18 }}>
           <Ic name="pencil" />
           MapleTools
         </a>
@@ -147,7 +157,7 @@ export default function App(): JSX.Element {
         <aside className="spine">
           <span className={sp.tape} style={{ width: 88 }} />
           <div>
-            <a className="brand" href="#/">
+            <a className="brand" href={ROUTE_HREF.calendar}>
               <Ic name="pencil" />
               MapleTools <span className="sparkle">✦</span>
             </a>
@@ -160,6 +170,9 @@ export default function App(): JSX.Element {
             </IdxLink>
             <IdxLink route="tracks" active={route === 'tracks'} icon="tracks">
               我的追番
+            </IdxLink>
+            <IdxLink route="community" active={route === 'community'} icon="user">
+              追番大厅
             </IdxLink>
             <IdxLink route="rewards" active={route === 'rewards'} icon="gift">
               放映福利
@@ -226,6 +239,8 @@ export default function App(): JSX.Element {
               ? <SettingsPage />
               : route === 'tracks'
                 ? <TracksPage />
+                : route === 'community'
+                  ? <CommunityPage />
                 : route === 'rewards'
                   ? <RewardsPage />
                   : <CalendarPage />}
@@ -240,6 +255,9 @@ export default function App(): JSX.Element {
         </MTab>
         <MTab route="tracks" active={route === 'tracks'} icon="tracks">
           我的追番
+        </MTab>
+        <MTab route="community" active={route === 'community'} icon="user">
+          追番大厅
         </MTab>
         <MTab route="rewards" active={route === 'rewards'} icon="gift">
           放映福利

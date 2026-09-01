@@ -8,11 +8,11 @@
 //   - 取消标记会连带清掉那一集的备注，不留孤儿。
 //
 // 备注编辑：不用悬浮气泡（试过，锚定位置在弹窗里飘、点哪都可能溢出，还挡住内容）。
-// 「只看好看集」视图直接是一份逐行列表，输入框常驻在行内，失焦即存——跟「全部集数」的
-// 网格点亮/取消是两个模式，不用在同一格子里塞两种操作。
-import { useEffect, useMemo, useState } from 'react'
+// 备注采用短 debounce 而不是只等失焦：切换集数或关闭弹窗前也要保住最后一笔，
+// 同时避免每个字符都单独发请求；跟「全部集数」的网格点亮/取消仍是两个模式。
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Track, TrackPatch } from './api'
-import { compressGoodEpisodes, normalizeGoodEpisodes } from './api'
+import { normalizeGoodEpisodes } from './api'
 import { Ic } from './SketchIcon'
 
 const ONGOING_MIN = 1
@@ -41,6 +41,20 @@ export function GoodEpisodesModal({
   const episodes = t.goodEpisodes
   const notes = t.goodEpisodeNotes
   const marked = useMemo(() => new Set(episodes), [episodes])
+  const [draftNotes, setDraftNotes] = useState<Record<number, string>>(notes)
+  const noteTimers = useRef(new Map<number, number>())
+  const pendingNotes = useRef(new Map<number, string>())
+  const notesRef = useRef(notes)
+
+  useEffect(() => {
+    notesRef.current = notes
+    // 权威快照回来时，保留 debounce 窗口内还没提交的文字，避免实时编辑被旧快照盖掉。
+    setDraftNotes(() => {
+      const next = { ...notes }
+      for (const [episode, raw] of pendingNotes.current) next[episode] = raw
+      return next
+    })
+  }, [notes])
 
   // 网格上限：总集数已知就用它；未知则取 max(当前观看集, 已标最高集, 1)
   const maxN = useMemo(() => {
@@ -61,17 +75,51 @@ export function GoodEpisodesModal({
     onPatch(t.bgmId, { goodEpisodes: [], goodEpisodeNotes: {} })
   }
 
-  // 失焦即存；trim 后为空就删掉这一集的备注，不留孤儿。跟现值一样就不发请求。
+  // trim 后为空就删掉这一集的备注，不留孤儿。跟现值一样就不发请求。
   const commitNote = (n: number, raw: string): void => {
     const trimmed = raw.trim()
-    if ((notes[n] ?? '') === trimmed) return
-    const nextNotes = { ...notes }
+    pendingNotes.current.delete(n)
+    if ((notesRef.current[n] ?? '') === trimmed) return
+    const nextNotes = { ...notesRef.current }
     if (trimmed) nextNotes[n] = trimmed
     else delete nextNotes[n]
+    notesRef.current = nextNotes
     onPatch(t.bgmId, { goodEpisodeNotes: nextNotes })
   }
 
-  const compressed = compressGoodEpisodes(episodes)
+  // 输入时延迟一点提交，既能做到不按回车也会保存，又不会每个字符都打一次接口。
+  const scheduleNote = (n: number, raw: string): void => {
+    setDraftNotes((prev) => ({ ...prev, [n]: raw }))
+    pendingNotes.current.set(n, raw)
+    const previous = noteTimers.current.get(n)
+    if (previous !== undefined) window.clearTimeout(previous)
+    const timer = window.setTimeout(() => {
+      noteTimers.current.delete(n)
+      commitNote(n, raw)
+    }, 450)
+    noteTimers.current.set(n, timer)
+  }
+
+  const flushNote = (n: number, raw: string): void => {
+    const timer = noteTimers.current.get(n)
+    if (timer !== undefined) window.clearTimeout(timer)
+    noteTimers.current.delete(n)
+    pendingNotes.current.delete(n)
+    commitNote(n, raw)
+  }
+
+  useEffect(() => {
+    const timers = noteTimers.current
+    const pending = pendingNotes.current
+    return () => {
+      for (const timer of timers.values()) window.clearTimeout(timer)
+      timers.clear()
+      // 关闭弹窗或按 Escape 时，仍把最后一段尚未到 debounce 时间的文字送出。
+      for (const [n, raw] of pending) commitNote(n, raw)
+      pending.clear()
+    }
+  }, [t.bgmId])
+
   const title = t.titleCn || t.title
 
   return (
@@ -156,10 +204,11 @@ export function GoodEpisodesModal({
                   </button>
                   <input
                     className="ge-row-note"
-                    defaultValue={notes[n] ?? ''}
+                    value={draftNotes[n] ?? ''}
                     placeholder="这集哪里戳中你了…"
                     maxLength={60}
-                    onBlur={(e) => commitNote(n, e.target.value)}
+                    onChange={(e) => scheduleNote(n, e.target.value)}
+                    onBlur={(e) => flushNote(n, e.currentTarget.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
                     }}
@@ -171,10 +220,10 @@ export function GoodEpisodesModal({
         </div>
 
         <div className="ge-footer">
-          <div className="ge-compressed">
-            {compressed ? (
+          <div className="ge-count">
+            {episodes.length > 0 ? (
               <>
-                <Ic name="star" cls="ic ic-sm" /> {compressed}
+                <Ic name="star" cls="ic ic-sm" /> 已标 {episodes.length} 集
               </>
             ) : (
               <span className="faint">还没标</span>
