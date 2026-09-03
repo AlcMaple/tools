@@ -84,7 +84,7 @@ app.route('/api/xifan', xifan)
 app.route('/api/girigiri', girigiri)
 
 // 追番「搜索加番」—— 打**本地** BGM 动漫索引（bgm_index.db），见 bgm/anime-index.ts。
-// 索引没生成时 ready=false，前端据此提示「先跑同步脚本」。
+// 索引没生成时 ready=false，前端据此提示目录尚未整理好。
 //
 // 只有本地**一条都没搜到**时，才查「用户实际加过」的持久补充表；它也没有才退回一次
 // BGM 在线搜（离线档每周三才更新，本周新建的条目本地必然没有）。本地或补充表有结果就

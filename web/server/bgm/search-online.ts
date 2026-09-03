@@ -71,10 +71,10 @@ function toHit(raw: unknown): AnimeHit | null {
 /** 把失败翻译成人话 —— 限流 / 超时 / 其它要分得清，用户才知道是「等等再试」还是「换个词」 */
 function explain(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err)
-  if (/HTTP 429/.test(msg)) return 'BGM 限流了，过会儿再试'
-  if (/HTTP 5\d\d/.test(msg)) return 'BGM 服务端出错了，过会儿再试'
-  if (/timeout|aborted|TimeoutError/i.test(msg)) return '连 BGM 超时了'
-  return 'BGM 在线补充失败'
+  if (/HTTP 429/.test(msg)) return 'Bangumi 现在有点挤，纱雾晚点再去找……'
+  if (/HTTP 5\d\d/.test(msg)) return 'Bangumi 那边出了点岔子，纱雾晚点再去找……'
+  if (/timeout|aborted|TimeoutError/i.test(msg)) return 'Bangumi 回得太慢，纱雾先回来啦……'
+  return 'Bangumi 的补充没接上，纱雾先放一边……'
 }
 
 export async function searchOnline(query: string, now = Date.now()): Promise<OnlineResult> {
@@ -85,14 +85,14 @@ export async function searchOnline(query: string, now = Date.now()): Promise<Onl
   if (cached && now - cached.at < CACHE_TTL) return { hits: cached.hits }
 
   if (now < cooldownUntil) {
-    return { hits: [], error: `在线补充暂停中（连续失败），约 ${Math.ceil((cooldownUntil - now) / 60000)} 分钟后恢复` }
+    return { hits: [], error: `Bangumi 连续闹脾气，纱雾要等约 ${Math.ceil((cooldownUntil - now) / 60000)} 分钟再去找……` }
   }
   if (now - hourStart >= 3600_000) {
     hourStart = now
     hourCount = 0
   }
-  if (hourCount >= HOURLY_CAP) return { hits: [], error: '在线补充已达本小时上限，先歇会儿' }
-  if (now - lastAt < MIN_INTERVAL) return { hits: [], error: '在线补充太频繁了，等一下再搜' }
+  if (hourCount >= HOURLY_CAP) return { hits: [], error: '纱雾今天已经敲太多次门啦，先歇会儿……' }
+  if (now - lastAt < MIN_INTERVAL) return { hits: [], error: '别点这么急嘛，等一下再搜……' }
 
   lastAt = now
   hourCount++

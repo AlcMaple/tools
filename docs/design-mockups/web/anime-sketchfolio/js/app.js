@@ -533,10 +533,10 @@
           <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.t)}</span>
           <span class="sugg-meta">${esc(p.meta)}${p.weekday ? ' · ' + p.weekday + '更新' : ''}</span>
           ${added
-            ? '<span class="tagx mine" style="margin-left:auto">已在追番</span>'
-            : `<button class="btn btn-sm btn-primary" type="button" data-add="${p.id}" style="margin-left:auto;flex:none">${ic('plus', 'ic ic-sm')}加入</button>`}
+            ? '<span class="tagx mine" style="margin-left:auto">已经在手帐里啦</span>'
+            : `<button class="btn btn-sm btn-primary" type="button" data-add="${p.id}" style="margin-left:auto;flex:none">${ic('plus', 'ic ic-sm')}贴进手帐</button>`}
         </div>`;
-      }).join('') : '<div class="sugg-note">没有匹配的番剧（本地索引演示）</div>';
+      }).join('') : '<div class="sugg-note">没有找到匹配的番剧……换个名字再试试？</div>';
     }
     $$('[data-dialog-open="addDlg"]').forEach((b) => b.addEventListener('click', () => {
       $('#addSearch').value = '';
@@ -549,7 +549,7 @@
       const p = POOL.find((x) => x.id === btn.dataset.add);
       TRACKS.unshift({ id: p.id, t: p.t, status: 'wish', ep: 0, total: null, weekday: p.weekday, hue: p.hue, tags: [] });
       render(); renderPool();
-      toast(`已加入『${p.t}』，默认想看`);
+      toast(`哼，『${p.t}』已经贴进手帐啦，先放在「想看」里。`);
     });
 
     $('#trkGrid').addEventListener('click', listActions);
