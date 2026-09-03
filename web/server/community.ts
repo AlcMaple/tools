@@ -57,6 +57,56 @@ const publicCoverStmt = db.prepare<[number, number]>(
   'SELECT cover, cover_mime FROM tracks WHERE user_id = ? AND bgm_id = ?',
 )
 
+// 已发布的点评 / 推荐 —— 只投影 published=1 的「当前内容」；草稿、问题、答案永不出现在公开端点。
+interface PublicReviewRow {
+  bgm_id: number
+  mode: string
+  body: string
+  spoiler: string
+  published_at: number | null
+}
+const publishedReviewsStmt = db.prepare<[number]>(
+  `SELECT bgm_id, mode, body, spoiler, published_at
+   FROM review_contents
+   WHERE user_id = ? AND published = 1`,
+)
+const reviewCountsStmt = db.prepare<[number]>(
+  `SELECT mode, COUNT(*) AS n
+   FROM review_contents
+   WHERE user_id = ? AND published = 1
+   GROUP BY mode`,
+)
+
+const MAX_REVIEW_BODY = 4000
+const REVIEW_PREVIEW = 80
+
+function reviewCountsFor(userId: number): { review: number; recommend: number } {
+  const rows = reviewCountsStmt.all(userId) as { mode: string; n: number }[]
+  const out = { review: 0, recommend: 0 }
+  for (const r of rows) {
+    if (r.mode === 'review') out.review = r.n
+    else if (r.mode === 'recommend') out.recommend = r.n
+  }
+  return out
+}
+
+function publishedReviewsFor(userId: number): Map<number, Record<string, unknown>> {
+  const byBgm = new Map<number, Record<string, unknown>>()
+  for (const row of publishedReviewsStmt.all(userId) as PublicReviewRow[]) {
+    if (row.mode !== 'review' && row.mode !== 'recommend') continue
+    const body = publicText(row.body, MAX_REVIEW_BODY)
+    const entry = byBgm.get(row.bgm_id) ?? {}
+    entry[row.mode] = {
+      body,
+      preview: publicText(body, REVIEW_PREVIEW),
+      spoiler: ['none', 'aired', 'all'].includes(row.spoiler) ? row.spoiler : 'none',
+      publishedAt: row.published_at,
+    }
+    byBgm.set(row.bgm_id, entry)
+  }
+  return byBgm
+}
+
 function parseList(value: string): string[] {
   try {
     const parsed = JSON.parse(value || '[]') as unknown
@@ -190,9 +240,14 @@ function tracksForUser(userId: number, username: string): Record<string, unknown
       Object.entries(girigiriBindingsFor(ids)).map(([id, binding]) => [id, { id: binding.girigiriId, name: publicText(binding.girigiriName, 200) }]),
     ),
   }
+  const reviewsByBgm = publishedReviewsFor(userId)
   return rows
     .map((row) => toPublicTrack(row, username, bindings))
     .filter((track): track is Record<string, unknown> => track !== null)
+    .map((track) => {
+      const r = reviewsByBgm.get(track.bgmId as number)
+      return r ? { ...track, review: r.review ?? null, recommend: r.recommend ?? null } : track
+    })
 }
 
 function publicHeaders(c: Context): void {
@@ -209,8 +264,142 @@ community.get('/', (c) => {
   const data = rows.slice(0, limit).map((user) => ({
     username: user.username,
     trackCount: publicTrackCount(user.id),
+    ...reviewCountsFor(user.id),
   }))
   return c.json({ data, hasMore: rows.length > limit })
+})
+
+// —— 番剧维度的公开点评：按番剧聚合、给「大家聊过的番」用 ——
+interface ReviewAnimeCountRow {
+  bgm_id: number
+  mode: string
+  n: number
+}
+const reviewAnimeCountStmt = db.prepare(
+  `SELECT rc.bgm_id AS bgm_id, rc.mode AS mode, COUNT(*) AS n
+   FROM review_contents rc
+   JOIN users u ON u.id = rc.user_id
+   WHERE rc.published = 1 AND u.tracks_public = 1
+   GROUP BY rc.bgm_id, rc.mode`,
+)
+// 番名 / 封面从任一条公开用户的 tracks 取（同一 bgm 各家标题基本一致）
+const anyTrackMetaStmt = db.prepare<[number]>(
+  `SELECT t.title, t.title_cn, t.cover, t.cover_mime, t.air_date, t.user_tags, t.bgm_tags, u.username
+   FROM tracks t
+   JOIN users u ON u.id = t.user_id
+   WHERE t.bgm_id = ? AND u.tracks_public = 1
+   ORDER BY t.id DESC
+   LIMIT 1`,
+)
+interface TrackMetaRow {
+  title: string
+  title_cn: string
+  cover: string
+  cover_mime: string
+  air_date: string
+  user_tags: string
+  bgm_tags: string
+  username: string
+}
+interface AnimeReviewRow {
+  mode: string
+  body: string
+  spoiler: string
+  score_shown: number
+  tags_shown: string
+  published_at: number | null
+  username: string
+}
+const animeReviewsStmt = db.prepare<[number]>(
+  `SELECT rc.mode, rc.body, rc.spoiler, rc.score_shown, rc.tags_shown, rc.published_at, u.username
+   FROM review_contents rc
+   JOIN users u ON u.id = rc.user_id
+   WHERE rc.bgm_id = ? AND rc.published = 1 AND u.tracks_public = 1
+   ORDER BY rc.published_at DESC`,
+)
+
+function animeMeta(bgmId: number): (TrackMetaRow & { cover: string }) | null {
+  const meta = anyTrackMetaStmt.get(bgmId) as TrackMetaRow | undefined
+  if (!meta) return null
+  return { ...meta, cover: publicCover(meta.cover, meta.cover_mime, meta.username, bgmId) }
+}
+
+// 有公开点评 / 推荐的番剧列表，按总篇数降序
+community.get('/reviews', (c) => {
+  publicHeaders(c)
+  const counts = new Map<number, { review: number; recommend: number }>()
+  for (const row of reviewAnimeCountStmt.all() as ReviewAnimeCountRow[]) {
+    if (row.mode !== 'review' && row.mode !== 'recommend') continue
+    const e = counts.get(row.bgm_id) ?? { review: 0, recommend: 0 }
+    e[row.mode] = row.n
+    counts.set(row.bgm_id, e)
+  }
+  const data = [...counts.entries()]
+    .map(([bgmId, n]) => {
+      const meta = animeMeta(bgmId)
+      if (!meta) return null
+      const rows = animeReviewsStmt.all(bgmId) as AnimeReviewRow[]
+      const freq = new Map<string, number>()
+      for (const r of rows) {
+        for (const t of parseList(r.tags_shown)) {
+          const tag = publicText(t, 40)
+          if (tag) freq.set(tag, (freq.get(tag) ?? 0) + 1)
+        }
+      }
+      let tags = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([t]) => t)
+      if (!tags.length) {
+        // 点评本身没勾标签时，退回番剧的用户标签 / BGM 标签
+        const fallback = [...parseList(meta.user_tags), ...parseList(meta.bgm_tags)]
+        tags = [...new Set(fallback.map((t) => publicText(t, 40)).filter(Boolean))].slice(0, 4)
+      }
+      const newest = rows[0]
+      const excerpt = newest ? publicText(newest.body, 60).replace(/\s+/g, ' ').trim() : ''
+      return {
+        bgmId,
+        title: publicText(meta.title),
+        titleCn: publicText(meta.title_cn),
+        cover: meta.cover,
+        airDate: publicText(meta.air_date, 32),
+        review: n.review,
+        recommend: n.recommend,
+        total: n.review + n.recommend,
+        tags,
+        excerpt,
+      }
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .sort((a, b) => b.total - a.total || b.review - a.review || b.bgmId - a.bgmId)
+    .slice(0, 200)
+  return c.json({ data })
+})
+
+// 一部番的所有公开点评 / 推荐（点评、推荐各一组）
+community.get('/reviews/:bgmId', (c) => {
+  publicHeaders(c)
+  const bgmId = Number(c.req.param('bgmId'))
+  if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: '这部番不存在' }, 404)
+  const meta = animeMeta(bgmId)
+  if (!meta) return c.json({ error: '这部番还没有公开点评' }, 404)
+  const toEntry = (r: AnimeReviewRow): Record<string, unknown> => ({
+    username: r.username,
+    body: publicText(r.body, MAX_REVIEW_BODY),
+    spoiler: ['none', 'aired', 'all'].includes(r.spoiler) ? r.spoiler : 'none',
+    score: Number.isFinite(r.score_shown) && r.score_shown > 0 ? r.score_shown : null,
+    tags: parseList(r.tags_shown).slice(0, 8).map((t) => publicText(t, 80)),
+    publishedAt: r.published_at,
+  })
+  const rows = animeReviewsStmt.all(bgmId) as AnimeReviewRow[]
+  return c.json({
+    anime: {
+      bgmId,
+      title: publicText(meta.title),
+      titleCn: publicText(meta.title_cn),
+      cover: meta.cover,
+      airDate: publicText(meta.air_date, 32),
+    },
+    review: rows.filter((r) => r.mode === 'review').map(toEntry),
+    recommend: rows.filter((r) => r.mode === 'recommend').map(toEntry),
+  })
 })
 
 // 本地封面不能复用只认当前会话的 tracks 路径；这里重新检查公开开关，让撤回公开后旧地址也失效。
@@ -247,7 +436,10 @@ community.get('/:username', (c) => {
   const user = publicUserStmt.get(username) as PublicUserRow | undefined
   if (!user) return c.json({ error: '公开用户不存在' }, 404)
   const data = tracksForUser(user.id, user.username)
-  return c.json({ user: { username: user.username, trackCount: data.length }, data })
+  return c.json({
+    user: { username: user.username, trackCount: data.length, ...reviewCountsFor(user.id) },
+    data,
+  })
 })
 
 export default community

@@ -131,6 +131,51 @@ db.exec(`
   );
 `)
 
+// 推荐与点评助手 —— 网页端自有数据，桌面端一个字都不碰：
+//   **不进 tracks.extra**（那列是给桌面富字段过路的），**不参与 tracks_rev**（桌面同步不该被它顶 409）。
+// 每 (user_id, bgm_id, mode) 至多：一行草稿 + 一行「当前内容」。mode 只有 review / recommend 两种。
+//
+//   review_drafts   写作过程的全部临时态；发布或删除后整行清掉（问题、答案不跨发布保留）
+//   review_contents 「当前内容」——published=1 已公开投影门槛之一，撤回置 0、正文保留
+db.exec(`
+  CREATE TABLE IF NOT EXISTS review_drafts (
+    user_id    INTEGER NOT NULL,
+    bgm_id     INTEGER NOT NULL,
+    mode       TEXT    NOT NULL CHECK (mode IN ('review', 'recommend')),
+    episode    INTEGER NOT NULL DEFAULT 0,
+    spoiler    TEXT    NOT NULL DEFAULT 'none' CHECK (spoiler IN ('none', 'aired', 'all')),
+    tone       TEXT    NOT NULL DEFAULT '',
+    length     TEXT    NOT NULL DEFAULT '',
+    questions  TEXT    NOT NULL DEFAULT '[]',
+    answers    TEXT    NOT NULL DEFAULT '{}',
+    body       TEXT    NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, bgm_id, mode),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS review_contents (
+    user_id      INTEGER NOT NULL,
+    bgm_id       INTEGER NOT NULL,
+    mode         TEXT    NOT NULL CHECK (mode IN ('review', 'recommend')),
+    body         TEXT    NOT NULL DEFAULT '',
+    episode      INTEGER NOT NULL DEFAULT 0,
+    spoiler      TEXT    NOT NULL DEFAULT 'none' CHECK (spoiler IN ('none', 'aired', 'all')),
+    tone         TEXT    NOT NULL DEFAULT '',
+    length       TEXT    NOT NULL DEFAULT '',
+    score_shown  REAL    NOT NULL DEFAULT 0,
+    tags_shown   TEXT    NOT NULL DEFAULT '[]',
+    published    INTEGER NOT NULL DEFAULT 0 CHECK (published IN (0, 1)),
+    published_at INTEGER,
+    created_at   INTEGER NOT NULL DEFAULT 0,
+    updated_at   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, bgm_id, mode),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS review_contents_public_idx
+  ON review_contents (user_id, mode, published);
+`)
+
 // 老库补列 —— 缺哪列补哪列,不写版本号、不写迁移文件。
 function ensureColumn(table: string, column: string, decl: string): void {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
@@ -147,6 +192,9 @@ ensureColumn('users', 'email_verified_at', 'email_verified_at TEXT')
 ensureColumn('users', 'bgm_uid', "bgm_uid TEXT NOT NULL DEFAULT ''")
 // 默认关闭是隐私边界；公开大厅只筛选用户明确打开的账号。
 ensureColumn('users', 'tracks_public', 'tracks_public INTEGER NOT NULL DEFAULT 0 CHECK (tracks_public IN (0, 1))')
+// AI 来源偏好 —— JSON `{provider:'server'|'byok', endpoint, model}`。**API key 绝不写这里**：
+// 只留在本机浏览器（见 web/src/reviews/byok.ts）。endpoint / model 随账号设置跨设备同步。
+ensureColumn('users', 'ai_config', "ai_config TEXT NOT NULL DEFAULT ''")
 // 老账号都有真实密码,迁移时统一保持可用;只有新建的邮箱验证码账号显式写 0。
 ensureColumn(
   'users',

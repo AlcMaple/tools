@@ -2,4 +2,7 @@ node_modules
 dist
 .vercel
 *.local
+.env
+.env.*
+!.env.example
 data

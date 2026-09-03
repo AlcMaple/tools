@@ -796,6 +796,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   user-select: none;
 }
 .tagx.mine { background: var(--teal-wash); color: var(--teal); border-color: var(--teal-line); }
+/* 点评问题的选项：整句预制答案，可能换行 —— 左对齐、行高放开，别居中 */
+.tagx-opt { display: flex; text-align: left; justify-content: flex-start; white-space: normal; line-height: 1.45; padding: 5px 11px; }
 .tagx > button { border: none; background: none; padding: 2px; color: inherit; font-size: 12px; line-height: 1; cursor: pointer; opacity: .7; }
 @media (hover: hover) { .tagx > button:hover { opacity: 1; } }
 .tagx-add { border: 1px dashed var(--line-strong); background: none; color: var(--ink-faint); font: inherit; cursor: pointer; }
@@ -1690,6 +1692,17 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   pointer-events: none;
 }
 .trk-rm { flex: none; }
+/* 「写点评」卡（.has-review）：状态分段 + 移出收进这个靠右的组，主操作药丸留在左边。
+   组内换行时靠右对齐，移出落在分段正下方，不会掉到左下角。 */
+.trk-tail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+.trk-tail > .status-seg { margin-left: 0; }
 .trk-edit-mobile {
   display: none;
   align-items: center;
@@ -1749,6 +1762,19 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
     gap: 8px;
     margin-top: 2px;
   }
+  /* 「写点评」卡是 4 个按钮：不铺满、不进网格，保持自然宽度的小药丸一行排开（375 也放得下），
+     状态分段和移出各自整行。避免「按钮太大太抢眼」。 */
+  .trk-actions.has-review {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    align-items: center;
+  }
+  .trk-actions.has-review > .btn { width: auto; }
+  /* 分段 + 移出的靠右组不铺满整行，收成自然宽度 */
+  .trk-actions.has-review > .trk-tail { width: auto; }
+  .trk-tail > .status-seg { width: auto; }
+  .trk-tail .status-seg .seg-btn { flex: 0 1 auto; }
   .trk-actions > .btn { width: 100%; }
   .trk-actions > .status-seg { grid-column: 1 / -1; width: 100%; }
   .trk-actions > .trk-rm { grid-column: 1 / -1; justify-self: start; width: auto; }
@@ -1771,6 +1797,11 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
      这个行距给**所有**卡片，不只观望卡 —— 只给观望卡的话，切一次状态卡片就高一截，
      等高网格里同一行的邻居跟着一起变，看上去就是「容器忽大忽小」。 */
   .trk-actions { row-gap: 32px; }
+  /* 「写点评」卡（看完 / 在追，永远没有观望气泡）：药丸靠左折行，行距收回常规值；
+     状态分段和移出收成自然宽度、靠右对齐（不铺满整行）。 */
+  .trk-actions.has-review { row-gap: 8px; column-gap: 6px; }
+  /* 4 个药丸挤进窄操作区（约 333px）：收紧内边距和图标间距，让「点评」也留在第一行 */
+  .trk-actions.has-review > .btn { padding-inline: 8px; gap: 4px; }
   /* 窄卡里气泡收一号，并让它压低到分段边框上，省出来的高度就是上一行按钮的余量 */
   .nudge { bottom: calc(100% - 3px); }
   .nudge-face { width: 28px; height: 28px; }

@@ -15,6 +15,7 @@ import xifan from './xifan'
 import rewards from './rewards-api'
 import slowPlayback from './slow-playback-api'
 import community from './community'
+import reviews from './reviews'
 import { sameOriginGuard, securityHeaders } from './security'
 
 // 本地开发通常没有 5.6MB 的 bgm_index.db（生成它要下载 400MB+ 官方离线档）。
@@ -71,6 +72,9 @@ app.route('/api/announcements', announcements)
 
 // 追番：列表 / 增改（字段级 patch）/ 删。要登录。
 app.route('/api/tracks', tracks)
+
+// 推荐与点评助手：草稿 / 当前内容 / 发布 / 撤回 + 服务器 AI 问答与初稿生成。要登录。
+app.route('/api/reviews', reviews)
 
 // 稀饭在线观看「浏览器直连」可行性原型:probe 诊断 + 自包含试播页,
 // 不登录、不碰 SPA。验证过就会长成①定位那一档的解析后端，或被判定要走服务器代理。

@@ -27,13 +27,15 @@ import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
+import { readByokKey, writeByokKey } from './reviews/byok'
 
-type Module = 'profile' | 'security' | 'xifan' | 'privacy'
+type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai'
 
 function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/xifan') return 'xifan'
   if (window.location.hash === '#/settings/security') return 'security'
   if (window.location.hash === '#/settings/privacy') return 'privacy'
+  if (window.location.hash === '#/settings/ai') return 'ai'
   return 'profile'
 }
 
@@ -181,13 +183,14 @@ export function SettingsPage(): JSX.Element | null {
             <div className="pocket-body">{module === 'privacy' && <PrivacyModule />}</div>
           </section>
 
-          {/* 后续预留 */}
-          <section className="pocket">
-            <button className="pocket-tab" type="button" disabled style={{ cursor: 'default' }}>
-              <Ic name="star" />
-              追番偏好
-              <span className="pocket-hint">待开发</span>
+          <section className={`pocket${module === 'ai' ? ' open' : ''}`} data-mod="ai">
+            <button className="pocket-tab" type="button" onClick={() => selectModule('ai')}>
+              <Ic name="edit" />
+              点评助手
+              <span className="pocket-hint">写点评时谁来帮忙</span>
+              <Ic name="chev" cls="ic chev" />
             </button>
+            <div className="pocket-body">{module === 'ai' && <AiModule />}</div>
           </section>
         </div>
 
@@ -268,6 +271,108 @@ function PrivacyModule(): JSX.Element | null {
           </a>
         </div>
       </div>
+      {error && <p className="form-note err" aria-live="polite">{error}</p>}
+    </div>
+  )
+}
+
+// 点评助手的 AI 来源 —— 服务器 AI（默认，所有登录用户可用）或自配 API（浏览器直连）。
+// 没有保存按钮 —— 跟编辑追番一样改完即生效：endpoint / model 防抖后随账号同步，
+// API key 直接落本机 localStorage（不入库、不同步）。清空输入框 = 清掉 key，不另设按钮。
+function AiModule(): JSX.Element | null {
+  const { user } = useAuth()
+  const [endpoint, setEndpoint] = useState(user?.aiConfig.endpoint ?? '')
+  const [model, setModel] = useState(user?.aiConfig.model ?? '')
+  const [key, setKey] = useState(() => readByokKey())
+  const [error, setError] = useState<string | null>(null)
+  const saveTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => () => window.clearTimeout(saveTimer.current), [])
+
+  if (!user) return null
+  const provider = user.aiConfig.provider
+
+  const pushConfig = (next: { provider?: 'server' | 'byok'; endpoint?: string; model?: string }): void => {
+    setError(null)
+    auth
+      .saveAiConfig({
+        provider: next.provider ?? provider,
+        endpoint: (next.endpoint ?? endpoint).trim(),
+        model: (next.model ?? model).trim(),
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : '没存上，检查下网络'))
+  }
+
+  const scheduleConfig = (next: { endpoint?: string; model?: string }): void => {
+    window.clearTimeout(saveTimer.current)
+    saveTimer.current = window.setTimeout(() => pushConfig(next), 700)
+  }
+
+  return (
+    <div style={{ paddingTop: 6 }}>
+      <div className="field mb16">
+        <span className="field-label">写点评时用谁的</span>
+        <div className="status-seg" style={{ marginLeft: 0 }} role="group" aria-label="AI 来源">
+          <button
+            type="button"
+            className={`seg-btn${provider === 'server' ? ' on' : ''}`}
+            aria-pressed={provider === 'server'}
+            onClick={() => provider !== 'server' && pushConfig({ provider: 'server' })}
+          >
+            用我这边的
+          </button>
+          <button
+            type="button"
+            className={`seg-btn${provider === 'byok' ? ' on' : ''}`}
+            aria-pressed={provider === 'byok'}
+            onClick={() => provider !== 'byok' && pushConfig({ provider: 'byok' })}
+          >
+            用你自己的
+          </button>
+        </div>
+      </div>
+
+      {provider === 'byok' && (
+        <>
+          <Field label="接口地址">
+            <input
+              value={endpoint}
+              onChange={(e) => {
+                setEndpoint(e.target.value)
+                scheduleConfig({ endpoint: e.target.value })
+              }}
+              onBlur={() => pushConfig({ endpoint })}
+              placeholder="https://api.example.com/v1"
+              spellCheck={false}
+              style={{ width: '100%' }}
+            />
+          </Field>
+          <Field label="模型">
+            <input
+              value={model}
+              onChange={(e) => {
+                setModel(e.target.value)
+                scheduleConfig({ model: e.target.value })
+              }}
+              onBlur={() => pushConfig({ model })}
+              placeholder="gpt-4o-mini"
+              spellCheck={false}
+              style={{ width: '100%' }}
+            />
+          </Field>
+          <Field label="API key（只存这台设备，清空即删除）">
+            <PasswordInput
+              value={key}
+              autoComplete="off"
+              placeholder="sk-..."
+              onChange={(v) => {
+                setKey(v)
+                writeByokKey(v.trim())
+              }}
+            />
+          </Field>
+        </>
+      )}
       {error && <p className="form-note err" aria-live="polite">{error}</p>}
     </div>
   )

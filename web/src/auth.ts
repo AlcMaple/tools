@@ -37,6 +37,26 @@ export interface AuthUser {
   hasPassword: boolean
   // 默认 false；只有用户明确打开后才进入公开追番大厅。
   tracksPublic: boolean
+  /** AI 来源偏好（推荐与点评助手）。API key 不在这里 —— 只存本机浏览器。 */
+  aiConfig: AiConfig
+}
+
+export interface AiConfig {
+  provider: 'server' | 'byok'
+  endpoint: string
+  model: string
+}
+
+const DEFAULT_AI_CONFIG: AiConfig = { provider: 'server', endpoint: '', model: '' }
+
+function normalizeAiConfig(raw: unknown): AiConfig {
+  if (!raw || typeof raw !== 'object') return DEFAULT_AI_CONFIG
+  const o = raw as Record<string, unknown>
+  return {
+    provider: o.provider === 'byok' ? 'byok' : 'server',
+    endpoint: typeof o.endpoint === 'string' ? o.endpoint : '',
+    model: typeof o.model === 'string' ? o.model : '',
+  }
 }
 
 export interface SecurityQuestion {
@@ -67,6 +87,7 @@ type MeRes = {
   hasEmail: boolean
   hasPassword: boolean
   tracksPublic: boolean
+  aiConfig: unknown
   dailyReward: number
 }
 type LoginRes = { username: string; hasSecurity: boolean; hasEmail: boolean; hasPassword: boolean }
@@ -112,6 +133,7 @@ export const auth = {
         hasEmail: me.hasEmail,
         hasPassword: me.hasPassword,
         tracksPublic: me.tracksPublic === true,
+        aiConfig: normalizeAiConfig(me.aiConfig),
       }, me.dailyReward)
     } catch {
       setUser(null)
@@ -175,6 +197,11 @@ export const auth = {
   // 公开开关不涉及账号凭据，因此不要求再次输入密码。
   async saveTracksPublic(tracksPublic: boolean): Promise<void> {
     await request('/settings', { tracksPublic })
+    await auth.init()
+  },
+  // AI 来源偏好（provider / endpoint / model）。API key 由前端单独存本机浏览器，不走这里。
+  async saveAiConfig(aiConfig: AiConfig): Promise<void> {
+    await request('/settings', { aiConfig })
     await auth.init()
   },
   /** 无密码账号（Google / 验证码注册）首次设置密码。 */

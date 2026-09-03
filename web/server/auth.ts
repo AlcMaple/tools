@@ -97,13 +97,13 @@ export async function issueSession(c: Context, s: Session): Promise<void> {
 
 // 预编译语句（oauth.ts 复用其中带 export 的几条）
 export const findByName = db.prepare<[string]>(
-  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, tracks_public, token_version, security_question, security_answer_hash, created_at FROM users WHERE username = ?',
+  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, tracks_public, token_version, security_question, security_answer_hash, created_at, ai_config FROM users WHERE username = ?',
 )
 export const findByEmail = db.prepare<[string]>(
-  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, tracks_public, token_version, security_question, security_answer_hash, created_at FROM users WHERE email = ?',
+  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, tracks_public, token_version, security_question, security_answer_hash, created_at, ai_config FROM users WHERE email = ?',
 )
 export const findById = db.prepare<[number]>(
-  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, tracks_public, token_version, security_question, security_answer_hash, created_at FROM users WHERE id = ?',
+  'SELECT id, username, pass_hash, password_enabled, email, email_verified_at, bgm_uid, tracks_public, token_version, security_question, security_answer_hash, created_at, ai_config FROM users WHERE id = ?',
 )
 const insertUser = db.prepare<[string, string, string]>(
   'INSERT INTO users (username, pass_hash, password_enabled, created_at) VALUES (?, ?, 1, ?)',
@@ -128,6 +128,8 @@ const setEmailVerified = db.prepare<[string, number]>(
 )
 const setBgmUid = db.prepare<[string, number]>('UPDATE users SET bgm_uid = ? WHERE id = ?')
 const setTracksPublic = db.prepare<[number, number]>('UPDATE users SET tracks_public = ? WHERE id = ?')
+// AI 来源偏好（provider / endpoint / model 的 JSON）。API key 绝不经过这里。
+const setAiConfig = db.prepare<[string, number]>('UPDATE users SET ai_config = ? WHERE id = ?')
 
 const findChallenge = db.prepare<[string]>(
   'SELECT id, email, code_hash, attempts, created_at, expires_at, verified_at, consumed_at FROM email_challenge WHERE id = ?',
@@ -180,6 +182,28 @@ export interface UserRow {
   security_question: string | null
   security_answer_hash: string | null
   created_at: string
+  ai_config: string
+}
+
+// AI 来源偏好归一 —— provider 只认 server / byok；endpoint / model 限长、去控制字符。
+export function normalizeAiConfig(raw: unknown): { provider: 'server' | 'byok'; endpoint: string; model: string } {
+  const fallback = { provider: 'server' as const, endpoint: '', model: '' }
+  let obj: Record<string, unknown> = {}
+  if (typeof raw === 'string' && raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) obj = parsed as Record<string, unknown>
+    } catch {
+      return fallback
+    }
+  } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    obj = raw as Record<string, unknown>
+  }
+  const strip = /[\u0000-\u001f\u007f]/g
+  const clean = (v: unknown, max: number): string =>
+    typeof v === 'string' ? v.trim().replace(strip, '').slice(0, max) : ''
+  const provider = obj.provider === 'byok' ? 'byok' : 'server'
+  return { provider, endpoint: clean(obj.endpoint, 300), model: clean(obj.model, 100) }
 }
 
 /**
@@ -768,6 +792,7 @@ auth.get('/me', async (c) => {
     email: row.email && row.email_verified_at ? row.email : null,
     bgmUid: row.bgm_uid,
     tracksPublic: row.tracks_public === 1,
+    aiConfig: normalizeAiConfig(row.ai_config),
     hasSecurity: !!row.security_answer_hash,
     hasEmail: !!row.email && !!row.email_verified_at,
     hasPassword: row.password_enabled === 1,
@@ -894,6 +919,9 @@ auth.post('/settings', async (c) => {
     return c.json({ error: '追番公开设置不合法' }, 400)
   }
 
+  const hasAiConfig = 'aiConfig' in body
+  const nextAiConfig = hasAiConfig ? normalizeAiConfig(body.aiConfig) : null
+
   const current = str(body.currentPassword)
   const next = str(body.newPassword)
   const confirm = str(body.confirm)
@@ -903,7 +931,9 @@ auth.post('/settings', async (c) => {
   const wantPassword = next.length > 0 || confirm.length > 0
   const wantSecurity = questionId.length > 0 || answer.length > 0
   const wantAccountSecurity = wantPassword || wantSecurity
-  if (!wantAccountSecurity && !hasBgmUid && !hasTracksPublic) return c.json({ error: '没有要修改的内容' }, 400)
+  if (!wantAccountSecurity && !hasBgmUid && !hasTracksPublic && !hasAiConfig) {
+    return c.json({ error: '没有要修改的内容' }, 400)
+  }
 
   if (wantAccountSecurity) {
     if (row.password_enabled !== 1) {
@@ -950,11 +980,13 @@ auth.post('/settings', async (c) => {
 
   if (hasBgmUid) setBgmUid.run(bgmUid, s.uid)
   if (hasTracksPublic) setTracksPublic.run(body.tracksPublic === true ? 1 : 0, s.uid)
+  if (nextAiConfig) setAiConfig.run(JSON.stringify(nextAiConfig), s.uid)
   const after = findById.get(s.uid) as UserRow
   return c.json({
     ok: true,
     bgmUid: after.bgm_uid,
     tracksPublic: after.tracks_public === 1,
+    aiConfig: normalizeAiConfig(after.ai_config),
     hasSecurity: !!after.security_answer_hash,
     hasPassword: after.password_enabled === 1,
   })
