@@ -572,8 +572,130 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .day-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
 .day-head .hr-dash { flex: 1; min-width: 30px; }
 
-/* 桌面整周纵览：每天一小节（章头 + 胶片），节与节之间留出翻页呼吸 */
+/* 周历布局容器：内容铺满整张内页，立绘作为可拖动贴纸叠在右侧，
+   不再占掉卡片宽度。这样横向内容可以继续向右延伸，被立绘盖住时移开即可。 */
+.calendar-stage {
+  position: relative;
+  min-width: 0;
+}
+.calendar-content {
+  width: 100%;
+  min-width: 0;
+}
+.calendar-rig-layer {
+  position: sticky;
+  top: 24px;
+  z-index: 25;
+  height: 0;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.calendar-rig {
+  position: relative;
+  flex: none;
+  width: 260px;
+  height: 430px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  will-change: transform;
+  transition: opacity .25s ease, filter .25s ease;
+}
+.calendar-rig.dragging { cursor: grabbing; }
+@media (hover: hover) {
+  /* 立绘/气泡 hover 变淡，让底下的卡片标题和封面能看清；仍保留指针命中，方便拖走。 */
+  .calendar-rig:hover { opacity: .14; }
+  .calendar-rig:focus-visible { outline: 3px solid var(--teal-wash); outline-offset: 5px; }
+}
+.calendar-rig .rig-bubble {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+.calendar-rig .rig-bubble::after {
+  top: -7px;
+  bottom: auto;
+  left: 50%;
+  margin-left: -6px;
+  transform: rotate(225deg) skew(8deg, 8deg);
+}
+.rig-drag-hint {
+  display: block;
+  margin-top: 5px;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+/* 桌面横向布局：每天一小节（章头 + 可继续向右的卡片），节与节之间留出翻页呼吸 */
 .day-sec + .day-sec { margin-top: 26px; }
+
+/* 第二种浏览方式：整周纵向布局。卡片换行而不是横向滚动，七天的内容一次铺开。 */
+.calendar-vertical-view .day-sec + .day-sec { margin-top: 34px; }
+.film-wrap.vertical .film-count,
+.film-wrap.vertical .film-nav { display: none; }
+.film.is-vertical {
+  grid-auto-flow: row;
+  grid-auto-columns: auto;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  align-items: start;
+  overflow: visible;
+  cursor: default;
+  user-select: auto;
+}
+.film.is-vertical .poster {
+  width: 100%;
+  min-width: 0;
+}
+.film.is-vertical .film-empty { grid-column: 1 / -1; }
+@media (max-width: 640px) {
+  .film.is-vertical {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    --film-gap: 12px;
+  }
+}
+
+/* 周历排布切换：分段按钮比两个散落按钮更像手帐里的小标签。 */
+.calendar-actions { flex-wrap: wrap; justify-content: flex-end; }
+.calendar-layout-toggle { flex: none; }
+.calendar-layout-toggle > button { white-space: nowrap; }
+@media (max-width: 960px) {
+  /* 移动端把同一张贴纸改成内联并排，仍可按住拖动；纵向布局不会被它挤出横向滚动。 */
+  .calendar-rig-layer {
+    position: relative;
+    top: auto;
+    height: auto;
+    margin-bottom: 10px;
+  }
+  .calendar-rig {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 10px;
+  }
+  .calendar-rig .rig { height: 96px; }
+  .calendar-rig .rig-bubble {
+    width: auto;
+    max-width: 240px;
+    margin: 0;
+  }
+  .calendar-rig .rig-bubble::after {
+    top: auto;
+    bottom: 22px;
+    left: -7px;
+    margin-left: 0;
+    transform: rotate(135deg) skew(8deg, 8deg);
+  }
+  .rig-drag-hint { font-size: 10px; }
+}
 
 /* 胶片条：整版翻页 —— 海报宽度由「一屏放几张」反推（容器宽 ÷ 列数），
    所以任何时候右缘都停在一张完整卡片上，不会切出半张、也就不用再拿渐隐去糊它 */
