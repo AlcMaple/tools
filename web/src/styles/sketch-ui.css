@@ -608,14 +608,20 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 .calendar-rig.dragging { cursor: grabbing; }
 @media (hover: hover) {
-  /* 立绘/气泡 hover 变淡，让底下的卡片标题和封面能看清；仍保留指针命中，方便拖走。 */
-  .calendar-rig:hover { opacity: .14; }
+  /* 想要「气泡半透明、但透过它的卡片文字仍然清晰」，正统做法是把卡片文字的 z-index
+     叠到气泡之上。但每张海报都有 transform: rotate(…)，各自成了独立层叠上下文，把标题
+     文字锁在卡片内部，没法单独抬出来盖过气泡。所以退回「气泡让开」：hover 时气泡淡出、
+     立绘压到很淡方便抓走；移开鼠标气泡淡入恢复。 */
+  .calendar-rig:hover .rig { opacity: .22; }
+  .calendar-rig:hover .rig-bubble { opacity: 0; pointer-events: none; }
   .calendar-rig:focus-visible { outline: 3px solid var(--teal-wash); outline-offset: 5px; }
 }
+.calendar-rig .rig { transition: opacity .25s ease; }
 .calendar-rig .rig-bubble {
-  width: 100%;
-  max-width: none;
+  width: max-content;
+  max-width: 300px;
   box-sizing: border-box;
+  transition: opacity .25s ease;
 }
 .calendar-rig .rig-bubble::after {
   top: -7px;
@@ -624,13 +630,12 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   margin-left: -6px;
   transform: rotate(225deg) skew(8deg, 8deg);
 }
-.rig-drag-hint {
-  display: block;
-  margin-top: 5px;
-  color: var(--ink-faint);
-  font-size: 10.5px;
-  line-height: 1.35;
-  text-align: center;
+/* 「サラサラ」是装饰拟声词：钉在周历区右上角，不放进那张可拖动的立绘贴纸里，
+   免得跟着人物和气泡满屏跑（也免得沉浸式翻译总去框它）。 */
+.calendar-kira {
+  top: 2px;
+  right: 6px;
+  z-index: 26;
 }
 
 /* 桌面横向布局：每天一小节（章头 + 可继续向右的卡片），节与节之间留出翻页呼吸 */
@@ -683,8 +688,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   }
   .calendar-rig .rig { height: 96px; }
   .calendar-rig .rig-bubble {
-    width: auto;
-    max-width: 240px;
+    width: max-content;
+    max-width: 250px;
     margin: 0;
   }
   .calendar-rig .rig-bubble::after {
@@ -695,6 +700,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
     transform: rotate(135deg) skew(8deg, 8deg);
   }
   .rig-drag-hint { font-size: 10px; }
+  /* 窄屏立绘改成内联并排，这颗拟声词没有落脚点，直接收起。 */
+  .calendar-kira { display: none; }
 }
 
 /* 胶片条：整版翻页 —— 海报宽度由「一屏放几张」反推（容器宽 ÷ 列数），
@@ -851,7 +858,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 .poster-title {
   padding: 0 3px;
-  font-size: 12.5px;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.35;
   color: var(--ink);
   display: -webkit-box;
@@ -860,7 +868,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   overflow: hidden;
   min-height: 2.7em;
 }
-.poster-ep { padding: 0 3px; font-size: 11px; color: var(--ink-faint); font-family: var(--font-hand); margin-top: -3px; }
+.poster-ep { padding: 0 3px; font-size: 11px; font-weight: 700; color: var(--ink-sub); font-family: var(--font-hand); margin-top: -3px; }
 
 /* 追番圆章按钮：常驻右上角，触控 44px */
 .track-btn {
