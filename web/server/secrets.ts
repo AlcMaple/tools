@@ -1,12 +1,19 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// 本地开发的密钥入口 —— 读 `web/.env.local`（被 .gitignore 忽略）填进 process.env。
-// 生产（Vercel / VPS）由运维直接给环境变量，不会走到这里（文件不存在即跳过）。
-// 只补「尚未设置」的键，绝不覆盖真实环境变量。
-for (const name of ['.env.local', '.env']) {
+const productionRuntime = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL)
+const externalEnvFile = process.env.MAPLETOOLS_ENV_FILE?.trim()
+
+// 本地开发可以读工作区里的 .env.local / .env；生产只接受部署目录外显式指定的文件。
+// .gitignore 不是运行时密钥边界：仓库目录里的未跟踪 .env 会在 reset / 打包后继续存在，
+// 还可能被误传、误备份。只补「尚未设置」的键，绝不覆盖进程管理器已经给出的变量。
+const envFiles = [
+  ...(externalEnvFile ? [externalEnvFile] : []),
+  ...(productionRuntime ? [] : [join(process.cwd(), '.env.local'), join(process.cwd(), '.env')]),
+]
+for (const name of envFiles) {
   try {
-    for (const line of readFileSync(join(process.cwd(), name), 'utf8').split('\n')) {
+    for (const line of readFileSync(name, 'utf8').split('\n')) {
       const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line)
       if (!m || process.env[m[1]] !== undefined) continue
       process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '')
