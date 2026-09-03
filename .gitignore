@@ -20,6 +20,9 @@ downloads/
 eggs/
 .eggs/
 lib/
+# `web/src/lib` is browser source, not a generated Python library.
+!web/src/lib/
+!web/src/lib/**
 lib64/
 parts/
 sdist/
