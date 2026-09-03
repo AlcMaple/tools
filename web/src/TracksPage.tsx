@@ -230,7 +230,7 @@ export function TracksPage(): JSX.Element {
       observeCount: 0, subjectType: 'anime', goodEpisodes: [], goodEpisodeNotes: {}, favorite: 0, updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
-    toast(`已加入『${hit.nameCn || hit.name}』，默认想看`)
+    toast(`哼，『${hit.nameCn || hit.name}』已经贴进手帐啦，先放在「想看」里。`)
     void runTracksMutation(user.username, () =>
       putTrack(hit.bgmId, {
         title: hit.name,

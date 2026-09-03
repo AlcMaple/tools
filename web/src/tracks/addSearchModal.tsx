@@ -4,9 +4,22 @@ import { Ic, Spinner } from '../SketchIcon'
 
 // ── 加番搜索弹窗 ───────────────────────────────────────────────────────────────
 // 搜索顺序由服务端统一控制：离线索引 → 已加番共享补充 → BGM 在线兜底。防抖 300ms；
-// 点「追」即时加、弹窗不关（可连着加多部）；已在追的显示「已追」不可重复加。
+// 点「贴进手帐」即时加、弹窗不关（可连着加多部）；已在追的显示已存在、不可重复加。
 // 索引超过这个天数没更新就提示。一周一档 + 3 天容错：正常同步永远碰不到，挂了才会露头
 const STALE_AFTER_DAYS = 10
+
+const ADD_COPY = {
+  subtitle: '哼，挑一部想看的，贴进纱雾的手帐里吧。默认先放在「想看」哦。',
+  searchPlaceholder: '想找哪部番？番名、日文原名或罗马音都可以……',
+  loading: '纱雾正在翻目录……',
+  idle: '把番名写进来，让纱雾帮你翻翻……',
+  noIndex: '番剧目录还没整理好……晚点再来，别催。',
+  stale: (days: number) => `索引已经 ${days} 天没更新……纱雾先照现有的找，新番可能还没翻到。`,
+  noResults: (query: string) => `没有找到「${query}」……换个名字再试试？`,
+  online: '本地没翻到，纱雾再去 Bangumi 找找看……',
+  tracked: '已在追番',
+  add: '加入',
+} as const
 
 export function AddSearchModal({
   trackedIds,
@@ -106,7 +119,7 @@ export function AddSearchModal({
         </button>
 
         <h3 className="dlg-title">加番</h3>
-        <p className="dlg-sub">从索引里挑一部贴进手帐，加进来默认是「想看」</p>
+        <p className="dlg-sub">{ADD_COPY.subtitle}</p>
 
         <div className="searchbar mb16" style={{ maxWidth: 'none' }}>
           <Ic name="search" cls="ic" />
@@ -116,7 +129,8 @@ export function AddSearchModal({
             autoComplete="off"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="番名 / 别名（中文、日文、罗马音都行）"
+            aria-label="搜索要贴进手帐的番剧"
+            placeholder={ADD_COPY.searchPlaceholder}
           />
         </div>
 
@@ -124,7 +138,7 @@ export function AddSearchModal({
             跟正常的一周滞后长得一模一样，永远发现不了。10 天 = 一周档期 + 3 天容错。 */}
         {ready && staleDays >= STALE_AFTER_DAYS && (
           <p className="form-note err mb16">
-            索引已 {staleDays} 天没更新 —— 正常每周自动同步一次，多半是服务器上的同步任务挂了，新番会搜不到。
+            {ADD_COPY.stale(staleDays)}
           </p>
         )}
 
@@ -133,21 +147,20 @@ export function AddSearchModal({
         <div className="add-pane">
           {!ready ? (
             <p className="faint small">
-              动漫索引还没生成。
-              <br />
-              在服务器上跑一次 <code>npm run sync:index</code> 即可。
+              {ADD_COPY.noIndex}
             </p>
           ) : loading ? (
             <div className="page-state">
               <Spinner size={26} />
+              <p className="faint small">{ADD_COPY.loading}</p>
             </div>
           ) : !q ? (
             <p className="faint small">
-              输入番名开始搜索（覆盖 BGM 全量动漫）
+              {ADD_COPY.idle}
             </p>
           ) : results.length === 0 ? (
             <p className="faint small">
-              没搜到「{q}」，换个词试试
+              {ADD_COPY.noResults(q)}
               {/* 本地没有 + 在线补充也没成 → 说清是哪一种，用户才知道该等还是该改词 */}
               {onlineError && (
                 <>
@@ -160,7 +173,7 @@ export function AddSearchModal({
             /* 定高列表（原型稿 #addList）：容器不随结果条数变高变矮，多出来的走竖向滚动 */
             <div id="addList">
               {source === 'online' && (
-                <p className="faint small">本地索引里没有，以下是 BGM 在线补充的结果（多半是刚上架的新条目）</p>
+                <p className="faint small">{ADD_COPY.online}</p>
               )}
               {results.map((h) => {
                 const tracked = trackedIds.has(h.bgmId) || added.has(h.bgmId)
@@ -184,7 +197,7 @@ export function AddSearchModal({
                     </div>
                     {tracked ? (
                       <span className="tagx mine" style={{ flex: 'none' }}>
-                        已在追番
+                        {ADD_COPY.tracked}
                       </span>
                     ) : (
                       <button
@@ -194,7 +207,7 @@ export function AddSearchModal({
                         onClick={() => add(h)}
                       >
                         <Ic name="plus" cls="ic ic-sm" />
-                        加入
+                        {ADD_COPY.add}
                       </button>
                     )}
                   </div>
