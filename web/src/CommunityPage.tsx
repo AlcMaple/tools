@@ -1,14 +1,53 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   coverUrl,
+  fetchAnimeReviews,
   fetchCommunityProfile,
+  fetchCommunityReviewAnime,
   fetchCommunityUsers,
+  type AnimeReviewsResult,
   type CommunityProfile,
+  type CommunityReviewAnime,
   type CommunityUserSummary,
   type PublicTrack,
   type TrackStatus,
 } from './api'
 import { Ic, Spinner } from './SketchIcon'
+import { PosterModal } from './reviews/PosterModal'
+import type { PosterInput } from './reviews/poster'
+import type { ReviewMode } from './reviews/reviewsApi'
+
+function posterInputFrom(opts: {
+  bgmId: number
+  title: string
+  titleCn: string
+  cover: string
+  airDate: string
+  mode: ReviewMode
+  body: string
+  spoiler: 'none' | 'aired' | 'all'
+  score: number | null
+  tags: string[]
+  publishedAt: number | null
+  username: string
+}): PosterInput {
+  const titleCn = opts.titleCn || opts.title
+  return {
+    cover: opts.cover,
+    titleCn,
+    titleAlt: opts.title && opts.title !== titleCn ? opts.title : undefined,
+    mode: opts.mode,
+    body: opts.body,
+    spoiler: opts.spoiler,
+    userScore: opts.score != null && opts.score > 0 ? opts.score : undefined,
+    airDate: opts.airDate || undefined,
+    tags: opts.tags,
+    publishedAt: opts.publishedAt ?? undefined,
+    serial: opts.bgmId,
+    qrUrl: `${window.location.origin}/u/${encodeURIComponent(opts.username)}`,
+    username: opts.username,
+  }
+}
 
 type PublicFilter = 'all' | TrackStatus
 
@@ -19,33 +58,39 @@ const STATUS_LABEL: Record<TrackStatus, string> = {
   done: '看完',
 }
 
-function profileUsername(): string | null {
-  const hash = window.location.hash.replace(/^#\/?/, '')
-  // 规范用户页使用 `/u/:username`，但从用户页点回大厅会留下 `#/community`。
-  // 只要 hash 明确指定了页面，就不能再用旧 pathname 把用户页识别回来。
-  if (hash === 'community') return null
+type CommunityRoute =
+  | { kind: 'users' }
+  | { kind: 'anime-list' }
+  | { kind: 'anime'; bgmId: number }
+  | { kind: 'profile'; username: string }
+
+function parseCommunityRoute(): CommunityRoute {
+  const hash = window.location.hash.replace(/^#\/?/, '').replace(/\/$/, '')
+  if (hash === 'community/reviews') return { kind: 'anime-list' }
+  const m = /^community\/reviews\/(\d+)$/.exec(hash)
+  if (m) return { kind: 'anime', bgmId: Number(m[1]) }
+  if (hash === 'community' || hash === 'community/') return { kind: 'users' }
   if (hash.startsWith('community/')) {
-    const raw = hash.slice('community/'.length).replace(/\/$/, '')
+    const raw = hash.slice('community/'.length)
     if (raw) {
       try {
-        return decodeURIComponent(raw)
+        return { kind: 'profile', username: decodeURIComponent(raw) }
       } catch {
-        return null
+        return { kind: 'users' }
       }
     }
   }
-  if (hash) return null
-  if (window.location.pathname === '/u' || window.location.pathname.startsWith('/u/')) {
+  if (!hash && (window.location.pathname === '/u' || window.location.pathname.startsWith('/u/'))) {
     const raw = window.location.pathname.slice('/u/'.length).replace(/\/$/, '')
     if (raw) {
       try {
-        return decodeURIComponent(raw)
+        return { kind: 'profile', username: decodeURIComponent(raw) }
       } catch {
-        return null
+        return { kind: 'users' }
       }
     }
   }
-  return null
+  return { kind: 'users' }
 }
 
 function profileHref(username: string): string {
@@ -53,66 +98,80 @@ function profileHref(username: string): string {
 }
 
 export function CommunityPage(): JSX.Element {
-  const [username, setUsername] = useState<string | null>(profileUsername)
+  const [route, setRoute] = useState<CommunityRoute>(parseCommunityRoute)
   const [users, setUsers] = useState<CommunityUserSummary[] | null>(null)
   const [profile, setProfile] = useState<CommunityProfile | null>(null)
+  const [animeList, setAnimeList] = useState<CommunityReviewAnime[] | null>(null)
+  const [animeReviews, setAnimeReviews] = useState<AnimeReviewsResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const syncLocation = (): void => setUsername(profileUsername())
-    window.addEventListener('hashchange', syncLocation)
-    window.addEventListener('popstate', syncLocation)
+    const sync = (): void => setRoute(parseCommunityRoute())
+    window.addEventListener('hashchange', sync)
+    window.addEventListener('popstate', sync)
     return () => {
-      window.removeEventListener('hashchange', syncLocation)
-      window.removeEventListener('popstate', syncLocation)
+      window.removeEventListener('hashchange', sync)
+      window.removeEventListener('popstate', sync)
     }
   }, [])
+
+  const routeKey = route.kind === 'profile' ? `p:${route.username}` : route.kind === 'anime' ? `a:${route.bgmId}` : route.kind
 
   useEffect(() => {
     let alive = true
     setLoading(true)
     setError(null)
-    setProfile(null)
-    if (username) {
-      void fetchCommunityProfile(username)
-        .then((next) => {
-          if (alive) setProfile(next)
-        })
-        .catch((err: unknown) => {
-          if (alive) setError(err instanceof Error ? err.message : '公开追番读取失败')
-        })
-        .finally(() => {
-          if (alive) setLoading(false)
-        })
+    const fail = (fallback: string) => (err: unknown) => {
+      if (alive) setError(err instanceof Error ? err.message : fallback)
+    }
+    const done = () => {
+      if (alive) setLoading(false)
+    }
+    if (route.kind === 'profile') {
+      setProfile(null)
+      void fetchCommunityProfile(route.username).then((n) => alive && setProfile(n)).catch(fail('公开追番读取失败')).finally(done)
+    } else if (route.kind === 'anime-list') {
+      void fetchCommunityReviewAnime().then((n) => alive && setAnimeList(n)).catch(fail('点评列表读取失败')).finally(done)
+    } else if (route.kind === 'anime') {
+      setAnimeReviews(null)
+      void fetchAnimeReviews(route.bgmId).then((n) => alive && setAnimeReviews(n)).catch(fail('这部番的点评读取失败')).finally(done)
     } else {
-      void fetchCommunityUsers()
-        .then((result) => {
-          if (alive) setUsers(result.data)
-        })
-        .catch((err: unknown) => {
-          if (alive) setError(err instanceof Error ? err.message : '追番大厅读取失败')
-        })
-        .finally(() => {
-          if (alive) setLoading(false)
-        })
+      void fetchCommunityUsers().then((r) => alive && setUsers(r.data)).catch(fail('追番大厅读取失败')).finally(done)
     }
     return () => {
       alive = false
     }
-  }, [username])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeKey])
 
-  return username
-    ? <ProfileView username={username} profile={profile} loading={loading} error={error} />
-    : <HallView users={users} loading={loading} error={error} />
+  if (route.kind === 'profile') {
+    return <ProfileView username={route.username} profile={profile} loading={loading} error={error} />
+  }
+  if (route.kind === 'anime') {
+    return <AnimeReviewsView data={animeReviews} loading={loading} error={error} />
+  }
+  return (
+    <HallView
+      tab={route.kind === 'anime-list' ? 'anime' : 'users'}
+      users={users}
+      animeList={animeList}
+      loading={loading}
+      error={error}
+    />
+  )
 }
 
 function HallView({
+  tab,
   users,
+  animeList,
   loading,
   error,
 }: {
+  tab: 'users' | 'anime'
   users: CommunityUserSummary[] | null
+  animeList: CommunityReviewAnime[] | null
   loading: boolean
   error: string | null
 }): JSX.Element {
@@ -126,8 +185,24 @@ function HallView({
         <span className="tagx mine"><Ic name="eye" cls="ic ic-sm" /> 纱雾只翻公开的手帐</span>
       </div>
 
+      <div className="tabf-row community-tabs mt16">
+        <a className={`tabf${tab === 'users' ? ' on' : ''}`} href="/#/community">谁在追</a>
+        <a className={`tabf${tab === 'anime' ? ' on' : ''}`} href="/#/community/reviews">大家聊过的番</a>
+      </div>
+
       {error && <p className="form-note err mt16" aria-live="polite">⚠ {error}</p>}
-      {loading && users === null ? (
+
+      {tab === 'anime' ? (
+        loading && animeList === null ? (
+          <div className="page-state"><Spinner size={36} /><p className="faint small">正在数谁写了点评…</p></div>
+        ) : animeList && animeList.length === 0 ? (
+          <div className="empty panel mt16"><div className="empty-say"><div className="bubble empty-bubble">还没有人公开点评过番……第一个会是你吗？</div></div></div>
+        ) : (
+          <div className="community-track-grid mt16">
+            {(animeList ?? []).map((a) => <ReviewAnimeCard key={a.bgmId} anime={a} />)}
+          </div>
+        )
+      ) : loading && users === null ? (
         <div className="page-state"><Spinner size={36} /><p className="faint small">正在翻看大家的追番手帐…</p></div>
       ) : users && users.length === 0 ? (
         <div className="empty panel mt16">
@@ -143,13 +218,161 @@ function HallView({
               </span>
               <span className="community-user-main">
                 <b>{user.username}</b>
-                <span className="muted small">摊开了 {user.trackCount} 部番</span>
+                <span className="muted small">
+                  摊开了 {user.trackCount} 部番
+                  {(user.review || 0) > 0 && `，写了 ${user.review} 篇点评`}
+                  {(user.recommend || 0) > 0 && `，${user.recommend} 篇推荐`}
+                </span>
               </span>
               <Ic name="chev" cls="ic community-user-arrow" />
             </a>
           ))}
         </div>
       )}
+    </>
+  )
+}
+
+function ReviewAnimeCard({ anime }: { anime: CommunityReviewAnime }): JSX.Element {
+  const [coverFailed, setCoverFailed] = useState(false)
+  const image = coverUrl(anime.cover)
+  const title = anime.titleCn || anime.title || `BGM ${anime.bgmId}`
+  return (
+    <div className="community-track-card review-anime-card">
+      <div className="community-track-cover">
+        {image && !coverFailed
+          ? <img src={image} alt="" loading="lazy" onError={() => setCoverFailed(true)} />
+          : <span>NO<br />COVER</span>}
+      </div>
+      <div className="review-anime-body">
+        <b title={title}>{title}</b>
+        {anime.title && anime.title !== title && <p className="faint small community-track-subtitle">{anime.title}</p>}
+        <p className="muted small community-review-count">
+          {[anime.review > 0 && `${anime.review} 篇点评`, anime.recommend > 0 && `${anime.recommend} 篇推荐`]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+        {anime.tags.length > 0 && (
+          <div className="tagx-row review-anime-tags">
+            {anime.tags.map((t) => <span key={t} className="tagx">{t}</span>)}
+          </div>
+        )}
+        {anime.excerpt && <p className="faint small review-anime-excerpt">「{anime.excerpt}」</p>}
+        <a className="link small community-track-link" href={`/#/community/reviews/${anime.bgmId}`}>
+          看看大家怎么评价 <Ic name="chev" cls="ic ic-sm" />
+        </a>
+      </div>
+    </div>
+  )
+}
+
+function AnimeReviewsView({
+  data,
+  loading,
+  error,
+}: {
+  data: AnimeReviewsResult | null
+  loading: boolean
+  error: string | null
+}): JSX.Element {
+  const [tab, setTab] = useState<'review' | 'recommend'>('review')
+  const [poster, setPoster] = useState<PosterInput | null>(null)
+  const title = data ? data.anime.titleCn || data.anime.title || `BGM ${data.anime.bgmId}` : ''
+  const list = data ? data[tab] : []
+  // 有哪个就默认停在哪个
+  useEffect(() => {
+    if (data && data.review.length === 0 && data.recommend.length > 0) setTab('recommend')
+  }, [data])
+
+  return (
+    <>
+      <div className="community-profile-head">
+        <a className="btn btn-sm btn-ghost" href="/#/community/reviews"><Ic name="back" cls="ic ic-sm" /> 返回列表</a>
+        {data && (
+          <div className="community-profile-identity">
+            <img className="dlg-cover" src={coverUrl(data.anime.cover)} alt="" onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
+            <div>
+              <h1 className="title-sketch" style={{ fontSize: 30 }}>{title}</h1>
+              <p className="muted small mt8">大家聊过 {data.review.length + data.recommend.length} 篇</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {error && <p className="form-note err mt16" aria-live="polite">⚠ {error}</p>}
+      {loading && !data ? (
+        <div className="page-state"><Spinner size={36} /><p className="faint small">正在收集大家的点评…</p></div>
+      ) : !data ? null : (
+        <>
+          <div className="tabf-row community-tabs mt16">
+            <button type="button" className={`tabf${tab === 'review' ? ' on' : ''}`} onClick={() => setTab('review')}>
+              点评 <span className="badge-num">{data.review.length}</span>
+            </button>
+            <button type="button" className={`tabf${tab === 'recommend' ? ' on' : ''}`} onClick={() => setTab('recommend')}>
+              推荐 <span className="badge-num">{data.recommend.length}</span>
+            </button>
+          </div>
+          {list.length === 0 ? (
+            <div className="empty panel mt16"><div className="empty-say"><div className="bubble empty-bubble">这一栏还没有人写……</div></div></div>
+          ) : (
+            <div className="anime-review-list mt16">
+              {list.map((entry, i) => (
+                <article className="anime-review-item" key={`${entry.username}-${i}`}>
+                  <div className="anime-review-head">
+                    <a className="anime-review-author" href={profileHref(entry.username)}>
+                      <span className="avatar-init" style={{ width: 32, height: 32, fontSize: 15 }} aria-hidden="true">
+                        {entry.username.charAt(0).toUpperCase()}
+                      </span>
+                      <b>{entry.username}</b>
+                    </a>
+                    <span className="anime-review-meta">
+                      {entry.score != null && <span className="anime-review-score">★ {entry.score}</span>}
+                      <span className={`anime-review-spoiler${entry.spoiler === 'none' ? '' : ' warn'}`}>
+                        {entry.spoiler === 'none' ? '无剧透' : '含剧透'}
+                      </span>
+                      {entry.publishedAt && <span>{new Date(entry.publishedAt).toLocaleDateString('zh-CN')}</span>}
+                    </span>
+                  </div>
+                  <p className="anime-review-body">{entry.body}</p>
+                  <div className="anime-review-foot">
+                    {entry.tags.length > 0 && (
+                      <div className="tagx-row">
+                        {entry.tags.map((t) => <span className="tagx" key={t}>{t}</span>)}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm anime-review-poster"
+                      onClick={() =>
+                        data &&
+                        setPoster(
+                          posterInputFrom({
+                            bgmId: data.anime.bgmId,
+                            title: data.anime.title,
+                            titleCn: data.anime.titleCn,
+                            cover: data.anime.cover,
+                            airDate: data.anime.airDate,
+                            mode: tab,
+                            body: entry.body,
+                            spoiler: entry.spoiler,
+                            score: entry.score,
+                            tags: entry.tags,
+                            publishedAt: entry.publishedAt,
+                            username: entry.username,
+                          }),
+                        )
+                      }
+                    >
+                      <Ic name="star" cls="ic ic-sm" /> 生成分享图
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {poster && <PosterModal input={poster} fileTitle={title} onClose={() => setPoster(null)} />}
     </>
   )
 }
@@ -192,7 +415,11 @@ function ProfileView({
           </span>
           <div>
             <h1 className="title-sketch" style={{ fontSize: 32 }}>{profile?.user.username ?? username} 的追番手帐</h1>
-            <p className="muted small mt8">这本手帐里有 {profile?.user.trackCount ?? '…'} 部番</p>
+            <p className="muted small mt8">
+              这本手帐里有 {profile?.user.trackCount ?? '…'} 部番
+              {(profile?.user.review || 0) > 0 && `，写了 ${profile?.user.review} 篇点评`}
+              {(profile?.user.recommend || 0) > 0 && `，${profile?.user.recommend} 篇推荐`}
+            </p>
           </div>
         </div>
       </div>
@@ -222,7 +449,7 @@ function ProfileView({
             <div className="empty panel mt16"><div className="empty-say"><div className="bubble empty-bubble">这本手帐里暂时没有匹配的番。</div></div></div>
           ) : (
             <div className="community-track-grid mt16">
-              {filtered.map((track) => <PublicTrackCard key={track.bgmId} track={track} />)}
+              {filtered.map((track) => <PublicTrackCard key={track.bgmId} track={track} username={username} />)}
             </div>
           )}
         </>
@@ -231,9 +458,12 @@ function ProfileView({
   )
 }
 
-function PublicTrackCard({ track }: { track: PublicTrack }): JSX.Element {
+const REVIEW_MODE_LABEL = { review: '点评', recommend: '推荐' } as const
+
+function PublicTrackCard({ track, username }: { track: PublicTrack; username: string }): JSX.Element {
   const [coverFailed, setCoverFailed] = useState(false)
   const [highlightsOpen, setHighlightsOpen] = useState(false)
+  const [openReview, setOpenReview] = useState<'review' | 'recommend' | null>(null)
   const image = coverUrl(track.cover)
   const highlightCount = track.goodEpisodes.length
   const subtitle = track.title && track.title !== (track.titleCn || track.title) ? track.title : ''
@@ -269,18 +499,25 @@ function PublicTrackCard({ track }: { track: PublicTrack }): JSX.Element {
           )}
         </div>
         <p className="faint small community-track-subtitle" title={subtitle || undefined} aria-hidden={!subtitle}>{subtitle || '\u00a0'}</p>
-        <p className="community-track-progress">看到第 {progress}</p>
+        <div className="community-track-meta-row">
+          <span className="community-track-progress">看到第 {progress}</span>
+          {track.favorite > 0 && (
+            <span className="community-track-stars" aria-label={`收藏 ${track.favorite} 星`}>{'★'.repeat(track.favorite)}</span>
+          )}
+        </div>
+        <div className="community-track-reviews">
+          {(['review', 'recommend'] as const).map((m) =>
+            track[m] ? (
+              <button key={m} type="button" className="community-review-chip" onClick={() => setOpenReview(m)}>
+                <Ic name="edit" cls="ic ic-sm" /> {REVIEW_MODE_LABEL[m]}
+              </button>
+            ) : null,
+          )}
+        </div>
         <div className="community-track-tags-slot">
           {tags.length > 0 && (
             <div className="tagx-row community-track-tags">
               {tags.map((tag) => <span className={`tagx${tag.mine ? ' mine' : ''}`} key={tag.key}>{tag.value}</span>)}
-            </div>
-          )}
-        </div>
-        <div className="community-track-sharing-slot">
-          {track.favorite > 0 && (
-            <div className="community-track-sharing">
-              <span aria-label={`收藏 ${track.favorite} 星`}>{'★'.repeat(track.favorite)}</span>
             </div>
           )}
         </div>
@@ -291,7 +528,77 @@ function PublicTrackCard({ track }: { track: PublicTrack }): JSX.Element {
         ) : <span className="community-track-link-placeholder" aria-hidden="true" />}
       </div>
       {highlightsOpen && <PublicHighlightsModal track={track} onClose={() => setHighlightsOpen(false)} />}
+      {openReview && track[openReview] && (
+        <PublicReviewModal
+          mode={openReview}
+          title={title}
+          text={track[openReview]!}
+          onPoster={() =>
+            posterInputFrom({
+              bgmId: track.bgmId,
+              title: track.title,
+              titleCn: track.titleCn,
+              cover: track.cover,
+              airDate: track.airDate,
+              mode: openReview,
+              body: track[openReview]!.body,
+              spoiler: track[openReview]!.spoiler,
+              score: track.score > 0 ? track.score : track.favorite > 0 ? track.favorite : null,
+              tags: track.userTags.slice(0, 6),
+              publishedAt: track[openReview]!.publishedAt,
+              username,
+            })
+          }
+          onClose={() => setOpenReview(null)}
+        />
+      )}
     </article>
+  )
+}
+
+function PublicReviewModal({
+  mode,
+  title,
+  text,
+  onPoster,
+  onClose,
+}: {
+  mode: 'review' | 'recommend'
+  title: string
+  text: NonNullable<PublicTrack['review']>
+  onPoster: () => PosterInput
+  onClose: () => void
+}): JSX.Element {
+  const [poster, setPoster] = useState<PosterInput | null>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const when = text.publishedAt ? new Date(text.publishedAt).toLocaleDateString('zh-CN') : ''
+  return (
+    <div className="dlg-backdrop open" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" aria-label={REVIEW_MODE_LABEL[mode]} className="dlg" style={{ maxWidth: 540 }}>
+        <span className="tape tl teal" />
+        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <Ic name="x" cls="ic" />
+        </button>
+        <h3 className="dlg-title">{title} · {REVIEW_MODE_LABEL[mode]}</h3>
+        <p className="dlg-sub">
+          {text.spoiler === 'none' ? '这篇没剧透，放心看' : '这篇含剧透，别怪我没提醒'}
+          {when && ` · ${when}`}
+        </p>
+        <p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7, maxHeight: '52vh', overflowY: 'auto' }}>{text.body}</p>
+        <div className="dlg-actions" style={{ marginTop: 12 }}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPoster(onPoster())}>
+            <Ic name="star" cls="ic ic-sm" /> 生成分享图
+          </button>
+        </div>
+      </div>
+      {poster && <PosterModal input={poster} fileTitle={title} onClose={() => setPoster(null)} />}
+    </div>
   )
 }
 

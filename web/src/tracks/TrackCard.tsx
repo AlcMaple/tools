@@ -16,6 +16,9 @@ export function TrackCard({
   onEdit,
   onAskRemove,
   onMarkGood,
+  onWriteReview,
+  onMakePoster,
+  posterBusy,
 }: {
   t: Track
   isToday: boolean
@@ -27,6 +30,9 @@ export function TrackCard({
   onEdit: () => void
   onAskRemove: () => void
   onMarkGood: () => void
+  onWriteReview: () => void
+  onMakePoster?: () => void
+  posterBusy?: boolean
 }): JSX.Element {
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
@@ -68,6 +74,8 @@ export function TrackCard({
   }
 
   const considering = t.status === 'considering'
+  // 看完 / 在追才有「写点评」入口；有它时操作行按钮从 3 个变 4 个，布局要跟着切。
+  const canReview = t.status === 'done' || t.status === 'watching'
   // 0–5：翻旧的档位。次数再多也只到 5，痕迹不会无限堆下去。
   const heat = considering ? Math.min(5, t.observeCount) : undefined
 
@@ -197,7 +205,7 @@ export function TrackCard({
           )}
         </div>
 
-        <div className="trk-actions">
+        <div className={`trk-actions${canReview ? ' has-review' : ''}`}>
           <ContinueWatchAction
             label={considering ? '试看一集' : '继续看'}
             ep={ep}
@@ -224,28 +232,82 @@ export function TrackCard({
             <Ic name="star" cls="ic ic-sm" />
             {t.goodEpisodes.length > 0 ? t.goodEpisodes.length : '好看集'}
           </button>
-          <div className="status-seg" role="group" aria-label="追番状态">
-            {SEG_ORDER.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className={`seg-btn${t.status === s ? ' on' : ''}`}
-                data-status={SEG_CLS[s]}
-                aria-pressed={t.status === s}
-                onClick={() => onStatus(s)}
-              >
-                {s === 'watching' && considering && t.observeCount >= NUDGE_AT && <Nudge />}
-                {STATUS_META.find((m) => m.key === s)?.label}
-              </button>
-            ))}
-          </div>
-          <button className="btn btn-sm btn-danger trk-rm" type="button" onClick={onAskRemove}>
-            <Ic name="x" cls="ic ic-sm" />
-            移出
-          </button>
+          {canReview && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={onWriteReview}
+              title={t.status === 'watching' ? '写点评（先说看到第几话）' : '写点评，或者推荐给别人'}
+            >
+              <Ic name="edit" cls="ic ic-sm" />
+              点评
+            </button>
+          )}
+          {onMakePoster && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={onMakePoster}
+              disabled={posterBusy}
+              title="把你的点评做成一张分享图"
+            >
+              <Ic name="star" cls="ic ic-sm" />
+              {posterBusy ? '生成中…' : '分享图'}
+            </button>
+          )}
+          {/* 看完 / 在追的卡片操作按钮多一个「点评」，把「状态分段 + 移出」收进一个靠右的组，
+              免得移出在窄卡里落单到左下角。观望 / 想看卡不套这层，沿用原来的手机三列网格。 */}
+          {canReview ? (
+            <div className="trk-tail">
+              <StatusSeg t={t} considering={considering} onStatus={onStatus} />
+              <RemoveBtn onAskRemove={onAskRemove} />
+            </div>
+          ) : (
+            <>
+              <StatusSeg t={t} considering={considering} onStatus={onStatus} />
+              <RemoveBtn onAskRemove={onAskRemove} />
+            </>
+          )}
         </div>
       </div>
     </article>
+  )
+}
+
+function StatusSeg({
+  t,
+  considering,
+  onStatus,
+}: {
+  t: Track
+  considering: boolean
+  onStatus: (s: TrackStatus) => void
+}): JSX.Element {
+  return (
+    <div className="status-seg" role="group" aria-label="追番状态">
+      {SEG_ORDER.map((s) => (
+        <button
+          key={s}
+          type="button"
+          className={`seg-btn${t.status === s ? ' on' : ''}`}
+          data-status={SEG_CLS[s]}
+          aria-pressed={t.status === s}
+          onClick={() => onStatus(s)}
+        >
+          {s === 'watching' && considering && t.observeCount >= NUDGE_AT && <Nudge />}
+          {STATUS_META.find((m) => m.key === s)?.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function RemoveBtn({ onAskRemove }: { onAskRemove: () => void }): JSX.Element {
+  return (
+    <button className="btn btn-sm btn-danger trk-rm" type="button" onClick={onAskRemove}>
+      <Ic name="x" cls="ic ic-sm" />
+      移出
+    </button>
   )
 }
 

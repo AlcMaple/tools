@@ -85,6 +85,8 @@ export interface Track {
   goodEpisodeNotes: Record<number, string>
   /** 最爱程度：0-6 颗星，跟桌面端 animeTrackStore.favorite 同语义，独立存放。 */
   favorite: number
+  /** 这部番已发布的点评 / 推荐（网页端自有，桌面端不碰）。空 = 没发布过。 */
+  publishedReviews?: ('review' | 'recommend')[]
   updatedAt: number
 }
 
@@ -237,11 +239,22 @@ export interface PublicTrack {
     xifan: { id: number; name: string } | null
     girigiri: { id: string; name: string } | null
   }
+  review?: PublicReviewText | null
+  recommend?: PublicReviewText | null
+}
+
+export interface PublicReviewText {
+  body: string
+  preview: string
+  spoiler: 'none' | 'aired' | 'all'
+  publishedAt: number | null
 }
 
 export interface CommunityUserSummary {
   username: string
   trackCount: number
+  review?: number
+  recommend?: number
 }
 
 export interface CommunityUsersResult {
@@ -261,6 +274,46 @@ export async function fetchCommunityUsers(limit = 100): Promise<CommunityUsersRe
 
 export async function fetchCommunityProfile(username: string): Promise<CommunityProfile> {
   return json<CommunityProfile>(await fetch(`/api/community/${encodeURIComponent(username)}`, { cache: 'no-store' }))
+}
+
+// —— 番剧维度的公开点评（「大家聊过的番」）——
+export interface CommunityReviewAnime {
+  bgmId: number
+  title: string
+  titleCn: string
+  cover: string
+  airDate: string
+  review: number
+  recommend: number
+  total: number
+  tags: string[]
+  excerpt: string
+}
+
+export interface AnimeReviewEntry {
+  username: string
+  body: string
+  spoiler: 'none' | 'aired' | 'all'
+  score: number | null
+  tags: string[]
+  publishedAt: number | null
+}
+
+export interface AnimeReviewsResult {
+  anime: { bgmId: number; title: string; titleCn: string; cover: string; airDate: string }
+  review: AnimeReviewEntry[]
+  recommend: AnimeReviewEntry[]
+}
+
+export async function fetchCommunityReviewAnime(): Promise<CommunityReviewAnime[]> {
+  const { data } = await json<{ data: CommunityReviewAnime[] }>(
+    await fetch('/api/community/reviews', { cache: 'no-store' }),
+  )
+  return data
+}
+
+export async function fetchAnimeReviews(bgmId: number): Promise<AnimeReviewsResult> {
+  return json<AnimeReviewsResult>(await fetch(`/api/community/reviews/${bgmId}`, { cache: 'no-store' }))
 }
 
 /** 本地图片上传封面（PNG/JPEG/WebP/GIF，≤4MB，见 server/tracks.ts 的校验）。 */

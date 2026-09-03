@@ -263,10 +263,25 @@ const bumpRev = (uid: number): void => {
   bumpRevStmt.run(uid)
 }
 
-const readTracksSnapshot = db.transaction((uid: number) => ({
-  rev: currentRev(uid),
-  data: (listNewestFirstStmt.all(uid) as TrackRow[]).map(toJson),
-}))
+const publishedReviewModesStmt = db.prepare<[number]>(
+  `SELECT bgm_id, mode FROM review_contents WHERE user_id = ? AND published = 1`,
+)
+
+const readTracksSnapshot = db.transaction((uid: number) => {
+  const byBgm = new Map<number, string[]>()
+  for (const row of publishedReviewModesStmt.all(uid) as { bgm_id: number; mode: string }[]) {
+    const list = byBgm.get(row.bgm_id) ?? []
+    if (row.mode === 'review' || row.mode === 'recommend') list.push(row.mode)
+    byBgm.set(row.bgm_id, list)
+  }
+  return {
+    rev: currentRev(uid),
+    data: (listNewestFirstStmt.all(uid) as TrackRow[]).map((r) => ({
+      ...toJson(r),
+      publishedReviews: byBgm.get(r.bgm_id) ?? [],
+    })),
+  }
+})
 
 const readSyncSnapshot = db.transaction((uid: number) => ({
   rev: currentRev(uid),

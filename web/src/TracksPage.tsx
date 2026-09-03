@@ -34,6 +34,10 @@ import { cacheGet } from './dataCache'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { GoodEpisodesModal } from './GoodEpisodesModal'
+import { ReviewAssistantModal } from './reviews/ReviewAssistantModal'
+import { PosterModal } from './reviews/PosterModal'
+import type { PosterInput } from './reviews/poster'
+import { fetchMaterial, fetchReviewsState } from './reviews/reviewsApi'
 import {
   loadBindings,
   loadTracks,
@@ -99,6 +103,9 @@ export function TracksPage(): JSX.Element {
   const [editing, setEditing] = useState<number | null>(null)
   const [confirming, setConfirming] = useState<number | null>(null)
   const [markingGood, setMarkingGood] = useState<number | null>(null)
+  const [writingReview, setWritingReview] = useState<number | null>(null)
+  const [poster, setPoster] = useState<PosterInput | null>(null)
+  const [posterBusy, setPosterBusy] = useState(false)
   // 在线源绑定：source → (bgmId → {id,name})。加载时一次拿齐，绑过的源「继续看」直接开。
   const [bindings, setBindings] = useState<Record<SourceId, Record<number, SourceBinding>>>(emptyBindings)
   const [locating, setLocating] = useState<{ source: SourceId; bgmId: number } | null>(null)
@@ -345,6 +352,47 @@ export function TracksPage(): JSX.Element {
   const editingTrack = animeTracks.find((t) => t.bgmId === editing) ?? null
   const confirmingTrack = animeTracks.find((t) => t.bgmId === confirming) ?? null
   const markingGoodTrack = animeTracks.find((t) => t.bgmId === markingGood) ?? null
+  const writingReviewTrack = animeTracks.find((t) => t.bgmId === writingReview) ?? null
+
+  async function makePoster(t: Track): Promise<void> {
+    const modes = t.publishedReviews ?? []
+    if (!modes.length || !user || posterBusy) return
+    const mode = modes.includes('review') ? 'review' : 'recommend'
+    setPosterBusy(true)
+    try {
+      const [state, material] = await Promise.all([fetchReviewsState(t.bgmId), fetchMaterial(t.bgmId).catch(() => null)])
+      const content = state[mode].content
+      if (!content) {
+        toast('这篇还没发布……', { err: true })
+        return
+      }
+      setPoster({
+        cover: t.cover,
+        titleCn: t.titleCn || t.title,
+        titleAlt: material?.title && material.title !== (t.titleCn || t.title) ? material.title : undefined,
+        mode,
+        body: content.body,
+        spoiler: content.spoiler,
+        userScore: content.scoreShown > 0 ? content.scoreShown : t.score > 0 ? t.score : undefined,
+        bgmScore: material && material.score > 0 ? material.score : undefined,
+        airDate: t.airDate || undefined,
+        tags: (content.tagsShown.length
+          ? content.tagsShown
+          : t.userTags.length
+            ? t.userTags
+            : material?.tags ?? []
+        ).slice(0, 6),
+        publishedAt: content.publishedAt ?? undefined,
+        serial: t.bgmId,
+        qrUrl: `${window.location.origin}/u/${encodeURIComponent(user.username)}`,
+        username: user.username,
+      })
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '海报没做成……', { err: true })
+    } finally {
+      setPosterBusy(false)
+    }
+  }
 
   return (
     <>
@@ -491,6 +539,9 @@ export function TracksPage(): JSX.Element {
                 onEdit={() => setEditing(t.bgmId)}
                 onAskRemove={() => setConfirming(t.bgmId)}
                 onMarkGood={onMarkGood}
+                onWriteReview={() => setWritingReview(t.bgmId)}
+                onMakePoster={t.publishedReviews?.length ? () => void makePoster(t) : undefined}
+                posterBusy={posterBusy}
               />
             )
           })}
@@ -572,6 +623,14 @@ export function TracksPage(): JSX.Element {
 
       {markingGoodTrack && (
         <GoodEpisodesModal t={markingGoodTrack} onPatch={patch} onClose={() => setMarkingGood(null)} />
+      )}
+
+      {writingReviewTrack && (
+        <ReviewAssistantModal track={writingReviewTrack} onClose={() => setWritingReview(null)} />
+      )}
+
+      {poster && (
+        <PosterModal input={poster} fileTitle={poster.titleCn} onClose={() => setPoster(null)} />
       )}
     </>
   )
