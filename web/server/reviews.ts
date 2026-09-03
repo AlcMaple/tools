@@ -468,6 +468,10 @@ reviews.post('/:bgmId/:mode/generate', async (c) => {
     })
   }
 
+  // nginx 默认 proxy_buffering on，会把整条流攒在缓冲区里一次性下发 —— 线上就变成
+  // 「正文一瞬间整段蹦出来」，本地 dev 直连 node 没有反代所以看着是正常的逐字。
+  // 这个响应头让 nginx 对本条响应关掉缓冲，不用改服务器上的 nginx 配置。
+  c.header('X-Accel-Buffering', 'no')
   return streamSSE(c, async (stream) => {
     let acc = ''
     try {

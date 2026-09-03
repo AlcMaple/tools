@@ -27,6 +27,7 @@ function posterInputFrom(opts: {
   body: string
   spoiler: 'none' | 'aired' | 'all'
   score: number | null
+  bgmScore?: number | null
   tags: string[]
   publishedAt: number | null
   username: string
@@ -40,6 +41,7 @@ function posterInputFrom(opts: {
     body: opts.body,
     spoiler: opts.spoiler,
     userScore: opts.score != null && opts.score > 0 ? opts.score : undefined,
+    bgmScore: opts.bgmScore != null && opts.bgmScore > 0 ? opts.bgmScore : undefined,
     airDate: opts.airDate || undefined,
     tags: opts.tags,
     publishedAt: opts.publishedAt ?? undefined,
@@ -356,6 +358,7 @@ function AnimeReviewsView({
                             body: entry.body,
                             spoiler: entry.spoiler,
                             score: entry.score,
+                            bgmScore: entry.bgmScore,
                             tags: entry.tags,
                             publishedAt: entry.publishedAt,
                             username: entry.username,
@@ -543,7 +546,9 @@ function PublicTrackCard({ track, username }: { track: PublicTrack; username: st
               mode: openReview,
               body: track[openReview]!.body,
               spoiler: track[openReview]!.spoiler,
-              score: track.score > 0 ? track.score : track.favorite > 0 ? track.favorite : null,
+              // track.score 是 BGM 综合分，不是本人打的 —— 只能进 bgmScore
+              score: track.favorite > 0 ? track.favorite : null,
+              bgmScore: track.score > 0 ? track.score : null,
               tags: track.userTags.slice(0, 6),
               publishedAt: track[openReview]!.publishedAt,
               username,

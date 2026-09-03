@@ -3,8 +3,12 @@ import react from '@vitejs/plugin-react'
 import devServer from '@hono/vite-dev-server'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 
+// ⚠ 这份 CSP 和 server/security.ts 的 DEFAULT_CSP 是**两条独立生效的策略**（meta + 响应头
+// 取交集，严的那条说了算）。**改一处必须同时改另一处**，否则只改响应头的那次等于没改
+// —— 分享图预览的 blob: 就是这么白修了一轮。改完要重新 `npm run build`（meta 是构建期注入
+// 到 index.html 的，热传服务端 TS 不会更新它）。
 const PRODUCTION_SECURITY_META = `
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://user.alcmaple.cn; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; frame-src 'none'; upgrade-insecure-requests" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://user.alcmaple.cn; style-src 'self'; img-src 'self' https: data: blob:; font-src 'self'; connect-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; frame-src 'none'; upgrade-insecure-requests" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />`
 
 // 本地开发一条命令跑通前后端：@hono/vite-dev-server 把 server/index.ts 里的 Hono 应用
