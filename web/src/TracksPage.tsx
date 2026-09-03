@@ -447,8 +447,9 @@ export function TracksPage(): JSX.Element {
         mode,
         body: content.body,
         spoiler: content.spoiler,
-        userScore: content.scoreShown > 0 ? content.scoreShown : t.score > 0 ? t.score : undefined,
-        bgmScore: material && material.score > 0 ? material.score : undefined,
+        // 我的评分：发布时勾的 → 喜爱程度。**不能拿 t.score 兜**，那是 BGM 综合分
+        userScore: content.scoreShown > 0 ? content.scoreShown : t.favorite > 0 ? t.favorite : undefined,
+        bgmScore: material && material.score > 0 ? material.score : t.score > 0 ? t.score : undefined,
         airDate: t.airDate || undefined,
         tags: (content.tagsShown.length
           ? content.tagsShown

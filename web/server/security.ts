@@ -12,7 +12,10 @@ const DEFAULT_CSP = [
   "form-action 'self'",
   "script-src 'self' https://user.alcmaple.cn",
   "style-src 'self'",
-  "img-src 'self' https: data:",
+  // blob: 是分享海报（Canvas → toBlob → objectURL）预览要的；少了它生产环境预览是裂图，
+  // 而下载仍然正常（<a download> 不受 img-src 约束），所以本地 dev 不开 CSP 时看不出来。
+  // ⚠ vite.config.ts 的 PRODUCTION_SECURITY_META 是另一条同样生效的策略，改这里就得改那里。
+  "img-src 'self' https: data: blob:",
   "font-src 'self'",
   "connect-src 'self' https:",
   "media-src 'self' https: blob:",

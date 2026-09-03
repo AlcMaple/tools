@@ -107,7 +107,7 @@ function publishedReviewsFor(userId: number): Map<number, Record<string, unknown
   return byBgm
 }
 
-function parseList(value: string): string[] {
+function parseList(value: string | null): string[] {
   try {
     const parsed = JSON.parse(value || '[]') as unknown
     return Array.isArray(parsed)
@@ -309,11 +309,20 @@ interface AnimeReviewRow {
   tags_shown: string
   published_at: number | null
   username: string
+  // 发布那一刻没勾评分 / 标签时的兜底：作者自己那条追番记录（可能为 NULL——追番删了但点评还在）
+  track_score: number | null
+  track_user_tags: string | null
+  track_bgm_tags: string | null
+  track_favorite: number | null
 }
+// LEFT JOIN 作者本人的 tracks：兜底只能用**同一个人**的评分和标签，不能拿别人的。
 const animeReviewsStmt = db.prepare<[number]>(
-  `SELECT rc.mode, rc.body, rc.spoiler, rc.score_shown, rc.tags_shown, rc.published_at, u.username
+  `SELECT rc.mode, rc.body, rc.spoiler, rc.score_shown, rc.tags_shown, rc.published_at, u.username,
+          t.score AS track_score, t.user_tags AS track_user_tags, t.bgm_tags AS track_bgm_tags,
+          json_extract(t.extra, '$.favorite') AS track_favorite
    FROM review_contents rc
    JOIN users u ON u.id = rc.user_id
+   LEFT JOIN tracks t ON t.user_id = rc.user_id AND t.bgm_id = rc.bgm_id
    WHERE rc.bgm_id = ? AND rc.published = 1 AND u.tracks_public = 1
    ORDER BY rc.published_at DESC`,
 )
@@ -380,14 +389,36 @@ community.get('/reviews/:bgmId', (c) => {
   if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: '这部番不存在' }, 404)
   const meta = animeMeta(bgmId)
   if (!meta) return c.json({ error: '这部番还没有公开点评' }, 404)
-  const toEntry = (r: AnimeReviewRow): Record<string, unknown> => ({
-    username: r.username,
-    body: publicText(r.body, MAX_REVIEW_BODY),
-    spoiler: ['none', 'aired', 'all'].includes(r.spoiler) ? r.spoiler : 'none',
-    score: Number.isFinite(r.score_shown) && r.score_shown > 0 ? r.score_shown : null,
-    tags: parseList(r.tags_shown).slice(0, 8).map((t) => publicText(t, 80)),
-    publishedAt: r.published_at,
-  })
+  // 发布时勾了就用勾的；没勾就退回作者自己追番卡上的评分 / 标签 —— 追番页那条生成海报的
+  // 路径本来就是这么兜的（TracksPage），这里少了兜底会让公开页生成的海报缺评分和标签整块。
+  const toEntry = (r: AnimeReviewRow): Record<string, unknown> => {
+    const shownTags = parseList(r.tags_shown).map((t) => publicText(t, 80)).filter(Boolean)
+    const fallbackTags = [...parseList(r.track_user_tags), ...parseList(r.track_bgm_tags)]
+      .map((t) => publicText(t, 80))
+      .filter(Boolean)
+    const tags = shownTags.length ? shownTags : [...new Set(fallbackTags)]
+    // 评分分两种，**不能混成一个数**：`score` 是作者自己的判断（发布时勾的分 → 喜爱程度），
+    // `bgmScore` 是 BGM 综合分（tracks.score）。混在一起的话海报会把 BGM 的分标成
+    // 「MY SCORE / 我的评分」，等于替用户打了一个他没打过的分。
+    const pick = (...vals: (number | null)[]): number | null => {
+      for (const v of vals) {
+        const n = Number(v)
+        if (Number.isFinite(n) && n > 0) return n
+      }
+      return null
+    }
+    const score = pick(r.score_shown, r.track_favorite)
+    const bgmScore = pick(r.track_score)
+    return {
+      username: r.username,
+      body: publicText(r.body, MAX_REVIEW_BODY),
+      spoiler: ['none', 'aired', 'all'].includes(r.spoiler) ? r.spoiler : 'none',
+      score,
+      bgmScore,
+      tags: tags.slice(0, 8),
+      publishedAt: r.published_at,
+    }
+  }
   const rows = animeReviewsStmt.all(bgmId) as AnimeReviewRow[]
   return c.json({
     anime: {

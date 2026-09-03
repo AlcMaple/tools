@@ -386,6 +386,19 @@ function initialTotal(bgmId: number, airDate: string): number | null {
   return epsOf(bgmId) || null
 }
 
+// 这次详情请求能补的四样东西，只要还缺一样就值得发。
+// **别只看 bgm_tags**：在线搜 Bangumi 加进来的条目自带标签、却没有日期和评分，
+// 用「有标签 = 都齐了」当闸门会让这类卡永久停在缺日期缺评分的状态（分享图上就是
+// 「放送」和「评分」两张卡整块不画）。
+function needsDetail(row: TrackRow): boolean {
+  return (
+    parseList(row.bgm_tags).length === 0 ||
+    parseList(row.aliases).length === 0 ||
+    !row.air_date ||
+    !(row.score > 0)
+  )
+}
+
 /**
  * 加追番后异步回填标签 / 别名 / 放送日期 / 老番总集数。三个细节各有理由:
  *   1. **抖动 800~2000ms 再发** —— 用户在周历上连点几部,不抖动就是一串请求瞬间砸过去。
@@ -396,13 +409,13 @@ function initialTotal(bgmId: number, airDate: string): number | null {
 function fillDetailLater(uid: number, bgmId: number): void {
   if (isCustomBgmId(bgmId)) return
   const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
-  if (!existing || parseList(existing.bgm_tags).length > 0) return
+  if (!existing || !needsDetail(existing)) return
 
   const jitterMs = 800 + Math.random() * 1200
   setTimeout(() => {
     void (async () => {
       const recheck = oneStmt.get(uid, bgmId) as TrackRow | undefined
-      if (!recheck || parseList(recheck.bgm_tags).length > 0) return
+      if (!recheck || !needsDetail(recheck)) return
       try {
         const d = await fetchSubjectDetail(bgmId)
         const apply = db.transaction(() => {
@@ -424,6 +437,10 @@ function fillDetailLater(uid: number, bgmId: number): void {
           if (d.date && !current.air_date) {
             sets.push('air_date = ?')
             args.push(d.date)
+          }
+          if (d.score > 0 && !(current.score > 0)) {
+            sets.push('score = ?')
+            args.push(d.score)
           }
           if (d.cover && !current.cover) {
             sets.push('cover = ?')
