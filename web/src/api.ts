@@ -60,6 +60,7 @@ export type TrackStatus = 'watching' | 'plan' | 'considering' | 'done'
 export type TrackSubjectType = 'anime' | 'manga' | 'novel' | 'other'
 
 export interface Track {
+  // 正数 = BGM 条目；负数 = 尚未对上 BGM 的手动条目。
   bgmId: number
   status: TrackStatus
   episode: number
@@ -208,6 +209,16 @@ export async function putTrack(bgmId: number, patch: TrackPatch, options: TrackW
     body: JSON.stringify(options.searchAdditionToken
       ? { ...patch, searchAdditionToken: options.searchAdditionToken }
       : patch),
+  })
+  return json<Track>(res)
+}
+
+// 把负数手动条目归并到用户从搜索结果选中的真实 BGM 条目；服务端会重新取权威详情。
+export async function backfillTrack(customBgmId: number, bgmId: number): Promise<Track> {
+  const res = await fetch(`/api/tracks/${customBgmId}/backfill`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bgmId }),
   })
   return json<Track>(res)
 }
@@ -670,15 +681,23 @@ export interface SearchResult {
   builtAt?: number // 索引生成时间（ms）—— 太久没更新说明每周的同步挂了，前端会提示
   /** local = 离线索引；learned = 已成功加过的共享补充；online = BGM 在线结果 */
   source?: 'local' | 'learned' | 'online'
-  /** 在线补充没成的具体原因（限流 / 超时 / 冷却中），如实显示，不糊成「网络错误」 */
+  /** 用户主动在线搜索没成的具体原因（限流 / 超时 / 冷却中），如实显示，不糊成「网络错误」 */
   onlineError?: string
 }
 
-/** 搜索动漫加追番。 */
-export async function searchAnime(q: string): Promise<SearchResult> {
-  const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+export type AnimeSearchMode = 'local' | 'online'
+
+// 搜索动漫加追番；在线模式只在用户明确点击时启用。
+export async function searchAnime(q: string, mode: AnimeSearchMode = 'local'): Promise<SearchResult> {
+  const suffix = mode === 'online' ? '&mode=online' : ''
+  const res = await fetch(`/api/search?q=${encodeURIComponent(q)}${suffix}`)
   if (!res.ok) return { ready: true, data: [] }
   return res.json() as Promise<SearchResult>
+}
+
+// 用户明确点击在线入口时调用；保留独立名称，避免把两条请求语义混在调用点。
+export function searchAnimeOnline(q: string): Promise<SearchResult> {
+  return searchAnime(q, 'online')
 }
 
 // ── 在线源统一适配器 ──────────────────────────────────────────────────────────

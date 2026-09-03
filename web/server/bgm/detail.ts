@@ -1,4 +1,4 @@
-// BGM 条目详情 —— 只为「加追番时回填标签 / 别名 / 放送日期」而存在。
+// BGM 条目详情 —— 加追番与手动条目回填共用：标题、标签、别名、放送日期、封面与集数。
 //
 // 为什么非要多这一次请求：周历接口（/calendar）**不返标签，也不返别名**，只有条目详情有。
 // 没有它，「按类型过滤」永远是空的、「搜索别名」也搜不到（搜「猫と竜」找不到《猫与龙》）。
@@ -20,10 +20,13 @@ const BGM_HEADERS = {
 }
 
 export interface SubjectDetail {
+  name: string
+  nameCn: string
   tags: string[]
   aliases: string[]
   date: string
   cover: string // BGM 图床封面 URL（lain.bgm.tv/...）；离线档没有封面，靠这里补
+  score: number
   /** 本篇总集数，**0 = BGM 没写**（不是「0 集」）。落不落库看调用方的新老番判断。 */
   eps: number
 }
@@ -69,12 +72,16 @@ export async function fetchSubjectDetail(bgmId: number, timeoutMs = 10000): Prom
 
   // total_episodes 是 BGM 算好的本篇集数；老条目偶尔只有 eps，两个都拿不到就是 0（= 没写）。
   const eps = Number(raw.total_episodes) || Number(raw.eps) || 0
+  const rating = (raw.rating ?? {}) as Record<string, unknown>
 
   return {
+    name: typeof raw.name === 'string' ? raw.name : '',
+    nameCn: typeof raw.name_cn === 'string' ? raw.name_cn : '',
     tags,
     aliases: aliasesFromInfobox(raw.infobox),
     date: typeof raw.date === 'string' ? raw.date : '',
     cover,
+    score: Number(rating.score) || 0,
     eps: eps > 0 ? eps : 0,
   }
 }

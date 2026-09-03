@@ -1076,6 +1076,10 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   box-shadow: var(--shadow-2);
   padding: 24px 22px 20px;
 }
+.dlg-add {
+  width: min(560px, 100%);
+  height: min(560px, calc(100vh - 32px));
+}
 .dlg-backdrop.open .dlg { animation: page-in .32s var(--ease-page); }
 @keyframes page-in {
   from { opacity: 0; transform: translateY(16px) rotate(-1.2deg); }
@@ -1488,7 +1492,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .ep-ctrl .prog { flex: 1; min-width: 100px; }
 .ep-ctrl .btn { padding: 3px 12px; font-size: 16px; min-height: 36px; }
 .ep-num { font-family: var(--font-hand); font-size: 16px; min-width: 56px; text-align: center; color: var(--ink); }
-.trk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+.trk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; min-width: 0; }
 /* 状态分段：想看/在看/看完 常驻直点，替换原「···」下拉（下拉被钉成触发器同宽 40px，
    菜单文字竖排没法看，且只有看完/移除、切不了想看在看）。整组无 hover，只认点击 */
 .status-seg {
@@ -1822,8 +1826,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   pointer-events: none;
 }
 .trk-rm { flex: none; }
-/* 「写点评」卡（.has-review）：状态分段 + 移出收进这个靠右的组，主操作药丸留在左边。
-   组内换行时靠右对齐，移出落在分段正下方，不会掉到左下角。 */
+/* 状态分段 + 移出收进同一个靠右尾组。尾组是一个 flex item，窄卡时整体换行并继续靠右。 */
 .trk-tail {
   display: flex;
   flex-wrap: wrap;
@@ -1831,8 +1834,11 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   justify-content: flex-end;
   gap: 8px;
   margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
 }
 .trk-tail > .status-seg { margin-left: 0; }
+.trk-tail > .trk-rm { margin-left: 0; }
 .trk-edit-mobile {
   display: none;
   align-items: center;
@@ -1884,30 +1890,17 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   /* 窄屏让划记本身吃掉剩余宽度：「观望」字头省掉（左边印章已经写着观望了） */
   .watchmarks { gap: 3px; padding: 2px 6px; }
   .wm-cap { display: none; }
-  /* 三个常用入口保持一行：继续看仍用主色强调，但不再独占整行；状态分段单独
-     占一行，便于快速记录。 */
+  /* 主操作药丸按内容宽度排列；状态 + 移出尾组始终靠右，空间不足时整体换行。 */
   .trk-actions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: flex;
     gap: 8px;
     margin-top: 2px;
   }
-  /* 「写点评」卡是 4 个按钮：不铺满、不进网格，保持自然宽度的小药丸一行排开（375 也放得下），
-     状态分段和移出各自整行。避免「按钮太大太抢眼」。 */
-  .trk-actions.has-review {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 8px;
-    align-items: center;
-  }
-  .trk-actions.has-review > .btn { width: auto; }
-  /* 分段 + 移出的靠右组不铺满整行，收成自然宽度 */
-  .trk-actions.has-review > .trk-tail { width: auto; }
-  .trk-tail > .status-seg { width: auto; }
-  .trk-tail .status-seg .seg-btn { flex: 0 1 auto; }
-  .trk-actions > .btn { width: 100%; }
-  .trk-actions > .status-seg { grid-column: 1 / -1; width: 100%; }
-  .trk-actions > .trk-rm { grid-column: 1 / -1; justify-self: start; width: auto; }
+  .trk-actions > .btn { flex: 0 1 auto; width: auto; }
+  .trk-actions > .trk-tail { flex: 0 1 auto; width: auto; margin-left: auto; justify-content: flex-end; }
+  .trk-tail > .status-seg { flex: 0 1 auto; max-width: 100%; }
+  .trk-tail .status-seg .seg-btn { flex: 1 1 0; min-width: 0; }
+  .trk-tail > .trk-rm { margin-left: 0; }
   /* 状态分段从 4 段变窄后按等分排列，仍保持足够的触控高度。 */
   .status-seg { margin-left: 0; }
   .status-seg .seg-btn { flex: 1; min-width: 0; padding: 4px 6px; font-size: 12px; }
@@ -1918,6 +1911,18 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .trk-actions > .btn-sm { gap: 4px; padding-inline: 6px; font-size: 12px; }
 }
 
+/* 超小屏首屏收口：保留立绘与气泡，但把装饰压成一条轻量便签，让第一张卡的标题和进度
+   在 iPhone SE 首屏露出更多；宽手机 / 平板继续沿用上面的完整比例。 */
+@media (max-width: 380px) {
+  body[data-page='tracks'] .sheet { padding-top: 12px; }
+  body[data-page='tracks'] .rig-inline { margin-top: 8px; gap: 5px; }
+  body[data-page='tracks'] .rig-inline .rig { height: 68px; }
+  body[data-page='tracks'] .rig-inline .rig-bubble { max-width: 200px; padding: 7px 10px; font-size: 12px; }
+  body[data-page='tracks'] .row.mb16 { margin-bottom: 10px; gap: 6px; }
+  body[data-page='tracks'] .m-tabs { padding-top: 4px; padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
+  body[data-page='tracks'] .m-tab { min-height: 46px; }
+}
+
 /* 卡片一窄，操作行就折行、状态分段独占一行，气泡会压到上一行的「试看一集 / BGM」上。
    给观望卡固定留出气泡的高度 —— 只看状态、不看观望次数，所以气泡出现那一刻不会顶动布局。 */
 @container trk (max-width: 620px) {
@@ -1926,9 +1931,9 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
      往下推，压还是压着）。
      这个行距给**所有**卡片，不只观望卡 —— 只给观望卡的话，切一次状态卡片就高一截，
      等高网格里同一行的邻居跟着一起变，看上去就是「容器忽大忽小」。 */
-  .trk-actions { row-gap: 32px; }
-  /* 「写点评」卡（看完 / 在追，永远没有观望气泡）：药丸靠左折行，行距收回常规值；
-     状态分段和移出收成自然宽度、靠右对齐（不铺满整行）。 */
+  .trk-actions { row-gap: 8px; }
+  .trk-row.is-considering .trk-actions { row-gap: 32px; }
+  /* 「写点评」卡（看完 / 在追，永远没有观望气泡）：药丸靠左折行，行距收回常规值。 */
   .trk-actions.has-review { row-gap: 8px; column-gap: 6px; }
   /* 4 个药丸挤进窄操作区（约 333px）：收紧内边距和图标间距，让「点评」也留在第一行 */
   .trk-actions.has-review > .btn { padding-inline: 8px; gap: 4px; }
@@ -2026,6 +2031,51 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .sugg-item .sugg-meta { margin-left: auto; font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; }
 .sugg-note { padding: 8px 10px; font-size: 12px; color: var(--ink-faint); }
 
+/* 加番弹窗：把「找 BGM」与「自己记一条」做成同一组页签。
+   入口永远在同一行；切到手动页后只保留一个标题输入，不再把搜索词复制一份。 */
+.add-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 4px;
+  background: var(--paper-2);
+  border: 1.5px solid var(--line);
+  border-radius: 12px 16px 10px 14px;
+}
+.add-mode-tabs.is-backfill { grid-template-columns: minmax(0, 1fr); }
+.add-mode-tab {
+  min-width: 0;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  color: var(--ink-sub);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 8px 12px 8px 12px;
+  font: inherit;
+  font-family: var(--font-hand);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color .18s, background-color .18s, border-color .18s, transform .15s var(--ease-stick);
+}
+.add-mode-tab.on {
+  color: var(--teal);
+  background: var(--card);
+  border-color: var(--teal-line);
+  box-shadow: var(--shadow-1);
+}
+.add-mode-tab:active { transform: translateY(1px); }
+@media (hover: hover) { .add-mode-tab:not(.on):hover { color: var(--teal); transform: translateY(-1px); } }
+.add-search-panel-head { min-width: 0; }
+.add-search-row { display: flex; align-items: center; gap: 8px; }
+.add-search-row .searchbar { min-width: 0; }
+.add-online-btn { flex: none; white-space: nowrap; }
+.add-online-link { margin-top: 6px; font-size: 12.5px; }
+
 /* 文件夹页签（用 margin 而不是 transform 下沉：transform 会造成 1.5px 滚动溢出，
    overflow-x:auto 的容器纵向跟着出滚动条） */
 .tabf-row { display: flex; gap: 6px; align-items: flex-end; padding: 0 6px; overflow-x: auto; }
@@ -2041,6 +2091,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   border-bottom: none;
   border-radius: 12px 14px 0 0;
   cursor: pointer;
+  text-align: center;
   margin-top: 1.5px;
   position: relative;
   transition: color .2s, background-color .2s, border-color .2s;
@@ -2065,12 +2116,11 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   color: inherit;
   opacity: .8;
 }
-/* 手机：四个页签等分一行，不再横向滚动 */
-@media (max-width: 640px) {
-  /* 5 个中文页签横排在 375px 上会压成竖排字，改两行三列（全部/想看/观望 + 在追/看完） */
-  .tabf-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 6px; padding: 0; }
-  .tabf { min-height: 40px; padding: 6px 2px; font-size: 12px; }
-  .tabf .badge-num { min-width: 15px; margin-left: 3px; padding: 0 4px; font-size: 10px; }
+/* 小屏手机：五个页签按 3 + 2 排版，文本居中、容器左对齐（贴内容左缘）。 */
+@media (max-width: 480px) {
+  .tabf-row { flex-wrap: wrap; justify-content: flex-start; width: auto; margin-right: auto; gap: 4px 6px; padding: 0; overflow: visible; }
+  .tabf { flex: 0 0 auto; justify-content: center; width: calc((100vw - 44px - 12px) / 3); max-width: 100px; min-height: 38px; padding: 6px 4px; font-size: 13px; text-align: center; }
+  .tabf .badge-num { min-width: 15px; margin-left: 3px; padding: 0 4px; font-size: 10.5px; }
 }
 
 /* 标签输入弹层（绝对定位不挤布局） */
@@ -2208,6 +2258,52 @@ body[data-auth='out'] .track-btn { display: none; }
 .add-pane { height: 300px; display: flex; flex-direction: column; }
 .add-pane > p { margin: auto 8px; text-align: center; }
 .add-pane > .page-state { margin: auto; padding: 0; }
+.custom-add-pane {
+  width: min(420px, 100%);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 11px;
+  padding: 12px 16px 16px;
+  text-align: center;
+  background: var(--paper-2);
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 9px 15px 9px 15px;
+}
+.custom-add-seal {
+  align-self: center;
+  padding: 4px 11px 3px;
+  color: var(--teal);
+  background: var(--teal-wash);
+  border: 1.5px solid var(--teal-line);
+  border-radius: 4px 10px 4px 9px;
+  font-family: var(--font-hand);
+  font-size: 12px;
+  transform: rotate(-2deg);
+}
+.custom-add-pane h4 { margin: 0; font-family: var(--font-hand); font-size: 20px; font-weight: 500; color: var(--ink); }
+.custom-add-pane p { margin: 0; }
+.custom-add-field { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; text-align: left; }
+.custom-add-field > span { color: var(--ink-faint); font-size: 11.5px; }
+.custom-add-pane input {
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--field-bg);
+  border: 1.5px solid var(--field-line);
+  border-radius: 10px 14px 10px 14px;
+  outline: none;
+}
+.custom-add-pane input:focus { border-color: var(--teal-line); box-shadow: 0 0 0 3px var(--teal-wash); }
+.custom-add-pane input:disabled { opacity: .55; }
+.custom-add-pane .form-note { min-height: 18px; margin: 0; }
+.custom-add-submit { width: 100%; justify-content: center; }
+.add-backfill-error { margin: 0 8px 2px !important; text-align: left !important; }
 /* 候选行内容一律不许横向撑宽（长日文原名 / 长副信息走省略号） */
 .sugg-item { min-width: 0; }
 .sugg-item > * { min-width: 0; }

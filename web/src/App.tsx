@@ -112,6 +112,15 @@ export default function App(): JSX.Element {
     window.scrollTo(0, 0)
   }, [route])
 
+  // 给全局手帐皮肤一个当前页标记：响应式细节（例如追番页的小屏紧凑模式）
+  // 只落在对应页面，切换 hash 时同步更新。
+  useEffect(() => {
+    document.body.dataset.page = route
+    return () => {
+      if (document.body.dataset.page === route) delete document.body.dataset.page
+    }
+  }, [route])
+
   const go = (r: Route): void => navigate(r)
   const closeAnnouncement = useCallback(() => setAnnouncementArmed(false), [])
   const announceAfterSplash = useCallback(() => {

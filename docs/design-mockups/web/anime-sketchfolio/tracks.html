@@ -130,20 +130,47 @@
 
 <!-- 加番 -->
 <div class="dlg-backdrop" id="addDlg">
-  <div class="dlg" role="dialog" aria-modal="true" aria-label="加入新番">
+  <div class="dlg dlg-add" role="dialog" aria-modal="true" aria-label="加入新番">
     <span class="tape tl teal"></span>
     <button class="dlg-close" data-dialog-close type="button" aria-label="关闭">
       <svg class="ic"><use href="#i-x"></use></svg>
     </button>
-    <h3 class="dlg-title">加番</h3>
-    <p class="dlg-sub">哼，挑一部想看的，贴进纱雾的手帐里吧。默认先放在「想看」哦。</p>
-    <label class="field mb16">
-      <span class="field-label">想找哪部番？</span>
-      <span class="field-row">
-        <input id="addSearch" aria-label="搜索要贴进手帐的番剧" placeholder="番名、日文原名或罗马音都可以……" autocomplete="off">
-      </span>
-    </label>
-    <div id="addList"></div>
+    <h3 id="addDlgTitle" class="dlg-title">加番</h3>
+    <p id="addDlgSub" class="dlg-sub">哼，先把想看的贴好。找得到 BGM 就认领，找不到也能先留一张手帐。</p>
+    <div class="add-mode-tabs" role="tablist" aria-label="选择加番方式">
+      <button id="addSearchTab" class="add-mode-tab on" role="tab" aria-selected="true" aria-controls="addSearchPanel" type="button">
+        <svg class="ic ic-sm"><use href="#i-search"></use></svg>找 BGM 条目
+      </button>
+      <button id="addCustomBtn" class="add-mode-tab" role="tab" aria-selected="false" aria-controls="customAddPane" type="button">
+        <svg class="ic ic-sm"><use href="#i-plus"></use></svg>自己记一条
+      </button>
+    </div>
+    <div id="addSearchPanel" role="tabpanel" aria-label="找 BGM 条目">
+      <div class="add-search-row mb16">
+        <label class="field" style="flex:1;min-width:0">
+          <span class="field-label">想找哪部番？</span>
+          <span class="field-row">
+            <input id="addSearch" aria-label="搜索要贴进手帐的番剧" placeholder="番名、日文原名或罗马音都可以……" autocomplete="off">
+          </span>
+        </label>
+        <button id="addOnlineBtn" class="btn btn-sm btn-primary add-online-btn" type="button" disabled>
+          <svg class="ic ic-sm"><use href="#i-refresh"></use></svg>在线搜 Bangumi
+        </button>
+      </div>
+      <div id="addList"></div>
+    </div>
+    <div id="customAddPane" class="custom-add-pane" role="tabpanel" aria-label="自己记一条" hidden>
+      <div class="custom-add-seal" aria-hidden="true">先留一页</div>
+      <h4>BGM 还没来？先写在这里</h4>
+      <p class="faint small">新番刚冒头也没关系，先留住这份心情，等 BGM 收录后再回填。</p>
+      <label class="custom-add-field">
+        <span>番名</span>
+        <input id="customAddTitle" aria-label="自定义番名" placeholder="番名写在这里……" autocomplete="off" maxlength="200">
+      </label>
+      <button id="customAddSubmit" class="btn btn-primary custom-add-submit" type="button">
+        <svg class="ic ic-sm"><use href="#i-plus"></use></svg>贴进手帐
+      </button>
+    </div>
   </div>
 </div>
 

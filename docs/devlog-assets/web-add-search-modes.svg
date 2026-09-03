@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 760" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="arrow-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+    <marker id="arrow-blue" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#557b96"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="758" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">加番搜索：默认翻目录，想找最新的再问 Bangumi</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：本地命中也会保留「在线搜 Bangumi」入口；只有用户点下去，服务器才访问在线 BGM。</text>
+
+  <rect x="32" y="84" width="1056" height="206" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、用户搜索时看到的两条路</text>
+
+  <rect x="56" y="128" width="196" height="82" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="154" y="153" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">输入番名</text>
+  <text x="154" y="174" text-anchor="middle" font-size="11" fill="#6a6470">停手 300ms 后开始翻</text>
+  <text x="154" y="192" text-anchor="middle" font-size="10.5" fill="#8a848a">默认模式：离线</text>
+
+  <path d="M258 169 H300" stroke="#6d686b" stroke-width="1.6" marker-end="url(#arrow-gray)"/>
+
+  <rect x="304" y="120" width="318" height="100" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="463" y="145" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">离线目录</text>
+  <text x="320" y="167" font-size="11" fill="#4d6575">① 每周 BGM 索引</text>
+  <text x="320" y="186" font-size="11" fill="#4d6575">② 已成功加番积累的补充条目</text>
+  <text x="320" y="205" font-size="11" fill="#4d6575">两处都只读，不触发 BGM 在线请求</text>
+
+  <path d="M626 149 H680" stroke="#4b8f6a" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+  <path d="M626 193 H680" stroke="#557b96" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+
+  <rect x="684" y="120" width="368" height="44" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="702" y="147" font-size="12" font-weight="700" fill="#316247">有结果 → 先展示，旁边仍留「在线搜 Bangumi」</text>
+  <rect x="684" y="176" width="368" height="44" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="702" y="203" font-size="12" font-weight="700" fill="#4a4450">没结果 / 索引未就绪 → 原地提示，再由用户决定</text>
+
+  <rect x="56" y="238" width="996" height="34" rx="8" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="72" y="260" font-size="11.5" fill="#7a6234">关键变化：关键词再常见，也只得到离线结果；新番、特别篇或离线库缺失时，用户自己点在线入口就能查到最新条目。</text>
+
+  <rect x="32" y="308" width="1056" height="232" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="334" font-size="14" font-weight="700" fill="#353136">二、点「在线搜 Bangumi」之后</text>
+
+  <rect x="56" y="356" width="214" height="76" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="163" y="381" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">用户明确点击</text>
+  <text x="163" y="402" text-anchor="middle" font-size="11" fill="#6a6470">结果区显示「正在问 Bangumi…」</text>
+  <text x="163" y="420" text-anchor="middle" font-size="10.5" fill="#8a848a">也可切回离线目录</text>
+
+  <path d="M276 394 H326" stroke="#557b96" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+
+  <rect x="330" y="348" width="308" height="92" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="484" y="374" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">在线搜索保护栏</text>
+  <text x="346" y="396" font-size="11" fill="#4d6575">缓存 30 分钟（空结果也记住）</text>
+  <text x="346" y="415" font-size="11" fill="#4d6575">两次间隔 2 秒 · 每小时最多 40 次</text>
+  <text x="346" y="434" font-size="11" fill="#4d6575">连续失败冷却；失败不自动重试</text>
+
+  <path d="M644 394 H694" stroke="#557b96" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+
+  <rect x="698" y="348" width="354" height="92" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="875" y="374" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">显示 BGM 在线候选</text>
+  <text x="714" y="396" font-size="11" fill="#456b54">候选带服务端签发的短期凭证</text>
+  <text x="714" y="415" font-size="11" fill="#456b54">新番 / 特别篇可直接「加入」</text>
+  <text x="714" y="434" font-size="11" fill="#456b54">限流、超时、冷却原因照实写在空态</text>
+
+  <rect x="56" y="464" width="996" height="52" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="72" y="487" font-size="11.5" font-weight="700" fill="#7a6234">添加仍走原来的确认边界：</text>
+  <text x="72" y="506" font-size="11" fill="#7a6234">点击「加入」→ 服务端验凭证 → 追番写入成功后才把该条目留进共享补充表；单纯搜索不会污染目录。</text>
+
+  <rect x="32" y="558" width="1056" height="166" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="584" font-size="14" font-weight="700" fill="#353136">三、几个容易改错的边界</text>
+
+  <rect x="56" y="606" width="310" height="92" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="72" y="630" font-size="12" font-weight="700" fill="#96434f">本地命中不是终点</text>
+  <text x="72" y="651" font-size="11" fill="#8a5a62">在线按钮必须仍然可见，</text>
+  <text x="72" y="670" font-size="11" fill="#8a5a62">否则新条目永远进不来。</text>
+
+  <rect x="382" y="606" width="310" height="92" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="398" y="630" font-size="12" font-weight="700" fill="#96434f">不要把空结果当网络故障</text>
+  <text x="398" y="651" font-size="11" fill="#8a5a62">本地没找到先停住；</text>
+  <text x="398" y="670" font-size="11" fill="#8a5a62">在线失败再显示具体原因。</text>
+
+  <rect x="708" y="606" width="344" height="92" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="724" y="630" font-size="12" font-weight="700" fill="#4a4450">换词 / 切来源会作废旧响应</text>
+  <text x="724" y="651" font-size="11" fill="#6a6470">只让最后一轮结果落到列表，</text>
+  <text x="724" y="670" font-size="11" fill="#6a6470">快速输入和点击不会串台。</text>
+</svg>

@@ -407,7 +407,7 @@ community.get('/:username/:bgmId/cover-file', async (c) => {
   publicHeaders(c)
   const username = c.req.param('username').trim()
   const bgmId = Number(c.req.param('bgmId'))
-  if (!username || !Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: '公开封面不存在' }, 404)
+  if (!username || !Number.isInteger(bgmId) || bgmId === 0) return c.json({ error: '公开封面不存在' }, 404)
   const user = publicUserStmt.get(username) as PublicUserRow | undefined
   if (!user) return c.json({ error: '公开封面不存在' }, 404)
   const row = publicCoverStmt.get(user.id, bgmId) as { cover: string; cover_mime: string } | undefined
