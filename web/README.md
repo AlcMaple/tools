@@ -53,7 +53,7 @@ Vercel / 生产 VPS 不走这套本地自动对齐；按部署环境显式配置
 
 ## 环境变量
 
-代码**只读进程环境变量，不读任何 `.env` 文件**（没有 dotenv）。本地开发在命令前临时注入（见上面邮箱示例），生产放在部署目录外的进程环境里（systemd `EnvironmentFile=` / pm2 ecosystem / Vercel 控制台）——密钥永远不进仓库，`.gitignore` 已忽略 `.env`
+生产代码只读进程环境变量，或由 `MAPLETOOLS_ENV_FILE` 明确指定的部署目录外文件；不会读取生产仓库里的 `.env`。本地开发才会读取被忽略的 `.env.local` / `.env`。`.gitignore` 不是密钥边界：生产 key 应放在 `/opt/mapletools-data/` 这类仓库外目录，并限制为运行用户可读。
 
 | 变量 | 必需 | 说明 |
 | --- | --- | --- |
@@ -64,6 +64,9 @@ Vercel / 生产 VPS 不走这套本地自动对齐；按部署环境显式配置
 | `SMTP_HOST` `SMTP_PORT` `SMTP_SECURE` `SMTP_USER` `SMTP_PASS` | 可选 | 邮箱验证码发信的 SMTP 凭证（如 Brevo 的 `smtp-relay.brevo.com:587`）。未配置时停用邮箱入口，不影响用户名 / 密码登录 |
 | `SMTP_FROM` `SMTP_FROM_NAME` | 可选 | 发件地址与显示名，如 `noreply@example.com` / `MapleTools`。`SMTP_FROM` 需先在发信服务完成自有域名的 DNS 验证（SPF / DKIM），步骤见 [docs/ideas/015](../docs/ideas/015-noreply发信与第三方登录接入指南.md) |
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` | 可选 | Google 登录（[Google Cloud 凭据页](https://console.cloud.google.com/apis/credentials)），**二者齐配登录按钮才出现**。OAuth 客户端登记的重定向 URI：`https://<你的域名>/api/auth/oauth/google/callback`；本地联调另加 `http://localhost:5173/api/auth/oauth/google/callback` |
+| `AI_API_KEY` | 服务器 AI 时必需 | DeepSeek / OpenAI-compatible 服务端 key；只在服务端进程环境中使用，不进入浏览器、数据库或日志。生产通过 `MAPLETOOLS_ENV_FILE` 从仓库外注入 |
+| `AI_BASE_URL` / `AI_MODEL` | 可选 | 服务器 AI 的兼容接口地址和模型；默认 `https://api.deepseek.com` / `deepseek-v4-flash-vision-exp` |
+| `MAPLETOOLS_ENV_FILE` | 生产建议 | 绝对路径，指向仓库外的简单 `KEY=VALUE` 文件（如 `/opt/mapletools-data/.env.ai`）；生产设置后不再读取仓库内 `.env` |
 | `SLOW_PLAYBACK_MAX_VIEWERS` | 可选 | 公共慢源容量池的同时观看上限，默认 `2`；只能按真实出口带宽测试结果调整 |
 | `SLOW_PLAYBACK_QUEUE_ENABLED` | 可选 | 慢源候补开关，默认开启；关闭后已有空位仍可观看，满员时不再接受新候补 |
 | `WEB_PUBLIC_ORIGIN` | 生产建议 | 慢源空位邮件里的站点来源，如 `https://anime.alcmaple.cn`；默认使用该生产域名 |
@@ -89,6 +92,12 @@ export GOOGLE_CLIENT_SECRET="GOCSPX-xxx"
 ```
 
 Google 登录的重定向 URI 按环境各登记一条，同一客户端可登记多条，服务端按请求来源自动选用：本地 `http://localhost:5173/api/auth/oauth/google/callback`，生产 `https://<你的域名>/api/auth/oauth/google/callback`。
+
+### 推荐与点评助手的密钥边界
+
+- 服务器 AI：浏览器只请求本站 `/api/reviews/*`，本站服务端读取 `AI_API_KEY` 调用模型；key 只存在服务端进程环境，`Sentry` 和普通日志不会记录 `Authorization`、请求体或 key。
+- BYOK：API key 只保存在当前浏览器的 `localStorage`，浏览器直接向用户填写的 OpenAI-compatible endpoint 发请求；本站只提供番剧资料并保存问题 / 草稿，不接收或转发这个 key。第三方 endpoint 不支持浏览器跨域时，切回服务器 AI。
+- 生产不要把真实 key 放进 `/opt/mapletools/web/.env`、前端构建变量、Git、数据库或截图；用外部文件并由 PM2 配置设置 `MAPLETOOLS_ENV_FILE`。
 
 ### 异常与性能监控（可选）
 
