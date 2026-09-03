@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 760" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="arrow-blue" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#557b96"/></marker>
+    <marker id="arrow-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="758" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">BGM 还没收录时：先记一条，之后原卡回填</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：手动条目先用负数占位；选中 BGM 后只换条目身份和官方资料，进度、用户标签、用户封面仍是同一张手帐。</text>
+
+  <rect x="32" y="84" width="1056" height="218" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、BGM 还没出现：先把这部番贴下来</text>
+
+  <rect x="56" y="132" width="224" height="92" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="168" y="158" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">加番 →「自己记一条」</text>
+  <text x="168" y="180" text-anchor="middle" font-size="11" fill="#6a6470">输入标题，默认放进「想看」</text>
+  <text x="168" y="199" text-anchor="middle" font-size="11" fill="#6a6470">标题可先用临时叫法</text>
+
+  <path d="M286 178 H332" stroke="#6d686b" stroke-width="1.6" marker-end="url(#arrow-gray)"/>
+
+  <rect x="336" y="124" width="320" height="108" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="496" y="151" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">手动卡片（负数 bgmId）</text>
+  <text x="352" y="175" font-size="11" fill="#4d6575">标题 / 状态 / 进度 / 观望次数</text>
+  <text x="352" y="194" font-size="11" fill="#4d6575">用户标签与封面可以随时编辑</text>
+  <text x="352" y="213" font-size="11" fill="#4d6575">卡片动作：显示「回填 BGM」</text>
+
+  <path d="M662 178 H708" stroke="#557b96" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+
+  <rect x="712" y="124" width="340" height="108" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="882" y="151" text-anchor="middle" font-size="12.5" font-weight="700" fill="#7a6234">封面 / 标签 / 进度先照常使用</text>
+  <text x="728" y="175" font-size="11" fill="#7a6234">封面上传后落在这张手动卡上</text>
+  <text x="728" y="194" font-size="11" fill="#7a6234">进度点到第几集就记到第几集</text>
+  <text x="728" y="213" font-size="11" fill="#7a6234">不用等 BGM 才能开始写手帐</text>
+
+  <rect x="32" y="320" width="1056" height="252" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="346" font-size="14" font-weight="700" fill="#353136">二、BGM 出现后：从原卡打开同一扇搜索窗</text>
+
+  <rect x="56" y="370" width="236" height="86" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="174" y="397" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">点击「回填 BGM」</text>
+  <text x="174" y="419" text-anchor="middle" font-size="11" fill="#6a6470">搜索框自动带入原卡标题</text>
+  <text x="174" y="438" text-anchor="middle" font-size="10.5" fill="#8a848a">本地结果 / 在线搜索都能选</text>
+
+  <path d="M298 413 H346" stroke="#557b96" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+
+  <rect x="350" y="362" width="298" height="102" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="499" y="389" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">在加番窗口选一条 BGM</text>
+  <text x="366" y="413" font-size="11" fill="#4d6575">按钮从「加入」变成「回填」</text>
+  <text x="366" y="432" font-size="11" fill="#4d6575">重复条目明确显示已在手帐</text>
+  <text x="366" y="451" font-size="11" fill="#4d6575">回填中锁住其它候选，避免连点</text>
+
+  <path d="M654 413 H702" stroke="#557b96" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+
+  <rect x="706" y="362" width="346" height="102" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="879" y="389" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">服务器读取权威 BGM 详情</text>
+  <text x="722" y="413" font-size="11" fill="#4d6575">标题 / 中文名 / 标签 / 别名 / 日期 / 评分</text>
+  <text x="722" y="432" font-size="11" fill="#4d6575">空封面用 BGM 封面；用户封面继续保留</text>
+  <text x="722" y="451" font-size="11" fill="#4d6575">同用户已有目标 BGM 时保留手动卡并提示重复</text>
+
+  <rect x="56" y="484" width="996" height="64" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="72" y="510" font-size="12" font-weight="700" fill="#316247">回填成功 → 原卡变成真实 BGM 卡</text>
+  <text x="72" y="531" font-size="11" fill="#456b54">BGM 标签 + 用户标签并列；用户封面优先；用户 episode / status / observeCount / extra 原样留下，之后可以继续播放与点评。</text>
+
+  <rect x="32" y="590" width="1056" height="134" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="616" font-size="14" font-weight="700" fill="#353136">三、数据边界</text>
+
+  <rect x="56" y="638" width="310" height="64" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="72" y="662" font-size="11.5" font-weight="700" fill="#7a6234">用户数据优先</text>
+  <text x="72" y="683" font-size="11" fill="#7a6234">进度 / 状态 / 自定义标签 / 封面不随换 ID 丢失。</text>
+
+  <rect x="382" y="638" width="310" height="64" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="398" y="662" font-size="11.5" font-weight="700" fill="#36566d">官方字段更新</text>
+  <text x="398" y="683" font-size="11" fill="#4d6575">标题、BGM 标签、别名、日期、评分取详情接口。</text>
+
+  <rect x="708" y="638" width="344" height="64" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="724" y="662" font-size="11.5" font-weight="700" fill="#96434f">异常就留在原卡</text>
+  <text x="724" y="683" font-size="11" fill="#8a5a62">详情读取失败、目标重复或回填冲突，都不删除手动条目。</text>
+</svg>

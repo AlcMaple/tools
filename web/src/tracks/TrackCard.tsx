@@ -16,6 +16,7 @@ export function TrackCard({
   onEdit,
   onAskRemove,
   onMarkGood,
+  onBackfill,
   onWriteReview,
   onMakePoster,
   posterBusy,
@@ -30,6 +31,7 @@ export function TrackCard({
   onEdit: () => void
   onAskRemove: () => void
   onMarkGood: () => void
+  onBackfill: () => void
   onWriteReview: () => void
   onMakePoster?: () => void
   posterBusy?: boolean
@@ -74,8 +76,8 @@ export function TrackCard({
   }
 
   const considering = t.status === 'considering'
-  // 看完 / 在追才有「写点评」入口；有它时操作行按钮从 3 个变 4 个，布局要跟着切。
-  const canReview = t.status === 'done' || t.status === 'watching'
+  // 真实 BGM 条目的看完 / 在追才有「写点评」入口；手动条目先回填，避免点到需要正数 bgmId 的接口。
+  const canReview = t.bgmId > 0 && (t.status === 'done' || t.status === 'watching')
   // 0–5：翻旧的档位。次数再多也只到 5，痕迹不会无限堆下去。
   const heat = considering ? Math.min(5, t.observeCount) : undefined
 
@@ -206,23 +208,32 @@ export function TrackCard({
         </div>
 
         <div className={`trk-actions${canReview ? ' has-review' : ''}`}>
-          <ContinueWatchAction
-            label={considering ? '试看一集' : '继续看'}
-            ep={ep}
-            bound={bound}
-            locating={locating}
-            onPick={onContinue}
-          />
-          <a
-            className="btn btn-sm btn-ghost"
-            href={`https://bgm.tv/subject/${t.bgmId}`}
-            target="_blank"
-            rel="noreferrer"
-            title="在 Bangumi 查看详情"
-          >
-            <Ic name="external" cls="ic ic-sm" />
-            BGM
-          </a>
+          {t.bgmId < 0 ? (
+            <button type="button" className="btn btn-sm btn-primary" onClick={onBackfill} title="从这条标题回填 BGM 条目">
+              <Ic name="refresh" cls="ic ic-sm" />
+              回填 BGM
+            </button>
+          ) : (
+            <>
+              <ContinueWatchAction
+                label={considering ? '试看一集' : '继续看'}
+                ep={ep}
+                bound={bound}
+                locating={locating}
+                onPick={onContinue}
+              />
+              <a
+                className="btn btn-sm btn-ghost"
+                href={`https://bgm.tv/subject/${t.bgmId}`}
+                target="_blank"
+                rel="noreferrer"
+                title="在 Bangumi 查看详情"
+              >
+                <Ic name="external" cls="ic ic-sm" />
+                BGM
+              </a>
+            </>
+          )}
           <button
             type="button"
             className={`btn btn-sm btn-ghost${t.goodEpisodes.length > 0 ? ' ge-trigger-on' : ''}`}
@@ -255,19 +266,12 @@ export function TrackCard({
               {posterBusy ? '生成中…' : '分享图'}
             </button>
           )}
-          {/* 看完 / 在追的卡片操作按钮多一个「点评」，把「状态分段 + 移出」收进一个靠右的组，
-              免得移出在窄卡里落单到左下角。观望 / 想看卡不套这层，沿用原来的手机三列网格。 */}
-          {canReview ? (
-            <div className="trk-tail">
-              <StatusSeg t={t} considering={considering} onStatus={onStatus} />
-              <RemoveBtn onAskRemove={onAskRemove} />
-            </div>
-          ) : (
-            <>
-              <StatusSeg t={t} considering={considering} onStatus={onStatus} />
-              <RemoveBtn onAskRemove={onAskRemove} />
-            </>
-          )}
+          {/* 状态分段与「移出」永远是一个靠右的尾组；卡片变窄时尾组整体换行，
+              移出仍贴在右缘，不会因为 flex 折行掉到左下角。 */}
+          <div className="trk-tail">
+            <StatusSeg t={t} considering={considering} onStatus={onStatus} />
+            <RemoveBtn onAskRemove={onAskRemove} />
+          </div>
         </div>
       </div>
     </article>

@@ -5,19 +5,21 @@ import { watchEp } from './common'
 
 // ── 列表行（只读速览）────────────────────────────────────────────────────────
 // 列表只负责让用户快速扫过追番，不提供改集数 / 改状态 / 改最爱等编辑控件。
-// 三个按钮仍沿用卡片上的入口：继续看、BGM、好看集。
+// BGM 条目提供继续看 / BGM / 好看集；手动条目把前两项收成一个回填入口。
 export function TrackListRow({
   t,
   bound,
   locating,
   onContinue,
   onMarkGood,
+  onBackfill,
 }: {
   t: Track
   bound: Partial<Record<SourceId, SourceBinding>>
   locating: boolean
   onContinue: (source: SourceId, mode: WatchMode, rebind?: boolean) => void
   onMarkGood: () => void
+  onBackfill: () => void
 }): JSX.Element {
   const title = t.titleCn || t.title
   const ep = watchEp(t)
@@ -39,23 +41,32 @@ export function TrackListRow({
       </div>
 
       <div className="trk-list-actions">
-        <ContinueWatchAction
-          label={t.status === 'considering' ? '试看一集' : '继续看'}
-          ep={ep}
-          bound={bound}
-          locating={locating}
-          onPick={onContinue}
-        />
-        <a
-          className="btn btn-sm btn-ghost"
-          href={`https://bgm.tv/subject/${t.bgmId}`}
-          target="_blank"
-          rel="noreferrer"
-          title="在 Bangumi 查看详情"
-        >
-          <Ic name="external" cls="ic ic-sm" />
-          BGM
-        </a>
+        {t.bgmId < 0 ? (
+          <button type="button" className="btn btn-sm btn-primary" onClick={onBackfill} title="从这条标题回填 BGM 条目">
+            <Ic name="refresh" cls="ic ic-sm" />
+            回填 BGM
+          </button>
+        ) : (
+          <>
+            <ContinueWatchAction
+              label={t.status === 'considering' ? '试看一集' : '继续看'}
+              ep={ep}
+              bound={bound}
+              locating={locating}
+              onPick={onContinue}
+            />
+            <a
+              className="btn btn-sm btn-ghost"
+              href={`https://bgm.tv/subject/${t.bgmId}`}
+              target="_blank"
+              rel="noreferrer"
+              title="在 Bangumi 查看详情"
+            >
+              <Ic name="external" cls="ic ic-sm" />
+              BGM
+            </a>
+          </>
+        )}
         <button
           type="button"
           className={`btn btn-sm btn-ghost${t.goodEpisodes.length > 0 ? ' ge-trigger-on' : ''}`}

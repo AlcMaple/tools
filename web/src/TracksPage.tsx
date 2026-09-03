@@ -7,6 +7,7 @@
 //   - 进度推到满**不**自动切「看完」—— 用户填 12 不一定是看到 12,可能是「还剩 12 没看」的备忘。
 //   - 「想看」首次 +1 才自动转「在追」(这个方向没有歧义)。
 //   - 标签在卡片上**只读**,增删在弹窗里;BGM 标签不可编辑。
+//   - 负数 bgmId = 尚未对上 BGM 的手动条目；回填时服务端只换主键与 BGM 元数据，进度/用户标签/用户封面留在原卡。
 //
 // 页头不置顶,只有顶栏置顶。
 //
@@ -27,7 +28,7 @@ import type {
   TrackStatus,
   WatchMode,
 } from './api'
-import { SOURCES, deleteTrack, importTracksFromBgm, putTrack, sourceById, uploadTrackCover } from './api'
+import { SOURCES, backfillTrack, deleteTrack, importTracksFromBgm, putTrack, sourceById, uploadTrackCover } from './api'
 import { isRecentAir } from '../shared/anime-age'
 import { useAuth } from './auth'
 import { cacheGet } from './dataCache'
@@ -50,7 +51,7 @@ import { TrackCard } from './tracks/TrackCard'
 import { TrackListRow } from './tracks/TrackList'
 import { BgmImportModal } from './tracks/importModal'
 import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
-import { AddSearchModal } from './tracks/addSearchModal'
+import { AddSearchModal, type BackfillTarget } from './tracks/addSearchModal'
 import {
   SourceBindPickerModal,
   SourceSearchModal,
@@ -60,6 +61,7 @@ import {
 
 type FilterKey = 'all' | TrackStatus
 type TrackView = 'cards' | 'list'
+type AddFlow = { initialQuery?: string; backfill?: BackfillTarget }
 
 function todayBgmId(): number {
   const d = new Date().getDay()
@@ -73,6 +75,15 @@ const titlesOf = (t: Track): string[] => [t.titleCn, ...t.aliases, t.title].filt
 // 拿老番去走一趟周表定位是纯浪费(冷缓存那次还要等源站抓 7 天)。判据见 shared/anime-age.ts,
 // 跟服务端「要不要自动填总集数」用的是同一把尺,不要在这儿另立一套。
 const isRecentAnime = (t: Track): boolean => isRecentAir(t.airDate)
+
+let customIdCursor = 0
+function nextCustomBgmId(tracks: Track[]): number {
+  const used = new Set(tracks.map((t) => t.bgmId))
+  let candidate = customIdCursor < 0 ? Math.min(customIdCursor, -Date.now()) : -Date.now()
+  while (used.has(candidate)) candidate--
+  customIdCursor = candidate - 1
+  return candidate
+}
 
 const emptyBindings = (): Record<SourceId, Record<number, SourceBinding>> => ({ xifan: {}, girigiri: {} })
 
@@ -111,7 +122,7 @@ export function TracksPage(): JSX.Element {
   const [locating, setLocating] = useState<{ source: SourceId; bgmId: number } | null>(null)
   const [pickerFlow, setPickerFlow] = useState<PickerFlow | null>(null)
   const [searchFlow, setSearchFlow] = useState<SearchFlow | null>(null)
-  const [adding, setAdding] = useState(false) // 加番搜索弹窗
+  const [adding, setAdding] = useState<AddFlow | null>(null) // 加番搜索弹窗
   const [importOpen, setImportOpen] = useState(false)
   const today = useMemo(todayBgmId, [])
 
@@ -242,6 +253,69 @@ export function TracksPage(): JSX.Element {
         ...(calDay ? { airWeekday: calDay.id } : {}),
       }, { searchAdditionToken: hit.searchAdditionToken })
     ).catch((e: Error) => setError(e.message))
+  }
+
+  const addCustom = async (title: string): Promise<void> => {
+    if (!user) throw new Error('未登录')
+    const customBgmId = nextCustomBgmId(tracks ?? [])
+    const optimistic: Track = {
+      bgmId: customBgmId,
+      status: 'plan',
+      episode: 0,
+      totalEpisodes: null,
+      title,
+      titleCn: '',
+      cover: '',
+      airWeekday: 0,
+      airDate: '',
+      score: 0,
+      bgmTags: [],
+      userTags: [],
+      aliases: [],
+      observeCount: 0,
+      subjectType: 'anime',
+      goodEpisodes: [],
+      goodEpisodeNotes: {},
+      favorite: 0,
+      updatedAt: Date.now(),
+    }
+    setError(null)
+    setTracks((prev) => [optimistic, ...(prev ?? [])])
+    toast(`哼，『${title}』先贴进手帐啦，等 BGM 出现再回填。`)
+    try {
+      await runTracksMutation(user.username, () => putTrack(customBgmId, {
+        title,
+        titleCn: '',
+        status: 'plan',
+        episode: 0,
+        totalEpisodes: null,
+        cover: '',
+        airWeekday: 0,
+        airDate: '',
+        score: 0,
+      }))
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+      throw error
+    }
+  }
+
+  const backfill = async (customBgmId: number, hit: AnimeHit): Promise<void> => {
+    if (!user) throw new Error('未登录')
+    setError(null)
+    try {
+      const updated = await runTracksMutation(user.username, () => backfillTrack(customBgmId, hit.bgmId))
+      setTracks((prev) => {
+        if (!prev) return [updated]
+        const found = prev.some((t) => t.bgmId === customBgmId)
+        return found ? prev.map((t) => (t.bgmId === customBgmId ? updated : t)) : [updated, ...prev]
+      })
+      setAdding(null)
+      toast(`『${updated.titleCn || updated.title}』对上 BGM 啦，进度、标签和封面都留着。`)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+      throw error
+    }
   }
 
   // 本地先改、后端后写 —— +1 要跟手，不能等一个来回。成功与失败都由最后一次全量 GET
@@ -422,7 +496,7 @@ export function TracksPage(): JSX.Element {
               <Ic name="refresh" cls="ic ic-sm" />
               从 Bangumi 导入
             </button>
-            <button className="btn btn-sm btn-primary" type="button" onClick={() => setAdding(true)}>
+            <button className="btn btn-sm btn-primary" type="button" onClick={() => setAdding({})}>
               <Ic name="plus" cls="ic ic-sm" />
               加番
             </button>
@@ -514,6 +588,13 @@ export function TracksPage(): JSX.Element {
               continueWatch(sourceById(sourceId), t, mode, rebind)
             }
             const onMarkGood = (): void => setMarkingGood(t.bgmId)
+            const onBackfill = (): void => {
+              const title = t.titleCn || t.title
+              setAdding({
+                initialQuery: title,
+                backfill: { customBgmId: t.bgmId, title },
+              })
+            }
             if (view === 'list') {
               return (
                 <TrackListRow
@@ -523,6 +604,7 @@ export function TracksPage(): JSX.Element {
                   locating={locatingThis}
                   onContinue={onContinue}
                   onMarkGood={onMarkGood}
+                  onBackfill={onBackfill}
                 />
               )
             }
@@ -539,6 +621,7 @@ export function TracksPage(): JSX.Element {
                 onEdit={() => setEditing(t.bgmId)}
                 onAskRemove={() => setConfirming(t.bgmId)}
                 onMarkGood={onMarkGood}
+                onBackfill={onBackfill}
                 onWriteReview={() => setWritingReview(t.bgmId)}
                 onMakePoster={t.publishedReviews?.length ? () => void makePoster(t) : undefined}
                 posterBusy={posterBusy}
@@ -599,9 +682,14 @@ export function TracksPage(): JSX.Element {
 
       {adding && (
         <AddSearchModal
+          key={adding.backfill ? `backfill:${adding.backfill.customBgmId}` : 'new'}
           trackedIds={new Set(animeTracks.map((t) => t.bgmId))}
           onAdd={addFromSearch}
-          onClose={() => setAdding(false)}
+          onAddCustom={addCustom}
+          initialQuery={adding.initialQuery}
+          backfill={adding.backfill}
+          onBackfill={backfill}
+          onClose={() => setAdding(null)}
         />
       )}
 

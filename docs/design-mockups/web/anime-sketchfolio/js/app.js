@@ -422,6 +422,9 @@
       { id: 'tsukimichi3', t: '月が導く異世界道中 第３期', meta: 'TV · 连载中', hue: 240, weekday: '周五' },
       { id: 'lls4', t: 'ラブライブ！スーパースター!! 第４期', meta: 'TV · 连载中', hue: 355, weekday: '周五' }
     ];
+    const ONLINE_POOL = POOL.concat([
+      { id: 'fresh-bgm', t: '临时新番（BGM 已收录）', meta: 'BGM 在线 · 新条目', hue: 315, weekday: null }
+    ]);
     const STATUS = { doing: '在看', wish: '想看', done: '看完' };
     let curTab = 'all';
     let query = '';
@@ -457,15 +460,19 @@
             ${t.tags.map((g) => `<span class="tagx${g.mine ? ' mine' : ''}" data-tag="${esc(g.v)}">${esc(g.v)}${g.mine ? `<button aria-label="删除标签">${ic('x', 'ic ic-sm')}</button>` : ''}</span>`).join('')}
             <button class="tagx tagx-add" type="button" data-act="tagadd">＋ 标签</button>
           </div>
-          <div class="trk-actions">
-            <a class="btn btn-sm btn-primary" href="player.html">${ic('play', 'ic ic-sm')}继续看</a>
-            <button class="btn btn-sm btn-ghost" type="button">${ic('external', 'ic ic-sm')}BGM</button>
-            <div class="status-seg" role="group" aria-label="追番状态">
-              <button class="seg-btn${t.status === 'wish' ? ' on' : ''}" type="button" data-status="wish" aria-pressed="${t.status === 'wish'}">想看</button>
-              <button class="seg-btn${t.status === 'doing' ? ' on' : ''}" type="button" data-status="doing" aria-pressed="${t.status === 'doing'}">在看</button>
-              <button class="seg-btn${t.status === 'done' ? ' on' : ''}" type="button" data-status="done" aria-pressed="${t.status === 'done'}">看完</button>
+        <div class="trk-actions">
+            ${t.manual
+              ? `<button class="btn btn-sm btn-primary" type="button" data-backfill="${t.id}">${ic('refresh', 'ic ic-sm')}回填 BGM</button>`
+              : `<a class="btn btn-sm btn-primary" href="player.html">${ic('play', 'ic ic-sm')}继续看</a>
+                 <button class="btn btn-sm btn-ghost" type="button">${ic('external', 'ic ic-sm')}BGM</button>`}
+            <div class="trk-tail">
+              <div class="status-seg" role="group" aria-label="追番状态">
+                <button class="seg-btn${t.status === 'wish' ? ' on' : ''}" type="button" data-status="wish" aria-pressed="${t.status === 'wish'}">想看</button>
+                <button class="seg-btn${t.status === 'doing' ? ' on' : ''}" type="button" data-status="doing" aria-pressed="${t.status === 'doing'}">在看</button>
+                <button class="seg-btn${t.status === 'done' ? ' on' : ''}" type="button" data-status="done" aria-pressed="${t.status === 'done'}">看完</button>
+              </div>
+              <button class="btn btn-sm btn-danger trk-rm" type="button" data-menu="remove">${ic('x', 'ic ic-sm')}移出</button>
             </div>
-            <button class="btn btn-sm btn-danger trk-rm" type="button" data-menu="remove">${ic('x', 'ic ic-sm')}移出</button>
           </div>
         </div>
         <div class="tagpop"></div>
@@ -521,10 +528,22 @@
 
     // 加番弹窗：显式入口，搜索 + 全量候选
     const addList = $('#addList');
+    const addOnlineBtn = $('#addOnlineBtn');
+    const addSearchTab = $('#addSearchTab');
+    const addSearchPanel = $('#addSearchPanel');
+    const addCustomBtn = $('#addCustomBtn');
+    const customAddPane = $('#customAddPane');
+    const customAddTitle = $('#customAddTitle');
+    const customAddSubmit = $('#customAddSubmit');
+    let addOnline = false;
+    let backfillTarget = null;
+    let customAddOpen = false;
     function renderPool() {
       const q = ($('#addSearch').value.trim() || '').toLowerCase();
-      const hits = POOL.filter((p) => !q || p.t.toLowerCase().includes(q));
-      addList.innerHTML = hits.length ? hits.map((p) => {
+      const pool = addOnline ? ONLINE_POOL : POOL;
+      const hits = pool.filter((p) => !q || p.t.toLowerCase().includes(q));
+      const source = addOnline ? '<div class="sugg-note">这是 Bangumi 刚翻回来的结果……</div>' : '';
+      addList.innerHTML = hits.length ? source + hits.map((p) => {
         const initial = esc((p.t.replace(/[！!？?＿—－・\s]/g, ' ').trim()[0]) || '☆');
         const added = TRACKS.some((t) => t.id === p.id);
         return `
@@ -532,19 +551,117 @@
           <span class="mini-cover" style="background:linear-gradient(160deg,hsl(${p.hue},45%,68%),hsl(${(p.hue + 40) % 360},40%,50%))">${initial}</span>
           <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.t)}</span>
           <span class="sugg-meta">${esc(p.meta)}${p.weekday ? ' · ' + p.weekday + '更新' : ''}</span>
-          ${added
+          ${added && !backfillTarget
             ? '<span class="tagx mine" style="margin-left:auto">已经在手帐里啦</span>'
-            : `<button class="btn btn-sm btn-primary" type="button" data-add="${p.id}" style="margin-left:auto;flex:none">${ic('plus', 'ic ic-sm')}贴进手帐</button>`}
+            : `<button class="btn btn-sm btn-primary" type="button" data-${backfillTarget ? 'backfill-result' : 'add'}="${p.id}" style="margin-left:auto;flex:none">${ic('plus', 'ic ic-sm')}${backfillTarget ? '回填' : '贴进手帐'}</button>`}
         </div>`;
-      }).join('') : '<div class="sugg-note">没有找到匹配的番剧……换个名字再试试？</div>';
+      }).join('') : `<div class="sugg-note">${addOnline ? 'Bangumi 也没找到……换个名字再试试？' : '没有找到匹配的番剧……换个名字再试试？'}</div>`;
     }
     $$('[data-dialog-open="addDlg"]').forEach((b) => b.addEventListener('click', () => {
+      $('#addDlgTitle').textContent = '加番';
+      $('#addDlgSub').textContent = '哼，先把想看的贴好。找得到 BGM 就认领，找不到也能先留一张手帐。';
       $('#addSearch').value = '';
+      addOnline = false;
+      backfillTarget = null;
+      customAddOpen = false;
+      customAddPane.hidden = true;
+      addSearchPanel.hidden = false;
+      addSearchTab.classList.add('on');
+      addSearchTab.setAttribute('aria-selected', 'true');
+      addCustomBtn.hidden = false;
+      addCustomBtn.classList.remove('on');
+      addCustomBtn.setAttribute('aria-selected', 'false');
+      addOnlineBtn.disabled = true;
+      addOnlineBtn.className = 'btn btn-sm btn-primary add-online-btn';
+      addOnlineBtn.innerHTML = `${ic('refresh', 'ic ic-sm')}在线搜 Bangumi`;
       renderPool();
     }));
-    $('#addSearch').addEventListener('input', renderPool);
+    $('#addSearch').addEventListener('input', () => {
+      addOnline = false;
+      addOnlineBtn.disabled = !$('#addSearch').value.trim();
+      addOnlineBtn.className = 'btn btn-sm btn-primary add-online-btn';
+      addOnlineBtn.innerHTML = `${ic('refresh', 'ic ic-sm')}在线搜 Bangumi`;
+      renderPool();
+    });
+    addCustomBtn.addEventListener('click', () => {
+      customAddOpen = !customAddOpen;
+      customAddPane.hidden = !customAddOpen;
+      addSearchPanel.hidden = customAddOpen;
+      addSearchTab.classList.toggle('on', !customAddOpen);
+      addSearchTab.setAttribute('aria-selected', String(!customAddOpen));
+      addCustomBtn.classList.toggle('on', customAddOpen);
+      addCustomBtn.setAttribute('aria-selected', String(customAddOpen));
+      addOnlineBtn.disabled = customAddOpen || !$('#addSearch').value.trim();
+      if (customAddOpen) {
+        customAddTitle.value = $('#addSearch').value.trim();
+        customAddTitle.focus();
+        addList.innerHTML = '';
+      } else {
+        renderPool();
+        $('#addSearch').focus();
+      }
+    });
+    addSearchTab.addEventListener('click', () => {
+      customAddOpen = false;
+      customAddPane.hidden = true;
+      addSearchPanel.hidden = false;
+      addSearchTab.classList.add('on');
+      addSearchTab.setAttribute('aria-selected', 'true');
+      addCustomBtn.classList.remove('on');
+      addCustomBtn.setAttribute('aria-selected', 'false');
+      addOnlineBtn.disabled = !$('#addSearch').value.trim();
+      renderPool();
+      $('#addSearch').focus();
+    });
+    customAddSubmit.addEventListener('click', () => {
+      const title = customAddTitle.value.trim();
+      if (!title) {
+        toast('先写个标题嘛……', { err: true });
+        customAddTitle.focus();
+        return;
+      }
+      const id = `manual-${Date.now()}`;
+      TRACKS.unshift({ id, t: title, manual: true, status: 'wish', ep: 0, total: null, weekday: null, hue: 315, tags: [] });
+      render();
+      customAddTitle.value = '';
+      $('#addSearch').value = '';
+      customAddOpen = false;
+      customAddPane.hidden = true;
+      addSearchPanel.hidden = false;
+      addSearchTab.classList.add('on');
+      addSearchTab.setAttribute('aria-selected', 'true');
+      addCustomBtn.classList.remove('on');
+      addCustomBtn.setAttribute('aria-selected', 'false');
+      addOnlineBtn.disabled = true;
+      addList.innerHTML = '';
+      toast(`哼，『${title}』先贴进手帐啦，等 BGM 出现再回填。`);
+      closeDialog(customAddSubmit);
+    });
+    addOnlineBtn.addEventListener('click', () => {
+      if (!$('#addSearch').value.trim()) return;
+      addOnline = !addOnline;
+      addOnlineBtn.className = `btn btn-sm ${addOnline ? 'btn-ghost' : 'btn-primary'} add-online-btn`;
+      addOnlineBtn.innerHTML = addOnline ? `${ic('back', 'ic ic-sm')}翻离线目录` : `${ic('refresh', 'ic ic-sm')}在线搜 Bangumi`;
+      renderPool();
+    });
     addList.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-add]');
+      const backfillBtn = e.target.closest('[data-backfill-result]');
+      if (backfillBtn && backfillTarget) {
+        const p = POOL.concat(ONLINE_POOL).find((x) => x.id === backfillBtn.dataset.backfillResult);
+        const t = TRACKS.find((x) => x.id === backfillTarget);
+        if (!p || !t) return;
+        t.id = p.id;
+        t.t = p.t;
+        t.manual = false;
+        t.weekday = p.weekday;
+        t.hue = p.hue;
+        backfillTarget = null;
+        render();
+        $('.dlg-close', $('#addDlg')).click();
+        toast(`『${p.t}』对上 BGM 啦，进度和标签都留着。`);
+        return;
+      }
       if (!btn) return;
       const p = POOL.find((x) => x.id === btn.dataset.add);
       TRACKS.unshift({ id: p.id, t: p.t, status: 'wish', ep: 0, total: null, weekday: p.weekday, hue: p.hue, tags: [] });
@@ -557,7 +674,26 @@
       const card = e.target.closest('[data-id]');
       if (!card) return;
       const t = findTrack(card);
-      if (e.target.closest('.ep-plus')) {
+      if (e.target.closest('[data-backfill]')) {
+        backfillTarget = t.id;
+        openDialog('addDlg');
+        $('#addDlgTitle').textContent = '回填 BGM';
+        $('#addDlgSub').textContent = '先把这张手帐和 BGM 对上，进度、标签和封面都会留下。';
+        $('#addSearch').value = t.t;
+        customAddOpen = false;
+        customAddPane.hidden = true;
+        addSearchPanel.hidden = false;
+        addSearchTab.classList.add('on');
+        addSearchTab.setAttribute('aria-selected', 'true');
+        addCustomBtn.classList.remove('on');
+        addCustomBtn.setAttribute('aria-selected', 'false');
+        addCustomBtn.hidden = true;
+        addOnline = false;
+        addOnlineBtn.disabled = false;
+        addOnlineBtn.className = 'btn btn-sm btn-primary add-online-btn';
+        addOnlineBtn.innerHTML = `${ic('refresh', 'ic ic-sm')}在线搜 Bangumi`;
+        renderPool();
+      } else if (e.target.closest('.ep-plus')) {
         t.ep += 1;
         if (t.status === 'wish') { t.status = 'doing'; toast(`『${t.t}』开始追啦`); }
         rerenderCard(t); renderCounts();

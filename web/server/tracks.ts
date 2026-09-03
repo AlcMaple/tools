@@ -37,6 +37,8 @@ const USER_TAG_MAX_LEN = 20
 const USER_TAG_MAX_COUNT = 12
 const MAX_TRACKS = 5000 // 单次同步 / 导入的条数上限（正常用户几百条封顶）
 
+const isCustomBgmId = (bgmId: number): boolean => Number.isInteger(bgmId) && bgmId < 0
+
 interface TrackRow {
   bgm_id: number
   status: string
@@ -57,7 +59,7 @@ interface TrackRow {
   cover_mime: string
 }
 
-// 本地上传封面：文件按 `<uid>_<bgmId>` 落 coversDir，不带扩展名 —— 实际类型看 cover_mime 那一列。
+// 本地上传封面：文件按 `<uid>_<bgmId>` 落 coversDir，不带扩展名 —— 负数 bgmId 也可用，实际类型看 cover_mime 那一列。
 const coverFilePath = (uid: number, bgmId: number): string => join(coversDir, `${uid}_${bgmId}`)
 // DB 的 cover 列存这个哨兵路径时，才代表「图在 coversDir 里」（另一半凭据是 cover_mime 非空）。
 // app 拉取时会原样拿到它、上传时又原样推回来 —— 同步那边要靠它把「推回自己的路径」和
@@ -244,6 +246,15 @@ async function withCoverFileLock<T>(uid: number, bgmId: number, run: () => Promi
   return operation
 }
 
+async function withCoverFileLocks<T>(uid: number, bgmIds: number[], run: () => Promise<T>): Promise<T> {
+  const ids = [...new Set(bgmIds)].sort((a, b) => a - b)
+  const acquire = (index: number): Promise<T> =>
+    index >= ids.length
+      ? run()
+      : withCoverFileLock(uid, ids[index], () => acquire(index + 1))
+  return acquire(0)
+}
+
 function cleanupOrphanedCover(uid: number, bgmId: number): void {
   void withCoverFileLock(uid, bgmId, async () => {
     const current = oneStmt.get(uid, bgmId) as TrackRow | undefined
@@ -370,6 +381,7 @@ async function requireUid(c: Context): Promise<number | null> {
  * 查的是本机 SQLite 单行主键命中，微秒级，不会拖慢「追番」按钮。
  */
 function initialTotal(bgmId: number, airDate: string): number | null {
+  if (isCustomBgmId(bgmId)) return null
   if (isRecentAir(airDate)) return null
   return epsOf(bgmId) || null
 }
@@ -382,6 +394,7 @@ function initialTotal(bgmId: number, airDate: string): number | null {
  * 失败静默放过:下次相关入口还会触发,**绝不重试打死对面**。
  */
 function fillDetailLater(uid: number, bgmId: number): void {
+  if (isCustomBgmId(bgmId)) return
   const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
   if (!existing || parseList(existing.bgm_tags).length > 0) return
 
@@ -729,9 +742,15 @@ tracks.put('/:bgmId', async (c) => {
   if (!uid) return c.json({ error: '未登录' }, 401)
 
   const bgmId = Number(c.req.param('bgmId'))
-  if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
+  if (!Number.isInteger(bgmId) || bgmId === 0) return c.json({ error: 'bgmId 不合法' }, 400)
 
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  const customCreation = isCustomBgmId(bgmId) && !oneStmt.get(uid, bgmId)
+  const customTitle = typeof body.title === 'string' ? body.title.trim() : ''
+  if (customCreation || (isCustomBgmId(bgmId) && 'title' in body)) {
+    if (!customTitle) return c.json({ error: '自定义番名不能为空' }, 400)
+    if (customTitle.length > 200) return c.json({ error: '自定义番名过长' }, 400)
+  }
   const now = Date.now()
   // 客户端提交的标题不能直接进入全站共享目录。只有服务端在线搜索签发过、且 bgmId
   // 与当前路径一致的候选才有资格在「确实插入新追番」时晋升为持久补充记录。
@@ -803,20 +822,26 @@ tracks.put('/:bgmId', async (c) => {
     const prev = oneStmt.get(uid, bgmId) as TrackRow | undefined
     if (!prev) {
       const airDate = String(body.airDate ?? '')
+      const insertedTotal = isCustomBgmId(bgmId)
+        ? (hasTotal ? nextTotal : null)
+        : initialTotal(bgmId, airDate)
+      const insertedEpisode = isCustomBgmId(bgmId) && hasEpisode
+        ? (insertedTotal != null ? Math.min(nextEpisode, insertedTotal) : nextEpisode)
+        : 0
       insertStmt.run({
         user_id: uid,
         bgm_id: bgmId,
         status: nextStatus ?? 'watching',
-        episode: 0,
-        total_episodes: initialTotal(bgmId, airDate),
-        title: String(body.title ?? ''),
+        episode: insertedEpisode,
+        total_episodes: insertedTotal,
+        title: isCustomBgmId(bgmId) ? customTitle : String(body.title ?? ''),
         title_cn: String(body.titleCn ?? ''),
         cover: String(body.cover ?? ''),
         air_weekday: Number(body.airWeekday) || weekdayFromDate(airDate),
         air_date: airDate,
         score: Number(body.score) || 0,
         bgm_tags: '[]',
-        user_tags: '[]',
+        user_tags: JSON.stringify(nextUserTags ?? []),
         aliases: '[]',
         extra: (hasGoodEpisodes || hasGoodEpisodeNotes || hasFavorite)
           ? JSON.stringify({
@@ -904,6 +929,136 @@ tracks.put('/:bgmId', async (c) => {
   return c.json(toJson(result.row))
 })
 
+// 手动条目回填：只替换 bgmId 与 BGM 元数据，用户状态、进度、自定义标签和封面归属原卡保留。
+// 本地封面按 uid+bgmId 命名，迁移时在同一把文件锁下复制到新 ID，再提交 DB 主键变更。
+tracks.post('/:customBgmId/backfill', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+
+  const customBgmId = Number(c.req.param('customBgmId'))
+  if (!isCustomBgmId(customBgmId)) return c.json({ error: '这不是自定义条目' }, 400)
+
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  const bgmId = Number(body.bgmId)
+  if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'BGM ID 不合法' }, 400)
+  if (!oneStmt.get(uid, customBgmId)) return c.json({ error: '自定义条目已经不在手帐里了' }, 404)
+  if (oneStmt.get(uid, bgmId)) return c.json({ error: '这部 BGM 已经在手帐里了，请先处理重复条目' }, 409)
+
+  let detail: Awaited<ReturnType<typeof fetchSubjectDetail>>
+  try {
+    detail = await fetchSubjectDetail(bgmId, 8000)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'BGM 详情读取失败'
+    return c.json({ error: `BGM 详情没接上：${message}` }, 502)
+  }
+
+  const now = Date.now()
+  const oldCoverPath = coverFilePath(uid, customBgmId)
+  const newCoverPath = coverFilePath(uid, bgmId)
+  try {
+    const result = await withCoverFileLocks(uid, [customBgmId, bgmId], async () => {
+      const source = oneStmt.get(uid, customBgmId) as TrackRow | undefined
+      if (!source) return { kind: 'missing' as const }
+      if (oneStmt.get(uid, bgmId)) return { kind: 'duplicate' as const }
+
+      const sourceHasCoverSentinel = source.cover === coverSentinel(customBgmId)
+      const sourceHasLocalCover = sourceHasCoverSentinel && !!source.cover_mime
+      let localBytes: Buffer | null = null
+      if (sourceHasLocalCover) {
+        try {
+          const bytes = await readFile(oldCoverPath)
+          await writeFile(newCoverPath, bytes)
+          localBytes = bytes
+        } catch {
+          localBytes = null
+          await unlink(newCoverPath).catch(() => {})
+        }
+      }
+
+      const apply = db.transaction(() => {
+        const current = oneStmt.get(uid, customBgmId) as TrackRow | undefined
+        if (!current) return { kind: 'missing' as const }
+        if (oneStmt.get(uid, bgmId)) return { kind: 'duplicate' as const }
+
+        const keepLocalCover = localBytes !== null
+          && current.cover === coverSentinel(customBgmId)
+          && !!current.cover_mime
+        const hasUserCover = !!current.cover && (current.cover !== coverSentinel(customBgmId) || keepLocalCover)
+        const title = detail.name.trim() || current.title
+        const titleCn = detail.nameCn.trim()
+        const airDate = detail.date || current.air_date
+        const airWeekday = detail.date ? weekdayFromDate(detail.date) || current.air_weekday : current.air_weekday
+        const totalEpisodes = detail.eps > 0 ? Math.max(detail.eps, current.episode) : current.total_episodes
+        const nextCover = keepLocalCover
+          ? coverSentinel(bgmId)
+          : hasUserCover
+            ? current.cover
+            : detail.cover
+        const nextMime = keepLocalCover ? current.cover_mime : ''
+
+        db.prepare(`
+          UPDATE tracks
+          SET bgm_id = ?,
+              title = ?, title_cn = ?,
+              cover = ?, cover_mime = ?,
+              air_weekday = ?, air_date = ?, score = ?,
+              bgm_tags = ?, aliases = ?, total_episodes = ?, updated_at = ?
+          WHERE user_id = ? AND bgm_id = ?
+        `).run(
+          bgmId,
+          title,
+          titleCn,
+          nextCover,
+          nextMime,
+          airWeekday,
+          airDate,
+          detail.score > 0 ? detail.score : current.score,
+          detail.tags.length ? JSON.stringify(detail.tags) : current.bgm_tags,
+          detail.aliases.length ? JSON.stringify(detail.aliases) : current.aliases,
+          totalEpisodes,
+          now,
+          uid,
+          customBgmId,
+        )
+        saveSearchAddition({
+          bgmId,
+          name: detail.name.trim() || title,
+          nameCn: detail.nameCn.trim() || titleCn,
+          date: detail.date,
+          score: detail.score,
+        }, now)
+        bumpRev(uid)
+        return {
+          kind: 'ok' as const,
+          keepLocalCover,
+          row: oneStmt.get(uid, bgmId) as TrackRow,
+        }
+      })
+      let applied: ReturnType<typeof apply>
+      try {
+        applied = apply.immediate()
+      } catch (error) {
+        if (localBytes !== null) await unlink(newCoverPath).catch(() => {})
+        throw error
+      }
+      if (applied.kind === 'ok') {
+        if (localBytes !== null && !applied.keepLocalCover) await unlink(newCoverPath).catch(() => {})
+        if (sourceHasCoverSentinel) await unlink(oldCoverPath).catch(() => {})
+      } else if (localBytes !== null) {
+        await unlink(newCoverPath).catch(() => {})
+      }
+      return applied
+    })
+
+    if (result.kind === 'missing') return c.json({ error: '自定义条目已经不在手帐里了' }, 404)
+    if (result.kind === 'duplicate') return c.json({ error: '这部 BGM 已经在手帐里了，请先处理重复条目' }, 409)
+    return c.json(toJson(result.row))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '自定义条目回填失败'
+    return c.json({ error: `回填没有完成：${message}` }, 500)
+  }
+})
+
 /** null / '' → null（连载中）；正整数 → 它自己；其余 → undefined（= 不合法） */
 function asTotal(v: unknown): number | null | undefined {
   if (v === null || v === '') return null
@@ -915,7 +1070,7 @@ tracks.delete('/:bgmId', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
   const bgmId = Number(c.req.param('bgmId'))
-  if (!Number.isInteger(bgmId)) return c.json({ error: 'bgmId 不合法' }, 400)
+  if (!Number.isInteger(bgmId) || bgmId === 0) return c.json({ error: 'bgmId 不合法' }, 400)
   const remove = db.transaction(() => {
     const result = delStmt.run(uid, bgmId)
     if (result.changes > 0) bumpRev(uid)
@@ -933,7 +1088,7 @@ tracks.post('/:bgmId/cover', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
   const bgmId = Number(c.req.param('bgmId'))
-  if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
+  if (!Number.isInteger(bgmId) || bgmId === 0) return c.json({ error: 'bgmId 不合法' }, 400)
   if (!oneStmt.get(uid, bgmId)) return c.json({ error: '未追这部番' }, 404)
 
   const body = await c.req.parseBody().catch(() => null)
@@ -968,7 +1123,7 @@ tracks.get('/:bgmId/good-episodes', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
   const bgmId = Number(c.req.param('bgmId'))
-  if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
+  if (!Number.isInteger(bgmId) || bgmId === 0) return c.json({ error: 'bgmId 不合法' }, 400)
   c.header('Cache-Control', 'no-store')
   const row = oneStmt.get(uid, bgmId) as TrackRow | undefined
   if (!row) return c.json({ goodEpisodes: [], goodEpisodeNotes: {} })

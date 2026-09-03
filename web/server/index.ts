@@ -19,7 +19,7 @@ import reviews from './reviews'
 import { sameOriginGuard, securityHeaders } from './security'
 
 // 本地开发通常没有 5.6MB 的 bgm_index.db（生成它要下载 400MB+ 官方离线档）。
-// 仅 localhost 且本地索引未就绪时，借线上公开搜索 API 返回同形数据；追番写入、
+// 仅 localhost 且本地索引未就绪时，借线上公开的**离线结果**返回同形数据；追番写入、
 // 登录和稀饭会话仍全部留在本地。生产有自己的索引，不会走这里。
 const DEV_SEARCH_ORIGIN = process.env.DEV_SEARCH_ORIGIN || 'https://anime.alcmaple.cn'
 
@@ -27,10 +27,17 @@ async function searchFromDeployedWeb(q: string): Promise<Record<string, unknown>
   try {
     const url = new URL('/api/search', DEV_SEARCH_ORIGIN)
     url.searchParams.set('q', q)
+    url.searchParams.set('mode', 'local')
     const response = await fetch(url, { signal: AbortSignal.timeout(12000) })
     if (!response.ok) return null
     const data = (await response.json()) as Record<string, unknown>
-    return data.ready === true && Array.isArray(data.data) ? data : null
+    // 旧站点在没有本地结果时会自动在线兜底；本地开发的借用结果只接受离线来源，
+    // 避免一个旧部署把「默认搜索」又悄悄带到 BGM。
+    return data.ready === true
+      && (data.source === 'local' || data.source === 'learned')
+      && Array.isArray(data.data)
+      ? data
+      : null
   } catch {
     return null
   }
@@ -83,17 +90,25 @@ app.route('/api/xifan', xifan)
 // Girigiri 在线观看：同样是服务端解析页面元数据、浏览器直连源 CDN，不中转视频。
 app.route('/api/girigiri', girigiri)
 
-// 追番「搜索加番」—— 打**本地** BGM 动漫索引（bgm_index.db），见 bgm/anime-index.ts。
-// 索引没生成时 ready=false，前端据此提示目录尚未整理好。
-//
-// 只有本地**一条都没搜到**时，才查「用户实际加过」的持久补充表；它也没有才退回一次
-// BGM 在线搜（离线档每周三才更新，本周新建的条目本地必然没有）。本地或补充表有结果就
-// 绝不联网 —— 单机单 IP 被 BGM 限流会把周历和封面代理一起带走。在线那条路仍保留原有
-// 缓存 / 限速 / 冷却，且失败不重试（bgm/search-online.ts）。
+// 追番「搜索加番」默认只打**本地** BGM 动漫索引（bgm_index.db）和成功加番积累的补充表，
+// 见 bgm/anime-index.ts / bgm/search-additions.ts。离线档每周更新，命中并不代表 BGM
+// 刚刚新增的条目也在里面，所以前端把在线搜索做成用户可见的明确动作，而不是隐式兜底。
+// `mode=online` 才会访问 BGM 在线搜索；这条路仍保留缓存 / 限速 / 冷却，且失败不重试
+//（bgm/search-online.ts）。
 app.get('/api/search', async (c) => {
   const q = c.req.query('q') ?? ''
+  const onlineRequested = c.req.query('mode') === 'online' || c.req.query('online') === '1'
   const st = indexStatus()
   c.header('Cache-Control', 'no-store')
+
+  // 在线搜索是独立入口：索引缺失、过期或已有本地结果都不影响用户主动去 BGM 查最新条目。
+  if (onlineRequested) {
+    const base = { ready: st.ready, total: st.count, builtAt: st.builtAt }
+    if (!q.trim()) return c.json({ ...base, source: 'online', data: [] })
+    const online = await searchOnline(q)
+    return c.json({ ...base, source: 'online', data: online.hits, onlineError: online.error })
+  }
+
   if (!st.ready) {
     const hostname = new URL(c.req.url).hostname
     const localRequest = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
@@ -109,8 +124,7 @@ app.get('/api/search', async (c) => {
   if (local.length || !q.trim()) return c.json({ ...base, source: 'local', data: local })
   const learned = searchAdditions(q, 30)
   if (learned.length) return c.json({ ...base, source: 'learned', data: learned })
-  const online = await searchOnline(q)
-  return c.json({ ...base, source: 'online', data: online.hits, onlineError: online.error })
+  return c.json({ ...base, source: 'local', data: [] })
 })
 
 app.get('/api/calendar', async (c) => {
