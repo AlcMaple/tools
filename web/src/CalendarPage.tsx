@@ -18,10 +18,18 @@ import { useIsWide } from './useMediaQuery'
 const CALENDAR_CACHE_KEY = 'calendar'
 const CALENDAR_TTL = 14 * 24 * 60 * 60_000
 
-// 纱雾驻场气泡的两句台词：一句引导向右（因为看不到右边还有内容正是这页的痛点），
-// 一句是原来的「一周的排片都在这页上」。每隔几秒换一句；减少动态效果时固定第一句。
-const SAGIRI_A = '右边的番剧还有好多呢…\n点那颗小箭头，就能一直看下去啦'
-const SAGIRI_B = '一周的排片都在这页上，慢慢挑吧～'
+// 纱雾驻场气泡台词：横向布局的痛点是看不到右边还有内容，一句专门引导「点箭头往右」；
+// 纵向布局没有左右翻页，改成「往下滑」的闲适口吻。每隔几秒换一句；减少动态效果时固定第一句。
+const SAGIRI_LINES: Record<CalendarLayout, readonly [string, string]> = {
+  horizontal: [
+    '右边的番剧还有好多呢…\n点那颗小箭头，就能一直看下去啦',
+    '一周排片都在这页上，慢慢挑～',
+  ],
+  vertical: [
+    '整周的番剧都铺在这一页了\n往下滑，慢慢挑吧～',
+    '想看哪天，就滑到哪天～',
+  ],
+}
 const SAGIRI_SWAP_MS = 4200
 
 type CalendarLayout = 'horizontal' | 'vertical'
@@ -392,7 +400,10 @@ export function CalendarPage(): JSX.Element {
     } catch {
       // 存储不可用时不影响本次切换。
     }
+    // 切换布局后先回到「引导句」，让新布局对应的那句先亮出来。
+    setSagiriLine('a')
   }, [layoutMode])
+  const sagiriLines = SAGIRI_LINES[layoutMode]
 
   // 复用 TracksPage 同一套「秒开缓存 + 后台校验」逻辑（tracksSync.ts）——两页共享
   // 同一份 tracks:<username> 缓存，谁先加载过谁就替对方省一次请求。
@@ -559,6 +570,7 @@ export function CalendarPage(): JSX.Element {
       )}
 
       <div className={`calendar-stage mt16 layout-${layoutMode}`}>
+        <span className="kira calendar-kira">サラサラ</span>
         <div className="calendar-rig-layer">
           <div
             className={`calendar-rig${rig.dragging ? ' dragging' : ''}`}
@@ -577,16 +589,12 @@ export function CalendarPage(): JSX.Element {
             <img className="rig" src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘（全身）" draggable={false} />
             <div className="bubble rig-bubble">
               <span className={`sagiri-line${sagiriLine === 'a' ? ' show' : ''}`}>
-                {SAGIRI_A}
+                {sagiriLines[0]}
               </span>
               <span className={`sagiri-line${sagiriLine === 'b' ? ' show' : ''}`}>
-                {SAGIRI_B}
+                {sagiriLines[1]}
               </span>
-              <small className="rig-drag-hint">按住我和气泡拖一拖，想放哪儿都行～</small>
             </div>
-            <span className="kira" style={{ bottom: 78, right: -10, transform: 'rotate(6deg)' }}>
-              サラサラ
-            </span>
           </div>
         </div>
 
