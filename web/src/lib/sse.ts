@@ -5,10 +5,6 @@
 // 只认 `data:` 行，`[DONE]` 和解析失败的行直接跳过。事件之间以空行（\n\n）分隔——
 // 按空行切分保证每次 parse 的都是完整 JSON，不会截断。
 
-/**
- * 逐个读取 SSE 事件。`onEvent` 抛出的错误会中断读取并向上冒泡（用于把流内的
- * `{ t: 'error' }` 事件转成 reject）。
- */
 export async function consumeSSE<T = unknown>(
   body: ReadableStream<Uint8Array>,
   onEvent: (evt: T) => void,
