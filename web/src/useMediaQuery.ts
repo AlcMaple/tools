@@ -18,7 +18,7 @@ export function useIsCompact(): boolean {
 }
 
 // 手帐骨架的分界线（书脊 ↔ 顶栏+底部标签 同一条）：≥961px 桌面态。
-// 周历用它切换「整周纵览（桌面）/ 日期章选天（手机）」。
+// 周历横向布局在宽屏显示整周、窄屏保留日期章选天；另一种纵向布局由页面开关控制。
 export function useIsWide(): boolean {
   const query = '(min-width: 961px)'
   const [match, setMatch] = useState(
