@@ -6,29 +6,32 @@ import App from './App'
 import { registerCoverCacheWorker } from './coverCache'
 import './index.css'
 
-async function bootstrap(): Promise<void> {
-  let captureRecoverableError: ((error: unknown, componentStack?: string) => void) | undefined
-  if (import.meta.env.VITE_SENTRY_DSN?.trim()) {
-    try {
-      const monitoring = await import('./monitoring')
-      monitoring.initBrowserMonitoring()
-      captureRecoverableError = monitoring.captureRecoverableReactError
-    } catch (error) {
-      // 监控脚本加载失败不能挡住产品本身启动；此时还没有可用的上报通道，只能留在控制台。
-      console.error('[monitoring] browser initialization failed', error)
-    }
-  }
+type CaptureRecoverableError = (error: unknown, componentStack?: string) => void
 
-  registerCoverCacheWorker()
-  createRoot(document.getElementById('root')!, {
-    onRecoverableError: captureRecoverableError
-      ? (error, info) => captureRecoverableError?.(error, info.componentStack ?? undefined)
-      : undefined,
-  }).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  )
-}
+// 监控属于旁路能力，首屏渲染先完成。移动 Safari 恢复长期挂起的标签页时，动态分片可能
+// 迟迟不返回；先挂载 React，应用仍能打开，监控分片回来后再接收可恢复错误。
+const monitoringReady: Promise<CaptureRecoverableError | undefined> = import.meta.env.VITE_SENTRY_DSN?.trim()
+  ? import('./monitoring')
+      .then((monitoring) => {
+        monitoring.initBrowserMonitoring()
+        return monitoring.captureRecoverableReactError
+      })
+      .catch((error: unknown) => {
+        // 监控脚本加载失败不影响产品本身启动；此时还没有可用的上报通道，留在控制台即可。
+        console.error('[monitoring] browser initialization failed', error)
+        return undefined
+      })
+  : Promise.resolve(undefined)
 
-void bootstrap()
+registerCoverCacheWorker()
+createRoot(document.getElementById('root')!, {
+  onRecoverableError: import.meta.env.VITE_SENTRY_DSN?.trim()
+    ? (error, info) => {
+        void monitoringReady.then((capture) => capture?.(error, info.componentStack ?? undefined))
+      }
+    : undefined,
+}).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
