@@ -736,12 +736,18 @@ function TagFilter({
   onChange: (s: Set<string>) => void
 }): JSX.Element {
   const [open, setOpen] = useState(false)
+  const [tagQuery, setTagQuery] = useState('')
   const box = useRef<HTMLDivElement>(null)
+  const tagSearch = useRef<HTMLInputElement>(null)
 
   // mousedown 而非 click —— 勾选会重建列表，click 冒泡上来时 e.target 已不在 DOM 上，
   // contains 判 false，弹窗会自己关掉（Select.tsx 同款写法）
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setTagQuery('')
+      return
+    }
+    const focusTimer = window.setTimeout(() => tagSearch.current?.focus(), 0)
     const onDown = (e: MouseEvent): void => {
       if (box.current && !box.current.contains(e.target as Node)) setOpen(false)
     }
@@ -751,6 +757,7 @@ function TagFilter({
     window.addEventListener('mousedown', onDown)
     window.addEventListener('keydown', onKey)
     return () => {
+      window.clearTimeout(focusTimer)
       window.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)
     }
@@ -761,6 +768,11 @@ function TagFilter({
     next.has(t) ? next.delete(t) : next.add(t)
     onChange(next)
   }
+
+  const visibleTags = useMemo(() => {
+    const q = tagQuery.trim().toLowerCase()
+    return q ? all.filter(([tag]) => tag.toLowerCase().includes(q)) : all
+  }, [all, tagQuery])
 
   return (
     <div ref={box} className={`dd-host${open ? ' open' : ''}`}>
@@ -780,24 +792,49 @@ function TagFilter({
       </button>
 
       {open && (
-        <div className="dd">
-          {all.length === 0 ? (
-            <p className="sugg-note">还没有标签</p>
-          ) : (
-            all.map(([t, n]) => (
-              <button key={t} type="button" className={`dd-item${selected.has(t) ? ' on' : ''}`} onClick={() => toggle(t)}>
-                <span className={`dd-check${selected.has(t) ? ' on' : ''}`}>
-                  {selected.has(t) && <Ic name="check" cls="ic ic-sm" />}
-                </span>
-                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {t}
-                </span>
-                <span className="faint">{n}</span>
+        <div className="dd dd-tag-filter">
+          <div className="tag-filter-search">
+            <Ic name="search" cls="ic ic-sm" />
+            <input
+              ref={tagSearch}
+              type="text"
+              value={tagQuery}
+              onChange={(e) => setTagQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}
+              placeholder="搜标签…"
+              aria-label="搜索标签"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {tagQuery && (
+              <button type="button" className="tag-filter-clear-search" onClick={() => setTagQuery('')} aria-label="清空标签搜索">
+                <Ic name="x" cls="ic ic-sm" />
               </button>
-            ))
-          )}
+            )}
+          </div>
+
+          <div className="tag-filter-list">
+            {all.length === 0 ? (
+              <p className="sugg-note">还没有标签</p>
+            ) : visibleTags.length === 0 ? (
+              <p className="sugg-note">没有匹配的标签</p>
+            ) : (
+              visibleTags.map(([t, n]) => (
+                <button key={t} type="button" className={`dd-item${selected.has(t) ? ' on' : ''}`} onClick={() => toggle(t)}>
+                  <span className={`dd-check${selected.has(t) ? ' on' : ''}`}>
+                    {selected.has(t) && <Ic name="check" cls="ic ic-sm" />}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {t}
+                  </span>
+                  <span className="faint">{n}</span>
+                </button>
+              ))
+            )}
+          </div>
+
           {selected.size > 0 && (
-            <button type="button" className="dd-item" style={{ color: 'var(--sakura)' }} onClick={() => onChange(new Set())}>
+            <button type="button" className="dd-item tag-filter-clear-all" onClick={() => onChange(new Set())}>
               清空过滤
             </button>
           )}
