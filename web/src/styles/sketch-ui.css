@@ -909,17 +909,57 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   transition: width .35s var(--ease-stick);
 }
 .prog.done > i { background: repeating-linear-gradient(135deg, var(--gold) 0 5px, #d9a93c 5px 10px); border-right-color: var(--gold); }
-.ep-progress {
+.ep-progress-shell {
   position: relative;
-  cursor: ew-resize;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 100px;
+  height: 30px;
+  cursor: grab;
   touch-action: none;
   user-select: none;
 }
-.ep-progress > i { pointer-events: none; }
-.ep-progress.is-static { cursor: default; touch-action: auto; }
-.ep-progress.is-dragging > i { transition: none; }
-.ep-progress:focus-visible { outline: 2px dashed var(--teal); outline-offset: 3px; }
-@media (hover: hover) { .ep-progress:not(.is-static):hover { border-color: var(--teal-line); } }
+.ep-progress-track { width: 100%; }
+.ep-progress-track > i { pointer-events: none; }
+.ep-progress-shell.is-static { cursor: default; touch-action: auto; }
+.ep-progress-shell.is-dragging { cursor: grabbing; }
+.ep-progress-shell.is-dragging .ep-progress-track > i { transition: none; }
+.ep-progress-shell:focus-visible { outline: 2px dashed var(--teal); outline-offset: 3px; }
+.ep-progress-handle {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 30px;
+  padding: 2px;
+  align-items: center;
+  justify-content: center;
+  color: var(--teal);
+  background: var(--card);
+  border: 1.5px solid var(--teal);
+  border-radius: 5px 8px 5px 8px;
+  box-shadow: var(--shadow-stick);
+  font: inherit;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  cursor: grab;
+  z-index: 1;
+}
+.ep-progress-grip {
+  width: 8px;
+  height: 15px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(to bottom, currentColor 0 1.5px, transparent 1.5px 4px);
+}
+.ep-progress-shell.is-dragging .ep-progress-handle { cursor: grabbing; }
+@media (hover: hover) and (min-width: 961px) {
+  .ep-progress-shell:not(.is-static):hover .ep-progress-track { border-color: var(--teal-line); }
+  .ep-progress-shell.is-dragging .ep-progress-handle { display: inline-flex; pointer-events: none; }
+  .ep-progress-shell:not(.is-static):not(.is-dragging):hover .ep-progress-handle { display: inline-flex; pointer-events: auto; }
+  .stepper > .ep-num-button:hover { background: var(--teal-wash); }
+}
 
 /* ---------- 标签贴纸 ---------- */
 .tagx-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1550,7 +1590,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .trk-ep { grid-area: ep; font-family: var(--font-hand); font-size: 13px; color: var(--ink-sub); white-space: nowrap; margin-top: 2px; }
 /* 步进器和进度条钉在同一行：窄卡也不换行，进度条吃剩余宽度 */
 .ep-ctrl { display: flex; align-items: center; gap: 8px; }
-.ep-ctrl .prog { flex: 1; min-width: 100px; }
+.ep-ctrl .ep-progress-shell { flex: 1; min-width: 100px; }
+.ep-ctrl .ep-progress-track { flex: 1; min-width: 0; }
 .ep-ctrl .btn { padding: 3px 12px; font-size: 16px; min-height: 36px; }
 .ep-num { font-family: var(--font-hand); font-size: 16px; min-width: 56px; text-align: center; color: var(--ink); }
 .trk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; min-width: 0; }
@@ -1945,7 +1986,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .trk-title { font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
   .trk-ep { display: block; margin: 3px 0 0; font-size: 13px; }
   .ep-ctrl { gap: 6px; }
-  .ep-ctrl .prog { min-width: 56px; }
+  .ep-ctrl .ep-progress-shell { min-width: 56px; }
   .stepper > button { width: 40px; }
   .stepper > .ep-num { min-width: 44px; font-size: 14px; }
   .stepper > .ep-num-input { width: 44px; min-width: 44px; font-size: 14px; }
@@ -2529,7 +2570,6 @@ body[data-auth='out'] .track-btn { display: none; }
   color: var(--ink);
   cursor: pointer;
 }
-.stepper > .ep-num-button:hover { background: var(--teal-wash); }
 .stepper > .ep-num-input {
   width: 60px;
   height: 40px;
