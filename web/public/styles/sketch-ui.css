@@ -699,6 +699,17 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   transition: width .35s var(--ease-stick);
 }
 .prog.done > i { background: repeating-linear-gradient(135deg, var(--gold) 0 5px, #d9a93c 5px 10px); border-right-color: var(--gold); }
+.ep-progress {
+  position: relative;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+.ep-progress > i { pointer-events: none; }
+.ep-progress.is-static { cursor: default; touch-action: auto; }
+.ep-progress.is-dragging > i { transition: none; }
+.ep-progress:focus-visible { outline: 2px dashed var(--teal); outline-offset: 3px; }
+@media (hover: hover) { .ep-progress:not(.is-static):hover { border-color: var(--teal-line); } }
 
 /* ---------- 标签贴纸 ---------- */
 .tagx-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1135,6 +1146,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .ep-ctrl .prog { min-width: 56px; }
   .stepper > button { width: 40px; }
   .stepper > .ep-num { min-width: 44px; font-size: 14px; }
+  .stepper > .ep-num-input { width: 44px; min-width: 44px; font-size: 14px; }
 }
 
 /* 平板保持阅读页比例：不把单列追番卡和操作区无边界拉满。 */
@@ -1423,6 +1435,28 @@ body[data-auth='out'] .track-btn { display: none; }
 @media (hover: hover) { .stepper > button:hover { background: var(--teal-wash); } }
 .stepper > button:active { transform: scale(.88); }
 .stepper > .ep-num { min-width: 60px; text-align: center; border-left: 1.5px dashed var(--line); border-right: 1.5px dashed var(--line); margin: 0; }
+.stepper > .ep-num-button {
+  padding: 0;
+  border-top: none;
+  border-bottom: none;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+.stepper > .ep-num-button:hover { background: var(--teal-wash); }
+.stepper > .ep-num-input {
+  width: 60px;
+  height: 40px;
+  padding: 0 4px;
+  border-top: none;
+  border-bottom: none;
+  background: var(--teal-wash);
+  font: inherit;
+  color: var(--ink);
+  outline: none;
+}
+.stepper > .ep-num-input:focus-visible { outline: 2px dashed var(--teal); outline-offset: -3px; }
 
 /* ---------- 立绘：待机摇摆 + 点击反应 ---------- */
 .rig-click { cursor: pointer; }

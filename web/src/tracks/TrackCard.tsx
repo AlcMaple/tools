@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SOURCES, coverUrl, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
 import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast, watchEp } from './common'
+import { clampEpisode, episodeFromPointer, episodeProgressPercent, parseEpisodeDraft } from './progress'
 
 // ── 卡片（手帐内页行卡） ───────────────────────────────────────────────────────
 export function TrackCard({
@@ -42,14 +43,6 @@ export function TrackCard({
   // 卡片上的行内标签输入（＋ 标签 → 回车贴上）
   const [addingTag, setAddingTag] = useState(false)
   const [tagDraft, setTagDraft] = useState('')
-  // 进度条：有总集数按比例；连载中给个「看过的集数」渐增（原型稿同款公式）
-  const pct =
-    t.totalEpisodes != null
-      ? Math.min(100, Math.round((t.episode / t.totalEpisodes) * 100))
-      : t.episode > 0
-        ? Math.min(100, 8 + t.episode * 6)
-        : 0
-
   const commitTag = (): void => {
     const v = tagDraft.trim()
     if (v && !allTagsOf(t).includes(v)) {
@@ -64,8 +57,9 @@ export function TrackCard({
     setAddingTag(false)
   }
 
-  const step = (delta: number): void => {
-    const ep = Math.max(0, t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode + delta) : t.episode + delta)
+  const commitEpisode = (next: number): void => {
+    if (!Number.isSafeInteger(next)) return
+    const ep = clampEpisode(next, t.totalEpisodes)
     const p: TrackPatch = { episode: ep }
     // 「想看」首次推进 → 自动转「在追」。反方向（推满 → 看完）**不**自动，见文件头注释。
     if (ep > 0 && t.status === 'plan') {
@@ -74,6 +68,7 @@ export function TrackCard({
     }
     onPatch(t.bgmId, p)
   }
+  const step = (delta: number): void => commitEpisode(t.episode + delta)
 
   const considering = t.status === 'considering'
   // 真实 BGM 条目的看完 / 在追才有「写点评」入口；手动条目先回填，避免点到需要正数 bgmId 的接口。
@@ -143,7 +138,7 @@ export function TrackCard({
             >
               <Ic name="minus" cls="ic ic-sm" />
             </button>
-            <span className="ep-num">EP {t.episode}</span>
+            <EpisodeInput episode={t.episode} total={t.totalEpisodes} onCommit={commitEpisode} />
             <button
               type="button"
               className="ep-plus"
@@ -154,9 +149,12 @@ export function TrackCard({
               <Ic name="plus" cls="ic ic-sm" />
             </button>
           </div>
-          <div className={`prog${t.status === 'done' ? ' done' : ''}`}>
-            <i style={{ width: `${pct}%` }} />
-          </div>
+          <EpisodeProgress
+            episode={t.episode}
+            total={t.totalEpisodes}
+            done={t.status === 'done'}
+            onCommit={commitEpisode}
+          />
           </>
           )}
         </div>
@@ -312,6 +310,170 @@ function RemoveBtn({ onAskRemove }: { onAskRemove: () => void }): JSX.Element {
       <Ic name="x" cls="ic ic-sm" />
       移出
     </button>
+  )
+}
+
+function EpisodeInput({
+  episode,
+  total,
+  onCommit,
+}: {
+  episode: number
+  total: number | null
+  onCommit: (episode: number) => void
+}): JSX.Element {
+  const [draft, setDraft] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (draft !== null) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [draft])
+
+  const commit = (): void => {
+    if (draft === null) return
+    setDraft(null)
+    const next = parseEpisodeDraft(draft, total)
+    if (next != null) onCommit(next)
+  }
+
+  if (draft !== null) {
+    return (
+      <input
+        ref={inputRef}
+        className="ep-num ep-num-input"
+        value={draft}
+        inputMode="numeric"
+        pattern="[0-9]*"
+        aria-label="直接输入看到的集数"
+        onChange={(event) => setDraft(event.currentTarget.value.replace(/[^0-9]/g, ''))}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commit()
+          } else if (event.key === 'Escape') {
+            event.preventDefault()
+            setDraft(null)
+          }
+        }}
+      />
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className="ep-num ep-num-button"
+      onClick={() => setDraft(String(episode))}
+      title="点这里直接输入集数"
+      aria-label={`当前第 ${episode} 集，点击直接输入`}
+    >
+      EP {episode}
+    </button>
+  )
+}
+
+function EpisodeProgress({
+  episode,
+  total,
+  done,
+  onCommit,
+}: {
+  episode: number
+  total: number | null
+  done: boolean
+  onCommit: (episode: number) => void
+}): JSX.Element {
+  const progressRef = useRef<HTMLDivElement>(null)
+  const [dragEpisode, setDragEpisode] = useState<number | null>(null)
+  const max = total != null && total > 0 ? total : null
+  const current = max != null ? Math.min(max, Math.max(0, episode)) : Math.max(0, episode)
+  const shown = dragEpisode ?? current
+  const percentage = episodeProgressPercent(shown, max)
+
+  const valueAt = (clientX: number): number | null => {
+    if (max == null) return null
+    const rect = progressRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0) return null
+    return episodeFromPointer(clientX, rect.left, rect.width, max)
+  }
+
+  const release = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const startDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (max == null) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setDragEpisode(valueAt(event.clientX))
+  }
+
+  const moveDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (dragEpisode === null) return
+    setDragEpisode(valueAt(event.clientX))
+  }
+
+  const finishDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (dragEpisode === null) return
+    const next = valueAt(event.clientX)
+    setDragEpisode(null)
+    release(event)
+    if (next != null && next !== current) onCommit(next)
+  }
+
+  const cancelDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (dragEpisode !== null) setDragEpisode(null)
+    release(event)
+  }
+
+  const nudge = (delta: number): void => {
+    if (max == null) return
+    const next = Math.min(max, Math.max(0, current + delta))
+    if (next !== current) onCommit(next)
+  }
+
+  return (
+    <div
+      ref={progressRef}
+      className={`prog ep-progress${done ? ' done' : ''}${max == null ? ' is-static' : ''}${dragEpisode !== null ? ' is-dragging' : ''}`}
+      role={max != null ? 'slider' : 'progressbar'}
+      tabIndex={max != null ? 0 : undefined}
+      aria-label={max != null ? '拖动调整观看进度' : '观看进度，连载中'}
+      aria-orientation={max != null ? 'horizontal' : undefined}
+      aria-valuemin={0}
+      aria-valuemax={max ?? 100}
+      aria-valuenow={max != null ? shown : percentage}
+      aria-valuetext={max != null ? `第 ${shown} 集，共 ${max} 集` : `第 ${current} 集，连载中`}
+      title={max != null ? '拖动调整集数；也可以点 EP 数字输入' : '连载中，点 EP 数字直接输入集数'}
+      onPointerDown={startDrag}
+      onPointerMove={moveDrag}
+      onPointerUp={finishDrag}
+      onPointerCancel={cancelDrag}
+      onKeyDown={(event) => {
+        if (max == null) return
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+          event.preventDefault()
+          nudge(-1)
+        } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+          event.preventDefault()
+          nudge(1)
+        } else if (event.key === 'Home') {
+          event.preventDefault()
+          if (current !== 0) onCommit(0)
+        } else if (event.key === 'End') {
+          event.preventDefault()
+          if (current !== max) onCommit(max)
+        }
+      }}
+    >
+      <i style={{ width: `${percentage}%` }} />
+    </div>
   )
 }
 
