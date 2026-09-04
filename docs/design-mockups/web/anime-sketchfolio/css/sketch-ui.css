@@ -1276,8 +1276,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   color: inherit;
   opacity: .8;
 }
-/* 小屏手机：五个页签按 3 + 2 居中排版，容器贴内容左缘；更宽的移动 / 平板宽度沿用单行。 */
-@media (max-width: 480px) {
+/* 手机：五个页签按 3 + 2 居中排版，观望 / 看完落在第二行，避免大数字挤出横向滚动条。 */
+@media (max-width: 640px) {
   .tabf-row { display: flex; flex-wrap: wrap; justify-content: center; width: min(100%, 282px); margin-left: 0; margin-right: auto; gap: 4px 6px; padding: 0; overflow: visible; }
   .tabf { flex: 0 0 min(90px, calc((100% - 12px) / 3)); max-width: calc((100% - 12px) / 3); min-width: 0; min-height: 40px; padding: 6px 8px; font-size: 12px; text-align: center; }
   .tabf .badge-num { min-width: 15px; margin-left: 3px; padding: 0 4px; font-size: 10px; }
