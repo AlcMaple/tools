@@ -447,8 +447,14 @@ export function TracksPage(): JSX.Element {
         mode,
         body: content.body,
         spoiler: content.spoiler,
-        // 我的评分：发布时勾的 → 喜爱程度。**不能拿 t.score 兜**，那是 BGM 综合分
-        userScore: content.scoreShown > 0 ? content.scoreShown : t.favorite > 0 ? t.favorite : undefined,
+        // 海报分数由爱心、好看集和备注共同计算；t.score 只保留给 BGM 综合分。
+        scoreSignals: {
+          favorite: t.favorite,
+          goodEpisodeCount: t.goodEpisodes.length,
+          notedEpisodeCount: Object.values(t.goodEpisodeNotes).filter((note) => typeof note === 'string' && note.trim()).length,
+          totalEpisodes: t.totalEpisodes,
+          watchedEpisodes: t.episode,
+        },
         bgmScore: material && material.score > 0 ? material.score : t.score > 0 ? t.score : undefined,
         airDate: t.airDate || undefined,
         tags: (content.tagsShown.length

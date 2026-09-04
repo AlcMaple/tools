@@ -15,6 +15,7 @@ import {
 import { Ic, Spinner } from './SketchIcon'
 import { PosterModal } from './reviews/PosterModal'
 import type { PosterInput } from './reviews/poster'
+import type { PosterScoreSignals } from '../shared/poster-score'
 import type { ReviewMode } from './reviews/reviewsApi'
 
 function posterInputFrom(opts: {
@@ -28,6 +29,7 @@ function posterInputFrom(opts: {
   spoiler: 'none' | 'aired' | 'all'
   score: number | null
   bgmScore?: number | null
+  scoreSignals?: PosterScoreSignals
   tags: string[]
   publishedAt: number | null
   username: string
@@ -41,6 +43,7 @@ function posterInputFrom(opts: {
     body: opts.body,
     spoiler: opts.spoiler,
     userScore: opts.score != null && opts.score > 0 ? opts.score : undefined,
+    scoreSignals: opts.scoreSignals,
     bgmScore: opts.bgmScore != null && opts.bgmScore > 0 ? opts.bgmScore : undefined,
     airDate: opts.airDate || undefined,
     tags: opts.tags,
@@ -546,8 +549,14 @@ function PublicTrackCard({ track, username }: { track: PublicTrack; username: st
               mode: openReview,
               body: track[openReview]!.body,
               spoiler: track[openReview]!.spoiler,
-              // track.score 是 BGM 综合分，不是本人打的 —— 只能进 bgmScore
-              score: track.favorite > 0 ? track.favorite : null,
+              score: null,
+              scoreSignals: {
+                favorite: track.favorite,
+                goodEpisodeCount: track.goodEpisodes.length,
+                notedEpisodeCount: Object.values(track.goodEpisodeNotes).filter((note) => typeof note === 'string' && note.trim()).length,
+                totalEpisodes: track.totalEpisodes,
+                watchedEpisodes: track.episode,
+              },
               bgmScore: track.score > 0 ? track.score : null,
               tags: track.userTags.slice(0, 6),
               publishedAt: track[openReview]!.publishedAt,

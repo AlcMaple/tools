@@ -212,7 +212,6 @@ export function ReviewAssistantModal({
     } else {
       parts.push('观看进度：已看完')
     }
-    if (track.score > 0) parts.push(`用户评分：${track.score}`)
     if (track.userTags.length) parts.push(`用户标签：${track.userTags.join('、')}`)
     return parts.join('\n')
   }
@@ -310,7 +309,6 @@ export function ReviewAssistantModal({
       const next = await publishReview(track.bgmId, mode, {
         ...settings,
         body,
-        scoreShown: track.score > 0 ? track.score : undefined,
         tagsShown: track.userTags.slice(0, 5),
       })
       setState((s) => (s && mode ? { ...s, [mode]: next } : s))
