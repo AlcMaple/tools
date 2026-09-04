@@ -4,7 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MapleTools 网页版 · 番剧周期表</title>
-    <script defer src="https://user.alcmaple.cn/script.js" data-website-id="6d38f531-a7ce-4e4a-8860-d23d0cfb4512"></script>
+    <!-- 先启动白屏探针：Vite 会把主模块注入 head，探针必须先于它执行才能捕获入口资源错误。 -->
+    <script src="/white-screen-probe.js?v=2"></script>
+    <!-- 必须是 async，不能是 defer。defer 的经典脚本和 type=module 的主包共用同一条
+         "延迟脚本" 队列，按文档顺序执行 —— 这个第三方统计脚本排在 Vite 注入的主包之前，
+         它一卡住，React 入口就永远轮不到执行：页面全白、地址栏一直转，手动刷新才恢复
+         （手机切回后台标签页复用陈旧连接时最容易触发）。async 把它移出那条队列，
+         主包不再等它。 -->
+    <script async src="https://user.alcmaple.cn/script.js" data-website-id="6d38f531-a7ce-4e4a-8860-d23d0cfb4512"></script>
     <!-- 开屏动画要画的就是这张立绘：不先拿到它，动画会在空卡片上白跑一遍。
          fetchpriority=high 把它抬到和 JS/CSS 同一档 —— 否则图片默认低优先级，
          要排在首屏那堆资源后面，正是「第一次进来立绘迟迟不出现」的那一段等待。 -->
@@ -13,7 +20,5 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- 白屏兜底探针：外部文件（CSP 不允许内联脚本），主包渲染失败时兜底上报，见 public/white-screen-probe.js -->
-    <script src="/white-screen-probe.js"></script>
   </body>
 </html>
