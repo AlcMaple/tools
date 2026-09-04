@@ -7,7 +7,11 @@
 
 import QRCode from 'qrcode'
 import { coverUrl } from '../api'
+import { calculatePosterScore, type PosterScoreSignals } from '../../shared/poster-score'
 import type { ReviewMode, Spoiler } from './reviewsApi'
+
+export { calculatePosterScore }
+export type { PosterScoreSignals }
 
 export interface PosterInput {
   cover: string
@@ -17,8 +21,9 @@ export interface PosterInput {
   mode: ReviewMode
   body: string
   spoiler: Spoiler
-  /** 用户自己的评分 0~10 */
+  /** 没有 scoreSignals 时保留的显式评分；追番卡海报优先使用 scoreSignals。 */
   userScore?: number
+  scoreSignals?: PosterScoreSignals
   /** BGM 综合评分 0~10 */
   bgmScore?: number
   /** 播出日期，形如 2025-01-10；用来生成「2025 年 1 月」 */
@@ -180,6 +185,10 @@ export async function renderPoster(input: PosterInput): Promise<Blob> {
     document.fonts.ready,
   ])
   const [cover, qr] = await Promise.all([loadImage(coverUrl(input.cover)), loadQR(input.qrUrl)])
+  const resolvedScore = input.scoreSignals
+    ? calculatePosterScore(input.scoreSignals)
+    : input.userScore
+  const posterInput = resolvedScore === undefined ? input : { ...input, userScore: resolvedScore }
 
   const probe = document.createElement('canvas').getContext('2d')!
   const BODY_FONT = `400 30px ${CJK}`
@@ -222,7 +231,7 @@ export async function renderPoster(input: PosterInput): Promise<Blob> {
   const coverW = 336
   const coverH = 470
   const rightW = CW - coverW - 44
-  const cards = rightColumnCards(probe, input, rightW)
+  const cards = rightColumnCards(probe, posterInput, rightW)
   const cardsSum = cards.reduce((a, b) => a + b, 0)
   const BASE_GAP = 16
   const naturalH = cardsSum + Math.max(0, cards.length - 1) * BASE_GAP
@@ -255,10 +264,10 @@ export async function renderPoster(input: PosterInput): Promise<Blob> {
   star(ctx, W - 46, metaTop + 8, 13, C.sakuraMid)
   star(ctx, 40, footerTop - 24, 10, C.tealMid)
 
-  drawHeader(ctx, input, { top: headerTop, h: headerH, dividerY })
-  drawTitle(ctx, input, { titleTop, titleSize, titleLH, titleLines })
-  drawMetaRow(ctx, input, cover, { metaTop, rightTop, rightGap, coverW, coverH, rightW, season: seasonText(input.airDate) })
-  drawReviewBlock(ctx, input, {
+  drawHeader(ctx, posterInput, { top: headerTop, h: headerH, dividerY })
+  drawTitle(ctx, posterInput, { titleTop, titleSize, titleLH, titleLines })
+  drawMetaRow(ctx, posterInput, cover, { metaTop, rightTop, rightGap, coverW, coverH, rightW, season: seasonText(posterInput.airDate) })
+  drawReviewBlock(ctx, posterInput, {
     bodyLabelTop,
     stickyTop,
     stickyH,
@@ -268,7 +277,7 @@ export async function renderPoster(input: PosterInput): Promise<Blob> {
     padX: STICKY_PAD_X,
     padTop: STICKY_PAD_TOP,
   })
-  drawFooter(ctx, input, qr, footerTop)
+  drawFooter(ctx, posterInput, qr, footerTop)
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('海报没生成出来……'))), 'image/png')

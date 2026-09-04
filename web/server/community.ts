@@ -11,6 +11,7 @@ import { db } from './db'
 import { coversDir } from './data-dir'
 import { bindingsFor as girigiriBindingsFor } from './girigiri/bindings'
 import { bindingsFor as xifanBindingsFor } from './xifan/bindings'
+import { calculatePosterScore } from '../shared/poster-score'
 
 const community = new Hono()
 
@@ -314,12 +315,16 @@ interface AnimeReviewRow {
   track_user_tags: string | null
   track_bgm_tags: string | null
   track_favorite: number | null
+  track_episode: number | null
+  track_total_episodes: number | null
+  track_extra: string | null
 }
 // LEFT JOIN 作者本人的 tracks：兜底只能用**同一个人**的评分和标签，不能拿别人的。
 const animeReviewsStmt = db.prepare<[number]>(
   `SELECT rc.mode, rc.body, rc.spoiler, rc.score_shown, rc.tags_shown, rc.published_at, u.username,
           t.score AS track_score, t.user_tags AS track_user_tags, t.bgm_tags AS track_bgm_tags,
-          json_extract(t.extra, '$.favorite') AS track_favorite
+          json_extract(t.extra, '$.favorite') AS track_favorite,
+          t.episode AS track_episode, t.total_episodes AS track_total_episodes, t.extra AS track_extra
    FROM review_contents rc
    JOIN users u ON u.id = rc.user_id
    LEFT JOIN tracks t ON t.user_id = rc.user_id AND t.bgm_id = rc.bgm_id
@@ -389,17 +394,16 @@ community.get('/reviews/:bgmId', (c) => {
   if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: '这部番不存在' }, 404)
   const meta = animeMeta(bgmId)
   if (!meta) return c.json({ error: '这部番还没有公开点评' }, 404)
-  // 发布时勾了就用勾的；没勾就退回作者自己追番卡上的评分 / 标签 —— 追番页那条生成海报的
-  // 路径本来就是这么兜的（TracksPage），这里少了兜底会让公开页生成的海报缺评分和标签整块。
+  // 标签仍沿用发布内容 → 作者自己的追番卡的兜底；个人评分改由追番卡行为信号即时计算，
+  // 不把 BGM 综合分误当成「我的评分」。追番卡被删掉时才保留旧内容里的显式分数。
   const toEntry = (r: AnimeReviewRow): Record<string, unknown> => {
     const shownTags = parseList(r.tags_shown).map((t) => publicText(t, 80)).filter(Boolean)
     const fallbackTags = [...parseList(r.track_user_tags), ...parseList(r.track_bgm_tags)]
       .map((t) => publicText(t, 80))
       .filter(Boolean)
     const tags = shownTags.length ? shownTags : [...new Set(fallbackTags)]
-    // 评分分两种，**不能混成一个数**：`score` 是作者自己的判断（发布时勾的分 → 喜爱程度），
-    // `bgmScore` 是 BGM 综合分（tracks.score）。混在一起的话海报会把 BGM 的分标成
-    // 「MY SCORE / 我的评分」，等于替用户打了一个他没打过的分。
+    // 评分分两种，**不能混成一个数**：`score` 是追番卡行为信号综合出的个人分，
+    // `bgmScore` 是 BGM 综合分。混在一起的话海报会把公共分数标成「MY SCORE」。
     const pick = (...vals: (number | null)[]): number | null => {
       for (const v of vals) {
         const n = Number(v)
@@ -407,7 +411,23 @@ community.get('/reviews/:bgmId', (c) => {
       }
       return null
     }
-    const score = pick(r.score_shown, r.track_favorite)
+    const trackExtra = r.track_extra ? parseExtra(r.track_extra) : null
+    const goodEpisodes = trackExtra ? normalizeGoodEpisodes(trackExtra.goodEpisodes) : []
+    const goodEpisodeNotes = trackExtra
+      ? normalizeGoodEpisodeNotes(trackExtra.goodEpisodeNotes, goodEpisodes)
+      : {}
+    const computedScore = trackExtra
+      ? calculatePosterScore({
+          favorite: normalizeFavorite(r.track_favorite),
+          goodEpisodeCount: goodEpisodes.length,
+          notedEpisodeCount: Object.keys(goodEpisodeNotes).length,
+          totalEpisodes: r.track_total_episodes,
+          watchedEpisodes: Math.max(Number(r.track_episode) || 0, goodEpisodes[goodEpisodes.length - 1] || 0),
+        })
+      : null
+    const score = computedScore != null
+      ? (computedScore > 0 ? computedScore : null)
+      : pick(r.score_shown)
     const bgmScore = pick(r.track_score)
     return {
       username: r.username,

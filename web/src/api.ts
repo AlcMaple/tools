@@ -305,7 +305,7 @@ export interface AnimeReviewEntry {
   username: string
   body: string
   spoiler: 'none' | 'aired' | 'all'
-  /** 作者自己的判断：发布时勾的分 → 喜爱程度。没有就是 null */
+  /** 作者的海报个人评分（爱心、好看集和备注综合计算）。没有追番卡时为 null */
   score: number | null
   /** BGM 综合分。跟 score 分开，混一起海报会把它标成「我的评分」 */
   bgmScore: number | null
