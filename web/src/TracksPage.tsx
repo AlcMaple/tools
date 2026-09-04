@@ -477,7 +477,7 @@ export function TracksPage(): JSX.Element {
 
   return (
     <>
-      <div className="spread" style={{ alignItems: 'flex-end' }}>
+      <div className="spread" style={{ alignItems: 'flex-start' }}>
         <div>
           <h1 className="title-sketch" style={{ fontSize: 34 }}>
             我的追番
