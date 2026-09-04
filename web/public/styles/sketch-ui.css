@@ -760,6 +760,56 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   overflow-y: auto;
 }
 .dd-host.open .dd { display: block; animation: page-in .22s var(--ease-page); }
+.dd-tag-filter {
+  display: flex;
+  flex-direction: column;
+  max-height: min(360px, calc(100vh - 120px));
+  overflow: hidden;
+}
+.dd-host.open .dd-tag-filter { display: flex; }
+.tag-filter-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  margin: 1px 1px 5px;
+  padding: 5px 8px;
+  background: var(--field-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px 11px 8px 11px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.tag-filter-search:focus-within { border-color: var(--teal-line); box-shadow: 0 0 0 2px var(--teal-wash); }
+.tag-filter-search > .ic { flex: none; color: var(--ink-faint); }
+.tag-filter-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: none;
+  border: none;
+  outline: none;
+}
+.tag-filter-search input::placeholder { color: var(--ink-faint); }
+.tag-filter-clear-search {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+@media (hover: hover) { .tag-filter-clear-search:hover { color: var(--teal); background: var(--teal-wash); } }
+.tag-filter-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.tag-filter-clear-all { flex: none; margin-top: 4px; border-top: 1px dashed var(--line); border-radius: 0; color: var(--sakura); }
 .dd-item {
   display: flex;
   align-items: center;
