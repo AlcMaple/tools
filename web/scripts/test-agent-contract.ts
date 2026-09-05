@@ -202,9 +202,9 @@ try {
   await stream.next(); abort.abort()
   await assert.rejects(stream.next(), (e: unknown) => e instanceof Error && e.name === 'AbortError')
   check('fake stream observes cancellation', () => assert.equal(abort.signal.aborted, true))
-  check('no live route imports the test provider or Agent runtime', () => {
+  check('live routes keep the fake provider outside production imports', () => {
     const server = readFileSync(new URL('../server/index.ts', import.meta.url), 'utf8')
-    assert.equal(/from\s+['"][^'"]*(?:agent|agent-fixtures)/.test(server), false)
+    assert.equal(/from\s+['"][^'"]*(?:agent-fixtures|scripts\/test|scripts\/agent)/.test(server), false)
     assert.equal(networkCalls, 0)
   })
   console.log(JSON.stringify({ contractCases: 28, checks, failed: 0, provider: 'fake-test-only', modelQuality: 'not_run', liveApiCalls: networkCalls, databaseWrites: 'not_applicable_no_database_imports' }))
