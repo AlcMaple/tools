@@ -20,6 +20,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
+import { getCookie, setCookie } from 'hono/cookie'
 import {
   BASE_URL,
   clearXifanResolveCache,
@@ -38,7 +40,7 @@ import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
 import { getXifanCaptcha, searchXifan, verifyXifanCaptcha, XIFAN_SEARCH_MAX_LENGTH } from './xifan/search'
 import { getXifanAuthStatus, loginXifan, logoutXifan } from './xifan/account'
 import { XifanLocalRateLimitError, XifanUpstreamError } from './xifan/session'
-import { clearRateLimit, clientIp, getSession, rateLimited } from './auth'
+import { clearRateLimit, clientIp, getSession, rateLimited, SECURE } from './auth'
 import { db } from './db'
 import { playerPageSecurity, renderNonce } from './security'
 import { captureClientLog } from './monitoring'
@@ -124,6 +126,80 @@ const XIFAN_CLIENT_LOG_MAX = 300
 // 上限按最坏情况卡死（30 格 × 120 字），别让这条无鉴权的口子变成写日志的入口。
 const XIFAN_TAPE_MAX_LINES = 40
 const XIFAN_TAPE_MAX_CHARS = 120
+// 临时真机取证：iOS 浏览器在固定截止时间前自动采集，避免用户操作调试入口。
+// 手动开关仍有效；每页最多 120 帧 / 10 分钟，截止时间不随服务重启延长。
+// 单独走 stdout，避免 client-log 的 300/120 字截断，也不转发到 Sentry。
+const VIEWPORT_PROBE_COOKIE = 'mt_player_viewport_probe'
+const VIEWPORT_PROBE_AUTO_UNTIL = Date.parse('2026-09-05T16:00:00Z') // 台北时间 9 月 6 日 00:00 自动停止
+function viewportProbeEnabled(c: Context): boolean {
+  const preference = getCookie(c, VIEWPORT_PROBE_COOKIE)
+  if (preference === '0') return false
+  if (preference === '1') return true
+  return Date.now() < VIEWPORT_PROBE_AUTO_UNTIL
+    && /iPhone|iPad|iPod|Macintosh.*Mobile[/]/i.test(c.req.header('user-agent') || '')
+}
+const VIEWPORT_PROBE_EVENTS = new Set([
+  'DOMContentLoaded', 'pageshow', 'load', 'pagehide', 'visibilitychange', 'orientationchange',
+  'window.resize', 'window.scroll', 'visualViewport.resize', 'visualViewport.scroll', 'player.scroll',
+  'fullscreenchange', 'webkitfullscreenchange', 'webkitbeginfullscreen', 'webkitendfullscreen',
+  'loadedmetadata', 'playing', 'iframe.load', 'content.lines', 'content.eps',
+  'probe.start', 'probe.timer', 'layout.resize', 'overlay.change', 'page.error', 'resource.error',
+  'page.unhandledrejection', 'player.script.start', 'player.listeners.ready',
+  'viewport.refresh.begin', 'viewport.refresh.end', 'boot.playlist.request', 'boot.playlist.response',
+  'boot.content.rendered', 'video.error', 'loadeddata', 'waiting', 'stalled',
+  'gesture.end',
+])
+const VIEWPORT_PROBE_METRICS: Record<string, number> = {
+  viewport: 16, state: 10, support: 4, hits: 3,
+  html: 22, body: 22, scroll: 22, sheet: 22, lines: 22, eps: 22, video: 22, frame: 22,
+  playerFrame: 22, buffering: 22, errorBox: 22, runtime: 8,
+  gesture: 8,
+}
+xifan.get('/viewport-probe/:action', async (c) => {
+  c.header('Cache-Control', 'no-store')
+  c.header('X-Player-Viewport-Probe', 'vp2-load')
+  const action = c.req.param('action')
+  if (action !== 'start' && action !== 'stop') return c.body(null, 404)
+  if (!await getSession(c)) return c.json({ error: '请先在此浏览器登录，再打开诊断入口' }, 401)
+  const options = { path: '/api/xifan', httpOnly: true, secure: SECURE, sameSite: 'Strict' as const }
+  if (action === 'start') setCookie(c, VIEWPORT_PROBE_COOKIE, '1', { ...options, maxAge: 1800 })
+  else setCookie(c, VIEWPORT_PROBE_COOKIE, '0', { ...options, maxAge: 3 * 60 * 60 })
+  return c.redirect('/#/tracks', 303)
+})
+xifan.post('/viewport-probe', bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
+  c.header('Cache-Control', 'no-store')
+  c.header('X-Player-Viewport-Probe', 'vp2-load')
+  const session = await getSession(c)
+  if (!session || !viewportProbeEnabled(c)) return c.body(null, 401)
+  if (rateLimited('viewport-probe:' + session.uid, 180, 30 * 60 * 1000)) return c.body(null, 429)
+  let input: any
+  try { input = await c.req.json() } catch { return c.body(null, 400) }
+  if (!input || typeof input.run !== 'string' || !/^[a-f0-9]{16}$/.test(input.run)
+      || !Array.isArray(input.samples) || input.samples.length < 1 || input.samples.length > 3) return c.body(null, 400)
+  const numeric = (values: unknown, size: number): values is number[] => Array.isArray(values)
+    && values.length === size && values.every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 1e9)
+  // browser 数组只含浏览器类别、版本与 iOS 版本号；不存原始 UA、账号、页面/媒体 URL 或凭据。
+  if (!numeric(input.browser, 7)) return c.body(null, 400)
+  const samples = []
+  for (const s of input.samples) {
+    if (!s || !VIEWPORT_PROBE_EVENTS.has(s.event) || !['sync', 'raf', '320ms', '1200ms'].includes(s.phase)
+        || !Number.isInteger(s.seq) || s.seq < 1 || s.seq > 120 || !numeric([s.t, s.count, s.dropped], 3)
+        || typeof s.persisted !== 'boolean' || !s.metrics) return c.body(null, 400)
+    const metrics: Record<string, number[] | null> = {}
+    for (const [key, size] of Object.entries(VIEWPORT_PROBE_METRICS)) {
+      const value = s.metrics[key]
+      if (value === null && size === 22) metrics[key] = null
+      else if (numeric(value, size)) metrics[key] = value
+      else return c.body(null, 400)
+    }
+    samples.push({ event: s.event, phase: s.phase, seq: s.seq, t: s.t, count: s.count,
+      dropped: s.dropped, persisted: s.persisted, metrics })
+  }
+  for (const sample of samples) console.log('[xifan:viewport] ' + JSON.stringify({
+    v: 1, at: Date.now(), run: input.run, browser: input.browser, sample,
+  }))
+  return c.body(null, 204)
+})
 xifan.post('/client-log', async (c) => {
   let body: unknown
   try {
@@ -380,6 +456,7 @@ xifan.get('/play-page', async (c) => {
   const sources = serializePlayerSources(playerSourceOptions('xifan', Number(animeId), ep, bgmId))
   const page = renderNonce(
     PLAY_PAGE
+      .replace('__VIEWPORT_PROBE__', viewportProbeEnabled(c) ? PLAYER_VIEWPORT_PROBE : '')
       .replace('__PLAYER_SOURCES__', sources)
       .replace('__PROXY_HOSTS__', JSON.stringify(PROXY_HOSTS))
       .replace('__MONITOR_CONFIG__', inlineScriptJson(playerMonitorConfig(session))),
@@ -531,6 +608,177 @@ export default xifan
 // 播放器页 —— 客户端 JS 只用字符串拼接（不用模板串），避开外层模板串的 ${}。<video> 不加 crossorigin。
 // 视觉照「纱雾画稿 Sagiri Sketchfolio」设计系统（docs/design-mockups/web/anime-sketchfolio/player.html）：
 // tokens/组件 CSS 引用同一份静态副本（web/public/styles/，见该目录文件头注释），不是另起一套配色。
+// 先于播放器脚本注册捕获监听：sync 为现有 viewport refresh 之前，raf/延迟为之后。
+// 探针仅读布局；不插入测量节点、不改 CSS/scrollTop、不主动触发 resize/fullscreen。
+const PLAYER_VIEWPORT_PROBE = `<script nonce="__CSP_NONCE__">
+(function(){
+  var run = '', queue = [], samples = [], counts = {}, last = {}, timers = {}, dropped = 0, hotCount = 0
+  var started = performance.now(), flushTimer = null, attached = false
+  var measureErrors = 0, errorKind = 0, errorLine = 0, errorColumn = 0
+  var touch = null, lastGesture = [0, 0, 0, 0, 0, 0, 0, 0]
+  for (var i = 0; i < 16; i++) run += Math.floor(Math.random() * 16).toString(16)
+  var ua = navigator.userAgent || ''
+  var family = /CriOS[/]/.test(ua) ? 2 : /FxiOS[/]/.test(ua) ? 3 : /EdgiOS[/]/.test(ua) ? 4 : /Safari[/]/.test(ua) && /Version[/]/.test(ua) ? 1 : 0
+  var version = ua.match(/(?:CriOS|FxiOS|EdgiOS|Version)[/]([0-9]+)(?:[.]([0-9]+))?(?:[.]([0-9]+))?/)
+  var os = ua.match(/(?:CPU (?:iPhone )?OS|iPhone OS) ([0-9]+)(?:_([0-9]+))?(?:_([0-9]+))?/)
+  var browser = [family, +(version && version[1] || 0), +(version && version[2] || 0), +(version && version[3] || 0),
+    +(os && os[1] || 0), +(os && os[2] || 0), +(os && os[3] || 0)]
+  ua = ''
+  function num(n){ return typeof n === 'number' && isFinite(n) ? Math.round(n * 100) / 100 : -1 }
+  function element(name){ return document.querySelector(name) }
+  function kind(el){
+    if (!el) return 0
+    if (el === document.documentElement) return 1
+    if (el === document.body) return 2
+    var names = ['.player-scroll', '#v', '#frame', '#lines', '#eps', '.sheet-wrap']
+    for (var i = 0; i < names.length; i++) {
+      var root = element(names[i])
+      if (root && (el === root || (i > 0 && root.contains(el)))) return i + 3
+    }
+    return 9
+  }
+  function box(el){
+    if (!el) return null
+    var r = el.getBoundingClientRect(), s = getComputedStyle(el)
+    var positions = ['static', 'relative', 'absolute', 'fixed', 'sticky']
+    var overflows = ['visible', 'hidden', 'auto', 'scroll', 'clip', 'overlay']
+    var displays = ['none', 'block', 'inline', 'inline-block', 'flex', 'grid', 'contents']
+    return [num(r.x), num(r.y), num(r.width), num(r.height), el.clientWidth, el.clientHeight,
+      el.scrollWidth, el.scrollHeight, num(el.scrollTop), num(el.scrollLeft), positions.indexOf(s.position),
+      num(parseFloat(s.height)), overflows.indexOf(s.overflowX), overflows.indexOf(s.overflowY),
+      num(parseFloat(s.paddingTop)), num(parseFloat(s.paddingBottom)), +(s.transform !== 'none'),
+      +(s.filter !== 'none'), +(s.perspective !== 'none'), +(s.contain !== 'none'), +(s.willChange !== 'auto'), displays.indexOf(s.display)]
+  }
+  function flush(){
+    if (flushTimer !== null) clearTimeout(flushTimer)
+    flushTimer = null
+    while (queue.length) {
+      var body = JSON.stringify({run: run, browser: browser, samples: queue.splice(0, 3)})
+      try {
+        if (navigator.sendBeacon && navigator.sendBeacon('/api/xifan/viewport-probe', new Blob([body], {type: 'application/json'}))) continue
+      } catch (e) {}
+      try { fetch('/api/xifan/viewport-probe', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: body, keepalive: true}).catch(function(){}) } catch (e) {}
+    }
+  }
+  function take(event, phase, persisted){
+    if (samples.length >= 120 || performance.now() - started > 600000) { dropped++; return }
+    try {
+      var vv = window.visualViewport, scroll = element('.player-scroll'), v = element('#v'), f = element('#frame')
+      var width = vv ? vv.width : innerWidth, height = vv ? vv.height : innerHeight
+      var left = vv ? vv.offsetLeft : 0, top = vv ? vv.offsetTop : 0
+      var metrics = {
+        viewport: [innerWidth, innerHeight, outerWidth, outerHeight, window.scrollX, window.scrollY,
+          vv ? vv.width : -1, vv ? vv.height : -1, left, top, vv ? vv.pageLeft : -1, vv ? vv.pageTop : -1,
+          vv ? vv.scale : -1, screen.width, screen.height, screen.orientation ? screen.orientation.angle : (window.orientation || 0)].map(num),
+        state: [document.hidden ? 1 : 0, ['loading','interactive','complete'].indexOf(document.readyState),
+          kind(document.fullscreenElement || document.webkitFullscreenElement), +(v && v.webkitDisplayingFullscreen || false),
+          +matchMedia('(max-width: 960px)').matches, +(scroll && scroll.classList.contains('viewport-refresh') || false),
+          kind(document.scrollingElement), kind(document.activeElement), +(f && f.classList.contains('on') || false), vv ? 1 : 0],
+        support: ['100dvh', '100svh', '100lvh', '-webkit-fill-available'].map(function(h){ return +(!!window.CSS && CSS.supports('height', h)) }),
+        hits: [2, 40, 120].map(function(d){ return kind(document.elementFromPoint(left + width / 2, Math.max(top, top + height - d))) }),
+        html: box(document.documentElement), body: box(document.body), scroll: box(scroll), sheet: box(element('.sheet-wrap')),
+        lines: box(element('#lines')), eps: box(element('#eps')), video: box(v), frame: box(f),
+        playerFrame: box(element('.player-frame')), buffering: box(element('#buffering')), errorBox: box(element('#err')),
+        runtime: [v ? v.readyState : -1, v ? v.networkState : -1, v && v.error ? v.error.code : 0,
+          v ? +v.paused : -1, measureErrors, errorKind, errorLine, errorColumn].map(num),
+        gesture: lastGesture.slice()
+      }
+      var sample = {event: event, phase: phase, seq: samples.length + 1, t: num(performance.now()),
+        count: counts[event] || 1, dropped: dropped, persisted: !!persisted, metrics: metrics}
+      samples.push(sample); queue.push(sample)
+      if (queue.length >= 3 || document.hidden || event === 'pagehide') flush()
+      else if (flushTimer === null) flushTimer = setTimeout(flush, 700)
+    } catch (e) { dropped++; measureErrors++ }
+  }
+  function record(event, phased, persisted){
+    if (performance.now() - started > 600000 || samples.length >= 120) return
+    counts[event] = (counts[event] || 0) + 1
+    var hot = /^(window[.]|visualViewport[.]|player[.]scroll|layout[.]resize|gesture[.]end)/.test(event)
+    if (hot && /resize$/.test(event) && counts[event] === 1) phased = true
+    if (hot) {
+      // 连续滚动/工具栏动画最多占 48 帧，给全屏、后台恢复、旋转保留记录空间。
+      if (hotCount >= 48) { dropped++; return }
+      if (last[event] && performance.now() - last[event] < 500) {
+        dropped++
+        if (!timers[event]) timers[event] = setTimeout(function(){ timers[event] = null; record(event, false, false) }, 500)
+        return
+      }
+      hotCount++; last[event] = performance.now()
+    }
+    take(event, 'sync', persisted)
+    if (phased) {
+      // 双 rAF：现有播放器在单 rAF 中执行 refresh，保证这一帧观察的是刷新后的状态。
+      requestAnimationFrame(function(){ requestAnimationFrame(function(){ take(event, 'raf', persisted) }) })
+      setTimeout(function(){ take(event, '320ms', persisted) }, 320)
+      setTimeout(function(){ take(event, '1200ms', persisted) }, 1200)
+    }
+  }
+  function listen(target, nativeEvent, event, phased){
+    if (target) target.addEventListener(nativeEvent, function(e){
+      if (target === window && e.target !== window && e.target !== document) return
+      record(event, phased, e.persisted)
+    }, {capture: true, passive: true})
+  }
+  function attach(){
+    if (attached) return
+    attached = true
+    listen(element('.player-scroll'), 'scroll', 'player.scroll', false)
+    ;['webkitbeginfullscreen', 'webkitendfullscreen', 'loadedmetadata', 'loadeddata', 'playing', 'waiting', 'stalled', 'error'].forEach(function(e){
+      listen(element('#v'), e, e === 'error' ? 'video.error' : e, e !== 'waiting' && e !== 'stalled')
+    })
+    listen(element('#frame'), 'load', 'iframe.load', true)
+    if (window.MutationObserver) ['lines', 'eps'].forEach(function(id){
+      var el = element('#' + id)
+      if (el) new MutationObserver(function(){ record('content.' + id, false, false) }).observe(el, {childList: true})
+    })
+    if (window.ResizeObserver) {
+      var observer = new ResizeObserver(function(){ record('layout.resize', false, false) })
+      ;['.player-scroll', '.sheet-wrap', '.player-frame'].forEach(function(name){ var el = element(name); if (el) observer.observe(el) })
+    }
+    if (window.MutationObserver) ['#buffering', '#err'].forEach(function(name){
+      var el = element(name)
+      if (el) new MutationObserver(function(){ record('overlay.change', false, false) }).observe(el, {attributes: true, attributeFilter: ['class']})
+    })
+  }
+  document.addEventListener('DOMContentLoaded', function(){ attach(); record('DOMContentLoaded', true, false) }, {capture: true, once: true})
+  ;['pageshow', 'load', 'orientationchange'].forEach(function(e){ listen(window, e, e, true) })
+  listen(window, 'pagehide', 'pagehide', false)
+  listen(window, 'resize', 'window.resize', false)
+  listen(window, 'scroll', 'window.scroll', false)
+  listen(window.visualViewport, 'resize', 'visualViewport.resize', false)
+  listen(window.visualViewport, 'scroll', 'visualViewport.scroll', false)
+  ;['fullscreenchange', 'webkitfullscreenchange', 'visibilitychange'].forEach(function(e){ listen(document, e, e, true) })
+  window.addEventListener('error', function(e){
+    errorKind = e.target === window ? 1 : 3
+    errorLine = num(e.lineno || 0); errorColumn = num(e.colno || 0)
+    record(errorKind === 1 ? 'page.error' : 'resource.error', false, false)
+  }, true)
+  window.addEventListener('unhandledrejection', function(){ errorKind = 2; record('page.unhandledrejection', false, false) })
+  // 只保留一次滑动的位移/滚动差值与元素类别，不记录点击正文或绝对触点坐标。
+  document.addEventListener('touchstart', function(e){
+    if (performance.now() - started > 600000 || samples.length >= 120) { touch = null; return }
+    var p = e.touches && e.touches[0], s = element('.player-scroll')
+    if (p && s) touch = {x: p.clientX, y: p.clientY, top: s.scrollTop, max: s.scrollHeight - s.clientHeight,
+      target: kind(e.target), at: performance.now()}
+  }, {capture: true, passive: true})
+  document.addEventListener('touchend', function(e){
+    if (performance.now() - started > 600000 || samples.length >= 120) { touch = null; return }
+    var p = e.changedTouches && e.changedTouches[0], s = element('.player-scroll')
+    if (p && s && touch) {
+      lastGesture = [p.clientX - touch.x, p.clientY - touch.y, touch.top, s.scrollTop, touch.max,
+        s.scrollHeight - s.clientHeight, touch.target, performance.now() - touch.at].map(num)
+      touch = null; record('gesture.end', false, false)
+    }
+  }, {capture: true, passive: true})
+  window.__PLAYER_VIEWPORT_PROBE__ = {run: run, samples: samples, flush: flush,
+    mark: function(event){ record(event, false, false) }}
+  record('probe.start', false, false)
+  ;[2000, 5000, 10000, 30000, 60000, 90000].forEach(function(delay){
+    setTimeout(function(){ record('probe.timer', false, false) }, delay)
+  })
+})()
+</script>`
+
 const PLAY_PAGE = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -539,6 +787,7 @@ const PLAY_PAGE = `<!doctype html>
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
 <title>继续看 · 稀饭</title>
+__VIEWPORT_PROBE__
 <script src="/api/xifan/hls.js"></script>
 <script nonce="__CSP_NONCE__">window.__PLAYER_MONITOR__ = __MONITOR_CONFIG__</script>
 <script src="/api/xifan/monitor.js"></script>
@@ -547,7 +796,39 @@ const PLAY_PAGE = `<!doctype html>
 <style nonce="__CSP_NONCE__">
   /* 播放页专属：真实 <video>/<iframe> 填满播放框（原型里那块是演示占位，这里要放真内容），
      其余外观（选集格 / 线路卡 / 分段器 / 手写标题）全部复用 sketch-ui.css 组件，不重新定义。 */
+  .player-scroll { min-height: 100% }
   .sheet-wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 60px; position: relative; z-index: 1 }
+  /* iOS Chrome 的可视高度（innerHeight/visualViewport 都报 684）比 WKWebView 实际绘制区
+     （874，即 lvh）矮 190px：按 684 布局时，屏幕最下面那 190px 画的是 html 背景纸，
+     滚动框够不到，看上去就是「底部内容被一块空白盖住」。所以父子三层统一按 lvh 布局，
+     跟真正被绘制的区域对齐；工具栏挡住的那一段用额外的底部留白补偿。 */
+  @media (max-width: 960px) {
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      height: 100lvh;
+      min-height: 0;
+      overflow: hidden;
+    }
+    body { position: relative }
+    .player-scroll {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+    .player-scroll .sheet-wrap {
+      min-height: 100%;
+      /* 底部工具栏最多吃掉 lvh - svh 这一段，滚到底时留白让最后一行内容仍露在工具栏之上。 */
+      padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px) + 100lvh - 100svh);
+    }
+    .player-scroll.viewport-refresh { overflow-y: hidden }
+  }
   .player-frame { position: relative; aspect-ratio: 16/9; background: #000; border: 1.5px solid var(--line-strong); border-radius: var(--r-card); overflow: hidden; box-shadow: var(--shadow-1) }
   video, iframe.player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; display: none }
   /* 浏览器原生的黑色缓冲转圈（Chrome/Safari 在 <video controls> 卡顿时自己画的那个）藏在
@@ -601,6 +882,7 @@ const PLAY_PAGE = `<!doctype html>
 </style>
 </head>
 <body data-page="player">
+<div class="player-scroll">
 <div class="sheet-wrap">
   <a class="btn btn-sm btn-ghost" href="/#/tracks">
     <svg class="ic ic-sm"><use href="#i-back"></use></svg>回到我的追番
@@ -634,9 +916,14 @@ const PLAY_PAGE = `<!doctype html>
   <h2 class="title-sketch section-title mt24">线路</h2>
   <div class="lines-list" id="lines"></div>
 </div>
+</div>
 <svg class="icon-sprite" aria-hidden="true"><symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 5.5L8 12l6.5 6.5"/></symbol></svg>
 <script nonce="__CSP_NONCE__">
 (function(){
+  function viewportCheckpoint(event){
+    try { if (window.__PLAYER_VIEWPORT_PROBE__) window.__PLAYER_VIEWPORT_PROBE__.mark(event) } catch (e) {}
+  }
+  viewportCheckpoint('player.script.start')
   var $ = function(id){ return document.getElementById(id) }
   // 排查用日志一律走这里。三个去处，各管一段：
   //   1. 面包屑 —— 页面自己的监控攒着，出异常时**整条时间线**跟着一起走（而不是散成 N 条独立记录）
@@ -679,6 +966,33 @@ const PLAY_PAGE = `<!doctype html>
     try { return PROXY_HOSTS.indexOf(new URL(u).hostname) >= 0 } catch (e) { return false }
   }
   var v = $('v'), frame = $('frame')
+  var playerScroll = document.querySelector('.player-scroll')
+  var viewportRefreshFrame = 0, viewportRefreshTimer = null
+  function refreshPlayerViewport(){
+    if (!playerScroll) return
+    viewportCheckpoint('viewport.refresh.begin')
+    var top = playerScroll.scrollTop
+    // 切换一次 overflow 强制 Safari 重新计算退出全屏后的滚动框尺寸；位置保持不变。
+    playerScroll.classList.add('viewport-refresh')
+    void playerScroll.offsetHeight
+    playerScroll.classList.remove('viewport-refresh')
+    playerScroll.scrollTop = top
+    window.scrollTo(0, 0)
+    viewportCheckpoint('viewport.refresh.end')
+  }
+  function schedulePlayerViewportRefresh(){
+    try { if (!matchMedia('(max-width: 960px)').matches) return } catch (e) { return }
+    if (viewportRefreshFrame) cancelAnimationFrame(viewportRefreshFrame)
+    viewportRefreshFrame = requestAnimationFrame(function(){
+      viewportRefreshFrame = 0
+      refreshPlayerViewport()
+    })
+    if (viewportRefreshTimer !== null) clearTimeout(viewportRefreshTimer)
+    viewportRefreshTimer = setTimeout(function(){
+      viewportRefreshTimer = null
+      refreshPlayerViewport()
+    }, 320)
+  }
   var lines = [], eps = [], curPl = null, resolvedMap = {}, resolvingMap = {}, hls = null
   var goodEps = {}, goodNotes = {}
   var waitingForAuth = false
@@ -766,7 +1080,22 @@ const PLAY_PAGE = `<!doctype html>
     if (waitingForAuth && e.key === 'mapletools-xifan-auth-changed' && e.newValue) location.reload()
   })
   window.addEventListener('pagehide', function(){ stopAll() })
-  window.addEventListener('pageshow', function(e){ if (e.persisted) location.reload() })
+  window.addEventListener('pageshow', function(e){
+    if (e.persisted) location.reload()
+    else {
+      schedulePlayerViewportRefresh()
+      setTimeout(schedulePlayerViewportRefresh, 700)
+    }
+  })
+  window.addEventListener('resize', schedulePlayerViewportRefresh)
+  window.addEventListener('orientationchange', schedulePlayerViewportRefresh)
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', schedulePlayerViewportRefresh)
+  document.addEventListener('fullscreenchange', schedulePlayerViewportRefresh)
+  document.addEventListener('webkitfullscreenchange', schedulePlayerViewportRefresh)
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) schedulePlayerViewportRefresh() })
+  v.addEventListener('webkitbeginfullscreen', schedulePlayerViewportRefresh)
+  v.addEventListener('webkitendfullscreen', schedulePlayerViewportRefresh)
+  viewportCheckpoint('player.listeners.ready')
   window.addEventListener('offline', function(){ rememberNetworkPosition(); networkInterrupted = true })
   window.addEventListener('online', function(){
     if (!networkInterrupted){ resumePending = false; resumeWasPlaying = false; return }
@@ -1587,14 +1916,17 @@ const PLAY_PAGE = `<!doctype html>
     renderEps() // 先按 URL 的 ep 画一版占位，拿到 playlist 的整季集数再重画
     var goodPromise = loadGoodEpisodes()
     try {
+      viewportCheckpoint('boot.playlist.request')
       var r = await fetch('/api/xifan/playlist?animeId=' + encodeURIComponent(animeId) + '&ep=' + encodeURIComponent(ep))
       var d = await r.json()
+      viewportCheckpoint('boot.playlist.response')
       if (d.error){ fail('加载失败：' + d.error, d.code); return }
       lines = d.lines || []
       eps = d.eps || []
       if (d.title){ $('ttl').textContent = d.title }
       await goodPromise
       renderEps(); renderChips(); renderGoodNote()
+      viewportCheckpoint('boot.content.rendered')
       // 按 first.source 存，**不能写死 1**：服务端返回的 first 是「最优线路」，
       // 未必是线路 1（它会跳过需要代理的慢源）。写死会让 resolvedMap[1] 装着别条线路的
       // 地址，点线路 1 拿到的却是那条——表现为「点了没反应」。

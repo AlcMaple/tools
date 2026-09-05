@@ -1,7 +1,7 @@
 // 应用外壳 —— 皮肤 = 原型稿的「书脊 + 内页」骨架：桌面左侧书脊侧栏（索引贴导航 + 用户卡），
 // 移动端顶栏 + 底部标签栏（CSS 切换，不写 JS 分支）。这里只管壳、固定页面路由、
 // 全局登录弹窗、密保提示和便签 Toast。
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnnouncementModal } from './AnnouncementModal'
 import { auth, captureInviteFromLocation, useAuth } from './auth'
 import { AuthModal, type AuthMode } from './AuthModal'
@@ -42,6 +42,7 @@ export default function App(): JSX.Element {
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [oauthError, setOauthError] = useState<string | null>(null)
   const [announcementArmed, setAnnouncementArmed] = useState(false)
+  const sheetRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     captureInviteFromLocation()
@@ -110,6 +111,7 @@ export default function App(): JSX.Element {
   // 把标题留在视口上沿之外；每次功能页切换都从手帐页首开始。
   useEffect(() => {
     window.scrollTo(0, 0)
+    sheetRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [route])
 
   // 给全局手帐皮肤一个当前页标记：响应式细节（例如追番页的小屏紧凑模式）
@@ -241,7 +243,7 @@ export default function App(): JSX.Element {
         </aside>
 
         {/* 内页 */}
-        <main className="sheet">
+        <main ref={sheetRef} className="sheet">
           <div className="sheet-wrap">
             <NagBar onGoSettings={() => go('settings')} />
             {route === 'settings'
