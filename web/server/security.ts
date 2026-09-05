@@ -56,7 +56,7 @@ export function securityHeaders(): MiddlewareHandler {
     setCommonHeaders(c)
     c.header('Content-Security-Policy', DEFAULT_CSP)
     const path = c.req.path
-    if (path.startsWith('/api/auth') || path.startsWith('/api/tracks') || path.endsWith('/bindings')) {
+    if (path.startsWith('/api/auth') || path.startsWith('/api/tracks') || path.startsWith('/api/agent') || path.endsWith('/bindings')) {
       c.header('Cache-Control', 'no-store')
     }
     await next()

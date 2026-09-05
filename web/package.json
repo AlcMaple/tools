@@ -17,7 +17,8 @@
     "preview": "vite preview",
     "start": "tsx server/node.ts",
     "sync:index": "tsx scripts/build-bgm-index.ts",
-    "test:agent-contract": "tsx scripts/test-agent-contract.ts"
+    "test:agent-contract": "tsx scripts/test-agent-contract.ts",
+    "test:agent-history": "tsx scripts/test-agent-history.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
