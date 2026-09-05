@@ -56,6 +56,53 @@ body,
   z-index: 1;
 }
 
+/* 移动端把页面滚动从根文档移到内页滚动框：iOS Safari 的地址栏 / 底部工具栏
+   会随着根页面滚动动态收放，根文档一变高，固定导航也会跟着跳。把根节点钉在
+   视口，只让 .sheet 滚动，顶栏与底部标签栏就始终使用同一块视口。 */
+@media (max-width: 960px) {
+  html,
+  body {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body {
+    position: fixed;
+    inset: 0;
+  }
+
+  #root {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #root > .m-top {
+    flex: 0 0 54px;
+  }
+
+  #root > .shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    overflow: hidden;
+  }
+
+  #root > .shell > .sheet {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 /* —— 真实源码在手帐皮肤上的少量补笔（原型稿没有对应组件的小件） —— */
 
 /* AuthModal：注册 / 找回页的小标题（页签只在 密码 / 验证码 两态出现） */
