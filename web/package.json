@@ -16,7 +16,8 @@
     "build": "vite build && tsx scripts/build-player-monitor.ts",
     "preview": "vite preview",
     "start": "tsx server/node.ts",
-    "sync:index": "tsx scripts/build-bgm-index.ts"
+    "sync:index": "tsx scripts/build-bgm-index.ts",
+    "test:agent-contract": "tsx scripts/test-agent-contract.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
