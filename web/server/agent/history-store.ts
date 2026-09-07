@@ -47,6 +47,12 @@ export function initializeAgentHistorySchema(db: Database.Database): void {
       FOREIGN KEY(user_id, session_id) REFERENCES agent_sessions(user_id, id) ON DELETE CASCADE
     );
   `)).immediate()
+  const columns = db.prepare('PRAGMA table_info(agent_sessions)').all() as { name: string }[]
+  for (const [name, declaration] of [
+    ['context_job_id', 'TEXT'], ['context_generation', 'INTEGER NOT NULL DEFAULT 0'],
+    ['context_version_seq', 'INTEGER NOT NULL DEFAULT 0'], ['context_bytes', 'INTEGER NOT NULL DEFAULT 0'],
+    ['context_adaptive', 'INTEGER NOT NULL DEFAULT 1'],
+  ]) if (!columns.some(c => c.name === name)) db.exec(`ALTER TABLE agent_sessions ADD COLUMN ${name} ${declaration}`)
 }
 
 interface SessionRow {
@@ -54,6 +60,7 @@ interface SessionRow {
   created_at: number; updated_at: number; archived_at: number | null; revision: number
   last_event_seq: number; last_message_seq: number; message_count: number; stored_bytes: number
   active_summary_version: number | null; context_tier: HistorySession['contextTier']
+  context_job_id: string | null; context_bytes: number
   current_bgm_id: number | null; provider: HistorySession['provider']; model: string
 }
 interface MessageRow {
@@ -129,6 +136,7 @@ export class AgentHistoryStore {
   }
 
   private expectIdle(s: SessionRow): void {
+    if (s.context_job_id) throw new AgentHistoryError('SESSION_BUSY', 409, '上下文正在整理，先取消或等它完成吧。')
     const busy = this.db.prepare("SELECT 1 FROM agent_messages WHERE user_id = ? AND session_id = ? AND (status = 'streaming' OR pending_actions = 1) LIMIT 1").get(s.user_id, s.id)
     if (busy) throw new AgentHistoryError('SESSION_BUSY', 409, '这本手帐还有进行中的回复或动作，先取消或等它结束吧。')
   }
@@ -140,7 +148,7 @@ export class AgentHistoryStore {
   }
 
   private expectSpace(s: SessionRow, delta: number, adding: boolean): void {
-    const { bytes } = this.db.prepare('SELECT COALESCE(SUM(stored_bytes), 0) AS bytes FROM agent_sessions WHERE user_id = ?').get(s.user_id) as { bytes: number }
+    const { bytes } = this.db.prepare('SELECT COALESCE(SUM(stored_bytes + context_bytes), 0) AS bytes FROM agent_sessions WHERE user_id = ?').get(s.user_id) as { bytes: number }
     if ((adding && s.message_count >= this.limits.messagesPerSession) || s.stored_bytes + delta > this.limits.bytesPerSession || bytes + delta > this.limits.bytesPerUser) {
       throw new AgentHistoryError('HISTORY_LIMIT', 409, '手帐空间已到上限，请先导出并清理旧会话。')
     }
@@ -206,6 +214,7 @@ export class AgentHistoryStore {
     if (Object.keys(p).length < 2 || (p.title !== undefined && !p.title.trim())) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '请填写要修改的手帐内容。')
     return this.db.transaction(() => {
       const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision)
+      if (s.context_job_id) this.expectIdle(s)
       if (p.archived === true || p.currentBgmId !== undefined) this.expectIdle(s)
       this.db.prepare('UPDATE agent_sessions SET title = ?, archived_at = ?, current_bgm_id = ? WHERE user_id = ? AND id = ?')
         .run(p.title?.trim() ?? s.title, p.archived === undefined ? s.archived_at : p.archived ? s.archived_at ?? Date.now() : null,
@@ -254,6 +263,7 @@ export class AgentHistoryStore {
     const p = parse<UpdateAssistantMessage>(ASSISTANT_UPDATE_SCHEMA, input), encoded = encodeContent(p)
     return this.db.transaction(() => {
       const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectWritable(s)
+      if (s.context_job_id) this.expectIdle(s)
       const row = this.db.prepare('SELECT * FROM agent_messages WHERE user_id = ? AND session_id = ? AND id = ?').get(uid, id, messageId) as MessageRow | undefined
       if (!row) throw new AgentHistoryError('NOT_FOUND', 404, '这条回复没有找到。')
       if (row.role !== 'assistant' || row.status !== 'streaming') throw new AgentHistoryError('MESSAGE_FINALIZED', 409, '这条回复已收好，晚到的更新没有覆盖它。')
@@ -297,7 +307,7 @@ export class AgentHistoryStore {
     return this.db.transaction(() => {
       const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectIdle(s)
       this.db.prepare('DELETE FROM agent_messages WHERE user_id = ? AND session_id = ?').run(uid, id)
-      this.db.prepare('UPDATE agent_sessions SET active_summary_version = NULL WHERE user_id = ? AND id = ?').run(uid, id)
+      this.db.prepare('UPDATE agent_sessions SET active_summary_version = NULL, context_bytes = 0, context_generation = context_generation + 1 WHERE user_id = ? AND id = ?').run(uid, id)
       // seq 不归零，另一端旧游标和晚到的请求仍然是旧状态，不会指向新的同号消息。
       this.touch(s, -s.stored_bytes, -s.message_count)
       return sessionView(this.session(uid, id))

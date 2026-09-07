@@ -117,7 +117,7 @@ try {
 
   await check('旧数据库新增表、重复初始化无损，追番版本不变', () => {
     initializeAgentHistorySchema(db); initializeAgentHistorySchema(db)
-    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name LIKE 'agent_%'").get() as { n: number }).n, 3)
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('agent_sessions','agent_messages','agent_deleted_sessions')").get() as { n: number }).n, 3)
     assert.equal((db.prepare('SELECT tracks_rev AS rev FROM users WHERE id = ?').get(alice) as { rev: number }).rev, 0)
   })
   await check('所有历史入口都需要真实会话 Cookie', async () => {

@@ -2,8 +2,11 @@ import { Hono, type Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { db } from '../db'
 import { getSession, rateLimited } from '../auth'
-import { AgentHistoryError, HISTORY_LIMITS } from '../../shared/agent-history'
+import { AgentHistoryError, HISTORY_LIMITS, USER_MESSAGE_SCHEMA, type AppendUserMessage } from '../../shared/agent-history'
 import { AgentHistoryStore } from './history-store'
+import { createAgentContextApi } from './context-api'
+import { agentContextService, agentContextStore } from './context-runtime'
+import { matchesContract } from './validation'
 
 const history = new Hono<{ Variables: { agentUid: number } }>()
 export const agentHistoryStore = new AgentHistoryStore(db)
@@ -53,7 +56,15 @@ history.get('/sessions', c => c.json(agentHistoryStore.listSessions(c.get('agent
 history.post('/sessions', async c => c.json({ session: agentHistoryStore.createSession(c.get('agentUid'), await body(c)) }, 201))
 history.get('/sessions/:sessionId', c => c.json(agentHistoryStore.snapshot(c.get('agentUid'), c.req.param('sessionId'), query(c, ['limit', 'beforeSeq', 'afterSeq']))))
 history.patch('/sessions/:sessionId', async c => c.json({ session: agentHistoryStore.patchSession(c.get('agentUid'), c.req.param('sessionId'), await body(c)) }))
-history.post('/sessions/:sessionId/messages', async c => c.json(agentHistoryStore.appendUser(c.get('agentUid'), c.req.param('sessionId'), await body(c)), 201))
+history.post('/sessions/:sessionId/messages', async c => {
+  const value=await body(c)
+  if(matchesContract(USER_MESSAGE_SCHEMA,value)&&(value as AppendUserMessage).body.trim()==='/compact'){
+    const p=value as AppendUserMessage,job=agentContextService.start(c.get('agentUid'),c.req.param('sessionId'),p)
+    try{c.executionCtx.waitUntil(agentContextService.wait(job.id))}catch{}
+    return c.json({command:'/compact',job},202)
+  }
+  return c.json(agentHistoryStore.appendUser(c.get('agentUid'),c.req.param('sessionId'),value),201)
+})
 history.post('/sessions/:sessionId/clear', async c => c.json({ session: agentHistoryStore.clearSession(c.get('agentUid'), c.req.param('sessionId'), await body(c)) }))
 history.delete('/sessions/:sessionId', async c => c.json(agentHistoryStore.deleteSession(c.get('agentUid'), c.req.param('sessionId'), await body(c))))
 history.get('/sessions/:sessionId/export', c => {
@@ -63,9 +74,11 @@ history.get('/sessions/:sessionId/export', c => {
     c.header('Retry-After', '60')
     return c.json({ code: 'RATE_LIMITED', error: '刚刚已导出过，稍等一下再试吧。' }, 429)
   }
-  const exported = agentHistoryStore.exportSession(uid, c.req.param('sessionId'))
+  const exported = db.transaction(()=>({...agentHistoryStore.exportSession(uid,c.req.param('sessionId')),context:agentContextStore.exportContext(uid,c.req.param('sessionId'))}))()
   c.header('Content-Disposition', `attachment; filename="agent-history-${exported.session.id}.json"`)
   return c.json(exported)
 })
+
+history.route('/',createAgentContextApi(agentContextService))
 
 export default history
