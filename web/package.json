@@ -12,14 +12,16 @@
     }
   },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build && tsx scripts/build-player-monitor.ts",
+    "dev": "npm run build:agent-release && vite",
+    "build": "npm run build:agent-release && vite build && tsx scripts/build-player-monitor.ts",
     "preview": "vite preview",
     "start": "tsx server/node.ts",
     "sync:index": "tsx scripts/build-bgm-index.ts",
     "test:agent-contract": "tsx scripts/test-agent-contract.ts",
     "test:agent-history": "tsx scripts/test-agent-history.ts",
-    "test:agent-context": "tsx scripts/test-agent-context.ts"
+    "test:agent-context": "tsx scripts/test-agent-context.ts",
+    "test:agent-loop": "npm run build:agent-release && tsx scripts/test-agent-loop.ts",
+    "build:agent-release": "tsx scripts/build-agent-release.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",

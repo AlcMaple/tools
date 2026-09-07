@@ -121,7 +121,13 @@ export class AgentContextStore {
     }).immediate()
   }
   settings(uid:number,id:string) { this.session(uid,id); return this.db.prepare('SELECT context_adaptive AS adaptive FROM agent_sessions WHERE user_id = ? AND id = ?').get(uid,id) as {adaptive:number} }
-  setContext(uid: number, id: string, expectedRevision: number, change: { contextTier?: ContextTier; adaptive?:boolean; messageId?: string; pinned?: boolean }) {
+  assertRun(uid: number, id: string, runId?: string) {
+    const row = this.db.prepare('SELECT run_id FROM agent_sessions WHERE user_id = ? AND id = ?').get(uid,id) as {run_id:string|null}|undefined
+    if (runId && row?.run_id !== runId) contextError('CANCELLED', '这轮回复已结束，晚到的整理任务没有启动。')
+    if (row?.run_id && row.run_id !== runId) contextError('SESSION_BUSY', '回复正在准备或执行，请先等它结束。')
+  }
+  setContext(uid: number, id: string, expectedRevision: number, change: { contextTier?: ContextTier; adaptive?:boolean; messageId?: string; pinned?: boolean }, runId?: string) {
+    this.assertRun(uid,id,runId)
     return this.db.transaction(() => {
       const s = this.session(uid, id)
       if (s.revision !== expectedRevision) contextError('REVISION_CONFLICT', '手帐已更新，请刷新后再试。')
@@ -186,7 +192,8 @@ export class AgentContextStore {
     const row = this.db.prepare('SELECT * FROM agent_context_jobs WHERE user_id = ? AND id = ?').get(uid, jobId) as JobRow | undefined
     return row ? jobView(row) : contextError('NOT_FOUND', '这次压缩记录没有找到。', 404)
   }
-  beginJob(uid: number, id: string, requestId: string, revision: number, trigger: CompactJob['trigger']) {
+  beginJob(uid: number, id: string, requestId: string, revision: number, trigger: CompactJob['trigger'], runId?: string) {
+    this.assertRun(uid,id,runId)
     if (!matchesContract(HISTORY_ID_SCHEMA, requestId)) contextError('INVALID_ARGUMENT', '请求编号格式不正确。', 400)
     return this.db.transaction(() => {
       const s = this.session(uid, id)
@@ -230,8 +237,8 @@ export class AgentContextStore {
       const state = JSON.stringify(data.state), native = data.native ? JSON.stringify(data.native) : null
       const bytes = Buffer.byteLength(state + (native ?? '') + JSON.stringify(data.usage) + JSON.stringify(data.quality))
       if (Buffer.byteLength(state) > CONTEXT_LIMITS.summaryBytes || (native && Buffer.byteLength(native) > CONTEXT_LIMITS.nativeBytes)) contextError('CONTEXT_TOO_LARGE', '摘要仍然太大，原有上下文保持不变。')
-      const usage = this.db.prepare('SELECT COALESCE(SUM(context_bytes),0) AS n FROM agent_sessions WHERE user_id = ?').get(uid) as { n: number }
-      if (usage.n + bytes > CONTEXT_LIMITS.contextBytesPerUser) contextError('CONTEXT_LIMIT', '摘要存储已到上限，原有历史仍然保留。')
+      const usage = this.db.prepare('SELECT COALESCE(SUM(context_bytes),0) AS n,COALESCE(SUM(stored_bytes+context_bytes+run_bytes),0) AS total,MAX(run_id IS NOT NULL) AS active FROM agent_sessions WHERE user_id = ?').get(uid) as { n: number; total: number; active: number }
+      if (usage.n + bytes > CONTEXT_LIMITS.contextBytesPerUser || usage.total + bytes + (usage.active ? 2048 : 0) > HISTORY_LIMITS.bytesPerUser) contextError('CONTEXT_LIMIT', '摘要存储已到上限，原有历史仍然保留。')
       const serial = this.db.prepare('SELECT context_version_seq AS n FROM agent_sessions WHERE user_id = ? AND id = ?').get(uid, id) as { n: number }
       const version = serial.n + 1
       this.db.prepare(`INSERT INTO agent_context_versions (user_id,session_id,version,parent_version,created_at,from_seq,through_seq,provider,model,method,origin,

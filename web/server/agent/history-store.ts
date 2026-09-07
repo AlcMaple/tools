@@ -51,7 +51,7 @@ export function initializeAgentHistorySchema(db: Database.Database): void {
   for (const [name, declaration] of [
     ['context_job_id', 'TEXT'], ['context_generation', 'INTEGER NOT NULL DEFAULT 0'],
     ['context_version_seq', 'INTEGER NOT NULL DEFAULT 0'], ['context_bytes', 'INTEGER NOT NULL DEFAULT 0'],
-    ['context_adaptive', 'INTEGER NOT NULL DEFAULT 1'],
+    ['context_adaptive', 'INTEGER NOT NULL DEFAULT 1'], ['run_id', 'TEXT'], ['run_bytes', 'INTEGER NOT NULL DEFAULT 0'],
   ]) if (!columns.some(c => c.name === name)) db.exec(`ALTER TABLE agent_sessions ADD COLUMN ${name} ${declaration}`)
 }
 
@@ -60,7 +60,7 @@ interface SessionRow {
   created_at: number; updated_at: number; archived_at: number | null; revision: number
   last_event_seq: number; last_message_seq: number; message_count: number; stored_bytes: number
   active_summary_version: number | null; context_tier: HistorySession['contextTier']
-  context_job_id: string | null; context_bytes: number
+  context_job_id: string | null; context_bytes: number; run_id: string | null
   current_bgm_id: number | null; provider: HistorySession['provider']; model: string
 }
 interface MessageRow {
@@ -117,7 +117,7 @@ function encodeContent(content: AssistantMessageContent) {
 export class AgentHistoryStore {
   constructor(private readonly db: Database.Database, private readonly limits: {
     sessionsPerUser: number; messagesPerSession: number; bytesPerSession: number; bytesPerUser: number
-  } = HISTORY_LIMITS) {}
+  } = HISTORY_LIMITS, private readonly runId?: string) {}
 
   private session(uid: number, id: string): SessionRow {
     if (!Number.isSafeInteger(uid) || uid <= 0) throw new AgentHistoryError('NOT_FOUND', 404, '这本手帐没有找到。')
@@ -135,7 +135,12 @@ export class AgentHistoryStore {
     if (s.archived_at !== null) throw new AgentHistoryError('SESSION_ARCHIVED', 409, '这本手帐已归档，先恢复再继续写吧。')
   }
 
+  private expectRun(s: SessionRow): void {
+    if (s.run_id && s.run_id !== this.runId) throw new AgentHistoryError('SESSION_BUSY', 409, '回复正在准备或执行，先取消或等它结束吧。')
+  }
+
   private expectIdle(s: SessionRow): void {
+    this.expectRun(s)
     if (s.context_job_id) throw new AgentHistoryError('SESSION_BUSY', 409, '上下文正在整理，先取消或等它完成吧。')
     const busy = this.db.prepare("SELECT 1 FROM agent_messages WHERE user_id = ? AND session_id = ? AND (status = 'streaming' OR pending_actions = 1) LIMIT 1").get(s.user_id, s.id)
     if (busy) throw new AgentHistoryError('SESSION_BUSY', 409, '这本手帐还有进行中的回复或动作，先取消或等它结束吧。')
@@ -148,8 +153,8 @@ export class AgentHistoryStore {
   }
 
   private expectSpace(s: SessionRow, delta: number, adding: boolean): void {
-    const { bytes } = this.db.prepare('SELECT COALESCE(SUM(stored_bytes + context_bytes), 0) AS bytes FROM agent_sessions WHERE user_id = ?').get(s.user_id) as { bytes: number }
-    if ((adding && s.message_count >= this.limits.messagesPerSession) || s.stored_bytes + delta > this.limits.bytesPerSession || bytes + delta > this.limits.bytesPerUser) {
+    const { bytes, active } = this.db.prepare('SELECT MAX(run_id IS NOT NULL) AS active, COALESCE(SUM(stored_bytes + context_bytes + run_bytes), 0) AS bytes FROM agent_sessions WHERE user_id = ?').get(s.user_id) as { bytes: number; active: number }
+    if ((adding && s.message_count >= this.limits.messagesPerSession) || s.stored_bytes + delta > this.limits.bytesPerSession || bytes + delta + (active ? 2048 : 0) > this.limits.bytesPerUser) {
       throw new AgentHistoryError('HISTORY_LIMIT', 409, '手帐空间已到上限，请先导出并清理旧会话。')
     }
   }
@@ -213,7 +218,7 @@ export class AgentHistoryStore {
     const p = parse<PatchHistorySession>(PATCH_SESSION_SCHEMA, input)
     if (Object.keys(p).length < 2 || (p.title !== undefined && !p.title.trim())) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '请填写要修改的手帐内容。')
     return this.db.transaction(() => {
-      const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision)
+      const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectRun(s)
       if (s.context_job_id) this.expectIdle(s)
       if (p.archived === true || p.currentBgmId !== undefined) this.expectIdle(s)
       this.db.prepare('UPDATE agent_sessions SET title = ?, archived_at = ?, current_bgm_id = ? WHERE user_id = ? AND id = ?')
@@ -262,7 +267,7 @@ export class AgentHistoryStore {
     parse(HISTORY_ID_SCHEMA, messageId)
     const p = parse<UpdateAssistantMessage>(ASSISTANT_UPDATE_SCHEMA, input), encoded = encodeContent(p)
     return this.db.transaction(() => {
-      const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectWritable(s)
+      const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectWritable(s); this.expectRun(s)
       if (s.context_job_id) this.expectIdle(s)
       const row = this.db.prepare('SELECT * FROM agent_messages WHERE user_id = ? AND session_id = ? AND id = ?').get(uid, id, messageId) as MessageRow | undefined
       if (!row) throw new AgentHistoryError('NOT_FOUND', 404, '这条回复没有找到。')

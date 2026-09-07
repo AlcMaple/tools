@@ -6,3 +6,7 @@ dist
 .env.*
 !.env.example
 data
+
+# Generated together with the running server build.
+/server/agent-release.json
+/server/.agent-release-*.tmp

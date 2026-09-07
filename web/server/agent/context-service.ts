@@ -39,23 +39,33 @@ export class AgentContextService {
     if(!Number.isSafeInteger(tokens)||tokens<0) contextError('PROVIDER_CAPABILITY','模型 token 计数结果不正确。')
     return {...view,estimatedTokens:tokens,budget:contextBudget(view.budget.tier,caps,view.budget.reservedOutputTokens,tokens)}
   }
-  async prepare(uid:number,id:string,p:CompactRequest & {question:string}) {
+  async prepare(uid:number,id:string,p:CompactRequest & {question:string}, options: {runId?:string;signal?:AbortSignal;additionalInput?:unknown;provider?:{source:string;model:string;fingerprint:string}} = {}) {
+    this.store.assertRun(uid,id,options.runId)
     this.expire()
     let ledger=readContextLedger(this.store,uid,id)
     if(ledger.session.revision!==p.expectedRevision) contextError('REVISION_CONFLICT','手帐已更新，请刷新后再继续。')
     const current=this.store.activeJob(uid)
     if(current) return {state:'compacting' as const,job:current,view:null}
-    const signal=AbortSignal.timeout(30_000), {provider,capabilities:caps}=await this.provider(uid,signal)
-    let view=await this.countView(provider,caps,buildActiveContext(this.store,ledger,p.question,caps,contextHash(provider.profile)),signal)
+    const signal=options.signal ? AbortSignal.any([options.signal,AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000), {provider,capabilities:caps}=await this.provider(uid,signal)
+    signal.throwIfAborted()
+    if(options.provider && (provider.profile.source!==options.provider.source || provider.profile.model!==options.provider.model || provider.profile.fingerprint!==options.provider.fingerprint)) contextError('PROVIDER_CHANGED','模型配置已变化，请重新开始这轮对话。')
+    const activeView = () => {
+      const base=buildActiveContext(this.store,ledger,p.question,caps,contextHash(provider.profile))
+      if(options.additionalInput===undefined)return base
+      const layers=[...base.layers,{kind:'server_capabilities',data:JSON.stringify(options.additionalInput)}]
+      const tokens=estimateContextTokens({layers,nativeState:base.nativeState})
+      return {...base,layers,estimatedTokens:tokens,budget:contextBudget(ledger.session.contextTier,caps,base.budget.reservedOutputTokens,tokens)}
+    }
+    let view=await this.countView(provider,caps,activeView(),signal)
     // 仅固定原文/本轮问题本身需要更大空间时扩档；旧历史过长优先压缩，避免每轮堆满窗口。
     if(this.store.settings(uid,id).adaptive && view.budget.shouldCompact) {
       const fixed=estimateContextTokens({rules:AGENT_SYSTEM_RULES,preferences:ledger.preferences,question:p.question,pinned:ledger.messages.filter(m=>ledger.pinnedIds.has(m.id))})
       const tiers=Object.keys(CONTEXT_TIERS) as ContextTier[]
       for(const tier of tiers.filter(t=>CONTEXT_TIERS[t]>CONTEXT_TIERS[ledger.session.contextTier])) {
         if(fixed<view.budget.compactAt || Math.min(CONTEXT_TIERS[tier],caps.contextTokens)<=view.budget.effectiveTokens) break
-        this.store.setContext(uid,id,ledger.session.revision,{contextTier:tier,adaptive:true})
+        this.store.setContext(uid,id,ledger.session.revision,{contextTier:tier,adaptive:true},options.runId)
         ledger=readContextLedger(this.store,uid,id)
-        view=await this.countView(provider,caps,buildActiveContext(this.store,ledger,p.question,caps,contextHash(provider.profile)),signal)
+        view=await this.countView(provider,caps,activeView(),signal)
         if(!view.budget.shouldCompact) break
       }
     }
@@ -66,13 +76,13 @@ export class AgentContextService {
     if(!mandatory.budget.fits)contextError('CONTEXT_BUDGET','本轮问题和固定原文已超过窗口，请调整档位或固定范围。')
     const active=this.store.active(uid,id)
     const reducible=ledger.messages.some(m=>!ledger.pinnedIds.has(m.id)&&(m.seq>(active?.view.transcriptRange.throughSeq??0)||active?.view.quality.restoredMessageIds.includes(m.id)))
-    if(view.budget.shouldCompact&&reducible) return {state:'compacting' as const,job:this.start(uid,id,{requestId:p.requestId,expectedRevision:ledger.session.revision},'automatic'),view}
+    if(view.budget.shouldCompact&&reducible) return {state:'compacting' as const,job:this.start(uid,id,{requestId:p.requestId,expectedRevision:ledger.session.revision},'automatic',undefined,options.runId),view}
     if(!view.budget.fits) contextError('CONTEXT_BUDGET','固定原文超出窗口，原有历史仍然保留。')
     return {state:'ready' as const,job:null,view}
   }
-  start(uid:number,id:string,p:CompactRequest,trigger:'manual'|'automatic'='manual',edit?:SummaryState) {
+  start(uid:number,id:string,p:CompactRequest,trigger:'manual'|'automatic'='manual',edit?:SummaryState,runId?:string) {
     this.expire()
-    const started=this.store.beginJob(uid,id,p.requestId,p.expectedRevision,trigger)
+    const started=this.store.beginJob(uid,id,p.requestId,p.expectedRevision,trigger,runId)
     if(!started.fresh) return started.job
     const controller=new AbortController(); this.controllers.set(started.job.id,controller)
     const work=Promise.resolve().then(()=>this.run(uid,id,started.job.id,controller,edit)).finally(()=>{this.controllers.delete(started.job.id);this.pending.delete(started.job.id)})
@@ -197,6 +207,7 @@ export class AgentContextService {
     return this.start(uid,id,{requestId:'edit-'+contextHash({revision,state}),expectedRevision:revision},'manual',state)
   }
   restore(uid:number,id:string,revision:number,version:number) {
+    this.store.assertRun(uid,id)
     if(this.store.activeJob(uid)) contextError('SESSION_BUSY','先完成或取消当前压缩，再恢复摘要吧。')
     const ledger=readContextLedger(this.store,uid,id),old=this.store.version(uid,id,version),state=structuredClone(old.view.state)
     state.confirmed_preferences=ledger.preferences.map(p=>p.id)
