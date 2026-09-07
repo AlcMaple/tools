@@ -5,6 +5,7 @@ import Database from 'better-sqlite3'
 import { join } from 'node:path'
 import { dataDir } from './data-dir'
 import { initializeAgentHistorySchema } from './agent/history-store'
+import { initializeAgentContextSchema } from './agent/context-store'
 
 export const db = new Database(join(dataDir, 'web.db'))
 // WAL:多个浏览器同时读列表 + 偶发写互不阻塞。
@@ -431,3 +432,4 @@ if (!migrationDone) {
 
 // Agent 历史独立于追番/点评同步；只新增自己的表，不递增 tracks_rev。
 initializeAgentHistorySchema(db)
+initializeAgentContextSchema(db)
