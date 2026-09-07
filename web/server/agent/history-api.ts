@@ -7,6 +7,8 @@ import { AgentHistoryStore } from './history-store'
 import { createAgentContextApi } from './context-api'
 import { agentContextService, agentContextStore } from './context-runtime'
 import { matchesContract } from './validation'
+import { createAgentRunApi } from './run-api'
+import { agentRunService, currentAgentKnowledge } from './run-runtime'
 
 const history = new Hono<{ Variables: { agentUid: number } }>()
 export const agentHistoryStore = new AgentHistoryStore(db)
@@ -79,6 +81,7 @@ history.get('/sessions/:sessionId/export', c => {
   return c.json(exported)
 })
 
+history.route('/',createAgentRunApi(agentRunService,currentAgentKnowledge))
 history.route('/',createAgentContextApi(agentContextService))
 
 export default history
