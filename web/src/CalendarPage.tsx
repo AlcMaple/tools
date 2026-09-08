@@ -1,4 +1,3 @@
-import { AgentContextButton } from './agent/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
 import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
@@ -815,7 +814,6 @@ function Poster({
   return (
     <article className={`poster${on ? ' tracked' : ''}`}>
       <div className="cover">
-        <AgentContextButton anime={{bgmId:item.id,title:displayTitle,titleCn:item.name_cn,episodes:item.episodes>0?item.episodes:null,year:/^\d{4}/.test(item.airDate)?Number(item.airDate.slice(0,4)):null}}/>
         {item.cover ? (
           <img
             className="cover-img"

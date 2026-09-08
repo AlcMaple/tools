@@ -137,6 +137,9 @@ export const AGENT_TOOLS = {
     parameters: { anyOf: [
       object({ bgmId, change: object({ kind: choice('add'), fields: trackFields }) }),
       object({ bgmId: trackId, change: object({ kind: choice('update'), fields: trackFields }) }),
+      // 自己记一条：离线库没有这部番时，模型给用户确认过的标题，服务端建自定义条目（负 bgmId）。
+      object({ change: object({ kind: choice('add_custom'), title: text(200, 1),
+        fields: object({ status, episode: integer(0, 20_000), userTags: tags }, []) }, ['kind', 'title']) }),
     ] },
     result: trackPreview, timeoutMs: 3000, maxCallsPerTurn: 12,
   },

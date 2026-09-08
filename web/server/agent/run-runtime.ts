@@ -1,6 +1,8 @@
-import { createAgentDataTools,READ_DATA_TOOLS,GUEST_DATA_TOOLS } from './data-tools'
+import { createAgentDataTools,READ_DATA_TOOLS,GUEST_DATA_TOOLS,PROPOSAL_DATA_TOOLS } from './data-tools'
+import { AgentActionStore,initializeAgentActionSchema,proposeTrackChangeTool } from './actions-store'
 import { enabledSiteFeatures } from './site-features'
 import { openOfflineIndex } from '../bgm/anime-index'
+import { borrowDeployedOfflineSearch } from '../bgm/dev-index-borrow'
 import { readCalendarSnapshot } from '../bgm/calendar'
 import { rewardsEnabled,invitesEnabled,lotteryEnabled } from '../rewards'
 import { emailDeliveryConfigured } from '../email-delivery'
@@ -16,15 +18,18 @@ import { AgentRunStore } from './run-store'
 import { AgentRunService } from './run-service'
 
 const loaded=readLoadedRelease()
-const registry=new AgentKnowledgeRegistry(loaded.release,AGENT_FEATURE_REGISTRATIONS,AGENT_FEATURES,READ_DATA_TOOLS,loaded.matches)
+const AUTHENTICATED_TOOLS=[...READ_DATA_TOOLS,...PROPOSAL_DATA_TOOLS] as const
+const registry=new AgentKnowledgeRegistry(loaded.release,AGENT_FEATURE_REGISTRATIONS,AGENT_FEATURES,AUTHENTICATED_TOOLS,loaded.matches)
 export function currentAgentKnowledge(uid:number){
   const row=db.prepare('SELECT token_version,ai_config FROM users WHERE id=?').get(uid) as {token_version:number;ai_config:string}|undefined
   if(!row)throw new AgentRunError('AUTH_REQUIRED',401)
   return registry.snapshot(uid,{enabled:true,permissionVersion:knowledgeHash({tv:row.token_version,aiConfig:row.ai_config,modelReady:externalReady(uid)}),
-    features:[...AGENT_FEATURES.filter(f=>f.id.startsWith('agent.')).map(f=>f.id),...enabledSiteFeatures({email:emailDeliveryConfigured(),google:Boolean(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),rewards:rewardsEnabled(uid),invites:invitesEnabled(uid),lottery:lotteryEnabled(uid)})],tools:[...READ_DATA_TOOLS],conditions:{answerModelAutoConnect:externalCanPrepare(uid),answerModelReady:externalReady(uid),dataToolsReady:true,chatUiReady:true,
+    features:[...AGENT_FEATURES.filter(f=>f.id.startsWith('agent.')).map(f=>f.id),...enabledSiteFeatures({email:emailDeliveryConfigured(),google:Boolean(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),rewards:rewardsEnabled(uid),invites:invitesEnabled(uid),lottery:lotteryEnabled(uid)})],tools:[...AUTHENTICATED_TOOLS],conditions:{answerModelAutoConnect:externalCanPrepare(uid),answerModelReady:externalReady(uid),dataToolsReady:true,chatUiReady:true,trackChangeReady:true,
       contextModelReady:externalReady(uid)}})
 }
 export const agentRunStore=new AgentRunStore(db)
+initializeAgentActionSchema(db)
+export const agentActionStore=new AgentActionStore(db,Date.now,uid=>currentAgentKnowledge(uid).version)
 // 测试通过显式依赖注入接入脚本 provider / 只读工具；生产入口从不导入测试夹具。
 export const agentRunService=new AgentRunService(agentRunStore,(uid,sessionId)=>{const binding=externalBinding(uid,`user:${uid}`);return {...bindAgentDataRun(uid,sessionId,binding.provider),execute:binding.execute}})
 
@@ -32,7 +37,7 @@ export const agentRunService=new AgentRunService(agentRunStore,(uid,sessionId)=>
 export function bindAgentDataRun(uid:number,sessionId:string,provider:RunProvider):RunBinding {
  const row=db.prepare('SELECT token_version FROM users WHERE id=?').get(uid) as {token_version:number}|undefined
  if(!row)throw new AgentRunError('AUTH_REQUIRED',401)
- return {provider,context:agentContextService,knowledge:()=>currentAgentKnowledge(uid),assertIdentity(){const current=db.prepare('SELECT token_version FROM users WHERE id=?').get(uid) as {token_version:number}|undefined;if(!current||current.token_version!==row.token_version)throw new AgentRunError('AUTH_REQUIRED',401)},tools:createAgentDataTools({db,index:openOfflineIndex,calendar:readCalendarSnapshot},{kind:'user',uid,sessionId,tokenVersion:row.token_version})}
+ return {provider,context:agentContextService,knowledge:()=>currentAgentKnowledge(uid),assertIdentity(){const current=db.prepare('SELECT token_version FROM users WHERE id=?').get(uid) as {token_version:number}|undefined;if(!current||current.token_version!==row.token_version)throw new AgentRunError('AUTH_REQUIRED',401)},tools:[...createAgentDataTools({db,index:openOfflineIndex,calendar:readCalendarSnapshot,devIndexFallback:borrowDeployedOfflineSearch},{kind:'user',uid,sessionId,tokenVersion:row.token_version}),proposeTrackChangeTool(agentActionStore,uid,sessionId)]}
 }
 
 export function currentGuestKnowledge(){

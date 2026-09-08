@@ -8,12 +8,16 @@ import type { CalendarWeekday } from '../bgm/calendar'
 
 export const READ_DATA_TOOLS = ['searchOfflineAnime','readCurrentAnimeContext','readCachedCalendar','listMyTracks','listPublicReviews','aggregatePublicData'] as const
 export const GUEST_DATA_TOOLS = ['readCachedCalendar','listPublicReviews','aggregatePublicData'] as const
+// 阶段 7：追番变更预览工具。仅登录账号注册；访客知识与工具集永远不含它。
+export const PROPOSAL_DATA_TOOLS = ['proposeTrackChange'] as const
 export type DataPrincipal = {kind:'user';uid:number;sessionId:string;tokenVersion:number}|{kind:'guest'}
 export interface DataDependencies {
   db:Database.Database
   index:()=>Database.Database|null
   calendar:()=>{data:CalendarWeekday[];updatedAt:number}|null
   now?:()=>number
+  // 仅 dev：本机没有离线索引时借线上离线结果（线上已模糊匹配），写入 bgm_search_additions 并返回命中。生产不接。
+  devIndexFallback?:(query:string)=>Promise<{bgmId:number;name:string;nameCn:string;date:string;score:number}[]>
 }
 import type { PageAnimeContext } from '../../shared/agent-history'
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,32)
@@ -50,7 +54,27 @@ export function createAgentDataTools(deps:DataDependencies,principal:DataPrincip
       if(name==='searchOfflineAnime'){
         if(typeof f.yearFrom==='number'&&typeof f.yearTo==='number'&&f.yearFrom>f.yearTo)return fail('INVALID_ARGUMENT','年份范围不正确。')
         if(f.completed!==undefined)return fail('CONTEXT_MISSING','离线资料未收录可靠的完结状态，请移除此筛选条件。')
-        const index=deps.index();if(!index)return fail('CACHE_MISS','离线索引尚未就绪，未调用在线搜索。')
+        const index=deps.index()
+        const structuralOk=(item:ReturnType<typeof anime>)=>
+          !(typeof f.yearFrom==='number'&&(item.year===null||item.year<f.yearFrom))
+          &&!(typeof f.yearTo==='number'&&(item.year===null||item.year>f.yearTo))
+          &&!(typeof f.episodesMax==='number'&&(item.episodes===null||item.episodes>f.episodesMax))
+          &&tagged(f.tags,item.tags)
+        // dev 本机无索引：借线上离线结果，保留线上按相关度排的顺序，只套结构化筛选，不本地重排。
+        if(!index){
+          if(f.similarToBgmId!==undefined)return fail('CACHE_MISS','离线索引尚未就绪，相似检索不可用。')
+          const q0=typeof f.query==='string'?f.query.trim():''
+          const borrowed=deps.devIndexFallback&&q0?await deps.devIndexFallback(q0):[]
+          if(!borrowed.length)return fail('CACHE_MISS','离线索引尚未就绪，未调用在线搜索。')
+          const out:ReturnType<typeof anime>[]=[]
+          const dseen=new Set<number>()
+          for(const hit of borrowed){guard();const id=Number(hit.bgmId)
+            if(!Number.isSafeInteger(id)||id<=0||dseen.has(id))continue;dseen.add(id)
+            const item=anime({bgm_id:id,name:hit.name,name_cn:hit.nameCn,date:hit.date,score:hit.score,aliases:'[]',tags:'[]'})
+            if(item.title&&structuralOk(item))out.push(item)
+            if(out.length>=limit)break}
+          result=success({items:out},'offline_index','BGM 离线索引与本地补充（开发环境借用）',borrowed.length>out.length)
+        }else{
         const columns=index.prepare('PRAGMA table_info(anime)').all() as {name:string}[]
         const query=`SELECT bgm_id,name,name_cn,aliases,date,score,${columns.some(c=>c.name==='tags')?'tags':"'[]' AS tags"},${columns.some(c=>c.name==='eps')?'eps':'0 AS eps'} FROM anime`
         let similar:string[]=[]
@@ -60,12 +84,13 @@ export function createAgentDataTools(deps:DataDependencies,principal:DataPrincip
         const collect=(rows:Iterable<unknown>)=>{for(const raw of rows){guard();if(++scanned>100000)throw fail('QUOTA_EXCEEDED','离线候选过多，请缩小范围。');const r=raw as Row,id=Number(r.bgm_id);if(!Number.isSafeInteger(id)||id<=0||seen.has(id))continue;seen.add(id);const item=anime(r);if(!item.title)continue
           const q=text(f.query,120).trim().toLowerCase(),hay=[item.title,item.titleCn,text(r.aliases,8192)].join(' ').toLowerCase()
           if(q&&!hay.includes(q)||!tagged(f.tags,item.tags)||f.similarToBgmId===id||similar.length&&!similar.some(t=>item.tags.includes(t)))continue
-          if(typeof f.yearFrom==='number'&&(item.year===null||item.year<f.yearFrom)||typeof f.yearTo==='number'&&(item.year===null||item.year>f.yearTo)||typeof f.episodesMax==='number'&&(item.episodes===null||item.episodes>f.episodesMax))continue
+          if(!structuralOk(item))continue
           hits.push({item,score:Number(r.score)||0,rank:similar.filter(t=>item.tags.includes(t)).length+(q&&(item.title.toLowerCase()===q||item.titleCn.toLowerCase()===q)?100:0)})}}
         collect(index.prepare(query).iterate())
         collect(deps.db.prepare("SELECT bgm_id,name,name_cn,aliases,date,score,'[]' AS tags,0 AS eps FROM bgm_search_additions").iterate())
         hits.sort((a,b)=>b.rank-a.rank||b.score-a.score||a.item.bgmId-b.item.bgmId)
         result=success({items:hits.slice(0,limit).map(h=>h.item)},'offline_index','BGM 离线索引与本地补充',hits.length>limit)
+        }
       }else if(name==='readCurrentAnimeContext'){
         if(principal.kind!=='user')return fail('AUTH_REQUIRED','访客尚未开放页面上下文工具。')
         const row=deps.db.prepare('SELECT current_bgm_id,page_context_json FROM agent_sessions WHERE user_id=? AND id=?').get(principal.uid,principal.sessionId) as {current_bgm_id:number|null;page_context_json:string}|undefined

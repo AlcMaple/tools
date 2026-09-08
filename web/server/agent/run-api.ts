@@ -6,8 +6,12 @@ import { getSession, rateLimited } from '../auth'
 import { AgentHistoryError, HISTORY_LIMITS } from '../../shared/agent-history'
 import { AgentRunError, RUN_LIMITS } from '../../shared/agent-run'
 import { AGENT_LIMITS } from './policy'
+import { APPLY_TRACK_CHANGE_SCHEMA } from '../../shared/agent-contracts'
+import { matchesContract } from './validation'
 import type { AgentRunService } from './run-service'
+import type { AgentActionStore } from './actions-store'
 import type { KnowledgeSnapshot } from './knowledge'
+import { logAgentIssue, logAgentRequest } from './diagnostics'
 
 const messages: Record<string,string> = {
   AUTH_REQUIRED:'登录状态已更新，请重新登录。', NOT_FOUND:'这次对话记录没有找到。', INVALID_ARGUMENT:'参数没有读懂，请检查后再试。',
@@ -19,7 +23,7 @@ async function readBody(c:Context):Promise<unknown>{
   if(!/^application\/json(?:;|$)/i.test(c.req.header('content-type')??''))throw new AgentRunError('INVALID_ARGUMENT',400)
   try{return await c.req.json()}catch{throw new AgentRunError('INVALID_ARGUMENT',400)}
 }
-export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)=>KnowledgeSnapshot,
+export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)=>KnowledgeSnapshot,actions:AgentActionStore,
   timings:{heartbeatMs:number;idleMs:number}={heartbeatMs:AGENT_LIMITS.heartbeatMs,idleMs:AGENT_LIMITS.idleMs}) {
   const app=new Hono<{Variables:{runUid:number;runTv:number}}>(),subscribers=new Map<number,number>()
   app.use('*',async(c,next)=>{
@@ -27,18 +31,37 @@ export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)
     const session=await getSession(c)
     if(!session)throw new AgentRunError('AUTH_REQUIRED',401)
     c.set('runUid',session.uid);c.set('runTv',session.tv);c.header('X-Agent-Owner',String(session.uid))
+    logAgentRequest('run-api',c.req.method,c.req.path,session.uid)
     if(rateLimited(`agent-run:${c.req.method==='GET'?'read':'write'}:${session.uid}`,c.req.method==='GET'?120:30,60_000)){
-      c.header('Retry-After','60');throw new AgentRunError('RATE_LIMITED',429)
+      c.header('Retry-After','60')
+      logAgentIssue('run-api',{limit:c.req.method==='GET'?'read 120/min':'write 30/min',method:c.req.method,path:c.req.path,uid:session.uid})
+      throw new AgentRunError('RATE_LIMITED',429)
     }
     await next();c.header('Cache-Control','no-store')
   })
   app.use('*',bodyLimit({maxSize:HISTORY_LIMITS.requestBytes,onError:c=>c.json({code:'MESSAGE_TOO_LARGE'},413)}))
   app.onError((error,c)=>{
+    logAgentIssue('run-api',{method:c.req.method,path:c.req.path,uid:c.get('runUid')},error)
     if(error instanceof AgentRunError)return c.json({code:error.code,error:messages[error.code]??externalError(error).error},error.status)
     if(error instanceof AgentHistoryError)return c.json({code:error.code,error:error.message},error.status)
     return c.json({code:'INTERNAL_ERROR',error:'这次操作遇到问题，原有记录仍然保留。'},500)
   })
   app.get('/knowledge',c=>c.json(knowledge(c.get('runUid'))))
+  const actionId=(c:Context)=>{const id=c.req.param('actionId')??'';if(!/^act-[a-zA-Z0-9-]{1,90}$/.test(id))throw new AgentRunError('NOT_FOUND',404);return id}
+  app.get('/actions/:actionId',c=>c.json(actions.detail(c.get('runUid'),actionId(c))))
+  app.post('/actions/:actionId/apply',async c=>{
+    const body=await readBody(c)
+    if(!matchesContract(APPLY_TRACK_CHANGE_SCHEMA,body))throw new AgentRunError('INVALID_ARGUMENT',400)
+    const p=body as {actionId:string;requestId:string;expectedRevision:number;confirmationToken:string}
+    if(p.actionId!==actionId(c))throw new AgentRunError('INVALID_ARGUMENT',400)
+    return c.json(actions.apply(c.get('runUid'),p.actionId,{requestId:p.requestId,expectedRevision:p.expectedRevision,confirmationToken:p.confirmationToken}))
+  })
+  app.post('/actions/:actionId/cancel',async c=>{
+    const body=await readBody(c)
+    if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>k!=='expectedRevision')
+      ||('expectedRevision' in body&&!Number.isSafeInteger((body as {expectedRevision:unknown}).expectedRevision)))throw new AgentRunError('INVALID_ARGUMENT',400)
+    return c.json(actions.cancel(c.get('runUid'),actionId(c),body as {expectedRevision?:number}))
+  })
   app.get('/sessions/:sessionId/runs',c=>{
     const query=c.req.queries()
     if(Object.entries(query).some(([key,values])=>!['limit','beforeCreatedAt','beforeId'].includes(key)||values.length!==1)

@@ -7,6 +7,7 @@ import { dataDir } from './data-dir'
 import { initializeAgentHistorySchema } from './agent/history-store'
 import { initializeAgentContextSchema } from './agent/context-store'
 import { initializeAgentRunSchema } from './agent/run-store'
+import { initializeAgentActionSchema } from './agent/actions-store'
 
 export const db = new Database(join(dataDir, 'web.db'))
 // WAL:多个浏览器同时读列表 + 偶发写互不阻塞。
@@ -435,3 +436,4 @@ if (!migrationDone) {
 initializeAgentHistorySchema(db)
 initializeAgentContextSchema(db)
 initializeAgentRunSchema(db)
+initializeAgentActionSchema(db)

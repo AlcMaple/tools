@@ -171,8 +171,8 @@
   },
   {
     "file": "server/agent/history-api.ts",
-    "method": "route",
-    "path": "/"
+    "method": "post",
+    "path": "/sessions/:sessionId/truncate"
   },
   {
     "file": "server/agent/history-api.ts",
@@ -183,6 +183,16 @@
     "file": "server/agent/history-api.ts",
     "method": "route",
     "path": "/"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "route",
+    "path": "/"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "get",
+    "path": "/actions/:actionId"
   },
   {
     "file": "server/agent/run-api.ts",
@@ -203,6 +213,16 @@
     "file": "server/agent/run-api.ts",
     "method": "get",
     "path": "/sessions/:sessionId/runs"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/actions/:actionId/apply"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/actions/:actionId/cancel"
   },
   {
     "file": "server/agent/run-api.ts",

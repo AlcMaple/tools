@@ -21,6 +21,7 @@
     "test:agent-history": "tsx scripts/test-agent-history.ts",
     "test:agent-context": "tsx scripts/test-agent-context.ts",
     "test:agent-loop": "npm run build:agent-release && tsx scripts/test-agent-loop.ts",
+    "test:agent-tracks": "npm run build:agent-release && tsx scripts/test-agent-tracks.ts",
     "sync:agent-guide": "tsx scripts/sync-agent-feature-docs.ts",
     "test:agent-data": "npm run build && tsx scripts/test-agent-data.ts",
     "build:agent-release": "tsx scripts/build-agent-release.ts",

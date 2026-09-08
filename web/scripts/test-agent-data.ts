@@ -36,7 +36,20 @@ try{
  await check('标签相似来自已知标签、排除本条，无标签明确缺资料',async()=>{const r=await call('searchOfflineAnime',{filters:{similarToBgmId:101,limit:30}});assert.deepEqual(r.data.items?.map(i=>i.bgmId),[102,103]);assert.equal((await call('searchOfflineAnime',{filters:{similarToBgmId:104,limit:30}})).code,'CONTEXT_MISSING')})
  await check('完结未知不由集数或年份猜测，未知集数保持 null',async()=>{assert.equal((await call('searchOfflineAnime',{filters:{completed:true,limit:5}})).code,'CONTEXT_MISSING');assert.equal((await call('searchOfflineAnime',{filters:{query:'未知',limit:5}})).data.items?.[0].episodes,null)})
  await check('本地补充参与去重检索，无在线回退',async()=>{db.prepare("INSERT INTO bgm_search_additions(bgm_id,name,name_cn,added_at) VALUES(105,'本地新番','本地新番',?)").run(start);const r=await call('searchOfflineAnime',{filters:{query:'本地新番',limit:5}});assert.equal(r.data.items?.[0].bgmId,105);assert.equal((await call('searchOfflineAnime',{filters:{query:'不存在',limit:5}})).data.items?.length,0)})
- await check('缺索引返回 CACHE_MISS，无远端开发代理请求',async()=>{tools=createAgentDataTools({...deps,index:()=>null},principal);assert.equal((await call('searchOfflineAnime',{filters:{limit:5}})).code,'CACHE_MISS');tools=createAgentDataTools(deps,principal)})
+ await check('缺索引且无本地补充返回 CACHE_MISS；dev 借用按线上模糊命中返回，不按子串二次过滤，不联网',async()=>{
+   db.prepare('DELETE FROM bgm_search_additions').run()
+   tools=createAgentDataTools({...deps,index:()=>null},principal)
+   assert.equal((await call('searchOfflineAnime',{filters:{query:'任意',limit:5}})).code,'CACHE_MISS')
+   // 线上把「大小姐不会格斗」模糊命中到标题并不含该子串的条目；借用后仍应返回
+   let asked='';const fallback=async(q:string)=>{asked=q;const hit={bgmId:702,name:'お嬢様は格闘なんてしません',nameCn:'感谢对战。～大小姐才不玩格斗游戏～',date:'2026-01-01',score:7.1};db.prepare("INSERT OR REPLACE INTO bgm_search_additions(bgm_id,name,name_cn,aliases,date,score,added_at) VALUES(?,?,?,'[]',?,?,?)").run(hit.bgmId,hit.name,hit.nameCn,hit.date,hit.score,start);return [hit]}
+   tools=createAgentDataTools({...deps,index:()=>null,devIndexFallback:fallback},principal)
+   const r=await call('searchOfflineAnime',{filters:{query:'大小姐不会格斗',limit:5}})
+   assert.equal(asked,'大小姐不会格斗');assert.equal(r.data.items?.[0].bgmId,702);assert.equal(f.metrics.externalRequests,0)
+   // 不是这次借用命中、且不含子串的旧补充条目仍被过滤
+   db.prepare("INSERT OR REPLACE INTO bgm_search_additions(bgm_id,name,name_cn,aliases,date,score,added_at) VALUES(703,'无关旧条目','无关旧条目','[]','',0,?)").run(start)
+   assert.equal((await call('searchOfflineAnime',{filters:{query:'大小姐不会格斗',limit:5}})).data.items?.some(i=>i.bgmId===703),false)
+   tools=createAgentDataTools(deps,principal)
+ })
  await check('参数拒绝额外 uid/URL/SQL/错误范围',async()=>{for(const args of [{filters:{limit:5},uid:f.bob},{filters:{limit:5,url:'https://invalid.test'}},{filters:{limit:31}},{filters:{yearFrom:2025,yearTo:2020,limit:5}}])assert.equal((await call('searchOfflineAnime',args as unknown as Record<string,JsonValue>)).code,'INVALID_ARGUMENT');assert.equal((await call('searchOfflineAnime',{filters:{query:"' OR 1=1 --",limit:5}})).data.items?.length,0)})
  await check('周历只读已有缓存，星期筛选和截断可见',async()=>{const r=await call('readCachedCalendar',{range:{weekdays:[1,2],limit:1}});assert(r.ok&&r.truncated);assert.equal(r.data.items?.[0].weekday,1);assert.equal(r.data.cachedAt!==undefined,true)})
  await check('缺失和过期缓存不调用在线刷新',async()=>{tools=createAgentDataTools({...deps,calendar:()=>null},principal);assert.equal((await call('readCachedCalendar',{range:{limit:5}})).code,'CACHE_MISS');tools=createAgentDataTools({...deps,calendar:()=>({...readCalendarSnapshot()!,updatedAt:start-15*86400000})},principal);assert.equal((await call('readCachedCalendar',{range:{limit:5}})).data.stale,true);tools=createAgentDataTools(deps,principal)})

@@ -317,6 +317,28 @@ try {
     const added = store.appendUser(alice, s.id, { requestId: randomUUID(), expectedRevision: s.revision, body: '清空后的新消息' }); s = added.session
     assert(added.message.seq > last)
   })
+  await check('编辑并重发：从某条用户消息起截断，之后的对话丢弃，seq 不回退', async () => {
+    let e = store.createSession(alice, fresh())
+    for (const body of ['q1', 'q2', 'q3']) {
+      e = store.appendUser(alice, e.id, { requestId: randomUUID(), expectedRevision: e.revision, body }).session
+      e = store.appendAssistant(alice, e.id, { requestId: randomUUID(), expectedRevision: e.revision, ...content('a for ' + body) }).session
+    }
+    const msgs = store.snapshot(alice, e.id).messages, q2 = msgs.find(m => m.role === 'user' && m.body === 'q2')!
+    const lastSeq = msgs.at(-1)!.seq
+    // 只能从用户消息截断
+    expectError(() => store.truncateSession(alice, e.id, { expectedRevision: e.revision, fromSeq: q2.seq + 1 }), 'INVALID_ARGUMENT')
+    expectError(() => store.truncateSession(alice, e.id, { expectedRevision: e.revision - 1, fromSeq: q2.seq }), 'REVISION_CONFLICT')
+    const before = e.revision
+    e = store.truncateSession(alice, e.id, { expectedRevision: e.revision, fromSeq: q2.seq })
+    assert.equal(e.revision, before + 1); assert.equal(e.messageCount, 2)
+    assert.deepEqual(store.snapshot(alice, e.id).messages.map(m => m.body), ['q1', 'a for q1'])
+    assert.equal(store.snapshot(alice, e.id).session.activeSummaryVersion, null)
+    // seq 不回退：新消息 seq 大于被删掉的
+    const added = store.appendUser(alice, e.id, { requestId: randomUUID(), expectedRevision: e.revision, body: 'q2 改' })
+    assert(added.message.seq > lastSeq)
+    // HTTP：跨账号拒绝
+    assert.equal((await request(`/sessions/${e.id}/truncate`, { method: 'POST', payload: { expectedRevision: added.session.revision, fromSeq: 1 }, cookie: cookieB })).response.status, 404)
+  })
   await check('删除级联移除内容，短期创建重试不让已删会话重新出现', async () => {
     assert.equal((await request(`/sessions/${s.id}`, { method: 'DELETE', payload: { expectedRevision: s.revision - 1 } })).response.status, 409)
     assert.equal((await request(`/sessions/${s.id}`, { method: 'DELETE', payload: { expectedRevision: s.revision } })).response.status, 200)
