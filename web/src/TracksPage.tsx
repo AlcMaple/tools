@@ -1,3 +1,4 @@
+import { AGENT_NAVIGATION_EVENT,takeAgentNavigation } from './agent/navigation'
 // 我的追番 —— 皮肤 = 原型稿 tracks.html：等宽卡片网格（不按更新日分组，今天更新的番贴
 // 「今天更新」小贴纸）、一体式步进器 + 铅笔排线进度条钉同一行、状态分段（想看/在追/看完）
 // 常驻直点、纸片弹窗。便签 Toast 做操作反馈。
@@ -125,6 +126,25 @@ export function TracksPage(): JSX.Element {
   const [adding, setAdding] = useState<AddFlow | null>(null) // 加番搜索弹窗
   const [importOpen, setImportOpen] = useState(false)
   const today = useMemo(todayBgmId, [])
+
+  useEffect(() => {
+    if (!user || !tracks) return
+    const receive = (): void => {
+      const action = takeAgentNavigation(user.id)
+      if (!action) return
+      if (action.kind === 'search') { setAdding({}); return }
+      const track = tracks.find(item => item.bgmId === action.bgmId)
+      if (!track) { toast('先在我的追番里找到这部番，再打开这个入口吧'); return }
+      if (action.kind === 'review') {
+        if (track.bgmId > 0 && (track.status === 'watching' || track.status === 'done')) setWritingReview(track.bgmId)
+        else toast('在追或看完的番，才可以打开点评助手')
+      } else if (track.bgmId > 0) setSearchFlow({source:action.source,track,mode:'online'})
+    }
+    receive()
+    window.addEventListener(AGENT_NAVIGATION_EVENT,receive)
+    return () => window.removeEventListener(AGENT_NAVIGATION_EVENT,receive)
+  },[user,tracks])
+
 
   // 秒开缓存 + 后台校验:缓存先渲染,服务器响应随后整份校正。缓存只是首屏优化
   // **不能覆盖**同一账号在另一台设备上已经落库的新状态。

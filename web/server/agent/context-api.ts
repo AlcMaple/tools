@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono'
 import type { ContractSchema, ContextTier, SummaryState } from '../../shared/agent-contracts'
 import { AgentHistoryError } from '../../shared/agent-history'
 import {
-  COMPACT_SCHEMA, PREPARE_CONTEXT_SCHEMA, PREFERENCE_CREATE_SCHEMA, PREFERENCE_EDIT_SCHEMA, CONFIRM_PREFERENCE_SCHEMA,
+  PREFERENCE_SETTINGS_SCHEMA, type PreferenceValues, COMPACT_SCHEMA, PREPARE_CONTEXT_SCHEMA, PREFERENCE_CREATE_SCHEMA, PREFERENCE_EDIT_SCHEMA, CONFIRM_PREFERENCE_SCHEMA,
   PIN_MESSAGE_SCHEMA, CONTEXT_SETTINGS_SCHEMA, SUMMARY_EDIT_SCHEMA, SUMMARY_RESTORE_SCHEMA,
   type CompactJob, type CompactRequest, type PreferenceCard,
 } from '../../shared/agent-context'
@@ -24,13 +24,15 @@ function keepJob(c:Context,service:AgentContextService,job:CompactJob) {
 }
 export function createAgentContextApi(service:AgentContextService) {
   const api=new Hono<{Variables:{agentUid:number}}>(),store=service.store
-  api.use('*',async(c,next)=>{c.header('Cache-Control','no-store');if(!Number.isSafeInteger(c.get('agentUid'))||c.get('agentUid')<=0)return c.json({code:'AUTH_REQUIRED',error:'先登录，再整理手帐吧。'},401);await next()})
+  api.use('*',async(c,next)=>{c.header('Cache-Control','no-store');if(!Number.isSafeInteger(c.get('agentUid'))||c.get('agentUid')<=0)return c.json({code:'AUTH_REQUIRED',error:'先登录，再整理手帐吧。'},401);c.header('X-Agent-Owner',String(c.get('agentUid')));await next()})
   api.onError((error,c)=>{if(error instanceof AgentHistoryError)return c.json({code:error.code,error:error.message},error.status);throw error})
   api.post('/capabilities/probe',async c=>{
     await input(c,{type:'object',properties:{},required:[],additionalProperties:false})
     return c.json(await service.capabilities(c.get('agentUid')))
   })
   api.get('/preferences',c=>{noQuery(c);return c.json({preferences:store.preferences(c.get('agentUid'))})})
+  api.get('/preferences/settings',c=>{noQuery(c);return c.json(store.preferenceSettings(c.get('agentUid')))})
+  api.put('/preferences/settings',async c=>{const p=await input<{expectedVersion:string;values:PreferenceValues}>(c,PREFERENCE_SETTINGS_SCHEMA);return c.json(store.savePreferenceSettings(c.get('agentUid'),p.expectedVersion,p.values))})
   api.post('/preferences',async c=>{
     const p=await input<{category:PreferenceCard['category'];value:string;sourceMessageId?:string}>(c,PREFERENCE_CREATE_SCHEMA)
     if(!p.value.trim()) contextError('INVALID_ARGUMENT','先写下想保存的偏好吧。',400)

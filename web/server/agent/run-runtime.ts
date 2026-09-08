@@ -13,7 +13,7 @@ export function currentAgentKnowledge(uid:number){
   const row=db.prepare('SELECT token_version,ai_config FROM users WHERE id=?').get(uid) as {token_version:number;ai_config:string}|undefined
   if(!row)throw new AgentRunError('AUTH_REQUIRED',401)
   return registry.snapshot(uid,{enabled:true,permissionVersion:knowledgeHash({tv:row.token_version,aiConfig:row.ai_config,contextEnabled:process.env.AGENT_CONTEXT_AI_ENABLED==='1'}),
-    features:AGENT_FEATURES.map(f=>f.id),tools:[],conditions:{answerModelReady:false,chatUiReady:false,
+    features:AGENT_FEATURES.map(f=>f.id),tools:[],conditions:{answerModelReady:false,chatUiReady:true,
       contextModelReady:process.env.AGENT_CONTEXT_AI_ENABLED==='1'&&Boolean(AI_API_KEY)&&normalizeAiConfig(row.ai_config).provider!=='byok'}})
 }
 export const agentRunStore=new AgentRunStore(db)

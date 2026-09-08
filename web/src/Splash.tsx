@@ -31,7 +31,7 @@ function shouldPlay(): boolean {
 // 第二遍读到自己刚写的 sessionStorage，开屏永远不放
 const PLAY = shouldPlay()
 
-export function Splash({ onComplete }: { onComplete?: () => void }): JSX.Element | null {
+export function Splash({ onComplete, onReady }: { onComplete?: () => void; onReady?: () => void }): JSX.Element | null {
   // wait = 纸已铺好、立绘还没解码完（此时时间轴停在第一帧）
   const [state, setState] = useState<'wait' | 'play' | 'out' | 'done'>(PLAY ? 'wait' : 'done')
   const ref = useRef<HTMLDivElement>(null)
@@ -107,6 +107,11 @@ export function Splash({ onComplete }: { onComplete?: () => void }): JSX.Element
     notified.current = true
     onComplete?.()
   }, [state, onComplete])
+
+  // 常驻界面只关心开屏已结束，和“实际播放过才弹公告”的通知分开。
+  useEffect(() => {
+    if (state === 'done') onReady?.()
+  }, [state, onReady])
 
   // 跳过：点一下 / 按任意键都算
   useEffect(() => {

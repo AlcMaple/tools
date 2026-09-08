@@ -18,6 +18,7 @@ history.use('*', async (c, next) => {
   const session = await getSession(c)
   if (!session) return c.json({ code: 'AUTH_REQUIRED', error: '先登录，再来翻这本手帐吧。' }, 401)
   c.set('agentUid', session.uid)
+  c.header('X-Agent-Owner',String(session.uid))
   const operation = c.req.method === 'GET' ? 'read' : 'write'
   if (rateLimited(`agent-history:${operation}:${session.uid}`, operation === 'read' ? 120 : 30, 60_000)) {
     c.header('Retry-After', '60')

@@ -20,7 +20,7 @@ export interface HistorySource {
 }
 
 export type HistoryAction = Pick<ActionReceipt, 'actionId' | 'kind' | 'state' | 'eventSeq' | 'updatedAt' | 'evidence' | 'errorCode' | 'userReportedSuccess'> & { summary: string }
-export type HistorySession = Omit<AgentSession, 'ownerUid'> & { messageCount: number }
+export type HistorySession = Omit<AgentSession, 'ownerUid'> & { messageCount: number; startedAt?: number | null }
 export type HistoryMessage = Omit<AgentMessage, 'ownerUid'> & {
   sources: HistorySource[]
   actions: HistoryAction[]

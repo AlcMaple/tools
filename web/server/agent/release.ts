@@ -10,10 +10,10 @@ export function agentCodeHash(root: string): string {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name)
       if (entry.isDirectory()) walk(path)
-      else if (entry.isFile() && entry.name.endsWith('.ts')) files.push(path)
+      else if (entry.isFile() && /\.(?:[cm]?[jt]sx?|css)$/.test(entry.name)) files.push(path)
     }
   }
-  for (const directory of ['server', 'shared']) walk(join(root, directory))
+  for (const directory of ['server', 'shared', 'src']) walk(join(root, directory))
   const hash = createHash('sha256')
   for (const file of files.sort()) hash.update(relative(root, file)).update('\0').update(readFileSync(file)).update('\0')
   return hash.digest('hex')

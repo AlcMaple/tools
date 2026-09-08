@@ -263,7 +263,7 @@ try {
     const now = Date.now
     try {
       const fixed = now(); Date.now = () => fixed
-      const ids = Array.from({ length: 3 }, () => store.createSession(carol, fresh()).id).sort().reverse()
+      const ids = Array.from({ length: 3 }, () => {const created=store.createSession(carol,fresh());store.appendUser(carol,created.id,{requestId:randomUUID(),expectedRevision:created.revision,body:'列表分页测试'});return created.id}).sort().reverse()
       let page = store.listSessions(carol, { limit: 1 })
       assert.equal(page.sessions[0].id, ids[0])
       for (let i = 1; i < 3; i++) { assert(page.nextCursor); page = store.listSessions(carol, { limit: 1, ...page.nextCursor }); assert.equal(page.sessions[0].id, ids[i]) }
