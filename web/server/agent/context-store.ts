@@ -1,3 +1,4 @@
+import { PREFERENCE_CATEGORIES,emptyPreferenceValues,type PreferenceSettings,type PreferenceValues } from '../../shared/agent-context'
 import type Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
 import type { AgentUsage, ContextTier, SummaryState } from '../../shared/agent-contracts'
@@ -92,7 +93,28 @@ export class AgentContextStore {
   session(uid: number, id: string) { return this.history.snapshot(uid, id, { limit: 1 }).session }
   transcript(uid: number, id: string) { return this.history.exportSession(uid, id) }
   preferences(uid: number, confirmedOnly = false): PreferenceCard[] {
-    return (this.db.prepare("SELECT * FROM agent_preferences WHERE user_id = ? AND (? = 0 OR status = 'confirmed') ORDER BY updated_at, id").all(uid, confirmedOnly ? 1 : 0) as PrefRow[]).map(prefView)
+    const cards=(this.db.prepare("SELECT * FROM agent_preferences WHERE user_id = ? AND (? = 0 OR status = 'confirmed') ORDER BY updated_at, id").all(uid, confirmedOnly ? 1 : 0) as PrefRow[]).map(prefView)
+    return confirmedOnly ? [...new Map(cards.map(card=>[card.category,card])).values()] : cards
+  }
+  preferenceSettings(uid:number):PreferenceSettings {
+    const values=emptyPreferenceValues(),cards=this.preferences(uid)
+    // 旧版同类多条只读取最后确认的一条；保存时再由用户明确替换，读取不删旧数据。
+    for(const card of cards) if(card.status==='confirmed') values[card.category]=card.value
+    return {values,version:contextHash(cards)}
+  }
+  savePreferenceSettings(uid:number,expectedVersion:string,values:PreferenceValues):PreferenceSettings {
+    return this.db.transaction(()=>{
+      const current=this.preferenceSettings(uid),normalized=emptyPreferenceValues()
+      for(const category of PREFERENCE_CATEGORIES) normalized[category]=values[category].trim()
+      const cards=this.preferences(uid)
+      const exact=JSON.stringify(current.values)===JSON.stringify(normalized)&&cards.length===PREFERENCE_CATEGORIES.filter(c=>normalized[c]).length&&cards.every(c=>c.status==='confirmed')
+      if(exact)return current
+      if(current.version!==expectedVersion)contextError('REVISION_CONFLICT','偏好已在其他页面更新，请重新读取后保存。')
+      this.db.prepare('DELETE FROM agent_preferences WHERE user_id = ?').run(uid)
+      const now=Date.now()
+      for(const category of PREFERENCE_CATEGORIES) if(normalized[category])this.db.prepare("INSERT INTO agent_preferences VALUES (?, ?, ?, ?, 'confirmed', 1, NULL, ?, ?, ?)").run(randomUUID(),uid,category,normalized[category],now,now,now)
+      return this.preferenceSettings(uid)
+    }).immediate()
   }
   preferenceHash(uid: number): string { return contextHash(this.preferences(uid, true)) }
   private preference(uid: number, id: string): PrefRow {
@@ -103,6 +125,7 @@ export class AgentContextStore {
     return this.db.transaction(() => {
       if (this.preferences(uid).length >= CONTEXT_LIMITS.preferences) contextError('PREFERENCE_LIMIT', '偏好卡已到上限，先整理一下旧卡片吧。')
       if (p.sourceMessageId && !this.db.prepare('SELECT 1 FROM agent_messages WHERE user_id = ? AND id = ?').get(uid, p.sourceMessageId)) contextError('NOT_FOUND', '偏好来源消息没有找到。', 404)
+      if(this.preferences(uid).some(card=>card.category===p.category))contextError('PREFERENCE_CATEGORY_EXISTS','此分类已有偏好，请修改现有设置。')
       const id = randomUUID(), now = Date.now()
       this.db.prepare("INSERT INTO agent_preferences VALUES (?, ?, ?, ?, 'proposed', 1, ?, ?, ?, NULL)").run(id, uid, p.category, p.value.trim(), p.sourceMessageId ?? null, now, now)
       return prefView(this.preference(uid, id))

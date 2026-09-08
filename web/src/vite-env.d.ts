@@ -7,3 +7,5 @@ interface Window {
     setUser: (user: { id: number | string; username?: string } | null) => void
   }
 }
+
+declare const __AGENT_CLIENT_RELEASE__: string

@@ -14,17 +14,20 @@ export interface KnowledgeSnapshot {
   notice: string; conditions: Record<string,boolean>
 }
 
-// 清单只描述本进程注册的阶段 1～3 入口；整个站点的初始清单与页面映射在阶段 5 补齐。
+// 清单只描述本进程注册的阶段 1～4 入口；整个站点的初始清单与页面映射在阶段 5 补齐。
 export const AGENT_FEATURES: readonly FeatureDescription[] = [
-  { id: 'agent.history', revision: 1, title: '个人会话历史', purpose: '登录后保存、查看、导出自己的完整对话。', entry: '/api/agent/sessions',
-    steps: ['使用会话接口保存与读取记录'], limitations: ['聊天浮层尚未开放', '压缩不会删除完整聊天'], mode: 'explain', tools: [] },
-  { id: 'agent.context', revision: 2, title: '上下文与偏好', purpose: '整理下一轮上下文，保留原文，长期偏好由用户确认。', entry: '/api/agent/sessions',
-    steps: ['使用压缩、摘要版本和偏好接口'], limitations: ['付费压缩需要维护者开启', '偏好按钮和聊天浮层尚未开放'], mode: 'explain', tools: [] },
-  { id: 'agent.run', revision: 3, title: '只读运行循环', purpose: '按轮装配上下文、校验结果，保存进度并支持取消和恢复。', entry: '/api/agent/sessions',
-    steps: ['创建回合', '通过事件接口查看进度', '暂停后由用户明确继续'], limitations: ['真实回答模型在外部 AI 阶段接入', '当前没有线上数据工具和聊天入口'], mode: 'explain', tools: [] },
+  { id: 'agent.history', revision: 3, title: '个人会话历史', purpose: '登录后保存、查看、导出自己的完整对话。', entry: '/api/agent/sessions',
+    steps: ['首次发送后进入历史并自动提取一次标题，手动改名优先', '历史条目可归档或恢复'], limitations: ['PC 和平板可使用右下角手帐，手机首期隐藏', '压缩不会删除完整聊天'], mode: 'explain', tools: [] },
+  { id: 'agent.context', revision: 4, title: '上下文与偏好', purpose: '整理下一轮上下文，保留原文，四项偏好由用户一次保存。', entry: '/api/agent/sessions',
+    steps: ['使用压缩、摘要版本和偏好接口'], limitations: ['付费压缩需要维护者开启', '每类偏好一个值，留空默认，点击保存即生效'], mode: 'explain', tools: [] },
+  { id: 'agent.run', revision: 4, title: '只读运行循环', purpose: '按轮装配上下文、校验结果，保存进度并支持取消和恢复。', entry: '/api/agent/sessions',
+    steps: ['创建回合', '通过事件接口查看进度', '暂停后由用户明确继续'], limitations: ['真实回答模型在外部 AI 阶段接入', '当前没有线上数据工具，真实模型尚未接入'], mode: 'explain', tools: [] },
+  { id:'agent.chat',revision:3,title:'纱雾助手',purpose:'PC 和平板右下角的头像入口，查看对话、来源、偏好与上下文。',entry:'/#/',
+    steps:['点击右下角头像，通过顶栏对话入口返回','可从番剧卡片或详情带入当前番剧','收起后稍后继续查看'],limitations:['手机首期隐藏入口','真实回答模型尚未接入','动作卡只展示已有状态，确认执行留在后续功能'],mode:'explain',tools:[] },
+
 ]
 export const AGENT_FEATURE_REGISTRATIONS: readonly FeatureRegistration[] = [
-  {id:'agent.history',revision:1}, {id:'agent.context',revision:2}, {id:'agent.run',revision:3},
+  {id:'agent.history',revision:3}, {id:'agent.context',revision:4}, {id:'agent.run',revision:4}, {id:'agent.chat',revision:3},
 ].map(registration=>({ ...registration,descriptionHash:knowledgeHash(AGENT_FEATURES.find(f=>f.id===registration.id)??null) }))
 
 export class AgentKnowledgeRegistry {

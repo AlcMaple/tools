@@ -1,3 +1,4 @@
+import { AgentContextButton } from '../agent/navigation'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SOURCES, coverUrl, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
@@ -89,7 +90,7 @@ export function TrackCard({
     <article className={`trk-row${considering ? ' is-considering' : ''}`} data-heat={heat}>
       <span className={`tape tr ${considering ? 'lav' : isToday ? 'sakura' : 'teal'}`} />
       {considering && <WearLayer />}
-      <div className="trk-cover" onClick={onEdit} title="点封面编辑" style={{ cursor: 'pointer' }}>
+      <div className="trk-cover" onClick={onEdit} title="点封面编辑" style={{ cursor: 'pointer', position: 'relative' }}>
         {t.cover ? (
           <img className="cover-img" src={coverUrl(t.cover)} alt={title} loading="lazy" decoding="async" />
         ) : (
@@ -106,6 +107,7 @@ export function TrackCard({
               {STATUS_META.find((m) => m.key === t.status)?.label}
             </span>
             {isToday && <span className="chip-today">今天更新</span>}
+            <AgentContextButton compact anime={{bgmId:t.bgmId,title,canReview,canOpenSources:t.bgmId>0}}/>
             <FavHearts value={t.favorite} onChange={(n) => onPatch(t.bgmId, { favorite: n })} />
             <button
               type="button"

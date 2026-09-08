@@ -25,7 +25,7 @@ export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)
     c.header('Cache-Control','no-store')
     const session=await getSession(c)
     if(!session)throw new AgentRunError('AUTH_REQUIRED',401)
-    c.set('runUid',session.uid);c.set('runTv',session.tv)
+    c.set('runUid',session.uid);c.set('runTv',session.tv);c.header('X-Agent-Owner',String(session.uid))
     if(rateLimited(`agent-run:${c.req.method==='GET'?'read':'write'}:${session.uid}`,c.req.method==='GET'?120:30,60_000)){
       c.header('Retry-After','60');throw new AgentRunError('RATE_LIMITED',429)
     }

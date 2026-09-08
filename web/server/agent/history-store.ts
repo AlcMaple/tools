@@ -53,12 +53,32 @@ export function initializeAgentHistorySchema(db: Database.Database): void {
     ['context_version_seq', 'INTEGER NOT NULL DEFAULT 0'], ['context_bytes', 'INTEGER NOT NULL DEFAULT 0'],
     ['context_adaptive', 'INTEGER NOT NULL DEFAULT 1'], ['run_id', 'TEXT'], ['run_bytes', 'INTEGER NOT NULL DEFAULT 0'],
   ]) if (!columns.some(c => c.name === name)) db.exec(`ALTER TABLE agent_sessions ADD COLUMN ${name} ${declaration}`)
+  db.transaction(()=>{
+  // 只迁移一次。已有聊天（含清空后的序号）保留历史资格；未发送空会话不进入列表。
+  if (!columns.some(c => c.name === 'started_at')) {
+    db.exec('ALTER TABLE agent_sessions ADD COLUMN started_at INTEGER')
+    db.exec('UPDATE agent_sessions SET started_at = created_at WHERE last_message_seq > 0')
+  }
+  if (!columns.some(c => c.name === 'title_manual')) {
+    db.exec('ALTER TABLE agent_sessions ADD COLUMN title_manual INTEGER NOT NULL DEFAULT 0')
+    db.exec("UPDATE agent_sessions SET title_manual = 1 WHERE title != '新会话'")
+  }
+  }).immediate()
+}
+
+// 首条消息确定性取题，不额外调用模型；之后只接受用户改名。
+export function firstMessageTitle(body: string): string {
+  const text = body.replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim()
+    .replace(/^(?:你好[，,！!。]?\s*)?(?:请问|请|能不能|能否)?\s*(?:帮我|给我)?\s*/,'')
+  const topic = text.split(/[。！？!?]/)[0].replace(/[，,；;：:、\s]+$/,'').trim() || '开始聊天'
+  const chars = Array.from(topic)
+  return chars.slice(0,24).join('') + (chars.length > 24 ? '…' : '')
 }
 
 interface SessionRow {
   id: string; user_id: number; create_request_id: string; create_hash: string; title: string
   created_at: number; updated_at: number; archived_at: number | null; revision: number
-  last_event_seq: number; last_message_seq: number; message_count: number; stored_bytes: number
+  started_at: number | null; title_manual: number; last_event_seq: number; last_message_seq: number; message_count: number; stored_bytes: number
   active_summary_version: number | null; context_tier: HistorySession['contextTier']
   context_job_id: string | null; context_bytes: number; run_id: string | null
   current_bgm_id: number | null; provider: HistorySession['provider']; model: string
@@ -80,7 +100,7 @@ const sessionView = (r: SessionRow): HistorySession => ({
   id: r.id, title: r.title, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at,
   revision: r.revision, activeSummaryVersion: r.active_summary_version, contextTier: r.context_tier,
   currentBgmId: r.current_bgm_id, provider: r.provider, model: r.model, lastEventSeq: r.last_event_seq,
-  messageCount: r.message_count,
+  messageCount: r.message_count, startedAt: r.started_at,
 })
 function messageView(r: MessageRow): HistoryMessage {
   const sources = JSON.parse(r.sources_json) as HistoryMessage['sources']
@@ -178,8 +198,8 @@ export class AgentHistoryStore {
       const { count } = this.db.prepare('SELECT COUNT(*) AS count FROM agent_sessions WHERE user_id = ?').get(uid) as { count: number }
       if (count >= this.limits.sessionsPerUser) throw new AgentHistoryError('HISTORY_LIMIT', 409, '手帐数量已到上限，请先导出并清理旧会话。')
       const id = randomUUID(), now = Date.now()
-      this.db.prepare(`INSERT INTO agent_sessions (id, user_id, create_request_id, create_hash, title, created_at, updated_at, current_bgm_id, model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, uid, p.requestId, fingerprint, title, now, now, p.currentBgmId ?? null, DEFAULT_AGENT_MODEL)
+      this.db.prepare(`INSERT INTO agent_sessions (id, user_id, create_request_id, create_hash, title, created_at, updated_at, current_bgm_id, model, title_manual)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, uid, p.requestId, fingerprint, title, now, now, p.currentBgmId ?? null, DEFAULT_AGENT_MODEL, p.title !== undefined && title !== '新会话' ? 1 : 0)
       return sessionView(this.session(uid, id))
     }).immediate()
   }
@@ -189,7 +209,7 @@ export class AgentHistoryStore {
     if ((p.beforeUpdatedAt === undefined) !== (p.beforeId === undefined)) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '列表游标不完整，请刷新列表。')
     const limit = p.limit ?? HISTORY_LIMITS.pageSize
     const archived = p.archived ?? 'active'
-    const rows = this.db.prepare(`SELECT * FROM agent_sessions WHERE user_id = ?
+    const rows = this.db.prepare(`SELECT * FROM agent_sessions WHERE user_id = ? AND started_at IS NOT NULL
       AND (? = 'all' OR (? = 'active' AND archived_at IS NULL) OR (? = 'archived' AND archived_at IS NOT NULL))
       AND (? IS NULL OR updated_at < ? OR (updated_at = ? AND id < ?))
       ORDER BY updated_at DESC, id DESC LIMIT ?`).all(uid, archived, archived, archived, p.beforeUpdatedAt ?? null, p.beforeUpdatedAt ?? null, p.beforeUpdatedAt ?? null, p.beforeId ?? '', limit + 1) as SessionRow[]
@@ -220,10 +240,12 @@ export class AgentHistoryStore {
     return this.db.transaction(() => {
       const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectRun(s)
       if (s.context_job_id) this.expectIdle(s)
+      if (p.archived === true && s.started_at === null) throw new AgentHistoryError('SESSION_NOT_STARTED',409,'发送首条消息后才能归档。')
       if (p.archived === true || p.currentBgmId !== undefined) this.expectIdle(s)
       this.db.prepare('UPDATE agent_sessions SET title = ?, archived_at = ?, current_bgm_id = ? WHERE user_id = ? AND id = ?')
         .run(p.title?.trim() ?? s.title, p.archived === undefined ? s.archived_at : p.archived ? s.archived_at ?? Date.now() : null,
           p.currentBgmId === undefined ? s.current_bgm_id : p.currentBgmId, uid, id)
+      if (p.title !== undefined) this.db.prepare('UPDATE agent_sessions SET title_manual = 1 WHERE user_id = ? AND id = ?').run(uid,id)
       this.touch(s)
       return sessionView(this.session(uid, id))
     }).immediate()
@@ -257,6 +279,7 @@ export class AgentHistoryStore {
         (id, user_id, session_id, seq, request_id, initial_hash, role, body, status, sources_json, tools_json, actions_json, usage_json, stored_bytes, pending_actions, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(messageId, uid, id, s.last_message_seq + 1,
           requestId, fingerprint, role, encoded.body, encoded.status, encoded.sources, encoded.tools, encoded.actions, encoded.usage, encoded.bytes, encoded.pending, now, now)
+      if (role === 'user' && s.started_at === null) this.db.prepare('UPDATE agent_sessions SET started_at = ?, title = ? WHERE user_id = ? AND id = ?').run(now,s.title_manual ? s.title : firstMessageTitle(encoded.body),uid,id)
       this.touch(s, encoded.bytes, 1, true)
       const row = this.db.prepare('SELECT * FROM agent_messages WHERE user_id = ? AND session_id = ? AND id = ?').get(uid, id, messageId) as MessageRow
       return { session: sessionView(this.session(uid, id)), message: messageView(row) }

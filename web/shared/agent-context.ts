@@ -13,6 +13,10 @@ export interface PreferenceCard {
   status: 'proposed' | 'confirmed'; revision: number; sourceMessageId: string | null
   createdAt: number; updatedAt: number; confirmedAt: number | null
 }
+export const PREFERENCE_CATEGORIES = ['tone','liked_tags','avoided_tags','recommendation_focus'] as const
+export type PreferenceValues = Record<PreferenceCard['category'],string>
+export interface PreferenceSettings { values: PreferenceValues; version: string }
+export const emptyPreferenceValues = ():PreferenceValues => ({tone:'',liked_tags:'',avoided_tags:'',recommendation_focus:''})
 export interface SummaryQuality {
   schemaValid: boolean; sourceCoverage: number; criticalFactsPreserved: boolean
   independentCheckPassed: boolean; injectionChecked: boolean; restoredMessageIds: string[]
@@ -44,6 +48,7 @@ export const PREFERENCE_CREATE_SCHEMA = object({
   category: { type: 'string', enum: ['tone', 'liked_tags', 'avoided_tags', 'recommendation_focus'] },
   value: text(500), sourceMessageId: HISTORY_ID_SCHEMA,
 }, ['category', 'value'])
+export const PREFERENCE_SETTINGS_SCHEMA = object({expectedVersion:{type:'string',pattern:'^[a-f0-9]{64}$'},values:object(Object.fromEntries(PREFERENCE_CATEGORIES.map(category=>[category,{type:'string',maxLength:500} as ContractSchema])))})
 export const PREFERENCE_EDIT_SCHEMA = object({ expectedRevision, value: text(500) })
 export const CONFIRM_PREFERENCE_SCHEMA = object({ expectedRevision })
 export const PIN_MESSAGE_SCHEMA = object({ expectedRevision, pinned: bool })

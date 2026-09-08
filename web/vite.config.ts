@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import devServer from '@hono/vite-dev-server'
@@ -22,7 +23,10 @@ const PRODUCTION_SECURITY_META = `
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN?.trim()
 const uploadSourceMaps = (command: string): boolean => command === 'build' && Boolean(sentryAuthToken)
 
+const agentRelease = JSON.parse(readFileSync(new URL('./server/agent-release.json',import.meta.url),'utf8')) as {codeHash:string}
+
 export default defineConfig(({ command }) => ({
+  define: {__AGENT_CLIENT_RELEASE__: JSON.stringify(agentRelease.codeHash)},
   plugins: [
     react(),
     {

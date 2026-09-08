@@ -1,3 +1,4 @@
+import { AgentContextButton } from './agent/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import {
   coverUrl,
@@ -244,7 +245,8 @@ function ReviewAnimeCard({ anime }: { anime: CommunityReviewAnime }): JSX.Elemen
   const title = anime.titleCn || anime.title || `BGM ${anime.bgmId}`
   return (
     <div className="community-track-card review-anime-card">
-      <div className="community-track-cover">
+      <div className="community-track-cover" style={{position:'relative'}}>
+        <AgentContextButton anime={{bgmId:anime.bgmId,title}}/>
         {image && !coverFailed
           ? <img src={image} alt="" loading="lazy" onError={() => setCoverFailed(true)} />
           : <span>NO<br />COVER</span>}
@@ -298,6 +300,7 @@ function AnimeReviewsView({
             <img className="dlg-cover" src={coverUrl(data.anime.cover)} alt="" onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
             <div>
               <h1 className="title-sketch" style={{ fontSize: 30 }}>{title}</h1>
+              <AgentContextButton inline anime={{bgmId:data.anime.bgmId,title}}/>
               <p className="muted small mt8">大家聊过 {data.review.length + data.recommend.length} 篇</p>
             </div>
           </div>
@@ -483,7 +486,8 @@ function PublicTrackCard({ track, username }: { track: PublicTrack; username: st
   const title = track.titleCn || track.title || `BGM ${track.bgmId}`
   return (
     <article className="community-track-card">
-      <div className="community-track-cover">
+      <div className="community-track-cover" style={{position:'relative'}}>
+        <AgentContextButton anime={{bgmId:track.bgmId,title}}/>
         {image && !coverFailed
           ? <img src={image} alt="" loading="lazy" onError={() => setCoverFailed(true)} />
           : <span>NO<br />COVER</span>}

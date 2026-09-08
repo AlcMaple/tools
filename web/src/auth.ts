@@ -92,17 +92,27 @@ type MeRes = {
 }
 type LoginRes = { username: string; hasSecurity: boolean; hasEmail: boolean; hasPassword: boolean }
 
+let authReadVersion = 0
+let identityChannel: BroadcastChannel | null = null
 let currentUser: AuthUser | null = null
 let ready = false // 首次 /me 是否已回来（避免登录态未知时闪一下登录按钮）
 let dailyRewardEvent = { seq: 0, points: 0 }
 const listeners = new Set<() => void>()
 
-function setUser(u: AuthUser | null, dailyReward = 0): void {
+function setUser(u: AuthUser | null, dailyReward = 0, announce = true): void {
+  const previousId = currentUser?.id ?? null
   currentUser = u
   window.__mapleMonitoring?.setUser(u ? { id: u.id, username: u.username } : null)
   ready = true
   if (dailyReward > 0) dailyRewardEvent = { seq: dailyRewardEvent.seq + 1, points: dailyReward }
   listeners.forEach((fn) => fn())
+  if (announce && previousId !== (u?.id ?? null)) {
+    const event = { uid: u?.id ?? null, nonce: Math.random() }
+    try {
+      if (identityChannel) identityChannel.postMessage(event)
+      else window.localStorage.setItem('mapletools-auth-identity', JSON.stringify(event))
+    } catch {}
+  }
 }
 
 export const auth = {
@@ -119,9 +129,11 @@ export const auth = {
     return points
   },
   // 启动时探一次登录态；/me 401 时静默置未登录（未登录不是错误）。
-  async init(): Promise<void> {
+  async init(announce = true): Promise<void> {
+    const version = ++authReadVersion
     try {
       const me = await request<MeRes>('/me')
+      if (version !== authReadVersion) return
       clearPendingInvite()
       setUser({
         id: me.id,
@@ -134,9 +146,9 @@ export const auth = {
         hasPassword: me.hasPassword,
         tracksPublic: me.tracksPublic === true,
         aiConfig: normalizeAiConfig(me.aiConfig),
-      }, me.dailyReward)
+      }, me.dailyReward, announce)
     } catch {
-      setUser(null)
+      if (version === authReadVersion) setUser(null, 0, announce)
     }
   },
   async refresh(): Promise<void> {
@@ -165,6 +177,7 @@ export const auth = {
   },
   async logout(): Promise<void> {
     await request('/logout', {})
+    authReadVersion++
     setUser(null)
   },
   /** 找回密码 —— 成功后不自动登录，让用户拿新密码正常登录。 */
@@ -282,6 +295,29 @@ export async function unbindEmailStart(): Promise<{ challengeId: string; expires
 export async function unbindEmailVerify(challengeId: string, code: string): Promise<void> {
   await request<{ ok: boolean }>('/email/unbind-verify', { challengeId, code })
   await auth.init()
+}
+
+// Cookie 在同源标签间共享；通知只携带公开账号 ID，身份仍重新请求 /me 确认。
+if (typeof window !== 'undefined') {
+  const changedElsewhere = (value: unknown): void => {
+    if (!value || typeof value !== 'object' || !('uid' in value)) return
+    const uid = value.uid
+    if (uid !== null && (typeof uid !== 'number' || !Number.isSafeInteger(uid) || uid <= 0)) return
+    if ((currentUser?.id ?? null) === uid) return
+    authReadVersion++
+    setUser(null, 0, false)
+    void auth.init(false)
+  }
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      identityChannel = new BroadcastChannel('mapletools-auth-identity')
+      identityChannel.onmessage = event => changedElsewhere(event.data)
+    }
+  } catch {}
+  window.addEventListener('storage', event => {
+    if (event.key !== 'mapletools-auth-identity' || !event.newValue) return
+    try { changedElsewhere(JSON.parse(event.newValue)) } catch {}
+  })
 }
 
 // 组件里订阅登录态。返回 { user, ready }，配合 auth.login/register/logout 用。

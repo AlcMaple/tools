@@ -16,6 +16,7 @@ import { TracksPage } from './TracksPage'
 import { Ic, SketchSprite, type SketchIconName } from './SketchIcon'
 import { Splash } from './Splash'
 import { toast, ToastRoot } from './Toast'
+import { AgentHost } from './agent/AgentHost'
 
 // 各页书脊的小 accents：胶带色 / 印章 / 拟声词（原型稿逐页配置）
 const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira: string }> = {
@@ -42,6 +43,7 @@ export default function App(): JSX.Element {
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [oauthError, setOauthError] = useState<string | null>(null)
   const [announcementArmed, setAnnouncementArmed] = useState(false)
+  const [introComplete, setIntroComplete] = useState(false)
   const sheetRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -124,6 +126,7 @@ export default function App(): JSX.Element {
   }, [route])
 
   const go = (r: Route): void => navigate(r)
+  const markIntroReady = useCallback(() => setIntroComplete(true), [])
   const closeAnnouncement = useCallback(() => setAnnouncementArmed(false), [])
   const announceAfterSplash = useCallback(() => {
     if (route === 'calendar') setAnnouncementArmed(true)
@@ -137,7 +140,7 @@ export default function App(): JSX.Element {
   return (
     <>
       <SketchSprite />
-      <Splash onComplete={announceAfterSplash} />
+      <Splash onComplete={announceAfterSplash} onReady={markIntroReady} />
       <AnnouncementModal active={announcementArmed && route === 'calendar'} onClose={closeAnnouncement} />
 
       {/* 移动端顶栏（桌面隐藏） */}
@@ -289,6 +292,7 @@ export default function App(): JSX.Element {
           if ((route === 'settings' || route === 'rewards') && !auth.user) navigate('calendar')
         }}
       />
+      <AgentHost enabled={introComplete} userId={ready ? user?.id ?? null : undefined} onLogin={openLogin} />
       <ToastRoot />
     </>
   )
