@@ -1,10 +1,10 @@
 import type { ContextSummary,CompactJob,PreferenceCard,PreferenceSettings,PreferenceValues } from '../../shared/agent-context'
-import type { HistorySession,HistoryMessage,HistorySnapshot } from '../../shared/agent-history'
+import type { PageAnimeContext,HistorySession,HistoryMessage,HistorySnapshot } from '../../shared/agent-history'
 import type { ContextTier } from '../../shared/agent-contracts'
 import type { RunView,RunEvent } from '../../shared/agent-run'
 import type { KnowledgeSnapshot } from '../../server/agent/knowledge'
 import { subscribeAgentEvents } from '../../shared/agent-stream'
-import { activeCompact,applyDelta,idValid,mergeMessages,type AnimeContext,type AgentIssue } from './model'
+import { pageContext,activeCompact,applyDelta,idValid,mergeMessages,type AnimeContext,type AgentIssue } from './model'
 
 type Cursor={beforeUpdatedAt:number;beforeId:string}
 export interface ContextInfo {session:HistorySession;adaptive:boolean;active:ContextSummary|null;versions:Omit<ContextSummary,'state'>[];job:CompactJob|null}
@@ -41,7 +41,7 @@ export class AgentController {
   private poll:ReturnType<typeof setTimeout>|null=null
   private refreshTimer:ReturnType<typeof setTimeout>|null=null
   private failedSend:{requestId:string;body:string;sessionId:string}|null=null
-  private pendingCreate:{requestId:string;title?:string;currentBgmId:number|null}|null=null
+  private pendingCreate:{requestId:string;title?:string;currentBgmId:number|null;pageContext:PageAnimeContext|null}|null=null
   private lastRefresh=0
   constructor(readonly uid:number,readonly clientVersion:string,private readonly options:{fetchImpl?:typeof fetch;onAuthExpired?:()=>void;pollMs?:number;remember?:Storage}={}){}
   getSnapshot=():AgentUiState=>this.state
@@ -106,7 +106,7 @@ export class AgentController {
       if(turn!==this.selection)return
       const session=context.session.revision>snapshot.session.revision?context.session:snapshot.session
       const run=runs.runs.find(r=>r.state==='running')??runs.runs[0]??null
-      this.set({session,messages:snapshot.messages,beforeSeq:snapshot.nextBeforeSeq,context,run,anime:session.currentBgmId===null?null:this.titles.get(session.currentBgmId)??{bgmId:session.currentBgmId,title:`条目 #${session.currentBgmId}`}})
+      this.set({session,messages:snapshot.messages,beforeSeq:snapshot.nextBeforeSeq,context,run,anime:session.currentBgmId===null?null:this.titles.get(session.currentBgmId)??session.pageContext??{bgmId:session.currentBgmId,title:`条目 #${session.currentBgmId}`}})
       this.remember(id)
       if(run?.state==='running')this.follow(run)
       if(context.job&&activeCompact(context.job))this.watchCompact(context.job)
@@ -132,7 +132,7 @@ export class AgentController {
   }
   async older(){const id=this.state.session?.id,before=this.state.beforeSeq,turn=this.selection;if(!id||before===null||this.state.busy)return;await this.mutate('翻前页',async()=>{const snapshot=await this.api<HistorySnapshot>(`/sessions/${id}?limit=50&beforeSeq=${before}`);if(turn===this.selection)this.set({messages:mergeMessages(snapshot.messages,this.state.messages),beforeSeq:snapshot.nextBeforeSeq})})}
   private async create(title?:string){
-    if(!this.pendingCreate)this.pendingCreate={requestId:crypto.randomUUID(),title:title?.slice(0,100),currentBgmId:this.state.anime?.bgmId??null}
+    if(!this.pendingCreate)this.pendingCreate={requestId:crypto.randomUUID(),title:title?.slice(0,100),currentBgmId:this.state.anime?.bgmId??null,pageContext:pageContext(this.state.anime)}
     const {session}=await this.api<{session:HistorySession}>('/sessions','POST',this.pendingCreate);this.pendingCreate=null;this.selection++
     this.updateSession(session);this.set({messages:[],beforeSeq:null,context:null,run:null});this.remember(session.id);return session
   }
@@ -147,7 +147,7 @@ export class AgentController {
   async setAnime(anime:AnimeContext|null){
     if(anime)this.titles.set(anime.bgmId,anime)
     if(!this.state.session){this.set({anime});return}
-    await this.mutate('更换番剧',async()=>{const session=this.state.session!;const response=await this.api<{session:HistorySession}>(`/sessions/${session.id}`,'PATCH',{expectedRevision:session.revision,currentBgmId:anime?.bgmId??null});this.updateSession(response.session);this.set({anime})})
+    await this.mutate('更换番剧',async()=>{const session=this.state.session!;const response=await this.api<{session:HistorySession}>(`/sessions/${session.id}`,'PATCH',{expectedRevision:session.revision,currentBgmId:anime?.bgmId??null,pageContext:pageContext(anime)});this.updateSession(response.session);this.set({anime})})
   }
   async send(){
     const body=this.state.draft.trim();if(!body)return

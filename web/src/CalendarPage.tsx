@@ -815,7 +815,7 @@ function Poster({
   return (
     <article className={`poster${on ? ' tracked' : ''}`}>
       <div className="cover">
-        <AgentContextButton anime={{bgmId:item.id,title:displayTitle}}/>
+        <AgentContextButton anime={{bgmId:item.id,title:displayTitle,titleCn:item.name_cn,episodes:item.episodes>0?item.episodes:null,year:/^\d{4}/.test(item.airDate)?Number(item.airDate.slice(0,4)):null}}/>
         {item.cover ? (
           <img
             className="cover-img"

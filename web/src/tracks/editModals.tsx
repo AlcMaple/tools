@@ -88,7 +88,7 @@ export function EditModal({
         </button>
 
         <h3 className="dlg-title">{title}</h3>
-        <AgentContextButton inline anime={{bgmId:t.bgmId,title,canReview:t.bgmId>0&&(t.status==='watching'||t.status==='done'),canOpenSources:t.bgmId>0}}/>
+        <AgentContextButton inline anime={{bgmId:t.bgmId,title,titleCn:t.titleCn,episodes:t.totalEpisodes,tags:t.bgmTags,year:/^\d{4}/.test(t.airDate)?Number(t.airDate.slice(0,4)):null,canReview:t.bgmId>0&&(t.status==='watching'||t.status==='done'),canOpenSources:t.bgmId>0}}/>
         {subLine && <p className="dlg-sub">{subLine}</p>}
 
         <div className="mb16" style={{ display: 'flex', gap: 14 }}>

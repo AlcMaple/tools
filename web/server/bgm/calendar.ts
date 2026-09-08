@@ -178,3 +178,8 @@ export async function getCalendarMetadata(): Promise<Map<number, CalendarMetadat
   }
   return map
 }
+
+// Agent 只读取已有缓存，不调用 getCalendar，不刷新或写盘。
+export function readCalendarSnapshot():{data:CalendarWeekday[];updatedAt:number}|null{
+  const entry=cache??readDisk();return entry?{data:structuredClone(entry.data),updatedAt:entry.at}:null
+}

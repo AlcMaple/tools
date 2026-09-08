@@ -19,18 +19,21 @@ export type { AnimeHit } from './anime-search'
 export const indexDbPath = join(dataDir, 'bgm_index.db')
 
 // 只读句柄缓存。索引被重建时是**原子 rename**（换了 inode），旧句柄会一直读到旧文件 —— 所以每次按
-// mtime 判断，变了就重开，让搜索读到刚同步的新数据，不必重启服务。
+// inode / 大小 / 时间标识判断，变了就重开，让搜索读到刚同步的新数据，不必重启服务。
 let db: DB | null = null
 let dbMtime = 0
+let dbIdentity = ''
 
-function open(): DB | null {
-  let mtime = 0
+export function openOfflineIndex(): DB | null {
+  let mtime = 0, identity = ''
   try {
-    mtime = statSync(indexDbPath).mtimeMs
+    const stat=statSync(indexDbPath)
+    mtime = stat.mtimeMs
+    identity = `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`
   } catch {
     return null // 索引还没生成（没跑过 build 脚本）
   }
-  if (db && mtime === dbMtime) return db
+  if (db && identity === dbIdentity) return db
   if (db) {
     try { db.close() } catch { /* ignore */ }
     db = null
@@ -38,6 +41,9 @@ function open(): DB | null {
   try {
     db = new Database(indexDbPath, { readonly: true, fileMustExist: true })
     dbMtime = mtime
+    dbIdentity = identity
+    hasEpsColumn = null
+    epsProbedMtime = -1
     return db
   } catch {
     db = null
@@ -51,7 +57,7 @@ function open(): DB | null {
  */
 export function searchAnime(query: string, limit = 30): AnimeHit[] {
   if (!query.trim()) return []
-  const h = open()
+  const h = openOfflineIndex()
   if (!h) return []
   return searchAnimeTable(h, 'anime', query, limit)
 }
@@ -78,7 +84,7 @@ function epsColumnExists(h: DB): boolean {
  * 调用方拿到 0 应退回在线详情，别当成一个确定值写进 total_episodes。
  */
 export function epsOf(bgmId: number): number {
-  const h = open()
+  const h = openOfflineIndex()
   if (!h || !epsColumnExists(h)) return 0
   try {
     const row = h.prepare('SELECT eps FROM anime WHERE bgm_id = ?').get(bgmId) as { eps: number } | undefined
@@ -90,7 +96,7 @@ export function epsOf(bgmId: number): number {
 
 /** 索引状态 —— 给前端提示「索引就绪 / 还没生成」，以及更新时间。 */
 export function indexStatus(): { ready: boolean; count: number; builtAt: number } {
-  const h = open()
+  const h = openOfflineIndex()
   if (!h) return { ready: false, count: 0, builtAt: 0 }
   try {
     const c = (h.prepare('SELECT COUNT(*) AS n FROM anime').get() as { n: number }).n

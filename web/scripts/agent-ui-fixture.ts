@@ -56,7 +56,7 @@ export async function createAgentUiFixture(){
     return{value:state,usage:usage('compact')}
   },async native(){throw new Error('NO_NATIVE_FIXTURE')}}
   const context=new AgentContextService(store,()=>provider),runStore=new AgentRunStore(db)
-  const release=readLoadedRelease().release,registry=new AgentKnowledgeRegistry(release,AGENT_FEATURE_REGISTRATIONS,AGENT_FEATURES,['listMyTracks'])
+  const release=readLoadedRelease().release,registry=new AgentKnowledgeRegistry(release,AGENT_FEATURE_REGISTRATIONS,AGENT_FEATURES,['searchOfflineAnime','readCurrentAnimeContext','readCachedCalendar','listMyTracks','listPublicReviews','aggregatePublicData'])
   const knowledge=(uid:number)=>({...registry.snapshot(uid,{enabled:true,permissionVersion:mode,features:AGENT_FEATURES.map(f=>f.id),tools:['listMyTracks'],conditions:{answerModelReady:mode!=='unavailable',contextModelReady:true,chatUiReady:true}}),release:mode==='stale'?'older-client-test-server':release})
   const runs=new AgentRunService(runStore,uid=>({context,knowledge:()=>knowledge(uid),assertIdentity(){},provider:{source:'byok',model:profile.model,fingerprint:profile.fingerprint,async *stream(request,signal):AsyncGenerator<RunProviderEvent>{
     metrics.modelCalls++;yield{type:'usage',usage:usage()}
@@ -78,7 +78,7 @@ export async function createAgentUiFixture(){
   const server=serve({fetch:app.fetch,hostname:'127.0.0.1',port});await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('FIXTURE_ADDRESS')
   const origin=`http://127.0.0.1:${address.port}`,browserOrigin=`http://agent-phase4.localhost:${address.port}`;network.enableNetConnect(new URL(origin).host)
   const close=async()=>{await runs.close();await context.close();await productionContext.close();const done=new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));(server as Server).closeAllConnections();await done;db.close();await network.close();setGlobalDispatcher(oldDispatcher);globalThis.fetch=originalFetch;process.chdir(oldCwd);process.env=oldEnv;rmSync(directory,{recursive:true,force:true})}
-  return{origin,browserOrigin,originalFetch,createUser,alice,bob,welcomeId:welcome.id,storyId:story.id,actionId:actionBook.id,history,store,runs,db,metrics,close}
+  return{origin,browserOrigin,originalFetch,createUser,alice,bob,welcomeId:welcome.id,storyId:story.id,actionId:actionBook.id,history,store,context,runs,db,metrics,close}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   process.env.AGENT_UI_FIXTURE='1';process.env.NODE_ENV='test';const fixture=await createAgentUiFixture()

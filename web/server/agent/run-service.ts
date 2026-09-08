@@ -27,7 +27,7 @@ export interface RunBinding {
   knowledge(): KnowledgeSnapshot
   assertIdentity(): void
 }
-export type RunResolver = (uid:number) => RunBinding | Promise<RunBinding>
+export type RunResolver = (uid:number,sessionId:string) => RunBinding | Promise<RunBinding>
 type Controls = { heartbeatMs: number; idleMs: number; softTargetMs: number; longTaskMs: number; activeTurnMs: number; toolRounds: number }
 const outputError = (): never => { throw new AgentRunError('INVALID_OUTPUT') }
 function json(value: unknown): JsonValue {
@@ -70,15 +70,15 @@ export class AgentRunService {
     const p=input as StartRun
     if(!p.body.trim()||p.body.trim()==='/compact')throw new AgentRunError('INVALID_ARGUMENT',400)
     this.store.recover()
-    const binding=await waitBounded(Promise.resolve(this.resolve(uid)),AbortSignal.timeout(30_000)),knowledge=this.checkBinding(binding)
+    const binding=await waitBounded(Promise.resolve(this.resolve(uid,sessionId)),AbortSignal.timeout(30_000)),knowledge=this.checkBinding(binding)
     const result=this.store.begin(uid,sessionId,p,knowledge,authVersion)
     if(result.fresh)this.launch(result.row,binding)
     return this.store.view(result.row)
   }
   async resume(uid:number,id:string,input:unknown,authVersion:number){
     if(!matchesContract(RESUME_RUN_SCHEMA,input))throw new AgentRunError('INVALID_ARGUMENT',400)
-    this.store.recover();this.store.row(uid,id)
-    const binding=await waitBounded(Promise.resolve(this.resolve(uid)),AbortSignal.timeout(30_000)),knowledge=this.checkBinding(binding)
+    this.store.recover();const resumed=this.store.row(uid,id)
+    const binding=await waitBounded(Promise.resolve(this.resolve(uid,resumed.session_id)),AbortSignal.timeout(30_000)),knowledge=this.checkBinding(binding)
     const result=this.store.resume(uid,id,input as ResumeRun,knowledge,authVersion)
     if(result.fresh)this.launch(result.row,binding)
     return this.store.view(result.row)

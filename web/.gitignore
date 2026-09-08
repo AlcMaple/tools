@@ -10,3 +10,6 @@ data
 # Generated together with the running server build.
 /server/agent-release.json
 /server/.agent-release-*.tmp
+
+# Generated from reviewed Agent feature descriptions at build time
+server/agent-guide.json
