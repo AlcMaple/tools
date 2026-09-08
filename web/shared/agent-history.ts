@@ -1,5 +1,5 @@
 import {
-  ACTION_STATES, ERROR_CODES, SOURCE_SCHEMA, TOOL_NAMES,
+  ANIME_SCHEMA, ACTION_STATES, ERROR_CODES, SOURCE_SCHEMA, TOOL_NAMES,
   type ActionReceipt, type AgentMessage, type AgentSession, type AgentUsage, type ContractSchema,
 } from './agent-contracts'
 
@@ -20,15 +20,16 @@ export interface HistorySource {
 }
 
 export type HistoryAction = Pick<ActionReceipt, 'actionId' | 'kind' | 'state' | 'eventSeq' | 'updatedAt' | 'evidence' | 'errorCode' | 'userReportedSuccess'> & { summary: string }
-export type HistorySession = Omit<AgentSession, 'ownerUid'> & { messageCount: number; startedAt?: number | null }
+export type HistorySession = Omit<AgentSession, 'ownerUid'> & { messageCount: number; startedAt?: number | null; pageContext?:PageAnimeContext|null }
 export type HistoryMessage = Omit<AgentMessage, 'ownerUid'> & {
   sources: HistorySource[]
   actions: HistoryAction[]
   updatedAt: number
 }
 
-export interface CreateHistorySession { requestId: string; title?: string; currentBgmId?: number | null }
-export interface PatchHistorySession { expectedRevision: number; title?: string; archived?: boolean; currentBgmId?: number | null }
+export interface PageAnimeContext { bgmId:number;title:string;titleCn:string;year:number|null;episodes:number|null;tags:string[];completed:boolean|null;summary:string;loadedAt:number }
+export interface CreateHistorySession { requestId: string; title?: string; currentBgmId?: number | null; pageContext?:PageAnimeContext|null }
+export interface PatchHistorySession { expectedRevision: number; title?: string; archived?: boolean; currentBgmId?: number | null; pageContext?:PageAnimeContext|null }
 export interface AppendUserMessage { requestId: string; expectedRevision: number; body: string }
 export interface AssistantMessageContent {
   body: string
@@ -63,8 +64,9 @@ const bgmId: ContractSchema = { anyOf: [integer(1), integer(-Number.MAX_SAFE_INT
 const boolean: ContractSchema = { type: 'boolean' }
 const expectedRevision = integer()
 
-export const CREATE_SESSION_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, title, currentBgmId: bgmId }, ['requestId'])
-export const PATCH_SESSION_SCHEMA = object({ expectedRevision, title, archived: boolean, currentBgmId: bgmId }, ['expectedRevision'])
+export const PAGE_CONTEXT_SCHEMA=object({...ANIME_SCHEMA.properties,summary:string(12000,0),loadedAt:integer()})
+export const CREATE_SESSION_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, title, currentBgmId: bgmId, pageContext:nullable(PAGE_CONTEXT_SCHEMA) }, ['requestId'])
+export const PATCH_SESSION_SCHEMA = object({ expectedRevision, title, archived: boolean, currentBgmId: bgmId, pageContext:nullable(PAGE_CONTEXT_SCHEMA) }, ['expectedRevision'])
 export const REVISION_SCHEMA = object({ expectedRevision })
 export const USER_MESSAGE_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, expectedRevision, body: string(HISTORY_LIMITS.bodyChars) })
 export const SESSION_LIST_SCHEMA = object({

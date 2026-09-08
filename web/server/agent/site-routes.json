@@ -1,0 +1,707 @@
+[
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "delete",
+    "path": "/preferences/:id"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "get",
+    "path": "/compactions/:id"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "get",
+    "path": "/preferences"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "get",
+    "path": "/preferences/settings"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "get",
+    "path": "/sessions/:id/context"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "get",
+    "path": "/sessions/:id/context/retrieve"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "get",
+    "path": "/sessions/:id/summaries/:version"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "patch",
+    "path": "/preferences/:id"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "patch",
+    "path": "/sessions/:id/context"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "patch",
+    "path": "/sessions/:id/messages/:messageId/pin"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "post",
+    "path": "/capabilities/probe"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "post",
+    "path": "/compactions/:id/cancel"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "post",
+    "path": "/preferences"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "post",
+    "path": "/preferences/:id/confirm"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "post",
+    "path": "/sessions/:id/compact"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "post",
+    "path": "/sessions/:id/context/prepare"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "post",
+    "path": "/sessions/:id/summaries/edit"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "post",
+    "path": "/sessions/:id/summaries/restore"
+  },
+  {
+    "file": "server/agent/context-api.ts",
+    "method": "put",
+    "path": "/preferences/settings"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "delete",
+    "path": "/sessions/:sessionId"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "get",
+    "path": "/sessions"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "get",
+    "path": "/sessions/:sessionId"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "get",
+    "path": "/sessions/:sessionId/export"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "patch",
+    "path": "/sessions/:sessionId"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "post",
+    "path": "/sessions"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "post",
+    "path": "/sessions/:sessionId/clear"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "post",
+    "path": "/sessions/:sessionId/messages"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "route",
+    "path": "/"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "route",
+    "path": "/"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "get",
+    "path": "/knowledge"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "get",
+    "path": "/runs/:runId"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "get",
+    "path": "/runs/:runId/events"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "get",
+    "path": "/sessions/:sessionId/runs"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/runs/:runId/cancel"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/runs/:runId/resume"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/sessions/:sessionId/runs"
+  },
+  {
+    "file": "server/announcement.ts",
+    "method": "get",
+    "path": "/current"
+  },
+  {
+    "file": "server/announcement.ts",
+    "method": "post",
+    "path": "/current/dismiss"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "get",
+    "path": "/me"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "get",
+    "path": "/questions"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/email/bind-start"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/email/bind-verify"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/email/current-start"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/email/register"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/email/start"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/email/unbind-start"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/email/unbind-verify"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/email/verify"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/forgot"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/login"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/logout"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/password/set"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/register"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/settings"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/username/change"
+  },
+  {
+    "file": "server/community.ts",
+    "method": "get",
+    "path": "/:username"
+  },
+  {
+    "file": "server/community.ts",
+    "method": "get",
+    "path": "/:username/:bgmId/cover-file"
+  },
+  {
+    "file": "server/community.ts",
+    "method": "get",
+    "path": "/"
+  },
+  {
+    "file": "server/community.ts",
+    "method": "get",
+    "path": "/reviews"
+  },
+  {
+    "file": "server/community.ts",
+    "method": "get",
+    "path": "/reviews/:bgmId"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "get",
+    "path": "/bindings"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "get",
+    "path": "/captcha"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "get",
+    "path": "/hls.js"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "get",
+    "path": "/play-page"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "get",
+    "path": "/playlist"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "get",
+    "path": "/resolve"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "get",
+    "path": "/source-page"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "post",
+    "path": "/bind"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "post",
+    "path": "/captcha/verify"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "post",
+    "path": "/locate"
+  },
+  {
+    "file": "server/girigiri.ts",
+    "method": "post",
+    "path": "/search"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/calendar"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/cover/*"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/health"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/search"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/agent"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/announcements"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/auth"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/auth/oauth"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/community"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/girigiri"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/reviews"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/rewards"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/slow-playback"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/tracks"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/xifan"
+  },
+  {
+    "file": "server/oauth.ts",
+    "method": "get",
+    "path": "/google/callback"
+  },
+  {
+    "file": "server/oauth.ts",
+    "method": "get",
+    "path": "/google/start"
+  },
+  {
+    "file": "server/oauth.ts",
+    "method": "get",
+    "path": "/providers"
+  },
+  {
+    "file": "server/oauth.ts",
+    "method": "post",
+    "path": "/google/rebind-email"
+  },
+  {
+    "file": "server/reviews.ts",
+    "method": "delete",
+    "path": "/:bgmId/:mode"
+  },
+  {
+    "file": "server/reviews.ts",
+    "method": "get",
+    "path": "/:bgmId"
+  },
+  {
+    "file": "server/reviews.ts",
+    "method": "get",
+    "path": "/:bgmId/material"
+  },
+  {
+    "file": "server/reviews.ts",
+    "method": "post",
+    "path": "/:bgmId/:mode/generate"
+  },
+  {
+    "file": "server/reviews.ts",
+    "method": "post",
+    "path": "/:bgmId/:mode/publish"
+  },
+  {
+    "file": "server/reviews.ts",
+    "method": "post",
+    "path": "/:bgmId/:mode/questions"
+  },
+  {
+    "file": "server/reviews.ts",
+    "method": "post",
+    "path": "/:bgmId/:mode/retract"
+  },
+  {
+    "file": "server/reviews.ts",
+    "method": "put",
+    "path": "/:bgmId/:mode/draft"
+  },
+  {
+    "file": "server/rewards-api.ts",
+    "method": "get",
+    "path": "/me"
+  },
+  {
+    "file": "server/rewards-api.ts",
+    "method": "post",
+    "path": "/draw"
+  },
+  {
+    "file": "server/rewards-api.ts",
+    "method": "post",
+    "path": "/redeem"
+  },
+  {
+    "file": "server/slow-playback-api.ts",
+    "method": "get",
+    "path": "/status"
+  },
+  {
+    "file": "server/slow-playback-api.ts",
+    "method": "post",
+    "path": "/heartbeat"
+  },
+  {
+    "file": "server/slow-playback-api.ts",
+    "method": "post",
+    "path": "/release"
+  },
+  {
+    "file": "server/slow-playback-api.ts",
+    "method": "post",
+    "path": "/request"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "delete",
+    "path": "/:bgmId"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
+    "path": "/:bgmId/cover-file"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
+    "path": "/:bgmId/good-episodes"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
+    "path": "/"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
+    "path": "/import/bgm/status"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
+    "path": "/revision"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
+    "path": "/sync"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "post",
+    "path": "/:bgmId/cover"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "post",
+    "path": "/:customBgmId/backfill"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "post",
+    "path": "/import/bgm"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "post",
+    "path": "/sync"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "put",
+    "path": "/:bgmId"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "delete",
+    "path": "/prepared/:key"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/auth/status"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/bindings"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/captcha"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/hls.js"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/hls/:key/:file"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/monitor.js"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/play-page"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/playlist"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/prepared"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/prepared/list"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/resolve"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/source-page"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/stream"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "get",
+    "path": "/viewport-probe/:action"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "post",
+    "path": "/auth/login"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "post",
+    "path": "/auth/logout"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "post",
+    "path": "/bind"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "post",
+    "path": "/captcha/verify"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "post",
+    "path": "/client-log"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "post",
+    "path": "/locate"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "post",
+    "path": "/prepare"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "post",
+    "path": "/search"
+  },
+  {
+    "file": "server/xifan.ts",
+    "method": "post",
+    "path": "/viewport-probe"
+  }
+]

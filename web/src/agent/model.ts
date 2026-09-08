@@ -2,7 +2,7 @@ import type { CompactJob } from '../../shared/agent-context'
 import type { HistoryMessage } from '../../shared/agent-history'
 import type { RunEvent } from '../../shared/agent-run'
 
-export interface AnimeContext { bgmId:number; title:string; canReview?:boolean; canOpenSources?:boolean }
+export interface AnimeContext { bgmId:number; title:string; titleCn?:string;year?:number|null;episodes?:number|null;tags?:string[];summary?:string;completed?:boolean|null; canReview?:boolean; canOpenSources?:boolean }
 export interface AgentIssue { code:string; message:string }
 export const activeCompact=(job:CompactJob|null):boolean=>Boolean(job&&!['completed','failed','cancelled','skipped'].includes(job.stage))
 export const idValid=(id:unknown):id is string=>typeof id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,99}$/.test(id)
@@ -42,4 +42,9 @@ export function applyDelta(messages:HistoryMessage[],buffers:Map<string,string>,
   if(previous&&(previous.status!=='streaming'||!body.startsWith(previous.body)))return messages
   const message:HistoryMessage=previous?{...previous,body}:{id:messageId,sessionId,seq:(messages.at(-1)?.seq??0)+1,role:'assistant',body,status:'streaming',sources:[],sourceIds:[],toolSummaries:[],actions:[],actionIds:[],createdAt:event.createdAt,updatedAt:0,pinned:false,usage:[]}
   return previous?messages.map(item=>item.id===messageId?message:item):[...messages,message]
+}
+
+export function pageContext(anime:AnimeContext|null){
+  if(!anime||anime.bgmId<=0)return null
+  return {bgmId:anime.bgmId,title:anime.title,titleCn:(anime.titleCn??'').slice(0,200),year:anime.year&&anime.year>=1900&&anime.year<=2200?anime.year:null,episodes:anime.episodes&&anime.episodes>0&&anime.episodes<=20000?anime.episodes:null,tags:[...new Set((anime.tags??[]).map(t=>t.slice(0,20)).filter(Boolean))].slice(0,12),completed:anime.completed??null,summary:(anime.summary??'').slice(0,12000),loadedAt:Date.now()}
 }

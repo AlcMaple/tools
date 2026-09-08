@@ -49,7 +49,7 @@ export function initializeAgentHistorySchema(db: Database.Database): void {
   `)).immediate()
   const columns = db.prepare('PRAGMA table_info(agent_sessions)').all() as { name: string }[]
   for (const [name, declaration] of [
-    ['context_job_id', 'TEXT'], ['context_generation', 'INTEGER NOT NULL DEFAULT 0'],
+    ['page_context_json','TEXT'], ['context_job_id', 'TEXT'], ['context_generation', 'INTEGER NOT NULL DEFAULT 0'],
     ['context_version_seq', 'INTEGER NOT NULL DEFAULT 0'], ['context_bytes', 'INTEGER NOT NULL DEFAULT 0'],
     ['context_adaptive', 'INTEGER NOT NULL DEFAULT 1'], ['run_id', 'TEXT'], ['run_bytes', 'INTEGER NOT NULL DEFAULT 0'],
   ]) if (!columns.some(c => c.name === name)) db.exec(`ALTER TABLE agent_sessions ADD COLUMN ${name} ${declaration}`)
@@ -78,7 +78,7 @@ export function firstMessageTitle(body: string): string {
 interface SessionRow {
   id: string; user_id: number; create_request_id: string; create_hash: string; title: string
   created_at: number; updated_at: number; archived_at: number | null; revision: number
-  started_at: number | null; title_manual: number; last_event_seq: number; last_message_seq: number; message_count: number; stored_bytes: number
+  page_context_json:string|null; started_at: number | null; title_manual: number; last_event_seq: number; last_message_seq: number; message_count: number; stored_bytes: number
   active_summary_version: number | null; context_tier: HistorySession['contextTier']
   context_job_id: string | null; context_bytes: number; run_id: string | null
   current_bgm_id: number | null; provider: HistorySession['provider']; model: string
@@ -100,7 +100,7 @@ const sessionView = (r: SessionRow): HistorySession => ({
   id: r.id, title: r.title, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at,
   revision: r.revision, activeSummaryVersion: r.active_summary_version, contextTier: r.context_tier,
   currentBgmId: r.current_bgm_id, provider: r.provider, model: r.model, lastEventSeq: r.last_event_seq,
-  messageCount: r.message_count, startedAt: r.started_at,
+  messageCount: r.message_count, startedAt: r.started_at, pageContext:r.page_context_json?JSON.parse(r.page_context_json):null,
 })
 function messageView(r: MessageRow): HistoryMessage {
   const sources = JSON.parse(r.sources_json) as HistoryMessage['sources']
@@ -183,7 +183,9 @@ export class AgentHistoryStore {
     const p = parse<CreateHistorySession>(CREATE_SESSION_SCHEMA, input)
     if (p.title !== undefined && !p.title.trim()) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '给这本手帐起个名字吧。')
     const title = p.title?.trim() ?? '新会话'
-    const fingerprint = hash({ title, currentBgmId: p.currentBgmId ?? null })
+    if(p.pageContext&&p.pageContext.bgmId!==p.currentBgmId)throw new AgentHistoryError('INVALID_ARGUMENT',400,'页面资料与当前番剧不匹配。')
+    const page=p.pageContext?JSON.stringify(p.pageContext):null,pageBytes=page?Buffer.byteLength(page):0
+    const fingerprint = hash({ title, currentBgmId: p.currentBgmId ?? null, ...p.pageContext?{pageContext:p.pageContext}:{} })
     return this.db.transaction(() => {
       if (!Number.isSafeInteger(uid) || uid <= 0 || !this.db.prepare('SELECT 1 FROM users WHERE id = ?').get(uid)) throw new AgentHistoryError('NOT_FOUND', 404, '账号已失效，请重新登录。')
       this.db.prepare('DELETE FROM agent_deleted_sessions WHERE user_id = ? AND deleted_at < ?').run(uid, Date.now() - HISTORY_LIMITS.deletedRequestRetentionMs)
@@ -197,9 +199,11 @@ export class AgentHistoryStore {
       }
       const { count } = this.db.prepare('SELECT COUNT(*) AS count FROM agent_sessions WHERE user_id = ?').get(uid) as { count: number }
       if (count >= this.limits.sessionsPerUser) throw new AgentHistoryError('HISTORY_LIMIT', 409, '手帐数量已到上限，请先导出并清理旧会话。')
+      const used=(this.db.prepare('SELECT COALESCE(SUM(stored_bytes+context_bytes+run_bytes),0) AS bytes FROM agent_sessions WHERE user_id=?').get(uid) as {bytes:number}).bytes
+      if(used+pageBytes>this.limits.bytesPerUser)throw new AgentHistoryError('HISTORY_LIMIT',409,'会话空间已到上限。')
       const id = randomUUID(), now = Date.now()
-      this.db.prepare(`INSERT INTO agent_sessions (id, user_id, create_request_id, create_hash, title, created_at, updated_at, current_bgm_id, model, title_manual)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, uid, p.requestId, fingerprint, title, now, now, p.currentBgmId ?? null, DEFAULT_AGENT_MODEL, p.title !== undefined && title !== '新会话' ? 1 : 0)
+      this.db.prepare(`INSERT INTO agent_sessions (id, user_id, create_request_id, create_hash, title, created_at, updated_at, current_bgm_id, model, title_manual,page_context_json,stored_bytes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, uid, p.requestId, fingerprint, title, now, now, p.currentBgmId ?? null, DEFAULT_AGENT_MODEL, p.title !== undefined && title !== '新会话' ? 1 : 0,page,pageBytes)
       return sessionView(this.session(uid, id))
     }).immediate()
   }
@@ -245,8 +249,14 @@ export class AgentHistoryStore {
       this.db.prepare('UPDATE agent_sessions SET title = ?, archived_at = ?, current_bgm_id = ? WHERE user_id = ? AND id = ?')
         .run(p.title?.trim() ?? s.title, p.archived === undefined ? s.archived_at : p.archived ? s.archived_at ?? Date.now() : null,
           p.currentBgmId === undefined ? s.current_bgm_id : p.currentBgmId, uid, id)
+      const nextId=p.currentBgmId===undefined?s.current_bgm_id:p.currentBgmId
+      if(p.pageContext&&p.pageContext.bgmId!==nextId)throw new AgentHistoryError('INVALID_ARGUMENT',400,'页面资料与当前番剧不匹配。')
+      const nextPage=p.pageContext===undefined?(p.currentBgmId!==undefined&&p.currentBgmId!==s.current_bgm_id?null:s.page_context_json):p.pageContext?JSON.stringify(p.pageContext):null
+      const delta=(nextPage?Buffer.byteLength(nextPage):0)-(s.page_context_json?Buffer.byteLength(s.page_context_json):0)
+      this.expectSpace(s,delta,false)
+      this.db.prepare('UPDATE agent_sessions SET page_context_json=? WHERE user_id=? AND id=?').run(nextPage,uid,id)
       if (p.title !== undefined) this.db.prepare('UPDATE agent_sessions SET title_manual = 1 WHERE user_id = ? AND id = ?').run(uid,id)
-      this.touch(s)
+      this.touch(s,delta)
       return sessionView(this.session(uid, id))
     }).immediate()
   }
@@ -335,7 +345,7 @@ export class AgentHistoryStore {
     return this.db.transaction(() => {
       const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectIdle(s)
       this.db.prepare('DELETE FROM agent_messages WHERE user_id = ? AND session_id = ?').run(uid, id)
-      this.db.prepare('UPDATE agent_sessions SET active_summary_version = NULL, context_bytes = 0, context_generation = context_generation + 1 WHERE user_id = ? AND id = ?').run(uid, id)
+      this.db.prepare('UPDATE agent_sessions SET page_context_json = NULL, active_summary_version = NULL, context_bytes = 0, context_generation = context_generation + 1 WHERE user_id = ? AND id = ?').run(uid, id)
       // seq 不归零，另一端旧游标和晚到的请求仍然是旧状态，不会指向新的同号消息。
       this.touch(s, -s.stored_bytes, -s.message_count)
       return sessionView(this.session(uid, id))

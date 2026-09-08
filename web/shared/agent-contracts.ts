@@ -1,4 +1,4 @@
-// 阶段 0 的可执行合同；没有工具实现、路由注册或数据库副作用。
+// Agent 共享合同；白名单实现由服务端注册，本文件不执行工具或数据库操作。
 export const AGENT_CONTRACT_VERSION = 1
 export const TRACK_STATUSES = ['watching', 'plan', 'considering', 'done'] as const
 export const CONTEXT_TIERS = { '64k': 64_000, '128k': 128_000, '256k': 256_000, '1m': 1_000_000 } as const
@@ -46,10 +46,11 @@ export const SOURCE_SCHEMA = object({
   label: text(120), bgmId: trackId, retrievedAt: integer(), cachedAt: nullable(integer()),
 }, ['sourceId', 'kind', 'label', 'retrievedAt'])
 
-const anime = object({
+export const ANIME_SCHEMA = object({
   bgmId, title: text(200), titleCn: text(200, 0), year: nullable(integer(1900, 2200)),
   episodes: nullable(integer(1, 20_000)), tags, completed: nullable(boolean),
 }, ['bgmId', 'title', 'titleCn', 'year', 'episodes', 'tags', 'completed'])
+const anime=ANIME_SCHEMA
 const track = object({ bgmId: trackId, title: text(200), status, episode: integer(0, 20_000), userTags: tags })
 const trackFields = object({ status, episode: integer(0, 20_000), userTags: tags }, [], 1)
 const review = object({
