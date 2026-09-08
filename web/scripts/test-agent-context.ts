@@ -245,7 +245,7 @@ try {
     const short=seed(alice,2),r=await req<{job:CompactJob;command:string}>(`/sessions/${short.id}/messages`,'POST',{requestId:randomUUID(),expectedRevision:short.revision,body:'/compact'})
     assert.equal(r.status,202);assert.equal(r.body.command,'/compact');await productionService.wait(r.body.job.id);assert.equal(store.job(alice,r.body.job.id).stage,'skipped')
     const long=seed(),blocked=await req<{job:CompactJob}>(`/sessions/${long.id}/messages`,'POST',{requestId:randomUUID(),expectedRevision:long.revision,body:'/compact'})
-    await productionService.wait(blocked.body.job.id);assert.equal(store.job(alice,blocked.body.job.id).errorCode,'CONTEXT_AI_DISABLED')
+    await productionService.wait(blocked.body.job.id);assert.equal(store.job(alice,blocked.body.job.id).errorCode,'AGENT_AI_DISABLED')
   })
   await check('协议适配探测 JSON/工具能力并禁用摘要工具，原生计数与 Claude 用量聚合正确',async()=>{
     for(const protocol of ['chat_completions','openai_responses','anthropic_messages'] as const){

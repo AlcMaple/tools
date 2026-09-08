@@ -15,7 +15,7 @@ export class AgentContextService {
   private readonly controllers = new Map<string, AbortController>()
   private readonly pending = new Map<string, Promise<void>>()
   private readonly probes = new Map<number, { fingerprint:string; capabilities:ProviderCapabilities; until:number; nativeVerified:boolean }>()
-  constructor(readonly store: AgentContextStore, private readonly resolve: ProviderResolver) {}
+  constructor(readonly store: AgentContextStore, private readonly resolve: ProviderResolver, private readonly execute: (uid:number,action:()=>Promise<void>)=>Promise<void> = (_uid,action)=>action()) {}
   async provider(uid:number,signal:AbortSignal,onProbe?:(profile:ContextProvider['profile'])=>void) {
     const provider = await this.resolve(uid), existing = this.probes.get(uid)
     if(existing && existing.fingerprint===contextHash(provider.profile) && existing.until>Date.now()) return {provider,capabilities:existing.capabilities,usage:[] as AgentUsage[]}
@@ -85,7 +85,7 @@ export class AgentContextService {
     const started=this.store.beginJob(uid,id,p.requestId,p.expectedRevision,trigger,runId)
     if(!started.fresh) return started.job
     const controller=new AbortController(); this.controllers.set(started.job.id,controller)
-    const work=Promise.resolve().then(()=>this.run(uid,id,started.job.id,controller,edit)).finally(()=>{this.controllers.delete(started.job.id);this.pending.delete(started.job.id)})
+    const work=Promise.resolve().then(()=>{const ledger=readContextLedger(this.store,uid,id),active=this.store.active(uid,id);const selected=ledger.messages.some(m=>!ledger.pinnedIds.has(m.id)&&(m.seq>(active?.view.transcriptRange.throughSeq??0)||active?.view.quality.restoredMessageIds.includes(m.id)));return !edit&&!selected?this.run(uid,id,started.job.id,controller,edit):this.execute(uid,()=>this.run(uid,id,started.job.id,controller,edit))}).catch(error=>{this.store.finishJob(uid,started.job.id,'failed',[],error instanceof Error?error.message:'PROVIDER_UNAVAILABLE')}).finally(()=>{this.controllers.delete(started.job.id);this.pending.delete(started.job.id)})
     this.pending.set(started.job.id,work)
     return started.job
   }

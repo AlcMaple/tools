@@ -6,6 +6,8 @@ import { AgentHistoryError, HISTORY_LIMITS, USER_MESSAGE_SCHEMA, type AppendUser
 import { AgentHistoryStore } from './history-store'
 import { createAgentContextApi } from './context-api'
 import { agentContextService, agentContextStore } from './context-runtime'
+import { AgentRunError } from '../../shared/agent-run'
+import { externalError,createExternalApi } from './external-api'
 import { matchesContract } from './validation'
 import { createAgentRunApi } from './run-api'
 import { agentRunService, currentAgentKnowledge } from './run-runtime'
@@ -29,6 +31,7 @@ history.use('*', async (c, next) => {
 
 history.use('*', bodyLimit({ maxSize: HISTORY_LIMITS.requestBytes, onError: c => c.json({ code: 'MESSAGE_TOO_LARGE', error: '这条消息太长啦，请分几次保存。' }, 413) }))
 history.onError((error, c) => {
+  if (error instanceof AgentRunError) return c.json(externalError(error),error.status)
   if (error instanceof AgentHistoryError) return c.json({ code: error.code, error: error.message }, error.status)
   throw error
 })
@@ -82,6 +85,7 @@ history.get('/sessions/:sessionId/export', c => {
   return c.json(exported)
 })
 
+history.route('/',createExternalApi())
 history.route('/',createAgentRunApi(agentRunService,currentAgentKnowledge))
 history.route('/',createAgentContextApi(agentContextService))
 

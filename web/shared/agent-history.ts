@@ -1,3 +1,4 @@
+import type { AggregateEvidence } from './agent-sources'
 import {
   ANIME_SCHEMA, ACTION_STATES, ERROR_CODES, SOURCE_SCHEMA, TOOL_NAMES,
   type ActionReceipt, type AgentMessage, type AgentSession, type AgentUsage, type ContractSchema,
@@ -17,6 +18,7 @@ export interface HistorySource {
   retrievedAt: number
   bgmId?: number
   cachedAt?: number | null
+  aggregate?: AggregateEvidence
 }
 
 export type HistoryAction = Pick<ActionReceipt, 'actionId' | 'kind' | 'state' | 'eventSeq' | 'updatedAt' | 'evidence' | 'errorCode' | 'userReportedSuccess'> & { summary: string }

@@ -17,6 +17,7 @@ import slowPlayback from './slow-playback-api'
 import community from './community'
 import reviews from './reviews'
 import agentHistory from './agent/history-api'
+import agentGuest from './agent/guest-api'
 import { sameOriginGuard, securityHeaders } from './security'
 
 // 本地开发通常没有 5.6MB 的 bgm_index.db（生成它要下载 400MB+ 官方离线档）。
@@ -84,6 +85,7 @@ app.route('/api/tracks', tracks)
 // 推荐与点评助手：草稿 / 当前内容 / 发布 / 撤回 + 服务器 AI 问答与初稿生成。要登录。
 app.route('/api/reviews', reviews)
 
+app.route('/api/agent', agentGuest)
 app.route('/api/agent', agentHistory)
 
 // 稀饭在线观看「浏览器直连」可行性原型:probe 诊断 + 自包含试播页,

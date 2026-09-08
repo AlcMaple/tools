@@ -1,3 +1,5 @@
+import { AgentConnection } from './connection'
+import { agentActivity } from './AgentActivity'
 import type { ContextSummary,CompactJob,PreferenceCard,PreferenceSettings,PreferenceValues } from '../../shared/agent-context'
 import type { PageAnimeContext,HistorySession,HistoryMessage,HistorySnapshot } from '../../shared/agent-history'
 import type { ContextTier } from '../../shared/agent-contracts'
@@ -13,10 +15,10 @@ export interface AgentUiState {
   knowledge:KnowledgeSnapshot|null;sessions:HistorySession[];cursor:Cursor|null;archived:boolean
   session:HistorySession|null;messages:HistoryMessage[];beforeSeq:number|null;context:ContextInfo|null;preferences:PreferenceCard[];preferenceSettings:PreferenceSettings|null
   run:RunView|null;watchingRun:RunView|null;job:CompactJob|null;connection:'idle'|'connected'|'disconnected'
-  draft:string;anime:AnimeContext|null;unread:number;status:string
+  pendingBody:string|null;draft:string;anime:AnimeContext|null;unread:number;status:string
 }
 const initial=():AgentUiState=>({ready:false,loading:false,syncing:false,busy:null,error:null,authExpired:false,open:false,knowledge:null,sessions:[],cursor:null,archived:false,
-  session:null,messages:[],beforeSeq:null,context:null,preferences:[],preferenceSettings:null,run:null,watchingRun:null,job:null,connection:'idle',draft:'',anime:null,unread:0,status:''})
+  session:null,messages:[],beforeSeq:null,context:null,preferences:[],preferenceSettings:null,run:null,watchingRun:null,job:null,connection:'idle',pendingBody:null,draft:'',anime:null,unread:0,status:''})
 class UiError extends Error {constructor(readonly code:string,message:string){super(message)}}
 const issue=(error:unknown):AgentIssue=>error instanceof UiError?{code:error.code,message:error.message}:{code:'NETWORK_ERROR',message:'连接断开了，刚写的内容还在。'}
 const stopped=()=>new DOMException('Request superseded','AbortError')
@@ -31,6 +33,7 @@ export class AgentController {
   private readonly cursors=new Map<string,number>()
   private readonly seen=new Map<string,number>()
   private readonly unreadMessages=new Map<string,Set<string>>()
+  private readonly providerConnection=new AgentConnection(()=>this.connectProvider())
   private alive=true
   private selection=0
   private listSerial=0
@@ -84,6 +87,7 @@ export class AgentController {
     try{
       const [knowledge,list]=await Promise.all([this.api<KnowledgeSnapshot>('/knowledge'),this.api<{sessions:HistorySession[];nextCursor:Cursor|null}>('/sessions')])
       this.set({knowledge,sessions:list.sessions,cursor:list.nextCursor,ready:true})
+      if(knowledge.conditions.answerModelAutoConnect)void this.prepareProvider().catch(()=>{})
       const remembered=this.remembered(),selected=idValid(remembered)?remembered:list.sessions[0]?.id
       if(selected){await this.select(selected);if(this.state.error?.code==='NOT_FOUND'&&list.sessions[0]&&list.sessions[0].id!==selected)await this.select(list.sessions[0].id)}
     }catch(error){this.fail(error)}finally{this.set({loading:false,ready:true})}
@@ -126,7 +130,7 @@ export class AgentController {
     const session=context.session.revision>snapshot.session.revision?context.session:snapshot.session
     const minSeq=(snapshot.messages.at(-1)?.seq??0)-session.messageCount+1
     const kept=this.state.messages.filter(message=>message.seq>=minSeq)
-    this.set({session,messages:session.messageCount?mergeMessages(kept,snapshot.messages):[],beforeSeq:session.messageCount?this.state.beforeSeq??snapshot.nextBeforeSeq:null,context,run:runs.runs[0]??null})
+    this.set({session,messages:session.messageCount?mergeMessages(kept,snapshot.messages):[],beforeSeq:session.messageCount?this.state.beforeSeq??snapshot.nextBeforeSeq:null,context,run:runs.runs[0]??null,...this.state.pendingBody&&snapshot.messages.some(m=>m.id===this.state.run?.userMessageId)?{pendingBody:null}:{}})
     if(this.state.open)this.markRead()
     if(context.job&&activeCompact(context.job)&&(!this.poll||this.state.job?.id!==context.job.id))this.watchCompact(context.job)
   }
@@ -152,15 +156,30 @@ export class AgentController {
   async send(){
     const body=this.state.draft.trim();if(!body)return
     if(body==='/compact'){await this.compact();return}
-    if(!this.state.knowledge?.conditions.answerModelReady){this.set({error:{code:'AGENT_RUNTIME_NOT_READY',message:'回答模型尚未接入，消息未发送。'}});return}
+    if(!this.state.knowledge?.conditions.answerModelReady&&!this.state.knowledge?.conditions.answerModelAutoConnect){this.set({error:{code:'AGENT_RUNTIME_NOT_READY',message:'回答模型尚未接入，消息未发送。'}});return}
+    const retryConnection=Boolean(this.state.error)
     await this.mutate('发送',async()=>{
+      this.set({pendingBody:body,draft:'',status:agentActivity('thinking')})
+      try{
+      if(retryConnection&&this.state.knowledge?.conditions.answerModelAutoConnect)await this.providerConnection.retry()
+      else await this.prepareProvider()
       const session=this.state.session??await this.create()
       const retry=this.failedSend?.sessionId===session.id&&this.failedSend.body===body?this.failedSend:{requestId:crypto.randomUUID(),sessionId:session.id,body}
       this.failedSend=retry
       const {run}=await this.api<{run:RunView}>(`/sessions/${session.id}/runs`,'POST',{requestId:retry.requestId,expectedRevision:session.revision,body,clientVersion:this.clientVersion})
       if(!session.startedAt)this.drafts.delete('new')
-      this.failedSend=null;this.drafts.set(session.id,'');this.set({draft:'',run,status:'正在查询…'});this.follow(run);await this.refreshCurrent();await this.list()
+      this.failedSend=null;this.drafts.set(session.id,'');this.set({draft:'',run,status:agentActivity('thinking')});this.follow(run);await this.refreshCurrent();await this.list()
+      }catch(error){if(!this.state.draft)this.set({draft:body});throw error}finally{this.set({pendingBody:null})}
     })
+  }
+  private async prepareProvider(){
+    if(this.state.knowledge?.conditions.answerModelAutoConnect)await this.providerConnection.ensure()
+  }
+  private async connectProvider(){
+    await this.api('/provider/prepare','POST',{})
+    const knowledge=await this.api<KnowledgeSnapshot>('/knowledge')
+    if(!knowledge.conditions.answerModelReady)throw new UiError('PROVIDER_CONNECTION_REQUIRED','模型连接尚未就绪，请检查 AI 配置。')
+    this.set({knowledge})
   }
   private scheduleRefresh(){if(this.refreshTimer)return;this.refreshTimer=setTimeout(()=>{this.refreshTimer=null;void this.refreshCurrent().catch(error=>this.fail(error))},Math.max(100,1800-(Date.now()-this.lastRefresh)))}
   private follow(run:RunView,reconnect=false){
@@ -179,11 +198,14 @@ export class AgentController {
   private event(run:RunView,event:RunEvent){
     const current=this.state.session?.id===run.sessionId,data=event.data&&typeof event.data==='object'&&!Array.isArray(event.data)?event.data:{}
     if(typeof data.attempt==='number'&&data.attempt<run.attempt)return
-    if(current&&event.type==='delta')this.set({messages:applyDelta(this.state.messages,this.buffers,event,run.sessionId)})
+    if(current&&event.type==='delta')this.set({messages:applyDelta(this.state.messages,this.buffers,event,run.sessionId),status:agentActivity('writing')})
     if(event.type==='delta'&&(!this.state.open||!current)&&typeof data.messageId==='string'){const messages=this.unreadMessages.get(run.sessionId)??new Set<string>();messages.add(data.messageId);this.unreadMessages.set(run.sessionId,messages);this.set({unread:Math.min(99,[...this.unreadMessages.values()].reduce((n,set)=>n+set.size,0))})}
-    if(current&&event.type==='model_started')this.set({status:'正在回复…'})
-    if(current&&event.type==='tool_started')this.set({status:'正在查询资料…'})
+    if(current&&event.type==='model_started')this.set({status:agentActivity('thinking')})
+    if(current&&event.type==='tool_started')this.set({status:agentActivity('tool',typeof data.name==='string'?data.name:undefined)})
+    if(current&&event.type==='tool_finished')this.set({status:agentActivity('thinking')})
+    if(current&&event.type==='context'&&data.state==='compacting')this.set({status:agentActivity('compact')})
     if(current&&event.type==='knowledge'&&data.refreshRequired===true)this.set({status:'页面版本已更新。'})
+    if(current&&event.type==='context'&&data.state==='price_warning')this.set({status:`本次调用最高估算 US$${Number(data.estimatedCost).toFixed(4)}`})
     if(current&&event.type==='soft_limit')this.set({status:'处理时间较长…'})
     if(current&&event.type==='long_task')this.set({status:'任务仍在运行，可取消。'})
     if(current&&['tool_finished','context'].includes(event.type))this.scheduleRefresh()
@@ -193,12 +215,12 @@ export class AgentController {
     }
   }
   async cancel(){const run=this.state.watchingRun?.state==='running'?this.state.watchingRun:this.state.run;if(!run)return;await this.mutate('停止回复',async()=>{const response=await this.api<{run:RunView}>(`/runs/${run.id}/cancel`,'POST',{});this.set({watchingRun:response.run,...this.state.session?.id===run.sessionId?{run:response.run}:{}});await this.refreshCurrent()})}
-  async resume(){const session=this.state.session,run=this.state.run;if(!session||!run?.canResume)return;await this.mutate('继续',async()=>{const response=await this.api<{run:RunView}>(`/runs/${run.id}/resume`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision,clientVersion:this.clientVersion});this.set({run:response.run});this.follow(response.run);await this.refreshCurrent()})}
+  async resume(){const session=this.state.session,run=this.state.run;if(!session||!run?.canResume)return;await this.mutate('继续',async()=>{await this.prepareProvider();const response=await this.api<{run:RunView}>(`/runs/${run.id}/resume`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision,clientVersion:this.clientVersion});this.set({run:response.run});this.follow(response.run);await this.refreshCurrent()})}
   retryDraft(){const last=this.state.messages.filter(m=>m.role==='user').at(-1);if(last)this.set({draft:last.body,error:null,status:''})}
   async compact(){
     const session=this.state.session;if(!session)return
-    if(!this.state.knowledge?.conditions.contextModelReady){this.set({error:{code:'CONTEXT_AI_DISABLED',message:'压缩模型尚未接入。'}});return}
-    await this.mutate('压缩上下文',async()=>{const response=await this.api<{job:CompactJob}>(`/sessions/${session.id}/compact`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision});if(this.state.draft.trim()==='/compact')this.set({draft:''});this.watchCompact(response.job)})
+    if(!this.state.knowledge?.conditions.contextModelReady&&!this.state.knowledge?.conditions.answerModelAutoConnect){this.set({error:{code:'CONTEXT_AI_DISABLED',message:'压缩模型尚未接入。'}});return}
+    await this.mutate('压缩上下文',async()=>{await this.prepareProvider();const response=await this.api<{job:CompactJob}>(`/sessions/${session.id}/compact`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision});if(this.state.draft.trim()==='/compact')this.set({draft:''});this.watchCompact(response.job)})
   }
   private watchCompact(job:CompactJob){
     if(this.poll)clearTimeout(this.poll);this.set({job})

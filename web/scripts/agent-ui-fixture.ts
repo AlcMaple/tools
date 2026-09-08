@@ -18,7 +18,7 @@ export async function createAgentUiFixture(){
   writeFileSync(join(directory,'data/calendar-cache.json'),JSON.stringify({at:Date.now(),data:Array.from({length:7},(_,index)=>({id:index+1,label:['星期一','星期二','星期三','星期四','星期五','星期六','星期日'][index],items:index<3?[{id:101+index,name:['葬送的芙莉莲','摇曳露营△','夏目友人帐'][index],name_cn:['葬送的芙莉莲','摇曳露营△','夏目友人帐'][index],url:'',cover:'',airDate:'2026-09-01',episodes:[28,12,13][index],score:0}]:[]}))}))
   for(const key of Object.keys(process.env))if(/^(SENTRY_|VITE_SENTRY_|SMTP_|AI_|GOOGLE_|MAPLETOOLS_ENV_FILE$|VERCEL$)/.test(key)||/^(?:https?_proxy|all_proxy|no_proxy)$/i.test(key))delete process.env[key]
   process.env.NODE_ENV='production';process.env.DATA_DIR=join(directory,'data');process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.EMAIL_MODE='disabled';process.env.AGENT_CONTEXT_AI_ENABLED='0'
-  const metrics={externalRequests:0,apiRequests:0,modelCalls:0,toolCalls:0}
+  const metrics={externalRequests:0,apiRequests:0,modelCalls:0,toolCalls:0,connections:0}
   globalThis.fetch=async()=>{metrics.externalRequests++;throw new Error('EXTERNAL_REQUEST_BLOCKED')}
   const {MockAgent,getGlobalDispatcher,setGlobalDispatcher}=await import('undici'),oldDispatcher=getGlobalDispatcher(),network=new MockAgent();network.disableNetConnect();setGlobalDispatcher(network)
   const {Hono}=await import('hono'),{serve}=await import('@hono/node-server'),{serveStatic}=await import('@hono/node-server/serve-static')
@@ -44,7 +44,7 @@ export async function createAgentUiFixture(){
   let other=book('另一位用户的手帐',bob);other=history.appendUser(bob,other.id,{requestId:randomUUID(),expectedRevision:other.revision,body:'BOB_PRIVATE_SENTINEL'}).session
   const welcome=book('新的一页')
   store.proposePreference(alice,{category:'tone',value:'推荐时先说氛围和集数，别剧透。'})
-  let mode:'normal'|'slow'|'error'|'unavailable'|'stale'='normal'
+  let mode:'normal'|'slow'|'error'|'unavailable'|'stale'|'sources'='normal'
   const profile:ProviderProfile={source:'byok',model:'ui-scripted-fixture',fingerprint:'ui-fixture-only',capabilities:{protocol:'chat_completions',contextTokens:1_000_000,maxOutputTokens:8192,toolCalling:true,tokenCounting:'estimate',nativeCompaction:'none',nativeMinimumTokens:0,verified:true}}
   const usage=(operation:AgentUsage['operation']='model'):AgentUsage=>({operation,provider:'byok',model:profile.model,inputTokens:100,cachedInputTokens:0,outputTokens:30,durationMs:1,resultCount:1,estimatedCost:null,currency:null,priceVersion:null})
   const provider:ContextProvider={profile,async probe(signal){signal.throwIfAborted();return{value:profile.capabilities,usage:usage('compact')}},async count(input){return estimateContextTokens(input)},async json(operation,data,signal){
@@ -67,10 +67,32 @@ export async function createAgentUiFixture(){
     yield{type:'output',value:{kind:'answer',text:built,sourceIds:['ui-tracks-source']}}
   }},tools:[{name:'listMyTracks',async execute(_args,actor){metrics.toolCalls++;if(actor.uid!==uid)throw new Error('OWNER_MISMATCH');return{ok:true,data:{items:[],revision:0},sources:[{sourceId:'ui-tracks-source',kind:'my_tracks',label:'测试手帐里的追番',retrievedAt:1}],resultCount:0,truncated:false}}}]}))
   const app=new Hono<{Variables:{agentUid:number}}>();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard())
+  const {createGuestApi}=await import('../server/agent/guest-api')
+  const {guestDataTools}=await import('../server/agent/run-runtime')
+  const guestKnowledge=()=>registry.guestSnapshot({enabled:true,permissionVersion:mode,features:AGENT_FEATURES.map(f=>f.id),tools:['readCachedCalendar','listPublicReviews','aggregatePublicData'],conditions:{answerModelReady:true}})
+  const guestStatus=()=>({enabled:true,configured:true,ready:true,source:'server' as const,model:'ui-guest-fixture'})
+  app.route('/api/agent',createGuestApi({
+    database:db,status:guestStatus,connect:async()=>{metrics.connections++;await delay(300);return guestStatus()},knowledge:guestKnowledge,tools:guestDataTools,
+    binding:()=>({context:provider,execute:action=>action(),provider:{
+      source:'server',model:'ui-guest-fixture',fingerprint:'ui-guest-fixture',
+      async *stream(request,signal){
+        metrics.modelCalls++
+        if(mode==='sources'){
+          if(!request.results.length){yield {type:'output' as const,value:{kind:'tool_calls',calls:['public_users','public_tracks','public_reviews','public_recommendations'].map(metric=>({name:'aggregatePublicData',arguments:{metric,filters:{}}}))}}}
+          else{const sources=request.results.flatMap(r=>(r.result as {sources?:{sourceId:string}[]}).sources??[]);yield {type:'output' as const,value:{kind:'answer',text:'已查询大厅的四项公开统计，具体指标与口径可在下方展开查看。',sourceIds:sources.map(s=>s.sourceId)}}}
+          return
+        }
+        const text='## 先从这里开始\n\n**番剧周历**看更新，*追番大厅*看公开点评。\n\n1. 挑一部想看的番\n2. 看看大家的评价\n\n> 不急，慢慢挑。\n\n| 页面 | 用途 |\n| --- | --- |\n| 周历 | 更新安排 |\n| 大厅 | 公开点评 |\n\n```ts\nconst greeting = "hello";\nconsole.log(greeting);\n```\n\n这是 `行内代码`，也可以点[番剧周历](/#/)。'
+        for(const piece of [text.slice(0,30),text.slice(30,130),text.slice(130)]){await delay(mode==='slow'?3000:120,undefined,{signal});yield {type:'delta' as const,text:piece}}
+        yield {type:'output' as const,value:{kind:'answer',text,sourceIds:[]}}
+      },
+    }}),
+  }))
   app.use('/api/agent/*',async(c,next)=>{metrics.apiRequests++;const session=await getSession(c);if(!session)return c.json({code:'AUTH_REQUIRED'},401);c.set('agentUid',session.uid);await next()})
   app.get('/__agent-test/login/:owner',async c=>{const owner=c.req.param('owner')==='bob'?{uid:bob,username:'ui_bob'}:c.req.param('owner')==='empty'?{uid:empty,username:'ui_empty'}:{uid:alice,username:'ui_alice'};await issueSession(c,{...owner,tv:0});return c.redirect('/#/tracks')})
-  app.post('/__agent-test/mode',async c=>{const value=await c.req.json() as {mode:typeof mode};if(!['normal','slow','error','unavailable','stale'].includes(value.mode))return c.json({ok:false},400);mode=value.mode;return c.json({ok:true})})
+  app.post('/__agent-test/mode',async c=>{const value=await c.req.json() as {mode:typeof mode};if(!['normal','slow','error','unavailable','stale','sources'].includes(value.mode))return c.json({ok:false},400);mode=value.mode;return c.json({ok:true})})
   app.get('/__agent-test/status',c=>c.json({metrics,mode,welcomeId:welcome.id,storyId:story.id,actionId:actionBook.id}))
+  app.get('/api/agent/provider',c=>{c.header('X-Agent-Owner',String(c.get('agentUid')));return c.json({enabled:true,ready:true,source:'server',model:'ui-model-fixture',profiles:[{endpoint:'https://api.deepseek.com',model:'deepseek-v4-flash-vision-exp',contextTokens:1000000}],usage:{tokens:100,cost:0.001,turns:1,warningCost:0.005}})})
   app.route('/api/agent',createAgentRunApi(runs,knowledge,{heartbeatMs:1000,idleMs:60_000}));app.route('/api/agent',createAgentContextApi(context));app.route('/',production)
   const dist=join(directory,'dist');cpSync(fileURLToPath(new URL('../dist/',import.meta.url)),dist,{recursive:true});const html=readFileSync(join(dist,'index.html'),'utf8').replace(/<script\b[^>]*src=["']https?:\/\/[^>]*>[\s\S]*?<\/script>/gi,'')
   app.get('/',c=>c.html(html));app.use('/*',serveStatic({root:dist}))

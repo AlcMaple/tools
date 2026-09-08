@@ -15,7 +15,7 @@ export interface ContextProvider {
   native(input: JsonValue[], trigger: number, signal: AbortSignal): Promise<ProviderResult<NativeWindow | null>>
   count(input: JsonValue[], signal: AbortSignal): Promise<number>
 }
-export type ProviderTransport = (path: string, body: Record<string, unknown>, signal: AbortSignal, headers?: Record<string, string>) => Promise<unknown>
+export type ProviderTransport = (path: string, body: Record<string, unknown>, signal: AbortSignal, headers?: Record<string, string>, onText?: (text:string)=>void) => Promise<unknown>
 export const estimateContextTokens = (data: unknown): number => Buffer.byteLength(JSON.stringify(data), 'utf8') + 512
 const object = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 const number = (v: unknown): number | null => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null
@@ -94,7 +94,7 @@ export function createProtocolProvider(profile: ProviderProfile, transport: Prov
       const start = Date.now(), name = 'agent_context_probe', schema = { type: 'object', properties: { nonce: { type: 'string', enum: [nonce] } }, required: ['nonce'], additionalProperties: false }
       let raw: unknown, called: Record<string, unknown>, args: unknown
       if (caps.protocol === 'chat_completions') {
-        raw = await transport('chat/completions', { model: profile.model, messages: [{ role:'user',content:'调用探测函数并原样带回 nonce：'+nonce }], tools:[{type:'function',function:{name,parameters:schema}}], tool_choice:{type:'function',function:{name}}, max_tokens:256 }, signal)
+        raw = await transport('chat/completions', { model: profile.model, messages: [{ role:'user',content:'调用探测函数并原样带回 nonce：'+nonce }], tools:[{type:'function',function:{name,parameters:schema}}], tool_choice:{type:'function',function:{name}}, max_tokens:256,...(profile.model.startsWith('deepseek-')?{thinking:{type:'disabled'}}:{}) }, signal)
         const message = object(object((object(raw).choices as unknown[] | undefined)?.[0]).message)
         called = object(object((message.tool_calls as unknown[] | undefined)?.[0]).function)
         try { args = JSON.parse(String(called.arguments)) } catch { args = null }

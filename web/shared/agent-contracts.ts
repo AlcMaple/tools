@@ -1,3 +1,4 @@
+import { PUBLIC_METRICS } from './agent-sources'
 // Agent 共享合同；白名单实现由服务端注册，本文件不执行工具或数据库操作。
 export const AGENT_CONTRACT_VERSION = 1
 export const TRACK_STATUSES = ['watching', 'plan', 'considering', 'done'] as const
@@ -40,11 +41,17 @@ const limit = integer(1, 30)
 const tags: ContractSchema = { ...array(text(20), 12), uniqueItems: true }
 const status = choice(...TRACK_STATUSES)
 
-export const SOURCE_SCHEMA = object({
+const sourceFields = {
   sourceId: id,
   kind: choice('offline_index', 'current_page', 'calendar_cache', 'my_tracks', 'public_reviews', 'public_aggregate'),
   label: text(120), bgmId: trackId, retrievedAt: integer(), cachedAt: nullable(integer()),
-}, ['sourceId', 'kind', 'label', 'retrievedAt'])
+}
+const sourceRequired=['sourceId','kind','label','retrievedAt']
+export const AGGREGATE_EVIDENCE_SCHEMA=object({metric:choice(...PUBLIC_METRICS),value:integer(),filters:object({bgmId,status},[]),scope:text(600)})
+export const SOURCE_SCHEMA:ContractSchema={anyOf:[
+  object(sourceFields,sourceRequired),
+  object({...sourceFields,kind:choice('public_aggregate'),aggregate:AGGREGATE_EVIDENCE_SCHEMA},[...sourceRequired,'aggregate']),
+]}
 
 export const ANIME_SCHEMA = object({
   bgmId, title: text(200), titleCn: text(200, 0), year: nullable(integer(1900, 2200)),
@@ -57,7 +64,7 @@ const review = object({
   reviewId: id, bgmId, mode: choice('review', 'recommend'), body: text(4000),
   spoiler: choice('none', 'aired', 'all'), author: text(100), publishedAt: integer(),
 })
-const metric = choice('public_users', 'public_tracks', 'public_reviews', 'public_recommendations')
+const metric = choice(...PUBLIC_METRICS)
 
 export const WEB_VIEW_SCHEMA: ContractSchema = { anyOf: [
   object({ view: choice('search'), params: object({ query: text(120, 0) }) }),

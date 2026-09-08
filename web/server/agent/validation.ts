@@ -1,3 +1,4 @@
+import { publicAggregateScope,type AggregateEvidence } from '../../shared/agent-sources'
 import {
   AGENT_TOOLS, MODEL_OUTPUT_SCHEMA, TOOL_CALL_SCHEMA, toolResultSchema,
   type AgentToolName, type ContractSchema, type JsonValue,
@@ -50,13 +51,19 @@ export function parseToolRequest(value: unknown, authenticatedUid: number): { na
   return parsed
 }
 
-export function validateToolResult(name: AgentToolName, value: unknown): void {
+export function validateToolResult(name: AgentToolName, value: unknown, args?:Record<string,JsonValue>): void {
   if (!matchesContract(toolResultSchema(name), value)) throw new Error('INVALID_OUTPUT')
   const result = value as Record<string, JsonValue>
   if (result.ok === true) {
     const data = result.data as Record<string, JsonValue>
     if ((Array.isArray(data.items) ? data.items.length : 1) !== result.resultCount) throw new Error('INVALID_OUTPUT')
     const sources = result.sources as Record<string, JsonValue>[]
+    for(const source of sources){
+      if(source.aggregate===undefined)continue
+      const detail=source.aggregate as unknown as AggregateEvidence
+      if(name!=='aggregatePublicData'||source.kind!=='public_aggregate'||detail.metric!==data.metric||detail.value!==data.value||source.retrievedAt!==data.asOf||detail.scope!==publicAggregateScope(detail.metric,detail.filters))throw new Error('INVALID_OUTPUT')
+      if(args){const filters=(args.filters??{}) as Record<string,JsonValue>;if(detail.metric!==args.metric||detail.filters.bgmId!==filters.bgmId||detail.filters.status!==filters.status)throw new Error('INVALID_OUTPUT')}
+    }
     if (new Set(sources.map(s => s.sourceId)).size !== sources.length) throw new Error('INVALID_OUTPUT')
     if (AGENT_TOOLS[name].mode === 'read' && result.resultCount !== 0 && sources.length === 0) throw new Error('INVALID_OUTPUT')
   }

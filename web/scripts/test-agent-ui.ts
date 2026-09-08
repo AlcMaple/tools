@@ -29,7 +29,7 @@ const blank=(id='message-1'):HistoryMessage=>({id,sessionId:'session-1',seq:1,ro
 const mode=async(value:string)=>{const response=await fixture.originalFetch(fixture.origin+'/__agent-test/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:value})});assert(response.ok)}
 try{
   const hostSource=readFileSync(new URL('../src/agent/AgentHost.tsx',import.meta.url),'utf8'),cssSource=readFileSync(new URL('../src/agent/agent.css',import.meta.url),'utf8')
-  await check('头像复用同一图集裁切，不把整张贴图作为 img 展示',()=>{assert(!hostSource.includes('<img src="/assets/sagiri-face.webp"'));assert.equal((hostSource.match(/<AgentAvatar\/>/g)??[]).length,3);assert(cssSource.includes('289.473684% 263.157895%'));assert(cssSource.includes('.agent-empty-art>span:not(.agent-avatar)'));assert(Math.abs(550/(289.473684/100)-190)<0.001);assert(Math.abs(500/(263.157895/100)-190)<0.001)})
+  await check('头像复用同一图集裁切，不把整张贴图作为 img 展示',()=>{assert(!hostSource.includes('<img src="/assets/sagiri-face.webp"'));assert.equal((hostSource.match(/<AgentAvatar\/>/g)??[]).length,2);assert(cssSource.includes('289.473684% 263.157895%'));assert(cssSource.includes('.agent-empty-art>span:not(.agent-avatar)'));assert(Math.abs(550/(289.473684/100)-190)<0.001);assert(Math.abs(500/(263.157895/100)-190)<0.001)})
   await check('入口固定 52px 正圆，发送箭头使用 18px SVG 而非字体箭头',()=>{const launcher=cssSource.split('.agent-launcher {')[1].split('}')[0];assert(launcher.includes('width:52px;height:52px'));assert(!launcher.includes('min-width'));assert(hostSource.includes('<svg width="18" height="18"'));assert(!hostSource.includes('<span>↑</span>'))})
   await check('偏好分类分别保存输入，一次保存四项，无确认卡片',()=>{assert(hostSource.includes('PREFERENCE_EXAMPLES[category]'));assert(hostSource.includes('value={values[category]}'));assert(hostSource.includes('onClick={()=>setCategory(key as'));assert(hostSource.includes('c.savePreferences(values,settings.version)'));assert(!hostSource.includes('待你确认'));assert(!hostSource.includes('确认使用'));assert(!hostSource.includes('放入待确认'))})
   await check('对话导航在短视口仍保留，设置移除重复入口和常驻刷新说明',()=>{const manage=hostSource.split('function ManagePane')[1];assert(!manage.includes('agent-quick-nav'));assert(!manage.includes('刷新页面'));assert(hostSource.includes("onClick={()=>changeSection('chat')}>对话"));assert(!cssSource.includes('.agent-layer[data-short=true] .agent-nav,'));for(const text of ['一点线索，慢慢收好','把好奇的事写下来','A LITTLE NOTE FOR TODAY','对话准备中，想聊的内容'])assert(!hostSource.includes(text))})
@@ -138,6 +138,40 @@ try{
     try{assert.throws(()=>fixture.store.savePreferenceSettings(actor.uid,original.version,{...values,tone:'新值',liked_tags:'FAIL_ATOMIC'}));assert.deepEqual(fixture.store.preferenceSettings(actor.uid),original)}finally{fixture.db.exec('DROP TRIGGER fail_pref')}
     for(const bad of [{tone:'漏字段'},{...values,tone:'长'.repeat(501)},{...values,userId:actor.uid}]){const response=await actor.fetchImpl('/api/agent/preferences/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectedVersion:original.version,values:bad})});assert.equal(response.status,400);assert.deepEqual(fixture.store.preferenceSettings(actor.uid),original)}
     assert.throws(()=>fixture.store.proposePreference(actor.uid,{category:'tone',value:'第二个说话方式'}),/此分类已有偏好/)
+  })
+  await check('有 key 时页面后台预连接，发送复用探测且不显示连接提示',async()=>{
+    const uid=fixture.createUser('auto-connect'),models=fixture.metrics.modelCalls;let connected=false,probes=0
+    const c=await controller(uid,base=>async(input,init)=>{
+      if(String(input)==='/api/agent/provider/prepare'){if(!connected)probes++;connected=true;return Response.json({ready:true},{headers:{'X-Agent-Owner':String(uid)}})}
+      const response=await base(input,init)
+      if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=connected;return Response.json(knowledge,{headers:response.headers})}
+      return response
+    })
+    assert.equal(probes,1);assert.equal(fixture.metrics.modelCalls,models);assert(!c.getSnapshot().status.includes('连接'))
+    c.setDraft('首次自动检查后回答');await c.send();assert.equal(c.getSnapshot().error,null);assert.equal(probes,1);await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle')
+    c.setDraft('继续对话');await c.send();await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle');assert.equal(probes,1)
+  })
+  await check('自动探测失败保留草稿，不建会话、不发送回答、不自动重试',async()=>{
+    const uid=fixture.createUser('auto-fail'),models=fixture.metrics.modelCalls;let probes=0
+    const c=await controller(uid,base=>async(input,init)=>{
+      if(String(input)==='/api/agent/provider/prepare'){probes++;return Response.json({code:'PROVIDER_HTTP_401',error:'API key 检查失败'},{status:503,headers:{'X-Agent-Owner':String(uid)}})}
+      const response=await base(input,init)
+      if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=false;return Response.json(knowledge,{headers:response.headers})}
+      return response
+    })
+    c.setDraft('失败后保留的问题');await c.send();assert.equal(c.getSnapshot().draft,'失败后保留的问题');assert.equal(c.getSnapshot().session,null);assert.equal(c.getSnapshot().error?.code,'PROVIDER_HTTP_401');assert.equal(probes,1);assert.equal(fixture.metrics.modelCalls,models)
+  })
+  await check('后台准备未结束时发送立即显示问题与思考占位，复用同一连接请求',async()=>{
+    const uid=fixture.createUser('pending-placeholder');let release=()=>{},probes=0,ready=false
+    const gate=new Promise<void>(r=>{release=r})
+    const c=await controller(uid,base=>async(input,init)=>{
+      if(String(input)==='/api/agent/provider/prepare'){probes++;await gate;ready=true;return Response.json({ready:true},{headers:{'X-Agent-Owner':String(uid)}})}
+      const response=await base(input,init)
+      if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=ready;return Response.json(knowledge,{headers:response.headers})}return response
+    })
+    assert.equal(probes,1);assert.equal(c.getSnapshot().error,null);assert.equal(c.getSnapshot().status,'')
+    c.setDraft('立即出现的消息');const pending=c.send();assert.equal(c.getSnapshot().pendingBody,'立即出现的消息');assert.equal(c.getSnapshot().draft,'');assert(c.getSnapshot().status.includes('纱雾'));assert(!c.getSnapshot().status.includes('连接'));assert.equal(probes,1)
+    release();await pending;await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle');assert.equal(c.getSnapshot().pendingBody,null)
   })
   await check('浏览器侧控制器没有新增工具执行权限，所有验证仅访问本机',()=>{assert.equal(fixture.metrics.externalRequests,0);assert(fetches.every(item=>item.path.startsWith('/api/agent/')));assert(!fetches.some(item=>/applyTrack|playback|\/api\/xifan|\/api\/girigiri/.test(item.path)))})
   console.log(JSON.stringify({checks,failed:0,httpRequests:fetches.length,externalRequests:fixture.metrics.externalRequests,realAiCalls:0,modelQuality:'not_run',controller:'real-loopback-http-sse-and-error-fixtures',rendering:'React-text-escaping',database:'temporary-sqlite',browserLayout:'separate-cua-record'}))

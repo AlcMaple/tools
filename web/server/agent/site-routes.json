@@ -95,6 +95,41 @@
     "path": "/preferences/settings"
   },
   {
+    "file": "server/agent/external-api.ts",
+    "method": "delete",
+    "path": "/provider/connection"
+  },
+  {
+    "file": "server/agent/external-api.ts",
+    "method": "get",
+    "path": "/provider"
+  },
+  {
+    "file": "server/agent/external-api.ts",
+    "method": "post",
+    "path": "/provider/connect"
+  },
+  {
+    "file": "server/agent/external-api.ts",
+    "method": "post",
+    "path": "/provider/prepare"
+  },
+  {
+    "file": "server/agent/guest-api.ts",
+    "method": "get",
+    "path": "/guest/status"
+  },
+  {
+    "file": "server/agent/guest-api.ts",
+    "method": "post",
+    "path": "/guest/connect"
+  },
+  {
+    "file": "server/agent/guest-api.ts",
+    "method": "post",
+    "path": "/guest/turns"
+  },
+  {
     "file": "server/agent/history-api.ts",
     "method": "delete",
     "path": "/sessions/:sessionId"
@@ -133,6 +168,11 @@
     "file": "server/agent/history-api.ts",
     "method": "post",
     "path": "/sessions/:sessionId/messages"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "route",
+    "path": "/"
   },
   {
     "file": "server/agent/history-api.ts",
@@ -373,6 +413,11 @@
     "file": "server/index.ts",
     "method": "get",
     "path": "/api/search"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/agent"
   },
   {
     "file": "server/index.ts",

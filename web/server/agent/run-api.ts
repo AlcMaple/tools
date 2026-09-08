@@ -1,3 +1,4 @@
+import { externalError } from './external-api'
 import { Hono, type Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
@@ -29,11 +30,11 @@ export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)
     if(rateLimited(`agent-run:${c.req.method==='GET'?'read':'write'}:${session.uid}`,c.req.method==='GET'?120:30,60_000)){
       c.header('Retry-After','60');throw new AgentRunError('RATE_LIMITED',429)
     }
-    await next()
+    await next();c.header('Cache-Control','no-store')
   })
   app.use('*',bodyLimit({maxSize:HISTORY_LIMITS.requestBytes,onError:c=>c.json({code:'MESSAGE_TOO_LARGE'},413)}))
   app.onError((error,c)=>{
-    if(error instanceof AgentRunError)return c.json({code:error.code,error:messages[error.code]??'这次操作已停止，原有记录仍然保留。'},error.status)
+    if(error instanceof AgentRunError)return c.json({code:error.code,error:messages[error.code]??externalError(error).error},error.status)
     if(error instanceof AgentHistoryError)return c.json({code:error.code,error:error.message},error.status)
     return c.json({code:'INTERNAL_ERROR',error:'这次操作遇到问题，原有记录仍然保留。'},500)
   })
