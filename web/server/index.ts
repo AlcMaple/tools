@@ -33,8 +33,8 @@ async function searchFromDeployedWeb(q: string): Promise<Record<string, unknown>
     const response = await fetch(url, { signal: AbortSignal.timeout(12000) })
     if (!response.ok) return null
     const data = (await response.json()) as Record<string, unknown>
-    // 旧站点在没有本地结果时会自动在线兜底；本地开发的借用结果只接受离线来源，
-    // 避免一个旧部署把「默认搜索」又悄悄带到 BGM。
+    // 只接受离线来源（source=local/learned）。当前 /api/search 在 mode=local 下不会在线兜底，
+    // 这一层是防御：万一对端跑着某个会自动回退到 BGM 的旧版本，也不采用它的 online 结果。
     return data.ready === true
       && (data.source === 'local' || data.source === 'learned')
       && Array.isArray(data.data)

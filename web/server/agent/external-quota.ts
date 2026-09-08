@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { AgentRunError } from '../../shared/agent-run'
 import { estimateCost, type PriceCard } from './policy'
+import { logAgentIssue } from './diagnostics'
 
 export interface ExternalLimits {
   globalDailyCost:number; userDailyCost:number; guestDailyCost:number; turnCost:number; guestTurnCost:number
@@ -20,7 +21,9 @@ export class ExternalQuota {
       CREATE TABLE IF NOT EXISTS agent_ai_turn_budget (id TEXT PRIMARY KEY,day TEXT NOT NULL,tokens INTEGER NOT NULL DEFAULT 0,cost REAL NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS agent_ai_usage (id TEXT PRIMARY KEY,turn_id TEXT NOT NULL,day TEXT NOT NULL,operation TEXT NOT NULL,model TEXT NOT NULL,input_tokens INTEGER,output_tokens INTEGER,cached_tokens INTEGER,duration_ms INTEGER NOT NULL DEFAULT 0,cost REAL NOT NULL,price_version TEXT NOT NULL,state TEXT NOT NULL);`)
   }
-  async turn<T>(owner:string,guest:boolean,project:boolean,action:()=>Promise<T>):Promise<T>{
+  // counted=false:连接探测。仍占并发租约、仍计 token 与费用,但不消耗「每日对话轮次」——
+  // 用户没发消息也会因连接过期(30 分钟)自动重连,把探测算成一轮会凭空吃光额度。
+  async turn<T>(owner:string,guest:boolean,project:boolean,action:()=>Promise<T>,counted=true):Promise<T>{
     const active=this.scope.getStore();if(active){if(active.owner!==owner||active.guest!==guest||active.project!==project)throw new AgentRunError('AUTH_REQUIRED',401);return action()}
     const day=new Date(this.now()).toISOString().slice(0,10),id=randomUUID(),lease=randomUUID()
     this.db.transaction(()=>{
@@ -31,9 +34,12 @@ export class ExternalQuota {
       if(this.db.prepare('SELECT 1 FROM agent_ai_leases WHERE owner=?').get(owner))throw new AgentRunError('RUN_BUSY')
       if((this.db.prepare('SELECT count(*) n FROM agent_ai_leases').get() as {n:number}).n>=this.limits.concurrency)throw new AgentRunError('GLOBAL_BUSY',429)
       const row=this.read(day,owner)
-      if(row.turns>=(guest?this.limits.guestTurns:this.limits.userTurns))throw new AgentRunError('DAILY_QUOTA',429)
+      if(counted&&row.turns>=(guest?this.limits.guestTurns:this.limits.userTurns))throw new AgentRunError('DAILY_QUOTA',429)
       this.db.prepare('INSERT INTO agent_ai_leases VALUES(?,?,?)').run(lease,owner,this.now()+660_000)
-      this.add(day,owner,0,0,1)
+      this.add(day,owner,0,0,counted?1:0)
+      logAgentIssue('quota',{kind:counted?'turn':'probe',owner,day,
+        turns:`${row.turns+(counted?1:0)}/${guest?this.limits.guestTurns:this.limits.userTurns}`,
+        cost:`${row.cost.toFixed(4)}/${guest?this.limits.guestDailyCost:this.limits.userDailyCost}`})
       this.db.prepare('INSERT INTO agent_ai_turn_budget(id,day) VALUES(?,?)').run(id,day)
     })()
     try{return await this.scope.run({id,owner,guest,project,day,lease},action)}finally{this.db.prepare('DELETE FROM agent_ai_leases WHERE id=?').run(lease)}

@@ -4,6 +4,13 @@ import type { RunEvent } from '../../shared/agent-run'
 
 export interface AnimeContext { bgmId:number; title:string; titleCn?:string;year?:number|null;episodes?:number|null;tags?:string[];summary?:string;completed?:boolean|null; canReview?:boolean; canOpenSources?:boolean }
 export interface AgentIssue { code:string; message:string }
+export interface TrackFields { bgmId:number; title:string; status:string; episode:number; userTags:string[] }
+export interface ActionPreview {
+  action:{actionId:string;state:string;errorCode:string|null;expiresAt:number;actualRevision:number|null}
+  preview:{actionId:string;kind:'track_change';bgmId:number;impact:string;expectedRevision:number;expiresAt:number;before:TrackFields|null;after:TrackFields}
+  confirmationToken:string|null
+}
+export const STATUS_TEXT:Record<string,string>={watching:'在看',plan:'想看',considering:'观望',done:'看完'}
 export const activeCompact=(job:CompactJob|null):boolean=>Boolean(job&&!['completed','failed','cancelled','skipped'].includes(job.stage))
 export const idValid=(id:unknown):id is string=>typeof id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,99}$/.test(id)
 export function validAnime(value:unknown):value is AnimeContext {

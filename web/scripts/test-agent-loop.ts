@@ -29,6 +29,7 @@ try{
   const {AgentContextStore}=await import('../server/agent/context-store'),{AgentContextService}=await import('../server/agent/context-service')
   const {estimateContextTokens}=await import('../server/agent/context-provider')
   const {AgentRunStore,initializeAgentRunSchema}=await import('../server/agent/run-store'),{AgentRunService}=await import('../server/agent/run-service')
+  const {AgentActionStore}=await import('../server/agent/actions-store')
   const {AgentRunError}=await import('../shared/agent-run'),{createAgentRunApi}=await import('../server/agent/run-api')
   const {AgentKnowledgeRegistry,AGENT_FEATURES,AGENT_FEATURE_REGISTRATIONS,knowledgeHash}=await import('../server/agent/knowledge')
   const {AGENT_TOOLS}=await import('../shared/agent-contracts'),{AGENT_LIMITS}=await import('../server/agent/policy')
@@ -67,7 +68,7 @@ try{
     stream(request:RunModelRequest,signal:AbortSignal){requests.push(structuredClone(request));return script(request,signal,++modelCalls)}},context,tools,knowledge:()=>knowledge(alice),assertIdentity(){if(!enabled)throw new AgentRunError('AUTH_REQUIRED',401)}})
   const store=new AgentRunStore(db,()=>now),service=new AgentRunService(store,uid=>({...resolve(),knowledge:()=>knowledge(uid)}),{heartbeatMs:5})
   const services=[service]
-  const app=new Hono();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard());app.route('/api/agent',createAgentRunApi(service,knowledge,{heartbeatMs:1000,idleMs:500}));app.route('/',productionApp)
+  const app=new Hono();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard());app.route('/api/agent',createAgentRunApi(service,knowledge,new AgentActionStore(db,()=>now,uid=>knowledge(uid).version),{heartbeatMs:1000,idleMs:500}));app.route('/',productionApp)
   const server=serve({fetch:app.fetch,hostname:'localhost',port:0});await once(server,'listening')
   const address=server.address();assert(address&&typeof address!=='string')
   const origin=`http://${address.address.includes(':')?`[${address.address}]`:address.address}:${address.port}`

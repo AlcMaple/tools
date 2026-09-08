@@ -3,7 +3,7 @@ const feature=(id:string,title:string,purpose:string,entry:string,steps:string[]
 export const SITE_FEATURES:readonly FeatureDescription[]=[
   feature('web.calendar','番剧周历','按星期查看番剧更新与已加载资料。','/#/',['打开番剧周历，切换横向或纵向视图','点击卡片查看资料；刷新由用户点击'],['Agent 只读取已有缓存，过期不自动联网刷新'],['readCachedCalendar','readCurrentAnimeContext'],'public'),
   feature('web.search','找番与离线索引','在加番入口按番名查找候选。','/#/tracks',['打开加番搜索','默认本地检索；在线搜索须由用户主动选择'],['Agent 仅使用本地索引和补充表；缺索引不借远端站点搜索','离线完结状态未知，标签相似不是模型推荐结论'],['searchOfflineAnime']),
-  feature('web.tracks','我的追番','管理自己的追番状态、进度、标签、收藏程度及好看集。','/#/tracks',['登录后添加番剧或手动条目','在卡片编辑进度、状态、标签或详情','可导入 Bangumi 收藏及使用既有同步入口'],['私人资料仅当前账号可读','Agent 本阶段只读，不代为添加、修改、删除、上传封面或导入'],['listMyTracks']),
+  {...feature('web.tracks','我的追番','管理自己的追番状态、进度、标签、收藏程度及好看集。','/#/tracks',['登录后添加番剧或手动条目','在卡片编辑进度、状态、标签或详情','可导入 Bangumi 收藏及使用既有同步入口','让纱雾预览追番添加或状态、进度、标签的改动，核对新旧值后点击确认再执行'],['私人资料仅当前账号可读','Agent 可预览追番添加与状态、进度、标签变更：旧值和 revision 由服务端读取，用户点击确认后由独立接口执行并回读；取消即不写','Agent 不代为删除、上传封面或导入，添加只用离线已收录的正数条目、不联网补全'],['listMyTracks']),revision:2},
   {...feature('web.community','追番大厅','浏览用户主动公开的番剧、点评与推荐。','/#/community',['打开追番大厅查看公开用户或公开点评','从条目进入番剧讨论或公开用户页'],['关闭公开开关或撤回发布后不再进入工具结果','公开用户按公开开关计数；追番、点评与推荐按动画记录统计，筛选和查询时点见可展开来源明细'],['listPublicReviews','aggregatePublicData'],'public'),revision:2},
   feature('web.reviews','点评与推荐助手','为已在看或看完的番剧整理点评或推荐草稿。','/#/tracks',['进入符合状态的追番卡片，点击点评','填写问题、调整草稿，明确点击发布或撤回'],['须登录并拥有该番剧；想看和观望不满足写点评条件','Agent 不直接生成发布请求；模型连接状态以当前配置为准']),
   feature('web.auth','登录与注册','使用账号登录后管理私人数据。','/#/settings',['点击登录/注册，使用已开通的登录方式','在设置中按界面流程修改账号、密码与公开开关'],['访客可了解登录流程，但不执行账号操作；不向 Agent 提供密码或验证码'],[],'public'),

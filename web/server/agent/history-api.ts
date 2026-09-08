@@ -10,7 +10,7 @@ import { AgentRunError } from '../../shared/agent-run'
 import { externalError,createExternalApi } from './external-api'
 import { matchesContract } from './validation'
 import { createAgentRunApi } from './run-api'
-import { agentRunService, currentAgentKnowledge } from './run-runtime'
+import { agentActionStore, agentRunService, currentAgentKnowledge } from './run-runtime'
 
 const history = new Hono<{ Variables: { agentUid: number } }>()
 export const agentHistoryStore = new AgentHistoryStore(db)
@@ -72,6 +72,7 @@ history.post('/sessions/:sessionId/messages', async c => {
   return c.json(agentHistoryStore.appendUser(c.get('agentUid'),c.req.param('sessionId'),value),201)
 })
 history.post('/sessions/:sessionId/clear', async c => c.json({ session: agentHistoryStore.clearSession(c.get('agentUid'), c.req.param('sessionId'), await body(c)) }))
+history.post('/sessions/:sessionId/truncate', async c => c.json({ session: agentHistoryStore.truncateSession(c.get('agentUid'), c.req.param('sessionId'), await body(c)) }))
 history.delete('/sessions/:sessionId', async c => c.json(agentHistoryStore.deleteSession(c.get('agentUid'), c.req.param('sessionId'), await body(c))))
 history.get('/sessions/:sessionId/export', c => {
   if (Object.keys(c.req.query()).length) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '导出整本手帐时不用填写筛选条件。')
@@ -86,7 +87,7 @@ history.get('/sessions/:sessionId/export', c => {
 })
 
 history.route('/',createExternalApi())
-history.route('/',createAgentRunApi(agentRunService,currentAgentKnowledge))
+history.route('/',createAgentRunApi(agentRunService,currentAgentKnowledge,agentActionStore))
 history.route('/',createAgentContextApi(agentContextService))
 
 export default history

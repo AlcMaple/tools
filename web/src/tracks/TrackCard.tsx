@@ -1,4 +1,3 @@
-import { AgentContextButton } from '../agent/navigation'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SOURCES, coverUrl, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
@@ -107,7 +106,6 @@ export function TrackCard({
               {STATUS_META.find((m) => m.key === t.status)?.label}
             </span>
             {isToday && <span className="chip-today">今天更新</span>}
-            <AgentContextButton compact anime={{bgmId:t.bgmId,title,titleCn:t.titleCn,episodes:t.totalEpisodes,tags:t.bgmTags,year:/^\d{4}/.test(t.airDate)?Number(t.airDate.slice(0,4)):null,canReview,canOpenSources:t.bgmId>0}}/>
             <FavHearts value={t.favorite} onChange={(n) => onPatch(t.bgmId, { favorite: n })} />
             <button
               type="button"

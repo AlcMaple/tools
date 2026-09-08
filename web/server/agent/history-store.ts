@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { ContractSchema } from '../../shared/agent-contracts'
 import {
   AgentHistoryError, HISTORY_LIMITS, HISTORY_ID_SCHEMA, CREATE_SESSION_SCHEMA, PATCH_SESSION_SCHEMA,
-  REVISION_SCHEMA, USER_MESSAGE_SCHEMA, ASSISTANT_APPEND_SCHEMA, ASSISTANT_UPDATE_SCHEMA,
+  REVISION_SCHEMA, TRUNCATE_SESSION_SCHEMA, USER_MESSAGE_SCHEMA, ASSISTANT_APPEND_SCHEMA, ASSISTANT_UPDATE_SCHEMA,
   SESSION_LIST_SCHEMA, MESSAGE_PAGE_SCHEMA, ACTION_UPDATE_SCHEMA,
   type CreateHistorySession, type PatchHistorySession, type AppendUserMessage,
   type AppendAssistantMessage, type UpdateAssistantMessage, type AssistantMessageContent,
@@ -337,6 +337,24 @@ export class AgentHistoryStore {
         .run(encoded.actions, encoded.pending, encoded.bytes, Date.now(), uid, id, messageId)
       this.touch(s, encoded.bytes - row.stored_bytes)
       return { session: sessionView(this.session(uid, id)), message: messageView(this.db.prepare('SELECT * FROM agent_messages WHERE user_id = ? AND session_id = ? AND id = ?').get(uid, id, messageId) as MessageRow) }
+    }).immediate()
+  }
+
+  // 编辑并重新提问：从某条用户消息起（含）截断，之后的对话丢弃。原文不保留（与压缩不同，
+  // 这是用户主动放弃这段分支）；摘要 / 上下文任务作废，run 行经 context_generation 触发器清理。
+  // seq 不回退——旧游标和晚到请求不会指向新的同号消息。当前番剧与已确认偏好不动。
+  truncateSession(uid: number, id: string, input: unknown): HistorySession {
+    const p = parse<{ expectedRevision: number; fromSeq: number }>(TRUNCATE_SESSION_SCHEMA, input)
+    return this.db.transaction(() => {
+      const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectIdle(s)
+      const target = this.db.prepare('SELECT role FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq = ?').get(uid, id, p.fromSeq) as { role: string } | undefined
+      if (!target) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '要编辑的消息已经不在了，请刷新对话。')
+      if (target.role !== 'user') throw new AgentHistoryError('INVALID_ARGUMENT', 400, '只能从自己发的消息处重新开始。')
+      const removed = this.db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(stored_bytes), 0) AS bytes FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq >= ?').get(uid, id, p.fromSeq) as { n: number; bytes: number }
+      this.db.prepare('DELETE FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq >= ?').run(uid, id, p.fromSeq)
+      this.db.prepare('UPDATE agent_sessions SET active_summary_version = NULL, context_bytes = 0, context_generation = context_generation + 1 WHERE user_id = ? AND id = ?').run(uid, id)
+      this.touch(s, -removed.bytes, -removed.n)
+      return sessionView(this.session(uid, id))
     }).immediate()
   }
 

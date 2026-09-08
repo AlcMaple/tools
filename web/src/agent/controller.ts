@@ -6,7 +6,7 @@ import type { ContextTier } from '../../shared/agent-contracts'
 import type { RunView,RunEvent } from '../../shared/agent-run'
 import type { KnowledgeSnapshot } from '../../server/agent/knowledge'
 import { subscribeAgentEvents } from '../../shared/agent-stream'
-import { pageContext,activeCompact,applyDelta,idValid,mergeMessages,type AnimeContext,type AgentIssue } from './model'
+import { pageContext,activeCompact,applyDelta,idValid,mergeMessages,type AnimeContext,type AgentIssue,type ActionPreview } from './model'
 
 type Cursor={beforeUpdatedAt:number;beforeId:string}
 export interface ContextInfo {session:HistorySession;adaptive:boolean;active:ContextSummary|null;versions:Omit<ContextSummary,'state'>[];job:CompactJob|null}
@@ -16,9 +16,10 @@ export interface AgentUiState {
   session:HistorySession|null;messages:HistoryMessage[];beforeSeq:number|null;context:ContextInfo|null;preferences:PreferenceCard[];preferenceSettings:PreferenceSettings|null
   run:RunView|null;watchingRun:RunView|null;job:CompactJob|null;connection:'idle'|'connected'|'disconnected'
   pendingBody:string|null;draft:string;anime:AnimeContext|null;unread:number;status:string
+  actionPreviews:Record<string,ActionPreview>;editingSeq:number|null
 }
 const initial=():AgentUiState=>({ready:false,loading:false,syncing:false,busy:null,error:null,authExpired:false,open:false,knowledge:null,sessions:[],cursor:null,archived:false,
-  session:null,messages:[],beforeSeq:null,context:null,preferences:[],preferenceSettings:null,run:null,watchingRun:null,job:null,connection:'idle',pendingBody:null,draft:'',anime:null,unread:0,status:''})
+  session:null,messages:[],beforeSeq:null,context:null,preferences:[],preferenceSettings:null,run:null,watchingRun:null,job:null,connection:'idle',pendingBody:null,draft:'',anime:null,unread:0,status:'',actionPreviews:{},editingSeq:null})
 class UiError extends Error {constructor(readonly code:string,message:string){super(message)}}
 const issue=(error:unknown):AgentIssue=>error instanceof UiError?{code:error.code,message:error.message}:{code:'NETWORK_ERROR',message:'连接断开了，刚写的内容还在。'}
 const stopped=()=>new DOMException('Request superseded','AbortError')
@@ -33,6 +34,7 @@ export class AgentController {
   private readonly cursors=new Map<string,number>()
   private readonly seen=new Map<string,number>()
   private readonly unreadMessages=new Map<string,Set<string>>()
+  private readonly actionFetches=new Set<string>()
   private readonly providerConnection=new AgentConnection(()=>this.connectProvider())
   private alive=true
   private selection=0
@@ -41,6 +43,8 @@ export class AgentController {
   private preferenceSerial=0
   private stream:AbortController|null=null
   private streamRunId:string|null=null
+  private reconnectTimer:ReturnType<typeof setTimeout>|null=null
+  private reconnectN=0
   private poll:ReturnType<typeof setTimeout>|null=null
   private refreshTimer:ReturnType<typeof setTimeout>|null=null
   private failedSend:{requestId:string;body:string;sessionId:string}|null=null
@@ -51,8 +55,10 @@ export class AgentController {
   subscribe=(listener:()=>void)=>(()=>{this.listeners.add(listener);return()=>this.listeners.delete(listener)})()
   private set(patch:Partial<AgentUiState>){if(this.alive){this.state={...this.state,...patch};for(const listener of this.listeners)listener()}}
   private fail(error:unknown){if(!this.alive||error instanceof DOMException&&error.name==='AbortError')return;this.set({error:issue(error),status:''})}
+  // 回合恢复/收尾后，清掉之前那条「进度连接断开」的旧横幅，别让它一直吓人。
+  private clearStale(){if(this.state.error?.code==='STREAM_DISCONNECTED')this.set({error:null})}
   private expire(){this.set({...initial(),authExpired:true,ready:true});this.options.onAuthExpired?.();this.dispose()}
-  dispose(){this.alive=false;for(const controller of this.requests)controller.abort();this.requests.clear();this.viewRequests.clear();this.stream?.abort();if(this.poll)clearTimeout(this.poll);if(this.refreshTimer)clearTimeout(this.refreshTimer);this.drafts.clear();this.titles.clear();this.buffers.clear();this.cursors.clear();this.seen.clear();this.unreadMessages.clear();this.failedSend=null;this.pendingCreate=null;this.state={...initial(),authExpired:this.state.authExpired,ready:this.state.authExpired}}
+  dispose(){this.alive=false;for(const controller of this.requests)controller.abort();this.requests.clear();this.viewRequests.clear();this.stream?.abort();if(this.poll)clearTimeout(this.poll);if(this.refreshTimer)clearTimeout(this.refreshTimer);if(this.reconnectTimer)clearTimeout(this.reconnectTimer);this.drafts.clear();this.titles.clear();this.buffers.clear();this.cursors.clear();this.seen.clear();this.unreadMessages.clear();this.actionFetches.clear();this.failedSend=null;this.pendingCreate=null;this.state={...initial(),authExpired:this.state.authExpired,ready:this.state.authExpired}}
   private async api<T>(path:string,method='GET',body?:unknown,view=false):Promise<T>{
     if(!this.alive)throw stopped()
     const controller=new AbortController();this.requests.add(controller);if(view)this.viewRequests.add(controller)
@@ -64,6 +70,14 @@ export class AgentController {
       if(response.headers.get('X-Agent-Owner')!==String(this.uid)){this.expire();throw stopped()}
       const data:unknown=await response.json()
       if(!this.alive||controller.signal.aborted)throw stopped()
+      // 429：服务端把「点太快」「今日额度用完」「费用上限」「AI 正忙」全塞在同一个状态码里。
+      // 只有真的 RATE_LIMITED 才说「点得有点快」，其余原样透出服务端文案，否则用户永远查不出真正卡在哪。
+      if(response.status===429){
+        const value=data as {code?:unknown;error?:unknown}
+        const code=typeof value?.code==='string'?value.code:'RATE_LIMITED'
+        throw new UiError(code,code==='RATE_LIMITED'?'刚才点得有点快，等几秒再试就好。'
+          :typeof value?.error==='string'?value.error.slice(0,300):`这次请求被限制了（${code}）。`)
+      }
       if(!response.ok){const value=data as {code?:unknown;error?:unknown};throw new UiError(typeof value?.code==='string'?value.code:`HTTP_${response.status}`,typeof value?.error==='string'?value.error.slice(0,300):`请求没有完成（${response.status}）。`)}
       return data as T
     }catch(error){if(timedOut)throw new UiError('REQUEST_TIMEOUT','这次等得有点久，内容已留好，请手动重试。');if(controller.signal.aborted)throw stopped();throw error}
@@ -104,23 +118,25 @@ export class AgentController {
     if(this.state.busy)return
     const previous=this.state.session?.id??'new';this.drafts.set(previous,this.state.draft)
     const turn=++this.selection;for(const request of this.viewRequests)request.abort();this.viewRequests.clear()
-    this.set({loading:true,error:null,session:null,messages:[],context:null,run:null,beforeSeq:null,draft:this.drafts.get(id)??'',anime:null,status:''})
+    this.set({loading:true,error:null,session:null,messages:[],context:null,run:null,beforeSeq:null,draft:this.drafts.get(id)??'',anime:null,status:'',editingSeq:null})
     try{
       const [snapshot,context,runs]=await Promise.all([this.api<HistorySnapshot>(`/sessions/${id}?limit=50`,'GET',undefined,true),this.api<ContextInfo>(`/sessions/${id}/context`,'GET',undefined,true),this.api<{runs:RunView[]}>(`/sessions/${id}/runs`,'GET',undefined,true)])
       if(turn!==this.selection)return
       const session=context.session.revision>snapshot.session.revision?context.session:snapshot.session
       const run=runs.runs.find(r=>r.state==='running')??runs.runs[0]??null
       this.set({session,messages:snapshot.messages,beforeSeq:snapshot.nextBeforeSeq,context,run,anime:session.currentBgmId===null?null:this.titles.get(session.currentBgmId)??session.pageContext??{bgmId:session.currentBgmId,title:`条目 #${session.currentBgmId}`}})
-      this.remember(id)
+      this.remember(id);this.syncActions()
       if(run?.state==='running')this.follow(run)
       if(context.job&&activeCompact(context.job))this.watchCompact(context.job)
       if(this.state.open)this.markRead()
     }catch(error){if(turn===this.selection)this.fail(error)}finally{if(turn===this.selection)this.set({loading:false})}
   }
-  async refresh(){
+  // silent=true 用于切标签页回来这类后台对账：失败就静默，绝不弹横幅（数据留在屏上，下次交互再拉）。
+  // 只有用户点「重新读取」才走非静默、失败弹提示。
+  async refresh(silent=false){
     if(!this.alive||this.state.loading||this.state.busy)return
-    this.set({error:null})
-    try{const knowledge=await this.api<KnowledgeSnapshot>('/knowledge');this.set({knowledge});await this.refreshCurrent();if(this.state.watchingRun?.state==='running'&&this.state.connection==='disconnected')this.follow(this.state.watchingRun,true)}catch(error){this.fail(error)}
+    if(!silent)this.set({error:null})
+    try{const knowledge=await this.api<KnowledgeSnapshot>('/knowledge');this.set({knowledge});await this.refreshCurrent();if(!this.reconnectTimer&&this.state.watchingRun?.state==='running'&&this.state.connection==='disconnected'){this.reconnectN=0;this.follow(this.state.watchingRun,true)}}catch(error){if(!silent)this.fail(error)}
   }
   private async refreshCurrent(){
     const id=this.state.session?.id,turn=this.selection,serial=++this.refreshSerial;if(!id)return
@@ -130,8 +146,19 @@ export class AgentController {
     const session=context.session.revision>snapshot.session.revision?context.session:snapshot.session
     const minSeq=(snapshot.messages.at(-1)?.seq??0)-session.messageCount+1
     const kept=this.state.messages.filter(message=>message.seq>=minSeq)
-    this.set({session,messages:session.messageCount?mergeMessages(kept,snapshot.messages):[],beforeSeq:session.messageCount?this.state.beforeSeq??snapshot.nextBeforeSeq:null,context,run:runs.runs[0]??null,...this.state.pendingBody&&snapshot.messages.some(m=>m.id===this.state.run?.userMessageId)?{pendingBody:null}:{}})
+    const freshRun=runs.runs[0]??null
+    let messages=session.messageCount?mergeMessages(kept,snapshot.messages):[]
+    // 权威 run 已终态，但本地还有它的流式消息没收尾（SSE 掉线漏了收尾事件）——按 run 状态定型，别一直转圈。
+    if(freshRun&&freshRun.state!=='running'&&freshRun.state!=='paused')
+      messages=messages.map(m=>m.status==='streaming'&&(m.id===freshRun.messageId||m.seq>=(snapshot.messages.at(-1)?.seq??0))?{...m,status:freshRun.state==='completed'?'completed':freshRun.state==='cancelled'?'cancelled':'failed'}:m)
+    this.set({session,messages,beforeSeq:session.messageCount?this.state.beforeSeq??snapshot.nextBeforeSeq:null,context,run:freshRun,...this.state.pendingBody&&snapshot.messages.some(m=>m.id===this.state.run?.userMessageId)?{pendingBody:null}:{}})
+    // 万能自愈：任何一次对账，只要权威 run 已终态而 watchingRun 还卡在 running，就拉平并清掉「连接断开」横幅。
+    if(freshRun&&freshRun.state!=='running'&&this.state.watchingRun?.id===freshRun.id&&this.state.watchingRun.state==='running'){
+      if(this.reconnectTimer){clearTimeout(this.reconnectTimer);this.reconnectTimer=null}
+      this.reconnectN=0;this.clearStale();this.set({watchingRun:freshRun,connection:'idle',syncing:false,status:''})
+    }
     if(this.state.open)this.markRead()
+    this.syncActions()
     if(context.job&&activeCompact(context.job)&&(!this.poll||this.state.job?.id!==context.job.id))this.watchCompact(context.job)
   }
   async older(){const id=this.state.session?.id,before=this.state.beforeSeq,turn=this.selection;if(!id||before===null||this.state.busy)return;await this.mutate('翻前页',async()=>{const snapshot=await this.api<HistorySnapshot>(`/sessions/${id}?limit=50&beforeSeq=${before}`);if(turn===this.selection)this.set({messages:mergeMessages(snapshot.messages,this.state.messages),beforeSeq:snapshot.nextBeforeSeq})})}
@@ -145,7 +172,7 @@ export class AgentController {
     this.drafts.set(this.state.session.id,this.state.draft)
     this.selection++;for(const request of this.viewRequests)request.abort();this.viewRequests.clear()
     this.pendingCreate=null;this.failedSend=null
-    this.set({session:null,messages:[],beforeSeq:null,context:null,run:null,draft:this.drafts.get('new')??'',status:'',error:null})
+    this.set({session:null,messages:[],beforeSeq:null,context:null,run:null,draft:this.drafts.get('new')??'',status:'',error:null,editingSeq:null})
     try{this.options.remember?.removeItem(`maple-agent-session:${this.uid}`)}catch{}
   }
   async setAnime(anime:AnimeContext|null){
@@ -163,12 +190,22 @@ export class AgentController {
       try{
       if(retryConnection&&this.state.knowledge?.conditions.answerModelAutoConnect)await this.providerConnection.retry()
       else await this.prepareProvider()
-      const session=this.state.session??await this.create()
+      let session=this.state.session??await this.create()
+      const editingSeq=this.state.editingSeq
+      if(editingSeq!==null&&session.startedAt){
+        const {session:cut}=await this.api<{session:HistorySession}>(`/sessions/${session.id}/truncate`,'POST',{expectedRevision:session.revision,fromSeq:editingSeq})
+        for(const message of this.state.messages)if(message.seq>=editingSeq)this.buffers.delete(message.id)
+        this.updateSession(cut);session=cut
+        this.set({messages:this.state.messages.filter(message=>message.seq<editingSeq),beforeSeq:null,run:null,watchingRun:null,context:null,editingSeq:null})
+        this.failedSend=null
+      }
       const retry=this.failedSend?.sessionId===session.id&&this.failedSend.body===body?this.failedSend:{requestId:crypto.randomUUID(),sessionId:session.id,body}
       this.failedSend=retry
       const {run}=await this.api<{run:RunView}>(`/sessions/${session.id}/runs`,'POST',{requestId:retry.requestId,expectedRevision:session.revision,body,clientVersion:this.clientVersion})
       if(!session.startedAt)this.drafts.delete('new')
-      this.failedSend=null;this.drafts.set(session.id,'');this.set({draft:'',run,status:agentActivity('thinking')});this.follow(run);await this.refreshCurrent();await this.list()
+      this.failedSend=null;this.drafts.set(session.id,'');this.set({draft:'',run,status:agentActivity('thinking')});this.follow(run)
+      // 回合已经启动，SSE 负责进度；这里的后台对账失败不该把成功的发送报成「请求已停止」。
+      try{await this.refreshCurrent();await this.list()}catch{/* follow() 会补上进度 */}
       }catch(error){if(!this.state.draft)this.set({draft:body});throw error}finally{this.set({pendingBody:null})}
     })
   }
@@ -181,19 +218,56 @@ export class AgentController {
     if(!knowledge.conditions.answerModelReady)throw new UiError('PROVIDER_CONNECTION_REQUIRED','模型连接尚未就绪，请检查 AI 配置。')
     this.set({knowledge})
   }
-  private scheduleRefresh(){if(this.refreshTimer)return;this.refreshTimer=setTimeout(()=>{this.refreshTimer=null;void this.refreshCurrent().catch(error=>this.fail(error))},Math.max(100,1800-(Date.now()-this.lastRefresh)))}
+  // SSE 事件触发的后台对账：失败不弹横幅（回合还在流式回答，进度以 SSE 为准），下个事件或收尾时自愈。
+  // 至少隔 2.5s 一次，避免工具多的回合把只读额度（120/min）打爆导致 429。
+  private scheduleRefresh(){if(this.refreshTimer)return;this.refreshTimer=setTimeout(()=>{this.refreshTimer=null;void this.refreshCurrent().catch(()=>{})},Math.max(6000,8000-(Date.now()-this.lastRefresh)))}
   private follow(run:RunView,reconnect=false){
     if(this.streamRunId===run.id&&!reconnect&&this.state.connection==='connected'&&this.state.watchingRun?.attempt===run.attempt)return
+    if(this.reconnectTimer){clearTimeout(this.reconnectTimer);this.reconnectTimer=null}
+    if(!reconnect)this.reconnectN=0
     this.stream?.abort();const controller=new AbortController();this.stream=controller;this.streamRunId=run.id
     this.set({watchingRun:run,connection:'connected',syncing:false})
     void(async()=>{
       try{
         for await(const event of subscribeAgentEvents({runId:run.id,afterSeq:this.cursors.get(run.id)??0,signal:controller.signal,fetchImpl:async(input,init)=>{const response=await(this.options.fetchImpl??fetch)(input,init);if(response.status===401||response.headers.get('X-Agent-Owner')!==String(this.uid)){this.expire();throw stopped()}return response}})){
-          if(!this.alive||controller.signal.aborted)return;this.cursors.set(run.id,event.seq);this.event(run,event)
+          if(!this.alive||controller.signal.aborted)return;this.reconnectN=0;this.clearStale();this.cursors.set(run.id,event.seq);this.event(run,event)
         }
-        if(!controller.signal.aborted){const result=await this.api<{run:RunView}>(`/runs/${run.id}`);if(controller.signal.aborted||this.stream!==controller)return;if(this.state.session?.id===run.sessionId)await this.refreshCurrent();if(controller.signal.aborted||this.stream!==controller)return;this.set({watchingRun:result.run,connection:'idle',syncing:false})}
-      }catch(error){if(!this.alive||controller.signal.aborted)return;if(error instanceof Error&&error.message==='HTTP_401'){this.expire();return}this.set({connection:'disconnected',syncing:false});this.fail(new UiError('STREAM_DISCONNECTED','进度连接断开了。手帐还在，点“重新读取”接着看。'))}
+        if(!controller.signal.aborted){const result=await this.api<{run:RunView}>(`/runs/${run.id}`);if(controller.signal.aborted||this.stream!==controller)return;if(this.state.session?.id===run.sessionId)await this.refreshCurrent();if(controller.signal.aborted||this.stream!==controller)return;this.reconnectN=0;this.clearStale();this.set({watchingRun:result.run,connection:'idle',syncing:false})}
+      }catch(error){
+        if(!this.alive||controller.signal.aborted||this.stream!==controller)return
+        if(error instanceof Error&&error.message==='HTTP_401'){this.expire();return}
+        // 流断开：交给 retryFollow 退避轮询。绝不在这里连打 GET，绝不立刻弹横幅。
+        this.retryFollow(run)
+      }
     })()
+  }
+  // SSE 在 dev 无反代（@hono/vite-dev-server）下会偶发掉线。退避轮询直到回合终态：
+  // 每次只发 1 个 GET /runs/:id；终态→对账收尾并解锁；还在跑且服务器可达→重开 SSE 拿实时；
+  // 不可达（含 429）→加倍退避后继续，绝不永久卡死。GET 连续失败很久才给一次温和提示（仍继续轮询）。
+  private retryFollow(run:RunView){
+    if(!this.alive||this.reconnectTimer)return
+    const attempt=++this.reconnectN
+    this.stream?.abort();this.streamRunId=null
+    const streamAt=this.stream
+    this.set({watchingRun:run,connection:'disconnected',syncing:false,status:''})
+    const superseded=()=>!this.alive||this.stream!==streamAt||this.state.watchingRun?.id!==run.id
+    this.reconnectTimer=setTimeout(async()=>{
+      this.reconnectTimer=null
+      if(superseded())return
+      let latest:RunView|null=null
+      try{latest=(await this.api<{run:RunView}>(`/runs/${run.id}`)).run}catch{/* 含 429 / 网络错误：latest 留空，继续退避 */}
+      if(superseded())return
+      if(latest&&latest.state!=='running'){
+        this.reconnectN=0
+        try{if(this.state.session?.id===run.sessionId)await this.refreshCurrent()}catch{/* 正文以下次对账为准 */}
+        if(!superseded()){this.clearStale();this.set({watchingRun:latest,connection:'idle',syncing:false,status:''})}
+        return
+      }
+      if(latest){this.reconnectN=0;this.follow(latest,true);return}
+      // 服务器没答上来：退避后继续轮，别放弃。攒够多次才提示一次（不锁死、仍自愈）。
+      if(this.reconnectN>=6&&this.state.error?.code!=='STREAM_DISCONNECTED')this.fail(new UiError('STREAM_DISCONNECTED','网络好像不太稳，还在自动重连…'))
+      this.retryFollow(run)
+    },Math.min(1500*attempt,8000))
   }
   private event(run:RunView,event:RunEvent){
     const current=this.state.session?.id===run.sessionId,data=event.data&&typeof event.data==='object'&&!Array.isArray(event.data)?event.data:{}
@@ -210,13 +284,21 @@ export class AgentController {
     if(current&&event.type==='long_task')this.set({status:'任务仍在运行，可取消。'})
     if(current&&['tool_finished','context'].includes(event.type))this.scheduleRefresh()
     if(['completed','failed','cancelled','paused'].includes(event.type)){
+      if(event.type==='completed')this.clearStale()
       const next={...run,state:event.type as RunView['state'],lastEventSeq:event.seq,canResume:event.type==='paused'}
       this.set({watchingRun:next,syncing:true,...current?{run:next,status:event.type==='completed'?'':event.type==='cancelled'?'已停止回复':event.type==='paused'?'已暂停':'回复失败，已保留生成内容'}:{}})
     }
   }
   async cancel(){const run=this.state.watchingRun?.state==='running'?this.state.watchingRun:this.state.run;if(!run)return;await this.mutate('停止回复',async()=>{const response=await this.api<{run:RunView}>(`/runs/${run.id}/cancel`,'POST',{});this.set({watchingRun:response.run,...this.state.session?.id===run.sessionId?{run:response.run}:{}});await this.refreshCurrent()})}
-  async resume(){const session=this.state.session,run=this.state.run;if(!session||!run?.canResume)return;await this.mutate('继续',async()=>{await this.prepareProvider();const response=await this.api<{run:RunView}>(`/runs/${run.id}/resume`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision,clientVersion:this.clientVersion});this.set({run:response.run});this.follow(response.run);await this.refreshCurrent()})}
-  retryDraft(){const last=this.state.messages.filter(m=>m.role==='user').at(-1);if(last)this.set({draft:last.body,error:null,status:''})}
+  async resume(){const session=this.state.session,run=this.state.run;if(!session||!run?.canResume)return;await this.mutate('继续',async()=>{await this.prepareProvider();const response=await this.api<{run:RunView}>(`/runs/${run.id}/resume`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision,clientVersion:this.clientVersion});this.set({run:response.run});this.follow(response.run);try{await this.refreshCurrent()}catch{/* follow() 会补上进度 */}})}
+  // 编辑并重新提问：把该用户消息放回输入框；发送时截断这条之后的对话再重新生成（见 send）。
+  startEdit(message:HistoryMessage){
+    if(message.role!=='user'||!this.state.session?.startedAt||this.state.busy||this.state.loading||this.state.syncing)return
+    if(this.state.watchingRun?.state==='running')return
+    this.drafts.set(this.state.session.id,message.body)
+    this.set({draft:message.body,editingSeq:message.seq,error:null,status:''})
+  }
+  cancelEdit(){this.set({editingSeq:null,draft:'',error:null})}
   async compact(){
     const session=this.state.session;if(!session)return
     if(!this.state.knowledge?.conditions.contextModelReady&&!this.state.knowledge?.conditions.answerModelAutoConnect){this.set({error:{code:'CONTEXT_AI_DISABLED',message:'压缩模型尚未接入。'}});return}
@@ -240,13 +322,47 @@ export class AgentController {
   }
   async manage(operation:'rename'|'archive'|'delete'|'clear',title?:string){const session=this.state.session;if(!session)return false;return this.mutate('更新对话',async()=>{
     const base=`/sessions/${session.id}`
-    if(operation==='delete'){await this.api(base,'DELETE',{expectedRevision:session.revision});this.selection++;this.set({session:null,messages:[],context:null,run:null,draft:'',anime:null});this.drafts.delete(session.id);try{this.options.remember?.removeItem(`maple-agent-session:${this.uid}`)}catch{}}
-    else{const response=await this.api<{session:HistorySession}>(operation==='clear'?`${base}/clear`:base,operation==='clear'?'POST':'PATCH',{expectedRevision:session.revision,...operation==='rename'?{title}:operation==='archive'?{archived:session.archivedAt===null}:{}});this.updateSession(response.session);if(operation==='clear'){this.buffers.clear();this.set({messages:[],context:null,run:null,beforeSeq:null});this.seen.delete(session.id)}}
+    if(operation==='delete'){await this.api(base,'DELETE',{expectedRevision:session.revision});this.selection++;this.set({session:null,messages:[],context:null,run:null,draft:'',anime:null,editingSeq:null});this.drafts.delete(session.id);try{this.options.remember?.removeItem(`maple-agent-session:${this.uid}`)}catch{}}
+    else{const response=await this.api<{session:HistorySession}>(operation==='clear'?`${base}/clear`:base,operation==='clear'?'POST':'PATCH',{expectedRevision:session.revision,...operation==='rename'?{title}:operation==='archive'?{archived:session.archivedAt===null}:{}});this.updateSession(response.session);if(operation==='clear'){this.buffers.clear();this.set({messages:[],context:null,run:null,beforeSeq:null,editingSeq:null});this.seen.delete(session.id)}}
     if(operation==='clear'||operation==='delete'){this.unreadMessages.delete(session.id);this.set({unread:[...this.unreadMessages.values()].reduce((n,messages)=>n+messages.size,0)})}
     await this.list()
   })}
-  async pin(message:HistoryMessage){const session=this.state.session;if(!session)return;await this.mutate('固定原文',async()=>{const response=await this.api<{session:HistorySession}>(`/sessions/${session.id}/messages/${message.id}/pin`,'PATCH',{expectedRevision:session.revision,pinned:!message.pinned});this.updateSession(response.session);this.set({messages:this.state.messages.map(item=>item.id===message.id?{...item,pinned:!item.pinned}:item)})})}
   async tier(contextTier:ContextTier,adaptive:boolean){const session=this.state.session;if(!session)return;await this.mutate('上下文档位',async()=>{const response=await this.api<{session:HistorySession}>(`/sessions/${session.id}/context`,'PATCH',{expectedRevision:session.revision,contextTier,adaptive});this.updateSession(response.session);await this.refreshCurrent()})}
   async restore(summaryVersion:number){const session=this.state.session;if(!session)return;await this.mutate('恢复摘要',async()=>{await this.api(`/sessions/${session.id}/summaries/restore`,'POST',{expectedRevision:session.revision,summaryVersion});await this.refreshCurrent()})}
   async export():Promise<unknown>{const session=this.state.session;if(!session)return null;try{return await this.api(`/sessions/${session.id}/export`)}catch(error){this.fail(error);return null}}
+  // 追番变更：预览随消息卡片出现，凭 owner 身份的 REST 接口取回确认凭证；确认前不写，取消不写。
+  private syncActions(){
+    const ids=new Set(this.state.messages.flatMap(m=>m.actions.filter(a=>a.kind==='track_change').map(a=>a.actionId)))
+    const previews={...this.state.actionPreviews}
+    let changed=false
+    for(const key of Object.keys(previews))if(!ids.has(key)){delete previews[key];changed=true}
+    if(changed)this.set({actionPreviews:previews})
+    for(const message of this.state.messages){
+      for(const action of message.actions){
+        if(action.kind!=='track_change'||this.actionFetches.has(action.actionId))continue
+        const known=this.state.actionPreviews[action.actionId]
+        if(known&&(action.state!=='prepared'||known.confirmationToken))continue
+        this.actionFetches.add(action.actionId)
+        void this.api<ActionPreview>(`/actions/${action.actionId}`).then(preview=>{
+          this.actionFetches.delete(action.actionId)
+          if(this.state.messages.some(m=>m.actions.some(a=>a.actionId===action.actionId)))this.set({actionPreviews:{...this.state.actionPreviews,[action.actionId]:preview}})
+        }).catch(()=>{this.actionFetches.delete(action.actionId)})
+      }
+    }
+  }
+  async confirmAction(actionId:string){
+    const preview=this.state.actionPreviews[actionId]
+    if(!preview?.confirmationToken)return
+    await this.mutate('确认变更',async()=>{
+      await this.api(`/actions/${actionId}/apply`,'POST',{actionId,requestId:`apply:${actionId}`,expectedRevision:preview.preview.expectedRevision,confirmationToken:preview.confirmationToken})
+      await this.refreshCurrent();await this.list()
+    })
+  }
+  async cancelAction(actionId:string){
+    const preview=this.state.actionPreviews[actionId]
+    await this.mutate('取消变更',async()=>{
+      await this.api(`/actions/${actionId}/cancel`,'POST',preview?{expectedRevision:preview.preview.expectedRevision}:{})
+      await this.refreshCurrent()
+    })
+  }
 }

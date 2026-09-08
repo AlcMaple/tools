@@ -136,7 +136,7 @@ export async function connectExternal(uid:number|null,owner:string,input:{source
       profile.capabilities=probe.value
       connections.set(id,{profile,transport,price:cfg.price,until:Date.now()+30*60_000,tv:row?.token_version??0,config})
       return externalStatus(uid)
-    })
+    },false)
   }finally{
     for(const lock of locks)if(connecting.get(lock)===operation)connecting.delete(lock)
   }

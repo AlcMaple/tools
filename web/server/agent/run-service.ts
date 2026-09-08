@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { AGENT_TOOLS, MODEL_OUTPUT_SCHEMA, type AgentToolName, type AgentUsage, type JsonValue } from '../../shared/agent-contracts'
-import { ASSISTANT_UPDATE_SCHEMA, AgentHistoryError, type AssistantMessageContent, type HistorySource } from '../../shared/agent-history'
+import { ASSISTANT_UPDATE_SCHEMA, AgentHistoryError, type AssistantMessageContent, type HistoryAction, type HistorySource } from '../../shared/agent-history'
+import { logAgentIssue } from './diagnostics'
 import { AgentRunError, RUN_LIMITS, START_RUN_SCHEMA, RESUME_RUN_SCHEMA, type StartRun, type ResumeRun, type ReadToolCall, type RunCheckpoint } from '../../shared/agent-run'
 import { AGENT_LIMITS, AGENT_SYSTEM_RULES } from './policy'
 import type { AgentContextService } from './context-service'
@@ -20,7 +21,7 @@ export interface RunProvider {
 }
 export interface ReadTool {
   name: AgentToolName
-  execute(args: Record<string,JsonValue>, actor: {uid:number;knowledgeVersion:string;signal:AbortSignal}): Promise<unknown>
+  execute(args: Record<string,JsonValue>, actor: {uid:number;knowledgeVersion:string;signal:AbortSignal;runId?:string;messageId?:string|null}): Promise<unknown>
 }
 export interface RunBinding {
   provider: RunProvider; context: AgentContextService; tools: readonly ReadTool[]
@@ -61,7 +62,7 @@ export class AgentRunService {
     const knowledge=binding.knowledge()
     if(knowledge.status!=='ready')throw new AgentRunError('KNOWLEDGE_PENDING_SYNC')
     if(new Set(binding.tools.map(t=>t.name)).size!==binding.tools.length
-      ||binding.tools.some(t=>!Object.hasOwn(AGENT_TOOLS,t.name)||AGENT_TOOLS[t.name].mode!=='read')
+      ||binding.tools.some(t=>!Object.hasOwn(AGENT_TOOLS,t.name)||!['read','proposal'].includes(AGENT_TOOLS[t.name].mode))
       ||knowledge.tools.some(t=>!binding.tools.some(registered=>registered.name===t)))throw new AgentRunError('UNREGISTERED_TOOL')
     if(!['server','byok'].includes(binding.provider.source)||!binding.provider.model.trim()||binding.provider.model.length>100||!binding.provider.fingerprint)throw new AgentRunError('PROVIDER_CAPABILITY')
     return knowledge
@@ -86,7 +87,8 @@ export class AgentRunService {
   }
   private launch(row:RunRow,binding:RunBinding){
     const controller=new AbortController();this.controllers.set(row.id,controller)
-    const promise=Promise.resolve().then(()=>binding.execute?binding.execute(()=>this.run(row,binding,controller)):this.run(row,binding,controller)).catch(error=>{this.store.finish(row.user_id,row.id,'failed',error instanceof AgentRunError?error.code:'PROVIDER_UNAVAILABLE')}).finally(()=>{
+    const promise=Promise.resolve().then(()=>binding.execute?binding.execute(()=>this.run(row,binding,controller)):this.run(row,binding,controller)).catch(error=>{logAgentIssue('run-launch',{runId:row.id,uid:row.user_id},error)
+      this.store.finish(row.user_id,row.id,'failed',error instanceof AgentRunError?error.code:'PROVIDER_UNAVAILABLE')}).finally(()=>{
       if(this.controllers.get(row.id)===controller){this.controllers.delete(row.id);this.pending.delete(row.id)}
     })
     this.pending.set(row.id,promise)
@@ -217,7 +219,7 @@ export class AgentRunService {
         if(hadDelta||content.body.length)outputError()
         const calls=value.calls.map(call=>parseToolRequest(call,uid))
         for(const call of calls){
-          if(!knowledge.tools.includes(call.name)||!binding.tools.some(tool=>tool.name===call.name)||AGENT_TOOLS[call.name].mode!=='read')throw new AgentRunError('UNREGISTERED_TOOL')
+          if(!knowledge.tools.includes(call.name)||!binding.tools.some(tool=>tool.name===call.name)||!['read','proposal'].includes(AGENT_TOOLS[call.name].mode))throw new AgentRunError('UNREGISTERED_TOOL')
           const count=(callCounts.get(call.name)??0)+1
           if(count>AGENT_TOOLS[call.name].maxCallsPerTurn)throw new AgentRunError('TOOL_LIMIT')
           callCounts.set(call.name,count)
@@ -229,7 +231,7 @@ export class AgentRunService {
           const started=now(),tool=binding.tools.find(tool=>tool.name===call.name)!
           const toolSignal=AbortSignal.any([signal,AbortSignal.timeout(AGENT_TOOLS[call.name].timeoutMs)])
           let result:JsonValue
-          try{result=json(await waitBounded(tool.execute(call.arguments,{uid,knowledgeVersion:knowledge.version,signal:toolSignal}),toolSignal))}
+          try{result=json(await waitBounded(tool.execute(call.arguments,{uid,knowledgeVersion:knowledge.version,signal:toolSignal,runId:id,messageId:this.store.row(uid,id).message_id}),toolSignal))}
           catch(error){guard();if(toolSignal.aborted)result={ok:false,code:'TIMEOUT',message:'这次查询超时了，已保留先前记录。',retryable:false};else throw error}
           guard();validateToolResult(call.name,result,call.arguments)
           const envelope=result as unknown as {ok:boolean;sources?:HistorySource[];resultCount?:number;code?:string}
@@ -238,6 +240,12 @@ export class AgentRunService {
           const summary=envelope.ok?`已返回 ${envelope.resultCount} 条记录。`:`查询结束：${envelope.code}`
           content.toolSummaries.push({tool:call.name,status:envelope.ok?'ok':envelope.code as 'TIMEOUT',summary})
           if(content.toolSummaries.length>48)throw new AgentRunError('TOOL_LIMIT')
+          if(AGENT_TOOLS[call.name].mode==='proposal'&&envelope.ok){
+            const preview=(result as unknown as {data:{actionId:string;impact:string}}).data
+            const action:HistoryAction={actionId:preview.actionId,kind:'track_change',state:'prepared',eventSeq:0,updatedAt:now(),evidence:'preview',errorCode:null,userReportedSuccess:false,summary:preview.impact}
+            content.actions=[...content.actions.filter(a=>a.actionId!==action.actionId),action]
+            if(content.actions.length>30)throw new AgentRunError('TOOL_LIMIT')
+          }
           const sources=[...new Map(checkpoint.results.flatMap(entry=>((entry.result as {sources?:HistorySource[]}).sources??[]).map(source=>[source.sourceId,source] as const))).values()]
           if(sources.length>30)throw new AgentRunError('SOURCE_LIMIT')
           content.sources=sources
@@ -247,6 +255,7 @@ export class AgentRunService {
       }
     }catch(error){
       const reason=signal.aborted?signal.reason:error
+      logAgentIssue('run',{runId:id,uid,aborted:signal.aborted,model:binding.provider.model},reason)
       const code=reason instanceof AgentRunError||reason instanceof AgentHistoryError?reason.code
         :reason instanceof Error&&['INVALID_OUTPUT','INVALID_ARGUMENT','UNREGISTERED_TOOL'].includes(reason.message)?reason.message:'PROVIDER_UNAVAILABLE'
       if(!compactId){const own=binding.context.store.activeJob(uid);if(own?.sessionId===initial.session_id)compactId=own.id}

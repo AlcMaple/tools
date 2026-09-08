@@ -6,6 +6,7 @@ import { AgentRunError } from '../../shared/agent-run'
 import { AgentHistoryError } from '../../shared/agent-history'
 import { connectExternal,prepareExternal,externalStatus,forgetConnection } from './external-runtime'
 import { matchesContract } from './validation'
+import { logAgentIssue, logAgentRequest } from './diagnostics'
 
 export const externalMessages:Record<string,string>={AGENT_AI_DISABLED:'服务器 AI 尚未启用。',PROVIDER_CONNECTION_REQUIRED:'请先连接 AI。',PROVIDER_NOT_CONFIGURED:'模型凭据尚未配置。',
   ENDPOINT_NOT_ALLOWED:'此端点或型号尚未核准，请选择已支持的连接。',PROVIDER_CAPABILITY:'模型的 JSON 或工具能力探测未通过，请检查配置。',PROVIDER_UNAVAILABLE:'模型连接失败，请检查连接后手动重试。',
@@ -26,9 +27,18 @@ export function parseConnection(value:unknown):{source:'server'|'byok';endpoint?
 }
 export function createExternalApi(){
   const api=new Hono<{Variables:{uid:number}}>()
-  api.use('*',async(c,next)=>{c.header('Cache-Control','no-store');const s=await getSession(c);if(!s)throw new AgentRunError('AUTH_REQUIRED',401);c.set('uid',s.uid);c.header('X-Agent-Owner',String(s.uid));if(rateLimited(`agent-provider:${s.uid}`,10,60000))throw new AgentRunError('RATE_LIMITED',429);await next()})
+  api.use('*',async(c,next)=>{c.header('Cache-Control','no-store');const s=await getSession(c);if(!s)throw new AgentRunError('AUTH_REQUIRED',401);c.set('uid',s.uid);c.header('X-Agent-Owner',String(s.uid));logAgentRequest('provider',c.req.method,c.req.path,s.uid);
+    // 读(GET /provider 状态轮询)与写(prepare/connect)分桶:状态查询不该把连接额度吃掉。
+    const write=c.req.method!=='GET'
+    if(rateLimited(`agent-provider:${write?'write':'read'}:${s.uid}`,write?20:120,60000)){
+      c.header('Retry-After','60')
+      logAgentIssue('provider',{limit:write?'write 20/min':'read 120/min',method:c.req.method,path:c.req.path,uid:s.uid})
+      throw new AgentRunError('RATE_LIMITED',429)
+    }
+    await next()})
   api.use('*',bodyLimit({maxSize:8192,onError:c=>c.json({code:'MESSAGE_TOO_LARGE'},413)}))
-  api.onError((error,c)=>c.json(externalError(error),error instanceof AgentRunError?error.status:503))
+  api.onError((error,c)=>{logAgentIssue('provider',{method:c.req.method,path:c.req.path,uid:c.get('uid')},error)
+    return c.json(externalError(error),error instanceof AgentRunError?error.status:503)})
   api.get('/provider',c=>c.json(externalStatus(c.get('uid'))))
   api.post('/provider/prepare',async c=>{
     const input=await externalBody(c)

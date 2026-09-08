@@ -70,6 +70,7 @@ export const PAGE_CONTEXT_SCHEMA=object({...ANIME_SCHEMA.properties,summary:stri
 export const CREATE_SESSION_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, title, currentBgmId: bgmId, pageContext:nullable(PAGE_CONTEXT_SCHEMA) }, ['requestId'])
 export const PATCH_SESSION_SCHEMA = object({ expectedRevision, title, archived: boolean, currentBgmId: bgmId, pageContext:nullable(PAGE_CONTEXT_SCHEMA) }, ['expectedRevision'])
 export const REVISION_SCHEMA = object({ expectedRevision })
+export const TRUNCATE_SESSION_SCHEMA = object({ expectedRevision, fromSeq: integer(1) })
 export const USER_MESSAGE_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, expectedRevision, body: string(HISTORY_LIMITS.bodyChars) })
 export const SESSION_LIST_SCHEMA = object({
   limit: integer(1, HISTORY_LIMITS.maxPageSize), archived: choices('active', 'archived', 'all'),
