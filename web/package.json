@@ -25,7 +25,10 @@
     "test:agent-data": "npm run build && tsx scripts/test-agent-data.ts",
     "build:agent-release": "tsx scripts/build-agent-release.ts",
     "test:agent-ui": "npm run build && tsx scripts/test-agent-ui.ts",
-    "test:agent-ui:serve": "npm run build && tsx scripts/agent-ui-fixture.ts"
+    "test:agent-ui:serve": "npm run build && tsx scripts/agent-ui-fixture.ts",
+    "test:agent-external": "npm run build:agent-release && tsx scripts/test-agent-external.ts && tsx scripts/test-agent-connections.ts",
+    "test:agent-experience": "tsx scripts/test-agent-experience.ts",
+    "test:agent-sources": "npm run build && tsx scripts/test-agent-sources.ts && tsx scripts/test-agent-source-budget.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -42,6 +45,8 @@
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "undici": "^6.28.0"
   },
   "devDependencies": {

@@ -13,7 +13,7 @@ export interface RunModelRequest {
   system: string; knowledge: KnowledgeSnapshot; layers: unknown[]; nativeState: unknown
   tools: Partial<typeof AGENT_TOOLS>; results: RunCheckpoint['results']; outputSchema: typeof MODEL_OUTPUT_SCHEMA
 }
-export type RunProviderEvent = { type: 'delta'; text: string } | { type: 'output'; value: unknown } | { type: 'usage'; usage: AgentUsage }
+export type RunProviderEvent = { type: 'delta'; text: string } | { type: 'output'; value: unknown } | { type: 'usage'; usage: AgentUsage } | {type:'warning';estimatedCost:number;currency:string}
 export interface RunProvider {
   source: 'server' | 'byok'; model: string; fingerprint: string
   stream(request: RunModelRequest, signal: AbortSignal): AsyncIterable<RunProviderEvent>
@@ -25,6 +25,7 @@ export interface ReadTool {
 export interface RunBinding {
   provider: RunProvider; context: AgentContextService; tools: readonly ReadTool[]
   knowledge(): KnowledgeSnapshot
+  execute?(action:()=>Promise<void>):Promise<void>
   assertIdentity(): void
 }
 export type RunResolver = (uid:number,sessionId:string) => RunBinding | Promise<RunBinding>
@@ -36,7 +37,7 @@ function json(value: unknown): JsonValue {
   if(typeof encoded!=='string'||Buffer.byteLength(encoded)>RUN_LIMITS.modelOutputBytes)return outputError()
   return JSON.parse(encoded) as JsonValue
 }
-function waitBounded<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+export function waitBounded<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if(signal.aborted)return Promise.reject(signal.reason)
   return new Promise<T>((resolve,reject)=>{
     const abort=()=>{signal.removeEventListener('abort',abort);reject(signal.reason)}
@@ -85,7 +86,7 @@ export class AgentRunService {
   }
   private launch(row:RunRow,binding:RunBinding){
     const controller=new AbortController();this.controllers.set(row.id,controller)
-    const promise=Promise.resolve().then(()=>this.run(row,binding,controller)).finally(()=>{
+    const promise=Promise.resolve().then(()=>binding.execute?binding.execute(()=>this.run(row,binding,controller)):this.run(row,binding,controller)).catch(error=>{this.store.finish(row.user_id,row.id,'failed',error instanceof AgentRunError?error.code:'PROVIDER_UNAVAILABLE')}).finally(()=>{
       if(this.controllers.get(row.id)===controller){this.controllers.delete(row.id);this.pending.delete(row.id)}
     })
     this.pending.set(row.id,promise)
@@ -164,7 +165,7 @@ export class AgentRunService {
         if(!['completed','skipped'].includes(job.stage))throw new AgentRunError(job.errorCode??'CONTEXT_FAILED')
         if(job.usage.length){const first=job.usage[0];pushUsage({...first,operation:'compact',inputTokens:job.usage.some(u=>u.inputTokens===null)?null:job.usage.reduce((n,u)=>n+(u.inputTokens??0),0),
           outputTokens:job.usage.some(u=>u.outputTokens===null)?null:job.usage.reduce((n,u)=>n+(u.outputTokens??0),0),cachedInputTokens:job.usage.some(u=>u.cachedInputTokens===null)?null:job.usage.reduce((n,u)=>n+(u.cachedInputTokens??0),0),
-          durationMs:job.usage.reduce((n,u)=>n+u.durationMs,0),estimatedCost:null,resultCount:job.summaryVersion===null?0:1})}
+          durationMs:job.usage.reduce((n,u)=>n+u.durationMs,0),estimatedCost:job.usage.some(u=>u.estimatedCost===null)?null:job.usage.reduce((n,u)=>n+(u.estimatedCost??0),0),resultCount:job.summaryVersion===null?0:1})}
         prepared=await waitBounded(binding.context.prepare(uid,initial.session_id,{requestId:randomUUID(),expectedRevision:binding.context.store.session(uid,initial.session_id).revision,question},{runId:id,signal,additionalInput:knowledge,provider:binding.provider}),signal)
         if(prepared.state!=='ready'){compactId=prepared.job.id;throw new AgentRunError('CONTEXT_BUDGET')}
       }
@@ -194,7 +195,9 @@ export class AgentRunService {
           if(event.type==='delta'){
             if(output!==undefined||typeof event.text!=='string'||!event.text.length||content.body.length+event.text.length>RUN_LIMITS.answerChars)outputError()
             content.body+=event.text;hadDelta=true
-            if(content.body.length-flushedChars>=256||now()-lastFlush>=150)flush()
+            if(flushedChars===0||content.body.length-flushedChars>=256||now()-lastFlush>=150)flush()
+          }else if(event.type==='warning'){
+            this.store.event(uid,id,'context',{state:'price_warning',estimatedCost:event.estimatedCost,currency:event.currency})
           }else if(event.type==='output'){
             if(output!==undefined)outputError()
             output=json(event.value);validateModelOutput(output,uid,[...known.keys()])
@@ -228,7 +231,7 @@ export class AgentRunService {
           let result:JsonValue
           try{result=json(await waitBounded(tool.execute(call.arguments,{uid,knowledgeVersion:knowledge.version,signal:toolSignal}),toolSignal))}
           catch(error){guard();if(toolSignal.aborted)result={ok:false,code:'TIMEOUT',message:'这次查询超时了，已保留先前记录。',retryable:false};else throw error}
-          guard();validateToolResult(call.name,result)
+          guard();validateToolResult(call.name,result,call.arguments)
           const envelope=result as unknown as {ok:boolean;sources?:HistorySource[];resultCount?:number;code?:string}
           if(envelope.ok)addSources(envelope.sources??[])
           checkpoint.results.push({call,result});checkpoint.pendingCalls.shift();checkpoint.inFlight=null
@@ -259,6 +262,7 @@ export class AgentRunService {
       }
     }finally{
       clearInterval(timer)
+      if(!signal.aborted)controller.abort(new AgentRunError('CANCELLED'))
       if(iterator?.return)void iterator.return().catch(()=>{})
     }
   }

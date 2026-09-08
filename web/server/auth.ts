@@ -771,7 +771,16 @@ auth.post('/email/register', (c) => {
   return c.json({ error: '邮箱注册已改为验证码验证后自动完成，请重新获取验证码' }, 410)
 })
 
-auth.post('/logout', (c) => {
+auth.post('/logout', async (c) => {
+  const session=await getSession(c)
+  if(session){
+    const {forgetConnection}=await import('./agent/external-runtime');forgetConnection(session.uid)
+    const {agentRunService}=await import('./agent/run-runtime')
+    const runs=db.prepare("SELECT id FROM agent_runs WHERE user_id=? AND state='running'").all(session.uid) as {id:string}[]
+    for(const run of runs)agentRunService.cancel(session.uid,run.id)
+    const {agentContextService}=await import('./agent/context-runtime'),job=agentContextService.store.activeJob(session.uid)
+    if(job)agentContextService.cancel(session.uid,job.id)
+  }
   deleteCookie(c, COOKIE, { path: '/', secure: SECURE, sameSite: 'Strict' })
   // 升级到 __Host- 名字时顺便清掉旧 Cookie，避免浏览器继续携带过期的会话材料。
   if (COOKIE !== LEGACY_COOKIE) deleteCookie(c, LEGACY_COOKIE, { path: '/', secure: SECURE, sameSite: 'Strict' })

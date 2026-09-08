@@ -1,3 +1,4 @@
+import { publicAggregateScope,PUBLIC_METRIC_LABELS,type PublicMetric,type AggregateEvidence } from '../../shared/agent-sources'
 import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
 import { AGENT_TOOLS,type AgentToolName,type JsonValue,type AgentErrorCode } from '../../shared/agent-contracts'
@@ -40,7 +41,7 @@ export function createAgentDataTools(deps:DataDependencies,principal:DataPrincip
         if(!deps.db.prepare('SELECT 1 FROM agent_sessions WHERE user_id=? AND id=?').get(principal.uid,principal.sessionId))throw fail('AUTH_REQUIRED','会话不属于当前账号。')
       }
     }
-    const success=(data:Record<string,unknown>,kind:string,label:string,truncated=false)=>({ok:true,data,sources:[{sourceId:`data-${digest({name,data,principal:principal.kind==='user'?principal.uid:'guest',at:start})}`,kind,label,retrievedAt:start,...kind==='calendar_cache'?{cachedAt:data.cachedAt}:{} }],resultCount:Array.isArray(data.items)?data.items.length:1,truncated})
+    const success=(data:Record<string,unknown>,kind:string,label:string,truncated=false)=>({ok:true,data,sources:[{sourceId:`data-${digest({name,data,args,principal:principal.kind==='user'?principal.uid:'guest',at:start})}`,kind,label,retrievedAt:start,...kind==='calendar_cache'?{cachedAt:data.cachedAt}:{} }],resultCount:Array.isArray(data.items)?data.items.length:1,truncated})
     try{
       guard(true)
       if(!matchesContract(AGENT_TOOLS[name].parameters,args))return fail('INVALID_ARGUMENT','查询参数不符合工具合同。')
@@ -95,9 +96,11 @@ export function createAgentDataTools(deps:DataDependencies,principal:DataPrincip
         else if(args.metric==='public_tracks')sql=`SELECT COUNT(*) AS value FROM tracks t JOIN users u ON u.id=t.user_id WHERE u.tracks_public=1 AND ${filter}`
         else sql=`SELECT COUNT(*) AS value FROM review_contents r JOIN users u ON u.id=r.user_id JOIN tracks t ON t.user_id=r.user_id AND t.bgm_id=r.bgm_id WHERE u.tracks_public=1 AND r.published=1 AND r.mode='${args.metric==='public_reviews'?'review':'recommend'}' AND ${filter}`
         const row=deps.db.prepare(sql).get(...(args.metric==='public_users'&&f.bgmId===undefined&&f.status===undefined?[]:params)) as {value:number}
-        result=success({metric:args.metric,value:row.value,asOf:start},'public_aggregate','公开大厅只读统计')
+        const metric=args.metric as PublicMetric,filters:AggregateEvidence['filters']={...f.bgmId!==undefined?{bgmId:Number(f.bgmId)}:{},...f.status!==undefined?{status:f.status as NonNullable<AggregateEvidence['filters']['status']>}:{} }
+        const response=success({metric,value:row.value,asOf:start},'public_aggregate',PUBLIC_METRIC_LABELS[metric].label)
+        result={...response,sources:response.sources.map(source=>({...source,aggregate:{metric,value:row.value,filters,scope:publicAggregateScope(metric,filters)}}))}
       }
-      guard(true);validateToolResult(name,result);return result
+      guard(true);validateToolResult(name,result,args);return result
     }catch(error){if(error&&typeof error==='object'&&'ok' in error&&error.ok===false)return error;return fail('INTERNAL_ERROR','本地资料暂时不可读取。')}
   }}))
 }

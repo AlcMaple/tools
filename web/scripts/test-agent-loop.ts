@@ -16,7 +16,7 @@ import type { RunEvent,RunView } from '../shared/agent-run'
 const directory=mkdtempSync(join(tmpdir(),'maple-agent-loop-')),cwd=process.cwd(),env={...process.env},originalFetch=globalThis.fetch
 mkdirSync(join(directory,'data'));process.chdir(directory)
 for(const key of Object.keys(process.env))if(/^(SENTRY_|VITE_SENTRY_|SMTP_|AI_|GOOGLE_|MAPLETOOLS_ENV_FILE$|VERCEL$)/.test(key)||/^(?:https?_proxy|all_proxy|no_proxy)$/i.test(key))delete process.env[key]
-process.env.NODE_ENV='production';process.env.DATA_DIR=join(directory,'data');process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.EMAIL_MODE='disabled';process.env.AGENT_CONTEXT_AI_ENABLED='0'
+process.env.NODE_ENV='production';process.env.DATA_DIR=join(directory,'data');process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.EMAIL_MODE='disabled';process.env.AGENT_CONTEXT_AI_ENABLED='0';process.env.AGENT_AI_ENABLED='0'
 let externalRequests=0,checks=0,httpRequests=0,modelCalls=0,toolCalls=0
 let cleanup:(()=>Promise<void>)|undefined
 globalThis.fetch=async()=>{externalRequests++;throw new Error('EXTERNAL_REQUEST_BLOCKED')}
@@ -329,8 +329,8 @@ try{
     while(!text.includes('event: completed')){const chunk=await reader.read();if(chunk.done)break;text+=new TextDecoder().decode(chunk.value)}
     assert(text.includes('event: completed'));assert(Date.now()-started<500);await reader.cancel()
   })
-  await check('生产入口保持未接入模型，不用 fake 代答；发布指纹不包含运行配置',async()=>{
-    reset();const b=book(),response=await productionApp.request(origin+'/api/agent/sessions/'+b.id+'/runs',{method:'POST',headers:{Cookie:cookies[0],Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({requestId:randomUUID(),expectedRevision:b.revision,body:'x'})});assert.equal(response.status,503);assert.equal((await response.json() as {code:string}).code,'AGENT_RUNTIME_NOT_READY');assert.equal(history.exportSession(alice,b.id).messages.length,0)
+  await check('生产未启用 AI 时拦截调用，不用 fake 代答；发布指纹不包含运行配置',async()=>{
+    reset();const b=book(),response=await productionApp.request(origin+'/api/agent/sessions/'+b.id+'/runs',{method:'POST',headers:{Cookie:cookies[0],Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({requestId:randomUUID(),expectedRevision:b.revision,body:'x'})});assert.equal(response.status,503);assert.equal((await response.json() as {code:string}).code,'AGENT_AI_DISABLED');assert.equal(history.exportSession(alice,b.id).messages.length,0)
     const liveKnowledge=await productionApp.request(origin+'/api/agent/knowledge',{headers:{Cookie:cookies[0]}});assert.equal(liveKnowledge.status,200);const snapshot=await liveKnowledge.json() as {conditions:Record<string,boolean>};assert.equal(snapshot.conditions.answerModelReady,false);assert.equal(snapshot.conditions.contextModelReady,false)
     const source=readFileSync(new URL('../server/agent/run-runtime.ts',import.meta.url),'utf8');assert(!source.includes('agent-fixtures'));assert(!source.includes('scripts/'))
     assert.equal(externalRequests,0)
