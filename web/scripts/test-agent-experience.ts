@@ -8,7 +8,9 @@ import { partialAnswer } from '../server/agent/provider-stream'
 import { createAnswerProvider } from '../server/agent/external-provider'
 import { MODEL_OUTPUT_SCHEMA } from '../shared/agent-contracts'
 import type { ProviderProfile } from '../server/agent/context-provider'
+import { checkPlan } from './agent-fixtures'
 let checks=0
+const settlePlan = checkPlan('X', 11, () => checks)
 const check=async(name:string,test:()=>unknown)=>{await test();console.log(`PASS X${++checks} ${name}`)}
 const render=(text:string)=>renderToStaticMarkup(createElement(AgentMarkdown,{text}))
 await check('粗体、斜体、标题、引用和列表渲染为结构元素',()=>{const html=render('# 标题\n\n**番剧周历**与*文字*\n\n> 引用\n\n1. 一\n2. 二\n\n- 项目');for(const tag of ['h1','strong','em','blockquote','ol','ul'])assert(html.includes('<'+tag));assert(!html.includes('**番剧周历**'))})
@@ -28,4 +30,5 @@ await check('供应商尚未结束时已收到 delta，不使用整段文本模�
  const iterator=provider.stream({system:'test',knowledge:{version:'v',release:'v',status:'ready',features:[],tools:[],notice:'',conditions:{}},layers:[],nativeState:null,tools:{},results:[],outputSchema:MODEL_OUTPUT_SCHEMA},new AbortController().signal)[Symbol.asyncIterator]()
  const first=await iterator.next();assert.deepEqual(first.value,{type:'delta',text:'第一段'});assert.equal(ended,false);release();let final=false;for(;;){const next=await iterator.next();if(next.done)break;if(next.value.type==='output')final=true}assert(final)
 })
+settlePlan()
 console.log(JSON.stringify({checks,failed:0,realAiCalls:0}))

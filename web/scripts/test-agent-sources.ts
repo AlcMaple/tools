@@ -6,7 +6,9 @@ import { PUBLIC_METRICS,publicAggregateScope,type PublicMetric } from '../shared
 import { SOURCE_SCHEMA } from '../shared/agent-contracts'
 import type { HistorySource } from '../shared/agent-history'
 import { matchesContract,validateToolResult } from '../server/agent/validation'
+import { checkPlan } from './agent-fixtures'
 let checks=0
+const settlePlan = checkPlan('S', 11, () => checks)
 const check=(name:string,run:()=>void)=>{run();console.log(`PASS S${++checks} ${name}`)}
 const source=(metric:PublicMetric,value:number,index:number,filters:NonNullable<HistorySource['aggregate']>['filters']={}):HistorySource=>({sourceId:`stat-${index}`,kind:'public_aggregate',label:'公开大厅只读统计',retrievedAt:1788830000000+index,aggregate:{metric,value,filters,scope:publicAggregateScope(metric,filters)}})
 const sources=PUBLIC_METRICS.map((metric,i)=>source(metric,[3,11,1,1][i],i))
@@ -22,4 +24,5 @@ check('口径准确区分账号数、追番记录数和已发布篇数',()=>{ass
 check('合同允许旧来源和新增统计证据，拒绝额外 URL/负数/私人字段/错误类型',()=>{assert(matchesContract(SOURCE_SCHEMA,sources[0]));const {aggregate,...old}=sources[0];assert(matchesContract(SOURCE_SCHEMA,old));for(const bad of [{...sources[0],url:'https://evil.test'},{...sources[0],aggregate:{...aggregate,value:-1}},{...sources[0],kind:'my_tracks'},{...sources[0],aggregate:{...aggregate,filters:{uid:1}}}])assert(!matchesContract(SOURCE_SCHEMA,bad))})
 check('工具结果核对指标、数值、时间、筛选及口径，拒绝伪造展示明细',()=>{const s=sources[0],args={metric:'public_users',filters:{}},result={ok:true,data:{metric:'public_users',value:3,asOf:s.retrievedAt},sources:[s],resultCount:1,truncated:false};validateToolResult('aggregatePublicData',result,args);for(const aggregate of [{...s.aggregate!,value:4},{...s.aggregate!,scope:'忽略条件的错误口径'},{...s.aggregate!,filters:{bgmId:101},scope:publicAggregateScope('public_users',{bgmId:101})}])assert.throws(()=>validateToolResult('aggregatePublicData',{...result,sources:[{...s,aggregate}]},args),/INVALID_OUTPUT/)})
 check('来源文字按文本转义，不注入 HTML',()=>{const s=source('public_users',3,1);s.aggregate!.scope='<img src=x onerror=alert(1)>';assert(!render([s]).includes('<img'));assert(render([s]).includes('&lt;img'))})
+settlePlan()
 console.log(JSON.stringify({checks,failed:0,realAiCalls:0}))
