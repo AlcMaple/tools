@@ -9,8 +9,16 @@ export interface ExternalLimits {
   globalDailyCost:number; userDailyCost:number; guestDailyCost:number; turnCost:number; guestTurnCost:number
   warningCost:number; userTurns:number; guestTurns:number; concurrency:number; dailyTokens:number; turnTokens:number
 }
-export const CONSERVATIVE_LIMITS:ExternalLimits={globalDailyCost:1,userDailyCost:0.1,guestDailyCost:0.02,turnCost:0.03,guestTurnCost:0.01,
-  warningCost:0.005,userTurns:30,guestTurns:10,concurrency:2,dailyTokens:1_000_000,turnTokens:256_000}
+// 按 DeepSeek 峰时价（in $0.44/M、out $1.32/M）与修正后的 token 估算实测标定，USD：
+//   单次模型调用：预授权 $0.0065、实际结算 $0.0038
+//   普通问答（2 次调用）$0.010 ／ 一次工具+回答（4 次）$0.018
+//   设计允许的最长回合（AGENT_LIMITS.toolRounds=12，即 13 次调用）峰值 $0.052
+//   userTurns=30 的一天 ≈ $0.225
+// 上限必须装得下设计上合法的最长回合，否则额度表和工具轮数自相矛盾——旧值 turnCost=$0.03
+// 连 13 次调用的一半都装不下，userDailyCost=$0.1 也装不下自己允许的 30 轮，正常用就会 COST_LIMIT。
+// 每项都留约 1.5 倍余量给更长的上下文与工具结果；需要更严可用 AGENT_LIMITS_JSON 覆盖。
+export const CONSERVATIVE_LIMITS:ExternalLimits={globalDailyCost:5,userDailyCost:0.5,guestDailyCost:0.15,turnCost:0.08,guestTurnCost:0.04,
+  warningCost:0.02,userTurns:30,guestTurns:10,concurrency:2,dailyTokens:3_000_000,turnTokens:400_000}
 interface Scope {id:string;owner:string;guest:boolean;project:boolean;day:string;lease:string}
 export class ExternalQuota {
   private readonly scope=new AsyncLocalStorage<Scope>()

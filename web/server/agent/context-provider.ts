@@ -16,7 +16,17 @@ export interface ContextProvider {
   count(input: JsonValue[], signal: AbortSignal): Promise<number>
 }
 export type ProviderTransport = (path: string, body: Record<string, unknown>, signal: AbortSignal, headers?: Record<string, string>, onText?: (text:string)=>void) => Promise<unknown>
-export const estimateContextTokens = (data: unknown): number => Buffer.byteLength(JSON.stringify(data), 'utf8') + 512
+// UTF-8 字节 → token 的保守换算。这个函数**曾经直接返回字节数**：一个汉字 3 字节却只有约
+// 0.6 token，于是中文负载被高估约 5 倍——实测同一次调用估算 34477、provider 实报 7938
+// （比值 4.34）。后果是 128k 档位实际只当 43k 用，单轮 $0.03 的费用上限实际只当 $0.007 用，
+// 正常的多轮工具回合走不完就 COST_LIMIT。
+//
+// 主流分词器上：ASCII / JSON 约 3.3 字节/token，中文约 5 字节/token。取 3 是刻意偏保守
+// （仍比实测的 4.34 高估约 1.45 倍）：宁可早一点压缩，也不要低估到真的超窗。
+// provider 有原生计数时走 count() 的 native 分支，不用这里的估算。
+export const BYTES_PER_TOKEN = 3
+export const estimateContextTokens = (data: unknown): number =>
+  Math.ceil(Buffer.byteLength(JSON.stringify(data), 'utf8') / BYTES_PER_TOKEN) + 512
 const object = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 const number = (v: unknown): number | null => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null
 
