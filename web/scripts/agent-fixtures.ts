@@ -66,3 +66,28 @@ export function createFakeProvider(events: readonly FakeAgentEvent[], delayMs = 
     },
   }
 }
+
+// 用例清单守卫。
+//
+// 各套件原本只有一个「跑过几条」的自增计数，没有「本该跑几条」。于是两种失效完全静默：
+// 中途 return，或 await 一个永不 resolve 的 promise。后者正是 test-agent-connections 的 C11 ——
+// 它等一个已经不会再发生的 DAILY_QUOTA 拒绝，把它后面的 6 条一起带走，而套件照常退出 0。
+//
+// planned 是人写的期望条数：加用例要同时改它，这点摩擦就是守卫本身。
+// 看门狗不 unref：挂起时进程本会因「顶层 await 未结算」以 13 退出，那是个含义模糊的码；
+// 留着这个 timer 让进程活到超时，再带着「停在第几条」以 1 退出。
+// 返回的 settle 在打印汇报 JSON 之前调用，传入实跑条数。
+export function checkPlan(prefix: string, planned: number, progress: () => number, timeoutMs = 600_000) {
+  const watchdog = setTimeout(() => {
+    console.error(`FAIL ${prefix} 套件卡住：计划 ${planned} 条，停在第 ${progress()} 条`)
+    process.exit(1)
+  }, timeoutMs)
+  return (actual: number = progress()) => {
+    clearTimeout(watchdog)
+    if (actual !== planned) {
+      console.error(`FAIL ${prefix} 实跑 ${actual} 条 \u2260 计划 ${planned} 条`)
+      process.exit(1)
+    }
+    return actual
+  }
+}

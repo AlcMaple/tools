@@ -6,12 +6,14 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import type { RunProvider,RunModelRequest } from '../server/agent/run-service'
 import type { ProviderProfile,ProviderTransport } from '../server/agent/context-provider'
+import { checkPlan } from './agent-fixtures'
 
 const dir=mkdtempSync(join(tmpdir(),'maple-agent-external-')),cwd=process.cwd(),env={...process.env}
 process.chdir(dir)
 for(const key of Object.keys(process.env))if(/^(AI_|AGENT_|SENTRY_|VITE_SENTRY_|SMTP_|GOOGLE_|MAPLETOOLS_ENV_FILE$)/.test(key))delete process.env[key]
 process.env.DATA_DIR=dir;process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.NODE_ENV='production';process.env.EMAIL_MODE='disabled'
 let checks=0
+const settlePlan = checkPlan('E', 36, () => checks)
 const check=async(name:string,fn:()=>unknown)=>{await fn();console.log(`PASS E${++checks} ${name}`)}
 try{
  const {ExternalQuota,CONSERVATIVE_LIMITS}=await import('../server/agent/external-quota')
@@ -93,5 +95,6 @@ try{
  await check('访客请求表只保存幂等元数据，无正文或占位会话',()=>{const columns=(db.prepare('PRAGMA table_info(agent_guest_requests)').all() as {name:string}[]).map(c=>c.name);assert.deepEqual(columns,['owner','id','created_at']);assert.equal((db.prepare('SELECT count(*) n FROM agent_sessions').get() as {n:number}).n,0)})
  await check('访客 UI 不访问持久存储，收起不卸载，身份切换卸载',()=>{const source=readFileSync(new URL('../src/agent/GuestAgent.tsx',import.meta.url),'utf8');assert(!/localStorage|sessionStorage|indexedDB|document.cookie/.test(source));assert(source.includes('active.current?.abort()'));const host=readFileSync(new URL('../src/agent/AgentHost.tsx',import.meta.url),'utf8');assert(host.includes('<GuestAgent key="guest" open={open}'));assert(!host.includes('owner:userId}:previous'))})
  memory.close();db.close()
+ settlePlan()
  console.log(JSON.stringify({checks,failed:0,realAiCalls:0,provider:'injected-protocol-fixtures',productionDataTouched:false}))
 }finally{process.chdir(cwd);process.env=env;rmSync(dir,{recursive:true,force:true})}
