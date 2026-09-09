@@ -172,6 +172,16 @@ export class AgentActionStore {
 
     const impact = this.impact(change.kind, before, after)
     const storedKind = change.kind === 'add_custom' ? 'add' : change.kind
+    // 同一会话里内容完全相同、仍在等确认的预览直接复用，不再开一张新卡。
+    // 模型会因为后续工具失败（例如播放打开要求先在追番里）而重试同一个提案，
+    // 每次都发新 actionId 的话，用户面前会并排出现两张一模一样的「待确认」，不知道该点哪个。
+    const twin = this.db.prepare(`SELECT * FROM agent_actions WHERE user_id = ? AND session_id = ? AND state = 'prepared'
+      AND expires_at > ? AND bgm_id = ? AND change_kind = ? AND after_json = ? ORDER BY created_at DESC LIMIT 1`)
+      .get(uid, ctx.sessionId, this.now(), bgmId, storedKind, JSON.stringify(after)) as ActionRow | undefined
+    if (twin) {
+      return { preview: { actionId: twin.id, bgmId: twin.bgm_id, kind: 'track_change', expiresAt: twin.expires_at, impact: twin.impact,
+        expectedRevision: twin.expected_revision, before: twin.before_json ? JSON.parse(twin.before_json) as TrackView : null, after: JSON.parse(twin.after_json) as TrackView } }
+    }
     const id = 'act-' + randomUUID(), created = this.now()
     this.db.prepare(`INSERT INTO agent_actions
       (id, user_id, session_id, run_id, message_id, bgm_id, change_kind, before_json, after_json, impact, expected_revision, confirm_token, token_version, knowledge_version, created_at, updated_at, expires_at)

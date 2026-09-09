@@ -138,7 +138,7 @@ export function TracksPage(): JSX.Element {
       if (action.kind === 'review') {
         if (track.bgmId > 0 && (track.status === 'watching' || track.status === 'done')) setWritingReview(track.bgmId)
         else toast('在追或看完的番，才可以打开点评助手')
-      } else if (track.bgmId > 0) setSearchFlow({source:action.source,track,mode:'online'})
+      } else if (track.bgmId > 0) setSearchFlow({source:action.source,track,mode:'online',agentAction:action.actionId})
     }
     receive()
     window.addEventListener(AGENT_NAVIGATION_EVENT,receive)
@@ -691,7 +691,7 @@ export function TracksPage(): JSX.Element {
           flow={pickerFlow}
           onPick={(cand) => confirmBind(sourceById(pickerFlow.source), pickerFlow.track.bgmId, cand)}
           onSearch={() => {
-            setSearchFlow({ source: pickerFlow.source, track: pickerFlow.track, mode: pickerFlow.mode })
+            setSearchFlow({ source: pickerFlow.source, track: pickerFlow.track, mode: pickerFlow.mode, agentAction: pickerFlow.agentAction })
             setPickerFlow(null)
           }}
           onClose={() => setPickerFlow(null)}

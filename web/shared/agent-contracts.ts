@@ -80,7 +80,15 @@ const trackPreview = object({
 })
 const playbackPreview = object({
   ...previewBase, bgmId, kind: choice('playback_open'), title: text(200),
-  source: choice('xifan', 'girigiri'), episode: integer(1, 20_000), target: choice('web_player'),
+  source: choice('xifan', 'girigiri'), episode: integer(1, 20_000), target: choice('web_player', 'source_search'),
+  // 一次确认可能连做三件人本来要手点的事，各自在卡片上单列一步：
+  // addsToTracks —— 加入追番，或把状态改成在看、进度推到这一集；
+  // bindsSource  —— 这部番还没认过片源，周表匹配到的候选（确认后才写全局绑定表）。
+  addsToTracks: boolean,
+  bindsSource: nullable(object({ id: text(32), name: text(200) })),
+  // 周表没匹配上时用户可以就地搜索、过验证码、挑一个片源。候选留在服务端按下标挑，
+  // 所以这里只给看得见的名字和辅助信息，不给 id。
+  sourceCandidates: nullable(array(object({ name: text(200), note: text(60, 0) }), 12)),
 })
 
 interface ToolContract {
@@ -111,6 +119,18 @@ export const AGENT_TOOLS = {
     description: '只读已有周历缓存及时间；过期照实标注，缺失返回 CACHE_MISS。', mode: 'read', scope: 'public',
     parameters: object({ range: object({ weekdays: { ...array(integer(1, 7), 7, 1), uniqueItems: true }, limit }, ['limit']) }),
     result: object({ items: array(object({ weekday: integer(1, 7), anime })), cachedAt: integer(), stale: boolean }),
+    timeoutMs: 1000, maxCallsPerTurn: 12,
+  },
+  readAiringSchedule: {
+    description: '按本地放送日期与更新星期推算这部番当前应该更新到第几集。只用离线资料，不联网核对；停播、合并放送或分割放送会有偏差，须如实说明是推算值。',
+    mode: 'read', scope: 'current_user',
+    parameters: object({ bgmId }),
+    result: object({
+      bgmId, title: text(200), airDate: nullable({ ...text(10), pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
+      airWeekday: nullable(integer(1, 7)), totalEpisodes: nullable(integer(1, 20_000)),
+      latestEpisode: nullable(integer(0, 20_000)), finished: nullable(boolean),
+      basis: choice('air_date_weekly', 'not_started', 'completed', 'insufficient_data'), asOf: integer(),
+    }),
     timeoutMs: 1000, maxCallsPerTurn: 12,
   },
   listMyTracks: {
@@ -144,8 +164,9 @@ export const AGENT_TOOLS = {
     result: trackPreview, timeoutMs: 3000, maxCallsPerTurn: 12,
   },
   proposePlaybackOpen: {
-    description: '只生成稀饭/Girigiri 的番剧、集数和目标页面预览；不请求源站。', mode: 'proposal', scope: 'current_user',
-    parameters: object({ bgmId, source: choice('xifan', 'girigiri'), episode: integer(1, 20_000) }),
+    description: '只生成稀饭/Girigiri 的番剧、集数和目标页面预览；不请求源站。番剧不在追番里时，预览会把「先加入追番」一并列出，用户确认一次顺序执行，不必另外调用 proposeTrackChange。', mode: 'proposal', scope: 'current_user',
+    parameters: object({ bgmId, source: choice('xifan', 'girigiri'), episode: integer(1, 20_000) }, ['bgmId', 'source']),
+    // 番剧不在追番里时不要改调 proposeTrackChange 重来一遍：本工具会把「加追番」一并放进同一张预览。
     result: playbackPreview, timeoutMs: 1000, maxCallsPerTurn: 12,
   },
 } as const satisfies Record<string, ToolContract>
@@ -162,6 +183,12 @@ export const MODEL_OUTPUT_SCHEMA: ContractSchema = { anyOf: [
 export const APPLY_TRACK_CHANGE_SCHEMA = object({
   actionId: id, requestId: id, expectedRevision: integer(), confirmationToken: text(512, 32),
 })
+
+// 阶段 8：播放页把浏览器/播放器事件回报给权威回执。事件名固定，状态与 origin 由服务端映射，
+// 页面不能自称已完成；不在 TOOL_NAMES 里，也永不发送给模型。
+export const PLAYBACK_EVENTS = ['page_ready', 'player_ready', 'source_selected', 'media_canplay', 'playing', 'watched', 'cross_origin', 'failed'] as const
+export type PlaybackEvent = typeof PLAYBACK_EVENTS[number]
+export const PLAYBACK_EVENT_SCHEMA = object({ actionId: id, event: choice(...PLAYBACK_EVENTS), detail: text(200, 0) }, ['actionId', 'event'])
 
 export const ERROR_CODES = [
   'INVALID_ARGUMENT', 'UNREGISTERED_TOOL', 'AUTH_REQUIRED', 'NOT_FOUND', 'CONTEXT_MISSING', 'CACHE_MISS',

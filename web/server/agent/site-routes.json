@@ -197,6 +197,11 @@
   {
     "file": "server/agent/run-api.ts",
     "method": "get",
+    "path": "/actions/:actionId/open"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "get",
     "path": "/bootstrap"
   },
   {
@@ -228,6 +233,36 @@
     "file": "server/agent/run-api.ts",
     "method": "post",
     "path": "/actions/:actionId/cancel"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/actions/:actionId/captcha"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/actions/:actionId/captcha/verify"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/actions/:actionId/open"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/actions/:actionId/pick-source"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/actions/:actionId/playback-event"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "post",
+    "path": "/actions/:actionId/source-search"
   },
   {
     "file": "server/agent/run-api.ts",

@@ -6,10 +6,10 @@ import { matchesContract,validateToolResult } from './validation'
 import type { ReadTool } from './run-service'
 import type { CalendarWeekday } from '../bgm/calendar'
 
-export const READ_DATA_TOOLS = ['searchOfflineAnime','readCurrentAnimeContext','readCachedCalendar','listMyTracks','listPublicReviews','aggregatePublicData'] as const
+export const READ_DATA_TOOLS = ['searchOfflineAnime','readCurrentAnimeContext','readCachedCalendar','readAiringSchedule','listMyTracks','listPublicReviews','aggregatePublicData'] as const
 export const GUEST_DATA_TOOLS = ['readCachedCalendar','listPublicReviews','aggregatePublicData'] as const
-// 阶段 7：追番变更预览工具。仅登录账号注册；访客知识与工具集永远不含它。
-export const PROPOSAL_DATA_TOOLS = ['proposeTrackChange'] as const
+// 阶段 7/8：追番变更与播放打开的预览工具。仅登录账号注册；访客知识与工具集永远不含它们。
+export const PROPOSAL_DATA_TOOLS = ['proposeTrackChange','proposePlaybackOpen'] as const
 export type DataPrincipal = {kind:'user';uid:number;sessionId:string;tokenVersion:number}|{kind:'guest'}
 export interface DataDependencies {
   db:Database.Database
@@ -104,6 +104,46 @@ export function createAgentDataTools(deps:DataDependencies,principal:DataPrincip
         for(const day of cache.data){guard();if(day.id<1||day.id>7||Array.isArray(range.weekdays)&&!range.weekdays.includes(day.id))continue
           for(const item of day.items){if(!Number.isSafeInteger(item.id)||item.id<=0)continue;items.push({weekday:day.id,anime:anime({bgm_id:item.id,name:item.name,name_cn:item.name_cn,date:item.airDate,eps:item.episodes})})}}
         result=success({items:items.slice(0,Number(range.limit)),cachedAt:cache.updatedAt,stale:now()-cache.updatedAt>=14*86400000},'calendar_cache','已有周历缓存',items.length>Number(range.limit))
+      }else if(name==='readAiringSchedule'){
+        // 「最新一集是第几集」不需要联网：放送日期 + 每周一集就能确定性地算出来。
+        // 资料优先级：当前账号的追番（有 air_date / air_weekday / total_episodes）→ 离线索引与本地补充表。
+        // 只推算、不断言：结果里带 basis，停播 / 合并放送 / 分割放送的偏差由模型如实转述。
+        const bgmId=Number(args.bgmId)
+        let airDate='',weekday=0,total:number|null=null,title='',kind='my_tracks',label='当前账号的追番'
+        if(principal.kind==='user'){
+          const t=deps.db.prepare('SELECT title,title_cn,air_date,air_weekday,total_episodes FROM tracks WHERE user_id=? AND bgm_id=?').get(principal.uid,bgmId) as Row|undefined
+          if(t){airDate=text(t.air_date,10);weekday=Number(t.air_weekday)||0;total=eps(t.total_episodes);title=text(t.title_cn||t.title,200)}
+        }
+        guard()
+        if(!airDate||!title){
+          let row:Row|undefined
+          const index=deps.index()
+          if(index){try{row=index.prepare('SELECT name,name_cn,date FROM anime WHERE bgm_id=?').get(bgmId) as Row|undefined}catch{/* 索引损坏时退到补充表 */}}
+          row??=deps.db.prepare('SELECT name,name_cn,date FROM bgm_search_additions WHERE bgm_id=?').get(bgmId) as Row|undefined
+          if(row){
+            if(!airDate){airDate=text(row.date,10);kind='offline_index';label='BGM 离线索引与本地补充'}
+            if(!title)title=text(row.name_cn||row.name,200)
+          }
+        }
+        guard()
+        // 周历缓存只用来补「星期几更新」，不改集数推算本身。
+        if(!weekday){const cache=deps.calendar();if(cache)for(const day of cache.data)if(day.items.some(i=>Number(i.id)===bgmId)){weekday=day.id;break}}
+        const day=/^\d{4}-\d{2}-\d{2}$/.test(airDate)?Date.parse(airDate+'T00:00:00Z'):NaN
+        let latest:number|null=null,finished:boolean|null=null,basis='insufficient_data'
+        if(!title)return fail('NOT_FOUND','离线资料里没有这个条目。')
+        if(!Number.isFinite(day))basis='insufficient_data'
+        else{
+          const days=Math.floor((start-day)/86_400_000)
+          if(days<0){latest=0;finished=false;basis='not_started'}
+          else{
+            const counted=Math.floor(days/7)+1
+            latest=total!==null&&total>0?Math.min(counted,total):counted
+            finished=total!==null&&total>0?counted>=total:null
+            basis=finished===true?'completed':'air_date_weekly'
+          }
+        }
+        result=success({bgmId,title,airDate:Number.isFinite(day)?airDate:null,airWeekday:weekday>=1&&weekday<=7?weekday:null,
+          totalEpisodes:total,latestEpisode:latest,finished,basis,asOf:start},kind,label)
       }else if(name==='listMyTracks'){
         if(principal.kind!=='user')return fail('AUTH_REQUIRED','需要登录。')
         const rows=deps.db.prepare(`SELECT t.bgm_id,t.title,t.title_cn,t.status,t.episode,t.user_tags FROM tracks t WHERE user_id=? AND ${animeType} ORDER BY t.updated_at DESC,t.bgm_id`).all(principal.uid) as Row[]

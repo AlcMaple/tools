@@ -18,6 +18,7 @@ import {
 import { BASE_URL, getPlaylist, isGirigiriId, resolveLine } from './girigiri/resolve'
 import { playerPageSecurity, renderNonce } from './security'
 import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources } from './player-sources'
+import { PLAYBACK_BEACON } from './agent/playback-beacon'
 
 const girigiri = new Hono()
 
@@ -248,6 +249,9 @@ const PLAY_PAGE = `<!doctype html>
   var animeId = q.get('animeId') || ''
   var ep = q.get('ep') || '1'
   var bgmId = q.get('bgmId') || ''
+${PLAYBACK_BEACON}
+  agentReport('page_ready', 'ep ' + ep)
+  agentWatch(document.getElementById('v'))
   var sourceOptions = __PLAYER_SOURCES__
   var v = $('v'), frame = $('frame')
   var lines = [], eps = [], curPl = null, resolvedMap = {}, hls = null, lineRequest = 0, playGeneration = 0
@@ -270,7 +274,7 @@ const PLAY_PAGE = `<!doctype html>
     recoverTimer = setTimeout(function(){ attempt(false) }, 600)
   })
 
-  function fail(txt){ var e = $('err'); e.textContent = txt; e.classList.add('show') }
+  function fail(txt){ agentReport('failed', txt); var e = $('err'); e.textContent = txt; e.classList.add('show') }
   function clearFail(){ var e = $('err'); e.classList.remove('show', 'retryable'); e.onclick = null }
   function inFrame(){ return frame.classList.contains('on') }
   function rememberNetworkPosition(){
@@ -324,7 +328,8 @@ const PLAY_PAGE = `<!doctype html>
     try { v.currentTime = Math.min(resumeTime, Number.isFinite(v.duration) ? Math.max(0, v.duration - .25) : resumeTime) } catch (e) {}
     if (resumeWasPlaying){ var rp = v.play(); if (rp && rp.catch) rp.catch(function(){}) }
   })
-  v.addEventListener('playing', function(){ resumePending = false; resumeWasPlaying = false; networkInterrupted = false })
+  v.addEventListener('canplay', function(){ agentReport('media_canplay') })
+  v.addEventListener('playing', function(){ agentReport('media_canplay'); agentReport('playing'); resumePending = false; resumeWasPlaying = false; networkInterrupted = false })
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
   function stopAll(){ playGeneration++; destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank' }
   function renderSources(){
@@ -359,6 +364,8 @@ const PLAY_PAGE = `<!doctype html>
   function embed(){
     curPl = curPl || { source: 1 }
     destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
+    // 退到源站自己的播放器：跨域之后父页面读不到任何播放状态，回执只能停在 unknown。
+    agentReport('cross_origin', 'source ' + (curPl ? curPl.source : '-'))
     v.classList.remove('on'); frame.classList.add('on'); renderChips(); frame.src = officialPage()
   }
   v.addEventListener('error', function(){
@@ -368,6 +375,7 @@ const PLAY_PAGE = `<!doctype html>
   })
   function playLine(pl){
     curPl = pl; clearFail(); stopAll(); renderChips()
+    agentReport('source_selected', 'line ' + pl.source + ' ' + pl.kind)
     v.classList.add('on'); frame.classList.remove('on')
     if (pl.kind === 'hls'){
       if (window.Hls && Hls.isSupported()){
@@ -476,6 +484,7 @@ const PLAY_PAGE = `<!doctype html>
       lines = d.lines || []; eps = d.eps || []; if (d.title) $('ttl').textContent = d.title
       await goodPromise
       renderEps(); renderChips(); renderGoodNote()
+      agentReport('player_ready', 'lines ' + lines.length)
       if (d.first){ resolvedMap[1] = d.first; playLine(d.first) } else fail('这一集解析不到，点上面其他线路试试')
     } catch (e){
       classifyMediaFailure(

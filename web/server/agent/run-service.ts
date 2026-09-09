@@ -242,7 +242,7 @@ export class AgentRunService {
           if(content.toolSummaries.length>48)throw new AgentRunError('TOOL_LIMIT')
           if(AGENT_TOOLS[call.name].mode==='proposal'&&envelope.ok){
             const preview=(result as unknown as {data:{actionId:string;impact:string}}).data
-            const action:HistoryAction={actionId:preview.actionId,kind:'track_change',state:'prepared',eventSeq:0,updatedAt:now(),evidence:'preview',errorCode:null,userReportedSuccess:false,summary:preview.impact}
+            const action:HistoryAction={actionId:preview.actionId,kind:call.name==='proposePlaybackOpen'?'playback_open':'track_change',state:'prepared',eventSeq:0,updatedAt:now(),evidence:'preview',errorCode:null,userReportedSuccess:false,summary:preview.impact}
             content.actions=[...content.actions.filter(a=>a.actionId!==action.actionId),action]
             if(content.actions.length>30)throw new AgentRunError('TOOL_LIMIT')
           }

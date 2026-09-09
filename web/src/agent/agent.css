@@ -70,6 +70,13 @@
 .agent-action-card[data-action-state=cancelled] { opacity:.7; }
 .agent-action-diff { display:grid;grid-template-columns:auto 1fr;gap:2px 8px;margin:6px 0;font-size:11px; }.agent-action-diff div { display:contents; }.agent-action-diff dt { color:var(--ink-sub); }.agent-action-diff dd { margin:0; }
 .agent-action-buttons { display:flex;gap:6px;justify-content:flex-end;margin-top:4px; }
+/* 就地认源：验证码一行、候选一列。图按源站原始尺寸给固定宽高，免得加载时卡片跳动。 */
+.agent-source-picker { margin:6px 0;display:flex;flex-direction:column;gap:6px;align-items:flex-start; }
+.agent-captcha { display:flex;gap:6px;align-items:center;flex-wrap:wrap; }
+.agent-captcha img { width:120px;height:40px;object-fit:contain;background:var(--paper);border:1px solid var(--rule);border-radius:4px; }
+.agent-captcha input { width:100px;font-size:12px;padding:3px 6px; }
+.agent-source-list { list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;align-self:stretch; }
+.agent-source-list button { width:100%;text-align:left; }
 .agent-message.is-editing { outline:1px dashed var(--teal-line);outline-offset:2px; }
 .agent-editing-note { display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--ink-sub);padding:5px 13px 0; }.agent-editing-note button { margin-left:auto;font-size:10.5px;color:var(--teal);background:none;border:none;cursor:pointer;padding:2px 4px; }
 .agent-composer { flex:none;padding:9px 13px 10px;background:var(--card);border-top:1px dashed var(--line); }

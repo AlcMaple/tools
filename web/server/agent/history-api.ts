@@ -10,7 +10,7 @@ import { AgentRunError } from '../../shared/agent-run'
 import { externalError,createExternalApi } from './external-api'
 import { matchesContract } from './validation'
 import { createAgentRunApi } from './run-api'
-import { agentActionStore, agentRunService, currentAgentKnowledge } from './run-runtime'
+import { agentActionStore, agentPlaybackStore, agentRunService, currentAgentKnowledge } from './run-runtime'
 
 const history = new Hono<{ Variables: { agentUid: number } }>()
 export const agentHistoryStore = new AgentHistoryStore(db)
@@ -113,7 +113,7 @@ history.get('/sessions/:sessionId/export', c => {
 })
 
 history.route('/provider',createExternalApi())
-history.route('/',createAgentRunApi(agentRunService,currentAgentKnowledge,agentActionStore))
+history.route('/',createAgentRunApi(agentRunService,currentAgentKnowledge,agentActionStore,agentPlaybackStore))
 history.route('/',createAgentContextApi(agentContextService))
 
 export default history

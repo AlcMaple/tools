@@ -5,11 +5,22 @@ import type { RunEvent } from '../../shared/agent-run'
 export interface AnimeContext { bgmId:number; title:string; titleCn?:string;year?:number|null;episodes?:number|null;tags?:string[];summary?:string;completed?:boolean|null; canReview?:boolean; canOpenSources?:boolean }
 export interface AgentIssue { code:string; message:string }
 export interface TrackFields { bgmId:number; title:string; status:string; episode:number; userTags:string[] }
-export interface ActionPreview {
+export interface TrackActionPreview {
   action:{actionId:string;state:string;errorCode:string|null;expiresAt:number;actualRevision:number|null}
   preview:{actionId:string;kind:'track_change';bgmId:number;impact:string;expectedRevision:number;expiresAt:number;before:TrackFields|null;after:TrackFields}
   confirmationToken:string|null
 }
+// 播放打开没有写入凭证：真正的执行发生在用户自己的浏览器里，服务端只签发回执。
+export interface PlaybackActionPreview {
+  action:{actionId:string;state:string;errorCode:string|null;expiresAt:number}
+  preview:{actionId:string;kind:'playback_open';bgmId:number;impact:string;expiresAt:number;title:string;source:'xifan'|'girigiri';episode:number;target:'web_player'|'source_search';addsToTracks:boolean;bindsSource:{id:string;name:string}|null;sourceCandidates:{name:string;note:string}[]|null}
+  openable:boolean
+}
+export type ActionPreview=TrackActionPreview|PlaybackActionPreview
+export const isPlaybackPreview=(p:ActionPreview|undefined):p is PlaybackActionPreview=>p?.preview.kind==='playback_open'
+export const isTrackPreview=(p:ActionPreview|undefined):p is TrackActionPreview=>p?.preview.kind==='track_change'
+/** 播放打开的确认入口：<a> 在用户手势内直接开新标签，异步请求不吃浏览器的弹窗手势。 */
+export const playbackOpenHref=(actionId:string):string=>`/api/agent/actions/${encodeURIComponent(actionId)}/open`
 export const STATUS_TEXT:Record<string,string>={watching:'在看',plan:'想看',considering:'观望',done:'看完'}
 export const activeCompact=(job:CompactJob|null):boolean=>Boolean(job&&!['completed','failed','cancelled','skipped'].includes(job.stage))
 export const idValid=(id:unknown):id is string=>typeof id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,99}$/.test(id)

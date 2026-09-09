@@ -26,6 +26,7 @@ export async function createAgentUiFixture(){
   const {AgentContextStore}=await import('../server/agent/context-store'),{AgentContextService}=await import('../server/agent/context-service'),{estimateContextTokens}=await import('../server/agent/context-provider')
   const {AgentRunStore}=await import('../server/agent/run-store'),{AgentRunService}=await import('../server/agent/run-service'),{createAgentRunApi}=await import('../server/agent/run-api'),{createAgentContextApi}=await import('../server/agent/context-api')
   const {AgentActionStore}=await import('../server/agent/actions-store')
+  const {AgentPlaybackStore}=await import('../server/agent/playback-store')
   const {AgentKnowledgeRegistry,AGENT_FEATURES,AGENT_FEATURE_REGISTRATIONS}=await import('../server/agent/knowledge'),{readLoadedRelease}=await import('../server/agent/release')
   const {default:production}=await import('../server/index'),{agentContextService:productionContext}=await import('../server/agent/context-runtime')
   const createUser=(name:string)=>Number(db.prepare('INSERT INTO users(username,pass_hash,created_at,security_question,security_answer_hash) VALUES(?,?,?,?,?)').run(name,randomBytes(32).toString('hex'),new Date().toISOString(),'fixture-question',randomBytes(32).toString('hex')).lastInsertRowid)
@@ -57,7 +58,10 @@ export async function createAgentUiFixture(){
     return{value:state,usage:usage('compact')}
   },async native(){throw new Error('NO_NATIVE_FIXTURE')}}
   const context=new AgentContextService(store,()=>provider),runStore=new AgentRunStore(db)
-  const release=readLoadedRelease().release,registry=new AgentKnowledgeRegistry(release,AGENT_FEATURE_REGISTRATIONS,AGENT_FEATURES,['searchOfflineAnime','readCurrentAnimeContext','readCachedCalendar','listMyTracks','listPublicReviews','aggregatePublicData'])
+  // 注册表直接取生产的 READ_DATA_TOOLS，不再抄一份：抄的那份一旦漏掉新工具，
+  // 功能说明里引用它的条目会被判成 pending_sync，表现为「发送没反应」而不是工具报错，很难查。
+  const {READ_DATA_TOOLS}=await import('../server/agent/data-tools')
+  const release=readLoadedRelease().release,registry=new AgentKnowledgeRegistry(release,AGENT_FEATURE_REGISTRATIONS,AGENT_FEATURES,READ_DATA_TOOLS)
   const knowledge=(uid:number)=>({...registry.snapshot(uid,{enabled:true,permissionVersion:mode,features:AGENT_FEATURES.map(f=>f.id),tools:['listMyTracks'],conditions:{answerModelReady:mode!=='unavailable',contextModelReady:true,chatUiReady:true}}),release:mode==='stale'?'older-client-test-server':release})
   const runs=new AgentRunService(runStore,uid=>({context,knowledge:()=>knowledge(uid),assertIdentity(){},provider:{source:'byok',model:profile.model,fingerprint:profile.fingerprint,async *stream(request,signal):AsyncGenerator<RunProviderEvent>{
     metrics.modelCalls++;yield{type:'usage',usage:usage()}
@@ -94,7 +98,7 @@ export async function createAgentUiFixture(){
   app.post('/__agent-test/mode',async c=>{const value=await c.req.json() as {mode:typeof mode};if(!['normal','slow','error','unavailable','stale','sources'].includes(value.mode))return c.json({ok:false},400);mode=value.mode;return c.json({ok:true})})
   app.get('/__agent-test/status',c=>c.json({metrics,mode,welcomeId:welcome.id,storyId:story.id,actionId:actionBook.id}))
   app.get('/api/agent/provider',c=>{c.header('X-Agent-Owner',String(c.get('agentUid')));return c.json({enabled:true,ready:true,source:'server',model:'ui-model-fixture',profiles:[{endpoint:'https://api.deepseek.com',model:'deepseek-v4-flash-vision-exp',contextTokens:1000000}],usage:{tokens:100,cost:0.001,turns:1,warningCost:0.005}})})
-  app.route('/api/agent',createAgentRunApi(runs,knowledge,new AgentActionStore(db,Date.now,uid=>knowledge(uid).version),{heartbeatMs:1000,idleMs:60_000}));app.route('/api/agent',createAgentContextApi(context));app.route('/',production)
+  app.route('/api/agent',createAgentRunApi(runs,knowledge,new AgentActionStore(db,Date.now,uid=>knowledge(uid).version),new AgentPlaybackStore(db,Date.now,uid=>knowledge(uid).version),{heartbeatMs:1000,idleMs:60_000}));app.route('/api/agent',createAgentContextApi(context));app.route('/',production)
   const dist=join(directory,'dist');cpSync(fileURLToPath(new URL('../dist/',import.meta.url)),dist,{recursive:true});const html=readFileSync(join(dist,'index.html'),'utf8').replace(/<script\b[^>]*src=["']https?:\/\/[^>]*>[\s\S]*?<\/script>/gi,'')
   app.get('/',c=>c.html(html));app.use('/*',serveStatic({root:dist}))
   const port=Number(process.env.AGENT_UI_PORT??0);if(!Number.isInteger(port)||port<0||port>65535)throw new Error('FIXTURE_PORT');

@@ -145,7 +145,8 @@ export class AgentRunStore {
       if(session.archivedAt!==null)throw new AgentRunError('SESSION_ARCHIVED')
       if(this.db.prepare("SELECT 1 FROM agent_runs WHERE user_id=? AND state='running'").get(uid)
         ||this.db.prepare('SELECT 1 FROM agent_sessions WHERE user_id=? AND context_job_id IS NOT NULL').get(uid))throw new AgentRunError('RUN_BUSY')
-      if(this.db.prepare("SELECT 1 FROM agent_messages WHERE user_id=? AND session_id=? AND (status='streaming' OR pending_actions=1)").get(uid,row.session_id))throw new AgentRunError('SESSION_BUSY')
+      // 与 appendUser 同一口径：只等还在写的回复，待确认的预览不挡继续（它在等用户，不是在跑）。
+      if(this.db.prepare("SELECT 1 FROM agent_messages WHERE user_id=? AND session_id=? AND status='streaming'").get(uid,row.session_id))throw new AgentRunError('SESSION_BUSY')
       const newest=this.db.prepare("SELECT id FROM agent_messages WHERE user_id=? AND session_id=? AND role='user' ORDER BY seq DESC LIMIT 1").get(uid,row.session_id) as {id:string}
       if(newest.id!==row.user_message_id)throw new AgentRunError('STALE_TURN')
       const now=this.now(), checkpoint=this.checkpoint(row)
@@ -195,7 +196,9 @@ export class AgentRunStore {
       // 终态事件自带「落库后的会话 + 定型的回答消息 + 权威回合」。客户端据此就地收尾,
       // 不必再为一个已经结束的回合去拉快照和回合状态 —— 流的最后一帧就是权威记录。
       //
-      // message 只带 delta 传不到的部分(来源、工具摘要、用量、最终状态),正文不重复(已由 delta 落地)。
+      // message 只带 delta 传不到的部分(来源、工具摘要、**动作**、用量、最终状态),正文不重复(已由 delta 落地)。
+      // actions 一旦漏掉,客户端 settle() 走「流干净就不回读」这条捷径时就永远拿不到待确认的预览,
+      // 表现为回复早就结束、动作卡过很久才被别的刷新带出来。
       // 找不到对应消息时省略,客户端自动回退到整套回读(见 controller.settle)。
       // run 的 lastEventSeq 此刻还差这条终态事件本身,客户端按事件 seq 校正(见 controller.event)。
       const snap=this.history().snapshot(uid,row.session_id,{limit:1})
@@ -203,7 +206,7 @@ export class AgentRunStore {
       const finished=this.view(this.row(uid,id))
       this.event(uid,id,state,{code,attempt:row.attempt,session:snap.session as unknown as JsonValue,
         run:finished as unknown as JsonValue,
-        message:ended?{id:ended.id,seq:ended.seq,status:ended.status,sources:ended.sources,toolSummaries:ended.toolSummaries,usage:ended.usage} as unknown as JsonValue:null},true)
+        message:ended?{id:ended.id,seq:ended.seq,status:ended.status,sources:ended.sources,toolSummaries:ended.toolSummaries,actions:ended.actions,usage:ended.usage} as unknown as JsonValue:null},true)
       return finished
     }).immediate()
   }

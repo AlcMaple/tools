@@ -12,12 +12,14 @@ import type { AgentUsage,AgentToolName,JsonValue,SummaryState } from '../shared/
 import type { ContextProvider,ProviderProfile } from '../server/agent/context-provider'
 import type { RunProviderEvent,RunModelRequest,ReadTool } from '../server/agent/run-service'
 import type { RunEvent,RunView } from '../shared/agent-run'
+import { checkPlan } from './agent-fixtures'
 
 const directory=mkdtempSync(join(tmpdir(),'maple-agent-loop-')),cwd=process.cwd(),env={...process.env},originalFetch=globalThis.fetch
 mkdirSync(join(directory,'data'));process.chdir(directory)
 for(const key of Object.keys(process.env))if(/^(SENTRY_|VITE_SENTRY_|SMTP_|AI_|GOOGLE_|MAPLETOOLS_ENV_FILE$|VERCEL$)/.test(key)||/^(?:https?_proxy|all_proxy|no_proxy)$/i.test(key))delete process.env[key]
 process.env.NODE_ENV='production';process.env.DATA_DIR=join(directory,'data');process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.EMAIL_MODE='disabled';process.env.AGENT_CONTEXT_AI_ENABLED='0';process.env.AGENT_AI_ENABLED='0'
 let externalRequests=0,checks=0,httpRequests=0,modelCalls=0,toolCalls=0
+const settlePlan = checkPlan('R', 38, () => checks)
 let cleanup:(()=>Promise<void>)|undefined
 globalThis.fetch=async()=>{externalRequests++;throw new Error('EXTERNAL_REQUEST_BLOCKED')}
 const obj=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
@@ -30,6 +32,7 @@ try{
   const {estimateContextTokens}=await import('../server/agent/context-provider')
   const {AgentRunStore,initializeAgentRunSchema}=await import('../server/agent/run-store'),{AgentRunService}=await import('../server/agent/run-service')
   const {AgentActionStore}=await import('../server/agent/actions-store')
+  const {AgentPlaybackStore}=await import('../server/agent/playback-store')
   const {AgentRunError}=await import('../shared/agent-run'),{createAgentRunApi}=await import('../server/agent/run-api')
   const {AgentKnowledgeRegistry,AGENT_FEATURES,AGENT_FEATURE_REGISTRATIONS,knowledgeHash}=await import('../server/agent/knowledge')
   const {AGENT_TOOLS}=await import('../shared/agent-contracts'),{AGENT_LIMITS}=await import('../server/agent/policy')
@@ -68,7 +71,7 @@ try{
     stream(request:RunModelRequest,signal:AbortSignal){requests.push(structuredClone(request));return script(request,signal,++modelCalls)}},context,tools,knowledge:()=>knowledge(alice),assertIdentity(){if(!enabled)throw new AgentRunError('AUTH_REQUIRED',401)}})
   const store=new AgentRunStore(db,()=>now),service=new AgentRunService(store,uid=>({...resolve(),knowledge:()=>knowledge(uid)}),{heartbeatMs:5})
   const services=[service]
-  const app=new Hono();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard());app.route('/api/agent',createAgentRunApi(service,knowledge,new AgentActionStore(db,()=>now,uid=>knowledge(uid).version),{heartbeatMs:1000,idleMs:500}));app.route('/',productionApp)
+  const app=new Hono();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard());app.route('/api/agent',createAgentRunApi(service,knowledge,new AgentActionStore(db,()=>now,uid=>knowledge(uid).version),new AgentPlaybackStore(db,()=>now,uid=>knowledge(uid).version),{heartbeatMs:1000,idleMs:500}));app.route('/',productionApp)
   const server=serve({fetch:app.fetch,hostname:'localhost',port:0});await once(server,'listening')
   const address=server.address();assert(address&&typeof address!=='string')
   const origin=`http://${address.address.includes(':')?`[${address.address}]`:address.address}:${address.port}`
@@ -98,6 +101,10 @@ try{
     assert.equal(row.state,'completed');assert.deepEqual(actors,[alice]);const message=history.exportSession(alice,b.id).messages.at(-1)!
     assert.equal(message.body,'线索已整理。');assert.equal(message.status,'completed');assert.deepEqual(message.sourceIds,['test-source']);assert.deepEqual(message.usage.map(u=>u.operation),['model','tool','model']);assert.equal(message.actions.length,0)
     assert(Object.values(requests[0].tools).every(t=>t.mode==='read'));assert(!Object.hasOwn(requests[0].tools,'proposeTrackChange'))
+    // 终态帧必须带 actions：客户端在流干净时不再回读（controller.settle），
+    // 漏掉这一项待确认预览就永远送不到界面，表现为回复早就结束、动作卡过很久才被别的刷新带出来。
+    const ending=store.events(alice,completed.id,0).find(e=>e.type==='completed')!
+    assert(Array.isArray(obj(obj(ending.data).message).actions))
   })
   await check('HTTP 保存、查询和 SSE 回放同一事件序列，不发送提示词或内部 checkpoint',async()=>{
     const response=await req(`/runs/${completed.id}`);assert.equal(response.status,200)
@@ -215,8 +222,11 @@ try{
     db.prepare('UPDATE users SET token_version=1 WHERE id=?').run(revoked);await service.wait(run.id);assert.equal(store.row(revoked,run.id).code,'AUTH_REQUIRED')
   })
   await check('长历史通过真实阶段 2 准备入口触发自动压缩，原文没有裁掉',async()=>{
+    // 长度按「跨过 64k 档的自动压缩线」反推：compactAt = 0.78×64k ≈ 49.9k token，
+    // 按估算器的 3 字节/token 约需 150 KB 正文；30 轮 × 每条 '早期线索'×420（5 KB）刚好越线，
+    // 同时把最近若干轮的固定原文留在 maxInputTokens 之内。改 BYTES_PER_TOKEN 要同步重算这里。
     reset();let b=book();b=contextStore.setContext(alice,b.id,b.revision,{contextTier:'64k',adaptive:false})
-    for(let i=0;i<30;i++){b=history.appendUser(alice,b.id,{requestId:randomUUID(),expectedRevision:b.revision,body:'早期线索'.repeat(150)}).session;b=history.appendAssistant(alice,b.id,{requestId:randomUUID(),expectedRevision:b.revision,body:'收到',status:'completed',sources:[],toolSummaries:[],actions:[],usage:[]}).session}
+    for(let i=0;i<30;i++){b=history.appendUser(alice,b.id,{requestId:randomUUID(),expectedRevision:b.revision,body:'早期线索'.repeat(420)}).session;b=history.appendAssistant(alice,b.id,{requestId:randomUUID(),expectedRevision:b.revision,body:'收到',status:'completed',sources:[],toolSummaries:[],actions:[],usage:[]}).session}
     const before=compactCalls,run=await begin(b.id),row=await terminalRow(run)
     assert.equal(row.state,'completed',JSON.stringify(store.view(row)));assert(compactCalls>before);assert.equal(history.exportSession(alice,b.id).messages.length,62);assert(contextStore.session(alice,b.id).activeSummaryVersion!==null)
     assert(store.events(alice,run.id,0).some(e=>e.type==='context'&&obj(e.data).state==='compacting'))
@@ -336,5 +346,6 @@ try{
     const source=readFileSync(new URL('../server/agent/run-runtime.ts',import.meta.url),'utf8');assert(!source.includes('agent-fixtures'));assert(!source.includes('scripts/'))
     assert.equal(externalRequests,0)
   })
+  settlePlan()
   console.log(JSON.stringify({checks,failed:0,httpRequests,scriptedModelCalls:modelCalls,scriptedToolCalls:toolCalls,externalRequests,realAiCalls:0,modelQuality:'not_run',database:'temporary-file-sqlite',sse:'loopback-and-bounded-client',productionDataTouched:false}))
 }finally{await cleanup?.();globalThis.fetch=originalFetch;process.chdir(cwd);process.env=env;rmSync(directory,{recursive:true,force:true})}
