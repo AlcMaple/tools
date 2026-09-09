@@ -156,7 +156,12 @@ export async function prepareExternal(uid:number|null,owner:string,signal:AbortS
   const joined=serverPreparation!==null
   if(!serverPreparation){
     if(serverPreparationFailure&&serverPreparationFailure.until>Date.now())throw serverPreparationFailure.error
-    serverPreparation=connectExternal(uid,owner,{source:'server'},signal,true).then(()=>{serverPreparationFailure=null},error=>{
+    // 共享连接**不能绑在发起者的请求信号上**：项目自带 key 时全站共用这一条，
+    // 谁先来谁发起，但他刷新/关页面不该把所有人的连接一起取消。
+    // 以前用调用者的 signal，页面在 30 分钟连接建立前刷新一次，探测就被 abort：
+    // 钱照付、连接没缓存、下次加载再探一次（终端里那条 Client connection prematurely closed 就是它）。
+    // 各调用者仍用自己的 signal 停止**等待**（下面的 waitBounded），共享的活照做完。
+    serverPreparation=connectExternal(uid,owner,{source:'server'},AbortSignal.timeout(30_000),true).then(()=>{serverPreparationFailure=null},error=>{
       serverPreparationFailure=sharedPreparationError(error)?{error,until:Date.now()+30000}:null
       throw error
     })
