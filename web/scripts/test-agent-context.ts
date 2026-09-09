@@ -10,12 +10,14 @@ import type { ContextProvider, ProviderProfile } from '../server/agent/context-p
 import type { ProviderCapabilities } from '../server/agent/policy'
 import type { CompactJob, PreferenceCard, ContextSummary, NativeWindow } from '../shared/agent-context'
 import type { HistorySession } from '../shared/agent-history'
+import { checkPlan } from './agent-fixtures'
 
 const directory=mkdtempSync(join(tmpdir(),'maple-agent-context-')),cwd=process.cwd(),env={...process.env},originalFetch=globalThis.fetch
 mkdirSync(join(directory,'data'));process.chdir(directory)
 for(const key of Object.keys(process.env))if(/^(SENTRY_|VITE_SENTRY_|SMTP_|AI_|GOOGLE_|MAPLETOOLS_ENV_FILE$|VERCEL$)/.test(key)||/^(?:https?_proxy|all_proxy|no_proxy)$/i.test(key))delete process.env[key]
 process.env.NODE_ENV='production';process.env.DATA_DIR=join(directory,'data');process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.EMAIL_MODE='disabled';process.env.AGENT_CONTEXT_AI_ENABLED='0'
 let externalRequests=0,checks=0,httpRequests=0
+const settlePlan = checkPlan('CX', 29, () => checks)
 globalThis.fetch=async()=>{externalRequests++;throw new Error('EXTERNAL_REQUEST_BLOCKED')}
 const obj=(v:unknown):Record<string,unknown>=>v&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:{}
 let close:(()=>Promise<void>)|undefined
@@ -191,7 +193,9 @@ try {
     }
   })
   await check('自动阈值启动同一压缩流水线；固定窗口不被突破',async()=>{
-    driver=fake();const target=seed(alice,40,'资料'.repeat(160));store.setContext(alice,target.id,target.revision,{contextTier:'64k',adaptive:false})
+    // 长度按「跨过 64k 档的自动压缩线」反推：compactAt = 0.78×64k ≈ 49.9k token，
+    // 换算约 150 KB 正文（估算器 3 字节/token）。改动 BYTES_PER_TOKEN 时这里要同步重算。
+    driver=fake();const target=seed(alice,40,'资料'.repeat(640));store.setContext(alice,target.id,target.revision,{contextTier:'64k',adaptive:false})
     const result=await service.prepare(alice,target.id,{requestId:randomUUID(),expectedRevision:revision(target.id),question:'继续整理'})
     assert.equal(result.state,'compacting');assert(result.job);await service.wait(result.job.id)
     assert.equal(store.job(alice,result.job.id).stage,'completed',store.job(alice,result.job.id).errorCode??'')
@@ -199,7 +203,9 @@ try {
   })
   await check('自适应按固定内容需求扩档；BYOK 小窗口取更小值',async()=>{
     driver=fake();const target=seed(alice,2);store.setContext(alice,target.id,target.revision,{contextTier:'64k',adaptive:true})
-    const p=await service.prepare(alice,target.id,{requestId:randomUUID(),expectedRevision:revision(target.id),question:'长'.repeat(20_000)})
+    // 问题本身就要超过 64k 档才会扩档：compactAt ≈ 49.9k token ×3 字节 ≈ 150 KB，
+    // 一个「长」字 3 字节，故需 5 万字以上。同样随 BYTES_PER_TOKEN 变化。
+    const p=await service.prepare(alice,target.id,{requestId:randomUUID(),expectedRevision:revision(target.id),question:'长'.repeat(60_000)})
     assert.equal(p.state,'ready');assert.notEqual(store.session(alice,target.id).contextTier,'64k')
     driver=fake({...caps,contextTokens:32_000});const small=seed(alice,2)
     const r=await service.prepare(alice,small.id,{requestId:randomUUID(),expectedRevision:small.revision,question:'继续'})
@@ -295,7 +301,7 @@ try {
     assert.equal(externalRequests,0)
   })
   await check('固定原文预算不足或模型探测失败时不写候选摘要',async()=>{
-    driver=fake();const large=seed(alice,24,'资料'.repeat(1400));store.setContext(alice,large.id,large.revision,{contextTier:'64k',adaptive:false})
+    driver=fake();const large=seed(alice,24,'资料'.repeat(4200));store.setContext(alice,large.id,large.revision,{contextTier:'64k',adaptive:false})
     const failed=await compact(large.id);assert.equal(failed.errorCode,'CONTEXT_BUDGET');assert.equal(driver.calls.includes('extract'),false)
     driver=fake({...caps},{failProbe:true});const target=seed();const unavailable=await compact(target.id)
     assert.equal(unavailable.errorCode,'PROVIDER_CAPABILITY');assert.equal(store.active(alice,target.id),null)
@@ -348,6 +354,7 @@ try {
     assert.deepEqual(store.versions(alice,target.id),[]);assert.deepEqual(store.exportContext(alice,target.id).compactions,[])
     assert.equal((db.prepare('SELECT context_bytes AS n FROM agent_sessions WHERE id=?').get(target.id) as {n:number}).n,0)
   })
+  settlePlan()
   console.log(JSON.stringify({checks,failed:0,httpRequests,externalRequests,realAiCalls:0,modelQuality:'not_run',nativeAdapters:'scripted-transport-verified',originalHistory:'preserved'}))
 } finally {
   await close?.();globalThis.fetch=originalFetch;process.chdir(cwd)

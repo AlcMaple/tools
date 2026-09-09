@@ -13,12 +13,18 @@ export function reportedUsage(raw:unknown){
   if(![input,output,cached].every(n=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0)||(cached as number)>(input as number))return null
   return {input:input as number,output:output as number,cached:cached as number}
 }
+// 费用预授权保留多少输出。**不是** max_tokens：实测回答只有 60～500 token，按满额 8192 冻结
+// 相当于每次多占十几倍，单轮上限里塞不下两次调用，正常的多轮工具回合必然 COST_LIMIT
+// （加油站按整箱油预授权的那种毛病）。真实花费由 settle() 按 provider 实报补差，一分不少收；
+// 单次最多低估 (max_tokens - RESERVED_OUTPUT_TOKENS) 的输出费用，下一次调用前就会被上限拦住。
+export const RESERVED_OUTPUT_TOKENS=1024
 export function meteredTransport(transport:ProviderTransport,quota:ExternalQuota,price:PriceCard,contextTokens:number):ProviderTransport{
   return async(path,body,signal,headers,onText)=>{
     signal.throwIfAborted()
     const input=estimateContextTokens(body),output=Number(body.max_tokens)
+    // 窗口检查仍按满额 output：模型真有可能写满，超窗是硬错误，不能按预期值放行。
     if(!Number.isSafeInteger(output)||output<1||input+output>contextTokens)throw new AgentRunError('CONTEXT_BUDGET')
-    const settle=quota.reserve(input,output,price,{operation:onText?'model':body.tools||String(record(Array.isArray(body.messages)?body.messages[0]:null).content??'').startsWith('只返回 JSON 对象 {"nonce"')?'probe':'compact',model:String(body.model??'unknown').slice(0,100)})
+    const settle=quota.reserve(input,Math.min(output,RESERVED_OUTPUT_TOKENS),price,{operation:onText?'model':body.tools||String(record(Array.isArray(body.messages)?body.messages[0]:null).content??'').startsWith('只返回 JSON 对象 {"nonce"')?'probe':'compact',model:String(body.model??'unknown').slice(0,100)})
     try{const result=await transport(path,body,signal,headers,onText);settle(reportedUsage(result));return result}catch(error){settle(null);throw error}
   }
 }
@@ -37,7 +43,8 @@ export function createAnswerProvider(profile:ProviderProfile,transport:ProviderT
       {role:'user',content:serializeModelMaterial({layers:request.layers,availableTools,toolResults:request.results})}],
       response_format:{type:'json_object'},temperature:0,max_tokens:Math.min(maxOutput,profile.capabilities.maxOutputTokens),
       ...(profile.model.startsWith('deepseek-')?{thinking:{type:'disabled'}}:{})}
-    const ceiling=estimateCost(estimateContextTokens(body),0,body.max_tokens,price)!
+    // 价格预警与预授权同一口径；按满额算的话每次调用都会触发，等于没有预警。
+    const ceiling=estimateCost(estimateContextTokens(body),0,Math.min(body.max_tokens,RESERVED_OUTPUT_TOKENS),price)!
     if(ceiling>=warningCost)yield {type:'warning',estimatedCost:ceiling,currency:price.currency}
     let wake:()=>void=()=>{},finished=false,failure:unknown,result:unknown,sent=''
     const pending:string[]=[]
