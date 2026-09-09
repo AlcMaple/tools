@@ -6,10 +6,11 @@ import { getSession, rateLimited } from '../auth'
 import { AgentHistoryError, HISTORY_LIMITS } from '../../shared/agent-history'
 import { AgentRunError, RUN_LIMITS } from '../../shared/agent-run'
 import { AGENT_LIMITS } from './policy'
-import { APPLY_TRACK_CHANGE_SCHEMA } from '../../shared/agent-contracts'
+import { APPLY_TRACK_CHANGE_SCHEMA, PLAYBACK_EVENT_SCHEMA, type PlaybackEvent } from '../../shared/agent-contracts'
 import { matchesContract } from './validation'
 import type { AgentRunService } from './run-service'
 import type { AgentActionStore } from './actions-store'
+import type { AgentPlaybackStore } from './playback-store'
 import type { KnowledgeSnapshot } from './knowledge'
 import { logAgentIssue, logAgentRequest } from './diagnostics'
 
@@ -23,7 +24,7 @@ async function readBody(c:Context):Promise<unknown>{
   if(!/^application\/json(?:;|$)/i.test(c.req.header('content-type')??''))throw new AgentRunError('INVALID_ARGUMENT',400)
   try{return await c.req.json()}catch{throw new AgentRunError('INVALID_ARGUMENT',400)}
 }
-export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)=>KnowledgeSnapshot,actions:AgentActionStore,
+export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)=>KnowledgeSnapshot,actions:AgentActionStore,playback:AgentPlaybackStore,
   timings:{heartbeatMs:number;idleMs:number}={heartbeatMs:AGENT_LIMITS.heartbeatMs,idleMs:AGENT_LIMITS.idleMs}) {
   const app=new Hono<{Variables:{runUid:number;runTv:number}}>(),subscribers=new Map<number,number>()
   app.use('*',async(c,next)=>{
@@ -32,9 +33,11 @@ export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)
     if(!session)throw new AgentRunError('AUTH_REQUIRED',401)
     c.set('runUid',session.uid);c.set('runTv',session.tv);c.header('X-Agent-Owner',String(session.uid))
     logAgentRequest('run-api',c.req.method,c.req.path,session.uid)
-    if(rateLimited(`agent-run:${c.req.method==='GET'?'read':'write'}:${session.uid}`,c.req.method==='GET'?120:30,60_000)){
+    // 播放回执是播放页自发的遥测（一次播放最多八条），不该跟用户手动操作抢同一个写额度。
+    const bucket=c.req.path.endsWith('/playback-event')?['playback',120] as const:[c.req.method==='GET'?'read':'write',c.req.method==='GET'?120:30] as const
+    if(rateLimited(`agent-run:${bucket[0]}:${session.uid}`,bucket[1],60_000)){
       c.header('Retry-After','60')
-      logAgentIssue('run-api',{limit:c.req.method==='GET'?'read 120/min':'write 30/min',method:c.req.method,path:c.req.path,uid:session.uid})
+      logAgentIssue('run-api',{limit:`${bucket[0]} ${bucket[1]}/min`,method:c.req.method,path:c.req.path,uid:session.uid})
       throw new AgentRunError('RATE_LIMITED',429)
     }
     await next();c.header('Cache-Control','no-store')
@@ -54,9 +57,82 @@ export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)
     if(Object.keys(c.req.queries()).length)throw new AgentRunError('INVALID_ARGUMENT',400)
     return c.json({knowledge:knowledge(uid),...service.store.history().listSessions(uid,{})})
   })
-  const actionId=(c:Context)=>{const id=c.req.param('actionId')??'';if(!/^act-[a-zA-Z0-9-]{1,90}$/.test(id))throw new AgentRunError('NOT_FOUND',404);return id}
-  app.get('/actions/:actionId',c=>c.json(actions.detail(c.get('runUid'),actionId(c))))
+  // 追番变更是 act-，播放打开是 pb-：前缀即路由，两套回执各自独立，永不互相顶替。
+  const actionId=(c:Context)=>{const id=c.req.param('actionId')??'';if(!/^(act|pb)-[a-zA-Z0-9-]{1,90}$/.test(id))throw new AgentRunError('NOT_FOUND',404);return id}
+  const isPlayback=(id:string)=>id.startsWith('pb-')
+  app.get('/actions/:actionId',c=>{const id=actionId(c),uid=c.get('runUid');return c.json(isPlayback(id)?playback.detail(uid,id):actions.detail(uid,id))})
+  // 播放打开：用户点击那一下。已认过片源的走 GET —— <a target="_blank"> 在用户手势内直接
+  // 打开新标签，服务端先把回执推进到 dispatch_started 再 302 到同源播放页，异步请求不吃弹窗手势。
+  // 还没认片源的走 POST，前端拿到导航意图后把用户送进既有的「继续看 → 选片源」弹窗。
+  app.get('/actions/:actionId/open',c=>{
+    const id=actionId(c)
+    if(!isPlayback(id))throw new AgentRunError('NOT_FOUND',404)
+    if(c.req.header('sec-fetch-site')==='cross-site')throw new AgentRunError('AUTH_REQUIRED',401)
+    // 组合动作要写追番或写全局片源绑定。同源守卫只覆盖 POST/PUT/PATCH/DELETE，写入不能挂在 GET 上——
+    // 这类预览由客户端先开空白标签再走 POST（见 controller.openPlayback）。
+    const pv=playback.detail(c.get('runUid'),id).preview
+    if(pv.addsToTracks||pv.bindsSource)throw new AgentRunError('INVALID_ARGUMENT',400)
+    const result=playback.open(c.get('runUid'),id)
+    if(!result.url)throw new AgentRunError('INVALID_ARGUMENT',400)
+    return c.redirect(result.url,302)
+  })
+  const emptyBody=async(c:Parameters<typeof readBody>[0])=>{
+    const body=await readBody(c)
+    if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length)throw new AgentRunError('INVALID_ARGUMENT',400)
+  }
+  app.post('/actions/:actionId/open',async c=>{
+    const id=actionId(c)
+    if(!isPlayback(id))throw new AgentRunError('NOT_FOUND',404)
+    await emptyBody(c)
+    return c.json(playback.open(c.get('runUid'),id))
+  })
+  // ── 就地认源（周表没匹配上的番）─────────────────────────────────────────────
+  // 四条全用 POST：搜索和取验证码都会改动源站会话状态，取一张新图还会作废旧图，
+  // 都不是 GET 的语义；同源守卫也只覆盖写方法。
+  app.post('/actions/:actionId/source-search',async c=>{
+    const id=actionId(c)
+    if(!isPlayback(id))throw new AgentRunError('NOT_FOUND',404)
+    await emptyBody(c)
+    return c.json(await playback.searchSource(c.get('runUid'),id))
+  })
+  app.post('/actions/:actionId/captcha',async c=>{
+    const id=actionId(c)
+    if(!isPlayback(id))throw new AgentRunError('NOT_FOUND',404)
+    await emptyBody(c)
+    c.header('Cache-Control','no-store')
+    return c.json(await playback.captcha(c.get('runUid'),id))
+  })
+  app.post('/actions/:actionId/captcha/verify',async c=>{
+    const id=actionId(c)
+    if(!isPlayback(id))throw new AgentRunError('NOT_FOUND',404)
+    const body=await readBody(c)
+    if(!body||typeof body!=='object'||Array.isArray(body))throw new AgentRunError('INVALID_ARGUMENT',400)
+    const code=(body as {code?:unknown}).code
+    if(typeof code!=='string')throw new AgentRunError('INVALID_ARGUMENT',400)
+    return c.json(await playback.verifyCaptcha(c.get('runUid'),id,code))
+  })
+  app.post('/actions/:actionId/pick-source',async c=>{
+    const id=actionId(c)
+    if(!isPlayback(id))throw new AgentRunError('NOT_FOUND',404)
+    const body=await readBody(c)
+    if(!body||typeof body!=='object'||Array.isArray(body))throw new AgentRunError('INVALID_ARGUMENT',400)
+    const index=(body as {index?:unknown}).index
+    if(typeof index!=='number')throw new AgentRunError('INVALID_ARGUMENT',400)
+    return c.json(playback.pickSource(c.get('runUid'),id,index))
+  })
+  // 播放页回报浏览器 / 播放器事件。状态与证据来源由服务端映射，页面不能自称已完成；
+  // 乱序、重放或已终结的事件不算错误，原样返回权威回执。
+  app.post('/actions/:actionId/playback-event',async c=>{
+    const id=actionId(c)
+    if(!isPlayback(id))throw new AgentRunError('NOT_FOUND',404)
+    const body=await readBody(c)
+    if(!matchesContract(PLAYBACK_EVENT_SCHEMA,body))throw new AgentRunError('INVALID_ARGUMENT',400)
+    const p=body as {actionId:string;event:PlaybackEvent;detail?:string}
+    if(p.actionId!==id)throw new AgentRunError('INVALID_ARGUMENT',400)
+    return c.json(playback.report(c.get('runUid'),id,p.event,p.detail??''))
+  })
   app.post('/actions/:actionId/apply',async c=>{
+    if(isPlayback(actionId(c)))throw new AgentRunError('NOT_FOUND',404)
     const body=await readBody(c)
     if(!matchesContract(APPLY_TRACK_CHANGE_SCHEMA,body))throw new AgentRunError('INVALID_ARGUMENT',400)
     const p=body as {actionId:string;requestId:string;expectedRevision:number;confirmationToken:string}
@@ -67,7 +143,8 @@ export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)
     const body=await readBody(c)
     if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>k!=='expectedRevision')
       ||('expectedRevision' in body&&!Number.isSafeInteger((body as {expectedRevision:unknown}).expectedRevision)))throw new AgentRunError('INVALID_ARGUMENT',400)
-    return c.json(actions.cancel(c.get('runUid'),actionId(c),body as {expectedRevision?:number}))
+    const id=actionId(c),uid=c.get('runUid')
+    return c.json(isPlayback(id)?playback.cancel(uid,id):actions.cancel(uid,id,body as {expectedRevision?:number}))
   })
   app.get('/sessions/:sessionId/runs',c=>{
     const query=c.req.queries()

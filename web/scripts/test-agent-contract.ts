@@ -7,7 +7,7 @@ import {
   contextBudget, estimateCost, permitsActionTransition, quotaDecision, selectServerModel, validateQuota,
   type ProviderCapabilities,
 } from '../server/agent/policy'
-import { AGENT_EVALUATION_CASES, createFakeProvider } from './agent-fixtures'
+import { AGENT_EVALUATION_CASES, createFakeProvider , checkPlan} from './agent-fixtures'
 
 if (process.argv.includes('--print-contracts')) {
   console.log(JSON.stringify({ version: AGENT_CONTRACT_VERSION, tools: TOOL_NAMES.map(name => ({ name, ...AGENT_TOOLS[name], result: toolResultSchema(name) })), confirmationOnly: { applyTrackChange: APPLY_TRACK_CHANGE_SCHEMA }, summaryState: SUMMARY_STATE_SCHEMA }, null, 2))
@@ -15,6 +15,7 @@ if (process.argv.includes('--print-contracts')) {
 }
 
 let checks = 0
+const settlePlan = checkPlan('CT', 45, () => checks)
 function check(label: string, run: () => void) { run(); checks++; console.log(`PASS ${label}`) }
 function expectError(run: () => void, message: string) { assert.throws(run, (e: unknown) => e instanceof Error && e.message === message) }
 const capability: ProviderCapabilities = {
@@ -69,7 +70,7 @@ try {
   }
 
   check('whitelist is exactly 7 query/navigation + 2 proposal tools', () => {
-    assert.deepEqual(TOOL_NAMES, ['searchOfflineAnime', 'readCurrentAnimeContext', 'readCachedCalendar', 'listMyTracks', 'listPublicReviews', 'aggregatePublicData', 'openWebView', 'proposeTrackChange', 'proposePlaybackOpen'])
+    assert.deepEqual(TOOL_NAMES, ['searchOfflineAnime', 'readCurrentAnimeContext', 'readCachedCalendar', 'readAiringSchedule', 'listMyTracks', 'listPublicReviews', 'aggregatePublicData', 'openWebView', 'proposeTrackChange', 'proposePlaybackOpen'])
     assert.equal(Object.values(AGENT_TOOLS).every(t => t.timeoutMs <= 3000 && t.maxCallsPerTurn <= 12), true)
     assert.equal(AGENT_SYSTEM_RULES.includes('和泉纱雾'), true)
     assert.deepEqual(CONTEXT_LAYER_ORDER.slice(0, 3), ['system_rules_and_persona', 'tool_contracts', 'confirmed_preferences'])
@@ -100,12 +101,13 @@ try {
       searchOfflineAnime: { items: [anime] },
       readCurrentAnimeContext: { anime, summary: '仅供测试的简介', loadedAt: 1 },
       readCachedCalendar: { items: [{ weekday: 1, anime }], cachedAt: 1, stale: false },
+      readAiringSchedule: { bgmId: 101, title: '测试番', airDate: '2026-08-12', airWeekday: 3, totalEpisodes: 8, latestEpisode: 5, finished: false, basis: 'air_date_weekly', asOf: 1 },
       listMyTracks: { items: [track], revision: 1 },
       listPublicReviews: { items: [{ reviewId: 'review-1', bgmId: 101, mode: 'review', body: '测试点评', spoiler: 'none', author: '公开测试作者', publishedAt: 1 }] },
       aggregatePublicData: { metric: 'public_users', value: 2, asOf: 1 },
       openWebView: { view: 'search', params: { query: '测试番' } },
       proposeTrackChange: { actionId: 'a1', bgmId: 101, expiresAt: 100, impact: '添加到想看', kind: 'track_change', expectedRevision: 1, before: null, after: track },
-      proposePlaybackOpen: { actionId: 'a2', bgmId: 101, expiresAt: 100, impact: '进入播放页', kind: 'playback_open', title: '测试番', source: 'xifan', episode: 1, target: 'web_player' },
+      proposePlaybackOpen: { actionId: 'a2', bgmId: 101, expiresAt: 100, impact: '进入播放页', kind: 'playback_open', title: '测试番', source: 'xifan', episode: 1, target: 'web_player', addsToTracks: false, bindsSource: null, sourceCandidates: null },
     }
     for (const name of TOOL_NAMES) {
       const result = { ok: true, data: data[name], sources: [source], resultCount: 1, truncated: false }
@@ -207,6 +209,7 @@ try {
     assert.equal(/from\s+['"][^'"]*(?:agent-fixtures|scripts\/test|scripts\/agent)/.test(server), false)
     assert.equal(networkCalls, 0)
   })
+  settlePlan()
   console.log(JSON.stringify({ contractCases: 28, checks, failed: 0, provider: 'fake-test-only', modelQuality: 'not_run', liveApiCalls: networkCalls, databaseWrites: 'not_applicable_no_database_imports' }))
 } finally {
   globalThis.fetch = originalFetch

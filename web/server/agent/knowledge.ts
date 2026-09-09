@@ -21,16 +21,16 @@ export const AGENT_FEATURES: readonly FeatureDescription[] = [
     steps: ['首次发送后进入历史并自动提取一次标题，手动改名优先', '历史条目可归档或恢复'], limitations: ['PC 和平板可使用右下角手帐，手机首期隐藏', '压缩不会删除完整聊天'], mode: 'explain', tools: [] },
   { id: 'agent.context', revision: 5, title: '上下文与偏好', purpose: '整理下一轮上下文，保留原文，四项偏好由用户一次保存。', entry: '/api/agent/sessions',
     steps: ['使用压缩、摘要版本和偏好接口'], limitations: ['付费压缩与回答共用当前已连接模型和额度', '每类偏好一个值，留空默认，点击保存即生效'], mode: 'explain', tools: [] },
-  { id: 'agent.run', revision: 7, title: '运行循环', purpose: '按轮装配上下文、校验结果，保存进度并支持取消和恢复。', entry: '/api/agent/sessions',
-    steps: ['创建回合', '通过事件接口查看进度', '暂停后由用户明确继续'], limitations: ['真实服务器 AI 或 BYOK 需通过连接探测和费用预检', '开放六个本地只读工具与追番变更预览；预览需用户点击确认后由独立接口执行并回读，不含删除、下载和播放'], mode: 'explain', tools: [] },
-  { id:'agent.chat',revision:8,title:'纱雾助手',purpose:'PC 和平板右下角的头像入口，查看对话、来源、偏好与上下文。',entry:'/#/',
-    steps:['点击右下角头像，通过顶栏对话入口返回','可从番剧卡片或详情带入当前番剧','收起后稍后继续查看','统计来源可展开查看指标、口径与查询时间，并点击查看大厅','追番变更预览卡里核对新旧值后点击确认或取消','用自己消息上的编辑按钮修改后重发，会丢弃这条之后的对话再重新回答'],limitations:['手机首期隐藏入口','服务器有 key 时页面后台准备；回复实时流式输出并支持 Markdown；BYOK 在 AI 页配置','追番变更动作卡可确认执行并回读权威记录，取消即不写；播放动作确认留在后续功能','编辑重发会删除该消息及其后的对话，不做多分支保留','纱雾可用自身动漫知识识别作品、解释剧情、推断集数（标注为判断、可能有误）；追番、周历、点评等项目数据只来自工具，不靠记忆，也没有联网工具'],mode:'explain',tools:[] },
+  { id: 'agent.run', revision: 9, title: '运行循环', purpose: '按轮装配上下文、校验结果，保存进度并支持取消和恢复。', entry: '/api/agent/sessions',
+    steps: ['创建回合', '通过事件接口查看进度', '暂停后由用户明确继续'], limitations: ['真实服务器 AI 或 BYOK 需通过连接探测和费用预检', '开放七个本地只读工具、追番变更与播放打开预览；预览经用户确认后由独立接口执行，追番回读权威记录、播放按播放器事件签发回执；播放预览可含「先加追番」一步，按顺序执行，不含删除和下载'], mode: 'explain', tools: [] },
+  { id:'agent.chat',revision:10,title:'纱雾助手',purpose:'PC 和平板右下角的头像入口，查看对话、来源、偏好与上下文。',entry:'/#/',
+    steps:['点击右下角头像，通过顶栏对话入口返回','可从番剧卡片或详情带入当前番剧','收起后稍后继续查看','统计来源可展开查看指标、口径与查询时间，并点击查看大厅','追番变更预览卡里核对新旧值后点击确认或取消；播放预览卡点开在新标签进入播放，番剧不在追番里时同一张卡会先加追番再打开，未认过片源则先进选片源弹窗','用自己消息上的编辑按钮修改后重发，会丢弃这条之后的对话再重新回答'],limitations:['手机首期隐藏入口','服务器有 key 时页面后台准备；回复实时流式输出并支持 Markdown；BYOK 在 AI 页配置','追番变更动作卡可确认执行并回读权威记录，取消即不写；播放只在用户点击后发起，状态跟随播放页真实事件，退到源站播放器后只标结果待确认','编辑重发会删除该消息及其后的对话，不做多分支保留','纱雾可用自身动漫知识识别作品、解释剧情、推断集数（标注为判断、可能有误）；追番、周历、点评等项目数据只来自工具，不靠记忆，也没有联网工具'],mode:'explain',tools:[] },
   {id:'agent.provider',revision:3,title:'AI 连接与用量',purpose:'连接项目模型或用户自配 API，查看本账号的用量。',entry:'/api/agent/provider',steps:['页面加载后后台准备服务器 AI，直接发送即可','BYOK 在 AI 页配置；上下文档位在上下文页设置'],limitations:['BYOK 仅开放核准端点和型号；凭据临时保留，过期需重连','能力不足、额度超限或连接失败不切换模型；探测也计费'],mode:'explain',tools:[]},
   {id:'agent.guest',revision:4,audience:'public',title:'访客临时对话',purpose:'未登录可询问网站用法、已有周历缓存和公开大厅资料。',entry:'/api/agent/guest/status',steps:['页面后台准备项目 AI，打开头像直接提问，发送即显示回复状态','收起后可继续；刷新开始新对话','统计来源合并为一组，展开查看明细，点击查看大厅'],limitations:['仅三个公开只读工具；不读取个人记录，不写入或播放','没有历史、偏好、摘要或 BYOK；临时状态不跨刷新保留','共享 IP 额度不因刷新重置；有 key 默认开放并后台准备，管理员可显式关闭，探测成功才回答'],mode:'explain',tools:[...['readCachedCalendar','listPublicReviews','aggregatePublicData'] as const]},
   ...SITE_FEATURES,
 ]
 export const AGENT_FEATURE_REGISTRATIONS: readonly FeatureRegistration[] = [
-  {id:'agent.history',revision:3}, {id:'agent.context',revision:5}, {id:'agent.run',revision:7}, {id:'agent.chat',revision:8}, {id:'agent.provider',revision:3}, {id:'agent.guest',revision:4}, ...SITE_FEATURES.map(({id,revision})=>({id,revision})),
+  {id:'agent.history',revision:3}, {id:'agent.context',revision:5}, {id:'agent.run',revision:9}, {id:'agent.chat',revision:10}, {id:'agent.provider',revision:3}, {id:'agent.guest',revision:4}, ...SITE_FEATURES.map(({id,revision})=>({id,revision})),
 ].map(registration=>({ ...registration,descriptionHash:knowledgeHash(AGENT_FEATURES.find(f=>f.id===registration.id)??null) }))
 
 export class AgentKnowledgeRegistry {

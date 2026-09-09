@@ -159,11 +159,21 @@ export class AgentHistoryStore {
     if (s.run_id && s.run_id !== this.runId) throw new AgentHistoryError('SESSION_BUSY', 409, '回复正在准备或执行，先取消或等它结束吧。')
   }
 
-  private expectIdle(s: SessionRow): void {
+  // 发新消息只等「真正在进行中的事」：回复还在写、上下文在整理。
+  // **待确认的预览不算**——它在等用户，而用户正是因为拿不准才要追问；
+  // 拿它挡住输入等于把人锁死在一张自己答不上来的卡片前（预览仍留在原处，确认或取消都不受影响）。
+  private expectSendable(s: SessionRow): void {
     this.expectRun(s)
     if (s.context_job_id) throw new AgentHistoryError('SESSION_BUSY', 409, '上下文正在整理，先取消或等它完成吧。')
-    const busy = this.db.prepare("SELECT 1 FROM agent_messages WHERE user_id = ? AND session_id = ? AND (status = 'streaming' OR pending_actions = 1) LIMIT 1").get(s.user_id, s.id)
-    if (busy) throw new AgentHistoryError('SESSION_BUSY', 409, '这本手帐还有进行中的回复或动作，先取消或等它结束吧。')
+    const streaming = this.db.prepare("SELECT 1 FROM agent_messages WHERE user_id = ? AND session_id = ? AND status = 'streaming' LIMIT 1").get(s.user_id, s.id)
+    if (streaming) throw new AgentHistoryError('SESSION_BUSY', 409, '上一条回复还在写，等它结束再发吧。')
+  }
+
+  // 截断 / 清空 / 删除会连同预览所在的那条消息一起毁掉，未结的动作仍要拦。
+  private expectIdle(s: SessionRow): void {
+    this.expectSendable(s)
+    const busy = this.db.prepare('SELECT 1 FROM agent_messages WHERE user_id = ? AND session_id = ? AND pending_actions = 1 LIMIT 1').get(s.user_id, s.id)
+    if (busy) throw new AgentHistoryError('SESSION_BUSY', 409, '这本手帐还有没结束的动作，先确认或取消它再继续吧。')
   }
 
   private touch(s: SessionRow, bytesDelta = 0, messageDelta = 0, advanceMessageSeq = false): void {
@@ -283,7 +293,7 @@ export class AgentHistoryStore {
         if (existing.initial_hash !== fingerprint) throw new AgentHistoryError('IDEMPOTENCY_CONFLICT', 409, '这次消息内容变了，请使用新的请求编号。')
         return { session: sessionView(s), message: messageView(existing) }
       }
-      this.expectRevision(s, expectedRevision); this.expectWritable(s); this.expectIdle(s); this.expectSpace(s, encoded.bytes, true)
+      this.expectRevision(s, expectedRevision); this.expectWritable(s); this.expectSendable(s); this.expectSpace(s, encoded.bytes, true)
       const messageId = randomUUID(), now = Date.now()
       this.db.prepare(`INSERT INTO agent_messages
         (id, user_id, session_id, seq, request_id, initial_hash, role, body, status, sources_json, tools_json, actions_json, usage_json, stored_bytes, pending_actions, created_at, updated_at)

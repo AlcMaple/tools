@@ -52,6 +52,7 @@ import {
   GLOBAL_SLOW_POOL,
   registerSlowPoolReleaseHook,
 } from './slow-playback'
+import { PLAYBACK_BEACON } from './agent/playback-beacon'
 
 const xifan = new Hono()
 
@@ -958,6 +959,9 @@ __VIEWPORT_PROBE__
   var animeId = q.get('animeId') || ''
   var ep = q.get('ep') || '1'
   var bgmId = q.get('bgmId') || ''
+${PLAYBACK_BEACON}
+  agentReport('page_ready', 'ep ' + ep)
+  agentWatch(document.getElementById('v'))
   var sourceOptions = __PLAYER_SOURCES__
   // 只有这些域名的 mp4 要走服务端并发代理；其余（如线路二 play.xfvod.pro）浏览器直连——
   // 直连实测 30Mbps 且不占服务器那 6Mbps 的出口，让它走代理纯属浪费还挤占名额。
@@ -1110,6 +1114,7 @@ __VIEWPORT_PROBE__
   })
 
   function fail(txt, code){
+    agentReport('failed', code || txt)
     waitingForAuth = code === 'XIFAN_AUTH_REQUIRED'
     $('err-text').textContent = txt
     $('auth-link').classList.toggle('show', waitingForAuth)
@@ -1196,8 +1201,8 @@ __VIEWPORT_PROBE__
   // 浏览器判定「缓冲远超消费速度」而主动限流，10.9 秒只攒到 2.7 秒缓冲；同一时刻用
   // fetch 直接读同一个代理地址能跑 772KB/s(6.3Mbps)。起播慢的真正原因是带宽不是时机，
   // 已由 /api/xifan/stream 的并发代理解决，不需要再抢跑。
-  v.addEventListener('canplay', function(){ if (!resumeAfterBuffer) hideBuffer() })
-  v.addEventListener('playing', function(){ if (!resumeAfterBuffer) hideBuffer() })
+  v.addEventListener('canplay', function(){ agentReport('media_canplay'); if (!resumeAfterBuffer) hideBuffer() })
+  v.addEventListener('playing', function(){ agentReport('media_canplay'); agentReport('playing'); if (!resumeAfterBuffer) hideBuffer() })
 
   function bufferedAhead(){
     for (var i = 0; i < v.buffered.length; i++){
@@ -1674,6 +1679,7 @@ __VIEWPORT_PROBE__
     gateOnPlay = false
     slowSession = !!pl.viaPrepared || (pl.kind === 'mp4' && needsProxy(pl.url))
     v.classList.add('on'); frame.classList.remove('on')
+    agentReport('source_selected', 'line ' + pl.source + ' ' + pl.kind)
     // stopAll() 里的 cancelBufferGate 已经把上一条线路的浮层收掉；这里立刻重新盖上——
     // 从「设 src」到浏览器第一次 canplay 之间那段没有任何 waiting/playing 事件，
     // bufferGate 完全不知道，只能靠浏览器自己画黑色原生 loading，就是「点了播放还有 loading」
@@ -1788,6 +1794,8 @@ __VIEWPORT_PROBE__
     }
     cancelBufferGate(false); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load()
     gateOnPlay = false; v.classList.remove('on'); frame.classList.add('on'); renderChips()
+    // 退到源站自己的播放器：跨域之后父页面读不到任何播放状态，回执只能停在 unknown。
+    agentReport('cross_origin', 'source ' + pl.source)
     frame.src = officialPlayerUrl(pl)
     // iframe 内的播放按钮完全由官方播放器绘制；父页面不寻找、不模拟点击画面中央按钮，
     // 也读不到跨域 iframe 的播放状态。套娃若卡在 Waiting parameters，就同时给一条源站直达——那边是好的。
@@ -1927,6 +1935,7 @@ __VIEWPORT_PROBE__
       await goodPromise
       renderEps(); renderChips(); renderGoodNote()
       viewportCheckpoint('boot.content.rendered')
+      agentReport('player_ready', 'lines ' + lines.length)
       // 按 first.source 存，**不能写死 1**：服务端返回的 first 是「最优线路」，
       // 未必是线路 1（它会跳过需要代理的慢源）。写死会让 resolvedMap[1] 装着别条线路的
       // 地址，点线路 1 拿到的却是那条——表现为「点了没反应」。

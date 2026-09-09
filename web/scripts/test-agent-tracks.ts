@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { once } from 'node:events'
 import Database from 'better-sqlite3'
 import type { Server } from 'node:http'
+import { checkPlan } from './agent-fixtures'
 
 const dir = mkdtempSync(join(tmpdir(), 'maple-agent-tracks-')), cwd = process.cwd(), env = { ...process.env }
 mkdirSync(join(dir, 'data'))
@@ -26,6 +27,7 @@ index.prepare('INSERT INTO anime VALUES (?,?,?,?,?,?)').run(555, 'Yuru Camp', '�
 index.close()
 
 let checks = 0
+const settlePlan = checkPlan('T', 16, () => checks)
 const check = async (name: string, fn: () => unknown) => { await fn(); console.log(`PASS T${++checks} ${name}`) }
 let cleanup: (() => Promise<void>) | undefined
 const throws = (fn: () => unknown, code: string) => assert.throws(fn, (e: unknown) => e instanceof Error && (e as { code?: string }).code === code, code)
@@ -33,6 +35,7 @@ const throws = (fn: () => unknown, code: string) => assert.throws(fn, (e: unknow
 try {
   const { db } = await import('../server/db')
   const { AgentActionStore, proposeTrackChangeTool } = await import('../server/agent/actions-store')
+  const { AgentPlaybackStore, initializeAgentPlaybackSchema } = await import('../server/agent/playback-store')
   const { AgentHistoryStore } = await import('../server/agent/history-store')
   const { initializeAgentRunSchema, AgentRunStore } = await import('../server/agent/run-store')
   const { AgentRunService } = await import('../server/agent/run-service')
@@ -61,6 +64,8 @@ try {
 
   let version = 'v1'
   const store = new AgentActionStore(db, Date.now, () => version)
+  initializeAgentPlaybackSchema(db)
+  const playbackStore = new AgentPlaybackStore(db, Date.now, () => version)
   const ctx = (sessionId: string) => ({ sessionId, runId: 'run-x', messageId: null })
 
   await check('预览只读：返回新旧值与 revision，不写追番，凭证不进模型结果', () => {
@@ -243,12 +248,27 @@ try {
     assert.equal(empty.ok, false)
   })
 
+  await check('同一会话里内容相同的重复提案复用同一张卡，不并排出现两个待确认', () => {
+    const s = session(alice); seedTrack(alice, 130, { status: 'watching', episode: 2 })
+    const args = { bgmId: 130, change: { kind: 'update', fields: { status: 'done', episode: 9 } } }
+    const first = store.prepare(alice, ctx(s.id), args).preview
+    const again = store.prepare(alice, ctx(s.id), args).preview
+    assert.equal(again.actionId, first.actionId)
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM agent_actions WHERE user_id=? AND session_id=? AND state='prepared'").get(alice, s.id) as { n: number }).n, 1)
+    // 内容不同（换了集数）仍然是另一个提案，照常发新卡
+    const other = store.prepare(alice, ctx(s.id), { bgmId: 130, change: { kind: 'update', fields: { status: 'done', episode: 10 } } }).preview
+    assert.notEqual(other.actionId, first.actionId)
+    // 另一本手帐互不复用
+    const elsewhere = store.prepare(alice, ctx(session(alice).id), args).preview
+    assert.notEqual(elsewhere.actionId, first.actionId)
+  })
+
   // ── HTTP：会话鉴权、跨账号、访客拒绝 ──────────────────────────────────────────
   const runService = new AgentRunService(new AgentRunStore(db), () => { throw new Error('NO_RUN_IN_THIS_TEST') })
   const knowledge = () => ({ ...new AgentKnowledgeRegistry('rel', AGENT_FEATURE_REGISTRATIONS, AGENT_FEATURES, ['proposeTrackChange']).snapshot(alice, { enabled: true, permissionVersion: 'p', features: [], tools: [] }) })
   const app = new Hono()
   app.use('*', securityHeaders()); app.use('/api/*', sameOriginGuard())
-  app.route('/api/agent', createAgentRunApi(runService, knowledge as never, store))
+  app.route('/api/agent', createAgentRunApi(runService, knowledge as never, store, playbackStore))
   const server = serve({ fetch: app.fetch, hostname: 'localhost', port: 0 }); await once(server, 'listening')
   const addr = server.address(); assert(addr && typeof addr !== 'string')
   const origin = `http://localhost:${addr.port}`
@@ -295,6 +315,8 @@ try {
     assert.equal((await call(`/actions/${preview.actionId}/cancel`, 'POST', { extra: 1 }, aliceCookie)).status, 400)
     assert.equal(trackRow(alice, 122)!.status, 'watching')
   })
+
+  settlePlan()
 
   console.log(JSON.stringify({ checks, failed: 0, realAiCalls: 0, transport: 'direct-store-and-loopback-http', database: 'temporary-sqlite', productionDataTouched: false }))
 } finally {

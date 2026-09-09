@@ -6,10 +6,10 @@ import type { ContextTier } from '../../shared/agent-contracts'
 import type { RunView,RunEvent } from '../../shared/agent-run'
 import type { KnowledgeSnapshot } from '../../server/agent/knowledge'
 import { subscribeAgentEvents } from '../../shared/agent-stream'
-import { pageContext,activeCompact,applyDelta,idValid,mergeMessages,type AnimeContext,type AgentIssue,type ActionPreview } from './model'
+import { pageContext,activeCompact,applyDelta,idValid,mergeMessages,type AnimeContext,type AgentIssue,type ActionPreview,type PlaybackActionPreview,isTrackPreview,isPlaybackPreview } from './model'
 
 // 确认/取消变更的响应回执:服务端只回传状态字段,summary 等留用本地已有的。
-type TerminalMessage={id:string;seq:number;status:HistoryMessage['status'];sources:HistoryMessage['sources'];toolSummaries:HistoryMessage['toolSummaries'];usage:HistoryMessage['usage']}
+type TerminalMessage={id:string;seq:number;status:HistoryMessage['status'];sources:HistoryMessage['sources'];toolSummaries:HistoryMessage['toolSummaries'];actions:HistoryMessage['actions'];usage:HistoryMessage['usage']}
 type ActionReceiptPatch={actionId:string;state:HistoryAction['state'];evidence:HistoryAction['evidence'];errorCode:HistoryAction['errorCode'];eventSeq:number;updatedAt:number}
 
 type Cursor={beforeUpdatedAt:number;beforeId:string}
@@ -331,10 +331,12 @@ export class AgentController {
       const ended=data.session as unknown as HistorySession|undefined
       const authoritative=data.run as unknown as RunView|undefined
       const finalized=data.message as unknown as TerminalMessage|null|undefined
-      this.settled=Boolean(ended&&authoritative&&finalized)
+      this.settled=Boolean(ended&&authoritative&&finalized&&Array.isArray(finalized.actions))
       if(ended&&current&&ended.revision>=(this.state.session?.revision??0)){this.updateSession(ended);this.set({session:ended})}
-      if(finalized&&current)this.set({messages:this.state.messages.map(m=>m.id===finalized.id
-        ?{...m,status:finalized.status,sources:finalized.sources,toolSummaries:finalized.toolSummaries,usage:finalized.usage}:m)})
+      if(finalized&&current){this.set({messages:this.state.messages.map(m=>m.id===finalized.id
+        ?{...m,status:finalized.status,sources:finalized.sources,toolSummaries:finalized.toolSummaries,actions:finalized.actions??[],usage:finalized.usage}:m)})
+        // 动作卡靠这一帧才知道自己存在；立刻去取预览详情，别等下一次全量刷新。
+        this.syncActions()}
       const next={...(data.run as unknown as RunView|undefined)??run,state:event.type as RunView['state'],lastEventSeq:event.seq,canResume:event.type==='paused'}
       this.set({watchingRun:next,syncing:true,...current?{run:next,status:event.type==='completed'?'':event.type==='cancelled'?'已停止回复':event.type==='paused'?'已暂停':'回复失败，已保留生成内容'}:{}})
     }
@@ -380,18 +382,19 @@ export class AgentController {
   async tier(contextTier:ContextTier,adaptive:boolean){const session=this.state.session;if(!session)return;await this.mutate('上下文档位',async()=>{const response=await this.api<{session:HistorySession}>(`/sessions/${session.id}/context`,'PATCH',{expectedRevision:session.revision,contextTier,adaptive});this.updateSession(response.session);await this.refreshCurrent()})}
   async restore(summaryVersion:number){const session=this.state.session;if(!session)return;await this.mutate('恢复摘要',async()=>{await this.api(`/sessions/${session.id}/summaries/restore`,'POST',{expectedRevision:session.revision,summaryVersion});await this.refreshCurrent()})}
   async export():Promise<unknown>{const session=this.state.session;if(!session)return null;try{return await this.api(`/sessions/${session.id}/export`)}catch(error){this.fail(error);return null}}
-  // 追番变更：预览随消息卡片出现，凭 owner 身份的 REST 接口取回确认凭证；确认前不写，取消不写。
+  // 追番变更 / 播放打开：预览随消息卡片出现，凭 owner 身份的 REST 接口取回详情
+  // （追番的确认凭证、播放的目标页面）；确认前不写、不打开任何页面，取消即作废。
   private syncActions(){
-    const ids=new Set(this.state.messages.flatMap(m=>m.actions.filter(a=>a.kind==='track_change').map(a=>a.actionId)))
+    const ids=new Set(this.state.messages.flatMap(m=>m.actions.map(a=>a.actionId)))
     const previews={...this.state.actionPreviews}
     let changed=false
     for(const key of Object.keys(previews))if(!ids.has(key)){delete previews[key];changed=true}
     if(changed)this.set({actionPreviews:previews})
     for(const message of this.state.messages){
       for(const action of message.actions){
-        if(action.kind!=='track_change'||this.actionFetches.has(action.actionId))continue
+        if(this.actionFetches.has(action.actionId))continue
         const known=this.state.actionPreviews[action.actionId]
-        if(known&&(action.state!=='prepared'||known.confirmationToken))continue
+        if(known&&(action.state!=='prepared'||isPlaybackPreview(known)||known.confirmationToken))continue
         this.actionFetches.add(action.actionId)
         void this.api<ActionPreview>(`/actions/${action.actionId}`).then(preview=>{
           this.actionFetches.delete(action.actionId)
@@ -411,8 +414,9 @@ export class AgentController {
   }
   async confirmAction(actionId:string){
     const preview=this.state.actionPreviews[actionId]
-    if(!preview?.confirmationToken)return
+    if(!isTrackPreview(preview)||!preview.confirmationToken)return
     await this.mutate('确认变更',async()=>{
+      if(!isTrackPreview(preview))return
       const result=await this.api<{action:ActionReceiptPatch;session:HistorySession}>(`/actions/${actionId}/apply`,'POST',{actionId,requestId:`apply:${actionId}`,expectedRevision:preview.preview.expectedRevision,confirmationToken:preview.confirmationToken})
       this.applyReceipt(result.action,result.session)
     })
@@ -420,8 +424,84 @@ export class AgentController {
   async cancelAction(actionId:string){
     const preview=this.state.actionPreviews[actionId]
     await this.mutate('取消变更',async()=>{
-      const result=await this.api<{action:ActionReceiptPatch;session:HistorySession}>(`/actions/${actionId}/cancel`,'POST',preview?{expectedRevision:preview.preview.expectedRevision}:{})
+      const result=await this.api<{action:ActionReceiptPatch;session:HistorySession}>(`/actions/${actionId}/cancel`,'POST',isTrackPreview(preview)?{expectedRevision:preview.preview.expectedRevision}:{})
       this.applyReceipt(result.action,result.session)
+    })
+  }
+  // 播放打开：已认过片源的那张卡是原生 <a>，浏览器在用户手势里自己开标签、服务端 302 前推进回执，
+  // 这里只负责稍后把播放页回报的状态拉回卡片上（回执由播放页事件签发，不是这次点击的返回值）。
+  followPlayback(actionId:string){
+    if(!this.state.actionPreviews[actionId])return
+    for(const delay of [3000,20000])setTimeout(()=>{if(this.alive&&this.state.messages.some(m=>m.actions.some(a=>a.actionId===actionId)))void this.refreshCurrent()},delay)
+  }
+  // 走 POST 的播放确认：组合动作（要先写追番）必须用它，因为同源守卫只覆盖写方法；
+  // 没认过片源的那种也用它，拿到导航意图后把用户送进既有的「继续看 → 选片源」弹窗。
+  //
+  // **标签页必须在用户手势里先开出来**：等 POST 回来再 window.open 一定被弹窗拦截。
+  // 同源播放页，所以不加 noopener —— 加了按规范 window.open 返回 null，就没法再给它导航。
+  async openPlayback(actionId:string):Promise<{bgmId:number;source:'xifan'|'girigiri'}|null>{
+    const preview=this.state.actionPreviews[actionId]
+    if(!isPlaybackPreview(preview))return null
+    const tab=preview.preview.target==='web_player'?window.open('about:blank','_blank'):null
+    let target:{bgmId:number;source:'xifan'|'girigiri'}|null=null
+    const done=await this.mutate('打开播放',async()=>{
+      const result=await this.api<{action:ActionReceiptPatch;session:HistorySession;url:string|null
+        navigate:{bgmId:number;source:'xifan'|'girigiri'}|null;track:{action:ActionReceiptPatch}|null}>(`/actions/${actionId}/open`,'POST',{})
+      // 追番那一步的权威回执随响应回来，先就地更新那张卡，再更新播放卡。
+      if(result.track)this.applyReceipt(result.track.action,result.session)
+      this.applyReceipt(result.action,result.session)
+      target=result.navigate
+      if(result.url){
+        if(tab)tab.location.replace(result.url)
+        else if(!window.open(result.url,'_blank'))this.set({error:{code:'POPUP_BLOCKED',message:'浏览器拦下了新标签。追番已经记好了，去「我的追番」点继续看即可。'}})
+      }
+    })
+    // 写入失败就别留一个空白标签在那儿。
+    if(!done&&tab)tab.close()
+    return target
+  }
+
+  // ── 就地认源：搜索 / 验证码 / 挑一个 ─────────────────────────────────────────
+  //
+  // 验证码图片和用户敲进去的数字都只在「浏览器 ↔ 我们服务端 ↔ 源站会话」这条线上走，
+  // 不进对话历史、不进模型上下文 —— 验证码要证明的正是「此刻有个人在」。
+  private replacePreview(actionId:string,preview:PlaybackActionPreview['preview']):void{
+    const old=this.state.actionPreviews[actionId]
+    if(!isPlaybackPreview(old))return
+    this.set({actionPreviews:{...this.state.actionPreviews,[actionId]:{...old,preview}}})
+  }
+  async searchSource(actionId:string):Promise<{needsCaptcha:boolean}>{
+    let needsCaptcha=false
+    await this.mutate('找片源',async()=>{
+      const r=await this.api<{needsCaptcha:boolean;preview:PlaybackActionPreview['preview']}>(`/actions/${actionId}/source-search`,'POST',{})
+      needsCaptcha=r.needsCaptcha
+      this.replacePreview(actionId,r.preview)
+    })
+    return {needsCaptcha}
+  }
+  async loadCaptcha(actionId:string):Promise<string|null>{
+    let src:string|null=null
+    await this.mutate('取验证码',async()=>{
+      const r=await this.api<{imageB64:string;mime:string}>(`/actions/${actionId}/captcha`,'POST',{})
+      // 只接受位图 MIME：源站返回 SVG / HTML 时服务端已经拦掉，这里再兜一次，
+      // 不把可执行矢量内容当成图片交给浏览器。
+      src=/^image\/(png|jpe?g|gif|webp)$/i.test(r.mime)?`data:${r.mime};base64,${r.imageB64}`:null
+    })
+    return src
+  }
+  async submitCaptcha(actionId:string,code:string):Promise<boolean>{
+    let ok=false
+    await this.mutate('校验验证码',async()=>{
+      const r=await this.api<{success:boolean;preview:PlaybackActionPreview['preview']}>(`/actions/${actionId}/captcha/verify`,'POST',{code})
+      ok=r.success
+      this.replacePreview(actionId,r.preview)
+    })
+    return ok
+  }
+  async pickSource(actionId:string,index:number):Promise<void>{
+    await this.mutate('认片源',async()=>{
+      const r=await this.api<{preview:PlaybackActionPreview['preview']}>(`/actions/${actionId}/pick-source`,'POST',{index})
+      this.replacePreview(actionId,r.preview)
     })
   }
 }

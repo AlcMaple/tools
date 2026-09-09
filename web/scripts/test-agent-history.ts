@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import type { Server } from 'node:http'
 import type { HistorySession, HistoryMessage, HistorySnapshot, HistoryAction, AssistantMessageContent } from '../shared/agent-history'
+import { checkPlan } from './agent-fixtures'
 
 const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -42,6 +43,7 @@ globalThis.fetch = async () => { externalRequests++; throw new Error('EXTERNAL_N
 let cleanup: (() => Promise<void>) | undefined
 let cleanupNetwork: (() => Promise<void>) | undefined
 let checks = 0, requests = 0
+const settlePlan = checkPlan('H', 30, () => checks)
 try {
   const { MockAgent, getGlobalDispatcher, setGlobalDispatcher } = await import('undici')
   const previousDispatcher = getGlobalDispatcher(), network = new MockAgent()
@@ -228,10 +230,15 @@ try {
     assert.equal(failed.message.body, partial.message.body)
     expectError(() => store.updateAssistant(alice, s.id, partial.message.id, { expectedRevision: s.revision, ...content('晚到的覆盖') }), 'MESSAGE_FINALIZED')
   })
-  await check('已完成回复中的待确认动作可单独更新摘要，正文不变且旧事件不回退', async () => {
+  await check('待确认动作挡住清空但不挡追问；可单独更新摘要，正文不变且旧事件不回退', async () => {
     const action: HistoryAction = { actionId: 'action-1', kind: 'playback_open', state: 'prepared', eventSeq: 1, updatedAt: Date.now(), evidence: 'preview', errorCode: null, userReportedSuccess: false, summary: '测试预览，没有打开源站' }
     const saved = store.appendAssistant(alice, s.id, { requestId: 'action-message', expectedRevision: s.revision, ...content('点确认后才打开。'), actions: [action] }); s = saved.session
     assert.equal((await request(`/sessions/${s.id}/clear`, { method: 'POST', payload: { expectedRevision: s.revision } })).body.code, 'SESSION_BUSY')
+    // 但追问不受阻：用户正是因为拿不准才要问，锁死输入等于把人困在一张自己答不上来的卡片前。
+    // 预览仍原样留着，确认或取消都不受影响。
+    const asked = store.appendUser(alice, s.id, { requestId: 'ask-while-pending', expectedRevision: s.revision, body: '我不确定，先问一句' }); s = asked.session
+    assert.equal(asked.message.body, '我不确定，先问一句')
+    assert.equal(store.snapshot(alice, s.id, { limit: 50 }).messages.find(m => m.id === saved.message.id)!.actions[0].state, 'prepared')
     const cancelled: HistoryAction = { ...action, state: 'cancelled', eventSeq: 2, evidence: 'user_click' }
     const updated = store.updateActionSummary(alice, s.id, saved.message.id, { expectedRevision: s.revision, action: cancelled }); s = updated.session
     assert.equal(updated.message.body, saved.message.body)
@@ -376,6 +383,7 @@ try {
     assert.equal((await request('/sessions', { cookie: cookieB })).response.status, 401)
     assert.equal(externalRequests, 0)
   })
+  settlePlan()
   console.log(JSON.stringify({ checks, failed: 0, httpRequests: requests, transport: 'loopback-http', persistence: 'file-sqlite-and-new-process-readback', externalRequests, realAiCalls: 0, productionDataTouched: false }))
 } finally {
   await cleanup?.()

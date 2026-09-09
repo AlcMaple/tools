@@ -17,16 +17,21 @@ export interface PickerFlow {
   track: Track
   candidates: SourceCandidate[]
   mode: WatchMode
+  /** 由纱雾的「播放打开」预览带过来；认好片源后播放页链接捎上它，回执才能跟到真正开播那一步。 */
+  agentAction?: string
 }
 
 export interface SearchFlow {
   source: SourceId
   track: Track
   mode: WatchMode
+  agentAction?: string
 }
 
-function linkFor(source: OnlineSource, mode: WatchMode, id: string, ep: number, bgmId: number): string {
-  return mode === 'source' ? source.sourcePageUrl(id, ep) : source.playPageUrl(id, ep, bgmId)
+function linkFor(source: OnlineSource, mode: WatchMode, id: string, ep: number, bgmId: number, agentAction?: string): string {
+  const url = mode === 'source' ? source.sourcePageUrl(id, ep) : source.playPageUrl(id, ep, bgmId)
+  // 源站站内页是对方的域名，带不了我们的回执参数；只有同源播放页才捎。
+  return agentAction && mode !== 'source' ? `${url}&agentAction=${encodeURIComponent(agentAction)}` : url
 }
 
 export function SourceBindPickerModal({
@@ -50,7 +55,7 @@ export function SourceBindPickerModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const { track, candidates, mode } = flow
+  const { track, candidates, mode, agentAction } = flow
   const title = track.titleCn || track.title
   const ep = watchEp(track)
 
@@ -79,7 +84,7 @@ export function SourceBindPickerModal({
             <a
               key={c.id}
               className="sugg-item"
-              href={linkFor(source, mode, c.id, ep, track.bgmId)}
+              href={linkFor(source, mode, c.id, ep, track.bgmId, agentAction)}
               target="_blank"
               rel="noreferrer"
               onClick={() => onPick(c)}
@@ -118,7 +123,7 @@ export function SourceSearchModal({
   onPick: (hit: SourceSearchHit) => void
   onClose: () => void
 }): JSX.Element {
-  const { track, mode } = flow
+  const { track, mode, agentAction } = flow
   const initialKeyword = track.titleCn || track.title
   const [keyword, setKeyword] = useState(initialKeyword)
   const [status, setStatus] = useState<SearchStatus>('searching')
@@ -358,7 +363,7 @@ export function SourceSearchModal({
                     <a
                       key={hit.id}
                       className="sugg-item"
-                      href={linkFor(source, mode, hit.id, ep, track.bgmId)}
+                      href={linkFor(source, mode, hit.id, ep, track.bgmId, agentAction)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => onPick(hit)}

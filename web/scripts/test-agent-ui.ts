@@ -12,11 +12,13 @@ import { firstMessageTitle } from '../server/agent/history-store'
 import { MessageCard } from '../src/agent/AgentCards'
 import { applyDelta,fallbackChoices,mergeMessages,phoneDevice,shouldSend,validAnime,viewportPlacement } from '../src/agent/model'
 import { createAgentUiFixture } from './agent-ui-fixture'
+import { checkPlan } from './agent-fixtures'
 
 process.env.NODE_ENV='test';process.env.AGENT_UI_FIXTURE='1'
 const fixture=await createAgentUiFixture(),controllers:AgentController[]=[],fetches:{path:string;method:string;body:unknown}[]=[]
 const {Hono}=await import('hono'),{issueSession}=await import('../server/auth'),{readLoadedRelease}=await import('../server/agent/release')
 let checks=0,serial=0
+const settlePlan = checkPlan('U', 50, () => checks)
 const waitFor=async(test:()=>boolean)=>{for(let i=0;i<200;i++){if(test())return;await delay(20)}throw new Error('UI_FIXTURE_WAIT_TIMEOUT')}
 const check=async(name:string,run:()=>unknown|Promise<unknown>)=>{await run();checks++;console.log(`PASS U${String(checks).padStart(2,'0')} ${name}`)}
 async function owner(uid?:number){const name=`ui_case_${++serial}`,id=uid??fixture.createUser(name);const app=new Hono().get('/',async c=>{await issueSession(c,{uid:id,username:name,tv:0});return c.text('ok')});const cookie=(await app.request(fixture.origin)).headers.get('set-cookie')!.split(';')[0]
@@ -225,5 +227,6 @@ try{
     release();await pending;await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle');assert.equal(c.getSnapshot().pendingBody,null)
   })
   await check('浏览器侧控制器没有新增工具执行权限，所有验证仅访问本机',()=>{assert.equal(fixture.metrics.externalRequests,0);assert(fetches.every(item=>item.path.startsWith('/api/agent/')));assert(!fetches.some(item=>/applyTrack|playback|\/api\/xifan|\/api\/girigiri/.test(item.path)))})
+  settlePlan()
   console.log(JSON.stringify({checks,failed:0,httpRequests:fetches.length,externalRequests:fixture.metrics.externalRequests,realAiCalls:0,modelQuality:'not_run',controller:'real-loopback-http-sse-and-error-fixtures',rendering:'React-text-escaping',database:'temporary-sqlite',browserLayout:'separate-cua-record'}))
 }finally{for(const c of controllers)c.dispose();await fixture.close()}
