@@ -126,6 +126,11 @@ try{
       }
       if(path===`/api/agent/runs/${runId}`){if(!held){held=true;const previous=structuredClone(run);await gate;return reply({run:previous})}return reply({run})}
       if(run&&/\/sessions\/[^/]+\/runs(?:\?|$)/.test(path))return reply({runs:[run]})
+      // 打开/对账已经改成合并读取(?include=context,runs),夹具里的假回合要从同一个响应里给回去。
+      if(run&&/\/sessions\/[^/?]+\?/.test(path)&&path.includes('include=')&&path.includes('runs')){
+        const merged=await (await base(input,init)).json() as Record<string,unknown>
+        return reply({...merged,runs:[run]})
+      }
       return base(input,init)
     })
     await seedSession(c);c.setDraft('通道切换夹具');await c.send();await waitFor(()=>held);assert.equal(c.getSnapshot().run?.state,'paused');assert.equal(c.getSnapshot().syncing,true);await c.resume();assert.equal(events,1);release();await waitFor(()=>c.getSnapshot().connection==='idle');await c.resume();await waitFor(()=>events===2);await delay(20)
@@ -185,7 +190,9 @@ try{
     const c=await controller(uid,base=>async(input,init)=>{
       if(String(input)==='/api/agent/provider/prepare'){if(!connected)probes++;connected=true;return Response.json({ready:true},{headers:{'X-Agent-Owner':String(uid)}})}
       const response=await base(input,init)
+      // /bootstrap 把功能说明和会话列表合并返回了,两处的 knowledge 都要按同一套条件改写。
       if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=connected;return Response.json(knowledge,{headers:response.headers})}
+      if(String(input)==='/api/agent/bootstrap'){const boot=await response.json();boot.knowledge.conditions.answerModelAutoConnect=true;boot.knowledge.conditions.answerModelReady=connected;return Response.json(boot,{headers:response.headers})}
       return response
     })
     assert.equal(probes,1);assert.equal(fixture.metrics.modelCalls,models);assert(!c.getSnapshot().status.includes('连接'))
@@ -198,6 +205,7 @@ try{
       if(String(input)==='/api/agent/provider/prepare'){probes++;return Response.json({code:'PROVIDER_HTTP_401',error:'API key 检查失败'},{status:503,headers:{'X-Agent-Owner':String(uid)}})}
       const response=await base(input,init)
       if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=false;return Response.json(knowledge,{headers:response.headers})}
+      if(String(input)==='/api/agent/bootstrap'){const boot=await response.json();boot.knowledge.conditions.answerModelAutoConnect=true;boot.knowledge.conditions.answerModelReady=false;return Response.json(boot,{headers:response.headers})}
       return response
     })
     c.setDraft('失败后保留的问题');await c.send();assert.equal(c.getSnapshot().draft,'失败后保留的问题');assert.equal(c.getSnapshot().session,null);assert.equal(c.getSnapshot().error?.code,'PROVIDER_HTTP_401');assert.equal(probes,1);assert.equal(fixture.metrics.modelCalls,models)
@@ -208,7 +216,9 @@ try{
     const c=await controller(uid,base=>async(input,init)=>{
       if(String(input)==='/api/agent/provider/prepare'){probes++;await gate;ready=true;return Response.json({ready:true},{headers:{'X-Agent-Owner':String(uid)}})}
       const response=await base(input,init)
-      if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=ready;return Response.json(knowledge,{headers:response.headers})}return response
+      if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=ready;return Response.json(knowledge,{headers:response.headers})}
+      if(String(input)==='/api/agent/bootstrap'){const boot=await response.json();boot.knowledge.conditions.answerModelAutoConnect=true;boot.knowledge.conditions.answerModelReady=ready;return Response.json(boot,{headers:response.headers})}
+      return response
     })
     assert.equal(probes,1);assert.equal(c.getSnapshot().error,null);assert.equal(c.getSnapshot().status,'')
     c.setDraft('立即出现的消息');const pending=c.send();assert.equal(c.getSnapshot().pendingBody,'立即出现的消息');assert.equal(c.getSnapshot().draft,'');assert(c.getSnapshot().status.includes('纱雾'));assert(!c.getSnapshot().status.includes('连接'));assert.equal(probes,1)

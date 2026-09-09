@@ -1,0 +1,109 @@
+<svg viewBox="0 0 1240 1050" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="aGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a4450"/></marker>
+    <marker id="aGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#316247"/></marker>
+    <marker id="aRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#96434f"/></marker>
+  </defs>
+  <rect x="8" y="8" width="1224" height="1034" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="36" y="46" font-size="19" font-weight="700" fill="#282529">纱雾助手一次完整往来：哪些是问我们自己的服务器，哪些是真的花钱调模型</text>
+  <text x="36" y="70" font-size="12.5" fill="#756f73">每块右上角分开标两个数：「问服务器几次」和「调模型几次」。只有红色箭头花钱、占额度，绿色和灰色都不花钱。</text>
+
+  <rect x="36" y="88" width="250" height="30" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="161" y="108" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">用户的浏览器</text>
+  <rect x="495" y="88" width="250" height="30" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="620" y="108" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">我们的服务器</text>
+  <rect x="954" y="88" width="250" height="30" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="1079" y="108" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">模型服务商（花钱的一端）</text>
+  <line x1="161" y1="118" x2="161" y2="964" stroke="#c3bcc6" stroke-width="1" stroke-dasharray="4 4"/>
+  <line x1="620" y1="118" x2="620" y2="964" stroke="#c3bcc6" stroke-width="1" stroke-dasharray="4 4"/>
+  <line x1="1079" y1="118" x2="1079" y2="964" stroke="#d99aa5" stroke-width="1" stroke-dasharray="4 4"/>
+
+  <!-- 块一 -->
+  <rect x="36" y="132" width="1168" height="200" rx="10" fill="#ffffff" stroke="#e2dcdf"/>
+  <text x="52" y="154" font-size="14" font-weight="700" fill="#282529">打开助手</text>
+  <rect x="960" y="140" width="232" height="22" rx="7" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="1076" y="155" text-anchor="middle" font-size="11" fill="#4a4450">问服务器 2 次　·　调模型 0~1 次</text>
+
+  <line x1="161" y1="184" x2="616" y2="184" stroke="#316247" stroke-width="2" marker-end="url(#aGreen)"/>
+  <text x="388" y="178" text-anchor="middle" font-size="11" fill="#316247">第 1 次：取回「助手会什么」和会话列表</text>
+  <line x1="620" y1="204" x2="165" y2="204" stroke="#4a4450" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#aGray)"/>
+
+  <line x1="161" y1="234" x2="616" y2="234" stroke="#316247" stroke-width="2" marker-end="url(#aGreen)"/>
+  <text x="388" y="228" text-anchor="middle" font-size="11" fill="#316247">第 2 次：取回选中那本会话的正文、上下文和最近一次回答</text>
+  <line x1="620" y1="254" x2="165" y2="254" stroke="#4a4450" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#aGray)"/>
+
+  <line x1="624" y1="288" x2="1075" y2="288" stroke="#96434f" stroke-width="2" marker-end="url(#aRed)"/>
+  <text x="850" y="282" text-anchor="middle" font-size="11" font-weight="700" fill="#96434f">花钱 ①　连通性探测（第一次连接也是靠这一次建立的）</text>
+  <rect x="196" y="298" width="1000" height="26" rx="7" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="696" y="309" text-anchor="middle" font-size="11" fill="#96434f">页面加载或发消息前检查连接是否过期（30 分钟），过期才探；打开面板本身不触发，也没有定时器到点主动探。</text>
+  <text x="696" y="321" text-anchor="middle" font-size="11" fill="#96434f">用项目自带 key 时全站共享一条连接 —— 全站每 30 分钟最多探一次，不是每人一次。自带 key（BYOK）才是每人一份。</text>
+
+  <!-- 块二 -->
+  <rect x="36" y="346" width="1168" height="310" rx="10" fill="#ffffff" stroke="#e2dcdf"/>
+  <text x="52" y="368" font-size="14" font-weight="700" fill="#282529">问一句话，直到回答完</text>
+  <rect x="960" y="354" width="232" height="22" rx="7" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="1076" y="369" text-anchor="middle" font-size="11" fill="#4a4450">问服务器 2 次　·　调模型 1 次起</text>
+
+  <line x1="161" y1="400" x2="616" y2="400" stroke="#316247" stroke-width="2" marker-end="url(#aGreen)"/>
+  <text x="388" y="394" text-anchor="middle" font-size="11" fill="#316247">第 1 次：把这句话发出去</text>
+  <line x1="620" y1="422" x2="165" y2="422" stroke="#4a4450" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#aGray)"/>
+  <text x="388" y="416" text-anchor="middle" font-size="11" fill="#4a4450">回执直接带上「已存好的这句话」和会话新版本，所以不用再问一遍</text>
+
+  <line x1="161" y1="450" x2="616" y2="450" stroke="#316247" stroke-width="2" marker-end="url(#aGreen)"/>
+  <text x="388" y="444" text-anchor="middle" font-size="11" fill="#316247">第 2 次：打开回话通道，之后所有进展都从这条通道推过来</text>
+
+  <rect x="404" y="468" width="432" height="42" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="620" y="486" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">服务器先占额度再开工</text>
+  <text x="620" y="502" text-anchor="middle" font-size="11" fill="#36566d">这一整轮只算 1 次「每日对话次数」，但下面每调一次模型都单独计费</text>
+
+  <line x1="624" y1="536" x2="1075" y2="536" stroke="#96434f" stroke-width="2" marker-end="url(#aRed)"/>
+  <text x="850" y="530" text-anchor="middle" font-size="11" font-weight="700" fill="#96434f">花钱 ②　让模型作答：一边生成一边往回吐字</text>
+  <line x1="1079" y1="556" x2="628" y2="556" stroke="#96434f" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#aRed)"/>
+  <text x="850" y="550" text-anchor="middle" font-size="11" fill="#96434f">回答文字，或者「我要查一下追番记录」</text>
+
+  <rect x="404" y="568" width="432" height="20" rx="6" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="620" y="582" text-anchor="middle" font-size="11" fill="#316247">查资料在本机库里完成，不花钱</text>
+  <path d="M842 579 L900 579 L900 536" fill="none" stroke="#96434f" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#aRed)"/>
+  <text x="916" y="582" font-size="11" fill="#96434f">查完再问一次模型 —— 每绕一圈多花一次</text>
+
+  <line x1="624" y1="620" x2="1075" y2="620" stroke="#96434f" stroke-width="2" marker-end="url(#aRed)"/>
+  <text x="850" y="614" text-anchor="middle" font-size="11" font-weight="700" fill="#96434f">花钱 ③　聊太长时自动叫模型压缩历史（也可手动点「压缩上下文」触发）</text>
+  <text x="52" y="618" font-size="11" fill="#756f73">压缩不额外占</text>
+  <text x="52" y="632" font-size="11" fill="#756f73">「每日对话次数」，</text>
+  <text x="52" y="646" font-size="11" fill="#756f73">但真的要花钱</text>
+
+  <!-- 块三 -->
+  <rect x="36" y="670" width="1168" height="164" rx="10" fill="#ffffff" stroke="#e2dcdf"/>
+  <text x="52" y="692" font-size="14" font-weight="700" fill="#282529">回答的收尾</text>
+  <rect x="960" y="678" width="232" height="22" rx="7" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="1076" y="693" text-anchor="middle" font-size="11" fill="#4a4450">问服务器 0 次　·　调模型 0 次</text>
+  <text x="176" y="692" font-size="11" fill="#756f73">以前这里要再问服务器三次，现在一次都不问</text>
+
+  <line x1="620" y1="720" x2="165" y2="720" stroke="#4a4450" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#aGray)"/>
+  <text x="388" y="714" text-anchor="middle" font-size="11" fill="#4a4450">回话通道持续推送：正文一个字一个字出现、正在查什么、进度</text>
+
+  <rect x="220" y="738" width="800" height="80" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="620" y="760" text-anchor="middle" font-size="12.5" font-weight="700" fill="#7a6234">最后一帧就是「这次回答的正式档案」</text>
+  <text x="620" y="780" text-anchor="middle" font-size="11" fill="#7a6234">里面带齐了会话新版本、这次回答的最终状态、资料来源和用量；正文不重复传（已经一个字一个字到齐了）</text>
+  <text x="620" y="800" text-anchor="middle" font-size="11" fill="#7a6234">全程没断线且这三样齐全 → 收尾一个请求都不发；只要断过一次或缺一样 → 老老实实整套重读，绝不用可能有洞的本地内容凑合</text>
+
+  <!-- 块四 -->
+  <rect x="36" y="848" width="1168" height="122" rx="10" fill="#ffffff" stroke="#e2dcdf"/>
+  <text x="52" y="870" font-size="14" font-weight="700" fill="#282529">确认一次追番改动</text>
+  <rect x="960" y="856" width="232" height="22" rx="7" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="1076" y="871" text-anchor="middle" font-size="11" fill="#4a4450">问服务器 1 次　·　调模型 0 次</text>
+  <text x="216" y="870" font-size="11" fill="#756f73">确认执行完全不经过模型，一分钱不花</text>
+
+  <line x1="161" y1="898" x2="616" y2="898" stroke="#4a4450" stroke-width="1.2" stroke-dasharray="6 3" marker-end="url(#aGray)"/>
+  <text x="388" y="892" text-anchor="middle" font-size="11" fill="#4a4450">卡片出现时：取回新旧值对照和确认凭证（凭证从不交给模型）</text>
+
+  <line x1="161" y1="934" x2="616" y2="934" stroke="#316247" stroke-width="2" marker-end="url(#aGreen)"/>
+  <text x="388" y="928" text-anchor="middle" font-size="11" fill="#316247">点「确认执行」：服务器核对后直接改数据库</text>
+  <text x="860" y="934" text-anchor="middle" font-size="11" fill="#4a4450">回执带上改完的结果和会话新版本 → 卡片就地变「已完成」，不再重读</text>
+
+  <!-- 汇总 -->
+  <rect x="36" y="984" width="1168" height="56" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="52" y="1005" font-size="11" fill="#36566d">花钱的只有三处：①连通性探测（连接过期时，全站共享）　②让模型作答（每查一次资料多一次）　③压缩历史。查追番、确认执行、翻历史都不碰模型。</text>
+  <text x="52" y="1024" font-size="11" fill="#36566d">问服务器的次数：改前打开 5~6、每轮 10、确认 5、切回标签页 4，一轮就把每分钟 10 次的限流打爆；改后 2 / 2 / 1 / 0，且与「已经聊了多久」无关。</text>
+</svg>

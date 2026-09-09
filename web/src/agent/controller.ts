@@ -1,12 +1,16 @@
 import { AgentConnection } from './connection'
 import { agentActivity } from './AgentActivity'
 import type { ContextSummary,CompactJob,PreferenceCard,PreferenceSettings,PreferenceValues } from '../../shared/agent-context'
-import type { PageAnimeContext,HistorySession,HistoryMessage,HistorySnapshot } from '../../shared/agent-history'
+import type { PageAnimeContext,HistorySession,HistoryMessage,HistorySnapshot,HistoryAction } from '../../shared/agent-history'
 import type { ContextTier } from '../../shared/agent-contracts'
 import type { RunView,RunEvent } from '../../shared/agent-run'
 import type { KnowledgeSnapshot } from '../../server/agent/knowledge'
 import { subscribeAgentEvents } from '../../shared/agent-stream'
 import { pageContext,activeCompact,applyDelta,idValid,mergeMessages,type AnimeContext,type AgentIssue,type ActionPreview } from './model'
+
+// 确认/取消变更的响应回执:服务端只回传状态字段,summary 等留用本地已有的。
+type TerminalMessage={id:string;seq:number;status:HistoryMessage['status'];sources:HistoryMessage['sources'];toolSummaries:HistoryMessage['toolSummaries'];usage:HistoryMessage['usage']}
+type ActionReceiptPatch={actionId:string;state:HistoryAction['state'];evidence:HistoryAction['evidence'];errorCode:HistoryAction['errorCode'];eventSeq:number;updatedAt:number}
 
 type Cursor={beforeUpdatedAt:number;beforeId:string}
 export interface ContextInfo {session:HistorySession;adaptive:boolean;active:ContextSummary|null;versions:Omit<ContextSummary,'state'>[];job:CompactJob|null}
@@ -43,10 +47,13 @@ export class AgentController {
   private preferenceSerial=0
   private stream:AbortController|null=null
   private streamRunId:string|null=null
+  // 本次订阅是否从头到尾没断过。断过就说明可能漏了 delta,收尾必须整套回读正文。
+  private streamClean=false
+  // 终态事件是否带全了收尾所需的三样(会话/回合/消息)。
+  private settled=false
   private reconnectTimer:ReturnType<typeof setTimeout>|null=null
   private reconnectN=0
   private poll:ReturnType<typeof setTimeout>|null=null
-  private refreshTimer:ReturnType<typeof setTimeout>|null=null
   private failedSend:{requestId:string;body:string;sessionId:string}|null=null
   private pendingCreate:{requestId:string;title?:string;currentBgmId:number|null;pageContext:PageAnimeContext|null}|null=null
   private lastRefresh=0
@@ -58,7 +65,7 @@ export class AgentController {
   // 回合恢复/收尾后，清掉之前那条「进度连接断开」的旧横幅，别让它一直吓人。
   private clearStale(){if(this.state.error?.code==='STREAM_DISCONNECTED')this.set({error:null})}
   private expire(){this.set({...initial(),authExpired:true,ready:true});this.options.onAuthExpired?.();this.dispose()}
-  dispose(){this.alive=false;for(const controller of this.requests)controller.abort();this.requests.clear();this.viewRequests.clear();this.stream?.abort();if(this.poll)clearTimeout(this.poll);if(this.refreshTimer)clearTimeout(this.refreshTimer);if(this.reconnectTimer)clearTimeout(this.reconnectTimer);this.drafts.clear();this.titles.clear();this.buffers.clear();this.cursors.clear();this.seen.clear();this.unreadMessages.clear();this.actionFetches.clear();this.failedSend=null;this.pendingCreate=null;this.state={...initial(),authExpired:this.state.authExpired,ready:this.state.authExpired}}
+  dispose(){this.alive=false;for(const controller of this.requests)controller.abort();this.requests.clear();this.viewRequests.clear();this.stream?.abort();if(this.poll)clearTimeout(this.poll);if(this.reconnectTimer)clearTimeout(this.reconnectTimer);this.drafts.clear();this.titles.clear();this.buffers.clear();this.cursors.clear();this.seen.clear();this.unreadMessages.clear();this.actionFetches.clear();this.failedSend=null;this.pendingCreate=null;this.state={...initial(),authExpired:this.state.authExpired,ready:this.state.authExpired}}
   private async api<T>(path:string,method='GET',body?:unknown,view=false):Promise<T>{
     if(!this.alive)throw stopped()
     const controller=new AbortController();this.requests.add(controller);if(view)this.viewRequests.add(controller)
@@ -99,7 +106,8 @@ export class AgentController {
     if(this.state.loading||this.state.ready)return
     this.set({loading:true,error:null})
     try{
-      const [knowledge,list]=await Promise.all([this.api<KnowledgeSnapshot>('/knowledge'),this.api<{sessions:HistorySession[];nextCursor:Cursor|null}>('/sessions')])
+      const list=await this.api<{sessions:HistorySession[];nextCursor:Cursor|null;knowledge:KnowledgeSnapshot}>('/bootstrap')
+      const knowledge=list.knowledge
       this.set({knowledge,sessions:list.sessions,cursor:list.nextCursor,ready:true})
       if(knowledge.conditions.answerModelAutoConnect)void this.prepareProvider().catch(()=>{})
       const remembered=this.remembered(),selected=idValid(remembered)?remembered:list.sessions[0]?.id
@@ -120,7 +128,8 @@ export class AgentController {
     const turn=++this.selection;for(const request of this.viewRequests)request.abort();this.viewRequests.clear()
     this.set({loading:true,error:null,session:null,messages:[],context:null,run:null,beforeSeq:null,draft:this.drafts.get(id)??'',anime:null,status:'',editingSeq:null})
     try{
-      const [snapshot,context,runs]=await Promise.all([this.api<HistorySnapshot>(`/sessions/${id}?limit=50`,'GET',undefined,true),this.api<ContextInfo>(`/sessions/${id}/context`,'GET',undefined,true),this.api<{runs:RunView[]}>(`/sessions/${id}/runs`,'GET',undefined,true)])
+      const opened=await this.api<HistorySnapshot&{context:ContextInfo;runs:RunView[]}>(`/sessions/${id}?limit=50&include=context,runs`,'GET',undefined,true)
+      const snapshot=opened,context=opened.context,runs={runs:opened.runs}
       if(turn!==this.selection)return
       const session=context.session.revision>snapshot.session.revision?context.session:snapshot.session
       const run=runs.runs.find(r=>r.state==='running')??runs.runs[0]??null
@@ -135,18 +144,30 @@ export class AgentController {
   // 只有用户点「重新读取」才走非静默、失败弹提示。
   async refresh(silent=false){
     if(!this.alive||this.state.loading||this.state.busy)return
+    // 切回标签页触发的静默对账:回合在跑时 SSE 已经是最新的;否则 30s 内不重复拉。
+    if(silent&&(this.state.connection==='connected'||Date.now()-this.lastRefresh<30_000))return
     if(!silent)this.set({error:null})
     try{const knowledge=await this.api<KnowledgeSnapshot>('/knowledge');this.set({knowledge});await this.refreshCurrent();if(!this.reconnectTimer&&this.state.watchingRun?.state==='running'&&this.state.connection==='disconnected'){this.reconnectN=0;this.follow(this.state.watchingRun,true)}}catch(error){if(!silent)this.fail(error)}
   }
-  private async refreshCurrent(){
+  // 收尾。流全程没断、且终态事件把会话/回合/消息都带全了 —— 该知道的都已经在本地,一个请求都不发。
+  // 任何一条不成立(中途重连过、事件不完整)就整套回读,绝不用可能有洞的本地状态糊弄过去。
+  private async settle(){
+    if(this.streamClean&&this.settled){this.lastRefresh=Date.now();if(this.state.open)this.markRead();this.syncActions();return}
+    await this.refreshCurrent(!this.streamClean)
+  }
+  // withRuns=false:回合刚从**没断过**的流里结束,权威 run 已由终态事件和 follow() 的收尾读取给到,
+  // 不必再拉一次 /runs。正文仍要回读——sources、工具摘要、用量只存在于落库的消息里,delta 不带。
+  private async refreshCurrent(withRuns=true){
     const id=this.state.session?.id,turn=this.selection,serial=++this.refreshSerial;if(!id)return
-    const [snapshot,context,runs]=await Promise.all([this.api<HistorySnapshot>(`/sessions/${id}?limit=50`,'GET',undefined,true),this.api<ContextInfo>(`/sessions/${id}/context`,'GET',undefined,true),this.api<{runs:RunView[]}>(`/sessions/${id}/runs?limit=1`,'GET',undefined,true)])
+    const read=await this.api<HistorySnapshot&{context:ContextInfo;runs?:RunView[]}>(`/sessions/${id}?limit=50&include=${withRuns?'context,runs':'context'}`,'GET',undefined,true)
+    const snapshot=read,context=read.context,runs=withRuns?{runs:read.runs??[]}:null
     if(turn!==this.selection||serial!==this.refreshSerial)return
     this.lastRefresh=Date.now()
     const session=context.session.revision>snapshot.session.revision?context.session:snapshot.session
     const minSeq=(snapshot.messages.at(-1)?.seq??0)-session.messageCount+1
     const kept=this.state.messages.filter(message=>message.seq>=minSeq)
-    const freshRun=runs.runs[0]??null
+    const known=this.state.watchingRun?.sessionId===id?this.state.watchingRun:this.state.run
+    const freshRun=runs?runs.runs[0]??null:known
     let messages=session.messageCount?mergeMessages(kept,snapshot.messages):[]
     // 权威 run 已终态，但本地还有它的流式消息没收尾（SSE 掉线漏了收尾事件）——按 run 状态定型，别一直转圈。
     if(freshRun&&freshRun.state!=='running'&&freshRun.state!=='paused')
@@ -201,11 +222,17 @@ export class AgentController {
       }
       const retry=this.failedSend?.sessionId===session.id&&this.failedSend.body===body?this.failedSend:{requestId:crypto.randomUUID(),sessionId:session.id,body}
       this.failedSend=retry
-      const {run}=await this.api<{run:RunView}>(`/sessions/${session.id}/runs`,'POST',{requestId:retry.requestId,expectedRevision:session.revision,body,clientVersion:this.clientVersion})
+      const started=await this.api<{run:RunView;session:HistorySession|null;userMessage:HistoryMessage|null}>(`/sessions/${session.id}/runs`,'POST',{requestId:retry.requestId,expectedRevision:session.revision,body,clientVersion:this.clientVersion})
+      const run=started.run
       if(!session.startedAt)this.drafts.delete('new')
       this.failedSend=null;this.drafts.set(session.id,'');this.set({draft:'',run,status:agentActivity('thinking')});this.follow(run)
-      // 回合已经启动，SSE 负责进度；这里的后台对账失败不该把成功的发送报成「请求已停止」。
-      try{await this.refreshCurrent();await this.list()}catch{/* follow() 会补上进度 */}
+      // 响应已经带回落库后的会话和用户消息,直接用它们更新;只有幂等重放(两者为 null)才回退到整套对账。
+      if(started.session&&started.userMessage){
+        this.updateSession(started.session)
+        this.set({session:started.session,messages:mergeMessages(this.state.messages,[started.userMessage]),pendingBody:null})
+      }else{
+        try{await this.refreshCurrent();await this.list()}catch{/* follow() 会补上进度 */}
+      }
       }catch(error){if(!this.state.draft)this.set({draft:body});throw error}finally{this.set({pendingBody:null})}
     })
   }
@@ -213,26 +240,39 @@ export class AgentController {
     if(this.state.knowledge?.conditions.answerModelAutoConnect)await this.providerConnection.ensure()
   }
   private async connectProvider(){
-    await this.api('/provider/prepare','POST',{})
-    const knowledge=await this.api<KnowledgeSnapshot>('/knowledge')
-    if(!knowledge.conditions.answerModelReady)throw new UiError('PROVIDER_CONNECTION_REQUIRED','模型连接尚未就绪，请检查 AI 配置。')
-    this.set({knowledge})
+    // prepare 的响应本身就带 ready，不必再拉一次 /knowledge 才知道连上没有。
+    const status=await this.api<{ready:boolean}>('/provider/prepare','POST',{})
+    if(!status.ready)throw new UiError('PROVIDER_CONNECTION_REQUIRED','模型连接尚未就绪，请检查 AI 配置。')
+    const knowledge=this.state.knowledge
+    if(knowledge)this.set({knowledge:{...knowledge,conditions:{...knowledge.conditions,answerModelReady:true}}})
   }
-  // SSE 事件触发的后台对账：失败不弹横幅（回合还在流式回答，进度以 SSE 为准），下个事件或收尾时自愈。
-  // 至少隔 2.5s 一次，避免工具多的回合把只读额度（120/min）打爆导致 429。
-  private scheduleRefresh(){if(this.refreshTimer)return;this.refreshTimer=setTimeout(()=>{this.refreshTimer=null;void this.refreshCurrent().catch(()=>{})},Math.max(6000,8000-(Date.now()-this.lastRefresh)))}
   private follow(run:RunView,reconnect=false){
     if(this.streamRunId===run.id&&!reconnect&&this.state.connection==='connected'&&this.state.watchingRun?.attempt===run.attempt)return
     if(this.reconnectTimer){clearTimeout(this.reconnectTimer);this.reconnectTimer=null}
     if(!reconnect)this.reconnectN=0
-    this.stream?.abort();const controller=new AbortController();this.stream=controller;this.streamRunId=run.id
+    this.stream?.abort();const controller=new AbortController();this.stream=controller;this.streamRunId=run.id;this.streamClean=!reconnect;this.settled=false
     this.set({watchingRun:run,connection:'connected',syncing:false})
     void(async()=>{
       try{
         for await(const event of subscribeAgentEvents({runId:run.id,afterSeq:this.cursors.get(run.id)??0,signal:controller.signal,fetchImpl:async(input,init)=>{const response=await(this.options.fetchImpl??fetch)(input,init);if(response.status===401||response.headers.get('X-Agent-Owner')!==String(this.uid)){this.expire();throw stopped()}return response}})){
           if(!this.alive||controller.signal.aborted)return;this.reconnectN=0;this.clearStale();this.cursors.set(run.id,event.seq);this.event(run,event)
         }
-        if(!controller.signal.aborted){const result=await this.api<{run:RunView}>(`/runs/${run.id}`);if(controller.signal.aborted||this.stream!==controller)return;if(this.state.session?.id===run.sessionId)await this.refreshCurrent();if(controller.signal.aborted||this.stream!==controller)return;this.reconnectN=0;this.clearStale();this.set({watchingRun:result.run,connection:'idle',syncing:false})}
+        if(!controller.signal.aborted){
+          // 终态帧就是权威记录:回合状态已由 event() 落到 watchingRun,不再回读。
+          // 帧不完整或中途断过时才读一次权威回合 —— 这条晚到的读仍受下面的守卫保护。
+          //
+          // 关于那两处 stream!==controller 守卫:**目前没有测试覆盖**,而且我找不到能触发它的路径 ——
+          // 终态事件会把 syncing 置为 true,而 mutate() 在 syncing 期间拒绝一切用户操作(send/resume),
+          // 所以这次读悬着的时候建不出新通道,也就没有可被覆盖的状态。用变异测试确认过:
+          // 拆掉这两行,整套 UI 测试仍然全绿(改动前的版本同样如此)。
+          // 保留它们是廉价保险 —— 一旦 syncing 的串行化被放宽,这里就是唯一的兜底。改动请连带重估。
+          const complete=this.streamClean&&this.settled
+          const latest=complete?null:(await this.api<{run:RunView}>(`/runs/${run.id}`)).run
+          if(controller.signal.aborted||this.stream!==controller)return
+          if(this.state.session?.id===run.sessionId)await this.settle()
+          if(controller.signal.aborted||this.stream!==controller)return
+          this.reconnectN=0;this.clearStale();this.set({...latest?{watchingRun:latest}:{},connection:'idle',syncing:false})
+        }
       }catch(error){
         if(!this.alive||controller.signal.aborted||this.stream!==controller)return
         if(error instanceof Error&&error.message==='HTTP_401'){this.expire();return}
@@ -282,10 +322,20 @@ export class AgentController {
     if(current&&event.type==='context'&&data.state==='price_warning')this.set({status:`本次调用最高估算 US$${Number(data.estimatedCost).toFixed(4)}`})
     if(current&&event.type==='soft_limit')this.set({status:'处理时间较长…'})
     if(current&&event.type==='long_task')this.set({status:'任务仍在运行，可取消。'})
-    if(current&&['tool_finished','context'].includes(event.type))this.scheduleRefresh()
+    // 这里刻意**不**对账。SSE 是权威数据源，事件已经把正文、状态、活动都带上了；
+    // 回合进终态时 follow() 收尾对账一次，断线时 retryFollow() 补一次，足够且不重复。
     if(['completed','failed','cancelled','paused'].includes(event.type)){
       if(event.type==='completed')this.clearStale()
-      const next={...run,state:event.type as RunView['state'],lastEventSeq:event.seq,canResume:event.type==='paused'}
+      // 终态事件自带「会话 + 权威回合 + 定型的回答消息」。三样齐全就地收尾,不再回读。
+      // 缺任何一样(旧服务端、消息找不到)都记为不完整,由 settle() 回退到整套回读。
+      const ended=data.session as unknown as HistorySession|undefined
+      const authoritative=data.run as unknown as RunView|undefined
+      const finalized=data.message as unknown as TerminalMessage|null|undefined
+      this.settled=Boolean(ended&&authoritative&&finalized)
+      if(ended&&current&&ended.revision>=(this.state.session?.revision??0)){this.updateSession(ended);this.set({session:ended})}
+      if(finalized&&current)this.set({messages:this.state.messages.map(m=>m.id===finalized.id
+        ?{...m,status:finalized.status,sources:finalized.sources,toolSummaries:finalized.toolSummaries,usage:finalized.usage}:m)})
+      const next={...(data.run as unknown as RunView|undefined)??run,state:event.type as RunView['state'],lastEventSeq:event.seq,canResume:event.type==='paused'}
       this.set({watchingRun:next,syncing:true,...current?{run:next,status:event.type==='completed'?'':event.type==='cancelled'?'已停止回复':event.type==='paused'?'已暂停':'回复失败，已保留生成内容'}:{}})
     }
   }
@@ -350,19 +400,28 @@ export class AgentController {
       }
     }
   }
+  // 确认/取消的结果是**已知**的状态变化:服务端把新回执和新会话一起给了回来,
+  // 就地改写那张卡片即可,不必为了一个已知结果再拉一整套快照。
+  private applyReceipt(action:ActionReceiptPatch,session:HistorySession){
+    this.updateSession(session)
+    // 回执视图不含 summary / userReportedSuccess,只覆盖服务端确实改动的字段。
+    this.set({session,messages:this.state.messages.map(message=>message.actions.some(a=>a.actionId===action.actionId)
+      ?{...message,actions:message.actions.map(a=>a.actionId===action.actionId?{...a,state:action.state,evidence:action.evidence,errorCode:action.errorCode,eventSeq:action.eventSeq,updatedAt:action.updatedAt}:a)}:message)})
+    this.syncActions()
+  }
   async confirmAction(actionId:string){
     const preview=this.state.actionPreviews[actionId]
     if(!preview?.confirmationToken)return
     await this.mutate('确认变更',async()=>{
-      await this.api(`/actions/${actionId}/apply`,'POST',{actionId,requestId:`apply:${actionId}`,expectedRevision:preview.preview.expectedRevision,confirmationToken:preview.confirmationToken})
-      await this.refreshCurrent();await this.list()
+      const result=await this.api<{action:ActionReceiptPatch;session:HistorySession}>(`/actions/${actionId}/apply`,'POST',{actionId,requestId:`apply:${actionId}`,expectedRevision:preview.preview.expectedRevision,confirmationToken:preview.confirmationToken})
+      this.applyReceipt(result.action,result.session)
     })
   }
   async cancelAction(actionId:string){
     const preview=this.state.actionPreviews[actionId]
     await this.mutate('取消变更',async()=>{
-      await this.api(`/actions/${actionId}/cancel`,'POST',preview?{expectedRevision:preview.preview.expectedRevision}:{})
-      await this.refreshCurrent()
+      const result=await this.api<{action:ActionReceiptPatch;session:HistorySession}>(`/actions/${actionId}/cancel`,'POST',preview?{expectedRevision:preview.preview.expectedRevision}:{})
+      this.applyReceipt(result.action,result.session)
     })
   }
 }

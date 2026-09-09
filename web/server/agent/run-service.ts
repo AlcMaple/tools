@@ -75,7 +75,7 @@ export class AgentRunService {
     const binding=await waitBounded(Promise.resolve(this.resolve(uid,sessionId)),AbortSignal.timeout(30_000)),knowledge=this.checkBinding(binding)
     const result=this.store.begin(uid,sessionId,p,knowledge,authVersion)
     if(result.fresh)this.launch(result.row,binding)
-    return this.store.view(result.row)
+    return {run:this.store.view(result.row),session:result.session,userMessage:result.userMessage}
   }
   async resume(uid:number,id:string,input:unknown,authVersion:number){
     if(!matchesContract(RESUME_RUN_SCHEMA,input))throw new AgentRunError('INVALID_ARGUMENT',400)
