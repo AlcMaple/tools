@@ -25,6 +25,8 @@ export function parseConnection(value:unknown):{source:'server'|'byok';endpoint?
   if(!matchesContract(schema,value))throw new AgentRunError('INVALID_ARGUMENT',400)
   return value as {source:'server'|'byok';endpoint?:string;model?:string;key?:string}
 }
+// 挂载点必须是 '/provider'(见 history-api)。Hono 的 route('/',sub) 会把 sub 的 use('*') 合并成父路由的
+// 全局中间件 —— 曾经因此让这里的限流和 8KB body 上限套在**每一条** /api/agent 请求上。
 export function createExternalApi(){
   const api=new Hono<{Variables:{uid:number}}>()
   api.use('*',async(c,next)=>{c.header('Cache-Control','no-store');const s=await getSession(c);if(!s)throw new AgentRunError('AUTH_REQUIRED',401);c.set('uid',s.uid);c.header('X-Agent-Owner',String(s.uid));logAgentRequest('provider',c.req.method,c.req.path,s.uid);
@@ -39,17 +41,17 @@ export function createExternalApi(){
   api.use('*',bodyLimit({maxSize:8192,onError:c=>c.json({code:'MESSAGE_TOO_LARGE'},413)}))
   api.onError((error,c)=>{logAgentIssue('provider',{method:c.req.method,path:c.req.path,uid:c.get('uid')},error)
     return c.json(externalError(error),error instanceof AgentRunError?error.status:503)})
-  api.get('/provider',c=>c.json(externalStatus(c.get('uid'))))
-  api.post('/provider/prepare',async c=>{
+  api.get('/',c=>c.json(externalStatus(c.get('uid'))))
+  api.post('/prepare',async c=>{
     const input=await externalBody(c)
     if(!matchesContract({type:'object',properties:{},required:[],additionalProperties:false},input))throw new AgentRunError('INVALID_ARGUMENT',400)
     const uid=c.get('uid')
     return c.json(await prepareExternal(uid,`user:${uid}`,AbortSignal.any([c.req.raw.signal,AbortSignal.timeout(30000)])))
   })
-  api.post('/provider/connect',async c=>{
+  api.post('/connect',async c=>{
     const uid=c.get('uid'),input=parseConnection(await externalBody(c))
     return c.json(await connectExternal(uid,`user:${uid}`,input,AbortSignal.any([c.req.raw.signal,AbortSignal.timeout(30000)])))
   })
-  api.delete('/provider/connection',c=>{forgetConnection(c.get('uid'));return c.json({ok:true})})
+  api.delete('/connection',c=>{forgetConnection(c.get('uid'));return c.json({ok:true})})
   return api
 }

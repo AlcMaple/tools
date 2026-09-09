@@ -47,6 +47,13 @@ export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)
     return c.json({code:'INTERNAL_ERROR',error:'这次操作遇到问题，原有记录仍然保留。'},500)
   })
   app.get('/knowledge',c=>c.json(knowledge(c.get('runUid'))))
+  // 打开助手 = 一次请求:功能说明 + 会话列表本来就是同一屏要用的。
+  // 放在这里而不是 history-api,是因为 knowledge 由本模块注入 —— 合并读取不能引入第二个知识来源。
+  app.get('/bootstrap',c=>{
+    const uid=c.get('runUid')
+    if(Object.keys(c.req.queries()).length)throw new AgentRunError('INVALID_ARGUMENT',400)
+    return c.json({knowledge:knowledge(uid),...service.store.history().listSessions(uid,{})})
+  })
   const actionId=(c:Context)=>{const id=c.req.param('actionId')??'';if(!/^act-[a-zA-Z0-9-]{1,90}$/.test(id))throw new AgentRunError('NOT_FOUND',404);return id}
   app.get('/actions/:actionId',c=>c.json(actions.detail(c.get('runUid'),actionId(c))))
   app.post('/actions/:actionId/apply',async c=>{
@@ -70,9 +77,9 @@ export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)
       beforeCreatedAt:query.beforeCreatedAt?Number(query.beforeCreatedAt[0]):undefined,beforeId:query.beforeId?.[0]}))
   })
   app.post('/sessions/:sessionId/runs',async c=>{
-    const run=await service.start(c.get('runUid'),c.req.param('sessionId'),await readBody(c),c.get('runTv'))
-    try{c.executionCtx.waitUntil(service.wait(run.id))}catch{}
-    return c.json({run},202)
+    const started=await service.start(c.get('runUid'),c.req.param('sessionId'),await readBody(c),c.get('runTv'))
+    try{c.executionCtx.waitUntil(service.wait(started.run.id))}catch{}
+    return c.json(started,202)
   })
   app.get('/runs/:runId',c=>c.json({run:service.status(c.get('runUid'),c.req.param('runId'))}))
   app.post('/runs/:runId/resume',async c=>{

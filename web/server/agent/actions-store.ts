@@ -241,7 +241,8 @@ export class AgentActionStore {
     if (pre.apply_request_id !== null) {
       if (pre.apply_request_id !== input.requestId) throw new AgentRunError('CONFIRMATION_REQUIRED', 409)
       const done = this.row(uid, actionId)
-      return { action: receiptView(done), track: done.state === 'completed' ? this.currentTrack(uid, done.bgm_id) : null }
+      return { action: receiptView(done), track: done.state === 'completed' ? this.currentTrack(uid, done.bgm_id) : null,
+        session: this.session(uid, done.session_id) }
     }
     const provided = Buffer.from(input.confirmationToken), expected = Buffer.from(pre.confirm_token)
     if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) throw new AgentRunError('CONFIRMATION_REQUIRED', 409)
@@ -291,21 +292,24 @@ export class AgentActionStore {
       const seq = this.syncMessage(uid, pre, 'completed', 'server_readback', null)
       this.db.prepare("UPDATE agent_actions SET state = 'completed', evidence = 'server_readback', actual_revision = ?, event_seq = ?, apply_request_id = ?, updated_at = ? WHERE user_id = ? AND id = ?")
         .run(nextRev, seq, input.requestId, now, uid, actionId)
-      return { action: receiptView(this.row(uid, actionId)), track: readback }
+      return { action: receiptView(this.row(uid, actionId)), track: readback, session: this.session(uid, pre.session_id) }
     }).immediate()
     return result
   }
 
   cancel(uid: number, actionId: string, input: { expectedRevision?: number }) {
     const r = this.row(uid, actionId)
-    if (r.state === 'cancelled') return { action: receiptView(r) }
+    if (r.state === 'cancelled') return { action: receiptView(r), session: this.session(uid, r.session_id) }
     if (r.state !== 'prepared') throw new AgentRunError('ACTION_EXPIRED', 409)
     if (input.expectedRevision !== undefined && input.expectedRevision !== r.expected_revision) throw new AgentRunError('REVISION_CONFLICT', 409)
     if (!permitsActionTransition('track_change', 'prepared', 'cancelled', { origin: 'user_click' })) throw new AgentRunError('INTERNAL_ERROR', 409)
     const seq = this.syncMessage(uid, r, 'cancelled', 'user_click', null)
     this.db.prepare("UPDATE agent_actions SET state = 'cancelled', evidence = 'user_click', event_seq = ?, updated_at = ? WHERE user_id = ? AND id = ?").run(seq, this.now(), uid, actionId)
-    return { action: receiptView(this.row(uid, actionId)) }
+    return { action: receiptView(this.row(uid, actionId)), session: this.session(uid, r.session_id) }
   }
+  // 确认/取消后把最新会话一并返回:客户端据此更新 revision 并就地改写卡片状态,
+  // 不必为了一个已知的状态变化再拉一整套快照(见 controller.confirmAction)。
+  private session(uid: number, sessionId: string) { return this.history.snapshot(uid, sessionId, { limit: 1 }).session }
   private expire(uid: number, r: ActionRow) {
     if (r.state !== 'prepared') return
     const seq = this.syncMessage(uid, r, 'cancelled', 'server_readback', 'ACTION_EXPIRED')

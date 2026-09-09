@@ -113,7 +113,8 @@ export class AgentRunStore {
       this.assertIdentity(uid,authVersion)
       const requestHash = knowledgeHash({body:p.body,clientVersion:p.clientVersion??null})
       const existing = this.db.prepare('SELECT * FROM agent_runs WHERE user_id=? AND session_id=? AND request_id=?').get(uid,sessionId,p.requestId) as RunRow|undefined
-      if (existing) { if(existing.request_hash!==requestHash) throw new AgentRunError('IDEMPOTENCY_CONFLICT'); return {row:existing,fresh:false} }
+      // 幂等重放:客户端本来就有这些状态,不必再拼一次用户消息。
+      if (existing) { if(existing.request_hash!==requestHash) throw new AgentRunError('IDEMPOTENCY_CONFLICT'); return {row:existing,fresh:false,session:null,userMessage:null} }
       if (this.db.prepare("SELECT 1 FROM agent_runs WHERE user_id=? AND state='running'").get(uid)) throw new AgentRunError('RUN_BUSY')
       if (this.db.prepare('SELECT 1 FROM agent_sessions WHERE user_id=? AND context_job_id IS NOT NULL').get(uid)) throw new AgentRunError('SESSION_BUSY')
       const session = this.history().snapshot(uid,sessionId,{limit:1}).session
@@ -127,7 +128,8 @@ export class AgentRunStore {
       this.db.prepare('UPDATE agent_sessions SET run_id=? WHERE user_id=? AND id=?').run(id,uid,sessionId)
       this.space(this.row(uid,id),Buffer.byteLength(JSON.stringify(knowledge))+512)
       this.event(uid,id,'started',{attempt:1})
-      return {row:this.row(uid,id),fresh:true}
+      // 连同落库后的会话与用户消息一起返回:客户端不必为了确认"我这句存下了"再拉一轮快照。
+      return {row:this.row(uid,id),fresh:true,session:this.history().snapshot(uid,sessionId,{limit:1}).session,userMessage:user.message}
     }).immediate()
   }
   resume(uid: number, id: string, p: ResumeRun, knowledge: KnowledgeSnapshot, authVersion: number) {
@@ -190,8 +192,19 @@ export class AgentRunStore {
       this.db.prepare('UPDATE agent_runs SET state=?,code=?,active_ms=active_ms+?,updated_at=?,lease_until=0 WHERE user_id=? AND id=?')
         .run(state,code,Math.max(0,this.now()-row.started_at),this.now(),uid,id)
       this.db.prepare('UPDATE agent_sessions SET run_id=NULL WHERE user_id=? AND id=? AND run_id=?').run(uid,row.session_id,id)
-      this.event(uid,id,state,{code,attempt:row.attempt},true)
-      return this.view(this.row(uid,id))
+      // 终态事件自带「落库后的会话 + 定型的回答消息 + 权威回合」。客户端据此就地收尾,
+      // 不必再为一个已经结束的回合去拉快照和回合状态 —— 流的最后一帧就是权威记录。
+      //
+      // message 只带 delta 传不到的部分(来源、工具摘要、用量、最终状态),正文不重复(已由 delta 落地)。
+      // 找不到对应消息时省略,客户端自动回退到整套回读(见 controller.settle)。
+      // run 的 lastEventSeq 此刻还差这条终态事件本身,客户端按事件 seq 校正(见 controller.event)。
+      const snap=this.history().snapshot(uid,row.session_id,{limit:1})
+      const ended=row.message_id?snap.messages.find(m=>m.id===row.message_id):undefined
+      const finished=this.view(this.row(uid,id))
+      this.event(uid,id,state,{code,attempt:row.attempt,session:snap.session as unknown as JsonValue,
+        run:finished as unknown as JsonValue,
+        message:ended?{id:ended.id,seq:ended.seq,status:ended.status,sources:ended.sources,toolSummaries:ended.toolSummaries,usage:ended.usage} as unknown as JsonValue:null},true)
+      return finished
     }).immediate()
   }
   renew(uid:number,id:string,attempt:number){const row=this.row(uid,id);this.assertActive(row,attempt);this.db.prepare('UPDATE agent_runs SET lease_until=? WHERE user_id=? AND id=?').run(this.now()+RUN_LIMITS.leaseMs,uid,id)}

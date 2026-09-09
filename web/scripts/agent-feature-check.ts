@@ -28,7 +28,11 @@ export function checkFeatureRelease(root:string,documentation:string):void {
  const inventory=routeInventory(root),roots=inventory.filter(r=>r.file==='server/index.ts')
  if(roots.some(r=>!SITE_API_FEATURES[r.path])||Object.keys(SITE_API_FEATURES).some(path=>!roots.some(r=>r.path===path)))throw new Error('FEATURE_ROUTE_COVERAGE')
  for(const id of Object.values(SITE_API_FEATURES))if(!id.startsWith('infrastructure.')&&!AGENT_FEATURES.some(f=>f.id===id))throw new Error('FEATURE_ROUTE_UNREGISTERED')
- for(const f of AGENT_FEATURES)if(f.entry.startsWith('/api/agent/')&&!inventory.some(r=>r.file.startsWith('server/agent/')&&r.method!=='route'&&r.path===f.entry.slice('/api/agent'.length)))throw new Error('FEATURE_API_ENTRY_MISSING')
+ // 子路由可以挂在前缀下(如 route('/provider',createExternalApi())),此时真实路径 = 前缀 + 子应用内路径。
+ const mounts=['',...new Set(inventory.filter(r=>r.file.startsWith('server/agent/')&&r.method==='route'&&r.path!=='/').map(r=>r.path))]
+ const served=new Set(inventory.filter(r=>r.file.startsWith('server/agent/')&&r.method!=='route')
+   .flatMap(r=>mounts.map(prefix=>`${prefix}${r.path==='/'?'':r.path}`||'/')))
+ for(const f of AGENT_FEATURES)if(f.entry.startsWith('/api/agent/')&&!served.has(f.entry.slice('/api/agent'.length)))throw new Error('FEATURE_API_ENTRY_MISSING')
  const recorded=JSON.parse(readFileSync(join(root,'server/agent/site-routes.json'),'utf8'))
  if(JSON.stringify(recorded)!==JSON.stringify(inventory))throw new Error('FEATURE_ROUTE_REVIEW_REQUIRED')
  const section=documentation.split(GUIDE_START)[1]?.split(GUIDE_END)[0]?.trim()

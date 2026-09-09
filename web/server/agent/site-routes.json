@@ -97,22 +97,22 @@
   {
     "file": "server/agent/external-api.ts",
     "method": "delete",
-    "path": "/provider/connection"
+    "path": "/connection"
   },
   {
     "file": "server/agent/external-api.ts",
     "method": "get",
-    "path": "/provider"
+    "path": "/"
   },
   {
     "file": "server/agent/external-api.ts",
     "method": "post",
-    "path": "/provider/connect"
+    "path": "/connect"
   },
   {
     "file": "server/agent/external-api.ts",
     "method": "post",
-    "path": "/provider/prepare"
+    "path": "/prepare"
   },
   {
     "file": "server/agent/guest-api.ts",
@@ -187,12 +187,17 @@
   {
     "file": "server/agent/history-api.ts",
     "method": "route",
-    "path": "/"
+    "path": "/provider"
   },
   {
     "file": "server/agent/run-api.ts",
     "method": "get",
     "path": "/actions/:actionId"
+  },
+  {
+    "file": "server/agent/run-api.ts",
+    "method": "get",
+    "path": "/bootstrap"
   },
   {
     "file": "server/agent/run-api.ts",
