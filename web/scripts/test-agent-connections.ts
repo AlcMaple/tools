@@ -6,6 +6,7 @@ import Database from 'better-sqlite3'
 import { ExternalQuota, CONSERVATIVE_LIMITS } from '../server/agent/external-quota'
 import { AgentRunError } from '../shared/agent-run'
 import type { ProviderProfile } from '../server/agent/context-provider'
+import { checkPlan } from './agent-fixtures'
 
 type Runtime = Pick<typeof import('../server/agent/external-runtime'), 'connectExternal'|'forgetConnection'|'prepareExternal'|'externalStatus'>
 const names=['selection','selectedConnection','externalReady','externalStatus','forgetConnection','connectExternal','sharedPreparationError','prepareExternal']
@@ -39,6 +40,7 @@ const input=(model='model-a')=>({source:'byok' as const,endpoint:`https://${mode
 const signal=()=>new AbortController().signal
 const tick=async()=>{for(let i=0;i<12;i++)await Promise.resolve()}
 let checks=0
+const settlePlan = checkPlan('C', 17, () => checks)
 async function check(name:string,action:(f:ReturnType<typeof fixture>)=>Promise<void>){const f=fixture();try{await action(f);console.log(`PASS C${++checks} ${name}`)}finally{f.close()}}
 await check('并发 BYOK B 被拒且不写配置，A 的配置/模型一致',async f=>{
  const a=f.connectExternal(1,'user:1',input(),signal());await tick()
@@ -90,27 +92,43 @@ await check('已取消的请求无配置或额度副作用',async f=>{
  await assert.rejects(f.connectExternal(1,'user:1',input(),c.signal),/CANCELLED/)
  assert.equal(f.externalStatus(1).source,'server');assert.equal(f.quota.status('user:1').turns,0);assert.equal(f.calls(),0)
 })
-await check('真实 SQLite 单访客日额度失败不毒化下一访客',async f=>{
+// 这两条原本等一个 DAILY_QUOTA：那是 connectExternal 还会消耗每日轮次时的写法。
+// 「探测不再消耗每日轮次」（见 perf(web): 减少 Agent 请求预算并修复限流）之后 counted=false，
+// DAILY_QUOTA 再也不会从这条路出现，两条用例就死等一个不会来的拒绝——探测也没人 resolve，
+// 于是永久挂起，把它们后面 7 条用例一起静默带走（进程以 13 退出，套件却没人发现）。
+// 改成断言现在真正成立的语义。
+await check('探测不消耗每日轮次：轮次用光的访客仍能建立连接，并被下一访客复用',async f=>{
  await f.quota.turn('spent',true,true,async()=>{})
- await assert.rejects(f.prepareExternal(null,'spent',signal()),/DAILY_QUOTA/);await tick()
- const b=f.prepareExternal(null,'fresh',signal());await tick();assert.equal(f.probes.length,1);f.probes[0].resolve();await b
- assert.equal(f.quota.status('spent').turns,1);assert.equal(f.quota.status('fresh').turns,1)
+ assert.equal(f.quota.status('spent').turns,1)
+ const a=f.prepareExternal(null,'spent',signal());await tick()
+ assert.equal(f.probes.length,1);f.probes[0].resolve();assert((await a).ready)
+ assert.equal(f.quota.status('spent').turns,1)
+ // 全站共享这一条：下一访客直接复用，不再发第二次付费探测
+ assert((await f.prepareExternal(null,'fresh',signal())).ready);assert.equal(f.calls(),1)
 })
-await check('同时等待者不继承他人额度错误，且不自动发付费请求',async f=>{
- await f.quota.turn('spent',true,true,async()=>{})
- const a=f.prepareExternal(null,'spent',signal()),b=f.prepareExternal(null,'fresh',signal())
+await check('同时等待者不继承发起者的非共享错误，也不自动补一次付费探测',async f=>{
+ const a=f.prepareExternal(null,'first',signal()),b=f.prepareExternal(null,'second',signal());await tick()
+ assert.equal(f.calls(),1)
+ f.probes[0].reject(new AgentRunError('DAILY_QUOTA',429))
  await Promise.all([assert.rejects(a,/DAILY_QUOTA/),assert.rejects(b,/PROVIDER_CONNECTION_REQUIRED/)])
- assert.equal(f.calls(),0);assert.equal(f.quota.status('fresh').turns,0)
+ assert.equal(f.calls(),1)
 })
 await check('共享准备仅一次探测，完成后两名等待者就绪',async f=>{
  const a=f.prepareExternal(null,'first',signal()),b=f.prepareExternal(null,'second',signal());await tick()
  assert.equal(f.calls(),1);f.probes[0].resolve();assert((await a).ready);assert((await b).ready)
 })
-await check('发起者取消不缓存成全局失败；等待者不继承取消也不重试',async f=>{
+// 这条原本断言「发起者取消 → 共享探测一起 abort」。改掉了，因为那个语义有两处站不住：
+//  1. 发起者只是碰巧第一个到的人，凭什么他刷新页面就把全站共用的那条连接掐掉；
+//  2. abort 根本不省钱 —— reserve 已经付过，settle(null) 按 unknown 保留整笔预留，
+//     中途取消等于「照付全款、什么也没换到」，下次加载还得再付一次。
+// 现在共享探测跑在自己的超时信号上，谁都可以停止等待，活照做完并缓存 30 分钟。
+await check('发起者离开不再掐断共享探测：等待者照常拿到连接，钱不白花',async f=>{
  const c=new AbortController(),a=f.prepareExternal(null,'first',c.signal),b=f.prepareExternal(null,'second',signal());await tick()
- c.abort(new AgentRunError('CANCELLED'));await Promise.all([assert.rejects(a,/CANCELLED/),assert.rejects(b,/PROVIDER_CONNECTION_REQUIRED/)])
- assert(f.probes[0].signal.aborted);assert.equal(f.calls(),1);await tick()
- const next=f.prepareExternal(null,'third',signal());await tick();f.probes[1].resolve();await next
+ c.abort(new AgentRunError('CANCELLED'));await assert.rejects(a,/CANCELLED/)
+ assert(!f.probes[0].signal.aborted)
+ f.probes[0].resolve();assert((await b).ready);assert.equal(f.calls(),1)
+ // 已经缓存，后来者不再触发第二次付费探测
+ assert((await f.prepareExternal(null,'third',signal())).ready);assert.equal(f.calls(),1)
 })
 await check('等待者取消不终止发起者探测',async f=>{
  const c=new AbortController(),a=f.prepareExternal(null,'first',signal()),b=f.prepareExternal(null,'second',c.signal);await tick()
@@ -126,4 +144,5 @@ await check('账号退出中止其服务器准备，下一访客不继承身份�
  const a=f.prepareExternal(1,'user:1',signal());await tick();f.forgetConnection(1);await assert.rejects(a,/PROVIDER_CHANGED/);await tick()
  assert(f.probes[0].signal.aborted);const b=f.prepareExternal(null,'fresh',signal());await tick();f.probes[1].resolve();await b
 })
+settlePlan()
 console.log(`Agent connection regression: ${checks} passed; real API calls: 0`)

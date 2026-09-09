@@ -33,12 +33,12 @@ let proxyRefreshAt = 0
 let proxyRefreshPromise: Promise<void> | null = null
 
 // 传输层通没通只看能不能拿到响应（4xx/403 也算通，说明握手 + HTTP 层是活的）。
-async function transportWorks(dispatcher?: ProxyAgent): Promise<boolean> {
+async function transportWorks(dispatcher?: ProxyAgent, timeoutMs = 4500): Promise<boolean> {
   try {
     const res = await undiciFetch(PROBE_URL, {
       method: 'HEAD',
       dispatcher,
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     return res.status > 0
   } catch {
@@ -121,7 +121,16 @@ async function alignProxy(mode: 'startup' | 'recovery'): Promise<boolean> {
     }
   }
   if (mode === 'startup') {
-    console.warn('[http] 直连稀饭不通，也没探到可用的本地代理 —— 用 Clash TUN 时请设 HTTPS_PROXY 或开启混合端口')
+    // 走到这里往往不是真的不通，而是**冷启动太慢**：首次经 TUN 出网要现做 DNS 劫持、
+    // fake-ip 映射和上游选路，实测热路径 1.1 秒的请求冷启动可以超过 4.5 秒的探测窗口。
+    // 候选代理都没验过就再给直连一次宽限；这条慢路径只在原本要误报时才走，不拖慢正常启动。
+    if (await transportWorks(undefined, 12_000)) {
+      console.log('[http] 直连稀饭冷启动较慢，重试后已通 —— 保持直连，不切代理')
+      return true
+    }
+    // 仍然不通才提示。注意这不是致命错误：全局 dispatcher 保持直连，真实请求失败时
+    // refreshProxyAfterFailure() 还会按需重新对齐一次（见下）。
+    console.warn('[http] 启动探测没能连上稀饭，也没探到可用的本地代理 —— 仍按直连继续；若稀饭功能报错，请检查 Clash 是否开启混合端口')
   }
   return false
 }
