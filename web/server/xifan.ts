@@ -964,7 +964,7 @@ __VIEWPORT_PROBE__
   // <video> 出问题时只会给一个 error code，什么上下文都没有。每 2 秒采一格状态存进环形缓冲，
   // 失败日志上报时把最近这一分钟一起带走 —— 「进度倒退了 2 秒」这种事只有连着看才看得出来。
   var TAPE_MAX = 30, TAPE_INTERVAL_MS = 2000
-  var tape = [], tapeTimer = null, tapeAt = 0, tapeLastTime = 0, userSeekAt = 0, rewindLoggedAt = 0
+  var tape = [], tapeTimer = null, tapeAt = 0, tapeLastTime = 0, tapeLastSampledAt = 0, userSeekAt = 0, rewindLoggedAt = 0
 
   var q = new URLSearchParams(location.search)
   var animeId = q.get('animeId') || ''
@@ -1061,7 +1061,7 @@ ${PLAYBACK_BEACON}
 
   function startTape(){
     stopTape()
-    tape = []; tapeAt = performance.now(); tapeLastTime = v.currentTime || 0; rewindLoggedAt = 0
+    tape = []; tapeAt = performance.now(); tapeLastTime = v.currentTime || 0; tapeLastSampledAt = tapeAt; rewindLoggedAt = 0
     tapeTimer = setInterval(sampleTape, TAPE_INTERVAL_MS)
   }
 
@@ -1078,13 +1078,37 @@ ${PLAYBACK_BEACON}
     if (tape.length > TAPE_MAX) tape.shift()
     // 进度倒退探测：不是内部 seek、用户也没刚拖过 —— 那就是我们自己把进度拽回去了。
     // 这个 bug 犯过一次（触屏上闸门回锚点），留个哨兵免得改回去没人发现。
+    // 上一格采样之后用户拖过 / 点过 ±10 秒，这一格比上一格靠前就是用户自己的意思，不算倒退
+    //（真机实测：暂停时按一下 -10s，2 秒后采样把它记成了 rewound，白报一条）。
     var now = performance.now()
-    if (t < tapeLastTime - .35 && !internalSeek && !v.seeking && now - userSeekAt > 1500
+    if (t < tapeLastTime - .35 && !internalSeek && !v.seeking && userSeekAt < tapeLastSampledAt
         && now - rewindLoggedAt > 15000){
       rewindLoggedAt = now
       slog('playback rewound ' + tapeLastTime.toFixed(1) + ' -> ' + t.toFixed(1) + ' ' + mediaSnapshot(), true)
     }
-    tapeLastTime = t
+    tapeLastTime = t; tapeLastSampledAt = now
+  }
+
+  // 跳转诊断：从用户 seeking 到画面真的走起来花了多久、目标点当时在不在缓冲里、中间有没有 waiting。
+  // 源站播放器回退 10/20/30 秒几乎是瞬时的（都在 back buffer 里），我们这边若要转圈，
+  // 这条日志能分清是浏览器把 back buffer 丢了、还是我们自己的逻辑在中间插了一脚。
+  var seekProbe = null
+  function inBuffered(t){
+    for (var i = 0; i < v.buffered.length; i++) if (v.buffered.start(i) <= t + .05 && v.buffered.end(i) >= t - .05) return true
+    return false
+  }
+  function beginSeekProbe(){
+    seekProbe = { at: performance.now(), from: tapeLastTime, to: v.currentTime || 0, buffered: inBuffered(v.currentTime || 0), waited: false, seekedAt: 0 }
+  }
+  function settleSeekProbe(why){
+    if (!seekProbe) return
+    var p = seekProbe; seekProbe = null
+    var ms = Math.round(performance.now() - p.at)
+    var line = 'seek ' + p.from.toFixed(1) + ' -> ' + p.to.toFixed(1) + ' (' + (p.to < p.from ? 'back' : 'fwd') + ', ' + (p.buffered ? 'in' : 'not in') + ' buffer)'
+      + ' settled by ' + why + ' in ' + ms + 'ms' + (p.waited ? ' with waiting' : '') + (p.seekedAt ? ' seeked@' + Math.round(p.seekedAt - p.at) + 'ms' : '')
+      + ' ' + mediaSnapshot()
+    // 缓冲里的回退还要超过 1 秒、或者中途 waiting 了，才值得上报；其余只留面包屑
+    slog(line, (p.buffered && ms > 1000) || p.waited)
   }
 
   function mediaSnapshot(){
@@ -1289,6 +1313,8 @@ ${PLAYBACK_BEACON}
     if (token !== bufferToken || !resumeAfterBuffer) return
     if (bufferTimer !== null) clearInterval(bufferTimer)
     bufferTimer = null; resumeAfterBuffer = false; hideBuffer()
+    // 真实卡顿（宽限 1.2 秒后仍没货）的恢复记录，带胶片上报：这是「一集卡一两次」唯一的证据来源
+    slog('stall recovered after ' + Math.round(performance.now() - stallStartedAt) + 'ms ' + mediaSnapshot() + ' url=' + (curPl ? curPl.url : '-'), true)
     // 缓冲期间用极低速静音播放来保持浏览器继续拉流；达标后回到用户 seek 的原位置，
     // 再恢复原速与静音状态。锚点已经落在 buffered 内，不会重新走网络。
     // 触屏上没降速、也就没有漂移要纠正 —— 回锚点在那里纯粹是把进度往回拽（见 cancelBufferGate）。
@@ -1411,10 +1437,12 @@ ${PLAYBACK_BEACON}
     }, BUFFER_GRACE_MS)
   }
 
+  var stallStartedAt = 0
   function engageBufferGate(){
     var goal = bufferGoal()
     var ahead = bufferedAhead()
     if (ahead + .25 >= goal) return
+    stallStartedAt = performance.now()
     resumeAfterBuffer = true
     bufferAnchor = v.currentTime
     savedRate = v.playbackRate
@@ -1447,16 +1475,24 @@ ${PLAYBACK_BEACON}
   v.addEventListener('seeking', function(){
     if (internalSeek) return
     userSeekAt = performance.now()
+    beginSeekProbe()
     gateOnPlay = true
     if (!v.paused || resumeAfterBuffer) beginBufferGate(true)
     if (curPl && curPl.viaPrepared) requestRegion(v.currentTime)
   })
-  v.addEventListener('seeked', function(){ if (internalSeek) clearInternalSeek() })
+  v.addEventListener('seeked', function(){
+    if (internalSeek) clearInternalSeek()
+    else if (seekProbe){ seekProbe.seekedAt = performance.now(); if (v.paused) settleSeekProbe('seeked while paused') }
+  })
+  v.addEventListener('timeupdate', function(){
+    if (seekProbe && !v.paused && !v.seeking && (v.currentTime || 0) > seekProbe.to + .15) settleSeekProbe('timeupdate')
+  })
   v.addEventListener('playing', function(){
     if (bufferGraceTimer !== null && bufferedAhead() >= 1) clearBufferGrace()
     if (gateOnPlay && !internalSeek && !resumeAfterBuffer) beginBufferGate(false)
   })
   v.addEventListener('waiting', function(){
+    if (seekProbe) seekProbe.waited = true
     if (internalSeek || v.paused) return
     if (!navigator.onLine){ holdForNetwork(function(){ if (curPl) playLine(curPl) }); return }
     // 首次点击后的起播等待交给浏览器原生控件处理，不要把它误画成中途缓冲纸片。
