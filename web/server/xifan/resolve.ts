@@ -123,10 +123,19 @@ function classify(url: string): 'mp4' | 'hls' {
   return 'mp4'
 }
 
+// 站点给的 player_aaaa.url 是源站地址 `play.xfvod.pro:8088`；官方播放器（player.moedot.net，from=cf）
+// 实际喂给 <video> 的是**去掉端口**的 `play.xfvod.pro`（同一个 Cloudflare 站点，443）——在内置浏览器里
+// 抓它的 <video>.currentSrc 确认过。两个地址内容、Range 都一样，但 8088 这种非标端口在手机运营商网络上
+// 走得很差：Sentry 里 iPhone 直连 8088 的胶片是「64KB 探测 4.8 秒、播放中一个字节不涨」，而同一部番
+// 用户在源站看（走 443）不卡。所以和官方一样，凡是这个域名一律用 443。
+const STRIP_PORT_HOSTS = new Set(['play.xfvod.pro'])
+
 function safeMediaUrl(raw: string): string {
   try {
     const url = new URL(raw)
-    return url.protocol === 'https:' ? url.href : ''
+    if (url.protocol !== 'https:') return ''
+    if (STRIP_PORT_HOSTS.has(url.hostname) && url.port) url.port = ''
+    return url.href
   } catch {
     return ''
   }
