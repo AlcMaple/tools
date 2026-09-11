@@ -20,10 +20,11 @@ import '../http'
 import { randomUUID } from 'node:crypto'
 import { setMaxListeners } from 'node:events'
 import { Agent, request } from 'undici'
-import { PROXY_HOSTS } from './proxy-hosts'
+import { PROXY_HOSTS, RESCUE_HOSTS } from './proxy-hosts'
 
-// 白名单见 proxy-hosts.ts（解析层也要用同一份，故单独成文件）。
-const ALLOWED_HOSTS = new Set(PROXY_HOSTS)
+// 白名单见 proxy-hosts.ts（解析层也要用同一份，故单独成文件）。救援域名平时直连，
+// 只有播放页判定直连饿死时才会带着这里的地址来。
+const ALLOWED_HOSTS = new Set([...PROXY_HOSTS, ...RESCUE_HOSTS])
 
 // 12 路。并发叠加曲线实测（每路 12s，无一失败）：
 //   本机     6 路 5.25Mbps → 12 路 18.8Mbps → 24 路 34.7Mbps
@@ -210,6 +211,18 @@ function disposeSession(s: Session): void {
 
 export function disposeXifanStream(): void {
   for (const list of [...sessions.values()]) for (const s of [...list]) disposeSession(s)
+}
+
+/** 正在经代理直连拉流的**外部**观众数（按账号去重）。预转让位只看这个：HLS 观众读的是
+ *  磁盘上的分片，不占入口带宽，不该把预转冻住——尤其是正在边转边看这一集的那个人。 */
+export function externalViewerCount(): number {
+  const keys = new Set<string>()
+  for (const list of sessions.values()) {
+    for (const session of list) {
+      for (const reader of liveReaders(session)) if (!reader.internal) keys.add(reader.viewerKey)
+    }
+  }
+  return keys.size
 }
 
 export function evictStreamViewer(viewerKey: string): void {

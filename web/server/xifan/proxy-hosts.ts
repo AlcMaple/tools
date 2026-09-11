@@ -11,10 +11,26 @@
 //      （play.xfvod.pro 直连实测 30Mbps、给全套 CORS、不按连接限速）。
 export const PROXY_HOSTS = ['apn.moedot.net']
 
-export function needsProxy(rawUrl: string): boolean {
+// 「快源」只是从 VPS / 电脑看是快的。Sentry 里 iPhone 直连 play.xfvod.pro:8088 的胶片：
+// 播放中 buffered 一秒不涨、耗光后 30 秒零字节、64KB 探测要 4.8s——非标端口在部分
+// 手机运营商网络上就是这么慢。这些域名**默认仍直连**，只在播放页实测直连喂不饱时
+// 才允许临时改走服务端（/prepared?rescue=1、/stream），不算进「必须代理」名单。
+export const RESCUE_HOSTS = ['play.xfvod.pro']
+
+function hostOf(rawUrl: string): string {
   try {
-    return PROXY_HOSTS.includes(new URL(rawUrl).hostname)
+    return new URL(rawUrl).hostname
   } catch {
-    return false
+    return ''
   }
+}
+
+export function needsProxy(rawUrl: string): boolean {
+  return PROXY_HOSTS.includes(hostOf(rawUrl))
+}
+
+// 服务端代理 / 预转愿意接的全部域名 = 必须代理 + 可救援。
+export function canProxy(rawUrl: string): boolean {
+  const host = hostOf(rawUrl)
+  return PROXY_HOSTS.includes(host) || RESCUE_HOSTS.includes(host)
 }
