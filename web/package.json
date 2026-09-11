@@ -30,6 +30,7 @@
     "test:agent-ui:serve": "npm run build && tsx scripts/agent-ui-fixture.ts",
     "test:agent-external": "npm run build:agent-release && tsx scripts/test-agent-external.ts && tsx scripts/test-agent-connections.ts",
     "test:agent-experience": "tsx scripts/test-agent-experience.ts",
+    "test:prepare-regions": "tsx scripts/test-prepare-regions.ts",
     "test:agent-sources": "npm run build && tsx scripts/test-agent-sources.ts && tsx scripts/test-agent-source-budget.ts"
   },
   "dependencies": {

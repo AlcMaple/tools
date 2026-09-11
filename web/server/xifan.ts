@@ -31,9 +31,9 @@ import {
   XifanResolveError,
 } from './xifan/resolve'
 import { evictStreamViewer, INTERNAL_TOKEN, serveStream } from './xifan/stream'
-import { needsProxy, PROXY_HOSTS } from './xifan/proxy-hosts'
+import { canProxy, needsProxy, PROXY_HOSTS, RESCUE_HOSTS } from './xifan/proxy-hosts'
 import {
-  dropPrepared, listPrepared, PrepareRejected, resolveAsset, startPrepare, statusOf, touch,
+  dropPrepared, listPrepared, PrepareRejected, readPlaylist, resolveAsset, startPrepare, statusOf, touch,
 } from './xifan/prepare'
 import { locate } from './xifan/locate'
 import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
@@ -330,12 +330,19 @@ xifan.get('/prepared', async (c) => {
   if (!raw) return c.json({ error: '缺少 u' }, 400)
   c.header('Cache-Control', 'no-store')
   try {
-    const st = statusOf(raw)
+    // from=秒：用户想看的位置。没转到那里就从那里起转（杀掉正在跑的段、回头再补洞），
+    // playable 也按这个位置前方够不够来答。
+    const fromRaw = Number(c.req.query('from') ?? '')
+    const from = Number.isFinite(fromRaw) && fromRaw >= 0 ? fromRaw : undefined
+    const st = statusOf(raw, from)
     // 播放页一轮询就顺手开工。**触发点必须放在这里而不是 /stream**：慢源的代理直连
     // 会占满入口，预转就被让位逻辑冻住，形成「越想转越转不动」的死锁（实测日志：
     // 开始预转 → 有人在看，暂停 → 永远转不出来）。轮询不占入口，所以能一直跑。
-    if (st.state === 'none' && needsProxy(raw)) {
-      try { startPrepare(raw, internalOrigin(c)) } catch { /* 配额/并发满，下次轮询再说 */ }
+    // rescue=1：播放页在手机上实测「快源」直连喂不饱（见 proxy-hosts.ts RESCUE_HOSTS），
+    // 主动要求把这条也转一份。只认可救援的域名，别的地址照旧不接。
+    const rescue = c.req.query('rescue') === '1' && canProxy(raw)
+    if (st.state === 'none' && (needsProxy(raw) || rescue)) {
+      try { startPrepare(raw, internalOrigin(c), from ?? 0) } catch { /* 配额/并发满，下次轮询再说 */ }
     }
     return c.json(st)
   } catch (error) {
@@ -358,12 +365,12 @@ xifan.post('/prepare', async (c) => {
   // 一个「任何人都能让你的服务器免费下片」的按钮。正常路径是下面 /stream 里自动触发。
   const session = await getSession(c)
   if (!session) return c.json({ error: '请先登录再用预转' }, 401)
-  const body = await c.req.json().catch(() => null) as { u?: string } | null
+  const body = await c.req.json().catch(() => null) as { u?: string; from?: number } | null
   const raw = body?.u ?? ''
   if (!raw) return c.json({ error: '缺少 u' }, 400)
   const origin = internalOrigin(c)
   try {
-    return c.json(startPrepare(raw, origin))
+    return c.json(startPrepare(raw, origin, Number(body?.from) > 0 ? Number(body?.from) : 0))
   } catch (error) {
     if (error instanceof PrepareRejected) return c.json({ error: error.message }, 429)
     return c.json({ error: error instanceof Error ? error.message : '预转失败' }, 400)
@@ -382,14 +389,14 @@ xifan.get('/hls/:key/:file', async (c) => {
     }
     return c.json({ error: error instanceof Error ? error.message : '慢源名额无效' }, 403)
   }
-  const p = resolveAsset(c.req.param('key'), c.req.param('file'))
-  if (!p) return c.json({ error: '没有这个分片' }, 404)
   const file = c.req.param('file')
   touch(c.req.param('key')) // LRU 按「最后真的被看过」排序，不是按转好的时间
   if (file.endsWith('.m3u8')) {
-    const { readFile } = await import('node:fs/promises')
+    // 主 playlist 读文件；各档媒体 playlist 由 prepare.ts 按磁盘上的分区实时拼（含 GAP / DISCONTINUITY）。
+    const text = readPlaylist(c.req.param('key'), file)
+    if (text === null) return c.json({ error: '没有这个 playlist' }, 404)
     const query = `clientId=${encodeURIComponent(clientId)}`
-    const playlist = (await readFile(p, 'utf8'))
+    const playlist = text
       .split('\n')
       .map((line) => {
         if (!line) return line
@@ -397,6 +404,7 @@ xifan.get('/hls/:key/:file', async (c) => {
           return line.replace(/URI="([^"]+)"/g, (_all, uri: string) =>
             `URI="${uri}${uri.includes('?') ? '&' : '?'}${query}"`)
         }
+        if (line === 'gap.m4s') return line // GAP 占位，播放器不会来请求
         return `${line}${line.includes('?') ? '&' : '?'}${query}`
       })
       .join('\n')
@@ -405,6 +413,8 @@ xifan.get('/hls/:key/:file', async (c) => {
       'Cache-Control': 'no-store',
     })
   }
+  const p = resolveAsset(c.req.param('key'), file)
+  if (!p) return c.json({ error: '没有这个分片' }, 404)
   const { createReadStream } = await import('node:fs')
   return new Response(createReadStream(p) as unknown as ReadableStream, {
     headers: { 'Content-Type': 'video/iso.segment', 'Cache-Control': 'private, max-age=86400' },
@@ -460,6 +470,7 @@ xifan.get('/play-page', async (c) => {
       .replace('__VIEWPORT_PROBE__', viewportProbeEnabled(c) ? PLAYER_VIEWPORT_PROBE : '')
       .replace('__PLAYER_SOURCES__', sources)
       .replace('__PROXY_HOSTS__', JSON.stringify(PROXY_HOSTS))
+      .replace('__RESCUE_HOSTS__', JSON.stringify(RESCUE_HOSTS))
       .replace('__MONITOR_CONFIG__', inlineScriptJson(playerMonitorConfig(session))),
   )
   playerPageSecurity(c, page.nonce)
@@ -966,9 +977,12 @@ ${PLAYBACK_BEACON}
   // 只有这些域名的 mp4 要走服务端并发代理；其余（如线路二 play.xfvod.pro）浏览器直连——
   // 直连实测 30Mbps 且不占服务器那 6Mbps 的出口，让它走代理纯属浪费还挤占名额。
   var PROXY_HOSTS = __PROXY_HOSTS__
-  function needsProxy(u){
-    try { return PROXY_HOSTS.indexOf(new URL(u).hostname) >= 0 } catch (e) { return false }
-  }
+  // 「快源」直连在本机实测饿死后（见 fallbackBufferGate），这一集的地址会被记进 rescued，
+  // 之后 needsProxy 对它返回 true —— 预转、名额、/stream 那整条慢源链路原样复用。
+  var RESCUE_HOSTS = __RESCUE_HOSTS__, rescued = {}
+  function hostOf(u){ try { return new URL(u).hostname } catch (e) { return '' } }
+  function needsProxy(u){ return PROXY_HOSTS.indexOf(hostOf(u)) >= 0 || !!rescued[u] }
+  function canRescue(u){ return RESCUE_HOSTS.indexOf(hostOf(u)) >= 0 && !rescued[u] }
   var v = $('v'), frame = $('frame')
   var playerScroll = document.querySelector('.player-scroll')
   var viewportRefreshFrame = 0, viewportRefreshTimer = null
@@ -1253,6 +1267,7 @@ ${PLAYBACK_BEACON}
 
   function cancelBufferGate(resetPosition){
     if (resetPosition === undefined) resetPosition = false
+    clearBufferGrace()
     var wasBuffering = resumeAfterBuffer
     bufferToken++
     if (bufferTimer !== null) clearInterval(bufferTimer)
@@ -1297,6 +1312,20 @@ ${PLAYBACK_BEACON}
     // 原样留给浏览器自己缓冲，同时把「换线路 / 去源站」两个出口摆出来让用户自己选。
     if (IS_TOUCH){
       cancelBufferGate(false)
+      // 直连「快源」在这台手机上实测就是喂不饱（Sentry 胶片：播放中 buffered 一秒不涨、
+      // 耗光后几十秒零字节）。「换线路 / 去源站」两个出口帮不上——没有别的快线，源站
+      // 用的也是同一个 CDN。改走服务端：VPS 到源站 12 路并发，再转成 HLS 让手机多片并发拉，
+      // 就是慢源那条已经验证过的链路。保留当前进度，切过去接着看。
+      if (canRescue(pl.url)){
+        rescued[pl.url] = true
+        slog('rescue: direct starved, route ' + hostOf(pl.url) + ' via server ' + mediaSnapshot(), true)
+        if (v.getAttribute('src')){
+          resumeTime = v.currentTime; resumeWasPlaying = !v.paused
+          resumePending = true; resumeKey = pl.source + ':' + ep
+        }
+        playLine(pl)
+        return
+      }
       $('bufferText').textContent = '这条线路读得很慢 · 可以再等等，或者换个地方看'
       var acts = $('bufferActions')
       acts.textContent = ''
@@ -1359,36 +1388,45 @@ ${PLAYBACK_BEACON}
     }
   }
 
+  // 闸门先等 1.2 秒再介入（桌面、触屏一视同仁）：源站一两秒的抖动浏览器自己就缓过来了，
+  // 桌面上以前是 waiting 一到就立刻降到 1/16 倍速 + 静音 + 盖浮层，攒够 10 秒再把进度拽回锚点——
+  // 服务器日志抓到的现场：正常播了 2 秒，被「playback rewound 591.3 -> 582.7」拽回去。
+  // 用户看到的就是「卡一下还倒退几秒」，而源站播放器没有这道闸门，只是顿一下。
+  var BUFFER_GRACE_MS = 1200, bufferGraceTimer = null
+  function clearBufferGrace(){ if (bufferGraceTimer !== null) clearTimeout(bufferGraceTimer); bufferGraceTimer = null }
   function beginBufferGate(fromSeek){
     if (!curPl || curPl.kind !== 'mp4' || inFrame()) return
-    var goal = bufferGoal()
-    var ahead = bufferedAhead()
-    gateOnPlay = false
-    if (ahead + .25 >= goal) return
     if (bufferTimer !== null){
-      if (fromSeek){ bufferAnchor = v.currentTime; resetBufferWatch(ahead) }
+      if (fromSeek){ bufferAnchor = v.currentTime; resetBufferWatch(bufferedAhead()) }
       return
     }
+    if (bufferGraceTimer !== null) return
+    gateOnPlay = false
+    bufferGraceTimer = setTimeout(function(){
+      bufferGraceTimer = null
+      // 宽限期里缓过来了（在播、或前方已经有货）就当没发生过
+      if (!curPl || curPl.kind !== 'mp4' || inFrame() || v.paused || v.ended) return
+      if (v.readyState >= 3 && bufferedAhead() >= 1) return
+      engageBufferGate()
+    }, BUFFER_GRACE_MS)
+  }
+
+  function engageBufferGate(){
+    var goal = bufferGoal()
+    var ahead = bufferedAhead()
+    if (ahead + .25 >= goal) return
     resumeAfterBuffer = true
     bufferAnchor = v.currentTime
     savedRate = v.playbackRate
     savedMuted = v.muted
+    // 触屏上不降速：手机的缓冲策略看到「消费速度只有 1/16」会直接不拉流，反而把自己饿死。
     if (!IS_TOUCH){
       v.muted = true
       try { v.playbackRate = BUFFER_RATE } catch (e) { v.playbackRate = .25 }
     }
     var token = ++bufferToken
     resetBufferWatch(ahead)
-    // 触屏上闸门不再冻结播放，所以一次一两秒的源站抖动会被 waiting 事件带出来。
-    // 立刻盖浮层的话就是「画面正常、纸片一闪一闪」，比卡顿本身更晃眼。
-    // 等 1.2 秒还没缓过来才盖；短抖动用户只会觉得顿一下，跟在源站看到的一样。
-    if (IS_TOUCH){
-      setTimeout(function(){
-        if (token === bufferToken && resumeAfterBuffer) $('buffering').classList.add('show')
-      }, 1200)
-    } else {
-      $('buffering').classList.add('show')
-    }
+    $('buffering').classList.add('show')
     checkBufferGate(token)
     bufferTimer = setInterval(function(){ checkBufferGate(token) }, 250)
   }
@@ -1411,9 +1449,13 @@ ${PLAYBACK_BEACON}
     userSeekAt = performance.now()
     gateOnPlay = true
     if (!v.paused || resumeAfterBuffer) beginBufferGate(true)
+    if (curPl && curPl.viaPrepared) requestRegion(v.currentTime)
   })
   v.addEventListener('seeked', function(){ if (internalSeek) clearInternalSeek() })
-  v.addEventListener('playing', function(){ if (gateOnPlay && !internalSeek && !resumeAfterBuffer) beginBufferGate(false) })
+  v.addEventListener('playing', function(){
+    if (bufferGraceTimer !== null && bufferedAhead() >= 1) clearBufferGrace()
+    if (gateOnPlay && !internalSeek && !resumeAfterBuffer) beginBufferGate(false)
+  })
   v.addEventListener('waiting', function(){
     if (internalSeek || v.paused) return
     if (!navigator.onLine){ holdForNetwork(function(){ if (curPl) playLine(curPl) }); return }
@@ -1425,6 +1467,7 @@ ${PLAYBACK_BEACON}
   v.addEventListener('pause', function(){
     // 用户主动暂停时停止自动恢复，并把进度退回本次缓冲开始的位置。
     if (curPl && curPl.kind === 'mp4' && !internalSeek) gateOnPlay = true
+    if (!internalSeek) clearBufferGrace()
     if (bufferTimer !== null && !internalSeek) cancelBufferGate(true)
   })
   v.addEventListener('ended', function(){ gateOnPlay = false; cancelBufferGate(false) })
@@ -1443,10 +1486,10 @@ ${PLAYBACK_BEACON}
     } else if (st.state === 'running' && st.playable){
       // 边转边播：已经攒够缓冲垫，可以一边看一边继续转。
       box.className = 'prep ok'
-      box.textContent = '边描边看 · 已描好 ' + Math.round((st.segments || 0) * 6 / 60) + ' 分钟，后面的还在赶'
+      box.textContent = '边描边看 · 已描好 ' + Math.round((st.seconds || 0) / 60) + ' 分钟，后面的还在赶'
     } else if (st.state === 'running'){
       box.className = 'prep busy'
-      box.textContent = '起稿中… 已描好 ' + Math.round((st.segments || 0) * 6) + ' 秒'
+      box.textContent = '起稿中… 已描好 ' + Math.round(st.seconds || 0) + ' 秒'
     } else if (st.state === 'failed'){
       // 转失败后代码会自动退回直连播放（卡但能看），所以文案要同时说清
       // 「出问题了」和「你现在能怎么办」——只说「没描成」看不出是报错。
@@ -1471,10 +1514,29 @@ ${PLAYBACK_BEACON}
     }
   }
 
+  // 用户想看的位置：预转从这里起转、playable 也按这里前方够不够来答。
+  // 等在起稿浮层里 → 记住的恢复位置（手机救援时可能已经在 7 分钟处）；正看着分片版 → 当前进度。
+  var regionWanted = null, regionWaiting = false
+  function wantedTime(){
+    if (regionWanted !== null) return regionWanted
+    if (resumePending) return resumeTime
+    return (curPl && curPl.viaPrepared && Number.isFinite(v.currentTime)) ? v.currentTime : 0
+  }
+  function fmtClock(t){ t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ':' + ('0' + (t % 60)).slice(-2) }
+
+  // 看分片版时跳到还没转出的位置：让服务端从那里起转（会杀掉正在跑的段、回头再补洞），
+  // 等到那一段攒够 30 秒再把进度真正放过去。像桌面端一样，跳哪转哪。
+  function requestRegion(t){
+    if (!curPl || !curPl.viaPrepared || !curPl.origin) return
+    regionWanted = t; regionWaiting = false
+    pollPrepare(curPl.origin)
+  }
+
   function pollPrepare(url){
     if (prepareTimer){ clearTimeout(prepareTimer); prepareTimer = null }
     if (!url) return
-    fetch('/api/xifan/prepared?u=' + encodeURIComponent(url), { cache: 'no-store' })
+    var from = wantedTime()
+    fetch('/api/xifan/prepared?u=' + encodeURIComponent(url) + (rescued[url] ? '&rescue=1' : '') + '&from=' + Math.max(0, Math.floor(from)), { cache: 'no-store' })
       .then(function(r){ return r.json() })
       .then(function(st){
         if (!st || st.error) return
@@ -1483,6 +1545,31 @@ ${PLAYBACK_BEACON}
           prepareFailed = url
           playLine(curPl) // 转不出来只能退回代理直连，卡也比看不了强
           return
+        }
+        // 正看着分片版、刚跳到没转出的地方：等那一段就绪再放过去。
+        if (regionWanted !== null && curPl && curPl.viaPrepared && curPl.origin === url){
+          var t = regionWanted
+          if (st.playable){
+            regionWanted = null
+            if (regionWaiting){
+              regionWaiting = false
+              hideBuffer()
+              markInternalSeek()
+              // hls.js 要重新拉一次 playlist 才知道新分片；Safari 原生会按 EVENT 周期自己刷新。
+              if (hls){ try { hls.stopLoad(); hls.startLoad(t) } catch (e) {} }
+              try { v.currentTime = t } catch (e) { clearInternalSeek() }
+              var p = v.play(); if (p && p.catch) p.catch(function(){})
+            }
+          } else if (st.state === 'running'){
+            regionWaiting = true
+            try { v.pause() } catch (e) {}
+            $('buffering').classList.remove('retryable'); $('buffering').onclick = null
+            $('bufferActions').textContent = ''
+            $('bufferText').textContent = '从 ' + fmtClock(t) + ' 起描线 · 攒够半分钟就放'
+            $('buffering').classList.add('show')
+            prepareTimer = setTimeout(function(){ pollPrepare(url) }, 3000)
+            return
+          }
         }
         if (st.playable){
           var wasNew = preparedKey !== st.key
@@ -1507,7 +1594,7 @@ ${PLAYBACK_BEACON}
 
   function destroyHls(){ if (hls){ try { hls.destroy() } catch (e) {} hls = null } }
   function clearAdmissionTimer(){ if (admissionTimer !== null) clearTimeout(admissionTimer); admissionTimer = null }
-  function stopAll(){ playGeneration++; stopTape(); cancelBufferGate(false); clearInternalSeek(); clearAdmissionTimer(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false; slowSession = false }
+  function stopAll(){ playGeneration++; regionWanted = null; regionWaiting = false; stopTape(); cancelBufferGate(false); clearInternalSeek(); clearAdmissionTimer(); destroyHls(); try { v.pause() } catch (e) {} v.removeAttribute('src'); v.load(); frame.src = 'about:blank'; gateOnPlay = false; slowSession = false }
 
   function renderSources(){
     var box = $('sources'); box.textContent = ''
@@ -1577,7 +1664,7 @@ ${PLAYBACK_BEACON}
     v.classList.remove('on'); frame.classList.remove('on')
     renderChips()
     $('buffering').classList.remove('retryable'); $('buffering').onclick = null
-    $('bufferText').textContent = '这张底稿难描了点 · 大约 1 分钟就好'
+    $('bufferText').textContent = '这张底稿难描了点 · 攒够半分钟就放'
     var acts = $('bufferActions')
     acts.textContent = ''
     // 只有**确实存在**已知快源时才给这个出口。没有还劝人家去换，那是把提示写成 bug。
