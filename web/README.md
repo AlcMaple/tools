@@ -68,6 +68,7 @@ Vercel / 生产 VPS 不走这套本地自动对齐；按部署环境显式配置
 | `SMTP_HOST` `SMTP_PORT` `SMTP_SECURE` `SMTP_USER` `SMTP_PASS` | 可选 | 邮箱验证码发信的 SMTP 凭证（如 Brevo 的 `smtp-relay.brevo.com:587`）。未配置时停用邮箱入口，不影响用户名 / 密码登录 |
 | `SMTP_FROM` `SMTP_FROM_NAME` | 可选 | 发件地址与显示名，如 `noreply@example.com` / `MapleTools`。`SMTP_FROM` 需先在发信服务完成自有域名的 DNS 验证（SPF / DKIM），步骤见 [docs/ideas/015](../docs/ideas/015-noreply发信与第三方登录接入指南.md) |
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` | 可选 | Google 登录（[Google Cloud 凭据页](https://console.cloud.google.com/apis/credentials)），**二者齐配登录按钮才出现**。OAuth 客户端登记的重定向 URI：`https://<你的域名>/api/auth/oauth/google/callback`；本地联调另加 `http://localhost:5173/api/auth/oauth/google/callback` |
+| `GITHUB_CLIENT_ID` `GITHUB_CLIENT_SECRET` | 可选 | GitHub OAuth App 登录，两项齐配才显示按钮。回调：`https://<你的域名>/api/auth/oauth/github/callback`；本地使用独立 OAuth App，回调 `http://localhost:5173/api/auth/oauth/github/callback` |
 | `AI_API_KEY` | 服务器 AI 时必需 | DeepSeek / OpenAI-compatible 服务端 key；只在服务端进程环境中使用，不进入浏览器、数据库或日志。生产通过 `MAPLETOOLS_ENV_FILE` 从仓库外注入 |
 | `AI_BASE_URL` / `AI_MODEL` | 可选 | 服务器 AI 的兼容接口地址和模型；默认 `https://api.deepseek.com` / `deepseek-v4-flash-vision-exp` |
 | `MAPLETOOLS_ENV_FILE` | 生产建议 | 绝对路径，指向仓库外的简单 `KEY=VALUE` 文件（如 `/opt/mapletools-data/.env.ai`）；生产设置后不再读取仓库内 `.env` |
@@ -148,3 +149,13 @@ web/
 │  └─ bgm/calendar.ts    # 拷自 app，只换传输层
 └─ api/[[...route]].ts   # Vercel serverless 适配（唯一平台胶水）
 ```
+
+### GitHub 快捷注册 / 登录
+
+1. 在 [GitHub Developer settings → OAuth Apps](https://github.com/settings/developers) 创建 OAuth App，Homepage URL 填网站地址，Authorization callback URL 填上表对应环境的回调地址。开发和生产使用独立 App。
+2. 将 `GITHUB_CLIENT_ID` 与 `GITHUB_CLIENT_SECRET` 写入部署目录外的环境文件（`MAPLETOOLS_ENV_FILE`）或进程环境；本地可用已忽略的 `.env.local`。不要使用 `VITE_` 前缀或提交密钥。
+3. 重启服务、刷新页面；`/api/auth/oauth/providers` 返回 `github: true` 后，登录 / 注册窗口出现「使用 GitHub 继续」。缺任一项时入口隐藏，start 返回 404。
+4. 仅申请 `user:email`，按 GitHub **已验证的主邮箱**进入现有账号或注册新账号；隐藏邮箱也支持。没有有效主邮箱时提示用户先去验证。不使用 GitHub 用户名建号，不读仓库，不保存 access token，不建立长期 GitHub 绑定；本站换绑邮箱后仍以新邮箱作为身份。
+5. 本地自动回归：`npx tsx scripts/test-github-oauth.ts` 和 `npx tsx scripts/test-github-oauth.ts --disabled`。测试使用临时数据库与上游响应夹具，不连接 GitHub、不产生真实账号。上线前需另用真实 OAuth App 验证注册、再次登录与取消授权。
+
+协议依据：[GitHub 授权码 / PKCE](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)、[已核验邮箱接口](https://docs.github.com/en/rest/users/emails#list-email-addresses-for-the-authenticated-user)。

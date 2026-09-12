@@ -14,7 +14,7 @@ import { agentContextService } from './context-runtime'
 import type { RunProvider,RunBinding } from './run-service'
 import { db } from '../db'
 import { externalBinding,externalReady,externalCanPrepare } from './external-runtime'
-import { GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET } from '../secrets'
+import { GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,GITHUB_CLIENT_ID,GITHUB_CLIENT_SECRET } from '../secrets'
 import { AgentRunError } from '../../shared/agent-run'
 import { AGENT_FEATURES, AGENT_FEATURE_REGISTRATIONS, AgentKnowledgeRegistry, knowledgeHash } from './knowledge'
 import { readLoadedRelease } from './release'
@@ -28,7 +28,7 @@ export function currentAgentKnowledge(uid:number){
   const row=db.prepare('SELECT token_version,ai_config FROM users WHERE id=?').get(uid) as {token_version:number;ai_config:string}|undefined
   if(!row)throw new AgentRunError('AUTH_REQUIRED',401)
   return registry.snapshot(uid,{enabled:true,permissionVersion:knowledgeHash({tv:row.token_version,aiConfig:row.ai_config,modelReady:externalReady(uid)}),
-    features:[...AGENT_FEATURES.filter(f=>f.id.startsWith('agent.')).map(f=>f.id),...enabledSiteFeatures({email:emailDeliveryConfigured(),google:Boolean(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),rewards:rewardsEnabled(uid),invites:invitesEnabled(uid),lottery:lotteryEnabled(uid)})],tools:[...AUTHENTICATED_TOOLS],conditions:{answerModelAutoConnect:externalCanPrepare(uid),answerModelReady:externalReady(uid),dataToolsReady:true,chatUiReady:true,trackChangeReady:true,playbackOpenReady:true,
+    features:[...AGENT_FEATURES.filter(f=>f.id.startsWith('agent.')).map(f=>f.id),...enabledSiteFeatures({email:emailDeliveryConfigured(),google:Boolean(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),github:Boolean(GITHUB_CLIENT_ID&&GITHUB_CLIENT_SECRET),rewards:rewardsEnabled(uid),invites:invitesEnabled(uid),lottery:lotteryEnabled(uid)})],tools:[...AUTHENTICATED_TOOLS],conditions:{answerModelAutoConnect:externalCanPrepare(uid),answerModelReady:externalReady(uid),dataToolsReady:true,chatUiReady:true,trackChangeReady:true,playbackOpenReady:true,
       contextModelReady:externalReady(uid)}})
 }
 export const agentRunStore=new AgentRunStore(db)
@@ -61,7 +61,7 @@ export function bindAgentDataRun(uid:number,sessionId:string,provider:RunProvide
 }
 
 export function currentGuestKnowledge(){
- return registry.guestSnapshot({enabled:true,permissionVersion:knowledgeHash({modelReady:externalReady(null)}),features:AGENT_FEATURES.map(f=>f.id),tools:GUEST_DATA_TOOLS,
+ return registry.guestSnapshot({enabled:true,permissionVersion:knowledgeHash({modelReady:externalReady(null)}),features:AGENT_FEATURES.filter(f=>f.id!=='web.github'||Boolean(GITHUB_CLIENT_ID&&GITHUB_CLIENT_SECRET)).map(f=>f.id),tools:GUEST_DATA_TOOLS,
   conditions:{answerModelAutoConnect:externalCanPrepare(null),answerModelReady:externalReady(null),dataToolsReady:true,chatUiReady:true,contextModelReady:false}})
 }
 export function guestDataTools(){return createAgentDataTools({db,index:openOfflineIndex,calendar:readCalendarSnapshot},{kind:'guest'})}

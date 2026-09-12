@@ -1,5 +1,5 @@
-// Google OIDC —— 授权码 + PKCE，浏览器整页跳进 Google、整页跳回来，服务端换 token
-// 并对 id_token 做 JWKS 验签。挂在 /api/auth/oauth（index.ts）。
+// Google OIDC / GitHub OAuth：授权码 + PKCE；Google 验签 id_token，GitHub 读取已核验主邮箱。
+// 挂在 /api/auth/oauth（index.ts），token 只在服务端本次请求内使用。
 //
 // 模型（2026-08-16 定稿）：**邮箱是身份本身，Google 只是 Gmail 的免验证码通道**。
 //  - 登录：Google 已核验邮箱命中本站账号 → 直接登录；没命中 → 以该邮箱建号并登录。
@@ -37,17 +37,24 @@ import {
 } from './auth'
 import { emailDeliveryConfigured } from './email-delivery'
 import { applyInvite } from './rewards'
-import { AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from './secrets'
+import { AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET } from './secrets'
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
+
+const GITHUB_CALLBACK_PATH = '/api/auth/oauth/github/callback'
+const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token'
 
 const CALLBACK_PATH = '/api/auth/oauth/google/callback'
 const TX_COOKIE = 'mt_oauth_tx'
 const TX_COOKIE_PATH = '/api/auth/oauth'
 const TX_TTL = 5 * 60 * 1000
 const OAUTH_START_MAX_PER_IP = 20 // 15 分钟；start 本身不建号，只挡恶意刷跳转
+
+function githubConfigured(): boolean {
+  return !!GITHUB_CLIENT_ID && !!GITHUB_CLIENT_SECRET
+}
 
 function googleConfigured(): boolean {
   return !!GOOGLE_CLIENT_ID && !!GOOGLE_CLIENT_SECRET
@@ -64,7 +71,7 @@ function requestOrigin(c: Context): string {
 
 // returnTo 只允许站内路径，且不能是 `//evil.com` 这种协议相对地址。
 function sanitizeReturnTo(v: string | undefined): string {
-  if (!v || !v.startsWith('/') || v.startsWith('//') || v.length > 512) return '/'
+  if (!v || !v.startsWith('/') || v.startsWith('//') || /[\\\x00-\x20]/.test(v) || v.length > 512) return '/'
   return v
 }
 
@@ -75,6 +82,7 @@ function safeEqualStr(a: string, b: string): boolean {
 }
 
 interface OAuthTx {
+  p?: 'google' | 'github'
   /** 防 CSRF 的 state，回调查对。 */
   s: string
   /** id_token 里的 nonce，防重放。 */
@@ -182,7 +190,7 @@ async function verifyGoogleIdToken(idToken: string, nonce: string): Promise<Goog
 }
 
 /** 邮箱落点（登录路径）：命中即登录，未命中建号。邮箱就是身份。 */
-const resolveGoogleLogin = db.transaction((email: string, now: number): { user: UserRow; created: boolean } => {
+const resolveEmailLogin = db.transaction((email: string, now: number): { user: UserRow; created: boolean } => {
   let user = findByEmail.get(email) as UserRow | undefined
   let created = false
   if (!user) {
@@ -199,7 +207,7 @@ const resolveGoogleLogin = db.transaction((email: string, now: number): { user: 
 /** 收尾：清跳转 cookie，回 returnTo。结果码区分登录与换绑两条流程：
  *  登录失败 oauth=failed（App 弹登录框）；换绑结果 bound / conflict / bind_failed
  *  由设置页就地提示，不会误触登录框。silent = 用户在 Google 页主动取消，静默回去。 */
-type FinishCode = 'ok' | 'failed' | 'bound' | 'conflict' | 'bind_failed'
+type FinishCode = 'github_failed' | 'github_email_required' | 'github_busy' | 'ok' | 'failed' | 'bound' | 'conflict' | 'bind_failed'
 
 function finish(c: Context, tx: OAuthTx | null, code: FinishCode, silent = false): Response {
   deleteCookie(c, TX_COOKIE, { path: TX_COOKIE_PATH, secure: SECURE, sameSite: 'Lax' })
@@ -218,7 +226,7 @@ function finish(c: Context, tx: OAuthTx | null, code: FinishCode, silent = false
 const oauth = new Hono()
 
 oauth.get('/providers', (c) =>
-  c.json({ google: googleConfigured(), email: emailDeliveryConfigured() }),
+  c.json({ google: googleConfigured(), github: githubConfigured(), email: emailDeliveryConfigured() }),
 )
 
 /** 组 Google 授权 URL（登录 / 换绑通用 —— 差异全在 tx 里：换绑模式带 u/tv）。 */
@@ -311,7 +319,7 @@ oauth.get('/google/callback', async (c) => {
   const bindMode = tx?.u !== undefined // 票据带 u/tv = 换绑模式
   // 用户在 Google 页面点了取消 —— 不是错误，静默回去，别拿红字吓人。
   if (denied) return finish(c, tx, bindMode ? 'bind_failed' : 'failed', denied === 'access_denied')
-  if (!tx || !code || !safeEqualStr(tx.s, state)) return finish(c, tx, bindMode ? 'bind_failed' : 'failed')
+  if (!tx || tx.p === 'github' || !code || !safeEqualStr(tx.s, state)) return finish(c, tx, bindMode ? 'bind_failed' : 'failed')
 
   // 换 token：授权码 + PKCE verifier 一次性换取 id_token 并验签核对。
   let claims: GoogleClaims
@@ -359,7 +367,7 @@ oauth.get('/google/callback', async (c) => {
 
   let completed: { user: UserRow; created: boolean }
   try {
-    completed = resolveGoogleLogin(verifiedEmail, Date.now())
+    completed = resolveEmailLogin(verifiedEmail, Date.now())
   } catch {
     return finish(c, tx, 'failed')
   }
@@ -368,6 +376,91 @@ oauth.get('/google/callback', async (c) => {
 
   await issueSession(c, { uid: user.id, username: user.username, tv: user.token_version })
   return finish(c, tx, 'ok')
+})
+
+// 与 Google 一样只证明邮箱控制权，不建立会脱离本站邮箱的永久 GitHub 绑定。
+oauth.get('/github/start', (c) => {
+  if (!githubConfigured()) return c.json({ error: 'GitHub 登录还没准备好' }, 404)
+  if (rateLimited(`oauth-start-ip:${clientIp(c)}`, OAUTH_START_MAX_PER_IP, 15 * 60 * 1000)) {
+    return c.json({ error: '点得有些快啦，稍后再试吧' }, 429)
+  }
+  const tx: OAuthTx = { ...freshLoginTx(c.req.query('returnTo'), c.req.query('invite')), p: 'github' }
+  setTxCookie(c, tx)
+  const params = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    redirect_uri: `${requestOrigin(c)}${GITHUB_CALLBACK_PATH}`,
+    scope: 'user:email',
+    state: tx.s,
+    code_challenge: createHash('sha256').update(tx.v).digest('base64url'),
+    code_challenge_method: 'S256',
+  })
+  return c.redirect(`https://github.com/login/oauth/authorize?${params}`)
+})
+
+oauth.get('/github/callback', async (c) => {
+  if (!githubConfigured()) return finish(c, null, 'github_failed')
+  const tx = decodeTx(getCookie(c, TX_COOKIE))
+  const state = c.req.query('state') ?? ''
+  if (!tx || tx.p !== 'github' || tx.u !== undefined || !safeEqualStr(tx.s, state)) return finish(c, null, 'github_failed')
+  const denied = c.req.query('error')
+  if (denied) return finish(c, tx, 'github_failed', denied === 'access_denied')
+  const code = c.req.query('code')
+  if (!code) return finish(c, tx, 'github_failed')
+  if (rateLimited(`oauth-callback-ip:${clientIp(c)}`, 20, 15 * 60 * 1000)) return finish(c, tx, 'github_busy')
+
+  let verifiedEmail: string
+  let exchangeStage = 'token request'
+  try {
+    const tokenRes = await fetch(GITHUB_TOKEN_URL, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: GITHUB_CLIENT_ID,
+        client_secret: GITHUB_CLIENT_SECRET,
+        code,
+        redirect_uri: `${requestOrigin(c)}${GITHUB_CALLBACK_PATH}`,
+        code_verifier: tx.v,
+      }),
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
+    })
+    exchangeStage = `token response HTTP ${tokenRes.status}`
+    if (!tokenRes.ok) throw new Error('token HTTP failure')
+    const tokens = await tokenRes.json() as { access_token?: unknown; token_type?: unknown; error?: unknown }
+    if (tokens.error || typeof tokens.access_token !== 'string' || !tokens.access_token || tokens.token_type !== 'bearer') throw new Error('invalid token response')
+    exchangeStage = 'email request'
+    const emailRes = await fetch('https://api.github.com/user/emails?per_page=100', {
+      headers: { Authorization: `Bearer ${tokens.access_token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'MapleTools', 'X-GitHub-Api-Version': '2026-03-10' },
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
+    })
+    exchangeStage = `email response HTTP ${emailRes.status}`
+    if (!emailRes.ok) throw new Error('email HTTP failure')
+    const emails: unknown = await emailRes.json()
+    if (!Array.isArray(emails)) throw new Error('invalid email response')
+    const primary = emails.find((item: unknown): item is { email: string; primary: true; verified: true } => {
+      if (!item || typeof item !== 'object') return false
+      const value = item as Record<string, unknown>
+      return value.primary === true && value.verified === true && typeof value.email === 'string'
+    })
+    verifiedEmail = primary ? normalizeEmail(primary.email) : ''
+  } catch (error) {
+    // 只记阶段和状态码；上游正文、授权码和 token 都不进日志。
+    console.error('[oauth/github] upstream exchange failed', exchangeStage, error instanceof Error ? error.name : 'UnknownError')
+    return finish(c, tx, 'github_failed')
+  }
+  if (!verifiedEmail || verifiedEmail.endsWith('@users.noreply.github.com')) return finish(c, tx, 'github_email_required')
+  if (!findByEmail.get(verifiedEmail) && rateLimited(`reg:${clientIp(c)}`, REGISTER_MAX_PER_IP, REGISTER_WINDOW)) return finish(c, tx, 'github_busy')
+  try {
+    const completed = resolveEmailLogin(verifiedEmail, Date.now())
+    if (completed.created) applyInvite(completed.user.id, tx.i)
+    const user = completed.user
+    await issueSession(c, { uid: user.id, username: user.username, tv: user.token_version })
+    return finish(c, tx, 'ok')
+  } catch (error) {
+    console.error('[oauth/github] account completion failed', error instanceof Error ? error.message : 'unknown error')
+    return finish(c, tx, 'github_failed')
+  }
 })
 
 export default oauth

@@ -287,6 +287,8 @@
 .btn-sm { min-height: 36px; padding: 5px 12px; font-size: 12.5px; }
 .btn-block { width: 100%; }
 
+.oauth-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.btn-github { background: var(--card); color: var(--ink); border-color: var(--ink-sub); }
 .btn-google { background: #fff; border-color: #565c6c; color: #1f1f1f; }
 @media (hover: hover) { .btn-google:hover { background: #fff; } }
 

@@ -74,6 +74,7 @@ export function AuthModal({
   const [okMsg, setOkMsg] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
+  const [githubEnabled, setGithubEnabled] = useState(false)
   const userRef = useRef<HTMLInputElement>(null)
   const emailRef = useRef<HTMLInputElement>(null)
 
@@ -133,7 +134,7 @@ export function AuthModal({
     let alive = true
     void fetchOauthProviders()
       .then((r) => {
-        if (alive) setGoogleEnabled(r.google)
+        if (alive) { setGoogleEnabled(r.google); setGithubEnabled(r.github) }
       })
       .catch(() => undefined)
     return () => {
@@ -161,14 +162,14 @@ export function AuthModal({
   const inboxLink = emailStep === 'code' ? inboxLinkFor(email) : null
 
   // 整页跳转授权 —— 回来后会话 cookie 已就位，auth.init() 恢复登录态；前端不经手任何令牌。
-  const startGoogleLogin = (): void => {
+  const oauthLoginHref = (provider: 'google' | 'github'): string => {
     const url = new URL(window.location.href)
     url.searchParams.delete('oauth')
     url.searchParams.delete('invite')
     const inviteCode = pendingInviteCode()
     const params = new URLSearchParams({ returnTo: url.pathname + url.search + url.hash })
     if (inviteCode) params.set('invite', inviteCode)
-    window.location.href = `/api/auth/oauth/google/start?${params.toString()}`
+    return `/api/auth/oauth/${provider}/start?${params.toString()}`
   }
 
   const submit = async (e: React.FormEvent): Promise<void> => {
@@ -487,15 +488,21 @@ export function AuthModal({
             </div>
           </form>
 
-          {googleEnabled && !isForgot && (
+          {(googleEnabled || githubEnabled) && !isForgot && (
             <>
               <div className="or-line mt8" aria-hidden="true">
                 或
               </div>
-              <button type="button" className="btn btn-google btn-block mt16" onClick={startGoogleLogin}>
-                <Ic name="google" cls="ic" />
-                使用 Google 继续
-              </button>
+              <div className="oauth-buttons mt16">
+                {googleEnabled && <a className="btn btn-google btn-block" href={oauthLoginHref('google')}>
+                  <Ic name="google" cls="ic" />
+                  使用 Google 继续
+                </a>}
+                {githubEnabled && <a className="btn btn-github btn-block" href={oauthLoginHref('github')}>
+                  <Ic name="github" cls="ic" />
+                  使用 GitHub 继续
+                </a>}
+              </div>
             </>
           )}
         </div>
