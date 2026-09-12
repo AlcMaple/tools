@@ -537,6 +537,16 @@
   {
     "file": "server/oauth.ts",
     "method": "get",
+    "path": "/github/callback"
+  },
+  {
+    "file": "server/oauth.ts",
+    "method": "get",
+    "path": "/github/start"
+  },
+  {
+    "file": "server/oauth.ts",
+    "method": "get",
     "path": "/google/callback"
   },
   {
