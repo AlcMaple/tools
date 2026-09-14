@@ -20,7 +20,7 @@ import '../http'
 import { randomUUID } from 'node:crypto'
 import { setMaxListeners } from 'node:events'
 import { Agent, request } from 'undici'
-import { PROXY_HOSTS, RESCUE_HOSTS } from './proxy-hosts'
+import { needsProxy, PROXY_HOSTS, RESCUE_HOSTS } from './proxy-hosts'
 
 // 白名单见 proxy-hosts.ts（解析层也要用同一份，故单独成文件）。救援域名平时直连，
 // 只有播放页判定直连饿死时才会带着这里的地址来。
@@ -441,9 +441,13 @@ function parseRange(header: string | undefined): { start: number; end: number | 
 }
 
 // 单路直连透传，完全不碰会话。用于 moov 尾部探测这类小请求。
-async function passthrough(url: string, start: number, end: number, total: number): Promise<StreamResult> {
+// 透传专用连接池：**不能**借 worker 的 agents[0]（connections:1）——透传一整段是长连接，
+// ffmpeg 读完文件头去 seek 时第二个请求会排在第一个后面等它读完整个文件，直接死锁（本机复现）。
+const passthroughAgent = new Agent({ connections: 16, connectTimeout: 10_000, headersTimeout: 15_000, bodyTimeout: 0 })
+
+async function passthrough(url: string, start: number, end: number, total: number, ranged = true): Promise<StreamResult> {
   const res = await request(url, {
-    dispatcher: agents[0],
+    dispatcher: passthroughAgent,
     method: 'GET',
     maxRedirections: 5,
     headers: { ...UPSTREAM_HEADERS, Range: `bytes=${start}-${end}` },
@@ -452,17 +456,15 @@ async function passthrough(url: string, start: number, end: number, total: numbe
     await res.body.dump()
     throw new Error('上游 passthrough 状态 ' + res.statusCode)
   }
-  return {
-    status: 206,
-    headers: {
-      'Content-Type': 'video/mp4',
-      'Accept-Ranges': 'bytes',
-      'Content-Range': `bytes ${start}-${end}/${total}`,
-      'Content-Length': String(end - start + 1),
-      'Cache-Control': 'no-store',
-    },
-    body: res.body as unknown as ReadableStream<Uint8Array>,
+  // 请求本身没带 Range（Chromium 打开 <video> 的首个请求）就回 200——206 只能回应 Range 请求。
+  const headers: Record<string, string> = {
+    'Content-Type': 'video/mp4',
+    'Accept-Ranges': 'bytes',
+    'Content-Length': String(end - start + 1),
+    'Cache-Control': 'no-store',
   }
+  if (ranged) headers['Content-Range'] = `bytes ${start}-${end}/${total}`
+  return { status: ranged ? 206 : 200, headers, body: res.body as unknown as ReadableStream<Uint8Array> }
 }
 
 /** 只有本进程知道的一次性令牌：预转拉流时带上，外部无法伪造成「不算观众」。 */
@@ -501,9 +503,13 @@ export async function serveStream(
   // 尾部探测 / 明确要一小段 → 直连透传，绝不触碰正在跑的会话。
   const wantsSmallSlice = end !== null && end - start + 1 <= TAIL_DIRECT_BYTES
   const isTail = start >= total - TAIL_DIRECT_BYTES
-  if (wantsSmallSlice || isTail) {
+  // 救援域名（play.xfvod.pro 这类 Cloudflare 快源）**整个走单连接透传**：VPS 实测单连接 560KB/s、
+  // 12 路并发合计 549KB/s——并发一点好处都没有，多路会话只剩代价：ffmpeg 开场读文件头会拉起一个
+  // 12 路 32MB 领先窗口的会话，把 4.4Mbps 的入口吃满，随后读 moov 的尾部请求等了 9.6 秒、真正的
+  // 转码区间 17 秒才见第一个字节。多路会话只给按连接限速的 apn.moedot.net 用。
+  if (wantsSmallSlice || isTail || !needsProxy(url)) {
     const realEnd = end === null ? total - 1 : Math.min(end, total - 1)
-    return passthrough(url, start, realEnd, total)
+    return passthrough(url, start, realEnd, total, ranged)
   }
 
   reclaimMemory()
@@ -511,6 +517,13 @@ export async function serveStream(
   // **绝不顶掉正在被人看的会话** —— 顶掉就意味着那位观众正看着突然卡住。
   let session = pickSession(url, start)
   if (!session) {
+    // 要另开区间了：同一视频里**已经没人读**的旧区间先收掉。它们只会用在途的块继续抢入口带宽——
+    // ffmpeg 开场读文件头留下的 start=0 会话就是这样，实测把真正的转码会话饿了近一分钟，
+    // 直到 60 秒 idle 看门狗才收摊。Chromium abort 后带同一 Range 重连会命中 pickSession，不走到这里。
+    for (const stale of (sessions.get(url) ?? []).filter((o) => liveReaders(o).length === 0)) {
+      log(`会话 ${stale.regionStart} 已无读取端，让位给新区间 ${start}`)
+      disposeSession(stale)
+    }
     const list = sessions.get(url) ?? []
     if (list.length >= MAX_SESSIONS_PER_URL) {
       const idle = list.find((s) => liveReaders(s).length === 0)
@@ -541,10 +554,22 @@ export async function serveStream(
   if (ranged) headers['Content-Range'] = `bytes ${start}-${total - 1}/${total}`
 
   const detach = (): void => {
-    session!.readers.delete(reader.id)
-    gc(session!)
-    notify(session!)
-    armIdle(session!)
+    const s = session!
+    s.readers.delete(reader.id)
+    gc(s)
+    notify(s)
+    armIdle(s)
+    // 最后一个读取端走了、而同一个视频**别的区间正有人在读**：这段会话留着只会用它在途的
+    // 12 块继续抢入口带宽（ffmpeg 开场读文件头留下的 start=0 会话就是这样，实测把真正的
+    // 转码会话饿了近一分钟，直到 60 秒 idle 看门狗才收摊）。立刻收，不等看门狗。
+    // 只剩它一段时照旧留窗口——Chromium 会 abort 再带同一 Range 重连，那时能直接命中。
+    if (liveReaders(s).length === 0) {
+      const others = (sessions.get(s.url) ?? []).filter((o) => o !== s && liveReaders(o).length > 0)
+      if (others.length) {
+        log(`会话 ${s.regionStart} 已无读取端，另一区间有人在读，立即收摊`)
+        disposeSession(s)
+      }
+    }
   }
 
   let pulls = 0
@@ -572,7 +597,9 @@ export async function serveStream(
         // 随后立刻追上下载端反复卡顿。**文件开场必须豁免**（对齐桌面端 exposeFirstProgressively）：
         // 开场时下载才刚建连，攒满 2MB 要十几秒，而播放器侧的缓冲闸门只等 10 秒——
         // 闸门互相顶死，表现为播放器一个字节都拿不到、直接回退 iframe。
-        const atFileStart = s.regionStart < CHUNK_BYTES
+        // 预转（ffmpeg）自己的读取端也豁免：它不是播放器，拿到多少吃多少，攒够 2MB 再放只是
+        // 白白让编码器晚起步 6 秒（本机实测冷 seek 后 9.3 秒才见第一个字节）。
+        const atFileStart = s.regionStart < CHUNK_BYTES || reader.internal
         const warmedUp =
           atFileStart ||
           s.contiguousEnd >= Math.min(COLD_START_BYTES, s.total - s.regionStart) ||

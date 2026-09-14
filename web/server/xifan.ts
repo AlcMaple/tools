@@ -1577,6 +1577,11 @@ ${PLAYBACK_BEACON}
       .then(function(st){
         if (!st || st.error) return
         renderPrepare(st, url)
+        // 起稿浮层上直接画「从哪起 · 攒了多少」，别让用户对着一个转圈猜
+        if (st.state === 'running' && !st.playable && regionWanted === null && curPl && curPl.url === url && !curPl.viaPrepared
+            && $('buffering').classList.contains('show')){
+          $('bufferText').textContent = '从 ' + fmtClock(from) + ' 起描线 · 已描好 ' + Math.floor(st.lead || 0) + ' / ' + (st.need || 30) + ' 秒'
+        }
         if (st.state === 'failed' && curPl && curPl.url === url && prepareFailed !== url){
           prepareFailed = url
           playLine(curPl) // 转不出来只能退回代理直连，卡也比看不了强
@@ -1601,7 +1606,7 @@ ${PLAYBACK_BEACON}
             try { v.pause() } catch (e) {}
             $('buffering').classList.remove('retryable'); $('buffering').onclick = null
             $('bufferActions').textContent = ''
-            $('bufferText').textContent = '从 ' + fmtClock(t) + ' 起描线 · 攒够半分钟就放'
+            $('bufferText').textContent = '从 ' + fmtClock(t) + ' 起描线 · 攒够十几秒就放'
             $('buffering').classList.add('show')
             prepareTimer = setTimeout(function(){ pollPrepare(url) }, 3000)
             return
@@ -1696,11 +1701,20 @@ ${PLAYBACK_BEACON}
   // 等待预转攒够缓冲垫。这段时间不建代理连接，入口全留给 remux。
   function showDrafting(pl){
     curPl = pl
-    stopAll()
-    v.classList.remove('on'); frame.classList.remove('on')
+    // 救援（直连饿死改走服务端）时用户已经在看：画面和进度条留着、只暂停，浮层只报进度；
+    // 别把 <video> 拆掉变成一块空白——「我已经在看了，怎么又回到开头的 loading」。
+    var keepVideo = !!rescued[pl.url] && !!v.getAttribute('src') && !inFrame()
+    if (keepVideo){
+      cancelBufferGate(false); clearInternalSeek(); clearAdmissionTimer(); destroyHls()
+      try { v.pause() } catch (e) {}
+      gateOnPlay = false
+    } else {
+      stopAll()
+      v.classList.remove('on'); frame.classList.remove('on')
+    }
     renderChips()
     $('buffering').classList.remove('retryable'); $('buffering').onclick = null
-    $('bufferText').textContent = '这张底稿难描了点 · 攒够半分钟就放'
+    $('bufferText').textContent = '这张底稿难描了点 · 攒够十几秒就放'
     var acts = $('bufferActions')
     acts.textContent = ''
     // 只有**确实存在**已知快源时才给这个出口。没有还劝人家去换，那是把提示写成 bug。

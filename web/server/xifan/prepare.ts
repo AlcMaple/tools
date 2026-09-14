@@ -12,11 +12,11 @@
 //
 // 两档码率（ABR）：同一条 ffmpeg 从同一份输入出两档，入口只拉一次。
 //   hd  源画质 -c copy（HEVC 1080p，约 1.5~2.7Mbps）
-//   sd  1080p H.264 crf23 封顶 1.2Mbps —— **不降分辨率只降码率**：VPS 实测（60s 样本）
-//       SSIM 0.982 vs 源；720p 各档只有 0.957~0.964，且体积差不多。番剧画面平坦，
-//       1080p 降码率比降分辨率划算得多。
+//   sd  1080p H.264 superfast crf23 封顶 1.2Mbps —— **不降分辨率只降码率**：VPS 实测
+//       SSIM 0.973 vs 源（veryfast 0.979，但只有 0.99x 实时，边转边看追不上）；720p 各档
+//       只有 0.957~0.964，且体积差不多。番剧画面平坦，1080p 降码率比降分辨率划算得多。
 //   播放器（hls.js / iOS 原生）按缓冲水位自动选档，主 playlist 把 sd 放前面让手机先起播。
-//   CPU：2 核 VPS 上 nice 19 + 2 线程 1.42x 实时；转码期间 /api/health p50 2ms、最差 8ms，
+//   CPU：2 核 VPS 上 nice 19 + 2 线程约 1.4x 实时；转码期间 /api/health p50 2ms、最差 8ms，
 //   不影响网站；快源直连本来就不经过服务器。
 //
 // **分区（region）**：一集不再是「从 0 顺序转到尾」一条 ffmpeg，而是若干段 `-ss S [-to E]`：
@@ -71,9 +71,10 @@ const READY_MARK = 'done'
 const MOOV_FILE = 'moov.json'
 // sd 分片长度 = 段起点网格 = sd 强制关键帧间隔。三者相等，各段的 sd 分片边界才落在同一张网格上。
 const SEGMENT_SECONDS = 6
-// 边转边播的缓冲垫：某个位置前方转出这么多秒就放行。转码 1.3~1.4x 实时，领先量只增不减，
-// 30 秒足够吃掉入口抖动。以前按「15 片」算，源关键帧 10 秒一个时就是 150 秒——起稿要等两分钟。
-const PLAYABLE_SECONDS = 30
+// 边转边播的缓冲垫：某个位置前方转出这么多秒就放行。转码 1.1~1.4x 实时，领先量只增不减；
+// 三片（18 秒）够播放器起步、也够吃掉入口抖动。以前按「15 片」算，源关键帧 10 秒一个时就是
+// 150 秒——起稿要等两分钟；改成 30 秒后真机仍嫌久（冷启动本身还要 20 秒左右）。
+const PLAYABLE_SECONDS = 18
 // 跳转目标落在正在跑的这段前沿之后多远以内，就不重开一段、等它转过去。
 const LOOKAHEAD_SECONDS = 45
 // 小于这个的空洞不补（`-to` 结束位置与关键帧对不齐留下的零头），playlist 里用 GAP 让播放器跳过。
@@ -362,17 +363,23 @@ export function readPlaylist(key: string, file: string): string | null {
   return composePlaylist(key, m[1] as Rung)
 }
 
+/** wanted 位置前方已经转出多少秒（不在任何已转段里就是 0）。播放页用它画「已描好 12 / 30 秒」。 */
+function leadAt(key: string, t: number): number {
+  for (const c of coverage(key)) if (t >= c.start - 0.05 && t <= c.end) return Math.max(0, c.end - t)
+  return 0
+}
+
 export function statusOf(url: string, wanted?: number): {
-  key: string; state: JobState; bytes: number; playable: boolean; seconds: number; duration: number | null; error?: string
+  key: string; state: JobState; bytes: number; playable: boolean; seconds: number; lead: number; need: number; duration: number | null; error?: string
 } {
   const key = keyFor(url)
   const dir = dirFor(key)
   // 磁盘上的完成标记优先于内存 —— 重启后内存里的 job 没了，但转好的分片还在。
   if (existsSync(join(dir, READY_MARK))) {
-    return { key, state: 'ready', bytes: dirSize(dir), playable: true, seconds: coveredSeconds(key), duration: durationOf(key) }
+    return { key, state: 'ready', bytes: dirSize(dir), playable: true, seconds: coveredSeconds(key), lead: 0, need: PLAYABLE_SECONDS, duration: durationOf(key) }
   }
   const job = jobs.get(key)
-  if (!job) return { key, state: 'none', bytes: 0, playable: false, seconds: 0, duration: null }
+  if (!job) return { key, state: 'none', bytes: 0, playable: false, seconds: 0, lead: 0, need: PLAYABLE_SECONDS, duration: null }
   if (job.state === 'running') {
     ensureMaster(dir)
     if (wanted !== undefined) ensureRegion(job, wanted)
@@ -386,6 +393,8 @@ export function statusOf(url: string, wanted?: number): {
     // 转到一半也能播：问的是「这个位置前方够不够」，不问整集。
     playable: job.state === 'running' && playableAt(key, wanted ?? job.lastWanted, job),
     seconds: job.state === 'running' ? coveredSeconds(key) : 0,
+    lead: job.state === 'running' ? leadAt(key, wanted ?? job.lastWanted) : 0,
+    need: PLAYABLE_SECONDS,
     duration: durationOf(key),
     error: safeError,
   }
@@ -550,7 +559,9 @@ function spawnRegion(job: Job, region: Region): void {
     // 同一份输入出两档：v:0/a:0 原样 copy 为 hd；v:1 重编 H.264 为 sd，音频两档都 copy。
     '-map', '0:v:0', '-map', '0:a:0', '-map', '0:v:0', '-map', '0:a:0',
     '-c:v:0', 'copy', '-c:a', 'copy',
-    '-c:v:1', 'libx264', '-preset:v:1', 'veryfast', '-crf:v:1', '23',
+    // superfast 而不是 veryfast：VPS 上拿真实番剧 30 秒片段实测（nice 19 + 2 线程），veryfast 只有 0.99x
+    // 实时——边转边看时领先量根本不长，播放器迟早追上；superfast 1.38x，SSIM 0.973 vs 0.979，肉眼无差。
+    '-c:v:1', 'libx264', '-preset:v:1', 'superfast', '-crf:v:1', '23',
     '-maxrate:v:1', '1200k', '-bufsize:v:1', '2400k',
     // sd 关键帧**只**在 6 秒网格上（段起点在网格上，所以相对时间的网格就是全局网格）；
     // 关掉场景切换插关键帧，否则分片会在任意位置断开，段与段就对不齐了。
