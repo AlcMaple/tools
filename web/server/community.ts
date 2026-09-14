@@ -426,7 +426,7 @@ community.get('/reviews/:bgmId', (c) => {
         })
       : null
     const score = computedScore != null
-      ? (computedScore > 0 ? computedScore : null)
+      ? computedScore
       : pick(r.score_shown)
     const bgmScore = pick(r.track_score)
     return {

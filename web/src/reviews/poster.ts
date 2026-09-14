@@ -289,7 +289,7 @@ export async function renderPoster(input: PosterInput): Promise<Blob> {
 function rightColumnCards(ctx: CanvasRenderingContext2D, input: PosterInput, w: number): number[] {
   const cards: number[] = []
   const hasScore =
-    (typeof input.userScore === 'number' && input.userScore > 0) ||
+    (typeof input.userScore === 'number' && Number.isFinite(input.userScore) && input.userScore >= 0 && input.userScore <= 10) ||
     (typeof input.bgmScore === 'number' && input.bgmScore > 0)
   if (hasScore) cards.push(150)
   if (seasonText(input.airDate)) cards.push(96)
@@ -458,7 +458,7 @@ function drawMetaRow(
   const gap = o.rightGap
   let y = o.rightTop
 
-  const hasUser = typeof input.userScore === 'number' && input.userScore > 0
+  const hasUser = typeof input.userScore === 'number' && Number.isFinite(input.userScore) && input.userScore >= 0 && input.userScore <= 10
   const hasBgm = typeof input.bgmScore === 'number' && input.bgmScore > 0
   if (hasUser || hasBgm) {
     const h = 150

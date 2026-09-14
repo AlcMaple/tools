@@ -42,7 +42,7 @@ function posterInputFrom(opts: {
     mode: opts.mode,
     body: opts.body,
     spoiler: opts.spoiler,
-    userScore: opts.score != null && opts.score > 0 ? opts.score : undefined,
+    userScore: opts.score != null && opts.score >= 0 ? opts.score : undefined,
     scoreSignals: opts.scoreSignals,
     bgmScore: opts.bgmScore != null && opts.bgmScore > 0 ? opts.bgmScore : undefined,
     airDate: opts.airDate || undefined,
@@ -154,7 +154,7 @@ export function CommunityPage(): JSX.Element {
     return <ProfileView username={route.username} profile={profile} loading={loading} error={error} />
   }
   if (route.kind === 'anime') {
-    return <AnimeReviewsView data={animeReviews} loading={loading} error={error} />
+    return <AnimeReviewsView key={route.bgmId} data={animeReviews} loading={loading} error={error} />
   }
   return (
     <HallView
@@ -271,7 +271,7 @@ function ReviewAnimeCard({ anime }: { anime: CommunityReviewAnime }): JSX.Elemen
   )
 }
 
-function AnimeReviewsView({
+export function AnimeReviewsView({
   data,
   loading,
   error,
@@ -280,14 +280,11 @@ function AnimeReviewsView({
   loading: boolean
   error: string | null
 }): JSX.Element {
-  const [tab, setTab] = useState<'review' | 'recommend'>('review')
+  const [selectedTab, setTab] = useState<ReviewMode | null>(null)
+  const tab = selectedTab ?? (data && data.review.length === 0 && data.recommend.length > 0 ? 'recommend' : 'review')
   const [poster, setPoster] = useState<PosterInput | null>(null)
   const title = data ? data.anime.titleCn || data.anime.title || `BGM ${data.anime.bgmId}` : ''
   const list = data ? data[tab] : []
-  // 有哪个就默认停在哪个
-  useEffect(() => {
-    if (data && data.review.length === 0 && data.recommend.length > 0) setTab('recommend')
-  }, [data])
 
   return (
     <>
@@ -331,7 +328,7 @@ function AnimeReviewsView({
                       <b>{entry.username}</b>
                     </a>
                     <span className="anime-review-meta">
-                      {entry.score != null && <span className="anime-review-score">★ {entry.score}</span>}
+                      {entry.score != null && <span className="anime-review-score">我的评分 {entry.score} / 10</span>}
                       <span className={`anime-review-spoiler${entry.spoiler === 'none' ? '' : ' warn'}`}>
                         {entry.spoiler === 'none' ? '无剧透' : '含剧透'}
                       </span>

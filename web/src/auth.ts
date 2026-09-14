@@ -251,9 +251,9 @@ export async function fetchQuestions(): Promise<SecurityQuestion[]> {
 // 第三方登录 / 邮箱能力是否启用 —— 服务端按环境变量决定，未配置时前端不画对应入口。
 // 登录走整页跳转（/api/auth/oauth/google/start → Google → 回调设会话 cookie 后跳回），
 // 前端无需也不应经手任何令牌。失败时回调带 ?oauth=failed 回来，由 App 弹登录框提示。
-let providersCache: { google: boolean; email: boolean } | null = null
-export async function fetchOauthProviders(): Promise<{ google: boolean; email: boolean }> {
-  if (!providersCache) providersCache = await request<{ google: boolean; email: boolean }>('/oauth/providers')
+let providersCache: { google: boolean; github: boolean; email: boolean } | null = null
+export async function fetchOauthProviders(): Promise<{ google: boolean; github: boolean; email: boolean }> {
+  if (!providersCache) providersCache = await request<{ google: boolean; github: boolean; email: boolean }>('/oauth/providers')
   return providersCache
 }
 

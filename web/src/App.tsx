@@ -87,11 +87,13 @@ export default function App(): JSX.Element {
   // 摘掉参数避免刷新重复触发，弹登录框说明原因。
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if (params.get('oauth') !== 'failed') return
+    const messages: Record<string, string> = { failed: 'Google 登录未完成，请重试', github_failed: 'GitHub 登录没接上，再试一次吧', github_email_required: '先去 GitHub 验证主邮箱，再回来找我吧', github_busy: '登录有些频繁，稍后再试吧' }
+    const message = messages[params.get('oauth') ?? '']
+    if (!message) return
     params.delete('oauth')
     const qs = params.toString()
     window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash)
-    setOauthError('Google 登录未完成，请重试')
+    setOauthError(message)
     setAuthMode('login')
     setAuthOpen(true)
   }, [])
