@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
 import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
 import { useAuth } from './auth'
@@ -39,30 +40,11 @@ const CALENDAR_LAYOUT_KEY = 'calendar-layout'
 const CALENDAR_RIG_POSITION_KEY = 'calendar-rig-position'
 const DEFAULT_RIG_POSITION: Point = { x: 0, y: 0 }
 
-function clampRigPosition(position: Point): Point {
-  if (typeof window === 'undefined') return position
-  // 手机端立绘是内联贴纸，限制横向偏移避免整张贴纸被拖出屏幕；宽屏则给卡片留出较大的挪动范围。
-  const compact = window.innerWidth <= 960
-  const maxTravel = compact ? 16 : Math.max(180, Math.round(window.innerWidth * 0.32))
-  const maxY = compact ? 220 : Math.max(260, Math.round(window.innerHeight * 0.55))
-
-  // stage 右缘通常离视口还有一段 padding；用未变换前的 offsetLeft 算出屏幕边界，
-  // 防止用户把贴纸拖到视口外后制造整页横向滚动。DOM 尚未挂载时退回 maxTravel。
-  let minX = -maxTravel
-  let maxX = maxTravel
-  const stage = document.querySelector<HTMLElement>('.calendar-stage')
-  const rig = document.querySelector<HTMLElement>('.calendar-rig')
-  if (stage && rig) {
-    const stageRect = stage.getBoundingClientRect()
-    const baseLeft = stageRect.left + rig.offsetLeft
-    const width = rig.offsetWidth
-    const edge = compact ? 16 : 32
-    minX = Math.max(minX, edge - baseLeft)
-    maxX = Math.min(maxX, window.innerWidth - edge - (baseLeft + width))
-  }
+export function clampRigPosition(position: Point, bounds: { left: number; top: number; width: number; height: number }, size: { width: number; height: number }): Point {
+  const edge = 8
   return {
-    x: Math.max(minX, Math.min(maxX, position.x)),
-    y: Math.max(-maxY, Math.min(maxY, position.y)),
+    x: Math.max(bounds.left + edge, Math.min(bounds.left + Math.max(edge, bounds.width - size.width - edge), position.x)),
+    y: Math.max(bounds.top + edge, Math.min(bounds.top + Math.max(edge, bounds.height - size.height - edge), position.y)),
   }
 }
 
@@ -76,96 +58,110 @@ function readCalendarLayout(): CalendarLayout {
   }
 }
 
-function readRigPosition(): Point {
-  if (typeof window === 'undefined') return DEFAULT_RIG_POSITION
+function readRigPosition(): (Point & { version?: number }) | null {
   try {
-    const raw = window.localStorage.getItem(CALENDAR_RIG_POSITION_KEY)
-    if (!raw) return DEFAULT_RIG_POSITION
-    const parsed = JSON.parse(raw) as Partial<Point>
-    if (!Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)) return DEFAULT_RIG_POSITION
-    return { x: Math.round(parsed.x as number), y: Math.round(parsed.y as number) }
+    const parsed = JSON.parse(window.localStorage.getItem(CALENDAR_RIG_POSITION_KEY) || 'null') as (Point & { version?: number }) | null
+    return parsed && Number.isFinite(parsed.x) && Number.isFinite(parsed.y) ? parsed : null
   } catch {
-    return DEFAULT_RIG_POSITION
+    return null
   }
 }
 
-// 立绘和气泡是同一个可拖动的贴纸：指针按下后由 wrapper 捕获，避免拖到气泡外就断开。
-// 坐标写进 localStorage，刷新后仍保留用户摆好的位置；Escape 或双击可快速归位。
-function useDraggableRig(): {
-  position: Point
-  dragging: boolean
-  onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
-  onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void
-  onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => void
-  onDoubleClick: () => void
-  onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void
-} {
-  const [position, setPosition] = useState<Point>(readRigPosition)
+// 固定层以视口为坐标系，避免侧栏、周历宽度和滚动位置变成隐形的拖动边界。
+function useDraggableRig() {
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const elementRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState<Point | null>(null)
   const [dragging, setDragging] = useState(false)
-  const positionRef = useRef(position)
+  const positionRef = useRef<Point | null>(null)
   const drag = useRef<{ pointerId: number; startX: number; startY: number; origin: Point } | null>(null)
 
-  useEffect(() => {
-    positionRef.current = position
-    try {
-      window.localStorage.setItem(CALENDAR_RIG_POSITION_KEY, JSON.stringify(position))
-    } catch {
-      // 私密浏览或存储空间不足时，位置仍保留在本次页面生命周期里。
-    }
-  }, [position])
+  const constrain = (next: Point): Point => {
+    const viewport = window.visualViewport
+    return clampRigPosition(next, {
+      left: viewport?.offsetLeft ?? 0,
+      top: viewport?.offsetTop ?? 0,
+      width: viewport?.width ?? document.documentElement.clientWidth,
+      height: viewport?.height ?? window.innerHeight,
+    }, elementRef.current?.getBoundingClientRect() ?? { width: 0, height: 0 })
+  }
+  const home = (): Point => {
+    const anchor = anchorRef.current?.getBoundingClientRect()
+    const width = elementRef.current?.getBoundingClientRect().width ?? 0
+    return constrain({ x: (anchor?.right ?? window.innerWidth) - width, y: anchor?.top ?? 24 })
+  }
+  const update = (next: Point): void => {
+    const value = constrain(next)
+    positionRef.current = value
+    setPosition(previous => previous?.x === value.x && previous.y === value.y ? previous : value)
+  }
+  const finish = (): void => {
+    const pointerId = drag.current?.pointerId
+    drag.current = null
+    if (pointerId != null && elementRef.current?.hasPointerCapture(pointerId)) elementRef.current.releasePointerCapture(pointerId)
+    setDragging(false)
+  }
 
-  useEffect(() => {
-    const onResize = (): void => setPosition((previous) => clampRigPosition(previous))
-    window.addEventListener('resize', onResize)
-    onResize()
-    return () => window.removeEventListener('resize', onResize)
+  useLayoutEffect(() => {
+    const saved = readRigPosition()
+    const initial = home()
+    // 旧数据存的是相对周历右侧的偏移，首次升级转换后再保存视口坐标。
+    update(saved?.version === 2 ? saved : saved ? { x: initial.x + saved.x, y: initial.y + saved.y } : initial)
+    const resize = (): void => {
+      finish()
+      if (positionRef.current) update(positionRef.current)
+    }
+    const observer = new ResizeObserver(resize)
+    if (elementRef.current) observer.observe(elementRef.current)
+    window.addEventListener('resize', resize)
+    window.visualViewport?.addEventListener('resize', resize)
+    window.visualViewport?.addEventListener('scroll', resize)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', resize)
+      window.visualViewport?.removeEventListener('resize', resize)
+      window.visualViewport?.removeEventListener('scroll', resize)
+    }
   }, [])
 
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
-    if (e.button !== 0) return
-    e.preventDefault()
-    e.currentTarget.setPointerCapture(e.pointerId)
-    drag.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      origin: positionRef.current,
+  useEffect(() => {
+    if (!position || dragging) return
+    try {
+      window.localStorage.setItem(CALENDAR_RIG_POSITION_KEY, JSON.stringify({ ...position, version: 2 }))
+    } catch {
+      // 存储不可用时仍可拖动，只是不跨刷新保存。
     }
-    setDragging(true)
-  }
-
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
-    const d = drag.current
-    if (!d || d.pointerId !== e.pointerId) return
-    e.preventDefault()
-    setPosition(clampRigPosition({
-      x: d.origin.x + e.clientX - d.startX,
-      y: d.origin.y + e.clientY - d.startY,
-    }))
-  }
-
-  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
-    const d = drag.current
-    if (!d || d.pointerId !== e.pointerId) return
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-    drag.current = null
-    setDragging(false)
-  }
+  }, [position, dragging])
 
   const reset = (): void => {
-    drag.current = null
-    setPosition(DEFAULT_RIG_POSITION)
-    setDragging(false)
+    finish()
+    update(home())
   }
-
   return {
-    position,
+    anchorRef,
+    elementRef,
+    position: position ?? DEFAULT_RIG_POSITION,
+    ready: position !== null,
     dragging,
-    onPointerDown,
-    onPointerMove,
-    onPointerUp,
+    onPointerDown: (e: React.PointerEvent<HTMLDivElement>): void => {
+      if (e.button !== 0 || drag.current || !positionRef.current) return
+      e.preventDefault()
+      e.currentTarget.setPointerCapture(e.pointerId)
+      drag.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, origin: positionRef.current }
+      setDragging(true)
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLDivElement>): void => {
+      const d = drag.current
+      if (!d || d.pointerId !== e.pointerId) return
+      e.preventDefault()
+      update({ x: d.origin.x + e.clientX - d.startX, y: d.origin.y + e.clientY - d.startY })
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLDivElement>): void => {
+      if (drag.current?.pointerId === e.pointerId) finish()
+    },
+    onLostPointerCapture: finish,
     onDoubleClick: reset,
-    onKeyDown: (e) => {
+    onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>): void => {
       if (e.key === 'Escape' || e.key === 'Home') {
         e.preventDefault()
         reset()
@@ -571,10 +567,12 @@ export function CalendarPage(): JSX.Element {
 
       <div className={`calendar-stage mt16 layout-${layoutMode}`}>
         <span className="kira calendar-kira">サラサラ</span>
-        <div className="calendar-rig-layer">
+        <div ref={rig.anchorRef} className="calendar-rig-layer" />
+        {createPortal(<div className="calendar-rig-overlay">
           <div
+            ref={rig.elementRef}
             className={`calendar-rig${rig.dragging ? ' dragging' : ''}`}
-            style={{ transform: `translate3d(${rig.position.x}px, ${rig.position.y}px, 0)` }}
+            style={{ transform: `translate3d(${rig.position.x}px, ${rig.position.y}px, 0)`, visibility: rig.ready ? undefined : 'hidden' }}
             role="img"
             aria-label="和泉纱雾驻场贴纸，可按住拖动；双击或按 Home 归位"
             tabIndex={0}
@@ -583,6 +581,7 @@ export function CalendarPage(): JSX.Element {
             onPointerMove={rig.onPointerMove}
             onPointerUp={rig.onPointerUp}
             onPointerCancel={rig.onPointerUp}
+            onLostPointerCapture={rig.onLostPointerCapture}
             onDoubleClick={rig.onDoubleClick}
             onKeyDown={rig.onKeyDown}
           >
@@ -596,7 +595,7 @@ export function CalendarPage(): JSX.Element {
               </span>
             </div>
           </div>
-        </div>
+        </div>, document.body)}
 
         <div className="calendar-content">
           {layoutMode === 'vertical' ? (

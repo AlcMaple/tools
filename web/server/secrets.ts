@@ -42,3 +42,6 @@ export const AI_MODEL = process.env.AI_MODEL?.trim() || 'deepseek-v4-flash-visio
 // Google OIDC 登录凭据 —— 二者都配置才启用入口；缺任一即视为未接入，前端也不显示按钮。
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID?.trim() ?? ''
 export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET?.trim() ?? ''
+
+export const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID?.trim() ?? ''
+export const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET?.trim() ?? ''
