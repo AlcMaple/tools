@@ -290,20 +290,32 @@ async function fetchRange(s: Session, worker: number, absStart: number, absEnd: 
   }
 }
 
+// Cloudflare 快源（play.xfvod.pro）对**边缘还没缓存**的对象会无视 Range 直接回 200 整文件
+// （2026-09-17 真机：一集刚更新时前几次请求全是 200，播放页收到 502 → <video> code=4；
+// 几秒后边缘缓存好了就正常 206）。所以 Range 请求收到 200 先等一下重打一次，不要立刻判「不支持 Range」。
+const RANGE_RETRY_MS = 1500
+async function rangeRequest(url: string, dispatcher: Agent, range: string) {
+  let res = await request(url, { dispatcher, method: 'GET', maxRedirections: 5, headers: { ...UPSTREAM_HEADERS, Range: range } })
+  if (res.statusCode !== 200) return res
+  await res.body.dump()
+  log(`上游对 Range ${range} 回了 200，${RANGE_RETRY_MS}ms 后重试一次`)
+  await new Promise((r) => setTimeout(r, RANGE_RETRY_MS))
+  res = await request(url, { dispatcher, method: 'GET', maxRedirections: 5, headers: { ...UPSTREAM_HEADERS, Range: range } })
+  return res
+}
+
 async function probeTotal(url: string): Promise<number> {
-  const res = await request(url, {
-    dispatcher: agents[0],
-    method: 'GET',
-    maxRedirections: 5,
-    headers: { ...UPSTREAM_HEADERS, Range: 'bytes=0-0' },
-  })
+  const res = await rangeRequest(url, agents[0], 'bytes=0-0')
   const cr = res.headers['content-range']
+  const cl = res.headers['content-length']
   // 必须 dump() 不能 destroy()：destroy 会在 BodyReadable 上 emit 一个没人接的 error，
   // 直接把整个 Node 进程带走（UND_ERR_ABORTED 未捕获异常）。
   await res.body.dump()
   const m = typeof cr === 'string' ? cr.match(/\/(\d+)$/) : null
-  if (!m) throw new Error('上游不支持 Range，拿不到总长度')
-  return Number(m[1])
+  if (m) return Number(m[1])
+  // 重试后仍是 200：Content-Length 就是总长度，先把长度拿到，透传那边从 0 起还能播。
+  if (res.statusCode === 200 && typeof cl === 'string' && /^\d+$/.test(cl)) return Number(cl)
+  throw new Error('上游不支持 Range，拿不到总长度')
 }
 
 function runWorkers(s: Session): void {
@@ -446,13 +458,10 @@ function parseRange(header: string | undefined): { start: number; end: number | 
 const passthroughAgent = new Agent({ connections: 16, connectTimeout: 10_000, headersTimeout: 15_000, bodyTimeout: 0 })
 
 async function passthrough(url: string, start: number, end: number, total: number, ranged = true): Promise<StreamResult> {
-  const res = await request(url, {
-    dispatcher: passthroughAgent,
-    method: 'GET',
-    maxRedirections: 5,
-    headers: { ...UPSTREAM_HEADERS, Range: `bytes=${start}-${end}` },
-  })
-  if (res.statusCode !== 206) {
+  const res = await rangeRequest(url, passthroughAgent, `bytes=${start}-${end}`)
+  // 重试后仍是 200 整文件：从 0 起要的就照样喂（当作 0..total-1）；从中间起的没法用，只能报错。
+  if (res.statusCode === 200 && start === 0) end = total - 1
+  else if (res.statusCode !== 206) {
     await res.body.dump()
     throw new Error('上游 passthrough 状态 ' + res.statusCode)
   }

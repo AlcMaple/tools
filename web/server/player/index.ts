@@ -251,7 +251,8 @@ player.post('/client-log', async (c) => {
   if (msg) {
     console.log('[player:client] ' + msg)
     if (tape?.length) console.log('[player:client]   tape: ' + tape.join(' | '))
-    if (!o.sdk) captureClientLog(msg, c.req.header('user-agent'), tape)
+    // 只有带胶片的（=出错诊断）才进 Sentry；「mount line=2」这种面包屑只留终端，不然 Issues 里全是 Info 噪音。
+    if (!o.sdk && tape?.length) captureClientLog(msg, c.req.header('user-agent'), tape)
   }
   return c.body(null, 204)
 })
