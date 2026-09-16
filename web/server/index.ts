@@ -11,7 +11,7 @@ import announcements from './announcement'
 import oauth from './oauth'
 import tracks from './tracks'
 import girigiri from './girigiri'
-import player from './player/probe'
+import player from './player'
 import xifan from './xifan'
 import rewards from './rewards-api'
 import slowPlayback from './slow-playback-api'
@@ -96,7 +96,7 @@ app.route('/api/xifan', xifan)
 // Girigiri 在线观看：同样是服务端解析页面元数据、浏览器直连源 CDN，不中转视频。
 app.route('/api/girigiri', girigiri)
 
-// 播放页重写（docs/design/播放页重写方案.md）：阶段 0 测速页 + 新流路由雏形，先与旧播放页并存。
+// 新播放页（docs/design/播放页重写方案.md）：稀饭 / Girigiri 共用，全部经服务器代理；含阶段 0 测速页。先与旧播放页并存。
 app.route('/api/player', player)
 
 // 追番「搜索加番」默认只打**本地** BGM 动漫索引（bgm_index.db）和成功加番积累的补充表，

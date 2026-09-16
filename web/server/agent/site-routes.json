@@ -570,14 +570,59 @@
     "path": "/google/rebind-email"
   },
   {
-    "file": "server/player/probe.ts",
+    "file": "server/player/index.ts",
     "method": "get",
-    "path": "/probe"
+    "path": "/hls"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "get",
+    "path": "/page"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "get",
+    "path": "/playlist"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "get",
+    "path": "/resolve"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "get",
+    "path": "/seg"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "get",
+    "path": "/stream"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "get",
+    "path": "/vendor/:file"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "post",
+    "path": "/client-log"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "route",
+    "path": "/"
   },
   {
     "file": "server/player/probe.ts",
     "method": "get",
-    "path": "/stream"
+    "path": "/probe-stream"
+  },
+  {
+    "file": "server/player/probe.ts",
+    "method": "get",
+    "path": "/probe"
   },
   {
     "file": "server/player/probe.ts",

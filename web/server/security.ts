@@ -90,7 +90,10 @@ export function sameOriginGuard(): MiddlewareHandler {
 }
 
 /** 播放器页必须保留内联控制脚本，但只允许本次响应生成的随机 nonce。 */
-export function playerPageSecurity(c: Context, nonce: string): void {
+// inlineStyles：新播放页用的 ArtPlayer 靠 innerHTML 模板里的 style= 属性和运行时插入的 <style> 布局，
+// 没法给它们发 nonce。只对 style-src 放开 'unsafe-inline'（**不能和 nonce 并存**：CSP 规定只要
+// 出现 nonce/hash，'unsafe-inline' 就被忽略）；script-src 仍然只认 nonce。
+export function playerPageSecurity(c: Context, nonce: string, options: { inlineStyles?: boolean } = {}): void {
   setCommonHeaders(c)
   c.header('Content-Security-Policy', [
     "default-src 'none'",
@@ -99,7 +102,7 @@ export function playerPageSecurity(c: Context, nonce: string): void {
     "frame-ancestors 'none'",
     "form-action 'none'",
     `script-src 'self' 'nonce-${nonce}'`,
-    `style-src 'self' 'nonce-${nonce}'`,
+    options.inlineStyles ? "style-src 'self' 'unsafe-inline'" : `style-src 'self' 'nonce-${nonce}'`,
     "img-src 'self' data:",
     "font-src 'self'",
     "connect-src 'self' https:",

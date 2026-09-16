@@ -30,10 +30,10 @@ player.get('/probe', async (c) => {
   return c.html(page.html)
 })
 
-// 新页最终用的流路由的雏形：直接调 serveStream，不走慢源名额。
+// 测速专用流路由（新页正式用的是 index.ts 的 /stream，带签名）：直接调 serveStream，不走慢源名额。
 // probe=1 时按 2s 一格把实际送出的字节数打进终端 —— 这是出口速率唯一可信的来源。
 let probeSeq = 0
-player.get('/stream', async (c) => {
+player.get('/probe-stream', async (c) => {
   const raw = c.req.query('u') ?? ''
   if (!raw) return c.json({ error: '缺少 u' }, 400)
   const session = await getSession(c)
@@ -164,7 +164,7 @@ const PROBE_PAGE = `<!doctype html>
     } catch (e) {}
     if (pending.length) flushTimer = setTimeout(flush, 800)
   }
-  function proxy(u, tag){ return '/api/player/stream?u=' + encodeURIComponent(u) + '&probe=1&tag=' + encodeURIComponent(tag) }
+  function proxy(u, tag){ return '/api/player/probe-stream?u=' + encodeURIComponent(u) + '&probe=1&tag=' + encodeURIComponent(tag) }
   function mbps(bytes, ms){ return (bytes * 8 / 1024 / 1024 / Math.max(.001, ms / 1000)).toFixed(2) }
   var q = new URLSearchParams(location.search)
   ;['animeId', 'ep', 'source'].forEach(function(k){ if (q.get(k)) $(k).value = q.get(k) })
