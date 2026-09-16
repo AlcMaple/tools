@@ -112,6 +112,13 @@
 /* 移动端：顶栏 + 底部标签栏 */
 .m-top, .m-tabs { display: none; }
 @media (max-width: 960px) {
+  /* 底栏底部留白不能直接写 env(safe-area-inset-bottom)：iOS Chrome 收放工具栏时
+     逐帧改 webview 的 frame，env() 跟着逐帧变（真机量到 4.5→8→8.9px 这种小数），
+     底栏每帧重排，Chrome 的全屏进度就卡在中间来回抽——底栏看起来"跟到一半
+     停住/回弹"。也不能等停稳后再用 JS 按 env 切换——切换那一下用户照样看得到
+     底栏跳一格。只能写死一个折中值：10px 在 Home 条露出来时够用（稀饭动漫的
+     底栏内容离屏幕底也只有 10px 左右），浏览器工具栏顶在下面时也不显空。 */
+  :root { --tabbar-pad: 10px; --tabbar-h: calc(62px + var(--tabbar-pad)); }
   .shell { grid-template-columns: minmax(0, 1fr); }
   .spine { display: none; }
   .m-top {
@@ -135,7 +142,7 @@
     z-index: 60;
     background: var(--paper);
     border-top: 1.5px dashed var(--line-strong);
-    padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+    padding: 6px 10px var(--tabbar-pad);
   }
   .m-tab {
     flex: 1;
@@ -1160,6 +1167,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   justify-content: center;
   padding: 16px;
   background: var(--veil);
+  touch-action: none;
 }
 .dlg-backdrop.open { display: flex; animation: fade-in .2s var(--ease-page); }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -1167,7 +1175,10 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   position: relative;
   width: min(440px, 100%);
   max-height: min(86vh, 760px);
+  max-height: min(86dvh, 760px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   background: var(--card);
   border: 1.5px solid var(--line-strong);
   border-radius: 8px 22px 10px 20px;
@@ -1177,6 +1188,14 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .dlg-add {
   width: min(560px, 100%);
   height: min(560px, calc(100vh - 32px));
+  height: min(560px, calc(100dvh - 32px));
+}
+@media (max-width: 960px) {
+  .dlg-backdrop { padding-bottom: calc(16px + var(--tabbar-h)); }
+  .dlg, .dlg-add {
+    max-height: min(86vh, calc(100vh - var(--tabbar-h) - 32px), 760px);
+    max-height: min(86dvh, calc(100dvh - var(--tabbar-h) - 32px), 760px);
+  }
 }
 .dlg-backdrop.open .dlg { animation: page-in .32s var(--ease-page); }
 @keyframes page-in {
@@ -1309,7 +1328,13 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .announcement-snooze:not(:disabled):hover { color: var(--teal); border-color: var(--teal-line); background: var(--teal-wash); }
 }
 @media (max-width: 560px) {
-  .announcement-dlg { padding: 24px 18px 18px; }
+  .announcement-dlg {
+    padding: 24px 18px 18px;
+    /* 手机上 84vh 按"工具栏收起后的最大视口"算，浏览器工具栏在时会上下各溢出
+       一截（顶部边框被裁、底部压到标签栏）。按最小视口 svh 减去标签栏来算。 */
+    max-height: min(84vh, calc(100vh - var(--tabbar-h) - 32px), 720px);
+    max-height: min(84svh, calc(100svh - var(--tabbar-h) - 32px), 720px);
+  }
   .announcement-face { width: 50px; height: 50px; }
   .announcement-head { gap: 9px; }
   .announcement-head .stamp { display: none; }
@@ -1428,7 +1453,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   gap: 12px;
   pointer-events: none;
 }
-@media (max-width: 960px) { #toast-root { bottom: 86px; } }
+@media (max-width: 960px) { #toast-root { bottom: calc(var(--tabbar-h) + 24px); } }
 .toast-note {
   position: relative;
   width: min(296px, calc(100vw - 36px));
@@ -2019,7 +2044,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   body[data-page='tracks'] .rig-inline .rig { height: 68px; }
   body[data-page='tracks'] .rig-inline .rig-bubble { max-width: 200px; padding: 7px 10px; font-size: 12px; }
   body[data-page='tracks'] .row.mb16 { margin-bottom: 10px; gap: 6px; }
-  body[data-page='tracks'] .m-tabs { padding-top: 4px; padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
+  body[data-page='tracks'] .m-tabs { padding-top: 4px; padding-bottom: calc(var(--tabbar-pad) - 2px); }
   body[data-page='tracks'] .m-tab { min-height: 46px; }
 }
 
@@ -2704,7 +2729,7 @@ body[data-auth='out'] .track-btn { display: none; }
 
 /* min-height 固定：切「全部集数」／「只看好看集」两个视图时弹窗高度不跳；
    内容超出再靠 max-height 滚动，不撑高弹窗本体。 */
-.ge-body { display: flex; flex-direction: column; min-height: 280px; max-height: 42vh; overflow-y: auto; margin: 0 -2px; padding: 2px; }
+.ge-body { display: flex; flex-direction: column; min-height: 280px; max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; margin: 0 -2px; padding: 2px; }
 
 .ge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 6px; align-content: start; }
 .ge-ep {

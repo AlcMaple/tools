@@ -43,11 +43,10 @@
   }
 }
 
-html,
-body,
-#root {
-  height: 100%;
-}
+/* 这里不再给 html/body/#root 设 height:100%：那是下面「钉死壳」时代的需要。
+   根文档自己滚动之后，#root 若只有视口高，里面 sticky 的 .m-top 滚过 #root
+   盒子就会失效；让它们按内容自然撑高即可。body::after 的噪点层是 fixed 铺满
+   视口，也不依赖 body 有高度。 */
 
 /* 噪点覆盖层（body::after，z-index:0）会盖住未定位的普通流内容；
    原型稿靠 body > .shell 提层，React 挂在 #root 下，给 #root 提同样的层级。 */
@@ -56,50 +55,16 @@ body,
   z-index: 1;
 }
 
-/* 移动端把页面滚动从根文档移到内页滚动框：iOS Safari 的地址栏 / 底部工具栏
-   会随着根页面滚动动态收放，根文档一变高，固定导航也会跟着跳。把根节点钉在
-   视口，只让 .sheet 滚动，顶栏与底部标签栏就始终使用同一块视口。 */
+/* 移动端曾把页面滚动从根文档钉死到内页滚动框（避免地址栏收放时固定导航跟着跳），
+   代价是根文档不再滚动——iOS Safari 的原生下拉刷新依赖的正是根文档在顶部继续下拉
+   时的橡皮筋回弹，钉死之后这个手势彻底失效。改回去：根文档正常滚动，把下拉刷新
+   还给系统；.m-top（sticky）/ .m-tabs（fixed，见 sketch-ui.css）本来就不依赖这个
+   钉死壳也能保持贴顶/贴底，只是地址栏动画期间可能有轻微跟手延迟，属于原生行为。 */
 @media (max-width: 960px) {
-  html,
-  body {
-    width: 100%;
-    height: 100%;
-    min-height: 0;
+  /* 弹窗开着时只挡一挡触摸滚动链（弹窗没走 portal，嵌在文档里），
+     真正兜底的是 App.tsx 里那个全局 touchmove 拦截。 */
+  body:has(.dlg-backdrop) {
     overflow: hidden;
-  }
-
-  body {
-    position: fixed;
-    inset: 0;
-  }
-
-  #root {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  #root > .m-top {
-    flex: 0 0 54px;
-  }
-
-  #root > .shell {
-    flex: 1 1 auto;
-    min-height: 0;
-    height: auto;
-    overflow: hidden;
-  }
-
-  #root > .shell > .sheet {
-    height: 100%;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    -webkit-overflow-scrolling: touch;
   }
 }
 
