@@ -1,6 +1,6 @@
 // 推荐与点评助手的 AI 调用层 —— 服务器 AI（DeepSeek，OpenAI 兼容格式）。
 //
-// 铁律（见根目录 AI_GUIDELINES.md）：
+// 铁律（见根目录 AGENTS.md）：
 //   - 用全局 `fetch`，不用 node `https`（fake-ip 代理下会解析成假地址黑洞）
 //   - 4xx / 5xx 不重试、不静默吞错、不周期探测「恢复没」——直接抛带原因的错误，
 //     让接口回 502 + 可读文案；前端始终保留「手写 / 保存 / 发布」能力
@@ -182,7 +182,7 @@ interface ChatUsage {
 /**
  * 调一次 DeepSeek chat completions，返回正文字符串。
  *
- * 重试策略（对齐 AI_GUIDELINES「仅明确的传输中断可有界续传」）：
+ * 重试策略（对齐 AGENTS「仅明确的传输中断可有界续传」）：
  *   - 只在 fetch() 本身抛错（连接被代理掐断 / RST / DNS）时重试，**最多一次**。
  *   - 超时（TimeoutError）不重试——那是对端在慢慢生成，重发只会双倍计费。
  *   - HTTP 4xx/5xx/429 不重试。

@@ -62,7 +62,7 @@ export function toWebSyncTracks(tracks: AnimeTrack[]): WebSyncTrack[] {
       userTags: track.userTags,
       aliases: track.aliases,
       // 观望次数是网页也要读写的正式字段。**不再往 extra 里塞一份** —— 一份数据两处存,
-      // 迟早对不上(见 AI_GUIDELINES「一份数据拆成两半」)。
+      // 迟早对不上(见 AGENTS「一份数据拆成两半」)。
       observeCount: track.observeCount,
       updatedAt: new Date(track.updatedAt).getTime() || Date.now(),
       extra: {

@@ -55,7 +55,7 @@ CSS 变量在 `css/tokens.css`（单主题）：
 - **动效**：`--ease-stick`（贴纸落纸回弹）、`--ease-page`（翻页缓动）、`.rig` 立绘待机摇摆
 - **漫画语汇工具类**：`.halftone/.halftone-wash`（网点）、`.hl`（荧光笔）、`.sparkle`（星芒闪烁）、`.title-sketch`（铅笔双线标题）
 
-## 交互规约（重构时一并继承 AI_GUIDELINES 红线）
+## 交互规约（重构时一并继承 AGENTS 红线）
 
 - **触摸优先：一切功能不依赖 hover**——追番按钮/详情/状态切换全部常驻直点，hover 样式统一收在
   `@media (hover: hover)` 里，**触屏设备一条都不会加载**（防手机点按后的粘滞 hover）；
