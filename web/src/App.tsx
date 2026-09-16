@@ -51,6 +51,20 @@ export default function App(): JSX.Element {
     void auth.init()
   }, [])
 
+  // 移动端弹窗遮罩之下是 .sheet 的滚动区（弹窗没走 portal，就嵌在里面）：
+  // CSS 的 overflow:hidden/touch-action 挡不住 iOS Safari 对固定壳整页的橡皮筋回弹，
+  // 弹窗开着时手动吞掉遮罩上的 touchmove，只放行弹窗自己（.dlg）内部的滚动。
+  useEffect(() => {
+    const handleTouchMove = (event: TouchEvent): void => {
+      if (!document.querySelector('.dlg-backdrop')) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.dlg')) return
+      event.preventDefault()
+    }
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    return () => document.removeEventListener('touchmove', handleTouchMove)
+  }, [])
+
   useEffect(() => {
     if (!dailyReward.seq) return
     const points = auth.consumeDailyReward(dailyReward.seq)

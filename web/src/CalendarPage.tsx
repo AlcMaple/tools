@@ -595,7 +595,7 @@ export function CalendarPage(): JSX.Element {
               </span>
             </div>
           </div>
-        </div>, document.body)}
+        </div>, document.getElementById('root') ?? document.body)}
 
         <div className="calendar-content">
           {layoutMode === 'vertical' ? (
