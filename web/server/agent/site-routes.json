@@ -412,26 +412,6 @@
   {
     "file": "server/girigiri.ts",
     "method": "get",
-    "path": "/hls.js"
-  },
-  {
-    "file": "server/girigiri.ts",
-    "method": "get",
-    "path": "/play-page"
-  },
-  {
-    "file": "server/girigiri.ts",
-    "method": "get",
-    "path": "/playlist"
-  },
-  {
-    "file": "server/girigiri.ts",
-    "method": "get",
-    "path": "/resolve"
-  },
-  {
-    "file": "server/girigiri.ts",
-    "method": "get",
     "path": "/source-page"
   },
   {
@@ -523,11 +503,6 @@
     "file": "server/index.ts",
     "method": "route",
     "path": "/api/rewards"
-  },
-  {
-    "file": "server/index.ts",
-    "method": "route",
-    "path": "/api/slow-playback"
   },
   {
     "file": "server/index.ts",
@@ -685,26 +660,6 @@
     "path": "/redeem"
   },
   {
-    "file": "server/slow-playback-api.ts",
-    "method": "get",
-    "path": "/status"
-  },
-  {
-    "file": "server/slow-playback-api.ts",
-    "method": "post",
-    "path": "/heartbeat"
-  },
-  {
-    "file": "server/slow-playback-api.ts",
-    "method": "post",
-    "path": "/release"
-  },
-  {
-    "file": "server/slow-playback-api.ts",
-    "method": "post",
-    "path": "/request"
-  },
-  {
     "file": "server/tracks.ts",
     "method": "delete",
     "path": "/:bgmId"
@@ -766,11 +721,6 @@
   },
   {
     "file": "server/xifan.ts",
-    "method": "delete",
-    "path": "/prepared/:key"
-  },
-  {
-    "file": "server/xifan.ts",
     "method": "get",
     "path": "/auth/status"
   },
@@ -787,57 +737,7 @@
   {
     "file": "server/xifan.ts",
     "method": "get",
-    "path": "/hls.js"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
-    "path": "/hls/:key/:file"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
-    "path": "/monitor.js"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
-    "path": "/play-page"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
-    "path": "/playlist"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
-    "path": "/prepared"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
-    "path": "/prepared/list"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
-    "path": "/resolve"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
     "path": "/source-page"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
-    "path": "/stream"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "get",
-    "path": "/viewport-probe/:action"
   },
   {
     "file": "server/xifan.ts",
@@ -862,26 +762,11 @@
   {
     "file": "server/xifan.ts",
     "method": "post",
-    "path": "/client-log"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "post",
     "path": "/locate"
   },
   {
     "file": "server/xifan.ts",
     "method": "post",
-    "path": "/prepare"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "post",
     "path": "/search"
-  },
-  {
-    "file": "server/xifan.ts",
-    "method": "post",
-    "path": "/viewport-probe"
   }
 ]

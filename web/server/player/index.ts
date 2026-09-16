@@ -228,13 +228,22 @@ const vendorCache = new Map<string, string>()
 const VENDOR: Record<string, string> = {
   'artplayer.js': 'node_modules/artplayer/dist/artplayer.js',
   'hls.js': 'node_modules/hls.js/dist/hls.min.js',
+  // 播放页专用的浏览器监控 bundle，由 npm run build 第二步产出（scripts/build-player-monitor.ts）。
+  // **dev 下 dist 不存在是正常的**，发一段空脚本让页面照常跑（页面里所有 playerMonitor 调用都判了空）。
+  'monitor.js': 'dist/player-monitor.js',
 }
 player.get('/vendor/:file', (c) => {
   const file = c.req.param('file')
   const path = VENDOR[file]
   if (!path) return c.body(null, 404)
   let js = vendorCache.get(file)
-  if (js === undefined) { js = readFileSync(join(process.cwd(), path), 'utf8'); vendorCache.set(file, js) }
+  if (js === undefined) {
+    try { js = readFileSync(join(process.cwd(), path), 'utf8') } catch {
+      if (file !== 'monitor.js') return c.body(null, 404)
+      js = '/* player monitor not built (dev) */'
+    }
+    vendorCache.set(file, js)
+  }
   c.header('Content-Type', 'application/javascript; charset=utf-8')
   c.header('Cache-Control', 'public, max-age=86400')
   return c.body(js)

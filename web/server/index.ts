@@ -14,7 +14,6 @@ import girigiri from './girigiri'
 import player from './player'
 import xifan from './xifan'
 import rewards from './rewards-api'
-import slowPlayback from './slow-playback-api'
 import community from './community'
 import reviews from './reviews'
 import agentHistory from './agent/history-api'
@@ -71,8 +70,6 @@ app.route('/api/auth/oauth', oauth)
 // 积分、邀请、权益兑换与幸运扭蛋。页面视觉另行设计，服务端合同先保持独立。
 app.route('/api/rewards', rewards)
 
-// 与来源无关的慢源容量、候补、保留和观看会话。
-app.route('/api/slow-playback', slowPlayback)
 
 // 公开追番大厅：只读、无需登录；具体用户是否可见由 users.tracks_public 控制。
 app.route('/api/community', community)

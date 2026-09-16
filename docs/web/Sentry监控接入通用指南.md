@@ -290,7 +290,7 @@ SENTRY_RELEASE=            # 留空/占位；由部署脚本 export 后进程读
 | G 密钥文件 | `/opt/mapletools-data/.env.sentry`（600 root）+ `ecosystem.config.cjs` 的 `env` |
 | H 重启 | `SENTRY_RELEASE=$RELEASE mtweb start /opt/mapletools-data/ecosystem.config.cjs --update-env` |
 | I 挂载点 | `#root` |
-| §7 裸 HTML 页 | 播放页 `/api/xifan/play-page`；DSN 走 `PLAYER_SENTRY_DSN`（= 前端 DSN，写在 `ecosystem.config.cjs`），tag `surface: xifan-player`，bundle 由 `/api/xifan/monitor.js` 发 |
+| §7 裸 HTML 页 | 播放页 `/api/player/page`；DSN 走 `PLAYER_SENTRY_DSN`（= 前端 DSN，写在 `ecosystem.config.cjs`），tag `surface: xifan-player`，bundle 由 `/api/player/vendor/monitor.js` 发 |
 | J glob | `./dist/**/*.map`（`web/server/node.ts` 用 `serveStatic({root:'./dist'})` 对外发整个 dist） |
 
 > **当前项目的用户关联**：SPA 在 `/api/auth/me` 确认登录后同步已验证账号；服务端从 httpOnly 会话在每个 API 请求的隔离 scope 设置同一身份；播放页由服务端只注入这两个字段，并在回到前台时复核会话。若 Sentry issue 的 Users 仍显示 0，依次检查部署是否带了对应 DSN、受控账号的 `/api/auth/me` 是否成功、以及登录、刷新、切换账号和退出登录生命周期是否实际发生。
@@ -373,7 +373,7 @@ instrumentation 依赖 Node ESM loader hook，VPS 常驻进程和 serverless 冷
 
 ## §7 SPA 之外的页面（服务端渲染的裸 HTML、独立入口）
 
-**这一节是踩出来的**：本项目的在线播放页（`/api/xifan/play-page`）是服务端返回的一张裸 HTML，
+**这一节是踩出来的**：本项目的在线播放页（当时是 `/api/xifan/play-page`，现为 `/api/player/page`）是服务端返回的一张裸 HTML，
 不由 SPA bundle 驱动。它上线后连着**四个 bug** 一个都没进 Sentry —— 页面里未捕获异常一条都不上报，
 只能靠用户口述现象。补完这一节之后，同类问题当场就能在 Issues 里看到现场。
 
@@ -440,7 +440,7 @@ instrumentation 依赖 Node ESM loader hook，VPS 常驻进程和 serverless 冷
 | 入口 | `web/src/player-monitoring.ts`（**不被 SPA import**，独立于 `src/monitoring.ts`） |
 | 打包脚本 | `web/scripts/build-player-monitor.ts`（esbuild → IIFE，87 KB） |
 | 构建链 | `package.json` 的 `"build": "vite build && tsx scripts/build-player-monitor.ts"` |
-| 发布路由 | `web/server/xifan.ts` 的 `/api/xifan/monitor.js`（同 `/api/xifan/hls.js` 的自托管路子） |
+| 发布路由 | `web/server/player/index.ts` 的 `/api/player/vendor/monitor.js`（同 `/api/player/vendor/hls.js` 的自托管路子） |
 | 配置注入 | 同文件 `playerMonitorConfig()` → 模板占位 `__MONITOR_CONFIG__` |
 
 **source map 不生成**：这类页面真正会出错的是**页面自己那段内联脚本**（写在 HTML 里，本来就没压缩，

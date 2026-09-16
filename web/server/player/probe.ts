@@ -118,7 +118,7 @@ const PROBE_PAGE = `<!doctype html>
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
 <title>播放测速 · 阶段 0</title>
-<script src="/api/xifan/hls.js"></script>
+<script src="/api/player/vendor/hls.js"></script>
 <style nonce="__CSP_NONCE__">
   body { font: 14px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #faf8f3; color: #222 }
   h1 { font-size: 18px; margin: 0 0 12px }
@@ -170,7 +170,7 @@ const PROBE_PAGE = `<!doctype html>
   ;['animeId', 'ep', 'source'].forEach(function(k){ if (q.get(k)) $(k).value = q.get(k) })
 
   async function resolve(){
-    var r = await fetch('/api/xifan/resolve?animeId=' + encodeURIComponent($('animeId').value.trim()) + '&ep=' + encodeURIComponent($('ep').value.trim()) + '&source=' + encodeURIComponent($('source').value.trim()))
+    var r = await fetch('/api/player/resolve?src=xifan&id=' + encodeURIComponent($('animeId').value.trim()) + '&ep=' + encodeURIComponent($('ep').value.trim()) + '&source=' + encodeURIComponent($('source').value.trim()))
     var d = await r.json()
     if (!r.ok || !d.url) throw new Error(d.error || ('HTTP ' + r.status))
     log('url ' + d.url + ' kind=' + d.kind)

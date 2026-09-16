@@ -1,9 +1,9 @@
 // 播放页专用的浏览器监控入口 —— **不属于 SPA bundle**。
 //
-// 播放页是服务端返回的一张裸 HTML（见 server/xifan.ts 的 PLAY_PAGE），加载不到 SPA 的
+// 播放页是服务端返回的一张裸 HTML（见 server/player/page.ts），加载不到 SPA 的
 // 那份监控；在这之前它是个盲区：页面里任何未捕获异常一条都不会出现在任何地方。
 // 这个文件由 scripts/build-player-monitor.ts 单独打成一个 IIFE 自托管（不走 CDN，
-// 国内加载不到），路子跟 /api/xifan/hls.js 一样。
+// 国内加载不到），路子跟 /api/player/vendor/hls.js 一样。
 //
 // 只要「异常 + 上下文」，**不要 Replay**：它录的是 DOM，而 currentTime / buffered 是
 // <video> 的内部状态，恰恰录不到播放页最常见的那类问题；移动端流量和配额也不划算。

@@ -2,7 +2,7 @@
 //
 // 为什么要单独一步：播放页是裸 HTML，用不上 SPA 的 bundle；而 @sentry/browser 的 npm 包里
 // **没有**现成的 CDN bundle（只有 ESM/CJS），直接 <script src> 是引不动的。
-// 产物放 dist/（vite build 的输出目录，已 gitignore），由 /api/xifan/monitor.js 读出来发。
+// 产物放 dist/（vite build 的输出目录，已 gitignore），由 /api/player/vendor/monitor.js 读出来发。
 // 因此这一步必须**排在 vite build 之后** —— vite 会先清空 dist。
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'

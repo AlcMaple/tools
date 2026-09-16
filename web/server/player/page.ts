@@ -19,7 +19,7 @@ export const PLAY_PAGE = `<!doctype html>
 <meta name="referrer" content="no-referrer">
 <title>继续看</title>
 <script nonce="__CSP_NONCE__">window.__PLAYER_MONITOR__ = __MONITOR_CONFIG__</script>
-<script src="/api/xifan/monitor.js"></script>
+<script src="/api/player/vendor/monitor.js"></script>
 <script src="/api/player/vendor/hls.js"></script>
 <script src="/api/player/vendor/artplayer.js"></script>
 <link rel="stylesheet" href="/styles/sketch-tokens.css">
