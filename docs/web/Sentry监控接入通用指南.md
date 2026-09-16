@@ -441,7 +441,7 @@ instrumentation 依赖 Node ESM loader hook，VPS 常驻进程和 serverless 冷
 | 打包脚本 | `web/scripts/build-player-monitor.ts`（esbuild → IIFE，87 KB） |
 | 构建链 | `package.json` 的 `"build": "vite build && tsx scripts/build-player-monitor.ts"` |
 | 发布路由 | `web/server/player/index.ts` 的 `/api/player/vendor/monitor.js`（同 `/api/player/vendor/hls.js` 的自托管路子） |
-| 配置注入 | 同文件 `playerMonitorConfig()` → 模板占位 `__MONITOR_CONFIG__` |
+| 配置注入 | 同文件 `/page` 路由组装 `monitor` 对象 → 模板占位 `__MONITOR_CONFIG__` |
 
 **source map 不生成**：这类页面真正会出错的是**页面自己那段内联脚本**（写在 HTML 里，本来就没压缩，
 栈里是原样行号），SDK 内部的帧压不压缩都不用读。省一次上传，也少一份泄露源码的风险（§6）。
@@ -462,6 +462,9 @@ instrumentation 依赖 Node ESM loader hook，VPS 常驻进程和 serverless 冷
 **去重是必须的**：服务端那条通路通常也会顺手转发一份到 Sentry。页面自己报过的，请求里带个
 标记（本项目是 `sdk: 1`），服务端见到就跳过 —— 否则**同一件事在浏览器项目和服务端项目各开一个 issue**，
 两边还都不完整。
+
+**面包屑不要转发**：服务端只转发**带附带数据（胶片）的诊断**，普通面包屑（如「播放器挂载 线路 2」）只落 stdout。
+2026-09-17 踩过：新播放页每次挂载打一条面包屑，服务端原样转发，Sentry 里就多了一个 Info 级、事件数一直涨的假 issue。
 
 播放器这类裸 HTML 页面，媒体 error、缓冲异常和进度哨兵都需要知道浏览器策略和设备环境，
 所以应由页面 SDK 直接上报；服务端只保留 stdout 兜底。若这类事件只走 `captureClientLog`，
