@@ -489,8 +489,11 @@ export async function serveStream(
   rangeHeader: string | undefined,
   internal = false,
   viewerKey = 'unknown',
+  // 新播放页（server/player）的地址由本服务器解析层产出并 HMAC 签名，域名不必在白名单里——
+  // 白名单是给旧 /api/xifan/stream 这种「裸 u 参数」用的防开放代理手段。
+  signedByUs = false,
 ): Promise<StreamResult> {
-  const url = assertStreamableUrl(rawUrl).toString()
+  const url = signedByUs ? new URL(rawUrl).toString() : assertStreamableUrl(rawUrl).toString()
   const { start, end, ranged } = parseRange(rangeHeader)
 
   let total = totalCache.get(url)

@@ -40,6 +40,7 @@
     "@sentry/browser": "^10.71.0",
     "@sentry/node": "^10.71.0",
     "@sentry/react": "^10.71.0",
+    "artplayer": "^5.4.0",
     "better-sqlite3": "^12.11.1",
     "cheerio": "^1.2.0",
     "hls.js": "^1.6.16",
