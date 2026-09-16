@@ -184,7 +184,7 @@ ${PLAYBACK_BEACON}
             hls = new Hls({ maxBufferLength: 90, maxMaxBufferLength: 120, backBufferLength: 60,
               manifestLoadPolicy: policy, playlistLoadPolicy: policy, keyLoadPolicy: policy, fragLoadPolicy: policy })
             hls.on(Hls.Events.ERROR, function(e, data){
-              if (data && data.fatal) onMediaError('hls ' + data.type + '/' + data.details)
+              if (gen === generation && data && data.fatal) onMediaError('hls ' + data.type + '/' + data.details)
             })
             hls.loadSource(url); hls.attachMedia(video)
           } else if (video.canPlayType('application/vnd.apple.mpegurl')){
@@ -207,7 +207,12 @@ ${PLAYBACK_BEACON}
     }
     art.on('video:canplay', function(){ agentReport('media_canplay') })
     art.on('video:playing', function(){ agentReport('media_canplay'); agentReport('playing') })
-    art.on('video:error', function(){ onMediaError('video code=' + (v.error ? v.error.code : '?')) })
+    // 只认**当前这台**播放器的错：换线 / 重试销毁旧实例时，旧 <video> 被清 src 也会冒一个 code=4，
+    // 不挡就会把刚挂好的新播放器盖上一条「播放出错」（真机截图：能播、进度条正常，红框却在）。
+    art.on('video:error', function(){
+      if (gen !== generation || !v.error) return
+      onMediaError('video code=' + v.error.code)
+    })
     // 没起播前别转圈：ArtPlayer 在 canplay 之前一直显示 loading，可首播要等用户点，那不是「在加载」。
     art.on('ready', function(){ if (!autoplay) art.loading.show = false; agentReport('player_ready', 'line ' + pl.source) })
   }
