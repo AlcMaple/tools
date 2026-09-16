@@ -13,7 +13,6 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
   feature('web.settings','偏好与公开设置','调整站点显示、账号资料、公开范围与 AI 配置。','/#/settings',['进入设置修改已有选项','公开追番由用户主动开启'],['账号配置与 Agent 四项偏好是不同设置','Agent 不修改设置或读取 API key']),
   {...feature('web.xifan','稀饭播放入口','从追番条目选择稀饭来源并播放。','/#/tracks',['在条目点击继续看，选择片源与集数；也可以点纱雾的播放预览进入同一张播放页'],['搜索、解析与播放由用户点击触发；Agent 无在线片源查询工具','回执来自播放页真实事件，退到稀饭自己的播放器后状态不可知']),revision:2},
   {...feature('web.girigiri','Girigiri 播放入口','从追番条目选择 Girigiri 来源并播放。','/#/tracks',['在条目点击继续看，选择片源与集数；也可以点纱雾的播放预览进入同一张播放页'],['来源搜索和播放不是 Agent 工具；Agent 不自动访问源站','未关联片源时先选片源，认好才有播放页']),revision:2},
-  feature('web.slowPlayback','慢源观看与候补','慢源播放按名额、候补及观看会话规则分配。','/#/tracks',['在已有播放器内查看等待状态','有名额后按播放器流程继续'],['须登录；候补排队不等于已播放','Agent 不申请名额或发送观看心跳']),
   feature('web.rewards','放映福利','查看当前账号积分与已启用的权益兑换。','/#/rewards',['进入放映福利查看个人状态','本人确认后兑换权益'],['按服务器开关和账号名单开放；Agent 不兑换或抽取']),
   feature('web.invites','邀请权益','使用账号已开放的邀请功能。','/#/rewards',['在放映福利查看邀请入口'],['受邀请开关及账号资格约束；Agent 不读取或分发私人邀请码']),
   feature('web.lottery','幸运扭蛋','使用账号已开放的抽取功能。','/#/rewards',['在放映福利查看可用次数并本人点击抽取'],['受扭蛋开关及账号资格约束；Agent 不代为抽取']),
@@ -22,7 +21,7 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
 // 仅构建校验使用，不进入模型或公开快照。每个顶层 API 入口必须有功能归属。
 export const SITE_API_FEATURES:Readonly<Record<string,string>>={
  '/api/health':'infrastructure.health','/api/cover/*':'infrastructure.cover','/api/auth':'web.auth','/api/auth/oauth':'web.auth',
- '/api/rewards':'web.rewards','/api/slow-playback':'web.slowPlayback','/api/community':'web.community','/api/announcements':'web.announcements',
+ '/api/rewards':'web.rewards','/api/community':'web.community','/api/announcements':'web.announcements',
  '/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/calendar':'web.calendar',
 }
 export interface SiteFeatureAccess { email:boolean;google:boolean;github:boolean;rewards:boolean;invites:boolean;lottery:boolean }

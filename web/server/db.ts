@@ -326,47 +326,7 @@ db.exec(`
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
-  CREATE TABLE IF NOT EXISTS slow_admissions (
-    id             TEXT PRIMARY KEY,
-    user_id        INTEGER NOT NULL,
-    pool_id        TEXT    NOT NULL,
-    client_id      TEXT    NOT NULL DEFAULT '',
-    state          TEXT    NOT NULL CHECK (state IN ('waiting', 'reserved', 'active', 'missed')),
-    tier           TEXT    NOT NULL CHECK (tier IN ('priority', 'normal')),
-    ticket_id      INTEGER,
-    source         TEXT    NOT NULL,
-    resource_key   TEXT    NOT NULL,
-    return_to      TEXT    NOT NULL DEFAULT '/',
-    created_at     INTEGER NOT NULL,
-    updated_at     INTEGER NOT NULL,
-    reserved_until INTEGER,
-    last_seen_at   INTEGER,
-    paused_at      INTEGER,
-    notified_at    INTEGER,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY(ticket_id) REFERENCES reward_entitlements(id) ON DELETE SET NULL
-  );
-  CREATE UNIQUE INDEX IF NOT EXISTS slow_admissions_user_pool_current
-  ON slow_admissions (user_id, pool_id)
-  WHERE state IN ('waiting', 'reserved', 'active');
-  CREATE INDEX IF NOT EXISTS slow_admissions_pool_queue
-  ON slow_admissions (pool_id, state, tier, created_at);
-
-  CREATE TABLE IF NOT EXISTS slow_pool_state (
-    pool_id         TEXT PRIMARY KEY,
-    priority_streak INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS slow_notification_log (
-    admission_id TEXT    NOT NULL,
-    channel      TEXT    NOT NULL,
-    status       TEXT    NOT NULL,
-    detail       TEXT    NOT NULL DEFAULT '',
-    created_at   INTEGER NOT NULL,
-    PRIMARY KEY(admission_id, channel)
-  );
 `)
-ensureColumn('slow_admissions', 'client_id', "client_id TEXT NOT NULL DEFAULT ''")
 
 // 追番数据版本号 —— app 的「覆盖上传」靠它判断「服务器上有没有我没见过的改动」。
 // **每次写入都 +1**（网页改一条、app 整包推一次，都算）。app 记住上次同步拿到的 rev，上传时带回来：

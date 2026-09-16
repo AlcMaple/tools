@@ -416,32 +416,6 @@ export function newRewardRequestId(): string {
   return crypto.randomUUID()
 }
 
-export interface SlowAdmissionStatus {
-  state: 'waiting' | 'reserved' | 'active' | 'missed'
-  tier: 'priority' | 'normal'
-  current: number
-  reserved: number
-  limit: number
-  position: number | null
-  reservedUntil: number | null
-  ticketLocked: boolean
-  source: string
-  resourceKey: string
-  returnTo: string
-  owner: boolean
-}
-
-export async function fetchSlowAdmissionStatus(
-  poolId: string,
-  clientId: string,
-): Promise<SlowAdmissionStatus | null> {
-  const query = new URLSearchParams({ poolId, clientId })
-  const result = await json<{ admission: SlowAdmissionStatus | null }>(
-    await fetch(`/api/slow-playback/status?${query.toString()}`, { cache: 'no-store' }),
-  )
-  return result.admission
-}
-
 // ── 稀饭在线观看：定位 / 绑定 ───────────────────────────────────────────────────
 // bgmId 和稀饭 animeId 是两套 id，唯一联系是标题。首次「继续看」拿追番标题去稀饭周表（免验证码）比中文名
 // 匹配出候选，用户点一个确认（建绑定）→ 落库，之后直接命中。详见 server/xifan/locate.ts。
