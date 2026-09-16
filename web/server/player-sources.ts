@@ -23,9 +23,9 @@ export function parsePlayerBgmId(value: string | undefined): number | null {
 }
 
 function playPageHref(source: WebPlayerSource, sourceId: number | string, ep: number, bgmId: number | null): string {
-  const query = new URLSearchParams({ animeId: String(sourceId), ep: String(ep) })
+  const query = new URLSearchParams({ src: source, id: String(sourceId), ep: String(ep) })
   if (bgmId != null) query.set('bgmId', String(bgmId))
-  return `/api/${source}/play-page?${query.toString()}`
+  return `/api/player/page?${query.toString()}`
 }
 
 export function playerSourceOptions(
