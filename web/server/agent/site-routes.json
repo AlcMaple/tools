@@ -512,6 +512,11 @@
   {
     "file": "server/index.ts",
     "method": "route",
+    "path": "/api/player"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
     "path": "/api/reviews"
   },
   {
@@ -563,6 +568,21 @@
     "file": "server/oauth.ts",
     "method": "post",
     "path": "/google/rebind-email"
+  },
+  {
+    "file": "server/player/probe.ts",
+    "method": "get",
+    "path": "/probe"
+  },
+  {
+    "file": "server/player/probe.ts",
+    "method": "get",
+    "path": "/stream"
+  },
+  {
+    "file": "server/player/probe.ts",
+    "method": "post",
+    "path": "/probe-log"
   },
   {
     "file": "server/reviews.ts",
