@@ -563,9 +563,9 @@ export async function verifyXifanCaptcha(code: string): Promise<{ success: boole
 
 /** 播放页地址 —— bgmId 让裸 HTML 播放器能分别读取两站绑定并保持跨源切换。 */
 export function playPageUrl(xifanId: number, ep: number, bgmId?: number): string {
-  const query = new URLSearchParams({ animeId: String(xifanId), ep: String(ep) })
+  const query = new URLSearchParams({ src: 'xifan', id: String(xifanId), ep: String(ep) })
   if (bgmId != null) query.set('bgmId', String(bgmId))
-  return `/api/xifan/play-page?${query.toString()}`
+  return `/api/player/page?${query.toString()}`
 }
 
 /**
@@ -652,9 +652,9 @@ export async function verifyGirigiriCaptcha(code: string): Promise<{ success: bo
 }
 
 export function girigiriPlayPageUrl(girigiriId: string, ep: number, bgmId?: number): string {
-  const query = new URLSearchParams({ animeId: girigiriId, ep: String(ep) })
+  const query = new URLSearchParams({ src: 'girigiri', id: girigiriId, ep: String(ep) })
   if (bgmId != null) query.set('bgmId', String(bgmId))
-  return `/api/girigiri/play-page?${query.toString()}`
+  return `/api/player/page?${query.toString()}`
 }
 
 /**

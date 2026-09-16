@@ -122,7 +122,7 @@ try {
     const { preview } = store.prepare(alice, ctx(s.id), { bgmId: 404, source: 'xifan' })
     const opened = store.open(alice, preview.actionId)
     assert.equal(opened.action.state, 'dispatch_started')
-    assert.equal(opened.url, `/api/xifan/play-page?animeId=9002&ep=5&bgmId=404&agentAction=${preview.actionId}`)
+    assert.equal(opened.url, `/api/player/page?src=xifan&id=9002&ep=5&bgmId=404&agentAction=${preview.actionId}`)
     // 同一份预览不能重复打开
     throws(() => store.open(alice, preview.actionId), 'ACTION_EXPIRED')
   })
@@ -218,7 +218,7 @@ try {
     const ok = await tool.execute({ bgmId: 410, source: 'xifan' } as never, { uid: alice, knowledgeVersion: 'v1', signal }) as { ok: boolean; data: { actionId: string } }
     assert.equal(ok.ok, true)
     // 工具结果里没有任何可直接执行的地址或凭证
-    assert(!JSON.stringify(ok).includes('play-page'))
+    assert(!JSON.stringify(ok).includes('/api/player/page'))
   })
 
   await check('不在追番里：同一张预览带上「先加入追番」，不再另发一张追番卡', async () => {
@@ -243,7 +243,7 @@ try {
     assert.equal(opened.track?.track?.episode, 3)
     assert.equal(trackRow(alice, 421)?.episode, 3)
     // 第二步给出同源播放页地址
-    assert.equal(opened.url, `/api/xifan/play-page?animeId=9021&ep=3&bgmId=421&agentAction=${preview.actionId}`)
+    assert.equal(opened.url, `/api/player/page?src=xifan&id=9021&ep=3&bgmId=421&agentAction=${preview.actionId}`)
     assert.equal(opened.action.state, 'dispatch_started')
     throws(() => store.open(alice, preview.actionId), 'ACTION_EXPIRED')
   })
@@ -294,7 +294,7 @@ try {
     assert.equal(detail.openable, true); assert.equal(detail.preview.target, 'web_player')
     const redirect = await call(`/actions/${preview.actionId}/open`, 'GET', undefined, aliceCookie, { 'Sec-Fetch-Site': 'same-origin' })
     assert.equal(redirect.status, 302)
-    assert.equal(redirect.headers.get('location'), `/api/xifan/play-page?animeId=9009&ep=7&bgmId=412&agentAction=${preview.actionId}`)
+    assert.equal(redirect.headers.get('location'), `/api/player/page?src=xifan&id=9009&ep=7&bgmId=412&agentAction=${preview.actionId}`)
     for (const event of ['page_ready', 'player_ready', 'source_selected', 'media_canplay', 'playing']) {
       const r = await call(`/actions/${preview.actionId}/playback-event`, 'POST', { actionId: preview.actionId, event }, aliceCookie)
       assert.equal(r.status, 200, event)
@@ -315,7 +315,7 @@ try {
     const body = await posted.json() as { url: string; track: { track: { episode: number } } }
     assert.equal(body.track.track.episode, 2)
     assert.equal(trackRow(alice, 423)?.episode, 2)
-    assert.match(body.url, /^\/api\/xifan\/play-page\?animeId=9023/)
+    assert.match(body.url, /^\/api\/player\/page\?src=xifan&id=9023/)
   })
 
   await check('HTTP：事件名白名单之外一律 400；页面不能自己指定状态', async () => {
@@ -380,7 +380,7 @@ try {
 
     const done = store.open(alice, preview.actionId)
     assert.deepEqual(bindCalls.at(-1), { bgmId: 432, id: '7788', name: '夺还篇' })
-    assert(done.url?.includes('animeId=7788'))
+    assert(done.url?.includes('id=7788'))
     // 追番那一步照做
     assert.deepEqual(trackRow(alice, 432), { status: 'watching', episode: 5 })
   })
@@ -445,7 +445,7 @@ try {
     assert.equal(picked.preview.target, 'web_player')
     const done = store.open(alice, preview.actionId)
     assert.deepEqual(bindCalls.at(-1), { bgmId: 440, id: '5501', name: '夺还篇' })
-    assert(done.url?.includes('animeId=5501'))
+    assert(done.url?.includes('id=5501'))
     searchResult = { needsCaptcha: false, data: [] }
   })
 

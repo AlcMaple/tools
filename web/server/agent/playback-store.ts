@@ -2,7 +2,7 @@
 //
 // Agent 的本分是替人按下他自己能按的那几个按钮，所以这里复用的全是网页上现成的入口：
 // 改状态改进度走 PUT /api/tracks/:bgmId（阶段 7 已包成 proposeTrackChange），认片源走
-// POST /api/xifan/locate + /bind，打开播放页走 GET /api/xifan/play-page。一次确认按序做完。
+// POST /api/xifan/locate + /bind，打开播放页走 GET /api/player/page。一次确认按序做完。
 //
 // 只解析、不擅自写：locate 打的是稀饭周表（免验证码、只读、不落库），拿到候选写进预览让用户看清；
 // 真正落库的 bind 要等确认那一下——xifan_binding 是**全局表**，认错了全站用户都跟着错。
@@ -429,8 +429,8 @@ export class AgentPlaybackStore {
 
 /** 同源播放页地址；与 src/api.ts 的 playPageUrl / girigiriPlayPageUrl 保持同一份拼法。 */
 function playPageUrl(r: PlaybackRow): string {
-  const query = new URLSearchParams({ animeId: r.bound_id ?? '', ep: String(r.episode), bgmId: String(r.bgm_id), agentAction: r.id })
-  return `/api/${r.source}/play-page?${query.toString()}`
+  const query = new URLSearchParams({ src: r.source, id: r.bound_id ?? '', ep: String(r.episode), bgmId: String(r.bgm_id), agentAction: r.id })
+  return `/api/player/page?${query.toString()}`
 }
 
 /** run-runtime 注册的 proposal 工具。身份固定绑定服务端会话，不接受模型账号参数。 */
