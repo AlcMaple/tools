@@ -206,7 +206,7 @@
   }
   /* 用真正的 border（而非 inset box-shadow）—— box-shadow 会被子元素（封面 <img>）盖住，
      只在信息区露出一截，卡片看起来"断层"。border 是盒子边缘的一部分，不会被内容覆盖。
-     未追/已追**边框宽度始终 2px**，只变颜色，避免切换时挤动相邻卡片（AI_GUIDELINES）。 */
+     未追/已追**边框宽度始终 2px**，只变颜色，避免切换时挤动相邻卡片（AGENTS）。 */
   .poster-card.tracked { border-color: rgb(var(--color-primary)); }
   .poster { position: relative; aspect-ratio: 3/4; background: rgb(var(--color-surface-container-high)); overflow: hidden; }
   .poster img { width: 100%; height: 100%; object-fit: cover; display: block; }

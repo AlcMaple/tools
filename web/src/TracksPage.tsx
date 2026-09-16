@@ -809,7 +809,7 @@ function TagFilter({
         onClick={() => setOpen((v) => !v)}
       >
         <span className="dd-val">类型</span>
-        {/* invisible 不用 hidden —— hidden 脱离文档流，角标一出现就把按钮撑宽（AI_GUIDELINES：
+        {/* invisible 不用 hidden —— hidden 脱离文档流，角标一出现就把按钮撑宽（AGENTS：
             临时状态要留常驻空位，两态盒子尺寸不变） */}
         <span className="tagx mine" style={{ visibility: selected.size ? 'visible' : 'hidden' }}>
           {selected.size}

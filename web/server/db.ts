@@ -187,7 +187,7 @@ function ensureColumn(table: string, column: string, decl: string): void {
   if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${decl}`)
 }
 // 观望次数（status='considering' 时才有意义）。提升为正式列而不是继续躺在 extra 里：
-// 网页端现在也要读写它，两处各存一份必然对不上（见 AI_GUIDELINES「一份数据拆成两半」）。
+// 网页端现在也要读写它，两处各存一份必然对不上（见 AGENTS「一份数据拆成两半」）。
 ensureColumn('tracks', 'observe_count', 'observe_count INTEGER NOT NULL DEFAULT 0')
 ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0')
 ensureColumn('users', 'security_question', 'security_question TEXT')

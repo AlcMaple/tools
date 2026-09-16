@@ -160,7 +160,7 @@ export interface FetchJsonOptions {
 }
 
 // 传输层瞬时抖动（连接被重置 / DNS 抖 / 双栈赛跑失败）允许**单次**重试 —— 这是
-// AI_GUIDELINES 里唯一放行的代码层重试。应用层失败（4xx/5xx）不在此列，直接抛给上层，
+// AGENTS 里唯一放行的代码层重试。应用层失败（4xx/5xx）不在此列，直接抛给上层，
 // 由 UI 让用户决定何时重试，绝不自动重试加重限流。
 function isTransient(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
