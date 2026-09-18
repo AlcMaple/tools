@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
 import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
@@ -168,6 +168,35 @@ function useDraggableRig() {
       }
     },
   }
+}
+
+function DesktopCalendarRig({ children }: { children: ReactNode }): JSX.Element {
+  const rig = useDraggableRig()
+  return (
+    <>
+      <div ref={rig.anchorRef} className="calendar-rig-layer" />
+      {createPortal(<div className="calendar-rig-overlay">
+        <div
+          ref={rig.elementRef}
+          className={`calendar-rig${rig.dragging ? ' dragging' : ''}`}
+          style={{ transform: `translate3d(${rig.position.x}px, ${rig.position.y}px, 0)`, visibility: rig.ready ? undefined : 'hidden' }}
+          role="img"
+          aria-label="和泉纱雾驻场贴纸，可按住拖动；双击或按 Home 归位"
+          tabIndex={0}
+          title="按住拖动纱雾和气泡；双击归位"
+          onPointerDown={rig.onPointerDown}
+          onPointerMove={rig.onPointerMove}
+          onPointerUp={rig.onPointerUp}
+          onPointerCancel={rig.onPointerUp}
+          onLostPointerCapture={rig.onLostPointerCapture}
+          onDoubleClick={rig.onDoubleClick}
+          onKeyDown={rig.onKeyDown}
+        >
+          {children}
+        </div>
+      </div>, document.getElementById('root') ?? document.body)}
+    </>
+  )
 }
 
 function todayBgmId(): number {
@@ -388,7 +417,6 @@ export function CalendarPage(): JSX.Element {
   // 默认保留截图里的横向布局；「纵向」是同一份数据的第二种浏览方式，选择会记住。
   const [layoutMode, setLayoutMode] = useState<CalendarLayout>(readCalendarLayout)
   const wide = useIsWide()
-  const rig = useDraggableRig()
 
   useEffect(() => {
     try {
@@ -400,6 +428,19 @@ export function CalendarPage(): JSX.Element {
     setSagiriLine('a')
   }, [layoutMode])
   const sagiriLines = SAGIRI_LINES[layoutMode]
+  const rigContent = (
+    <>
+      <img className="rig" src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘（全身）" draggable={false} />
+      <div className="bubble rig-bubble">
+        <span className={`sagiri-line${sagiriLine === 'a' ? ' show' : ''}`}>
+          {sagiriLines[0]}
+        </span>
+        <span className={`sagiri-line${sagiriLine === 'b' ? ' show' : ''}`}>
+          {sagiriLines[1]}
+        </span>
+      </div>
+    </>
+  )
 
   // 复用 TracksPage 同一套「秒开缓存 + 后台校验」逻辑（tracksSync.ts）——两页共享
   // 同一份 tracks:<username> 缓存，谁先加载过谁就替对方省一次请求。
@@ -567,35 +608,11 @@ export function CalendarPage(): JSX.Element {
 
       <div className={`calendar-stage mt16 layout-${layoutMode}`}>
         <span className="kira calendar-kira">サラサラ</span>
-        <div ref={rig.anchorRef} className="calendar-rig-layer" />
-        {createPortal(<div className="calendar-rig-overlay">
-          <div
-            ref={rig.elementRef}
-            className={`calendar-rig${rig.dragging ? ' dragging' : ''}`}
-            style={{ transform: `translate3d(${rig.position.x}px, ${rig.position.y}px, 0)`, visibility: rig.ready ? undefined : 'hidden' }}
-            role="img"
-            aria-label="和泉纱雾驻场贴纸，可按住拖动；双击或按 Home 归位"
-            tabIndex={0}
-            title="按住拖动纱雾和气泡；双击归位"
-            onPointerDown={rig.onPointerDown}
-            onPointerMove={rig.onPointerMove}
-            onPointerUp={rig.onPointerUp}
-            onPointerCancel={rig.onPointerUp}
-            onLostPointerCapture={rig.onLostPointerCapture}
-            onDoubleClick={rig.onDoubleClick}
-            onKeyDown={rig.onKeyDown}
-          >
-            <img className="rig" src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘（全身）" draggable={false} />
-            <div className="bubble rig-bubble">
-              <span className={`sagiri-line${sagiriLine === 'a' ? ' show' : ''}`}>
-                {sagiriLines[0]}
-              </span>
-              <span className={`sagiri-line${sagiriLine === 'b' ? ' show' : ''}`}>
-                {sagiriLines[1]}
-              </span>
-            </div>
+        {wide ? <DesktopCalendarRig>{rigContent}</DesktopCalendarRig> : (
+          <div className="calendar-rig calendar-rig-inline" role="img" aria-label="和泉纱雾驻场贴纸">
+            {rigContent}
           </div>
-        </div>, document.getElementById('root') ?? document.body)}
+        )}
 
         <div className="calendar-content">
           {layoutMode === 'vertical' ? (
