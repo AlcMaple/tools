@@ -619,8 +619,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
      叠到气泡之上。但每张海报都有 transform: rotate(…)，各自成了独立层叠上下文，把标题
      文字锁在卡片内部，没法单独抬出来盖过气泡。所以退回「气泡让开」：hover 时气泡淡出、
      立绘压到很淡方便抓走；移开鼠标气泡淡入恢复。 */
-  .calendar-rig:hover .rig { opacity: .22; }
-  .calendar-rig:hover .rig-bubble { opacity: 0; pointer-events: none; }
+  .calendar-rig:not(.calendar-rig-inline):hover .rig { opacity: .22; }
+  .calendar-rig:not(.calendar-rig-inline):hover .rig-bubble { opacity: 0; pointer-events: none; }
   .calendar-rig:focus-visible { outline: 3px solid var(--teal-wash); outline-offset: 5px; }
 }
 .calendar-rig .rig { height: min(340px, calc(100dvh - 150px)); transition: opacity .25s ease; }
@@ -678,9 +678,13 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .calendar-layout-toggle { flex: none; }
 .calendar-layout-toggle > button { white-space: nowrap; }
 @media (max-width: 960px) {
-  /* 窄屏仍用并排小贴纸；锚点只预留初始位置，拖动层不受内容列限制。 */
-  .calendar-rig-layer {
-    height: 106px;
+  /* 手机贴纸留在内容流中，不随视口驻留，也不读取桌面拖动坐标。 */
+  .calendar-rig-inline {
+    position: static;
+    margin: 0 auto 10px;
+    cursor: default;
+    touch-action: auto;
+    will-change: auto;
   }
   .calendar-rig {
     width: min(330px, calc(100vw - 16px));
