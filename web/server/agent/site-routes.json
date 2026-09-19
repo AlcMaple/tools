@@ -375,6 +375,21 @@
     "path": "/username/change"
   },
   {
+    "file": "server/backup.ts",
+    "method": "get",
+    "path": "/export"
+  },
+  {
+    "file": "server/backup.ts",
+    "method": "post",
+    "path": "/export-ticket"
+  },
+  {
+    "file": "server/backup.ts",
+    "method": "post",
+    "path": "/import"
+  },
+  {
     "file": "server/community.ts",
     "method": "get",
     "path": "/:username"
@@ -478,6 +493,11 @@
     "file": "server/index.ts",
     "method": "route",
     "path": "/api/auth/oauth"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/backup"
   },
   {
     "file": "server/index.ts",

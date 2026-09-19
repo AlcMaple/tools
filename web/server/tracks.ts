@@ -1384,4 +1384,26 @@ tracks.post('/sync', async (c) => {
   })
 })
 
+// 备份导入导出（backup.ts）复用这里的封面锁 / rev / 归一化 —— 只暴露它需要的这几样，
+// 逻辑仍然只在本文件维护。
+export const trackInternals = {
+  STATUSES,
+  MAX_TRACKS,
+  MAX_EXTRA_BYTES,
+  COVER_UPLOAD_MAX_BYTES,
+  COVER_UPLOAD_MIME,
+  coverFilePath,
+  coverSentinel,
+  withCoverFileLocks,
+  bumpRev,
+  toJson,
+  parseExtra,
+  listByInsertStmt,
+  insertStmt,
+  weekdayFromDate,
+  fillCalendarMetadataLater,
+  statusCounts,
+}
+export type { TrackRow }
+
 export default tracks

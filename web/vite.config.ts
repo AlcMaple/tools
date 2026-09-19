@@ -27,6 +27,9 @@ const agentRelease = JSON.parse(readFileSync(new URL('./server/agent-release.jso
 
 export default defineConfig(({ command }) => ({
   define: {__AGENT_CLIENT_RELEASE__: JSON.stringify(agentRelease.codeHash)},
+  // dev 默认只监听 `[::1]`，把 localhost 解析成 127.0.0.1 的外部程序（NDM 之类下载管理器）连不上。
+  // 钉死 IPv4 回环：浏览器访问 localhost 会 v6/v4 都试、自动落到 v4；不用 `::`/`0.0.0.0`，那会对局域网开放。
+  server: { host: '127.0.0.1', port: 5173 },
   plugins: [
     react(),
     {

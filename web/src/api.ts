@@ -227,6 +227,31 @@ export async function deleteTrack(bgmId: number): Promise<void> {
   await json<{ ok: boolean }>(await fetch(`/api/tracks/${bgmId}`, { method: 'DELETE' }))
 }
 
+// ── 备份导入导出 ─────────────────────────────────────────────────────────────
+export type BackupExportFormat = 'zip' | 'zip-md' | 'md'
+
+/** 要一张短效下载票据，返回可直接放进 <a href download> 的地址（下载管理器插件也能接管）。 */
+export async function requestBackupExportUrl(format: BackupExportFormat): Promise<string> {
+  const { url } = await json<{ url: string }>(
+    await fetch('/api/backup/export-ticket', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format }) }),
+  )
+  return url
+}
+
+export interface BackupImportResult {
+  tracks: { added: number; updated: number; skipped: number }
+  /** 别人的备份不导点评，此时为 null */
+  reviews: { imported: number; skipped: number } | null
+  covers: { imported: number; missing: number }
+  foreignBackup: boolean
+}
+
+export async function importBackup(file: File): Promise<BackupImportResult> {
+  const fd = new FormData()
+  fd.append('file', file)
+  return json<BackupImportResult>(await fetch('/api/backup/import', { method: 'POST', body: fd }))
+}
+
 // ── 公开追番大厅 ───────────────────────────────────────────────────────────────
 // 公开投影只包含服务端明确允许展示的字段；不要把 Track 当作这里的响应类型，
 // 因为这里仍然不包含账号邮箱等身份字段。

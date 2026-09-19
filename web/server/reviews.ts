@@ -603,4 +603,23 @@ reviews.delete('/:bgmId/:mode', async (c) => {
   return c.json({ ...modeState(uid, loaded.bgmId, loaded.mode) })
 })
 
+// 备份导入导出（backup.ts）只借这里的序列化 / 归一化和两条 upsert，规则仍在本文件维护。
+export const reviewInternals = {
+  MODES,
+  SPOILERS,
+  BODY_MAX,
+  TONE_MAX,
+  LENGTH_MAX,
+  TAGS_SHOWN_MAX,
+  normalizeQuestions,
+  normalizeAnswers,
+  draftJson,
+  contentJson,
+  draftStmt,
+  contentStmt,
+  upsertDraftStmt,
+  upsertContentStmt,
+}
+export type { DraftRow, ContentRow }
+
 export default reviews

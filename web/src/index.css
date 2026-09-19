@@ -81,6 +81,38 @@
 .form-note { min-height: 18px; margin: 8px 0 2px; font-size: 12.5px; color: var(--teal); }
 .form-note.err { color: var(--sakura); }
 
+/* 设置页「备份与恢复」：两段手帐段落；导出形态是贴纸式单选（虚线框，选中 = 青色荧光底 + 勾），
+   按钮只有一个，颜色不再暗示“哪个是默认导出” */
+.backup-module { display: flex; flex-direction: column; gap: 22px; padding-top: 8px; }
+.backup-part { display: flex; flex-direction: column; gap: 12px; }
+.backup-opts { display: flex; flex-direction: column; gap: 8px; max-width: 460px; }
+.backup-opt {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 12px;
+  border: 1.5px dashed var(--line);
+  border-radius: 10px 14px 9px 13px;
+  background: var(--field-bg);
+  cursor: pointer;
+  transition: background-color .15s, border-color .15s, transform .15s;
+}
+.backup-opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+.backup-opt:hover { transform: rotate(-.4deg); }
+.backup-opt.on { border-style: solid; border-color: var(--teal-line); background: var(--teal-wash); }
+/* 只给键盘焦点画圈：鼠标点完焦点还留在选项上，:focus-within 会在选中态外再套一圈 */
+.backup-opt:has(input:focus-visible) { outline: 2px solid var(--teal-line); outline-offset: 2px; }
+.backup-opt-mark {
+  flex: 0 0 20px; width: 20px; height: 20px; margin-top: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--line-strong); border-radius: 6px 8px 6px 8px;
+  background: var(--card); color: var(--teal);
+}
+.backup-opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.backup-opt-text b { font-size: 13.5px; color: var(--ink); }
+.backup-opt-text small { font-size: 11.5px; color: var(--ink-faint); }
+.backup-act { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.backup-act .field-hint { margin-top: 0; }
+.backup-result { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-sub); line-height: 1.7; }
+
 /* 字段下的常驻小注（「至少 6 位」） */
 .field-hint { display: block; margin-top: 5px; font-size: 11.5px; color: var(--ink-faint); }
 
