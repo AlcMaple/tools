@@ -28,14 +28,16 @@ import { toast } from './Toast'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 import { readByokKey, writeByokKey } from './reviews/byok'
+import { BackupModule } from './BackupModule'
 
-type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai'
+type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai' | 'backup'
 
 function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/xifan') return 'xifan'
   if (window.location.hash === '#/settings/security') return 'security'
   if (window.location.hash === '#/settings/privacy') return 'privacy'
   if (window.location.hash === '#/settings/ai') return 'ai'
+  if (window.location.hash === '#/settings/backup') return 'backup'
   return 'profile'
 }
 
@@ -191,6 +193,16 @@ export function SettingsPage(): JSX.Element | null {
               <Ic name="chev" cls="ic chev" />
             </button>
             <div className="pocket-body">{module === 'ai' && <AiModule />}</div>
+          </section>
+
+          <section className={`pocket${module === 'backup' ? ' open' : ''}`} data-mod="backup">
+            <button className="pocket-tab" type="button" onClick={() => selectModule('backup')}>
+              <Ic name="tracks" />
+              备份与恢复
+              <span className="pocket-hint">导出一份留在自己手里</span>
+              <Ic name="chev" cls="ic chev" />
+            </button>
+            <div className="pocket-body">{module === 'backup' && <BackupModule />}</div>
           </section>
         </div>
 

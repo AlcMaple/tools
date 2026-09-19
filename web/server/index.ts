@@ -16,6 +16,7 @@ import xifan from './xifan'
 import rewards from './rewards-api'
 import community from './community'
 import reviews from './reviews'
+import backup from './backup'
 import agentHistory from './agent/history-api'
 import agentGuest from './agent/guest-api'
 import { sameOriginGuard, securityHeaders } from './security'
@@ -82,6 +83,8 @@ app.route('/api/tracks', tracks)
 
 // 推荐与点评助手：草稿 / 当前内容 / 发布 / 撤回 + 服务器 AI 问答与初稿生成。要登录。
 app.route('/api/reviews', reviews)
+// 备份导入导出：追番 + 点评/推荐，用户自己留底或跨账号拿追番清单
+app.route('/api/backup', backup)
 
 app.route('/api/agent', agentGuest)
 app.route('/api/agent', agentHistory)
