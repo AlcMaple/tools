@@ -1,14 +1,14 @@
-// 好看集编辑器 —— 点 ✨ chip 打开,标 / 看 / 改这部番的好看集。
+// 鉴赏神回编辑器 —— 点 ✨ chip 打开,标 / 看 / 改这部番的鉴赏神回。
 //
 // 数据是 number[](具体集号)。**点即生效、不走草稿** —— 这是「勾清单」那种细碎动作
 // 每点一下立刻写 store 才符合手感,草稿反而强迫用户多走一步保存。
 //
 // 两种视图:
 //   - **全部集数**:1..maxN 的方块网格,亮 = 已标,再点取消。适合边追边勾。
-//   - **仅好看集**:只列已标的集号,点 chip 移除。适合柯南这种 1000+ 集、只想看自己标过的几十集。
+//   - **仅鉴赏神回**:只列已标的集号,点 chip 移除。适合柯南这种 1000+ 集、只想看自己标过的几十集。
 //
 // 总集数未知(连载中 / OVA)时网格上限取 max(当前观看集, 已标最高集, 1),即「看到哪显示到哪」。
-// **不提供「+N 扩展」按钮** —— 好看集语义上必须先看过那一集才能标,上限锁在「已看到 / 已标过」
+// **不提供「+N 扩展」按钮** —— 鉴赏神回语义上必须先看过那一集才能标,上限锁在「已看到 / 已标过」
 // 是合理的;想标更后面的,看到了再回来标。
 //
 // 不给当前集画高亮轮廓:试过,用户觉得那个高亮反而干扰扫视(amber 已标 / 普通未标 已经够区分)。
@@ -22,7 +22,7 @@ interface Props {
   animeTitle: string
   /** 当前已标的集号(来自 store)。弹窗内 toggle 直接通过 onChange 写回。 */
   episodes: number[]
-  /** 集号 → 备注。「仅好看集」视图里行内编辑,网格视图 hover 查看。 */
+  /** 集号 → 备注。「仅鉴赏神回」视图里行内编辑,网格视图 hover 查看。 */
   notes: Record<number, string>
   /** 总集数;未知时走「看到哪显示到哪」的上限计算。 */
   totalEpisodes: number | undefined
@@ -42,7 +42,7 @@ const ONGOING_MIN = 1
 export function GoodEpisodesEditor({
   animeTitle, episodes, notes, totalEpisodes, episode, onChange, onSetNote, onClose,
 }: Props): JSX.Element {
-  // 默认「全部集数」(最常见的「找某一集来标」场景);长寿番用户可以手动切到「仅好看集」
+  // 默认「全部集数」(最常见的「找某一集来标」场景);长寿番用户可以手动切到「仅鉴赏神回」
   // 绕开 1000+ 方块的网格。
   const [view, setView] = useState<ViewMode>('all')
 
@@ -107,7 +107,7 @@ export function GoodEpisodesEditor({
                 >
                   auto_awesome
                 </span>
-                标记好看集
+                标记鉴赏神回
               </h3>
               <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-1">
                 {animeTitle}
@@ -130,7 +130,7 @@ export function GoodEpisodesEditor({
             </button>
           </div>
 
-          {/* 视图切换：全部集数 / 仅好看集 */}
+          {/* 视图切换：全部集数 / 仅鉴赏神回 */}
           <div className="mt-4 inline-flex bg-surface-container rounded-md p-0.5 border border-outline-variant/15 gap-0.5">
             <ViewToggleButton
               active={view === 'all'}
@@ -143,7 +143,7 @@ export function GoodEpisodesEditor({
               active={view === 'marked'}
               onClick={() => setView('marked')}
               icon="auto_awesome"
-              label="仅好看集"
+              label="仅鉴赏神回"
               count={episodes.length}
             />
           </div>
@@ -178,7 +178,7 @@ export function GoodEpisodesEditor({
         <div className="px-5 py-3 border-t border-outline-variant/15 bg-surface-container-low flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-label text-[10px] text-on-surface-variant/45 uppercase tracking-widest mb-0.5">
-              当前好看集
+              当前鉴赏神回
             </p>
             {compressed ? (
               <p className="font-mono text-xs text-amber-600 truncate" title={compressed}>
@@ -316,7 +316,7 @@ function GridView({
   )
 }
 
-// ── Marked-only view（仅好看集）──────────────────────────────────────────────
+// ── Marked-only view（仅鉴赏神回）──────────────────────────────────────────────
 
 /**
  * 只渲染已标的集号——长寡番（柯南标了 50 集）切到这里就只看 50 个 chip，
@@ -347,7 +347,7 @@ function MarkedView({
           auto_awesome
         </span>
         <p className="font-body text-xs text-center max-w-[280px] leading-relaxed">
-          这部番还没标好看集
+          这部番还没标鉴赏神回
         </p>
         <button
           type="button"

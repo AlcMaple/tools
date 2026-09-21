@@ -111,7 +111,7 @@ export function BackupModule(): JSX.Element {
             {exporting ? <Spinner /> : <Ic name="clip" />}
             {exporting ? '正在抄…' : '抄一份给我'}
           </button>
-          <span className="field-hint">抄的是追番（进度、标签、评分、好看集）和你写的点评 / 推荐。</span>
+          <span className="field-hint">抄的是追番（进度、标签、评分、鉴赏神回）和你写的点评 / 推荐。</span>
         </div>
         {exportError && <p className="form-note err">{exportError}</p>}
       </section>

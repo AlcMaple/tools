@@ -101,7 +101,7 @@ function collect(uid: number): { tracks: ExportTrack[]; covers: Record<string, U
   return { tracks, covers, reviews: [...byKey.values()] }
 }
 
-// 好看集集号折成「1、4-5、16-17」，与前端 compressGoodEpisodes 同一套规则。
+// 鉴赏神回集号折成「1、4-5、16-17」，与前端 compressGoodEpisodes 同一套规则。
 function compressEpisodes(eps: number[]): string {
   const parts: string[] = []
   let start = -1
@@ -142,7 +142,7 @@ function buildMarkdown(username: string, exportedAt: number, tracks: ExportTrack
     const group = tracks.filter((t) => t.status === status)
     if (!group.length) continue
     out.push(`## ${STATUS_LABEL[status]}（${group.length}）`, '')
-    out.push('| 番名 | 进度 | 评分 | 最爱 | 标签 | 好看集 |', '|---|---|---|---|---|---|')
+    out.push('| 番名 | 进度 | 评分 | 最爱 | 标签 | 鉴赏神回 |', '|---|---|---|---|---|---|')
     const notes: string[] = []
     for (const t of group) {
       const type = SUBJECT_LABEL[String(t.subjectType)]
@@ -160,7 +160,7 @@ function buildMarkdown(username: string, exportedAt: number, tracks: ExportTrack
       }
     }
     out.push('')
-    if (notes.length) out.push('好看集备注：', '', ...notes, '')
+    if (notes.length) out.push('鉴赏神回备注：', '', ...notes, '')
   }
 
   const titled = reviews

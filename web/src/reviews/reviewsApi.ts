@@ -96,7 +96,7 @@ export interface Material {
   tags: string[]
   score: number
   staff: string[]
-  /** 用户在这部番的好看集里写的备注——给 AI 把握用词语气用 */
+  /** 用户在这部番的鉴赏神回里写的备注——给 AI 把握用词语气用 */
   goodEpisodeNotes?: string[]
 }
 

@@ -1,7 +1,7 @@
-// 评判标准帮助弹窗 —— 给 ✨ 好看集 和 🌟 最爱值 提供"什么时候 +1"的参考文档。
+// 评判标准帮助弹窗 —— 给 ✨ 鉴赏神回 和 🌟 最爱值 提供"什么时候 +1"的参考文档。
 //
 // 这是给用户自己看的参考，不是规则强制——所以语气是"参考"而不是"必须满足以下"。
-// 内容直接来自原 PDF 里"好看集的评判标准" / "最爱值加一的评判标准"两段。
+// 内容直接来自原 PDF 里"鉴赏神回的评判标准" / "最爱值加一的评判标准"两段。
 //
 // 入口：MyAnime sticky header 右上角的 help_outline 图标按钮。
 
@@ -49,7 +49,7 @@ export function CriteriaModal({ onClose }: Props): JSX.Element {
                 Reference · 自己用的尺，不是规则
               </p>
               <p className="font-body text-xs text-on-surface-variant/70 mt-2 leading-relaxed">
-                这两套标准帮你判断什么时候该给一部番打 ✨ 好看集 或者 🌟 最爱值。
+                这两套标准帮你判断什么时候该给一部番打 ✨ 鉴赏神回 或者 🌟 最爱值。
                 标准是"参考"——按自己的感觉来就行，不用每条都对得上才能加。
               </p>
             </div>
@@ -64,7 +64,7 @@ export function CriteriaModal({ onClose }: Props): JSX.Element {
 
         {/* Body —— 两栏，窄屏自动堆叠 */}
         <div className="custom-scrollbar overflow-y-auto flex-1 p-5 grid gap-5 md:grid-cols-2">
-          {/* 好看集 */}
+          {/* 鉴赏神回 */}
           <section className="bg-surface-container-low border border-outline-variant/15 rounded-xl p-4">
             <header className="flex items-center gap-2 mb-3">
               <span
@@ -74,7 +74,7 @@ export function CriteriaModal({ onClose }: Props): JSX.Element {
                 auto_awesome
               </span>
               <div>
-                <h4 className="font-headline font-bold text-sm text-on-surface">好看集</h4>
+                <h4 className="font-headline font-bold text-sm text-on-surface">鉴赏神回</h4>
                 <p className="font-label text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-0.5">
                   这一集精彩到值得 +1
                 </p>

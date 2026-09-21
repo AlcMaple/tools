@@ -1,10 +1,10 @@
-// 好看集弹窗 —— 参考桌面端 GoodEpisodesEditor，网页版重画成手帐纸片风格。
+// 鉴赏神回弹窗 —— 参考桌面端 GoodEpisodesEditor，网页版重画成手帐纸片风格。
 //
 // 语义跟桌面端对齐（都是踩过坑定下来的，别改）：
 //   - 数据是具体集号数组，不是计数；点即生效，不走草稿 —— 「勾清单」这种细碎动作每点一下
 //     立刻写回才符合手感。
 //   - 总集数未知（连载中）时网格上限取 max(当前观看集, 已标最高集, 1)，看到哪显示到哪，
-//     不给「+N 扩展」按钮 —— 好看集语义上必须先看过那一集才能标。
+//     不给「+N 扩展」按钮 —— 鉴赏神回语义上必须先看过那一集才能标。
 //   - 取消标记会连带清掉那一集的备注，不留孤儿。
 //
 // 备注编辑：不用悬浮气泡（试过，锚定位置在弹窗里飘、点哪都可能溢出，还挡住内容）。
@@ -129,7 +129,7 @@ export function GoodEpisodesModal({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div role="dialog" aria-modal="true" aria-label="标记好看集" className="dlg ge-dlg">
+      <div role="dialog" aria-modal="true" aria-label="标记鉴赏神回" className="dlg ge-dlg">
         <span className="tape tl gold" />
         <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
           <Ic name="x" cls="ic" />
@@ -137,11 +137,11 @@ export function GoodEpisodesModal({
 
         <h3 className="dlg-title ge-title">
           <Ic name="star" cls="ic ic-sm ge-star" />
-          好看集
+          鉴赏神回
         </h3>
         <p className="dlg-sub">
           『{title}』里我随手点亮的那几集。点一下亮起来，再点一下就灭掉——标准是我定的，不解释。
-          <span className="ge-hint">已标的集切到「只看好看集」能写句吐槽，不写也没关系。</span>
+          <span className="ge-hint">已标的集切到「只看鉴赏神回」能写句吐槽，不写也没关系。</span>
         </p>
 
         <div className="ge-view-toggle">
@@ -157,7 +157,7 @@ export function GoodEpisodesModal({
             className={`ge-view-btn${view === 'marked' ? ' on' : ''}`}
             onClick={() => setView('marked')}
           >
-            <Ic name="star" cls="ic ic-sm" /> 只看好看集 <span className="ge-view-count">{episodes.length}</span>
+            <Ic name="star" cls="ic ic-sm" /> 只看鉴赏神回 <span className="ge-view-count">{episodes.length}</span>
           </button>
         </div>
 

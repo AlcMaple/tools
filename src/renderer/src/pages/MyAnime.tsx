@@ -284,7 +284,7 @@ export default function MyAnime(): JSX.Element {
               <button
                 type="button"
                 onClick={() => setCriteriaOpen(true)}
-                title="✨ 好看集 & 🌟 最爱值 的评判标准参考"
+                title="✨ 鉴赏神回 & 🌟 最爱值 的评判标准参考"
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface-variant/70 hover:text-primary hover:border-primary/30 hover:bg-primary/8 font-label text-[11px] uppercase tracking-widest transition-colors"
               >
                 <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>help_outline</span>
@@ -619,7 +619,7 @@ function ManualAddModal({
     }
 
     if (editing) {
-      // 编辑：不带 status/episode 默认值，避免重置进度；其余字段（标签/绑定/好看集等）由 upsert 合并保留。
+      // 编辑：不带 status/episode 默认值，避免重置进度；其余字段（标签/绑定/鉴赏神回等）由 upsert 合并保留。
       if (bgmId !== editing.bgmId) {
         // 改了 bgmId = 换 key：整条搬到新 id（保留全部进度），删掉旧的。
         animeTrackStore.delete(editing.bgmId)
@@ -961,7 +961,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
   const displayTitle = track.titleCn || track.title
   const nativeTitle = track.titleCn && track.title !== track.titleCn ? track.title : ''
   const coverSrc = useCover(String(track.bgmId), track.cover)
-  // 删追番必须先确认 —— 它带着自定义标签、最爱值、好看集等本地数据,误删代价太高。
+  // 删追番必须先确认 —— 它带着自定义标签、最爱值、鉴赏神回等本地数据,误删代价太高。
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [addingBinding, setAddingBinding] = useState(false)
   // 当前正在补搜的内置源；null = 没在搜
@@ -975,7 +975,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
   // 推荐入口设在行内:推荐的番一定在追番列表里,免去再做一遍 BGM 搜索(用户洞察)。
   const [quickRecOpen, setQuickRecOpen] = useState(false)
   const userAddedBindings = track.bindings.filter(isUserAddedBinding)
-  // 小说走「卷 + 章」两级进度，且不用好看集（只留星级）——见下方计数器 / chip 的分支。
+  // 小说走「卷 + 章」两级进度，且不用鉴赏神回（只留星级）——见下方计数器 / chip 的分支。
   const isNovel = track.subjectType === 'novel'
 
   // 哪些内置源还没绑过 —— 已绑过的隐藏「+ 搜 X」按钮，留出空间。
@@ -1024,11 +1024,11 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
   const setObserveCount = (n: number): void => {
     animeTrackStore.upsert({ bgmId: track.bgmId, observeCount: Math.max(0, n) })
   }
-  // 好看集 setter —— 接 number[]（编辑器 modal 整批写回，已 normalize）。
+  // 鉴赏神回 setter —— 接 number[]（编辑器 modal 整批写回，已 normalize）。
   const setGoodEpisodes = (eps: number[]): void => {
     animeTrackStore.upsert({ bgmId: track.bgmId, goodEpisodes: eps })
   }
-  // 好看集单集备注 setter（trim 后空 = 删除）。
+  // 鉴赏神回单集备注 setter（trim 后空 = 删除）。
   const setGoodEpisodeNote = (ep: number, note: string): void => {
     animeTrackStore.setGoodEpisodeNote(track.bgmId, ep, note)
   }
@@ -1263,7 +1263,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
             />
           )}
           <div className="ml-auto flex items-center gap-3 flex-wrap">
-            {/* 小说不用好看集（卷 / 章颗粒度跟"好看集"的单集语义对不上）——只留星级 */}
+            {/* 小说不用鉴赏神回（卷 / 章颗粒度跟"鉴赏神回"的单集语义对不上）——只留星级 */}
             {!isNovel && (
               <GoodEpisodesChip
                 episodes={track.goodEpisodes}
@@ -1343,7 +1343,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
 
       {/* Body（平板 + 手机精简版，<lg）——
           只直接显示：标题 / 标签(只读) / 状态 / 集数·进度 / 在线观看。
-          最爱值 / 好看集 / 标签编辑 / 推荐 / 移除 收进右上「更多」浮层。 */}
+          最爱值 / 鉴赏神回 / 标签编辑 / 推荐 / 移除 收进右上「更多」浮层。 */}
       {isCompact && (
         <div className="flex-1 p-3 min-w-0 flex flex-col gap-2.5">
           {/* 标题 + 更多 */}
@@ -1357,7 +1357,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
             <button
               ref={moreBtnRef}
               onClick={() => setMoreAnchor(moreAnchor ? null : moreBtnRef.current?.getBoundingClientRect() ?? null)}
-              title="更多操作（最爱值 / 好看集 / 标签 / 推荐 / 移除）"
+              title="更多操作（最爱值 / 鉴赏神回 / 标签 / 推荐 / 移除）"
               className="shrink-0 w-7 h-7 rounded-md flex items-center justify-center border border-outline-variant/15 text-on-surface-variant/55 hover:text-primary hover:bg-primary/10 transition-colors"
             >
               <span className="material-symbols-outlined text-[18px] leading-none">more_vert</span>
@@ -1480,10 +1480,10 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
                 )}
               </div>
 
-              {/* 好看集（小说不显示） */}
+              {/* 鉴赏神回（小说不显示） */}
               {!isNovel && (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/55">好看集</span>
+                  <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/55">鉴赏神回</span>
                   <GoodEpisodesChip
                     episodes={track.goodEpisodes}
                     onOpen={() => { setMoreAnchor(null); setGoodEpsOpen(true) }}
@@ -1682,7 +1682,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
         <ConfirmDeleteModal
           title="移除追番"
           itemName={displayTitle}
-          description="这部番会从追番列表里移除，本地的自定义标签、最爱值、好看集等数据也会一起清掉。若没同步到云端就无法恢复。"
+          description="这部番会从追番列表里移除，本地的自定义标签、最爱值、鉴赏神回等数据也会一起清掉。若没同步到云端就无法恢复。"
           confirmText="移除"
           onCancel={() => setConfirmDeleteOpen(false)}
           onConfirm={() => {
@@ -1883,7 +1883,7 @@ function EpisodeInput({
 
 /**
  * 小说不像动漫一集一个数字:内容是「卷 + 章」两级,而且两级都可能是「SS2 / 后记」这类
- * 文本。行内步进器塞不下变长文本,所以走「紧凑 chip → 点开浮层编辑」范式(同好看集):
+ * 文本。行内步进器塞不下变长文本,所以走「紧凑 chip → 点开浮层编辑」范式(同鉴赏神回):
  * 行上只占一个 chip,点开才是有充足宽度的编辑浮层,+/- 只在当前值是纯整数时可用。
  * 不显示「总数」—— 小说卷数没有动漫总集数那种确定语义,只记读到哪。
  */
@@ -2115,7 +2115,7 @@ function SortSelector({
 // ── Good episodes chip ───────────────────────────────────────────────────────
 
 /**
- * ✨ 好看集 chip 只做「入口」,不展示具体集号(用户决定)—— 长寿番标到 100+ 也不会
+ * ✨ 鉴赏神回 chip 只做「入口」,不展示具体集号(用户决定)—— 长寿番标到 100+ 也不会
  * 撑乱行,快速扫描时不被一长串数字干扰。空 = 虚线浅色,非空 = amber 实色。
  */
 function GoodEpisodesChip({
@@ -2131,8 +2131,8 @@ function GoodEpisodesChip({
       onClick={onOpen}
       title={
         isEmpty
-          ? '标记这部番里的好看集（重温有关注点 / 重看片段 / 暂停截图）'
-          : `✨ 已标 ${episodes.length} 集好看集 — 点击查看 / 编辑`
+          ? '标记这部番里的鉴赏神回（重温有关注点 / 重看片段 / 暂停截图）'
+          : `✨ 已标 ${episodes.length} 集鉴赏神回 — 点击查看 / 编辑`
       }
       className={
         isEmpty
@@ -2146,7 +2146,7 @@ function GoodEpisodesChip({
       >
         auto_awesome
       </span>
-      <span>标好看集</span>
+      <span>标鉴赏神回</span>
     </button>
   )
 }

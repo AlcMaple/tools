@@ -18,7 +18,7 @@ function roundOne(value: number): number {
   return Math.round(value * 10) / 10
 }
 
-// 爱心给 0~6 分；好看集和有文字的备注各给最多 2 分。两个集数信号都按同一
+// 爱心给 0~6 分；鉴赏神回和有文字的备注各给最多 2 分。两个集数信号都按同一
 // 个集数基准归一化，避免 100 集番只因集数多就天然占便宜。
 export function calculatePosterScore(signals: PosterScoreSignals): number {
   const favorite = Math.min(FAVORITE_MAX, nonNegativeInt(signals.favorite))

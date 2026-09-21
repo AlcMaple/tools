@@ -247,10 +247,10 @@ export function TrackCard({
             type="button"
             className={`btn btn-sm btn-ghost${t.goodEpisodes.length > 0 ? ' ge-trigger-on' : ''}`}
             onClick={onMarkGood}
-            title={t.goodEpisodes.length > 0 ? `已标 ${t.goodEpisodes.length} 集好看` : '标记好看集'}
+            title={t.goodEpisodes.length > 0 ? `已标 ${t.goodEpisodes.length} 集好看` : '标记鉴赏神回'}
           >
             <Ic name="star" cls="ic ic-sm" />
-            {t.goodEpisodes.length > 0 ? t.goodEpisodes.length : '好看集'}
+            {t.goodEpisodes.length > 0 ? t.goodEpisodes.length : '鉴赏神回'}
           </button>
           {canReview && (
             <button

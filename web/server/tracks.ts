@@ -1,7 +1,7 @@
 // 追番 API —— 用户数据,必须登录。
 //
 // **写入一律是字段级 patch,绝不整条替换**:body 里没给的字段保持原样,沉默 ≠ 置空。
-// 这样桌面端推富记录过来时,网页端只写自己拥有的那几个字段,对方的好看集 / 绑定之类不会被抹掉。
+// 这样桌面端推富记录过来时,网页端只写自己拥有的那几个字段,对方的鉴赏神回 / 绑定之类不会被抹掉。
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
@@ -78,7 +78,7 @@ function asObserve(value: unknown, extra: unknown): number {
 const hasLegacyObserve = (extra: unknown): boolean =>
   !!extra && typeof extra === 'object' && 'observeCount' in (extra as Record<string, unknown>)
 
-/** 好看集集号归一：去掉 ≤0 / 非整数，去重升序。与 app 端 animeTrackStore 同一套规则。 */
+/** 鉴赏神回集号归一：去掉 ≤0 / 非整数，去重升序。与 app 端 animeTrackStore 同一套规则。 */
 function normalizeGoodEpisodes(input: unknown): number[] {
   if (!Array.isArray(input)) return []
   const seen = new Set<number>()
@@ -165,7 +165,7 @@ function toJson(r: TrackRow): Record<string, unknown> {
     // 网页版当前只展示动画，但全量同步必须保留漫画 / 小说。普通列表带上类别让前端过滤，
     // 不能在服务端 SELECT 时丢掉，否则桌面端下一次整包拉取会误删隐藏类别。
     subjectType: subjectTypeOf(extra),
-    // 好看集本是桌面端专属字段（存在 extra 里）；网页版现在也能读写这两个 key，
+    // 鉴赏神回本是桌面端专属字段（存在 extra 里）；网页版现在也能读写这两个 key，
     // 其余 extra 字段仍然原样透传、不认识、不改写。
     goodEpisodes: normalizeGoodEpisodes(extra.goodEpisodes),
     goodEpisodeNotes: normalizeGoodEpisodeNotes(extra.goodEpisodeNotes, normalizeGoodEpisodes(extra.goodEpisodes)),
@@ -802,7 +802,7 @@ tracks.put('/:bgmId', async (c) => {
   const nextCover = hasCover ? String(body.cover ?? '').trim() : ''
   if (hasCover && nextCover.length > 2000) return c.json({ error: '封面地址过长' }, 400)
 
-  // 好看集：具体集号数组 + 集号→备注。两个字段都收在 extra 里，跟 app 端共用同一份存储，
+  // 鉴赏神回：具体集号数组 + 集号→备注。两个字段都收在 extra 里，跟 app 端共用同一份存储，
   // 但更新时只动这两个 key，extra 里 app 写的其它字段原样保留（沉默 ≠ 置空）。
   const hasGoodEpisodes = 'goodEpisodes' in body
   if (hasGoodEpisodes && !Array.isArray(body.goodEpisodes)) return c.json({ error: 'goodEpisodes 不合法' }, 400)
@@ -811,7 +811,7 @@ tracks.put('/:bgmId', async (c) => {
     return c.json({ error: 'goodEpisodeNotes 不合法' }, 400)
   }
 
-  // 最爱值：同样收在 extra 里，跟好看集一套逻辑。
+  // 最爱值：同样收在 extra 里，跟鉴赏神回一套逻辑。
   const hasFavorite = 'favorite' in body
   if (hasFavorite && !Number.isFinite(Number(body.favorite))) return c.json({ error: 'favorite 不合法' }, 400)
 
@@ -920,7 +920,7 @@ tracks.put('/:bgmId', async (c) => {
       const nextFavorite = hasFavorite ? normalizeFavorite(body.favorite) : normalizeFavorite(prevExtra.favorite)
       const nextExtraStr = JSON.stringify({ ...prevExtra, goodEpisodes: nextEpisodes, goodEpisodeNotes: nextNotes, favorite: nextFavorite })
       if (nextExtraStr.length > MAX_EXTRA_BYTES) {
-        return { row: prev, fillDetail: false, orphanedCover: false, error: '好看集数据过大' }
+        return { row: prev, fillDetail: false, orphanedCover: false, error: '鉴赏神回数据过大' }
       }
       sets.push('extra = ?')
       args.push(nextExtraStr)
@@ -1134,7 +1134,7 @@ tracks.post('/:bgmId/cover', async (c) => {
 
 /**
  * 只读端点，给在线播放页（xifan.ts / girigiri.ts 的裸 HTML 播放器）用：不追这部番 /
- * 没标过都返回空，不当错误——播放页只是想知道「这集是不是我标过的好看集」，不是追番详情页。
+ * 没标过都返回空，不当错误——播放页只是想知道「这集是不是我标过的鉴赏神回」，不是追番详情页。
  */
 tracks.get('/:bgmId/good-episodes', async (c) => {
   const uid = await requireUid(c)

@@ -85,7 +85,7 @@ export interface AnimeTrack {
    * 之后可能是「SS2 / 短篇集」、第 6 章之后可能是「后记」，纯数字表达不了，所以
    * 允许任意文本。UI 的 +/- 步进只在当前值是纯整数时生效（非数字时禁用，让用户
    * 直接改文本框）。老 track / 非小说没这俩字段时 normalize() 默认 ''（= 未开始），
-   * 零手动迁移。小说不用好看集（goodEpisodes 留空），只保留 favorite 星级。
+   * 零手动迁移。小说不用鉴赏神回（goodEpisodes 留空），只保留 favorite 星级。
    */
   novelVolume: string
   novelChapter: string
@@ -119,12 +119,12 @@ export interface AnimeTrack {
   /** 用户自己加的标签,与 bgmTags 物理隔离,互不影响。 */
   userTags: string[]
   /**
-   * 好看集:**具体集号的数组**(不是计数),`[1,4,5,16,17]` 渲染时由 compressGoodEpisodes()
+   * 鉴赏神回:**具体集号的数组**(不是计数),`[1,4,5,16,17]` 渲染时由 compressGoodEpisodes()
    * 折回「1、4-5、16-17」。评判标准见 CriteriaModal。
    * 不夹到 totalEpisodes 上限 —— 总集数可能被用户改小,越界值原样留着让用户自己处理。
    */
   goodEpisodes: number[]
-  /** 好看集备注,键是集号。与 goodEpisodes 平行存放;normalize 只保留仍被标记的集
+  /** 鉴赏神回备注,键是集号。与 goodEpisodes 平行存放;normalize 只保留仍被标记的集
    *  取消标记时备注自动剪掉,不留孤儿。 */
   goodEpisodeNotes: Record<number, string>
   /** 首次追番的日期。 */
@@ -165,9 +165,9 @@ export function aliasesFromInfobox(infobox: Record<string, string> | undefined |
   return normalizeTagList(raw.split(/[、,，;；/]/))
 }
 
-// ── 好看集集号工具 ──────────────────────────────────────────────────────────
+// ── 鉴赏神回集号工具 ──────────────────────────────────────────────────────────
 
-/** 好看集集号归一:去掉 ≤0 / 非整数,去重升序。normalize 和编辑弹窗共用同一套。 */
+/** 鉴赏神回集号归一:去掉 ≤0 / 非整数,去重升序。normalize 和编辑弹窗共用同一套。 */
 export function normalizeGoodEpisodes(input: unknown): number[] {
   if (!Array.isArray(input)) return []
   const seen = new Set<number>()
@@ -254,7 +254,7 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   // 观望次数 —— 非负整数，老数据没这字段就当 0。不设上限：UI 只在 ≥4 时
   // 高亮提示"建议升到在追"，但用户硬要继续观望不阻止。
   const observeCount = typeof t.observeCount === 'number' && t.observeCount >= 0 ? Math.floor(t.observeCount) : 0
-  // 好看集 —— 老数据没这字段或不是数组就当空 []；过滤 ≤ 0 / NaN，去重、升序。
+  // 鉴赏神回 —— 老数据没这字段或不是数组就当空 []；过滤 ≤ 0 / NaN，去重、升序。
   const goodEpisodes = normalizeGoodEpisodes(t.goodEpisodes)
   // 备注剪到只剩"还被标记着的集" —— 取消标记某集时它的备注自动作废
   const goodEpisodeNotes = normalizeGoodEpisodeNotes(t.goodEpisodeNotes, goodEpisodes)
@@ -359,7 +359,7 @@ class AnimeTrackStore {
     return merged
   }
 
-  /** 设置某一集的好看集备注,trim 后为空则删除。track 不存在时 no-op。 */
+  /** 设置某一集的鉴赏神回备注,trim 后为空则删除。track 不存在时 no-op。 */
   setGoodEpisodeNote(bgmId: number, ep: number, note: string): void {
     const map = this.ensure()
     const prev = map.get(bgmId)

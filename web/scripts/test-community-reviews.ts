@@ -33,7 +33,7 @@ try {
     assert.equal(data.review[0].score, 0)
     assert.equal(data.review[0].bgmScore, 4.1)
   })
-  await check('API 爱心、好看集、备注折算 6.3 分', async () => {
+  await check('API 爱心、鉴赏神回、备注折算 6.3 分', async () => {
     db.prepare('UPDATE tracks SET extra=? WHERE user_id=?').run(JSON.stringify({favorite:6,goodEpisodes:[1],goodEpisodeNotes:{1:'喜欢'}}),user)
     assert.equal((await read()).review[0].score, 6.3)
   })

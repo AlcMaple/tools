@@ -238,7 +238,7 @@ export default function OnlinePlayer(): JSX.Element {
   const track = useAnimeTrack(bgmId)
   const [goodEpsOpen, setGoodEpsOpen] = useState(false)
   const [onlyGoodEps, setOnlyGoodEps] = useState(false)
-  // 好看集备注 hover 提示：同 GoodEpisodesEditor 的 NoteTip,~120ms 防抖后即显,比原生 title 快。
+  // 鉴赏神回备注 hover 提示：同 GoodEpisodesEditor 的 NoteTip,~120ms 防抖后即显,比原生 title 快。
   const [noteHoverTip, setNoteHoverTip] = useState<{ text: string; anchor: DOMRect } | null>(null)
   const noteTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const showNoteTip = useCallback((text: string, anchor: DOMRect) => {
@@ -1288,7 +1288,7 @@ export default function OnlinePlayer(): JSX.Element {
                           }`}
                         >
                           <span className="material-symbols-outlined leading-none" style={{ fontSize: 13 }}>filter_alt</span>
-                          <span>仅看好看集</span>
+                          <span>仅看鉴赏神回</span>
                         </button>
                       )}
                       <button
@@ -1302,7 +1302,7 @@ export default function OnlinePlayer(): JSX.Element {
                         >
                           auto_awesome
                         </span>
-                        <span>标记好看集</span>
+                        <span>标记鉴赏神回</span>
                       </button>
                     </div>
                   )}

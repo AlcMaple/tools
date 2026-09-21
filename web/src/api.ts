@@ -80,9 +80,9 @@ export interface Track {
   observeCount: number
   /** 桌面端全量同步会带漫画 / 小说；网页版追番页当前只展示 anime。 */
   subjectType: TrackSubjectType
-  /** 好看集：具体集号数组（不是计数），渲染时由 compressGoodEpisodes() 折成「1、4-5、16-17」。 */
+  /** 鉴赏神回：具体集号数组（不是计数），渲染时由 compressGoodEpisodes() 折成「1、4-5、16-17」。 */
   goodEpisodes: number[]
-  /** 好看集备注，键是集号，与 goodEpisodes 平行存放。取消标记某集时它的备注自动作废。 */
+  /** 鉴赏神回备注，键是集号，与 goodEpisodes 平行存放。取消标记某集时它的备注自动作废。 */
   goodEpisodeNotes: Record<number, string>
   /** 最爱程度：0-6 颗星，跟桌面端 animeTrackStore.favorite 同语义，独立存放。 */
   favorite: number
@@ -105,9 +105,9 @@ export function normalizeFavorite(input: number): number {
   return Math.min(n, FAVORITE_MAX)
 }
 
-// ── 好看集集号工具（与桌面端 animeTrackStore 同一套规则，网页端独立声明一份） ──────
+// ── 鉴赏神回集号工具（与桌面端 animeTrackStore 同一套规则，网页端独立声明一份） ──────
 
-/** 好看集集号归一：去掉 ≤0 / 非整数，去重升序。 */
+/** 鉴赏神回集号归一：去掉 ≤0 / 非整数，去重升序。 */
 export function normalizeGoodEpisodes(input: number[]): number[] {
   const seen = new Set<number>()
   for (const v of input) {
@@ -330,7 +330,7 @@ export interface AnimeReviewEntry {
   username: string
   body: string
   spoiler: 'none' | 'aired' | 'all'
-  /** 作者的海报个人评分（爱心、好看集和备注综合计算）。没有追番卡时为 null */
+  /** 作者的海报个人评分（爱心、鉴赏神回和备注综合计算）。没有追番卡时为 null */
   score: number | null
   /** BGM 综合分。跟 score 分开，混一起海报会把它标成「我的评分」 */
   bgmScore: number | null

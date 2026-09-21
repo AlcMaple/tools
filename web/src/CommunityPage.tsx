@@ -493,8 +493,8 @@ function PublicTrackCard({ track, username }: { track: PublicTrack; username: st
             <button
               type="button"
               className="community-highlight-trigger"
-              title="查看好看集与手帐备注"
-              aria-label={`查看好看集，共 ${highlightCount} 集`}
+              title="查看鉴赏神回与手帐备注"
+              aria-label={`查看鉴赏神回，共 ${highlightCount} 集`}
               onClick={() => setHighlightsOpen(true)}
             >
               <Ic name="star" cls="ic ic-sm" /> {highlightCount}
@@ -634,11 +634,11 @@ function PublicHighlightsModal({ track, onClose }: { track: PublicTrack; onClose
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div role="dialog" aria-modal="true" aria-label="好看集与手帐备注" className="dlg community-highlights-dlg">
+      <div role="dialog" aria-modal="true" aria-label="鉴赏神回与手帐备注" className="dlg community-highlights-dlg">
         <button type="button" className="dlg-close" onClick={onClose} aria-label="收起记录" title="收起记录">
           <Ic name="x" cls="ic" />
         </button>
-        <h3 className="dlg-title"><Ic name="star" cls="ic ic-sm community-highlight-icon" /> 好看集</h3>
+        <h3 className="dlg-title"><Ic name="star" cls="ic ic-sm community-highlight-icon" /> 鉴赏神回</h3>
         <p className="dlg-sub">『{title}』里，纱雾点亮的集数都收在这里。</p>
         <div className="community-highlight-summary">
           <span>共 {track.goodEpisodes.length} 集</span>

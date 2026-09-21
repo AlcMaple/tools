@@ -467,7 +467,7 @@ export function TracksPage(): JSX.Element {
         mode,
         body: content.body,
         spoiler: content.spoiler,
-        // 海报分数由爱心、好看集和备注共同计算；t.score 只保留给 BGM 综合分。
+        // 海报分数由爱心、鉴赏神回和备注共同计算；t.score 只保留给 BGM 综合分。
         scoreSignals: {
           favorite: t.favorite,
           goodEpisodeCount: t.goodEpisodes.length,

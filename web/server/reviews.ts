@@ -123,7 +123,7 @@ const trackStmt = db.prepare<[number, number]>(
   'SELECT status, episode, total_episodes, title, title_cn, user_tags, score, extra FROM tracks WHERE user_id = ? AND bgm_id = ?',
 )
 
-/** 从 tracks.extra 里取用户写过的好看集备注（他自己的只言片语）。 */
+/** 从 tracks.extra 里取用户写过的鉴赏神回备注（他自己的只言片语）。 */
 function goodEpisodeNotesOf(extra: string): string[] {
   try {
     const ex = JSON.parse(extra || '{}') as Record<string, unknown>

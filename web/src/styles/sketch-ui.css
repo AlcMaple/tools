@@ -2673,7 +2673,7 @@ body[data-auth='out'] .track-btn { display: none; }
 .ep-cell.on { color: #f7fbfb; background: var(--teal-mid); border-color: var(--teal); font-weight: 600; }
 .ep-cell.seen::after { content: '✓'; margin-left: 3px; font-size: 10px; color: var(--gold); }
 .ep-cell.on.seen::after { color: #fff; }
-/* 在线播放页「选集」网格：这集是不是我标过的好看集，跟 .seen 同一个视觉语汇（角标追加）。 */
+/* 在线播放页「选集」网格：这集是不是我标过的鉴赏神回，跟 .seen 同一个视觉语汇（角标追加）。 */
 .ep-cell.good::after { content: '★'; margin-left: 3px; font-size: 10px; color: var(--gold); }
 .ep-cell.on.good::after { color: #fff; }
 .line-card {
@@ -2699,7 +2699,7 @@ body[data-auth='out'] .track-btn { display: none; }
 
 .ge-trigger-on { border-color: var(--gold); color: var(--gold); background: var(--gold-hl); }
 
-/* ── 好看集弹窗（GoodEpisodesModal）───────────────────────────────────────── */
+/* ── 鉴赏神回弹窗（GoodEpisodesModal）───────────────────────────────────────── */
 .ge-dlg { max-width: 560px; }
 .ge-title { display: flex; align-items: center; gap: 6px; }
 .ge-star { color: var(--gold); }
@@ -2731,7 +2731,7 @@ body[data-auth='out'] .track-btn { display: none; }
 .ge-view-btn.on { background: var(--gold-hl); color: var(--gold); font-weight: 600; }
 .ge-view-count { font-size: 11px; opacity: .7; }
 
-/* min-height 固定：切「全部集数」／「只看好看集」两个视图时弹窗高度不跳；
+/* min-height 固定：切「全部集数」／「只看鉴赏神回」两个视图时弹窗高度不跳；
    内容超出再靠 max-height 滚动，不撑高弹窗本体。 */
 .ge-body { display: flex; flex-direction: column; min-height: 280px; max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; margin: 0 -2px; padding: 2px; }
 
@@ -2750,7 +2750,7 @@ body[data-auth='out'] .track-btn { display: none; }
 }
 @media (hover: hover) { .ge-ep:hover { border-color: var(--gold); color: var(--ink); transform: translateY(-1px); } }
 .ge-ep.on { background: var(--gold-hl); border-color: var(--gold); color: var(--gold); font-weight: 700; }
-/* 有备注的集：角上一个常驻小圆点，标题 hover 即读；改备注统一去「只看好看集」列表。 */
+/* 有备注的集：角上一个常驻小圆点，标题 hover 即读；改备注统一去「只看鉴赏神回」列表。 */
 .ge-ep-dot { position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--gold); }
 
 .ge-empty {
@@ -2767,7 +2767,7 @@ body[data-auth='out'] .track-btn { display: none; }
 .ge-empty-star { width: 30px; height: 30px; color: var(--gold-hl); }
 .ge-empty p { max-width: 320px; font-size: 12.5px; line-height: 1.6; }
 
-/* 只看好看集：逐行列表，星号按钮取消标记，备注输入框常驻行内、失焦即存 —— 不用悬浮气泡。 */
+/* 只看鉴赏神回：逐行列表，星号按钮取消标记，备注输入框常驻行内、失焦即存 —— 不用悬浮气泡。 */
 .ge-list { display: flex; flex-direction: column; gap: 8px; }
 .ge-row { display: flex; align-items: center; gap: 8px; }
 .ge-row-ep {

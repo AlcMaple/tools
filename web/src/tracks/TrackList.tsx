@@ -5,7 +5,7 @@ import { watchEp } from './common'
 
 // ── 列表行（只读速览）────────────────────────────────────────────────────────
 // 列表只负责让用户快速扫过追番，不提供改集数 / 改状态 / 改最爱等编辑控件。
-// BGM 条目提供继续看 / BGM / 好看集；手动条目把前两项收成一个回填入口。
+// BGM 条目提供继续看 / BGM / 鉴赏神回；手动条目把前两项收成一个回填入口。
 export function TrackListRow({
   t,
   bound,
@@ -71,10 +71,10 @@ export function TrackListRow({
           type="button"
           className={`btn btn-sm btn-ghost${t.goodEpisodes.length > 0 ? ' ge-trigger-on' : ''}`}
           onClick={onMarkGood}
-          title={t.goodEpisodes.length > 0 ? `已标 ${t.goodEpisodes.length} 集好看` : '标记好看集'}
+          title={t.goodEpisodes.length > 0 ? `已标 ${t.goodEpisodes.length} 集好看` : '标记鉴赏神回'}
         >
           <Ic name="star" cls="ic ic-sm" />
-          {t.goodEpisodes.length > 0 ? t.goodEpisodes.length : '好看集'}
+          {t.goodEpisodes.length > 0 ? t.goodEpisodes.length : '鉴赏神回'}
         </button>
       </div>
     </article>

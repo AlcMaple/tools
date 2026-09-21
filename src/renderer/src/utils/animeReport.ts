@@ -85,7 +85,7 @@ function renderRecommendList(recs: Recommendation[]): string {
   `).join('')
 }
 
-// ── 好看集 ──────────────────────────────────────────────────────────────────
+// ── 鉴赏神回 ──────────────────────────────────────────────────────────────────
 //
 // 跟 PDF 一致：动漫名 + 紧凑集号字符串（"1、4-5、16-19"）。
 // 集号用 compressGoodEpisodes 折叠 —— 跟应用里 ✨ chip 的展示口径一致。
@@ -113,7 +113,7 @@ interface ReportInput {
  * 内部过滤规则：
  *   - 追番列表：排除 status === 'completed'（看完了不用再追）
  *   - 推荐：排除 status === 'rejected'（已经拒了不用看）
- *   - 好看集：所有有标记的 track（不论状态），完结番的好看集仍然值得回味
+ *   - 鉴赏神回：所有有标记的 track（不论状态），完结番的鉴赏神回仍然值得回味
  *
  * 三段都空时返回带"本期无更新"提示的极简版，让"空发也发"路径有意义。
  */
@@ -164,7 +164,7 @@ export function buildAnimeReportHtml({ tracks, recommendations }: ReportInput): 
           <div style="text-align:center;padding:40px 0 20px;color:#9a948a;">
             <div style="font-size:48px;line-height:1;margin-bottom:12px;">✦</div>
             <p style="margin:0;font-size:14px;letter-spacing:1px;">本期无更新</p>
-            <p style="margin:8px 0 0;font-size:11px;color:#bdb6a8;">追番、推荐、好看集都是空的</p>
+            <p style="margin:8px 0 0;font-size:11px;color:#bdb6a8;">追番、推荐、鉴赏神回都是空的</p>
           </div>
         </div>
       </div>
@@ -182,7 +182,7 @@ export function buildAnimeReportHtml({ tracks, recommendations }: ReportInput): 
         ${sectionHeader('推荐', recs.length)}
         ${renderRecommendList(recs)}
 
-        ${sectionHeader('好看集', goodEps.length)}
+        ${sectionHeader('鉴赏神回', goodEps.length)}
         ${renderGoodEpisodes(goodEps)}
       </div>
     </div>
