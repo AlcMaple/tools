@@ -340,6 +340,43 @@ async function probeTotal(url: string): Promise<number> {
   throw new Error('上游不支持 Range，拿不到总长度')
 }
 
+// 测速选线用：4 条独立连接各拉 512KB，限时 windowMs，返回实到字节（B/s 口径 = bytes / 窗口）。
+// 只量「源站 → 服务器」这一段——两条线路之后都走同一套 12 路会话，出口那段对谁都一样。
+// 失败（建连超时、非 206）算 0 字节，不抛：测速本身不该让打开播放页失败。
+const SPEED_PROBE_STREAMS = 4
+const SPEED_PROBE_BYTES = 512 * 1024
+const speedAgent = new Agent({ connections: SPEED_PROBE_STREAMS, connectTimeout: CONNECT_TIMEOUT_MS, headersTimeout: HEADERS_TIMEOUT_MS, bodyTimeout: 0 })
+export async function measureThroughput(url: string, windowMs: number): Promise<number> {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), windowMs)
+  let bytes = 0
+  const one = async (i: number): Promise<void> => {
+    const start = i * SPEED_PROBE_BYTES
+    try {
+      const res = await request(url, {
+        dispatcher: speedAgent,
+        method: 'GET',
+        maxRedirections: 5,
+        headers: { ...UPSTREAM_HEADERS, Range: `bytes=${start}-${start + SPEED_PROBE_BYTES - 1}` },
+        signal: ac.signal,
+      })
+      if (res.statusCode !== 206) {
+        await res.body.dump()
+        return
+      }
+      for await (const piece of res.body) bytes += (piece as Buffer).length
+    } catch {
+      /* 超时被 abort 或上游失败：到手多少算多少 */
+    }
+  }
+  const began = Date.now()
+  await Promise.all(Array.from({ length: SPEED_PROBE_STREAMS }, (_, i) => one(i)))
+  clearTimeout(timer)
+  const bps = Math.round(bytes / (Math.max(Date.now() - began, 1) / 1000))
+  log(`测速 ${new URL(url).hostname} ${Math.round(bps / 1024)}KB/s（${bytes}B / ${Date.now() - began}ms）`)
+  return bps
+}
+
 function runWorkers(s: Session): void {
   const regionLength = s.total - s.regionStart
   let nextOffset = 0

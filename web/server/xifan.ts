@@ -60,7 +60,7 @@ function upstreamFailure(c: Context, error: unknown, fallback: string): Response
   return c.json({ error: message }, 502)
 }
 
-// 用户明确选择「跳去源站」时才走这里：复用 getPlaylist 的快源判定，避免让用户进站后
+// 用户明确选择「跳去源站」时才走这里：复用 getPlaylist 的测速选线结论，避免让用户进站后
 // 再手动试线路。先打开的是本站地址，策略请求完成后由 302 落到具体的稀饭线路页，
 // 这样前端仍在原始点击手势里 window.open，不会被浏览器当成异步弹窗拦截。
 xifan.get('/source-page', async (c) => {

@@ -4,13 +4,15 @@
 // 而且用户多半只看默认线路，预解析其余线路是白费。所以：
 //   - 打开播放页 → `getPlaylist`：**一次抓取**（source 1 的页面）拿到「线路 1 地址 + 全部线路名单」。
 //   - 用户点线路 2/3 → `resolveLine`：那时才抓那一条。
-// 不再自动选最优线路，也不预探 content-disposition / HLS 空壳 —— 播放层「直连失败就套娃兜底」。
+//   - 例外：同一部番第一次打开时多解析一条做测速选线（见 getPlaylist 上方），之后按番复用结论。
+// 不预探 content-disposition / HLS 空壳 —— 播放层「直连失败就套娃兜底」。
 //
 // **拷贝复用 + 换传输层**：parsePlayerData 抄自 src/main/xifan/api.ts；
 // 源 tab 名单改用正则扒（web 侧只为这几个 <a> 标签不值当加 cheerio 依赖）。
 
 import { proxyReady, refreshProxyAfterFailure } from '../http' // 本地开发：等代理探测定盘，和浏览器走同一条出口
-import { needsProxy } from './proxy-hosts'
+import { canProxy } from './proxy-hosts'
+import { measureThroughput } from './stream'
 import {
   assertXifanResponse,
   BASE_URL,
@@ -366,8 +368,14 @@ export function clearXifanResolveCache(uid: number): void {
   }
 }
 
-// source 1 恰好是慢源时才多解析一条线路，用域名判断快慢而不是猜线路编号；快源不占服务器出口。
-// source 1 已经是快源时不追加请求，保持懒加载和对源站的最小访问量。
+// 默认线路按**实测**选，不按域名猜（2026-09-21 起两个源站都走服务器 12 路会话，处理路径完全一样，
+// 而 xfvod 改绕中转后单连接只剩 10~130KB/s，「xfvod 是快源」的旧前提不成立了）。
+// 有第二条线路时两条都解析、服务器各拉 ~3 秒比实到字节；结论按番缓存 1 小时，同一部番后面几集直接复用，
+// 只有第一次打开多等约 3 秒、多一次稀饭解析请求。
+const SPEED_WINDOW_MS = 3_000
+function speedTestable(line: PlayLine | null): line is PlayLine {
+  return !!line && line.kind === 'mp4' && canProxy(line.url)
+}
 export async function getPlaylist(animeId: string, ep: number, uid: number | null = null): Promise<Playlist> {
   const access = accessContext(uid)
   const key = `${access.scope}:pl:${animeId}:${ep}`
@@ -388,17 +396,28 @@ export async function getPlaylist(animeId: string, ep: number, uid: number | nul
     const lines = tabs.length ? tabs : line1 ? [{ source: 1, name: '线路1' }] : []
     const eps = parseEpList(body, animeId)
 
-    // 只有「线路 1 是慢源 且 还有别的线路」时才多试一条。失败/也是慢源就老实用线路 1。
     let first = line1
-    if (line1 && needsProxy(line1.url) && lines.length > 1) {
-      const next = lines.find((l) => l.source !== 1)
-      if (next) {
-        try {
+    const next = lines.find((l) => l.source !== 1)
+    if (line1 && next) {
+      const fastKey = `${access.scope}:fast:${animeId}`
+      const known = cached<number>(fastKey)
+      try {
+        if (known.hit) {
+          if (known.v !== 1) first = (await resolveLine(animeId, ep, known.v, uid)) ?? line1
+        } else if (speedTestable(line1)) {
           const alt = await resolveLine(animeId, ep, next.source, uid)
-          if (alt && !needsProxy(alt.url)) first = alt
-        } catch {
-          /* 备选线路解析不出来不影响主流程，继续用线路 1 */
+          if (speedTestable(alt)) {
+            const [s1, s2] = await Promise.all([
+              measureThroughput(line1.url, SPEED_WINDOW_MS),
+              measureThroughput(alt.url, SPEED_WINDOW_MS),
+            ])
+            first = s2 > s1 ? alt : line1
+            // 两边都 0 字节说明是源站 / 服务器这会儿整体不通，不是谁快谁慢，不记结论。
+            if (s1 > 0 || s2 > 0) put(fastKey, s2 > s1 ? alt.source : 1)
+          }
         }
+      } catch (error) {
+        console.log(`[xifan:resolve] 测速选线失败，用线路 1：${error instanceof Error ? error.message : String(error)}`)
       }
     }
     return put(key, { title: data?.vod_data?.vod_name ?? '', lines, first, eps })
