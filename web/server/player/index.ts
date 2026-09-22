@@ -6,7 +6,7 @@
 //   GET  /api/player/page?src=xifan|girigiri&id=&ep=[&bgmId=]   → 播放页
 //   GET  /api/player/playlist?src&id&ep                          → 统一结构：{ title, lines, first, eps }
 //   GET  /api/player/resolve?src&id&ep&source                    → 用户手动点线路时解析那一条
-//   GET  /api/player/stream?u&s[&range]                          → mp4：stream.ts（apn / xfvod 12 路会话，其余单连接透传）
+//   GET  /api/player/stream?u&s[&range]                          → mp4：盘上有预取好的整集先从盘答（prefetch.ts），否则 stream.ts
 //   GET  /api/player/hls?u&s                                     → m3u8：拉回来把分片 / 子表 / key 改写成本站地址
 //   GET  /api/player/seg?u&s                                     → HLS 分片 / key 的单连接透传（不做 mp4 那套 total 探测）
 //   GET  /api/player/vendor/artplayer.js|hls.js                  → 自托管（CSP 只放行 self；国内也拉不到 CDN）
@@ -28,6 +28,7 @@ import { captureClientLog } from '../monitoring'
 import { sanitizeSentryUser } from '../../shared/sentry-user'
 import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources, type WebPlayerSource } from '../player-sources'
 import { serveStream } from '../xifan/stream'
+import { schedulePrefetch, servePrefetched } from '../xifan/prefetch'
 import * as xifan from '../xifan/resolve'
 import * as girigiri from '../girigiri/resolve'
 import { XifanResolveError } from '../xifan/resolve'
@@ -105,7 +106,13 @@ player.get('/playlist', async (c) => {
   if (!session) return c.json({ error: '未登录', code: 'AUTH_REQUIRED' }, 401)
   c.header('Cache-Control', 'no-store')
   try {
-    return c.json(await playlistOf(args.src, args.id, args.ep, session.uid))
+    const playlist = await playlistOf(args.src, args.id, args.ep, session.uid)
+    const next = args.ep + 1
+    if (args.src === 'xifan' && playlist.eps.includes(next)) {
+      const { id } = args
+      schedulePrefetch(session.uid, `xifan:${id}:${next}`, `xifan:${id}:${args.ep}`, async () => (await xifan.getPlaylist(id, next, session.uid)).first?.url ?? null)
+    }
+    return c.json(playlist)
   } catch (error) {
     return resolveFailure(c, error)
   }
@@ -145,7 +152,7 @@ player.get('/stream', async (c) => {
   const media = await signedMedia(c)
   if (media instanceof Response) return media
   try {
-    const r = await serveStream(media.url, c.req.header('range'), false, 'player', true)
+    const r = servePrefetched(media.url, c.req.header('range')) ?? await serveStream(media.url, c.req.header('range'), false, 'player', true)
     return new Response(r.body, { status: r.status, headers: r.headers })
   } catch (error) {
     console.error('[player] stream 失败: ' + (error instanceof Error ? error.message : error))
