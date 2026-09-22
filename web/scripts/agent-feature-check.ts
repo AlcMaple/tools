@@ -35,6 +35,7 @@ export function checkFeatureRelease(root:string,documentation:string):void {
  for(const f of AGENT_FEATURES)if(f.entry.startsWith('/api/agent/')&&!served.has(f.entry.slice('/api/agent'.length)))throw new Error('FEATURE_API_ENTRY_MISSING')
  const recorded=JSON.parse(readFileSync(join(root,'server/agent/site-routes.json'),'utf8'))
  if(JSON.stringify(recorded)!==JSON.stringify(inventory))throw new Error('FEATURE_ROUTE_REVIEW_REQUIRED')
- const section=documentation.split(GUIDE_START)[1]?.split(GUIDE_END)[0]?.trim()
+ // Windows checkout may use CRLF; compare content independently of line endings.
+ const section=documentation.replaceAll('\r\n','\n').split(GUIDE_START)[1]?.split(GUIDE_END)[0]?.trim()
  if(section!==featureGuideMarkdown().trim())throw new Error('FEATURE_DOCUMENTATION_MISMATCH')
 }
