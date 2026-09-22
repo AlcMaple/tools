@@ -164,7 +164,7 @@ export default function App(): JSX.Element {
               <Ic name="pencil" />
               MapleTools <span className="sparkle">✦</span>
             </a>
-            <div className="brand-sub">SAGIRI · SKETCHFOLIO</div>
+            <div className="brand-sub"><a href="/about.html">功能介绍与桌面下载</a></div>
           </div>
 
           <nav className="idx-nav">

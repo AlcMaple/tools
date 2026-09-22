@@ -3,7 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>MapleTools 网页版 · 番剧周期表</title>
+    <title>MapleTools · 个人追番管理与番剧周历 | AlcMaple</title>
+    <meta name="description" content="AlcMaple 开发的 MapleTools：管理个人追番列表、观看进度与新番周历，提供多源观看入口；桌面版另支持稀饭动漫 Xifan、Girigiri、嗷呜搜索下载、本地媒体管理和坚果云同步。" />
+    <meta name="author" content="AlcMaple" />
+    <meta property="og:site_name" content="MapleTools" />
+    <meta property="og:title" content="MapleTools · 个人追番管理与番剧周历" />
+    <meta property="og:description" content="个人追番、观看进度、新番周历与多源观看。由 AlcMaple 开发，提供网页版及 Windows / macOS 桌面应用。" />
+    <meta property="og:type" content="website" />
     <!-- 先启动白屏探针：Vite 会把主模块注入 head，探针必须先于它执行才能捕获入口资源错误。 -->
     <script src="/white-screen-probe.js?v=2"></script>
     <!-- 必须是 async，不能是 defer。defer 的经典脚本和 type=module 的主包共用同一条
@@ -19,6 +25,9 @@
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <p>在线追番需要启用 JavaScript。你也可以查看<a href="/about.html">功能介绍与桌面下载</a>。</p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
