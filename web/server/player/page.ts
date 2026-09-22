@@ -181,7 +181,7 @@ ${PLAYBACK_BEACON}
   // ——— 卡住时要看得见：转圈 + 一行「缓冲中 · 领先 N 秒」———
   // ArtPlayer 自己的 loading 在 seeked / progress 一到就收（iOS 上 seeked 立刻就发、progress 一有字节就发），
   // 所以真卡住的时候它反而是不转的。这里按「没暂停、currentTime 一秒多没走」自己判，判到就把圈亮回去。
-  var stallTimer = null, stallSince = 0, lastT = -1, lastTAt = 0, stallReported = false
+  var stallTimer = null, stallSince = 0, lastT = -1, lastTAt = 0, stallReported = false, bufOwned = false
   function aheadOf(v){
     for (var i = 0; i < v.buffered.length; i++)
       if (v.buffered.start(i) <= v.currentTime + .05 && v.buffered.end(i) >= v.currentTime) return v.buffered.end(i) - v.currentTime
@@ -189,16 +189,19 @@ ${PLAYBACK_BEACON}
   }
   function setBuffering(v, on, label){
     var box = $('buf')
-    if (!on){ box.classList.remove('show'); if (art) art.loading.show = false; return }
+    // 只收自己亮起来的圈：起播前 ArtPlayer 在拿到时长之前一直转圈，看门狗每 500ms 判一次「暂停中 → 不算卡」，
+    // 不加这个闸就会把那个圈掐掉，画面变成 00:00 / 00:00 的黑框干等（真机 2026-09-23）。
+    if (!on){ box.classList.remove('show'); if (art && bufOwned) art.loading.show = false; bufOwned = false; return }
     var ahead = aheadOf(v)
     box.textContent = (label || '缓冲中') + ' · 第 ' + fmt(v.currentTime) + ' · 已缓冲 ' + ahead.toFixed(1) + ' 秒'
     box.classList.add('show')
     if (art) art.loading.show = true
+    bufOwned = true
   }
   function fmt(t){ t = Math.max(0, Math.floor(t || 0)); var m = Math.floor(t / 60), s2 = t % 60; return m + ':' + (s2 < 10 ? '0' : '') + s2 }
   function startStallWatch(v){
     if (stallTimer !== null) clearInterval(stallTimer)
-    stallSince = 0; lastT = -1; lastTAt = performance.now(); stallReported = false
+    stallSince = 0; lastT = -1; lastTAt = performance.now(); stallReported = false; bufOwned = false
     stallTimer = setInterval(function(){
       if (!art || art.video !== v) return
       var now = performance.now(), t = v.currentTime
@@ -211,7 +214,7 @@ ${PLAYBACK_BEACON}
       }
       if (now - lastTAt < 1200) return
       if (!stallSince) stallSince = lastTAt
-      setBuffering(v, true, v.seeking ? '正在跳转' : '缓冲中')
+      setBuffering(v, true, '缓冲中')
       if (!stallReported && now - stallSince > 20000){ stallReported = true; slog('stall 20s ' + snapshot(v), true) }
     }, 500)
   }
@@ -272,7 +275,6 @@ ${PLAYBACK_BEACON}
         try { v.currentTime = Math.min(resumeAt, Number.isFinite(v.duration) ? Math.max(0, v.duration - .25) : resumeAt) } catch (e) {}
       })
     }
-    art.on('video:seeking', function(){ setBuffering(v, true, '正在跳转') })
     art.on('video:canplay', function(){ agentReport('media_canplay') })
     art.on('video:playing', function(){ agentReport('media_canplay'); agentReport('playing') })
     // 只认**当前这台**播放器的错：换线 / 重试销毁旧实例时，旧 <video> 被清 src 也会冒一个 code=4，
