@@ -131,7 +131,7 @@ ${PLAYBACK_BEACON}
   var generation = 0
   var offlineAt = null, offlineTime = 0, offlineWasPlaying = false
   var RESUME_KEY = 'player:resume:' + src + ':' + id + ':' + ep
-  // 整页刷新（后台挂久了 / bfcache 复活）前把进度和「当时在不在播」记下来，刷新后从原地接着。
+  // iOS 把后台标签页整个回收后浏览器会自己重载：进度和「当时在不在播」先记下，重载后从原地接着。
   function stashResume(){
     try {
       if (!art) return
@@ -147,13 +147,6 @@ ${PLAYBACK_BEACON}
       return r && r.t > 1 && Date.now() - r.at < 6 * 3600 * 1000 ? r : null
     } catch (e) { return null }
   }
-  function reloadPage(why){
-    slog('reload: ' + why)
-    stashResume()
-    destroyPlayer()
-    location.reload()
-  }
-
   function mediaUrl(pl){
     return (pl.kind === 'hls' ? '/api/player/hls' : '/api/player/stream') + '?u=' + encodeURIComponent(pl.url) + '&s=' + pl.s
   }
@@ -326,15 +319,21 @@ ${PLAYBACK_BEACON}
   window.addEventListener('offline', holdForNetwork)
   window.addEventListener('online', function(){ setTimeout(recover, 600) })
   window.addEventListener('pagehide', function(){ if (art){ try { art.video.pause() } catch (e) {} } stashResume() })
-  window.addEventListener('pageshow', function(e){ if (e.persisted) reloadPage('bfcache') })
-  // 后台挂久了回来：iOS 会把标签页的媒体 / 网络状态整个冻掉甚至丢掉，<video> 看着还在，实际已经不会再拉字节。
-  // 藏起来超过 3 分钟就当作重新进这一页——整页刷新、从记下的进度接着。
-  var HIDDEN_RELOAD_MS = 3 * 60 * 1000, hiddenAt = null
+  // 后台挂久了回来只查一件确定的事：登录还在不在。过期就回追番页——不然接下来的媒体请求全是 401，
+  // 用户只看到「播放出错」。视频本身不动：没坏就照常接着播，真坏了走上面原有的报错 / 自动重试。
+  // 历史：09-21 曾「离开 3 分钟整页刷新」，没坏也刷新、要重新缓冲，已撤掉。
+  var RETURN_CHECK_MS = 60 * 1000, hiddenAt = null
+  function checkLogin(why){
+    fetch('/api/player/alive', { cache: 'no-store' }).then(function(r){
+      if (r.status === 401){ slog('return: session expired (' + why + ')'); location.href = '/#/tracks' }
+    }).catch(function(){ /* 断网交给 offline / online 那套 */ })
+  }
+  window.addEventListener('pageshow', function(e){ if (e.persisted) checkLogin('bfcache') })
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden'){ hiddenAt = Date.now(); stashResume(); return }
     if (hiddenAt === null) return
     var away = Date.now() - hiddenAt; hiddenAt = null
-    if (away >= HIDDEN_RELOAD_MS) reloadPage('hidden ' + Math.round(away / 1000) + 's')
+    if (away >= RETURN_CHECK_MS) checkLogin('hidden ' + Math.round(away / 1000) + 's')
   })
 
   // ——— 线路 / 选集 / 源 ———

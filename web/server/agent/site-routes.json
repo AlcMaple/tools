@@ -567,6 +567,11 @@
   {
     "file": "server/player/index.ts",
     "method": "get",
+    "path": "/alive"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "get",
     "path": "/hls"
   },
   {
