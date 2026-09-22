@@ -38,6 +38,8 @@ export const PLAY_PAGE = `<!doctype html>
   .ep-badge-pill { display: inline-flex; align-items: center; font-family: var(--font-hand); font-size: 14px; color: var(--teal); background: var(--teal-wash); border: 1.5px solid var(--teal-line); border-radius: var(--r-pill); padding: 2px 12px; font-variant-numeric: tabular-nums }
   #err { display: none; align-items: center; gap: 12px; margin: 16px 0; padding: 10px 14px; border-radius: var(--r-card); font-size: 13px; font-weight: 600; background: var(--sakura-wash); border: 1.5px solid var(--sakura); color: #923d49 }
   #err.show { display: flex }
+  #buf { display: none; margin-top: 8px; font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums }
+  #buf.show { display: block }
   #err-text { min-width: 0; flex: 1 }
   #err-retry, #auth-link { display: none }
   #err-retry.show, #auth-link.show { display: inline-flex }
@@ -67,6 +69,7 @@ export const PLAY_PAGE = `<!doctype html>
   </div>
   <div class="ep-good-note" id="epgood"></div>
   <div class="player-frame mt16"><div id="art"></div></div>
+  <div id="buf" aria-live="polite"></div>
   <div id="err" role="alert" aria-live="polite">
     <span id="err-text"></span>
     <button id="err-retry" class="btn btn-sm">重试</button>
@@ -127,6 +130,29 @@ ${PLAYBACK_BEACON}
   var goodEps = {}, goodNotes = {}
   var generation = 0
   var offlineAt = null, offlineTime = 0, offlineWasPlaying = false
+  var RESUME_KEY = 'player:resume:' + src + ':' + id + ':' + ep
+  // 整页刷新（后台挂久了 / bfcache 复活）前把进度和「当时在不在播」记下来，刷新后从原地接着。
+  function stashResume(){
+    try {
+      if (!art) return
+      var v = art.video, t = v.currentTime || 0
+      if (t > 1) sessionStorage.setItem(RESUME_KEY, JSON.stringify({ t: t, playing: !v.paused, at: Date.now() }))
+    } catch (e) {}
+  }
+  function takeResume(){
+    try {
+      var raw = sessionStorage.getItem(RESUME_KEY)
+      sessionStorage.removeItem(RESUME_KEY)
+      var r = raw ? JSON.parse(raw) : null
+      return r && r.t > 1 && Date.now() - r.at < 6 * 3600 * 1000 ? r : null
+    } catch (e) { return null }
+  }
+  function reloadPage(why){
+    slog('reload: ' + why)
+    stashResume()
+    destroyPlayer()
+    location.reload()
+  }
 
   function mediaUrl(pl){
     return (pl.kind === 'hls' ? '/api/player/hls' : '/api/player/stream') + '?u=' + encodeURIComponent(pl.url) + '&s=' + pl.s
@@ -145,9 +171,49 @@ ${PLAYBACK_BEACON}
   function destroyPlayer(){
     generation++
     if (tapeTimer !== null){ clearInterval(tapeTimer); tapeTimer = null }
+    if (stallTimer !== null){ clearInterval(stallTimer); stallTimer = null }
+    $('buf').classList.remove('show')
     if (hls){ try { hls.destroy() } catch (e) {} hls = null }
     if (art){ try { art.destroy(false) } catch (e) {} art = null }
     $('art').textContent = ''
+  }
+
+  // ——— 卡住时要看得见：转圈 + 一行「缓冲中 · 领先 N 秒」———
+  // ArtPlayer 自己的 loading 在 seeked / progress 一到就收（iOS 上 seeked 立刻就发、progress 一有字节就发），
+  // 所以真卡住的时候它反而是不转的。这里按「没暂停、currentTime 一秒多没走」自己判，判到就把圈亮回去。
+  var stallTimer = null, stallSince = 0, lastT = -1, lastTAt = 0, stallReported = false
+  function aheadOf(v){
+    for (var i = 0; i < v.buffered.length; i++)
+      if (v.buffered.start(i) <= v.currentTime + .05 && v.buffered.end(i) >= v.currentTime) return v.buffered.end(i) - v.currentTime
+    return 0
+  }
+  function setBuffering(v, on, label){
+    var box = $('buf')
+    if (!on){ box.classList.remove('show'); if (art) art.loading.show = false; return }
+    var ahead = aheadOf(v)
+    box.textContent = (label || '缓冲中') + ' · 第 ' + fmt(v.currentTime) + ' · 已缓冲 ' + ahead.toFixed(1) + ' 秒'
+    box.classList.add('show')
+    if (art) art.loading.show = true
+  }
+  function fmt(t){ t = Math.max(0, Math.floor(t || 0)); var m = Math.floor(t / 60), s2 = t % 60; return m + ':' + (s2 < 10 ? '0' : '') + s2 }
+  function startStallWatch(v){
+    if (stallTimer !== null) clearInterval(stallTimer)
+    stallSince = 0; lastT = -1; lastTAt = performance.now(); stallReported = false
+    stallTimer = setInterval(function(){
+      if (!art || art.video !== v) return
+      var now = performance.now(), t = v.currentTime
+      if (v.paused || v.ended){ if (!v.seeking) setBuffering(v, false); lastT = t; lastTAt = now; return }
+      if (t !== lastT){
+        if (stallSince && !stallReported && now - stallSince > 1500) slog('stall recovered after ' + Math.round(now - stallSince) + 'ms ' + snapshot(v))
+        lastT = t; lastTAt = now; stallSince = 0; stallReported = false
+        setBuffering(v, false)
+        return
+      }
+      if (now - lastTAt < 1200) return
+      if (!stallSince) stallSince = lastTAt
+      setBuffering(v, true, v.seeking ? '正在跳转' : '缓冲中')
+      if (!stallReported && now - stallSince > 20000){ stallReported = true; slog('stall 20s ' + snapshot(v), true) }
+    }, 500)
   }
 
   function mount(pl, resumeAt, autoplay){
@@ -197,6 +263,7 @@ ${PLAYBACK_BEACON}
     })
     var v = art.video
     startTape(v)
+    startStallWatch(v)
     agentWatch(v)
     if (resumeAt){
       v.addEventListener('loadedmetadata', function once(){
@@ -205,6 +272,7 @@ ${PLAYBACK_BEACON}
         try { v.currentTime = Math.min(resumeAt, Number.isFinite(v.duration) ? Math.max(0, v.duration - .25) : resumeAt) } catch (e) {}
       })
     }
+    art.on('video:seeking', function(){ setBuffering(v, true, '正在跳转') })
     art.on('video:canplay', function(){ agentReport('media_canplay') })
     art.on('video:playing', function(){ agentReport('media_canplay'); agentReport('playing') })
     // 只认**当前这台**播放器的错：换线 / 重试销毁旧实例时，旧 <video> 被清 src 也会冒一个 code=4，
@@ -218,13 +286,22 @@ ${PLAYBACK_BEACON}
   }
 
   // 播放出错：不换线、不探测。只区分「断网」和「这条线路真坏了」，两种都给用户一个明确的出口。
+  var autoRetries = 0
   function onMediaError(why){
     if (!cur || !art) return
     var v = art.video
     slog('media error ' + why + ' ' + snapshot(v) + ' url=' + cur.url, true)
     var at = v.currentTime || 0, pl = cur
     if (!navigator.onLine){ holdForNetwork(); return }
-    fail('这条线路播放出错（' + why + '）', 'MEDIA_ERROR', function(){ mount(pl, at, true) })
+    // 源站建连慢时服务端偶尔还是会 502 → code=4。第一次别急着红框，等 2 秒自己重挂一次（保留进度），
+    // 第二次才把「重试」交给用户。换线 / 换集会把计数清零。
+    if (autoRetries < 1){
+      autoRetries++
+      setBuffering(v, true, '线路没响应，正在重试')
+      setTimeout(function(){ if (cur === pl) mount(pl, at, true) }, 2000)
+      return
+    }
+    fail('这条线路播放出错（' + why + '）', 'MEDIA_ERROR', function(){ autoRetries = 0; mount(pl, at, true) })
   }
 
   // ——— 断网：记住位置，online 后同线路恢复一次 ———
@@ -246,8 +323,17 @@ ${PLAYBACK_BEACON}
   }
   window.addEventListener('offline', holdForNetwork)
   window.addEventListener('online', function(){ setTimeout(recover, 600) })
-  window.addEventListener('pagehide', function(){ if (art){ try { art.video.pause() } catch (e) {} } })
-  window.addEventListener('pageshow', function(e){ if (e.persisted) location.reload() })
+  window.addEventListener('pagehide', function(){ if (art){ try { art.video.pause() } catch (e) {} } stashResume() })
+  window.addEventListener('pageshow', function(e){ if (e.persisted) reloadPage('bfcache') })
+  // 后台挂久了回来：iOS 会把标签页的媒体 / 网络状态整个冻掉甚至丢掉，<video> 看着还在，实际已经不会再拉字节。
+  // 藏起来超过 3 分钟就当作重新进这一页——整页刷新、从记下的进度接着。
+  var HIDDEN_RELOAD_MS = 3 * 60 * 1000, hiddenAt = null
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'hidden'){ hiddenAt = Date.now(); stashResume(); return }
+    if (hiddenAt === null) return
+    var away = Date.now() - hiddenAt; hiddenAt = null
+    if (away >= HIDDEN_RELOAD_MS) reloadPage('hidden ' + Math.round(away / 1000) + 's')
+  })
 
   // ——— 线路 / 选集 / 源 ———
   var lineRequest = 0
@@ -270,6 +356,7 @@ ${PLAYBACK_BEACON}
       }
     }
     if (req !== lineRequest) return
+    autoRetries = 0
     mount(pl, 0, true)
   }
   function renderLines(){
@@ -309,12 +396,9 @@ ${PLAYBACK_BEACON}
       b.className = (s.active ? 'on' : '') + (!s.href ? ' unbound' : '')
       b.textContent = s.label + (!s.href ? ' · 未关联' : '')
       if (s.active) b.setAttribute('aria-current', 'true')
-      else if (s.href) b.onclick = function(){
-        var other = new URLSearchParams(s.href.split('?')[1] || '')
-        var q = new URLSearchParams({ src: s.key, id: other.get('animeId') || '', ep: String(ep) })
-        if (bgmId) q.set('bgmId', String(bgmId))
-        destroyPlayer(); location.assign('/api/player/page?' + q.toString())
-      }
+      // href 由服务端 playerSourceOptions 直接生成（已是 /api/player/page?src=&id=&ep=&bgmId=），原样跳。
+      // 早先这里还按旧播放页的 animeId 参数重新拼，拼出来 id 为空 → 整页变成一行 JSON「animeId 不合法」。
+      else if (s.href) b.onclick = function(){ destroyPlayer(); location.assign(s.href) }
       else b.onclick = function(){ fail(s.label + ' 尚未关联，请回「我的追番」选择片源') }
       box.appendChild(b)
     })
@@ -346,7 +430,9 @@ ${PLAYBACK_BEACON}
       if (d.title){ $('ttl').textContent = d.title; document.title = d.title + ' · EP' + ep }
       await good
       renderEps(); renderLines(); renderGoodNote()
-      if (d.first){ resolved[d.first.source] = d.first; mount(d.first, 0, false) }
+      var resume = takeResume()
+      if (resume) slog('resume from ' + resume.t.toFixed(1) + (resume.playing ? ' (was playing)' : ''))
+      if (d.first){ resolved[d.first.source] = d.first; mount(d.first, resume ? resume.t : 0, !!(resume && resume.playing)) }
       else fail('这一集解析不到 —— 可能还没更新，点上面别的集试试', 'LINE_EMPTY')
     } catch (e){
       if (!navigator.onLine){ fail('网络已断开', 'OFFLINE', boot); return }

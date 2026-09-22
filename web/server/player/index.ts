@@ -6,7 +6,7 @@
 //   GET  /api/player/page?src=xifan|girigiri&id=&ep=[&bgmId=]   → 播放页
 //   GET  /api/player/playlist?src&id&ep                          → 统一结构：{ title, lines, first, eps }
 //   GET  /api/player/resolve?src&id&ep&source                    → 用户手动点线路时解析那一条
-//   GET  /api/player/stream?u&s[&range]                          → mp4：stream.ts（apn 12 路 / 其余单连接透传）
+//   GET  /api/player/stream?u&s[&range]                          → mp4：stream.ts（apn / xfvod 12 路会话，其余单连接透传）
 //   GET  /api/player/hls?u&s                                     → m3u8：拉回来把分片 / 子表 / key 改写成本站地址
 //   GET  /api/player/seg?u&s                                     → HLS 分片 / key 的单连接透传（不做 mp4 那套 total 探测）
 //   GET  /api/player/vendor/artplayer.js|hls.js                  → 自托管（CSP 只放行 self；国内也拉不到 CDN）
@@ -275,7 +275,8 @@ function inlineJson(value: unknown): string {
 
 player.get('/page', async (c) => {
   const session = await getSession(c)
-  if (!session) return c.json({ error: '未登录' }, 401)
+  // 这是给浏览器打开的页面，不是接口：会话过期（后台挂久了刷新回来）时回 JSON 只会让整页变成一行黑底白字。
+  if (!session) return c.redirect('/#/tracks')
   const args = parseSrc(c)
   if (args instanceof Response) return args
   const bgmIdRaw = c.req.query('bgmId')

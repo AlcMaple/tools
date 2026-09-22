@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 860" font-family="-apple-system, PingFang SC, Helvetica, sans-serif" font-size="13">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#555"/></marker>
+<style>.box{fill:#fff;stroke:#333;stroke-width:1.4;rx:8}.srv{fill:#eef6f3}.cli{fill:#fdf4ec}.up{fill:#f3f0fa}.t{fill:#222}.m{fill:#666;font-size:11.5px}.h{font-weight:700;font-size:14px}.ln{stroke:#555;stroke-width:1.3;fill:none;marker-end:url(#a)}.bad{fill:#b23b3b;font-size:11.5px}</style></defs>
+<rect width="1180" height="860" fill="#fbfaf7"/>
+<text x="24" y="30" class="h" font-size="18">网页播放页：从拿到地址到不断缓冲，一条流的全链路（2026-09-21）</text>
+
+<!-- lanes -->
+<rect x="20" y="50" width="330" height="790" fill="#fdf4ec" opacity=".45" rx="10"/><text x="34" y="72" class="h">手机浏览器（iOS Chrome / Safari）</text>
+<rect x="370" y="50" width="430" height="790" fill="#eef6f3" opacity=".55" rx="10"/><text x="384" y="72" class="h">本站服务器 /api/player（香港 VPS）</text>
+<rect x="820" y="50" width="340" height="790" fill="#f3f0fa" opacity=".6" rx="10"/><text x="834" y="72" class="h">源站</text>
+
+<!-- 1 解析 -->
+<rect x="40" y="95" width="290" height="58" class="box cli"/><text x="52" y="116" class="t h">① 打开 /api/player/page?src&amp;id&amp;ep</text><text x="52" y="136" class="m">无会话 → 302 回 /#/tracks（不再吐一行 JSON）</text>
+<rect x="390" y="95" width="390" height="58" class="box srv"/><text x="402" y="116" class="t h">/playlist：抓稀饭 watch 页 → 线路表 + 首选线路</text><text x="402" y="136" class="m">线路 1 是 apn 慢源时多试一条；地址去 :8088；HMAC 签名 s</text>
+<rect x="840" y="95" width="300" height="58" class="box up"/><text x="852" y="116" class="t h">anime.xifanacg.com</text><text x="852" y="136" class="m">player_aaaa.url → play.xfvod.pro / apn.moedot.net</text>
+<path d="M330 124H388" class="ln"/><path d="M780 124H838" class="ln"/>
+
+<!-- 2 mount -->
+<rect x="40" y="180" width="290" height="70" class="box cli"/><text x="52" y="201" class="t h">② ArtPlayer mount</text><text x="52" y="220" class="m">&lt;video src="/api/player/stream?u=…&amp;s=…"&gt;</text><text x="52" y="238" class="m">刷新回来：sessionStorage 里的进度 → 直接 seek 过去</text>
+<path d="M185 153V178" class="ln"/>
+
+<!-- 3 requests -->
+<rect x="40" y="280" width="290" height="96" class="box cli"/><text x="52" y="301" class="t h">③ WebKit 发的 Range 请求</text><text x="52" y="320" class="m">bytes=0-1 探测 · bytes=N-（open-ended，主流）</text><text x="52" y="338" class="m">尾部 bytes=T-4MB-（找 moov）· 若干 ≤4MB 小段重连</text><text x="52" y="358" class="m">拖到 17:00 → 断掉旧流，新发 bytes=N'-</text>
+<path d="M185 250V278" class="ln"/>
+
+<!-- server routing -->
+<rect x="390" y="190" width="390" height="120" class="box srv"/><text x="402" y="211" class="t h">/stream：验签 + 登录 → serveStream(url, Range)</text>
+<text x="402" y="232" class="m">probeTotal：bytes=0-0 取总长（缓存；建连/首字节失败重试 3 次）</text>
+<text x="402" y="250" class="m">小段(≤4MB)且已在内存 → 直接从窗口答，不开上游连接</text>
+<text x="402" y="268" class="m">尾部 / 小段 / 非白名单域名 → 单连接透传（含重试）</text>
+<text x="402" y="288" class="m">apn.moedot.net、play.xfvod.pro → 12 路会话（下）</text>
+<path d="M330 320 C360 320 360 250 388 250" class="ln"/>
+
+<!-- session -->
+<rect x="390" y="340" width="390" height="250" class="box srv"/><text x="402" y="361" class="t h">12 路分片会话（内存滑动窗口）</text>
+<text x="402" y="383" class="m">pickSession：进度落在某段 [rear−16MB, contiguousEnd] 内 → 复用</text>
+<text x="402" y="401" class="m">否则新开区间 start=N；同 url 无人读的旧区间立即收摊</text>
+<text x="402" y="425" class="m">12 个 worker 各自 Agent(connections:1)，按 512KB / 2MB 块领活：</text>
+<text x="402" y="443" class="m">  窗口 24MB · 领先读取端 ≤32MB · 缓冲垫 &lt;12MB 时一律小块</text>
+<text x="402" y="461" class="m">  块失败 15s 无字节 / 200(边缘未缓存) → 续传重试 ×4</text>
+<text x="402" y="485" class="m">冷 seek 闸门：前缀攒够 2MB 或 6s 再放行（文件开场豁免）</text>
+<text x="402" y="503" class="m">读取端 pull：cursor 命中块 → enqueue；窗口滑过 → 截断让浏览器重连</text>
+<text x="402" y="521" class="m">gc：所有读取端越过 + 16MB 之外的块丢；单会话 64MB · 全局 192MB</text>
+<text x="402" y="545" class="m">无人读 60s 收摊；暂停时浏览器断流不杀会话（窗口留着等你回来）</text>
+<text x="402" y="569" class="m">响应：无 Range 头回 200，否则 206 + Content-Range，Content-Length=剩余全长</text>
+<path d="M585 310V338" class="ln"/>
+
+<!-- upstream -->
+<rect x="840" y="340" width="300" height="140" class="box up"/><text x="852" y="361" class="t h">play.xfvod.pro（09-21 起）</text>
+<text x="852" y="381" class="m">DNS → b4dc7934.xfvod.top → sin1.xfvod.top</text><text x="852" y="399" class="m">→ 170.178.190.53（中转）→ Cloudflare LAX → 源</text>
+<text x="852" y="421" class="bad">VPS 实测：建连 1~7s · 首字节 1~8s</text><text x="852" y="439" class="bad">单连接 10~130KB/s（09-16 还是 600KB/s+）</text>
+<text x="852" y="457" class="m">6 路 ≈380KB/s · 12 路 ≈300KB/s → 并发值钱了</text>
+<text x="852" y="475" class="m">Cf-Cache DYNAMIC · X-Cache MISS：每次都回源</text>
+<rect x="840" y="500" width="300" height="60" class="box up"/><text x="852" y="521" class="t h">apn.moedot.net → pan.wo.cn</text><text x="852" y="541" class="m">按连接限速 1.4Mbps；一见 Origin 就 403（只能服务端）</text>
+<path d="M780 420H838" class="ln"/><path d="M780 530H838" class="ln"/>
+<text x="790" y="405" class="m">GET Range</text>
+
+<!-- client buffering -->
+<rect x="40" y="410" width="290" height="180" class="box cli"/><text x="52" y="431" class="t h">④ 播放中：页面自己盯着 &lt;video&gt;</text>
+<text x="52" y="452" class="m">胶片：每 2s 记 t / ahead / readyState（出错时随报告上传）</text>
+<text x="52" y="474" class="m">卡住看门狗（500ms）：没暂停、currentTime 1.2s 没走</text>
+<text x="52" y="492" class="m">→ 亮转圈 + 「缓冲中 · 第 17:03 · 已缓冲 0.4 秒」</text>
+<text x="52" y="510" class="m">→ 走了就收；卡满 20s 带胶片上报一次</text>
+<text x="52" y="532" class="m">seeking → 立刻转圈「正在跳转」直到画面动</text>
+<text x="52" y="554" class="m">code=4：先静默重挂一次（保留进度），第二次才红框+重试</text>
+<text x="52" y="576" class="m">断网：记位置，online 后同线路恢复一次</text>
+<path d="M388 480 H332" class="ln"/><text x="336" y="472" class="m">字节流</text>
+
+<!-- lifecycle -->
+<rect x="40" y="620" width="290" height="110" class="box cli"/><text x="52" y="641" class="t h">⑤ 生命周期</text>
+<text x="52" y="662" class="m">藏到后台 ≥3 分钟再回来 / bfcache 复活</text><text x="52" y="680" class="m">→ 记进度到 sessionStorage → 整页 reload → ② 从原地接着</text>
+<text x="52" y="702" class="m">换源：直接跳服务端给的 href（早先重拼 id 为空 → JSON 报错页）</text>
+<text x="52" y="720" class="m">换集：整页跳转，不残留上一集状态</text>
+
+<!-- legend / notes -->
+<rect x="390" y="620" width="390" height="110" class="box srv"/><text x="402" y="641" class="t h">这次为什么「突然又不行了」</text>
+<text x="402" y="662" class="m">不是被限流 / 记 IP：源站仍给 206、全套 CORS，换机器一样慢；</text>
+<text x="402" y="680" class="m">是 play.xfvod.pro 的前端从 Cloudflare 直落换成了 sin1 中转，</text>
+<text x="402" y="698" class="m">单连接掉到 1/5~1/50，旧代码对它是「整段单连接透传 + 10s 建连上限」，</text>
+<text x="402" y="716" class="m">晚高峰建连超时 → 502 → code=4「起播没反应」；能连上也喂不饱 → 播一会卡。</text>
+
+<rect x="840" y="620" width="300" height="110" class="box up"/><text x="852" y="641" class="t h">日志里怎么看</text>
+<text x="852" y="662" class="m">[xifan:stream] 会话开启 / 复用 / 收摊 / 截断</text>
+<text x="852" y="680" class="m">[xifan:stream] …失败（…），Nms 后重试 k/3</text>
+<text x="852" y="698" class="m">[player] stream 失败: …（重试 3 次仍失败才有）</text>
+<text x="852" y="716" class="m">[player:client] stall 20s / stall recovered / reload:</text>
+
+<text x="24" y="800" class="m">粗线路：① 解析 → ② 挂载 → ③ Range 请求 → 服务端路由（内存 / 透传 / 12 路会话）→ 源站 → 字节流回 &lt;video&gt; → ④ 页面盯缓冲 → ⑤ 生命周期兜底。</text>
+<text x="24" y="820" class="m">出口硬顶仍是 VPS 6Mbps；源站供片跟不上时（12 路合计仍 &lt;码率）该卡还是卡，只是现在卡得看得见、不会误报出错、回来能接着看。</text>
+</svg>

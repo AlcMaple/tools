@@ -20,10 +20,10 @@ import '../http'
 import { randomUUID } from 'node:crypto'
 import { setMaxListeners } from 'node:events'
 import { Agent, request } from 'undici'
-import { needsProxy, PROXY_HOSTS, RESCUE_HOSTS } from './proxy-hosts'
+import { canProxy, PROXY_HOSTS, RESCUE_HOSTS } from './proxy-hosts'
 
 // 白名单见 proxy-hosts.ts（解析层也要用同一份，故单独成文件）。救援域名平时直连，
-// 只有播放页判定直连饿死时才会带着这里的地址来。
+// 只有播放页判定直连饿死时才会带着这里的地址来。（2026-09-21 起新播放页对这些域名也走 12 路会话，见 serveStream）
 const ALLOWED_HOSTS = new Set([...PROXY_HOSTS, ...RESCUE_HOSTS])
 
 // 12 路。并发叠加曲线实测（每路 12s，无一失败）：
@@ -62,7 +62,13 @@ const IDLE_MS = 60_000
 const WAIT_TICK_MS = 5_000
 const WORKER_STAGGER_MS = 40
 const CHUNK_SILENCE_MS = 15_000
-const CHUNK_RETRY_LIMIT = 2
+const CHUNK_RETRY_LIMIT = 4
+// 2026-09-21 起 play.xfvod.pro 不再直落 Cloudflare 边缘，而是绕经 sin1.xfvod.top 这台中转（响应头仍是
+// cloudflare / X-Cache: MISS）：VPS 实测建连 1~7s、首字节 1~8s、单连接 10~130KB/s。10s 建连 / 15s 首字节
+// 的旧上限在这种源上几乎必超，超了就是 502 → <video> code=4「起播没反应」。放宽并配合下面的重试。
+const CONNECT_TIMEOUT_MS = 20_000
+const HEADERS_TIMEOUT_MS = 30_000
+const UPSTREAM_RETRY = 3
 
 const UPSTREAM_HEADERS: Record<string, string> = {
   'User-Agent':
@@ -75,8 +81,23 @@ const UPSTREAM_HEADERS: Record<string, string> = {
 // 代码里写 6 个 Promise 不等于 6 条有效下载链（桌面端用 6 个独立 Electron Session 解决同一问题）。
 const agents: Agent[] = Array.from(
   { length: WORKERS },
-  () => new Agent({ connections: 1, connectTimeout: 10_000, headersTimeout: 15_000, bodyTimeout: 0 }),
+  () => new Agent({ connections: 1, connectTimeout: CONNECT_TIMEOUT_MS, headersTimeout: HEADERS_TIMEOUT_MS, bodyTimeout: 0 }),
 )
+
+// 上游建连 / 首字节超时、握手中被掐（other side closed）这类**还没收到响应头**的失败，等一下再打一次。
+// 收到响应后再失败的不在这里重试——那要按各自语义处理（fetchRange 续传、passthrough 直接报）。
+async function withUpstreamRetry<T>(what: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      if (attempt >= UPSTREAM_RETRY - 1) throw error
+      const wait = 500 * (attempt + 1)
+      log(`${what} 失败（${error instanceof Error ? error.message : String(error)}），${wait}ms 后重试 ${attempt + 2}/${UPSTREAM_RETRY}`)
+      await new Promise((r) => setTimeout(r, wait))
+    }
+  }
+}
 
 /**
  * 一个读取端 = 一条挂在会话上的 HTTP 响应流（一个观众的 <video>，或它自己开的某条请求）。
@@ -268,6 +289,7 @@ async function fetchRange(s: Session, worker: number, absStart: number, absEnd: 
       })
       if (res.statusCode !== 206) {
         await res.body.dump()
+        // 200 = 边缘没缓存时无视 Range 回整文件（见 rangeRequest 注释），等一下重打通常就是 206。
         throw new Error('upstream status ' + res.statusCode)
       }
       for await (const piece of res.body) {
@@ -282,7 +304,7 @@ async function fetchRange(s: Session, worker: number, absStart: number, absEnd: 
     } catch (error) {
       if (s.ac.signal.aborted || attempt >= CHUNK_RETRY_LIMIT) throw error
       // 已收到的部分留着，下一次尝试从这里续传。
-      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)))
+      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
     } finally {
       clearInterval(silence)
       s.ac.signal.removeEventListener('abort', onAbort)
@@ -305,7 +327,7 @@ async function rangeRequest(url: string, dispatcher: Agent, range: string) {
 }
 
 async function probeTotal(url: string): Promise<number> {
-  const res = await rangeRequest(url, agents[0], 'bytes=0-0')
+  const res = await withUpstreamRetry('探总长度', () => rangeRequest(url, passthroughAgent, 'bytes=0-0'))
   const cr = res.headers['content-range']
   const cl = res.headers['content-length']
   // 必须 dump() 不能 destroy()：destroy 会在 BodyReadable 上 emit 一个没人接的 error，
@@ -446,6 +468,31 @@ function pickSession(url: string, start: number): Session | null {
   return null
 }
 
+// [start, end] 闭区间整段都在某个会话的连续前缀里且块还留着 → 拼出来；否则 null。
+function sliceFromSessions(url: string, start: number, end: number): Buffer | null {
+  const list = sessions.get(url)
+  if (!list) return null
+  for (const s of list) {
+    const relStart = start - s.regionStart
+    const relEnd = end - s.regionStart
+    if (relStart < 0 || relEnd >= s.contiguousEnd) continue
+    const parts: Buffer[] = []
+    let cursor = relStart
+    while (cursor <= relEnd) {
+      let hit: { key: number; buf: Buffer } | null = null
+      for (const [key, buf] of s.chunks) {
+        if (key <= cursor && cursor < key + buf.length) { hit = { key, buf }; break }
+      }
+      if (!hit) break
+      const piece = hit.buf.subarray(cursor - hit.key, Math.min(hit.buf.length, relEnd + 1 - hit.key))
+      parts.push(piece)
+      cursor += piece.length
+    }
+    if (cursor > relEnd) return Buffer.concat(parts)
+  }
+  return null
+}
+
 function parseRange(header: string | undefined): { start: number; end: number | null; ranged: boolean } {
   const m = header?.match(/^bytes=(\d+)-(\d*)/)
   if (!m) return { start: 0, end: null, ranged: false }
@@ -455,10 +502,10 @@ function parseRange(header: string | undefined): { start: number; end: number | 
 // 单路直连透传，完全不碰会话。用于 moov 尾部探测这类小请求。
 // 透传专用连接池：**不能**借 worker 的 agents[0]（connections:1）——透传一整段是长连接，
 // ffmpeg 读完文件头去 seek 时第二个请求会排在第一个后面等它读完整个文件，直接死锁（本机复现）。
-const passthroughAgent = new Agent({ connections: 16, connectTimeout: 10_000, headersTimeout: 15_000, bodyTimeout: 0 })
+const passthroughAgent = new Agent({ connections: 16, connectTimeout: CONNECT_TIMEOUT_MS, headersTimeout: HEADERS_TIMEOUT_MS, bodyTimeout: 0 })
 
 async function passthrough(url: string, start: number, end: number, total: number, ranged = true): Promise<StreamResult> {
-  const res = await rangeRequest(url, passthroughAgent, `bytes=${start}-${end}`)
+  const res = await withUpstreamRetry(`透传 ${start}-${end}`, () => rangeRequest(url, passthroughAgent, `bytes=${start}-${end}`))
   // 重试后仍是 200 整文件：从 0 起要的就照样喂（当作 0..total-1）；从中间起的没法用，只能报错。
   if (res.statusCode === 200 && start === 0) end = total - 1
   else if (res.statusCode !== 206) {
@@ -515,11 +562,26 @@ export async function serveStream(
   // 尾部探测 / 明确要一小段 → 直连透传，绝不触碰正在跑的会话。
   const wantsSmallSlice = end !== null && end - start + 1 <= TAIL_DIRECT_BYTES
   const isTail = start >= total - TAIL_DIRECT_BYTES
-  // 救援域名（play.xfvod.pro 这类 Cloudflare 快源）**整个走单连接透传**：VPS 实测单连接 560KB/s、
-  // 12 路并发合计 549KB/s——并发一点好处都没有，多路会话只剩代价：ffmpeg 开场读文件头会拉起一个
-  // 12 路 32MB 领先窗口的会话，把 4.4Mbps 的入口吃满，随后读 moov 的尾部请求等了 9.6 秒、真正的
-  // 转码区间 17 秒才见第一个字节。多路会话只给按连接限速的 apn.moedot.net 用。
-  if (wantsSmallSlice || isTail || !needsProxy(url)) {
+  // 小段若已经整段躺在某个会话的内存里，直接从内存答——iOS WebKit 重连 / 探测会发不少这种小请求，
+  // 每个都新开一条上游连接的话，在建连要 1~7 秒的源上就是一次次「转圈」。
+  if (wantsSmallSlice) {
+    const fromMemory = sliceFromSessions(url, start, Math.min(end!, total - 1))
+    if (fromMemory) {
+      return {
+        status: ranged ? 206 : 200,
+        headers: {
+          'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store',
+          'Content-Length': String(fromMemory.length),
+          ...(ranged ? { 'Content-Range': `bytes ${start}-${start + fromMemory.length - 1}/${total}` } : {}),
+        },
+        body: new ReadableStream<Uint8Array>({ start(ctl) { ctl.enqueue(new Uint8Array(fromMemory)); ctl.close() } }),
+      }
+    }
+  }
+  // 多路会话给 apn.moedot.net（按连接限速）和 play.xfvod.pro：后者 09-11 时是 Cloudflare 直落、单连接 560KB/s、
+  // 并发零收益，所以曾整段单连接透传；2026-09-21 它换成绕经 sin1.xfvod.top 的中转后单连接只剩 20~130KB/s，
+  // 而 6~12 路合计 300~380KB/s——并发又值钱了。判据仍是域名（canProxy），签名地址之外的域名照旧透传。
+  if (wantsSmallSlice || isTail || !canProxy(url)) {
     const realEnd = end === null ? total - 1 : Math.min(end, total - 1)
     return passthrough(url, start, realEnd, total, ranged)
   }
