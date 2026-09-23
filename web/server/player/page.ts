@@ -319,22 +319,10 @@ ${PLAYBACK_BEACON}
   window.addEventListener('offline', holdForNetwork)
   window.addEventListener('online', function(){ setTimeout(recover, 600) })
   window.addEventListener('pagehide', function(){ if (art){ try { art.video.pause() } catch (e) {} } stashResume() })
-  // 后台挂久了回来只查一件确定的事：登录还在不在。过期就回追番页——不然接下来的媒体请求全是 401，
-  // 用户只看到「播放出错」。视频本身不动：没坏就照常接着播，真坏了走上面原有的报错 / 自动重试。
-  // 历史：09-21 曾「离开 3 分钟整页刷新」，没坏也刷新、要重新缓冲，已撤掉。
-  var RETURN_CHECK_MS = 60 * 1000, hiddenAt = null
-  function checkLogin(why){
-    fetch('/api/player/alive', { cache: 'no-store' }).then(function(r){
-      if (r.status === 401){ slog('return: session expired (' + why + ')'); location.href = '/#/tracks' }
-    }).catch(function(){ /* 断网交给 offline / online 那套 */ })
-  }
-  window.addEventListener('pageshow', function(e){ if (e.persisted) checkLogin('bfcache') })
-  document.addEventListener('visibilitychange', function(){
-    if (document.visibilityState === 'hidden'){ hiddenAt = Date.now(); stashResume(); return }
-    if (hiddenAt === null) return
-    var away = Date.now() - hiddenAt; hiddenAt = null
-    if (away >= RETURN_CHECK_MS) checkLogin('hidden ' + Math.round(away / 1000) + 's')
-  })
+  // 历史：09-21 曾「离开 3 分钟整页刷新」、之后又试过「回前台查登录」，都撤掉了——没坏也刷新要重新缓冲；
+  // 刷新后看到一行 JSON 的真因（换源拼错地址、/page 未登录回 JSON）已在服务端修掉。
+  // 这里只在藏到后台时记一下进度：iOS 回收整个标签页后浏览器自己重载，boot() 取回接着播。
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') stashResume() })
 
   // ——— 线路 / 选集 / 源 ———
   var lineRequest = 0

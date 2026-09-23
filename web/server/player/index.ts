@@ -6,7 +6,6 @@
 //   GET  /api/player/page?src=xifan|girigiri&id=&ep=[&bgmId=]   → 播放页
 //   GET  /api/player/playlist?src&id&ep                          → 统一结构：{ title, lines, first, eps }
 //   GET  /api/player/resolve?src&id&ep&source                    → 用户手动点线路时解析那一条
-//   GET  /api/player/alive                                        → 回到前台时查登录（204 / 401）
 //   GET  /api/player/stream?u&s[&range]                          → mp4：盘上有预取好的整集先从盘答（prefetch.ts），否则 stream.ts
 //   GET  /api/player/hls?u&s                                     → m3u8：拉回来把分片 / 子表 / key 改写成本站地址
 //   GET  /api/player/seg?u&s                                     → HLS 分片 / key 的单连接透传（不做 mp4 那套 total 探测）
@@ -117,12 +116,6 @@ player.get('/playlist', async (c) => {
   } catch (error) {
     return resolveFailure(c, error)
   }
-})
-
-// 播放页回到前台时确认登录还在。不用 /api/auth/me：那个会顺带发每日登录奖励。
-player.get('/alive', async (c) => {
-  c.header('Cache-Control', 'no-store')
-  return (await getSession(c)) ? c.body(null, 204) : c.json({ error: '未登录', code: 'AUTH_REQUIRED' }, 401)
 })
 
 player.get('/resolve', async (c) => {
