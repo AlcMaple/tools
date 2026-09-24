@@ -456,6 +456,9 @@ function EpisodeProgress({
   }
 
   const startDrag = (event: React.PointerEvent<HTMLElement>): void => {
+    // 触屏容易在滑动别的内容时误触进度条；鼠标（含缩窄到移动端宽度的 PC 网页）不受影响，
+    // 触屏用户改用上面「点击直接输入集数」。pointerType 是实际输入设备，不看视口宽度。
+    if (event.pointerType === 'touch') return
     if (max == null) return
     const rect = progressRef.current?.getBoundingClientRect()
     if (!rect || rect.width <= 0) return
