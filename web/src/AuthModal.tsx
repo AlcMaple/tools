@@ -75,6 +75,7 @@ export function AuthModal({
   const [submitting, setSubmitting] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
   const [githubEnabled, setGithubEnabled] = useState(false)
+  const [linuxdoEnabled, setLinuxdoEnabled] = useState(false)
   const userRef = useRef<HTMLInputElement>(null)
   const emailRef = useRef<HTMLInputElement>(null)
 
@@ -134,7 +135,7 @@ export function AuthModal({
     let alive = true
     void fetchOauthProviders()
       .then((r) => {
-        if (alive) { setGoogleEnabled(r.google); setGithubEnabled(r.github) }
+        if (alive) { setGoogleEnabled(r.google); setGithubEnabled(r.github); setLinuxdoEnabled(r.linuxdo) }
       })
       .catch(() => undefined)
     return () => {
@@ -162,7 +163,7 @@ export function AuthModal({
   const inboxLink = emailStep === 'code' ? inboxLinkFor(email) : null
 
   // 整页跳转授权 —— 回来后会话 cookie 已就位，auth.init() 恢复登录态；前端不经手任何令牌。
-  const oauthLoginHref = (provider: 'google' | 'github'): string => {
+  const oauthLoginHref = (provider: 'google' | 'github' | 'linuxdo'): string => {
     const url = new URL(window.location.href)
     url.searchParams.delete('oauth')
     url.searchParams.delete('invite')
@@ -488,7 +489,7 @@ export function AuthModal({
             </div>
           </form>
 
-          {(googleEnabled || githubEnabled) && !isForgot && (
+          {(googleEnabled || githubEnabled || linuxdoEnabled) && !isForgot && (
             <>
               <div className="or-line mt8" aria-hidden="true">
                 或
@@ -501,6 +502,10 @@ export function AuthModal({
                 {githubEnabled && <a className="btn btn-github btn-block" href={oauthLoginHref('github')}>
                   <Ic name="github" cls="ic" />
                   使用 GitHub 继续
+                </a>}
+                {linuxdoEnabled && <a className="btn btn-github btn-block" href={oauthLoginHref('linuxdo')}>
+                  <Ic name="linuxdo" cls="ic" />
+                  使用 LinuxDO 继续
                 </a>}
               </div>
             </>

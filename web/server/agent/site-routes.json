@@ -557,6 +557,16 @@
   {
     "file": "server/oauth.ts",
     "method": "get",
+    "path": "/linuxdo/callback"
+  },
+  {
+    "file": "server/oauth.ts",
+    "method": "get",
+    "path": "/linuxdo/start"
+  },
+  {
+    "file": "server/oauth.ts",
+    "method": "get",
     "path": "/providers"
   },
   {

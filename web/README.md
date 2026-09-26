@@ -159,3 +159,13 @@ web/
 5. 本地自动回归：`npx tsx scripts/test-github-oauth.ts` 和 `npx tsx scripts/test-github-oauth.ts --disabled`。测试使用临时数据库与上游响应夹具，不连接 GitHub、不产生真实账号。上线前需另用真实 OAuth App 验证注册、再次登录与取消授权。
 
 协议依据：[GitHub 授权码 / PKCE](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)、[已核验邮箱接口](https://docs.github.com/en/rest/users/emails#list-email-addresses-for-the-authenticated-user)。
+
+### LinuxDO 快捷注册 / 登录
+
+1. 在 [LinuxDO Connect](https://connect.linux.do) 的「我的应用接入」申请应用，回调地址填写 `https://<你的域名>/api/auth/oauth/linuxdo/callback`。本地使用独立应用，回调填写 `http://localhost:5173/api/auth/oauth/linuxdo/callback`。
+2. 将 `LINUXDO_CLIENT_ID`、`LINUXDO_CLIENT_SECRET` 写入服务端进程环境或仓库外 `MAPLETOOLS_ENV_FILE`；本地可使用 `web/.env.local`。不要提交密钥，也不要加 `VITE_` 前缀。
+3. 重启服务并刷新页面。`/api/auth/oauth/providers` 返回 `linuxdo: true` 时，登录和注册窗口显示「使用 LinuxDO 继续」；缺任一凭据时隐藏入口。
+4. 首次授权自动创建账号，再次授权按 LinuxDO 不可变用户 ID 登录原账号。官方接口不提供已验证邮箱，因此不会按论坛用户名或响应中的邮箱合并本站账号。可以登录后在设置中绑定邮箱；绑定、换绑或解绑邮箱不删除 LinuxDO 身份。不会保存 access token 或论坛资料。
+5. 本地回归：在 `web/` 执行 `npx tsx scripts/test-linuxdo-oauth.ts` 和 `npx tsx scripts/test-linuxdo-oauth.ts --disabled`。测试使用临时数据库和模拟上游，不产生真实账号。上线前用真实应用验证首次授权、再次登录、取消授权。
+
+协议依据：[LinuxDO 官方接入说明](https://wiki.linux.do/Community/LinuxDoConnect)。使用授权码、签名短效 state cookie 和服务端密钥交换；官方文档未说明 PKCE，未假设其支持。上游限流和服务错误不自动重试。

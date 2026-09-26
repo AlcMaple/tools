@@ -163,10 +163,9 @@ export const updateUserEmail = db.prepare<[string, string, number]>(
 const clearUserEmail = db.prepare<[number, string]>(
   'UPDATE users SET email = NULL, email_verified_at = NULL WHERE id = ? AND email = ?',
 )
-// 换绑/解绑邮箱时清掉旧的身份记录 —— 邮箱变了，挂在旧邮箱上的 Google 关联即失效
-//（oauth_identity 表已不参与登录匹配，清理只是不留僵尸数据）。
+// 邮箱变更只清理历史邮箱身份；LinuxDO 身份不依赖邮箱，必须保留。
 export const deleteIdentitiesForUser = db.prepare<[number]>(
-  'DELETE FROM oauth_identity WHERE user_id = ?',
+  "DELETE FROM oauth_identity WHERE user_id = ? AND provider IN ('google', 'github')",
 )
 
 export interface UserRow {
@@ -862,7 +861,7 @@ auth.post('/username/change', async (c) => {
     }
     consumeChallenge.run(Date.now(), check.row.id, row.email, Date.now())
   } else {
-    // 既没密码也没邮箱：理论不可达（账密注册必有密码，其余必有邮箱），防御性兜底
+    // LinuxDO 首次注册可以既无密码也无邮箱，改名之前先补一种可验证凭据。
     return c.json({ error: '请先设置密码或绑定邮箱' }, 400)
   }
 

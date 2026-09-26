@@ -17,7 +17,7 @@ db.pragma('foreign_keys = ON')
 // 建表(幂等)。用户名 COLLATE NOCASE → 大小写不敏感唯一。
 //
 //   pass_hash             scrypt 的 `salt:hash`;无密码邮箱账号写不可用随机值,由 password_enabled 明确区分
-//   password_enabled      1 = 可用用户名 / 密码登录;0 = 只能用邮箱验证码登录
+//   password_enabled      1 = 可用用户名 / 密码登录;0 = 使用邮箱验证码或第三方登录
 //   email / verified_at   可选的邮箱登录凭据,完成一次性验证码后才写验证时间
 //   token_version         改密码 / 重置密码时 +1,JWT 里带着它,验证时对不上就拒 ——
 //                         **这是「改密码能踢掉所有老会话」的唯一实现方式**(无状态 JWT 默认做不到)
@@ -233,9 +233,8 @@ db.exec(`
   ON email_challenge (expires_at);
 `)
 
-// 第三方登录身份表（**遗留**）—— 登录匹配已改为「邮箱中心」（users.email 是唯一身份，
-// Google 只是 Gmail 的免验证码通道，见 server/oauth.ts），本表不再参与任何登录 / 绑定逻辑。
-// 保留只为兼容老库；换绑 / 解绑邮箱时会顺带清掉对应旧行（DELETE ... WHERE user_id）。
+// LinuxDO 不提供已验证邮箱，以 provider + 不可变 subject 识别账号。
+// 历史 Google 身份仍留在此表，但 Google / GitHub 登录只按已验证邮箱匹配。
 db.exec(`
   CREATE TABLE IF NOT EXISTS oauth_identity (
     provider    TEXT NOT NULL,

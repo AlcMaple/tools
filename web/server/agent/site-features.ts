@@ -11,6 +11,7 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
   feature('web.email','邮箱验证码','使用已启用的邮箱验证码入口登录或绑定邮箱。','/#/settings',['点击邮箱登录或设置中的邮箱入口','本人填写验证码完成操作'],['入口取决于服务器邮件配置；Agent 不发送邮件或读取验证码'],[],'public'),
   feature('web.google','Google 登录','通过已启用的 Google 登录入口验证账号。','/#/settings',['点击 Google 登录并完成提供方流程'],['只在服务器配置就绪时启用；Agent 不代为操作凭据'],[],'public'),
   feature('web.github','GitHub 登录与注册','通过已启用的 GitHub 入口核验主邮箱并登录，同邮箱进入已有账号。','/#/settings',['点击使用 GitHub 继续，完成授权；新邮箱首次注册'],['只在服务器配置就绪时启用；需要已验证主邮箱；Agent 不代为操作凭据'],[],'public'),
+  feature('web.linuxdo','LinuxDO 登录与注册','通过已启用的 LinuxDO 入口登录，首次授权自动创建账号。','/#/settings',['点击使用 LinuxDO 继续并完成授权','再次登录进入同一个 LinuxDO 身份对应的账号'],['只在服务器配置就绪时启用；不按论坛用户名或邮箱合并已有账号；Agent 不代为操作凭据'],[],'public'),
   feature('web.settings','偏好与公开设置','调整站点显示、账号资料、公开范围与 AI 配置。','/#/settings',['进入设置修改已有选项','公开追番由用户主动开启'],['账号配置与 Agent 四项偏好是不同设置','Agent 不修改设置或读取 API key']),
   {...feature('web.xifan','稀饭播放入口','从追番条目选择稀饭来源并播放。','/#/tracks',['在条目点击继续看，选择片源与集数；也可以点纱雾的播放预览进入同一张播放页'],['搜索、解析与播放由用户点击触发；Agent 无在线片源查询工具','回执来自播放页真实事件，退到稀饭自己的播放器后状态不可知']),revision:2},
   {...feature('web.girigiri','Girigiri 播放入口','从追番条目选择 Girigiri 来源并播放。','/#/tracks',['在条目点击继续看，选择片源与集数；也可以点纱雾的播放预览进入同一张播放页'],['来源搜索和播放不是 Agent 工具；Agent 不自动访问源站','未关联片源时先选片源，认好才有播放页']),revision:2},
@@ -25,8 +26,8 @@ export const SITE_API_FEATURES:Readonly<Record<string,string>>={
  '/api/rewards':'web.rewards','/api/community':'web.community','/api/announcements':'web.announcements',
  '/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/backup':'web.backup','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/calendar':'web.calendar',
 }
-export interface SiteFeatureAccess { email:boolean;google:boolean;github:boolean;rewards:boolean;invites:boolean;lottery:boolean }
+export interface SiteFeatureAccess { email:boolean;google:boolean;github:boolean;linuxdo?:boolean;rewards:boolean;invites:boolean;lottery:boolean }
 export function enabledSiteFeatures(flags:SiteFeatureAccess,guest=false):string[]{
- const gates:Record<string,boolean>={'web.email':flags.email,'web.google':flags.google,'web.github':flags.github,'web.rewards':flags.rewards,'web.invites':flags.invites,'web.lottery':flags.lottery}
+ const gates:Record<string,boolean>={'web.email':flags.email,'web.google':flags.google,'web.github':flags.github,'web.linuxdo':flags.linuxdo===true,'web.rewards':flags.rewards,'web.invites':flags.invites,'web.lottery':flags.lottery}
  return SITE_FEATURES.filter(f=>(!guest||f.audience==='public')&&gates[f.id]!==false).map(f=>f.id)
 }

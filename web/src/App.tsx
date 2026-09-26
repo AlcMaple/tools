@@ -74,7 +74,16 @@ export default function App(): JSX.Element {
   // 摘掉参数避免刷新重复触发，弹登录框说明原因。
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const messages: Record<string, string> = { failed: 'Google 登录未完成，请重试', github_failed: 'GitHub 登录没接上，再试一次吧', github_email_required: '先去 GitHub 验证主邮箱，再回来找我吧', github_busy: '登录有些频繁，稍后再试吧' }
+    const messages: Record<string, string> = {
+      failed: 'Google 登录未完成，请重试',
+      github_failed: 'GitHub 登录没接上，再试一次吧',
+      github_email_required: '先去 GitHub 验证主邮箱，再回来找我吧',
+      github_busy: '登录有些频繁，稍后再试吧',
+      linuxdo_failed: 'LinuxDO 登录未完成，请重新授权',
+      linuxdo_busy: 'LinuxDO 登录请求已被限流，请稍后再试',
+      linuxdo_unavailable: 'LinuxDO 登录服务暂时不可用，请稍后再试',
+      linuxdo_inactive: 'LinuxDO 账号未激活，暂时无法登录',
+    }
     const message = messages[params.get('oauth') ?? '']
     if (!message) return
     params.delete('oauth')

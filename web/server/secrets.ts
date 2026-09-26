@@ -45,3 +45,6 @@ export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET?.trim() ?? 
 
 export const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID?.trim() ?? ''
 export const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET?.trim() ?? ''
+
+export const LINUXDO_CLIENT_ID = process.env.LINUXDO_CLIENT_ID?.trim() ?? ''
+export const LINUXDO_CLIENT_SECRET = process.env.LINUXDO_CLIENT_SECRET?.trim() ?? ''

@@ -5,8 +5,7 @@
 //  - 登录：Google 已核验邮箱命中本站账号 → 直接登录；没命中 → 以该邮箱建号并登录。
 //    「Google 快捷登录」和「该邮箱收验证码登录」永远进同一个账号，不存在第二种绑定。
 //  - 换绑：设置页发起，Google 路径免验证码（OAuth 即证明控制新邮箱），验证码路径照旧。
-//  - 早期按 oauth_identity(provider+subject) 匹配的登录逻辑已移除；表保留但不再读写，
-//    换绑/解绑邮箱时顺手清掉旧记录，避免留下与邮箱脱节的僵尸关联。
+//  - Google / GitHub 不再读写旧身份记录；LinuxDO 不提供已验证邮箱，独立按不可变 ID 匹配。
 //
 // 设计约束：
 //  - GOOGLE_CLIENT_ID / SECRET 任一未配则入口不出现（/providers 回 google:false）；
@@ -37,7 +36,7 @@ import {
 } from './auth'
 import { emailDeliveryConfigured } from './email-delivery'
 import { applyInvite } from './rewards'
-import { AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET } from './secrets'
+import { AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, LINUXDO_CLIENT_ID, LINUXDO_CLIENT_SECRET } from './secrets'
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -45,6 +44,11 @@ const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
 
 const GITHUB_CALLBACK_PATH = '/api/auth/oauth/github/callback'
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token'
+const LINUXDO_CALLBACK_PATH = '/api/auth/oauth/linuxdo/callback'
+
+function linuxdoConfigured(): boolean {
+  return !!LINUXDO_CLIENT_ID && !!LINUXDO_CLIENT_SECRET
+}
 
 const CALLBACK_PATH = '/api/auth/oauth/google/callback'
 const TX_COOKIE = 'mt_oauth_tx'
@@ -82,7 +86,7 @@ function safeEqualStr(a: string, b: string): boolean {
 }
 
 interface OAuthTx {
-  p?: 'google' | 'github'
+  p?: 'google' | 'github' | 'linuxdo'
   /** 防 CSRF 的 state，回调查对。 */
   s: string
   /** id_token 里的 nonce，防重放。 */
@@ -207,7 +211,7 @@ const resolveEmailLogin = db.transaction((email: string, now: number): { user: U
 /** 收尾：清跳转 cookie，回 returnTo。结果码区分登录与换绑两条流程：
  *  登录失败 oauth=failed（App 弹登录框）；换绑结果 bound / conflict / bind_failed
  *  由设置页就地提示，不会误触登录框。silent = 用户在 Google 页主动取消，静默回去。 */
-type FinishCode = 'github_failed' | 'github_email_required' | 'github_busy' | 'ok' | 'failed' | 'bound' | 'conflict' | 'bind_failed'
+type FinishCode = 'linuxdo_failed' | 'linuxdo_busy' | 'linuxdo_unavailable' | 'linuxdo_inactive' | 'github_failed' | 'github_email_required' | 'github_busy' | 'ok' | 'failed' | 'bound' | 'conflict' | 'bind_failed'
 
 function finish(c: Context, tx: OAuthTx | null, code: FinishCode, silent = false): Response {
   deleteCookie(c, TX_COOKIE, { path: TX_COOKIE_PATH, secure: SECURE, sameSite: 'Lax' })
@@ -226,7 +230,7 @@ function finish(c: Context, tx: OAuthTx | null, code: FinishCode, silent = false
 const oauth = new Hono()
 
 oauth.get('/providers', (c) =>
-  c.json({ google: googleConfigured(), github: githubConfigured(), email: emailDeliveryConfigured() }),
+  c.json({ google: googleConfigured(), github: githubConfigured(), linuxdo: linuxdoConfigured(), email: emailDeliveryConfigured() }),
 )
 
 /** 组 Google 授权 URL（登录 / 换绑通用 —— 差异全在 tx 里：换绑模式带 u/tv）。 */
@@ -319,7 +323,7 @@ oauth.get('/google/callback', async (c) => {
   const bindMode = tx?.u !== undefined // 票据带 u/tv = 换绑模式
   // 用户在 Google 页面点了取消 —— 不是错误，静默回去，别拿红字吓人。
   if (denied) return finish(c, tx, bindMode ? 'bind_failed' : 'failed', denied === 'access_denied')
-  if (!tx || tx.p === 'github' || !code || !safeEqualStr(tx.s, state)) return finish(c, tx, bindMode ? 'bind_failed' : 'failed')
+  if (!tx || (tx.p !== undefined && tx.p !== 'google') || !code || !safeEqualStr(tx.s, state)) return finish(c, tx, bindMode ? 'bind_failed' : 'failed')
 
   // 换 token：授权码 + PKCE verifier 一次性换取 id_token 并验签核对。
   let claims: GoogleClaims
@@ -460,6 +464,107 @@ oauth.get('/github/callback', async (c) => {
   } catch (error) {
     console.error('[oauth/github] account completion failed', error instanceof Error ? error.message : 'unknown error')
     return finish(c, tx, 'github_failed')
+  }
+})
+
+const findLinuxdoUser = db.prepare<[string]>(
+  "SELECT users.* FROM users JOIN oauth_identity ON oauth_identity.user_id = users.id WHERE provider = 'linuxdo' AND subject = ?",
+)
+const insertLinuxdoUser = db.prepare<[string, string, string]>(
+  'INSERT INTO users (username, pass_hash, password_enabled, created_at) VALUES (?, ?, 0, ?)',
+)
+const insertLinuxdoIdentity = db.prepare<[string, number, string]>(
+  "INSERT INTO oauth_identity (provider, subject, user_id, created_at) VALUES ('linuxdo', ?, ?, ?)",
+)
+const resolveLinuxdoLogin = db.transaction((subject: string): { user: UserRow; created: boolean } => {
+  const existing = findLinuxdoUser.get(subject) as UserRow | undefined
+  if (existing) return { user: existing, created: false }
+  const now = new Date().toISOString()
+  // 不采用论坛用户名或未核验邮箱，避免与本站已有账号发生身份碰撞。
+  const result = insertLinuxdoUser.run(makeEmailUsername(), makeUnusablePasswordHash(), now)
+  insertLinuxdoIdentity.run(subject, Number(result.lastInsertRowid), now)
+  const user = findLinuxdoUser.get(subject) as UserRow | undefined
+  if (!user) throw new Error('LinuxDO 账号创建后读取失败')
+  return { user, created: true }
+})
+
+oauth.get('/linuxdo/start', (c) => {
+  if (!linuxdoConfigured()) return c.json({ error: 'LinuxDO 登录未启用' }, 404)
+  if (rateLimited(`oauth-start-ip:${clientIp(c)}`, OAUTH_START_MAX_PER_IP, 15 * 60 * 1000)) {
+    return c.json({ error: '操作太频繁，请稍后再试' }, 429)
+  }
+  const tx: OAuthTx = { ...freshLoginTx(c.req.query('returnTo'), c.req.query('invite')), p: 'linuxdo' }
+  setTxCookie(c, tx)
+  const params = new URLSearchParams({
+    client_id: LINUXDO_CLIENT_ID,
+    redirect_uri: `${requestOrigin(c)}${LINUXDO_CALLBACK_PATH}`,
+    response_type: 'code',
+    scope: 'user',
+    state: tx.s,
+  })
+  return c.redirect(`https://connect.linux.do/oauth2/authorize?${params}`)
+})
+
+oauth.get('/linuxdo/callback', async (c) => {
+  if (!linuxdoConfigured()) return finish(c, null, 'linuxdo_failed')
+  const tx = decodeTx(getCookie(c, TX_COOKIE))
+  const state = c.req.query('state') ?? ''
+  if (!tx || tx.p !== 'linuxdo' || tx.u !== undefined || !safeEqualStr(tx.s, state)) return finish(c, null, 'linuxdo_failed')
+  const denied = c.req.query('error')
+  if (denied) return finish(c, tx, 'linuxdo_failed', denied === 'access_denied')
+  const code = c.req.query('code')
+  if (!code) return finish(c, tx, 'linuxdo_failed')
+  if (rateLimited(`oauth-callback-ip:${clientIp(c)}`, 20, 15 * 60 * 1000)) return finish(c, tx, 'linuxdo_busy')
+
+  let subject: string
+  let stage = 'token request'
+  let failure: FinishCode = 'linuxdo_failed'
+  try {
+    const tokenRes = await fetch('https://connect.linux.do/oauth2/token', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code', client_id: LINUXDO_CLIENT_ID,
+        client_secret: LINUXDO_CLIENT_SECRET, code,
+        redirect_uri: `${requestOrigin(c)}${LINUXDO_CALLBACK_PATH}`,
+      }),
+      signal: AbortSignal.timeout(10_000), redirect: 'error',
+    })
+    stage = `token response HTTP ${tokenRes.status}`
+    if (tokenRes.status === 429) failure = 'linuxdo_busy'
+    else if (tokenRes.status >= 500) failure = 'linuxdo_unavailable'
+    if (!tokenRes.ok) throw new Error('LinuxDO token HTTP failure')
+    const tokens = await tokenRes.json() as { access_token?: unknown; token_type?: unknown; error?: unknown }
+    if (tokens.error || typeof tokens.access_token !== 'string' || !tokens.access_token || typeof tokens.token_type !== 'string' || tokens.token_type.toLowerCase() !== 'bearer') throw new Error('Invalid LinuxDO token response')
+    stage = 'user request'
+    const userRes = await fetch('https://connect.linux.do/api/user', {
+      headers: { Authorization: `Bearer ${tokens.access_token}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000), redirect: 'error',
+    })
+    stage = `user response HTTP ${userRes.status}`
+    if (userRes.status === 429) failure = 'linuxdo_busy'
+    else if (userRes.status >= 500) failure = 'linuxdo_unavailable'
+    if (!userRes.ok) throw new Error('LinuxDO user HTTP failure')
+    const profile = await userRes.json() as { id?: unknown; active?: unknown }
+    if (typeof profile.id !== 'number' || !Number.isSafeInteger(profile.id) || profile.id <= 0) throw new Error('Invalid LinuxDO user ID')
+    if (profile.active !== true) return finish(c, tx, 'linuxdo_inactive')
+    subject = String(profile.id)
+  } catch (error) {
+    // 上游正文可能包含令牌；只记录阶段和脱敏原因，不记录请求或响应正文。
+    const reason = error instanceof SyntaxError ? 'Invalid JSON response' : error instanceof Error ? error.message.replace(/https?:\/\/\S+/g, '[url]') : 'Unknown error'
+    const frames = error instanceof Error ? error.stack?.split('\n').slice(1).join('\n') : undefined
+    console.error('[oauth/linuxdo]', stage, reason, frames ?? '')
+    return finish(c, tx, failure)
+  }
+  if (!findLinuxdoUser.get(subject) && rateLimited(`reg:${clientIp(c)}`, REGISTER_MAX_PER_IP, REGISTER_WINDOW)) return finish(c, tx, 'linuxdo_busy')
+  try {
+    const { user, created } = resolveLinuxdoLogin(subject)
+    if (created) applyInvite(user.id, tx.i)
+    await issueSession(c, { uid: user.id, username: user.username, tv: user.token_version })
+    return finish(c, tx, 'ok')
+  } catch (error) {
+    console.error('[oauth/linuxdo] account completion failed', error)
+    return finish(c, tx, 'linuxdo_failed')
   }
 })
 
