@@ -1614,8 +1614,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   color: var(--ink);
 }
 .trk-ep { grid-area: ep; font-family: var(--font-hand); font-size: 13px; color: var(--ink-sub); white-space: nowrap; margin-top: 2px; }
-/* 步进器和进度条钉在同一行：窄卡也不换行，进度条吃剩余宽度 */
-.ep-ctrl { display: flex; align-items: center; gap: 8px; }
+/* 集数和加减按钮保持完整；窄卡放不下进度条时，让进度条另起一行。 */
+.ep-ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ep-ctrl .ep-progress-shell { flex: 1; min-width: 100px; }
 .ep-ctrl .ep-progress-track { flex: 1; min-width: 0; }
 .ep-ctrl .btn { padding: 3px 12px; font-size: 16px; min-height: 36px; }
@@ -2015,7 +2015,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .ep-ctrl .ep-progress-shell { min-width: 56px; }
   .stepper > button { width: 40px; }
   .stepper > .ep-num { min-width: 44px; font-size: 14px; }
-  .stepper > .ep-num-input { width: 44px; min-width: 44px; font-size: 14px; }
   /* 窄屏让划记本身吃掉剩余宽度：「观望」字头省掉（左边印章已经写着观望了） */
   .watchmarks { gap: 3px; padding: 2px 6px; }
   .wm-cap { display: none; }
@@ -2574,6 +2573,7 @@ body[data-auth='out'] .track-btn { display: none; }
   flex: none;
 }
 .stepper > button {
+  flex: none;
   width: 40px;
   height: 40px;
   display: grid;
@@ -2586,7 +2586,7 @@ body[data-auth='out'] .track-btn { display: none; }
 }
 @media (hover: hover) { .stepper > button:hover { background: var(--teal-wash); } }
 .stepper > button:active { transform: scale(.88); }
-.stepper > .ep-num { min-width: 60px; text-align: center; border-left: 1.5px dashed var(--line); border-right: 1.5px dashed var(--line); margin: 0; }
+.stepper > .ep-num { flex: none; min-width: 60px; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: center; border-left: 1.5px dashed var(--line); border-right: 1.5px dashed var(--line); margin: 0; }
 .stepper > .ep-num-button {
   padding: 0;
   border-top: none;
@@ -2597,7 +2597,6 @@ body[data-auth='out'] .track-btn { display: none; }
   cursor: pointer;
 }
 .stepper > .ep-num-input {
-  width: 60px;
   height: 40px;
   padding: 0 4px;
   border-top: none;

@@ -336,6 +336,7 @@ function EpisodeInput({
   const [draft, setDraft] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const focusPending = useRef(false)
+  const episodeWidth = `calc(${Math.max(2, String(episode).length, String(total ?? 0).length)}ch + 2.5em)`
 
   useEffect(() => {
     if (draft !== null && focusPending.current) {
@@ -358,6 +359,7 @@ function EpisodeInput({
       <input
         ref={inputRef}
         className="ep-num ep-num-input"
+        style={{ width: episodeWidth }}
         value={draft}
         inputMode="numeric"
         pattern="[0-9]*"
@@ -382,6 +384,7 @@ function EpisodeInput({
     <button
       type="button"
       className="ep-num ep-num-button"
+      style={{ width: episodeWidth }}
       onClick={() => {
         focusPending.current = true
         setDraft(String(episode))
