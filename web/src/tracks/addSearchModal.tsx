@@ -39,6 +39,11 @@ const ADD_COPY = {
 
 type AddTab = 'search' | 'custom'
 
+function resultYear(hit: AnimeHit): number | null {
+  const year = /^\d{4}/.exec(hit.date)?.[0]
+  return year && Number(year) > 0 ? Number(year) : null
+}
+
 export interface BackfillTarget {
   customBgmId: number
   title: string
@@ -96,7 +101,14 @@ export function AddSearchModal({
   const finishSearch = (id: number, r: Awaited<ReturnType<typeof searchAnime>>): void => {
     if (id !== requestIdRef.current) return
     setReady(r.ready)
-    setResults(r.data)
+    setResults([...r.data].sort((a, b) => {
+      const aYear = resultYear(a)
+      const bYear = resultYear(b)
+      if (aYear === bYear) return 0
+      if (aYear === null) return -1
+      if (bYear === null) return 1
+      return bYear - aYear
+    }))
     setSource(r.source)
     setOnlineError(r.onlineError ?? '')
     if (r.builtAt) setBuiltAt(r.builtAt)
@@ -381,7 +393,7 @@ export function AddSearchModal({
               )}
               {results.map((h) => {
                 const tracked = trackedIds.has(h.bgmId) || added.has(h.bgmId)
-                const year = h.date && h.date.length >= 4 ? h.date.slice(0, 4) : ''
+                const year = resultYear(h)
                 // 主标题要一眼可读：中文译名优先；副信息（原名 / 年份 / 评分）弱化成第二行
                 const mainTitle = h.nameCn || h.name
                 const sub = [h.nameCn && h.name !== h.nameCn ? h.name : '', year ? `${year}年` : '', h.score > 0 ? `★ ${h.score.toFixed(1)}` : '']
