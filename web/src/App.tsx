@@ -144,7 +144,7 @@ export default function App(): JSX.Element {
       {/* 移动端顶栏（桌面隐藏） */}
       <header className="m-top">
         <a className="brand" href={ROUTE_HREF.calendar} style={{ fontSize: 18 }}>
-          <Ic name="pencil" />
+          <img className="brand-logo" src="/logo.png" alt="" width={32} height={32} />
           MapleTools
         </a>
         <span style={{ marginLeft: 'auto' }} />
@@ -170,7 +170,7 @@ export default function App(): JSX.Element {
           <span className={sp.tape} style={{ width: 88 }} />
           <div>
             <a className="brand" href={ROUTE_HREF.calendar}>
-              <Ic name="pencil" />
+              <img className="brand-logo" src="/logo.png" alt="" width={32} height={32} />
               MapleTools <span className="sparkle">✦</span>
             </a>
             <div className="brand-sub"><a href="/about.html">功能介绍与桌面下载</a></div>

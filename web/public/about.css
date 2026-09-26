@@ -4,6 +4,8 @@ body { margin: 0; }
 header, main, footer { max-width: 960px; margin: auto; padding: 24px; }
 header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid #e1dad1; }
 header > a { font-weight: 750; font-size: 22px; }
+.brand { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; }
+.brand img { flex: none; object-fit: contain; }
 nav { display: flex; flex-wrap: wrap; gap: 12px 24px; }
 a { color: #75434e; text-underline-offset: 4px; }
 a:hover { color: #47232b; }

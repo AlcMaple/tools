@@ -42,7 +42,7 @@
   text-decoration: none;
   user-select: none;
 }
-.brand .ic { color: var(--teal); }
+.brand-logo { width: 32px; height: 32px; flex: none; object-fit: contain; }
 .brand-sub { font-size: 11px; letter-spacing: .3em; color: var(--ink-faint); margin: 6px 0 0 2px; }
 
 .idx-nav { display: flex; flex-direction: column; gap: 9px; }
