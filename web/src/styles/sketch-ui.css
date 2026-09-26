@@ -2731,9 +2731,12 @@ body[data-auth='out'] .track-btn { display: none; }
 .ge-view-btn.on { background: var(--gold-hl); color: var(--gold); font-weight: 600; }
 .ge-view-count { font-size: 11px; opacity: .7; }
 
-/* min-height 固定：切「全部集数」／「只看鉴赏神回」两个视图时弹窗高度不跳；
-   内容超出再靠 max-height 滚动，不撑高弹窗本体。 */
+/* 桌面结果区保留最低高度，切视图时减少跳动；移动端改由整个弹窗滚动。 */
 .ge-body { display: flex; flex-direction: column; min-height: 280px; max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; margin: 0 -2px; padding: 2px; }
+@media (max-width: 960px) {
+  /* 避免内层滚到底后截断滚动手势，使外层遮住的末行和底部操作无法露出。 */
+  .ge-body { max-height: none; overflow: visible; }
+}
 
 .ge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 6px; align-content: start; }
 .ge-ep {
