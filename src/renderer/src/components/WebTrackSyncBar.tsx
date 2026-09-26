@@ -250,7 +250,7 @@ function WebSyncConfirmModal({
         <div>
           <h3 className="text-base font-black tracking-tight">{push ? '上传到网页版' : '从网页版拉取'}</h3>
           <p className="text-[11px] text-on-surface-variant/60 mt-0.5 font-label">
-            {push ? '网页版追番将按这份本地列表覆盖' : '本地追番将按网页版列表覆盖'}
+            {push ? '网页版同步列表将按下方本地条目覆盖' : '本地列表将按下方网页版条目覆盖'}
           </p>
         </div>
       </div>
@@ -275,7 +275,7 @@ function WebSyncConfirmModal({
         <div className="rounded-xl border border-outline-variant/15 bg-surface-container px-4 py-4 grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
           <div>
             <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50">本地</p>
-            <p className="text-sm font-mono mt-1">追番 {localTracks.length} 部</p>
+            <TrackCounts tracks={localTracks} />
             <p className="text-[10px] text-on-surface-variant/50 mt-1">rev={lastRev}</p>
           </div>
           <span className={`material-symbols-outlined ${push ? 'text-primary' : 'text-secondary'}`}>
@@ -283,7 +283,7 @@ function WebSyncConfirmModal({
           </span>
           <div>
             <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50">网页版</p>
-            <p className="text-sm font-mono mt-1">追番 {state.remote.tracks.length} 部</p>
+            <TrackCounts tracks={state.remote.tracks} />
             <p className="text-[10px] text-on-surface-variant/50 mt-1">rev={state.remote.rev}</p>
           </div>
         </div>
@@ -314,5 +314,27 @@ function WebSyncConfirmModal({
         </button>
       </div>
     </ModalShell>
+  )
+}
+
+function TrackCounts({ tracks }: { tracks: AnimeTrack[] }): JSX.Element {
+  const counts = { anime: 0, manga: 0, novel: 0, other: 0 }
+  for (const track of tracks) counts[track.subjectType]++
+  const additional = [
+    counts.manga ? `漫画 ${counts.manga} 部` : '',
+    counts.novel ? `小说 ${counts.novel} 部` : '',
+    counts.other ? `其他 ${counts.other} 条` : '',
+  ].filter(Boolean)
+
+  return (
+    <div className="mt-1">
+      <p className="text-sm font-mono">动画 {counts.anime} 部</p>
+      {additional.length > 0 && (
+        <>
+          <p className="text-xs font-mono text-on-surface-variant mt-1">{additional.join(' · ')}</p>
+          <p className="text-xs text-on-surface-variant mt-1">合计 {tracks.length} 条</p>
+        </>
+      )}
+    </div>
   )
 }
