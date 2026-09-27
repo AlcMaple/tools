@@ -13,6 +13,7 @@ import {
   type TrackStatus,
 } from './api'
 import { Ic, Spinner } from './SketchIcon'
+import { LongText } from './lib/LongText'
 import { PosterModal } from './reviews/PosterModal'
 import type { PosterInput } from './reviews/poster'
 import type { PosterScoreSignals } from '../shared/poster-score'
@@ -335,7 +336,7 @@ export function AnimeReviewsView({
                       {entry.publishedAt && <span>{new Date(entry.publishedAt).toLocaleDateString('zh-CN')}</span>}
                     </span>
                   </div>
-                  <p className="anime-review-body">{entry.body}</p>
+                  <LongText className="anime-review-body" text={entry.body}/>
                   <div className="anime-review-foot">
                     {entry.tags.length > 0 && (
                       <div className="tagx-row">

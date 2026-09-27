@@ -196,7 +196,8 @@ export async function renderPoster(input: PosterInput): Promise<Blob> {
   const STICKY_PAD_X = 46
   const STICKY_PAD_TOP = 52
   probe.font = BODY_FONT
-  const bodyLines = wrapLines(probe, input.body.trim(), CW - STICKY_PAD_X * 2)
+  const { wrapPosterBody } = await import('./poster-text')
+  const bodyLines = wrapPosterBody(input.body.trim(), probe.font, CW - STICKY_PAD_X * 2)
   const stickyH = bodyLines.length * BODY_LH + STICKY_PAD_TOP + 40
 
   // 标题自适应：52 → 44 → 38，尽量压到 2 行

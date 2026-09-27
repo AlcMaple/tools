@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LongText } from '../lib/LongText'
 import type { HistoryMessage } from '../../shared/agent-history'
 import type { ActionState } from '../../shared/agent-contracts'
 import type { ActionPreview } from './model'
@@ -89,7 +90,7 @@ export function MessageCard({message,disabled,activity,onNavigate,onEdit,editing
   }
   return <article className={`agent-message ${own?'agent-message-own':''}${editing?' is-editing':''}`} data-message-id={message.id}>
     <div className="agent-message-by"><span>{own?'我':'纱雾'}</span><span>{editing?'编辑中…':message.status==='streaming'?'正在写…':message.status==='cancelled'?'已停止':message.status==='failed'?'保留的片段':''}</span>{own&&onEdit&&<button type="button" className="agent-icon" title="编辑并重新提问" aria-label="编辑并重新提问" onClick={onEdit} disabled={disabled}><Ic name="pencil" cls="ic ic-sm" /></button>}</div>
-    {message.body?(own?<p className="agent-message-text">{message.body}</p>:<AgentMarkdown text={message.body}/>):message.status==='streaming'?<AgentActivity label={activity}/>:<p className="agent-message-empty">这一页的查询记录已收好。</p>}
+    {message.body?(own?<LongText className="agent-message-text" text={message.body}/>:<AgentMarkdown text={message.body} streaming={message.status==='streaming'}/>):message.status==='streaming'?<AgentActivity label={activity}/>:<p className="agent-message-empty">这一页的查询记录已收好。</p>}
     {!own&&message.body&&message.status==='streaming'&&<AgentActivity label={activity}/>}
     {/* 动作卡紧跟正文，排在来源 / 翻阅记录 / 用量之前：待确认的预览一旦被挤到这些区块下面，
         就会掉出浮层可视区，用户以为回复结束了，其实还有一张卡在等他。 */}
