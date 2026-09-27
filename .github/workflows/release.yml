@@ -114,3 +114,37 @@ jobs:
             artifacts/**/*.zip
             artifacts/**/*.yml
             artifacts/**/*.blockmap
+
+      - name: Verify release assets
+        # 之前踩过：这一步的上传其实全部成功，但 action 自身在收尾时报了 failure，
+        # 红叉具有误导性。用 always() 跳过它的报告结果，直接查 GitHub 上真实存在
+        # 的产物数量来判断这次发布到底完不完整。
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          assets="$(gh release view "$tag" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')"
+          echo "== release assets for $tag =="
+          echo "$assets"
+
+          for required in latest.yml latest-mac.yml; do
+            echo "$assets" | grep -qx "$required" || { echo "缺少 $required"; exit 1; }
+          done
+
+          for ext in exe dmg zip; do
+            echo "$assets" | grep -q "\.${ext}$" || { echo "缺少 *.${ext}"; exit 1; }
+          done
+
+          for ext in exe.blockmap dmg.blockmap zip.blockmap; do
+            echo "$assets" | grep -q "\.${ext}$" || { echo "缺少 *.${ext}"; exit 1; }
+          done
+
+          count="$(echo "$assets" | grep -c .)"
+          echo "产物总数: $count"
+          if [ "$count" -lt 8 ]; then
+            echo "预期至少 8 个产物（exe/dmg/zip 各一 + 各自 blockmap + latest.yml + latest-mac.yml），实际 $count"
+            exit 1
+          fi
+
+          echo "产物齐全"
