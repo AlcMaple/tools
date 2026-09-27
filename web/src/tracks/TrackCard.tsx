@@ -336,7 +336,8 @@ function EpisodeInput({
   const [draft, setDraft] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const focusPending = useRef(false)
-  const episodeWidth = `calc(${Math.max(2, String(episode).length, String(total ?? 0).length)}ch + 2.5em)`
+  // 常见集数统一预留四位，避免同列卡片的加号和进度条随位数左右错位。
+  const episodeWidth = `calc(${Math.max(4, String(episode).length, String(total ?? 0).length)}ch + 2.5em)`
 
   useEffect(() => {
     if (draft !== null && focusPending.current) {
