@@ -84,7 +84,7 @@ interface StatusMeta {
 }
 
 const STATUS_META: ReadonlyArray<StatusMeta> = [
-  { key: 'watching',     label: '在追',  icon: 'play_arrow',   color: 'text-primary',   tint: 'bg-primary/10',   border: 'border-primary/30' },
+  { key: 'watching',     label: '在看',  icon: 'play_arrow',   color: 'text-primary',   tint: 'bg-primary/10',   border: 'border-primary/30' },
   { key: 'plan',         label: '想看',  icon: 'visibility',   color: 'text-secondary', tint: 'bg-secondary/10', border: 'border-secondary/30' },
   { key: 'considering',  label: '观望',  icon: 'hourglass_empty', color: 'text-outline',   tint: 'bg-outline/10',   border: 'border-outline/30' },
   { key: 'completed',    label: '看完',  icon: 'check_circle', color: 'text-tertiary',  tint: 'bg-tertiary/10',  border: 'border-tertiary/30' },
@@ -214,7 +214,7 @@ export default function MyAnime(): JSX.Element {
     return reversed
   }, [tracks, currentCategory, filter, query, sort, selectedTags])
 
-  // 徽章只统计**当前类目**下的记录:在「漫画」tab 看到的「在追 5」是漫画的数量
+  // 徽章只统计**当前类目**下的记录:在「漫画」tab 看到的「在看 5」是漫画的数量
   // 不是全类目加总,否则误导。
   const counts = useMemo(() => {
     const c: Record<FilterKey, number> = { all: 0, watching: 0, plan: 0, considering: 0, completed: 0 }
@@ -291,7 +291,7 @@ export default function MyAnime(): JSX.Element {
                 <span>评判标准</span>
               </button>
 
-              {/* 搜索框所有 tab 常驻 —— 不再只在追番 tab 出现。之前它在推荐 tab
+              {/* 搜索框所有 tab 常驻 —— 不再只在看番 tab 出现。之前它在推荐 tab
                   被隐藏，导致标题行右侧动作组宽度变化、整块 sticky header 上下
                   跳动。常驻后布局稳定；推荐 tab 下它过滤标题 / 推荐对象（见
                   matchesRecommendation），placeholder 随 tab 自适应。 */}
@@ -597,7 +597,7 @@ function ManualAddModal({
       }
       // 重名校验排除自己（编辑时 id 不变是正常的）。
       if (parsed !== editing?.bgmId && animeTrackStore.getByBgmId(parsed)) {
-        setError(`BGM ID ${parsed} 已经在追番列表里了`)
+        setError(`BGM ID ${parsed} 已经在看番列表里了`)
         return
       }
       bgmId = parsed
@@ -972,7 +972,7 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
   // 仅手动添加的本地条目(bgmId<0)可改标题/类目/封面。BGM 同步的条目以 BGM 为准。
   const [editTrackOpen, setEditTrackOpen] = useState(false)
   const isManual = track.bgmId < 0
-  // 推荐入口设在行内:推荐的番一定在追番列表里,免去再做一遍 BGM 搜索(用户洞察)。
+  // 推荐入口设在行内:推荐的番一定在看番列表里,免去再做一遍 BGM 搜索(用户洞察)。
   const [quickRecOpen, setQuickRecOpen] = useState(false)
   const userAddedBindings = track.bindings.filter(isUserAddedBinding)
   // 小说走「卷 + 章」两级进度，且不用鉴赏神回（只留星级）——见下方计数器 / chip 的分支。
@@ -994,11 +994,11 @@ const TrackRow = memo(function TrackRow({ track }: { track: AnimeTrack }): JSX.E
     // **不**自动把 watching 切 completed —— 用户反馈「集数填 12 不一定是看到 12,有时是
     // 剩 12 集没看的备忘」,自动切 tab 会曲解意图。看完了由用户自己点。
     const patch: Partial<AnimeTrack> & { bgmId: number } = { bgmId: track.bgmId, episode: clamped }
-    // 「想看 → 在追」这个方向仍自动切:从 0 集 +1 就是开始看了,没有歧义。
+    // 「想看 → 在看」这个方向仍自动切:从 0 集 +1 就是开始看了,没有歧义。
     if (clamped > 0 && track.status === 'plan') patch.status = 'watching'
     animeTrackStore.upsert(patch)
   }
-  // 小说用「卷 + 章」两级文本进度替代 episode 数字;与 +1 一样,首次推进自动切「在追」。
+  // 小说用「卷 + 章」两级文本进度替代 episode 数字;与 +1 一样,首次推进自动切「在看」。
   const advancesFromPlan = (v: string): boolean => {
     const t = v.trim()
     return t !== '' && t !== '0' && track.status === 'plan'
@@ -1730,7 +1730,7 @@ function StatusSegment({
             >
               {m.icon}
             </span>
-            {/* 超窄屏（<420）只留图标、隐藏文字，避免「在追」之类被挤到第二行；
+            {/* 超窄屏（<420）只留图标、隐藏文字，避免「在看」之类被挤到第二行；
                 button 上有 title tooltip 兜底语义。桌面富卡片 ≥1200 永远显示文字。 */}
             <span className="hidden min-[420px]:inline">{m.label}</span>
           </button>
@@ -2202,7 +2202,7 @@ function FavoriteStars({
 
 /**
  * 观望次数计数器,占据观望状态下的 🌟 评分槽。次数是头等数据(不是评分),用 −/数字/+ 编辑。
- * ≥4 时高亮提示可以升到「在追」,但**不长出额外按钮** —— 升级走左侧已有的 StatusSegment。
+ * ≥4 时高亮提示可以升到「在看」,但**不长出额外按钮** —— 升级走左侧已有的 StatusSegment。
  * 不设上限:用户硬要继续观望不阻止(与最爱值 clamp 到 [0,6] 有意区分,一个是行为统计、
  * 一个是评分)。
  */
@@ -2214,8 +2214,8 @@ function ObserveCounter({
 }): JSX.Element {
   const overThreshold = value >= 4
   const title = overThreshold
-    ? `观望 ${value} 次（> 3，可在左侧 status 切到「在追」）`
-    : `观望 ${value} 次（点 −/+ 调整；>3 时考虑切到「在追」）`
+    ? `观望 ${value} 次（> 3，可在左侧 status 切到「在看」）`
+    : `观望 ${value} 次（点 −/+ 调整；>3 时考虑切到「在看」）`
   return (
     <div className="inline-flex items-center gap-1.5" title={title}>
       <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/45">

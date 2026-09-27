@@ -577,7 +577,7 @@ function EmptyAll(): JSX.Element {
       <div className="text-center max-w-md">
         <p className="font-headline text-base text-on-surface/60 font-bold mb-1">还没有推荐记录</p>
         <p className="font-body text-xs leading-relaxed">
-          在追番列表行尾点 <span className="material-symbols-outlined align-text-bottom text-on-surface/60" style={{ fontSize: 14 }}>campaign</span> 推荐图标，或者点右上的「+ 新建推荐」按钮，记录你把哪部番推荐给了谁。
+          在看番列表行尾点 <span className="material-symbols-outlined align-text-bottom text-on-surface/60" style={{ fontSize: 14 }}>campaign</span> 推荐图标，或者点右上的「+ 新建推荐」按钮，记录你把哪部番推荐给了谁。
         </p>
       </div>
     </div>

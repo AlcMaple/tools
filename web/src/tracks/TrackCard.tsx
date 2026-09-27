@@ -70,7 +70,7 @@ export function TrackCard({
     const ep = clampEpisode(next, t.totalEpisodes)
     setEpisodePreview(null)
     const p: TrackPatch = { episode: ep }
-    // 「想看」首次推进 → 自动转「在追」。反方向（推满 → 看完）**不**自动，见文件头注释。
+    // 「想看」首次推进 → 自动转「在看」。反方向（推满 → 看完）**不**自动，见文件头注释。
     if (ep > 0 && t.status === 'plan') {
       p.status = 'watching'
       toast(`『${title}』开始追啦`)
@@ -80,7 +80,7 @@ export function TrackCard({
   const step = (delta: number): void => commitEpisode(t.episode + delta)
 
   const considering = t.status === 'considering'
-  // 真实 BGM 条目的看完 / 在追才有「写点评」入口；手动条目先回填，避免点到需要正数 bgmId 的接口。
+  // 真实 BGM 条目的看完 / 在看才有「写点评」入口；手动条目先回填，避免点到需要正数 bgmId 的接口。
   const canReview = t.bgmId > 0 && (t.status === 'done' || t.status === 'watching')
   // 0–5：翻旧的档位。次数再多也只到 5，痕迹不会无限堆下去。
   const heat = considering ? Math.min(5, t.observeCount) : undefined
@@ -668,7 +668,7 @@ function WearLayer(): JSX.Element {
       <span className="w-stain s2" />
       <span className="w-tape" />
       <span className="w-dogear" />
-    </div>
+    </div>在看
   )
 }
 

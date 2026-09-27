@@ -56,7 +56,7 @@ try{
  await check('周历只读已有缓存，星期筛选和截断可见',async()=>{const r=await call('readCachedCalendar',{range:{weekdays:[1,2],limit:1}});assert(r.ok&&r.truncated);assert.equal(r.data.items?.[0].weekday,1);assert.equal(r.data.cachedAt!==undefined,true)})
  await check('缺失和过期缓存不调用在线刷新',async()=>{tools=createAgentDataTools({...deps,calendar:()=>null},principal);assert.equal((await call('readCachedCalendar',{range:{limit:5}})).code,'CACHE_MISS');tools=createAgentDataTools({...deps,calendar:()=>({...readCalendarSnapshot()!,updatedAt:start-15*86400000})},principal);assert.equal((await call('readCachedCalendar',{range:{limit:5}})).data.stale,true);tools=createAgentDataTools(deps,principal)})
  await check('集数推算：按放送日期每周一集，封顶总集数，不联网核对',async()=>{
-   // 101 早已播完（索引里 2020-01-01 开播）→ completed，且封顶在追番记录的 28 集：
+   // 101 早已播完（索引里 2020-01-01 开播）→ completed，且封顶在看番记录的 28 集：
    // 总集数以用户自己的追番记录为准，不被离线索引的 eps=12 覆盖。
    const done=await call('readAiringSchedule',{bgmId:101})
    assert(done.ok);assert.equal(done.data.basis,'completed');assert.equal(done.data.totalEpisodes,28)

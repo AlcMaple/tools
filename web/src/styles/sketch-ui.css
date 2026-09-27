@@ -1729,7 +1729,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .wm-more::before { content: '×'; margin-right: 1px; opacity: .7; }
 /* 印记条比进度条短，右边空出来的一截用手帐里那种「还没写完」的点线收尾 */
 .wm-rule { flex: 1; min-width: 24px; height: 0; border-bottom: 1.5px dotted var(--line); }
-/* ≥4 次：整条转金，暗示该升「在追」了 —— 只换色，不长按钮（升级走右侧状态分段） */
+/* ≥4 次：整条转金，暗示该升「在看」了 —— 只换色，不长按钮（升级走右侧状态分段） */
 .watchmarks.hot { border-color: var(--gold); background: var(--gold-hl); }
 .watchmarks.hot .wm-cap, .watchmarks.hot .wm-more { color: var(--gold); }
 .watchmarks.hot .wm-eye.on { color: var(--gold); border-color: var(--gold); }
@@ -1881,7 +1881,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 /* ── ≥4 次：纱雾探头催你 ─────────────────────────────────────────────────────
    不用凭空发明一套箭头语汇 —— 这一页本来就有「立绘 + 手写气泡」的说话方式
    （页尾那位山田エルフ），催促也用同一套：小头像从按钮上方探出来，气泡尾巴
-   直接扎在「在追」上。绝对定位、不占流，挂在按钮自己身上才不会指错人。 */
+   直接扎在「在看」上。绝对定位、不占流，挂在按钮自己身上才不会指错人。 */
 .nudge {
   position: absolute;
   /* 宽度必须 shrink-wrap：不给 max-content 的话绝对定位盒子按「左侧可用空间」收缩，
@@ -1925,7 +1925,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   26% { transform: translate(0, 1px) rotate(1deg); }
   40% { transform: translate(-1px, 2px) rotate(-1deg); }
 }
-/* 箭头锚在「在追」按钮上方，所以按钮要成为定位上下文（分段本身裁不掉溢出） */
+/* 箭头锚在「在看」按钮上方，所以按钮要成为定位上下文（分段本身裁不掉溢出） */
 .status-seg .seg-btn { position: relative; }
 @media (prefers-reduced-motion: reduce) {
   .trk-row.is-considering[data-heat='5'] { animation: none; }
@@ -2062,7 +2062,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .trk-actions { row-gap: 8px; }
   .trk-row.is-considering .trk-actions { row-gap: 32px; }
   /* 「写点评」卡（看完 / 在追，永远没有观望气泡）：药丸靠左折行，行距收回常规值。 */
-  .trk-actions.has-review { row-gap: 8px; column-gap: 6px; }
+  .trk-actions.ha在看review { row-gap: 8px; column-gap: 6px; }
   /* 4 个药丸挤进窄操作区（约 333px）：收紧内边距和图标间距，让「点评」也留在第一行 */
   .trk-actions.has-review > .btn { padding-inline: 8px; gap: 4px; }
   /* 窄卡里气泡收一号，并让它压低到分段边框上，省出来的高度就是上一行按钮的余量 */

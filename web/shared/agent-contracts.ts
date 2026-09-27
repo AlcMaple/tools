@@ -164,9 +164,9 @@ export const AGENT_TOOLS = {
     result: trackPreview, timeoutMs: 3000, maxCallsPerTurn: 12,
   },
   proposePlaybackOpen: {
-    description: '只生成稀饭/Girigiri 的番剧、集数和目标页面预览；不请求源站。番剧不在追番里时，预览会把「先加入追番」一并列出，用户确认一次顺序执行，不必另外调用 proposeTrackChange。', mode: 'proposal', scope: 'current_user',
+    description: '只生成稀饭/Girigiri 的番剧、集数和目标页面预览；不请求源站。番剧不在看番里时，预览会把「先加入追番」一并列出，用户确认一次顺序执行，不必另外调用 proposeTrackChange。', mode: 'proposal', scope: 'current_user',
     parameters: object({ bgmId, source: choice('xifan', 'girigiri'), episode: integer(1, 20_000) }, ['bgmId', 'source']),
-    // 番剧不在追番里时不要改调 proposeTrackChange 重来一遍：本工具会把「加追番」一并放进同一张预览。
+    // 番剧不在看番里时不要改调 proposeTrackChange 重来一遍：本工具会把「加追番」一并放进同一张预览。
     result: playbackPreview, timeoutMs: 1000, maxCallsPerTurn: 12,
   },
 } as const satisfies Record<string, ToolContract>

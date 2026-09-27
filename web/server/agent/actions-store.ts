@@ -173,7 +173,7 @@ export class AgentActionStore {
     const impact = this.impact(change.kind, before, after)
     const storedKind = change.kind === 'add_custom' ? 'add' : change.kind
     // 同一会话里内容完全相同、仍在等确认的预览直接复用，不再开一张新卡。
-    // 模型会因为后续工具失败（例如播放打开要求先在追番里）而重试同一个提案，
+    // 模型会因为后续工具失败（例如播放打开要求先在看番里）而重试同一个提案，
     // 每次都发新 actionId 的话，用户面前会并排出现两张一模一样的「待确认」，不知道该点哪个。
     const twin = this.db.prepare(`SELECT * FROM agent_actions WHERE user_id = ? AND session_id = ? AND state = 'prepared'
       AND expires_at > ? AND bgm_id = ? AND change_kind = ? AND after_json = ? ORDER BY created_at DESC LIMIT 1`)

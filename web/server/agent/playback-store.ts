@@ -155,7 +155,7 @@ export class AgentPlaybackStore {
     if (!this.db.prepare('SELECT 1 FROM agent_sessions WHERE user_id = ? AND id = ?').get(uid, ctx.sessionId)) throw new AgentRunError('AUTH_REQUIRED', 401)
     const account = this.account(uid)
     const bgmId = Number(args.bgmId), source = String(args.source) as PlaybackSource
-    // 「继续看」只长在追番卡片上。番剧还不在追番里时**不报错**：把「先加入追番」挂进同一张预览，
+    // 「继续看」只长在看番卡片上。番剧还不在看番里时**不报错**：把「先加入追番」挂进同一张预览，
     // 用户点一次按顺序执行。以前这里直接 NOT_FOUND，模型会改调 proposeTrackChange 再回头重试，
     // 一轮里反复试探，最后并排甩出两张一模一样的待确认卡。
     const track = this.db.prepare('SELECT bgm_id, title, title_cn, status, episode, total_episodes, aliases FROM tracks WHERE user_id = ? AND bgm_id = ?')
@@ -177,7 +177,7 @@ export class AgentPlaybackStore {
     if (twin) return { preview: previewView(this.row(uid, twin.id)) }
 
     // 追番那一步照阶段 7 原样生成（离线元数据、字段白名单、revision、确认凭证都不另起一套）。
-    // 番剧不在追番里就加；已经在但状态或进度落后于用户这次要看的集数，就一并改到位 ——
+    // 番剧不在看番里就加；已经在但状态或进度落后于用户这次要看的集数，就一并改到位 ——
     // 「我要看最新一集」在人的操作里本来就等于「点在看、把进度拖到那一集、再点继续看」。
     let trackActionId: string | null = null
     let title = track ? String(track.title_cn || track.title || `条目 #${bgmId}`).slice(0, 200) : ''
@@ -272,7 +272,7 @@ export class AgentPlaybackStore {
   open(uid: number, actionId: string) {
     const pre = this.row(uid, actionId)
     this.assertOpenable(uid, pre)
-    // 第一步：认源。全局表写在追番之前 —— 它是后面两步的前提（没有 xifan_id 就签不出播放页地址），
+    // 第一步：认源。全局表写在看番之前 —— 它是后面两步的前提（没有 xifan_id 就签不出播放页地址），
     // 而且失败时还没有任何用户数据被改动。这里不再匹配一次：绑的就是预览上给用户看过的那个候选。
     if (pre.bind_source_id && !this.binding(pre.source, pre.bgm_id)) {
       if (!this.sources) throw new AgentRunError('CAPABILITY_CHANGED', 409)
@@ -448,7 +448,7 @@ export function proposePlaybackOpenTool(store: AgentPlaybackStore, uid: number, 
         return {
           ok: false,
           code: ['INVALID_ARGUMENT', 'AUTH_REQUIRED', 'NOT_FOUND', 'QUOTA_EXCEEDED'].includes(code) ? code : 'INTERNAL_ERROR',
-          message: code === 'NOT_FOUND' ? '这部番还不在追番里，没有继续看的入口。' : '这次预览没有生成。',
+          message: code === 'NOT_FOUND' ? '这部番还不在看番里，没有继续看的入口。' : '这次预览没有生成。',
           retryable: false,
         }
       }

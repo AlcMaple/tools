@@ -214,14 +214,14 @@ try {
     const bad = await tool.execute({ bgmId: 410, source: 'bilibili' } as never, { uid: alice, knowledgeVersion: 'v1', signal }) as { ok: boolean; code?: string }
     assert.equal(bad.ok, false); assert.equal(bad.code, 'INVALID_ARGUMENT')
     const missing = await tool.execute({ bgmId: 999_002, source: 'xifan' } as never, { uid: alice, knowledgeVersion: 'v1', signal }) as { ok: boolean; code?: string; message?: string }
-    assert.equal(missing.code, 'NOT_FOUND'); assert.match(missing.message!, /还不在追番里/)
+    assert.equal(missing.code, 'NOT_FOUND'); assert.match(missing.message!, /还不在看番里/)
     const ok = await tool.execute({ bgmId: 410, source: 'xifan' } as never, { uid: alice, knowledgeVersion: 'v1', signal }) as { ok: boolean; data: { actionId: string } }
     assert.equal(ok.ok, true)
     // 工具结果里没有任何可直接执行的地址或凭证
     assert(!JSON.stringify(ok).includes('/api/player/page'))
   })
 
-  await check('不在追番里：同一张预览带上「先加入追番」，不再另发一张追番卡', async () => {
+  await check('不在看番里：同一张预览带上「先加入追番」，不再另发一张追番卡', async () => {
     const s = session(alice); offline(420, '夺还篇'); bindXifan(420, 9020)
     const { preview } = store.prepare(alice, ctx(s.id), { bgmId: 420, source: 'xifan', episode: 5 })
     assert.equal(preview.addsToTracks, true)
@@ -341,7 +341,7 @@ try {
     assert.equal(rowState(preview.actionId).state, 'cancelled')
   })
 
-  await check('已在追番但状态或进度落后：同一张预览带上「改成在看 + 进度记到那一集」', async () => {
+  await check('已在看番但状态或进度落后：同一张预览带上「改成在看 + 进度记到那一集」', async () => {
     const s = session(alice); seedTrack(alice, 430, { episode: 2, status: 'plan', total_episodes: 12 }); bindXifan(430, 9030)
     const { preview } = store.prepare(alice, ctx(s.id), { bgmId: 430, source: 'xifan', episode: 5 })
     assert.equal(preview.addsToTracks, true)

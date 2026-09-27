@@ -9,7 +9,7 @@ export const MODE_LABEL: Record<ReviewMode, string> = { review: '观后点评', 
 export const SPOILER_LABEL: Record<Spoiler, string> = {
   none: '无剧透',
   // 「已播出」原文案会让人以为是「这部番播出了多少集」，实际边界是发帖人自己看到的进度——
-  // 在追时只到「看到第 N 集」的 N-1 集为止，看完则是这部作品全部内容，不含后续季。
+  // 在看时只到「看到第 N 集」的 N-1 集为止，看完则是这部作品全部内容，不含后续季。
   aired: '看过的可剧透',
   all: '全剧透',
 }

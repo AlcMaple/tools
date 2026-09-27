@@ -471,7 +471,7 @@ function CalendarCard({ item, weekday }: { item: BgmCalendarItem; weekday: numbe
               bookmark
             </span>
             <span className="font-label text-[9px] font-bold tracking-wider">
-              {track.episode > 0 ? `EP ${track.episode}` : '在追'}
+              {track.episode > 0 ? `EP ${track.episode}` : '在看'}
             </span>
           </div>
         )}

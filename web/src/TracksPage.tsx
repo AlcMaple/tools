@@ -1,12 +1,12 @@
 import { AGENT_NAVIGATION_EVENT,takeAgentNavigation } from './agent/navigation'
 // 我的追番 —— 皮肤 = 原型稿 tracks.html：等宽卡片网格（不按更新日分组，今天更新的番贴
-// 「今天更新」小贴纸）、一体式步进器 + 铅笔排线进度条钉同一行、状态分段（想看/在追/看完）
+// 「今天更新」小贴纸）、一体式步进器 + 铅笔排线进度条钉同一行、状态分段（想看/在看/看完）
 // 常驻直点、纸片弹窗。便签 Toast 做操作反馈。
 //
 // 几条与桌面端对齐的语义(都是踩过坑定下来的,别改):
 //   - `totalEpisodes == null` = **连载中**,不是 0。徽章本身就是「点这里填总集数」的入口。
 //   - 进度推到满**不**自动切「看完」—— 用户填 12 不一定是看到 12,可能是「还剩 12 没看」的备忘。
-//   - 「想看」首次 +1 才自动转「在追」(这个方向没有歧义)。
+//   - 「想看」首次 +1 才自动转「在看」(这个方向没有歧义)。
 //   - 标签在卡片上**只读**,增删在弹窗里;BGM 标签不可编辑。
 //   - 负数 bgmId = 尚未对上 BGM 的手动条目；回填时服务端只换主键与 BGM 元数据，进度/用户标签/用户封面留在原卡。
 //
@@ -137,7 +137,7 @@ export function TracksPage(): JSX.Element {
       if (!track) { toast('先在我的追番里找到这部番，再打开这个入口吧'); return }
       if (action.kind === 'review') {
         if (track.bgmId > 0 && (track.status === 'watching' || track.status === 'done')) setWritingReview(track.bgmId)
-        else toast('在追或看完的番，才可以打开点评助手')
+        else toast('在看或看完的番，才可以打开点评助手')
       } else if (track.bgmId > 0) setSearchFlow({source:action.source,track,mode:'online',agentAction:action.actionId})
     }
     receive()
@@ -505,7 +505,7 @@ export function TracksPage(): JSX.Element {
           <p className="muted small mt8">
             {user ? (
               <>
-                在追 {counts.watching} 部
+                在看 {counts.watching} 部
                 {todayCount > 0 && (
                   <>
                     ，今天有 <span className="hl" style={{ fontWeight: 600 }}>{todayCount} 部更新</span>

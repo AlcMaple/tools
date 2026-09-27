@@ -5,12 +5,12 @@ import { toast } from '../Toast'
 export const SHORT_DAY: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
 
 export const STATUS_META: { key: TrackStatus; label: string }[] = [
-  { key: 'watching', label: '在追' },
+  { key: 'watching', label: '在看' },
   { key: 'plan', label: '想看' },
   { key: 'considering', label: '观望' },
   { key: 'done', label: '看完' },
 ]
-// 状态分段的展示顺序（想看 → 观望 → 在追 → 看完）与印章配色（银 / 薰衣草 / 青 / 金）
+// 状态分段的展示顺序（想看 → 观望 → 在看 → 看完）与印章配色（银 / 薰衣草 / 青 / 金）
 export const SEG_ORDER: TrackStatus[] = ['plan', 'considering', 'watching', 'done']
 export const SEG_CLS: Record<TrackStatus, string> = { plan: 'wish', considering: 'watch', watching: 'doing', done: 'done' }
 export const STAMP_CLS: Record<TrackStatus, string> = { plan: 'st-silver', considering: 'st-lav', watching: 'st-teal', done: 'st-gold' }

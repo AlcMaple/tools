@@ -193,7 +193,7 @@ export function ReviewAssistantModal({
     }
   }
 
-  // BYOK 的剧透边界要知道「在追 / 看完」——WritingSettings 本身不带 status，这里从 track 补上。
+  // BYOK 的剧透边界要知道「在看 / 看完」——WritingSettings 本身不带 status，这里从 track 补上。
   function byokSettings(): ByokSettings {
     return { ...settings, status: track.status === 'done' ? 'done' : 'watching' }
   }
@@ -578,7 +578,7 @@ function SetupStep({
 }): JSX.Element {
   return (
     <>
-      {/* 在追时进度直接取追番卡上的集数（顶部副标题已显示「看到第 N 话」），不再让用户在这里
+      {/* 在看时进度直接取追番卡上的集数（顶部副标题已显示「看到第 N 话」），不再让用户在这里
           重选一遍——追番卡才是进度的唯一来源，改进度去卡片上改。 */}
       <Seg
         label="语气"

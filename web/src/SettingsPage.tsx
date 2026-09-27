@@ -258,7 +258,7 @@ function PrivacyModule(): JSX.Element | null {
       <div className="privacy-card-head">
         <div className="privacy-copy">
           <b>要把手帐摊开吗？</b>
-          <p className="muted small mt8">哼……让同好看看你最近在追什么？</p>
+          <p className="muted small mt8">哼……让同好看看你最近在看什么？</p>
         </div>
         <div className="privacy-action">
           <span className="privacy-state" aria-live="polite">{user.tracksPublic ? '已摊开' : '收进抽屉'}</span>

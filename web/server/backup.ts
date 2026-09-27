@@ -29,7 +29,7 @@ const FORMAT = 'mapletools-backup'
 const VERSION = 1
 const IMPORT_MAX_BYTES = 20 * 1024 * 1024 // 与 nginx client_max_body_size 对齐
 const EXPORT_COVERS_MAX_BYTES = 200 * 1024 * 1024 // 一次性在内存里打包，给个保险
-const STATUS_LABEL: Record<string, string> = { watching: '在追', plan: '想看', considering: '观望', done: '看完' }
+const STATUS_LABEL: Record<string, string> = { watching: '在看', plan: '想看', considering: '观望', done: '看完' }
 const STATUS_ORDER = ['watching', 'plan', 'considering', 'done']
 const MODE_LABEL: Record<ReviewMode, string> = { review: '点评', recommend: '推荐' }
 const EXT_BY_MIME: Record<string, string> = {
@@ -626,7 +626,7 @@ backup.post('/import', async (c) => {
       }
 
       for (const r of reviewsIn) {
-        // 点评挂在追番下：追番不在（备份里没有、或导入者删过）就跳过，不凭空造一条没有番的点评
+        // 点评挂在看番下：追番不在（备份里没有、或导入者删过）就跳过，不凭空造一条没有番的点评
         if (!oneTrackStmt.get(uid, r.bgmId)) {
           summary.reviews!.skipped++
           continue

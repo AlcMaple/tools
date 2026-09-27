@@ -58,7 +58,7 @@ function posterInputFrom(opts: {
 type PublicFilter = 'all' | TrackStatus
 
 const STATUS_LABEL: Record<TrackStatus, string> = {
-  watching: '在追',
+  watching: '在看',
   plan: '想看',
   considering: '观望',
   done: '看完',
@@ -192,7 +192,7 @@ function HallView({
       </div>
 
       <div className="tabf-row community-tabs mt16">
-        <a className={`tabf${tab === 'users' ? ' on' : ''}`} href="/#/community">谁在追</a>
+        <a className={`tabf${tab === 'users' ? ' on' : ''}`} href="/#/community">谁在看</a>
         <a className={`tabf${tab === 'anime' ? ' on' : ''}`} href="/#/community/reviews">大家聊过的番</a>
       </div>
 

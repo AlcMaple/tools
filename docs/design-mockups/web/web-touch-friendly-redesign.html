@@ -719,7 +719,7 @@ let confirmingId = null;
 let pickerId = null;
 let addedIds = new Set();
 
-const STATUS_META = { watching:'在追', plan:'想看', done:'看完' };
+const STATUS_META = { watching:'在看', plan:'想看', done:'看完' };
 function nextEp(t) { const n = t.total != null ? Math.min(t.total, t.episode + 1) : t.episode + 1; return Math.max(1, n); }
 
 function renderFilters() {
@@ -730,7 +730,7 @@ function renderFilters() {
       ${k === 'all' ? '全部' : STATUS_META[k]} ${counts[k]}
     </button>`).join('');
   const today = tracks.filter((t) => t.today && t.status !== 'done').length;
-  $('tr-summary').textContent = `在追 ${counts.watching} 部${today ? `，今天有 ${today} 部更新。` : '。'}`;
+  $('tr-summary').textContent = `在看 ${counts.watching} 部${today ? `，今天有 ${today} 部更新。` : '。'}`;
 }
 
 function matchQuery(t, q) {

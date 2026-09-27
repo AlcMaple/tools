@@ -12,7 +12,7 @@ export const PUBLIC_METRIC_LABELS:Record<PublicMetric,{label:string;unit:string}
   public_users:{label:'公开用户',unit:'位'},public_tracks:{label:'公开追番',unit:'条'},
   public_reviews:{label:'公开点评',unit:'篇'},public_recommendations:{label:'公开推荐',unit:'篇'},
 }
-export const SOURCE_STATUS_LABELS:Record<typeof TRACK_STATUSES[number],string>={watching:'在追',plan:'想看',considering:'观望',done:'看完'}
+export const SOURCE_STATUS_LABELS:Record<typeof TRACK_STATUSES[number],string>={watching:'在看',plan:'想看',considering:'观望',done:'看完'}
 export function publicAggregateScope(metric:PublicMetric,filters:AggregateEvidence['filters']):string{
   if(metric==='public_users')return filters.bgmId===undefined&&filters.status===undefined
     ?'开启公开追番的账号总数，包含尚未添加动画追番的账号；不是当前页显示的卡片数。'

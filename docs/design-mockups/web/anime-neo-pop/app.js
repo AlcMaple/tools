@@ -12,7 +12,7 @@
   }
 
   const statusLabels = {
-    watching: '在追',
+    watching: '在看',
     plan: '想看',
     done: '看完',
   }
@@ -209,7 +209,7 @@
     track.episode = nextEpisode
     if (delta > 0 && nextEpisode > 0 && track.status === 'plan') {
       track.status = 'watching'
-      if (announce) showToast(`已从“想看”转为“在追” · EP.${nextEpisode}`)
+      if (announce) showToast(`已从“想看”转为“在看” · EP.${nextEpisode}`)
     } else if (announce) {
       showToast(`观看进度已更新为 EP.${nextEpisode}`)
     }

@@ -102,10 +102,10 @@ export interface AnimeTrack {
    * 观望次数 —— 仅在 status='considering'（观望）时有意义。
    *
    * **跟 favorite 物理隔离**：观望阶段是"候补，看看再说"，跟"整体喜爱程度"
-   * 的最爱值不是一个语义。原 PDF 设计里观望次数 > 3 时用户自己手动迁到在追
-   * （不自动升级），UI 上 ≥4 会高亮显示"建议升到在追"提示。
+   * 的最爱值不是一个语义。原 PDF 设计里观望次数 > 3 时用户自己手动迁到在看
+   * （不自动升级），UI 上 ≥4 会高亮显示"建议升到在看"提示。
    *
-   * 状态切换时不重置：从观望升到在追后 observeCount 保留作为历史记录,
+   * 状态切换时不重置：从观望升到在看后 observeCount 保留作为历史记录,
    * 用户哪天再切回观望 counter 接着用。其他状态下这个字段虽然在数据里,
    * 但 UI 不展示也不可编辑（避免跨状态的语义混淆）。
    */
@@ -252,7 +252,7 @@ function normalize(t: Partial<AnimeTrack> & { bgmId: number }): AnimeTrack {
   const favoriteRaw = typeof t.favorite === 'number' && t.favorite >= 0 ? Math.floor(t.favorite) : 0
   const favorite = Math.min(FAVORITE_MAX, favoriteRaw)
   // 观望次数 —— 非负整数，老数据没这字段就当 0。不设上限：UI 只在 ≥4 时
-  // 高亮提示"建议升到在追"，但用户硬要继续观望不阻止。
+  // 高亮提示"建议升到在看"，但用户硬要继续观望不阻止。
   const observeCount = typeof t.observeCount === 'number' && t.observeCount >= 0 ? Math.floor(t.observeCount) : 0
   // 鉴赏神回 —— 老数据没这字段或不是数组就当空 []；过滤 ≤ 0 / NaN，去重、升序。
   const goodEpisodes = normalizeGoodEpisodes(t.goodEpisodes)

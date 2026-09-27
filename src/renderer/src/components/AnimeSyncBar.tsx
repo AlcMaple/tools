@@ -579,7 +579,7 @@ function SyncConfirmModal({
           <div className="rounded-xl border border-outline-variant/30 bg-surface-container px-4 py-3 flex items-start gap-2.5">
             <span className="material-symbols-outlined text-on-surface-variant text-[18px] mt-px">cloud_off</span>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-on-surface-variant">远端不存在追番数据</p>
+              <p className="text-xs font-bold text-on-surface-variant">远端不存在看番数据</p>
               <p className="text-[11px] text-on-surface-variant/70 mt-0.5 font-label">
                 {loadError ? `读取远端失败：${loadError}` : '坚果云上还没有 anime.json，无需拉取。请先在某台设备上传一次。'}
               </p>
@@ -594,7 +594,7 @@ function SyncConfirmModal({
               <div className="space-y-1">
                 <p className="text-xs font-mono">追番 {localTr.total} 部</p>
                 <p className="text-xs font-mono">动画 {localTr.anime} · 漫画 {localTr.manga} · 小说 {localTr.novel}{localTr.other > 0 ? ` · 其他 ${localTr.other}` : ''}</p>
-                <p className="text-xs font-mono">在追 {localTr.watching} · 想看 {localTr.plan}</p>
+                <p className="text-xs font-mono">在看 {localTr.watching} · 想看 {localTr.plan}</p>
                 <p className="text-xs font-mono">观望 {localTr.considering} · 看完 {localTr.completed}</p>
                 <p className="text-xs font-mono">推荐 {localRecCount} 条</p>
                 <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">
@@ -616,7 +616,7 @@ function SyncConfirmModal({
                 <div className="space-y-1">
                   <p className="text-xs font-mono">追番 {remoteTr!.total} 部</p>
                   <p className="text-xs font-mono">动画 {remoteTr!.anime} · 漫画 {remoteTr!.manga} · 小说 {remoteTr!.novel}{remoteTr!.other > 0 ? ` · 其他 ${remoteTr!.other}` : ''}</p>
-                  <p className="text-xs font-mono">在追 {remoteTr!.watching} · 想看 {remoteTr!.plan}</p>
+                  <p className="text-xs font-mono">在看 {remoteTr!.watching} · 想看 {remoteTr!.plan}</p>
                   <p className="text-xs font-mono">观望 {remoteTr!.considering} · 看完 {remoteTr!.completed}</p>
                   <p className="text-xs font-mono">推荐 {remoteRecCount} 条</p>
                   <p className="text-[10px] font-label text-on-surface-variant/50 mt-1.5">

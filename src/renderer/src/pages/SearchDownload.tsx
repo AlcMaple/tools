@@ -130,7 +130,7 @@ function ResultCard({
             <span className="font-label text-[10px] font-bold tracking-wider whitespace-nowrap">
               {track.episode > 0
                 ? `EP ${track.episode}${track.totalEpisodes ? `/${track.totalEpisodes}` : ""}`
-                : "在追"}
+                : "在看"}
             </span>
           </div>
         )}
@@ -248,7 +248,7 @@ function ResultListItem({
               <span className="font-label text-[10px] font-bold tracking-wider whitespace-nowrap">
                 {track.episode > 0
                   ? `EP ${track.episode}${track.totalEpisodes ? `/${track.totalEpisodes}` : ""}`
-                  : "在追"}
+                  : "在看"}
               </span>
             </span>
           )}
