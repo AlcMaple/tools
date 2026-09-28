@@ -355,7 +355,7 @@ ${PLAYBACK_BEACON}
       b.className = 'line-card' + (cur && l.source === cur.source ? ' on' : '')
       var dot = document.createElement('span'); dot.className = 'lc-dot'
       var name = document.createElement('span'); name.className = 'lc-name'
-      name.textContent = '线路 ' + l.source + (l.name ? ' ' + l.name : '')
+      name.textContent = l.name || ('线路 ' + l.source)
       b.appendChild(dot); b.appendChild(name)
       b.onclick = function(){ selectLine(l.source) }
       box.appendChild(b)

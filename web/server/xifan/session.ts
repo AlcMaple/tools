@@ -1,3 +1,4 @@
+import { parseNextAuth, type NextAuth } from '../../shared/xifan-next'
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import { proxyReady, refreshProxyAfterFailure } from '../http'
 import { db } from '../db'
@@ -207,8 +208,15 @@ export class XifanCookieSession {
   }
 
   get loggedIn(): boolean {
-    const userId = this.getCookie('user_id')
-    return !!userId && userId !== '0'
+    const value = this.getCookie('next_auth')
+    if (!value) return false
+    try { return !!parseNextAuth(JSON.parse(value)) } catch { return false }
+  }
+
+  setNextAuth(auth: NextAuth | null): void {
+    if (auth) this.cookies.set('next_auth', { value: JSON.stringify(auth) })
+    else this.cookies.delete('next_auth')
+    this.persist()
   }
 
   getCookie(name: string): string | undefined {
@@ -245,7 +253,7 @@ export class XifanCookieSession {
       }
     }
     if (changed) this.persist()
-    return [...this.cookies.entries()].map(([name, cookie]) => `${name}=${cookie.value}`).join('; ')
+    return [...this.cookies.entries()].filter(([name]) => name !== 'next_auth').map(([name, cookie]) => `${name}=${cookie.value}`).join('; ')
   }
 
   private ingest(headers: Headers): void {

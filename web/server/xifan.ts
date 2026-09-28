@@ -1,3 +1,4 @@
+import { NextError } from '../shared/xifan-next'
 // 稀饭：账号 / 验证码 / 搜索 / 定位 / 绑定 / 「跳去源站」。
 // 在线观看已迁到 server/player（2026-09-17 删掉旧播放页、流代理路由、预转 HLS、慢源名额）；
 // 解析层仍在 xifan/resolve.ts，流代理核心仍在 xifan/stream.ts，由 /api/player 调用。
@@ -6,14 +7,14 @@
 //   POST /api/xifan/locate                         → bgmId + 标题 → 稀饭候选（周表免验证码匹配，见 locate.ts）
 //   GET  /api/xifan/auth/status                    → 稀饭账号状态（远端校验）
 //   POST /api/xifan/auth/login|logout              → 稀饭账号登录 / 退出
-//   GET  /api/xifan/captcha                        → 登录 / 全站搜索共用验证码
-//   POST /api/xifan/captcha/verify                 → 校验全站搜索验证码
-//   POST /api/xifan/search                         → 搜索非周历稀饭资源（需要先过验证码）
+//   GET  /api/xifan/captcha                        → 旧版客户端提示升级
+//   POST /api/xifan/captcha/verify                 → 旧版客户端提示升级
+//   POST /api/xifan/search                         → 搜索稀饭新版资源（无需图片验证码）
 //   POST /api/xifan/bind                           → 用户点候选确认，落库绑定（要登录）
 //   GET  /api/xifan/bindings                       → 当前用户追番已建的绑定，页面加载时一次拿齐（要登录）
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import { BASE_URL, clearXifanResolveCache, getPlaylist, XifanBusyError } from './xifan/resolve'
+import { BASE_URL, clearXifanResolveCache, getPlaylist, sourcePage, XifanBusyError } from './xifan/resolve'
 import { locate } from './xifan/locate'
 import { getBinding, putBinding, bindingsFor } from './xifan/bindings'
 import { getXifanCaptcha, searchXifan, verifyXifanCaptcha, XIFAN_SEARCH_MAX_LENGTH } from './xifan/search'
@@ -49,6 +50,10 @@ function upstreamFailure(c: Context, error: unknown, fallback: string): Response
     c.header('Retry-After', String(error.retryAfterSec))
     return c.json({ error: message }, 429)
   }
+  if (error instanceof NextError) {
+    if (error.retryAfter !== null) c.header('Retry-After', String(error.retryAfter))
+    return c.json({ error: message, code: error.code, upstreamStatus: error.status }, error.status === 429 || error.code === 'rate_limited' ? 429 : 502)
+  }
   if (error instanceof XifanUpstreamError) {
     c.header('X-Upstream-Status', String(error.status))
     if (error.status === 429) {
@@ -75,13 +80,12 @@ xifan.get('/source-page', async (c) => {
   try {
     const playlist = await getPlaylist(animeId, ep, session.uid)
     const source = playlist.first?.source
-    const selected = typeof source === 'number' && Number.isInteger(source) && source > 0 ? source : 1
-    return c.redirect(`${BASE_URL}/watch/${animeId}/${selected}/${ep}.html`, 302)
+    return c.redirect(await sourcePage(animeId, ep, session.uid, source), 302)
   } catch (error) {
-    // 定位失败不让「跳去源站」变成空白页；线路 1 是源站原生默认回落。
+    // 定位失败时回落番剧详情，由源站显示可用选集和账号要求。
     // 真实原因仍落终端，不能把限流 / 验证 / 源站错误伪装成成功定位。
-    console.warn('[xifan] 快源定位失败，回落线路 1：', error)
-    return c.redirect(`${BASE_URL}/watch/${animeId}/1/${ep}.html`, 302)
+    console.warn('[xifan] 快源定位失败，回落番剧详情：', error)
+    return c.redirect(`${BASE_URL}/anime/${animeId}`, 302)
   }
 })
 
@@ -111,7 +115,7 @@ xifan.post('/auth/login', async (c) => {
   const verify = typeof body.verify === 'string' ? body.verify.trim() : ''
   if (!username || username.length > 100) return c.json({ error: '账号格式不合法' }, 400)
   if (!password || password.length > 200) return c.json({ error: '密码格式不合法' }, 400)
-  if (!verify || verify.length > 32) return c.json({ error: '验证码格式不合法' }, 400)
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username)) return c.json({ error: '请填写稀饭新版账号邮箱' }, 400)
 
   const ipKey = `xifan-login-ip:${clientIp(c)}`
   const accountKey = `xifan-login-account:${username.toLowerCase()}`
@@ -143,7 +147,7 @@ xifan.post('/auth/logout', async (c) => {
   return c.json(status)
 })
 
-// 登录与全站搜索复用同一个验证码 / cookie 会话；不登录就不能把服务器当成匿名代理。
+// 保留旧客户端接口并返回明确升级提示，不再请求已下线的图片验证码。
 xifan.get('/captcha', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录' }, 401)

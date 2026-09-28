@@ -890,47 +890,32 @@ function Settings(): JSX.Element {
     setBiliLoggedIn((await window.biliApi.logout()).loggedIn);
   };
 
-  // 稀饭账号。登录态存在主进程的 xifanSession,cookie 罐持久化到本地文件,不存用户名/密码明文。
+  // 稀饭账号。新版会话由主进程加密保存，不保存密码。
   const [xifanAuth, setXifanAuth] = useState({ loggedIn: false });
   const [xifanUsername, setXifanUsername] = useState("");
   const [xifanPassword, setXifanPassword] = useState("");
   const [xifanShowPwd, setXifanShowPwd] = useState(false);
-  const [xifanVerify, setXifanVerify] = useState("");
-  const [xifanCaptcha, setXifanCaptcha] = useState("");
   const [xifanLoggingIn, setXifanLoggingIn] = useState(false);
   const [xifanLoginMsg, setXifanLoginMsg] = useState("");
   useEffect(() => {
-    window.xifanApi.authStatus().then(setXifanAuth).catch(() => { /* 当未登录 */ });
+    window.xifanApi.authStatus().then(setXifanAuth).catch((error) => setXifanLoginMsg(ipcErrMsg(error, "登录状态校验失败")));
   }, []);
-  const refreshXifanCaptcha = (): void => {
-    window.xifanApi.getCaptcha()
-      .then(({ image_b64 }) => setXifanCaptcha(`data:image/png;base64,${image_b64}`))
-      .catch(() => setXifanCaptcha(""));
-  };
-  // 展开登录表单时先秒显一张验证码,免得用户先看到空白框。
-  useEffect(() => {
-    if (!xifanAuth.loggedIn && !xifanCaptcha) refreshXifanCaptcha();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [xifanAuth.loggedIn]);
   const doXifanLogin = async (): Promise<void> => {
-    if (!xifanUsername.trim() || !xifanPassword || !xifanVerify.trim()) return;
+    if (!xifanUsername.trim() || !xifanPassword) return;
     setXifanLoggingIn(true);
     setXifanLoginMsg("");
     try {
       const { success, message } = await window.xifanApi.login(
-        xifanUsername.trim(), xifanPassword, xifanVerify.trim(),
+        xifanUsername.trim(), xifanPassword, "",
       );
       if (success) {
         setXifanAuth({ loggedIn: true });
         setXifanPassword("");
-        setXifanVerify("");
       } else {
         setXifanLoginMsg(message);
-        refreshXifanCaptcha();
       }
     } catch (error: unknown) {
       setXifanLoginMsg(ipcErrMsg(error, "登录失败"));
-      refreshXifanCaptcha();
     } finally {
       setXifanLoggingIn(false);
     }
@@ -1336,7 +1321,7 @@ function Settings(): JSX.Element {
               {active === "general" && (
                 <Block
                   title="稀饭账号"
-                  hint="给稀饭动漫的收藏、签到等站内功能用。登录态(cookie)只存本机，不上传、不同步；用户名密码只发这一次登录请求，不落盘。"
+                  hint="使用稀饭新版邮箱账号，按账号权限观看。"
                   footer={
                     !xifanAuth.loggedIn ? (
                       <div className="flex items-center gap-3 min-h-9">
@@ -1344,7 +1329,7 @@ function Settings(): JSX.Element {
                           type="button"
                           onClick={() => { void doXifanLogin(); }}
                           disabled={
-                            xifanLoggingIn || !xifanUsername.trim() || !xifanPassword || !xifanVerify.trim()
+                            xifanLoggingIn || !xifanUsername.trim() || !xifanPassword
                           }
                           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30 hover:border-primary/55 disabled:opacity-50 disabled:cursor-not-allowed text-[12px] font-label font-bold uppercase tracking-wider transition-colors"
                         >
@@ -1365,7 +1350,7 @@ function Settings(): JSX.Element {
                     <Row
                       icon="account_circle"
                       title="已登录"
-                      desc="可在稀饭动漫使用收藏、签到等账号功能。"
+                      desc="播放时使用当前稀饭账号的观看权限。"
                       density={tweaks.density}
                       control={
                         <button
@@ -1382,13 +1367,13 @@ function Settings(): JSX.Element {
                       <Row
                         icon="person"
                         title="账号"
-                        desc="稀饭动漫的手机号/登录账号。"
+                        desc="使用稀饭新版账号邮箱登录。"
                         density={tweaks.density}
                         stack
                         control={
                           <TextControl
                             value={xifanUsername}
-                            placeholder="手机号/登录账号"
+                            placeholder="稀饭新版账号邮箱"
                             onChange={setXifanUsername}
                             onCommit={() => {}}
                           />
@@ -1417,38 +1402,6 @@ function Settings(): JSX.Element {
                                 <span className="material-symbols-outlined leading-none" style={{ fontSize: 16 }}>
                                   {xifanShowPwd ? "visibility_off" : "visibility"}
                                 </span>
-                              </button>
-                            }
-                          />
-                        }
-                      />
-                      <Row
-                        icon="verified_user"
-                        title="验证码"
-                        desc="看不清点图换一张。"
-                        density={tweaks.density}
-                        stack
-                        control={
-                          <TextControl
-                            value={xifanVerify}
-                            placeholder="图中字符"
-                            onChange={setXifanVerify}
-                            commitOnBlur={false}
-                            onCommit={() => { void doXifanLogin(); }}
-                            trailing={
-                              <button
-                                type="button"
-                                onClick={refreshXifanCaptcha}
-                                title="点击换一张"
-                                className="flex-shrink-0 w-[70px] h-8 rounded-md overflow-hidden bg-surface-container-high border border-outline-variant/20"
-                              >
-                                {xifanCaptcha ? (
-                                  <img src={xifanCaptcha} alt="验证码" className="w-full h-full object-cover" />
-                                ) : (
-                                  <span className="material-symbols-outlined text-on-surface-variant/40 leading-none" style={{ fontSize: 16 }}>
-                                    refresh
-                                  </span>
-                                )}
                               </button>
                             }
                           />

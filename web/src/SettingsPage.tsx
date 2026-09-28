@@ -4,12 +4,10 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   fetchXifanAuthStatus,
-  fetchXifanCaptcha,
   loginXifanAccount,
   logoutXifanAccount,
   signalXifanAuthChanged,
   XIFAN_AUTH_EVENT_KEY,
-  XIFAN_CAPTCHA_EVENT_KEY,
 } from './api'
 import {
   auth,
@@ -164,12 +162,12 @@ export function SettingsPage(): JSX.Element | null {
             </section>
           )}
 
-          {/* 稀饭账号：打开过就保持挂载（验证码状态不丢），开合由口袋 CSS 管 */}
+          {/* 稀饭账号：打开过就保持挂载（输入状态不丢），开合由口袋 CSS 管 */}
           <section className={`pocket${module === 'xifan' ? ' open' : ''}`} data-mod="xifan">
             <button className="pocket-tab" type="button" onClick={() => selectModule('xifan')}>
               <Ic name="play" />
               稀饭账号
-              <span className="pocket-hint">在线播放源 · 验证码登录</span>
+              <span className="pocket-hint">在线播放源 · 邮箱登录</span>
               <Ic name="chev" cls="ic chev" />
             </button>
             <div className="pocket-body">{xifanOpened && <XifanAccountModule />}</div>
@@ -1187,36 +1185,10 @@ function XifanAccountModule(): JSX.Element {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [verify, setVerify] = useState('')
-  const [captcha, setCaptcha] = useState('')
-  const [captchaLoading, setCaptchaLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const mounted = useRef(false)
-  const captchaRequest = useRef(0)
   const statusRequest = useRef(0)
-
-  const loadCaptcha = async (clearError = true): Promise<string | null> => {
-    if (!mounted.current) return null
-    const request = ++captchaRequest.current
-    setVerify('')
-    setCaptchaLoading(true)
-    if (clearError) setError(null)
-    try {
-      const data = await fetchXifanCaptcha()
-      if (!mounted.current || request !== captchaRequest.current) return null
-      setCaptcha(`data:${data.mime};base64,${data.imageB64}`)
-      return null
-    } catch (requestError) {
-      if (!mounted.current || request !== captchaRequest.current) return null
-      const message = requestError instanceof Error ? requestError.message : '验证码加载失败'
-      setCaptcha('')
-      setError(message)
-      return message
-    } finally {
-      if (mounted.current && request === captchaRequest.current) setCaptchaLoading(false)
-    }
-  }
 
   const loadStatus = async (notifyIfLoggedIn = false): Promise<void> => {
     if (!mounted.current) return
@@ -1229,7 +1201,7 @@ function XifanAccountModule(): JSX.Element {
       setLoggedIn(status.loggedIn)
       if (status.loggedIn) {
         if (notifyIfLoggedIn) signalXifanAuthChanged()
-      } else await loadCaptcha()
+      }
     } catch (requestError) {
       if (!mounted.current || request !== statusRequest.current) return
       setError(requestError instanceof Error ? requestError.message : '登录状态校验失败')
@@ -1241,7 +1213,6 @@ function XifanAccountModule(): JSX.Element {
     void loadStatus(true)
     return () => {
       mounted.current = false
-      captchaRequest.current += 1
       statusRequest.current += 1
     }
   }, [])
@@ -1250,12 +1221,6 @@ function XifanAccountModule(): JSX.Element {
     const onStorage = (event: StorageEvent): void => {
       if (event.key === XIFAN_AUTH_EVENT_KEY) {
         void loadStatus()
-      } else if (event.key === XIFAN_CAPTCHA_EVENT_KEY) {
-        captchaRequest.current += 1
-        setCaptchaLoading(false)
-        setCaptcha('')
-        setVerify('')
-        if (loggedIn === false) setError('验证码已在其他页面刷新，请重新获取')
       }
     }
     window.addEventListener('storage', onStorage)
@@ -1265,25 +1230,21 @@ function XifanAccountModule(): JSX.Element {
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
     setError(null)
-    if (!username.trim() || !password || !verify.trim()) {
-      setError('请填写账号、密码和验证码')
+    if (!username.trim() || !password) {
+      setError('请填写邮箱和密码')
       return
     }
     setBusy(true)
     try {
-      await loginXifanAccount(username.trim(), password, verify.trim())
+      await loginXifanAccount(username.trim(), password, '')
       if (!mounted.current) return
       setLoggedIn(true)
       setUsername('')
       setPassword('')
-      setVerify('')
-      setCaptcha('')
     } catch (requestError) {
       if (!mounted.current) return
       const message = requestError instanceof Error ? requestError.message : '登录失败'
       setError(message)
-      const captchaError = await loadCaptcha(false)
-      if (mounted.current) setError(captchaError ? `${message}；${captchaError}` : message)
     } finally {
       if (mounted.current) setBusy(false)
     }
@@ -1295,7 +1256,6 @@ function XifanAccountModule(): JSX.Element {
     try {
       await logoutXifanAccount()
       if (!mounted.current) return
-      await loadCaptcha()
       if (mounted.current) setLoggedIn(false)
     } catch (requestError) {
       if (!mounted.current) return
@@ -1340,14 +1300,14 @@ function XifanAccountModule(): JSX.Element {
         </div>
       ) : (
         <form onSubmit={submit} aria-describedby="xifan-auth-error" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Field label="账号" htmlFor="xifan-username" required>
+          <Field label="邮箱" htmlFor="xifan-username" required>
             <span className="field-row">
               <input
                 id="xifan-username"
-                type="text"
+                type="email"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="手机 / 登录账号"
+                placeholder="稀饭新版账号邮箱"
                 autoComplete="username"
                 aria-required="true"
                 maxLength={100}
@@ -1357,43 +1317,8 @@ function XifanAccountModule(): JSX.Element {
           <Field label="密码" htmlFor="xifan-password" required>
             <PasswordInput id="xifan-password" value={password} onChange={setPassword} placeholder="输入密码" />
           </Field>
-          <Field label="验证码" htmlFor="xifan-verify" required>
-            <div className="row" style={{ alignItems: 'stretch' }}>
-              <span className="field-row" style={{ flex: 1 }}>
-                <input
-                  id="xifan-verify"
-                  type="text"
-                  value={verify}
-                  onChange={(event) => setVerify(event.target.value)}
-                  placeholder="输入验证码"
-                  autoComplete="off"
-                  aria-required="true"
-                  maxLength={32}
-                />
-              </span>
-              <span className="captcha-img" style={{ width: 104, height: 42, flex: 'none' }}>
-                {captcha ? (
-                  <img src={captcha} alt="验证码" draggable={false} />
-                ) : (
-                  <Ic name="search" cls="ic ic-sm" />
-                )}
-              </span>
-              <button
-                type="button"
-                className="icon-btn"
-                style={{ width: 42, height: 42, flex: 'none' }}
-                title="刷新验证码"
-                aria-label="刷新验证码"
-                disabled={captchaLoading}
-                onClick={() => void loadCaptcha()}
-              >
-                <Ic name="refresh" cls={captchaLoading ? 'ic animate-spin' : 'ic'} />
-              </button>
-            </div>
-          </Field>
-
           <div className="row">
-            <button type="submit" className="btn btn-primary" disabled={busy || captchaLoading || !captcha}>
+            <button type="submit" className="btn btn-primary" disabled={busy || !username.trim() || !password}>
               {busy ? '登录中…' : '登录'}
             </button>
             <span id="xifan-auth-error" role="alert" aria-live="polite" className={`form-note err${error ? '' : ' empty'}`} style={{ margin: 0 }}>

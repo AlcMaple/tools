@@ -1,216 +1,38 @@
-// 稀饭在线观看解析 —— **懒加载版**（用户 2026-07-21 定）。
-//
-// 为什么懒加载：一次并行解析所有源 = 一串请求瞬间砸向稀饭，像爬虫、有触发反爬 / 限流的风险；
-// 而且用户多半只看默认线路，预解析其余线路是白费。所以：
-//   - 打开播放页 → `getPlaylist`：**一次抓取**（source 1 的页面）拿到「线路 1 地址 + 全部线路名单」。
-//   - 用户点线路 2/3 → `resolveLine`：那时才抓那一条。
-//   - 例外：同一部番第一次打开时多解析一条做测速选线（见 getPlaylist 上方），之后按番复用结论。
-// 不预探 content-disposition / HLS 空壳 —— 播放层「直连失败就套娃兜底」。
-//
-// **拷贝复用 + 换传输层**：parsePlayerData 抄自 src/main/xifan/api.ts；
-// 源 tab 名单改用正则扒（web 侧只为这几个 <a> 标签不值当加 cheerio 依赖）。
-
-import { proxyReady, refreshProxyAfterFailure } from '../http' // 本地开发：等代理探测定盘，和浏览器走同一条出口
+// 新站通过剧集 ID + 稳定线路 ID 签发媒体地址；保留共享并发预算和实测选线，禁止按文件名猜下一集。
+import { NextError, nextPage } from '../../shared/xifan-next'
+import { nextXifan } from './next'
 import { canProxy } from './proxy-hosts'
 import { measureThroughput } from './stream'
-import {
-  assertXifanResponse,
-  BASE_URL,
-  DESKTOP_UA,
-  XifanUpstreamError,
-  xifanSessionFor,
-  type XifanCookieSession,
-  type XifanHttpResponse,
-} from './session'
-
-// weekday.ts 已经从这里取 UA / BASE_URL；继续转出，避免同一站点出现两份指纹常量。
+import { XifanUpstreamError } from './session'
 export { BASE_URL, DESKTOP_UA, XifanUpstreamError } from './session'
-const XIFAN_HEADERS: Record<string, string> = {
-  'User-Agent': DESKTOP_UA,
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'zh-CN,zh;q=0.9',
-  Referer: `${BASE_URL}/`,
-}
-
 const MAX_UPSTREAM_CONCURRENCY = 2
 const MAX_UPSTREAM_WAITING = 8
 const UPSTREAM_START_GAP_MS = 250
-const CACHE_TTL_MS = 60 * 60 * 1000
+const CACHE_TTL_MS = 30_000
 const MAX_CACHE_ENTRIES = 1000
-
+const sessionGenerations = new Map<number, number>()
 export class XifanBusyError extends Error {
   readonly retryAfterSec = 2
-
-  constructor() {
-    super('稀饭解析请求较多，请稍后再试')
-    this.name = 'XifanBusyError'
-  }
+  constructor() { super('稀饭解析请求较多，请稍后再试') }
 }
-
-interface PlayerData {
-  url: string
-  from: string
-  id: string
-  vod_data?: { vod_name?: string }
-}
-
-// ↓↓↓ parsePlayerData 逐字抄自 src/main/xifan/api.ts（勿改；要改两边一起改）↓↓↓
-function parsePlayerData(html: string): PlayerData | null {
-  const m1 = html.match(/var player_aaaa\s*=\s*(\{.*?\})<\/script>/)
-  if (m1) {
-    try { return JSON.parse(m1[1]) as PlayerData } catch { /* fall through */ }
-  }
-  const m2 = html.match(/var player_aaaa\s*=\s*\{(.*?)\};/s)
-  if (!m2) return null
-  const block = m2[1]
-
-  function getStr(key: string): string {
-    const pat = new RegExp(`\\b${key}\\s*:\\s*\\n?\\s*"((?:[^"\\\\]|\\\\.)*)"`, 's')
-    const r = block.match(pat)
-    if (!r) return ''
-    try { return JSON.parse(`"${r[1]}"`) } catch { return r[1].replace(/\\\//g, '/') }
-  }
-
-  const vodM = block.match(/vod_data\s*:\s*\{(.*?)\}/s)
-  let vodName = ''
-  if (vodM) {
-    const nm = vodM[1].match(/\bvod_name\s*:\s*\n?\s*"((?:[^"\\]|\\.)*)"/s)
-    if (nm) { try { vodName = JSON.parse(`"${nm[1]}"`) } catch { vodName = nm[1] } }
-  }
-
-  return { url: getStr('url'), from: getStr('from'), id: getStr('id'), vod_data: { vod_name: vodName } }
-}
-// ↑↑↑ 抄写结束 ↑↑↑
-
-// 一次抓 source 1 就取回全部线路名，不逐条解析；站点 tab 没有稳定数据字段，只能从专用 class 读顺序。
-// 去掉 tab 里的集数徽章和图标，避免把装饰文字当线路名；解析不到时保留线路 1 兜底。
-function parseSourceTabs(html: string): LineMeta[] {
-  const out: LineMeta[] = []
-  const re = /<a[^>]*class="[^"]*\bvod-playerUrl\b[^"]*"[^>]*>([\s\S]*?)<\/a>/gi
-  let m: RegExpExecArray | null
-  let i = 0
-  while ((m = re.exec(html)) !== null) {
-    const name = m[1]
-      .replace(/<span[^>]*\bbadge\b[^>]*>[\s\S]*?<\/span>/gi, '') // 去集数徽章
-      .replace(/<i[^>]*>[\s\S]*?<\/i>/gi, '') // 去图标
-      .replace(/<[^>]*>/g, '') // 剥剩余标签
-      .replace(/&nbsp;| /gi, ' ')
-      .trim()
-    out.push({ source: ++i, name: name || `线路${i}` })
-  }
-  return out
-}
-
-// tab 和集数链接共用 href 形状；跳过带 vod-playerUrl 的 tab，再按 ep 去重排序，避免集数网格重复。
-// 扒不到时返回空，让播放页退化成当前集，仍可通过地址栏 ep 切集。
-function parseEpList(html: string, animeId: string): number[] {
-  const set = new Set<number>()
-  const re = new RegExp(`<a\\b[^>]*href="/watch/${animeId}/\\d+/(\\d+)\\.html"[^>]*>`, 'gi')
-  let m: RegExpExecArray | null
-  while ((m = re.exec(html)) !== null) {
-    if (/vod-playerUrl/i.test(m[0])) continue // 源切换 tab 不是集数
-    const ep = parseInt(m[1], 10)
-    if (ep > 0) set.add(ep)
-  }
-  return [...set].sort((a, b) => a - b)
-}
-
-// 只看 URL 后缀，不为分类再发请求：m3u8 交给 hls.js，其余交给 <video> 直连。
-// pan.wo 的 attachment 跳转在播放页使用 no-referrer 后可作为媒体加载；若个别浏览器仍失败，
-// 页面 error 监听会回退官方 iframe。坏 URL 由 safeMediaUrl 在输出前拦住。
-function classify(url: string): 'mp4' | 'hls' {
-  try {
-    if (new URL(url).pathname.toLowerCase().endsWith('.m3u8')) return 'hls'
-  } catch { /* safeMediaUrl 会在输出前拒绝坏 URL */ }
-  return 'mp4'
-}
-
-// 站点给的 player_aaaa.url 是源站地址 `play.xfvod.pro:8088`；官方播放器（player.moedot.net，from=cf）
-// 实际喂给 <video> 的是**去掉端口**的 `play.xfvod.pro`（同一个 Cloudflare 站点，443）——在内置浏览器里
-// 抓它的 <video>.currentSrc 确认过。两个地址内容、Range 都一样，但 8088 这种非标端口在手机运营商网络上
-// 走得很差：Sentry 里 iPhone 直连 8088 的胶片是「64KB 探测 4.8 秒、播放中一个字节不涨」，而同一部番
-// 用户在源站看（走 443）不卡。所以和官方一样，凡是这个域名一律用 443。
-const STRIP_PORT_HOSTS = new Set(['play.xfvod.pro'])
-
-function safeMediaUrl(raw: string): string {
-  try {
-    const url = new URL(raw)
-    if (url.protocol !== 'https:') return ''
-    if (STRIP_PORT_HOSTS.has(url.hostname) && url.port) url.port = ''
-    return url.href
-  } catch {
-    return ''
-  }
-}
-
 export type XifanResolveErrorCode = 'XIFAN_AUTH_REQUIRED' | 'XIFAN_ACCESS_DENIED'
-
 export class XifanResolveError extends Error {
-  constructor(
-    readonly code: XifanResolveErrorCode,
-    message: string,
-  ) {
-    super(message)
-    this.name = 'XifanResolveError'
+  constructor(readonly code: XifanResolveErrorCode, message: string) { super(message) }
+}
+export interface LineMeta { source: number; name: string }
+export interface PlayLine { source: number; url: string; kind: 'mp4' | 'hls'; from: string }
+export interface Playlist { title: string; lines: LineMeta[]; first: PlayLine | null; eps: number[] }
+function scope(uid: number | null): string { return uid === null ? 'anon' : `user:${uid}:${sessionGenerations.get(uid) ?? 0}` }
+async function upstream<T>(fn: () => Promise<T>): Promise<T> {
+  try { return await withUpstreamSlot(fn) } catch (error) {
+    if (error instanceof NextError) {
+      if (['unauthorized', 'unauthenticated'].includes(error.code) || error.status === 401) throw new XifanResolveError('XIFAN_AUTH_REQUIRED', error.message)
+      if (error.code === 'forbidden' || error.status === 403) throw new XifanResolveError('XIFAN_ACCESS_DENIED', error.message)
+      throw new XifanUpstreamError(error.code === 'rate_limited' ? 429 : error.status, error.retryAfter, error.message)
+    }
+    throw error
   }
 }
-
-interface AccessContext {
-  uid: number | null
-  session: XifanCookieSession | null
-  authenticated: boolean
-  scope: string
-}
-
-const sessionGenerations = new Map<number, number>()
-
-function accessContext(uid: number | null): AccessContext {
-  if (uid === null) return { uid, session: null, authenticated: false, scope: 'anon' }
-  const session = xifanSessionFor(uid)
-  const authenticated = session.loggedIn
-  const generation = sessionGenerations.get(uid) ?? 0
-  return {
-    uid,
-    session: authenticated ? session : null,
-    authenticated,
-    scope: authenticated ? `user:${uid}:${generation}` : 'anon',
-  }
-}
-
-function noticeText(html: string): string {
-  const content = html.match(/<div[^>]*class="[^"]*\bmsg-content\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? ''
-  return content.replace(/<[^>]+>/g, ' ').replace(/&nbsp;| /gi, ' ').replace(/\s+/g, ' ').trim()
-}
-
-function gateText(html: string): string {
-  const chunks = [noticeText(html)]
-  const gateClass = /class=(['"])[^'"]*(?:popedom|popeom|upgrade-gate)[^'"]*\1/gi
-  let match: RegExpExecArray | null
-  while ((match = gateClass.exec(html)) !== null && chunks.length < 6) {
-    chunks.push(html.slice(match.index, match.index + 4000).replace(/<[^>]+>/g, ' '))
-  }
-  return chunks.join(' ').replace(/&nbsp;| /gi, ' ').replace(/\s+/g, ' ').trim()
-}
-
-function loggedOutPage(html: string): boolean {
-  const notice = noticeText(html)
-  return notice.includes('亲爱的：未登录')
-    || html.includes('class="mac_login_form')
-    || html.includes('<h1>账号登录</h1>')
-    || /请先登录|登录后(?:才可|方可|观看)/.test(notice)
-}
-
-function deniedPage(html: string): boolean {
-  return /亲爱的：您没有权限访问此数据|没有权限观看/.test(html)
-    || /没有权限访问|权限不足|升级会员|请先购买|积分不足|需要购买|付费后/.test(gateText(html))
-}
-
-function accessError(access: AccessContext): XifanResolveError {
-  return access.authenticated
-    ? new XifanResolveError('XIFAN_ACCESS_DENIED', '当前稀饭账号没有该资源的观看权限')
-    : new XifanResolveError('XIFAN_AUTH_REQUIRED', '该资源需要先登录稀饭账号')
-}
-
 let upstreamActive = 0
 const upstreamWaiters: Array<() => void> = []
 let upstreamStartQueue = Promise.resolve()
@@ -252,75 +74,12 @@ async function withUpstreamSlot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-async function fetchAnonymous(url: string): Promise<XifanHttpResponse> {
-  await proxyReady
-  const run = async (): Promise<XifanHttpResponse> => {
-    await scheduleUpstreamStart()
-    const response = await fetch(url, {
-      headers: XIFAN_HEADERS,
-      redirect: 'follow',
-      signal: AbortSignal.timeout(12000),
-    })
-    return {
-      status: response.status,
-      headers: response.headers,
-      body: Buffer.from(await response.arrayBuffer()),
-      url: response.url,
-    }
-  }
-  try {
-    return await run()
-  } catch (error) {
-    // 只允许 GET 的传输层瞬时抖动单次重试；HTTP 429 / 5xx 不在这里重试。
-    const message = error instanceof Error ? error.message : String(error)
-    if (/ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket disconnected|TLS|fetch failed|terminated/i.test(message)) {
-      await refreshProxyAfterFailure()
-      return run()
-    }
-    throw error
-  }
-}
-
-async function fetchHtml(url: string, access: AccessContext): Promise<string> {
-  return withUpstreamSlot(async () => {
-    const response = access.session
-      ? await access.session.get(url, {}, { retryTransient: true, timeoutMs: 12000 })
-      : await fetchAnonymous(url)
-    const html = assertXifanResponse(response, '稀饭播放页请求')
-    if (loggedOutPage(html)) {
-      access.session?.clear()
-      if (access.uid !== null) clearXifanResolveCache(access.uid)
-      throw new XifanResolveError('XIFAN_AUTH_REQUIRED', '该资源需要先登录稀饭账号')
-    }
-    if (deniedPage(html)) throw accessError(access)
-    return html
-  })
-}
-
-export interface LineMeta {
-  source: number
-  name: string
-}
-export interface PlayLine {
-  source: number
-  url: string
-  kind: 'mp4' | 'hls'
-  // 直连不需要 from；回退官方 iframe 时必须按它选择播放器地址，写错会得到空的 Waiting parameters 页面。
-  from: string
-}
-export interface Playlist {
-  title: string
-  lines: LineMeta[]
-  first: PlayLine | null // 线路 1（顺手解析出来，打开即可播）
-  eps: number[] // 整季集数序号（画集数网格用），扒不到就空
-}
-
 // 进程内缓存（1h）+ singleflight：同一条正在解析时所有调用复用一个 Promise，不重复打上游。
 const cache = new Map<string, { v: unknown; at: number }>()
 const inflight = new Map<string, Promise<unknown>>()
-function cached<T>(key: string): { hit: true; v: T } | { hit: false } {
+function cached<T>(key: string, ttl = CACHE_TTL_MS): { hit: true; v: T } | { hit: false } {
   const h = cache.get(key)
-  if (h && Date.now() - h.at < CACHE_TTL_MS) {
+  if (h && Date.now() - h.at < ttl) {
     cache.delete(key)
     cache.set(key, h)
     return { hit: true, v: h.v as T }
@@ -368,81 +127,46 @@ export function clearXifanResolveCache(uid: number): void {
   }
 }
 
-// 默认线路按**实测**选，不按域名猜（2026-09-21 起两个源站都走服务器 12 路会话，处理路径完全一样，
-// 而 xfvod 改绕中转后单连接只剩 10~130KB/s，「xfvod 是快源」的旧前提不成立了）。
-// 有第二条线路时两条都解析、服务器各拉 ~3 秒比实到字节；结论按番缓存 1 小时，同一部番后面几集直接复用，
-// 只有第一次打开多等约 3 秒、多一次稀饭解析请求。
-const SPEED_WINDOW_MS = 3_000
-function speedTestable(line: PlayLine | null): line is PlayLine {
-  return !!line && line.kind === 'mp4' && canProxy(line.url)
+
+export async function sourcePage(animeId: string, ep: number, uid: number | null, source?: number): Promise<string> {
+  return nextPage(await upstream(() => nextXifan(uid).detail(Number(animeId))), ep, source)
 }
 export async function getPlaylist(animeId: string, ep: number, uid: number | null = null): Promise<Playlist> {
-  const access = accessContext(uid)
-  const key = `${access.scope}:pl:${animeId}:${ep}`
-  const c = cached<Playlist>(key)
-  if (c.hit) return c.v
+  const key = `${scope(uid)}:pl:${animeId}:${ep}`
+  const hit = cached<Playlist>(key)
+  if (hit.hit) return hit.v
   return singleflight(key, async () => {
-    const latest = cached<Playlist>(key)
-    if (latest.hit) return latest.v
-    const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/1/${ep}.html`, access)
-    const data = parsePlayerData(body)
-    const tabs = parseSourceTabs(body)
-    let url1 = ''
-    try { url1 = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
-    url1 = safeMediaUrl(url1)
-    const line1: PlayLine | null = url1
-      ? { source: 1, url: url1, kind: classify(url1), from: data?.from ?? '' }
-      : null
-    const lines = tabs.length ? tabs : line1 ? [{ source: 1, name: '线路1' }] : []
-    const eps = parseEpList(body, animeId)
-
-    let first = line1
-    const next = lines.find((l) => l.source !== 1)
-    if (line1 && next) {
-      const fastKey = `${access.scope}:fast:${animeId}`
-      const known = cached<number>(fastKey)
+    const detail = await upstream(() => nextXifan(uid).detail(Number(animeId)))
+    const available = detail.sources.filter(s => s.episodes.some(e => e.number === ep))
+    const lines = available.map(s => ({ source: s.id, name: s.name }))
+    const eps = [...new Set(detail.sources.flatMap(s => s.episodes.map(e => e.number)))].sort((a, b) => a - b)
+    if (!lines.length) return put(key, { title: detail.title, lines, first: null, eps })
+    const fastKey = `${scope(uid)}:fast:${animeId}`
+    const known = cached<number>(fastKey, 60 * 60_000)
+    const preferred = known.hit && lines.some(l => l.source === known.v) ? known.v : lines[0].source
+    let first = await resolveLine(animeId, ep, preferred, uid)
+    const second = lines[1]
+    if (!known.hit && first && second && first.kind === 'mp4' && canProxy(first.url)) {
       try {
-        if (known.hit) {
-          if (known.v !== 1) first = (await resolveLine(animeId, ep, known.v, uid)) ?? line1
-        } else if (speedTestable(line1)) {
-          const alt = await resolveLine(animeId, ep, next.source, uid)
-          if (speedTestable(alt)) {
-            const [s1, s2] = await Promise.all([
-              measureThroughput(line1.url, SPEED_WINDOW_MS),
-              measureThroughput(alt.url, SPEED_WINDOW_MS),
-            ])
-            first = s2 > s1 ? alt : line1
-            // 两边都 0 字节说明是源站 / 服务器这会儿整体不通，不是谁快谁慢，不记结论。
-            if (s1 > 0 || s2 > 0) put(fastKey, s2 > s1 ? alt.source : 1)
-          }
+        const alt = await resolveLine(animeId, ep, second.source, uid)
+        if (alt && alt.kind === 'mp4' && canProxy(alt.url)) {
+          const [one, two] = await Promise.all([measureThroughput(first.url, 3000), measureThroughput(alt.url, 3000)])
+          if (two > one) first = alt
+          if (one > 0 || two > 0) put(fastKey, first.source)
         }
       } catch (error) {
-        console.log(`[xifan:resolve] 测速选线失败，用线路 1：${error instanceof Error ? error.message : String(error)}`)
+        console.error('[xifan:resolve] 备用线路测速失败，保留已解析线路：', error)
       }
     }
-    return put(key, { title: data?.vod_data?.vod_name ?? '', lines, first, eps })
+    return put(key, { title: detail.title, lines, first, eps })
   })
 }
-
-// 只有用户手动点线路时才抓那一条，避免打开播放页并行请求所有线路。
-export async function resolveLine(
-  animeId: string,
-  ep: number,
-  source: number,
-  uid: number | null = null,
-): Promise<PlayLine | null> {
-  const access = accessContext(uid)
-  const key = `${access.scope}:ln:${animeId}:${ep}:${source}`
-  const c = cached<PlayLine | null>(key)
-  if (c.hit) return c.v
+export async function resolveLine(animeId: string, ep: number, source: number, uid: number | null = null): Promise<PlayLine | null> {
+  const key = `${scope(uid)}:ln:${animeId}:${ep}:${source}`
+  const hit = cached<PlayLine>(key)
+  if (hit.hit) return hit.v
   return singleflight(key, async () => {
-    const latest = cached<PlayLine | null>(key)
-    if (latest.hit) return latest.v
-    const body = await fetchHtml(`${BASE_URL}/watch/${animeId}/${source}/${ep}.html`, access)
-    const data = parsePlayerData(body)
-    let url = ''
-    try { url = data?.url ? decodeURIComponent(data.url) : '' } catch { /* 站点返回了坏编码 */ }
-    url = safeMediaUrl(url)
-    return put<PlayLine | null>(key, url ? { source, url, kind: classify(url), from: data?.from ?? '' } : null)
+    const media = await upstream(() => nextXifan(uid).playback(Number(animeId), ep, source))
+    return put<PlayLine>(key, { source, url: media.url, kind: /\.m3u8(?:[?#]|$)/i.test(media.url) ? 'hls' : 'mp4', from: media.code })
   })
 }

@@ -10,7 +10,7 @@ import { SiteQueueRegistry, newTaskId } from '../shared/site-download-queue'
 
 interface XifanPayload {
   templates: string[]
-  /** 与 templates 平行:各线路播放页的 URL 模板,模板拼出 404 时用它回源解析。老任务恢复时为空数组。 */
+  // 与 templates 同序；新版由这里的番剧和线路定位逐集签发。
   epPages: string[]
   sourceIdx: number
 }
@@ -40,18 +40,16 @@ export function registerXifanIpc(): void {
 
   ipcMain.handle('xifan:watch', async (_event, watchUrl: string, preferCache?: boolean) =>
     watch(watchUrl, preferCache))
-  // 模板拼出的直链 404(OVA 等特殊集)时回源解析真实地址。与下载流程内部用的是同一个函数
-  // 这里只是把它开给渲染进程按需调用。
+  // 复制媒体地址与下载共用逐集解析，避免继续使用旧站的文件名模板。
   ipcMain.handle('xifan:resolve-ep-url', async (_event, epPage: string, ep: number) =>
     resolveEpRealUrl(epPage, ep))
-  // 先看 24h 的逐集地址缓存,只有没命中、或播放器报错要求强制刷新时才去读播放页。
-  // **这个缓存不能放渲染层** —— 否则刷新页面 / 重启应用后又会重新触发站点的安全检查。
+  // 新版媒体地址逐集签发，旧版 URL 模板和磁盘缓存不再作为播放依据。
   ipcMain.handle(
     'xifan:resolve-play-url',
     async (_event, template: string | null, epPage: string, ep: number, forceRefresh?: boolean) =>
       resolveEpPlaybackUrl(template, epPage, ep, forceRefresh === true),
   )
-  // 下载配置面板专用:watch() 只解析当前激活线路,这里并发补齐其余线路,给面板一次性展示。
+  // 下载面板复用详情中的线路和选集；不预先签发所有线路的媒体地址。
   // 播放器**不**调这个 —— 它按需惰性解析。
   ipcMain.handle('xifan:resolve-all-sources', async (_event, animeId: string, sources: XifanSource[]) =>
     resolveAllSources(animeId, sources))

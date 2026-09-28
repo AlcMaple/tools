@@ -75,19 +75,11 @@ export function siteApi(task: DownloadTask): SiteApi {
     switchSource: ({ failedEps, newSourceIdx }) =>
       window.xifanApi.switchSource(task.id, task.title, task.templates, failedEps, newSourceIdx, savePath, task.epPages),
     resolveEpUrl: async (ep) => {
-      // OVA 等特殊集的文件名不是集号、模板拼不出来;主进程回源解析过的真实直链记在 epUrls 里,优先用它。
-      const resolved = task.epUrls[ep]
-      if (resolved) return resolved
-      // 要用**当前源**的模板(换过源后 sourceIdx 已经变了);写死 [0] 会复制出原来那个源的链接。
-      const template = task.templates[task.sourceIdx] ?? task.templates[0] ?? ''
-      // 占位符按携带的位宽补零,**必须**与主进程 download.ts 的 formatEpUrl 保持一致
-      // 否则复制出来的直链是错的。
-      return template
-        ? template.replace(/\{:0?(\d*)d\}/, (_, w: string) =>
-            String(ep).padStart(w ? parseInt(w, 10) : 0, '0'))
-        : ''
+      const page = task.epPages[task.sourceIdx]
+      if (!page) throw new Error('旧任务缺少稀饭选集信息，请重新添加下载任务')
+      return await window.xifanApi.resolveEpUrl(page, ep) ?? ''
     },
-    resolveIsAsync: false,
+    resolveIsAsync: true,
   }
 }
 

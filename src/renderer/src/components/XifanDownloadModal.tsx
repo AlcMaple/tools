@@ -34,12 +34,11 @@ export function XifanDownloadConfigModal({
   onClose,
   onStart,
 }: Props): JSX.Element {
-  const validSources = watchInfo.sources.filter((s) => s.template);
+  const validSources = watchInfo.sources.filter((s) => s.epPage || s.template);
   const options: SourceOption[] = validSources.map((s) => ({
     id: s.idx,
     name: cleanSourceName(s.name),
-    // 稀饭不给每条线路各自的集数 —— 各线路总集数相同,所以每个选项都复用同一个 total。
-    episodeCount: watchInfo.total,
+    episodeCount: s.epLabels.length,
     epLabels: s.epLabels.map((l, i) => displayEpLabel(l, i + 1)),
   }));
 
@@ -50,8 +49,8 @@ export function XifanDownloadConfigModal({
     excluded: number[],
   ): void => {
     const selected = validSources.find((s) => s.idx === source.id);
-    if (!selected?.template) return;
-    // 把全部可用模板都传下去(选中的排第一),失败时用户可以换线路。
+    if (!selected || (!selected.epPage && !selected.template)) return;
+    // 保持队列数组同序，媒体地址在每集开始时由源站签发。
     // epPages 与 templates 同序平行,换源时 sourceIdx 同时索引这两个数组。
     const ordered = [
       selected,
@@ -59,7 +58,7 @@ export function XifanDownloadConfigModal({
     ];
     // Xifan 的集号 == 序号,排除项直接就是要跳过的 ep 号。
     onStart(
-      ordered.map((s) => s.template!),
+      ordered.map((s) => s.template ?? ''),
       ordered.map((s) => s.epPage),
       startEp,
       endEp,

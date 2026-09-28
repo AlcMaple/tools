@@ -350,7 +350,7 @@ export function SourceSearchModal({
           ) : results.length === 0 ? (
             <div className="page-state" style={{ padding: '48px 12px' }}>
               <Ic name="search" cls="ic" />
-              <p className="small">没有找到“{keyword}”相关的{source.label}资源</p>
+              <p className="small">没有找到“{keyword}”相关的{source.label}资源，试试缩短番名或换一种译名</p>
               <p className="faint small">换一个中文名、别名或关键词再搜。</p>
             </div>
           ) : (

@@ -50,7 +50,7 @@ try {
     db.prepare(`INSERT OR REPLACE INTO tracks (user_id,bgm_id,status,episode,total_episodes,title,title_cn,cover,air_weekday,air_date,score,bgm_tags,user_tags,aliases,extra,observe_count,updated_at)
       VALUES (@user_id,@bgm_id,@status,@episode,@total_episodes,'Ojou-sama','大小姐才不会格斗游戏','',0,'',0,'[]','[]','[]','{}',0,@now)`).run({
       user_id: uid, bgm_id: bgmId, status: 'watching', episode: 3, total_episodes: null, now: Date.now(), ...over })
-  const bindXifan = (bgmId: number, id: number) => db.prepare('INSERT OR REPLACE INTO xifan_binding (bgm_id,xifan_id,xifan_name,updated_at) VALUES (?,?,?,?)').run(bgmId, id, 'x', Date.now())
+  const bindXifan = (bgmId: number, id: number) => db.prepare("INSERT OR REPLACE INTO xifan_binding (bgm_id,xifan_id,xifan_name,updated_at,source_version) VALUES (?,?,?,?,'next')").run(bgmId, id, 'x', Date.now())
   const session = (uid: number) => history.createSession(uid, { requestId: randomUUID(), title: '播放手帐' })
   const rowState = (id: string) => (db.prepare('SELECT state, event_seq FROM agent_playback_actions WHERE id=?').get(id) as { state: string; event_seq: number })
 
@@ -76,7 +76,7 @@ try {
     verifyCaptcha: async () => ({ success: captchaOk }),
     bind: (bgmId, id, name) => {
       bindCalls.push({ bgmId, id, name })
-      db.prepare('INSERT OR REPLACE INTO xifan_binding (bgm_id,xifan_id,xifan_name,updated_at) VALUES (?,?,?,?)').run(bgmId, Number(id), name, clock)
+      db.prepare("INSERT OR REPLACE INTO xifan_binding (bgm_id,xifan_id,xifan_name,updated_at,source_version) VALUES (?,?,?,?,'next')").run(bgmId, Number(id), name, clock)
     },
   })
   // 组合动作里的「先加入追番」要能查到离线元数据；本地补充表就够，不必造索引文件。
@@ -92,6 +92,15 @@ try {
     assert.equal(preview.episode, 3)
     assert.equal(preview.source, 'xifan')
     assert.equal(preview.target, 'web_player')
+    const { getBinding, bindingsFor } = await import('../server/xifan/bindings')
+    db.prepare("UPDATE xifan_binding SET source_version='legacy' WHERE bgm_id=401").run()
+    const legacy = store.prepare(alice, ctx(session(alice).id), { bgmId: 401, source: 'xifan' }).preview
+    assert.equal(legacy.target, 'source_search')
+    assert.equal(getBinding(401), null)
+    assert.deepEqual(bindingsFor([401]), {})
+    assert.equal(db.prepare('SELECT xifan_id FROM xifan_binding WHERE bgm_id=401').get()?.xifan_id, 9001)
+    bindXifan(401, 9001)
+
     assert.equal(preview.title, '大小姐才不会格斗游戏')
     assert.equal(rowState(preview.actionId).state, 'prepared')
     // 预览里没有任何可直接执行的凭证或源站地址

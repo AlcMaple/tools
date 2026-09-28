@@ -19,6 +19,8 @@ const TTL_BY_SOURCE: Record<string, number> = {
  * 不用等 TTL 过期。默认版本 1,不出现在 key 里,保持旧数据继续可读。
  */
 const CACHE_VERSION_BY_SOURCE: Record<string, number> = {
+  // 新站编号与旧站不同，旧搜索结果必须重新确认。
+  xifan: 2,
   // v2: 封面改走 mtmedia:// 代理(之前是裸 https 链接,拿不到 Referer 会 403)+ 补了
   // "BILI_<数字>"僵尸账号过滤——v1 缓存里的条目两个都没有,必须失效重搜。
   bilibili: 2,

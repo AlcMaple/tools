@@ -136,7 +136,7 @@ export class AgentPlaybackStore {
   // 片源绑定是全局事实（见 server/db.ts 建表注释），不按用户分；没绑过就是没绑过，不联网去认。
   private binding(source: PlaybackSource, bgmId: number): string | null {
     const row = source === 'xifan'
-      ? this.db.prepare('SELECT xifan_id AS id FROM xifan_binding WHERE bgm_id = ?').get(bgmId) as { id: number } | undefined
+      ? this.db.prepare("SELECT xifan_id AS id FROM xifan_binding WHERE bgm_id = ? AND source_version = 'next'").get(bgmId) as { id: number } | undefined
       : this.db.prepare('SELECT girigiri_id AS id FROM girigiri_binding WHERE bgm_id = ?').get(bgmId) as { id: string } | undefined
     return row ? String(row.id) : null
   }

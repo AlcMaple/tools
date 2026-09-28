@@ -153,8 +153,7 @@ async function loadSiteData(binding: AnimeBinding, preferCache: boolean): Promis
     return { kind: 'bili', info, lines }
   }
   if (binding.source === 'Xifan') {
-    // 只有追番记录填过总集数(= 不再更新的老番)才允许吃 7 天缓存跳过这次请求;
-    // 连载番必须按最新结果来,否则会漏掉新更新的集数。
+    // 主进程按新站选集元数据解析，旧站绑定会提示重新确认。
     const info = await window.xifanApi.getWatch(url, preferCache)
     if (info.error) throw new Error(info.error)
     const lines = info.sources.map((s) => ({
@@ -216,11 +215,10 @@ async function resolveStream(data: SiteData, lineIdx: number, ep: number): Promi
   const line = data.info.sources[lineIdx]
   if (!line) throw new Error('线路不存在,换一条线路试试')
   if (!line.epPage) throw new Error('这条线路没有可用的播放地址,换一条线路试试')
-  // 地址缓存放主进程而非这个组件：重进播放页 / 重启应用仍可命中，且缓存未命中
-  // 才会让后台 Chromium 访问稀饭页面。模板直链也在这里归一成「按集缓存」的地址。
+  // 新版地址按剧集 ID 签发，旧版按文件名推算的模板不再用于播放。
   const real = await window.xifanApi.resolvePlayUrl(line.template, line.epPage, ep)
   if (!real) throw new Error('未能解析到这一集的播放地址')
-  return { kind: 'url', url: real, isHls: false }
+  return { kind: 'url', url: real, isHls: /\.m3u8(?:[?#]|$)/i.test(real) }
 }
 
 /** 把选中的 qn 落到 shaka 上。B 站同档画质有多种编码,MPD 里只放了 avc1,按高度匹配。 */

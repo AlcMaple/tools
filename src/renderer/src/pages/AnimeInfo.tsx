@@ -13,7 +13,7 @@ import { GirigiriDownloadConfigModal } from '../components/GirigiriDownloadModal
 import { AowuDownloadConfigModal } from '../components/AowuDownloadModal'
 import { BgmLoginChip } from '../components/BgmLoginChip'
 import { downloadStore } from '../stores/downloadStore'
-import { readCacheEntry, getSavePath, isSearchCacheEnabled, setCachedSearch } from '../utils/searchCache'
+import { getCachedSearch, getSavePath, isSearchCacheEnabled, setCachedSearch } from '../utils/searchCache'
 import { animeTrackStore, useAnimeTrack, deriveSubjectType, aliasesFromInfobox } from '../stores/animeTrackStore'
 import { loadBgmHistory, addBgmHistory, removeBgmHistory, clearBgmHistory } from '../utils/bgmSearchHistory'
 import { useCover } from '../hooks/useCover'
@@ -30,10 +30,7 @@ function extractSubjectId(link: string): number | null {
 
 // ArchiveFlow 各源的缓存独立，存的是统一后的 SearchCard
 const archiveCacheKey = (source: Source): string =>
-  `archive_search_cache_${source.toLowerCase()}`
-
-const sharedSearchCacheKey = (source: Source): string =>
-  `search_cache_${source.toLowerCase()}`
+  `archive_search_cache_${source.toLowerCase()}${source === 'Xifan' ? '_v2' : ''}`
 
 async function getSearchCache(source: Source, keyword: string): Promise<SearchCard[] | null> {
   try {
@@ -43,9 +40,8 @@ async function getSearchCache(source: Source, keyword: string): Promise<SearchCa
 
   // 兼容 SearchDownload 写入的共享缓存
   try {
-    const sd = (await window.systemApi.cacheGet(sharedSearchCacheKey(source))) as Record<string, unknown> | null
-    const entry = sd ? readCacheEntry<SearchCard[]>(sd[keyword]) : null
-    if (entry && Array.isArray(entry.data) && entry.data.length > 0) return entry.data
+    const entry = await getCachedSearch(keyword, source)
+    if (entry && entry.data.length > 0) return entry.data
   } catch { /* noop */ }
 
   return null

@@ -9,11 +9,12 @@ export interface Binding {
   xifanName: string
 }
 
-const getStmt = db.prepare('SELECT xifan_id, xifan_name FROM xifan_binding WHERE bgm_id = ?')
+const getStmt = db.prepare("SELECT xifan_id, xifan_name FROM xifan_binding WHERE bgm_id = ? AND source_version = 'next'")
 const upsertStmt = db.prepare(`
-  INSERT INTO xifan_binding (bgm_id, xifan_id, xifan_name, updated_at) VALUES (?, ?, ?, ?)
+  INSERT INTO xifan_binding (bgm_id, xifan_id, xifan_name, updated_at, source_version) VALUES (?, ?, ?, ?, 'next')
   ON CONFLICT(bgm_id) DO UPDATE SET
-    xifan_id = excluded.xifan_id, xifan_name = excluded.xifan_name, updated_at = excluded.updated_at
+    xifan_id = excluded.xifan_id, xifan_name = excluded.xifan_name, updated_at = excluded.updated_at,
+    source_version = excluded.source_version
 `)
 
 export function getBinding(bgmId: number): Binding | null {
@@ -30,7 +31,7 @@ export function bindingsFor(bgmIds: number[]): Record<number, Binding> {
   if (!bgmIds.length) return {}
   const placeholders = bgmIds.map(() => '?').join(',')
   const rows = db
-    .prepare(`SELECT bgm_id, xifan_id, xifan_name FROM xifan_binding WHERE bgm_id IN (${placeholders})`)
+    .prepare(`SELECT bgm_id, xifan_id, xifan_name FROM xifan_binding WHERE source_version = 'next' AND bgm_id IN (${placeholders})`)
     .all(...bgmIds) as { bgm_id: number; xifan_id: number; xifan_name: string }[]
   const out: Record<number, Binding> = {}
   for (const r of rows) out[r.bgm_id] = { xifanId: r.xifan_id, xifanName: r.xifan_name }

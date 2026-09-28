@@ -1,0 +1,467 @@
+{
+  "source": "https://next.xifanacg.com/anime/3412",
+  "capturedAt": "2026-09-28",
+  "search": [
+    {
+      "id": 3393,
+      "title": "花织同学转生后还是想干架",
+      "cover_url": "https://img2.xfmanga.top/pic/cover/l/59/84/587109_q1iCs.jpg",
+      "release_year": 2026,
+      "current_episodes": 12,
+      "total_count": 1
+    }
+  ],
+  "detail": {
+    "anime": {
+      "id": 3412,
+      "title": "LV999的村民"
+    },
+    "sources": [
+      {
+        "id": 4,
+        "code": "xfxf1",
+        "name": "稀饭新番主线-1",
+        "episodes": [
+          {
+            "id": 121197,
+            "kind": "main",
+            "title": "世界的设定",
+            "available_at": "2026-07-02T09:09:12.033646+00:00",
+            "release_date": "2026-07-01",
+            "episode_number": 1,
+            "stale_update_eligible_at": "2026-07-10"
+          },
+          {
+            "id": 121198,
+            "kind": "main",
+            "title": "因为他是超级大笨蛋",
+            "available_at": "2026-07-02T09:09:12.033646+00:00",
+            "release_date": "2026-07-08",
+            "episode_number": 2,
+            "stale_update_eligible_at": "2026-07-10"
+          },
+          {
+            "id": 121899,
+            "kind": "main",
+            "title": "魔族与人类的共存",
+            "available_at": "2026-07-08T16:41:11.132443+00:00",
+            "release_date": "2026-07-15",
+            "episode_number": 3,
+            "stale_update_eligible_at": "2026-07-17"
+          },
+          {
+            "id": 122752,
+            "kind": "main",
+            "title": "有些事想问你",
+            "available_at": "2026-07-15T16:53:25.98307+00:00",
+            "release_date": "2026-07-22",
+            "episode_number": 4,
+            "stale_update_eligible_at": "2026-07-24"
+          },
+          {
+            "id": 123899,
+            "kind": "main",
+            "title": "被赋予的角色",
+            "available_at": "2026-07-22T16:31:11.345933+00:00",
+            "release_date": "2026-07-29",
+            "episode_number": 5,
+            "stale_update_eligible_at": "2026-07-31"
+          },
+          {
+            "id": 125239,
+            "kind": "main",
+            "title": "公主的想法",
+            "available_at": "2026-07-29T16:38:26.859833+00:00",
+            "release_date": "2026-08-05",
+            "episode_number": 6,
+            "stale_update_eligible_at": "2026-08-07"
+          },
+          {
+            "id": 127345,
+            "kind": "main",
+            "title": "相遇使人改变",
+            "available_at": "2026-08-05T17:05:11.159333+00:00",
+            "release_date": "2026-08-12",
+            "episode_number": 7,
+            "stale_update_eligible_at": "2026-08-14"
+          },
+          {
+            "id": 129355,
+            "kind": "main",
+            "title": "水火不容",
+            "available_at": "2026-08-12T16:52:09.456141+00:00",
+            "release_date": "2026-08-19",
+            "episode_number": 8,
+            "stale_update_eligible_at": "2026-08-21"
+          },
+          {
+            "id": 131384,
+            "kind": "main",
+            "title": "前所未有的希望",
+            "available_at": "2026-08-19T16:28:11.203012+00:00",
+            "release_date": "2026-08-26",
+            "episode_number": 9,
+            "stale_update_eligible_at": "2026-08-28"
+          },
+          {
+            "id": 133557,
+            "kind": "main",
+            "title": "自此摧毁",
+            "available_at": "2026-08-26T16:34:40.615792+00:00",
+            "release_date": "2026-09-02",
+            "episode_number": 10,
+            "stale_update_eligible_at": "2026-09-04"
+          },
+          {
+            "id": 148404,
+            "kind": "main",
+            "title": "绝对王权",
+            "available_at": "2026-09-02T16:37:11.124185+00:00",
+            "release_date": "2026-09-09",
+            "episode_number": 11,
+            "stale_update_eligible_at": "2026-09-11"
+          },
+          {
+            "id": 150661,
+            "kind": "main",
+            "title": "狗屁常识",
+            "available_at": "2026-09-09T16:40:10.983163+00:00",
+            "release_date": "2026-09-16",
+            "episode_number": 12,
+            "stale_update_eligible_at": "2026-09-18"
+          }
+        ]
+      },
+      {
+        "id": 1,
+        "code": "AL",
+        "name": "稀饭新番主线-2",
+        "episodes": [
+          {
+            "id": 121197,
+            "kind": "main",
+            "title": "世界的设定",
+            "available_at": "2026-07-02T09:09:12.033646+00:00",
+            "release_date": "2026-07-01",
+            "episode_number": 1,
+            "stale_update_eligible_at": "2026-07-10"
+          },
+          {
+            "id": 121198,
+            "kind": "main",
+            "title": "因为他是超级大笨蛋",
+            "available_at": "2026-07-02T09:09:12.033646+00:00",
+            "release_date": "2026-07-08",
+            "episode_number": 2,
+            "stale_update_eligible_at": "2026-07-10"
+          },
+          {
+            "id": 121899,
+            "kind": "main",
+            "title": "魔族与人类的共存",
+            "available_at": "2026-07-08T16:41:11.132443+00:00",
+            "release_date": "2026-07-15",
+            "episode_number": 3,
+            "stale_update_eligible_at": "2026-07-17"
+          },
+          {
+            "id": 122752,
+            "kind": "main",
+            "title": "有些事想问你",
+            "available_at": "2026-07-15T16:53:25.98307+00:00",
+            "release_date": "2026-07-22",
+            "episode_number": 4,
+            "stale_update_eligible_at": "2026-07-24"
+          },
+          {
+            "id": 123899,
+            "kind": "main",
+            "title": "被赋予的角色",
+            "available_at": "2026-07-22T16:31:11.345933+00:00",
+            "release_date": "2026-07-29",
+            "episode_number": 5,
+            "stale_update_eligible_at": "2026-07-31"
+          },
+          {
+            "id": 125239,
+            "kind": "main",
+            "title": "公主的想法",
+            "available_at": "2026-07-29T16:38:26.859833+00:00",
+            "release_date": "2026-08-05",
+            "episode_number": 6,
+            "stale_update_eligible_at": "2026-08-07"
+          },
+          {
+            "id": 127345,
+            "kind": "main",
+            "title": "相遇使人改变",
+            "available_at": "2026-08-05T17:05:11.159333+00:00",
+            "release_date": "2026-08-12",
+            "episode_number": 7,
+            "stale_update_eligible_at": "2026-08-14"
+          },
+          {
+            "id": 129355,
+            "kind": "main",
+            "title": "水火不容",
+            "available_at": "2026-08-12T16:52:09.456141+00:00",
+            "release_date": "2026-08-19",
+            "episode_number": 8,
+            "stale_update_eligible_at": "2026-08-21"
+          },
+          {
+            "id": 131384,
+            "kind": "main",
+            "title": "前所未有的希望",
+            "available_at": "2026-08-19T16:28:11.203012+00:00",
+            "release_date": "2026-08-26",
+            "episode_number": 9,
+            "stale_update_eligible_at": "2026-08-28"
+          },
+          {
+            "id": 133557,
+            "kind": "main",
+            "title": "自此摧毁",
+            "available_at": "2026-08-26T16:34:40.615792+00:00",
+            "release_date": "2026-09-02",
+            "episode_number": 10,
+            "stale_update_eligible_at": "2026-09-04"
+          },
+          {
+            "id": 148404,
+            "kind": "main",
+            "title": "绝对王权",
+            "available_at": "2026-09-02T16:37:11.124185+00:00",
+            "release_date": "2026-09-09",
+            "episode_number": 11,
+            "stale_update_eligible_at": "2026-09-11"
+          },
+          {
+            "id": 150661,
+            "kind": "main",
+            "title": "狗屁常识",
+            "available_at": "2026-09-09T16:40:10.983163+00:00",
+            "release_date": "2026-09-16",
+            "episode_number": 12,
+            "stale_update_eligible_at": "2026-09-18"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "code": "CS",
+        "name": "稀饭备用-1",
+        "episodes": [
+          {
+            "id": 121197,
+            "kind": "main",
+            "title": "世界的设定",
+            "available_at": "2026-07-02T09:09:12.033646+00:00",
+            "release_date": "2026-07-01",
+            "episode_number": 1,
+            "stale_update_eligible_at": "2026-07-10"
+          },
+          {
+            "id": 121198,
+            "kind": "main",
+            "title": "因为他是超级大笨蛋",
+            "available_at": "2026-07-02T09:09:12.033646+00:00",
+            "release_date": "2026-07-08",
+            "episode_number": 2,
+            "stale_update_eligible_at": "2026-07-10"
+          },
+          {
+            "id": 121899,
+            "kind": "main",
+            "title": "魔族与人类的共存",
+            "available_at": "2026-07-08T16:41:11.132443+00:00",
+            "release_date": "2026-07-15",
+            "episode_number": 3,
+            "stale_update_eligible_at": "2026-07-17"
+          },
+          {
+            "id": 122752,
+            "kind": "main",
+            "title": "有些事想问你",
+            "available_at": "2026-07-15T16:53:25.98307+00:00",
+            "release_date": "2026-07-22",
+            "episode_number": 4,
+            "stale_update_eligible_at": "2026-07-24"
+          },
+          {
+            "id": 123899,
+            "kind": "main",
+            "title": "被赋予的角色",
+            "available_at": "2026-07-22T16:31:11.345933+00:00",
+            "release_date": "2026-07-29",
+            "episode_number": 5,
+            "stale_update_eligible_at": "2026-07-31"
+          },
+          {
+            "id": 125239,
+            "kind": "main",
+            "title": "公主的想法",
+            "available_at": "2026-07-29T16:38:26.859833+00:00",
+            "release_date": "2026-08-05",
+            "episode_number": 6,
+            "stale_update_eligible_at": "2026-08-07"
+          },
+          {
+            "id": 127345,
+            "kind": "main",
+            "title": "相遇使人改变",
+            "available_at": "2026-08-05T17:05:11.159333+00:00",
+            "release_date": "2026-08-12",
+            "episode_number": 7,
+            "stale_update_eligible_at": "2026-08-14"
+          },
+          {
+            "id": 129355,
+            "kind": "main",
+            "title": "水火不容",
+            "available_at": "2026-08-12T16:52:09.456141+00:00",
+            "release_date": "2026-08-19",
+            "episode_number": 8,
+            "stale_update_eligible_at": "2026-08-21"
+          },
+          {
+            "id": 131384,
+            "kind": "main",
+            "title": "前所未有的希望",
+            "available_at": "2026-08-19T16:28:11.203012+00:00",
+            "release_date": "2026-08-26",
+            "episode_number": 9,
+            "stale_update_eligible_at": "2026-08-28"
+          },
+          {
+            "id": 133557,
+            "kind": "main",
+            "title": "自此摧毁",
+            "available_at": "2026-08-26T16:34:40.615792+00:00",
+            "release_date": "2026-09-02",
+            "episode_number": 10,
+            "stale_update_eligible_at": "2026-09-04"
+          },
+          {
+            "id": 148404,
+            "kind": "main",
+            "title": "绝对王权",
+            "available_at": "2026-09-02T16:37:11.124185+00:00",
+            "release_date": "2026-09-09",
+            "episode_number": 11,
+            "stale_update_eligible_at": "2026-09-11"
+          },
+          {
+            "id": 150661,
+            "kind": "main",
+            "title": "狗屁常识",
+            "available_at": "2026-09-09T16:40:10.983163+00:00",
+            "release_date": "2026-09-16",
+            "episode_number": 12,
+            "stale_update_eligible_at": "2026-09-18"
+          }
+        ]
+      }
+    ]
+  },
+  "schedule": [
+    {
+      "weekday": 0,
+      "animes": [
+        {
+          "id": 3348,
+          "title": "在异世界获得超强能力的我，在现实世界照样无敌～等级提升改变人生命运～ SP",
+          "cover_url": "https://img2.cycimg.me/r/800/pic/cover/l/4b/fa/459601_vf61d.jpg",
+          "release_year": 2026,
+          "bangumi_score": 4.7,
+          "is_finished": false,
+          "current_episodes": 1,
+          "total_episodes": 1,
+          "format": "tv",
+          "view_count": 9714,
+          "hiatus_until": null,
+          "is_hiatus": false,
+          "remarks": null
+        },
+        {
+          "id": 3462,
+          "title": "魔法少女育成计划 restart",
+          "cover_url": "https://img2.cycimg.me/r/800/pic/cover/l/52/fe/418229_gcFij.jpg",
+          "release_year": 2026,
+          "bangumi_score": 8.8,
+          "is_finished": false,
+          "current_episodes": 0,
+          "total_episodes": 0,
+          "format": "tv",
+          "view_count": 0,
+          "hiatus_until": null,
+          "is_hiatus": false,
+          "remarks": "周一深夜"
+        },
+        {
+          "id": 3487,
+          "title": "PSYREN -决战游戏-",
+          "cover_url": "https://img2.cycimg.me/r/800/pic/cover/l/1b/1e/614640_CV00Q.jpg",
+          "release_year": 2026,
+          "bangumi_score": 6,
+          "is_finished": false,
+          "current_episodes": 0,
+          "total_episodes": 0,
+          "format": "tv",
+          "view_count": 0,
+          "hiatus_until": null,
+          "is_hiatus": false,
+          "remarks": "周一深夜"
+        },
+        {
+          "id": 3446,
+          "title": "你好、我是受心上人所托来做恋爱药的魔女。",
+          "cover_url": "https://img2.cycimg.me/r/800/pic/cover/l/73/99/624923_4u99L.jpg",
+          "release_year": 2026,
+          "bangumi_score": 0,
+          "is_finished": false,
+          "current_episodes": 0,
+          "total_episodes": 0,
+          "format": "tv",
+          "view_count": 0,
+          "hiatus_until": null,
+          "is_hiatus": false,
+          "remarks": null
+        },
+        {
+          "id": 3493,
+          "title": "转生成哥布林但有疑问吗？",
+          "cover_url": "https://img2.cycimg.me/r/800/pic/cover/l/05/25/634587_8k4k7.jpg",
+          "release_year": 2026,
+          "bangumi_score": 0,
+          "is_finished": false,
+          "current_episodes": 0,
+          "total_episodes": 0,
+          "format": "tv",
+          "view_count": 0,
+          "hiatus_until": null,
+          "is_hiatus": false,
+          "remarks": "周一晚间"
+        }
+      ]
+    }
+  ],
+  "playback": {
+    "ok": true,
+    "action": "fallback",
+    "resolved_action": "fallback",
+    "episode_id": 121197,
+    "anime_id": 3412,
+    "url": "https://apn.moedot.net/d/wo/2607/LV01.mp4",
+    "candidates": [
+      {
+        "source_id": 4,
+        "source_code": "xfxf1",
+        "source_name": "稀饭新番主线-1",
+        "url": "https://apn.moedot.net/d/wo/2607/LV01.mp4",
+        "expected_bytes": 364235574
+      }
+    ],
+    "request_id": "b2846c6a-7d86-4d6f-aef5-ba8e7ec62599"
+  }
+}

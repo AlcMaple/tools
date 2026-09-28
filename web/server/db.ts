@@ -188,6 +188,8 @@ function ensureColumn(table: string, column: string, decl: string): void {
 }
 // 观望次数（status='considering' 时才有意义）。提升为正式列而不是继续躺在 extra 里：
 // 网页端现在也要读写它，两处各存一份必然对不上（见 AGENTS「一份数据拆成两半」）。
+// 新旧稀饭编号并不对应；保留旧绑定但不拿它猜新站资源，待用户重新确认。
+ensureColumn('xifan_binding', 'source_version', "source_version TEXT NOT NULL DEFAULT 'legacy'")
 ensureColumn('tracks', 'observe_count', 'observe_count INTEGER NOT NULL DEFAULT 0')
 ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0')
 ensureColumn('users', 'security_question', 'security_question TEXT')
