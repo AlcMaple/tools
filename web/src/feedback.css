@@ -1,0 +1,21 @@
+.feedback-panel{max-width:700px;margin:0 auto;color:var(--ink);padding:24px;background:var(--paper);border:1.5px solid var(--line-strong);border-radius:20px;position:relative}
+.feedback-panel.dlg{width:min(620px,calc(100vw - 28px));max-height:85vh;overflow-y:auto;margin:auto}
+.feedback-backdrop{z-index:220}
+.feedback-panel *{box-sizing:border-box}
+.feedback-head,.feedback-tabs,.feedback-types,.feedback-detail-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.feedback-head{justify-content:space-between;margin-bottom:18px}.feedback-head h2{margin:0}
+.feedback-tabs{margin-bottom:20px}.feedback-types{margin-bottom:14px}
+.feedback-label{display:block;margin:16px 0 8px;font-weight:600}.feedback-label .faint{font-weight:400;font-size:12px}
+.feedback-panel textarea,.feedback-panel input[type=email]{width:100%;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--paper-2);color:inherit;padding:12px;font:inherit}
+.feedback-panel textarea{resize:vertical;min-height:92px;max-height:260px;margin-bottom:12px;line-height:1.6;scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
+.feedback-panel::-webkit-scrollbar,.feedback-panel textarea::-webkit-scrollbar{width:4px;height:4px}.feedback-panel::-webkit-scrollbar-thumb,.feedback-panel textarea::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:4px}
+.feedback-images,.feedback-attachments{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.feedback-images>div{position:relative}.feedback-images img{width:95px;height:75px;object-fit:contain;border:1px solid var(--line);border-radius:8px}.feedback-images button{position:absolute;right:-5px;top:-5px;border:1px solid var(--line);border-radius:50%;background:var(--paper);color:var(--ink);width:24px;height:24px}
+.feedback-context{font-size:12px;margin:16px 0}.feedback-context summary{cursor:pointer}.feedback-context label{display:flex;gap:8px;align-items:center;margin:10px 0}.feedback-context pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--paper-2);padding:10px;border-radius:8px}
+.feedback-result{min-height:32px;padding-top:12px;font-size:13px}.feedback-result .text-error{color:var(--rose,#a34558)}
+.feedback-list{display:grid;gap:12px}.feedback-list-item{text-align:left;background:var(--paper-2);color:inherit;border:1px solid var(--line);border-radius:12px;padding:14px;position:relative;width:100%;font:inherit}.feedback-list-item>span{display:flex;gap:12px;align-items:center}.feedback-list-item em{margin-left:auto;font-size:11px;color:var(--teal);font-style:normal}.feedback-list-item p{margin:10px 0;overflow-wrap:anywhere}.feedback-panel time{font-size:11px;color:var(--ink-faint)}
+.feedback-detail-head{margin:16px 0;font-size:12px}.feedback-status{color:var(--teal);background:var(--teal-wash);border-radius:16px;padding:4px 10px}
+.feedback-message{padding:14px;border:1px solid var(--line);background:var(--paper-2);border-radius:12px;margin:12px 0}.feedback-message.from-admin{border-color:var(--teal-line);background:var(--teal-wash)}.feedback-message>div:first-child{display:flex;justify-content:space-between;gap:8px;font-size:12px}.feedback-message p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;margin:10px 0 0}.feedback-attachments img{max-width:180px;max-height:140px;object-fit:contain;border-radius:8px}.feedback-notification{font-size:12px;display:flex;gap:8px;align-items:center;margin:8px 0}
+.feedback-settings-entry{display:flex;justify-content:space-between;align-items:center;margin:16px 0;gap:12px}.feedback-error-link{margin-left:8px;font-size:12px;text-decoration:underline;background:transparent;border:0;color:inherit}
+@media(max-width:720px){.feedback-panel{padding:18px;border-radius:16px}.feedback-panel.dlg{max-height:82vh}.feedback-attachments img{max-width:130px}.feedback-tabs{gap:8px}.feedback-list-item>span{flex-wrap:wrap}}
+
+.feedback-entry{position:relative}.feedback-unread{position:absolute;right:4px;top:-8px;width:max-content;border-radius:12px;background:var(--teal);color:white;padding:2px 7px;font-size:10px;line-height:1.4}.feedback-list-item>span{padding-right:60px}.feedback-list-item em{position:absolute;right:14px;top:14px;width:max-content}
