@@ -24,7 +24,7 @@ if (HAS_PROXY_ENV) setGlobalDispatcher(new EnvHttpProxyAgent())
 // 手动 `HTTPS_PROXY=... npm run dev`。探测顺序：macOS 系统代理 → Clash/Mihomo 外部控制器
 // 报的混合端口 → 常见端口兜底；启动时每个候选都真发一次 HEAD 验证过才启用，
 // 请求失败后的重新对齐只检查本地端口，再让原请求承担唯一重试。
-const PROBE_URL = 'https://anime.xifanacg.com/'
+const PROBE_URL = 'https://next.xifanacg.com/'
 const execFileAsync = promisify(execFile)
 const DIRECT_AGENT = new Agent()
 const PROXY_REFRESH_COOLDOWN_MS = 5_000

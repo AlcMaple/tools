@@ -10,7 +10,7 @@ const XIFAN_PARTITION = 'persist:xifan-browser-check'
 const PAGE_TIMEOUT_MS = 45_000
 const DOCUMENT_SETTLE_DELAY_MS = 120
 const CHALLENGE_POLL_DELAY_MS = 250
-export const XIFAN_ORIGIN = 'https://anime.xifanacg.com'
+export const XIFAN_ORIGIN = 'https://next.xifanacg.com'
 
 export interface XifanBrowserPage {
   html: string

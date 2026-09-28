@@ -14,8 +14,7 @@ import {
   XIFAN_ORIGIN,
 } from './browser-challenge'
 
-// 旧域 dm.xifanacg.com 现在 301 到 anime.xifanacg.com,直接用新域省掉每次跨域跳转。
-// 后台页面仍允许该子域,旧下载任务里残留的播放页链接可继续跟随 301。
+// 与后台浏览器共用官网地址，避免页面和接口请求落在不同域名。
 const BASE_URL = XIFAN_ORIGIN
 const HEADERS = {
   'User-Agent': DESKTOP_USER_AGENT,
