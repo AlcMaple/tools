@@ -668,7 +668,7 @@ function WearLayer(): JSX.Element {
       <span className="w-stain s2" />
       <span className="w-tape" />
       <span className="w-dogear" />
-    </div>在看
+    </div>
   )
 }
 
