@@ -415,6 +415,51 @@
     "path": "/reviews/:bgmId"
   },
   {
+    "file": "server/feedback.ts",
+    "method": "get",
+    "path": "/:id"
+  },
+  {
+    "file": "server/feedback.ts",
+    "method": "get",
+    "path": "/:id/images/:imageId"
+  },
+  {
+    "file": "server/feedback.ts",
+    "method": "get",
+    "path": "/"
+  },
+  {
+    "file": "server/feedback.ts",
+    "method": "get",
+    "path": "/context"
+  },
+  {
+    "file": "server/feedback.ts",
+    "method": "post",
+    "path": "/:id/notifications/:notificationId/retry"
+  },
+  {
+    "file": "server/feedback.ts",
+    "method": "post",
+    "path": "/:id/replies"
+  },
+  {
+    "file": "server/feedback.ts",
+    "method": "post",
+    "path": "/:id/seen"
+  },
+  {
+    "file": "server/feedback.ts",
+    "method": "post",
+    "path": "/:id/status"
+  },
+  {
+    "file": "server/feedback.ts",
+    "method": "post",
+    "path": "/"
+  },
+  {
     "file": "server/girigiri.ts",
     "method": "get",
     "path": "/bindings"
@@ -503,6 +548,11 @@
     "file": "server/index.ts",
     "method": "route",
     "path": "/api/community"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/feedback"
   },
   {
     "file": "server/index.ts",

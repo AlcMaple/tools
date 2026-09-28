@@ -1,3 +1,6 @@
+import { FeedbackPanel } from './FeedbackPanel'
+import { openFeedback, feedbackApi } from './feedback'
+import type { FeedbackContext } from '../shared/feedback'
 // 应用外壳 —— 皮肤 = 原型稿的「书脊 + 内页」骨架：桌面左侧书脊侧栏（索引贴导航 + 用户卡），
 // 移动端顶栏 + 底部标签栏（CSS 切换，不写 JS 分支）。这里只管壳、固定页面路由、
 // 全局登录弹窗、密保提示和便签 Toast。
@@ -23,6 +26,7 @@ const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira
   tracks: { tape: 'tape tl gold', stamp: '在看', stampCls: 'st-teal', kira: 'キラキラ…' },
   rewards: { tape: 'tape tl lav', stamp: '福利', stampCls: 'st-sakura', kira: 'ポンッ…' },
   community: { tape: 'tape tl teal', stamp: '同好', stampCls: 'st-sakura', kira: 'わくわく…' },
+  feedback: { tape: 'tape tl teal', stamp: '反馈', stampCls: 'st-teal', kira: 'サラサラ…' },
   settings: { tape: 'tape tl', stamp: '整理', stampCls: 'st-gold', kira: 'サラサラ…' },
 }
 
@@ -33,11 +37,27 @@ const ROUTE_HREF: Record<Route, string> = {
   rewards: '/#/rewards',
   community: '/#/community',
   settings: '/#/settings',
+  feedback: '/#/feedback',
 }
 
 export default function App(): JSX.Element {
   const route = useRoute()
   const { user, ready, dailyReward } = useAuth()
+  const [feedbackUnread, setFeedbackUnread] = useState(0)
+  const [feedbackOpen, setFeedbackOpen] = useState<FeedbackContext | null>(null)
+  useEffect(() => {
+    const onFeedback = (event: Event): void => setFeedbackOpen((event as CustomEvent<FeedbackContext>).detail)
+    window.addEventListener('maple:feedback', onFeedback)
+    return () => window.removeEventListener('maple:feedback', onFeedback)
+  }, [])
+  useEffect(() => {
+    if (!ready) return
+    let live = true
+    const refresh = (): void => { void feedbackApi<{unread:number}>('/context').then(data => { if (live) setFeedbackUnread(data.unread) }).catch(() => { if (live) setFeedbackUnread(0) }) }
+    refresh()
+    window.addEventListener('maple:feedback-read', refresh)
+    return () => { live = false; window.removeEventListener('maple:feedback-read', refresh) }
+  }, [ready,user?.id,route,feedbackOpen])
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [oauthError, setOauthError] = useState<string | null>(null)
@@ -207,6 +227,7 @@ export default function App(): JSX.Element {
           </div>
 
           <div className="spine-foot">
+            <button type="button" className="btn btn-sm w100 feedback-entry" onClick={() => openFeedback()}>反馈与建议{feedbackUnread>0&&<span className="feedback-unread">有新消息</span>}</button>
             {ready && user ? (
               <>
                 <div className="spine-user">
@@ -246,8 +267,9 @@ export default function App(): JSX.Element {
         {/* 内页 */}
         <main ref={sheetRef} className="sheet">
           <div className="sheet-wrap">
+            {route === 'settings' && <div className="feedback-settings-entry"><span>反馈与建议</span><button type="button" className="btn btn-sm feedback-entry" onClick={() => openFeedback()}>打开反馈{feedbackUnread>0&&<span className="feedback-unread">有新消息</span>}</button></div>}
             <NagBar onGoSettings={() => go('settings')} />
-            {route === 'settings'
+            {route === 'feedback' ? <FeedbackPanel key={user?.id ?? 'guest'} /> : route === 'settings'
               ? <SettingsPage />
               : route === 'tracks'
                 ? <TracksPage />
@@ -291,6 +313,7 @@ export default function App(): JSX.Element {
         }}
       />
       <AgentHost enabled={introComplete} userId={ready ? user?.id ?? null : undefined} onLogin={openLogin} />
+      {feedbackOpen && <FeedbackPanel key={user?.id ?? 'guest'} context={feedbackOpen} dialog onClose={() => setFeedbackOpen(null)} />}
       <ToastRoot />
     </>
   )

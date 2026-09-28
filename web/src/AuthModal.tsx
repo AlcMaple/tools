@@ -1,3 +1,4 @@
+import { openFeedback } from './feedback'
 // 登录 / 注册 / 邮箱验证码登录 / 找回密码 弹窗 —— 皮肤 = 原型稿 .auth-dlg：
 // 左侧纱雾立绘栏（halftone 网点渐隐）+ 右侧稿纸表单；「密码登录 / 验证码登录」页签，
 // 注册 / 找回由底部链接进入；Google 品牌按钮在表单下方（或分隔线隔开）。
@@ -489,6 +490,7 @@ export function AuthModal({
             </div>
           </form>
 
+          <button type="button" className="link mt8" onClick={() => openFeedback('ACCOUNT_ACCESS_PROBLEM')}>登录遇到问题？反馈一下</button>
           {(googleEnabled || githubEnabled || linuxdoEnabled) && !isForgot && (
             <>
               <div className="or-line mt8" aria-hidden="true">

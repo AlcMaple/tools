@@ -2,11 +2,12 @@
 // 但也不能只用 state：那样地址栏不变，设置页刷新就回周历、也收藏不了。hash 路由 20 行拿到真实 URL。
 import { useEffect, useState } from 'react'
 
-export type Route = 'calendar' | 'settings' | 'tracks' | 'rewards' | 'community'
+export type Route = 'calendar' | 'settings' | 'tracks' | 'rewards' | 'community' | 'feedback'
 
 function parse(): Route {
   const h = window.location.hash.replace(/^#\/?/, '')
   if (h === 'settings' || h.startsWith('settings/')) return 'settings'
+  if (h === 'feedback' || h.startsWith('feedback?')) return 'feedback'
   if (h === 'rewards') return 'rewards'
   if (h === 'community' || h.startsWith('community/')) return 'community'
   // hash 是站内页面的明确选择，必须先于 `/u/:username` 的 pathname 判断。

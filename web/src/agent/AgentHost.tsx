@@ -1,3 +1,4 @@
+import { openFeedback } from '../feedback'
 import { useEffect,useLayoutEffect,useRef,useState,useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties,FormEvent } from 'react'
@@ -87,6 +88,7 @@ function ConnectedAgent({controller:c,open,close,login,anime,launcher,toggle}:{c
       {(state.pendingBody||running&&state.watchingRun?.sessionId===state.session?.id)&&!state.messages.some(m=>m.role==='assistant'&&(m.status==='streaming'||!state.pendingBody&&m.id===state.run?.messageId))&&<article className="agent-message" aria-label="纱雾正在回复"><div className="agent-message-by"><span>纱雾</span></div><AgentActivity label={state.status||agentActivity('thinking')}/></article>}
       {state.run?.state==='paused'&&<div className="agent-inline-status"><p>回复已暂停</p><button type="button" className="btn btn-sm" disabled={!state.run.canResume||Boolean(state.busy)||running||compacting} onClick={()=>void c.resume()}>继续回复</button></div>}
       {(state.run?.state==='failed'||state.run?.state==='cancelled')&&state.editingSeq===null&&<div className="agent-inline-status"><p>已保留生成内容</p><button type="button" className="btn btn-sm" disabled={locked} onClick={()=>{const last=state.messages.filter(m=>m.role==='user').at(-1);if(last){c.startEdit(last);input.current?.focus()}}}>重新编辑问题</button></div>}
+      {(state.error||state.run?.state==='failed')&&<button type="button" className="feedback-error-link" onClick={()=>openFeedback(state.error?.code??'AGENT_RUN_FAILED')}>反馈此问题</button>}
       {(state.error||state.run?.state==='failed'||state.messages.at(-1)?.toolSummaries.some(tool=>tool.status!=='ok'))&&fallback.length>0&&<div className="agent-fallbacks">{fallback.map(kind=><button type="button" key={kind} onClick={()=>go(kind)}>{({search:'打开普通搜索',review:'打开点评助手',xifan:'去稀饭搜索',girigiri:'去 Girigiri 搜索'})[kind]} <Ic name="external" cls="ic ic-sm"/></button>)}</div>}
     </div>{newBelow&&<button type="button" className="agent-new-below" onClick={()=>{bottom.current=true;scroll.current?.scrollTo({top:scroll.current.scrollHeight});setNewBelow(false)}}>有新内容 ↓</button>}</div>
     :section==='history'?<HistoryPane c={c} state={state} onSelect={()=>setSection('chat')}/>

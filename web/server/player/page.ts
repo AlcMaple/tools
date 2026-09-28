@@ -72,6 +72,7 @@ export const PLAY_PAGE = `<!doctype html>
   <div id="buf" aria-live="polite"></div>
   <div id="err" role="alert" aria-live="polite">
     <span id="err-text"></span>
+    <a class="btn btn-sm" href="/#/feedback?from=player" target="_blank" rel="noopener">反馈此问题</a>
     <button id="err-retry" class="btn btn-sm">重试</button>
     <a id="auth-link" class="btn btn-sm btn-ghost" href="/#/settings/xifan" target="_blank" rel="noopener">去登录</a>
   </div>

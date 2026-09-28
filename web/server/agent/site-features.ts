@@ -1,6 +1,7 @@
 import type { FeatureDescription } from './knowledge'
 const feature=(id:string,title:string,purpose:string,entry:string,steps:string[],limitations:string[],tools:FeatureDescription['tools']=[],audience:'public'|'authenticated'='authenticated'):FeatureDescription=>({id,revision:1,title,purpose,entry,steps,limitations,tools,mode:tools.length?'tool':'explain',audience})
 export const SITE_FEATURES:readonly FeatureDescription[]=[
+  feature('web.feedback','反馈与建议','向开发者反馈问题或建议，并查看回复。','/#/feedback',['从侧栏、设置或报错旁打开反馈，填写内容，可添加截图','在我的反馈中查看回复或继续补充'],['未登录也可提交；匿名记录只在提交时的浏览器内查看','管理员权限由服务端明确配置；Agent 不读取反馈、截图、邮箱，也不代用户提交或代管理员回复'],[],'public'),
   {...feature('web.calendar','番剧周历','按星期查看番剧更新与已加载资料。','/#/',['打开番剧周历，切换横向或纵向视图','点击卡片查看资料；刷新由用户点击'],['Agent 只读取已有缓存，过期不自动联网刷新','「更新到第几集」由放送日期按每周一集推算，不联网核对；停播、合并或分割放送会有偏差'],['readCachedCalendar','readCurrentAnimeContext','readAiringSchedule'],'public'),revision:2},
   feature('web.search','找番与离线索引','在加番入口按番名查找候选。','/#/tracks',['打开加番搜索','默认本地检索；在线搜索须由用户主动选择'],['Agent 仅使用本地索引和补充表；缺索引不借远端站点搜索','离线完结状态未知，标签相似不是模型推荐结论'],['searchOfflineAnime']),
   {...feature('web.tracks','我的追番','管理自己的追番状态、进度、标签、收藏程度及鉴赏神回。','/#/tracks',['登录后添加番剧或手动条目','在卡片编辑进度、状态、标签或详情','可导入 Bangumi 收藏及使用既有同步入口','让纱雾预览追番添加或状态、进度、标签的改动，核对新旧值后点击确认再执行'],['私人资料仅当前账号可读','Agent 可预览追番添加与状态、进度、标签变更：旧值和 revision 由服务端读取，用户点击确认后由独立接口执行并回读；取消即不写','Agent 不代为删除、上传封面或导入，添加只用离线已收录的正数条目、不联网补全'],['listMyTracks']),revision:2},
@@ -24,7 +25,7 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
 export const SITE_API_FEATURES:Readonly<Record<string,string>>={
  '/api/health':'infrastructure.health','/api/cover/*':'infrastructure.cover','/api/auth':'web.auth','/api/auth/oauth':'web.auth',
  '/api/rewards':'web.rewards','/api/community':'web.community','/api/announcements':'web.announcements',
- '/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/backup':'web.backup','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/calendar':'web.calendar',
+ '/api/feedback':'web.feedback','/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/backup':'web.backup','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/calendar':'web.calendar',
 }
 export interface SiteFeatureAccess { email:boolean;google:boolean;github:boolean;linuxdo?:boolean;rewards:boolean;invites:boolean;lottery:boolean }
 export function enabledSiteFeatures(flags:SiteFeatureAccess,guest=false):string[]{

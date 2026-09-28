@@ -57,3 +57,11 @@ export async function sendEmailCode(email: string, code: string): Promise<void> 
     html: `<p>你的 MapleTools 邮箱验证码是：</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>验证码 10 分钟内有效，且只能使用一次。如果不是你本人操作，请忽略此邮件。</p>`,
   })
 }
+
+export async function sendFeedbackMail(to: string, subject: string, text: string): Promise<void> {
+  if (MODE === 'console' && !IS_PRODUCTION) {
+    console.info('[feedback:mail] 开发模式：通知已记录，不投递外部邮箱')
+    return
+  }
+  await getTransporter().sendMail({ from: `"${SMTP_FROM_NAME.replace(/["\\]/g, '')}" <${SMTP_FROM}>`, to, subject, text })
+}

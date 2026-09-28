@@ -1,3 +1,4 @@
+import { openFeedback } from '../feedback'
 // 「继续看」的两个弹窗，对所有在线源通用（源差异全部收在 api.ts 的 OnlineSource 适配器里）。
 //
 // - SourceBindPickerModal：首次继续看时弹，把周表里名字相近的候选列出来让用户点一个确认
@@ -313,7 +314,7 @@ export function SourceSearchModal({
               <div className="captcha-img mb16">
                 {imageB64 && <img src={`data:${mime};base64,${imageB64}`} alt={`${source.label}验证码`} />}
               </div>
-              {message && <p className="form-note err" style={{ marginTop: 0 }}>{message}</p>}
+              {message && <p className="form-note err" style={{ marginTop: 0 }}>{message}<button type="button" className="feedback-error-link" onClick={() => openFeedback('SOURCE_SEARCH_FAILED')}>反馈此问题</button></p>}
               <div className="field-row">
                 <input
                   type="text"
@@ -342,6 +343,7 @@ export function SourceSearchModal({
             <div className="page-state" style={{ padding: '48px 12px' }}>
               <Ic name="alert" cls="ic" />
               <p className="small" style={{ color: 'var(--sakura)', maxWidth: 360 }}>{message || `${source.label}搜索失败`}</p>
+              <button type="button" className="feedback-error-link" onClick={() => openFeedback('SOURCE_SEARCH_FAILED')}>反馈此问题</button>
               <button className="btn btn-sm" type="button" onClick={() => { void runSearch(keyword) }}>
                 <Ic name="refresh" cls="ic ic-sm" />
                 再试一次
