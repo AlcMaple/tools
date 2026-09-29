@@ -1,0 +1,85 @@
+/* 插画格：借 xh-anime /universe 的手法，换成本站手账配色。
+   人物去色后用 luminosity 混合——只留明暗、颜色取自背后的爆炸线，于是不同画风的图被统一成同一张「印刷品」；
+   白色区域混合后仍是白，所以没 hover 时只有头发等中间调透出几道色线，不会整张染色。
+   不要给图加 brightness 压暗：白一旦变灰就会被整片染色（设计稿第一版踩过）。
+   悬停无过渡、瞬间上色——突变本身就是冲击力。设计稿：docs/design-mockups/web/pop-panel/ */
+.pop-art {
+  --tone: var(--teal-mid);
+  position: relative;
+  isolation: isolate;
+  flex: none;
+  aspect-ratio: 5 / 6;
+}
+.pop-art.tone-sakura { --tone: var(--sakura-mid); }
+.pop-art.tone-lav { --tone: #aaa4d6; }
+.pop-art.tone-gold { --tone: #f0cf7a; }
+
+.pop-art-frame {
+  position: absolute;
+  inset: 26% 0 0;
+  overflow: hidden;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--card);
+  box-shadow: 5px 5px 0 var(--ink);
+  transform: rotate(-1.5deg);
+}
+.pop-art-burst {
+  position: absolute;
+  inset: -20% -10% -6%;
+  background: repeating-conic-gradient(from -8deg at 50% 62%, var(--tone) 0 6deg, transparent 6deg 15deg);
+  clip-path: polygon(50% 0, 58% 22%, 76% 6%, 74% 30%, 96% 22%, 84% 44%, 100% 56%, 80% 64%, 92% 88%, 68% 80%, 62% 100%, 48% 82%, 32% 100%, 30% 78%, 6% 86%, 20% 62%, 0 50%, 20% 40%, 8% 16%, 34% 26%);
+}
+.pop-art-dots {
+  position: absolute;
+  inset: 0;
+  opacity: .16;
+  background-image: radial-gradient(var(--ink) 1.4px, transparent 1.6px);
+  background-size: 10px 10px;
+}
+.pop-art-img {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  height: 100%;
+  max-width: none;
+  transform: translateX(-50%) rotate(-1.5deg);
+  transform-origin: 50% 100%;
+  filter: grayscale(1) contrast(1.25);
+  mix-blend-mode: luminosity;
+  user-select: none;
+}
+.pop-art-tag {
+  position: absolute;
+  right: -8px;
+  top: 30%;
+  z-index: 1;
+  padding: 3px 8px;
+  border: 1.5px solid var(--ink);
+  background: var(--card);
+  color: var(--ink);
+  font-family: var(--font-hand);
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 var(--ink);
+  transform: rotate(4deg);
+}
+
+.pop-art:hover .pop-art-img {
+  filter: none;
+  mix-blend-mode: normal;
+  transform: translate(calc(-50% - 4px), -4px) rotate(-1.5deg);
+}
+.pop-art:hover .pop-art-frame { box-shadow: 5px 5px 0 var(--tone); }
+.pop-art:hover .pop-art-tag { background: var(--tone); }
+
+/* ---------- 各页落点 ---------- */
+.calendar-actions { align-items: flex-end; }
+.calendar-pop { width: 132px; margin: 0 14px -6px 0; }
+.rig-slot .pop-art { width: 210px; }
+.rig-box .pop-art { width: 200px; margin-top: 10px; }
+.empty .pop-art { width: 132px; }
+.empty-text { max-width: 320px; margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink-sub); }
+.reward-pop { width: 170px; justify-self: center; }
+.auth-pop { width: 160px; aspect-ratio: 5 / 8; margin-bottom: 14px; }
+@media (max-width: 960px) { .calendar-pop { display: none; } }
