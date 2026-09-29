@@ -84,6 +84,9 @@ export function AuthModal({
   const isReg = mode === 'register'
   const isForgot = mode === 'forgot'
   const isEmail = mode === 'email'
+  // 你一边填，她一边画：填了几格就画到哪，提交的那一下画完
+  const fields = isEmail ? [email, emailCode] : isReg ? [username, password, confirm] : isForgot ? [username, answer, password] : [username, password]
+  const drawn = submitting || okMsg ? 1 : fields.filter((v) => v.trim()).length / fields.length
 
   useEffect(() => {
     if (!open) return
@@ -265,7 +268,7 @@ export function AuthModal({
         </button>
 
         <aside className="auth-side">
-          <SketchSheet src="/assets/pop/auth.webp" className="auth-sketch" />
+          <SketchSheet src="/assets/pop/auth.webp" className="auth-sketch" paint={drawn} />
           <p className="auth-side-cap">「才、才不是在等你登录……」</p>
         </aside>
 

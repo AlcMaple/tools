@@ -444,6 +444,12 @@ export function TracksPage(): JSX.Element {
     [filtered, today],
   )
   const todayCount = todayIds.size
+  // 今天的功课：今天更新的番里，今天动过进度的有几部。updatedAt 是服务端时间戳，换设备也算数。
+  const homework = useMemo(() => {
+    const dayStart = new Date().setHours(0, 0, 0, 0)
+    const due = animeTracks.filter((t) => t.airWeekday === today && t.status !== 'done' && isRecentAir(t.airDate))
+    return { total: due.length, done: due.filter((t) => t.updatedAt >= dayStart).length }
+  }, [animeTracks, today])
   const editingTrack = animeTracks.find((t) => t.bgmId === editing) ?? null
   const confirmingTrack = animeTracks.find((t) => t.bgmId === confirming) ?? null
   const markingGoodTrack = animeTracks.find((t) => t.bgmId === markingGood) ?? null
@@ -536,7 +542,16 @@ export function TracksPage(): JSX.Element {
           src="/assets/pop/tracks.webp"
           paper="note"
           className="sketch-hero-art"
-          sign={todayCount > 0 ? `今天 ${todayCount} 部更新` : undefined}
+          mode="blocks"
+          blocks={homework.total}
+          paint={homework.total ? homework.done / homework.total : undefined}
+          sign={
+            !homework.total
+              ? undefined
+              : homework.done >= homework.total
+                ? '今天的功课 ✿'
+                : `今天的功课 ${homework.done}/${homework.total}`
+          }
         />
       </header>
 

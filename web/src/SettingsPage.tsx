@@ -47,6 +47,8 @@ function normalizeLegacySettingsHash(): void {
 
 export function SettingsPage(): JSX.Element | null {
   const { user } = useAuth()
+  // 拍立得显影：邮箱、密码、密保三项整理好几项，照片就显影到几分
+  const settled = user ? [user.email, user.hasPassword, user.hasSecurity].filter(Boolean).length : 0
   const [module, setModule] = useState<Module>(moduleFromHash)
   const [xifanOpened, setXifanOpened] = useState(module === 'xifan')
 
@@ -198,7 +200,14 @@ export function SettingsPage(): JSX.Element | null {
         </div>
 
         <div className="rig-box">
-          <SketchSheet src="/assets/pop/settings.webp" paper="polaroid" className="settings-sketch" />
+          <SketchSheet
+            src="/assets/pop/settings.webp"
+            paper="polaroid"
+            className="settings-sketch"
+            mode="develop"
+            paint={settled / 3}
+            sign={settled < 3 ? `显影中 ${settled}/3` : undefined}
+          />
         </div>
       </div>
     </>

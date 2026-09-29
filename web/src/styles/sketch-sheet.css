@@ -64,6 +64,9 @@
   user-select: none;
 }
 .sketch-sheet:hover .sketch-paint { transform: translate(calc(-50% - 3px), -3px); }
+/* 显影是慢慢浮出来的，不是跳变 */
+.paint-develop .sketch-clip, .paint-develop .sketch-paint { transition: opacity .9s ease; }
+.paper-polaroid .sketch-sign { right: auto; left: 50%; bottom: 7px; transform: translateX(-50%) rotate(-2deg); font-size: 12px; }
 /* 悬停无过渡、瞬间上色——突变本身就是那一下惊喜 */
 .sketch-sheet:hover .sketch-img {
   filter: none;
@@ -137,8 +140,9 @@
 .sketch-dock .sketch-sheet { --lift: 12px; width: 104px; height: 124px; transform: none; }
 .sketch-dock .sketch-sign { right: auto; left: 50%; bottom: -22px; transform: translateX(-50%) rotate(-3deg); font-size: 12px; }
 
-@media (max-width: 960px) {
+/* 画稿和它的动画只属于 PC：窄屏或没有 hover 的设备（手机 / 平板，含横屏 iPad）一律不出现 */
+@media (max-width: 1024px), (hover: none) {
+  .sketch-sheet, .sketch-dock { display: none !important; }
   .sketch-hero { min-height: 0; border-bottom: 0; margin-bottom: 16px; padding: 0; }
-  .sketch-hero-art, .sketch-dock { display: none; }
   .sketch-hero-body { padding-right: 0; }
 }
