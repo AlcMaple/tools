@@ -181,6 +181,63 @@
 .hero-tracks .deco-heart { top: 34px; right: 40px; transform: rotate(12deg); }
 .hero-tracks .deco-spark.s1 { bottom: 30px; right: calc(clamp(250px, 30%, 380px) + 14px); }
 
+/* ---------- 画稿版页头：贴在页上的一张铅笔线稿，hover 时上色 ----------
+   用本站自己的媒介（画纸 / 和纸胶带 / 水彩）重演 xh 的「去色→透色→瞬间上色」；
+   波普那套黑描边、斜切色块、爆炸线放进手账站永远像外来物。 */
+.sketch-hero { min-height: 212px; border-bottom: 1.5px dashed var(--line); }
+.sketch-sheet {
+  position: absolute;
+  z-index: 2;
+  right: clamp(24px, 5%, 64px);
+  bottom: 22px;
+  width: 270px;
+  height: 150px;
+  margin: 0;
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 14px 14px,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 14px 14px,
+    var(--card);
+  border-radius: 3px;
+  box-shadow: var(--shadow-2);
+  transform: rotate(2.5deg);
+}
+.sketch-wash {
+  position: absolute;
+  inset: 6% 6% 0;
+  background:
+    radial-gradient(ellipse 40% 52% at 50% 62%, var(--tape-gold), transparent 72%),
+    radial-gradient(ellipse 28% 34% at 28% 42%, var(--tape-teal), transparent 70%),
+    radial-gradient(ellipse 24% 30% at 76% 34%, var(--tape-sakura), transparent 70%);
+  filter: blur(3px);
+}
+/* 只裁下边（画纸边缘），上方留 28px 让头探出纸面、画到页面上 */
+.sketch-clip { position: absolute; left: 0; right: 0; bottom: 0; top: -28px; overflow: hidden; }
+.sketch-img {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  height: 184px;
+  max-width: none;
+  transform: translateX(-50%);
+  filter: grayscale(1) contrast(1.2) brightness(1.05);
+  mix-blend-mode: multiply;
+  user-select: none;
+}
+.sketch-sign {
+  position: absolute;
+  right: 10px;
+  bottom: -24px;
+  font-family: var(--font-hand);
+  font-size: 13px;
+  color: var(--ink-sub);
+  transform: rotate(-3deg);
+}
+.sketch-sheet:hover .sketch-img {
+  filter: none;
+  mix-blend-mode: normal;
+  transform: translate(calc(-50% - 3px), -3px);
+}
+
 /* ---------- 各页落点 ---------- */
 .rig-box .pop-art { width: 200px; margin-top: 10px; }
 .empty .pop-art { width: 132px; }
@@ -189,6 +246,6 @@
 .auth-pop { width: 160px; aspect-ratio: 5 / 8; margin-bottom: 14px; }
 @media (max-width: 960px) {
   .pop-hero { min-height: 0; border-bottom: 0; margin-bottom: 16px; padding: 0; }
-  .pop-hero-slab, .pop-hero-art, .hero-deco { display: none; }
+  .pop-hero-slab, .pop-hero-art, .hero-deco, .sketch-sheet { display: none; }
   .pop-hero-body { padding-right: 0; }
 }

@@ -7,7 +7,7 @@ import { loadTracks, runTracksMutation } from './tracksSync'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { useIsWide } from './useMediaQuery'
-import { PopArt } from './PopArt'
+import { SketchSheet } from './PopArt'
 
 // 皮肤 = 原型稿 index.html（番剧周历）：横向海报胶片，页头一格插画，另有纵向布局。
 // 横向布局保留日期章选天（窄屏）和每周一行胶片（宽屏）；纵向布局一次展开七天。
@@ -342,8 +342,7 @@ export function CalendarPage(): JSX.Element {
 
   return (
     <>
-      <header className="pop-hero tone-gold hero-calendar">
-        <span className="pop-hero-slab" aria-hidden="true" />
+      <header className="pop-hero sketch-hero">
         <div className="spread pop-hero-body" style={{ alignItems: 'flex-end' }}>
           <div>
             <h1 className="title-sketch" style={{ fontSize: 34 }}>
@@ -410,13 +409,10 @@ export function CalendarPage(): JSX.Element {
             </button>
           </div>
         </div>
-        <span className="hero-deco deco-square" aria-hidden="true" />
-        <span className="hero-deco deco-spark s1" aria-hidden="true">✦</span>
-        <span className="hero-deco deco-spark s2" aria-hidden="true">✦</span>
-        <span className="hero-deco deco-stamp" aria-hidden="true">
-          {dates[todayId]?.m}/{dates[todayId]?.d}
-        </span>
-        <PopArt src="/assets/pop/calendar.webp" tone="gold" bare className="pop-hero-art" />
+        <SketchSheet
+          src="/assets/pop/calendar.webp"
+          sign={`${dates[todayId]?.m}.${dates[todayId]?.d} 紗霧`}
+        />
       </header>
 
       {(error || tracksError) && (
