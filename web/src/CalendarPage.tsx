@@ -228,6 +228,87 @@ function useFilmPager(el: React.RefObject<HTMLDivElement>, itemCount: number): {
   return { canPrev, canNext, remainingNext, goPrev: () => go(-1), goNext: () => go(1) }
 }
 
+
+const WEEKDAY_NAMES = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
+// 速写本：往下翻这一周 = 看纱雾把页头那张线稿画完。
+// 进度 = 从周历顶部滚到「今天」那一栏的比例；只增不减——画好的颜色不会因为往回翻就褪掉。
+// 页头画稿滚出视野后，缩成一张拍立得停到右下角（纱雾按钮上方）继续上色，滚回顶部再飞回去。
+function useSketchbook(todayId: number, ready: boolean) {
+  const heroRef = useRef<HTMLElement>(null)
+  const dockRef = useRef<HTMLElement>(null)
+  const [paint, setPaint] = useState(0)
+  const [docked, setDocked] = useState(false)
+  const [shown, setShown] = useState(false)
+  const [dayLabel, setDayLabel] = useState('')
+
+  useEffect(() => {
+    if (!ready) return
+    let frame = 0
+    const measure = (): void => {
+      frame = 0
+      const content = document.querySelector('.calendar-content')
+      const today = document.getElementById(`day-sec-${todayId}`)
+      if (!content || !today) return
+      const line = window.innerHeight * 0.4
+      const start = content.getBoundingClientRect().top + window.scrollY - line
+      const end = today.getBoundingClientRect().top + window.scrollY - line
+      const p = end <= start ? 1 : Math.min(1, Math.max(0, (window.scrollY - start) / (end - start)))
+      setPaint((prev) => Math.max(prev, p))
+      let label = ''
+      for (const sec of document.querySelectorAll<HTMLElement>('.day-sec')) {
+        if (sec.getBoundingClientRect().top < line) label = WEEKDAY_NAMES[Number(sec.id.replace('day-sec-', ''))] ?? label
+      }
+      setDayLabel(label)
+    }
+    const onScroll = (): void => {
+      if (!frame) frame = requestAnimationFrame(measure)
+    }
+    measure()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [todayId, ready])
+
+  useEffect(() => {
+    const hero = heroRef.current
+    if (!hero) return
+    const io = new IntersectionObserver(([e]) => setDocked(!e.isIntersecting && e.boundingClientRect.bottom < 0))
+    io.observe(hero)
+    return () => io.disconnect()
+  }, [])
+
+  // 飞行：FLIP——从页头画稿当前的位置（此刻已在视口上方）飞到角落，反之亦然
+  useEffect(() => {
+    const hero = heroRef.current
+    const dock = dockRef.current
+    if (docked) setShown(true)
+    const a = hero?.getBoundingClientRect()
+    const b = dock?.getBoundingClientRect()
+    if (!dock || !a?.width || !b?.width || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      if (!docked) setShown(false)
+      return
+    }
+    const from = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}) rotate(2.5deg)`
+    const rest = 'translate(0, 0) scale(1) rotate(-4deg)'
+    const anim = dock.animate(
+      docked
+        ? [{ transform: from, opacity: 0.4 }, { transform: rest, opacity: 1 }]
+        : [{ transform: rest, opacity: 1 }, { transform: from, opacity: 0 }],
+      { duration: docked ? 560 : 380, easing: docked ? 'cubic-bezier(.34, 1.3, .64, 1)' : 'cubic-bezier(.4, 0, 1, 1)', fill: 'both' },
+    )
+    // 飞回页头的途中仍要看得见，落地后才隐藏
+    if (!docked) anim.onfinish = () => setShown(false)
+    return () => anim.cancel()
+  }, [docked])
+
+  return { heroRef, dockRef, paint, docked, shown, dayLabel }
+}
+
 export function CalendarPage(): JSX.Element {
   const [result, setResult] = useState<CalendarResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -243,6 +324,7 @@ export function CalendarPage(): JSX.Element {
   // 默认保留截图里的横向布局；「纵向」是同一份数据的第二种浏览方式，选择会记住。
   const [layoutMode, setLayoutMode] = useState<CalendarLayout>(readCalendarLayout)
   const wide = useIsWide()
+  const book = useSketchbook(todayId, !!result)
 
   useEffect(() => {
     try {
@@ -412,7 +494,9 @@ export function CalendarPage(): JSX.Element {
         <SketchSheet
           src="/assets/pop/calendar.webp"
           className="sketch-hero-art"
-          sign={`${dates[todayId]?.m}.${dates[todayId]?.d} 紗霧`}
+          paint={book.paint}
+          sheetRef={book.heroRef}
+          sign={book.paint >= 1 ? `${dates[todayId]?.m}.${dates[todayId]?.d} 紗霧` : undefined}
         />
       </header>
 
@@ -459,6 +543,23 @@ export function CalendarPage(): JSX.Element {
           )}
         </div>
       </div>
+
+      <button
+        type="button"
+        className={`sketch-dock${book.shown ? ' on' : ''}`}
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        title="回到页头"
+        aria-label="回到页头"
+        tabIndex={book.docked ? 0 : -1}
+      >
+        <SketchSheet
+          src="/assets/pop/calendar.webp"
+          paper="polaroid"
+          paint={book.paint}
+          sheetRef={book.dockRef}
+          sign={book.paint >= 1 ? `${dates[todayId]?.m}.${dates[todayId]?.d} 紗霧` : book.dayLabel ? `画到${book.dayLabel}…` : undefined}
+        />
+      </button>
 
       {loading && !result && (
         <div className="page-state">

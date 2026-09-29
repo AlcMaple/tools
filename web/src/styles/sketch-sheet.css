@@ -53,6 +53,17 @@
   white-space: nowrap;
   transform: rotate(-3deg);
 }
+/* 上色图层：遮罩由组件按进度从下往上推（见 SketchSheet paintMask） */
+.sketch-paint {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  height: 100%;
+  max-width: none;
+  transform: translateX(-50%);
+  user-select: none;
+}
+.sketch-sheet:hover .sketch-paint { transform: translate(calc(-50% - 3px), -3px); }
 /* 悬停无过渡、瞬间上色——突变本身就是那一下惊喜 */
 .sketch-sheet:hover .sketch-img {
   filter: none;
@@ -109,8 +120,25 @@
 .reward-sketch { --lift: 0px; width: 160px; height: 150px; justify-self: center; }
 .auth-sketch { --lift: 22px; width: 150px; height: 250px; transform: rotate(-2deg); }
 
+/* ---------- 周历速写本：页头画稿滚出视野后停在纱雾按钮上方继续上色 ---------- */
+.sketch-dock {
+  position: fixed;
+  z-index: 60;
+  right: 30px;
+  bottom: 104px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  visibility: hidden;
+  pointer-events: none;
+}
+.sketch-dock.on { visibility: visible; pointer-events: auto; }
+.sketch-dock .sketch-sheet { --lift: 12px; width: 104px; height: 124px; transform: none; }
+.sketch-dock .sketch-sign { right: auto; left: 50%; bottom: -22px; transform: translateX(-50%) rotate(-3deg); font-size: 12px; }
+
 @media (max-width: 960px) {
   .sketch-hero { min-height: 0; border-bottom: 0; margin-bottom: 16px; padding: 0; }
-  .sketch-hero-art { display: none; }
+  .sketch-hero-art, .sketch-dock { display: none; }
   .sketch-hero-body { padding-right: 0; }
 }
