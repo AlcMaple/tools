@@ -588,11 +588,11 @@ export function TracksPage(): JSX.Element {
           <p className="faint small">正在翻开追番手帐…</p>
         </div>
       ) : !user ? (
-        <EmptyState text="登录后才能追番" hint="追番数据存在账号里，换设备也在" goCalendar />
+        <EmptyState text="登录后就能开始追番" />
       ) : counts.all === 0 ? (
-        <EmptyState text="还没追任何番" hint="去「番剧周历」，点封面上的 ＋ 追番" goCalendar />
+        <EmptyState text="还没有在追的番，点上面的「加番」开始吧" />
       ) : filtered.length === 0 ? (
-        <EmptyState text="没有匹配的追番" hint="换个词，或清掉类型过滤" />
+        <EmptyState text="没有匹配的追番，换个词或清掉类型过滤试试" />
       ) : (
         <div className={view === 'list' ? 'trk-list' : 'trk-grid'}>
           {filtered.map((t) => {
@@ -865,20 +865,10 @@ function ViewModeToggle({
 }
 
 // ── 空态 ─────────────────────────────────────────────────────
-function EmptyState({ text, hint, goCalendar }: { text: string; hint: string; goCalendar?: boolean }): JSX.Element {
+function EmptyState({ text }: { text: string }): JSX.Element {
   return (
     <div className="empty panel mt16">
-      <SketchSheet src="/assets/pop/empty.webp" paper="polaroid" />
-      <div className="empty-say">
-        <p className="empty-text">
-          {text}。{hint}
-        </p>
-        {goCalendar && (
-          <a className="btn btn-primary" href="/#/">
-            去番剧周历
-          </a>
-        )}
-      </div>
+      <p className="empty-text">{text}</p>
     </div>
   )
 }
