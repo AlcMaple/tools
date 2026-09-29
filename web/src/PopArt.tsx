@@ -4,15 +4,17 @@ export function PopArt({
   src,
   tone = 'teal',
   tag,
+  bare = false,
   className = '',
 }: {
   src: string
   tone?: PopTone
   tag?: string
+  bare?: boolean
   className?: string
 }): JSX.Element {
   return (
-    <div className={`pop-art tone-${tone} ${className}`} aria-hidden="true">
+    <div className={`pop-art tone-${tone}${bare ? ' bare' : ''} ${className}`} aria-hidden="true">
       <span className="pop-art-frame">
         <span className="pop-art-burst" />
         <span className="pop-art-dots" />

@@ -53,6 +53,7 @@ import { TrackListRow } from './tracks/TrackList'
 import { BgmImportModal } from './tracks/importModal'
 import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
 import { AddSearchModal, type BackfillTarget } from './tracks/addSearchModal'
+import { PopArt } from './PopArt'
 import {
   SourceBindPickerModal,
   SourceSearchModal,
@@ -497,57 +498,52 @@ export function TracksPage(): JSX.Element {
 
   return (
     <>
-      <div className="spread" style={{ alignItems: 'flex-start' }}>
-        <div>
-          <h1 className="title-sketch" style={{ fontSize: 34 }}>
-            我的追番
-          </h1>
-          <p className="muted small mt8">
-            {user ? (
-              <>
-                在看 {counts.watching} 部
-                {todayCount > 0 && (
-                  <>
-                    ，今天有 <span className="hl" style={{ fontWeight: 600 }}>{todayCount} 部更新</span>
-                  </>
-                )}
-              </>
-            ) : (
-              '登录后，这一页就是你的手帐'
-            )}
-          </p>
-        </div>
-        {user && (
-          <div className="row">
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setImportOpen(true)}>
-              <Ic name="refresh" cls="ic ic-sm" />
-              从 Bangumi 导入
-            </button>
-            <button className="btn btn-sm btn-primary" type="button" onClick={() => setAdding({})}>
-              <Ic name="plus" cls="ic ic-sm" />
-              加番
-            </button>
+      <header className="pop-hero tone-sakura hero-tracks">
+        <span className="pop-hero-slab" aria-hidden="true" />
+        <div className="spread pop-hero-body" style={{ alignItems: 'flex-start' }}>
+          <div>
+            <h1 className="title-sketch" style={{ fontSize: 34 }}>
+              我的追番
+            </h1>
+            <p className="muted small mt8">
+              {user ? (
+                <>
+                  在看 {counts.watching} 部
+                  {todayCount > 0 && (
+                    <>
+                      ，今天有 <span className="hl" style={{ fontWeight: 600 }}>{todayCount} 部更新</span>
+                    </>
+                  )}
+                </>
+              ) : (
+                '登录后，这一页就是你的手帐'
+              )}
+            </p>
           </div>
-        )}
-      </div>
-
-      {/* 立绘只在「当前列表真的有卡片」时驻场：任何空态（没追过 / 搜索无结果 / 过滤无结果）
-          都只留 Q 版纱雾空态面板，不叠第二个角色 */}
-      {user && filtered.length > 0 && (
-        <>
-          {/* 手机：立绘内联（桌面为页尾驻场，CSS 切换） */}
-          <div className="rig-inline mt16">
-            <img className="rig" src="/assets/chara_03.webp" alt="山田エルフ · 官方立绘" />
-            <div className="bubble rig-bubble">
-              <span>
-                {todayCount > 0
-                  ? `今天有 ${todayCount} 部更新，快去看快去看！`
-                  : '今天没有更新，慢慢补番也好～'}
-              </span>
+          {user && (
+            <div className="row">
+              <button className="btn btn-sm btn-ghost" type="button" onClick={() => setImportOpen(true)}>
+                <Ic name="refresh" cls="ic ic-sm" />
+                从 Bangumi 导入
+              </button>
+              <button className="btn btn-sm btn-primary" type="button" onClick={() => setAdding({})}>
+                <Ic name="plus" cls="ic ic-sm" />
+                加番
+              </button>
             </div>
-          </div>
-        </>
-      )}
+          )}
+        </div>
+        <span className="hero-deco deco-tri" aria-hidden="true" />
+        <span className="hero-deco deco-heart" aria-hidden="true">♡</span>
+        <span className="hero-deco deco-spark s1" aria-hidden="true">✦</span>
+        <PopArt
+          src="/assets/pop/tracks.webp"
+          tone="sakura"
+          bare
+          className="pop-hero-art"
+          tag={todayCount > 0 ? `今日更新 ×${todayCount}` : undefined}
+        />
+      </header>
 
       <div className="row mb16" style={{ flexWrap: 'wrap' }}>
         <div className="searchbar">
@@ -658,23 +654,6 @@ export function TracksPage(): JSX.Element {
         </div>
       )}
 
-      {user && filtered.length > 0 && (
-        <div className="rig-slot">
-          <div className="rig-box">
-            <img className="rig" src="/assets/chara_03.webp" alt="山田エルフ · 官方立绘" />
-            <div className="bubble rig-bubble">
-              <span>
-                {todayCount > 0
-                  ? `今天有 ${todayCount} 部更新，快去看快去看！`
-                  : '今天没有更新，慢慢补番也好～'}
-              </span>
-            </div>
-            <span className="kira" style={{ bottom: 70, right: -12, transform: 'rotate(7deg)' }}>
-              エルフ先生
-            </span>
-          </div>
-        </div>
-      )}
 
       {editingTrack && (
         <EditModal
@@ -890,17 +869,15 @@ function ViewModeToggle({
   )
 }
 
-// ── 空态（Q 版纱雾 + 气泡） ─────────────────────────────────────────────────────
+// ── 空态 ─────────────────────────────────────────────────────
 function EmptyState({ text, hint, goCalendar }: { text: string; hint: string; goCalendar?: boolean }): JSX.Element {
   return (
-    /* 横排：立绘在左、气泡在右，尾巴从气泡左缘指回人物（竖排时尾巴悬在人物脚边的空气里，
-       而且整块面板被撑得又高又空） */
     <div className="empty panel mt16">
-      <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />
+      <PopArt src="/assets/pop/empty.webp" tone="teal" />
       <div className="empty-say">
-        <div className="bubble empty-bubble">
+        <p className="empty-text">
           {text}。{hint}
-        </div>
+        </p>
         {goCalendar && (
           <a className="btn btn-primary" href="/#/">
             去番剧周历

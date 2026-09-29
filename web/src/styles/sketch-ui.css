@@ -164,7 +164,6 @@
   .m-tab.on { color: var(--teal); font-weight: 600; }
   .sheet { padding: 20px 16px 110px; }
   .rig-box { display: none; }
-  .rig-inline { display: flex !important; }
   .m-top .btn-sm { min-height: 34px; padding: 4px 12px; font-size: 12.5px; }
   .hero-split > div:first-child { min-width: 0; }
 }
@@ -174,9 +173,7 @@
 .hero-split.top { align-items: flex-start; }
 @media (max-width: 960px) { .hero-split { display: block; } }
 
-/* ---------- 立绘驻场（idle 待机动作） ---------- */
-/* 驻场立绘吸顶跟随：周历一页七天很长，立绘钉在栏底的话，右栏从页顶到页尾全是空白，
-   而且要滚到最后才看得见人 */
+/* ---------- 插画格驻场：吸顶跟随，长页面右栏不至于从页顶到页尾全是空白 ---------- */
 .rig-box {
   position: sticky;
   top: 24px;
@@ -186,28 +183,6 @@
   flex-direction: column;
   align-items: center;
 }
-.rig {
-  display: block;
-  height: 340px;
-  object-fit: contain;
-  object-position: bottom;
-  filter: drop-shadow(0 10px 14px rgba(30, 36, 52, .18));
-  transform-origin: 50% 20%;
-  animation: rig-sway 7s var(--ease-page) infinite alternate;
-}
-.rig-inline { display: none; align-items: flex-end; gap: 10px; }
-.rig-inline .rig { height: 96px; animation: rig-sway 7s var(--ease-page) infinite alternate; }
-@keyframes rig-sway {
-  from { transform: rotate(-1.1deg) translateY(2px); }
-  to   { transform: rotate(1.2deg) translateY(-7px); }
-}
-/* 驻场立绘：气泡挂在人物下方、尾巴朝上指人物（人物在上、气泡在下，不再叠头顶戳脸） */
-.rig-bubble { position: static; max-width: 220px; margin: -30px 0 0; z-index: 1; }
-.rig-box .rig-bubble::after { top: -7px; bottom: auto; left: 50%; margin-left: -6px; transform: rotate(225deg) skew(8deg, 8deg); }
-.rig-inline .rig-bubble { margin: 0; max-width: 240px; }
-/* 内联立绘：人物在左、气泡在右并排，尾巴从气泡左缘指回人物 */
-.rig-inline .rig-bubble::after { left: -7px; bottom: 22px; transform: rotate(135deg) skew(8deg, 8deg); }
-/* 基础 .rig-box 定义在窄屏规则之后，需在这里重新收口，否则手机会同时出现内联与桌面驻场两张立绘。 */
 @media (max-width: 960px) { .rig-box { display: none; } }
 
 .bubble {
@@ -233,26 +208,6 @@
   border-bottom: 1.5px solid var(--line-strong);
   transform: rotate(45deg) skew(8deg, 8deg);
 }
-
-/* 周历的两句驻场台词长短不同。右栏和气泡都固定为同一宽度，切换时不挤压胶片区。 */
-.calendar-rig-box {
-  flex: 0 0 260px;
-  width: 260px;
-}
-.calendar-rig-box .rig-bubble {
-  width: 100%;
-  max-width: none;
-  box-sizing: border-box;
-}
-
-/* 纱雾驻场气泡的两句轮换：每次只显示一句（.show 切换）。
-   white-space: pre-line 让带 \n 的台词能换行；min-height 稳住气泡高度，换句时不跳一下。 */
-.rig-bubble .sagiri-line {
-  white-space: pre-line;
-  display: none;
-  min-height: 3.4em;
-}
-.rig-bubble .sagiri-line.show { display: block; }
 
 /* ---------- 贴纸按钮（触控 ≥40px） ---------- */
 .btn {
@@ -581,8 +536,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .day-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
 .day-head .hr-dash { flex: 1; min-width: 30px; }
 
-/* 周历布局容器：内容铺满整张内页，立绘作为可拖动贴纸叠在右侧，
-   不再占掉卡片宽度。这样横向内容可以继续向右延伸，被立绘盖住时移开即可。 */
 .calendar-stage {
   position: relative;
   min-width: 0;
@@ -591,60 +544,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   width: 100%;
   min-width: 0;
 }
-.calendar-rig-layer { height: 0; pointer-events: none; }
-.calendar-rig-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  pointer-events: none;
-}
-.calendar-rig {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: min(260px, calc(100vw - 16px));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  pointer-events: auto;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-  will-change: transform;
-  transition: opacity .25s ease, filter .25s ease;
-}
-.calendar-rig.dragging { cursor: grabbing; }
-@media (hover: hover) {
-  /* 想要「气泡半透明、但透过它的卡片文字仍然清晰」，正统做法是把卡片文字的 z-index
-     叠到气泡之上。但每张海报都有 transform: rotate(…)，各自成了独立层叠上下文，把标题
-     文字锁在卡片内部，没法单独抬出来盖过气泡。所以退回「气泡让开」：hover 时气泡淡出、
-     立绘压到很淡方便抓走；移开鼠标气泡淡入恢复。 */
-  .calendar-rig:not(.calendar-rig-inline):hover .rig { opacity: .22; }
-  .calendar-rig:not(.calendar-rig-inline):hover .rig-bubble { opacity: 0; pointer-events: none; }
-  .calendar-rig:focus-visible { outline: 3px solid var(--teal-wash); outline-offset: 5px; }
-}
-.calendar-rig .rig { height: min(340px, calc(100dvh - 150px)); transition: opacity .25s ease; }
-.calendar-rig .rig-bubble {
-  width: max-content;
-  max-width: 100%;
-  box-sizing: border-box;
-  transition: opacity .25s ease;
-}
-.calendar-rig .rig-bubble::after {
-  top: -7px;
-  bottom: auto;
-  left: 50%;
-  margin-left: -6px;
-  transform: rotate(225deg) skew(8deg, 8deg);
-}
-/* 「サラサラ」是装饰拟声词：钉在周历区右上角，不放进那张可拖动的立绘贴纸里，
-   免得跟着人物和气泡满屏跑（也免得沉浸式翻译总去框它）。 */
-.calendar-kira {
-  top: 2px;
-  right: 6px;
-  z-index: 26;
-}
-
 /* 桌面横向布局：每天一小节（章头 + 可继续向右的卡片），节与节之间留出翻页呼吸 */
 .day-sec + .day-sec { margin-top: 26px; }
 
@@ -677,40 +576,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .calendar-actions { flex-wrap: wrap; justify-content: flex-end; }
 .calendar-layout-toggle { flex: none; }
 .calendar-layout-toggle > button { white-space: nowrap; }
-@media (max-width: 960px) {
-  /* 手机贴纸留在内容流中，不随视口驻留，也不读取桌面拖动坐标。 */
-  .calendar-rig-inline {
-    position: static;
-    margin: 0 auto 10px;
-    cursor: default;
-    touch-action: auto;
-    will-change: auto;
-  }
-  .calendar-rig {
-    width: min(330px, calc(100vw - 16px));
-    height: auto;
-    flex-direction: row;
-    align-items: flex-end;
-    justify-content: center;
-    gap: 10px;
-  }
-  .calendar-rig .rig { height: min(96px, calc(100dvh - 32px)); flex: none; }
-  .calendar-rig .rig-bubble {
-    width: max-content;
-    max-width: calc(100% - 56px);
-    margin: 0;
-  }
-  .calendar-rig .rig-bubble::after {
-    top: auto;
-    bottom: 22px;
-    left: -7px;
-    margin-left: 0;
-    transform: rotate(135deg) skew(8deg, 8deg);
-  }
-  .rig-drag-hint { font-size: 10px; }
-  /* 窄屏立绘改成内联并排，这颗拟声词没有落脚点，直接收起。 */
-  .calendar-kira { display: none; }
-}
 
 /* 胶片条：整版翻页 —— 海报宽度由「一屏放几张」反推（容器宽 ÷ 列数），
    所以任何时候右缘都停在一张完整卡片上，不会切出半张、也就不用再拿渐隐去糊它 */
@@ -1406,7 +1271,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   border-right: 1.5px dashed var(--line);
   overflow: hidden;
 }
-.auth-side > img { width: 152px; display: block; transform-origin: 50% 20%; animation: rig-sway 7s var(--ease-page) infinite alternate; }
 .auth-side-cap {
   position: relative;
   z-index: 1;
@@ -1524,7 +1388,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   justify-content: center;
   gap: 18px;
 }
-.empty .mascot { width: 118px; flex: none; filter: drop-shadow(0 6px 10px rgba(30, 36, 52, .16)); }
 .empty-say { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; }
 /* 尾巴从气泡左缘伸出、指回人物 */
 .empty-bubble { max-width: 300px; }
@@ -2043,9 +1906,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
    在 iPhone SE 首屏露出更多；宽手机 / 平板继续沿用上面的完整比例。 */
 @media (max-width: 380px) {
   body[data-page='tracks'] .sheet { padding-top: 12px; }
-  body[data-page='tracks'] .rig-inline { margin-top: 8px; gap: 5px; }
-  body[data-page='tracks'] .rig-inline .rig { height: 68px; }
-  body[data-page='tracks'] .rig-inline .rig-bubble { max-width: 200px; padding: 7px 10px; font-size: 12px; }
   body[data-page='tracks'] .row.mb16 { margin-bottom: 10px; gap: 6px; }
   body[data-page='tracks'] .m-tabs { padding-top: 4px; padding-bottom: calc(var(--tabbar-pad) - 2px); }
   body[data-page='tracks'] .m-tab { min-height: 46px; }
@@ -2075,9 +1935,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 @media (min-width: 641px) and (max-width: 960px) {
   body[data-page='tracks'] .sheet { padding-inline: 28px; }
   body[data-page='tracks'] .sheet-wrap { max-width: 760px; }
-  body[data-page='tracks'] .rig-inline { margin-top: 10px; gap: 8px; }
-  body[data-page='tracks'] .rig-inline .rig { height: 76px; }
-  body[data-page='tracks'] .rig-inline .rig-bubble { max-width: 280px; padding: 8px 12px; }
 }
 
 /* 搜索 + 加番建议 */
@@ -2558,9 +2415,6 @@ body[data-auth='out'] .track-btn { display: none; }
 @media (max-width: 360px) {
   .trk-list-actions > .btn-sm { gap: 4px; padding-inline: 6px; font-size: 12px; }
 }
-.rig-slot { display: flex; justify-content: center; padding-top: 16px; }
-.rig-slot .rig { height: 248px; }
-@media (max-width: 960px) { .rig-slot { display: none; } }
 
 /* ---------- 集数步进器：一体的胶囊（− EP n +） ---------- */
 .stepper {
@@ -2607,16 +2461,6 @@ body[data-auth='out'] .track-btn { display: none; }
   outline: none;
 }
 .stepper > .ep-num-input:focus-visible { outline: 2px dashed var(--teal); outline-offset: -3px; }
-
-/* ---------- 立绘：待机摇摆 + 点击反应 ---------- */
-.rig-click { cursor: pointer; }
-@keyframes rig-bounce {
-  0% { transform: scale(1); }
-  35% { transform: scale(1.06) rotate(2deg); }
-  65% { transform: scale(.97) rotate(-1.5deg); }
-  100% { transform: scale(1); }
-}
-.rig.bounce { animation: rig-bounce .55s var(--ease-stick); }
 
 /* ---------- 播放器页 ---------- */
 .player-video {
@@ -2878,11 +2722,6 @@ body[data-auth='out'] .track-btn { display: none; }
 .reward-balance.sakura { border-color: var(--sakura-mid); background: var(--sakura-wash); }
 .reward-balance.sakura strong { color: var(--sakura); }
 
-.reward-guide { display: flex; flex-direction: column; align-items: center; min-width: 0; }
-.reward-guide img { display: block; width: 146px; height: 146px; object-fit: contain; filter: drop-shadow(0 8px 12px rgba(30, 36, 52, .14)); }
-.reward-guide .bubble { width: 190px; max-width: 190px; margin-top: -10px; font-size: 12.5px; }
-.reward-guide .bubble::after { top: -7px; bottom: auto; left: 50%; margin-left: -6px; transform: rotate(225deg) skew(8deg, 8deg); }
-
 .reward-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .92fr); gap: 16px; align-items: stretch; }
 .reward-layout > .panel { min-width: 0; height: 100%; }
 .reward-copy { min-height: 50px; color: var(--ink-sub); font-size: 13px; line-height: 1.75; }
@@ -2967,7 +2806,7 @@ body[data-auth='out'] .track-btn { display: none; }
 @media (max-width: 960px) {
   .reward-page { max-width: 760px; }
   .reward-hero { grid-template-columns: minmax(0, 1fr); }
-  .reward-guide { display: none; }
+  .reward-pop { display: none; }
   .reward-shop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .invite-code { flex-basis: 100%; }
   .invite-code-row .btn { flex-basis: 100%; }

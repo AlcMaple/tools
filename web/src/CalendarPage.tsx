@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
 import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
 import { useAuth } from './auth'
@@ -8,8 +7,9 @@ import { loadTracks, runTracksMutation } from './tracksSync'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { useIsWide } from './useMediaQuery'
+import { PopArt } from './PopArt'
 
-// 皮肤 = 原型稿 index.html（番剧周历）：横向海报胶片 + 可拖动立绘驻场，另有纵向布局。
+// 皮肤 = 原型稿 index.html（番剧周历）：横向海报胶片，页头一格插画，另有纵向布局。
 // 横向布局保留日期章选天（窄屏）和每周一行胶片（宽屏）；纵向布局一次展开七天。
 // 数据流与旧版一致：
 // 14 天缓存窗口 + 刷新绕过缓存；追番角标常驻（不依赖 hover），乐观更新后由 tracksSync 校正。
@@ -19,34 +19,9 @@ import { useIsWide } from './useMediaQuery'
 const CALENDAR_CACHE_KEY = 'calendar'
 const CALENDAR_TTL = 14 * 24 * 60 * 60_000
 
-// 纱雾驻场气泡台词：横向布局的痛点是看不到右边还有内容，一句专门引导「点箭头往右」；
-// 纵向布局没有左右翻页，改成「往下滑」的闲适口吻。每隔几秒换一句；减少动态效果时固定第一句。
-const SAGIRI_LINES: Record<CalendarLayout, readonly [string, string]> = {
-  horizontal: [
-    '右边的番剧还有好多呢…\n点那颗小箭头，就能一直看下去啦',
-    '一周排片都在这页上，慢慢挑～',
-  ],
-  vertical: [
-    '整周的番剧都铺在这一页了\n往下滑，慢慢挑吧～',
-    '想看哪天，就滑到哪天～',
-  ],
-}
-const SAGIRI_SWAP_MS = 4200
-
 type CalendarLayout = 'horizontal' | 'vertical'
-type Point = { x: number; y: number }
 
 const CALENDAR_LAYOUT_KEY = 'calendar-layout'
-const CALENDAR_RIG_POSITION_KEY = 'calendar-rig-position'
-const DEFAULT_RIG_POSITION: Point = { x: 0, y: 0 }
-
-export function clampRigPosition(position: Point, bounds: { left: number; top: number; width: number; height: number }, size: { width: number; height: number }): Point {
-  const edge = 8
-  return {
-    x: Math.max(bounds.left + edge, Math.min(bounds.left + Math.max(edge, bounds.width - size.width - edge), position.x)),
-    y: Math.max(bounds.top + edge, Math.min(bounds.top + Math.max(edge, bounds.height - size.height - edge), position.y)),
-  }
-}
 
 function readCalendarLayout(): CalendarLayout {
   if (typeof window === 'undefined') return 'horizontal'
@@ -56,147 +31,6 @@ function readCalendarLayout(): CalendarLayout {
   } catch {
     return 'horizontal'
   }
-}
-
-function readRigPosition(): (Point & { version?: number }) | null {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(CALENDAR_RIG_POSITION_KEY) || 'null') as (Point & { version?: number }) | null
-    return parsed && Number.isFinite(parsed.x) && Number.isFinite(parsed.y) ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-// 固定层以视口为坐标系，避免侧栏、周历宽度和滚动位置变成隐形的拖动边界。
-function useDraggableRig() {
-  const anchorRef = useRef<HTMLDivElement>(null)
-  const elementRef = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState<Point | null>(null)
-  const [dragging, setDragging] = useState(false)
-  const positionRef = useRef<Point | null>(null)
-  const drag = useRef<{ pointerId: number; startX: number; startY: number; origin: Point } | null>(null)
-
-  const constrain = (next: Point): Point => {
-    const viewport = window.visualViewport
-    return clampRigPosition(next, {
-      left: viewport?.offsetLeft ?? 0,
-      top: viewport?.offsetTop ?? 0,
-      width: viewport?.width ?? document.documentElement.clientWidth,
-      height: viewport?.height ?? window.innerHeight,
-    }, elementRef.current?.getBoundingClientRect() ?? { width: 0, height: 0 })
-  }
-  const home = (): Point => {
-    const anchor = anchorRef.current?.getBoundingClientRect()
-    const width = elementRef.current?.getBoundingClientRect().width ?? 0
-    return constrain({ x: (anchor?.right ?? window.innerWidth) - width, y: anchor?.top ?? 24 })
-  }
-  const update = (next: Point): void => {
-    const value = constrain(next)
-    positionRef.current = value
-    setPosition(previous => previous?.x === value.x && previous.y === value.y ? previous : value)
-  }
-  const finish = (): void => {
-    const pointerId = drag.current?.pointerId
-    drag.current = null
-    if (pointerId != null && elementRef.current?.hasPointerCapture(pointerId)) elementRef.current.releasePointerCapture(pointerId)
-    setDragging(false)
-  }
-
-  useLayoutEffect(() => {
-    const saved = readRigPosition()
-    const initial = home()
-    // 旧数据存的是相对周历右侧的偏移，首次升级转换后再保存视口坐标。
-    update(saved?.version === 2 ? saved : saved ? { x: initial.x + saved.x, y: initial.y + saved.y } : initial)
-    const resize = (): void => {
-      finish()
-      if (positionRef.current) update(positionRef.current)
-    }
-    const observer = new ResizeObserver(resize)
-    if (elementRef.current) observer.observe(elementRef.current)
-    window.addEventListener('resize', resize)
-    window.visualViewport?.addEventListener('resize', resize)
-    window.visualViewport?.addEventListener('scroll', resize)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', resize)
-      window.visualViewport?.removeEventListener('resize', resize)
-      window.visualViewport?.removeEventListener('scroll', resize)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!position || dragging) return
-    try {
-      window.localStorage.setItem(CALENDAR_RIG_POSITION_KEY, JSON.stringify({ ...position, version: 2 }))
-    } catch {
-      // 存储不可用时仍可拖动，只是不跨刷新保存。
-    }
-  }, [position, dragging])
-
-  const reset = (): void => {
-    finish()
-    update(home())
-  }
-  return {
-    anchorRef,
-    elementRef,
-    position: position ?? DEFAULT_RIG_POSITION,
-    ready: position !== null,
-    dragging,
-    onPointerDown: (e: React.PointerEvent<HTMLDivElement>): void => {
-      if (e.button !== 0 || drag.current || !positionRef.current) return
-      e.preventDefault()
-      e.currentTarget.setPointerCapture(e.pointerId)
-      drag.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, origin: positionRef.current }
-      setDragging(true)
-    },
-    onPointerMove: (e: React.PointerEvent<HTMLDivElement>): void => {
-      const d = drag.current
-      if (!d || d.pointerId !== e.pointerId) return
-      e.preventDefault()
-      update({ x: d.origin.x + e.clientX - d.startX, y: d.origin.y + e.clientY - d.startY })
-    },
-    onPointerUp: (e: React.PointerEvent<HTMLDivElement>): void => {
-      if (drag.current?.pointerId === e.pointerId) finish()
-    },
-    onLostPointerCapture: finish,
-    onDoubleClick: reset,
-    onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>): void => {
-      if (e.key === 'Escape' || e.key === 'Home') {
-        e.preventDefault()
-        reset()
-      }
-    },
-  }
-}
-
-function DesktopCalendarRig({ children }: { children: ReactNode }): JSX.Element {
-  const rig = useDraggableRig()
-  return (
-    <>
-      <div ref={rig.anchorRef} className="calendar-rig-layer" />
-      {createPortal(<div className="calendar-rig-overlay">
-        <div
-          ref={rig.elementRef}
-          className={`calendar-rig${rig.dragging ? ' dragging' : ''}`}
-          style={{ transform: `translate3d(${rig.position.x}px, ${rig.position.y}px, 0)`, visibility: rig.ready ? undefined : 'hidden' }}
-          role="img"
-          aria-label="和泉纱雾驻场贴纸，可按住拖动；双击或按 Home 归位"
-          tabIndex={0}
-          title="按住拖动纱雾和气泡；双击归位"
-          onPointerDown={rig.onPointerDown}
-          onPointerMove={rig.onPointerMove}
-          onPointerUp={rig.onPointerUp}
-          onPointerCancel={rig.onPointerUp}
-          onLostPointerCapture={rig.onLostPointerCapture}
-          onDoubleClick={rig.onDoubleClick}
-          onKeyDown={rig.onKeyDown}
-        >
-          {children}
-        </div>
-      </div>, document.getElementById('root') ?? document.body)}
-    </>
-  )
 }
 
 function todayBgmId(): number {
@@ -404,14 +238,6 @@ export function CalendarPage(): JSX.Element {
   const { user } = useAuth()
   // 已追的 bgmId —— 用来给海报画「已收藏」描边 / 切圆章按钮图标。未登录就是空集（按钮不显示）。
   const [tracked, setTracked] = useState<Set<number>>(new Set())
-  // 纱雾驻场气泡两句话轮换：一会儿引导向右（这页的痛点），一会儿回到「慢慢挑」的闲适。
-  const [sagiriLine, setSagiriLine] = useState<'a' | 'b'>('a')
-  useEffect(() => {
-    // 系统要求减少动态效果时，保留最关键的右翻提示，不再轮换台词。
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const t = window.setInterval(() => setSagiriLine((p) => (p === 'a' ? 'b' : 'a')), SAGIRI_SWAP_MS)
-    return () => window.clearInterval(t)
-  }, [])
   const dates = useMemo(weekDates, [])
   const todayId = useMemo(todayBgmId, [])
   // 默认保留截图里的横向布局；「纵向」是同一份数据的第二种浏览方式，选择会记住。
@@ -424,24 +250,7 @@ export function CalendarPage(): JSX.Element {
     } catch {
       // 存储不可用时不影响本次切换。
     }
-    // 切换布局后先回到「引导句」，让新布局对应的那句先亮出来。
-    setSagiriLine('a')
   }, [layoutMode])
-  const sagiriLines = SAGIRI_LINES[layoutMode]
-  const rigContent = (
-    <>
-      <img className="rig" src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘（全身）" draggable={false} />
-      <div className="bubble rig-bubble">
-        <span className={`sagiri-line${sagiriLine === 'a' ? ' show' : ''}`}>
-          {sagiriLines[0]}
-        </span>
-        <span className={`sagiri-line${sagiriLine === 'b' ? ' show' : ''}`}>
-          {sagiriLines[1]}
-        </span>
-      </div>
-    </>
-  )
-
   // 复用 TracksPage 同一套「秒开缓存 + 后台校验」逻辑（tracksSync.ts）——两页共享
   // 同一份 tracks:<username> 缓存，谁先加载过谁就替对方省一次请求。
   useEffect(() => {
@@ -533,72 +342,82 @@ export function CalendarPage(): JSX.Element {
 
   return (
     <>
-      <div className="spread" style={{ alignItems: 'flex-end' }}>
-        <div>
-          <h1 className="title-sketch" style={{ fontSize: 34 }}>
-            番剧周历
-          </h1>
-          <p className="muted small mt8">
-            {range && (
-              <>
-                本季 · {range} · {layoutMode === 'vertical' ? '查看整周排片' : '按日期浏览'}
-              </>
-            )}
-            {result && (
-              <>
-                {' '}
-                <span className="faint">
-                  （{result.fromCache ? '缓存' : '刚拉取'}：{formatRelTime(result.updatedAt)}）
-                </span>
-              </>
-            )}
-          </p>
-        </div>
-        <div className="row calendar-actions">
-          <div className="seg calendar-layout-toggle" role="group" aria-label="浏览方式">
+      <header className="pop-hero tone-gold hero-calendar">
+        <span className="pop-hero-slab" aria-hidden="true" />
+        <div className="spread pop-hero-body" style={{ alignItems: 'flex-end' }}>
+          <div>
+            <h1 className="title-sketch" style={{ fontSize: 34 }}>
+              番剧周历
+            </h1>
+            <p className="muted small mt8">
+              {range && (
+                <>
+                  本季 · {range} · {layoutMode === 'vertical' ? '查看整周排片' : '按日期浏览'}
+                </>
+              )}
+              {result && (
+                <>
+                  {' '}
+                  <span className="faint">
+                    （{result.fromCache ? '缓存' : '刚拉取'}：{formatRelTime(result.updatedAt)}）
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
+          <div className="row calendar-actions">
+            <div className="seg calendar-layout-toggle" role="group" aria-label="浏览方式">
+              <button
+                type="button"
+                className={layoutMode === 'horizontal' ? 'on' : ''}
+                aria-pressed={layoutMode === 'horizontal'}
+                onClick={() => setLayoutMode('horizontal')}
+              >
+                横向
+              </button>
+              <button
+                type="button"
+                className={layoutMode === 'vertical' ? 'on' : ''}
+                aria-pressed={layoutMode === 'vertical'}
+                onClick={() => setLayoutMode('vertical')}
+              >
+                纵向
+              </button>
+            </div>
             <button
-              type="button"
-              className={layoutMode === 'horizontal' ? 'on' : ''}
-              aria-pressed={layoutMode === 'horizontal'}
-              onClick={() => setLayoutMode('horizontal')}
+              className="icon-btn"
+              onClick={() => load(true)}
+              disabled={refreshing}
+              title="刷新周历（绕过缓存）"
+              aria-label="刷新周历"
             >
-              横向
+              <Ic name="refresh" cls={refreshing ? 'ic animate-spin' : 'ic'} />
             </button>
             <button
+              className="btn btn-sm"
               type="button"
-              className={layoutMode === 'vertical' ? 'on' : ''}
-              aria-pressed={layoutMode === 'vertical'}
-              onClick={() => setLayoutMode('vertical')}
+              onClick={() => {
+                if (layoutMode === 'vertical' || wide) {
+                  document.getElementById(`day-sec-${todayId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                } else {
+                  setSelectedDay(todayId)
+                }
+                toast('已回到今天')
+              }}
             >
-              纵向
+              <Ic name="calendar" cls="ic ic-sm" />
+              回到今天
             </button>
           </div>
-          <button
-            className="icon-btn"
-            onClick={() => load(true)}
-            disabled={refreshing}
-            title="刷新周历（绕过缓存）"
-            aria-label="刷新周历"
-          >
-            <Ic name="refresh" cls={refreshing ? 'ic animate-spin' : 'ic'} />
-          </button>
-          <button
-            className="btn btn-sm"
-            type="button"
-            onClick={() => {
-              if (layoutMode === 'vertical' || wide) {
-                document.getElementById(`day-sec-${todayId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              } else {
-                setSelectedDay(todayId)
-              }
-              toast('已回到今天')
-            }}
-          >
-            <Ic name="calendar" cls="ic ic-sm" />
-            回到今天
-          </button>
         </div>
-      </div>
+        <span className="hero-deco deco-square" aria-hidden="true" />
+        <span className="hero-deco deco-spark s1" aria-hidden="true">✦</span>
+        <span className="hero-deco deco-spark s2" aria-hidden="true">✦</span>
+        <span className="hero-deco deco-stamp" aria-hidden="true">
+          {dates[todayId]?.m}/{dates[todayId]?.d}
+        </span>
+        <PopArt src="/assets/pop/calendar.webp" tone="gold" bare className="pop-hero-art" />
+      </header>
 
       {(error || tracksError) && (
         <p className="form-note err mt8" aria-live="polite">
@@ -607,13 +426,6 @@ export function CalendarPage(): JSX.Element {
       )}
 
       <div className={`calendar-stage mt16 layout-${layoutMode}`}>
-        <span className="kira calendar-kira">サラサラ</span>
-        {wide ? <DesktopCalendarRig>{rigContent}</DesktopCalendarRig> : (
-          <div className="calendar-rig calendar-rig-inline" role="img" aria-label="和泉纱雾驻场贴纸">
-            {rigContent}
-          </div>
-        )}
-
         <div className="calendar-content">
           {layoutMode === 'vertical' ? (
             <div className="calendar-vertical-view">

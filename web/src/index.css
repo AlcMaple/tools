@@ -6,6 +6,7 @@
 @import './styles/sketch-tokens.css';
 @import './styles/sketch-ui.css';
 @import './styles/splash.css';
+@import './styles/pop-art.css';
 
 @tailwind base;
 @tailwind components;

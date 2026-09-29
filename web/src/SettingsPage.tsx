@@ -27,6 +27,7 @@ import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 import { readByokKey, writeByokKey } from './reviews/byok'
 import { BackupModule } from './BackupModule'
+import { PopArt } from './PopArt'
 
 type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai' | 'backup'
 
@@ -81,14 +82,6 @@ export function SettingsPage(): JSX.Element | null {
             设置
           </h1>
           <p className="muted small mt8">账号、安全和播放源，都收在这几个口袋里</p>
-        </div>
-      </div>
-
-      {/* 手机：立绘内联（桌面在右侧驻场，CSS 切换） */}
-      <div className="rig-inline mt16">
-        <img className="rig" src="/assets/chara_04.webp" alt="千寿ムラマサ · 官方立绘" />
-        <div className="bubble rig-bubble">
-          <span>书架整理好了，接下来交给我吧。</span>
         </div>
       </div>
 
@@ -205,13 +198,7 @@ export function SettingsPage(): JSX.Element | null {
         </div>
 
         <div className="rig-box">
-          <img className="rig" src="/assets/chara_04.webp" alt="千寿ムラマサ · 官方立绘" />
-          <div className="bubble rig-bubble">
-            <span>书架整理好了，接下来交给我吧。</span>
-          </div>
-          <span className="kira" style={{ bottom: 74, right: -8, transform: 'rotate(5deg)' }}>
-            ムラママ
-          </span>
+          <PopArt src="/assets/pop/settings.webp" tone="teal" />
         </div>
       </div>
     </>

@@ -10,6 +10,7 @@ import type { SecurityQuestion } from './auth'
 import { Ic } from './SketchIcon'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
+import { PopArt } from './PopArt'
 
 export type AuthMode = 'login' | 'register' | 'email' | 'forgot'
 
@@ -264,8 +265,7 @@ export function AuthModal({
         </button>
 
         <aside className="auth-side">
-          <span className="halftone-wash" />
-          <img src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘" />
+          <PopArt src="/assets/pop/auth.webp" tone="sakura" className="auth-pop" />
           <p className="auth-side-cap">「才、才不是在等你登录……」</p>
         </aside>
 

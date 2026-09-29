@@ -10,6 +10,7 @@ import {
 import { useAuth } from './auth'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
+import { PopArt } from './PopArt'
 
 const SHOP: Array<{
   item: RewardShopItem
@@ -108,9 +109,9 @@ export function RewardsPage(): JSX.Element {
   if (error || !summary) {
     return (
       <div className="empty panel reward-empty">
-        <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />
+        <PopArt src="/assets/pop/locked.webp" tone="lav" />
         <div className="empty-say">
-          <div className="bubble empty-bubble"><span>{error || '这页卡住了…'}</span></div>
+          <p className="empty-text">{error || '这页卡住了…'}</p>
           <button className="btn btn-primary" type="button" onClick={() => void load()}>再试一次</button>
         </div>
       </div>
@@ -122,9 +123,9 @@ export function RewardsPage(): JSX.Element {
       <>
         <PageTitle />
         <div className="empty panel reward-empty mt16">
-          <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />
+          <PopArt src="/assets/pop/locked.webp" tone="lav" tag="还没开放" />
           <div className="empty-say">
-            <div className="bubble empty-bubble"><span>这页今天先不给你看。开放的时候我会说的</span></div>
+            <p className="empty-text">这页今天先不给你看。开放的时候我会说的</p>
           </div>
         </div>
       </>
@@ -200,10 +201,7 @@ export function RewardsPage(): JSX.Element {
           </div>
         </section>
 
-        <div className="reward-guide">
-          <img src="/assets/sagiri-mascot.webp" alt="和泉纱雾" />
-          <div className="bubble"><span>想要哪张券？先说好，不许一次全花掉</span></div>
-        </div>
+        <PopArt src="/assets/pop/rewards.webp" tone="gold" className="reward-pop" />
       </div>
 
       <div className="reward-layout mt16">

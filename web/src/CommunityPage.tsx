@@ -18,6 +18,7 @@ import { PosterModal } from './reviews/PosterModal'
 import type { PosterInput } from './reviews/poster'
 import type { PosterScoreSignals } from '../shared/poster-score'
 import type { ReviewMode } from './reviews/reviewsApi'
+import { PopArt } from './PopArt'
 
 function posterInputFrom(opts: {
   bgmId: number
@@ -212,8 +213,8 @@ function HallView({
         <div className="page-state"><Spinner size={36} /><p className="faint small">正在翻看大家的追番手帐…</p></div>
       ) : users && users.length === 0 ? (
         <div className="empty panel mt16">
-          <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />
-          <div className="empty-say"><div className="bubble empty-bubble">这里还安安静静的……谁来先摊开一页？</div></div>
+          <PopArt src="/assets/pop/empty.webp" tone="teal" />
+          <div className="empty-say"><p className="empty-text">这里还安安静静的……谁来先摊开一页？</p></div>
         </div>
       ) : (
         <div className="community-users mt16">
