@@ -53,7 +53,7 @@ import { TrackListRow } from './tracks/TrackList'
 import { BgmImportModal } from './tracks/importModal'
 import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
 import { AddSearchModal, type BackfillTarget } from './tracks/addSearchModal'
-import { PopArt } from './PopArt'
+import { SketchSheet } from './SketchSheet'
 import {
   SourceBindPickerModal,
   SourceSearchModal,
@@ -498,9 +498,8 @@ export function TracksPage(): JSX.Element {
 
   return (
     <>
-      <header className="pop-hero tone-sakura hero-tracks">
-        <span className="pop-hero-slab" aria-hidden="true" />
-        <div className="spread pop-hero-body" style={{ alignItems: 'flex-start' }}>
+      <header className="sketch-hero">
+        <div className="spread sketch-hero-body" style={{ alignItems: 'flex-start' }}>
           <div>
             <h1 className="title-sketch" style={{ fontSize: 34 }}>
               我的追番
@@ -533,15 +532,11 @@ export function TracksPage(): JSX.Element {
             </div>
           )}
         </div>
-        <span className="hero-deco deco-tri" aria-hidden="true" />
-        <span className="hero-deco deco-heart" aria-hidden="true">♡</span>
-        <span className="hero-deco deco-spark s1" aria-hidden="true">✦</span>
-        <PopArt
+        <SketchSheet
           src="/assets/pop/tracks.webp"
-          tone="sakura"
-          bare
-          className="pop-hero-art"
-          tag={todayCount > 0 ? `今日更新 ×${todayCount}` : undefined}
+          paper="note"
+          className="sketch-hero-art"
+          sign={todayCount > 0 ? `今天 ${todayCount} 部更新` : undefined}
         />
       </header>
 
@@ -873,7 +868,7 @@ function ViewModeToggle({
 function EmptyState({ text, hint, goCalendar }: { text: string; hint: string; goCalendar?: boolean }): JSX.Element {
   return (
     <div className="empty panel mt16">
-      <PopArt src="/assets/pop/empty.webp" tone="teal" />
+      <SketchSheet src="/assets/pop/empty.webp" paper="polaroid" />
       <div className="empty-say">
         <p className="empty-text">
           {text}。{hint}

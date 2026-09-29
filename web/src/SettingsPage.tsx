@@ -27,7 +27,7 @@ import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 import { readByokKey, writeByokKey } from './reviews/byok'
 import { BackupModule } from './BackupModule'
-import { PopArt } from './PopArt'
+import { SketchSheet } from './SketchSheet'
 
 type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai' | 'backup'
 
@@ -198,7 +198,7 @@ export function SettingsPage(): JSX.Element | null {
         </div>
 
         <div className="rig-box">
-          <PopArt src="/assets/pop/settings.webp" tone="teal" />
+          <SketchSheet src="/assets/pop/settings.webp" paper="polaroid" className="settings-sketch" />
         </div>
       </div>
     </>

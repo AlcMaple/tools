@@ -10,7 +10,7 @@ import {
 import { useAuth } from './auth'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
-import { PopArt } from './PopArt'
+import { SketchSheet } from './SketchSheet'
 
 const SHOP: Array<{
   item: RewardShopItem
@@ -109,7 +109,7 @@ export function RewardsPage(): JSX.Element {
   if (error || !summary) {
     return (
       <div className="empty panel reward-empty">
-        <PopArt src="/assets/pop/locked.webp" tone="lav" />
+        <SketchSheet src="/assets/pop/locked.webp" paper="note" />
         <div className="empty-say">
           <p className="empty-text">{error || '这页卡住了…'}</p>
           <button className="btn btn-primary" type="button" onClick={() => void load()}>再试一次</button>
@@ -123,7 +123,7 @@ export function RewardsPage(): JSX.Element {
       <>
         <PageTitle />
         <div className="empty panel reward-empty mt16">
-          <PopArt src="/assets/pop/locked.webp" tone="lav" tag="还没开放" />
+          <SketchSheet src="/assets/pop/locked.webp" paper="note" sign="还没开放" />
           <div className="empty-say">
             <p className="empty-text">这页今天先不给你看。开放的时候我会说的</p>
           </div>
@@ -201,7 +201,7 @@ export function RewardsPage(): JSX.Element {
           </div>
         </section>
 
-        <PopArt src="/assets/pop/rewards.webp" tone="gold" className="reward-pop" />
+        <SketchSheet src="/assets/pop/rewards.webp" paper="torn" className="reward-sketch" />
       </div>
 
       <div className="reward-layout mt16">

@@ -7,7 +7,7 @@ import { loadTracks, runTracksMutation } from './tracksSync'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { useIsWide } from './useMediaQuery'
-import { SketchSheet } from './PopArt'
+import { SketchSheet } from './SketchSheet'
 
 // 皮肤 = 原型稿 index.html（番剧周历）：横向海报胶片，页头一格插画，另有纵向布局。
 // 横向布局保留日期章选天（窄屏）和每周一行胶片（宽屏）；纵向布局一次展开七天。
@@ -342,8 +342,8 @@ export function CalendarPage(): JSX.Element {
 
   return (
     <>
-      <header className="pop-hero sketch-hero">
-        <div className="spread pop-hero-body" style={{ alignItems: 'flex-end' }}>
+      <header className="sketch-hero">
+        <div className="spread sketch-hero-body" style={{ alignItems: 'flex-end' }}>
           <div>
             <h1 className="title-sketch" style={{ fontSize: 34 }}>
               番剧周历
@@ -411,6 +411,7 @@ export function CalendarPage(): JSX.Element {
         </div>
         <SketchSheet
           src="/assets/pop/calendar.webp"
+          className="sketch-hero-art"
           sign={`${dates[todayId]?.m}.${dates[todayId]?.d} 紗霧`}
         />
       </header>

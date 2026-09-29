@@ -1,0 +1,116 @@
+/* 画稿：借 xh-anime /universe「去色→透色→hover 瞬间上色」的思路，但用本站自己的媒介重演——
+   画纸 / 和纸胶带 / 水彩晕染 / 手写签名。试过照搬它的波普语言（黑硬投影、斜切色块、爆炸线），
+   放进手账站永远像外来物，细节调到头也只有「好看但不属于这里」。
+   人物 grayscale + multiply：白色透出纸面，只剩铅笔线落在纸上，水彩从线稿底下透出来。
+   不要给图加 brightness 压暗：白一旦变灰，整张纸都会被弄脏。 */
+.sketch-sheet {
+  --lift: 28px;
+  position: relative;
+  flex: none;
+  margin: 0;
+  transform: rotate(2.5deg);
+}
+.sketch-paper {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 14px 14px,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 14px 14px,
+    var(--card);
+  box-shadow: var(--shadow-2);
+}
+.sketch-sheet .tape { z-index: 1; }
+.sketch-wash {
+  position: absolute;
+  inset: 6% 6% 0;
+  background:
+    radial-gradient(ellipse 40% 52% at 50% 62%, var(--tape-gold), transparent 72%),
+    radial-gradient(ellipse 28% 34% at 28% 42%, var(--tape-teal), transparent 70%),
+    radial-gradient(ellipse 24% 30% at 76% 34%, var(--tape-sakura), transparent 70%);
+  filter: blur(3px);
+}
+/* 只裁下边（纸的边缘），上方留 --lift 让头探出纸面、画到页面上 */
+.sketch-clip { position: absolute; left: 0; right: 0; bottom: 0; top: calc(-1 * var(--lift)); overflow: hidden; }
+.sketch-img {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  height: 100%;
+  max-width: none;
+  transform: translateX(-50%);
+  filter: grayscale(1) contrast(1.2) brightness(1.05);
+  mix-blend-mode: multiply;
+  user-select: none;
+}
+.sketch-sign {
+  position: absolute;
+  right: 10px;
+  bottom: -24px;
+  font-family: var(--font-hand);
+  font-size: 13px;
+  color: var(--ink-sub);
+  white-space: nowrap;
+  transform: rotate(-3deg);
+}
+/* 悬停无过渡、瞬间上色——突变本身就是那一下惊喜 */
+.sketch-sheet:hover .sketch-img {
+  filter: none;
+  mix-blend-mode: normal;
+  transform: translate(calc(-50% - 3px), -3px);
+}
+
+/* ---------- 纸张：每处换一种，别让各页像同一张模板 ---------- */
+.paper-note { transform: rotate(-2deg); }
+.paper-note .sketch-paper { background: #fdeef2; border-radius: 2px; box-shadow: var(--shadow-1); }
+
+
+/* 拍立得：白边相框，照片区是泛黄内页，签名写在下边白条上 */
+.paper-polaroid { --lift: 18px; transform: rotate(-3deg); }
+.paper-polaroid .sketch-paper { background: var(--card); box-shadow: var(--shadow-2); }
+.paper-polaroid .sketch-paper::after { content: ''; position: absolute; inset: 8px 8px 30px; background: var(--paper-2); }
+.paper-polaroid .sketch-wash { inset: 8px 8px 30px; }
+.paper-polaroid .sketch-clip { left: 8px; right: 8px; bottom: 30px; }
+
+/* 撕页：上缘锯齿；纸用伪元素画，头依旧能探出去 */
+.paper-torn .sketch-paper {
+  clip-path: polygon(0 4%, 7% 0, 14% 5%, 22% 1%, 30% 6%, 38% 0, 46% 4%, 55% 1%, 63% 6%, 71% 0, 80% 5%, 88% 1%, 100% 4%, 100% 100%, 0 100%);
+  box-shadow: none;
+  filter: drop-shadow(0 6px 10px rgba(62, 67, 80, .14));
+}
+
+/* ---------- 页头：标题在左，画稿贴在右边 ---------- */
+.sketch-hero {
+  position: relative;
+  min-height: 212px;
+  display: flex;
+  align-items: flex-end;
+  padding: 18px 0 30px;
+  margin-bottom: 30px;
+  border-bottom: 1.5px dashed var(--line);
+}
+.sketch-hero-body {
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start !important;
+  justify-content: flex-end;
+  gap: 16px;
+  padding-right: 330px;
+}
+.sketch-hero-art { position: absolute; z-index: 2; right: clamp(24px, 5%, 64px); bottom: 26px; width: 270px; height: 150px; }
+.sketch-hero .paper-note { width: 220px; height: 150px; }
+
+/* ---------- 其他落点 ---------- */
+.rig-box .sketch-sheet { width: 190px; height: 220px; margin-top: 14px; }
+.empty .sketch-sheet { width: 128px; height: 140px; }
+.empty .paper-note { width: 140px; height: 120px; }
+.empty-text { max-width: 320px; margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink-sub); }
+.reward-sketch { --lift: 0px; width: 160px; height: 150px; justify-self: center; }
+.auth-sketch { --lift: 22px; width: 150px; height: 250px; transform: rotate(-2deg); }
+
+@media (max-width: 960px) {
+  .sketch-hero { min-height: 0; border-bottom: 0; margin-bottom: 16px; padding: 0; }
+  .sketch-hero-art { display: none; }
+  .sketch-hero-body { padding-right: 0; }
+}

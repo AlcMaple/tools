@@ -18,7 +18,7 @@ import { PosterModal } from './reviews/PosterModal'
 import type { PosterInput } from './reviews/poster'
 import type { PosterScoreSignals } from '../shared/poster-score'
 import type { ReviewMode } from './reviews/reviewsApi'
-import { PopArt } from './PopArt'
+import { SketchSheet } from './SketchSheet'
 
 function posterInputFrom(opts: {
   bgmId: number
@@ -213,7 +213,7 @@ function HallView({
         <div className="page-state"><Spinner size={36} /><p className="faint small">正在翻看大家的追番手帐…</p></div>
       ) : users && users.length === 0 ? (
         <div className="empty panel mt16">
-          <PopArt src="/assets/pop/empty.webp" tone="teal" />
+          <SketchSheet src="/assets/pop/empty.webp" paper="polaroid" />
           <div className="empty-say"><p className="empty-text">这里还安安静静的……谁来先摊开一页？</p></div>
         </div>
       ) : (
