@@ -12,7 +12,7 @@ const SEEN_KEY = 'mt-splash-seen'
 const ART = '/assets/sagiri-full.webp'
 const HOLD_MS = 700 // 时间轴总长：单拍动作演完 + 停一瞬
 const OUT_MS = 320 // 翻页离场（与 .sp.out 动画同长）
-const WAIT_MS = 800 // 等立绘解码的上限，超时就照画（宁可卡片空一点，也不能干等白纸）
+const WAIT_MS = 10000 // 等立绘的上限：超时或加载失败就整段跳过，不在空卡片上演
 const STEP_CAP = 34 // 单帧最多推进两帧的量：卡一下就慢一点，不跳帧
 const HARD_MS = 8000 // 兜底：无论帧跑成什么样，最多占屏这么久（rAF 完全不来时也能退场）
 
@@ -36,18 +36,24 @@ export function Splash({ onComplete, onReady }: { onComplete?: () => void; onRea
   const [state, setState] = useState<'wait' | 'play' | 'out' | 'done'>(PLAY ? 'wait' : 'done')
   const ref = useRef<HTMLDivElement>(null)
   const notified = useRef(false)
+  const played = useRef(false)
 
-  // 等立绘就位：图没到就开画，画的是一张空卡片
+  // 等立绘就位：立绘没到手就不出画布（wait 态什么都不渲染），到了才开演；
+  // 等太久或加载失败就整段跳过。以前 0.8 秒一到就照画，慢网下看到的是一块空画布、
+  // 卡片里没有人。
   useEffect(() => {
     if (state !== 'wait') return
     let live = true
     const start = (): void => {
       if (live) setState('play')
     }
+    const skip = (): void => {
+      if (live) setState('done')
+    }
     const img = new Image()
     img.src = ART
-    void (img.decode ? img.decode().then(start, start) : start())
-    const cap = window.setTimeout(start, WAIT_MS)
+    void (img.decode ? img.decode().then(start, skip) : (img.onload = start, img.onerror = skip))
+    const cap = window.setTimeout(skip, WAIT_MS)
     return () => {
       live = false
       window.clearTimeout(cap)
@@ -57,6 +63,7 @@ export function Splash({ onComplete, onReady }: { onComplete?: () => void; onRea
   // 时间轴：卡片里的动画全被 CSS 钉在暂停态，这里逐帧给它们设 currentTime
   useLayoutEffect(() => {
     if (state !== 'play') return
+    played.current = true
     const root = ref.current
     if (!root) return
     const anims = root
@@ -103,7 +110,7 @@ export function Splash({ onComplete, onReady }: { onComplete?: () => void; onRea
   // 公告只能跟在一段真实播放过的开屏后面：刷新时本会话已经看过开屏，PLAY=false，就不再
   // 补弹；并用 ref 抵住开发环境 StrictMode / 父组件重渲染带来的重复通知。
   useEffect(() => {
-    if (state !== 'done' || !PLAY || notified.current) return
+    if (state !== 'done' || !PLAY || !played.current || notified.current) return
     notified.current = true
     onComplete?.()
   }, [state, onComplete])
@@ -115,13 +122,13 @@ export function Splash({ onComplete, onReady }: { onComplete?: () => void; onRea
 
   // 跳过：点一下 / 按任意键都算
   useEffect(() => {
-    if (state === 'done' || state === 'out') return
+    if (state !== 'play') return
     const skip = (): void => setState('out')
     window.addEventListener('keydown', skip)
     return () => window.removeEventListener('keydown', skip)
   }, [state])
 
-  if (state === 'done') return null
+  if (state === 'done' || state === 'wait') return null
 
   return (
     <div
