@@ -25,7 +25,7 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
 export const SITE_API_FEATURES:Readonly<Record<string,string>>={
  '/api/health':'infrastructure.health','/api/cover/*':'infrastructure.cover','/api/auth':'web.auth','/api/auth/oauth':'web.auth',
  '/api/rewards':'web.rewards','/api/community':'web.community','/api/announcements':'web.announcements',
- '/api/feedback':'web.feedback','/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/backup':'web.backup','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/calendar':'web.calendar',
+ '/api/feedback':'web.feedback','/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/backup':'web.backup','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/search-log':'web.search','/api/calendar':'web.calendar',
 }
 export interface SiteFeatureAccess { email:boolean;google:boolean;github:boolean;linuxdo?:boolean;rewards:boolean;invites:boolean;lottery:boolean }
 export function enabledSiteFeatures(flags:SiteFeatureAccess,guest=false):string[]{
