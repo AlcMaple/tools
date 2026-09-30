@@ -47,6 +47,65 @@ function inboxLinkFor(address: string): InboxLink | null {
   return null
 }
 
+// 纱雾躲起来：21 帧是同一段图生视频（首帧抱着数位板 → 尾帧挡住脸）抽出来的，动作连贯、人物不走样。
+// 看的是密码本身，不是焦点：有密码且小眼睛关着 → 逐帧举起挡脸；小眼睛打开 → 倒回第 13 帧，
+// 数位板停在眼睛下方偷看；密码清空 → 倒放放下。只换 src，不做补间：举起 / 放下是一整个动作，
+// 每帧 1/40 秒要干脆；开关小眼睛只挪几帧，每帧 1/24 秒留出「偷看」的犹豫感。
+const SHY_FRAMES = Array.from({ length: 21 }, (_, i) => `/assets/pop/shy/${String(i).padStart(2, '0')}.webp`)
+const SHY_PEEK = 13
+function useShySketch() {
+  const imgRef = useRef<HTMLImageElement>(null)
+  const frame = useRef(0)
+  const target = useRef(0)
+  const timer = useRef(0)
+
+  useEffect(() => {
+    // 预解码，逐帧切换时不闪白
+    SHY_FRAMES.forEach((src) => {
+      const img = new Image()
+      img.src = src
+    })
+    return () => window.clearInterval(timer.current)
+  }, [])
+
+  const run = (): void => {
+    window.clearInterval(timer.current)
+    const whole = target.current === 0 || frame.current < SHY_PEEK
+    timer.current = window.setInterval(() => {
+      if (frame.current === target.current) {
+        window.clearInterval(timer.current)
+        timer.current = 0
+        return
+      }
+      frame.current += frame.current < target.current ? 1 : -1
+      if (imgRef.current) imgRef.current.src = SHY_FRAMES[frame.current]
+    }, 1000 / (whole ? 40 : 24))
+  }
+
+  // 只认带「显示密码」按钮的行（用户名框也是同一种 .field-row）；注册时有两个密码框，任一个藏着字就挡脸
+  const sync = (): void => {
+    requestAnimationFrame(() => {
+      const filled = [...document.querySelectorAll<HTMLInputElement>('.auth-dlg .field-row:has(.eye) input')].filter((i) => i.value)
+      target.current = !filled.length ? 0 : filled.some((i) => i.type === 'password') ? SHY_FRAMES.length - 1 : SHY_PEEK
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        frame.current = target.current
+        if (imgRef.current) imgRef.current.src = SHY_FRAMES[frame.current]
+        return
+      }
+      run()
+    })
+  }
+
+  // 弹窗重开时图片重新挂载回第 0 帧，帧号要跟着归零，否则会倒放一段不存在的动作
+  const reset = (): void => {
+    window.clearInterval(timer.current)
+    timer.current = 0
+    frame.current = target.current = 0
+  }
+
+  return { imgRef, sync, reset }
+}
+
 export function AuthModal({
   open,
   mode,
@@ -84,6 +143,14 @@ export function AuthModal({
   const isReg = mode === 'register'
   const isForgot = mode === 'forgot'
   const isEmail = mode === 'email'
+  const shy = useShySketch()
+  useEffect(() => {
+    if (open) shy.reset()
+  }, [open])
+  // 跟着密码本身走：输入、切换登录 / 注册、提交后被清空都会重新判断；小眼睛的开关由下面的 onClickCapture 捕获
+  useEffect(() => {
+    shy.sync()
+  }, [password, confirm, mode, open])
 
   useEffect(() => {
     if (!open) return
@@ -265,11 +332,11 @@ export function AuthModal({
         </button>
 
         <aside className="auth-side">
-          <SketchSheet src="/assets/pop/auth.webp" className="auth-sketch" />
+          <SketchSheet src={SHY_FRAMES[0]} className="auth-sketch" imgRef={shy.imgRef} />
           <p className="auth-side-cap">「才、才不是在等你登录……」</p>
         </aside>
 
-        <div className="auth-main">
+        <div className="auth-main" onClickCapture={shy.sync}>
           {!isReg && !isForgot ? (
             <div className="auth-tabs">
               <button

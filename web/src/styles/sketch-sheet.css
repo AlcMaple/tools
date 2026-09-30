@@ -118,6 +118,8 @@
 .empty .paper-note { width: 140px; height: 120px; }
 .empty-text { max-width: 320px; margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink-sub); }
 .reward-sketch { --lift: 0px; width: 160px; height: 150px; justify-self: center; }
+/* 登录弹窗的纱雾一直是彩色的：她在动，线稿反而显得僵 */
+.auth-sketch .sketch-img { filter: none; mix-blend-mode: normal; }
 .auth-sketch { --lift: 22px; width: 150px; height: 250px; transform: rotate(-2deg); }
 
 /* ---------- 我的追番：便签上手写「今天的功课」，下面卡片动过进度就被铅笔划掉 ---------- */

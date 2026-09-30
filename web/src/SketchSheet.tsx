@@ -18,6 +18,7 @@ export function SketchSheet({
   sign,
   paint,
   sheetRef,
+  imgRef,
   className = '',
   children,
 }: {
@@ -26,6 +27,7 @@ export function SketchSheet({
   sign?: string
   paint?: number
   sheetRef?: Ref<HTMLElement>
+  imgRef?: Ref<HTMLImageElement>
   className?: string
   children?: ReactNode
 }): JSX.Element {
@@ -42,7 +44,7 @@ export function SketchSheet({
       {paper === 'torn' && <span className="tape tr lav" />}
       <span className="sketch-wash" />
       <span className="sketch-clip">
-        <img className="sketch-img" src={src} alt="" draggable={false} />
+        <img ref={imgRef} className="sketch-img" src={src} alt="" draggable={false} />
         {paint !== undefined && (
           <img className="sketch-paint" src={src} alt="" draggable={false} style={paintMask(paint)} />
         )}
