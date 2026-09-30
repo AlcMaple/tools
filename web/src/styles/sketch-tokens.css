@@ -125,6 +125,13 @@ body {
   background-size: 24px 24px;
 }
 
+/* 启动期（入口包 / 立绘没到手）整页留白，像还没连上一样，不露出空的方眼格让人干等。
+   mt-booting 由 public/white-screen-probe.js 最先挂上，Splash 决定好放不放开屏后摘掉 */
+html.mt-booting { color-scheme: light dark; }
+html.mt-booting, html.mt-booting body { background: Canvas !important; }
+html.mt-booting body > * { visibility: hidden; }
+html.mt-booting body::after { display: none; }
+
 /* 纸张噪点覆盖层（比 grid 更细的颗粒） */
 body::after {
   content: '';

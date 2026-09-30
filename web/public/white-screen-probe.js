@@ -9,10 +9,24 @@
 (function () {
   var TIMEOUT_MS = 4000
   var RETRY_DELAY_MS = 120
+  // 慢网下入口包还在下载时 #root 本来就是空的，此时整页重载只会把已下的字节作废、重新排队，
+  // 用户看到的就是一直转的空白页。所以没报错、也没加载完时只等；最多等到这个上限才兜底重载
+  var STALL_LIMIT_MS = 45000
+  var startedAt = Date.now()
   var RECOVERY_PARAM = 'mt_recover'
   var timer = 0
   var recoveryStarted = false
   var reportSent = false
+
+  // 入口包 / 立绘没到手之前整页留白（样式见 sketch-tokens.css 的 html.mt-booting），
+  // 由 Splash 摘掉。任何自愈失败、超时的路径也必须摘掉，不能把用户永远关在白屏里
+  var root = document.documentElement
+  root.classList.add('mt-booting')
+  function release() {
+    root.classList.remove('mt-booting')
+  }
+  window.__mtReleaseBooting = release
+  window.setTimeout(release, 60000)
 
   function looksBlank(el) {
     if (!el) return true
@@ -48,6 +62,11 @@
 
   function recover(reason) {
     if (document.visibilityState === 'hidden') return
+    var passive = reason === 'watchdog' || reason === 'visibilitychange' || reason === 'pageshow-persisted'
+    if (passive && document.readyState !== 'complete' && Date.now() - startedAt < STALL_LIMIT_MS) {
+      schedule(reason, 2000)
+      return
+    }
     if (!looksBlank(document.getElementById('root'))) {
       cleanRecoveryParam()
       return
@@ -61,6 +80,7 @@
       return
     }
     if (url.searchParams.has(RECOVERY_PARAM)) {
+      release()
       report(reason + ' recovery-already-attempted')
       return
     }
