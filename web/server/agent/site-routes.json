@@ -516,6 +516,11 @@
   },
   {
     "file": "server/index.ts",
+    "method": "post",
+    "path": "/api/search-log"
+  },
+  {
+    "file": "server/index.ts",
     "method": "route",
     "path": "/api/agent"
   },

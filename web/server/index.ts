@@ -27,12 +27,19 @@ import { sameOriginGuard, securityHeaders } from './security'
 // 登录和稀饭会话仍全部留在本地。生产有自己的索引，不会走这里。
 const DEV_SEARCH_ORIGIN = process.env.DEV_SEARCH_ORIGIN || 'https://anime.alcmaple.cn'
 
-async function searchFromDeployedWeb(q: string): Promise<Record<string, unknown> | null> {
+// 本地开发没有索引时每次搜索都要翻山越岭问线上：不去重、不缓存、超时 12 秒，回填弹窗一开
+// 还会先发一次空查询，用户看到的就是「纱雾正在翻目录」转很久。同一个词 60 秒内共用一份结果 /
+// 一个在途请求；失败也短暂记住，避免在代理黑洞时每次输入都再等满超时。
+const DEPLOYED_TIMEOUT_MS = 6000
+const DEPLOYED_TTL_MS = 60_000
+const deployedCache = new Map<string, { at: number; value: Promise<Record<string, unknown> | null> }>()
+
+async function fetchDeployedSearch(q: string): Promise<Record<string, unknown> | null> {
   try {
     const url = new URL('/api/search', DEV_SEARCH_ORIGIN)
     url.searchParams.set('q', q)
     url.searchParams.set('mode', 'local')
-    const response = await fetch(url, { signal: AbortSignal.timeout(12000) })
+    const response = await fetch(url, { signal: AbortSignal.timeout(DEPLOYED_TIMEOUT_MS) })
     if (!response.ok) return null
     const data = (await response.json()) as Record<string, unknown>
     // 只接受离线来源（source=local/learned）。当前 /api/search 在 mode=local 下不会在线兜底，
@@ -42,9 +49,20 @@ async function searchFromDeployedWeb(q: string): Promise<Record<string, unknown>
       && Array.isArray(data.data)
       ? data
       : null
-  } catch {
+  } catch (error) {
+    console.warn(`[search] 借线上离线索引失败 q="${q}": ${error instanceof Error ? error.message : String(error)}`)
     return null
   }
+}
+
+function searchFromDeployedWeb(q: string): Promise<Record<string, unknown> | null> {
+  const now = Date.now()
+  const hit = deployedCache.get(q)
+  if (hit && now - hit.at < DEPLOYED_TTL_MS) return hit.value
+  if (deployedCache.size > 200) deployedCache.clear()
+  const value = fetchDeployedSearch(q)
+  deployedCache.set(q, { at: now, value })
+  return value
 }
 
 // 单一 Hono 应用 = API 的唯一真相源。本地开发经 vite.config 的 dev-server 插件跑，
@@ -107,7 +125,12 @@ app.route('/api/player', player)
 // `mode=online` 才会访问 BGM 在线搜索；这条路仍保留缓存 / 限速 / 冷却，且失败不重试
 //（bgm/search-online.ts）。
 app.get('/api/search', async (c) => {
+  const started = Date.now()
   const q = c.req.query('q') ?? ''
+  // 只记有词的搜索；本地搜索正常是几十毫秒，日志里出现大数字就是服务端这一段慢
+  const done = (source: string, hits: number): void => {
+    if (q.trim()) console.log(`[search] q="${q.trim().slice(0, 40)}" source=${source} hits=${hits} server=${Date.now() - started}ms`)
+  }
   const onlineRequested = c.req.query('mode') === 'online' || c.req.query('online') === '1'
   const st = indexStatus()
   c.header('Cache-Control', 'no-store')
@@ -117,6 +140,7 @@ app.get('/api/search', async (c) => {
     const base = { ready: st.ready, total: st.count, builtAt: st.builtAt }
     if (!q.trim()) return c.json({ ...base, source: 'online', data: [] })
     const online = await searchOnline(q)
+    done('online', online.hits.length)
     return c.json({ ...base, source: 'online', data: online.hits, onlineError: online.error })
   }
 
@@ -125,17 +149,43 @@ app.get('/api/search', async (c) => {
     const localRequest = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
     if (process.env.NODE_ENV !== 'production' && localRequest) {
       const deployed = await searchFromDeployedWeb(q)
-      if (deployed) return c.json(deployed)
+      if (deployed) {
+        done('dev-deployed', Array.isArray(deployed.data) ? deployed.data.length : 0)
+        return c.json(deployed)
+      }
     }
+    done('not-ready', 0)
     return c.json({ ready: false, data: [] })
   }
   // builtAt/total 是给运维看的：q 传空就只回这两个数，等于一个「索引同步到哪天了」的健康检查
   const base = { ready: true, total: st.count, builtAt: st.builtAt }
   const local = searchAnime(q, 30)
-  if (local.length || !q.trim()) return c.json({ ...base, source: 'local', data: local })
+  if (local.length || !q.trim()) {
+    done('local', local.length)
+    return c.json({ ...base, source: 'local', data: local })
+  }
   const learned = searchAdditions(q, 30)
-  if (learned.length) return c.json({ ...base, source: 'learned', data: learned })
+  if (learned.length) {
+    done('learned', learned.length)
+    return c.json({ ...base, source: 'learned', data: learned })
+  }
+  done('local', 0)
   return c.json({ ...base, source: 'local', data: [] })
+})
+
+// 浏览器等搜索超过 3 秒时把耗时打回来：服务端只有自己那一段的耗时，「浏览器到服务器」
+// 这段慢在哪只有前端知道，落进这个终端才能和上面 server=…ms 对上。
+app.post('/api/search-log', async (c) => {
+  const raw = (await c.req.text().catch(() => '')).slice(0, 1000)
+  try {
+    const b = JSON.parse(raw) as Record<string, unknown>
+    const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : -1)
+    const t = (v: unknown, max: number): string => String(v ?? '').replace(/[\r\n]/g, ' ').slice(0, max)
+    console.log(`[search:client] q="${t(b.q, 40)}" mode=${t(b.mode, 10)} outcome=${t(b.outcome, 10)} client=${n(b.ms)}ms`)
+  } catch {
+    /* 上报格式不对就丢，日志接口不该产生新错误 */
+  }
+  return c.body(null, 204)
 })
 
 app.get('/api/calendar', async (c) => {
@@ -169,15 +219,23 @@ app.get('/api/cover/*', async (c) => {
       headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
       signal: AbortSignal.timeout(15000),
     })
-    if (!upstream.ok || !upstream.body) return c.text('upstream error', 502)
+    if (!upstream.ok || !upstream.body) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('upstream error', 502)
+    }
     const contentType = upstream.headers.get('content-type')?.split(';', 1)[0]?.toLowerCase() ?? ''
     // 代理只允许图片。上游异常返回 HTML 时不能把它原样挂在本站路径下，避免被浏览器当
     // 成可执行文档或被未来的页面导航误用。
-    if (!/^image\/(?:png|jpe?g|gif|webp)$/i.test(contentType)) return c.text('upstream image type rejected', 502)
+    if (!/^image\/(?:png|jpe?g|gif|webp)$/i.test(contentType)) {
+      c.header('Cache-Control', 'no-store')
+      return c.text('upstream image type rejected', 502)
+    }
     c.header('Content-Type', contentType)
     c.header('Cache-Control', 'public, max-age=2592000, immutable')
     return c.body(upstream.body)
-  } catch {
+  } catch (error) {
+    console.warn(`[cover] 代取失败 ${path}: ${error instanceof Error ? error.message : String(error)}`)
+    c.header('Cache-Control', 'no-store')
     return c.text('fetch failed', 502)
   }
 })

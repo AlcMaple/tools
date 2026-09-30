@@ -697,6 +697,16 @@ export async function searchAnime(q: string, mode: AnimeSearchMode = 'local'): P
   return res.json() as Promise<SearchResult>
 }
 
+// 搜索超过 3 秒时把耗时打回服务端终端（网页控制台没人看）。outcome: pending = 3 秒了还没回，
+// ok / fail = 最终结果。失败静默，日志不能影响搜索本身。
+export function reportSlowSearch(q: string, mode: AnimeSearchMode, outcome: 'pending' | 'ok' | 'fail', ms: number): void {
+  try {
+    const body = JSON.stringify({ q: q.slice(0, 40), mode, outcome, ms })
+    if (navigator.sendBeacon) navigator.sendBeacon('/api/search-log', new Blob([body], { type: 'application/json' }))
+    else void fetch('/api/search-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {})
+  } catch { /* ignore */ }
+}
+
 // 用户明确点击在线入口时调用；保留独立名称，避免把两条请求语义混在调用点。
 export function searchAnimeOnline(q: string): Promise<SearchResult> {
   return searchAnime(q, 'online')

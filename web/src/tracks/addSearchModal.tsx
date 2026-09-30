@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { searchAnime, searchAnimeOnline, type AnimeHit, type AnimeSearchMode } from '../api'
+import { reportSlowSearch, searchAnime, searchAnimeOnline, type AnimeHit, type AnimeSearchMode } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
 
 // ── 加番搜索弹窗 ───────────────────────────────────────────────────────────────
@@ -8,6 +8,7 @@ import { Ic, Spinner } from '../SketchIcon'
 // 「自己记一条」用负数 bgmId 留下待回填的手动条目；从卡片进入时复用这扇窗选 BGM 并回填。
 // 索引超过这个天数没更新就提示。一周一档 + 3 天容错：正常同步永远碰不到，挂了才会露头
 const STALE_AFTER_DAYS = 10
+const SLOW_SEARCH_MS = 3000
 
 const ADD_COPY = {
   subtitle: '哼，先把想看的贴好。找得到 BGM 就认领，找不到也能先留一张手帐。',
@@ -126,9 +127,24 @@ export function AddSearchModal({
     setBackfillError('')
     setLoading(true)
     const request = nextMode === 'online' ? searchAnimeOnline(q) : searchAnime(q)
+    const startedAt = performance.now()
+    let pendingReported = false
+    const pendingTimer = window.setTimeout(() => {
+      pendingReported = true
+      reportSlowSearch(q, nextMode, 'pending', SLOW_SEARCH_MS)
+    }, SLOW_SEARCH_MS)
+    const settle = (outcome: 'ok' | 'fail'): void => {
+      window.clearTimeout(pendingTimer)
+      const ms = performance.now() - startedAt
+      if (pendingReported || ms >= SLOW_SEARCH_MS) reportSlowSearch(q, nextMode, outcome, ms)
+    }
     void request
-      .then((r) => finishSearch(id, r))
+      .then((r) => {
+        settle('ok')
+        finishSearch(id, r)
+      })
       .catch(() => {
+        settle('fail')
         if (id !== requestIdRef.current) return
         setResults([])
         setOnlineError(nextMode === 'online' ? ADD_COPY.network : '')
