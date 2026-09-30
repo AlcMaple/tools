@@ -50,7 +50,7 @@ function inboxLinkFor(address: string): InboxLink | null {
 // 纱雾躲起来：21 帧是同一段图生视频（首帧抱着数位板 → 尾帧挡住脸）抽出来的，动作连贯、人物不走样。
 // 看的是密码本身，不是焦点：有密码且小眼睛关着 → 逐帧举起挡脸；小眼睛打开 → 倒回第 13 帧，
 // 数位板停在眼睛下方偷看；密码清空 → 倒放放下。只换 src，不做补间：举起 / 放下是一整个动作，
-// 每帧 1/40 秒要干脆；开关小眼睛只挪几帧，每帧 1/24 秒留出「偷看」的犹豫感。
+// 每帧 1/80 秒要干脆；开关小眼睛只挪几帧，每帧 1/24 秒留出「偷看」的犹豫感。
 const SHY_FRAMES = Array.from({ length: 21 }, (_, i) => `/assets/pop/shy/${String(i).padStart(2, '0')}.webp`)
 const SHY_PEEK = 13
 function useShySketch() {
@@ -79,7 +79,7 @@ function useShySketch() {
       }
       frame.current += frame.current < target.current ? 1 : -1
       if (imgRef.current) imgRef.current.src = SHY_FRAMES[frame.current]
-    }, 1000 / (whole ? 40 : 24))
+    }, 1000 / (whole ? 80 : 24))
   }
 
   // 只认带「显示密码」按钮的行（用户名框也是同一种 .field-row）；注册时有两个密码框，任一个藏着字就挡脸
