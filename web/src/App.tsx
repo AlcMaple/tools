@@ -11,7 +11,7 @@ import { AuthModal, type AuthMode } from './AuthModal'
 import { CalendarPage } from './CalendarPage'
 import { CommunityPage } from './CommunityPage'
 import { NagBar } from './NagBar'
-import { navigate, useRoute, type Route } from './router'
+import { REWARDS_ENABLED, navigate, useRoute, type Route } from './router'
 import { RewardsPage } from './RewardsPage'
 import { SettingsPage } from './SettingsPage'
 import { TracksPage } from './TracksPage'
@@ -206,9 +206,11 @@ export default function App(): JSX.Element {
             <IdxLink route="community" active={route === 'community'} icon="user">
               追番大厅
             </IdxLink>
-            <IdxLink route="rewards" active={route === 'rewards'} icon="gift">
-              放映福利
-            </IdxLink>
+            {REWARDS_ENABLED && (
+              <IdxLink route="rewards" active={route === 'rewards'} icon="gift">
+                放映福利
+              </IdxLink>
+            )}
             <IdxLink route="settings" active={route === 'settings'} icon="settings">
               设置
             </IdxLink>
@@ -293,9 +295,11 @@ export default function App(): JSX.Element {
         <MTab route="community" active={route === 'community'} icon="user">
           追番大厅
         </MTab>
-        <MTab route="rewards" active={route === 'rewards'} icon="gift">
-          放映福利
-        </MTab>
+        {REWARDS_ENABLED && (
+          <MTab route="rewards" active={route === 'rewards'} icon="gift">
+            放映福利
+          </MTab>
+        )}
         <MTab route="settings" active={route === 'settings'} icon="settings">
           设置
         </MTab>

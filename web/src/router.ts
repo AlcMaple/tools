@@ -2,13 +2,16 @@
 // 但也不能只用 state：那样地址栏不变，设置页刷新就回周历、也收藏不了。hash 路由 20 行拿到真实 URL。
 import { useEffect, useState } from 'react'
 
+// 放映福利暂无用户场景：只在开发环境露出，生产构建里入口和 #/rewards 都不可达。
+export const REWARDS_ENABLED = import.meta.env.DEV
+
 export type Route = 'calendar' | 'settings' | 'tracks' | 'rewards' | 'community' | 'feedback'
 
 function parse(): Route {
   const h = window.location.hash.replace(/^#\/?/, '')
   if (h === 'settings' || h.startsWith('settings/')) return 'settings'
   if (h === 'feedback' || h.startsWith('feedback?')) return 'feedback'
-  if (h === 'rewards') return 'rewards'
+  if (h === 'rewards' && REWARDS_ENABLED) return 'rewards'
   if (h === 'community' || h.startsWith('community/')) return 'community'
   // hash 是站内页面的明确选择，必须先于 `/u/:username` 的 pathname 判断。
   // 否则 `/u/foo#/tracks` 会被误判成公开用户页。
