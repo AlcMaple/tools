@@ -98,7 +98,8 @@ function matches(t: Track, q: string): boolean {
 
 /** 本地乐观更新 —— 跟服务端 patch 同样的夹取规则，免得手感和落库结果对不上 */
 function applyLocal(t: Track, p: TrackPatch): Track {
-  const next = { ...t, ...p } as Track
+  // updatedAt 跟服务端同语义（任何改动都刷新），乐观更新也要带上——页头「今天的功课」靠它当场划掉
+  const next = { ...t, ...p, updatedAt: Date.now() } as Track
   const total = 'totalEpisodes' in p ? p.totalEpisodes ?? null : t.totalEpisodes
   if (total != null && next.episode > total) next.episode = total
   return next
@@ -444,12 +445,15 @@ export function TracksPage(): JSX.Element {
     [filtered, today],
   )
   const todayCount = todayIds.size
-  // 今天的功课：今天更新的番里，今天动过进度的有几部。updatedAt 是服务端时间戳，换设备也算数。
+  // 今天的功课：页头便签上手写列出今天更新的番，下面卡片里动过进度（updatedAt 是今天）就被铅笔划掉。
+  // updatedAt 是服务端时间戳，换设备也算数；任何改动都会刷新它，改标签也会被当成看过。
   const homework = useMemo(() => {
     const dayStart = new Date().setHours(0, 0, 0, 0)
-    const due = animeTracks.filter((t) => t.airWeekday === today && t.status !== 'done' && isRecentAir(t.airDate))
-    return { total: due.length, done: due.filter((t) => t.updatedAt >= dayStart).length }
+    return animeTracks
+      .filter((t) => t.airWeekday === today && t.status !== 'done' && isRecentAir(t.airDate))
+      .map((t) => ({ id: t.bgmId, title: t.titleCn || t.title, done: t.updatedAt >= dayStart }))
   }, [animeTracks, today])
+  const homeworkDone = homework.length > 0 && homework.every((h) => h.done)
   const editingTrack = animeTracks.find((t) => t.bgmId === editing) ?? null
   const confirmingTrack = animeTracks.find((t) => t.bgmId === confirming) ?? null
   const markingGoodTrack = animeTracks.find((t) => t.bgmId === markingGood) ?? null
@@ -538,21 +542,22 @@ export function TracksPage(): JSX.Element {
             </div>
           )}
         </div>
-        <SketchSheet
-          src="/assets/pop/tracks.webp"
-          paper="note"
-          className="sketch-hero-art"
-          mode="blocks"
-          blocks={homework.total}
-          paint={homework.total ? homework.done / homework.total : undefined}
-          sign={
-            !homework.total
-              ? undefined
-              : homework.done >= homework.total
-                ? '今天的功课 ✿'
-                : `今天的功课 ${homework.done}/${homework.total}`
-          }
-        />
+        <SketchSheet src="/assets/pop/tracks.webp" paper="note" className={`sketch-hero-art${homework.length ? ' with-list' : ''}`}>
+          {homework.length > 0 && (
+            <>
+              <ol className="homework">
+                <li className="homework-head">今天的功课</li>
+                {homework.slice(0, 4).map((h) => (
+                  <li key={h.id} className={h.done ? 'done' : ''}>
+                    {h.title}
+                  </li>
+                ))}
+                {homework.length > 4 && <li className="homework-more">还有 {homework.length - 4} 部…</li>}
+              </ol>
+              {homeworkDone && <span className="homework-stamp">済</span>}
+            </>
+          )}
+        </SketchSheet>
       </header>
 
       <div className="row mb16" style={{ flexWrap: 'wrap' }}>

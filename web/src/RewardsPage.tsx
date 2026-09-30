@@ -201,14 +201,7 @@ export function RewardsPage(): JSX.Element {
           </div>
         </section>
 
-        <SketchSheet
-          src="/assets/pop/rewards.webp"
-          paper="torn"
-          className="reward-sketch"
-          mode="stars"
-          paint={Math.min(1, summary.points / 20)}
-          sign={summary.points >= 20 ? '可以转扭蛋了' : `星光 ${summary.points}/20`}
-        />
+        <SketchSheet src="/assets/pop/rewards.webp" paper="torn" className="reward-sketch" />
       </div>
 
       <div className="reward-layout mt16">

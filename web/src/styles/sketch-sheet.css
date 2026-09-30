@@ -64,9 +64,6 @@
   user-select: none;
 }
 .sketch-sheet:hover .sketch-paint { transform: translate(calc(-50% - 3px), -3px); }
-/* 显影是慢慢浮出来的，不是跳变 */
-.paint-develop .sketch-clip, .paint-develop .sketch-paint { transition: opacity .9s ease; }
-.paper-polaroid .sketch-sign { right: auto; left: 50%; bottom: 7px; transform: translateX(-50%) rotate(-2deg); font-size: 12px; }
 /* 悬停无过渡、瞬间上色——突变本身就是那一下惊喜 */
 .sketch-sheet:hover .sketch-img {
   filter: none;
@@ -122,6 +119,62 @@
 .empty-text { max-width: 320px; margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink-sub); }
 .reward-sketch { --lift: 0px; width: 160px; height: 150px; justify-self: center; }
 .auth-sketch { --lift: 22px; width: 150px; height: 250px; transform: rotate(-2deg); }
+
+/* ---------- 我的追番：便签上手写「今天的功课」，下面卡片动过进度就被铅笔划掉 ---------- */
+.sketch-hero .paper-note.with-list { width: 320px; }
+.paper-note.with-list .sketch-img { left: auto; right: -6px; transform: none; }
+.paper-note.with-list:hover .sketch-img { transform: translate(-3px, -3px); }
+.homework {
+  position: absolute;
+  z-index: 1;
+  left: 16px;
+  top: 16px;
+  width: 54%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-hand);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.homework li { position: relative; padding-left: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.homework li::before { content: '□'; position: absolute; left: 0; color: var(--ink-sub); }
+.homework li.done { color: var(--ink-sub); }
+.homework li.done::before { content: '✓'; color: var(--sakura); }
+/* 划线：宽度从 0 拉满——只在 done 这个类「新加上」时才有过渡，首屏已完成的直接是划掉的 */
+.homework li:not(.homework-head):not(.homework-more)::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 54%;
+  width: 0;
+  height: 1.5px;
+  background: var(--ink);
+  transform: rotate(-2deg);
+  transition: width .5s cubic-bezier(.6, 0, .2, 1);
+}
+.homework li.done:not(.homework-head):not(.homework-more)::after { width: calc(100% - 14px); }
+.homework .homework-head { padding-left: 0; margin-bottom: 2px; font-size: 14px; color: var(--sakura); }
+.homework .homework-head::before, .homework .homework-more::before { content: none; }
+.homework .homework-more { font-size: 11px; color: var(--ink-faint); }
+.homework-stamp {
+  position: absolute;
+  z-index: 2;
+  left: 40%;
+  bottom: 10px;
+  width: 44px;
+  height: 44px;
+  border: 2.5px solid var(--sakura);
+  border-radius: 50%;
+  color: var(--sakura);
+  font: 22px/39px var(--font-hand);
+  text-align: center;
+  opacity: .88;
+  transform: rotate(-14deg);
+  animation: stamp-press .45s cubic-bezier(.3, 1.6, .5, 1) both;
+}
+@keyframes stamp-press { from { opacity: 0; transform: rotate(-14deg) scale(2.2); } }
 
 /* ---------- 周历速写本：页头画稿滚出视野后停在纱雾按钮上方继续上色 ---------- */
 .sketch-dock {
