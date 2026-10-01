@@ -40,7 +40,14 @@ const ROUTE_HREF: Record<Route, string> = {
   feedback: '/#/feedback',
 }
 
-export default function App(): JSX.Element {
+declare global {
+  interface Window {
+    __mtAppReady?: () => void
+  }
+}
+
+export default function App({ splashArt }: { splashArt: string | null }): JSX.Element {
+  useEffect(() => { window.__mtAppReady?.() }, [])
   const route = useRoute()
   const { user, ready, dailyReward } = useAuth()
   const [feedbackUnread, setFeedbackUnread] = useState(0)
@@ -158,7 +165,7 @@ export default function App(): JSX.Element {
   return (
     <>
       <SketchSprite />
-      <Splash onComplete={announceAfterSplash} onReady={markIntroReady} />
+      <Splash art={splashArt} onComplete={announceAfterSplash} onReady={markIntroReady} />
       <AnnouncementModal active={announcementArmed && route === 'calendar'} onClose={closeAnnouncement} />
 
       {/* 移动端顶栏（桌面隐藏） */}

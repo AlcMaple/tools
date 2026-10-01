@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import { registerCoverCacheWorker } from './coverCache'
 import './index.css'
+import { cachedSplashArt } from './splash-art'
 
 type CaptureRecoverableError = (error: unknown, componentStack?: string) => void
 
@@ -23,15 +24,18 @@ const monitoringReady: Promise<CaptureRecoverableError | undefined> = import.met
       })
   : Promise.resolve(undefined)
 
-registerCoverCacheWorker()
-createRoot(document.getElementById('root')!, {
-  onRecoverableError: import.meta.env.VITE_SENTRY_DSN?.trim()
-    ? (error, info) => {
-        void monitoringReady.then((capture) => capture?.(error, info.componentStack ?? undefined))
-      }
-    : undefined,
-}).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+void cachedSplashArt().then((splashArt) => {
+  registerCoverCacheWorker()
+  createRoot(document.getElementById('root')!, {
+    onRecoverableError: import.meta.env.VITE_SENTRY_DSN?.trim()
+      ? (error, info) => {
+          void monitoringReady.then((capture) => capture?.(error, info.componentStack ?? undefined))
+        }
+      : undefined,
+  }).render(
+    <StrictMode>
+      <App splashArt={splashArt} />
+    </StrictMode>,
+  )
+
+})

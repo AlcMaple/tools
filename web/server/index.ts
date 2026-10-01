@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono'
+import bootLog from './boot-log'
 // 监控要最先加载：Sentry.init 是这个模块的导入副作用，必须早于它可能包裹的业务模块，
 // 否则将来任何一个自动 integration 被重新打开都会因为加载顺序而静默失效。
 import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
@@ -77,6 +78,8 @@ app.onError(monitoringErrorHandler())
 app.use('*', securityHeaders())
 // 所有写请求都先过来源校验；SameSite=Strict 仍是 Cookie 层的第二道防线。
 app.use('/api/*', sameOriginGuard())
+
+app.route('/api/boot-log', bootLog)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 

@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server'
+import { compress } from 'hono/compress'
 import { serveStatic } from '@hono/node-server/serve-static'
 import app from './index'
 
@@ -28,6 +29,9 @@ app.use('/white-screen-probe.js', async (c, next) => {
   await next()
   if (c.res.status === 200) c.res.headers.set('Cache-Control', 'no-cache, must-revalidate')
 })
+// 线上 nginx 默认只压 HTML；静态 JS/CSS 在应用层协商压缩，避免每台反代漏配。
+// 只挂 assets，不能让视频、Range 续传或 SSE 进入额外的压缩链路。
+app.use('/assets/*', compress({ encoding: 'gzip' }))
 app.use('/assets/*', async (c, next) => {
   await next()
   if (c.res.status !== 200) return
@@ -60,7 +64,7 @@ const STALE_ENTRY_RECOVERY = `// 这份资源属于一个已经下线的构建�
   var GUARD = 'mt_stale'
   try {
     var url = new URL(location.href)
-    if (url.searchParams.has(GUARD)) {
+    if (url.searchParams.has(GUARD) || url.searchParams.has('mt_recover')) {
       console.error('[stale-entry] 重新加载后仍然是旧入口，停止重试')
       return
     }

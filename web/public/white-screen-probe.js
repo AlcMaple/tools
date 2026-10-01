@@ -1,139 +1,55 @@
-// 白屏兜底探针 —— 独立静态文件，不进 Vite 打包。
-//
-// 为什么是外部文件而不是 index.html 里的内联 <script>：生产 CSP 是
-// `script-src 'self' https://user.alcmaple.cn`，没有 'unsafe-inline'，内联脚本会被直接拦掉
-// （见 server/security.ts / vite.config.ts）。`/white-screen-probe.js` 属于 'self'，放行。
-//
-// 入口脚本 / 样式加载失败时，window.load 也会被延后；探针从执行这一刻起计时，先处理资源
-// error，再用一次带恢复参数的入口请求打破旧 HTML 缓存。恢复参数存在时停止重载，避免循环。
+// 只记录入口异常，不以等待时长或 DOM 是否为空决定刷新。
+// 后台回收与恢复由浏览器处理；服务器只为确实失效的入口 hash 返回一次恢复脚本。
 (function () {
-  var TIMEOUT_MS = 4000
-  var RETRY_DELAY_MS = 120
-  // 慢网下入口包还在下载时 #root 本来就是空的，此时整页重载只会把已下的字节作废、重新排队，
-  // 用户看到的就是一直转的空白页。所以没报错、也没加载完时只等；最多等到这个上限才兜底重载
-  var STALL_LIMIT_MS = 45000
-  var startedAt = Date.now()
-  var RECOVERY_PARAM = 'mt_recover'
-  var timer = 0
-  var recoveryStarted = false
-  var reportSent = false
-
-  // 入口包 / 立绘没到手之前整页留白（样式见 sketch-tokens.css 的 html.mt-booting），
-  // 由 Splash 摘掉。任何自愈失败、超时的路径也必须摘掉，不能把用户永远关在白屏里
-  var root = document.documentElement
-  root.classList.add('mt-booting')
-  function release() {
-    root.classList.remove('mt-booting')
-  }
-  window.__mtReleaseBooting = release
-  window.setTimeout(release, 60000)
-
-  function looksBlank(el) {
-    if (!el) return true
-    var html = el.innerHTML.trim()
-    if (html === '') return true
-    // 首屏若将来加了 "加载中" 占位，超时后还停在占位也算白屏
-    return /加载中|loading\.\.\./i.test(html) && el.childElementCount <= 1
-  }
-
-  function cleanRecoveryParam() {
-    try {
-      var url = new URL(location.href)
-      if (!url.searchParams.has(RECOVERY_PARAM)) return
-      url.searchParams.delete(RECOVERY_PARAM)
-      history.replaceState(null, '', url.pathname + url.search + url.hash)
-    } catch (_) {
-      // URL / History 受限时只保留恢复标记，不影响页面内容。
-    }
-  }
+  var mounted = false
+  var reported = false
 
   function report(reason) {
-    if (reportSent) return
-    reportSent = true
-    var detail = 'reason=' + reason + ' path=' + location.pathname + ' ua=' + navigator.userAgent.slice(0, 120)
-    // eslint-disable-next-line no-console
+    if (reported) return
+    reported = true
+    var detail = ('reason=' + reason + ' state=' + document.readyState).slice(0, 2000)
     console.error('[white-screen-probe] ' + detail)
-
-    var mon = window.__mapleMonitoring
-    if (mon && typeof mon.captureMessage === 'function') {
-      mon.captureMessage('应用启动资源异常 (' + detail + ')')
-    }
-  }
-
-  function recover(reason) {
-    if (document.visibilityState === 'hidden') return
-    var passive = reason === 'watchdog' || reason === 'visibilitychange' || reason === 'pageshow-persisted'
-    if (passive && document.readyState !== 'complete' && Date.now() - startedAt < STALL_LIMIT_MS) {
-      schedule(reason, 2000)
-      return
-    }
-    if (!looksBlank(document.getElementById('root'))) {
-      cleanRecoveryParam()
-      return
-    }
-
-    var url
+    var body = JSON.stringify({ detail: detail })
     try {
-      url = new URL(location.href)
+      if (navigator.sendBeacon && navigator.sendBeacon('/api/boot-log', new Blob([body], { type: 'application/json' }))) return
+      fetch('/api/boot-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }).catch(function () {})
     } catch (_) {
-      report(reason + ' url-invalid')
-      return
-    }
-    if (url.searchParams.has(RECOVERY_PARAM)) {
-      release()
-      report(reason + ' recovery-already-attempted')
-      return
-    }
-
-    recoveryStarted = true
-    report(reason)
-    url.searchParams.set(RECOVERY_PARAM, Date.now().toString(36))
-    location.replace(url.pathname + url.search + url.hash)
-  }
-
-  function schedule(reason, delay) {
-    if (timer) window.clearTimeout(timer)
-    timer = window.setTimeout(function () {
-      timer = 0
-      if (!recoveryStarted) recover(reason)
-    }, delay)
-  }
-
-  function resourcePath(target) {
-    if (!target || !target.tagName) return ''
-    var tag = target.tagName.toLowerCase()
-    if (tag === 'script' && target.src) return target.src
-    if (tag === 'link' && target.rel === 'stylesheet' && target.href) return target.href
-    return ''
-  }
-
-  function onResourceError(event) {
-    var raw = resourcePath(event.target)
-    if (!raw) return
-    var path = raw.split(/[?#]/, 1)[0]
-    if (/\/assets\/index-[^/]+\.js$/.test(path) || /\/src\/main\.tsx$/.test(path)) {
-      schedule('entry-resource-error ' + path, 0)
-    } else if (/\.css$/.test(path)) {
-      schedule('style-resource-error ' + path, 0)
+      // 日志通道也可能断网，不追加网络重试。
     }
   }
 
-  function onUnhandledRejection(event) {
-    var reason = event && event.reason ? String(event.reason) : 'unknown'
-    if (/chunk|import|module|failed to fetch|loading/i.test(reason)) {
-      schedule('unhandled-rejection', 0)
+  window.__mtAppReady = function () {
+    mounted = true
+    try {
+      var url = new URL(location.href)
+      if (!url.searchParams.has('mt_recover') && !url.searchParams.has('mt_stale')) return
+      url.searchParams.delete('mt_recover')
+      url.searchParams.delete('mt_stale')
+      history.replaceState(history.state, '', url.pathname + url.search + url.hash)
+    } catch (_) {
+      // History 受限不影响已经完成的首屏。
     }
   }
 
-  window.addEventListener('error', onResourceError, true)
-  window.addEventListener('unhandledrejection', onUnhandledRejection)
-  window.addEventListener('pageshow', function (event) {
-    if (event.persisted) schedule('pageshow-persisted', RETRY_DELAY_MS)
+  window.addEventListener('error', function (event) {
+    if (mounted) return
+    var target = event.target
+    var tag = target && target.tagName ? target.tagName.toLowerCase() : ''
+    var raw = tag === 'script' ? target.src : tag === 'link' && target.rel === 'stylesheet' ? target.href : ''
+    if (raw) {
+      var url = new URL(raw, location.href)
+      if (url.origin !== location.origin || tag === 'script' && target.type !== 'module') return
+      // error 事件没有 HTTP 状态；不能把 429/503 当陈旧缓存重试。
+      // 已失效的入口 hash 由服务器返回的恢复脚本准确处理。
+      report('resource-error ' + url.pathname)
+    } else if (event.error || event.message) {
+      if (event.filename && new URL(event.filename, location.href).origin !== location.origin) return
+      report(String(event.error && event.error.stack || event.message))
+    }
+  }, true)
+  window.addEventListener('unhandledrejection', function (event) {
+    if (mounted) return
+    var reason = String(event.reason && event.reason.stack || event.reason || '')
+    if (/Loading chunk|dynamically imported module|Importing a module script|module script failed/i.test(reason)) report(reason)
   })
-  document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') schedule('visibilitychange', RETRY_DELAY_MS)
-  })
-
-  // 不等待 load：入口脚本或外部依赖卡住时，load 本身不会到达。
-  schedule('watchdog', TIMEOUT_MS)
 })()

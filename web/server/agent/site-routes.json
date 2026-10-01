@@ -390,6 +390,11 @@
     "path": "/import"
   },
   {
+    "file": "server/boot-log.ts",
+    "method": "post",
+    "path": "/"
+  },
+  {
     "file": "server/community.ts",
     "method": "get",
     "path": "/:username"
@@ -548,6 +553,11 @@
     "file": "server/index.ts",
     "method": "route",
     "path": "/api/backup"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/boot-log"
   },
   {
     "file": "server/index.ts",

@@ -8,78 +8,23 @@
 // 「第一次进来只看到一个画框、贴纸和盖章全没了」的原因。掉帧只让动画变慢，不让它跳过。
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-const SEEN_KEY = 'mt-splash-seen'
-const ART = '/assets/sagiri-full.webp'
-const HOLD_MS = 700 // 时间轴总长：单拍动作演完 + 停一瞬
-const OUT_MS = 320 // 翻页离场（与 .sp.out 动画同长）
-const WAIT_MS = 1500 // 等立绘的上限：超时就跳过开屏直接进首页，立绘留在后台接着下，下次进来有缓存再放
-const STEP_CAP = 34 // 单帧最多推进两帧的量：卡一下就慢一点，不跳帧
-const HARD_MS = 8000 // 兜底：无论帧跑成什么样，最多占屏这么久（rAF 完全不来时也能退场）
+import { warmSplashArt } from './splash-art'
 
-declare global {
-  interface Window {
-    __mtReleaseBooting?: () => void
-  }
-}
+const HOLD_MS = 700
+const OUT_MS = 320
+const STEP_CAP = 34
+const HARD_MS = 8000
 
-function shouldPlay(): boolean {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false
-  try {
-    if (sessionStorage.getItem(SEEN_KEY)) return false
-    sessionStorage.setItem(SEEN_KEY, '1')
-  } catch {
-    // 隐私模式下 sessionStorage 会抛错，放一次也无妨
-  }
-  return true
-}
-
-// 模块级只判一次：放在组件的 useState 初始化里，StrictMode 会调两遍，
-// 第二遍读到自己刚写的 sessionStorage，开屏永远不放
-const PLAY = shouldPlay()
-let pending: HTMLImageElement | null = null
-
-export function Splash({ onComplete, onReady }: { onComplete?: () => void; onReady?: () => void }): JSX.Element | null {
-  // wait = 纸已铺好、立绘还没解码完（此时时间轴停在第一帧）
-  const [state, setState] = useState<'wait' | 'play' | 'out' | 'done'>(PLAY ? 'wait' : 'done')
+export function Splash({ art, onComplete, onReady }: { art: string | null; onComplete?: () => void; onReady?: () => void }): JSX.Element | null {
+  const [state, setState] = useState<'play' | 'out' | 'done'>(art ? 'play' : 'done')
   const ref = useRef<HTMLDivElement>(null)
   const notified = useRef(false)
   const played = useRef(false)
 
-  // 等立绘就位：立绘没到手就不出画布（wait 态什么都不渲染），到了才开演；
-  // 等太久或加载失败就跳过、直接进首页。以前 0.8 秒一到就照画，慢网下看到的是一块空画布、
-  // 卡片里没有人。
   useEffect(() => {
-    if (state !== 'wait') return
-    let live = true
-    const start = (): void => {
-      if (live) setState('play')
-    }
-    const skip = (): void => {
-      if (!live) return
-      // 这次没放成，别占用「本会话已看过」：立绘下完后刷新 / 下次进来还能放
-      try {
-        sessionStorage.removeItem(SEEN_KEY)
-      } catch {
-        // 隐私模式下读写都可能抛错，忽略
-      }
-      setState('done')
-    }
-    const img = pending ?? new Image()
-    pending = img // 模块级持有：跳过后这张图仍在后台继续下载，不会被回收中断
-    if (!img.src) img.src = ART
-    void (img.decode ? img.decode().then(start, skip) : (img.onload = start, img.onerror = skip))
-    const cap = window.setTimeout(skip, WAIT_MS)
-    return () => {
-      live = false
-      window.clearTimeout(cap)
-    }
-  }, [state])
-
-  // 启动留白（html.mt-booting，见 white-screen-probe.js）到这里才摘：要么开屏马上盖上来，
-  // 要么已决定不放，这两种都不会露出空格子
-  useEffect(() => {
-    if (state !== 'wait') window.__mtReleaseBooting?.()
-  }, [state])
+    if (!art) warmSplashArt()
+    if (state === 'done' && art) URL.revokeObjectURL(art)
+  }, [art, state])
 
   // 时间轴：卡片里的动画全被 CSS 钉在暂停态，这里逐帧给它们设 currentTime
   useLayoutEffect(() => {
@@ -128,10 +73,10 @@ export function Splash({ onComplete, onReady }: { onComplete?: () => void; onRea
     return () => window.clearTimeout(t)
   }, [state])
 
-  // 公告只能跟在一段真实播放过的开屏后面：刷新时本会话已经看过开屏，PLAY=false，就不再
+  // 公告只能跟在一段真实播放过的开屏后面：刷新时本会话已经看过开屏，就不再
   // 补弹；并用 ref 抵住开发环境 StrictMode / 父组件重渲染带来的重复通知。
   useEffect(() => {
-    if (state !== 'done' || !PLAY || !played.current || notified.current) return
+    if (state !== 'done' || !played.current || notified.current) return
     notified.current = true
     onComplete?.()
   }, [state, onComplete])
@@ -149,7 +94,7 @@ export function Splash({ onComplete, onReady }: { onComplete?: () => void; onRea
     return () => window.removeEventListener('keydown', skip)
   }, [state])
 
-  if (state === 'done' || state === 'wait') return null
+  if (state === 'done') return null
 
   return (
     <div
@@ -168,7 +113,7 @@ export function Splash({ onComplete, onReady }: { onComplete?: () => void; onRea
         <span className="sp-focus focus-lines" />
 
         <div className="sp-art">
-          <img src={ART} alt="" />
+          <img src={art ?? undefined} alt="" />
           {/* 显影瞬间扫过去的那道斜光，配合立绘一起淡入，制造「啪」地贴上去的手感 */}
           <span className="sp-pen" />
         </div>
