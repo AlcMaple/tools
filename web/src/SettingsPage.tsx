@@ -1294,7 +1294,7 @@ function XifanAccountModule(): JSX.Element {
                 type="email"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="稀饭新版账号邮箱"
+                placeholder="稀饭账号邮箱"
                 autoComplete="username"
                 aria-required="true"
                 maxLength={100}

@@ -1367,13 +1367,13 @@ function Settings(): JSX.Element {
                       <Row
                         icon="person"
                         title="账号"
-                        desc="使用稀饭新版账号邮箱登录。"
+                        desc="使用稀饭账号邮箱登录。"
                         density={tweaks.density}
                         stack
                         control={
                           <TextControl
                             value={xifanUsername}
-                            placeholder="稀饭新版账号邮箱"
+                            placeholder="稀饭账号邮箱"
                             onChange={setXifanUsername}
                             onCommit={() => {}}
                           />

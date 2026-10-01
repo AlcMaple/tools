@@ -115,7 +115,7 @@ xifan.post('/auth/login', async (c) => {
   const verify = typeof body.verify === 'string' ? body.verify.trim() : ''
   if (!username || username.length > 100) return c.json({ error: '账号格式不合法' }, 400)
   if (!password || password.length > 200) return c.json({ error: '密码格式不合法' }, 400)
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username)) return c.json({ error: '请填写稀饭新版账号邮箱' }, 400)
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username)) return c.json({ error: '请填写稀饭账号邮箱' }, 400)
 
   const ipKey = `xifan-login-ip:${clientIp(c)}`
   const accountKey = `xifan-login-account:${username.toLowerCase()}`
