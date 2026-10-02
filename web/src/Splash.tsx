@@ -23,8 +23,7 @@ export function Splash({ art, onComplete, onReady }: { art: string | null; onCom
 
   useEffect(() => {
     if (!art) warmSplashArt()
-    if (state === 'done' && art) URL.revokeObjectURL(art)
-  }, [art, state])
+  }, [art])
 
   // 时间轴：卡片里的动画全被 CSS 钉在暂停态，这里逐帧给它们设 currentTime
   useLayoutEffect(() => {
