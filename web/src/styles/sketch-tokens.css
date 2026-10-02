@@ -125,6 +125,12 @@ body {
   background-size: 24px 24px;
 }
 
+/* 首访时 CSS 比主包早到很多，纸色和网格会先单独亮一阵再出开屏。React 挂载前一笔都不画，
+   让浏览器保留进站前的画面（同源跳转的 paint holding）或它自己的空白，纸面与开屏同一帧出现。
+   纯样式门槛，不参与任何重载判断。 */
+body:has(> #root:empty) { background: none; }
+body:has(> #root:empty)::after { content: none; }
+
 /* 纸张噪点覆盖层（比 grid 更细的颗粒） */
 body::after {
   content: '';
