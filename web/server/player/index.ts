@@ -154,7 +154,7 @@ async function signedMedia(c: Context): Promise<{ url: string } | Response> {
 }
 
 // 每条媒体请求结束时打一行：手机按什么顺序要了哪段、拿到多少、多久。拖进度后的「断开 → 补小请求 → 回来重连」
-// 只有这份序列能还原，之后才能在本机按同样的顺序重放复现（docs/web/移动端问题复现调试通用指南.md）。
+// 只有这份序列能还原，之后才能在本机按同样的顺序重放复现（docs/web/网页移动端问题复现调试通用指南.md）。
 function logged(body: ReadableStream<Uint8Array> | null, range: string, status: number, startedAt: number): ReadableStream<Uint8Array> | null {
   if (!body) {
     console.log(`[player:req] range=${range} status=${status} sent=0KB ${Date.now() - startedAt}ms end=empty`)
