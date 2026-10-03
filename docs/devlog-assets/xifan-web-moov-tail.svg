@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1210" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="a-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+    <marker id="a-red" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#b96372"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="1208" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">iPhone 看稀饭新番一直转圈：源站换了文件结构，服务器替手机把「目录」挪到前面</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：修好后起播几秒、全程不卡；拖进度后从新位置续拉，起播后不再二次卡顿。旧番（目录本来就在前面）原样透传，不受影响。</text>
+
+  <!-- ============ 一、为什么卡 ============ -->
+  <rect x="32" y="84" width="1056" height="250" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、为什么突然卡：视频文件的「目录」从开头搬到了结尾</text>
+
+  <text x="56" y="138" font-size="12.5" font-weight="700" fill="#316247">上一季（丧失篇）· H.264</text>
+  <rect x="56" y="148" width="60" height="30" rx="5" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="86" y="168" text-anchor="middle" font-size="11" font-weight="700" fill="#316247">目录</text>
+  <rect x="118" y="148" width="420" height="30" rx="5" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="328" y="168" text-anchor="middle" font-size="11" fill="#4a4450">画面和声音（几百 MB）</text>
+  <text x="56" y="198" font-size="11" fill="#456b54">手机从头读，先拿到目录，马上能播 ✓</text>
+
+  <text x="580" y="138" font-size="12.5" font-weight="700" fill="#96434f">这一季（夺还篇）· HEVC</text>
+  <rect x="580" y="148" width="420" height="30" rx="5" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="790" y="168" text-anchor="middle" font-size="11" fill="#4a4450">画面和声音（730MB）</text>
+  <rect x="1002" y="148" width="60" height="30" rx="5" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="1032" y="168" text-anchor="middle" font-size="11" font-weight="700" fill="#96434f">目录</text>
+  <text x="580" y="198" font-size="11" fill="#8a5a62">没有目录一帧都解不出来 → 手机得先单独去文件末尾拉 2.4MB 目录</text>
+
+  <rect x="56" y="214" width="1006" height="104" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="72" y="236" font-size="12.5" font-weight="700" fill="#96434f">用户看到的（修复前真机）</text>
+  <text x="72" y="256" font-size="11" fill="#8a5a62">· 转圈 38 秒，一个字节都没解出来；之后「缓冲中 · 第 0:00 · 已缓冲 121.6 秒」——攒了两分钟还是不动</text>
+  <text x="72" y="274" font-size="11" fill="#8a5a62">· 背后：拉目录的那条请求，要跟服务器已经开好的 12 条下载连接抢同一条约 5Mbps 的入口；拿到目录后还得回头从文件开头再拉一遍</text>
+  <text x="72" y="292" font-size="11" fill="#8a5a62">· 拿到的播放地址没问题：新站接口、和官方播放器同一个请求。在源站看顺畅，是因为浏览器直连源站、不经过我们这条 5Mbps 的服务器</text>
+  <text x="72" y="310" font-size="11" fill="#8a5a62">· 不是被当爬虫限速：服务器去测一个与稀饭无关的测速站也只有 685KB/s。620KB/s × 8 ≈ 5Mbps，就是 6M 宽带跑满的样子</text>
+
+  <!-- ============ 二、怎么修 ============ -->
+  <rect x="32" y="350" width="1056" height="268" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="376" font-size="14" font-weight="700" fill="#353136">二、怎么修：服务器只把目录拉一次，挪到前面交给手机；大小不变，其余字节原样对应</text>
+
+  <text x="56" y="404" font-size="11" fill="#756f73">源站原文件</text>
+  <rect x="140" y="390" width="34" height="26" rx="4" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="157" y="407" text-anchor="middle" font-size="10" fill="#4a4450">头</text>
+  <rect x="176" y="390" width="780" height="26" rx="4" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="566" y="407" text-anchor="middle" font-size="11" fill="#4a4450">画面和声音</text>
+  <rect x="958" y="390" width="70" height="26" rx="4" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="993" y="407" text-anchor="middle" font-size="11" font-weight="700" fill="#96434f">目录</text>
+
+  <path d="M993 418 V448 H211 V460" fill="none" stroke="#4b8f6a" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#a-green)"/>
+  <text x="600" y="441" text-anchor="middle" font-size="11" fill="#316247">只拉这 2.4MB 一次（打开选集时就在后台拉），改好里面的位置记录后存在内存</text>
+
+  <text x="56" y="478" font-size="11" fill="#756f73">交给手机的</text>
+  <rect x="140" y="464" width="34" height="26" rx="4" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="157" y="481" text-anchor="middle" font-size="10" fill="#4a4450">头</text>
+  <rect x="176" y="464" width="70" height="26" rx="4" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="211" y="481" text-anchor="middle" font-size="11" font-weight="700" fill="#316247">目录</text>
+  <rect x="248" y="464" width="780" height="26" rx="4" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="638" y="481" text-anchor="middle" font-size="11" fill="#4a4450">画面和声音（照旧走：预取好的盘上文件 / 12 条连接边下边给）</text>
+
+  <rect x="56" y="508" width="490" height="96" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="72" y="530" font-size="12.5" font-weight="700" fill="#316247">用户看到的（修复后）</text>
+  <text x="72" y="550" font-size="11" fill="#456b54">· 第一个请求就拿到目录，起播约 3~5 秒</text>
+  <text x="72" y="568" font-size="11" fill="#456b54">· 文件总长不变，进度条、拖动位置和原文件一一对应</text>
+  <text x="72" y="586" font-size="11" fill="#456b54">· 目录本来就在前面的旧番 → 什么都不改，原样透传</text>
+
+  <rect x="562" y="508" width="500" height="96" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="578" y="530" font-size="12.5" font-weight="700" fill="#7a6234">为什么不让服务器把整集重新打包成「目录在前」</text>
+  <text x="578" y="550" font-size="11" fill="#7a6234">重新打包要先把 730MB 整集下完。入口约 5Mbps，</text>
+  <text x="578" y="568" font-size="11" fill="#7a6234">光下载就要 20 分钟，用户得一直干等。</text>
+  <text x="578" y="586" font-size="11" fill="#7a6234">只挪目录：2.4MB，几秒就好，而且不用把整集落盘。</text>
+
+  <!-- ============ 三、拖进度 ============ -->
+  <rect x="32" y="634" width="1056" height="262" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="660" font-size="14" font-weight="700" fill="#353136">三、拖进度后「播几秒又卡一下」：iPhone 会短暂断开再回来，服务器不能一断就扔</text>
+
+  <text x="56" y="688" font-size="11" fill="#756f73">真机实测（跳到 17:51）iPhone 发请求的顺序：</text>
+  <rect x="56" y="698" width="230" height="44" rx="8" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="171" y="716" text-anchor="middle" font-size="11" font-weight="700" fill="#36566d">① 从 17:51 开始拉</text>
+  <text x="171" y="732" text-anchor="middle" font-size="10.5" fill="#4d6575">服务器开始在这里攒数据</text>
+  <path d="M290 720 H330" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+  <rect x="334" y="698" width="250" height="44" rx="8" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="459" y="716" text-anchor="middle" font-size="11" font-weight="700" fill="#36566d">② 断开，去文件开头补个小请求</text>
+  <text x="459" y="732" text-anchor="middle" font-size="10.5" fill="#4d6575">17:51 那段暂时没人读</text>
+  <path d="M588 720 H628" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+  <rect x="632" y="698" width="250" height="44" rx="8" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="757" y="716" text-anchor="middle" font-size="11" font-weight="700" fill="#36566d">③ 几秒后回到 18:00 附近接着拉</text>
+  <text x="757" y="732" text-anchor="middle" font-size="10.5" fill="#4d6575">正好落在刚攒的那段里</text>
+
+  <rect x="56" y="758" width="490" height="122" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="72" y="780" font-size="12.5" font-weight="700" fill="#96434f">修复前：第 ② 步当场把 17:51 那段扔掉</text>
+  <text x="72" y="800" font-size="11" fill="#8a5a62">规则是「这段没人读、别处有人在读 → 立刻收掉省带宽」。</text>
+  <text x="72" y="818" font-size="11" fill="#8a5a62">第 ③ 步回来时数据已经没了，只能从零开始下载</text>
+  <text x="72" y="836" font-size="11" fill="#8a5a62">→ 用户看到：起播了，到 18:00 又卡一会儿，之后才顺。</text>
+  <text x="72" y="862" font-size="11" fill="#8a5a62">（更早那一轮还有个崩溃：拖进度的小请求让服务器进程挂掉，</text>
+  <text x="72" y="876" font-size="11" fill="#8a5a62">手机只收到成片报错、画面冻住。已修。）</text>
+
+  <rect x="562" y="758" width="500" height="122" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="578" y="780" font-size="12.5" font-weight="700" fill="#316247">修复后：没人读要持续 15 秒才收</text>
+  <text x="578" y="800" font-size="11" fill="#456b54">iPhone 几秒内回来 → 直接从服务器内存接上</text>
+  <text x="578" y="818" font-size="11" fill="#456b54">（按真机同样的请求顺序重放：4 毫秒交出数据）</text>
+  <text x="578" y="836" font-size="11" fill="#456b54">真的不要了的那段，15 秒后照样收掉，不长期抢带宽。</text>
+  <text x="578" y="862" font-size="11" fill="#456b54">→ 用户看到：拖完等一下新位置，起播后不再卡。</text>
+
+  <!-- ============ 四、容易改错 ============ -->
+  <rect x="32" y="912" width="1056" height="278" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="938" font-size="14" font-weight="700" fill="#353136">四、接手时容易改错的地方</text>
+
+  <rect x="56" y="954" width="490" height="104" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="72" y="976" font-size="12.5" font-weight="700" fill="#7a6234">「15 秒宽限」别改回「立刻收」</text>
+  <text x="72" y="996" font-size="11" fill="#7a6234">电脑浏览器很少这样断开又回来，在电脑上测不出来；</text>
+  <text x="72" y="1014" font-size="11" fill="#7a6234">只有 iPhone 拖进度会出现。改回去，电脑上一切正常，</text>
+  <text x="72" y="1032" font-size="11" fill="#7a6234">手机拖进度后照样「播几秒卡一下」。</text>
+
+  <rect x="562" y="954" width="500" height="104" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="578" y="976" font-size="12.5" font-weight="700" fill="#36566d">源站换回 H.264 也不用改</text>
+  <text x="578" y="996" font-size="11" fill="#4d6575">服务器只看「目录在哪」，不看编码：</text>
+  <text x="578" y="1014" font-size="11" fill="#4d6575">目录在前 → 原样透传；目录在后 → 挪到前面。</text>
+  <text x="578" y="1032" font-size="11" fill="#4d6575">这季的 HEVC 带的是苹果能解的那种标记（hvc1）。</text>
+
+  <rect x="56" y="1074" width="1006" height="100" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="72" y="1096" font-size="12.5" font-weight="700" fill="#4a4450">带宽账（实测）：够一个人看，但不宽裕</text>
+  <text x="72" y="1116" font-size="11" fill="#4a4450">· 服务器入口约 5Mbps（6M 宽带跑满）；这集码率约 2.2Mbps，一个人看有约 2 倍余量</text>
+  <text x="72" y="1134" font-size="11" fill="#4a4450">· 预取下一集和当前这集共用这 5Mbps，所以预取在开播 1 分钟后才开始、只用小头</text>
+  <text x="72" y="1152" font-size="11" fill="#4a4450">· 拖到还没下载的位置：第一下要等源站把新位置的数据送过来（实测几秒到十几秒），这是唯一还会等的地方</text>
+</svg>

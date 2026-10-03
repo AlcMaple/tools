@@ -59,6 +59,10 @@ const MAX_SESSIONS_PER_URL = 3
 // 会话（顶掉一次 = 前面攒的窗口全丢，播放器立刻 stall 回退 iframe），单路直连透传即可。
 const TAIL_DIRECT_BYTES = 4 * 1024 * 1024
 const IDLE_MS = 60_000
+// 「没人读」要持续这么久才算真的被放弃。iPhone 拖进度后会先断开当前连接、去文件开头补一个小请求，
+// 几秒后再在原位置附近重连（2026-10-03 胶片：151.6MB 区间因此被当场收掉，1.4MB 后重连只能冷启动，
+// 18:00 卡了一下）。宽限期内的区间照常保留、照常能被 pickSession 接上。
+const ABANDON_GRACE_MS = 15_000
 const WAIT_TICK_MS = 5_000
 const WORKER_STAGGER_MS = 40
 const CHUNK_SILENCE_MS = 15_000
@@ -130,6 +134,8 @@ interface Session {
   idleTimer: NodeJS.Timeout | null
   failure: unknown
   done: boolean
+  // 最后一个读取端离开的时刻；有读取端时为 0
+  readerLeftAt: number
 }
 
 const sessions = new Map<string, Session[]>() // url → 该视频当前活着的几段区间
@@ -200,6 +206,10 @@ function gc(s: Session): void {
       s.bytesHeld -= buf.length
     }
   }
+}
+
+function abandoned(s: Session): boolean {
+  return liveReaders(s).length === 0 && Date.now() - s.readerLeftAt >= ABANDON_GRACE_MS
 }
 
 function armIdle(s: Session): void {
@@ -464,6 +474,7 @@ function startSession(url: string, total: number, regionStart: number): Session 
     idleTimer: null,
     failure: null,
     done: false,
+    readerLeftAt: 0,
   }
   const list = sessions.get(url) ?? []
   list.push(s)
@@ -628,16 +639,16 @@ export async function serveStream(
   // **绝不顶掉正在被人看的会话** —— 顶掉就意味着那位观众正看着突然卡住。
   let session = pickSession(url, start)
   if (!session) {
-    // 要另开区间了：同一视频里**已经没人读**的旧区间先收掉。它们只会用在途的块继续抢入口带宽——
+    // 要另开区间了：同一视频里**已经没人读**（超过 ABANDON_GRACE_MS）的旧区间先收掉。它们只会用在途的块继续抢入口带宽——
     // ffmpeg 开场读文件头留下的 start=0 会话就是这样，实测把真正的转码会话饿了近一分钟，
     // 直到 60 秒 idle 看门狗才收摊。Chromium abort 后带同一 Range 重连会命中 pickSession，不走到这里。
-    for (const stale of (sessions.get(url) ?? []).filter((o) => liveReaders(o).length === 0)) {
+    for (const stale of (sessions.get(url) ?? []).filter(abandoned)) {
       log(`会话 ${stale.regionStart} 已无读取端，让位给新区间 ${start}`)
       disposeSession(stale)
     }
     const list = sessions.get(url) ?? []
     if (list.length >= MAX_SESSIONS_PER_URL) {
-      const idle = list.find((s) => liveReaders(s).length === 0)
+      const idle = list.find(abandoned) ?? list.find((s) => liveReaders(s).length === 0)
       if (idle) disposeSession(idle)
       else disposeSession(list[0]) // 都有人读也只能让位，否则区间数无上限
     }
@@ -672,14 +683,19 @@ export async function serveStream(
     armIdle(s)
     // 最后一个读取端走了、而同一个视频**别的区间正有人在读**：这段会话留着只会用它在途的
     // 12 块继续抢入口带宽（ffmpeg 开场读文件头留下的 start=0 会话就是这样，实测把真正的
-    // 转码会话饿了近一分钟，直到 60 秒 idle 看门狗才收摊）。立刻收，不等看门狗。
+    // 转码会话饿了近一分钟，直到 60 秒 idle 看门狗才收摊）。不等看门狗，但要过 ABANDON_GRACE_MS
+    // 宽限期：历史上这里是「立刻收」，iPhone 拖进度后短暂断开重连就会丢掉刚攒好的区间。
     // 只剩它一段时照旧留窗口——Chromium 会 abort 再带同一 Range 重连，那时能直接命中。
     if (liveReaders(s).length === 0) {
-      const others = (sessions.get(s.url) ?? []).filter((o) => o !== s && liveReaders(o).length > 0)
-      if (others.length) {
-        log(`会话 ${s.regionStart} 已无读取端，另一区间有人在读，立即收摊`)
-        disposeSession(s)
-      }
+      s.readerLeftAt = Date.now()
+      setTimeout(() => {
+        if (!abandoned(s) || !(sessions.get(s.url) ?? []).includes(s)) return
+        const others = (sessions.get(s.url) ?? []).filter((o) => o !== s && liveReaders(o).length > 0)
+        if (others.length) {
+          log(`会话 ${s.regionStart} 已无读取端 ${ABANDON_GRACE_MS / 1000}s，另一区间有人在读，收摊`)
+          disposeSession(s)
+        }
+      }, ABANDON_GRACE_MS + 50).unref?.()
     }
   }
 

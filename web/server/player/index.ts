@@ -6,7 +6,8 @@
 //   GET  /api/player/page?src=xifan|girigiri&id=&ep=[&bgmId=]   → 播放页
 //   GET  /api/player/playlist?src&id&ep                          → 统一结构：{ title, lines, first, eps }
 //   GET  /api/player/resolve?src&id&ep&source                    → 用户手动点线路时解析那一条
-//   GET  /api/player/stream?u&s[&range]                          → mp4：盘上有预取好的整集先从盘答（prefetch.ts），否则 stream.ts
+//   GET  /api/player/stream?u&s[&range]                          → mp4：moov 在尾部的先改成虚拟 faststart（faststart.ts）；
+//                                                                 底下盘上有预取好的整集先从盘答（prefetch.ts），否则 stream.ts
 //   GET  /api/player/hls?u&s                                     → m3u8：拉回来把分片 / 子表 / key 改写成本站地址
 //   GET  /api/player/seg?u&s                                     → HLS 分片 / key 的单连接透传（不做 mp4 那套 total 探测）
 //   GET  /api/player/vendor/artplayer.js|hls.js                  → 自托管（CSP 只放行 self；国内也拉不到 CDN）
@@ -18,6 +19,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { Agent, request } from 'undici'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -34,6 +36,7 @@ import * as girigiri from '../girigiri/resolve'
 import { XifanResolveError } from '../xifan/resolve'
 import { XifanLocalRateLimitError, XifanUpstreamError } from '../xifan/session'
 import probe from './probe'
+import { layoutOf, serveFaststart } from './faststart'
 import { PLAY_PAGE } from './page'
 
 const player = new Hono()
@@ -107,6 +110,8 @@ player.get('/playlist', async (c) => {
   c.header('Cache-Control', 'no-store')
   try {
     const playlist = await playlistOf(args.src, args.id, args.ep, session.uid)
+    // 播放器拿到地址到发第一个 Range 之间有几秒空档，先把 mp4 结构（尾部 moov）拉好。
+    if (playlist.first?.kind === 'mp4') void layoutOf(playlist.first.url)
     const next = args.ep + 1
     if (args.src === 'xifan' && playlist.eps.includes(next)) {
       const { id } = args
@@ -148,14 +153,53 @@ async function signedMedia(c: Context): Promise<{ url: string } | Response> {
   return { url: parsed.toString() }
 }
 
+// 每条媒体请求结束时打一行：手机按什么顺序要了哪段、拿到多少、多久。拖进度后的「断开 → 补小请求 → 回来重连」
+// 只有这份序列能还原，之后才能在本机按同样的顺序重放复现（docs/web/网页移动端问题复现调试通用指南.md）。
+function logged(body: ReadableStream<Uint8Array> | null, range: string, status: number, startedAt: number): ReadableStream<Uint8Array> | null {
+  if (!body) {
+    console.log(`[player:req] range=${range} status=${status} sent=0KB ${Date.now() - startedAt}ms end=empty`)
+    return null
+  }
+  const raw = body as unknown
+  const web = raw instanceof Readable ? Readable.toWeb(raw) as ReadableStream<Uint8Array> : body
+  let sent = 0
+  let firstMs = -1
+  let ended = false
+  const done = (how: string): void => {
+    if (ended) return
+    ended = true
+    console.log(`[player:req] range=${range} status=${status} first=${firstMs}ms sent=${(sent / 1024).toFixed(0)}KB ${Date.now() - startedAt}ms end=${how}`)
+  }
+  const reader = web.getReader()
+  return new ReadableStream<Uint8Array>({
+    async pull(ctl) {
+      try {
+        const { done: fin, value } = await reader.read()
+        if (fin) { done('done'); ctl.close(); return }
+        if (firstMs < 0) firstMs = Date.now() - startedAt
+        sent += value.length
+        ctl.enqueue(value)
+      } catch (error) {
+        done('error:' + (error instanceof Error ? error.message : String(error)))
+        ctl.error(error)
+      }
+    },
+    cancel(reason) { done('cancel'); return reader.cancel(reason) },
+  })
+}
+
 player.get('/stream', async (c) => {
   const media = await signedMedia(c)
   if (media instanceof Response) return media
+  const range = c.req.header('range') ?? '-'
+  const startedAt = Date.now()
   try {
-    const r = servePrefetched(media.url, c.req.header('range')) ?? await serveStream(media.url, c.req.header('range'), false, 'player', true)
-    return new Response(r.body, { status: r.status, headers: r.headers })
+    const origin = async (range: string | undefined) => servePrefetched(media.url, range) ?? await serveStream(media.url, range, false, 'player', true)
+    const layout = await layoutOf(media.url)
+    const r = layout ? await serveFaststart(layout, c.req.header('range'), origin) : await origin(c.req.header('range'))
+    return new Response(logged(r.body, range, r.status, startedAt), { status: r.status, headers: r.headers })
   } catch (error) {
-    console.error('[player] stream 失败: ' + (error instanceof Error ? error.message : error))
+    console.error(`[player] stream 失败 range=${range}: ` + (error instanceof Error ? error.message : error))
     return c.json({ error: error instanceof Error ? error.message : '代理失败' }, 502)
   }
 })
