@@ -521,6 +521,16 @@
   },
   {
     "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/subject-cover/:id"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "post",
+    "path": "/api/request-log"
+  },
+  {
+    "file": "server/index.ts",
     "method": "post",
     "path": "/api/search-log"
   },

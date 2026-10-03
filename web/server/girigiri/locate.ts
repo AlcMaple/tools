@@ -68,23 +68,22 @@ export async function locate(
   opts: { rebind?: boolean } = {},
 ): Promise<GirigiriLocateResult> {
   const clean = titles.map((title) => title.trim()).filter(Boolean)
-  const items = await fetchWeekday()
   // rebind = 用户明确要改这条绑定，跳过已绑短路，照常给周表候选重新挑。
   const bound = opts.rebind ? null : getBinding(bgmId)
   if (bound) {
-    const hit = items.find((item) => item.girigiriId === bound.girigiriId)
     return {
       bound: {
         girigiriId: bound.girigiriId,
-        girigiriName: bound.girigiriName || hit?.name || '',
-        day: hit?.day ?? 0,
-        remarks: hit?.remarks ?? '',
+        girigiriName: bound.girigiriName,
+        day: 0,
+        remarks: '',
         score: 1,
       },
       candidates: [],
     }
   }
 
+  const items = await fetchWeekday()
   const scored = new Map<string, GirigiriCandidate>()
   for (const item of items) {
     const score = scoreItem(item.name, clean)

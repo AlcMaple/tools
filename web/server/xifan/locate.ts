@@ -78,24 +78,23 @@ export async function locate(
   opts: { rebind?: boolean } = {},
 ): Promise<LocateResult> {
   const clean = titles.map((t) => t.trim()).filter(Boolean)
-  const items = await fetchWeekday()
 
-  // 已绑定：直接返回。顺带从周表补一份最新 day/remarks（周表里没有就给占位），前端可显示但不依赖。
+  // 已确认的编号不依赖周表；周表不可达时也必须能打开原有片源。
   const bound = opts.rebind ? null : getBinding(bgmId)
   if (bound) {
-    const hit = items.find((i) => i.xifanId === bound.xifanId)
     return {
       bound: {
         xifanId: bound.xifanId,
-        xifanName: bound.xifanName || hit?.name || '',
-        day: hit?.day ?? 0,
-        remarks: hit?.remarks ?? '',
+        xifanName: bound.xifanName,
+        day: 0,
+        remarks: '',
         score: 1,
       },
       candidates: [],
     }
   }
 
+  const items = await fetchWeekday()
   // 未绑定：打分排序。同一 xifanId 可能跨天重复（极少），按 id 去重留最高分。
   const scored = new Map<number, Candidate>()
   for (const it of items) {

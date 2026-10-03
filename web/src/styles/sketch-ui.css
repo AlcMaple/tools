@@ -1042,6 +1042,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .dlg {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
   width: min(440px, 100%);
   max-height: min(86vh, 760px);
   max-height: min(86dvh, 760px);
@@ -2826,4 +2828,15 @@ body[data-auth='out'] .track-btn { display: none; }
   .reward-points-left { padding-top: 5px; }
   .reward-shop-grid { grid-template-columns: minmax(0, 1fr); }
   .reward-shop-card { min-height: 196px; }
+}
+
+.trk-more { grid-column: 1 / -1; justify-self: center; min-height: 1px; margin-block: 16px; }
+.trk-load-progress { position: fixed; right: 16px; bottom: 20px; z-index: 70; width: max-content; max-width: calc(100vw - 32px); padding: 6px 10px; border-radius: 8px; background: var(--card); box-shadow: var(--shadow-1); color: var(--ink-sub); font-size: 12px; }
+.trk-load-progress .link { margin-left: 8px; }
+@media (max-width: 960px) { .trk-load-progress { bottom: calc(var(--tabbar-h) + 12px); } }
+@media (max-width: 600px) {
+  .dlg input, .dlg textarea { font-size: 16px; }
+  .add-search-row { flex-wrap: wrap; }
+  .add-search-row .searchbar { flex: 1 1 100%; width: 100%; }
+  .add-online-btn { margin-left: auto; }
 }

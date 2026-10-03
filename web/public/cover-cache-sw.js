@@ -1,6 +1,6 @@
 // 只接管公开、内容地址稳定的 Bangumi 封面代理。不能泛化到 `/api/tracks/*`：其中的
 // `cover-file` 是登录用户私有图片，同一路径在换账号后可能对应另一份数据。
-const CACHE_NAME = 'mt-bgm-cover-v1'
+const CACHE_NAME = 'mt-bgm-cover-v2'
 const CACHE_PREFIX = 'mt-bgm-cover-'
 const MAX_ENTRIES = 360
 

@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 950" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" role="img">
+<title>iPhone 搜索验收：等待从数秒降到约半秒</title>
+<rect x="1" y="1" width="1118" height="948" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="32" y="38" font-size="19" fill="#282529" font-weight="700">iPhone 搜索验收：等待从数秒降到约半秒</text>
+<text x="32" y="62" font-size="12.5" fill="#756f73" font-weight="400">结论：2026-10-03 真机连续 5 次搜索顺畅；同词请求耗时下降约 95%。改善已验证，具体贡献尚未拆分。</text>
+<text x="32" y="101" font-size="14" fill="#282529" font-weight="700">一、同一关键词「刀剑神域」：数据量和服务端耗时几乎不变</text>
+<rect x="32" y="120" width="516" height="157" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="48" y="145" font-size="12.5" fill="#96434f" font-weight="700">10 月 2 日 22:56 · 更新前两次样本</text>
+<text x="48" y="168" font-size="11" fill="#96434f" font-weight="400">浏览器请求总耗时：4,057～4,467 ms</text>
+<text x="48" y="187" font-size="11" fill="#96434f" font-weight="400">等待响应头：1,303～1,407 ms</text>
+<text x="48" y="206" font-size="11" fill="#96434f" font-weight="400">响应体读取：2,754～3,060 ms</text>
+<text x="48" y="225" font-size="11" fill="#96434f" font-weight="400">服务端处理：72～73 ms；响应正文：4,373 字节</text>
+<rect x="572" y="120" width="516" height="157" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="588" y="145" font-size="12.5" fill="#316247" font-weight="700">10 月 3 日 14:20 · 更新后样本</text>
+<text x="588" y="168" font-size="11" fill="#316247" font-weight="400">浏览器请求总耗时：201 ms</text>
+<text x="588" y="187" font-size="11" fill="#316247" font-weight="400">等待响应头：201 ms；响应体读取取整为 0 ms</text>
+<text x="588" y="206" font-size="11" fill="#316247" font-weight="400">请求发出到结果 进入页面：207 ms</text>
+<text x="588" y="225" font-size="11" fill="#316247" font-weight="400">服务端处理：73 ms；仍为 4,373 字节、30 条结果</text>
+<text x="32" y="302" font-size="11" fill="#756f73" font-weight="400">口径：时间均为北京时间；双方均为 iPhone Chrome / HTTP/2。服务端处理包含在响应头等待内，不能重复相加。</text>
+<text x="32" y="337" font-size="14" fill="#282529" font-weight="700">二、本轮 5 次实际搜索：把停手后的防抖也算进去</text>
+<rect x="32" y="353" width="1056" height="32" rx="8" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="48" y="375" font-size="12" fill="#4a4450" font-weight="700">关键词</text>
+<text x="375" y="375" font-size="12" fill="#4a4450" font-weight="700">完整候选数</text>
+<text x="560" y="375" font-size="12" fill="#4a4450" font-weight="700">发请求 → 进入页面</text>
+<text x="835" y="375" font-size="12" fill="#4a4450" font-weight="700">含防抖的总等待</text>
+<rect x="32" y="391" width="1056" height="28" rx="6" fill="#ffffff"/>
+<text x="48" y="410" font-size="11" fill="#4a4450" font-weight="400">clannad</text>
+<text x="375" y="410" font-size="11" fill="#4a4450" font-weight="400">5 条</text>
+<text x="560" y="410" font-size="11" fill="#4a4450" font-weight="400">83 ms</text>
+<text x="835" y="410" font-size="11" fill="#4a4450" font-weight="400">390 ms</text>
+<rect x="32" y="422" width="1056" height="28" rx="6" fill="#ffffff"/>
+<text x="48" y="441" font-size="11" fill="#4a4450" font-weight="400">魔方</text>
+<text x="375" y="441" font-size="11" fill="#4a4450" font-weight="400">3 条</text>
+<text x="560" y="441" font-size="11" fill="#4a4450" font-weight="400">92 ms</text>
+<text x="835" y="441" font-size="11" fill="#4a4450" font-weight="400">394 ms</text>
+<rect x="32" y="453" width="1056" height="28" rx="6" fill="#ffffff"/>
+<text x="48" y="472" font-size="11" fill="#4a4450" font-weight="400">魔方少女</text>
+<text x="375" y="472" font-size="11" fill="#4a4450" font-weight="400">30 条</text>
+<text x="560" y="472" font-size="11" fill="#4a4450" font-weight="400">165 ms</text>
+<text x="835" y="472" font-size="11" fill="#4a4450" font-weight="400">466 ms</text>
+<rect x="32" y="484" width="1056" height="28" rx="6" fill="#edf7f1"/>
+<text x="48" y="503" font-size="11" fill="#4a4450" font-weight="400">刀剑神域</text>
+<text x="375" y="503" font-size="11" fill="#4a4450" font-weight="400">30 条</text>
+<text x="560" y="503" font-size="11" fill="#4a4450" font-weight="400">207 ms</text>
+<text x="835" y="503" font-size="11" fill="#4a4450" font-weight="400">509 ms</text>
+<rect x="32" y="515" width="1056" height="28" rx="6" fill="#ffffff"/>
+<text x="48" y="534" font-size="11" fill="#4a4450" font-weight="400">精灵幻想记 第三季</text>
+<text x="375" y="534" font-size="11" fill="#4a4450" font-weight="400">30 条</text>
+<text x="560" y="534" font-size="11" fill="#4a4450" font-weight="400">263 ms</text>
+<text x="835" y="534" font-size="11" fill="#4a4450" font-weight="400">569 ms</text>
+<text x="32" y="570" font-size="11" fill="#756f73" font-weight="400">进入页面表示结果内容已准备好显示，不等于屏幕已经绘制完成。5 次排序计时均取整为 0 ms；不能解释为绝对零耗时。</text>
+<rect x="32" y="590" width="1056" height="97" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="48" y="615" font-size="12.5" fill="#7a6234" font-weight="700">为什么没有继续做「搜索先显示、后追加」？</text>
+<text x="48" y="638" font-size="11" fill="#7a6234" font-weight="400">原样返回相同数量、相同大小的结果也已经很快；之前主要慢在响应等待与接收，并非已证实数据库大或结果渲染慢。</text>
+<text x="48" y="657" font-size="11" fill="#7a6234" font-weight="400">本轮没有做受控对照，不能把全部改善归功于少发拼音请求，也不能认定重启、网络状态或浏览器连接中的任何一项是根因。</text>
+<text x="32" y="724" font-size="14" fill="#282529" font-weight="700">三、关键状态文案：等待、失败和空结果分清楚</text>
+<rect x="32" y="740" width="1056" height="31" rx="8" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="48" y="761" font-size="12" fill="#4a4450" font-weight="700">用户看到的字</text>
+<text x="470" y="761" font-size="12" fill="#4a4450" font-weight="700">出现位置 / 条件</text>
+<text x="835" y="761" font-size="12" fill="#4a4450" font-weight="700">用户可以做什么</text>
+<text x="48" y="796" font-size="11" fill="#4a4450" font-weight="400">正在加载其余追番（已到/总数）</text>
+<text x="470" y="796" font-size="11" fill="#4a4450" font-weight="400">追番列表上方 / 尚在接收</text>
+<text x="835" y="796" font-size="11" fill="#4a4450" font-weight="400">先看已到条目</text>
+<text x="48" y="827" font-size="11" fill="#4a4450" font-weight="400">已加载 已到/总数 · 继续加载</text>
+<text x="470" y="827" font-size="11" fill="#4a4450" font-weight="400">追番列表上方 / 接收中断</text>
+<text x="835" y="827" font-size="11" fill="#4a4450" font-weight="400">手动继续加载</text>
+<text x="48" y="858" font-size="11" fill="#4a4450" font-weight="400">纱雾正在翻目录……</text>
+<text x="470" y="858" font-size="11" fill="#4a4450" font-weight="400">加番弹窗 / 正在等待离线搜索</text>
+<text x="835" y="858" font-size="11" fill="#4a4450" font-weight="400">改词或关闭弹窗</text>
+<text x="48" y="889" font-size="11" fill="#4a4450" font-weight="400">具体错误原因 · 重新搜索</text>
+<text x="470" y="889" font-size="11" fill="#4a4450" font-weight="400">加番弹窗 / 本次搜索失败</text>
+<text x="835" y="889" font-size="11" fill="#4a4450" font-weight="400">按原因处理后手动重搜</text>
+<text x="32" y="926" font-size="11" fill="#316247" font-weight="400">验收结论：用户确认「已经可以算是解决问题」。保留完整结果与错误边界，不为追求解释而继续改动已经顺畅的搜索。</text>
+</svg>

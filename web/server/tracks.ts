@@ -3,6 +3,7 @@
 // **写入一律是字段级 patch,绝不整条替换**:body 里没给的字段保持原样,沉默 ≠ 置空。
 // 这样桌面端推富记录过来时,网页端只写自己拥有的那几个字段,对方的鉴赏神回 / 绑定之类不会被抹掉。
 import { Hono } from 'hono'
+import { stream } from 'hono/streaming'
 import type { Context } from 'hono'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -144,7 +145,7 @@ function subjectTypeOf(extra: Record<string, unknown>): 'anime' | 'manga' | 'nov
     : 'anime'
 }
 
-function toJson(r: TrackRow): Record<string, unknown> {
+function toJson(r: TrackRow): Record<string, unknown> & { bgmId: number; status: string; subjectType: string; airWeekday: number; airDate: string } {
   const extra = parseExtra(r.extra)
   return {
     bgmId: r.bgm_id,
@@ -719,10 +720,37 @@ function startBgmImport(
 }
 
 tracks.get('/', async (c) => {
+  const started = performance.now()
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
   const snapshot = readTracksSnapshot(uid)
   fillCalendarMetadataLater(uid)
+  c.header('Server-Timing', `snapshot;dur=${(performance.now() - started).toFixed(1)}`)
+  if (c.req.header('Accept')?.includes('application/x-ndjson')) {
+    const counts = { all: 0, watching: 0, plan: 0, considering: 0, done: 0 }
+    for (const track of snapshot.data) {
+      if (track.subjectType !== 'anime') continue
+      counts.all++
+      if (STATUSES.includes(track.status as Status)) counts[track.status as Status]++
+    }
+    const weekday = Number(c.req.header('X-Calendar-Day'))
+    const order = snapshot.data.map((track, index) => ({ index, priority: track.subjectType === 'anime' ? 1 + Number(track.airWeekday === weekday && track.status !== 'done' && isRecentAir(track.airDate)) : 0 }))
+      .sort((a, b) => b.priority - a.priority || a.index - b.index)
+    c.header('Content-Type', 'application/x-ndjson; charset=utf-8')
+    c.header('X-Accel-Buffering', 'no')
+    c.header('Cache-Control', 'no-store')
+    return stream(c, async output => {
+      const total = snapshot.data.length
+      let sent = 0
+      do {
+        if (output.aborted) return
+        const indices = order.slice(sent, sent + (sent === 0 ? 18 : 64)).map(item => item.index)
+        sent += indices.length
+        await output.write(JSON.stringify({ rev: snapshot.rev, total, counts, indices, data: indices.map(index => snapshot.data[index]), done: sent === total }) + '\n')
+        if (sent <= 18) console.info(`[tracks:stream] id=${c.res.headers.get('X-Request-ID') ?? '-'} first=${sent}/${total} server=${Math.round(performance.now() - started)}ms`)
+      } while (sent < total)
+    }, async error => { console.error('[tracks:stream] transfer interrupted', error) })
+  }
   return c.json(snapshot)
 })
 

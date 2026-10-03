@@ -91,7 +91,7 @@ export function TrackCard({
       {considering && <WearLayer />}
       <div className="trk-cover" onClick={onEdit} title="点封面编辑" style={{ cursor: 'pointer', position: 'relative' }}>
         {t.cover ? (
-          <img className="cover-img" src={coverUrl(t.cover)} alt={title} loading="lazy" decoding="async" />
+          <img className="cover-img" src={coverUrl(t.cover, t.bgmId)} alt={title} loading="lazy" decoding="async" />
         ) : (
           <div className="cover-ph">☆</div>
         )}

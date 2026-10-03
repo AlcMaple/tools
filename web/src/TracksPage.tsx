@@ -27,11 +27,12 @@ import type {
   Track,
   TrackPatch,
   TrackStatus,
+  TracksLoadProgress,
   WatchMode,
 } from './api'
 import { SOURCES, backfillTrack, deleteTrack, importTracksFromBgm, putTrack, sourceById, uploadTrackCover } from './api'
 import { isRecentAir } from '../shared/anime-age'
-import { useAuth } from './auth'
+import { auth, useAuth } from './auth'
 import { cacheGet } from './dataCache'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
@@ -43,6 +44,7 @@ import { fetchMaterial, fetchReviewsState } from './reviews/reviewsApi'
 import {
   loadBindings,
   loadTracks,
+  reloadTracks,
   runTracksMutation,
   saveBindingsCache,
   saveTracksCache,
@@ -106,10 +108,11 @@ function applyLocal(t: Track, p: TrackPatch): Track {
 }
 
 export function TracksPage(): JSX.Element {
-  const { user, ready } = useAuth()
+  const { user, ready, error: authError } = useAuth()
   const [tracks, setTracks] = useState<Track[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tracksError, setTracksError] = useState<string | null>(null)
+  const [loadProgress, setLoadProgress] = useState<TracksLoadProgress | null>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [view, setView] = useState<TrackView>('cards')
   const [query, setQuery] = useState('')
@@ -123,6 +126,8 @@ export function TracksPage(): JSX.Element {
   // 在线源绑定：source → (bgmId → {id,name})。加载时一次拿齐，绑过的源「继续看」直接开。
   const [bindings, setBindings] = useState<Record<SourceId, Record<number, SourceBinding>>>(emptyBindings)
   const [locating, setLocating] = useState<{ source: SourceId; bgmId: number } | null>(null)
+  const locateRequest = useRef<AbortController | null>(null)
+  useEffect(() => () => locateRequest.current?.abort(), [user?.id])
   const [pickerFlow, setPickerFlow] = useState<PickerFlow | null>(null)
   const [searchFlow, setSearchFlow] = useState<SearchFlow | null>(null)
   const [adding, setAdding] = useState<AddFlow | null>(null) // 加番搜索弹窗
@@ -134,7 +139,10 @@ export function TracksPage(): JSX.Element {
     const receive = (): void => {
       const action = takeAgentNavigation(user.id)
       if (!action) return
-      if (action.kind === 'search') { setAdding({}); return }
+      if (action.kind === 'search') {
+        if (loadProgress) { toast('追番列表尚未加载完整'); return }
+        setAdding({}); return
+      }
       const track = tracks.find(item => item.bgmId === action.bgmId)
       if (!track) { toast('先在我的追番里找到这部番，再打开这个入口吧'); return }
       if (action.kind === 'review') {
@@ -145,7 +153,7 @@ export function TracksPage(): JSX.Element {
     receive()
     window.addEventListener(AGENT_NAVIGATION_EVENT,receive)
     return () => window.removeEventListener(AGENT_NAVIGATION_EVENT,receive)
-  },[user,tracks])
+  },[user,tracks,loadProgress])
 
 
   // 秒开缓存 + 后台校验:缓存先渲染,服务器响应随后整份校正。缓存只是首屏优化
@@ -155,10 +163,14 @@ export function TracksPage(): JSX.Element {
     if (!user) {
       setTracks([])
       setTracksError(null)
+      setLoadProgress(null)
       setBindings(emptyBindings())
       return
     }
-    const stopTracks = loadTracks(user.username, setTracks, setTracksError)
+    setTracks(null)
+    setTracksError(null)
+    setLoadProgress(null)
+    const stopTracks = loadTracks(user.username, setTracks, setTracksError, setLoadProgress)
     const stopBindings = SOURCES.map((s) =>
       loadBindings(s.id, user.username, (b) => setBindings((prev) => ({ ...prev, [s.id]: b }))),
     )
@@ -177,13 +189,12 @@ export function TracksPage(): JSX.Element {
     if (user) for (const s of SOURCES) saveBindingsCache(s.id, user.username, bindings[s.id])
   }, [user, bindings])
 
-  // 未绑定的「继续看」：老番跳过周表直接进搜索；新番去周表定位 → 有候选就弹选择框让用户确认
-  // （= 建绑定）。零候选说明周表里没有（名字对不上 / 判新老判错了），**不弹空框**，直接落到
-  // 搜索 —— 空框的唯一用途就是让用户再点一次「去搜索」。
+  // 稀饭新版搜索不再需要验证码，未绑定或重新绑定都直接搜，不再额外等待周表。
+  // Girigiri 仍保留新番周表候选；候选由用户确认，不自动绑定。
   const continueWatch = (source: OnlineSource, t: Track, mode: WatchMode, rebind = false): void => {
     if (locating != null) return
     // 已绑定：直接开 —— online 走播放页，source 跳源站站内页（都在用户点击手势内，不吃弹窗拦截）。
-    // rebind = 用户在弹窗里点了「不对，重认」，此时**不**走这条直开分支，照常拉候选让他重挑。
+    // rebind = 用户在弹窗里点了「不对，重认」，跳过已有绑定，重新挑选。
     const bound = bindings[source.id][t.bgmId]
     if (bound && !rebind) {
       const url = mode === 'source'
@@ -192,16 +203,17 @@ export function TracksPage(): JSX.Element {
       window.open(url, '_blank', 'noopener')
       return
     }
-    // 新老分流不受 rebind 影响：只有「像是本季在播」的番才值得去打一趟稀饭周表
-    // （周表只列在播番，老番必然查不到，白等一次冷缓存抓 7 天）。老番——含换绑——
-    // 直接全站搜索。注意稀饭周表 ≠ BGM 番剧周历：BGM 才是全量，稀饭那份是它自己的在播清单。
-    if (!isRecentAnime(t)) {
+    if (source.id === 'xifan' || !isRecentAnime(t)) {
       setSearchFlow({ source: source.id, track: t, mode })
       return
     }
+    locateRequest.current?.abort()
+    const controller = new AbortController()
+    locateRequest.current = controller
     setLocating({ source: source.id, bgmId: t.bgmId })
-    source.locate(t.bgmId, titlesOf(t), rebind)
+    source.locate(t.bgmId, titlesOf(t), rebind, controller.signal)
       .then((r) => {
+        if (controller.signal.aborted) return
         if (r.bound && !rebind) {
           // 极少见：加载后别的用户刚绑上 → 记下来（卡片下次即变链接），并尽力开一下
           const b = r.bound
@@ -216,8 +228,8 @@ export function TracksPage(): JSX.Element {
           setSearchFlow({ source: source.id, track: t, mode })
         }
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLocating(null))
+      .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message) })
+      .finally(() => { if (locateRequest.current === controller) setLocating(null) })
   }
 
   // 用户在选择框点了某个候选 = 确认绑定：落库 + 本地记下（卡片即变链接）。开播由候选行自身的链接完成。
@@ -403,13 +415,14 @@ export function TracksPage(): JSX.Element {
   )
 
   const counts = useMemo(() => {
+    if (loadProgress) return loadProgress.counts
     const c = { all: 0, watching: 0, plan: 0, considering: 0, done: 0 }
     for (const t of animeTracks) {
       c.all++
       c[t.status]++
     }
     return c
-  }, [animeTracks])
+  }, [animeTracks, loadProgress])
 
   const filtered = useMemo(() => {
     let list = animeTracks
@@ -422,6 +435,24 @@ export function TracksPage(): JSX.Element {
     // 其余卡片则保持真正的创建顺序（新加的更靠前）。
     return [...list.filter(isToday), ...list.filter((t) => !isToday(t))]
   }, [animeTracks, filter, query, tags, today])
+
+  const renderKey = JSON.stringify([user?.username, filter, query, [...tags].sort(), view])
+  const [renderWindow, setRenderWindow] = useState({ key: '', count: 18 })
+  const visibleCount = renderWindow.key === renderKey ? renderWindow.count : 18
+  const moreRef = useRef<HTMLDivElement>(null)
+  const showMore = (): void => setRenderWindow({ key: renderKey, count: visibleCount + 18 })
+  useEffect(() => {
+    const target = moreRef.current
+    if (!target || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        observer.disconnect()
+        setRenderWindow({ key: renderKey, count: visibleCount + 18 })
+      }
+    }, { rootMargin: '600px' })
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [renderKey, visibleCount, filtered.length])
 
   const allTags = useMemo(() => {
     const m = new Map<string, number>()
@@ -531,11 +562,11 @@ export function TracksPage(): JSX.Element {
           </div>
           {user && (
             <div className="row">
-              <button className="btn btn-sm btn-ghost" type="button" onClick={() => setImportOpen(true)}>
+              <button className="btn btn-sm btn-ghost" type="button" disabled={!!loadProgress} onClick={() => setImportOpen(true)}>
                 <Ic name="refresh" cls="ic ic-sm" />
                 从 Bangumi 导入
               </button>
-              <button className="btn btn-sm btn-primary" type="button" onClick={() => setAdding({})}>
+              <button className="btn btn-sm btn-primary" type="button" disabled={!!loadProgress} onClick={() => setAdding({})}>
                 <Ic name="plus" cls="ic ic-sm" />
                 加番
               </button>
@@ -602,20 +633,34 @@ export function TracksPage(): JSX.Element {
         </p>
       )}
 
-      {!ready || tracks === null ? (
+      {loadProgress && (
+        <div className="trk-load-progress" role="status">
+          {loadProgress.loading ? `正在加载其余追番（${loadProgress.loaded}/${loadProgress.total}）` : `已加载 ${loadProgress.loaded}/${loadProgress.total}`}
+          {!loadProgress.loading && user && <button type="button" className="link" onClick={() => reloadTracks(user.username)}>继续加载</button>}
+        </div>
+      )}
+
+      {!ready || (tracks === null && !tracksError) ? (
         <div className="page-state">
           <Spinner size={36} />
           <p className="faint small">正在翻开追番手帐…</p>
+        </div>
+      ) : tracks === null && tracksError ? (
+        <div className="page-state"><p>追番列表暂时无法读取</p>{user && <button type="button" className="btn btn-ghost" onClick={() => reloadTracks(user.username)}>重新加载</button>}</div>
+      ) : !user && authError ? (
+        <div className="page-state">
+          <p className="form-note err">{authError}</p>
+          <button className="btn btn-ghost" type="button" onClick={() => void auth.init()}>重新连接</button>
         </div>
       ) : !user ? (
         <EmptyState text="登录后就能开始追番" />
       ) : counts.all === 0 ? (
         <EmptyState text="还没有在追的番，点上面的「加番」开始吧" />
       ) : filtered.length === 0 ? (
-        <EmptyState text="没有匹配的追番，换个词或清掉类型过滤试试" />
+        <EmptyState text={loadProgress ? (loadProgress.loading ? '正在查找其余追番…' : '列表尚未加载完整，请继续加载') : '没有匹配的追番，换个词或清掉类型过滤试试'} />
       ) : (
         <div className={view === 'list' ? 'trk-list' : 'trk-grid'}>
-          {filtered.map((t) => {
+          {filtered.slice(0, visibleCount).map((t) => {
             const bound: Partial<Record<SourceId, SourceBinding>> = {}
             for (const s of SOURCES) {
               const b = bindings[s.id][t.bgmId]
@@ -666,6 +711,13 @@ export function TracksPage(): JSX.Element {
               />
             )
           })}
+          {visibleCount < filtered.length && (
+            <div ref={moreRef} className="trk-more">
+              {typeof IntersectionObserver === 'undefined' && (
+                <button type="button" className="btn btn-ghost" onClick={showMore}>加载更多</button>
+              )}
+            </div>
+          )}
         </div>
       )}
 

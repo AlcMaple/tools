@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { reportSlowSearch, searchAnime, searchAnimeOnline, type AnimeHit, type AnimeSearchMode } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
 
@@ -68,6 +68,13 @@ export function AddSearchModal({
   onClose: () => void
 }): JSX.Element {
   const [query, setQuery] = useState(initialQuery ?? '')
+  const [composing, setComposing] = useState(false)
+  const composingRef = useRef(false)
+  const inputAt = useRef(performance.now())
+  const [completedSearch, setCompletedSearch] = useState<{
+    id: number; q: string; mode: AnimeSearchMode; started: number; startedAt: number;
+    inputWaitMs: number; readyMs: number; sortMs: number; count: number
+  } | null>(null)
   const [results, setResults] = useState<AnimeHit[]>([])
   const [ready, setReady] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -80,6 +87,13 @@ export function AddSearchModal({
   const [backfillError, setBackfillError] = useState('')
   // 每次改词 / 切换来源都递增，晚到的响应只落在发起它的那一轮，保持新结果优先。
   const requestIdRef = useRef(0)
+  const searchController = useRef<AbortController | null>(null)
+  const cancelSearch = (): void => {
+    requestIdRef.current++
+    searchController.current?.abort()
+    searchController.current = null
+  }
+  useEffect(() => () => cancelSearch(), [])
   // 来源只描述结果从哪来；模式描述用户当前正在看哪一路。
   const [source, setSource] = useState<'local' | 'learned' | 'online' | undefined>()
   const [onlineError, setOnlineError] = useState('')
@@ -88,7 +102,8 @@ export function AddSearchModal({
   // 开弹窗就先问一次索引状态（q 为空 = 只回统计、不搜也不联网）。
   // 不等用户输入才知道 —— 「索引没生成」和「同步挂了」都该进门就看见。
   useEffect(() => {
-    searchAnime('')
+    const controller = new AbortController()
+    searchAnime('', 'local', controller.signal)
       .then((r) => {
         setReady(r.ready)
         setBuiltAt(r.builtAt ?? 0)
@@ -96,67 +111,91 @@ export function AddSearchModal({
       .catch(() => {
         /* 状态查不到就不提示，别让它盖住正常搜索 */
       })
+    return () => controller.abort()
   }, [])
   const [added, setAdded] = useState<Set<number>>(new Set()) // 本次弹窗点过的，即时变「已追」
 
-  const finishSearch = (id: number, r: Awaited<ReturnType<typeof searchAnime>>): void => {
-    if (id !== requestIdRef.current) return
-    setReady(r.ready)
-    setResults([...r.data].sort((a, b) => {
+  useLayoutEffect(() => {
+    if (!completedSearch || completedSearch.id !== requestIdRef.current) return
+    const { q, mode, started, startedAt, inputWaitMs, readyMs, sortMs, count } = completedSearch
+    // layout effect 只能证明结果 DOM 已提交，不能当成屏幕已经绘制完成。
+    reportSlowSearch(q, mode, 'committed', performance.now() - started, { startedAt, inputWaitMs, readyMs, sortMs, count })
+  }, [completedSearch])
+
+  const finishSearch = (id: number, r: Awaited<ReturnType<typeof searchAnime>>): number => {
+    if (id !== requestIdRef.current) return 0
+    const sortingAt = performance.now()
+    const sorted = [...r.data].sort((a, b) => {
       const aYear = resultYear(a)
       const bYear = resultYear(b)
       if (aYear === bYear) return 0
       if (aYear === null) return -1
       if (bYear === null) return 1
       return bYear - aYear
-    }))
+    })
+    const sortMs = performance.now() - sortingAt
+    setReady(r.ready)
+    setResults(sorted)
     setSource(r.source)
     setOnlineError(r.onlineError ?? '')
     if (r.builtAt) setBuiltAt(r.builtAt)
     setLoading(false)
+    return sortMs
   }
 
-  const runSearch = (raw: string, nextMode: AnimeSearchMode): void => {
+  const runSearch = (raw: string, nextMode: AnimeSearchMode, triggeredAt = performance.now()): void => {
     const q = raw.trim()
-    if (!q) return
-    const id = ++requestIdRef.current
+    if (!q || composingRef.current) return
+    cancelSearch()
+    const id = requestIdRef.current
+    const controller = new AbortController()
+    searchController.current = controller
     setMode(nextMode)
     setResults([])
     setSource(undefined)
     setOnlineError('')
     setBackfillError('')
     setLoading(true)
-    const request = nextMode === 'online' ? searchAnimeOnline(q) : searchAnime(q)
     const startedAt = performance.now()
+    const wallStartedAt = Date.now()
+    const inputWaitMs = startedAt - triggeredAt
+    const request = nextMode === 'online' ? searchAnimeOnline(q, controller.signal) : searchAnime(q, 'local', controller.signal)
     let pendingReported = false
     const pendingTimer = window.setTimeout(() => {
+      if (id !== requestIdRef.current) return
       pendingReported = true
       reportSlowSearch(q, nextMode, 'pending', SLOW_SEARCH_MS)
     }, SLOW_SEARCH_MS)
     const settle = (outcome: 'ok' | 'fail'): void => {
       window.clearTimeout(pendingTimer)
+      if (id !== requestIdRef.current) return
       const ms = performance.now() - startedAt
       if (pendingReported || ms >= SLOW_SEARCH_MS) reportSlowSearch(q, nextMode, outcome, ms)
     }
     void request
       .then((r) => {
         settle('ok')
-        finishSearch(id, r)
+        if (id !== requestIdRef.current) return
+        const readyMs = performance.now() - startedAt
+        const sortMs = finishSearch(id, r)
+        setCompletedSearch({ id, q, mode: nextMode, started: startedAt, startedAt: wallStartedAt, inputWaitMs, readyMs, sortMs, count: r.data.length })
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         settle('fail')
         if (id !== requestIdRef.current) return
         setResults([])
-        setOnlineError(nextMode === 'online' ? ADD_COPY.network : '')
+        setOnlineError(error instanceof Error ? error.message : ADD_COPY.network)
         setLoading(false)
       })
   }
 
   const openCustom = (): void => {
+    composingRef.current = false
+    setComposing(false)
     setCustomError('')
     setCustomTitle(query.trim())
     setTab('custom')
-    requestIdRef.current++
+    cancelSearch()
     setResults([])
     setSource(undefined)
     setOnlineError('')
@@ -164,6 +203,7 @@ export function AddSearchModal({
   }
 
   const openSearch = (): void => {
+    if (tab === 'search') return
     setTab('search')
     setCustomError('')
     setMode('local')
@@ -213,23 +253,24 @@ export function AddSearchModal({
 
   // 默认搜索只翻离线目录；停手 300ms 再打接口，别每个键都发。
   useEffect(() => {
-    if (tab !== 'search') return
+    if (tab !== 'search' || composing) return
     const q = query.trim()
     if (!q) {
-      requestIdRef.current++
+      cancelSearch()
       setResults([])
       setSource(undefined)
       setOnlineError('')
       setLoading(false)
       return
     }
-    const timer = setTimeout(() => runSearch(q, 'local'), 300)
+    const timer = setTimeout(() => runSearch(q, 'local', inputAt.current), 300)
     return () => clearTimeout(timer)
-  }, [query, tab])
+  }, [query, tab, composing])
 
   const onQueryChange = (value: string): void => {
     // 换词即回到默认离线路；先作废上一轮在线请求，避免它在防抖期间回写旧词结果。
-    requestIdRef.current++
+    cancelSearch()
+    inputAt.current = performance.now()
     setQuery(value)
     setMode('local')
     setResults([])
@@ -302,6 +343,16 @@ export function AddSearchModal({
                   autoComplete="off"
                   value={query}
                   onChange={(e) => onQueryChange(e.target.value)}
+                  onCompositionStart={() => {
+                    composingRef.current = true
+                    setComposing(true)
+                    cancelSearch()
+                  }}
+                  onCompositionEnd={(e) => {
+                    composingRef.current = false
+                    setComposing(false)
+                    onQueryChange(e.currentTarget.value)
+                  }}
                   aria-label="搜索要贴进手帐的番剧"
                   placeholder={ADD_COPY.searchPlaceholder}
                 />
@@ -310,7 +361,7 @@ export function AddSearchModal({
                 <button
                   type="button"
                   className={`btn btn-sm ${mode === 'online' ? 'btn-ghost' : 'btn-primary'} add-online-btn`}
-                  disabled={loading}
+                  disabled={loading || composing}
                   title={mode === 'online' ? '回到离线目录' : '想找刚更新的条目，去 Bangumi 看看'}
                   onClick={() => runSearch(q, mode === 'online' ? 'local' : 'online')}
                 >
@@ -377,6 +428,12 @@ export function AddSearchModal({
             <p className="faint small">
               {mode === 'local' && !ready ? ADD_COPY.noIndex : ADD_COPY.idle}
             </p>
+          ) : onlineError ? (
+            <p className="form-note err" role="alert">
+              {onlineError}
+              <br />
+              <button type="button" className="link add-online-link" onClick={() => runSearch(q, mode)}>重新搜索</button>
+            </p>
           ) : mode === 'local' && !ready ? (
             <p className="faint small">
               {ADD_COPY.noIndex}
@@ -390,13 +447,6 @@ export function AddSearchModal({
                   <button type="button" className="link add-online-link" onClick={() => runSearch(q, 'online')}>
                     {ADD_COPY.onlineAction}？
                   </button>
-                </>
-              )}
-              {/* 在线请求失败时保留具体原因，用户知道是等一会儿还是换关键词。 */}
-              {onlineError && (
-                <>
-                  <br />
-                  <span style={{ color: 'var(--ink-sub)' }}>{onlineError}</span>
                 </>
               )}
             </p>

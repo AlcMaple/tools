@@ -9,6 +9,7 @@ import {
   type SourceId,
   type Track,
   type TracksSnapshot,
+  type TracksLoadProgress,
 } from './api'
 import { cachePeek, cacheSet } from './dataCache'
 
@@ -27,6 +28,7 @@ function tracksSignature(tracks: Track[]): string {
 interface TracksListener {
   onData: (tracks: Track[]) => void
   onError?: (message: string | null) => void
+  onProgress?: (progress: TracksLoadProgress | null) => void
 }
 
 interface TracksAccountState {
@@ -51,6 +53,10 @@ interface TracksAccountState {
   monitorCleanup: (() => void) | null
   lifecycleTimer: number | null
   lastFullStartedAt: number
+  readFailed: boolean
+  progress: TracksLoadProgress | null
+  partialData: Track[] | null
+  fullController: AbortController | null
 }
 
 const accountStates = new Map<string, TracksAccountState>()
@@ -81,6 +87,10 @@ function stateFor(username: string): TracksAccountState {
     monitorCleanup: null,
     lifecycleTimer: null,
     lastFullStartedAt: 0,
+    readFailed: false,
+    progress: null,
+    partialData: null,
+    fullController: null,
   }
   accountStates.set(username, state)
   return state
@@ -95,7 +105,11 @@ function notifyError(state: TracksAccountState, message: string | null): void {
 }
 
 function applyServerSnapshot(state: TracksAccountState, snapshot: TracksSnapshot): void {
+  state.progress = null
+  state.partialData = null
+  for (const listener of state.listeners) listener.onProgress?.(null)
   state.lastRevision = snapshot.rev
+  state.readFailed = false
   state.lastServerData = snapshot.data
   state.lastServerSignature = tracksSignature(snapshot.data)
   state.needsAuthoritativeRead = false
@@ -120,14 +134,32 @@ function startFullRequest(state: TracksAccountState): void {
   }
 
   state.fullQueued = false
+  notifyError(state, null)
+  if (state.progress) {
+    state.progress = { ...state.progress, loading: true }
+    for (const listener of state.listeners) listener.onProgress?.(state.progress)
+  }
   const requestId = ++state.nextRequestId
   state.latestRequestId = requestId
   // 开始一份全量快照时，同时淘汰更早发出的 revision 响应；否则旧 revision 可能在
   // 新快照落地后误报「版本变化」，白白再拉一次全量数据。
   const validationVersion = ++state.validationVersion
   state.lastFullStartedAt = Date.now()
+  const controller = new AbortController()
+  state.fullController = controller
+  const onPartial = !state.lastServerData && !cachePeek<Track[]>(tracksKey(state.username)) ? (snapshot: TracksSnapshot, progress: TracksLoadProgress): void => {
+    if (requestId !== state.latestRequestId || validationVersion !== state.validationVersion || state.pendingWrites > 0) return
+    state.partialData = snapshot.data
+    state.progress = progress
+    for (const listener of state.listeners) {
+      // 周历等只认完整集合；只有明确接收加载进度的页面才展示部分条目。
+      if (!listener.onProgress) continue
+      listener.onProgress(progress)
+      listener.onData(snapshot.data)
+    }
+  } : undefined
 
-  const request = fetchTracks()
+  const request = fetchTracks(onPartial, controller.signal)
     .then((snapshot) => {
       // 写入开始、跨标签缓存变化或 revision 变化都会让这次读取失效。即使请求较早发出、
       // 较晚返回，也没有资格覆盖当前乐观 UI；失效方已经排好下一次权威读取。
@@ -140,10 +172,16 @@ function startFullRequest(state: TracksAccountState): void {
     })
     .catch((error: unknown) => {
       if (validationVersion !== state.validationVersion || state.pendingWrites > 0) return
+      state.readFailed = true
+      if (state.progress) {
+        state.progress = { ...state.progress, loading: false }
+        for (const listener of state.listeners) listener.onProgress?.(state.progress)
+      }
       notifyError(state, error instanceof Error ? error.message : '追番数据读取失败')
     })
     .finally(() => {
       if (state.fullRequest === request) state.fullRequest = null
+      if (state.fullController === controller) state.fullController = null
       if (state.fullQueued && state.pendingWrites === 0) startFullRequest(state)
     })
 
@@ -152,7 +190,10 @@ function startFullRequest(state: TracksAccountState): void {
 
 /** 普通挂载 / 聚焦只需要保证有一次全量读取；已有请求就是这次校验，不再叠加。 */
 function ensureFullRequest(state: TracksAccountState): void {
-  if (state.fullRequest) return
+  if (state.fullRequest) {
+    if (state.fullController?.signal.aborted) state.fullQueued = true
+    return
+  }
   startFullRequest(state)
 }
 
@@ -160,6 +201,7 @@ function ensureFullRequest(state: TracksAccountState): void {
 function invalidateAndRequestFull(state: TracksAccountState): void {
   state.validationVersion++
   state.fullQueued = true
+  state.fullController?.abort()
   if (state.pendingWrites === 0 && !state.fullRequest) startFullRequest(state)
 }
 
@@ -172,7 +214,7 @@ function restoreKnownServerData(state: TracksAccountState): void {
 }
 
 function checkRevision(state: TracksAccountState): void {
-  if (state.revisionRequest || state.fullRequest || state.pendingWrites > 0) return
+  if (state.readFailed || state.revisionRequest || state.fullRequest || state.pendingWrites > 0) return
 
   const validationVersion = state.validationVersion
   const request = fetchTracksRevision()
@@ -182,9 +224,8 @@ function checkRevision(state: TracksAccountState): void {
         invalidateAndRequestFull(state)
         return
       }
-      // 最后一个写入后的全量读取若恰好断网失败，15 秒轮询仍只发轻量 revision。
-      // revision 没变说明服务器没有接纳那份乐观写入，可安全恢复上次权威快照；若变了，
-      // 上面的分支会拉全量数据，覆盖「响应丢了但服务器其实写成功」的情况。
+      // 尚未确认的乐观修改不能长期充当事实；版本未变时恢复权威快照，
+      // 版本变化则由上面的分支重新读取，覆盖“写成功但响应丢失”的情况。
       if (state.needsAuthoritativeRead) {
         if (state.lastServerData) restoreKnownServerData(state)
         else invalidateAndRequestFull(state)
@@ -194,6 +235,7 @@ function checkRevision(state: TracksAccountState): void {
     })
     .catch((error: unknown) => {
       if (validationVersion !== state.validationVersion || state.pendingWrites > 0) return
+      state.readFailed = true
       notifyError(state, error instanceof Error ? error.message : '追番数据校验失败')
     })
     .finally(() => {
@@ -215,19 +257,15 @@ function parseStorageTracks(raw: string | null): Track[] | null {
 
 function scheduleLifecycleRefresh(state: TracksAccountState): void {
   if (state.lifecycleTimer != null) return
-  if (state.fullRequest) {
-    // 刚发出的 full 足以覆盖同一批 focus / visible / pageshow；已运行较久的请求可能
-    // 在本次聚焦前就取得了旧快照，必须废弃并在它结束后补一份 post-focus GET。
-    if (
-      Date.now() - state.lastFullStartedAt >= LIFECYCLE_COALESCE_MS &&
-      !state.fullQueued
-    ) invalidateAndRequestFull(state)
-    return
-  }
+  if (state.fullRequest) return
   if (Date.now() - state.lastFullStartedAt < LIFECYCLE_COALESCE_MS) return
   state.lifecycleTimer = window.setTimeout(() => {
     state.lifecycleTimer = null
-    if (state.listeners.size) ensureFullRequest(state)
+    if (state.listeners.size) {
+      state.readFailed = false
+      if (state.lastServerData && !state.needsAuthoritativeRead) checkRevision(state)
+      else ensureFullRequest(state)
+    }
   }, 0)
 }
 
@@ -254,11 +292,13 @@ function startMonitor(state: TracksAccountState): void {
 
   window.addEventListener('focus', onFocus)
   window.addEventListener('pageshow', onPageShow)
+  window.addEventListener('online', onFocus)
   window.addEventListener('storage', onStorage)
   document.addEventListener('visibilitychange', onVisible)
   state.monitorCleanup = () => {
     window.removeEventListener('focus', onFocus)
     window.removeEventListener('pageshow', onPageShow)
+    window.removeEventListener('online', onFocus)
     window.removeEventListener('storage', onStorage)
     document.removeEventListener('visibilitychange', onVisible)
     window.clearInterval(interval)
@@ -269,7 +309,14 @@ function startMonitor(state: TracksAccountState): void {
 }
 
 function stopMonitorIfIdle(state: TracksAccountState): void {
-  if (state.listeners.size === 0) state.monitorCleanup?.()
+  if (state.listeners.size !== 0) return
+  state.monitorCleanup?.()
+  if (state.fullRequest && state.pendingWrites === 0) {
+    state.validationVersion++
+    state.fullQueued = false
+    state.fullController?.abort()
+    if (state.progress) state.progress = { ...state.progress, loading: false }
+  }
 }
 
 /**
@@ -281,6 +328,7 @@ export async function runTracksMutation<T>(username: string, mutate: () => Promi
   state.pendingWrites++
   state.needsAuthoritativeRead = true
   state.validationVersion++
+  state.fullController?.abort()
   state.fullQueued = true
   // 不能只数「还有几个请求」：HTTP 请求并发时，后点的操作可能先落库、先点的操作反而
   // 最后覆盖服务器。队列继续执行失败后的下一项，但每个调用仍拿到自己的成功 / 失败。
@@ -300,25 +348,37 @@ export async function runTracksMutation<T>(username: string, mutate: () => Promi
   }
 }
 
-/** 立刻用缓存喂一次 onData（如果有），随后后台拉最新数据并整份覆盖缓存与页面。
- * 页面挂载期间监听恢复前台、15 秒 revision 和其他标签缓存变化。返回取消订阅函数。 */
+// 有权威缓存时先检查 revision，只有版本变化才拉全量；读取失败后停止定时检查，
+// 由重新进入页面、恢复前台或 online 事件触发下一次校验。
 export function loadTracks(
   username: string,
   onData: (ts: Track[]) => void,
   onError?: (message: string | null) => void,
+  onProgress?: (progress: TracksLoadProgress | null) => void,
 ): () => void {
   const key = tracksKey(username)
   const state = stateFor(username)
-  const listener = { onData, onError }
+  const listener = { onData, onError, onProgress }
   state.listeners.add(listener)
-  const cached = cachePeek<Track[]>(key)
+  // 重启前未完成的乐观写入可能留在普通缓存里；有权威快照时优先展示它。
+  const cached = (!state.needsAuthoritativeRead ? state.lastServerData : null) ?? cachePeek<Track[]>(key)
   if (cached) onData(cached)
+  else if (onProgress && state.partialData) onData(state.partialData)
+  onProgress?.(state.progress)
   startMonitor(state)
-  ensureFullRequest(state)
+  state.readFailed = false
+  if (cached && state.lastServerData && !state.needsAuthoritativeRead) checkRevision(state)
+  else ensureFullRequest(state)
   return () => {
     state.listeners.delete(listener)
     stopMonitorIfIdle(state)
   }
+}
+
+export function reloadTracks(username: string): void {
+  const state = stateFor(username)
+  state.readFailed = false
+  invalidateAndRequestFull(state)
 }
 
 /**
@@ -351,6 +411,7 @@ export function loadBindings(
 export function saveTracksCache(username: string, ts: Track[]): void {
   const signature = tracksSignature(ts)
   const state = accountStates.get(username)
+  if (state?.partialData) return
   // 权威 GET 已经收口后，React 上一帧迟到的乐观 effect 不能再把旧状态写回缓存。
   if (
     state &&

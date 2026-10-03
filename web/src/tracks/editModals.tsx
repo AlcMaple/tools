@@ -102,7 +102,7 @@ export function EditModal({
               disabled={coverUploading}
             >
               {t.cover ? (
-                <img className="dlg-cover" src={coverUrl(t.cover)} alt="" />
+                <img className="dlg-cover" src={coverUrl(t.cover, t.bgmId)} alt="" />
               ) : (
                 <span className="dlg-cover dlg-cover-ph">{coverUploading ? <Spinner /> : '＋ 封面'}</span>
               )}

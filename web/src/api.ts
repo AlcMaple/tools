@@ -1,3 +1,4 @@
+import { fetchApi, readApi } from './request'
 // 前端与后端 server/bgm/calendar.ts 的返回结构对应。网页版前端不共享后端代码（后端有
 // undici 等 Node 依赖，不能进浏览器包），这里独立声明一份同形状类型。
 export interface CalendarItem {
@@ -29,7 +30,7 @@ export interface CalendarResult {
 // 本地上传的封面在库里存的就是同源相对路径（私有页是 /api/tracks/<id>/cover-file，
 // 公开页是 /api/community/<username>/<id>/cover-file），不是绝对 URL —— `new URL()`
 // 会直接抛，得在那之前放行。
-export function coverUrl(raw: string): string {
+export function coverUrl(raw: string, bgmId?: number): string {
   if (
     (raw.startsWith('/api/tracks/') || raw.startsWith('/api/community/'))
     && raw.endsWith('/cover-file')
@@ -37,6 +38,9 @@ export function coverUrl(raw: string): string {
   try {
     const url = new URL(raw)
     if (url.username || url.password) return ''
+    if (url.hostname === 'bkimg.cdn.bcebos.com' && Number.isSafeInteger(bgmId) && bgmId! > 0) {
+      return `/api/subject-cover/${bgmId}`
+    }
     if (url.hostname === 'lain.bgm.tv') return `/api/cover${url.pathname}`
     if (url.protocol === 'http:') url.protocol = 'https:'
     return url.protocol === 'https:' ? url.toString() : ''
@@ -150,6 +154,14 @@ export interface TracksSnapshot {
   data: Track[]
 }
 
+export type TrackCounts = Record<TrackStatus | 'all', number>
+export interface TracksLoadProgress {
+  loaded: number
+  total: number
+  counts: TrackCounts
+  loading: boolean
+}
+
 export interface AnnouncementStatus {
   id: string
   muted: boolean
@@ -173,10 +185,7 @@ export async function dismissCurrentAnnouncement(): Promise<void> {
   await json<{ ok: boolean }>(await fetch('/api/announcements/current/dismiss', { method: 'POST' }))
 }
 
-export async function fetchTracks(): Promise<TracksSnapshot> {
-  // 401 必须作为读取失败抛出。把「会话失效」解释成空列表会用空数据覆盖本地缓存，
-  // 用户重新登录后首屏也会误以为自己从未追过番。
-  const snapshot = await json<TracksSnapshot>(await fetch('/api/tracks'))
+function normalizeTracksSnapshot(snapshot: TracksSnapshot): TracksSnapshot {
   if (!Number.isSafeInteger(snapshot.rev) || snapshot.rev < 0 || !Array.isArray(snapshot.data)) {
     throw new Error('追番数据响应无效')
   }
@@ -196,8 +205,71 @@ export async function fetchTracks(): Promise<TracksSnapshot> {
   }
 }
 
+export async function fetchTracks(
+  onPartial?: (snapshot: TracksSnapshot, progress: TracksLoadProgress) => void,
+  signal?: AbortSignal,
+): Promise<TracksSnapshot> {
+  if (!onPartial) return normalizeTracksSnapshot(await json<TracksSnapshot>(await fetchApi('/api/tracks', { signal })))
+  return readApi('/api/tracks', {
+    signal,
+    headers: { Accept: 'application/x-ndjson', 'X-Calendar-Day': String(new Date().getDay() || 7) },
+  }, async response => {
+    // 部署切换期间旧服务仍可返回 JSON；只消费这次响应，不追加重试。
+    if (!response.ok || !response.headers.get('Content-Type')?.includes('application/x-ndjson')) {
+      return normalizeTracksSnapshot(await json<TracksSnapshot>(response))
+    }
+    if (!response.body) throw new Error('追番列表响应为空')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    const rows = new Map<number, Track>()
+    let pending = '', rev = -1, total = -1, completed = false
+    const snapshot = (): TracksSnapshot => normalizeTracksSnapshot({ rev, data: [...rows].sort((a, b) => a[0] - b[0]).map(entry => entry[1]) })
+    const accept = (line: string): void => {
+      const packet = JSON.parse(line) as TracksSnapshot & { total: number; counts: TrackCounts; indices: number[]; done: boolean }
+      if (completed || !Number.isSafeInteger(packet.rev) || packet.rev < 0 || !Number.isSafeInteger(packet.total) || packet.total < 0
+        || !Array.isArray(packet.data) || !Array.isArray(packet.indices) || packet.indices.length !== packet.data.length
+        || !packet.counts || !['all', 'watching', 'plan', 'considering', 'done'].every(key => Number.isSafeInteger(packet.counts[key as keyof TrackCounts]) && packet.counts[key as keyof TrackCounts] >= 0)
+        || (rev !== -1 && (rev !== packet.rev || total !== packet.total))) throw new Error('追番列表分批响应无效')
+      rev = packet.rev
+      total = packet.total
+      packet.data.forEach((track, offset) => {
+        const index = packet.indices[offset]
+        if (!Number.isSafeInteger(index) || index < 0 || index >= total || rows.has(index)) throw new Error('追番列表分批数据重复或越界')
+        rows.set(index, track)
+      })
+      if (packet.done) {
+        if (rows.size !== total) throw new Error('追番列表传输不完整，请重新加载')
+        completed = true
+      } else {
+        onPartial(snapshot(), { loaded: rows.size, total, counts: packet.counts, loading: true })
+      }
+    }
+    try {
+      for (;;) {
+        const chunk = await reader.read()
+        pending += decoder.decode(chunk.value, { stream: !chunk.done })
+        let newline: number
+        while ((newline = pending.indexOf('\n')) !== -1) {
+          const line = pending.slice(0, newline)
+          pending = pending.slice(newline + 1)
+          if (line) accept(line)
+        }
+        if (chunk.done) break
+      }
+      if (pending.trim() || !completed) throw new Error('追番列表传输中断，请重新加载')
+      return snapshot()
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof SyntaxError) throw new Error('追番列表传输中断或格式不完整，请重新加载', { cause: error })
+      throw error
+    } finally {
+      await reader.cancel().catch(() => undefined)
+      reader.releaseLock()
+    }
+  }, 60_000)
+}
+
 export async function fetchTracksRevision(): Promise<number> {
-  const { rev } = await json<{ rev: number }>(await fetch('/api/tracks/revision'))
+  const { rev } = await json<{ rev: number }>(await fetchApi('/api/tracks/revision'))
   if (!Number.isSafeInteger(rev) || rev < 0) throw new Error('追番数据版本无效')
   return rev
 }
@@ -509,7 +581,7 @@ export async function logoutXifanAccount(): Promise<void> {
 
 /** 追番页加载时一次拿齐当前用户的绑定 —— 绑过的「继续看」直接渲染成链接，无需再定位。 */
 export async function fetchXifanBindings(): Promise<Record<number, XifanBinding>> {
-  const res = await fetch('/api/xifan/bindings')
+  const res = await fetchApi('/api/xifan/bindings')
   if (!res.ok) return {}
   return (await json<{ data: Record<number, XifanBinding> }>(res)).data
 }
@@ -517,10 +589,12 @@ export async function fetchXifanBindings(): Promise<Record<number, XifanBinding>
 export async function locateXifan(
   bgmId: number,
   titles: string[],
-  rebind = false
+  rebind = false,
+  signal?: AbortSignal,
 ): Promise<{ bound?: XifanCandidate; candidates: XifanCandidate[] }> {
   return json(
-    await fetch('/api/xifan/locate', {
+    await fetchApi('/api/xifan/locate', {
+      signal,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bgmId, titles, rebind }),
@@ -537,8 +611,9 @@ export async function bindXifan(bgmId: number, xifanId: number, xifanName: strin
 }
 
 /** 搜索非周历资源。没有通过验证码时只回 needsCaptcha，不把站点验证码页当成空结果。 */
-export async function searchXifan(keyword: string): Promise<XifanSearchResponse> {
-  return json<XifanSearchResponse>(await fetch('/api/xifan/search', {
+export async function searchXifan(keyword: string, signal?: AbortSignal): Promise<XifanSearchResponse> {
+  return json<XifanSearchResponse>(await fetchApi('/api/xifan/search', {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keyword }),
@@ -549,11 +624,11 @@ export async function fetchXifanCaptcha(): Promise<{ imageB64: string; mime: str
   // 稀饭每次取图都会替换服务端会话里的验证码；先通知其他标签作废旧图，避免网络较慢时
   // 两张图都短暂显示为“可提交”。当前标签不会收到自己的 storage 事件。
   signalXifanEvent(XIFAN_CAPTCHA_EVENT_KEY)
-  return json<{ imageB64: string; mime: string }>(await fetch('/api/xifan/captcha'))
+  return json<{ imageB64: string; mime: string }>(await fetchApi('/api/xifan/captcha'))
 }
 
 export async function verifyXifanCaptcha(code: string): Promise<{ success: boolean }> {
-  return json<{ success: boolean }>(await fetch('/api/xifan/captcha/verify', {
+  return json<{ success: boolean }>(await fetchApi('/api/xifan/captcha/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
@@ -605,7 +680,7 @@ export type GirigiriSearchResponse =
   | { needsCaptcha: false; data: GirigiriSearchHit[] }
 
 export async function fetchGirigiriBindings(): Promise<Record<number, GirigiriBinding>> {
-  const res = await fetch('/api/girigiri/bindings')
+  const res = await fetchApi('/api/girigiri/bindings')
   if (!res.ok) return {}
   return (await json<{ data: Record<number, GirigiriBinding> }>(res)).data
 }
@@ -614,8 +689,10 @@ export async function locateGirigiri(
   bgmId: number,
   titles: string[],
   rebind = false,
+  signal?: AbortSignal,
 ): Promise<{ bound?: GirigiriCandidate; candidates: GirigiriCandidate[] }> {
-  return json(await fetch('/api/girigiri/locate', {
+  return json(await fetchApi('/api/girigiri/locate', {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ bgmId, titles, rebind }),
@@ -630,8 +707,9 @@ export async function bindGirigiri(bgmId: number, girigiriId: string, girigiriNa
   }))
 }
 
-export async function searchGirigiri(keyword: string): Promise<GirigiriSearchResponse> {
-  return json<GirigiriSearchResponse>(await fetch('/api/girigiri/search', {
+export async function searchGirigiri(keyword: string, signal?: AbortSignal): Promise<GirigiriSearchResponse> {
+  return json<GirigiriSearchResponse>(await fetchApi('/api/girigiri/search', {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keyword }),
@@ -639,11 +717,11 @@ export async function searchGirigiri(keyword: string): Promise<GirigiriSearchRes
 }
 
 export async function fetchGirigiriCaptcha(): Promise<{ imageB64: string; mime: string }> {
-  return json<{ imageB64: string; mime: string }>(await fetch('/api/girigiri/captcha'))
+  return json<{ imageB64: string; mime: string }>(await fetchApi('/api/girigiri/captcha'))
 }
 
 export async function verifyGirigiriCaptcha(code: string): Promise<{ success: boolean }> {
-  return json<{ success: boolean }>(await fetch('/api/girigiri/captcha/verify', {
+  return json<{ success: boolean }>(await fetchApi('/api/girigiri/captcha/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
@@ -690,26 +768,26 @@ export interface SearchResult {
 export type AnimeSearchMode = 'local' | 'online'
 
 // 搜索动漫加追番；在线模式只在用户明确点击时启用。
-export async function searchAnime(q: string, mode: AnimeSearchMode = 'local'): Promise<SearchResult> {
+export async function searchAnime(q: string, mode: AnimeSearchMode = 'local', signal?: AbortSignal): Promise<SearchResult> {
   const suffix = mode === 'online' ? '&mode=online' : ''
-  const res = await fetch(`/api/search?q=${encodeURIComponent(q)}${suffix}`)
-  if (!res.ok) return { ready: true, data: [] }
-  return res.json() as Promise<SearchResult>
+  const res = await fetchApi(`/api/search?q=${encodeURIComponent(q)}${suffix}`, { signal }, mode === 'local' ? 12_000 : 30_000)
+  return json<SearchResult>(res)
 }
 
-// 搜索超过 3 秒时把耗时打回服务端终端（网页控制台没人看）。outcome: pending = 3 秒了还没回，
-// ok / fail = 最终结果。失败静默，日志不能影响搜索本身。
-export function reportSlowSearch(q: string, mode: AnimeSearchMode, outcome: 'pending' | 'ok' | 'fail', ms: number): void {
+// 慢请求报告等待/结束，所有完成的搜索报告 DOM 提交，才能比较手机和 PC 的快慢样本。
+export function reportSlowSearch(q: string, mode: AnimeSearchMode, outcome: 'pending' | 'ok' | 'fail' | 'committed', ms: number,
+  detail?: { startedAt: number; inputWaitMs: number; readyMs: number; sortMs: number; count: number },
+): void {
   try {
-    const body = JSON.stringify({ q: q.slice(0, 40), mode, outcome, ms })
+    const body = JSON.stringify({ q: q.slice(0, 40), mode, outcome, ms, ...detail })
     if (navigator.sendBeacon) navigator.sendBeacon('/api/search-log', new Blob([body], { type: 'application/json' }))
     else void fetch('/api/search-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {})
   } catch { /* ignore */ }
 }
 
 // 用户明确点击在线入口时调用；保留独立名称，避免把两条请求语义混在调用点。
-export function searchAnimeOnline(q: string): Promise<SearchResult> {
-  return searchAnime(q, 'online')
+export function searchAnimeOnline(q: string, signal?: AbortSignal): Promise<SearchResult> {
+  return searchAnime(q, 'online', signal)
 }
 
 // ── 在线源统一适配器 ──────────────────────────────────────────────────────────
@@ -747,9 +825,9 @@ export interface OnlineSource {
   /** 仅稀饭：跨标签验证码作废用的 storage key（Girigiri 没有这套会话联动）。 */
   captchaEventKey?: string
   fetchBindings(): Promise<Record<number, SourceBinding>>
-  locate(bgmId: number, titles: string[], rebind?: boolean): Promise<{ bound?: SourceCandidate; candidates: SourceCandidate[] }>
+  locate(bgmId: number, titles: string[], rebind?: boolean, signal?: AbortSignal): Promise<{ bound?: SourceCandidate; candidates: SourceCandidate[] }>
   bind(bgmId: number, id: string, name: string): Promise<void>
-  search(keyword: string): Promise<SourceSearchResult>
+  search(keyword: string, signal?: AbortSignal): Promise<SourceSearchResult>
   fetchCaptcha(): Promise<{ imageB64: string; mime: string }>
   verifyCaptcha(code: string): Promise<{ success: boolean }>
   playPageUrl(id: string, ep: number, bgmId: number): string
@@ -766,14 +844,14 @@ const XIFAN_SOURCE: OnlineSource = {
     for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: String(b.xifanId), name: b.xifanName }
     return out
   },
-  locate: async (bgmId, titles, rebind) => {
+  locate: async (bgmId, titles, rebind, signal) => {
     const toCand = (c: XifanCandidate): SourceCandidate => ({ id: String(c.xifanId), name: c.xifanName, day: c.day, remarks: c.remarks, score: c.score })
-    const r = await locateXifan(bgmId, titles, rebind)
+    const r = await locateXifan(bgmId, titles, rebind, signal)
     return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
   },
   bind: (bgmId, id, name) => bindXifan(bgmId, Number(id), name),
-  search: async (keyword) => {
-    const r = await searchXifan(keyword)
+  search: async (keyword, signal) => {
+    const r = await searchXifan(keyword, signal)
     if (r.needsCaptcha) return r
     return { needsCaptcha: false, data: r.data.map((h) => ({ id: String(h.xifanId), name: h.xifanName, cover: h.cover, episode: h.episode, year: h.year, area: h.area })) }
   },
@@ -792,14 +870,14 @@ const GIRIGIRI_SOURCE: OnlineSource = {
     for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: b.girigiriId, name: b.girigiriName }
     return out
   },
-  locate: async (bgmId, titles, rebind) => {
+  locate: async (bgmId, titles, rebind, signal) => {
     const toCand = (c: GirigiriCandidate): SourceCandidate => ({ id: c.girigiriId, name: c.girigiriName, day: c.day, remarks: c.remarks, score: c.score })
-    const r = await locateGirigiri(bgmId, titles, rebind)
+    const r = await locateGirigiri(bgmId, titles, rebind, signal)
     return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
   },
   bind: (bgmId, id, name) => bindGirigiri(bgmId, id, name),
-  search: async (keyword) => {
-    const r = await searchGirigiri(keyword)
+  search: async (keyword, signal) => {
+    const r = await searchGirigiri(keyword, signal)
     if (r.needsCaptcha) return r
     return { needsCaptcha: false, data: r.data.map((h) => ({ id: h.girigiriId, name: h.girigiriName, cover: h.cover, episode: h.episode, year: h.year, area: h.area })) }
   },

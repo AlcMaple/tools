@@ -176,8 +176,7 @@ app.get('/api/search', async (c) => {
   return c.json({ ...base, source: 'local', data: [] })
 })
 
-// 浏览器等搜索超过 3 秒时把耗时打回来：服务端只有自己那一段的耗时，「浏览器到服务器」
-// 这段慢在哪只有前端知道，落进这个终端才能和上面 server=…ms 对上。
+// 快慢搜索都记录 DOM 提交耗时；浏览器时钟只和同端日志关联，不能直接减服务端时间。
 app.post('/api/search-log', async (c) => {
   const raw = (await c.req.text().catch(() => '')).slice(0, 1000)
   try {
@@ -185,8 +184,31 @@ app.post('/api/search-log', async (c) => {
     const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : -1)
     const t = (v: unknown, max: number): string => String(v ?? '').replace(/[\r\n]/g, ' ').slice(0, max)
     console.log(`[search:client] q="${t(b.q, 40)}" mode=${t(b.mode, 10)} outcome=${t(b.outcome, 10)} client=${n(b.ms)}ms`)
+    if (b.outcome === 'committed') console.log('[search:display]', JSON.stringify({
+      q: t(b.q, 40), mode: t(b.mode, 10), startedAt: n(b.startedAt),
+      inputWaitMs: n(b.inputWaitMs), readyMs: n(b.readyMs), sortMs: n(b.sortMs), commitMs: n(b.ms), count: n(b.count),
+    }))
   } catch {
     /* 上报格式不对就丢，日志接口不该产生新错误 */
+  }
+  return c.body(null, 204)
+})
+
+app.post('/api/request-log', async (c) => {
+  const body = await c.req.json().catch(() => null) as Record<string, unknown> | null
+  if (body && typeof body.path === 'string' && /^\/api\/[a-z/-]{1,80}$/.test(body.path)) {
+    const outcome = ['ok', 'timeout', 'failed'].includes(String(body.outcome)) ? body.outcome : 'unknown'
+    const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : null
+    const timing = body.timing && typeof body.timing === 'object' ? body.timing as Record<string, unknown> : {}
+    console.warn('[request:client]', JSON.stringify({
+      path: body.path, outcome, status: number(body.status), ms: number(body.ms), startedAt: number(body.startedAt),
+      reason: typeof body.reason === 'string' ? body.reason.replace(/[\r\n]/g, ' ').slice(0, 240) : '',
+      requestId: /^[a-f0-9-]{36}$/.test(String(body.requestId)) ? body.requestId : null,
+      headersMs: number(body.headersMs), bodyMs: number(body.bodyMs),
+      visibility: body.visibility === 'hidden' ? 'hidden' : 'visible', online: body.online === true,
+      dnsMs: number(timing.dnsMs), connectMs: number(timing.connectMs), waitMs: number(timing.waitMs), receiveMs: number(timing.receiveMs),
+      transferBytes: number(timing.transferBytes), protocol: ['h2', 'h3', 'http/1.1'].includes(String(timing.protocol)) ? timing.protocol : '',
+    }))
   }
   return c.body(null, 204)
 })
@@ -214,6 +236,48 @@ app.get('/api/calendar', async (c) => {
 // 两种形态都要过：`/pic/...`（原图）和 `/r/<宽>/pic/...`（图床按宽度实时缩放，周历在用，
 // 见 bgm/calendar.ts 的 COVER_WIDTH）。仍然只认 `pic/` 那一段，不放行图床上的任意路径。
 const COVER_PATH_RE = /^\/(r\/\d{2,4}\/)?pic\//
+const subjectCovers = new Map<number, { path: string; at: number }>()
+const subjectCoverRequests = new Map<number, Promise<string>>()
+
+// 旧同步记录可能带已失效的百科图床；只为这些 BGM 条目取官方封面，不改用户保存的数据。
+app.get('/api/subject-cover/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isSafeInteger(id) || id <= 0) return c.text('invalid subject', 400)
+  c.header('Cache-Control', 'no-store')
+  const cached = subjectCovers.get(id)
+  if (cached && Date.now() - cached.at < 3600_000) return c.redirect(cached.path)
+  let request = subjectCoverRequests.get(id)
+  if (!request) {
+    if (subjectCoverRequests.size >= 4) return c.text('cover busy', 503)
+    request = (async () => {
+      const response = await fetch(`https://api.bgm.tv/v0/subjects/${id}`, {
+        headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
+        signal: AbortSignal.timeout(10_000),
+      })
+      if (!response.ok) {
+        await response.body?.cancel()
+        throw new Error(`BGM HTTP ${response.status}`)
+      }
+      const data = await response.json() as { images?: { common?: string; large?: string } }
+      const url = new URL(data.images?.common || data.images?.large || '')
+      if (url.hostname !== 'lain.bgm.tv' || !COVER_PATH_RE.test(url.pathname)) throw new Error('BGM cover missing')
+      const path = `/api/cover${url.pathname}`
+      if (subjectCovers.size >= 128) subjectCovers.delete(subjectCovers.keys().next().value!)
+      subjectCovers.set(id, { path, at: Date.now() })
+      return path
+    })()
+    subjectCoverRequests.set(id, request)
+  }
+  try {
+    return c.redirect(await request)
+  } catch (error) {
+    console.warn(`[cover] subject=${id}`, error)
+    return c.text('subject cover unavailable', 502)
+  } finally {
+    if (subjectCoverRequests.get(id) === request) subjectCoverRequests.delete(id)
+  }
+})
+
 app.get('/api/cover/*', async (c) => {
   const path = c.req.path.replace(/^\/api\/cover/, '')
   if (!COVER_PATH_RE.test(path)) return c.text('forbidden', 403)
@@ -223,6 +287,8 @@ app.get('/api/cover/*', async (c) => {
       signal: AbortSignal.timeout(15000),
     })
     if (!upstream.ok || !upstream.body) {
+      console.warn(`[cover] ${path}: upstream HTTP ${upstream.status}`)
+      await upstream.body?.cancel()
       c.header('Cache-Control', 'no-store')
       return c.text('upstream error', 502)
     }
@@ -230,14 +296,33 @@ app.get('/api/cover/*', async (c) => {
     // 代理只允许图片。上游异常返回 HTML 时不能把它原样挂在本站路径下，避免被浏览器当
     // 成可执行文档或被未来的页面导航误用。
     if (!/^image\/(?:png|jpe?g|gif|webp)$/i.test(contentType)) {
+      console.warn(`[cover] ${path}: unexpected content-type ${contentType}`)
+      await upstream.body.cancel()
       c.header('Cache-Control', 'no-store')
       return c.text('upstream image type rejected', 502)
     }
+    // 读完整张图再发缓存头；流中途超时不能把半张 200 图片永久写进浏览器缓存。
+    const reader = upstream.body.getReader()
+    const chunks: Uint8Array[] = []
+    let size = 0
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        size += value.byteLength
+        if (size > 8 * 1024 * 1024) throw new Error('cover exceeds 8 MiB')
+        chunks.push(value)
+      }
+      if (!size) throw new Error('empty cover')
+    } finally {
+      await reader.cancel().catch(() => undefined)
+      reader.releaseLock()
+    }
     c.header('Content-Type', contentType)
     c.header('Cache-Control', 'public, max-age=2592000, immutable')
-    return c.body(upstream.body)
+    return c.body(Buffer.concat(chunks, size))
   } catch (error) {
-    console.warn(`[cover] 代取失败 ${path}: ${error instanceof Error ? error.message : String(error)}`)
+    console.warn(`[cover] 代取失败 ${path}:`, error)
     c.header('Cache-Control', 'no-store')
     return c.text('fetch failed', 502)
   }

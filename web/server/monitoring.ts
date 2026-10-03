@@ -124,9 +124,16 @@ export function monitoringMiddleware(): MiddlewareHandler {
     c.header('X-Request-ID', requestId)
     const method = c.req.method
     const path = stablePath(c.req.path)
+    const logTiming = ['/api/search', '/api/tracks', '/api/auth/me', '/api/xifan/search', '/api/xifan/locate'].includes(c.req.path)
+    const receivedAt = Date.now()
+    if (logTiming) console.info(`[request:server] id=${requestId} ${method} ${path} receivedAt=${receivedAt}`)
+    const logHeaders = (): void => {
+      if (logTiming) console.info(`[request:server] id=${requestId} headers=${Date.now() - receivedAt}ms status=${c.res.status}`)
+    }
     const traceable = /^\/api(?:\/|$)/.test(path) && path !== '/api/health'
     if (!enabled || !traceable) {
       await next()
+      logHeaders()
       return
     }
 
@@ -162,6 +169,7 @@ export function monitoringMiddleware(): MiddlewareHandler {
           ),
       )
     })
+    logHeaders()
   }
 }
 

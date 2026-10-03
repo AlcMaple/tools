@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 908" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" role="img">
+<title>追番先看已到的，搜索只接受当前关键词</title>
+<rect x="1" y="1" width="1118" height="906" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="32" y="38" font-size="19" fill="#282529" font-weight="700">追番先看已到的，搜索只接受当前关键词</text>
+<text x="32" y="62" font-size="12.5" fill="#756f73" font-weight="400">结果：追番首批可以先用；手机搜索本轮实测已顺畅。列表分批接收，搜索仍一次返回完整候选。</text>
+<text x="32" y="102" font-size="14" fill="#282529" font-weight="700">一、进入「我的追番」：先显示卡片，不等整个列表传完</text>
+<rect x="32" y="120" width="336" height="146" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="48" y="145" font-size="12.5" fill="#4a4450" font-weight="700">打开页面</text>
+<text x="48" y="168" font-size="11" fill="#4a4450" font-weight="400">用户看到：已有完整缓存时先看缓存。</text>
+<text x="48" y="187" font-size="11" fill="#4a4450" font-weight="400">没有完整缓存时，等待第一批卡片。</text>
+<text x="48" y="206" font-size="11" fill="#4a4450" font-weight="400">背后：检查列表版本；需要时获取新快照。</text>
+<rect x="392" y="120" width="336" height="146" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="408" y="145" font-size="12.5" fill="#316247" font-weight="700">第一批到达</text>
+<text x="408" y="168" font-size="11" fill="#316247" font-weight="400">用户看到：先出现最多 18 张卡片。</text>
+<text x="408" y="187" font-size="11" fill="#316247" font-weight="400">分类数量来自完整列表，不按已到条数算。</text>
+<text x="408" y="206" font-size="11" fill="#316247" font-weight="400">背后：服务器分批发送，中转层不攒整包。</text>
+<rect x="752" y="120" width="336" height="146" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="768" y="145" font-size="12.5" fill="#316247" font-weight="700">继续接收与展示</text>
+<text x="768" y="168" font-size="11" fill="#316247" font-weight="400">用户看到：其余条目继续到达，往下翻能看更多。</text>
+<text x="768" y="187" font-size="11" fill="#316247" font-weight="400">「正在加载其余追番（18/240）」是夹具示例。</text>
+<text x="768" y="206" font-size="11" fill="#316247" font-weight="400">背后：收到全部条目后才保存为完整缓存。</text>
+<text x="375" y="194" font-size="18" fill="#4a4450" font-weight="400">→</text>
+<text x="735" y="194" font-size="18" fill="#4a4450" font-weight="400">→</text>
+<rect x="32" y="284" width="1056" height="94" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="48" y="309" font-size="12.5" fill="#7a6234" font-weight="700">为什么不能把第一批直接当成完整列表？</text>
+<text x="48" y="332" font-size="11" fill="#7a6234" font-weight="400">否则下一次打开会把剩余追番当成不存在。隔离验证把余下内容延迟 45 秒：首批 18 张先显示，分类总数仍为 240；收齐后能找到第 240 条。</text>
+<text x="48" y="351" font-size="11" fill="#7a6234" font-weight="400">这些数字来自受控夹具，不是线上用户的固定列表长度，也不是每次加载都需要等待 45 秒。</text>
+<text x="32" y="415" font-size="14" fill="#282529" font-weight="700">二、搜索加番：选好中文再查，完整结果按原规则排序</text>
+<rect x="32" y="434" width="336" height="127" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="48" y="459" font-size="12.5" fill="#36566d" font-weight="700">输入与选字</text>
+<text x="48" y="482" font-size="11" fill="#36566d" font-weight="400">用户看到：输入框保留当前文字。</text>
+<text x="48" y="501" font-size="11" fill="#36566d" font-weight="400">拼音还在选字时，不发起关键词搜索。</text>
+<text x="48" y="520" font-size="11" fill="#36566d" font-weight="400">选定文字并停手后，才查服务器离线目录。</text>
+<rect x="392" y="434" width="336" height="127" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="408" y="459" font-size="12.5" fill="#316247" font-weight="700">等待并显示结果</text>
+<text x="408" y="482" font-size="11" fill="#316247" font-weight="400">用户看到：「纱雾正在翻目录……」→ 候选列表。</text>
+<text x="408" y="501" font-size="11" fill="#316247" font-weight="400">背后：默认只查离线索引及补充库。</text>
+<text x="408" y="520" font-size="11" fill="#316247" font-weight="400">候选仍整批返回，按原有年份规则一次显示。</text>
+<rect x="752" y="434" width="336" height="127" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="768" y="459" font-size="12.5" fill="#36566d" font-weight="700">改词、清空或关闭</text>
+<text x="768" y="482" font-size="11" fill="#36566d" font-weight="400">用户看到：不会突然跳回旧关键词结果。</text>
+<text x="768" y="501" font-size="11" fill="#36566d" font-weight="400">背后：中止旧请求，晚到结果也不能回写。</text>
+<text x="768" y="520" font-size="11" fill="#36566d" font-weight="400">只有点击「在线搜 Bangumi」才访问在线搜索。</text>
+<text x="375" y="501" font-size="18" fill="#4a4450" font-weight="400">→</text>
+<text x="735" y="501" font-size="18" fill="#4a4450" font-weight="400">→</text>
+<text x="32" y="603" font-size="14" fill="#282529" font-weight="700">三、异常与容易改错的边界</text>
+<rect x="32" y="622" width="516" height="122" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="48" y="647" font-size="12.5" fill="#96434f" font-weight="700">列表还没收齐就失败或被修改</text>
+<text x="48" y="670" font-size="11" fill="#96434f" font-weight="400">中途断流：已显示的卡片保留，提示尚未完整，可手动继续加载。</text>
+<text x="48" y="689" font-size="11" fill="#96434f" font-weight="400">中途修改：终止旧传输，再获取服务器确认的新列表。</text>
+<text x="48" y="708" font-size="11" fill="#96434f" font-weight="400">完整列表没到齐，不能误报「没有匹配的追番」。</text>
+<rect x="572" y="622" width="516" height="122" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="588" y="647" font-size="12.5" fill="#96434f" font-weight="700">搜索失败不等于没有结果</text>
+<text x="588" y="670" font-size="11" fill="#96434f" font-weight="400">保留断网、超时和服务端返回的具体原因，让用户手动重搜。</text>
+<text x="588" y="689" font-size="11" fill="#96434f" font-weight="400">限流或服务器报错不自动重试；超时保护只负责结束等待。</text>
+<text x="588" y="708" font-size="11" fill="#96434f" font-weight="400">登录状态暂时读取失败，不直接当成用户已经退出。</text>
+<rect x="32" y="764" width="1056" height="87" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="48" y="789" font-size="12.5" fill="#4a4450" font-weight="700">同批修复：少等不必要的前置请求，避免保留损坏封面</text>
+<text x="48" y="812" font-size="11" fill="#4a4450" font-weight="400">稀饭未绑定或重新绑定时直接搜索；已有片源绑定直接打开，不先等周表。封面仍经本站代理，图片收全后才允许成功缓存。</text>
+<text x="48" y="831" font-size="11" fill="#4a4450" font-weight="400">通常路径：打开追番先看到可用内容；搜索完成后一次显示整批候选。不会把追番的分批策略套到小体积搜索上。</text>
+<text x="32" y="881" font-size="11" fill="#756f73" font-weight="400">阅读顺序：用户看到什么 → 背后如何处理 → 失败时还能做什么。搜索实测与文案边界见另一张图。</text>
+</svg>

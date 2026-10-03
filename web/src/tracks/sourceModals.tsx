@@ -133,7 +133,7 @@ export function SourceSearchModal({
   const [mime, setMime] = useState('image/png')
   const [captchaInput, setCaptchaInput] = useState('')
   const [message, setMessage] = useState('')
-  const started = useRef(false)
+  const searchRequest = useRef<AbortController | null>(null)
   // 代次守卫 —— 慢到的验证码 / 校验响应不能覆盖新一轮的状态（稀饭跨标签作废会 bump 代次）。
   const captchaGeneration = useRef(0)
   const captchaActive = useRef(false)
@@ -192,12 +192,18 @@ export function SourceSearchModal({
   const runSearch = async (rawKeyword: string): Promise<void> => {
     const q = rawKeyword.trim()
     if (!q) return
+    captchaGeneration.current++
+    captchaActive.current = false
+    searchRequest.current?.abort()
+    const controller = new AbortController()
+    searchRequest.current = controller
     setKeyword(q)
     setResults([])
     setMessage('')
     setStatus('searching')
     try {
-      const result = await source.search(q)
+      const result = await source.search(q, controller.signal)
+      if (controller.signal.aborted) return
       if (result.needsCaptcha) {
         await refreshCaptcha()
       } else {
@@ -205,16 +211,20 @@ export function SourceSearchModal({
         setStatus('results')
       }
     } catch (e) {
+      if (controller.signal.aborted) return
       setStatus('error')
       setMessage(e instanceof Error ? e.message : `${source.label}搜索失败`)
     }
   }
 
   useEffect(() => {
-    if (started.current) return
-    started.current = true
-    void runSearch(initialKeyword)
-  }, [])
+    const timer = window.setTimeout(() => void runSearch(initialKeyword), 0)
+    return () => {
+      window.clearTimeout(timer)
+      searchRequest.current?.abort()
+      captchaGeneration.current++
+    }
+  }, [source.id, initialKeyword])
 
   const verify = async (): Promise<void> => {
     const code = captchaInput.trim()

@@ -1,6 +1,7 @@
 // 前端账号层 —— 调后端 /api/auth/*（见 server/auth.ts）。会话是 httpOnly cookie，前端拿不到也
 // 不需要拿；登录态靠 /me 探。极简 store：单个 user 值 + 订阅，够登录入口和后续追番用。
 import { useEffect, useState } from 'react'
+import { fetchApi } from './request'
 
 const INVITE_STORAGE_KEY = 'mapletools-pending-invite'
 
@@ -65,15 +66,19 @@ export interface SecurityQuestion {
 }
 
 // 后端出错时统一抛出带中文原因的 Error（{ error } 来自 server/auth.ts）。
+class AuthRequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message) }
+}
+
 async function request<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api/auth${path}`, {
+  const res = await (path === '/me' ? fetchApi : fetch)(`/api/auth${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: 'same-origin',
   })
   const data = (await res.json().catch(() => ({}))) as { error?: string }
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  if (!res.ok) throw new AuthRequestError(data.error || `HTTP ${res.status}`, res.status)
   return data as T
 }
 
@@ -96,10 +101,12 @@ let authReadVersion = 0
 let identityChannel: BroadcastChannel | null = null
 let currentUser: AuthUser | null = null
 let ready = false // 首次 /me 是否已回来（避免登录态未知时闪一下登录按钮）
+let readError: string | null = null
 let dailyRewardEvent = { seq: 0, points: 0 }
 const listeners = new Set<() => void>()
 
 function setUser(u: AuthUser | null, dailyReward = 0, announce = true): void {
+  readError = null
   const previousId = currentUser?.id ?? null
   currentUser = u
   window.__mapleMonitoring?.setUser(u ? { id: u.id, username: u.username } : null)
@@ -147,8 +154,15 @@ export const auth = {
         tracksPublic: me.tracksPublic === true,
         aiConfig: normalizeAiConfig(me.aiConfig),
       }, me.dailyReward, announce)
-    } catch {
-      if (version === authReadVersion) setUser(null, 0, announce)
+    } catch (error) {
+      if (version !== authReadVersion) return
+      if (error instanceof AuthRequestError && error.status === 401) setUser(null, 0, announce)
+      else {
+        // 网络失败不等于退出登录，不能向其它标签广播账号已退出。
+        readError = error instanceof Error ? error.message : '登录状态读取失败'
+        ready = true
+        listeners.forEach((fn) => fn())
+      }
     }
   },
   async refresh(): Promise<void> {
@@ -324,9 +338,10 @@ if (typeof window !== 'undefined') {
 export function useAuth(): {
   user: AuthUser | null
   ready: boolean
+  error: string | null
   dailyReward: { seq: number; points: number }
 } {
   const [, force] = useState(0)
   useEffect(() => auth.subscribe(() => force((n) => n + 1)), [])
-  return { user: currentUser, ready, dailyReward: dailyRewardEvent }
+  return { user: currentUser, ready, error: readError, dailyReward: dailyRewardEvent }
 }
