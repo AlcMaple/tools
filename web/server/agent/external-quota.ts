@@ -6,7 +6,7 @@ import { estimateCost, type PriceCard } from './policy'
 import { logAgentIssue } from './diagnostics'
 
 export interface ExternalLimits {
-  globalDailyCost:number; userDailyCost:number; guestDailyCost:number; turnCost:number; guestTurnCost:number
+  globalDailyCost:number; guestPoolDailyCost:number; guestConcurrency:number; userDailyCost:number; guestDailyCost:number; turnCost:number; guestTurnCost:number
   warningCost:number; userTurns:number; guestTurns:number; concurrency:number; dailyTokens:number; turnTokens:number
 }
 // 按 DeepSeek 峰时价（in $0.44/M、out $1.32/M）与修正后的 token 估算实测标定，USD：
@@ -17,13 +17,13 @@ export interface ExternalLimits {
 // 上限必须装得下设计上合法的最长回合，否则额度表和工具轮数自相矛盾——旧值 turnCost=$0.03
 // 连 13 次调用的一半都装不下，userDailyCost=$0.1 也装不下自己允许的 30 轮，正常用就会 COST_LIMIT。
 // 每项都留约 1.5 倍余量给更长的上下文与工具结果；需要更严可用 AGENT_LIMITS_JSON 覆盖。
-export const CONSERVATIVE_LIMITS:ExternalLimits={globalDailyCost:5,userDailyCost:0.5,guestDailyCost:0.15,turnCost:0.08,guestTurnCost:0.04,
+export const CONSERVATIVE_LIMITS:ExternalLimits={globalDailyCost:5,guestPoolDailyCost:1,guestConcurrency:1,userDailyCost:0.5,guestDailyCost:0.15,turnCost:0.08,guestTurnCost:0.04,
   warningCost:0.02,userTurns:30,guestTurns:10,concurrency:2,dailyTokens:3_000_000,turnTokens:400_000}
 interface Scope {id:string;owner:string;guest:boolean;project:boolean;day:string;lease:string}
 export class ExternalQuota {
   private readonly scope=new AsyncLocalStorage<Scope>()
   constructor(private readonly db:Database.Database,readonly limits:ExternalLimits,private readonly now=Date.now){
-    if(Object.keys(limits).some(k=>!Object.hasOwn(CONSERVATIVE_LIMITS,k))||Object.values(limits).some(n=>!Number.isFinite(n)||n<=0)||['userTurns','guestTurns','concurrency','dailyTokens','turnTokens'].some(k=>!Number.isSafeInteger(limits[k as keyof ExternalLimits]))||limits.warningCost>limits.turnCost||limits.warningCost>limits.guestTurnCost)throw new Error('INVALID_QUOTA')
+    if(Object.keys(limits).some(k=>!Object.hasOwn(CONSERVATIVE_LIMITS,k))||Object.values(limits).some(n=>!Number.isFinite(n)||n<=0)||['userTurns','guestTurns','concurrency','guestConcurrency','dailyTokens','turnTokens'].some(k=>!Number.isSafeInteger(limits[k as keyof ExternalLimits]))||limits.warningCost>limits.turnCost||limits.warningCost>limits.guestTurnCost)throw new Error('INVALID_QUOTA')
     db.exec(`CREATE TABLE IF NOT EXISTS agent_ai_budget (day TEXT NOT NULL,owner TEXT NOT NULL,tokens INTEGER NOT NULL DEFAULT 0,cost REAL NOT NULL DEFAULT 0,turns INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(day,owner));
       CREATE TABLE IF NOT EXISTS agent_ai_leases (id TEXT PRIMARY KEY,owner TEXT NOT NULL UNIQUE,expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS agent_ai_turn_budget (id TEXT PRIMARY KEY,day TEXT NOT NULL,tokens INTEGER NOT NULL DEFAULT 0,cost REAL NOT NULL DEFAULT 0);
@@ -41,6 +41,8 @@ export class ExternalQuota {
       this.db.prepare('DELETE FROM agent_ai_usage WHERE day<?').run(day)
       if(this.db.prepare('SELECT 1 FROM agent_ai_leases WHERE owner=?').get(owner))throw new AgentRunError('RUN_BUSY')
       if((this.db.prepare('SELECT count(*) n FROM agent_ai_leases').get() as {n:number}).n>=this.limits.concurrency)throw new AgentRunError('GLOBAL_BUSY',429)
+      // 游客共享一个小池子：换 IP 刷出来的游客也只能烧这一份，登录用户不会被挤掉。
+      if(guest&&(this.db.prepare("SELECT count(*) n FROM agent_ai_leases WHERE owner LIKE 'guest:%'").get() as {n:number}).n>=this.limits.guestConcurrency)throw new AgentRunError('GUEST_BUSY',429)
       const row=this.read(day,owner)
       if(counted&&row.turns>=(guest?this.limits.guestTurns:this.limits.userTurns))throw new AgentRunError('DAILY_QUOTA',429)
       this.db.prepare('INSERT INTO agent_ai_leases VALUES(?,?,?)').run(lease,owner,this.now()+660_000)
@@ -61,10 +63,11 @@ export class ExternalQuota {
     const tokens=input+output,cost=estimateCost(input,0,output,price)!
     this.db.transaction(()=>{
       if(!(this.db.prepare('SELECT 1 FROM agent_ai_leases WHERE id=? AND expires>?').get(s.lease,this.now())))throw new AgentRunError('ACTIVE_LIMIT')
-      const day=this.read(s.day,s.owner),global=this.read(s.day,'project'),turn=this.db.prepare('SELECT tokens,cost FROM agent_ai_turn_budget WHERE id=?').get(s.id) as {tokens:number;cost:number}
+      const day=this.read(s.day,s.owner),global=this.read(s.day,'project'),pool=this.read(s.day,'guest-pool'),turn=this.db.prepare('SELECT tokens,cost FROM agent_ai_turn_budget WHERE id=?').get(s.id) as {tokens:number;cost:number}
       if(turn.tokens+tokens>this.limits.turnTokens||day.tokens+tokens>this.limits.dailyTokens||turn.cost+cost>(s.guest?this.limits.guestTurnCost:this.limits.turnCost)
         ||day.cost+cost>(s.guest?this.limits.guestDailyCost:this.limits.userDailyCost)||s.project&&global.cost+cost>this.limits.globalDailyCost)throw new AgentRunError('COST_LIMIT',429)
-      this.add(s.day,s.owner,tokens,cost);if(s.project)this.add(s.day,'project',tokens,cost)
+      if(s.guest&&pool.cost+cost>this.limits.guestPoolDailyCost)throw new AgentRunError('GUEST_POOL_LIMIT',429)
+      this.add(s.day,s.owner,tokens,cost);if(s.project)this.add(s.day,'project',tokens,cost);if(s.guest)this.add(s.day,'guest-pool',tokens,cost)
       this.db.prepare('UPDATE agent_ai_turn_budget SET tokens=tokens+?,cost=cost+? WHERE id=?').run(tokens,cost,s.id)
       this.db.prepare('INSERT INTO agent_ai_usage(id,turn_id,day,operation,model,cost,price_version,state) VALUES(?,?,?,?,?,?,?,?)').run(recordId,s.id,s.day,meta.operation,meta.model,cost,price.version,'reserved')
     })()
@@ -74,7 +77,7 @@ export class ExternalQuota {
       // 取消、网络中断或供应商未报 usage 保留整笔预留，避免未知费用被当成免费。
       if(!actual){this.db.prepare("UPDATE agent_ai_usage SET duration_ms=?,state='unknown' WHERE id=?").run(this.now()-started,recordId);return}
       const actualCost=estimateCost(actual.input,actual.cached,actual.output,price)!,deltaTokens=actual.input+actual.output-tokens,deltaCost=actualCost-cost
-      this.db.transaction(()=>{this.add(s.day,s.owner,deltaTokens,deltaCost);if(s.project)this.add(s.day,'project',deltaTokens,deltaCost)
+      this.db.transaction(()=>{this.add(s.day,s.owner,deltaTokens,deltaCost);if(s.project)this.add(s.day,'project',deltaTokens,deltaCost);if(s.guest)this.add(s.day,'guest-pool',deltaTokens,deltaCost)
         this.db.prepare('UPDATE agent_ai_turn_budget SET tokens=tokens+?,cost=cost+? WHERE id=?').run(deltaTokens,deltaCost,s.id)
         this.db.prepare("UPDATE agent_ai_usage SET input_tokens=?,output_tokens=?,cached_tokens=?,duration_ms=?,cost=?,state='reported' WHERE id=?").run(actual.input,actual.output,actual.cached,this.now()-started,actualCost,recordId)})()
     }

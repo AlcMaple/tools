@@ -12,6 +12,14 @@ import { currentGuestKnowledge,guestDataTools } from './run-runtime'
 import { waitBounded } from './run-service'
 import { GUEST_LIMITS,guestTurn,parseGuestInput } from './guest-service'
 
+// IPv6 用户通常拿到整段 /64，逐地址计数等于无限个身份；折叠到 /64 前缀。
+export function ipBucket(ip:string):string{
+  if(isIP(ip)!==6)return ip
+  const mapped=/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);if(mapped)return mapped[1]
+  const [head,tail=''] =ip.split('::'),h=head?head.split(':'):[],t=tail?tail.split(':'):[]
+  const groups=[...h,...Array(Math.max(0,8-h.length-t.length)).fill('0'),...t]
+  return groups.slice(0,4).map(g=>g.toLowerCase().padStart(4,'0')).join(':')+'::/64'
+}
 export function guestIp(c:Context):string{
   let remote='local';try{remote=getConnInfo(c).remote.address??'local'}catch{}
   // 只有显式启用且 socket 对端为回环反代时信任 nginx 覆写的单一头；开发直连忽略全部转发头。
@@ -27,7 +35,7 @@ db.exec('CREATE TABLE IF NOT EXISTS agent_guest_requests(owner TEXT NOT NULL,id 
 guest.use('/guest/*',async(c,next)=>{
   c.header('Cache-Control','no-store');c.header('X-Agent-Owner','guest')
   if(await getSession(c))throw new AgentRunError('AUTH_CHANGED',409)
-  const owner=guestOwner(guestIp(c));c.set('owner',owner)
+  const owner=guestOwner(ipBucket(guestIp(c)));c.set('owner',owner)
   if(rateLimited(`agent-guest:${owner}`,30,60000))throw new AgentRunError('RATE_LIMITED',429)
   await next();c.header('Cache-Control','no-store')
 })
