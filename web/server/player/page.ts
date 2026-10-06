@@ -162,7 +162,39 @@ ${PLAYBACK_BEACON}
   function clearFail(){ $('err').classList.remove('show'); $('err-retry').onclick = null }
 
   // ——— 播放器 ———
+  // ——— 卡顿汇总上报：每台播放器一条，PC 上几秒的短卡也进 Sentry ———
+  // 「stall 20s」只在卡满 20 秒才报，PC 上反复「播 1~2 秒卡几秒」一条都不会进 Sentry（2026-10-06）。
+  // 这里按次累计：跳进度后的等待单独算（那是在等源站下到新位置），其余的卡顿才是「不该卡」。
+  // 消息固定成一句，Sentry 里聚成一个 Issue，数字放 extra。
+  var qos = null
+  function qosStart(line){
+    qos = { line: line, mountAt: performance.now(), readyMs: -1, playAt: 0, startupMs: -1, stalls: 0, stallMs: 0, longest: 0,
+      seeks: 0, seekMs: 0, seekLongest: 0, lastSeekAt: -1e9, sent: false }
+  }
+  function qosStall(ms, since){
+    if (!qos) return
+    if (since - qos.lastSeekAt < 1500){ qos.seeks++; qos.seekMs += ms; qos.seekLongest = Math.max(qos.seekLongest, ms) }
+    else { qos.stalls++; qos.stallMs += ms; qos.longest = Math.max(qos.longest, ms) }
+  }
+  function qosFlush(why){
+    if (!qos || qos.sent) return
+    if (stallSince) qosStall(performance.now() - stallSince, stallSince)
+    var q = qos
+    q.sent = true
+    var bad = q.stalls > 0 || q.readyMs > 15000 || q.startupMs > 10000 || q.seekLongest > 10000
+    var s1 = function(ms){ return (ms / 1000).toFixed(1) + 's' }
+    var summary = 'stalls=' + q.stalls + ' stallTotal=' + s1(q.stallMs) + ' longest=' + s1(q.longest)
+      + ' ready=' + (q.readyMs < 0 ? '-' : s1(q.readyMs)) + ' startup=' + (q.startupMs < 0 ? '-' : s1(q.startupMs)) + ' seekWaits=' + q.seeks + ' seekLongest=' + s1(q.seekLongest)
+      + ' line=' + q.line + ' ep=' + ep + ' watched=' + s1(performance.now() - q.mountAt) + ' end=' + why
+    slog('qos ' + summary)
+    if (bad && window.playerMonitor){
+      try { window.playerMonitor.report('playback qos', { summary: summary, stalls: q.stalls, stallTotalMs: Math.round(q.stallMs),
+        longestMs: Math.round(q.longest), readyMs: Math.round(q.readyMs), startupMs: Math.round(q.startupMs), seekLongestMs: Math.round(q.seekLongest), line: q.line, ep: ep }) } catch (e) {}
+    }
+  }
+
   function destroyPlayer(){
+    qosFlush('switch')
     generation++
     if (tapeTimer !== null){ clearInterval(tapeTimer); tapeTimer = null }
     if (stallTimer !== null){ clearInterval(stallTimer); stallTimer = null }
@@ -202,6 +234,7 @@ ${PLAYBACK_BEACON}
       if (v.paused || v.ended){ if (!v.seeking) setBuffering(v, false); lastT = t; lastTAt = now; return }
       if (t !== lastT){
         if (stallSince && !stallReported && now - stallSince > 1500) slog('stall recovered after ' + Math.round(now - stallSince) + 'ms ' + snapshot(v))
+        if (stallSince && now - stallSince > 1500) qosStall(now - stallSince, stallSince)
         lastT = t; lastTAt = now; stallSince = 0; stallReported = false
         setBuffering(v, false)
         return
@@ -259,6 +292,12 @@ ${PLAYBACK_BEACON}
       }
     })
     var v = art.video
+    qosStart(pl.source)
+    // ready = 打开到播放按钮可点（拿到时长）；startup = 点播放到画面开始走
+    v.addEventListener('loadedmetadata', function(){ if (qos && qos.readyMs < 0) qos.readyMs = performance.now() - qos.mountAt })
+    v.addEventListener('play', function(){ if (qos && !qos.playAt) qos.playAt = performance.now() })
+    v.addEventListener('playing', function(){ if (qos && qos.playAt && qos.startupMs < 0) qos.startupMs = performance.now() - qos.playAt })
+    v.addEventListener('seeking', function(){ if (qos) qos.lastSeekAt = performance.now() })
     startTape(v)
     startStallWatch(v)
     agentWatch(v)
@@ -305,6 +344,7 @@ ${PLAYBACK_BEACON}
     if (!art || offlineAt !== null) return
     var v = art.video
     offlineAt = performance.now(); offlineTime = v.currentTime || 0; offlineWasPlaying = !v.paused
+    slog('offline t=' + offlineTime.toFixed(1))
     try { v.pause() } catch (e) {}
     fail('网络已断开 · 恢复后接着播', 'OFFLINE', function(){ recover() })
   }
@@ -319,11 +359,11 @@ ${PLAYBACK_BEACON}
   }
   window.addEventListener('offline', holdForNetwork)
   window.addEventListener('online', function(){ setTimeout(recover, 600) })
-  window.addEventListener('pagehide', function(){ if (art){ try { art.video.pause() } catch (e) {} } stashResume() })
+  window.addEventListener('pagehide', function(){ qosFlush('leave'); if (art){ try { art.video.pause() } catch (e) {} } stashResume() })
   // 历史：09-21 曾「离开 3 分钟整页刷新」、之后又试过「回前台查登录」，都撤掉了——没坏也刷新要重新缓冲；
   // 刷新后看到一行 JSON 的真因（换源拼错地址、/page 未登录回 JSON）已在服务端修掉。
   // 这里只在藏到后台时记一下进度：iOS 回收整个标签页后浏览器自己重载，boot() 取回接着播。
-  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') stashResume() })
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden'){ stashResume(); qosFlush('hidden'); if (art && cur) qosStart(cur.source) } })
 
   // ——— 线路 / 选集 / 源 ———
   var lineRequest = 0
