@@ -12,7 +12,7 @@
 - **接一个新项目 / 新服务器** —— 「§1 照抄」整段搬过去，「§2 每实例单独生成」逐项走一遍生成流程，
   再按「§5 换个项目 / 服务器」的顺序拼起来。
 - **项目里有 SPA 之外的页面**（服务端渲染的裸 HTML、独立入口）—— 上面那套**覆盖不到它**，
-  补 §7；页面里自己打的日志怎么进 Sentry 见 §8；Sentry 天生看不到、必须自己造遥测的那类问题见 §9。
+  补 §7；页面里自己打的日志怎么进 Sentry 见 §8；Sentry 天生看不到、必须自己造遥测的那类问题（含「每次都不严重」的短卡顿汇总）见 §9。
 
 > **重要更正（2026-08-30）**：早期版本把“用户身份全去掉”写成了默认规则，导致按旧文档接入的项目在 Sentry 的“用户”列长期显示 0。`sendDefaultPii:false` 只表示关闭 SDK 自动采集 PII，**不等于不能主动设置已验证的用户上下文**。本指南现在要求：登录用户主动关联稳定账号 ID，匿名事件继续没有用户。
 
@@ -493,7 +493,7 @@ Sentry 看到的会是 Node / Ubuntu 上下文，即使请求里带了 User-Agen
 **Session Replay 录下来也只是「一个几乎不动的页面」**。同类还有：canvas、WebGL、音视频、
 IndexedDB 状态、Worker 内部进度。
 
-### 三个补位手段（都跟 Sentry 无关，是你自己写的几十行）
+### 四个补位手段（都跟 Sentry 无关，是你自己写的几十行）
 
 | 手段 | 做什么 | 解决什么 |
 |---|---|---|
@@ -520,6 +520,39 @@ IndexedDB 状态、Worker 内部进度。
 - **消息固定成一句**（`playback qos`），数字全放 `extra`：Sentry 按消息聚 issue，消息里带数字就会每条开一个新 issue。
 - 由**页面 SDK** 上报（要浏览器 / 设备上下文，见 §8），服务端 stdout 那一行不再转发。
 
+最小形态（无框架、可直接搬进任何带 `<video>` 的页面；`report` 是 §7 暴露的页面 SDK 上报方法，`log` 是 §8 的 stdout 通路）：
+
+```js
+var qos = null
+function qosStart(){ qos = { mountAt: performance.now(), readyMs: -1, playAt: 0, startupMs: -1,
+  stalls: 0, stallMs: 0, longest: 0, seeks: 0, seekLongest: 0, lastSeekAt: -1e9, sent: false } }
+// 由「播放中、currentTime 超过 ~1.2 秒没动」的看门狗在恢复时调用；since = 开始卡的时刻
+function qosStall(ms, since){
+  if (since - qos.lastSeekAt < 1500){ qos.seeks++; qos.seekLongest = Math.max(qos.seekLongest, ms) }
+  else { qos.stalls++; qos.stallMs += ms; qos.longest = Math.max(qos.longest, ms) }
+}
+function qosFlush(why){
+  if (!qos || qos.sent) return
+  qos.sent = true
+  var q = qos, data = { stalls: q.stalls, stallTotalMs: Math.round(q.stallMs), longestMs: Math.round(q.longest),
+    readyMs: Math.round(q.readyMs), startupMs: Math.round(q.startupMs), seekLongestMs: Math.round(q.seekLongest), end: why }
+  log('qos ' + JSON.stringify(data))                                   // 每次都进 stdout
+  if (q.stalls > 0 || q.readyMs > 15000 || q.startupMs > 10000 || q.seekLongest > 10000)
+    report('playback qos', data)                                       // 消息固定，数字进 extra
+}
+// 挂到每个新 <video> 上（换集 / 换线前先 qosFlush('switch') 再 qosStart()）
+video.addEventListener('loadedmetadata', function(){ if (qos.readyMs < 0) qos.readyMs = performance.now() - qos.mountAt })
+video.addEventListener('play', function(){ if (!qos.playAt) qos.playAt = performance.now() })
+video.addEventListener('playing', function(){ if (qos.playAt && qos.startupMs < 0) qos.startupMs = performance.now() - qos.playAt })
+video.addEventListener('seeking', function(){ qos.lastSeekAt = performance.now() })
+addEventListener('pagehide', function(){ qosFlush('leave') })
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'hidden'){ qosFlush('hidden'); qosStart() }   // 回来后另开一个窗口
+})
+```
+
+阈值是本项目的取值（单人追番、约 24 分钟一集），换项目按自己能容忍的等待改，原理不变：**正常会话只留日志，超线才占 Sentry 配额**。
+
 落地位置：`web/server/player/page.ts` 的 `qosStart` / `qosStall` / `qosFlush`；终端里 `grep "player:client] qos"`，
 Sentry 里搜 `playback qos`，按 `extra.stalls` / `extra.stallTotalMs` 看严重程度，按 browser / os 看是不是只有某一端。
 
@@ -531,7 +564,7 @@ Sentry 里搜 `playback qos`，按 `extra.stalls` / `extra.stallTotalMs` 看严�
 - 主要用户在**移动端**吗？Replay 的持续上报对流量和电量都不便宜。
 - 配额扛得住吗？Replay 是按会话计费的大头。
 
-三条里中两条就别装 —— 把同样的精力放到上面那三个手段上，回报高得多。
+三条里中两条就别装 —— 把同样的精力放到上面那四个手段上，回报高得多。
 
 ---
 
