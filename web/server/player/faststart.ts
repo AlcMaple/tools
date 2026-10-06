@@ -5,13 +5,16 @@
 // 而这条尾部请求跟已经跑起来的 12 路会话抢同一个 ~5Mbps 入口，真机胶片前 38 秒 rs=0、一个字节都没解出来；
 // 拿到 moov 后又要回头从 mdat 开头重新拉，起播前就浪费了一轮。
 //
-// 做法：服务器先把尾块拉一次（只拉一次、按 URL 缓存），把 stco/co64 里每个块偏移加上尾块长度，
-// 放到 mdat 前面从内存答；其余区间一一映射回原文件（偏移 -尾块长度），底下照旧走预取盘 / 12 路会话。
+// 做法：服务器先把尾块拉一次（只拉一次、按媒体身份缓存，签名换了不重拉），把 stco/co64 里每个块偏移加上尾块长度，
+// 放到 mdat 前面从内存答；其余区间一一映射回原文件（偏移 -尾块长度），底下走边下边播的盘上缓存（disk.ts），太大的文件才回到 12 路内存会话。
+// 整集已在盘上时，头尾也直接从盘上读（fetchRange），不再为目录去源站排队。
 // 文件总长不变，所以拖进度条的 Range 计算和原文件完全一致。
 
 import { Readable } from 'node:stream'
 import { Agent, request } from 'undici'
+import { open } from 'node:fs/promises'
 import { UPSTREAM_HEADERS, type StreamResult } from '../xifan/stream'
+import { diskFile, mediaKey } from '../xifan/disk'
 
 const HEAD_BYTES = 64 * 1024
 const MAX_TAIL_BYTES = 32 * 1024 * 1024
@@ -28,7 +31,7 @@ export interface Layout {
   tail: Buffer
 }
 
-const agent = new Agent({ connections: 4, connectTimeout: 20_000, headersTimeout: 30_000, bodyTimeout: 60_000 })
+const agent = new Agent({ connections: 6, connectTimeout: 20_000, headersTimeout: 30_000, bodyTimeout: 60_000 })
 const layouts = new Map<string, Layout | null>()
 const failedAt = new Map<string, number>()
 const inflight = new Map<string, Promise<Layout | null>>()
@@ -38,6 +41,18 @@ function log(msg: string): void {
 }
 
 async function fetchRange(url: string, start: number, end: number): Promise<{ buf: Buffer; total: number }> {
+  // 整集已在盘上：头尾直接读盘，不再为了 0.9MB 目录去源站排十几秒
+  const file = diskFile(url)
+  if (file) {
+    const fh = await open(file, 'r')
+    try {
+      const total = (await fh.stat()).size
+      const buf = Buffer.alloc(end - start + 1)
+      const { bytesRead } = await fh.read(buf, 0, buf.length, start)
+      if (bytesRead !== buf.length) throw new Error(`盘上区间截断 ${bytesRead}/${buf.length}`)
+      return { buf, total }
+    } finally { await fh.close() }
+  }
   const res = await request(url, { dispatcher: agent, method: 'GET', maxRedirections: 5, headers: { ...UPSTREAM_HEADERS, Range: `bytes=${start}-${end}` } })
   if (res.statusCode !== 206) {
     await res.body.dump()
@@ -121,7 +136,13 @@ async function buildLayout(url: string): Promise<Layout | null> {
   if (mdat.end >= total) return null
   const tailLen = total - mdat.end
   if (tailLen > MAX_TAIL_BYTES) throw new Error(`尾块 ${tailLen}B 超过上限`)
-  const { buf: tail } = await fetchRange(url, mdat.end, total - 1)
+  // 尾块分几段并发拉：源站单连接只有几十 KB/s（2026-10-06 实测约 57KB/s），0.9MB 单连接要十几秒，
+  // 这段时间 /stream 一个字节都答不出，播放按钮迟迟不出现。
+  const TAIL_PARTS = 6
+  const step = Math.ceil(tailLen / TAIL_PARTS)
+  const parts = await Promise.all(Array.from({ length: Math.ceil(tailLen / step) }, (_, i) =>
+    fetchRange(url, mdat.end + i * step, Math.min(total - 1, mdat.end + (i + 1) * step - 1))))
+  const tail = Buffer.concat(parts.map((p) => p.buf))
   const moov = childBoxes(tail, 0, tail.length).find((b) => b.type === 'moov')
   if (!moov) return null
   const patched = shiftChunkOffsets(tail, moov.body, moov.end, tailLen)
@@ -131,21 +152,23 @@ async function buildLayout(url: string): Promise<Layout | null> {
 
 // null = 不需要改（已是 faststart / 不是能识别的 mp4）或刚失败过（60 秒内不再打上游，直接按原文件透传）。
 export function layoutOf(url: string): Promise<Layout | null> {
-  if (layouts.has(url)) return Promise.resolve(layouts.get(url)!)
-  const failed = failedAt.get(url)
+  // 按媒体身份缓存：签名换了还是同一个文件，不重新拉尾块
+  const key = mediaKey(url)
+  if (layouts.has(key)) return Promise.resolve(layouts.get(key)!)
+  const failed = failedAt.get(key)
   if (failed && Date.now() - failed < FAILURE_TTL_MS) return Promise.resolve(null)
-  const running = inflight.get(url)
+  const running = inflight.get(key)
   if (running) return running
   const job = buildLayout(url).then((layout) => {
     if (layouts.size >= LAYOUT_CACHE_MAX) layouts.delete(layouts.keys().next().value as string)
-    layouts.set(url, layout)
+    layouts.set(key, layout)
     return layout
   }, (error: unknown) => {
     console.error('[player:faststart] 解析 mp4 结构失败，按原文件透传：', error)
-    failedAt.set(url, Date.now())
+    failedAt.set(key, Date.now())
     return null
-  }).finally(() => { inflight.delete(url) })
-  inflight.set(url, job)
+  }).finally(() => { inflight.delete(key) })
+  inflight.set(key, job)
   return job
 }
 
@@ -164,7 +187,7 @@ function bytesStream(buf: Buffer): ReadableStream<Uint8Array> {
 }
 
 // 虚拟文件：[0,P) 原头部 · [P,P+T) 尾块 · [P+T,total) = 原文件 [P, mdatEnd)。
-// origin(range) 是底层取原文件区间的方式（预取盘或会话），这里只做偏移换算和拼接。
+// origin(range) 是底层取原文件区间的方式（盘上缓存或会话），这里只做偏移换算和拼接。
 export async function serveFaststart(
   layout: Layout,
   rangeHeader: string | undefined,

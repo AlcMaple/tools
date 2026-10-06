@@ -7,7 +7,7 @@
 //   GET  /api/player/playlist?src&id&ep                          → 统一结构：{ title, lines, first, eps }
 //   GET  /api/player/resolve?src&id&ep&source                    → 用户手动点线路时解析那一条
 //   GET  /api/player/stream?u&s[&range]                          → mp4：moov 在尾部的先改成虚拟 faststart（faststart.ts）；
-//                                                                 底下盘上有预取好的整集先从盘答（prefetch.ts），否则 stream.ts
+//                                                                 底下源站 mp4 边下边播落盘（disk.ts），太大的才走 stream.ts
 //   GET  /api/player/hls?u&s                                     → m3u8：拉回来把分片 / 子表 / key 改写成本站地址
 //   GET  /api/player/seg?u&s                                     → HLS 分片 / key 的单连接透传（不做 mp4 那套 total 探测）
 //   GET  /api/player/vendor/artplayer.js|hls.js                  → 自托管（CSP 只放行 self；国内也拉不到 CDN）
@@ -30,7 +30,8 @@ import { captureClientLog } from '../monitoring'
 import { sanitizeSentryUser } from '../../shared/sentry-user'
 import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources, type WebPlayerSource } from '../player-sources'
 import { serveStream } from '../xifan/stream'
-import { schedulePrefetch, servePrefetched } from '../xifan/prefetch'
+import { schedulePrefetch, serveFromDisk, warmDisk } from '../xifan/disk'
+import { canProxy } from '../xifan/proxy-hosts'
 import * as xifan from '../xifan/resolve'
 import * as girigiri from '../girigiri/resolve'
 import { XifanResolveError } from '../xifan/resolve'
@@ -111,11 +112,17 @@ player.get('/playlist', async (c) => {
   try {
     const playlist = await playlistOf(args.src, args.id, args.ep, session.uid)
     // 播放器拿到地址到发第一个 Range 之间有几秒空档，先把 mp4 结构（尾部 moov）拉好。
-    if (playlist.first?.kind === 'mp4') void layoutOf(playlist.first.url)
+    if (playlist.first?.kind === 'mp4') {
+      void layoutOf(playlist.first.url)
+      if (canProxy(playlist.first.url)) warmDisk(playlist.first.url, new URL(playlist.first.url).pathname.slice(-40))
+    }
     const next = args.ep + 1
     if (args.src === 'xifan' && playlist.eps.includes(next)) {
       const { id } = args
-      schedulePrefetch(session.uid, `xifan:${id}:${next}`, `xifan:${id}:${args.ep}`, async () => (await xifan.getPlaylist(id, next, session.uid)).first?.url ?? null)
+      schedulePrefetch(session.uid, `xifan:${id}:${next}`, async () => {
+        const line = (await xifan.getPlaylist(id, next, session.uid)).first
+        return line?.kind === 'mp4' && canProxy(line.url) ? line.url : null
+      })
     }
     return c.json(playlist)
   } catch (error) {
@@ -194,7 +201,10 @@ player.get('/stream', async (c) => {
   const range = c.req.header('range') ?? '-'
   const startedAt = Date.now()
   try {
-    const origin = async (range: string | undefined) => servePrefetched(media.url, range) ?? await serveStream(media.url, range, false, 'player', true)
+    // 源站 mp4 一律先落盘、从盘上答（disk.ts）；太大或探不到长度的才回到原来的内存会话。
+    const origin = async (range: string | undefined) =>
+      (canProxy(media.url) ? await serveFromDisk(media.url, new URL(media.url).pathname.slice(-40), range) : null)
+      ?? await serveStream(media.url, range, false, 'player', true)
     const layout = await layoutOf(media.url)
     const r = layout ? await serveFaststart(layout, c.req.header('range'), origin) : await origin(c.req.header('range'))
     return new Response(logged(r.body, range, r.status, startedAt), { status: r.status, headers: r.headers })
