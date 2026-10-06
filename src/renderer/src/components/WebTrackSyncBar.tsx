@@ -8,7 +8,7 @@ import {
   type AnimeTrack,
 } from '../stores/animeTrackStore'
 import { ipcErrMsg, ModalShell } from '../pages/homework/shared'
-import { fromWebSyncTracks, toWebSyncTracks, webTrackSyncFingerprint } from '../utils/webTrackSync'
+import { fromWebSyncTracks, keepLocalBindings, toWebSyncTracks, webTrackSyncFingerprint } from '../utils/webTrackSync'
 
 type SyncState = 'idle' | 'syncing' | 'synced' | 'error'
 type Direction = 'push' | 'pull'
@@ -139,7 +139,8 @@ export function WebTrackSyncBar(): JSX.Element | null {
     setState('syncing')
     setMessage('应用网页版数据…')
     try {
-      animeTrackStore.replaceAll(remote.tracks)
+      animeTrackStore.replaceAll(keepLocalBindings(remote.tracks, tracks))
+      // 快照记网页那份：本机多出来的绑定显示为「本地未上传」，提醒用户传上去给另一台电脑。
       remember(remote.rev, remote.tracks)
       settle('synced', '网页版拉取成功')
     } catch (error: unknown) {

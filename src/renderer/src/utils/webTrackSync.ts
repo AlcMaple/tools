@@ -186,3 +186,21 @@ export function webTrackSyncFingerprint(tracks: AnimeTrack[]): string {
   projected.sort((a, b) => a.bgmId - b.bgmId)
   return JSON.stringify(projected)
 }
+
+/**
+ * 拉取时保住本机的片源绑定。绑定只由桌面端写（网页版的稀饭 / Girigiri 绑定是服务器上另外两张表，
+ * 从不碰 extra.bindings），所以网页那份要么是上次上传时的旧快照、要么根本没有。整包替换会把
+ * 「绑了还没上传」的绑定抹掉，用户只能重新搜源站再绑一次。本机有的一律保留；网页带来的只补本机
+ * 还没有的站（Custom 按链接去重），这样另一台电脑上传的绑定仍能拉过来。
+ */
+export function keepLocalBindings(remote: AnimeTrack[], local: AnimeTrack[]): AnimeTrack[] {
+  const localById = new Map(local.map((t) => [t.bgmId, t]))
+  return remote.map((track) => {
+    const mine = localById.get(track.bgmId)?.bindings ?? []
+    if (mine.length === 0) return track
+    const extra = track.bindings.filter((b) => b.source === 'Custom'
+      ? !mine.some((m) => m.source === 'Custom' && m.sourceKey.trim() === b.sourceKey.trim())
+      : !mine.some((m) => m.source === b.source))
+    return { ...track, bindings: [...mine, ...extra] }
+  })
+}
