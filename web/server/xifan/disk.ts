@@ -347,10 +347,16 @@ async function serveComplete(file: string, rangeHeader: string | undefined): Pro
   try { const now = new Date(); utimesSync(file, now, now) } catch { /* 只影响回收顺序 */ }
   const r = parseRange(rangeHeader, total)
   if (!r) return { status: 416, headers: { 'Content-Range': `bytes */${total}` }, body: null }
-  const fh = await open(file, 'r')
+  // 句柄在第一次读时才开：响应建好了但浏览器一个字节没读就断开时，没有句柄可漏
+  let fh: FileHandle | null = null
+  let cancelled = false
   let pos = r.start
   const body = new ReadableStream<Uint8Array>({
     async pull(ctl) {
+      if (!fh) {
+        fh = await open(file, 'r')
+        if (cancelled) { await fh.close(); return }
+      }
       if (pos > r.end) { ctl.close(); await fh.close(); return }
       const buf = Buffer.alloc(Math.min(256 * 1024, r.end - pos + 1))
       const { bytesRead } = await fh.read(buf, 0, buf.length, pos)
@@ -358,7 +364,7 @@ async function serveComplete(file: string, rangeHeader: string | undefined): Pro
       pos += bytesRead
       ctl.enqueue(new Uint8Array(buf.buffer, buf.byteOffset, bytesRead))
     },
-    async cancel() { await fh.close() },
+    async cancel() { cancelled = true; await fh?.close() },
   })
   return { status: r.ranged ? 206 : 200, headers: headersFor(r.start, r.end, total, r.ranged), body }
 }
@@ -399,12 +405,16 @@ export async function serveFromDisk(url: string, label: string, rangeHeader: str
   const body = new ReadableStream<Uint8Array>({
     async pull(ctl) {
       for (;;) {
-        if (cancelled) return
+        if (cancelled) { await fh?.close(); return }
         if (pos > r.end) { ctl.close(); await fh?.close(); return }
         if (e.failure) { await fh?.close(); ctl.error(e.failure); return }
         e.watchedAt = Date.now()
         // 每个读取端自己开只读句柄：整集落盘时 .part 改名，已打开的句柄照样能读，不跟写入端的句柄抢关闭时机
-        fh ??= await open(file + '.part', 'r').catch(() => open(file, 'r')) // 恰好赶上改名那一刻
+        if (!fh) {
+          fh = await open(file + '.part', 'r').catch(() => open(file, 'r')) // 恰好赶上改名那一刻
+          // 打开期间播放器断开：cancel() 那时还没有句柄可关，这里补关
+          if (cancelled) { await fh.close(); return }
+        }
         if (!e.complete && contiguousFrom(e, pos) <= pos) {
           if (small) { for (let i = Math.floor(pos / PIECE); i <= Math.floor(r.end / PIECE); i++) if (!e.done[i]) e.urgent.add(i); pump() }
           else if (readerId === e.latestReader) prioritize(e, pos)
