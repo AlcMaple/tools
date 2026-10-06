@@ -1038,6 +1038,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   background: var(--veil);
   touch-action: none;
 }
+/* 弹窗高度用 svh 不用 dvh：iOS 弹键盘时会收起工具栏，dvh 随之变大，居中的弹窗跟着下移半个差值。 */
 .dlg-backdrop.open { display: flex; animation: fade-in .2s var(--ease-page); }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .dlg {
@@ -1046,7 +1047,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   max-width: 100%;
   width: min(440px, 100%);
   max-height: min(86vh, 760px);
-  max-height: min(86dvh, 760px);
+  max-height: min(86svh, 760px);
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
@@ -1059,13 +1060,13 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .dlg-add {
   width: min(560px, 100%);
   height: min(560px, calc(100vh - 32px));
-  height: min(560px, calc(100dvh - 32px));
+  height: min(560px, calc(100svh - 32px));
 }
 @media (max-width: 960px) {
   .dlg-backdrop { padding-bottom: calc(16px + var(--tabbar-h)); }
   .dlg, .dlg-add {
     max-height: min(86vh, calc(100vh - var(--tabbar-h) - 32px), 760px);
-    max-height: min(86dvh, calc(100dvh - var(--tabbar-h) - 32px), 760px);
+    max-height: min(86svh, calc(100svh - var(--tabbar-h) - 32px), 760px);
   }
 }
 .dlg-backdrop.open .dlg { animation: page-in .32s var(--ease-page); }
@@ -2838,4 +2839,12 @@ body[data-auth='out'] .track-btn { display: none; }
   .dlg input, .dlg textarea { font-size: 16px; }
   .add-search-row .searchbar { flex: 1 1 0; width: auto; }
   .add-online-btn { padding-inline: 12px; }
+}
+
+/* iOS Safari/Chrome 在输入框字号 < 16px 时，聚焦会自动放大页面且失焦后不还原；
+   统一抬到 16px 就不触发，同时保留用户手动捏合缩放（不用 maximum-scale 锁死）。 */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select { font-size: 16px !important; }
 }

@@ -6,6 +6,9 @@ import App from './App'
 import { registerCoverCacheWorker } from './coverCache'
 import './index.css'
 import { cachedSplashArt } from './splash-art'
+import { installIosKeyboardFocus } from './iosKeyboardFocus'
+
+installIosKeyboardFocus()
 
 type CaptureRecoverableError = (error: unknown, componentStack?: string) => void
 
@@ -39,3 +42,4 @@ void cachedSplashArt().then((splashArt) => {
   )
 
 })
+
