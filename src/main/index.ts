@@ -1,6 +1,6 @@
 // ⚠️ 必须是第一个 import —— 在任何 fs 异步操作前把 libuv 线程池调大(见模块注释)。
 import './shared/uv-bootstrap'
-import { app, shell, BrowserWindow, protocol, ipcMain, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, Menu, protocol, ipcMain, nativeImage } from 'electron'
 import { join } from 'path'
 import { readFile } from 'fs/promises'
 import { scanLibrary, startLibraryWatch, reconcilePaths, incrementalUpdate, type LibraryEntry } from './library/api'
@@ -226,6 +226,10 @@ if (app.isPackaged) {
 }
 
 app.whenReady().then(() => {
+  // Windows/Linux 上 autoHideMenuBar 只是「平时藏起来」，按 Alt 仍会弹出 File/Edit/View 默认菜单；
+  // 应用没有自己的菜单项，直接移除。F12 由下面的 before-input-event 自管，复制粘贴由 Chromium 自带处理。
+  // macOS 的应用菜单必须保留（系统菜单栏 + Cmd+C/V 靠它）。
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
   // 在线播放媒体流代理(mtmedia://)—— 必须 app ready 后注册。
   registerMediaProxy()
   // 上次被强杀 / 崩溃时遗留的播放临时文件在这里收拾(几百 MB 级别,不能任其堆积)

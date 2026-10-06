@@ -24,6 +24,16 @@
 
 ## 当前未归类记录（2026-10）
 
+## 2026-10-06 test(desktop): 修复 Windows 按 Alt 弹出 File/Edit 菜单栏
+
+**效果**：Windows / Linux 桌面端按 Alt 不再弹出 File / Edit / View / Window / Help 菜单栏。macOS 行为不变。
+
+**原因**：主窗口只设了 `autoHideMenuBar: true`，它只是平时藏起来，按 Alt 仍会临时显示 Electron 默认菜单。应用没有自己的菜单项，所以在 `app.whenReady` 里对非 macOS 直接 `Menu.setApplicationMenu(null)`，同时覆盖其他子窗口。macOS 的应用菜单要保留，系统菜单栏和 Cmd+C/V 依赖它。
+
+**边界 / 风险**：
+- 默认菜单带的 Ctrl+R、Ctrl+Shift+I 等快捷键在 Win/Linux 上随之消失；F12 / Ctrl+Shift+I 是 `before-input-event` 自管的，不受影响。
+- 复制 / 粘贴 / 全选在 Windows 由 Chromium 自带处理，未在真机上验证；需要在 Windows 打包版确认 Alt 不再弹菜单、输入框 Ctrl+C/V/A 正常。
+
 ## 2026-10-06 fix(agent): 游客额度独立成池
 
 **效果**：未登录的游客对话共用一个单独的小额度池（默认每天 $1），同一时间最多 1 个游客在跑；登录用户的额度和并发名额不受游客影响。池子用完提示「今日临时对话额度已用完」，名额被占提示「临时对话名额已满」，两者都引导登录。IPv6 游客按 /64 前缀计为同一人。
