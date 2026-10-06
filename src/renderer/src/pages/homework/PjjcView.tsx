@@ -112,7 +112,6 @@ function AddPjjcModal({
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-primary/40 bg-primary/10 text-sm font-bold text-primary hover:bg-primary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <span className="material-symbols-outlined text-base leading-none">save</span>
           保存
         </button>
       </div>
@@ -206,7 +205,6 @@ function EditDefensesModal({
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-primary/40 bg-primary/10 text-sm font-bold text-primary hover:bg-primary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <span className="material-symbols-outlined text-base leading-none">save</span>
           保存修改
         </button>
       </div>
@@ -313,7 +311,6 @@ function EditAttackModal({
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <span className="material-symbols-outlined text-base leading-none">save</span>
           保存修改
         </button>
       </div>
@@ -403,7 +400,6 @@ function AddAttackModal({
           disabled={!canSave}
           className="flex-1 py-3 rounded-xl border border-secondary/40 bg-secondary/10 text-sm font-bold text-secondary hover:bg-secondary/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <span className="material-symbols-outlined text-base leading-none">save</span>
           保存
         </button>
       </div>

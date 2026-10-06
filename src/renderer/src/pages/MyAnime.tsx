@@ -773,7 +773,6 @@ function ManualAddModal({
             onClick={submit}
             className="flex-1 py-2.5 rounded-lg border border-primary/40 bg-primary/10 text-primary font-bold text-sm hover:bg-primary/20 transition-colors flex items-center justify-center gap-2"
           >
-            <span className="material-symbols-outlined text-base leading-none">{isEdit ? 'save' : 'bookmark_add'}</span>
             {isEdit ? '保存修改' : '添加到追番'}
           </button>
         </div>

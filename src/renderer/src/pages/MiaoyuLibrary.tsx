@@ -1056,7 +1056,7 @@ function PostModal({
 
         <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
           <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
-          <ModalButton variant="primary" icon="save" disabled={!canSave} onClick={() => onSave(text.trim(), images)}>
+          <ModalButton variant="primary" disabled={!canSave} onClick={() => onSave(text.trim(), images)}>
             {initial ? '保存' : '发布'}
           </ModalButton>
         </div>
@@ -1119,7 +1119,7 @@ function CommentModal({
 
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
         <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
-        <ModalButton variant="primary" icon="save" disabled={!canSave} onClick={() => onSave(text.trim(), thought.trim())}>
+        <ModalButton variant="primary" disabled={!canSave} onClick={() => onSave(text.trim(), thought.trim())}>
           {initial ? '保存' : '添加'}
         </ModalButton>
       </div>

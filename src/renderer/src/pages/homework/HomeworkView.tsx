@@ -130,7 +130,7 @@ function AddModal({
 
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
         <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
-        <ModalButton variant="primary" icon="save" onClick={() => onSave(noteState.finalNotes())} disabled={!canSave}>
+        <ModalButton variant="primary" onClick={() => onSave(noteState.finalNotes())} disabled={!canSave}>
           保存
         </ModalButton>
       </div>
@@ -207,7 +207,7 @@ function EditDefenseModal({
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
         <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
-        <ModalButton variant="primary" icon="save" onClick={() => onSave(value.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())} disabled={!canSave}>
+        <ModalButton variant="primary" onClick={() => onSave(value.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())} disabled={!canSave}>
           保存修改
         </ModalButton>
       </div>
@@ -289,7 +289,7 @@ function EditAttackModal({
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
         <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
-        <ModalButton variant="secondary" icon="save" onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())} disabled={!canSave}>
+        <ModalButton variant="secondary" onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())} disabled={!canSave}>
           保存修改
         </ModalButton>
       </div>
@@ -477,7 +477,7 @@ function AddAttackModal({
       </div>
       <div className="px-7 py-4 bg-surface-container/60 border-t border-outline-variant/10 rounded-b-xl flex items-center gap-3">
         <ModalButton variant="cancel" onClick={onClose}>取消</ModalButton>
-        <ModalButton variant="secondary" icon="save" onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())} disabled={!canSave}>
+        <ModalButton variant="secondary" onClick={() => onSave(teamValue.split('、').map(s => cleanCharName(s)).filter(Boolean), noteState.finalNotes())} disabled={!canSave}>
           保存
         </ModalButton>
       </div>
