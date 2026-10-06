@@ -273,11 +273,11 @@ const LogView = forwardRef<LogViewHandle, Props>(function LogView(
 
 export default LogView
 
-// 「有类型/备注」小圆点 —— 提示这条标题背后还有东西，引导 hover / 点开（紧凑列表用）。
+// 「有备注」小圆点 —— 只有备注才亮；仅有类型的条目不亮（类型已在 hover 浮层里看得到）。
 // 没有就占位等宽，保持标题左缘对齐。
 function Dot({ entry }: { entry: LogEntry }): JSX.Element {
-  return hasMeta(entry)
-    ? <span className="w-1.5 h-1.5 rounded-full bg-primary/70 flex-shrink-0" title="有类型 / 备注" />
+  return entry.note?.trim()
+    ? <span className="w-1.5 h-1.5 rounded-full bg-primary/70 flex-shrink-0" title="有备注" />
     : <span className="w-1.5 h-1.5 flex-shrink-0" />
 }
 
