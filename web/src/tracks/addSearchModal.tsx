@@ -22,8 +22,8 @@ const ADD_COPY = {
   noResults: (query: string) => `没有找到「${query}」……换个名字再试试？`,
   online: '这是 Bangumi 刚翻回来的结果，纱雾先贴给你看……',
   onlineNoResults: (query: string) => `Bangumi 也没找到「${query}」……换个名字再试试？`,
-  onlineAction: '在线搜 Bangumi',
-  localAction: '翻离线目录',
+  onlineAction: '在线搜',
+  localAction: '离线搜',
   network: 'Bangumi 的回信没接上，纱雾先放一边……',
   searchTab: '找 BGM 条目',
   customTab: '自己记一条',
@@ -365,7 +365,6 @@ export function AddSearchModal({
                   title={mode === 'online' ? '回到离线目录' : '想找刚更新的条目，去 Bangumi 看看'}
                   onClick={() => runSearch(q, mode === 'online' ? 'local' : 'online')}
                 >
-                  <Ic name={mode === 'online' ? 'back' : 'refresh'} cls="ic ic-sm" />
                   {mode === 'online' ? ADD_COPY.localAction : ADD_COPY.onlineAction}
                 </button>
               )}
@@ -445,7 +444,7 @@ export function AddSearchModal({
                 <>
                   <br />
                   <button type="button" className="link add-online-link" onClick={() => runSearch(q, 'online')}>
-                    {ADD_COPY.onlineAction}？
+                    在线搜 Bangumi？
                   </button>
                 </>
               )}

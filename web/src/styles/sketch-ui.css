@@ -2836,7 +2836,6 @@ body[data-auth='out'] .track-btn { display: none; }
 @media (max-width: 960px) { .trk-load-progress { bottom: calc(var(--tabbar-h) + 12px); } }
 @media (max-width: 600px) {
   .dlg input, .dlg textarea { font-size: 16px; }
-  .add-search-row { flex-wrap: wrap; }
-  .add-search-row .searchbar { flex: 1 1 100%; width: 100%; }
-  .add-online-btn { margin-left: auto; }
+  .add-search-row .searchbar { flex: 1 1 0; width: auto; }
+  .add-online-btn { padding-inline: 12px; }
 }
