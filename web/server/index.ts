@@ -24,6 +24,7 @@ import reviews from './reviews'
 import backup from './backup'
 import agentHistory from './agent/history-api'
 import agentGuest from './agent/guest-api'
+import { maintenanceMode } from './maintenance'
 import { sameOriginGuard, securityHeaders } from './security'
 
 // 本地开发通常没有 5.6MB 的 bgm_index.db（生成它要下载 400MB+ 官方离线档）。
@@ -79,6 +80,8 @@ app.use('*', monitoringMiddleware())
 app.onError(monitoringErrorHandler())
 // 先挂在所有路由上：VPS 的静态 dist、API 和 Vercel serverless 都走同一套响应头。
 app.use('*', securityHeaders())
+// 服务器上建 DATA_DIR/MAINTENANCE 文件即进入维护页，删掉恢复；必须排在所有路由和静态文件之前。
+app.use('*', maintenanceMode())
 // 所有写请求都先过来源校验；SameSite=Strict 仍是 Cookie 层的第二道防线。
 app.use('/api/*', sameOriginGuard())
 
