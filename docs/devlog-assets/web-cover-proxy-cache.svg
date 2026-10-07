@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 616" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="cpG" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#7fad91"/></marker>
+    <marker id="cpR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#d99aa5"/></marker>
+    <marker id="cpN" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#c3bcc6"/></marker>
+  </defs>
+  <rect x="1" y="1" width="858" height="614" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="28" y="36" font-size="19" font-weight="700" fill="#282529">一次加十几部番，封面不再整批变白图</text>
+  <text x="28" y="58" font-size="12.5" fill="#756f73">每张封面只向图床取一次，取到就存到服务器磁盘；同一时刻最多 3 张在路上。已存过的封面不再碰图床，重启也不丢。</text>
+
+  <!-- ═ 块 1：出了什么事 ═ -->
+  <text x="28" y="92" font-size="14" font-weight="700" fill="#282529">① 以前为什么整批白图，过几个小时又好了</text>
+
+  <rect x="28" y="104" width="804" height="110" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="44" y="126" font-size="12.5" font-weight="700" fill="#96434f">用户看到的</text>
+  <text x="44" y="146" font-size="11" fill="#96434f">一次加 15 部 → 一屏封面全是灰块或图片裂开的文字；刷新还是不行；隔几小时自己好了</text>
+  <text x="44" y="170" font-size="12.5" font-weight="700" fill="#96434f">背后在做的</text>
+  <text x="44" y="190" font-size="11" fill="#96434f">浏览器同时要 15 张 → 服务器原样同时去图床要 15 张 → 图床对服务器的 IP 限流，整批被拒；</text>
+  <text x="44" y="206" font-size="11" fill="#96434f">失败不缓存，刷新就是再同时要一轮；限流期间越刷越严，等限流窗口过去才恢复</text>
+
+  <!-- ═ 块 2：现在怎么走 ═ -->
+  <text x="28" y="246" font-size="14" font-weight="700" fill="#282529">② 现在一张封面的路径：依次问四件事</text>
+
+  <rect x="28" y="262" width="150" height="44" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="103" y="281" font-size="12.5" font-weight="700" text-anchor="middle" fill="#4a4450">浏览器要一张封面</text>
+  <text x="103" y="297" font-size="11" text-anchor="middle" fill="#4a4450">15 张同时来也一样</text>
+  <path d="M178 284 L204 284" stroke="#c3bcc6" stroke-width="1.5" marker-end="url(#cpN)"/>
+
+  <rect x="208" y="262" width="150" height="44" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="283" y="281" font-size="12.5" font-weight="700" text-anchor="middle" fill="#316247">磁盘里有吗？</text>
+  <text x="283" y="297" font-size="11" text-anchor="middle" fill="#316247">有 → 直接返回，不碰图床</text>
+  <path d="M358 284 L384 284" stroke="#c3bcc6" stroke-width="1.5" marker-end="url(#cpN)"/>
+
+  <rect x="388" y="262" width="150" height="44" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="463" y="281" font-size="12.5" font-weight="700" text-anchor="middle" fill="#36566d">同一张已在路上？</text>
+  <text x="463" y="297" font-size="11" text-anchor="middle" fill="#36566d">是 → 等那一次，共用结果</text>
+  <path d="M538 284 L564 284" stroke="#c3bcc6" stroke-width="1.5" marker-end="url(#cpN)"/>
+
+  <rect x="568" y="262" width="130" height="44" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="633" y="281" font-size="12.5" font-weight="700" text-anchor="middle" fill="#36566d">排队等名额</text>
+  <text x="633" y="297" font-size="11" text-anchor="middle" fill="#36566d">同时最多 3 张</text>
+  <path d="M698 284 L724 284" stroke="#c3bcc6" stroke-width="1.5" marker-end="url(#cpN)"/>
+
+  <rect x="728" y="262" width="104" height="44" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="780" y="281" font-size="12.5" font-weight="700" text-anchor="middle" fill="#4a4450">去图床取</text>
+  <text x="780" y="297" font-size="11" text-anchor="middle" fill="#4a4450">整张读完才存</text>
+
+  <path d="M780 306 L780 334 L103 334 L103 346" stroke="#7fad91" stroke-width="1.5" fill="none" marker-end="url(#cpG)"/>
+  <text x="440" y="328" font-size="11" text-anchor="middle" fill="#316247">成功：写入磁盘再返回，下一次起第一步就命中</text>
+
+  <rect x="28" y="350" width="390" height="66" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="44" y="370" font-size="12.5" font-weight="700" fill="#316247">常见情况：封面立刻出来</text>
+  <text x="44" y="388" font-size="11" fill="#316247">实测同一张 3 个请求同时来，只去图床 1 次（约 0.8 秒）；</text>
+  <text x="44" y="404" font-size="11" fill="#316247">之后从磁盘返回，约 1 毫秒</text>
+
+  <rect x="440" y="350" width="392" height="66" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="456" y="370" font-size="12.5" font-weight="700" fill="#96434f">失败：如实报错，什么都不存</text>
+  <text x="456" y="388" font-size="11" fill="#96434f">图床 HTTP 错误、类型不对、断流、排队超 80 张（503）；</text>
+  <text x="456" y="404" font-size="11" fill="#96434f">不自动重试，下次打开页面再取</text>
+
+  <!-- ═ 块 3：为什么不那样做 ═ -->
+  <text x="28" y="452" font-size="14" font-weight="700" fill="#282529">③ 为什么不那样做（接手者最容易改错的地方）</text>
+
+  <rect x="28" y="466" width="260" height="112" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="42" y="486" font-size="12.5" font-weight="700" fill="#7a6234">为什么不失败后自动重试</text>
+  <text x="42" y="506" font-size="11" fill="#7a6234">限流窗口里再发请求只会加重</text>
+  <text x="42" y="522" font-size="11" fill="#7a6234">限流。并发压到 3 才是治本：</text>
+  <text x="42" y="538" font-size="11" fill="#7a6234">封面只取一次，之后根本不再</text>
+  <text x="42" y="554" font-size="11" fill="#7a6234">需要问图床。</text>
+
+  <rect x="300" y="466" width="260" height="112" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="314" y="486" font-size="12.5" font-weight="700" fill="#7a6234">为什么可以永久缓存</text>
+  <text x="314" y="506" font-size="11" fill="#7a6234">封面地址里带图片内容的哈希，</text>
+  <text x="314" y="522" font-size="11" fill="#7a6234">图片换了地址就变，旧地址的图</text>
+  <text x="314" y="538" font-size="11" fill="#7a6234">永远不会过期。所以磁盘缓存</text>
+  <text x="314" y="554" font-size="11" fill="#7a6234">不设过期，不用再去核对。</text>
+
+  <rect x="572" y="466" width="260" height="112" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="586" y="486" font-size="12.5" font-weight="700" fill="#4a4450">边界与遗留</text>
+  <text x="586" y="506" font-size="11" fill="#4a4450">· 上线时已被限流的封面，要等</text>
+  <text x="586" y="522" font-size="11" fill="#4a4450">  限流窗口过去才第一次取到</text>
+  <text x="586" y="538" font-size="11" fill="#4a4450">· 磁盘缓存只增不清，每张约</text>
+  <text x="586" y="554" font-size="11" fill="#4a4450">  200KB；其他图床不经此路</text>
+
+  <text x="28" y="602" font-size="11" fill="#756f73">只管 lain.bgm.tv 的封面（含百科旧封面改查 BGM 后的结果）；用户上传的封面和其他图床直连，不受影响。</text>
+</svg>

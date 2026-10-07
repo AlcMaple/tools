@@ -4,6 +4,7 @@ import bootLog from './boot-log'
 // 否则将来任何一个自动 integration 被重新打开都会因为加载顺序而静默失效。
 import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
+import { CoverError, getBgmCover } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
 import { searchOnline } from './bgm/search-online'
@@ -282,49 +283,15 @@ app.get('/api/cover/*', async (c) => {
   const path = c.req.path.replace(/^\/api\/cover/, '')
   if (!COVER_PATH_RE.test(path)) return c.text('forbidden', 403)
   try {
-    const upstream = await fetch(`https://lain.bgm.tv${path}`, {
-      headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!upstream.ok || !upstream.body) {
-      console.warn(`[cover] ${path}: upstream HTTP ${upstream.status}`)
-      await upstream.body?.cancel()
-      c.header('Cache-Control', 'no-store')
-      return c.text('upstream error', 502)
-    }
-    const contentType = upstream.headers.get('content-type')?.split(';', 1)[0]?.toLowerCase() ?? ''
-    // 代理只允许图片。上游异常返回 HTML 时不能把它原样挂在本站路径下，避免被浏览器当
-    // 成可执行文档或被未来的页面导航误用。
-    if (!/^image\/(?:png|jpe?g|gif|webp)$/i.test(contentType)) {
-      console.warn(`[cover] ${path}: unexpected content-type ${contentType}`)
-      await upstream.body.cancel()
-      c.header('Cache-Control', 'no-store')
-      return c.text('upstream image type rejected', 502)
-    }
-    // 读完整张图再发缓存头；流中途超时不能把半张 200 图片永久写进浏览器缓存。
-    const reader = upstream.body.getReader()
-    const chunks: Uint8Array[] = []
-    let size = 0
-    try {
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        size += value.byteLength
-        if (size > 8 * 1024 * 1024) throw new Error('cover exceeds 8 MiB')
-        chunks.push(value)
-      }
-      if (!size) throw new Error('empty cover')
-    } finally {
-      await reader.cancel().catch(() => undefined)
-      reader.releaseLock()
-    }
-    c.header('Content-Type', contentType)
+    const image = await getBgmCover(path)
+    c.header('Content-Type', image.contentType)
     c.header('Cache-Control', 'public, max-age=2592000, immutable')
-    return c.body(Buffer.concat(chunks, size))
+    return c.body(image.body)
   } catch (error) {
-    console.warn(`[cover] 代取失败 ${path}:`, error)
+    console.warn(`[cover] 代取失败 ${path}:`, error instanceof Error ? error.message : error)
     c.header('Cache-Control', 'no-store')
-    return c.text('fetch failed', 502)
+    const status = error instanceof CoverError ? error.status : 502
+    return c.text(error instanceof CoverError ? error.message : 'fetch failed', status as 502 | 503)
   }
 })
 
