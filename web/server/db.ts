@@ -191,6 +191,10 @@ function ensureColumn(table: string, column: string, decl: string): void {
 // 新旧稀饭编号并不对应；保留旧绑定但不拿它猜新站资源，待用户重新确认。
 ensureColumn('xifan_binding', 'source_version', "source_version TEXT NOT NULL DEFAULT 'legacy'")
 ensureColumn('tracks', 'observe_count', 'observe_count INTEGER NOT NULL DEFAULT 0')
+// 加入追番的时间 —— 追番「年份 / 季度」时间线按它归档。updated_at 每次编辑都会刷新，
+// 不能拿来归档。老记录没有真实加入时间，只能拿当时的 updated_at 兜底（偏晚），用户可在页面里改。
+ensureColumn('tracks', 'created_at', 'created_at INTEGER NOT NULL DEFAULT 0')
+db.exec('UPDATE tracks SET created_at = updated_at WHERE created_at = 0')
 ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0')
 ensureColumn('users', 'security_question', 'security_question TEXT')
 ensureColumn('users', 'security_answer_hash', 'security_answer_hash TEXT')

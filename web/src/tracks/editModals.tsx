@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { coverUrl, type Track, type TrackPatch } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
+import { toast } from '../Toast'
+import { SEASON_MONTHS, addedAtOf, seasonOf, seasonStamp } from './TrackTimeline'
 import { SEG_CLS, SEG_ORDER, SHORT_DAY, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast } from './common'
 
 // ── 编辑弹窗 ───────────────────────────────────────────────────────────────────
@@ -53,6 +55,15 @@ export function EditModal({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  const added = seasonOf(addedAtOf(t))
+  const now = seasonOf(Date.now())
+  const moveSeason = (year: number, q: number): void => {
+    if (year > now.year || (year === now.year && q > now.q)) return
+    if (year === added.year && q === added.q) return
+    onPatch(t.bgmId, { createdAt: seasonStamp(year, q) })
+    toast(`哼，『${title}』已经挪到 ${year} 年的 ${SEASON_MONTHS[q]} 月番了，别再弄丢啦。`)
+  }
 
   const commitTotal = (): void => {
     const raw = totalDraft.trim()
@@ -149,6 +160,41 @@ export function EditModal({
                   onClick={() => onPatch(t.bgmId, { status: s })}
                 >
                   {STATUS_META.find((m) => m.key === s)?.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="field mb16">
+          <span className="field-label">记在哪一季</span>
+          <div className="ep-ctrl">
+            <div className="stepper">
+              <button type="button" className="ep-minus" aria-label="往前一年" onClick={() => moveSeason(added.year - 1, added.q)}>
+                <Ic name="minus" cls="ic ic-sm" />
+              </button>
+              <span className="ep-num">{added.year}</span>
+              <button
+                type="button"
+                className="ep-plus"
+                aria-label="往后一年"
+                disabled={added.year >= now.year}
+                onClick={() => moveSeason(added.year + 1, Math.min(added.q, added.year + 1 === now.year ? now.q : 3))}
+              >
+                <Ic name="plus" cls="ic ic-sm" />
+              </button>
+            </div>
+            <div className="status-seg season-seg" style={{ marginLeft: 0 }} role="group" aria-label="归入季度">
+              {SEASON_MONTHS.map((m, q) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`seg-btn${added.q === q ? ' on' : ''}`}
+                  aria-pressed={added.q === q}
+                  disabled={added.year === now.year && q > now.q}
+                  onClick={() => moveSeason(added.year, q)}
+                >
+                  {m}月
                 </button>
               ))}
             </div>

@@ -52,6 +52,7 @@ import {
 import { STATUS_META, allTagsOf, tagLimitToast, watchEp } from './tracks/common'
 import { TrackCard } from './tracks/TrackCard'
 import { TrackListRow } from './tracks/TrackList'
+import { TrackTimeline } from './tracks/TrackTimeline'
 import { BgmImportModal } from './tracks/importModal'
 import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
 import { AddSearchModal, type BackfillTarget } from './tracks/addSearchModal'
@@ -64,7 +65,7 @@ import {
 } from './tracks/sourceModals'
 
 type FilterKey = 'all' | TrackStatus
-type TrackView = 'cards' | 'list'
+type TrackView = 'cards' | 'list' | 'timeline'
 type AddFlow = { initialQuery?: string; backfill?: BackfillTarget }
 
 function todayBgmId(): number {
@@ -272,7 +273,7 @@ export function TracksPage(): JSX.Element {
       bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
       title: hit.name, titleCn: hit.nameCn, cover: calItem?.cover ?? '', airWeekday: calDay?.id ?? 0,
       airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [],
-      observeCount: 0, subjectType: 'anime', goodEpisodes: [], goodEpisodeNotes: {}, favorite: 0, updatedAt: Date.now(),
+      observeCount: 0, subjectType: 'anime', goodEpisodes: [], goodEpisodeNotes: {}, favorite: 0, createdAt: Date.now(), updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
     toast(`哼，『${hit.nameCn || hit.name}』已经贴进手帐啦，先放在「想看」里。`)
@@ -311,6 +312,7 @@ export function TracksPage(): JSX.Element {
       goodEpisodes: [],
       goodEpisodeNotes: {},
       favorite: 0,
+      createdAt: Date.now(),
       updatedAt: Date.now(),
     }
     setError(null)
@@ -658,6 +660,8 @@ export function TracksPage(): JSX.Element {
         <EmptyState text="还没有在追的番，点上面的「加番」开始吧" />
       ) : filtered.length === 0 ? (
         <EmptyState text={loadProgress ? (loadProgress.loading ? '正在查找其余追番…' : '列表尚未加载完整，请继续加载') : '没有匹配的追番，换个词或清掉类型过滤试试'} />
+      ) : view === 'timeline' ? (
+        <TrackTimeline tracks={filtered} onOpen={setEditing} />
       ) : (
         <div className={view === 'list' ? 'trk-list' : 'trk-grid'}>
           {filtered.slice(0, visibleCount).map((t) => {
@@ -931,6 +935,9 @@ function ViewModeToggle({
       </button>
       <button type="button" className={value === 'list' ? 'on' : ''} aria-pressed={value === 'list'} onClick={() => onChange('list')}>
         列表
+      </button>
+      <button type="button" className={value === 'timeline' ? 'on' : ''} aria-pressed={value === 'timeline'} onClick={() => onChange('timeline')}>
+        时间线
       </button>
     </div>
   )

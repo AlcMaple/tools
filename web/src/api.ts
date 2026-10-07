@@ -92,12 +92,14 @@ export interface Track {
   favorite: number
   /** 这部番已发布的点评 / 推荐（网页端自有，桌面端不碰）。空 = 没发布过。 */
   publishedReviews?: ('review' | 'recommend')[]
+  /** 加入追番的时间，追番时间线按它归年份 / 季度；老记录是回填的最后修改时间 */
+  createdAt: number
   updatedAt: number
 }
 
 /** 写入用的 patch —— **只带要改的字段**；没带的字段服务端保持沉默、原样不动（沉默 ≠ 置空） */
 export type TrackPatch = Partial<
-  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score' | 'observeCount' | 'goodEpisodes' | 'goodEpisodeNotes' | 'favorite'>
+  Pick<Track, 'status' | 'episode' | 'totalEpisodes' | 'userTags' | 'title' | 'titleCn' | 'cover' | 'airWeekday' | 'airDate' | 'score' | 'observeCount' | 'createdAt' | 'goodEpisodes' | 'goodEpisodeNotes' | 'favorite'>
 >
 
 const FAVORITE_MAX = 6

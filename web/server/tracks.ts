@@ -57,6 +57,7 @@ interface TrackRow {
   extra: string
   observe_count: number
   updated_at: number
+  created_at: number
   cover_mime: string
 }
 
@@ -173,6 +174,7 @@ function toJson(r: TrackRow): Record<string, unknown> & { bgmId: number; status:
     // 最爱值同样是桌面端专属字段（存在 extra 里），网页版现在也能读写它。
     favorite: normalizeFavorite(extra.favorite),
     updatedAt: r.updated_at,
+    createdAt: r.created_at || r.updated_at,
   }
 }
 
@@ -206,10 +208,10 @@ const delStmt = db.prepare('DELETE FROM tracks WHERE user_id = ? AND bgm_id = ?'
 const insertStmt = db.prepare(`
   INSERT INTO tracks (user_id, bgm_id, status, episode, total_episodes, title, title_cn, cover,
                       air_weekday, air_date, score, bgm_tags, user_tags, aliases, extra,
-                      observe_count, updated_at)
+                      observe_count, updated_at, created_at)
   VALUES (@user_id, @bgm_id, @status, @episode, @total_episodes, @title, @title_cn, @cover,
           @air_weekday, @air_date, @score, @bgm_tags, @user_tags, @aliases, @extra,
-          @observe_count, @updated_at)
+          @observe_count, @updated_at, @updated_at)
 `)
 const importUpdateStmt = db.prepare(`
   UPDATE tracks
@@ -814,6 +816,13 @@ tracks.put('/:bgmId', async (c) => {
     return c.json({ error: 'observeCount 不合法' }, 400)
   }
 
+  // 归属时间：用户在时间线里手动挪这部番所在的年份 / 季度。不能晚于现在。
+  const hasCreatedAt = 'createdAt' in body
+  const nextCreatedAt = Number(body.createdAt)
+  if (hasCreatedAt && (!Number.isInteger(nextCreatedAt) || nextCreatedAt <= 0 || nextCreatedAt > now)) {
+    return c.json({ error: 'createdAt 不合法' }, 400)
+  }
+
   const hasEpisode = 'episode' in body
   const nextEpisode = Number(body.episode)
   if (hasEpisode && (!Number.isInteger(nextEpisode) || nextEpisode < 0)) {
@@ -928,6 +937,10 @@ tracks.put('/:bgmId', async (c) => {
     if (hasObserve) {
       sets.push('observe_count = ?')
       args.push(nextObserve)
+    }
+    if (hasCreatedAt) {
+      sets.push('created_at = ?')
+      args.push(nextCreatedAt)
     }
     if (nextUserTags !== undefined) {
       sets.push('user_tags = ?')
