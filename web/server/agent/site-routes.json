@@ -507,6 +507,16 @@
   {
     "file": "server/index.ts",
     "method": "get",
+    "path": "/api/calendar/seasons"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/calendar/seasons/:key"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
     "path": "/api/cover/*"
   },
   {

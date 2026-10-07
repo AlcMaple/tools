@@ -4,6 +4,7 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dataDir } from '../data-dir'
 import { fetchJson } from '../http'
+import { recordSeason } from './calendar-history'
 
 const CALENDAR_URL = 'https://api.bgm.tv/calendar'
 
@@ -49,7 +50,7 @@ function toHttps(u: string): string {
  */
 const COVER_WIDTH = 400
 
-function coverUrl(images: Record<string, string>): string {
+export function coverUrl(images: Record<string, string>): string {
   // 从 large 的路径拼 /r/<宽>/ —— large 一定是 /pic/cover/l/... 这种原图路径
   const m = (images.large ?? '').match(/^https?:\/\/[^/]+(\/pic\/.+)$/)
   if (m) return `https://lain.bgm.tv/r/${COVER_WIDTH}${m[1]}`
@@ -91,8 +92,8 @@ function parseCalendar(raw: unknown): CalendarWeekday[] {
   })
 }
 
-// 周期表一季度才变，14 天 TTL 够；强制刷新走 force。
-const TTL_MS = 14 * 24 * 60 * 60 * 1000
+// 本季内 BGM 会陆续补番、改星期，往期快照也靠这里的刷新续写，所以按周更新；强制刷新走 force。
+const TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 type CacheEntry = { data: CalendarWeekday[]; at: number }
 let cache: CacheEntry | null = null
@@ -142,7 +143,12 @@ export interface CalendarMetadata {
 
 export async function getCalendar(force = false): Promise<CalendarResult> {
   // 进程刚起来时内存是空的 —— 先看盘上有没有，有就不用打扰 BGM
-  if (!cache) cache = readDisk()
+  if (!cache) {
+    cache = readDisk()
+    // 接入往期功能之前就已落盘的周历，也补进它所属季度的快照。放在这里而不是 readDisk：
+    // Agent 走 readDisk 只读，不能因此写盘。内容没变不会重复写。
+    if (cache) recordSeason(cache.data, cache.at)
+  }
 
   if (!force && cache && Date.now() - cache.at < TTL_MS) {
     return { data: cache.data, updatedAt: cache.at, fromCache: true }
@@ -152,6 +158,7 @@ export async function getCalendar(force = false): Promise<CalendarResult> {
   if (data.length > 0) {
     cache = { data, at: Date.now() }
     writeDisk(cache)
+    recordSeason(data, cache.at)
     return { data, updatedAt: cache.at, fromCache: false }
   }
   // BGM 返回空数组 —— 有旧缓存就退回旧的（不抛，是 BGM 那边的问题），否则抛

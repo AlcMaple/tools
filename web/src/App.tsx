@@ -9,6 +9,7 @@ import { AnnouncementModal } from './AnnouncementModal'
 import { auth, captureInviteFromLocation, useAuth } from './auth'
 import { AuthModal, type AuthMode } from './AuthModal'
 import { CalendarPage } from './CalendarPage'
+import { CalendarHistoryPage } from './CalendarHistoryPage'
 import { CommunityPage } from './CommunityPage'
 import { NagBar } from './NagBar'
 import { REWARDS_ENABLED, navigate, useRoute, type Route } from './router'
@@ -23,6 +24,7 @@ import { AgentHost } from './agent/AgentHost'
 // 各页书脊的小 accents：胶带色 / 印章 / 拟声词（原型稿逐页配置）
 const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira: string }> = {
   calendar: { tape: 'tape tl teal', stamp: '紗霧', stampCls: 'st-sakura', kira: 'キラキラ…' },
+  history: { tape: 'tape tl teal', stamp: '往期', stampCls: 'st-sakura', kira: 'キラキラ…' },
   tracks: { tape: 'tape tl gold', stamp: '在看', stampCls: 'st-teal', kira: 'キラキラ…' },
   rewards: { tape: 'tape tl lav', stamp: '福利', stampCls: 'st-sakura', kira: 'ポンッ…' },
   community: { tape: 'tape tl teal', stamp: '同好', stampCls: 'st-sakura', kira: 'わくわく…' },
@@ -33,6 +35,7 @@ const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira
 const ROUTE_HREF: Record<Route, string> = {
   // 用根路径作为站内入口，避免从 `/u/:username` 打开时把用户 pathname 带到别的页面。
   calendar: '/#/',
+  history: '/#/history',
   tracks: '/#/tracks',
   rewards: '/#/rewards',
   community: '/#/community',
@@ -204,7 +207,7 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
           </div>
 
           <nav className="idx-nav">
-            <IdxLink route="calendar" active={route === 'calendar'} icon="calendar">
+            <IdxLink route="calendar" active={route === 'calendar' || route === 'history'} icon="calendar">
               番剧周历
             </IdxLink>
             <IdxLink route="tracks" active={route === 'tracks'} icon="tracks">
@@ -282,6 +285,8 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
               ? <SettingsPage />
               : route === 'tracks'
                 ? <TracksPage />
+                : route === 'history'
+                  ? <CalendarHistoryPage />
                 : route === 'community'
                   ? <CommunityPage />
                 : route === 'rewards'
@@ -293,7 +298,7 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
 
       {/* 移动端底部标签栏（桌面隐藏） */}
       <nav className="m-tabs">
-        <MTab route="calendar" active={route === 'calendar'} icon="calendar">
+        <MTab route="calendar" active={route === 'calendar' || route === 'history'} icon="calendar">
           番剧周历
         </MTab>
         <MTab route="tracks" active={route === 'tracks'} icon="tracks">

@@ -17,6 +17,7 @@
     "preview": "vite preview",
     "start": "tsx server/node.ts",
     "sync:index": "tsx scripts/build-bgm-index.ts",
+    "warm:seasons": "tsx scripts/warm-calendar-seasons.ts",
     "test:backup": "tsx scripts/test-backup.ts",
     "test:agent-contract": "tsx scripts/test-agent-contract.ts",
     "test:agent-history": "tsx scripts/test-agent-history.ts",

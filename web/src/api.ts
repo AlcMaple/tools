@@ -58,6 +58,44 @@ export async function fetchCalendar(force = false): Promise<CalendarResult> {
   return res.json() as Promise<CalendarResult>
 }
 
+export interface SeasonSummary {
+  key: string
+  year: number
+  /** 0 冬(1月) 1 春(4月) 2 夏(7月) 3 秋(10月) */
+  q: number
+  /** 还没存过的往期季度是 null，点开时服务端才去 BGM 翻 */
+  count: number | null
+  updatedAt: number | null
+  current: boolean
+  derived: boolean
+}
+
+export interface SeasonResult {
+  key: string
+  data: CalendarWeekday[]
+  updatedAt: number
+  current: boolean
+  /** 按首播日推算补出来的，不是当季周历原样 */
+  derived: boolean
+}
+
+async function seasonError(res: Response): Promise<Error> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string }
+  return new Error(body.error || `HTTP ${res.status}`)
+}
+
+export async function fetchSeasons(): Promise<SeasonSummary[]> {
+  const res = await fetch('/api/calendar/seasons')
+  if (!res.ok) throw await seasonError(res)
+  return ((await res.json()) as { seasons: SeasonSummary[] }).seasons
+}
+
+export async function fetchSeason(key: string): Promise<SeasonResult> {
+  const res = await fetch(`/api/calendar/seasons/${encodeURIComponent(key)}`)
+  if (!res.ok) throw await seasonError(res)
+  return res.json() as Promise<SeasonResult>
+}
+
 // ── 追番 ───────────────────────────────────────────────────────────────────────
 // `considering`(观望) = 「候补，看看再说」，与 `plan`(想看，已决定追)是两件事，别合并
 export type TrackStatus = 'watching' | 'plan' | 'considering' | 'done'

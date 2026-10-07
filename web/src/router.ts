@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 // 放映福利暂无用户场景：只在开发环境露出，生产构建里入口和 #/rewards 都不可达。
 export const REWARDS_ENABLED = import.meta.env.DEV
 
-export type Route = 'calendar' | 'settings' | 'tracks' | 'rewards' | 'community' | 'feedback'
+export type Route = 'calendar' | 'history' | 'settings' | 'tracks' | 'rewards' | 'community' | 'feedback'
 
 function parse(): Route {
   const h = window.location.hash.replace(/^#\/?/, '')
@@ -16,6 +16,7 @@ function parse(): Route {
   // hash 是站内页面的明确选择，必须先于 `/u/:username` 的 pathname 判断。
   // 否则 `/u/foo#/tracks` 会被误判成公开用户页。
   if (h === 'tracks') return 'tracks'
+  if (h === 'history') return 'history'
   if (window.location.pathname === '/u' || window.location.pathname.startsWith('/u/')) return 'community'
   return 'calendar'
 }

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
-import { coverUrl, fetchCalendar, putTrack, deleteTrack } from './api'
-import { useAuth } from './auth'
+import { coverUrl, fetchCalendar } from './api'
+import { useTrackToggle } from './useTrackToggle'
+import { navigate } from './router'
 import { cacheGet, cacheSet } from './dataCache'
-import { loadTracks, runTracksMutation } from './tracksSync'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { useIsWide } from './useMediaQuery'
@@ -12,12 +12,12 @@ import { SketchSheet } from './SketchSheet'
 // 皮肤 = 原型稿 index.html（番剧周历）：横向海报胶片，页头一格插画，另有纵向布局。
 // 横向布局保留日期章选天（窄屏）和每周一行胶片（宽屏）；纵向布局一次展开七天。
 // 数据流与旧版一致：
-// 14 天缓存窗口 + 刷新绕过缓存；追番角标常驻（不依赖 hover），乐观更新后由 tracksSync 校正。
+// 7 天缓存窗口 + 刷新绕过缓存；追番角标常驻（不依赖 hover），乐观更新后由 tracksSync 校正。
 
-// 周历数据信 14 天的缓存窗口——跟桌面端、跟服务端自己的 14 天缓存一致。BGM 是外部接口，
+// 周历数据信 7 天的缓存窗口——跟服务端自己的 7 天缓存一致（本季内 BGM 会补番，往期快照也靠它续写）。BGM 是外部接口，
 // 缓存没过期就没必要发请求（唯一主动绕过缓存的入口是「刷新」按钮）。
 const CALENDAR_CACHE_KEY = 'calendar'
-const CALENDAR_TTL = 14 * 24 * 60 * 60_000
+const CALENDAR_TTL = 7 * 24 * 60 * 60_000
 
 type CalendarLayout = 'horizontal' | 'vertical'
 
@@ -312,13 +312,10 @@ function useSketchbook(todayId: number, ready: boolean) {
 export function CalendarPage(): JSX.Element {
   const [result, setResult] = useState<CalendarResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [tracksError, setTracksError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [selectedDay, setSelectedDay] = useState(todayBgmId)
-  const { user } = useAuth()
-  // 已追的 bgmId —— 用来给海报画「已收藏」描边 / 切圆章按钮图标。未登录就是空集（按钮不显示）。
-  const [tracked, setTracked] = useState<Set<number>>(new Set())
+  const track = useTrackToggle()
   const dates = useMemo(weekDates, [])
   const todayId = useMemo(todayBgmId, [])
   // 默认保留截图里的横向布局；「纵向」是同一份数据的第二种浏览方式，选择会记住。
@@ -333,50 +330,6 @@ export function CalendarPage(): JSX.Element {
       // 存储不可用时不影响本次切换。
     }
   }, [layoutMode])
-  // 复用 TracksPage 同一套「秒开缓存 + 后台校验」逻辑（tracksSync.ts）——两页共享
-  // 同一份 tracks:<username> 缓存，谁先加载过谁就替对方省一次请求。
-  useEffect(() => {
-    if (!user) {
-      setTracked(new Set())
-      setTracksError(null)
-      return
-    }
-    return loadTracks(
-      user.username,
-      (ts) => setTracked(new Set(ts.map((t) => t.bgmId))),
-      setTracksError,
-    )
-  }, [user])
-
-  // 先改本地再发请求 —— 点了要立刻有反馈。单条响应不直接落页面；最后一个并行写结束后
-  // tracksSync 会拉权威全量列表，成功和失败都据此校正角标。
-  const toggleTrack = (item: CalendarItem, weekday: number): void => {
-    if (!user) return
-    setError(null)
-    const on = tracked.has(item.id)
-    const title = item.name_cn || item.name
-    setTracked((prev) => {
-      const next = new Set(prev)
-      on ? next.delete(item.id) : next.add(item.id)
-      return next
-    })
-    toast(on ? '已取消追番' : `已把『${title}』加入追番`)
-    void runTracksMutation(user.username, async () => {
-      if (on) {
-        await deleteTrack(item.id)
-      } else {
-        await putTrack(item.id, {
-          status: 'watching',
-          title: item.name,
-          titleCn: item.name_cn,
-          cover: item.cover,
-          airWeekday: weekday,
-          score: item.score,
-        })
-      }
-    }).catch((e: Error) => setError(e.message))
-  }
-
   const load = (force = false): void => {
     if (force) setRefreshing(true)
     else if (!result) setLoading(true)
@@ -414,9 +367,9 @@ export function CalendarPage(): JSX.Element {
       <FilmRow label={`${day.label}在播番剧`} itemCount={day.items.length} vertical={vertical}>
         <DayFilm
           day={day}
-          canTrack={!!user}
-          tracked={tracked}
-          onToggle={toggleTrack}
+          canTrack={track.canTrack}
+          tracked={track.tracked}
+          onToggle={track.toggle}
         />
       </FilmRow>
     </section>
@@ -489,6 +442,10 @@ export function CalendarPage(): JSX.Element {
               <Ic name="calendar" cls="ic ic-sm" />
               回到今天
             </button>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('history')}>
+              <Ic name="tracks" cls="ic ic-sm" />
+              往期周历
+            </button>
           </div>
         </div>
         <SketchSheet
@@ -500,9 +457,9 @@ export function CalendarPage(): JSX.Element {
         />
       </header>
 
-      {(error || tracksError) && (
+      {(error || track.error) && (
         <p className="form-note err mt8" aria-live="polite">
-          ⚠ {error ?? tracksError}
+          ⚠ {error ?? track.error}
         </p>
       )}
 
@@ -586,7 +543,7 @@ const ArrowIcon = ({ dir }: { dir: 'prev' | 'next' }): JSX.Element => (
   </svg>
 )
 
-function FilmRow({
+export function FilmRow({
   label,
   itemCount,
   vertical = false,
@@ -690,7 +647,7 @@ function DayHead({ day, date, today }: { day: { id: number; label: string; items
   )
 }
 
-function DayFilm({
+export function DayFilm({
   day,
   canTrack,
   tracked,

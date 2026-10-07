@@ -4,6 +4,7 @@ import bootLog from './boot-log'
 // 否则将来任何一个自动 integration 被重新打开都会因为加载顺序而静默失效。
 import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
+import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
 import { CoverError, getBgmCover } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
@@ -226,6 +227,32 @@ app.get('/api/calendar', async (c) => {
     const message = err instanceof Error ? err.message : '未知错误'
     return c.json({ error: message }, 502)
   }
+})
+
+// 往期周历：每个季度一份 BGM 周历快照，从接入起往后存。本季还在随周历更新，其余季度已冻结。
+app.get('/api/calendar/seasons', (c) => {
+  // 目录随快照增长，不让浏览器 / 边缘缓存把「还没有」固定住
+  c.header('Cache-Control', 'no-cache')
+  return c.json({ seasons: listSeasons() })
+})
+
+app.get('/api/calendar/seasons/:key', async (c) => {
+  const key = c.req.param('key')
+  if (!isSeasonKey(key)) return c.json({ error: '季度不合法' }, 400)
+  const current = key === seasonKeyOf(Date.now())
+  let snapshot = getSeason(key)
+  if (!snapshot && isBackfillable(key)) {
+    try {
+      snapshot = await deriveSeason(key)
+    } catch (error) {
+      console.warn(`[calendar-history] 补 ${key} 失败:`, error instanceof Error ? error.message : error)
+      c.header('Cache-Control', 'no-store')
+      return c.json({ error: error instanceof Error ? error.message : '补这一季时出了问题' }, 502)
+    }
+  }
+  if (!snapshot) return c.json({ error: '这个季度还没有周历记录' }, 404)
+  c.header('Cache-Control', current ? 'public, max-age=300' : 'public, max-age=86400')
+  return c.json({ key, data: snapshot.data, updatedAt: snapshot.updatedAt, current, derived: snapshot.derived })
 })
 
 // 封面代理 —— BGM 图床 lain.bgm.tv 在国内被墙，国内免魔法用户浏览器直连拿不到（实测大陆机 curl
