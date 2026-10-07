@@ -527,6 +527,11 @@
   {
     "file": "server/index.ts",
     "method": "get",
+    "path": "/api/health/bgm"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
     "path": "/api/search"
   },
   {

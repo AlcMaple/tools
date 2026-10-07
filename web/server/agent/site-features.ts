@@ -23,7 +23,7 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
 ]
 // 仅构建校验使用，不进入模型或公开快照。每个顶层 API 入口必须有功能归属。
 export const SITE_API_FEATURES:Readonly<Record<string,string>>={
- '/api/request-log':'infrastructure.monitoring','/api/subject-cover/:id':'infrastructure.cover','/api/boot-log':'infrastructure.monitoring','/api/health':'infrastructure.health','/api/cover/*':'infrastructure.cover','/api/auth':'web.auth','/api/auth/oauth':'web.auth',
+ '/api/request-log':'infrastructure.monitoring','/api/subject-cover/:id':'infrastructure.cover','/api/boot-log':'infrastructure.monitoring','/api/health':'infrastructure.health','/api/health/bgm':'infrastructure.health','/api/cover/*':'infrastructure.cover','/api/auth':'web.auth','/api/auth/oauth':'web.auth',
  '/api/rewards':'web.rewards','/api/community':'web.community','/api/announcements':'web.announcements',
  '/api/feedback':'web.feedback','/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/backup':'web.backup','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/search-log':'web.search','/api/calendar':'web.calendar','/api/calendar/seasons':'web.calendar','/api/calendar/seasons/:key':'web.calendar',
 }

@@ -9,6 +9,7 @@ import { mkdirSync } from 'node:fs'
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { dataDir } from '../data-dir'
+import { noteBgmRequest } from './bgm-health'
 
 const cacheDir = join(dataDir, 'bgm-cover-cache')
 mkdirSync(cacheDir, { recursive: true })
@@ -55,10 +56,18 @@ async function readCached(base: string): Promise<CoverImage | null> {
 }
 
 async function fetchUpstream(path: string): Promise<CoverImage> {
-  const upstream = await fetch(`https://lain.bgm.tv${path}`, {
-    headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
-    signal: AbortSignal.timeout(15000),
-  })
+  const url = `https://lain.bgm.tv${path}`
+  let upstream: Response
+  try {
+    upstream = await fetch(url, {
+      headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
+      signal: AbortSignal.timeout(15000),
+    })
+  } catch (error) {
+    noteBgmRequest(url, null)
+    throw error
+  }
+  noteBgmRequest(url, upstream.status)
   if (!upstream.ok || !upstream.body) {
     await upstream.body?.cancel()
     throw new CoverError(`upstream HTTP ${upstream.status}`, 502)

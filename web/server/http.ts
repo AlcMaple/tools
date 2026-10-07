@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { createConnection } from 'node:net'
 import { promisify } from 'node:util'
 import { Agent, EnvHttpProxyAgent, fetch as undiciFetch, ProxyAgent, setGlobalDispatcher } from 'undici'
+import { noteBgmRequest } from './bgm/bgm-health'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production' || !!process.env.VERCEL
 const HAS_PROXY_ENV = !!(
@@ -172,12 +173,19 @@ function isTransient(err: unknown): boolean {
 export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions = {}): Promise<T> {
   const { headers = {}, timeoutMs = 10000, method = 'GET', body } = opts
   const run = async (): Promise<T> => {
-    const res = await fetch(url, {
-      method,
-      headers: body === undefined ? headers : { ...headers, 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method,
+        headers: body === undefined ? headers : { ...headers, 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+    } catch (error) {
+      noteBgmRequest(url, null)
+      throw error
+    }
+    noteBgmRequest(url, res.status)
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
     return (await res.json()) as T
   }

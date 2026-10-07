@@ -4,6 +4,7 @@ import bootLog from './boot-log'
 // 否则将来任何一个自动 integration 被重新打开都会因为加载顺序而静默失效。
 import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
+import { bgmHealth, noteBgmRequest } from './bgm/bgm-health'
 import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
 import { CoverError, getBgmCover } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
@@ -84,6 +85,13 @@ app.use('/api/*', sameOriginGuard())
 app.route('/api/boot-log', bootLog)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
+// BGM 连通状态（被动记账，不会去请求 BGM）。ok / idle 返回 200；被限流 / 大面积失败返回 503，
+// 方便外部监控直接按状态码判断，具体原因看 body。
+app.get('/api/health/bgm', (c) => {
+  const health = bgmHealth()
+  c.header('Cache-Control', 'no-store')
+  return c.json(health, health.state === 'ok' || health.state === 'idle' ? 200 : 503)
+})
 
 // 账号体系：注册 / 登录 / 登出 / me。
 app.route('/api/auth', auth)
@@ -278,10 +286,18 @@ app.get('/api/subject-cover/:id', async (c) => {
   if (!request) {
     if (subjectCoverRequests.size >= 4) return c.text('cover busy', 503)
     request = (async () => {
-      const response = await fetch(`https://api.bgm.tv/v0/subjects/${id}`, {
-        headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
-        signal: AbortSignal.timeout(10_000),
-      })
+      const subjectUrl = `https://api.bgm.tv/v0/subjects/${id}`
+      let response: Response
+      try {
+        response = await fetch(subjectUrl, {
+          headers: { 'User-Agent': 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)' },
+          signal: AbortSignal.timeout(10_000),
+        })
+      } catch (error) {
+        noteBgmRequest(subjectUrl, null)
+        throw error
+      }
+      noteBgmRequest(subjectUrl, response.status)
       if (!response.ok) {
         await response.body?.cancel()
         throw new Error(`BGM HTTP ${response.status}`)
