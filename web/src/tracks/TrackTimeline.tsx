@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Track } from '../api'
 
 // ── 追番手帐·年表 ──────────────────────────────────────────────────────────────
@@ -48,6 +48,28 @@ function group(tracks: Track[]): Year[] {
 
 export function TrackTimeline({ tracks, onOpen }: { tracks: Track[]; onOpen: (bgmId: number) => void }): JSX.Element {
   const years = useMemo(() => group(tracks), [tracks])
+  const [selection, setSelection] = useState<number | null>(null)
+  const year = years.find(item => item.year === selection) ?? years[0]
+  const [quarter, setQuarter] = useState<number | null | undefined>(undefined)
+  const q = quarter === undefined ? year?.seasons[0]?.q ?? 0 : quarter
+  const [overview, setOverview] = useState(false)
+  const yearsRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const list = yearsRef.current
+    if (!list) return
+    const reveal = (): void => {
+      const selected = list.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
+      if (!selected) return
+      const item = selected.getBoundingClientRect()
+      const viewport = list.getBoundingClientRect()
+      list.scrollLeft += Math.min(0, item.left - viewport.left) + Math.max(0, item.right - viewport.right)
+    }
+    reveal()
+    const observer = new ResizeObserver(reveal)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [year?.year, overview])
 
   if (!years.length) {
     return (
@@ -60,47 +82,90 @@ export function TrackTimeline({ tracks, onOpen }: { tracks: Track[]; onOpen: (bg
 
   return (
     <div className="trk-timeline">
-      <div className="tl-say">
-        <img className="tl-say-face" src="/assets/sagiri-nudge.webp" alt="" />
-        <p className="bubble">粉色虚线的，是还没看完的。哥哥可别装作没看见。</p>
+      <div className="tl-picker">
+        <div className="tl-years" ref={yearsRef} role="group" aria-label="选择年份">
+          <button
+            type="button"
+            className={`tl-year-tab${overview ? ' on' : ''}`}
+            aria-pressed={overview}
+            onClick={() => { setOverview(true); setQuarter(q) }}
+          >
+            全览
+          </button>
+          {years.map(item => (
+            <button
+              key={item.year}
+              type="button"
+              className={`tl-year-tab${!overview && item.year === year.year ? ' on' : ''}`}
+              aria-pressed={!overview && item.year === year.year}
+              onClick={() => { setOverview(false); setSelection(item.year); setQuarter(q) }}
+            >
+              {item.year}
+            </button>
+          ))}
+        </div>
+        <div className="tl-quarters" role="group" aria-label="选择季度">
+          <button
+            type="button"
+            className={`tl-quarter-tab${q === null ? ' on' : ''}`}
+            aria-pressed={q === null}
+            onClick={() => setQuarter(null)}
+          >
+            全部
+          </button>
+          {SEASON_MONTHS.map((month, index) => (
+            <button
+              key={month}
+              type="button"
+              className={`tl-quarter-tab${index === q ? ' on' : ''}`}
+              aria-pressed={index === q}
+              onClick={() => setQuarter(index)}
+            >
+              {month}月番
+            </button>
+          ))}
+        </div>
       </div>
 
-      {years.map((y) => (
-        <section key={y.year} className="tl-year">
-          <h2 className="tl-year-title">
-            <span className="tl-year-num">{y.year}</span>
-            <span className="tl-year-note">这一年追了 {y.total} 部</span>
-          </h2>
-
-          {y.seasons.map((s, i) => (
-            <div key={s.q} className={`tl-season${i % 2 ? ' flip' : ''}`}>
-              <span className={`tape tl ${SEASON_TAPE[s.q]}`} aria-hidden="true" />
-              <div className="tl-season-head">
-                <span className={`stamp st-${s.q === 1 ? 'sakura' : s.q === 2 ? 'teal' : s.q === 3 ? 'gold' : 'lav'}`} aria-hidden="true">
-                  {SEASON_KANJI[s.q]}
-                </span>
-                <div>
-                  <b>{SEASON_MONTHS[s.q]}月番</b>
-                  <span>{s.items.length} 部，看完 {s.done}</span>
-                </div>
-              </div>
-              <div className="tl-names">
-                {s.items.map((t) => (
-                  <button
-                    key={t.bgmId}
-                    type="button"
-                    className={`tl-name${t.status === 'done' ? ' is-done' : ''}`}
-                    onClick={() => onOpen(t.bgmId)}
-                    title="点一下，挪到别的季度"
-                  >
-                    {t.titleCn || t.title}
-                  </button>
-                ))}
-              </div>
+      {(overview ? years.filter(item => q === null || item.seasons.some(season => season.q === q)) : [year]).map(visibleYear => (
+      <section key={visibleYear.year} className="tl-year" aria-label={`${visibleYear.year}年`}>
+        <h2 className="tl-year-title">
+          <span className="tl-year-num">{visibleYear.year}</span>
+          <span className="tl-year-note">这一年追了 {visibleYear.total} 部</span>
+        </h2>
+        {(q === null ? visibleYear.seasons : [visibleYear.seasons.find(season => season.q === q) ?? { q, items: [], done: 0 }]).map(visibleSeason => (
+        <div key={visibleSeason.q} className="tl-season">
+          <span className={`tape tl ${SEASON_TAPE[visibleSeason.q]}`} aria-hidden="true" />
+          <div className="tl-season-head">
+            <span className={`stamp st-${visibleSeason.q === 1 ? 'sakura' : visibleSeason.q === 2 ? 'teal' : visibleSeason.q === 3 ? 'gold' : 'lav'}`} aria-hidden="true">
+              {SEASON_KANJI[visibleSeason.q]}
+            </span>
+            <div>
+              <b>{SEASON_MONTHS[visibleSeason.q]}月番</b>
+              <span>{visibleSeason.items.length} 部，看完 {visibleSeason.done}</span>
             </div>
-          ))}
-        </section>
+          </div>
+          <div className="tl-names">
+            {visibleSeason.items.map(track => (
+              <button
+                key={track.bgmId}
+                type="button"
+                className={`tl-name${track.status === 'done' ? ' is-done' : ''}`}
+                onClick={() => onOpen(track.bgmId)}
+                title="编辑追番"
+              >
+                {track.titleCn || track.title}
+              </button>
+            ))}
+            {!visibleSeason.items.length && <p className="tl-season-empty">这一季没有匹配的追番</p>}
+          </div>
+        </div>
+        ))}
+      </section>
       ))}
+      {overview && q !== null && !years.some(item => item.seasons.some(season => season.q === q)) && (
+        <p className="tl-season-empty">这一季度没有匹配的追番</p>
+      )}
     </div>
   )
 }

@@ -2877,20 +2877,43 @@ body[data-auth='out'] .track-btn { display: none; }
 
 /* ── 追番手帐·年表（年份 → 季度）── */
 .trk-timeline { margin-top: 14px; display: flex; flex-direction: column; gap: 26px; }
-.tl-say { display: flex; align-items: flex-end; gap: 6px; padding-left: 4px; }
-.tl-say-face {
-  flex: none;
-  width: 38px;
-  height: 38px;
-  object-fit: cover;
-  object-position: top center;
-  border-radius: 50%;
-  border: 1.5px solid var(--line-strong);
-  background: var(--card);
-  transform: rotate(-6deg);
+.tl-picker {
+  position: sticky;
+  top: 12px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--paper);
+  border: 1.5px solid var(--line);
+  border-radius: 10px 14px 10px 14px;
+  box-shadow: var(--shadow-1);
 }
-.tl-say .bubble { max-width: none; font-family: var(--font-hand); font-size: 14px; color: var(--ink); border-radius: 12px 14px 12px 4px; }
-.tl-say .bubble::after { left: -7px; bottom: 9px; transform: rotate(135deg) skew(8deg, 8deg); }
+.tl-years { display: flex; gap: 6px; min-width: 0; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; scrollbar-color: var(--silver) transparent; }
+.tl-year-tab, .tl-quarter-tab {
+  flex: none;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 7px 10px 7px 10px;
+  background: transparent;
+  color: var(--ink-sub);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tl-year-tab { border-color: var(--line); background: var(--card); }
+.tl-year-tab.on { border-color: var(--teal-line); color: var(--teal); background: var(--teal-wash); }
+.tl-quarters { display: flex; flex-wrap: nowrap; gap: 4px; border-top: 1px dashed var(--line); padding-top: 6px; }
+.tl-quarter-tab { padding-inline: 8px; }
+.tl-quarter-tab.on { border-color: var(--teal-line); background: var(--card); color: var(--teal); box-shadow: var(--shadow-1); }
+.tl-year-tab:focus-visible, .tl-quarter-tab:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.tl-season-empty { margin: 0; padding: 10px 0; font-size: 13px; color: var(--ink-sub); }
+@media (hover: hover) { .tl-year-tab:hover, .tl-quarter-tab:hover { background: var(--teal-wash); color: var(--teal); } }
+@media (max-width: 960px) { .tl-picker { top: calc(var(--nav-h) + 8px); } }
+@media (max-width: 360px) { .tl-quarter-tab { padding-inline: 5px; font-size: 12px; } }
 .tl-year-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 16px 4px; font-weight: 400; }
 .tl-year-num {
   padding: 0 8px;
@@ -2899,7 +2922,6 @@ body[data-auth='out'] .track-btn { display: none; }
   line-height: 1.3;
   color: var(--ink);
   background: linear-gradient(transparent 58%, var(--gold-hl) 58%, var(--gold-hl) 92%, transparent 92%);
-  transform: rotate(-1.5deg);
 }
 .tl-year-note { font-family: var(--font-hand); font-size: 14px; color: var(--ink-sub); }
 .tl-season {
@@ -2913,9 +2935,7 @@ body[data-auth='out'] .track-btn { display: none; }
   border: 1.5px solid var(--line);
   border-radius: 8px 14px 10px 13px;
   box-shadow: var(--shadow-1);
-  transform: rotate(-.25deg);
 }
-.tl-season.flip { transform: rotate(.25deg); }
 .tl-season-head { display: flex; align-items: center; gap: 10px; align-self: start; }
 .tl-season-head .stamp { width: 44px; height: 44px; font-size: 18px; }
 .tl-season-head b { display: block; font-family: var(--font-hand); font-size: 17px; font-weight: 400; color: var(--ink); }
@@ -2928,15 +2948,13 @@ body[data-auth='out'] .track-btn { display: none; }
   font-size: 14px;
   line-height: 1.5;
   text-align: left;
-  color: var(--sakura);
+  color: var(--ink);
   background: var(--sakura-wash);
   border: 1.5px dashed var(--sakura-mid);
   border-radius: 9px 12px 9px 12px;
   cursor: pointer;
-  transform: rotate(-.8deg);
   transition: box-shadow .2s, background-color .2s;
 }
-.tl-name:nth-child(even) { transform: rotate(.7deg); }
 .tl-name.is-done {
   padding-right: 24px;
   color: var(--ink);
