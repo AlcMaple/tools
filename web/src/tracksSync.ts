@@ -48,6 +48,7 @@ interface TracksAccountState {
   /** 有乐观写入尚未被权威全量结果收口。 */
   needsAuthoritativeRead: boolean
   lastRevision: number | null
+  lastViewRevision: number
   lastServerData: Track[] | null
   lastServerSignature: string | null
   monitorCleanup: (() => void) | null
@@ -82,6 +83,7 @@ function stateFor(username: string): TracksAccountState {
     revisionRequest: null,
     needsAuthoritativeRead: false,
     lastRevision: hasValidServerCache ? cachedServer.rev : null,
+    lastViewRevision: hasValidServerCache ? cachedServer.viewRev ?? 0 : 0,
     lastServerData: hasValidServerCache ? cachedServer.data : null,
     lastServerSignature: hasValidServerCache ? tracksSignature(cachedServer.data) : null,
     monitorCleanup: null,
@@ -109,6 +111,7 @@ function applyServerSnapshot(state: TracksAccountState, snapshot: TracksSnapshot
   state.partialData = null
   for (const listener of state.listeners) listener.onProgress?.(null)
   state.lastRevision = snapshot.rev
+  state.lastViewRevision = snapshot.viewRev ?? 0
   state.readFailed = false
   state.lastServerData = snapshot.data
   state.lastServerSignature = tracksSignature(snapshot.data)
@@ -117,6 +120,7 @@ function applyServerSnapshot(state: TracksAccountState, snapshot: TracksSnapshot
   if (
     !cachedServer ||
     cachedServer.rev !== snapshot.rev ||
+    (cachedServer.viewRev ?? 0) !== (snapshot.viewRev ?? 0) ||
     !Array.isArray(cachedServer.data) ||
     tracksSignature(cachedServer.data) !== state.lastServerSignature
   ) {
@@ -220,7 +224,7 @@ function checkRevision(state: TracksAccountState): void {
   const request = fetchTracksRevision()
     .then((revision) => {
       if (validationVersion !== state.validationVersion || state.pendingWrites > 0) return
-      if (state.lastRevision !== revision) {
+      if (state.lastRevision !== revision.rev || state.lastViewRevision !== revision.viewRev) {
         invalidateAndRequestFull(state)
         return
       }

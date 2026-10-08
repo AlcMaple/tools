@@ -191,6 +191,7 @@ interface TrackWriteOptions {
 
 export interface TracksSnapshot {
   rev: number
+  viewRev?: number
   data: Track[]
 }
 
@@ -262,15 +263,16 @@ export async function fetchTracks(
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     const rows = new Map<number, Track>()
-    let pending = '', rev = -1, total = -1, completed = false
-    const snapshot = (): TracksSnapshot => normalizeTracksSnapshot({ rev, data: [...rows].sort((a, b) => a[0] - b[0]).map(entry => entry[1]) })
+    let pending = '', rev = -1, viewRev = 0, total = -1, completed = false
+    const snapshot = (): TracksSnapshot => normalizeTracksSnapshot({ rev, viewRev, data: [...rows].sort((a, b) => a[0] - b[0]).map(entry => entry[1]) })
     const accept = (line: string): void => {
       const packet = JSON.parse(line) as TracksSnapshot & { total: number; counts: TrackCounts; indices: number[]; done: boolean }
-      if (completed || !Number.isSafeInteger(packet.rev) || packet.rev < 0 || !Number.isSafeInteger(packet.total) || packet.total < 0
+      if (completed || !Number.isSafeInteger(packet.rev) || packet.rev < 0 || (packet.viewRev != null && (!Number.isSafeInteger(packet.viewRev) || packet.viewRev < 0)) || !Number.isSafeInteger(packet.total) || packet.total < 0
         || !Array.isArray(packet.data) || !Array.isArray(packet.indices) || packet.indices.length !== packet.data.length
         || !packet.counts || !['all', 'watching', 'plan', 'considering', 'done'].every(key => Number.isSafeInteger(packet.counts[key as keyof TrackCounts]) && packet.counts[key as keyof TrackCounts] >= 0)
-        || (rev !== -1 && (rev !== packet.rev || total !== packet.total))) throw new Error('追番列表分批响应无效')
+        || (rev !== -1 && (rev !== packet.rev || viewRev !== (packet.viewRev ?? 0) || total !== packet.total))) throw new Error('追番列表分批响应无效')
       rev = packet.rev
+      viewRev = packet.viewRev ?? 0
       total = packet.total
       packet.data.forEach((track, offset) => {
         const index = packet.indices[offset]
@@ -308,10 +310,11 @@ export async function fetchTracks(
   }, 60_000)
 }
 
-export async function fetchTracksRevision(): Promise<number> {
-  const { rev } = await json<{ rev: number }>(await fetchApi('/api/tracks/revision'))
+export async function fetchTracksRevision(): Promise<{ rev: number; viewRev: number }> {
+  const { rev, viewRev = 0 } = await json<{ rev: number; viewRev?: number }>(await fetchApi('/api/tracks/revision'))
   if (!Number.isSafeInteger(rev) || rev < 0) throw new Error('追番数据版本无效')
-  return rev
+  if (!Number.isSafeInteger(viewRev) || viewRev < 0) throw new Error('追番列表版本无效')
+  return { rev, viewRev }
 }
 
 export async function putTrack(bgmId: number, patch: TrackPatch, options: TrackWriteOptions = {}): Promise<Track> {

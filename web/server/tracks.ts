@@ -19,6 +19,7 @@ import {
   type BgmCollectionAnime,
 } from './bgm/collections'
 import { fetchSubjectDetail } from './bgm/detail'
+import { noteCoverRateLimit, scheduleBgmCoverRequest } from './bgm/cover-proxy'
 import {
   enrichSearchAddition,
   saveSearchAddition,
@@ -269,8 +270,11 @@ function cleanupOrphanedCover(uid: number, bgmId: number): void {
 // ── 数据版本号（app 覆盖上传的冲突检测，见 db.ts 的 tracks_rev 注释）──────────────
 const revStmt = db.prepare('SELECT tracks_rev AS rev FROM users WHERE id = ?')
 const bumpRevStmt = db.prepare('UPDATE users SET tracks_rev = tracks_rev + 1 WHERE id = ?')
+const viewRevStmt = db.prepare('SELECT tracks_view_rev AS rev FROM users WHERE id = ?')
+const bumpViewRevStmt = db.prepare('UPDATE users SET tracks_view_rev = tracks_view_rev + 1 WHERE id = ?')
 
 const currentRev = (uid: number): number => (revStmt.get(uid) as { rev: number } | undefined)?.rev ?? 0
+const currentViewRev = (uid: number): number => (viewRevStmt.get(uid) as { rev: number } | undefined)?.rev ?? 0
 
 /** 任何会改动该用户追番数据的写入都要调 —— 漏一处,桌面端就会拿着过期 rev 静默覆盖掉网页的改动。 */
 const bumpRev = (uid: number): void => {
@@ -290,6 +294,7 @@ const readTracksSnapshot = db.transaction((uid: number) => {
   }
   return {
     rev: currentRev(uid),
+    viewRev: currentViewRev(uid),
     data: (listNewestFirstStmt.all(uid) as TrackRow[]).map((r) => ({
       ...toJson(r),
       publishedReviews: byBgm.get(r.bgm_id) ?? [],
@@ -395,6 +400,7 @@ function initialTotal(bgmId: number, airDate: string): number | null {
 // 「放送」和「评分」两张卡整块不画）。
 function needsDetail(row: TrackRow): boolean {
   return (
+    !row.cover ||
     parseList(row.bgm_tags).length === 0 ||
     parseList(row.aliases).length === 0 ||
     !row.air_date ||
@@ -404,23 +410,25 @@ function needsDetail(row: TrackRow): boolean {
 
 /**
  * 加追番后异步回填标签 / 别名 / 放送日期 / 老番总集数。三个细节各有理由:
- *   1. **抖动 800~2000ms 再发** —— 用户在周历上连点几部,不抖动就是一串请求瞬间砸过去。
+ *   1. **共用封面队列** —— 加番后补封面和图片下载都占同一出口预算。
  *   2. **发之前二次检查** —— 这段延迟里用户可能已经取消追番,或别的路径已经补上了。
  *   3. **一次请求同时拿标签 + 别名 + 放送日期 + 集数**,零额外开销。
- * 失败静默放过:下次相关入口还会触发,**绝不重试打死对面**。
+ * 同一进程中失败不再自动尝试；记下原因，下一次服务启动后才可能重新补。
  */
+const detailScheduled = new Set<string>()
 function fillDetailLater(uid: number, bgmId: number): void {
   if (isCustomBgmId(bgmId)) return
   const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
   if (!existing || !needsDetail(existing)) return
-
-  const jitterMs = 800 + Math.random() * 1200
+  const key = `${uid}:${bgmId}`
+  if (detailScheduled.has(key)) return
+  detailScheduled.add(key)
   setTimeout(() => {
     void (async () => {
       const recheck = oneStmt.get(uid, bgmId) as TrackRow | undefined
       if (!recheck || !needsDetail(recheck)) return
       try {
-        const d = await fetchSubjectDetail(bgmId)
+        const d = await scheduleBgmCoverRequest(() => fetchSubjectDetail(bgmId))
         const apply = db.transaction(() => {
           // 网络返回后必须重新读。等待期间 app 同步可能已经写入了更完整的数据，后台补全只填
           // 此刻仍为空的字段，绝不拿请求前的旧快照覆盖新值。
@@ -467,13 +475,15 @@ function fillDetailLater(uid: number, bgmId: number): void {
           // 标签补全就会把桌面端顶出 409、让它误以为「网页那边有人改过」。
           db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE user_id = ? AND bgm_id = ?`)
             .run(...args, uid, bgmId)
+          bumpViewRevStmt.run(uid)
         })
         apply.immediate()
-      } catch {
-        /* 静默 —— 下次再加 / 再打开时还有机会补上 */
+      } catch (error) {
+        if (error instanceof Error && /^HTTP 429\b/.test(error.message)) noteCoverRateLimit()
+        console.warn(`[tracks] 补全条目 ${bgmId} 失败:`, error)
       }
     })()
-  }, jitterMs)
+  }, 0)
 }
 
 // ── 从 Bangumi 导入 ────────────────────────────────────────────────────────────
@@ -727,6 +737,9 @@ tracks.get('/', async (c) => {
   if (!uid) return c.json({ error: '未登录' }, 401)
   const snapshot = readTracksSnapshot(uid)
   fillCalendarMetadataLater(uid)
+  for (const row of (listNewestFirstStmt.all(uid) as TrackRow[]).filter((track) => track.bgm_id > 0 && !track.cover).slice(0, 20)) {
+    fillDetailLater(uid, row.bgm_id)
+  }
   c.header('Server-Timing', `snapshot;dur=${(performance.now() - started).toFixed(1)}`)
   if (c.req.header('Accept')?.includes('application/x-ndjson')) {
     const counts = { all: 0, watching: 0, plan: 0, considering: 0, done: 0 }
@@ -748,7 +761,7 @@ tracks.get('/', async (c) => {
         if (output.aborted) return
         const indices = order.slice(sent, sent + (sent === 0 ? 18 : 64)).map(item => item.index)
         sent += indices.length
-        await output.write(JSON.stringify({ rev: snapshot.rev, total, counts, indices, data: indices.map(index => snapshot.data[index]), done: sent === total }) + '\n')
+        await output.write(JSON.stringify({ rev: snapshot.rev, viewRev: snapshot.viewRev, total, counts, indices, data: indices.map(index => snapshot.data[index]), done: sent === total }) + '\n')
         if (sent <= 18) console.info(`[tracks:stream] id=${c.res.headers.get('X-Request-ID') ?? '-'} first=${sent}/${total} server=${Math.round(performance.now() - started)}ms`)
       } while (sent < total)
     }, async error => { console.error('[tracks:stream] transfer interrupted', error) })
@@ -759,7 +772,7 @@ tracks.get('/', async (c) => {
 tracks.get('/revision', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
-  return c.json({ rev: currentRev(uid) })
+  return c.json({ rev: currentRev(uid), viewRev: currentViewRev(uid) })
 })
 
 tracks.post('/import/bgm', async (c) => {

@@ -6,7 +6,7 @@ import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
 import { bgmHealth, noteBgmRequest } from './bgm/bgm-health'
 import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
-import { CoverError, getBgmCover } from './bgm/cover-proxy'
+import { CoverError, getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
 import { searchOnline } from './bgm/search-online'
@@ -287,8 +287,7 @@ app.get('/api/subject-cover/:id', async (c) => {
   if (cached && Date.now() - cached.at < 3600_000) return c.redirect(cached.path)
   let request = subjectCoverRequests.get(id)
   if (!request) {
-    if (subjectCoverRequests.size >= 4) return c.text('cover busy', 503)
-    request = (async () => {
+    request = scheduleBgmCoverRequest(async () => {
       const subjectUrl = `https://api.bgm.tv/v0/subjects/${id}`
       let response: Response
       try {
@@ -301,6 +300,7 @@ app.get('/api/subject-cover/:id', async (c) => {
         throw error
       }
       noteBgmRequest(subjectUrl, response.status)
+      if (response.status === 429) noteCoverRateLimit()
       if (!response.ok) {
         await response.body?.cancel()
         throw new Error(`BGM HTTP ${response.status}`)
@@ -312,14 +312,14 @@ app.get('/api/subject-cover/:id', async (c) => {
       if (subjectCovers.size >= 128) subjectCovers.delete(subjectCovers.keys().next().value!)
       subjectCovers.set(id, { path, at: Date.now() })
       return path
-    })()
+    })
     subjectCoverRequests.set(id, request)
   }
   try {
     return c.redirect(await request)
   } catch (error) {
     console.warn(`[cover] subject=${id}`, error)
-    return c.text('subject cover unavailable', 502)
+    return c.text(error instanceof CoverError ? error.message : 'subject cover unavailable', error instanceof CoverError ? 503 : 502)
   } finally {
     if (subjectCoverRequests.get(id) === request) subjectCoverRequests.delete(id)
   }
