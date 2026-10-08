@@ -52,7 +52,7 @@ function normalizeCode(raw: unknown): string {
 function geetestPage(challenge: BiliGeetestChallenge): string {
   const nonce = randomBytes(18).toString('base64url')
   const safeChallenge = JSON.stringify({ gt: challenge.gt, challenge: challenge.challenge })
-    .replaceAll('<', '\\u003c')
+    .replace(/</g, '\\u003c')
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
