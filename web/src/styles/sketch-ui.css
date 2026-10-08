@@ -573,9 +573,35 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 
 /* 周历排布切换：分段按钮比两个散落按钮更像手帐里的小标签。 */
-.calendar-actions { flex-wrap: wrap; justify-content: flex-end; }
+.calendar-heading { width: 100%; min-width: 0; }
+.calendar-title-row { display: flex; align-items: center; gap: 20px; }
+.calendar-history-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px solid var(--teal-line);
+  border-radius: 5px 8px 5px 8px;
+  background: var(--teal-wash);
+  color: var(--teal);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.calendar-history-link:hover { background: var(--card); }
+.calendar-history-link:focus-visible { outline: 2px solid var(--teal); outline-offset: 4px; }
+.row.calendar-actions { flex-wrap: wrap; justify-content: flex-start; gap: 10px; }
 .calendar-layout-toggle { flex: none; }
 .calendar-layout-toggle > button { white-space: nowrap; }
+.calendar-actions > .btn { white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .calendar-layout-toggle { min-height: 44px; }
+  .calendar-actions > .icon-btn { width: 44px; height: 44px; }
+  .calendar-actions > .btn { min-height: 44px; }
+}
 
 /* 胶片条：整版翻页 —— 海报宽度由「一屏放几张」反推（容器宽 ÷ 列数），
    所以任何时候右缘都停在一张完整卡片上，不会切出半张、也就不用再拿渐隐去糊它 */

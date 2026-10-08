@@ -378,11 +378,17 @@ export function CalendarPage(): JSX.Element {
   return (
     <>
       <header className="sketch-hero">
-        <div className="spread sketch-hero-body" style={{ alignItems: 'flex-end' }}>
-          <div>
+        <div className="spread sketch-hero-body">
+          <div className="calendar-heading">
+            <div className="calendar-title-row">
             <h1 className="title-sketch" style={{ fontSize: 34 }}>
               番剧周历
             </h1>
+            <button className="calendar-history-link" type="button" aria-label="查看往期周历" onClick={() => navigate('history')}>
+              <Ic name="tracks" cls="ic ic-sm" />
+              往期 <span aria-hidden="true">›</span>
+            </button>
+            </div>
             <p className="muted small mt8">
               {range && (
                 <>
@@ -427,25 +433,21 @@ export function CalendarPage(): JSX.Element {
             >
               <Ic name="refresh" cls={refreshing ? 'ic animate-spin' : 'ic'} />
             </button>
-            <button
-              className="btn btn-sm"
-              type="button"
-              onClick={() => {
-                if (layoutMode === 'vertical' || wide) {
-                  document.getElementById(`day-sec-${todayId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                } else {
-                  setSelectedDay(todayId)
-                }
-                toast('已回到今天')
-              }}
-            >
-              <Ic name="calendar" cls="ic ic-sm" />
-              回到今天
-            </button>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate('history')}>
-              <Ic name="tracks" cls="ic ic-sm" />
-              往期周历
-            </button>
+              <button
+                className="btn btn-sm"
+                type="button"
+                onClick={() => {
+                  if (layoutMode === 'vertical' || wide) {
+                    document.getElementById(`day-sec-${todayId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  } else {
+                    setSelectedDay(todayId)
+                  }
+                  toast('已回到今天')
+                }}
+              >
+                <Ic name="calendar" cls="ic ic-sm" />
+                回到今天
+              </button>
           </div>
         </div>
         <SketchSheet
