@@ -18,7 +18,7 @@ const tracksServerKey = (username: string): string => `tracksServer:${username}`
 // 缓存 key 保持不变：`xifanBindings:` / `girigiriBindings:`
 const bindingsKey = (source: SourceId, username: string): string => `${source}Bindings:${username}`
 const TRACKS_STORAGE_PREFIX = 'mt_cache:'
-const REVISION_INTERVAL_MS = 15_000
+const REVISION_INTERVAL_MS = 3_000
 const LIFECYCLE_COALESCE_MS = 500
 
 function tracksSignature(tracks: Track[]): string {
@@ -50,6 +50,7 @@ interface TracksAccountState {
   lastRevision: number | null
   lastViewRevision: number
   lastServerData: Track[] | null
+  committedData: Track[] | null
   lastServerSignature: string | null
   monitorCleanup: (() => void) | null
   lifecycleTimer: number | null
@@ -85,6 +86,7 @@ function stateFor(username: string): TracksAccountState {
     lastRevision: hasValidServerCache ? cachedServer.rev : null,
     lastViewRevision: hasValidServerCache ? cachedServer.viewRev ?? 0 : 0,
     lastServerData: hasValidServerCache ? cachedServer.data : null,
+    committedData: null,
     lastServerSignature: hasValidServerCache ? tracksSignature(cachedServer.data) : null,
     monitorCleanup: null,
     lifecycleTimer: null,
@@ -107,6 +109,7 @@ function notifyError(state: TracksAccountState, message: string | null): void {
 }
 
 function applyServerSnapshot(state: TracksAccountState, snapshot: TracksSnapshot): void {
+  state.committedData = null
   state.progress = null
   state.partialData = null
   for (const listener of state.listeners) listener.onProgress?.(null)
@@ -327,7 +330,11 @@ function stopMonitorIfIdle(state: TracksAccountState): void {
  * 把一次 PUT / DELETE 纳入账号级写入生命周期。最后一个连续写无论成功失败都会触发
  * 一次权威全量 GET；调用方不要再把单条写响应直接套回页面，避免旧响应覆盖后续操作。
  */
-export async function runTracksMutation<T>(username: string, mutate: () => Promise<T>): Promise<T> {
+export async function runTracksMutation<T>(
+  username: string,
+  mutate: () => Promise<T>,
+  update?: (tracks: Track[], result: T) => Track[],
+): Promise<T> {
   const state = stateFor(username)
   state.pendingWrites++
   state.needsAuthoritativeRead = true
@@ -336,7 +343,13 @@ export async function runTracksMutation<T>(username: string, mutate: () => Promi
   state.fullQueued = true
   // 不能只数「还有几个请求」：HTTP 请求并发时，后点的操作可能先落库、先点的操作反而
   // 最后覆盖服务器。队列继续执行失败后的下一项，但每个调用仍拿到自己的成功 / 失败。
-  const result = state.writeTail.then(mutate)
+  const result = state.writeTail.then(async () => {
+    const value = await mutate()
+    const base = state.committedData ?? state.lastServerData
+    // 只有完整快照才能合并单条成功响应，首批流式数据不能冒充完整列表。
+    if (update && base) state.committedData = update(base, value)
+    return value
+  })
   state.writeTail = result.then(
     () => undefined,
     () => undefined,
@@ -346,10 +359,27 @@ export async function runTracksMutation<T>(username: string, mutate: () => Promi
   } finally {
     state.pendingWrites--
     if (state.pendingWrites === 0) {
+      if (state.committedData) {
+        saveTracksCache(username, state.committedData)
+        notifyData(state, state.committedData)
+      }
       state.fullQueued = true
       if (!state.fullRequest) startFullRequest(state)
     }
   }
+}
+
+export function runTrackMutation(
+  username: string,
+  bgmId: number,
+  mutate: () => Promise<Track | void>,
+): Promise<Track | void> {
+  return runTracksMutation(username, mutate, (tracks, saved) => {
+    if (!saved) return tracks.filter(track => track.bgmId !== bgmId)
+    return tracks.some(track => track.bgmId === bgmId)
+      ? tracks.map(track => track.bgmId === bgmId ? saved : track)
+      : [saved, ...tracks]
+  })
 }
 
 // 有权威缓存时先检查 revision，只有版本变化才拉全量；读取失败后停止定时检查，
@@ -365,7 +395,7 @@ export function loadTracks(
   const listener = { onData, onError, onProgress }
   state.listeners.add(listener)
   // 重启前未完成的乐观写入可能留在普通缓存里；有权威快照时优先展示它。
-  const cached = (!state.needsAuthoritativeRead ? state.lastServerData : null) ?? cachePeek<Track[]>(key)
+  const cached = state.committedData ?? (!state.needsAuthoritativeRead ? state.lastServerData : null) ?? cachePeek<Track[]>(key)
   if (cached) onData(cached)
   else if (onProgress && state.partialData) onData(state.partialData)
   onProgress?.(state.progress)

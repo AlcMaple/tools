@@ -46,6 +46,7 @@ import {
   loadTracks,
   reloadTracks,
   runTracksMutation,
+  runTrackMutation,
   saveBindingsCache,
   saveTracksCache,
 } from './tracksSync'
@@ -259,8 +260,7 @@ export function TracksPage(): JSX.Element {
     confirmBind(source, flow.track.bgmId, { id: hit.id, name: hit.name, day: 0, remarks, score: 0 })
   }
 
-  // 搜索结果加追番 —— 乐观先塞占位（默认「想看」），最后统一用权威全量 GET 收口。
-  // 单条 PUT 响应可能比随后一次操作更晚回来，不能拿它覆盖较新的页面状态。
+  // 先展示占位；成功响应由账号写队列合并，连续操作结束后再通知共享列表。
   const addFromSearch = (hit: AnimeHit): void => {
     if (!user) return
     setError(null)
@@ -276,8 +276,7 @@ export function TracksPage(): JSX.Element {
       observeCount: 0, subjectType: 'anime', goodEpisodes: [], goodEpisodeNotes: {}, favorite: 0, createdAt: Date.now(), updatedAt: Date.now(),
     }
     setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
-    toast(`哼，『${hit.nameCn || hit.name}』已经贴进手帐啦，先放在「想看」里。`)
-    void runTracksMutation(user.username, () =>
+    void runTrackMutation(user.username, hit.bgmId, () =>
       putTrack(hit.bgmId, {
         title: hit.name,
         titleCn: hit.nameCn,
@@ -287,7 +286,8 @@ export function TracksPage(): JSX.Element {
         ...(calItem?.cover ? { cover: calItem.cover } : {}),
         ...(calDay ? { airWeekday: calDay.id } : {}),
       }, { searchAdditionToken: hit.searchAdditionToken })
-    ).catch((e: Error) => setError(e.message))
+    ).then(() => toast(`『${hit.nameCn || hit.name}』已加入想看`))
+      .catch((e: Error) => setError(e.message))
   }
 
   const addCustom = async (title: string): Promise<void> => {
@@ -319,7 +319,7 @@ export function TracksPage(): JSX.Element {
     setTracks((prev) => [optimistic, ...(prev ?? [])])
     toast(`哼，『${title}』先贴进手帐啦，等 BGM 出现再回填。`)
     try {
-      await runTracksMutation(user.username, () => putTrack(customBgmId, {
+      await runTrackMutation(user.username, customBgmId, () => putTrack(customBgmId, {
         title,
         titleCn: '',
         status: 'plan',
@@ -354,15 +354,14 @@ export function TracksPage(): JSX.Element {
     }
   }
 
-  // 本地先改、后端后写 —— +1 要跟手，不能等一个来回。成功与失败都由最后一次全量 GET
-  // 校正整份列表，快速连续点击时不会被较早返回的 PUT 盖回去。
+  // +1 本地先改；写队列只在连续操作结束后合并成功响应，避免旧响应盖掉后一次点击。
   const patch = (bgmId: number, p: TrackPatch): void => {
     if (!user) return
     setError(null)
     setTracks((prev) =>
       prev ? prev.map((t) => (t.bgmId === bgmId ? applyLocal(t, p) : t)) : prev
     )
-    void runTracksMutation(user.username, () => putTrack(bgmId, p)).catch((e: Error) => {
+    void runTrackMutation(user.username, bgmId, () => putTrack(bgmId, p)).catch((e: Error) => {
       // 标签超限（前端已拦一道，这里兜底并发写）：走便签，不挂页头红字警示条
       if (e.message.includes('标签')) tagLimitToast()
       else setError(e.message)
@@ -398,7 +397,7 @@ export function TracksPage(): JSX.Element {
     setEditing(null)
     setConfirming(null)
     if (t) toast(`已移出『${t.titleCn || t.title}』`)
-    void runTracksMutation(user.username, () => deleteTrack(bgmId))
+    void runTrackMutation(user.username, bgmId, () => deleteTrack(bgmId))
       .catch((e: Error) => setError(e.message))
   }
 

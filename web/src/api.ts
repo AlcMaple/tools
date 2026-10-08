@@ -250,9 +250,10 @@ export async function fetchTracks(
   onPartial?: (snapshot: TracksSnapshot, progress: TracksLoadProgress) => void,
   signal?: AbortSignal,
 ): Promise<TracksSnapshot> {
-  if (!onPartial) return normalizeTracksSnapshot(await json<TracksSnapshot>(await fetchApi('/api/tracks', { signal })))
+  if (!onPartial) return normalizeTracksSnapshot(await json<TracksSnapshot>(await fetchApi('/api/tracks', { signal, cache: 'no-store' })))
   return readApi('/api/tracks', {
     signal,
+    cache: 'no-store',
     headers: { Accept: 'application/x-ndjson', 'X-Calendar-Day': String(new Date().getDay() || 7) },
   }, async response => {
     // 部署切换期间旧服务仍可返回 JSON；只消费这次响应，不追加重试。
@@ -311,14 +312,14 @@ export async function fetchTracks(
 }
 
 export async function fetchTracksRevision(): Promise<{ rev: number; viewRev: number }> {
-  const { rev, viewRev = 0 } = await json<{ rev: number; viewRev?: number }>(await fetchApi('/api/tracks/revision'))
+  const { rev, viewRev = 0 } = await json<{ rev: number; viewRev?: number }>(await fetchApi('/api/tracks/revision', { cache: 'no-store' }))
   if (!Number.isSafeInteger(rev) || rev < 0) throw new Error('追番数据版本无效')
   if (!Number.isSafeInteger(viewRev) || viewRev < 0) throw new Error('追番列表版本无效')
   return { rev, viewRev }
 }
 
 export async function putTrack(bgmId: number, patch: TrackPatch, options: TrackWriteOptions = {}): Promise<Track> {
-  const res = await fetch(`/api/tracks/${bgmId}`, {
+  const res = await fetchApi(`/api/tracks/${bgmId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options.searchAdditionToken
@@ -339,7 +340,7 @@ export async function backfillTrack(customBgmId: number, bgmId: number): Promise
 }
 
 export async function deleteTrack(bgmId: number): Promise<void> {
-  await json<{ ok: boolean }>(await fetch(`/api/tracks/${bgmId}`, { method: 'DELETE' }))
+  await json<{ ok: boolean }>(await fetchApi(`/api/tracks/${bgmId}`, { method: 'DELETE' }))
 }
 
 // ── 备份导入导出 ─────────────────────────────────────────────────────────────

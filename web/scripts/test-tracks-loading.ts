@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { fetchApi } from '../src/request'
-import { coverUrl, fetchTracks, searchAnime, searchXifan, type TracksLoadProgress } from '../src/api'
+import { coverUrl, fetchTracks, searchAnime, searchXifan, type Track, type TracksLoadProgress } from '../src/api'
 
 const originalFetch = globalThis.fetch
 const directory = mkdtempSync(join(tmpdir(), 'maple-tracks-loading-'))
@@ -64,18 +64,19 @@ try {
   const storage = new Map<string, string>()
   const localStorage = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) }
   const intervals = new Map<number, () => void>()
+  const intervalDelays = new Map<number, number>()
   let nextInterval = 0
   const fakeWindow = Object.assign(new EventTarget(), {
     localStorage, setTimeout, clearTimeout,
-    setInterval: (callback: () => void) => { const id = ++nextInterval; intervals.set(id, callback); return id },
-    clearInterval: (id: number) => intervals.delete(id),
+    setInterval: (callback: () => void, delay: number) => { const id = ++nextInterval; intervals.set(id, callback); intervalDelays.set(id, delay); return id },
+    clearInterval: (id: number) => { intervals.delete(id); intervalDelays.delete(id) },
   })
   Object.defineProperty(globalThis, 'window', { value: fakeWindow, configurable: true })
   Object.defineProperty(globalThis, 'document', { value: Object.assign(new EventTarget(), { visibilityState: 'visible' }), configurable: true })
   Object.defineProperty(globalThis, 'localStorage', { value: localStorage, configurable: true })
   Object.defineProperty(globalThis, 'BroadcastChannel', { value: undefined, configurable: true })
-  const { cacheSet } = await import('../src/dataCache')
-  const { loadTracks, saveTracksCache, runTracksMutation } = await import('../src/tracksSync')
+  const { cacheSet, cachePeek } = await import('../src/dataCache')
+  const { loadTracks, saveTracksCache, runTracksMutation, runTrackMutation } = await import('../src/tracksSync')
   const flush = () => new Promise(resolve => setTimeout(resolve, 10))
   const streamRows = Array.from({ length: 20 }, (_, index) => ({ bgmId: index + 1, title: `流式番剧${index + 1}`, subjectType: 'anime', status: 'watching' }))
   const streamCounts = { all: 20, watching: 20, plan: 0, considering: 0, done: 0 }
@@ -170,6 +171,77 @@ try {
     assert.equal(visibleTitle, '权威标题')
     stop()
     assert.equal(intervals.size, 0)
+  })
+  await check('周历写入成功后立即更新共享列表，切页不等待卡住的全量校验', async () => {
+    cacheSet('tracksServer:calendar-add', { rev: 1, data: [] })
+    let finish!: (response: Response) => void
+    globalThis.fetch = async (url, init) => {
+      assert.equal(init?.cache, 'no-store')
+      if (String(url).endsWith('/revision')) return Response.json({ rev: 1 })
+      return new Promise((resolve, reject) => {
+        finish = resolve
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+      })
+    }
+    let calendar: Track[] = [], list: Track[] = []
+    const stopCalendar = loadTracks('calendar-add', rows => { calendar = rows })
+    await flush()
+    const saved = { ...streamRows[0], title: '世界最强的魔女，就此开始', episode: 0 } as Track
+    await runTrackMutation('calendar-add', saved.bgmId, async () => saved)
+    assert.equal(calendar[0]?.title, saved.title)
+    assert.equal(cachePeek<Track[]>('tracks:calendar-add')?.[0]?.title, saved.title)
+    const stopList = loadTracks('calendar-add', rows => { list = rows })
+    assert.equal(list[0]?.title, saved.title)
+    finish(Response.json({ rev: 2, data: [saved] }))
+    await flush()
+    assert.equal(list[0]?.title, saved.title)
+    stopCalendar(); stopList()
+  })
+  await check('连续写入只发布最后的确认状态，失败加番不会留下幽灵条目', async () => {
+    const saved = { ...streamRows[0], episode: 0 } as Track
+    cacheSet('tracksServer:write-order', { rev: 1, data: [saved] })
+    let revision = 1
+    let server = [saved]
+    globalThis.fetch = async url => String(url).endsWith('/revision')
+      ? Response.json({ rev: revision }) : Response.json({ rev: revision, data: server })
+    const episodes: number[] = []
+    let rows: Track[] = []
+    const stop = loadTracks('write-order', data => { rows = data; episodes.push(data[0]?.episode) })
+    await flush()
+    let first!: (track: Track) => void, second!: (track: Track) => void
+    const a = runTrackMutation('write-order', saved.bgmId, () => new Promise(resolve => { first = resolve }))
+    const b = runTrackMutation('write-order', saved.bgmId, () => new Promise(resolve => { second = resolve }))
+    await flush()
+    first({ ...saved, episode: 1 })
+    await a; await flush()
+    assert.deepEqual(episodes, [0])
+    server = [{ ...saved, episode: 2 }]; revision++
+    second(server[0])
+    await b
+    assert.equal(episodes.at(-1), 2)
+    await flush()
+    assert(!episodes.includes(1))
+    await assert.rejects(runTrackMutation('write-order', 999, async () => { throw new Error('写入被拒绝') }), /写入被拒绝/)
+    assert(!rows.some(track => track.bgmId === 999))
+    await flush()
+    await runTrackMutation('write-order', saved.bgmId, async () => { server = []; revision++ })
+    assert.equal(rows.length, 0)
+    stop()
+  })
+  await check('前台三秒检查版本，切回页面立即发现另一浏览器的新条目', async () => {
+    cacheSet('tracksServer:other-browser', { rev: 1, data: [] })
+    let revision = 1, rows: Track[] = []
+    const saved = { ...streamRows[0], title: '最强魔女' } as Track
+    globalThis.fetch = async url => String(url).endsWith('/revision')
+      ? Response.json({ rev: revision }) : Response.json({ rev: revision, data: [saved] })
+    const stop = loadTracks('other-browser', data => { rows = data })
+    await flush()
+    assert.deepEqual([...intervalDelays.values()], [3_000])
+    revision++
+    fakeWindow.dispatchEvent(new Event('focus'))
+    await flush(); await flush()
+    assert.equal(rows[0]?.title, saved.title)
+    stop()
   })
   await check('登录态读取 503 不误退出，只有 401 才清除账号', async () => {
     const { auth } = await import('../src/auth')

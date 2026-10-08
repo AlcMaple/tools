@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1000" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" role="img" aria-labelledby="title desc">
+<title id="title">追番写入已成功，列表也要立即跟上</title>
+<desc id="desc">历次同步修复的边界、周历加番后的用户体验与后台步骤、跨浏览器同步、失败和并发防护，以及线上双会话实测。</desc>
+<rect x="1" y="1" width="1118" height="998" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="32" y="38" font-size="19" fill="#282529" font-weight="700">追番写入已成功，列表也要立即跟上</text>
+<text x="32" y="63" font-size="12.5" fill="#756f73" font-weight="400">结果：成功加番后跨页立即可见；另一浏览器前台自动跟进。保留缓存秒开和原有防覆盖保护。</text>
+<text x="32" y="105" font-size="14" fill="#282529" font-weight="700">一、为什么又修一次：每次解决的缺口不同</text>
+<rect x="32" y="122" width="336" height="131" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="48" y="147" font-size="12.5" fill="#4a4450" font-weight="700">此前：修复多端状态不一致</text>
+<text x="48" y="171" font-size="11" fill="#4a4450" font-weight="400">旧缓存不能压过服务器；旧读取失效后要补拉。</text>
+<text x="48" y="190" font-size="11" fill="#4a4450" font-weight="400">同账号修改按点击顺序保存，切回页面校验。</text>
+<text x="48" y="209" font-size="11" fill="#4a4450" font-weight="400">这些保护本次继续保留。</text>
+<rect x="392" y="122" width="336" height="131" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+<text x="408" y="147" font-size="12.5" fill="#36566d" font-weight="700">随后：优化列表加载与手机搜索</text>
+<text x="408" y="171" font-size="11" fill="#36566d" font-weight="400">有缓存先显示；没有缓存先展示已收到的卡片。</text>
+<text x="408" y="190" font-size="11" fill="#36566d" font-weight="400">完整接收后才保存完整列表。</text>
+<text x="408" y="209" font-size="11" fill="#36566d" font-weight="400">这是加载提速，不等于写入后立即更新共享列表。</text>
+<rect x="752" y="122" width="336" height="131" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="768" y="147" font-size="12.5" fill="#96434f" font-weight="700">本次：补上成功写入后的显示空档</text>
+<text x="768" y="171" font-size="11" fill="#96434f" font-weight="400">用户报告：周历已打勾、提示已加入，列表搜不到。</text>
+<text x="768" y="190" font-size="11" fill="#96434f" font-weight="400">代码确认：提示先于写入，列表等整份校验。</text>
+<text x="768" y="209" font-size="11" fill="#96434f" font-weight="400">未取得当时请求证据，不能断言数据没有落库。</text>
+<text x="32" y="291" font-size="14" fill="#282529" font-weight="700">二、现在点击周历加番：提示、跨页列表、后台校验各有明确时机</text>
+<rect x="32" y="309" width="336" height="147" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+<text x="48" y="334" font-size="12.5" fill="#36566d" font-weight="700">点击「＋」</text>
+<text x="48" y="358" font-size="11" fill="#36566d" font-weight="400">用户看到：海报角标立即变为已追。</text>
+<text x="48" y="377" font-size="11" fill="#36566d" font-weight="400">此时还不显示「已把『番名』加入追番」。</text>
+<text x="48" y="396" font-size="11" fill="#36566d" font-weight="400">背后：把修改放进账号的保存队列。</text>
+<text x="48" y="415" font-size="11" fill="#36566d" font-weight="400">同一条正在保存时，重复点击不再追加操作。</text>
+<rect x="392" y="309" width="336" height="147" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="408" y="334" font-size="12.5" fill="#316247" font-weight="700">服务器确认保存成功</text>
+<text x="408" y="358" font-size="11" fill="#316247" font-weight="400">用户看到：「已把『番名』加入追番」。</text>
+<text x="408" y="377" font-size="11" fill="#316247" font-weight="400">切到「我的追番」可立即看到新条目。</text>
+<text x="408" y="396" font-size="11" fill="#316247" font-weight="400">背后：把已保存的条目合入共享完整列表，</text>
+<text x="408" y="415" font-size="11" fill="#316247" font-weight="400">更新当前页面和缓存，不等整份校验下载。</text>
+<rect x="752" y="309" width="336" height="147" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="768" y="334" font-size="12.5" fill="#316247" font-weight="700">随后核对完整列表</text>
+<text x="768" y="358" font-size="11" fill="#316247" font-weight="400">用户看到：保留刚保存的结果，后台继续校验。</text>
+<text x="768" y="377" font-size="11" fill="#316247" font-weight="400">背后：获取服务器完整列表，统一校正所有条目。</text>
+<text x="768" y="396" font-size="11" fill="#316247" font-weight="400">更早发出的读取不能覆盖刚刚的修改；</text>
+<text x="768" y="415" font-size="11" fill="#316247" font-weight="400">新快照确认后，清除临时合并结果。</text>
+<text x="375" y="389" font-size="18" fill="#4a4450" font-weight="400">→</text>
+<text x="735" y="389" font-size="18" fill="#4a4450" font-weight="400">→</text>
+<rect x="32" y="473" width="1056" height="88" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="48" y="498" font-size="12.5" fill="#7a6234" font-weight="700">为什么不能直接把每个保存回执都贴回页面？</text>
+<text x="48" y="522" font-size="11" fill="#7a6234" font-weight="400">快速连续修改时，较早回执会盖掉用户后一次点击；必须按保存顺序合并，连续操作结束后再统一发布。</text>
+<text x="48" y="541" font-size="11" fill="#7a6234" font-weight="400">只有已有完整列表时才合并单条回执。首次只收到一部分卡片时，仍须等完整校验，不能把半份缓存当作全部追番。</text>
+<text x="32" y="601" font-size="14" fill="#282529" font-weight="700">三、另一浏览器与异常：等待同步不是保存失败，失败也不能假装成功</text>
+<rect x="32" y="618" width="516" height="127" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+<text x="48" y="643" font-size="12.5" fill="#36566d" font-weight="700">另一浏览器已经登录</text>
+<text x="48" y="667" font-size="11" fill="#36566d" font-weight="400">用户看到：前台会自动补上新番；切回页面会立即校验。</text>
+<text x="48" y="686" font-size="11" fill="#36566d" font-weight="400">背后：先查版本，变化后才下载完整列表；没有变化不下载。</text>
+<text x="48" y="705" font-size="11" fill="#36566d" font-weight="400">不同浏览器不能共享本地缓存，必须从账号服务器确认。</text>
+<rect x="572" y="618" width="516" height="127" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="588" y="643" font-size="12.5" fill="#96434f" font-weight="700">保存失败 / 校验失败</text>
+<text x="588" y="667" font-size="11" fill="#96434f" font-weight="400">保存失败：恢复原角标，显示具体原因，不发成功提示。</text>
+<text x="588" y="686" font-size="11" fill="#96434f" font-weight="400">校验失败：保留已有内容，停止周期检查，不自动重试。</text>
+<text x="588" y="705" font-size="11" fill="#96434f" font-weight="400">重新进入页面、切回前台或联网事件可触发新一次校验。</text>
+<text x="32" y="785" font-size="14" fill="#282529" font-weight="700">四、线上实测：两个独立浏览器会话，共用一个临时测试账号</text>
+<rect x="32" y="803" width="336" height="110" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="48" y="828" font-size="12.5" fill="#316247" font-weight="700">点击到收到成功确认</text>
+<text x="48" y="852" font-size="11" fill="#316247" font-weight="400">933 ms</text>
+<text x="48" y="871" font-size="11" fill="#316247" font-weight="400">样本：周历添加「列女战纪：女娲石记」。</text>
+<rect x="392" y="803" width="336" height="110" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="408" y="828" font-size="12.5" fill="#316247" font-weight="700">成功确认后切到「我的追番」</text>
+<text x="408" y="852" font-size="11" fill="#316247" font-weight="400">43 ms 显示新条目</text>
+<text x="408" y="871" font-size="11" fill="#316247" font-weight="400">使用共享列表，不等待整份网络校验完成。</text>
+<rect x="752" y="803" width="336" height="110" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="768" y="828" font-size="12.5" fill="#316247" font-weight="700">另一前台会话自动看到新条目</text>
+<text x="768" y="852" font-size="11" fill="#316247" font-weight="400">2190 ms（从成功确认起计）</text>
+<text x="768" y="871" font-size="11" fill="#316247" font-weight="400">随后在本地列表中搜索该标题，仍能找到。</text>
+<text x="32" y="939" font-size="11" fill="#756f73" font-weight="400">测量口径：2026-10-08，生产站点，桌面 Chromium 独立会话；单次样本，不代表 iPhone、弱网或全部账号。</text>
+<text x="32" y="963" font-size="11" fill="#756f73" font-weight="400">常见情况：已有完整缓存仍然秒开；保存成功不再等整份列表下载，只有变化或显式校验才需要更新数据。</text>
+</svg>
