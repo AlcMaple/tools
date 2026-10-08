@@ -18,7 +18,7 @@
 | 新增了功能 | 递增 MINOR，如 `v0.2.0` | Latest |
 | 紧急修复刚发布版本的严重 bug | 递增 PATCH | Latest |
 
-统一打 **Latest**。没有自动更新机制，用户都是手动下载，Pre-release 对当前阶段没有实际意义。
+正式版统一打 **Latest**。Windows 支持应用内更新；macOS 需手动下载安装包。
 
 ---
 
@@ -61,7 +61,7 @@ Actions 成功后会自动创建一个 draft release。点铅笔图标编辑：
 
 ## 打错 tag 怎么办
 
-如果 tag 打在了错误的 commit 上，或者 Actions 失败需要重跑：
+如果尚未发布的 tag 打在了错误的 commit 上，需要修正标签：
 
 ```bash
 # 删本地 tag
@@ -83,20 +83,19 @@ git push --tags
 `Create draft release` 这步，注解报 `Not Found - .../releases/assets#update-a-release-asset`，
 往往十几秒就失败。（v0.12.0 / run#20 踩过一次。）
 
-**原因**：`softprops/action-gh-release` 的偶发抖动 —— 它先建草稿、紧接着传资产，GitHub API
-偶尔因同步延迟对刚建的 release 返回 404。**与代码 / 版本号 / workflow 无关**：`@v2` 解析到的
-action 版本和上次成功那次是同一份，唯一变量是时机。（那条 `Node.js 20 is deprecated` 是 warning，
-不是失败原因，忽略。）
+**先看完整日志与资产核验，不要只看红叉**。v0.16.3 / run#30 两个平台构建成功，
+上传日志同时出现两个 `builder-debug.yml`，随后资产更新报 404，但最后核验确认 8 个必需资产齐全。
+旧 workflow 的 `*.yml` 把两端同名调试文件都收进来；当前已改为只收集 `latest.yml` 与 `latest-mac.yml`。
+历史记录将 404 归因为同步延迟，不能直接套用到后续失败。Node.js 弃用警告不是本次失败原因。
 
-**修法（不用重打 tag、不用重新构建）**：
+**处理流程（不用重打 tag、不用重新构建）**：
 
-1. 去 [Releases 页] 看有没有一个**残缺的 v0.12.x draft**——失败那次可能已建了半个草稿。有就
-   **Delete draft** 删掉（留着它，重跑会撞「资产已存在」再次 404）。
-2. 回到失败的那次 run → 右上角 **Re-run jobs → Re-run failed jobs**。只重跑 `release` job，
-   直接复用已造好的包(artifact 保留 7 天)，约 1 分钟。换个时机通常就过。
+1. 查看 `Verify release assets` 与草稿：本版 exe/dmg/zip、各自 blockmap、两份 latest 清单共 8 个必需资产，核对版本、大小和清单引用。
+2. 资产齐全时保留草稿，补齐标题与 release notes 后按正常流程发布；不必为红叉重新构建。
+3. 资产缺失时先定位原因，再重跑失败的 `release` job，复用 artifact（保留 7 天）。
+   重跑使用原 tag 的 workflow，本地修改不会修正旧 run；不要随意删草稿或重打 tag。
 
-**只有 re-run 仍反复失败**才是真回归，届时再动 workflow（把 `softprops/action-gh-release@v2`
-钉到确定可用的版本 / 加重试），别一上来就改。
+同名资产等确定性问题应修正上传范围，不能靠反复重试掩盖。
 
 ---
 
@@ -104,5 +103,5 @@ action 版本和上次成功那次是同一份，唯一变量是时机。（那�
 
 - `.npmrc` 里有国内镜像配置，CI 会在构建前自动清空它（见 workflow）。本地开发不受影响。
 - 不需要 Windows 电脑，构建全在 GitHub Actions 云端完成。
-- 每次 tag 只能对应一次 Actions 触发；删掉重打才会重新触发。
+- 推送新 tag 会触发发布；已有 run 可重跑失败 job，无需删掉重打 tag。
 - draft release 随时可以编辑，但 tag 一旦发布出去就不要改名。
