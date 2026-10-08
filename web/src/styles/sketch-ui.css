@@ -2960,6 +2960,16 @@ body[data-auth='out'] .track-btn { display: none; }
 }
 .season-seg { flex: 1 1 200px; min-width: 0; }
 .season-seg .seg-btn { flex: 1; white-space: nowrap; }
+.season-ctrl { flex-wrap: nowrap; }
+.season-ctrl > .stepper > button { width: 32px; }
+.season-ctrl > .stepper > .ep-num { min-width: 48px; }
+.season-ctrl > .season-seg { flex: 1 1 0; gap: 0; padding: 3px; }
+.season-ctrl .season-seg > .seg-btn { min-width: 0; padding: 4px; font-size: 12px; }
+@media (max-width: 360px) {
+  .season-ctrl > .stepper > button { width: 28px; }
+  .season-ctrl > .stepper > .ep-num { min-width: 44px; }
+  .season-ctrl .season-seg > .seg-btn { padding: 4px 2px; }
+}
 
 /* ── 往期周历 ── */
 .hist-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 14px; }

@@ -168,7 +168,7 @@ export function EditModal({
 
         <div className="field mb16">
           <span className="field-label">记在哪一季</span>
-          <div className="ep-ctrl">
+          <div className="ep-ctrl season-ctrl">
             <div className="stepper">
               <button type="button" className="ep-minus" aria-label="往前一年" onClick={() => moveSeason(added.year - 1, added.q)}>
                 <Ic name="minus" cls="ic ic-sm" />
