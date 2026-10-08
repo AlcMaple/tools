@@ -9,8 +9,8 @@ import { dataDir } from './data-dir'
 
 const flagFile = join(dataDir, 'MAINTENANCE')
 
-// 维护页上纱雾头像要用的那张图，必须放行；整张图集在 public/assets，裁切由 CSS 完成。
-const FACE_PATH = '/assets/sagiri-face.webp'
+// 维护页上纱雾头像要用的那张图，必须放行；与 Toast、助手共用已裁好的单人头像。
+const FACE_PATH = '/assets/sagiri-avatar.webp'
 
 const API_MESSAGE = '纱雾正在整理小站，请稍后再来'
 
@@ -30,8 +30,8 @@ box-shadow:5px 6px 0 #ecd8d6;text-align:center;transform:rotate(-1.2deg)}
 .tape{position:absolute;top:-10px;right:-18px;width:76px;height:24px;background:rgba(214,79,122,.28);
 transform:rotate(38deg);border-left:2px dashed rgba(214,79,122,.45);border-right:2px dashed rgba(214,79,122,.45)}
 .face{position:absolute;top:-46px;left:50%;width:92px;height:92px;margin-left:-46px;border-radius:50%;
-border:2px solid #3e4350;background:#f4eddc url(/assets/sagiri-face.webp) no-repeat;
-background-size:266px 242px;background-position:-87px 0;animation:bob 3.2s ease-in-out infinite}
+border:2px solid #3e4350;background:#f4eddc url(/assets/sagiri-avatar.webp) no-repeat;
+background-size:cover;background-position:center;animation:bob 3.2s ease-in-out infinite}
 h1{margin:0 0 10px;font-size:21px;letter-spacing:1px;color:#1f7680}
 p{margin:0;font-size:14.5px;line-height:1.8;color:#6f7279}
 .dots{display:inline-block;margin-left:2px;letter-spacing:2px;color:#d64f7a}

@@ -118,7 +118,7 @@
     const el = document.createElement('div');
     el.className = 'toast-note' + (opt.err ? ' err' : '');
     el.innerHTML = `
-      <img class="avatar" src="assets/sagiri-face.png" alt="">
+      <img class="avatar" src="assets/sagiri-avatar.png" alt="">
       <div class="toast-body">
         <div class="toast-name">纱雾${opt.err ? ' · 小声' : ''}</div>
         <div class="toast-text"></div>
