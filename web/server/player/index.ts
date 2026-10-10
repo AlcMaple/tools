@@ -311,7 +311,7 @@ player.get('/vendor/:file', (c) => {
 })
 
 // ——— 日志：页面里发生的事只有浏览器知道，打回终端（AGENTS.md：用户只看终端）———
-const CLIENT_LOG_MAX = 300
+const CLIENT_LOG_MAX = 400
 player.post('/client-log', async (c) => {
   let body: unknown
   try { body = await c.req.json() } catch { return c.body(null, 204) }
@@ -319,7 +319,9 @@ player.post('/client-log', async (c) => {
   const msg = typeof o.msg === 'string' ? o.msg.slice(0, CLIENT_LOG_MAX) : ''
   const tape = Array.isArray(o.tape) ? o.tape.slice(-40).map((l) => String(l).slice(0, 120)) : undefined
   if (msg) {
-    console.log('[player:client] ' + msg)
+    // 带时间和 IP：pm2 日志本身没时间戳，事后只能靠这两样去对 nginx 访问日志里同一时段的 rt=（真实到手速度）
+    const ip = c.req.header('x-real-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? '-'
+    console.log(`[player:client] ${new Date().toISOString()} ip=${ip} ` + msg)
     if (tape?.length) console.log('[player:client]   tape: ' + tape.join(' | '))
     // 只有带胶片的（=出错诊断）才进 Sentry；「mount line=2」这种面包屑只留终端，不然 Issues 里全是 Info 噪音。
     if (!o.sdk && tape?.length) captureClientLog(msg, c.req.header('user-agent'), tape)

@@ -115,12 +115,26 @@ ${PLAYBACK_BEACON}
     for (var i = 0; i < v.buffered.length; i++)
       if (v.buffered.start(i) <= v.currentTime + .05 && v.buffered.end(i) >= v.currentTime) ahead = v.buffered.end(i) - v.currentTime
     return 't=' + (v.currentTime || 0).toFixed(1) + ' ahead=' + ahead.toFixed(1) + ' rs=' + v.readyState + ' ns=' + v.networkState
-      + ' err=' + (v.error ? v.error.code : '-') + (v.paused ? ' paused' : '')
+      + ' err=' + (v.error ? v.error.code : '-') + (v.paused ? ' paused' : '') + (fillRate >= 0 ? ' fill=' + fillRate.toFixed(2) + 'x' : '')
+  }
+  // 下载速度按「每过 1 秒缓冲区多出几秒画面」算：≥1 才跟得上播放。比 Mbps 直接——不用知道码率，
+  // 2026-10-10 iPhone 43 集就是 fill≈1.2x 时 iOS 攒到 44 秒也不开播；服务器那边只看得到数据已交给 nginx。
+  var fillRate = -1, fillEnd = -1, fillAt = 0
+  function sampleFill(v){
+    var now = performance.now(), end = v.currentTime + aheadOf(v)
+    var full = Number.isFinite(v.duration) && end >= v.duration - 1
+    if (fillEnd >= 0 && !full && !v.seeking && end >= fillEnd){
+      fillRate = (end - fillEnd) / ((now - fillAt) / 1000)
+      if (qos){ qos.fillSum += fillRate; qos.fillN++; if (fillRate < 1.2) qos.fillLow++ }
+    } else if (full) fillRate = -1
+    fillEnd = end; fillAt = now
   }
   function startTape(v){
     if (tapeTimer !== null) clearInterval(tapeTimer)
     tape = []; tapeAt = performance.now()
+    fillRate = -1; fillEnd = -1
     tapeTimer = setInterval(function(){
+      sampleFill(v)
       tape.push(Math.round((performance.now() - tapeAt) / 100) / 10 + 's ' + snapshot(v))
       if (tape.length > TAPE_MAX) tape.shift()
     }, 2000)
@@ -169,7 +183,7 @@ ${PLAYBACK_BEACON}
   var qos = null
   function qosStart(line){
     qos = { line: line, mountAt: performance.now(), readyMs: -1, playAt: 0, startupMs: -1, stalls: 0, stallMs: 0, longest: 0,
-      seeks: 0, seekMs: 0, seekLongest: 0, lastSeekAt: -1e9, sent: false }
+      seeks: 0, seekMs: 0, seekLongest: 0, lastSeekAt: -1e9, fillSum: 0, fillN: 0, fillLow: 0, kicks: 0, kickWins: 0, sent: false }
   }
   function qosStall(ms, since){
     if (!qos) return
@@ -185,11 +199,13 @@ ${PLAYBACK_BEACON}
     var s1 = function(ms){ return (ms / 1000).toFixed(1) + 's' }
     var summary = 'stalls=' + q.stalls + ' stallTotal=' + s1(q.stallMs) + ' longest=' + s1(q.longest)
       + ' ready=' + (q.readyMs < 0 ? '-' : s1(q.readyMs)) + ' startup=' + (q.startupMs < 0 ? '-' : s1(q.startupMs)) + ' seekWaits=' + q.seeks + ' seekLongest=' + s1(q.seekLongest)
+      + ' fill=' + (q.fillN ? (q.fillSum / q.fillN).toFixed(2) + 'x' : '-') + ' fillLow=' + q.fillLow + '/' + q.fillN
+      + ' kicks=' + q.kicks + '/' + q.kickWins
       + ' line=' + q.line + ' ep=' + ep + ' watched=' + s1(performance.now() - q.mountAt) + ' end=' + why
     slog('qos ' + summary)
     if (bad && window.playerMonitor){
       try { window.playerMonitor.report('playback qos', { summary: summary, stalls: q.stalls, stallTotalMs: Math.round(q.stallMs),
-        longestMs: Math.round(q.longest), readyMs: Math.round(q.readyMs), startupMs: Math.round(q.startupMs), seekLongestMs: Math.round(q.seekLongest), line: q.line, ep: ep }) } catch (e) {}
+        longestMs: Math.round(q.longest), readyMs: Math.round(q.readyMs), startupMs: Math.round(q.startupMs), seekLongestMs: Math.round(q.seekLongest), fill: q.fillN ? +(q.fillSum / q.fillN).toFixed(2) : null, fillLow: q.fillLow, kicks: q.kicks, kickWins: q.kickWins, line: q.line, ep: ep }) } catch (e) {}
     }
   }
 
@@ -208,6 +224,19 @@ ${PLAYBACK_BEACON}
   // ArtPlayer 自己的 loading 在 seeked / progress 一到就收（iOS 上 seeked 立刻就发、progress 一有字节就发），
   // 所以真卡住的时候它反而是不转的。这里按「没暂停、currentTime 一秒多没走」自己判，判到就把圈亮回去。
   var stallTimer = null, stallSince = 0, lastT = -1, lastTAt = 0, stallReported = false, bufOwned = false
+  // 「手里有画面却不走」时推一把：iOS 判断下载只比码率快一点就宁可一直等（2026-10-10 真机：缓冲 44 秒、rs=3、没暂停，
+  // 100 秒停在 0:00）。原地 seek 让它重新评估一次，还不走再 pause/play。每次卡顿最多两下，不碰网络、不换线。
+  var kickStage = 0, kicking = false
+  var KICK_AHEAD = 6
+  function kick(v, stage){
+    kickStage = stage
+    if (qos) qos.kicks++
+    slog('kick ' + (stage === 1 ? 'seek-in-place' : 'pause-play') + ' after ' + Math.round(performance.now() - stallSince) + 'ms ' + snapshot(v))
+    try {
+      if (stage === 1){ kicking = true; v.currentTime = v.currentTime }
+      else { v.pause(); var p = v.play(); if (p && p.catch) p.catch(function(){}) }
+    } catch (e) {}
+  }
   function aheadOf(v){
     for (var i = 0; i < v.buffered.length; i++)
       if (v.buffered.start(i) <= v.currentTime + .05 && v.buffered.end(i) >= v.currentTime) return v.buffered.end(i) - v.currentTime
@@ -227,7 +256,7 @@ ${PLAYBACK_BEACON}
   function fmt(t){ t = Math.max(0, Math.floor(t || 0)); var m = Math.floor(t / 60), s2 = t % 60; return m + ':' + (s2 < 10 ? '0' : '') + s2 }
   function startStallWatch(v){
     if (stallTimer !== null) clearInterval(stallTimer)
-    stallSince = 0; lastT = -1; lastTAt = performance.now(); stallReported = false; bufOwned = false
+    stallSince = 0; lastT = -1; lastTAt = performance.now(); stallReported = false; bufOwned = false; kickStage = 0; kicking = false
     stallTimer = setInterval(function(){
       if (!art || art.video !== v) return
       var now = performance.now(), t = v.currentTime
@@ -235,6 +264,8 @@ ${PLAYBACK_BEACON}
       if (t !== lastT){
         if (stallSince && !stallReported && now - stallSince > 1500) slog('stall recovered after ' + Math.round(now - stallSince) + 'ms ' + snapshot(v))
         if (stallSince && now - stallSince > 1500) qosStall(now - stallSince, stallSince)
+        if (stallSince && kickStage){ if (qos) qos.kickWins++; slog('kick worked stage=' + kickStage) }
+        kickStage = 0
         lastT = t; lastTAt = now; stallSince = 0; stallReported = false
         setBuffering(v, false)
         return
@@ -242,6 +273,10 @@ ${PLAYBACK_BEACON}
       if (now - lastTAt < 1200) return
       if (!stallSince) stallSince = lastTAt
       setBuffering(v, true, '缓冲中')
+      if (!v.seeking && v.readyState >= 3 && aheadOf(v) >= KICK_AHEAD){
+        if (kickStage === 0 && now - stallSince > 3000) kick(v, 1)
+        else if (kickStage === 1 && now - stallSince > 8000) kick(v, 2)
+      }
       if (!stallReported && now - stallSince > 20000){ stallReported = true; slog('stall 20s ' + snapshot(v), true) }
     }, 500)
   }
@@ -297,7 +332,7 @@ ${PLAYBACK_BEACON}
     v.addEventListener('loadedmetadata', function(){ if (qos && qos.readyMs < 0) qos.readyMs = performance.now() - qos.mountAt })
     v.addEventListener('play', function(){ if (qos && !qos.playAt) qos.playAt = performance.now() })
     v.addEventListener('playing', function(){ if (qos && qos.playAt && qos.startupMs < 0) qos.startupMs = performance.now() - qos.playAt })
-    v.addEventListener('seeking', function(){ if (qos) qos.lastSeekAt = performance.now() })
+    v.addEventListener('seeking', function(){ if (kicking){ kicking = false; return } if (qos) qos.lastSeekAt = performance.now() })
     startTape(v)
     startStallWatch(v)
     agentWatch(v)
