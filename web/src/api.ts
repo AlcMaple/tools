@@ -346,12 +346,12 @@ export async function deleteTrack(bgmId: number): Promise<void> {
 // ── 备份导入导出 ─────────────────────────────────────────────────────────────
 export type BackupExportFormat = 'zip' | 'zip-md' | 'md'
 
-/** 要一张短效下载票据，返回可直接放进 <a href download> 的地址（下载管理器插件也能接管）。 */
-export async function requestBackupExportUrl(format: BackupExportFormat): Promise<string> {
-  const { url } = await json<{ url: string }>(
-    await fetch('/api/backup/export-ticket', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format }) }),
+export async function requestBackupExportUrl(format: BackupExportFormat, signal: AbortSignal): Promise<{ url: string; expiresAt: number }> {
+  const requestedAt = Date.now()
+  const { url, expiresIn } = await json<{ url: string; expiresIn: number }>(
+    await fetch('/api/backup/export-ticket', { method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format }) }),
   )
-  return url
+  return { url, expiresAt: requestedAt + expiresIn * 1000 - 5000 }
 }
 
 export interface BackupImportResult {

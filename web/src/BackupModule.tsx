@@ -1,9 +1,9 @@
 // 设置页「备份与恢复」口袋 —— 手帐口吻（纱雾）。导出：先挑一种形态（贴纸单选），再按一个按钮。
-// 下载：先 POST 要一张 2 分钟票据，再用带票据的普通链接触发。直接 <a href="/api/…"> 会被下载管理器
+// 下载：提前 POST 要一张 2 分钟票据，用户直接点击带票据的普通链接。直接 <a href="/api/…"> 会被下载管理器
 // 插件（NDM 之类）抢去、没 Cookie 只能 401；fetch → blob: 插件又接管不了、用户嫌浏览器自带下载限速。
 // 票据挂在 URL 上两边都吃：有插件走插件，没插件浏览器自己下。
 // 导入结果按服务端汇总展示；追番列表页靠 rev 轮询自己刷新，这里不碰缓存。
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { requestBackupExportUrl, importBackup, type BackupExportFormat, type BackupImportResult } from './api'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
@@ -13,16 +13,6 @@ const EXPORTS: { format: BackupExportFormat; label: string; hint: string }[] = [
   { format: 'zip-md', label: '整本抄走 + 一页速览（ZIP）', hint: '能贴回来，另附一份 Markdown 随手翻' },
   { format: 'md', label: '只要那页速览（Markdown）', hint: '只能看，不能贴回来' },
 ]
-
-async function downloadExport(format: BackupExportFormat): Promise<void> {
-  const url = await requestBackupExportUrl(format)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = ''
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-}
 
 function summarize(r: BackupImportResult): string[] {
   const lines: string[] = []
@@ -45,25 +35,38 @@ function summarize(r: BackupImportResult): string[] {
 export function BackupModule(): JSX.Element {
   const fileRef = useRef<HTMLInputElement>(null)
   const [format, setFormat] = useState<BackupExportFormat>('zip')
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState(true)
+  const [exportTicket, setExportTicket] = useState<{ url: string; expiresAt: number; format: BackupExportFormat } | null>(null)
+  const [exportAttempt, setExportAttempt] = useState(0)
   const [exportError, setExportError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<BackupImportResult | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
 
-  const onExport = async (): Promise<void> => {
-    if (exporting) return
+  useEffect(() => {
+    const controller = new AbortController()
+    let expiryTimer: ReturnType<typeof setTimeout> | undefined
     setExporting(true)
+    setExportTicket(null)
     setExportError(null)
-    try {
-      await downloadExport(format)
-      toast('拿去吧，收好别弄丢。')
-    } catch (err) {
-      setExportError(err instanceof Error ? err.message : '没抄成，等会儿再试试')
-    } finally {
-      setExporting(false)
+    // 提前取票，让实际下载保持为用户直接点击链接。
+    void requestBackupExportUrl(format, controller.signal).then((ticket) => {
+      if (controller.signal.aborted) return
+      if (ticket.expiresAt <= Date.now()) throw new Error('下载链接已过期，请重新准备')
+      setExportTicket({ ...ticket, format })
+      expiryTimer = setTimeout(() => setExportTicket(null), ticket.expiresAt - Date.now())
+    }).catch((err: unknown) => {
+      if (!controller.signal.aborted) setExportError(err instanceof Error ? err.message : '下载链接准备失败')
+    }).finally(() => {
+      if (!controller.signal.aborted) setExporting(false)
+    })
+    return () => {
+      controller.abort()
+      clearTimeout(expiryTimer)
     }
-  }
+  }, [format, exportAttempt])
+
+  const readyTicket = exportTicket?.format === format ? exportTicket : null
 
   const onPick = async (file: File | undefined): Promise<void> => {
     if (!file || importing) return
@@ -107,10 +110,25 @@ export function BackupModule(): JSX.Element {
           })}
         </div>
         <div className="backup-act">
-          <button type="button" className="btn btn-primary" disabled={exporting} onClick={() => void onExport()}>
-            {exporting ? <Spinner /> : <Ic name="clip" />}
-            {exporting ? '正在抄…' : '抄一份给我'}
-          </button>
+          {readyTicket ? (
+            // NDM 连接失败会向当前页回传弹窗；同页导航被插件拦截后可能丢失接收页面。
+            <a className="btn btn-primary" href={readyTicket.url} target="_blank" rel="noopener" onClick={(event) => {
+              if (readyTicket.expiresAt <= Date.now()) {
+                event.preventDefault()
+                setExportTicket(null)
+                setExportAttempt((attempt) => attempt + 1)
+                return
+              }
+              toast('开始抄给你了……拿到后要收好哦。')
+            }}>
+              <Ic name="clip" />抄一份给我
+            </a>
+          ) : (
+            <button type="button" className="btn btn-primary" disabled={exporting} onClick={() => setExportAttempt((attempt) => attempt + 1)}>
+              {exporting ? <Spinner /> : <Ic name="clip" />}
+              {exporting ? '正在准备…' : '重新准备下载'}
+            </button>
+          )}
           <span className="field-hint">抄的是追番（进度、标签、评分、鉴赏神回）和你写的点评 / 推荐。</span>
         </div>
         {exportError && <p className="form-note err">{exportError}</p>}
