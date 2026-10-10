@@ -40,7 +40,7 @@ player.get('/probe-stream', async (c) => {
   if (!session) return c.json({ error: '未登录' }, 401)
   let r
   try {
-    r = await serveStream(raw, c.req.header('range'), false, String(session.uid))
+    r = await serveStream(raw, c.req.header('range'))
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : '代理失败' }, 502)
   }

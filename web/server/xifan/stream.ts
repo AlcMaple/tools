@@ -17,7 +17,6 @@
 //   2. **一个会话可以有多个读取端** —— 见下面 Reader 的注释。
 
 import '../http'
-import { randomUUID } from 'node:crypto'
 import { setMaxListeners } from 'node:events'
 import { Agent, request } from 'undici'
 import { canProxy, PROXY_HOSTS, RESCUE_HOSTS } from './proxy-hosts'
@@ -114,10 +113,6 @@ interface Reader {
   id: number
   cursor: number // 相对 regionStart
   evicted: boolean
-  /** 公共慢源准入按账号释放时，用它截断该账号仍挂着的长响应。 */
-  viewerKey: string
-  /** 预转（ffmpeg）自己拉的那条，不算「观众」——否则预转会把自己当观众冻住自己。 */
-  internal: boolean
 }
 
 interface Session {
@@ -242,33 +237,6 @@ function disposeSession(s: Session): void {
 
 export function disposeXifanStream(): void {
   for (const list of [...sessions.values()]) for (const s of [...list]) disposeSession(s)
-}
-
-/** 正在经代理直连拉流的**外部**观众数（按账号去重）。预转让位只看这个：HLS 观众读的是
- *  磁盘上的分片，不占入口带宽，不该把预转冻住——尤其是正在边转边看这一集的那个人。 */
-export function externalViewerCount(): number {
-  const keys = new Set<string>()
-  for (const list of sessions.values()) {
-    for (const session of list) {
-      for (const reader of liveReaders(session)) if (!reader.internal) keys.add(reader.viewerKey)
-    }
-  }
-  return keys.size
-}
-
-export function evictStreamViewer(viewerKey: string): void {
-  for (const list of sessions.values()) {
-    for (const session of list) {
-      let changed = false
-      for (const reader of liveReaders(session)) {
-        if (!reader.internal && reader.viewerKey === viewerKey) {
-          reader.evicted = true
-          changed = true
-        }
-      }
-      if (changed) notify(session)
-    }
-  }
 }
 
 function chunkSizeAt(bufferAhead: number): number {
@@ -549,7 +517,8 @@ function parseRange(header: string | undefined): { start: number; end: number | 
 
 // 单路直连透传，完全不碰会话。用于 moov 尾部探测这类小请求。
 // 透传专用连接池：**不能**借 worker 的 agents[0]（connections:1）——透传一整段是长连接，
-// ffmpeg 读完文件头去 seek 时第二个请求会排在第一个后面等它读完整个文件，直接死锁（本机复现）。
+// 播放器读完文件头去 seek 时第二个请求会排在第一个后面等它读完整个文件，直接死锁
+// （历史：09 月由当时的服务器转码 ffmpeg 在本机复现，转码已于 09-17 删除，道理对播放器同样成立）。
 const passthroughAgent = new Agent({ connections: 16, connectTimeout: CONNECT_TIMEOUT_MS, headersTimeout: HEADERS_TIMEOUT_MS, bodyTimeout: 0 })
 
 async function passthrough(url: string, start: number, end: number, total: number, ranged = true): Promise<StreamResult> {
@@ -571,9 +540,6 @@ async function passthrough(url: string, start: number, end: number, total: numbe
   return { status: ranged ? 206 : 200, headers, body: res.body as unknown as ReadableStream<Uint8Array> }
 }
 
-/** 只有本进程知道的一次性令牌：预转拉流时带上，外部无法伪造成「不算观众」。 */
-export const INTERNAL_TOKEN = randomUUID()
-
 export function assertStreamableUrl(raw: string): URL {
   const u = new URL(raw)
   if (u.protocol !== 'https:' || !ALLOWED_HOSTS.has(u.hostname)) {
@@ -591,8 +557,6 @@ export interface StreamResult {
 export async function serveStream(
   rawUrl: string,
   rangeHeader: string | undefined,
-  internal = false,
-  viewerKey = 'unknown',
   // 新播放页（server/player）的地址由本服务器解析层产出并 HMAC 签名，域名不必在白名单里——
   // 白名单是给旧 /api/xifan/stream 这种「裸 u 参数」用的防开放代理手段。
   signedByUs = false,
@@ -640,7 +604,7 @@ export async function serveStream(
   let session = pickSession(url, start)
   if (!session) {
     // 要另开区间了：同一视频里**已经没人读**（超过 ABANDON_GRACE_MS）的旧区间先收掉。它们只会用在途的块继续抢入口带宽——
-    // ffmpeg 开场读文件头留下的 start=0 会话就是这样，实测把真正的转码会话饿了近一分钟，
+    // 历史实测：读完文件头就去 seek 留下的 start=0 会话，把真正在读的会话饿了近一分钟，
     // 直到 60 秒 idle 看门狗才收摊。Chromium abort 后带同一 Range 重连会命中 pickSession，不走到这里。
     for (const stale of (sessions.get(url) ?? []).filter(abandoned)) {
       log(`会话 ${stale.regionStart} 已无读取端，让位给新区间 ${start}`)
@@ -658,7 +622,7 @@ export async function serveStream(
   }
 
   const reader: Reader = {
-    id: nextReaderId++, cursor: start - session.regionStart, evicted: false, internal, viewerKey,
+    id: nextReaderId++, cursor: start - session.regionStart, evicted: false,
   }
   session.readers.set(reader.id, reader)
   armIdle(session)
@@ -682,8 +646,8 @@ export async function serveStream(
     notify(s)
     armIdle(s)
     // 最后一个读取端走了、而同一个视频**别的区间正有人在读**：这段会话留着只会用它在途的
-    // 12 块继续抢入口带宽（ffmpeg 开场读文件头留下的 start=0 会话就是这样，实测把真正的
-    // 转码会话饿了近一分钟，直到 60 秒 idle 看门狗才收摊）。不等看门狗，但要过 ABANDON_GRACE_MS
+    // 12 块继续抢入口带宽（读完文件头就去 seek 留下的 start=0 会话就是这样，历史实测把真正在读的
+    // 会话饿了近一分钟，直到 60 秒 idle 看门狗才收摊）。不等看门狗，但要过 ABANDON_GRACE_MS
     // 宽限期：历史上这里是「立刻收」，iPhone 拖进度后短暂断开重连就会丢掉刚攒好的区间。
     // 只剩它一段时照旧留窗口——Chromium 会 abort 再带同一 Range 重连，那时能直接命中。
     if (liveReaders(s).length === 0) {
@@ -724,9 +688,7 @@ export async function serveStream(
         // 随后立刻追上下载端反复卡顿。**文件开场必须豁免**（对齐桌面端 exposeFirstProgressively）：
         // 开场时下载才刚建连，攒满 2MB 要十几秒，而播放器侧的缓冲闸门只等 10 秒——
         // 闸门互相顶死，表现为播放器一个字节都拿不到、直接回退 iframe。
-        // 预转（ffmpeg）自己的读取端也豁免：它不是播放器，拿到多少吃多少，攒够 2MB 再放只是
-        // 白白让编码器晚起步 6 秒（本机实测冷 seek 后 9.3 秒才见第一个字节）。
-        const atFileStart = s.regionStart < CHUNK_BYTES || reader.internal
+        const atFileStart = s.regionStart < CHUNK_BYTES
         const warmedUp =
           atFileStart ||
           s.contiguousEnd >= Math.min(COLD_START_BYTES, s.total - s.regionStart) ||

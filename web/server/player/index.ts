@@ -204,7 +204,7 @@ player.get('/stream', async (c) => {
     // 源站 mp4 一律先落盘、从盘上答（disk.ts）；太大或探不到长度的才回到原来的内存会话。
     const origin = async (range: string | undefined) =>
       (canProxy(media.url) ? await serveFromDisk(media.url, new URL(media.url).pathname.slice(-40), range) : null)
-      ?? await serveStream(media.url, range, false, 'player', true)
+      ?? await serveStream(media.url, range, true)
     const layout = await layoutOf(media.url)
     const r = layout ? await serveFaststart(layout, c.req.header('range'), origin) : await origin(c.req.header('range'))
     return new Response(logged(r.body, range, r.status, startedAt), { status: r.status, headers: r.headers })
