@@ -93,7 +93,15 @@ export function FeedbackPanel({context,onClose,dialog=false}:{context?:FeedbackC
   <div className="feedback-head"><h2 id={`${prefix}-title`} className="dlg-title">反馈与建议</h2>{onClose&&<button type="button" className="icon-btn" aria-label="关闭反馈" disabled={busy} onClick={onClose}><Ic name="x"/></button>}</div>
   <div className="feedback-tabs">{(['new','mine',...(admin?['admin']:[])] as View[]).map(tab=><button key={tab} type="button" className={`btn btn-sm${view===tab?' btn-primary':''}`} disabled={busy} onClick={()=>{if(tab==='new'){generation.current++;setView(tab);setDetail(null);setLoading(false);setError('');setNotice('')}else void list(tab)}}>{tab==='new'?'写反馈':tab==='mine'?'我的反馈':'反馈管理'}</button>)}</div>
   {view==='admin'&&!mailConfigured&&<p className="small" role="status">邮件通知尚未配置；反馈仍会正常保存。</p>}
-  {view==='new'?<form onSubmit={e=>void submit(e)} onPaste={e=>{const files=Array.from(e.clipboardData.files);if(files.length){e.preventDefault();void addImages(files)}}}>
+  {view==='new'?<form onSubmit={e=>void submit(e)} onPaste={e=>{
+   const files=Array.from(e.clipboardData.files).filter(file=>file.type.startsWith('image/'))
+   // 混合粘贴的文字由输入框原生插入，图片单独加入截图区。
+   if(files.length){void addImages(files);return}
+   const html=e.clipboardData.getData('text/html')
+   if(html&&new DOMParser().parseFromString(html,'text/html').querySelector('img')){
+    setError('复制的内容含图片，但剪贴板没有提供图片文件。请逐张复制图片粘贴，或点击“添加截图”选择图片。')
+   }
+  }}>
    <div className="feedback-types" role="group" aria-label="反馈类型">{Object.entries(FEEDBACK_CATEGORIES).map(([value,label])=><button key={value} type="button" className={`btn btn-sm${category===value?' btn-primary':''}`} aria-pressed={category===value} disabled={busy} onClick={()=>setCategory(value as FeedbackCategory)}>{label}</button>)}</div>
    <label className="feedback-label" htmlFor={`${prefix}-body`}>想告诉我们什么？</label><textarea id={`${prefix}-body`} value={body} disabled={busy} onChange={e=>setBody(e.target.value)} placeholder="描述问题或建议……" maxLength={3000} required rows={5}/>
    <input hidden type="file" accept="image/png,image/jpeg,image/webp" multiple ref={fileInput} onChange={e=>{void addImages(Array.from(e.target.files??[]));e.target.value=''}}/>
