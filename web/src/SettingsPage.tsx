@@ -404,7 +404,7 @@ function ProfileLoginWays({ onGoSecurity }: { onGoSecurity: () => void }): JSX.E
       if (result === 'bound') {
         toast('Google 账号已绑定')
       } else if (result === 'conflict') {
-        toast('该 Google 账号已绑定其它账号，如需覆盖请先用那个账号解绑', { err: true })
+        toast('该邮箱已用于其他账号，无法绑定。', { err: true })
       } else if (result === 'already_bound') {
         toast('本账号已绑定 Google，请先解绑再绑定新的', { err: true })
       } else {
