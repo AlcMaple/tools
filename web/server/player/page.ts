@@ -141,7 +141,7 @@ ${PLAYBACK_BEACON}
   }
 
   // ——— 状态 ———
-  var lines = [], eps = [], cur = null, resolved = {}, art = null, hls = null
+  var lines = [], eps = [], cur = null, resolved = {}, art = null, hls = null, emptyLines = {}
   var goodEps = {}, goodNotes = {}
   var generation = 0
   var offlineAt = null, offlineTime = 0, offlineWasPlaying = false
@@ -386,6 +386,7 @@ ${PLAYBACK_BEACON}
     if (cur && cur.source === source) return
     var req = ++lineRequest
     clearFail()
+    if (emptyLines[source]){ noEpisode(source); return }
     var pl = resolved[source]
     if (!pl){
       try {
@@ -396,6 +397,7 @@ ${PLAYBACK_BEACON}
       } catch (e){
         if (req !== lineRequest) return
         slog('resolve failed source=' + source + ' msg=' + (e && e.message))
+        if (e && e.code === 'LINE_EMPTY'){ emptyLines[source] = true; renderLines(); noEpisode(source); return }
         fail('线路 ' + source + ' 解析失败：' + (e && e.message), e && e.code, function(){ selectLine(source) })
         return
       }
@@ -403,6 +405,13 @@ ${PLAYBACK_BEACON}
     if (req !== lineRequest) return
     autoRetries = 0
     mount(pl, 0, true)
+  }
+  function lineName(source){
+    var l = lines.find(function(x){ return x.source === source })
+    return (l && l.name) || ('线路 ' + source)
+  }
+  function noEpisode(source){
+    fail('「' + lineName(source) + '」没有第 ' + ep + ' 集，请选其他线路' + (cur ? '，当前继续播放「' + lineName(cur.source) + '」' : ''), 'LINE_EMPTY')
   }
   function renderLines(){
     var box = $('lines'); box.textContent = ''
@@ -413,6 +422,11 @@ ${PLAYBACK_BEACON}
       var name = document.createElement('span'); name.className = 'lc-name'
       name.textContent = l.name || ('线路 ' + l.source)
       b.appendChild(dot); b.appendChild(name)
+      if (emptyLines[l.source]){
+        var meta = document.createElement('span'); meta.className = 'lc-meta'
+        meta.textContent = '没有第 ' + ep + ' 集'
+        b.appendChild(meta)
+      }
       b.onclick = function(){ selectLine(l.source) }
       box.appendChild(b)
     })
