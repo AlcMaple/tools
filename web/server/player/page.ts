@@ -162,7 +162,10 @@ ${PLAYBACK_BEACON}
       return r && r.t > 1 && Date.now() - r.at < 6 * 3600 * 1000 ? r : null
     } catch (e) { return null }
   }
+  // Girigiri 的 HLS 由手机直连源站：源站允许本站跨域取播放表和分片，2026-10-12 真机同一时刻同几片对比
+  // 直连 6.2Mbps、经本站 4.0Mbps，本站出口在高码率段（7~9Mbps）追不上。只走这一条，失败显示原因，不回退到经本站。
   function mediaUrl(pl){
+    if (src === 'girigiri' && pl.kind === 'hls') return pl.url
     return (pl.kind === 'hls' ? '/api/player/hls' : '/api/player/stream') + '?u=' + encodeURIComponent(pl.url) + '&s=' + pl.s
   }
   function fail(txt, code, retry){
