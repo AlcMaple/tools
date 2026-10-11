@@ -195,8 +195,8 @@
 .sketch-dock .sketch-sheet { --lift: 12px; width: 104px; height: 124px; transform: none; }
 .sketch-dock .sketch-sign { right: auto; left: 50%; bottom: -22px; transform: translateX(-50%) rotate(-3deg); font-size: 12px; }
 
-/* 画稿和它的动画只属于 PC：窄屏或没有 hover 的设备（手机 / 平板，含横屏 iPad）一律不出现 */
-@media (max-width: 1024px), (hover: none) {
+/* 画稿和它的动画只属于 PC：≤960px（与顶栏 / 底部标签栏同一条分界线）或没有 hover 的设备（手机 / 平板，含横屏 iPad）不出现 */
+@media (max-width: 960px), (hover: none) {
   .sketch-sheet, .sketch-dock { display: none !important; }
   .sketch-hero { min-height: 0; border-bottom: 0; margin-bottom: 16px; padding: 0; }
   .sketch-hero-body { padding-right: 0; }

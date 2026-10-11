@@ -89,7 +89,7 @@ export function TrackCard({
     <article className={`trk-row${considering ? ' is-considering' : ''}`} data-heat={heat}>
       <span className={`tape tr ${considering ? 'lav' : isToday ? 'sakura' : 'teal'}`} />
       {considering && <WearLayer />}
-      <div className="trk-cover" onClick={onEdit} title="点封面编辑" style={{ cursor: 'pointer', position: 'relative' }}>
+      <div className="trk-cover" onClick={onEdit} title="想改封面的话，戳我一下…" style={{ cursor: 'pointer', position: 'relative' }}>
         {t.cover ? (
           <img className="cover-img" src={coverUrl(t.cover, t.bgmId)} alt={title} loading="lazy" decoding="async" />
         ) : (
@@ -225,7 +225,7 @@ export function TrackCard({
           ) : (
             <>
               <ContinueWatchAction
-                label={considering ? '试看一集' : '继续看'}
+                label={considering ? '试看' : '继续看'}
                 ep={ep}
                 bound={bound}
                 locating={locating}
@@ -245,7 +245,7 @@ export function TrackCard({
           )}
           <button
             type="button"
-            className={`btn btn-sm btn-ghost${t.goodEpisodes.length > 0 ? ' ge-trigger-on' : ''}`}
+            className={`btn btn-sm btn-ghost trk-sec${t.goodEpisodes.length > 0 ? ' ge-trigger-on' : ''}`}
             onClick={onMarkGood}
             title={t.goodEpisodes.length > 0 ? `已标 ${t.goodEpisodes.length} 集好看` : '标记鉴赏神回'}
           >
@@ -255,7 +255,7 @@ export function TrackCard({
           {canReview && (
             <button
               type="button"
-              className="btn btn-sm btn-ghost"
+              className="btn btn-sm btn-ghost trk-sec"
               onClick={onWriteReview}
               title={t.status === 'watching' ? '写点评（先说看到第几话）' : '写点评，或者推荐给别人'}
             >
@@ -266,7 +266,7 @@ export function TrackCard({
           {onMakePoster && (
             <button
               type="button"
-              className="btn btn-sm btn-ghost"
+              className="btn btn-sm btn-ghost trk-sec"
               onClick={onMakePoster}
               disabled={posterBusy}
               title="把你的点评做成一张分享图"
@@ -277,13 +277,120 @@ export function TrackCard({
           )}
           {/* 状态分段与「移出」永远是一个靠右的尾组；卡片变窄时尾组整体换行，
               移出仍贴在右缘，不会因为 flex 折行掉到左下角。 */}
-          <div className="trk-tail">
+          <div className="trk-tail trk-sec">
             <StatusSeg t={t} considering={considering} onStatus={onStatus} />
             <RemoveBtn onAskRemove={onAskRemove} />
           </div>
+          <TrackMenu
+            t={t}
+            nudge={considering && t.observeCount >= NUDGE_AT}
+            canReview={canReview}
+            onStatus={onStatus}
+            onMarkGood={onMarkGood}
+            onWriteReview={onWriteReview}
+            onMakePoster={onMakePoster}
+            posterBusy={posterBusy}
+            onAskRemove={onAskRemove}
+          />
         </div>
       </div>
     </article>
+  )
+}
+
+// 桌面竖卡把「状态 / 神回 / 点评 / 分享图 / 移出」收进这个 ⋯ 菜单；手机仍用上面常驻的 .trk-sec 那组，CSS 二选一。
+function TrackMenu({
+  t,
+  nudge,
+  canReview,
+  onStatus,
+  onMarkGood,
+  onWriteReview,
+  onMakePoster,
+  posterBusy,
+  onAskRemove,
+}: {
+  t: Track
+  nudge: boolean
+  canReview: boolean
+  onStatus: (s: TrackStatus) => void
+  onMarkGood: () => void
+  onWriteReview: () => void
+  onMakePoster?: () => void
+  posterBusy?: boolean
+  onAskRemove: () => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  const run = (fn: () => void) => (): void => {
+    setOpen(false)
+    fn()
+  }
+  return (
+    <div ref={ref} className={`trk-menu${open ? ' open' : ''}`}>
+      <button
+        type="button"
+        className="btn btn-sm btn-ghost trk-menu-btn"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="更多操作"
+        title="更多"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Ic name="dots" cls="ic ic-sm" />
+        {nudge && !open && <Nudge />}
+      </button>
+      {open && (
+        <div className="trk-menu-pop" role="menu">
+          {SEG_ORDER.map((s) => (
+            <button
+              key={s}
+              type="button"
+              role="menuitemradio"
+              aria-checked={t.status === s}
+              className={`trk-menu-item${t.status === s ? ' on' : ''}`}
+              data-status={SEG_CLS[s]}
+              onClick={run(() => onStatus(s))}
+            >
+              {STATUS_META.find((m) => m.key === s)?.label}
+            </button>
+          ))}
+          <div className="trk-menu-sep" />
+          <button type="button" role="menuitem" className="trk-menu-item" onClick={run(onMarkGood)}>
+            {t.goodEpisodes.length > 0 ? `鉴赏神回（${t.goodEpisodes.length}）` : '鉴赏神回'}
+          </button>
+          {canReview && (
+            <button type="button" role="menuitem" className="trk-menu-item" onClick={run(onWriteReview)}>
+              写点评
+            </button>
+          )}
+          {onMakePoster && (
+            <button type="button" role="menuitem" className="trk-menu-item" disabled={posterBusy} onClick={run(onMakePoster)}>
+              {posterBusy ? '分享图生成中…' : '做分享图'}
+            </button>
+          )}
+          <div className="trk-menu-sep" />
+          <button type="button" role="menuitem" className="trk-menu-item danger" onClick={run(onAskRemove)}>
+            移出追番
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -168,6 +168,99 @@
   .hero-split > div:first-child { min-width: 0; }
 }
 
+/* ---------- 桌面顶栏（≥961px）：书脊横过来变成顶部导航 ----------
+   平板 / 手机仍是上面的 .m-top + 底部标签栏，这里只管桌面。同一个 .spine 节点，
+   不另起一套 DOM：品牌、导航、印章装饰、反馈和用户依次排成一行。 */
+@media (min-width: 961px) {
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .spine {
+    height: auto;
+    min-height: 52px;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 32px;
+    border-right: none;
+    border-bottom: 1.5px dashed var(--line-strong);
+    overflow: visible;
+    z-index: 50;
+  }
+  /* 胶带从顶栏下沿斜贴出去，像把这页纸粘在桌上 */
+  .spine .tape { left: 28px; top: auto; bottom: -9px; }
+  .brand { font-size: 19px; margin-right: 12px; white-space: nowrap; }
+  .brand-logo { width: 28px; height: 28px; }
+  .brand-sub { margin: 1px 0 0 2px; font-size: 10.5px; line-height: 1; letter-spacing: .2em; white-space: nowrap; }
+  .idx-nav { flex-direction: row; gap: 2px; }
+  /* 导航条目像贴在手帐页边的页签：平时是一行手写感小字，当前页被一条斜贴的胶带压住 */
+  .idx-a {
+    position: relative;
+    isolation: isolate;
+    min-height: 36px;
+    padding: 4px 15px;
+    border: none;
+    border-radius: 0;
+    background: none;
+    white-space: nowrap;
+    font-size: 14.5px;
+    letter-spacing: .04em;
+  }
+  .idx-a:nth-child(2n) { transform: rotate(.7deg); }
+  .idx-a:nth-child(2n+1) { transform: rotate(-.6deg); }
+  .idx-a.on { transform: rotate(-1.2deg); color: var(--teal); font-weight: 600; }
+  .idx-a.on::before {
+    content: '';
+    position: absolute;
+    inset: 3px -2px;
+    z-index: -1;
+    background: rgba(46, 151, 160, .22);
+    border-left: 1.5px dashed rgba(31, 118, 128, .35);
+    border-right: 1.5px dashed rgba(31, 118, 128, .35);
+    clip-path: polygon(0 8%, 3% 0, 6% 9%, 9% 0, 100% 0, 100% 100%, 9% 100%, 6% 91%, 3% 100%, 0 92%);
+    box-shadow: 0 1px 2px rgba(62, 67, 80, .1);
+  }
+  @media (hover: hover) {
+    .idx-a:not(.on):hover { color: var(--ink); text-decoration: underline wavy var(--teal-mid); text-underline-offset: 6px; text-decoration-thickness: 1px; }
+  }
+  /* 印章和拟声词紧挨着导航，不再撑出一段空档 */
+  .spine-deco { flex: none; display: flex; align-items: center; gap: 12px; min-height: 0; margin-left: 10px; }
+  .spine-deco .kira { position: static; font-size: 14px; }
+  .spine-deco .stamp { position: static; width: 34px; height: 34px; font-size: 11px; }
+  .spine-deco .sparkle { display: none; }
+  .spine-foot { margin-top: 0; margin-left: auto; flex-direction: row; align-items: center; gap: 10px; }
+  .spine-foot .w100 { width: auto; }
+  /* 反馈入口做成一张小标签贴纸 */
+  .spine-foot .feedback-entry { border-style: dashed; border-radius: 4px 10px 4px 10px; transform: rotate(-1.5deg); }
+  .spine-foot .btn { flex: none; white-space: nowrap; }
+  .spine-user { flex: none; white-space: nowrap; padding: 3px 12px 3px 4px; border-radius: var(--r-pill); }
+  .spine-user .avatar-init { width: 28px !important; height: 28px !important; font-size: 14px !important; }
+  .spine-user .faint { display: none; }
+  .spine-user b { max-width: 110px; }
+  .spine-acts .btn { flex: none; }
+  .sheet { padding-top: 16px; }
+  .rig-box { top: 76px; }
+  body[data-page='tracks'] .sheet-wrap { max-width: 1240px; }
+  /* 追番页抬头：标题、在看数、搜索工具栏三层叠在左边，立绘贴右边，和番剧周历同一种比例；
+     导入 / 加番放到下面状态标签那一行的最右边 */
+  /* 抬头高度和立绘位置沿用番剧周历的默认值：立绘人物的头会探出便签上沿，矮了就会顶到上面的提示条 */
+  body[data-page='tracks'] .sketch-hero { margin-bottom: 20px; }
+  body[data-page='tracks'] .sketch-hero-body { gap: 12px; }
+  /* 「今天的功课」便签更宽（320px），左侧内容让出的位置也要更多，否则工具栏会钻到便签底下 */
+  body[data-page='tracks'] .sketch-hero:has(.with-list) .sketch-hero-body { padding-right: 410px; }
+  body[data-page='tracks'] .sketch-hero .trk-toolbar { margin-bottom: 0; }
+  .trk-head-actions { margin-left: auto; align-self: center; padding-bottom: 4px; }
+}
+/* 窄桌面（961–1279）：先收印章和品牌副标题；再窄就把用户名和退出收成图标 */
+@media (min-width: 961px) and (max-width: 1279px) {
+  .spine-deco, .brand-sub { display: none; }
+  .spine { gap: 8px; padding-inline: 24px; }
+  .idx-a { padding-inline: 10px; gap: 7px; }
+}
+@media (min-width: 961px) and (max-width: 1139px) {
+  .spine-user > div { display: none; }
+  .spine-user { padding: 3px; gap: 0; border-radius: 50%; }
+  .spine-acts .btn { font-size: 0; gap: 0; padding-inline: 10px; }
+}
+
 /* ---------- 页面主分栏：内容 + 立绘驻场 ---------- */
 .hero-split { display: flex; gap: 30px; align-items: flex-end; }
 .hero-split.top { align-items: flex-start; }
@@ -1430,13 +1523,9 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 
 /* ---------- 追番：手帐内页行卡 ---------- */
 .trk-row {
-  --trk-cover-w: clamp(136px, 16vw, 156px);
-  /* 容器查询锚点：卡片窄不窄跟视口宽不宽是两回事（宽屏双列时卡片一样窄） */
+  /* 容器查询锚点：卡片窄不窄跟视口宽不宽是两回事 */
   container: trk / inline-size;
   position: relative;
-  display: grid;
-  grid-template-columns: var(--trk-cover-w) minmax(0, 1fr);
-  gap: 0;
   padding: 0;
   background: var(--card);
   border: 1.5px solid var(--line);
@@ -1446,14 +1535,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .trk-row.is-considering .trk-body { position: relative; z-index: 1; }
 .trk-cover {
   position: relative;
-  align-self: stretch;
-  width: auto;
-  min-height: 100%;
-  border-right: 1.5px dashed rgba(62, 67, 80, .26);
-  border-radius: 8px 0 0 8px;
   overflow: hidden;
   background: var(--silver-wash);
-  box-shadow: inset -1px 0 0 rgba(255, 253, 247, .5);
 }
 .trk-cover::after {
   content: '';
@@ -1891,6 +1974,85 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   border-radius: var(--r-pill);
   white-space: nowrap;
 }
+/* 桌面 / 平板：相纸竖卡。封面固定 5:7 完整显示，卡片高度由封面决定，同一行天然等高；
+   状态、神回、点评、分享图、移出全部收进 ⋯ 菜单，手机仍用常驻的 .trk-sec。 */
+@media (min-width: 641px) {
+  .trk-row {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 8px 8px 12px;
+  }
+  .trk-grid .trk-row:nth-child(3n+1) { transform: rotate(-.5deg); }
+  .trk-grid .trk-row:nth-child(3n+2) { transform: rotate(.4deg); }
+  .trk-grid .trk-row:has(.trk-menu.open) { z-index: 5; }
+  .trk-cover {
+    flex: none;
+    width: 100%;
+    aspect-ratio: 5 / 7;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  .trk-body { padding: 0 2px; gap: 9px; flex: 1; }
+  .trk-marks { flex-wrap: nowrap; }
+  .trk-marks .fav-heart { width: 14px; }
+  .trk-title { font-size: 15px; -webkit-line-clamp: 2; min-height: 2.7em; }
+  .ep-ctrl { flex-wrap: nowrap; gap: 6px; }
+  .ep-ctrl .ep-progress-shell { min-width: 40px; }
+  .ep-ctrl .stepper > button { width: 30px; }
+  .ep-ctrl .stepper > .ep-num { min-width: 0; font-size: 14px; }
+  .wm-cap, .wm-rule { display: none; }
+  .ep-ctrl .watchmarks { flex: 1; min-width: 0; justify-content: space-between; padding-inline: 8px; }
+  /* 单行标签：「＋」排在最前面，永远点得到；多出来的标签在右缘淡出，完整标签在详情弹窗里 */
+  .tagx-row {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+    mask-image: linear-gradient(90deg, #000 88%, transparent);
+  }
+  .tagx-row > .tagx { flex: none; white-space: nowrap; }
+  .tagx-row > .tagx-add { order: -1; font-size: 0; padding-inline: 8px; }
+  .tagx-row > .tagx-add::before { content: '＋'; font-size: 12px; }
+  .tagx-row > .tagx-input { order: -1; flex: none; width: 140px; }
+  .trk-actions { flex-wrap: nowrap; gap: 6px; }
+  .trk-actions > .btn-primary { flex: 1 1 auto; justify-content: center; }
+  .trk-actions > .btn { padding-inline: 10px; }
+  .trk-sec { display: none; }
+  .trk-menu { position: relative; flex: none; }
+  .trk-menu-btn { padding-inline: 8px; }
+  .trk-menu-pop {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 6;
+    min-width: 148px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--line-strong);
+    border-radius: var(--r-card);
+    box-shadow: var(--shadow-1), 0 12px 28px rgba(62, 67, 80, .16);
+  }
+  .trk-menu-sep { height: 0; margin: 5px 4px; border-top: 1px dashed var(--line); }
+  .trk-menu-item {
+    padding: 6px 10px;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    color: var(--ink);
+    background: none;
+    border: 1.5px dashed transparent;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .trk-menu-item:disabled { opacity: .5; cursor: default; }
+  .trk-menu-item.on { font-weight: 600; background: var(--teal-wash); border-color: var(--teal-line); color: var(--teal); }
+  .trk-menu-item.danger { color: var(--sakura); }
+  @media (hover: hover) { .trk-menu-item:not(:disabled):hover { background: var(--silver-wash); } }
+}
+@media (max-width: 640px) { .trk-menu { display: none; } }
+
 /* 手机：卡片改成信息优先的单栏，封面和标签收进详情弹窗。
    窄屏最需要的是标题、进度、状态和继续看；保留独立详情按钮，避免隐藏封面后
    失去进入编辑弹窗的入口。 */
@@ -2339,10 +2501,13 @@ body[data-auth='out'] .track-btn { display: none; }
 /* ---------- 追番：等宽卡片网格（不再按更新日分栏） ---------- */
 .trk-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px 20px;
   align-items: stretch;
   margin-top: 8px;
+}
+@media (min-width: 641px) {
+  .trk-grid { grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: 30px 22px; padding-top: 6px; }
 }
 .trk-grid .trk-row { height: 100%; }
 .trk-list {

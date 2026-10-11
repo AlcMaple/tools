@@ -168,7 +168,7 @@
 }
 .community-track-card {
   display: grid;
-  grid-template-columns: 108px minmax(0, 1fr);
+  grid-template-columns: 132px minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
   height: 220px;
@@ -180,7 +180,8 @@
 }
 .community-track-cover {
   width: 100%;
-  height: 100%;
+  aspect-ratio: 5 / 7;
+  align-self: start;
   flex: none;
   display: grid;
   place-items: center;
@@ -194,7 +195,7 @@
   border: 1px solid var(--line);
   border-radius: 5px;
 }
-.community-track-cover img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.community-track-cover img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
 .community-track-body {
   display: grid;
   /* 标题 / 副标题 / 进度+星 / 点评推荐 chip / 标签 / BGM 链接 */

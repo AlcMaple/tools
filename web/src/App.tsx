@@ -227,15 +227,9 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
           </nav>
 
           <div className="spine-deco">
-            <span className="kira" style={{ top: 0, left: 26 }}>
-              {sp.kira}
-            </span>
-            <span className={`stamp ${sp.stampCls}`} style={{ position: 'absolute', top: 6, right: 14 }}>
-              {sp.stamp}
-            </span>
-            <span className="sparkle s2" style={{ position: 'absolute', top: 52, left: 40, fontSize: 13 }}>
-              ✦
-            </span>
+            <span className="kira">{sp.kira}</span>
+            <span className={`stamp ${sp.stampCls}`}>{sp.stamp}</span>
+            <span className="sparkle s2">✦</span>
           </div>
 
           <div className="spine-foot">
@@ -279,7 +273,6 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
         {/* 内页 */}
         <main ref={sheetRef} className="sheet">
           <div className="sheet-wrap">
-            {route === 'settings' && <div className="feedback-settings-entry"><span>反馈与建议</span><button type="button" className="btn btn-sm feedback-entry" onClick={() => openFeedback()}>打开反馈{feedbackUnread>0&&<span className="feedback-unread">有新消息</span>}</button></div>}
             <NagBar onGoSettings={() => go('settings')} />
             {route === 'feedback' ? <FeedbackPanel key={user?.id ?? 'guest'} /> : route === 'settings'
               ? <SettingsPage />

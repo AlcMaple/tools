@@ -58,6 +58,7 @@ import { BgmImportModal } from './tracks/importModal'
 import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
 import { AddSearchModal, type BackfillTarget } from './tracks/addSearchModal'
 import { SketchSheet } from './SketchSheet'
+import { useIsWide } from './useMediaQuery'
 import {
   SourceBindPickerModal,
   SourceSearchModal,
@@ -538,6 +539,43 @@ export function TracksPage(): JSX.Element {
     }
   }
 
+  const wide = useIsWide()
+  const headActions = user ? (
+    <div className="row">
+      <button className="btn btn-sm btn-ghost" type="button" disabled={!!loadProgress} onClick={() => setImportOpen(true)}>
+        <Ic name="refresh" cls="ic ic-sm" />
+        从 Bangumi 导入
+      </button>
+      <button className="btn btn-sm btn-primary" type="button" disabled={!!loadProgress} onClick={() => setAdding({})}>
+        <Ic name="plus" cls="ic ic-sm" />
+        加番
+      </button>
+    </div>
+  ) : null
+
+  const toolbar = (
+    <div className="row mb16 trk-toolbar" style={{ flexWrap: 'wrap' }}>
+        <div className="searchbar">
+          <Ic name="search" cls="ic" />
+          <input
+            id="trkSearch"
+            spellCheck={false}
+            autoComplete="off"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="在这页里搜番名…"
+          />
+          {query && (
+            <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="清空搜索">
+              <Ic name="x" cls="ic ic-sm" />
+            </button>
+          )}
+        </div>
+        <TagFilter all={allTags} selected={tags} onChange={setTags} />
+        <ViewModeToggle value={view} onChange={setView} />
+    </div>
+  )
+
   return (
     <>
       <header className="sketch-hero">
@@ -561,18 +599,7 @@ export function TracksPage(): JSX.Element {
               )}
             </p>
           </div>
-          {user && (
-            <div className="row">
-              <button className="btn btn-sm btn-ghost" type="button" disabled={!!loadProgress} onClick={() => setImportOpen(true)}>
-                <Ic name="refresh" cls="ic ic-sm" />
-                从 Bangumi 导入
-              </button>
-              <button className="btn btn-sm btn-primary" type="button" disabled={!!loadProgress} onClick={() => setAdding({})}>
-                <Ic name="plus" cls="ic ic-sm" />
-                加番
-              </button>
-            </div>
-          )}
+          {wide ? toolbar : headActions}
         </div>
         <SketchSheet src="/assets/pop/tracks.webp" paper="note" className={`sketch-hero-art${homework.length ? ' with-list' : ''}`}>
           {homework.length > 0 && (
@@ -592,26 +619,7 @@ export function TracksPage(): JSX.Element {
         </SketchSheet>
       </header>
 
-      <div className="row mb16" style={{ flexWrap: 'wrap' }}>
-        <div className="searchbar">
-          <Ic name="search" cls="ic" />
-          <input
-            id="trkSearch"
-            spellCheck={false}
-            autoComplete="off"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="在这页里搜番名…"
-          />
-          {query && (
-            <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="清空搜索">
-              <Ic name="x" cls="ic ic-sm" />
-            </button>
-          )}
-        </div>
-        <TagFilter all={allTags} selected={tags} onChange={setTags} />
-        <ViewModeToggle value={view} onChange={setView} />
-      </div>
+      {!wide && toolbar}
 
       <div className="tabf-row">
         {([['all', '全部'], ...STATUS_META.map((m) => [m.key, m.label])] as [FilterKey, string][]).map(
@@ -626,6 +634,7 @@ export function TracksPage(): JSX.Element {
             </button>
           )
         )}
+        {wide && headActions && <div className="trk-head-actions">{headActions}</div>}
       </div>
 
       {(error ?? tracksError) && (
