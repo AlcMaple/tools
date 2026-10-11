@@ -248,7 +248,7 @@ player.get('/hls', async (c) => {
   const media = await signedMedia(c)
   if (media instanceof Response) return media
   try {
-    const res = await request(media.url, { dispatcher: segAgent, method: 'GET', maxRedirections: 5, headers: UPSTREAM_HEADERS })
+    const res = await request(media.url, { dispatcher: segAgent, method: 'GET', maxRedirections: 5, headers: UPSTREAM_HEADERS, signal: c.req.raw.signal })
     if (res.statusCode !== 200) { await res.body.dump(); return c.json({ error: '上游 m3u8 状态 ' + res.statusCode }, 502) }
     const text = await res.body.text()
     if (!text.startsWith('#EXTM3U')) return c.json({ error: '上游返回的不是 m3u8' }, 502)
@@ -269,7 +269,11 @@ player.get('/seg', async (c) => {
   const range = c.req.header('range')
   if (range) headers.Range = range
   try {
-    const res = await request(media.url, { dispatcher: segAgent, method: 'GET', maxRedirections: 5, headers })
+    // 播放器断开就中止上游：hls.js 拖进度条时会一口气发出又取消几十个分片，不中止的话上游响应没人读，
+    // 连接卡在 segAgent 里（bodyTimeout 0 永不超时），16 条占满后新分片和 m3u8 全排队到超时
+    // （2026-10-12 真机：Girigiri 拖到 4:50 后报 fragLoadTimeOut，重载后 manifestLoadTimeOut，服务器上留着 4 条
+    // 各积压几百 KB 的上游连接）。
+    const res = await request(media.url, { dispatcher: segAgent, method: 'GET', maxRedirections: 5, headers, signal: c.req.raw.signal })
     if (res.statusCode !== 200 && res.statusCode !== 206) { await res.body.dump(); return c.json({ error: '上游分片状态 ' + res.statusCode }, 502) }
     const out: Record<string, string> = { 'Cache-Control': 'private, max-age=3600' }
     for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {

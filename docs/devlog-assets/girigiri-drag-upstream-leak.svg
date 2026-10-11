@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1010" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="a-red" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#b96372"/></marker>
+    <marker id="a-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="1008" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">Girigiri 拖进度后报错，重试、换线路都不行：服务器没把「不要了」转告源站</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：拖一次进度条，就可能把服务器转发视频的通道永久占满，之后谁来都排队超时，只有重启服务才恢复。修复后手机一取消，服务器立刻挂断源站，通道马上空出来。</text>
+
+  <!-- 一、用户看到的 -->
+  <rect x="32" y="84" width="1056" height="150" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、用户经历了什么（10-12 真机，学生会第 2 集）</text>
+
+  <rect x="56" y="126" width="180" height="88" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="146" y="150" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">正常起播</text>
+  <text x="146" y="172" text-anchor="middle" font-size="11" fill="#456b54">播了一会儿</text>
+  <text x="146" y="190" text-anchor="middle" font-size="11" fill="#456b54">拖进度条到 4:50</text>
+  <path d="M240 170 H262" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="266" y="126" width="180" height="88" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="356" y="150" text-anchor="middle" font-size="12.5" font-weight="700" fill="#7a6234">一直转圈 10 秒</text>
+  <text x="356" y="172" text-anchor="middle" font-size="11" fill="#7a6234">然后页面像「刷新」了一下</text>
+  <text x="356" y="190" text-anchor="middle" font-size="11" fill="#7a6234">（播放器自动重新加载）</text>
+  <path d="M450 170 H472" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="476" y="126" width="260" height="88" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="606" y="150" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">红框：这条线路播放出错</text>
+  <text x="606" y="172" text-anchor="middle" font-size="11" fill="#8a5a62">hls networkError / manifestLoadTimeOut</text>
+  <text x="606" y="190" text-anchor="middle" font-size="11" fill="#8a5a62">（连播放列表都拿不到）</text>
+  <path d="M740 170 H762" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="766" y="126" width="298" height="88" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="915" y="150" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">点重试、换线路都不行</text>
+  <text x="915" y="172" text-anchor="middle" font-size="11" fill="#8a5a62">而源站官方页面播放正常</text>
+  <text x="915" y="190" text-anchor="middle" font-size="11" fill="#8a5a62">→ 问题在我们的服务器，不在源站</text>
+
+  <!-- 二、背后在做什么：修复前 / 修复后 -->
+  <rect x="32" y="250" width="1056" height="380" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="276" font-size="14" font-weight="700" fill="#353136">二、背后发生了什么</text>
+  <text x="52" y="296" font-size="11" fill="#756f73">那时 Girigiri 的视频是「手机 → 我们的服务器 → 源站」转一道。服务器到源站固定 16 条通道，所有看 Girigiri 的人共用。</text>
+
+  <!-- 修复前 -->
+  <rect x="56" y="312" width="490" height="300" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="76" y="336" font-size="12.5" font-weight="700" fill="#96434f">修复前</text>
+  <text x="76" y="362" font-size="11" fill="#5f3a40">① 拖进度条时，播放器沿途连发约 25 个分片请求，</text>
+  <text x="76" y="380" font-size="11" fill="#5f3a40">    几毫秒后又全部取消（只要最后停下的位置）</text>
+  <text x="76" y="406" font-size="11" fill="#5f3a40">② 服务器已经替每个请求去问源站了，手机取消时</text>
+  <text x="76" y="424" font-size="11" font-weight="700" fill="#96434f">    源站还没回话 → 服务器没把「不要了」转告源站</text>
+  <text x="76" y="450" font-size="11" fill="#5f3a40">③ 源站随后把数据发过来，没人接收，</text>
+  <text x="76" y="468" font-size="11" fill="#5f3a40">    这条通道就一直被占着，永远不会自己超时</text>
+  <text x="76" y="494" font-size="11" fill="#5f3a40">④ 16 条被占满 → 真正需要的 4:50 分片、播放列表</text>
+  <text x="76" y="512" font-size="11" fill="#5f3a40">    都在排队 → 10 秒超时 → 报错 → 自动重载也排队</text>
+
+  <rect x="76" y="530" width="450" height="64" rx="8" fill="#ffffff" stroke="#d99aa5"/>
+  <text x="96" y="552" font-size="11" font-weight="700" fill="#96434f">现场证据（4 分多钟后还在）</text>
+  <text x="96" y="572" font-size="11" fill="#5f3a40">服务器上仍挂着 4 条连 Girigiri 源站的通道，</text>
+  <text x="96" y="588" font-size="11" fill="#5f3a40">每条都积压着几百 KB 没人读的数据</text>
+
+  <!-- 修复后 -->
+  <rect x="574" y="312" width="490" height="300" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="594" y="336" font-size="12.5" font-weight="700" fill="#316247">修复后</text>
+  <text x="594" y="362" font-size="11" fill="#2f4d3c">① 播放器照样连发又取消，这是播放器的正常行为，不去改它</text>
+  <text x="594" y="388" font-size="11" fill="#2f4d3c">② 手机一取消，服务器同时挂断对源站的那次请求，</text>
+  <text x="594" y="406" font-size="11" font-weight="700" fill="#316247">    不管源站有没有回话</text>
+  <text x="594" y="432" font-size="11" fill="#2f4d3c">③ 通道立刻空出来，真正需要的分片马上就能取</text>
+
+  <rect x="594" y="452" width="450" height="64" rx="8" fill="#ffffff" stroke="#7fad91"/>
+  <text x="614" y="474" font-size="11" font-weight="700" fill="#316247">本地复现（模拟「源站回话前就取消」）</text>
+  <text x="614" y="494" font-size="11" fill="#2f4d3c">手机取消 5 次：修复前源站那头 0 条被挂断，</text>
+  <text x="614" y="510" font-size="11" fill="#2f4d3c">修复后 5 条全部挂断</text>
+
+  <rect x="594" y="530" width="450" height="64" rx="8" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="614" y="552" font-size="11" font-weight="700" fill="#36566d">为什么以前没发现</text>
+  <text x="614" y="572" font-size="11" fill="#36566d">源站已经回话后再取消，本来就能挂断；只有「回话前就</text>
+  <text x="614" y="588" font-size="11" fill="#36566d">取消」会漏。正常播放几乎碰不到，拖进度条却全是这种</text>
+
+  <!-- 三、容易改错 -->
+  <rect x="32" y="646" width="1056" height="210" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="672" font-size="14" font-weight="700" fill="#353136">三、哪里容易改错</text>
+
+  <rect x="56" y="688" width="490" height="150" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="76" y="712" font-size="12.5" font-weight="700" fill="#7a6234">为什么不给通道加个「多久没读就断开」</text>
+  <text x="76" y="736" font-size="11" fill="#6b5a35">看起来能兜底，但正常播放时手机缓冲满了会暂停读取，</text>
+  <text x="76" y="754" font-size="11" fill="#6b5a35">一段长视频读到一半停几十秒很常见。加了它，用户暂停一会儿</text>
+  <text x="76" y="772" font-size="11" fill="#6b5a35">再播就会断流。该断的时机只有一个：手机明确说不要了。</text>
+  <text x="76" y="798" font-size="11" fill="#6b5a35">同理也不要在服务器上「排队太久就重试」：那只会让更多</text>
+  <text x="76" y="816" font-size="11" fill="#6b5a35">请求挤进已经堵住的通道。</text>
+
+  <rect x="574" y="688" width="490" height="150" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="594" y="712" font-size="12.5" font-weight="700" fill="#4a4450">同时看到、但跟这次无关的</text>
+  <text x="594" y="736" font-size="11" fill="#4a4450">换到「简中」提示解析不到：源站这条线路本来就没有第 2 集，</text>
+  <text x="594" y="754" font-size="11" fill="#4a4450">已另改成明确提示「该线路没有第 2 集」（单独一个提交）。</text>
+  <text x="594" y="780" font-size="11" fill="#4a4450">10-12 起 Girigiri 改为手机直连源站，不再经这条通道；</text>
+  <text x="594" y="798" font-size="11" fill="#4a4450">这个修复仍保护其它经服务器转发的分段视频线路。</text>
+
+  <!-- 结尾 -->
+  <rect x="32" y="872" width="1056" height="110" rx="12" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="52" y="898" font-size="14" font-weight="700" fill="#316247">常见情况</text>
+  <text x="52" y="922" font-size="11" fill="#2f4d3c">不拖进度条、正常从头看完的人从来碰不到这个问题；只要拖过一次，就可能把所有人的通道一起堵住，直到服务重启。</text>
+  <text x="52" y="942" font-size="11" fill="#2f4d3c">修复后：拖进度条只多花几毫秒的无用请求，通道随取消随放，不会累积。</text>
+  <text x="52" y="962" font-size="11" fill="#2f4d3c">这条规则写在项目规范里：「换集 / 换源 / 拖动时，必须中止真正的媒体请求，而不只是丢弃结果」。</text>
+</svg>
