@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1180" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="b-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="1178" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">稀饭：iPhone 跳到还没下载的位置，起播从 22～66 秒降到约 6 秒</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：只在「跳到服务器还没下载的位置」时才会遇到；整集已在服务器上的番跳转只要 2～8 秒，不受影响。改的只是服务器先下哪一块，不碰画质、不改播放器。</text>
+
+  <!-- 一、背景 -->
+  <rect x="32" y="84" width="1056" height="132" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、先知道两件事</text>
+  <rect x="56" y="124" width="490" height="76" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="76" y="146" font-size="12.5" font-weight="700" fill="#36566d">服务器边下边给</text>
+  <text x="76" y="166" font-size="11" fill="#36566d">用户点开一集，服务器开 12 条连接把整集拉到自己盘上，每块 256KB；</text>
+  <text x="76" y="184" font-size="11" fill="#36566d">手机要哪段就给哪段。源站单条连接很慢：下完一块约 5 秒。</text>
+  <rect x="574" y="124" width="490" height="76" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="594" y="146" font-size="12.5" font-weight="700" fill="#36566d">iPhone 跳转时不是一次要一大段</text>
+  <text x="594" y="166" font-size="11" fill="#36566d">它先要跳转点的 64KB，拿到才要下一个 64KB，再要中间漏的一段；</text>
+  <text x="594" y="184" font-size="11" fill="#36566d">同时还会发「跳转点往后」以及「从旧位置回补到跳转点」的大段请求。</text>
+
+  <!-- 二、修复前 -->
+  <rect x="32" y="232" width="1056" height="330" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="258" font-size="14" font-weight="700" fill="#353136">二、修复前：三种卡法（都来自 10-11 真机）</text>
+
+  <rect x="56" y="274" width="320" height="270" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="76" y="298" font-size="12.5" font-weight="700" fill="#96434f">A. 拖到 5:36，等了 66 秒</text>
+  <text x="76" y="320" font-size="11" fill="#8a5a62">用户看到：一直「缓冲中 · 已缓冲 0.0 秒」</text>
+  <text x="76" y="346" font-size="11" fill="#5f3a40">背后：跳转点那 64KB 本来插队先下，</text>
+  <text x="76" y="364" font-size="11" fill="#5f3a40">但「跳转点往后」那个请求每往前读一块，</text>
+  <text x="76" y="382" font-size="11" fill="#5f3a40">服务器就把下载位置往前挪，</text>
+  <text x="76" y="400" font-size="11" fill="#5f3a40">同时砍掉挪动位置之前所有在下的块——</text>
+  <text x="76" y="418" font-size="11" font-weight="700" fill="#96434f">插队的那块也被砍，下到一半重来</text>
+  <text x="76" y="436" font-size="11" fill="#5f3a40">反反复复，66 秒才拿到</text>
+  <text x="76" y="470" font-size="11" fill="#8a5a62">之后手机不再发请求，画面停在 5:36</text>
+  <text x="76" y="488" font-size="11" fill="#8a5a62">（为什么停住没查实，去掉触发条件后</text>
+  <text x="76" y="506" font-size="11" fill="#8a5a62">没再出现）</text>
+
+  <rect x="400" y="274" width="320" height="270" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="420" y="298" font-size="12.5" font-weight="700" fill="#96434f">B. 跳到上次进度，等了 21.7 秒</text>
+  <text x="420" y="320" font-size="11" fill="#8a5a62">用户看到：转圈 20 多秒才开始播</text>
+  <text x="420" y="346" font-size="11" fill="#5f3a40">背后：一环等一环，每环都现下一块</text>
+  <rect x="420" y="358" width="280" height="24" rx="5" fill="#ffffff" stroke="#d99aa5"/>
+  <text x="430" y="374" font-size="11" fill="#5f3a40">跳转点 64KB　　　　　　　等 5.3 秒</text>
+  <rect x="420" y="388" width="280" height="24" rx="5" fill="#ffffff" stroke="#d99aa5"/>
+  <text x="430" y="404" font-size="11" fill="#5f3a40">→ 下一个 64KB　　　　　　等 4.8 秒</text>
+  <rect x="420" y="418" width="280" height="24" rx="5" fill="#ffffff" stroke="#d99aa5"/>
+  <text x="430" y="434" font-size="11" fill="#5f3a40">→ 中间漏的 832KB　　　　　等 8.6 秒</text>
+  <text x="420" y="466" font-size="11" fill="#5f3a40">中间有一刻手里已有 17 秒画面，</text>
+  <text x="420" y="484" font-size="11" fill="#5f3a40">却仍在等那 832KB，所以不播</text>
+
+  <rect x="744" y="274" width="320" height="270" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="764" y="298" font-size="12.5" font-weight="700" fill="#96434f">C. 拖进度后播到 6:06 又卡</text>
+  <text x="764" y="320" font-size="11" fill="#8a5a62">用户看到：起播了，播一会儿又卡住</text>
+  <text x="764" y="346" font-size="11" fill="#5f3a40">背后：「最新的大段请求决定下载位置」，</text>
+  <text x="764" y="364" font-size="11" fill="#5f3a40">而 iPhone 拖进度后最后发的，恰好是</text>
+  <text x="764" y="382" font-size="11" font-weight="700" fill="#96434f">「从旧位置回补到跳转点」（5MB→116MB）</text>
+  <text x="764" y="400" font-size="11" fill="#5f3a40">下载位置被拽回 5MB 处十几秒，</text>
+  <text x="764" y="418" font-size="11" fill="#5f3a40">跳转点往后没人下，缓冲慢慢用光</text>
+  <text x="764" y="452" font-size="11" fill="#8a5a62">用「跳到上次进度」按钮时手机不发</text>
+  <text x="764" y="470" font-size="11" fill="#8a5a62">这个回补请求，所以那次没卡</text>
+
+  <!-- 三、修复后：三条规则 -->
+  <rect x="32" y="578" width="1056" height="236" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="604" font-size="14" font-weight="700" fill="#353136">三、修复后：服务器只改「先下哪一块」的三条规则</text>
+
+  <rect x="56" y="620" width="320" height="176" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="76" y="644" font-size="12.5" font-weight="700" fill="#316247">1. 插队的块不会被砍</text>
+  <text x="76" y="668" font-size="11" fill="#2f4d3c">下载位置怎么挪，都不中止插队块；</text>
+  <text x="76" y="686" font-size="11" fill="#2f4d3c">连接全忙时，让出离播放位置最远的</text>
+  <text x="76" y="704" font-size="11" fill="#2f4d3c">那条（它最晚才用得上，重下代价最小）</text>
+  <text x="76" y="736" font-size="11" font-weight="700" fill="#316247">治 A：66 秒 → 5.3 秒（真机）</text>
+
+  <rect x="400" y="620" width="320" height="176" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="420" y="644" font-size="12.5" font-weight="700" fill="#316247">2. 补洞时顺手多下 1MB</text>
+  <text x="420" y="668" font-size="11" fill="#2f4d3c">手机要一小段而服务器还没有时，</text>
+  <text x="420" y="686" font-size="11" fill="#2f4d3c">连同它后面 1MB 一起插队，</text>
+  <text x="420" y="704" font-size="11" fill="#2f4d3c">4 块同时下，约 5 秒一轮到齐；</text>
+  <text x="420" y="722" font-size="11" fill="#2f4d3c">后面那几环请求直接命中</text>
+  <text x="420" y="754" font-size="11" font-weight="700" fill="#316247">治 B：15.1 秒 → 6.2 秒（回放）</text>
+
+  <rect x="744" y="620" width="320" height="176" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="764" y="644" font-size="12.5" font-weight="700" fill="#316247">3. 只有「往后播」能挪下载位置</text>
+  <text x="764" y="668" font-size="11" fill="#2f4d3c">「一直读到文件末尾」的请求才是播放；</text>
+  <text x="764" y="686" font-size="11" fill="#2f4d3c">有终点的是补洞：离终点 4MB 内的按</text>
+  <text x="764" y="704" font-size="11" fill="#2f4d3c">规则 2 插队，更远的（回补旧位置）</text>
+  <text x="764" y="722" font-size="11" fill="#2f4d3c">不插队、不挪位置，顺路带上</text>
+  <text x="764" y="754" font-size="11" font-weight="700" fill="#316247">治 C：回补请求抢到 0 字节；</text>
+  <text x="764" y="772" font-size="11" font-weight="700" fill="#316247">60 秒到手 39.9MB → 49.1MB（回放）</text>
+
+  <!-- 四、容易改错 -->
+  <rect x="32" y="830" width="1056" height="214" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="856" font-size="14" font-weight="700" fill="#353136">四、哪里容易改错</text>
+
+  <rect x="56" y="872" width="490" height="154" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="76" y="896" font-size="12.5" font-weight="700" fill="#7a6234">为什么不让所有请求平分 12 条连接</text>
+  <text x="76" y="920" font-size="11" fill="#6b5a35">试过：每个请求都登记、连接轮流分（BT 下载那种做法）。</text>
+  <text x="76" y="938" font-size="11" fill="#6b5a35">服务器回放：跳转点首字节从 5.5 秒变成 9.7 秒，更慢——</text>
+  <text x="76" y="956" font-size="11" fill="#6b5a35">回补旧位置的请求分走了一半连接。没上线。</text>
+  <text x="76" y="982" font-size="11" fill="#6b5a35">用户拖动后，跳转点往后才是唯一要紧的；拖回旧位置时，</text>
+  <text x="76" y="1000" font-size="11" fill="#6b5a35">那边的请求自然变成「读到末尾」，规则 3 会让它接管。</text>
+
+  <rect x="574" y="872" width="490" height="154" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="594" y="896" font-size="12.5" font-weight="700" fill="#4a4450">还存在的限制</text>
+  <text x="594" y="920" font-size="11" fill="#4a4450">· 跳转后至少要等一块从源站下完，约 5～6 秒；再短得把块切小</text>
+  <text x="594" y="938" font-size="11" fill="#4a4450">· iPhone 自己要先攒约 15 秒画面才开播，数据全在服务器上</text>
+  <text x="594" y="956" font-size="11" fill="#4a4450">  也要等约 8 秒（受服务器到手机约 5Mbps 限制）</text>
+  <text x="594" y="974" font-size="11" fill="#4a4450">· 稀饭源站偶尔整体停顿（10-12 真机断供约 20 秒），</text>
+  <text x="594" y="992" font-size="11" fill="#4a4450">  缓冲用光会卡一两下后恢复，不在本次范围</text>
+
+  <!-- 结尾 -->
+  <rect x="32" y="1060" width="1056" height="96" rx="12" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="52" y="1086" font-size="14" font-weight="700" fill="#316247">常见情况</text>
+  <text x="52" y="1110" font-size="11" fill="#2f4d3c">从头看、或看到下一集（多半已提前下好）都不会遇到这些；只有「打开一集新番就往后跳」才会走到这里。</text>
+  <text x="52" y="1130" font-size="11" fill="#2f4d3c">「回放」= 在服务器上按真机的请求顺序、对真实源站重放并计时；规则 1 的 5.3 秒是修复后真机实测，规则 2、3 的真机跳转尚待补验。</text>
+</svg>

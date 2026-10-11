@@ -32,7 +32,14 @@ const LEAD_BYTES = 1.5 * 1024 * 1024
 // 闸门封顶：源站整体变慢时也不能让用户对着转圈干等，到点有多少先给多少。
 const GATE_MAX_MS = 20_000
 const PIECE_RESUME_LIMIT = 3
-const SMALL_BYTES = 1024 * 1024
+// 只有读到文件末尾的请求（正常往后播放）才挪下载游标。有终点的请求是补洞：离终点不超过 GAP_BYTES 的，
+// 从它当前位置起 READAHEAD_BYTES 插队先下；更远的（iPhone 拖进度后「从旧位置回补到跳转点」）只等顺序下载顺路带上。
+// 2026-10-11 真机两次拖进度：回补请求成了「最新的大段」，把游标拽回 5MB 十几秒，跳转点往后没人下，播到 6:06 卡住。
+const GAP_BYTES = 4 * 1024 * 1024
+// 插队时连同其后这么多一起下：iPhone 跳转后是一环等一环地要「64KB → 下一个 64KB → 中间漏的 832KB」，
+// 只下它要的那一块，每一环都要再等一块下载（约 5 秒），2026-10-11 真机跳转起播因此等了 21.7 秒。
+// 预读 1MB = 4 块并行，一轮全到。
+const READAHEAD_BYTES = 1024 * 1024
 // 传输中断（断连 / 建连超时）的预算按时间算、整集只有一份：某块续传用尽后放回去冷却几秒、换条连接再拿；
 // 连续这么久一块都没成才判源站不通。早先「一块续传用尽就整集作废」，本机实测一次 TLS 握手被掐，
 // 正在看的这集就停在 0:42 再也不动。
@@ -110,8 +117,12 @@ interface Entry {
   // 最近一次新开的 Range 请求编号。只有它能挪下载游标：PC Chrome 跳进度后旧连接常常还挂着、
   // 停在旧位置等数据，若它也能挪游标，两个位置来回抢，新位置永远攒不起领先。
   latestReader: number
-  // 小段请求（iPhone 拖进度后去文件头补的几 KB、探测）要的块：插队先下，但不挪游标、不中止别处的块。
+  // 补洞请求要的块（见 GAP_BYTES）：插队先下，但不挪游标、不中止别处的块。
   urgent: Set<number>
+  // 只给进度日志用：在读的读取端位置、累计从源站收到的字节，不参与调度
+  readerPos: Map<number, { pos: number; fill: boolean; at: number }>
+  readerSeq: number
+  bytesIn: number
   lastSuccessAt: number
   // 最近一次有块在飞的时刻。闲了一阵（暂停、让位给别的集）再开工时重置 lastSuccessAt，
   // 否则歇过 60 秒后遇到的第一次断连就会被当成「一分钟没成功」直接判死。
@@ -171,7 +182,7 @@ function entryOf(url: string, label: string): Promise<Entry | null> {
     const e: Entry = {
       url, label, total, pieces, done: new Uint8Array(pieces), doneCount: 0, inflight: new Map(),
       fh: await open(fileOf(url) + '.part', 'w'), cursor: 0, watchedAt: 0, prefetch: null,
-      failure: null, complete: false, waiters: new Set(), latestReader: 0, urgent: new Set(), lastSuccessAt: Date.now(), lastActiveAt: Date.now(), cooldown: new Map(),
+      failure: null, complete: false, waiters: new Set(), latestReader: 0, urgent: new Set(), readerPos: new Map(), readerSeq: 0, bytesIn: 0, lastSuccessAt: Date.now(), lastActiveAt: Date.now(), cooldown: new Map(),
     }
     entries.set(key, e)
     log(`${label} 开始落盘 ${Math.round(total / 1048576)}MB`)
@@ -228,6 +239,7 @@ async function fetchPiece(e: Entry, i: number, worker: number, ac: AbortControll
         const { bytesWritten } = await e.fh!.write(buf, 0, take, start + got)
         if (bytesWritten !== take) throw new HttpStatusError(`写盘不完整 ${bytesWritten}/${take}`) // 盘满之类，不是传输问题，不续传
         got += take
+        e.bytesIn += take
       }
       if (got !== end - start + 1) throw new Error(`分块截断 ${got}/${end - start + 1}`)
       return
@@ -297,6 +309,24 @@ function pump(): void {
 // 只是为了没有读取端时到点开始预取；正常推进全靠块完成和读取端请求时的 pump()。
 setInterval(pump, 5_000).unref()
 
+// 正在被看的集每 5 秒一行：源站入口速度、游标处连续领先、每个读取端的位置和它手前连续领先。
+// 起播慢 / 中途卡时据此分清是源站入口不够，还是下载位置不在播放器要的地方。
+const lastBytesIn = new Map<Entry, number>()
+setInterval(() => {
+  for (const e of entries.values()) {
+    if (e.complete || e.failure || !watching(e)) { lastBytesIn.delete(e); continue }
+    const rate = (e.bytesIn - (lastBytesIn.get(e) ?? e.bytesIn)) / 5 / 1024
+    lastBytesIn.set(e, e.bytesIn)
+    const mb = (n: number): string => (n / 1048576).toFixed(1)
+    for (const [id, r] of e.readerPos) if (Date.now() - r.at > WATCH_TTL_MS) e.readerPos.delete(id)
+    const readers = [...e.readerPos].map(([id, r]) =>
+      `#${id}${r.fill ? 'f' : ''}@${mb(r.pos)}MB lead=${mb(contiguousFrom(e, r.pos) - r.pos)}MB${id === e.latestReader ? '*' : ''}`
+      + (Date.now() - r.at > 5_000 ? ` idle=${Math.round((Date.now() - r.at) / 1000)}s` : ''))
+    log(`${e.label} 进度 ${rate.toFixed(0)}KB/s cursor=${mb(e.cursor * PIECE)}MB lead=${mb(contiguousFrom(e, e.cursor * PIECE) - e.cursor * PIECE)}MB`
+      + ` inflight=${e.inflight.size} urgent=${e.urgent.size} done=${(e.doneCount / e.pieces * 100).toFixed(0)}% ${readers.join(' | ')}`)
+  }
+}, 5_000).unref()
+
 const contiguousFrom = (e: Entry, pos: number): number => {
   let i = Math.floor(pos / PIECE)
   while (i < e.pieces && e.done[i]) i++
@@ -313,15 +343,28 @@ function waitChange(e: Entry, ms: number): Promise<void> {
 
 // 读取端要的位置还没下：把下载游标挪过去。还在别处飞的块（跳进度前的旧位置）立刻中止，
 // 12 条连接全部转到新位置——否则它们各自还要跑完一块（约 9 秒）才肯过来。
+// 补洞插队的块不中止：iPhone 跳进度时同时发「关键帧处 64KB」和「其后的大段」，大段读取端每往前读一块
+// 就挪一次游标，若连它也中止，那 64KB 每次下到一半就被砍掉重来；而播放器拿不到它就不起播
+// （2026-10-11 真机：这 64KB 首字节等了 66 秒，之后播放器再不发请求，画面停在 5:36）。
 function prioritize(e: Entry, pos: number): void {
   const want = Math.floor(pos / PIECE)
   const leadPieces = Math.ceil(LEAD_BYTES / PIECE) * 2
   if (e.done[want] && contiguousFrom(e, pos) - pos >= LEAD_BYTES) return
   if (e.cursor !== want) {
     e.cursor = want
-    for (const [i, c] of e.inflight) if (i < want || i >= want + leadPieces + WORKERS) c.abort()
+    for (const [i, c] of e.inflight) if (!e.urgent.has(i) && (i < want || i >= want + leadPieces + WORKERS)) c.abort()
   }
   pump()
+}
+
+// 补洞插队时 12 条连接常被紧随其后的大段占满，干等一块下完要再多一轮（本地回放 6~10 秒）。
+// 让出离游标最远的那几条：它们最晚才会被读到，重下一次的代价最小。
+function makeRoomForUrgent(e: Entry): void {
+  const waiting = [...e.urgent].filter((i) => !e.done[i] && !e.inflight.has(i)).length
+  const spare = [...e.inflight.keys()]
+    .filter((i) => !e.urgent.has(i))
+    .sort((a, b) => ((b - e.cursor + e.pieces) % e.pieces) - ((a - e.cursor + e.pieces) % e.pieces))
+  for (const i of spare.slice(0, Math.max(0, waiting - freeSlots.length))) e.inflight.get(i)!.abort()
 }
 
 function parseRange(header: string | undefined, total: number): { start: number; end: number; ranged: boolean } | null {
@@ -379,12 +422,20 @@ export async function serveFromDisk(url: string, label: string, rangeHeader: str
   const r = parseRange(rangeHeader, e.total)
   if (!r) return { status: 416, headers: { 'Content-Range': `bytes */${e.total}` }, body: null }
   e.watchedAt = Date.now()
-  const small = r.end - r.start + 1 <= SMALL_BYTES
-  let readerId = 0
-  if (small) {
-    for (let i = Math.floor(r.start / PIECE); i <= Math.floor(r.end / PIECE); i++) if (!e.done[i]) e.urgent.add(i)
+  const fill = r.end < e.total - 1
+  const logId = ++e.readerSeq
+  const seen = { pos: r.start, fill, at: Date.now() }
+  e.readerPos.set(logId, seen)
+  const fillUrgent = (at: number): void => {
+    if (r.end - at + 1 > GAP_BYTES) { pump(); return }
+    const last = Math.floor(Math.min(at + READAHEAD_BYTES - 1, e.total - 1) / PIECE)
+    for (let i = Math.floor(at / PIECE); i <= last; i++) if (!e.done[i]) e.urgent.add(i)
+    makeRoomForUrgent(e)
     pump()
-  } else {
+  }
+  let readerId = 0
+  if (fill) fillUrgent(r.start)
+  else {
     readerId = ++e.latestReader
     prioritize(e, r.start)
   }
@@ -395,7 +446,7 @@ export async function serveFromDisk(url: string, label: string, rangeHeader: str
   while (!e.failure && !e.complete && contiguousFrom(e, r.start) < gateEnd && Date.now() < gateUntil) {
     await waitChange(e, Math.min(1000, gateUntil - Date.now()))
   }
-  if (e.failure) throw e.failure
+  if (e.failure) { e.readerPos.delete(logId); throw e.failure }
 
   let pos = r.start
   let fh: FileHandle | null = null
@@ -406,9 +457,11 @@ export async function serveFromDisk(url: string, label: string, rangeHeader: str
     async pull(ctl) {
       for (;;) {
         if (cancelled) { await fh?.close(); return }
-        if (pos > r.end) { ctl.close(); await fh?.close(); return }
-        if (e.failure) { await fh?.close(); ctl.error(e.failure); return }
+        if (pos > r.end) { e.readerPos.delete(logId); ctl.close(); await fh?.close(); return }
+        if (e.failure) { e.readerPos.delete(logId); await fh?.close(); ctl.error(e.failure); return }
         e.watchedAt = Date.now()
+        seen.pos = pos
+        seen.at = Date.now()
         // 每个读取端自己开只读句柄：整集落盘时 .part 改名，已打开的句柄照样能读，不跟写入端的句柄抢关闭时机
         if (!fh) {
           fh = await open(file + '.part', 'r').catch(() => open(file, 'r')) // 恰好赶上改名那一刻
@@ -416,7 +469,7 @@ export async function serveFromDisk(url: string, label: string, rangeHeader: str
           if (cancelled) { await fh.close(); return }
         }
         if (!e.complete && contiguousFrom(e, pos) <= pos) {
-          if (small) { for (let i = Math.floor(pos / PIECE); i <= Math.floor(r.end / PIECE); i++) if (!e.done[i]) e.urgent.add(i); pump() }
+          if (fill) fillUrgent(pos)
           else if (readerId === e.latestReader) prioritize(e, pos)
           await waitChange(e, 5_000)
           continue
@@ -430,7 +483,7 @@ export async function serveFromDisk(url: string, label: string, rangeHeader: str
         return
       }
     },
-    async cancel() { cancelled = true; wake(e); await fh?.close() },
+    async cancel() { cancelled = true; e.readerPos.delete(logId); wake(e); await fh?.close() },
   })
   return { status: r.ranged ? 206 : 200, headers: headersFor(r.start, r.end, e.total, r.ranged), body }
 }

@@ -213,7 +213,9 @@ export async function serveFaststart(
 
   const srcStart = Math.max(start, memEnd) - T
   const srcEnd = end - T
-  const res = await origin(`bytes=${srcStart}-${srcEnd}`)
+  // 读到虚拟文件末尾 = 正常往后播放：底层也按「读到末尾」请求，盘上缓存靠这个区分播放和补洞（见 disk.ts GAP_BYTES）。
+  // 多出来的原文件尾块（moov）由下面的 left 截住，不会发出去。
+  const res = await origin(end === total - 1 ? `bytes=${srcStart}-` : `bytes=${srcStart}-${srcEnd}`)
   // stream.ts 的透传分支把 undici 的 Node Readable 硬转成 ReadableStream 类型交出来，实际没有 getReader。
   // 2026-10-03 真机拖进度时这里抛错、那条上游响应没人消费，源站断开连接时它的 error 事件无人监听，整个进程崩掉重启。
   // 统一转成 Web 流（toWeb 会接住 error），失败分支也必须把它关掉。
