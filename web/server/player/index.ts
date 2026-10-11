@@ -257,6 +257,8 @@ player.get('/hls', async (c) => {
       'Cache-Control': 'no-store',
     })
   } catch (error) {
+    // 播放器自己取消的（拖进度时成批发出又取消）不是失败；记下来只会让人以为源站出错
+    if (c.req.raw.signal.aborted) return new Response(null, { status: 499 })
     console.error('[player] hls 失败: ' + (error instanceof Error ? error.message : error))
     return c.json({ error: error instanceof Error ? error.message : 'm3u8 代理失败' }, 502)
   }
@@ -282,6 +284,7 @@ player.get('/seg', async (c) => {
     }
     return new Response(res.body as unknown as ReadableStream, { status: res.statusCode, headers: out })
   } catch (error) {
+    if (c.req.raw.signal.aborted) return new Response(null, { status: 499 })
     console.error('[player] seg 失败: ' + (error instanceof Error ? error.message : error))
     return c.json({ error: error instanceof Error ? error.message : '分片代理失败' }, 502)
   }
