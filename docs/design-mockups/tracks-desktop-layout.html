@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>追番页 · 桌面顶栏与首屏布局</title>
+<style>
+:root{
+  --paper:#fbf6ec;--paper-2:#f4eddc;--card:#fffdf7;--ink:#3e4350;--ink-sub:rgba(62,67,80,.74);--ink-faint:rgba(62,67,80,.48);
+  --teal:#1f7680;--teal-mid:#2e97a0;--teal-wash:rgba(41,139,148,.13);--teal-line:#2e97a0;--sakura:#d64f7a;
+  --silver-line:#c7cdd9;--silver-wash:rgba(214,218,225,.45);--line:rgba(62,67,80,.34);--line-strong:#565c6c;--gold:#b98a2e;
+  --shadow-1:0 1px 2px rgba(62,67,80,.12),0 6px 16px rgba(62,67,80,.09);--r-card:10px;
+  --font-body:'PingFang SC','HarmonyOS Sans SC','Microsoft YaHei UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#e9e4d8;font:14px/1.5 var(--font-body);color:var(--ink)}
+.notes{max-width:1440px;margin:0 auto;padding:20px 28px;font-size:13px;color:var(--ink-sub)}
+.notes b{color:var(--ink)}
+.notes ul{margin:6px 0 0;padding-left:18px}
+/* 1440×900 一屏：虚线框 = 首屏边界 */
+.screen{position:relative;width:1440px;height:900px;margin:0 auto 40px;overflow:hidden;background:var(--paper);background-image:linear-gradient(rgba(62,67,80,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(62,67,80,.05) 1px,transparent 1px);background-size:24px 24px;box-shadow:0 0 0 2px #b9b2a2}
+.tag{position:absolute;left:12px;bottom:12px;z-index:9;font-size:12px;padding:3px 10px;border-radius:99px;background:#3e4350;color:#fff}
+
+/* 顶栏 52px */
+.bar{position:relative;height:52px;display:flex;align-items:center;gap:6px;padding:0 32px;background:var(--paper-2);border-bottom:1.5px dashed var(--line-strong)}
+.bar .tape{position:absolute;left:28px;bottom:-8px;width:80px;height:16px;background:rgba(235,200,120,.65);transform:rotate(-2deg)}
+.brand{display:flex;align-items:center;gap:8px;font-size:19px;margin-right:18px;white-space:nowrap}
+.brand i{width:26px;height:26px;border-radius:6px;border:1.5px solid #a24;display:inline-block}
+.nav{display:flex;gap:2px}
+.nav a{padding:6px 13px;border-radius:99px;border:1.5px solid transparent;font-size:14px;color:var(--ink-sub);white-space:nowrap}
+.nav a.on{color:var(--teal);font-weight:600;background:var(--teal-wash);border-color:var(--teal-line)}
+.right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn{font:inherit;font-size:12.5px;padding:5px 12px;border:1.5px solid var(--line-strong);background:var(--card);border-radius:6px;color:var(--ink);white-space:nowrap}
+.btn.p{background:var(--teal);border-color:var(--teal);color:#fff}
+.chip{display:flex;align-items:center;gap:7px;padding:3px 12px 3px 4px;border:1px dashed var(--silver-line);border-radius:99px;background:var(--card);font-size:13px}
+.chip i{width:26px;height:26px;border-radius:50%;background:var(--teal-wash);border:1.5px solid var(--teal-line);display:grid;place-items:center;font-style:normal;color:var(--teal)}
+
+/* 内容容器 */
+.page{max-width:1240px;margin:0 auto;padding:22px 32px 0}
+.head{position:relative;display:flex;align-items:flex-end;gap:14px;height:92px;border-bottom:1.5px dashed var(--line);padding-bottom:14px}
+.head h1{margin:0;font-size:30px;line-height:1;font-weight:500;letter-spacing:.02em}
+.head h1::after{content:'';display:block;height:3px;margin-top:6px;border-radius:3px;background:linear-gradient(90deg,var(--teal-mid),var(--sakura))}
+.head .sub{color:var(--ink-sub);font-size:13px;margin-bottom:2px}
+.stamp{display:inline-grid;place-items:center;width:44px;height:44px;border-radius:50%;border:2px solid var(--sakura);color:var(--sakura);font-size:12px;transform:rotate(-10deg);margin-bottom:-2px}
+.kira{color:var(--ink-faint);font-size:13px;transform:rotate(-6deg);margin-bottom:6px}
+.note-img{position:absolute;right:0;top:-6px;width:104px;height:92px;border-radius:4px;background:#fbe8ee url(assets/trk/sagiri.webp) center top/cover;box-shadow:var(--shadow-1);transform:rotate(3deg)}
+.note-img::before{content:'';position:absolute;left:12px;top:-8px;width:44px;height:14px;background:rgba(235,200,120,.7);transform:rotate(-4deg)}
+
+/* 工具栏：一行 */
+.tools{display:flex;align-items:center;gap:10px;padding:14px 0 12px}
+.search{flex:0 1 300px;height:38px;border:1.5px solid var(--line);border-radius:99px;background:#fff;padding:0 16px;display:flex;align-items:center;color:var(--ink-faint);font-size:13px}
+.sel{height:38px;padding:0 14px;display:flex;align-items:center;border:1.5px solid var(--line-strong);border-radius:12px;background:#fff;font-size:13px}
+.seg{display:inline-flex;padding:3px;border:1.5px solid var(--line-strong);border-radius:99px;background:#fff}
+.seg span{padding:5px 12px;font-size:12.5px;color:var(--ink-sub);border-radius:99px;border:1.5px solid transparent}
+.seg span.on{border-color:var(--teal-line);color:var(--teal)}
+.tools .grow{flex:1}
+/* 状态标签 */
+.tabs{display:flex;gap:8px;padding-bottom:16px}
+.tabs span{padding:6px 14px;font-size:13px;border:1.5px solid var(--line);border-radius:12px 12px 0 0;background:var(--paper-2);color:var(--ink-sub)}
+.tabs span.on{background:var(--card);border-color:var(--teal-line);color:var(--teal)}
+.tabs em{font-style:normal;margin-left:5px;font-size:11.5px;color:var(--ink-faint)}
+
+/* 竖卡 */
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:26px 20px}
+.pc{position:relative;background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow-1);padding:7px 7px 10px;display:flex;flex-direction:column;gap:8px}
+.pc:nth-child(3n+1){transform:rotate(-.5deg)}.pc:nth-child(3n+2){transform:rotate(.4deg)}
+.pc .tp{position:absolute;top:-8px;right:16px;width:58px;height:15px;background:rgba(160,205,210,.6);transform:rotate(3deg)}
+.cv{display:block;width:100%;aspect-ratio:5/7;object-fit:cover;border-radius:4px;border:1px solid var(--line)}
+.m{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-sub);padding:0 2px}
+.m .st{width:28px;height:28px;border-radius:50%;border:1.5px dashed var(--teal);color:var(--teal);display:grid;place-items:center;font-size:10.5px;background:var(--card)}
+.m .h{color:var(--silver-line);letter-spacing:1px}.m .e{margin-left:auto}
+.t{font-weight:600;font-size:14px;line-height:1.35;padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.ctl{display:flex;align-items:center;gap:6px;padding:0 2px}
+.step{display:inline-flex;align-items:center;border:1.5px solid var(--line-strong);border-radius:99px;background:#fff;font-size:13px;height:32px;padding:0 4px}
+.step b{width:24px;text-align:center;font-weight:400}.step u{text-decoration:none;padding:0 8px;border-inline:1px dashed var(--line);font-size:12.5px}
+.pbar{flex:1;height:9px;border:1.5px solid var(--line-strong);border-radius:99px;background:#fff;overflow:hidden}.pbar i{display:block;height:100%;background:var(--teal-mid)}
+.tags2{display:flex;gap:5px;padding:0 2px;overflow:hidden}
+.tg{padding:1px 8px;font-size:11.5px;border:1px solid var(--silver-line);border-radius:99px;background:#f3f1ee;color:var(--ink-sub);white-space:nowrap}
+.acts{display:flex;gap:6px;padding:0 2px}
+.ann{position:absolute;z-index:8;font-size:12px;color:var(--sakura);border:1px dashed var(--sakura);border-radius:6px;padding:2px 8px;background:rgba(255,253,247,.92);white-space:nowrap}
+.fold{position:absolute;left:0;right:0;bottom:0;height:0;border-top:2px dashed var(--sakura);z-index:7}
+</style></head><body>
+<div class="notes">
+  <p><b>追番页 · 桌面（≥961px）顶栏与首屏布局</b>。两屏都是 1440×900，红色虚线是首屏下沿。数据用开发库里的三张真实封面重复摆放，所以卡片是 5 列填满；测试账号只有两三张卡时右边会空，那是数据少，不是布局问题。</p>
+  <ul>
+    <li>顶栏 66px → <b>52px</b>；导航紧挨 Logo；印章和「キラキラ…」从顶栏中间搬到页面标题旁边；右侧只留反馈、头像。</li>
+    <li>页面抬头约 300px → <b>92px</b>：标题、在看数、印章同一行，立绘便签缩小贴在右边。</li>
+    <li>搜索 / 类型 / 视图 / 导入 / 加番合并成<b>一行工具栏</b>，状态标签紧贴下面。</li>
+    <li>结果：第一排封面和信息在首屏完整可见，第二排露出一截，提示还能往下看。</li>
+  </ul>
+</div>
+
+<div class="screen"><span class="tag">调整后 · 1440×900</span>
+  <div class="bar"><span class="tape"></span>
+    <div class="brand"><i></i>MapleTools <span style="color:#d9a53b">✦</span></div>
+    <nav class="nav"><a>番剧周历</a><a class="on">我的追番</a><a>追番大厅</a><a>放映福利</a><a>设置</a></nav>
+    <div class="right"><button class="btn">反馈与建议</button><span class="chip"><i>T</i>test</span><button class="btn" title="退出登录">⇥</button></div>
+  </div>
+  <div class="page">
+    <div class="head">
+      <h1>我的追番</h1><span class="sub">在看 1 部</span><span class="stamp">在看</span><span class="kira">キラキラ…</span>
+      <div class="note-img"></div>
+    </div>
+    <div class="tools">
+      <div class="search">在这页里搜番名…</div><div class="sel">类型 ⌄</div><div class="seg"><span class="on">卡片</span><span>列表</span><span>时间线</span></div>
+      <span class="grow"></span><button class="btn">从 Bangumi 导入</button><button class="btn p">＋ 加番</button>
+    </div>
+    <div class="tabs"><span class="on">全部<em>12</em></span><span>在看<em>5</em></span><span>想看<em>4</em></span><span>观望<em>1</em></span><span>看完<em>2</em></span></div>
+    <div class="grid" id="g"></div>
+  </div>
+  <div class="ann" style="left:520px;top:845px">第一排完整在首屏 ↑</div>
+</div>
+<script>
+const covers=['326871_6Sp4i','325767_u3pvR','425998_dnzr8'];
+const titles=['处刑少女的生存之道','感谢对战。〜大小姐才不玩格斗游戏〜','Re:从零开始的异世界生活','幼女战记 第二季','药屋少女的呢喃 第二季','恋爱游戏世界对路人角色很不友好','青之箱 第二季','我的幸福婚姻 特别篇','魔法少女育成计划 restart','罗梅莉亚战记'];
+const g=document.getElementById('g');
+for(let i=0;i<10;i++){const c=covers[i%3];g.insertAdjacentHTML('beforeend',`<article class="pc"><span class="tp"></span><img class="cv" src="assets/trk/${c}.jpg" alt=""><div class="m"><span class="st">在看</span><span class="h">♡♡♡♡♡♡</span><span class="e">${i+2} / 12</span></div><div class="t">${titles[i]}</div><div class="ctl"><span class="step"><b>−</b><u>EP ${i+2}</u><b>＋</b></span><span class="pbar"><i style="width:${30+i*6}%"></i></span></div><div class="tags2"><span class="tg">＋</span><span class="tg">百合</span><span class="tg">异世界</span><span class="tg">2026年7月</span></div><div class="acts"><button class="btn p" style="flex:1">▶ 继续看</button><button class="btn">BGM</button><button class="btn">⋮</button></div></article>`)}
+</script>
+</body></html>
