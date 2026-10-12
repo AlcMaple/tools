@@ -232,3 +232,6 @@ logs/
 bgm_cache/
 html_cache/
 maple-tools-*.zip
+
+# 部署文档
+docs/web/唐人云部署保姆教程.md
