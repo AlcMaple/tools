@@ -2325,6 +2325,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 
 .pocket { background: var(--card); border: 1.5px solid var(--line); border-radius: var(--r-card); box-shadow: var(--shadow-1); overflow: hidden; }
 .pocket + .pocket { margin-top: 14px; }
+/* 展开态不裁剪：里面的自绘下拉（.dd）要能伸出卡片底边 */
+.pocket.open { overflow: visible; }
 .pocket-tab {
   width: 100%;
   min-height: 54px;
