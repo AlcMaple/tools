@@ -3087,8 +3087,9 @@ body[data-auth='out'] .track-btn { display: none; }
 .tl-season {
   position: relative;
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 16px;
+  /* 左列要放得下「图章 + 145 部，看完 74」（nowrap），再窄文字就压到右边的番名上 */
+  grid-template-columns: 172px minmax(0, 1fr);
+  gap: 18px;
   padding: 20px 18px 16px 16px;
   margin-bottom: 14px;
   background: var(--card);
