@@ -1,4 +1,5 @@
 import { FeedbackPanel } from './FeedbackPanel'
+import { ResetPasswordDialog } from './ResetPasswordDialog'
 import { openFeedback, feedbackApi } from './feedback'
 import type { FeedbackContext } from '../shared/feedback'
 // 应用外壳 —— 皮肤 = 原型稿的「书脊 + 内页」骨架：桌面左侧书脊侧栏（索引贴导航 + 用户卡），
@@ -55,6 +56,12 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
   const { user, ready, dailyReward } = useAuth()
   const [feedbackUnread, setFeedbackUnread] = useState(0)
   const [feedbackOpen, setFeedbackOpen] = useState<FeedbackContext | null>(null)
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get('reset') ?? '')
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('reset')) return
+    // 令牌已在内存里，立刻从地址栏抹掉，避免进历史记录或被截图 / 转发带走。
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`)
+  }, [])
   useEffect(() => {
     const onFeedback = (event: Event): void => setFeedbackOpen((event as CustomEvent<FeedbackContext>).detail)
     window.addEventListener('maple:feedback', onFeedback)
@@ -321,6 +328,13 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
           if ((route === 'settings' || route === 'rewards') && !auth.user) navigate('calendar')
         }}
       />
+      {resetToken && (
+        <ResetPasswordDialog
+          token={resetToken}
+          onClose={() => setResetToken('')}
+          onDone={() => { setResetToken(''); openLogin() }}
+        />
+      )}
       <AgentHost enabled={introComplete} userId={ready ? user?.id ?? null : undefined} onLogin={openLogin} />
       {feedbackOpen && <FeedbackPanel key={user?.id ?? 'guest'} context={feedbackOpen} dialog onClose={() => setFeedbackOpen(null)} />}
       <ToastRoot />

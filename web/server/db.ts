@@ -239,6 +239,20 @@ db.exec(`
   ON email_challenge (expires_at);
 `)
 
+// 管理员签发的一次性重置链接：库里只存 sha256，泄露数据库也拿不到可用链接；
+// 用后即焚，同一账号再签发时旧链接作废。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS password_reset (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    token_hash  TEXT NOT NULL UNIQUE,
+    created_at  INTEGER NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    used_at     INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`)
+
 // LinuxDO 不提供已验证邮箱，以 provider + 不可变 subject 识别账号。
 // 历史 Google 身份仍留在此表，但 Google / GitHub 登录只按已验证邮箱匹配。
 db.exec(`

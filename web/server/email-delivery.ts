@@ -65,3 +65,17 @@ export async function sendFeedbackMail(to: string, subject: string, text: string
   }
   await getTransporter().sendMail({ from: `"${SMTP_FROM_NAME.replace(/["\\]/g, '')}" <${SMTP_FROM}>`, to, subject, text })
 }
+
+export async function sendResetLinkMail(email: string, url: string, minutes: number): Promise<void> {
+  if (MODE === 'console' && !IS_PRODUCTION) {
+    console.info(`[auth-email] ${email} 的重置链接：${url}（仅开发模式）`)
+    return
+  }
+  await getTransporter().sendMail({
+    from: `"${SMTP_FROM_NAME.replace(/["\\]/g, '')}" <${SMTP_FROM}>`,
+    to: email,
+    subject: 'MapleTools 重置密码与密保',
+    text: `管理员为你的账号开启了密码与密保重置。请在 ${minutes} 分钟内打开下面的链接，设置新的密码和密保：\n\n${url}\n\n链接只能使用一次。如果不是你本人申请，请忽略此邮件。`,
+    html: `<p>管理员为你的账号开启了密码与密保重置。请在 ${minutes} 分钟内打开下面的链接，设置新的密码和密保：</p><p><a href="${url}">${url}</a></p><p>链接只能使用一次。如果不是你本人申请，请忽略此邮件。</p>`,
+  })
+}

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SOURCES, coverUrl, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
+import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
 import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast, watchEp } from './common'
@@ -322,21 +323,6 @@ function TrackMenu({
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent): void => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
   const run = (fn: () => void) => (): void => {
     setOpen(false)
     fn()
@@ -355,8 +341,8 @@ function TrackMenu({
         <Ic name="dots" cls="ic ic-sm" />
         {nudge && !open && <Nudge />}
       </button>
-      {open && (
-        <div className="trk-menu-pop" role="menu">
+      <Popover anchor={ref} open={open} onClose={() => setOpen(false)} align="end" className="trk-menu-pop" role="menu">
+        <>
           {SEG_ORDER.map((s) => (
             <button
               key={s}
@@ -388,8 +374,8 @@ function TrackMenu({
           <button type="button" role="menuitem" className="trk-menu-item danger" onClick={run(onAskRemove)}>
             移出追番
           </button>
-        </div>
-      )}
+        </>
+      </Popover>
     </div>
   )
 }

@@ -57,6 +57,7 @@ import { TrackTimeline } from './tracks/TrackTimeline'
 import { BgmImportModal } from './tracks/importModal'
 import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
 import { AddSearchModal, type BackfillTarget } from './tracks/addSearchModal'
+import { Popover } from './Popover'
 import { SketchSheet } from './SketchSheet'
 import { useIsWide } from './useMediaQuery'
 import {
@@ -824,27 +825,13 @@ function TagFilter({
   const box = useRef<HTMLDivElement>(null)
   const tagSearch = useRef<HTMLInputElement>(null)
 
-  // mousedown 而非 click —— 勾选会重建列表，click 冒泡上来时 e.target 已不在 DOM 上，
-  // contains 判 false，弹窗会自己关掉（Select.tsx 同款写法）
   useEffect(() => {
     if (!open) {
       setTagQuery('')
       return
     }
     const focusTimer = window.setTimeout(() => tagSearch.current?.focus(), 0)
-    const onDown = (e: MouseEvent): void => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.clearTimeout(focusTimer)
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
+    return () => window.clearTimeout(focusTimer)
   }, [open])
 
   const toggle = (t: string): void => {
@@ -875,8 +862,8 @@ function TagFilter({
         <Ic name="chev" cls="ic" />
       </button>
 
-      {open && (
-        <div className="dd dd-tag-filter">
+      <Popover anchor={box} open={open} onClose={() => setOpen(false)} matchWidth maxHeight={360} className="dd dd-tag-filter">
+        <>
           <div className="tag-filter-search">
             <Ic name="search" cls="ic ic-sm" />
             <input
@@ -922,8 +909,8 @@ function TagFilter({
               清空过滤
             </button>
           )}
-        </div>
-      )}
+        </>
+      </Popover>
     </div>
   )
 }

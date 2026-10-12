@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { getCookie, setCookie } from 'hono/cookie'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { db } from './db'
+import { isAdminUid } from './admin'
 import { clientIp, getSession, rateLimited } from './auth'
 import { sendFeedbackMail, emailDeliveryConfigured } from './email-delivery'
 import { FEEDBACK_CATEGORIES, FEEDBACK_STATUSES, type FeedbackContext, type FeedbackDetail, type FeedbackSummary } from '../shared/feedback'
@@ -35,7 +36,6 @@ interface Message { id: string; author: 'user' | 'admin'; body: string; created_
 const feedback = new Hono<{ Variables: { owner: string; admin: boolean } }>()
 const emailPattern = /^[^\s@<>,;:"()\\]+@[^\s@<>,;:"()\\]+\.[a-zA-Z]{2,63}$/
 const hash = (s: string): string => createHash('sha256').update(s).digest('hex')
-const admins = (): Set<number> => new Set((process.env.FEEDBACK_ADMIN_USER_IDS ?? '').split(',').map(v => Number(v.trim())).filter(v => Number.isSafeInteger(v) && v > 0))
 const notifyTo = (): string => { const s = process.env.FEEDBACK_NOTIFY_TO?.trim() ?? ''; return emailPattern.test(s) ? s : '' }
 feedback.use('*', bodyLimit({ maxSize: 5 * 1024 * 1024, onError: c => c.json({ error: '图片总大小超出限制，请减少图片' }, 413) }))
 feedback.use('*', async (c, next) => {
@@ -51,9 +51,7 @@ feedback.use('*', async (c, next) => {
   setCookie(c, 'mt_feedback_guest', guest, { httpOnly: true, secure: process.env.NODE_ENV === 'production' || new URL(c.req.url).protocol === 'https:', sameSite: 'Strict', path: '/api/feedback', maxAge: 30 * 86400 })
  }
  c.set('owner', session ? `user:${session.uid}` : `guest:${hash(guest)}`)
- const configuredEmail=process.env.FEEDBACK_ADMIN_EMAIL?.trim().toLowerCase()
- const emailAdmin=session&&configuredEmail?db.prepare("SELECT 1 FROM users WHERE id=? AND lower(email)=? AND email_verified_at IS NOT NULL AND email_verified_at <> ''").get(session.uid,configuredEmail):undefined
- c.set('admin', !!session && (admins().has(session.uid)||!!emailAdmin))
+ c.set('admin', !!session && isAdminUid(session.uid))
  await next()
 })
 function thread(c: Context, id: string): Thread | undefined {

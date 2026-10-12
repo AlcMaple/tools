@@ -301,6 +301,16 @@
   },
   {
     "file": "server/auth.ts",
+    "method": "get",
+    "path": "/reset/check"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "get",
+    "path": "/reset/users"
+  },
+  {
+    "file": "server/auth.ts",
     "method": "post",
     "path": "/email/bind-start"
   },
@@ -363,6 +373,16 @@
     "file": "server/auth.ts",
     "method": "post",
     "path": "/register"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/reset/complete"
+  },
+  {
+    "file": "server/auth.ts",
+    "method": "post",
+    "path": "/reset/issue"
   },
   {
     "file": "server/auth.ts",

@@ -204,6 +204,19 @@ export const auth = {
   }): Promise<void> {
     await request('/forgot', p)
   },
+  /** 管理员给账号签发限时重置链接（管理员也可给自己签发）。 */
+  async issueReset(username: string): Promise<{ url: string; expiresAt: number; emailedTo: string | null; emailError: string | null }> {
+    return request('/reset/issue', { username })
+  },
+  async resetUsers(): Promise<{ total: number; users: { username: string; self: boolean }[] }> {
+    return request('/reset/users')
+  },
+  async checkReset(token: string): Promise<{ username: string }> {
+    return request(`/reset/check?token=${encodeURIComponent(token)}`)
+  },
+  async completeReset(p: { token: string; newPassword: string; confirm: string; questionId: string; answer: string }): Promise<void> {
+    await request('/reset/complete', p)
+  },
   /** 账号安全设置 —— 新密码留空 = 只改密保。两条路都要原始密码。 */
   async saveSettings(p: {
     currentPassword: string

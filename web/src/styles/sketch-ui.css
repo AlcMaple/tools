@@ -999,29 +999,24 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 @media (hover: hover) { .dd-trigger:hover { border-color: var(--teal-line); } }
 .dd-trigger .ic { color: var(--ink-faint); transition: transform .2s; }
 .dd-host.open .dd-trigger .ic { transform: rotate(180deg); color: var(--teal); }
+/* 下拉浮层皮肤；定位、宽度、z-index 全由 Popover 内联（挂在 body 上） */
 .dd {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 70;
   background: var(--card);
   border: 1.5px solid var(--line-strong);
   border-radius: 8px 14px 8px 14px;
   box-shadow: var(--shadow-2);
   padding: 5px;
-  display: none;
   max-height: 240px;
   overflow-y: auto;
+  animation: fade-in .15s var(--ease-page);
 }
-.dd-host.open .dd { display: block; animation: page-in .22s var(--ease-page); }
+
 .dd-tag-filter {
   display: flex;
   flex-direction: column;
   max-height: min(360px, calc(100vh - 120px));
   overflow: hidden;
 }
-.dd-host.open .dd-tag-filter { display: flex; }
 .tag-filter-search {
   flex: none;
   display: flex;
@@ -2325,8 +2320,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 
 .pocket { background: var(--card); border: 1.5px solid var(--line); border-radius: var(--r-card); box-shadow: var(--shadow-1); overflow: hidden; }
 .pocket + .pocket { margin-top: 14px; }
-/* 展开态不裁剪：里面的自绘下拉（.dd）要能伸出卡片底边 */
-.pocket.open { overflow: visible; }
 .pocket-tab {
   width: 100%;
   min-height: 54px;

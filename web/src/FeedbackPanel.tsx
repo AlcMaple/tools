@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { FEEDBACK_CATEGORIES, FEEDBACK_STATUSES, type FeedbackCategory, type FeedbackContext, type FeedbackDetail, type FeedbackSummary } from '../shared/feedback'
 import { feedbackApi, feedbackContext } from './feedback'
 import { Ic } from './SketchIcon'
+import { AdminResetLink } from './AdminResetLink'
 import './feedback.css'
 
 type View = 'new' | 'mine' | 'admin'
@@ -92,6 +93,7 @@ export function FeedbackPanel({context,onClose,dialog=false}:{context?:FeedbackC
  const content=<section ref={panel} className={`feedback-panel${dialog?' dlg':''}`} role={dialog?'dialog':undefined} aria-modal={dialog||undefined} aria-labelledby={`${prefix}-title`}>
   <div className="feedback-head"><h2 id={`${prefix}-title`} className="dlg-title">反馈与建议</h2>{onClose&&<button type="button" className="icon-btn" aria-label="关闭反馈" disabled={busy} onClick={onClose}><Ic name="x"/></button>}</div>
   <div className="feedback-tabs">{(['new','mine',...(admin?['admin']:[])] as View[]).map(tab=><button key={tab} type="button" className={`btn btn-sm${view===tab?' btn-primary':''}`} disabled={busy} onClick={()=>{if(tab==='new'){generation.current++;setView(tab);setDetail(null);setLoading(false);setError('');setNotice('')}else void list(tab)}}>{tab==='new'?'写反馈':tab==='mine'?'我的反馈':'反馈管理'}</button>)}</div>
+  {view==='admin'&&admin&&!detail&&<AdminResetLink/>}
   {view==='admin'&&!mailConfigured&&<p className="small" role="status">邮件通知尚未配置；反馈仍会正常保存。</p>}
   {view==='new'?<form onSubmit={e=>void submit(e)} onPaste={e=>{
    const files=Array.from(e.clipboardData.files).filter(file=>file.type.startsWith('image/'))

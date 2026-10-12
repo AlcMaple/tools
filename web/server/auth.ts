@@ -4,11 +4,12 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { sign, verify } from 'hono/jwt'
-import { createHmac, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import { domainToASCII } from 'node:url'
 import { db } from './db'
-import { emailDeliveryConfigured, sendEmailCode } from './email-delivery'
+import { isAdminUid } from './admin'
+import { emailDeliveryConfigured, sendEmailCode, sendResetLinkMail } from './email-delivery'
 import { applyInvite, awardDailyLogin } from './rewards'
 import { AUTH_SECRET, IS_PRODUCTION } from './secrets'
 import { usernameError } from './username'
@@ -1044,6 +1045,123 @@ auth.post('/forgot', async (c) => {
   bumpPassword.run(await hashSecret(next), row.id)
   buckets.delete(`forgot-user:${username.toLowerCase()}`)
   return c.json({ ok: true, hasPassword: true })
+})
+
+/**
+ * 管理员强制重置 —— 用户密码和密保都忘了、没有任何自助途径时，管理员给该账号签发一条
+ * 限时一次性链接，用户打开后同时设置新密码和新密保。管理员也能给自己签发。
+ * 链接有效期短、库里只存 sha256；签发新链接即作废旧的。
+ */
+const RESET_TTL_MIN = 30
+const hashResetToken = (t: string): string => createHash('sha256').update(t).digest('hex')
+
+function requestOrigin(c: Context): string {
+  const url = new URL(c.req.url)
+  const proto = c.req.header('x-forwarded-proto')?.split(',')[0]?.trim() || url.protocol.replace(':', '')
+  return `${proto}://${c.req.header('host') || url.host}`
+}
+
+function maskEmail(email: string): string {
+  const at = email.lastIndexOf('@')
+  return `${email.slice(0, Math.min(2, at))}***${email.slice(at)}`
+}
+
+// 管理员选人用：只列能走密码重置的账号，总数含邮箱验证码账号，方便看站点规模。
+auth.get('/reset/users', async (c) => {
+  const s = await getSession(c)
+  if (!s || !isAdminUid(s.uid)) return c.json({ error: '需要管理员权限' }, 403)
+  const users = db
+    .prepare('SELECT id, username FROM users WHERE password_enabled = 1 ORDER BY id')
+    .all() as { id: number; username: string }[]
+  const total = (db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n
+  return c.json({ total, users: users.map((u) => ({ username: u.username, self: u.id === s.uid })) })
+})
+
+auth.post('/reset/issue', async (c) => {
+  const s = await getSession(c)
+  if (!s || !isAdminUid(s.uid)) return c.json({ error: '需要管理员权限' }, 403)
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+  if (rateLimited(`reset-issue:${s.uid}`, 20, 60 * 60 * 1000)) {
+    return c.json({ error: '签发次数过多，请稍后再试' }, 429)
+  }
+  const row = findByName.get(str(body.username).trim()) as UserRow | undefined
+  if (!row) return c.json({ error: '没有这个用户名' }, 404)
+  if (row.password_enabled !== 1) {
+    return c.json({ error: '该账号没有密码登录（邮箱验证码账号），无需重置' }, 409)
+  }
+
+  const token = randomBytes(32).toString('base64url')
+  const now = Date.now()
+  const expiresAt = now + RESET_TTL_MIN * 60_000
+  db.transaction(() => {
+    db.prepare('DELETE FROM password_reset WHERE user_id = ? AND used_at IS NULL').run(row.id)
+    db.prepare('INSERT INTO password_reset (user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run(row.id, hashResetToken(token), now, expiresAt)
+  })()
+  const url = `${requestOrigin(c)}/?reset=${token}`
+
+  // 账号有已验证邮箱就顺带发过去；没有（或没配 SMTP）则由管理员复制链接转交用户。
+  let emailedTo: string | null = null
+  let emailError: string | null = null
+  if (row.email && row.email_verified_at && emailDeliveryConfigured()) {
+    try {
+      await sendResetLinkMail(row.email, url, RESET_TTL_MIN)
+      emailedTo = maskEmail(row.email)
+    } catch (err) {
+      console.error('[auth:reset] 重置邮件发送失败，链接已生成：', err)
+      emailError = '邮件发送失败，请复制链接转交用户'
+    }
+  }
+  return c.json({ ok: true, url, expiresAt, emailedTo, emailError })
+})
+
+function findResetToken(token: string): { id: number; user_id: number } | undefined {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return undefined
+  return db
+    .prepare('SELECT id, user_id FROM password_reset WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?')
+    .get(hashResetToken(token), Date.now()) as { id: number; user_id: number } | undefined
+}
+
+auth.get('/reset/check', (c) => {
+  if (rateLimited(`reset-check:${clientIp(c)}`, 30, WINDOW)) return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+  const hit = findResetToken(c.req.query('token') ?? '')
+  const user = hit ? (findById.get(hit.user_id) as UserRow | undefined) : undefined
+  if (!user) return c.json({ error: '链接无效或已过期，请联系管理员重新生成' }, 410)
+  return c.json({ username: user.username })
+})
+
+auth.post('/reset/complete', async (c) => {
+  const body = await readJson(c)
+  if (!body) return c.json({ error: '请求格式错误' }, 400)
+  if (rateLimited(`reset-complete:${clientIp(c)}`, 10, WINDOW)) {
+    return c.json({ error: '尝试次数过多，请 15 分钟后再试' }, 429)
+  }
+  const next = str(body.newPassword)
+  const questionId = str(body.questionId)
+  const answer = normalizeAnswer(str(body.answer))
+  if (next.length < PASSWORD_MIN || next.length > PASSWORD_MAX) {
+    return c.json({ error: `新密码需 ${PASSWORD_MIN}–${PASSWORD_MAX} 个字符` }, 400)
+  }
+  if (next !== str(body.confirm)) return c.json({ error: '两次输入的新密码不一致' }, 400)
+  if (!QUESTION_IDS.has(questionId)) return c.json({ error: '请选择一个密保问题' }, 400)
+  if (!answer || answer.length > ANSWER_MAX) return c.json({ error: '请填写密保答案' }, 400)
+
+  const hit = findResetToken(str(body.token))
+  if (!hit) return c.json({ error: '链接无效或已过期，请联系管理员重新生成' }, 410)
+
+  const [passHash, answerHash] = [await hashSecret(next), await hashSecret(answer)]
+  // 先条件消费令牌再改库，两个人拿同一条链接并发提交时只有一个能成功。
+  const applied = db.transaction(() => {
+    const used = db.prepare('UPDATE password_reset SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?')
+      .run(Date.now(), hit.id, Date.now())
+    if (used.changes !== 1) return false
+    bumpPassword.run(passHash, hit.user_id)
+    setSecurity.run(questionId, answerHash, hit.user_id)
+    return true
+  })()
+  if (!applied) return c.json({ error: '链接无效或已过期，请联系管理员重新生成' }, 410)
+  return c.json({ ok: true })
 })
 
 export default auth
