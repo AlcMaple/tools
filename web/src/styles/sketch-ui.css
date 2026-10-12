@@ -641,7 +641,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .day-sec + .day-sec { margin-top: 26px; }
 
 /* 第二种浏览方式：整周纵向布局。卡片换行而不是横向滚动，七天的内容一次铺开。 */
-.calendar-vertical-view .day-sec + .day-sec { margin-top: 34px; }
 .film-wrap.vertical .film-count,
 .film-wrap.vertical .film-nav { display: none; }
 .film.is-vertical {
@@ -658,6 +657,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   min-width: 0;
 }
 .film.is-vertical .film-empty { grid-column: 1 / -1; }
+.film:not(.is-vertical) .film-empty { grid-column: span var(--film-cols); }
 @media (max-width: 640px) {
   .film.is-vertical {
     grid-template-columns: repeat(2, minmax(0, 1fr));

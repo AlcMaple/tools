@@ -323,6 +323,21 @@ export function CalendarPage(): JSX.Element {
   const wide = useIsWide()
   const book = useSketchbook(todayId, !!result)
 
+  const [onlyMine, setOnlyMine] = useState(() => {
+    try {
+      return window.localStorage.getItem('calendar-only-mine') === '1'
+    } catch {
+      return false
+    }
+  })
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('calendar-only-mine', onlyMine ? '1' : '0')
+    } catch {
+      // 存储不可用时不影响本次切换。
+    }
+  }, [onlyMine])
+
   useEffect(() => {
     try {
       window.localStorage.setItem(CALENDAR_LAYOUT_KEY, layoutMode)
@@ -356,7 +371,15 @@ export function CalendarPage(): JSX.Element {
     load()
   }, [])
 
-  const selected = result?.data.find((d) => d.id === selectedDay)
+  const mineOnly = onlyMine && track.canTrack
+  const days = useMemo(
+    () =>
+      mineOnly
+        ? result?.data.map((d) => ({ ...d, items: d.items.filter((i) => track.tracked.has(i.id)) }))
+        : result?.data,
+    [result, mineOnly, track.tracked],
+  )
+  const selected = days?.find((d) => d.id === selectedDay)
   const range = result
     ? `${dates[1].m}/${dates[1].d} – ${dates[7].m}/${dates[7].d}`
     : ''
@@ -370,6 +393,7 @@ export function CalendarPage(): JSX.Element {
           canTrack={track.canTrack}
           tracked={track.tracked}
           onToggle={track.toggle}
+          mineOnly={mineOnly}
         />
       </FilmRow>
     </section>
@@ -424,6 +448,16 @@ export function CalendarPage(): JSX.Element {
                 纵向
               </button>
             </div>
+            {track.canTrack && (
+              <button
+                type="button"
+                className={`btn btn-sm${onlyMine ? ' btn-primary' : ''}`}
+                aria-pressed={onlyMine}
+                onClick={() => setOnlyMine((v) => !v)}
+              >
+                只看我的追番
+              </button>
+            )}
             <button
               className="icon-btn"
               onClick={() => load(true)}
@@ -469,15 +503,15 @@ export function CalendarPage(): JSX.Element {
         <div className="calendar-content">
           {layoutMode === 'vertical' ? (
             <div className="calendar-vertical-view">
-              {result?.data.map((day) => renderDaySection(day, true))}
+              {days?.map((day) => renderDaySection(day, true))}
             </div>
           ) : wide ? (
             // 宽屏横向布局：每个星期独占一行，卡片可继续向右拖动，不让立绘把内容截断。
-            result?.data.map((day) => renderDaySection(day))
+            days?.map((day) => renderDaySection(day))
           ) : (
             <>
               <DateStrip>
-                {result?.data.map((day) => (
+                {days?.map((day) => (
                   <button
                     key={day.id}
                     type="button"
@@ -654,14 +688,16 @@ export function DayFilm({
   canTrack,
   tracked,
   onToggle,
+  mineOnly,
 }: {
   day: { id: number; items: CalendarItem[] }
   canTrack: boolean
   tracked: Set<number>
   onToggle: (item: CalendarItem, weekday: number) => void
+  mineOnly?: boolean
 }): JSX.Element {
   if (day.items.length === 0) {
-    return <div className="film-empty faint">这一天没有排片</div>
+    return <div className="film-empty faint">{mineOnly ? '这一天没有你追的番' : '这一天没有排片'}</div>
   }
   return (
     <>
