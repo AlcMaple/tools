@@ -20,6 +20,7 @@
     "warm:seasons": "tsx scripts/warm-calendar-seasons.ts",
     "test:backup": "tsx scripts/test-backup.ts",
     "test:account-reset": "tsx scripts/test-account-reset.ts",
+    "test:maintenance": "tsx scripts/test-maintenance.ts",
     "test:agent-contract": "tsx scripts/test-agent-contract.ts",
     "test:agent-history": "tsx scripts/test-agent-history.ts",
     "test:agent-context": "tsx scripts/test-agent-context.ts",
