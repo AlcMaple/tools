@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { SOURCES, coverUrl, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
 import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
@@ -776,13 +777,7 @@ function Nudge(): JSX.Element {
   )
 }
 
-/**
- * 「继续看」入口 —— 点一下不直接开，先弹个便签问纱雾：用哪个源、在站内看还是跳源站。
- * 用弹窗而非下拉：窄屏（iPhone SE 375）下卡片里塞不下 2×2 的按钮网格，会挤成换行；
- * 弹窗跟本页其它绑定 / 搜索流程也是同一套 .dlg 语汇。
- * 文案统一走和泉纱雾口吻（傲娇 + 手帐语气）。已认出来的源直接开；没认出来的
- * 走定位/搜索流程（验证码在我们站里过），认出来后按当时选的「站内 / 源站」落地。
- */
+// 卡片的旋转会让 fixed 遮罩以卡片为包含块；弹窗挂到 body，避免被压窄或裁切。
 export function ContinueWatchAction({
   label,
   ep,
@@ -828,7 +823,7 @@ export function ContinueWatchAction({
         {locating ? <Spinner size={12} /> : <Ic name="play" cls="ic ic-sm" />}
         <span>{locating ? '找片源中…' : label}</span>
       </button>
-      {open && (
+      {open && createPortal(
         <div
           className="dlg-backdrop open"
           onMouseDown={(e) => {
@@ -877,7 +872,8 @@ export function ContinueWatchAction({
               })}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   )
