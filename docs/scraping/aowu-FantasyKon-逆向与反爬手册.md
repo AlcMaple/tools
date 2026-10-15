@@ -486,7 +486,7 @@ perf(aowu): 重新逆向 /api/site/secure 协议（FantasyKon vX.Y.Z）
 ### bundle 解码
 
 - 见本次 session 的 `/tmp/decode.js`（基于 javascript-obfuscator 标准格式）
-- 也可以用在线工具如 https://obf-io.deobfuscate.io/，但生成的代码可读性一般
+- 也可以用在线工具如 <https://obf-io.deobfuscate.io/>，但生成的代码可读性一般
 
 ### 协议测试参考实现
 

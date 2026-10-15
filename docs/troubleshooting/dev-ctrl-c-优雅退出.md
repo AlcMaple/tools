@@ -26,7 +26,7 @@ Error: write EPIPE
 
 ### 1. 父进程:Rsbuild 插件启动 + 转发信号
 
-[plugins/electron-dev.ts:86-96](plugins/electron-dev.ts#L86-L96) 用 Node 原生 `child_process.spawn` 拉起 Electron,并注册了两个信号转发器:
+`plugins/electron-dev.ts:86-96` 用 Node 原生 `child_process.spawn` 拉起 Electron,并注册了两个信号转发器:
 
 ```ts
 const handleTerminationSignal = (signal: any) => {
@@ -49,7 +49,7 @@ handleTerminationSignal("SIGTERM");
 
 ### 2. 子进程 `close` 回调:区分信号退出 vs 正常退出
 
-[plugins/electron-dev.ts:29-41](plugins/electron-dev.ts#L29-L41):
+`plugins/electron-dev.ts:29-41`:
 
 ```ts
 electronProcess?.on("close", (code: number, signal: unknown) => {
@@ -73,7 +73,7 @@ electronProcess?.on("close", (code: number, signal: unknown) => {
 
 ### 3. Electron 主进程:dev 模式下强制 `process.exit(0)`
 
-[electron/main.ts:185-209](electron/main.ts#L185-L209):
+`electron/main.ts:185-209`:
 
 ```ts
 app.on("will-quit", () => {
@@ -102,7 +102,7 @@ app.on("will-quit", () => {
 
 ### 4. 兜底:`uncaughtException` 也走 `app.quit()`
 
-[electron/main.ts:235-243](electron/main.ts#L235-L243):
+`electron/main.ts:235-243`:
 
 ```ts
 process.on("uncaughtException", err => {
@@ -120,7 +120,7 @@ process.on("unhandledRejection", reason => {
 
 ### 配合:`app.quitting` 标记
 
-[electron/main.ts:120-135,181-183](electron/main.ts#L120-L135):
+`electron/main.ts:120-135,181-183`:
 
 ```ts
 mainWindow.on("close", event => {
@@ -180,6 +180,6 @@ pnpm dev
 
 ## 涉及文件
 
-- [plugins/electron-dev.ts](plugins/electron-dev.ts) — 父进程启动/转发/监听
-- [plugins/rsbuild-plugin-electron.ts](plugins/rsbuild-plugin-electron.ts) — Rsbuild 插件入口
-- [electron/main.ts](electron/main.ts) — 主进程 will-quit / uncaughtException / quitting 标记
+- `plugins/electron-dev.ts` — 父进程启动/转发/监听
+- `plugins/rsbuild-plugin-electron.ts` — Rsbuild 插件入口
+- `electron/main.ts` — 主进程 will-quit / uncaughtException / quitting 标记

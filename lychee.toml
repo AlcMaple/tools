@@ -1,0 +1,11 @@
+# 站内根相对链接（/logo.png 等）对应 web/public
+root_dir = "web/public"
+
+exclude = [
+  '^http://localhost',
+  '^https://gemini\.google\.com/',   # 分享链接需登录，HTTP/2 握手报错
+  '^https://entra\.microsoft\.com/', # 反爬 403
+  '^https://(connect|wiki)\.linux\.do/', # 反爬 403
+  '^https://www\.aowu\.tv/',         # 站点对检测器返回 599
+  '^https://cdn\.jsdelivr\.net/gh/AlcMaple/tools@main/update-manifest\.json', # 更新通道，超时只代表网络
+]
