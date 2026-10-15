@@ -109,6 +109,40 @@
   user-select: none;
 }
 
+/* 平板 / 手机顶栏的头像菜单：反馈与退出（桌面在顶栏里直接摆着） */
+.m-user-btn { position: relative; flex: none; padding: 0; background: none; border: none; border-radius: 50%; cursor: pointer; line-height: 0; }
+.m-user-badge, .m-user-count { min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: var(--sakura); color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; font-family: inherit; }
+.m-user-badge { position: absolute; top: -5px; right: -6px; border: 1.5px solid var(--paper); line-height: 13px; }
+.m-user-pop {
+  min-width: 168px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-1), 0 12px 28px rgba(62, 67, 80, .16);
+}
+.m-user-name { padding: 6px 10px 7px; margin-bottom: 4px; font-size: 12px; color: var(--ink-3, var(--ink)); border-bottom: 1px dashed var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.m-user-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  color: var(--ink);
+  background: none;
+  border: 1.5px dashed transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.m-user-item.danger { color: var(--sakura); }
+@media (hover: hover) { .m-user-item:hover { background: var(--silver-wash); } }
+
 /* 移动端：顶栏 + 底部标签栏 */
 .m-top, .m-tabs { display: none; }
 @media (max-width: 960px) {

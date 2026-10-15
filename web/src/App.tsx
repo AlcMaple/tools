@@ -19,6 +19,7 @@ import { SettingsPage } from './SettingsPage'
 import { TracksPage } from './TracksPage'
 import { Ic, SketchSprite, type SketchIconName } from './SketchIcon'
 import { Splash } from './Splash'
+import { Popover } from './Popover'
 import { toast, ToastRoot } from './Toast'
 import { AgentHost } from './agent/AgentHost'
 
@@ -55,6 +56,8 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
   const route = useRoute()
   const { user, ready, dailyReward } = useAuth()
   const [feedbackUnread, setFeedbackUnread] = useState(0)
+  const [mUserOpen, setMUserOpen] = useState(false)
+  const mUserBtn = useRef<HTMLButtonElement>(null)
   const [feedbackOpen, setFeedbackOpen] = useState<FeedbackContext | null>(null)
   const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get('reset') ?? '')
   useEffect(() => {
@@ -186,14 +189,43 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
         </a>
         <span style={{ marginLeft: 'auto' }} />
         {!ready ? null : user ? (
-          <span
-            className="avatar-init"
-            style={{ width: 30, height: 30, fontSize: 15 }}
-            title={user.username}
-            aria-label={user.username}
-          >
-            {user.username.charAt(0).toUpperCase()}
-          </span>
+          <>
+            <button
+              ref={mUserBtn}
+              type="button"
+              className="m-user-btn"
+              title={user.username}
+              aria-label={feedbackUnread > 0 ? `${user.username}，${feedbackUnread} 条新消息` : user.username}
+              aria-haspopup="menu"
+              aria-expanded={mUserOpen}
+              onClick={() => setMUserOpen((o) => !o)}
+            >
+              <span className="avatar-init" style={{ width: 30, height: 30, fontSize: 15 }}>
+                {user.username.charAt(0).toUpperCase()}
+              </span>
+              {feedbackUnread > 0 && <span className="m-user-badge" aria-hidden="true">{feedbackUnread > 99 ? '99+' : feedbackUnread}</span>}
+            </button>
+            <Popover anchor={mUserBtn} open={mUserOpen} onClose={() => setMUserOpen(false)} align="end" className="m-user-pop" role="menu">
+              <div className="m-user-name">{user.username}</div>
+              <button type="button" role="menuitem" className="m-user-item" onClick={() => { setMUserOpen(false); openFeedback() }}>
+                反馈与建议{feedbackUnread > 0 && <span className="m-user-count">{feedbackUnread > 99 ? '99+' : feedbackUnread}</span>}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="m-user-item danger"
+                onClick={() => {
+                  setMUserOpen(false)
+                  void auth.logout().then(() => {
+                    toast('已退出登录，回来记得找我')
+                    go('calendar')
+                  })
+                }}
+              >
+                退出登录
+              </button>
+            </Popover>
+          </>
         ) : (
           <button className="btn btn-sm btn-primary" type="button" onClick={openLogin}>
             登录 / 注册
