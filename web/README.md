@@ -85,6 +85,12 @@ Vercel / 生产 VPS 不走这套本地自动对齐；按部署环境显式配置
 | `GITHUB_CLIENT_ID` `GITHUB_CLIENT_SECRET` | 可选 | GitHub OAuth App 登录，两项齐配才显示按钮。回调：`https://<你的域名>/api/auth/oauth/github/callback`；本地使用独立 OAuth App，回调 `http://localhost:5173/api/auth/oauth/github/callback` |
 | `AI_API_KEY` | 服务器 AI 时必需 | DeepSeek / OpenAI-compatible 服务端 key；只在服务端进程环境中使用，不进入浏览器、数据库或日志。生产通过 `MAPLETOOLS_ENV_FILE` 从仓库外注入 |
 | `AI_BASE_URL` / `AI_MODEL` | 可选 | 服务器 AI 的兼容接口地址和模型；默认 `https://api.deepseek.com` / `deepseek-v4-flash-vision-exp` |
+| `AGENT_AI_ENABLED` | 可选 | 不设时有 `AI_API_KEY` 就开启；`1` 强制开启，`0`（或任何非 `1` 的值）关闭全部 Agent AI（含 BYOK） |
+| `AGENT_LIMITS_JSON` | 可选 | Agent 额度上限（USD，须大于零），省略的字段用保守默认值；字段见 `server/agent/policy.ts` |
+| `AGENT_TRUST_LOOPBACK_PROXY` | 生产可选 | 设 `1` 后访客限流才信任 nginx 的 `X-Real-IP`；仅当 node 只绑回环、且 nginx 用 `proxy_set_header X-Real-IP $remote_addr` 覆写（不是透传）时开启，否则忽略转发头 |
+| `AGENT_ANSWER_OUTPUT_TOKENS` | 可选 | 单次回答输出预留，256~8192，默认 8192；访客至多 2048 |
+| `AGENT_BYOK_PROFILES` | 维护者 | BYOK 白名单 JSON 数组，默认只允许 `api.deepseek.com` 基线模型；新增项由维护者核对域名、型号、上下文窗口和 USD 单价，字段 `endpoint` `model` `contextTokens` `maxOutputTokens` `price{currency,version,inputPerMillion,cachedInputPerMillion,outputPerMillion}` |
+| `AGENT_MODEL_APPROVAL` | 维护者 | 启用更强服务器模型的审批记录 JSON（`model` `baselineEvaluationId` `baselinePassed` `strongerModelVerified` `approvedBy` `approvedAt`）；对应模型须已在 `AGENT_BYOK_PROFILES` 中，不自动降档 |
 | `MAPLETOOLS_ENV_FILE` | 生产建议 | 绝对路径，指向仓库外的简单 `KEY=VALUE` 文件（如 `/opt/mapletools-data/.env.ai`）；生产设置后不再读取仓库内 `.env` |
 | `SLOW_PLAYBACK_MAX_VIEWERS` | 可选 | 公共慢源容量池的同时观看上限，默认 `2`；只能按真实出口带宽测试结果调整 |
 | `SLOW_PLAYBACK_QUEUE_ENABLED` | 可选 | 慢源候补开关，默认开启；关闭后已有空位仍可观看，满员时不再接受新候补 |

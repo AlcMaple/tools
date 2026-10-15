@@ -128,6 +128,7 @@ export function SettingsPage(): JSX.Element | null {
               {module === 'profile' && (
                 <div style={{ paddingTop: 6 }}>
                   <UsernameRow />
+                  <Kv k="用户 ID" v={String(user.id)} />
                   <Kv k="注册时间" v={user.createdAt.slice(0, 10)} />
                   {/* 无密码的验证码账号不能使用依赖原始密码的密保设置，也不展示一条无从处理的状态。 */}
                   {user.hasPassword && (
