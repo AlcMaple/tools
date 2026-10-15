@@ -455,7 +455,10 @@ export function CalendarPage(): JSX.Element {
                 aria-pressed={onlyMine}
                 onClick={() => setOnlyMine((v) => !v)}
               >
-                只看我的追番
+                <span style={{ display: 'inline-grid' }}>
+                  <span style={{ gridArea: '1/1', visibility: onlyMine ? 'hidden' : 'visible' }}>隐藏没追的</span>
+                  <span style={{ gridArea: '1/1', visibility: onlyMine ? 'visible' : 'hidden' }}>显示全部</span>
+                </span>
               </button>
             )}
             <button
