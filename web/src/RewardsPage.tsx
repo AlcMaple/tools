@@ -11,6 +11,7 @@ import { useAuth } from './auth'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { SketchSheet } from './SketchSheet'
+import { useSpriteStyle } from './sprites'
 
 const SHOP: Array<{
   item: RewardShopItem
@@ -68,6 +69,7 @@ function copyText(text: string): Promise<void> {
 }
 
 export function RewardsPage(): JSX.Element {
+  const legacySprite = useSpriteStyle() === 'old'
   const { user, ready } = useAuth()
   const [summary, setSummary] = useState<RewardSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -109,9 +111,9 @@ export function RewardsPage(): JSX.Element {
   if (error || !summary) {
     return (
       <div className="empty panel reward-empty">
-        <SketchSheet src="/assets/pop/locked.webp" paper="note" />
+        {legacySprite ? <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" /> : <SketchSheet src="/assets/pop/locked.webp" paper="note" />}
         <div className="empty-say">
-          <p className="empty-text">{error || '这页卡住了…'}</p>
+          {legacySprite ? <div className="bubble empty-bubble"><span>{error || '这页卡住了…'}</span></div> : <p className="empty-text">{error || '这页卡住了…'}</p>}
           <button className="btn btn-primary" type="button" onClick={() => void load()}>再试一次</button>
         </div>
       </div>
@@ -123,9 +125,11 @@ export function RewardsPage(): JSX.Element {
       <>
         <PageTitle />
         <div className="empty panel reward-empty mt16">
-          <SketchSheet src="/assets/pop/locked.webp" paper="note" sign="还没开放" />
+          {legacySprite ? <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" /> : <SketchSheet src="/assets/pop/locked.webp" paper="note" sign="还没开放" />}
           <div className="empty-say">
-            <p className="empty-text">这页今天先不给你看。开放的时候我会说的</p>
+            {legacySprite
+              ? <div className="bubble empty-bubble"><span>这页今天先不给你看。开放的时候我会说的</span></div>
+              : <p className="empty-text">这页今天先不给你看。开放的时候我会说的</p>}
           </div>
         </div>
       </>
@@ -201,7 +205,14 @@ export function RewardsPage(): JSX.Element {
           </div>
         </section>
 
-        <SketchSheet src="/assets/pop/rewards.webp" paper="torn" className="reward-sketch" />
+        {legacySprite ? (
+          <div className="reward-guide">
+            <img src="/assets/sagiri-mascot.webp" alt="和泉纱雾" />
+            <div className="bubble"><span>想要哪张券？先说好，不许一次全花掉</span></div>
+          </div>
+        ) : (
+          <SketchSheet src="/assets/pop/rewards.webp" paper="torn" className="reward-sketch" />
+        )}
       </div>
 
       <div className="reward-layout mt16">

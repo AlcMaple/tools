@@ -11,6 +11,7 @@ import { Ic } from './SketchIcon'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 import { SketchSheet } from './SketchSheet'
+import { useSpriteStyle } from './sprites'
 
 export type AuthMode = 'login' | 'register' | 'email' | 'forgot'
 
@@ -120,6 +121,7 @@ export function AuthModal({
   /** 打开弹窗时就带上的错误（如第三方登录回调失败回跳后由 App 传入）。 */
   presetError?: string | null
 }): JSX.Element | null {
+  const legacySprite = useSpriteStyle() === 'old'
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [emailStep, setEmailStep] = useState<'address' | 'code'>('address')
@@ -332,7 +334,14 @@ export function AuthModal({
         </button>
 
         <aside className="auth-side">
-          <SketchSheet src={SHY_FRAMES[0]} className="auth-sketch" imgRef={shy.imgRef} />
+          {legacySprite ? (
+            <>
+              <span className="halftone-wash" />
+              <img className="auth-full" src="/assets/sagiri-full.webp" alt="和泉纱雾 · 官方立绘" />
+            </>
+          ) : (
+            <SketchSheet src={SHY_FRAMES[0]} className="auth-sketch" imgRef={shy.imgRef} />
+          )}
           <p className="auth-side-cap">「才、才不是在等你登录……」</p>
         </aside>
 

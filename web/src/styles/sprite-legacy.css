@@ -1,0 +1,76 @@
+/* 旧版全身立绘（设置里「立绘风格 = 旧版」时才渲染这些节点）。
+   素材与结构取自 9bed4ce 之前的版本，见 DEVLOG。 */
+.rig {
+  display: block;
+  height: 340px;
+  object-fit: contain;
+  object-position: bottom;
+  filter: drop-shadow(0 10px 14px rgba(30, 36, 52, .18));
+  transform-origin: 50% 20%;
+  animation: rig-sway 7s var(--ease-page) infinite alternate;
+}
+.rig-inline { display: none; align-items: flex-end; gap: 10px; }
+.rig-inline .rig { height: 96px; }
+@keyframes rig-sway {
+  from { transform: rotate(-1.1deg) translateY(2px); }
+  to   { transform: rotate(1.2deg) translateY(-7px); }
+}
+@media (max-width: 960px) { .rig-inline { display: flex; } }
+.rig-bubble { position: static; max-width: 220px; margin: -30px 0 0; z-index: 1; }
+.rig-box .rig-bubble::after { top: -7px; bottom: auto; left: 50%; margin-left: -6px; transform: rotate(225deg) skew(8deg, 8deg); }
+.rig-inline .rig-bubble { margin: 0; max-width: 240px; }
+.rig-inline .rig-bubble::after { left: -7px; bottom: 22px; transform: rotate(135deg) skew(8deg, 8deg); }
+.rig-slot { display: flex; justify-content: center; padding-top: 16px; }
+.rig-slot .rig { height: 248px; }
+@media (max-width: 960px) { .rig-slot { display: none; } }
+.rig-bubble .sagiri-line { white-space: pre-line; display: none; min-height: 3.4em; }
+.rig-bubble .sagiri-line.show { display: block; }
+
+.empty .mascot { width: 118px; flex: none; filter: drop-shadow(0 6px 10px rgba(30, 36, 52, .16)); }
+.tl-empty img.mascot { width: 96px; }
+.auth-side > img.auth-full { width: 152px; display: block; transform-origin: 50% 20%; animation: rig-sway 7s var(--ease-page) infinite alternate; }
+.reward-guide { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.reward-guide img { display: block; width: 146px; height: 146px; object-fit: contain; filter: drop-shadow(0 8px 12px rgba(30, 36, 52, .14)); }
+.reward-guide .bubble { width: 190px; max-width: 190px; margin-top: -10px; font-size: 12.5px; }
+.reward-guide .bubble::after { top: -7px; bottom: auto; left: 50%; margin-left: -6px; transform: rotate(225deg) skew(8deg, 8deg); }
+@media (max-width: 960px) { .reward-guide { display: none; } }
+
+/* 周历：立绘是可拖动贴纸，宽屏挂在固定层，窄屏留在内容流里 */
+.calendar-rig-layer { height: 0; pointer-events: none; }
+.calendar-rig-overlay { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.calendar-rig {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: min(260px, calc(100vw - 16px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  will-change: transform;
+  transition: opacity .25s ease, filter .25s ease;
+}
+.calendar-rig.dragging { cursor: grabbing; }
+@media (hover: hover) {
+  .calendar-rig:not(.calendar-rig-inline):hover .rig { opacity: .22; }
+  .calendar-rig:not(.calendar-rig-inline):hover .rig-bubble { opacity: 0; pointer-events: none; }
+  .calendar-rig:focus-visible { outline: 3px solid var(--teal-wash); outline-offset: 5px; }
+}
+.calendar-rig .rig { height: min(340px, calc(100dvh - 150px)); transition: opacity .25s ease; }
+.calendar-rig .rig-bubble { width: max-content; max-width: 100%; box-sizing: border-box; transition: opacity .25s ease; }
+.calendar-rig .rig-bubble::after { top: -7px; bottom: auto; left: 50%; margin-left: -6px; transform: rotate(225deg) skew(8deg, 8deg); }
+@media (max-width: 960px) {
+  .calendar-rig-inline { position: static; margin: 0 auto 10px; cursor: default; touch-action: auto; will-change: auto; }
+  .calendar-rig { width: min(330px, calc(100vw - 16px)); height: auto; flex-direction: row; align-items: flex-end; justify-content: center; gap: 10px; }
+  .calendar-rig .rig { height: min(96px, calc(100dvh - 32px)); flex: none; }
+  .calendar-rig .rig-bubble { width: max-content; max-width: calc(100% - 56px); margin: 0; }
+  .calendar-rig .rig-bubble::after { top: auto; bottom: 22px; left: -7px; margin-left: 0; transform: rotate(135deg) skew(8deg, 8deg); }
+}
+
+/* 旧版气泡不画小尾巴（立绘头顶的小三角），各处统一 */
+.rig-bubble::after,
+.reward-guide .bubble::after,
+.empty .bubble.empty-bubble::after { display: none !important; }

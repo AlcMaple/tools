@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { spriteSrc, useSpriteStyle } from './sprites'
 import { fetchSeason, fetchSeasons, type SeasonResult, type SeasonSummary } from './api'
 import { DayFilm, FilmRow } from './CalendarPage'
 import { navigate } from './router'
@@ -20,6 +21,7 @@ const stamp = (ts: number): string => {
 }
 
 export function CalendarHistoryPage(): JSX.Element {
+  const legacySprite = useSpriteStyle() === 'old'
   const [seasons, setSeasons] = useState<SeasonSummary[] | null>(null)
   const [pickedKey, setPickedKey] = useState<string | null>(null)
   const [year, setYear] = useState<number | null>(null)
@@ -81,7 +83,7 @@ export function CalendarHistoryPage(): JSX.Element {
 
       {seasons && seasons.length === 0 && (
         <div className="tl-empty">
-          <img src="/assets/pop/empty.webp" alt="" />
+          <img className={legacySprite ? 'mascot' : undefined} src={spriteSrc('empty', legacySprite ? 'old' : 'new')} alt="" />
           <p>……还一页都没有。哥哥晚点再来看吧。</p>
         </div>
       )}

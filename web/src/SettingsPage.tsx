@@ -28,8 +28,9 @@ import { Select } from './Select'
 import { readByokKey, writeByokKey } from './reviews/byok'
 import { BackupModule } from './BackupModule'
 import { SketchSheet } from './SketchSheet'
+import { LegacyRig, setSpriteStyle, useSpriteStyle } from './sprites'
 
-type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai' | 'backup'
+type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai' | 'backup' | 'look'
 
 function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/xifan') return 'xifan'
@@ -37,6 +38,7 @@ function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/privacy') return 'privacy'
   if (window.location.hash === '#/settings/ai') return 'ai'
   if (window.location.hash === '#/settings/backup') return 'backup'
+  if (window.location.hash === '#/settings/look') return 'look'
   return 'profile'
 }
 
@@ -47,6 +49,7 @@ function normalizeLegacySettingsHash(): void {
 
 export function SettingsPage(): JSX.Element | null {
   const { user } = useAuth()
+  const legacySprite = useSpriteStyle() === 'old'
   const [module, setModule] = useState<Module>(moduleFromHash)
   const [xifanOpened, setXifanOpened] = useState(module === 'xifan')
 
@@ -84,6 +87,8 @@ export function SettingsPage(): JSX.Element | null {
           <p className="muted small mt8">账号、安全和播放源，都收在这几个口袋里</p>
         </div>
       </div>
+
+      {legacySprite && <LegacyRig variant="inline" src="/assets/chara_04.webp" alt="千寿ムラマサ · 官方立绘" text="书架整理好了，接下来交给我吧。" />}
 
       <div className="hero-split top mt16">
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -195,10 +200,27 @@ export function SettingsPage(): JSX.Element | null {
             </button>
             <div className="pocket-body">{module === 'backup' && <BackupModule />}</div>
           </section>
+
+          <section className={`pocket${module === 'look' ? ' open' : ''}`} data-mod="look">
+            <button className="pocket-tab" type="button" onClick={() => selectModule('look')}>
+              <Ic name="eye" />
+              外观
+              <span className="pocket-hint">立绘风格</span>
+              <Ic name="chev" cls="ic chev" />
+            </button>
+            <div className="pocket-body">{module === 'look' && <LookModule />}</div>
+          </section>
         </div>
 
         <div className="rig-box">
-          <SketchSheet src="/assets/pop/settings.webp" paper="polaroid" className="settings-sketch" />
+          {legacySprite ? (
+            <>
+              <img className="rig" src="/assets/chara_04.webp" alt="千寿ムラマサ · 官方立绘" />
+              <div className="bubble rig-bubble"><span>书架整理好了，接下来交给我吧。</span></div>
+            </>
+          ) : (
+            <SketchSheet src="/assets/pop/settings.webp" paper="polaroid" className="settings-sketch" />
+          )}
         </div>
       </div>
     </>
@@ -214,6 +236,22 @@ function Kv({ k, v, note }: { k: string; v: string; note?: string }): JSX.Elemen
         {v}
         {note && <span className="muted">{note}</span>}
       </span>
+    </div>
+  )
+}
+
+function LookModule(): JSX.Element {
+  const style = useSpriteStyle()
+  return (
+    <div style={{ paddingTop: 6 }}>
+      <div className="seg" role="group" aria-label="立绘风格">
+        <button type="button" className={style === 'old' ? 'on' : ''} aria-pressed={style === 'old'} onClick={() => setSpriteStyle('old')}>
+          旧版
+        </button>
+        <button type="button" className={style === 'new' ? 'on' : ''} aria-pressed={style === 'new'} onClick={() => setSpriteStyle('new')}>
+          新版
+        </button>
+      </div>
     </div>
   )
 }

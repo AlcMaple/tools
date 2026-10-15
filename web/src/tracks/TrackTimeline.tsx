@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Track } from '../api'
+import { spriteSrc, useSpriteStyle } from '../sprites'
 
 // ── 追番手帐·年表 ──────────────────────────────────────────────────────────────
 // 按「贴进手帐的时间」归到 年份 → 季度（冬 1 月 / 春 4 月 / 夏 7 月 / 秋 10 月番）。
@@ -47,6 +48,7 @@ function group(tracks: Track[]): Year[] {
 }
 
 export function TrackTimeline({ tracks, onOpen }: { tracks: Track[]; onOpen: (bgmId: number) => void }): JSX.Element {
+  const legacySprite = useSpriteStyle() === 'old'
   const years = useMemo(() => group(tracks), [tracks])
   const [selection, setSelection] = useState<number | null>(null)
   const year = years.find(item => item.year === selection) ?? years[0]
@@ -74,7 +76,7 @@ export function TrackTimeline({ tracks, onOpen }: { tracks: Track[]; onOpen: (bg
   if (!years.length) {
     return (
       <div className="tl-empty">
-        <img src="/assets/pop/empty.webp" alt="" />
+        <img className={legacySprite ? 'mascot' : undefined} src={spriteSrc('empty', legacySprite ? 'old' : 'new')} alt="" />
         <p>……什么都没有。哥哥是不是点错筛选了？观望的番不算追番，我才不记。</p>
       </div>
     )

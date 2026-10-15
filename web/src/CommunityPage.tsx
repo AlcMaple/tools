@@ -19,6 +19,7 @@ import type { PosterInput } from './reviews/poster'
 import type { PosterScoreSignals } from '../shared/poster-score'
 import type { ReviewMode } from './reviews/reviewsApi'
 import { SketchSheet } from './SketchSheet'
+import { useSpriteStyle } from './sprites'
 
 function posterInputFrom(opts: {
   bgmId: number
@@ -182,6 +183,7 @@ function HallView({
   loading: boolean
   error: string | null
 }): JSX.Element {
+  const legacySprite = useSpriteStyle() === 'old'
   return (
     <>
       <div className="spread" style={{ alignItems: 'flex-end' }}>
@@ -213,8 +215,10 @@ function HallView({
         <div className="page-state"><Spinner size={36} /><p className="faint small">正在翻看大家的追番手帐…</p></div>
       ) : users && users.length === 0 ? (
         <div className="empty panel mt16">
-          <SketchSheet src="/assets/pop/empty.webp" paper="polaroid" />
-          <div className="empty-say"><p className="empty-text">这里还安安静静的……谁来先摊开一页？</p></div>
+          {legacySprite ? <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" /> : <SketchSheet src="/assets/pop/empty.webp" paper="polaroid" />}
+          <div className="empty-say">{legacySprite
+            ? <div className="bubble empty-bubble">这里还安安静静的……谁来先摊开一页？</div>
+            : <p className="empty-text">这里还安安静静的……谁来先摊开一页？</p>}</div>
         </div>
       ) : (
         <div className="community-users mt16">

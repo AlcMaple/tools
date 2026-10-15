@@ -56,6 +56,7 @@ import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
 import { AddSearchModal, type BackfillTarget } from './tracks/addSearchModal'
 import { Popover } from './Popover'
 import { SketchSheet } from './SketchSheet'
+import { LegacyRig, useSpriteStyle } from './sprites'
 import { useIsWide } from './useMediaQuery'
 
 type FilterKey = 'all' | TrackStatus
@@ -379,6 +380,7 @@ export function TracksPage(): JSX.Element {
     [filtered, today],
   )
   const todayCount = todayIds.size
+  const todayLine = todayCount > 0 ? `今天有 ${todayCount} 部更新，快去看快去看！` : '今天没有更新，慢慢补番也好～'
   // 今天的功课：页头便签上手写列出今天更新的番，下面卡片里动过进度（updatedAt 是今天）就被铅笔划掉。
   // updatedAt 是服务端时间戳，换设备也算数；任何改动都会刷新它，改标签也会被当成看过。
   const homework = useMemo(() => {
@@ -441,6 +443,7 @@ export function TracksPage(): JSX.Element {
   }
 
   const wide = useIsWide()
+  const legacySprite = useSpriteStyle() === 'old'
   const headActions = user ? (
     <div className="row">
       <button className="btn btn-sm btn-ghost" type="button" disabled={!!loadProgress} onClick={() => setImportOpen(true)}>
@@ -502,7 +505,7 @@ export function TracksPage(): JSX.Element {
           </div>
           {wide ? toolbar : headActions}
         </div>
-        <SketchSheet src="/assets/pop/tracks.webp" paper="note" className={`sketch-hero-art${homework.length ? ' with-list' : ''}`}>
+        {!legacySprite && <SketchSheet src="/assets/pop/tracks.webp" paper="note" className={`sketch-hero-art${homework.length ? ' with-list' : ''}`}>
           {homework.length > 0 && (
             <>
               <ol className="homework">
@@ -517,8 +520,12 @@ export function TracksPage(): JSX.Element {
               {homeworkDone && <span className="homework-stamp">済</span>}
             </>
           )}
-        </SketchSheet>
+        </SketchSheet>}
       </header>
+
+      {legacySprite && user && filtered.length > 0 && (
+        <LegacyRig variant="inline" src="/assets/chara_03.webp" alt="山田エルフ · 官方立绘" text={todayLine} />
+      )}
 
       {!wide && toolbar}
 
@@ -634,6 +641,11 @@ export function TracksPage(): JSX.Element {
         </div>
       )}
 
+      {legacySprite && user && filtered.length > 0 && (
+        <div className="rig-slot">
+          <LegacyRig variant="box" src="/assets/chara_03.webp" alt="山田エルフ · 官方立绘" text={todayLine} />
+        </div>
+      )}
 
       {editingTrack && (
         <EditModal
@@ -823,6 +835,7 @@ function ViewModeToggle({
 function EmptyState({ text }: { text: string }): JSX.Element {
   return (
     <div className="empty panel mt16">
+      {useSpriteStyle() === 'old' && <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />}
       <p className="empty-text">{text}</p>
     </div>
   )

@@ -11,6 +11,7 @@ import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { useIsWide } from './useMediaQuery'
 import { SketchSheet } from './SketchSheet'
+import { LegacyCalendarRig, useSpriteStyle } from './sprites'
 
 // 皮肤 = 原型稿 index.html（番剧周历）：横向海报胶片，页头一格插画，另有纵向布局。
 // 横向布局保留日期章选天（窄屏）和每周一行胶片（宽屏）；纵向布局一次展开七天。
@@ -331,6 +332,7 @@ export function CalendarPage(): JSX.Element {
   // 默认保留截图里的横向布局；「纵向」是同一份数据的第二种浏览方式，选择会记住。
   const [layoutMode, setLayoutMode] = useState<CalendarLayout>(readCalendarLayout)
   const wide = useIsWide()
+  const legacySprite = useSpriteStyle() === 'old'
   const book = useSketchbook(todayId, !!result)
 
   const [onlyMine, setOnlyMine] = useState(() => {
@@ -498,13 +500,13 @@ export function CalendarPage(): JSX.Element {
               </button>
           </div>
         </div>
-        <SketchSheet
+        {!legacySprite && <SketchSheet
           src="/assets/pop/calendar.webp"
           className="sketch-hero-art"
           paint={book.paint}
           sheetRef={book.heroRef}
           sign={book.paint >= 1 ? `${dates[todayId]?.m}.${dates[todayId]?.d} 紗霧` : undefined}
-        />
+        />}
       </header>
 
       {sourceWatch.modals}
@@ -516,6 +518,7 @@ export function CalendarPage(): JSX.Element {
       )}
 
       <div className={`calendar-stage mt16 layout-${layoutMode}`}>
+        {legacySprite && <LegacyCalendarRig layout={layoutMode} wide={wide} />}
         <div className="calendar-content">
           {layoutMode === 'vertical' ? (
             <div className="calendar-vertical-view">
@@ -553,7 +556,7 @@ export function CalendarPage(): JSX.Element {
         </div>
       </div>
 
-      <button
+      {!legacySprite && <button
         type="button"
         className={`sketch-dock${book.shown ? ' on' : ''}`}
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -568,7 +571,7 @@ export function CalendarPage(): JSX.Element {
           sheetRef={book.dockRef}
           sign={book.paint >= 1 ? `${dates[todayId]?.m}.${dates[todayId]?.d} 紗霧` : book.dayLabel ? `画到${book.dayLabel}…` : undefined}
         />
-      </button>
+      </button>}
 
       {loading && !result && (
         <div className="page-state">
