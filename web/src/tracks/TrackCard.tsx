@@ -784,7 +784,9 @@ export function ContinueWatchAction({
   bound,
   locating,
   onPick,
+  className = 'btn btn-sm btn-primary',
 }: {
+  className?: string
   label: string
   ep: number
   bound: Partial<Record<SourceId, SourceBinding>>
@@ -815,7 +817,7 @@ export function ContinueWatchAction({
     <>
       <button
         type="button"
-        className="btn btn-sm btn-primary"
+        className={className}
         disabled={locating}
         onClick={() => setOpen(true)}
         title={`挑个源看第 ${ep} 话`}

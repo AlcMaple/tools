@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CalendarItem } from './api'
+import type { CalendarItem, Track } from './api'
 import { deleteTrack, putTrack } from './api'
 import { useAuth } from './auth'
 import { toast } from './Toast'
@@ -11,12 +11,15 @@ import { loadTracks, runTrackMutation } from './tracksSync'
 export function useTrackToggle(): {
   canTrack: boolean
   tracked: Set<number>
+  /** 已追番的完整记录，周历「继续看」按它的进度开播 */
+  tracksById: Map<number, Track>
   error: string | null
   toggle: (item: CalendarItem, weekday: number) => void
 } {
   const { user } = useAuth()
   // 已追的 bgmId —— 用来给海报画「已收藏」描边 / 切圆章按钮图标。未登录就是空集（按钮不显示）。
   const [tracked, setTracked] = useState<Set<number>>(new Set())
+  const [tracksById, setTracksById] = useState<Map<number, Track>>(new Map())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [writeError, setWriteError] = useState<string | null>(null)
   const pending = useRef(new Set<number>())
@@ -24,12 +27,16 @@ export function useTrackToggle(): {
   useEffect(() => {
     if (!user) {
       setTracked(new Set())
+      setTracksById(new Map())
       setLoadError(null)
       return
     }
     return loadTracks(
       user.username,
-      (ts) => setTracked(new Set(ts.map((t) => t.bgmId))),
+      (ts) => {
+        setTracked(new Set(ts.map((t) => t.bgmId)))
+        setTracksById(new Map(ts.map((t) => [t.bgmId, t])))
+      },
       setLoadError,
     )
   }, [user])
@@ -72,5 +79,5 @@ export function useTrackToggle(): {
     }).finally(() => pending.current.delete(item.id))
   }
 
-  return { canTrack: !!user, tracked, error: writeError ?? loadError, toggle }
+  return { canTrack: !!user, tracked, tracksById, error: writeError ?? loadError, toggle }
 }

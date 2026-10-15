@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CalendarItem, CalendarResult, CalendarWeekday } from './api'
-import { coverUrl, fetchCalendar } from './api'
+import type { CalendarItem, CalendarResult, CalendarWeekday, SourceBinding, SourceId, Track, WatchMode } from './api'
+import { SOURCES, coverUrl, fetchCalendar, sourceById } from './api'
+import { ContinueWatchAction } from './tracks/TrackCard'
+import { watchEp } from './tracks/common'
+import { useSourceWatch } from './tracks/useSourceWatch'
 import { useTrackToggle } from './useTrackToggle'
 import { navigate } from './router'
 import { cacheGet, cacheSet } from './dataCache'
@@ -316,6 +319,13 @@ export function CalendarPage(): JSX.Element {
   const [refreshing, setRefreshing] = useState(false)
   const [selectedDay, setSelectedDay] = useState(todayBgmId)
   const track = useTrackToggle()
+  const sourceWatch = useSourceWatch(setError)
+  const posterWatch: PosterWatch = {
+    tracksById: track.tracksById,
+    bindings: sourceWatch.bindings,
+    locating: sourceWatch.locating,
+    onContinue: (t, source, mode, rebind) => sourceWatch.continueWatch(sourceById(source), t, mode, rebind),
+  }
   const dates = useMemo(weekDates, [])
   const todayId = useMemo(todayBgmId, [])
   // 默认保留截图里的横向布局；「纵向」是同一份数据的第二种浏览方式，选择会记住。
@@ -394,6 +404,7 @@ export function CalendarPage(): JSX.Element {
           tracked={track.tracked}
           onToggle={track.toggle}
           mineOnly={mineOnly}
+          watch={posterWatch}
         />
       </FilmRow>
     </section>
@@ -495,6 +506,8 @@ export function CalendarPage(): JSX.Element {
           sign={book.paint >= 1 ? `${dates[todayId]?.m}.${dates[todayId]?.d} 紗霧` : undefined}
         />
       </header>
+
+      {sourceWatch.modals}
 
       {(error || track.error) && (
         <p className="form-note err mt8" aria-live="polite">
@@ -692,12 +705,14 @@ export function DayFilm({
   tracked,
   onToggle,
   mineOnly,
+  watch,
 }: {
   day: { id: number; items: CalendarItem[] }
   canTrack: boolean
   tracked: Set<number>
   onToggle: (item: CalendarItem, weekday: number) => void
   mineOnly?: boolean
+  watch?: PosterWatch
 }): JSX.Element {
   if (day.items.length === 0) {
     return <div className="film-empty faint">{mineOnly ? '这一天没有你追的番' : '这一天没有排片'}</div>
@@ -712,10 +727,29 @@ export function DayFilm({
           canTrack={canTrack}
           tracked={tracked.has(item.id)}
           onToggle={onToggle}
+          watch={watch}
         />
       ))}
     </>
   )
+}
+
+export interface PosterWatch {
+  tracksById: Map<number, Track>
+  bindings: Record<SourceId, Record<number, SourceBinding>>
+  locating: { source: SourceId; bgmId: number } | null
+  onContinue: (t: Track, source: SourceId, mode: WatchMode, rebind?: boolean) => void
+}
+
+// 没追的番也能「试看」：没有进度，按第 1 话开；绑定仍按 bgmId 落库，之后追上直接沿用。
+function trialTrack(item: CalendarItem): Track {
+  const now = Date.now()
+  return {
+    bgmId: item.id, status: 'considering', episode: 1, totalEpisodes: item.episodes > 0 ? item.episodes : null,
+    title: item.name, titleCn: item.name_cn, cover: item.cover, airWeekday: 0, airDate: item.airDate, score: item.score,
+    bgmTags: [], userTags: [], aliases: [], observeCount: 0, subjectType: 'anime',
+    goodEpisodes: [], goodEpisodeNotes: {}, favorite: 0, createdAt: now, updatedAt: now,
+  }
 }
 
 // ── 拍立得海报卡（追番圆章常驻，无 hover 依赖） ──────────────────────────────────
@@ -725,15 +759,25 @@ function Poster({
   canTrack,
   tracked,
   onToggle,
+  watch,
 }: {
   item: CalendarItem
   weekday: number
   canTrack: boolean
   tracked: boolean
   onToggle: (item: CalendarItem, weekday: number) => void
+  watch?: PosterWatch
 }): JSX.Element {
   const displayTitle = item.name_cn || item.name
   const on = tracked
+  const watchTrack = watch?.tracksById.get(item.id) ?? trialTrack(item)
+  const bound: Partial<Record<SourceId, SourceBinding>> = {}
+  if (watch) {
+    for (const src of SOURCES) {
+      const b = watch.bindings[src.id][item.id]
+      if (b) bound[src.id] = b
+    }
+  }
 
   return (
     <article className={`poster${on ? ' tracked' : ''}`}>
@@ -766,6 +810,22 @@ function Poster({
         {displayTitle}
       </div>
       <div className="poster-ep">{item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中'}</div>
+      {watch && canTrack && (
+        <div className="poster-watch">
+          <ContinueWatchAction
+            className={`btn btn-sm${on ? ' btn-primary' : ''}`}
+            label={on ? '继续看' : '试看'}
+            ep={watchEp(watchTrack)}
+            bound={bound}
+            locating={watch.locating?.bgmId === item.id}
+            onPick={(source, mode, rebind) => watch.onContinue(watchTrack, source, mode, rebind)}
+          />
+          <a className="btn btn-sm btn-ghost" href={`https://bgm.tv/subject/${item.id}`} target="_blank" rel="noreferrer" title="在 Bangumi 查看详情">
+            <Ic name="external" cls="ic ic-sm" />
+            BGM
+          </a>
+        </div>
+      )}
     </article>
   )
 }
