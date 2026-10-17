@@ -1,5 +1,8 @@
-// 编辑用户手动添加的观看链接 —— **只管 Custom 一类**,内置四源(Xifan/Girigiri/Aowu/
-// Bilibili)不出现在这里,它们都靠搜索流程绑定/改绑,是结构性数据,没有用户能手改的字段。
+// 编辑追番已关联的观看源。两类行:
+//   - 用户手动添加的 Custom 链接:可改标题 / URL、可删。
+//   - 内置四源(Xifan/Girigiri/Aowu/Bilibili):只读展示 + 可移除。它们是结构性数据
+//     (sourceKey 是站内 id / 观看页),没有能手改的字段,改绑走行内的「换 X」重新搜索。
+//     这里只给「移除」——绑错了又搜不到对的,至少能清掉,不必删掉整条追番丢掉备注。
 //
 // 进来先把当前所有用户添加的 binding 拷一份到本地 state,每行可改标题 / URL、可标记删除
 // 点保存才一次性 diff 回 store,取消或关弹窗则全部丢弃。
@@ -12,8 +15,7 @@ import type { AnimeBinding } from '../stores/animeTrackStore'
 /**
  * 算作「用户手动添加、可在这里改标题/URL」的来源。**不含 'Bilibili'**——它现在靠搜索
  * 关联,想换视频走 MyAnime 行内的「换 B 站视频」重新搜一遍,不是在这改 URL(避免手滑改出
- * 一个不合法的 BV 链接)。老数据里若真存在 source:'Bilibili' 的 binding,不在这里编辑,
- * 但仍会正常显示/播放,只是改不了——用户可以在 MyAnime 上用「换 B 站视频」重新搜索覆盖。
+ * 一个不合法的 BV 链接)。老数据里若真存在 source:'Bilibili' 的 binding,在这里也只能移除。
  */
 const USER_ADDED_SOURCES = new Set<AnimeBinding['source']>(['Custom'])
 
@@ -44,6 +46,8 @@ export interface BindingEdit {
 interface RowDraft {
   /** Frozen at modal open — used as the diff anchor / store key. */
   original: AnimeBinding
+  /** 仅 Custom 链接可编辑;内置源只能移除。 */
+  editable: boolean
   /** Mutable form values. */
   title: string
   url: string
@@ -51,12 +55,11 @@ interface RowDraft {
 }
 
 export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Props): JSX.Element {
-  // 只有用户手动添加的 binding 可编辑;内置三源直接滤掉 —— 它们由搜索流程管理。
   const [rows, setRows] = useState<RowDraft[]>(() =>
     bindings
-      .filter(isUserAddedBinding)
       .map(b => ({
         original: b,
+        editable: isUserAddedBinding(b),
         title: b.sourceTitle,
         url: b.sourceUrl || b.sourceKey,
         deleted: false,
@@ -72,7 +75,7 @@ export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Pro
   const handleSave = (): void => {
     // 校验未标记删除那些行的 URL
     for (const r of rows) {
-      if (r.deleted) continue
+      if (r.deleted || !r.editable) continue
       if (!r.title.trim()) {
         setError(`「${r.original.sourceTitle || r.original.sourceKey}」的标题不能为空`)
         return
@@ -86,7 +89,7 @@ export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Pro
     // 检出重复 URL,否则更新时会悄悄丢掉一条
     const seen = new Set<string>()
     for (const r of rows) {
-      if (r.deleted) continue
+      if (r.deleted || !r.editable) continue
       const k = r.url.trim()
       if (seen.has(k)) {
         setError(`链接「${k}」重复了，请合并或删除其中一条`)
@@ -105,6 +108,7 @@ export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Pro
         changes.push({ ...ref, kind: 'delete' })
         continue
       }
+      if (!r.editable) continue
       const newTitle = r.title.trim()
       const newUrl = r.url.trim()
       const titleChanged = newTitle !== r.original.sourceTitle
@@ -140,7 +144,7 @@ export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Pro
         <div className="min-w-0">
           <h3 className="text-base font-black tracking-tight">编辑观看源</h3>
           <p className="text-[11px] text-on-surface-variant/60 mt-0.5 font-label truncate" title={animeTitle}>
-            「{animeTitle}」的自定义播放链接
+            「{animeTitle}」的观看源
           </p>
         </div>
       </div>
@@ -150,15 +154,35 @@ export function EditBindingsModal({ animeTitle, bindings, onClose, onSave }: Pro
         {visibleRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 gap-2 text-on-surface-variant/40">
             <span className="material-symbols-outlined text-3xl">link_off</span>
-            <p className="font-label text-xs">没有可编辑的自定义链接</p>
-            <p className="font-label text-[10px] text-on-surface-variant/30">
-              内置三源（Aowu / Xifan / Girigiri）的绑定不在这里编辑
-            </p>
+            <p className="font-label text-xs">没有已关联的观看源</p>
           </div>
         ) : (
           <div className="space-y-4">
             {rows.map((r, i) => {
               if (r.deleted) return null
+              if (!r.editable) {
+                return (
+                  <div
+                    key={`${r.original.source}-${r.original.sourceKey}`}
+                    className="rounded-lg border border-outline-variant/15 bg-surface-container/60 px-3 py-2 flex items-center gap-2"
+                  >
+                    <span className="shrink-0 font-label text-[10px] uppercase tracking-widest text-on-surface-variant/50">
+                      {r.original.source === 'Bilibili' ? 'B 站' : r.original.source}
+                    </span>
+                    <span className="flex-1 min-w-0 truncate text-sm text-on-surface" title={r.original.sourceTitle}>
+                      {r.original.sourceTitle || r.original.sourceKey}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => updateRow(i, { deleted: true })}
+                      title="移除这个关联"
+                      className="shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant/40 hover:text-error hover:bg-error/10 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[16px] leading-none">delete</span>
+                    </button>
+                  </div>
+                )
+              }
               return (
                 <div
                   key={`${r.original.source}-${r.original.sourceKey}`}
