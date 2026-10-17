@@ -607,7 +607,7 @@ const PjjcView = forwardRef<PjjcViewHandle, {
     const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === editAttackTarget.groupId
-        ? { ...d, attacks: d.attacks.map(a => a.id === editAttackTarget.atk.id ? { ...a, teams, notes, updatedAt: now } : a) }
+        ? { ...d, updatedAt: now, attacks: d.attacks.map(a => a.id === editAttackTarget.atk.id ? { ...a, teams, notes, updatedAt: now } : a) }
         : d
     ))
     setEditAttackTarget(null)
@@ -634,7 +634,7 @@ const PjjcView = forwardRef<PjjcViewHandle, {
     const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === addAttackTarget.id
-        ? { ...d, attacks: [...d.attacks, { id: Date.now(), teams, notes, updatedAt: now }] }
+        ? { ...d, updatedAt: now, attacks: [...d.attacks, { id: Date.now(), teams, notes, updatedAt: now }] }
         : d
     ))
     setAddAttackTarget(null)

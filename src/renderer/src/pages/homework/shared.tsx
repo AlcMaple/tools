@@ -240,7 +240,8 @@ export function teamDedupKey(team: string[]): string {
 /**
  * 判断一组角色位能否满足全部搜索词 —— **每个词占一个不同的角色位**(二分匹配)。
  *
- *   - 角色位整名精确匹配,**不做子串包含**:搜「驴」命中不了「魔驴」(是两个角色)。
+ *   - 角色位按**前缀**匹配,**不做子串包含**:搜「s」能边输边命中「sls」,但搜「驴」仍命中不了
+ *     「魔驴」(是两个角色,词不是它的开头)。整名相等自然也算前缀命中。
  *   - 「/」是二选一记号:角色位「涅比亚/ams」表示这个位填涅比亚**或** ams,所以单搜
  *     任一别名都能命中。
  *   - 但搜「涅比亚、ams」要求**两个不同的位** —— 一个二选一的位不能同时算作两者
@@ -249,7 +250,7 @@ export function teamDedupKey(team: string[]): string {
  * 角色和词都 ≤5 个,直接回溯即可。
  */
 function matchesAllRoles(roles: string[], terms: string[]): boolean {
-  // 每个角色位 → 它能被哪些词命中（整名 + "/" 拆出的各别名，全小写）
+  // 每个角色位 → 可供词前缀匹配的名字（整名 + "/" 拆出的各别名，全小写）
   const roleAlts = roles.map(r => {
     // 角色位也要 stripCjkLatinSpaces:存量数据里有「水 m」这种中英文之间带空格的名字
     // (拼音输入法的产物),查询词那边已经 strip 过,两边都 strip 才对得上。
@@ -260,14 +261,14 @@ function matchesAllRoles(roles: string[], terms: string[]): boolean {
       const p = part.trim()
       if (p) alts.add(p)
     }
-    return alts
+    return [...alts]
   })
   const used = new Array(roleAlts.length).fill(false)
   // 回溯：给第 i 个词找一个还没被占、且能命中它的角色位
   const assign = (i: number): boolean => {
     if (i >= terms.length) return true
     for (let r = 0; r < roleAlts.length; r++) {
-      if (used[r] || !roleAlts[r].has(terms[i])) continue
+      if (used[r] || !roleAlts[r].some(alt => alt.startsWith(terms[i]))) continue
       used[r] = true
       if (assign(i + 1)) return true
       used[r] = false

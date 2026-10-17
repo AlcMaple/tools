@@ -70,12 +70,13 @@ function computeImportMerge(items: ImportItem[], current: DefenseGroup[]): Impor
     const defKey = item.defense.join('、')
     const existing = result.find(d => d.defense.join('、') === defKey)
     if (existing) {
-      // 防守方自己的更新时间保持不变 —— 只有进攻队会拿到新日期。
+      // 导入了新进攻队的组,组日期同步更新:清理按组日期判断,不能让有新内容的组被当旧数据删掉。
       const existingTeams = new Set(existing.attacks.map(a => a.team.join('、')))
       for (const atk of item.attacks) {
         const teamKey = atk.team.join('、')
         if (existingTeams.has(teamKey)) { skippedCount++; continue }
         existing.attacks.push({ id: nextId(), team: atk.team, notes: atk.notes, updatedAt: now })
+        existing.updatedAt = now
         existingTeams.add(teamKey)
         newAttackCount++
       }

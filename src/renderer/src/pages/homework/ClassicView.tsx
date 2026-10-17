@@ -457,10 +457,10 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     setData(prev => {
       const existing = prev.find(d => d.title === title)
       if (existing) {
-        // 往已有组里加阵容:只有新加的这条拿今天的日期。
+        // 往已有组里加阵容:新条目和所属组都拿今天的日期(清理按组日期判断,组日期要反映组内最近活动)。
         return prev.map(d =>
           d.id === existing.id
-            ? { ...d, teams: [...d.teams, { id: Date.now(), team, notes, updatedAt: now }] }
+            ? { ...d, updatedAt: now, teams: [...d.teams, { id: Date.now(), team, notes, updatedAt: now }] }
             : d
         )
       }
@@ -483,7 +483,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === editTeamTarget.groupId
-        ? { ...d, teams: d.teams.map(t => t.id === editTeamTarget.team.id ? { ...t, team, notes, updatedAt: now } : t) }
+        ? { ...d, updatedAt: now, teams: d.teams.map(t => t.id === editTeamTarget.team.id ? { ...t, team, notes, updatedAt: now } : t) }
         : d
     ))
     setEditTeamTarget(null)
@@ -510,7 +510,7 @@ const ClassicView = forwardRef<ClassicViewHandle, {
     const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === addTeamTarget.id
-        ? { ...d, teams: [...d.teams, { id: Date.now(), team, notes, updatedAt: now }] }
+        ? { ...d, updatedAt: now, teams: [...d.teams, { id: Date.now(), team, notes, updatedAt: now }] }
         : d
     ))
     setAddTeamTarget(null)

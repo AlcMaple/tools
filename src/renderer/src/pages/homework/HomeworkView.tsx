@@ -589,7 +589,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
         if (existing.attacks.some(a => teamDedupKey(a.team) === teamDedupKey(team))) return prev
         return prev.map(d =>
           d.id === existing.id
-            ? { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
+            ? { ...d, updatedAt: now, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
             : d
         )
       }
@@ -623,7 +623,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
     const now = todayStr()
     setData(prev => prev.map(d =>
       d.id === editAttackTarget.groupId
-        ? { ...d, attacks: d.attacks.map(a => a.id === editAttackTarget.atk.id ? { ...a, team, notes, updatedAt: now } : a) }
+        ? { ...d, updatedAt: now, attacks: d.attacks.map(a => a.id === editAttackTarget.atk.id ? { ...a, team, notes, updatedAt: now } : a) }
         : d
     ))
     setEditAttackTarget(null)
@@ -657,7 +657,7 @@ const HomeworkView = forwardRef<HomeworkViewHandle, {
       if (d.id !== addAttackTarget.id) return d
       // 兜底去重：同一支进攻队（大小写/顺序无关）已在该组就不再追加。
       if (d.attacks.some(a => teamDedupKey(a.team) === teamDedupKey(team))) return d
-      return { ...d, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
+      return { ...d, updatedAt: now, attacks: [...d.attacks, { id: Date.now(), team, notes, updatedAt: now }] }
     }))
     setAddAttackTarget(null)
   }
