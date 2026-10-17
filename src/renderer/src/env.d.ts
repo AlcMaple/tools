@@ -394,9 +394,9 @@ declare global {
       pull: (kind: 'homework' | 'anime' | 'miaoyu') => Promise<string>
     }
     webAccountApi: {
-      status: () => Promise<{ loggedIn: boolean; username: string; origin: string; accountId: number }>
-      login: (input: { username: string; password: string }) => Promise<{ loggedIn: true; username: string; origin: string; accountId: number }>
-      logout: () => Promise<{ loggedIn: false; username: string; origin: string; accountId: number }>
+      status: () => Promise<{ loggedIn: boolean; username: string; origin: string; accountId: number; expired: boolean }>
+      login: (input: { username: string; password: string }) => Promise<{ loggedIn: true; username: string; origin: string; accountId: number; expired: false }>
+      logout: () => Promise<{ loggedIn: false; username: string; origin: string; accountId: number; expired: false }>
       pullTracks: () => Promise<{
         rev: number
         data: unknown[]

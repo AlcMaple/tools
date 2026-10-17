@@ -17,6 +17,8 @@ interface WebAccountState {
   username: string
   origin: string
   accountId: number
+  // 登录曾因 401 被服务器判失效时置位，让界面能告诉用户「需要重新登录」，而不是当成新用户直接隐藏同步入口。
+  expired: boolean
 }
 
 interface SyncPushInput {
@@ -45,6 +47,7 @@ const accountStore = new JsonStore<WebAccountState>('web_account.json', (raw) =>
     accountId: Number.isSafeInteger(Number(value.accountId)) && Number(value.accountId) > 0
       ? Number(value.accountId)
       : 0,
+    expired: value.expired === true && !value.token,
   }
 })
 
@@ -145,7 +148,7 @@ async function authedRequest(path: string, options: {
     timeoutMs: 15000,
   })
   if (res.status === 401) {
-    accountStore.set({ token: '', username: '', origin: '', accountId: 0 })
+    accountStore.set({ token: '', username: '', origin: '', accountId: 0, expired: true })
     throw new Error('网页版登录已失效，请重新登录')
   }
   return res
@@ -159,6 +162,7 @@ export function registerWebAccountIpc(): void {
       username: account.token ? account.username : '',
       origin: WEB_BASE,
       accountId: account.token ? account.accountId : 0,
+      expired: account.expired,
     }
   })
 
@@ -179,13 +183,13 @@ export function registerWebAccountIpc(): void {
     const body = responseJson(res)
     if (!token) throw new Error('登录成功但没有收到会话令牌')
     const canonicalName = typeof body.username === 'string' ? body.username : username
-    accountStore.set({ token, username: canonicalName, origin: WEB_BASE, accountId: 0 })
-    return { loggedIn: true, username: canonicalName, origin: WEB_BASE, accountId: 0 }
+    accountStore.set({ token, username: canonicalName, origin: WEB_BASE, accountId: 0, expired: false })
+    return { loggedIn: true, username: canonicalName, origin: WEB_BASE, accountId: 0, expired: false }
   })
 
   ipcMain.handle('web-account:logout', async () => {
-    accountStore.set({ token: '', username: '', origin: '', accountId: 0 })
-    return { loggedIn: false, username: '', origin: WEB_BASE, accountId: 0 }
+    accountStore.set({ token: '', username: '', origin: '', accountId: 0, expired: false })
+    return { loggedIn: false, username: '', origin: WEB_BASE, accountId: 0, expired: false }
   })
 
   ipcMain.handle('web-account:pull-tracks', async () => {

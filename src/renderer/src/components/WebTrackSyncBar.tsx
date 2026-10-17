@@ -31,7 +31,7 @@ const snapshotOf = webTrackSyncFingerprint
 
 export function WebTrackSyncBar(): JSX.Element | null {
   const tracks = useAnimeTrackList()
-  const [account, setAccount] = useState<{ loggedIn: boolean; username: string } | null>(null)
+  const [account, setAccount] = useState<{ loggedIn: boolean; expired: boolean; username: string } | null>(null)
   const [state, setState] = useState<SyncState>('idle')
   const [message, setMessage] = useState('')
   const [remoteRev, setRemoteRev] = useState<number | null>(null)
@@ -43,8 +43,16 @@ export function WebTrackSyncBar(): JSX.Element | null {
   useEffect(() => {
     window.webAccountApi.status()
       .then(setAccount)
-      .catch(() => setAccount({ loggedIn: false, username: '' }))
+      .catch(() => setAccount({ loggedIn: false, expired: false, username: '' }))
   }, [])
+
+  // 主进程遇到 401 会清掉令牌并置「已失效」；这里只在登录态真的没了时才更新，
+  // 网络错误之类仍是已登录，不改 account，避免重复触发读取。
+  const refreshAccount = (): void => {
+    window.webAccountApi.status()
+      .then((next) => { if (!next.loggedIn) setAccount(next) })
+      .catch(() => { /* 取不到状态就保持现状 */ })
+  }
 
   useEffect(() => {
     if (!account?.loggedIn) return
@@ -58,11 +66,23 @@ export function WebTrackSyncBar(): JSX.Element | null {
         if (!cancelled) setRemoteRev(remote.rev)
       })
       .catch(() => {
-        // 这里只做状态提示，失败不重试、不改变本地数据，也不把登录态擅自判掉。
+        // 失败不重试、不改变本地数据；只回查主进程的登录态，401 才会让入口变成「登录已失效」。
+        if (!cancelled) refreshAccount()
       })
     return () => { cancelled = true }
   }, [account])
 
+  if (account?.expired) {
+    return (
+      <div
+        title="网页版登录已失效，请在设置里重新登录"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container-high border border-error/30"
+      >
+        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-error" />
+        <span className="font-label text-[10px] uppercase tracking-widest text-error">网页登录已失效</span>
+      </div>
+    )
+  }
   if (!account?.loggedIn) return null
 
   const localDirty = snapshotOf(tracks) !== lastSnapshot
@@ -105,6 +125,7 @@ export function WebTrackSyncBar(): JSX.Element | null {
       setMessage('')
     } catch (error: unknown) {
       settle('error', ipcErrMsg(error, '读取网页版失败'))
+      refreshAccount()
     }
   }
 
@@ -129,6 +150,7 @@ export function WebTrackSyncBar(): JSX.Element | null {
       settle('synced', '网页版上传成功')
     } catch (error: unknown) {
       settle('error', ipcErrMsg(error, '上传网页版失败'))
+      refreshAccount()
     }
   }
 
