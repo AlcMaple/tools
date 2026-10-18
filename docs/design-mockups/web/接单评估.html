@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>网页版 · 接单评估</title>
+<!-- 网页版接单评估设计稿。组件样式直接引用线上同一份 sketch-tokens / sketch-ui，
+     页面私有样式写在下面 .oj-* 里，实现时搬进 web/src/styles/order-judge.css。
+     外层（无 ?frame）是审稿台：设备 / 状态切换、待定事项、与桌面版的功能对照；
+     ?frame=1&s=<状态> 才是界面本身，iframe 宽度决定走桌面还是手机断点（961px）。 -->
+<link rel="stylesheet" href="../../../web/src/styles/sketch-tokens.css">
+<link rel="stylesheet" href="../../../web/src/styles/sketch-ui.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body, h1, h2, h3, p, ol, ul { margin: 0; }
+  ol, ul { padding: 0; list-style: none; }
+  button { font: inherit; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-thumb { background: var(--silver-line); border-radius: 2px; }
+
+  .only-mob { display: none !important; }
+  @media (max-width: 960px) {
+    .only-desk { display: none !important; }
+    .only-mob { display: revert !important; }
+  }
+
+  /* ---------- 页头 ---------- */
+  .oj-head { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+  .oj-head .tools { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .oj-tally { font-variant-numeric: tabular-nums; }
+  .oj-tally b { font-weight: 600; }
+  .oj-gear { position: relative; }
+  /* 缺 Key / 档案时设置按钮带一个点：浮在角上，不改按钮尺寸 */
+  .oj-gear.dot::after { content: ''; position: absolute; top: 2px; right: 2px; width: 9px; height: 9px; border-radius: 50%; background: var(--sakura); border: 1.5px solid var(--card); }
+  .seg .n { margin-left: 4px; font-size: 11.5px; opacity: .75; font-variant-numeric: tabular-nums; }
+
+  .oj-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 26px; align-items: start; margin-top: 22px; }
+  @media (max-width: 960px) { .oj-grid { grid-template-columns: minmax(0, 1fr); gap: 22px; margin-top: 16px; } }
+
+  /* ---------- 材料区 ---------- */
+  .oj-drop { position: relative; }
+  .oj-text {
+    display: block; width: 100%; min-height: 170px; resize: vertical;
+    padding: 10px 12px; font: inherit; font-size: 14px; line-height: 28px; color: var(--ink);
+    background: var(--field-bg) repeating-linear-gradient(transparent 0 27px, var(--grid-line) 27px 28px);
+    background-attachment: local;
+    border: 1.5px solid var(--field-line); border-radius: 10px 14px 10px 14px; outline: none;
+  }
+  .oj-text::placeholder { color: var(--ink-faint); }
+  .oj-text:focus { border-color: var(--teal-line); box-shadow: 0 0 0 3px var(--teal-wash); }
+  @media (max-width: 960px) { .oj-text { min-height: 132px; } }
+  /* 拖入时整块盖一层，不改输入区尺寸 */
+  .oj-over { position: absolute; inset: -6px; display: none; place-items: center; gap: 6px; z-index: 3;
+    border: 2px dashed var(--teal-mid); border-radius: 12px; background: rgba(251, 246, 236, .9);
+    color: var(--teal); font-family: var(--font-hand); font-size: 20px; }
+  .oj-drop.drag .oj-over { display: grid; }
+
+  .oj-files { display: flex; flex-wrap: wrap; gap: 12px 10px; margin-top: 14px; }
+  .oj-file { position: relative; width: 88px; flex: none; }
+  .oj-file .pic { position: relative; height: 64px; border: 1.5px solid var(--line); border-radius: 4px; background: var(--paper-2); overflow: hidden;
+    display: grid; place-items: center; color: var(--ink-faint); box-shadow: var(--shadow-1); }
+  .oj-file:nth-child(3n+1) .pic { transform: rotate(-1.5deg); }
+  .oj-file:nth-child(3n+2) .pic { transform: rotate(1deg); }
+  .oj-file .pic.img { background: linear-gradient(160deg, #e8eef2 0 38%, #f6efe2 38% 62%, #e4dccb 62%); }
+  .oj-file .pic.img.b { background: linear-gradient(200deg, #f1e6ea 0 30%, #eef3f4 30% 70%, #dfe7ea 70%); }
+  .oj-file .pic.long { background: repeating-linear-gradient(180deg, #eef3f4 0 10px, #f6efe2 10px 20px); }
+  .oj-file .pic .ic { width: 22px; height: 22px; }
+  .oj-file .name { margin-top: 5px; font-size: 11px; color: var(--ink-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .oj-file .note { position: absolute; left: 4px; bottom: 4px; width: max-content; padding: 0 5px; border-radius: 4px; background: rgba(62, 67, 80, .72); color: #fff; font-size: 10.5px; line-height: 17px; }
+  .oj-file .rm { position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; display: grid; place-items: center; padding: 0;
+    border: 1.5px solid var(--line-strong); border-radius: 50%; background: var(--card); color: var(--ink-sub); cursor: pointer; z-index: 2; }
+  .oj-file .rm .ic { width: 12px; height: 12px; }
+  .oj-file.bad .pic { border: 1.5px dashed var(--gold); background: var(--gold-hl); color: var(--gold); }
+  .oj-file.bad .name { color: var(--gold); }
+
+  .oj-bar { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .oj-bar .hint { font-size: 12.5px; color: var(--ink-faint); }
+  .oj-bar .hint kbd { font: inherit; padding: 0 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--card); color: var(--ink-sub); }
+  .oj-bar .go { margin-left: auto; position: relative; }
+  /* 计时写在固定宽度的按钮里：秒数变化不推动旁边的按钮 */
+  .oj-go { min-width: 128px; font-variant-numeric: tabular-nums; }
+  .oj-tip { position: absolute; right: 0; top: calc(100% + 10px); width: max-content; max-width: 240px; z-index: 4; font-size: 12.5px; }
+  .oj-tip.bubble::after { left: auto; right: 30px; bottom: auto; top: -7px; transform: rotate(225deg) skew(8deg, 8deg); }
+  @media (max-width: 960px) {
+    .oj-bar .go { margin-left: 0; width: 100%; }
+    .oj-go { width: 100%; min-height: 46px; font-size: 15px; }
+    .oj-tip { right: 50%; transform: translateX(50%); }
+    .oj-tip.bubble::after { right: calc(50% - 6px); }
+  }
+
+  .oj-how { margin-top: 16px; border-top: 1.5px dashed var(--line); padding-top: 12px; }
+  .oj-how summary { display: flex; align-items: center; gap: 6px; min-height: 36px; cursor: pointer; font-size: 13px; color: var(--ink-sub); list-style: none; }
+  .oj-how summary::-webkit-details-marker { display: none; }
+  .oj-how summary .ic { transition: transform .2s; transform: rotate(-90deg); }
+  .oj-how[open] summary .ic { transform: none; }
+  .oj-how dl { display: grid; grid-template-columns: 92px 1fr; gap: 9px 12px; margin: 8px 0 2px; font-size: 12.5px; line-height: 1.65; }
+  .oj-how dt { color: var(--ink); font-weight: 600; }
+  .oj-how dd { margin: 0; color: var(--ink-sub); }
+  @media (max-width: 960px) { .oj-how dl { grid-template-columns: 1fr; gap: 2px; } .oj-how dd { margin-bottom: 8px; } }
+
+  /* ---------- 批改单（结论） ---------- */
+  .oj-sheet { padding: 22px 22px 20px; min-height: 340px; }
+  .oj-sheet.blank { display: grid; place-items: center; text-align: center; }
+  .oj-meta { font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; padding-right: 92px; }
+  .oj-verdict { position: absolute; top: 16px; right: 18px; width: 78px; height: 78px; font-size: 19px; border-width: 2.5px; letter-spacing: .06em; }
+  .oj-verdict::before { inset: 4px; }
+  @media (max-width: 960px) {
+    .oj-sheet { padding: 20px 16px 18px; }
+    .oj-verdict { width: 64px; height: 64px; font-size: 16px; top: 14px; right: 12px; }
+    .oj-meta, .oj-headline { padding-right: 72px; }
+    .oj-headline { font-size: 18px; }
+  }
+  .oj-headline { margin-top: 8px; padding-right: 92px; font-family: var(--font-hand); font-size: 20px; line-height: 1.5; color: var(--ink); }
+  .oj-summary { margin-top: 10px; font-size: 13.5px; line-height: 1.75; color: var(--ink-sub); }
+  .oj-sec { margin-top: 18px; padding-top: 14px; border-top: 1.5px dashed var(--line); }
+  .oj-sec h3 { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 10px; letter-spacing: .04em; }
+  .oj-sec h3 .ic { color: var(--teal); }
+  .oj-list { display: grid; gap: 10px; counter-reset: n; }
+  .oj-list li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; font-size: 13.5px; line-height: 1.7; counter-increment: n; }
+  .oj-list li::before { content: counter(n); font-family: var(--font-hand); color: var(--teal); font-size: 15px; line-height: 1.55; }
+  .oj-list.warn li::before { color: var(--gold); }
+  .oj-list b { color: var(--ink); font-weight: 600; }
+  .oj-list span { color: var(--ink-sub); }
+  .oj-risk { margin-top: 14px; padding: 10px 14px; border: 1.5px dashed var(--sakura); border-radius: 8px; background: var(--sakura-wash); font-size: 13.5px; line-height: 1.7; color: var(--ink); display: flex; gap: 8px; }
+  .oj-risk .ic { color: var(--sakura); margin-top: 3px; }
+  .oj-q li { display: flex; gap: 8px; align-items: baseline; font-size: 13.5px; line-height: 1.7; padding: 3px 0; }
+  .oj-q li::before { content: ''; flex: none; width: 13px; height: 13px; border: 1.5px solid var(--line-strong); border-radius: 3px; transform: translateY(2px) rotate(-3deg); }
+  .oj-flip { flex: none; padding: 0 7px; border-radius: 999px; background: var(--gold-hl); color: var(--ink); font-size: 11px; line-height: 19px; white-space: nowrap; }
+  .oj-acts { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+
+  .oj-steps { display: grid; gap: 14px; margin-top: 22px; }
+  .oj-steps li { display: flex; gap: 12px; align-items: flex-start; font-size: 13.5px; }
+  .oj-steps .mk { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; color: #fff; }
+  .oj-steps .mk .ic { width: 13px; height: 13px; stroke-width: 2.6; }
+  .oj-steps .done .mk { background: var(--teal-mid); border-color: var(--teal); }
+  .oj-steps .run .mk { border: 2px solid var(--teal-wash); border-top-color: var(--teal-mid); animation: oj-spin .9s linear infinite; }
+  .oj-steps .wait { color: var(--ink-faint); }
+  .oj-steps small { display: block; font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
+  @keyframes oj-spin { to { transform: rotate(360deg); } }
+
+  .oj-err { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--paper-2); font-size: 13px; line-height: 1.7; color: var(--ink-sub); }
+  .oj-err code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink); }
+
+  /* ---------- 历史 ---------- */
+  .oj-hist { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 26px; align-items: start; margin-top: 22px; }
+  @media (max-width: 960px) { .oj-hist { grid-template-columns: minmax(0, 1fr); margin-top: 16px; } }
+  .oj-rows { padding: 6px; }
+  .oj-row { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 9px 44px 9px 10px; text-align: left;
+    background: none; border: 1.5px solid transparent; border-radius: 8px; cursor: pointer; color: var(--ink); }
+  .oj-row + .oj-row { border-top: 1px dashed var(--line); border-radius: 0; }
+  .oj-row.on { background: var(--teal-wash); border-radius: 8px; }
+  .oj-row .t { min-width: 0; flex: 1; }
+  .oj-row .t b { display: block; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .oj-row .t span { font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .oj-row .del { position: absolute; right: 6px; top: 50%; margin-top: -16px; width: 32px; height: 32px; display: grid; place-items: center; padding: 0;
+    border: none; border-radius: 50%; background: none; color: var(--ink-faint); cursor: pointer; opacity: 0; }
+  .oj-row:hover .del, .oj-row.on .del { opacity: 1; }
+  @media (hover: none) { .oj-row .del { opacity: 1; } }
+  .oj-row .stamp { font-size: 10.5px; }
+  .oj-back { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0; border: none; background: none; color: var(--teal); cursor: pointer; font-size: 14px; }
+
+  /* ---------- 设置（桌面弹窗 / 手机底部抽屉） ---------- */
+  .oj-set .field + .field { margin-top: 18px; }
+  .oj-doc { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1.5px dashed var(--field-line); border-radius: 10px 14px 10px 14px; background: var(--field-bg); }
+  .oj-doc .ic { color: var(--teal); }
+  .oj-doc .t { flex: 1; min-width: 0; }
+  .oj-doc .t b { display: block; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .oj-doc .t span { font-size: 11.5px; color: var(--ink-faint); }
+  .oj-doc.empty-doc { color: var(--ink-faint); font-size: 13px; }
+  .oj-set-foot { position: relative; display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 22px; }
+  .oj-saved { position: absolute; left: 0; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--teal); }
+  .oj-bsheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 95; max-height: 86svh; overflow-y: auto; padding: 10px 18px 26px;
+    background: var(--card); border-top: 1.5px solid var(--line-strong); border-radius: 18px 22px 0 0; box-shadow: var(--shadow-2); }
+  .oj-bsheet .grip { width: 44px; height: 4px; margin: 0 auto 12px; border-radius: 2px; background: var(--silver-line); }
+
+  /* 未登录 */
+  .oj-guest { max-width: 460px; margin: 40px auto 0; text-align: center; padding: 30px 26px 26px; }
+  .oj-guest img { width: 96px; height: 96px; border-radius: 50%; border: 1.5px solid var(--silver-line); }
+
+  /* ================= 审稿台（外层） ================= */
+  .rv { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 30px 20px 80px; }
+  .rv-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+  .rv-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .rv-chip { min-height: 32px; padding: 4px 12px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--card); font-size: 12.5px; color: var(--ink-sub); cursor: pointer; }
+  .rv-chip.on { border-color: var(--teal); color: var(--teal); background: var(--teal-wash); font-weight: 600; }
+  .rv-cap { margin-top: 12px; font-size: 13px; color: var(--ink-sub); line-height: 1.7; min-height: 44px; }
+  .rv-stage { margin-top: 10px; display: flex; justify-content: center; }
+  .rv-frame { border: 1.5px solid var(--line-strong); border-radius: 12px; overflow: hidden; background: var(--paper); box-shadow: var(--shadow-2); }
+  .rv-frame iframe { display: block; border: 0; transform-origin: 0 0; }
+  .rv h2 { font-family: var(--font-hand); font-size: 22px; font-weight: 400; margin: 44px 0 14px; }
+  .rv-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.65; background: var(--card); border: 1.5px solid var(--line); }
+  .rv-table th, .rv-table td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px dashed var(--line); }
+  .rv-table th { font-weight: 600; color: var(--ink); background: var(--paper-2); }
+  .rv-table td:first-child { color: var(--ink-faint); width: 34px; font-variant-numeric: tabular-nums; }
+  .rv-table .go { color: var(--teal); cursor: pointer; white-space: nowrap; }
+  .rv-q { display: grid; gap: 14px; }
+  .rv-q .panel p { font-size: 13.5px; line-height: 1.75; color: var(--ink-sub); }
+  .rv-q .panel p + p { margin-top: 6px; }
+  .rv-q .panel b { color: var(--ink); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-tracks" viewBox="0 0 24 24"><rect x="6" y="8.5" width="14" height="11.5" rx="2"/><path d="M4 15.5V6a2 2 0 0 1 2-2h9.5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6.5h8M17.5 6.5H20M4 12h3M12.5 12H20M4 17.5h10M19 17.5h1"/><circle cx="14.5" cy="6.5" r="2.2"/><circle cx="9.5" cy="12" r="2.2"/><circle cx="16.5" cy="17.5" r="2.2"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.2" r="3.6"/><path d="M5 20c1.2-3.6 4-5.3 7-5.3s5.8 1.7 7 5.3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.5L21 19.5H3z"/><path d="M12 10.2v3.6M12 16.4v.2"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.7"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M20.5 3.5v4.3h-4.3"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9.5 8l-4 4 4 4M5 12h9.5"/><path d="M13 4.5h5.5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H13"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="M16.5 11.5l-6.9 6.9a3.4 3.4 0 0 1-4.8-4.8l8.2-8.2a2.3 2.3 0 0 1 3.2 3.2l-8.2 8.2a1.1 1.1 0 0 1-1.6-1.6l7.2-7.2"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20.5h8.5"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7.2 18.8 3 20l1.2-4.2z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 5.5L8 12l6.5 6.5"/></symbol>
+  <!-- 新增：接单评估入口 / 文档 / 视频 / 粘贴 / 删除 -->
+  <symbol id="i-judge" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9.2 3.5h5.6v2.8H9.2z"/><path d="M8.8 13.2l2.3 2.3 4.2-4.6"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4M9 12h6M9 15.5h6"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3.5" y="6" width="12" height="12" rx="2"/><path d="M15.5 10.5l5-3v9l-5-3"/></symbol>
+  <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="15.5" rx="2"/><path d="M9.5 3.5h5v3h-5zM9 11h6M9 14.5h4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></symbol>
+</svg>
+
+<div id="app"></div>
+
+<script>
+const Q = new URLSearchParams(location.search);
+const FRAME = Q.get('frame') === '1';
+const S = Q.get('s') || 'yes';
+const $ = (s, r = document) => r.querySelector(s);
+const ic = (n, c = 'ic') => `<svg class="${c}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const isMob = () => matchMedia('(max-width: 960px)').matches;
+const LOGO = '../../../web/public/logo.png';
+const AVATAR = '../../../web/public/assets/sagiri-avatar.webp';
+
+// ───────────────────────── 示例数据 ─────────────────────────
+const TEXT = '【派单】Python 爬取某电商平台 3 个店铺近半年的评论（约 2 万条），做情感分析和词云，出一份 Word 报告。\n周期 4 天，预算 350。\nhttps://docs.qq.com/sheet/DUmVxbGd4aEtwSFlo?tab=BB08J2';
+const FILES = [
+  { k: 'img', n: '截图01.png' },
+  { k: 'img b', n: '截图02.png' },
+  { k: 'long', n: '需求长图.jpg', note: '切 4 块' },
+  { k: 'video', n: '录屏说明.mp4', note: '12 帧' },
+  { k: 'doc', n: '任务书.pdf', note: '6 页' },
+  { k: 'doc', n: '交付要求.docx' },
+];
+const BAD = { k: 'bad', n: '老师讲解.wmv', note: '读不了' };
+
+const R = {
+  yes: { v: '能接', cls: 'st-teal', when: '今天 14:32 · 5 张图 · 1 个网址 · 用时 38 秒',
+    headline: '能接：爬虫、情感分析、词云和 Word 报告，日志里都有现成经验',
+    summary: '爬取 3 个电商店铺近半年约 2 万条评论，做情感分析和词云，交付一份 Word 报告，周期 4 天，预算 350。',
+    reasons: [['爬虫经验够用', 'BGM、萌娘百科的抓取都处理过限流和登录态，评论接口的分页和频控套路一样。'],
+      ['分析部分不重', '情感分析用现成模型，2 万条几分钟能跑完；词云和图表都是常规产出。'],
+      ['Word 报告能直接生成', '能力档案写了做过 docx 自动排版，图表可以直接嵌进去。']],
+    gapTitle: '可能翻车的地方',
+    gaps: [['平台风控', '评论接口要是需要登录或滑块验证，4 天会很紧，先确认能不能用对方的账号。'],
+      ['情感口径', '对方如果要「好评 / 差评」以外的细分维度，得额外设计标签。']],
+    qs: [['评论要登录才能看全吗？', true], ['报告按什么维度分章节？'], ['情感分析有没有指定方法或准确率要求？']] },
+  no: { v: '不接', cls: 'st-sakura', when: '今天 11:05 · 1 张图 · 用时 21 秒',
+    headline: '不能接：要在越狱环境里写 Objective-C hook，日志里没有相关经验',
+    summary: '给某 iOS 应用写越狱插件，去广告并解锁会员功能，要求适配 iOS 17。',
+    risk: '解锁会员功能属于破解，有被平台追责和封号的风险。',
+    reasons: [['技术栈对不上', '要用 Theos / Logos 和 Objective-C 运行时 hook，项目日志里没有 iOS 原生开发记录。'],
+      ['逆向是空白', '能力档案把逆向、破解列在「不能」里，这单要先砸壳、分析二进制。']],
+    gapTitle: '卡在哪一步',
+    gaps: [['越狱环境', '没有能越狱的测试机，iOS 17 的越狱工具链也不稳定。'], ['二进制逆向', '要用 IDA / Hopper 找会员校验逻辑，没做过。']],
+    qs: [] },
+  info: { v: '待补', cls: 'st-gold', when: '刚刚 · 没有调用 AI',
+    headline: '只看到「[聊天记录]」几个字，读不到派单内容',
+    fix: ['转发的聊天记录要先点开，再截图粘贴进来；直接复制只会得到「[聊天记录]」。', '截图后在这里粘贴，可以连续粘贴多张。'] },
+};
+
+const HIST = [
+  ['yes', '今天 14:32', '电商评论爬取与情感分析', 5],
+  ['no', '今天 11:05', 'iOS 越狱插件开发', 1],
+  ['info', '昨天 22:47', '只有聊天记录占位', 0],
+  ['yes', '昨天 20:13', '毕业论文数据可视化', 2],
+  ['yes', '10-16 18:40', 'B 站视频批量去重剪辑', 0],
+  ['no', '10-16 09:21', '游戏辅助脚本', 4],
+  ['yes', '10-15 21:02', '微信小程序商城前端', 6],
+  ['info', '10-15 16:55', '一张模糊截图', 1],
+  ['yes', '10-14 13:30', 'Excel 报表自动汇总', 0],
+];
+const VMAP = { yes: ['能接', 'st-teal'], no: ['不接', 'st-sakura'], info: ['待补', 'st-gold'] };
+
+// ───────────────────────── 界面片段 ─────────────────────────
+function shell(page, guest) {
+  const nav = [['calendar', '番剧周历'], ['tracks', '我的追番'], ['user', '追番大厅'], ['judge', '接单评估', 1], ['settings', '设置']];
+  const mtab = [['calendar', '番剧周历'], ['tracks', '我的追番'], ['user', '追番大厅'], ['judge', '接单', 1], ['settings', '设置']];
+  const user = guest
+    ? `<button class="btn btn-primary" type="button">登录 / 注册</button>`
+    : `<div class="spine-user"><span class="avatar-init" style="width:34px;height:34px;font-size:17px">S</span><div><b>sprp48jm</b><span class="faint">已登录</span></div></div>
+       <div class="spine-acts"><button class="btn btn-sm btn-danger w100" type="button">${ic('logout', 'ic ic-sm')}退出登录</button></div>`;
+  return `
+  <header class="m-top">
+    <a class="brand" style="font-size:18px"><img class="brand-logo" src="${LOGO}" alt="" width="32" height="32">MapleTools</a>
+    <span style="margin-left:auto"></span>
+    ${guest ? `<button class="btn btn-sm btn-primary" type="button">登录 / 注册</button>` : `<button class="m-user-btn" type="button"><span class="avatar-init" style="width:30px;height:30px;font-size:15px">S</span></button>`}
+  </header>
+  <div class="shell">
+    <aside class="spine">
+      <span class="tape tl gold" style="width:88px"></span>
+      <div><a class="brand"><img class="brand-logo" src="${LOGO}" alt="" width="32" height="32">MapleTools <span class="sparkle">✦</span></a>
+        <div class="brand-sub"><a>功能介绍与桌面下载</a></div></div>
+      <nav class="idx-nav">${nav.map(([i, l, on]) => `<a class="idx-a${on ? ' on' : ''}">${ic(i)}${l}</a>`).join('')}</nav>
+      <div class="spine-deco"><span class="kira">カキカキ…</span><span class="stamp st-teal">接单</span><span class="sparkle s2">✦</span></div>
+      <div class="spine-foot"><button type="button" class="btn btn-sm w100 feedback-entry">反馈与建议</button>${user}</div>
+    </aside>
+    <main class="sheet"><div class="sheet-wrap">${page}</div></main>
+  </div>
+  <nav class="m-tabs">${mtab.map(([i, l, on]) => `<a class="m-tab${on ? ' on' : ''}">${ic(i)}${l}</a>`).join('')}</nav>`;
+}
+
+function head({ tab = 'judge', gearDot = false } = {}) {
+  const seg = `<div class="seg only-desk" role="group" aria-label="视图">
+      <button type="button" class="${tab === 'judge' ? 'on' : ''}">评估</button>
+      <button type="button" class="${tab === 'hist' ? 'on' : ''}">历史<span class="n">9</span></button></div>`;
+  // 手机：模式切换按响应式原型改成下拉
+  const dd = `<div class="dd-host only-mob" style="width:112px"><button type="button" class="dd-trigger">${tab === 'judge' ? '评估' : '历史 · 9'}${ic('chev', 'ic ic-sm')}</button></div>`;
+  return `<div class="oj-head">
+    <div><h1 class="title-sketch" style="font-size:34px">接单评估</h1>
+      <p class="muted small mt8 oj-tally only-desk">9 单 · 能接 <b>5</b> · 不接 <b>2</b> · 待补 <b>2</b></p></div>
+    <div class="tools">${seg}${dd}
+      <button type="button" class="icon-btn oj-gear${gearDot ? ' dot' : ''}" title="评估设置" aria-label="评估设置">${ic('settings')}</button></div>
+  </div>`;
+}
+
+function fileChip(f) {
+  const icon = f.k === 'video' ? 'video' : f.k === 'doc' ? 'doc' : f.k === 'bad' ? 'alert' : '';
+  return `<div class="oj-file${f.k === 'bad' ? ' bad' : ''}" title="${esc(f.n)}">
+    <div class="pic ${f.k}">${icon ? ic(icon) : ''}${f.note ? `<span class="note">${f.note}</span>` : ''}</div>
+    <div class="name">${esc(f.n)}</div>
+    <button type="button" class="rm" aria-label="移除">${ic('x')}</button></div>`;
+}
+
+function materials({ text = '', files = [], running = false, sec = 0, tip = '', drag = false } = {}) {
+  const empty = !text && !files.length;
+  return `<section class="panel">
+    <span class="tape tl teal"></span>
+    <div class="panel-title">${ic('clip')}派单材料</div>
+    <div class="oj-drop${drag ? ' drag' : ''}">
+      <textarea class="oj-text" placeholder="把派单的文字、网址贴在这里" ${running ? 'disabled' : ''}>${esc(text)}</textarea>
+      <div class="oj-over">${ic('clip')}松手放入</div>
+    </div>
+    ${files.length ? `<div class="oj-files">${files.map(fileChip).join('')}</div>` : ''}
+    <div class="oj-bar">
+      <span class="hint only-desk"><kbd>⌘V</kbd> 粘贴截图，文件拖进来或</span>
+      <button type="button" class="btn btn-sm only-desk" ${running ? 'disabled' : ''}>选择文件</button>
+      <button type="button" class="btn btn-sm only-mob" ${running ? 'disabled' : ''}>${ic('paste', 'ic ic-sm')}粘贴</button>
+      <button type="button" class="btn btn-sm only-mob" ${running ? 'disabled' : ''}>${ic('clip', 'ic ic-sm')}添加文件</button>
+      ${empty ? '' : `<button type="button" class="btn btn-sm btn-ghost" ${running ? 'disabled' : ''}>清空</button>`}
+      <span class="go">
+        <button type="button" class="btn btn-primary oj-go" ${running ? 'disabled' : ''}>${running ? `评估中 ${sec}s` : `${ic('judge')}评估`}</button>
+        ${tip ? `<span class="bubble oj-tip">${tip}</span>` : ''}
+      </span>
+    </div>
+    <details class="oj-how"${empty && !tip ? ' open' : ''}>
+      <summary>${ic('chev', 'ic ic-sm')}不同材料怎么放</summary>
+      <dl>
+        <dt>文字、截图</dt><dd><span class="only-desk">⌘V 粘贴，可以连续粘贴多张。</span><span class="only-mob">截图后点「粘贴」，可以连续粘贴多张。</span>转发的聊天记录要点开后截图，直接复制只会得到「[聊天记录]」。</dd>
+        <dt>网址</dt><dd>以文字贴进输入框，会读取网页标题和正文开头，每单最多 10 个。截图里的网址不会被打开。</dd>
+        <dt>在线表格、文档</dt><dd>公开的腾讯文档能读到首屏的一部分文字，每张工作表的网址不同，要哪张贴哪张。表格很长时，把关键行截图一起放进来。</dd>
+        <dt>要登录的网页</dt><dd>飞书、钉钉、小红书等打不开，请截图或截长图后粘贴。</dd>
+        <dt>视频</dt><dd>均匀取 12 帧画面，听不到声音，口头讲的需求请补一段文字。</dd>
+        <dt>PDF、Word</dt><dd>只读文字。扫描版 PDF 和文档里的图片读不到，重要的图请单独截图。</dd>
+      </dl>
+    </details>
+  </section>`;
+}
+
+function blankSheet() {
+  return `<section class="panel oj-sheet blank">
+    <div class="empty" style="padding:10px 0">
+      <img src="${AVATAR}" alt="" width="84" height="84" style="border-radius:50%;border:1.5px solid var(--silver-line)">
+      <div class="empty-say"><span class="bubble empty-bubble">材料放好后点「评估」，结论会写在这里。</span></div>
+    </div>
+  </section>`;
+}
+
+function runningSheet() {
+  return `<section class="panel oj-sheet">
+    <span class="tape tr gold"></span>
+    <p class="oj-meta">开始于 14:31:52</p>
+    <p class="oj-headline" style="padding-right:0">正在对照能力档案和项目日志…</p>
+    <ol class="oj-steps">
+      <li class="done"><span class="mk">${ic('check')}</span><div>整理材料<small>3 张截图 · 长图切成 4 块 · 视频取 12 帧 · PDF 6 页 · Word 1 份</small></div></li>
+      <li class="done"><span class="mk">${ic('check')}</span><div>打开网址<small>腾讯文档 1 个</small></div></li>
+      <li class="run"><span class="mk"></span><div>AI 判断中<small>一般 20～60 秒</small></div></li>
+    </ol>
+  </section>`;
+}
+
+function reportSheet(key, { fromHist = false } = {}) {
+  const r = R[key];
+  if (key === 'info') {
+    return `<section class="panel oj-sheet">
+      <span class="tape tl gold"></span>
+      <span class="stamp oj-verdict ${r.cls} pop">${r.v}</span>
+      <p class="oj-meta">${r.when}</p>
+      <p class="oj-headline">${r.headline}</p>
+      <div class="oj-sec"><h3>${ic('edit')}怎么补</h3>
+        <ol class="oj-list warn">${r.fix.map((t) => `<li><span>${t}</span></li>`).join('')}</ol></div>
+    </section>`;
+  }
+  return `<section class="panel oj-sheet">
+    <span class="tape tl ${key === 'yes' ? 'teal' : 'sakura'}"></span>
+    <span class="stamp oj-verdict ${r.cls} pop">${r.v}</span>
+    <p class="oj-meta">${r.when}</p>
+    <p class="oj-headline">${r.headline}</p>
+    <p class="oj-summary">${r.summary}</p>
+    ${r.risk ? `<p class="oj-risk">${ic('alert')}<span>${r.risk}</span></p>` : ''}
+    <div class="oj-sec"><h3>${ic('check')}为什么</h3>
+      <ol class="oj-list">${r.reasons.map(([a, b]) => `<li><p><b>${a}</b><span>：${b}</span></p></li>`).join('')}</ol></div>
+    <div class="oj-sec"><h3>${ic('alert')}${r.gapTitle}</h3>
+      <ol class="oj-list warn">${r.gaps.map(([a, b]) => `<li><p><b>${a}</b><span>：${b}</span></p></li>`).join('')}</ol></div>
+    ${r.qs.length ? `<div class="oj-sec"><h3>${ic('user')}接单前先问清楚</h3>
+      <ul class="oj-q">${r.qs.map(([q, flip]) => `<li><span>${q}</span>${flip ? '<span class="oj-flip">可能改判</span>' : ''}</li>`).join('')}</ul></div>` : ''}
+    ${fromHist ? `<div class="oj-acts"><button type="button" class="btn btn-sm">${ic('refresh', 'ic ic-sm')}放回材料区重新评估</button></div>` : ''}
+  </section>`;
+}
+
+const ERRS = {
+  key: { t: 'DeepSeek 不认这个 Key', d: 'DeepSeek 返回 401。检查 Key 有没有复制完整、是否已在 DeepSeek 后台删除。', code: 'PROVIDER_HTTP_401', act: '改 Key' },
+  balance: { t: 'DeepSeek 账户余额不足', d: 'DeepSeek 返回 402。充值后回来点「评估」，材料还在。', code: 'PROVIDER_HTTP_402', act: '' },
+  limit: { t: '评估太频繁了', d: '每分钟最多评估 6 次，48 秒后可以再点。', code: 'RATE_LIMITED', act: '' },
+};
+function errorSheet(k) {
+  const e = ERRS[k];
+  return `<section class="panel oj-sheet">
+    <span class="tape tr gold"></span>
+    <p class="oj-meta">今天 14:33</p>
+    <p class="oj-headline" style="padding-right:0;color:var(--ink)">${ic('alert', 'ic')} ${e.t}</p>
+    <p class="oj-summary">${e.d}</p>
+    <p class="oj-err"><code>${e.code}</code></p>
+    ${e.act ? `<div class="oj-acts"><button type="button" class="btn btn-sm">${ic('settings', 'ic ic-sm')}${e.act}</button></div>` : ''}
+  </section>`;
+}
+
+function histList(sel) {
+  return `<section class="panel oj-rows"><span class="tape tl lav"></span>
+    ${HIST.map(([v, when, t, n], i) => `<button type="button" class="oj-row${i === sel ? ' on' : ''}">
+      <span class="stamp small ${VMAP[v][1]}">${VMAP[v][0]}</span>
+      <span class="t"><b>${t}</b><span>${when}${n ? ` · ${n} 张图` : ''}</span></span>
+      <span class="del" title="删除这条">${ic('trash', 'ic ic-sm')}</span></button>`).join('')}
+  </section>`;
+}
+
+function settingsBody({ blank = false } = {}) {
+  return `<div class="oj-set">
+    <div class="field"><span class="field-label">DeepSeek Key</span>
+      <div class="field-row"><input type="password" value="${blank ? '' : 'sk-4f1c0d2b8e9a7f3c'}" placeholder="sk-..." autocomplete="off" style="width:100%">
+        <button type="button" class="eye" aria-label="显示">${ic('eye', 'ic ic-sm')}</button></div></div>
+    <div class="field"><span class="field-label">能力档案</span>
+      ${blank ? `<div class="oj-doc empty-doc">${ic('doc')}<span class="t">还没有上传</span><button type="button" class="btn btn-sm">上传 .md</button></div>`
+      : `<div class="oj-doc">${ic('doc')}<span class="t"><b>能力档案.md</b><span>3.2 KB · 10-12 上传</span></span><button type="button" class="btn btn-sm">更换</button></div>`}</div>
+    <div class="field"><span class="field-label">项目日志</span>
+      ${blank ? `<div class="oj-doc empty-doc">${ic('doc')}<span class="t">还没有上传</span><button type="button" class="btn btn-sm">上传 .md</button></div>`
+      : `<div class="oj-doc">${ic('doc')}<span class="t"><b>项目日志.md</b><span>41 KB · 今天 09:12 上传</span></span><button type="button" class="btn btn-sm">更换</button></div>`}</div>
+    <div class="oj-set-foot">${blank ? '' : `<span class="oj-saved">${ic('check', 'ic ic-sm')}已保存</span>`}<button type="button" class="btn btn-primary btn-sm">保存</button></div>
+  </div>`;
+}
+
+// ───────────────────────── 状态 → 页面 ─────────────────────────
+const STATES = {
+  empty: { label: '空态 · 未配置', cap: '第一次进来：Key 和档案都没填。顶部提示条 + 设置按钮角上的红点；右栏只有一句话。点评估会先弹设置，不发请求。手机上模式切换按响应式原型改成下拉，副标题收起。' },
+  nofill: { label: '没放材料就点评估', cap: '内容为空时提示浮在评估按钮下方，不把下面的内容往下推，几秒后自己消失。' },
+  drag: { label: '拖入文件', cap: '桌面拖文件进来时整块盖一层「松手放入」，输入区尺寸不变。手机没有拖拽，改成「粘贴」「添加文件」两个按钮。' },
+  filled: { label: '放好材料', cap: '截图、长图、视频、PDF、Word 都在浏览器里处理好再上传：长图切块、视频取 12 帧，角标直接写处理结果。wmv 这类浏览器解码不了的视频标黄「读不了」，评估时跳过并在结论里注明。' },
+  running: { label: '评估中', cap: '按钮固定宽度，秒数写在按钮里；右栏显示三步进度。手机上提交后自动滚到结论区。' },
+  yes: { label: '结论 · 能接', cap: '结论做成一张「批改单」：右上角盖章（能接 / 不接 / 待补），一句话结论用手写体。顺序沿用桌面版：需求 → 风险 → 为什么 → 可能翻车的地方 → 接单前先问清楚。' },
+  no: { label: '结论 · 不接', cap: '有风险时，粉色虚线框放在理由前面。「能接」时这一块叫「可能翻车的地方」，「不接」时叫「卡在哪一步」。' },
+  info: { label: '结论 · 信息不足', cap: '本地预检直接判出来的（空内容、只有「[聊天记录]」），不调用 AI、不花钱，只告诉用户怎么补。' },
+  'e-key': { label: '出错 · Key 无效', cap: '按真实原因分开显示，错误码原样附在下面。HTTP 错误一律不自动重试，出错的这次不进历史（界面上不写这些）。' },
+  'e-balance': { label: '出错 · 余额不足', cap: '402 单独一句话，不跟 Key 无效混在一起。' },
+  'e-limit': { label: '出错 · 本站限流', cap: '本站每人每分钟的评估次数上限，写明还要等几秒，避免用户以为是 DeepSeek 坏了而反复点。' },
+  hist: { label: '历史', cap: '历史是单独一个视图：桌面左边列表、右边批改单；手机先看列表，点进去看单条（下一张）。每条可删，可「放回材料区重新评估」。最多留 50 条。' },
+  hdetail: { label: '历史 · 手机单条', cap: '手机点进一条历史：顶部「返回历史」，下面就是同一张批改单。' },
+  settings: { label: '评估设置', cap: '桌面是弹窗，手机是底部抽屉。档案和日志上传 .md，保存在你的账号下，换设备也在；保存提示浮在按钮左边。' },
+  guest: { label: '未登录', cap: '入口对所有人可见；没登录时只显示一张卡片，登录后才能用（档案、日志、历史都跟账号走）。' },
+};
+
+function pageFor(s) {
+  if (s === 'guest') {
+    return `${head()}<section class="panel oj-guest"><span class="tape tl teal"></span>
+      <img src="${AVATAR}" alt="">
+      <p class="font-hand" style="font-size:20px;margin-top:14px">登录后就能评估派单</p>
+      <p class="muted small mt8">能力档案、项目日志和评估记录都跟着账号走。</p>
+      <button type="button" class="btn btn-primary mt24" style="min-width:160px">登录 / 注册</button></section>`;
+  }
+  if (s === 'hist' || s === 'hdetail') {
+    if (s === 'hdetail') return `${head({ tab: 'hist' })}<div class="oj-hist"><button type="button" class="oj-back">${ic('back')}返回历史</button>${reportSheet('yes', { fromHist: true })}</div>`;
+    return `${head({ tab: 'hist' })}<div class="oj-hist">${histList(0)}<div class="only-desk">${reportSheet('yes', { fromHist: true })}</div></div>`;
+  }
+  const nag = s === 'empty' ? `<div class="nag mt16">${ic('alert')}还没有填 DeepSeek Key 和能力档案，评估前要先填好<button type="button" class="btn btn-sm">去填写</button></div>` : '';
+  const m = {
+    empty: [materials(), blankSheet()],
+    nofill: [materials({ tip: '还没有放入内容' }), blankSheet()],
+    drag: [materials({ text: TEXT, files: FILES.slice(0, 2), drag: true }), blankSheet()],
+    filled: [materials({ text: TEXT, files: [...FILES, BAD] }), blankSheet()],
+    running: [materials({ text: TEXT, files: FILES, running: true, sec: 17 }), runningSheet()],
+    yes: [materials({ text: TEXT, files: FILES }), reportSheet('yes')],
+    no: [materials({ text: '【派单】iOS 越狱插件，去广告 + 解锁会员，适配 iOS 17，预算 800', files: FILES.slice(0, 1) }), reportSheet('no')],
+    info: [materials({ text: '[聊天记录]' }), reportSheet('info')],
+    'e-key': [materials({ text: TEXT, files: FILES }), errorSheet('key')],
+    'e-balance': [materials({ text: TEXT, files: FILES }), errorSheet('balance')],
+    'e-limit': [materials({ text: TEXT, files: FILES }), errorSheet('limit')],
+    settings: [materials({ text: TEXT, files: FILES }), reportSheet('yes')],
+  }[s] || [materials(), blankSheet()];
+  return `${head({ gearDot: s === 'empty' })}${nag}<div class="oj-grid">${m[0]}${m[1]}</div>`;
+}
+
+function renderFrame() {
+  document.body.dataset.page = 'order-judge';
+  let html = shell(pageFor(S), S === 'guest');
+  if (S === 'settings') {
+    html += `<div class="dlg-backdrop open only-desk" style="display:flex"><div class="dlg" role="dialog" aria-label="评估设置">
+      <button type="button" class="dlg-close" aria-label="关闭">${ic('x')}</button>
+      <p class="font-hand" style="font-size:20px;margin-bottom:18px">评估设置</p>${settingsBody()}</div></div>
+      <div class="only-mob"><div class="dlg-backdrop open" style="display:block"></div>
+      <div class="oj-bsheet" role="dialog" aria-label="评估设置"><div class="grip"></div>
+      <p class="font-hand" style="font-size:19px;margin-bottom:16px">评估设置</p>${settingsBody()}</div></div>`;
+  }
+  $('#app').innerHTML = html;
+}
+
+// ───────────────────────── 审稿台 ─────────────────────────
+const ALIGN = [
+  ['粘贴文字，可多次；焦点不在输入框也能粘进去', '桌面同左（整页监听 paste）；手机用「粘贴」按钮读剪贴板', 'filled'],
+  ['粘贴截图（多张，自动命名 截图01…）', '同左；图片在浏览器里缩到长边 2000px 再上传', 'filled'],
+  ['拖入文件 / 选择文件', '桌面拖入覆盖层 +「选择文件」；手机「添加文件」，可选相册和文件', 'drag'],
+  ['文件 chip：缩略图、文件名、单个移除', '同左，角标写长图切几块、视频几帧、PDF 几页', 'filled'],
+  ['快捷键按平台显示', '桌面按系统显示 ⌘V / Ctrl+V；手机不显示快捷键', 'filled'],
+  ['「不同材料怎么放」折叠说明', '六项保留；空态默认展开，有材料后收起', 'empty'],
+  ['评估 / 清空按钮', '桌面在材料区底栏右侧；手机评估按钮通栏', 'filled'],
+  ['空内容提示「还没有放入内容」', '浮在按钮下方的气泡，不插进流', 'nofill'],
+  ['「分析中，已用 N 秒」', '秒数在固定宽度的按钮里 + 右栏三步进度', 'running'],
+  ['视频抽 12 帧', '浏览器里用 <video> 取帧，只上传 12 张 JPEG；浏览器解码不了的格式标黄跳过', 'filled'],
+  ['长图切块、PDF / Word / 网址 / 腾讯文档', '长图、PDF、Word 在浏览器处理；网址由服务端抓取（同站间隔 3～5 秒）', 'running'],
+  ['结论徽章 + 一句话（能 / 不能 / 信息不足 / 出错）', '改成盖章：能接 / 不接 / 待补；出错不盖章', 'yes'],
+  ['需求 / 风险 / 原因 / 卡点 / 先问清楚', '顺序与命名不变，「可能改判」是小标签', 'yes'],
+  ['空内容或「[聊天记录]」直接判信息不足', '同左，本地预检、不调用 AI，附「怎么补」', 'info'],
+  ['出错原因分开', 'Key 无效 / 余额不足 / DeepSeek 限流 / 本站限流 / 网络 / 空返回，错误码原样附上', 'e-key'],
+  ['历史记录 + 展开看完整报告', '单独的「历史」视图，列表 + 批改单；可放回材料区重新评估', 'hist'],
+  ['历史为空', '「还没有评估过的派单」', 'hist'],
+  ['旧 Python 历史迁移', '不迁移', ''],
+  ['删除历史', '每条右侧删除按钮（触屏常显）', 'hist'],
+  ['Key 设置', '页头设置按钮 → 弹窗 / 底部抽屉；缺 Key 时角上红点 + 顶部提示条', 'settings'],
+  ['能力档案 / 项目日志', '上传 .md，存在账号下，跨设备可用；「更换」覆盖上传', 'settings'],
+  ['深色模式', '网页版只有素纸一套主题，不做', ''],
+  ['窄屏适配', '≤960px 单列：材料在上、结论在下；模式切换改下拉；设置走底部抽屉', 'yes'],
+];
+
+function renderReview() {
+  document.title = '网页版 · 接单评估 · 设计稿';
+  const keys = Object.keys(STATES);
+  $('#app').innerHTML = `<div class="rv">
+    <h1 class="title-sketch" style="font-size:32px">网页版 · 接单评估</h1>
+    <p class="muted small mt16">组件直接引用线上的 sketch-ui.css；切换设备看 961px 断点两侧的样子。</p>
+    <div class="rv-bar">
+      <div class="seg" id="dev"><button type="button" data-d="desk" class="on">桌面 1280</button><button type="button" data-d="mob">手机 390</button></div>
+    </div>
+    <div class="rv-chips" id="chips">${keys.map((k) => `<button type="button" class="rv-chip" data-s="${k}">${STATES[k].label}</button>`).join('')}</div>
+    <p class="rv-cap" id="cap"></p>
+    <div class="rv-stage"><div class="rv-frame" id="fw"><iframe id="fr" title="界面预览"></iframe></div></div>
+
+    <h2>需要你定的两件事</h2>
+    <div class="rv-q">
+      <div class="panel"><span class="tape tl gold"></span>
+        <p><b>1. DeepSeek Key 存在哪？</b></p>
+        <p><b>A（推荐）只存在这台设备的浏览器里</b>，每次评估随请求发给我们的服务器，服务器用完就丢，不写库也不打日志。和网站现有的「用你自己的 AI」是同一个做法。代价是换手机 / 换电脑要再填一次。</p>
+        <p><b>B 服务器加密保存</b>，换设备不用再填。代价是数据库和服务器密钥同时泄露时，Key 会一起泄露。</p>
+        <p>两种都只走服务器调用 DeepSeek：浏览器拿不到 DeepSeek 的原始返回，也就没有可以转发的调用流；评估接口要登录 + 同源校验 + 每人每分钟限次。</p>
+      </div>
+      <div class="panel"><span class="tape tl gold"></span>
+        <p><b>2. 历史里要不要留当时的图片？</b></p>
+        <p><b>A（推荐）留压缩后的图</b>（每张约 150 KB，最多 50 条），「放回材料区重新评估」时图也能一起回来，和桌面版一致。</p>
+        <p><b>B 只留文字和结论</b>，省服务器空间；放回材料区时只有文字。</p>
+      </div>
+    </div>
+
+    <h2>与桌面版的功能对照（23 项）</h2>
+    <table class="rv-table"><thead><tr><th>#</th><th>桌面版</th><th>网页版</th><th>看哪一屏</th></tr></thead>
+      <tbody>${ALIGN.map(([a, b, s], i) => `<tr><td>${i + 1}</td><td>${a}</td><td>${esc(b)}</td><td>${s ? `<span class="go" data-s="${s}">${STATES[s].label}</span>` : '—'}</td></tr>`).join('')}</tbody></table>
+  </div>`;
+
+  let dev = 'desk', st = 'yes';
+  const fr = $('#fr'), fw = $('#fw');
+  function fit() {
+    const w = dev === 'desk' ? 1280 : 390, h = dev === 'desk' ? 860 : 844;
+    const avail = Math.min(fw.parentElement.clientWidth, 1140);
+    const k = dev === 'desk' ? Math.min(1, avail / w) : 1;
+    fr.style.width = w + 'px'; fr.style.height = h + 'px'; fr.style.transform = `scale(${k})`;
+    fw.style.width = w * k + 'px'; fw.style.height = h * k + 'px';
+  }
+  function go() {
+    fr.src = `?frame=1&s=${st}`;
+    document.querySelectorAll('#chips .rv-chip').forEach((b) => b.classList.toggle('on', b.dataset.s === st));
+    document.querySelectorAll('#dev button').forEach((b) => b.classList.toggle('on', b.dataset.d === dev));
+    $('#cap').textContent = STATES[st].cap;
+    fit();
+  }
+  document.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-s]'); if (c) { st = c.dataset.s; if (st === 'hdetail') dev = 'mob'; go(); if (c.classList.contains('go')) scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    const d = e.target.closest('[data-d]'); if (d) { dev = d.dataset.d; go(); }
+  });
+  addEventListener('resize', fit);
+  go();
+}
+
+FRAME ? renderFrame() : renderReview();
+</script>
+</body>
+</html>
