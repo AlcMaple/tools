@@ -3,6 +3,7 @@
 // DeepSeek 连接和助手共用同一条「自配 API」连接，在这里连上，助手那边也就连上了。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuth } from '../auth'
 import { Ic } from '../SketchIcon'
 import { Select } from '../Select'
@@ -764,7 +765,8 @@ function SettingsDialog({ docs, provider, onDocs, onProvider, onClose }: {
     )
   }
 
-  return (
+  // 挂到 body：留在页面里会被页面容器的层叠上下文困住，z-index 再高也盖不过右下角的助手头像。
+  return createPortal(
     <div className="dlg-backdrop open oj-set-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div role="dialog" aria-modal="true" aria-label="评估设置" className="dlg oj-set-dlg">
         <div className="oj-grip" aria-hidden="true" />
@@ -799,7 +801,8 @@ function SettingsDialog({ docs, provider, onDocs, onProvider, onClose }: {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

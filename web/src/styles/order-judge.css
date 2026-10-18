@@ -135,7 +135,7 @@
 .oj-flowbar { align-items: center; justify-content: space-between; gap: 10px; }
 .oj-cancel { margin-top: 20px; }
 @media (max-width: 960px) {
-  .oj-grid:not(.flow) > .oj-blank { display: none; }
+  .oj-grid:not(.flow) > .oj-result { display: none; }
   .oj-grid.flow > .oj-mat { display: none; }
   .oj-grid.flow .oj-brief { display: block; }
   .oj-grid.flow .oj-flowbar { display: flex; }
