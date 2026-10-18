@@ -1,0 +1,579 @@
+<!doctype html>
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta content="width=device-width, initial-scale=1.0" name="viewport" />
+<title>MapleTools | 接单评估</title>
+<!-- 桌面端「接单评估」设计稿。颜色 token 与 src/renderer/src/index.css 同源（亮/暗两套），
+     结论色 yes / amber 是本页新增的语义色，落地时加进 index.css。
+     页面底部的设计稿控制条与「功能对齐清单」不属于界面本身。 -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+<script>
+  const v = (n) => `rgb(var(--color-${n}) / <alpha-value>)`;
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: Object.fromEntries([
+          "background", "surface", "surface-bright", "surface-container-lowest", "surface-container-low",
+          "surface-container", "surface-container-high", "surface-container-highest", "surface-variant",
+          "on-surface", "on-surface-variant", "outline", "outline-variant",
+          "primary", "on-primary", "primary-container", "on-primary-container",
+          "secondary", "error", "on-error", "error-container", "on-error-container",
+          "yes", "yes-container", "amber", "amber-container",
+        ].map((n) => [n, v(n)])),
+        fontFamily: {
+          headline: ["Inter", "PingFang SC", "Microsoft YaHei", "sans-serif"],
+          body: ["Inter", "PingFang SC", "Microsoft YaHei", "sans-serif"],
+          label: ["Space Grotesk", "PingFang SC", "Microsoft YaHei", "sans-serif"],
+        },
+        borderRadius: { DEFAULT: "0.125rem", lg: "0.25rem", xl: "0.5rem", full: "0.75rem" },
+      },
+    },
+  };
+</script>
+<style>
+  :root {
+    --color-background: 248 249 250; --color-surface: 248 249 250; --color-surface-bright: 248 249 250;
+    --color-surface-container-lowest: 255 255 255; --color-surface-container-low: 243 244 245;
+    --color-surface-container: 237 238 239; --color-surface-container-high: 227 228 229;
+    --color-surface-container-highest: 223 223 224; --color-surface-variant: 244 221 221;
+    --color-on-surface: 25 28 29; --color-on-surface-variant: 82 67 68;
+    --color-outline: 132 115 116; --color-outline-variant: 217 193 193;
+    --color-primary: 148 70 79; --color-on-primary: 255 255 255;
+    --color-primary-container: 240 145 153; --color-on-primary-container: 62 4 16;
+    --color-secondary: 88 96 98;
+    --color-error: 186 26 26; --color-on-error: 255 255 255;
+    --color-error-container: 255 218 214; --color-on-error-container: 65 0 2;
+    --color-yes: 22 108 69; --color-yes-container: 214 243 226;
+    --color-amber: 122 90 30; --color-amber-container: 255 240 205;
+  }
+  .dark {
+    --color-background: 19 19 19; --color-surface: 19 19 19; --color-surface-bright: 57 57 57;
+    --color-surface-container-lowest: 14 14 14; --color-surface-container-low: 27 27 27;
+    --color-surface-container: 31 31 31; --color-surface-container-high: 42 42 42;
+    --color-surface-container-highest: 53 53 53; --color-surface-variant: 53 53 53;
+    --color-on-surface: 226 226 226; --color-on-surface-variant: 217 193 193;
+    --color-outline: 161 140 140; --color-outline-variant: 84 67 67;
+    --color-primary: 255 179 184; --color-on-primary: 90 25 35;
+    --color-primary-container: 240 145 153; --color-on-primary-container: 110 41 50;
+    --color-secondary: 170 199 255;
+    --color-error: 255 180 171; --color-on-error: 105 0 5;
+    --color-error-container: 147 0 10; --color-on-error-container: 255 218 214;
+    --color-yes: 134 214 168; --color-yes-container: 24 58 40;
+    --color-amber: 236 196 118; --color-amber-container: 62 48 18;
+  }
+  body { font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .material-symbols-outlined { font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24; line-height: 1; }
+  .custom-scrollbar::-webkit-scrollbar, textarea::-webkit-scrollbar { width: 4px; height: 4px; }
+  .custom-scrollbar::-webkit-scrollbar-track, textarea::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb, textarea::-webkit-scrollbar-thumb { background: #353535; border-radius: 2px; }
+  @keyframes pulseDot { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
+  .pulse-dot { animation: pulseDot 1.1s ease-in-out infinite; }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .animate-fade-up { animation: fade-up .25s cubic-bezier(.2,.8,.2,1) both; }
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] .chev { transform: rotate(90deg); }
+</style>
+</head>
+<body class="bg-background text-on-surface antialiased">
+
+<!-- ═══════════════════════ 应用画面 ═══════════════════════ -->
+<div id="app" class="relative h-[900px] overflow-hidden bg-background">
+
+  <!-- 侧栏：与 Sidebar.tsx 一致，新增「接单评估」 -->
+  <aside class="hidden md:flex absolute left-0 top-0 h-full md:w-16 lg:w-64 bg-surface-container-lowest flex-col py-8 z-50">
+    <div class="px-6 mb-12 hidden lg:block">
+      <h1 class="text-xl font-black text-primary tracking-tighter">MAPLE TOOLS</h1>
+      <p class="font-label text-[10px] text-on-surface/40 tracking-widest mt-1">V0.17.0</p>
+    </div>
+    <div class="mb-12 flex justify-center lg:hidden"><h1 class="text-xl font-black text-primary tracking-tighter">M</h1></div>
+    <nav class="flex-1 space-y-1" id="nav"></nav>
+  </aside>
+
+  <div id="page-scroll" class="h-full overflow-y-auto custom-scrollbar md:ml-16 lg:ml-64" style="scrollbar-gutter: stable">
+    <!-- TopBar（titleSlot 形态） -->
+    <header class="sticky top-0 h-16 bg-background/80 backdrop-blur-xl flex justify-between items-center gap-2 px-4 md:px-8 z-40">
+      <div class="flex items-center gap-4 min-w-0">
+        <h2 class="text-2xl font-bold tracking-tighter text-primary">接单评估</h2>
+      </div>
+      <div class="flex items-center gap-1">
+        <button id="open-settings" class="flex items-center gap-1.5 px-3 h-9 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors">
+          <span class="material-symbols-outlined text-[20px]">tune</span>
+          <span class="font-label text-sm">评估设置</span>
+        </button>
+        <button id="theme" class="w-9 h-9 grid place-items-center rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" title="切换亮/暗">
+          <span class="material-symbols-outlined text-[20px]" id="theme-icon">light_mode</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="px-4 md:px-8 pt-4 pb-16">
+      <div class="mx-auto max-w-[1180px] grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
+
+        <!-- ─────────── 左列：材料 + 结论 ─────────── -->
+        <div class="min-w-0">
+
+          <!-- Key 未设置时的提示条（只在缺 Key 时出现，替代 Python 版的 --setup） -->
+          <div id="nokey" class="hidden mb-4 flex items-center gap-3 rounded-xl border border-amber/30 bg-amber-container px-4 py-3">
+            <span class="material-symbols-outlined text-amber text-[20px]">key</span>
+            <p class="flex-1 text-sm text-amber">还没有填写 DeepSeek Key，评估前需要先填好</p>
+            <button data-open-settings class="font-label text-sm font-bold text-amber hover:underline underline-offset-2">去填写</button>
+          </div>
+
+          <!-- 材料输入区 -->
+          <section id="drop" class="relative rounded-xl border border-outline-variant/40 bg-surface-container-low transition-colors focus-within:border-primary/60">
+            <textarea id="text" rows="6" placeholder="粘贴派单文字或截图，可以粘贴多次"
+              class="block w-full min-h-[148px] resize-y bg-transparent px-5 pt-4 pb-2 text-[15px] leading-relaxed text-on-surface placeholder:text-on-surface-variant/40 outline-none border-0"></textarea>
+
+            <div id="files" class="flex flex-wrap gap-2 px-5 pb-3 empty:hidden"></div>
+
+            <div class="flex items-center gap-3 border-t border-outline-variant/20 px-5 h-14">
+              <p id="hint" class="flex-1 min-w-0 truncate text-[13px] text-on-surface-variant/70">
+                <kbd class="mod font-label text-[11px] px-1.5 py-0.5 rounded-lg bg-surface-container-highest text-on-surface-variant">⌘V</kbd>
+                粘贴文字或截图 · 视频、PDF、Word、长图拖进来，或
+                <button class="text-primary hover:underline underline-offset-2">选择文件</button>
+              </p>
+              <button id="clear" class="shrink-0 h-9 px-3 rounded-xl font-label text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors">清空</button>
+              <!-- 按钮固定宽度：计时文字切换时不撑动左侧提示 -->
+              <button id="go" class="shrink-0 w-[132px] h-10 rounded-xl bg-primary text-on-primary font-bold text-sm flex items-center justify-center gap-1.5 hover:brightness-110 disabled:opacity-60 disabled:hover:brightness-100 transition">
+                <span class="material-symbols-outlined text-[18px]" id="go-icon">gavel</span>
+                <span id="go-label" class="tabular-nums">评估</span>
+              </button>
+            </div>
+
+            <!-- 拖入时的覆盖层：浮在上面，不改变输入区尺寸 -->
+            <div id="drop-over" class="hidden absolute inset-0 rounded-xl border-2 border-dashed border-primary bg-primary/10 backdrop-blur-[2px] grid place-items-center">
+              <div class="flex items-center gap-2 text-primary font-bold">
+                <span class="material-symbols-outlined">file_download</span>松手放入
+              </div>
+            </div>
+
+            <!-- 空内容提示：浮在按钮上方，不插进流 -->
+            <div id="empty-tip" class="hidden absolute right-5 -bottom-9 w-max rounded-xl px-3 py-1.5 text-xs text-on-surface bg-surface-container-highest shadow-lg">还没有放入内容</div>
+          </section>
+
+          <!-- 不同材料怎么放 -->
+          <details class="mt-3 group">
+            <summary class="inline-flex items-center gap-1 cursor-pointer py-1 text-[13px] text-on-surface-variant/70 hover:text-on-surface transition-colors">
+              <span class="material-symbols-outlined chev text-[18px] transition-transform">chevron_right</span>不同材料怎么放
+            </summary>
+            <dl class="mt-2 grid grid-cols-[7.5em_1fr] gap-x-5 gap-y-3 rounded-xl bg-surface-container px-5 py-4 text-[13px] leading-relaxed">
+              <dt class="font-bold text-on-surface">文字、截图</dt>
+              <dd class="text-on-surface-variant"><span class="mod">⌘V</span> 粘贴，可以连续粘贴多张。转发的聊天记录要点开后截图，直接复制只会得到「[聊天记录]」。</dd>
+              <dt class="font-bold text-on-surface">网址</dt>
+              <dd class="text-on-surface-variant">以文字形式贴进输入框，会打开网页读取标题和正文开头，每单最多 10 个。截图里的网址不会被打开。</dd>
+              <dt class="font-bold text-on-surface">在线表格、文档</dt>
+              <dd class="text-on-surface-variant">公开的腾讯文档能读到首屏的一部分文字，每张工作表的网址不同，需要哪张贴哪张。表格很长或要看细节时，把关键行截图一起放进来。</dd>
+              <dt class="font-bold text-on-surface">要登录的网页</dt>
+              <dd class="text-on-surface-variant">飞书、钉钉、小红书等打不开，请在浏览器里截图或截长图后粘贴。</dd>
+              <dt class="font-bold text-on-surface">视频</dt>
+              <dd class="text-on-surface-variant">均匀取 12 帧画面，听不到声音，口头讲的需求请补一段文字。</dd>
+              <dt class="font-bold text-on-surface">PDF、Word</dt>
+              <dd class="text-on-surface-variant">只读文字。扫描版 PDF 和文档里的图片读不到，重要的图请单独截图。</dd>
+            </dl>
+          </details>
+
+          <!-- 结论区 -->
+          <section id="result" class="mt-8"></section>
+        </div>
+
+        <!-- ─────────── 右列：历史 ─────────── -->
+        <aside class="min-w-0">
+          <div class="xl:sticky xl:top-20">
+            <div class="flex items-baseline justify-between mb-2 px-1">
+              <h3 class="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">历史记录</h3>
+              <span id="hist-count" class="font-label text-[11px] text-on-surface-variant/50 tabular-nums"></span>
+            </div>
+            <div id="history" class="xl:max-h-[calc(900px-140px)] overflow-y-auto custom-scrollbar -mx-1 px-1"></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <!-- 评估设置抽屉（右侧滑出，盖在内容上） -->
+  <div id="sheet-mask" class="hidden absolute inset-0 bg-black/40 z-[60]"></div>
+  <aside id="sheet" class="absolute top-0 right-0 bottom-0 w-[400px] max-w-full translate-x-full transition-transform duration-300 bg-surface-container-low border-l border-outline-variant/20 z-[70] flex flex-col">
+    <div class="flex items-center justify-between h-16 px-6 border-b border-outline-variant/20">
+      <h3 class="text-lg font-bold tracking-tight">评估设置</h3>
+      <button id="close-settings" class="w-9 h-9 grid place-items-center rounded-xl text-on-surface-variant hover:bg-surface-container-high">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 space-y-7">
+      <label class="block">
+        <span class="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">DeepSeek Key</span>
+        <div class="relative mt-2">
+          <input type="password" value="sk-xxxxxxxxxxxxxxxxxxxxxxxx" class="w-full h-11 rounded-xl bg-surface-container-high border border-outline-variant/30 px-4 pr-11 text-sm outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/30" />
+          <button class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 grid place-items-center rounded-xl text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-[18px]">visibility</span></button>
+        </div>
+      </label>
+
+      <div>
+        <span class="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">能力档案</span>
+        <div class="mt-2 flex items-center gap-2 rounded-xl bg-surface-container-high border border-outline-variant/30 h-11 pl-4 pr-1.5">
+          <span class="material-symbols-outlined text-[18px] text-on-surface-variant">description</span>
+          <span class="flex-1 min-w-0 truncate text-sm" title="~/Documents/接单/能力档案.md">~/Documents/接单/能力档案.md</span>
+          <button class="h-8 px-3 rounded-xl font-label text-sm text-primary hover:bg-primary/10">更换</button>
+        </div>
+      </div>
+
+      <div>
+        <span class="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">项目日志</span>
+        <div class="mt-2 flex items-center gap-2 rounded-xl bg-surface-container-high border border-outline-variant/30 h-11 pl-4 pr-1.5">
+          <span class="material-symbols-outlined text-[18px] text-on-surface-variant">history_edu</span>
+          <span class="flex-1 min-w-0 truncate text-sm" title="~/Downloads/同步空间/cwj/vibecoding/docs/项目日志.md">~/Downloads/同步空间/cwj/vibecoding/docs/项目日志.md</span>
+          <button class="h-8 px-3 rounded-xl font-label text-sm text-primary hover:bg-primary/10">更换</button>
+        </div>
+        <p class="mt-2 text-xs text-on-surface-variant/60">更新于 今天 09:12</p>
+      </div>
+    </div>
+    <div class="relative flex justify-end gap-2 px-6 py-4 border-t border-outline-variant/20">
+      <span id="saved" class="hidden absolute left-6 top-1/2 -translate-y-1/2 w-max flex items-center gap-1 text-xs text-yes"><span class="material-symbols-outlined text-[16px]">check</span>已保存</span>
+      <button id="save-settings" class="h-10 px-5 rounded-xl bg-primary text-on-primary font-bold text-sm hover:brightness-110">保存</button>
+    </div>
+  </aside>
+</div>
+
+<!-- ═══════════════════════ 设计稿控制条（非界面） ═══════════════════════ -->
+<div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] flex flex-wrap items-center gap-1 rounded-xl bg-black/80 text-white px-2 py-1.5 text-xs shadow-2xl backdrop-blur" id="ctl"></div>
+
+<!-- ═══════════════════════ 功能对齐清单（非界面） ═══════════════════════ -->
+<section class="mx-auto max-w-[1180px] px-8 py-14">
+  <h2 class="text-xl font-black tracking-tight">功能对齐清单</h2>
+  <p class="mt-1 text-sm text-on-surface-variant">左边是 Python 版 gui.html / gui.py 已有的功能，右边是本稿里的对应位置。点右侧状态名可以直接切到那一屏。</p>
+  <table class="mt-6 w-full text-sm border-collapse">
+    <thead><tr class="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant/70">
+      <th class="py-2 pr-4 w-8">#</th><th class="py-2 pr-4">原功能</th><th class="py-2 pr-4">新设计</th><th class="py-2">看哪一屏</th>
+    </tr></thead>
+    <tbody id="parity" class="align-top"></tbody>
+  </table>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const h = (html) => { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ── 侧栏 ──
+const nav = [["本地播放器","subscriptions"],["搜索下载","search"],["下载队列","download_for_offline"],["动漫查询","travel_explore"],["我的追番","grade"],["番剧周历表","calendar_month"],["资源管理器","folder_managed"],["锦囊妙计","swords"],["妙语库","forum"],["接单评估","assignment_turned_in"]];
+$("nav").innerHTML = nav.map(([l, i]) => {
+  const on = l === "接单评估";
+  return `<a class="flex items-center py-3 border-r-2 justify-center lg:justify-start px-0 lg:px-6 lg:space-x-3 font-medium transition-colors ${on ? "text-primary border-primary bg-surface-container" : "text-on-surface/60 border-transparent hover:text-on-surface hover:bg-surface-container"}" href="#"><span class="material-symbols-outlined text-lg">${i}</span><span class="hidden lg:block font-label text-sm">${l}</span></a>`;
+}).join("");
+
+// ── 示例数据 ──
+const SAMPLE_TEXT = "【派单】Python 爬取某电商平台 3 个店铺近半年的评论（约 2 万条），做情感分析和词云，出一份 Word 报告。\n周期 4 天，预算 350。\nhttps://docs.qq.com/sheet/DUmVxbGd4aEtwSFlo?tab=BB08J2";
+const FILES = [
+  { kind: "img", name: "截图01.png", src: "https://picsum.photos/seed/oj1/200/150" },
+  { kind: "img", name: "截图02.png", src: "https://picsum.photos/seed/oj2/200/150" },
+  { kind: "img", name: "需求长图.jpg", src: "https://picsum.photos/seed/oj3/200/150", note: "长图 · 切 4 块" },
+  { kind: "video", name: "录屏说明.mp4", note: "12 帧" },
+  { kind: "pdf", name: "任务书-评论分析.pdf", note: "6 页" },
+  { kind: "doc", name: "交付要求.docx" },
+];
+const BAD_FILE = { kind: "bad", name: "老师讲解.wmv" };
+
+const REPORTS = {
+  能: {
+    verdict: "能", title: "电商评论爬取与情感分析",
+    headline: "能接：爬虫、情感分析、词云和 Word 报告日志里都有现成经验",
+    summary: "爬取 3 个电商店铺近半年约 2 万条评论，做情感分析和词云，交付一份 Word 报告，周期 4 天。",
+    risk: "",
+    reasons: [
+      { title: "爬虫经验充足", detail: "项目日志里 BGM、萌娘百科抓取都处理过限流与登录态，评论接口的分页和频控套路相同。" },
+      { title: "分析环节轻量", detail: "情感分析用现成模型即可，2 万条在本机几分钟跑完；词云和图表是常规输出。" },
+      { title: "Word 报告可直接生成", detail: "能力档案写明做过 docx 自动排版，图表能直接嵌入。" },
+    ],
+    gaps: [
+      { step: "平台风控", detail: "若评论接口需要登录或滑块验证，4 天周期会被压缩，需要提前确认能否用对方账号。" },
+      { step: "情感标注口径", detail: "对方若要求「好评/差评」以外的细分维度，需要额外设计标签。" },
+    ],
+    questions: ["评论是否需要登录才能看全？（可能改判）", "报告需要按什么维度分章节？", "有没有指定的情感分析方法或准确率要求？"],
+  },
+  不能: {
+    verdict: "不能", title: "iOS 越狱插件开发",
+    headline: "不能接：需要越狱环境下的 Objective-C hook，日志里没有相关经验",
+    summary: "为某 iOS 应用写越狱插件，去除广告并解锁会员功能，要求适配 iOS 17。",
+    risk: "解锁会员功能属于破解，存在被平台追责和账号封禁的风险。",
+    reasons: [
+      { title: "技术栈不匹配", detail: "需要 Theos / Logos 与 Objective-C 运行时 hook，项目日志里没有 iOS 原生开发记录。" },
+      { title: "逆向分析是空白", detail: "能力档案把逆向、破解列在「不能」，需要先砸壳、分析二进制。" },
+    ],
+    gaps: [
+      { step: "越狱环境", detail: "没有可越狱的测试机，iOS 17 越狱工具链也不稳定。" },
+      { step: "二进制逆向", detail: "需要 IDA / Hopper 定位会员校验逻辑，没有经验。" },
+    ],
+    questions: [],
+  },
+  信息不足: {
+    verdict: "信息不足", title: "",
+    headline: "只有「[聊天记录]」几个字，看不到派单内容",
+    summary: "", risk: "", reasons: [], gaps: [],
+    questions: [], precheck: true,
+  },
+};
+
+const HISTORY = [
+  { v: "能", when: "今天 14:32", title: "电商评论爬取与情感分析", imgs: 3, key: "能" },
+  { v: "不能", when: "今天 11:05", title: "iOS 越狱插件开发", imgs: 1, key: "不能" },
+  { v: "信息不足", when: "昨天 22:47", title: "（只有聊天记录占位）", imgs: 0, key: "信息不足" },
+  { v: "能", when: "昨天 20:13", title: "毕业论文数据可视化", imgs: 2, key: "能" },
+  { v: "能", when: "10-16 18:40", title: "B 站视频批量去重剪辑", imgs: 0, key: "能" },
+  { v: "不能", when: "10-16 09:21", title: "游戏辅助脚本", imgs: 4, key: "不能" },
+  { v: "能", when: "10-15 21:02", title: "微信小程序商城前端", imgs: 6, key: "能" },
+  { v: "信息不足", when: "10-15 16:55", title: "（截图）", imgs: 1, key: "信息不足" },
+  { v: "能", when: "10-14 13:30", title: "Excel 报表自动汇总", imgs: 0, key: "能" },
+];
+
+// ── 设计稿状态 ──
+const S = { screen: "filled", platform: "mac", theme: "dark", sel: null, nokey: false };
+
+const verdictStyle = {
+  能: { badge: "bg-yes-container text-yes", bar: "bg-yes", icon: "check_circle" },
+  不能: { badge: "bg-error-container text-on-error-container dark:text-error", bar: "bg-error", icon: "block" },
+  信息不足: { badge: "bg-amber-container text-amber", bar: "bg-amber", icon: "help" },
+  出错: { badge: "bg-amber-container text-amber", bar: "bg-amber", icon: "error" },
+};
+
+function chip(f) {
+  const x = `<button class="absolute top-1 right-1 w-5 h-5 grid place-items-center rounded-[9999px] bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity" title="移除"><span class="material-symbols-outlined text-[14px]">close</span></button>`;
+  if (f.kind === "img") {
+    return `<div class="group relative w-[92px] h-[68px] rounded-xl overflow-hidden bg-surface-container-highest">
+      <img src="${f.src}" class="absolute inset-0 w-full h-full object-cover" alt="${esc(f.name)}">
+      ${f.note ? `<span class="absolute left-1 bottom-1 w-max rounded-lg bg-black/60 px-1.5 py-px font-label text-[10px] text-white">${f.note}</span>` : ""}${x}</div>`;
+  }
+  const icon = { video: "movie", pdf: "picture_as_pdf", doc: "description", bad: "warning" }[f.kind];
+  const bad = f.kind === "bad";
+  return `<div class="group relative w-[92px] h-[68px] rounded-xl bg-surface-container-highest ${bad ? "ring-1 ring-amber/60" : ""} flex flex-col items-center justify-center gap-1 px-2 text-center">
+    <span class="material-symbols-outlined text-[20px] ${bad ? "text-amber" : "text-on-surface-variant"}">${icon}</span>
+    <span class="w-full truncate text-[11px] leading-tight text-on-surface-variant" title="${esc(f.name)}">${esc(f.name)}</span>
+    ${f.note ? `<span class="absolute left-1 top-1 w-max rounded-lg bg-surface-container-lowest/80 px-1 font-label text-[10px] text-on-surface-variant">${f.note}</span>` : ""}${x}</div>`;
+}
+
+function section(label, inner, icon) {
+  return `<div class="px-6 py-5 border-t border-outline-variant/20">
+    <p class="mb-3 flex items-center gap-1.5 font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">${icon ? `<span class="material-symbols-outlined text-[16px]">${icon}</span>` : ""}${label}</p>${inner}</div>`;
+}
+function items(list, a, b, numCls) {
+  return `<ol class="grid gap-3">${list.map((x, i) => `<li class="grid grid-cols-[22px_1fr] gap-2">
+    <span class="font-label text-[13px] font-bold tabular-nums pt-0.5 ${numCls}">${i + 1}</span>
+    <p class="text-[14px] leading-relaxed"><span class="font-bold text-on-surface">${esc(x[a])}</span><span class="text-on-surface-variant">：${esc(x[b])}</span></p></li>`).join("")}</ol>`;
+}
+
+function report(r, meta) {
+  const st = verdictStyle[r.verdict];
+  let html = `<article class="animate-fade-up relative overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-low">
+    <div class="h-1 ${st.bar}"></div>`;
+  if (meta) {
+    html += `<div class="flex items-center justify-between gap-3 px-6 pt-4 -mb-2 font-label text-xs text-on-surface-variant/70">
+      <span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">history</span>${meta.when}</span>
+      <span class="flex items-center gap-1">
+        <button class="h-8 px-2.5 rounded-xl hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">refresh</span>放回输入框</button>
+        <button class="h-8 px-2.5 rounded-xl hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1" data-close-hist><span class="material-symbols-outlined text-[16px]">close</span>收起</button>
+      </span></div>`;
+  }
+  html += `<div class="flex items-start gap-4 px-6 pt-6 pb-5">
+      <span class="shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-lg font-black ${st.badge}">
+        <span class="material-symbols-outlined text-[20px]">${st.icon}</span>${r.verdict}</span>
+      <p class="pt-1 text-[17px] font-bold leading-snug text-on-surface">${esc(r.headline)}</p>
+    </div>`;
+  if (r.precheck) {
+    const key = S.platform === "mac" ? "⌃⌘A" : "Alt+A";
+    html += section("怎么补", `<p class="text-[14px] leading-relaxed text-on-surface-variant">在微信里点开这条聊天记录，用 <kbd class="font-label text-[11px] px-1.5 py-0.5 rounded-lg bg-surface-container-highest">${key}</kbd> 截图后粘贴进来，再评估一次。</p>`);
+  }
+  if (r.summary) html += section("需求", `<p class="text-[14px] leading-relaxed text-on-surface-variant">${esc(r.summary)}</p>`);
+  if (r.risk) html += section("风险", `<p class="rounded-xl bg-amber-container px-4 py-3 text-[14px] leading-relaxed text-amber">${esc(r.risk)}</p>`, "warning");
+  if (r.reasons?.length) html += section("原因", items(r.reasons, "title", "detail", "text-on-surface-variant/60"));
+  if (r.gaps?.length) html += section(r.verdict === "能" ? "可能翻车的地方" : "卡点", items(r.gaps, "step", "detail", "text-error"));
+  if (r.questions?.length) {
+    html += section("接单前先问清楚", `<ul class="grid gap-2">${r.questions.map((q) => {
+      const m = q.match(/^(.*?)[（(]可能改判[）)]\s*$/);
+      return `<li class="grid grid-cols-[22px_1fr] gap-2 text-[14px] leading-relaxed text-on-surface-variant">
+        <span class="mt-1 w-[18px] h-[18px] rounded-[9999px] bg-surface-container-highest grid place-items-center font-label text-[11px] font-bold text-on-surface-variant/70">?</span>
+        <span>${esc(m ? m[1] : q)}${m ? ` <span class="ml-1 whitespace-nowrap rounded-lg bg-amber-container px-1.5 py-px font-label text-[11px] font-bold text-amber">可能改判</span>` : ""}</span></li>`;
+    }).join("")}</ul>`);
+  }
+  if (meta) {
+    html += section("当时放进来的材料", `<p class="mb-3 text-[13px] leading-relaxed text-on-surface-variant line-clamp-2">${esc(SAMPLE_TEXT)}</p><div class="flex flex-wrap gap-2">${FILES.slice(0, 4).map(chip).join("")}</div>`);
+  }
+  return html + `</article>`;
+}
+
+function progress() {
+  const steps = [
+    ["整理材料", "3 张截图 · 长图切成 4 块 · 视频取 12 帧 · PDF 6 页", "done"],
+    ["打开网址", "腾讯文档 1 个", "done"],
+    ["AI 判断中", "对照能力档案和项目日志", "run"],
+  ];
+  return `<div class="rounded-xl border border-outline-variant/30 bg-surface-container-low px-6 py-5">
+    <ol class="grid gap-4">${steps.map(([t, d, s]) => `<li class="flex items-start gap-3">
+      <span class="mt-0.5 w-5 h-5 grid place-items-center">${s === "done"
+        ? `<span class="material-symbols-outlined text-[20px] text-yes">check_circle</span>`
+        : `<span class="pulse-dot w-2.5 h-2.5 rounded-[9999px] bg-primary"></span>`}</span>
+      <div><p class="text-sm font-bold ${s === "done" ? "text-on-surface-variant" : "text-on-surface"}">${t}</p>
+      <p class="text-xs text-on-surface-variant/70 mt-0.5">${d}</p></div></li>`).join("")}</ol></div>`;
+}
+
+const ERRORS = {
+  key: ["DeepSeek Key 无效", "Key 被拒绝（401），可能填错或已删除。", "去评估设置"],
+  balance: ["DeepSeek 余额不足", "账户余额用完了（402），充值后再评估。", "打开充值页"],
+  busy: ["DeepSeek 正忙", "请求太多被限流（429），过一会儿再点评估。", ""],
+  net: ["连不上 DeepSeek", "网络请求超时，检查网络或代理后再试。", ""],
+  empty: ["AI 没有给出结论", "连续 3 次返回空内容，请稍后重试。", ""],
+};
+function errorCard(k) {
+  const [t, d, act] = ERRORS[k];
+  return `<article class="animate-fade-up overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-low">
+    <div class="h-1 bg-amber"></div>
+    <div class="flex items-start gap-4 px-6 py-6">
+      <span class="shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-lg font-black bg-amber-container text-amber"><span class="material-symbols-outlined text-[20px]">error</span>出错</span>
+      <div class="pt-1"><p class="text-[17px] font-bold">${t}</p><p class="mt-1 text-[14px] text-on-surface-variant">${d}</p>
+      ${act ? `<button class="mt-3 h-9 px-4 rounded-xl border border-outline-variant/40 font-label text-sm hover:bg-surface-container-high">${act}</button>` : ""}</div>
+    </div></article>`;
+}
+
+function renderHistory() {
+  $("hist-count").textContent = `${HISTORY.length} 条`;
+  if (S.screen === "blank") {
+    $("history").innerHTML = `<p class="px-1 py-6 text-sm text-on-surface-variant/60">还没有评估过的派单</p>`;
+    $("hist-count").textContent = "";
+    return;
+  }
+  const tag = { 能: "bg-yes-container text-yes", 不能: "bg-error-container text-on-error-container dark:text-error", 信息不足: "bg-amber-container text-amber" };
+  $("history").innerHTML = HISTORY.map((x, i) => `<div data-h="${i}" class="group relative grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 items-center cursor-pointer rounded-xl px-3 py-2.5 transition-colors ${S.sel === i ? "bg-surface-container-high" : "hover:bg-surface-container"}">
+    <span class="row-span-2 self-start mt-0.5 min-w-[52px] text-center rounded-lg px-1.5 py-0.5 font-label text-[11px] font-bold ${tag[x.v]}">${x.v}</span>
+    <span class="truncate text-sm ${S.sel === i ? "text-on-surface font-bold" : "text-on-surface"}">${esc(x.title)}</span>
+    <span class="font-label text-[11px] text-on-surface-variant/60 tabular-nums">${x.when}${x.imgs ? ` · ${x.imgs} 张图` : ""}</span>
+    <button class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 grid place-items-center rounded-xl text-on-surface-variant/60 opacity-0 group-hover:opacity-100 hover:text-error hover:bg-surface-container-highest transition" title="删除这条"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+  </div>`).join("");
+  document.querySelectorAll("[data-h]").forEach((el) => el.onclick = (e) => {
+    if (e.target.closest("button")) return;
+    S.sel = +el.dataset.h; render();
+  });
+}
+
+function render() {
+  document.documentElement.classList.toggle("dark", S.theme === "dark");
+  $("theme-icon").textContent = S.theme === "dark" ? "light_mode" : "dark_mode";
+  document.querySelectorAll(".mod").forEach((e) => e.textContent = S.platform === "mac" ? "⌘V" : "Ctrl+V");
+  $("nokey").classList.toggle("hidden", !S.nokey);
+
+  const sc = S.screen;
+  const filled = !["blank", "empty"].includes(sc);
+  $("text").value = filled ? (sc === "r-信息不足" ? "[聊天记录]" : SAMPLE_TEXT) : "";
+  const fs = !filled || sc === "r-信息不足" ? [] : sc === "badfile" ? [...FILES.slice(0, 2), BAD_FILE] : FILES;
+  $("files").innerHTML = fs.map(chip).join("");
+  $("drop-over").classList.toggle("hidden", sc !== "dragover");
+  $("empty-tip").classList.toggle("hidden", sc !== "empty");
+
+  const hint = $("hint");
+  if (sc === "badfile") {
+    hint.className = "flex-1 min-w-0 truncate text-[13px] text-amber";
+    hint.innerHTML = `<span class="material-symbols-outlined text-[16px] align-[-3px]">warning</span> 老师讲解.wmv 读不了，转成 mp4 或截几张图再放进来`;
+  } else {
+    hint.className = "flex-1 min-w-0 truncate text-[13px] text-on-surface-variant/70";
+    hint.innerHTML = `<kbd class="mod font-label text-[11px] px-1.5 py-0.5 rounded-lg bg-surface-container-highest text-on-surface-variant">${S.platform === "mac" ? "⌘V" : "Ctrl+V"}</kbd> 粘贴文字或截图 · 视频、PDF、Word、长图拖进来，或 <button class="text-primary hover:underline underline-offset-2">选择文件</button>`;
+  }
+
+  const running = sc === "running";
+  $("go").disabled = running;
+  $("go-icon").textContent = running ? "hourglass_top" : "gavel";
+  $("go-label").textContent = running ? "分析中 23 秒" : "评估";
+
+  let res = "";
+  if (S.sel != null) res = report(REPORTS[HISTORY[S.sel].key], HISTORY[S.sel]);
+  else if (running) res = progress();
+  else if (sc.startsWith("r-")) res = report(REPORTS[sc.slice(2)]);
+  else if (sc.startsWith("e-")) res = errorCard(sc.slice(2));
+  $("result").innerHTML = res;
+  document.querySelectorAll("[data-close-hist]").forEach((b) => b.onclick = () => { S.sel = null; render(); });
+
+  renderHistory();
+  renderCtl();
+}
+
+// ── 设置抽屉 ──
+function sheet(open) {
+  $("sheet").classList.toggle("translate-x-full", !open);
+  $("sheet-mask").classList.toggle("hidden", !open);
+  $("saved").classList.add("hidden");
+}
+$("open-settings").onclick = () => sheet(true);
+document.addEventListener("click", (e) => { if (e.target.closest("[data-open-settings]")) sheet(true); });
+$("close-settings").onclick = $("sheet-mask").onclick = () => sheet(false);
+$("save-settings").onclick = () => { $("saved").classList.remove("hidden"); setTimeout(() => $("saved").classList.add("hidden"), 1600); };
+$("theme").onclick = () => { S.theme = S.theme === "dark" ? "light" : "dark"; render(); };
+
+// ── 控制条 ──
+const SCREENS = [
+  ["blank", "空白"], ["filled", "已放材料"], ["dragover", "拖入中"], ["empty", "空内容"], ["badfile", "读不了的文件"],
+  ["running", "分析中"], ["r-能", "结论·能"], ["r-不能", "结论·不能"], ["r-信息不足", "结论·信息不足"],
+  ["e-key", "错·Key"], ["e-balance", "错·余额"], ["e-busy", "错·限流"], ["e-net", "错·网络"], ["e-empty", "错·空返回"],
+];
+function renderCtl() {
+  const b = (on, label, act) => `<button data-act="${act}" class="px-2 py-1 rounded-lg ${on ? "bg-white text-black font-bold" : "hover:bg-white/15"}">${label}</button>`;
+  $("ctl").innerHTML = SCREENS.map(([k, l]) => b(S.screen === k && S.sel == null, l, "s:" + k)).join("")
+    + `<span class="w-px h-4 bg-white/30 mx-1"></span>`
+    + b(S.nokey, "缺 Key", "nokey") + b(S.platform === "win", S.platform === "mac" ? "Mac" : "Windows", "plat")
+    + b(false, S.theme === "dark" ? "暗" : "亮", "theme") + b(false, "设置抽屉", "sheet");
+  $("ctl").querySelectorAll("[data-act]").forEach((el) => el.onclick = () => {
+    const a = el.dataset.act;
+    if (a.startsWith("s:")) { S.screen = a.slice(2); S.sel = null; }
+    else if (a === "nokey") S.nokey = !S.nokey;
+    else if (a === "plat") S.platform = S.platform === "mac" ? "win" : "mac";
+    else if (a === "theme") S.theme = S.theme === "dark" ? "light" : "dark";
+    else if (a === "sheet") return sheet(true);
+    render();
+  });
+}
+
+// ── 功能对齐清单 ──
+const PARITY = [
+  ["粘贴文字，可多次；焦点不在输入框时也粘进去", "同左；输入区更高，可拖拽调整高度", "filled"],
+  ["粘贴截图（多张，自动命名 截图01…）", "缩略图 chip，命名规则不变", "filled"],
+  ["拖入文件 / 选择文件", "拖入时整块覆盖层「松手放入」，不改变输入区尺寸；提示行里的「选择文件」", "dragover"],
+  ["文件 chip：图片缩略图、其他显示文件名、单个移除", "同左；另加角标：长图切几块、视频取几帧、PDF 页数", "filled"],
+  ["快捷键按平台显示（⌘V / Ctrl+V，截图 ⌃⌘A / Alt+A）", "同左（控制条切 Mac / Windows 查看）", "r-信息不足"],
+  ["「不同材料怎么放」折叠说明", "保留六项，文案压短；删掉「历史存在 logs/」这条", "filled"],
+  ["评估 / 清空按钮", "两个按钮并到输入区底栏右侧", "filled"],
+  ["空内容时提示「还没有放入内容」", "浮在按钮下方的小气泡，不插进流", "empty"],
+  ["状态文字「分析中，已用 N 秒」", "计时写在固定宽度的评估按钮里；结论区显示三步进度（整理材料 → 打开网址 → AI 判断）", "running"],
+  ["视频抽 12 帧；没有 ffmpeg 时提示安装", "视频在应用内取帧，Windows 不必再装 ffmpeg；格式读不了时在提示行直接说是哪个文件", "badfile"],
+  ["长图自动切块、PDF / Word / 网址 / 腾讯文档读取", "后台逻辑保留，在进度和 chip 角标里能看到处理结果", "running"],
+  ["结论徽章 + 一句话 + 顶部色条（能 / 不能 / 信息不足 / 出错）", "同左，徽章加图标", "r-能"],
+  ["需求 / ⚠️风险 / 原因 / 卡点（能 → 可能翻车的地方）/ 接单前先问清楚", "顺序与命名不变；「可能改判」改成小标签", "r-能"],
+  ["空内容或「[聊天记录]」直接判信息不足", "同左，多一块「怎么补」告诉用户截图快捷键", "r-信息不足"],
+  ["出错时统一「连不上本地服务」", "按真实原因分开：Key 无效 / 余额不足 / 限流 / 网络 / 空返回，各带能做的动作", "e-key"],
+  ["历史记录：最近 30 条，结论 + 时间 + 标题 + 图片数，展开看完整报告", "常驻右栏；点一条在左侧结论区打开，可「放回输入框」重新评估、看当时的材料", "r-能"],
+  ["历史为空「还没有评估过的派单」", "同左", "blank"],
+  ["旧格式只有 md 的历史（legacy）", "迁移时转成「详情」纯文本卡片显示", "r-能"],
+  ["清空 logs/ 才能删历史", "每条历史悬停出现删除", "r-能"],
+  ["gui.py --setup 粘贴 Key", "顶栏「评估设置」抽屉；缺 Key 时页面顶部提示条", "nokey"],
+  ["能力档案 / 项目日志放在目录里，每天手动复制", "设置里选文件路径，评估时直接读最新内容", "sheet"],
+  ["深色模式", "跟随应用亮 / 暗主题", "theme"],
+  ["窄屏适配", "宽度不足时历史栏落到结论下方", "filled"],
+];
+$("parity").innerHTML = PARITY.map(([a, b, s], i) => `<tr class="border-t border-outline-variant/20">
+  <td class="py-3 pr-4 font-label text-on-surface-variant/60 tabular-nums">${i + 1}</td>
+  <td class="py-3 pr-4 text-on-surface-variant">${a}</td>
+  <td class="py-3 pr-4">${b}</td>
+  <td class="py-3"><button data-go="${s}" class="whitespace-nowrap font-label text-xs text-primary hover:underline">${(SCREENS.find(([k]) => k === s) || [, { nokey: "缺 Key", sheet: "设置抽屉", theme: "亮 / 暗" }[s]])[1]}</button></td></tr>`).join("");
+document.querySelectorAll("[data-go]").forEach((el) => el.onclick = () => {
+  const s = el.dataset.go;
+  if (s === "sheet") { sheet(true); }
+  else if (s === "nokey") { S.nokey = true; }
+  else if (s === "theme") { S.theme = S.theme === "dark" ? "light" : "dark"; }
+  else { S.screen = s; S.sel = null; }
+  render();
+  $("app").scrollIntoView({ behavior: "smooth" });
+});
+
+render();
+</script>
+</body>
+</html>
