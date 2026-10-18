@@ -174,7 +174,7 @@
 .agent-markdown .contains-task-list { list-style:none;padding-left:.2em; }.agent-markdown input[type=checkbox] { accent-color:var(--teal);margin-right:.4em; }.agent-image-alt { color:var(--ink-sub);font-style:italic; }
 @media (prefers-reduced-motion:reduce) { .agent-thinking-spark,.agent-thinking .agent-writing>span { animation:none; } }
 
-.agent-guest-composer-foot { justify-content:flex-end; }
+.agent-guest-composer-foot { justify-content:space-between; }
 
 .agent-stat-sources { border:1px solid var(--teal-line);border-radius:8px;background:var(--card);min-width:0; }
 .agent-stat-sources>summary { display:flex;align-items:center;gap:6px;padding:9px 10px;cursor:pointer;list-style:none;color:var(--teal);font-size:11px; }

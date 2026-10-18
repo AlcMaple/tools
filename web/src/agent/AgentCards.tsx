@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef,useState } from 'react'
 import { LongText } from '../lib/LongText'
 import type { HistoryMessage } from '../../shared/agent-history'
 import type { ActionState } from '../../shared/agent-contracts'
@@ -8,7 +8,8 @@ import { AgentSources } from './AgentSources'
 import { AgentMarkdown } from './AgentMarkdown'
 import { AgentActivity } from './AgentActivity'
 import { Ic } from '../SketchIcon'
-import { agentImageUrl } from './images'
+import { agentImageUrl,imageFiles,type AgentAttachment } from './images'
+import { AGENT_IMAGE_LIMITS } from '../../shared/agent-history'
 
 const ACTION_LABEL:Record<ActionState,string>={prepared:'待确认',user_confirmed:'已确认',dispatch_started:'已发起',navigation_committed:'页面已打开',player_ready:'播放器已就绪',source_selected:'已选择片源',media_canplay:'可以开始播放',playing:'正在播放',completed:'已完成',failed:'未完成',cancelled:'已取消',unknown:'结果待确认'}
 
@@ -74,6 +75,29 @@ function SourcePicker({actionId,preview,busy,image,setImage,onCaptcha,onSubmitCa
           {hit.name}{hit.note&&<small> · {hit.note}</small>}</button></li>)}
       </ul>)}
   </div>
+}
+
+// 登录后的面板和访客面板共用：附图条、「图片」按钮、面板内看大图。
+export function AgentAttachStrip({attachments,tip,onRemove}:{attachments:AgentAttachment[];tip:string|null;onRemove:(key:string)=>void}):JSX.Element|null{
+  if(!attachments.length&&!tip)return null
+  return <div className="agent-attach">{tip&&<span className="agent-attach-tip" role="status">{tip}</span>}{attachments.map((a,index)=><span key={a.key} className={`agent-attach-item${a.state==='busy'?' is-busy':a.state==='bad'?' is-bad':''}`} style={a.url?{backgroundImage:`url("${a.url}")`}:undefined}>{a.state==='bad'&&<em>读不了<br/>这张</em>}<button type="button" className="rm" onClick={()=>onRemove(a.key)} aria-label={`移除图片 ${index+1}`}><Ic name="x" cls="ic"/></button></span>)}</div>
+}
+export function AgentImageButton({count,disabled,onFiles}:{count:number;disabled:boolean;onFiles:(images:File[],rejected:number)=>void}):JSX.Element{
+  const picker=useRef<HTMLInputElement>(null)
+  return <><button type="button" className="agent-context-control" onClick={()=>picker.current?.click()} disabled={disabled||count>=AGENT_IMAGE_LIMITS.perMessage}><svg className="ic ic-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>图片{count>0&&<span className="agent-attach-count">{count}/{AGENT_IMAGE_LIMITS.perMessage}</span>}</button>
+    <input ref={picker} type="file" accept="image/*" multiple hidden onChange={event=>{const files=Array.from(event.target.files??[]),images=imageFiles(event.target.files);event.target.value='';onFiles(images,files.length-images.length)}}/></>
+}
+export type LightboxState={urls:string[];index:number}|null
+// 面板 onKeyDown 先交给它：看大图时吞掉 Esc / 左右键，返回 true。
+export function lightboxKey(event:React.KeyboardEvent,box:LightboxState,set:(next:LightboxState)=>void):boolean{
+  if(!box)return false
+  if(event.key==='Escape'){event.stopPropagation();set(null)}
+  else if(event.key==='ArrowLeft'||event.key==='ArrowRight'){const step=event.key==='ArrowLeft'?-1:1;set({...box,index:(box.index+step+box.urls.length)%box.urls.length})}
+  return true
+}
+export function AgentLightbox({box,set}:{box:LightboxState;set:(next:LightboxState)=>void}):JSX.Element|null{
+  if(!box)return null
+  return <div className="agent-lightbox" role="dialog" aria-label="查看图片"><header><span>图片 {box.index+1} / {box.urls.length}</span><button type="button" autoFocus onClick={()=>set(null)} aria-label="关闭"><Ic name="x" cls="ic"/></button></header><div onClick={event=>{if(event.target===event.currentTarget)set(null)}}><img src={box.urls[box.index]} alt=""/></div></div>
 }
 
 // 自己消息上方的附图；读不到（被删 / 网络）时那一格换成虚线占位，消息照常显示。

@@ -10,7 +10,7 @@ import { connectExternal,prepareExternal,externalBinding,externalStatus,guestOwn
 import { externalBody,externalError } from './external-api'
 import { currentGuestKnowledge,guestDataTools } from './run-runtime'
 import { waitBounded } from './run-service'
-import { GUEST_LIMITS,guestTurn,parseGuestInput } from './guest-service'
+import { GUEST_BODY_BYTES,GUEST_LIMITS,guestTurn,parseGuestInput } from './guest-service'
 
 // IPv6 用户通常拿到整段 /64，逐地址计数等于无限个身份；折叠到 /64 前缀。
 export function ipBucket(ip:string):string{
@@ -39,8 +39,13 @@ guest.use('/guest/*',async(c,next)=>{
   if(rateLimited(`agent-guest:${owner}`,30,60000))throw new AgentRunError('RATE_LIMITED',429)
   await next();c.header('Cache-Control','no-store')
 })
-guest.use('/guest/*',bodyLimit({maxSize:64*1024,onError:c=>c.json({code:'MESSAGE_TOO_LARGE'},413)}))
-guest.onError((error,c)=>c.json(externalError(error),error instanceof AgentRunError?error.status:503))
+// 只有提问接口要装下内联的附图（≤4 张缩好的 JPEG），其余访客接口仍是 64 KB。
+const smallBody=bodyLimit({maxSize:64*1024,onError:c=>c.json({code:'MESSAGE_TOO_LARGE'},413)})
+const turnBody=bodyLimit({maxSize:GUEST_BODY_BYTES,onError:c=>c.json({code:'MESSAGE_TOO_LARGE',error:'这条消息连同图片太大了，少附几张再发。'},413)})
+guest.use('/guest/*',(c,next)=>(c.req.method==='POST'&&c.req.path.endsWith('/guest/turns')?turnBody:smallBody)(c,next))
+// 访客换不了模型，「看不了图」只能叫他去掉图片。
+const guestError=(error:unknown)=>{const value=externalError(error);return value.code==='IMAGE_UNSUPPORTED'?{...value,error:'现在的 AI 看不了图片，去掉图片再发吧。'}:value}
+guest.onError((error,c)=>c.json(guestError(error),error instanceof AgentRunError?error.status:503))
 guest.get('/guest/status',c=>c.json({provider:deps.status(null),knowledge:deps.knowledge()}))
 guest.post('/guest/connect',async c=>{
   const body=await externalBody(c);if(JSON.stringify(body)!=='{}')throw new AgentRunError('INVALID_ARGUMENT',400)
@@ -48,6 +53,7 @@ guest.post('/guest/connect',async c=>{
 })
 guest.post('/guest/turns',async c=>{
   const input=parseGuestInput(await externalBody(c)),owner=c.get('owner'),binding=deps.binding(null,owner)
+  if(input.images?.length&&!binding.provider.vision)throw new AgentRunError('IMAGE_UNSUPPORTED',400)
   db.transaction(()=>{
     db.prepare('DELETE FROM agent_guest_requests WHERE created_at<?').run(Date.now()-86400000)
     if(db.prepare('SELECT 1 FROM agent_guest_requests WHERE owner=? AND id=?').get(owner,input.requestId))throw new AgentRunError('REQUEST_ALREADY_USED',409)
@@ -62,7 +68,7 @@ guest.post('/guest/turns',async c=>{
     const emit=(type:string,data:unknown)=>{writing=writing.then(()=>waitBounded(stream.writeSSE({event:type,data:JSON.stringify(data)}),signal));return writing}
     const timer=setInterval(()=>{void emit('heartbeat',{}).catch(()=>controller.abort())},15000)
     try{await binding.execute(()=>guestTurn(input,{provider:binding.provider,tools:deps.tools(),knowledge:deps.knowledge},signal,emit));await emit('completed',{})}
-    catch(error){if(!signal.aborted)await emit('failed',externalError(error))}
+    catch(error){if(!signal.aborted)await emit('failed',guestError(error))}
     finally{clearInterval(timer);controller.abort()}
   })
 })

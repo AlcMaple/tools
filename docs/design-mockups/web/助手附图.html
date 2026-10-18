@@ -71,10 +71,10 @@
   .agent-lightbox > div > span { width: 100%; aspect-ratio: 16 / 10; border-radius: 4px; background-position: center; background-size: contain; background-repeat: no-repeat; }
 
   /* 假截图：渐变色块代替真图 */
-  .shot-a { background-image: linear-gradient(160deg, #e8eef2 0 38%, #f6efe2 38% 62%, #e4dccb 62%); }
-  .shot-b { background-image: linear-gradient(200deg, #f1e6ea 0 30%, #eef3f4 30% 70%, #dfe7ea 70%); }
-  .shot-c { background-image: repeating-linear-gradient(180deg, #eef3f4 0 9px, #f6efe2 9px 18px); }
-  .shot-d { background-image: linear-gradient(120deg, #2f3640 0 45%, #6c5a7a 45% 70%, #e6c9a8 70%); }
+  .mk .shot-a, .mk .agent-shots > .shot-a { background-image: linear-gradient(160deg, #e8eef2 0 38%, #f6efe2 38% 62%, #e4dccb 62%); }
+  .mk .shot-b, .mk .agent-shots > .shot-b { background-image: linear-gradient(200deg, #f1e6ea 0 30%, #eef3f4 30% 70%, #dfe7ea 70%); }
+  .mk .shot-c, .mk .agent-shots > .shot-c { background-image: repeating-linear-gradient(180deg, #eef3f4 0 9px, #f6efe2 9px 18px); }
+  .mk .shot-d, .mk .agent-shots > .shot-d { background-image: linear-gradient(120deg, #2f3640 0 45%, #6c5a7a 45% 70%, #e6c9a8 70%); }
 
   [data-show] { display: none !important; }
 </style>
@@ -94,6 +94,8 @@
         <button data-s="zoom">6 · 点开看大图</button>
         <button data-s="unsupported">7 · 当前模型看不了图</button>
         <button data-s="edit">8 · 编辑重发带图的消息</button>
+        <button data-s="guest">9 · 访客：附了图、还没发</button>
+        <button data-s="guestchat">10 · 访客：发过带图的消息</button>
       </div>
     </div>
     <div>
@@ -104,7 +106,9 @@
         <li>只有图、不写字也能发。</li>
         <li>图只在<b>这一轮</b>给模型看；之后几轮和压缩摘要里只留「附了 2 张图」这类文字，需要她再看就重新贴。</li>
         <li>图片跟着对话存；删除对话 / 清空对话时一起删掉。导出的对话里记成「[图片 ×2]」。</li>
-        <li>访客模式不显示「图片」按钮，粘贴图片不响应。</li>
+        <li>访客（没登录）也能附图：同一个「图片」按钮、粘贴、拖入，<b>最多 4 张</b>，同样在浏览器里缩好。</li>
+        <li>访客的图<b>不存服务器</b>：随这一轮提问一起发出，模型看完就丢；缩略图只留在当前页面里，刷新后和临时对话一起消失。后面几轮只告诉模型「附了 2 张图」。</li>
+        <li>每张图按约 1100 token 计进访客的单轮上限，图多 + 历史长时会提示「本次临时对话已达到长度上限」。</li>
       </ul>
     </div>
     <div>
@@ -199,6 +203,47 @@
   </div>
 </template>
 
+<template id="guestpanel">
+  <div class="agent-layer" data-open="true">
+    <section class="agent-window">
+      <div class="agent-top">
+        <header class="agent-header"><span class="agent-header-mark">✦</span><div><h2>纱雾助手</h2></div><button type="button" class="agent-icon" aria-label="收起"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button></header>
+        <div class="agent-nav"><span>临时对话</span><button>登录</button></div>
+      </div>
+      <div class="agent-feedback" hidden></div>
+      <div class="agent-chat-wrap"><div class="agent-chat agent-scroll">
+        <div class="agent-suggestions" data-show="guest"><button>这个网站怎么用？</button><button>本周有哪些番更新？</button><button>追番大厅有哪些公开信息？</button></div>
+        <article class="agent-message agent-message-own" data-show="guestchat">
+          <div class="agent-message-by">我</div>
+          <div class="agent-shots"><button class="shot-d" aria-label="查看图片 1"></button><button class="shot-a" aria-label="查看图片 2"></button></div>
+          <p class="agent-message-text">这两张截图里的番叫什么？</p>
+        </article>
+        <article class="agent-message" data-show="guestchat">
+          <div class="agent-message-by">纱雾</div>
+          <p class="agent-message-text">第一张是《药屋少女的呢喃》第三季的片头；第二张是同一部的第 5 集。登录后可以把它加进你的追番。</p>
+        </article>
+        <article class="agent-message agent-message-own" data-show="guestchat">
+          <div class="agent-message-by">我</div>
+          <p class="agent-message-text">第三季什么时候更新？</p>
+        </article>
+        <article class="agent-message" data-show="guestchat"><div class="agent-message-by">纱雾</div><div class="agent-writing"><span>·</span><span>·</span><span>·</span></div></article>
+      </div></div>
+      <form class="agent-composer" onsubmit="return false">
+        <div class="agent-attach" data-show="guest">
+          <span class="agent-attach-item shot-d"><button class="rm" aria-label="移除图片 1">×</button></span>
+          <span class="agent-attach-item shot-a"><button class="rm" aria-label="移除图片 2">×</button></span>
+        </div>
+        <textarea class="agent-scroll" rows="2" placeholder="输入消息…" data-text></textarea>
+        <div class="agent-composer-foot agent-guest-composer-foot">
+          <button type="button" class="agent-context-control" style="margin-right:auto" data-imgbtn><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>图片<span class="count" data-count></span></button>
+          <button type="button" class="agent-text-button" data-show="guestchat">停止</button>
+          <button type="button" class="agent-send" aria-label="发送消息" data-show="guest"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 18V6M6 12l6-6 6 6"/></svg></button>
+        </div>
+      </form>
+    </section>
+  </div>
+</template>
+
 <script>
   const desc = {
     draft: '截好图直接 ⌘V 粘进输入框（或拖进来 / 点「图片」）。缩略图排在文本框上方，第三张还在缩放压缩，转圈遮罩只盖住这一格；右上角 × 随时去掉。底栏「图片」后面显示已放几张，只换文字不挪按钮。',
@@ -208,24 +253,26 @@
     history: '历史里，我的消息上方排缩略图（74px，最多 4 格一行），文字在下。服务器上的图已经被删或读失败时，该格换成虚线占位「图片读取失败」，消息本身照常显示。',
     zoom: '点缩略图，在助手面板内部盖一层暗底看大图（不遮主页面）；Esc / × 关闭，左右键切换同一条消息里的图。',
     unsupported: '自配 API 选的模型不能看图时，发送前就拦下，不偷偷丢图：顶部状态行（红字）给出原因和去「AI 连接」的入口，草稿和图片都留在输入框里。错误码 IMAGE_UNSUPPORTED 原样透传；如果服务商自己报了别的错，照它的错误码显示。',
+    guest: '没登录的访客：底栏左边同样有「图片」按钮，粘贴 / 拖入也照常收；满 4 张、读不了的提示与登录后一致。点发送时图片和文字一起发出，不先单独上传，所以没有「上传图片 1/2…」这一步，直接出现纱雾的「…」。',
+    guestchat: '访客发过的图留在本页对话里，可以点开看大图；刷新页面后和整段临时对话一起消失，服务器上不留任何图片。接着问下一句时，模型只知道上一条「附了 2 张图」，要她再看就重新贴。访客对话没有编辑按钮，失败时草稿和图片退回输入框。',
     edit: '点自己消息上的编辑：文字回到输入框，原消息的图也回到附图条（已存在服务器上，不重新上传），可以删掉或再加，重发后丢弃这条之后的对话，与现在的编辑规则一致。'
   }
-  const fill = { draft: '这三张截图里的番叫什么？', full: '', drop: '', unsupported: '这张截图里的番叫什么？', edit: '这两张截图里的番叫什么？第二张那个角色是谁', sending: '', history: '', zoom: '' }
-  const counts = { draft: ' 3/4', full: ' 4/4', unsupported: ' 2/4', edit: ' 2/4' }
+  const fill = { guest: '这两张截图里的番叫什么？', guestchat: '', draft: '这三张截图里的番叫什么？', full: '', drop: '', unsupported: '这张截图里的番叫什么？', edit: '这两张截图里的番叫什么？第二张那个角色是谁', sending: '', history: '', zoom: '' }
+  const counts = { guest: ' 2/4', draft: ' 3/4', full: ' 4/4', unsupported: ' 2/4', edit: ' 2/4' }
   function render(s) {
     document.querySelectorAll('#states button').forEach(b => b.classList.toggle('on', b.dataset.s === s))
     document.getElementById('desc').textContent = desc[s]
     for (const id of ['pc', 'tab']) {
       const host = document.getElementById(id)
       host.innerHTML = id === 'tab' ? '<div class="tabs"><span>周历</span><span>追番</span><span>大厅</span><span>设置</span></div>' : ''
-      const node = document.getElementById('panel').content.cloneNode(true)
+      const node = document.getElementById(s.startsWith('guest') ? 'guestpanel' : 'panel').content.cloneNode(true)
       node.querySelectorAll('[data-show]').forEach(el => { if (el.dataset.show.split(' ').includes(s)) el.removeAttribute('data-show') })
       node.querySelectorAll('[data-hide]').forEach(el => { if (el.dataset.hide.split(' ').includes(s)) el.remove() })
       node.querySelector('[data-text]').value = fill[s]
       node.querySelector('[data-count]').textContent = counts[s] || ''
       if (s === 'full') node.querySelector('[data-imgbtn]').disabled = true
       if (s === 'sending') { node.querySelector('[data-sendbtn]').classList.add('is-stop'); node.querySelector('[data-sendbtn]').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>' }
-      if (id === 'tab') node.querySelector('[data-hint]').textContent = ''
+      if (id === 'tab' && node.querySelector('[data-hint]')) node.querySelector('[data-hint]').textContent = ''
       host.appendChild(node)
     }
   }
