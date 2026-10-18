@@ -135,7 +135,7 @@
 ### 连接与凭据
 
 - 配置好 `AI_API_KEY` 后，正常 `npm run dev` 即可。服务器有 key 默认开放输入发送；页面加载后在后台完成随机 nonce JSON + 工具调用探测，连接进度不进入对话。页面准备与发送复用同一个任务，连接复用 30 分钟，过期后按需再检查；失败保留草稿，由用户手动重试，没有周期性重试。首次打开页面的探测可能计费，仍经过原有配额与费用预留；多页面共享服务端正在进行的准备，近期失败短暂缓存，避免刷新制造请求突发。管理员可用 `AGENT_AI_ENABLED=0` 显式关闭所有 Agent AI；有 key 不等于连接已验证，`answerModelReady` 仍只代表探测成功。
-- 默认型号 `deepseek-v4-flash-vision-exp`；官方 2026-09-08 列出 1M 上下文、JSON 和工具能力。费用按 USD 峰时上界估算：输入未命中 0.44、命中 0.014、输出 1.32 / 百万 token；不是供应商账单。来源：[DeepSeek 型号与价格](https://api-docs.deepseek.com/quick_start/pricing/)。扩展型号须核对价格卡；服务器升级还须 `AGENT_MODEL_APPROVAL` 中的基线失败记录和更强型号审批，不接受仅改型号。
+- 默认型号 `deepseek-flash`（DeepSeek-V4.1-Flash-1017）；官方 2026-10-17 列出 1M 上下文、JSON、工具和图像理解能力。旧名 `deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 在配置里会被改写成 `deepseek-flash`。费用按 USD 峰时上界估算：输入未命中 0.30、命中 0.006、输出 1.20 / 百万 token；不是供应商账单。来源：[DeepSeek 型号与价格](https://api-docs.deepseek.com/quick_start/pricing/)。扩展型号须核对价格卡；服务器升级还须 `AGENT_MODEL_APPROVAL` 中的基线失败记录和更强型号审批，不接受仅改型号。
 - 登录用户可选服务器或 BYOK，现阶段生产入口开放 **Chat Completions 兼容端点**。已有 Responses / Anthropic 原生压缩适配继续保留并回归，但未开放这些协议的生产连接；当前连接使用同模型应用摘要，不把原生适配脚本测试当成生产能力。
 - BYOK 默认仅核准 DeepSeek 基线。维护者通过 `AGENT_BYOK_PROFILES` 扩展精确 endpoint + model + 已核对窗口 / USD 价格；HTTPS、端口、凭据 URL、查询、片段、DNS 公网检查、地址固定和禁重定向共同约束，用户 endpoint 不成为任意内网代理。
 - API key 只在表单与服务端临时连接内存中使用，发送后清空输入；不保存到浏览器持久存储、用户配置、历史、日志或返回体。服务端在过期、退出或账号撤销后移除；用户来源/endpoint/model 可保存在已有账号设置。BYOK 连接失败仍维持 BYOK 来源，不使用旧服务器连接代答。

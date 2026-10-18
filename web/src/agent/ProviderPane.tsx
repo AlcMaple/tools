@@ -2,7 +2,7 @@ import { useEffect,useRef,useState } from 'react'
 
 interface ProviderStatus {enabled:boolean;disabled?:boolean;canPrepare?:boolean;ready:boolean;source:'server'|'byok';model:string;endpoint?:string;profiles:{endpoint:string;model:string;contextTokens:number}[];usage:{tokens:number;cost:number;turns:number;warningCost:number}}
 export function ProviderPane({uid,locked,onChanged}:{uid:number;locked:boolean;onChanged:()=>void}){
- const [state,setState]=useState<ProviderStatus|null>(null),[source,setSource]=useState<'server'|'byok'>('server'),[endpoint,setEndpoint]=useState('https://api.deepseek.com'),[model,setModel]=useState('deepseek-v4-flash-vision-exp'),[key,setKey]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('')
+ const [state,setState]=useState<ProviderStatus|null>(null),[source,setSource]=useState<'server'|'byok'>('server'),[endpoint,setEndpoint]=useState('https://api.deepseek.com'),[model,setModel]=useState('deepseek-flash'),[key,setKey]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('')
  const active=useRef<AbortController|null>(null),alive=useRef(true)
  const request=async(method='GET',body?:unknown)=>{active.current?.abort();const controller=new AbortController();active.current=controller
   const timer=setTimeout(()=>controller.abort(),35000)

@@ -37,7 +37,7 @@ export const AUTH_SECRET = configuredSecret || DEV_AUTH_SECRET
 // 未配置 AI_API_KEY 时 server/ai.ts 走 fake 流程，助手仍可用（手写 / 保存 / 发布不依赖 AI）。
 export const AI_API_KEY = process.env.AI_API_KEY?.trim() ?? ''
 export const AI_BASE_URL = process.env.AI_BASE_URL?.trim() || 'https://api.deepseek.com'
-export const AI_MODEL = process.env.AI_MODEL?.trim() || 'deepseek-v4-flash-vision-exp'
+export const AI_MODEL = process.env.AI_MODEL?.trim() || 'deepseek-flash'
 
 // Google OIDC 登录凭据 —— 二者都配置才启用入口；缺任一即视为未接入，前端也不显示按钮。
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID?.trim() ?? ''

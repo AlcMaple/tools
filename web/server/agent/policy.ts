@@ -1,6 +1,10 @@
 import { ACTION_STATES, CONTEXT_TIERS, type ActionState, type ContextTier } from '../../shared/agent-contracts'
 
-export const DEFAULT_AGENT_MODEL = 'deepseek-v4-flash-vision-exp'
+export const DEFAULT_AGENT_MODEL = 'deepseek-flash'
+// DeepSeek 2026-10-17 把旧名都转给 DeepSeek-V4.1-Flash-1017 并按 Flash 计费；旧名不在 /models 里，随时可能下线，
+// 所以存量配置（.env 的 AI_MODEL、用户保存的自配型号）一律改写成新名再去匹配核准端点和发请求。
+const LEGACY_MODELS = new Set(['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'])
+export const canonicalModel = (model: string): string => LEGACY_MODELS.has(model) ? DEFAULT_AGENT_MODEL : model
 export const AGENT_LIMITS = Object.freeze({
   toolRounds: 12, callsPerRound: 4, concurrentTurnsPerUser: 1, softTargetMs: 180_000,
   longTaskMs: 480_000, activeTurnMs: 600_000, cumulativeTaskMs: 1_800_000,
@@ -68,6 +72,7 @@ export interface ModelUpgradeApproval {
 }
 
 export function selectServerModel(configuredModel: string, approval: ModelUpgradeApproval | null): string {
+  configuredModel = canonicalModel(configuredModel)
   if (configuredModel === DEFAULT_AGENT_MODEL) return configuredModel
   if (!approval || approval.model !== configuredModel || approval.baselinePassed !== false || approval.strongerModelVerified !== true
     || !approval.baselineEvaluationId.trim() || !approval.approvedBy.trim() || !Number.isSafeInteger(approval.approvedAt) || approval.approvedAt <= 0) {

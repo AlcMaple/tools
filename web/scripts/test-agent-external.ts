@@ -32,7 +32,7 @@ try{
  const {issueSession}=await import('../server/auth')
  const {sameOriginGuard}=await import('../server/security')
  const price={currency:'USD',version:'test',inputPerMillion:0.44,cachedInputPerMillion:0.014,outputPerMillion:1.32}
- const profile:ProviderProfile={source:'server',model:'deepseek-v4-flash-vision-exp',fingerprint:'test-only',capabilities:{protocol:'chat_completions',contextTokens:1_000_000,maxOutputTokens:8192,toolCalling:true,verified:true,tokenCounting:'estimate',nativeCompaction:'none',nativeMinimumTokens:0}}
+ const profile:ProviderProfile={source:'server',model:'deepseek-flash',fingerprint:'test-only',capabilities:{protocol:'chat_completions',contextTokens:1_000_000,maxOutputTokens:8192,toolCalling:true,verified:true,tokenCounting:'estimate',nativeCompaction:'none',nativeMinimumTokens:0}}
  const knowledge={...currentGuestKnowledge(),status:'ready' as const,conditions:{answerModelReady:true}}
  const request:RunModelRequest={system:'system',knowledge,layers:[],nativeState:null,tools:{},results:[],outputSchema:MODEL_OUTPUT_SCHEMA}
  const raw=(value:unknown)=>({choices:[{finish_reason:'stop',message:{content:JSON.stringify(value)}}],usage:{prompt_tokens:100,completion_tokens:20,prompt_cache_hit_tokens:10}})

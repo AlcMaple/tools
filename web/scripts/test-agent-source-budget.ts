@@ -16,7 +16,7 @@ const calls:{bytes:number;ceiling:number|null}[]=[]
 try{
  const registry=new AgentKnowledgeRegistry('budget-test',AGENT_FEATURE_REGISTRATIONS,AGENT_FEATURES,READ_DATA_TOOLS)
  const knowledge=()=>registry.guestSnapshot({enabled:true,permissionVersion:'guest',features:AGENT_FEATURES.map(f=>f.id),tools:GUEST_DATA_TOOLS,conditions:{answerModelReady:true}})
- const provider=createAnswerProvider({source:'server',model:'deepseek-v4-flash-vision-exp',fingerprint:'budget-fixture',capabilities:{protocol:'chat_completions',contextTokens:1000000,maxOutputTokens:8192,toolCalling:true,verified:true,tokenCounting:'estimate',nativeCompaction:'none',nativeMinimumTokens:0}},meteredTransport(async(_p,body)=>{
+ const provider=createAnswerProvider({source:'server',model:'deepseek-flash',fingerprint:'budget-fixture',capabilities:{protocol:'chat_completions',contextTokens:1000000,maxOutputTokens:8192,toolCalling:true,verified:true,tokenCounting:'estimate',nativeCompaction:'none',nativeMinimumTokens:0}},meteredTransport(async(_p,body)=>{
   const material=JSON.parse((body.messages as {content:string}[])[1].content)
   if(material.toolResults.length)assert(material.toolResults.every((r:{result:{sources:Record<string,unknown>[]}})=>r.result.sources.every(s=>!Object.hasOwn(s,'aggregate'))))
   calls.push({bytes:estimateContextTokens(body),ceiling:estimateCost(estimateContextTokens(body),0,Number(body.max_tokens),price)})

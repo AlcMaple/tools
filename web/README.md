@@ -84,7 +84,7 @@ Vercel / 生产 VPS 不走这套本地自动对齐；按部署环境显式配置
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` | 可选 | Google 登录（[Google Cloud 凭据页](https://console.cloud.google.com/apis/credentials)），**二者齐配登录按钮才出现**。OAuth 客户端登记的重定向 URI：`https://<你的域名>/api/auth/oauth/google/callback`；本地联调另加 `http://localhost:5173/api/auth/oauth/google/callback` |
 | `GITHUB_CLIENT_ID` `GITHUB_CLIENT_SECRET` | 可选 | GitHub OAuth App 登录，两项齐配才显示按钮。回调：`https://<你的域名>/api/auth/oauth/github/callback`；本地使用独立 OAuth App，回调 `http://localhost:5173/api/auth/oauth/github/callback` |
 | `AI_API_KEY` | 服务器 AI 时必需 | DeepSeek / OpenAI-compatible 服务端 key；只在服务端进程环境中使用，不进入浏览器、数据库或日志。生产通过 `MAPLETOOLS_ENV_FILE` 从仓库外注入 |
-| `AI_BASE_URL` / `AI_MODEL` | 可选 | 服务器 AI 的兼容接口地址和模型；默认 `https://api.deepseek.com` / `deepseek-v4-flash-vision-exp` |
+| `AI_BASE_URL` / `AI_MODEL` | 可选 | 服务器 AI 的兼容接口地址和模型；默认 `https://api.deepseek.com` / `deepseek-flash` |
 | `AGENT_AI_ENABLED` | 可选 | 不设时有 `AI_API_KEY` 就开启；`1` 强制开启，`0`（或任何非 `1` 的值）关闭全部 Agent AI（含 BYOK） |
 | `AGENT_LIMITS_JSON` | 可选 | Agent 额度上限（USD，须大于零），省略的字段用保守默认值；字段见 `server/agent/policy.ts` |
 | `AGENT_TRUST_LOOPBACK_PROXY` | 生产可选 | 设 `1` 后访客限流才信任 nginx 的 `X-Real-IP`；仅当 node 只绑回环、且 nginx 用 `proxy_set_header X-Real-IP $remote_addr` 覆写（不是透传）时开启，否则忽略转发头 |

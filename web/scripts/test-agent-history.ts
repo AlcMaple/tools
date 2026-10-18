@@ -133,7 +133,7 @@ try {
     const r = await request<{ session: HistorySession }>('/sessions', { method: 'POST', payload: initial })
     assert.equal(r.response.status, 201); s = r.body.session
     assert.equal(s.messageCount, 0); assert.equal(s.revision, 0); assert.equal(s.currentBgmId, 101)
-    assert.equal(s.provider, 'server'); assert.equal(s.model, 'deepseek-v4-flash-vision-exp'); assert.equal(s.contextTier, '128k')
+    assert.equal(s.provider, 'server'); assert.equal(s.model, 'deepseek-flash'); assert.equal(s.contextTier, '128k')
     assert.equal('ownerUid' in s || 'create_hash' in s || 'create_request_id' in s, false)
   })
   await check('创建重试不重复，修改同一请求的内容返回冲突', async () => {

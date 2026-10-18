@@ -10,12 +10,12 @@ import { normalizeAiConfig } from '../auth'
 import { AI_API_KEY,AI_BASE_URL,AI_MODEL,AUTH_SECRET } from '../secrets'
 import { AgentRunError } from '../../shared/agent-run'
 import { createProtocolProvider,estimateRequestTokens,providerFingerprint,type ProviderProfile,type ProviderTransport } from './context-provider'
-import { DEFAULT_AGENT_MODEL,selectServerModel,estimateCost,type ModelUpgradeApproval,type PriceCard } from './policy'
+import { DEFAULT_AGENT_MODEL,canonicalModel,selectServerModel,estimateCost,type ModelUpgradeApproval,type PriceCard } from './policy'
 import { CONSERVATIVE_LIMITS,ExternalQuota,type ExternalLimits } from './external-quota'
 import { RESERVED_OUTPUT_TOKENS,createAnswerProvider,meteredTransport,reportedUsage } from './external-provider'
 
-// 官方 2026-09-08 价格，USD / 百万 token；使用峰时上界，不预测缓存命中或优惠。
-const baselinePrice:PriceCard={currency:'USD',version:'deepseek-2026-09-08-peak',inputPerMillion:0.44,cachedInputPerMillion:0.014,outputPerMillion:1.32}
+// 官方 2026-10-17 DeepSeek-V4.1-Flash 价格，USD / 百万 token；使用峰时上界，不预测缓存命中或空闲时段半价。
+const baselinePrice:PriceCard={currency:'USD',version:'deepseek-flash-2026-10-17-peak',inputPerMillion:0.3,cachedInputPerMillion:0.006,outputPerMillion:1.2}
 // vision：该型号能否收 image_url 内容块；自配型号默认不能，管理员核准时显式标 true。
 export interface EndpointProfile {endpoint:string;model:string;contextTokens:number;maxOutputTokens:number;price:PriceCard;vision?:boolean}
 const baseline:EndpointProfile={endpoint:'https://api.deepseek.com',model:DEFAULT_AGENT_MODEL,contextTokens:1_000_000,maxOutputTokens:8192,price:baselinePrice,vision:true}
@@ -45,7 +45,7 @@ export function approvedProfiles():EndpointProfile[]{
   return profiles
 }
 export function matchEndpoint(endpoint:string,model:string):EndpointProfile{
-  const normalized=endpointUrl(endpoint),profile=approvedProfiles().find(p=>endpointUrl(p.endpoint)===normalized&&p.model===model)
+  const normalized=endpointUrl(endpoint),profile=approvedProfiles().find(p=>endpointUrl(p.endpoint)===normalized&&p.model===canonicalModel(model))
   if(!profile)throw new AgentRunError('ENDPOINT_NOT_ALLOWED',400)
   return profile
 }

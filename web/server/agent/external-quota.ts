@@ -9,7 +9,8 @@ export interface ExternalLimits {
   globalDailyCost:number; guestPoolDailyCost:number; guestConcurrency:number; userDailyCost:number; guestDailyCost:number; turnCost:number; guestTurnCost:number
   warningCost:number; userTurns:number; guestTurns:number; concurrency:number; dailyTokens:number; turnTokens:number
 }
-// 按 DeepSeek 峰时价（in $0.44/M、out $1.32/M）与修正后的 token 估算实测标定，USD：
+// 按 2026-09-08 DeepSeek 峰时价（in $0.44/M、out $1.32/M）与修正后的 token 估算实测标定，USD；
+// 2026-10-17 起 Flash 峰时价降到 in $0.30/M、out $1.20/M，下面的上限没改，实际能跑的回合比标定时略多：
 //   单次模型调用：预授权 $0.0065、实际结算 $0.0038
 //   普通问答（2 次调用）$0.010 ／ 一次工具+回答（4 次）$0.018
 //   设计允许的最长回合（AGENT_LIMITS.toolRounds=12，即 13 次调用）峰值 $0.052
