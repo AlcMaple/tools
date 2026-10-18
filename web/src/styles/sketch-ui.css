@@ -2079,13 +2079,17 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
     padding: 6px;
     display: flex;
     flex-direction: column;
+    /* 状态 4 项 + 神回 / 点评 / 分享图 + 移出最高约 330px，超过浮层默认 240 上限时末项会溢出框外；
+       菜单高度给足，屏幕实在放不下时在框内滚动 */
+    overflow-y: auto;
     background: var(--card);
     border: 1.5px solid var(--line-strong);
     border-radius: var(--r-card);
     box-shadow: var(--shadow-1), 0 12px 28px rgba(62, 67, 80, .16);
   }
-  .trk-menu-sep { height: 0; margin: 5px 4px; border-top: 1px dashed var(--line); }
+  .trk-menu-sep { flex: none; height: 0; margin: 5px 4px; border-top: 1px dashed var(--line); }
   .trk-menu-item {
+    flex: none;
     padding: 6px 10px;
     font: inherit;
     font-size: 13px;

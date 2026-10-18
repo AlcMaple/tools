@@ -343,7 +343,7 @@ function TrackMenu({
         <Ic name="dots" cls="ic ic-sm" />
         {nudge && !open && <Nudge />}
       </button>
-      <Popover anchor={ref} open={open} onClose={() => setOpen(false)} align="end" className="trk-menu-pop" role="menu">
+      <Popover anchor={ref} open={open} onClose={() => setOpen(false)} align="end" maxHeight={420} className="trk-menu-pop" role="menu">
         <>
           {SEG_ORDER.map((s) => (
             <button
