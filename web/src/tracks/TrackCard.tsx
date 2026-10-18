@@ -98,6 +98,7 @@ export function TrackCard({
           <div className="cover-ph">☆</div>
         )}
         {considering && <span className="cover-seal">観望中</span>}
+        {isToday && <span className="chip-today cover-today">今天更新</span>}
       </div>
       <div className="trk-body">
         <div className="trk-head">

@@ -2006,6 +2006,20 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   border-radius: var(--r-pill);
   white-space: nowrap;
 }
+/* 桌面竖卡的顶排放不下「状态章 + 今天更新 + 爱心 + 集数」，爱心会压到集数上；
+   桌面改贴在封面左上角，手机封面隐藏，仍留在顶排（顶排可换行） */
+.cover-today {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 1;
+  background: rgba(255, 253, 247, .9);
+  transform: rotate(-4deg);
+  pointer-events: none;
+}
+@media (min-width: 641px) {
+  .trk-marks .chip-today { display: none; }
+}
 /* 桌面 / 平板：相纸竖卡。封面固定 5:7 完整显示，卡片高度由封面决定，同一行天然等高；
    状态、神回、点评、分享图、移出全部收进 ⋯ 菜单，手机仍用常驻的 .trk-sec。 */
 @media (min-width: 641px) {
