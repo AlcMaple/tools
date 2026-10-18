@@ -16,6 +16,7 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
   feature('web.settings','偏好与公开设置','调整站点显示、账号资料、公开范围与 AI 配置。','/#/settings',['进入设置修改已有选项','公开追番由用户主动开启'],['账号配置与 Agent 四项偏好是不同设置','Agent 不修改设置或读取 API key']),
   {...feature('web.xifan','稀饭播放入口','从追番条目选择稀饭来源并播放。','/#/tracks',['在条目点击继续看，选择片源与集数；也可以点纱雾的播放预览进入同一张播放页'],['搜索、解析与播放由用户点击触发；Agent 无在线片源查询工具','回执来自播放页真实事件，退到稀饭自己的播放器后状态不可知']),revision:2},
   {...feature('web.girigiri','Girigiri 播放入口','从追番条目选择 Girigiri 来源并播放。','/#/tracks',['在条目点击继续看，选择片源与集数；也可以点纱雾的播放预览进入同一张播放页'],['来源搜索和播放不是 Agent 工具；Agent 不自动访问源站','未关联片源时先选片源，认好才有播放页']),revision:2},
+  feature('web.orderJudge','接单评估','把需求材料对照自己的能力档案与项目日志，评估这一单能不能接。','/#/judge',['登录后在接单评估页上传或粘贴需求材料，可附截图、视频、PDF、Word 或网址','在评估设置填写自配 API 后开始评估，结论自动存入历史'],['须登录并使用自配 API；项目服务器的 key 不用于评估','Agent 不读取档案、日志、材料或历史，也不代为评估']),
   feature('web.rewards','放映福利','查看当前账号积分与已启用的权益兑换。','/#/rewards',['进入放映福利查看个人状态','本人确认后兑换权益'],['按服务器开关和账号名单开放；Agent 不兑换或抽取']),
   feature('web.invites','邀请权益','使用账号已开放的邀请功能。','/#/rewards',['在放映福利查看邀请入口'],['受邀请开关及账号资格约束；Agent 不读取或分发私人邀请码']),
   feature('web.lottery','幸运扭蛋','使用账号已开放的抽取功能。','/#/rewards',['在放映福利查看可用次数并本人点击抽取'],['受扭蛋开关及账号资格约束；Agent 不代为抽取']),
@@ -25,7 +26,7 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
 export const SITE_API_FEATURES:Readonly<Record<string,string>>={
  '/api/request-log':'infrastructure.monitoring','/api/subject-cover/:id':'infrastructure.cover','/api/boot-log':'infrastructure.monitoring','/api/health':'infrastructure.health','/api/health/bgm':'infrastructure.health','/api/cover/*':'infrastructure.cover','/api/auth':'web.auth','/api/auth/oauth':'web.auth',
  '/api/rewards':'web.rewards','/api/community':'web.community','/api/announcements':'web.announcements',
- '/api/feedback':'web.feedback','/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/backup':'web.backup','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/search-log':'web.search','/api/calendar':'web.calendar','/api/calendar/seasons':'web.calendar','/api/calendar/seasons/:key':'web.calendar',
+ '/api/feedback':'web.feedback','/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/backup':'web.backup','/api/order-judge':'web.orderJudge','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/search-log':'web.search','/api/calendar':'web.calendar','/api/calendar/seasons':'web.calendar','/api/calendar/seasons/:key':'web.calendar',
 }
 export interface SiteFeatureAccess { email:boolean;google:boolean;github:boolean;linuxdo?:boolean;rewards:boolean;invites:boolean;lottery:boolean }
 export function enabledSiteFeatures(flags:SiteFeatureAccess,guest=false):string[]{

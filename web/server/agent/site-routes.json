@@ -622,6 +622,11 @@
   {
     "file": "server/index.ts",
     "method": "route",
+    "path": "/api/order-judge"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
     "path": "/api/player"
   },
   {
@@ -683,6 +688,36 @@
     "file": "server/oauth.ts",
     "method": "post",
     "path": "/google/rebind-email"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "delete",
+    "path": "/history/:id"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "get",
+    "path": "/"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "get",
+    "path": "/history/:id/:file"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/judge"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/log"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "put",
+    "path": "/docs/:kind"
   },
   {
     "file": "server/player/index.ts",
