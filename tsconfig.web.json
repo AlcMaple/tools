@@ -17,5 +17,5 @@
       "@renderer/*": ["src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer/src/**/*", "web/shared/order-judge.ts"]
+  "include": ["src/renderer/src/**/*", "web/shared/order-judge.ts", "web/shared/order-judge-prepare.ts"]
 }
