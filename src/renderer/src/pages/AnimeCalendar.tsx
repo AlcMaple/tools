@@ -148,7 +148,7 @@ export default function AnimeCalendar(): JSX.Element {
         <div className="px-4 md:px-8 pt-5 pb-3">
           <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">番剧周历</h1>
           <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label">
-            本季正在播出，按星期排列。
+            本季正在播出，按星期排列
           </p>
         </div>
 

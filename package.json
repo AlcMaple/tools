@@ -1,6 +1,6 @@
 {
   "name": "mapletools",
-  "version": "0.16.4",
+  "version": "0.17.0",
   "description": "MapleTools Desktop App",
   "main": "out/main/index.js",
   "scripts": {
