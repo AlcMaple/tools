@@ -27,6 +27,22 @@ export type ProviderTransport = (path: string, body: Record<string, unknown>, si
 export const BYTES_PER_TOKEN = 3
 export const estimateContextTokens = (data: unknown): number =>
   Math.ceil(Buffer.byteLength(JSON.stringify(data), 'utf8') / BYTES_PER_TOKEN) + 512
+// 图片不能按体积估：base64 会被当文字算，实测一张 1280×1280 JPEG 估出约 55 万 token、DeepSeek 实报 1001。
+// 实报每张封顶约 1015（960×540 帧 321、1280×2560 长图块 1021），所以文字照旧按体积估，图片按张计 1100。
+export const IMAGE_INPUT_TOKENS = 1100
+export function withoutImages(body: Record<string, unknown>): { text: Record<string, unknown>; images: number } {
+  let images = 0
+  const messages = (Array.isArray(body.messages) ? body.messages : []).map(m => {
+    const content = (m as { content?: unknown }).content
+    if (!Array.isArray(content)) return m
+    return { ...m as object, content: content.filter(part => { const image = (part as { type?: unknown }).type === 'image_url'; if (image) images++; return !image }) }
+  })
+  return { text: { ...body, messages }, images }
+}
+export function estimateRequestTokens(body: Record<string, unknown>): number {
+  const { text, images } = withoutImages(body)
+  return estimateContextTokens(text) + images * IMAGE_INPUT_TOKENS
+}
 const object = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 const number = (v: unknown): number | null => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null
 

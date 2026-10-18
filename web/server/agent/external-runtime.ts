@@ -9,10 +9,10 @@ import { db } from '../db'
 import { normalizeAiConfig } from '../auth'
 import { AI_API_KEY,AI_BASE_URL,AI_MODEL,AUTH_SECRET } from '../secrets'
 import { AgentRunError } from '../../shared/agent-run'
-import { createProtocolProvider,providerFingerprint,type ProviderProfile,type ProviderTransport } from './context-provider'
+import { createProtocolProvider,estimateRequestTokens,providerFingerprint,type ProviderProfile,type ProviderTransport } from './context-provider'
 import { DEFAULT_AGENT_MODEL,selectServerModel,estimateCost,type ModelUpgradeApproval,type PriceCard } from './policy'
 import { CONSERVATIVE_LIMITS,ExternalQuota,type ExternalLimits } from './external-quota'
-import { createAnswerProvider,meteredTransport } from './external-provider'
+import { RESERVED_OUTPUT_TOKENS,createAnswerProvider,meteredTransport,reportedUsage } from './external-provider'
 
 // 官方 2026-09-08 价格，USD / 百万 token；使用峰时上界，不预测缓存命中或优惠。
 const baselinePrice:PriceCard={currency:'USD',version:'deepseek-2026-09-08-peak',inputPerMillion:0.44,cachedInputPerMillion:0.014,outputPerMillion:1.32}
@@ -178,13 +178,36 @@ export async function prepareExternal(uid:number|null,owner:string,signal:AbortS
   if(!status.ready||status.source!=='server')throw new AgentRunError('PROVIDER_CHANGED')
   return status
 }
-// 接单评估复用助手的「自配 API」连接：同一把 Key、同一套端点校验和 DNS 固定，Key 不另存一份。
-// 只认自配：项目服务器的 Key 不替个人的接单评估付费。
-export function byokConnection(uid:number):{transport:ProviderTransport;model:string}{
-  if(!externalEnabled('byok'))throw new AgentRunError('AGENT_AI_DISABLED',503)
-  if(selection(uid).choice.provider!=='byok')throw new AgentRunError('BYOK_REQUIRED',409)
-  const c=selectedConnection(uid);if(!c)throw new AgentRunError('PROVIDER_CONNECTION_REQUIRED',409)
-  return {transport:c.transport,model:c.profile.model}
+// 接单评估跟随设置里「用谁的」（users.ai_config，与助手同一份）：选项目服务器就用服务器 Key；
+// 选自配就用助手那条自配连接（同一把 Key、同一套端点校验和 DNS 固定，Key 不另存一份）。
+// 服务器 Key 的调用和助手共用一份额度（每日轮次、单轮 / 每日 / 全站费用上限），整单评估算一轮。
+// 预授权按 estimateRequestTokens：文字按体积、图片按张（见 context-provider.ts）。
+export interface JudgeConnection {
+  source:'server'|'byok';model:string
+  execute:<T>(action:()=>Promise<T>)=>Promise<T>
+  call:(body:Record<string,unknown>,signal:AbortSignal)=>Promise<unknown>
+}
+export const aiSource=(uid:number)=>selection(uid).choice.provider
+export async function judgeConnection(uid:number,signal:AbortSignal):Promise<JudgeConnection>{
+  const source=selection(uid).choice.provider,owner=`user:${uid}`
+  if(!externalEnabled(source))throw new AgentRunError('AGENT_AI_DISABLED',503)
+  if(source==='server')await prepareExternal(uid,owner,signal)
+  const c=selectedConnection(uid)
+  if(!c||c.profile.source!==source)throw new AgentRunError('PROVIDER_CONNECTION_REQUIRED',409)
+  const send=async(body:Record<string,unknown>,s:AbortSignal)=>{
+    try{return await c.transport('chat/completions',body,s)}catch(error){
+      if(error instanceof AgentRunError&&/^(PROVIDER_HTTP_|PROVIDER_UNAVAILABLE|INVALID_OUTPUT)/.test(error.code))connections.delete(source==='server'?'server':owner)
+      throw error
+    }
+  }
+  if(source==='byok')return {source,model:c.profile.model,execute:action=>action(),call:send}
+  return {source,model:c.profile.model,execute:action=>externalQuota.turn(owner,false,true,action),call:async(body,s)=>{
+    s.throwIfAborted()
+    const input=estimateRequestTokens(body),output=Number(body.max_tokens)
+    if(!Number.isSafeInteger(output)||output<1||input+output>c.profile.capabilities.contextTokens)throw new AgentRunError('CONTEXT_BUDGET')
+    const settle=externalQuota.reserve(input,Math.min(output,RESERVED_OUTPUT_TOKENS),c.price,{operation:'order-judge',model:c.profile.model})
+    try{const result=await send(body,s);settle(reportedUsage(result));return result}catch(error){settle(null);throw error}
+  }}
 }
 export function externalBinding(uid:number|null,owner:string){
   if(!externalEnabled(uid===null?'server':selection(uid).choice.provider))throw new AgentRunError('AGENT_AI_DISABLED',503)

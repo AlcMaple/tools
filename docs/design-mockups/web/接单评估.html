@@ -447,8 +447,8 @@ function reportSheet(key, { fromHist = false } = {}) {
 }
 
 const ERRS = {
-  key: { t: 'DeepSeek 不认这个 Key', d: 'DeepSeek 返回 401。检查 Key 有没有复制完整、是否已在 DeepSeek 后台删除。', code: 'PROVIDER_HTTP_401', act: '改 Key' },
-  balance: { t: 'DeepSeek 账户余额不足', d: 'DeepSeek 返回 402。充值后回来点「评估」，材料还在。', code: 'PROVIDER_HTTP_402', act: '' },
+  key: { t: '你的 API key 不对（HTTP 401），请在设置里检查。', d: '设置里选了「用你自己的」时才会出现；用服务器的时候写成「服务器的 AI Key 失效了，可以先在设置里改用你自己的」。', code: 'PROVIDER_HTTP_401', act: '去设置' },
+  balance: { t: '服务器的 AI 余额用完了（HTTP 402）', d: '可以先在设置里改用你自己的，材料还在。用自己的 Key 时写成「你的 AI 账户余额不足，充值后再评估」。', code: 'PROVIDER_HTTP_402', act: '' },
   limit: { t: '评估太频繁了', d: '每分钟最多评估 6 次，48 秒后可以再点。', code: 'RATE_LIMITED', act: '' },
 };
 function errorSheet(k) {
@@ -474,9 +474,6 @@ function histList(sel) {
 
 function settingsBody({ blank = false } = {}) {
   return `<div class="oj-set">
-    <div class="field"><span class="field-label">DeepSeek Key</span>
-      <div class="field-row"><input type="password" value="${blank ? '' : 'sk-4f1c0d2b8e9a7f3c'}" placeholder="sk-..." autocomplete="off" style="width:100%">
-        <button type="button" class="eye" aria-label="显示">${ic('eye', 'ic ic-sm')}</button></div></div>
     <div class="field"><span class="field-label">能力档案</span>
       ${blank ? `<div class="oj-doc empty-doc">${ic('doc')}<span class="t">还没有上传</span><button type="button" class="btn btn-sm">上传 .md</button></div>`
       : `<div class="oj-doc">${ic('doc')}<span class="t"><b>能力档案.md</b><span>3.2 KB · 10-12 上传</span></span><button type="button" class="btn btn-sm">更换</button></div>`}</div>
@@ -489,7 +486,7 @@ function settingsBody({ blank = false } = {}) {
 
 // ───────────────────────── 状态 → 页面 ─────────────────────────
 const STATES = {
-  empty: { label: '空态 · 未配置', cap: '第一次进来：Key 和档案都没填。顶部提示条 + 设置按钮角上的红点；桌面右栏只有一句话，平板 / 手机编辑时不显示空的结论区。点评估会先弹设置，不发请求。手机上模式切换按响应式原型改成下拉，副标题收起。' },
+  empty: { label: '空态 · 未配置', cap: '第一次进来：档案没上传。AI 默认用服务器的，跟随设置页「点评助手 · 写点评时用谁的」，和纱雾助手同一份；设置里选了用自己的但没填 Key 时，提示条改成「设置里选了用你自己的 AI，但还没填 API key」+「去设置」。顶部提示条 + 设置按钮角上的红点；桌面右栏只有一句话，平板 / 手机编辑时不显示空的结论区。点评估会先弹设置，不发请求。手机上模式切换按响应式原型改成下拉，副标题收起。' },
   nofill: { label: '没放材料就点评估', cap: '内容为空时提示浮在评估按钮下方，不把下面的内容往下推，几秒后自己消失。' },
   drag: { label: '拖入文件', cap: '桌面拖文件进来时整块盖一层「松手放入」，输入区尺寸不变。手机没有拖拽，改成「粘贴」「添加文件」两个按钮。' },
   filled: { label: '放好材料', cap: '截图、长图、视频、PDF、Word 都在浏览器里处理好再上传：长图切块、视频取 12 帧，角标直接写处理结果。wmv 这类浏览器解码不了的视频标黄「读不了」，评估时跳过并在结论里注明。' },
@@ -531,7 +528,7 @@ function pageFor(s) {
     if (s === 'hdetail') return `${head({ tab: 'hist' })}<div class="oj-hist"><button type="button" class="oj-back">${ic('back')}返回历史</button>${reportSheet('yes', { fromHist: true })}</div>`;
     return `${head({ tab: 'hist' })}<div class="oj-hist">${histList(0)}<div class="only-desk">${reportSheet('yes', { fromHist: true })}</div></div>`;
   }
-  const nag = s === 'empty' ? `<div class="nag mt16">${ic('alert')}还没有填 DeepSeek Key 和能力档案，评估前要先填好<button type="button" class="btn btn-sm">去填写</button></div>` : '';
+  const nag = s === 'empty' ? `<div class="nag mt16">${ic('alert')}还没有上传能力档案，评估前要先上传<button type="button" class="btn btn-sm">去上传</button></div>` : '';
   const m = {
     empty: [materials(), blankSheet()],
     nofill: [materials({ tip: '还没有放入内容' }), blankSheet()],
@@ -586,12 +583,12 @@ const ALIGN = [
   ['结论徽章 + 一句话（能 / 不能 / 信息不足 / 出错）', '改成盖章：能接 / 不接 / 待补；出错不盖章', 'yes'],
   ['需求 / 风险 / 原因 / 卡点 / 先问清楚', '顺序与命名不变，「可能改判」是小标签', 'yes'],
   ['空内容或「[聊天记录]」直接判信息不足', '同左，本地预检、不调用 AI，附「怎么补」', 'info'],
-  ['出错原因分开', 'Key 无效 / 余额不足 / DeepSeek 限流 / 本站限流 / 网络 / 空返回，错误码原样附上', 'e-key'],
+  ['出错原因分开', 'Key 无效 / 余额不足（按服务器 / 自己的分开写）/ AI 限流 / 服务器 AI 额度用完 / 本站限流 / 网络 / 空返回，错误码原样附上', 'e-key'],
   ['历史记录 + 展开看完整报告', '单独的「历史」视图，列表 + 批改单；可放回材料区重新评估', 'hist'],
   ['历史为空', '「还没有评估过的派单」', 'hist'],
   ['旧 Python 历史迁移', '不迁移', ''],
   ['删除历史', '每条右侧删除按钮（触屏常显）', 'hist'],
-  ['Key 设置', '页头设置按钮 → 弹窗 / 底部抽屉；缺 Key 时角上红点 + 顶部提示条', 'settings'],
+  ['Key 设置', '不在这里填：跟随设置页「写点评时用谁的」，默认用服务器的；设置弹窗只管能力档案和项目日志', 'settings'],
   ['能力档案 / 项目日志', '上传 .md，存在账号下，跨设备可用；「更换」覆盖上传', 'settings'],
   ['深色模式', '网页版只有素纸一套主题，不做', ''],
   ['窄屏适配', '≤960px 单列：材料在上、结论在下；模式切换改下拉；设置走底部抽屉', 'yes'],
@@ -613,7 +610,7 @@ function renderReview() {
     <h2>需要你定的两件事</h2>
     <div class="rv-q">
       <div class="panel"><span class="tape tl gold"></span>
-        <p><b>1. DeepSeek Key 存在哪？</b></p>
+        <p><b>1. DeepSeek Key 存在哪？</b>（已改：不在接单评估里填，跟随设置页「写点评时用谁的」，默认用服务器的）</p>
         <p><b>A（推荐）只存在这台设备的浏览器里</b>，每次评估随请求发给我们的服务器，服务器用完就丢，不写库也不打日志。和网站现有的「用你自己的 AI」是同一个做法。代价是换手机 / 换电脑要再填一次。</p>
         <p><b>B 服务器加密保存</b>，换设备不用再填。代价是数据库和服务器密钥同时泄露时，Key 会一起泄露。</p>
         <p>两种都只走服务器调用 DeepSeek：浏览器拿不到 DeepSeek 的原始返回，也就没有可以转发的调用流；评估接口要登录 + 同源校验 + 每人每分钟限次。</p>

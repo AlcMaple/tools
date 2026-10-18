@@ -1,23 +1,22 @@
 // 网页版接单评估。设计稿：docs/design-mockups/web/接单评估.html
 // 材料在浏览器里预处理（web/shared/order-judge-prepare.ts），服务端只收文字和 JPEG；
-// DeepSeek 连接和助手共用同一条「自配 API」连接，在这里连上，助手那边也就连上了。
+// AI 跟随设置里「用谁的」：用服务器的由服务端自己准备连接；用自己的，评估前拿设置里存的 Key 接上助手同一条自配连接。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../auth'
 import { Ic } from '../SketchIcon'
 import { Select } from '../Select'
-import { PasswordInput } from '../PasswordInput'
 import { useIsWide } from '../useMediaQuery'
 import { precheck, type JudgeReport } from '../../shared/order-judge'
 import { decodeText, imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
+import { readByokKey } from '../reviews/byok'
 import type { DocKind, DocMeta, HistoryEntry, JudgeState } from '../../shared/order-judge-api'
 import {
   JudgeError, connectProvider, deleteEntry, imageUrl, judge, loadState, logClient, providerStatus, saveDoc,
   type ProviderStatus,
 } from './api'
 
-const DEFAULT_MODEL = 'deepseek-v4-flash-vision-exp'
 const ACCEPT = 'image/*,video/*,.pdf,.doc,.docx,.rtf,.odt,.pages,.html,.htm,.txt,.md'
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
 
@@ -107,6 +106,7 @@ function Head({ tab, onTab, counts, gearDot, onGear }: {
 }
 
 function JudgeWorkspace(): JSX.Element {
+  const { user } = useAuth()
   const [tab, setTab] = useState<'judge' | 'hist'>('judge')
   const [state, setState] = useState<JudgeState | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -162,8 +162,10 @@ function JudgeWorkspace(): JSX.Element {
     return () => window.clearTimeout(t)
   }, [tip])
 
-  const connected = provider?.ready === true && provider.source === 'byok'
-  const configured = connected && Boolean(state?.docs.profile)
+  const ai = user?.aiConfig
+  const byok = ai?.provider === 'byok'
+  const noKey = byok && !readByokKey().trim()
+  const configured = Boolean(state?.docs.profile) && !noKey
 
   const addFiles = useCallback((files: File[]) => {
     const fresh: Material[] = files.map((file) => {
@@ -257,7 +259,8 @@ function JudgeWorkspace(): JSX.Element {
     const pre = precheck(text, materials.length)
     if (pre === 'empty') { setTip(true); return }
     if (pre === 'chat-record') { setOutcome({ kind: 'chat-record' }); return }
-    if (!configured) { setSettingsOpen(true); return }
+    if (!state?.docs.profile) { setSettingsOpen(true); return }
+    if (noKey) { window.location.hash = '#/settings/ai'; return }
     const controller = new AbortController()
     abortRef.current = controller
     const t0 = Date.now()
@@ -280,6 +283,9 @@ function JudgeWorkspace(): JSX.Element {
         setMaterials((list) => list.map((m) => (prepared.unreadable.includes(m.file.name) ? { ...m, bad: true, note: '读不了' } : m)))
       }
       setPrepStats(prepared.stats.join(' · '))
+      if (byok && ai && !(provider?.ready && provider.source === 'byok')) {
+        setProvider(await connectProvider(ai.endpoint, ai.model, readByokKey().trim()))
+      }
       const entry = await judge(prepared.text, prepared.images, (e) => {
         if (e.stage === 'links') { links = e.count; setLinkCount(e.count); setStage('links') } else setStage('ai')
       }, controller.signal)
@@ -291,7 +297,7 @@ function JudgeWorkspace(): JSX.Element {
       const { code, message } = errorOf(e)
       if (code === 'NETWORK') logClient('order-judge:judge', e)
       setOutcome({ kind: 'error', code, message, at: Date.now() })
-      if (code === 'PROVIDER_CONNECTION_REQUIRED' || code === 'BYOK_REQUIRED' || code === 'PROVIDER_HTTP_401') refreshProvider()
+      if (code === 'PROVIDER_CONNECTION_REQUIRED' || code === 'PROVIDER_HTTP_401') refreshProvider()
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null
@@ -350,8 +356,7 @@ function JudgeWorkspace(): JSX.Element {
   } : null
 
   const noProfile = Boolean(state && !state.docs.profile)
-  const missing = !connected && noProfile ? '还没有连接 DeepSeek Key，也还没上传能力档案'
-    : !connected ? 'DeepSeek Key 还没有连接' : noProfile ? '还没有上传能力档案' : ''
+  const missing = noProfile ? '还没有上传能力档案，评估前要先上传' : noKey ? '设置里选了用你自己的 AI，但还没填 API key' : ''
   const head = (
     <Head
       tab={tab}
@@ -365,10 +370,8 @@ function JudgeWorkspace(): JSX.Element {
   const settings = settingsOpen && state && (
     <SettingsDialog
       docs={state.docs}
-      provider={provider}
       onDocs={(docs) => setState((s) => (s ? { ...s, docs } : s))}
-      onProvider={setProvider}
-      onClose={() => { setSettingsOpen(false); refreshProvider() }}
+      onClose={() => setSettingsOpen(false)}
     />
   )
 
@@ -422,8 +425,10 @@ function JudgeWorkspace(): JSX.Element {
       {state && missing && (
         <div className="nag mt16">
           <Ic name="alert" />
-          {missing}，评估前要先填好
-          <button type="button" className="btn btn-sm" onClick={() => setSettingsOpen(true)}>去填写</button>
+          {missing}
+          {noProfile
+            ? <button type="button" className="btn btn-sm" onClick={() => setSettingsOpen(true)}>去上传</button>
+            : <button type="button" className="btn btn-sm" onClick={() => { window.location.hash = '#/settings/ai' }}>去设置</button>}
         </div>
       )}
       {loadError && <p className="nag mt16"><Ic name="alert" />{loadError}</p>}
@@ -678,21 +683,14 @@ function ReportSheet({ entry, ms, links, onRestore }: { entry: HistoryEntry; ms?
   )
 }
 
-function SettingsDialog({ docs, provider, onDocs, onProvider, onClose }: {
+function SettingsDialog({ docs, onDocs, onClose }: {
   docs: Record<DocKind, DocMeta | null>
-  provider: ProviderStatus | null
   onDocs: (d: Record<DocKind, DocMeta | null>) => void
-  onProvider: (p: ProviderStatus) => void
   onClose: () => void
 }): JSX.Element {
-  const [key, setKey] = useState('')
-  const [editingKey, setEditingKey] = useState(false)
-  const [busy, setBusy] = useState<'key' | DocKind | null>(null)
-  const [keyError, setKeyError] = useState('')
+  const [busy, setBusy] = useState<DocKind | null>(null)
   const [notice, setNotice] = useState<{ text: string; err: boolean } | null>(null)
   const pick = useRef<Record<DocKind, HTMLInputElement | null>>({ profile: null, log: null })
-  const connected = provider?.ready === true && provider.source === 'byok'
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -704,24 +702,6 @@ function SettingsDialog({ docs, provider, onDocs, onProvider, onClose }: {
     const t = window.setTimeout(() => setNotice(null), 2400)
     return () => window.clearTimeout(t)
   }, [notice])
-
-  const connect = async (): Promise<void> => {
-    const credential = key.trim()
-    if (!credential || busy) return
-    setBusy('key')
-    setKeyError('')
-    const profile = provider?.profiles?.find((p) => p.model === DEFAULT_MODEL) ?? provider?.profiles?.[0]
-    try {
-      onProvider(await connectProvider(profile?.endpoint ?? 'https://api.deepseek.com', profile?.model ?? DEFAULT_MODEL, credential))
-      setKey('')
-      setEditingKey(false)
-      setNotice({ text: '已连接', err: false })
-    } catch (e) {
-      setKeyError(errorOf(e).message)
-    } finally {
-      setBusy(null)
-    }
-  }
 
   const upload = async (kind: DocKind, file: File): Promise<void> => {
     setBusy(kind)
@@ -773,26 +753,6 @@ function SettingsDialog({ docs, provider, onDocs, onProvider, onClose }: {
         <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭"><Ic name="x" cls="ic" /></button>
         <h2 className="dlg-title">评估设置</h2>
         <div className="oj-set">
-          <div className={`field${keyError ? ' err' : ''}`}>
-            <span className="field-label">DeepSeek Key</span>
-            {connected && !editingKey ? (
-              <div className="oj-doc">
-                <Ic name="check" />
-                <span className="t"><b>已连接</b><span>{provider?.model}</span></span>
-                <button type="button" className="btn btn-sm" onClick={() => setEditingKey(true)}>换 Key</button>
-              </div>
-            ) : (
-              <div className="oj-key">
-                <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                  <PasswordInput value={key} onChange={setKey} placeholder="sk-..." autoComplete="off" />
-                  <span className={`field-msg${keyError ? ' show' : ''}`} role="status">{keyError}</span>
-                </div>
-                <button type="button" className="btn btn-sm btn-primary" disabled={!key.trim() || busy !== null} onClick={() => void connect()}>
-                  {busy === 'key' ? '连接中…' : '连接'}
-                </button>
-              </div>
-            )}
-          </div>
           {docRow('profile', '能力档案')}
           {docRow('log', '项目日志')}
           <div className="oj-set-foot">

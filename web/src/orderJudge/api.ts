@@ -63,7 +63,7 @@ export async function judge(text: string, images: JudgeImage[], onStage: (e: Ext
   }, 300_000)
 }
 
-// 与助手共用同一条「自配 API」连接：在这里连上，助手那边也就连上了
+// 设置里选了用自己的 AI 时，评估前用设置里存的 Key 接上助手同一条自配连接
 export interface ProviderStatus {
   enabled: boolean
   ready: boolean

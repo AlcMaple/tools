@@ -1,4 +1,4 @@
-// 网页版接单评估：能力档案 / 项目日志 / 历史按账号存，评估用助手同一条「自配 API」连接调 DeepSeek。
+// 网页版接单评估：能力档案 / 项目日志 / 历史按账号存。AI 跟随设置里「用谁的」，和助手共用同一条连接与额度。
 // 材料预处理（截图缩放、长图切块、视频取帧、PDF / Word 取字）在浏览器里做完，这里只收文字和 JPEG。
 //
 // 历史是「DB 行 + 磁盘图片」两半：图片落 dataDir/order-judge/<uid>/<id>/，写入先落文件再插行（插行失败删目录），
@@ -18,7 +18,7 @@ import { db } from './db'
 import { dataDir } from './data-dir'
 import { getSession, rateLimited } from './auth'
 import { AgentRunError } from '../shared/agent-run'
-import { byokConnection, publicAddress } from './agent/external-runtime'
+import { aiSource, judgeConnection, publicAddress, type JudgeConnection } from './agent/external-runtime'
 import {
   MAX_IMAGES, SAME_SITE_GAP_MS, buildSystemPrompt, buildUserText, extractUrls, groupByHost,
   normalizeReport, pageDigest, type JudgeReport,
@@ -62,19 +62,22 @@ const MAX_RUNNING = 4 // 同时在跑的评估；每个请求体最多 20MB，�
 const FETCH_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 const IS_DEV = process.env.NODE_ENV !== 'production' && !process.env.VERCEL
 
+type Source = 'server' | 'byok'
+
 const MESSAGES: Record<string, string> = {
   AUTH_REQUIRED: '请先登录。',
   NO_PROFILE: '还没有上传能力档案。',
-  BYOK_REQUIRED: '接单评估要用你自己的 DeepSeek Key，请在评估设置里连接。',
-  PROVIDER_CONNECTION_REQUIRED: 'DeepSeek 连接已断开，请在评估设置里重新连接。',
   AGENT_AI_DISABLED: '服务器暂未开放 AI 功能。',
-  PROVIDER_HTTP_401: 'DeepSeek 不认这个 Key（HTTP 401），请检查后重新连接。',
-  PROVIDER_HTTP_402: 'DeepSeek 账户余额不足（HTTP 402），充值后再评估，材料还在。',
-  PROVIDER_HTTP_429: 'DeepSeek 正在限流（HTTP 429），过一会儿再手动评估。',
-  PROVIDER_UNAVAILABLE: '连不上 DeepSeek，请检查后手动重试。',
-  INVALID_OUTPUT: 'DeepSeek 的回复读不出来，请手动重试。',
-  EMPTY_RESPONSE: 'DeepSeek 连续 3 次返回空内容，请手动重试。',
-  BAD_RESPONSE: 'DeepSeek 返回的结论不是有效 JSON，请手动重试。',
+  PROVIDER_HTTP_429: 'AI 正在限流（HTTP 429），过一会儿再手动评估。',
+  PROVIDER_UNAVAILABLE: '连不上 AI，请检查后手动重试。',
+  INVALID_OUTPUT: 'AI 的回复读不出来，请手动重试。',
+  EMPTY_RESPONSE: 'AI 连续 3 次返回空内容，请手动重试。',
+  BAD_RESPONSE: 'AI 返回的结论不是有效 JSON，请手动重试。',
+  CONTEXT_BUDGET: '材料太长，超出了模型一次能读的量，删掉一些再评估。',
+  DAILY_QUOTA: '今天用服务器 AI 的次数用完了（和纱雾助手共用），明天再来，或者在设置里改用你自己的。',
+  COST_LIMIT: '服务器 AI 的费用额度不够了：可能是这一单材料太多，也可能是今天的额度用完了。少放些截图再试，或者在设置里改用你自己的。',
+  GLOBAL_BUSY: '同时在用服务器 AI 的人太多，稍后手动重试。',
+  RUN_BUSY: '纱雾助手正在回答，等它说完再评估。',
   RATE_LIMITED: `评估太频繁了：每分钟最多 ${JUDGES_PER_MINUTE} 次。`,
   JUDGE_BUSY: '上一单还在评估，等它出结果再点。',
   SERVER_BUSY: '服务器同时在评估的单子太多，稍后手动重试。',
@@ -83,10 +86,24 @@ const MESSAGES: Record<string, string> = {
   NOT_FOUND: '这条记录不存在。',
   ABORTED: '评估超时或被取消了，请手动重试。',
 }
+// 同一个状态码在两种来源下是两回事：服务器 Key 余额用完不该叫用户去充值
+const BY_SOURCE: Record<Source, Record<string, string>> = {
+  server: {
+    PROVIDER_CONNECTION_REQUIRED: '服务器的 AI 还没准备好，请手动重试。',
+    PROVIDER_HTTP_401: '服务器的 AI Key 失效了（HTTP 401），可以先在设置里改用你自己的。',
+    PROVIDER_HTTP_402: '服务器的 AI 余额用完了（HTTP 402），可以先在设置里改用你自己的，材料还在。',
+  },
+  byok: {
+    PROVIDER_CONNECTION_REQUIRED: '你自己的 AI 连接断开了，请手动重试。',
+    PROVIDER_HTTP_401: '你的 API key 不对（HTTP 401），请在设置里检查。',
+    PROVIDER_HTTP_402: '你的 AI 账户余额不足（HTTP 402），充值后再评估，材料还在。',
+  },
+}
 
-function errorBody(code: string): { code: string; error: string } {
+function errorBody(code: string, source?: Source): { code: string; error: string } {
   const http = /^PROVIDER_HTTP_(\d+)$/.exec(code)
-  return { code, error: MESSAGES[code] ?? (http ? `DeepSeek 返回 HTTP ${http[1]}，没有自动重试。` : '这次评估失败了，请手动重试。') }
+  const known = (source && BY_SOURCE[source][code]) ?? MESSAGES[code]
+  return { code, error: known ?? (http ? `AI 返回 HTTP ${http[1]}，没有自动重试。` : '这次评估失败了，请手动重试。') }
 }
 
 // ── 存取 ──
@@ -245,8 +262,8 @@ function contentOf(raw: unknown): string | null {
   return typeof content === 'string' && content.trim() ? content : null
 }
 
-async function askModel(uid: number, system: string, userText: string, images: string[], signal: AbortSignal): Promise<JudgeReport> {
-  const { transport, model } = byokConnection(uid)
+async function askModel(conn: JudgeConnection, uid: number, system: string, userText: string, images: string[], signal: AbortSignal): Promise<JudgeReport> {
+  const model = conn.model
   const body = {
     model,
     temperature: 0.2,
@@ -260,7 +277,7 @@ async function askModel(uid: number, system: string, userText: string, images: s
   }
   // JSON 模式偶尔返回空内容，最多试 3 次；HTTP 错误不重试，原样交给界面
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const content = contentOf(await transport('chat/completions', body, signal))
+    const content = contentOf(await conn.call(body, signal))
     if (!content) {
       console.info(`[order-judge] uid=${uid} 第 ${attempt} 次返回空内容`)
       continue
@@ -368,12 +385,6 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
   if (!input) return c.json(errorBody('BAD_INPUT'), 400)
   const profile = readDoc(uid, 'profile')
   if (!profile) return c.json(errorBody('NO_PROFILE'), 409)
-  try {
-    byokConnection(uid)
-  } catch (e) {
-    const code = e instanceof AgentRunError ? e.code : 'PROVIDER_UNAVAILABLE'
-    return c.json(errorBody(code), e instanceof AgentRunError ? e.status : 503)
-  }
   if (running.has(uid)) return c.json(errorBody('JUDGE_BUSY'), 409)
   if (running.size >= MAX_RUNNING) return c.json(errorBody('SERVER_BUSY'), 429)
   const wait = takeSlot(uid)
@@ -389,7 +400,9 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
     const send = (e: JudgeEvent): Promise<unknown> => out.write(JSON.stringify(e) + '\n')
     const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(240_000)])
     const started = Date.now()
+    let source: Source | undefined
     try {
+      source = aiSource(uid)
       const urls = extractUrls(input.text)
       let links = ''
       if (urls.length) {
@@ -397,16 +410,18 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
         links = await fetchLinks(urls, signal)
       }
       await send({ type: 'stage', stage: 'ai' })
+      const conn = await judgeConnection(uid, signal)
       const system = buildSystemPrompt(profile, readDoc(uid, 'log'))
-      console.info(`[order-judge] → uid=${uid} 文字 ${input.text.length} 字 网址 ${urls.length} 个 图片 ${input.images.length} 张`)
-      const report = await askModel(uid, system, buildUserText(input.text, links, input.images.map((x) => x.name)), input.images.map((x) => x.dataUrl), signal)
+      console.info(`[order-judge] → uid=${uid} ${conn.source} ${conn.model} 文字 ${input.text.length} 字 网址 ${urls.length} 个 图片 ${input.images.length} 张`)
+      const userText = buildUserText(input.text, links, input.images.map((x) => x.name))
+      const report = await conn.execute(() => askModel(conn, uid, system, userText, input.images.map((x) => x.dataUrl), signal))
       const entry = await saveHistory(uid, report, input.text, input.images)
       console.info(`[order-judge] ← uid=${uid} ${report.verdict} ${report.title} ${Date.now() - started}ms`)
       await send({ type: 'done', entry })
     } catch (e) {
       const code = e instanceof AgentRunError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
       console.error(`[order-judge] ✗ uid=${uid} ${code} ${Date.now() - started}ms`, e)
-      if (!out.aborted) await send({ type: 'error', ...errorBody(code) })
+      if (!out.aborted) await send({ type: 'error', ...errorBody(code, source) })
     } finally {
       running.delete(uid)
     }
