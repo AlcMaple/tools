@@ -10,6 +10,10 @@ export const HISTORY_LIMITS = Object.freeze({
   bytesPerSession: 10 * 1024 * 1024, bytesPerUser: 50 * 1024 * 1024,
   deletedRequestRetentionMs: 30 * 24 * 60 * 60 * 1000,
 })
+// 附图：浏览器缩到长边 1280 的 JPEG；没发出去的上传与截断丢下的图过了宽限期才回收（编辑重发会带回）。
+export const AGENT_IMAGE_LIMITS = Object.freeze({
+  perMessage: 4, edge: 1280, bytes: 1536 * 1024, bytesPerUser: 200 * 1024 * 1024, orphanGraceMs: 60 * 60 * 1000,
+})
 
 export interface HistorySource {
   sourceId: string
@@ -27,6 +31,7 @@ export type HistoryMessage = Omit<AgentMessage, 'ownerUid'> & {
   sources: HistorySource[]
   actions: HistoryAction[]
   updatedAt: number
+  images: string[]
 }
 
 export interface PageAnimeContext { bgmId:number;title:string;titleCn:string;year:number|null;episodes:number|null;tags:string[];completed:boolean|null;summary:string;loadedAt:number }
@@ -72,6 +77,7 @@ export const PATCH_SESSION_SCHEMA = object({ expectedRevision, title, archived: 
 export const REVISION_SCHEMA = object({ expectedRevision })
 export const TRUNCATE_SESSION_SCHEMA = object({ expectedRevision, fromSeq: integer(1) })
 export const USER_MESSAGE_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, expectedRevision, body: string(HISTORY_LIMITS.bodyChars) })
+export const IMAGE_MESSAGE_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, expectedRevision, body: string(HISTORY_LIMITS.bodyChars, 0) })
 export const SESSION_LIST_SCHEMA = object({
   limit: integer(1, HISTORY_LIMITS.maxPageSize), archived: choices('active', 'archived', 'all'),
   beforeUpdatedAt: integer(), beforeId: HISTORY_ID_SCHEMA,

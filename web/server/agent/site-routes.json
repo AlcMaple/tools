@@ -151,6 +151,11 @@
   },
   {
     "file": "server/agent/history-api.ts",
+    "method": "get",
+    "path": "/sessions/:sessionId/images/:imageId"
+  },
+  {
+    "file": "server/agent/history-api.ts",
     "method": "patch",
     "path": "/sessions/:sessionId"
   },
@@ -163,6 +168,11 @@
     "file": "server/agent/history-api.ts",
     "method": "post",
     "path": "/sessions/:sessionId/clear"
+  },
+  {
+    "file": "server/agent/history-api.ts",
+    "method": "post",
+    "path": "/sessions/:sessionId/images"
   },
   {
     "file": "server/agent/history-api.ts",

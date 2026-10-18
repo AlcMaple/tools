@@ -1,5 +1,5 @@
 import type { AgentToolName, AgentUsage, JsonValue } from './agent-contracts'
-import { HISTORY_ID_SCHEMA, USER_MESSAGE_SCHEMA } from './agent-history'
+import { AGENT_IMAGE_LIMITS, HISTORY_ID_SCHEMA, HISTORY_LIMITS, USER_MESSAGE_SCHEMA } from './agent-history'
 
 export const RUN_LIMITS = Object.freeze({ eventsPerRun: 2048, eventBytes: 128 * 1024, checkpointBytes: 256 * 1024,
   bytesPerRun: 2 * 1024 * 1024, bytesPerUser: 10 * 1024 * 1024, runsPerSession: 100, leaseMs: 60_000,
@@ -12,9 +12,13 @@ export interface RunView {
   attempt: number; rounds: number; activeMs: number; createdAt: number; updatedAt: number
   lastEventSeq: number; code: string | null; knowledgeVersion: string; canResume: boolean
 }
-export interface StartRun { requestId: string; expectedRevision: number; body: string; clientVersion?: string }
+export interface StartRun { requestId: string; expectedRevision: number; body: string; clientVersion?: string; images?: string[] }
 export interface ResumeRun { requestId: string; expectedRevision: number; clientVersion?: string }
-export const START_RUN_SCHEMA = { ...USER_MESSAGE_SCHEMA, properties: { ...USER_MESSAGE_SCHEMA.properties, clientVersion: { type: 'string' as const, maxLength: 128, minLength: 1 } } }
+// 只附图不写字也能发，所以正文允许为空，「至少有一样」由 run-service 判断。
+export const START_RUN_SCHEMA = { ...USER_MESSAGE_SCHEMA, properties: { ...USER_MESSAGE_SCHEMA.properties,
+  body: { type: 'string' as const, minLength: 0, maxLength: HISTORY_LIMITS.bodyChars },
+  clientVersion: { type: 'string' as const, maxLength: 128, minLength: 1 },
+  images: { type: 'array' as const, maxItems: AGENT_IMAGE_LIMITS.perMessage, items: { type: 'string' as const, pattern: '^[a-f0-9-]{36}$' } } } }
 export const RESUME_RUN_SCHEMA = { type: 'object' as const, properties: {
   requestId: HISTORY_ID_SCHEMA, expectedRevision: { type: 'integer' as const, minimum: 0 },
   clientVersion: { type: 'string' as const, maxLength: 128, minLength: 1 },

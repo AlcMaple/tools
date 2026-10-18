@@ -6,6 +6,8 @@ import type { ContextTier } from '../../shared/agent-contracts'
 import type { RunView,RunEvent } from '../../shared/agent-run'
 import type { KnowledgeSnapshot } from '../../server/agent/knowledge'
 import { subscribeAgentEvents } from '../../shared/agent-stream'
+import { AGENT_IMAGE_LIMITS } from '../../shared/agent-history'
+import { agentImageUrl,shrinkImage,type AgentAttachment } from './images'
 import { pageContext,activeCompact,applyDelta,idValid,mergeMessages,type AnimeContext,type AgentIssue,type ActionPreview,type PlaybackActionPreview,isTrackPreview,isPlaybackPreview } from './model'
 
 // 确认/取消变更的响应回执:服务端只回传状态字段,summary 等留用本地已有的。
@@ -21,9 +23,12 @@ export interface AgentUiState {
   run:RunView|null;watchingRun:RunView|null;job:CompactJob|null;connection:'idle'|'connected'|'disconnected'
   pendingBody:string|null;draft:string;anime:AnimeContext|null;unread:number;status:string
   actionPreviews:Record<string,ActionPreview>;editingSeq:number|null
+  attachments:AgentAttachment[];attachTip:string|null;pendingImages:string[]
 }
 const initial=():AgentUiState=>({ready:false,loading:false,syncing:false,busy:null,error:null,authExpired:false,open:false,knowledge:null,sessions:[],cursor:null,archived:false,
-  session:null,messages:[],beforeSeq:null,context:null,preferences:[],preferenceSettings:null,run:null,watchingRun:null,job:null,connection:'idle',pendingBody:null,draft:'',anime:null,unread:0,status:'',actionPreviews:{},editingSeq:null})
+  session:null,messages:[],beforeSeq:null,context:null,preferences:[],preferenceSettings:null,run:null,watchingRun:null,job:null,connection:'idle',pendingBody:null,draft:'',anime:null,unread:0,status:'',actionPreviews:{},editingSeq:null,attachments:[],attachTip:null,pendingImages:[]})
+// 回合进行中才发现的附图问题（换了看不了图的连接后继续、图被清掉）：已知码原样给出原因，不只说「回复失败」。
+const IMAGE_FAILURES:Record<string,string>={IMAGE_UNSUPPORTED:'当前 AI 连接看不了图片，去掉图片再发，或换一个能看图的模型。',IMAGE_MISSING:'附的图找不到了，请重新添加后再发。'}
 class UiError extends Error {constructor(readonly code:string,message:string){super(message)}}
 const issue=(error:unknown):AgentIssue=>error instanceof UiError?{code:error.code,message:error.message}:{code:'NETWORK_ERROR',message:'连接断开了，刚写的内容还在。'}
 const stopped=()=>new DOMException('Request superseded','AbortError')
@@ -54,7 +59,8 @@ export class AgentController {
   private reconnectTimer:ReturnType<typeof setTimeout>|null=null
   private reconnectN=0
   private poll:ReturnType<typeof setTimeout>|null=null
-  private failedSend:{requestId:string;body:string;sessionId:string}|null=null
+  private failedSend:{requestId:string;body:string;sessionId:string;images:string}|null=null
+  private tipTimer:ReturnType<typeof setTimeout>|null=null
   private pendingCreate:{requestId:string;title?:string;currentBgmId:number|null;pageContext:PageAnimeContext|null}|null=null
   private lastRefresh=0
   constructor(readonly uid:number,readonly clientVersion:string,private readonly options:{fetchImpl?:typeof fetch;onAuthExpired?:()=>void;pollMs?:number;remember?:Storage}={}){}
@@ -65,7 +71,7 @@ export class AgentController {
   // 回合恢复/收尾后，清掉之前那条「进度连接断开」的旧横幅，别让它一直吓人。
   private clearStale(){if(this.state.error?.code==='STREAM_DISCONNECTED')this.set({error:null})}
   private expire(){this.set({...initial(),authExpired:true,ready:true});this.options.onAuthExpired?.();this.dispose()}
-  dispose(){this.alive=false;for(const controller of this.requests)controller.abort();this.requests.clear();this.viewRequests.clear();this.stream?.abort();if(this.poll)clearTimeout(this.poll);if(this.reconnectTimer)clearTimeout(this.reconnectTimer);this.drafts.clear();this.titles.clear();this.buffers.clear();this.cursors.clear();this.seen.clear();this.unreadMessages.clear();this.actionFetches.clear();this.failedSend=null;this.pendingCreate=null;this.state={...initial(),authExpired:this.state.authExpired,ready:this.state.authExpired}}
+  dispose(){this.dropAttachments();if(this.tipTimer)clearTimeout(this.tipTimer);this.alive=false;for(const controller of this.requests)controller.abort();this.requests.clear();this.viewRequests.clear();this.stream?.abort();if(this.poll)clearTimeout(this.poll);if(this.reconnectTimer)clearTimeout(this.reconnectTimer);this.drafts.clear();this.titles.clear();this.buffers.clear();this.cursors.clear();this.seen.clear();this.unreadMessages.clear();this.actionFetches.clear();this.failedSend=null;this.pendingCreate=null;this.state={...initial(),authExpired:this.state.authExpired,ready:this.state.authExpired}}
   private async api<T>(path:string,method='GET',body?:unknown,view=false):Promise<T>{
     if(!this.alive)throw stopped()
     const controller=new AbortController();this.requests.add(controller);if(view)this.viewRequests.add(controller)
@@ -126,6 +132,7 @@ export class AgentController {
     if(this.state.busy)return
     const previous=this.state.session?.id??'new';this.drafts.set(previous,this.state.draft)
     const turn=++this.selection;for(const request of this.viewRequests)request.abort();this.viewRequests.clear()
+    this.dropAttachments()
     this.set({loading:true,error:null,session:null,messages:[],context:null,run:null,beforeSeq:null,draft:this.drafts.get(id)??'',anime:null,status:'',editingSeq:null})
     try{
       const opened=await this.api<HistorySnapshot&{context:ContextInfo;runs:RunView[]}>(`/sessions/${id}?limit=50&include=context,runs`,'GET',undefined,true)
@@ -172,7 +179,7 @@ export class AgentController {
     // 权威 run 已终态，但本地还有它的流式消息没收尾（SSE 掉线漏了收尾事件）——按 run 状态定型，别一直转圈。
     if(freshRun&&freshRun.state!=='running'&&freshRun.state!=='paused')
       messages=messages.map(m=>m.status==='streaming'&&(m.id===freshRun.messageId||m.seq>=(snapshot.messages.at(-1)?.seq??0))?{...m,status:freshRun.state==='completed'?'completed':freshRun.state==='cancelled'?'cancelled':'failed'}:m)
-    this.set({session,messages,beforeSeq:session.messageCount?this.state.beforeSeq??snapshot.nextBeforeSeq:null,context,run:freshRun,...this.state.pendingBody&&snapshot.messages.some(m=>m.id===this.state.run?.userMessageId)?{pendingBody:null}:{}})
+    this.set({session,messages,beforeSeq:session.messageCount?this.state.beforeSeq??snapshot.nextBeforeSeq:null,context,run:freshRun,...this.state.pendingBody!==null&&snapshot.messages.some(m=>m.id===this.state.run?.userMessageId)?{pendingBody:null}:{}})
     // 万能自愈：任何一次对账，只要权威 run 已终态而 watchingRun 还卡在 running，就拉平并清掉「连接断开」横幅。
     if(freshRun&&freshRun.state!=='running'&&this.state.watchingRun?.id===freshRun.id&&this.state.watchingRun.state==='running'){
       if(this.reconnectTimer){clearTimeout(this.reconnectTimer);this.reconnectTimer=null}
@@ -193,6 +200,7 @@ export class AgentController {
     this.drafts.set(this.state.session.id,this.state.draft)
     this.selection++;for(const request of this.viewRequests)request.abort();this.viewRequests.clear()
     this.pendingCreate=null;this.failedSend=null
+    this.dropAttachments()
     this.set({session:null,messages:[],beforeSeq:null,context:null,run:null,draft:this.drafts.get('new')??'',status:'',error:null,editingSeq:null})
     try{this.options.remember?.removeItem(`maple-agent-session:${this.uid}`)}catch{}
   }
@@ -202,12 +210,14 @@ export class AgentController {
     await this.mutate('更换番剧',async()=>{const session=this.state.session!;const response=await this.api<{session:HistorySession}>(`/sessions/${session.id}`,'PATCH',{expectedRevision:session.revision,currentBgmId:anime?.bgmId??null,pageContext:pageContext(anime)});this.updateSession(response.session);this.set({anime})})
   }
   async send(){
-    const body=this.state.draft.trim();if(!body)return
-    if(body==='/compact'){await this.compact();return}
+    const body=this.state.draft.trim(),attached=this.state.attachments
+    if(attached.some(a=>a.state!=='ready'))return
+    if(!body&&!attached.length)return
+    if(body==='/compact'&&!attached.length){await this.compact();return}
     if(!this.state.knowledge?.conditions.answerModelReady&&!this.state.knowledge?.conditions.answerModelAutoConnect){this.set({error:{code:'AGENT_RUNTIME_NOT_READY',message:'回答模型尚未接入，消息未发送。'}});return}
     const retryConnection=Boolean(this.state.error)
     await this.mutate('发送',async()=>{
-      this.set({pendingBody:body,draft:'',status:agentActivity('thinking')})
+      this.set({pendingBody:body,draft:'',attachments:[],pendingImages:attached.map(a=>a.url),status:agentActivity('thinking')})
       try{
       if(retryConnection&&this.state.knowledge?.conditions.answerModelAutoConnect)await this.providerConnection.retry()
       else await this.prepareProvider()
@@ -220,9 +230,16 @@ export class AgentController {
         this.set({messages:this.state.messages.filter(message=>message.seq<editingSeq),beforeSeq:null,run:null,watchingRun:null,context:null,editingSeq:null})
         this.failedSend=null
       }
-      const retry=this.failedSend?.sessionId===session.id&&this.failedSend.body===body?this.failedSend:{requestId:crypto.randomUUID(),sessionId:session.id,body}
+      for(const [index,a] of attached.entries())if(!a.imageId){
+        this.set({status:`上传图片 ${index+1}/${attached.length}…`})
+        a.imageId=await this.upload(session.id,a.blob!)
+      }
+      if(attached.length)this.set({status:agentActivity('thinking')})
+      const images=attached.map(a=>a.imageId!),imageKey=images.join(',')
+      const retry=this.failedSend?.sessionId===session.id&&this.failedSend.body===body&&this.failedSend.images===imageKey?this.failedSend:{requestId:crypto.randomUUID(),sessionId:session.id,body,images:imageKey}
       this.failedSend=retry
-      const started=await this.api<{run:RunView;session:HistorySession|null;userMessage:HistoryMessage|null}>(`/sessions/${session.id}/runs`,'POST',{requestId:retry.requestId,expectedRevision:session.revision,body,clientVersion:this.clientVersion})
+      const started=await this.api<{run:RunView;session:HistorySession|null;userMessage:HistoryMessage|null}>(`/sessions/${session.id}/runs`,'POST',{requestId:retry.requestId,expectedRevision:session.revision,body,clientVersion:this.clientVersion,...images.length?{images}:{}})
+      for(const a of attached)if(a.blob)URL.revokeObjectURL(a.url)
       const run=started.run
       if(!session.startedAt)this.drafts.delete('new')
       this.failedSend=null;this.drafts.set(session.id,'');this.set({draft:'',run,status:agentActivity('thinking')});this.follow(run)
@@ -233,7 +250,7 @@ export class AgentController {
       }else{
         try{await this.refreshCurrent();await this.list()}catch{/* follow() 会补上进度 */}
       }
-      }catch(error){if(!this.state.draft)this.set({draft:body});throw error}finally{this.set({pendingBody:null})}
+      }catch(error){if(!this.state.draft)this.set({draft:body});if(!this.state.attachments.length)this.set({attachments:attached});throw error}finally{this.set({pendingBody:null,pendingImages:[]})}
     })
   }
   private async prepareProvider(){
@@ -338,6 +355,7 @@ export class AgentController {
         // 动作卡靠这一帧才知道自己存在；立刻去取预览详情，别等下一次全量刷新。
         this.syncActions()}
       const next={...(data.run as unknown as RunView|undefined)??run,state:event.type as RunView['state'],lastEventSeq:event.seq,canResume:event.type==='paused'}
+      if(current&&event.type==='failed'&&typeof data.code==='string'&&IMAGE_FAILURES[data.code])this.set({error:{code:data.code,message:IMAGE_FAILURES[data.code]}})
       this.set({watchingRun:next,syncing:true,...current?{run:next,status:event.type==='completed'?'':event.type==='cancelled'?'已停止回复':event.type==='paused'?'已暂停':'回复失败，已保留生成内容'}:{}})
     }
   }
@@ -348,9 +366,49 @@ export class AgentController {
     if(message.role!=='user'||!this.state.session?.startedAt||this.state.busy||this.state.loading||this.state.syncing)return
     if(this.state.watchingRun?.state==='running')return
     this.drafts.set(this.state.session.id,message.body)
-    this.set({draft:message.body,editingSeq:message.seq,error:null,status:''})
+    // 原消息的图已在服务器上，编辑重发原样带回编号，不重新上传。
+    const sessionId=this.state.session.id
+    this.dropAttachments()
+    this.set({draft:message.body,editingSeq:message.seq,error:null,status:'',attachments:(message.images??[]).map(id=>({key:id,state:'ready',url:agentImageUrl(sessionId,id),blob:null,imageId:id}))})
   }
-  cancelEdit(){this.set({editingSeq:null,draft:'',error:null})}
+  cancelEdit(){this.dropAttachments();this.set({editingSeq:null,draft:'',error:null})}
+  // ── 附图 ──
+  private dropAttachments(){for(const a of this.state.attachments)if(a.blob)URL.revokeObjectURL(a.url);this.set({attachments:[]})}
+  private tip(text:string){if(this.tipTimer)clearTimeout(this.tipTimer);this.set({attachTip:text});this.tipTimer=setTimeout(()=>{this.tipTimer=null;this.set({attachTip:null})},2200)}
+  addImages(files:File[],rejected=0){
+    if(this.state.session?.archivedAt)return
+    const room=AGENT_IMAGE_LIMITS.perMessage-this.state.attachments.length
+    if(rejected&&!files.length){this.tip('只能放图片');return}
+    if(room<=0){this.tip(`一次最多 ${AGENT_IMAGE_LIMITS.perMessage} 张`);return}
+    if(files.length>room)this.tip(`一次最多 ${AGENT_IMAGE_LIMITS.perMessage} 张`)
+    for(const file of files.slice(0,room)){
+      const key=crypto.randomUUID()
+      this.set({attachments:[...this.state.attachments,{key,state:'busy',url:'',blob:null,imageId:null}]})
+      void shrinkImage(file).then(blob=>{
+        if(!this.state.attachments.some(a=>a.key===key))return
+        this.set({attachments:this.state.attachments.map(a=>a.key===key?{...a,state:'ready',blob,url:URL.createObjectURL(blob)}:a)})
+      },()=>{
+        if(!this.state.attachments.some(a=>a.key===key))return
+        this.set({attachments:this.state.attachments.map(a=>a.key===key?{...a,state:'bad'}:a)});this.tip('读不了这张')
+      })
+    }
+  }
+  removeImage(key:string){const target=this.state.attachments.find(a=>a.key===key);if(target?.blob)URL.revokeObjectURL(target.url);this.set({attachments:this.state.attachments.filter(a=>a.key!==key)})}
+  private async upload(sessionId:string,blob:Blob):Promise<string>{
+    if(!this.alive)throw stopped()
+    const controller=new AbortController();this.requests.add(controller)
+    let timedOut=false;const timer=setTimeout(()=>{timedOut=true;controller.abort()},35_000)
+    try{
+      const response=await(this.options.fetchImpl??fetch)(`/api/agent/sessions/${encodeURIComponent(sessionId)}/images`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'image/jpeg'},body:blob,signal:controller.signal})
+      if(!this.alive||controller.signal.aborted)throw stopped()
+      if(response.status===401||response.headers.get('X-Agent-Owner')!==String(this.uid)){this.expire();throw stopped()}
+      const data=await response.json() as {code?:unknown;error?:unknown;image?:{id?:unknown}}
+      if(!response.ok)throw new UiError(typeof data?.code==='string'?data.code:`HTTP_${response.status}`,typeof data?.error==='string'?data.error.slice(0,300):`图片没有传上去（${response.status}）。`)
+      if(typeof data.image?.id!=='string')throw new UiError('IMAGE_INVALID','图片没有传上去，请重试。')
+      return data.image.id
+    }catch(error){if(timedOut)throw new UiError('REQUEST_TIMEOUT','图片传得有点久，内容已留好，请手动重试。');if(controller.signal.aborted)throw stopped();throw error}
+    finally{clearTimeout(timer);this.requests.delete(controller)}
+  }
   async compact(){
     const session=this.state.session;if(!session)return
     if(!this.state.knowledge?.conditions.contextModelReady&&!this.state.knowledge?.conditions.answerModelAutoConnect){this.set({error:{code:'CONTEXT_AI_DISABLED',message:'压缩模型尚未接入。'}});return}

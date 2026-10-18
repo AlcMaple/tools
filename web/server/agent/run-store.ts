@@ -1,6 +1,8 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { AgentHistoryStore } from './history-store'
+import { existsSync } from 'node:fs'
+import { AgentImageStore } from './image-store'
 import { knowledgeHash, type KnowledgeSnapshot } from './knowledge'
 import { AGENT_LIMITS } from './policy'
 import { AgentRunError, RUN_LIMITS, type RunCheckpoint, type RunEvent, type RunEventKind, type RunState, type RunView, type StartRun, type ResumeRun } from '../../shared/agent-run'
@@ -111,7 +113,7 @@ export class AgentRunStore {
   begin(uid: number, sessionId: string, p: StartRun, knowledge: KnowledgeSnapshot, authVersion: number) {
     return this.db.transaction(() => {
       this.assertIdentity(uid,authVersion)
-      const requestHash = knowledgeHash({body:p.body,clientVersion:p.clientVersion??null})
+      const images=p.images??[],requestHash = knowledgeHash({body:p.body,clientVersion:p.clientVersion??null,...images.length?{images}:{}})
       const existing = this.db.prepare('SELECT * FROM agent_runs WHERE user_id=? AND session_id=? AND request_id=?').get(uid,sessionId,p.requestId) as RunRow|undefined
       // 幂等重放:客户端本来就有这些状态,不必再拼一次用户消息。
       if (existing) { if(existing.request_hash!==requestHash) throw new AgentRunError('IDEMPOTENCY_CONFLICT'); return {row:existing,fresh:false,session:null,userMessage:null} }
@@ -122,7 +124,8 @@ export class AgentRunStore {
       const count = this.db.prepare('SELECT COUNT(*) AS n FROM agent_runs WHERE user_id=? AND session_id=?').get(uid,sessionId) as {n:number}
       if (count.n >= RUN_LIMITS.runsPerSession) throw new AgentRunError('RUN_STORAGE_LIMIT')
       const id=randomUUID(), now=this.now(), history=this.history(id)
-      const user=history.appendUser(uid,sessionId,{requestId:randomUUID(),expectedRevision:p.expectedRevision,body:p.body})
+      if(images.length)new AgentImageStore(this.db).checkUnbound(uid,sessionId,images,existsSync)
+      const user=history.appendUser(uid,sessionId,{requestId:randomUUID(),expectedRevision:p.expectedRevision,body:p.body},images)
       this.db.prepare(`INSERT INTO agent_runs(id,user_id,session_id,request_id,request_hash,user_message_id,state,started_at,created_at,updated_at,lease_until,auth_version,knowledge_json,client_version,checkpoint_json)
         VALUES(?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?)`).run(id,uid,sessionId,p.requestId,requestHash,user.message.id,now,now,now,now+RUN_LIMITS.leaseMs,authVersion,JSON.stringify(knowledge),p.clientVersion??null,JSON.stringify(emptyCheckpoint()))
       this.db.prepare('UPDATE agent_sessions SET run_id=? WHERE user_id=? AND id=?').run(id,uid,sessionId)

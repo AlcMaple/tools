@@ -12,7 +12,9 @@ export const externalMessages:Record<string,string>={AGENT_AI_DISABLED:'服务�
   ENDPOINT_NOT_ALLOWED:'此端点或型号尚未核准，请选择已支持的连接。',PROVIDER_CAPABILITY:'模型的 JSON 或工具能力探测未通过，请检查配置。',PROVIDER_UNAVAILABLE:'模型连接失败，请检查连接后手动重试。',
   COST_LIMIT:'已达到费用或 token 上限，这次调用已停止。',DAILY_QUOTA:'今日对话额度已用完。',GLOBAL_BUSY:'AI 正忙，请稍后手动重试。',GUEST_BUSY:'临时对话名额已满，登录后可直接使用。',GUEST_POOL_LIMIT:'今日临时对话额度已用完，登录后可继续使用。',CONNECTION_BUSY:'连接检查正在进行。',
   RUN_BUSY:'当前已有请求正在运行。',GUEST_CONTEXT_LIMIT:'本次临时对话已达到长度上限，请刷新后重新开始。',ROUND_LIMIT:'已达到本轮查询上限。',
-  INVALID_OUTPUT:'模型回复格式未通过检查，未执行额外操作。',REQUEST_ALREADY_USED:'这个请求已发送过，不会重复调用模型。',AUTH_CHANGED:'身份已变化，请重新打开助手。'}
+  INVALID_OUTPUT:'模型回复格式未通过检查，未执行额外操作。',REQUEST_ALREADY_USED:'这个请求已发送过，不会重复调用模型。',AUTH_CHANGED:'身份已变化，请重新打开助手。',
+  IMAGE_UNSUPPORTED:'当前 AI 连接看不了图片，去掉图片再发，或换一个能看图的模型。',IMAGE_INVALID:'这张图没有读懂，换一张再试。',IMAGE_MISSING:'附的图找不到了，请重新添加后再发。',
+  IMAGE_STORAGE_LIMIT:'存的图片太多了，删掉一些旧对话再发图吧。',SESSION_ARCHIVED:'此对话已归档。'}
 export function externalError(error:unknown){
   const code=error instanceof AgentRunError||error instanceof AgentHistoryError?error.code:'PROVIDER_UNAVAILABLE'
   const http=/^PROVIDER_HTTP_(\d+)$/.exec(code)

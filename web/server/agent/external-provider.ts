@@ -1,7 +1,7 @@
 import { partialAnswer } from './provider-stream'
 import { AgentRunError, RUN_LIMITS } from '../../shared/agent-run'
 import type { AgentUsage } from '../../shared/agent-contracts'
-import { estimateContextTokens, type ProviderProfile, type ProviderTransport } from './context-provider'
+import { estimateRequestTokens, type ProviderProfile, type ProviderTransport } from './context-provider'
 import { estimateCost,type PriceCard } from './policy'
 import type { RunProvider } from './run-service'
 import { matchesContract } from './validation'
@@ -21,7 +21,7 @@ export const RESERVED_OUTPUT_TOKENS=1024
 export function meteredTransport(transport:ProviderTransport,quota:ExternalQuota,price:PriceCard,contextTokens:number):ProviderTransport{
   return async(path,body,signal,headers,onText)=>{
     signal.throwIfAborted()
-    const input=estimateContextTokens(body),output=Number(body.max_tokens)
+    const input=estimateRequestTokens(body),output=Number(body.max_tokens)
     // 窗口检查仍按满额 output：模型真有可能写满，超窗是硬错误，不能按预期值放行。
     if(!Number.isSafeInteger(output)||output<1||input+output>contextTokens)throw new AgentRunError('CONTEXT_BUDGET')
     const settle=quota.reserve(input,Math.min(output,RESERVED_OUTPUT_TOKENS),price,{operation:onText?'model':body.tools||String(record(Array.isArray(body.messages)?body.messages[0]:null).content??'').startsWith('只返回 JSON 对象 {"nonce"')?'probe':'compact',model:String(body.model??'unknown').slice(0,100)})
@@ -32,19 +32,23 @@ export function meteredTransport(transport:ProviderTransport,quota:ExternalQuota
 export function serializeModelMaterial(value:unknown):string{
   return JSON.stringify(value,function(key,entry){return key==='aggregate'&&this.kind==='public_aggregate'&&typeof this.sourceId==='string'?undefined:entry})
 }
-export function createAnswerProvider(profile:ProviderProfile,transport:ProviderTransport,price:PriceCard,maxOutput=8192,warningCost=Infinity):RunProvider{
-  return {source:profile.source,model:profile.model,fingerprint:profile.fingerprint,async *stream(request,signal){
+// 附图只随本轮这一条 user 消息走 OpenAI 兼容的 content 数组；历史轮次只在文字里留「附图 N 张」。
+function userContent(text:string,images:string[]){
+  return images.length?[{type:'text',text},...images.map(url=>({type:'image_url',image_url:{url}}))]:text
+}
+export function createAnswerProvider(profile:ProviderProfile,transport:ProviderTransport,price:PriceCard,maxOutput=8192,warningCost=Infinity,vision=false):RunProvider{
+  return {source:profile.source,model:profile.model,fingerprint:profile.fingerprint,vision,async *stream(request,signal){
     if(request.nativeState!==null&&request.nativeState!==undefined)throw new AgentRunError('INVALID_NATIVE_STATE')
     const started=Date.now()
     const allowed=Object.keys(request.tools)
     const schema={anyOf:[request.outputSchema.anyOf![0],{type:'object',properties:{kind:{enum:['tool_calls']},calls:{type:'array',minItems:1,maxItems:4,items:{anyOf:request.outputSchema.anyOf![1].properties!.calls.items!.anyOf!.filter(s=>allowed.includes(String(s.properties!.name.enum![0])))}}},required:['kind','calls'],additionalProperties:false}]}
     const availableTools=Object.fromEntries(Object.entries(request.tools).map(([name,tool])=>[name,{description:tool.description,parameters:tool.parameters}]))
     const body={model:profile.model,messages:[{role:'system',content:request.system+'\n只返回一个符合以下合同的 JSON 对象：'+JSON.stringify(schema)+'\n回答字段按 kind、text、sourceIds 顺序输出；工具请求只输出 kind、calls。\n服务器本轮能力（未列出功能保持未知）：'+JSON.stringify(request.knowledge)},
-      {role:'user',content:serializeModelMaterial({layers:request.layers,availableTools,toolResults:request.results})}],
+      {role:'user',content:userContent(serializeModelMaterial({layers:request.layers,availableTools,toolResults:request.results}),request.images??[])}],
       response_format:{type:'json_object'},temperature:0,max_tokens:Math.min(maxOutput,profile.capabilities.maxOutputTokens),
       ...(profile.model.startsWith('deepseek-')?{thinking:{type:'disabled'}}:{})}
     // 价格预警与预授权同一口径；按满额算的话每次调用都会触发，等于没有预警。
-    const ceiling=estimateCost(estimateContextTokens(body),0,Math.min(body.max_tokens,RESERVED_OUTPUT_TOKENS),price)!
+    const ceiling=estimateCost(estimateRequestTokens(body),0,Math.min(body.max_tokens,RESERVED_OUTPUT_TOKENS),price)!
     if(ceiling>=warningCost)yield {type:'warning',estimatedCost:ceiling,currency:price.currency}
     let wake:()=>void=()=>{},finished=false,failure:unknown,result:unknown,sent=''
     const pending:string[]=[]

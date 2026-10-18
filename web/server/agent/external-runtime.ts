@@ -16,8 +16,9 @@ import { RESERVED_OUTPUT_TOKENS,createAnswerProvider,meteredTransport,reportedUs
 
 // 官方 2026-09-08 价格，USD / 百万 token；使用峰时上界，不预测缓存命中或优惠。
 const baselinePrice:PriceCard={currency:'USD',version:'deepseek-2026-09-08-peak',inputPerMillion:0.44,cachedInputPerMillion:0.014,outputPerMillion:1.32}
-export interface EndpointProfile {endpoint:string;model:string;contextTokens:number;maxOutputTokens:number;price:PriceCard}
-const baseline:EndpointProfile={endpoint:'https://api.deepseek.com',model:DEFAULT_AGENT_MODEL,contextTokens:1_000_000,maxOutputTokens:8192,price:baselinePrice}
+// vision：该型号能否收 image_url 内容块；自配型号默认不能，管理员核准时显式标 true。
+export interface EndpointProfile {endpoint:string;model:string;contextTokens:number;maxOutputTokens:number;price:PriceCard;vision?:boolean}
+const baseline:EndpointProfile={endpoint:'https://api.deepseek.com',model:DEFAULT_AGENT_MODEL,contextTokens:1_000_000,maxOutputTokens:8192,price:baselinePrice,vision:true}
 function parseConfig<T>(key:string,fallback:T):T{try{return process.env[key]?JSON.parse(process.env[key]!):fallback}catch{throw new AgentRunError('PROVIDER_CONFIGURATION',503)}}
 export const externalQuota=new ExternalQuota(db,{...CONSERVATIVE_LIMITS,...parseConfig<Partial<ExternalLimits>>('AGENT_LIMITS_JSON',{})})
 export function agentEnabled(hasKey:boolean,override:string|undefined){
@@ -68,7 +69,7 @@ export function protectedTransport(endpoint:string,key:string):ProviderTransport
     }catch(error){if(error instanceof AgentRunError)throw error;if(signal.aborted)throw signal.reason;throw new AgentRunError('PROVIDER_UNAVAILABLE',503)}finally{await dispatcher.close()}
   }
 }
-interface Connection {profile:ProviderProfile;transport:ProviderTransport;price:PriceCard;until:number;tv:number;config:string}
+interface Connection {profile:ProviderProfile;transport:ProviderTransport;price:PriceCard;vision:boolean;until:number;tv:number;config:string}
 const connections=new Map<string,Connection>(),connecting=new Map<string,AbortController>()
 const account=(uid:number)=>{const row=db.prepare('SELECT token_version,ai_config FROM users WHERE id=?').get(uid) as {token_version:number;ai_config:string}|undefined;if(!row)throw new AgentRunError('AUTH_REQUIRED',401);return row}
 function selection(uid:number){const row=account(uid);return {...row,choice:normalizeAiConfig(row.ai_config)}}
@@ -134,7 +135,7 @@ export async function connectExternal(uid:number|null,owner:string,input:{source
         if(current.ai_config!==config)throw new AgentRunError('PROVIDER_CHANGED')
       }
       profile.capabilities=probe.value
-      connections.set(id,{profile,transport,price:cfg.price,until:Date.now()+30*60_000,tv:row?.token_version??0,config})
+      connections.set(id,{profile,transport,price:cfg.price,vision:cfg.vision===true,until:Date.now()+30*60_000,tv:row?.token_version??0,config})
       return externalStatus(uid)
     },false)
   }finally{
@@ -188,6 +189,14 @@ export interface JudgeConnection {
   call:(body:Record<string,unknown>,signal:AbortSignal)=>Promise<unknown>
 }
 export const aiSource=(uid:number)=>selection(uid).choice.provider
+// 按设置里选中的型号判断能否看图，上传前就拦下，免得图传上去才在开回合时报错。
+export function imagesAllowed(uid:number){
+  const choice=selection(uid).choice
+  try{
+    const profile=choice.provider==='server'?matchEndpoint(AI_BASE_URL,selectServerModel(AI_MODEL,parseConfig<ModelUpgradeApproval|null>('AGENT_MODEL_APPROVAL',null))):matchEndpoint(choice.endpoint,choice.model)
+    return profile.vision===true
+  }catch{return false}
+}
 export async function judgeConnection(uid:number,signal:AbortSignal):Promise<JudgeConnection>{
   const source=selection(uid).choice.provider,owner=`user:${uid}`
   if(!externalEnabled(source))throw new AgentRunError('AGENT_AI_DISABLED',503)
@@ -226,6 +235,6 @@ export function externalBinding(uid:number|null,owner:string){
   context.probe=async()=>({value:profile.capabilities,usage:{operation:'compact',provider:profile.source,model:profile.model,inputTokens:0,cachedInputTokens:0,outputTokens:0,durationMs:0,resultCount:0,estimatedCost:0,currency:c.price.currency,priceVersion:c.price.version}})
   const output=Number(process.env.AGENT_ANSWER_OUTPUT_TOKENS??8192)
   if(!Number.isSafeInteger(output)||output<256||output>8192)throw new AgentRunError('PROVIDER_CONFIGURATION',503)
-  return {provider:createAnswerProvider(profile,transport,c.price,uid===null?Math.min(2048,output):output,externalQuota.limits.warningCost),context,
+  return {provider:createAnswerProvider(profile,transport,c.price,uid===null?Math.min(2048,output):output,externalQuota.limits.warningCost,c.vision),context,
     execute:<T>(action:()=>Promise<T>)=>externalQuota.turn(owner,uid===null,project,action)}
 }

@@ -58,7 +58,7 @@ export function applyDelta(messages:HistoryMessage[],buffers:Map<string,string>,
   buffers.set(messageId,body)
   const previous=messages.find(message=>message.id===messageId)
   if(previous&&(previous.status!=='streaming'||!body.startsWith(previous.body)))return messages
-  const message:HistoryMessage=previous?{...previous,body}:{id:messageId,sessionId,seq:(messages.at(-1)?.seq??0)+1,role:'assistant',body,status:'streaming',sources:[],sourceIds:[],toolSummaries:[],actions:[],actionIds:[],createdAt:event.createdAt,updatedAt:0,pinned:false,usage:[]}
+  const message:HistoryMessage=previous?{...previous,body}:{id:messageId,sessionId,seq:(messages.at(-1)?.seq??0)+1,role:'assistant',body,status:'streaming',sources:[],sourceIds:[],toolSummaries:[],actions:[],actionIds:[],createdAt:event.createdAt,updatedAt:0,pinned:false,usage:[],images:[]}
   return previous?messages.map(item=>item.id===messageId?message:item):[...messages,message]
 }
 

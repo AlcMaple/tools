@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { ContractSchema } from '../../shared/agent-contracts'
 import {
   AgentHistoryError, HISTORY_LIMITS, HISTORY_ID_SCHEMA, CREATE_SESSION_SCHEMA, PATCH_SESSION_SCHEMA,
-  REVISION_SCHEMA, TRUNCATE_SESSION_SCHEMA, USER_MESSAGE_SCHEMA, ASSISTANT_APPEND_SCHEMA, ASSISTANT_UPDATE_SCHEMA,
+  REVISION_SCHEMA, TRUNCATE_SESSION_SCHEMA, USER_MESSAGE_SCHEMA, IMAGE_MESSAGE_SCHEMA, ASSISTANT_APPEND_SCHEMA, ASSISTANT_UPDATE_SCHEMA,
   SESSION_LIST_SCHEMA, MESSAGE_PAGE_SCHEMA, ACTION_UPDATE_SCHEMA,
   type CreateHistorySession, type PatchHistorySession, type AppendUserMessage,
   type AppendAssistantMessage, type UpdateAssistantMessage, type AssistantMessageContent,
@@ -63,6 +63,10 @@ export function initializeAgentHistorySchema(db: Database.Database): void {
     db.exec('ALTER TABLE agent_sessions ADD COLUMN title_manual INTEGER NOT NULL DEFAULT 0')
     db.exec("UPDATE agent_sessions SET title_manual = 1 WHERE title != '新会话'")
   }
+  // 附图编号；文件在 agent-images 目录，两半的同进同退见 image-store.ts。
+  if (!(db.prepare('PRAGMA table_info(agent_messages)').all() as { name: string }[]).some(c => c.name === 'images_json')) {
+    db.exec("ALTER TABLE agent_messages ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'")
+  }
   }).immediate()
 }
 
@@ -86,7 +90,7 @@ interface SessionRow {
 interface MessageRow {
   id: string; user_id: number; session_id: string; seq: number; request_id: string; initial_hash: string
   role: HistoryMessage['role']; body: string; status: HistoryMessage['status']
-  sources_json: string; tools_json: string; actions_json: string; usage_json: string
+  sources_json: string; tools_json: string; actions_json: string; usage_json: string; images_json: string
   pinned: number; pending_actions: number; stored_bytes: number; created_at: number; updated_at: number
 }
 
@@ -110,7 +114,7 @@ function messageView(r: MessageRow): HistoryMessage {
     sources, sourceIds: sources.map(s => s.sourceId), actions, actionIds: actions.map(a => a.actionId),
     toolSummaries: JSON.parse(r.tools_json) as HistoryMessage['toolSummaries'],
     usage: JSON.parse(r.usage_json) as HistoryMessage['usage'],
-    createdAt: r.created_at, updatedAt: r.updated_at, pinned: r.pinned === 1,
+    createdAt: r.created_at, updatedAt: r.updated_at, pinned: r.pinned === 1, images: JSON.parse(r.images_json) as string[],
   }
 }
 
@@ -271,10 +275,11 @@ export class AgentHistoryStore {
     }).immediate()
   }
 
-  appendUser(uid: number, id: string, input: unknown) {
-    const p = parse<AppendUserMessage>(USER_MESSAGE_SCHEMA, input)
-    if (!p.body.trim()) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '先写一点想聊的内容吧。')
-    return this.append(uid, id, p.requestId, p.expectedRevision, 'user', emptyContent(p.body))
+  // images 只由服务端回合传入（编号已在 begin 事务里核过归属）；HTTP 追加消息不带图。
+  appendUser(uid: number, id: string, input: unknown, images: string[] = []) {
+    const p = parse<AppendUserMessage>(images.length ? IMAGE_MESSAGE_SCHEMA : USER_MESSAGE_SCHEMA, input)
+    if (!p.body.trim() && !images.length) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '先写一点想聊的内容吧。')
+    return this.append(uid, id, p.requestId, p.expectedRevision, 'user', emptyContent(p.body), images)
   }
 
   // 助手记录只供未来的服务端循环写入；HTTP 只开放用户消息，浏览器不拥有回执/来源的签发权。
@@ -283,9 +288,9 @@ export class AgentHistoryStore {
     return this.append(uid, id, p.requestId, p.expectedRevision, 'assistant', p)
   }
 
-  private append(uid: number, id: string, requestId: string, expectedRevision: number, role: HistoryMessage['role'], content: AssistantMessageContent) {
-    const encoded = encodeContent(content)
-    const fingerprint = hash({ role, body: encoded.body, status: encoded.status, sources: encoded.sources, tools: encoded.tools, actions: encoded.actions, usage: encoded.usage })
+  private append(uid: number, id: string, requestId: string, expectedRevision: number, role: HistoryMessage['role'], content: AssistantMessageContent, images: string[] = []) {
+    const encoded = encodeContent(content), imagesJson = JSON.stringify(images)
+    const fingerprint = hash({ role, body: encoded.body, status: encoded.status, sources: encoded.sources, tools: encoded.tools, actions: encoded.actions, usage: encoded.usage, ...images.length ? { images } : {} })
     return this.db.transaction(() => {
       const s = this.session(uid, id)
       const existing = this.db.prepare('SELECT * FROM agent_messages WHERE user_id = ? AND session_id = ? AND request_id = ?').get(uid, id, requestId) as MessageRow | undefined
@@ -296,10 +301,10 @@ export class AgentHistoryStore {
       this.expectRevision(s, expectedRevision); this.expectWritable(s); this.expectSendable(s); this.expectSpace(s, encoded.bytes, true)
       const messageId = randomUUID(), now = Date.now()
       this.db.prepare(`INSERT INTO agent_messages
-        (id, user_id, session_id, seq, request_id, initial_hash, role, body, status, sources_json, tools_json, actions_json, usage_json, stored_bytes, pending_actions, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(messageId, uid, id, s.last_message_seq + 1,
-          requestId, fingerprint, role, encoded.body, encoded.status, encoded.sources, encoded.tools, encoded.actions, encoded.usage, encoded.bytes, encoded.pending, now, now)
-      if (role === 'user' && s.started_at === null) this.db.prepare('UPDATE agent_sessions SET started_at = ?, title = ? WHERE user_id = ? AND id = ?').run(now,s.title_manual ? s.title : firstMessageTitle(encoded.body),uid,id)
+        (id, user_id, session_id, seq, request_id, initial_hash, role, body, status, sources_json, tools_json, actions_json, usage_json, images_json, stored_bytes, pending_actions, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(messageId, uid, id, s.last_message_seq + 1,
+          requestId, fingerprint, role, encoded.body, encoded.status, encoded.sources, encoded.tools, encoded.actions, encoded.usage, imagesJson, encoded.bytes, encoded.pending, now, now)
+      if (role === 'user' && s.started_at === null) this.db.prepare('UPDATE agent_sessions SET started_at = ?, title = ? WHERE user_id = ? AND id = ?').run(now,s.title_manual ? s.title : firstMessageTitle(encoded.body.trim() ? encoded.body : '看图'),uid,id)
       this.touch(s, encoded.bytes, 1, true)
       const row = this.db.prepare('SELECT * FROM agent_messages WHERE user_id = ? AND session_id = ? AND id = ?').get(uid, id, messageId) as MessageRow
       return { session: sessionView(this.session(uid, id)), message: messageView(row) }
@@ -353,7 +358,9 @@ export class AgentHistoryStore {
   // 编辑并重新提问：从某条用户消息起（含）截断，之后的对话丢弃。原文不保留（与压缩不同，
   // 这是用户主动放弃这段分支）；摘要 / 上下文任务作废，run 行经 context_generation 触发器清理。
   // seq 不回退——旧游标和晚到请求不会指向新的同号消息。当前番剧与已确认偏好不动。
-  truncateSession(uid: number, id: string, input: unknown): HistorySession {
+  truncateSession(uid: number, id: string, input: unknown): HistorySession { return this.truncateReleasing(uid, id, input).session }
+  // 同上，并带回被截掉消息的附图编号，供接口给这些文件续一段宽限期（编辑重发会带回）。
+  truncateReleasing(uid: number, id: string, input: unknown): { session: HistorySession; releasedImages: string[] } {
     const p = parse<{ expectedRevision: number; fromSeq: number }>(TRUNCATE_SESSION_SCHEMA, input)
     return this.db.transaction(() => {
       const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectIdle(s)
@@ -361,10 +368,11 @@ export class AgentHistoryStore {
       if (!target) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '要编辑的消息已经不在了，请刷新对话。')
       if (target.role !== 'user') throw new AgentHistoryError('INVALID_ARGUMENT', 400, '只能从自己发的消息处重新开始。')
       const removed = this.db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(stored_bytes), 0) AS bytes FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq >= ?').get(uid, id, p.fromSeq) as { n: number; bytes: number }
+      const released = (this.db.prepare("SELECT images_json FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq >= ? AND images_json != '[]'").all(uid, id, p.fromSeq) as { images_json: string }[]).flatMap(r => JSON.parse(r.images_json) as string[])
       this.db.prepare('DELETE FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq >= ?').run(uid, id, p.fromSeq)
       this.db.prepare('UPDATE agent_sessions SET active_summary_version = NULL, context_bytes = 0, context_generation = context_generation + 1 WHERE user_id = ? AND id = ?').run(uid, id)
       this.touch(s, -removed.bytes, -removed.n)
-      return sessionView(this.session(uid, id))
+      return { session: sessionView(this.session(uid, id)), releasedImages: released }
     }).immediate()
   }
 

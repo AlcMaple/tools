@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>网页版 · 纱雾助手附图</title>
+<!-- 纱雾助手「粘贴 / 添加图片和文字一起发」设计稿。面板直接引用线上同一份 sketch-tokens / sketch-ui / agent.css，
+     新增样式写在下面 .agent-attach* / .agent-shot* / .agent-lightbox 里，实现时原样搬进 web/src/agent/agent.css。
+     左边是审稿台（状态切换 + 待定事项），右边同一个状态同时画 PC 和平板两份。 -->
+<link rel="stylesheet" href="../../../web/src/styles/sketch-tokens.css">
+<link rel="stylesheet" href="../../../web/src/styles/sketch-ui.css">
+<link rel="stylesheet" href="../../../web/src/agent/agent.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-body); }
+  p, h1, h2, h3, ul, ol { margin: 0; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-thumb { background: var(--silver-line); border-radius: 2px; }
+
+  /* ---------- 审稿台 ---------- */
+  .bench { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 28px; padding: 28px; align-items: start; }
+  .bench-side { position: sticky; top: 20px; display: flex; flex-direction: column; gap: 18px; }
+  .bench-side h1 { font: 24px/1.3 var(--font-hand); font-weight: 400; }
+  .bench-side h2 { font: 15px var(--font-hand); color: var(--teal); margin-bottom: 8px; }
+  .states { display: flex; flex-direction: column; gap: 5px; }
+  .states button { text-align: left; padding: 7px 10px; font: inherit; font-size: 12.5px; color: var(--ink-sub); background: var(--card);
+    border: 1px solid var(--line); border-radius: 6px 10px 6px 10px; cursor: pointer; }
+  .states button.on { color: var(--teal); background: var(--teal-wash); border-color: var(--teal-line); }
+  .note { font-size: 12px; line-height: 1.75; color: var(--ink-sub); }
+  .note li { margin: 0 0 6px 16px; list-style: disc; }
+  .note b { color: var(--ink); font-weight: 600; }
+  .pending li::marker { color: var(--gold); }
+  .stage { display: flex; gap: 36px; flex-wrap: wrap; align-items: flex-start; }
+  .device { display: flex; flex-direction: column; gap: 8px; }
+  .device > small { font-size: 12px; color: var(--ink-sub); }
+  .state-desc { font-size: 13px; line-height: 1.8; margin: 0 0 18px; max-width: 900px; }
+
+  /* 面板在稿里按静态块画，尺寸用线上上限 440×660（平板竖屏同一上限，底部让出站内标签栏） */
+  .mk .agent-layer { position: relative; inset: auto; pointer-events: auto; z-index: auto; }
+  .mk .agent-window { position: relative; left: auto; top: auto; width: 440px; height: 660px; max-height: none; animation: none; }
+  .mk .agent-avatar { background-image: url('../../../web/public/assets/sagiri-avatar.webp'); }
+  .tablet { width: 560px; height: 760px; position: relative; padding: 18px; border: 10px solid #2e2f35; border-radius: 30px; background: var(--paper) repeating-linear-gradient(0deg, transparent 0 23px, var(--grid-line) 23px 24px); overflow: hidden; }
+  .tablet .agent-window { position: absolute; right: 16px; top: 16px; height: 640px; }
+  .tablet .tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 58px; background: var(--card); border-top: 1px solid var(--line); display: flex; justify-content: space-around; align-items: center; font-size: 11px; color: var(--ink-sub); }
+  .ico { width: 14px; height: 14px; flex: none; }
+
+  /* ---------- 新增：输入框里的附图条 ---------- */
+  /* 附图条在文本框上方、同一个 composer 里；没有图时整条不渲染。缩略图 52px 方块，删除钮绝对定位在角上，不占位。 */
+  .agent-attach { position: relative; display: flex; gap: 8px; padding: 6px 2px 8px; }
+  .agent-attach-item { position: relative; width: 52px; height: 52px; flex: none; border: 1px solid var(--line); border-radius: 5px 8px 5px 8px; background-color: var(--paper-2); background-position: center; background-size: cover; box-shadow: var(--shadow-1); }
+  .agent-attach-item > .rm { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--card); color: var(--ink-sub); }
+  .agent-attach-item.is-busy::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: #fbf6ece0 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%233f8a8a' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M12 3a9 9 0 1 0 9 9'/%3E%3C/svg%3E") center no-repeat; }
+  .agent-attach-item.is-bad { border: 1px dashed var(--sakura-mid); background: var(--sakura-wash); }
+  .agent-attach-item.is-bad > em { position: absolute; inset: 0; display: grid; place-items: center; font-style: normal; font-size: 9.5px; line-height: 1.3; text-align: center; color: var(--sakura); }
+  /* 满额 / 读不了 等一次性提示：浮在附图条右上，不挤动缩略图和文本框 */
+  .agent-attach-tip { position: absolute; right: 0; top: -24px; width: max-content; padding: 2px 8px; border-radius: 10px; background: var(--ink); color: var(--card); font-size: 10px; line-height: 18px; }
+  .agent-composer-foot .agent-context-control .count { color: var(--teal); font-variant-numeric: tabular-nums; }
+  /* 拖进面板：整块盖一层，面板尺寸不变 */
+  .agent-drop { position: absolute; inset: 6px; z-index: 5; display: grid; place-items: center; border: 2px dashed var(--teal-mid); border-radius: 12px 20px 12px 18px; background: #fbf6ece6; color: var(--teal); font: 19px var(--font-hand); }
+
+  /* ---------- 新增：对话里的图片 ---------- */
+  .agent-shots { display: grid; grid-template-columns: repeat(auto-fill, 74px); gap: 6px; margin: 2px 0 7px; }
+  .agent-shots > button { width: 74px; height: 74px; padding: 0; border: 1px solid var(--teal-line); border-radius: 5px 8px 5px 8px; background-color: var(--paper-2); background-position: center; background-size: cover; cursor: zoom-in; }
+  .agent-shots > .is-gone { display: grid; place-items: center; cursor: default; border-style: dashed; color: var(--ink-faint); font-size: 9.5px; background: var(--paper); }
+  .agent-message-own.is-pending .agent-shots > button { opacity: .7; }
+  /* 点开看大图：只盖在助手面板里，不遮主页面 */
+  .agent-lightbox { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; background: #26262bf0; }
+  .agent-lightbox > header { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 12px; color: #fff; font-size: 11px; }
+  .agent-lightbox > header > button { margin-left: auto; width: 28px; height: 28px; border: none; border-radius: 7px; background: #ffffff1a; color: #fff; display: grid; place-items: center; }
+  .agent-lightbox > div { flex: 1; min-height: 0; display: grid; place-items: center; padding: 8px 14px 18px; }
+  .agent-lightbox > div > span { width: 100%; aspect-ratio: 16 / 10; border-radius: 4px; background-position: center; background-size: contain; background-repeat: no-repeat; }
+
+  /* 假截图：渐变色块代替真图 */
+  .shot-a { background-image: linear-gradient(160deg, #e8eef2 0 38%, #f6efe2 38% 62%, #e4dccb 62%); }
+  .shot-b { background-image: linear-gradient(200deg, #f1e6ea 0 30%, #eef3f4 30% 70%, #dfe7ea 70%); }
+  .shot-c { background-image: repeating-linear-gradient(180deg, #eef3f4 0 9px, #f6efe2 9px 18px); }
+  .shot-d { background-image: linear-gradient(120deg, #2f3640 0 45%, #6c5a7a 45% 70%, #e6c9a8 70%); }
+
+  [data-show] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="bench">
+  <aside class="bench-side">
+    <h1>纱雾助手 · 附图</h1>
+    <div>
+      <h2>状态</h2>
+      <div class="states" id="states">
+        <button data-s="draft" class="on">1 · 附了图、还没发</button>
+        <button data-s="full">2 · 满 4 张 / 读不了的文件</button>
+        <button data-s="drop">3 · 拖进面板</button>
+        <button data-s="sending">4 · 发送中</button>
+        <button data-s="history">5 · 历史对话里的图</button>
+        <button data-s="zoom">6 · 点开看大图</button>
+        <button data-s="unsupported">7 · 当前模型看不了图</button>
+        <button data-s="edit">8 · 编辑重发带图的消息</button>
+      </div>
+    </div>
+    <div>
+      <h2>定下来的规则</h2>
+      <ul class="note">
+        <li>三种加法：<b>粘贴</b>（截图后 ⌘/Ctrl+V）、<b>拖进面板</b>、底栏 <b>「图片」</b>按钮选文件。平板主要靠按钮（可直接拍照）。</li>
+        <li>一条消息<b>最多 4 张</b>；每张在浏览器里缩到长边 1280、转 JPEG 再上传，原图不出本机。</li>
+        <li>只有图、不写字也能发。</li>
+        <li>图只在<b>这一轮</b>给模型看；之后几轮和压缩摘要里只留「附了 2 张图」这类文字，需要她再看就重新贴。</li>
+        <li>图片跟着对话存；删除对话 / 清空对话时一起删掉。导出的对话里记成「[图片 ×2]」。</li>
+        <li>访客模式不显示「图片」按钮，粘贴图片不响应。</li>
+      </ul>
+    </div>
+    <div>
+      <h2>请拍板</h2>
+      <ul class="note pending">
+        <li>上限 4 张是否合适？（每张约 1000 token，4 张 ≈ 一轮多花 US$0.002）</li>
+        <li>「之后几轮不再带图」是否接受？带上的话每轮都要重复付这几千 token。</li>
+        <li>编辑重发时，原消息的图默认<b>保留在附图条</b>里（可删），还是清空？稿里画的是保留。</li>
+      </ul>
+    </div>
+  </aside>
+
+  <main>
+    <p class="state-desc" id="desc"></p>
+    <div class="stage">
+      <div class="device"><small>PC（面板 440 × 660）</small><div class="mk" id="pc"></div></div>
+      <div class="device"><small>平板竖屏（同一面板，底部让出站内标签栏；无粘贴，走「图片」按钮）</small><div class="mk"><div class="tablet" id="tab"></div></div></div>
+    </div>
+  </main>
+</div>
+
+<template id="panel">
+  <div class="agent-layer" data-open="true">
+    <section class="agent-window">
+      <div class="agent-top">
+        <header class="agent-header"><span class="agent-header-mark">✦</span><div><h2>纱雾助手</h2></div><button type="button" class="agent-icon" aria-label="收起"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button></header>
+        <nav class="agent-nav"><button aria-current="page">对话</button><button>历史对话</button><button>新对话</button><button>偏好</button><button>AI</button><button>⋮</button></nav>
+      </div>
+
+      <div class="agent-feedback is-error" data-show="unsupported"><span>当前 AI 连接（reviewed-model）看不了图片，去掉图片再发，或换一个能看图的模型。</span><button>AI 连接</button></div>
+      <div class="agent-feedback" data-show="sending"><span>上传图片 2/2…</span></div>
+      <div class="agent-feedback" hidden data-hide="unsupported sending"></div>
+
+      <div class="agent-chat-wrap"><div class="agent-chat agent-scroll">
+        <!-- 空对话 -->
+        <div class="agent-empty" data-show="draft full drop unsupported"><div class="agent-empty-art"><span class="agent-avatar"></span><span>紗霧</span></div><h3>今天，想聊哪部番？</h3></div>
+
+        <!-- 历史 / 发送中 / 编辑 -->
+        <article class="agent-message agent-message-own" data-show="history zoom edit">
+          <div class="agent-message-by"><span>我</span><span>10/18 14:02</span><button class="agent-icon" aria-label="编辑"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button></div>
+          <div class="agent-shots"><button class="shot-d" aria-label="查看图片 1"></button><button class="shot-a" aria-label="查看图片 2"></button></div>
+          <p class="agent-message-text">这两张截图里的番叫什么？第二张那个角色是谁</p>
+        </article>
+        <article class="agent-message" data-show="history zoom edit">
+          <div class="agent-message-by"><span>纱雾</span></div>
+          <p class="agent-message-text">第一张是《药屋少女的呢喃》第三季的片头，猫猫在后宫回廊那一幕；第二张右边穿蓝衣服的是壬氏。要不要我帮你看看它在不在你的追番里？</p>
+        </article>
+        <article class="agent-message agent-message-own" data-show="history zoom">
+          <div class="agent-message-by"><span>我</span><span>10/18 14:05</span></div>
+          <div class="agent-shots"><button class="is-gone" disabled>图片读取失败</button></div>
+          <p class="agent-message-text">那这张呢</p>
+        </article>
+
+        <article class="agent-message agent-message-own is-pending" data-show="sending">
+          <div class="agent-message-by"><span>我</span></div>
+          <div class="agent-shots"><button class="shot-d"></button><button class="shot-a"></button></div>
+          <p class="agent-message-text">这两张截图里的番叫什么？第二张那个角色是谁</p>
+        </article>
+        <article class="agent-message" data-show="sending"><div class="agent-message-by"><span>纱雾</span></div><div class="agent-writing"><span>·</span><span>·</span><span>·</span></div></article>
+      </div></div>
+
+      <div class="agent-editing-note" data-show="edit"><span>编辑并重新提问，会丢弃这条之后的对话</span><button>取消编辑</button></div>
+      <form class="agent-composer" onsubmit="return false">
+        <!-- 附图条 -->
+        <div class="agent-attach" data-show="draft unsupported edit">
+          <span class="agent-attach-item shot-d"><button class="rm" aria-label="移除图片 1">×</button></span>
+          <span class="agent-attach-item shot-a" data-show="draft unsupported edit"><button class="rm" aria-label="移除图片 2">×</button></span>
+          <span class="agent-attach-item shot-c is-busy" data-show="draft"><button class="rm" aria-label="移除图片 3">×</button></span>
+        </div>
+        <div class="agent-attach" data-show="full">
+          <span class="agent-attach-tip">一次最多 4 张</span>
+          <span class="agent-attach-item shot-d"><button class="rm">×</button></span>
+          <span class="agent-attach-item shot-a"><button class="rm">×</button></span>
+          <span class="agent-attach-item shot-c"><button class="rm">×</button></span>
+          <span class="agent-attach-item is-bad"><em>读不了<br>这张</em><button class="rm">×</button></span>
+        </div>
+        <textarea class="agent-scroll" rows="2" placeholder="输入消息…" data-text></textarea>
+        <div class="agent-composer-foot">
+          <button type="button" class="agent-context-control"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 12l6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l7-7"/></svg>上下文</button>
+          <button type="button" class="agent-context-control" data-imgbtn><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>图片<span class="count" data-count></span></button>
+          <small data-hint>Enter 发送 · Shift + Enter 换行</small>
+          <button type="button" class="agent-send" aria-label="发送消息" data-sendbtn><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 18V6M6 12l6-6 6 6"/></svg></button>
+        </div>
+      </form>
+
+      <div class="agent-drop" data-show="drop">松手，把图片放进来</div>
+      <div class="agent-lightbox" data-show="zoom">
+        <header><span>图片 2 / 2</span><button aria-label="关闭">×</button></header>
+        <div><span class="shot-a"></span></div>
+      </div>
+    </section>
+  </div>
+</template>
+
+<script>
+  const desc = {
+    draft: '截好图直接 ⌘V 粘进输入框（或拖进来 / 点「图片」）。缩略图排在文本框上方，第三张还在缩放压缩，转圈遮罩只盖住这一格；右上角 × 随时去掉。底栏「图片」后面显示已放几张，只换文字不挪按钮。',
+    full: '已经 4 张时再粘贴：不收，附图条右上角浮一句「一次最多 4 张」，两秒后淡出，不推动任何东西。「图片」按钮置灰。不是图片或解不开的文件不会进来，同一处浮出「读不了这张」；稿里画的那一格是 HEIC 之类浏览器解不了的格式，占位方便用户知道是哪一张被拒、手动删掉。',
+    drop: '把截图拖到面板上任何位置，整块盖一层虚线框提示，面板尺寸不变；松手后进附图条。拖的不是图片就不显示这层。',
+    sending: '点发送后：图先随消息上传，顶部状态行写「上传图片 2/2…」，然后照常出现纱雾的「…」。我的消息气泡里图片略淡，等服务端存好后转正常。上传或回合失败时，草稿和附图原样退回输入框，不会丢。',
+    history: '历史里，我的消息上方排缩略图（74px，最多 4 格一行），文字在下。服务器上的图已经被删或读失败时，该格换成虚线占位「图片读取失败」，消息本身照常显示。',
+    zoom: '点缩略图，在助手面板内部盖一层暗底看大图（不遮主页面）；Esc / × 关闭，左右键切换同一条消息里的图。',
+    unsupported: '自配 API 选的模型不能看图时，发送前就拦下，不偷偷丢图：顶部状态行（红字）给出原因和去「AI 连接」的入口，草稿和图片都留在输入框里。错误码 IMAGE_UNSUPPORTED 原样透传；如果服务商自己报了别的错，照它的错误码显示。',
+    edit: '点自己消息上的编辑：文字回到输入框，原消息的图也回到附图条（已存在服务器上，不重新上传），可以删掉或再加，重发后丢弃这条之后的对话，与现在的编辑规则一致。'
+  }
+  const fill = { draft: '这三张截图里的番叫什么？', full: '', drop: '', unsupported: '这张截图里的番叫什么？', edit: '这两张截图里的番叫什么？第二张那个角色是谁', sending: '', history: '', zoom: '' }
+  const counts = { draft: ' 3/4', full: ' 4/4', unsupported: ' 2/4', edit: ' 2/4' }
+  function render(s) {
+    document.querySelectorAll('#states button').forEach(b => b.classList.toggle('on', b.dataset.s === s))
+    document.getElementById('desc').textContent = desc[s]
+    for (const id of ['pc', 'tab']) {
+      const host = document.getElementById(id)
+      host.innerHTML = id === 'tab' ? '<div class="tabs"><span>周历</span><span>追番</span><span>大厅</span><span>设置</span></div>' : ''
+      const node = document.getElementById('panel').content.cloneNode(true)
+      node.querySelectorAll('[data-show]').forEach(el => { if (el.dataset.show.split(' ').includes(s)) el.removeAttribute('data-show') })
+      node.querySelectorAll('[data-hide]').forEach(el => { if (el.dataset.hide.split(' ').includes(s)) el.remove() })
+      node.querySelector('[data-text]').value = fill[s]
+      node.querySelector('[data-count]').textContent = counts[s] || ''
+      if (s === 'full') node.querySelector('[data-imgbtn]').disabled = true
+      if (s === 'sending') { node.querySelector('[data-sendbtn]').classList.add('is-stop'); node.querySelector('[data-sendbtn]').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>' }
+      if (id === 'tab') node.querySelector('[data-hint]').textContent = ''
+      host.appendChild(node)
+    }
+  }
+  document.getElementById('states').addEventListener('click', e => { const b = e.target.closest('button'); if (b) render(b.dataset.s) })
+  render('draft')
+</script>
+</body>
+</html>

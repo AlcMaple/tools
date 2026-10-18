@@ -5,7 +5,8 @@ import { logAgentIssue } from './diagnostics'
 import { AgentRunError, RUN_LIMITS, START_RUN_SCHEMA, RESUME_RUN_SCHEMA, type StartRun, type ResumeRun, type ReadToolCall, type RunCheckpoint } from '../../shared/agent-run'
 import { AGENT_LIMITS, AGENT_SYSTEM_RULES } from './policy'
 import type { AgentContextService } from './context-service'
-import { estimateContextTokens } from './context-provider'
+import { IMAGE_INPUT_TOKENS, estimateContextTokens } from './context-provider'
+import { AgentImageStore } from './image-store'
 import { AgentRunStore, type RunRow } from './run-store'
 import { knowledgeHash, requireSameKnowledge, type KnowledgeSnapshot } from './knowledge'
 import { matchesContract, parseToolRequest, validateModelOutput, validateToolResult } from './validation'
@@ -13,10 +14,11 @@ import { matchesContract, parseToolRequest, validateModelOutput, validateToolRes
 export interface RunModelRequest {
   system: string; knowledge: KnowledgeSnapshot; layers: unknown[]; nativeState: unknown
   tools: Partial<typeof AGENT_TOOLS>; results: RunCheckpoint['results']; outputSchema: typeof MODEL_OUTPUT_SCHEMA
+  images?: string[]
 }
 export type RunProviderEvent = { type: 'delta'; text: string } | { type: 'output'; value: unknown } | { type: 'usage'; usage: AgentUsage } | {type:'warning';estimatedCost:number;currency:string}
 export interface RunProvider {
-  source: 'server' | 'byok'; model: string; fingerprint: string
+  source: 'server' | 'byok'; model: string; fingerprint: string; vision?: boolean
   stream(request: RunModelRequest, signal: AbortSignal): AsyncIterable<RunProviderEvent>
 }
 export interface ReadTool {
@@ -70,9 +72,11 @@ export class AgentRunService {
   async start(uid:number,sessionId:string,input:unknown,authVersion:number){
     if(!matchesContract(START_RUN_SCHEMA,input))throw new AgentRunError('INVALID_ARGUMENT',400)
     const p=input as StartRun
-    if(!p.body.trim()||p.body.trim()==='/compact')throw new AgentRunError('INVALID_ARGUMENT',400)
+    if((!p.body.trim()&&!p.images?.length)||p.body.trim()==='/compact')throw new AgentRunError('INVALID_ARGUMENT',400)
     this.store.recover()
     const binding=await waitBounded(Promise.resolve(this.resolve(uid,sessionId)),AbortSignal.timeout(30_000)),knowledge=this.checkBinding(binding)
+    // 在写入消息前拦下：看不了图的型号不能把图静默丢掉再回答。
+    if(p.images?.length&&!binding.provider.vision)throw new AgentRunError('IMAGE_UNSUPPORTED',400)
     const result=this.store.begin(uid,sessionId,p,knowledge,authVersion)
     if(result.fresh)this.launch(result.row,binding)
     return {run:this.store.view(result.row),session:result.session,userMessage:result.userMessage}
@@ -156,8 +160,12 @@ export class AgentRunService {
       this.store.event(uid,id,'knowledge',{version:knowledge.version,release:knowledge.release,status:knowledge.status,
         clientStale:initial.client_version!==null&&initial.client_version!==knowledge.release,refreshRequired:initial.client_version!==null&&initial.client_version!==knowledge.release})
       const transcript=binding.context.store.transcript(uid,initial.session_id)
-      const question=transcript.messages.find(m=>m.id===initial.user_message_id)?.body
-      if(!question)throw new AgentRunError('STALE_TURN')
+      const asked=transcript.messages.find(m=>m.id===initial.user_message_id)
+      if(!asked)throw new AgentRunError('STALE_TURN')
+      if(asked.images.length&&!binding.provider.vision)throw new AgentRunError('IMAGE_UNSUPPORTED',400)
+      const question=asked.images.length?`${asked.body}\n[本条附图 ${asked.images.length} 张，随这条消息一起给你]`:asked.body
+      // 图只在本轮这条消息里带上；之后的回合和摘要只看到 transcript 里的「附图 N 张」。
+      const images=asked.images.length?await new AgentImageStore(this.store.db).dataUrls(uid,initial.session_id,asked.images):[]
       let prepared=await waitBounded(binding.context.prepare(uid,initial.session_id,{requestId:randomUUID(),expectedRevision:transcript.session.revision,question},
         {runId:id,signal,additionalInput:knowledge,provider:binding.provider}),signal)
       if(prepared.state==='compacting'){
@@ -182,8 +190,8 @@ export class AgentRunService {
       for(;;){
         guard()
         if(this.store.row(uid,id).rounds>=this.controls.toolRounds)throw new AgentRunError('ROUND_LIMIT')
-        const request:RunModelRequest={system:AGENT_SYSTEM_RULES,knowledge,layers,nativeState:view.nativeState,tools,results:checkpoint.results,outputSchema:MODEL_OUTPUT_SCHEMA}
-        if(estimateContextTokens(request)>view.budget.maxInputTokens)throw new AgentRunError('CONTEXT_BUDGET')
+        const request:RunModelRequest={system:AGENT_SYSTEM_RULES,knowledge,layers,nativeState:view.nativeState,tools,results:checkpoint.results,outputSchema:MODEL_OUTPUT_SCHEMA,images}
+        if(estimateContextTokens({...request,images:[]})+images.length*IMAGE_INPUT_TOKENS>view.budget.maxInputTokens)throw new AgentRunError('CONTEXT_BUDGET')
         checkpoint.inFlight='model';save();this.store.event(uid,id,'model_started',{round:this.store.row(uid,id).rounds,provider:binding.provider.source,model:binding.provider.model})
         let output:JsonValue|undefined,hadDelta=false
         modelStarted=now();usageReported=false;modelUsageIndex=checkpoint.usage.length

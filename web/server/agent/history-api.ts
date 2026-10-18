@@ -2,7 +2,10 @@ import { Hono, type Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { db } from '../db'
 import { getSession, rateLimited } from '../auth'
-import { AgentHistoryError, HISTORY_LIMITS, USER_MESSAGE_SCHEMA, type AppendUserMessage } from '../../shared/agent-history'
+import { AGENT_IMAGE_LIMITS, AgentHistoryError, HISTORY_LIMITS, USER_MESSAGE_SCHEMA, type AppendUserMessage } from '../../shared/agent-history'
+import { AgentImageStore } from './image-store'
+import { imagesAllowed } from './external-runtime'
+import { logAgentIssue } from './diagnostics'
 import { AgentHistoryStore } from './history-store'
 import { createAgentContextApi } from './context-api'
 import { agentContextService, agentContextStore } from './context-runtime'
@@ -14,6 +17,9 @@ import { agentActionStore, agentPlaybackStore, agentRunService, currentAgentKnow
 
 const history = new Hono<{ Variables: { agentUid: number } }>()
 export const agentHistoryStore = new AgentHistoryStore(db)
+const agentImages = new AgentImageStore(db)
+const imagePath = /\/sessions\/[^/]+\/images(?:\/[^/]+)?$/
+setInterval(() => { void agentImages.sweepAll().catch(error => logAgentIssue('agent-image', { op: 'sweep' }, error)) }, 60 * 60_000).unref()
 
 history.use('*', async (c, next) => {
   c.header('Cache-Control', 'no-store')
@@ -21,15 +27,17 @@ history.use('*', async (c, next) => {
   if (!session) return c.json({ code: 'AUTH_REQUIRED', error: '先登录，再来翻这本手帐吧。' }, 401)
   c.set('agentUid', session.uid)
   c.header('X-Agent-Owner',String(session.uid))
-  const operation = c.req.method === 'GET' ? 'read' : 'write'
-  if (rateLimited(`agent-history:${operation}:${session.uid}`, operation === 'read' ? 120 : 30, 60_000)) {
+  // 一屏历史里的缩略图各是一次 GET，不和翻页、读会话抢同一个读额度。
+  const operation = c.req.method !== 'GET' ? 'write' : imagePath.test(c.req.path) ? 'image' : 'read'
+  if (rateLimited(`agent-history:${operation}:${session.uid}`, operation === 'image' ? 600 : operation === 'read' ? 120 : 30, 60_000)) {
     c.header('Retry-After', '60')
     return c.json({ code: 'RATE_LIMITED', error: '翻写得有点快，稍等一下再来吧。' }, 429)
   }
   await next()
 })
 
-history.use('*', bodyLimit({ maxSize: HISTORY_LIMITS.requestBytes, onError: c => c.json({ code: 'MESSAGE_TOO_LARGE', error: '这条消息太长啦，请分几次保存。' }, 413) }))
+const jsonLimit = bodyLimit({ maxSize: HISTORY_LIMITS.requestBytes, onError: c => c.json({ code: 'MESSAGE_TOO_LARGE', error: '这条消息太长啦，请分几次保存。' }, 413) })
+history.use('*', (c, next) => c.req.method === 'POST' && imagePath.test(c.req.path) ? next() : jsonLimit(c, next))
 history.onError((error, c) => {
   if (error instanceof AgentRunError) return c.json(externalError(error),error.status)
   if (error instanceof AgentHistoryError) return c.json({ code: error.code, error: error.message }, error.status)
@@ -97,9 +105,35 @@ history.post('/sessions/:sessionId/messages', async c => {
   }
   return c.json(agentHistoryStore.appendUser(c.get('agentUid'),c.req.param('sessionId'),value),201)
 })
-history.post('/sessions/:sessionId/clear', async c => c.json({ session: agentHistoryStore.clearSession(c.get('agentUid'), c.req.param('sessionId'), await body(c)) }))
-history.post('/sessions/:sessionId/truncate', async c => c.json({ session: agentHistoryStore.truncateSession(c.get('agentUid'), c.req.param('sessionId'), await body(c)) }))
-history.delete('/sessions/:sessionId', async c => c.json(agentHistoryStore.deleteSession(c.get('agentUid'), c.req.param('sessionId'), await body(c))))
+// 附图两半同进同退：清空 / 删除先在事务里删行，再删整个会话的图目录；截断丢下的图给宽限期（编辑重发会带回）。
+history.post('/sessions/:sessionId/clear', async c => {
+  const uid = c.get('agentUid'), id = c.req.param('sessionId'), session = agentHistoryStore.clearSession(uid, id, await body(c))
+  await agentImages.removeSession(uid, id)
+  return c.json({ session })
+})
+history.post('/sessions/:sessionId/truncate', async c => {
+  const uid = c.get('agentUid'), id = c.req.param('sessionId'), { session, releasedImages } = agentHistoryStore.truncateReleasing(uid, id, await body(c))
+  await agentImages.graceRemoved(uid, id, releasedImages)
+  return c.json({ session })
+})
+history.delete('/sessions/:sessionId', async c => {
+  const uid = c.get('agentUid'), id = c.req.param('sessionId'), result = agentHistoryStore.deleteSession(uid, id, await body(c))
+  await agentImages.removeSession(uid, id)
+  return c.json(result)
+})
+// 附图：浏览器已缩成长边 1280 的 JPEG，发送前逐张上传、拿编号，开回合时把编号带上。
+history.post('/sessions/:sessionId/images', bodyLimit({ maxSize: AGENT_IMAGE_LIMITS.bytes, onError: c => c.json({ code: 'IMAGE_TOO_LARGE', error: '这张图太大了，换一张或裁小一点再试。' }, 413) }), async c => {
+  const uid = c.get('agentUid')
+  if (!/^image\/jpeg(?:;|$)/i.test(c.req.header('content-type') ?? '')) throw new AgentRunError('IMAGE_INVALID', 400)
+  if (!imagesAllowed(uid)) throw new AgentRunError('IMAGE_UNSUPPORTED', 400)
+  const image = await agentImages.save(uid, c.req.param('sessionId'), Buffer.from(await c.req.arrayBuffer()))
+  return c.json({ image }, 201)
+})
+history.get('/sessions/:sessionId/images/:imageId', async c => {
+  const bytes = await agentImages.read(c.get('agentUid'), c.req.param('sessionId'), c.req.param('imageId'))
+  c.header('Cache-Control', 'private, max-age=31536000, immutable')
+  return c.body(new Uint8Array(bytes), 200, { 'Content-Type': 'image/jpeg' })
+})
 history.get('/sessions/:sessionId/export', c => {
   if (Object.keys(c.req.query()).length) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '导出整本手帐时不用填写筛选条件。')
   const uid = c.get('agentUid')

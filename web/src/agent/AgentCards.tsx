@@ -8,6 +8,7 @@ import { AgentSources } from './AgentSources'
 import { AgentMarkdown } from './AgentMarkdown'
 import { AgentActivity } from './AgentActivity'
 import { Ic } from '../SketchIcon'
+import { agentImageUrl } from './images'
 
 const ACTION_LABEL:Record<ActionState,string>={prepared:'待确认',user_confirmed:'已确认',dispatch_started:'已发起',navigation_committed:'页面已打开',player_ready:'播放器已就绪',source_selected:'已选择片源',media_canplay:'可以开始播放',playing:'正在播放',completed:'已完成',failed:'未完成',cancelled:'已取消',unknown:'结果待确认'}
 
@@ -75,10 +76,17 @@ function SourcePicker({actionId,preview,busy,image,setImage,onCaptcha,onSubmitCa
   </div>
 }
 
-export function MessageCard({message,disabled,activity,onNavigate,onEdit,editing,actionPreviews,onConfirmAction,onCancelAction,onOpenPlayback,onFollowPlayback,onSearchSource,onCaptcha,onSubmitCaptcha,onPickSource,actionBusy}:{message:HistoryMessage;disabled:boolean;activity?:string;onNavigate?:()=>void;onEdit?:()=>void;editing?:boolean;actionPreviews?:Record<string,ActionPreview>;onConfirmAction?:(id:string)=>void;onCancelAction?:(id:string)=>void;onOpenPlayback?:(id:string)=>void;onFollowPlayback?:(id:string)=>void
+// 自己消息上方的附图；读不到（被删 / 网络）时那一格换成虚线占位，消息照常显示。
+export function AgentShots({urls,onOpen}:{urls:string[];onOpen?:(urls:string[],index:number)=>void}):JSX.Element{
+  const [gone,setGone]=useState<Set<string>>(()=>new Set())
+  return <div className="agent-shots">{urls.map((url,index)=>gone.has(url)
+    ?<span key={url} className="is-gone">图片读取失败</span>
+    :<button key={url} type="button" aria-label={`查看图片 ${index+1}`} onClick={()=>onOpen?.(urls.filter(u=>!gone.has(u)),urls.filter(u=>!gone.has(u)).indexOf(url))}><img src={url} alt="" loading="lazy" onError={()=>setGone(prev=>new Set(prev).add(url))}/></button>)}</div>
+}
+export function MessageCard({message,disabled,activity,onNavigate,onEdit,editing,actionPreviews,onConfirmAction,onCancelAction,onOpenPlayback,onFollowPlayback,onSearchSource,onCaptcha,onSubmitCaptcha,onPickSource,actionBusy,onOpenImage}:{message:HistoryMessage;disabled:boolean;activity?:string;onNavigate?:()=>void;onEdit?:()=>void;editing?:boolean;actionPreviews?:Record<string,ActionPreview>;onConfirmAction?:(id:string)=>void;onCancelAction?:(id:string)=>void;onOpenPlayback?:(id:string)=>void;onFollowPlayback?:(id:string)=>void
   onSearchSource?:(id:string)=>Promise<{needsCaptcha:boolean}>;onCaptcha?:(id:string)=>Promise<string|null>
   onSubmitCaptcha?:(id:string,code:string)=>Promise<boolean>;onPickSource?:(id:string,index:number)=>Promise<void>
-  actionBusy?:boolean}):JSX.Element{
+  actionBusy?:boolean;onOpenImage?:(urls:string[],index:number)=>void}):JSX.Element{
   const own=message.role==='user'
   // 认源过程中的验证码图。它不属于任何持久状态：刷新就该重新取一张，源站那边旧图也已作废。
   const [captcha,setCaptcha]=useState<{actionId:string;image:string|null}|null>(null)
@@ -90,7 +98,8 @@ export function MessageCard({message,disabled,activity,onNavigate,onEdit,editing
   }
   return <article className={`agent-message ${own?'agent-message-own':''}${editing?' is-editing':''}`} data-message-id={message.id}>
     <div className="agent-message-by"><span>{own?'我':'纱雾'}</span><span>{editing?'编辑中…':message.status==='streaming'?'正在写…':message.status==='cancelled'?'已停止':message.status==='failed'?'保留的片段':''}</span>{own&&onEdit&&<button type="button" className="agent-icon" title="编辑并重新提问" aria-label="编辑并重新提问" onClick={onEdit} disabled={disabled}><Ic name="pencil" cls="ic ic-sm" /></button>}</div>
-    {message.body?(own?<LongText className="agent-message-text" text={message.body}/>:<AgentMarkdown text={message.body} streaming={message.status==='streaming'}/>):message.status==='streaming'?<AgentActivity label={activity}/>:<p className="agent-message-empty">这一页的查询记录已收好。</p>}
+    {own&&(message.images??[]).length>0&&<AgentShots urls={message.images.map(id=>agentImageUrl(message.sessionId,id))} onOpen={onOpenImage}/>}
+    {message.body?(own?<LongText className="agent-message-text" text={message.body}/>:<AgentMarkdown text={message.body} streaming={message.status==='streaming'}/>):message.status==='streaming'?<AgentActivity label={activity}/>:own?null:<p className="agent-message-empty">这一页的查询记录已收好。</p>}
     {!own&&message.body&&message.status==='streaming'&&<AgentActivity label={activity}/>}
     {/* 动作卡紧跟正文，排在来源 / 翻阅记录 / 用量之前：待确认的预览一旦被挤到这些区块下面，
         就会掉出浮层可视区，用户以为回复结束了，其实还有一张卡在等他。 */}
