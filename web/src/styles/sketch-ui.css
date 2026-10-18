@@ -835,10 +835,13 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   flex-direction: column;
   gap: 7px;
 }
-.poster:nth-child(4n+1) { transform: rotate(-1.1deg); }
-.poster:nth-child(4n+2) { transform: rotate(.8deg); }
-.poster:nth-child(4n+3) { transform: rotate(-.5deg); }
-.poster:nth-child(4n) { transform: rotate(1.2deg); }
+/* 同 .trk-grid：低于 2x 的屏上旋转会把卡内文字糊掉，只在高分屏歪放 */
+@media (min-resolution: 2dppx) {
+  .poster:nth-child(4n+1) { transform: rotate(-1.1deg); }
+  .poster:nth-child(4n+2) { transform: rotate(.8deg); }
+  .poster:nth-child(4n+3) { transform: rotate(-.5deg); }
+  .poster:nth-child(4n) { transform: rotate(1.2deg); }
+}
 .cover {
   position: relative;
   aspect-ratio: 3 / 4;
@@ -2012,8 +2015,11 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
     gap: 9px;
     padding: 8px 8px 12px;
   }
-  .trk-grid .trk-row:nth-child(3n+1) { transform: rotate(-.5deg); }
-  .trk-grid .trk-row:nth-child(3n+2) { transform: rotate(.4deg); }
+  /* 歪放只给 2x 屏：1x~1.5x 屏（Windows 常见）上旋转后的文字和按钮会被重采样，同一排里歪的卡糊、正的卡清楚 */
+  @media (min-resolution: 2dppx) {
+    .trk-grid .trk-row:nth-child(3n+1) { transform: rotate(-.5deg); }
+    .trk-grid .trk-row:nth-child(3n+2) { transform: rotate(.4deg); }
+  }
   .trk-grid .trk-row:has(.trk-menu.open) { z-index: 5; }
   .trk-cover {
     flex: none;
