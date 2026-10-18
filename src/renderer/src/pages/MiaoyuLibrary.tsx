@@ -362,28 +362,12 @@ export default function MiaoyuLibrary(): JSX.Element {
 
   return (
     <div className="relative min-h-full bg-background">
-      <TopBar
-        placeholder=""
-        titleSlot={
-          <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold tracking-tighter text-primary">妙语库</h2>
-            <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">
-              Witty Replies
-            </span>
-          </div>
-        }
-      />
+      <TopBar />
       <div className="pt-16">
         {/* Sticky 页头 —— 同锦囊妙计：top-16 卡在 fixed TopBar 下面 */}
         <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-4 md:px-8 py-4 md:py-5">
           <div className="flex items-end justify-between gap-4 md:gap-6 flex-wrap">
             <div>
-              <div className="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
-                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>forum</span>
-                <span>Social</span>
-                <span className="text-outline-variant">/</span>
-                <span className="text-on-surface font-bold">妙语库</span>
-              </div>
               <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">妙语库</h1>
               <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label">
                 {posts.length} 帖 · {totalComments} 条妙语 —— 借鉴群友怎么幽默地说话

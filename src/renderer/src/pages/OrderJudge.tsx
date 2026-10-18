@@ -639,29 +639,13 @@ function OrderJudge(): JSX.Element {
 
   return (
     <div className="relative min-h-full bg-background">
-      <TopBar
-        placeholder=""
-        titleSlot={
-          <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold tracking-tighter text-primary">接单评估</h2>
-            <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">
-              Order Check
-            </span>
-          </div>
-        }
-      />
+      <TopBar />
 
       <div className="pt-16">
         {/* Sticky 页头 —— 同妙语库 / 锦囊妙计：top-16 卡在 fixed TopBar 下面，页面操作放右侧 */}
         <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-4 md:px-8 py-4 md:py-5">
           <div className="flex items-end justify-between gap-4 md:gap-6">
             <div className="min-w-0">
-              <div className="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
-                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>assignment_turned_in</span>
-                <span>Work</span>
-                <span className="text-outline-variant">/</span>
-                <span className="text-on-surface font-bold">接单评估</span>
-              </div>
               <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">接单评估</h1>
               <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label tabular-nums">
                 {history.entries.length

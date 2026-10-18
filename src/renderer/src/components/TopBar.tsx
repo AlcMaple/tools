@@ -13,9 +13,10 @@ export interface SearchHistoryEntry {
 }
 
 interface TopBarProps {
-  placeholder: string
+  // 不传就不渲染快速查找框：页面标题写在页内，顶栏只放工具和状态
+  placeholder?: string
   onSearch?: (query: string) => void
-  // 可选内容,替换掉左侧的搜索框。给工作流不适合快速查找框的页面用(如资源管理器放标题块)。
+  // 可选内容,替换掉左侧的搜索框。只给页内没有标题的页面用(如资源管理器);页内已有 h1 的页面别再放,否则标题重复。
   titleSlot?: JSX.Element
   /**
    * 嵌在搜索框**内**右侧的小控件(带一条竖分隔线),给「搜索 + 类目下拉」二合一的页面用
@@ -91,7 +92,7 @@ function TopBar({
   }
 
   return (
-    <header className="fixed top-0 right-0 left-0 md:left-16 lg:left-64 h-16 bg-background/80 backdrop-blur-xl flex justify-between items-center gap-2 px-4 md:px-8 z-40">
+    <header className="fixed top-0 right-0 left-0 md:left-16 lg:left-64 h-16 bg-background border-b border-outline-variant/50 flex justify-between items-center gap-2 px-4 md:px-8 z-40">
       {/* 手机档汉堡：打开导航抽屉（平板/桌面有常驻侧栏，故 md 以上隐藏） */}
       <button
         type="button"
@@ -114,7 +115,7 @@ function TopBar({
           **不能加 `overflow-hidden`** —— 否则会把 slot 里那些 `absolute` 定位
           的下拉菜单一起裁掉（菜单要往容器下面伸）。圆角改到各分段自己的边
           (`rounded-l-md` / `rounded-r-md`) 处理。 */}
-      {titleSlot ?? (
+      {titleSlot ?? (placeholder !== undefined && (
         // relative 给历史下拉做定位锚点（下拉用 absolute top-full）。
         <div className="relative flex items-stretch bg-surface-container-highest rounded-md w-full lg:w-80 transition-all duration-300 focus-within:bg-surface-bright focus-within:ring-1 focus-within:ring-primary/40">
           {/* 输入分段：图标 + 输入框，自带 py-2 撑出整个搜索框的高度。 */}
@@ -201,7 +202,7 @@ function TopBar({
             </div>
           )}
         </div>
-      )}
+      ))}
       </div>
 
       {/* Quick Stats —— 逐项渐隐，不一次性全消失：窗口越窄越先收次要项。

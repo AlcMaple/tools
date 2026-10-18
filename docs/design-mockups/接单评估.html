@@ -95,12 +95,9 @@
   </aside>
 
   <div id="page-scroll" class="h-full overflow-y-auto custom-scrollbar md:ml-16 lg:ml-64" style="scrollbar-gutter: stable">
-    <!-- TopBar（titleSlot 形态） -->
-    <header class="sticky top-0 h-16 bg-background/80 backdrop-blur-xl flex justify-between items-center gap-2 px-4 md:px-8 z-40">
-      <div class="flex items-center gap-4 min-w-0">
-        <h2 class="text-2xl font-bold tracking-tighter text-primary">接单评估</h2>
-        <span class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">Order Check</span>
-      </div>
+    <!-- TopBar：只放工具和状态，标题写在页内（见 桌面页头统一.html） -->
+    <header class="sticky top-0 h-16 bg-background border-b border-outline-variant/50 flex justify-between items-center gap-2 px-4 md:px-8 z-40">
+      <div></div>
       <div class="flex items-center gap-1">
         <button id="theme" class="w-9 h-9 grid place-items-center rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" title="切换亮/暗">
           <span class="material-symbols-outlined text-[20px]" id="theme-icon">light_mode</span>
@@ -112,10 +109,6 @@
     <div class="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-4 md:px-8 py-4 md:py-5">
       <div class="flex items-end justify-between gap-4 md:gap-6">
         <div class="min-w-0">
-          <div class="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
-            <span class="material-symbols-outlined" style="font-size:14px">assignment_turned_in</span>
-            <span>Work</span><span class="text-outline-variant">/</span><span class="text-on-surface font-bold">接单评估</span>
-          </div>
           <h1 class="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">接单评估</h1>
           <p class="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label tabular-nums">9 单 · 能 5 · 不能 2 · 信息不足 2</p>
         </div>

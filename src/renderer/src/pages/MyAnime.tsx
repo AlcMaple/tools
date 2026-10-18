@@ -138,16 +138,6 @@ const CATEGORY_TABS: ReadonlyArray<{ key: 'anime' | 'manga' | 'novel'; label: st
 const SORT_KEY = 'maple-anime-sort'
 const TAB_KEY = 'maple-anime-tab'
 
-// 顶栏左侧用标题块替掉 TopBar 默认的搜索框 —— 本页 sticky header 右侧已经有自己的搜索框。
-const TITLE_SLOT = (
-  <div className="flex items-center gap-4">
-    <h2 className="text-2xl font-bold tracking-tighter text-primary">我的追番</h2>
-    <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">
-      Anime · Manga · Novel
-    </span>
-  </div>
-)
-
 export default function MyAnime(): JSX.Element {
   const tracks = useAnimeTrackList()
   const [filter, setFilter] = useState<FilterKey>('all')
@@ -257,7 +247,7 @@ export default function MyAnime(): JSX.Element {
 
   return (
     <div className="relative min-h-full bg-background">
-      <TopBar placeholder="" titleSlot={TITLE_SLOT} />
+      <TopBar />
 
       <div className="pt-16">
         {/* Sticky header —— top-16 是为了让自己卡在 fixed TopBar（高 64px = pt-16）
@@ -265,12 +255,6 @@ export default function MyAnime(): JSX.Element {
         <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-4 md:px-8 py-4 md:py-5">
           <div className="flex items-end justify-between gap-4 md:gap-6 flex-wrap">
             <div>
-              <div className="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
-                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>bookmark</span>
-                <span>Anime</span>
-                <span className="text-outline-variant">/</span>
-                <span className="text-on-surface font-bold">我的追番</span>
-              </div>
               <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">我的追番</h1>
               <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label">
                 状态 · 集数 · 备注 全在这里。在 BGM 详情页加进来，回到这里管理进度。

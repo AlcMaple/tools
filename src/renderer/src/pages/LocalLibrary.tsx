@@ -25,7 +25,6 @@ export default function LocalLibrary(): JSX.Element {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [folderFiles, setFolderFiles] = useState<LibraryFile[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [posters, setPosters] = useState<any[]>([]);
   const [paths, setPaths] = useState<any[]>([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -61,29 +60,19 @@ export default function LocalLibrary(): JSX.Element {
     return cleanupScan;
   }, []);
 
-  const filteredPosters = useMemo(() => {
-    if (!searchQuery.trim()) return posters;
-    const q = searchQuery.toLowerCase();
-    return posters.filter(
-      (p) =>
-        p.title.toLowerCase().includes(q) ||
-        p.nativeTitle.toLowerCase().includes(q),
-    );
-  }, [searchQuery, posters]);
-
   // 列表变化时自动选中第一个文件夹
   useEffect(() => {
-    if (filteredPosters.length === 0) {
+    if (posters.length === 0) {
       setSelectedFolderId(null);
       return;
     }
     if (
       !selectedFolderId ||
-      !filteredPosters.find((p) => p.id === selectedFolderId)
+      !posters.find((p) => p.id === selectedFolderId)
     ) {
-      setSelectedFolderId(filteredPosters[0].id);
+      setSelectedFolderId(posters[0].id);
     }
-  }, [filteredPosters, selectedFolderId]);
+  }, [posters, selectedFolderId]);
 
   const selectedPoster = useMemo(
     () => posters.find((p) => p.id === selectedFolderId) || null,
@@ -109,7 +98,7 @@ export default function LocalLibrary(): JSX.Element {
 
   return (
     <div className="relative min-h-full bg-background">
-      <TopBar placeholder="Search in library..." onSearch={setSearchQuery} />
+      <TopBar />
       <div className="pt-24 pb-8">
         {/* Hero Actions & Stats Area */}
         <section className="px-4 md:px-8 lg:px-12 pb-6">
@@ -152,7 +141,7 @@ export default function LocalLibrary(): JSX.Element {
 
         {isRefreshing && posters.length === 0 ? (
           <SearchingState />
-        ) : filteredPosters.length === 0 ? (
+        ) : posters.length === 0 ? (
           <section className="px-4 md:px-8 lg:px-12 pb-32">
             <div className="py-24 flex justify-center text-on-surface-variant/50 font-label text-sm uppercase tracking-widest">
               Library is empty
@@ -178,7 +167,7 @@ export default function LocalLibrary(): JSX.Element {
 
             {/* Folder Chips */}
             <div className="flex flex-wrap gap-3 mb-8">
-              {filteredPosters.map((p) => {
+              {posters.map((p) => {
                 const active = p.id === selectedFolderId;
                 return (
                   <button

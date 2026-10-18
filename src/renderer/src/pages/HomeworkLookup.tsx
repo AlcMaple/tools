@@ -412,25 +412,13 @@ export default function HomeworkLookup(): JSX.Element {
   return (
     <div className="relative min-h-full bg-background">
       {/* 顶栏搜索框删掉（本就没接 onSearch、纯摆设）—— 页内已有「模糊搜索防守方角色」。 */}
-      <TopBar placeholder="" titleSlot={
-        <div className="flex items-center gap-4">
-          <h2 className="text-2xl font-bold tracking-tighter text-primary">锦囊妙计</h2>
-          <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">Homework · Lineups</span>
-        </div>
-      } />
+      <TopBar />
       <div className="pt-16">
         {/* Sticky page header —— top-16 让 sticky 卡在 fixed TopBar（64px）下面，
             top-0 会让标题被 TopBar 压住露出一半。同 MyAnime / AnimeCalendar 的修法。 */}
         <div className="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-4 md:px-8 py-4 md:py-5">
           <div className="flex items-end justify-between gap-4 md:gap-6 flex-wrap">
             <div>
-              {/* 面包屑 / 副标题在手机档隐藏（窄屏只留主标题），对齐蓝图 .crumb/.subttl 收起 */}
-              <div className="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
-                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>menu_book</span>
-                <span>Tools</span>
-                <span className="text-outline-variant">/</span>
-                <span className="text-on-surface font-bold">锦囊妙计</span>
-              </div>
               <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">锦囊妙计</h1>
               <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label">
                 查询作业 · 浏览经典阵容 · 流水账记录

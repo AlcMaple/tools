@@ -141,25 +141,14 @@ export default function AnimeCalendar(): JSX.Element {
 
   return (
     <div className="relative min-h-full bg-background">
-      {/* 顶栏搜索框删掉（本就没接 onSearch、纯摆设）—— 用标题块占位,跟 MyAnime / 文件管理器一致。 */}
-      <TopBar placeholder="" titleSlot={
-        <div className="flex items-center gap-4">
-          <h2 className="text-2xl font-bold tracking-tighter text-primary">番剧周历</h2>
-          <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">This Season · Bangumi</span>
-        </div>
-      } />
+      {/* 顶栏不放搜索框（本就没接 onSearch、纯摆设）,标题写在页内,顶栏不再重复。 */}
+      <TopBar />
       <div className="pt-16">
         {/* Hero — 标题块随内容滚走，不 sticky。 */}
         <div className="px-4 md:px-8 pt-5 pb-3">
-          <div className="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
-            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>calendar_month</span>
-            <span>Anime</span>
-            <span className="text-outline-variant">/</span>
-            <span className="text-on-surface font-bold">番剧周历</span>
-          </div>
           <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">番剧周历</h1>
           <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label">
-            本季正在播出，按星期排列。来源 Bangumi · 14 天缓存。
+            本季正在播出，按星期排列。
           </p>
         </div>
 
