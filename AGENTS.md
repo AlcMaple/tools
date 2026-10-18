@@ -221,6 +221,11 @@
   后果：开发者需要额外记住去补 `git add`，改动多文件的任务里容易漏掉新文件。新建或移动文件后执行 `git add "<file>"` 加具体路径，禁止用 `git add -A` / `git add .` 图省事（会把无关改动一起卷进来）；编辑已有文件不需要额外 add
 - ❌ 临时验证一段脚本代码用 `node -e "..."` / `python -c "..."` 内联
   后果：命令行转义引号、换行、特殊符号极易写错，反复调整转义比写文件麻烦。改用 heredoc/stdin 喂给解释器，或直接写临时文件到 scratchpad 运行
+- ❌ 验证网页版构建时直接跑 `vite build` / `vite`，绕过 `npm run build` / `npm run dev`
+  后果：真实事故——接单评估提交前只跑了 `vite build`，跳过了前置的 `build:agent-release`；新挂的 `/api/order-judge`
+  没登记进 `server/agent/site-features.ts` 的 `SITE_API_FEATURES` 和 `site-routes.json`，用户一跑 `npm run dev` 就报
+  `FEATURE_ROUTE_COVERAGE` 起不来。验证一律走 package.json 里的脚本；新增顶层路由要同时登记功能归属、重新生成路由快照
+  和 `docs/web/Agent功能说明.md` 的功能说明段
 
 # 代码注释
 
