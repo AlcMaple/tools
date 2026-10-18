@@ -19,6 +19,7 @@ const navItems: NavItem[] = [
   { label: "资源管理器", path: "/file-explorer", icon: "folder_managed" },
   { label: "锦囊妙计", path: "/homework", icon: "swords" },
   { label: "妙语库", path: "/miaoyu", icon: "forum" },
+  { label: "接单评估", path: "/order-judge", icon: "assignment_turned_in" },
 ];
 
 /**

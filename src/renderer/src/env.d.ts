@@ -10,6 +10,7 @@ import type { XifanSearchResult, XifanWatchInfo, XifanSource } from './types/xif
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 import type { AowuSearchResult, AowuEpisode, AowuWatchInfo } from './types/aowu'
 import type { BiliVideoInfo, BiliDash, BiliSearchResult } from './types/bili'
+import type { OrderJudgeSettings, OrderJudgeHistoryEntry, OrderJudgeResult, OrderJudgeProgress, OrderJudgeConvertResult } from './types/orderJudge'
 
 export interface LibraryPath {
   path: string;
@@ -167,6 +168,22 @@ declare global {
       node: () => string
       chrome: () => string
       electron: () => string
+    }
+    orderJudgeApi: {
+      getSettings: () => Promise<OrderJudgeSettings>
+      /** 空字符串表示清除 Key。 */
+      setKey: (key: string) => Promise<OrderJudgeSettings>
+      /** 弹系统对话框选文件并保存路径，取消时原样返回当前设置。 */
+      pickFile: (which: 'profile' | 'log') => Promise<OrderJudgeSettings>
+      /** base 是历史图片目录的 archivist URL，图片地址为 `${base}/${id}/${file}`。 */
+      history: () => Promise<{ base: string; entries: OrderJudgeHistoryEntry[] }>
+      deleteHistory: (id: string) => Promise<void>
+      judge: (input: { text: string; images: { name: string; dataUrl: string }[] }) => Promise<OrderJudgeResult>
+      /** 渲染进程读不了的视频 / 图片 / 文档交给本机工具兜底。 */
+      convert: (kind: 'image' | 'video' | 'doc', bytes: Uint8Array, ext: string) => Promise<OrderJudgeConvertResult>
+      onProgress: (cb: (p: OrderJudgeProgress) => void) => () => void
+      /** pdf.js 的二进制 CMap（读中文 PDF 用），名字不存在时为 null。 */
+      cmap: (name: string) => Promise<Uint8Array | null>
     }
     miaoyuApi: {
       /** 妙语库图片目录的 archivist base URL。渲染端用 `${base}/${hash}.${ext}` 拼具体图片 URL。 */

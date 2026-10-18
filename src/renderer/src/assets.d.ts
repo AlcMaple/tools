@@ -15,3 +15,8 @@ declare module '*.svg' {
   const src: string
   export default src
 }
+
+// pdf.js 的 worker 入口没有自带类型；接单评估把它挂到 globalThis.pdfjsWorker 上在主线程运行
+declare module 'pdfjs-dist/build/pdf.worker.min.mjs' {
+  export const WorkerMessageHandler: unknown
+}

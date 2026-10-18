@@ -99,19 +99,35 @@
     <header class="sticky top-0 h-16 bg-background/80 backdrop-blur-xl flex justify-between items-center gap-2 px-4 md:px-8 z-40">
       <div class="flex items-center gap-4 min-w-0">
         <h2 class="text-2xl font-bold tracking-tighter text-primary">接单评估</h2>
+        <span class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 hidden lg:inline">Order Check</span>
       </div>
       <div class="flex items-center gap-1">
-        <button id="open-settings" class="flex items-center gap-1.5 px-3 h-9 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors">
-          <span class="material-symbols-outlined text-[20px]">tune</span>
-          <span class="font-label text-sm">评估设置</span>
-        </button>
         <button id="theme" class="w-9 h-9 grid place-items-center rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" title="切换亮/暗">
           <span class="material-symbols-outlined text-[20px]" id="theme-icon">light_mode</span>
         </button>
       </div>
     </header>
 
-    <div class="px-4 md:px-8 pt-4 pb-16">
+    <!-- 吸顶页头：同妙语库 / 锦囊妙计，页面操作放右侧 -->
+    <div class="sticky top-16 z-30 bg-surface-container-lowest border-b border-outline-variant/10 px-4 md:px-8 py-4 md:py-5">
+      <div class="flex items-end justify-between gap-4 md:gap-6">
+        <div class="min-w-0">
+          <div class="hidden md:flex items-center gap-2 mb-2 text-xs font-label text-outline uppercase tracking-widest">
+            <span class="material-symbols-outlined" style="font-size:14px">assignment_turned_in</span>
+            <span>Work</span><span class="text-outline-variant">/</span><span class="text-on-surface font-bold">接单评估</span>
+          </div>
+          <h1 class="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">接单评估</h1>
+          <p class="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label tabular-nums">9 单 · 能 5 · 不能 2 · 信息不足 2</p>
+        </div>
+        <button id="open-settings" class="relative shrink-0 flex items-center gap-2 px-3.5 sm:px-5 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface font-label text-xs uppercase tracking-widest hover:bg-surface-bright hover:border-primary/40 transition-all whitespace-nowrap">
+          <span class="material-symbols-outlined" style="font-size:18px">tune</span>
+          <span class="hidden sm:inline">评估设置</span>
+          <span id="setup-dot" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 rounded-[9999px] bg-amber ring-2 ring-surface-container-lowest"></span>
+        </button>
+      </div>
+    </div>
+
+    <div class="px-4 md:px-8 pt-8 pb-16">
       <div class="mx-auto max-w-[1180px] grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
 
         <!-- ─────────── 左列：材料 + 结论 ─────────── -->
@@ -183,7 +199,7 @@
 
         <!-- ─────────── 右列：历史 ─────────── -->
         <aside class="min-w-0">
-          <div class="xl:sticky xl:top-20">
+          <div class="xl:sticky xl:top-[220px]">
             <div class="flex items-baseline justify-between mb-2 px-1">
               <h3 class="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">历史记录</h3>
               <span id="hist-count" class="font-label text-[11px] text-on-surface-variant/50 tabular-nums"></span>
@@ -462,6 +478,7 @@ function render() {
   $("theme-icon").textContent = S.theme === "dark" ? "light_mode" : "dark_mode";
   document.querySelectorAll(".mod").forEach((e) => e.textContent = S.platform === "mac" ? "⌘V" : "Ctrl+V");
   $("nokey").classList.toggle("hidden", !S.nokey);
+  $("setup-dot").classList.toggle("hidden", !S.nokey);
 
   const sc = S.screen;
   const filled = !["blank", "empty"].includes(sc);
@@ -553,7 +570,7 @@ const PARITY = [
   ["历史为空「还没有评估过的派单」", "同左", "blank"],
   ["旧格式只有 md 的历史（legacy）", "迁移时转成「详情」纯文本卡片显示", "r-能"],
   ["清空 logs/ 才能删历史", "每条历史悬停出现删除", "r-能"],
-  ["gui.py --setup 粘贴 Key", "顶栏「评估设置」抽屉；缺 Key 时页面顶部提示条", "nokey"],
+  ["gui.py --setup 粘贴 Key", "页头右侧「评估设置」按钮打开抽屉；缺 Key 时按钮带提示点，页面顶部出提示条", "nokey"],
   ["能力档案 / 项目日志放在目录里，每天手动复制", "设置里选文件路径，评估时直接读最新内容", "sheet"],
   ["深色模式", "跟随应用亮 / 暗主题", "theme"],
   ["窄屏适配", "宽度不足时历史栏落到结论下方", "filled"],

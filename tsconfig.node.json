@@ -8,5 +8,5 @@
     "strict": true,
     "types": ["node"]
   },
-  "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "web/shared/xifan-next.ts"]
+  "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "web/shared/xifan-next.ts", "web/shared/order-judge.ts"]
 }

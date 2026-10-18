@@ -8,6 +8,7 @@ import { registerFileExplorerIpc } from './fileExplorer'
 import { registerWebDavIpc } from './webdav'
 import { registerMailIpc } from './mail'
 import { registerMiaoyuIpc } from './miaoyu'
+import { registerOrderJudgeIpc } from './orderJudge'
 import { registerBiliIpc } from './bili'
 import { registerWebAccountIpc } from './webAccount'
 import { registerLogIpc } from '../shared/logger'
@@ -24,6 +25,7 @@ export function registerAllIpc(): void {
   registerWebDavIpc()
   registerMailIpc()
   registerMiaoyuIpc()
+  registerOrderJudgeIpc()
   registerBiliIpc()
   registerWebAccountIpc()
 }

@@ -12,6 +12,7 @@ import LocalLibrary from './pages/LocalLibrary'
 import FileExplorer from './pages/FileExplorer'
 import HomeworkLookup from './pages/HomeworkLookup'
 import MiaoyuLibrary from './pages/MiaoyuLibrary'
+import OrderJudge from './pages/OrderJudge'
 import OnlinePlayer from './pages/OnlinePlayer'
 import UpdateBanner from './components/UpdateBanner'
 import EditContextMenu from './components/EditContextMenu'
@@ -64,6 +65,7 @@ function Shell(): JSX.Element {
           <Route path="/settings" element={<Settings />} />
           <Route path="/homework" element={<HomeworkLookup />} />
           <Route path="/miaoyu" element={<MiaoyuLibrary />} />
+          <Route path="/order-judge" element={<OrderJudge />} />
           {/* 在线观看播放页,无侧边栏入口 —— 只从追番卡片「播放」按钮进入 */}
           <Route path="/play" element={<OnlinePlayer />} />
         </Routes>

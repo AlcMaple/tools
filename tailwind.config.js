@@ -51,7 +51,12 @@ module.exports = {
         'surface-container-highest': 'rgb(var(--color-surface-container-highest) / <alpha-value>)',
         'outline-variant': 'rgb(var(--color-outline-variant) / <alpha-value>)',
         'outline': 'rgb(var(--color-outline) / <alpha-value>)',
-        'inverse-surface': 'rgb(var(--color-inverse-surface) / <alpha-value>)'
+        'inverse-surface': 'rgb(var(--color-inverse-surface) / <alpha-value>)',
+        // 接单评估的结论色：能 = yes，信息不足 / 风险 = amber
+        'yes': 'rgb(var(--color-yes) / <alpha-value>)',
+        'yes-container': 'rgb(var(--color-yes-container) / <alpha-value>)',
+        'amber': 'rgb(var(--color-amber) / <alpha-value>)',
+        'amber-container': 'rgb(var(--color-amber-container) / <alpha-value>)'
       },
       fontFamily: {
         'headline': ['Inter', 'sans-serif'],

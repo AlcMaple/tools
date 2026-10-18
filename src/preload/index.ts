@@ -411,3 +411,21 @@ contextBridge.exposeInMainWorld('miaoyuApi', {
   importImages: (map: Record<string, string>) =>
     ipcRenderer.invoke('miaoyu:import-images', map) as Promise<number>,
 })
+
+contextBridge.exposeInMainWorld('orderJudgeApi', {
+  getSettings: () => ipcRenderer.invoke('order-judge:get-settings'),
+  setKey: (key: string) => ipcRenderer.invoke('order-judge:set-key', key),
+  pickFile: (which: 'profile' | 'log') => ipcRenderer.invoke('order-judge:pick-file', which),
+  history: () => ipcRenderer.invoke('order-judge:history'),
+  deleteHistory: (id: string) => ipcRenderer.invoke('order-judge:delete-history', id),
+  judge: (input: { text: string; images: { name: string; dataUrl: string }[] }) =>
+    ipcRenderer.invoke('order-judge:judge', input),
+  convert: (kind: 'image' | 'video' | 'doc', bytes: Uint8Array, ext: string) =>
+    ipcRenderer.invoke('order-judge:convert', kind, bytes, ext),
+  cmap: (name: string) => ipcRenderer.invoke('order-judge:cmap', name),
+  onProgress: (cb: (p: unknown) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, p: unknown): void => cb(p)
+    ipcRenderer.on('order-judge:progress', handler)
+    return () => ipcRenderer.removeListener('order-judge:progress', handler)
+  },
+})

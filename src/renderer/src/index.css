@@ -51,6 +51,10 @@
     --color-outline-variant: 217 193 193; /* #d9c1c1 */
     --color-outline: 132 115 116; /* #847374 */
     --color-inverse-surface: 49 48 48; /* #313030 */
+    --color-yes: 22 108 69; /* #166c45 */
+    --color-yes-container: 214 243 226; /* #d6f3e2 */
+    --color-amber: 122 90 30; /* #7a5a1e */
+    --color-amber-container: 255 240 205; /* #fff0cd */
   }
 
   .dark {
@@ -101,6 +105,10 @@
     --color-outline-variant: 84 67 67; /* #544343 */
     --color-outline: 161 140 140; /* #a18c8c */
     --color-inverse-surface: 226 226 226; /* #e2e2e2 */
+    --color-yes: 134 214 168; /* #86d6a8 */
+    --color-yes-container: 24 58 40; /* #183a28 */
+    --color-amber: 236 196 118; /* #ecc476 */
+    --color-amber-container: 62 48 18; /* #3e3012 */
   }
 }
 
