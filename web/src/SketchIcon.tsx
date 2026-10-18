@@ -35,6 +35,11 @@ const SYMBOLS = `
 <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.2S3.5 14.8 3.5 8.9A4.4 4.4 0 0 1 12 6.6a4.4 4.4 0 0 1 8.5 2.3c0 5.9-8.5 11.3-8.5 11.3z"/></symbol>
 <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M4 6.5h16v4a2.1 2.1 0 0 0 0 4v3H4v-3a2.1 2.1 0 0 0 0-4z"/><path d="M9 8.5v7"/></symbol>
 <symbol id="i-gift" viewBox="0 0 24 24"><path d="M4 10h16v10H4zM3 6.5h18V10H3zM12 6.5V20"/><path d="M12 6.5C9.2 6.5 7 5.5 7 3.9c0-1 1-1.7 2.1-1.4C10.8 3 12 6.5 12 6.5zM12 6.5c2.8 0 5-1 5-2.6 0-1-1-1.7-2.1-1.4C13.2 3 12 6.5 12 6.5z"/></symbol>
+<symbol id="i-judge" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9.2 3.5h5.6v2.8H9.2z"/><path d="M8.8 13.2l2.3 2.3 4.2-4.6"/></symbol>
+<symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4M9 12h6M9 15.5h6"/></symbol>
+<symbol id="i-video" viewBox="0 0 24 24"><rect x="3.5" y="6" width="12" height="12" rx="2"/><path d="M15.5 10.5l5-3v9l-5-3"/></symbol>
+<symbol id="i-paste" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="15.5" rx="2"/><path d="M9.5 3.5h5v3h-5zM9 11h6M9 14.5h4"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></symbol>
 `
 
 export function SketchSprite(): JSX.Element {
@@ -52,7 +57,7 @@ export type SketchIconName =
   | 'pencil' | 'calendar' | 'tracks' | 'settings' | 'search' | 'user' | 'plus' | 'minus'
   | 'play' | 'star' | 'x' | 'check' | 'alert' | 'chev' | 'eye' | 'eye-off' | 'refresh'
   | 'external' | 'dots' | 'logout' | 'clip' | 'tag' | 'edit' | 'mail' | 'google' | 'github' | 'linuxdo' | 'pause' | 'back' | 'heart'
-  | 'ticket' | 'gift'
+  | 'ticket' | 'gift' | 'judge' | 'doc' | 'video' | 'paste' | 'trash'
 
 export function Ic({ name, cls = 'ic' }: { name: SketchIconName; cls?: string }): JSX.Element {
   return (

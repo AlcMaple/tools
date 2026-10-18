@@ -1,0 +1,206 @@
+/* 接单评估（网页版）。设计稿：docs/design-mockups/web/接单评估.html */
+
+@media (min-width: 961px) { .oj-mob { display: none !important; } }
+@media (max-width: 960px) { .oj-desk { display: none !important; } }
+
+/* ---------- 页头 ---------- */
+.oj-head { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.oj-head .tools { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.oj-tally { font-variant-numeric: tabular-nums; }
+.oj-tally b { font-weight: 600; }
+.oj-gear { position: relative; }
+/* 缺 Key / 档案时设置按钮带一个点：浮在角上，不改按钮尺寸 */
+.oj-gear.dot::after { content: ''; position: absolute; top: 2px; right: 2px; width: 9px; height: 9px; border-radius: 50%; background: var(--sakura); border: 1.5px solid var(--card); }
+.seg .n { margin-left: 4px; font-size: 11.5px; opacity: .75; font-variant-numeric: tabular-nums; }
+
+.oj-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 26px; align-items: start; margin-top: 22px; }
+@media (max-width: 960px) { .oj-grid { grid-template-columns: minmax(0, 1fr); gap: 22px; margin-top: 16px; } }
+
+/* ---------- 材料区 ---------- */
+.oj-drop { position: relative; }
+.oj-text {
+  display: block; width: 100%; min-height: 170px; resize: vertical;
+  padding: 10px 12px; font: inherit; font-size: 14px; line-height: 28px; color: var(--ink);
+  /* 横线落在每行行盒偏下的位置、整组从 padding-top 起算，字才是「写在线上」而不是被线穿过 */
+  background: var(--field-bg) repeating-linear-gradient(transparent 0 24px, var(--grid-line) 24px 25px, transparent 25px 28px);
+  background-position: 0 10px;
+  background-attachment: local;
+  border: 1.5px solid var(--field-line); border-radius: 10px 14px 10px 14px; outline: none;
+}
+.oj-text::placeholder { color: var(--ink-faint); }
+.oj-text:focus { border-color: var(--teal-line); box-shadow: 0 0 0 3px var(--teal-wash); }
+@media (max-width: 960px) { .oj-text { min-height: 132px; } }
+/* 拖入时整块盖一层，不改输入区尺寸 */
+.oj-over { position: absolute; inset: -6px; display: none; place-items: center; gap: 6px; z-index: 3;
+  border: 2px dashed var(--teal-mid); border-radius: 12px; background: rgba(251, 246, 236, .9);
+  color: var(--teal); font-family: var(--font-hand); font-size: 20px; }
+.oj-drop.drag .oj-over { display: grid; }
+
+.oj-files { display: flex; flex-wrap: wrap; gap: 12px 10px; margin-top: 14px; }
+.oj-file { position: relative; width: 88px; flex: none; }
+.oj-file .pic { position: relative; height: 64px; border: 1.5px solid var(--line); border-radius: 4px; background: var(--paper-2); overflow: hidden;
+  display: grid; place-items: center; color: var(--ink-faint); box-shadow: var(--shadow-1); }
+.oj-file:nth-child(3n+1) .pic { transform: rotate(-1.5deg); }
+.oj-file:nth-child(3n+2) .pic { transform: rotate(1deg); }
+.oj-file .pic.img { background: linear-gradient(160deg, #e8eef2 0 38%, #f6efe2 38% 62%, #e4dccb 62%); }
+.oj-file .pic.img.b { background: linear-gradient(200deg, #f1e6ea 0 30%, #eef3f4 30% 70%, #dfe7ea 70%); }
+.oj-file .pic.long { background: repeating-linear-gradient(180deg, #eef3f4 0 10px, #f6efe2 10px 20px); }
+.oj-file .pic .ic { width: 22px; height: 22px; }
+.oj-file .name { margin-top: 5px; font-size: 11px; color: var(--ink-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oj-file .note { position: absolute; left: 4px; bottom: 4px; width: max-content; padding: 0 5px; border-radius: 4px; background: rgba(62, 67, 80, .72); color: #fff; font-size: 10.5px; line-height: 17px; }
+.oj-file .rm { position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; display: grid; place-items: center; padding: 0;
+  border: 1.5px solid var(--line-strong); border-radius: 50%; background: var(--card); color: var(--ink-sub); cursor: pointer; z-index: 2; }
+.oj-file .rm .ic { width: 12px; height: 12px; }
+.oj-file.bad .pic { border: 1.5px dashed var(--gold); background: var(--gold-hl); color: var(--gold); }
+.oj-file.bad .name { color: var(--gold); }
+
+.oj-bar { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.oj-bar .hint { font-size: 12.5px; color: var(--ink-faint); }
+.oj-bar .hint kbd { font: inherit; padding: 0 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--card); color: var(--ink-sub); }
+.oj-bar .go { margin-left: auto; position: relative; }
+/* 计时写在固定宽度的按钮里：秒数变化不推动旁边的按钮 */
+.oj-go { min-width: 128px; font-variant-numeric: tabular-nums; }
+.oj-tip { position: absolute; right: 0; top: calc(100% + 10px); width: max-content; max-width: 240px; z-index: 4; font-size: 12.5px; }
+.oj-tip.bubble::after { left: auto; right: 30px; bottom: auto; top: -7px; transform: rotate(225deg) skew(8deg, 8deg); }
+@media (max-width: 960px) {
+  .oj-bar .go { margin-left: 0; width: 100%; }
+  .oj-go { width: 100%; min-height: 46px; font-size: 15px; }
+  .oj-tip { right: 50%; transform: translateX(50%); }
+  .oj-tip.bubble::after { right: calc(50% - 6px); }
+}
+
+.oj-how { margin-top: 16px; border-top: 1.5px dashed var(--line); padding-top: 12px; }
+.oj-how summary { display: flex; align-items: center; gap: 6px; min-height: 36px; cursor: pointer; font-size: 13px; color: var(--ink-sub); list-style: none; }
+.oj-how summary::-webkit-details-marker { display: none; }
+.oj-how summary .ic { transition: transform .2s; transform: rotate(-90deg); }
+.oj-how[open] summary .ic { transform: none; }
+.oj-how dl { display: grid; grid-template-columns: 92px 1fr; gap: 9px 12px; margin: 8px 0 2px; font-size: 12.5px; line-height: 1.65; }
+.oj-how dt { color: var(--ink); font-weight: 600; }
+.oj-how dd { margin: 0; color: var(--ink-sub); }
+@media (max-width: 960px) { .oj-how dl { grid-template-columns: 1fr; gap: 2px; } .oj-how dd { margin-bottom: 8px; } }
+
+/* ---------- 批改单（结论） ---------- */
+.oj-sheet { padding: 22px 22px 20px; min-height: 340px; }
+.oj-sheet.blank { display: grid; place-items: center; text-align: center; }
+.oj-meta { font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; padding-right: 92px; }
+.oj-verdict { position: absolute; top: 16px; right: 18px; width: 78px; height: 78px; font-size: 19px; border-width: 2.5px; letter-spacing: .06em; }
+.oj-verdict::before { inset: 4px; }
+@media (max-width: 960px) {
+  .oj-sheet { padding: 20px 16px 18px; }
+  .oj-verdict { width: 64px; height: 64px; font-size: 16px; top: 14px; right: 12px; }
+  .oj-meta, .oj-headline { padding-right: 72px; }
+  .oj-headline { font-size: 18px; }
+}
+.oj-headline { margin-top: 8px; padding-right: 92px; font-family: var(--font-hand); font-size: 20px; line-height: 1.5; color: var(--ink); }
+.oj-summary { margin-top: 10px; font-size: 13.5px; line-height: 1.75; color: var(--ink-sub); }
+.oj-sec { margin-top: 18px; padding-top: 14px; border-top: 1.5px dashed var(--line); }
+.oj-sec h3 { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 10px; letter-spacing: .04em; }
+.oj-sec h3 .ic { color: var(--teal); }
+.oj-list { display: grid; gap: 10px; counter-reset: n; }
+.oj-list li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; font-size: 13.5px; line-height: 1.7; counter-increment: n; }
+.oj-list li::before { content: counter(n); font-family: var(--font-hand); color: var(--teal); font-size: 15px; line-height: 1.55; }
+.oj-list.warn li::before { color: var(--gold); }
+.oj-list b { color: var(--ink); font-weight: 600; }
+.oj-list span { color: var(--ink-sub); }
+.oj-risk { margin-top: 14px; padding: 10px 14px; border: 1.5px dashed var(--sakura); border-radius: 8px; background: var(--sakura-wash); font-size: 13.5px; line-height: 1.7; color: var(--ink); display: flex; gap: 8px; }
+.oj-risk .ic { color: var(--sakura); margin-top: 3px; }
+.oj-q li { display: flex; gap: 8px; align-items: baseline; font-size: 13.5px; line-height: 1.7; padding: 3px 0; }
+.oj-q li::before { content: ''; flex: none; width: 13px; height: 13px; border: 1.5px solid var(--line-strong); border-radius: 3px; transform: translateY(2px) rotate(-3deg); }
+.oj-flip { flex: none; padding: 0 7px; border-radius: 999px; background: var(--gold-hl); color: var(--ink); font-size: 11px; line-height: 19px; white-space: nowrap; }
+.oj-acts { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+
+.oj-steps { display: grid; gap: 14px; margin-top: 22px; }
+.oj-steps li { display: flex; gap: 12px; align-items: flex-start; font-size: 13.5px; }
+.oj-steps .mk { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; color: #fff; }
+.oj-steps .mk .ic { width: 13px; height: 13px; stroke-width: 2.6; }
+.oj-steps .done .mk { background: var(--teal-mid); border-color: var(--teal); }
+.oj-steps .run .mk { border: 2px solid var(--teal-wash); border-top-color: var(--teal-mid); animation: oj-spin .9s linear infinite; }
+.oj-steps .wait { color: var(--ink-faint); }
+.oj-steps small { display: block; font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
+@keyframes oj-spin { to { transform: rotate(360deg); } }
+
+.oj-err { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--paper-2); font-size: 13px; line-height: 1.7; color: var(--ink-sub); }
+.oj-err code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink); }
+
+/* ---------- 平板 / 手机：编辑 → 评估中 → 结论 三段流程 ---------- */
+.oj-brief, .oj-flowbar { display: none; }
+.oj-brief .ex { font-size: 13px; line-height: 1.65; color: var(--ink-sub); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.oj-brief .strip { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; }
+.oj-brief .strip > * { flex: none; width: 46px; height: 36px; border: 1px solid var(--line); border-radius: 3px; display: grid; place-items: center; color: var(--ink-faint); }
+.oj-brief .strip > * .ic { width: 15px; height: 15px; }
+.oj-brief summary { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; list-style: none; font-size: 13.5px; }
+.oj-brief summary::-webkit-details-marker { display: none; }
+.oj-brief summary .meta { margin-left: auto; font-size: 12px; color: var(--ink-faint); }
+.oj-brief summary .ic { color: var(--teal); }
+.oj-flowbar { align-items: center; justify-content: space-between; gap: 10px; }
+.oj-cancel { margin-top: 20px; }
+@media (max-width: 960px) {
+  .oj-grid:not(.flow) > .oj-blank { display: none; }
+  .oj-grid.flow > .oj-mat { display: none; }
+  .oj-grid.flow .oj-brief { display: block; }
+  .oj-grid.flow .oj-flowbar { display: flex; }
+  .oj-grid.flow { gap: 14px; }
+  .oj-cancel .btn { width: 100%; min-height: 44px; }
+  .oj-brief.panel { padding: 14px 16px; }
+}
+
+.oj-brief .strip img { object-fit: cover; }
+/* ---------- 历史 ---------- */
+.oj-hist { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 26px; align-items: start; margin-top: 22px; }
+@media (max-width: 960px) { .oj-hist { grid-template-columns: minmax(0, 1fr); margin-top: 16px; } }
+.oj-rows { padding: 6px; }
+.oj-row { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 9px 44px 9px 10px; text-align: left;
+  background: none; border: 1.5px solid transparent; border-radius: 8px; cursor: pointer; color: var(--ink); }
+.oj-row + .oj-row { border-top: 1px dashed var(--line); border-radius: 0; }
+.oj-row.on { background: var(--teal-wash); border-radius: 8px; }
+.oj-row .t { min-width: 0; flex: 1; }
+.oj-row .t b { display: block; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oj-row .t span { font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.oj-row .del { position: absolute; right: 6px; top: 50%; margin-top: -16px; width: 32px; height: 32px; display: grid; place-items: center; padding: 0;
+  border: none; border-radius: 50%; background: none; color: var(--ink-faint); cursor: pointer; opacity: 0; }
+.oj-row:hover .del, .oj-row.on .del { opacity: 1; }
+@media (hover: none) { .oj-row .del { opacity: 1; } }
+.oj-row .stamp { font-size: 10.5px; }
+.oj-back { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0; border: none; background: none; color: var(--teal); cursor: pointer; font-size: 14px; }
+
+/* ---------- 设置（桌面弹窗 / 手机底部抽屉） ---------- */
+.oj-set .field + .field { margin-top: 18px; }
+.oj-doc { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1.5px dashed var(--field-line); border-radius: 10px 14px 10px 14px; background: var(--field-bg); }
+.oj-doc .ic { color: var(--teal); }
+.oj-doc .t { flex: 1; min-width: 0; }
+.oj-doc .t b { display: block; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oj-doc .t span { font-size: 11.5px; color: var(--ink-faint); }
+.oj-doc.empty-doc { color: var(--ink-faint); font-size: 13px; }
+.oj-set-foot { position: relative; display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 22px; }
+.oj-saved { position: absolute; left: 0; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--teal); }
+
+/* 未登录 */
+.oj-guest { max-width: 460px; margin: 40px auto 0; text-align: center; padding: 30px 26px 26px; }
+.oj-guest img { width: 96px; height: 96px; border-radius: 50%; border: 1.5px solid var(--silver-line); }
+
+
+/* ---------- 实现补充 ---------- */
+.oj-mode { width: 128px; }
+.oj-mode .dd-host { width: 100%; }
+/* 助手浮标在 .agent-layer（z 150）里，设置弹窗要压在它上面，不然手机抽屉右下角的按钮被挡住 */
+.oj-set-backdrop { z-index: 160; }
+.oj-file .pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.oj-avatar { border-radius: 50%; border: 1.5px solid var(--silver-line); }
+.oj-err-title { display: flex; align-items: center; gap: 8px; }
+.oj-err-title .ic { color: var(--gold); flex: none; }
+.oj-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.oj-thumbs a { display: block; width: 52px; height: 40px; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; background: var(--paper-2); }
+.oj-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.oj-row { padding: 0; }
+.oj-row-main { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 9px 44px 9px 10px; text-align: left; font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+.oj-key { display: flex; gap: 10px; align-items: center; }
+.oj-key .field-row > input { width: 100%; }
+.oj-saved.err { color: var(--sakura); }
+.oj-grip { display: none; }
+/* 手机上设置弹窗贴底成抽屉 */
+@media (max-width: 960px) {
+  .oj-set-backdrop.open { align-items: flex-end; padding: 0; }
+  .oj-set-dlg { width: 100%; max-width: none; border-radius: 18px 22px 0 0; padding: 10px 18px 26px; max-height: 86svh; }
+  .oj-grip { display: block; width: 44px; height: 4px; margin: 0 auto 12px; border-radius: 2px; background: var(--silver-line); }
+}
+.oj-result { display: grid; gap: 14px; min-width: 0; align-content: start; }

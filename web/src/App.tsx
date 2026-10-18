@@ -22,6 +22,7 @@ import { Splash } from './Splash'
 import { Popover } from './Popover'
 import { toast, ToastRoot } from './Toast'
 import { AgentHost } from './agent/AgentHost'
+import { OrderJudgePage } from './orderJudge/OrderJudgePage'
 
 // 各页书脊的小 accents：胶带色 / 印章 / 拟声词（原型稿逐页配置）
 const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira: string }> = {
@@ -31,6 +32,7 @@ const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira
   rewards: { tape: 'tape tl lav', stamp: '福利', stampCls: 'st-sakura', kira: 'ポンッ…' },
   community: { tape: 'tape tl teal', stamp: '同好', stampCls: 'st-sakura', kira: 'わくわく…' },
   feedback: { tape: 'tape tl teal', stamp: '反馈', stampCls: 'st-teal', kira: 'サラサラ…' },
+  judge: { tape: 'tape tl gold', stamp: '接单', stampCls: 'st-teal', kira: 'カキカキ…' },
   settings: { tape: 'tape tl', stamp: '整理', stampCls: 'st-gold', kira: 'サラサラ…' },
 }
 
@@ -43,6 +45,7 @@ const ROUTE_HREF: Record<Route, string> = {
   community: '/#/community',
   settings: '/#/settings',
   feedback: '/#/feedback',
+  judge: '/#/judge',
 }
 
 declare global {
@@ -255,6 +258,9 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
             <IdxLink route="community" active={route === 'community'} icon="user">
               追番大厅
             </IdxLink>
+            <IdxLink route="judge" active={route === 'judge'} icon="judge">
+              接单评估
+            </IdxLink>
             {REWARDS_ENABLED && (
               <IdxLink route="rewards" active={route === 'rewards'} icon="gift">
                 放映福利
@@ -321,6 +327,8 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
                   ? <CalendarHistoryPage />
                 : route === 'community'
                   ? <CommunityPage />
+                : route === 'judge'
+                  ? <OrderJudgePage key={user?.id ?? 'guest'} onLogin={openLogin} />
                 : route === 'rewards'
                   ? <RewardsPage />
                   : <CalendarPage />}
@@ -338,6 +346,9 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
         </MTab>
         <MTab route="community" active={route === 'community'} icon="user">
           追番大厅
+        </MTab>
+        <MTab route="judge" active={route === 'judge'} icon="judge">
+          接单
         </MTab>
         {REWARDS_ENABLED && (
           <MTab route="rewards" active={route === 'rewards'} icon="gift">

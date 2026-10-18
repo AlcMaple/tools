@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { defineConfig } from 'vite'
+import { readdirSync, readFileSync } from 'node:fs'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import devServer from '@hono/vite-dev-server'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
@@ -23,6 +23,31 @@ const PRODUCTION_SECURITY_META = `
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN?.trim()
 const uploadSourceMaps = (command: string): boolean => command === 'build' && Boolean(sentryAuthToken)
 
+// 接单评估读中文 PDF 要 pdf.js 的 CMap（169 个小文件）。不拷进 public/ 进仓库：dev 直接从
+// node_modules 出，构建时原样产出到 dist/pdfjs/cmaps/，版本永远跟着 pdfjs-dist 走。
+const CMAP_DIR = new URL('./node_modules/pdfjs-dist/cmaps/', import.meta.url)
+const pdfCmaps: Plugin = {
+  name: 'maple-pdfjs-cmaps',
+  configureServer(server) {
+    server.middlewares.use('/pdfjs/cmaps', (req, res, next) => {
+      const name = (req.url ?? '').replace(/^\//, '').split('?')[0]
+      if (!/^[\w.-]+\.bcmap$/.test(name)) return next()
+      try {
+        const body = readFileSync(new URL(name, CMAP_DIR))
+        res.setHeader('Content-Type', 'application/octet-stream')
+        res.end(body)
+      } catch {
+        next()
+      }
+    })
+  },
+  generateBundle() {
+    for (const name of readdirSync(CMAP_DIR)) {
+      if (name.endsWith('.bcmap')) this.emitFile({ type: 'asset', fileName: `pdfjs/cmaps/${name}`, source: readFileSync(new URL(name, CMAP_DIR)) })
+    }
+  },
+}
+
 const agentRelease = JSON.parse(readFileSync(new URL('./server/agent-release.json',import.meta.url),'utf8')) as {codeHash:string}
 
 export default defineConfig(({ command }) => ({
@@ -32,6 +57,7 @@ export default defineConfig(({ command }) => ({
   server: { host: '127.0.0.1', port: 5173 },
   plugins: [
     react(),
+    pdfCmaps,
     {
       name: 'maple-production-security-meta',
       transformIndexHtml(html: string): string {

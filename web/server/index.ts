@@ -22,6 +22,7 @@ import rewards from './rewards-api'
 import community from './community'
 import reviews from './reviews'
 import backup from './backup'
+import orderJudge from './order-judge'
 import agentHistory from './agent/history-api'
 import agentGuest from './agent/guest-api'
 import { maintenanceMode } from './maintenance'
@@ -121,6 +122,7 @@ app.route('/api/tracks', tracks)
 app.route('/api/reviews', reviews)
 // 备份导入导出：追番 + 点评/推荐，用户自己留底或跨账号拿追番清单
 app.route('/api/backup', backup)
+app.route('/api/order-judge', orderJudge)
 
 app.route('/api/agent', agentGuest)
 app.route('/api/agent', agentHistory)

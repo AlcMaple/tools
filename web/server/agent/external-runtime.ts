@@ -178,6 +178,14 @@ export async function prepareExternal(uid:number|null,owner:string,signal:AbortS
   if(!status.ready||status.source!=='server')throw new AgentRunError('PROVIDER_CHANGED')
   return status
 }
+// 接单评估复用助手的「自配 API」连接：同一把 Key、同一套端点校验和 DNS 固定，Key 不另存一份。
+// 只认自配：项目服务器的 Key 不替个人的接单评估付费。
+export function byokConnection(uid:number):{transport:ProviderTransport;model:string}{
+  if(!externalEnabled('byok'))throw new AgentRunError('AGENT_AI_DISABLED',503)
+  if(selection(uid).choice.provider!=='byok')throw new AgentRunError('BYOK_REQUIRED',409)
+  const c=selectedConnection(uid);if(!c)throw new AgentRunError('PROVIDER_CONNECTION_REQUIRED',409)
+  return {transport:c.transport,model:c.profile.model}
+}
 export function externalBinding(uid:number|null,owner:string){
   if(!externalEnabled(uid===null?'server':selection(uid).choice.provider))throw new AgentRunError('AGENT_AI_DISABLED',503)
   const c=selectedConnection(uid);if(!c)throw new AgentRunError('PROVIDER_CONNECTION_REQUIRED',503)

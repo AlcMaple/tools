@@ -42,7 +42,8 @@
   .oj-text {
     display: block; width: 100%; min-height: 170px; resize: vertical;
     padding: 10px 12px; font: inherit; font-size: 14px; line-height: 28px; color: var(--ink);
-    background: var(--field-bg) repeating-linear-gradient(transparent 0 27px, var(--grid-line) 27px 28px);
+    background: var(--field-bg) repeating-linear-gradient(transparent 0 24px, var(--grid-line) 24px 25px, transparent 25px 28px);
+    background-position: 0 10px;
     background-attachment: local;
     border: 1.5px solid var(--field-line); border-radius: 10px 14px 10px 14px; outline: none;
   }
@@ -140,6 +141,28 @@
 
   .oj-err { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--paper-2); font-size: 13px; line-height: 1.7; color: var(--ink-sub); }
   .oj-err code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink); }
+
+  /* ---------- 平板 / 手机：编辑 → 评估中 → 结论 三段流程 ---------- */
+  .oj-brief, .oj-flowbar { display: none; }
+  .oj-brief .ex { font-size: 13px; line-height: 1.65; color: var(--ink-sub); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .oj-brief .strip { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; }
+  .oj-brief .strip span { flex: none; width: 46px; height: 36px; border: 1px solid var(--line); border-radius: 3px; display: grid; place-items: center; color: var(--ink-faint); }
+  .oj-brief .strip span .ic { width: 15px; height: 15px; }
+  .oj-brief summary { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; list-style: none; font-size: 13.5px; }
+  .oj-brief summary::-webkit-details-marker { display: none; }
+  .oj-brief summary .meta { margin-left: auto; font-size: 12px; color: var(--ink-faint); }
+  .oj-brief summary .ic { color: var(--teal); }
+  .oj-flowbar { align-items: center; justify-content: space-between; gap: 10px; }
+  .oj-cancel { margin-top: 20px; }
+  @media (max-width: 960px) {
+    .oj-grid:not(.flow) > .oj-blank { display: none; }
+    .oj-grid.flow > .oj-mat { display: none; }
+    .oj-grid.flow .oj-brief { display: block; }
+    .oj-grid.flow .oj-flowbar { display: flex; }
+    .oj-grid.flow { gap: 14px; }
+    .oj-cancel .btn { width: 100%; min-height: 44px; }
+    .oj-brief.panel { padding: 14px 16px; }
+  }
 
   /* ---------- 历史 ---------- */
   .oj-hist { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 26px; align-items: start; margin-top: 22px; }
@@ -338,7 +361,7 @@ function fileChip(f) {
 
 function materials({ text = '', files = [], running = false, sec = 0, tip = '', drag = false } = {}) {
   const empty = !text && !files.length;
-  return `<section class="panel">
+  return `<section class="panel oj-mat">
     <span class="tape tl teal"></span>
     <div class="panel-title">${ic('clip')}派单材料</div>
     <div class="oj-drop${drag ? ' drag' : ''}">
@@ -372,7 +395,7 @@ function materials({ text = '', files = [], running = false, sec = 0, tip = '', 
 }
 
 function blankSheet() {
-  return `<section class="panel oj-sheet blank">
+  return `<section class="panel oj-sheet blank oj-blank">
     <div class="empty" style="padding:10px 0">
       <img src="${AVATAR}" alt="" width="84" height="84" style="border-radius:50%;border:1.5px solid var(--silver-line)">
       <div class="empty-say"><span class="bubble empty-bubble">材料放好后点「评估」，结论会写在这里。</span></div>
@@ -390,6 +413,7 @@ function runningSheet() {
       <li class="done"><span class="mk">${ic('check')}</span><div>打开网址<small>腾讯文档 1 个</small></div></li>
       <li class="run"><span class="mk"></span><div>AI 判断中<small>一般 20～60 秒</small></div></li>
     </ol>
+    <div class="oj-cancel"><button type="button" class="btn btn-sm btn-ghost">${ic('x', 'ic ic-sm')}取消评估</button></div>
   </section>`;
 }
 
@@ -465,12 +489,12 @@ function settingsBody({ blank = false } = {}) {
 
 // ───────────────────────── 状态 → 页面 ─────────────────────────
 const STATES = {
-  empty: { label: '空态 · 未配置', cap: '第一次进来：Key 和档案都没填。顶部提示条 + 设置按钮角上的红点；右栏只有一句话。点评估会先弹设置，不发请求。手机上模式切换按响应式原型改成下拉，副标题收起。' },
+  empty: { label: '空态 · 未配置', cap: '第一次进来：Key 和档案都没填。顶部提示条 + 设置按钮角上的红点；桌面右栏只有一句话，平板 / 手机编辑时不显示空的结论区。点评估会先弹设置，不发请求。手机上模式切换按响应式原型改成下拉，副标题收起。' },
   nofill: { label: '没放材料就点评估', cap: '内容为空时提示浮在评估按钮下方，不把下面的内容往下推，几秒后自己消失。' },
   drag: { label: '拖入文件', cap: '桌面拖文件进来时整块盖一层「松手放入」，输入区尺寸不变。手机没有拖拽，改成「粘贴」「添加文件」两个按钮。' },
   filled: { label: '放好材料', cap: '截图、长图、视频、PDF、Word 都在浏览器里处理好再上传：长图切块、视频取 12 帧，角标直接写处理结果。wmv 这类浏览器解码不了的视频标黄「读不了」，评估时跳过并在结论里注明。' },
-  running: { label: '评估中', cap: '按钮固定宽度，秒数写在按钮里；右栏显示三步进度。手机上提交后自动滚到结论区。' },
-  yes: { label: '结论 · 能接', cap: '结论做成一张「批改单」：右上角盖章（能接 / 不接 / 待补），一句话结论用手写体。顺序沿用桌面版：需求 → 风险 → 为什么 → 可能翻车的地方 → 接单前先问清楚。' },
+  running: { label: '评估中', cap: '桌面：按钮固定宽度，秒数写在按钮里，右栏显示三步进度和「取消评估」。平板 / 手机：点评估后整页切到评估过程，上面是这单材料的缩略（文字前三行 + 附件小图），下面是进度和取消，取消后回到编辑，材料都还在。' },
+  yes: { label: '结论 · 能接', cap: '平板 / 手机：结论单独一屏，顶部「返回修改」回到编辑（材料保留）、「再评一单」清空重来，这单的材料折叠在结论下面。结论做成一张「批改单」：右上角盖章（能接 / 不接 / 待补），一句话结论用手写体。顺序沿用桌面版：需求 → 风险 → 为什么 → 可能翻车的地方 → 接单前先问清楚。' },
   no: { label: '结论 · 不接', cap: '有风险时，粉色虚线框放在理由前面。「能接」时这一块叫「可能翻车的地方」，「不接」时叫「卡在哪一步」。' },
   info: { label: '结论 · 信息不足', cap: '本地预检直接判出来的（空内容、只有「[聊天记录]」），不调用 AI、不花钱，只告诉用户怎么补。' },
   'e-key': { label: '出错 · Key 无效', cap: '按真实原因分开显示，错误码原样附在下面。HTTP 错误一律不自动重试，出错的这次不进历史（界面上不写这些）。' },
@@ -481,6 +505,19 @@ const STATES = {
   settings: { label: '评估设置', cap: '桌面是弹窗，手机是底部抽屉。档案和日志上传 .md，保存在你的账号下，换设备也在；保存提示浮在按钮左边。' },
   guest: { label: '未登录', cap: '入口对所有人可见；没登录时只显示一张卡片，登录后才能用（档案、日志、历史都跟账号走）。' },
 };
+
+function brief(text, files, { fold = false } = {}) {
+  const strip = files.length ? `<div class="strip">${files.map((f) => `<span>${ic(f.k === 'video' ? 'video' : f.k === 'doc' ? 'doc' : 'clip')}</span>`).join('')}</div>` : '';
+  const meta = `${files.length} 个附件`;
+  if (fold) {
+    return `<details class="panel oj-brief"><summary>${ic('clip')}这单的材料<span class="meta">${meta}</span>${ic('chev', 'ic ic-sm')}</summary>
+      <p class="ex">${esc(text)}</p>${strip}</details>`;
+  }
+  return `<section class="panel oj-brief"><span class="tape tl teal"></span>
+    <div class="panel-title" style="margin-bottom:8px">${ic('clip')}这单的材料<span class="faint small" style="margin-left:auto">${meta}</span></div>
+    <p class="ex">${esc(text)}</p>${strip}</section>`;
+}
+const flowbar = () => `<div class="oj-flowbar"><button type="button" class="oj-back">${ic('back')}返回修改</button><button type="button" class="btn btn-sm">再评一单</button></div>`;
 
 function pageFor(s) {
   if (s === 'guest') {
@@ -509,6 +546,13 @@ function pageFor(s) {
     'e-limit': [materials({ text: TEXT, files: FILES }), errorSheet('limit')],
     settings: [materials({ text: TEXT, files: FILES }), reportSheet('yes')],
   }[s] || [materials(), blankSheet()];
+  // 平板 / 手机：评估中只看材料摘要 + 进度；出结论后结论在上、材料折叠在下。桌面仍是左右两栏
+  const flowText = s === 'no' ? '【派单】iOS 越狱插件，去广告 + 解锁会员，适配 iOS 17，预算 800' : s === 'info' ? '[聊天记录]' : TEXT;
+  const flowFiles = s === 'no' ? FILES.slice(0, 1) : s === 'info' ? [] : FILES;
+  if (s === 'running') return `${head()}<div class="oj-grid flow">${m[0]}${brief(flowText, flowFiles)}${m[1]}</div>`;
+  if (['yes', 'no', 'info', 'e-key', 'e-balance', 'e-limit'].includes(s)) {
+    return `${head()}<div class="oj-grid flow">${m[0]}<div style="display:grid;gap:14px;min-width:0">${flowbar()}${m[1]}${brief(flowText, flowFiles, { fold: true })}</div></div>`;
+  }
   return `${head({ gearDot: s === 'empty' })}${nag}<div class="oj-grid">${m[0]}${m[1]}</div>`;
 }
 

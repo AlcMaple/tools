@@ -283,8 +283,9 @@
   body[data-page='tracks'] .sketch-hero .trk-toolbar { margin-bottom: 0; }
   .trk-head-actions { margin-left: auto; align-self: center; padding-bottom: 4px; }
 }
-/* 窄桌面（961–1279）：先收印章和品牌副标题；再窄就把用户名和退出收成图标 */
-@media (min-width: 961px) and (max-width: 1279px) {
+/* 窄桌面（961–1365）：先收印章和品牌副标题；再窄就把用户名和退出收成图标。
+   加了「接单评估」入口后 1280～1365 也放不下印章，横向会撑出滚动条 */
+@media (min-width: 961px) and (max-width: 1365px) {
   .spine-deco, .brand-sub { display: none; }
   .spine { gap: 8px; padding-inline: 24px; }
   .idx-a { padding-inline: 10px; gap: 7px; }

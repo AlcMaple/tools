@@ -8,6 +8,7 @@
 @import './styles/splash.css';
 @import './styles/sketch-sheet.css';
 @import './styles/sprite-legacy.css';
+@import './styles/order-judge.css';
 
 @tailwind base;
 @tailwind components;
