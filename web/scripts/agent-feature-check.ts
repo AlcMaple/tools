@@ -26,7 +26,8 @@ export function checkFeatureRelease(root:string,documentation:string):void {
   if(f.entry.startsWith('/#/')&&!app.includes(`'${f.entry}'`))throw new Error('FEATURE_PAGE_MISSING')
  }
  const inventory=routeInventory(root),roots=inventory.filter(r=>r.file==='server/index.ts')
- if(roots.some(r=>!SITE_API_FEATURES[r.path])||Object.keys(SITE_API_FEATURES).some(path=>!roots.some(r=>r.path===path)))throw new Error('FEATURE_ROUTE_COVERAGE')
+ const unowned=roots.filter(r=>!SITE_API_FEATURES[r.path]).map(r=>r.path),stale=Object.keys(SITE_API_FEATURES).filter(path=>!roots.some(r=>r.path===path))
+ if(unowned.length||stale.length)throw new Error(`FEATURE_ROUTE_COVERAGE: server/agent/site-features.ts 的 SITE_API_FEATURES${unowned.length?` 缺 ${unowned.join(', ')}`:''}${stale.length?` 多出 ${stale.join(', ')}`:''}`)
  for(const id of Object.values(SITE_API_FEATURES))if(!id.startsWith('infrastructure.')&&!AGENT_FEATURES.some(f=>f.id===id))throw new Error('FEATURE_ROUTE_UNREGISTERED')
  // 子路由可以挂在前缀下(如 route('/provider',createExternalApi())),此时真实路径 = 前缀 + 子应用内路径。
  const mounts=['',...new Set(inventory.filter(r=>r.file.startsWith('server/agent/')&&r.method==='route'&&r.path!=='/').map(r=>r.path))]
@@ -34,7 +35,8 @@ export function checkFeatureRelease(root:string,documentation:string):void {
    .flatMap(r=>mounts.map(prefix=>`${prefix}${r.path==='/'?'':r.path}`||'/')))
  for(const f of AGENT_FEATURES)if(f.entry.startsWith('/api/agent/')&&!served.has(f.entry.slice('/api/agent'.length)))throw new Error('FEATURE_API_ENTRY_MISSING')
  const recorded=JSON.parse(readFileSync(join(root,'server/agent/site-routes.json'),'utf8'))
- if(JSON.stringify(recorded)!==JSON.stringify(inventory))throw new Error('FEATURE_ROUTE_REVIEW_REQUIRED')
+ const key=(r:{file:string;method:string;path:string})=>`${r.method.toUpperCase()} ${r.file} ${r.path}`,recordedKeys=new Set((recorded as typeof inventory).map(key)),currentKeys=new Set(inventory.map(key))
+ if(JSON.stringify(recorded)!==JSON.stringify(inventory))throw new Error(`FEATURE_ROUTE_REVIEW_REQUIRED: server/agent/site-routes.json 与路由不一致；新增 ${inventory.map(key).filter(k=>!recordedKeys.has(k)).join(', ')||'无'}；移除 ${[...recordedKeys].filter(k=>!currentKeys.has(k)).join(', ')||'无'}`)
  // Windows checkout may use CRLF; compare content independently of line endings.
  const section=documentation.replaceAll('\r\n','\n').split(GUIDE_START)[1]?.split(GUIDE_END)[0]?.trim()
  if(section!==featureGuideMarkdown().trim())throw new Error('FEATURE_DOCUMENTATION_MISMATCH')
