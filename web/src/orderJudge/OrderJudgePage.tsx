@@ -504,15 +504,15 @@ function JudgeWorkspace(): JSX.Element {
             <dl>
               <dt>文字、截图</dt>
               <dd>
-                <span className="oj-desk">{isMac ? '⌘V' : 'Ctrl+V'} 粘贴，可以连续粘贴多张。</span>
-                <span className="oj-mob">截图后点「粘贴」，可以连续粘贴多张。</span>
-                转发的聊天记录要点开后截图，直接复制只会得到「[聊天记录]」。
+                <span className="oj-desk">{isMac ? '⌘V' : 'Ctrl+V'} 粘贴，可以连续粘贴多张</span>
+                <span className="oj-mob">截图后点「粘贴」，可以连续粘贴多张</span>
+                转发的聊天记录要点开后截图，直接复制只会得到「[聊天记录]」
               </dd>
-              <dt>网址</dt><dd>以文字贴进输入框，会读取网页标题和正文开头，每单最多 10 个。截图里的网址不会被打开。</dd>
-              <dt>在线表格、文档</dt><dd>公开的腾讯文档能读到首屏的一部分文字，每张工作表的网址不同，要哪张贴哪张。表格很长时，把关键行截图一起放进来。</dd>
-              <dt>要登录的网页</dt><dd>飞书、钉钉、小红书等打不开，请截图或截长图后粘贴。</dd>
-              <dt>视频</dt><dd>均匀取 12 帧画面，听不到声音，口头讲的需求请补一段文字。</dd>
-              <dt>PDF、Word</dt><dd>只读文字。扫描版 PDF 和文档里的图片读不到，重要的图请单独截图。</dd>
+              <dt>网址</dt><dd>以文字贴进输入框，会读取网页标题和正文开头，每单最多 10 个。截图里的网址不会被打开</dd>
+              <dt>在线表格、文档</dt><dd>公开的腾讯文档能读到首屏的一部分文字，每张工作表的网址不同，要哪张贴哪张。表格很长时，把关键行截图一起放进来</dd>
+              <dt>要登录的网页</dt><dd>飞书、钉钉、小红书等打不开，请截图或截长图后粘贴</dd>
+              <dt>视频</dt><dd>均匀取 12 帧画面，听不到声音，口头讲的需求请补一段文字</dd>
+              <dt>PDF、Word</dt><dd>只读文字。扫描版 PDF 和文档里的图片读不到，重要的图请单独截图</dd>
             </dl>
           </details>
         </section>
@@ -549,8 +549,8 @@ function JudgeWorkspace(): JSX.Element {
               <div className="oj-sec">
                 <h3><Ic name="edit" />怎么补</h3>
                 <ol className="oj-list warn">
-                  <li><span>转发的聊天记录要先点开，再截图粘贴进来；直接复制只会得到「[聊天记录]」。</span></li>
-                  <li><span>{isMac ? '⌘V' : 'Ctrl+V'} 或「粘贴」把截图放进来，可以连续粘贴多张。</span></li>
+                  <li><span>转发的聊天记录要先点开，再截图粘贴进来；直接复制只会得到「[聊天记录]」</span></li>
+                  <li><span>{isMac ? '⌘V' : 'Ctrl+V'} 或「粘贴」把截图放进来，可以连续粘贴多张</span></li>
                 </ol>
               </div>
             </section>
