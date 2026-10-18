@@ -6,6 +6,7 @@ import { estimateCost,type PriceCard } from './policy'
 import type { RunProvider } from './run-service'
 import { matchesContract } from './validation'
 import type { ExternalQuota } from './external-quota'
+import type { KnowledgeSnapshot } from './knowledge'
 
 export const record=(value:unknown):Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
 export function reportedUsage(raw:unknown){
@@ -32,6 +33,11 @@ export function meteredTransport(transport:ProviderTransport,quota:ExternalQuota
 export function serializeModelMaterial(value:unknown):string{
   return JSON.stringify(value,function(key,entry){return key==='aggregate'&&this.kind==='public_aggregate'&&typeof this.sourceId==='string'?undefined:entry})
 }
+// 只发模型用得上的字段。版本 / 发布哈希每次发版都变、revision 只给登记校验用，留在提示里既占 token 又让
+// 不同发版、不同用户的系统消息前缀对不上，DeepSeek 前缀缓存命中不了；能力校验仍对完整快照做（requireSameKnowledge）。
+export function modelKnowledge(snapshot:KnowledgeSnapshot){
+  return {notice:snapshot.notice,features:snapshot.features.map(({id,title,purpose,entry,steps,limitations,tools})=>({id,title,purpose,entry,steps,limitations,...(tools.length?{tools}:{})})),conditions:snapshot.conditions}
+}
 // 附图只随本轮这一条 user 消息走 OpenAI 兼容的 content 数组；历史轮次只在文字里留「附图 N 张」。
 function userContent(text:string,images:string[]){
   return images.length?[{type:'text',text},...images.map(url=>({type:'image_url',image_url:{url}}))]:text
@@ -42,9 +48,9 @@ export function createAnswerProvider(profile:ProviderProfile,transport:ProviderT
     const started=Date.now()
     const allowed=Object.keys(request.tools)
     const schema={anyOf:[request.outputSchema.anyOf![0],{type:'object',properties:{kind:{enum:['tool_calls']},calls:{type:'array',minItems:1,maxItems:4,items:{anyOf:request.outputSchema.anyOf![1].properties!.calls.items!.anyOf!.filter(s=>allowed.includes(String(s.properties!.name.enum![0])))}}},required:['kind','calls'],additionalProperties:false}]}
-    const availableTools=Object.fromEntries(Object.entries(request.tools).map(([name,tool])=>[name,{description:tool.description,parameters:tool.parameters}]))
-    const body={model:profile.model,messages:[{role:'system',content:request.system+'\n只返回一个符合以下合同的 JSON 对象：'+JSON.stringify(schema)+'\n回答字段按 kind、text、sourceIds 顺序输出；工具请求只输出 kind、calls。\n服务器本轮能力（未列出功能保持未知）：'+JSON.stringify(request.knowledge)},
-      {role:'user',content:userContent(serializeModelMaterial({layers:request.layers,availableTools,toolResults:request.results}),request.images??[])}],
+    const availableTools=Object.fromEntries(Object.entries(request.tools).map(([name,tool])=>[name,tool.description]))
+    const body={model:profile.model,messages:[{role:'system',content:request.system+'\n只返回一个符合以下合同的 JSON 对象：'+JSON.stringify(schema)+'\n回答字段按 kind、text、sourceIds 顺序输出；工具请求只输出 kind、calls。\n可用工具（参数见合同 calls）：'+JSON.stringify(availableTools)+'\n服务器本轮能力（未列出功能保持未知）：'+JSON.stringify(modelKnowledge(request.knowledge))},
+      {role:'user',content:userContent(serializeModelMaterial({layers:request.layers,toolResults:request.results}),request.images??[])}],
       response_format:{type:'json_object'},temperature:0,max_tokens:Math.min(maxOutput,profile.capabilities.maxOutputTokens),
       ...(profile.model.startsWith('deepseek-')?{thinking:{type:'disabled'}}:{})}
     // 价格预警与预授权同一口径；按满额算的话每次调用都会触发，等于没有预警。
