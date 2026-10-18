@@ -1629,6 +1629,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .ep-ctrl .btn { padding: 3px 12px; font-size: 16px; min-height: 36px; }
 .ep-num { font-family: var(--font-hand); font-size: 16px; min-width: 56px; text-align: center; color: var(--ink); }
 .trk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; min-width: 0; }
+.trk-actions > .btn { white-space: nowrap; }
 /* 状态分段：想看/在看/看完 常驻直点，替换原「···」下拉（下拉被钉成触发器同宽 40px，
    菜单文字竖排没法看，且只有看完/移除、切不了想看在看）。整组无 hover，只认点击 */
 .status-seg {
@@ -2140,7 +2141,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 
 @media (max-width: 360px) {
   /* iPhone SE 等更窄视口仍保持三按钮一行，收紧内边距而不缩小触控高度。 */
-  .trk-actions > .btn-sm { gap: 4px; padding-inline: 6px; font-size: 12px; }
+  .trk-actions > .btn.btn-sm { gap: 4px; padding-inline: 6px; font-size: 12px; }
 }
 
 /* 超小屏首屏收口：保留立绘与气泡，但把装饰压成一条轻量便签，让第一张卡的标题和进度
@@ -2163,9 +2164,9 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .trk-actions { row-gap: 8px; }
   .trk-row.is-considering .trk-actions { row-gap: 32px; }
   /* 「写点评」卡（看完 / 在追，永远没有观望气泡）：药丸靠左折行，行距收回常规值。 */
-  .trk-actions.ha在看review { row-gap: 8px; column-gap: 6px; }
-  /* 4 个药丸挤进窄操作区（约 333px）：收紧内边距和图标间距，让「点评」也留在第一行 */
-  .trk-actions.has-review > .btn { padding-inline: 8px; gap: 4px; }
+  .trk-actions.has-review { row-gap: 8px; column-gap: 6px; }
+  /* 窄操作区里所有卡都收紧内边距：只收「写点评」卡时，想看卡的「继续看」会被挤成两行 */
+  .trk-actions > .btn { padding-inline: 8px; gap: 4px; }
   /* 窄卡里气泡收一号，并让它压低到分段边框上，省出来的高度就是上一行按钮的余量 */
   .nudge { bottom: calc(100% - 3px); }
   .nudge-face { width: 28px; height: 28px; }
