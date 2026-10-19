@@ -25,7 +25,13 @@ const PROMPT = `你是接单顾问。根据下面的「能力档案」判断用�
 材料可能包括：微信复制的文字、微信截图、视频按时间顺序抽出的帧、文章长截图（被切成了几块，按顺序拼起来读）。
 截图里可能有群聊杂讯、时间、昵称，请只关注需求本身。如果有多个派单，只评估最后（最下方）的那一个，其余忽略。
 「XX的聊天记录」卡片只显示了几行预览；如果预览不足以判断，判「信息不足」，并在 questions 里提示用户点开记录后截图全文再评估。
-视频帧要连起来看，推断视频想展示的效果（动画、交互、3D、特效、App 界面等），并在 summary 里说清视频演示了什么。
+视频帧要连起来看，推断视频想展示的效果（动画、交互、3D、特效、App 界面等）。
+summary 和 video 会被用户原样复制到只收文字的平台去估价，对方看不到任何图片、视频、文件，所以必须脱离材料独立读懂：
+- 有视频：video 按画面顺序写 3–8 步操作流程，每步不超过 15 字，写清在哪个界面做了什么、出现什么结果；
+  terms 只写交付物、运行平台、预算工期、派单文字里额外提的要求（视频里没演示的），不写任何功能；summary 留空字符串
+- 没有视频：video 留空数组，terms 留空字符串，summary 照常复述需求
+- 截图或文件里有派单文字没写的关键信息（功能清单、界面布局、数据格式、参考效果），挑影响工作量的写进 summary 或 video、terms，不写「见截图」「如图」「视频里那样」这类指代
+- 只写影响报价的事实，不写画面配色、昵称、群聊杂讯等无关细节
 
 判断标准：
 - 「能」：核心需求都落在档案的「能」，或者少量落在「勉强」且工期允许
@@ -42,7 +48,9 @@ const PROMPT = `你是接单顾问。根据下面的「能力档案」判断用�
 {"verdict": "能|不能|信息不足",
  "title": "派单的短标题，8–16 字，名词短语，说清做什么，例：Mate X3 刷 X5 系统、直播回放去重推流软件",
  "headline": "一句话说清为什么能/不能（不超过 30 字），例：卡在实时推流和音视频编码，没有相关经验",
- "summary": "需求是什么：只客观复述派单内容（做什么、给谁用、交付物、预算工期），不超过 80 字；不要提用户的能力、档案、经验或难度判断",
+ "video": ["视频演示的一步操作，例：App 首页点「上传照片」", "选照片后几秒生成卡通头像，可保存到相册"],
+ "terms": "有视频时填，不超过 40 字，例：交付 Windows 可运行脚本，预算工期未提，要求带鼠标自动对焦",
+ "summary": "需求是什么：只客观复述派单内容（做什么、给谁用、交付物、预算工期），不超过 80 字，有视频时留空；不要提用户的能力、档案、经验或难度判断",
  "reasons": [{"title": "短标题，不超过 12 字", "detail": "一两句，不超过 60 字"}],
  "gaps": [{"step": "环节名，不超过 12 字", "detail": "为什么做不到、差在哪，不超过 60 字"}],
  "risk": "仅刷量/外挂/破解/黑产类填写，否则空字符串",
@@ -85,6 +93,15 @@ export function precheck(text: string, imageCount: number): Precheck | null {
 
 const asStr = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 
+// 有视频时不让模型写自由的 summary：实测 deepseek-flash 不管怎么要求「别重复」，都会在第一行把视频里的功能再列一遍。
+// 第一行改由 title + terms（只放交付、预算工期、额外要求）拼出，功能只出现在视频流程里。
+// 拼回 summary 一个字符串，历史记录和两端界面都不用改
+function withVideo(title: string, summary: string, terms: string, steps: string[]): string {
+  if (!steps.length) return summary
+  const head = [title, terms].map((x) => x.replace(/[。，,.]+$/, '')).filter(Boolean).join('。') || summary
+  return `${head ? head + '。' : ''}\n视频演示：${steps.join(' → ')}`.trim()
+}
+
 export function normalizeReport(raw: unknown): JudgeReport {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const verdict: Verdict = r.verdict === '能' || r.verdict === '不能' ? r.verdict : '信息不足'
@@ -99,7 +116,7 @@ export function normalizeReport(raw: unknown): JudgeReport {
     verdict,
     title: asStr(r.title),
     headline: asStr(r.headline),
-    summary: asStr(r.summary),
+    summary: withVideo(asStr(r.title), asStr(r.summary), asStr(r.terms), arr(r.video).map(asStr).filter(Boolean)),
     reasons: arr(r.reasons).map((x) => pair(x, 'title', 'detail')).filter((x) => x.title || x.detail),
     gaps: arr(r.gaps).map((x) => pair(x, 'step', 'detail')).filter((x) => x.step || x.detail),
     risk: asStr(r.risk),

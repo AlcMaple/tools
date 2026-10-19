@@ -113,7 +113,7 @@ function ReportBody({ r }: { r: JudgeReport }): JSX.Element {
   return (
     <>
       {r.summary && (
-        <Section label="需求"><p className="text-[14px] leading-relaxed text-on-surface-variant">{r.summary}</p></Section>
+        <Section label="需求"><p className="text-[14px] leading-relaxed text-on-surface-variant whitespace-pre-line">{r.summary}</p></Section>
       )}
       {r.risk && (
         <Section label="风险" icon="warning">

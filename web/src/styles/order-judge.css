@@ -92,7 +92,7 @@
   .oj-headline { font-size: 18px; }
 }
 .oj-headline { margin-top: 8px; padding-right: 92px; font-family: var(--font-hand); font-size: 20px; line-height: 1.5; color: var(--ink); }
-.oj-summary { margin-top: 10px; font-size: 13.5px; line-height: 1.75; color: var(--ink-sub); }
+.oj-summary { margin-top: 10px; font-size: 13.5px; line-height: 1.75; color: var(--ink-sub); white-space: pre-line; }
 .oj-sec { margin-top: 18px; padding-top: 14px; border-top: 1.5px dashed var(--line); }
 .oj-sec h3 { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 10px; letter-spacing: .04em; }
 .oj-sec h3 .ic { color: var(--teal); }
