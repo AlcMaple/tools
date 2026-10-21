@@ -201,7 +201,7 @@ export function WebTrackSyncBar(): JSX.Element | null {
             type="button"
             onClick={() => void openConfirm('push')}
             disabled={busy}
-            title="上传追番到 MapleTools 网页版"
+            title="上传追番到番外小站网页版"
             className="p-1 rounded text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
           >
             <span className="material-symbols-outlined" style={{ fontSize: 13 }}>cloud_upload</span>
@@ -210,7 +210,7 @@ export function WebTrackSyncBar(): JSX.Element | null {
             type="button"
             onClick={() => void openConfirm('pull')}
             disabled={busy}
-            title="从 MapleTools 网页版拉取追番"
+            title="从番外小站网页版拉取追番"
             className="p-1 rounded text-on-surface-variant/50 hover:text-secondary hover:bg-secondary/10 transition-colors disabled:opacity-30"
           >
             <span className="material-symbols-outlined" style={{ fontSize: 13 }}>cloud_download</span>

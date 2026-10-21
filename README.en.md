@@ -1,8 +1,8 @@
-# MapleTools — Anime tracking, multi-source search and local media tools
+# 番外小站 (formerly MapleTools) — Anime tracking, multi-source search and local media tools
 
 [中文](README.md) · [Web app](https://anime.alcmaple.cn/) · [Desktop downloads](https://github.com/AlcMaple/tools/releases) · [Usage guide](docs/使用场景.md)
 
-MapleTools, developed by [AlcMaple](https://github.com/AlcMaple), combines a web anime tracker with a Windows and macOS desktop application.
+番外小站 (formerly MapleTools), developed by [AlcMaple](https://github.com/AlcMaple), combines a web anime tracker with a Windows and macOS desktop application.
 
 ## Features and use cases
 
@@ -19,4 +19,4 @@ The web app focuses on anime schedules, personal tracking, online viewing and co
 
 Desktop releases target Windows x64 and macOS Apple Silicon. Downloading and thumbnail generation require ffmpeg installed on the system. See the [Chinese README](README.md) for installation and development instructions.
 
-MapleTools is an independent application, not an official Xifan or Girigiri client. Third-party source availability may change.
+番外小站 is an independent application, not an official Xifan or Girigiri client. Third-party source availability may change.

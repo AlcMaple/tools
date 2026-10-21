@@ -20,12 +20,12 @@ export async function sendAnimeReportMail(cfg: MailConfig, html: string): Promis
   const label = todayLabel()
   console.log(`[anime-report-mailer] 准备通过 smtp.qq.com 发送给 ${cfg.qqEmail}`)
   await transporter.sendMail({
-    from: `MapleTools <${cfg.qqEmail}>`,
+    from: `番外小站 <${cfg.qqEmail}>`,
     to: cfg.qqEmail,
     subject: `我的追番 — ${label}`,
     html: html + `
       <p style="font:12px/1.6 -apple-system,sans-serif;color:#999;margin:24px 0 0;text-align:center;">
-        来自 MapleTools v${app.getVersion()} · ${label}
+        来自番外小站 v${app.getVersion()} · ${label}
       </p>
     `,
   })

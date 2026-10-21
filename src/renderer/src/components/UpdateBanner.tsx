@@ -60,7 +60,7 @@ export default function UpdateBanner(): JSX.Element | null {
                 发现新版本
               </h3>
               <p className="font-body text-xs text-on-surface-variant mt-1.5">
-                MapleTools v{version}
+                番外小站 v{version}
               </p>
             </div>
             <button

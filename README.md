@@ -1,6 +1,6 @@
-# MapleTools — 个人追番管理、多源动漫搜索与本地媒体工具
+# 番外小站（原 MapleTools）— 个人追番管理、多源动漫搜索与本地媒体工具
 
-MapleTools 由 [AlcMaple](https://github.com/AlcMaple) 开发，提供网页追番应用和 Windows / macOS 桌面应用。支持个人追番列表、观看进度记录、新番周历、Bangumi 番组计划资料查询，以及稀饭动漫（Xifan）、Girigiri 动漫、嗷呜动漫（Aowu）的多源搜索。桌面端还提供番剧下载、本地媒体库、坚果云 WebDAV 数据同步、文件管理、游戏阵容查询和妙语收藏。
+番外小站（原 MapleTools）由 [AlcMaple](https://github.com/AlcMaple) 开发，提供网页追番应用和 Windows / macOS 桌面应用。支持个人追番列表、观看进度记录、新番周历、Bangumi 番组计划资料查询，以及稀饭动漫（Xifan）、Girigiri 动漫、嗷呜动漫（Aowu）的多源搜索。桌面端还提供番剧下载、本地媒体库、坚果云 WebDAV 数据同步、文件管理、游戏阵容查询和妙语收藏。
 
 [在线追番](https://anime.alcmaple.cn/) · [下载桌面版](https://github.com/AlcMaple/tools/releases) · [功能与使用场景](docs/使用场景.md) · [English](README.en.md)
 
@@ -19,7 +19,7 @@ MapleTools 由 [AlcMaple](https://github.com/AlcMaple) 开发，提供网页追�
 | 在网页和桌面之间同步追番 | 网页版账号登录、追番数据上传与拉取 | 桌面端「网页版账号」及追番页 |
 | 保存游戏阵容与有趣发言 | 锦囊妙计、妙语库 | 桌面端 |
 
-稀饭动漫、Girigiri、嗷呜是第三方内容来源，MapleTools 是整合这些来源的独立应用。各来源的搜索、登录和播放可用性受源站影响。
+稀饭动漫、Girigiri、嗷呜是第三方内容来源，番外小站是整合这些来源的独立应用。各来源的搜索、登录和播放可用性受源站影响。
 
 ### 两端与同步的区别
 
@@ -28,7 +28,7 @@ MapleTools 由 [AlcMaple](https://github.com/AlcMaple) 开发，提供网页追�
 Bangumi 资料查询不等于同步 Bangumi 官方账号的收藏。选择工具时，可通过[使用场景与功能边界](docs/使用场景.md)核对需求。
 
 <p align="center">
-  <img src="docs/screenshots/hero.png" alt="MapleTools 主界面" width="860" />
+  <img src="docs/screenshots/hero.png" alt="番外小站主界面" width="860" />
 </p>
 
 ## 功能一览

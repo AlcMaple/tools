@@ -132,7 +132,7 @@ export async function sendCalendarMail(cfg: MailConfig): Promise<void> {
 
   const label = todayLabel()
   await transporter.sendMail({
-    from: `MapleTools <${cfg.qqEmail}>`,
+    from: `番外小站 <${cfg.qqEmail}>`,
     to: cfg.qqEmail,
     subject: `番剧周历更新 — ${label}`,
     html: `
@@ -141,7 +141,7 @@ export async function sendCalendarMail(cfg: MailConfig): Promise<void> {
       </p>
       <img src="cid:calendar" alt="番剧周历" style="display:block;max-width:100%;border:1px solid #eee;border-radius:8px;" />
       <p style="font:12px/1.6 -apple-system,sans-serif;color:#999;margin:16px 0 0;">
-        来自 MapleTools v${app.getVersion()} · ${label}
+        来自番外小站 v${app.getVersion()} · ${label}
       </p>
     `,
     attachments: [
@@ -164,9 +164,9 @@ export async function sendTestMail(cfg: MailConfig): Promise<void> {
   }
   const transporter = buildTransporter(cfg)
   await transporter.sendMail({
-    from: `MapleTools <${cfg.qqEmail}>`,
+    from: `番外小站 <${cfg.qqEmail}>`,
     to: cfg.qqEmail,
-    subject: 'MapleTools 邮件配置测试',
+    subject: '番外小站邮件配置测试',
     text: `如果你收到了这封邮件，说明 QQ 邮箱 SMTP 配置成功，番剧周历刷新后将自动发件。\n\n时间：${new Date().toLocaleString('zh-CN')}`,
   })
 }

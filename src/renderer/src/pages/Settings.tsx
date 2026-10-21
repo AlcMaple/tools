@@ -560,7 +560,7 @@ function CategoryRail({
           <span className="font-label text-[10px] tracking-widest uppercase">{NODE_ID}</span>
         </div>
         <div className="font-label text-[10px] tracking-widest uppercase text-on-surface-variant/30 mt-1.5">
-          MapleTools v{__APP_VERSION__}
+          番外小站 v{__APP_VERSION__}
         </div>
       </div>
     </aside>
@@ -1442,7 +1442,7 @@ function Settings(): JSX.Element {
               {active === "sync" && (
                 <>
                   <Block
-                    title="MapleTools 网页版账号"
+                    title="番外小站网页版账号"
                     hint="登录后可在「我的追番」页手动上传或拉取，与网页版共用追番列表。"
                     footer={
                       <div className="flex items-center gap-3 min-h-9">
@@ -1470,7 +1470,7 @@ function Settings(): JSX.Element {
                       <Row
                         icon="account_circle"
                         title={webAccount.username}
-                        desc="已连接 MapleTools 网页版账号。"
+                        desc="已连接番外小站网页版账号。"
                         density={tweaks.density}
                         control={
                           <button
@@ -1487,7 +1487,7 @@ function Settings(): JSX.Element {
                         <Row
                           icon="person"
                           title="用户名"
-                          desc="填写 MapleTools 网页版的用户名。"
+                          desc="填写番外小站网页版的用户名。"
                           density={tweaks.density}
                           stack
                           control={
@@ -1725,7 +1725,7 @@ function Settings(): JSX.Element {
                     title="版本"
                     desc="当前已安装的应用版本。"
                     density={tweaks.density}
-                    control={<ReadonlyValue value={`MapleTools v${__APP_VERSION__}`} />}
+                    control={<ReadonlyValue value={`番外小站 v${__APP_VERSION__}`} />}
                   />
                   <Row
                     icon="auto_mode"

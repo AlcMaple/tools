@@ -1502,7 +1502,7 @@ const RECYCLE_CAUSES: readonly CauseItem[] = [
   },
   {
     cause: '当前账号没 DELETE 权限（已尝试自动 takeown 仍失败）',
-    fix: '右键 Maple Tools 选"以管理员身份运行"再试',
+    fix: '右键番外小站选"以管理员身份运行"再试',
   },
   {
     cause: '占用进程顽固（已尝试自动杀进程仍失败）',
@@ -1534,7 +1534,7 @@ const PERMANENT_CAUSES: readonly CauseItem[] = [
   },
   {
     cause: '当前账号没 DELETE 权限（已尝试自动 takeown 仍失败）',
-    fix: '右键 Maple Tools 选"以管理员身份运行"再试',
+    fix: '右键番外小站选"以管理员身份运行"再试',
   },
   {
     cause: '杀毒软件实时拦截',

@@ -125,7 +125,7 @@ export function friendlyError(err: unknown): FriendlyError {
     ) {
       return {
         title: '权限不足',
-        hint: '系统拒绝了删除/修改操作。这通常意味着该文件需要管理员权限——可以用 Windows 资源管理器手动删除（按 UAC 提示授权），或以管理员身份重新运行 Maple Tools 后再试。',
+        hint: '系统拒绝了删除/修改操作。这通常意味着该文件需要管理员权限——可以用 Windows 资源管理器手动删除（按 UAC 提示授权），或以管理员身份重新运行番外小站后再试。',
         raw: msg,
       }
     }
@@ -308,7 +308,7 @@ export function friendlyError(err: unknown): FriendlyError {
   ) {
     return {
       title: '权限不足',
-      hint: '系统拒绝了删除/修改操作。这通常意味着该文件需要管理员权限——可以用 Windows 资源管理器手动删除（按 UAC 提示授权），或以管理员身份重新运行 Maple Tools 后再试。',
+      hint: '系统拒绝了删除/修改操作。这通常意味着该文件需要管理员权限——可以用 Windows 资源管理器手动删除（按 UAC 提示授权），或以管理员身份重新运行番外小站后再试。',
       raw: msg,
     }
   }

@@ -1,7 +1,7 @@
 {
   "name": "mapletools",
   "version": "0.17.0",
-  "description": "MapleTools Desktop App",
+  "description": "番外小站 Desktop App",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

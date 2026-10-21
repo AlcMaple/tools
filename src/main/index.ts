@@ -117,7 +117,7 @@ function createWindow(): void {
     // 最小尺寸卡在手机版设计宽度（~390），不让窗口无限缩小到布局崩坏。
     minWidth: 390,
     minHeight: 600,
-    title: 'MapleTools',
+    title: '番外小站',
     show: false,
     // 窗口底色给暗色主题的背景色而不是默认白 —— 否则首帧画出来之前会闪一下刺眼的白。
     backgroundColor: '#131313',

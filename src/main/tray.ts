@@ -69,7 +69,7 @@ export function createTray(onExit: () => void): void {
   if (!img) return // 图标资源缺失:不建托盘也比抛错中断启动好
 
   appTray = new Tray(img)
-  appTray.setToolTip('MapleTools')
+  appTray.setToolTip('番外小站')
 
   const menu = Menu.buildFromTemplate([
     { label: '显示主界面', click: showWindow },
