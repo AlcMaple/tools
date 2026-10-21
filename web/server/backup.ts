@@ -256,7 +256,7 @@ backup.get('/export', async (c) => {
   const stamp = dateStamp()
   if (format === 'md') {
     const md = buildMarkdown(session.username, exportedAt, data.tracks, data.reviews)
-    return attachment(c, md, 'text/markdown; charset=utf-8', `mapletools-追番-${stamp}.md`, `mapletools-tracks-${stamp}.md`)
+    return attachment(c, md, 'text/markdown; charset=utf-8', `番外小站-追番-${stamp}.md`, `mapletools-tracks-${stamp}.md`)
   }
   const json = JSON.stringify(
     {
@@ -277,7 +277,7 @@ backup.get('/export', async (c) => {
     files['README.md'] = [strToU8(buildMarkdown(session.username, exportedAt, data.tracks, data.reviews)), { level: 6 }]
   }
   for (const [name, bytes] of Object.entries(data.covers)) files[name] = [bytes, { level: 0 }]
-  return attachment(c, zipSync(files), 'application/zip', `mapletools-备份-${stamp}.zip`, `mapletools-backup-${stamp}.zip`)
+  return attachment(c, zipSync(files), 'application/zip', `番外小站-备份-${stamp}.zip`, `mapletools-backup-${stamp}.zip`)
 })
 
 // ── 导入 ─────────────────────────────────────────────────────────────────────
@@ -542,7 +542,7 @@ backup.post('/import', async (c) => {
   const unpacked = unpack(new Uint8Array(await file.arrayBuffer()), file.name)
   if ('error' in unpacked) return c.json({ error: unpacked.error }, 400)
   const { data, files } = unpacked
-  if (data.format !== FORMAT) return c.json({ error: '这不是 MapleTools 导出的备份' }, 400)
+  if (data.format !== FORMAT) return c.json({ error: '这不是番外小站导出的备份' }, 400)
   if (data.version !== VERSION) return c.json({ error: `备份版本 ${String(data.version)} 不受支持` }, 400)
 
   const now = Date.now()

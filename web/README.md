@@ -1,6 +1,6 @@
-# MapleTools 网页版（`web/`）
+# 番外小站网页版（`web/`）
 
-MapleTools 桌面应用的网页版，**独立子项目**：自带 `package.json` / `node_modules`，与根目录的 Electron app 物理隔离
+番外小站桌面应用的网页版，**独立子项目**：自带 `package.json` / `node_modules`，与根目录的 Electron app 物理隔离
 
 ## 技术栈
 

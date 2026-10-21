@@ -704,7 +704,7 @@ function drawFooter(
   } catch {
     host = ''
   }
-  ctx.fillText(`MapleTools  ✦  ${host}`, M, top + 142)
+  ctx.fillText(`番外小站  ✦  ${host}`, M, top + 142)
   if (input.publishedAt) {
     ctx.font = `400 17px ${HAND}`
     ctx.fillText(fmtDate(input.publishedAt), M, top + 172)

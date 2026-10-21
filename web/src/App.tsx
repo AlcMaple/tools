@@ -188,7 +188,7 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
       <header className="m-top">
         <a className="brand" href={ROUTE_HREF.calendar} style={{ fontSize: 18 }}>
           <img className="brand-logo" src="/logo.png" alt="" width={32} height={32} />
-          MapleTools
+          番外小站
         </a>
         <span style={{ marginLeft: 'auto' }} />
         {!ready ? null : user ? (
@@ -243,7 +243,7 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
           <div>
             <a className="brand" href={ROUTE_HREF.calendar}>
               <img className="brand-logo" src="/logo.png" alt="" width={32} height={32} />
-              MapleTools <span className="sparkle">✦</span>
+              番外小站 <span className="sparkle">✦</span>
             </a>
             <div className="brand-sub"><a href="/about.html">功能介绍与桌面下载</a></div>
           </div>

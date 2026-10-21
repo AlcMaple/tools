@@ -121,7 +121,7 @@ function addMessage(id: string, author: 'user' | 'admin', data: ReturnType<typeo
 }
 function enqueue(id: string, to: string, body: string): number | null {
  if (!to) return null
- return Number(db.prepare('INSERT INTO feedback_notifications(thread_id,recipient,subject,body) VALUES(?,?,?,?)').run(id,to,'MapleTools 反馈通知',body).lastInsertRowid)
+ return Number(db.prepare('INSERT INTO feedback_notifications(thread_id,recipient,subject,body) VALUES(?,?,?,?)').run(id,to,'番外小站反馈通知',body).lastInsertRowid)
 }
 async function deliver(id: number | null): Promise<void> {
  if (id === null) return
@@ -204,7 +204,7 @@ feedback.post('/:id/replies', async c => {
    db.prepare("UPDATE feedback_threads SET updated_at=?,status=CASE WHEN ?='user' THEN 'pending' ELSE status END WHERE id=?").run(at,author,row.id)
    const to = author === 'admin' ? row.email : notifyTo()
    if (author === 'admin' && to && rateLimited(`feedback:mail:${hash(to.toLowerCase())}`,5,86400000)) return null
-   return enqueue(row.id,to,author === 'admin' ? `你的 MapleTools 反馈有了回复：\n\n${data.body}\n\n请回到提交反馈的账号或浏览器，在「我的反馈」中继续补充。` : `反馈 ${row.id} 有新补充，请在站内查看。`)
+   return enqueue(row.id,to,author === 'admin' ? `你的番外小站反馈有了回复：\n\n${data.body}\n\n请回到提交反馈的账号或浏览器，在「我的反馈」中继续补充。` : `反馈 ${row.id} 有新补充，请在站内查看。`)
   })()
   await deliver(notification)
   return c.json({ok:true},201)

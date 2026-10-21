@@ -126,7 +126,7 @@ export function Splash({ art, onComplete, onReady }: { art: string | null; onCom
       </div>
 
       <div className="sp-title">
-        <b>MapleTools</b>
+        <b>番外小站</b>
         <i className="sp-rule" />
         <small className="sp-sub">SAGIRI · SKETCHFOLIO</small>
       </div>

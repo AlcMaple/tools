@@ -327,7 +327,7 @@ export function AuthModal({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div role="dialog" aria-modal="true" aria-label="登录 MapleTools" className="dlg auth-dlg">
+      <div role="dialog" aria-modal="true" aria-label="登录番外小站" className="dlg auth-dlg">
         <span className="tape tl teal" />
         <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭">
           <Ic name="x" cls="ic" />
