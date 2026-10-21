@@ -1469,15 +1469,15 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 /* ---------- 便签 Toast ---------- */
 #toast-root {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 120;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 160;
   display: flex;
   flex-direction: column;
   gap: 12px;
   pointer-events: none;
 }
-@media (max-width: 960px) { #toast-root { bottom: calc(var(--tabbar-h) + 24px); } }
 .toast-note {
   position: relative;
   width: min(296px, calc(100vw - 36px));
@@ -1494,11 +1494,11 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 .toast-note.out { animation: peel-out .3s var(--ease-page) forwards; }
 @keyframes stick-in {
-  from { opacity: 0; transform: translateX(60px) rotate(3deg); }
-  to   { opacity: 1; transform: translateX(0) rotate(-1deg); }
+  from { opacity: 0; transform: translateY(-28px) rotate(3deg); }
+  to   { opacity: 1; transform: translateY(0) rotate(-1deg); }
 }
 @keyframes peel-out {
-  to { opacity: 0; transform: translateY(14px) rotate(-5deg); }
+  to { opacity: 0; transform: translateY(-14px) rotate(-5deg); }
 }
 .toast-note::before {
   content: '';

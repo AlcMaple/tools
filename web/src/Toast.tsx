@@ -1,7 +1,8 @@
 // 便签 Toast（单例）—— 视觉 = 原型稿 .toast-note（纱雾头像 + 名牌 + 圆章，失败换樱粉描边）。
-// 右下角始终只有一张：后来的直接顶掉先来的（key 变化重挂载 → stick-in 动画重放）。
+// 顶部居中始终只有一张：后来的直接顶掉先来的（key 变化重挂载 → stick-in 动画重放）。
 // 模块级发布订阅（同 auth.ts 的做法，不上 Context）。
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 export interface ToastOpt {
   err?: boolean
@@ -47,7 +48,8 @@ export function ToastRoot(): JSX.Element | null {
   }, [item?.seq])
 
   if (!item) return null
-  return (
+  // #root 自己是层叠上下文（index.css 给了层级），留在里面 z-index 再大也压不过挂在 body 上的助手层
+  return createPortal(
     <div id="toast-root">
       <div className={`toast-note${item.opt.err ? ' err' : ''}`} key={item.seq}>
         <img className="avatar" src="/assets/sagiri-avatar.webp" alt="" />
@@ -59,6 +61,7 @@ export function ToastRoot(): JSX.Element | null {
           {item.opt.err ? '!' : '✓'}
         </span>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
