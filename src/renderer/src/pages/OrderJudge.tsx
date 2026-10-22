@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
 import { ipcErrMsg } from '../utils/ipcError'
 import { reportError } from '../utils/reportError'
+import { DOC_TEMPLATES, downloadDocTemplate } from '../../../../web/shared/order-judge-templates'
 import { VIDEO_FRAMES, precheck, type JudgeReport, type Precheck } from '../../../../web/shared/order-judge'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
 import type {
@@ -263,7 +264,11 @@ function SettingsSheet({ open, settings, onClose, onChange }: {
     const iconButton = 'w-7 h-7 grid place-items-center rounded-lg text-on-surface-variant hover:bg-surface-container-highest disabled:opacity-30 disabled:hover:bg-transparent'
     return (
       <div>
-        <span className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">{label}</span>
+        <div className="flex items-center justify-between">
+          <span className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">{label}</span>
+          <button type="button" onClick={() => downloadDocTemplate(which)} className="font-label text-xs text-primary hover:underline">下载模版</button>
+        </div>
+        <p className="mt-1 text-xs text-on-surface-variant">{DOC_TEMPLATES[which].purpose}</p>
         <div className="mt-2 space-y-1.5">
           {paths.map((p, i) => (
             <div key={p.path} className="flex items-center gap-1 rounded-xl bg-surface-container-high border border-outline-variant/30 h-11 pl-3 pr-1">

@@ -8,6 +8,7 @@ import { useAuth } from '../auth'
 import { Ic } from '../SketchIcon'
 import { Select } from '../Select'
 import { useIsWide } from '../useMediaQuery'
+import { DOC_TEMPLATES, downloadDocTemplate } from '../../shared/order-judge-templates'
 import { precheck, type JudgeReport } from '../../shared/order-judge'
 import { decodeText, imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { readByokKey } from '../reviews/byok'
@@ -771,6 +772,7 @@ function SettingsDialog({ docs, paths, onDocs, onPaths, onClose }: {
     return (
       <div className="field">
         <span className="field-label">{label}</span>
+        <p className="muted small oj-doc-purpose">{DOC_TEMPLATES[kind].purpose}</p>
         <div className={`oj-doc${d ? '' : ' empty-doc'}`}>
           <Ic name="doc" />
           <span className="t">
@@ -781,6 +783,7 @@ function SettingsDialog({ docs, paths, onDocs, onPaths, onClose }: {
         <button type="button" className="btn btn-sm mt8" disabled={busy !== null} onClick={() => pick.current[kind]?.click()}>
           <Ic name="plus" cls="ic ic-sm" />{busy === kind ? '上传中…' : '上传文件'}
         </button>
+        <button type="button" className="btn btn-sm mt8" style={{ marginLeft: 8 }} onClick={() => downloadDocTemplate(kind)}>下载模版</button>
         <input
             ref={(el) => { pick.current[kind] = el }}
             type="file"

@@ -216,3 +216,4 @@
 }
 .oj-result { display: grid; gap: 14px; min-width: 0; align-content: start; }
 
+.oj-doc-purpose { margin: 2px 0 8px; }
