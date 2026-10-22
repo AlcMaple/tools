@@ -25,6 +25,12 @@
 
 ## 当前未归类记录（2026-10）
 
+## 2026-10-22 docs(web): 部署文档补上升级服务器 Node 的步骤
+
+**效果**：[部署教程](docs/web/唐人云部署保姆教程.md)「系统更新」下新增「升级 Node（安全补丁）」：nodesource 源不走自动更新，要手动升；apt 换完二进制必须 `mtweb kill` + `systemctl start pm2-mapletools`，并按 3000 端口的 PID 核对 `/proc/<pid>/exe -v`。服务器已按此升到 22.23.4（CVE-2026-111497 等 10 月公告）。
+
+**风险**：root 直接 `pm2 update` 作用在空的 root pm2 上；`sudo -u mapletools pm2 update` 会继承 `/root` 作 cwd 报 `spawn /usr/bin/node EACCES`，这次因此断站约 2 分钟。
+
 ## 2026-10-22 build: 桌面应用升级到 Electron 44，换掉停止维护的内核
 
 **效果**：Electron 28.3.3 → 44.9.3（内置 Node 24.22.0）。28 早已停止维护、Chromium 不再收安全补丁。渲染进程日志转发改用 `console-message` 的事件对象签名（位置参数自 35 起废弃，`level` 改为字符串）。
