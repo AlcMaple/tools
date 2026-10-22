@@ -51,7 +51,7 @@ export const DOC_TEMPLATES: Record<DocKind, DocTemplate> = {
   },
   log: {
     filename: '项目日志模版.md',
-    purpose: '记录实际做过、学会的事，比档案更新。档案说不能、日志里做过的，评估按日志判能。',
+    purpose: '记录实际做过、学会的事。档案说不能、日志里做过的，评估按日志判能。',
     body: `# 项目日志
 
 > 这份文档是能力的实际证据，建议每做完一件事就在最上面补一条，新的在上。

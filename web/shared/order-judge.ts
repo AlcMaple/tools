@@ -69,7 +69,7 @@ summary 和 video 会被用户原样复制到只收文字的平台去估价，�
 export function buildSystemPrompt(profile: string, projectLog: string | null): string {
   let s = PROMPT + profile
   if (projectLog) {
-    s += '\n\n# 最新项目日志（每日更新，比能力档案新）。规则：能力判断以日志里的最新证据为准——档案说不能、但日志显示已做过或已学会的，按日志判）\n'
+    s += '\n\n# 最新项目日志（每日更新，比能力档案新）。规则：能力判断以日志里的最新证据为准——档案说不能、但日志显示已做过或已学会的，按日志判。日志证据须与核心需求同类，只是沾边的最多判「勉强」\n'
       + projectLog
   }
   return s
