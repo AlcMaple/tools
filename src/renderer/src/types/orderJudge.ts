@@ -2,10 +2,19 @@
 import type { JudgeReport } from '../../../../web/shared/order-judge'
 
 export interface OrderJudgeSettings {
-  hasKey: boolean
-  profilePath: string
-  logPath: string
-  logUpdatedAt: number | null
+  shared: boolean
+  paths: Record<'profile' | 'log', OrderJudgePath[]>
+  hasWebAccount: boolean
+  webUsername: string
+  sync: { state: 'disabled' | 'starting' | 'synced' | 'error'; message: string; at: number | null }
+}
+
+export interface OrderJudgePath {
+  path: string
+  device: string
+  exists: boolean
+  active: boolean
+  updatedAt: number | null
 }
 
 export interface OrderJudgeHistoryEntry {
@@ -17,13 +26,11 @@ export interface OrderJudgeHistoryEntry {
 }
 
 export type OrderJudgeErrorCode =
-  | 'NO_KEY' | 'NO_PROFILE' | 'PROFILE_UNREADABLE'
-  | 'KEY_INVALID' | 'BALANCE' | 'RATE_LIMITED' | 'PROVIDER_ERROR'
-  | 'NETWORK' | 'EMPTY_RESPONSE' | 'BAD_RESPONSE' | 'BAD_INPUT'
+  | 'NEED_WEB' | 'BAD_INPUT' | 'SHARED_ERROR'
 
 export type OrderJudgeResult =
   | { ok: true; entry: OrderJudgeHistoryEntry; warnings: string[] }
-  | { ok: false; code: OrderJudgeErrorCode; detail?: string; status?: number }
+  | { ok: false; code: OrderJudgeErrorCode; detail?: string }
 
 export type OrderJudgeProgress = { stage: 'links'; count: number } | { stage: 'ai' }
 

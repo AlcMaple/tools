@@ -1,9 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { convertMaterial, type ConvertKind } from '../order-judge/convert'
 import {
-  deleteHistory, getSettings, historyDir, judge, listHistory, setKey, setPath, type JudgeInput,
+  deleteHistory, getSettings, historyBase, judge, listHistory, addPath, removePath, movePath, setSharedMode, judgeWebsite, type JudgeInput,
 } from '../order-judge/service'
 
 const MAX_CONVERT_BYTES = 1024 * 1024 * 1024
@@ -22,11 +22,8 @@ function toArchivistUrl(absPath: string): string {
 
 export function registerOrderJudgeIpc(): void {
   ipcMain.handle('order-judge:get-settings', () => getSettings())
-
-  ipcMain.handle('order-judge:set-key', async (_e, key: unknown) => {
-    await setKey(typeof key === 'string' ? key : '')
-    return getSettings()
-  })
+  ipcMain.handle('order-judge:set-shared', (_e, shared: unknown) => setSharedMode(shared === true))
+  ipcMain.handle('order-judge:open-web', () => shell.openExternal(judgeWebsite()))
 
   // 路径只能由主进程弹的系统对话框选出来，渲染进程传不进任意路径
   ipcMain.handle('order-judge:pick-file', async (e, which: unknown) => {
@@ -38,14 +35,23 @@ export function registerOrderJudgeIpc(): void {
       filters: [{ name: 'Markdown / 文本', extensions: ['md', 'markdown', 'txt'] }],
     }
     const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
-    if (!r.canceled && r.filePaths[0]) await setPath(which, r.filePaths[0])
+    if (!r.canceled && r.filePaths[0]) await addPath(which, r.filePaths[0])
+    return getSettings()
+  })
+  // 删除 / 调序只认已有列表里的下标，渲染进程仍然塞不进新路径
+  ipcMain.handle('order-judge:remove-path', async (_e, which: unknown, index: unknown) => {
+    if ((which === 'profile' || which === 'log') && Number.isInteger(index)) await removePath(which, index as number)
+    return getSettings()
+  })
+  ipcMain.handle('order-judge:move-path', async (_e, which: unknown, index: unknown, offset: unknown) => {
+    if ((which === 'profile' || which === 'log') && Number.isInteger(index) && (offset === -1 || offset === 1)) await movePath(which, index as number, offset)
     return getSettings()
   })
 
-  ipcMain.handle('order-judge:history', async () => ({
-    base: toArchivistUrl(historyDir()),
-    entries: await listHistory(),
-  }))
+  ipcMain.handle('order-judge:history', async () => {
+    const entries = await listHistory(), base = await historyBase()
+    return { base: base.startsWith('archivist:') ? base : toArchivistUrl(base), entries }
+  })
 
   ipcMain.handle('order-judge:delete-history', (_e, id: unknown) =>
     deleteHistory(typeof id === 'string' ? id : ''))

@@ -6,13 +6,12 @@ import { reportError } from '../utils/reportError'
 import { VIDEO_FRAMES, precheck, type JudgeReport, type Precheck } from '../../../../web/shared/order-judge'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
 import type {
-  OrderJudgeErrorCode, OrderJudgeHistoryEntry, OrderJudgeSettings,
+  OrderJudgeErrorCode, OrderJudgeHistoryEntry, OrderJudgePath, OrderJudgeSettings,
 } from '../types/orderJudge'
 
 const IS_MAC = navigator.userAgent.includes('Mac')
 const PASTE_KEY = IS_MAC ? '⌘V' : 'Ctrl+V'
 const SHOT_KEY = IS_MAC ? '⌃⌘A' : 'Alt+A'
-const TOP_UP_URL = 'https://platform.deepseek.com/top_up'
 
 interface Material {
   id: number
@@ -24,7 +23,7 @@ interface Material {
 type Outcome =
   | { type: 'report'; entry: OrderJudgeHistoryEntry; warnings: string[] }
   | { type: 'precheck'; kind: Precheck }
-  | { type: 'error'; code: OrderJudgeErrorCode | 'THROWN'; detail?: string; status?: number }
+  | { type: 'error'; code: OrderJudgeErrorCode | 'THROWN'; detail?: string }
 
 interface Running {
   startedAt: number
@@ -154,27 +153,15 @@ function ReportBody({ r }: { r: JudgeReport }): JSX.Element {
   )
 }
 
-function ErrorCard({ code, detail, status, onSettings }: {
+function ErrorCard({ code, detail, onSettings }: {
   code: OrderJudgeErrorCode | 'THROWN'
   detail?: string
-  status?: number
   onSettings: () => void
 }): JSX.Element {
   const settingsBtn = { label: '去评估设置', onClick: onSettings }
   const map: Record<OrderJudgeErrorCode | 'THROWN', { title: string; desc: string; action?: { label: string; onClick?: () => void; href?: string } }> = {
-    NO_KEY: { title: '还没有填写 DeepSeek Key', desc: '填好 Key 后再评估。', action: settingsBtn },
-    NO_PROFILE: { title: '还没有选能力档案', desc: '选好能力档案后再评估。', action: settingsBtn },
-    PROFILE_UNREADABLE: { title: '能力档案读不到', desc: `${detail ?? ''} 可能被移动或删除了，请重新选一次。`, action: settingsBtn },
-    KEY_INVALID: { title: 'DeepSeek Key 无效', desc: 'Key 被拒绝（401），可能填错或已删除。', action: settingsBtn },
-    BALANCE: { title: 'DeepSeek 余额不足', desc: '账户余额用完了（402），充值后再评估。', action: { label: '打开充值页', href: TOP_UP_URL } },
-    RATE_LIMITED: { title: 'DeepSeek 正忙', desc: `请求太多被限流（429），过一会儿再评估。${detail ? `\n${detail}` : ''}` },
-    PROVIDER_ERROR: { title: `DeepSeek 返回错误（HTTP ${status ?? '?'}）`, desc: detail ?? '' },
-    NETWORK: {
-      title: '连不上 DeepSeek',
-      desc: detail === 'timeout' ? '等了 3 分钟没有响应，检查网络或代理后再试。' : `网络请求失败：${detail ?? ''}。检查网络或代理后再试。`,
-    },
-    EMPTY_RESPONSE: { title: 'AI 没有给出结论', desc: '连续 3 次返回空内容，稍后再评估一次。' },
-    BAD_RESPONSE: { title: 'AI 返回的内容解析不了', desc: detail ?? '' },
+    SHARED_ERROR: { title: '共享评估未完成', desc: detail || '请查看同步状态或网页评估设置。', action: settingsBtn },
+    NEED_WEB: { title: '还不能评估', desc: '登录网页版账号并开启「与网页版共用评估和历史」后，就能用网页账号的 AI 评估。', action: settingsBtn },
     BAD_INPUT: { title: '材料格式不对', desc: '图片数据没有通过检查，清空后重新放一次。' },
     THROWN: { title: '评估中断', desc: detail ?? '' },
   }
@@ -241,13 +228,11 @@ function SettingsSheet({ open, settings, onClose, onChange }: {
   onClose: () => void
   onChange: (s: OrderJudgeSettings) => void
 }): JSX.Element {
-  const [key, setKeyInput] = useState('')
-  const [showKey, setShowKey] = useState(false)
-  const [saved, setSaved] = useState(false)
   const [err, setErr] = useState('')
+  const [switching, setSwitching] = useState(false)
 
   useEffect(() => {
-    if (!open) { setKeyInput(''); setSaved(false); setErr('') }
+    if (!open) setErr('')
   }, [open])
 
   const pick = async (which: 'profile' | 'log'): Promise<void> => {
@@ -258,31 +243,46 @@ function SettingsSheet({ open, settings, onClose, onChange }: {
       setErr(ipcErrMsg(e, '选择文件失败'))
     }
   }
-  const saveKey = async (): Promise<void> => {
-    if (!key.trim()) return
-    try {
-      onChange(await window.orderJudgeApi.setKey(key))
-      setKeyInput('')
-      setErr('')
-      setSaved(true)
-      setTimeout(() => setSaved(false), 1600)
-    } catch (e) {
-      reportError('order-judge:set-key', e)
-      setErr(ipcErrMsg(e, 'Key 没有保存'))
-    }
+  // 开启时会把本机路径并进账号、本机历史上传一次，可能要几秒，期间锁住开关。
+  const toggleShared = async (shared: boolean): Promise<void> => {
+    setSwitching(true); setErr('')
+    try { onChange(await window.orderJudgeApi.setShared(shared)) }
+    catch (e) {
+      reportError('order-judge:set-shared', e)
+      setErr(ipcErrMsg(e, '没有开启共用'))
+      onChange(await window.orderJudgeApi.getSettings())
+    } finally { setSwitching(false) }
   }
 
-  const pathRow = (label: string, icon: string, path: string | undefined, which: 'profile' | 'log', extra?: React.ReactNode): JSX.Element => (
-    <div>
-      <span className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">{label}</span>
-      <div className="mt-2 flex items-center gap-2 rounded-xl bg-surface-container-high border border-outline-variant/30 h-11 pl-4 pr-1.5">
-        <span className="material-symbols-outlined text-[18px] leading-none text-on-surface-variant">{icon}</span>
-        <span className={`flex-1 min-w-0 truncate text-sm ${path ? '' : 'text-on-surface-variant/50'}`} title={path}>{path || '未选择'}</span>
-        <button onClick={() => void pick(which)} className="h-8 px-3 rounded-xl font-label text-sm text-primary hover:bg-primary/10">{path ? '更换' : '选择'}</button>
+  const edit = async (task: Promise<OrderJudgeSettings>, tag: string): Promise<void> => {
+    try { onChange(await task) } catch (e) { reportError(tag, e); setErr(ipcErrMsg(e, '保存路径失败')) }
+  }
+
+  // 按顺序取第一个本机存在的文件；用的那条图标亮起，本机不存在的那条变淡（通常是另一台电脑的路径）。
+  const pathList = (label: string, icon: string, paths: OrderJudgePath[], which: 'profile' | 'log'): JSX.Element => {
+    const iconButton = 'w-7 h-7 grid place-items-center rounded-lg text-on-surface-variant hover:bg-surface-container-highest disabled:opacity-30 disabled:hover:bg-transparent'
+    return (
+      <div>
+        <span className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">{label}</span>
+        <div className="mt-2 space-y-1.5">
+          {paths.map((p, i) => (
+            <div key={p.path} className="flex items-center gap-1 rounded-xl bg-surface-container-high border border-outline-variant/30 h-11 pl-3 pr-1">
+              <span className={`material-symbols-outlined text-[18px] leading-none ${p.active ? 'text-primary' : 'text-on-surface-variant/40'}`}>{icon}</span>
+              <span className={`flex-1 min-w-0 truncate text-sm ml-1 ${p.exists ? '' : 'text-on-surface-variant/50'}`} title={`${p.device} · ${p.path}${p.updatedAt ? `\n更新于 ${formatWhen(p.updatedAt)}` : ''}`}>{p.path}</span>
+              <span className="shrink-0 font-label text-[11px] text-on-surface-variant/50 px-1">{p.device}</span>
+              <button type="button" aria-label="上移" disabled={i === 0} onClick={() => void edit(window.orderJudgeApi.movePath(which, i, -1), 'order-judge:move-path')} className={iconButton}><span className="material-symbols-outlined text-[18px] leading-none">arrow_upward</span></button>
+              <button type="button" aria-label="下移" disabled={i === paths.length - 1} onClick={() => void edit(window.orderJudgeApi.movePath(which, i, 1), 'order-judge:move-path')} className={iconButton}><span className="material-symbols-outlined text-[18px] leading-none">arrow_downward</span></button>
+              <button type="button" aria-label="移除" onClick={() => void edit(window.orderJudgeApi.removePath(which, i), 'order-judge:remove-path')} className={iconButton}><span className="material-symbols-outlined text-[18px] leading-none">close</span></button>
+            </div>
+          ))}
+          <button type="button" onClick={() => void pick(which)} className="h-9 px-3 rounded-xl font-label text-sm text-primary hover:bg-primary/10">{paths.length ? '添加路径' : '选择文件'}</button>
+        </div>
       </div>
-      {extra}
-    </div>
-  )
+    )
+  }
+
+  const notice = settings?.shared && !settings.hasWebAccount ? '请先在应用设置中登录网页版账号'
+    : settings?.shared && settings.sync.state === 'error' ? settings.sync.message : ''
 
   return (
     <>
@@ -295,41 +295,20 @@ function SettingsSheet({ open, settings, onClose, onChange }: {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 space-y-7">
-          <label className="block">
-            <span className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">DeepSeek Key</span>
-            <div className="relative mt-2">
-              <input
-                type={showKey ? 'text' : 'password'}
-                value={key}
-                onChange={(e) => setKeyInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') void saveKey() }}
-                placeholder={settings?.hasKey ? '已保存，重新填写可替换' : 'sk-…'}
-                autoComplete="off"
-                spellCheck={false}
-                className="w-full h-11 rounded-xl bg-surface-container-high border border-outline-variant/30 px-4 pr-11 text-sm outline-none placeholder:text-on-surface-variant/40 focus:border-primary/60 focus:ring-2 focus:ring-primary/30"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 grid place-items-center rounded-xl text-on-surface-variant hover:text-on-surface"
-                aria-label={showKey ? '隐藏' : '显示'}
-              >
-                <span className="material-symbols-outlined text-[18px] leading-none">{showKey ? 'visibility_off' : 'visibility'}</span>
-              </button>
-            </div>
-          </label>
-          {pathRow('能力档案', 'description', settings?.profilePath, 'profile')}
-          {pathRow('项目日志', 'history_edu', settings?.logPath, 'log',
-            settings?.logUpdatedAt ? <p className="mt-2 text-xs text-on-surface-variant/60">更新于 {formatWhen(settings.logUpdatedAt)}</p> : null)}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={switching} checked={settings?.shared ?? false} onChange={e => void toggleShared(e.target.checked)} />与网页版共用评估和历史</label>
+            {notice && <p role="status" className="text-sm text-on-surface-variant">{notice}</p>}
+          </div>
+          {pathList('能力档案', 'description', settings?.paths.profile ?? [], 'profile')}
+          {pathList('项目日志', 'history_edu', settings?.paths.log ?? [], 'log')}
         </div>
-        <div className="relative flex justify-end gap-2 px-6 py-4 border-t border-outline-variant/20">
-          {(saved || err) && (
-            <span className={`absolute left-6 right-32 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs truncate ${err ? 'text-error' : 'text-yes'}`}>
-              <span className="material-symbols-outlined text-[16px] leading-none">{err ? 'error' : 'check'}</span>{err || '已保存'}
+        {err && (
+          <div className="relative h-12 px-6 border-t border-outline-variant/20">
+            <span className="absolute left-6 right-6 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs truncate text-error" title={err}>
+              <span className="material-symbols-outlined text-[16px] leading-none">error</span>{err}
             </span>
-          )}
-          <button onClick={() => void saveKey()} disabled={!key.trim()} className="h-10 px-5 rounded-xl bg-primary text-on-primary font-bold text-sm hover:brightness-110 disabled:opacity-50 disabled:hover:brightness-100">保存 Key</button>
-        </div>
+          </div>
+        )}
       </aside>
     </>
   )
@@ -356,17 +335,31 @@ function OrderJudge(): JSX.Element {
   const shotCount = useRef(0)
   const dragDepth = useRef(0)
 
+  const historyRequest = useRef(0)
+  const historyOwner = useRef('')
   const loadHistory = useCallback(async () => {
+    const request = ++historyRequest.current
     try {
-      setHistory(await window.orderJudgeApi.history())
+      const next = await window.orderJudgeApi.history()
+      if (request === historyRequest.current) setHistory(next)
     } catch (e) {
       reportError('order-judge:history', e)
     }
   }, [])
 
   useEffect(() => {
-    void loadHistory()
-    window.orderJudgeApi.getSettings().then(setSettings).catch((e) => reportError('order-judge:settings', e))
+    let live = true
+    const refresh = (): void => {
+      window.orderJudgeApi.getSettings().then(next => {
+        if (!live) return
+        const owner = JSON.stringify([next.shared, next.webUsername])
+        if (owner !== historyOwner.current) { historyOwner.current = owner; historyRequest.current++; setHistory({ base: '', entries: [] }); setSelected(null) }
+        setSettings(next); void loadHistory()
+      }).catch((e) => reportError('order-judge:settings', e))
+    }
+    refresh()
+    const stop = window.orderJudgeApi.onChanged(refresh)
+    return () => { live = false; historyRequest.current++; stop() }
   }, [loadHistory])
 
   useEffect(() => {
@@ -489,8 +482,8 @@ function OrderJudge(): JSX.Element {
         setOutcome({ type: 'report', entry: res.entry, warnings: res.warnings })
         void loadHistory()
       } else {
-        setOutcome({ type: 'error', code: res.code, detail: res.detail, status: res.status })
-        if (res.code === 'NO_KEY' || res.code === 'NO_PROFILE') {
+        setOutcome({ type: 'error', code: res.code, detail: res.detail })
+        if (res.code === 'NEED_WEB') {
           window.orderJudgeApi.getSettings().then(setSettings).catch(() => undefined)
         }
       }
@@ -530,7 +523,7 @@ function OrderJudge(): JSX.Element {
 
   const selectedEntry = history.entries.find((x) => x.id === selected) ?? null
   const elapsed = running ? Math.max(0, Math.round((now - running.startedAt) / 1000)) : 0
-  const needsSetup = settings !== null && (!settings.hasKey || !settings.profilePath)
+  const needsSetup = settings !== null && (!settings.shared || !settings.hasWebAccount)
   const unreadableSet = new Set(unreadable)
   const verdictCount = (v: string): number => history.entries.filter((x) => x.report.verdict === v).length
 
@@ -595,7 +588,7 @@ function OrderJudge(): JSX.Element {
     }
     if (!outcome) return null
     if (outcome.type === 'error') {
-      return <ErrorCard code={outcome.code} detail={outcome.detail} status={outcome.status} onSettings={() => setSheetOpen(true)} />
+      return <ErrorCard code={outcome.code} detail={outcome.detail} onSettings={() => setSheetOpen(true)} />
     }
     if (outcome.type === 'precheck') {
       return (
@@ -667,15 +660,6 @@ function OrderJudge(): JSX.Element {
       <div className="pt-8 px-4 md:px-8 pb-16">
         <div className="mx-auto max-w-[1180px] grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0">
-            {needsSetup && (
-              <div className="mb-4 flex items-center gap-3 rounded-xl border border-amber/30 bg-amber-container px-4 py-3">
-                <span className="material-symbols-outlined text-amber text-[20px] leading-none">key</span>
-                <p className="flex-1 text-sm text-amber">
-                  {!settings?.hasKey ? '还没有填写 DeepSeek Key' : '还没有选能力档案'}，评估前需要先设置好
-                </p>
-                <button onClick={() => setSheetOpen(true)} className="font-label text-sm font-bold text-amber hover:underline underline-offset-2">去设置</button>
-              </div>
-            )}
 
             <section
               className="relative rounded-xl border border-outline-variant/40 bg-surface-container-low transition-colors focus-within:border-primary/60"

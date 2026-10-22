@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron .",
+    "sync:judge": "electron . --order-judge-sync",
     "dist": "npm run build && electron-builder",
     "build:win": "node scripts/build-win.mjs",
     "sync:manifest": "node scripts/sync-manifest.mjs"

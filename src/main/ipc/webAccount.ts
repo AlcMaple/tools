@@ -1,4 +1,4 @@
-// MapleTools 网页版账号 —— 只负责 app ↔ web 的追番同步。
+// 追番与接单评估复用网站会话，但保持各自的数据通道，避免同一资料出现两个来源。
 //
 // JWT 只存在主进程的 userData JSON 里；preload / renderer 只能拿登录状态和
 // 同步结果，永远接触不到令牌。请求固定发往 MapleTools 网页版，不接受 renderer
@@ -6,8 +6,9 @@
 import { app, ipcMain } from 'electron'
 import { JsonStore } from '../shared/json-store'
 import { netRequest, type NetResult } from '../shared/net-request'
+import { netLines, WebRequestError } from '../shared/net-lines'
 
-const WEB_BASE = (process.env.MAPLETOOLS_WEB_URL || 'https://anime.alcmaple.cn').replace(/\/+$/, '')
+export const WEB_BASE = (process.env.MAPLETOOLS_WEB_URL || 'https://anime.alcmaple.cn').replace(/\/+$/, '')
 const SYNC_SCHEMA = 2
 const WEB_SESSION_COOKIE = '__Host-mt_session'
 const LEGACY_WEB_SESSION_COOKIE = 'mt_session'
@@ -51,6 +52,18 @@ const accountStore = new JsonStore<WebAccountState>('web_account.json', (raw) =>
   }
 })
 
+const accountListeners = new Set<() => void>()
+export function onWebAccountChange(listener: () => void): () => void {
+  accountListeners.add(listener)
+  return () => { accountListeners.delete(listener) }
+}
+export const readWebAccount = (): Promise<WebAccountState> => accountStore.read()
+function setAccount(next: WebAccountState): void {
+  const old = accountStore.current()
+  accountStore.set(next)
+  if (old.token !== next.token || old.origin !== next.origin) for (const listener of accountListeners) listener()
+}
+
 function responseJson(res: NetResult): Record<string, unknown> {
   try {
     const value = JSON.parse(res.body.toString('utf-8')) as unknown
@@ -82,9 +95,9 @@ function syncSnapshot(body: Record<string, unknown>): SyncSnapshot {
   return { ...identity, rev, data: body.data }
 }
 
-async function rememberVerifiedAccount(username: string, accountId: number): Promise<void> {
+export async function rememberVerifiedAccount(username: string, accountId: number): Promise<void> {
   const current = await accountStore.read()
-  accountStore.set({ ...current, username, origin: WEB_BASE, accountId })
+  setAccount({ ...current, username, origin: WEB_BASE, accountId })
 }
 
 function responseError(res: NetResult, fallback: string): Error {
@@ -132,26 +145,47 @@ function requestHeaders(token = ''): Record<string, string> {
   return headers
 }
 
-async function authedRequest(path: string, options: {
+export async function authedRequest(path: string, options: {
   method?: string
   body?: string
+  signal?: AbortSignal
 } = {}): Promise<NetResult> {
   const account = await accountStore.read()
-  if (!account.token) throw new Error('请先在设置中登录网页版账号')
+  if (!account.token) throw new WebRequestError('AUTH_REQUIRED', '请先在设置中登录网页版账号', 401)
   if (account.origin && account.origin !== WEB_BASE) {
-    throw new Error(`网页版同步目标已从 ${account.origin} 变为 ${WEB_BASE}，请重新登录确认`)
+    throw new WebRequestError('ORIGIN_CHANGED', `网页版同步目标已从 ${account.origin} 变为 ${WEB_BASE}，请重新登录确认`, 409)
   }
-  const res = await netRequest(`${WEB_BASE}${path}`, {
+  let res: NetResult
+  try { res = await netRequest(`${WEB_BASE}${path}`, {
     method: options.method,
     body: options.body,
     headers: requestHeaders(account.token),
     timeoutMs: 15000,
-  })
+    signal: options.signal,
+  }) } catch (cause) { throw Object.assign(new WebRequestError(options.signal?.aborted ? 'ABORTED' : 'NETWORK', cause instanceof Error ? cause.message : String(cause)), { cause }) }
+  if ((await accountStore.read()).token !== account.token) throw new WebRequestError('ACCOUNT_CHANGED', '同步账号已切换，旧请求已停止。')
   if (res.status === 401) {
-    accountStore.set({ token: '', username: '', origin: '', accountId: 0, expired: true })
-    throw new Error('网页版登录已失效，请重新登录')
+    setAccount({ token: '', username: '', origin: '', accountId: 0, expired: true })
+    throw new WebRequestError('AUTH_REQUIRED', '网页版登录已失效，请重新登录', 401)
   }
   return res
+}
+
+export async function webAccountLines(path: string, body: string | undefined, signal: AbortSignal, onLine: (value: unknown) => void, idleMs?: number): Promise<void> {
+  const account = await accountStore.read()
+  if (!account.token || account.origin && account.origin !== WEB_BASE) throw new WebRequestError('AUTH_REQUIRED', '请先在设置中登录当前网站账号。', 401)
+  if (!path.startsWith('/api/order-judge/')) throw new Error('INVALID_JUDGE_ENDPOINT')
+  try {
+    await netLines(WEB_BASE + path, { headers: requestHeaders(account.token), body, signal, idleMs }, value => {
+      if (accountStore.current().token !== account.token) throw new WebRequestError('ACCOUNT_CHANGED', '同步账号已切换，旧响应已停止。')
+      onLine(value)
+    })
+  } catch (error) {
+    if (error instanceof WebRequestError && error.status === 401 && (await accountStore.read()).token === account.token) {
+      setAccount({ token: '', username: '', origin: '', accountId: 0, expired: true })
+    }
+    throw error
+  }
 }
 
 export function registerWebAccountIpc(): void {
@@ -183,12 +217,12 @@ export function registerWebAccountIpc(): void {
     const body = responseJson(res)
     if (!token) throw new Error('登录成功但没有收到会话令牌')
     const canonicalName = typeof body.username === 'string' ? body.username : username
-    accountStore.set({ token, username: canonicalName, origin: WEB_BASE, accountId: 0, expired: false })
+    setAccount({ token, username: canonicalName, origin: WEB_BASE, accountId: 0, expired: false })
     return { loggedIn: true, username: canonicalName, origin: WEB_BASE, accountId: 0, expired: false }
   })
 
   ipcMain.handle('web-account:logout', async () => {
-    accountStore.set({ token: '', username: '', origin: '', accountId: 0, expired: false })
+    setAccount({ token: '', username: '', origin: '', accountId: 0, expired: false })
     return { loggedIn: false, username: '', origin: WEB_BASE, accountId: 0, expired: false }
   })
 

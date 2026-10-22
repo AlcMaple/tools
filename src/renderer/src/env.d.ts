@@ -171,10 +171,14 @@ declare global {
     }
     orderJudgeApi: {
       getSettings: () => Promise<OrderJudgeSettings>
-      /** 空字符串表示清除 Key。 */
-      setKey: (key: string) => Promise<OrderJudgeSettings>
-      /** 弹系统对话框选文件并保存路径，取消时原样返回当前设置。 */
+      /** 开启时本机路径并进账号、本机历史自动上传一次；未登录网页版账号会抛错。 */
+      setShared: (shared: boolean) => Promise<OrderJudgeSettings>
+      openWeb: () => Promise<void>
+      onChanged: (cb: () => void) => () => void
+      /** 弹系统对话框选文件并追加到该类资料的路径列表末尾，取消时原样返回当前设置。 */
       pickFile: (which: 'profile' | 'log') => Promise<OrderJudgeSettings>
+      removePath: (which: 'profile' | 'log', index: number) => Promise<OrderJudgeSettings>
+      movePath: (which: 'profile' | 'log', index: number, offset: -1 | 1) => Promise<OrderJudgeSettings>
       /** base 是历史图片目录的 archivist URL，图片地址为 `${base}/${id}/${file}`。 */
       history: () => Promise<{ base: string; entries: OrderJudgeHistoryEntry[] }>
       deleteHistory: (id: string) => Promise<void>

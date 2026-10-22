@@ -414,8 +414,16 @@ contextBridge.exposeInMainWorld('miaoyuApi', {
 
 contextBridge.exposeInMainWorld('orderJudgeApi', {
   getSettings: () => ipcRenderer.invoke('order-judge:get-settings'),
-  setKey: (key: string) => ipcRenderer.invoke('order-judge:set-key', key),
+  setShared: (shared: boolean) => ipcRenderer.invoke('order-judge:set-shared', shared),
+  openWeb: () => ipcRenderer.invoke('order-judge:open-web'),
+  onChanged: (cb: () => void) => {
+    const handler = (): void => cb()
+    ipcRenderer.on('order-judge:changed', handler)
+    return () => ipcRenderer.removeListener('order-judge:changed', handler)
+  },
   pickFile: (which: 'profile' | 'log') => ipcRenderer.invoke('order-judge:pick-file', which),
+  removePath: (which: 'profile' | 'log', index: number) => ipcRenderer.invoke('order-judge:remove-path', which, index),
+  movePath: (which: 'profile' | 'log', index: number, offset: -1 | 1) => ipcRenderer.invoke('order-judge:move-path', which, index, offset),
   history: () => ipcRenderer.invoke('order-judge:history'),
   deleteHistory: (id: string) => ipcRenderer.invoke('order-judge:delete-history', id),
   judge: (input: { text: string; images: { name: string; dataUrl: string }[] }) =>
