@@ -20,6 +20,8 @@ import { judgeEvents } from './order-judge-events'
 import { dataDir } from './data-dir'
 import { getSession, rateLimited } from './auth'
 import { AgentRunError } from '../shared/agent-run'
+import { estimateHours } from './order-judge-estimate'
+import type { EstimateEvent } from '../shared/order-judge-estimate'
 import { aiSource, judgeConnection, publicAddress, type JudgeConnection } from './agent/external-runtime'
 import {
   MAX_IMAGES, SAME_SITE_GAP_MS, buildSystemPrompt, buildUserText, extractUrls, groupByHost,
@@ -60,6 +62,7 @@ const MESSAGES: Record<string, string> = {
   RUN_BUSY: '纱雾助手正在回答，等它说完再评估。',
   RATE_LIMITED: `评估太频繁了：每分钟最多 ${JUDGES_PER_MINUTE} 次。`,
   JUDGE_BUSY: '上一单还在评估，等它出结果再点。',
+  ESTIMATE_BUSY: '上一单还在估价，等它出结果再点。',
   SERVER_BUSY: '服务器同时在评估的单子太多，稍后手动重试。',
   BAD_INPUT: '材料格式不对，刷新页面后重新放入。',
   MESSAGE_TOO_LARGE: '材料太大了：截图少放几张，或把视频换成几张关键截图。',
@@ -214,11 +217,14 @@ async function fetchLinks(urls: string[], signal: AbortSignal): Promise<string> 
 
 // ── 限流 ──
 
+// 评估和估价同一次点击一起发，各自计数，互不占对方的名额
 const recent = new Map<number, number[]>()
+const recentEstimates = new Map<number, number[]>()
 const running = new Set<number>()
+const estimating = new Set<number>()
 
 // 返回还要等几秒，0 表示放行并记一次
-function takeSlot(uid: number): number {
+function takeSlot(uid: number, recent: Map<number, number[]>): number {
   const now = Date.now()
   const list = (recent.get(uid) ?? []).filter((t) => now - t < 60_000)
   if (list.length >= JUDGES_PER_MINUTE) {
@@ -480,7 +486,7 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
   }
   if (running.has(uid)) return c.json(errorBody('JUDGE_BUSY'), 409)
   if (running.size >= MAX_RUNNING) return c.json(errorBody('SERVER_BUSY'), 429)
-  const wait = takeSlot(uid)
+  const wait = takeSlot(uid, recent)
   if (wait) {
     c.header('Retry-After', String(wait))
     return c.json({ ...errorBody('RATE_LIMITED'), error: `${MESSAGES.RATE_LIMITED}${wait} 秒后可以再点。` }, 429)
@@ -527,6 +533,54 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
   }, async (e) => {
     running.delete(uid)
     console.error('[order-judge] 响应流中断', e)
+  })
+})
+
+// 估价只出小时，不进历史（阶段 3 接界面时再存）；AI 走评估同一条连接，一次估价算一回合额度
+api.post('/estimate', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(errorBody('MESSAGE_TOO_LARGE'), 413) }), async (c: Context<Env>) => {
+  const uid = c.get('uid')
+  const input = parseJudge(await c.req.json().catch(() => null))
+  if (!input) return c.json(errorBody('BAD_INPUT'), 400)
+  if (estimating.has(uid)) return c.json(errorBody('ESTIMATE_BUSY'), 409)
+  if (estimating.size >= MAX_RUNNING) return c.json(errorBody('SERVER_BUSY'), 429)
+  const wait = takeSlot(uid, recentEstimates)
+  if (wait) {
+    c.header('Retry-After', String(wait))
+    return c.json({ ...errorBody('RATE_LIMITED'), error: `估价太频繁了：每分钟最多 ${JUDGES_PER_MINUTE} 次，${wait} 秒后可以再点。` }, 429)
+  }
+
+  estimating.add(uid)
+  c.header('Content-Type', 'application/x-ndjson; charset=utf-8')
+  c.header('X-Accel-Buffering', 'no')
+  return stream(c, async (out) => {
+    const send = (e: EstimateEvent): Promise<unknown> => out.write(JSON.stringify(e) + '\n')
+    const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(120_000)])
+    const started = Date.now()
+    let source: Source | undefined
+    try {
+      source = aiSource(uid)
+      const urls = extractUrls(input.text)
+      let links = ''
+      if (urls.length) {
+        await send({ type: 'stage', stage: 'links', count: urls.length })
+        links = await fetchLinks(urls, signal)
+      }
+      const conn = await connection(uid, signal)
+      console.info(`[order-judge:estimate] → uid=${uid} ${conn.source} ${conn.model} 文字 ${input.text.length} 字 网址 ${urls.length} 个 图片 ${input.images.length} 张`)
+      const brief = buildUserText(input.text, links, input.images.map((x) => x.name))
+      const estimate = await conn.execute(() => estimateHours(conn.call, conn.model, brief, input.images.map((x) => x.dataUrl), signal, send))
+      console.info(`[order-judge:estimate] ← uid=${uid} ${estimate.totalHours}h ${estimate.taskCount} 任务 ${Date.now() - started}ms`)
+      await send({ type: 'done', estimate, ms: Date.now() - started })
+    } catch (e) {
+      const code = e instanceof AgentRunError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
+      console.error(`[order-judge:estimate] ✗ uid=${uid} ${code} ${Date.now() - started}ms`, e)
+      if (!out.aborted) await send({ type: 'error', ...errorBody(code, source) })
+    } finally {
+      estimating.delete(uid)
+    }
+  }, async (e) => {
+    estimating.delete(uid)
+    console.error('[order-judge:estimate] 响应流中断', e)
   })
 })
 

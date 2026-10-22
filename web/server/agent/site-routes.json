@@ -727,6 +727,11 @@
   {
     "file": "server/order-judge.ts",
     "method": "post",
+    "path": "/estimate"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
     "path": "/history/import"
   },
   {
