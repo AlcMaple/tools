@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { authedRequest, onWebAccountChange, readWebAccount, rememberVerifiedAccount, webAccountLines } from '../ipc/webAccount'
 import { WebRequestError } from '../shared/net-lines'
 import type { DocKind, DocReceipt, DocWrite, HistoryEntry, JudgeEvent, JudgeState, JudgeSyncState } from '../../../web/shared/order-judge-api'
+import type { EstimateEvent } from '../../../web/shared/order-judge-estimate'
 
 const activeJudges = new Set<AbortController>()
 export function stopSharedJudgeRequests(): void { for (const controller of activeJudges) controller.abort(); activeJudges.clear() }
@@ -36,17 +37,21 @@ export async function sharedJudgeImage(uid: string, id: string, file: string): P
   return response.body
 }
 
-export async function remoteJudge(input: { text: string; images: { name: string; dataUrl: string }[] }, progress: (stage: Extract<JudgeEvent, { type: 'stage' }>) => void, signal: AbortSignal): Promise<HistoryEntry> {
-  let entry: HistoryEntry | undefined
+// 带估价时结论先经 onVerdict 交出去，流继续读到估价结束才返回
+export async function remoteJudge(input: { text: string; images: { name: string; dataUrl: string }[] }, progress: (stage: Extract<JudgeEvent, { type: 'stage' }>) => void, signal: AbortSignal, onVerdict?: (entry: HistoryEntry) => void, onEstimate?: (e: EstimateEvent) => void): Promise<HistoryEntry> {
+  let entry: HistoryEntry | undefined, estimated = false
   const controller = new AbortController(), abort = (): void => controller.abort()
   if (signal.aborted) controller.abort()
   signal.addEventListener('abort', abort, { once: true }); activeJudges.add(controller)
-  try { await webAccountLines('/api/order-judge/judge', JSON.stringify({ ...input, requestId: randomUUID() }), controller.signal, raw => {
+  try { await webAccountLines('/api/order-judge/judge', JSON.stringify({ ...input, requestId: randomUUID(), estimate: !!onEstimate }), controller.signal, raw => {
     const event = raw as JudgeEvent
     if (event.type === 'stage') progress(event)
-    else if (event.type === 'done') entry = event.entry
-    else if (event.type === 'error') throw new WebRequestError(event.code, event.error)
+    else if (event.type === 'done') { entry = event.entry; onVerdict?.(event.entry) }
+    else if (event.type === 'estimate') { if (event.event.type === 'done' || event.event.type === 'error') estimated = true; onEstimate?.(event.event) }
+    else throw new WebRequestError(event.code, event.error)
   }, 250_000) } finally { activeJudges.delete(controller); signal.removeEventListener('abort', abort) }
   if (!entry) throw new WebRequestError('STREAM_CLOSED', '连接中断，没有取得结论；请先查看共享历史。')
+  // 旧版网站不认 estimate 参数，流里不会有估价事件；不交代一声，桌面的估价卡片会一直停在进行中
+  if (onEstimate && !estimated) onEstimate({ type: 'error', code: 'NO_ESTIMATE', error: '这次没有拿到估价：网站可能还没更新到带估价的版本。' })
   return entry
 }

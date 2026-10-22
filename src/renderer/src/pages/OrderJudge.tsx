@@ -5,6 +5,8 @@ import { ipcErrMsg } from '../utils/ipcError'
 import { reportError } from '../utils/reportError'
 import { DOC_TEMPLATES, downloadDocTemplate } from '../../../../web/shared/order-judge-templates'
 import { VIDEO_FRAMES, precheck, type JudgeReport, type Precheck } from '../../../../web/shared/order-judge'
+import type { EstimateResult } from '../../../../web/shared/order-judge-estimate'
+import { DAY_RATE } from '../../../../web/shared/order-judge-quote'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
 import type {
   OrderJudgeErrorCode, OrderJudgeHistoryEntry, OrderJudgePath, OrderJudgeSettings,
@@ -20,6 +22,11 @@ interface Material {
   preview?: string
   note?: string
 }
+
+type Est =
+  | { kind: 'run'; tasks: number; groups: number }
+  | { kind: 'done'; result: EstimateResult }
+  | { kind: 'error'; code: string; message: string }
 
 type Outcome =
   | { type: 'report'; entry: OrderJudgeHistoryEntry; warnings: string[] }
@@ -321,6 +328,113 @@ function SettingsSheet({ open, settings, onClose, onChange }: {
 
 // ── 页面 ──
 
+const yuan = (n: number): string => `¥${n.toLocaleString('en-US')}`
+const monthDay = (date: string): string => `${Number(date.slice(5, 7))} 月 ${Number(date.slice(8, 10))} 日`
+
+// 与网页版估价卡片同一份数据（设计稿 docs/design-mockups/web/接单评估.html），样式跟桌面版 MD3
+function EstimateCard({ est }: { est: Est }): JSX.Element {
+  const head = (meta?: string): JSX.Element => (
+    <div className="flex items-baseline gap-3 px-6 pt-5">
+      <p className="flex items-center gap-1.5 font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">
+        <span className="material-symbols-outlined text-[16px] leading-none">request_quote</span>估价
+      </p>
+      {meta && <p className="ml-auto font-label text-xs text-on-surface-variant/70 tabular-nums">{meta}</p>}
+    </div>
+  )
+  const shell = (children: React.ReactNode): JSX.Element => (
+    <article className="animate-fade-up mt-4 overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-low pb-5">{children}</article>
+  )
+  if (est.kind === 'run') {
+    const steps = [
+      { title: '拆任务', detail: est.tasks ? `${est.tasks} 个任务` : '', state: est.tasks ? 'done' : 'run' },
+      { title: '估工时', detail: est.tasks ? `已估完 ${est.groups} / 8 组` : '', state: est.tasks ? 'run' : 'wait' },
+    ]
+    return shell(
+      <>
+        {head()}
+        <ol className="grid gap-3 px-6 pt-4">
+          {steps.map((s) => (
+            <li key={s.title} className="flex items-start gap-3">
+              <span className="mt-0.5 w-5 h-5 grid place-items-center">
+                {s.state === 'done' && <span className="material-symbols-outlined text-[20px] leading-none text-yes">check_circle</span>}
+                {s.state === 'run' && <span className="pulse-dot w-2.5 h-2.5 rounded-[9999px] bg-primary" />}
+                {s.state === 'wait' && <span className="w-2.5 h-2.5 rounded-[9999px] bg-outline-variant/60" />}
+              </span>
+              <div>
+                <p className={`text-sm font-bold ${s.state === 'run' ? 'text-on-surface' : 'text-on-surface-variant'}`}>{s.title}</p>
+                {s.detail && <p className="text-xs text-on-surface-variant/70 mt-0.5">{s.detail}</p>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </>,
+    )
+  }
+  if (est.kind === 'error') {
+    return shell(
+      <>
+        {head()}
+        <p className="mx-6 mt-4 rounded-xl bg-error-container px-4 py-3 text-[14px] leading-relaxed text-on-error-container">{est.message}</p>
+        <p className="mx-6 mt-2 font-label text-xs text-on-surface-variant/70">{est.code}</p>
+      </>,
+    )
+  }
+  const { hours, quote } = est.result
+  const max = Math.max(1, ...hours.groups.map((g) => g.hours))
+  const tiers = quote?.tiers ?? []
+  return shell(
+    <>
+      {head(`${formatWhen(est.result.at)} · 用时 ${Math.round(est.result.ms / 1000)} 秒 · ${hours.taskCount} 个任务`)}
+      <p className="px-6 pt-2 text-[28px] font-black leading-tight text-on-surface tabular-nums">
+        {hours.totalHours.toLocaleString('en-US')}<span className="ml-1.5 text-sm font-bold text-on-surface-variant">小时</span>
+      </p>
+      {quote ? (
+        <div className="px-6 pt-4">
+          <div className="grid grid-cols-2 gap-3">
+            {tiers.map((t) => (
+              <div key={t.factor} className="rounded-xl bg-surface-container-high px-4 py-3">
+                <p className="text-lg font-black text-on-surface tabular-nums">{yuan(t.price)}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-on-surface-variant tabular-nums">{t.workdays} 个工作日 · {monthDay(t.end)}交付 · 共 {t.calendarDays} 天</p>
+              </div>
+            ))}
+          </div>
+          {(quote.assumedYears.length > 0 || quote.springFestivalRisk) && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {quote.assumedYears.length > 0 && <span className="rounded-lg bg-amber-container px-2 py-0.5 font-label text-[11px] font-bold text-amber">{quote.assumedYears.join('、')} 年节假日未公布，按双休估算</span>}
+              {quote.springFestivalRisk && <span className="rounded-lg bg-amber-container px-2 py-0.5 font-label text-[11px] font-bold text-amber">交期跨春节，实际可能顺延</span>}
+            </div>
+          )}
+          <p className="mt-3 flex gap-1.5 text-xs leading-relaxed text-on-surface-variant">
+            <span className="material-symbols-outlined text-[16px] leading-none text-amber">info</span>
+            <span>以上不含加急。加急每提前 1 天加（请的人数 + 1）× {DAY_RATE} 元，最多提前 {tiers.map((t) => t.calendarDays).join(' / ')} 天；例：请 1 人提前 2 天加 {2 * 2 * DAY_RATE} 元。</span>
+          </p>
+        </div>
+      ) : (
+        <p className="mx-6 mt-4 rounded-xl bg-amber-container px-4 py-3 text-[14px] leading-relaxed text-amber">{est.result.quoteError}</p>
+      )}
+      <div className="mx-6 mt-4 grid gap-0.5 border-t border-outline-variant/20 pt-3">
+        {hours.groups.map((g, i) => (
+          <details key={g.key} open={i === 0} className="group">
+            <summary className="grid cursor-pointer list-none grid-cols-[7em_1fr_auto_18px] items-center gap-3 py-1.5 text-[13px] text-on-surface [&::-webkit-details-marker]:hidden">
+              <span>{g.name}</span>
+              <span className="h-1.5 overflow-hidden rounded-[9999px] bg-surface-container-highest"><i className="block h-full rounded-[9999px] bg-primary" style={{ width: `${Math.round(g.hours / max * 100)}%` }} /></span>
+              <span className="whitespace-nowrap text-right tabular-nums text-on-surface-variant">{g.hours} 小时</span>
+              <span className="material-symbols-outlined text-[18px] leading-none text-on-surface-variant/70 transition-transform group-open:rotate-180">expand_more</span>
+            </summary>
+            <ul className="mb-2 ml-[calc(7em+12px)] grid gap-0.5">
+              {g.tasks.map((t, k) => (
+                <li key={k} className="flex justify-between gap-3 text-xs leading-relaxed text-on-surface-variant">
+                  <span>{t.title}</span><span className="shrink-0 tabular-nums text-on-surface-variant/70">{t.hours}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ))}
+      </div>
+    </>,
+  )
+}
+
 function OrderJudge(): JSX.Element {
   const [text, setText] = useState('')
   const [materials, setMaterials] = useState<Material[]>([])
@@ -328,6 +442,7 @@ function OrderJudge(): JSX.Element {
   const [running, setRunning] = useState<Running | null>(null)
   const [now, setNow] = useState(Date.now())
   const [outcome, setOutcome] = useState<Outcome | null>(null)
+  const [est, setEst] = useState<Est | null>(null)
   const [history, setHistory] = useState<{ base: string; entries: OrderJudgeHistoryEntry[] }>({ base: '', entries: [] })
   const [selected, setSelected] = useState<string | null>(null)
   const [settings, setSettings] = useState<OrderJudgeSettings | null>(null)
@@ -470,7 +585,24 @@ function OrderJudge(): JSX.Element {
     setNow(startedAt)
     setRunning({ startedAt, stage: 'prepare', stats: [], links: 0 })
     showResult()
+    setEst(null)
     const off = window.orderJudgeApi.onProgress((p) => {
+      if (p.stage === 'verdict') {
+        // 结论先到先显示，估价接着在下面跑
+        setOutcome({ type: 'report', entry: p.entry, warnings: [] })
+        setRunning(null)
+        setEst((x) => x ?? { kind: 'run', tasks: 0, groups: 0 })
+        return
+      }
+      if (p.stage === 'estimate') {
+        const e = p.event
+        if (e.type === 'scope') setEst({ kind: 'run', tasks: e.tasks, groups: 0 })
+        else if (e.type === 'group') setEst((x) => (x?.kind === 'run' ? { ...x, groups: x.groups + 1 } : x))
+        else if (e.type === 'done') setEst({ kind: 'done', result: e.result })
+        else if (e.type === 'error') setEst({ kind: 'error', code: e.code, message: e.error })
+        else setEst((x) => x ?? { kind: 'run', tasks: 0, groups: 0 })
+        return
+      }
       setRunning((r) => (r ? (p.stage === 'links' ? { ...r, stage: 'links', links: p.count } : { ...r, stage: 'ai' }) : r))
     })
     try {
@@ -536,6 +668,7 @@ function OrderJudge(): JSX.Element {
     if (selectedEntry) {
       const r = selectedEntry.report
       return (
+        <>
         <Card verdict={r.verdict}>
           <div className="flex items-center justify-between gap-3 px-6 pt-4 -mb-2 font-label text-xs text-on-surface-variant/70">
             <span className="flex items-center gap-1.5"><span className="material-symbols-outlined text-[16px] leading-none">history</span>{formatWhen(selectedEntry.at)}</span>
@@ -563,6 +696,8 @@ function OrderJudge(): JSX.Element {
             )}
           </Section>
         </Card>
+        {selectedEntry.estimate && <EstimateCard est={{ kind: 'done', result: selectedEntry.estimate }} />}
+        </>
       )
     }
     if (running) {
@@ -614,6 +749,7 @@ function OrderJudge(): JSX.Element {
     }
     const r = outcome.entry.report
     return (
+      <>
       <Card verdict={r.verdict}>
         <VerdictBar
           verdict={r.verdict}
@@ -626,6 +762,8 @@ function OrderJudge(): JSX.Element {
         />
         <ReportBody r={r} />
       </Card>
+      {est && <EstimateCard est={est} />}
+      </>
     )
   }
 

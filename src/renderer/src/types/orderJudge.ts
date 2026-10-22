@@ -1,5 +1,6 @@
 // 与 src/main/order-judge/service.ts 的 IPC 返回结构保持一致
 import type { JudgeReport } from '../../../../web/shared/order-judge'
+import type { EstimateEvent, EstimateResult } from '../../../../web/shared/order-judge-estimate'
 
 export interface OrderJudgeSettings {
   shared: boolean
@@ -23,6 +24,7 @@ export interface OrderJudgeHistoryEntry {
   report: JudgeReport
   order: string
   images: { file: string; name: string }[]
+  estimate?: EstimateResult
 }
 
 export type OrderJudgeErrorCode =
@@ -32,7 +34,10 @@ export type OrderJudgeResult =
   | { ok: true; entry: OrderJudgeHistoryEntry; warnings: string[] }
   | { ok: false; code: OrderJudgeErrorCode; detail?: string }
 
-export type OrderJudgeProgress = { stage: 'links'; count: number } | { stage: 'ai' }
+export type OrderJudgeProgress =
+  | { stage: 'links'; count: number } | { stage: 'ai' }
+  | { stage: 'verdict'; entry: OrderJudgeHistoryEntry }
+  | { stage: 'estimate'; event: EstimateEvent }
 
 export type OrderJudgeConvertResult =
   | { ok: true; images: Uint8Array[]; text: string; seconds?: number }

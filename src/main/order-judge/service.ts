@@ -13,6 +13,7 @@ import { configureJudgeSync, getJudgeSyncStatus, latestJudgeState, syncJudgeNow,
 import { judgeRemote, remoteJudge, remoteSnapshot, remoteState } from './remote'
 import { MAX_IMAGES, type JudgeReport } from '../../../web/shared/order-judge'
 import { MAX_JUDGE_PATHS, type JudgePath, type JudgePaths } from '../../../web/shared/order-judge-api'
+import type { EstimateEvent } from '../../../web/shared/order-judge-estimate'
 
 // ── 设置 ──
 
@@ -234,7 +235,10 @@ export interface JudgeInput {
   images: { name: string; dataUrl: string }[]
 }
 
-export type JudgeProgress = { stage: 'links'; count: number } | { stage: 'ai' }
+export type JudgeProgress =
+  | { stage: 'links'; count: number } | { stage: 'ai' }
+  | { stage: 'verdict'; entry: HistoryEntry }
+  | { stage: 'estimate'; event: EstimateEvent }
 
 const DATA_URL_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/
 
@@ -247,7 +251,8 @@ export async function judge(input: JudgeInput, onProgress: (p: JudgeProgress) =>
   if (!(await settingsStore.read()).shared || !(await readWebAccount()).token) return { ok: false, code: 'NEED_WEB' }
   try {
     await syncJudgeNow()
-    const entry = await remoteJudge({ text, images }, onProgress, new AbortController().signal)
+    const entry = await remoteJudge({ text, images }, onProgress, new AbortController().signal,
+      (verdict) => onProgress({ stage: 'verdict', entry: verdict }), (event) => onProgress({ stage: 'estimate', event }))
     return { ok: true, entry, warnings: [] }
   } catch (e) {
     logError('order-judge:shared', e)
