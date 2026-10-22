@@ -1,4 +1,4 @@
-// 备份导入导出 —— 用户把自己的追番 + 点评 / 推荐带走一份，服务器炸了也能导回来。
+// 备份导入导出 —— 用户把自己的追番、点评 / 推荐与接单评估带走一份，服务器炸了也能导回来。
 // 意图与取舍见 docs/intent/web-import-export.md，这里只写代码没法自解释的部分。
 //
 //   票据  POST /api/backup/export-ticket {format} → { url }
@@ -9,7 +9,8 @@
 //         md   ：只供人读，不能导回
 //   导入  POST /api/backup/import  multipart `file`，.zip 或裸 data.json
 //
-// 合并规则：按条目、后写者胜（同 bgm_id 比 updated_at），文件有账号没有的补上，账号有文件
+// 追番合并规则：按条目、后写者胜（同 bgm_id 比 updated_at），文件有账号没有的补上，账号有文件
+// 接单评估只在空目标恢复，已有资料保留，不采用时间戳胜出。
 // 没有的不动 —— 和 /api/tracks/sync 的「整包覆盖」是两回事，绝不删任何一条。
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -22,6 +23,8 @@ import { AUTH_SECRET } from './secrets'
 import { trackInternals as T, type TrackRow } from './tracks'
 import { reviewInternals as R, type ContentRow, type DraftRow } from './reviews'
 import type { ReviewMode, Spoiler } from './ai'
+import { collectJudgeBackup, prepareJudgeRestore } from './order-judge-backup'
+import { JudgeDataError } from './order-judge-data'
 
 const backup = new Hono()
 
@@ -258,6 +261,13 @@ backup.get('/export', async (c) => {
     const md = buildMarkdown(session.username, exportedAt, data.tracks, data.reviews)
     return attachment(c, md, 'text/markdown; charset=utf-8', `番外小站-追番-${stamp}.md`, `mapletools-tracks-${stamp}.md`)
   }
+  let judge: ReturnType<typeof collectJudgeBackup>
+  try { judge = collectJudgeBackup(session.uid) }
+  catch (error) {
+    if (error instanceof JudgeDataError) return c.json({ code: error.code, error: error.message }, error.status)
+    throw error
+  }
+  if ([...Object.values(data.covers), ...Object.values(judge.files)].reduce((sum, bytes) => sum + bytes.byteLength, 0) > 200 * 1024 * 1024) return c.json({ error: '备份图片总量超过 200 MB，请分批归档。' }, 413)
   const json = JSON.stringify(
     {
       format: FORMAT,
@@ -266,6 +276,7 @@ backup.get('/export', async (c) => {
       exportedBy: { userId: session.uid, username: session.username },
       tracks: data.tracks,
       reviews: data.reviews,
+      orderJudge: judge.data,
     },
     null,
     2,
@@ -277,6 +288,7 @@ backup.get('/export', async (c) => {
     files['README.md'] = [strToU8(buildMarkdown(session.username, exportedAt, data.tracks, data.reviews)), { level: 6 }]
   }
   for (const [name, bytes] of Object.entries(data.covers)) files[name] = [bytes, { level: 0 }]
+  for (const [name, bytes] of Object.entries(judge.files)) files[name] = [bytes, { level: 0 }]
   return attachment(c, zipSync(files), 'application/zip', `番外小站-备份-${stamp}.zip`, `mapletools-backup-${stamp}.zip`)
 })
 
@@ -553,6 +565,9 @@ backup.post('/import', async (c) => {
   // 别人的备份只导追番：点评是署名内容，不能一键变成导入者自己公开发表的东西。
   const reviewsIn = foreignBackup ? [] : readReviews(data.reviews, now)
   if ('error' in reviewsIn) return c.json({ error: reviewsIn.error }, 400)
+  let judgeRestore: ReturnType<typeof prepareJudgeRestore>
+  try { judgeRestore = prepareJudgeRestore(uid, foreignBackup ? undefined : data.orderJudge, files) }
+  catch (error) { return c.json({ error: error instanceof Error ? error.message : '接单评估备份无效。' }, 400) }
 
   const summary: ImportSummary = {
     tracks: { added: 0, updated: 0, skipped: 0 },
@@ -677,11 +692,13 @@ backup.post('/import', async (c) => {
         else summary.reviews!.skipped++
       }
 
+      judgeRestore.apply()
       if (summary.tracks.added || summary.tracks.updated) T.bumpRev(uid)
     })
     try {
       apply.immediate()
     } catch (e) {
+      judgeRestore.rollback()
       for (const id of written) {
         try {
           unlinkSync(T.coverFilePath(uid, id))
@@ -694,7 +711,8 @@ backup.post('/import', async (c) => {
   })
 
   if (summary.tracks.added || summary.tracks.updated) T.fillCalendarMetadataLater(uid)
-  return c.json({ ...summary, statusCounts: T.statusCounts(uid) })
+  judgeRestore.committed()
+  return c.json({ ...summary, orderJudge: foreignBackup ? 'foreign-skipped' : judgeRestore.status(), statusCounts: T.statusCounts(uid) })
 })
 
 export default backup

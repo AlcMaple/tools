@@ -716,6 +716,21 @@
   },
   {
     "file": "server/order-judge.ts",
+    "method": "get",
+    "path": "/sync"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "get",
+    "path": "/sync/events"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/history/import"
+  },
+  {
+    "file": "server/order-judge.ts",
     "method": "post",
     "path": "/judge"
   },
@@ -726,8 +741,23 @@
   },
   {
     "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/paths/merge"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/sync/check/:id"
+  },
+  {
+    "file": "server/order-judge.ts",
     "method": "put",
     "path": "/docs/:kind"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "put",
+    "path": "/paths/:kind"
   },
   {
     "file": "server/player/index.ts",

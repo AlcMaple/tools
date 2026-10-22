@@ -1,4 +1,4 @@
-// 网页版接单评估：能力档案 / 项目日志 / 历史按账号存。AI 跟随设置里「用谁的」，和助手共用同一条连接与额度。
+// 桌面共享模式与网页走同一入口，避免资料与历史各自演进。AI 跟随账号设置，共用连接与额度。
 // 材料预处理（截图缩放、长图切块、视频取帧、PDF / Word 取字）在浏览器里做完，这里只收文字和 JPEG。
 //
 // 历史是「DB 行 + 磁盘图片」两半：图片落 dataDir/order-judge/<uid>/<id>/，写入先落文件再插行（插行失败删目录），
@@ -15,6 +15,8 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Agent, fetch as undiciFetch } from 'undici'
 import { db } from './db'
+import { judgeData, judgeHash, JudgeDataError } from './order-judge-data'
+import { judgeEvents } from './order-judge-events'
 import { dataDir } from './data-dir'
 import { getSession, rateLimited } from './auth'
 import { AgentRunError } from '../shared/agent-run'
@@ -25,30 +27,8 @@ import {
 } from '../shared/order-judge'
 import {
   DOC_MAX_BYTES, HISTORY_LIMIT, JUDGES_PER_MINUTE, JUDGE_MAX_BODY,
-  type DocKind, type DocMeta, type HistoryEntry, type JudgeEvent, type JudgeState,
+  type HistoryEntry, type JudgeEvent, type JudgeState, type JudgeSnapshot, type JudgeSyncEvent,
 } from '../shared/order-judge-api'
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS order_judge_docs (
-    user_id    INTEGER NOT NULL,
-    kind       TEXT    NOT NULL CHECK (kind IN ('profile', 'log')),
-    name       TEXT    NOT NULL,
-    content    TEXT    NOT NULL,
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY(user_id, kind),
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-  CREATE TABLE IF NOT EXISTS order_judge_history (
-    id         TEXT    PRIMARY KEY,
-    user_id    INTEGER NOT NULL,
-    at         INTEGER NOT NULL,
-    report     TEXT    NOT NULL,
-    order_text TEXT    NOT NULL,
-    images     TEXT    NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS order_judge_history_user ON order_judge_history(user_id, at DESC);
-`)
 
 const rootDir = join(dataDir, 'order-judge')
 const entryDir = (uid: number, id: string): string => join(rootDir, String(uid), id)
@@ -108,25 +88,18 @@ function errorBody(code: string, source?: Source): { code: string; error: string
 
 // ── 存取 ──
 
-interface HistoryRow { id: string; at: number; report: string; order_text: string; images: string }
+interface HistoryRow { id: string; at: number; report: string; order_text: string; images: string; snapshot: string | null; model: string | null }
 
 function rowToEntry(r: HistoryRow): HistoryEntry {
-  return { id: r.id, at: r.at, report: JSON.parse(r.report) as JudgeReport, order: r.order_text, images: JSON.parse(r.images) as HistoryEntry['images'] }
+  return { id: r.id, at: r.at, report: JSON.parse(r.report) as JudgeReport, order: r.order_text, images: JSON.parse(r.images) as HistoryEntry['images'], ...(r.snapshot ? { snapshot: JSON.parse(r.snapshot) as JudgeSnapshot } : {}), ...(r.model ? { model: r.model } : {}) }
 }
 
 function readState(uid: number): JudgeState {
-  const docs: JudgeState['docs'] = { profile: null, log: null }
-  const rows = db.prepare('SELECT kind, name, length(CAST(content AS BLOB)) AS size, updated_at FROM order_judge_docs WHERE user_id = ?').all(uid) as { kind: DocKind; name: string; size: number; updated_at: number }[]
-  for (const r of rows) docs[r.kind] = { name: r.name, size: r.size, updatedAt: r.updated_at } satisfies DocMeta
-  const history = (db.prepare('SELECT id, at, report, order_text, images FROM order_judge_history WHERE user_id = ? ORDER BY at DESC LIMIT ?').all(uid, HISTORY_LIMIT) as HistoryRow[]).map(rowToEntry)
-  return { docs, history }
+  const history = (db.prepare('SELECT * FROM order_judge_history WHERE user_id = ? ORDER BY at DESC LIMIT ?').all(uid, HISTORY_LIMIT) as HistoryRow[]).map(rowToEntry)
+  return { docs: judgeData.meta(uid), paths: judgeData.paths(uid), history, seq: judgeData.seq(uid) }
 }
 
-function readDoc(uid: number, kind: DocKind): string | null {
-  return (db.prepare('SELECT content FROM order_judge_docs WHERE user_id = ? AND kind = ?').get(uid, kind) as { content: string } | undefined)?.content ?? null
-}
-
-async function saveHistory(uid: number, report: JudgeReport, order: string, images: { name: string; bytes: Buffer }[]): Promise<HistoryEntry> {
+async function saveHistory(uid: number, report: JudgeReport, order: string, images: { name: string; bytes: Buffer }[], snapshot: JudgeSnapshot, model: string, requestId: string): Promise<HistoryEntry> {
   const id = randomUUID()
   const dir = entryDir(uid, id)
   await mkdir(dir, { recursive: true })
@@ -137,16 +110,21 @@ async function saveHistory(uid: number, report: JudgeReport, order: string, imag
       await writeFile(join(dir, file), images[i].bytes)
       saved.push({ file, name: images[i].name })
     }
-    const entry: HistoryEntry = { id, at: Date.now(), report, order, images: saved }
+    const entry: HistoryEntry = { id, at: Date.now(), report, order, images: saved, snapshot, model }
     const stale = db.transaction(() => {
-      db.prepare('INSERT INTO order_judge_history (id, user_id, at, report, order_text, images) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(id, uid, entry.at, JSON.stringify(report), order, JSON.stringify(saved))
+      db.prepare('INSERT INTO order_judge_history (id, user_id, at, report, order_text, images, snapshot, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, uid, entry.at, JSON.stringify(report), order, JSON.stringify(saved), JSON.stringify(snapshot), model)
+      judgeData.bump(uid)
+      judgeData.endRun(uid, requestId, entry.id, null)
       const old = db.prepare('SELECT id FROM order_judge_history WHERE user_id = ? ORDER BY at DESC LIMIT -1 OFFSET ?').all(uid, HISTORY_LIMIT) as { id: string }[]
       const del = db.prepare('DELETE FROM order_judge_history WHERE id = ?')
       for (const o of old) del.run(o.id)
       return old.map((o) => o.id)
     })()
-    for (const oldId of stale) await rm(entryDir(uid, oldId), { recursive: true, force: true })
+    for (const oldId of stale) {
+      try { await rm(entryDir(uid, oldId), { recursive: true, force: true }) }
+      catch (error) { console.warn(`[order-judge] 旧图片目录清理失败 uid=${uid} id=${oldId}`, error) }
+    }
     return entry
   } catch (e) {
     await rm(dir, { recursive: true, force: true })
@@ -295,7 +273,13 @@ async function askModel(conn: JudgeConnection, uid: number, system: string, user
 // ── 路由 ──
 
 type Env = { Variables: { uid: number } }
+export function createOrderJudgeApi(connection: typeof judgeConnection = judgeConnection): Hono<Env> {
 const api = new Hono<Env>()
+api.onError((e, c) => {
+  if (e instanceof JudgeDataError) return c.json({ code: e.code, error: e.message }, e.status)
+  console.error('[order-judge] 请求失败', e)
+  return c.json({ code: 'UNEXPECTED', error: '接单评估服务异常，请查看服务端日志。' }, 500)
+})
 
 api.use('*', async (c, next) => {
   c.header('Cache-Control', 'no-store')
@@ -314,6 +298,54 @@ api.use('*', async (c, next) => {
 
 api.get('/', (c) => c.json(readState(c.get('uid'))))
 
+api.get('/sync', async c => {
+  const session = await getSession(c)
+  return c.json({ protocol: 1, accountId: c.get('uid'), username: session!.username, seq: judgeData.seq(c.get('uid')), docs: judgeData.docs(c.get('uid')), paths: judgeData.paths(c.get('uid')) })
+})
+
+api.post('/sync/check/:id', bodyLimit({ maxSize: 4096 }), async c => {
+  const input = await c.req.json().catch(() => null) as { deviceId?: unknown; error?: unknown } | null
+  if (typeof input?.deviceId !== 'string' || (input.error !== undefined && typeof input.error !== 'string')) return c.json(errorBody('BAD_INPUT'), 400)
+  judgeEvents.acknowledge(c.get('uid'), input.deviceId, c.req.param('id'), input.error as string | undefined)
+  return c.json({ ok: true })
+})
+
+api.get('/sync/events', async c => {
+  const uid = c.get('uid'), session = await getSession(c), device = c.req.query('deviceId') ?? null
+  if (device !== null && !/^[a-zA-Z0-9-]{16,80}$/.test(device)) return c.json(errorBody('BAD_INPUT'), 400)
+  judgeEvents.validate(uid, device)
+  c.header('Content-Type', 'application/x-ndjson; charset=utf-8')
+  c.header('X-Accel-Buffering', 'no')
+  return stream(c, async out => {
+    let stopped = false, wake = (): void => {}
+    const queue: JudgeSyncEvent[] = [{ type: 'ready', seq: judgeData.seq(uid) }]
+    const close = (): void => { stopped = true; wake() }
+    const unsubscribe = judgeEvents.subscribe(uid, device, event => {
+      if (queue.length >= 64) { close(); return }
+      queue.push(event); wake()
+    }, close)
+    out.onAbort(close)
+    const write = async (event: JudgeSyncEvent): Promise<void> => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try { await Promise.race([out.write(JSON.stringify(event) + '\n'), new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('SYNC_STREAM_IDLE')), 45_000) })]) }
+      finally { clearTimeout(timer) }
+    }
+    try {
+      while (!stopped) {
+        const current = await getSession(c)
+        if (!current || current.uid !== uid || current.tv !== session!.tv) break
+        for (const event of queue.splice(0)) await write(event)
+        if (stopped) break
+        await new Promise<void>(resolve => {
+          const timer = setTimeout(() => { queue.push({ type: 'ping', seq: judgeData.seq(uid) }); resolve() }, 15_000)
+          wake = () => { clearTimeout(timer); resolve() }
+          if (stopped || queue.length) wake()
+        })
+      }
+    } finally { close(); unsubscribe() }
+  }, async e => { console.warn('[order-judge] 同步连接中断', e) })
+})
+
 // 浏览器里预处理材料失败（PDF / 视频解不开）只有浏览器知道，打回服务端终端，不留在 devtools 里
 api.post('/log', bodyLimit({ maxSize: 4096 }), async (c) => {
   const body = await c.req.json().catch(() => null) as { tag?: unknown; detail?: unknown } | null
@@ -328,14 +360,27 @@ const docLimit = bodyLimit({ maxSize: DOC_MAX_BYTES + 4096, onError: (c) => c.js
 api.put('/docs/:kind', docLimit, async (c) => {
   const kind = c.req.param('kind')
   if (kind !== 'profile' && kind !== 'log') return c.json(errorBody('NOT_FOUND'), 404)
-  const input = await c.req.json().catch(() => null) as { name?: unknown; content?: unknown } | null
-  const name = typeof input?.name === 'string' ? input.name.trim().slice(0, 120) : ''
-  const content = typeof input?.content === 'string' ? input.content : ''
-  if (!name || !content.trim() || Buffer.byteLength(content) > DOC_MAX_BYTES) return c.json(errorBody('BAD_INPUT'), 400)
-  db.prepare(`INSERT INTO order_judge_docs (user_id, kind, name, content, updated_at) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(user_id, kind) DO UPDATE SET name = excluded.name, content = excluded.content, updated_at = excluded.updated_at`)
-    .run(c.get('uid'), kind, name, content, Date.now())
-  return c.json(readState(c.get('uid')).docs)
+  const body = await c.req.json().catch(() => null) as { path?: unknown } | null
+  // 带 path 的是电脑读本机文件后的覆盖；不带的是网页（含手机）上传，进路径列表。
+  const receipt = typeof body?.path === 'string' && body.path ? judgeData.write(c.get('uid'), kind, body) : undefined
+  if (!receipt) judgeData.upload(c.get('uid'), kind, body)
+  judgeEvents.changed(c.get('uid'), judgeData.seq(c.get('uid')))
+  return c.json({ ...(receipt ? { receipt } : {}), docs: judgeData.meta(c.get('uid')), paths: judgeData.paths(c.get('uid')) })
+})
+
+api.put('/paths/:kind', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+  const kind = c.req.param('kind')
+  if (kind !== 'profile' && kind !== 'log') return c.json(errorBody('NOT_FOUND'), 404)
+  const input = await c.req.json().catch(() => null) as { paths?: unknown } | null
+  const paths = judgeData.setPaths(c.get('uid'), kind, input?.paths)
+  judgeEvents.changed(c.get('uid'), judgeData.seq(c.get('uid')))
+  return c.json({ paths })
+})
+
+api.post('/paths/merge', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+  const paths = judgeData.mergePaths(c.get('uid'), await c.req.json().catch(() => null))
+  judgeEvents.changed(c.get('uid'), judgeData.seq(c.get('uid')))
+  return c.json({ paths })
 })
 
 api.delete('/history/:id', async (c) => {
@@ -343,8 +388,47 @@ api.delete('/history/:id', async (c) => {
   if (!ID_RE.test(id)) return c.json(errorBody('NOT_FOUND'), 404)
   const r = db.prepare('DELETE FROM order_judge_history WHERE id = ? AND user_id = ?').run(id, uid)
   if (!r.changes) return c.json(errorBody('NOT_FOUND'), 404)
-  await rm(entryDir(uid, id), { recursive: true, force: true })
+  judgeData.bump(uid); judgeEvents.changed(uid, judgeData.seq(uid))
+  try { await rm(entryDir(uid, id), { recursive: true, force: true }) }
+  catch (error) { console.warn(`[order-judge] 删除记录后的图片目录清理失败 uid=${uid} id=${id}`, error) }
   return c.json({ ok: true })
+})
+
+api.post('/history/import', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: c => c.json(errorBody('MESSAGE_TOO_LARGE'), 413) }), async c => {
+  const input = await c.req.json().catch(() => null) as { sourceId?: unknown; at?: unknown; report?: unknown; text?: unknown; images?: unknown } | null
+  const materials = parseJudge(input)
+  if (!input || typeof input.sourceId !== 'string' || !ID_RE.test(input.sourceId) || !Number.isSafeInteger(input.at) || Number(input.at) < 0 || !input.report || typeof input.report !== 'object' || !materials) return c.json(errorBody('BAD_INPUT'), 400)
+  const uid = c.get('uid'), report = normalizeReport(input.report)
+  const hash = judgeHash(JSON.stringify([input.at, report, materials.text, materials.images.map(image => [image.name, judgeHash(image.dataUrl)])]))
+  const lookup = (): { input_hash: string; entry_id: string } | undefined => db.prepare('SELECT input_hash,entry_id FROM order_judge_imports WHERE user_id=? AND source_id=?').get(uid, input.sourceId) as { input_hash: string; entry_id: string } | undefined
+  const previous = lookup()
+  if (previous) {
+    if (previous.input_hash !== hash) throw new JudgeDataError('REQUEST_CHANGED', '这条本机历史在导入后发生变化，未覆盖共享记录。')
+    return c.json({ imported: false, id: previous.entry_id })
+  }
+  const id = randomUUID(), dir = entryDir(uid, id), saved: HistoryEntry['images'] = []
+  await mkdir(dir, { recursive: true })
+  let committed = false
+  try {
+    for (let i = 0; i < materials.images.length; i++) {
+      const file = `${String(i + 1).padStart(2, '0')}.jpg`
+      await writeFile(join(dir, file), materials.images[i].bytes); saved.push({ file, name: materials.images[i].name })
+    }
+    const result = db.transaction(() => {
+      const existing = lookup()
+      if (existing) {
+        if (existing.input_hash !== hash) throw new JudgeDataError('REQUEST_CHANGED', '导入来源已改变。')
+        return { imported: false, id: existing.entry_id }
+      }
+      if ((db.prepare('SELECT count(*) AS n FROM order_judge_history WHERE user_id=?').get(uid) as { n: number }).n >= HISTORY_LIMIT) throw new JudgeDataError('HISTORY_FULL', '共享历史已满 50 条；本机记录与备份保留，请先整理共享历史再导入。')
+      db.prepare('INSERT INTO order_judge_history (id,user_id,at,report,order_text,images) VALUES (?,?,?,?,?,?)').run(id, uid, input.at, JSON.stringify(report), materials.text, JSON.stringify(saved))
+      db.prepare('INSERT INTO order_judge_imports VALUES (?,?,?,?)').run(uid, input.sourceId, hash, id)
+      judgeData.bump(uid); return { imported: true, id }
+    })()
+    committed = result.imported
+    judgeEvents.changed(uid, judgeData.seq(uid))
+    return c.json(result)
+  } finally { if (!committed) await rm(dir, { recursive: true, force: true }) }
 })
 
 api.get('/history/:id/:file', async (c) => {
@@ -381,10 +465,19 @@ function parseJudge(input: unknown): { text: string; images: { name: string; byt
 
 api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(errorBody('MESSAGE_TOO_LARGE'), 413) }), async (c: Context<Env>) => {
   const uid = c.get('uid')
-  const input = parseJudge(await c.req.json().catch(() => null))
+  const raw = await c.req.json().catch(() => null) as Record<string, unknown> | null
+  const input = parseJudge(raw)
   if (!input) return c.json(errorBody('BAD_INPUT'), 400)
-  const profile = readDoc(uid, 'profile')
-  if (!profile) return c.json(errorBody('NO_PROFILE'), 409)
+  const requestId = raw?.requestId === undefined ? randomUUID() : raw.requestId
+  if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) return c.json(errorBody('BAD_INPUT'), 400)
+  const inputHash = judgeHash(JSON.stringify([input.text, input.images.map(x => [x.name, judgeHash(x.dataUrl)])]))
+  const previous = judgeData.run(uid, requestId, inputHash)
+  if (previous) {
+    if (previous.status === 'running') return c.json(errorBody('JUDGE_BUSY'), 409)
+    const row = previous.entry_id ? db.prepare('SELECT * FROM order_judge_history WHERE id=? AND user_id=?').get(previous.entry_id, uid) as HistoryRow | undefined : undefined
+    if (row) return c.body(JSON.stringify({ type: 'done', entry: rowToEntry(row) }) + '\n', 200, { 'Content-Type': 'application/x-ndjson' })
+    return c.json({ code: previous.error_code ?? 'RESULT_REMOVED', error: '这次请求已结束；没有重复调用 AI。请查看历史，或明确发起一次新的评估。' }, 409)
+  }
   if (running.has(uid)) return c.json(errorBody('JUDGE_BUSY'), 409)
   if (running.size >= MAX_RUNNING) return c.json(errorBody('SERVER_BUSY'), 429)
   const wait = takeSlot(uid)
@@ -393,6 +486,7 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
     return c.json({ ...errorBody('RATE_LIMITED'), error: `${MESSAGES.RATE_LIMITED}${wait} 秒后可以再点。` }, 429)
   }
 
+  judgeData.beginRun(uid, requestId, inputHash)
   running.add(uid)
   c.header('Content-Type', 'application/x-ndjson; charset=utf-8')
   c.header('X-Accel-Buffering', 'no')
@@ -402,6 +496,9 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
     const started = Date.now()
     let source: Source | undefined
     try {
+      await judgeEvents.check(uid)
+      signal.throwIfAborted()
+      const frozen = judgeData.snapshot(uid)
       source = aiSource(uid)
       const urls = extractUrls(input.text)
       let links = ''
@@ -410,18 +507,20 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
         links = await fetchLinks(urls, signal)
       }
       await send({ type: 'stage', stage: 'ai' })
-      const conn = await judgeConnection(uid, signal)
-      const system = buildSystemPrompt(profile, readDoc(uid, 'log'))
+      const conn = await connection(uid, signal)
+      const system = buildSystemPrompt(frozen.profile, frozen.log)
       console.info(`[order-judge] → uid=${uid} ${conn.source} ${conn.model} 文字 ${input.text.length} 字 网址 ${urls.length} 个 图片 ${input.images.length} 张`)
       const userText = buildUserText(input.text, links, input.images.map((x) => x.name))
       const report = await conn.execute(() => askModel(conn, uid, system, userText, input.images.map((x) => x.dataUrl), signal))
-      const entry = await saveHistory(uid, report, input.text, input.images)
+      const entry = await saveHistory(uid, report, input.text, input.images, frozen.snapshot, conn.model, requestId)
+      judgeEvents.changed(uid, judgeData.seq(uid))
       console.info(`[order-judge] ← uid=${uid} ${report.verdict} ${report.title} ${Date.now() - started}ms`)
       await send({ type: 'done', entry })
     } catch (e) {
-      const code = e instanceof AgentRunError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
+      const code = e instanceof AgentRunError || e instanceof JudgeDataError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
+      judgeData.endRun(uid, requestId, null, code)
       console.error(`[order-judge] ✗ uid=${uid} ${code} ${Date.now() - started}ms`, e)
-      if (!out.aborted) await send({ type: 'error', ...errorBody(code, source) })
+      if (!out.aborted) await send({ type: 'error', ...(e instanceof JudgeDataError ? { code, error: e.message } : errorBody(code, source)) })
     } finally {
       running.delete(uid)
     }
@@ -431,4 +530,7 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
   })
 })
 
-export default api
+return api
+}
+
+export default createOrderJudgeApi()

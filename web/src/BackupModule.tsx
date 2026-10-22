@@ -29,6 +29,8 @@ function summarize(r: BackupImportResult): string[] {
   if (r.covers.imported || r.covers.missing) {
     lines.push(`封面：贴了 ${r.covers.imported} 张${r.covers.missing ? `，${r.covers.missing} 张文件里找不到、先用网上的图顶着` : ''}`)
   }
+  if (r.orderJudge === 'restored') lines.push('接单评估：资料与历史已恢复。')
+  else if (r.orderJudge === 'existing-skipped') lines.push('接单评估：保留现有资料，未覆盖。')
   return lines
 }
 

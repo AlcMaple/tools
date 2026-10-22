@@ -8,7 +8,26 @@ export interface DocMeta {
   name: string
   size: number
   updatedAt: number
+  revision: number
+  hash: string
+  source: string
+  sourcePath: string | null
 }
+
+export interface JudgeDoc extends DocMeta { content: string }
+export type JudgeDocs = Record<DocKind, JudgeDoc | null>
+// 本机文件是唯一来源：上传即整份覆盖，服务器不合并正文、不留候选和旧稿。
+export interface DocWrite { name: string; content: string; source?: string; path?: string }
+export interface DocReceipt { status: 'saved' | 'same'; revision: number; hash: string }
+export interface JudgeSnapshot { profile: { revision: number; hash: string }; log: { revision: number; hash: string } | null }
+// 路径列表按账号存一份：各台电脑的路径合并追加，顺序即优先级，每台电脑取第一个本机存在的文件。
+// 网页（含手机）上传的文件也是其中一条：device 为 WEB_DEVICE，正文存在服务器，任何设备都「存在」。
+export interface JudgePath { path: string; device: string; upload?: { size: number; updatedAt: number } }
+export const WEB_DEVICE = '网页'
+export type JudgePaths = Record<DocKind, JudgePath[]>
+export const MAX_JUDGE_PATHS = 12
+export interface JudgeSyncState { protocol: 1; accountId: number; username: string; seq: number; docs: JudgeDocs; paths: JudgePaths }
+export type JudgeSyncEvent = { type: 'ready' | 'changed' | 'ping'; seq: number } | { type: 'check'; id: string }
 
 export interface HistoryEntry {
   id: string
@@ -16,11 +35,15 @@ export interface HistoryEntry {
   report: JudgeReport
   order: string
   images: { file: string; name: string }[]
+  snapshot?: JudgeSnapshot
+  model?: string
 }
 
 export interface JudgeState {
   docs: Record<DocKind, DocMeta | null>
+  paths: JudgePaths
   history: HistoryEntry[]
+  seq: number
 }
 
 export interface JudgeImage {

@@ -11,9 +11,9 @@ import { useIsWide } from '../useMediaQuery'
 import { precheck, type JudgeReport } from '../../shared/order-judge'
 import { decodeText, imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { readByokKey } from '../reviews/byok'
-import type { DocKind, DocMeta, HistoryEntry, JudgeState } from '../../shared/order-judge-api'
+import type { DocKind, DocMeta, HistoryEntry, JudgePath, JudgePaths, JudgeState } from '../../shared/order-judge-api'
 import {
-  JudgeError, connectProvider, deleteEntry, imageUrl, judge, loadState, logClient, providerStatus, saveDoc,
+  JudgeError, connectProvider, deleteEntry, imageUrl, judge, loadState, logClient, providerStatus, saveDoc, savePaths, followJudgeChanges,
   type ProviderStatus,
 } from './api'
 
@@ -40,7 +40,7 @@ const VERDICT: Record<JudgeReport['verdict'], { stamp: string; cls: string; tape
   信息不足: { stamp: '待补', cls: 'st-gold', tape: 'gold' },
 }
 
-const SETTINGS_CODES = new Set(['BYOK_REQUIRED', 'PROVIDER_CONNECTION_REQUIRED', 'PROVIDER_HTTP_401', 'NO_PROFILE'])
+const SETTINGS_CODES = new Set(['BYOK_REQUIRED', 'PROVIDER_CONNECTION_REQUIRED', 'PROVIDER_HTTP_401', 'NO_PROFILE', 'DOC_CONFLICT'])
 
 function when(at: number): string {
   const d = new Date(at)
@@ -62,7 +62,7 @@ export function OrderJudgePage({ onLogin }: { onLogin: () => void }): JSX.Elemen
   const { user, ready } = useAuth()
   if (!ready) return null
   if (!user) return <GuestCard onLogin={onLogin} />
-  return <JudgeWorkspace />
+  return <JudgeWorkspace key={user.id} />
 }
 
 function Head({ tab, onTab, counts, gearDot, onGear }: {
@@ -110,6 +110,7 @@ function JudgeWorkspace(): JSX.Element {
   const [tab, setTab] = useState<'judge' | 'hist'>('judge')
   const [state, setState] = useState<JudgeState | null>(null)
   const [loadError, setLoadError] = useState('')
+  const [syncError, setSyncError] = useState('')
   const [provider, setProvider] = useState<ProviderStatus | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [text, setText] = useState('')
@@ -132,6 +133,8 @@ function JudgeWorkspace(): JSX.Element {
   const textRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const materialsRef = useRef<Material[]>([])
+  const refreshRef = useRef<Promise<void> | null>(null)
+  const mountedRef = useRef(true)
   materialsRef.current = materials
 
   const refreshProvider = useCallback(() => {
@@ -142,9 +145,21 @@ function JudgeWorkspace(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    loadState().then(setState).catch((e: unknown) => setLoadError(errorOf(e).message))
+    mountedRef.current = true
+    let queued = false
+    const refresh = (): void => {
+      if (refreshRef.current) { queued = true; return }
+      const task = loadState().then(next => {
+        if (mountedRef.current) { setState(old => !old || next.seq >= old.seq ? next : old); setLoadError('') }
+      }).catch((e: unknown) => { if (mountedRef.current) setLoadError(errorOf(e).message) })
+        .finally(() => { refreshRef.current = null; if (queued && mountedRef.current) { queued = false; refresh() } })
+      refreshRef.current = task
+    }
+    refresh()
+    const unfollow = followJudgeChanges(refresh, error => { logClient('order-judge:sync', error); if (mountedRef.current) setSyncError(errorOf(error).message) }, () => { if (mountedRef.current) setSyncError('') })
     refreshProvider()
     return () => {
+      mountedRef.current = false; unfollow()
       abortRef.current?.abort()
       for (const m of materialsRef.current) if (m.thumb) URL.revokeObjectURL(m.thumb)
     }
@@ -370,7 +385,9 @@ function JudgeWorkspace(): JSX.Element {
   const settings = settingsOpen && state && (
     <SettingsDialog
       docs={state.docs}
-      onDocs={(docs) => setState((s) => (s ? { ...s, docs } : s))}
+      paths={state.paths}
+      onPaths={(paths) => setState(s => s ? { ...s, paths } : s)}
+      onDocs={(docs) => setState(s => s ? { ...s, docs: { profile: (s.docs.profile?.revision ?? 0) > (docs.profile?.revision ?? 0) ? s.docs.profile : docs.profile, log: (s.docs.log?.revision ?? 0) > (docs.log?.revision ?? 0) ? s.docs.log : docs.log } } : s)}
       onClose={() => setSettingsOpen(false)}
     />
   )
@@ -381,7 +398,7 @@ function JudgeWorkspace(): JSX.Element {
     return (
       <>
         {head}
-        {loadError && <p className="nag mt16"><Ic name="alert" />{loadError}</p>}
+        {(loadError || syncError) && <p className="nag mt16"><Ic name="alert" />{loadError || syncError}</p>}
         {list.length === 0 ? (
           <section className="panel oj-sheet blank mt24"><p className="muted">还没有评估过的派单</p></section>
         ) : !wide && mobileDetail && current ? (
@@ -431,7 +448,7 @@ function JudgeWorkspace(): JSX.Element {
             : <button type="button" className="btn btn-sm" onClick={() => { window.location.hash = '#/settings/ai' }}>去设置</button>}
         </div>
       )}
-      {loadError && <p className="nag mt16"><Ic name="alert" />{loadError}</p>}
+      {(loadError || syncError) && <p className="nag mt16"><Ic name="alert" />{loadError || syncError}</p>}
       <div className={`oj-grid${flow ? ' flow' : ''}`}>
         <section
           className="panel oj-mat"
@@ -683,9 +700,11 @@ function ReportSheet({ entry, ms, links, onRestore }: { entry: HistoryEntry; ms?
   )
 }
 
-function SettingsDialog({ docs, onDocs, onClose }: {
+function SettingsDialog({ docs, paths, onDocs, onPaths, onClose }: {
   docs: Record<DocKind, DocMeta | null>
+  paths: JudgePaths
   onDocs: (d: Record<DocKind, DocMeta | null>) => void
+  onPaths: (p: JudgePaths) => void
   onClose: () => void
 }): JSX.Element {
   const [busy, setBusy] = useState<DocKind | null>(null)
@@ -707,13 +726,44 @@ function SettingsDialog({ docs, onDocs, onClose }: {
     setBusy(kind)
     try {
       const content = decodeText(await file.arrayBuffer())
-      onDocs(await saveDoc(kind, file.name, content))
-      setNotice({ text: '已保存', err: false })
+      const saved = await saveDoc(kind, file.name, content)
+      onDocs(saved.docs); onPaths(saved.paths)
+      setNotice({ text: '已上传', err: false })
     } catch (e) {
       setNotice({ text: errorOf(e).message, err: true })
     } finally {
       setBusy(null)
     }
+  }
+
+  // 电脑路径由桌面应用添加，网页上传的文件也是一条；顺序即优先级：每台电脑取第一个本机存在的文件，网页条目处处可用。
+  const reorder = async (kind: DocKind, next: JudgePath[]): Promise<void> => {
+    setBusy(kind)
+    try { onPaths(await savePaths(kind, next)) }
+    catch (e) { setNotice({ text: errorOf(e).message, err: true }) }
+    finally { setBusy(null) }
+  }
+  const pathList = (kind: DocKind): JSX.Element => {
+    const list = paths[kind], current = docs[kind]?.sourcePath
+    if (!list.length) return <></>
+    const move = (i: number, offset: -1 | 1): void => {
+      const next = [...list];[next[i], next[i + offset]] = [next[i + offset], next[i]]
+      void reorder(kind, next)
+    }
+    return (
+      <ol className="oj-paths">
+        {list.map((p, i) => (
+          <li key={p.path} className={p.path === current ? 'on' : ''} title={`${p.path === current ? '当前正文来自这一条\n' : ''}${p.path}${p.upload ? `\n${sizeText(p.upload.size)} · ${when(p.upload.updatedAt)}` : ''}`}>
+            <span className="n">{i + 1}</span>
+            <span className="p">{p.path}</span>
+            <span className="d">{p.device}</span>
+            <button type="button" aria-label="上移" disabled={busy !== null || i === 0} onClick={() => move(i, -1)}><Ic name="chev" cls="ic ic-sm up" /></button>
+            <button type="button" aria-label="下移" disabled={busy !== null || i === list.length - 1} onClick={() => move(i, 1)}><Ic name="chev" cls="ic ic-sm" /></button>
+            <button type="button" aria-label="移除" disabled={busy !== null} onClick={() => void reorder(kind, list.filter((_, j) => j !== i))}><Ic name="x" cls="ic ic-sm" /></button>
+          </li>
+        ))}
+      </ol>
+    )
   }
 
   const docRow = (kind: DocKind, label: string): JSX.Element => {
@@ -724,12 +774,14 @@ function SettingsDialog({ docs, onDocs, onClose }: {
         <div className={`oj-doc${d ? '' : ' empty-doc'}`}>
           <Ic name="doc" />
           <span className="t">
-            {d ? <><b>{d.name}</b><span>{sizeText(d.size)} · {when(d.updatedAt)} 上传</span></> : '还没有上传'}
+            {d ? <><b>{d.name}</b><span>{sizeText(d.size)} · {when(d.updatedAt)} · {d.source}</span></> : '还没有上传'}
           </span>
-          <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={() => pick.current[kind]?.click()}>
-            {busy === kind ? '上传中…' : d ? '更换' : '上传 .md'}
-          </button>
-          <input
+        </div>
+        {pathList(kind)}
+        <button type="button" className="btn btn-sm mt8" disabled={busy !== null} onClick={() => pick.current[kind]?.click()}>
+          <Ic name="plus" cls="ic ic-sm" />{busy === kind ? '上传中…' : '上传文件'}
+        </button>
+        <input
             ref={(el) => { pick.current[kind] = el }}
             type="file"
             accept=".md,.markdown,.txt,text/markdown,text/plain"
@@ -740,7 +792,6 @@ function SettingsDialog({ docs, onDocs, onClose }: {
               if (f) void upload(kind, f)
             }}
           />
-        </div>
       </div>
     )
   }

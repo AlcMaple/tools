@@ -355,6 +355,7 @@ export async function requestBackupExportUrl(format: BackupExportFormat, signal:
 }
 
 export interface BackupImportResult {
+  orderJudge?: 'none' | 'restored' | 'existing-skipped' | 'foreign-skipped'
   tracks: { added: number; updated: number; skipped: number }
   /** 别人的备份不导点评，此时为 null */
   reviews: { imported: number; skipped: number } | null

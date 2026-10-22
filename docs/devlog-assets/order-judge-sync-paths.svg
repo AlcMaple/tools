@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 800" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect x="1" y="1" width="1118" height="798" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">接单评估三端同步：每台设备用哪份文件，什么时候覆盖网站</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：路径列表按账号存一份，各电脑追加自己的路径；每台按顺序取第一个本机存在的文件整份覆盖，一个都没有就用网站上的。</text>
+
+  <!-- 一、路径优先级 -->
+  <rect x="32" y="84" width="1056" height="246" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、账号里的同一份路径列表，在三台设备上各自选中哪一条</text>
+
+  <rect x="52" y="126" width="300" height="188" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="202" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">账号里的项目日志路径（从上往下找）</text>
+  <rect x="68" y="164" width="268" height="40" rx="8" fill="#ffffff" stroke="#c3bcc6"/>
+  <text x="82" y="189" font-size="11" fill="#4a4450">1. ~/百度同步/项目日志.md（Mac 上的）</text>
+  <rect x="68" y="214" width="268" height="40" rx="8" fill="#ffffff" stroke="#c3bcc6"/>
+  <text x="82" y="239" font-size="11" fill="#4a4450">2. D:\百度同步\项目日志.md（Windows 上的）</text>
+  <text x="68" y="282" font-size="11" fill="#5c5560">Mac、Windows 开启共用时各自追加</text>
+  <text x="68" y="300" font-size="11" fill="#5c5560">网页和桌面都能调顺序、移除</text>
+
+  <rect x="372" y="126" width="220" height="188" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="482" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">Mac</text>
+  <text x="388" y="176" font-size="11" fill="#456b54">第 1 条存在 → 用它</text>
+  <text x="388" y="198" font-size="11" fill="#456b54">和网站不同就整份覆盖</text>
+
+  <rect x="608" y="126" width="220" height="188" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="718" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">Windows</text>
+  <text x="624" y="176" font-size="11" fill="#456b54">第 1 条在这台不存在，跳过</text>
+  <text x="624" y="198" font-size="11" fill="#456b54">第 2 条存在 → 用它</text>
+  <text x="624" y="220" font-size="11" fill="#456b54">和网站不同就整份覆盖</text>
+
+  <rect x="844" y="126" width="224" height="188" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="956" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">手机 / 浏览器</text>
+  <text x="860" y="176" font-size="11" fill="#4d6575">可以上传文件，作为「网页」</text>
+  <text x="860" y="198" font-size="11" fill="#4d6575">条目追加进列表、调顺序</text>
+  <text x="860" y="220" font-size="11" fill="#4d6575">网页条目排在前面时直接是正文，</text>
+  <text x="860" y="240" font-size="11" fill="#4d6575">电脑不再覆盖；排后面以电脑为准</text>
+
+  <!-- 二、会发生什么 -->
+  <rect x="32" y="346" width="1056" height="232" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="372" font-size="14" font-weight="700" fill="#353136">二、以前要人处理的情况，现在都自动解决</text>
+
+  <rect x="52" y="388" width="326" height="174" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="215" y="411" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">撤销 / 删掉一行</text>
+  <text x="66" y="436" font-size="11" fill="#456b54">以前：内容和旧版一样 → 被当成旧稿忽略，</text>
+  <text x="66" y="456" font-size="11" fill="#456b54">网站留着删掉的那行</text>
+  <text x="66" y="484" font-size="11" font-weight="700" fill="#316247">现在：保存后整份覆盖，网站同步变回去</text>
+
+  <rect x="396" y="388" width="326" height="174" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="559" y="411" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">两台电脑改到同一段</text>
+  <text x="410" y="436" font-size="11" fill="#456b54">以前：存成候选稿，评估被拦，</text>
+  <text x="410" y="456" font-size="11" fill="#456b54">要在网页「处理冲突」里选</text>
+  <text x="410" y="484" font-size="11" font-weight="700" fill="#316247">现在：最后同步的那份胜出，评估照常</text>
+
+  <rect x="740" y="388" width="328" height="174" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="904" y="411" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">改动太大</text>
+  <text x="754" y="436" font-size="11" fill="#456b54">以前：超过比对上限也算冲突，要人选</text>
+  <text x="754" y="484" font-size="11" font-weight="700" fill="#316247">现在：不比对，整份替换，没有上限问题</text>
+  <text x="754" y="512" font-size="11" fill="#456b54">服务器上只剩两份正文，</text>
+  <text x="754" y="532" font-size="11" fill="#456b54">没有候选稿、旧版本、合并基线</text>
+
+  <!-- 三、代价与边界 -->
+  <rect x="32" y="594" width="1056" height="188" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="620" font-size="14" font-weight="700" fill="#353136">三、换来的代价与边界（接手时最容易改错）</text>
+
+  <rect x="52" y="636" width="500" height="62" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="66" y="658" font-size="11" font-weight="700" fill="#7a6234">两台电脑都在线、文件又不一样：后上传的覆盖先上传的</text>
+  <text x="66" y="680" font-size="11" fill="#7a6234">两边文件靠百度同步盘保持一致；同步盘晚到的旧文件也会覆盖上去。</text>
+
+  <rect x="568" y="636" width="500" height="62" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="582" y="658" font-size="11" font-weight="700" fill="#7a6234">网页上传的条目要排在电脑路径前面才会生效</text>
+  <text x="582" y="680" font-size="11" fill="#7a6234">排在后面时，电脑在线就会以电脑上的文件覆盖。</text>
+
+  <rect x="52" y="708" width="1016" height="58" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="66" y="730" font-size="11" font-weight="700" fill="#96434f">找到的文件读不稳（正在保存 / 空文件 / 超过 1 MB）→ 报错，不往下一条路径找</text>
+  <text x="66" y="752" font-size="11" fill="#96434f">否则会把排在后面的另一份旧文件当成新稿传上去。路径不存在才往下找。</text>
+</svg>

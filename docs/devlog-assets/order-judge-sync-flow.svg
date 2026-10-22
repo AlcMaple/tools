@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1060" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="g" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+    <marker id="bl" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#5b7d95"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="1058" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">接单评估三端同步：电脑上的文件说了算，网站只存两份正文，哪端点评估都先核对再问 AI</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：电脑保存 MD 后约 0.3 秒整份覆盖上传；点评估时网站先让在线的电脑交最新稿（最多等 12 秒），再冻结两份资料调 AI。没有冲突，也不用人选稿。</text>
+
+  <!-- 一、三端角色 -->
+  <rect x="32" y="84" width="1056" height="250" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、谁负责什么：只有电脑是「资料来源」，网站是唯一正文，手机只看和发起评估</text>
+
+  <rect x="56" y="128" width="270" height="118" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="191" y="151" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">Mac（来源）</text>
+  <text x="72" y="174" font-size="11" fill="#4d6575">路径列表存在账号里，按顺序</text>
+  <text x="72" y="194" font-size="11" fill="#4d6575">取第一个本机存在的文件</text>
+  <text x="72" y="214" font-size="11" fill="#4d6575">后台组件一保存就读，平时不开窗口</text>
+  <text x="72" y="234" font-size="11" fill="#4d6575">只读原文件，从不改写它</text>
+
+  <rect x="56" y="256" width="270" height="62" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="191" y="279" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">Windows（来源，可选）</text>
+  <text x="72" y="302" font-size="11" fill="#4d6575">开启共用时追加自己的路径</text>
+
+  <path d="M330 200 H420" stroke="#4b8f6a" stroke-width="1.8" marker-end="url(#gn)"/>
+  <text x="375" y="190" text-anchor="middle" font-size="10.5" fill="#316247">整份覆盖</text>
+  <path d="M330 286 C380 286 380 230 420 222" stroke="#4b8f6a" stroke-width="1.8" fill="none" marker-end="url(#gn)"/>
+
+  <rect x="424" y="128" width="290" height="190" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="569" y="151" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">网站（同一个账号）</text>
+  <text x="440" y="176" font-size="11" fill="#456b54">· 每个账号只存两份正文 + 一份路径列表</text>
+  <text x="440" y="198" font-size="11" fill="#456b54">· 收到新稿就整份替换，不合并</text>
+  <text x="440" y="220" font-size="11" fill="#456b54">· 不存候选稿、旧版本，没有冲突</text>
+  <text x="440" y="242" font-size="11" fill="#456b54">· 评估、历史都在这里；AI 跟随网页账号设置</text>
+  <text x="440" y="264" font-size="11" fill="#456b54">· 资料有变化就推一条「变了」给在线各端</text>
+  <text x="440" y="290" font-size="11" font-weight="700" fill="#316247">AI 永远只读这里确认过的正文</text>
+
+  <path d="M718 200 H808" stroke="#5b7d95" stroke-width="1.8" marker-end="url(#bl)"/>
+  <text x="763" y="190" text-anchor="middle" font-size="10.5" fill="#36566d">推送「变了」</text>
+  <path d="M808 240 H718" stroke="#6d686b" stroke-width="1.6" marker-end="url(#g)"/>
+  <text x="763" y="258" text-anchor="middle" font-size="10.5" fill="#6d686b">发起评估 / 选稿</text>
+
+  <rect x="812" y="128" width="252" height="190" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="938" y="151" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">手机 / 各端网页</text>
+  <text x="828" y="176" font-size="11" fill="#5c5560">· 看路径列表、调顺序、看共享历史</text>
+  <text x="828" y="198" font-size="11" fill="#5c5560">· 也能手动上传一份覆盖</text>
+  <text x="828" y="220" font-size="11" fill="#5c5560">· 点评估</text>
+  <text x="828" y="242" font-size="11" fill="#5c5560">· 切回前台 / 网络恢复时重连一次</text>
+  <text x="828" y="264" font-size="11" fill="#5c5560">· 不需要手机一直保持在线</text>
+  <text x="828" y="290" font-size="11" fill="#5c5560">桌面应用不再填 key，评估也走网站</text>
+
+  <!-- 二、时间轴 -->
+  <rect x="32" y="350" width="1056" height="330" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="376" font-size="14" font-weight="700" fill="#353136">二、一次完整经过：Mac 改日志 → 手机点评估</text>
+  <text x="52" y="402" font-size="12.5" font-weight="700" fill="#4a4450">用户看到的</text>
+  <text x="52" y="532" font-size="12.5" font-weight="700" fill="#4a4450">背后在做的</text>
+
+  <rect x="52" y="412" width="190" height="96" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="147" y="434" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">① 在 Mac 保存日志</text>
+  <text x="66" y="456" font-size="11" fill="#5c5560">编辑器里照常 ⌘S</text>
+  <text x="66" y="476" font-size="11" fill="#5c5560">设置里状态显示「已同步」</text>
+
+  <rect x="262" y="412" width="190" height="96" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="357" y="434" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">② 手机网页</text>
+  <text x="276" y="456" font-size="11" fill="#5c5560">资料版本号自己跳到新的</text>
+  <text x="276" y="476" font-size="11" fill="#5c5560">不用刷新页面</text>
+
+  <rect x="472" y="412" width="250" height="96" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="597" y="434" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">③ 手机点「评估」</text>
+  <text x="486" y="456" font-size="11" fill="#5c5560">先短暂停在准备阶段</text>
+  <text x="486" y="476" font-size="11" fill="#5c5560">（最多等 12 秒）</text>
+  <text x="486" y="496" font-size="11" fill="#5c5560">然后进入「AI 分析中」</text>
+
+  <rect x="742" y="412" width="322" height="96" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="903" y="434" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">④ 出结论</text>
+  <text x="756" y="456" font-size="11" fill="#5c5560">结论记着用的是哪一版档案和日志</text>
+  <text x="756" y="476" font-size="11" fill="#5c5560">Mac / Windows / 手机的历史里同时出现</text>
+
+  <rect x="52" y="542" width="190" height="122" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="66" y="564" font-size="11" fill="#4d6575">系统文件事件通知「变了」</text>
+  <text x="66" y="584" font-size="11" fill="#4d6575">等 0.3 秒合并连续保存</text>
+  <text x="66" y="604" font-size="11" fill="#4d6575">读两次文件大小/时间，不一致</text>
+  <text x="66" y="622" font-size="11" fill="#4d6575">= 还在写，这次不传</text>
+  <text x="66" y="644" font-size="11" fill="#4d6575">和网站内容一样就不上传</text>
+
+  <rect x="262" y="542" width="190" height="122" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="276" y="564" font-size="11" fill="#4d6575">整份上传，网站直接替换</text>
+  <text x="276" y="584" font-size="11" fill="#4d6575">网站存新版本，推「变了」</text>
+  <text x="276" y="604" font-size="11" fill="#4d6575">长连接每 15 秒一次心跳，</text>
+  <text x="276" y="622" font-size="11" fill="#4d6575">45 秒没动静就算断开</text>
+
+  <rect x="472" y="542" width="250" height="122" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="486" y="564" font-size="11" font-weight="700" fill="#7a6234">评估前的「点名」</text>
+  <text x="486" y="584" font-size="11" fill="#7a6234">网站叫所有在线电脑：再读一次文件</text>
+  <text x="486" y="604" font-size="11" fill="#7a6234">都交完稿 → 冻结两份资料版本</text>
+  <text x="486" y="624" font-size="11" fill="#7a6234">读失败 / 超时 12 秒</text>
+  <text x="486" y="644" font-size="11" font-weight="700" fill="#7a6234">→ 直接结束，AI 一次都不调</text>
+
+  <rect x="742" y="542" width="322" height="122" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="756" y="564" font-size="11" fill="#456b54">用冻结的那两份正文问 AI</text>
+  <text x="756" y="584" font-size="11" fill="#456b54">问 AI 期间资料再改，只影响下一次评估</text>
+  <text x="756" y="604" font-size="11" fill="#456b54">结论、图片存网站，推「变了」</text>
+  <text x="756" y="624" font-size="11" fill="#456b54">各端收到后自己去拉最新历史</text>
+
+  <path d="M242 600 H258" stroke="#6d686b" stroke-width="1.4" marker-end="url(#g)"/>
+  <path d="M452 600 H468" stroke="#6d686b" stroke-width="1.4" marker-end="url(#g)"/>
+  <path d="M722 600 H738" stroke="#6d686b" stroke-width="1.4" marker-end="url(#g)"/>
+
+  <!-- 三、为什么不那样做 -->
+  <rect x="32" y="696" width="520" height="232" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="722" font-size="14" font-weight="700" fill="#353136">三、为什么不那样做（最容易被改错的地方）</text>
+  <rect x="52" y="736" width="480" height="58" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="66" y="757" font-size="11" font-weight="700" fill="#7a6234">为什么不把网站上的新稿写回电脑的日志？</text>
+  <text x="66" y="779" font-size="11" fill="#7a6234">百度同步盘已经在两台电脑间同步这份文件，再写一路会互相覆盖。</text>
+  <rect x="52" y="802" width="480" height="58" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="66" y="823" font-size="11" font-weight="700" fill="#7a6234">为什么不定时扫文件、而要等系统通知 + 评估前点名？</text>
+  <text x="66" y="845" font-size="11" fill="#7a6234">定时扫描费电且仍有空窗；点名保证「点评估那一刻」拿到最新稿。</text>
+  <rect x="52" y="868" width="480" height="48" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="66" y="889" font-size="11" font-weight="700" fill="#7a6234">为什么不做合并，而是整份覆盖？</text>
+  <text x="66" y="907" font-size="11" fill="#7a6234">合并要存基线和候选稿，撤销会被误判；文件本身就是准，覆盖最简单。</text>
+
+  <!-- 四、异常与边界 -->
+  <rect x="568" y="696" width="520" height="232" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="588" y="722" font-size="14" font-weight="700" fill="#353136">四、出意外时会怎样</text>
+  <rect x="588" y="736" width="480" height="40" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="602" y="761" font-size="11" fill="#316247">电脑关机/离线：评估照常，用网站上最后确认的版本（离线改动不算数）</text>
+  <rect x="588" y="784" width="480" height="40" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="602" y="809" font-size="11" fill="#96434f">网络闪断：最多自动重连 2 次；仍失败 → 状态报错，手动「立即同步」</text>
+  <rect x="588" y="832" width="480" height="40" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="602" y="857" font-size="11" fill="#96434f">被限流、登录失效、服务器出错：不自动重试，原样显示原因</text>
+  <rect x="588" y="880" width="480" height="40" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="602" y="905" font-size="11" fill="#96434f">文件为空 / 超过 1 MB / 正在保存：本次不覆盖，也不去找下一条路径</text>
+
+  <rect x="32" y="944" width="1056" height="96" rx="12" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="52" y="970" font-size="14" font-weight="700" fill="#4a4450">常见情况</text>
+  <text x="52" y="994" font-size="11.5" fill="#4a4450">只有 Mac 在写、手机发起评估：全程看不到任何提示，只是评估前多一次「点名」。</text>
+  <text x="52" y="1016" font-size="11.5" fill="#4a4450">两台电脑同时在线且文件不同：最后上传的那份胜出（百度同步盘负责让两台的文件一致）。旧的本机历史要手动点「导入本机历史」。</text>
+</svg>
