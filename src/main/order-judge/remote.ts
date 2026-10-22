@@ -45,7 +45,7 @@ export async function remoteJudge(input: { text: string; images: { name: string;
     const event = raw as JudgeEvent
     if (event.type === 'stage') progress(event)
     else if (event.type === 'done') entry = event.entry
-    else throw new WebRequestError(event.code, event.error)
+    else if (event.type === 'error') throw new WebRequestError(event.code, event.error)
   }, 250_000) } finally { activeJudges.delete(controller); signal.removeEventListener('abort', abort) }
   if (!entry) throw new WebRequestError('STREAM_CLOSED', '连接中断，没有取得结论；请先查看共享历史。')
   return entry
