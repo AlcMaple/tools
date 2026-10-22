@@ -48,6 +48,7 @@ export class JudgeData {
     add('order_judge_paths', 'updated_at', 'INTEGER')
     add('order_judge_history', 'snapshot', 'TEXT')
     add('order_judge_history', 'model', 'TEXT')
+    add('order_judge_history', 'estimate', 'TEXT')
     database.transaction(() => {
       const rows = database.prepare("SELECT user_id,kind,name,content,updated_at,revision FROM order_judge_docs WHERE hash='' ").all() as (DocRow & { user_id: number; kind: DocKind })[]
       for (const row of rows) {
@@ -189,6 +190,10 @@ export class JudgeData {
     const row = this.database.prepare('SELECT * FROM order_judge_runs WHERE user_id=? AND request_id=?').get(uid, id) as RunRow | undefined
     if (row && row.input_hash !== hash) throw new JudgeDataError('REQUEST_CHANGED', '同一评估请求的材料发生变化。')
     return row ?? null
+  }
+
+  runRow(uid: number, id: string): RunRow | null {
+    return (this.database.prepare('SELECT * FROM order_judge_runs WHERE user_id=? AND request_id=?').get(uid, id) as RunRow | undefined) ?? null
   }
 
   beginRun(uid: number, id: string, hash: string): void {

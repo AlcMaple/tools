@@ -54,7 +54,8 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
         if (!rawRow || typeof rawRow !== 'object') throw new Error('接单评估备份行无效。')
         const row: Row = {}
         for (const column of columns) {
-          const value = rawRow[column]
+          // 后加的可空列：旧备份里没有这一项，按空值恢复
+          const value = column === 'estimate' && !(column in rawRow) ? null : rawRow[column]
           if (value !== null && typeof value !== 'string' && typeof value !== 'number') throw new Error('接单评估备份字段无效。')
           row[column] = column === 'user_id' ? uid : value
         }

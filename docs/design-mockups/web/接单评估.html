@@ -139,6 +139,38 @@
   .oj-steps small { display: block; font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
   @keyframes oj-spin { to { transform: rotate(360deg); } }
 
+  /* ---------- 估价 ---------- */
+  .oj-est { padding: 20px 22px 18px; }
+  .oj-est-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .oj-est-head h3 { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: .04em; }
+  .oj-est-head h3 .ic { color: var(--teal); }
+  .oj-est-head .oj-meta { padding-right: 0; margin-left: auto; }
+  .oj-est-total { margin-top: 10px; font-family: var(--font-hand); font-size: 30px; line-height: 1.2; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .oj-est-total small { margin-left: 6px; font-family: inherit; font-size: 15px; color: var(--ink-sub); }
+  .oj-est-price { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .oj-est-tier { padding: 10px 12px; border: 1.5px dashed var(--line); border-radius: 8px; font-size: 12.5px; line-height: 1.7; color: var(--ink-sub); font-variant-numeric: tabular-nums; }
+  .oj-est-tier b { display: block; font-family: var(--font-hand); font-size: 20px; font-weight: 400; color: var(--ink); }
+  .oj-est-note { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .oj-est-rush { margin-top: 12px; display: flex; gap: 8px; font-size: 12.5px; line-height: 1.7; color: var(--ink-sub); }
+  .oj-est-rush .ic { flex: none; color: var(--gold); margin-top: 3px; }
+  .oj-est-groups { margin-top: 16px; padding-top: 12px; border-top: 1.5px dashed var(--line); display: grid; gap: 2px; }
+  .oj-est-g summary { display: grid; grid-template-columns: 7.5em 1fr 4.5em 14px; align-items: center; gap: 10px; padding: 5px 0; font-size: 13px; color: var(--ink); cursor: pointer; list-style: none; }
+  .oj-est-g summary::-webkit-details-marker { display: none; }
+  .oj-est-g summary .ic { color: var(--ink-faint); transition: transform .2s; transform: rotate(-90deg); }
+  .oj-est-g[open] summary .ic { transform: none; }
+  .oj-est-bar { height: 6px; border-radius: 3px; background: var(--teal-wash); overflow: hidden; }
+  .oj-est-bar i { display: block; height: 100%; border-radius: 3px; background: var(--teal-mid); }
+  .oj-est-h { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink-sub); }
+  .oj-est-g ul { margin: 2px 0 8px calc(7.5em + 10px); display: grid; gap: 2px; }
+  .oj-est-g li { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; line-height: 1.6; color: var(--ink-sub); }
+  .oj-est-g li span:last-child { flex: none; font-variant-numeric: tabular-nums; color: var(--ink-faint); }
+  @media (max-width: 960px) {
+    .oj-est { padding: 18px 16px 16px; }
+    .oj-est-price { grid-template-columns: 1fr; }
+    .oj-est-g summary { grid-template-columns: 5.5em 1fr auto 14px; }
+    .oj-est-g ul { margin-left: 0; }
+  }
+
   .oj-err { margin-top: 16px; padding: 12px 14px; border-radius: 8px; background: var(--paper-2); font-size: 13px; line-height: 1.7; color: var(--ink-sub); }
   .oj-err code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink); }
 
@@ -446,6 +478,37 @@ function reportSheet(key, { fromHist = false } = {}) {
   </section>`;
 }
 
+const EST_GROUPS = [['开发', 824, [['钱包创建与助记词导入', 46], ['BTC 收付款', 38], ['ETH / BSC 转账与代币', 52], ['TRON 资产与能量', 41], ['Solana 转账', 36], ['交易记录与筛选', 28]]], ['测试', 212, [['多链转账回归', 48], ['iOS / 安卓兼容', 40]]], ['第三方集成', 234, [['节点服务接入', 64], ['行情价格接口', 30]]], ['部署上线', 190, []], ['上线后支持', 174, []], ['UX 与设计', 138, []], ['项目管理', 136, []], ['需求与启动', 118, []]];
+function estimateSheet(kind) {
+  if (kind === 'run') {
+    return `<section class="panel oj-est"><span class="tape tr teal"></span>
+      <div class="oj-est-head"><h3>${ic('calendar')}估价</h3></div>
+      <ol class="oj-steps" style="margin-top:14px">
+        <li class="done"><span class="mk">${ic('check')}</span><div>拆任务<small>60 个任务</small></div></li>
+        <li class="run"><span class="mk"></span><div>估工时<small>已估完 3 / 8 组</small></div></li>
+      </ol></section>`;
+  }
+  if (kind === 'err') {
+    return `<section class="panel oj-est"><span class="tape tr gold"></span>
+      <div class="oj-est-head"><h3>${ic('calendar')}估价</h3></div>
+      <p class="oj-headline oj-err-title" style="padding-right:0;font-size:17px">${ic('alert')} AI 的回复读不出来，请手动重试。</p>
+      <p class="oj-err"><code>BAD_RESPONSE</code></p>
+      <div class="oj-acts"><button type="button" class="btn btn-sm">${ic('refresh', 'ic ic-sm')}重新估价</button></div></section>`;
+  }
+  const cross = kind === '2027';
+  const tiers = cross ? [['¥2,880', '11 个工作日 · 1 月 8 日交付 · 共 18 天'], ['¥3,520', '13 个工作日 · 1 月 12 日交付 · 共 22 天']] : [['¥2,400', '11 个工作日 · 11 月 6 日交付 · 共 15 天'], ['¥3,040', '13 个工作日 · 11 月 10 日交付 · 共 19 天']];
+  const max = EST_GROUPS[0][1];
+  return `<section class="panel oj-est"><span class="tape tr teal"></span>
+    <div class="oj-est-head"><h3>${ic('calendar')}估价</h3><p class="oj-meta">用时 18 秒 · 60 个任务</p></div>
+    <p class="oj-est-total">2,026<small>小时</small></p>
+    <div class="oj-est-price">${tiers.map(([p, d]) => `<div class="oj-est-tier"><b>${p}</b>${d}</div>`).join('')}</div>
+    ${cross ? `<div class="oj-est-note"><span class="oj-flip">2027 年节假日未公布，按双休估算</span></div>` : ''}
+    <p class="oj-est-rush">${ic('alert')}<span>以上不含加急。加急每提前 1 天加（请的人数 + 1）× 160 元，最多提前 ${cross ? '18 / 22' : '15 / 19'} 天；例：请 1 人提前 2 天加 640 元。</span></p>
+    <div class="oj-est-groups">${EST_GROUPS.map(([n, h, tasks], i) => `<details class="oj-est-g"${i === 0 ? ' open' : ''}><summary><span>${n}</span><span class="oj-est-bar"><i style="width:${Math.round(h / max * 100)}%"></i></span><span class="oj-est-h">${h} 小时</span>${ic('chev', 'ic ic-sm')}</summary>
+      ${tasks.length ? `<ul>${tasks.map(([t, th]) => `<li><span>${t}</span><span>${th}</span></li>`).join('')}</ul>` : ''}</details>`).join('')}</div>
+  </section>`;
+}
+
 const ERRS = {
   key: { t: '你的 API key 不对（HTTP 401），请在设置里检查。', d: '设置里选了「用你自己的」时才会出现；用服务器的时候写成「服务器的 AI Key 失效了，可以先在设置里改用你自己的」。', code: 'PROVIDER_HTTP_401', act: '去设置' },
   balance: { t: '服务器的 AI 余额用完了（HTTP 402）', d: '可以先在设置里改用你自己的，材料还在。用自己的 Key 时写成「你的 AI 账户余额不足，充值后再评估」。', code: 'PROVIDER_HTTP_402', act: '' },
@@ -491,7 +554,10 @@ const STATES = {
   drag: { label: '拖入文件', cap: '桌面拖文件进来时整块盖一层「松手放入」，输入区尺寸不变。手机没有拖拽，改成「粘贴」「添加文件」两个按钮。' },
   filled: { label: '放好材料', cap: '截图、长图、视频、PDF、Word 都在浏览器里处理好再上传：长图切块、视频取 12 帧，角标直接写处理结果。wmv 这类浏览器解码不了的视频标黄「读不了」，评估时跳过并在结论里注明。' },
   running: { label: '评估中', cap: '桌面：按钮固定宽度，秒数写在按钮里，右栏显示三步进度和「取消评估」。平板 / 手机：点评估后整页切到评估过程，上面是这单材料的缩略（文字前三行 + 附件小图），下面是进度和取消，取消后回到编辑，材料都还在。' },
-  yes: { label: '结论 · 能接', cap: '平板 / 手机：结论单独一屏，顶部「返回修改」回到编辑（材料保留）、「再评一单」清空重来，这单的材料折叠在结论下面。结论做成一张「批改单」：右上角盖章（能接 / 不接 / 待补），一句话结论用手写体。顺序沿用桌面版：需求 → 风险 → 为什么 → 可能翻车的地方 → 接单前先问清楚。' },
+  yes: { label: '结论 · 能接', cap: '批改单下面接一张估价卡片：总小时、两档不加急报价（工作日 · 交付日 · 日历天数）、加急怎么算、各组小时（点开看任务）。平板 / 手机：结论单独一屏，顶部「返回修改」回到编辑（材料保留）、「再评一单」清空重来，这单的材料折叠在结论下面。结论做成一张「批改单」：右上角盖章（能接 / 不接 / 待补），一句话结论用手写体。顺序沿用桌面版：需求 → 风险 → 为什么 → 可能翻车的地方 → 接单前先问清楚。' },
+  'est-run': { label: '估价中', cap: '评估和估价同一次点击一起发，结论先到时估价卡片接在下面继续走：先拆任务，再按组估工时，组数实时更新。' },
+  'est-2027': { label: '估价 · 跨年未公布', cap: '交期落进节假日还没公布的年份时按双休估算，用小标签写明；跨春节段时再加「交期跨春节，实际可能顺延」。' },
+  'est-err': { label: '估价出错', cap: '估价失败不影响评估结论，原因和错误码原样显示，只重试估价。' },
   no: { label: '结论 · 不接', cap: '有风险时，粉色虚线框放在理由前面。「能接」时这一块叫「可能翻车的地方」，「不接」时叫「卡在哪一步」。' },
   info: { label: '结论 · 信息不足', cap: '本地预检直接判出来的（空内容、只有「[聊天记录]」），不调用 AI、不花钱，只告诉用户怎么补。' },
   'e-key': { label: '出错 · Key 无效', cap: '按真实原因分开显示，错误码原样附在下面。HTTP 错误一律不自动重试，出错的这次不进历史（界面上不写这些）。' },
@@ -535,7 +601,10 @@ function pageFor(s) {
     drag: [materials({ text: TEXT, files: FILES.slice(0, 2), drag: true }), blankSheet()],
     filled: [materials({ text: TEXT, files: [...FILES, BAD] }), blankSheet()],
     running: [materials({ text: TEXT, files: FILES, running: true, sec: 17 }), runningSheet()],
-    yes: [materials({ text: TEXT, files: FILES }), reportSheet('yes')],
+    yes: [materials({ text: TEXT, files: FILES }), reportSheet('yes') + estimateSheet('done')],
+    'est-run': [materials({ text: TEXT, files: FILES }), reportSheet('yes') + estimateSheet('run')],
+    'est-2027': [materials({ text: TEXT, files: FILES }), reportSheet('yes') + estimateSheet('2027')],
+    'est-err': [materials({ text: TEXT, files: FILES }), reportSheet('yes') + estimateSheet('err')],
     no: [materials({ text: '【派单】iOS 越狱插件，去广告 + 解锁会员，适配 iOS 17，预算 800', files: FILES.slice(0, 1) }), reportSheet('no')],
     info: [materials({ text: '[聊天记录]' }), reportSheet('info')],
     'e-key': [materials({ text: TEXT, files: FILES }), errorSheet('key')],
@@ -547,7 +616,7 @@ function pageFor(s) {
   const flowText = s === 'no' ? '【派单】iOS 越狱插件，去广告 + 解锁会员，适配 iOS 17，预算 800' : s === 'info' ? '[聊天记录]' : TEXT;
   const flowFiles = s === 'no' ? FILES.slice(0, 1) : s === 'info' ? [] : FILES;
   if (s === 'running') return `${head()}<div class="oj-grid flow">${m[0]}${brief(flowText, flowFiles)}${m[1]}</div>`;
-  if (['yes', 'no', 'info', 'e-key', 'e-balance', 'e-limit'].includes(s)) {
+  if (['yes', 'no', 'info', 'e-key', 'e-balance', 'e-limit', 'est-run', 'est-2027', 'est-err'].includes(s)) {
     return `${head()}<div class="oj-grid flow">${m[0]}<div style="display:grid;gap:14px;min-width:0">${flowbar()}${m[1]}${brief(flowText, flowFiles, { fold: true })}</div></div>`;
   }
   return `${head({ gearDot: s === 'empty' })}${nag}<div class="oj-grid">${m[0]}${m[1]}</div>`;

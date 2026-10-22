@@ -12,9 +12,11 @@ import { DOC_TEMPLATES, downloadDocTemplate } from '../../shared/order-judge-tem
 import { precheck, type JudgeReport } from '../../shared/order-judge'
 import { decodeText, imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { readByokKey } from '../reviews/byok'
-import type { DocKind, DocMeta, HistoryEntry, JudgePath, JudgePaths, JudgeState } from '../../shared/order-judge-api'
+import type { DocKind, DocMeta, HistoryEntry, JudgeImage, JudgePath, JudgePaths, JudgeState } from '../../shared/order-judge-api'
+import type { EstimateEvent, EstimateResult } from '../../shared/order-judge-estimate'
+import { DAY_RATE } from '../../shared/order-judge-quote'
 import {
-  JudgeError, connectProvider, deleteEntry, imageUrl, judge, loadState, logClient, providerStatus, saveDoc, savePaths, followJudgeChanges,
+  JudgeError, connectProvider, deleteEntry, estimate, imageUrl, judge, loadState, logClient, providerStatus, saveDoc, savePaths, followJudgeChanges,
   type ProviderStatus,
 } from './api'
 
@@ -34,6 +36,11 @@ type Outcome =
   | { kind: 'report'; entry: HistoryEntry; ms?: number; links?: number }
   | { kind: 'chat-record' }
   | { kind: 'error'; code: string; message: string; at: number }
+
+type Est =
+  | { kind: 'run'; tasks: number; groups: number }
+  | { kind: 'done'; result: EstimateResult }
+  | { kind: 'error'; code: string; message: string }
 
 const VERDICT: Record<JudgeReport['verdict'], { stamp: string; cls: string; tape: string }> = {
   能: { stamp: '能接', cls: 'st-teal', tape: 'teal' },
@@ -123,6 +130,7 @@ function JudgeWorkspace(): JSX.Element {
   const [startedAt, setStartedAt] = useState(0)
   const [sec, setSec] = useState(0)
   const [outcome, setOutcome] = useState<Outcome | null>(null)
+  const [est, setEst] = useState<Est | null>(null)
   const [tip, setTip] = useState(false)
   const [drag, setDrag] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
@@ -133,6 +141,11 @@ function JudgeWorkspace(): JSX.Element {
   const fileInput = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const estAbortRef = useRef<AbortController | null>(null)
+  // 重新估价复用这单整理好的材料和 requestId，结果仍写进同一条历史
+  const estInputRef = useRef<{ text: string; images: JudgeImage[]; requestId: string } | null>(null)
+  const judgedIdRef = useRef<string | null>(null)
+  const estResultRef = useRef<EstimateResult | null>(null)
   const materialsRef = useRef<Material[]>([])
   const refreshRef = useRef<Promise<void> | null>(null)
   const mountedRef = useRef(true)
@@ -268,6 +281,49 @@ function JudgeWorkspace(): JSX.Element {
     setMaterials([])
     setText('')
     setOutcome(null)
+    stopEstimate()
+  }
+
+  const stopEstimate = (): void => {
+    estAbortRef.current?.abort()
+    estAbortRef.current = null
+    estInputRef.current = null
+    setEst(null)
+  }
+
+  const estimated = (result: EstimateResult): void => {
+    estResultRef.current = result
+    setEst({ kind: 'done', result })
+    const id = judgedIdRef.current
+    if (id) setState((st) => (st ? { ...st, history: st.history.map((h) => (h.id === id ? { ...h, estimate: result } : h)) } : st))
+  }
+
+  const onEstimateEvent = (e: EstimateEvent): void => {
+    if (e.type === 'scope') setEst({ kind: 'run', tasks: e.tasks, groups: 0 })
+    else if (e.type === 'group') setEst((x) => (x?.kind === 'run' ? { ...x, groups: x.groups + 1 } : x))
+    else if (e.type === 'done') estimated(e.result)
+    else if (e.type === 'error') setEst({ kind: 'error', code: e.code, message: e.error })
+  }
+
+  // 只用于估价失败后单独重试；平时估价跟着评估同一个请求走
+  const retryEstimate = async (): Promise<void> => {
+    const input = estInputRef.current
+    if (!input) return
+    estAbortRef.current?.abort()
+    const controller = new AbortController()
+    estAbortRef.current = controller
+    setEst({ kind: 'run', tasks: 0, groups: 0 })
+    try {
+      const result = await estimate(input.text, input.images, input.requestId, onEstimateEvent, controller.signal)
+      if (!controller.signal.aborted) estimated(result)
+    } catch (e) {
+      if (controller.signal.aborted) return
+      const { code, message } = errorOf(e)
+      if (code === 'NETWORK') logClient('order-judge:estimate', e)
+      setEst({ kind: 'error', code, message })
+    } finally {
+      if (estAbortRef.current === controller) estAbortRef.current = null
+    }
   }
 
   const run = async (): Promise<void> => {
@@ -287,6 +343,8 @@ function JudgeWorkspace(): JSX.Element {
     setPrepStats('')
     setLinkCount(0)
     setOutcome(null)
+    stopEstimate()
+    judgedIdRef.current = null
     // 平板 / 手机整页切到评估过程，回到页顶看进度
     if (!wide) window.scrollTo({ top: 0 })
     let links = 0
@@ -302,10 +360,16 @@ function JudgeWorkspace(): JSX.Element {
       if (byok && ai && !(provider?.ready && provider.source === 'byok')) {
         setProvider(await connectProvider(ai.endpoint, ai.model, readByokKey().trim()))
       }
-      const entry = await judge(prepared.text, prepared.images, (e) => {
+      const requestId = crypto.randomUUID()
+      estInputRef.current = { text: prepared.text, images: prepared.images, requestId }
+      estResultRef.current = null
+      setEst({ kind: 'run', tasks: 0, groups: 0 })
+      const judged = await judge(prepared.text, prepared.images, requestId, (e) => {
         if (e.stage === 'links') { links = e.count; setLinkCount(e.count); setStage('links') } else setStage('ai')
-      }, controller.signal)
+      }, (e) => { if (!controller.signal.aborted) onEstimateEvent(e) }, controller.signal)
       if (controller.signal.aborted) return
+      judgedIdRef.current = judged.id
+      const entry = estResultRef.current && !judged.estimate ? { ...judged, estimate: estResultRef.current } : judged
       setState((s) => (s ? { ...s, history: [entry, ...s.history].slice(0, 50) } : s))
       setOutcome({ kind: 'report', entry, ms: Date.now() - t0, links })
     } catch (e) {
@@ -313,6 +377,8 @@ function JudgeWorkspace(): JSX.Element {
       const { code, message } = errorOf(e)
       if (code === 'NETWORK') logClient('order-judge:judge', e)
       setOutcome({ kind: 'error', code, message, at: Date.now() })
+      // 回合没开起来（限流、额度、没连上 AI）时估价也没开始，不留一张空转的估价卡
+      setEst((x) => (x?.kind === 'run' && x.tasks === 0 ? null : x))
       if (code === 'PROVIDER_CONNECTION_REQUIRED' || code === 'PROVIDER_HTTP_401') refreshProvider()
     } finally {
       if (abortRef.current === controller) {
@@ -326,6 +392,7 @@ function JudgeWorkspace(): JSX.Element {
   const cancel = (): void => {
     abortRef.current?.abort()
     abortRef.current = null
+    stopEstimate()
     setRunning(false)
     setOutcome(null)
   }
@@ -406,6 +473,7 @@ function JudgeWorkspace(): JSX.Element {
           <div className="oj-hist">
             <button type="button" className="oj-back" onClick={() => setMobileDetail(false)}><Ic name="back" />返回历史</button>
             <ReportSheet entry={current} onRestore={() => void restore(current)} />
+            {current.estimate && <EstimateSheet est={{ kind: 'done', result: current.estimate }} />}
           </div>
         ) : (
           <div className="oj-hist">
@@ -429,7 +497,12 @@ function JudgeWorkspace(): JSX.Element {
                 )
               })}
             </section>
-            {current && <div className="oj-desk"><ReportSheet entry={current} onRestore={() => void restore(current)} /></div>}
+            {current && (
+              <div className="oj-desk">
+                <ReportSheet entry={current} onRestore={() => void restore(current)} />
+                {current.estimate && <EstimateSheet est={{ kind: 'done', result: current.estimate }} />}
+              </div>
+            )}
           </div>
         )}
         {settings}
@@ -597,6 +670,7 @@ function JudgeWorkspace(): JSX.Element {
               </div>
             </section>
           )}
+          {est && (running || outcome) && <EstimateSheet est={est} onRetry={() => void retryEstimate()} />}
           {flow && !running && <Brief text={text} materials={materials} fold />}
         </div>
       </div>
@@ -697,6 +771,82 @@ function ReportSheet({ entry, ms, links, onRestore }: { entry: HistoryEntry; ms?
           <button type="button" className="btn btn-sm" onClick={onRestore}><Ic name="refresh" cls="ic ic-sm" />放回材料区重新评估</button>
         </div>
       )}
+    </section>
+  )
+}
+
+const yuan = (n: number): string => `¥${n.toLocaleString('en-US')}`
+const md = (date: string): string => `${Number(date.slice(5, 7))} 月 ${Number(date.slice(8, 10))} 日`
+
+function EstimateSheet({ est, onRetry }: { est: Est; onRetry?: () => void }): JSX.Element {
+  const head = (meta?: string): JSX.Element => (
+    <div className="oj-est-head"><h3><Ic name="calendar" />估价</h3>{meta && <p className="oj-meta">{meta}</p>}</div>
+  )
+  if (est.kind === 'run') {
+    return (
+      <section className="panel oj-est">
+        <span className="tape tr teal" />
+        {head()}
+        <ol className="oj-steps" style={{ marginTop: 14 }}>
+          <Step state={est.tasks ? 'done' : 'run'} title="拆任务" sub={est.tasks ? `${est.tasks} 个任务` : ''} />
+          <Step state={est.tasks ? 'run' : 'wait'} title="估工时" sub={est.tasks ? `已估完 ${est.groups} / 8 组` : ''} />
+        </ol>
+      </section>
+    )
+  }
+  if (est.kind === 'error') {
+    return (
+      <section className="panel oj-est">
+        <span className="tape tr gold" />
+        {head()}
+        <p className="oj-headline oj-err-title" style={{ paddingRight: 0, fontSize: 17 }}><Ic name="alert" />{est.message}</p>
+        <p className="oj-err"><code>{est.code}</code></p>
+        {onRetry && <div className="oj-acts"><button type="button" className="btn btn-sm" onClick={onRetry}><Ic name="refresh" cls="ic ic-sm" />重新估价</button></div>}
+      </section>
+    )
+  }
+  const { hours, quote } = est.result
+  const max = Math.max(1, ...hours.groups.map((g) => g.hours))
+  const tiers = quote?.tiers ?? []
+  return (
+    <section className="panel oj-est">
+      <span className="tape tr teal" />
+      {head(`${when(est.result.at)} · 用时 ${Math.round(est.result.ms / 1000)} 秒 · ${hours.taskCount} 个任务`)}
+      <p className="oj-est-total">{hours.totalHours.toLocaleString('en-US')}<small>小时</small></p>
+      {quote ? (
+        <>
+          <div className="oj-est-price">
+            {tiers.map((t) => (
+              <div key={t.factor} className="oj-est-tier"><b>{yuan(t.price)}</b>{t.workdays} 个工作日 · {md(t.end)}交付 · 共 {t.calendarDays} 天</div>
+            ))}
+          </div>
+          {(quote.assumedYears.length > 0 || quote.springFestivalRisk) && (
+            <div className="oj-est-note">
+              {quote.assumedYears.length > 0 && <span className="oj-flip">{quote.assumedYears.join('、')} 年节假日未公布，按双休估算</span>}
+              {quote.springFestivalRisk && <span className="oj-flip">交期跨春节，实际可能顺延</span>}
+            </div>
+          )}
+          <p className="oj-est-rush">
+            <Ic name="alert" />
+            <span>以上不含加急。加急每提前 1 天加（请的人数 + 1）× {DAY_RATE} 元，最多提前 {tiers.map((t) => t.calendarDays).join(' / ')} 天；例：请 1 人提前 2 天加 {2 * 2 * DAY_RATE} 元。</span>
+          </p>
+        </>
+      ) : (
+        <p className="oj-err">{est.result.quoteError}</p>
+      )}
+      <div className="oj-est-groups">
+        {hours.groups.map((g, i) => (
+          <details key={g.key} className="oj-est-g" open={i === 0}>
+            <summary>
+              <span>{g.name}</span>
+              <span className="oj-est-bar"><i style={{ width: `${Math.round(g.hours / max * 100)}%` }} /></span>
+              <span className="oj-est-h">{g.hours} 小时</span>
+              <Ic name="chev" cls="ic ic-sm" />
+            </summary>
+            <ul>{g.tasks.map((t, k) => <li key={k}><span>{t.title}</span><span>{t.hours}</span></li>)}</ul>
+          </details>
+        ))}
+      </div>
     </section>
   )
 }

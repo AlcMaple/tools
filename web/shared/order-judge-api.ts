@@ -1,6 +1,7 @@
 // 网页版接单评估前后端共用的接口形状。
 
 import type { JudgeReport } from './order-judge'
+import type { EstimateEvent, EstimateResult } from './order-judge-estimate'
 
 export type DocKind = 'profile' | 'log'
 
@@ -37,6 +38,7 @@ export interface HistoryEntry {
   images: { file: string; name: string }[]
   snapshot?: JudgeSnapshot
   model?: string
+  estimate?: EstimateResult
 }
 
 export interface JudgeState {
@@ -57,6 +59,8 @@ export type JudgeEvent =
   | { type: 'stage'; stage: 'ai' }
   | { type: 'done'; entry: HistoryEntry }
   | { type: 'error'; code: string; error: string }
+  // 评估附带的估价（estimate: true），在 done / error 之前或之后都可能到，流在两边都结束后才关
+  | { type: 'estimate'; event: EstimateEvent }
 
 export const HISTORY_LIMIT = 50
 export const DOC_MAX_BYTES = 1_000_000

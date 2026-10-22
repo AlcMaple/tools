@@ -21,7 +21,9 @@ import { dataDir } from './data-dir'
 import { getSession, rateLimited } from './auth'
 import { AgentRunError } from '../shared/agent-run'
 import { estimateHours } from './order-judge-estimate'
-import type { EstimateEvent } from '../shared/order-judge-estimate'
+import type { EstimateEvent, EstimateResult, HoursEstimate } from '../shared/order-judge-estimate'
+import { chinaToday, quote, quoteYears, type Quote } from '../shared/order-judge-quote'
+import { holidayYears } from './order-judge-holidays'
 import { aiSource, judgeConnection, publicAddress, type JudgeConnection } from './agent/external-runtime'
 import {
   MAX_IMAGES, SAME_SITE_GAP_MS, buildSystemPrompt, buildUserText, extractUrls, groupByHost,
@@ -91,15 +93,50 @@ function errorBody(code: string, source?: Source): { code: string; error: string
 
 // ── 存取 ──
 
-interface HistoryRow { id: string; at: number; report: string; order_text: string; images: string; snapshot: string | null; model: string | null }
+interface HistoryRow { id: string; at: number; report: string; order_text: string; images: string; snapshot: string | null; model: string | null; estimate: string | null }
 
 function rowToEntry(r: HistoryRow): HistoryEntry {
-  return { id: r.id, at: r.at, report: JSON.parse(r.report) as JudgeReport, order: r.order_text, images: JSON.parse(r.images) as HistoryEntry['images'], ...(r.snapshot ? { snapshot: JSON.parse(r.snapshot) as JudgeSnapshot } : {}), ...(r.model ? { model: r.model } : {}) }
+  return { id: r.id, at: r.at, report: JSON.parse(r.report) as JudgeReport, order: r.order_text, images: JSON.parse(r.images) as HistoryEntry['images'], ...(r.snapshot ? { snapshot: JSON.parse(r.snapshot) as JudgeSnapshot } : {}), ...(r.model ? { model: r.model } : {}), ...(r.estimate ? { estimate: JSON.parse(r.estimate) as EstimateResult } : {}) }
 }
 
 function readState(uid: number): JudgeState {
   const history = (db.prepare('SELECT * FROM order_judge_history WHERE user_id = ? ORDER BY at DESC LIMIT ?').all(uid, HISTORY_LIMIT) as HistoryRow[]).map(rowToEntry)
   return { docs: judgeData.meta(uid), paths: judgeData.paths(uid), history, seq: judgeData.seq(uid) }
+}
+
+// 评估和估价带同一个 requestId 并行跑，谁先完成不一定：估价先到就暂存在这里，评估写历史时一并带上；
+// 评估先到，估价完成时按 requestId 找到那条历史补写。暂存只在内存里，服务重启会丢（估价结果当时已显示给用户）。
+const pendingEstimates = new Map<string, { result: EstimateResult; at: number }>()
+
+function attachEstimate(uid: number, requestId: string, result: EstimateResult): boolean {
+  const run = judgeData.runRow(uid, requestId)
+  if (run?.entry_id) {
+    db.prepare('UPDATE order_judge_history SET estimate=? WHERE id=? AND user_id=?').run(JSON.stringify(result), run.entry_id, uid)
+    judgeData.bump(uid)
+    return true
+  }
+  if (run?.status === 'error') return false
+  const now = Date.now()
+  for (const [k, v] of pendingEstimates) if (now - v.at > 600_000) pendingEstimates.delete(k)
+  pendingEstimates.set(`${uid}:${requestId}`, { result, at: now })
+  return false
+}
+
+// 小时 → 交期和价格（服务端按北京时间当天算），再写进这次评估的历史。节假日拉不到时小时照样给，写明为什么没有价格
+async function finishEstimate(uid: number, requestId: string, hours: HoursEstimate, started: number, model: string): Promise<EstimateResult> {
+  const today = chinaToday()
+  let priced: Quote | null = null, quoteError: string | undefined
+  try {
+    priced = quote(hours.totalHours, today, await holidayYears(quoteYears(today, hours.totalHours)))
+  } catch (e) {
+    console.error(`[order-judge:estimate] uid=${uid} 交期算不出`, e)
+    quoteError = `交期和价格算不出：${(e as Error).message}`
+  }
+  const result: EstimateResult = { hours, quote: priced, ...(quoteError ? { quoteError } : {}), at: Date.now(), ms: Date.now() - started, model }
+  const saved = attachEstimate(uid, requestId, result)
+  if (saved) judgeEvents.changed(uid, judgeData.seq(uid))
+  console.info(`[order-judge:estimate] ← uid=${uid} ${hours.totalHours}h ${hours.taskCount} 任务 ${result.ms}ms ${saved ? '已写入历史' : '等评估写历史'}`)
+  return result
 }
 
 async function saveHistory(uid: number, report: JudgeReport, order: string, images: { name: string; bytes: Buffer }[], snapshot: JudgeSnapshot, model: string, requestId: string): Promise<HistoryEntry> {
@@ -113,10 +150,12 @@ async function saveHistory(uid: number, report: JudgeReport, order: string, imag
       await writeFile(join(dir, file), images[i].bytes)
       saved.push({ file, name: images[i].name })
     }
-    const entry: HistoryEntry = { id, at: Date.now(), report, order, images: saved, snapshot, model }
+    const estimate = pendingEstimates.get(`${uid}:${requestId}`)?.result
+    pendingEstimates.delete(`${uid}:${requestId}`)
+    const entry: HistoryEntry = { id, at: Date.now(), report, order, images: saved, snapshot, model, ...(estimate ? { estimate } : {}) }
     const stale = db.transaction(() => {
-      db.prepare('INSERT INTO order_judge_history (id, user_id, at, report, order_text, images, snapshot, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(id, uid, entry.at, JSON.stringify(report), order, JSON.stringify(saved), JSON.stringify(snapshot), model)
+      db.prepare('INSERT INTO order_judge_history (id, user_id, at, report, order_text, images, snapshot, model, estimate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, uid, entry.at, JSON.stringify(report), order, JSON.stringify(saved), JSON.stringify(snapshot), model, estimate ? JSON.stringify(estimate) : null)
       judgeData.bump(uid)
       judgeData.endRun(uid, requestId, entry.id, null)
       const old = db.prepare('SELECT id FROM order_judge_history WHERE user_id = ? ORDER BY at DESC LIMIT -1 OFFSET ?').all(uid, HISTORY_LIMIT) as { id: string }[]
@@ -475,6 +514,7 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
   const input = parseJudge(raw)
   if (!input) return c.json(errorBody('BAD_INPUT'), 400)
   const requestId = raw?.requestId === undefined ? randomUUID() : raw.requestId
+  const withEstimate = raw?.estimate === true
   if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) return c.json(errorBody('BAD_INPUT'), 400)
   const inputHash = judgeHash(JSON.stringify([input.text, input.images.map(x => [x.name, judgeHash(x.dataUrl)])]))
   const previous = judgeData.run(uid, requestId, inputHash)
@@ -501,6 +541,12 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
     const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(240_000)])
     const started = Date.now()
     let source: Source | undefined
+    const fail = async (e: unknown): Promise<void> => {
+      const code = e instanceof AgentRunError || e instanceof JudgeDataError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
+      judgeData.endRun(uid, requestId, null, code)
+      console.error(`[order-judge] ✗ uid=${uid} ${code} ${Date.now() - started}ms`, e)
+      if (!out.aborted) await send({ type: 'error', ...(e instanceof JudgeDataError ? { code, error: e.message } : errorBody(code, source)) })
+    }
     try {
       await judgeEvents.check(uid)
       signal.throwIfAborted()
@@ -517,16 +563,34 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
       const system = buildSystemPrompt(frozen.profile, frozen.log)
       console.info(`[order-judge] → uid=${uid} ${conn.source} ${conn.model} 文字 ${input.text.length} 字 网址 ${urls.length} 个 图片 ${input.images.length} 张`)
       const userText = buildUserText(input.text, links, input.images.map((x) => x.name))
-      const report = await conn.execute(() => askModel(conn, uid, system, userText, input.images.map((x) => x.dataUrl), signal))
-      const entry = await saveHistory(uid, report, input.text, input.images, frozen.snapshot, conn.model, requestId)
-      judgeEvents.changed(uid, judgeData.seq(uid))
-      console.info(`[order-judge] ← uid=${uid} ${report.verdict} ${report.title} ${Date.now() - started}ms`)
-      await send({ type: 'done', entry })
+      // 估价和评估放在同一个 AI 回合里并行：服务器 AI 每人同时只能占一个回合，分两个请求会互相顶掉（RUN_BUSY）。
+      // 估价失败只发它自己的 error 事件，不影响评估结论。
+      const estimating = withEstimate ? (async () => {
+        try {
+          const hours = await estimateHours(conn.call, conn.model, userText, input.images.map((x) => x.dataUrl), signal, (e) => send({ type: 'estimate', event: e }))
+          await send({ type: 'estimate', event: { type: 'done', result: await finishEstimate(uid, requestId, hours, started, conn.model) } })
+        } catch (e) {
+          const code = e instanceof AgentRunError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
+          console.error(`[order-judge:estimate] ✗ uid=${uid} ${code} ${Date.now() - started}ms`, e)
+          if (!out.aborted) await send({ type: 'estimate', event: { type: 'error', ...errorBody(code, source) } })
+        }
+      }) : null
+      // 结论一出来就发，回合等估价也结束才释放（估价的计费要在回合内结算）
+      await conn.execute(async () => {
+        const est = estimating?.()
+        try {
+          const report = await askModel(conn, uid, system, userText, input.images.map((x) => x.dataUrl), signal)
+          const entry = await saveHistory(uid, report, input.text, input.images, frozen.snapshot, conn.model, requestId)
+          judgeEvents.changed(uid, judgeData.seq(uid))
+          console.info(`[order-judge] ← uid=${uid} ${report.verdict} ${report.title} ${Date.now() - started}ms`)
+          await send({ type: 'done', entry })
+        } catch (e) {
+          await fail(e)
+        }
+        await est
+      })
     } catch (e) {
-      const code = e instanceof AgentRunError || e instanceof JudgeDataError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
-      judgeData.endRun(uid, requestId, null, code)
-      console.error(`[order-judge] ✗ uid=${uid} ${code} ${Date.now() - started}ms`, e)
-      if (!out.aborted) await send({ type: 'error', ...(e instanceof JudgeDataError ? { code, error: e.message } : errorBody(code, source)) })
+      await fail(e)
     } finally {
       running.delete(uid)
     }
@@ -536,11 +600,13 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
   })
 })
 
-// 估价只出小时，不进历史（阶段 3 接界面时再存）；AI 走评估同一条连接，一次估价算一回合额度
+// 单独重新估价（评估时附带的那次失败后用）：带评估的 requestId，结果写进那条历史；一次估价算一回合额度。
 api.post('/estimate', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(errorBody('MESSAGE_TOO_LARGE'), 413) }), async (c: Context<Env>) => {
   const uid = c.get('uid')
-  const input = parseJudge(await c.req.json().catch(() => null))
-  if (!input) return c.json(errorBody('BAD_INPUT'), 400)
+  const raw = await c.req.json().catch(() => null) as Record<string, unknown> | null
+  const input = parseJudge(raw)
+  const requestId = raw?.requestId
+  if (!input || typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) return c.json(errorBody('BAD_INPUT'), 400)
   if (estimating.has(uid)) return c.json(errorBody('ESTIMATE_BUSY'), 409)
   if (estimating.size >= MAX_RUNNING) return c.json(errorBody('SERVER_BUSY'), 429)
   const wait = takeSlot(uid, recentEstimates)
@@ -568,9 +634,8 @@ api.post('/estimate', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.jso
       const conn = await connection(uid, signal)
       console.info(`[order-judge:estimate] → uid=${uid} ${conn.source} ${conn.model} 文字 ${input.text.length} 字 网址 ${urls.length} 个 图片 ${input.images.length} 张`)
       const brief = buildUserText(input.text, links, input.images.map((x) => x.name))
-      const estimate = await conn.execute(() => estimateHours(conn.call, conn.model, brief, input.images.map((x) => x.dataUrl), signal, send))
-      console.info(`[order-judge:estimate] ← uid=${uid} ${estimate.totalHours}h ${estimate.taskCount} 任务 ${Date.now() - started}ms`)
-      await send({ type: 'done', estimate, ms: Date.now() - started })
+      const hours = await conn.execute(() => estimateHours(conn.call, conn.model, brief, input.images.map((x) => x.dataUrl), signal, send))
+      await send({ type: 'done', result: await finishEstimate(uid, requestId, hours, started, conn.model) })
     } catch (e) {
       const code = e instanceof AgentRunError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
       console.error(`[order-judge:estimate] ✗ uid=${uid} ${code} ${Date.now() - started}ms`, e)

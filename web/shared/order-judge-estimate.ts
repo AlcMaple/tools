@@ -1,3 +1,5 @@
+import type { Quote } from './order-judge-quote'
+
 // 估价的小时部分：结构对齐 RadQuote（任务组 → 任务 → 小时），总小时 / 组小时由服务端按任务求和，不信模型报的总数。
 
 export const ESTIMATE_GROUPS = [
@@ -17,10 +19,13 @@ export interface EstimateTask { title: string; hours: number }
 export interface EstimateGroup { key: EstimateGroupKey; name: string; hours: number; tasks: EstimateTask[] }
 export interface HoursEstimate { totalHours: number; taskCount: number; groups: EstimateGroup[] }
 
+// quote 为空时 quoteError 说明为什么算不出交期（节假日数据拉取失败），小时照样给
+export interface EstimateResult { hours: HoursEstimate; quote: Quote | null; quoteError?: string; at: number; ms: number; model: string }
+
 export type EstimateEvent =
   | { type: 'stage'; stage: 'links'; count: number }
   | { type: 'stage'; stage: 'scope' }
   | { type: 'scope'; tasks: number }
   | { type: 'group'; group: EstimateGroup }
-  | { type: 'done'; estimate: HoursEstimate; ms: number }
+  | { type: 'done'; result: EstimateResult }
   | { type: 'error'; code: string; error: string }
