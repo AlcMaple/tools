@@ -1,6 +1,6 @@
-// 新播放页（稀饭 / Girigiri 共用）—— 一条路：解析 → 签名地址 → 全部经本服务器代理 → ArtPlayer。
+// 稀饭 / Girigiri 共用 ArtPlayer；MP4 和稀饭 HLS 经本站，Girigiri HLS 自 10-12 起直连源站。
 //
-// 为什么重写、为什么没有直连 / 探测 / 救援 / iframe，见 docs/design/播放页重写方案.md；
+// 历史重写取舍见 docs/design/播放页重写方案.md，后续直连调整见 docs/devlog/2026-在线观看.md；
 // 阶段 0 真机实测（同文档第三节）：VPS → 手机单连接 4.9Mbps，多连接零收益，所以纯 mp4 透传即可。
 //
 //   GET  /api/player/page?src=xifan|girigiri&id=&ep=[&bgmId=]   → 播放页
@@ -34,6 +34,7 @@ import { schedulePrefetch, serveFromDisk, warmDisk } from '../xifan/disk'
 import { canProxy } from '../xifan/proxy-hosts'
 import * as xifan from '../xifan/resolve'
 import * as girigiri from '../girigiri/resolve'
+import { GirigiriError } from '../girigiri/api'
 import { XifanResolveError } from '../xifan/resolve'
 import { XifanLocalRateLimitError, XifanUpstreamError } from '../xifan/session'
 import probe from './probe'
@@ -99,6 +100,9 @@ function resolveFailure(c: Context, error: unknown): Response {
   }
   if (error instanceof XifanUpstreamError) {
     return c.json({ error: message, code: 'UPSTREAM_' + error.status, upstreamStatus: error.status }, error.status === 429 ? 429 : 502)
+  }
+  if (error instanceof GirigiriError) {
+    return c.json({ error: message, code: error.code, upstreamStatus: error.upstreamStatus }, error.upstreamStatus === 429 ? 429 : 502)
   }
   return c.json({ error: message }, 502)
 }

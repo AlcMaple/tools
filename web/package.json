@@ -39,7 +39,8 @@
     "test:agent-experience": "tsx scripts/test-agent-experience.ts",
     "test:agent-sources": "npm run build && tsx scripts/test-agent-sources.ts && tsx scripts/test-agent-source-budget.ts",
     "test:order-judge-quote": "tsx scripts/test-order-judge-quote.ts",
-    "bench:order-judge-estimate": "tsx scripts/bench-order-judge-estimate.ts"
+    "bench:order-judge-estimate": "tsx scripts/bench-order-judge-estimate.ts",
+    "test:girigiri": "tsx scripts/test-girigiri-next.ts"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.9",

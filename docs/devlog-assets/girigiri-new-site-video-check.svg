@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 786" role="img" aria-labelledby="title desc" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+<title id="title">视频真的换了吗？先对照媒体，再决定动不动播放器</title>
+<desc id="desc">两个样本的新旧入口指向相同视频地址；这支持保留现有播放链路，不代表全站视频逐字节相同。</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#7fad91"/></marker></defs>
+<rect x="1" y="1" width="1118" height="784" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="32" y="38" font-size="19" font-weight="700" fill="#282529">视频真的换了吗？先对照媒体，再决定动不动播放器</text>
+<text x="32" y="61" font-size="12.5" font-weight="400" fill="#756f73">两个样本的新旧入口指向相同视频地址；这支持保留现有播放链路，不代表全站视频逐字节相同。</text>
+<rect x="32" y="84" width="1056" height="222" rx="9" fill="#ffffff" stroke="#e2dcdf"/>
+<text x="52" y="110" font-size="14" font-weight="700" fill="#282529">一、这次实际对照了什么（2026-10-24）</text>
+<rect x="52" y="126" width="1016" height="30" rx="7" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="68" y="146" font-size="12" font-weight="700" fill="#4a4450">实测样本</text>
+<text x="314" y="146" font-size="12" font-weight="700" fill="#4a4450">当前媒体</text>
+<text x="650" y="146" font-size="12" font-weight="700" fill="#4a4450">当前旧版与新版的对照结果</text>
+<rect x="52" y="164" width="1016" height="58" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="68" y="187" font-size="12.5" font-weight="700" fill="#316247">死神 · 第 53 集</text>
+<text x="68" y="207" font-size="11" font-weight="400" fill="#316247">与用户截图中的同一集对照</text>
+<text x="314" y="187" font-size="12.5" font-weight="700" fill="#316247">MP4 · 1440 × 1080</text>
+<text x="314" y="207" font-size="11" font-weight="400" fill="#316247">184.63 MiB · 24 分 36 秒</text>
+<text x="650" y="187" font-size="12.5" font-weight="700" fill="#316247">媒体地址完全一致</text>
+<text x="650" y="207" font-size="11" font-weight="400" fill="#316247">文件大小也与用户截图一致</text>
+<rect x="52" y="230" width="1016" height="58" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="68" y="253" font-size="12.5" font-weight="700" fill="#316247">学生会也有洞！</text>
+<text x="68" y="273" font-size="11" font-weight="400" fill="#316247">第 2 集 · 繁中</text>
+<text x="314" y="253" font-size="12.5" font-weight="700" fill="#316247">HLS · 1920 × 1080</text>
+<text x="314" y="273" font-size="11" font-weight="400" fill="#316247">时长约 23 分 40 秒</text>
+<text x="650" y="253" font-size="12.5" font-weight="700" fill="#316247">媒体地址完全一致</text>
+<text x="650" y="273" font-size="11" font-weight="400" fill="#316247">简中第 2 集也已补出，实播通过</text>
+<rect x="32" y="324" width="1056" height="176" rx="9" fill="#ffffff" stroke="#e2dcdf"/>
+<text x="52" y="350" font-size="14" font-weight="700" fill="#282529">二、为什么保留 10-12 的播放路线，而不是再换播放器</text>
+<rect x="52" y="366" width="168" height="40" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="68" y="391" font-size="11" font-weight="700" fill="#4a4450">MP4 · 整个视频文件</text>
+<rect x="244" y="366" width="220" height="40" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="354.0" y="391" font-size="12.5" font-weight="700" fill="#36566d" text-anchor="middle">源站视频</text>
+<rect x="516" y="366" width="220" height="40" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="626.0" y="391" font-size="12.5" font-weight="700" fill="#36566d" text-anchor="middle">小站服务器</text>
+<rect x="788" y="366" width="280" height="40" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="928.0" y="391" font-size="12.5" font-weight="700" fill="#36566d" text-anchor="middle">浏览器播放</text>
+<path d="M476 386 H504" fill="none" stroke="#7fad91" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M748 386 H776" fill="none" stroke="#7fad91" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="52" y="426" width="168" height="40" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="68" y="451" font-size="11" font-weight="700" fill="#4a4450">HLS · 分段视频</text>
+<rect x="244" y="426" width="220" height="40" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="354" y="451" font-size="12.5" font-weight="700" fill="#316247" text-anchor="middle">源站视频片段</text>
+<rect x="788" y="426" width="280" height="40" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="928" y="451" font-size="12.5" font-weight="700" fill="#316247" text-anchor="middle">浏览器直接取片段</text>
+<path d="M476 446 H776" fill="none" stroke="#7fad91" stroke-width="1.6" marker-end="url(#arrow)"/>
+<text x="52" y="484" font-size="11" font-weight="400" fill="#756f73">跨站读取许可已核对；不重新编码，也不把 Girigiri 的分段视频绕回小站服务器。</text>
+<rect x="32" y="518" width="1056" height="144" rx="9" fill="#ffffff" stroke="#e2dcdf"/>
+<text x="52" y="544" font-size="14" font-weight="700" fill="#282529">三、验收结果和仍待验证的范围，分开看</text>
+<rect x="52" y="560" width="496" height="82" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="68" y="584" font-size="12.5" font-weight="700" fill="#316247">本地 Chrome 已验证</text>
+<text x="68" y="606" font-size="11" font-weight="400" fill="#316247">初始暂停等待手势，点击后正常起播</text>
+<text x="68" y="624" font-size="11" font-weight="400" fill="#316247">两种视频跳到中段后续播；HLS 同集手动切线</text>
+<rect x="572" y="560" width="496" height="82" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="588" y="584" font-size="12.5" font-weight="700" fill="#7a6234">这些还没有验证</text>
+<text x="588" y="606" font-size="11" font-weight="400" fill="#7a6234">iPhone、原生分段播放、整集及线上链路</text>
+<text x="588" y="624" font-size="11" font-weight="400" fill="#7a6234">65 项自动检查通过，不替代上述实机验收</text>
+<rect x="32" y="680" width="1056" height="64" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="52" y="704" font-size="12.5" font-weight="700" fill="#4a4450">结论的边界</text>
+<text x="52" y="726" font-size="11" font-weight="400" fill="#4a4450">只确认两个样本与可访问旧版的地址一致；缺少历史整集指纹，不下“全站视频没变”的结论。</text>
+<text x="32" y="769" font-size="11" font-weight="400" fill="#756f73">常见情况：仍在原来的追番条目继续看，不需要重绑，也不用换播放器。</text>
+</svg>

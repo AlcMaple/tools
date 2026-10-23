@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 844" role="img" aria-labelledby="title desc" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+<title id="title">Girigiri 改版后，为什么源站能看，小站却搜不到？</title>
+<desc id="desc">找片入口换了，不是第 53 集没更新；修复入口与集号定位，保留原有关联和观看集数。</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#7fad91"/></marker></defs>
+<rect x="1" y="1" width="1118" height="842" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="32" y="38" font-size="19" font-weight="700" fill="#282529">Girigiri 改版后，为什么源站能看，小站却搜不到？</text>
+<text x="32" y="61" font-size="12.5" font-weight="400" fill="#756f73">找片入口换了，不是第 53 集没更新；修复入口与集号定位，保留原有关联和观看集数。</text>
+<rect x="32" y="84" width="1056" height="190" rx="9" fill="#ffffff" stroke="#e2dcdf"/>
+<text x="52" y="110" font-size="14" font-weight="700" fill="#282529">一、用户碰到的不是“没片”，而是小站没读懂新入口</text>
+<rect x="52" y="126" width="328" height="90" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="68" y="150" font-size="12.5" font-weight="700" fill="#96434f">在小站搜索“死神”</text>
+<text x="68" y="172" font-size="11" font-weight="400" fill="#96434f">没有找到“死神”相关的Girigiri资源，</text>
+<text x="68" y="190" font-size="11" font-weight="400" fill="#96434f">试试缩短番名或换一种译名</text>
+<rect x="396" y="126" width="328" height="90" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="412" y="150" font-size="12.5" font-weight="700" fill="#96434f">从追番继续看 EP 53</text>
+<text x="412" y="172" font-size="11" font-weight="400" fill="#96434f">这一集解析不到 —— 可能还没更新，</text>
+<text x="412" y="190" font-size="11" font-weight="400" fill="#96434f">点上面别的集试试</text>
+<rect x="740" y="126" width="328" height="90" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="756" y="150" font-size="12.5" font-weight="700" fill="#316247">打开源站的同一集</text>
+<text x="756" y="172" font-size="11" font-weight="400" fill="#316247">死神第 53 集正常可播</text>
+<text x="756" y="190" font-size="11" font-weight="400" fill="#316247">说明视频仍在，先查找片入口</text>
+<rect x="52" y="232" width="1016" height="26" rx="7" fill="#eef4f8" stroke="#91adc1"/>
+<text x="68" y="249" font-size="11" font-weight="400" fill="#36566d">背后发生的事：旧地址虽然能打开，却只剩网页外壳；旧解析读不到番名、线路与选集。</text>
+<rect x="32" y="292" width="1056" height="256" rx="9" fill="#ffffff" stroke="#e2dcdf"/>
+<text x="52" y="318" font-size="14" font-weight="700" fill="#282529">二、修复后：仍从同一张追番卡片进入，接回新站的真实目录</text>
+<text x="52" y="343" font-size="11" font-weight="700" fill="#756f73">用户看到的</text>
+<rect x="52" y="354" width="300" height="74" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="68" y="378" font-size="12.5" font-weight="700" fill="#316247">搜索并认准正确的《死神》</text>
+<text x="68" y="400" font-size="11" font-weight="400" fill="#316247">这次搜索恢复 15 个候选</text>
+<rect x="410" y="354" width="300" height="74" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="426" y="378" font-size="12.5" font-weight="700" fill="#316247">继续看仍是 EP 53</text>
+<text x="426" y="400" font-size="11" font-weight="400" fill="#316247">选集列表恢复完整 366 集</text>
+<rect x="768" y="354" width="300" height="74" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="784" y="378" font-size="12.5" font-weight="700" fill="#316247">在小站播放，或跳去源站</text>
+<text x="784" y="400" font-size="11" font-weight="400" fill="#316247">进入同一部番的同一集</text>
+<path d="M364 391 H398" fill="none" stroke="#7fad91" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M722 391 H756" fill="none" stroke="#7fad91" stroke-width="1.6" marker-end="url(#arrow)"/>
+<text x="52" y="451" font-size="11" font-weight="700" fill="#756f73">背后在做的</text>
+<rect x="52" y="462" width="300" height="64" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="68" y="486" font-size="12.5" font-weight="700" fill="#36566d">读取新站提供的番剧目录</text>
+<text x="68" y="508" font-size="11" font-weight="400" fill="#36566d">不再向旧页面要找片资料</text>
+<rect x="410" y="462" width="300" height="64" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="426" y="486" font-size="12.5" font-weight="700" fill="#36566d">一起拿到线路与真实集号</text>
+<text x="426" y="508" font-size="11" font-weight="400" fill="#36566d">已有片源关联保留，不要求重绑</text>
+<rect x="768" y="462" width="300" height="64" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="784" y="486" font-size="12.5" font-weight="700" fill="#36566d">从真实选集里查外跳位置</text>
+<text x="784" y="508" font-size="11" font-weight="400" fill="#36566d">区分“第几集”和“第几个按钮”</text>
+<rect x="32" y="566" width="1056" height="144" rx="9" fill="#ffffff" stroke="#e2dcdf"/>
+<text x="52" y="592" font-size="14" font-weight="700" fill="#282529">三、异常要说清楚，而不是继续猜一个能打开的地址</text>
+<rect x="52" y="608" width="328" height="82" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="68" y="632" font-size="12.5" font-weight="700" fill="#96434f">手动切到缺集线路</text>
+<text x="68" y="654" font-size="11" font-weight="400" fill="#96434f">明确提示缺集，保留当前播放</text>
+<text x="68" y="672" font-size="11" font-weight="400" fill="#96434f">用户可选其他线路或集数</text>
+<rect x="396" y="608" width="328" height="82" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="412" y="632" font-size="12.5" font-weight="700" fill="#7a6234">源站限流或维护</text>
+<text x="412" y="654" font-size="11" font-weight="400" fill="#7a6234">显示实际原因，不伪装成无资源</text>
+<text x="412" y="672" font-size="11" font-weight="400" fill="#7a6234">不自动重试，由用户决定何时再试</text>
+<rect x="740" y="608" width="328" height="82" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="756" y="632" font-size="12.5" font-weight="700" fill="#96434f">源站再次改了返回内容</text>
+<text x="756" y="654" font-size="11" font-weight="400" fill="#96434f">先核对资料是否完整</text>
+<text x="756" y="672" font-size="11" font-weight="400" fill="#96434f">网页外壳、异常内容直接报错</text>
+<rect x="32" y="728" width="1056" height="70" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="52" y="752" font-size="12.5" font-weight="700" fill="#7a6234">为什么不直接退回旧版？</text>
+<text x="52" y="774" font-size="11" font-weight="400" fill="#7a6234">旧版还能访问，不等于旧地址仍会准确落在这一集。修正找片与选集，不再堆自动回退。</text>
+<text x="32" y="827" font-size="11" font-weight="400" fill="#756f73">常见路径：已关联的番直接继续看；未关联或主动重选时，才需要搜索并确认片源。</text>
+</svg>

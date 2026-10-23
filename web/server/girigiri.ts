@@ -1,6 +1,7 @@
 // Girigiri：追番定位 / 搜索 / 绑定 / 「跳去源站」。
 // 在线观看已迁到 server/player（2026-09-17 删掉旧播放页）；解析层仍在 girigiri/resolve.ts，由 /api/player 调用。
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import { getSession } from './auth'
 import { db } from './db'
 import { bindingsFor, getBinding, putBinding } from './girigiri/bindings'
@@ -11,12 +12,21 @@ import {
   searchGirigiri,
   verifyGirigiriCaptcha,
 } from './girigiri/search'
-import { BASE_URL, getPlaylist, isGirigiriId } from './girigiri/resolve'
+import { getSourcePageUrl, isGirigiriId } from './girigiri/resolve'
+import { GirigiriError } from './girigiri/api'
 
 const girigiri = new Hono()
 
-// 与稀饭的 source-page 保持同一点击链路：前端先打开本站地址，服务端确定默认线路后
-// 302 到 Girigiri 源站。当前 Girigiri 播放页的默认线路仍是线路 1，失败时也明确回落。
+function failure(c: Context, error: unknown): Response {
+  console.error('[girigiri] 请求失败：', error)
+  const status = error instanceof GirigiriError && error.code === 'GIRIGIRI_EPISODE_NOT_FOUND' ? 404
+    : error instanceof GirigiriError && error.upstreamStatus === 429 ? 429 : 502
+  return c.json({ error: error instanceof Error ? error.message : 'Girigiri 请求失败',
+    ...(error instanceof GirigiriError ? { code: error.code, upstreamStatus: error.upstreamStatus } : {}),
+  }, status)
+}
+
+// 源站使用零基线路/选集索引，必须从真实列表查集号；缺集时不跳回第 1 集。
 girigiri.get('/source-page', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录' }, 401)
@@ -27,17 +37,13 @@ girigiri.get('/source-page', async (c) => {
 
   c.header('Cache-Control', 'no-store')
   try {
-    const playlist = await getPlaylist(id, ep)
-    const source = playlist.first?.source
-    const selected = typeof source === 'number' && Number.isInteger(source) && source > 0 ? source : 1
-    return c.redirect(`${BASE_URL}/play${id}-${selected}-${ep}/`, 302)
+    return c.redirect(await getSourcePageUrl(id, ep), 302)
   } catch (error) {
-    console.warn('[girigiri] 默认线路定位失败，回落线路 1：', error)
-    return c.redirect(`${BASE_URL}/play${id}-1-${ep}/`, 302)
+    return failure(c, error)
   }
 })
 
-// 搜索验证码会话按 MapleTools 用户隔离；不登录不开放站点搜索代理。
+// 搜索仍需本站登录；源站新版 API 不需要旧验证码会话。
 girigiri.get('/captcha', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录' }, 401)
@@ -45,7 +51,7 @@ girigiri.get('/captcha', async (c) => {
     c.header('Cache-Control', 'no-store')
     return c.json(await getGirigiriCaptcha(session.uid))
   } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : 'Girigiri 验证码请求失败' }, 502)
+    return failure(c, error)
   }
 })
 
@@ -58,7 +64,7 @@ girigiri.post('/captcha/verify', async (c) => {
   try {
     return c.json(await verifyGirigiriCaptcha(session.uid, code))
   } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : 'Girigiri 验证码校验失败' }, 502)
+    return failure(c, error)
   }
 })
 
@@ -75,7 +81,7 @@ girigiri.post('/search', async (c) => {
     c.header('Cache-Control', 'no-store')
     return c.json(await searchGirigiri(session.uid, keyword))
   } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : 'Girigiri 搜索失败' }, 502)
+    return failure(c, error)
   }
 })
 
@@ -88,7 +94,7 @@ girigiri.post('/locate', async (c) => {
     c.header('Cache-Control', 'no-store')
     return c.json(await locate(bgmId, titles, { rebind: body.rebind === true }))
   } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : 'Girigiri 周表请求失败' }, 502)
+    return failure(c, error)
   }
 })
 

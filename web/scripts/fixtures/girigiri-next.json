@@ -1,0 +1,251 @@
+{
+  "source": "2026-10-24 新站公开 API；仅保留解析所需字段，不含媒体字节",
+  "detail": {
+    "26595": {
+      "vod_id": 26595,
+      "vod_name": "死神",
+      "vod_play_from": "chs",
+      "vod_play_url": "01$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/01.mp4#02$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/02.mp4#03$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/03.mp4#04$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/04.mp4#05$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/05.mp4#06$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/06.mp4#07$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/07.mp4#08$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/08.mp4#09$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/09.mp4#10$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/10.mp4#11$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/11.mp4#12$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/12.mp4#13$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/13.mp4#14$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/14.mp4#15$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/15.mp4#16$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/16.mp4#17$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/17.mp4#18$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/18.mp4#19$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/19.mp4#20$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/20.mp4#21$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/21.mp4#22$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/22.mp4#23$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/23.mp4#24$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/24.mp4#25$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/25.mp4#26$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/26.mp4#27$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/27.mp4#28$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/28.mp4#29$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/29.mp4#30$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/30.mp4#31$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/31.mp4#32$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/32.mp4#33$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/33.mp4#34$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/34.mp4#35$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/35.mp4#36$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/36.mp4#37$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/37.mp4#38$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/38.mp4#39$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/39.mp4#40$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/40.mp4#41$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/41.mp4#42$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/42.mp4#43$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/43.mp4#44$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/44.mp4#45$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/45.mp4#46$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/46.mp4#47$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/47.mp4#48$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/48.mp4#49$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/49.mp4#50$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/50.mp4#51$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/51.mp4#52$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/52.mp4#53$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/53.mp4#54$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/54.mp4#55$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/55.mp4#56$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/56.mp4#57$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/57.mp4#58$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/58.mp4#59$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/59.mp4#60$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/60.mp4#61$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/61.mp4#62$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/62.mp4#63$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/63.mp4#64$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/64.mp4#65$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/65.mp4#66$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/66.mp4#67$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/67.mp4#68$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/68.mp4#69$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/69.mp4#70$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/70.mp4#71$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/71.mp4#72$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/72.mp4#73$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/73.mp4#74$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/74.mp4#75$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/75.mp4#76$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/76.mp4#77$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/77.mp4#78$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/78.mp4#79$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/79.mp4#80$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/80.mp4#81$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/81.mp4#82$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/82.mp4#83$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/83.mp4#84$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/84.mp4#85$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/85.mp4#86$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/86.mp4#87$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/87.mp4#88$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/88.mp4#89$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/89.mp4#90$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/90.mp4#91$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/91.mp4#92$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/92.mp4#93$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/93.mp4#94$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/94.mp4#95$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/95.mp4#96$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/96.mp4#97$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/97.mp4#98$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/98.mp4#99$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/99.mp4#100$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/100.mp4#101$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/101.mp4#102$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/102.mp4#103$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/103.mp4#104$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/104.mp4#105$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/105.mp4#106$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/106.mp4#107$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/107.mp4#108$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/108.mp4#109$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/109.mp4#110$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/110.mp4#111$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/111.mp4#112$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/112.mp4#113$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/113.mp4#114$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/114.mp4#115$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/115.mp4#116$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/116.mp4#117$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/117.mp4#118$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/118.mp4#119$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/119.mp4#120$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/120.mp4#121$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/121.mp4#122$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/122.mp4#123$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/123.mp4#124$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/124.mp4#125$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/125.mp4#126$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/126.mp4#127$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/127.mp4#128$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/128.mp4#129$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/129.mp4#130$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/130.mp4#131$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/131.mp4#132$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/132.mp4#133$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/133.mp4#134$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/134.mp4#135$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/135.mp4#136$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/136.mp4#137$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/137.mp4#138$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/138.mp4#139$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/139.mp4#140$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/140.mp4#141$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/141.mp4#142$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/142.mp4#143$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/143.mp4#144$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/144.mp4#145$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/145.mp4#146$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/146.mp4#147$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/147.mp4#148$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/148.mp4#149$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/149.mp4#150$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/150.mp4#151$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/151.mp4#152$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/152.mp4#153$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/153.mp4#154$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/154.mp4#155$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/155.mp4#156$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/156.mp4#157$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/157.mp4#158$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/158.mp4#159$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/159.mp4#160$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/160.mp4#161$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/161.mp4#162$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/162.mp4#163$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/163.mp4#164$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/164.mp4#165$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/165.mp4#166$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/166.mp4#167$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/167.mp4#168$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/168.mp4#169$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/169.mp4#170$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/170.mp4#171$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/171.mp4#172$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/172.mp4#173$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/173.mp4#174$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/174.mp4#175$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/175.mp4#176$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/176.mp4#177$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/177.mp4#178$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/178.mp4#179$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/179.mp4#180$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/180.mp4#181$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/181.mp4#182$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/182.mp4#183$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/183.mp4#184$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/184.mp4#185$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/185.mp4#186$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/186.mp4#187$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/187.mp4#188$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/188.mp4#189$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/189.mp4#190$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/190.mp4#191$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/191.mp4#192$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/192.mp4#193$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/193.mp4#194$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/194.mp4#195$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/195.mp4#196$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/196.mp4#197$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/197.mp4#198$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/198.mp4#199$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/199.mp4#200$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/200.mp4#201$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/201.mp4#202$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/202.mp4#203$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/203.mp4#204$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/204.mp4#205$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/205.mp4#206$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/206.mp4#207$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/207.mp4#208$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/208.mp4#209$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/209.mp4#210$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/210.mp4#211$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/211.mp4#212$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/212.mp4#213$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/213.mp4#214$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/214.mp4#215$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/215.mp4#216$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/216.mp4#217$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/217.mp4#218$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/218.mp4#219$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/219.mp4#220$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/220.mp4#221$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/221.mp4#222$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/222.mp4#223$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/223.mp4#224$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/224.mp4#225$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/225.mp4#226$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/226.mp4#227$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/227.mp4#228$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/228.mp4#229$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/229.mp4#230$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/230.mp4#231$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/231.mp4#232$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/232.mp4#233$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/233.mp4#234$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/234.mp4#235$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/235.mp4#236$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/236.mp4#237$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/237.mp4#238$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/238.mp4#239$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/239.mp4#240$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/240.mp4#241$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/241.mp4#242$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/242.mp4#243$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/243.mp4#244$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/244.mp4#245$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/245.mp4#246$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/246.mp4#247$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/247.mp4#248$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/248.mp4#249$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/249.mp4#250$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/250.mp4#251$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/251.mp4#252$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/252.mp4#253$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/253.mp4#254$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/254.mp4#255$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/255.mp4#256$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/256.mp4#257$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/257.mp4#258$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/258.mp4#259$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/259.mp4#260$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/260.mp4#261$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/261.mp4#262$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/262.mp4#263$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/263.mp4#264$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/264.mp4#265$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/265.mp4#266$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/266.mp4#267$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/267.mp4#268$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/268.mp4#269$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/269.mp4#270$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/270.mp4#271$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/271.mp4#272$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/272.mp4#273$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/273.mp4#274$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/274.mp4#275$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/275.mp4#276$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/276.mp4#277$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/277.mp4#278$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/278.mp4#279$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/279.mp4#280$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/280.mp4#281$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/281.mp4#282$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/282.mp4#283$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/283.mp4#284$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/284.mp4#285$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/285.mp4#286$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/286.mp4#287$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/287.mp4#288$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/288.mp4#289$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/289.mp4#290$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/290.mp4#291$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/291.mp4#292$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/292.mp4#293$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/293.mp4#294$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/294.mp4#295$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/295.mp4#296$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/296.mp4#297$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/297.mp4#298$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/298.mp4#299$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/299.mp4#300$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/300.mp4#301$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/301.mp4#302$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/302.mp4#303$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/303.mp4#304$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/304.mp4#305$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/305.mp4#306$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/306.mp4#307$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/307.mp4#308$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/308.mp4#309$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/309.mp4#310$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/310.mp4#311$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/311.mp4#312$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/312.mp4#313$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/313.mp4#314$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/314.mp4#315$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/315.mp4#316$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/316.mp4#317$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/317.mp4#318$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/318.mp4#319$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/319.mp4#320$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/320.mp4#321$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/321.mp4#322$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/322.mp4#323$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/323.mp4#324$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/324.mp4#325$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/325.mp4#326$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/326.mp4#327$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/327.mp4#328$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/328.mp4#329$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/329.mp4#330$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/330.mp4#331$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/331.mp4#332$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/332.mp4#333$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/333.mp4#334$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/334.mp4#335$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/335.mp4#336$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/336.mp4#337$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/337.mp4#338$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/338.mp4#339$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/339.mp4#340$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/340.mp4#341$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/341.mp4#342$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/342.mp4#343$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/343.mp4#344$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/344.mp4#345$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/345.mp4#346$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/346.mp4#347$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/347.mp4#348$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/348.mp4#349$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/349.mp4#350$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/350.mp4#351$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/351.mp4#352$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/352.mp4#353$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/353.mp4#354$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/354.mp4#355$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/355.mp4#356$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/356.mp4#357$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/357.mp4#358$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/358.mp4#359$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/359.mp4#360$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/360.mp4#361$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/361.mp4#362$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/362.mp4#363$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/363.mp4#364$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/364.mp4#365$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/365.mp4#366$https://ana.girigirilove.com/zijian/oldanime/2024/0607/Bleach/366.mp4"
+    },
+    "27203": {
+      "vod_id": 27203,
+      "vod_name": "学生会也有洞！",
+      "vod_play_from": "cht$$$chs",
+      "vod_play_url": "01$https://akua.girigirilove.com/zijian/oldanime/2026/10/cht/SeitokainimoAnawaAruCHT/01/playlist.m3u8#02$https://akua.girigirilove.com/zijian/oldanime/2026/10/cht/SeitokainimoAnawaAruCHT/02/playlist.m3u8#03$https://akua.girigirilove.com/zijian/oldanime/2026/10/cht/SeitokainimoAnawaAruCHT/03/playlist.m3u8$$$01$https://akua.girigirilove.com/zijian/oldanime/2026/10/SeitokainimoAnawaAru/01/playlist.m3u8#02$https://akua.girigirilove.com/zijian/oldanime/2026/10/SeitokainimoAnawaAru/02/playlist.m3u8#03$https://akua.girigirilove.com/zijian/oldanime/2026/10/SeitokainimoAnawaAru/03/playlist.m3u8"
+    }
+  },
+  "search": {
+    "offset": 0,
+    "limit": 24,
+    "total": 15,
+    "rows": [
+      {
+        "vod_id": 27122,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20260702-1/a583c4360f5febc0eefbe4225c11194e.webp",
+        "vod_name": "死神 千年血战篇 -祸进谭-",
+        "vod_remarks": "更新至09集 / 23點30分",
+        "vod_area": "七月",
+        "vod_year": "2026"
+      },
+      {
+        "vod_id": 26599,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20250607-1/4ea59e35084577335167cccb4b48ecd9.webp",
+        "vod_name": "死神剧场版4：地狱篇",
+        "vod_remarks": "支持杜比视界 建议佩戴耳机",
+        "vod_area": "四月",
+        "vod_year": "2010"
+      },
+      {
+        "vod_id": 26598,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20250607-1/e6a1808e37a655071aa484a226fa6b60.webp",
+        "vod_name": "死神剧场版3：黑色褪去 呼唤君之名",
+        "vod_remarks": "",
+        "vod_area": "四月",
+        "vod_year": "2008"
+      },
+      {
+        "vod_id": 26597,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20250607-1/0d947687537f9d416441fdb3098de63a.webp",
+        "vod_name": "死神剧场版2：钻石星尘的反叛 另一个冰轮丸",
+        "vod_remarks": "支持杜比视界 建议佩戴耳机",
+        "vod_area": "四月",
+        "vod_year": "2007"
+      },
+      {
+        "vod_id": 26596,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20250607-1/77f8ab13535bee67a80350a996442508.webp",
+        "vod_name": "死神剧场版1：无人的回忆",
+        "vod_remarks": "支持杜比视界 建议佩戴耳机",
+        "vod_area": "四月",
+        "vod_year": "2006"
+      },
+      {
+        "vod_id": 26595,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20250607-1/68c47cabd9c26b93d4a2d7a17bc138ab.webp",
+        "vod_name": "死神",
+        "vod_remarks": "",
+        "vod_area": "十月",
+        "vod_year": "2004"
+      },
+      {
+        "vod_id": 1826,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20230305-1/fef7d2a06634af093fcd245c9c2c8065.webp",
+        "vod_name": "不吉波普不笑",
+        "vod_remarks": "已完结",
+        "vod_area": "一月",
+        "vod_year": "2019"
+      },
+      {
+        "vod_id": 26411,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20250113-1/79582a37cbbff91cb99e359631f6dbeb.webp",
+        "vod_name": "不吉波普不笑 幻影死神",
+        "vod_remarks": "",
+        "vod_area": "一月",
+        "vod_year": "2000至90年代"
+      },
+      {
+        "vod_id": 26251,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20240929-1/e41ea7241374364a6a0ca6ce95997e82.webp",
+        "vod_name": "死神 千年血战篇 -相克谭-",
+        "vod_remarks": "已完结",
+        "vod_area": "十月",
+        "vod_year": "2024"
+      },
+      {
+        "vod_id": 25864,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20240323-1/10032ab1169cf6d19fed3b4af7a6b1d0.webp",
+        "vod_name": "死神少爷与黑女仆 第三季",
+        "vod_remarks": "12集全",
+        "vod_area": "四月",
+        "vod_year": "2024"
+      },
+      {
+        "vod_id": 25370,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20230710-1/8004d44d0f2df3ba61ade8ec70bb58d5.webp",
+        "vod_name": "死神少爷与黑女仆 第二季",
+        "vod_remarks": "",
+        "vod_area": "四月",
+        "vod_year": "2023"
+      },
+      {
+        "vod_id": 1908,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20230316-1/6bb53ed30733a4b33d39c44fb2616b2a.webp",
+        "vod_name": "死神少爷与黑女仆",
+        "vod_remarks": "已完结",
+        "vod_area": "七月",
+        "vod_year": "2021"
+      },
+      {
+        "vod_id": 25362,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20230709-1/c58025991e27511558508a26f38f9c8d.webp",
+        "vod_name": "死神 千年血战篇 第二季",
+        "vod_remarks": "",
+        "vod_area": "七月",
+        "vod_year": "2023"
+      },
+      {
+        "vod_id": 1859,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20221207-2/9118fb683cfa7d15b2b28c4d086a369d.jpg",
+        "vod_name": "死神 千年血战篇",
+        "vod_remarks": "",
+        "vod_area": "十月",
+        "vod_year": "2022"
+      },
+      {
+        "vod_id": 25453,
+        "vod_pic": "https://jpg.girigirilove.com/upload/vod/20230823-1/34e0df840797f53d55b4ebb3e7f382b5.webp",
+        "vod_name": "美少女死神 还我H之魂！",
+        "vod_remarks": "",
+        "vod_area": "七月",
+        "vod_year": "2012"
+      }
+    ]
+  },
+  "week": [
+    {
+      "week": 1,
+      "video": [
+        {
+          "vod_id": 27235,
+          "vod_name": "七龙珠超：比鲁斯",
+          "vod_time": "更新至01集 / 23點30分"
+        },
+        {
+          "vod_id": 27222,
+          "vod_name": "转生成哥布林有问题吗？",
+          "vod_time": "更新至04集 / 22點30分"
+        }
+      ]
+    },
+    {
+      "week": 2,
+      "video": [
+        {
+          "vod_id": 27230,
+          "vod_name": "弹珠汽水瓶里的千岁同学 Part 2",
+          "vod_time": "更新至15集 / 23點30分"
+        },
+        {
+          "vod_id": 27229,
+          "vod_name": "超巡！超条前辈",
+          "vod_time": "更新至03集 / 23點30分"
+        }
+      ]
+    },
+    {
+      "week": 3,
+      "video": [
+        {
+          "vod_id": 27030,
+          "vod_name": "Re：从零开始的异世界生活 第四季 丧失篇&amp;夺还篇",
+          "vod_time": "完结"
+        },
+        {
+          "vod_id": 27174,
+          "vod_name": "新 魔法骑士雷阿斯",
+          "vod_time": "更新至03集 / 23點30分"
+        }
+      ]
+    },
+    {
+      "week": 4,
+      "video": [
+        {
+          "vod_id": 26868,
+          "vod_name": "JOJO的奇妙冒险 飙马野郎",
+          "vod_time": "更新至06集 / 23點30分"
+        },
+        {
+          "vod_id": 27187,
+          "vod_name": "桃源暗鬼 ～日光・华严之泷篇～",
+          "vod_time": "更新至03集 / 01點30分"
+        }
+      ]
+    },
+    {
+      "week": 5,
+      "video": [
+        {
+          "vod_id": 27112,
+          "vod_name": "被追放的转生重骑士用游戏知识开无双",
+          "vod_time": "更新至17集 / 0點26分"
+        },
+        {
+          "vod_id": 27182,
+          "vod_name": "黑化吧！圣女大人 第二季",
+          "vod_time": "更新至04集 / 00點30分"
+        }
+      ]
+    },
+    {
+      "week": 6,
+      "video": [
+        {
+          "vod_id": 27219,
+          "vod_name": "青蛙军曹☆",
+          "vod_time": "更新至03集 / 23點30分"
+        },
+        {
+          "vod_id": 27117,
+          "vod_name": "我家的弟弟们真是让您费心了",
+          "vod_time": "更新至15集 / 0點0分"
+        }
+      ]
+    },
+    {
+      "week": 7,
+      "video": [
+        {
+          "vod_id": 27218,
+          "vod_name": "杀手旅店 第2期",
+          "vod_time": "更新至03集 / 00點30分"
+        },
+        {
+          "vod_id": 27216,
+          "vod_name": "和没有信徒的女神大人一起攻略异世界",
+          "vod_time": "更新至02集 / 23點30分"
+        }
+      ]
+    }
+  ]
+}
