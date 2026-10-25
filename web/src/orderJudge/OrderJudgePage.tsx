@@ -16,11 +16,11 @@ import type { DocKind, DocMeta, HistoryEntry, JudgeImage, JudgePath, JudgePaths,
 import type { EstimateEvent, EstimateResult } from '../../shared/order-judge-estimate'
 import { DAY_RATE } from '../../shared/order-judge-quote'
 import {
-  JudgeError, connectProvider, deleteEntry, estimate, imageUrl, judge, loadState, logClient, providerStatus, saveDoc, savePaths, followJudgeChanges,
+  JudgeError, connectProvider, deleteEntry, attachUrl, estimate, imageUrl, judge, loadState, logClient, providerStatus, saveDoc, savePaths, followJudgeChanges,
   type ProviderStatus,
 } from './api'
 
-const ACCEPT = 'image/*,video/*,.pdf,.doc,.docx,.rtf,.odt,.pages,.html,.htm,.txt,.md'
+const ACCEPT = 'image/*,video/*,.pdf,.doc,.docx,.rtf,.odt,.pages,.html,.htm,.txt,.md,.xlsx,.xls,.csv'
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
 
 interface Material {
@@ -364,7 +364,7 @@ function JudgeWorkspace(): JSX.Element {
       estInputRef.current = { text: prepared.text, images: prepared.images, requestId }
       estResultRef.current = null
       setEst({ kind: 'run', tasks: 0, groups: 0 })
-      const judged = await judge(prepared.text, prepared.images, requestId, (e) => {
+      const judged = await judge(prepared.text, prepared.images, prepared.attachments, requestId, (e) => {
         if (e.stage === 'links') { links = e.count; setLinkCount(e.count); setStage('links') } else setStage('ai')
       }, (e) => { if (!controller.signal.aborted) onEstimateEvent(e) }, controller.signal)
       if (controller.signal.aborted) return
@@ -609,6 +609,7 @@ function JudgeWorkspace(): JSX.Element {
               <dt>要登录的网页</dt><dd>飞书、钉钉、小红书等打不开，请截图或截长图后粘贴</dd>
               <dt>视频</dt><dd>均匀取 12 帧画面，听不到声音，口头讲的需求请补一段文字</dd>
               <dt>PDF、Word</dt><dd>只读文字。扫描版 PDF 和文档里的图片读不到，重要的图请单独截图</dd>
+              <dt>Excel、CSV</dt><dd>读 .xlsx 和 .csv 里的文字，每个文件最多前 5 张工作表、每张前 300 行。老版 .xls 读不了，请先另存为 .xlsx</dd>
             </dl>
           </details>
         </section>
@@ -707,6 +708,48 @@ function Brief({ text, materials, fold = false }: { text: string; materials: Mat
   )
 }
 
+const TEXT_PREVIEW = new Set(['md', 'txt', 'csv', 'html', 'htm', 'rtf'])
+const fileExt = (file: string): string => file.slice(file.lastIndexOf('.') + 1)
+const sizeOf = (n: number): string => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
+
+function AttachList({ entry }: { entry: HistoryEntry }): JSX.Element {
+  const [open, setOpen] = useState<string | null>(null)
+  const [body, setBody] = useState('')
+  const preview = async (file: string): Promise<void> => {
+    if (open === file) { setOpen(null); return }
+    setOpen(file)
+    setBody('')
+    try {
+      const res = await fetch(attachUrl(entry.id, file), { credentials: 'same-origin' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setBody((await res.text()).slice(0, 60_000))
+    } catch (e) {
+      logClient('order-judge:attach-preview', e)
+      setBody('读不出这份文件，请改用下载。')
+    }
+  }
+  return (
+    <div className="oj-attach">
+      {entry.files!.map((f) => {
+        const ext = fileExt(f.file)
+        return (
+          <div key={f.file} className="oj-attach-item">
+            <div className="oj-attach-row">
+              <Ic name="doc" cls="ic ic-sm" />
+              <span className="oj-attach-name" title={f.name}>{f.name}</span>
+              <span className="faint small">{sizeOf(f.size)}</span>
+              {ext === 'pdf' && <a className="btn btn-sm" href={attachUrl(entry.id, f.file)} target="_blank" rel="noreferrer">预览</a>}
+              {TEXT_PREVIEW.has(ext) && <button type="button" className="btn btn-sm" onClick={() => void preview(f.file)}>{open === f.file ? '收起' : '预览'}</button>}
+              <a className="btn btn-sm" href={attachUrl(entry.id, f.file, true)} download={f.name}>下载</a>
+            </div>
+            {open === f.file && <pre className="oj-attach-pre">{body || '读取中…'}</pre>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function Step({ state, title, sub }: { state: 'done' | 'run' | 'wait'; title: string; sub: string }): JSX.Element {
   return (
     <li className={state}>
@@ -738,6 +781,7 @@ function ReportSheet({ entry, ms, links, onRestore }: { entry: HistoryEntry; ms?
           ))}
         </div>
       )}
+      {entry.files && entry.files.length > 0 && <AttachList entry={entry} />}
       {r.risk && <p className="oj-risk"><Ic name="alert" /><span>{r.risk}</span></p>}
       {r.reasons.length > 0 && (
         <div className="oj-sec">

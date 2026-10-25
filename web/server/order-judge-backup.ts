@@ -5,6 +5,7 @@ import { dataDir } from './data-dir'
 import { judgeData, judgeHash, JudgeDataError } from './order-judge-data'
 import { judgeEvents } from './order-judge-events'
 import { normalizeReport } from '../shared/order-judge'
+import { ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES } from '../shared/order-judge-api'
 
 // 旧备份里的 versions / bases / conflicts / doc_ops 表已不存在，恢复时忽略。
 const tables = ['order_judge_docs', 'order_judge_paths', 'order_judge_history', 'order_judge_runs', 'order_judge_imports'] as const
@@ -20,6 +21,14 @@ const imageRefs = (row: Row): { file: string; name: string }[] => {
   return images as { file: string; name: string }[]
 }
 
+const fileRefs = (row: Row): { file: string; name: string; size: number }[] => {
+  if (row.files === null || row.files === undefined) return []
+  const list: unknown = JSON.parse(String(row.files))
+  if (!Array.isArray(list) || list.length > ATTACH_MAX_FILES) throw new Error('接单评估附件清单无效。')
+  for (const f of list) if (!f || typeof f !== 'object' || !ATTACH_FILE_RE.test(f.file) || typeof f.name !== 'string' || !Number.isSafeInteger(f.size)) throw new Error('接单评估附件名无效。')
+  return list as { file: string; name: string; size: number }[]
+}
+
 export function collectJudgeBackup(uid: number): { data: JudgeBackup; files: Record<string, Uint8Array> } {
   return db.transaction(() => {
     if (db.prepare("SELECT 1 FROM order_judge_runs WHERE user_id=? AND status='running'").get(uid)) throw new JudgeDataError('JUDGE_RUNNING', '评估仍在进行，请结束后再备份。')
@@ -27,7 +36,7 @@ export function collectJudgeBackup(uid: number): { data: JudgeBackup; files: Rec
     let bytes = 0
     for (const table of tables) data.tables[table] = db.prepare(`SELECT * FROM ${table} WHERE user_id=?`).all(uid) as Row[]
     if (Buffer.byteLength(JSON.stringify(data)) > 50 * 1024 * 1024) throw new JudgeDataError('BACKUP_TOO_LARGE', '接单评估资料版本超过 50 MB，请先单独归档。', 413)
-    for (const row of data.tables.order_judge_history) for (const image of imageRefs(row)) {
+    for (const row of data.tables.order_judge_history) for (const image of [...imageRefs(row), ...fileRefs(row)]) {
       const content = readFileSync(location(uid, String(row.id), image.file)); bytes += content.byteLength
       if (bytes > 200 * 1024 * 1024) throw new JudgeDataError('BACKUP_TOO_LARGE', '历史图片超过 200 MB，请先分批归档。', 413)
       files[`order-judge/${row.id}/${image.file}`] = content
@@ -55,7 +64,7 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
         const row: Row = {}
         for (const column of columns) {
           // 后加的可空列：旧备份里没有这一项，按空值恢复
-          const value = column === 'estimate' && !(column in rawRow) ? null : rawRow[column]
+          const value = (column === 'estimate' || column === 'files') && !(column in rawRow) ? null : rawRow[column]
           if (value !== null && typeof value !== 'string' && typeof value !== 'number') throw new Error('接单评估备份字段无效。')
           row[column] = column === 'user_id' ? uid : value
         }
@@ -72,6 +81,11 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
             const content = files[`order-judge/${row.id}/${image.file}`]
             if (!content || content.length > 1_500_000 || content[0] !== 0xff || content[1] !== 0xd8) throw new Error('备份缺少有效的接单评估历史图片，请导入完整 ZIP。')
             images.push({ path: location(uid, String(row.id), image.file), content })
+          }
+          for (const file of fileRefs(row)) {
+            const content = files[`order-judge/${row.id}/${file.file}`]
+            if (!content || content.length > ATTACH_MAX_BYTES) throw new Error('备份缺少有效的接单评估历史附件，请导入完整 ZIP。')
+            images.push({ path: location(uid, String(row.id), file.file), content })
           }
         }
         if (table === 'order_judge_runs' && row.status === 'running') { row.status = 'error'; row.error_code = 'INTERRUPTED'; row.entry_id = null }

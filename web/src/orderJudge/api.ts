@@ -37,6 +37,14 @@ export const deleteEntry = async (id: string): Promise<void> => {
 }
 
 export const imageUrl = (id: string, file: string): string => `/api/order-judge/history/${id}/${file}`
+export const attachUrl = (id: string, file: string, download = false): string => `/api/order-judge/history/${id}/files/${file}${download ? '?download=1' : ''}`
+
+async function fileBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
+}
 
 export function logClient(tag: string, error: unknown): void {
   const detail = error instanceof Error ? error.stack || `${error.name}: ${error.message}` : String(error)
@@ -48,12 +56,13 @@ export function logClient(tag: string, error: unknown): void {
 // NDJSON：一行一个事件；HTTP 非 200 的是发请求前就拒了（限流、没档案、没连 AI）。
 // 带估价时结论先到就先返回，流继续读到估价结束；估价事件交给 onEstimate
 export async function judge(
-  text: string, images: JudgeImage[], requestId: string,
+  text: string, images: JudgeImage[], files: File[], requestId: string,
   onStage: (e: Extract<JudgeEvent, { type: 'stage' }>) => void,
   onEstimate: ((e: EstimateEvent) => void) | null,
   signal: AbortSignal,
 ): Promise<HistoryEntry> {
-  return readApi('/api/order-judge/judge', { ...send('POST', { text, images, requestId, estimate: !!onEstimate }), signal }, async (res) => {
+  const attached = await Promise.all(files.map(async (f) => ({ name: f.name, data: await fileBase64(f) })))
+  return readApi('/api/order-judge/judge', { ...send('POST', { text, images, files: attached, requestId, estimate: !!onEstimate }), signal }, async (res) => {
     if (!res.ok || !res.body) await json(res)
     const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader()
     let settle: { ok: (e: HistoryEntry) => void; fail: (e: unknown) => void } | null = null

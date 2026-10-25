@@ -234,6 +234,11 @@
 .oj-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .oj-thumbs a { display: block; width: 52px; height: 40px; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; background: var(--paper-2); }
 .oj-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.oj-attach { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.oj-attach-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.oj-attach-row .ic { flex: none; }
+.oj-attach-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oj-attach-pre { margin: 6px 0 0; padding: 10px 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.6; background: var(--paper-2); border: 1px solid var(--line); border-radius: 3px; }
 .oj-row { padding: 0; }
 .oj-row-main { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 9px 44px 9px 10px; text-align: left; font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
 .oj-key { display: flex; gap: 10px; align-items: center; }

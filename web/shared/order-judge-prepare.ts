@@ -3,6 +3,7 @@
 // 浏览器解不了的格式（wmv / avi、HEIC、doc / pages）桌面版用 hooks.convert 交给本机工具兜底；
 // 网页版没有兜底，标成读不了，让用户截图。
 
+import { ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL } from './order-judge-api'
 import { MAX_DOC_CHARS, MAX_IMAGES, VIDEO_FRAMES, unescapeHtml, htmlToText } from './order-judge'
 
 const VIDEO = new Set(['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'wmv', 'flv'])
@@ -38,8 +39,8 @@ export function kindOf(file: File): MaterialKind {
   if (IMAGE.has(ext) || (!ext && file.type.startsWith('image/'))) return 'image'
   if (VIDEO.has(ext)) return 'video'
   if (ext === 'pdf') return 'pdf'
-  if (['docx', 'doc', 'rtf', 'odt', 'pages', 'html', 'htm'].includes(ext)) return 'doc'
-  if (ext === 'txt' || ext === 'md') return 'text'
+  if (['docx', 'doc', 'rtf', 'odt', 'pages', 'html', 'htm', 'xlsx'].includes(ext)) return 'doc'
+  if (ext === 'txt' || ext === 'md' || ext === 'csv') return 'text'
   return 'other'
 }
 
@@ -215,6 +216,48 @@ function xmlText(xml: string, paraTag: string): string {
   return unescapeHtml(xml.replace(new RegExp(`</${paraTag}>`, 'g'), '\n').replace(/<[^>]+>/g, ''))
 }
 
+const XLSX_SHEETS = 5
+const XLSX_ROWS = 300
+
+function colIndex(ref: string): number {
+  let n = 0
+  for (const ch of /^[A-Z]+/.exec(ref)?.[0] ?? '') n = n * 26 + ch.charCodeAt(0) - 64
+  return Math.max(0, n - 1)
+}
+
+const cellText = (xml: string): string => unescapeHtml([...xml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((m) => m[1]).join(''))
+
+// xlsx 是 zip：共享字符串表 + 每张工作表的 XML。只取单元格显示的值，公式取缓存结果，不算样式
+async function xlsxText(buf: ArrayBuffer): Promise<string> {
+  const shared = await readZipEntry(buf, 'xl/sharedStrings.xml')
+  const strings = shared ? [...shared.matchAll(/<si[^>]*>([\s\S]*?)<\/si>/g)].map((m) => cellText(m[1])) : []
+  const book = await readZipEntry(buf, 'xl/workbook.xml')
+  const names = book ? [...book.matchAll(/<sheet [^>]*?name="([^"]*)"/g)].map((m) => unescapeHtml(m[1])) : []
+  const out: string[] = []
+  for (let i = 1; i <= XLSX_SHEETS; i++) {
+    const xml = await readZipEntry(buf, `xl/worksheets/sheet${i}.xml`)
+    if (!xml) break
+    const rows: string[] = []
+    for (const row of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
+      if (rows.length >= XLSX_ROWS) break
+      const cells: string[] = []
+      for (const c of row[1].matchAll(/<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const ref = /r="([A-Z]+\d+)"/.exec(c[1])?.[1]
+        const type = /t="(\w+)"/.exec(c[1])?.[1]
+        const body = c[2] ?? ''
+        const v = /<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? ''
+        const value = type === 's' ? (strings[Number(v)] ?? '') : type === 'inlineStr' ? cellText(body) : unescapeHtml(v)
+        const at = ref ? colIndex(ref) : cells.length
+        while (cells.length < at) cells.push('')
+        cells[at] = value.replace(/[\t\r\n]+/g, ' ')
+      }
+      if (cells.some(Boolean)) rows.push(cells.join('\t').replace(/\t+$/, ''))
+    }
+    if (rows.length) out.push(`【工作表 ${names[i - 1] ?? i}】\n${rows.join('\n')}`)
+  }
+  return out.join('\n\n')
+}
+
 function rtfText(raw: string): string {
   let s = raw.replace(/\{\\(fonttbl|colortbl|stylesheet|\*)[^{}]*(\{[^{}]*\}[^{}]*)*\}/g, '')
   s = s.replace(/\\u(-?\d+) ?(\?|\\'[0-9a-f]{2})?/g, (_m, n: string) => String.fromCharCode(((parseInt(n, 10) % 65536) + 65536) % 65536))
@@ -229,6 +272,7 @@ async function docText(file: File, hooks: PrepareHooks): Promise<string> {
     const xml = await readZipEntry(buf, 'word/document.xml')
     return xml ? xmlText(xml.replace(/<w:tab\/>/g, '\t'), 'w:p') : ''
   }
+  if (ext === 'xlsx') return xlsxText(buf)
   if (ext === 'odt') {
     const xml = await readZipEntry(buf, 'content.xml')
     return xml ? xmlText(xml, 'text:p') : ''
@@ -253,6 +297,8 @@ export interface Prepared {
   unreadable: string[]
   /** 超过上限没发出去的图片张数 */
   dropped: number
+  /** 要原样留进历史的附件（图片、视频不算，它们已有抽帧 / 切块留存） */
+  attachments: File[]
 }
 
 export async function prepareMaterials(pasted: string, files: File[], hooks: PrepareHooks): Promise<Prepared> {
@@ -333,7 +379,9 @@ export async function prepareMaterials(pasted: string, files: File[], hooks: Pre
       parts.push(`[${file.name}]\n${decodeText(await file.arrayBuffer())}\n`)
     } else {
       unreadable.push(file.name)
-      parts.push(`[附件：${file.name}（无法读取内容，请截图后再放入）]\n`)
+      parts.push(extOf(file.name) === 'xls'
+        ? `[附件：${file.name}（老版 .xls 读不了，请另存为 .xlsx 后再放入）]\n`
+        : `[附件：${file.name}（无法读取内容，请截图后再放入）]\n`)
     }
   }
 
@@ -347,6 +395,18 @@ export async function prepareMaterials(pasted: string, files: File[], hooks: Pre
   const dropped = Math.max(0, images.length - MAX_IMAGES)
   if (dropped) stats.push(`图片超过 ${MAX_IMAGES} 张，只发前 ${MAX_IMAGES} 张`)
 
+  const attachments: File[] = []
+  let attachBytes = 0
+  const skipped: string[] = []
+  for (const file of files) {
+    const kind = kindOf(file)
+    if (kind === 'image' || kind === 'video') continue
+    if (file.size > ATTACH_MAX_BYTES || attachBytes + file.size > ATTACH_MAX_TOTAL || attachments.length >= ATTACH_MAX_FILES) { skipped.push(file.name); continue }
+    attachBytes += file.size
+    attachments.push(file)
+  }
+  if (skipped.length) stats.push(`${skipped.join('、')} 太大，没存进历史`)
+
   const text = [pasted.trim(), parts.join('').trim()].filter(Boolean).join('\n\n')
-  return { text, images: images.slice(0, MAX_IMAGES), stats, unreadable, dropped }
+  return { text, images: images.slice(0, MAX_IMAGES), stats, unreadable, dropped, attachments }
 }

@@ -49,6 +49,7 @@ export class JudgeData {
     add('order_judge_history', 'snapshot', 'TEXT')
     add('order_judge_history', 'model', 'TEXT')
     add('order_judge_history', 'estimate', 'TEXT')
+    add('order_judge_history', 'files', 'TEXT')
     database.transaction(() => {
       const rows = database.prepare("SELECT user_id,kind,name,content,updated_at,revision FROM order_judge_docs WHERE hash='' ").all() as (DocRow & { user_id: number; kind: DocKind })[]
       for (const row of rows) {

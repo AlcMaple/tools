@@ -30,12 +30,16 @@ export const MAX_JUDGE_PATHS = 12
 export interface JudgeSyncState { protocol: 1; accountId: number; username: string; seq: number; docs: JudgeDocs; paths: JudgePaths }
 export type JudgeSyncEvent = { type: 'ready' | 'changed' | 'ping'; seq: number } | { type: 'check'; id: string }
 
+export interface HistoryFile { file: string; name: string; size: number }
+
 export interface HistoryEntry {
   id: string
   at: number
   report: JudgeReport
   order: string
   images: { file: string; name: string }[]
+  /** 原样留存的附件（PDF / Word / 文本 / 表格等），图片和视频不在此列 */
+  files?: HistoryFile[]
   snapshot?: JudgeSnapshot
   model?: string
   estimate?: EstimateResult
@@ -63,6 +67,10 @@ export type JudgeEvent =
   | { type: 'estimate'; event: EstimateEvent }
 
 export const HISTORY_LIMIT = 50
+export const ATTACH_MAX_FILES = 10
+export const ATTACH_MAX_BYTES = 6 * 1024 * 1024
+export const ATTACH_MAX_TOTAL = 8 * 1024 * 1024
+export const ATTACH_FILE_RE = /^att-\d{2}\.[a-z0-9]{1,8}$/
 export const DOC_MAX_BYTES = 1_000_000
 export const JUDGE_MAX_BODY = 20 * 1024 * 1024 // 与 nginx client_max_body_size 对齐
 export const JUDGES_PER_MINUTE = 6

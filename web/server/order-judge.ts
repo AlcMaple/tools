@@ -30,8 +30,8 @@ import {
   normalizeReport, pageDigest, type JudgeReport,
 } from '../shared/order-judge'
 import {
-  DOC_MAX_BYTES, HISTORY_LIMIT, JUDGES_PER_MINUTE, JUDGE_MAX_BODY,
-  type HistoryEntry, type JudgeEvent, type JudgeState, type JudgeSnapshot, type JudgeSyncEvent,
+  ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL, DOC_MAX_BYTES, HISTORY_LIMIT, JUDGES_PER_MINUTE, JUDGE_MAX_BODY,
+  type HistoryEntry, type HistoryFile, type JudgeEvent, type JudgeState, type JudgeSnapshot, type JudgeSyncEvent,
 } from '../shared/order-judge-api'
 
 const rootDir = join(dataDir, 'order-judge')
@@ -93,10 +93,10 @@ function errorBody(code: string, source?: Source): { code: string; error: string
 
 // ── 存取 ──
 
-interface HistoryRow { id: string; at: number; report: string; order_text: string; images: string; snapshot: string | null; model: string | null; estimate: string | null }
+interface HistoryRow { id: string; at: number; report: string; order_text: string; images: string; snapshot: string | null; model: string | null; estimate: string | null; files: string | null }
 
 function rowToEntry(r: HistoryRow): HistoryEntry {
-  return { id: r.id, at: r.at, report: JSON.parse(r.report) as JudgeReport, order: r.order_text, images: JSON.parse(r.images) as HistoryEntry['images'], ...(r.snapshot ? { snapshot: JSON.parse(r.snapshot) as JudgeSnapshot } : {}), ...(r.model ? { model: r.model } : {}), ...(r.estimate ? { estimate: JSON.parse(r.estimate) as EstimateResult } : {}) }
+  return { id: r.id, at: r.at, report: JSON.parse(r.report) as JudgeReport, order: r.order_text, images: JSON.parse(r.images) as HistoryEntry['images'], ...(r.files ? { files: JSON.parse(r.files) as HistoryFile[] } : {}), ...(r.snapshot ? { snapshot: JSON.parse(r.snapshot) as JudgeSnapshot } : {}), ...(r.model ? { model: r.model } : {}), ...(r.estimate ? { estimate: JSON.parse(r.estimate) as EstimateResult } : {}) }
 }
 
 function readState(uid: number): JudgeState {
@@ -139,23 +139,30 @@ async function finishEstimate(uid: number, requestId: string, hours: HoursEstima
   return result
 }
 
-async function saveHistory(uid: number, report: JudgeReport, order: string, images: { name: string; bytes: Buffer }[], snapshot: JudgeSnapshot, model: string, requestId: string): Promise<HistoryEntry> {
+async function saveHistory(uid: number, report: JudgeReport, order: string, images: { name: string; bytes: Buffer }[], files: { name: string; bytes: Buffer }[], snapshot: JudgeSnapshot, model: string, requestId: string): Promise<HistoryEntry> {
   const id = randomUUID()
   const dir = entryDir(uid, id)
   await mkdir(dir, { recursive: true })
   const saved: HistoryEntry['images'] = []
+  const savedFiles: HistoryFile[] = []
   try {
     for (let i = 0; i < images.length; i++) {
       const file = `${String(i + 1).padStart(2, '0')}.jpg`
       await writeFile(join(dir, file), images[i].bytes)
       saved.push({ file, name: images[i].name })
     }
+    for (let i = 0; i < files.length; i++) {
+      const ext = /\.([a-z0-9]{1,8})$/i.exec(files[i].name)?.[1].toLowerCase() ?? 'bin'
+      const file = `att-${String(i + 1).padStart(2, '0')}.${ext}`
+      await writeFile(join(dir, file), files[i].bytes)
+      savedFiles.push({ file, name: files[i].name, size: files[i].bytes.length })
+    }
     const estimate = pendingEstimates.get(`${uid}:${requestId}`)?.result
     pendingEstimates.delete(`${uid}:${requestId}`)
-    const entry: HistoryEntry = { id, at: Date.now(), report, order, images: saved, snapshot, model, ...(estimate ? { estimate } : {}) }
+    const entry: HistoryEntry = { id, at: Date.now(), report, order, images: saved, ...(savedFiles.length ? { files: savedFiles } : {}), snapshot, model, ...(estimate ? { estimate } : {}) }
     const stale = db.transaction(() => {
-      db.prepare('INSERT INTO order_judge_history (id, user_id, at, report, order_text, images, snapshot, model, estimate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(id, uid, entry.at, JSON.stringify(report), order, JSON.stringify(saved), JSON.stringify(snapshot), model, estimate ? JSON.stringify(estimate) : null)
+      db.prepare('INSERT INTO order_judge_history (id, user_id, at, report, order_text, images, snapshot, model, estimate, files) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, uid, entry.at, JSON.stringify(report), order, JSON.stringify(saved), JSON.stringify(snapshot), model, estimate ? JSON.stringify(estimate) : null, savedFiles.length ? JSON.stringify(savedFiles) : null)
       judgeData.bump(uid)
       judgeData.endRun(uid, requestId, entry.id, null)
       const old = db.prepare('SELECT id FROM order_judge_history WHERE user_id = ? ORDER BY at DESC LIMIT -1 OFFSET ?').all(uid, HISTORY_LIMIT) as { id: string }[]
@@ -490,8 +497,35 @@ api.get('/history/:id/:file', async (c) => {
   }
 })
 
-function parseJudge(input: unknown): { text: string; images: { name: string; bytes: Buffer; dataUrl: string }[] } | null {
-  const o = (input && typeof input === 'object' ? input : {}) as { text?: unknown; images?: unknown }
+const FILE_TYPES: Record<string, string> = {
+  pdf: 'application/pdf', md: 'text/plain; charset=utf-8', txt: 'text/plain; charset=utf-8', csv: 'text/plain; charset=utf-8',
+  html: 'text/plain; charset=utf-8', htm: 'text/plain; charset=utf-8', rtf: 'text/plain; charset=utf-8',
+}
+
+api.get('/history/:id/files/:file', async (c) => {
+  const uid = c.get('uid'), id = c.req.param('id'), file = c.req.param('file')
+  if (!ID_RE.test(id) || !ATTACH_FILE_RE.test(file)) return c.json(errorBody('NOT_FOUND'), 404)
+  const row = db.prepare('SELECT files FROM order_judge_history WHERE id = ? AND user_id = ?').get(id, uid) as { files: string | null } | undefined
+  const meta = (row?.files ? JSON.parse(row.files) as HistoryFile[] : []).find((f) => f.file === file)
+  if (!meta) return c.json(errorBody('NOT_FOUND'), 404)
+  try {
+    const bytes = await readFile(join(entryDir(uid, id), file))
+    const download = c.req.query('download') === '1'
+    const type = FILE_TYPES[file.slice(file.lastIndexOf('.') + 1)]
+    c.header('Cache-Control', 'private, max-age=86400')
+    c.header('X-Content-Type-Options', 'nosniff')
+    c.header('Content-Disposition', `${download || !type ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(meta.name)}`)
+    return c.body(new Uint8Array(bytes), 200, { 'Content-Type': download || !type ? 'application/octet-stream' : type })
+  } catch (e) {
+    console.warn(`[order-judge] 历史附件读不到 uid=${uid} ${id}/${file}`, e)
+    return c.json(errorBody('NOT_FOUND'), 404)
+  }
+})
+
+type ParsedJudge = { text: string; images: { name: string; bytes: Buffer; dataUrl: string }[]; files: { name: string; bytes: Buffer; hash: string }[] }
+
+function parseJudge(input: unknown): ParsedJudge | null {
+  const o = (input && typeof input === 'object' ? input : {}) as { text?: unknown; images?: unknown; files?: unknown }
   const text = typeof o.text === 'string' ? o.text : ''
   if (text.length > MAX_TEXT_CHARS || !Array.isArray(o.images) || o.images.length > MAX_IMAGES) return null
   const images: { name: string; bytes: Buffer; dataUrl: string }[] = []
@@ -504,8 +538,21 @@ function parseJudge(input: unknown): { text: string; images: { name: string; byt
     if (bytes.length > MAX_IMAGE_BYTES || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null
     images.push({ name: item.name.slice(0, 120), bytes, dataUrl: item.dataUrl })
   }
-  if (!text.trim() && !images.length) return null
-  return { text, images }
+  const files: ParsedJudge['files'] = []
+  if (o.files !== undefined) {
+    if (!Array.isArray(o.files) || o.files.length > ATTACH_MAX_FILES) return null
+    let total = 0
+    for (const x of o.files as unknown[]) {
+      const item = (x && typeof x === 'object' ? x : {}) as { name?: unknown; data?: unknown }
+      if (typeof item.name !== 'string' || !item.name.trim() || typeof item.data !== 'string' || !/^[A-Za-z0-9+/=]*$/.test(item.data)) return null
+      const bytes = Buffer.from(item.data, 'base64')
+      total += bytes.length
+      if (bytes.length > ATTACH_MAX_BYTES || total > ATTACH_MAX_TOTAL) return null
+      files.push({ name: item.name.slice(0, 120), bytes, hash: judgeHash(item.data) })
+    }
+  }
+  if (!text.trim() && !images.length && !files.length) return null
+  return { text, images, files }
 }
 
 api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(errorBody('MESSAGE_TOO_LARGE'), 413) }), async (c: Context<Env>) => {
@@ -516,7 +563,7 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
   const requestId = raw?.requestId === undefined ? randomUUID() : raw.requestId
   const withEstimate = raw?.estimate === true
   if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) return c.json(errorBody('BAD_INPUT'), 400)
-  const inputHash = judgeHash(JSON.stringify([input.text, input.images.map(x => [x.name, judgeHash(x.dataUrl)])]))
+  const inputHash = judgeHash(JSON.stringify([input.text, input.images.map(x => [x.name, judgeHash(x.dataUrl)]), input.files.map(x => [x.name, x.hash])]))
   const previous = judgeData.run(uid, requestId, inputHash)
   if (previous) {
     if (previous.status === 'running') return c.json(errorBody('JUDGE_BUSY'), 409)
@@ -580,7 +627,7 @@ api.post('/judge', bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(e
         const est = estimating?.()
         try {
           const report = await askModel(conn, uid, system, userText, input.images.map((x) => x.dataUrl), signal)
-          const entry = await saveHistory(uid, report, input.text, input.images, frozen.snapshot, conn.model, requestId)
+          const entry = await saveHistory(uid, report, input.text, input.images, input.files, frozen.snapshot, conn.model, requestId)
           judgeEvents.changed(uid, judgeData.seq(uid))
           console.info(`[order-judge] ← uid=${uid} ${report.verdict} ${report.title} ${Date.now() - started}ms`)
           await send({ type: 'done', entry })
