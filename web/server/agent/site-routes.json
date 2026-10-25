@@ -717,6 +717,11 @@
   {
     "file": "server/order-judge.ts",
     "method": "get",
+    "path": "/history/:id/files/:file"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "get",
     "path": "/sync"
   },
   {

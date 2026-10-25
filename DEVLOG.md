@@ -25,6 +25,16 @@
 
 ## 当前未归类记录（2026-10）
 
+## 2026-10-26 docs(web): 部署文档补上接单评估数据与备份，并补登记附件下载路由
+
+**效果**：[部署教程](docs/web/唐人云部署保姆教程.md)新增「接单评估数据」一节，备份与恢复步骤加入 `order-judge/`，排错表加两行（路由登记失败、节假日数据拉不到）。线上备份脚本已同步加上这段，网页版已部署到 `c62c357`
+
+**关键决策**：接单评估历史的图片和附件在磁盘 `order-judge/<uid>/<历史id>/`，库里只有清单，与封面同属「库 + 文件」两半，必须同一时间戳一起备、一起恢复，否则历史打得开图和附件却读不到文件。估价交期依赖从 jsdelivr 拉取的 holiday-cn，缓存在 `holidays/`，服务器必须能访问该域名
+
+**事故**：`7ff1003` 新增 `GET /history/:id/files/:file` 却没更新 `site-routes.json`，服务器 `npm run build` 在 `build:agent-release` 步被 `FEATURE_ROUTE_REVIEW_REQUIRED` 拦下。本次用 `npm run sync:agent-guide` 重新生成快照补上这一条。
+
+**边界 / 风险**：线上备份脚本不在 git 里，只在文档和服务器上各有一份，新机器搭脚本时要照文档补；脚本原件留在服务器 `mapletools-backup.sh.bak`
+
 ## 2026-10-22 docs(web): 部署文档补上升级服务器 Node 的步骤
 
 **效果**：[部署教程](docs/web/唐人云部署保姆教程.md)「系统更新」下新增「升级 Node（安全补丁）」：nodesource 源不走自动更新，要手动升；apt 换完二进制必须 `mtweb kill` + `systemctl start pm2-mapletools`，并按 3000 端口的 PID 核对 `/proc/<pid>/exe -v`。服务器已按此升到 22.23.4（CVE-2026-111497 等 10 月公告）。
