@@ -34,6 +34,16 @@ async function main() {
       await page.locator('.oj-go').click()
     }
     await open()
+    const help = page.locator('.oj-how')
+    assert.equal(await help.locator('dt').filter({ hasText: '登录页、小程序' }).count(), 1)
+    assert.equal(await help.getByText('请提供截图、长图或录屏。', { exact: true }).count(), 1)
+    assert.match(await help.innerText(), /截图。聊天记录请展开后截图。/)
+    assert.match(await help.innerText(), /不识别声音/)
+    console.log('PASS B: 材料说明合并登录页与小程序，明确截图/长图/录屏，并保留视频无声音提示')
+    if (process.env.JUDGE_SCREENSHOT_DIR) {
+      await mkdir(process.env.JUDGE_SCREENSHOT_DIR, { recursive: true })
+      await help.screenshot({ path: path.join(process.env.JUDGE_SCREENSHOT_DIR, 'materials-help-desktop.png') })
+    }
     assert.match(await page.locator('input[type=file]').first().getAttribute('accept'), /\.zip,\.rar/)
     const response = await page.request.get(origin)
     const csp = response.headers()['content-security-policy']
@@ -89,6 +99,8 @@ async function main() {
     console.log('PASS B: 解包期间取消保留附件，终止 Worker，不提交评估')
     await page.setViewportSize({ width: 390, height: 844 })
     await open()
+    assert.match(await help.innerText(), /点「粘贴」添加截图。聊天记录请展开后截图。/)
+    if (process.env.JUDGE_SCREENSHOT_DIR) await help.screenshot({ path: path.join(process.env.JUDGE_SCREENSHOT_DIR, 'materials-help-mobile.png') })
     await send(path.join(fixtures, 'materials.zip'))
     await page.getByText('压缩包回归通过', { exact: true }).first().waitFor({ timeout: 40_000 })
     await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth + 1)

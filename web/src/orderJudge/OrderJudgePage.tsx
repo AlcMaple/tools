@@ -608,17 +608,17 @@ function JudgeWorkspace(): JSX.Element {
             <dl>
               <dt>文字、截图</dt>
               <dd>
-                <span className="oj-desk">{isMac ? '⌘V' : 'Ctrl+V'} 粘贴，可以连续粘贴多张</span>
-                <span className="oj-mob">截图后点「粘贴」，可以连续粘贴多张</span>
-                转发的聊天记录要点开后截图，直接复制只会得到「[聊天记录]」
+                <span className="oj-desk">{isMac ? '⌘V' : 'Ctrl+V'} 粘贴，可连续添加截图。</span>
+                <span className="oj-mob">点「粘贴」添加截图。</span>
+                聊天记录请展开后截图。
               </dd>
-              <dt>网址</dt><dd>以文字贴进输入框，会读取网页标题和正文开头，每单最多 10 个。截图里的网址不会被打开</dd>
-              <dt>在线表格、文档</dt><dd>公开的腾讯文档能读到首屏的一部分文字，每张工作表的网址不同，要哪张贴哪张。表格很长时，把关键行截图一起放进来</dd>
-              <dt>要登录的网页</dt><dd>飞书、钉钉、小红书等打不开，请截图或截长图后粘贴</dd>
-              <dt>视频</dt><dd>均匀取 12 帧画面，听不到声音，口头讲的需求请补一段文字</dd>
-              <dt>PDF、Word</dt><dd>只读文字。扫描版 PDF 和文档里的图片读不到，重要的图请单独截图</dd>
-              <dt>ZIP、RAR</dt><dd>读取包内文档、图片和视频。加密包请先解密，内层压缩包请单独放入；单包最多 32 MB、100 项，解压后合计最多 64 MB、单文件最多 16 MB</dd>
-              <dt>Excel、CSV</dt><dd>读 .xlsx 和 .csv 里的文字，每个文件最多前 5 张工作表、每张前 300 行。老版 .xls 读不了，请先另存为 .xlsx</dd>
+              <dt>网址</dt><dd>粘贴网址，最多 10 个；截图中的网址不读取。</dd>
+              <dt>在线文档</dt><dd>公开腾讯文档请贴具体页网址，只读部分文字。</dd>
+              <dt>登录页、小程序</dt><dd>请提供截图、长图或录屏。</dd>
+              <dt>视频</dt><dd>均匀取 12 帧，不识别声音；口述需求请补文字。</dd>
+              <dt>PDF、Word</dt><dd>只读文字；扫描件和文档配图请补截图。</dd>
+              <dt>ZIP、RAR</dt><dd>单包最多 32 MB；加密包先解密，内层压缩包单独添加。</dd>
+              <dt>Excel、CSV</dt><dd>Excel 读前 5 张表、每表 300 行；.xls 请转 .xlsx，CSV 可直接添加。</dd>
             </dl>
           </details>
         </section>
