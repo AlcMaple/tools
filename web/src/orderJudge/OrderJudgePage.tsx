@@ -11,8 +11,10 @@ import { useIsWide } from '../useMediaQuery'
 import { DOC_TEMPLATES, downloadDocTemplate } from '../../shared/order-judge-templates'
 import { precheck, type JudgeReport } from '../../shared/order-judge'
 import { decodeText, imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
+import { expandArchive, isArchive } from './archive'
 import { readByokKey } from '../reviews/byok'
 import type { DocKind, DocMeta, HistoryEntry, JudgeImage, JudgePath, JudgePaths, JudgeState } from '../../shared/order-judge-api'
+import { MAX_TEXT_CHARS } from '../../shared/order-judge-api'
 import type { EstimateEvent, EstimateResult } from '../../shared/order-judge-estimate'
 import { DAY_RATE } from '../../shared/order-judge-quote'
 import {
@@ -20,7 +22,7 @@ import {
   type ProviderStatus,
 } from './api'
 
-const ACCEPT = 'image/*,video/*,.pdf,.doc,.docx,.rtf,.odt,.pages,.html,.htm,.txt,.md,.xlsx,.xls,.csv'
+const ACCEPT = 'image/*,video/*,.pdf,.doc,.docx,.rtf,.odt,.pages,.html,.htm,.txt,.md,.xlsx,.xls,.csv,.zip,.rar'
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
 
 interface Material {
@@ -204,8 +206,8 @@ function JudgeWorkspace(): JSX.Element {
         id: nextId.current++,
         file,
         thumb: kind === 'image' ? URL.createObjectURL(file) : null,
-        note: kind === 'video' && probe ? '12 帧' : '',
-        bad: kind === 'other' || (kind === 'video' && !probe),
+        note: isArchive(file) ? '待解包' : kind === 'video' && probe ? '12 帧' : '',
+        bad: (kind === 'other' && !isArchive(file)) || (kind === 'video' && !probe),
       }
     })
     setMaterials((list) => [...list, ...fresh])
@@ -350,12 +352,18 @@ function JudgeWorkspace(): JSX.Element {
     let links = 0
     try {
       const prepared = await prepareMaterials(text, materials.map((m) => m.file), {
+        expandArchive: file => expandArchive(file, controller.signal),
         pdfText: async (file) => (await import('./pdf')).pdfText(file),
         onError: logClient,
       })
-      if (prepared.unreadable.length) {
-        setMaterials((list) => list.map((m) => (prepared.unreadable.includes(m.file.name) ? { ...m, bad: true, note: '读不了' } : m)))
-      }
+      if (controller.signal.aborted) return
+      setMaterials((list) => list.map((m) => ({ ...m,
+        bad: prepared.unreadable.includes(m.file.name),
+        note: prepared.materialNotes[m.file.name] ?? (prepared.unreadable.includes(m.file.name) ? '读不了' : m.note),
+      })))
+      const failedArchives = materials.filter(m => isArchive(m.file) && prepared.unreadable.includes(m.file.name))
+      if (failedArchives.length) throw new JudgeError('ARCHIVE_UNREADABLE', failedArchives.map(m => `${m.file.name}：${prepared.materialNotes[m.file.name]}`).join('；'))
+      if (prepared.text.length > MAX_TEXT_CHARS) throw new JudgeError('MATERIAL_TEXT_TOO_LONG', '材料文字超过 20 万字，请拆分后再评估')
       setPrepStats(prepared.stats.join(' · '))
       if (byok && ai && !(provider?.ready && provider.source === 'byok')) {
         setProvider(await connectProvider(ai.endpoint, ai.model, readByokKey().trim()))
@@ -553,7 +561,7 @@ function JudgeWorkspace(): JSX.Element {
               {materials.map((m) => {
                 const kind = kindOf(m.file)
                 return (
-                  <div key={m.id} className={`oj-file${m.bad ? ' bad' : ''}`} title={m.file.name}>
+                  <div key={m.id} className={`oj-file${m.bad ? ' bad' : ''}`} title={[m.file.name, m.note].filter(Boolean).join('：')}>
                     <div className="pic">
                       {m.thumb ? <img src={m.thumb} alt="" /> : <Ic name={m.bad ? 'alert' : kind === 'video' ? 'video' : 'doc'} />}
                       {m.note && <span className="note">{m.note}</span>}
@@ -609,6 +617,7 @@ function JudgeWorkspace(): JSX.Element {
               <dt>要登录的网页</dt><dd>飞书、钉钉、小红书等打不开，请截图或截长图后粘贴</dd>
               <dt>视频</dt><dd>均匀取 12 帧画面，听不到声音，口头讲的需求请补一段文字</dd>
               <dt>PDF、Word</dt><dd>只读文字。扫描版 PDF 和文档里的图片读不到，重要的图请单独截图</dd>
+              <dt>ZIP、RAR</dt><dd>读取包内文档、图片和视频。加密包请先解密，内层压缩包请单独放入；单包最多 32 MB、100 项，解压后合计最多 64 MB、单文件最多 16 MB</dd>
               <dt>Excel、CSV</dt><dd>读 .xlsx 和 .csv 里的文字，每个文件最多前 5 张工作表、每张前 300 行。老版 .xls 读不了，请先另存为 .xlsx</dd>
             </dl>
           </details>

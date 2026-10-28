@@ -12,6 +12,8 @@
     }
   },
   "scripts": {
+    "test:order-judge-archives": "tsx scripts/test-order-judge-archives.ts",
+    "test:order-judge-archives-ui": "npm run build && tsx scripts/test-order-judge-archives.ts --browser",
     "dev": "npm run build:agent-release && vite",
     "build": "npm run build:agent-release && vite build && tsx scripts/build-player-monitor.ts",
     "preview": "vite preview",
@@ -53,9 +55,11 @@
     "artplayer": "^5.4.0",
     "better-sqlite3": "^12.11.1",
     "cheerio": "^1.2.0",
+    "comlink": "4.4.2",
     "fflate": "^0.8.3",
     "hls.js": "^1.6.16",
     "hono": "^4.13.1",
+    "libarchive.js": "2.0.2",
     "nodemailer": "^9.0.5",
     "pdfjs-dist": "4.4.168",
     "qrcode": "^1.5.4",

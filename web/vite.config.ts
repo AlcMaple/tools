@@ -3,13 +3,14 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import devServer from '@hono/vite-dev-server'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
+import archivePackage from 'libarchive.js/package.json' with { type: 'json' }
 
 // ⚠ 这份 CSP 和 server/security.ts 的 DEFAULT_CSP 是**两条独立生效的策略**（meta + 响应头
 // 取交集，严的那条说了算）。**改一处必须同时改另一处**，否则只改响应头的那次等于没改
 // —— 分享图预览的 blob: 就是这么白修了一轮。改完要重新 `npm run build`（meta 是构建期注入
 // 到 index.html 的，热传服务端 TS 不会更新它）。
 const PRODUCTION_SECURITY_META = `
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://user.alcmaple.cn; style-src 'self'; img-src 'self' https: data: blob:; font-src 'self'; connect-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; frame-src 'none'; upgrade-insecure-requests" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval' https://user.alcmaple.cn; style-src 'self'; img-src 'self' https: data: blob:; font-src 'self'; connect-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; frame-src 'none'; upgrade-insecure-requests" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />`
 
 // 本地开发一条命令跑通前后端：@hono/vite-dev-server 把 server/index.ts 里的 Hono 应用
@@ -50,6 +51,24 @@ const pdfCmaps: Plugin = {
 
 const agentRelease = JSON.parse(readFileSync(new URL('./server/agent-release.json',import.meta.url),'utf8')) as {codeHash:string}
 
+// Worker 与 WASM 必须同目录、同版本；本地开发和生产都从本站加载，不依赖 CDN。
+const archiveAssets: Plugin = {
+  name: 'maple-archive-assets',
+  configureServer(server) {
+    server.middlewares.use(`/archive/${archivePackage.version}`, (req, res, next) => {
+      const name = (req.url ?? '').replace(/^\//, '').split('?')[0]
+      if (!['worker-bundle.js', 'libarchive.wasm', 'LICENSE.txt'].includes(name)) return next()
+      res.setHeader('Content-Type', name.endsWith('.wasm') ? 'application/wasm' : name.endsWith('.js') ? 'text/javascript' : 'text/plain')
+      res.end(readFileSync(new URL(`./node_modules/libarchive.js/${name === 'LICENSE.txt' ? 'LICENSE' : `dist/${name}`}`, import.meta.url)))
+    })
+  },
+  generateBundle() {
+    for (const name of ['worker-bundle.js', 'libarchive.wasm', 'LICENSE.txt']) {
+      this.emitFile({ type: 'asset', fileName: `archive/${archivePackage.version}/${name}`, source: readFileSync(new URL(`./node_modules/libarchive.js/${name === 'LICENSE.txt' ? 'LICENSE' : `dist/${name}`}`, import.meta.url)) })
+    }
+  },
+}
+
 export default defineConfig(({ command }) => ({
   define: {__AGENT_CLIENT_RELEASE__: JSON.stringify(agentRelease.codeHash)},
   // dev 默认只监听 `[::1]`，把 localhost 解析成 127.0.0.1 的外部程序（NDM 之类下载管理器）连不上。
@@ -58,6 +77,7 @@ export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     pdfCmaps,
+    archiveAssets,
     {
       name: 'maple-production-security-meta',
       transformIndexHtml(html: string): string {

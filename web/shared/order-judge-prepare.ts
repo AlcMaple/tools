@@ -1,7 +1,7 @@
-// 接单评估的材料预处理：一律用浏览器能力做完，只把文字和 JPEG 交给服务端 / 主进程。
+// 接单评估的材料预处理：浏览器提取文字和 JPEG 供评估，原附件另行留存历史。
 // 桌面版渲染进程和网页版前端共用这一份，视频也只传 12 张帧图，不上传整段视频。
 // 浏览器解不了的格式（wmv / avi、HEIC、doc / pages）桌面版用 hooks.convert 交给本机工具兜底；
-// 网页版没有兜底，标成读不了，让用户截图。
+// 网页版通过可选 expandArchive 钩子展开压缩包；桌面端不加载网页解压依赖。
 
 import { ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL } from './order-judge-api'
 import { MAX_DOC_CHARS, MAX_IMAGES, VIDEO_FRAMES, unescapeHtml, htmlToText } from './order-judge'
@@ -19,6 +19,7 @@ export type ConvertResult =
   | { ok: false }
 
 export interface PrepareHooks {
+  expandArchive?: (file: File) => Promise<{ files: File[]; skipped: string[] }>
   convert?: (kind: 'image' | 'video' | 'doc', bytes: Uint8Array, ext: string) => Promise<ConvertResult>
   pdfText: (file: File) => Promise<{ text: string; pages: number }>
   onError: (tag: string, error: unknown) => void
@@ -299,19 +300,45 @@ export interface Prepared {
   dropped: number
   /** 要原样留进历史的附件（图片、视频不算，它们已有抽帧 / 切块留存） */
   attachments: File[]
+  materialNotes: Record<string, string>
 }
 
 export async function prepareMaterials(pasted: string, files: File[], hooks: PrepareHooks): Promise<Prepared> {
   const parts: string[] = []
   const images: { name: string; dataUrl: string }[] = []
   const unreadable: string[] = []
+  const materialNotes: Record<string, string> = Object.create(null)
+  const archiveStats: string[] = []
+  const expanded: File[] = []
+  const archiveOwners = new Map<string, string>()
+  for (const file of files) {
+    if (!hooks.expandArchive || !['zip', 'rar'].includes(extOf(file.name))) {
+      expanded.push(file)
+      continue
+    }
+    try {
+      const result = await hooks.expandArchive(file)
+      expanded.push(...result.files)
+      for (const child of result.files) archiveOwners.set(child.name, file.name)
+      materialNotes[file.name] = `解包 ${result.files.length} 项${result.skipped.length ? `，跳过 ${result.skipped.length} 项` : ''}`
+      archiveStats.push(`${file.name}：${materialNotes[file.name]}`)
+      if (result.skipped.length) parts.push(`[${file.name}：以下条目未参与评估：${result.skipped.join('、')}]\n`)
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') throw error
+      hooks.onError('order-judge:archive', error)
+      const reason = error instanceof Error ? error.message : '压缩包读取失败'
+      materialNotes[file.name] = reason
+      unreadable.push(file.name)
+      parts.push(`[${file.name}：${reason}]\n`)
+    }
+  }
   let shots = 0
   let tiles = 0
   let frames = 0
   let pdfPages = 0
   let docs = 0
 
-  for (const file of files) {
+  for (const file of expanded) {
     const stem = stemOf(file.name)
     const kind = kindOf(file)
     if (kind === 'image') {
@@ -385,7 +412,15 @@ export async function prepareMaterials(pasted: string, files: File[], hooks: Pre
     }
   }
 
-  const stats: string[] = []
+  for (const name of [...unreadable]) {
+    const owner = archiveOwners.get(name)
+    if (owner) {
+      if (!unreadable.includes(owner)) unreadable.push(owner)
+      const failed = unreadable.filter(item => archiveOwners.get(item) === owner)
+      materialNotes[owner] = `未读取：${failed.map(item => item.slice(owner.length + 1)).join('、')}，请检查格式或另存为截图`
+    }
+  }
+  const stats: string[] = [...archiveStats]
   if (shots) stats.push(`${shots} 张截图`)
   if (tiles) stats.push(`长图切成 ${tiles} 块`)
   if (frames) stats.push(`视频取 ${frames} 帧`)
@@ -408,5 +443,5 @@ export async function prepareMaterials(pasted: string, files: File[], hooks: Pre
   if (skipped.length) stats.push(`${skipped.join('、')} 太大，没存进历史`)
 
   const text = [pasted.trim(), parts.join('').trim()].filter(Boolean).join('\n\n')
-  return { text, images: images.slice(0, MAX_IMAGES), stats, unreadable, dropped, attachments }
+  return { text, images: images.slice(0, MAX_IMAGES), stats, unreadable, dropped, attachments, materialNotes }
 }

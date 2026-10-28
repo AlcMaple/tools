@@ -10,7 +10,7 @@ const DEFAULT_CSP = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self' https://user.alcmaple.cn",
+  "script-src 'self' 'wasm-unsafe-eval' https://user.alcmaple.cn",
   "style-src 'self'",
   // blob: 是分享海报（Canvas → toBlob → objectURL）预览要的；少了它生产环境预览是裂图，
   // 而下载仍然正常（<a download> 不受 img-src 约束），所以本地 dev 不开 CSP 时看不出来。

@@ -47,7 +47,7 @@
 .oj-file .pic.long { background: repeating-linear-gradient(180deg, #eef3f4 0 10px, #f6efe2 10px 20px); }
 .oj-file .pic .ic { width: 22px; height: 22px; }
 .oj-file .name { margin-top: 5px; font-size: 11px; color: var(--ink-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.oj-file .note { position: absolute; left: 4px; bottom: 4px; width: max-content; padding: 0 5px; border-radius: 4px; background: rgba(62, 67, 80, .72); color: #fff; font-size: 10.5px; line-height: 17px; }
+.oj-file .note { position: absolute; left: 4px; bottom: 4px; width: max-content; max-width: calc(100% - 8px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 5px; border-radius: 4px; background: rgba(62, 67, 80, .72); color: #fff; font-size: 10.5px; line-height: 17px; }
 .oj-file .rm { position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; display: grid; place-items: center; padding: 0;
   border: 1.5px solid var(--line-strong); border-radius: 50%; background: var(--card); color: var(--ink-sub); cursor: pointer; z-index: 2; }
 .oj-file .rm .ic { width: 12px; height: 12px; }

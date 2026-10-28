@@ -73,4 +73,5 @@ export const ATTACH_MAX_TOTAL = 8 * 1024 * 1024
 export const ATTACH_FILE_RE = /^att-\d{2}\.[a-z0-9]{1,8}$/
 export const DOC_MAX_BYTES = 1_000_000
 export const JUDGE_MAX_BODY = 20 * 1024 * 1024 // 与 nginx client_max_body_size 对齐
+export const MAX_TEXT_CHARS = 200_000
 export const JUDGES_PER_MINUTE = 6

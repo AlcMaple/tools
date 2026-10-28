@@ -30,7 +30,7 @@ import {
   normalizeReport, pageDigest, type JudgeReport,
 } from '../shared/order-judge'
 import {
-  ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL, DOC_MAX_BYTES, HISTORY_LIMIT, JUDGES_PER_MINUTE, JUDGE_MAX_BODY,
+  ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL, DOC_MAX_BYTES, HISTORY_LIMIT, JUDGES_PER_MINUTE, JUDGE_MAX_BODY, MAX_TEXT_CHARS,
   type HistoryEntry, type HistoryFile, type JudgeEvent, type JudgeState, type JudgeSnapshot, type JudgeSyncEvent,
 } from '../shared/order-judge-api'
 
@@ -41,7 +41,6 @@ const ID_RE = /^[0-9a-f-]{36}$/
 const FILE_RE = /^\d{2}\.jpg$/
 const DATA_URL_RE = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/
 const MAX_IMAGE_BYTES = 1_500_000
-const MAX_TEXT_CHARS = 200_000
 const MAX_RUNNING = 4 // 同时在跑的评估；每个请求体最多 20MB，留在内存里
 const FETCH_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 const IS_DEV = process.env.NODE_ENV !== 'production' && !process.env.VERCEL

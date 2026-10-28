@@ -47,7 +47,9 @@ async function fileBase64(file: File): Promise<string> {
 }
 
 export function logClient(tag: string, error: unknown): void {
-  const detail = error instanceof Error ? error.stack || `${error.name}: ${error.message}` : String(error)
+  const detail = error instanceof Error
+    ? [error.stack || `${error.name}: ${error.message}`, error.cause instanceof Error ? error.cause.stack : error.cause].filter(Boolean).join('\nCaused by: ')
+    : String(error)
   try {
     void fetch('/api/order-judge/log', { ...send('POST', { tag, detail }), keepalive: true })
   } catch { /* 上报失败不影响评估 */ }
