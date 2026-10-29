@@ -609,15 +609,15 @@ function JudgeWorkspace(): JSX.Element {
               <dd>
                 <span className="oj-desk">{isMac ? '⌘V' : 'Ctrl+V'} 粘贴，可连续添加截图。</span>
                 <span className="oj-mob">点「粘贴」添加截图。</span>
-                聊天记录请展开后截图。
+                微信、QQ聊天记录请展开后截图
               </dd>
-              <dt>网址</dt><dd>粘贴网址，最多 10 个；截图中的网址不读取。</dd>
-              <dt>在线文档</dt><dd>公开腾讯文档请贴具体页网址，只读部分文字。</dd>
-              <dt>需登录访问的网站、小程序</dt><dd>请提供截图、长图或录屏。</dd>
-              <dt>视频</dt><dd>均匀取 12 帧，不识别声音；口述需求请补文字。</dd>
-              <dt>PDF、Word</dt><dd>只读文字；扫描件和文档配图请补截图。</dd>
-              <dt>ZIP、RAR</dt><dd>单包最多 32 MB；加密包先解密，内层压缩包单独添加。</dd>
-              <dt>Excel、CSV</dt><dd>Excel 读前 5 张表、每表 300 行；.xls 请转 .xlsx，CSV 可直接添加。</dd>
+              <dt>网址</dt><dd>粘贴网址，最多 10 个；截图中的网址不读取</dd>
+              <dt>在线文档</dt><dd>公开腾讯文档请贴具体页网址，只读部分文字</dd>
+              <dt>需登录访问的网站、小程序</dt><dd>请提供截图、长图或录屏</dd>
+              <dt>视频</dt><dd>均匀取 12 帧，不识别声音；口述需求请补文字</dd>
+              <dt>PDF、Word</dt><dd>只读文字；扫描件和文档配图请补截图</dd>
+              <dt>ZIP、RAR</dt><dd>单包最多 32 MB；加密包先解密，内层压缩包单独添加</dd>
+              <dt>Excel、CSV</dt><dd>Excel 读前 5 张表、每表 300 行；.xls 请转 .xlsx，CSV 可直接添加</dd>
             </dl>
           </details>
         </section>
