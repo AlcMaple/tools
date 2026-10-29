@@ -12,6 +12,7 @@ import { DOC_TEMPLATES, downloadDocTemplate } from '../../shared/order-judge-tem
 import { precheck, type JudgeReport } from '../../shared/order-judge'
 import { decodeText, imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
+import { canLink, forgetLinked, linkedNames, pickLinked, readLinked } from './linkedFiles'
 import { readByokKey } from '../reviews/byok'
 import type { DocKind, DocMeta, HistoryEntry, JudgeImage, JudgePath, JudgePaths, JudgeState } from '../../shared/order-judge-api'
 import { MAX_TEXT_CHARS } from '../../shared/order-judge-api'
@@ -51,6 +52,18 @@ const VERDICT: Record<JudgeReport['verdict'], { stamp: string; cls: string; tape
 }
 
 const SETTINGS_CODES = new Set(['BYOK_REQUIRED', 'PROVIDER_CONNECTION_REQUIRED', 'PROVIDER_HTTP_401', 'NO_PROFILE', 'DOC_CONFLICT'])
+
+const mergeDocs = (s: JudgeState, docs: Record<DocKind, DocMeta | null>): JudgeState['docs'] => ({
+  profile: (s.docs.profile?.revision ?? 0) > (docs.profile?.revision ?? 0) ? s.docs.profile : docs.profile,
+  log: (s.docs.log?.revision ?? 0) > (docs.log?.revision ?? 0) ? s.docs.log : docs.log,
+})
+
+// 重读用户关联的本机文件并覆盖上传；服务端内容哈希没变时原样返回，重复调用无副作用
+async function syncLinked(kind: DocKind, name: string, ask = false): Promise<{ docs: Record<DocKind, DocMeta | null>; paths: JudgePaths } | 'none' | 'ask' | 'gone'> {
+  const r = await readLinked(kind, name, ask)
+  if (typeof r === 'string') return r
+  return saveDoc(kind, r.file.name, decodeText(await r.file.arrayBuffer()))
+}
 
 function when(at: number): string {
   const d = new Date(at)
@@ -152,6 +165,8 @@ function JudgeWorkspace(): JSX.Element {
   const materialsRef = useRef<Material[]>([])
   const refreshRef = useRef<Promise<void> | null>(null)
   const mountedRef = useRef(true)
+  const pathsRef = useRef<JudgePaths | null>(null)
+  pathsRef.current = state?.paths ?? null
   materialsRef.current = materials
 
   const refreshProvider = useCallback(() => {
@@ -181,6 +196,34 @@ function JudgeWorkspace(): JSX.Element {
       for (const m of materialsRef.current) if (m.thumb) URL.revokeObjectURL(m.thumb)
     }
   }, [refreshProvider])
+
+  const loaded = state !== null
+  useEffect(() => {
+    if (!loaded) return
+    const gesture = ['pointerdown', 'keydown'] as const
+    const off = (): void => { for (const e of gesture) document.removeEventListener(e, onGesture, true) }
+    const run = (ask = false): void => {
+      for (const kind of ['profile', 'log'] as const) {
+        void linkedNames(kind).then(names => {
+          // 只重读列表里还在的网页条目：别处移除过的不能被同步重新加回来
+          const listed = names.filter(n => pathsRef.current?.[kind].some(p => p.path === n && p.upload))
+          for (const name of listed) {
+            syncLinked(kind, name, ask).then(r => {
+              if (r === 'ask') { for (const e of gesture) document.addEventListener(e, onGesture, true); return }
+              if (typeof r === 'string' || !mountedRef.current) return
+              setState(s => s ? { ...s, docs: mergeDocs(s, r.docs), paths: r.paths } : s)
+            }).catch(() => { /* 本机文件读不到时保留服务端上次的内容 */ })
+          }
+        })
+      }
+    }
+    // 权限被收回后浏览器只允许在用户手势里重新申请：借用户的第一次点击 / 按键顺带申请，不需要额外按钮
+    function onGesture(): void { off(); run(true) }
+    run()
+    const onVisible = (): void => { if (document.visibilityState === 'visible') run() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { off(); document.removeEventListener('visibilitychange', onVisible) }
+  }, [loaded])
 
   useEffect(() => {
     if (!running) return
@@ -461,7 +504,7 @@ function JudgeWorkspace(): JSX.Element {
       docs={state.docs}
       paths={state.paths}
       onPaths={(paths) => setState(s => s ? { ...s, paths } : s)}
-      onDocs={(docs) => setState(s => s ? { ...s, docs: { profile: (s.docs.profile?.revision ?? 0) > (docs.profile?.revision ?? 0) ? s.docs.profile : docs.profile, log: (s.docs.log?.revision ?? 0) > (docs.log?.revision ?? 0) ? s.docs.log : docs.log } } : s)}
+      onDocs={(docs) => setState(s => s ? { ...s, docs: mergeDocs(s, docs) } : s)}
       onClose={() => setSettingsOpen(false)}
     />
   )
@@ -997,6 +1040,25 @@ function SettingsDialog({ docs, paths, onDocs, onPaths, onClose }: {
     return () => window.clearTimeout(t)
   }, [notice])
 
+  const [linked, setLinked] = useState<Record<DocKind, string[]>>({ profile: [], log: [] })
+  const refreshLinked = useCallback((kind: DocKind): void => {
+    void linkedNames(kind).then(names => setLinked(l => ({ ...l, [kind]: names })))
+  }, [])
+  useEffect(() => { refreshLinked('profile'); refreshLinked('log') }, [refreshLinked])
+
+  const choose = async (kind: DocKind, from?: string): Promise<void> => {
+    if (!canLink()) { pick.current[kind]?.click(); return }
+    try {
+      const file = await pickLinked(kind, from)
+      if (file) {
+        await upload(kind, file)
+        refreshLinked(kind)
+      }
+    } catch (e) {
+      setNotice({ text: errorOf(e).message, err: true })
+    }
+  }
+
   const upload = async (kind: DocKind, file: File): Promise<void> => {
     setBusy(kind)
     try {
@@ -1034,7 +1096,13 @@ function SettingsDialog({ docs, paths, onDocs, onPaths, onClose }: {
             <span className="d">{p.device}</span>
             <button type="button" aria-label="上移" disabled={busy !== null || i === 0} onClick={() => move(i, -1)}><Ic name="chev" cls="ic ic-sm up" /></button>
             <button type="button" aria-label="下移" disabled={busy !== null || i === list.length - 1} onClick={() => move(i, 1)}><Ic name="chev" cls="ic ic-sm" /></button>
-            <button type="button" aria-label="移除" disabled={busy !== null} onClick={() => void reorder(kind, list.filter((_, j) => j !== i))}><Ic name="x" cls="ic ic-sm" /></button>
+            {p.upload && linked[kind].includes(p.path) && (
+              <button type="button" aria-label="打开所在位置" title="打开所在位置" disabled={busy !== null} onClick={() => void choose(kind, p.path)}><Ic name="folder" cls="ic ic-sm" /></button>
+            )}
+            <button type="button" aria-label="移除" disabled={busy !== null} onClick={() => {
+              void reorder(kind, list.filter((_, j) => j !== i))
+              if (p.upload) void forgetLinked(kind, p.path).then(() => refreshLinked(kind))
+            }}><Ic name="x" cls="ic ic-sm" /></button>
           </li>
         ))}
       </ol>
@@ -1054,7 +1122,7 @@ function SettingsDialog({ docs, paths, onDocs, onPaths, onClose }: {
           </span>
         </div>
         {pathList(kind)}
-        <button type="button" className="btn btn-sm mt8" disabled={busy !== null} onClick={() => pick.current[kind]?.click()}>
+        <button type="button" className="btn btn-sm mt8" disabled={busy !== null} onClick={() => void choose(kind)}>
           <Ic name="plus" cls="ic ic-sm" />{busy === kind ? '上传中…' : '上传文件'}
         </button>
         <button type="button" className="btn btn-sm mt8" style={{ marginLeft: 8 }} onClick={() => downloadDocTemplate(kind)}>下载模版</button>
