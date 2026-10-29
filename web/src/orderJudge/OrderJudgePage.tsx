@@ -136,6 +136,7 @@ function JudgeWorkspace(): JSX.Element {
   const [tip, setTip] = useState(false)
   const [drag, setDrag] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<HistoryEntry | null>(null)
   const [mobileDetail, setMobileDetail] = useState(false)
   const wide = useIsWide()
   const nextId = useRef(1)
@@ -406,13 +407,10 @@ function JudgeWorkspace(): JSX.Element {
   }
 
   const removeEntry = async (id: string): Promise<void> => {
-    try {
-      await deleteEntry(id)
-      setState((s) => (s ? { ...s, history: s.history.filter((h) => h.id !== id) } : s))
-      if (selected === id) { setSelected(null); setMobileDetail(false) }
-    } catch (e) {
-      setLoadError(errorOf(e).message)
-    }
+    await deleteEntry(id)
+    if (!mountedRef.current) return
+    setState((s) => (s ? { ...s, history: s.history.filter((h) => h.id !== id) } : s))
+    if (selected === id) { setSelected(null); setMobileDetail(false) }
   }
 
   const restore = async (entry: HistoryEntry): Promise<void> => {
@@ -498,7 +496,7 @@ function JudgeWorkspace(): JSX.Element {
                         <span>{when(h.at)}{h.images.length ? ` · ${h.images.length} 张图` : ''}</span>
                       </span>
                     </button>
-                    <button type="button" className="del" title="删除这条" aria-label="删除这条" onClick={() => void removeEntry(h.id)}>
+                    <button type="button" className="del" title="删除这条" aria-label="删除这条" onClick={() => setDeleteTarget(h)}>
                       <Ic name="trash" cls="ic ic-sm" />
                     </button>
                   </div>
@@ -513,6 +511,7 @@ function JudgeWorkspace(): JSX.Element {
             )}
           </div>
         )}
+        {deleteTarget && <DeleteHistoryDialog entry={deleteTarget} onDelete={removeEntry} onClose={() => setDeleteTarget(null)} />}
         {settings}
       </>
     )
@@ -614,7 +613,7 @@ function JudgeWorkspace(): JSX.Element {
               </dd>
               <dt>网址</dt><dd>粘贴网址，最多 10 个；截图中的网址不读取。</dd>
               <dt>在线文档</dt><dd>公开腾讯文档请贴具体页网址，只读部分文字。</dd>
-              <dt>登录页、小程序</dt><dd>请提供截图、长图或录屏。</dd>
+              <dt>需登录访问的网站、小程序</dt><dd>请提供截图、长图或录屏。</dd>
               <dt>视频</dt><dd>均匀取 12 帧，不识别声音；口述需求请补文字。</dd>
               <dt>PDF、Word</dt><dd>只读文字；扫描件和文档配图请补截图。</dd>
               <dt>ZIP、RAR</dt><dd>单包最多 32 MB；加密包先解密，内层压缩包单独添加。</dd>
@@ -901,6 +900,78 @@ function EstimateSheet({ est, onRetry }: { est: Est; onRetry?: () => void }): JS
         ))}
       </div>
     </section>
+  )
+}
+
+function DeleteHistoryDialog({ entry, onDelete, onClose }: {
+  entry: HistoryEntry
+  onDelete: (id: string) => Promise<void>
+  onClose: () => void
+}): JSX.Element {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const cancel = useRef<HTMLButtonElement>(null)
+  const submitting = useRef(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    const element = dialog.current!
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const list = previous?.closest('.oj-rows')
+    // 原生模态层负责隔离背景和键盘焦点，外观继续使用站内 dlg 样式。
+    element.showModal()
+    cancel.current?.focus()
+    return () => {
+      element.close()
+      if (previous?.isConnected) previous.focus()
+      else ((list?.isConnected ? list.querySelector<HTMLButtonElement>('.oj-row-main') : null) ?? document.querySelector<HTMLButtonElement>('[aria-label="评估设置"]'))?.focus()
+    }
+  }, [])
+  useEffect(() => { if (busy) dialog.current?.focus() }, [busy])
+
+  const confirm = async (): Promise<void> => {
+    if (submitting.current) return
+    submitting.current = true
+    setBusy(true)
+    setError('')
+    try {
+      await onDelete(entry.id)
+      onClose()
+    } catch (cause) {
+      logClient('order-judge:delete', cause)
+      setError(errorOf(cause).message)
+    } finally {
+      submitting.current = false
+      setBusy(false)
+    }
+  }
+
+  return createPortal(
+    <dialog ref={dialog} className="dlg oj-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="oj-delete-title" aria-describedby="oj-delete-description" aria-busy={busy} tabIndex={-1}
+      onCancel={(event) => { event.preventDefault(); if (!submitting.current) onClose() }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Tab') return
+        const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not([disabled])')
+        const first = buttons[0], last = buttons[buttons.length - 1]
+        if (!first) { event.preventDefault(); event.currentTarget.focus() }
+        else if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) { event.preventDefault(); last.focus() }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+      }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget || submitting.current) return
+        const rect = event.currentTarget.getBoundingClientRect()
+        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose()
+      }}>
+      <span className="tape tl sakura" />
+      <button type="button" className="dlg-close" onClick={onClose} disabled={busy} aria-label="关闭" title="关闭"><Ic name="x" cls="ic" /></button>
+      <h2 id="oj-delete-title" className="dlg-title">删除评估记录</h2>
+      <p className="oj-delete-name">{entry.report.title || entry.report.headline || '（没有标题）'}</p>
+      <p id="oj-delete-description" className="dlg-sub">评估结果及保存的图片、附件将一并删除，删除后不可恢复。</p>
+      <p className="oj-delete-error" role="alert">{error}</p>
+      <div className="dlg-actions">
+        <button ref={cancel} type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>取消</button>
+        <button type="button" className="btn btn-danger" onClick={() => void confirm()} disabled={busy}>{busy ? '删除中…' : '确认删除'}</button>
+      </div>
+    </dialog>, document.body,
   )
 }
 

@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "test:order-judge-delete": "npm run build && node scripts/test-order-judge-ui.cjs --delete-history",
     "test:order-judge-archives": "tsx scripts/test-order-judge-archives.ts",
     "test:order-judge-archives-ui": "npm run build && tsx scripts/test-order-judge-archives.ts --browser",
     "dev": "npm run build:agent-release && vite",

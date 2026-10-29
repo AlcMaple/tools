@@ -254,3 +254,10 @@
 .oj-result { display: grid; gap: 14px; min-width: 0; align-content: start; }
 
 .oj-doc-purpose { margin: 2px 0 8px; }
+
+.oj-delete-dialog { position: fixed; inset: 0; margin: auto; width: min(440px, calc(100% - 32px)); height: max-content; color: var(--ink); }
+.oj-delete-dialog::backdrop { background: var(--veil); }
+.oj-delete-name { margin: 14px 0 8px; font-weight: 600; overflow-wrap: anywhere; }
+.oj-delete-error { height: 3.3em; overflow: auto; overflow-wrap: anywhere; color: var(--sakura); font-size: 13px; line-height: 1.65; }
+.oj-delete-dialog .dlg-actions { margin-top: 12px; }
+.oj-delete-dialog .dlg-actions .btn { min-width: 96px; }

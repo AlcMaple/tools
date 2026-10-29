@@ -35,7 +35,7 @@ async function main() {
     }
     await open()
     const help = page.locator('.oj-how')
-    assert.equal(await help.locator('dt').filter({ hasText: '登录页、小程序' }).count(), 1)
+    assert.equal(await help.locator('dt').filter({ hasText: '需登录认证的网站、小程序' }).count(), 1)
     assert.equal(await help.getByText('请提供截图、长图或录屏。', { exact: true }).count(), 1)
     assert.match(await help.innerText(), /截图。聊天记录请展开后截图。/)
     assert.match(await help.innerText(), /不识别声音/)
