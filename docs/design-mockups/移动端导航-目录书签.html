@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>移动端导航 · 设计稿</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Yusei+Magic&display=swap">
+<style>
+:root{
+  --paper:#fbf6ec;--paper-2:#f4eddc;--card:#fffdf7;
+  --ink:#3e4350;--ink-sub:rgba(62,67,80,.74);--ink-faint:rgba(62,67,80,.48);
+  --teal:#1f7680;--teal-mid:#2e97a0;--teal-wash:rgba(41,139,148,.13);
+  --sakura:#d64f7a;--sakura-mid:#f095b4;--sakura-wash:rgba(253,169,185,.2);
+  --gold:#b8861d;--gold-hl:rgba(255,226,130,.62);--lav:#7c74a8;
+  --line:rgba(62,67,80,.34);--line-strong:#565c6c;
+  --shadow-1:0 1px 2px rgba(62,67,80,.12),0 6px 16px rgba(62,67,80,.09);
+  --shadow-2:0 2px 4px rgba(62,67,80,.12),0 14px 32px rgba(62,67,80,.14);
+  --wob-2:15px 225px 15px 255px/255px 15px 225px 15px;
+  --font-hand:'Yusei Magic','Chalkboard SE','PingFang SC',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#e9e3d6;color:var(--ink);font-family:'PingFang SC','Hiragino Sans GB','Microsoft YaHei UI',system-ui,sans-serif}
+.wrap{max-width:1240px;margin:0 auto;padding:32px 16px 60px}
+.note{font-size:12.5px;color:var(--ink-sub);background:var(--card);border:1px dashed var(--line);border-radius:8px;padding:10px 14px;margin-bottom:26px;line-height:1.7}
+.row{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start}
+.cap{font-size:13px;font-weight:700;margin:0 0 10px}
+
+.dev{position:relative;width:375px;height:740px;border-radius:34px;border:10px solid #2c2c33;background:var(--paper);overflow:hidden;
+  background-image:linear-gradient(rgba(62,67,80,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(62,67,80,.05) 1px,transparent 1px);background-size:22px 22px}
+.dev.tab{width:620px;height:740px;border-radius:26px}
+.top{height:54px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1.5px dashed var(--line-strong);background:var(--paper);font-size:16px}
+.top .logo{width:24px;height:24px;border:2px solid var(--sakura);border-radius:6px}
+.top .av{margin-left:auto;width:32px;height:32px;border-radius:50%;border:1.5px solid var(--teal);display:flex;align-items:center;justify-content:center;color:var(--teal);font-weight:700}
+.body{padding:18px 16px}
+.ph{height:14px;border-radius:7px;background:rgba(62,67,80,.08);margin-bottom:10px}
+.ph.card{height:120px;border-radius:12px;background:var(--card);border:1.5px solid var(--line);margin-bottom:14px}
+
+/* 底栏：4 个主入口 + 「更多」 */
+.tabs{position:absolute;left:0;right:0;bottom:0;display:flex;padding:6px 10px 10px;background:var(--paper);border-top:1.5px dashed var(--line-strong);z-index:3}
+.t{flex:1;min-height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;color:var(--ink-faint);position:relative}
+.t svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.t.on{color:var(--teal);font-weight:600}
+.t.on::after{content:"";position:absolute;bottom:2px;width:18px;height:3px;border-radius:2px;background:var(--gold-hl)}
+.t.more.on{color:var(--sakura)}
+.t .dot{position:absolute;top:6px;left:calc(50% + 7px);width:7px;height:7px;border-radius:50%;background:var(--sakura)}
+
+/* 「更多」抽屉：像从手帐里抽出来的一张便签 */
+.mask{position:absolute;inset:0;background:rgba(62,67,80,.28);z-index:2}
+.sheet{position:absolute;left:10px;right:10px;bottom:78px;z-index:4;background:var(--card);border:1.5px solid var(--line-strong);border-radius:18px 18px 14px 14px;box-shadow:var(--shadow-2);padding:22px 16px 14px}
+.sheet::before{content:"";position:absolute;top:-10px;left:50%;width:84px;height:20px;margin-left:-42px;background:rgba(240,149,180,.38);transform:rotate(-2deg);border-radius:2px}
+.sheet-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.sheet-head img,.sheet-head .ava{width:36px;height:36px;border-radius:50%;background:radial-gradient(circle at 50% 38%,#eef0f5 0 32%,#bfc5d4 33%);box-shadow:0 2px 6px rgba(0,0,0,.12)}
+.sheet-head span{font-size:12.5px;color:var(--ink-sub)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.it{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 2px 12px;white-space:nowrap;font-size:12px;border-radius:12px;border:1.5px solid var(--line);background:var(--paper);font-size:12.5px;color:var(--ink);position:relative}
+.it svg{width:24px;height:24px;stroke:var(--teal);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.it.on{border-color:var(--teal-mid);background:var(--teal-wash);color:var(--teal);font-weight:600}
+.it small{font-size:10.5px;color:var(--ink-faint);font-weight:400}
+.it:nth-child(3n+1){transform:rotate(-.8deg)}
+.it:nth-child(3n+3){transform:rotate(.7deg)}
+.sheet-foot{display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.chip{font-size:12px;padding:6px 12px;border-radius:999px;border:1.5px solid var(--line-strong);background:var(--card)}
+.chip.danger{margin-left:auto;color:var(--sakura);border-color:var(--sakura-mid)}
+
+/* 平板：底栏加宽到 5 格时仍放得下，标签横排 */
+.dev.tab .tabs{padding:6px 60px 10px}
+.dev.tab .t{flex-direction:row;gap:7px;font-size:13px}
+.dev.tab .t.on::after{bottom:4px}
+.dev.tab .sheet{left:auto;right:40px;width:360px}
+
+
+/* 书签条：替代一排标签按钮 */
+.bm{position:absolute;left:12px;right:12px;bottom:12px;z-index:5;height:54px;display:flex;align-items:center;gap:10px;padding:0 8px 0 16px;background:var(--card);border:1.5px solid var(--line-strong);border-radius:16px;box-shadow:var(--shadow-1)}
+.bm::before{content:"";position:absolute;left:22px;top:-8px;width:16px;height:22px;background:var(--sakura-mid);clip-path:polygon(0 0,100% 0,100% 100%,50% 75%,0 100%);opacity:.9}
+.bm svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.bm-cur{display:flex;align-items:center;gap:8px;font-size:14.5px;font-weight:700;color:var(--teal);padding-left:22px}
+.bm-dots{display:flex;gap:4px;margin-left:auto}
+.bm-dots i{width:5px;height:5px;border-radius:50%;background:rgba(62,67,80,.18)}
+.bm-dots i.on{width:14px;border-radius:3px;background:var(--teal-mid)}
+.bm-open{display:flex;align-items:center;gap:6px;font-size:13px;padding:8px 14px;border-radius:12px;background:var(--teal-wash);color:var(--teal);border:1.5px solid var(--teal-mid)}
+.bm.open .bm-open{margin-left:auto;background:var(--sakura-wash);color:var(--sakura);border-color:var(--sakura-mid)}
+.sheet{bottom:76px}
+.dev.tab .bm{left:50%;right:auto;width:420px;margin-left:-210px}
+.dev.tab .sheet{left:50%;right:auto;width:440px;margin-left:-220px}
+.dev.tab .grid{grid-template-columns:repeat(4,1fr)}
+.names{margin-top:36px;background:var(--card);border:1.5px solid var(--line);border-radius:var(--wob-2);padding:18px 22px;box-shadow:var(--shadow-1)}
+.names h3{margin:0 0 10px;font-family:var(--font-hand);font-weight:400;font-size:20px}
+.names table{border-collapse:collapse;width:100%;font-size:13px}
+.names td,.names th{text-align:left;padding:7px 10px;border-bottom:1px dashed var(--line);vertical-align:top}
+.names th{color:var(--ink-faint);font-weight:400;font-size:12px}
+.names tr.pick td{background:rgba(255,226,130,.25)}
+.names td:first-child{font-weight:700;white-space:nowrap}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="cal" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></symbol>
+  <symbol id="trk" viewBox="0 0 24 24"><rect x="4" y="7" width="12" height="13" rx="2"/><path d="M8 4h10a2 2 0 0 1 2 2v10"/></symbol>
+  <symbol id="usr" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6"/></symbol>
+  <symbol id="more" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/><rect x="3" y="5" width="18" height="14" rx="4"/></symbol>
+  <symbol id="judge" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 13l2 2 4-4"/></symbol>
+  <symbol id="film" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 6v4M11 6v4M15 6v4M19 6v4"/><path d="M10.5 13v4l3.5-2z"/></symbol>
+  <symbol id="gift" viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="11" rx="1.5"/><path d="M3 9h18M12 9v11M12 9c-2-4-6-4-6-1s6 1 6 1c0 0 6 2 6-1s-4-3-6 1"/></symbol>
+  <symbol id="set" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+  <symbol id="menu" viewBox="0 0 24 24"><path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z"/></symbol>
+  <symbol id="close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="fb" viewBox="0 0 24 24"><path d="M5 5h14v10H10l-5 4z"/></symbol>
+</svg>
+<div class="wrap">
+  <div class="note">
+    设计稿 · ≤960px（手机 + 平板）的导航。底部不再排一排按钮，改成一张「书签条」：左边写着现在在哪页，点一下就把整本目录摊开，所有入口一样大、一次看全；桌面顶栏不变，只把「线路手帐」改名「放映室」<br>
+    左：手机平时；中：手机摊开目录；右：平板摊开目录
+  </div>
+  <div class="row">
+    <div>
+      <p class="cap">手机 · 平时</p>
+      <div class="dev">
+        <div class="top"><span class="logo"></span>番外小站<span class="av">T</span></div>
+        <div class="body"><div class="ph" style="width:50%;height:26px"></div><div class="ph card"></div><div class="ph card"></div><div class="ph card"></div></div>
+        <div class="bm">
+          <span class="bm-cur"><svg><use href="#cal"/></svg>番剧周历</span>
+          <span class="bm-dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+          <span class="bm-open"><svg><use href="#menu"/></svg>目录</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">手机 · 摊开目录</p>
+      <div class="dev">
+        <div class="top"><span class="logo"></span>番外小站<span class="av">T</span></div>
+        <div class="body"><div class="ph" style="width:60%;height:26px"></div><div class="ph card"></div><div class="ph card"></div></div>
+        <div class="mask"></div>
+        <div class="sheet">
+          <div class="sheet-head"><span class="ava"></span><span>哥哥要去哪里？</span></div>
+          <div class="grid">
+            <div class="it"><svg><use href="#cal"/></svg>番剧周历</div>
+            <div class="it"><svg><use href="#trk"/></svg>我的追番</div>
+            <div class="it"><svg><use href="#usr"/></svg>追番大厅</div>
+            <div class="it"><svg><use href="#judge"/></svg>接单评估</div>
+            <div class="it on"><svg><use href="#film"/></svg>放映室</div>
+            <div class="it"><svg><use href="#gift"/></svg>放映福利</div>
+            <div class="it"><svg><use href="#fb"/></svg>反馈与建议</div>
+            <div class="it"><svg><use href="#set"/></svg>设置</div>
+          </div>
+          <div class="sheet-foot"><span class="chip">功能介绍与桌面下载</span></div>
+        </div>
+        <div class="bm open">
+          <span class="bm-cur"><svg><use href="#film"/></svg>放映室</span>
+          <span class="bm-open"><svg><use href="#close"/></svg>合上</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">平板 · 摊开目录</p>
+      <div class="dev tab">
+        <div class="top"><span class="logo"></span>番外小站<span class="av">T</span></div>
+        <div class="body"><div class="ph" style="width:40%;height:26px"></div><div class="ph card"></div><div class="ph card"></div></div>
+        <div class="mask"></div>
+        <div class="sheet">
+          <div class="sheet-head"><span class="ava"></span><span>哥哥要去哪里？</span></div>
+          <div class="grid">
+            <div class="it"><svg><use href="#cal"/></svg>番剧周历</div>
+            <div class="it on"><svg><use href="#trk"/></svg>我的追番</div>
+            <div class="it"><svg><use href="#usr"/></svg>追番大厅</div>
+            <div class="it"><svg><use href="#judge"/></svg>接单评估</div>
+            <div class="it"><svg><use href="#film"/></svg>放映室</div>
+            <div class="it"><svg><use href="#gift"/></svg>放映福利</div>
+            <div class="it"><svg><use href="#fb"/></svg>反馈与建议</div>
+            <div class="it"><svg><use href="#set"/></svg>设置</div>
+          </div>
+          <div class="sheet-foot"><span class="chip">功能介绍与桌面下载</span></div>
+        </div>
+        <div class="bm open">
+          <span class="bm-cur"><svg><use href="#trk"/></svg>我的追番</span>
+          <span class="bm-open"><svg><use href="#close"/></svg>合上</span>
+        </div>
+      </div>
+    </div>
+  </div>
+<div class="names">
+    <h3>「线路手帐」换个名字</h3>
+    <table>
+      <tr><th>名字</th><th>页面标题</th><th>为什么</th></tr>
+      <tr class="pick"><td>放映室</td><td>纱雾的放映室</td><td>存着的集是「胶片柜」，测速是「放映机跑得顺不顺」，跟「放映福利」同一套说法；不会让人以为是来选线路的</td></tr>
+      <tr><td>胶片柜</td><td>纱雾的胶片柜</td><td>更偏「存了哪些集」，测速那块就显得是附带的</td></tr>
+      <tr><td>片源天气</td><td>今天的片源天气</td><td>条块像天气预报，可爱，但缓存管理放进来有点牵强</td></tr>
+    </table>
+    <p style="font-size:12.5px;color:var(--ink-sub);margin:12px 0 0">页内三块跟着改：「大家量到的线路」→「放映机跑得顺不顺」，「存在这台设备上的」→「胶片柜」，「哥哥的贡献」不变</p>
+  </div>
+</div>
+</body>
+</html>
