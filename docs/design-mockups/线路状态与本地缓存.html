@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>线路状态与本地缓存 · 设计稿</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Yusei+Magic&display=swap">
+<style>
+:root{
+  --paper:#fbf6ec;--paper-2:#f4eddc;--card:#fffdf7;
+  --ink:#3e4350;--ink-sub:rgba(62,67,80,.74);--ink-faint:rgba(62,67,80,.48);
+  --teal:#1f7680;--teal-mid:#2e97a0;--teal-wash:rgba(41,139,148,.13);
+  --sakura:#d64f7a;--sakura-mid:#f095b4;--sakura-wash:rgba(253,169,185,.2);
+  --gold:#b8861d;--gold-hl:rgba(255,226,130,.62);--lav:#7c74a8;--lav-wash:rgba(172,172,195,.22);
+  --line:rgba(62,67,80,.34);--line-strong:#565c6c;
+  --shadow-1:0 1px 2px rgba(62,67,80,.12),0 6px 16px rgba(62,67,80,.09);
+  --shadow-stick:0 4px 10px rgba(62,67,80,.16);
+  --wob-1:255px 15px 225px 15px/15px 225px 15px 255px;
+  --wob-2:15px 225px 15px 255px/255px 15px 225px 15px;
+  --font-hand:'Yusei Magic','Chalkboard SE','PingFang SC',sans-serif;
+  --font-body:'PingFang SC','Hiragino Sans GB','Microsoft YaHei UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);
+  background-image:linear-gradient(rgba(62,67,80,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(62,67,80,.05) 1px,transparent 1px);
+  background-size:24px 24px}
+.page{max-width:1080px;margin:0 auto;padding:40px 16px 80px}
+.note{font-size:12px;color:var(--ink-faint);border:1px dashed var(--line);border-radius:8px;padding:8px 12px;margin-bottom:28px;background:var(--card)}
+
+h1{font-family:var(--font-hand);font-size:34px;margin:0;font-weight:400;display:inline-block;position:relative}
+h1::after{content:"";position:absolute;left:-4px;right:-6px;bottom:4px;height:12px;background:var(--gold-hl);z-index:-1;transform:rotate(-1deg);border-radius:4px}
+.hero{display:flex;align-items:flex-end;gap:18px;margin-bottom:34px}
+.bubble{position:relative;background:var(--card);border:1.5px solid var(--line-strong);border-radius:var(--wob-2);padding:8px 14px;font-size:13px;color:var(--ink-sub);box-shadow:var(--shadow-1);margin-bottom:4px}
+.bubble::before{content:"";position:absolute;left:-8px;bottom:12px;width:12px;height:12px;background:var(--card);border-left:1.5px solid var(--line-strong);border-bottom:1.5px solid var(--line-strong);transform:rotate(45deg)}
+.avatar{width:56px;height:56px;border-radius:50%;border:2px solid var(--card);box-shadow:var(--shadow-stick);background:radial-gradient(circle at 50% 38%,#e9ecf3 0 30%,#b9bfd0 31% 100%);flex:none}
+
+.sec{margin-bottom:44px}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:14px}
+.sec-head h2{font-family:var(--font-hand);font-weight:400;font-size:22px;margin:0}
+.sec-head .tab{font-size:12px;color:var(--ink-faint)}
+.legend{margin-left:auto;display:flex;gap:12px;font-size:12px;color:var(--ink-sub)}
+.legend i{display:inline-block;width:9px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+
+.c-fast{background:var(--teal-mid)} .c-ok{background:#e0b65a} .c-slow{background:var(--sakura-mid)} .c-none{background:rgba(62,67,80,.1)}
+
+/* 线路卡片：像贴在手帐上的便签 */
+.lines{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.line{position:relative;background:var(--card);border:1.5px solid var(--line);border-radius:var(--wob-1);padding:18px 20px 16px;box-shadow:var(--shadow-1)}
+.line:nth-child(2n){border-radius:var(--wob-2)}
+.line::before{content:"";position:absolute;top:-9px;left:50%;width:70px;height:18px;margin-left:-35px;background:rgba(46,151,160,.22);transform:rotate(-3deg);border-radius:2px}
+.line:nth-child(2)::before{background:rgba(240,149,180,.3);transform:rotate(2deg)}
+.line:nth-child(3)::before{background:rgba(255,226,130,.55)}
+.line:nth-child(4)::before{background:rgba(172,172,195,.38);transform:rotate(-1deg)}
+.line-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.line-name{font-weight:700;font-size:15px}
+.line-site{font-size:11.5px;color:var(--ink-faint)}
+.speed{margin-left:auto;font-variant-numeric:tabular-nums;font-size:20px;font-weight:700}
+.speed small{font-size:11px;font-weight:400;color:var(--ink-faint);margin-left:2px}
+.pill{font-size:11.5px;padding:2px 9px;border-radius:999px;border:1px solid;white-space:nowrap}
+.pill.fast{color:var(--teal);background:var(--teal-wash);border-color:var(--teal-mid)}
+.pill.ok{color:var(--gold);background:rgba(255,226,130,.3);border-color:#d9bd85}
+.pill.slow{color:var(--sakura);background:var(--sakura-wash);border-color:var(--sakura-mid)}
+.pill.none{color:var(--ink-faint);background:rgba(62,67,80,.05);border-color:var(--line)}
+.bars{display:grid;grid-template-columns:repeat(56,1fr);gap:2px;height:30px}
+.bars span{border-radius:3px;transition:transform .15s}
+.bars span:hover{transform:scaleY(1.18)}
+.bar-foot{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-faint);margin-top:6px}
+.line-foot{display:flex;gap:14px;font-size:12px;color:var(--ink-sub);margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.line-foot b{font-variant-numeric:tabular-nums;color:var(--ink)}
+.tip{position:absolute;top:58px;left:62%;background:var(--ink);color:var(--card);font-size:11.5px;padding:6px 9px;border-radius:8px;width:max-content;box-shadow:var(--shadow-stick);line-height:1.5}
+.tip::after{content:"";position:absolute;bottom:-5px;left:12px;width:10px;height:10px;background:var(--ink);transform:rotate(45deg)}
+
+/* 我的缓存：胶片抽屉 */
+.drawer{background:var(--paper-2);border:1.5px solid var(--line);border-radius:14px;padding:18px 20px}
+.usage{display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.usage-num{font-family:var(--font-hand);font-size:26px}
+.usage-num small{font-family:var(--font-body);font-size:12px;color:var(--ink-faint);margin-left:6px}
+.meter{flex:1;height:10px;border-radius:999px;background:rgba(62,67,80,.1);overflow:hidden;display:flex}
+.meter span{height:100%}
+.btn{white-space:nowrap;flex:none;font:inherit;font-size:12.5px;padding:6px 14px;border-radius:999px;border:1.5px solid var(--line-strong);background:var(--card);color:var(--ink);cursor:pointer}
+.btn.danger{color:var(--sakura);border-color:var(--sakura-mid)}
+.btn:hover{background:var(--sakura-wash)}
+.shows{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.show{background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:10px;box-shadow:var(--shadow-1);transform:rotate(var(--r,0deg))}
+.cover{width:54px;height:76px;border-radius:5px;flex:none;box-shadow:0 2px 4px rgba(0,0,0,.15)}
+.show-main{flex:1;min-width:0}
+.show-title{padding-right:64px;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.show-meta{font-size:11.5px;color:var(--ink-faint);margin:2px 0 8px}
+.eps{display:flex;flex-wrap:wrap;gap:4px}
+.ep{font-size:11px;min-width:30px;text-align:center;padding:2px 5px;border-radius:5px;border:1px solid var(--teal-mid);color:var(--teal);background:var(--teal-wash);font-variant-numeric:tabular-nums}
+.ep.part{border-style:dashed;background:linear-gradient(90deg,var(--teal-wash) var(--p),transparent var(--p))}
+.ep.old{border-color:var(--line);color:var(--ink-faint);background:none}
+
+/* 我的贡献 */
+.contrib{display:grid;grid-template-columns:1.1fr 1fr;gap:18px}
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--wob-2);padding:18px 20px;box-shadow:var(--shadow-1)}
+.vs{display:grid;grid-template-columns:96px 1fr 70px;align-items:center;gap:10px;font-size:12.5px;margin:10px 0}
+.vs .track{position:relative;height:16px;border-radius:999px;background:rgba(62,67,80,.07)}
+.vs .all{position:absolute;inset:0 auto 0 0;border-radius:999px;background:var(--teal-wash);border:1px dashed var(--teal-mid)}
+.vs .me{position:absolute;top:3px;bottom:3px;left:3px;border-radius:999px;background:var(--sakura-mid)}
+.vs .val{font-variant-numeric:tabular-nums;text-align:right;color:var(--ink-sub)}
+.k{display:flex;gap:16px;font-size:11.5px;color:var(--ink-faint);margin-top:4px}
+.k i{display:inline-block;width:14px;height:8px;border-radius:9px;margin-right:4px}
+.stamp{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px}
+.stamp-ring{width:130px;height:130px;border-radius:50%;border:2.5px dashed var(--sakura);display:flex;flex-direction:column;align-items:center;justify-content:center;transform:rotate(-8deg);color:var(--sakura)}
+.stamp-ring b{font-family:var(--font-hand);font-size:36px;font-weight:400;line-height:1}
+.stamp-ring small{font-size:11.5px}
+.stamp p{margin:6px 0 0;font-size:13px;color:var(--ink-sub)}
+.dots{display:grid;grid-template-columns:repeat(30,1fr);gap:3px;width:100%;margin-top:10px}
+.dots span{aspect-ratio:1;border-radius:3px}
+
+.show{position:relative}
+.show-del{position:absolute;top:6px;right:8px;font-size:11.5px;color:var(--ink-faint);background:none;border:0;cursor:pointer;padding:2px 4px;border-radius:6px}
+.show-del:hover{color:var(--sakura);background:var(--sakura-wash)}
+.ep{position:relative;cursor:pointer}
+.ep .x{position:absolute;top:-6px;right:-6px;width:14px;height:14px;border-radius:50%;background:var(--sakura);color:#fff;font-size:10px;line-height:14px;text-align:center;opacity:0;transition:opacity .15s}
+.ep:hover .x,.ep.sel .x{opacity:1}
+.ep.sel{border-color:var(--sakura);color:var(--sakura);background:var(--sakura-wash)}
+.pick{display:flex;align-items:center;gap:10px;margin-top:14px;padding:8px 12px;border:1.5px dashed var(--sakura-mid);border-radius:10px;background:var(--card);font-size:12.5px;color:var(--ink-sub)}
+.pick .btn{margin-left:auto}
+@media (hover:none){.ep .x{display:none}.show-del{color:var(--sakura)}}
+@media (max-width:760px){
+  .lines,.contrib{grid-template-columns:1fr}
+  .shows{grid-template-columns:1fr}
+  .legend{display:none}
+  .bars{grid-template-columns:repeat(28,1fr)}
+  .bars span:nth-child(-n+28){display:none}
+  .tip{display:none}
+  h1{font-size:28px}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="note">设计稿 · 设置 › 本地缓存 点进来的整页；上：全站共享线路 / 中：这台设备的缓存 / 下：我的贡献。条块每格 3 小时，共 7 天；手机只显示近 3.5 天</div>
+
+  <div class="hero">
+    <div class="avatar"></div>
+    <div>
+      <h1>线路观测手帐</h1>
+    </div>
+    <div class="bubble">哥哥看番的时候，顺手帮大家量了线路哦</div>
+  </div>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>大家量到的线路</h2>
+      <div class="legend"><span><i class="c-fast"></i>畅通</span><span><i class="c-ok"></i>偶尔卡</span><span><i class="c-slow"></i>好慢</span><span><i class="c-none"></i>没人看</span></div>
+    </div>
+    <div class="lines" id="lines"></div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>存在这台设备上的</h2></div>
+    <div class="drawer">
+      <div class="usage">
+        <div class="usage-num">2.4 GB<small>7 集</small></div>
+        <div class="meter"><span style="width:38%;background:var(--teal-mid)"></span><span style="width:14%;background:var(--sakura-mid)"></span><span style="width:6%;background:#e0b65a"></span></div>
+        <button class="btn danger">全部清掉</button>
+      </div>
+      <div class="shows">
+        <div class="show" style="--r:-.6deg"><div class="cover" style="background:linear-gradient(160deg,#9fd3d8,#3f8f99)"></div>
+          <button class="show-del">清掉这部</button><div class="show-main"><div class="show-title">我心里危险的东西 第二季</div><div class="show-meta">1.4 GB · 昨天看过</div>
+          <div class="eps"><span class="ep">07<i class="x">×</i></span><span class="ep sel">08<i class="x">×</i></span><span class="ep part" style="--p:62%">09<i class="x">×</i></span></div></div></div>
+        <div class="show" style="--r:.5deg"><div class="cover" style="background:linear-gradient(160deg,#f6c3d3,#c96b8c)"></div>
+          <button class="show-del">清掉这部</button><div class="show-main"><div class="show-title">死神 千年血战篇</div><div class="show-meta">640 MB · 3 天前</div>
+          <div class="eps"><span class="ep">12<i class="x">×</i></span><span class="ep">13<i class="x">×</i></span></div></div></div>
+        <div class="show" style="--r:-.3deg"><div class="cover" style="background:linear-gradient(160deg,#f3dc9c,#b8861d)"></div>
+          <button class="show-del">清掉这部</button><div class="show-main"><div class="show-title">间谍过家家</div><div class="show-meta">310 MB · 26 天前</div>
+          <div class="eps"><span class="ep old">03<i class="x">×</i></span></div></div></div>
+      </div>
+      <div class="pick">选了 1 集 · 我心里危险的东西 08 · 460 MB<button class="btn">算了</button><button class="btn danger">清掉</button></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>哥哥的贡献</h2></div>
+    <div class="contrib">
+      <div class="card">
+        <div class="vs"><span>新番主线-1</span><div class="track"><div class="all" style="width:92%"></div><div class="me" style="width:15%"></div></div><span class="val">3.1 / 18.4</span></div>
+        <div class="vs"><span>新番主线-2</span><div class="track"><div class="all" style="width:46%"></div><div class="me" style="width:14%"></div></div><span class="val">2.8 / 9.2</span></div>
+        <div class="vs"><span>备用-1</span><div class="track"><div class="all" style="width:20%"></div><div class="me" style="width:12%"></div></div><span class="val">2.4 / 4.0</span></div>
+        <div class="k"><span><i style="background:var(--sakura-mid)"></i>哥哥</span><span><i style="background:var(--teal-wash);border:1px dashed var(--teal-mid)"></i>大家</span><span>单位 Mbps</span></div>
+      </div>
+      <div class="card stamp">
+        <div class="stamp-ring"><b>136</b><small>次测速</small></div>
+        <p>哥哥是第 4 勤快的观测员呢</p>
+        <div class="dots" id="dots"></div>
+      </div>
+    </div>
+  </section>
+</div>
+<script>
+const lines=[
+  {name:'新番主线-1',site:'稀饭',v:18.4,users:23,n:412,seed:1,base:.85},
+  {name:'新番主线-2',site:'稀饭',v:9.2,users:17,n:288,seed:2,base:.6},
+  {name:'备用-1',site:'稀饭',v:4.0,users:6,n:71,seed:3,base:.35},
+  {name:'旧番主线-1',site:'稀饭',v:0,users:0,n:0,seed:4,base:0},
+];
+function rnd(s){return()=>(s=(s*9301+49297)%233280)/233280}
+const cls=v=>v>=6?'fast':v>=2.7?'ok':v>0?'slow':'none'
+const word={fast:'畅通',ok:'偶尔卡',slow:'好慢',none:'还没人量过'}
+document.getElementById('lines').innerHTML=lines.map((l,i)=>{
+  const r=rnd(l.seed);let bars='';
+  for(let k=0;k<56;k++){const night=(k%8)>=6;const x=r();
+    const c=l.base===0||x<(night?.5:.12)?'none':x<l.base?'fast':x<l.base+.12?'ok':'slow';
+    bars+=`<span class="c-${c}"></span>`}
+  const c=cls(l.v);
+  return `<div class="line"><div class="line-top"><div><div class="line-name">${l.name}</div><div class="line-site">${l.site}</div></div>
+  <div class="speed">${l.v?l.v.toFixed(1):'—'}<small>${l.v?'Mbps':''}</small></div><span class="pill ${c}">${word[c]}</span></div>
+  <div class="bars">${bars}</div><div class="bar-foot"><span>7 天前</span><span>现在</span></div>
+  <div class="line-foot"><span><b>${l.users}</b> 位观测员</span><span><b>${l.n}</b> 次测速</span></div>
+  ${i===0?'<div class="tip">10/30 21:00–24:00<br>21.7 Mbps · 9 人</div>':''}</div>`}).join('')
+const r=rnd(9);document.getElementById('dots').innerHTML=Array.from({length:30},()=>{const x=r();return `<span style="background:${x<.35?'rgba(62,67,80,.08)':x<.7?'var(--sakura-wash)':x<.9?'var(--sakura-mid)':'var(--sakura)'}"></span>`}).join('')
+</script>
+</body>
+</html>
