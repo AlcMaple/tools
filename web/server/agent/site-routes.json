@@ -777,6 +777,11 @@
   {
     "file": "server/player/index.ts",
     "method": "get",
+    "path": "/line-status"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "get",
     "path": "/page"
   },
   {

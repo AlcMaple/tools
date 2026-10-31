@@ -11,6 +11,7 @@
 //   GET  /api/player/hls?u&s                                     → m3u8：拉回来把分片 / 子表 / key 改写成本站地址
 //   GET  /api/player/seg?u&s                                     → HLS 分片 / key 的单连接透传（不做 mp4 那套 total 探测）
 //   GET  /api/player/vendor/artplayer.js|hls.js                  → 自托管（CSP 只放行 self；国内也拉不到 CDN）
+//   GET  /api/player/line-status                                 → 线路观测页：各线路速度、7 天条块、我的贡献
 //   POST /api/player/line-speed                                  → 直连测速样本进全站共享速度表（line-speed.ts）
 //   POST /api/player/client-log                                  → 页面日志回终端 + Sentry
 //
@@ -41,7 +42,7 @@ import { XifanLocalRateLimitError, XifanUpstreamError } from '../xifan/session'
 import probe from './probe'
 import { layoutOf, serveFaststart } from './faststart'
 import { PLAY_PAGE } from './page'
-import { noteLineHost, noteSample, speedsFor } from './line-speed'
+import { lineStatus, noteLineHost, noteLineNames, noteSample, speedsFor } from './line-speed'
 
 const player = new Hono()
 player.route('/', probe)
@@ -79,6 +80,7 @@ async function playlistOf(src: WebPlayerSource, id: string, ep: number, uid: num
   if (src === 'xifan') {
     const p = await xifan.getPlaylist(id, ep, uid)
     if (p.first) noteLineHost(src, p.first.source, p.first.url)
+    noteLineNames(src, p.lines)
     return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps, speeds: speedsFor(src, p.lines) }
   }
   const p = await girigiri.getPlaylist(id, ep)
@@ -329,6 +331,12 @@ player.get('/vendor/:file', (c) => {
 // ——— 日志：页面里发生的事只有浏览器知道，打回终端（AGENTS.md：用户只看终端）———
 const CLIENT_LOG_MAX = 400
 // 直连下载测速样本（line-speed.ts），每个用户 4 秒最多收一个
+player.get('/line-status', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录', code: 'AUTH_REQUIRED' }, 401)
+  return c.json(lineStatus(session.uid))
+})
+
 player.post('/line-speed', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录', code: 'AUTH_REQUIRED' }, 401)

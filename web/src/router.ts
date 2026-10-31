@@ -5,10 +5,12 @@ import { useEffect, useState } from 'react'
 // 放映福利暂无用户场景：只在开发环境露出，生产构建里入口和 #/rewards 都不可达。
 export const REWARDS_ENABLED = import.meta.env.DEV
 
-export type Route = 'calendar' | 'history' | 'settings' | 'tracks' | 'rewards' | 'community' | 'feedback' | 'judge'
+export type Route = 'calendar' | 'history' | 'settings' | 'tracks' | 'rewards' | 'community' | 'feedback' | 'judge' | 'room'
 
 function parse(): Route {
   const h = window.location.hash.replace(/^#\/?/, '')
+  // 旧书签：本地缓存曾经是设置里的一个口袋
+  if (h === 'room' || h === 'settings/cache') return 'room'
   if (h === 'settings' || h.startsWith('settings/')) return 'settings'
   if (h === 'feedback' || h.startsWith('feedback?')) return 'feedback'
   if (h === 'rewards' && REWARDS_ENABLED) return 'rewards'

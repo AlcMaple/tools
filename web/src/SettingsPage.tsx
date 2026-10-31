@@ -27,11 +27,10 @@ import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
 import { readByokKey, writeByokKey } from './reviews/byok'
 import { BackupModule } from './BackupModule'
-import { MediaCacheModule } from './MediaCacheModule'
 import { SketchSheet } from './SketchSheet'
 import { LegacyRig, setSpriteStyle, useSpriteStyle } from './sprites'
 
-type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai' | 'backup' | 'cache' | 'look'
+type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai' | 'backup' | 'look'
 
 function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/xifan') return 'xifan'
@@ -39,7 +38,6 @@ function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/privacy') return 'privacy'
   if (window.location.hash === '#/settings/ai') return 'ai'
   if (window.location.hash === '#/settings/backup') return 'backup'
-  if (window.location.hash === '#/settings/cache') return 'cache'
   if (window.location.hash === '#/settings/look') return 'look'
   return 'profile'
 }
@@ -202,16 +200,6 @@ export function SettingsPage(): JSX.Element | null {
               <Ic name="chev" cls="ic chev" />
             </button>
             <div className="pocket-body">{module === 'backup' && <BackupModule />}</div>
-          </section>
-
-          <section className={`pocket${module === 'cache' ? ' open' : ''}`} data-mod="cache">
-            <button className="pocket-tab" type="button" onClick={() => selectModule('cache')}>
-              <Ic name="play" />
-              本地缓存
-              <span className="pocket-hint">看过的集存在这台设备上</span>
-              <Ic name="chev" cls="ic chev" />
-            </button>
-            <div className="pocket-body">{module === 'cache' && <MediaCacheModule />}</div>
           </section>
 
           <section className={`pocket${module === 'look' ? ' open' : ''}`} data-mod="look">

@@ -13,23 +13,31 @@ import { join } from 'node:path'
 import { dataDir } from '../data-dir'
 
 interface Sample { uid: number; bps: number }
-interface HostSpeed { samples: Sample[]; at: number }
-interface Store { hosts: Record<string, HostSpeed>; lines: Record<string, string> }
+// 条块：每 3 小时一格，格里每人只留自己最新的值，只保留最近 7 天（56 格）
+interface Bucket { t: number; s: Record<string, number> }
+interface HostSpeed { samples: Sample[]; at: number; n?: number; buckets?: Bucket[] }
+// 贡献：每人总次数 + 最近 30 天每天的次数
+interface Contrib { n: number; days: Record<string, number> }
+interface Store { hosts: Record<string, HostSpeed>; lines: Record<string, string>; names: Record<string, string>; contrib: Record<string, Contrib> }
 
 const FILE = join(dataDir, 'line-speed.json')
 const MAX_BPS = 1e9
 const SAMPLE_GAP_MS = 4000
 const WINDOW = 50
+const BUCKET_MS = 3 * 3600 * 1000
+const BUCKETS = 56
+const DAY_MS = 24 * 3600 * 1000
+const CONTRIB_DAYS = 30
 
 function load(): Store {
   try {
     const raw = JSON.parse(readFileSync(FILE, 'utf8')) as Partial<Store>
     const hosts: Record<string, HostSpeed> = {}
     for (const [h, r] of Object.entries(raw.hosts ?? {})) if (Array.isArray(r?.samples)) hosts[h] = r
-    return { hosts, lines: raw.lines ?? {} }
+    return { hosts, lines: raw.lines ?? {}, names: raw.names ?? {}, contrib: raw.contrib ?? {} }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('[player:line-speed] 读取失败，从空表开始：', error)
-    return { hosts: {}, lines: {} }
+    return { hosts: {}, lines: {}, names: {}, contrib: {} }
   }
 }
 const store = load()
@@ -55,6 +63,16 @@ export function noteLineHost(src: string, source: number, url: string): void {
   if (!host || store.lines[key] === host) return
   store.lines[key] = host
   save()
+}
+
+export function noteLineNames(src: string, lines: { source: number; name: string }[]): void {
+  if (src !== 'xifan') return
+  let changed = false
+  for (const l of lines) {
+    const key = `${src}:${l.source}`
+    if (l.name && store.names[key] !== l.name) { store.names[key] = l.name; changed = true }
+  }
+  if (changed) save()
 }
 
 export function speedsFor(src: string, lines: { source: number }[]): Record<number, number> {
@@ -89,6 +107,63 @@ export function noteSample(uid: number, src: string, host: string, bps: number):
   r.samples.push({ uid, bps: Math.round(mine) })
   if (r.samples.length > WINDOW) r.samples.splice(0, r.samples.length - WINDOW)
   r.at = now
+  r.n = (r.n ?? 0) + 1
+  const t = Math.floor(now / BUCKET_MS) * BUCKET_MS
+  const buckets = r.buckets ?? (r.buckets = [])
+  if (buckets[buckets.length - 1]?.t !== t) buckets.push({ t, s: {} })
+  buckets[buckets.length - 1].s[uid] = Math.round(bps)
+  while (buckets.length && buckets[0].t <= t - BUCKETS * BUCKET_MS) buckets.shift()
+  const c = store.contrib[uid] ?? (store.contrib[uid] = { n: 0, days: {} })
+  const day = dayKey(now)
+  c.n++
+  c.days[day] = (c.days[day] ?? 0) + 1
+  for (const d of Object.keys(c.days)) if (d < dayKey(now - (CONTRIB_DAYS - 1) * DAY_MS)) delete c.days[d]
   save()
   return true
+}
+
+function dayKey(ms: number): string {
+  return new Date(ms + 8 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+export interface LineStatus {
+  source: number
+  name: string
+  bps: number
+  users: number
+  samples: number
+  mine: number
+  bars: ({ t: number; bps: number; users: number } | null)[]
+}
+
+// 线路观测页：只给线路名，不给源站域名
+export function lineStatus(uid: number): { lines: LineStatus[]; me: { n: number; rank: number; days: number[] } } {
+  const now = Date.now()
+  const last = Math.floor(now / BUCKET_MS) * BUCKET_MS
+  const lines: LineStatus[] = Object.entries(store.lines)
+    .filter(([k]) => k.startsWith('xifan:'))
+    .map(([k, host]) => {
+      const r = store.hosts[host]
+      const byT = new Map((r?.buckets ?? []).map(b => [b.t, b]))
+      const bars = Array.from({ length: BUCKETS }, (_, i) => {
+        const b = byT.get(last - (BUCKETS - 1 - i) * BUCKET_MS)
+        const vals = b ? Object.values(b.s) : []
+        return vals.length ? { t: b!.t, bps: p90(vals), users: vals.length } : null
+      })
+      const users = new Set((r?.buckets ?? []).flatMap(b => Object.keys(b.s)))
+      return {
+        source: Number(k.slice(6)),
+        name: store.names[k] ?? `线路 ${k.slice(6)}`,
+        bps: r?.samples.length ? p90(r.samples.map(x => x.bps)) : 0,
+        users: users.size,
+        samples: r?.n ?? 0,
+        mine: r?.samples.find(x => x.uid === uid)?.bps ?? 0,
+        bars,
+      }
+    })
+    .sort((a, b) => b.bps - a.bps || a.source - b.source)
+  const mine = store.contrib[uid]
+  const rank = mine ? 1 + Object.values(store.contrib).filter(c => c.n > mine.n).length : 0
+  const days = Array.from({ length: CONTRIB_DAYS }, (_, i) => mine?.days[dayKey(now - (CONTRIB_DAYS - 1 - i) * DAY_MS)] ?? 0)
+  return { lines, me: { n: mine?.n ?? 0, rank, days } }
 }
