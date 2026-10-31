@@ -191,3 +191,6 @@
 .agent-stat-note { font-size:9px;line-height:1.6;color:var(--ink-sub);margin:3px 0 8px; }
 .agent-source-link { display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--teal);text-decoration:underline;text-underline-offset:3px; }
 @media (hover:hover) { .agent-stat-sources>summary:hover { background:var(--teal-wash);border-radius:8px; } }
+
+/* 手机上底部是书签条和目录，助手只在平板和桌面出现 */
+@media (max-width:640px) { .agent-layer { display:none; } }

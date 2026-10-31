@@ -144,7 +144,7 @@
 @media (hover: hover) { .m-user-item:hover { background: var(--silver-wash); } }
 
 /* 移动端：顶栏 + 底部标签栏 */
-.m-top, .m-tabs { display: none; }
+.m-top, .m-dir { display: none; }
 @media (max-width: 960px) {
   /* 底栏底部留白不能直接写 env(safe-area-inset-bottom)：iOS Chrome 收放工具栏时
      逐帧改 webview 的 frame，env() 跟着逐帧变（真机量到 4.5→8→8.9px 这种小数），
@@ -152,7 +152,7 @@
      停住/回弹"。也不能等停稳后再用 JS 按 env 切换——切换那一下用户照样看得到
      底栏跳一格。只能写死一个折中值：10px 在 Home 条露出来时够用（稀饭动漫的
      底栏内容离屏幕底也只有 10px 左右），浏览器工具栏顶在下面时也不显空。 */
-  :root { --tabbar-pad: 10px; --tabbar-h: calc(62px + var(--tabbar-pad)); }
+  :root { --tabbar-pad: 10px; --tabbar-h: calc(64px + var(--tabbar-pad)); }
   .shell { grid-template-columns: minmax(0, 1fr); }
   .spine { display: none; }
   .m-top {
@@ -167,35 +167,64 @@
     background: var(--paper);
     border-bottom: 1.5px dashed var(--line-strong);
   }
-  .m-tabs {
-    display: flex;
+  .m-dir { display: block; }
+  /* 书签条：只占底部一条，留白写常量（见上） */
+  .m-bm {
     position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 60;
-    background: var(--paper);
-    border-top: 1.5px dashed var(--line-strong);
-    padding: 6px 10px var(--tabbar-pad);
-  }
-  .m-tab {
-    flex: 1;
-    min-height: 50px;
+    left: 12px;
+    right: 12px;
+    bottom: var(--tabbar-pad);
+    z-index: 62;
+    height: 54px;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 2px;
-    font: inherit;
-    font-size: 11px;
-    color: var(--ink-faint);
-    text-decoration: none;
-    border: none;
-    background: none;
-    border-radius: 12px;
+    gap: 10px;
+    padding: 0 7px 0 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line-strong);
+    border-radius: 16px;
+    box-shadow: var(--shadow-1);
   }
-  .m-tab .ic { width: 21px; height: 21px; }
-  .m-tab.on { color: var(--teal); font-weight: 600; }
+  .m-bm::before { content: ""; position: absolute; left: 20px; top: -8px; width: 15px; height: 21px; background: var(--sakura-mid); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 75%, 0 100%); pointer-events: none; }
+  .m-bm button { font: inherit; border: none; background: none; cursor: pointer; display: flex; align-items: center; }
+  .m-bm-cur { gap: 8px; padding: 8px 4px 8px 26px; font-size: 14.5px; font-weight: 700; color: var(--teal); min-width: 0; white-space: nowrap; }
+  .m-bm .ic { width: 20px; height: 20px; flex: none; }
+  .m-bm-dots { display: flex; gap: 4px; margin-left: auto; }
+  .m-bm-dots i { width: 5px; height: 5px; border-radius: 50%; background: rgba(62, 67, 80, .18); }
+  .m-bm-dots i.on { width: 14px; border-radius: 3px; background: var(--teal-mid); }
+  .m-bm .m-bm-open { flex: none; gap: 6px; font-size: 13px; padding: 8px 14px; border-radius: 12px; background: var(--teal-wash); color: var(--teal); border: 1.5px solid var(--teal-mid); }
+  .m-bm.open .m-bm-open { margin-left: auto; background: var(--sakura-wash); color: var(--sakura); border-color: var(--sakura-mid); }
+  .m-dir-mask { position: fixed; inset: 0; z-index: 61; background: rgba(62, 67, 80, .28); animation: m-dir-fade .18s ease-out; }
+  .m-dir-sheet {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: calc(var(--tabbar-pad) + 66px);
+    z-index: 62;
+    background: var(--card);
+    border: 1.5px solid var(--line-strong);
+    border-radius: 18px 18px 14px 14px;
+    box-shadow: var(--shadow-2);
+    padding: 22px 14px 12px;
+    animation: m-dir-up .22s var(--ease-page);
+  }
+  .m-dir-sheet::before { content: ""; position: absolute; top: -10px; left: 50%; width: 84px; height: 20px; margin-left: -42px; background: rgba(240, 149, 180, .38); transform: rotate(-2deg); border-radius: 2px; }
+  .m-dir-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 12.5px; color: var(--ink-sub); }
+  .m-dir-head img { width: 36px; height: 36px; border-radius: 50%; box-shadow: 0 2px 6px rgba(0, 0, 0, .12); }
+  .m-dir-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .m-dir-it { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 2px 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--paper); font: inherit; font-size: 12px; color: var(--ink); text-decoration: none; white-space: nowrap; cursor: pointer; }
+  .m-dir-it .ic { width: 24px; height: 24px; color: var(--teal); }
+  .m-dir-it:nth-child(4n+1) { transform: rotate(-.8deg); }
+  .m-dir-it:nth-child(4n+3) { transform: rotate(.7deg); }
+  .m-dir-it.on { border-color: var(--teal-mid); background: var(--teal-wash); color: var(--teal); font-weight: 600; }
+  .m-dir-dot { position: absolute; top: 8px; right: 12px; width: 7px; height: 7px; border-radius: 50%; background: var(--sakura); }
+  .m-dir-foot { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .m-dir-foot a { display: inline-block; font-size: 12px; padding: 6px 12px; border-radius: 999px; border: 1.5px solid var(--line-strong); color: var(--ink); text-decoration: none; }
+  @keyframes m-dir-fade { from { opacity: 0; } }
+  @keyframes m-dir-up { from { opacity: 0; transform: translate(-50%, 12px); } }
+  /* 书签条只占它需要的宽度、居中，铺满一整行中间会空出一大片 */
+  .m-bm { left: 50%; right: auto; width: min(360px, calc(100% - 24px)); transform: translateX(-50%); }
+  .m-dir-sheet { left: 50%; right: auto; width: min(440px, calc(100% - 20px)); transform: translateX(-50%); }
   .sheet { padding: 20px 16px 110px; }
   .rig-box { display: none; }
   .m-top .btn-sm { min-height: 34px; padding: 4px 12px; font-size: 12.5px; }
@@ -283,17 +312,22 @@
   body[data-page='tracks'] .sketch-hero .trk-toolbar { margin-bottom: 0; }
   .trk-head-actions { margin-left: auto; align-self: center; padding-bottom: 4px; }
 }
-/* 窄桌面（961–1365）：先收印章和品牌副标题；再窄就把用户名和退出收成图标。
+/* 窄桌面（961–1439）：先收印章和品牌副标题；再窄就把用户名和退出收成图标。
    加了「接单评估」入口后 1280～1365 也放不下印章，横向会撑出滚动条 */
-@media (min-width: 961px) and (max-width: 1365px) {
+@media (min-width: 961px) and (max-width: 1439px) {
   .spine-deco, .brand-sub { display: none; }
   .spine { gap: 8px; padding-inline: 24px; }
   .idx-a { padding-inline: 10px; gap: 7px; }
 }
-@media (min-width: 961px) and (max-width: 1139px) {
+@media (min-width: 961px) and (max-width: 1199px) {
   .spine-user > div { display: none; }
   .spine-user { padding: 3px; gap: 0; border-radius: 50%; }
   .spine-acts .btn { font-size: 0; gap: 0; padding-inline: 10px; }
+  /* 7 个入口带图标要 ~700px，加上品牌和右侧用户区 961 宽放不下：这一档只留字 */
+  .idx-a { padding-inline: 8px; font-size: 14px; letter-spacing: 0; }
+  .idx-a .ic { display: none; }
+  .brand { margin-right: 4px; }
+  .spine { padding-inline: 16px; gap: 6px; }
 }
 
 /* ---------- 页面主分栏：内容 + 立绘驻场 ---------- */
@@ -2154,8 +2188,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 @media (max-width: 380px) {
   body[data-page='tracks'] .sheet { padding-top: 12px; }
   body[data-page='tracks'] .row.mb16 { margin-bottom: 10px; gap: 6px; }
-  body[data-page='tracks'] .m-tabs { padding-top: 4px; padding-bottom: calc(var(--tabbar-pad) - 2px); }
-  body[data-page='tracks'] .m-tab { min-height: 46px; }
 }
 
 /* 卡片一窄，操作行就折行、状态分段独占一行，气泡会压到上一行的「试看一集 / BGM」上。

@@ -344,32 +344,8 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
         </main>
       </div>
 
-      {/* 移动端底部标签栏（桌面隐藏） */}
-      <nav className="m-tabs">
-        <MTab route="calendar" active={route === 'calendar' || route === 'history'} icon="calendar">
-          番剧周历
-        </MTab>
-        <MTab route="tracks" active={route === 'tracks'} icon="tracks">
-          我的追番
-        </MTab>
-        <MTab route="community" active={route === 'community'} icon="user">
-          追番大厅
-        </MTab>
-        <MTab route="judge" active={route === 'judge'} icon="judge">
-          接单
-        </MTab>
-        <MTab route="room" active={route === 'room'} icon="video">
-          放映室
-        </MTab>
-        {REWARDS_ENABLED && (
-          <MTab route="rewards" active={route === 'rewards'} icon="gift">
-            放映福利
-          </MTab>
-        )}
-        <MTab route="settings" active={route === 'settings'} icon="settings">
-          设置
-        </MTab>
-      </nav>
+      {/* 移动端底部书签条 + 目录（桌面隐藏）：设计稿 docs/design-mockups/移动端导航-目录书签.html */}
+      <MobileDirectory route={route} feedbackUnread={feedbackUnread} />
 
       <AuthModal
         open={authOpen}
@@ -415,21 +391,68 @@ function IdxLink({
   )
 }
 
-function MTab({
-  route,
-  active,
-  icon,
-  children,
-}: {
-  route: Route
-  active: boolean
-  icon: SketchIconName
-  children: React.ReactNode
-}): JSX.Element {
+const DIRECTORY: { route: Route; icon: SketchIconName; label: string }[] = [
+  { route: 'calendar', icon: 'calendar', label: '番剧周历' },
+  { route: 'tracks', icon: 'tracks', label: '我的追番' },
+  { route: 'community', icon: 'user', label: '追番大厅' },
+  { route: 'judge', icon: 'judge', label: '接单评估' },
+  { route: 'room', icon: 'video', label: '放映室' },
+  ...(REWARDS_ENABLED ? [{ route: 'rewards' as const, icon: 'gift' as const, label: '放映福利' }] : []),
+  { route: 'settings', icon: 'settings', label: '设置' },
+]
+
+// 入口都同样重要，不分主次：底部只留「现在在哪」，点开是全部入口一样大的目录
+function MobileDirectory({ route, feedbackUnread }: { route: Route; feedbackUnread: number }): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const current = route === 'history' ? 'calendar' : route
+  const here = DIRECTORY.find((d) => d.route === current) ?? (route === 'feedback' ? { route, icon: 'mail' as const, label: '反馈与建议' } : DIRECTORY[0])
+  useEffect(() => setOpen(false), [route])
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
   return (
-    <a className={`m-tab${active ? ' on' : ''}`} href={ROUTE_HREF[route]}>
-      <Ic name={icon} />
-      {children}
-    </a>
+    <div className="m-dir">
+      {open && <div className="m-dir-mask" onClick={() => setOpen(false)} />}
+      {open && (
+        <nav className="m-dir-sheet" aria-label="目录">
+          <div className="m-dir-head">
+            <img src="/assets/sagiri-avatar.webp" alt="" />
+            <span>哥哥要去哪里？</span>
+          </div>
+          <div className="m-dir-grid">
+            {DIRECTORY.map((d) => (
+              <a key={d.route} className={`m-dir-it${d.route === current ? ' on' : ''}`} href={ROUTE_HREF[d.route]} onClick={() => setOpen(false)}>
+                <Ic name={d.icon} />
+                {d.label}
+              </a>
+            ))}
+            <button type="button" className="m-dir-it" onClick={() => { setOpen(false); openFeedback() }}>
+              <Ic name="mail" />
+              反馈与建议
+              {feedbackUnread > 0 && <span className="m-dir-dot" />}
+            </button>
+          </div>
+          <div className="m-dir-foot"><a href="/about.html">功能介绍与桌面下载</a></div>
+        </nav>
+      )}
+      <div className={`m-bm${open ? ' open' : ''}`}>
+        <button type="button" className="m-bm-cur" onClick={() => setOpen((o) => !o)}>
+          <Ic name={here.icon} />
+          {here.label}
+        </button>
+        {!open && (
+          <span className="m-bm-dots" aria-hidden="true">
+            {DIRECTORY.map((d) => <i key={d.route} className={d.route === current ? 'on' : undefined} />)}
+          </span>
+        )}
+        <button type="button" className="m-bm-open" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <Ic name={open ? 'x' : 'folder'} />
+          {open ? '合上' : '目录'}
+        </button>
+      </div>
+    </div>
   )
 }
