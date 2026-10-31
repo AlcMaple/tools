@@ -11,6 +11,7 @@
 //   GET  /api/player/hls?u&s                                     → m3u8：拉回来把分片 / 子表 / key 改写成本站地址
 //   GET  /api/player/seg?u&s                                     → HLS 分片 / key 的单连接透传（不做 mp4 那套 total 探测）
 //   GET  /api/player/vendor/artplayer.js|hls.js                  → 自托管（CSP 只放行 self；国内也拉不到 CDN）
+//   POST /api/player/line-speed                                  → 直连测速样本进全站共享速度表（line-speed.ts）
 //   POST /api/player/client-log                                  → 页面日志回终端 + Sentry
 //
 // 媒体地址一律带 HMAC 签名 s：只有本服务器解析层产出的地址才会被代理，不需要维护域名白名单，
@@ -40,6 +41,7 @@ import { XifanLocalRateLimitError, XifanUpstreamError } from '../xifan/session'
 import probe from './probe'
 import { layoutOf, serveFaststart } from './faststart'
 import { PLAY_PAGE } from './page'
+import { noteLineHost, noteSample, speedsFor } from './line-speed'
 
 const player = new Hono()
 player.route('/', probe)
@@ -48,7 +50,7 @@ player.route('/', probe)
 
 interface Line { source: number; name: string }
 interface PlayLine { source: number; kind: 'mp4' | 'hls'; url: string; s: string }
-interface Playlist { title: string; lines: Line[]; first: PlayLine | null; eps: number[] }
+interface Playlist { title: string; lines: Line[]; first: PlayLine | null; eps: number[]; speeds: Record<number, number> }
 
 function sign(url: string): string {
   return createHmac('sha256', AUTH_SECRET).update('player-media:' + url).digest('base64url').slice(0, 32)
@@ -76,14 +78,17 @@ function parseSrc(c: Context): { src: WebPlayerSource; id: string; ep: number } 
 async function playlistOf(src: WebPlayerSource, id: string, ep: number, uid: number): Promise<Playlist> {
   if (src === 'xifan') {
     const p = await xifan.getPlaylist(id, ep, uid)
-    return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps }
+    if (p.first) noteLineHost(src, p.first.source, p.first.url)
+    return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps, speeds: speedsFor(src, p.lines) }
   }
   const p = await girigiri.getPlaylist(id, ep)
-  return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps }
+  return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps, speeds: speedsFor(src, p.lines) }
 }
 
 async function lineOf(src: WebPlayerSource, id: string, ep: number, source: number, uid: number): Promise<PlayLine | null> {
-  return signed(src === 'xifan' ? await xifan.resolveLine(id, ep, source, uid) : await girigiri.resolveLine(id, ep, source))
+  const line = src === 'xifan' ? await xifan.resolveLine(id, ep, source, uid) : await girigiri.resolveLine(id, ep, source)
+  if (line) noteLineHost(src, line.source, line.url)
+  return signed(line)
 }
 
 // 已知 code 原样透出（AGENTS.md：兜底文案只给未知错误）。
@@ -323,6 +328,17 @@ player.get('/vendor/:file', (c) => {
 
 // ——— 日志：页面里发生的事只有浏览器知道，打回终端（AGENTS.md：用户只看终端）———
 const CLIENT_LOG_MAX = 400
+// 直连下载测速样本（line-speed.ts），每个用户 4 秒最多收一个
+player.post('/line-speed', async (c) => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录', code: 'AUTH_REQUIRED' }, 401)
+  let body: unknown
+  try { body = await c.req.json() } catch { return c.json({ error: '请求体不是 JSON' }, 400) }
+  const o = body && typeof body === 'object' ? body as { src?: unknown; host?: unknown; bps?: unknown } : {}
+  if (typeof o.src !== 'string' || typeof o.host !== 'string' || typeof o.bps !== 'number') return c.json({ error: '参数不合法' }, 400)
+  return noteSample(session.uid, o.src, o.host, o.bps) ? c.body(null, 204) : c.json({ error: '未知源站或速度不合法', code: 'UNKNOWN_HOST' }, 400)
+})
+
 player.post('/client-log', async (c) => {
   let body: unknown
   try { body = await c.req.json() } catch { return c.body(null, 204) }

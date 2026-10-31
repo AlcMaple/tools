@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 // 由 sketch-tokens.css 的 @font-face 引入并经 Vite 打包）。不再引入 Inter / Space Grotesk。
 import App from './App'
 import { registerCoverCacheWorker } from './coverCache'
+import { cleanupExpiredEpisodes } from './mediaCache'
 import './index.css'
 import { cachedSplashArt } from './splash-art'
 import { installIosKeyboardFocus } from './iosKeyboardFocus'
@@ -29,6 +30,10 @@ const monitoringReady: Promise<CaptureRecoverableError | undefined> = import.met
 
 void cachedSplashArt().then((splashArt) => {
   registerCoverCacheWorker()
+  // 过期清理不挡首屏；神回要查追番数据，登录态这时候一般已经在了。
+  setTimeout(() => {
+    cleanupExpiredEpisodes().catch((err: unknown) => console.error('[media-cache] 过期清理失败', err))
+  }, 5000)
   createRoot(document.getElementById('root')!, {
     onRecoverableError: import.meta.env.VITE_SENTRY_DSN?.trim()
       ? (error, info) => {

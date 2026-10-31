@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1060" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="b-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="b-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+    <marker id="b-red" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#b96372"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="1058" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">播放中变慢：只换到画面完全一样的退路，从原来的时间点接着播</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：源站跟不上时，用户最多看到约 8 秒转圈，再黑一下（0.06~1.3 秒）就从原位置接着播，之后不再卡；下载一直领先的番一次都不会触发</text>
+
+  <!-- 一 -->
+  <rect x="32" y="84" width="1056" height="166" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、为什么必须处理：慢的常常不是本机网络，而是源站或线路</text>
+  <rect x="56" y="126" width="320" height="106" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="216" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">稀饭备用-1（按连接限速）</text>
+  <text x="216" y="172" text-anchor="middle" font-size="11" fill="#8a5a62">单连接 1.5Mbps &lt; 码率约 4.2Mbps</text>
+  <text x="216" y="192" text-anchor="middle" font-size="11" fill="#8a5a62">同一天另一次测：第一片 8 秒都没到</text>
+  <text x="216" y="212" text-anchor="middle" font-size="11" fill="#8a5a62">再一次又是 4 秒一片，够快</text>
+  <rect x="390" y="126" width="320" height="106" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="550" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">稀饭新番主线-2</text>
+  <text x="550" y="172" text-anchor="middle" font-size="11" fill="#8a5a62">平时单连接 20.5Mbps</text>
+  <text x="550" y="192" text-anchor="middle" font-size="11" fill="#8a5a62">一度掉到 2~4Mbps，</text>
+  <text x="550" y="212" text-anchor="middle" font-size="11" fill="#8a5a62">问一下文件大小都要 3.9 秒</text>
+  <rect x="724" y="126" width="344" height="106" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="896" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">同一台 Mac、同一时段</text>
+  <text x="896" y="172" text-anchor="middle" font-size="11" fill="#4d6575">本机网络没变，</text>
+  <text x="896" y="192" text-anchor="middle" font-size="11" fill="#4d6575">快慢随源站和时段变</text>
+  <text x="896" y="212" text-anchor="middle" font-size="11" fill="#4d6575">开播时选对了，播到一半也可能变慢</text>
+
+  <!-- 二 时间轴 -->
+  <rect x="32" y="266" width="1056" height="330" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="292" font-size="14" font-weight="700" fill="#353136">二、一次变慢的完整经过（判据是「已经下到本机、还没播到的有几秒」）</text>
+
+  <text x="56" y="320" font-size="11" font-weight="700" fill="#756f73">用户看到的</text>
+  <rect x="56" y="330" width="240" height="58" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="176" y="353" text-anchor="middle" font-size="12" font-weight="700" fill="#316247">正常播放</text>
+  <text x="176" y="373" text-anchor="middle" font-size="11" fill="#456b54">什么都没察觉</text>
+  <rect x="310" y="330" width="240" height="58" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="430" y="353" text-anchor="middle" font-size="12" font-weight="700" fill="#316247">还在正常播放</text>
+  <text x="430" y="373" text-anchor="middle" font-size="11" fill="#456b54">什么都没察觉</text>
+  <rect x="564" y="330" width="240" height="58" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="684" y="353" text-anchor="middle" font-size="12" font-weight="700" fill="#7a6234">画面黑一下</text>
+  <text x="684" y="373" text-anchor="middle" font-size="11" fill="#7a6234">0.06~1.3 秒，从原位置接着播</text>
+  <rect x="818" y="330" width="250" height="58" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="943" y="353" text-anchor="middle" font-size="12" font-weight="700" fill="#316247">继续播，不再卡</text>
+  <text x="943" y="373" text-anchor="middle" font-size="11" fill="#456b54">暂停中切换的，仍保持暂停</text>
+
+  <path d="M56 410 H1060" stroke="#c3bcc6" stroke-width="1.4" stroke-dasharray="4 4"/>
+
+  <text x="56" y="436" font-size="11" font-weight="700" fill="#756f73">背后在做的</text>
+  <rect x="56" y="446" width="240" height="128" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="176" y="469" text-anchor="middle" font-size="12" font-weight="700" fill="#4a4450">每 0.5 秒看一次领先量</text>
+  <text x="72" y="492" font-size="11" fill="#4a4450">按已经写进本机的块 / 片算，</text>
+  <text x="72" y="510" font-size="11" fill="#4a4450">不看播放器自己的缓冲：</text>
+  <text x="72" y="528" font-size="11" fill="#4a4450">浏览器会限制它缓冲多少，</text>
+  <text x="72" y="546" font-size="11" fill="#4a4450">代表不了下载快慢</text>
+  <path d="M300 510 H306" stroke="#6d686b" stroke-width="1.6" marker-end="url(#b-gray)"/>
+
+  <rect x="310" y="446" width="240" height="128" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="430" y="469" text-anchor="middle" font-size="12" font-weight="700" fill="#36566d">领先 &lt;30 秒且还在减少</text>
+  <text x="326" y="492" font-size="11" fill="#4d6575">→ 后台悄悄备好退路</text>
+  <text x="326" y="514" font-size="11" fill="#4d6575">（找同一个文件的线路，</text>
+  <text x="326" y="532" font-size="11" fill="#4d6575">找不到就备好「同线路</text>
+  <text x="326" y="550" font-size="11" fill="#4d6575">经服务器」，见第三块）</text>
+  <path d="M554 510 H560" stroke="#6d686b" stroke-width="1.6" marker-end="url(#b-gray)"/>
+
+  <rect x="564" y="446" width="240" height="128" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="684" y="469" text-anchor="middle" font-size="12" font-weight="700" fill="#7a6234">什么时候切</text>
+  <text x="580" y="492" font-size="11" fill="#7a6234">领先 &lt;10 秒还没好转</text>
+  <text x="580" y="510" font-size="11" fill="#7a6234">或已经卡住满 3 秒</text>
+  <text x="580" y="532" font-size="11" fill="#7a6234">刚开播、刚拖进度时放宽到 8 秒：</text>
+  <text x="580" y="550" font-size="11" fill="#7a6234">本机边下边播起播本来就要</text>
+  <text x="580" y="566" font-size="11" fill="#7a6234">1.4~10 秒</text>
+  <path d="M808 510 H814" stroke="#6d686b" stroke-width="1.6" marker-end="url(#b-gray)"/>
+
+  <rect x="818" y="446" width="250" height="128" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="943" y="469" text-anchor="middle" font-size="12" font-weight="700" fill="#316247">切换</text>
+  <text x="834" y="492" font-size="11" fill="#456b54">先拆掉旧播放器、停掉旧下载，</text>
+  <text x="834" y="510" font-size="11" fill="#456b54">再从当前时间点开新的</text>
+  <text x="834" y="532" font-size="11" fill="#456b54">换到同一文件的另一条线路时，</text>
+  <text x="834" y="550" font-size="11" fill="#456b54">已经下好的部分直接交给它，</text>
+  <text x="834" y="566" font-size="11" fill="#456b54">不重下</text>
+
+  <!-- 三 退路 -->
+  <rect x="32" y="612" width="1056" height="210" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="638" font-size="14" font-weight="700" fill="#353136">三、退路只能是「画面完全一样」的</text>
+
+  <rect x="56" y="654" width="320" height="150" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="216" y="677" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">① 同一个文件的其他线路（优先）</text>
+  <text x="72" y="700" font-size="11" fill="#456b54">mp4：文件大小一个字节都不差</text>
+  <text x="72" y="718" font-size="11" fill="#456b54">HLS：片数相同、每一片时长都相同</text>
+  <text x="72" y="740" font-size="11" fill="#456b54">只看速度表说不比现在慢的，最多再问</text>
+  <text x="72" y="758" font-size="11" fill="#456b54">两条地址；读文件信息每次最多等 4 秒</text>
+  <text x="72" y="780" font-size="11" fill="#456b54">读不到信息的一律当作「不是同一个」</text>
+
+  <rect x="390" y="654" width="320" height="150" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="550" y="677" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">② 同一条线路，改经服务器</text>
+  <text x="406" y="700" font-size="11" fill="#456b54">拉的就是同一个文件，画面必然一致</text>
+  <text x="406" y="722" font-size="11" fill="#456b54">已经卡住、①还没找完时，先用它</text>
+  <text x="406" y="744" font-size="11" fill="#456b54">代价：占服务器出口（约 6Mbps，</text>
+  <text x="406" y="762" font-size="11" fill="#456b54">约够 2 人同时看），这一集的</text>
+  <text x="406" y="780" font-size="11" fill="#456b54">本机下载也随之停掉</text>
+
+  <rect x="724" y="654" width="344" height="150" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="896" y="677" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">为什么不随便换一条快的</text>
+  <text x="740" y="700" font-size="11" fill="#8a5a62">不同压制版本片头片尾长短不同，</text>
+  <text x="740" y="718" font-size="11" fill="#8a5a62">同一时间点画面会差几秒：</text>
+  <text x="740" y="740" font-size="11" fill="#8a5a62">Girigiri 繁中 260 片 / 1426.0 秒</text>
+  <text x="740" y="758" font-size="11" fill="#8a5a62">　　　　 简中 294 片 / 1420.1 秒</text>
+  <text x="740" y="780" font-size="11" fill="#8a5a62">这种只在下一集开播时按速度换</text>
+
+  <!-- 四 实测与边界 -->
+  <rect x="32" y="838" width="1056" height="202" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="864" font-size="14" font-weight="700" fill="#353136">四、实测（10-30 本机，弱气MAX的大小姐 EP2）与没测到的</text>
+
+  <rect x="56" y="880" width="652" height="142" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="72" y="902" font-size="11" font-weight="700" fill="#316247">情况</text>
+  <text x="350" y="902" font-size="11" font-weight="700" fill="#316247">从卡住到切换</text>
+  <text x="450" y="902" font-size="11" font-weight="700" fill="#316247">切换到出画面</text>
+  <text x="610" y="902" font-size="11" font-weight="700" fill="#316247">之后</text>
+  <text x="72" y="926" font-size="11" fill="#456b54">备用-1 续播到 91 秒卡住 → 同线路经服务器</text>
+  <text x="350" y="926" font-size="11" fill="#456b54">8.5 秒</text>
+  <text x="450" y="926" font-size="11" fill="#456b54">1.2 秒，仍在 91.2 秒</text>
+  <text x="610" y="926" font-size="11" fill="#456b54">60 秒无卡顿</text>
+  <text x="72" y="950" font-size="11" fill="#456b54">备用-1 第一片 8 秒没到 → 同线路经服务器</text>
+  <text x="350" y="950" font-size="11" fill="#456b54">8.0 秒</text>
+  <text x="450" y="950" font-size="11" fill="#456b54">1.3 秒</text>
+  <text x="610" y="950" font-size="11" fill="#456b54">60 秒无卡顿</text>
+  <text x="72" y="974" font-size="11" fill="#456b54">主线-2 起播时源站变慢 → 同线路经服务器</text>
+  <text x="350" y="974" font-size="11" fill="#456b54">8.0~8.5 秒</text>
+  <text x="450" y="974" font-size="11" fill="#456b54">0.06~0.12 秒</text>
+  <text x="610" y="974" font-size="11" fill="#456b54">70 秒无卡顿</text>
+  <text x="72" y="998" font-size="11" fill="#456b54">卡住到恢复画面合计约 9.3~9.7 秒，在「整个过程不超过 10 秒」之内；主要是起播 / 跳转的 8 秒宽限</text>
+
+  <rect x="722" y="880" width="346" height="142" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="738" y="902" font-size="11.5" font-weight="700" fill="#7a6234">还没在真实情况里走到</text>
+  <text x="738" y="924" font-size="11" fill="#7a6234">· ①同文件线路之间切换：测过的两部番</text>
+  <text x="738" y="942" font-size="11" fill="#7a6234">　里没有任何两条是同一个文件</text>
+  <text x="738" y="964" font-size="11" fill="#7a6234">· 「领先不到 30 秒就备、10 秒就切」：</text>
+  <text x="738" y="982" font-size="11" fill="#7a6234">　真实变慢都是直接卡住，走的是卡住规则</text>
+  <text x="738" y="1004" font-size="11" fill="#7a6234">· 稀饭新番主线-1 对浏览器不回，当不了①</text>
+</svg>

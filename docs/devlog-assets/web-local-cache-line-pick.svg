@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 920" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="a-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="918" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">开播时自动挑线路：按全站用户实测的速度，不按线路排第几</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：用户什么都不用点，打开就是够快的线路；只要有人看过这条线路，新番也能直接挑。字幕不同也照换，只要是同一集。最多多问稀饭两次地址</text>
+
+  <!-- 一 -->
+  <rect x="32" y="84" width="1056" height="220" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、速度表记什么：全站一张，按源站记</text>
+
+  <rect x="56" y="126" width="330" height="160" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="221" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">为什么全站一张就够</text>
+  <text x="72" y="172" font-size="11" fill="#4d6575">10-31 抽查稀饭 8 部番：线路是全站统一的</text>
+  <text x="72" y="190" font-size="11" fill="#4d6575">新番主线-1 → 每部都是 apn.moedot.net</text>
+  <text x="72" y="208" font-size="11" fill="#4d6575">新番主线-2 → 每部都是 play.xfvod.pro</text>
+  <text x="72" y="226" font-size="11" fill="#4d6575">新番一打开就知道每条线路多快，不用先问地址</text>
+  <text x="72" y="250" font-size="11" fill="#4d6575">Girigiri 抽查 8 部：繁中、简中在同一个源站，</text>
+  <text x="72" y="268" font-size="11" fill="#4d6575">只是字幕不同，没有快慢可挑</text>
+
+  <rect x="400" y="126" width="330" height="160" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="565" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">数字从哪来、怎么算</text>
+  <text x="416" y="172" font-size="11" fill="#456b54">只记真正把视频下到本机时的实收速度</text>
+  <text x="416" y="190" font-size="11" fill="#456b54">经服务器播放不记：那是服务器的速度</text>
+  <text x="416" y="214" font-size="11" fill="#456b54">每个源站留最近 50 个用户，每人只占一格</text>
+  <text x="416" y="232" font-size="11" fill="#456b54">从慢到快排好，取九成位置上的那个值</text>
+  <text x="416" y="256" font-size="11" fill="#456b54">永久保留，不过期；有人再看就跟着更新</text>
+  <text x="416" y="274" font-size="11" fill="#456b54">不多问稀饭：样本就是用户本来在下的视频</text>
+
+  <rect x="744" y="126" width="324" height="160" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="906" y="149" text-anchor="middle" font-size="12.5" font-weight="700" fill="#7a6234">能不能直连：只记在这台设备</text>
+  <text x="760" y="172" font-size="11" fill="#7a6234">第一个字节都没拿到就被拒（报错 / 跨域）</text>
+  <text x="760" y="190" font-size="11" fill="#7a6234">→ 这台设备记为「只能经服务器」</text>
+  <text x="760" y="214" font-size="11" fill="#7a6234">不共享：同一个源站，有的运营商直连饿死，</text>
+  <text x="760" y="232" font-size="11" fill="#7a6234">有的很快（iPhone 用流量时出过事）</text>
+  <text x="760" y="256" font-size="11" fill="#7a6234">7 天后再试：被标记后就不直连了，</text>
+  <text x="760" y="274" font-size="11" fill="#7a6234">不再有新数据能纠正，换了网络也得有机会</text>
+
+  <!-- 二 -->
+  <rect x="32" y="320" width="1056" height="300" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="346" font-size="14" font-weight="700" fill="#353136">二、开播那一刻怎么选</text>
+
+  <text x="56" y="372" font-size="11" font-weight="700" fill="#756f73">用户看到的</text>
+  <rect x="56" y="382" width="1012" height="40" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="562" y="407" text-anchor="middle" font-size="12" fill="#4a4450">点开这一集 → 线路卡片里亮着的那条就是挑好的，直接点播放；没有任何额外提示</text>
+
+  <text x="56" y="448" font-size="11" font-weight="700" fill="#756f73">背后在做的</text>
+  <rect x="56" y="458" width="190" height="74" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="151" y="481" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">服务器给出第一条</text>
+  <text x="151" y="501" text-anchor="middle" font-size="11" fill="#4a4450">没有这一集的线路</text>
+  <text x="151" y="517" text-anchor="middle" font-size="11" fill="#4a4450">已经被排除在外</text>
+  <path d="M250 495 H278" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="282" y="458" width="230" height="74" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="397" y="481" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">第一条已经够快？</text>
+  <text x="397" y="501" text-anchor="middle" font-size="11" fill="#4d6575">全站速度 6Mbps 以上</text>
+  <text x="397" y="517" text-anchor="middle" font-size="11" fill="#4d6575">就不去比别的线路</text>
+  <path d="M397 536 V560" stroke="#4b8f6a" stroke-width="1.6" marker-end="url(#a-green)"/>
+  <text x="408" y="553" font-size="10.5" fill="#316247">够</text>
+  <rect x="282" y="564" width="230" height="40" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="397" y="589" text-anchor="middle" font-size="12" fill="#316247">直接用第一条</text>
+
+  <path d="M516 495 H544" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+  <text x="530" y="487" text-anchor="middle" font-size="10.5" fill="#756f73">不够</text>
+  <rect x="548" y="458" width="240" height="74" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="668" y="481" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">有没有明显更快的？</text>
+  <text x="668" y="501" text-anchor="middle" font-size="11" fill="#4d6575">第一条有数据：要快 15% 以上</text>
+  <text x="668" y="517" text-anchor="middle" font-size="11" fill="#4d6575">第一条没数据：对方要 6Mbps 以上</text>
+  <path d="M668 536 V560" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+  <text x="679" y="553" font-size="10.5" fill="#756f73">没有</text>
+  <rect x="548" y="564" width="240" height="40" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="668" y="589" text-anchor="middle" font-size="12" fill="#4a4450">用第一条</text>
+
+  <path d="M792 495 H820" stroke="#4b8f6a" stroke-width="1.6" marker-end="url(#a-green)"/>
+  <text x="806" y="487" text-anchor="middle" font-size="10.5" fill="#316247">有</text>
+  <rect x="824" y="458" width="244" height="74" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="946" y="481" text-anchor="middle" font-size="12" font-weight="700" fill="#316247">只去问更快那条的地址</text>
+  <text x="946" y="501" text-anchor="middle" font-size="11" fill="#456b54">问不到（没这一集 / 出错）</text>
+  <text x="946" y="517" text-anchor="middle" font-size="11" fill="#456b54">就问下一条，最多两条</text>
+
+  <rect x="824" y="544" width="244" height="60" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="840" y="564" font-size="11.5" font-weight="700" fill="#7a6234">本机已下完这一集：以上全跳过</text>
+  <text x="840" y="582" font-size="11" fill="#7a6234">不管是哪条线路、稀饭还是 Girigiri 下的，</text>
+  <text x="840" y="598" font-size="11" fill="#7a6234">同一部番同一集，直接播本机那份</text>
+
+  <!-- 三 -->
+  <rect x="32" y="636" width="1056" height="264" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="662" font-size="14" font-weight="700" fill="#353136">三、哪里容易改错</text>
+
+  <rect x="56" y="678" width="330" height="204" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="221" y="701" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">为什么取九成位置，不取平均</text>
+  <text x="72" y="724" font-size="11" fill="#8a5a62">测到的是「线路多快」和「这个人网速多快」</text>
+  <text x="72" y="742" font-size="11" fill="#8a5a62">里更慢的那个</text>
+  <text x="72" y="766" font-size="11" fill="#8a5a62">例：甲测得 A 20Mbps、B 10Mbps；</text>
+  <text x="72" y="784" font-size="11" fill="#8a5a62">乙自己网速上限 6Mbps，一直看 A</text>
+  <text x="72" y="802" font-size="11" fill="#8a5a62">取平均：A 被拉到 6，比 B 慢 → 全站换去 B</text>
+  <text x="72" y="820" font-size="11" fill="#8a5a62">取九成位置：A 仍是 20（按这个例子回放验证）</text>
+  <text x="72" y="844" font-size="11" fill="#8a5a62">每人只占一格：不然一个人连看 3 分钟</text>
+  <text x="72" y="862" font-size="11" fill="#8a5a62">就把 50 格占满，又变成只看他一个人</text>
+
+  <rect x="400" y="678" width="330" height="204" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="565" y="701" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">为什么不把所有线路都问一遍</text>
+  <text x="416" y="724" font-size="11" fill="#8a5a62">稀饭给地址的接口有限流</text>
+  <text x="416" y="742" font-size="11" fill="#8a5a62">三条线路每次全问一遍，</text>
+  <text x="416" y="760" font-size="11" fill="#8a5a62">点几集就被限流，连当前这集都打不开</text>
+  <text x="416" y="784" font-size="11" fill="#8a5a62">所以只问「速度表说更快」的，封顶两次</text>
+  <text x="416" y="808" font-size="11" fill="#8a5a62">代价：没人看过的线路一直没有数据，</text>
+  <text x="416" y="826" font-size="11" fill="#8a5a62">万一被分到慢线路，卡 3 秒就自动切走</text>
+  <text x="416" y="844" font-size="11" fill="#8a5a62">（见下一张图）</text>
+
+  <rect x="744" y="678" width="324" height="204" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="906" y="701" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">为什么够 6Mbps 就不换 · 常见情况</text>
+  <text x="760" y="724" font-size="11" fill="#4d6575">番剧 1080p 码率约 2.7~4.2Mbps，</text>
+  <text x="760" y="742" font-size="11" fill="#4d6575">留一倍余量 → 6Mbps 就够看</text>
+  <text x="760" y="760" font-size="11" fill="#4d6575">为 20 比 15 换线不值得，表有误差会来回换</text>
+  <text x="760" y="784" font-size="11" fill="#4d6575">常见：新番主线全站有人看过，</text>
+  <text x="760" y="802" font-size="11" fill="#4d6575">打开新番直接挑，不用多问地址</text>
+  <text x="760" y="826" font-size="11" fill="#4d6575">全站第一个看某条线路的人：</text>
+  <text x="760" y="844" font-size="11" fill="#4d6575">用第一条，边看边记</text>
+  <text x="760" y="862" font-size="11" fill="#4d6575">只有一条线路的番（多为旧番）：没得挑</text>
+</svg>

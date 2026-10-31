@@ -3255,3 +3255,12 @@ body[data-auth='out'] .track-btn { display: none; }
 
 .poster-watch { display: flex; gap: 6px; padding: 0 2px; }
 .poster-watch .btn { flex: 1; min-width: 0; justify-content: center; padding-inline: 6px; }
+
+/* 设置 · 本地缓存 */
+.mc-list { list-style: none; margin: 0; padding: 0; }
+.mc-row { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1.5px dashed var(--line); }
+.mc-row:last-child { border-bottom: none; }
+.mc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-meta { font-size: 12.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.mc-good { color: var(--gold); }

@@ -811,6 +811,11 @@
   },
   {
     "file": "server/player/index.ts",
+    "method": "post",
+    "path": "/line-speed"
+  },
+  {
+    "file": "server/player/index.ts",
     "method": "route",
     "path": "/"
   },
