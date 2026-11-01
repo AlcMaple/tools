@@ -770,6 +770,11 @@
     "path": "/paths/:kind"
   },
   {
+    "file": "server/order-judge.ts",
+    "method": "put",
+    "path": "/settings"
+  },
+  {
     "file": "server/player/index.ts",
     "method": "get",
     "path": "/hls"
