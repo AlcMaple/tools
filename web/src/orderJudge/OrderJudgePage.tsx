@@ -1021,6 +1021,11 @@ function DeleteHistoryDialog({ entry, onDelete, onClose }: {
   )
 }
 
+const DOC_PURPOSE: Record<DocKind, string> = {
+  profile: '先划好哪些能接、哪些不能接，评估时吾辈先照这份分档；核心需求落在「不能」里，就直接判不能',
+  log: '把实际做过、学会的事记在这里；档案说不能、日志里做过的，吾辈就按日志判能',
+}
+
 function SettingsDialog({ docs, paths, dayRate, onDayRate, onDocs, onPaths, onClose }: {
   docs: Record<DocKind, DocMeta | null>
   paths: JudgePaths
@@ -1041,7 +1046,7 @@ function SettingsDialog({ docs, paths, dayRate, onDayRate, onDocs, onPaths, onCl
     setRateBusy(true)
     try {
       onDayRate(await saveDayRate(rateNum))
-      setNotice({ text: '已保存', err: false })
+      setNotice({ text: '记下了', err: false })
     } catch (e) {
       setNotice({ text: errorOf(e).message, err: true })
     } finally {
@@ -1087,7 +1092,7 @@ function SettingsDialog({ docs, paths, dayRate, onDayRate, onDocs, onPaths, onCl
       const content = decodeText(await file.arrayBuffer())
       const saved = await saveDoc(kind, file.name, content)
       onDocs(saved.docs); onPaths(saved.paths)
-      setNotice({ text: '已上传', err: false })
+      setNotice({ text: '收好了', err: false })
     } catch (e) {
       setNotice({ text: errorOf(e).message, err: true })
     } finally {
@@ -1136,19 +1141,19 @@ function SettingsDialog({ docs, paths, dayRate, onDayRate, onDocs, onPaths, onCl
     return (
       <div className="field">
         <span className="field-label">{label}</span>
-        <p className="muted small oj-doc-purpose">{DOC_TEMPLATES[kind].purpose}</p>
+        <p className="muted small oj-doc-purpose">{DOC_PURPOSE[kind]}</p>
         {(!d || paths[kind].length !== 1) && (
           <div className={`oj-doc${d ? '' : ' empty-doc'}`}>
             <Ic name="doc" />
             <span className="t">
-              {d ? <><b>{d.name}</b><span>{sizeText(d.size)} · {when(d.updatedAt)} · {d.source}</span></> : '还没有上传'}
+              {d ? <><b>{d.name}</b><span>{sizeText(d.size)} · {when(d.updatedAt)} · {d.source}</span></> : '还没有放进来'}
             </span>
           </div>
         )}
         {pathList(kind)}
         <div className="oj-doc-acts">
           <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={() => void choose(kind)}>
-            <Ic name="plus" cls="ic ic-sm" />{busy === kind ? '上传中…' : '上传文件'}
+            <Ic name="plus" cls="ic ic-sm" />{busy === kind ? '收取中…' : '上传文件'}
           </button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadDocTemplate(kind)}>下载模版</button>
         </div>
@@ -1188,7 +1193,7 @@ function SettingsDialog({ docs, paths, dayRate, onDayRate, onDocs, onPaths, onCl
               </span>
               <button type="button" className="btn btn-sm btn-primary" disabled={rateBusy || !rateOk || rateNum === dayRate} onClick={() => void saveRate()}>保存</button>
             </div>
-            <p className="muted small oj-doc-purpose">估价 = 日薪 × 工期天数</p>
+            <p className="muted small oj-doc-purpose">按这个数算一天，吾辈来估价</p>
           </div>
           {docRow('profile', '能力档案')}
           {docRow('log', '项目日志')}

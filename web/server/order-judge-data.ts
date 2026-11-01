@@ -112,7 +112,7 @@ export class JudgeData {
   }
 
   setDayRate(uid: number, value: unknown): number {
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < MIN_DAY_RATE || value > MAX_DAY_RATE) throw new JudgeDataError('BAD_INPUT', `日薪要填 ${MIN_DAY_RATE}～${MAX_DAY_RATE} 之间的整数。`, 400)
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < MIN_DAY_RATE || value > MAX_DAY_RATE) throw new JudgeDataError('BAD_INPUT', `日薪要填 ${MIN_DAY_RATE}～${MAX_DAY_RATE} 的整数，别乱写哦`, 400)
     this.database.prepare('INSERT INTO order_judge_settings VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET day_rate=excluded.day_rate').run(uid, value)
     this.bump(uid)
     return value
