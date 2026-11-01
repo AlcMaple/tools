@@ -2,6 +2,8 @@
 // 规则来源 docs/ideas/020-接单评估估价.md：按日历天数（含周末假期）计费，加急只在页面说明，不进计算。
 
 export const DAY_RATE = 160
+export const MIN_DAY_RATE = 1
+export const MAX_DAY_RATE = 99999
 export const HOURS_PER_DAY = 8
 export const QUOTE_FACTORS = [0.06, 0.075] as const
 
@@ -25,6 +27,8 @@ export interface QuoteTier {
 
 export interface Quote {
   totalHours: number
+  // 这次估价用的日薪；旧历史没有这项，按 DAY_RATE 显示
+  dayRate?: number
   tiers: QuoteTier[]
   assumedYears: number[]
   springFestivalRisk: boolean
@@ -55,7 +59,7 @@ export function quoteYears(orderDate: string, totalHours: number): number[] {
   return years
 }
 
-export function quote(totalHours: number, orderDate: string, calendars: HolidayYear[]): Quote {
+export function quote(totalHours: number, orderDate: string, calendars: HolidayYear[], dayRate = DAY_RATE): Quote {
   const byYear = new Map(calendars.map(c => [c.year, c]))
   const used = new Set<number>()
   const isWorkday = (ms: number): boolean => {
@@ -79,12 +83,12 @@ export function quote(totalHours: number, orderDate: string, calendars: HolidayY
       if (isWorkday(cursor)) counted++
     }
     const calendarDays = Math.round((cursor - start) / DAY_MS) + 1
-    return { factor, hours, workdays, start: formatDate(start), end: formatDate(cursor), calendarDays, price: calendarDays * DAY_RATE }
+    return { factor, hours, workdays, start: formatDate(start), end: formatDate(cursor), calendarDays, price: calendarDays * dayRate }
   })
 
   const assumedYears = [...used].filter(y => !byYear.get(y)!.published).sort()
   // 春节落在 1 月下旬到 2 月中旬；未公布年份的工期进了这段，实际交期大概率顺延
   const springFestivalRisk = tiers.some(t => assumedYears.some(year =>
     parseDate(t.start) <= Date.UTC(year, 1, 20) && parseDate(t.end) >= Date.UTC(year, 0, 20)))
-  return { totalHours, tiers, assumedYears, springFestivalRisk }
+  return { totalHours, dayRate, tiers, assumedYears, springFestivalRisk }
 }

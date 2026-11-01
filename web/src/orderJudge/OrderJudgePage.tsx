@@ -17,9 +17,9 @@ import { readByokKey } from '../reviews/byok'
 import type { DocKind, DocMeta, HistoryEntry, JudgeImage, JudgePath, JudgePaths, JudgeState } from '../../shared/order-judge-api'
 import { MAX_TEXT_CHARS } from '../../shared/order-judge-api'
 import type { EstimateEvent, EstimateResult } from '../../shared/order-judge-estimate'
-import { DAY_RATE } from '../../shared/order-judge-quote'
+import { DAY_RATE, MAX_DAY_RATE, MIN_DAY_RATE } from '../../shared/order-judge-quote'
 import {
-  JudgeError, connectProvider, deleteEntry, attachUrl, estimate, imageUrl, judge, loadState, logClient, providerStatus, saveDoc, savePaths, followJudgeChanges,
+  JudgeError, connectProvider, deleteEntry, attachUrl, estimate, imageUrl, judge, loadState, logClient, providerStatus, saveDoc, saveDayRate, savePaths, followJudgeChanges,
   type ProviderStatus,
 } from './api'
 
@@ -503,6 +503,8 @@ function JudgeWorkspace(): JSX.Element {
     <SettingsDialog
       docs={state.docs}
       paths={state.paths}
+      dayRate={state.dayRate}
+      onDayRate={(dayRate) => setState(s => s ? { ...s, dayRate } : s)}
       onPaths={(paths) => setState(s => s ? { ...s, paths } : s)}
       onDocs={(docs) => setState(s => s ? { ...s, docs: mergeDocs(s, docs) } : s)}
       onClose={() => setSettingsOpen(false)}
@@ -901,6 +903,7 @@ function EstimateSheet({ est, onRetry }: { est: Est; onRetry?: () => void }): JS
     )
   }
   const { hours, quote } = est.result
+  const rate = quote?.dayRate ?? DAY_RATE
   const max = Math.max(1, ...hours.groups.map((g) => g.hours))
   const tiers = quote?.tiers ?? []
   return (
@@ -923,7 +926,7 @@ function EstimateSheet({ est, onRetry }: { est: Est; onRetry?: () => void }): JS
           )}
           <p className="oj-est-rush">
             <Ic name="alert" />
-            <span>以上不含加急。加急每提前 1 天加（请的人数 + 1）× {DAY_RATE} 元，最多提前 {tiers.map((t) => t.calendarDays).join(' / ')} 天；例：请 1 人提前 2 天加 {2 * 2 * DAY_RATE} 元。</span>
+            <span>以上不含加急。加急每提前 1 天加（请的人数 + 1）× {rate} 元，最多提前 {tiers.map((t) => t.calendarDays).join(' / ')} 天；例：请 1 人提前 2 天加 {2 * 2 * rate} 元。</span>
           </p>
         </>
       ) : (
@@ -1018,14 +1021,33 @@ function DeleteHistoryDialog({ entry, onDelete, onClose }: {
   )
 }
 
-function SettingsDialog({ docs, paths, onDocs, onPaths, onClose }: {
+function SettingsDialog({ docs, paths, dayRate, onDayRate, onDocs, onPaths, onClose }: {
   docs: Record<DocKind, DocMeta | null>
   paths: JudgePaths
+  dayRate: number
+  onDayRate: (v: number) => void
   onDocs: (d: Record<DocKind, DocMeta | null>) => void
   onPaths: (p: JudgePaths) => void
   onClose: () => void
 }): JSX.Element {
   const [busy, setBusy] = useState<DocKind | null>(null)
+  const [rateText, setRateText] = useState(String(dayRate))
+  const [rateBusy, setRateBusy] = useState(false)
+  useEffect(() => { setRateText(String(dayRate)) }, [dayRate])
+  const rateNum = /^\d+$/.test(rateText.trim()) ? Number(rateText.trim()) : NaN
+  const rateOk = rateNum >= MIN_DAY_RATE && rateNum <= MAX_DAY_RATE
+  const saveRate = async (): Promise<void> => {
+    if (!rateOk || rateNum === dayRate) return
+    setRateBusy(true)
+    try {
+      onDayRate(await saveDayRate(rateNum))
+      setNotice({ text: '已保存', err: false })
+    } catch (e) {
+      setNotice({ text: errorOf(e).message, err: true })
+    } finally {
+      setRateBusy(false)
+    }
+  }
   const [notice, setNotice] = useState<{ text: string; err: boolean } | null>(null)
   const pick = useRef<Record<DocKind, HTMLInputElement | null>>({ profile: null, log: null })
   useEffect(() => {
@@ -1115,17 +1137,21 @@ function SettingsDialog({ docs, paths, onDocs, onPaths, onClose }: {
       <div className="field">
         <span className="field-label">{label}</span>
         <p className="muted small oj-doc-purpose">{DOC_TEMPLATES[kind].purpose}</p>
-        <div className={`oj-doc${d ? '' : ' empty-doc'}`}>
-          <Ic name="doc" />
-          <span className="t">
-            {d ? <><b>{d.name}</b><span>{sizeText(d.size)} · {when(d.updatedAt)} · {d.source}</span></> : '还没有上传'}
-          </span>
-        </div>
+        {(!d || paths[kind].length !== 1) && (
+          <div className={`oj-doc${d ? '' : ' empty-doc'}`}>
+            <Ic name="doc" />
+            <span className="t">
+              {d ? <><b>{d.name}</b><span>{sizeText(d.size)} · {when(d.updatedAt)} · {d.source}</span></> : '还没有上传'}
+            </span>
+          </div>
+        )}
         {pathList(kind)}
-        <button type="button" className="btn btn-sm mt8" disabled={busy !== null} onClick={() => void choose(kind)}>
-          <Ic name="plus" cls="ic ic-sm" />{busy === kind ? '上传中…' : '上传文件'}
-        </button>
-        <button type="button" className="btn btn-sm mt8" style={{ marginLeft: 8 }} onClick={() => downloadDocTemplate(kind)}>下载模版</button>
+        <div className="oj-doc-acts">
+          <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={() => void choose(kind)}>
+            <Ic name="plus" cls="ic ic-sm" />{busy === kind ? '上传中…' : '上传文件'}
+          </button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadDocTemplate(kind)}>下载模版</button>
+        </div>
         <input
             ref={(el) => { pick.current[kind] = el }}
             type="file"
@@ -1149,6 +1175,21 @@ function SettingsDialog({ docs, paths, onDocs, onPaths, onClose }: {
         <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭"><Ic name="x" cls="ic" /></button>
         <h2 className="dlg-title">评估设置</h2>
         <div className="oj-set">
+          <div className="field">
+            <label className="field-label" htmlFor="oj-day-rate">每日工资</label>
+            <div className="oj-rate">
+              <span className="oj-rate-box">
+                <span aria-hidden="true">¥</span>
+                <input id="oj-day-rate" inputMode="numeric" autoComplete="off" value={rateText} disabled={rateBusy}
+                  aria-invalid={!rateOk}
+                  onChange={(e) => setRateText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void saveRate() }} />
+                <span aria-hidden="true">元 / 天</span>
+              </span>
+              <button type="button" className="btn btn-sm btn-primary" disabled={rateBusy || !rateOk || rateNum === dayRate} onClick={() => void saveRate()}>保存</button>
+            </div>
+            <p className="muted small oj-doc-purpose">估价 = 日薪 × 工期天数</p>
+          </div>
           {docRow('profile', '能力档案')}
           {docRow('log', '项目日志')}
           <div className="oj-set-foot">

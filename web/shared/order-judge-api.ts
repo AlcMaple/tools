@@ -49,6 +49,7 @@ export interface JudgeState {
   docs: Record<DocKind, DocMeta | null>
   paths: JudgePaths
   history: HistoryEntry[]
+  dayRate: number
   seq: number
 }
 

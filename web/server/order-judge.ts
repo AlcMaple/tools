@@ -100,7 +100,7 @@ function rowToEntry(r: HistoryRow): HistoryEntry {
 
 function readState(uid: number): JudgeState {
   const history = (db.prepare('SELECT * FROM order_judge_history WHERE user_id = ? ORDER BY at DESC LIMIT ?').all(uid, HISTORY_LIMIT) as HistoryRow[]).map(rowToEntry)
-  return { docs: judgeData.meta(uid), paths: judgeData.paths(uid), history, seq: judgeData.seq(uid) }
+  return { docs: judgeData.meta(uid), paths: judgeData.paths(uid), history, dayRate: judgeData.dayRate(uid), seq: judgeData.seq(uid) }
 }
 
 // 评估和估价带同一个 requestId 并行跑，谁先完成不一定：估价先到就暂存在这里，评估写历史时一并带上；
@@ -126,7 +126,7 @@ async function finishEstimate(uid: number, requestId: string, hours: HoursEstima
   const today = chinaToday()
   let priced: Quote | null = null, quoteError: string | undefined
   try {
-    priced = quote(hours.totalHours, today, await holidayYears(quoteYears(today, hours.totalHours)))
+    priced = quote(hours.totalHours, today, await holidayYears(quoteYears(today, hours.totalHours)), judgeData.dayRate(uid))
   } catch (e) {
     console.error(`[order-judge:estimate] uid=${uid} 交期算不出`, e)
     quoteError = `交期和价格算不出：${(e as Error).message}`
@@ -417,6 +417,18 @@ api.put('/docs/:kind', docLimit, async (c) => {
   if (!receipt) judgeData.upload(c.get('uid'), kind, body)
   judgeEvents.changed(c.get('uid'), judgeData.seq(c.get('uid')))
   return c.json({ ...(receipt ? { receipt } : {}), docs: judgeData.meta(c.get('uid')), paths: judgeData.paths(c.get('uid')) })
+})
+
+api.put('/settings', bodyLimit({ maxSize: 1024 }), async (c) => {
+  const input = await c.req.json().catch(() => null) as { dayRate?: unknown } | null
+  try {
+    const dayRate = judgeData.setDayRate(c.get('uid'), input?.dayRate)
+    judgeEvents.changed(c.get('uid'), judgeData.seq(c.get('uid')))
+    return c.json({ dayRate })
+  } catch (e) {
+    if (e instanceof JudgeDataError) return c.json({ code: e.code, error: e.message }, 400)
+    throw e
+  }
 })
 
 api.put('/paths/:kind', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {

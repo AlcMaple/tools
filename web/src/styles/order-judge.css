@@ -1,3 +1,15 @@
+/* 平板居中成卡片，手机贴底成抽屉 */
+@media (max-width: 960px) {
+  .oj-set-backdrop.open { align-items: center; padding: 16px; }
+  .oj-set-dlg { width: min(560px, 100%); max-width: none; max-height: 88svh; }
+  .oj-grip { display: none; }
+}
+@media (max-width: 600px) {
+  .oj-set-backdrop.open { align-items: flex-end; padding: 0; }
+  .oj-set-dlg { width: 100%; border-radius: 18px 22px 0 0; padding: 10px 18px 26px; max-height: 86svh; }
+  .oj-grip { display: block; width: 44px; height: 4px; margin: 0 auto 12px; border-radius: 2px; background: var(--silver-line); }
+  .oj-doc-acts .btn { flex: 1; }
+}
 /* 接单评估（网页版）。设计稿：docs/design-mockups/web/接单评估.html */
 
 @media (min-width: 961px) { .oj-mob { display: none !important; } }
@@ -261,3 +273,15 @@
 .oj-delete-error { height: 3.3em; overflow: auto; overflow-wrap: anywhere; color: var(--sakura); font-size: 13px; line-height: 1.65; }
 .oj-delete-dialog .dlg-actions { margin-top: 12px; }
 .oj-delete-dialog .dlg-actions .btn { min-width: 96px; }
+
+/* 设置：日薪、文件操作按钮成排，不再各占一整行 */
+.oj-rate { display: flex; align-items: center; gap: 10px; }
+.oj-rate-box { flex: 1; min-width: 0; max-width: 260px; display: flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 12px; border: 1.5px solid var(--field-line); border-radius: 10px 14px 10px 14px; background: var(--field-bg); color: var(--ink-faint); font-size: 13px; transition: border-color .2s, box-shadow .2s; }
+.oj-rate-box:focus-within { border-color: var(--teal-line); box-shadow: 0 0 0 3px var(--teal-wash); }
+.oj-rate-box:has(input[aria-invalid="true"]) { border-color: var(--sakura); }
+.oj-rate-box input { flex: 1; min-width: 0; width: 100%; padding: 8px 0; border: 0; outline: 0; background: none; font: inherit; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.oj-rate-box span { flex: none; }
+.oj-rate .btn { flex: none; }
+.oj-doc-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.oj-doc-acts .btn { flex: none; }
+.oj-set .field-label { display: block; }

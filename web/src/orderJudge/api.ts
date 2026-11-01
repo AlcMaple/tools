@@ -32,6 +32,9 @@ export const saveDoc = async (kind: DocKind, name: string, content: string): Pro
 export const savePaths = async (kind: DocKind, paths: JudgePath[]): Promise<JudgePaths> =>
   (await json<{ paths: JudgePaths }>(await fetchApi(`/api/order-judge/paths/${kind}`, send('PUT', { paths })))).paths
 
+export const saveDayRate = async (dayRate: number): Promise<number> =>
+  (await json<{ dayRate: number }>(await fetchApi('/api/order-judge/settings', send('PUT', { dayRate })))).dayRate
+
 export const deleteEntry = async (id: string): Promise<void> => {
   await json(await fetchApi(`/api/order-judge/history/${id}`, send('DELETE')))
 }

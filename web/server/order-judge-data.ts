@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3'
 import { db } from './db'
 import { DOC_MAX_BYTES, type DocKind, type DocMeta, type JudgeDoc, type JudgeDocs, type DocReceipt, type JudgeSnapshot, type JudgePath, type JudgePaths, MAX_JUDGE_PATHS, WEB_DEVICE } from '../shared/order-judge-api'
 import { judgeDocText } from '../shared/order-judge-text'
+import { DAY_RATE, MAX_DAY_RATE, MIN_DAY_RATE } from '../shared/order-judge-quote'
 
 export class JudgeDataError extends Error {
   constructor(readonly code: string, message: string, readonly status: 400 | 404 | 409 | 413 = 409) { super(message) }
@@ -33,6 +34,8 @@ export class JudgeData {
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         source_id TEXT NOT NULL, input_hash TEXT NOT NULL, entry_id TEXT NOT NULL,
         PRIMARY KEY(user_id,source_id));
+      CREATE TABLE IF NOT EXISTS order_judge_settings (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, day_rate INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS order_judge_paths (
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL CHECK(kind IN ('profile','log')),
         position INTEGER NOT NULL, path TEXT NOT NULL, device TEXT NOT NULL, PRIMARY KEY(user_id,kind,path));
@@ -102,6 +105,17 @@ export class JudgeData {
       this.bump(uid)
       return { status: 'saved', revision, hash }
     })()
+  }
+
+  dayRate(uid: number): number {
+    return (this.database.prepare('SELECT day_rate FROM order_judge_settings WHERE user_id=?').get(uid) as { day_rate: number } | undefined)?.day_rate ?? DAY_RATE
+  }
+
+  setDayRate(uid: number, value: unknown): number {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < MIN_DAY_RATE || value > MAX_DAY_RATE) throw new JudgeDataError('BAD_INPUT', `日薪要填 ${MIN_DAY_RATE}～${MAX_DAY_RATE} 之间的整数。`, 400)
+    this.database.prepare('INSERT INTO order_judge_settings VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET day_rate=excluded.day_rate').run(uid, value)
+    this.bump(uid)
+    return value
   }
 
   paths(uid: number): JudgePaths {

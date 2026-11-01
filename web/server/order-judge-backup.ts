@@ -8,7 +8,7 @@ import { normalizeReport } from '../shared/order-judge'
 import { ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES } from '../shared/order-judge-api'
 
 // 旧备份里的 versions / bases / conflicts / doc_ops 表已不存在，恢复时忽略。
-const tables = ['order_judge_docs', 'order_judge_paths', 'order_judge_history', 'order_judge_runs', 'order_judge_imports'] as const
+const tables = ['order_judge_docs', 'order_judge_paths', 'order_judge_history', 'order_judge_runs', 'order_judge_imports', 'order_judge_settings'] as const
 type Scalar = string | number | null
 type Row = Record<string, Scalar>
 interface JudgeBackup { version: 1; tables: Record<string, Row[]> }
@@ -56,7 +56,8 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
     const input = raw as Partial<JudgeBackup>
     if (input.version !== 1 || !input.tables || typeof input.tables !== 'object') throw new Error('接单评估备份格式无效。')
     for (const table of tables) {
-      const rows = input.tables[table]
+      // 日薪表是后加的，旧备份里没有
+      const rows = input.tables[table] ?? (table === 'order_judge_settings' ? [] : undefined)
       if (!Array.isArray(rows) || rows.length > 20_000) throw new Error('接单评估备份表无效。')
       const columns = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(c => c.name)
       restored[table] = rows.map(rawRow => {
@@ -98,7 +99,7 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
     apply() {
       if (!Object.values(restored).some(rows => rows.length)) return
       // 备份恢复不覆盖已在多端使用的版本；已有资料时保留现状，不走时间戳胜出。
-      if (tables.some(table => db.prepare(`SELECT 1 FROM ${table} WHERE user_id=? LIMIT 1`).get(uid))) { state = 'existing-skipped'; return }
+      if (tables.some(table => table !== 'order_judge_settings' && db.prepare(`SELECT 1 FROM ${table} WHERE user_id=? LIMIT 1`).get(uid))) { state = 'existing-skipped'; return }
       for (const image of images) {
         const folder = dirname(image.path)
         if (!existsSync(folder)) { mkdirSync(folder, { recursive: true }); folders.push(folder) }
