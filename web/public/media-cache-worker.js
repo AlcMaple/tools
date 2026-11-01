@@ -218,8 +218,10 @@ async function run(state) {
     if (state.stopped) return
     const start = pickNext()
     if (start === undefined) break
+    // 尾块（moov）没到之前，这条流只拉当前一块：否则从 0 起的 Range 会一路顺下去，尾块要等 <video> 来要、断流重连后才开始拉，
+    // 11-01 iPhone 实测单连接约 1.7Mbps，这一来一回超过 WebKit 约 18 秒的等待，直接报 code=4
     let end = start
-    while (end + 1 < n && !state.have.has(end + 1)) end++
+    if (state.have.has(n - 1)) while (end + 1 < n && !state.have.has(end + 1)) end++
     const ctrl = new AbortController()
     state.streamCtrl = ctrl
     state.streamAt = start

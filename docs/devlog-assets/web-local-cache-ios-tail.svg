@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 980" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="a-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+    <marker id="a-red" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#b96372"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="978" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">iPhone 上本地缓存播放起不来：结尾那一小块排到了整集后面</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：改成「开头一块 → 结尾一块 → 再从头顺着拉」后，iPhone 实测约 10 秒出画面，整集存进手机，下一集自动接着下</text>
+
+  <!-- ============ 一、为什么结尾那块决定能不能开播 ============ -->
+  <rect x="32" y="84" width="1056" height="168" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、为什么结尾那一块决定能不能开播</text>
+
+  <rect x="56" y="126" width="316" height="106" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="214" y="150" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">这批视频的「目录」在文件最后</text>
+  <text x="214" y="172" text-anchor="middle" font-size="11" fill="#4d6575">一集约 160~210MB，按 4MB 一块存进手机</text>
+  <text x="214" y="190" text-anchor="middle" font-size="11" fill="#4d6575">告诉播放器每一秒画面在哪的目录</text>
+  <text x="214" y="208" text-anchor="middle" font-size="11" fill="#4d6575">只在最后约 1.4MB 里</text>
+
+  <path d="M376 179 H412" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="416" y="126" width="316" height="106" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="574" y="150" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">Safari 开播前必须拿到两头</text>
+  <text x="574" y="172" text-anchor="middle" font-size="11" fill="#4d6575">先要开头 → 发现目录不在这</text>
+  <text x="574" y="190" text-anchor="middle" font-size="11" fill="#4d6575">→ 再要结尾 → 拿到目录才出画面</text>
+  <text x="574" y="208" text-anchor="middle" font-size="11" fill="#4d6575">中间几十块此时都用不上</text>
+
+  <path d="M736 179 H772" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="776" y="126" width="288" height="106" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="920" y="150" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">等结尾超过约 18 秒</text>
+  <text x="920" y="172" text-anchor="middle" font-size="11" fill="#8a5a62">Safari 直接判定「视频坏了」</text>
+  <text x="920" y="190" text-anchor="middle" font-size="11" fill="#8a5a62">播放页只能退回原来的播放方式</text>
+  <text x="920" y="208" text-anchor="middle" font-size="11" fill="#8a5a62">手机里的下载随之停掉</text>
+
+  <!-- ============ 二、改前改后对照 ============ -->
+  <rect x="32" y="270" width="1056" height="470" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="296" font-size="14" font-weight="700" fill="#353136">二、同一台 iPhone、同一条线路（手机单连接约 1.7~1.8Mbps），改前改后</text>
+
+  <!-- 改前 -->
+  <text x="56" y="326" font-size="12.5" font-weight="700" fill="#96434f">改前 · 死神第 62 集（202MB）</text>
+  <text x="56" y="352" font-size="11" font-weight="700" fill="#756f73">用户看到的</text>
+  <rect x="140" y="338" width="924" height="26" rx="7" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="602" y="355" text-anchor="middle" font-size="11" fill="#96434f">画面一直不出来，约 40 秒后换回原来的方式播放；放映室里这一集只存了 8MB，第 63 集一点没下</text>
+
+  <text x="56" y="392" font-size="11" font-weight="700" fill="#756f73">背后在做的</text>
+  <rect x="140" y="376" width="196" height="64" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="238" y="398" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">0~19 秒</text>
+  <text x="238" y="416" text-anchor="middle" font-size="11" fill="#4a4450">开头 4MB 到手</text>
+  <text x="238" y="432" text-anchor="middle" font-size="11" fill="#4a4450">Safari 拿到开头</text>
+  <path d="M340 408 H368" stroke="#b96372" stroke-width="1.6" marker-end="url(#a-red)"/>
+  <rect x="372" y="376" width="300" height="64" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="522" y="398" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">下载没停，顺着拉第 2、3 块…</text>
+  <text x="522" y="416" text-anchor="middle" font-size="11" fill="#8a5a62">第一次请求就要了「整集」，结尾排在最后</text>
+  <text x="522" y="432" text-anchor="middle" font-size="11" fill="#8a5a62">Safari 来要结尾时才断开、重连去拉</text>
+  <path d="M676 408 H704" stroke="#b96372" stroke-width="1.6" marker-end="url(#a-red)"/>
+  <rect x="708" y="376" width="356" height="64" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="886" y="398" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">19~37 秒：结尾 18 秒一个字节都没给出</text>
+  <text x="886" y="416" text-anchor="middle" font-size="11" fill="#8a5a62">Safari 放弃 → 退回原来的播放方式</text>
+  <text x="886" y="432" text-anchor="middle" font-size="11" fill="#8a5a62">下载停掉，只剩开头那块和半截</text>
+
+  <!-- 改后 -->
+  <text x="56" y="486" font-size="12.5" font-weight="700" fill="#316247">改后 · 死神第 63 集（157MB）</text>
+  <text x="56" y="512" font-size="11" font-weight="700" fill="#756f73">用户看到的</text>
+  <rect x="140" y="498" width="924" height="26" rx="7" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="602" y="515" text-anchor="middle" font-size="11" fill="#316247">约 10 秒出画面，之后全程从手机里读；看完时整集已经存好，第 64 集已经开始下</text>
+
+  <text x="56" y="552" font-size="11" font-weight="700" fill="#756f73">背后在做的</text>
+  <rect x="140" y="536" width="196" height="64" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="238" y="558" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">0~4.4 秒</text>
+  <text x="238" y="576" text-anchor="middle" font-size="11" fill="#456b54">只拉开头这一块</text>
+  <text x="238" y="592" text-anchor="middle" font-size="11" fill="#456b54">拉完立刻收手</text>
+  <path d="M340 568 H368" stroke="#4b8f6a" stroke-width="1.6" marker-end="url(#a-green)"/>
+  <rect x="372" y="536" width="300" height="64" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="522" y="558" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">4.4~9.5 秒：紧接着拉结尾 1.3MB</text>
+  <text x="522" y="576" text-anchor="middle" font-size="11" fill="#456b54">Safari 来要结尾时它已经在路上</text>
+  <text x="522" y="592" text-anchor="middle" font-size="11" fill="#456b54">等了约 4 秒就拿到，出画面</text>
+  <path d="M676 568 H704" stroke="#4b8f6a" stroke-width="1.6" marker-end="url(#a-green)"/>
+  <rect x="708" y="536" width="356" height="64" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="886" y="558" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">之后：从头一条连接顺着拉完全集</text>
+  <text x="886" y="576" text-anchor="middle" font-size="11" fill="#456b54">157MB / 12 分钟 = 1.8Mbps，比边看边播快</text>
+  <text x="886" y="592" text-anchor="middle" font-size="11" fill="#456b54">下完 3 秒后第 64 集自动开始下</text>
+
+  <rect x="56" y="620" width="1008" height="100" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="76" y="644" font-size="12.5" font-weight="700" fill="#7a6234">为什么电脑上一直没发现</text>
+  <text x="76" y="666" font-size="11" fill="#7a6234">电脑直连这条线路约 15Mbps，开头 4MB 只要 2 秒，结尾就算排队等重连也远不到 18 秒，所以改前在电脑上照样能播</text>
+  <text x="76" y="686" font-size="11" fill="#7a6234">只有手机单连接掉到约 2Mbps，「先把开头拉完 + 断开重连 + 再拉结尾」这一来一回才会超过 Safari 的耐心</text>
+  <text x="76" y="706" font-size="11" fill="#7a6234">第 62 集没下也不是另一个问题：下一集只在这一集下完后才排上，这一集中途被停，下一集自然轮不到</text>
+
+  <!-- ============ 三、哪里容易改错 ============ -->
+  <rect x="32" y="758" width="1056" height="198" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="784" font-size="14" font-weight="700" fill="#353136">三、接手时容易改错的地方</text>
+
+  <rect x="56" y="800" width="324" height="136" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="218" y="824" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">别把开头那次请求改回「要整集」</text>
+  <text x="218" y="846" text-anchor="middle" font-size="11" fill="#8a5a62">一次要整集看着省一次握手</text>
+  <text x="218" y="864" text-anchor="middle" font-size="11" fill="#8a5a62">但结尾会被排到最后几分钟</text>
+  <text x="218" y="882" text-anchor="middle" font-size="11" fill="#8a5a62">连成一整条，只能在结尾到手之后</text>
+
+  <rect x="398" y="800" width="324" height="136" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="560" y="824" text-anchor="middle" font-size="12.5" font-weight="700" fill="#96434f">别为了快起播再开第二条连接</text>
+  <text x="560" y="846" text-anchor="middle" font-size="11" fill="#8a5a62">开头和结尾同时拉，两条连接分同一份</text>
+  <text x="560" y="864" text-anchor="middle" font-size="11" fill="#8a5a62">手机带宽，开头反而更慢到</text>
+  <text x="560" y="882" text-anchor="middle" font-size="11" fill="#8a5a62">始终只有一条连接，按「谁先要谁先拉」排</text>
+
+  <rect x="740" y="800" width="324" height="136" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="902" y="824" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">还剩的风险：开头那块</text>
+  <text x="902" y="846" text-anchor="middle" font-size="11" fill="#4d6575">Safari 第一次请求要等整块 4MB 落盘</text>
+  <text x="902" y="864" text-anchor="middle" font-size="11" fill="#4d6575">1.8Mbps 下约 5 秒；改前那次 19 秒</text>
+  <text x="902" y="882" text-anchor="middle" font-size="11" fill="#4d6575">手机更慢、接近 18 秒时这里会先出事</text>
+  <text x="902" y="912" text-anchor="middle" font-size="11" font-weight="700" fill="#36566d">常见情况：电脑和快网络从来碰不到这条</text>
+</svg>
