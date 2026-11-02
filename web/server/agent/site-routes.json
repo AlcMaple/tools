@@ -547,6 +547,11 @@
   {
     "file": "server/index.ts",
     "method": "get",
+    "path": "/api/catalog"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
     "path": "/api/cover/*"
   },
   {

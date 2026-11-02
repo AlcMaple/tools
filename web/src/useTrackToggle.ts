@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CalendarItem, Track } from './api'
+import type { CalendarItem, Track, TrackStatus } from './api'
 import { deleteTrack, putTrack } from './api'
 import { useAuth } from './auth'
 import { toast } from './Toast'
@@ -14,7 +14,7 @@ export function useTrackToggle(): {
   /** 已追番的完整记录，周历「继续看」按它的进度开播 */
   tracksById: Map<number, Track>
   error: string | null
-  toggle: (item: CalendarItem, weekday: number) => void
+  toggle: (item: CalendarItem, weekday: number, status?: TrackStatus) => void
 } {
   const { user } = useAuth()
   // 已追的 bgmId —— 用来给海报画「已收藏」描边 / 切圆章按钮图标。未登录就是空集（按钮不显示）。
@@ -42,7 +42,7 @@ export function useTrackToggle(): {
   }, [user])
 
   // 角标先响应点击，成功提示等写入确认；共享列表先合并成功响应，再用全量校验收口。
-  const toggle = (item: CalendarItem, weekday: number): void => {
+  const toggle = (item: CalendarItem, weekday: number, status: TrackStatus = 'watching'): void => {
     if (!user || pending.current.has(item.id)) return
     pending.current.add(item.id)
     setWriteError(null)
@@ -58,7 +58,7 @@ export function useTrackToggle(): {
         return deleteTrack(item.id)
       } else {
         return putTrack(item.id, {
-          status: 'watching',
+          status,
           title: item.name,
           titleCn: item.name_cn,
           cover: item.cover,

@@ -10,6 +10,7 @@ import { AnnouncementModal } from './AnnouncementModal'
 import { auth, captureInviteFromLocation, useAuth } from './auth'
 import { AuthModal, type AuthMode } from './AuthModal'
 import { CalendarPage } from './CalendarPage'
+import { CatalogPage } from './CatalogPage'
 import { CalendarHistoryPage } from './CalendarHistoryPage'
 import { CommunityPage } from './CommunityPage'
 import { NagBar } from './NagBar'
@@ -29,6 +30,7 @@ import { FindAnime, openFindAnime } from './FindAnime'
 // 各页书脊的小 accents：胶带色 / 印章 / 拟声词（原型稿逐页配置）
 const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira: string }> = {
   calendar: { tape: 'tape tl teal', stamp: '紗霧', stampCls: 'st-sakura', kira: 'キラキラ…' },
+  catalog: { tape: 'tape tl gold', stamp: '图鉴', stampCls: 'st-teal', kira: 'パラパラ…' },
   history: { tape: 'tape tl teal', stamp: '往期', stampCls: 'st-sakura', kira: 'キラキラ…' },
   tracks: { tape: 'tape tl gold', stamp: '在看', stampCls: 'st-teal', kira: 'キラキラ…' },
   rewards: { tape: 'tape tl lav', stamp: '福利', stampCls: 'st-sakura', kira: 'ポンッ…' },
@@ -42,6 +44,7 @@ const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira
 const ROUTE_HREF: Record<Route, string> = {
   // 用根路径作为站内入口，避免从 `/u/:username` 打开时把用户 pathname 带到别的页面。
   calendar: '/#/',
+  catalog: '/#/anime',
   history: '/#/history',
   tracks: '/#/tracks',
   rewards: '/#/rewards',
@@ -261,11 +264,14 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
             <IdxLink route="calendar" active={route === 'calendar' || route === 'history'} icon="calendar">
               番剧周历
             </IdxLink>
+            <IdxLink route="catalog" active={route === 'catalog'} icon="shelf">
+              全部番剧
+            </IdxLink>
             <IdxLink route="tracks" active={route === 'tracks'} icon="tracks">
               我的追番
             </IdxLink>
             <IdxLink route="community" active={route === 'community'} icon="user">
-              追番大厅
+              同好手帐
             </IdxLink>
             <IdxLink route="judge" active={route === 'judge'} icon="judge">
               接单评估
@@ -335,6 +341,8 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
               ? <SettingsPage />
               : route === 'tracks'
                 ? <TracksPage />
+                : route === 'catalog'
+                  ? <CatalogPage />
                 : route === 'history'
                   ? <CalendarHistoryPage />
                 : route === 'community'
@@ -405,8 +413,9 @@ function IdxLink({
 
 const DIRECTORY: { route: Route; icon: SketchIconName; label: string }[] = [
   { route: 'calendar', icon: 'calendar', label: '番剧周历' },
+  { route: 'catalog', icon: 'shelf', label: '全部番剧' },
   { route: 'tracks', icon: 'tracks', label: '我的追番' },
-  { route: 'community', icon: 'user', label: '追番大厅' },
+  { route: 'community', icon: 'user', label: '同好手帐' },
   { route: 'judge', icon: 'judge', label: '接单评估' },
   { route: 'room', icon: 'video', label: '放映室' },
   ...(REWARDS_ENABLED ? [{ route: 'rewards' as const, icon: 'gift' as const, label: '放映福利' }] : []),
@@ -414,7 +423,7 @@ const DIRECTORY: { route: Route; icon: SketchIconName; label: string }[] = [
 ]
 
 // 设计稿里浮钮只出现在列表类页面；播放、设置这类页面不挡内容
-const FIND_FAB_ROUTES = new Set<Route>(['calendar', 'history', 'tracks', 'community'])
+const FIND_FAB_ROUTES = new Set<Route>(['calendar', 'catalog', 'history', 'tracks', 'community'])
 
 // 入口都同样重要，不分主次：底部只留「现在在哪」，点开是全部入口一样大的目录
 function MobileDirectory({ route, feedbackUnread }: { route: Route; feedbackUnread: number }): JSX.Element {

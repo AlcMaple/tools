@@ -29,7 +29,7 @@ export function AgentSources({sources,onNavigate}:{sources:readonly HistorySourc
   if(!sources.length)return null
   return <div className="agent-sources" aria-label="来源">
     {(items.length>0||legacy.length>0)&&<details className="agent-stat-sources">
-      <summary><span>来源：追番大厅</span><small>{items.length>0?`${items.length} 项统计`:''}{items.length>0&&legacy.length>0?' · ':''}{legacy.length>0?`${legacy.length} 条旧来源`:''}</small></summary>
+      <summary><span>来源：同好手帐</span><small>{items.length>0?`${items.length} 项统计`:''}{items.length>0&&legacy.length>0?' · ':''}{legacy.length>0?`${legacy.length} 条旧来源`:''}</small></summary>
       <div className="agent-stat-content">
         {items.map(({source,origins})=>{const d=source.aggregate!,label=PUBLIC_METRIC_LABELS[d.metric],times=[...new Set(origins.map(s=>s.retrievedAt))].sort((a,b)=>a-b)
           return <section className="agent-stat-item" key={source.sourceId} aria-label={label.label}>

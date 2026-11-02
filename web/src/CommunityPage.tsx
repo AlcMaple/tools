@@ -145,7 +145,7 @@ export function CommunityPage(): JSX.Element {
       setAnimeReviews(null)
       void fetchAnimeReviews(route.bgmId).then((n) => alive && setAnimeReviews(n)).catch(fail('这部番的点评读取失败')).finally(done)
     } else {
-      void fetchCommunityUsers().then((r) => alive && setUsers(r.data)).catch(fail('追番大厅读取失败')).finally(done)
+      void fetchCommunityUsers().then((r) => alive && setUsers(r.data)).catch(fail('同好手帐读取失败')).finally(done)
     }
     return () => {
       alive = false
@@ -188,7 +188,7 @@ function HallView({
     <>
       <div className="spread" style={{ alignItems: 'flex-end' }}>
         <div>
-          <h1 className="title-sketch" style={{ fontSize: 34 }}>追番大厅</h1>
+          <h1 className="title-sketch" style={{ fontSize: 34 }}>同好手帐</h1>
           <p className="muted small mt8">哼，来看看大家的追番手帐吧，说不定能捡到下一部想看的番。</p>
         </div>
         <span className="tagx mine"><Ic name="eye" cls="ic ic-sm" /> 纱雾只翻公开的手帐</span>

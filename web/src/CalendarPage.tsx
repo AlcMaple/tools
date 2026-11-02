@@ -756,13 +756,14 @@ function trialTrack(item: CalendarItem): Track {
 }
 
 // ── 拍立得海报卡（追番圆章常驻，无 hover 依赖） ──────────────────────────────────
-function Poster({
+export function Poster({
   item,
   weekday,
   canTrack,
   tracked,
   onToggle,
   watch,
+  meta,
 }: {
   item: CalendarItem
   weekday: number
@@ -770,6 +771,7 @@ function Poster({
   tracked: boolean
   onToggle: (item: CalendarItem, weekday: number) => void
   watch?: PosterWatch
+  meta?: string
 }): JSX.Element {
   const displayTitle = item.name_cn || item.name
   const on = tracked
@@ -812,7 +814,7 @@ function Poster({
       <div className="poster-title" title={displayTitle}>
         {displayTitle}
       </div>
-      <div className="poster-ep">{item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中'}</div>
+      <div className="poster-ep">{meta ?? (item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中')}</div>
       {watch && canTrack && (
         <div className="poster-watch">
           <ContinueWatchAction

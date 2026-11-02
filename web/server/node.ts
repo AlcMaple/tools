@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import { compress } from 'hono/compress'
 import { serveStatic } from '@hono/node-server/serve-static'
 import app from './index'
+import { startCatalogCoverBackfill } from './bgm/catalog'
 
 // 生产 / 自有 VPS 运行入口：同一个 Hono 应用（/api/* 已在 index.ts 里定义、优先匹配）
 // + 服务 `npm run build` 打包出的前端 dist/。
@@ -92,6 +93,7 @@ const port = Number(process.env.PORT) || 3000
 // 曾经绑 0.0.0.0：公网直连 http://<ip>:3000 就绕开了 nginx，登录密码明文过网，
 // 且 X-Forwarded-For 随便伪造（限流形同虚设）。要对外裸跑再显式给 HOST=0.0.0.0。
 const hostname = process.env.HOST || '127.0.0.1'
+startCatalogCoverBackfill()
 serve({ fetch: app.fetch, port, hostname }, (info) => {
   console.log(`[web] listening on http://${hostname}:${info.port}`)
 })

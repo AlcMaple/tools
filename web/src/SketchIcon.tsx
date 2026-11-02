@@ -40,6 +40,7 @@ const SYMBOLS = `
 <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4M9 12h6M9 15.5h6"/></symbol>
 <symbol id="i-video" viewBox="0 0 24 24"><rect x="3.5" y="6" width="12" height="12" rx="2"/><path d="M15.5 10.5l5-3v9l-5-3"/></symbol>
 <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="15.5" rx="2"/><path d="M9.5 3.5h5v3h-5zM9 11h6M9 14.5h4"/></symbol>
+<symbol id="i-shelf" viewBox="0 0 24 24"><path d="M3.5 20.5h17M5.5 20.5v-14h3.5v14M10.5 20.5v-11h3.5v11M15 20.5l2.4-12.6 3.3.6-2.3 12"/></symbol>
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></symbol>
 `
 
@@ -58,7 +59,7 @@ export type SketchIconName =
   | 'pencil' | 'calendar' | 'tracks' | 'settings' | 'search' | 'user' | 'plus' | 'minus'
   | 'play' | 'star' | 'x' | 'check' | 'alert' | 'chev' | 'eye' | 'eye-off' | 'refresh'
   | 'external' | 'dots' | 'logout' | 'clip' | 'tag' | 'edit' | 'mail' | 'google' | 'github' | 'linuxdo' | 'pause' | 'back' | 'heart' | 'folder'
-  | 'ticket' | 'gift' | 'judge' | 'doc' | 'video' | 'paste' | 'trash'
+  | 'ticket' | 'gift' | 'judge' | 'doc' | 'video' | 'paste' | 'trash' | 'shelf'
 
 export function Ic({ name, cls = 'ic' }: { name: SketchIconName; cls?: string }): JSX.Element {
   return (

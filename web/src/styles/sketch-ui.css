@@ -301,7 +301,6 @@
   .spine-acts .btn { flex: none; }
   .sheet { padding-top: 16px; }
   .rig-box { top: 76px; }
-  body[data-page='tracks'] .sheet-wrap { max-width: 1240px; }
   /* 追番页抬头：标题、在看数、搜索工具栏三层叠在左边，立绘贴右边，和番剧周历同一种比例；
      导入 / 加番放到下面状态标签那一行的最右边 */
   /* 抬头高度和立绘位置沿用番剧周历的默认值：立绘人物的头会探出便签上沿，矮了就会顶到上面的提示条 */
@@ -1152,7 +1151,11 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 @media (hover: hover) { .dd-item:hover { background: var(--teal-wash); color: var(--ink); } }
 .dd-item.on { color: var(--teal); font-weight: 600; }
-.dd-item .ic { flex: none; }
+.dd-item .ic { flex: none; margin-left: auto; }
+/* 滚动条沿用全站 4px 细条（别写 scrollbar-width，Chrome 会改用系统滚动条），上下让开圆角，不戳出浮层 */
+.dd::-webkit-scrollbar-track, .tag-filter-list::-webkit-scrollbar-track { margin-block: 8px; }
+/* 浮层与触发器同宽，选项文字一律单行：窄触发器里折行会把「全部年份」拆成两截 */
+.dd-item > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- 「继续看」挑源弹窗（手帐便签口吻）---------- */
 .dlg-wsrc { width: min(400px, 100%); }
@@ -3400,15 +3403,19 @@ body[data-auth='out'] .track-btn { display: none; }
 /* ---------- 全站找番：桌面顶栏一枚主按钮，手机右下浮钮（设计稿 #fab） ---------- */
 .spine-find { flex: none; white-space: nowrap; }
 .m-find-fab { display: none; }
-/* 多了这枚按钮，顶栏到 1600 才放得下印章装饰 */
-@media (min-width: 961px) and (max-width: 1599px) {
+/* 多了找番和全部番剧，顶栏到 1800 才放得下印章装饰，1700 才放得下导航图标 */
+@media (min-width: 961px) and (max-width: 1799px) {
   .spine-deco { display: none; }
+}
+@media (min-width: 961px) and (max-width: 1699px) {
+  .idx-a .ic { display: none; }
 }
 @media (min-width: 961px) and (max-width: 1199px) {
   .spine-find { padding-inline: 10px; }
 }
-@media (min-width: 1200px) and (max-width: 1349px) {
-  .idx-a .ic { display: none; }
+@media (min-width: 961px) and (max-width: 1299px) {
+  .idx-a { padding-inline: 6px; }
+  .spine { gap: 4px; }
 }
 @media (max-width: 960px) {
   .spine-find { display: none; }
@@ -3445,3 +3452,29 @@ body[data-auth='out'] .track-btn { display: none; }
   .add-hit-acts { margin-left: auto; }
   .add-pane { height: min(52vh, 440px); }
 }
+
+/* 全部番剧：周历纵向海报墙同款，工具条在手机上搜索独占一行 */
+.catalog-toolbar { flex-wrap: wrap; gap: 10px; width: 100%; }
+.catalog-toolbar .searchbar { flex: 1 1 260px; max-width: 420px; }
+.catalog-year { width: 150px; }
+.catalog-year .dd-host { width: 100%; }
+.catalog-grid { padding-top: 4px; }
+@media (max-width: 640px) {
+  .catalog-toolbar .searchbar { flex-basis: 100%; max-width: none; }
+  .catalog-year { flex: 1; width: auto; }
+}
+/* 全部番剧页头：当前列表前三张封面叠成一把扇面，代替立绘；一张封面都没有时页头收成紧凑高度 */
+.catalog-fan { position: absolute; right: clamp(24px, 5%, 64px); bottom: 26px; width: 300px; height: 180px; pointer-events: none; }
+.catalog-fan img {
+  position: absolute; bottom: 0; left: 50%; width: 104px; aspect-ratio: 2 / 3; object-fit: cover;
+  padding: 5px 5px 14px; background: var(--card); border: 1px solid var(--line);
+  box-shadow: var(--shadow-2); transform-origin: 50% 100%;
+}
+.catalog-fan img:nth-child(1) { transform: translateX(-50%) rotate(-14deg) translateX(-62px); }
+.catalog-fan img:nth-child(2) { z-index: 1; transform: translateX(-50%) translateY(-10px) rotate(1deg); }
+.catalog-fan img:nth-child(3) { transform: translateX(-50%) rotate(13deg) translateX(62px); }
+@media (max-width: 960px), (hover: none) {
+  .catalog-fan { display: none; }
+}
+.catalog-page.no-art .sketch-hero { min-height: 0; }
+.catalog-page.no-art .sketch-hero-body { padding-right: 0; }

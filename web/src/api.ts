@@ -49,6 +49,29 @@ export function coverUrl(raw: string, bgmId?: number): string {
   }
 }
 
+export interface CatalogItem {
+  bgmId: number
+  name: string
+  nameCn: string
+  date: string
+  score: number
+  eps: number
+  tags: string[]
+  cover: string
+}
+
+export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number }
+
+export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number }, signal?: AbortSignal): Promise<CatalogResult> {
+  const query = new URLSearchParams({ q: params.q, year: String(params.year), sort: params.sort, offset: String(params.offset), limit: String(params.limit) })
+  const res = await fetch(`/api/catalog?${query}`, { signal })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(body.error || `全部番剧读取失败（HTTP ${res.status}）`)
+  }
+  return res.json() as Promise<CatalogResult>
+}
+
 export async function fetchCalendar(force = false): Promise<CalendarResult> {
   const res = await fetch(`/api/calendar${force ? '?force=1' : ''}`)
   if (!res.ok) {

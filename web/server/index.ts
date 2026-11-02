@@ -6,6 +6,7 @@ import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
 import { bgmHealth, noteBgmRequest } from './bgm/bgm-health'
 import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
+import { listCatalog } from './bgm/catalog'
 import { CoverError, getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
@@ -142,6 +143,22 @@ app.route('/api/player', player)
 // 刚刚新增的条目也在里面，所以前端把在线搜索做成用户可见的明确动作，而不是隐式兜底。
 // `mode=online` 才会访问 BGM 在线搜索；这条路仍保留缓存 / 限速 / 冷却，且失败不重试
 //（bgm/search-online.ts）。
+// 全部番剧：只读离线索引和已补好的封面，浏览不会触发任何 BGM 请求
+app.get('/api/catalog', (c) => {
+  const num = (key: string, fallback: number): number => {
+    const value = Number(c.req.query(key))
+    return Number.isSafeInteger(value) && value >= 0 ? value : fallback
+  }
+  c.header('Cache-Control', 'no-store')
+  return c.json(listCatalog({
+    q: (c.req.query('q') ?? '').slice(0, 80),
+    year: num('year', 0),
+    sort: c.req.query('sort') === 'date' ? 'date' : 'score',
+    offset: Math.min(num('offset', 0), 50_000),
+    limit: Math.min(Math.max(num('limit', 48), 1), 96),
+  }))
+})
+
 app.get('/api/search', async (c) => {
   const started = Date.now()
   const q = c.req.query('q') ?? ''
