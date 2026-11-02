@@ -185,7 +185,7 @@ ${PLAYBACK_BEACON}
     'akua.girigirilove.com': { conns: 1, par: 4 },
     'dl.playxf.top': { conns: 6, par: 1 }
   }
-  var localOff = false, localComplete = false, cacheWorker = null, cacheTitle = '', nextQueued = false, dl = null
+  var localOff = false, localComplete = false, cacheWorker = null, cacheTitle = '', nextQueued = false, dl = null, dlBps = 0
   function hostOf(url){ try { return new URL(url).hostname } catch (e) { return '' } }
   function tuneOf(pl){ return TUNE[hostOf(pl.url)] || (pl.kind === 'hls' ? { conns: 1, par: 4 } : { conns: 1, par: 1 }) }
 
@@ -292,7 +292,7 @@ ${PLAYBACK_BEACON}
     cacheWorker.onmessage = function(e){
       var m = e.data
       if (m.type === 'log') slog(m.msg)
-      else if (m.type === 'speed') noteSpeed(m.host, m.bps)
+      else if (m.type === 'speed'){ noteSpeed(m.host, m.bps); if (cur && cur.localHash === m.hash) dlBps = m.bps }
       else if (m.type === 'start' && cur && cur.localHash === m.hash) dl = { hash: m.hash, kind: m.kind, total: m.total, chunk: m.chunk, segs: m.segs, have: new Set(m.have) }
       else if (m.type === 'progress' && dl && dl.hash === m.hash) dl.have.add(m.chunk)
       else if (m.type === 'complete' && cur && cur.localHash === m.hash){ localComplete = true; queueNextEp() }
@@ -303,7 +303,7 @@ ${PLAYBACK_BEACON}
   }
   // 调用前播放器已经销毁（mount → destroyPlayer），这里才中止旧下载、开新的，顺序见 AGENTS.md。
   function switchDownload(pl){
-    dl = null
+    dl = null; dlBps = 0
     // 离线开播的那份没有下载任务、本来就是整集；其余换了线路都要等新的下载器报「下完」
     if (pl.localJob || !pl.localHash) localComplete = false
     if (pl.localJob) ensureWorker().postMessage({ type: 'job', priority: 'current', job: pl.localJob })
@@ -405,13 +405,16 @@ ${PLAYBACK_BEACON}
     }
   }
 
-  function destroyPlayer(){
+  function stopSource(){
     qosFlush('switch')
     generation++
     if (tapeTimer !== null){ clearInterval(tapeTimer); tapeTimer = null }
     if (stallTimer !== null){ clearInterval(stallTimer); stallTimer = null }
     $('buf').classList.remove('show')
     if (hls){ try { hls.destroy() } catch (e) {} hls = null }
+  }
+  function destroyPlayer(){
+    stopSource()
     if (art){ try { art.destroy(false) } catch (e) {} art = null }
     $('art').textContent = ''
   }
@@ -466,7 +469,7 @@ ${PLAYBACK_BEACON}
   // 不同压制版本同一时间点可能差几秒，只在下一集开始时按速度换。
   // 本地缓存时 <video> 自己的缓冲被浏览器限量，代表不了下载进度，按下载器报的已落盘块 / 片算
   // 「开始播了没」「上次跳转」自己记：qos 在页面藏到后台时会重开一份，不能拿它当依据
-  var slow = null, triedLines = {}, switchAt = 0, playedGen = -1, seekAt = -1e9, pendingResume = 0, firstGen = -1
+  var slow = null, triedLines = {}, switchAt = 0, playedGen = -1, seekAt = -1e9, pendingResume = 0, firstGen = -1, seekPending = false
   function downloadAhead(v){
     if (!cur || !cur.localHash) return aheadOf(v)
     if (localComplete) return Infinity
@@ -490,13 +493,22 @@ ${PLAYBACK_BEACON}
     slow.hist.push([now, ahead])
     while (now - slow.hist[0][0] > 5000) slow.hist.shift()
     var settled = now - slow.hist[0][0] >= 4000, before = slow.hist[0][1]
-    var stalled = stallSince ? now - stallSince : 0
-    var afterSeek = stallSince && stallSince - seekAt < 1500
-    var stuck = stalled >= (afterSeek || firstGen !== generation ? 8000 : 3000)
-    if ((settled && ahead < 30 && ahead < before - .5) || stuck) prepareFallback()
+    // 跳转后新位置的「领先量」从 0 起算，不是下载变慢：等跳转落地（seeked）之前不看趋势，只看是不是真的等不到数据。
+    // 本地缓存跳到还没下的位置，要等下载器把那一块（1MB）整块落盘才有首字节，按本机实测速度估这一块要多久，再留一倍余量
+    var stalled = seekPending ? now - seekAt : (stallSince ? now - stallSince : 0)
+    var stuck = stalled >= (seekPending ? seekWaitMs() : firstGen !== generation ? 8000 : 3000)
+    if ((!seekPending && settled && ahead < 30 && ahead < before - .5) || stuck) prepareFallback()
     // 已经卡住时不等同文件线路找完（要解析、要读文件信息），有同一条线路改走服务端就先切过去
     var fb = slow.fb || (stuck ? slow.server : null)
-    if (fb && (stuck || (settled && ahead < 10 && ahead <= before))) switchFallback(v, ahead, fb)
+    if (fb && (stuck || (!seekPending && settled && ahead < 10 && ahead <= before))) switchFallback(v, ahead, fb)
+  }
+  function seekWaitMs(){
+    if (!cur || !cur.localHash || localComplete) return 8000
+    if (dl && dl.kind === 'mp4'){
+      var bps = dlBps || lineSpeed(cur.source) || 1.5e6
+      return Math.min(60000, Math.max(8000, dl.chunk * 8 / bps * 2000 + 4000))
+    }
+    return 15000
   }
   async function prepareFallback(){
     var st = slow, pl = cur, gen = generation
@@ -538,7 +550,7 @@ ${PLAYBACK_BEACON}
     var next = fb.viaServer ? fb : await prepareLocal(fb, from.localHash)
     if (gen !== generation) return
     switchAt = performance.now()
-    mount(next, at, playing)
+    swapSource(next, at, playing)
   }
   function plainOf(pl){ var p = Object.assign({}, pl); delete p.localHash; delete p.localJob; return p }
 
@@ -570,11 +582,13 @@ ${PLAYBACK_BEACON}
       lang: 'zh-cn',
       theme: '#2f7d5e',
       customType: {
+        // 退路换源时同一台播放器会再调一次，线路和代次按调用那一刻的 cur / generation 取，不能用 mount 时的闭包
         m3u8: function(video, url){
+          var gen = generation, local = !!(cur && cur.localHash)
           if (window.Hls && Hls.isSupported()){
             var noRetry = { maxNumRetry: 0, retryDelayMs: 0, maxRetryDelayMs: 0 }
             // 本地缓存的分片要等下载器整片落盘才回头，首字节天然比直连晚，放宽等待；不加重试。
-            var policy = { default: { maxTimeToFirstByteMs: pl.localHash ? 30000 : 10000, maxLoadTimeMs: pl.localHash ? 45000 : 30000, timeoutRetry: noRetry, errorRetry: noRetry } }
+            var policy = { default: { maxTimeToFirstByteMs: local ? 30000 : 10000, maxLoadTimeMs: local ? 45000 : 30000, timeoutRetry: noRetry, errorRetry: noRetry } }
             hls = new Hls({ maxBufferLength: 90, maxMaxBufferLength: 120, backBufferLength: 60,
               manifestLoadPolicy: policy, playlistLoadPolicy: policy, keyLoadPolicy: policy, fragLoadPolicy: policy })
             hls.on(Hls.Events.ERROR, function(e, data){
@@ -589,24 +603,30 @@ ${PLAYBACK_BEACON}
         }
       }
     })
-    var v = art.video
+    var v = art.video, me = art
     qosStart(pl.source)
     // ready = 打开到播放按钮可点（拿到时长）；startup = 点播放到画面开始走
     v.addEventListener('loadedmetadata', function(){ if (qos && qos.readyMs < 0) qos.readyMs = performance.now() - qos.mountAt })
     v.addEventListener('play', function(){ if (qos && !qos.playAt) qos.playAt = performance.now() })
     v.addEventListener('playing', function(){ if (qos && qos.playAt && qos.startupMs < 0) qos.startupMs = performance.now() - qos.playAt })
-    if (switchAt){
-      var t0 = switchAt
+    v.addEventListener('playing', function(){
+      if (!switchAt || art !== me) return
+      slog('slow switch playing after ' + Math.round(performance.now() - switchAt) + 'ms t=' + v.currentTime.toFixed(1))
       switchAt = 0
-      v.addEventListener('playing', function once(){ v.removeEventListener('playing', once); slog('slow switch playing after ' + Math.round(performance.now() - t0) + 'ms t=' + v.currentTime.toFixed(1)) })
-    }
-    v.addEventListener('seeking', function(){ seekAt = performance.now(); if (qos) qos.lastSeekAt = seekAt })
-    v.addEventListener('play', function(){ if (gen === generation) playedGen = gen })
-    v.addEventListener('playing', function(){ if (gen === generation) firstGen = gen })
+    })
+    v.addEventListener('seeking', function(){
+      seekAt = performance.now(); seekPending = true
+      if (slow && slow.gen === generation) slow.hist = []
+      if (qos) qos.lastSeekAt = seekAt
+    })
+    // 这些监听跟着 <video> 活，退路换源（swapSource）不重挂，所以认「还是不是这台播放器」，代次取当下的
+    v.addEventListener('seeked', function(){ if (art === me){ seekPending = false; if (slow && slow.gen === generation) slow.hist = [] } })
+    v.addEventListener('play', function(){ if (art === me) playedGen = generation })
+    v.addEventListener('playing', function(){ if (art === me) firstGen = generation })
     startTape(v)
     startStallWatch(v)
     agentWatch(v)
-    pendingResume = resumeAt || 0
+    pendingResume = resumeAt || 0; seekPending = false
     if (resumeAt){
       v.addEventListener('loadedmetadata', function once(){
         v.removeEventListener('loadedmetadata', once)
@@ -619,12 +639,52 @@ ${PLAYBACK_BEACON}
     art.on('video:playing', function(){ agentReport('media_canplay'); agentReport('playing') })
     // 只认**当前这台**播放器的错：换线 / 重试销毁旧实例时，旧 <video> 被清 src 也会冒一个 code=4，
     // 不挡就会把刚挂好的新播放器盖上一条「播放出错」（真机截图：能播、进度条正常，红框却在）。
+    // 同一台换源时浏览器开始加载新地址就会把 v.error 清空，旧地址的错不会落到新源头上
     art.on('video:error', function(){
-      if (gen !== generation || !v.error) return
+      if (art !== me || !v.error) return
       onMediaError('video code=' + v.error.code)
     })
     // 没起播前别转圈：ArtPlayer 在 canplay 之前一直显示 loading，可首播要等用户点，那不是「在加载」。
     art.on('ready', function(){ if (!autoplay) art.loading.show = false; agentReport('player_ready', 'line ' + pl.source) })
+  }
+
+  function freezeFrame(v){
+    if (!v.videoWidth || v.readyState < 2) return
+    try {
+      var c = document.createElement('canvas'), k = Math.min(1, 960 / v.videoWidth)
+      c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k)
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height)
+      v.poster = c.toDataURL('image/jpeg', .8)
+    } catch (e){ slog('freeze frame failed ' + (e && e.name)) }
+  }
+
+  // 退路：同一台播放器、同一个 <video> 只换地址。整台销毁重建会退出全屏、控件和进度条先归 0，
+  // 用户以为看着看着断了。换集 / 手动换线路仍走 mount
+  function swapSource(pl, at, playing){
+    if (!art || !cur || cur.kind !== pl.kind) return mount(pl, at, playing)
+    stopSource()
+    var gen = generation, v = art.video
+    cur = pl; clearFail(); renderLines()
+    switchDownload(pl)
+    agentReport('source_selected', 'line ' + pl.source + ' ' + pl.kind)
+    slog('swap line=' + pl.source + ' kind=' + pl.kind + (pl.localHash ? ' local' : '') + ' resume=' + at.toFixed(1) + (playing ? ' playing' : ''))
+    qosStart(pl.source)
+    pendingResume = at; seekPending = false
+    // 换地址会把画面清成黑的，新地址出画面要几秒（11-02 实测 4.7 秒，大头是手机下新地址的 moov）。
+    // 先把当前帧截成 poster，等待期间停在这一帧上，看着像普通缓冲而不是断了。不预拉新地址：触发退路时本机网速已经不够，再分一份只会提前卡住
+    freezeFrame(v)
+    v.addEventListener('playing', function once(){ v.removeEventListener('playing', once); v.removeAttribute('poster') })
+    v.addEventListener('loadedmetadata', function once(){
+      v.removeEventListener('loadedmetadata', once)
+      if (gen !== generation) return
+      pendingResume = 0
+      try { v.currentTime = Math.min(at, Number.isFinite(v.duration) ? Math.max(0, v.duration - .25) : at) } catch (e) {}
+      if (playing) v.play().catch(function(e){ slog('swap play rejected ' + (e && e.name)) })
+    })
+    art.url = mediaUrl(pl)
+    setBuffering(v, true, '换线路中')
+    startTape(v)
+    startStallWatch(v)
   }
 
   // 播放出错：不换线、不探测。只区分「断网」和「这条线路真坏了」，两种都给用户一个明确的出口。
@@ -639,14 +699,14 @@ ${PLAYBACK_BEACON}
       // 开播直接用了本机下完的那份（可能是别的线路 / 别的站下的），坏了就回到正常挑线路
       localOff = true
       var playing = !v.paused
-      pickFastest(bootFirst, ep, lines).then(function(p){ mount(p, at, playing) })
+      pickFastest(bootFirst, ep, lines).then(function(p){ swapSource(p, at, playing) })
       return
     }
     if (pl.localHash){
       localOff = true
       var plain = plainOf(pl)
       resolved[pl.source] = plain
-      mount(plain, at, !v.paused)
+      swapSource(plain, at, !v.paused)
       return
     }
     // 源站建连慢时服务端偶尔还是会 502 → code=4。第一次别急着红框，等 2 秒自己重挂一次（保留进度），

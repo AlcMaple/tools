@@ -60,7 +60,7 @@ self.addEventListener('activate', (event) => {
 })
 
 // ——— 在线播放的本地缓存 ———
-// 播放页把 <video> 指向 /media-cache/<hash>，这里按 Range 从 OPFS 里的 4MB 块拼出响应。
+// 播放页把 <video> 指向 /media-cache/<hash>，这里按 Range 从 OPFS 里的 1MB 块拼出响应。
 // HLS 则指向 /media-cache/<hash>/index.m3u8，播放表里的分片是同目录的 r<序号>，整片返回。
 // 块由 media-cache-worker.js 直连源站下载；还没到的块先发 need 让下载器插队，再等它广播「到了」。
 // 等不到（下载器失败 / 页面已没了下载器）就让这条请求出错，播放页据此退回原来的播放方式。

@@ -1,6 +1,6 @@
 // 在线播放的本地缓存（OPFS `media-cache/<hash>/`）在网页这一侧只做两件事：列出 / 删除，和打开网站时清掉过期的。
 // 写入只发生在播放页的 public/media-cache-worker.js，读取在 public/cover-cache-sw.js；目录结构三处一致：
-// `meta.json` + 按 4MB 切开的 `<序号>.bin`（mp4），或 `index.m3u8` + 整片的 `r<序号>`（HLS）。
+// `meta.json` + 按 1MB 切开的 `<序号>.bin`（mp4），或 `index.m3u8` + 整片的 `r<序号>`（HLS）。
 const DIR = 'media-cache'
 const KEEP_DAYS = 30
 const DAY_MS = 24 * 3600 * 1000

@@ -1,5 +1,7 @@
-// 播放页的本地缓存下载器：浏览器用本机网速直连源站，把整集按 4MB 一块写进 OPFS，
+// 播放页的本地缓存下载器：浏览器用本机网速直连源站，把整集按 1MB 一块写进 OPFS，
 // Service Worker（cover-cache-sw.js）再按 Range 从这些块里回答 <video> 的请求——播放和下载只拉一份流。
+//
+// 块大小 1MB：跳到还没下的位置时，首字节要等「那一块整块落盘」，4MB 在 1.8Mbps 的手机上要 18 秒，1MB 约 4.5 秒。
 //
 // 为什么切块而不是写一个大文件：同步写句柄独占文件，SW 在它打开期间 getFile() 会被锁挡住；
 // createWritable 要等 close 才可见。每块写完、flush、close 之后才广播「这块到了」，
@@ -13,7 +15,8 @@
 // 一片要按 Range 切成 job.conns 段并发拉；只开多条连接排队拉不同片的话，每一片都要等近 30 秒，起播和跳转都等不起。
 // akua.girigirilove.com 正相反：一片只有 0.2~2MB，每片首字节要等 1.5~4 秒，一片一片顺序拉只有约 2Mbps，
 // 所以同时拉 job.par 片。
-const CHUNK = 4 * 1024 * 1024
+const CHUNK = 1024 * 1024
+const TAIL_CHUNKS = 4
 const DIR = 'media-cache'
 const RESUME_DELAYS = [2000, 6000, 15000]
 // 等响应头、或两次收到数据之间超过这么久就当连接卡死，按传输中断续传。10-30 实测 akua 分片会一直挂着不回。
@@ -30,14 +33,19 @@ function log(msg) { post({ type: 'log', msg: '[media-cache] ' + msg }) }
 
 class HttpError extends Error {}
 
-const farFrom = (at, want) => want < at || want > at + 3
+// 离正在拉的位置多远算「跳了」：mp4 12 块 = 12MB，顺着拉过去比重开连接快；HLS 一片就是一块，3 片
+const nearOf = (job) => (job.kind === 'hls' ? 3 : 12)
+const farFrom = (at, want, near) => want < at || want > at + near
 
 channel.onmessage = (e) => {
   const m = e.data
   if (m && m.type === 'need' && current && m.hash === current.job.hash && !current.have.has(m.chunk)) {
-    current.needs.push(m.chunk)
+    // 最新的要求排最前，离它很远的旧要求作废：用户拖着进度条连划几下，只有最后停下的那个位置有人在等，
+    // 中途划过的位置不该排在它前面再各拉一块。
+    const near = nearOf(current.job)
+    current.needs = [m.chunk, ...current.needs.filter((x) => x !== m.chunk && !farFrom(m.chunk, x, near))]
     // 正在拉的这条流离 SW 要的块很远时立刻断开，从需要的位置重开一条；就在前方几块内的顺着拉过去更快。
-    if (current.streamAt >= 0 && farFrom(current.streamAt, m.chunk) && current.streamCtrl) current.streamCtrl.abort('jump')
+    if (current.streamAt >= 0 && farFrom(current.streamAt, m.chunk, near) && current.streamCtrl) current.streamCtrl.abort('jump')
   }
 }
 
@@ -172,16 +180,16 @@ async function run(state) {
   if (state.stopped) return
   const total = Number(head.headers.get('content-length'))
   if (!Number.isFinite(total) || total <= 0) throw new HttpError('源站没给文件长度')
-  if (meta && meta.total !== total) {
+  if (meta && (meta.total !== total || meta.chunk !== CHUNK)) {
     // 同一路径换了内容（签名换了不算），旧块全作废，不然会串片。
-    log('ep' + job.ep + ' 源站长度 ' + total + ' ≠ 本地 ' + meta.total + '，重下')
+    log('ep' + job.ep + ' 源站长度 ' + total + ' ≠ 本地 ' + meta.total + ' 或块大小变了，重下')
     await top.removeEntry(job.hash, { recursive: true })
     dir = await top.getDirectoryHandle(job.hash, { create: true })
     meta = null
   }
 
   const n = Math.ceil(total / CHUNK)
-  const seeded = await adoptSeed(top, dir, job.seed, (m) => m.total === total && !m.kind, (name) => /^\d+\.bin$/.test(name))
+  const seeded = await adoptSeed(top, dir, job.seed, (m) => m.total === total && !m.kind && m.chunk === CHUNK, (name) => /^\d+\.bin$/.test(name))
   if (seeded) log('ep' + job.ep + ' 从上一条线路接过 ' + seeded + ' 块')
   for await (const [name, handle] of dir.entries()) {
     const m = /^(\d+)\.bin$/.exec(name)
@@ -204,8 +212,12 @@ async function run(state) {
 
   const startedAt = performance.now()
   let fetchedBytes = 0, failures = 0
-  const order = [0, n - 1]
-  for (let i = 1; i < n - 1; i++) order.push(i)
+  // 尾部按 4MB 算整段先拉：moov 不一定落在最后一块里，11-02 夜樱 ep19 的 moov 770KB，最后一块只有 178KB，跨了两块
+  const tailFrom = Math.max(1, n - TAIL_CHUNKS)
+  const order = [0]
+  for (let i = tailFrom; i < n; i++) order.push(i)
+  for (let i = 1; i < tailFrom; i++) order.push(i)
+  const tailReady = () => { for (let i = tailFrom; i < n; i++) if (!state.have.has(i)) return false; return true }
   const pickNext = () => {
     while (state.needs.length) {
       const i = state.needs.shift()
@@ -218,10 +230,10 @@ async function run(state) {
     if (state.stopped) return
     const start = pickNext()
     if (start === undefined) break
-    // 尾块（moov）没到之前，这条流只拉当前一块：否则从 0 起的 Range 会一路顺下去，尾块要等 <video> 来要、断流重连后才开始拉，
+    // 尾部 4MB（moov）没到齐之前，这条流只拉当前一块：否则从 0 起的 Range 会一路顺下去，尾部要等 <video> 来要、断流重连后才开始拉，
     // 11-01 iPhone 实测单连接约 1.7Mbps，这一来一回超过 WebKit 约 18 秒的等待，直接报 code=4
     let end = start
-    if (state.have.has(n - 1)) while (end + 1 < n && !state.have.has(end + 1)) end++
+    if (start >= tailFrom || tailReady()) while (end + 1 < n && !state.have.has(end + 1)) end++
     const ctrl = new AbortController()
     state.streamCtrl = ctrl
     state.streamAt = start
@@ -257,7 +269,7 @@ async function run(state) {
             state.streamAt = i
             if (i > end || state.stopped) { ctrl.abort('done'); break }
             const want = state.needs.find((x) => !state.have.has(x))
-            if (want !== undefined && farFrom(i, want)) { ctrl.abort('jump'); break }
+            if (want !== undefined && farFrom(i, want, nearOf(job))) { ctrl.abort('jump'); break }
             buf = new Uint8Array(chunkLen(total, i)); filled = 0
           }
         }

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 930" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+<defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker></defs>
+<rect x="1" y="1" width="1118" height="928" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="32" y="38" font-size="19" font-weight="700" fill="#282529">拖进度条不再被当成「变慢」切走</text>
+<text x="32" y="61" font-size="12.5" fill="#756f73">结论：拖到还没下的位置，iPhone 约 2.5 秒出画面、不触发退路；连拖几下只等最后停下的那个位置；用户在手机上多半是拖进度条，这条最常走到</text>
+<rect x="32" y="84" width="1056" height="196" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+<text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、改前为什么拖一下就切走：把「刚跳过去还没下」当成了「下载在变慢」</text>
+<rect x="56" y="126" width="235" height="96" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="70" y="149" font-size="12.5" font-weight="700" fill="#4a4450">用户拖到 3 分钟后</text>
+<text x="70" y="171" font-size="11" fill="#4a4450">那个位置本机还没下到</text>
+<rect x="316" y="126" width="235" height="96" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="330" y="149" font-size="12.5" font-weight="700" fill="#4a4450">本机领先播放：0 秒</text>
+<text x="330" y="171" font-size="11" fill="#4a4450">拖之前是 30 秒以上</text>
+<rect x="576" y="126" width="235" height="96" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="590" y="149" font-size="12.5" font-weight="700" fill="#96434f">判成「下载越来越慢」</text>
+<text x="590" y="171" font-size="11" fill="#96434f">30 秒 → 0 秒，跌得飞快</text>
+<text x="590" y="190" font-size="11" fill="#96434f">其实只是位置换了</text>
+<rect x="836" y="126" width="235" height="96" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="850" y="149" font-size="12.5" font-weight="700" fill="#96434f">不到 0.5 秒就切走</text>
+<text x="850" y="171" font-size="11" fill="#96434f">退出全屏、黑屏、进度归 0</text>
+<text x="850" y="190" font-size="11" fill="#96434f">日志：切走时卡住 0 毫秒</text>
+<line x1="293" y1="174" x2="314" y2="174" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="553" y1="174" x2="574" y2="174" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="813" y1="174" x2="834" y2="174" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="56" y="252" font-size="11" fill="#756f73">另一条：等画面的上限只有 8 秒，而跳到没下的位置要等一整块 4MB 落盘，1.8Mbps 的手机约 18 秒——就算判断对了也等不到</text>
+<rect x="32" y="296" width="1056" height="196" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+<text x="52" y="322" font-size="14" font-weight="700" fill="#353136">二、现在：拖动落地之前，只问「等得太久了没有」</text>
+<rect x="56" y="338" width="320" height="132" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="70" y="361" font-size="12.5" font-weight="700" fill="#316247">不看涨跌</text>
+<text x="70" y="383" font-size="11" fill="#316247">从开始拖到画面落地，不拿领先量</text>
+<text x="70" y="402" font-size="11" fill="#316247">跟拖之前比；拖之前的记录清空</text>
+<text x="70" y="421" font-size="11" fill="#316247">落地后重新攒 4 秒再看趋势</text>
+<rect x="392" y="338" width="336" height="132" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="406" y="361" font-size="12.5" font-weight="700" fill="#36566d">多久才算太久：按这台手机现测的网速估</text>
+<text x="406" y="383" font-size="11" fill="#36566d">「下一块要多久」× 2 再加 4 秒</text>
+<text x="406" y="402" font-size="11" fill="#36566d">限在 8~60 秒之间</text>
+<text x="406" y="421" font-size="11" fill="#36566d">1.8Mbps 的手机约 13 秒</text>
+<rect x="744" y="338" width="320" height="132" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="758" y="361" font-size="12.5" font-weight="700" fill="#316247">连着拖几下：只等最后那一下</text>
+<text x="758" y="383" font-size="11" fill="#316247">新位置排最前，划过的旧位置作废</text>
+<text x="758" y="402" font-size="11" fill="#316247">中途经过的地方不再各下一块</text>
+<text x="758" y="421" font-size="11" fill="#316247">下到一半的那块最多白费 1MB</text>
+<rect x="32" y="508" width="1056" height="190" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+<text x="52" y="534" font-size="14" font-weight="700" fill="#353136">三、一块从 4MB 改成 1MB：跳过去之后要等的那一下变短</text>
+<text x="56" y="560" font-size="11" fill="#756f73">跳到没下的位置，画面要等那一块整块存进手机才能出来（按 1.8Mbps 估算）</text>
+<rect x="56" y="576" width="720" height="22" rx="5" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="786" y="591" font-size="11" font-weight="700" fill="#96434f">4MB 一块 ≈ 18 秒</text>
+<rect x="56" y="610" width="180" height="22" rx="5" fill="#edf7f1" stroke="#7fad91"/>
+<text x="246" y="625" font-size="11" font-weight="700" fill="#316247">1MB 一块 ≈ 4.5 秒</text>
+<text x="56" y="666" font-size="11" font-weight="700" fill="#316247">11-02 iPhone 实测：乱马 ep2 拖到 3:25，2.5 秒出画面，没有触发退路。旧格式（4MB）没下完的缓存会整集重下一次，下完的不受影响</text>
+<rect x="32" y="714" width="1056" height="196" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+<text x="52" y="740" font-size="14" font-weight="700" fill="#353136">四、改小块带出的坑（已修）：开头必须先拿到的「目录」被切成两半</text>
+<rect x="56" y="756" width="300" height="132" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="70" y="779" font-size="12.5" font-weight="700" fill="#96434f">夜樱 ep19 的情况</text>
+<text x="70" y="801" font-size="11" fill="#96434f">目录（moov）770KB，放在文件末尾</text>
+<text x="70" y="820" font-size="11" fill="#96434f">最后一块只剩 178KB</text>
+<text x="70" y="839" font-size="11" fill="#96434f">目录跨了最后两块</text>
+<rect x="372" y="756" width="340" height="132" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="386" y="779" font-size="12.5" font-weight="700" fill="#96434f">原规则：拿到最后一块就当目录到了</text>
+<text x="386" y="801" font-size="11" fill="#96434f">另一半要等 Safari 回头来要</text>
+<text x="386" y="820" font-size="11" fill="#96434f">一来一回超过它约 18 秒的耐心</text>
+<text x="386" y="839" font-size="11" fill="#96434f">报错 → 20 秒后退回原来的播放方式</text>
+<rect x="728" y="756" width="336" height="132" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="742" y="779" font-size="12.5" font-weight="700" fill="#316247">修：起播时先把尾部 4MB 整段拉下来</text>
+<text x="742" y="801" font-size="11" fill="#316247">跟 4MB 一块时一样，目录一次拿全</text>
+<text x="742" y="820" font-size="11" fill="#316247">跳转仍按 1MB 一块</text>
+<text x="742" y="839" font-size="11" fill="#316247">11-02 修好后起播不再报错</text>
+<line x1="358" y1="822" x2="370" y2="822" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="714" y1="822" x2="726" y2="822" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+</svg>

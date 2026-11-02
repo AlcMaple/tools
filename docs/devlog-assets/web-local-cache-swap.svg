@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 846" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+<defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker></defs>
+<rect x="1" y="1" width="1118" height="844" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="32" y="38" font-size="19" font-weight="700" fill="#282529">真要切退路时：停在原画面，全屏和位置都保留</text>
+<text x="32" y="61" font-size="12.5" fill="#756f73">结论：只有下载确实跟不上才切；切的那几秒停在原来那一帧上，全屏不退、从原时间点接着播，不再像整页刷新</text>
+<rect x="32" y="84" width="1056" height="240" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+<text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、用户看到的（11-02 乱马 ep2：5:04 下载跟不上，提前切到服务端那条线）</text>
+<text x="56" y="163" font-size="12.5" font-weight="700" fill="#96434f">改前</text>
+<rect x="110" y="124" width="220" height="74" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="124" y="147" font-size="12.5" font-weight="700" fill="#96434f">退出全屏</text>
+<text x="124" y="169" font-size="11" fill="#96434f">正在全屏看也会被弹出来</text>
+<rect x="350" y="124" width="220" height="74" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="364" y="147" font-size="12.5" font-weight="700" fill="#96434f">黑屏转圈</text>
+<text x="364" y="169" font-size="11" fill="#96434f">像整个页面刷新了</text>
+<rect x="590" y="124" width="220" height="74" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="604" y="147" font-size="12.5" font-weight="700" fill="#96434f">进度条归 0</text>
+<text x="604" y="169" font-size="11" fill="#96434f">以为看着看着断了</text>
+<rect x="830" y="124" width="220" height="74" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="844" y="147" font-size="12.5" font-weight="700" fill="#96434f">几秒后回到原位置</text>
+<text x="844" y="169" font-size="11" fill="#96434f">还得自己再点全屏</text>
+<line x1="332" y1="161" x2="347" y2="161" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="572" y1="161" x2="587" y2="161" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="812" y1="161" x2="827" y2="161" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="56" y="249" font-size="12.5" font-weight="700" fill="#316247">改后</text>
+<rect x="110" y="210" width="220" height="74" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="124" y="233" font-size="12.5" font-weight="700" fill="#316247">全屏保持</text>
+<text x="124" y="255" font-size="11" fill="#316247">播放器还是原来那一台</text>
+<rect x="350" y="210" width="220" height="74" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="364" y="233" font-size="12.5" font-weight="700" fill="#316247">停在切换前那一帧</text>
+<text x="364" y="255" font-size="11" fill="#316247">转圈 +「换线路中」</text>
+<rect x="590" y="210" width="220" height="74" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="604" y="233" font-size="12.5" font-weight="700" fill="#316247">进度回到原位置</text>
+<text x="604" y="255" font-size="11" fill="#316247">从 5:04 接着播</text>
+<rect x="830" y="210" width="220" height="74" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="844" y="233" font-size="12.5" font-weight="700" fill="#316247">约 4.7 秒后继续</text>
+<text x="844" y="255" font-size="11" fill="#316247">原来在播就接着播</text>
+<line x1="332" y1="247" x2="347" y2="247" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="572" y1="247" x2="587" y2="247" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="812" y1="247" x2="827" y2="247" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="56" y="308" font-size="11" fill="#756f73">停在那一帧：电脑浏览器已验证；iPhone 全屏用的是系统播放器，会不会显示这一帧没真机验证，不显示就是黑一下，其余不变</text>
+<rect x="32" y="340" width="1056" height="170" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+<text x="52" y="366" font-size="14" font-weight="700" fill="#353136">二、背后在做的</text>
+<rect x="56" y="382" width="320" height="112" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="70" y="405" font-size="12.5" font-weight="700" fill="#96434f">改前：整台播放器拆掉重建</text>
+<text x="70" y="427" font-size="11" fill="#96434f">控件、全屏状态、进度条全是新的</text>
+<text x="70" y="446" font-size="11" fill="#96434f">跟换集、手动换线路走同一条路</text>
+<rect x="392" y="382" width="672" height="112" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+<text x="406" y="405" font-size="12.5" font-weight="700" fill="#316247">改后：同一台播放器只换视频地址（只用于自动退路）</text>
+<text x="406" y="427" font-size="11" fill="#316247">1. 先把当前这一帧截下来，换地址期间就显示它</text>
+<text x="406" y="446" font-size="11" fill="#316247">2. 新地址一拿到片长，立刻跳回原来的时间点；原来在播就接着播</text>
+<text x="406" y="465" font-size="11" fill="#316247">3. 出画面后把截图撤掉。换集、手动换线路是用户自己点的，仍整台重建</text>
+<rect x="32" y="526" width="1056" height="170" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+<text x="52" y="552" font-size="14" font-weight="700" fill="#353136">三、为什么不提前把服务端那条线预热好，把 4.7 秒压到 1 秒内</text>
+<rect x="56" y="568" width="320" height="112" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+<text x="70" y="591" font-size="12.5" font-weight="700" fill="#36566d">这 4.7 秒花在手机下载上</text>
+<text x="70" y="613" font-size="11" fill="#36566d">新地址的目录约 0.8MB，</text>
+<text x="70" y="632" font-size="11" fill="#36566d">1.8Mbps 要 3 秒多，再加开头几秒画面</text>
+<text x="70" y="651" font-size="11" fill="#36566d">服务端从源站拉反而很快</text>
+<rect x="392" y="568" width="336" height="112" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="406" y="591" font-size="12.5" font-weight="700" fill="#96434f">预热 = 同一条不够快的网再分一份</text>
+<text x="406" y="613" font-size="11" fill="#96434f">触发退路时本机网速本就跟不上</text>
+<text x="406" y="632" font-size="11" fill="#96434f">再分走一份，领先量更快见底</text>
+<text x="406" y="651" font-size="11" fill="#96434f">没切过去就先卡住转圈</text>
+<rect x="744" y="568" width="320" height="112" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="758" y="591" font-size="12.5" font-weight="700" fill="#7a6234">总量没少，只是挪到了前面</text>
+<text x="758" y="613" font-size="11" fill="#7a6234">黑屏短了，切之前多一段卡顿</text>
+<text x="758" y="632" font-size="11" fill="#7a6234">网速够时根本不会触发退路</text>
+<text x="758" y="651" font-size="11" fill="#7a6234">所以改成「停在原画面」，不预热</text>
+<rect x="32" y="712" width="1056" height="112" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+<text x="52" y="738" font-size="14" font-weight="700" fill="#353136">四、边界</text>
+<text x="56" y="760" font-size="11" fill="#4a4450">· 暂停不算卡：暂停时不做任何判断，恢复播放时暂停前的记录早已超出 5 秒的观察窗口，不会拿来比</text>
+<text x="56" y="782" font-size="11" fill="#4a4450">· 视频来自别的网站、不允许截图时，换线路时照旧黑一下；换集和手动换线路仍会退出全屏</text>
+<text x="56" y="804" font-size="11" fill="#4a4450">· 大多数番一次都不会切：下载领先一直够就不触发，退路只在本机网速确实跟不上时才出现</text>
+</svg>
