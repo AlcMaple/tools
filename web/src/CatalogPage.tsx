@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CatalogItem, CalendarItem } from './api'
 import { coverUrl, fetchCatalog, sourceById } from './api'
 import { Poster, type PosterWatch } from './CalendarPage'
+import { CatalogEditDialog } from './CatalogEditDialog'
 import { Select } from './Select'
 import { Ic, Spinner } from './SketchIcon'
 import { useSourceWatch } from './tracks/useSourceWatch'
@@ -33,6 +34,8 @@ export function CatalogPage(): JSX.Element {
   const [q, setQ] = useState('')
   const [year, setYear] = useState(0)
   const [sort, setSort] = useState<Sort>('score')
+  const [admin, setAdmin] = useState(false)
+  const [editing, setEditing] = useState<CatalogItem | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
   const [total, setTotal] = useState(0)
   const [ready, setReady] = useState(true)
@@ -67,6 +70,7 @@ export function CatalogPage(): JSX.Element {
       .then((r) => {
         if (gen !== generation.current) return
         setReady(r.ready)
+        setAdmin(r.admin)
         setTotal(r.total)
         setItems((prev) => (offset === 0 ? r.items : [...prev, ...r.items]))
       })
@@ -141,6 +145,16 @@ export function CatalogPage(): JSX.Element {
       </header>
 
       {sourceWatch.modals}
+      {editing && (
+        <CatalogEditDialog
+          item={editing}
+          onSaved={(next) => {
+            setItems((prev) => prev.map((i) => (i.bgmId === next.bgmId ? next : i)))
+            setEditing(next)
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
 
       {(error || track.error) && (
         <p className="form-note err mt8" aria-live="polite">⚠ {error ?? track.error}</p>
@@ -164,6 +178,11 @@ export function CatalogPage(): JSX.Element {
               onToggle={(i, w) => track.toggle(i, w, 'plan')}
               watch={posterWatch}
               meta={metaOf(item)}
+              coverExtra={admin && (
+                <button type="button" className="catalog-edit-btn" onClick={() => setEditing(item)} aria-label="编辑卡片" title="编辑卡片">
+                  <Ic name="pencil" cls="ic ic-sm" />
+                </button>
+              )}
             />
           ))}
         </div>

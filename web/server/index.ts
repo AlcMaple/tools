@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono'
+import { isAdminUid } from './admin'
 import bootLog from './boot-log'
 // 监控要最先加载：Sentry.init 是这个模块的导入副作用，必须早于它可能包裹的业务模块，
 // 否则将来任何一个自动 integration 被重新打开都会因为加载顺序而静默失效。
@@ -6,12 +7,12 @@ import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
 import { bgmHealth, noteBgmRequest } from './bgm/bgm-health'
 import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
-import { listCatalog } from './bgm/catalog'
+import { CatalogEditError, clearCatalogCover, getCatalogItem, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
 import { CoverError, getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
 import { searchOnline } from './bgm/search-online'
-import auth from './auth'
+import auth, { getSession } from './auth'
 import announcements from './announcement'
 import feedback from './feedback'
 import oauth from './oauth'
@@ -144,7 +145,8 @@ app.route('/api/player', player)
 // `mode=online` 才会访问 BGM 在线搜索；这条路仍保留缓存 / 限速 / 冷却，且失败不重试
 //（bgm/search-online.ts）。
 // 全部番剧：只读离线索引和已补好的封面，浏览不会触发任何 BGM 请求
-app.get('/api/catalog', (c) => {
+app.get('/api/catalog', async (c) => {
+  const session = await getSession(c)
   const num = (key: string, fallback: number): number => {
     const value = Number(c.req.query(key))
     return Number.isSafeInteger(value) && value >= 0 ? value : fallback
@@ -156,7 +158,60 @@ app.get('/api/catalog', (c) => {
     sort: c.req.query('sort') === 'date' ? 'date' : 'score',
     offset: Math.min(num('offset', 0), 50_000),
     limit: Math.min(Math.max(num('limit', 48), 1), 96),
+    adult: !!session,
+    admin: !!session && isAdminUid(session.uid),
   }))
+})
+
+// 管理员手改卡片：中文名、标签、封面。改的是全站共用的目录，不是某个用户自己的追番
+const catalogAdmin = async (c: Context): Promise<number | Response> => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  if (!isAdminUid(session.uid)) return c.json({ error: '只有管理员能编辑' }, 403)
+  const id = Number(c.req.param('id'))
+  return Number.isSafeInteger(id) && id > 0 ? id : c.json({ error: 'bgmId 不合法' }, 400)
+}
+const catalogEditFailed = (c: Context, error: unknown): Response => {
+  if (error instanceof CatalogEditError) return c.json({ error: error.message }, error.status)
+  throw error
+}
+
+app.put('/api/catalog/:id', async (c) => {
+  const id = await catalogAdmin(c)
+  if (id instanceof Response) return id
+  const body = await c.req.json().catch(() => null) as { nameCn?: unknown; tags?: unknown } | null
+  if (!body) return c.json({ error: '请求格式不对' }, 400)
+  try { saveCatalogText(id, { nameCn: body.nameCn, tags: body.tags }) } catch (error) { return catalogEditFailed(c, error) }
+  return c.json({ item: getCatalogItem(id) })
+})
+
+app.post('/api/catalog/:id/cover', async (c) => {
+  const id = await catalogAdmin(c)
+  if (id instanceof Response) return id
+  const file = (await c.req.parseBody().catch(() => null))?.file
+  if (!(file instanceof File)) return c.json({ error: '没有收到图片' }, 400)
+  try { await saveCatalogCover(id, file) } catch (error) { return catalogEditFailed(c, error) }
+  return c.json({ item: getCatalogItem(id) })
+})
+
+app.delete('/api/catalog/:id/cover', async (c) => {
+  const id = await catalogAdmin(c)
+  if (id instanceof Response) return id
+  await clearCatalogCover(id)
+  return c.json({ item: getCatalogItem(id) })
+})
+
+// R18 条目的手动封面同样只给登录用户
+app.get('/api/catalog/:id/cover-file', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
+  if (isAdultEntry(id) && !(await getSession(c))) return c.json({ error: '没有封面' }, 404)
+  const cover = await readCatalogCover(id)
+  if (!cover) return c.json({ error: '没有封面' }, 404)
+  c.header('Content-Type', cover.mime)
+  // 地址带 ?v=<修改时间>，换图就是新地址，可以放心长缓存；private 是因为 R18 那批要登录才给
+  c.header('Cache-Control', 'private, max-age=604800')
+  return c.body(new Uint8Array(cover.bytes))
 })
 
 app.get('/api/search', async (c) => {

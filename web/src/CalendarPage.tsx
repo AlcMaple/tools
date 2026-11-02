@@ -832,6 +832,7 @@ export function Poster({
   onToggle,
   watch,
   meta,
+  coverExtra,
 }: {
   item: CalendarItem
   weekday: number
@@ -840,6 +841,7 @@ export function Poster({
   onToggle: (item: CalendarItem, weekday: number) => void
   watch?: PosterWatch
   meta?: string
+  coverExtra?: React.ReactNode
 }): JSX.Element {
   const displayTitle = item.name_cn || item.name
   const on = tracked
@@ -867,6 +869,7 @@ export function Poster({
         ) : (
           <div className="cover-ph">☆</div>
         )}
+        {coverExtra}
         {canTrack && (
           <button
             type="button"

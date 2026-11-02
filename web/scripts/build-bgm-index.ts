@@ -31,6 +31,8 @@ interface Row {
   tags: string
   date: string
   score: number
+  nsfw: number
+  votes: number
 }
 
 // 归档的 subject 档里**没有**总集数字段（官方 schema 只有 id/type/name/name_cn/infobox/platform/
@@ -51,6 +53,13 @@ function parseAliasesFromWiki(infobox: unknown): string[] {
     return items.map((s: string) => s.slice(1, -1).split('|')[0].trim()).filter(Boolean)
   }
   return raw ? [raw] : []
+}
+
+// score_details 是 {"1":人数,…,"10":人数}，加起来就是评分人数。全部番剧按评分排序时，
+// 一两个人打出的 10 分不能排在几千人打的 9 分前面
+function voteCount(details: unknown): number {
+  if (!details || typeof details !== 'object') return 0
+  return Object.values(details as Record<string, unknown>).reduce<number>((sum, v) => sum + (Number(v) || 0), 0)
 }
 
 // tags 档里大概率是 [{name,count}]（跟在线 API 同构），兼容纯字符串数组。按 count 降序取前 10。
@@ -132,15 +141,17 @@ async function buildIndex(
       score   REAL NOT NULL DEFAULT 0,
       -- 本篇集数。0 = 档里数不出来（没有章节数据 / 没扫 episode 文件），**不是**「0 集」；
       -- 读取方（server/bgm/anime-index.ts epsOf）把 0 当「不知道」，退回在线详情补。
-      eps     INTEGER NOT NULL DEFAULT 0
+      eps     INTEGER NOT NULL DEFAULT 0,
+      nsfw    INTEGER NOT NULL DEFAULT 0,
+      votes   INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT);
   `)
   const ins = db.prepare(
-    `INSERT OR REPLACE INTO anime (bgm_id,name,name_cn,aliases,tags,date,score) VALUES (?,?,?,?,?,?,?)`
+    `INSERT OR REPLACE INTO anime (bgm_id,name,name_cn,aliases,tags,date,score,nsfw,votes) VALUES (?,?,?,?,?,?,?,?,?)`
   )
   const flush = db.transaction((batch: Row[]) => {
-    for (const r of batch) ins.run(r.bgm_id, r.name, r.name_cn, r.aliases, r.tags, r.date, r.score)
+    for (const r of batch) ins.run(r.bgm_id, r.name, r.name_cn, r.aliases, r.tags, r.date, r.score, r.nsfw, r.votes)
   })
 
   let n = 0
@@ -168,6 +179,8 @@ async function buildIndex(
       tags: JSON.stringify(topTags(o.tags)),
       date: String(o.date ?? ''),
       score: Number(o.score) || 0,
+      nsfw: o.nsfw ? 1 : 0,
+      votes: voteCount(o.score_details),
     })
     if (batch.length >= 2000) {
       flush(batch)

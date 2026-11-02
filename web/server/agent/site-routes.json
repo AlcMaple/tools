@@ -531,6 +531,11 @@
   },
   {
     "file": "server/index.ts",
+    "method": "delete",
+    "path": "/api/catalog/:id/cover"
+  },
+  {
+    "file": "server/index.ts",
     "method": "get",
     "path": "/api/calendar"
   },
@@ -548,6 +553,11 @@
     "file": "server/index.ts",
     "method": "get",
     "path": "/api/catalog"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/catalog/:id/cover-file"
   },
   {
     "file": "server/index.ts",
@@ -577,12 +587,22 @@
   {
     "file": "server/index.ts",
     "method": "post",
+    "path": "/api/catalog/:id/cover"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "post",
     "path": "/api/request-log"
   },
   {
     "file": "server/index.ts",
     "method": "post",
     "path": "/api/search-log"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "put",
+    "path": "/api/catalog/:id"
   },
   {
     "file": "server/index.ts",

@@ -3548,3 +3548,28 @@ body[data-auth='out'] .track-btn { display: none; }
 }
 .catalog-page.no-art .sketch-hero { min-height: 0; }
 .catalog-page.no-art .sketch-hero-body { padding-right: 0; }
+
+/* ---------- 全部番剧：管理员编辑卡片 ---------- */
+.catalog-edit-btn {
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border: 2px solid var(--on-cover-line, #fff); border-radius: 50%;
+  background: rgba(255, 253, 247, .92); color: var(--ink); cursor: pointer;
+}
+.catalog-edit-btn:hover { background: #fff; }
+.catalog-edit { width: min(520px, calc(100vw - 32px)); }
+.catalog-edit-body { display: flex; gap: 16px; align-items: flex-start; }
+.catalog-edit-cover { position: relative; display: flex; flex-direction: column; gap: 6px; width: 104px; flex: none; }
+.catalog-edit-cover .dlg-cover { width: 104px; height: 146px; object-fit: cover; border-radius: 6px; }
+.catalog-edit-cover-busy { position: absolute; top: 0; left: 0; width: 104px; height: 146px; display: grid; place-items: center; background: rgba(255, 253, 247, .7); }
+.catalog-edit-fields { flex: 1; min-width: 0; }
+.catalog-edit .field-label { display: flex; align-items: baseline; justify-content: space-between; }
+.field-reset { border: 0; background: none; padding: 0; color: var(--teal); font-size: 12px; cursor: pointer; }
+.catalog-edit-err { min-height: 1.5em; margin: 8px 0 4px; }
+.catalog-edit-err.is-empty { visibility: hidden; }
+@media (max-width: 480px) {
+  .catalog-edit-body { flex-direction: column; align-items: stretch; }
+  .catalog-edit-cover { flex-direction: row; flex-wrap: wrap; width: auto; align-items: flex-end; }
+  .catalog-edit-cover-busy { width: 104px; }
+}
+

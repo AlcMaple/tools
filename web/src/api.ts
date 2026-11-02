@@ -35,6 +35,7 @@ export function coverUrl(raw: string, bgmId?: number): string {
     (raw.startsWith('/api/tracks/') || raw.startsWith('/api/community/'))
     && raw.endsWith('/cover-file')
   ) return raw
+  if (/^\/api\/catalog\/\d+\/cover-file(\?v=\d+)?$/.test(raw)) return raw
   try {
     const url = new URL(raw)
     if (url.username || url.password) return ''
@@ -58,9 +59,32 @@ export interface CatalogItem {
   eps: number
   tags: string[]
   cover: string
+  edited?: { nameCn: boolean; tags: boolean; cover: boolean }
 }
 
-export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number }
+export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean }
+
+async function catalogEdit(path: string, init: RequestInit): Promise<CatalogItem> {
+  const res = await fetch(`/api/catalog/${path}`, init)
+  const body = (await res.json().catch(() => ({}))) as { error?: string; item?: CatalogItem | null }
+  if (!res.ok || !body.item) throw new Error(body.error || `保存失败（HTTP ${res.status}）`)
+  return body.item
+}
+
+// null = 恢复成索引里的
+export function saveCatalogText(bgmId: number, patch: { nameCn: string | null; tags: string[] | null }): Promise<CatalogItem> {
+  return catalogEdit(String(bgmId), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
+}
+
+export function uploadCatalogCover(bgmId: number, file: File): Promise<CatalogItem> {
+  const form = new FormData()
+  form.append('file', file)
+  return catalogEdit(`${bgmId}/cover`, { method: 'POST', body: form })
+}
+
+export function clearCatalogCover(bgmId: number): Promise<CatalogItem> {
+  return catalogEdit(`${bgmId}/cover`, { method: 'DELETE' })
+}
 
 export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number }, signal?: AbortSignal): Promise<CatalogResult> {
   const query = new URLSearchParams({ q: params.q, year: String(params.year), sort: params.sort, offset: String(params.offset), limit: String(params.limit) })

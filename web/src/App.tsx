@@ -352,7 +352,7 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
               : route === 'tracks'
                 ? <TracksPage />
                 : route === 'catalog'
-                  ? <CatalogPage />
+                  ? <CatalogPage key={user?.id ?? 'guest'} />
                 : route === 'history'
                   ? <CalendarHistoryPage />
                 : route === 'community'
