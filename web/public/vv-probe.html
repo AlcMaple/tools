@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>视口探针</title>
+<style>
+body{margin:0;font:14px -apple-system,sans-serif;background:repeating-linear-gradient(#fff 0 49px,#ddd 49px 50px)}
+.top{position:sticky;top:0;height:54px;background:#cfe;border-bottom:2px solid #096;display:flex;align-items:center;padding:0 12px}
+.fx{position:fixed;top:0;right:0;width:40px;height:54px;background:rgba(255,0,0,.4)}
+.lvh{position:absolute;top:0;left:0;width:6px;height:100lvh;background:#f0a}
+#out{position:fixed;left:8px;right:8px;bottom:12px;background:#222;color:#fff;padding:8px;border-radius:8px;white-space:pre;font:12px ui-monospace,monospace;z-index:9}
+#anchor{margin:300px 20px 0;height:40px;background:#fd8;display:flex;align-items:center;padding:0 10px}
+#pop{position:fixed;left:20px;width:160px;height:40px;background:rgba(0,90,200,.5)}
+#sa{position:fixed;top:env(safe-area-inset-top);height:0}
+</style></head><body>
+<div class="top">sticky 顶栏</div><div class="fx"></div><div class="lvh"></div><div id="sa"></div>
+<div id="anchor">触发器（蓝块应贴在它下方）</div><div id="pop"></div>
+<div style="height:3000px"></div>
+<pre id="out"></pre>
+<script>
+const $=s=>document.querySelector(s),vv=visualViewport
+function tick(){
+  const a=$('#anchor').getBoundingClientRect()
+  $('#pop').style.top=a.bottom+4+'px'
+  const p=$('#pop').getBoundingClientRect()
+  $('#out').textContent=[
+    'clientH '+document.documentElement.clientHeight+'  innerH '+innerHeight,
+    'vv.h '+vv.height.toFixed(1)+'  vv.offTop '+vv.offsetTop.toFixed(1)+'  lvh '+$('.lvh').offsetHeight,
+    '顶栏 top '+$('.top').getBoundingClientRect().top.toFixed(1)+'  fixed top '+$('.fx').getBoundingClientRect().top.toFixed(1),
+    'safe-top '+$('#sa').getBoundingClientRect().top.toFixed(1)+'  scrollY '+scrollY.toFixed(0),
+    '触发器底 '+a.bottom.toFixed(1)+'  浮层顶 '+p.top.toFixed(1)
+  ].join('\n')
+  requestAnimationFrame(tick)
+}
+tick()
+</script></body></html>
