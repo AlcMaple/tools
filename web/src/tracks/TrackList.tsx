@@ -2,6 +2,7 @@ import type { SourceBinding, SourceId, Track, WatchMode } from '../api'
 import { Ic } from '../SketchIcon'
 import { ContinueWatchAction } from './TrackCard'
 import { watchEp } from './common'
+import { SeasonStamp } from './SeasonStamp'
 
 // ── 列表行（只读速览）────────────────────────────────────────────────────────
 // 列表只负责让用户快速扫过追番，不提供改集数 / 改状态 / 改最爱等编辑控件。
@@ -35,6 +36,7 @@ export function TrackListRow({
       <div className="trk-list-main">
         <div className="trk-list-title" title={title}>{title}</div>
         <div className="trk-list-meta">
+          <SeasonStamp airDate={t.airDate} className="list-season" />
           <span className="trk-list-ep">{episodeLabel}</span>
           <FavoriteDisplay value={t.favorite} />
         </div>

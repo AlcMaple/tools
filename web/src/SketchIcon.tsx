@@ -17,6 +17,7 @@ const SYMBOLS = `
 <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
 <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.5L21 19.5H3z"/><path d="M12 10.2v3.6M12 16.4v.2"/></symbol>
 <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+<symbol id="i-sort" viewBox="0 0 24 24"><path d="M8 5v14M4.5 15.5L8 19l3.5-3.5"/><path d="M16 19V5M12.5 8.5L16 5l3.5 3.5"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.7"/></symbol>
 <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.7"/><path d="M4.5 4.5l15 15"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M20.5 3.5v4.3h-4.3"/></symbol>
@@ -59,7 +60,7 @@ export type SketchIconName =
   | 'pencil' | 'calendar' | 'tracks' | 'settings' | 'search' | 'user' | 'plus' | 'minus'
   | 'play' | 'star' | 'x' | 'check' | 'alert' | 'chev' | 'eye' | 'eye-off' | 'refresh'
   | 'external' | 'dots' | 'logout' | 'clip' | 'tag' | 'edit' | 'mail' | 'google' | 'github' | 'linuxdo' | 'pause' | 'back' | 'heart' | 'folder'
-  | 'ticket' | 'gift' | 'judge' | 'doc' | 'video' | 'paste' | 'trash' | 'shelf'
+  | 'ticket' | 'gift' | 'judge' | 'doc' | 'video' | 'paste' | 'trash' | 'shelf' | 'sort'
 
 export function Ic({ name, cls = 'ic' }: { name: SketchIconName; cls?: string }): JSX.Element {
   return (

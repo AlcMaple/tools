@@ -4,6 +4,7 @@ import { SOURCES, coverUrl, type SourceBinding, type SourceId, type Track, type 
 import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
+import { SeasonStamp } from './SeasonStamp'
 import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast, watchEp } from './common'
 import {
   clampEpisode,
@@ -99,6 +100,7 @@ export function TrackCard({
         )}
         {considering && <span className="cover-seal">観望中</span>}
         {isToday && <span className="chip-today cover-today">今天更新</span>}
+        <SeasonStamp airDate={t.airDate} className="cover-season" />
       </div>
       <div className="trk-body">
         <div className="trk-head">
@@ -109,6 +111,7 @@ export function TrackCard({
               {STATUS_META.find((m) => m.key === t.status)?.label}
             </span>
             {isToday && <span className="chip-today">今天更新</span>}
+            <SeasonStamp airDate={t.airDate} className="marks-season" />
             <FavHearts value={t.favorite} onChange={(n) => onPatch(t.bgmId, { favorite: n })} />
             <button
               type="button"

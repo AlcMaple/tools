@@ -50,6 +50,7 @@ import { STATUS_META, allTagsOf, tagLimitToast } from './tracks/common'
 import { TrackCard } from './tracks/TrackCard'
 import { TrackListRow } from './tracks/TrackList'
 import { TrackTimeline } from './tracks/TrackTimeline'
+import { SORT_OPTIONS, sortTracks, type TrackSort } from './tracks/season'
 import { useSourceWatch } from './tracks/useSourceWatch'
 import { BgmImportModal } from './tracks/importModal'
 import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
@@ -102,6 +103,11 @@ export function TracksPage(): JSX.Element {
   const [loadProgress, setLoadProgress] = useState<TracksLoadProgress | null>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [view, setView] = useState<TrackView>('cards')
+  const [sort, setSortState] = useState<TrackSort>(readSort)
+  const setSort = (next: TrackSort): void => {
+    setSortState(next)
+    try { localStorage.setItem(SORT_KEY, next) } catch { /* 无痕窗口等存不下就只在本次生效 */ }
+  }
   const [query, setQuery] = useState('')
   const [tags, setTags] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<number | null>(null)
@@ -335,13 +341,15 @@ export function TracksPage(): JSX.Element {
     const q = query.trim()
     if (q) list = list.filter((t) => matches(t, q))
     if (tags.size) list = list.filter((t) => allTagsOf(t).some((x) => tags.has(x)))
+    list = sortTracks(list, sort)
+    // 默认「最近加入」时今天更新的番仍置顶；用户主动选了别的顺序就严格按那个顺序，
+    // 否则按播出顺序一部部追的人会看到中间插进来几部今天更新的
+    if (sort !== 'added-desc') return list
     const isToday = (t: Track) => t.airWeekday === today && t.status !== 'done' && isRecentAir(t.airDate)
-    // 服务端已按加入顺序倒序返回；分成两段而不是按 updatedAt 重排，今天更新仍置顶，
-    // 其余卡片则保持真正的创建顺序（新加的更靠前）。
     return [...list.filter(isToday), ...list.filter((t) => !isToday(t))]
-  }, [animeTracks, filter, query, tags, today])
+  }, [animeTracks, filter, query, tags, today, sort])
 
-  const renderKey = JSON.stringify([user?.username, filter, query, [...tags].sort(), view])
+  const renderKey = JSON.stringify([user?.username, filter, query, [...tags].sort(), view, sort])
   const [renderWindow, setRenderWindow] = useState({ key: '', count: 18 })
   const visibleCount = renderWindow.key === renderKey ? renderWindow.count : 18
   const moreRef = useRef<HTMLDivElement>(null)
@@ -477,6 +485,7 @@ export function TracksPage(): JSX.Element {
           )}
         </div>
         <TagFilter all={allTags} selected={tags} onChange={setTags} />
+        {view !== 'timeline' && <SortPicker value={sort} onChange={setSort} />}
         <ViewModeToggle value={view} onChange={setView} />
     </div>
   )
@@ -815,6 +824,38 @@ function TagFilter({
             </button>
           )}
         </>
+      </Popover>
+    </div>
+  )
+}
+
+// ── 排序 ──────────────────────────────────────────────────────────────────────
+const SORT_KEY = 'tracks.sort'
+function readSort(): TrackSort {
+  try {
+    const saved = localStorage.getItem(SORT_KEY)
+    if (SORT_OPTIONS.some(([k]) => k === saved)) return saved as TrackSort
+  } catch { /* 读不到存储就用默认 */ }
+  return 'added-desc'
+}
+
+function SortPicker({ value, onChange }: { value: TrackSort; onChange: (v: TrackSort) => void }): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  return (
+    <div ref={box} className={`dd-host trk-sort${open ? ' open' : ''}`}>
+      <button type="button" className="dd-trigger" aria-label="排序" onClick={() => setOpen((v) => !v)}>
+        <Ic name="sort" cls="ic ic-sm" />
+        <span className="dd-val">{SORT_OPTIONS.find(([k]) => k === value)?.[1]}</span>
+        <Ic name="chev" cls="ic" />
+      </button>
+      <Popover anchor={box} open={open} onClose={() => setOpen(false)} matchWidth maxHeight={260} className="dd">
+        {SORT_OPTIONS.map(([k, label]) => (
+          <button key={k} type="button" className={`dd-item${value === k ? ' on' : ''}`} onClick={() => { onChange(k); setOpen(false) }}>
+            <span>{label}</span>
+            {value === k && <Ic name="check" cls="ic ic-sm" />}
+          </button>
+        ))}
       </Popover>
     </div>
   )

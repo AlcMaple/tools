@@ -737,7 +737,11 @@ tracks.get('/', async (c) => {
   if (!uid) return c.json({ error: '未登录' }, 401)
   const snapshot = readTracksSnapshot(uid)
   fillCalendarMetadataLater(uid)
-  for (const row of (listNewestFirstStmt.all(uid) as TrackRow[]).filter((track) => track.bgm_id > 0 && !track.cover).slice(0, 20)) {
+  // 逐字段判缺：只挑「缺封面」会让有封面、缺放送日期的条目永远补不上（卡片播出季印章一直是「未定」）。
+  // 本进程已排过的跳过再取 20 条，否则 BGM 本身就没日期的条目会一直占着这 20 个名额
+  const pending = (listNewestFirstStmt.all(uid) as TrackRow[])
+    .filter((track) => track.bgm_id > 0 && (!track.cover || !track.air_date) && !detailScheduled.has(`${uid}:${track.bgm_id}`))
+  for (const row of pending.slice(0, 20)) {
     fillDetailLater(uid, row.bgm_id)
   }
   c.header('Server-Timing', `snapshot;dur=${(performance.now() - started).toFixed(1)}`)

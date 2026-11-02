@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>追番排序与播出季印章</title>
+<style>
+  :root { --ink:#282529; --faint:#9a949a; --sakura:#d64f7a; --teal:#1f7680; --autumn:#b06a1f; --winter:#4f6f94; --paper:#fbf8f0; }
+  body { margin:0; padding:24px 16px; background:var(--paper); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; }
+  h2 { font-size:15px; margin:24px 0 10px; }
+  .row { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; }
+  .cover { position:relative; width:150px; aspect-ratio:5/7; background:#e8e4ea; border-radius:4px; }
+  .stamp { --s:var(--faint); display:inline-flex; align-items:center; gap:4px; padding:3px 8px 4px; color:var(--s); background:rgba(255,253,247,.88); border:1.5px solid var(--s); border-radius:9px 3px 10px 4px; font-family:'Kaiti SC','STKaiti',serif; white-space:nowrap; }
+  .cover .stamp { position:absolute; right:8px; bottom:8px; transform:rotate(4deg); }
+  .y { writing-mode:vertical-rl; font-size:11.5px; line-height:1; }
+  .n { font-size:26px; font-weight:600; }
+  .spring{--s:var(--sakura)} .summer{--s:var(--teal)} .autumn{--s:var(--autumn)} .winter{--s:var(--winter)}
+  .unknown { border-style:dashed; font-size:12px; letter-spacing:.1em; }
+  .dd { display:inline-block; border:1.5px solid #c9c3cb; border-radius:14px; padding:6px; background:#fff; font-size:13.5px; }
+  .dd div { padding:8px 10px; } .dd .on { color:var(--teal); font-weight:600; }
+  ul { font-size:13px; line-height:1.8; }
+</style>
+</head>
+<body>
+<h2>封面右下角：播出季印章（手机卡片无封面，改为标记行小章）</h2>
+<div class="row">
+  <div class="cover"><span class="stamp winter"><span class="y">2004</span><span class="n">冬</span></span></div>
+  <div class="cover"><span class="stamp spring"><span class="y">2017</span><span class="n">春</span></span></div>
+  <div class="cover"><span class="stamp summer"><span class="y">2019</span><span class="n">夏</span></span></div>
+  <div class="cover"><span class="stamp autumn"><span class="y">2020</span><span class="n">秋</span></span></div>
+  <div class="cover"><span class="stamp unknown">未定</span></div>
+</div>
+<ul>
+  <li>1~3 月冬、4~6 月春、7~9 月夏、10~12 月秋；悬停显示完整放送日期</li>
+  <li>缺日期：虚线空印「未定」；只有年份：只写年份</li>
+</ul>
+<h2>工具栏排序下拉（卡片、列表生效；时间线按加入时间分组，不显示）</h2>
+<div class="dd"><div class="on">最新加入 ✓</div><div>最早加入</div><div>最早播出</div><div>最新播出</div></div>
+<ul>
+  <li>播出排序精确到日，缺日期的沉底</li>
+  <li>只有默认「最新加入」时今天更新的番置顶</li>
+</ul>
+</body>
+</html>

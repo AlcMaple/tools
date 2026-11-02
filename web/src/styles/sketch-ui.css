@@ -312,7 +312,17 @@
   /* 「今天的功课」便签更宽（320px），左侧内容让出的位置也要更多，否则工具栏会钻到便签底下 */
   body[data-page='tracks'] .sketch-hero:has(.with-list) .sketch-hero-body { padding-right: 410px; }
   body[data-page='tracks'] .sketch-hero .trk-toolbar { margin-bottom: 0; }
+  /* 页头里的工具栏不换行：控件都是固定宽度，空间不够时只压缩搜索框，否则查看方式会被挤到第二行 */
+  body[data-page='tracks'] .sketch-hero .trk-toolbar { flex-wrap: nowrap !important; }
+  body[data-page='tracks'] .sketch-hero .trk-toolbar .searchbar { min-width: 72px; }
+  body[data-page='tracks'] .sketch-hero .trk-toolbar .dd-host:not(.trk-sort) .dd-trigger { min-width: 112px !important; }
+  body[data-page='tracks'] .sketch-hero .view-mode > button { min-width: 0; padding-inline: 7px; }
   .trk-head-actions { margin-left: auto; align-self: center; padding-bottom: 4px; }
+}
+/* 窄桌面又有「今天的功课」便签时一行放不下：搜索框整行，其余控件固定在第二行，不随选项文字忽上忽下 */
+@media (min-width: 961px) and (max-width: 1199px) {
+  body[data-page='tracks'] .sketch-hero:has(.with-list) .trk-toolbar { flex-wrap: wrap !important; }
+  body[data-page='tracks'] .sketch-hero:has(.with-list) .trk-toolbar .searchbar { flex-basis: 100%; }
 }
 /* 窄桌面（961–1439）：先收印章和品牌副标题；再窄就把用户名和退出收成图标。
    加了「接单评估」入口后 1280～1365 也放不下印章，横向会撑出滚动条 */
@@ -2071,6 +2081,49 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 @media (min-width: 641px) {
   .trk-marks .chip-today { display: none; }
 }
+/* 播出季印章：封面右下角的手写章，四季各一色；手机卡片不显示封面，改在标记行里出一枚小章 */
+.season-stamp {
+  --season: var(--ink-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 2px;
+  font-family: var(--font-hand);
+  line-height: 1.2;
+  color: var(--season);
+  background: rgba(255, 253, 247, .88);
+  border: 1.5px solid var(--season);
+  border-radius: 9px 3px 10px 4px;
+  white-space: nowrap;
+}
+.season-stamp.is-spring { --season: var(--sakura); }
+.season-stamp.is-summer { --season: var(--teal); }
+.season-stamp.is-autumn { --season: #b06a1f; }
+.season-stamp.is-winter { --season: #4f6f94; }
+.season-stamp.is-unknown { border-style: dashed; font-size: 12px; letter-spacing: .1em; }
+.season-year { font-size: 11px; letter-spacing: .02em; }
+.season-name { font-size: 17px; font-weight: 600; }
+.cover-season {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1;
+  transform: rotate(4deg);
+  pointer-events: auto;
+}
+.cover-season .season-year { writing-mode: vertical-rl; font-size: 11.5px; line-height: 1; }
+.cover-season { padding: 3px 8px 4px; }
+.cover-season .season-name { font-size: 26px; }
+.marks-season .season-name { font-size: 14px; }
+.list-season { flex: none; min-width: 64px; justify-content: center; }
+.list-season .season-name { font-size: 14px; }
+@media (min-width: 641px) {
+  .trk-marks .marks-season { display: none; }
+}
+/* 固定宽度：切换选项时触发器不变宽，不把后面的查看方式挤到下一行 */
+.trk-sort { flex: none; }
+.trk-sort .dd-trigger { width: 128px; gap: 4px; padding-inline: 10px; }
+.trk-sort .dd-val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 桌面 / 平板：相纸竖卡。封面固定 5:7 完整显示，卡片高度由封面决定，同一行天然等高；
    状态、神回、点评、分享图、移出全部收进 ⋯ 菜单，手机仍用常驻的 .trk-sec。 */
 @media (min-width: 641px) {
@@ -2699,6 +2752,9 @@ body[data-auth='out'] .track-btn { display: none; }
     overflow-wrap: anywhere;
   }
   .trk-list-meta { gap: 8px; }
+  .list-season { min-width: 0; padding: 0 5px; }
+  .list-season .season-year { font-size: 10px; }
+  .list-season .season-name { font-size: 12.5px; }
   .trk-list-ep { min-width: 64px; font-size: 12.5px; }
   .trk-list-favorite { min-width: 96px; }
   .trk-list-actions {
