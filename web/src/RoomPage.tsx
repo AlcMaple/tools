@@ -69,13 +69,13 @@ function Lines({ status }: { status: Load }): JSX.Element {
   )
 }
 
-interface Show { key: string; title: string; eps: CachedEpisode[]; bytes: number; lastAt: number }
+interface Show { key: string; bgmId: number | null; title: string; eps: CachedEpisode[]; bytes: number; lastAt: number }
 
 function groupShows(items: CachedEpisode[]): Show[] {
   const map = new Map<string, Show>()
   for (const it of items) {
     const key = it.bgmId ? 'bgm:' + it.bgmId : it.src + ':' + it.id
-    const s = map.get(key) ?? { key, title: it.title || '未命名', eps: [], bytes: 0, lastAt: 0 }
+    const s = map.get(key) ?? { key, bgmId: it.bgmId, title: it.title || '未命名', eps: [], bytes: 0, lastAt: 0 }
     s.eps.push(it)
     s.bytes += it.bytes
     s.lastAt = Math.max(s.lastAt, it.savedAt)
@@ -151,7 +151,10 @@ function Cache(): JSX.Element {
         <div className="ls-shows">
           {shows.map((s) => (
             <div key={s.key} className="ls-show">
-              <div className="ls-cover" style={{ background: coverOf(s.title) }}>{s.title.slice(0, 1)}</div>
+              <div className="ls-cover" style={{ background: coverOf(s.title) }}>
+                {s.title.slice(0, 1)}
+                {s.bgmId && <img src={`/api/subject-cover/${s.bgmId}`} alt="" loading="lazy" onError={(e) => e.currentTarget.remove()} />}
+              </div>
               <div className="ls-show-main">
                 <div className="ls-show-title">{s.title}</div>
                 <div className="ls-show-meta">{size(s.bytes)} · {ago(s.lastAt)}</div>
@@ -241,8 +244,10 @@ export function RoomPage(): JSX.Element {
     <div className="ls-page">
       <div className="ls-hero">
         <h1 className="title-sketch" style={{ fontSize: 34 }}>纱雾的放映室</h1>
-        <img className="ls-avatar" src="/assets/sagiri-avatar.webp" alt="" />
-        <div className="ls-bubble">哥哥看番的时候，顺手帮大家量了线路哦</div>
+        <div className="ls-says">
+          <img className="ls-avatar" src="/assets/sagiri-avatar.webp" alt="" />
+          <div className="ls-bubble">哥哥看番的时候，顺手帮大家量了线路哦</div>
+        </div>
       </div>
       <section className="ls-sec">
         <div className="ls-sec-head">

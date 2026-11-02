@@ -3363,6 +3363,7 @@ body[data-auth='out'] .track-btn { display: none; }
 .ls-page { padding-bottom: 24px; }
 .ls-hero { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 30px; }
 .ls-hero h1 { margin: 0 8px 0 0; }
+.ls-says { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .ls-avatar { width: 52px; height: 52px; border-radius: 50%; border: 2px solid var(--card); box-shadow: var(--shadow-stick); flex: none; }
 .ls-bubble { position: relative; background: var(--card); border: 1.5px solid var(--line-strong); border-radius: var(--wob-2); padding: 8px 14px; font-size: 13px; color: var(--ink-sub); box-shadow: var(--shadow-1); }
 .ls-bubble::before { content: ""; position: absolute; left: -7px; top: 50%; width: 11px; height: 11px; margin-top: -6px; background: var(--card); border-left: 1.5px solid var(--line-strong); border-bottom: 1.5px solid var(--line-strong); transform: rotate(45deg); }
@@ -3414,7 +3415,8 @@ body[data-auth='out'] .track-btn { display: none; }
 .ls-show { position: relative; background: var(--card); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px; display: flex; gap: 10px; box-shadow: var(--shadow-1); }
 .ls-show:nth-child(3n+1) { transform: rotate(-.6deg); }
 .ls-show:nth-child(3n+2) { transform: rotate(.5deg); }
-.ls-cover { width: 54px; height: 76px; border-radius: 5px; flex: none; box-shadow: 0 2px 4px rgba(0, 0, 0, .15); display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, .9); font-family: var(--font-hand); font-size: 22px; }
+.ls-cover { position: relative; overflow: hidden; width: 54px; height: 76px; border-radius: 5px; flex: none; box-shadow: 0 2px 4px rgba(0, 0, 0, .15); display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, .9); font-family: var(--font-hand); font-size: 22px; }
+.ls-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .ls-show-main { flex: 1; min-width: 0; }
 .ls-show-title { font-size: 13.5px; font-weight: 700; color: var(--ink); padding-right: 64px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ls-show-meta { font-size: 11.5px; color: var(--ink-faint); margin: 2px 0 8px; font-variant-numeric: tabular-nums; }
