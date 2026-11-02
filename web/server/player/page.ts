@@ -259,7 +259,8 @@ ${PLAYBACK_BEACON}
     var digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(key))
     var hash = Array.from(new Uint8Array(digest)).map(function(b){ return b.toString(16).padStart(2, '0') }).join('')
     var t = tuneOf(pl)
-    return { hash: hash, key: key, url: u.toString(), kind: pl.kind, conns: t.conns, par: t.par, src: src, id: id, ep: n, bgmId: bgmId || null, title: cacheTitle }
+    var moov = pl.kind === 'mp4' && pl.s ? '/api/player/moov?u=' + encodeURIComponent(pl.url) + '&s=' + pl.s : null
+    return { hash: hash, key: key, url: u.toString(), kind: pl.kind, conns: t.conns, par: t.par, src: src, id: id, ep: n, bgmId: bgmId || null, title: cacheTitle, moov: moov }
   }
   async function prepareLocal(pl, seed){
     if (!cacheEnabled() && !pl.viaServer) void probeSpeed(pl)

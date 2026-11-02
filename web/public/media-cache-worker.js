@@ -160,6 +160,25 @@ async function writeFileAtomic(dir, name, bytes) {
   await dir.removeEntry('t' + name)
 }
 
+// 头部盒子表里 mdat 的结束位置就是尾部 moov 的起点；返回 -1 = moov 在 mdat 前面（不用拉尾部），null = 读不出来。
+function moovStart(head, total) {
+  const view = new DataView(head.buffer, head.byteOffset, head.byteLength)
+  let at = 0
+  while (at + 8 <= head.length) {
+    let size = view.getUint32(at)
+    const type = String.fromCharCode(head[at + 4], head[at + 5], head[at + 6], head[at + 7])
+    if (size === 1) {
+      if (at + 16 > head.length) return null
+      size = view.getUint32(at + 8) * 4294967296 + view.getUint32(at + 12)
+    }
+    if (size < 8) return null
+    if (type === 'moov') return -1
+    if (type === 'mdat') return at + size < total ? at + size : null
+    at += size
+  }
+  return null
+}
+
 const writeMeta = (dir, meta) => writeFile(dir, 'meta.json', new TextEncoder().encode(JSON.stringify(meta)))
 const chunkLen = (total, i) => Math.min(CHUNK, total - i * CHUNK)
 
@@ -212,12 +231,56 @@ async function run(state) {
 
   const startedAt = performance.now()
   let fetchedBytes = 0, failures = 0
-  // 尾部按 4MB 算整段先拉：moov 不一定落在最后一块里，11-02 夜樱 ep19 的 moov 770KB，最后一块只有 178KB，跨了两块
-  const tailFrom = Math.max(1, n - TAIL_CHUNKS)
-  const order = [0]
-  for (let i = tailFrom; i < n; i++) order.push(i)
-  for (let i = 1; i < tailFrom; i++) order.push(i)
+  // 尾部要先拉多少，等第 0 块到手、从头部的盒子表里读出 mdat 在哪结束再定（moovStart）；读不出来才按 4MB 盲拉：
+  // moov 不一定落在最后一块里，11-02 夜樱 ep19 的 moov 770KB，最后一块只有 178KB，跨了两块。
+  // 盲拉 4MB 在 11-02 iPhone 家宽（约 1.5Mbps）上让乱马 ep3 起播等了 27 秒，它的 moov 其实只有 0.8MB
+  let tailFrom = Math.max(1, n - TAIL_CHUNKS), order = []
+  const setTail = (from) => {
+    tailFrom = from
+    order = [0]
+    for (let i = tailFrom; i < n; i++) order.push(i)
+    for (let i = 1; i < tailFrom; i++) order.push(i)
+  }
+  // 尾部整块同时向本站要一份（服务端多连接拉、moov 多半已缓存），先到的那份先用：本站那份直接当普通块落盘，
+  // 直连拉尾部的那条中止，往后顺着拉。11-02 乱马 ep4 手机直连拉尾部断流，<video> 22 秒后报错退回，那时服务端早已拿到这份索引
+  // 两路可能同时写同一块尾块，同步写句柄是独占的：谁先开始写谁写，另一路跳过
+  const writing = new Set()
+  const fetchTail = async () => {
+    const t0 = performance.now(), from = tailFrom * CHUNK
+    try {
+      const { res, bytes } = await fetchBytes(job.moov + '&from=' + from, {}, null, (r) => { if (r.status !== 200 && r.status !== 204) throw new HttpError('HTTP ' + r.status) })
+      if (state.stopped) return
+      if (tailReady()) { log('ep' + job.ep + ' 尾部直连先到，本站那份 ' + ((performance.now() - t0) / 1000).toFixed(1) + 's 后才到，不用'); return }
+      if (res.status === 204 || Number(res.headers.get('x-total')) !== total || bytes.length !== total - from) {
+        log('ep' + job.ep + ' 本站尾部不可用（' + res.status + '，' + bytes.length + 'B），只等直连')
+        return
+      }
+      for (let i = tailFrom; i < n; i++) {
+        if (state.have.has(i) || writing.has(i)) continue
+        writing.add(i)
+        try { await writeFile(dir, i + '.bin', bytes.subarray((i - tailFrom) * CHUNK, (i - tailFrom) * CHUNK + chunkLen(total, i))) } finally { writing.delete(i) }
+        state.have.add(i)
+        channel.postMessage({ type: 'chunk', hash: job.hash, chunk: i })
+        post({ type: 'progress', hash: job.hash, chunk: i, have: state.have.size, n })
+      }
+      state.needs = state.needs.filter((i) => i < tailFrom)
+      if (state.streamAt >= tailFrom && state.streamCtrl) state.streamCtrl.abort('done')
+      log('ep' + job.ep + ' 尾部从本站到手 ' + ((performance.now() - t0) / 1000).toFixed(1) + 's')
+    } catch (err) {
+      log('ep' + job.ep + ' 本站尾部失败（' + (err && err.message) + '），只等直连')
+    }
+  }
+  const planTail = async (head) => {
+    const at = moovStart(head, total)
+    if (at === null) return
+    setTail(at < 0 ? n : Math.max(1, Math.floor(at / CHUNK)))
+    log('ep' + job.ep + (at < 0 ? ' 索引在头部，不拉尾部' : ' 索引在尾部，从第 ' + tailFrom + ' 块拉起，共 ' + ((total - at) / 1048576).toFixed(1) + 'MB'))
+    if (at >= 0 && !tailReady() && job.moov) void fetchTail()
+  }
+  setTail(tailFrom)
   const tailReady = () => { for (let i = tailFrom; i < n; i++) if (!state.have.has(i)) return false; return true }
+  if (state.have.has(0)) await planTail(new Uint8Array(await (await (await dir.getFileHandle('0.bin')).getFile()).arrayBuffer()))
+  let planned = state.have.has(0)
   const pickNext = () => {
     while (state.needs.length) {
       const i = state.needs.shift()
@@ -237,7 +300,8 @@ async function run(state) {
     const ctrl = new AbortController()
     state.streamCtrl = ctrl
     state.streamAt = start
-    let idle = 0
+    let idle = 0, got = 0
+    const t0 = performance.now()
     const arm = () => { clearTimeout(idle); idle = setTimeout(() => ctrl.abort('idle'), IDLE_MS) }
     arm()
     try {
@@ -253,18 +317,26 @@ async function run(state) {
         if (done) break
         arm()
         received += value.length
+        got += value.length
         let off = 0
         while (off < value.length) {
           const take = Math.min(buf.length - filled, value.length - off)
           buf.set(value.subarray(off, off + take), filled)
           filled += take; off += take
-          if (filled === buf.length) {
-            await writeFile(dir, i + '.bin', buf)
+          if (filled === buf.length && (state.have.has(i) || writing.has(i))) {
+            i++
+            state.streamAt = i
+            if (i > end || state.stopped) { ctrl.abort('done'); break }
+            buf = new Uint8Array(chunkLen(total, i)); filled = 0
+          } else if (filled === buf.length) {
+            writing.add(i)
+            try { await writeFile(dir, i + '.bin', buf) } finally { writing.delete(i) }
             state.have.add(i)
             fetchedBytes += buf.length
             failures = 0
             channel.postMessage({ type: 'chunk', hash: job.hash, chunk: i })
             post({ type: 'progress', hash: job.hash, chunk: i, have: state.have.size, n })
+            if (i === 0 && !planned) { planned = true; await planTail(buf) }
             i++
             state.streamAt = i
             if (i > end || state.stopped) { ctrl.abort('done'); break }
@@ -283,7 +355,8 @@ async function run(state) {
       if (failures >= RESUME_DELAYS.length) throw new Error('传输连续中断 ' + failures + ' 次：' + (err && err.message))
       const wait = RESUME_DELAYS[failures++] * (1 + Math.random() * 0.3)
       const why = ctrl.signal.reason === 'idle' ? IDLE_MS / 1000 + ' 秒没收到数据' : err && err.message
-      log('ep' + job.ep + ' 传输中断（' + why + '），' + Math.round(wait / 1000) + ' 秒后续传')
+      // 带上这条请求从哪块起、收到多少、过了多久：0B 是连首字节都没等到，有字节是中途断，两种原因不同
+      log('ep' + job.ep + ' 传输中断（' + why + '）第 ' + start + '-' + end + ' 块，收到 ' + (got / 1024).toFixed(0) + 'KB / ' + ((performance.now() - t0) / 1000).toFixed(1) + 's，' + Math.round(wait / 1000) + ' 秒后续传')
       await new Promise((r) => setTimeout(r, wait))
     } finally {
       clearTimeout(idle)

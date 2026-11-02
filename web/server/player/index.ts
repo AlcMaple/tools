@@ -40,7 +40,7 @@ import { GirigiriError } from '../girigiri/api'
 import { XifanResolveError } from '../xifan/resolve'
 import { XifanLocalRateLimitError, XifanUpstreamError } from '../xifan/session'
 import probe from './probe'
-import { layoutOf, serveFaststart } from './faststart'
+import { layoutOf, serveFaststart, tailBlocks } from './faststart'
 import { PLAY_PAGE } from './page'
 import { lineStatus, noteLineHost, noteLineNames, noteSample, speedsFor } from './line-speed'
 
@@ -222,6 +222,22 @@ player.get('/stream', async (c) => {
   } catch (error) {
     console.error(`[player] stream 失败 range=${range}: ` + (error instanceof Error ? error.message : error))
     return c.json({ error: error instanceof Error ? error.message : '代理失败' }, 502)
+  }
+})
+
+// 本地缓存起播前要的尾部整块（含 moov）：服务端多连接拉比手机单连接稳（11-02 乱马 ep4 手机直连拉尾部断流，22 秒后报错），
+// moov 那段打开播放列表时已经顺手拉过（layoutOf 有缓存）。没有尾部索引的文件回 204，手机照常直连
+player.get('/moov', async (c) => {
+  const media = await signedMedia(c)
+  if (media instanceof Response) return media
+  try {
+    const layout = await layoutOf(media.url)
+    if (!layout) return new Response(null, { status: 204 })
+    const tail = await tailBlocks(media.url, layout, Number(c.req.query('from')))
+    return new Response(new Uint8Array(tail), { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(tail.length), 'X-Total': String(layout.total), 'Cache-Control': 'no-store' } })
+  } catch (error) {
+    console.error('[player] moov 失败: ' + (error instanceof Error ? error.stack : error))
+    return c.json({ error: error instanceof Error ? error.message : '读取索引失败' }, 502)
   }
 })
 

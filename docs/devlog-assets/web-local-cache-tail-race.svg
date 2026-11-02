@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1010" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+    <marker id="a-green" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#4b8f6a"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="1008" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">本地缓存起播：只拉目录所在的那两块，并让本站同时送一份，谁先到用谁</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：乱马起播从「27 秒才出播放按钮」「22.5 秒报错后换走」变成约 4 秒出画面（11-03 iPhone 实测）；整集仍由手机自己下到本机，本站每集只多送约 1.6MB</text>
+
+  <!-- ============ 一、用户看到的 ============ -->
+  <rect x="32" y="84" width="1056" height="236" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、用户看到的：同一部番，三次打开</text>
+
+  <text x="56" y="140" font-size="11" fill="#756f73">0 秒</text>
+  <text x="340" y="140" font-size="11" fill="#756f73">10 秒</text>
+  <text x="624" y="140" font-size="11" fill="#756f73">20 秒</text>
+  <text x="908" y="140" font-size="11" fill="#756f73">30 秒</text>
+  <path d="M60 146 H1060" stroke="#e2dcdf"/>
+
+  <text x="56" y="170" font-size="12.5" font-weight="700" fill="#96434f">11-02 乱马 ep3（改前）</text>
+  <rect x="60" y="178" width="767" height="26" rx="6" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="72" y="195" font-size="11" fill="#96434f">一直转圈，27 秒才出播放按钮</text>
+  <rect x="831" y="178" width="85" height="26" rx="6" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="838" y="195" font-size="11" fill="#7a6234">点播放卡 3 秒</text>
+  <rect x="920" y="178" width="140" height="26" rx="6" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="928" y="195" font-size="11" fill="#4a4450">黑一下，换成经本站播</text>
+
+  <text x="56" y="230" font-size="12.5" font-weight="700" fill="#96434f">11-02 乱马 ep4（只改了「拉多少」）</text>
+  <rect x="60" y="238" width="639" height="26" rx="6" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="72" y="255" font-size="11" fill="#96434f">一直转圈：手机拉结尾那条连接中途断开，重连也没拉到</text>
+  <rect x="703" y="238" width="250" height="26" rx="6" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="711" y="255" font-size="11" fill="#4a4450">22.5 秒播放器报错 → 左上角「重新连接」</text>
+
+  <text x="56" y="290" font-size="12.5" font-weight="700" fill="#316247">11-03 乱马 ep4（现在）</text>
+  <rect x="60" y="298" width="114" height="14" rx="5" fill="#edf7f1" stroke="#7fad91"/>
+  <rect x="178" y="298" width="882" height="14" rx="5" fill="#edf7f1" stroke="#7fad91" stroke-dasharray="4 3"/>
+  <text x="188" y="309" font-size="11" fill="#316247">约 4 秒出画面；跳到上次看的位置也一直播下去，整集 144 秒在后台下完，接着下 ep5</text>
+
+  <!-- ============ 二、背后在做的 ============ -->
+  <rect x="32" y="336" width="1056" height="300" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="362" font-size="14" font-weight="700" fill="#353136">二、背后在做的：开播前只缺「开头一块 + 目录」</text>
+
+  <rect x="56" y="380" width="230" height="112" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="171" y="403" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">① 先拉开头 1MB</text>
+  <text x="171" y="425" text-anchor="middle" font-size="11" fill="#4d6575">开头写着「画面数据从哪到哪」</text>
+  <text x="171" y="443" text-anchor="middle" font-size="11" fill="#4d6575">画面数据一结束，后面就是目录</text>
+  <text x="171" y="461" text-anchor="middle" font-size="11" fill="#4d6575">（告诉播放器每一秒画面在哪）</text>
+  <text x="171" y="479" text-anchor="middle" font-size="11" fill="#4d6575">乱马 ep4：目录在最后 0.85MB</text>
+
+  <path d="M290 436 H322" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="326" y="380" width="230" height="112" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="441" y="403" text-anchor="middle" font-size="12.5" font-weight="700" fill="#36566d">② 只要目录所在的块</text>
+  <text x="441" y="425" text-anchor="middle" font-size="11" fill="#4d6575">本机按 1MB 一块存</text>
+  <text x="441" y="443" text-anchor="middle" font-size="11" fill="#4d6575">目录落在最后两块：共 1.6MB</text>
+  <text x="441" y="461" text-anchor="middle" font-size="11" fill="#4d6575">改前不管目录多大</text>
+  <text x="441" y="479" text-anchor="middle" font-size="11" fill="#4d6575">一律拉最后 4MB</text>
+
+  <path d="M560 410 C590 410 590 404 616 404" fill="none" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+  <path d="M560 462 C590 462 590 470 616 470" fill="none" stroke="#6d686b" stroke-width="1.6" marker-end="url(#a-gray)"/>
+
+  <rect x="620" y="380" width="214" height="52" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="727" y="401" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">A 手机直连源站拉这两块</text>
+  <text x="727" y="420" text-anchor="middle" font-size="11" fill="#5d5763">一条连接，断了就全靠它重连</text>
+
+  <rect x="620" y="440" width="214" height="52" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="727" y="461" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4a4450">B 同时向本站要这两块</text>
+  <text x="727" y="480" text-anchor="middle" font-size="11" fill="#5d5763">本站多条连接拉，目录早已备好</text>
+
+  <path d="M838 406 C866 406 866 436 892 436" fill="none" stroke="#4b8f6a" stroke-width="1.6" marker-end="url(#a-green)"/>
+  <path d="M838 466 C866 466 866 436 892 436" fill="none" stroke="#4b8f6a" stroke-width="1.6" marker-end="url(#a-green)"/>
+
+  <rect x="896" y="380" width="168" height="112" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="980" y="403" text-anchor="middle" font-size="12.5" font-weight="700" fill="#316247">③ 先到的那份存进手机</text>
+  <text x="980" y="425" text-anchor="middle" font-size="11" fill="#3e6d53">播放器拿到目录就出画面</text>
+  <text x="980" y="443" text-anchor="middle" font-size="11" fill="#3e6d53">晚到的那份丢掉</text>
+  <text x="980" y="461" text-anchor="middle" font-size="11" fill="#3e6d53">之后从开头往后</text>
+  <text x="980" y="479" text-anchor="middle" font-size="11" fill="#3e6d53">一块块下完整集</text>
+
+  <text x="56" y="522" font-size="12.5" font-weight="700" fill="#353136">11-03 真机两次都走通了（不同的路先到）</text>
+  <rect x="56" y="534" width="496" height="84" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="72" y="556" font-size="12.5" font-weight="700" fill="#316247">ep4：A 先到</text>
+  <text x="72" y="576" font-size="11" fill="#3e6d53">手机直连这次很快（整集 260MB / 144 秒 = 15.1Mbps）</text>
+  <text x="72" y="594" font-size="11" fill="#3e6d53">本站那份晚 3.9 秒才到，没用上</text>
+  <text x="72" y="610" font-size="11" fill="#3e6d53">没有任何连接断开</text>
+  <rect x="568" y="534" width="496" height="84" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="584" y="556" font-size="12.5" font-weight="700" fill="#316247">ep5（看 ep4 时在后台预下）：B 先到</text>
+  <text x="584" y="576" font-size="11" fill="#3e6d53">本站 4.1 秒送到最后两块</text>
+  <text x="584" y="594" font-size="11" fill="#3e6d53">直连拉尾部的那条随即作废，改从开头往后下</text>
+  <text x="584" y="610" font-size="11" fill="#3e6d53">本站送的和源站逐字节一致（本机核对 ep4 这两块）</text>
+
+  <!-- ============ 三、哪里容易改错 ============ -->
+  <rect x="32" y="652" width="1056" height="190" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="678" font-size="14" font-weight="700" fill="#353136">三、哪里容易改错</text>
+
+  <rect x="56" y="694" width="328" height="132" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="72" y="716" font-size="12.5" font-weight="700" fill="#7a6234">为什么不能固定拉最后 4MB</text>
+  <text x="72" y="738" font-size="11" fill="#6b5a3a">目录多大，拉之前不知道：</text>
+  <text x="72" y="756" font-size="11" fill="#6b5a3a">夜樱 ep19 跨了两块，所以当初定了 4MB</text>
+  <text x="72" y="774" font-size="11" fill="#6b5a3a">可乱马的目录只有 0.85MB</text>
+  <text x="72" y="792" font-size="11" fill="#6b5a3a">11-02 家宽约 1.5Mbps：多拉的那 3MB</text>
+  <text x="72" y="810" font-size="11" fill="#6b5a3a">就是多等的十几秒</text>
+
+  <rect x="396" y="694" width="328" height="132" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="412" y="716" font-size="12.5" font-weight="700" fill="#7a6234">为什么本站给整块，不只给目录</text>
+  <text x="412" y="738" font-size="11" fill="#6b5a3a">播放器要结尾时会往前多要一点：</text>
+  <text x="412" y="756" font-size="11" fill="#6b5a3a">本机 Chrome 从目录前 7.5KB 开始要</text>
+  <text x="412" y="774" font-size="11" fill="#6b5a3a">只有目录的那份答不了这条请求，</text>
+  <text x="412" y="792" font-size="11" fill="#6b5a3a">又回去等直连——本机测出 52 秒才可播</text>
+  <text x="412" y="810" font-size="11" fill="#6b5a3a">给整块就和直连拉到的一模一样</text>
+
+  <rect x="736" y="694" width="328" height="132" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="752" y="716" font-size="12.5" font-weight="700" fill="#7a6234">为什么两路都要，不全走本站</text>
+  <text x="752" y="738" font-size="11" fill="#6b5a3a">本站出口约 6Mbps，全站共用</text>
+  <text x="752" y="756" font-size="11" fill="#6b5a3a">有的网络到本站反而慢：</text>
+  <text x="752" y="774" font-size="11" fill="#6b5a3a">10-10 家宽到本站只有 0.6Mbps</text>
+  <text x="752" y="792" font-size="11" fill="#6b5a3a">直连不卡时它常常先到（11-03 ep4）</text>
+  <text x="752" y="810" font-size="11" fill="#6b5a3a">本站只在直连卡住时顶上</text>
+
+  <!-- ============ 四、边界 ============ -->
+  <rect x="32" y="858" width="1056" height="132" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="884" font-size="14" font-weight="700" fill="#353136">四、边界情况</text>
+  <text x="56" y="910" font-size="11" fill="#4a4450">· 目录本来就在开头的文件：结尾一块都不多拉；开头读不出目录在哪：退回老办法，拉最后 4MB</text>
+  <text x="56" y="930" font-size="11" fill="#4a4450">· 本站那份拿不到（本站出错、或没有目录）：只记一行，不重试，只等直连那份</text>
+  <text x="56" y="950" font-size="11" fill="#4a4450">· 两路都没到：播放器约 18~22 秒报错，照旧换到经本站播放（同一个文件，从原位置接着播），和改前一样</text>
+  <text x="56" y="970" font-size="11" fill="#316247">· 常见情况：手机直连不慢时直连先到，本站那份到了也不用；只有直连拉结尾卡住时，本站那份才顶上</text>
+</svg>

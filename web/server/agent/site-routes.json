@@ -812,6 +812,11 @@
   {
     "file": "server/player/index.ts",
     "method": "get",
+    "path": "/moov"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "get",
     "path": "/page"
   },
   {

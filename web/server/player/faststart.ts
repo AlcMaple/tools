@@ -150,6 +150,24 @@ async function buildLayout(url: string): Promise<Layout | null> {
   return { total, prefixEnd: mdat.start, mdatEnd: mdat.end, head: head.subarray(0, mdat.start), tail }
 }
 
+// 本地缓存播放器的尾部整块：从 from（块边界）到文件尾，源文件原样的字节。
+// 为什么不只给 moov：播放器要尾部时会往前取整（11-03 本机 Chrome 从 moov 前 7.5KB 起要），只有 moov 答不了，
+// 整块给就能直接当普通块落盘。mdat 末尾那一段服务端没缓存，现拉；尾块要把前移时加上的偏移再减回去
+export async function tailBlocks(url: string, layout: Layout, from: number): Promise<Buffer> {
+  if (!Number.isSafeInteger(from) || from < layout.prefixEnd || from > layout.mdatEnd || layout.mdatEnd - from > 4 * 1024 * 1024) {
+    throw new Error(`尾部起点 ${from} 不在 mdat 末尾 4MB 内`)
+  }
+  const tail = Buffer.from(layout.tail)
+  const moov = childBoxes(tail, 0, tail.length).find((b) => b.type === 'moov')
+  if (moov) shiftChunkOffsets(tail, moov.body, moov.end, -(layout.total - layout.mdatEnd))
+  if (from === layout.mdatEnd) return tail
+  // 和 buildLayout 拉尾块同一个理由：源站单连接慢，分几段并发
+  const gapLen = layout.mdatEnd - from, step = Math.ceil(gapLen / 6)
+  const parts = await Promise.all(Array.from({ length: Math.ceil(gapLen / step) }, (_, i) =>
+    fetchRange(url, from + i * step, Math.min(layout.mdatEnd - 1, from + (i + 1) * step - 1))))
+  return Buffer.concat([...parts.map((p) => p.buf), tail])
+}
+
 // null = 不需要改（已是 faststart / 不是能识别的 mp4）或刚失败过（60 秒内不再打上游，直接按原文件透传）。
 export function layoutOf(url: string): Promise<Layout | null> {
   // 按媒体身份缓存：签名换了还是同一个文件，不重新拉尾块
