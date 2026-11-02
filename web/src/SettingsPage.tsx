@@ -30,7 +30,7 @@ import { BackupModule } from './BackupModule'
 import { SketchSheet } from './SketchSheet'
 import { LegacyRig, setSpriteStyle, useSpriteStyle } from './sprites'
 
-type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai' | 'backup' | 'look'
+type Module = 'profile' | 'security' | 'xifan' | 'privacy' | 'ai' | 'backup' | 'cache' | 'look'
 
 function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/xifan') return 'xifan'
@@ -38,6 +38,7 @@ function moduleFromHash(): Module {
   if (window.location.hash === '#/settings/privacy') return 'privacy'
   if (window.location.hash === '#/settings/ai') return 'ai'
   if (window.location.hash === '#/settings/backup') return 'backup'
+  if (window.location.hash === '#/settings/cache') return 'cache'
   if (window.location.hash === '#/settings/look') return 'look'
   return 'profile'
 }
@@ -202,6 +203,16 @@ export function SettingsPage(): JSX.Element | null {
             <div className="pocket-body">{module === 'backup' && <BackupModule />}</div>
           </section>
 
+          <section className={`pocket${module === 'cache' ? ' open' : ''}`} data-mod="cache">
+            <button className="pocket-tab" type="button" onClick={() => selectModule('cache')}>
+              <Ic name="play" />
+              缓存播放器
+              <span className="pocket-hint">占用硬盘 · 默认关闭</span>
+              <Ic name="chev" cls="ic chev" />
+            </button>
+            <div className="pocket-body">{module === 'cache' && <CacheModule />}</div>
+          </section>
+
           <section className={`pocket${module === 'look' ? ' open' : ''}`} data-mod="look">
             <button className="pocket-tab" type="button" onClick={() => selectModule('look')}>
               <Ic name="eye" />
@@ -237,6 +248,42 @@ function Kv({ k, v, note }: { k: string; v: string; note?: string }): JSX.Elemen
         {v}
         {note && <span className="muted">{note}</span>}
       </span>
+    </div>
+  )
+}
+
+const CACHE_KEY = 'mt-local-cache'
+
+function CacheModule(): JSX.Element {
+  const [on, setOn] = useState(() => {
+    try { return localStorage.getItem(CACHE_KEY) === '1' } catch { return false }
+  })
+  const toggle = (): void => {
+    const next = !on
+    try { localStorage.setItem(CACHE_KEY, next ? '1' : '0') } catch { /* 存不了就只在本次页面生效 */ }
+    setOn(next)
+  }
+  return (
+    <div className="privacy-module">
+      <div className="privacy-card-head">
+        <div className="privacy-copy">
+          <b>缓存播放器</b>
+          <p className="muted small mt8">把正在看的番存到本机，拖进度更快；会占用硬盘空间</p>
+        </div>
+        <div className="privacy-action">
+          <span className="privacy-state" aria-live="polite">{on ? '已开启' : '未开启'}</span>
+          <button
+            type="button"
+            className={`privacy-switch${on ? ' on' : ''}`}
+            role="switch"
+            aria-checked={on}
+            aria-label="缓存播放器"
+            onClick={toggle}
+          >
+            <span className="privacy-switch-knob" />
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

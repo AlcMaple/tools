@@ -222,7 +222,26 @@ ${PLAYBACK_BEACON}
       .sort(function(a, b){ return b.bps - a.bps || a.i - b.i })
   }
 
+  // 设置页的「缓存播放器」开关，默认关：写盘会占用户硬盘，只是加速，关着不影响播放
+  function cacheEnabled(){ try { return localStorage.getItem('mt-local-cache') === '1' } catch (e) { return false } }
+  // 开关关着时不写盘，只在开播时从源站直连读一小段测一次速，交给全站线路速度；只一次，失败只记日志，不重试
+  var probed = {}
+  async function probeSpeed(pl){
+    var host = hostOf(pl.url)
+    if (src !== 'xifan' || pl.kind !== 'mp4' || !host || probed[host] || blockedHost(host) || !navigator.onLine) return
+    probed[host] = true
+    try {
+      var t0 = performance.now(), got = 0
+      var r = await fetch(directUrl(pl).toString(), { headers: { Range: 'bytes=0-2097151' }, cache: 'no-store', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(8000) })
+      if (!r.ok && r.status !== 206) throw new Error('HTTP ' + r.status)
+      var rd = r.body.getReader()
+      for (;;){ var c = await rd.read(); if (c.done) break; got += c.value.length }
+      var dt = (performance.now() - t0) / 1000
+      if (got >= 1048576 && dt > 0) noteSpeed(host, got * 8 / dt)
+    } catch (e) { slog('speed probe failed ' + host + ' ' + (e && e.message)) }
+  }
   function localEligible(pl){
+    if (!cacheEnabled()) return false
     if (localOff || pl.viaServer || (pl.kind !== 'mp4' && pl.kind !== 'hls')) return false
     if (blockedHost(hostOf(pl.url))) return false
     if (!navigator.serviceWorker || !navigator.serviceWorker.controller || !navigator.storage || !navigator.storage.getDirectory) return false
@@ -243,6 +262,7 @@ ${PLAYBACK_BEACON}
     return { hash: hash, key: key, url: u.toString(), kind: pl.kind, conns: t.conns, par: t.par, src: src, id: id, ep: n, bgmId: bgmId || null, title: cacheTitle }
   }
   async function prepareLocal(pl, seed){
+    if (!cacheEnabled() && !pl.viaServer) void probeSpeed(pl)
     if (!localEligible(pl)) return pl
     try {
       var job = await localJob(pl, ep)
