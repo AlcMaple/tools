@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CalendarItem, CalendarResult, CalendarWeekday, SourceBinding, SourceId, Track, WatchMode } from './api'
-import { SOURCES, coverUrl, fetchCalendar, sourceById } from './api'
+import type { CalendarItem, CalendarResult, SeasonSummary, CalendarWeekday, SourceBinding, SourceId, Track, WatchMode } from './api'
+import { SOURCES, coverUrl, fetchCalendar, fetchSeasons, sourceById } from './api'
+import { openFindAnime } from './FindAnime'
 import { ContinueWatchAction } from './tracks/TrackCard'
 import { watchEp } from './tracks/common'
 import { useSourceWatch } from './tracks/useSourceWatch'
@@ -36,6 +37,11 @@ function readCalendarLayout(): CalendarLayout {
     return 'horizontal'
   }
 }
+
+const SEASON_KANJI = ['冬', '春', '夏', '秋']
+
+// 搜索比对忽略大小写、空格和常见标点，「Re:从零」「re 从零」都能命中
+const normalizeTitle = (s: string): string => s.toLowerCase().replace(/[\s·・:：!！?？,，.。'"「」『』《》\-_~～]/g, '')
 
 function todayBgmId(): number {
   const d = new Date().getDay() // 0=周日..6=周六
@@ -383,14 +389,33 @@ export function CalendarPage(): JSX.Element {
     load()
   }, [])
 
+  const [query, setQuery] = useState('')
+  const [recentSeasons, setRecentSeasons] = useState<SeasonSummary[]>([])
+  useEffect(() => {
+    let live = true
+    fetchSeasons()
+      .then((list) => live && setRecentSeasons(list.filter((x) => !x.current).slice(0, 2)))
+      // 季度条只是快捷入口，拿不到时「更多往期」照样能进往期页，不必打断周历
+      .catch((e: Error) => console.error('[calendar] 往期季度列表获取失败', e))
+    return () => { live = false }
+  }, [])
+
   const mineOnly = onlyMine && track.canTrack
+  const needle = normalizeTitle(query)
+  const searching = needle.length > 0
   const days = useMemo(
     () =>
-      mineOnly
-        ? result?.data.map((d) => ({ ...d, items: d.items.filter((i) => track.tracked.has(i.id)) }))
-        : result?.data,
-    [result, mineOnly, track.tracked],
+      result?.data.map((d) => ({
+        ...d,
+        items: d.items.filter(
+          (i) =>
+            (!mineOnly || track.tracked.has(i.id)) &&
+            (!needle || normalizeTitle(i.name_cn).includes(needle) || normalizeTitle(i.name).includes(needle)),
+        ),
+      })),
+    [result, mineOnly, track.tracked, needle],
   )
+  const hitDays = searching ? (days ?? []).filter((d) => d.items.length > 0) : []
   const selected = days?.find((d) => d.id === selectedDay)
   const range = result
     ? `${dates[1].m}/${dates[1].d} – ${dates[7].m}/${dates[7].d}`
@@ -421,11 +446,18 @@ export function CalendarPage(): JSX.Element {
             <h1 className="title-sketch" style={{ fontSize: 34 }}>
               番剧周历
             </h1>
-            <button className="calendar-history-link" type="button" aria-label="查看往期周历" onClick={() => navigate('history')}>
-              <Ic name="tracks" cls="ic ic-sm" />
-              往期 <span aria-hidden="true">›</span>
-            </button>
             </div>
+            <nav className="calendar-seasons" aria-label="切换季度">
+              <span className="hist-chip on" aria-current="page">本季</span>
+              {recentSeasons.map((x) => (
+                <button key={x.key} type="button" className="hist-chip" onClick={() => navigate('history', `s=${encodeURIComponent(x.key)}`)}>
+                  {x.year} {SEASON_KANJI[x.q]}
+                </button>
+              ))}
+              <button type="button" className="hist-chip calendar-seasons-more" onClick={() => navigate('history')}>
+                更多往期 <span aria-hidden="true">›</span>
+              </button>
+            </nav>
             <p className="muted small mt8">
               {range && (
                 <>
@@ -517,6 +549,41 @@ export function CalendarPage(): JSX.Element {
         </p>
       )}
 
+      <div className="field-row calendar-search mt16">
+        <Ic name="search" cls="ic ic-sm calendar-search-ic" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+          placeholder="在本季里找番名"
+          aria-label="在本季周历里搜索番名"
+          enterKeyHint="search"
+        />
+        {searching && (
+          <button type="button" className="calendar-search-clear" aria-label="清空搜索" onClick={() => setQuery('')}>
+            <Ic name="x" cls="ic ic-sm" />
+          </button>
+        )}
+      </div>
+
+      {searching && result && hitDays.length === 0 && (
+        <div className="calendar-search-empty">
+          <p className="muted">本季{mineOnly ? '追的番里' : ''}没有「{query.trim()}」</p>
+          <button type="button" className="btn btn-sm btn-primary" onClick={openFindAnime}>
+            <Ic name="search" cls="ic ic-sm" />
+            去找番
+          </button>
+        </div>
+      )}
+
+      {searching ? (
+        <div className="calendar-stage mt16 layout-vertical">
+          <div className="calendar-content">
+            <div className="calendar-vertical-view">{hitDays.map((day) => renderDaySection(day, true))}</div>
+          </div>
+        </div>
+      ) : (
       <div className={`calendar-stage mt16 layout-${layoutMode}`}>
         {legacySprite && <LegacyCalendarRig layout={layoutMode} wide={wide} />}
         <div className="calendar-content">
@@ -555,6 +622,7 @@ export function CalendarPage(): JSX.Element {
           )}
         </div>
       </div>
+      )}
 
       {!legacySprite && <button
         type="button"

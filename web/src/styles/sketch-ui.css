@@ -736,23 +736,29 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 /* 周历排布切换：分段按钮比两个散落按钮更像手帐里的小标签。 */
 .calendar-heading { width: 100%; min-width: 0; }
 .calendar-title-row { display: flex; align-items: center; gap: 20px; }
-.calendar-history-link {
+.calendar-seasons { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; }
+.calendar-seasons > .hist-chip { flex: none; align-items: center; min-height: 34px; padding: 4px 12px; font-size: 13px; white-space: nowrap; }
+.calendar-seasons > .hist-chip.on { cursor: default; }
+.calendar-seasons-more { color: var(--teal); border-style: dashed; }
+.calendar-search { max-width: 420px; }
+.calendar-search > input { padding-left: 36px; padding-right: 40px; }
+.calendar-search-ic { position: absolute; left: 12px; color: var(--ink-faint); pointer-events: none; }
+.calendar-search-clear {
+  position: absolute;
+  right: 6px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 5px 10px;
-  border: 1px solid var(--teal-line);
-  border-radius: 5px 8px 5px 8px;
-  background: var(--teal-wash);
-  color: var(--teal);
-  font: inherit;
-  font-size: 12.5px;
-  white-space: nowrap;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-sub);
   cursor: pointer;
 }
-.calendar-history-link:hover { background: var(--card); }
-.calendar-history-link:focus-visible { outline: 2px solid var(--teal); outline-offset: 4px; }
+@media (hover: hover) { .calendar-search-clear:hover { background: var(--teal-wash); } }
+.calendar-search-empty { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
 .row.calendar-actions { flex-wrap: wrap; justify-content: flex-start; gap: 10px; }
 .calendar-layout-toggle { flex: none; }
 .calendar-layout-toggle > button { white-space: nowrap; }
@@ -762,6 +768,9 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .calendar-layout-toggle { min-height: 44px; }
   .calendar-actions > .icon-btn { width: 44px; height: 44px; }
   .calendar-actions > .btn { min-height: 44px; }
+  .calendar-search { max-width: none; }
+  .calendar-search > input { min-height: 44px; font-size: 16px; }
+  .calendar-seasons > .hist-chip { min-height: 40px; }
 }
 
 /* 胶片条：整版翻页 —— 海报宽度由「一屏放几张」反推（容器宽 ÷ 列数），

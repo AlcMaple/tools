@@ -20,15 +20,15 @@ function parse(): Route {
   if (h === 'tracks') return 'tracks'
   if (h === 'anime' || h.startsWith('anime?')) return 'catalog'
   if (h === 'judge') return 'judge'
-  if (h === 'history') return 'history'
+  if (h === 'history' || h.startsWith('history?')) return 'history'
   if (window.location.pathname === '/u' || window.location.pathname.startsWith('/u/')) return 'community'
   return 'calendar'
 }
 
-export function navigate(r: Route): void {
+export function navigate(r: Route, query = ''): void {
   // 从 `/u/:username` 切回站内功能时，同时回到根路径；只改 hash 会把公开用户路径
   // 留在地址栏，随后 `#/` 又会被识别成该用户页。
-  const hash = r === 'calendar' ? '#/' : r === 'catalog' ? '#/anime' : `#/${r}`
+  const hash = (r === 'calendar' ? '#/' : r === 'catalog' ? '#/anime' : `#/${r}`) + (query ? `?${query}` : '')
   const onPublicProfilePath = window.location.pathname === '/u' || window.location.pathname.startsWith('/u/')
   if (onPublicProfilePath) {
     window.history.pushState(null, '', `/${hash}`)

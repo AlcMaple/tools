@@ -35,7 +35,9 @@ export function CalendarHistoryPage(): JSX.Element {
       .then((list) => {
         if (!live) return
         setSeasons(list)
-        const first = list.find((s) => s.count !== null) ?? list[0]
+        // 周历页的季度条直接点进某一季：#/history?s=<key>
+        const wanted = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('s')
+        const first = list.find((s) => s.key === wanted) ?? list.find((s) => s.count !== null) ?? list[0]
         setPickedKey((prev) => prev ?? first?.key ?? null)
         setYear((prev) => prev ?? first?.year ?? null)
       })
