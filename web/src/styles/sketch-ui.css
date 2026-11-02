@@ -3396,3 +3396,52 @@ body[data-auth='out'] .track-btn { display: none; }
   .ls-meter { order: 3; flex-basis: 100%; }
   .ls-usage .ls-btn { margin-left: auto; }
 }
+
+/* ---------- 全站找番：桌面顶栏一枚主按钮，手机右下浮钮（设计稿 #fab） ---------- */
+.spine-find { flex: none; white-space: nowrap; }
+.m-find-fab { display: none; }
+/* 多了这枚按钮，顶栏到 1600 才放得下印章装饰 */
+@media (min-width: 961px) and (max-width: 1599px) {
+  .spine-deco { display: none; }
+}
+@media (min-width: 961px) and (max-width: 1199px) {
+  .spine-find { padding-inline: 10px; }
+}
+@media (min-width: 1200px) and (max-width: 1349px) {
+  .idx-a .ic { display: none; }
+}
+@media (max-width: 960px) {
+  .spine-find { display: none; }
+  .m-find-fab {
+    position: fixed;
+    right: 16px;
+    bottom: calc(var(--tabbar-h) + 14px);
+    z-index: 61;
+    display: inline-grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    padding: 0;
+    border: 1.5px solid var(--teal);
+    border-radius: 50%;
+    background: var(--teal-mid);
+    color: #f7fbfb;
+    box-shadow: var(--shadow-stick);
+    cursor: pointer;
+  }
+  .m-find-fab .ic { width: 24px; height: 24px; }
+}
+.empty-acts { justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+
+/* 加番 / 找番结果行：番名完整换行显示，同名多季才分得清；按钮自成一组不被挤 */
+.add-hit { flex-shrink: 0; align-items: center; }
+.add-hit-text { flex: 1; min-width: 0; }
+.add-hit-title { font-weight: 600; font-size: 13.5px; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.add-hit-sub { margin-top: 2px; font-size: 11.5px; line-height: 1.4; color: var(--ink-faint); overflow-wrap: anywhere; }
+.add-hit-acts { flex: none; display: flex; align-items: center; gap: 8px; }
+@media (max-width: 600px) {
+  .add-hit { flex-wrap: wrap; row-gap: 8px; border-bottom: 1px dashed var(--line); }
+  .add-hit-text { flex-basis: 100%; }
+  .add-hit-acts { margin-left: auto; }
+  .add-pane { height: min(52vh, 440px); }
+}

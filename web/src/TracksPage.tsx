@@ -14,7 +14,7 @@ import { AGENT_NAVIGATION_EVENT,takeAgentNavigation } from './agent/navigation'
 //
 // 卡片 / 列表 / 弹窗 / 在线源逻辑拆到 src/tracks/*；稀饭 / Girigiri（以后还有嗷呜 / B站）统一走
 // api.ts 的 OnlineSource 适配器，这里的 state / handler / 弹窗都参数化到 `source`。
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
   AnimeHit,
   BgmImportStatus,
@@ -53,6 +53,7 @@ import { TrackTimeline } from './tracks/TrackTimeline'
 import { useSourceWatch } from './tracks/useSourceWatch'
 import { BgmImportModal } from './tracks/importModal'
 import { ConfirmRemoveModal, EditModal } from './tracks/editModals'
+import { openFindAnime } from './FindAnime'
 import { AddSearchModal, type BackfillTarget } from './tracks/addSearchModal'
 import { Popover } from './Popover'
 import { SketchSheet } from './SketchSheet'
@@ -573,7 +574,18 @@ export function TracksPage(): JSX.Element {
       ) : !user ? (
         <EmptyState text="登录后就能开始追番" />
       ) : counts.all === 0 ? (
-        <EmptyState text="还没有在追的番，点上面的「加番」开始吧" />
+        <EmptyState text="手帐还是空的，先找一部想看的番吧">
+          <div className="row empty-acts">
+            <button className="btn btn-primary" type="button" onClick={openFindAnime}>
+              <Ic name="search" cls="ic ic-sm" />
+              找番
+            </button>
+            <button className="btn btn-ghost" type="button" onClick={() => setImportOpen(true)}>
+              <Ic name="refresh" cls="ic ic-sm" />
+              从 Bangumi 导入
+            </button>
+          </div>
+        </EmptyState>
       ) : filtered.length === 0 ? (
         <EmptyState text={loadProgress ? (loadProgress.loading ? '正在查找其余追番…' : '列表尚未加载完整，请继续加载') : '没有匹配的追番，换个词或清掉类型过滤试试'} />
       ) : view === 'timeline' ? (
@@ -832,11 +844,12 @@ function ViewModeToggle({
 }
 
 // ── 空态 ─────────────────────────────────────────────────────
-function EmptyState({ text }: { text: string }): JSX.Element {
+function EmptyState({ text, children }: { text: string; children?: ReactNode }): JSX.Element {
   return (
     <div className="empty panel mt16">
       {useSpriteStyle() === 'old' && <img className="mascot" src="/assets/sagiri-mascot.webp" alt="" />}
       <p className="empty-text">{text}</p>
+      {children}
     </div>
   )
 }

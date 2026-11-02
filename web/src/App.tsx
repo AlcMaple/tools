@@ -24,6 +24,7 @@ import { toast, ToastRoot } from './Toast'
 import { AgentHost } from './agent/AgentHost'
 import { OrderJudgePage } from './orderJudge/OrderJudgePage'
 import { RoomPage } from './RoomPage'
+import { FindAnime, openFindAnime } from './FindAnime'
 
 // 各页书脊的小 accents：胶带色 / 印章 / 拟声词（原型稿逐页配置）
 const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira: string }> = {
@@ -251,6 +252,11 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
             <div className="brand-sub"><a href="/about.html">功能介绍与桌面下载</a></div>
           </div>
 
+          <button type="button" className="btn btn-sm btn-primary spine-find" onClick={openFindAnime}>
+            <Ic name="search" cls="ic ic-sm" />
+            找番
+          </button>
+
           <nav className="idx-nav">
             <IdxLink route="calendar" active={route === 'calendar' || route === 'history'} icon="calendar">
               番剧周历
@@ -346,6 +352,12 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
 
       {/* 移动端底部书签条 + 目录（桌面隐藏）：设计稿 docs/design-mockups/移动端导航-目录书签.html */}
       <MobileDirectory route={route} feedbackUnread={feedbackUnread} />
+      {FIND_FAB_ROUTES.has(route) && (
+        <button type="button" className="m-find-fab" onClick={openFindAnime} aria-label="找番" title="找番">
+          <Ic name="search" cls="ic" />
+        </button>
+      )}
+      <FindAnime onLogin={openLogin} />
 
       <AuthModal
         open={authOpen}
@@ -400,6 +412,9 @@ const DIRECTORY: { route: Route; icon: SketchIconName; label: string }[] = [
   ...(REWARDS_ENABLED ? [{ route: 'rewards' as const, icon: 'gift' as const, label: '放映福利' }] : []),
   { route: 'settings', icon: 'settings', label: '设置' },
 ]
+
+// 设计稿里浮钮只出现在列表类页面；播放、设置这类页面不挡内容
+const FIND_FAB_ROUTES = new Set<Route>(['calendar', 'history', 'tracks', 'community'])
 
 // 入口都同样重要，不分主次：底部只留「现在在哪」，点开是全部入口一样大的目录
 function MobileDirectory({ route, feedbackUnread }: { route: Route; feedbackUnread: number }): JSX.Element {

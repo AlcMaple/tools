@@ -36,6 +36,9 @@ const ADD_COPY = {
   backfillBusy: '回填中…',
   tracked: '已在看番',
   add: '加入',
+  findTitle: '找番',
+  findSubtitle: '想看哪部，搜到就能直接看，也能先追上',
+  want: '追番',
 } as const
 
 type AddTab = 'search' | 'custom'
@@ -57,6 +60,7 @@ export function AddSearchModal({
   backfill,
   onBackfill,
   initialQuery,
+  renderTry,
   onClose,
 }: {
   trackedIds: Set<number>
@@ -65,8 +69,11 @@ export function AddSearchModal({
   backfill?: BackfillTarget
   onBackfill?: (customBgmId: number, hit: AnimeHit) => Promise<void>
   initialQuery?: string
+  // 传了就是全局「找番」：结果行多一个「试看」，不提供自记条目
+  renderTry?: (hit: AnimeHit) => JSX.Element
   onClose: () => void
 }): JSX.Element {
+  const finding = !!renderTry && !backfill
   const [query, setQuery] = useState(initialQuery ?? '')
   const [composing, setComposing] = useState(false)
   const composingRef = useRef(false)
@@ -301,10 +308,10 @@ export function AddSearchModal({
           <Ic name="x" cls="ic" />
         </button>
 
-        <h3 className="dlg-title">{backfill ? '回填 BGM' : '加番'}</h3>
-        <p className="dlg-sub">{backfill ? ADD_COPY.backfillSubtitle : ADD_COPY.subtitle}</p>
+        <h3 className="dlg-title">{backfill ? '回填 BGM' : finding ? ADD_COPY.findTitle : '加番'}</h3>
+        <p className="dlg-sub">{backfill ? ADD_COPY.backfillSubtitle : finding ? ADD_COPY.findSubtitle : ADD_COPY.subtitle}</p>
 
-        <div className={`add-mode-tabs${backfill ? ' is-backfill' : ''}`} role="tablist" aria-label="选择加番方式">
+        {!finding && <div className={`add-mode-tabs${backfill ? ' is-backfill' : ''}`} role="tablist" aria-label="选择加番方式">
           <button
             type="button"
             role="tab"
@@ -330,7 +337,7 @@ export function AddSearchModal({
               {ADD_COPY.customTab}
             </button>
           )}
-        </div>
+        </div>}
 
         {tab === 'search' && (
           <div className="add-search-panel-head">
@@ -465,17 +472,13 @@ export function AddSearchModal({
                   .filter(Boolean)
                   .join(' · ')
                 return (
-                  <div key={h.bgmId} className="sugg-item">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={mainTitle}>
-                        {mainTitle}
-                      </div>
-                      {sub && (
-                        <div className="faint small" style={{ fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sub}>
-                          {sub}
-                        </div>
-                      )}
+                  <div key={h.bgmId} className="sugg-item add-hit">
+                    <div className="add-hit-text">
+                      <div className="add-hit-title">{mainTitle}</div>
+                      {sub && <div className="add-hit-sub">{sub}</div>}
                     </div>
+                    <div className="add-hit-acts">
+                    {finding && renderTry?.(h)}
                     {tracked ? (
                       <span className="tagx mine" style={{ flex: 'none' }}>
                         {ADD_COPY.tracked}
@@ -489,9 +492,10 @@ export function AddSearchModal({
                         onClick={() => (backfill ? backfillHit(h) : add(h))}
                       >
                         {backfill && backfillBusyId === h.bgmId ? <Spinner size={14} /> : <Ic name="plus" cls="ic ic-sm" />}
-                        {backfill ? (backfillBusyId === h.bgmId ? ADD_COPY.backfillBusy : ADD_COPY.backfillAction) : ADD_COPY.add}
+                        {backfill ? (backfillBusyId === h.bgmId ? ADD_COPY.backfillBusy : ADD_COPY.backfillAction) : finding ? ADD_COPY.want : ADD_COPY.add}
                       </button>
                     )}
+                    </div>
                   </div>
                 )
               })}
