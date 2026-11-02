@@ -33,8 +33,9 @@ db.exec(`
   );
 `)
 
-// 管理员手改的卡片信息。NULL / 空 cover_mime = 这一项没改，沿用索引和后台补的封面。
-// 上传的封面字节在 catalogCoversDir/<bgm_id>，这张表的 cover_mime 是另一半凭据：两半在每条写路径上同进同退
+// 管理员手改的卡片信息。NULL / 空 cover_mime 且空 cover_url = 这一项没改，沿用索引和后台补的封面。
+// 上传的封面字节在 catalogCoversDir/<bgm_id>，这张表的 cover_mime 是另一半凭据：两半在每条写路径上同进同退。
+// cover_url 是填的网图地址，和上传互斥：换成哪一种，另一种（含磁盘文件）就一起清掉
 db.exec(`
   CREATE TABLE IF NOT EXISTS catalog_override (
     bgm_id     INTEGER PRIMARY KEY,
@@ -44,11 +45,14 @@ db.exec(`
     updated_at INTEGER NOT NULL  -- 封面最后一次换图的时间，也是封面地址里的 ?v=；只改文字不动它，免得浏览器白白重下封面
   );
 `)
+if (!(db.prepare('PRAGMA table_info(catalog_override)').all() as { name: string }[]).some((c) => c.name === 'cover_url')) {
+  db.exec("ALTER TABLE catalog_override ADD COLUMN cover_url TEXT NOT NULL DEFAULT ''")
+}
 export const catalogCoversDir = join(dataDir, 'catalog-covers')
 mkdirSync(catalogCoversDir, { recursive: true })
 
-interface OverrideRow { name_cn: string | null; tags: string | null; cover_mime: string; updated_at: number }
-const overrideRow = db.prepare('SELECT name_cn, tags, cover_mime, updated_at FROM catalog_override WHERE bgm_id = ?')
+interface OverrideRow { name_cn: string | null; tags: string | null; cover_mime: string; cover_url: string; updated_at: number }
+const overrideRow = db.prepare('SELECT name_cn, tags, cover_mime, cover_url, updated_at FROM catalog_override WHERE bgm_id = ?')
 
 const coverRow = db.prepare('SELECT path FROM anime_cover WHERE bgm_id = ? AND status = \'ok\'')
 const saveCover = db.prepare(`
@@ -83,9 +87,10 @@ function toItem(row: IndexRow, admin: boolean): CatalogItem {
   // R18 条目只给登录用户列出，索引里的标签多是露骨字眼，不展示；封面不去补，管理员手动上传的除外
   const tags = ov?.tags != null ? parseTags(ov.tags, MAX_TAGS) : row.adult ? [] : parseTags(row.tags, 6)
   const cover = ov?.cover_mime ? `/api/catalog/${row.bgm_id}/cover-file?v=${ov.updated_at}`
+    : ov?.cover_url ? ov.cover_url
     : row.adult ? '' : (coverRow.get(row.bgm_id) as { path: string } | undefined)?.path ?? ''
   const item: CatalogItem = { bgmId: row.bgm_id, name: row.name, nameCn: ov?.name_cn ?? row.name_cn, date: row.date, score: row.score, eps: Number(row.eps) || 0, tags, cover }
-  if (admin) item.edited = { nameCn: ov?.name_cn != null, tags: ov?.tags != null, cover: !!ov?.cover_mime }
+  if (admin) item.edited = { nameCn: ov?.name_cn != null, tags: ov?.tags != null, cover: !!ov?.cover_mime || !!ov?.cover_url }
   return item
 }
 
@@ -184,7 +189,7 @@ const upsertText = db.prepare(`
   INSERT INTO catalog_override (bgm_id, name_cn, tags, updated_at) VALUES (@id, @name_cn, @tags, @now)
   ON CONFLICT(bgm_id) DO UPDATE SET name_cn = excluded.name_cn, tags = excluded.tags
 `)
-const dropEmpty = db.prepare("DELETE FROM catalog_override WHERE bgm_id = ? AND name_cn IS NULL AND tags IS NULL AND cover_mime = ''")
+const dropEmpty = db.prepare("DELETE FROM catalog_override WHERE bgm_id = ? AND name_cn IS NULL AND tags IS NULL AND cover_mime = '' AND cover_url = ''")
 
 // null = 恢复成索引里的；标签按顺序去重，空数组也是一种手改（明确不要任何标签）
 export function saveCatalogText(id: number, input: { nameCn: unknown; tags: unknown }): void {
@@ -218,19 +223,44 @@ export async function saveCatalogCover(id: number, file: File): Promise<void> {
     await writeFile(tmp, bytes)
     await rename(tmp, coverFile(id))
     db.prepare(`
-      INSERT INTO catalog_override (bgm_id, cover_mime, updated_at) VALUES (?, ?, ?)
-      ON CONFLICT(bgm_id) DO UPDATE SET cover_mime = excluded.cover_mime, updated_at = excluded.updated_at
+      INSERT INTO catalog_override (bgm_id, cover_mime, cover_url, updated_at) VALUES (?, ?, '', ?)
+      ON CONFLICT(bgm_id) DO UPDATE SET cover_mime = excluded.cover_mime, cover_url = '', updated_at = excluded.updated_at
     `).run(id, file.type, Date.now())
   })
 }
 
+const COVER_URL_MAX = 1000
+
+// 只收 https 网图（http 存成 https，和前端 coverUrl 的放行规则一致）；存进去的就是原样地址，
+// 显示时照常经 coverUrl 走 lain 代理等分流
+export async function saveCatalogCoverUrl(id: number, raw: unknown): Promise<void> {
+  if (!existsInIndex(id)) throw new CatalogEditError('索引里没有这部番', 404)
+  if (typeof raw !== 'string' || !raw.trim()) throw new CatalogEditError('请填写图片地址')
+  let url: URL
+  try { url = new URL(raw.trim()) } catch { throw new CatalogEditError('图片地址格式不对') }
+  if (url.protocol === 'http:') url.protocol = 'https:'
+  if (url.protocol !== 'https:' || url.username || url.password) throw new CatalogEditError('图片地址要以 https:// 开头')
+  const value = url.toString()
+  if (value.length > COVER_URL_MAX) throw new CatalogEditError('图片地址太长')
+  await withLock(id, async () => {
+    db.prepare(`
+      INSERT INTO catalog_override (bgm_id, cover_mime, cover_url, updated_at) VALUES (?, '', ?, ?)
+      ON CONFLICT(bgm_id) DO UPDATE SET cover_mime = '', cover_url = excluded.cover_url, updated_at = excluded.updated_at
+    `).run(id, value, Date.now())
+    await unlinkCover(id)
+  })
+}
+
+const unlinkCover = (id: number): Promise<void> =>
+  unlink(coverFile(id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
+
 export async function clearCatalogCover(id: number): Promise<void> {
   await withLock(id, async () => {
     db.transaction(() => {
-      db.prepare("UPDATE catalog_override SET cover_mime = '', updated_at = ? WHERE bgm_id = ?").run(Date.now(), id)
+      db.prepare("UPDATE catalog_override SET cover_mime = '', cover_url = '', updated_at = ? WHERE bgm_id = ?").run(Date.now(), id)
       dropEmpty.run(id)
     })()
-    await unlink(coverFile(id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
+    await unlinkCover(id)
   })
 }
 

@@ -82,6 +82,10 @@ export function uploadCatalogCover(bgmId: number, file: File): Promise<CatalogIt
   return catalogEdit(`${bgmId}/cover`, { method: 'POST', body: form })
 }
 
+export function saveCatalogCoverUrl(bgmId: number, url: string): Promise<CatalogItem> {
+  return catalogEdit(`${bgmId}/cover`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
+}
+
 export function clearCatalogCover(bgmId: number): Promise<CatalogItem> {
   return catalogEdit(`${bgmId}/cover`, { method: 'DELETE' })
 }

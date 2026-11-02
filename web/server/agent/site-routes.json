@@ -606,6 +606,11 @@
   },
   {
     "file": "server/index.ts",
+    "method": "put",
+    "path": "/api/catalog/:id/cover"
+  },
+  {
+    "file": "server/index.ts",
     "method": "route",
     "path": "/api/agent"
   },

@@ -7,7 +7,7 @@ import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
 import { bgmHealth, noteBgmRequest } from './bgm/bgm-health'
 import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
-import { CatalogEditError, clearCatalogCover, getCatalogItem, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
+import { CatalogEditError, clearCatalogCover, getCatalogItem, saveCatalogCoverUrl, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
 import { CoverError, getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
@@ -191,6 +191,14 @@ app.post('/api/catalog/:id/cover', async (c) => {
   const file = (await c.req.parseBody().catch(() => null))?.file
   if (!(file instanceof File)) return c.json({ error: '没有收到图片' }, 400)
   try { await saveCatalogCover(id, file) } catch (error) { return catalogEditFailed(c, error) }
+  return c.json({ item: getCatalogItem(id) })
+})
+
+app.put('/api/catalog/:id/cover', async (c) => {
+  const id = await catalogAdmin(c)
+  if (id instanceof Response) return id
+  const body = await c.req.json().catch(() => null) as { url?: unknown } | null
+  try { await saveCatalogCoverUrl(id, body?.url) } catch (error) { return catalogEditFailed(c, error) }
   return c.json({ item: getCatalogItem(id) })
 })
 
