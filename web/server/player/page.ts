@@ -240,9 +240,10 @@ ${PLAYBACK_BEACON}
       if (got >= 1048576 && dt > 0) noteSpeed(host, got * 8 / dt)
     } catch (e) { slog('speed probe failed ' + host + ' ' + (e && e.message)) }
   }
-  function localEligible(pl){
+  // localOff 只管这一页还要不要从本机播；下一集的预下载不受它影响（退路之后照样往下缓存）
+  function localEligible(pl, forNext){
     if (!cacheEnabled()) return false
-    if (localOff || pl.viaServer || (pl.kind !== 'mp4' && pl.kind !== 'hls')) return false
+    if ((localOff && !forNext) || pl.viaServer || (pl.kind !== 'mp4' && pl.kind !== 'hls')) return false
     if (blockedHost(hostOf(pl.url))) return false
     if (!navigator.serviceWorker || !navigator.serviceWorker.controller || !navigator.storage || !navigator.storage.getDirectory) return false
     return typeof Worker !== 'undefined' && !!window.crypto && !!crypto.subtle
@@ -317,7 +318,12 @@ ${PLAYBACK_BEACON}
       else if (m.type === 'start' && cur && cur.localHash === m.hash) dl = { hash: m.hash, kind: m.kind, total: m.total, chunk: m.chunk, segs: m.segs, have: new Set(m.have) }
       else if (m.type === 'progress' && dl && dl.hash === m.hash) dl.have.add(m.chunk)
       else if (m.type === 'complete' && cur && cur.localHash === m.hash){ localComplete = true; queueNextEp() }
-      else if (m.type === 'failed' && m.early && m.http && navigator.onLine && cur && cur.localHash === m.hash) noteBlocked(hostOf(cur.url), m.reason)
+      else if (m.type === 'complete' && bg && bg.job.hash === m.hash){ slog('bg cache ep' + bg.job.ep + ' done'); bg = { job: null, on: false, next: true }; queueNextEp() }
+      else if (m.type === 'failed'){
+        deadJobs[m.hash] = true
+        if (m.early && m.http && navigator.onLine && cur && cur.localHash === m.hash) noteBlocked(hostOf(cur.url), m.reason)
+        if (bg && bg.job && bg.job.hash === m.hash){ slog('bg cache ep' + bg.job.ep + ' stopped: ' + m.reason); bg = null }
+      }
     }
     try { navigator.storage.persist() } catch (e) {}
     return cacheWorker
@@ -327,8 +333,9 @@ ${PLAYBACK_BEACON}
     dl = null; dlBps = 0
     // 离线开播的那份没有下载任务、本来就是整集；其余换了线路都要等新的下载器报「下完」
     if (pl.localJob || !pl.localHash) localComplete = false
-    if (pl.localJob) ensureWorker().postMessage({ type: 'job', priority: 'current', job: pl.localJob })
+    if (pl.localJob){ bg = null; ensureWorker().postMessage({ type: 'job', priority: 'current', job: pl.localJob }) }
     else if (cacheWorker) cacheWorker.postMessage({ type: 'stop' })
+    if (bg) bg.on = false
   }
   // 这一集下完就下一集：只解析一次，失败只记一行，不重试。
   async function queueNextEp(){
@@ -340,8 +347,9 @@ ${PLAYBACK_BEACON}
       if (!r.ok || !d.first){ slog('local cache next ep skipped ' + (d.code || d.error || r.status)); return }
       mergeSpeeds(d)
       d.first = await pickFastest(d.first, ep + 1, d.lines || [])
-      if (!localEligible(d.first)){ slog('local cache next ep not direct ' + d.first.kind); return }
+      if (!localEligible(d.first, true)){ slog('local cache next ep not direct ' + d.first.kind); return }
       var job = await localJob(d.first, ep + 1)
+      if (bg && bg.next){ bg = { job: job, on: false }; return }
       ensureWorker().postMessage({ type: 'job', priority: 'next', job: job })
     } catch (e) { slog('local cache next ep failed ' + (e && e.message)) }
   }
@@ -466,6 +474,7 @@ ${PLAYBACK_BEACON}
     stallSince = 0; lastT = -1; lastTAt = performance.now(); stallReported = false; bufOwned = false
     stallTimer = setInterval(function(){
       if (!art || art.video !== v) return
+      governBg(v)
       var now = performance.now(), t = v.currentTime
       if (v.paused || v.ended){ if (!v.seeking) setBuffering(v, false); lastT = t; lastTAt = now; return }
       if (t !== lastT){
@@ -490,6 +499,23 @@ ${PLAYBACK_BEACON}
   // 不同压制版本同一时间点可能差几秒，只在下一集开始时按速度换。
   // 本地缓存时 <video> 自己的缓冲被浏览器限量，代表不了下载进度，按下载器报的已落盘块 / 片算
   // 「开始播了没」「上次跳转」自己记：qos 在页面藏到后台时会重开一份，不能拿它当依据
+  // ——— 退路之后接着缓存：退到经本站 / 不能本地缓存的线路后，这一集（下完再下一集）照样下进本机，但让着播放 ———
+  // 暂停时 <video> 自己只缓冲两秒多就不拉了，带宽闲着；播放中缓冲领先满 60 秒才下，掉到 20 秒以下就停，
+  // 两个门槛隔开免得来回开关。停 = 中止当前连接，再开从盘上缺的块续下，不重下。源站拒绝过（failed）的不再开
+  var bg = null, deadJobs = {}
+  function keepCaching(pl){
+    if (pl.localJob && !deadJobs[pl.localJob.hash]) bg = { job: pl.localJob, on: false }
+  }
+  function governBg(v){
+    if (!bg || !bg.job) return
+    var ahead = aheadOf(v), idle = v.paused || v.ended
+    var want = idle || ahead >= (bg.on ? 20 : 60)
+    if (want === bg.on) return
+    bg.on = want
+    if (want) ensureWorker().postMessage({ type: 'job', priority: 'current', job: bg.job })
+    else if (cacheWorker) cacheWorker.postMessage({ type: 'stop' })
+    slog('bg cache ' + (want ? 'resume' : 'yield') + ' ep' + bg.job.ep + ' ahead=' + ahead.toFixed(1) + (idle ? ' paused' : ''))
+  }
   var slow = null, triedLines = {}, switchAt = 0, playedGen = -1, seekAt = -1e9, pendingResume = 0, firstGen = -1, seekPending = false
   function downloadAhead(v){
     if (!cur || !cur.localHash) return aheadOf(v)
@@ -570,6 +596,7 @@ ${PLAYBACK_BEACON}
       + ' t=' + at.toFixed(1) + ' ahead=' + ahead.toFixed(1) + ' stalled=' + (stallSince ? Math.round(performance.now() - stallSince) : 0) + 'ms')
     var next = fb.viaServer ? fb : await prepareLocal(fb, from.localHash)
     if (gen !== generation) return
+    if (!next.localJob) keepCaching(from)
     switchAt = performance.now()
     swapSource(next, at, playing)
   }
@@ -577,6 +604,7 @@ ${PLAYBACK_BEACON}
 
   function mount(pl, resumeAt, autoplay){
     destroyPlayer()
+    bg = null
     var gen = generation
     cur = pl; clearFail(); renderLines()
     switchDownload(pl)
@@ -725,6 +753,7 @@ ${PLAYBACK_BEACON}
     }
     if (pl.localHash){
       localOff = true
+      keepCaching(pl)
       var plain = plainOf(pl)
       resolved[pl.source] = plain
       swapSource(plain, at, !v.paused)
