@@ -23,6 +23,7 @@ import { Splash } from './Splash'
 import { Popover } from './Popover'
 import { toast, ToastRoot } from './Toast'
 import { AgentHost } from './agent/AgentHost'
+import { openAgent } from './agent/navigation'
 import { OrderJudgePage } from './orderJudge/OrderJudgePage'
 import { RoomPage } from './RoomPage'
 import { FindAnime, openFindAnime } from './FindAnime'
@@ -198,6 +199,12 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
           番外小站
         </a>
         <span style={{ marginLeft: 'auto' }} />
+        {introComplete && (
+          <button type="button" className="m-agent-btn" onClick={openAgent}>
+            <span className="m-dir-avatar" aria-hidden="true" />
+            问纱雾
+          </button>
+        )}
         {!ready ? null : user ? (
           <>
             <button
@@ -217,6 +224,9 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
             </button>
             <Popover anchor={mUserBtn} open={mUserOpen} onClose={() => setMUserOpen(false)} align="end" className="m-user-pop" role="menu">
               <div className="m-user-name">{user.username}</div>
+              <button type="button" role="menuitem" className="m-user-item" onClick={() => { setMUserOpen(false); go('settings') }}>
+                设置
+              </button>
               <button type="button" role="menuitem" className="m-user-item" onClick={() => { setMUserOpen(false); openFeedback() }}>
                 反馈与建议{feedbackUnread > 0 && <span className="m-user-count">{feedbackUnread > 99 ? '99+' : feedbackUnread}</span>}
               </button>
@@ -453,6 +463,10 @@ function MobileDirectory({ route, feedbackUnread }: { route: Route; feedbackUnre
                 {d.label}
               </a>
             ))}
+            <button type="button" className="m-dir-it" onClick={() => { setOpen(false); openAgent() }}>
+              <span className="m-dir-avatar" aria-hidden="true" />
+              纱雾助手
+            </button>
             <button type="button" className="m-dir-it" onClick={() => { setOpen(false); openFeedback() }}>
               <Ic name="mail" />
               反馈与建议

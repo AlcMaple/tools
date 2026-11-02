@@ -7,7 +7,7 @@ import type { ContextTier } from '../../shared/agent-contracts'
 import { auth } from '../auth'
 import { Ic,Spinner } from '../SketchIcon'
 import { AgentController,type AgentUiState } from './controller'
-import { AGENT_CONTEXT_EVENT,goFromAgent } from './navigation'
+import { AGENT_CONTEXT_EVENT,AGENT_OPEN_EVENT,goFromAgent } from './navigation'
 import { activeCompact,JOB_LABELS,phoneDevice,shouldSend,validAnime,viewportPlacement,fallbackChoices,type AnimeContext } from './model'
 import { AgentAttachStrip,AgentImageButton,AgentLightbox,AgentShots,MessageCard,lightboxKey,type LightboxState } from './AgentCards'
 import { imageFiles } from './images'
@@ -36,13 +36,14 @@ export function AgentHost({userId,enabled,onLogin}:{userId:number|null|undefined
   const trigger=useRef<HTMLElement|null>(null),launcher=useRef<HTMLButtonElement>(null),pendingLogin=useRef(false)
   useEffect(()=>{document.documentElement.dataset.agentDevice=viewport.phone?'phone':'wide';return()=>{delete document.documentElement.dataset.agentDevice}},[viewport.phone])
   useEffect(()=>{const receive=(event:Event)=>{const value=(event as CustomEvent<unknown>).detail;if(!validAnime(value)||viewport.phone||!enabled)return;trigger.current=document.activeElement as HTMLElement;setContext({owner:userId??null,anime:value,seq:Date.now()});setOpen(true)};window.addEventListener(AGENT_CONTEXT_EVENT,receive);return()=>window.removeEventListener(AGENT_CONTEXT_EVENT,receive)},[userId,enabled,viewport.phone])
+  useEffect(()=>{const receive=()=>{if(!enabled)return;trigger.current=document.activeElement as HTMLElement;setOpen(true)};window.addEventListener(AGENT_OPEN_EVENT,receive);return()=>window.removeEventListener(AGENT_OPEN_EVENT,receive)},[enabled])
   useEffect(()=>{setContext(null)},[userId])
   useEffect(()=>{if(pendingLogin.current&&userId){pendingLogin.current=false;setContext(null);setOpen(true)}},[userId])
   const close=()=>{setOpen(false);queueMicrotask(()=>{const target=trigger.current?.isConnected?trigger.current:launcher.current;target?.focus({preventScroll:true})})}
   const login=()=>{pendingLogin.current=true;setOpen(false);onLogin()}
-  if(!enabled||userId===undefined||viewport.phone)return null
+  if(!enabled||userId===undefined)return null
   const style={'--agent-left':`${viewport.left}px`,'--agent-top':`${viewport.top}px`,'--agent-width':`${viewport.width}px`,'--agent-height':`${viewport.height}px`,'--agent-launch-left':`${viewport.launcherLeft}px`,'--agent-launch-top':`${viewport.launcherTop}px`} as CSSProperties
-  return createPortal(<div className="agent-layer" data-short={viewport.short} data-open={open} style={style}>
+  return createPortal(<div className="agent-layer" data-short={viewport.short} data-open={open} data-phone={viewport.phone} style={style}>
     {userId?<OwnedAgent key={userId} uid={userId} open={open} close={close} login={login} anime={context?.owner===userId?context:null} launcher={launcher} toggle={()=>{if(!open)trigger.current=document.activeElement as HTMLElement;setOpen(!open)}}/>:<><Launcher open={open} toggle={()=>{trigger.current=document.activeElement as HTMLElement;setOpen(!open)}} launcher={launcher}/><GuestAgent key="guest" open={open} close={close} login={login} header={<PanelHeader close={close}/>}/></>}
   </div>,document.body)
 }
@@ -51,9 +52,18 @@ function OwnedAgent(props:{uid:number;open:boolean;close:()=>void;login:()=>void
   useEffect(()=>{let storage:Storage|undefined;try{storage=window.sessionStorage}catch{}const instance=new AgentController(props.uid,__AGENT_CLIENT_RELEASE__,{remember:storage,onAuthExpired:()=>{void auth.refresh()}});setController(instance);return()=>instance.dispose()},[props.uid])
   return controller?<ConnectedAgent {...props} controller={controller}/>:<Launcher open={props.open} toggle={props.toggle} launcher={props.launcher}/>
 }
+const INTRO_KEY='agent-intro-seen'
+function introSeen():boolean{try{return localStorage.getItem(INTRO_KEY)==='1'}catch{return true}}
+function markIntroSeen():void{try{localStorage.setItem(INTRO_KEY,'1')}catch{/* 存不下就只在本次页面里收起 */}}
+function AgentIntro({open}:{open:boolean}):JSX.Element|null{
+  const [show,setShow]=useState(()=>!introSeen())
+  useEffect(()=>{if(open&&show){markIntroSeen();setShow(false)}},[open,show])
+  if(!show||open)return null
+  return <div className="agent-intro" role="note"><p>找番、看点评、找能看的片源，都可以问我</p><button type="button" className="agent-icon" aria-label="知道了" onClick={()=>{markIntroSeen();setShow(false)}}><Ic name="x" cls="ic ic-sm"/></button></div>
+}
 function Launcher({open,toggle,launcher,state}:{open:boolean;toggle:()=>void;launcher:React.RefObject<HTMLButtonElement>;state?:AgentUiState}):JSX.Element{
   const running=state?.watchingRun?.state==='running'||activeCompact(state?.job??null),pending=state?.messages.some(m=>m.actions.some(a=>a.state==='prepared'))
-  return <button ref={launcher} type="button" className={`agent-launcher${running?' is-running':''}`} onClick={toggle} aria-haspopup="dialog" aria-expanded={open} aria-controls="agent-window" aria-label={open?'收起纱雾助手':'打开纱雾助手'}><AgentAvatar/>{(running||pending)&&<i className="agent-activity" aria-label={running?'运行中':'有待确认操作'}/>}{Boolean(state?.unread)&&<b className="agent-unread" aria-label={`${state!.unread} 条未读`}>{state!.unread}</b>}</button>
+  return <><AgentIntro open={open}/><button ref={launcher} type="button" className={`agent-launcher${running?' is-running':''}`} onClick={toggle} aria-haspopup="dialog" aria-expanded={open} aria-controls="agent-window" aria-label={open?'收起纱雾助手':'打开纱雾助手'}><AgentAvatar/><span className="agent-launch-tag" aria-hidden="true">问纱雾</span>{(running||pending)&&<i className="agent-activity" aria-label={running?'运行中':'有待确认操作'}/>}{Boolean(state?.unread)&&<b className="agent-unread" aria-label={`${state!.unread} 条未读`}>{state!.unread}</b>}</button></>
 }
 function PanelHeader({close,section='chat'}:{close:()=>void;section?:Section}):JSX.Element{
   const title={chat:'纱雾助手',history:'历史对话',preferences:'偏好',context:'上下文',manage:'对话设置',provider:'AI 连接'}[section]

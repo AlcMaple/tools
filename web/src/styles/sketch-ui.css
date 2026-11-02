@@ -110,6 +110,9 @@
 }
 
 /* 平板 / 手机顶栏的头像菜单：反馈与退出（桌面在顶栏里直接摆着） */
+.m-dir-avatar { display: block; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--sakura-wash) url('/assets/sagiri-avatar.webp') center / cover no-repeat; }
+.m-agent-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 34px; margin-right: 10px; padding: 0 12px 0 4px; border: 1.5px solid var(--sakura-mid); border-radius: 17px; background: var(--card); color: var(--ink); font: inherit; font-size: 12.5px; cursor: pointer; }
+.m-agent-btn .m-dir-avatar { width: 26px; height: 26px; }
 .m-user-btn { position: relative; flex: none; padding: 0; background: none; border: none; border-radius: 50%; cursor: pointer; line-height: 0; }
 .m-user-badge, .m-user-count { min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: var(--sakura); color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; font-family: inherit; }
 .m-user-badge { position: absolute; top: -5px; right: -6px; border: 1.5px solid var(--paper); line-height: 13px; }
