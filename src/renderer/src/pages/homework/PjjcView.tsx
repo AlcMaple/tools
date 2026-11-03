@@ -24,6 +24,49 @@ function joinTeam(arr: string[]): string {
   return arr.join('、')
 }
 
+function copyDefensesText(g: PjjcGroup): string {
+  const notes = g.notes ?? []
+  return g.defenses.map((d, i) => `${SLOT_LABELS[i]}：${joinTeam(d)}`).join('\n')
+    + (notes.length ? `\n备注：${notes.join(' / ')}` : '')
+}
+
+function parseDefensesPaste(text: string): { teams: [string, string, string]; notes: string[] } | null {
+  const teams: string[] = []
+  let notes: string[] = []
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line) continue
+    const m = line.match(/^防\s*([123])\s*[：:]\s*(.+)$/)
+    if (m) {
+      if (teams[Number(m[1]) - 1] !== undefined) return null
+      teams[Number(m[1]) - 1] = m[2].trim()
+      continue
+    }
+    const n = line.match(/^备注\s*[：:]\s*(.+)$/)
+    if (!n) return null
+    notes = n[1].split(/\s*\/\s*/).map(x => x.trim()).filter(Boolean)
+  }
+  if (teams.length !== 3 || teams.some(t => !t)) return null
+  return { teams: teams as [string, string, string], notes }
+}
+
+function createDefensesPasteHandler(opts: {
+  setTeams: (t: [string, string, string]) => void
+  setNotes: (n: string[]) => void
+  currentNotes: string[]
+  fallback: (e: React.ClipboardEvent<HTMLInputElement>) => void
+}): (e: React.ClipboardEvent<HTMLInputElement>) => void {
+  return (e) => {
+    const parsed = parseDefensesPaste(e.clipboardData.getData('text'))
+    if (!parsed) return opts.fallback(e)
+    e.preventDefault()
+    opts.setTeams(parsed.teams)
+    const merged = [...opts.currentNotes]
+    for (const n of parsed.notes) if (!merged.includes(n)) merged.push(n)
+    opts.setNotes(merged)
+  }
+}
+
 function defKey(defenses: string[][]): string {
   return defenses.map(d => d.join('、')).join('|')
 }
@@ -74,10 +117,15 @@ function AddPjjcModal({
                   placeholder={`例：涅比亚、ams、春剑、水m、布丁`}
                   value={defenseInputs[i]}
                   onChange={e => updateDefense(i as 0 | 1 | 2, e.target.value)}
-                  onPaste={createTeamPasteHandler({
-                    setTeam: (v) => updateDefense(i as 0 | 1 | 2, v),
+                  onPaste={createDefensesPasteHandler({
+                    setTeams: setDefenseInputs,
                     setNotes: noteState.setNotes,
                     currentNotes: noteState.notes,
+                    fallback: createTeamPasteHandler({
+                      setTeam: (v) => updateDefense(i as 0 | 1 | 2, v),
+                      setNotes: noteState.setNotes,
+                      currentNotes: noteState.notes,
+                    }),
                   })}
                   autoFocus={i === 0}
                 />
@@ -171,10 +219,15 @@ function EditDefensesModal({
               <ModalInput
                 value={inputs[i]}
                 onChange={e => update(i as 0 | 1 | 2, e.target.value)}
-                onPaste={createTeamPasteHandler({
-                  setTeam: (v) => update(i as 0 | 1 | 2, v),
+                onPaste={createDefensesPasteHandler({
+                  setTeams: setInputs,
                   setNotes: noteState.setNotes,
                   currentNotes: noteState.notes,
+                  fallback: createTeamPasteHandler({
+                    setTeam: (v) => update(i as 0 | 1 | 2, v),
+                    setNotes: noteState.setNotes,
+                    currentNotes: noteState.notes,
+                  }),
                 })}
                 autoFocus={i === 0}
               />
@@ -773,7 +826,7 @@ const PjjcView = forwardRef<PjjcViewHandle, {
                   {isPhone ? (
                     <GroupMoreMenu items={[
                       { icon: 'add', label: '新增三方进攻', tone: 'secondary', onClick: () => setAddAttackTarget(item) },
-                      { icon: 'content_copy', label: '复制三防阵容', tone: 'primary', onClick: () => copyWithFeedback(`pdef-${item.id}`, item.defenses.map((d, i) => `${SLOT_LABELS[i]}：${joinTeam(d)}`).join('\n')) },
+                      { icon: 'content_copy', label: '复制三防阵容', tone: 'primary', onClick: () => copyWithFeedback(`pdef-${item.id}`, copyDefensesText(item)) },
                       { icon: 'edit', label: '编辑三防阵容', onClick: () => setEditDefensesGroup(item) },
                       { icon: 'delete', label: '删除整组', tone: 'danger', onClick: () => setDeleteGroup(item) },
                     ]} />
@@ -786,10 +839,7 @@ const PjjcView = forwardRef<PjjcViewHandle, {
                       <button
                         className={`p-1.5 rounded-md transition-colors ${copiedKey === `pdef-${item.id}` ? 'text-secondary' : 'text-on-surface-variant hover:bg-surface-container-high'}`}
                         title="复制三防阵容"
-                        onClick={() => copyWithFeedback(
-                          `pdef-${item.id}`,
-                          item.defenses.map((d, i) => `${SLOT_LABELS[i]}：${joinTeam(d)}`).join('\n')
-                        )}
+                        onClick={() => copyWithFeedback(`pdef-${item.id}`, copyDefensesText(item))}
                       >
                         <span className="material-symbols-outlined" style={{ fontSize: 16 }}>{copiedKey === `pdef-${item.id}` ? 'check' : 'content_copy'}</span>
                       </button>
