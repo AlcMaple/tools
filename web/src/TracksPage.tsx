@@ -95,7 +95,12 @@ function applyLocal(t: Track, p: TrackPatch): Track {
   return next
 }
 
-export function TracksPage({ filter, onFilterChange }: { filter: TrackFilter; onFilterChange: (next: TrackFilter) => void }): JSX.Element {
+export function TracksPage({ filter, onFilterChange, query, onQueryChange }: {
+  filter: TrackFilter
+  onFilterChange: (next: TrackFilter) => void
+  query: string
+  onQueryChange: (next: string) => void
+}): JSX.Element {
   const { user, ready, error: authError } = useAuth()
   const [tracks, setTracks] = useState<Track[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -107,7 +112,6 @@ export function TracksPage({ filter, onFilterChange }: { filter: TrackFilter; on
     setSortState(next)
     try { localStorage.setItem(SORT_KEY, next) } catch { /* 无痕窗口等存不下就只在本次生效 */ }
   }
-  const [query, setQuery] = useState('')
   const [tags, setTags] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<number | null>(null)
   const [confirming, setConfirming] = useState<number | null>(null)
@@ -474,11 +478,11 @@ export function TracksPage({ filter, onFilterChange }: { filter: TrackFilter; on
             spellCheck={false}
             autoComplete="off"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => onQueryChange(e.target.value)}
             placeholder="在这页里搜番名…"
           />
           {query && (
-            <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="清空搜索">
+            <button type="button" className="search-clear" onClick={() => onQueryChange('')} aria-label="清空搜索">
               <Ic name="x" cls="ic ic-sm" />
             </button>
           )}

@@ -67,8 +67,10 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
   const route = useRoute()
   const { user, ready, dailyReward } = useAuth()
   const [tracksFilter, setTracksFilter] = useState<TrackFilter>('all')
+  const [tracksQuery, setTracksQuery] = useState('')
   useEffect(() => {
     setTracksFilter('all')
+    setTracksQuery('')
   }, [user?.id])
   const [feedbackUnread, setFeedbackUnread] = useState(0)
   const [mUserOpen, setMUserOpen] = useState(false)
@@ -354,7 +356,7 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
             {route === 'feedback' ? <FeedbackPanel key={user?.id ?? 'guest'} /> : route === 'settings'
               ? <SettingsPage />
               : route === 'tracks'
-                ? <TracksPage filter={tracksFilter} onFilterChange={setTracksFilter} />
+                ? <TracksPage filter={tracksFilter} onFilterChange={setTracksFilter} query={tracksQuery} onQueryChange={setTracksQuery} />
                 : route === 'catalog'
                   ? <CatalogPage key={user?.id ?? 'guest'} />
                 : route === 'history'
