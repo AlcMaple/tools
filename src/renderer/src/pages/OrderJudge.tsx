@@ -1,16 +1,13 @@
-// 设计稿：docs/design-mockups/接单评估.html
+// 桌面版接单评估：材料 → 需求清单，与网页版同一个账号、同一份项目。方案见 docs/ideas/021-接单评估重新定位.md
 import { useCallback, useEffect, useRef, useState } from 'react'
 import TopBar from '../components/TopBar'
 import { ipcErrMsg } from '../utils/ipcError'
 import { reportError } from '../utils/reportError'
-import { DOC_TEMPLATES, downloadDocTemplate } from '../../../../web/shared/order-judge-templates'
-import { VIDEO_FRAMES, precheck, type JudgeReport, type Precheck } from '../../../../web/shared/order-judge'
-import type { EstimateResult } from '../../../../web/shared/order-judge-estimate'
-import { DAY_RATE } from '../../../../web/shared/order-judge-quote'
+import { VIDEO_FRAMES, precheck } from '../../../../web/shared/order-judge'
+import { PRIORITIES, type BriefItem } from '../../../../web/shared/order-judge-brief'
+import { VERSION_LIMIT, type Project, type Version } from '../../../../web/shared/order-judge-api'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
-import type {
-  OrderJudgeErrorCode, OrderJudgeHistoryEntry, OrderJudgePath, OrderJudgeSettings,
-} from '../types/orderJudge'
+import type { OrderJudgeView } from '../types/orderJudge'
 
 const IS_MAC = navigator.userAgent.includes('Mac')
 const PASTE_KEY = IS_MAC ? '⌘V' : 'Ctrl+V'
@@ -23,28 +20,16 @@ interface Material {
   note?: string
 }
 
-type Est =
-  | { kind: 'run'; tasks: number; groups: number }
-  | { kind: 'done'; result: EstimateResult }
-  | { kind: 'error'; code: string; message: string }
-
 type Outcome =
-  | { type: 'report'; entry: OrderJudgeHistoryEntry; warnings: string[] }
-  | { type: 'precheck'; kind: Precheck }
-  | { type: 'error'; code: OrderJudgeErrorCode | 'THROWN'; detail?: string }
+  | { type: 'done'; projectId: string; ms: number }
+  | { type: 'precheck' }
+  | { type: 'error'; code: string; detail: string }
 
 interface Running {
   startedAt: number
   stage: 'prepare' | 'links' | 'ai'
   stats: string[]
   links: number
-}
-
-const VERDICT_STYLE: Record<string, { badge: string; bar: string; icon: string }> = {
-  能: { badge: 'bg-yes-container text-yes', bar: 'bg-yes', icon: 'check_circle' },
-  不能: { badge: 'bg-error-container text-on-error-container dark:text-error', bar: 'bg-error', icon: 'block' },
-  信息不足: { badge: 'bg-amber-container text-amber', bar: 'bg-amber', icon: 'help' },
-  出错: { badge: 'bg-amber-container text-amber', bar: 'bg-amber', icon: 'error' },
 }
 
 let nextId = 1
@@ -61,136 +46,169 @@ function formatWhen(at: number): string {
   return d.getFullYear() === now.getFullYear() ? `${md} ${hm}` : `${d.getFullYear()}-${md}`
 }
 
-// ── 结论卡片 ──
+const latest = (p: Project): Version => p.versions[p.versions.length - 1]
+const hoursText = (h: number): string => `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`
 
-function Section({ label, icon, children }: { label: string; icon?: string; children: React.ReactNode }): JSX.Element {
+async function fileBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
+}
+
+// ── 需求清单 ──
+
+function Section({ label, icon, aside, children }: { label: string; icon?: string; aside?: string; children: React.ReactNode }): JSX.Element {
   return (
     <div className="px-6 py-5 border-t border-outline-variant/20">
       <p className="mb-3 flex items-center gap-1.5 font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">
         {icon && <span className="material-symbols-outlined text-[16px] leading-none">{icon}</span>}
         {label}
+        {aside && <span className="ml-auto normal-case tracking-normal font-normal tabular-nums">{aside}</span>}
       </p>
       {children}
     </div>
   )
 }
 
-function Items({ items, numClass }: { items: { t: string; d: string }[]; numClass: string }): JSX.Element {
+function Item({ item, mark }: { item: BriefItem; mark?: string }): JSX.Element {
   return (
-    <ol className="grid gap-3">
-      {items.map((x, i) => (
-        <li key={i} className="grid grid-cols-[22px_1fr] gap-2">
-          <span className={`font-label text-[13px] font-bold tabular-nums pt-0.5 ${numClass}`}>{i + 1}</span>
-          <p className="text-[14px] leading-relaxed">
-            {x.t && <span className="font-bold text-on-surface">{x.t}</span>}
-            <span className="text-on-surface-variant">{x.t ? '：' : ''}{x.d}</span>
-          </p>
-        </li>
-      ))}
-    </ol>
+    <li className="grid gap-1">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[14px] font-bold text-on-surface">{item.title}</span>
+        <span className="rounded-lg bg-surface-container-highest px-1.5 py-px font-label text-[11px] text-on-surface-variant">{item.kind}</span>
+        {mark && <span className="rounded-lg bg-primary/10 px-1.5 py-px font-label text-[11px] font-bold text-primary">{mark}</span>}
+        <span className="ml-auto shrink-0 font-label text-xs text-on-surface-variant tabular-nums">{hoursText(item.hours)}</span>
+      </div>
+      {item.detail && <p className="text-[14px] leading-relaxed text-on-surface-variant">{item.detail}</p>}
+      {item.reason && <p className="text-xs leading-relaxed text-on-surface-variant/70">{item.reason}</p>}
+      {item.unclear && (
+        <p className="flex items-start gap-1 text-xs leading-relaxed text-amber">
+          <span className="material-symbols-outlined text-[14px] leading-none mt-0.5">help</span>{item.unclear}
+        </p>
+      )}
+    </li>
   )
 }
 
-function Card({ verdict, children }: { verdict: string; children: React.ReactNode }): JSX.Element {
+function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose }: {
+  project: Project
+  base: string
+  ms?: number
+  onAppend?: () => void
+  onDelete?: () => void
+  onClose?: () => void
+}): JSX.Element {
+  const [n, setN] = useState(latest(project).n)
+  useEffect(() => setN(latest(project).n), [project])
+  const version = project.versions.find(v => v.n === n) ?? latest(project)
+  const b = version.brief
+  const marks = new Map<string, string>()
+  for (const c of version.changes) if (c.type !== 'removed') marks.set(c.id, c.type === 'added' ? '新增' : '有改动')
+  const removed = version.changes.filter((c): c is Extract<typeof c, { type: 'removed' }> => c.type === 'removed')
+  const meta = [`第 ${version.n} 版`, formatWhen(version.at), b.clientType, ms ? `用时 ${Math.round(ms / 1000)} 秒` : ''].filter(Boolean).join(' · ')
+  const facts: [string, string][] = [['客户在意的结果', b.outcome], ['预算', b.budget], ['截止', b.deadline], ['不找你会怎么办', b.alternative]]
+  const groups = PRIORITIES.map(p => ({ p, items: b.items.filter(i => i.priority === p) })).filter(g => g.items.length)
+  const tool = 'h-8 px-2.5 rounded-xl hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1'
   return (
     <article className="animate-fade-up overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-low">
-      <div className={`h-1 ${VERDICT_STYLE[verdict].bar}`} />
-      {children}
+      <div className="h-1 bg-primary" />
+      <div className="flex items-center gap-3 px-6 pt-4 font-label text-xs text-on-surface-variant/70">
+        {project.versions.length > 1 && (
+          <div className="flex gap-1" role="tablist" aria-label="版本">
+            {project.versions.map(v => (
+              <button key={v.n} type="button" role="tab" aria-selected={v.n === version.n} onClick={() => setN(v.n)}
+                className={`h-7 min-w-[36px] px-2 rounded-lg font-bold tabular-nums ${v.n === version.n ? 'bg-primary text-on-primary' : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'}`}>v{v.n}</button>
+            ))}
+          </div>
+        )}
+        <span className="flex items-center gap-1 ml-auto">
+          {onAppend && project.versions.length < VERSION_LIMIT && (
+            <button type="button" onClick={onAppend} className={tool}><span className="material-symbols-outlined text-[16px] leading-none">edit_note</span>追加需求</button>
+          )}
+          {onDelete && (
+            <button type="button" onClick={onDelete} className={`${tool} hover:text-error`}><span className="material-symbols-outlined text-[16px] leading-none">delete</span>删除这个项目</button>
+          )}
+          {onClose && (
+            <button type="button" onClick={onClose} className={tool}><span className="material-symbols-outlined text-[16px] leading-none">close</span>收起</button>
+          )}
+        </span>
+      </div>
+      <div className="px-6 pt-3 pb-5">
+        <p className="font-label text-xs text-on-surface-variant/70 tabular-nums">{meta}</p>
+        <p className="mt-1 text-[17px] font-bold leading-snug text-on-surface">{b.title || project.title}</p>
+        <dl className="mt-4 grid grid-cols-2 gap-3">
+          {facts.map(([k, v]) => (
+            <div key={k} className="rounded-xl bg-surface-container-high px-4 py-3">
+              <dt className="font-label text-[11px] text-on-surface-variant/70">{k}</dt>
+              <dd className={`mt-0.5 text-[14px] leading-relaxed ${v ? 'text-on-surface' : 'text-amber'}`}>{v || '待问'}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      {groups.map(g => (
+        <Section key={g.p} label={g.p === '不做' ? '这次不做' : g.p} aside={hoursText(g.items.reduce((s, i) => s + i.hours, 0))}>
+          <ul className="grid gap-4">{g.items.map(item => <Item key={item.id} item={item} mark={marks.get(item.id)} />)}</ul>
+        </Section>
+      ))}
+      {removed.length > 0 && (
+        <Section label="这一版去掉了" icon="remove_circle">
+          <ul className="grid gap-1.5 text-[14px] text-on-surface-variant line-through decoration-on-surface-variant/40">{removed.map(r => <li key={r.id}>{r.title}</li>)}</ul>
+        </Section>
+      )}
+      {b.excluded.length > 0 && (
+        <Section label="不包含" icon="block">
+          <ul className="grid gap-1.5 text-[14px] text-on-surface-variant">{b.excluded.map((x, i) => <li key={i}>{x}</li>)}</ul>
+        </Section>
+      )}
+      {b.questions.length > 0 && (
+        <Section label="要问客户的">
+          <ul className="grid gap-2">
+            {b.questions.map((q, i) => (
+              <li key={i} className="grid grid-cols-[22px_1fr] gap-2 text-[14px] leading-relaxed text-on-surface-variant">
+                <span className="mt-1 w-[18px] h-[18px] rounded-[9999px] bg-surface-container-highest grid place-items-center font-label text-[11px] font-bold text-on-surface-variant/70">?</span>
+                <span>{q}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+      {(version.text || version.images.length > 0 || version.files.length > 0) && (
+        <Section label={`第 ${version.n} 版放进来的材料`}>
+          {version.text && <p className="mb-3 text-[13px] leading-relaxed text-on-surface-variant line-clamp-4 whitespace-pre-wrap">{version.text}</p>}
+          {version.images.length > 0 && base && (
+            <div className="flex flex-wrap gap-2">
+              {version.images.map(img => (
+                <img key={img.file} src={`${base}/${version.id}/${img.file}`} alt={img.name} title={img.name} className="w-[92px] h-[68px] rounded-xl object-cover bg-surface-container-highest" />
+              ))}
+            </div>
+          )}
+          {version.files.length > 0 && (
+            <ul className="mt-3 grid gap-1 text-[13px] text-on-surface-variant">
+              {version.files.map(f => (
+                <li key={f.file} className="flex items-center gap-1.5"><span className="material-symbols-outlined text-[16px] leading-none">attach_file</span>{f.name}</li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      )}
     </article>
   )
 }
 
-function VerdictBar({ verdict, headline, sub }: { verdict: string; headline: string; sub?: React.ReactNode }): JSX.Element {
-  const st = VERDICT_STYLE[verdict]
+function Notice({ title, desc, action }: { title: string; desc?: string; action?: { label: string; onClick: () => void } }): JSX.Element {
   return (
-    <div className="flex items-start gap-4 px-6 pt-6 pb-5">
-      <span className={`shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-lg font-black ${st.badge}`}>
-        <span className="material-symbols-outlined text-[20px] leading-none">{st.icon}</span>
-        {verdict}
-      </span>
-      <div className="pt-1 min-w-0">
-        <p className="text-[17px] font-bold leading-snug text-on-surface">{headline}</p>
-        {sub}
+    <article className="animate-fade-up overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-low">
+      <div className="h-1 bg-amber" />
+      <div className="flex items-start gap-3 px-6 py-5">
+        <span className="material-symbols-outlined text-[22px] leading-none text-amber">error</span>
+        <div className="min-w-0">
+          <p className="text-[17px] font-bold leading-snug text-on-surface">{title}</p>
+          {desc && <p className="mt-1 text-[14px] whitespace-pre-wrap break-words text-on-surface-variant">{desc}</p>}
+          {action && <button onClick={action.onClick} className="mt-3 h-9 px-4 rounded-xl border border-outline-variant/40 font-label text-sm hover:bg-surface-container-high">{action.label}</button>}
+        </div>
       </div>
-    </div>
-  )
-}
-
-function ReportBody({ r }: { r: JudgeReport }): JSX.Element {
-  return (
-    <>
-      {r.summary && (
-        <Section label="需求"><p className="text-[14px] leading-relaxed text-on-surface-variant whitespace-pre-line">{r.summary}</p></Section>
-      )}
-      {r.risk && (
-        <Section label="风险" icon="warning">
-          <p className="rounded-xl bg-amber-container px-4 py-3 text-[14px] leading-relaxed text-amber">{r.risk}</p>
-        </Section>
-      )}
-      {r.reasons.length > 0 && (
-        <Section label="原因">
-          <Items items={r.reasons.map((x) => ({ t: x.title, d: x.detail }))} numClass="text-on-surface-variant/60" />
-        </Section>
-      )}
-      {r.gaps.length > 0 && (
-        <Section label={r.verdict === '能' ? '可能翻车的地方' : '卡点'}>
-          <Items items={r.gaps.map((x) => ({ t: x.step, d: x.detail }))} numClass="text-error" />
-        </Section>
-      )}
-      {r.questions.length > 0 && (
-        <Section label="接单前先问清楚">
-          <ul className="grid gap-2">
-            {r.questions.map((q, i) => {
-              const m = /^(.*?)[（(]可能改判[）)]\s*$/.exec(q)
-              return (
-                <li key={i} className="grid grid-cols-[22px_1fr] gap-2 text-[14px] leading-relaxed text-on-surface-variant">
-                  <span className="mt-1 w-[18px] h-[18px] rounded-[9999px] bg-surface-container-highest grid place-items-center font-label text-[11px] font-bold text-on-surface-variant/70">?</span>
-                  <span>
-                    {m ? m[1] : q}
-                    {m && (
-                      <span className="ml-1.5 whitespace-nowrap rounded-lg bg-amber-container px-1.5 py-px font-label text-[11px] font-bold text-amber">可能改判</span>
-                    )}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </Section>
-      )}
-    </>
-  )
-}
-
-function ErrorCard({ code, detail, onSettings }: {
-  code: OrderJudgeErrorCode | 'THROWN'
-  detail?: string
-  onSettings: () => void
-}): JSX.Element {
-  const settingsBtn = { label: '去评估设置', onClick: onSettings }
-  const map: Record<OrderJudgeErrorCode | 'THROWN', { title: string; desc: string; action?: { label: string; onClick?: () => void; href?: string } }> = {
-    SHARED_ERROR: { title: '共享评估未完成', desc: detail || '请查看同步状态或网页评估设置。', action: settingsBtn },
-    NEED_WEB: { title: '还不能评估', desc: '登录网页版账号并开启「与网页版共用评估和历史」后，就能用网页账号的 AI 评估。', action: settingsBtn },
-    BAD_INPUT: { title: '材料格式不对', desc: '图片数据没有通过检查，清空后重新放一次。' },
-    THROWN: { title: '评估中断', desc: detail ?? '' },
-  }
-  const e = map[code]
-  return (
-    <Card verdict="出错">
-      <VerdictBar
-        verdict="出错"
-        headline={e.title}
-        sub={
-          <>
-            {e.desc && <p className="mt-1 text-[14px] whitespace-pre-wrap break-words text-on-surface-variant">{e.desc}</p>}
-            {e.action && (e.action.href ? (
-              <a href={e.action.href} target="_blank" rel="noreferrer" className="inline-flex mt-3 h-9 items-center px-4 rounded-xl border border-outline-variant/40 font-label text-sm hover:bg-surface-container-high">{e.action.label}</a>
-            ) : (
-              <button onClick={e.action.onClick} className="mt-3 h-9 px-4 rounded-xl border border-outline-variant/40 font-label text-sm hover:bg-surface-container-high">{e.action.label}</button>
-            ))}
-          </>
-        }
-      />
-    </Card>
+    </article>
   )
 }
 
@@ -228,212 +246,7 @@ function Chip({ m, onRemove, bad }: { m: Material; onRemove: () => void; bad: bo
   )
 }
 
-// ── 评估设置抽屉 ──
-
-function SettingsSheet({ open, settings, onClose, onChange }: {
-  open: boolean
-  settings: OrderJudgeSettings | null
-  onClose: () => void
-  onChange: (s: OrderJudgeSettings) => void
-}): JSX.Element {
-  const [err, setErr] = useState('')
-  const [switching, setSwitching] = useState(false)
-
-  useEffect(() => {
-    if (!open) setErr('')
-  }, [open])
-
-  const pick = async (which: 'profile' | 'log'): Promise<void> => {
-    try {
-      onChange(await window.orderJudgeApi.pickFile(which))
-    } catch (e) {
-      reportError('order-judge:pick-file', e)
-      setErr(ipcErrMsg(e, '选择文件失败'))
-    }
-  }
-  // 开启时会把本机路径并进账号、本机历史上传一次，可能要几秒，期间锁住开关。
-  const toggleShared = async (shared: boolean): Promise<void> => {
-    setSwitching(true); setErr('')
-    try { onChange(await window.orderJudgeApi.setShared(shared)) }
-    catch (e) {
-      reportError('order-judge:set-shared', e)
-      setErr(ipcErrMsg(e, '没有开启共用'))
-      onChange(await window.orderJudgeApi.getSettings())
-    } finally { setSwitching(false) }
-  }
-
-  const edit = async (task: Promise<OrderJudgeSettings>, tag: string): Promise<void> => {
-    try { onChange(await task) } catch (e) { reportError(tag, e); setErr(ipcErrMsg(e, '保存路径失败')) }
-  }
-
-  // 按顺序取第一个本机存在的文件；用的那条图标亮起，本机不存在的那条变淡（通常是另一台电脑的路径）。
-  const pathList = (label: string, icon: string, paths: OrderJudgePath[], which: 'profile' | 'log'): JSX.Element => {
-    const iconButton = 'w-7 h-7 grid place-items-center rounded-lg text-on-surface-variant hover:bg-surface-container-highest disabled:opacity-30 disabled:hover:bg-transparent'
-    return (
-      <div>
-        <div className="flex items-center justify-between">
-          <span className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">{label}</span>
-          <button type="button" onClick={() => downloadDocTemplate(which)} className="font-label text-xs text-primary hover:underline">下载模版</button>
-        </div>
-        <p className="mt-1 text-xs text-on-surface-variant">{DOC_TEMPLATES[which].purpose}</p>
-        <div className="mt-2 space-y-1.5">
-          {paths.map((p, i) => (
-            <div key={p.path} className="flex items-center gap-1 rounded-xl bg-surface-container-high border border-outline-variant/30 h-11 pl-3 pr-1">
-              <span className={`material-symbols-outlined text-[18px] leading-none ${p.active ? 'text-primary' : 'text-on-surface-variant/40'}`}>{icon}</span>
-              <span className={`flex-1 min-w-0 truncate text-sm ml-1 ${p.exists ? '' : 'text-on-surface-variant/50'}`} title={`${p.device} · ${p.path}${p.updatedAt ? `\n更新于 ${formatWhen(p.updatedAt)}` : ''}`}>{p.path}</span>
-              <span className="shrink-0 font-label text-[11px] text-on-surface-variant/50 px-1">{p.device}</span>
-              <button type="button" aria-label="上移" disabled={i === 0} onClick={() => void edit(window.orderJudgeApi.movePath(which, i, -1), 'order-judge:move-path')} className={iconButton}><span className="material-symbols-outlined text-[18px] leading-none">arrow_upward</span></button>
-              <button type="button" aria-label="下移" disabled={i === paths.length - 1} onClick={() => void edit(window.orderJudgeApi.movePath(which, i, 1), 'order-judge:move-path')} className={iconButton}><span className="material-symbols-outlined text-[18px] leading-none">arrow_downward</span></button>
-              <button type="button" aria-label="移除" onClick={() => void edit(window.orderJudgeApi.removePath(which, i), 'order-judge:remove-path')} className={iconButton}><span className="material-symbols-outlined text-[18px] leading-none">close</span></button>
-            </div>
-          ))}
-          <button type="button" onClick={() => void pick(which)} className="h-9 px-3 rounded-xl font-label text-sm text-primary hover:bg-primary/10">{paths.length ? '添加路径' : '选择文件'}</button>
-        </div>
-      </div>
-    )
-  }
-
-  const notice = settings?.shared && !settings.hasWebAccount ? '请先在应用设置中登录网页版账号'
-    : settings?.shared && settings.sync.state === 'error' ? settings.sync.message : ''
-
-  return (
-    <>
-      <div className={`fixed inset-0 bg-black/40 z-[60] transition-opacity ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={onClose} />
-      <aside className={`fixed top-0 right-0 bottom-0 w-[400px] max-w-full transition-transform duration-300 bg-surface-container-low border-l border-outline-variant/20 z-[70] flex flex-col ${open ? 'translate-x-0' : 'translate-x-full'}`}>
-        <div className="flex items-center justify-between h-16 px-6 border-b border-outline-variant/20">
-          <h3 className="text-lg font-bold tracking-tight">评估设置</h3>
-          <button onClick={onClose} className="w-9 h-9 grid place-items-center rounded-xl text-on-surface-variant hover:bg-surface-container-high" aria-label="关闭">
-            <span className="material-symbols-outlined leading-none">close</span>
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 space-y-7">
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={switching} checked={settings?.shared ?? false} onChange={e => void toggleShared(e.target.checked)} />与网页版共用评估和历史</label>
-            {notice && <p role="status" className="text-sm text-on-surface-variant">{notice}</p>}
-          </div>
-          {pathList('能力档案', 'description', settings?.paths.profile ?? [], 'profile')}
-          {pathList('项目日志', 'history_edu', settings?.paths.log ?? [], 'log')}
-        </div>
-        {err && (
-          <div className="relative h-12 px-6 border-t border-outline-variant/20">
-            <span className="absolute left-6 right-6 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs truncate text-error" title={err}>
-              <span className="material-symbols-outlined text-[16px] leading-none">error</span>{err}
-            </span>
-          </div>
-        )}
-      </aside>
-    </>
-  )
-}
-
 // ── 页面 ──
-
-const yuan = (n: number): string => `¥${n.toLocaleString('en-US')}`
-const monthDay = (date: string): string => `${Number(date.slice(5, 7))} 月 ${Number(date.slice(8, 10))} 日`
-
-// 与网页版估价卡片同一份数据（设计稿 docs/design-mockups/web/接单评估.html），样式跟桌面版 MD3
-function EstimateCard({ est }: { est: Est }): JSX.Element {
-  const head = (meta?: string): JSX.Element => (
-    <div className="flex items-baseline gap-3 px-6 pt-5">
-      <p className="flex items-center gap-1.5 font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">
-        <span className="material-symbols-outlined text-[16px] leading-none">request_quote</span>估价
-      </p>
-      {meta && <p className="ml-auto font-label text-xs text-on-surface-variant/70 tabular-nums">{meta}</p>}
-    </div>
-  )
-  const shell = (children: React.ReactNode): JSX.Element => (
-    <article className="animate-fade-up mt-4 overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-low pb-5">{children}</article>
-  )
-  if (est.kind === 'run') {
-    const steps = [
-      { title: '拆任务', detail: est.tasks ? `${est.tasks} 个任务` : '', state: est.tasks ? 'done' : 'run' },
-      { title: '估工时', detail: est.tasks ? `已估完 ${est.groups} / 8 组` : '', state: est.tasks ? 'run' : 'wait' },
-    ]
-    return shell(
-      <>
-        {head()}
-        <ol className="grid gap-3 px-6 pt-4">
-          {steps.map((s) => (
-            <li key={s.title} className="flex items-start gap-3">
-              <span className="mt-0.5 w-5 h-5 grid place-items-center">
-                {s.state === 'done' && <span className="material-symbols-outlined text-[20px] leading-none text-yes">check_circle</span>}
-                {s.state === 'run' && <span className="pulse-dot w-2.5 h-2.5 rounded-[9999px] bg-primary" />}
-                {s.state === 'wait' && <span className="w-2.5 h-2.5 rounded-[9999px] bg-outline-variant/60" />}
-              </span>
-              <div>
-                <p className={`text-sm font-bold ${s.state === 'run' ? 'text-on-surface' : 'text-on-surface-variant'}`}>{s.title}</p>
-                {s.detail && <p className="text-xs text-on-surface-variant/70 mt-0.5">{s.detail}</p>}
-              </div>
-            </li>
-          ))}
-        </ol>
-      </>,
-    )
-  }
-  if (est.kind === 'error') {
-    return shell(
-      <>
-        {head()}
-        <p className="mx-6 mt-4 rounded-xl bg-error-container px-4 py-3 text-[14px] leading-relaxed text-on-error-container">{est.message}</p>
-        <p className="mx-6 mt-2 font-label text-xs text-on-surface-variant/70">{est.code}</p>
-      </>,
-    )
-  }
-  const { hours, quote } = est.result
-  const max = Math.max(1, ...hours.groups.map((g) => g.hours))
-  const tiers = quote?.tiers ?? []
-  return shell(
-    <>
-      {head(`${formatWhen(est.result.at)} · 用时 ${Math.round(est.result.ms / 1000)} 秒 · ${hours.taskCount} 个任务`)}
-      <p className="px-6 pt-2 text-[28px] font-black leading-tight text-on-surface tabular-nums">
-        {hours.totalHours.toLocaleString('en-US')}<span className="ml-1.5 text-sm font-bold text-on-surface-variant">小时</span>
-      </p>
-      {quote ? (
-        <div className="px-6 pt-4">
-          <div className="grid grid-cols-2 gap-3">
-            {tiers.map((t) => (
-              <div key={t.factor} className="rounded-xl bg-surface-container-high px-4 py-3">
-                <p className="text-lg font-black text-on-surface tabular-nums">{yuan(t.price)}</p>
-                <p className="mt-0.5 text-xs leading-relaxed text-on-surface-variant tabular-nums">{t.workdays} 个工作日 · {monthDay(t.end)}交付 · 共 {t.calendarDays} 天</p>
-              </div>
-            ))}
-          </div>
-          {(quote.assumedYears.length > 0 || quote.springFestivalRisk) && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {quote.assumedYears.length > 0 && <span className="rounded-lg bg-amber-container px-2 py-0.5 font-label text-[11px] font-bold text-amber">{quote.assumedYears.join('、')} 年节假日未公布，按双休估算</span>}
-              {quote.springFestivalRisk && <span className="rounded-lg bg-amber-container px-2 py-0.5 font-label text-[11px] font-bold text-amber">交期跨春节，实际可能顺延</span>}
-            </div>
-          )}
-          <p className="mt-3 flex gap-1.5 text-xs leading-relaxed text-on-surface-variant">
-            <span className="material-symbols-outlined text-[16px] leading-none text-amber">info</span>
-            <span>以上不含加急。加急每提前 1 天加（请的人数 + 1）× {DAY_RATE} 元，最多提前 {tiers.map((t) => t.calendarDays).join(' / ')} 天；例：请 1 人提前 2 天加 {2 * 2 * DAY_RATE} 元。</span>
-          </p>
-        </div>
-      ) : (
-        <p className="mx-6 mt-4 rounded-xl bg-amber-container px-4 py-3 text-[14px] leading-relaxed text-amber">{est.result.quoteError}</p>
-      )}
-      <div className="mx-6 mt-4 grid gap-0.5 border-t border-outline-variant/20 pt-3">
-        {hours.groups.map((g, i) => (
-          <details key={g.key} open={i === 0} className="group">
-            <summary className="grid cursor-pointer list-none grid-cols-[7em_1fr_auto_18px] items-center gap-3 py-1.5 text-[13px] text-on-surface [&::-webkit-details-marker]:hidden">
-              <span>{g.name}</span>
-              <span className="h-1.5 overflow-hidden rounded-[9999px] bg-surface-container-highest"><i className="block h-full rounded-[9999px] bg-primary" style={{ width: `${Math.round(g.hours / max * 100)}%` }} /></span>
-              <span className="whitespace-nowrap text-right tabular-nums text-on-surface-variant">{g.hours} 小时</span>
-              <span className="material-symbols-outlined text-[18px] leading-none text-on-surface-variant/70 transition-transform group-open:rotate-180">expand_more</span>
-            </summary>
-            <ul className="mb-2 ml-[calc(7em+12px)] grid gap-0.5">
-              {g.tasks.map((t, k) => (
-                <li key={k} className="flex justify-between gap-3 text-xs leading-relaxed text-on-surface-variant">
-                  <span>{t.title}</span><span className="shrink-0 tabular-nums text-on-surface-variant/70">{t.hours}</span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        ))}
-      </div>
-    </>,
-  )
-}
 
 function OrderJudge(): JSX.Element {
   const [text, setText] = useState('')
@@ -442,11 +255,11 @@ function OrderJudge(): JSX.Element {
   const [running, setRunning] = useState<Running | null>(null)
   const [now, setNow] = useState(Date.now())
   const [outcome, setOutcome] = useState<Outcome | null>(null)
-  const [est, setEst] = useState<Est | null>(null)
-  const [history, setHistory] = useState<{ base: string; entries: OrderJudgeHistoryEntry[] }>({ base: '', entries: [] })
+  const [view, setView] = useState<OrderJudgeView | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
-  const [settings, setSettings] = useState<OrderJudgeSettings | null>(null)
-  const [sheetOpen, setSheetOpen] = useState(false)
+  const [target, setTarget] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [emptyTip, setEmptyTip] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
@@ -455,32 +268,25 @@ function OrderJudge(): JSX.Element {
   const shotCount = useRef(0)
   const dragDepth = useRef(0)
 
-  const historyRequest = useRef(0)
-  const historyOwner = useRef('')
-  const loadHistory = useCallback(async () => {
-    const request = ++historyRequest.current
+  const loadRequest = useRef(0)
+  const load = useCallback(async () => {
+    const request = ++loadRequest.current
     try {
-      const next = await window.orderJudgeApi.history()
-      if (request === historyRequest.current) setHistory(next)
+      const next = await window.orderJudgeApi.load()
+      if (request === loadRequest.current) setView(next)
     } catch (e) {
-      reportError('order-judge:history', e)
+      reportError('order-judge:load', e)
     }
   }, [])
 
+  // 网页那头新建 / 追加 / 删除后，切回窗口时重新拉；换账号由主进程通知
   useEffect(() => {
-    let live = true
-    const refresh = (): void => {
-      window.orderJudgeApi.getSettings().then(next => {
-        if (!live) return
-        const owner = JSON.stringify([next.shared, next.webUsername])
-        if (owner !== historyOwner.current) { historyOwner.current = owner; historyRequest.current++; setHistory({ base: '', entries: [] }); setSelected(null) }
-        setSettings(next); void loadHistory()
-      }).catch((e) => reportError('order-judge:settings', e))
-    }
-    refresh()
-    const stop = window.orderJudgeApi.onChanged(refresh)
-    return () => { live = false; historyRequest.current++; stop() }
-  }, [loadHistory])
+    void load()
+    const stop = window.orderJudgeApi.onChanged(() => { setSelected(null); setTarget(null); setOutcome(null); void load() })
+    const onFocus = (): void => { void load() }
+    window.addEventListener('focus', onFocus)
+    return () => { loadRequest.current++; stop(); window.removeEventListener('focus', onFocus) }
+  }, [load])
 
   useEffect(() => {
     if (!running) return
@@ -536,7 +342,6 @@ function OrderJudge(): JSX.Element {
   // 截图和文件在页面任意位置粘贴都收；焦点不在输入框时文字也追加进输入框
   useEffect(() => {
     const onPaste = (e: ClipboardEvent): void => {
-      if (sheetOpen) return
       const files = [...(e.clipboardData?.items ?? [])]
         .filter((it) => it.kind === 'file')
         .map((it) => it.getAsFile())
@@ -555,7 +360,7 @@ function OrderJudge(): JSX.Element {
     }
     document.addEventListener('paste', onPaste)
     return () => document.removeEventListener('paste', onPaste)
-  }, [addFiles, sheetOpen])
+  }, [addFiles])
 
   const clearAll = (): void => {
     materials.forEach((m) => m.preview && URL.revokeObjectURL(m.preview))
@@ -563,7 +368,6 @@ function OrderJudge(): JSX.Element {
     setText('')
     setUnreadable([])
     setOutcome(null)
-    setSelected(null)
     shotCount.current = 0
     textRef.current?.focus()
   }
@@ -572,7 +376,10 @@ function OrderJudge(): JSX.Element {
     requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
-  const evaluate = async (): Promise<void> => {
+  const projects = view?.projects ?? []
+  const targetProject = projects.find(p => p.id === target) ?? null
+
+  const run = async (): Promise<void> => {
     if (running) return
     if (!text.trim() && !materials.length) {
       setEmptyTip(true)
@@ -585,47 +392,30 @@ function OrderJudge(): JSX.Element {
     setNow(startedAt)
     setRunning({ startedAt, stage: 'prepare', stats: [], links: 0 })
     showResult()
-    setEst(null)
     const off = window.orderJudgeApi.onProgress((p) => {
-      if (p.stage === 'verdict') {
-        // 结论先到先显示，估价接着在下面跑
-        setOutcome({ type: 'report', entry: p.entry, warnings: [] })
-        setRunning(null)
-        setEst((x) => x ?? { kind: 'run', tasks: 0, groups: 0 })
-        return
-      }
-      if (p.stage === 'estimate') {
-        const e = p.event
-        if (e.type === 'scope') setEst({ kind: 'run', tasks: e.tasks, groups: 0 })
-        else if (e.type === 'group') setEst((x) => (x?.kind === 'run' ? { ...x, groups: x.groups + 1 } : x))
-        else if (e.type === 'done') setEst({ kind: 'done', result: e.result })
-        else if (e.type === 'error') setEst({ kind: 'error', code: e.code, message: e.error })
-        else setEst((x) => x ?? { kind: 'run', tasks: 0, groups: 0 })
-        return
-      }
       setRunning((r) => (r ? (p.stage === 'links' ? { ...r, stage: 'links', links: p.count } : { ...r, stage: 'ai' }) : r))
     })
     try {
       const prepared = await prepareMaterials(text, materials.map((m) => m.file))
       setUnreadable(prepared.unreadable)
-      const pre = precheck(prepared.text, prepared.images.length)
-      if (pre) {
-        setOutcome({ type: 'precheck', kind: pre })
+      if (precheck(prepared.text, prepared.images.length)) {
+        setOutcome({ type: 'precheck' })
         return
       }
       setRunning((r) => (r ? { ...r, stats: prepared.stats } : r))
-      const res = await window.orderJudgeApi.judge({ text: prepared.text, images: prepared.images })
+      const files = await Promise.all(prepared.attachments.map(async (f) => ({ name: f.name, data: await fileBase64(f) })))
+      const res = await window.orderJudgeApi.organize({ projectId: targetProject?.id ?? null, text: prepared.text, images: prepared.images, files })
       if (res.ok) {
-        setOutcome({ type: 'report', entry: res.entry, warnings: res.warnings })
-        void loadHistory()
+        setView((v) => v && { ...v, projects: [res.project, ...v.projects.filter(p => p.id !== res.project.id)] })
+        setOutcome({ type: 'done', projectId: res.project.id, ms: Date.now() - startedAt })
+        setTarget(res.project.id)
+        materials.forEach((m) => m.preview && URL.revokeObjectURL(m.preview))
+        setMaterials([]); setText(''); shotCount.current = 0
       } else {
-        setOutcome({ type: 'error', code: res.code, detail: res.detail })
-        if (res.code === 'NEED_WEB') {
-          window.orderJudgeApi.getSettings().then(setSettings).catch(() => undefined)
-        }
+        setOutcome({ type: 'error', code: res.code, detail: res.error })
       }
     } catch (e) {
-      reportError('order-judge:evaluate', e)
+      reportError('order-judge:organize', e)
       setOutcome({ type: 'error', code: 'THROWN', detail: ipcErrMsg(e, '未知错误') })
     } finally {
       off()
@@ -634,78 +424,42 @@ function OrderJudge(): JSX.Element {
     }
   }
 
-  const reloadFromHistory = async (entry: OrderJudgeHistoryEntry): Promise<void> => {
+  const remove = async (id: string): Promise<void> => {
+    setDeleteError('')
     try {
-      const files = await Promise.all(entry.images.map(async (img) => {
-        const blob = await (await fetch(`${history.base}/${entry.id}/${img.file}`)).blob()
-        return new File([blob], `${img.name}.jpg`, { type: 'image/jpeg' })
-      }))
-      clearAll()
-      setText(entry.order)
-      addFiles(files)
-    } catch (e) {
-      reportError('order-judge:reload', e)
-    }
-  }
-
-  const deleteEntry = async (id: string): Promise<void> => {
-    try {
-      await window.orderJudgeApi.deleteHistory(id)
+      await window.orderJudgeApi.deleteProject(id)
+      setConfirmDelete(null)
       if (selected === id) setSelected(null)
-      await loadHistory()
+      if (target === id) setTarget(null)
+      if (outcome?.type === 'done' && outcome.projectId === id) setOutcome(null)
+      await load()
     } catch (e) {
       reportError('order-judge:delete', e)
+      setDeleteError(ipcErrMsg(e, '没有删掉'))
     }
   }
 
-  const selectedEntry = history.entries.find((x) => x.id === selected) ?? null
+  const append = (id: string): void => {
+    setTarget(id)
+    setSelected(null)
+    requestAnimationFrame(() => { textRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); textRef.current?.focus() })
+  }
+
+  const base = view?.accountId ? `archivist://judge/${view.accountId}` : ''
+  const selectedProject = projects.find(p => p.id === selected) ?? null
   const elapsed = running ? Math.max(0, Math.round((now - running.startedAt) / 1000)) : 0
-  const needsSetup = settings !== null && (!settings.shared || !settings.hasWebAccount)
   const unreadableSet = new Set(unreadable)
-  const verdictCount = (v: string): number => history.entries.filter((x) => x.report.verdict === v).length
 
   const renderResult = (): React.ReactNode => {
-    if (selectedEntry) {
-      const r = selectedEntry.report
-      return (
-        <>
-        <Card verdict={r.verdict}>
-          <div className="flex items-center justify-between gap-3 px-6 pt-4 -mb-2 font-label text-xs text-on-surface-variant/70">
-            <span className="flex items-center gap-1.5"><span className="material-symbols-outlined text-[16px] leading-none">history</span>{formatWhen(selectedEntry.at)}</span>
-            <span className="flex items-center gap-1">
-              <button onClick={() => void reloadFromHistory(selectedEntry)} className="h-8 px-2.5 rounded-xl hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1">
-                <span className="material-symbols-outlined text-[16px] leading-none">refresh</span>放回输入框
-              </button>
-              <button onClick={() => setSelected(null)} className="h-8 px-2.5 rounded-xl hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1">
-                <span className="material-symbols-outlined text-[16px] leading-none">close</span>收起
-              </button>
-            </span>
-          </div>
-          <VerdictBar verdict={r.verdict} headline={r.headline} />
-          <ReportBody r={r} />
-          <Section label="当时放进来的材料">
-            {selectedEntry.order && (
-              <p className="mb-3 text-[13px] leading-relaxed text-on-surface-variant line-clamp-3 whitespace-pre-wrap">{selectedEntry.order}</p>
-            )}
-            {selectedEntry.images.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {selectedEntry.images.map((img) => (
-                  <img key={img.file} src={`${history.base}/${selectedEntry.id}/${img.file}`} alt={img.name} title={img.name} className="w-[92px] h-[68px] rounded-xl object-cover bg-surface-container-highest" />
-                ))}
-              </div>
-            )}
-          </Section>
-        </Card>
-        {selectedEntry.estimate && <EstimateCard est={{ kind: 'done', result: selectedEntry.estimate }} />}
-        </>
-      )
+    if (selectedProject) {
+      return <ProjectSheet project={selectedProject} base={base} onAppend={() => append(selectedProject.id)} onDelete={() => setConfirmDelete(selectedProject.id)} onClose={() => setSelected(null)} />
     }
     if (running) {
       const steps: { title: string; detail: string; state: 'done' | 'run' | 'wait' }[] = [
         { title: '整理材料', detail: running.stage === 'prepare' ? '截图、视频、文档转成 AI 能看的格式' : running.stats.join(' · '), state: running.stage === 'prepare' ? 'run' : 'done' },
       ]
       if (running.links) steps.push({ title: '打开网址', detail: `${running.links} 个`, state: running.stage === 'links' ? 'run' : 'done' })
-      steps.push({ title: 'AI 判断中', detail: '对照能力档案和项目日志', state: running.stage === 'ai' ? 'run' : 'wait' })
+      steps.push({ title: 'AI 整理需求', detail: targetProject ? `对照第 ${latest(targetProject).n} 版的清单` : '拆成条目，按必须 / 应该 / 可以分好', state: running.stage === 'ai' ? 'run' : 'wait' })
       return (
         <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-6 py-5">
           <ol className="grid gap-4">
@@ -727,51 +481,26 @@ function OrderJudge(): JSX.Element {
       )
     }
     if (!outcome) return null
-    if (outcome.type === 'error') {
-      return <ErrorCard code={outcome.code} detail={outcome.detail} onSettings={() => setSheetOpen(true)} />
-    }
     if (outcome.type === 'precheck') {
       return (
-        <Card verdict="信息不足">
-          <VerdictBar
-            verdict="信息不足"
-            headline={outcome.kind === 'empty' ? '没有拿到派单内容' : '内容里只有「[聊天记录]」，转发的记录复制不出来'}
-          />
-          {outcome.kind === 'chat-record' && (
-            <Section label="怎么补">
-              <p className="text-[14px] leading-relaxed text-on-surface-variant">
-                在微信里点开这条聊天记录，用 <kbd className="font-label text-[11px] px-1.5 py-0.5 rounded-lg bg-surface-container-highest">{SHOT_KEY}</kbd> 截图后粘贴进来，再评估一次。
-              </p>
-            </Section>
-          )}
-        </Card>
+        <Notice title="内容里只有「[聊天记录]」，转发的记录复制不出来"
+          desc={`在微信里点开这条聊天记录，用 ${SHOT_KEY} 截图后粘贴进来，再整理一次`} />
       )
     }
-    const r = outcome.entry.report
-    return (
-      <>
-      <Card verdict={r.verdict}>
-        <VerdictBar
-          verdict={r.verdict}
-          headline={r.headline}
-          sub={outcome.warnings.map((w) => (
-            <p key={w} className="mt-1.5 flex items-center gap-1 text-xs text-amber">
-              <span className="material-symbols-outlined text-[14px] leading-none">warning</span>{w}
-            </p>
-          ))}
-        />
-        <ReportBody r={r} />
-      </Card>
-      {est && <EstimateCard est={est} />}
-      </>
-    )
+    if (outcome.type === 'error') {
+      const login = outcome.code === 'AUTH_REQUIRED'
+      const ai = ['BYOK_REQUIRED', 'PROVIDER_CONNECTION_REQUIRED', 'PROVIDER_HTTP_401'].includes(outcome.code)
+      return (
+        <Notice title={login ? '还没登录网页版账号' : '这次没有整理出来'}
+          desc={`${outcome.detail}${login || ai ? '' : `\n${outcome.code}`}`}
+          action={ai ? { label: '去网页版设置 AI', onClick: () => void window.orderJudgeApi.openWeb() } : undefined} />
+      )
+    }
+    const done = projects.find(p => p.id === outcome.projectId)
+    return done ? <ProjectSheet project={done} base={base} ms={outcome.ms} onAppend={() => append(done.id)} /> : null
   }
 
-  const tag: Record<string, string> = {
-    能: 'bg-yes-container text-yes',
-    不能: 'bg-error-container text-on-error-container dark:text-error',
-    信息不足: 'bg-amber-container text-amber',
-  }
+  const deleting = projects.find(p => p.id === confirmDelete) ?? null
 
   return (
     <div className="relative min-h-full bg-background">
@@ -784,18 +513,15 @@ function OrderJudge(): JSX.Element {
             <div className="min-w-0">
               <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-on-surface">接单评估</h1>
               <p className="hidden md:block text-sm text-on-surface-variant/80 mt-1 font-label tabular-nums">
-                {history.entries.length
-                  ? `${history.entries.length} 单 · 能 ${verdictCount('能')} · 不能 ${verdictCount('不能')} · 信息不足 ${verdictCount('信息不足')}`
-                  : '还没有评估记录'}
+                {view && !view.loggedIn ? '登录网页版账号后使用' : projects.length ? `${projects.length} 个项目` : '还没有整理过的项目'}
               </p>
             </div>
             <button
-              onClick={() => setSheetOpen(true)}
-              className="relative shrink-0 flex items-center gap-2 px-3.5 sm:px-5 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface font-label text-xs uppercase tracking-widest hover:bg-surface-bright hover:border-primary/40 transition-all active:scale-95 whitespace-nowrap"
+              onClick={() => void window.orderJudgeApi.openWeb()}
+              className="shrink-0 flex items-center gap-2 px-3.5 sm:px-5 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface font-label text-xs uppercase tracking-widest hover:bg-surface-bright hover:border-primary/40 transition-all active:scale-95 whitespace-nowrap"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>tune</span>
-              <span className="hidden sm:inline">评估设置</span>
-              {needsSetup && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-[9999px] bg-amber ring-2 ring-surface-container-lowest" />}
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>open_in_new</span>
+              <span className="hidden sm:inline">在网页打开</span>
             </button>
           </div>
         </div>
@@ -803,6 +529,14 @@ function OrderJudge(): JSX.Element {
       <div className="pt-8 px-4 md:px-8 pb-16">
         <div className="mx-auto max-w-[1180px] grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0">
+
+            <div className="mb-2 flex h-8 items-center gap-2 px-1 text-[13px] text-on-surface-variant">
+              <span className="material-symbols-outlined text-[18px] leading-none">{targetProject ? 'edit_note' : 'add_circle'}</span>
+              <span className="min-w-0 truncate">{targetProject ? `给「${targetProject.title}」追加需求` : '新项目'}</span>
+              {targetProject && (
+                <button type="button" disabled={!!running} onClick={() => setTarget(null)} className="shrink-0 h-8 px-2.5 rounded-xl font-label text-primary hover:bg-primary/10 disabled:opacity-50">改为新项目</button>
+              )}
+            </div>
 
             <section
               className="relative rounded-xl border border-outline-variant/40 bg-surface-container-low transition-colors focus-within:border-primary/60"
@@ -821,7 +555,7 @@ function OrderJudge(): JSX.Element {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={6}
-                placeholder="粘贴派单文字或截图，可以粘贴多次"
+                placeholder={targetProject ? '粘贴客户新补充的要求，可以粘贴多次' : '粘贴需求文字或截图，可以粘贴多次'}
                 className="block w-full min-h-[148px] resize-y bg-transparent px-5 pt-4 pb-2 text-[15px] leading-relaxed text-on-surface placeholder:text-on-surface-variant/40 outline-none border-0 focus:ring-0"
               />
               {materials.length > 0 && (
@@ -853,12 +587,12 @@ function OrderJudge(): JSX.Element {
                 />
                 <button onClick={clearAll} disabled={!!running} className="shrink-0 h-9 px-3 rounded-xl font-label text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-50">清空</button>
                 <button
-                  onClick={() => void evaluate()}
+                  onClick={() => void run()}
                   disabled={!!running}
-                  className="shrink-0 w-[132px] h-10 rounded-xl bg-primary text-on-primary font-bold text-sm flex items-center justify-center gap-1.5 hover:brightness-110 disabled:opacity-60 disabled:hover:brightness-100 transition"
+                  className="shrink-0 w-[148px] h-10 rounded-xl bg-primary text-on-primary font-bold text-sm flex items-center justify-center gap-1.5 hover:brightness-110 disabled:opacity-60 disabled:hover:brightness-100 transition"
                 >
-                  <span className="material-symbols-outlined text-[18px] leading-none">{running ? 'hourglass_top' : 'gavel'}</span>
-                  <span className="tabular-nums">{running ? `分析中 ${elapsed} 秒` : '评估'}</span>
+                  <span className="material-symbols-outlined text-[18px] leading-none">{running ? 'hourglass_top' : 'checklist'}</span>
+                  <span className="tabular-nums">{running ? `整理中 ${elapsed} 秒` : targetProject ? `整理第 ${latest(targetProject).n + 1} 版` : '整理需求'}</span>
                 </button>
               </div>
 
@@ -883,7 +617,7 @@ function OrderJudge(): JSX.Element {
                 <dt className="font-bold text-on-surface">文字、截图</dt>
                 <dd className="text-on-surface-variant">{PASTE_KEY} 粘贴，可以连续粘贴多张。转发的聊天记录要点开后截图，直接复制只会得到「[聊天记录]」</dd>
                 <dt className="font-bold text-on-surface">网址</dt>
-                <dd className="text-on-surface-variant">以文字形式贴进输入框，会打开网页读取标题和正文开头，每单最多 10 个。截图里的网址不会被打开</dd>
+                <dd className="text-on-surface-variant">以文字形式贴进输入框，会打开网页读取标题和正文开头，每次最多 10 个。截图里的网址不会被打开</dd>
                 <dt className="font-bold text-on-surface">在线表格、文档</dt>
                 <dd className="text-on-surface-variant">公开的腾讯文档能读到首屏的一部分文字，每张工作表的网址不同，需要哪张贴哪张。表格很长或要看细节时，把关键行截图一起放进来</dd>
                 <dt className="font-bold text-on-surface">要登录的网页</dt>
@@ -895,43 +629,37 @@ function OrderJudge(): JSX.Element {
               </dl>
             </details>
 
-            <section ref={resultRef} className="mt-8 scroll-mt-[220px]">{renderResult()}</section>
+                        <section ref={resultRef} className="mt-8 scroll-mt-[220px]">{renderResult()}</section>
           </div>
 
           <aside className="min-w-0">
             <div className="xl:sticky xl:top-[220px]">
               <div className="flex items-baseline justify-between mb-2 px-1">
-                <h3 className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">历史记录</h3>
-                {history.entries.length > 0 && (
-                  <span className="font-label text-[11px] text-on-surface-variant/50 tabular-nums">{history.entries.length} 条</span>
+                <h3 className="font-label text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">项目</h3>
+                {projects.length > 0 && (
+                  <span className="font-label text-[11px] text-on-surface-variant/50 tabular-nums">{projects.length} 个</span>
                 )}
               </div>
-              {history.entries.length === 0 ? (
-                <p className="px-1 py-6 text-sm text-on-surface-variant/60">还没有评估过的派单</p>
+              {projects.length === 0 ? (
+                <p className="px-1 py-6 text-sm text-on-surface-variant/60">还没有整理过的项目</p>
               ) : (
                 <div className="xl:max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar -mx-1 px-1">
-                  {history.entries.map((x) => {
-                    const on = selected === x.id
+                  {projects.map((p) => {
+                    const on = selected === p.id
+                    const v = latest(p)
                     return (
-                      <div
-                        key={x.id}
-                        onClick={() => { setSelected(x.id); showResult() }}
-                        className={`group relative grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 items-center cursor-pointer rounded-xl px-3 py-2.5 transition-colors ${on ? 'bg-surface-container-high' : 'hover:bg-surface-container'}`}
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => { setSelected(p.id); showResult() }}
+                        className={`w-full grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 items-center text-left rounded-xl px-3 py-2.5 transition-colors ${on ? 'bg-surface-container-high' : 'hover:bg-surface-container'}`}
                       >
-                        <span className={`row-span-2 self-start mt-0.5 min-w-[52px] text-center rounded-lg px-1.5 py-0.5 font-label text-[11px] font-bold ${tag[x.report.verdict]}`}>{x.report.verdict}</span>
-                        <span className={`truncate pr-7 text-sm text-on-surface ${on ? 'font-bold' : ''}`}>{x.report.title || x.report.summary || x.order || '（截图）'}</span>
-                        <span className="font-label text-[11px] text-on-surface-variant/60 tabular-nums">
-                          {formatWhen(x.at)}{x.images.length ? ` · ${x.images.length} 张图` : ''}
+                        <span className="row-span-2 self-start mt-0.5 min-w-[36px] text-center rounded-lg bg-surface-container-highest px-1.5 py-0.5 font-label text-[11px] font-bold text-on-surface-variant tabular-nums">v{v.n}</span>
+                        <span className={`truncate text-sm text-on-surface ${on ? 'font-bold' : ''}`}>{p.title}</span>
+                        <span className="truncate font-label text-[11px] text-on-surface-variant/60 tabular-nums">
+                          {formatWhen(p.updatedAt)} · {v.brief.clientType} · {v.brief.items.length} 条
                         </span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); void deleteEntry(x.id) }}
-                          title="删除这条"
-                          aria-label="删除这条"
-                          className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 grid place-items-center rounded-xl text-on-surface-variant/60 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-error hover:bg-surface-container-highest transition"
-                        >
-                          <span className="material-symbols-outlined text-[16px] leading-none">delete</span>
-                        </button>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -943,7 +671,19 @@ function OrderJudge(): JSX.Element {
 
       </div>
 
-      <SettingsSheet open={sheetOpen} settings={settings} onClose={() => setSheetOpen(false)} onChange={setSettings} />
+      {deleting && (
+        <div className="fixed inset-0 z-[80] bg-black/40 grid place-items-center p-4" onClick={() => setConfirmDelete(null)}>
+          <div role="alertdialog" aria-modal="true" aria-labelledby="oj-del-title" onClick={(e) => e.stopPropagation()} className="w-[400px] max-w-full rounded-xl border border-outline-variant/30 bg-surface-container-low p-6">
+            <h3 id="oj-del-title" className="text-lg font-bold text-on-surface">删除「{deleting.title}」</h3>
+            <p className="mt-2 text-sm text-on-surface-variant">{deleting.versions.length} 个版本和放进来的材料会一起删掉，网页版也看不到了</p>
+            <div className="relative mt-6 flex justify-end gap-2">
+              {deleteError && <span className="absolute left-0 top-1/2 -translate-y-1/2 max-w-[55%] truncate text-xs text-error" title={deleteError}>{deleteError}</span>}
+              <button type="button" autoFocus onClick={() => setConfirmDelete(null)} className="h-9 px-4 rounded-xl font-label text-sm text-on-surface-variant hover:bg-surface-container-high">取消</button>
+              <button type="button" onClick={() => void remove(deleting.id)} className="h-9 px-4 rounded-xl bg-error text-on-error font-label text-sm font-bold hover:brightness-110">确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

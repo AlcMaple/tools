@@ -10,7 +10,7 @@ import type { XifanSearchResult, XifanWatchInfo, XifanSource } from './types/xif
 import type { GirigiriSearchResult, GirigiriEpisode, GirigiriWatchInfo } from './types/girigiri'
 import type { AowuSearchResult, AowuEpisode, AowuWatchInfo } from './types/aowu'
 import type { BiliVideoInfo, BiliDash, BiliSearchResult } from './types/bili'
-import type { OrderJudgeSettings, OrderJudgeHistoryEntry, OrderJudgeResult, OrderJudgeProgress, OrderJudgeConvertResult } from './types/orderJudge'
+import type { OrderJudgeView, OrderJudgeOrganizeInput, OrderJudgeOrganizeResult, OrderJudgeStage, OrderJudgeConvertResult } from './types/orderJudge'
 
 export interface LibraryPath {
   path: string;
@@ -170,23 +170,15 @@ declare global {
       electron: () => string
     }
     orderJudgeApi: {
-      getSettings: () => Promise<OrderJudgeSettings>
-      /** 开启时本机路径并进账号、本机历史自动上传一次；未登录网页版账号会抛错。 */
-      setShared: (shared: boolean) => Promise<OrderJudgeSettings>
       openWeb: () => Promise<void>
+      load: () => Promise<OrderJudgeView>
+      deleteProject: (id: string) => Promise<void>
+      organize: (input: OrderJudgeOrganizeInput) => Promise<OrderJudgeOrganizeResult>
       onChanged: (cb: () => void) => () => void
-      /** 弹系统对话框选文件并追加到该类资料的路径列表末尾，取消时原样返回当前设置。 */
-      pickFile: (which: 'profile' | 'log') => Promise<OrderJudgeSettings>
-      removePath: (which: 'profile' | 'log', index: number) => Promise<OrderJudgeSettings>
-      movePath: (which: 'profile' | 'log', index: number, offset: -1 | 1) => Promise<OrderJudgeSettings>
-      /** base 是历史图片目录的 archivist URL，图片地址为 `${base}/${id}/${file}`。 */
-      history: () => Promise<{ base: string; entries: OrderJudgeHistoryEntry[] }>
-      deleteHistory: (id: string) => Promise<void>
-      judge: (input: { text: string; images: { name: string; dataUrl: string }[] }) => Promise<OrderJudgeResult>
-      /** 渲染进程读不了的视频 / 图片 / 文档交给本机工具兜底。 */
+      /** 渲染进程读不了的视频 / 图片 / 文档交给本机工具兜底 */
       convert: (kind: 'image' | 'video' | 'doc', bytes: Uint8Array, ext: string) => Promise<OrderJudgeConvertResult>
-      onProgress: (cb: (p: OrderJudgeProgress) => void) => () => void
-      /** pdf.js 的二进制 CMap（读中文 PDF 用），名字不存在时为 null。 */
+      onProgress: (cb: (p: OrderJudgeStage) => void) => () => void
+      /** pdf.js 的二进制 CMap（读中文 PDF 用），名字不存在时为 null */
       cmap: (name: string) => Promise<Uint8Array | null>
     }
     miaoyuApi: {

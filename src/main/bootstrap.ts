@@ -11,5 +11,4 @@ if (isolatedData) {
 }
 
 if (!app.requestSingleInstanceLock()) app.quit()
-else if (process.argv.includes('--order-judge-sync')) void import('./judge-sync-entry')
 else void import('./index')

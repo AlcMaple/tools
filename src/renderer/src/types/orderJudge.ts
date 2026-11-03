@@ -1,43 +1,20 @@
 // 与 src/main/order-judge/service.ts 的 IPC 返回结构保持一致
-import type { JudgeReport } from '../../../../web/shared/order-judge'
-import type { EstimateEvent, EstimateResult } from '../../../../web/shared/order-judge-estimate'
+import type { JudgeEvent, Project } from '../../../../web/shared/order-judge-api'
 
-export interface OrderJudgeSettings {
-  shared: boolean
-  paths: Record<'profile' | 'log', OrderJudgePath[]>
-  hasWebAccount: boolean
-  webUsername: string
-  sync: { state: 'disabled' | 'starting' | 'synced' | 'error'; message: string; at: number | null }
+export interface OrderJudgeView { loggedIn: boolean; username: string; accountId: number; projects: Project[] }
+
+export interface OrderJudgeOrganizeInput {
+  projectId: string | null
+  text: string
+  images: { name: string; dataUrl: string }[]
+  files: { name: string; data: string }[]
 }
 
-export interface OrderJudgePath {
-  path: string
-  device: string
-  exists: boolean
-  active: boolean
-  updatedAt: number | null
-}
+export type OrderJudgeStage = Extract<JudgeEvent, { type: 'stage' }>
 
-export interface OrderJudgeHistoryEntry {
-  id: string
-  at: number
-  report: JudgeReport
-  order: string
-  images: { file: string; name: string }[]
-  estimate?: EstimateResult
-}
-
-export type OrderJudgeErrorCode =
-  | 'NEED_WEB' | 'BAD_INPUT' | 'SHARED_ERROR'
-
-export type OrderJudgeResult =
-  | { ok: true; entry: OrderJudgeHistoryEntry; warnings: string[] }
-  | { ok: false; code: OrderJudgeErrorCode; detail?: string }
-
-export type OrderJudgeProgress =
-  | { stage: 'links'; count: number } | { stage: 'ai' }
-  | { stage: 'verdict'; entry: OrderJudgeHistoryEntry }
-  | { stage: 'estimate'; event: EstimateEvent }
+export type OrderJudgeOrganizeResult =
+  | { ok: true; project: Project }
+  | { ok: false; code: string; error: string }
 
 export type OrderJudgeConvertResult =
   | { ok: true; images: Uint8Array[]; text: string; seconds?: number }

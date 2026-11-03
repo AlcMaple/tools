@@ -15,9 +15,7 @@ import { disposeMediaProxyRequests, MEDIA_PROXY_SCHEME, registerMediaProxy } fro
 import { disposeMediaCache, sweepMediaCacheDir } from './shared/media-cache'
 import { disposeHlsPrefetch } from './shared/hls-prefetch'
 import { disposeXifanBackgroundWindow, isXifanBackgroundWindow } from './xifan/browser-challenge'
-import { initializeJudgeSync } from './order-judge/service'
-import { stopJudgeSync } from './order-judge/sync-manager'
-import { sharedJudgeImage, stopSharedJudgeRequests } from './order-judge/remote'
+import { removeRetiredJudgeData, stopJudgeRequests, versionImage } from './order-judge/service'
 
 // 接管 console.error/warn → 同时落盘到 main.log,让主进程所有报错可查。
 initConsoleCapture()
@@ -96,8 +94,7 @@ app.on('web-contents-created', (_e, contents) => {
 
 app.on('before-quit', () => {
   isAppQuitting = true
-  stopJudgeSync()
-  stopSharedJudgeRequests()
+  stopJudgeRequests()
   // 退出时一并收掉在线播放的缓冲。渲染层离开 /play 会主动 media:release,但「看到一半直接
   // 关应用」没有那个时机。
   disposeMediaCache()
@@ -213,9 +210,8 @@ function createWindow(): void {
   }
 }
 
-// 锁由 bootstrap 获取，桌面和后台模式共用同一个同步进程。
-    app.on('second-instance', (_event, args) => {
-      if (args.includes('--order-judge-sync')) return
+// 单实例锁由 bootstrap 获取
+    app.on('second-instance', () => {
       const win = BrowserWindow.getAllWindows().find((item) => !isXifanBackgroundWindow(item))
       if (win) {
         if (win.isMinimized()) win.restore()
@@ -225,7 +221,7 @@ function createWindow(): void {
     })
 
 app.whenReady().then(() => {
-  void initializeJudgeSync().catch(error => console.error('[order-judge:sync]', error))
+  void removeRetiredJudgeData().catch(error => console.error('[order-judge] 旧数据清理失败', error))
   // Windows/Linux 上 autoHideMenuBar 只是「平时藏起来」，按 Alt 仍会弹出 File/Edit/View 默认菜单；
   // 应用没有自己的菜单项，直接移除。F12 由下面的 before-input-event 自管，复制粘贴由 Chromium 自带处理。
   // macOS 的应用菜单必须保留（系统菜单栏 + Cmd+C/V 靠它）。
@@ -241,7 +237,7 @@ app.whenReady().then(() => {
       if (address.hostname === 'judge') {
         const parts = address.pathname.split('/').filter(Boolean)
         if (parts.length !== 3) return new Response(null, { status: 404 })
-        const data = await sharedJudgeImage(parts[0], parts[1], parts[2])
+        const data = await versionImage(parts[0], parts[1], parts[2])
         return new Response(new Uint8Array(data), { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' } })
       }
       // URL 形如 archivist://local/Users/.../267215.jpg(host=local 是占位)。standard scheme 下
