@@ -13,6 +13,9 @@ import { useTrackToggle } from './useTrackToggle'
 const PAGE = 48
 type Sort = 'score' | 'date'
 
+// 只记住本次打开网站时的筛选，不缓存列表，账号变化后仍重新读取可见条目
+let lastView: { query: string; year: number; sort: Sort } = { query: '', year: 0, sort: 'score' }
+
 const thisYear = new Date().getFullYear()
 const YEAR_OPTIONS = [
   { id: '0', text: '全部年份' },
@@ -30,10 +33,10 @@ function metaOf(item: CatalogItem): string {
 }
 
 export function CatalogPage(): JSX.Element {
-  const [query, setQuery] = useState('')
-  const [q, setQ] = useState('')
-  const [year, setYear] = useState(0)
-  const [sort, setSort] = useState<Sort>('score')
+  const [query, setQuery] = useState(lastView.query)
+  const [q, setQ] = useState(lastView.query.trim())
+  const [year, setYear] = useState(lastView.year)
+  const [sort, setSort] = useState<Sort>(lastView.sort)
   const [admin, setAdmin] = useState(false)
   const [editing, setEditing] = useState<CatalogItem | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
@@ -53,6 +56,10 @@ export function CatalogPage(): JSX.Element {
     locating: sourceWatch.locating,
     onContinue: (t, source, mode, rebind) => sourceWatch.continueWatch(sourceById(source), t, mode, rebind),
   }
+
+  useEffect(() => {
+    lastView = { query, year, sort }
+  }, [query, year, sort])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQ(query.trim()), 300)
