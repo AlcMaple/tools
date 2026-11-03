@@ -7,6 +7,7 @@ import { VIDEO_FRAMES, precheck } from '../../../../web/shared/order-judge'
 import { PRIORITIES, WORK_KINDS, type BriefItem } from '../../../../web/shared/order-judge-brief'
 import { VERSION_LIMIT, type Project, type Version } from '../../../../web/shared/order-judge-api'
 import { parseBudget, type Expense } from '../../../../web/shared/order-judge-quote'
+import { MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance, type MonthRecord } from '../../../../web/shared/order-judge-maintenance'
 import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../../../web/shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
 import type { OrderJudgeView } from '../types/orderJudge'
@@ -93,11 +94,12 @@ function Item({ item, mark }: { item: BriefItem; mark?: string }): JSX.Element {
   )
 }
 
-function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved, calib }: {
+function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved, calib, all }: {
   project: Project
   base: string
   onSaved: (p: Project) => void
   calib: Calibration
+  all: Project[]
   ms?: number
   onAppend?: () => void
   onDelete?: () => void
@@ -178,6 +180,7 @@ function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved,
         </Section>
       )}
       <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} />
+      {project.versions.some(v => v.quote.status === '已成交') && <MaintenancePanel key={`m:${project.id}`} project={project} all={all} onSaved={onSaved} calib={calib} />}
       {(version.text || version.images.length > 0 || version.files.length > 0) && (
         <Section label={`第 ${version.n} 版放进来的材料`}>
           {version.text && <p className="mb-3 text-[13px] leading-relaxed text-on-surface-variant line-clamp-4 whitespace-pre-wrap">{version.text}</p>}
@@ -346,6 +349,109 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <Seg label="报价单版本" options={['自用版', '客户版'] as const} value={view} onPick={setView} />
+        <div className="relative flex items-center gap-2">
+          <button type="button" className={tool} onClick={() => void copy()}><span className="material-symbols-outlined text-[16px] leading-none">content_copy</span>复制</button>
+          <button type="button" className={tool} onClick={download}><span className="material-symbols-outlined text-[16px] leading-none">download</span>下载</button>
+          <button type="button" className="h-8 px-4 rounded-xl bg-primary text-xs font-bold text-on-primary disabled:opacity-50" disabled={!dirty || busy} onClick={() => void save()}>{busy ? '保存中…' : '保存'}</button>
+          {note && <span role="status" className={`absolute right-0 top-full mt-1 w-max max-w-[260px] text-xs ${note.ok ? 'text-primary' : 'text-error'}`}>{note.text}</span>}
+        </div>
+      </div>
+      <pre className="mt-6 whitespace-pre-wrap break-words rounded-xl bg-surface-container-high px-4 py-3 font-body text-[13px] leading-relaxed text-on-surface">{text}</pre>
+    </Section>
+  )
+}
+
+const thisMonth = (): string => new Date().toISOString().slice(0, 7)
+
+// 与网页版 MaintenancePanel 同一套计算和文字（web/shared/order-judge-maintenance.ts）；记过月份后月费锁定
+function MaintenancePanel({ project, all, onSaved, calib }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
+  const [draft, setDraft] = useState<Maintenance>(project.maintenance)
+  const [view, setView] = useState<'自用版' | '客户版'>('自用版')
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const set = (patch: Partial<Maintenance>): void => { setDraft(d => ({ ...d, ...patch })); setNote(null) }
+  const pending = normalizeMaintenance(draft)
+  const dirty = JSON.stringify(pending) !== JSON.stringify(project.maintenance)
+  const suggestion = suggestFee(all.some(p => p.id === project.id) ? all : [...all, project], project.id, calib.settings)
+  const text = view === '客户版' ? maintenanceClientText(project.title, pending) : maintenanceSelfText(project.title, pending, suggestion)
+  const locked = project.maintenance.months.length > 0 && project.maintenance.fee > 0
+  const expenses = draft.expenses.length < MAX_MAINT_EXPENSES ? [...draft.expenses, { name: '', amount: 0 }] : draft.expenses
+  const setExpense = (i: number, patch: Partial<Expense>): void => set({ expenses: expenses.map((e, j) => (j === i ? { ...e, ...patch } : e)).filter(e => e.name || e.amount) })
+  const setMonth = (i: number, patch: Partial<MonthRecord>): void => set({ months: draft.months.map((m, j) => (j === i ? { ...m, ...patch } : m)) })
+
+  const save = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      const saved = await window.orderJudgeApi.saveMaintenance(project.id, pending)
+      onSaved(saved)
+      setDraft(saved.maintenance)
+      setNote({ ok: true, text: '已保存' })
+    } catch (e) {
+      reportError('order-judge:maintenance', e)
+      setNote({ ok: false, text: ipcErrMsg(e, '没有保存上') })
+    } finally { setBusy(false) }
+  }
+  const copy = async (): Promise<void> => {
+    try { await navigator.clipboard.writeText(text); setNote({ ok: true, text: '已复制' }) } catch (e) { reportError('order-judge:copy', e); setNote({ ok: false, text: '复制失败，请手动选中文字复制' }) }
+  }
+  const download = (): void => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${project.title}-月维护${view === '客户版' ? '' : '-自用'}.txt`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  const row = 'flex flex-wrap items-center gap-3'
+  const label = 'w-24 shrink-0 font-label text-xs text-on-surface-variant'
+  const tool = 'h-8 px-3 rounded-xl bg-surface-container-high text-xs text-on-surface-variant hover:text-on-surface flex items-center gap-1 disabled:opacity-50'
+
+  return (
+    <Section label="月维护" icon="calendar_month">
+      <div className="grid gap-2.5">
+        <div className={row}><span className={label}>状态</span><Seg label="月维护状态" options={MAINTENANCE_STATES} value={draft.state} onPick={st => set({ state: st })} /></div>
+        {draft.state !== '不做' && (
+          <>
+            <label className={row}><span className={label}>月费</span>
+              <input className={qInput} aria-label="月费" inputMode="numeric" value={draft.fee || ''} disabled={locked} placeholder={suggestion.fee != null ? `建议 ${suggestion.fee}` : '自己定'} onChange={e => set({ fee: Number(e.target.value.replace(/[^\d]/g, '')) || 0 })} />
+              <span className="text-xs text-on-surface-variant">元{locked ? '，已经记过月份，不再改' : ''}</span>
+            </label>
+            <label className={row}><span className={label}>开始月份</span>
+              <input className={qInput} aria-label="开始月份" value={draft.start} placeholder={thisMonth()} maxLength={7} onChange={e => set({ start: e.target.value.replace(/[^\d-]/g, '') })} />
+            </label>
+            <div className="flex flex-wrap items-start gap-3"><span className={`${label} pt-2`}>每月支出</span>
+              <div className="grid gap-1.5">
+                {expenses.map((e, i) => (
+                  <div key={i} className="flex gap-1.5">
+                    <input className={`${qInput} w-52`} value={e.name} placeholder="服务器、域名、付费接口" maxLength={40} onChange={ev => setExpense(i, { name: ev.target.value })} />
+                    <input className={qInput} inputMode="numeric" value={e.amount || ''} placeholder="金额" onChange={ev => setExpense(i, { amount: Number(ev.target.value.replace(/[^\d]/g, '')) || 0 })} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-start gap-3"><span className={`${label} pt-2`}>每月记录</span>
+              <div className="grid gap-3">
+                {draft.months.map((m, i) => (
+                  <div key={i} className="grid gap-1.5 border-b border-dashed border-outline-variant/40 pb-3">
+                    <div className="flex gap-1.5">
+                      <input className={qInput} aria-label="月份" value={m.month} placeholder={thisMonth()} maxLength={7} onChange={e => setMonth(i, { month: e.target.value.replace(/[^\d-]/g, '') })} />
+                      <input className={qInput} aria-label="实际小时" inputMode="decimal" value={m.hours || ''} placeholder="实际小时" onChange={e => setMonth(i, { hours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+                      <button type="button" className={tool} onClick={() => set({ months: draft.months.filter((_, j) => j !== i) })}><span className="material-symbols-outlined text-[16px] leading-none">delete</span>删除</button>
+                    </div>
+                    <input className={`${qInput} w-52`} aria-label="交付了什么" value={m.delivered} placeholder="这个月交付的大功能" maxLength={200} onChange={e => setMonth(i, { delivered: e.target.value })} />
+                    <div><Seg label={`${m.month || '这个月'}觉得`} options={FEELINGS} value={m.feeling} onPick={f => setMonth(i, { feeling: f })} /></div>
+                  </div>
+                ))}
+                {draft.months.length < MAX_MONTHS && (
+                  <button type="button" className={`${tool} justify-self-start`} onClick={() => set({ months: [...draft.months, { month: thisMonth(), delivered: '', hours: 0, feeling: '待定' }] })}><span className="material-symbols-outlined text-[16px] leading-none">add</span>记一个月</button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <Seg label="月维护说明版本" options={['自用版', '客户版'] as const} value={view} onPick={setView} />
         <div className="relative flex items-center gap-2">
           <button type="button" className={tool} onClick={() => void copy()}><span className="material-symbols-outlined text-[16px] leading-none">content_copy</span>复制</button>
           <button type="button" className={tool} onClick={download}><span className="material-symbols-outlined text-[16px] leading-none">download</span>下载</button>
@@ -617,7 +723,7 @@ function OrderJudge(): JSX.Element {
 
   const renderResult = (): React.ReactNode => {
     if (selectedProject) {
-      return <ProjectSheet project={selectedProject} base={base} onSaved={replaceProject} calib={calib} onAppend={() => append(selectedProject.id)} onDelete={() => setConfirmDelete(selectedProject.id)} onClose={() => setSelected(null)} />
+      return <ProjectSheet project={selectedProject} base={base} onSaved={replaceProject} calib={calib} all={view?.projects ?? []} onAppend={() => append(selectedProject.id)} onDelete={() => setConfirmDelete(selectedProject.id)} onClose={() => setSelected(null)} />
     }
     if (running) {
       const steps: { title: string; detail: string; state: 'done' | 'run' | 'wait' }[] = [
@@ -662,7 +768,7 @@ function OrderJudge(): JSX.Element {
       )
     }
     const done = projects.find(p => p.id === outcome.projectId)
-    return done ? <ProjectSheet project={done} base={base} ms={outcome.ms} onSaved={replaceProject} calib={calib} onAppend={() => append(done.id)} /> : null
+    return done ? <ProjectSheet project={done} base={base} ms={outcome.ms} onSaved={replaceProject} calib={calib} all={view?.projects ?? []} onAppend={() => append(done.id)} /> : null
   }
 
   const deleting = projects.find(p => p.id === confirmDelete) ?? null

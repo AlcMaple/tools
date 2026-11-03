@@ -10,6 +10,7 @@ import { WebRequestError } from '../shared/net-lines'
 import { logError, logInfo } from '../shared/logger'
 import { MAX_IMAGES } from '../../../web/shared/order-judge'
 import { normalizeQuote } from '../../../web/shared/order-judge-sheet'
+import { normalizeMaintenance } from '../../../web/shared/order-judge-maintenance'
 import { ATTACH_MAX_FILES, type JudgeEvent, type JudgeState, type Project } from '../../../web/shared/order-judge-api'
 
 const ID_RE = /^[0-9a-f-]{36}$/
@@ -58,6 +59,11 @@ export async function deleteProject(id: string): Promise<void> {
 export async function saveQuote(versionId: string, quote: unknown): Promise<Project> {
   if (!ID_RE.test(versionId)) throw new Error('版本标识无效')
   return (await remote<{ project: Project }>(`/versions/${versionId}/quote`, 'PUT', normalizeQuote(quote))).project
+}
+
+export async function saveMaintenance(projectId: string, maintenance: unknown): Promise<Project> {
+  if (!ID_RE.test(projectId)) throw new Error('项目标识无效')
+  return (await remote<{ project: Project }>(`/projects/${projectId}/maintenance`, 'PUT', normalizeMaintenance(maintenance))).project
 }
 
 export async function versionImage(uid: string, id: string, file: string): Promise<Buffer> {

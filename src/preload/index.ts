@@ -417,6 +417,7 @@ contextBridge.exposeInMainWorld('orderJudgeApi', {
   load: () => ipcRenderer.invoke('order-judge:load'),
   deleteProject: (id: string) => ipcRenderer.invoke('order-judge:delete-project', id),
   saveQuote: (versionId: string, quote: unknown) => ipcRenderer.invoke('order-judge:save-quote', versionId, quote),
+  saveMaintenance: (projectId: string, maintenance: unknown) => ipcRenderer.invoke('order-judge:save-maintenance', projectId, maintenance),
   organize: (input: unknown) => ipcRenderer.invoke('order-judge:organize', input),
   onChanged: (cb: () => void) => {
     const handler = (): void => cb()

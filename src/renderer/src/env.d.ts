@@ -13,6 +13,7 @@ import type { BiliVideoInfo, BiliDash, BiliSearchResult } from './types/bili'
 import type { OrderJudgeView, OrderJudgeOrganizeInput, OrderJudgeOrganizeResult, OrderJudgeStage, OrderJudgeConvertResult } from './types/orderJudge'
 import type { Project } from '../../../web/shared/order-judge-api'
 import type { QuoteState } from '../../../web/shared/order-judge-sheet'
+import type { Maintenance } from '../../../web/shared/order-judge-maintenance'
 
 export interface LibraryPath {
   path: string;
@@ -176,6 +177,7 @@ declare global {
       load: () => Promise<OrderJudgeView>
       deleteProject: (id: string) => Promise<void>
       saveQuote: (versionId: string, quote: QuoteState) => Promise<Project>
+      saveMaintenance: (projectId: string, maintenance: Maintenance) => Promise<Project>
       organize: (input: OrderJudgeOrganizeInput) => Promise<OrderJudgeOrganizeResult>
       onChanged: (cb: () => void) => () => void
       /** 渲染进程读不了的视频 / 图片 / 文档交给本机工具兜底 */
