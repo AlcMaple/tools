@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import type { Brief, BriefItem } from '../shared/order-judge-brief'
 import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
+import { EMPTY_MAINTENANCE, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance } from '../shared/order-judge-maintenance'
 import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type QuoteState } from '../shared/order-judge-sheet'
 
 let checks = 0
@@ -179,5 +180,48 @@ const hit = calibrate([proj({ status: '已成交', actual: { 新做: 2, 接手�
 assert.equal(hit.settings.rates['新做'], 235)
 assert.deepEqual(normalizeQuote(JSON.parse(JSON.stringify({ ...EMPTY_QUOTE, bonus: terms }))).bonus, terms)
 pass('校准按实际收到的钱：奖金待定不算，没达标只算先付，达标加上奖金')
+
+// ── 月维护 ──
+const maint = (m: Partial<Maintenance>): Maintenance => ({ ...EMPTY_MAINTENANCE, state: '在做', ...m })
+const deal = v({ status: '已成交' })
+// 成交后两张已成交变更单，实际 6、10 小时 → 中位数 8 → 8 × 31 + 域名 20 = 268
+const changeA = { ...v({ status: '已成交', actual: { 新做: 6, 接手改: 0 } }, brief([item('r1', '必须', 10), item('r2', '必须', 5)])), n: 2 }
+const changeB = { ...v({ status: '已成交', actual: { 新做: 4, 接手改: 6 } }, brief([item('r1', '必须', 10), item('r2', '必须', 5), item('r3', '必须', 3)])), n: 3 }
+const mp = (id: string, versions: ReturnType<typeof v>[], m: Partial<Maintenance> = {}) => ({ id, title: id, versions, maintenance: maint(m) })
+const domain = { expenses: [{ name: '域名', amount: 20 }] }
+const s1 = suggestFee([mp('a', [deal, changeA, changeB], domain)], 'a')
+assert.deepEqual([s1.hours, s1.fee], [8, 268])
+assert.match(s1.source, /2 张变更单的实际小时中位数/)
+pass('第一个月维护项目：建议月费按这个客户变更单的实际小时')
+
+// 只有一份还没成交的变更：用 AI 预估 r2 = 5 小时
+const draftChange = { ...v({}, brief([item('r1', '必须', 10), item('r2', '必须', 5)])), n: 2 }
+assert.deepEqual(suggestFee([mp('a', [deal, draftChange])], 'a').hours, 5)
+assert.equal(suggestFee([mp('a', [deal])], 'a').fee, null)
+pass('没有变更单实际小时时用 AI 对大功能的预估，什么都没有就让你自己定')
+
+// 别的维护项目记过 20、30、40 小时 → 下一个项目建议 30 × 31 = 930；自己项目的记录不算
+const months = [20, 30, 40].map((hours, i) => ({ month: `2026-0${i + 1}`, delivered: '', hours, feeling: '待定' as const }))
+const s3 = suggestFee([mp('old', [deal], { fee: 900, months }), mp('new', [deal, changeA], { months: [{ month: '2026-05', delivered: '', hours: 100, feeling: '待定' }] })], 'new')
+assert.deepEqual([s3.hours, s3.fee], [30, 930])
+assert.match(s3.source, /过去 3 个月维护记录/)
+pass('有过月维护记录后，下一个项目按所有其他项目每月实际小时的中位数')
+
+// 月费 900，某月 40 小时觉得亏 → 每小时 22.5 低于 31 不动；某月 10 小时觉得亏 → 90 → 新做时间值至少 90
+const mc = (hours: number) => calibrate([{ title: 'm', versions: [], maintenance: maint({ fee: 900, months: [{ month: '2026-01', delivered: '', hours, feeling: '亏' }] }) }])
+assert.equal(mc(40).settings.rates['新做'], 31)
+assert.equal(mc(10).settings.rates['新做'], 90)
+pass('月维护的亏 / 值也校准新做时间值：（月费 − 支出）÷ 当月小时')
+
+const raw = normalizeMaintenance({ state: '在做', fee: '1200', start: '2026-13', months: [{ month: '2026-11', hours: 12.3, feeling: '值', delivered: '会员系统' }, { month: 'x' }] })
+assert.deepEqual([raw.fee, raw.start, raw.months.length, raw.months[0].hours], [1200, '', 1, 12.5])
+const ct = maintenanceClientText('商城', maint({ fee: 1200, start: '2026-11', ...domain }))
+assert.match(ct, /每月 ¥1,200，从 2026 年 11 月 开始/)
+assert.match(ct, /做不完的排到下个月，不另收钱/)
+assert.match(ct, /付款，当天交付这个月的大功能/)
+assert.match(ct, /随时可以停，停了以后再有需求按变更单另算/)
+assert.doesNotMatch(ct, /小时/)
+assert.match(maintenanceSelfText('商城', raw, s1), /2026 年 11 月  12\.5 小时，每小时 ¥96  值  交付：会员系统/)
+pass('月维护的客户版不出现小时，自用版逐月列出每小时实际拿到多少')
 
 console.log(`\n${checks} 项全部通过`)

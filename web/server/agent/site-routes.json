@@ -772,6 +772,11 @@
   {
     "file": "server/order-judge.ts",
     "method": "put",
+    "path": "/projects/:id/maintenance"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "put",
     "path": "/versions/:id/quote"
   },
   {

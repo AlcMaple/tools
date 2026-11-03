@@ -9,6 +9,7 @@ import { dataDir } from './data-dir'
 import type { Project, Version } from '../shared/order-judge-api'
 import type { Brief, BriefChange } from '../shared/order-judge-brief'
 import { normalizeQuote } from '../shared/order-judge-sheet'
+import { normalizeMaintenance } from '../shared/order-judge-maintenance'
 
 export class JudgeDataError extends Error {
   constructor(readonly code: string, message: string, readonly status: 400 | 404 | 409 | 413 = 409) { super(message) }
@@ -20,7 +21,7 @@ export const versionDir = (uid: number, id: string): string => join(judgeRoot, S
 // 2026-11 重做前的表：能力档案、项目日志、能不能接的历史、工时估价、日薪。用户决定旧数据全部删除
 const RETIRED = ['order_judge_docs', 'order_judge_history', 'order_judge_runs', 'order_judge_imports', 'order_judge_settings', 'order_judge_paths']
 
-interface ProjectRow { id: string; title: string; created_at: number; updated_at: number }
+interface ProjectRow { id: string; title: string; created_at: number; updated_at: number; maintenance: string }
 export interface VersionRow { id: string; project_id: string; n: number; at: number; text: string; images: string; files: string; brief: string; changes: string; model: string; quote: string }
 
 export const rowToVersion = (r: VersionRow): Version => ({
@@ -56,6 +57,8 @@ export class JudgeData {
     `)
     const columns = (database.prepare('PRAGMA table_info(order_judge_versions)').all() as { name: string }[]).map(c => c.name)
     if (!columns.includes('quote')) database.exec("ALTER TABLE order_judge_versions ADD COLUMN quote TEXT NOT NULL DEFAULT '{}'")
+    const projectColumns = (database.prepare('PRAGMA table_info(order_judge_projects)').all() as { name: string }[]).map(c => c.name)
+    if (!projectColumns.includes('maintenance')) database.exec("ALTER TABLE order_judge_projects ADD COLUMN maintenance TEXT NOT NULL DEFAULT '{}'")
   }
 
   seq(uid: number): number {
@@ -67,10 +70,10 @@ export class JudgeData {
   }
 
   project(uid: number, id: string): Project | null {
-    const row = this.database.prepare('SELECT id,title,created_at,updated_at FROM order_judge_projects WHERE id=? AND user_id=?').get(id, uid) as ProjectRow | undefined
+    const row = this.database.prepare('SELECT id,title,created_at,updated_at,maintenance FROM order_judge_projects WHERE id=? AND user_id=?').get(id, uid) as ProjectRow | undefined
     if (!row) return null
     const versions = (this.database.prepare('SELECT * FROM order_judge_versions WHERE project_id=? ORDER BY n').all(id) as VersionRow[]).map(rowToVersion)
-    return { id: row.id, title: row.title, createdAt: row.created_at, updatedAt: row.updated_at, versions }
+    return { id: row.id, title: row.title, createdAt: row.created_at, updatedAt: row.updated_at, versions, maintenance: normalizeMaintenance(JSON.parse(row.maintenance)) }
   }
 
   projects(uid: number, limit: number): Project[] {

@@ -21,6 +21,7 @@ import { aiSource, judgeConnection, publicAddress, type JudgeConnection } from '
 import { MAX_IMAGES, SAME_SITE_GAP_MS, extractUrls, groupByHost, pageDigest } from '../shared/order-judge'
 import { briefSystemPrompt, briefUserText, diffBrief, normalizeBrief, type Brief } from '../shared/order-judge-brief'
 import { EMPTY_QUOTE, normalizeQuote, type QuoteState } from '../shared/order-judge-sheet'
+import { normalizeMaintenance } from '../shared/order-judge-maintenance'
 import {
   ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL, JUDGE_MAX_BODY, JUDGES_PER_MINUTE, MAX_TEXT_CHARS, PROJECT_LIMIT, VERSION_LIMIT,
   type JudgeEvent, type JudgeSyncEvent, type Project, type VersionFile,
@@ -56,7 +57,7 @@ const MESSAGES: Record<string, string> = {
   BAD_INPUT: '材料格式不对，刷新页面后重新放入',
   MESSAGE_TOO_LARGE: '材料太大了：截图少放几张，或把视频换成几张关键截图',
   NOT_FOUND: '这个项目不存在，可能已在别处删除',
-  BAD_QUOTE: '报价设置格式不对，刷新页面后再保存',
+  BAD_QUOTE: '报价或月维护的设置格式不对，刷新页面后再保存',
   VERSION_FULL: `这一单已经有 ${VERSION_LIMIT} 个版本，新开一个项目再追加`,
   ABORTED: '整理超时或被取消了，请手动重试',
 }
@@ -515,6 +516,18 @@ api.put('/versions/:id/quote', bodyLimit({ maxSize: 8192 }), async (c) => {
   if (!project) return c.json(errorBody('NOT_FOUND'), 404)
   judgeEvents.changed(uid, judgeData.seq(uid))
   return c.json({ project })
+})
+
+api.put('/projects/:id/maintenance', bodyLimit({ maxSize: 32768 }), async (c) => {
+  const uid = c.get('uid'), id = c.req.param('id')
+  if (!ID_RE.test(id)) return c.json(errorBody('NOT_FOUND'), 404)
+  const body: unknown = await c.req.json().catch(() => null)
+  if (!body || typeof body !== 'object') return c.json(errorBody('BAD_QUOTE'), 400)
+  const maintenance = normalizeMaintenance(body)
+  const r = db.prepare('UPDATE order_judge_projects SET maintenance=?, updated_at=? WHERE id=? AND user_id=?').run(JSON.stringify(maintenance), Date.now(), id, uid)
+  if (!r.changes) return c.json(errorBody('NOT_FOUND'), 404)
+  judgeData.bump(uid); judgeEvents.changed(uid, judgeData.seq(uid))
+  return c.json({ project: judgeData.project(uid, id) })
 })
 
 const materialLimit = bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(errorBody('MESSAGE_TOO_LARGE'), 413) })

@@ -2,6 +2,7 @@
 // 文字用全角括号和圆点而不是 Markdown，客户多半在微信里看，井号和星号会原样露出来。网页和桌面共用
 
 import { WORK_KINDS, type Brief, type ClientType, type WorkKind } from './order-judge-brief'
+import type { Maintenance } from './order-judge-maintenance'
 import {
   DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, tiers, zone,
   type ChangeOrder, type Discount, type Expense, type Priced, type QuoteLine, type QuoteSettings, type Tier, type TierName, type Zone,
@@ -316,7 +317,7 @@ export interface Calibration {
   budgets: Partial<Record<ClientType, { median: number; count: number }>>
 }
 
-const median = (xs: number[]): number => {
+export const median = (xs: number[]): number => {
   const a = [...xs].sort((x, y) => x - y), m = a.length >> 1
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2
 }
@@ -332,10 +333,20 @@ function shares(lines: QuoteLine[]): Record<WorkKind, number> {
 const hoursBy = (lines: QuoteLine[], k: WorkKind, f: number, kinds: QuoteLine['kind'][]): number =>
   lines.filter(l => l.work === k && kinds.includes(l.kind)).reduce((a, l) => a + (l.kind === 'item' ? l.hours / f : l.hours), 0)
 
-export function calibrate(projects: { title: string; versions: SheetVersion[] }[], base: QuoteSettings = DEFAULT_QUOTE_SETTINGS): Calibration {
+export function calibrate(projects: { title: string; versions: SheetVersion[]; maintenance?: Maintenance }[], base: QuoteSettings = DEFAULT_QUOTE_SETTINGS): Calibration {
   const lows = { 新做: [] as number[], 接手改: [] as number[] }, highs = { 新做: [] as number[], 接手改: [] as number[] }, exact = { 新做: [] as number[], 接手改: [] as number[] }
   const ratios = { 新做: [] as number[], 接手改: [] as number[] }
   const budgets: Partial<Record<ClientType, number[]>> = {}
+  // 月维护：月费扣掉支出 ÷ 当月实际小时，维护的是自己的代码，算进新做
+  for (const p of projects) {
+    const m = p.maintenance
+    if (!m || m.fee <= 0) continue
+    const net = m.fee - m.expenses.reduce((a, e) => a + e.amount, 0)
+    for (const r of m.months) {
+      if (r.hours <= 0 || r.feeling === '待定') continue
+      ;(r.feeling === '亏' ? lows : r.feeling === '值' ? highs : exact)['新做'].push(net / r.hours)
+    }
+  }
   for (const p of projects) for (const v of p.versions) {
     const q = v.quote
     if (q.status === '已报价' && q.outcome === '嫌贵' && q.clientBudget) (budgets[v.brief.clientType] ??= []).push(q.clientBudget)

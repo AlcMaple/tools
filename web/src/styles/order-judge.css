@@ -245,3 +245,7 @@
 .oj-qnote.bad { color: var(--sakura); }
 .oj-qtext { margin: 24px 0 0; padding: 12px 14px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; line-height: 1.75; color: var(--ink); background: var(--paper-2); border: 1px solid var(--line); border-radius: 3px; }
 @media (max-width: 600px) { .oj-qlabel { flex-basis: 100%; } .oj-qrow.top .oj-qlabel { padding-top: 0; } }
+.oj-qmonth { display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+.oj-qmonth .seg { justify-self: start; }
+.oj-qmonth .seg > button { padding: 5px 11px; font-size: 12.5px; }
+.oj-qexp > .btn { justify-self: start; }

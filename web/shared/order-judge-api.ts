@@ -4,6 +4,7 @@
 
 import type { Brief, BriefChange } from './order-judge-brief'
 import type { QuoteState } from './order-judge-sheet'
+import type { Maintenance } from './order-judge-maintenance'
 
 export interface VersionFile { file: string; name: string; size: number }
 
@@ -26,6 +27,7 @@ export interface Project {
   createdAt: number
   updatedAt: number
   versions: Version[]
+  maintenance: Maintenance
 }
 
 export interface JudgeState { projects: Project[]; seq: number }

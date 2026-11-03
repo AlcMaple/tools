@@ -5,6 +5,7 @@ import { judgeData, versionDir, JudgeDataError } from './order-judge-data'
 import { judgeEvents } from './order-judge-events'
 import { normalizeBrief, type Brief } from '../shared/order-judge-brief'
 import { normalizeQuote } from '../shared/order-judge-sheet'
+import { normalizeMaintenance } from '../shared/order-judge-maintenance'
 import { ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, PROJECT_LIMIT, VERSION_LIMIT } from '../shared/order-judge-api'
 
 // 项目行 + 版本行 + 版本目录里的截图和附件，三样一起备、一起恢复。
@@ -57,11 +58,13 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
         const row: Row = {}
         for (const column of columns) {
           // 报价设置是 2026-11 第四阶段加的列，之前的备份没有，按草稿恢复
-          const value = column === 'quote' && rawRow[column] === undefined ? '{}' : rawRow[column]
+          // 月维护是 2026-11 加的列，之前的备份没有，按「不做」恢复
+          const value = (column === 'quote' || column === 'maintenance') && rawRow[column] === undefined ? '{}' : rawRow[column]
           if (value !== null && typeof value !== 'string' && typeof value !== 'number') throw new Error('接单评估备份字段无效')
           row[column] = column === 'user_id' ? uid : value
         }
         if (typeof row.id !== 'string' || !ID_RE.test(row.id)) throw new Error('接单评估备份标识无效')
+        if (table === 'order_judge_projects') row.maintenance = JSON.stringify(normalizeMaintenance(JSON.parse(String(row.maintenance))))
         if (table === 'order_judge_versions') {
           row.brief = JSON.stringify(normalizeBrief(JSON.parse(String(row.brief)), JSON.parse(String(row.brief)) as Brief))
           row.quote = JSON.stringify(normalizeQuote(JSON.parse(String(row.quote))))

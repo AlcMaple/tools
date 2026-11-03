@@ -11,6 +11,7 @@ import { useIsWide } from '../useMediaQuery'
 import { precheck } from '../../shared/order-judge'
 import { PRIORITIES, WORK_KINDS, type BriefItem } from '../../shared/order-judge-brief'
 import { parseBudget, type Expense } from '../../shared/order-judge-quote'
+import { MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance, type MonthRecord } from '../../shared/order-judge-maintenance'
 import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
@@ -18,7 +19,7 @@ import { readByokKey } from '../reviews/byok'
 import type { JudgeState, Project, Version } from '../../shared/order-judge-api'
 import { MAX_TEXT_CHARS, VERSION_LIMIT } from '../../shared/order-judge-api'
 import {
-  JudgeError, attachUrl, connectProvider, deleteProject, saveQuote, followJudgeChanges, imageUrl, loadState, logClient, organize, providerStatus,
+  JudgeError, attachUrl, connectProvider, deleteProject, saveMaintenance, saveQuote, followJudgeChanges, imageUrl, loadState, logClient, organize, providerStatus,
   type ProviderStatus,
 } from './api'
 
@@ -94,6 +95,7 @@ function JudgeWorkspace(): JSX.Element {
   const [tab, setTab] = useState<Tab>('new')
   const [state, setState] = useState<JudgeState | null>(null)
   const calib = calibrate(state?.projects ?? [])
+  const all = state?.projects ?? []
   const [loadError, setLoadError] = useState('')
   const [syncError, setSyncError] = useState('')
   const [provider, setProvider] = useState<ProviderStatus | null>(null)
@@ -364,7 +366,7 @@ function JudgeWorkspace(): JSX.Element {
   if (tab === 'projects') {
     const list = state?.projects ?? []
     const current = list.find((p) => p.id === selected) ?? list[0] ?? null
-    const sheet = current && <ProjectSheet key={`${current.id}:${latest(current).n}`} project={current} onAppend={() => appendTo(current)} onSaved={replaceProject} calib={calib} />
+    const sheet = current && <ProjectSheet key={`${current.id}:${latest(current).n}`} project={current} onAppend={() => appendTo(current)} onSaved={replaceProject} calib={calib} all={all} />
     return (
       <>
         {head}
@@ -535,7 +537,7 @@ function JudgeWorkspace(): JSX.Element {
               </div>
             </section>
           ) : outcome?.kind === 'done' ? (
-            <ProjectSheet key={`${outcome.project.id}:${latest(outcome.project).n}`} project={outcome.project} ms={outcome.ms} onSaved={replaceProject} calib={calib} />
+            <ProjectSheet key={`${outcome.project.id}:${latest(outcome.project).n}`} project={outcome.project} ms={outcome.ms} onSaved={replaceProject} calib={calib} all={all} />
           ) : outcome?.kind === 'chat-record' ? (
             <section className="panel oj-sheet">
               <span className="tape tl gold" />
@@ -562,7 +564,7 @@ function JudgeWorkspace(): JSX.Element {
               )}
             </section>
           ) : target ? (
-            <ProjectSheet key={`${target.id}:${latest(target).n}`} project={target} onSaved={replaceProject} calib={calib} />
+            <ProjectSheet key={`${target.id}:${latest(target).n}`} project={target} onSaved={replaceProject} calib={calib} all={all} />
           ) : (
             <section className="panel oj-sheet blank oj-blank">
               <div className="empty" style={{ padding: '10px 0' }}>
@@ -661,7 +663,7 @@ function Step({ state, title, sub }: { state: 'done' | 'run' | 'wait'; title: st
 const hoursText = (h: number): string => `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`
 
 // 一个项目：版本切换 + 这一版的需求清单 + 这一版放进来的材料
-function ProjectSheet({ project, ms, onAppend, onSaved, calib }: { project: Project; ms?: number; onAppend?: () => void; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
+function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project: Project; ms?: number; onAppend?: () => void; onSaved: (p: Project) => void; calib: Calibration; all: Project[] }): JSX.Element {
   const [n, setN] = useState(latest(project).n)
   const version = project.versions.find(v => v.n === n) ?? latest(project)
   const b = version.brief
@@ -711,6 +713,7 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib }: { project: Proj
         </div>
       )}
       <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} />
+      {project.versions.some(v => v.quote.status === '已成交') && <MaintenancePanel key={`m:${project.id}`} project={project} all={all} onSaved={onSaved} calib={calib} />}
       {(version.text || version.images.length > 0 || version.files.length > 0) && (
         <details className="oj-sec oj-src">
           <summary><Ic name="clip" cls="ic ic-sm" />第 {version.n} 版放进来的材料</summary>
@@ -741,6 +744,122 @@ const BONUS_INPUTS: [keyof BonusTerms, string, string][] = [
   ['verify', '怎么算达标', '用哪里的数据、怎么算'],
   ['period', '考核期', '如上线后 3 个月'],
 ]
+
+const thisMonth = (): string => new Date().toISOString().slice(0, 7)
+
+// 月维护：项目级，成交过才出现。月费定了就不改：一旦记过月份，月费输入框锁住
+function MaintenancePanel({ project, all, onSaved, calib }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
+  const [draft, setDraft] = useState<Maintenance>(project.maintenance)
+  const [view, setView] = useState<'client' | 'self'>('self')
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const set = (patch: Partial<Maintenance>): void => { setDraft(d => ({ ...d, ...patch })); setNote(null) }
+  const pending = normalizeMaintenance(draft)
+  const dirty = JSON.stringify(pending) !== JSON.stringify(project.maintenance)
+  const suggestion = suggestFee(all.some(p => p.id === project.id) ? all : [...all, project], project.id, calib.settings)
+  const text = view === 'client' ? maintenanceClientText(project.title, pending) : maintenanceSelfText(project.title, pending, suggestion)
+  const locked = project.maintenance.months.length > 0 && project.maintenance.fee > 0
+  const expenses = draft.expenses.length < MAX_MAINT_EXPENSES ? [...draft.expenses, { name: '', amount: 0 }] : draft.expenses
+  const setExpense = (i: number, patch: Partial<Expense>): void => set({ expenses: expenses.map((e, j) => (j === i ? { ...e, ...patch } : e)).filter(e => e.name || e.amount) })
+  const setMonth = (i: number, patch: Partial<MonthRecord>): void => set({ months: draft.months.map((m, j) => (j === i ? { ...m, ...patch } : m)) })
+
+  const save = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      const saved = await saveMaintenance(project.id, pending)
+      onSaved(saved)
+      setDraft(saved.maintenance)
+      setNote({ ok: true, text: '已保存' })
+    } catch (e) {
+      logClient('order-judge:maintenance', e)
+      setNote({ ok: false, text: errorOf(e).message })
+    } finally { setBusy(false) }
+  }
+  const copy = async (): Promise<void> => {
+    try { await navigator.clipboard.writeText(text); setNote({ ok: true, text: '已复制' }) } catch (e) { logClient('order-judge:copy', e); setNote({ ok: false, text: '复制失败，请手动选中文字复制' }) }
+  }
+  const download = (): void => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${project.title}-月维护${view === 'client' ? '' : '-自用'}.txt`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  return (
+    <div className="oj-sec oj-maint">
+      <h3><Ic name="calendar" />月维护</h3>
+      <div className="oj-qform">
+        <div className="oj-qrow">
+          <span className="oj-qlabel">状态</span>
+          <div className="seg" role="group" aria-label="月维护状态">
+            {MAINTENANCE_STATES.map(st => <button key={st} type="button" className={draft.state === st ? 'on' : ''} onClick={() => set({ state: st })}>{st}</button>)}
+          </div>
+        </div>
+        {draft.state !== '不做' && (
+          <>
+            <label className="oj-qrow">
+              <span className="oj-qlabel">月费</span>
+              <input className="oj-qin" aria-label="月费" inputMode="numeric" value={draft.fee || ''} disabled={locked} placeholder={suggestion.fee != null ? `建议 ${suggestion.fee}` : '自己定'}
+                onChange={e => set({ fee: Number(e.target.value.replace(/[^\d]/g, '')) || 0 })} />
+              <span className="faint small">元{locked ? '，已经记过月份，不再改' : ''}</span>
+            </label>
+            <label className="oj-qrow">
+              <span className="oj-qlabel">开始月份</span>
+              <input className="oj-qin" aria-label="开始月份" value={draft.start} placeholder={thisMonth()} maxLength={7} onChange={e => set({ start: e.target.value.replace(/[^\d-]/g, '') })} />
+            </label>
+            <div className="oj-qrow top">
+              <span className="oj-qlabel">每月支出</span>
+              <div className="oj-qexp">
+                {expenses.map((e, i) => (
+                  <div key={i} className="oj-qexp-row">
+                    <input className="oj-qin wide" value={e.name} placeholder="服务器、域名、付费接口" maxLength={40} onChange={ev => setExpense(i, { name: ev.target.value })} />
+                    <input className="oj-qin" inputMode="numeric" value={e.amount || ''} placeholder="金额" onChange={ev => setExpense(i, { amount: Number(ev.target.value.replace(/[^\d]/g, '')) || 0 })} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="oj-qrow top">
+              <span className="oj-qlabel">每月记录</span>
+              <div className="oj-qexp">
+                {draft.months.map((m, i) => (
+                  <div key={i} className="oj-qmonth">
+                    <div className="oj-qexp-row">
+                      <input className="oj-qin" aria-label="月份" value={m.month} placeholder={thisMonth()} maxLength={7} onChange={e => setMonth(i, { month: e.target.value.replace(/[^\d-]/g, '') })} />
+                      <input className="oj-qin" aria-label="实际小时" inputMode="decimal" value={m.hours || ''} placeholder="实际小时" onChange={e => setMonth(i, { hours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ months: draft.months.filter((_, j) => j !== i) })}><Ic name="trash" cls="ic ic-sm" />删除</button>
+                    </div>
+                    <input className="oj-qin wide" aria-label="交付了什么" value={m.delivered} placeholder="这个月交付的大功能" maxLength={200} onChange={e => setMonth(i, { delivered: e.target.value })} />
+                    <div className="seg" role="group" aria-label={`${m.month || '这个月'}觉得`}>
+                      {FEELINGS.map(f => <button key={f} type="button" className={m.feeling === f ? 'on' : ''} onClick={() => setMonth(i, { feeling: f })}>{f}</button>)}
+                    </div>
+                  </div>
+                ))}
+                {draft.months.length < MAX_MONTHS && (
+                  <button type="button" className="btn btn-sm" onClick={() => set({ months: [...draft.months, { month: thisMonth(), delivered: '', hours: 0, feeling: '待定' }] })}><Ic name="plus" cls="ic ic-sm" />记一个月</button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      <div className="oj-qbar">
+        <div className="seg" role="group" aria-label="月维护说明版本">
+          <button type="button" className={view === 'self' ? 'on' : ''} onClick={() => setView('self')}>自用版</button>
+          <button type="button" className={view === 'client' ? 'on' : ''} onClick={() => setView('client')}>客户版</button>
+        </div>
+        <div className="oj-qbtns">
+          <button type="button" className="btn btn-sm" onClick={() => void copy()}><Ic name="paste" cls="ic ic-sm" />复制</button>
+          <button type="button" className="btn btn-sm" onClick={download}><Ic name="doc" cls="ic ic-sm" />下载</button>
+          <button type="button" className="btn btn-sm btn-primary" disabled={!dirty || busy} onClick={() => void save()}>{busy ? '保存中…' : '保存'}</button>
+          {note && <span className={`oj-qnote ${note.ok ? '' : 'bad'}`} role="status">{note.text}</span>}
+        </div>
+      </div>
+      <pre className="oj-qtext">{text}</pre>
+    </div>
+  )
+}
 
 const pct = (r: number): string => (r ? `${Math.round(r * 100)}%` : '不让')
 
