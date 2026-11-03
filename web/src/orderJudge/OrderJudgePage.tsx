@@ -1,6 +1,6 @@
-// 网页版接单评估。设计稿：docs/design-mockups/web/接单评估.html
-// 材料在浏览器里预处理（web/shared/order-judge-prepare.ts），服务端只收文字和 JPEG；
-// AI 跟随设置里「用谁的」：用服务器的由服务端自己准备连接；用自己的，评估前拿设置里存的 Key 接上助手同一条自配连接。
+// 网页版接单评估：材料 → 需求清单。一单一个项目，客户每追加 / 调整一次就整理出一个新版本。
+// 方案见 docs/ideas/021-接单评估重新定位.md。材料在浏览器里预处理（web/shared/order-judge-prepare.ts），服务端只收文字、JPEG 和附件；
+// AI 跟随设置里「用谁的」：用服务器的由服务端自己准备连接；用自己的，整理前拿设置里存的 Key 接上助手同一条自配连接。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -8,18 +8,15 @@ import { useAuth } from '../auth'
 import { Ic } from '../SketchIcon'
 import { Select } from '../Select'
 import { useIsWide } from '../useMediaQuery'
-import { DOC_TEMPLATES, downloadDocTemplate } from '../../shared/order-judge-templates'
-import { precheck, type JudgeReport } from '../../shared/order-judge'
-import { decodeText, imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
+import { precheck } from '../../shared/order-judge'
+import { PRIORITIES, type BriefItem } from '../../shared/order-judge-brief'
+import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
-import { canLink, forgetLinked, linkedNames, pickLinked, readLinked } from './linkedFiles'
 import { readByokKey } from '../reviews/byok'
-import type { DocKind, DocMeta, HistoryEntry, JudgeImage, JudgePath, JudgePaths, JudgeState } from '../../shared/order-judge-api'
-import { MAX_TEXT_CHARS } from '../../shared/order-judge-api'
-import type { EstimateEvent, EstimateResult } from '../../shared/order-judge-estimate'
-import { DAY_RATE, MAX_DAY_RATE, MIN_DAY_RATE } from '../../shared/order-judge-quote'
+import type { JudgeState, Project, Version } from '../../shared/order-judge-api'
+import { MAX_TEXT_CHARS, VERSION_LIMIT } from '../../shared/order-judge-api'
 import {
-  JudgeError, connectProvider, deleteEntry, attachUrl, estimate, imageUrl, judge, loadState, logClient, providerStatus, saveDoc, saveDayRate, savePaths, followJudgeChanges,
+  JudgeError, attachUrl, connectProvider, deleteProject, followJudgeChanges, imageUrl, loadState, logClient, organize, providerStatus,
   type ProviderStatus,
 } from './api'
 
@@ -34,36 +31,14 @@ interface Material {
   bad: boolean
 }
 
+type Tab = 'new' | 'projects'
 type Stage = 'prep' | 'links' | 'ai'
 type Outcome =
-  | { kind: 'report'; entry: HistoryEntry; ms?: number; links?: number }
+  | { kind: 'done'; project: Project; ms: number }
   | { kind: 'chat-record' }
   | { kind: 'error'; code: string; message: string; at: number }
 
-type Est =
-  | { kind: 'run'; tasks: number; groups: number }
-  | { kind: 'done'; result: EstimateResult }
-  | { kind: 'error'; code: string; message: string }
-
-const VERDICT: Record<JudgeReport['verdict'], { stamp: string; cls: string; tape: string }> = {
-  能: { stamp: '能接', cls: 'st-teal', tape: 'teal' },
-  不能: { stamp: '不接', cls: 'st-sakura', tape: 'sakura' },
-  信息不足: { stamp: '待补', cls: 'st-gold', tape: 'gold' },
-}
-
-const SETTINGS_CODES = new Set(['BYOK_REQUIRED', 'PROVIDER_CONNECTION_REQUIRED', 'PROVIDER_HTTP_401', 'NO_PROFILE', 'DOC_CONFLICT'])
-
-const mergeDocs = (s: JudgeState, docs: Record<DocKind, DocMeta | null>): JudgeState['docs'] => ({
-  profile: (s.docs.profile?.revision ?? 0) > (docs.profile?.revision ?? 0) ? s.docs.profile : docs.profile,
-  log: (s.docs.log?.revision ?? 0) > (docs.log?.revision ?? 0) ? s.docs.log : docs.log,
-})
-
-// 重读用户关联的本机文件并覆盖上传；服务端内容哈希没变时原样返回，重复调用无副作用
-async function syncLinked(kind: DocKind, name: string, ask = false): Promise<{ docs: Record<DocKind, DocMeta | null>; paths: JudgePaths } | 'none' | 'ask' | 'gone'> {
-  const r = await readLinked(kind, name, ask)
-  if (typeof r === 'string') return r
-  return saveDoc(kind, r.file.name, decodeText(await r.file.arrayBuffer()))
-}
+const SETTINGS_CODES = new Set(['BYOK_REQUIRED', 'PROVIDER_CONNECTION_REQUIRED', 'PROVIDER_HTTP_401'])
 
 function when(at: number): string {
   const d = new Date(at)
@@ -76,10 +51,10 @@ function when(at: number): string {
   return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hm}`
 }
 
-const sizeText = (n: number): string => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
-
 const errorOf = (e: unknown): { code: string; message: string } =>
   e instanceof JudgeError ? { code: e.code, message: e.message } : { code: 'NETWORK', message: e instanceof Error ? e.message : String(e) }
+
+const latest = (p: Project): Version => p.versions[p.versions.length - 1]
 
 export function OrderJudgePage({ onLogin }: { onLogin: () => void }): JSX.Element | null {
   const { user, ready } = useAuth()
@@ -88,41 +63,25 @@ export function OrderJudgePage({ onLogin }: { onLogin: () => void }): JSX.Elemen
   return <JudgeWorkspace key={user.id} />
 }
 
-function Head({ tab, onTab, counts, gearDot, onGear }: {
-  tab: 'judge' | 'hist'
-  onTab: (t: 'judge' | 'hist') => void
-  counts: { all: number; yes: number; no: number; info: number } | null
-  gearDot: boolean
-  onGear: () => void
-}): JSX.Element {
+function Head({ tab, onTab, count }: { tab: Tab; onTab: (t: Tab) => void; count: number | null }): JSX.Element {
   return (
     <div className="oj-head">
-      <div>
-        <h1 className="title-sketch" style={{ fontSize: 34 }}>接单评估</h1>
-        {counts && counts.all > 0 && (
-          <p className="muted small mt8 oj-tally oj-desk">
-            {counts.all} 单 · 能接 <b>{counts.yes}</b> · 不接 <b>{counts.no}</b> · 待补 <b>{counts.info}</b>
-          </p>
-        )}
-      </div>
+      <h1 className="title-sketch" style={{ fontSize: 34 }}>接单评估</h1>
       <div className="tools">
         <div className="seg oj-desk" role="group" aria-label="视图">
-          <button type="button" className={tab === 'judge' ? 'on' : ''} onClick={() => onTab('judge')}>评估</button>
-          <button type="button" className={tab === 'hist' ? 'on' : ''} onClick={() => onTab('hist')}>
-            历史{counts ? <span className="n">{counts.all}</span> : null}
+          <button type="button" className={tab === 'new' ? 'on' : ''} onClick={() => onTab('new')}>整理</button>
+          <button type="button" className={tab === 'projects' ? 'on' : ''} onClick={() => onTab('projects')}>
+            项目{count !== null ? <span className="n">{count}</span> : null}
           </button>
         </div>
         <div className="oj-mob oj-mode">
           <Select
-            options={[{ id: 'judge', text: '评估' }, { id: 'hist', text: counts ? `历史 · ${counts.all}` : '历史' }]}
+            options={[{ id: 'new', text: '整理' }, { id: 'projects', text: count !== null ? `项目 · ${count}` : '项目' }]}
             value={tab}
-            onChange={(id) => onTab(id === 'hist' ? 'hist' : 'judge')}
-            placeholder="评估"
+            onChange={(id) => onTab(id === 'projects' ? 'projects' : 'new')}
+            placeholder="整理"
           />
         </div>
-        <button type="button" className={`icon-btn oj-gear${gearDot ? ' dot' : ''}`} title="评估设置" aria-label="评估设置" onClick={onGear}>
-          <Ic name="settings" />
-        </button>
       </div>
     </div>
   )
@@ -130,12 +89,12 @@ function Head({ tab, onTab, counts, gearDot, onGear }: {
 
 function JudgeWorkspace(): JSX.Element {
   const { user } = useAuth()
-  const [tab, setTab] = useState<'judge' | 'hist'>('judge')
+  const [tab, setTab] = useState<Tab>('new')
   const [state, setState] = useState<JudgeState | null>(null)
   const [loadError, setLoadError] = useState('')
   const [syncError, setSyncError] = useState('')
   const [provider, setProvider] = useState<ProviderStatus | null>(null)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [target, setTarget] = useState<Project | null>(null)
   const [text, setText] = useState('')
   const [materials, setMaterials] = useState<Material[]>([])
   const [running, setRunning] = useState(false)
@@ -145,11 +104,10 @@ function JudgeWorkspace(): JSX.Element {
   const [startedAt, setStartedAt] = useState(0)
   const [sec, setSec] = useState(0)
   const [outcome, setOutcome] = useState<Outcome | null>(null)
-  const [est, setEst] = useState<Est | null>(null)
   const [tip, setTip] = useState(false)
   const [drag, setDrag] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<HistoryEntry | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const [mobileDetail, setMobileDetail] = useState(false)
   const wide = useIsWide()
   const nextId = useRef(1)
@@ -157,16 +115,9 @@ function JudgeWorkspace(): JSX.Element {
   const fileInput = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const estAbortRef = useRef<AbortController | null>(null)
-  // 重新估价复用这单整理好的材料和 requestId，结果仍写进同一条历史
-  const estInputRef = useRef<{ text: string; images: JudgeImage[]; requestId: string } | null>(null)
-  const judgedIdRef = useRef<string | null>(null)
-  const estResultRef = useRef<EstimateResult | null>(null)
   const materialsRef = useRef<Material[]>([])
   const refreshRef = useRef<Promise<void> | null>(null)
   const mountedRef = useRef(true)
-  const pathsRef = useRef<JudgePaths | null>(null)
-  pathsRef.current = state?.paths ?? null
   materialsRef.current = materials
 
   const refreshProvider = useCallback(() => {
@@ -197,34 +148,6 @@ function JudgeWorkspace(): JSX.Element {
     }
   }, [refreshProvider])
 
-  const loaded = state !== null
-  useEffect(() => {
-    if (!loaded) return
-    const gesture = ['pointerdown', 'keydown'] as const
-    const off = (): void => { for (const e of gesture) document.removeEventListener(e, onGesture, true) }
-    const run = (ask = false): void => {
-      for (const kind of ['profile', 'log'] as const) {
-        void linkedNames(kind).then(names => {
-          // 只重读列表里还在的网页条目：别处移除过的不能被同步重新加回来
-          const listed = names.filter(n => pathsRef.current?.[kind].some(p => p.path === n && p.upload))
-          for (const name of listed) {
-            syncLinked(kind, name, ask).then(r => {
-              if (r === 'ask') { for (const e of gesture) document.addEventListener(e, onGesture, true); return }
-              if (typeof r === 'string' || !mountedRef.current) return
-              setState(s => s ? { ...s, docs: mergeDocs(s, r.docs), paths: r.paths } : s)
-            }).catch(() => { /* 本机文件读不到时保留服务端上次的内容 */ })
-          }
-        })
-      }
-    }
-    // 权限被收回后浏览器只允许在用户手势里重新申请：借用户的第一次点击 / 按键顺带申请，不需要额外按钮
-    function onGesture(): void { off(); run(true) }
-    run()
-    const onVisible = (): void => { if (document.visibilityState === 'visible') run() }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => { off(); document.removeEventListener('visibilitychange', onVisible) }
-  }, [loaded])
-
   useEffect(() => {
     if (!running) return
     const t = window.setInterval(() => setSec(Math.floor((Date.now() - startedAt) / 1000)), 500)
@@ -237,10 +160,14 @@ function JudgeWorkspace(): JSX.Element {
     return () => window.clearTimeout(t)
   }, [tip])
 
+  // 追加的目标项目在别处被删掉时，退回新项目
+  useEffect(() => {
+    if (target && state && !state.projects.some(p => p.id === target.id)) setTarget(null)
+  }, [state, target])
+
   const ai = user?.aiConfig
   const byok = ai?.provider === 'byok'
   const noKey = byok && !readByokKey().trim()
-  const configured = Boolean(state?.docs.profile) && !noKey
 
   const addFiles = useCallback((files: File[]) => {
     const fresh: Material[] = files.map((file) => {
@@ -274,7 +201,7 @@ function JudgeWorkspace(): JSX.Element {
 
   // 整页接粘贴：焦点不在输入框时文字也粘进去，截图直接成为材料
   useEffect(() => {
-    if (tab !== 'judge' || settingsOpen) return
+    if (tab !== 'new' || deleteTarget) return
     const onPaste = (e: ClipboardEvent): void => {
       if (running || !e.clipboardData) return
       const files = [...e.clipboardData.files]
@@ -285,15 +212,15 @@ function JudgeWorkspace(): JSX.Element {
       }
       const pasted = e.clipboardData.getData('text')
       if (pasted && document.activeElement !== textRef.current) {
-        const target = document.activeElement as HTMLElement | null
-        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+        const active = document.activeElement as HTMLElement | null
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return
         e.preventDefault()
         setText((t) => (t ? `${t}\n${pasted}` : pasted))
       }
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [tab, settingsOpen, running, addFiles])
+  }, [tab, deleteTarget, running, addFiles])
 
   const pasteFromClipboard = async (): Promise<void> => {
     try {
@@ -322,54 +249,26 @@ function JudgeWorkspace(): JSX.Element {
     })
   }
 
-  const clearAll = (): void => {
+  const clearMaterials = (): void => {
     for (const m of materials) if (m.thumb) URL.revokeObjectURL(m.thumb)
     setMaterials([])
     setText('')
+  }
+
+  const startNew = (): void => {
+    clearMaterials()
     setOutcome(null)
-    stopEstimate()
+    setTarget(null)
+    setTab('new')
   }
 
-  const stopEstimate = (): void => {
-    estAbortRef.current?.abort()
-    estAbortRef.current = null
-    estInputRef.current = null
-    setEst(null)
-  }
-
-  const estimated = (result: EstimateResult): void => {
-    estResultRef.current = result
-    setEst({ kind: 'done', result })
-    const id = judgedIdRef.current
-    if (id) setState((st) => (st ? { ...st, history: st.history.map((h) => (h.id === id ? { ...h, estimate: result } : h)) } : st))
-  }
-
-  const onEstimateEvent = (e: EstimateEvent): void => {
-    if (e.type === 'scope') setEst({ kind: 'run', tasks: e.tasks, groups: 0 })
-    else if (e.type === 'group') setEst((x) => (x?.kind === 'run' ? { ...x, groups: x.groups + 1 } : x))
-    else if (e.type === 'done') estimated(e.result)
-    else if (e.type === 'error') setEst({ kind: 'error', code: e.code, message: e.error })
-  }
-
-  // 只用于估价失败后单独重试；平时估价跟着评估同一个请求走
-  const retryEstimate = async (): Promise<void> => {
-    const input = estInputRef.current
-    if (!input) return
-    estAbortRef.current?.abort()
-    const controller = new AbortController()
-    estAbortRef.current = controller
-    setEst({ kind: 'run', tasks: 0, groups: 0 })
-    try {
-      const result = await estimate(input.text, input.images, input.requestId, onEstimateEvent, controller.signal)
-      if (!controller.signal.aborted) estimated(result)
-    } catch (e) {
-      if (controller.signal.aborted) return
-      const { code, message } = errorOf(e)
-      if (code === 'NETWORK') logClient('order-judge:estimate', e)
-      setEst({ kind: 'error', code, message })
-    } finally {
-      if (estAbortRef.current === controller) estAbortRef.current = null
-    }
+  const appendTo = (project: Project): void => {
+    clearMaterials()
+    setOutcome(null)
+    setTarget(project)
+    setTab('new')
+    setMobileDetail(false)
+    window.scrollTo({ top: 0 })
   }
 
   const run = async (): Promise<void> => {
@@ -377,7 +276,6 @@ function JudgeWorkspace(): JSX.Element {
     const pre = precheck(text, materials.length)
     if (pre === 'empty') { setTip(true); return }
     if (pre === 'chat-record') { setOutcome({ kind: 'chat-record' }); return }
-    if (!state?.docs.profile) { setSettingsOpen(true); return }
     if (noKey) { window.location.hash = '#/settings/ai'; return }
     const controller = new AbortController()
     abortRef.current = controller
@@ -389,11 +287,8 @@ function JudgeWorkspace(): JSX.Element {
     setPrepStats('')
     setLinkCount(0)
     setOutcome(null)
-    stopEstimate()
-    judgedIdRef.current = null
-    // 平板 / 手机整页切到评估过程，回到页顶看进度
+    // 平板 / 手机整页切到整理过程，回到页顶看进度
     if (!wide) window.scrollTo({ top: 0 })
-    let links = 0
     try {
       const prepared = await prepareMaterials(text, materials.map((m) => m.file), {
         expandArchive: file => expandArchive(file, controller.signal),
@@ -407,30 +302,25 @@ function JudgeWorkspace(): JSX.Element {
       })))
       const failedArchives = materials.filter(m => isArchive(m.file) && prepared.unreadable.includes(m.file.name))
       if (failedArchives.length) throw new JudgeError('ARCHIVE_UNREADABLE', failedArchives.map(m => `${m.file.name}：${prepared.materialNotes[m.file.name]}`).join('；'))
-      if (prepared.text.length > MAX_TEXT_CHARS) throw new JudgeError('MATERIAL_TEXT_TOO_LONG', '材料文字超过 20 万字，请拆分后再评估')
+      if (prepared.text.length > MAX_TEXT_CHARS) throw new JudgeError('MATERIAL_TEXT_TOO_LONG', '材料文字超过 20 万字，请拆分后再整理')
       setPrepStats(prepared.stats.join(' · '))
       if (byok && ai && !(provider?.ready && provider.source === 'byok')) {
         setProvider(await connectProvider(ai.endpoint, ai.model, readByokKey().trim()))
       }
-      const requestId = crypto.randomUUID()
-      estInputRef.current = { text: prepared.text, images: prepared.images, requestId }
-      estResultRef.current = null
-      setEst({ kind: 'run', tasks: 0, groups: 0 })
-      const judged = await judge(prepared.text, prepared.images, prepared.attachments, requestId, (e) => {
-        if (e.stage === 'links') { links = e.count; setLinkCount(e.count); setStage('links') } else setStage('ai')
-      }, (e) => { if (!controller.signal.aborted) onEstimateEvent(e) }, controller.signal)
+      const project = await organize(target?.id ?? null, prepared.text, prepared.images, prepared.attachments, (e) => {
+        if (e.stage === 'links') { setLinkCount(e.count); setStage('links') } else setStage('ai')
+      }, controller.signal)
       if (controller.signal.aborted) return
-      judgedIdRef.current = judged.id
-      const entry = estResultRef.current && !judged.estimate ? { ...judged, estimate: estResultRef.current } : judged
-      setState((s) => (s ? { ...s, history: [entry, ...s.history].slice(0, 50) } : s))
-      setOutcome({ kind: 'report', entry, ms: Date.now() - t0, links })
+      setState((s) => (s ? { ...s, projects: [project, ...s.projects.filter(p => p.id !== project.id)] } : s))
+      setTarget(project)
+      setSelected(project.id)
+      clearMaterials()
+      setOutcome({ kind: 'done', project, ms: Date.now() - t0 })
     } catch (e) {
       if (controller.signal.aborted) return
       const { code, message } = errorOf(e)
-      if (code === 'NETWORK') logClient('order-judge:judge', e)
+      if (code === 'NETWORK') logClient('order-judge:organize', e)
       setOutcome({ kind: 'error', code, message, at: Date.now() })
-      // 回合没开起来（限流、额度、没连上 AI）时估价也没开始，不留一张空转的估价卡
-      setEst((x) => (x?.kind === 'run' && x.tasks === 0 ? null : x))
       if (code === 'PROVIDER_CONNECTION_REQUIRED' || code === 'PROVIDER_HTTP_401') refreshProvider()
     } finally {
       if (abortRef.current === controller) {
@@ -444,134 +334,77 @@ function JudgeWorkspace(): JSX.Element {
   const cancel = (): void => {
     abortRef.current?.abort()
     abortRef.current = null
-    stopEstimate()
     setRunning(false)
     setOutcome(null)
   }
 
-  const removeEntry = async (id: string): Promise<void> => {
-    await deleteEntry(id)
+  const removeProject = async (id: string): Promise<void> => {
+    await deleteProject(id)
     if (!mountedRef.current) return
-    setState((s) => (s ? { ...s, history: s.history.filter((h) => h.id !== id) } : s))
+    setState((s) => (s ? { ...s, projects: s.projects.filter((p) => p.id !== id) } : s))
     if (selected === id) { setSelected(null); setMobileDetail(false) }
+    if (target?.id === id) setTarget(null)
+    if (outcome?.kind === 'done' && outcome.project.id === id) setOutcome(null)
   }
 
-  const restore = async (entry: HistoryEntry): Promise<void> => {
-    for (const m of materials) if (m.thumb) URL.revokeObjectURL(m.thumb)
-    setMaterials([])
-    setText(entry.order)
-    setOutcome(null)
-    setTab('judge')
-    setMobileDetail(false)
-    window.scrollTo({ top: 0 })
-    try {
-      const files = await Promise.all(entry.images.map(async (img) => {
-        const res = await fetch(imageUrl(entry.id, img.file), { credentials: 'same-origin' })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return new File([await res.blob()], `${img.name}.jpg`, { type: 'image/jpeg' })
-      }))
-      addFiles(files)
-    } catch (e) {
-      logClient('order-judge:restore', e)
-      setOutcome({ kind: 'error', code: 'RESTORE_FAILED', message: '当时的图片没取回来，文字已经放回去了。', at: Date.now() })
-    }
-  }
-
-  // 平板 / 手机：评估中和出结论后不显示编辑区（CSS 只在 ≤960px 生效，桌面仍是两栏）
+  // 平板 / 手机：整理中和出结果后不显示编辑区（CSS 只在 ≤960px 生效，桌面仍是两栏）
   const flow = running || outcome !== null
+  const head = <Head tab={tab} onTab={(t) => { setTab(t); setMobileDetail(false) }} count={state ? state.projects.length : null} />
+  const deleting = deleteTarget && <DeleteProjectDialog project={deleteTarget} onDelete={removeProject} onClose={() => setDeleteTarget(null)} />
 
-  const counts = state ? {
-    all: state.history.length,
-    yes: state.history.filter((h) => h.report.verdict === '能').length,
-    no: state.history.filter((h) => h.report.verdict === '不能').length,
-    info: state.history.filter((h) => h.report.verdict === '信息不足').length,
-  } : null
-
-  const noProfile = Boolean(state && !state.docs.profile)
-  const missing = noProfile ? '还没有上传能力档案，评估前要先上传' : noKey ? '设置里选了用你自己的 AI，但还没填 API key' : ''
-  const head = (
-    <Head
-      tab={tab}
-      onTab={(t) => { setTab(t); setMobileDetail(false) }}
-      counts={counts}
-      gearDot={Boolean(missing)}
-      onGear={() => setSettingsOpen(true)}
-    />
-  )
-
-  const settings = settingsOpen && state && (
-    <SettingsDialog
-      docs={state.docs}
-      paths={state.paths}
-      dayRate={state.dayRate}
-      onDayRate={(dayRate) => setState(s => s ? { ...s, dayRate } : s)}
-      onPaths={(paths) => setState(s => s ? { ...s, paths } : s)}
-      onDocs={(docs) => setState(s => s ? { ...s, docs: mergeDocs(s, docs) } : s)}
-      onClose={() => setSettingsOpen(false)}
-    />
-  )
-
-  if (tab === 'hist') {
-    const list = state?.history ?? []
-    const current = list.find((h) => h.id === selected) ?? list[0] ?? null
+  if (tab === 'projects') {
+    const list = state?.projects ?? []
+    const current = list.find((p) => p.id === selected) ?? list[0] ?? null
+    const sheet = current && <ProjectSheet key={`${current.id}:${latest(current).n}`} project={current} onAppend={() => appendTo(current)} />
     return (
       <>
         {head}
         {(loadError || syncError) && <p className="nag mt16"><Ic name="alert" />{loadError || syncError}</p>}
         {list.length === 0 ? (
-          <section className="panel oj-sheet blank mt24"><p className="muted">还没有评估过的派单</p></section>
+          <section className="panel oj-sheet blank mt24"><p className="muted">还没有整理过的项目</p></section>
         ) : !wide && mobileDetail && current ? (
           <div className="oj-hist">
-            <button type="button" className="oj-back" onClick={() => setMobileDetail(false)}><Ic name="back" />返回历史</button>
-            <ReportSheet entry={current} onRestore={() => void restore(current)} />
-            {current.estimate && <EstimateSheet est={{ kind: 'done', result: current.estimate }} />}
+            <button type="button" className="oj-back" onClick={() => setMobileDetail(false)}><Ic name="back" />返回项目</button>
+            {sheet}
           </div>
         ) : (
           <div className="oj-hist">
             <section className="panel oj-rows">
               <span className="tape tl lav" />
-              {list.map((h) => {
-                const v = VERDICT[h.report.verdict]
+              {list.map((p) => {
+                const v = latest(p)
                 return (
-                  <div key={h.id} className={`oj-row${current?.id === h.id ? ' on' : ''}`}>
-                    <button type="button" className="oj-row-main" onClick={() => { setSelected(h.id); setMobileDetail(true) }}>
-                      <span className={`stamp small ${v.cls}`}>{v.stamp}</span>
+                  <div key={p.id} className={`oj-row${current?.id === p.id ? ' on' : ''}`}>
+                    <button type="button" className="oj-row-main" onClick={() => { setSelected(p.id); setMobileDetail(true) }}>
+                      <span className="oj-ver-badge">v{v.n}</span>
                       <span className="t">
-                        <b>{h.report.title || h.report.headline || '（没有标题）'}</b>
-                        <span>{when(h.at)}{h.images.length ? ` · ${h.images.length} 张图` : ''}</span>
+                        <b>{p.title}</b>
+                        <span>{when(p.updatedAt)} · {v.brief.clientType} · {v.brief.items.length} 条需求</span>
                       </span>
                     </button>
-                    <button type="button" className="del" title="删除这条" aria-label="删除这条" onClick={() => setDeleteTarget(h)}>
+                    <button type="button" className="del" title="删除这个项目" aria-label="删除这个项目" onClick={() => setDeleteTarget(p)}>
                       <Ic name="trash" cls="ic ic-sm" />
                     </button>
                   </div>
                 )
               })}
             </section>
-            {current && (
-              <div className="oj-desk">
-                <ReportSheet entry={current} onRestore={() => void restore(current)} />
-                {current.estimate && <EstimateSheet est={{ kind: 'done', result: current.estimate }} />}
-              </div>
-            )}
+            {current && <div className="oj-desk">{sheet}</div>}
           </div>
         )}
-        {deleteTarget && <DeleteHistoryDialog entry={deleteTarget} onDelete={removeEntry} onClose={() => setDeleteTarget(null)} />}
-        {settings}
+        {deleting}
       </>
     )
   }
 
+  const nextN = target ? latest(target).n + 1 : 1
   return (
     <>
       {head}
-      {state && missing && (
+      {noKey && (
         <div className="nag mt16">
-          <Ic name="alert" />
-          {missing}
-          {noProfile
-            ? <button type="button" className="btn btn-sm" onClick={() => setSettingsOpen(true)}>去上传</button>
-            : <button type="button" className="btn btn-sm" onClick={() => { window.location.hash = '#/settings/ai' }}>去设置</button>}
+          <Ic name="alert" />设置里选了用你自己的 AI，但还没填 API key
+          <button type="button" className="btn btn-sm" onClick={() => { window.location.hash = '#/settings/ai' }}>去设置</button>
         </div>
       )}
       {(loadError || syncError) && <p className="nag mt16"><Ic name="alert" />{loadError || syncError}</p>}
@@ -588,14 +421,18 @@ function JudgeWorkspace(): JSX.Element {
           }}
         >
           <span className="tape tl teal" />
-          <div className="panel-title"><Ic name="clip" />派单材料</div>
+          <div className="panel-title oj-mat-title">
+            <Ic name="clip" />
+            <span className="oj-mat-name">{target ? `给「${target.title}」追加需求` : '客户材料'}</span>
+            {target && !running && <button type="button" className="btn btn-sm btn-ghost" onClick={startNew}>改为新项目</button>}
+          </div>
           <div className={`oj-drop${drag ? ' drag' : ''}`}>
             <textarea
               ref={textRef}
               className="oj-text"
               value={text}
               disabled={running}
-              placeholder="把派单的文字、网址贴在这里"
+              placeholder={target ? '客户追加或改了什么，贴在这里' : '把客户的需求文字、网址贴在这里'}
               onChange={(e) => setText(e.target.value)}
             />
             <div className="oj-over"><Ic name="clip" />松手放入</div>
@@ -638,23 +475,23 @@ function JudgeWorkspace(): JSX.Element {
             <button type="button" className="btn btn-sm oj-mob" disabled={running} onClick={() => void pasteFromClipboard()}><Ic name="paste" cls="ic ic-sm" />粘贴</button>
             <button type="button" className="btn btn-sm oj-mob" disabled={running} onClick={() => fileInput.current?.click()}><Ic name="clip" cls="ic ic-sm" />添加文件</button>
             {(text || materials.length > 0) && (
-              <button type="button" className="btn btn-sm btn-ghost" disabled={running} onClick={clearAll}>清空</button>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={running} onClick={clearMaterials}>清空</button>
             )}
             <span className="go">
-              <button type="button" className="btn btn-primary oj-go" disabled={running} onClick={() => void run()}>
-                {running ? `评估中 ${sec}s` : <><Ic name="judge" />评估</>}
+              <button type="button" className="btn btn-primary oj-go" disabled={running || nextN > VERSION_LIMIT} onClick={() => void run()}>
+                {running ? `整理中 ${sec}s` : <><Ic name="judge" />{target ? `整理第 ${nextN} 版` : '整理需求'}</>}
               </button>
               {tip && <span className="bubble oj-tip" role="status">还没有放入内容</span>}
             </span>
           </div>
-          <details className="oj-how" open={!text && materials.length === 0 ? true : undefined}>
+          <details className="oj-how" open={!text && materials.length === 0 && !target ? true : undefined}>
             <summary><Ic name="chev" cls="ic ic-sm" />不同材料怎么放</summary>
             <dl>
               <dt>文字、截图</dt>
               <dd>
-                <span className="oj-desk">{isMac ? '⌘V' : 'Ctrl+V'} 粘贴，可连续添加截图。</span>
-                <span className="oj-mob">点「粘贴」添加截图。</span>
-                微信、QQ聊天记录请展开后截图
+                <span className="oj-desk">{isMac ? '⌘V' : 'Ctrl+V'} 粘贴，可连续添加截图，</span>
+                <span className="oj-mob">点「粘贴」添加截图，</span>
+                微信、QQ 聊天记录请展开后截图
               </dd>
               <dt>网址</dt><dd>粘贴网址，最多 10 个；截图中的网址不读取</dd>
               <dt>在线文档</dt><dd>公开腾讯文档请贴具体页网址，只读部分文字</dd>
@@ -669,8 +506,8 @@ function JudgeWorkspace(): JSX.Element {
         <div className="oj-result">
           {flow && !running && (
             <div className="oj-flowbar">
-              <button type="button" className="oj-back" onClick={() => setOutcome(null)}><Ic name="back" />返回修改</button>
-              <button type="button" className="btn btn-sm" onClick={clearAll}>再评一单</button>
+              <button type="button" className="oj-back" onClick={() => setOutcome(null)}><Ic name="back" />{outcome?.kind === 'done' ? '追加需求' : '返回修改'}</button>
+              <button type="button" className="btn btn-sm" onClick={startNew}>新项目</button>
             </div>
           )}
           {running && <Brief text={text} materials={materials} />}
@@ -678,24 +515,23 @@ function JudgeWorkspace(): JSX.Element {
             <section className="panel oj-sheet">
               <span className="tape tr gold" />
               <p className="oj-meta">开始于 {when(startedAt).replace(/^今天 /, '')}</p>
-              <p className="oj-headline" style={{ paddingRight: 0 }}>正在对照能力档案和项目日志…</p>
+              <p className="oj-headline" style={{ paddingRight: 0 }}>{target ? `正在整理第 ${nextN} 版…` : '正在整理需求…'}</p>
               <ol className="oj-steps">
                 <Step state={stage === 'prep' ? 'run' : 'done'} title="整理材料" sub={prepStats} />
                 {(stage === 'links' || linkCount > 0) && <Step state={stage === 'links' ? 'run' : 'done'} title="打开网址" sub={`${linkCount} 个`} />}
-                <Step state={stage === 'ai' ? 'run' : 'wait'} title={stage === 'ai' ? 'AI 判断中' : 'AI 判断'} sub={stage === 'ai' ? '一般 20～60 秒' : ''} />
+                <Step state={stage === 'ai' ? 'run' : 'wait'} title={stage === 'ai' ? 'AI 整理中' : 'AI 整理'} sub={stage === 'ai' ? '一般 20～60 秒' : ''} />
               </ol>
               <div className="oj-cancel">
-                <button type="button" className="btn btn-sm btn-ghost" onClick={cancel}><Ic name="x" cls="ic ic-sm" />取消评估</button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={cancel}><Ic name="x" cls="ic ic-sm" />取消</button>
               </div>
             </section>
-          ) : outcome?.kind === 'report' ? (
-            <ReportSheet entry={outcome.entry} ms={outcome.ms} links={outcome.links} />
+          ) : outcome?.kind === 'done' ? (
+            <ProjectSheet key={`${outcome.project.id}:${latest(outcome.project).n}`} project={outcome.project} ms={outcome.ms} />
           ) : outcome?.kind === 'chat-record' ? (
             <section className="panel oj-sheet">
               <span className="tape tl gold" />
-              <span className="stamp oj-verdict st-gold pop">待补</span>
               <p className="oj-meta">刚刚</p>
-              <p className="oj-headline">只看到「[聊天记录]」几个字，读不到派单内容</p>
+              <p className="oj-headline">只看到「[聊天记录]」几个字，读不到客户的需求</p>
               <div className="oj-sec">
                 <h3><Ic name="edit" />怎么补</h3>
                 <ol className="oj-list warn">
@@ -712,23 +548,24 @@ function JudgeWorkspace(): JSX.Element {
               <p className="oj-err"><code>{outcome.code}</code></p>
               {SETTINGS_CODES.has(outcome.code) && (
                 <div className="oj-acts">
-                  <button type="button" className="btn btn-sm" onClick={() => setSettingsOpen(true)}><Ic name="settings" cls="ic ic-sm" />打开评估设置</button>
+                  <button type="button" className="btn btn-sm" onClick={() => { window.location.hash = '#/settings/ai' }}><Ic name="settings" cls="ic ic-sm" />打开 AI 设置</button>
                 </div>
               )}
             </section>
+          ) : target ? (
+            <ProjectSheet key={`${target.id}:${latest(target).n}`} project={target} />
           ) : (
             <section className="panel oj-sheet blank oj-blank">
               <div className="empty" style={{ padding: '10px 0' }}>
                 <img src="/assets/sagiri-avatar.webp" alt="" width={84} height={84} className="oj-avatar" />
-                <div className="empty-say"><span className="bubble empty-bubble">材料放好后点「评估」，结论会写在这里。</span></div>
+                <div className="empty-say"><span className="bubble empty-bubble">材料放好后点「整理需求」，需求清单会写在这里</span></div>
               </div>
             </section>
           )}
-          {est && (running || outcome) && <EstimateSheet est={est} onRetry={() => void retryEstimate()} />}
-          {flow && !running && <Brief text={text} materials={materials} fold />}
+          {flow && !running && outcome?.kind !== 'done' && <Brief text={text} materials={materials} fold />}
         </div>
       </div>
-      {settings}
+      {deleting}
     </>
   )
 }
@@ -745,7 +582,7 @@ function Brief({ text, materials, fold = false }: { text: string; materials: Mat
   if (fold) {
     return (
       <details className="panel oj-brief">
-        <summary><Ic name="clip" />这单的材料<span className="meta">{meta}</span><Ic name="chev" cls="ic ic-sm" /></summary>
+        <summary><Ic name="clip" />这次的材料<span className="meta">{meta}</span><Ic name="chev" cls="ic ic-sm" /></summary>
         {text && <p className="ex">{text}</p>}
         {strip}
       </details>
@@ -754,7 +591,7 @@ function Brief({ text, materials, fold = false }: { text: string; materials: Mat
   return (
     <section className="panel oj-brief">
       <span className="tape tl teal" />
-      <div className="panel-title" style={{ marginBottom: 8 }}><Ic name="clip" />这单的材料<span className="faint small" style={{ marginLeft: 'auto' }}>{meta}</span></div>
+      <div className="panel-title" style={{ marginBottom: 8 }}><Ic name="clip" />这次的材料<span className="faint small" style={{ marginLeft: 'auto' }}>{meta}</span></div>
       {text && <p className="ex">{text}</p>}
       {strip}
     </section>
@@ -765,7 +602,7 @@ const TEXT_PREVIEW = new Set(['md', 'txt', 'csv', 'html', 'htm', 'rtf'])
 const fileExt = (file: string): string => file.slice(file.lastIndexOf('.') + 1)
 const sizeOf = (n: number): string => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
 
-function AttachList({ entry }: { entry: HistoryEntry }): JSX.Element {
+function AttachList({ version }: { version: Version }): JSX.Element {
   const [open, setOpen] = useState<string | null>(null)
   const [body, setBody] = useState('')
   const preview = async (file: string): Promise<void> => {
@@ -773,17 +610,17 @@ function AttachList({ entry }: { entry: HistoryEntry }): JSX.Element {
     setOpen(file)
     setBody('')
     try {
-      const res = await fetch(attachUrl(entry.id, file), { credentials: 'same-origin' })
+      const res = await fetch(attachUrl(version.id, file), { credentials: 'same-origin' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setBody((await res.text()).slice(0, 60_000))
     } catch (e) {
       logClient('order-judge:attach-preview', e)
-      setBody('读不出这份文件，请改用下载。')
+      setBody('读不出这份文件，请改用下载')
     }
   }
   return (
     <div className="oj-attach">
-      {entry.files!.map((f) => {
+      {version.files.map((f) => {
         const ext = fileExt(f.file)
         return (
           <div key={f.file} className="oj-attach-item">
@@ -791,9 +628,9 @@ function AttachList({ entry }: { entry: HistoryEntry }): JSX.Element {
               <Ic name="doc" cls="ic ic-sm" />
               <span className="oj-attach-name" title={f.name}>{f.name}</span>
               <span className="faint small">{sizeOf(f.size)}</span>
-              {ext === 'pdf' && <a className="btn btn-sm" href={attachUrl(entry.id, f.file)} target="_blank" rel="noreferrer">预览</a>}
+              {ext === 'pdf' && <a className="btn btn-sm" href={attachUrl(version.id, f.file)} target="_blank" rel="noreferrer">预览</a>}
               {TEXT_PREVIEW.has(ext) && <button type="button" className="btn btn-sm" onClick={() => void preview(f.file)}>{open === f.file ? '收起' : '预览'}</button>}
-              <a className="btn btn-sm" href={attachUrl(entry.id, f.file, true)} download={f.name}>下载</a>
+              <a className="btn btn-sm" href={attachUrl(version.id, f.file, true)} download={f.name}>下载</a>
             </div>
             {open === f.file && <pre className="oj-attach-pre">{body || '读取中…'}</pre>}
           </div>
@@ -812,145 +649,99 @@ function Step({ state, title, sub }: { state: 'done' | 'run' | 'wait'; title: st
   )
 }
 
-function ReportSheet({ entry, ms, links, onRestore }: { entry: HistoryEntry; ms?: number; links?: number; onRestore?: () => void }): JSX.Element {
-  const r = entry.report
-  const v = VERDICT[r.verdict]
-  const meta = [when(entry.at), entry.images.length ? `${entry.images.length} 张图` : '', links ? `${links} 个网址` : '', ms ? `用时 ${Math.round(ms / 1000)} 秒` : '']
-    .filter(Boolean).join(' · ')
-  const gapTitle = r.verdict === '能' ? '可能翻车的地方' : '卡在哪一步'
+const hoursText = (h: number): string => `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`
+
+// 一个项目：版本切换 + 这一版的需求清单 + 这一版放进来的材料
+function ProjectSheet({ project, ms, onAppend }: { project: Project; ms?: number; onAppend?: () => void }): JSX.Element {
+  const [n, setN] = useState(latest(project).n)
+  const version = project.versions.find(v => v.n === n) ?? latest(project)
+  const b = version.brief
+  const marks = new Map<string, string>()
+  for (const c of version.changes) if (c.type !== 'removed') marks.set(c.id, c.type === 'added' ? '新增' : '有改动')
+  const removed = version.changes.filter((c): c is Extract<typeof c, { type: 'removed' }> => c.type === 'removed')
+  const meta = [`第 ${version.n} 版`, when(version.at), b.clientType, ms ? `用时 ${Math.round(ms / 1000)} 秒` : ''].filter(Boolean).join(' · ')
+  const facts: [string, string][] = [['客户在意的结果', b.outcome], ['预算', b.budget], ['截止', b.deadline], ['不找你会怎么办', b.alternative]]
+  const groups = PRIORITIES.map(p => ({ p, items: b.items.filter(i => i.priority === p) })).filter(g => g.items.length)
   return (
     <section className="panel oj-sheet">
-      <span className={`tape tl ${v.tape}`} />
-      <span key={entry.id} className={`stamp oj-verdict ${v.cls} pop`}>{v.stamp}</span>
-      <p className="oj-meta">{meta}</p>
-      <p className="oj-headline">{r.headline || r.title}</p>
-      {r.summary && <p className="oj-summary">{r.summary}</p>}
-      {onRestore && entry.images.length > 0 && (
-        <div className="oj-thumbs">
-          {entry.images.map((img) => (
-            <a key={img.file} href={imageUrl(entry.id, img.file)} target="_blank" rel="noreferrer" title={img.name}>
-              <img src={imageUrl(entry.id, img.file)} alt={img.name} loading="lazy" />
-            </a>
+      <span className="tape tl teal" />
+      {project.versions.length > 1 && (
+        <div className="oj-vers" role="tablist" aria-label="版本">
+          {project.versions.map(v => (
+            <button key={v.n} type="button" role="tab" aria-selected={v.n === version.n} className={v.n === version.n ? 'on' : ''} onClick={() => setN(v.n)}>v{v.n}</button>
           ))}
         </div>
       )}
-      {entry.files && entry.files.length > 0 && <AttachList entry={entry} />}
-      {r.risk && <p className="oj-risk"><Ic name="alert" /><span>{r.risk}</span></p>}
-      {r.reasons.length > 0 && (
+      <p className="oj-meta" style={{ paddingRight: 0 }}>{meta}</p>
+      <p className="oj-headline" style={{ paddingRight: 0 }}>{b.title || project.title}</p>
+      <dl className="oj-facts">
+        {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd className={v ? '' : 'ask'}>{v || '待问'}</dd></div>)}
+      </dl>
+      {groups.map(g => (
+        <div key={g.p} className="oj-sec">
+          <h3><Ic name="check" />{g.p === '不做' ? '这次不做' : g.p}<span className="oj-sum">{hoursText(g.items.reduce((s, i) => s + i.hours, 0))}</span></h3>
+          <ul className="oj-items">{g.items.map(item => <Item key={item.id} item={item} mark={marks.get(item.id)} />)}</ul>
+        </div>
+      ))}
+      {removed.length > 0 && (
         <div className="oj-sec">
-          <h3><Ic name="check" />为什么</h3>
-          <ol className="oj-list">
-            {r.reasons.map((x, i) => <li key={i}><p>{x.title && <b>{x.title}</b>}<span>{x.title ? '：' : ''}{x.detail}</span></p></li>)}
-          </ol>
+          <h3><Ic name="x" />这一版去掉了</h3>
+          <ul className="oj-plain">{removed.map(r => <li key={r.id}>{r.title}</li>)}</ul>
         </div>
       )}
-      {r.gaps.length > 0 && (
+      {b.excluded.length > 0 && (
         <div className="oj-sec">
-          <h3><Ic name="alert" />{gapTitle}</h3>
-          <ol className="oj-list warn">
-            {r.gaps.map((x, i) => <li key={i}><p>{x.step && <b>{x.step}</b>}<span>{x.step ? '：' : ''}{x.detail}</span></p></li>)}
-          </ol>
+          <h3><Ic name="alert" />不包含</h3>
+          <ul className="oj-plain">{b.excluded.map((x, i) => <li key={i}>{x}</li>)}</ul>
         </div>
       )}
-      {r.questions.length > 0 && (
+      {b.questions.length > 0 && (
         <div className="oj-sec">
-          <h3><Ic name="user" />接单前先问清楚</h3>
-          <ul className="oj-q">
-            {r.questions.map((q, i) => {
-              const flip = /[（(]可能改判[）)]\s*$/.test(q)
-              return <li key={i}><span>{q.replace(/\s*[（(]可能改判[）)]\s*$/, '')}</span>{flip && <span className="oj-flip">可能改判</span>}</li>
-            })}
-          </ul>
+          <h3><Ic name="edit" />要问客户的</h3>
+          <ul className="oj-q">{b.questions.map((q, i) => <li key={i}><span>{q}</span></li>)}</ul>
         </div>
       )}
-      {onRestore && (
-        <div className="oj-acts">
-          <button type="button" className="btn btn-sm" onClick={onRestore}><Ic name="refresh" cls="ic ic-sm" />放回材料区重新评估</button>
-        </div>
-      )}
-    </section>
-  )
-}
-
-const yuan = (n: number): string => `¥${n.toLocaleString('en-US')}`
-const md = (date: string): string => `${Number(date.slice(5, 7))} 月 ${Number(date.slice(8, 10))} 日`
-
-function EstimateSheet({ est, onRetry }: { est: Est; onRetry?: () => void }): JSX.Element {
-  const head = (meta?: string): JSX.Element => (
-    <div className="oj-est-head"><h3><Ic name="calendar" />估价</h3>{meta && <p className="oj-meta">{meta}</p>}</div>
-  )
-  if (est.kind === 'run') {
-    return (
-      <section className="panel oj-est">
-        <span className="tape tr teal" />
-        {head()}
-        <ol className="oj-steps" style={{ marginTop: 14 }}>
-          <Step state={est.tasks ? 'done' : 'run'} title="拆任务" sub={est.tasks ? `${est.tasks} 个任务` : ''} />
-          <Step state={est.tasks ? 'run' : 'wait'} title="估工时" sub={est.tasks ? `已估完 ${est.groups} / 8 组` : ''} />
-        </ol>
-      </section>
-    )
-  }
-  if (est.kind === 'error') {
-    return (
-      <section className="panel oj-est">
-        <span className="tape tr gold" />
-        {head()}
-        <p className="oj-headline oj-err-title" style={{ paddingRight: 0, fontSize: 17 }}><Ic name="alert" />{est.message}</p>
-        <p className="oj-err"><code>{est.code}</code></p>
-        {onRetry && <div className="oj-acts"><button type="button" className="btn btn-sm" onClick={onRetry}><Ic name="refresh" cls="ic ic-sm" />重新估价</button></div>}
-      </section>
-    )
-  }
-  const { hours, quote } = est.result
-  const rate = quote?.dayRate ?? DAY_RATE
-  const max = Math.max(1, ...hours.groups.map((g) => g.hours))
-  const tiers = quote?.tiers ?? []
-  return (
-    <section className="panel oj-est">
-      <span className="tape tr teal" />
-      {head(`${when(est.result.at)} · 用时 ${Math.round(est.result.ms / 1000)} 秒 · ${hours.taskCount} 个任务`)}
-      <p className="oj-est-total">{hours.totalHours.toLocaleString('en-US')}<small>小时</small></p>
-      {quote ? (
-        <>
-          <div className="oj-est-price">
-            {tiers.map((t) => (
-              <div key={t.factor} className="oj-est-tier"><b>{yuan(t.price)}</b>{t.workdays} 个工作日 · {md(t.end)}交付 · 共 {t.calendarDays} 天</div>
-            ))}
-          </div>
-          {(quote.assumedYears.length > 0 || quote.springFestivalRisk) && (
-            <div className="oj-est-note">
-              {quote.assumedYears.length > 0 && <span className="oj-flip">{quote.assumedYears.join('、')} 年节假日未公布，按双休估算</span>}
-              {quote.springFestivalRisk && <span className="oj-flip">交期跨春节，实际可能顺延</span>}
+      {(version.text || version.images.length > 0 || version.files.length > 0) && (
+        <details className="oj-sec oj-src">
+          <summary><Ic name="clip" cls="ic ic-sm" />第 {version.n} 版放进来的材料</summary>
+          {version.text && <p className="oj-src-text">{version.text}</p>}
+          {version.images.length > 0 && (
+            <div className="oj-thumbs">
+              {version.images.map(img => (
+                <a key={img.file} href={imageUrl(version.id, img.file)} target="_blank" rel="noreferrer" title={img.name}><img src={imageUrl(version.id, img.file)} alt={img.name} loading="lazy" /></a>
+              ))}
             </div>
           )}
-          <p className="oj-est-rush">
-            <Ic name="alert" />
-            <span>以上不含加急。加急每提前 1 天加（请的人数 + 1）× {rate} 元，最多提前 {tiers.map((t) => t.calendarDays).join(' / ')} 天；例：请 1 人提前 2 天加 {2 * 2 * rate} 元。</span>
-          </p>
-        </>
-      ) : (
-        <p className="oj-err">{est.result.quoteError}</p>
+          {version.files.length > 0 && <AttachList version={version} />}
+        </details>
       )}
-      <div className="oj-est-groups">
-        {hours.groups.map((g, i) => (
-          <details key={g.key} className="oj-est-g" open={i === 0}>
-            <summary>
-              <span>{g.name}</span>
-              <span className="oj-est-bar"><i style={{ width: `${Math.round(g.hours / max * 100)}%` }} /></span>
-              <span className="oj-est-h">{g.hours} 小时</span>
-              <Ic name="chev" cls="ic ic-sm" />
-            </summary>
-            <ul>{g.tasks.map((t, k) => <li key={k}><span>{t.title}</span><span>{t.hours}</span></li>)}</ul>
-          </details>
-        ))}
-      </div>
+      {onAppend && project.versions.length < VERSION_LIMIT && (
+        <div className="oj-acts">
+          <button type="button" className="btn btn-sm" onClick={onAppend}><Ic name="edit" cls="ic ic-sm" />追加需求</button>
+        </div>
+      )}
     </section>
   )
 }
 
-function DeleteHistoryDialog({ entry, onDelete, onClose }: {
-  entry: HistoryEntry
+function Item({ item, mark }: { item: BriefItem; mark?: string }): JSX.Element {
+  return (
+    <li className="oj-item">
+      <div className="oj-item-head">
+        <b>{item.title}</b>
+        <span className="oj-tag">{item.kind}</span>
+        {mark && <span className="oj-flip">{mark}</span>}
+        <span className="oj-item-h">{hoursText(item.hours)}</span>
+      </div>
+      {item.detail && <p>{item.detail}</p>}
+      {item.reason && <p className="why">{item.reason}</p>}
+      {item.unclear && <p className="unclear"><Ic name="alert" cls="ic ic-sm" />{item.unclear}</p>}
+    </li>
+  )
+}
+
+function DeleteProjectDialog({ project, onDelete, onClose }: {
+  project: Project
   onDelete: (id: string) => Promise<void>
   onClose: () => void
 }): JSX.Element {
@@ -963,13 +754,13 @@ function DeleteHistoryDialog({ entry, onDelete, onClose }: {
     const element = dialog.current!
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const list = previous?.closest('.oj-rows')
-    // 原生模态层负责隔离背景和键盘焦点，外观继续使用站内 dlg 样式。
+    // 原生模态层负责隔离背景和键盘焦点，外观继续使用站内 dlg 样式
     element.showModal()
     cancel.current?.focus()
     return () => {
       element.close()
       if (previous?.isConnected) previous.focus()
-      else ((list?.isConnected ? list.querySelector<HTMLButtonElement>('.oj-row-main') : null) ?? document.querySelector<HTMLButtonElement>('[aria-label="评估设置"]'))?.focus()
+      else (list?.isConnected ? list.querySelector<HTMLButtonElement>('.oj-row-main') : null)?.focus()
     }
   }, [])
   useEffect(() => { if (busy) dialog.current?.focus() }, [busy])
@@ -980,7 +771,7 @@ function DeleteHistoryDialog({ entry, onDelete, onClose }: {
     setBusy(true)
     setError('')
     try {
-      await onDelete(entry.id)
+      await onDelete(project.id)
       onClose()
     } catch (cause) {
       logClient('order-judge:delete', cause)
@@ -1009,202 +800,15 @@ function DeleteHistoryDialog({ entry, onDelete, onClose }: {
       }}>
       <span className="tape tl sakura" />
       <button type="button" className="dlg-close" onClick={onClose} disabled={busy} aria-label="关闭" title="关闭"><Ic name="x" cls="ic" /></button>
-      <h2 id="oj-delete-title" className="dlg-title">删除评估记录</h2>
-      <p className="oj-delete-name">{entry.report.title || entry.report.headline || '（没有标题）'}</p>
-      <p id="oj-delete-description" className="dlg-sub">评估结果及保存的图片、附件将一并删除，删除后不可恢复。</p>
+      <h2 id="oj-delete-title" className="dlg-title">删除项目</h2>
+      <p className="oj-delete-name">{project.title}</p>
+      <p id="oj-delete-description" className="dlg-sub">{project.versions.length} 个版本的需求清单、截图和附件一并删除，删除后不可恢复</p>
       <p className="oj-delete-error" role="alert">{error}</p>
       <div className="dlg-actions">
         <button ref={cancel} type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>取消</button>
         <button type="button" className="btn btn-danger" onClick={() => void confirm()} disabled={busy}>{busy ? '删除中…' : '确认删除'}</button>
       </div>
     </dialog>, document.body,
-  )
-}
-
-const DOC_PURPOSE: Record<DocKind, string> = {
-  profile: '先划好哪些能接、哪些不能接，评估时吾辈先照这份分档；核心需求落在「不能」里，就直接判不能',
-  log: '把实际做过、学会的事记在这里；档案说不能、日志里做过的，吾辈就按日志判能',
-}
-
-function SettingsDialog({ docs, paths, dayRate, onDayRate, onDocs, onPaths, onClose }: {
-  docs: Record<DocKind, DocMeta | null>
-  paths: JudgePaths
-  dayRate: number
-  onDayRate: (v: number) => void
-  onDocs: (d: Record<DocKind, DocMeta | null>) => void
-  onPaths: (p: JudgePaths) => void
-  onClose: () => void
-}): JSX.Element {
-  const [busy, setBusy] = useState<DocKind | null>(null)
-  const [rateText, setRateText] = useState(String(dayRate))
-  const [rateBusy, setRateBusy] = useState(false)
-  useEffect(() => { setRateText(String(dayRate)) }, [dayRate])
-  const rateNum = /^\d+$/.test(rateText.trim()) ? Number(rateText.trim()) : NaN
-  const rateOk = rateNum >= MIN_DAY_RATE && rateNum <= MAX_DAY_RATE
-  const saveRate = async (): Promise<void> => {
-    if (!rateOk || rateNum === dayRate) return
-    setRateBusy(true)
-    try {
-      onDayRate(await saveDayRate(rateNum))
-      setNotice({ text: '记下了', err: false })
-    } catch (e) {
-      setNotice({ text: errorOf(e).message, err: true })
-    } finally {
-      setRateBusy(false)
-    }
-  }
-  const [notice, setNotice] = useState<{ text: string; err: boolean } | null>(null)
-  const pick = useRef<Record<DocKind, HTMLInputElement | null>>({ profile: null, log: null })
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  useEffect(() => {
-    if (!notice) return
-    const t = window.setTimeout(() => setNotice(null), 2400)
-    return () => window.clearTimeout(t)
-  }, [notice])
-
-  const [linked, setLinked] = useState<Record<DocKind, string[]>>({ profile: [], log: [] })
-  const refreshLinked = useCallback((kind: DocKind): void => {
-    void linkedNames(kind).then(names => setLinked(l => ({ ...l, [kind]: names })))
-  }, [])
-  useEffect(() => { refreshLinked('profile'); refreshLinked('log') }, [refreshLinked])
-
-  const choose = async (kind: DocKind, from?: string): Promise<void> => {
-    if (!canLink()) { pick.current[kind]?.click(); return }
-    try {
-      const file = await pickLinked(kind, from)
-      if (file) {
-        await upload(kind, file)
-        refreshLinked(kind)
-      }
-    } catch (e) {
-      setNotice({ text: errorOf(e).message, err: true })
-    }
-  }
-
-  const upload = async (kind: DocKind, file: File): Promise<void> => {
-    setBusy(kind)
-    try {
-      const content = decodeText(await file.arrayBuffer())
-      const saved = await saveDoc(kind, file.name, content)
-      onDocs(saved.docs); onPaths(saved.paths)
-      setNotice({ text: '收好了', err: false })
-    } catch (e) {
-      setNotice({ text: errorOf(e).message, err: true })
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  // 电脑路径由桌面应用添加，网页上传的文件也是一条；顺序即优先级：每台电脑取第一个本机存在的文件，网页条目处处可用。
-  const reorder = async (kind: DocKind, next: JudgePath[]): Promise<void> => {
-    setBusy(kind)
-    try { onPaths(await savePaths(kind, next)) }
-    catch (e) { setNotice({ text: errorOf(e).message, err: true }) }
-    finally { setBusy(null) }
-  }
-  const pathList = (kind: DocKind): JSX.Element => {
-    const list = paths[kind], current = docs[kind]?.sourcePath
-    if (!list.length) return <></>
-    const move = (i: number, offset: -1 | 1): void => {
-      const next = [...list];[next[i], next[i + offset]] = [next[i + offset], next[i]]
-      void reorder(kind, next)
-    }
-    return (
-      <ol className="oj-paths">
-        {list.map((p, i) => (
-          <li key={p.path} className={p.path === current ? 'on' : ''} title={`${p.path === current ? '当前正文来自这一条\n' : ''}${p.path}${p.upload ? `\n${sizeText(p.upload.size)} · ${when(p.upload.updatedAt)}` : ''}`}>
-            <span className="n">{i + 1}</span>
-            <span className="p">{p.path}</span>
-            <span className="d">{p.device}</span>
-            <button type="button" aria-label="上移" disabled={busy !== null || i === 0} onClick={() => move(i, -1)}><Ic name="chev" cls="ic ic-sm up" /></button>
-            <button type="button" aria-label="下移" disabled={busy !== null || i === list.length - 1} onClick={() => move(i, 1)}><Ic name="chev" cls="ic ic-sm" /></button>
-            {p.upload && linked[kind].includes(p.path) && (
-              <button type="button" aria-label="打开所在位置" title="打开所在位置" disabled={busy !== null} onClick={() => void choose(kind, p.path)}><Ic name="folder" cls="ic ic-sm" /></button>
-            )}
-            <button type="button" aria-label="移除" disabled={busy !== null} onClick={() => {
-              void reorder(kind, list.filter((_, j) => j !== i))
-              if (p.upload) void forgetLinked(kind, p.path).then(() => refreshLinked(kind))
-            }}><Ic name="x" cls="ic ic-sm" /></button>
-          </li>
-        ))}
-      </ol>
-    )
-  }
-
-  const docRow = (kind: DocKind, label: string): JSX.Element => {
-    const d = docs[kind]
-    return (
-      <div className="field">
-        <span className="field-label">{label}</span>
-        <p className="muted small oj-doc-purpose">{DOC_PURPOSE[kind]}</p>
-        {(!d || paths[kind].length !== 1) && (
-          <div className={`oj-doc${d ? '' : ' empty-doc'}`}>
-            <Ic name="doc" />
-            <span className="t">
-              {d ? <><b>{d.name}</b><span>{sizeText(d.size)} · {when(d.updatedAt)} · {d.source}</span></> : '还没有放进来'}
-            </span>
-          </div>
-        )}
-        {pathList(kind)}
-        <div className="oj-doc-acts">
-          <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={() => void choose(kind)}>
-            <Ic name="plus" cls="ic ic-sm" />{busy === kind ? '收取中…' : '上传文件'}
-          </button>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadDocTemplate(kind)}>下载模版</button>
-        </div>
-        <input
-            ref={(el) => { pick.current[kind] = el }}
-            type="file"
-            accept=".md,.markdown,.txt,text/markdown,text/plain"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              e.target.value = ''
-              if (f) void upload(kind, f)
-            }}
-          />
-      </div>
-    )
-  }
-
-  // 挂到 body：留在页面里会被页面容器的层叠上下文困住，z-index 再高也盖不过右下角的助手头像。
-  return createPortal(
-    <div className="dlg-backdrop open oj-set-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div role="dialog" aria-modal="true" aria-label="评估设置" className="dlg oj-set-dlg">
-        <div className="oj-grip" aria-hidden="true" />
-        <button type="button" className="dlg-close" onClick={onClose} aria-label="关闭" title="关闭"><Ic name="x" cls="ic" /></button>
-        <h2 className="dlg-title">评估设置</h2>
-        <div className="oj-set">
-          <div className="field">
-            <label className="field-label" htmlFor="oj-day-rate">每日工资</label>
-            <div className="oj-rate">
-              <span className="oj-rate-box">
-                <span aria-hidden="true">¥</span>
-                <input id="oj-day-rate" inputMode="numeric" autoComplete="off" value={rateText} disabled={rateBusy}
-                  aria-invalid={!rateOk}
-                  onChange={(e) => setRateText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') void saveRate() }} />
-                <span aria-hidden="true">元 / 天</span>
-              </span>
-              <button type="button" className="btn btn-sm btn-primary" disabled={rateBusy || !rateOk || rateNum === dayRate} onClick={() => void saveRate()}>保存</button>
-            </div>
-            <p className="muted small oj-doc-purpose">按这个数算一天，吾辈来估价</p>
-          </div>
-          {docRow('profile', '能力档案')}
-          {docRow('log', '项目日志')}
-          <div className="oj-set-foot">
-            {notice && <span className={`oj-saved${notice.err ? ' err' : ''}`} role="status">{!notice.err && <Ic name="check" cls="ic ic-sm" />}{notice.text}</span>}
-            <button type="button" className="btn btn-primary btn-sm" onClick={onClose}>完成</button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
   )
 }
 
@@ -1215,8 +819,7 @@ function GuestCard({ onLogin }: { onLogin: () => void }): JSX.Element {
       <section className="panel oj-guest">
         <span className="tape tl teal" />
         <img src="/assets/sagiri-avatar.webp" alt="" width={96} height={96} />
-        <p className="font-hand" style={{ fontSize: 20, marginTop: 14 }}>登录后就能评估派单</p>
-        <p className="muted small mt8">能力档案、项目日志和评估记录都跟着账号走。</p>
+        <p className="font-hand" style={{ fontSize: 20, marginTop: 14 }}>登录后就能整理需求</p>
         <button type="button" className="btn btn-primary mt24" style={{ minWidth: 160 }} onClick={onLogin}>登录 / 注册</button>
       </section>
     </>

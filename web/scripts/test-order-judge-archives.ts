@@ -40,7 +40,7 @@ const result = await prepareMaterials('补充文字', [archive], { ...hooks, exp
 assert.match(result.text, /客户已有小程序/); assert.match(result.text, /小程序.RAR\/需求.md/)
 assert.equal(result.attachments[0], archive); assert.equal(result.attachments.length, 1)
 assert.deepEqual(result.unreadable, []); assert.match(result.materialNotes[archive.name], /解包 1 项/)
-pass('包内材料进入评估正文，历史仅留原压缩包、不重复存解压文件')
+pass('包内材料进入整理正文，版本只留原压缩包、不重复存解压文件')
 let logged = false
 const bad = await prepareMaterials('', [archive], { ...hooks, expandArchive: async () => { throw new Error('压缩包已加密') }, onError: (tag, error) => { logged = tag === 'order-judge:archive' && error instanceof Error } })
 assert(logged); assert.deepEqual(bad.unreadable, [archive.name]); assert.equal(bad.materialNotes[archive.name], '压缩包已加密')
@@ -48,7 +48,7 @@ pass('具体失败原因同时进入附件状态和终端日志上报钩子')
 const partial = await prepareMaterials('', [archive], { ...hooks, expandArchive: async () => ({ files: [new File([], '小程序.RAR/扫描.pdf')], skipped: [] }) })
 assert(partial.unreadable.includes(archive.name)); assert.match(partial.materialNotes[archive.name], /未读取：扫描.pdf/)
 await assert.rejects(prepareMaterials('', [archive], { ...hooks, expandArchive: async () => { throw new DOMException('cancelled', 'AbortError') } }), { name: 'AbortError' })
-pass('包内读取失败归属原附件；取消不吞错、不继续评估')
+pass('包内读取失败归属原附件；取消不吞错、不继续整理')
 const plain = new File(['原文'], '原文.txt')
 const unchanged = await prepareMaterials('', [plain], hooks)
 assert.match(unchanged.text, /原文/); assert.equal(unchanged.attachments[0], plain)
@@ -72,7 +72,7 @@ if (process.argv.includes('--browser')) {
   app.use('*', securityHeaders())
   app.route('/api/auth', auth)
   app.route('/api/order-judge', createOrderJudgeApi(async () => ({
-    source: 'server', model: 'archive-fixture', execute: action => action(), call: async () => ({ choices: [{ message: { content: JSON.stringify({ verdict: '能', title: '压缩包回归通过', summary: '夹具结果', reasons: [], gaps: [], questions: [] }) } }] }),
+    source: 'server', model: 'archive-fixture', execute: action => action(), call: async () => ({ choices: [{ message: { content: JSON.stringify({ title: '压缩包回归通过', clientType: '个人单', outcome: '夹具结果', budget: '', deadline: '', alternative: '', items: [{ id: null, title: '修复登录', detail: '夹具条目', priority: '必须', kind: '接手改', hours: 2, reason: '夹具', unclear: '' }], excluded: [], questions: [] }) } }] }),
   })))
   app.get('/api/agent/provider', c => c.json({ enabled: true, ready: true, source: 'server', model: 'archive-fixture' }))
   app.all('/api/*', c => c.json({ error: 'fixture endpoint' }, 404))
@@ -85,8 +85,6 @@ if (process.argv.includes('--browser')) {
     const registered = await fetch(origin + '/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'archivecheck', password: 'fixture-password', confirm: 'fixture-password' }) })
     assert.equal(registered.status, 200)
     const cookie = registered.headers.get('set-cookie')!.split(';')[0]
-    const saved = await fetch(origin + '/api/order-judge/docs/profile', { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'profile.md', content: '夹具能力档案' }) })
-    assert.equal(saved.status, 200)
     const docx = zipSync({ 'word/document.xml': strToU8('<w:document><w:p><w:r><w:t>DOCX_REQUIREMENT</w:t></w:r></w:p></w:document>') })
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEUlEQVR4nGP4z8AARGDiPwMAHfAD/aAzCYkAAAAASUVORK5CYII=', 'base64')
     await writeFile(join(root, 'materials.zip'), zipSync({ '中文目录/需求.txt': strToU8('客户已有小程序，只修复登录错误'), '中文目录/需求.docx': docx, '界面.png': png, '__MACOSX/._需求.txt': strToU8('IGNORE_ME'), '程序.exe': strToU8('DO_NOT_EXECUTE'), '内层.zip': zipSync({ 'inner.txt': strToU8('NESTED_NOT_READ') }) }))
@@ -98,13 +96,13 @@ if (process.argv.includes('--browser')) {
       const child = spawn(process.execPath, ['scripts/test-order-judge-archives-ui.cjs'], { stdio: 'inherit', env: { ...process.env, JUDGE_UI_ORIGIN: origin, JUDGE_UI_COOKIE: cookie, JUDGE_ARCHIVE_FIXTURES: root } })
       child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(new Error(`浏览器回归退出 ${code}`)))
     })
-    const state = await (await fetch(origin + '/api/order-judge', { headers: { cookie } })).json() as { history: { id: string; order: string; files: { file: string; name: string }[] }[] }
-    const zip = state.history.find(h => h.files?.some(f => f.name === 'materials.zip')); assert(zip)
-    assert.match(zip.order, /客户已有小程序/); assert.match(zip.order, /DOCX_REQUIREMENT/)
+    const state = await (await fetch(origin + '/api/order-judge', { headers: { cookie } })).json() as { projects: { versions: { id: string; text: string; files: { file: string; name: string }[] }[] }[] }
+    const zip = state.projects.flatMap(p => p.versions).find(v => v.files.some(f => f.name === 'materials.zip')); assert(zip)
+    assert.match(zip.text, /客户已有小程序/); assert.match(zip.text, /DOCX_REQUIREMENT/)
     assert.equal(zip.files.length, 1)
-    const original = await fetch(origin + `/api/order-judge/history/${zip.id}/files/${zip.files[0].file}`, { headers: { cookie } })
+    const original = await fetch(origin + `/api/order-judge/versions/${zip.id}/files/${zip.files[0].file}`, { headers: { cookie } })
     assert.deepEqual(Buffer.from(await original.arrayBuffer()), await readFile(join(root, 'materials.zip')))
-    pass('真实历史接口保存解包后的正文，原始 ZIP 下载字节完全一致')
+    pass('真实项目接口保存解包后的正文，原始 ZIP 下载字节完全一致')
   } finally {
     server.closeAllConnections()
     await new Promise<void>(resolve => server.close(() => resolve()))

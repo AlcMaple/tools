@@ -1,45 +1,37 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { db } from './db'
-import { dataDir } from './data-dir'
-import { judgeData, judgeHash, JudgeDataError } from './order-judge-data'
+import { judgeData, versionDir, JudgeDataError } from './order-judge-data'
 import { judgeEvents } from './order-judge-events'
-import { normalizeReport } from '../shared/order-judge'
-import { ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES } from '../shared/order-judge-api'
+import { normalizeBrief, type Brief } from '../shared/order-judge-brief'
+import { ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, PROJECT_LIMIT, VERSION_LIMIT } from '../shared/order-judge-api'
 
-// 旧备份里的 versions / bases / conflicts / doc_ops 表已不存在，恢复时忽略。
-const tables = ['order_judge_docs', 'order_judge_paths', 'order_judge_history', 'order_judge_runs', 'order_judge_imports', 'order_judge_settings'] as const
+// 项目行 + 版本行 + 版本目录里的截图和附件，三样一起备、一起恢复。
+// 2026-11 重做前的备份（version 1：能力档案、历史等）结构不同，用户已决定旧数据不要，恢复时跳过
+const tables = ['order_judge_projects', 'order_judge_versions'] as const
 type Scalar = string | number | null
 type Row = Record<string, Scalar>
-interface JudgeBackup { version: 1; tables: Record<string, Row[]> }
-const location = (uid: number, id: string, file: string): string => join(dataDir, 'order-judge', String(uid), id, file)
-const imageRefs = (row: Row): { file: string; name: string }[] => {
-  if (typeof row.id !== 'string' || !/^[0-9a-f-]{36}$/.test(row.id) || typeof row.images !== 'string') throw new Error('接单评估历史标识无效。')
-  const images: unknown = JSON.parse(row.images)
-  if (!Array.isArray(images) || images.length > 40) throw new Error('接单评估图片清单无效。')
-  for (const image of images) if (!image || typeof image !== 'object' || !/^\d{2}\.jpg$/.test(image.file) || typeof image.name !== 'string') throw new Error('接单评估图片名无效。')
-  return images as { file: string; name: string }[]
-}
+interface JudgeBackup { version: 2; tables: Record<string, Row[]> }
+const ID_RE = /^[0-9a-f-]{36}$/
 
-const fileRefs = (row: Row): { file: string; name: string; size: number }[] => {
-  if (row.files === null || row.files === undefined) return []
-  const list: unknown = JSON.parse(String(row.files))
-  if (!Array.isArray(list) || list.length > ATTACH_MAX_FILES) throw new Error('接单评估附件清单无效。')
-  for (const f of list) if (!f || typeof f !== 'object' || !ATTACH_FILE_RE.test(f.file) || typeof f.name !== 'string' || !Number.isSafeInteger(f.size)) throw new Error('接单评估附件名无效。')
-  return list as { file: string; name: string; size: number }[]
+const fileRefs = (row: Row): string[] => {
+  if (typeof row.id !== 'string' || !ID_RE.test(row.id) || typeof row.images !== 'string' || typeof row.files !== 'string') throw new Error('接单评估版本标识无效')
+  const images: unknown = JSON.parse(row.images), files: unknown = JSON.parse(row.files)
+  if (!Array.isArray(images) || images.length > 40 || !Array.isArray(files) || files.length > ATTACH_MAX_FILES) throw new Error('接单评估文件清单无效')
+  for (const i of images) if (!i || typeof i !== 'object' || !/^\d{2}\.jpg$/.test(i.file) || typeof i.name !== 'string') throw new Error('接单评估图片名无效')
+  for (const f of files) if (!f || typeof f !== 'object' || !ATTACH_FILE_RE.test(f.file) || typeof f.name !== 'string' || !Number.isSafeInteger(f.size)) throw new Error('接单评估附件名无效')
+  return [...images.map(i => (i as { file: string }).file), ...files.map(f => (f as { file: string }).file)]
 }
 
 export function collectJudgeBackup(uid: number): { data: JudgeBackup; files: Record<string, Uint8Array> } {
   return db.transaction(() => {
-    if (db.prepare("SELECT 1 FROM order_judge_runs WHERE user_id=? AND status='running'").get(uid)) throw new JudgeDataError('JUDGE_RUNNING', '评估仍在进行，请结束后再备份。')
-    const data: JudgeBackup = { version: 1, tables: {} }, files: Record<string, Uint8Array> = {}
+    const data: JudgeBackup = { version: 2, tables: {} }, files: Record<string, Uint8Array> = {}
     let bytes = 0
     for (const table of tables) data.tables[table] = db.prepare(`SELECT * FROM ${table} WHERE user_id=?`).all(uid) as Row[]
-    if (Buffer.byteLength(JSON.stringify(data)) > 50 * 1024 * 1024) throw new JudgeDataError('BACKUP_TOO_LARGE', '接单评估资料版本超过 50 MB，请先单独归档。', 413)
-    for (const row of data.tables.order_judge_history) for (const image of [...imageRefs(row), ...fileRefs(row)]) {
-      const content = readFileSync(location(uid, String(row.id), image.file)); bytes += content.byteLength
-      if (bytes > 200 * 1024 * 1024) throw new JudgeDataError('BACKUP_TOO_LARGE', '历史图片超过 200 MB，请先分批归档。', 413)
-      files[`order-judge/${row.id}/${image.file}`] = content
+    for (const row of data.tables.order_judge_versions) for (const file of fileRefs(row)) {
+      const content = readFileSync(join(versionDir(uid, String(row.id)), file)); bytes += content.byteLength
+      if (bytes > 200 * 1024 * 1024) throw new JudgeDataError('BACKUP_TOO_LARGE', '接单评估的截图和附件超过 200 MB，请先删掉一些项目', 413)
+      files[`order-judge/${row.id}/${file}`] = content
     }
     return { data, files }
   })()
@@ -50,62 +42,49 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
 } {
   const written: string[] = [], folders: string[] = []
   let state: 'none' | 'restored' | 'existing-skipped' = 'none'
-  const restored: Record<string, Row[]> = {}
-  const images: { path: string; content: Uint8Array }[] = []
-  if (raw !== undefined && raw !== null) {
-    const input = raw as Partial<JudgeBackup>
-    if (input.version !== 1 || !input.tables || typeof input.tables !== 'object') throw new Error('接单评估备份格式无效。')
+  const restored: Record<string, Row[]> = { order_judge_projects: [], order_judge_versions: [] }
+  const contents: { path: string; content: Uint8Array }[] = []
+  const input = raw as Partial<JudgeBackup> | null | undefined
+  if (input?.version === 2) {
+    if (!input.tables || typeof input.tables !== 'object') throw new Error('接单评估备份格式无效')
     for (const table of tables) {
-      // 日薪表是后加的，旧备份里没有
-      const rows = input.tables[table] ?? (table === 'order_judge_settings' ? [] : undefined)
-      if (!Array.isArray(rows) || rows.length > 20_000) throw new Error('接单评估备份表无效。')
+      const rows = input.tables[table]
+      if (!Array.isArray(rows) || rows.length > PROJECT_LIMIT * VERSION_LIMIT) throw new Error('接单评估备份表无效')
       const columns = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(c => c.name)
       restored[table] = rows.map(rawRow => {
-        if (!rawRow || typeof rawRow !== 'object') throw new Error('接单评估备份行无效。')
+        if (!rawRow || typeof rawRow !== 'object') throw new Error('接单评估备份行无效')
         const row: Row = {}
         for (const column of columns) {
-          // 后加的可空列：旧备份里没有这一项，按空值恢复
-          const value = (column === 'estimate' || column === 'files') && !(column in rawRow) ? null : rawRow[column]
-          if (value !== null && typeof value !== 'string' && typeof value !== 'number') throw new Error('接单评估备份字段无效。')
+          const value = rawRow[column]
+          if (value !== null && typeof value !== 'string' && typeof value !== 'number') throw new Error('接单评估备份字段无效')
           row[column] = column === 'user_id' ? uid : value
         }
-        if (row.kind !== undefined && !['profile', 'log'].includes(String(row.kind))) throw new Error('接单评估文档类型无效。')
-        if (typeof row.content === 'string' && (Buffer.byteLength(row.content) > 1_000_000 || table === 'order_judge_docs' && row.hash !== judgeHash(row.content))) throw new Error('接单评估正文哈希校验失败。')
-        if (row.revision !== undefined && (!Number.isSafeInteger(row.revision) || Number(row.revision) < 1)) throw new Error('接单评估版本无效。')
-        if (table === 'order_judge_history') {
-          row.report = JSON.stringify(normalizeReport(JSON.parse(String(row.report))))
-          if (row.snapshot !== null) {
-            const snapshot = JSON.parse(String(row.snapshot)) as { profile?: { hash?: string }; log?: { hash?: string } }
-            if (!/^[0-9a-f]{64}$/.test(snapshot.profile?.hash ?? '') || snapshot.log && !/^[0-9a-f]{64}$/.test(snapshot.log.hash ?? '')) throw new Error('接单评估快照无效。')
-          }
-          for (const image of imageRefs(row)) {
-            const content = files[`order-judge/${row.id}/${image.file}`]
-            if (!content || content.length > 1_500_000 || content[0] !== 0xff || content[1] !== 0xd8) throw new Error('备份缺少有效的接单评估历史图片，请导入完整 ZIP。')
-            images.push({ path: location(uid, String(row.id), image.file), content })
-          }
+        if (typeof row.id !== 'string' || !ID_RE.test(row.id)) throw new Error('接单评估备份标识无效')
+        if (table === 'order_judge_versions') {
+          row.brief = JSON.stringify(normalizeBrief(JSON.parse(String(row.brief)), JSON.parse(String(row.brief)) as Brief))
           for (const file of fileRefs(row)) {
-            const content = files[`order-judge/${row.id}/${file.file}`]
-            if (!content || content.length > ATTACH_MAX_BYTES) throw new Error('备份缺少有效的接单评估历史附件，请导入完整 ZIP。')
-            images.push({ path: location(uid, String(row.id), file.file), content })
+            const content = files[`order-judge/${row.id}/${file}`]
+            const image = file.endsWith('.jpg')
+            if (!content || content.length > (image ? 1_500_000 : ATTACH_MAX_BYTES) || image && (content[0] !== 0xff || content[1] !== 0xd8)) throw new Error('备份缺少有效的接单评估截图或附件，请导入完整 ZIP')
+            contents.push({ path: join(versionDir(uid, row.id), file), content })
           }
         }
-        if (table === 'order_judge_runs' && row.status === 'running') { row.status = 'error'; row.error_code = 'INTERRUPTED'; row.entry_id = null }
         return row
       })
     }
-    if (restored.order_judge_history.length > 50) throw new Error('接单评估备份超过 50 条历史，未静默裁剪。')
+    if (restored.order_judge_projects.length > PROJECT_LIMIT) throw new Error(`接单评估备份超过 ${PROJECT_LIMIT} 个项目，未静默裁剪`)
   }
   return {
     apply() {
-      if (!Object.values(restored).some(rows => rows.length)) return
-      // 备份恢复不覆盖已在多端使用的版本；已有资料时保留现状，不走时间戳胜出。
-      if (tables.some(table => table !== 'order_judge_settings' && db.prepare(`SELECT 1 FROM ${table} WHERE user_id=? LIMIT 1`).get(uid))) { state = 'existing-skipped'; return }
-      for (const image of images) {
-        const folder = dirname(image.path)
+      if (!restored.order_judge_projects.length) return
+      // 备份恢复不覆盖已在多端使用的数据；已有项目时保留现状，不走时间戳胜出
+      if (db.prepare('SELECT 1 FROM order_judge_projects WHERE user_id=? LIMIT 1').get(uid)) { state = 'existing-skipped'; return }
+      for (const item of contents) {
+        const folder = dirname(item.path)
         if (!existsSync(folder)) { mkdirSync(folder, { recursive: true }); folders.push(folder) }
-        const descriptor = openSync(image.path, 'wx')
-        written.push(image.path)
-        try { writeFileSync(descriptor, image.content) } finally { closeSync(descriptor) }
+        const descriptor = openSync(item.path, 'wx')
+        written.push(item.path)
+        try { writeFileSync(descriptor, item.content) } finally { closeSync(descriptor) }
       }
       for (const table of tables) for (const row of restored[table]) {
         const columns = Object.keys(row)

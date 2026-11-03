@@ -1,0 +1,144 @@
+// 需求整理：把客户材料整理成需求清单。口径来自 docs/ideas/021-接单评估重新定位.md：
+// 每条需求标「必须 / 应该 / 可以 / 这次不做」（MoSCoW）、「新做 / 接手改」，各自挂预计投入小时和理由；
+// 客户在意的结果、预算、截止、替代方案决定客户能接受的上限，材料里没有的变成要问客户的问题。
+// 纯函数，网页服务端和桌面端共用。
+
+export const PRIORITIES = ['必须', '应该', '可以', '不做'] as const
+export const WORK_KINDS = ['新做', '接手改'] as const
+export const CLIENT_TYPES = ['商单', '学生单', '个人单', '待确认'] as const
+
+export type Priority = typeof PRIORITIES[number]
+export type WorkKind = typeof WORK_KINDS[number]
+export type ClientType = typeof CLIENT_TYPES[number]
+
+export interface BriefItem {
+  id: string
+  title: string
+  detail: string
+  priority: Priority
+  kind: WorkKind
+  hours: number
+  reason: string
+  unclear: string
+}
+
+export interface Brief {
+  title: string
+  clientType: ClientType
+  outcome: string
+  budget: string
+  deadline: string
+  alternative: string
+  items: BriefItem[]
+  excluded: string[]
+  questions: string[]
+}
+
+export type BriefChange =
+  | { type: 'added'; id: string }
+  | { type: 'removed'; id: string; title: string }
+  | { type: 'changed'; id: string; fields: (keyof BriefItem)[] }
+
+export const MAX_ITEMS = 60
+export const MAX_ITEM_HOURS = 200
+
+const RULES = `你是个人接单开发者的需求整理助手。客户可能是商家（商单）、学生（毕设、课设、作业）或个人（自己用的小工具、玩具项目）。
+开发者用 AI 写代码，写代码本身很快；真正花时间的是沟通确认、调试、部署、返工、交付后答疑，以及读懂和修改别人写的旧代码。
+
+把材料整理成需求清单。规则：
+- 材料可能包括聊天文字、截图、视频按时间顺序抽出的帧、长截图切块、网页文字。截图里的群聊杂讯、昵称、时间忽略，只看需求
+- 每条需求是客户能验收的一项功能或交付物，一个页面、一个功能、一个端、一次部署、一份文档各自成条；不拆成「前端」「后端」这种技术分工
+- priority：客户明确要的、没有就不成立的是「必须」；客户提到但可以晚点做的是「应该」；你按同类项目推断客户可能想要、客户没提的是「可以」；客户明确说不要或明显超出这次范围的是「不做」
+- kind：从零做是「新做」；在客户已有的代码、系统、文档上改是「接手改」
+- hours：一个人用 AI 写代码完成这一条的预计投入小时，包含沟通、调试、自测、部署和一轮修改，不含等待客户回复的时间。reason 用一句话写清这个数怎么来的（具体工作量在哪）
+- unclear：这一条有哪里客户没说清、会影响工作量，写清是哪一点；说清了就留空
+- clientType：判断不了写「待确认」
+- outcome：客户真正在意的结果，一句话（商单是业务结果，学生单通常是截止前交付并通过答辩，个人单通常是能跑起来、自己会用）
+- budget、deadline、alternative：材料里客户说的预算、截止日期、他不找你的话会怎么做（自己用 AI 做、找同学、找别家等）；材料里没有就留空，不猜
+- excluded：容易被客户默认包含、但这次不包含的东西（例如部署上线、论文正文、后续新功能、长期维护），每条一句话
+- questions：接下来要问客户的问题，每条不超过 40 字，按重要性排序。budget、deadline、outcome 材料里没有的，一定要问；每个 unclear 都要有对应的问题；客户前后说法矛盾的，也写成问题，不要自己挑一个版本
+- 所有文字用中文，句末不加句号，不要用破折号连接句子
+
+只输出 JSON：
+{"title":"一句话项目名","clientType":"商单|学生单|个人单|待确认","outcome":"","budget":"","deadline":"","alternative":"",
+ "items":[{"id":"沿用上一版的 id，新条目写 null","title":"","detail":"","priority":"必须|应该|可以|不做","kind":"新做|接手改","hours":数字,"reason":"","unclear":""}],
+ "excluded":[""],"questions":[""]}`
+
+const REVISE = `
+这是同一单的后续：客户追加或调整了需求。下面给出上一版需求清单，请输出调整后完整的新清单：
+- 没变的条目原样保留，id 不变
+- 改了的条目保留原 id，只改变化的字段
+- 新增的条目 id 写 null
+- 客户明确取消的条目直接不输出
+- 新材料与上一版矛盾的，以新材料为准，并在 questions 里请客户确认`
+
+export function briefSystemPrompt(previous: Brief | null): string {
+  return previous ? RULES + REVISE : RULES
+}
+
+export function briefUserText(materials: string, links: string, imageNames: string[], previous: Brief | null): string {
+  return (previous ? '上一版需求清单：\n' + JSON.stringify(previous) + '\n\n这次追加的材料：\n' : '客户材料：\n')
+    + (materials || '（只有图片）')
+    + (links ? '\n\n附：链接内容\n' + links : '')
+    + imageNames.map((n, i) => `\n图片${i + 1}：${n}`).join('')
+}
+
+const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().replace(/。$/, '').slice(0, max) : '')
+const list = (v: unknown, max: number): string[] => (Array.isArray(v) ? v.map(x => str(x, 200)).filter(Boolean).slice(0, max) : [])
+const pick = <T extends string>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? v as T : fallback)
+
+// 模型给的 id 只认上一版里真实存在、且这一版第一次出现的；其余一律当新增，按 r1、r2… 续号，不让模型造 id
+export function normalizeBrief(raw: unknown, previous: Brief | null): Brief {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const known = new Set(previous?.items.map(i => i.id) ?? [])
+  const used = new Set<string>()
+  let next = Math.max(0, ...[...known].map(id => Number(id.slice(1)) || 0)) + 1
+  const items: BriefItem[] = []
+  for (const x of Array.isArray(o.items) ? o.items.slice(0, MAX_ITEMS) : []) {
+    const r = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
+    const title = str(r.title, 120)
+    if (!title) continue
+    const hours = Number(r.hours)
+    const claimed = typeof r.id === 'string' && known.has(r.id) && !used.has(r.id) ? r.id : null
+    const id = claimed ?? `r${next++}`
+    used.add(id)
+    items.push({
+      id,
+      title,
+      detail: str(r.detail, 400),
+      priority: pick(r.priority, PRIORITIES, '应该'),
+      kind: pick(r.kind, WORK_KINDS, '新做'),
+      hours: Number.isFinite(hours) ? Math.min(MAX_ITEM_HOURS, Math.max(0, Math.round(hours * 2) / 2)) : 0,
+      reason: str(r.reason, 300),
+      unclear: str(r.unclear, 300),
+    })
+  }
+  return {
+    title: str(o.title, 120),
+    clientType: pick(o.clientType, CLIENT_TYPES, '待确认'),
+    outcome: str(o.outcome, 300),
+    budget: str(o.budget, 120),
+    deadline: str(o.deadline, 120),
+    alternative: str(o.alternative, 300),
+    items,
+    excluded: list(o.excluded, 20),
+    questions: list(o.questions, 20),
+  }
+}
+
+const COMPARED: (keyof BriefItem)[] = ['title', 'detail', 'priority', 'kind', 'hours']
+
+export function diffBrief(previous: Brief | null, current: Brief): BriefChange[] {
+  if (!previous) return []
+  const before = new Map(previous.items.map(i => [i.id, i]))
+  const changes: BriefChange[] = []
+  for (const item of current.items) {
+    const old = before.get(item.id)
+    if (!old) { changes.push({ type: 'added', id: item.id }); continue }
+    const fields = COMPARED.filter(f => old[f] !== item[f])
+    if (fields.length) changes.push({ type: 'changed', id: item.id, fields })
+  }
+  const kept = new Set(current.items.map(i => i.id))
+  for (const old of previous.items) if (!kept.has(old.id)) changes.push({ type: 'removed', id: old.id, title: old.title })
+  return changes
+}
