@@ -9,9 +9,9 @@ import { Ic } from '../SketchIcon'
 import { Select } from '../Select'
 import { useIsWide } from '../useMediaQuery'
 import { precheck } from '../../shared/order-judge'
-import { PRIORITIES, type BriefItem } from '../../shared/order-judge-brief'
+import { PRIORITIES, WORK_KINDS, type BriefItem } from '../../shared/order-judge-brief'
 import { parseBudget, type Expense } from '../../shared/order-judge-quote'
-import { DISCOUNT_STEPS, MAX_EXPENSES, VERSION_STATUSES, buildSheet, clientText, normalizeQuote, selfText, type QuoteState } from '../../shared/order-judge-sheet'
+import { DISCOUNT_STEPS, FEELINGS, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
 import { readByokKey } from '../reviews/byok'
@@ -93,6 +93,7 @@ function JudgeWorkspace(): JSX.Element {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('new')
   const [state, setState] = useState<JudgeState | null>(null)
+  const calib = calibrate(state?.projects ?? [])
   const [loadError, setLoadError] = useState('')
   const [syncError, setSyncError] = useState('')
   const [provider, setProvider] = useState<ProviderStatus | null>(null)
@@ -363,7 +364,7 @@ function JudgeWorkspace(): JSX.Element {
   if (tab === 'projects') {
     const list = state?.projects ?? []
     const current = list.find((p) => p.id === selected) ?? list[0] ?? null
-    const sheet = current && <ProjectSheet key={`${current.id}:${latest(current).n}`} project={current} onAppend={() => appendTo(current)} onSaved={replaceProject} />
+    const sheet = current && <ProjectSheet key={`${current.id}:${latest(current).n}`} project={current} onAppend={() => appendTo(current)} onSaved={replaceProject} calib={calib} />
     return (
       <>
         {head}
@@ -534,7 +535,7 @@ function JudgeWorkspace(): JSX.Element {
               </div>
             </section>
           ) : outcome?.kind === 'done' ? (
-            <ProjectSheet key={`${outcome.project.id}:${latest(outcome.project).n}`} project={outcome.project} ms={outcome.ms} onSaved={replaceProject} />
+            <ProjectSheet key={`${outcome.project.id}:${latest(outcome.project).n}`} project={outcome.project} ms={outcome.ms} onSaved={replaceProject} calib={calib} />
           ) : outcome?.kind === 'chat-record' ? (
             <section className="panel oj-sheet">
               <span className="tape tl gold" />
@@ -561,7 +562,7 @@ function JudgeWorkspace(): JSX.Element {
               )}
             </section>
           ) : target ? (
-            <ProjectSheet key={`${target.id}:${latest(target).n}`} project={target} onSaved={replaceProject} />
+            <ProjectSheet key={`${target.id}:${latest(target).n}`} project={target} onSaved={replaceProject} calib={calib} />
           ) : (
             <section className="panel oj-sheet blank oj-blank">
               <div className="empty" style={{ padding: '10px 0' }}>
@@ -660,7 +661,7 @@ function Step({ state, title, sub }: { state: 'done' | 'run' | 'wait'; title: st
 const hoursText = (h: number): string => `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`
 
 // 一个项目：版本切换 + 这一版的需求清单 + 这一版放进来的材料
-function ProjectSheet({ project, ms, onAppend, onSaved }: { project: Project; ms?: number; onAppend?: () => void; onSaved: (p: Project) => void }): JSX.Element {
+function ProjectSheet({ project, ms, onAppend, onSaved, calib }: { project: Project; ms?: number; onAppend?: () => void; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
   const [n, setN] = useState(latest(project).n)
   const version = project.versions.find(v => v.n === n) ?? latest(project)
   const b = version.brief
@@ -709,7 +710,7 @@ function ProjectSheet({ project, ms, onAppend, onSaved }: { project: Project; ms
           <ul className="oj-q">{b.questions.map((q, i) => <li key={i}><span>{q}</span></li>)}</ul>
         </div>
       )}
-      <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} />
+      <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} />
       {(version.text || version.images.length > 0 || version.files.length > 0) && (
         <details className="oj-sec oj-src">
           <summary><Ic name="clip" cls="ic ic-sm" />第 {version.n} 版放进来的材料</summary>
@@ -736,23 +737,27 @@ function ProjectSheet({ project, ms, onAppend, onSaved }: { project: Project; ms
 const pct = (r: number): string => (r ? `${Math.round(r * 100)}%` : '不让')
 
 // 报价：表单改动即时反映到下面的报价单，点保存才写回；复制 / 下载的就是当前看到的文字
-function QuotePanel({ project, version, onSaved }: { project: Project; version: Version; onSaved: (p: Project) => void }): JSX.Element {
+function QuotePanel({ project, version, onSaved, calib }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
   const [draft, setDraft] = useState<QuoteState>(version.quote)
   const [budgetText, setBudgetText] = useState(version.quote.budget == null ? '' : String(version.quote.budget))
   const [view, setView] = useState<'client' | 'self'>('self')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
   const set = (patch: Partial<QuoteState>): void => { setDraft(d => ({ ...d, ...patch })); setNote(null) }
-  const versions = project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? draft : v.quote }))
-  const sheet = buildSheet(project.title, versions, version.n)
-  const text = view === 'client' ? clientText(sheet) : selfText(sheet)
-  const dirty = JSON.stringify(normalizeQuote(draft)) !== JSON.stringify(version.quote)
+  const pending = freeze(normalizeQuote(draft), calib.settings)
+  const versions = project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? pending : v.quote }))
+  const sheet = buildSheet(project.title, versions, version.n, calib.settings)
+  const text = view === 'client' ? clientText(sheet) : selfText(sheet, calib)
+  const dirty = JSON.stringify(pending) !== JSON.stringify(version.quote)
+  const kinds = WORK_KINDS.filter(k => sheet.chosen?.lines.some(l => l.work === k))
   const parsed = parseBudget(version.brief.budget)
 
   const save = async (): Promise<void> => {
     setBusy(true)
     try {
-      onSaved(await saveQuote(version.id, normalizeQuote(draft)))
+      const saved = await saveQuote(version.id, pending)
+      onSaved(saved)
+      setDraft(saved.versions.find(x => x.id === version.id)?.quote ?? pending)
       setNote({ ok: true, text: '已保存' })
     } catch (e) {
       logClient('order-judge:quote', e)
@@ -783,6 +788,38 @@ function QuotePanel({ project, version, onSaved }: { project: Project; version: 
             {VERSION_STATUSES.map(st => <button key={st} type="button" className={draft.status === st ? 'on' : ''} onClick={() => set({ status: st })}>{st}</button>)}
           </div>
         </div>
+        {draft.status === '已报价' && (
+          <div className="oj-qrow">
+            <span className="oj-qlabel">客户结果</span>
+            <div className="seg" role="group" aria-label="客户结果">
+              {OUTCOMES.map(o => <button key={o} type="button" className={draft.outcome === o ? 'on' : ''} onClick={() => set({ outcome: o })}>{o === '嫌贵' ? '嫌贵没成交' : o}</button>)}
+            </div>
+          </div>
+        )}
+        {draft.status === '已报价' && draft.outcome === '嫌贵' && (
+          <label className="oj-qrow">
+            <span className="oj-qlabel">客户说的预算</span>
+            <input className="oj-qin" inputMode="numeric" value={draft.clientBudget ?? ''} placeholder="没说就空着"
+              onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); set({ clientBudget: v ? Number(v) : null }) }} />
+            <span className="faint small">元</span>
+          </label>
+        )}
+        {draft.status === '已成交' && kinds.map(k => (
+          <label key={k} className="oj-qrow">
+            <span className="oj-qlabel">实际{k}</span>
+            <input className="oj-qin" inputMode="decimal" value={draft.actual[k] || ''} placeholder="做完再填"
+              onChange={e => set({ actual: { ...draft.actual, [k]: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } })} />
+            <span className="faint small">小时</span>
+          </label>
+        ))}
+        {draft.status === '已成交' && (
+          <div className="oj-qrow">
+            <span className="oj-qlabel">做完觉得</span>
+            <div className="seg" role="group" aria-label="做完觉得">
+              {FEELINGS.map(f => <button key={f} type="button" className={draft.feeling === f ? 'on' : ''} onClick={() => set({ feeling: f })}>{f}</button>)}
+            </div>
+          </div>
+        )}
         {!sheet.base && sheet.tiers.length > 1 && (
           <div className="oj-qrow">
             <span className="oj-qlabel">主推</span>

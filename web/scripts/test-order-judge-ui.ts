@@ -146,6 +146,18 @@ try {
   assert.equal(await change.getByRole('group', { name: '人情折让' }).locator('.on').innerText(), '不让')
   pass('成交后追加的版本出变更单：只算新增和改动，去掉的不退，折让不沿用')
 
+  await change.getByRole('group', { name: '状态' }).getByRole('button', { name: '已成交' }).click()
+  await change.getByLabel('实际新做').fill('8')
+  await change.getByLabel('实际接手改').fill('3')
+  await change.getByRole('group', { name: '做完觉得' }).getByRole('button', { name: '亏' }).click()
+  await change.getByRole('button', { name: '保存' }).click()
+  await change.getByText('已保存').waitFor()
+  const fed = JSON.parse((db.prepare('SELECT quote FROM order_judge_versions WHERE n=2').get() as { quote: string }).quote) as { actual: Record<string, number>; feeling: string; frozen: { rates: Record<string, number> } }
+  assert.deepEqual(fed.actual, { 新做: 8, 接手改: 3 }); assert.equal(fed.feeling, '亏')
+  assert.deepEqual(fed.frozen.rates, { 新做: 31, 接手改: 267 })
+  assert.match(await change.locator('.oj-qtext').innerText(), /按报出去那一刻的/)
+  pass('成交后按新做 / 接手改分别回填实际小时和感受，保存时冻结当时的时间值')
+
   await page.getByRole('button', { name: /^项目/ }).click()
   const rows = page.locator('.oj-row')
   assert.equal(await rows.count(), 1)

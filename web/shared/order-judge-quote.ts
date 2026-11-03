@@ -13,6 +13,7 @@ import { diffBrief, type Brief, type BriefItem, type Priority, type WorkKind } f
 
 export interface QuoteSettings {
   rates: Record<WorkKind, number>
+  hourFactor: Record<WorkKind, number>
   padRatio: number
   maxDiscount: number
   warrantyDays: number
@@ -20,6 +21,7 @@ export interface QuoteSettings {
 
 export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
   rates: { 新做: 31, 接手改: 267 },
+  hourFactor: { 新做: 1, 接手改: 1 },
   padRatio: 0.5,
   maxDiscount: 0.2,
   warrantyDays: 14,
@@ -37,6 +39,7 @@ export type LineKind = 'item' | 'pad' | 'result' | 'expense'
 export interface QuoteLine {
   kind: LineKind
   itemId?: string
+  work?: WorkKind
   label: string
   hours: number
   rate: number
@@ -71,16 +74,19 @@ const hoursText = (h: number): string => `${h} 小时`
 function itemLines(items: BriefItem[], s: QuoteSettings, hoursOf: (i: BriefItem) => number, whyOf: (i: BriefItem) => string): QuoteLine[] {
   const lines: QuoteLine[] = []
   for (const i of items) {
-    const hours = hoursOf(i)
-    if (hours <= 0) continue
+    const raw = hoursOf(i)
+    if (raw <= 0) continue
+    const factor = s.hourFactor[i.kind]
+    const hours = Math.round(raw * factor * 2) / 2
     const rate = s.rates[i.kind]
-    lines.push({ kind: 'item', itemId: i.id, label: i.title, hours, rate, amount: yuan(hours * rate), why: `${i.kind}，${hoursText(hours)} × ${rate}，${whyOf(i)}` })
+    const scaled = factor === 1 ? '' : `AI 估 ${raw} 小时，按你过去的实际 × ${factor}，`
+    lines.push({ kind: 'item', itemId: i.id, work: i.kind, label: i.title, hours, rate, amount: yuan(hours * rate), why: `${i.kind}，${scaled}${hoursText(hours)} × ${rate}，${whyOf(i)}` })
   }
   const padded = lines.filter(l => items.find(i => i.id === l.itemId)?.unclear)
   for (const l of padded) {
     const item = items.find(i => i.id === l.itemId)!
     const hours = l.hours * s.padRatio
-    lines.push({ kind: 'pad', itemId: l.itemId, label: `兜底：${l.label}`, hours, rate: l.rate, amount: yuan(hours * l.rate), why: `未说清「${item.unclear}」，按 ${s.padRatio} 倍小时垫` })
+    lines.push({ kind: 'pad', itemId: l.itemId, work: l.work, label: `兜底：${l.label}`, hours, rate: l.rate, amount: yuan(hours * l.rate), why: `未说清「${item.unclear}」，按 ${s.padRatio} 倍小时垫` })
   }
   return lines
 }
@@ -89,7 +95,7 @@ function extraLines(extras: QuoteExtras, s: QuoteSettings): QuoteLine[] {
   const lines: QuoteLine[] = []
   if (extras.resultHours > 0) {
     const rate = s.rates['新做']
-    lines.push({ kind: 'result', label: '交付后修改到结果达成', hours: extras.resultHours, rate, amount: yuan(extras.resultHours * rate), why: `预计 ${hoursText(extras.resultHours)} × ${rate}` })
+    lines.push({ kind: 'result', work: '新做', label: '交付后修改到结果达成', hours: extras.resultHours, rate, amount: yuan(extras.resultHours * rate), why: `预计 ${hoursText(extras.resultHours)} × ${rate}` })
   }
   for (const e of extras.expenses) {
     if (e.amount > 0) lines.push({ kind: 'expense', label: e.name, hours: 0, rate: 0, amount: yuan(e.amount), why: '实际支出，原价计入' })

@@ -231,7 +231,7 @@
 .oj-qrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .oj-qrow.top { align-items: flex-start; }
 .oj-qrow.top .oj-qlabel { padding-top: 8px; }
-.oj-qlabel { flex: 0 0 72px; font-size: 12.5px; color: var(--ink-sub); }
+.oj-qlabel { flex: 0 0 84px; font-size: 12.5px; color: var(--ink-sub); }
 .oj-qin { width: 96px; min-height: 34px; padding: 6px 10px; font: inherit; font-size: 13.5px; color: var(--ink); background: var(--field-bg); border: 1.5px solid var(--field-line); border-radius: 8px 11px 8px 11px; outline: none; transition: border-color .2s, box-shadow .2s; }
 .oj-qin.wide { width: 220px; max-width: 100%; }
 .oj-qin::placeholder { color: var(--ink-faint); }

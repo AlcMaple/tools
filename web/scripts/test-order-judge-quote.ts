@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import type { Brief, BriefItem } from '../shared/order-judge-brief'
-import { applyDiscount, changeOrder, parseBudget, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
+import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
+import { EMPTY_QUOTE, buildSheet, calibrate, freeze, normalizeQuote, selfText, type QuoteState } from '../shared/order-judge-sheet'
 
 let checks = 0
 const pass = (label: string): void => { console.log(`PASS Q${++checks}: ${label}`) }
@@ -92,5 +93,61 @@ assert.equal(co.lines.find(l => l.kind === 'pad')!.hours, 1.5)
 assert.deepEqual(co.removed, ['条目r5'])
 assert.equal(co.floor, 3 * 31 + 8 * 31 + 5 * 31 + Math.round(1.5 * 31))
 pass('变更单只算新增和改动：只改优先级不收，只加小时收差额，内容改了整条重算')
+
+// ── 回填与校准 ──
+// 单子：必须 10 小时新做 → 底线 310，报价 390；主推档只有基础
+const one = brief([item('r1', '必须', 10)])
+const v = (quote: Partial<QuoteState>, b: Brief = one) => ({ n: 1, at: 0, brief: b, quote: { ...EMPTY_QUOTE, ...quote } })
+const proj = (quote: Partial<QuoteState>, b?: Brief) => ({ title: 'p', versions: [v(quote, b)] })
+
+assert.deepEqual(calibrate([]).settings, DEFAULT_QUOTE_SETTINGS)
+assert.match(calibrate([]).notes.join(), /新做时间值 31：来自答题/)
+pass('没有回填时时间值就是答题结果')
+
+// 成交 390，实际 20 小时，觉得亏 → 每小时 19.5 < 31，不动；实际 20 ÷ 预估 10 → 小时 × 2
+const c1 = calibrate([proj({ status: '已成交', actual: { 新做: 20, 接手改: 0 }, feeling: '亏' })])
+assert.equal(c1.settings.rates['新做'], 31)
+assert.equal(c1.settings.hourFactor['新做'], 2)
+assert.equal(c1.settings.hourFactor['接手改'], 1)
+pass('实际小时只修小时系数：实际 ÷ 预估取中位数，亏但每小时低于现值时不动时间值')
+
+// 成交 390，实际 5 小时，觉得亏 → 每小时 78 → 时间值至少 78
+const c2 = calibrate([proj({ status: '已成交', actual: { 新做: 5, 接手改: 0 }, feeling: '亏' })])
+assert.equal(c2.settings.rates['新做'], 78)
+assert.match(c2.notes.join(), /时间值至少到这/)
+pass('做完觉得亏：时间值抬到亏的那单每小时价格')
+
+// 亏 78 + 值 130（3 小时）→ 取中间 104
+const c3 = calibrate([proj({ status: '已成交', actual: { 新做: 5, 接手改: 0 }, feeling: '亏' }), proj({ status: '已成交', actual: { 新做: 3, 接手改: 0 }, feeling: '值' })])
+assert.equal(c3.settings.rates['新做'], 104)
+pass('有亏有值：时间值取亏的最高和值的最低中间')
+
+// 我没接：报价 390 ÷ 10 小时 = 39 → 时间值至少 39；人情折让和实际小时都不参与
+const c4 = calibrate([proj({ status: '已报价', outcome: '我没接' })])
+assert.equal(c4.settings.rates['新做'], 39)
+pass('自己不想接的单也是依据：时间值高于它的每小时报价')
+
+const c5 = calibrate([proj({ status: '已报价', outcome: '嫌贵', clientBudget: 200 }), proj({ status: '已报价', outcome: '嫌贵', clientBudget: 600 })])
+assert.deepEqual(c5.settings, DEFAULT_QUOTE_SETTINGS)
+assert.deepEqual(c5.budgets['学生单'], { median: 400, count: 2 })
+pass('客户嫌贵只记预算参考，不动时间值')
+
+// 冻结：报出去之后再校准，那一版的价不变
+const quoted = freeze(normalizeQuote({ status: '已报价' }), DEFAULT_QUOTE_SETTINGS)
+assert.deepEqual(quoted.frozen?.rates, { 新做: 31, 接手改: 267 })
+const later = buildSheet('p', [v(quoted)], 1, c2.settings)
+assert.equal(later.chosen!.floor, 310)
+// 草稿用校准后的：小时 × 0.5（实际 5 ÷ 预估 10）、时间值 78 → 5 × 78
+assert.equal(buildSheet('p', [v(EMPTY_QUOTE)], 1, c2.settings).chosen!.floor, 390)
+assert.equal(freeze({ ...quoted, status: '草稿' }, DEFAULT_QUOTE_SETTINGS).frozen, null)
+assert.match(selfText(later, c2), /按报出去那一刻的/)
+pass('离开草稿时冻结当时的时间值，之后校准只影响草稿')
+
+// 小时系数作用在 AI 估的小时上，并写明
+const scaled = buildSheet('p', [v(EMPTY_QUOTE)], 1, c1.settings)
+assert.equal(scaled.chosen!.lines[0].hours, 20)
+assert.match(scaled.chosen!.lines[0].why, /AI 估 10 小时，按你过去的实际 × 2/)
+assert.deepEqual(normalizeQuote(JSON.parse(JSON.stringify(quoted))), quoted)
+pass('小时系数乘在 AI 预估上并写明来源，回填数据存取不走样')
 
 console.log(`\n${checks} 项全部通过`)
