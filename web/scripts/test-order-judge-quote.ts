@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import type { Brief, BriefItem } from '../shared/order-judge-brief'
 import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
-import { EMPTY_QUOTE, buildSheet, calibrate, freeze, normalizeQuote, selfText, type QuoteState } from '../shared/order-judge-sheet'
+import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type QuoteState } from '../shared/order-judge-sheet'
 
 let checks = 0
 const pass = (label: string): void => { console.log(`PASS Q${++checks}: ${label}`) }
@@ -149,5 +149,35 @@ assert.equal(scaled.chosen!.lines[0].hours, 20)
 assert.match(scaled.chosen!.lines[0].why, /AI 估 10 小时，按你过去的实际 × 2/)
 assert.deepEqual(normalizeQuote(JSON.parse(JSON.stringify(quoted))), quoted)
 pass('小时系数乘在 AI 预估上并写明来源，回填数据存取不走样')
+
+// ── 成效奖金 ──
+// 底线 310、报价 390；把握 5 成 → 奖金 (390 − 310) ÷ 0.5 = 160，平均收 310 + 0.5 × 160 = 390
+const shop = { ...one, clientType: '商单' as const }
+const terms = { ...EMPTY_BONUS, on: true, metric: '下单转化率', baseline: '1.2%', target: '2%', verify: '后台 30 天订单数 ÷ 访客数', period: '上线后 3 个月', gain: 8000 }
+const bs = buildSheet('p', [v({ bonus: terms }, shop)], 1)
+assert.deepEqual(bs.bonus, { fixed: 310, amount: 160, confidence: 0.5, expected: 390 })
+const bc = clientText(bs)
+assert.match(bc, /先付 ¥310，交付时付清\n达标后再付 ¥160/)
+assert.match(bc, /· 怎么算达标：后台 30 天订单数 ÷ 访客数/)
+assert.match(bc, /没达标不付奖金，先付的部分不退/)
+assert.match(selfText(bs), /奖金是客户达标后多赚 ¥8,000 的 2%/)
+pass('成效奖金：先付 = 底线，奖金按把握倒推，平均收入等于原报价')
+
+assert.equal(buildSheet('p', [v({ bonus: { ...terms, confidence: 0.9 } }, shop)], 1).bonus!.amount, 90)
+assert.equal(buildSheet('p', [v({ bonus: terms })], 1).bonus, null)
+assert.match(selfText(buildSheet('p', [v({ bonus: { ...terms, verify: '' } }, shop)], 1)), /条款还缺：怎么算达标/)
+const withDiscount = buildSheet('p', [v({ bonus: terms, discount: { ratio: 0.2, reason: '老客户' } }, shop)], 1)
+assert.doesNotMatch(clientText(withDiscount), /人情折让/)
+pass('把握越高奖金越少；学生单不出成效方案；条款没写清会提醒；成效方案下人情折让不生效')
+
+// 回填：奖金还没结果不拿来校准时间值；没达标按先付算（310 ÷ 2 小时 = 155，亏 → 时间值至少 155）
+const pend = calibrate([proj({ status: '已成交', actual: { 新做: 2, 接手改: 0 }, feeling: '亏', bonus: terms }, shop)])
+assert.equal(pend.settings.rates['新做'], 31)
+const miss = calibrate([proj({ status: '已成交', actual: { 新做: 2, 接手改: 0 }, feeling: '亏', bonus: { ...terms, result: '没达标' } }, shop)])
+assert.equal(miss.settings.rates['新做'], 155)
+const hit = calibrate([proj({ status: '已成交', actual: { 新做: 2, 接手改: 0 }, feeling: '亏', bonus: { ...terms, result: '达标' } }, shop)])
+assert.equal(hit.settings.rates['新做'], 235)
+assert.deepEqual(normalizeQuote(JSON.parse(JSON.stringify({ ...EMPTY_QUOTE, bonus: terms }))).bonus, terms)
+pass('校准按实际收到的钱：奖金待定不算，没达标只算先付，达标加上奖金')
 
 console.log(`\n${checks} 项全部通过`)

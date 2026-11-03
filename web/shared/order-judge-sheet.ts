@@ -18,6 +18,25 @@ export const FEELINGS = ['待定', '亏', '刚好', '值'] as const
 export type Outcome = typeof OUTCOMES[number]
 export type Feeling = typeof FEELINGS[number]
 
+// 成效奖金（商单）：文章「固定建置費 + 成效獎金，客戶心理門檻最低」。文章没给奖金比例，这里不编比例，用期望值倒推：
+// 先付 = 底线（没达标你也不亏），奖金 = (报价 − 底线) ÷ 你对达标的把握，于是「先付 + 把握 × 奖金」= 原报价，平均下来不少收
+export const CONFIDENCE_STEPS = [0.3, 0.5, 0.7, 0.9]
+export const BONUS_RESULTS = ['待定', '达标', '没达标'] as const
+export type BonusResult = typeof BONUS_RESULTS[number]
+export interface BonusTerms {
+  on: boolean
+  metric: string
+  baseline: string
+  target: string
+  verify: string
+  period: string
+  confidence: number
+  gain: number | null
+  result: BonusResult
+}
+export const EMPTY_BONUS: BonusTerms = { on: false, metric: '', baseline: '', target: '', verify: '', period: '', confidence: 0.5, gain: null, result: '待定' }
+export const bonusAllowed = (b: Brief): boolean => b.clientType === '商单' || b.clientType === '待确认'
+
 // 报出去的价不能因为之后的校准变掉：状态离开草稿时把当时的时间值和小时系数存进版本
 export interface Frozen { rates: Record<WorkKind, number>; hourFactor: Record<WorkKind, number> }
 
@@ -33,11 +52,12 @@ export interface QuoteState {
   actual: Record<WorkKind, number>
   feeling: Feeling
   frozen: Frozen | null
+  bonus: BonusTerms
 }
 
 export const EMPTY_QUOTE: QuoteState = {
   status: '草稿', budget: null, resultHours: 0, expenses: [], tier: '推荐', discount: { ratio: 0, reason: '' },
-  outcome: '待定', clientBudget: null, actual: { 新做: 0, 接手改: 0 }, feeling: '待定', frozen: null,
+  outcome: '待定', clientBudget: null, actual: { 新做: 0, 接手改: 0 }, feeling: '待定', frozen: null, bonus: EMPTY_BONUS,
 }
 
 const num = (v: unknown, max: number): number => {
@@ -65,6 +85,19 @@ export function normalizeQuote(raw: unknown): QuoteState {
     actual: perKind(o.actual, 1000),
     feeling: FEELINGS.includes(o.feeling as Feeling) ? o.feeling as Feeling : '待定',
     frozen: frozenOf(o.frozen),
+    bonus: bonusOf(o.bonus),
+  }
+}
+
+function bonusOf(v: unknown): BonusTerms {
+  const r = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>
+  const c = Number(r.confidence)
+  return {
+    on: r.on === true,
+    metric: text(r.metric, 60), baseline: text(r.baseline, 60), target: text(r.target, 60), verify: text(r.verify, 120), period: text(r.period, 40),
+    confidence: CONFIDENCE_STEPS.includes(c) ? c : 0.5,
+    gain: r.gain == null || r.gain === '' ? null : Math.round(num(r.gain, 1_000_000_000)) || null,
+    result: BONUS_RESULTS.includes(r.result as BonusResult) ? r.result as BonusResult : '待定',
   }
 }
 
@@ -112,6 +145,7 @@ export interface Sheet {
   discount: ReturnType<typeof applyDiscount> | null
   zone: Zone
   settings: QuoteSettings
+  bonus: { fixed: number; amount: number; confidence: number; expected: number } | null
 }
 
 // 本版之前最近一个「已成交」的版本就是变更单的基准；没有就按整单出三档
@@ -126,14 +160,28 @@ export function buildSheet(title: string, versions: SheetVersion[], n: number, c
   if (base) {
     const change = changeOrder(base.brief, v.brief, extras, s)
     const chosen = change.lines.length ? { name: '变更', ...change } : null
-    return { title, n, at: v.at, brief: v.brief, quote: v.quote, budget, budgetFrom, base, tiers: [], change, chosen, discount: chosen && applyDiscount(chosen, v.quote.discount, s), zone: { type: 'unknown' }, settings: s }
+    return { title, n, at: v.at, brief: v.brief, quote: v.quote, budget, budgetFrom, base, tiers: [], change, chosen, discount: chosen && applyDiscount(chosen, v.quote.discount, s), zone: { type: 'unknown' }, settings: s, bonus: null }
   }
   const ts = tiers(v.brief, extras, s)
   const tier = ts.find(t => t.name === v.quote.tier) ?? ts[ts.length - 1] ?? null
   return {
     title, n, at: v.at, brief: v.brief, quote: v.quote, budget, budgetFrom, base: null, tiers: ts, change: null,
     chosen: tier, discount: tier && applyDiscount(tier, v.quote.discount, s), zone: zone(v.brief, extras, budget, s), settings: s,
+    bonus: tier && v.quote.bonus.on && bonusAllowed(v.brief) ? bonusPlan(tier, v.quote.bonus.confidence) : null,
   }
+}
+
+export function bonusPlan(p: Priced, confidence: number): NonNullable<Sheet['bonus']> {
+  const amount = Math.ceil((p.quote - p.floor) / confidence / 10) * 10
+  return { fixed: p.floor, amount, confidence, expected: Math.round(p.floor + confidence * amount) }
+}
+
+// 实际收到的钱：带成效奖金的单，先付 + 达标才有的奖金；奖金还没结果时返回 null，不拿来校准
+export function received(sheet: Sheet): number | null {
+  if (!sheet.discount) return null
+  if (!sheet.bonus) return sheet.discount.price
+  const r = sheet.quote.bonus.result
+  return r === '待定' ? null : sheet.bonus.fixed + (r === '达标' ? sheet.bonus.amount : 0)
 }
 
 const RESULT_PROMISE: Record<ClientType, string> = {
@@ -171,8 +219,19 @@ export function blocks(p: Priced): { label: string; amount: number }[] {
 
 function discountLines(sheet: Sheet): string[] {
   const d = sheet.discount
-  if (!d || !d.amount || !sheet.chosen) return []
+  if (!d || !d.amount || !sheet.chosen || sheet.bonus) return []
   return ['', `【人情折让】${sheet.chosen.name === '变更' ? '' : sheet.chosen.name + '档'}`, `原价 ${money(sheet.chosen.quote)}`, `人情折让 −${money(d.amount)}${d.reason ? `（${d.reason}）` : ''}`, `实收 ${money(d.price)}`]
+}
+
+const BONUS_FIELDS: [keyof BonusTerms, string][] = [['metric', '看什么'], ['baseline', '现在'], ['target', '目标'], ['verify', '怎么算达标'], ['period', '考核期']]
+
+function bonusLines(sheet: Sheet): string[] {
+  const p = sheet.bonus, t = sheet.quote.bonus
+  if (!p || !sheet.chosen) return []
+  const out = ['', `【成效方案】${sheet.chosen.name}档的内容，换一种付法`, `先付 ${money(p.fixed)}，交付时付清`, `达标后再付 ${money(p.amount)}`]
+  for (const [k, label] of BONUS_FIELDS) if (t[k]) out.push(`· ${label}：${t[k]}`)
+  out.push('· 没达标不付奖金，先付的部分不退')
+  return out
 }
 
 function afterLines(sheet: Sheet, days: number): string[] {
@@ -204,7 +263,7 @@ export function clientText(sheet: Sheet): string {
     for (const id of t.itemIds) out.push(`· ${byId.get(id)!.title}`)
     for (const bl of blocks(t)) out.push(`  ${bl.label} ${money(bl.amount)}`)
   }
-  out.push(...discountLines(sheet), ...afterLines(sheet, s.warrantyDays))
+  out.push(...bonusLines(sheet), ...discountLines(sheet), ...afterLines(sheet, s.warrantyDays))
   const notIn = [...b.items.filter(i => i.priority === '不做').map(i => i.title), ...b.excluded]
   if (notIn.length) out.push('', '【不包含】', ...notIn.map(x => '· ' + x))
   out.push('', '清单以外的新想法，每一条单独报价，你决定要不要做')
@@ -234,7 +293,17 @@ export function selfText(sheet: Sheet, calib: Calibration | null = null): string
   }
   if (sheet.change?.removed.length) out.push('', '【这一版去掉的】已成交的部分，客户不提就不退', ...sheet.change.removed.map(x => '· ' + x))
   if (!sheet.change) out.push('', ...zoneText(sheet.zone, sheet.budget))
-  if (sheet.discount?.amount) out.push(`人情折让 −${money(sheet.discount.amount)}，实收 ${money(sheet.discount.price)}，底线 ${money(sheet.chosen!.floor)}`)
+  if (sheet.bonus && sheet.chosen) {
+    const p = sheet.bonus, t = sheet.quote.bonus
+    out.push('', `【成效方案】先付 = ${sheet.chosen.name}档底线 ${money(p.fixed)}；奖金 = (报价 ${money(sheet.chosen.quote)} − 底线) ÷ 把握 ${p.confidence * 10} 成 = ${money(p.amount)}`)
+    out.push(`按你的把握，平均能收 ${money(p.expected)}，和直接报价差不多；没达标也不低于底线`)
+    if (t.gain) out.push(`奖金是客户达标后多赚 ${money(t.gain)} 的 ${Math.round(p.amount / t.gain * 100)}%`)
+    const missing = BONUS_FIELDS.filter(([k]) => !t[k]).map(([, label]) => label)
+    if (missing.length) out.push(`条款还缺：${missing.join('、')}，没写清的不要发给客户`)
+    if (sheet.discount?.amount) out.push('选了成效方案，人情折让不再生效：先付已经是底线')
+    if (sheet.quote.status === '已成交') out.push(`奖金结果：${t.result}`)
+  }
+  if (sheet.discount?.amount && !sheet.bonus) out.push(`人情折让 −${money(sheet.discount.amount)}，实收 ${money(sheet.discount.price)}，底线 ${money(sheet.chosen!.floor)}`)
   return out.join('\n')
 }
 
@@ -285,8 +354,9 @@ export function calibrate(projects: { title: string; versions: SheetVersion[] }[
       const actual = q.actual[k]
       const estimate = hoursBy(lines, k, f[k], ['item', 'result'])
       if (q.status === '已成交' && actual > 0 && estimate > 0) ratios[k].push(actual / estimate)
-      if (worth && actual > 0) {
-        const rate = (sheet.discount.price - expense) * share[k] / actual
+      const paid = received(sheet)
+      if (worth && actual > 0 && paid != null) {
+        const rate = (paid - expense) * share[k] / actual
         ;(q.feeling === '亏' ? lows : q.feeling === '值' ? highs : exact)[k].push(rate)
       }
       // 自己不想接：按报价和预计小时（含兜底）折出的每小时都不够，时间值高于它

@@ -11,7 +11,7 @@ import { useIsWide } from '../useMediaQuery'
 import { precheck } from '../../shared/order-judge'
 import { PRIORITIES, WORK_KINDS, type BriefItem } from '../../shared/order-judge-brief'
 import { parseBudget, type Expense } from '../../shared/order-judge-quote'
-import { DISCOUNT_STEPS, FEELINGS, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../shared/order-judge-sheet'
+import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
 import { readByokKey } from '../reviews/byok'
@@ -734,6 +734,14 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib }: { project: Proj
   )
 }
 
+const BONUS_INPUTS: [keyof BonusTerms, string, string][] = [
+  ['metric', '看什么', '下单转化率、大促不掉单、退货率'],
+  ['baseline', '现在', '改之前的数，如 1.2%'],
+  ['target', '目标', '如 2%'],
+  ['verify', '怎么算达标', '用哪里的数据、怎么算'],
+  ['period', '考核期', '如上线后 3 个月'],
+]
+
 const pct = (r: number): string => (r ? `${Math.round(r * 100)}%` : '不让')
 
 // 报价：表单改动即时反映到下面的报价单，点保存才写回；复制 / 下载的就是当前看到的文字
@@ -744,6 +752,7 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
   const set = (patch: Partial<QuoteState>): void => { setDraft(d => ({ ...d, ...patch })); setNote(null) }
+  const setBonus = (patch: Partial<BonusTerms>): void => { setDraft(d => ({ ...d, bonus: { ...d.bonus, ...patch } })); setNote(null) }
   const pending = freeze(normalizeQuote(draft), calib.settings)
   const versions = project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? pending : v.quote }))
   const sheet = buildSheet(project.title, versions, version.n, calib.settings)
@@ -853,13 +862,53 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
             ))}
           </div>
         </div>
-        <div className="oj-qrow">
-          <span className="oj-qlabel">人情折让</span>
-          <div className="seg" role="group" aria-label="人情折让">
-            {DISCOUNT_STEPS.map(r => <button key={r} type="button" className={draft.discount.ratio === r ? 'on' : ''} onClick={() => set({ discount: { ...draft.discount, ratio: r } })}>{pct(r)}</button>)}
+        {!sheet.bonus && (
+          <div className="oj-qrow">
+            <span className="oj-qlabel">人情折让</span>
+            <div className="seg" role="group" aria-label="人情折让">
+              {DISCOUNT_STEPS.map(r => <button key={r} type="button" className={draft.discount.ratio === r ? 'on' : ''} onClick={() => set({ discount: { ...draft.discount, ratio: r } })}>{pct(r)}</button>)}
+            </div>
           </div>
-        </div>
-        {draft.discount.ratio > 0 && (
+        )}
+        {!sheet.base && bonusAllowed(version.brief) && (
+          <div className="oj-qrow">
+            <span className="oj-qlabel">成效奖金</span>
+            <div className="seg" role="group" aria-label="成效奖金">
+              {[false, true].map(on => <button key={String(on)} type="button" className={draft.bonus.on === on ? 'on' : ''} onClick={() => setBonus({ on })}>{on ? '加' : '不加'}</button>)}
+            </div>
+          </div>
+        )}
+        {sheet.bonus && BONUS_INPUTS.map(([k, label, hint]) => (
+          <label key={k} className="oj-qrow">
+            <span className="oj-qlabel">{label}</span>
+            <input className="oj-qin wide" value={draft.bonus[k] as string} placeholder={hint} maxLength={k === 'verify' ? 120 : 60} onChange={e => setBonus({ [k]: e.target.value })} />
+          </label>
+        ))}
+        {sheet.bonus && (
+          <div className="oj-qrow">
+            <span className="oj-qlabel">达标把握</span>
+            <div className="seg" role="group" aria-label="达标把握">
+              {CONFIDENCE_STEPS.map(c => <button key={c} type="button" className={draft.bonus.confidence === c ? 'on' : ''} onClick={() => setBonus({ confidence: c })}>{c * 10} 成</button>)}
+            </div>
+          </div>
+        )}
+        {sheet.bonus && (
+          <label className="oj-qrow">
+            <span className="oj-qlabel">客户多赚</span>
+            <input className="oj-qin" inputMode="numeric" value={draft.bonus.gain ?? ''} placeholder="达标后客户多赚多少"
+              onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); setBonus({ gain: v ? Number(v) : null }) }} />
+            <span className="faint small">元，可不填</span>
+          </label>
+        )}
+        {sheet.bonus && draft.status === '已成交' && (
+          <div className="oj-qrow">
+            <span className="oj-qlabel">奖金结果</span>
+            <div className="seg" role="group" aria-label="奖金结果">
+              {BONUS_RESULTS.map(r => <button key={r} type="button" className={draft.bonus.result === r ? 'on' : ''} onClick={() => setBonus({ result: r })}>{r}</button>)}
+            </div>
+          </div>
+        )}
+        {draft.discount.ratio > 0 && !sheet.bonus && (
           <label className="oj-qrow">
             <span className="oj-qlabel">折让原因</span>
             <input className="oj-qin wide" value={draft.discount.reason} placeholder="同学、老客户第 3 单、换作品展示权" maxLength={60}
