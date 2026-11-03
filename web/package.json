@@ -42,7 +42,8 @@
     "test:agent-sources": "npm run build && tsx scripts/test-agent-sources.ts && tsx scripts/test-agent-source-budget.ts",
     "test:girigiri": "tsx scripts/test-girigiri-next.ts",
     "test:catalog-navigation:serve": "npm run build && node scripts/catalog-navigation-fixture.mjs",
-    "test:auth-dialog-labels": "tsx scripts/test-auth-dialog-labels.ts"
+    "test:auth-dialog-labels": "tsx scripts/test-auth-dialog-labels.ts",
+    "test:manual-add-mode": "npm run build && tsx scripts/test-manual-add-mode.ts"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.9",
