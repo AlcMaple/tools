@@ -17,7 +17,7 @@ import { NagBar } from './NagBar'
 import { REWARDS_ENABLED, navigate, useRoute, type Route } from './router'
 import { RewardsPage } from './RewardsPage'
 import { SettingsPage } from './SettingsPage'
-import { TracksPage } from './TracksPage'
+import { TracksPage, type TrackFilter } from './TracksPage'
 import { Ic, SketchSprite, type SketchIconName } from './SketchIcon'
 import { Splash } from './Splash'
 import { Popover } from './Popover'
@@ -66,6 +66,10 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
   useEffect(() => { window.__mtAppReady?.() }, [])
   const route = useRoute()
   const { user, ready, dailyReward } = useAuth()
+  const [tracksFilter, setTracksFilter] = useState<TrackFilter>('all')
+  useEffect(() => {
+    setTracksFilter('all')
+  }, [user?.id])
   const [feedbackUnread, setFeedbackUnread] = useState(0)
   const [mUserOpen, setMUserOpen] = useState(false)
   const mUserBtn = useRef<HTMLButtonElement>(null)
@@ -350,7 +354,7 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
             {route === 'feedback' ? <FeedbackPanel key={user?.id ?? 'guest'} /> : route === 'settings'
               ? <SettingsPage />
               : route === 'tracks'
-                ? <TracksPage />
+                ? <TracksPage filter={tracksFilter} onFilterChange={setTracksFilter} />
                 : route === 'catalog'
                   ? <CatalogPage key={user?.id ?? 'guest'} />
                 : route === 'history'

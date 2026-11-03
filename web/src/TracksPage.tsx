@@ -61,7 +61,7 @@ import { SketchSheet } from './SketchSheet'
 import { LegacyRig, useSpriteStyle } from './sprites'
 import { useIsWide } from './useMediaQuery'
 
-type FilterKey = 'all' | TrackStatus
+export type TrackFilter = 'all' | TrackStatus
 type TrackView = 'cards' | 'list' | 'timeline'
 type AddFlow = { initialQuery?: string; backfill?: BackfillTarget }
 
@@ -95,13 +95,12 @@ function applyLocal(t: Track, p: TrackPatch): Track {
   return next
 }
 
-export function TracksPage(): JSX.Element {
+export function TracksPage({ filter, onFilterChange }: { filter: TrackFilter; onFilterChange: (next: TrackFilter) => void }): JSX.Element {
   const { user, ready, error: authError } = useAuth()
   const [tracks, setTracks] = useState<Track[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tracksError, setTracksError] = useState<string | null>(null)
   const [loadProgress, setLoadProgress] = useState<TracksLoadProgress | null>(null)
-  const [filter, setFilter] = useState<FilterKey>('all')
   const [view, setView] = useState<TrackView>('cards')
   const [sort, setSortState] = useState<TrackSort>(readSort)
   const setSort = (next: TrackSort): void => {
@@ -540,13 +539,13 @@ export function TracksPage(): JSX.Element {
       {!wide && toolbar}
 
       <div className="tabf-row">
-        {([['all', '全部'], ...STATUS_META.map((m) => [m.key, m.label])] as [FilterKey, string][]).map(
+        {([['all', '全部'], ...STATUS_META.map((m) => [m.key, m.label])] as [TrackFilter, string][]).map(
           ([k, label]) => (
             <button
               key={k}
               type="button"
               className={`tabf${filter === k ? ' on' : ''}`}
-              onClick={() => setFilter(k)}
+              onClick={() => onFilterChange(k)}
             >
               {label} <span className="badge-num">{counts[k]}</span>
             </button>
