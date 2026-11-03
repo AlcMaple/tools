@@ -7,7 +7,7 @@ import { VIDEO_FRAMES, precheck } from '../../../../web/shared/order-judge'
 import { PRIORITIES, WORK_KINDS, type BriefItem } from '../../../../web/shared/order-judge-brief'
 import { VERSION_LIMIT, type Project, type Version } from '../../../../web/shared/order-judge-api'
 import { parseBudget, type Expense } from '../../../../web/shared/order-judge-quote'
-import { DISCOUNT_STEPS, FEELINGS, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../../../web/shared/order-judge-sheet'
+import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../../../web/shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
 import type { OrderJudgeView } from '../types/orderJudge'
 
@@ -201,6 +201,14 @@ function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved,
   )
 }
 
+const BONUS_INPUTS: [keyof BonusTerms, string, string][] = [
+  ['metric', '看什么', '下单转化率、大促不掉单、退货率'],
+  ['baseline', '现在', '改之前的数，如 1.2%'],
+  ['target', '目标', '如 2%'],
+  ['verify', '怎么算达标', '用哪里的数据、怎么算'],
+  ['period', '考核期', '如上线后 3 个月'],
+]
+
 const pct = (r: number): string => (r ? `${Math.round(r * 100)}%` : '不让')
 
 function Seg<T extends string | number>({ label, options, value, text, onPick }: { label: string; options: readonly T[]; value: T; text?: (v: T) => string; onPick: (v: T) => void }): JSX.Element {
@@ -224,6 +232,7 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
   const set = (patch: Partial<QuoteState>): void => { setDraft(d => ({ ...d, ...patch })); setNote(null) }
+  const setBonus = (patch: Partial<BonusTerms>): void => { setDraft(d => ({ ...d, bonus: { ...d.bonus, ...patch } })); setNote(null) }
   const pending = freeze(normalizeQuote(draft), calib.settings)
   const sheet = buildSheet(project.title, project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? pending : v.quote })), version.n, calib.settings)
   const text = view === '客户版' ? clientText(sheet) : selfText(sheet, calib)
@@ -306,8 +315,30 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
             ))}
           </div>
         </div>
-        <div className={row}><span className={label}>人情折让</span><Seg label="人情折让" options={DISCOUNT_STEPS} value={draft.discount.ratio} text={pct} onPick={r => set({ discount: { ...draft.discount, ratio: r } })} /></div>
-        {draft.discount.ratio > 0 && (
+        {!sheet.bonus && (
+          <div className={row}><span className={label}>人情折让</span><Seg label="人情折让" options={DISCOUNT_STEPS} value={draft.discount.ratio} text={pct} onPick={r => set({ discount: { ...draft.discount, ratio: r } })} /></div>
+        )}
+        {!sheet.base && bonusAllowed(version.brief) && (
+          <div className={row}><span className={label}>成效奖金</span><Seg label="成效奖金" options={['不加', '加'] as const} value={draft.bonus.on ? '加' : '不加'} onPick={o => setBonus({ on: o === '加' })} /></div>
+        )}
+        {sheet.bonus && BONUS_INPUTS.map(([k, name, hint]) => (
+          <label key={k} className={row}><span className={label}>{name}</span>
+            <input className={`${qInput} w-52`} value={draft.bonus[k] as string} placeholder={hint} maxLength={k === 'verify' ? 120 : 60} onChange={e => setBonus({ [k]: e.target.value })} />
+          </label>
+        ))}
+        {sheet.bonus && (
+          <div className={row}><span className={label}>达标把握</span><Seg label="达标把握" options={CONFIDENCE_STEPS} value={draft.bonus.confidence} text={c => `${c * 10} 成`} onPick={c => setBonus({ confidence: c })} /></div>
+        )}
+        {sheet.bonus && (
+          <label className={row}><span className={label}>客户多赚</span>
+            <input className={qInput} inputMode="numeric" value={draft.bonus.gain ?? ''} placeholder="达标后客户多赚多少" onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); setBonus({ gain: v ? Number(v) : null }) }} />
+            <span className="text-xs text-on-surface-variant">元，可不填</span>
+          </label>
+        )}
+        {sheet.bonus && draft.status === '已成交' && (
+          <div className={row}><span className={label}>奖金结果</span><Seg label="奖金结果" options={BONUS_RESULTS} value={draft.bonus.result} onPick={r => setBonus({ result: r })} /></div>
+        )}
+        {draft.discount.ratio > 0 && !sheet.bonus && (
           <label className={row}><span className={label}>折让原因</span>
             <input className={`${qInput} w-52`} value={draft.discount.reason} placeholder="同学、老客户第 3 单、换作品展示权" maxLength={60} onChange={e => set({ discount: { ...draft.discount, reason: e.target.value } })} />
           </label>
