@@ -89,6 +89,7 @@ export function AddSearchModal({
   const [tab, setTab] = useState<AddTab>('search')
   const [customTitle, setCustomTitle] = useState(initialQuery ?? '')
   const [customBusy, setCustomBusy] = useState(false)
+  const customInput = useRef<HTMLInputElement>(null)
   const [customError, setCustomError] = useState('')
   const [backfillBusyId, setBackfillBusyId] = useState<number | null>(null)
   const [backfillError, setBackfillError] = useState('')
@@ -121,6 +122,10 @@ export function AddSearchModal({
     return () => controller.abort()
   }, [])
   const [added, setAdded] = useState<Set<number>>(new Set()) // 本次弹窗点过的，即时变「已追」
+
+  useLayoutEffect(() => {
+    customInput.current?.focus()
+  }, [customBusy])
 
   useLayoutEffect(() => {
     if (!completedSearch || completedSearch.id !== requestIdRef.current) return
@@ -231,7 +236,6 @@ export function AddSearchModal({
       .then(() => {
         setCustomTitle('')
         setQuery('')
-        setTab('search')
       })
       .catch((error: unknown) => {
         setCustomError(error instanceof Error ? error.message : '这条手帐没贴好……')
@@ -403,6 +407,7 @@ export function AddSearchModal({
               <label className="custom-add-field">
                 <span>番名</span>
                 <input
+                  ref={customInput}
                   autoFocus
                   value={customTitle}
                   onChange={(e) => {
