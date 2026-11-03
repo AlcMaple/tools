@@ -1,6 +1,7 @@
 import { fetchApi, readApi } from '../request'
 import type { JudgeEvent, JudgeImage, JudgeState, JudgeSyncEvent, Project } from '../../shared/order-judge-api'
 import { judgeLineReader } from '../../shared/order-judge-lines'
+import type { QuoteState } from '../../shared/order-judge-sheet'
 
 export class JudgeError extends Error {
   constructor(readonly code: string, message: string) {
@@ -27,6 +28,9 @@ export const loadState = async (): Promise<JudgeState> => json(await fetchApi('/
 export const deleteProject = async (id: string): Promise<void> => {
   await json(await fetchApi(`/api/order-judge/projects/${id}`, send('DELETE')))
 }
+
+export const saveQuote = async (versionId: string, quote: QuoteState): Promise<Project> =>
+  (await json<{ project: Project }>(await fetchApi(`/api/order-judge/versions/${versionId}/quote`, send('PUT', quote)))).project
 
 export const imageUrl = (version: string, file: string): string => `/api/order-judge/versions/${version}/${file}`
 export const attachUrl = (version: string, file: string, download = false): string => `/api/order-judge/versions/${version}/files/${file}${download ? '?download=1' : ''}`

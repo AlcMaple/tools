@@ -8,6 +8,7 @@ import { db } from './db'
 import { dataDir } from './data-dir'
 import type { Project, Version } from '../shared/order-judge-api'
 import type { Brief, BriefChange } from '../shared/order-judge-brief'
+import { normalizeQuote } from '../shared/order-judge-sheet'
 
 export class JudgeDataError extends Error {
   constructor(readonly code: string, message: string, readonly status: 400 | 404 | 409 | 413 = 409) { super(message) }
@@ -20,7 +21,7 @@ export const versionDir = (uid: number, id: string): string => join(judgeRoot, S
 const RETIRED = ['order_judge_docs', 'order_judge_history', 'order_judge_runs', 'order_judge_imports', 'order_judge_settings', 'order_judge_paths']
 
 interface ProjectRow { id: string; title: string; created_at: number; updated_at: number }
-export interface VersionRow { id: string; project_id: string; n: number; at: number; text: string; images: string; files: string; brief: string; changes: string; model: string }
+export interface VersionRow { id: string; project_id: string; n: number; at: number; text: string; images: string; files: string; brief: string; changes: string; model: string; quote: string }
 
 export const rowToVersion = (r: VersionRow): Version => ({
   id: r.id, n: r.n, at: r.at, text: r.text,
@@ -29,6 +30,7 @@ export const rowToVersion = (r: VersionRow): Version => ({
   brief: JSON.parse(r.brief) as Brief,
   changes: JSON.parse(r.changes) as BriefChange[],
   model: r.model,
+  quote: normalizeQuote(JSON.parse(r.quote)),
 })
 
 export class JudgeData {
@@ -52,6 +54,8 @@ export class JudgeData {
         text TEXT NOT NULL, images TEXT NOT NULL, files TEXT NOT NULL, brief TEXT NOT NULL, changes TEXT NOT NULL, model TEXT NOT NULL,
         UNIQUE(project_id, n));
     `)
+    const columns = (database.prepare('PRAGMA table_info(order_judge_versions)').all() as { name: string }[]).map(c => c.name)
+    if (!columns.includes('quote')) database.exec("ALTER TABLE order_judge_versions ADD COLUMN quote TEXT NOT NULL DEFAULT '{}'")
   }
 
   seq(uid: number): number {

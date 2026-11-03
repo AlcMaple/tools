@@ -20,6 +20,7 @@ import { AgentRunError } from '../shared/agent-run'
 import { aiSource, judgeConnection, publicAddress, type JudgeConnection } from './agent/external-runtime'
 import { MAX_IMAGES, SAME_SITE_GAP_MS, extractUrls, groupByHost, pageDigest } from '../shared/order-judge'
 import { briefSystemPrompt, briefUserText, diffBrief, normalizeBrief, type Brief } from '../shared/order-judge-brief'
+import { EMPTY_QUOTE, normalizeQuote, type QuoteState } from '../shared/order-judge-sheet'
 import {
   ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL, JUDGE_MAX_BODY, JUDGES_PER_MINUTE, MAX_TEXT_CHARS, PROJECT_LIMIT, VERSION_LIMIT,
   type JudgeEvent, type JudgeSyncEvent, type Project, type VersionFile,
@@ -55,9 +56,18 @@ const MESSAGES: Record<string, string> = {
   BAD_INPUT: '材料格式不对，刷新页面后重新放入',
   MESSAGE_TOO_LARGE: '材料太大了：截图少放几张，或把视频换成几张关键截图',
   NOT_FOUND: '这个项目不存在，可能已在别处删除',
+  BAD_QUOTE: '报价设置格式不对，刷新页面后再保存',
   VERSION_FULL: `这一单已经有 ${VERSION_LIMIT} 个版本，新开一个项目再追加`,
   ABORTED: '整理超时或被取消了，请手动重试',
 }
+// 新版本沿用上一版的报价设置，状态回到草稿；项目里已有成交版本时新版本是变更单，支出和交付后修改已经在原单收过，从空白开始
+function carriedQuote(projectId: string): QuoteState {
+  const rows = (db.prepare('SELECT quote FROM order_judge_versions WHERE project_id=? ORDER BY n DESC').all(projectId) as { quote: string }[])
+    .map(r => normalizeQuote(JSON.parse(r.quote)))
+  if (!rows.length || rows.some(q => q.status === '已成交')) return EMPTY_QUOTE
+  return { ...rows[0], status: '草稿' }
+}
+
 // 同一个状态码在两种来源下是两回事：服务器 Key 余额用完不该叫用户去充值
 const BY_SOURCE: Record<Source, Record<string, string>> = {
   server: {
@@ -298,8 +308,8 @@ async function saveVersion(uid: number, projectId: string | null, input: Materia
         pid = randomUUID()
         db.prepare('INSERT INTO order_judge_projects (id,user_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(pid, uid, brief.title || '未命名项目', now, now)
       }
-      db.prepare('INSERT INTO order_judge_versions (id,project_id,user_id,n,at,text,images,files,brief,changes,model) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-        .run(id, pid, uid, n, now, input.text, JSON.stringify(images), JSON.stringify(files), JSON.stringify(brief), JSON.stringify(diffBrief(previous, brief)), model)
+      db.prepare('INSERT INTO order_judge_versions (id,project_id,user_id,n,at,text,images,files,brief,changes,model,quote) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(id, pid, uid, n, now, input.text, JSON.stringify(images), JSON.stringify(files), JSON.stringify(brief), JSON.stringify(diffBrief(previous, brief)), model, JSON.stringify(carriedQuote(pid)))
       const old = db.prepare('SELECT id FROM order_judge_projects WHERE user_id=? ORDER BY updated_at DESC LIMIT -1 OFFSET ?').all(uid, PROJECT_LIMIT) as { id: string }[]
       const stale = old.flatMap(o => judgeData.versionIds(uid, o.id))
       for (const o of old) db.prepare('DELETE FROM order_judge_projects WHERE id=?').run(o.id)
@@ -487,6 +497,25 @@ async function organize(c: Context<Env>, projectId: string | null): Promise<Resp
     console.error('[order-judge] 响应流中断', e)
   })
 }
+
+api.put('/versions/:id/quote', bodyLimit({ maxSize: 8192 }), async (c) => {
+  const uid = c.get('uid'), id = c.req.param('id')
+  if (!ID_RE.test(id)) return c.json(errorBody('NOT_FOUND'), 404)
+  const body: unknown = await c.req.json().catch(() => null)
+  if (!body || typeof body !== 'object') return c.json(errorBody('BAD_QUOTE'), 400)
+  const quote = normalizeQuote(body)
+  const project = db.transaction(() => {
+    const row = db.prepare('SELECT project_id FROM order_judge_versions WHERE id=? AND user_id=?').get(id, uid) as { project_id: string } | undefined
+    if (!row) return null
+    db.prepare('UPDATE order_judge_versions SET quote=? WHERE id=?').run(JSON.stringify(quote), id)
+    db.prepare('UPDATE order_judge_projects SET updated_at=? WHERE id=?').run(Date.now(), row.project_id)
+    judgeData.bump(uid)
+    return judgeData.project(uid, row.project_id)
+  })()
+  if (!project) return c.json(errorBody('NOT_FOUND'), 404)
+  judgeEvents.changed(uid, judgeData.seq(uid))
+  return c.json({ project })
+})
 
 const materialLimit = bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(errorBody('MESSAGE_TOO_LARGE'), 413) })
 

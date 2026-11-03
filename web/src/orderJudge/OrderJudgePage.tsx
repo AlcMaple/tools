@@ -10,13 +10,15 @@ import { Select } from '../Select'
 import { useIsWide } from '../useMediaQuery'
 import { precheck } from '../../shared/order-judge'
 import { PRIORITIES, type BriefItem } from '../../shared/order-judge-brief'
+import { parseBudget, type Expense } from '../../shared/order-judge-quote'
+import { DISCOUNT_STEPS, MAX_EXPENSES, VERSION_STATUSES, buildSheet, clientText, normalizeQuote, selfText, type QuoteState } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
 import { readByokKey } from '../reviews/byok'
 import type { JudgeState, Project, Version } from '../../shared/order-judge-api'
 import { MAX_TEXT_CHARS, VERSION_LIMIT } from '../../shared/order-judge-api'
 import {
-  JudgeError, attachUrl, connectProvider, deleteProject, followJudgeChanges, imageUrl, loadState, logClient, organize, providerStatus,
+  JudgeError, attachUrl, connectProvider, deleteProject, saveQuote, followJudgeChanges, imageUrl, loadState, logClient, organize, providerStatus,
   type ProviderStatus,
 } from './api'
 
@@ -338,6 +340,12 @@ function JudgeWorkspace(): JSX.Element {
     setOutcome(null)
   }
 
+  const replaceProject = (p: Project): void => {
+    setState((s) => (s ? { ...s, projects: s.projects.map((x) => (x.id === p.id ? p : x)) } : s))
+    setOutcome((o) => (o?.kind === 'done' && o.project.id === p.id ? { ...o, project: p } : o))
+    setTarget((t) => (t?.id === p.id ? p : t))
+  }
+
   const removeProject = async (id: string): Promise<void> => {
     await deleteProject(id)
     if (!mountedRef.current) return
@@ -355,7 +363,7 @@ function JudgeWorkspace(): JSX.Element {
   if (tab === 'projects') {
     const list = state?.projects ?? []
     const current = list.find((p) => p.id === selected) ?? list[0] ?? null
-    const sheet = current && <ProjectSheet key={`${current.id}:${latest(current).n}`} project={current} onAppend={() => appendTo(current)} />
+    const sheet = current && <ProjectSheet key={`${current.id}:${latest(current).n}`} project={current} onAppend={() => appendTo(current)} onSaved={replaceProject} />
     return (
       <>
         {head}
@@ -526,7 +534,7 @@ function JudgeWorkspace(): JSX.Element {
               </div>
             </section>
           ) : outcome?.kind === 'done' ? (
-            <ProjectSheet key={`${outcome.project.id}:${latest(outcome.project).n}`} project={outcome.project} ms={outcome.ms} />
+            <ProjectSheet key={`${outcome.project.id}:${latest(outcome.project).n}`} project={outcome.project} ms={outcome.ms} onSaved={replaceProject} />
           ) : outcome?.kind === 'chat-record' ? (
             <section className="panel oj-sheet">
               <span className="tape tl gold" />
@@ -553,7 +561,7 @@ function JudgeWorkspace(): JSX.Element {
               )}
             </section>
           ) : target ? (
-            <ProjectSheet key={`${target.id}:${latest(target).n}`} project={target} />
+            <ProjectSheet key={`${target.id}:${latest(target).n}`} project={target} onSaved={replaceProject} />
           ) : (
             <section className="panel oj-sheet blank oj-blank">
               <div className="empty" style={{ padding: '10px 0' }}>
@@ -652,7 +660,7 @@ function Step({ state, title, sub }: { state: 'done' | 'run' | 'wait'; title: st
 const hoursText = (h: number): string => `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`
 
 // 一个项目：版本切换 + 这一版的需求清单 + 这一版放进来的材料
-function ProjectSheet({ project, ms, onAppend }: { project: Project; ms?: number; onAppend?: () => void }): JSX.Element {
+function ProjectSheet({ project, ms, onAppend, onSaved }: { project: Project; ms?: number; onAppend?: () => void; onSaved: (p: Project) => void }): JSX.Element {
   const [n, setN] = useState(latest(project).n)
   const version = project.versions.find(v => v.n === n) ?? latest(project)
   const b = version.brief
@@ -701,6 +709,7 @@ function ProjectSheet({ project, ms, onAppend }: { project: Project; ms?: number
           <ul className="oj-q">{b.questions.map((q, i) => <li key={i}><span>{q}</span></li>)}</ul>
         </div>
       )}
+      <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} />
       {(version.text || version.images.length > 0 || version.files.length > 0) && (
         <details className="oj-sec oj-src">
           <summary><Ic name="clip" cls="ic ic-sm" />第 {version.n} 版放进来的材料</summary>
@@ -721,6 +730,120 @@ function ProjectSheet({ project, ms, onAppend }: { project: Project; ms?: number
         </div>
       )}
     </section>
+  )
+}
+
+const pct = (r: number): string => (r ? `${Math.round(r * 100)}%` : '不让')
+
+// 报价：表单改动即时反映到下面的报价单，点保存才写回；复制 / 下载的就是当前看到的文字
+function QuotePanel({ project, version, onSaved }: { project: Project; version: Version; onSaved: (p: Project) => void }): JSX.Element {
+  const [draft, setDraft] = useState<QuoteState>(version.quote)
+  const [budgetText, setBudgetText] = useState(version.quote.budget == null ? '' : String(version.quote.budget))
+  const [view, setView] = useState<'client' | 'self'>('self')
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const set = (patch: Partial<QuoteState>): void => { setDraft(d => ({ ...d, ...patch })); setNote(null) }
+  const versions = project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? draft : v.quote }))
+  const sheet = buildSheet(project.title, versions, version.n)
+  const text = view === 'client' ? clientText(sheet) : selfText(sheet)
+  const dirty = JSON.stringify(normalizeQuote(draft)) !== JSON.stringify(version.quote)
+  const parsed = parseBudget(version.brief.budget)
+
+  const save = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      onSaved(await saveQuote(version.id, normalizeQuote(draft)))
+      setNote({ ok: true, text: '已保存' })
+    } catch (e) {
+      logClient('order-judge:quote', e)
+      setNote({ ok: false, text: errorOf(e).message })
+    } finally { setBusy(false) }
+  }
+  const copy = async (): Promise<void> => {
+    try { await navigator.clipboard.writeText(text); setNote({ ok: true, text: '已复制' }) } catch (e) { logClient('order-judge:copy', e); setNote({ ok: false, text: '复制失败，请手动选中文字复制' }) }
+  }
+  const download = (): void => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${project.title}-第${version.n}版-${view === 'client' ? '报价单' : '自用'}.txt`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  const expenses = draft.expenses.length < MAX_EXPENSES ? [...draft.expenses, { name: '', amount: 0 }] : draft.expenses
+  const setExpense = (i: number, patch: Partial<Expense>): void => set({ expenses: expenses.map((e, j) => (j === i ? { ...e, ...patch } : e)).filter(e => e.name || e.amount) })
+
+  return (
+    <div className="oj-sec oj-quote">
+      <h3><Ic name="ticket" />{sheet.base ? `变更单 · 基于第 ${sheet.base.n} 版` : '报价'}</h3>
+      <div className="oj-qform">
+        <div className="oj-qrow">
+          <span className="oj-qlabel">状态</span>
+          <div className="seg" role="group" aria-label="状态">
+            {VERSION_STATUSES.map(st => <button key={st} type="button" className={draft.status === st ? 'on' : ''} onClick={() => set({ status: st })}>{st}</button>)}
+          </div>
+        </div>
+        {!sheet.base && sheet.tiers.length > 1 && (
+          <div className="oj-qrow">
+            <span className="oj-qlabel">主推</span>
+            <div className="seg" role="group" aria-label="主推档">
+              {sheet.tiers.map(t => <button key={t.name} type="button" className={sheet.chosen?.name === t.name ? 'on' : ''} onClick={() => set({ tier: t.name })}>{t.name}</button>)}
+            </div>
+          </div>
+        )}
+        {!sheet.base && (
+          <label className="oj-qrow">
+            <span className="oj-qlabel">预算</span>
+            <input className="oj-qin" inputMode="numeric" value={budgetText} placeholder={parsed != null ? `材料里是 ${parsed}` : '待问'}
+              onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); setBudgetText(v); set({ budget: v ? Number(v) : null }) }} />
+            <span className="faint small">元</span>
+          </label>
+        )}
+        <label className="oj-qrow">
+          <span className="oj-qlabel">交付后修改</span>
+          <input className="oj-qin" inputMode="decimal" value={draft.resultHours || ''} placeholder="0"
+            onChange={e => set({ resultHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+          <span className="faint small">小时</span>
+        </label>
+        <div className="oj-qrow top">
+          <span className="oj-qlabel">实际支出</span>
+          <div className="oj-qexp">
+            {expenses.map((e, i) => (
+              <div key={i} className="oj-qexp-row">
+                <input className="oj-qin wide" value={e.name} placeholder="服务器、域名、付费接口" maxLength={40} onChange={ev => setExpense(i, { name: ev.target.value })} />
+                <input className="oj-qin" inputMode="numeric" value={e.amount || ''} placeholder="金额" onChange={ev => setExpense(i, { amount: Number(ev.target.value.replace(/[^\d]/g, '')) || 0 })} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="oj-qrow">
+          <span className="oj-qlabel">人情折让</span>
+          <div className="seg" role="group" aria-label="人情折让">
+            {DISCOUNT_STEPS.map(r => <button key={r} type="button" className={draft.discount.ratio === r ? 'on' : ''} onClick={() => set({ discount: { ...draft.discount, ratio: r } })}>{pct(r)}</button>)}
+          </div>
+        </div>
+        {draft.discount.ratio > 0 && (
+          <label className="oj-qrow">
+            <span className="oj-qlabel">折让原因</span>
+            <input className="oj-qin wide" value={draft.discount.reason} placeholder="同学、老客户第 3 单、换作品展示权" maxLength={60}
+              onChange={e => set({ discount: { ...draft.discount, reason: e.target.value } })} />
+          </label>
+        )}
+      </div>
+      <div className="oj-qbar">
+        <div className="seg" role="group" aria-label="报价单版本">
+          <button type="button" className={view === 'self' ? 'on' : ''} onClick={() => setView('self')}>自用版</button>
+          <button type="button" className={view === 'client' ? 'on' : ''} onClick={() => setView('client')}>客户版</button>
+        </div>
+        <div className="oj-qbtns">
+          <button type="button" className="btn btn-sm" onClick={() => void copy()}><Ic name="paste" cls="ic ic-sm" />复制</button>
+          <button type="button" className="btn btn-sm" onClick={download}><Ic name="doc" cls="ic ic-sm" />下载</button>
+          <button type="button" className="btn btn-sm btn-primary" disabled={!dirty || busy} onClick={() => void save()}>{busy ? '保存中…' : '保存'}</button>
+          {note && <span className={`oj-qnote ${note.ok ? '' : 'bad'}`} role="status">{note.text}</span>}
+        </div>
+      </div>
+      <pre className="oj-qtext">{text}</pre>
+    </div>
   )
 }
 

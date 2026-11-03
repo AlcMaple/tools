@@ -4,6 +4,7 @@ import { db } from './db'
 import { judgeData, versionDir, JudgeDataError } from './order-judge-data'
 import { judgeEvents } from './order-judge-events'
 import { normalizeBrief, type Brief } from '../shared/order-judge-brief'
+import { normalizeQuote } from '../shared/order-judge-sheet'
 import { ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, PROJECT_LIMIT, VERSION_LIMIT } from '../shared/order-judge-api'
 
 // 项目行 + 版本行 + 版本目录里的截图和附件，三样一起备、一起恢复。
@@ -55,13 +56,15 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
         if (!rawRow || typeof rawRow !== 'object') throw new Error('接单评估备份行无效')
         const row: Row = {}
         for (const column of columns) {
-          const value = rawRow[column]
+          // 报价设置是 2026-11 第四阶段加的列，之前的备份没有，按草稿恢复
+          const value = column === 'quote' && rawRow[column] === undefined ? '{}' : rawRow[column]
           if (value !== null && typeof value !== 'string' && typeof value !== 'number') throw new Error('接单评估备份字段无效')
           row[column] = column === 'user_id' ? uid : value
         }
         if (typeof row.id !== 'string' || !ID_RE.test(row.id)) throw new Error('接单评估备份标识无效')
         if (table === 'order_judge_versions') {
           row.brief = JSON.stringify(normalizeBrief(JSON.parse(String(row.brief)), JSON.parse(String(row.brief)) as Brief))
+          row.quote = JSON.stringify(normalizeQuote(JSON.parse(String(row.quote))))
           for (const file of fileRefs(row)) {
             const content = files[`order-judge/${row.id}/${file}`]
             const image = file.endsWith('.jpg')

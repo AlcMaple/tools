@@ -3,6 +3,7 @@
 // AI 读上一版的需求清单 + 这次的材料，给出完整的新清单，服务端按条目 id 算出与上一版的差别。
 
 import type { Brief, BriefChange } from './order-judge-brief'
+import type { QuoteState } from './order-judge-sheet'
 
 export interface VersionFile { file: string; name: string; size: number }
 
@@ -16,6 +17,7 @@ export interface Version {
   brief: Brief
   changes: BriefChange[]
   model: string
+  quote: QuoteState
 }
 
 export interface Project {

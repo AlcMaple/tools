@@ -770,6 +770,11 @@
     "path": "/projects/:id/versions"
   },
   {
+    "file": "server/order-judge.ts",
+    "method": "put",
+    "path": "/versions/:id/quote"
+  },
+  {
     "file": "server/player/index.ts",
     "method": "get",
     "path": "/hls"

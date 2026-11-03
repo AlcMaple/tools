@@ -98,6 +98,29 @@ try {
   pass('新项目整理出第 1 版：客户类型、待问的预算、按优先级分组的小时、不清楚的点、不包含')
   if (shots) await page.screenshot({ path: join(shots, 'v1-desktop.png'), fullPage: true })
 
+  // 基础 4×31=124 → 报价 160；推荐 +3×31 +兜底 1.5×31≈47 = 264 → 330；完整 +2×31 = 326 → 410
+  const quote = sheet.locator('.oj-quote')
+  const selfV1 = await quote.locator('.oj-qtext').innerText()
+  assert.match(selfV1, /【基础档】底线 ¥124 · 报价 ¥160/)
+  assert.match(selfV1, /【推荐档】底线 ¥264 · 报价 ¥330/)
+  assert.match(selfV1, /兜底：管理员导出 Excel  1\.5 小时 × 31 = ¥47  未说清「导出字段没说」/)
+  assert.match(selfV1, /预算：待问/)
+  await quote.getByRole('group', { name: '人情折让' }).getByRole('button', { name: '10%' }).click()
+  await quote.getByPlaceholder(/同学/).fill('同学')
+  await quote.getByRole('group', { name: '状态' }).getByRole('button', { name: '已成交' }).click()
+  await quote.getByRole('group', { name: '报价单版本' }).getByRole('button', { name: '客户版' }).click()
+  const clientV1 = await quote.locator('.oj-qtext').innerText()
+  assert(clientV1.indexOf('【完整档】¥410') < clientV1.indexOf('【推荐档】¥330（主推）'))
+  assert.match(clientV1, /人情折让 −¥33（同学）\n实收 ¥297/)
+  assert.match(clientV1, /14 天保修/)
+  assert.doesNotMatch(clientV1, /小时|底线/)
+  await quote.getByRole('button', { name: '保存' }).click()
+  await quote.getByText('已保存').waitFor()
+  const saved = JSON.parse((db.prepare('SELECT quote FROM order_judge_versions').get() as { quote: string }).quote) as { status: string; discount: { ratio: number } }
+  assert.equal(saved.status, '已成交'); assert.equal(saved.discount.ratio, 0.1)
+  pass('报价：三档底线逐行可查，报价 = 底线 ÷ 0.8，客户版完整档在前、不出现小时，人情折让单列，保存后落库')
+  if (shots) await page.screenshot({ path: join(shots, 'v1-quote.png'), fullPage: true })
+
   assert.match(await page.locator('.oj-mat-name').innerText(), /给「社团报名小程序」追加需求/)
   await page.locator('.oj-text').fill('客户补充：表单要加手机号，不要推送了，旧登录页也帮忙修一下，预算 800')
   await page.getByRole('button', { name: '整理第 2 版' }).click()
@@ -112,6 +135,16 @@ try {
   assert.equal(await sheet.locator('.oj-item').filter({ hasText: '管理员导出 Excel' }).locator('.oj-flip').count(), 0)
   pass('追加需求带上一版清单给 AI，第 2 版标出改动、新增、去掉，没变的条目不标')
   if (shots) await page.screenshot({ path: join(shots, 'v2-desktop.png'), fullPage: true })
+
+  // 第 1 版已成交，第 2 版是变更单：报名表单内容改了整条 5×31=155，旧登录新增 6×267=1602，导出没变不收，推送去掉不退
+  const change = sheet.locator('.oj-quote')
+  assert.match(await change.locator('h3').innerText(), /变更单 · 基于第 1 版/)
+  const selfV2 = await change.locator('.oj-qtext').innerText()
+  assert.match(selfV2, /底线 ¥1,757 · 报价 ¥2,200/)
+  assert.doesNotMatch(selfV2, /管理员导出 Excel  \d/)
+  assert.match(selfV2, /客户不提就不退\n· 消息推送/)
+  assert.equal(await change.getByRole('group', { name: '人情折让' }).locator('.on').innerText(), '不让')
+  pass('成交后追加的版本出变更单：只算新增和改动，去掉的不退，折让不沿用')
 
   await page.getByRole('button', { name: /^项目/ }).click()
   const rows = page.locator('.oj-row')
