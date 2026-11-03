@@ -9,6 +9,7 @@ import { authedRequest, onWebAccountChange, readWebAccount, webAccountLines, WEB
 import { WebRequestError } from '../shared/net-lines'
 import { logError, logInfo } from '../shared/logger'
 import { MAX_IMAGES } from '../../../web/shared/order-judge'
+import { normalizeQuote } from '../../../web/shared/order-judge-sheet'
 import { ATTACH_MAX_FILES, type JudgeEvent, type JudgeState, type Project } from '../../../web/shared/order-judge-api'
 
 const ID_RE = /^[0-9a-f-]{36}$/
@@ -31,8 +32,8 @@ export async function removeRetiredJudgeData(): Promise<void> {
   logInfo('order-judge', `已删除重做前的本机接单评估数据：${found.join(', ')}`)
 }
 
-async function remote<T>(path: string, method = 'GET'): Promise<T> {
-  const response = await authedRequest('/api/order-judge' + path, { method })
+async function remote<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  const response = await authedRequest('/api/order-judge' + path, { method, body: body === undefined ? undefined : JSON.stringify(body) })
   let value: T & { code?: string; error?: string }
   try { value = JSON.parse(response.body.toString('utf8')) as typeof value }
   catch { throw new WebRequestError('BAD_RESPONSE', '网站接单评估接口还没更新', response.status) }
@@ -52,6 +53,11 @@ export async function loadProjects(): Promise<JudgeView> {
 export async function deleteProject(id: string): Promise<void> {
   if (!ID_RE.test(id)) throw new Error('项目标识无效')
   await remote(`/projects/${id}`, 'DELETE')
+}
+
+export async function saveQuote(versionId: string, quote: unknown): Promise<Project> {
+  if (!ID_RE.test(versionId)) throw new Error('版本标识无效')
+  return (await remote<{ project: Project }>(`/versions/${versionId}/quote`, 'PUT', normalizeQuote(quote))).project
 }
 
 export async function versionImage(uid: string, id: string, file: string): Promise<Buffer> {

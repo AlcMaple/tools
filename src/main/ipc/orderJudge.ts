@@ -3,7 +3,7 @@ import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { convertMaterial, type ConvertKind } from '../order-judge/convert'
 import { onWebAccountChange } from './webAccount'
-import { deleteProject, judgeWebsite, loadProjects, organize, type OrganizeInput } from '../order-judge/service'
+import { deleteProject, judgeWebsite, loadProjects, organize, saveQuote, type OrganizeInput } from '../order-judge/service'
 
 const MAX_CONVERT_BYTES = 1024 * 1024 * 1024
 const CMAP_NAME = /^[A-Za-z0-9-]{1,40}$/
@@ -19,6 +19,7 @@ export function registerOrderJudgeIpc(): void {
   ipcMain.handle('order-judge:open-web', () => shell.openExternal(judgeWebsite()))
   ipcMain.handle('order-judge:load', () => loadProjects())
   ipcMain.handle('order-judge:delete-project', (_e, id: unknown) => deleteProject(typeof id === 'string' ? id : ''))
+  ipcMain.handle('order-judge:save-quote', (_e, versionId: unknown, quote: unknown) => saveQuote(typeof versionId === 'string' ? versionId : '', quote))
   ipcMain.handle('order-judge:organize', (e, input: OrganizeInput) =>
     organize(input, (stage) => { if (!e.sender.isDestroyed()) e.sender.send('order-judge:progress', stage) }))
 

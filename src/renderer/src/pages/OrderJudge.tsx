@@ -6,6 +6,8 @@ import { reportError } from '../utils/reportError'
 import { VIDEO_FRAMES, precheck } from '../../../../web/shared/order-judge'
 import { PRIORITIES, type BriefItem } from '../../../../web/shared/order-judge-brief'
 import { VERSION_LIMIT, type Project, type Version } from '../../../../web/shared/order-judge-api'
+import { parseBudget, type Expense } from '../../../../web/shared/order-judge-quote'
+import { DISCOUNT_STEPS, MAX_EXPENSES, VERSION_STATUSES, buildSheet, clientText, normalizeQuote, selfText, type QuoteState } from '../../../../web/shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
 import type { OrderJudgeView } from '../types/orderJudge'
 
@@ -91,9 +93,10 @@ function Item({ item, mark }: { item: BriefItem; mark?: string }): JSX.Element {
   )
 }
 
-function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose }: {
+function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved }: {
   project: Project
   base: string
+  onSaved: (p: Project) => void
   ms?: number
   onAppend?: () => void
   onDelete?: () => void
@@ -173,6 +176,7 @@ function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose }: {
           </ul>
         </Section>
       )}
+      <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} />
       {(version.text || version.images.length > 0 || version.files.length > 0) && (
         <Section label={`第 ${version.n} 版放进来的材料`}>
           {version.text && <p className="mb-3 text-[13px] leading-relaxed text-on-surface-variant line-clamp-4 whitespace-pre-wrap">{version.text}</p>}
@@ -193,6 +197,110 @@ function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose }: {
         </Section>
       )}
     </article>
+  )
+}
+
+const pct = (r: number): string => (r ? `${Math.round(r * 100)}%` : '不让')
+
+function Seg<T extends string | number>({ label, options, value, text, onPick }: { label: string; options: readonly T[]; value: T; text?: (v: T) => string; onPick: (v: T) => void }): JSX.Element {
+  return (
+    <div role="group" aria-label={label} className="inline-flex rounded-xl bg-surface-container-high p-0.5">
+      {options.map(o => (
+        <button key={String(o)} type="button" onClick={() => onPick(o)}
+          className={`h-7 px-3 rounded-lg font-label text-xs ${o === value ? 'bg-primary text-on-primary font-bold' : 'text-on-surface-variant hover:text-on-surface'}`}>{text ? text(o) : String(o)}</button>
+      ))}
+    </div>
+  )
+}
+
+const qInput = 'h-8 w-24 rounded-lg border border-outline-variant/40 bg-surface-container-high px-2.5 text-[13px] text-on-surface outline-none placeholder:text-on-surface-variant/50 focus:border-primary'
+
+// 与网页版 QuotePanel 同一套计算和文字（web/shared/order-judge-sheet.ts）；表单改动即时反映到报价单，点保存才写回网站
+function QuotePanel({ project, version, onSaved }: { project: Project; version: Version; onSaved: (p: Project) => void }): JSX.Element {
+  const [draft, setDraft] = useState<QuoteState>(version.quote)
+  const [budgetText, setBudgetText] = useState(version.quote.budget == null ? '' : String(version.quote.budget))
+  const [view, setView] = useState<'自用版' | '客户版'>('自用版')
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const set = (patch: Partial<QuoteState>): void => { setDraft(d => ({ ...d, ...patch })); setNote(null) }
+  const sheet = buildSheet(project.title, project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? draft : v.quote })), version.n)
+  const text = view === '客户版' ? clientText(sheet) : selfText(sheet)
+  const dirty = JSON.stringify(normalizeQuote(draft)) !== JSON.stringify(version.quote)
+  const parsed = parseBudget(version.brief.budget)
+  const expenses = draft.expenses.length < MAX_EXPENSES ? [...draft.expenses, { name: '', amount: 0 }] : draft.expenses
+  const setExpense = (i: number, patch: Partial<Expense>): void => set({ expenses: expenses.map((e, j) => (j === i ? { ...e, ...patch } : e)).filter(e => e.name || e.amount) })
+
+  const save = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      onSaved(await window.orderJudgeApi.saveQuote(version.id, normalizeQuote(draft)))
+      setNote({ ok: true, text: '已保存' })
+    } catch (e) {
+      reportError('order-judge:quote', e)
+      setNote({ ok: false, text: ipcErrMsg(e, '没有保存上') })
+    } finally { setBusy(false) }
+  }
+  const copy = async (): Promise<void> => {
+    try { await navigator.clipboard.writeText(text); setNote({ ok: true, text: '已复制' }) } catch (e) { reportError('order-judge:copy', e); setNote({ ok: false, text: '复制失败，请手动选中文字复制' }) }
+  }
+  const download = (): void => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${project.title}-第${version.n}版-${view === '客户版' ? '报价单' : '自用'}.txt`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  const row = 'flex flex-wrap items-center gap-3'
+  const label = 'w-20 shrink-0 font-label text-xs text-on-surface-variant'
+  const tool = 'h-8 px-3 rounded-xl bg-surface-container-high text-xs text-on-surface-variant hover:text-on-surface flex items-center gap-1 disabled:opacity-50'
+
+  return (
+    <Section label={sheet.base ? `变更单 · 基于第 ${sheet.base.n} 版` : '报价'} icon="request_quote">
+      <div className="grid gap-2.5">
+        <div className={row}><span className={label}>状态</span><Seg label="状态" options={VERSION_STATUSES} value={draft.status} onPick={st => set({ status: st })} /></div>
+        {!sheet.base && sheet.tiers.length > 1 && (
+          <div className={row}><span className={label}>主推</span><Seg label="主推档" options={sheet.tiers.map(t => t.name)} value={sheet.chosen?.name ?? ''} onPick={t => set({ tier: t as QuoteState['tier'] })} /></div>
+        )}
+        {!sheet.base && (
+          <label className={row}><span className={label}>预算</span>
+            <input className={qInput} inputMode="numeric" value={budgetText} placeholder={parsed != null ? `材料里是 ${parsed}` : '待问'}
+              onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); setBudgetText(v); set({ budget: v ? Number(v) : null }) }} />
+            <span className="text-xs text-on-surface-variant">元</span>
+          </label>
+        )}
+        <label className={row}><span className={label}>交付后修改</span>
+          <input className={qInput} inputMode="decimal" value={draft.resultHours || ''} placeholder="0" onChange={e => set({ resultHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+          <span className="text-xs text-on-surface-variant">小时</span>
+        </label>
+        <div className="flex flex-wrap items-start gap-3"><span className={`${label} pt-2`}>实际支出</span>
+          <div className="grid gap-1.5">
+            {expenses.map((e, i) => (
+              <div key={i} className="flex gap-1.5">
+                <input className={`${qInput} w-52`} value={e.name} placeholder="服务器、域名、付费接口" maxLength={40} onChange={ev => setExpense(i, { name: ev.target.value })} />
+                <input className={qInput} inputMode="numeric" value={e.amount || ''} placeholder="金额" onChange={ev => setExpense(i, { amount: Number(ev.target.value.replace(/[^\d]/g, '')) || 0 })} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className={row}><span className={label}>人情折让</span><Seg label="人情折让" options={DISCOUNT_STEPS} value={draft.discount.ratio} text={pct} onPick={r => set({ discount: { ...draft.discount, ratio: r } })} /></div>
+        {draft.discount.ratio > 0 && (
+          <label className={row}><span className={label}>折让原因</span>
+            <input className={`${qInput} w-52`} value={draft.discount.reason} placeholder="同学、老客户第 3 单、换作品展示权" maxLength={60} onChange={e => set({ discount: { ...draft.discount, reason: e.target.value } })} />
+          </label>
+        )}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <Seg label="报价单版本" options={['自用版', '客户版'] as const} value={view} onPick={setView} />
+        <div className="relative flex items-center gap-2">
+          <button type="button" className={tool} onClick={() => void copy()}><span className="material-symbols-outlined text-[16px] leading-none">content_copy</span>复制</button>
+          <button type="button" className={tool} onClick={download}><span className="material-symbols-outlined text-[16px] leading-none">download</span>下载</button>
+          <button type="button" className="h-8 px-4 rounded-xl bg-primary text-xs font-bold text-on-primary disabled:opacity-50" disabled={!dirty || busy} onClick={() => void save()}>{busy ? '保存中…' : '保存'}</button>
+          {note && <span role="status" className={`absolute right-0 top-full mt-1 w-max max-w-[260px] text-xs ${note.ok ? 'text-primary' : 'text-error'}`}>{note.text}</span>}
+        </div>
+      </div>
+      <pre className="mt-6 whitespace-pre-wrap break-words rounded-xl bg-surface-container-high px-4 py-3 font-body text-[13px] leading-relaxed text-on-surface">{text}</pre>
+    </Section>
   )
 }
 
@@ -424,6 +532,8 @@ function OrderJudge(): JSX.Element {
     }
   }
 
+  const replaceProject = (p: Project): void => setView((v) => v && { ...v, projects: v.projects.map(x => (x.id === p.id ? p : x)) })
+
   const remove = async (id: string): Promise<void> => {
     setDeleteError('')
     try {
@@ -452,7 +562,7 @@ function OrderJudge(): JSX.Element {
 
   const renderResult = (): React.ReactNode => {
     if (selectedProject) {
-      return <ProjectSheet project={selectedProject} base={base} onAppend={() => append(selectedProject.id)} onDelete={() => setConfirmDelete(selectedProject.id)} onClose={() => setSelected(null)} />
+      return <ProjectSheet project={selectedProject} base={base} onSaved={replaceProject} onAppend={() => append(selectedProject.id)} onDelete={() => setConfirmDelete(selectedProject.id)} onClose={() => setSelected(null)} />
     }
     if (running) {
       const steps: { title: string; detail: string; state: 'done' | 'run' | 'wait' }[] = [
@@ -497,7 +607,7 @@ function OrderJudge(): JSX.Element {
       )
     }
     const done = projects.find(p => p.id === outcome.projectId)
-    return done ? <ProjectSheet project={done} base={base} ms={outcome.ms} onAppend={() => append(done.id)} /> : null
+    return done ? <ProjectSheet project={done} base={base} ms={outcome.ms} onSaved={replaceProject} onAppend={() => append(done.id)} /> : null
   }
 
   const deleting = projects.find(p => p.id === confirmDelete) ?? null
