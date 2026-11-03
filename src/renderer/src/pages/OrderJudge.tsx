@@ -4,10 +4,10 @@ import TopBar from '../components/TopBar'
 import { ipcErrMsg } from '../utils/ipcError'
 import { reportError } from '../utils/reportError'
 import { VIDEO_FRAMES, precheck } from '../../../../web/shared/order-judge'
-import { PRIORITIES, type BriefItem } from '../../../../web/shared/order-judge-brief'
+import { PRIORITIES, WORK_KINDS, type BriefItem } from '../../../../web/shared/order-judge-brief'
 import { VERSION_LIMIT, type Project, type Version } from '../../../../web/shared/order-judge-api'
 import { parseBudget, type Expense } from '../../../../web/shared/order-judge-quote'
-import { DISCOUNT_STEPS, MAX_EXPENSES, VERSION_STATUSES, buildSheet, clientText, normalizeQuote, selfText, type QuoteState } from '../../../../web/shared/order-judge-sheet'
+import { DISCOUNT_STEPS, FEELINGS, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../../../web/shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
 import type { OrderJudgeView } from '../types/orderJudge'
 
@@ -93,10 +93,11 @@ function Item({ item, mark }: { item: BriefItem; mark?: string }): JSX.Element {
   )
 }
 
-function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved }: {
+function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved, calib }: {
   project: Project
   base: string
   onSaved: (p: Project) => void
+  calib: Calibration
   ms?: number
   onAppend?: () => void
   onDelete?: () => void
@@ -176,7 +177,7 @@ function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved 
           </ul>
         </Section>
       )}
-      <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} />
+      <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} />
       {(version.text || version.images.length > 0 || version.files.length > 0) && (
         <Section label={`第 ${version.n} 版放进来的材料`}>
           {version.text && <p className="mb-3 text-[13px] leading-relaxed text-on-surface-variant line-clamp-4 whitespace-pre-wrap">{version.text}</p>}
@@ -216,16 +217,18 @@ function Seg<T extends string | number>({ label, options, value, text, onPick }:
 const qInput = 'h-8 w-24 rounded-lg border border-outline-variant/40 bg-surface-container-high px-2.5 text-[13px] text-on-surface outline-none placeholder:text-on-surface-variant/50 focus:border-primary'
 
 // 与网页版 QuotePanel 同一套计算和文字（web/shared/order-judge-sheet.ts）；表单改动即时反映到报价单，点保存才写回网站
-function QuotePanel({ project, version, onSaved }: { project: Project; version: Version; onSaved: (p: Project) => void }): JSX.Element {
+function QuotePanel({ project, version, onSaved, calib }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
   const [draft, setDraft] = useState<QuoteState>(version.quote)
   const [budgetText, setBudgetText] = useState(version.quote.budget == null ? '' : String(version.quote.budget))
   const [view, setView] = useState<'自用版' | '客户版'>('自用版')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
   const set = (patch: Partial<QuoteState>): void => { setDraft(d => ({ ...d, ...patch })); setNote(null) }
-  const sheet = buildSheet(project.title, project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? draft : v.quote })), version.n)
-  const text = view === '客户版' ? clientText(sheet) : selfText(sheet)
-  const dirty = JSON.stringify(normalizeQuote(draft)) !== JSON.stringify(version.quote)
+  const pending = freeze(normalizeQuote(draft), calib.settings)
+  const sheet = buildSheet(project.title, project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? pending : v.quote })), version.n, calib.settings)
+  const text = view === '客户版' ? clientText(sheet) : selfText(sheet, calib)
+  const dirty = JSON.stringify(pending) !== JSON.stringify(version.quote)
+  const kinds = WORK_KINDS.filter(k => sheet.chosen?.lines.some(l => l.work === k))
   const parsed = parseBudget(version.brief.budget)
   const expenses = draft.expenses.length < MAX_EXPENSES ? [...draft.expenses, { name: '', amount: 0 }] : draft.expenses
   const setExpense = (i: number, patch: Partial<Expense>): void => set({ expenses: expenses.map((e, j) => (j === i ? { ...e, ...patch } : e)).filter(e => e.name || e.amount) })
@@ -233,7 +236,9 @@ function QuotePanel({ project, version, onSaved }: { project: Project; version: 
   const save = async (): Promise<void> => {
     setBusy(true)
     try {
-      onSaved(await window.orderJudgeApi.saveQuote(version.id, normalizeQuote(draft)))
+      const saved = await window.orderJudgeApi.saveQuote(version.id, pending)
+      onSaved(saved)
+      setDraft(saved.versions.find(x => x.id === version.id)?.quote ?? pending)
       setNote({ ok: true, text: '已保存' })
     } catch (e) {
       reportError('order-judge:quote', e)
@@ -252,13 +257,31 @@ function QuotePanel({ project, version, onSaved }: { project: Project; version: 
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   const row = 'flex flex-wrap items-center gap-3'
-  const label = 'w-20 shrink-0 font-label text-xs text-on-surface-variant'
+  const label = 'w-24 shrink-0 font-label text-xs text-on-surface-variant'
   const tool = 'h-8 px-3 rounded-xl bg-surface-container-high text-xs text-on-surface-variant hover:text-on-surface flex items-center gap-1 disabled:opacity-50'
 
   return (
     <Section label={sheet.base ? `变更单 · 基于第 ${sheet.base.n} 版` : '报价'} icon="request_quote">
       <div className="grid gap-2.5">
         <div className={row}><span className={label}>状态</span><Seg label="状态" options={VERSION_STATUSES} value={draft.status} onPick={st => set({ status: st })} /></div>
+        {draft.status === '已报价' && (
+          <div className={row}><span className={label}>客户结果</span><Seg label="客户结果" options={OUTCOMES} value={draft.outcome} text={o => (o === '嫌贵' ? '嫌贵没成交' : o)} onPick={o => set({ outcome: o })} /></div>
+        )}
+        {draft.status === '已报价' && draft.outcome === '嫌贵' && (
+          <label className={row}><span className={label}>客户说的预算</span>
+            <input className={qInput} inputMode="numeric" value={draft.clientBudget ?? ''} placeholder="没说就空着" onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); set({ clientBudget: v ? Number(v) : null }) }} />
+            <span className="text-xs text-on-surface-variant">元</span>
+          </label>
+        )}
+        {draft.status === '已成交' && kinds.map(k => (
+          <label key={k} className={row}><span className={label}>实际{k}</span>
+            <input className={qInput} inputMode="decimal" value={draft.actual[k] || ''} placeholder="做完再填" onChange={e => set({ actual: { ...draft.actual, [k]: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } })} />
+            <span className="text-xs text-on-surface-variant">小时</span>
+          </label>
+        ))}
+        {draft.status === '已成交' && (
+          <div className={row}><span className={label}>做完觉得</span><Seg label="做完觉得" options={FEELINGS} value={draft.feeling} onPick={f => set({ feeling: f })} /></div>
+        )}
         {!sheet.base && sheet.tiers.length > 1 && (
           <div className={row}><span className={label}>主推</span><Seg label="主推档" options={sheet.tiers.map(t => t.name)} value={sheet.chosen?.name ?? ''} onPick={t => set({ tier: t as QuoteState['tier'] })} /></div>
         )}
@@ -532,6 +555,7 @@ function OrderJudge(): JSX.Element {
     }
   }
 
+  const calib = calibrate(view?.projects ?? [])
   const replaceProject = (p: Project): void => setView((v) => v && { ...v, projects: v.projects.map(x => (x.id === p.id ? p : x)) })
 
   const remove = async (id: string): Promise<void> => {
@@ -562,7 +586,7 @@ function OrderJudge(): JSX.Element {
 
   const renderResult = (): React.ReactNode => {
     if (selectedProject) {
-      return <ProjectSheet project={selectedProject} base={base} onSaved={replaceProject} onAppend={() => append(selectedProject.id)} onDelete={() => setConfirmDelete(selectedProject.id)} onClose={() => setSelected(null)} />
+      return <ProjectSheet project={selectedProject} base={base} onSaved={replaceProject} calib={calib} onAppend={() => append(selectedProject.id)} onDelete={() => setConfirmDelete(selectedProject.id)} onClose={() => setSelected(null)} />
     }
     if (running) {
       const steps: { title: string; detail: string; state: 'done' | 'run' | 'wait' }[] = [
@@ -607,7 +631,7 @@ function OrderJudge(): JSX.Element {
       )
     }
     const done = projects.find(p => p.id === outcome.projectId)
-    return done ? <ProjectSheet project={done} base={base} ms={outcome.ms} onSaved={replaceProject} onAppend={() => append(done.id)} /> : null
+    return done ? <ProjectSheet project={done} base={base} ms={outcome.ms} onSaved={replaceProject} calib={calib} onAppend={() => append(done.id)} /> : null
   }
 
   const deleting = projects.find(p => p.id === confirmDelete) ?? null
