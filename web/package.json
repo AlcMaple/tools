@@ -15,6 +15,7 @@
     "test:order-judge-archives": "tsx scripts/test-order-judge-archives.ts",
     "test:order-judge-quote": "tsx scripts/test-order-judge-quote.ts",
     "test:order-judge-ui": "npm run build && tsx scripts/test-order-judge-ui.ts",
+    "test:order-judge-ui:serve": "npm run build && tsx scripts/order-judge-ui-fixture.ts",
     "test:order-judge-archives-ui": "npm run build && tsx scripts/test-order-judge-archives.ts --browser",
     "dev": "npm run build:agent-release && vite",
     "build": "npm run build:agent-release && vite build && tsx scripts/build-player-monitor.ts",
