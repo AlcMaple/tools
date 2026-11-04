@@ -23,6 +23,7 @@
     "start": "tsx server/node.ts",
     "sync:index": "tsx scripts/build-bgm-index.ts",
     "warm:seasons": "tsx scripts/warm-calendar-seasons.ts",
+    "test:calendar-today": "npm run build && tsx scripts/test-calendar-today.ts",
     "test:backup": "tsx scripts/test-backup.ts",
     "test:account-reset": "tsx scripts/test-account-reset.ts",
     "test:maintenance": "tsx scripts/test-maintenance.ts",
