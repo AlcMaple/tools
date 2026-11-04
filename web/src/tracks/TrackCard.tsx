@@ -782,66 +782,33 @@ function Nudge(): JSX.Element {
 }
 
 // 卡片的旋转会让 fixed 遮罩以卡片为包含块；弹窗挂到 body，避免被压窄或裁切。
-export function ContinueWatchAction({
-  label,
-  ep,
-  bound,
-  locating,
-  onPick,
-  className = 'btn btn-sm btn-primary',
-}: {
-  className?: string
-  label: string
+export function WatchSourceDialog({ ep, bound, title, onClose, onPick }: {
   ep: number
   bound: Partial<Record<SourceId, SourceBinding>>
-  locating: boolean
+  title?: string
+  onClose: () => void
   onPick: (source: SourceId, mode: WatchMode, rebind?: boolean) => void
 }): JSX.Element {
-  const [open, setOpen] = useState(false)
-
   useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
-    }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open])
-
-  const choose = (source: SourceId, mode: WatchMode): void => {
-    setOpen(false)
-    onPick(source, mode)
-  }
-  const rebind = (source: SourceId): void => {
-    setOpen(false)
-    onPick(source, 'online', true)
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        className={className}
-        disabled={locating}
-        onClick={() => setOpen(true)}
-        title={`挑个源看第 ${ep} 话`}
-      >
-        {locating ? <Spinner size={12} /> : <Ic name="play" cls="ic ic-sm" />}
-        <span>{locating ? '找片源中…' : label}</span>
-      </button>
-      {open && createPortal(
+  }, [onClose])
+  const choose = (source: SourceId, mode: WatchMode): void => { onClose(); onPick(source, mode) }
+  const rebind = (source: SourceId): void => { onClose(); onPick(source, 'online', true) }
+  return createPortal(
         <div
           className="dlg-backdrop open"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setOpen(false)
+            if (e.target === e.currentTarget) onClose()
           }}
         >
           <div role="dialog" aria-modal="true" aria-label="挑个播放源" className="dlg dlg-wsrc">
             <span className="tape tl teal" />
-            <button type="button" className="dlg-close" onClick={() => setOpen(false)} aria-label="关闭" title="关闭">
+            <button type="button" className="dlg-close" onClick={() => onClose()} aria-label="关闭" title="关闭">
               <Ic name="x" cls="ic" />
             </button>
-            <h3 className="dlg-title">要看第 {ep} 话啦</h3>
+            <h3 className="dlg-title">{title && `${title} · `}要看第 {ep} 话啦</h3>
             <p className="dlg-sub">
               从哪儿看呀……笨、笨蛋，才不是催你。挑个源，再挑「在纱雾这儿看」还是「跳去源站」。
             </p>
@@ -879,8 +846,24 @@ export function ContinueWatchAction({
             </div>
           </div>
         </div>,
-        document.body,
-      )}
-    </>
+    document.body,
   )
+}
+
+export function ContinueWatchAction({ label, ep, bound, locating, onPick, className = 'btn btn-sm btn-primary' }: {
+  className?: string
+  label: string
+  ep: number
+  bound: Partial<Record<SourceId, SourceBinding>>
+  locating: boolean
+  onPick: (source: SourceId, mode: WatchMode, rebind?: boolean) => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  return <>
+    <button type="button" className={className} disabled={locating} onClick={() => setOpen(true)} title={`挑个源看第 ${ep} 话`}>
+      {locating ? <Spinner size={12} /> : <Ic name="play" cls="ic ic-sm" />}
+      <span>{locating ? '找片源中…' : label}</span>
+    </button>
+    {open && <WatchSourceDialog ep={ep} bound={bound} onClose={() => setOpen(false)} onPick={onPick} />}
+  </>
 }

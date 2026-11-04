@@ -72,6 +72,7 @@ export async function createAgentUiFixture(){
     yield{type:'output',value:{kind:'answer',text:built,sourceIds:['ui-tracks-source']}}
   }},tools:[{name:'listMyTracks',async execute(_args,actor){metrics.toolCalls++;if(actor.uid!==uid)throw new Error('OWNER_MISMATCH');return{ok:true,data:{items:[],revision:0},sources:[{sourceId:'ui-tracks-source',kind:'my_tracks',label:'测试手帐里的追番',retrievedAt:1}],resultCount:0,truncated:false}}}]}))
   const app=new Hono<{Variables:{agentUid:number}}>();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard())
+  if(process.env.AGENT_UI_WATCH==='1'){const {addWatchFixture}=await import('./watch-fixture-routes');addWatchFixture(app,directory,db)}
   const {createGuestApi}=await import('../server/agent/guest-api')
   const {guestDataTools}=await import('../server/agent/run-runtime')
   const guestKnowledge=()=>registry.guestSnapshot({enabled:true,permissionVersion:mode,features:AGENT_FEATURES.map(f=>f.id),tools:['readCachedCalendar','listPublicReviews','aggregatePublicData'],conditions:{answerModelReady:true}})
