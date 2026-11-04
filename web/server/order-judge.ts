@@ -20,10 +20,10 @@ import { AgentRunError } from '../shared/agent-run'
 import { aiSource, judgeConnection, publicAddress, type JudgeConnection } from './agent/external-runtime'
 import { MAX_IMAGES, SAME_SITE_GAP_MS, extractUrls, groupByHost, pageDigest } from '../shared/order-judge'
 import { briefSystemPrompt, briefUserText, diffBrief, isChoosableClientType, normalizeBrief, type Brief, type ChoosableClientType } from '../shared/order-judge-brief'
-import { EMPTY_QUOTE, normalizeQuote, type QuoteState } from '../shared/order-judge-sheet'
+import { EMPTY_QUOTE, carryHourEdits, experienceLines, normalizeQuote, type QuoteState } from '../shared/order-judge-sheet'
 import { normalizeMaintenance } from '../shared/order-judge-maintenance'
 import {
-  ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL, JUDGE_MAX_BODY, JUDGES_PER_MINUTE, MAX_TEXT_CHARS, PROJECT_LIMIT, VERSION_LIMIT,
+  ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL, JUDGE_MAX_BODY, JUDGES_PER_MINUTE, MAX_TEXT_CHARS, VERSION_LIMIT,
   type JudgeEvent, type JudgeSyncEvent, type Project, type VersionFile,
 } from '../shared/order-judge-api'
 
@@ -210,6 +210,8 @@ function contentOf(raw: unknown): string | null {
 
 async function askBrief(conn: JudgeConnection, uid: number, previous: Brief | null, clientType: ChoosableClientType, userText: string, images: string[], signal: AbortSignal): Promise<Brief> {
   const model = conn.model
+  const experience = experienceLines(judgeData.projects(uid), clientType)
+  console.info(`[order-judge] uid=${uid} ${clientType} 带上历史修正 ${experience.length} 条`)
   const body = {
     model,
     temperature: 0.2,
@@ -217,7 +219,7 @@ async function askBrief(conn: JudgeConnection, uid: number, previous: Brief | nu
     response_format: { type: 'json_object' },
     ...(model.startsWith('deepseek-') ? { thinking: { type: 'disabled' } } : {}),
     messages: [
-      { role: 'system', content: briefSystemPrompt(previous, clientType) },
+      { role: 'system', content: briefSystemPrompt(previous, clientType, experience) },
       { role: 'user', content: [{ type: 'text', text: userText }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))] },
     ],
   }
@@ -287,7 +289,7 @@ async function removeDirs(uid: number, ids: string[]): Promise<void> {
   }
 }
 
-// 先落文件再插行；插行失败删掉刚写的目录。新项目超出 PROJECT_LIMIT 时裁掉最久没动的项目（先删行再删目录）
+// 先落文件再插行；插行失败删掉刚写的目录。用户的项目从不自动删除
 async function saveVersion(uid: number, projectId: string | null, input: Materials, brief: Brief, previous: Brief | null, model: string): Promise<Project> {
   const id = randomUUID()
   const dir = versionDir(uid, id)
@@ -307,7 +309,7 @@ async function saveVersion(uid: number, projectId: string | null, input: Materia
       files.push({ file, name: input.files[i].name, size: input.files[i].bytes.length })
     }
     const now = Date.now()
-    const { project, stale } = db.transaction(() => {
+    const { project } = db.transaction(() => {
       let pid = projectId
       let n = 1
       if (pid) {
@@ -321,14 +323,10 @@ async function saveVersion(uid: number, projectId: string | null, input: Materia
         db.prepare('INSERT INTO order_judge_projects (id,user_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(pid, uid, brief.title || '未命名项目', now, now)
       }
       db.prepare('INSERT INTO order_judge_versions (id,project_id,user_id,n,at,text,images,files,brief,changes,model,quote) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(id, pid, uid, n, now, input.text, JSON.stringify(images), JSON.stringify(files), JSON.stringify(brief), JSON.stringify(diffBrief(previous, brief)), model, JSON.stringify(carriedQuote(pid)))
-      const old = db.prepare('SELECT id FROM order_judge_projects WHERE user_id=? ORDER BY updated_at DESC LIMIT -1 OFFSET ?').all(uid, PROJECT_LIMIT) as { id: string }[]
-      const stale = old.flatMap(o => judgeData.versionIds(uid, o.id))
-      for (const o of old) db.prepare('DELETE FROM order_judge_projects WHERE id=?').run(o.id)
+        .run(id, pid, uid, n, now, input.text, JSON.stringify(images), JSON.stringify(files), JSON.stringify(brief), JSON.stringify(diffBrief(previous, brief)), model, JSON.stringify(carryHourEdits(carriedQuote(pid), previous, brief)))
       judgeData.bump(uid)
-      return { project: judgeData.project(uid, pid)!, stale }
+      return { project: judgeData.project(uid, pid)! }
     })()
-    await removeDirs(uid, stale)
     return project
   } catch (e) {
     await rm(dir, { recursive: true, force: true })
@@ -362,7 +360,7 @@ api.use('*', async (c, next) => {
   await next()
 })
 
-api.get('/', (c) => c.json({ projects: judgeData.projects(c.get('uid'), PROJECT_LIMIT), seq: judgeData.seq(c.get('uid')) }))
+api.get('/', (c) => c.json({ projects: judgeData.projects(c.get('uid')), seq: judgeData.seq(c.get('uid')), market: judgeData.market() }))
 
 api.get('/sync/events', async c => {
   const uid = c.get('uid'), session = await getSession(c)
@@ -413,6 +411,7 @@ api.delete('/projects/:id', async (c) => {
   const ids = judgeData.versionIds(uid, id)
   const r = db.prepare('DELETE FROM order_judge_projects WHERE id = ? AND user_id = ?').run(id, uid)
   if (!r.changes) return c.json(errorBody('NOT_FOUND'), 404)
+  judgeData.removeSamples(ids)
   judgeData.bump(uid); judgeEvents.changed(uid, judgeData.seq(uid))
   await removeDirs(uid, ids)
   return c.json({ ok: true })
@@ -521,6 +520,7 @@ api.put('/versions/:id/quote', bodyLimit({ maxSize: 8192 }), async (c) => {
     if (!row) return null
     db.prepare('UPDATE order_judge_versions SET quote=? WHERE id=?').run(JSON.stringify(quote), id)
     db.prepare('UPDATE order_judge_projects SET updated_at=? WHERE id=?').run(Date.now(), row.project_id)
+    judgeData.syncSample(uid, row.project_id, id)
     judgeData.bump(uid)
     return judgeData.project(uid, row.project_id)
   })()

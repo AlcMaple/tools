@@ -1,7 +1,8 @@
 // 与 src/main/order-judge/service.ts 的 IPC 返回结构保持一致
 import type { JudgeEvent, Project } from '../../../../web/shared/order-judge-api'
+import type { MarketStat } from '../../../../web/shared/order-judge-sheet'
 
-export interface OrderJudgeView { loggedIn: boolean; username: string; accountId: number; projects: Project[] }
+export interface OrderJudgeView { loggedIn: boolean; username: string; accountId: number; projects: Project[]; market?: MarketStat[] }
 
 export interface OrderJudgeOrganizeInput {
   projectId: string | null

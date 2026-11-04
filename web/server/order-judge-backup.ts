@@ -6,7 +6,7 @@ import { judgeEvents } from './order-judge-events'
 import { normalizeBrief, type Brief } from '../shared/order-judge-brief'
 import { normalizeQuote } from '../shared/order-judge-sheet'
 import { normalizeMaintenance } from '../shared/order-judge-maintenance'
-import { ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, PROJECT_LIMIT, VERSION_LIMIT } from '../shared/order-judge-api'
+import { ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, BACKUP_MAX_PROJECTS, VERSION_LIMIT } from '../shared/order-judge-api'
 
 // 项目行 + 版本行 + 版本目录里的截图和附件，三样一起备、一起恢复。
 // 2026-11 重做前的备份（version 1：能力档案、历史等）结构不同，用户已决定旧数据不要，恢复时跳过
@@ -51,7 +51,7 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
     if (!input.tables || typeof input.tables !== 'object') throw new Error('接单评估备份格式无效')
     for (const table of tables) {
       const rows = input.tables[table]
-      if (!Array.isArray(rows) || rows.length > PROJECT_LIMIT * VERSION_LIMIT) throw new Error('接单评估备份表无效')
+      if (!Array.isArray(rows) || rows.length > BACKUP_MAX_PROJECTS * VERSION_LIMIT) throw new Error('接单评估备份表无效')
       const columns = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(c => c.name)
       restored[table] = rows.map(rawRow => {
         if (!rawRow || typeof rawRow !== 'object') throw new Error('接单评估备份行无效')
@@ -78,7 +78,7 @@ export function prepareJudgeRestore(uid: number, raw: unknown, files: Record<str
         return row
       })
     }
-    if (restored.order_judge_projects.length > PROJECT_LIMIT) throw new Error(`接单评估备份超过 ${PROJECT_LIMIT} 个项目，未静默裁剪`)
+    if (restored.order_judge_projects.length > BACKUP_MAX_PROJECTS) throw new Error(`接单评估备份超过 ${BACKUP_MAX_PROJECTS} 个项目，未静默裁剪`)
   }
   return {
     apply() {

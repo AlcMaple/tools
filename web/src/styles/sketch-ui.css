@@ -719,6 +719,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   min-width: 0;
 }
 /* 桌面横向布局：每天一小节（章头 + 可继续向右的卡片），节与节之间留出翻页呼吸 */
+.day-sec { scroll-margin-top: calc(var(--nav-h) + 12px); }
 .day-sec + .day-sec { margin-top: 26px; }
 
 /* 第二种浏览方式：整周纵向布局。卡片换行而不是横向滚动，七天的内容一次铺开。 */

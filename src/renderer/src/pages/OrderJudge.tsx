@@ -4,11 +4,11 @@ import TopBar from '../components/TopBar'
 import { ipcErrMsg } from '../utils/ipcError'
 import { reportError } from '../utils/reportError'
 import { VIDEO_FRAMES, precheck } from '../../../../web/shared/order-judge'
-import { CHOOSABLE_CLIENT_TYPES, PRIORITIES, WORK_KINDS, isChoosableClientType, type BriefItem, type ChoosableClientType } from '../../../../web/shared/order-judge-brief'
+import { BASIS_TEXT, CHOOSABLE_CLIENT_TYPES, PRIORITIES, WORK_KINDS, isChoosableClientType, type Brief as BriefType, type BriefItem, type ChoosableClientType } from '../../../../web/shared/order-judge-brief'
 import { VERSION_LIMIT, type Project, type Version } from '../../../../web/shared/order-judge-api'
-import { parseBudget, parseDeadline, ymd, type Expense } from '../../../../web/shared/order-judge-quote'
+import { parseBudget, parseDeadline, ymd, type Expense, type QuoteSettings } from '../../../../web/shared/order-judge-quote'
 import { MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance, type MonthRecord } from '../../../../web/shared/order-judge-maintenance'
-import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../../../web/shared/order-judge-sheet'
+import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibFor, calibrateByType, latestType, clientText, freeze, normalizeQuote, selfText, marketLine, HOUR_SCALE_MAX, HOUR_SCALE_MIN, hourRows, hoursLabel, scaleLabel, selfSummary, type Calibrations, type HourRow, type QuoteState, type Sheet } from '../../../../web/shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
 import type { OrderJudgeView } from '../types/orderJudge'
 
@@ -58,7 +58,6 @@ function formatWhen(at: number): string {
 }
 
 const latest = (p: Project): Version => p.versions[p.versions.length - 1]
-const hoursText = (h: number): string => (h === 0 ? '直接做' : `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`)
 
 async function fileBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer())
@@ -89,7 +88,6 @@ function Item({ item, mark }: { item: BriefItem; mark?: string }): JSX.Element {
         <span className="text-[14px] font-bold text-on-surface">{item.title}</span>
         <span className="rounded-lg bg-surface-container-highest px-1.5 py-px font-label text-[11px] text-on-surface-variant">{item.kind}</span>
         {mark && <span className="rounded-lg bg-primary/10 px-1.5 py-px font-label text-[11px] font-bold text-primary">{mark}</span>}
-        <span className="ml-auto shrink-0 font-label text-xs text-on-surface-variant tabular-nums">{hoursText(item.hours)}</span>
       </div>
       {item.detail && <p className="text-[14px] leading-relaxed text-on-surface-variant">{item.detail}</p>}
       {item.reason && <p className="text-xs leading-relaxed text-on-surface-variant/70">{item.reason}</p>}
@@ -106,7 +104,7 @@ function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved,
   project: Project
   base: string
   onSaved: (p: Project) => void
-  calib: Calibration
+  calib: Calibrations
   all: Project[]
   ms?: number
   onAppend?: () => void
@@ -161,7 +159,7 @@ function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved,
         </dl>
       </div>
       {groups.map(g => (
-        <Section key={g.p} label={g.p === '不做' ? '这次不做' : g.p} aside={hoursText(g.items.reduce((s, i) => s + i.hours, 0))}>
+        <Section key={g.p} label={g.p === '不做' ? '这次不做' : g.p}>
           <ul className="grid gap-4">{g.items.map(item => <Item key={item.id} item={item} mark={marks.get(item.id)} />)}</ul>
         </Section>
       ))}
@@ -235,8 +233,49 @@ function Seg<T extends string | number>({ label, options, value, text, onPick }:
 
 const qInput = 'h-8 w-24 rounded-lg border border-outline-variant/40 bg-surface-container-high px-2.5 text-[13px] text-on-surface outline-none placeholder:text-on-surface-variant/50 focus:border-primary'
 
+const hRow = 'grid grid-cols-[minmax(0,1fr)_minmax(110px,1fr)_84px] items-center gap-2.5 text-[13px] text-on-surface'
+const hVal = 'text-right font-label text-xs text-on-surface-variant tabular-nums whitespace-nowrap'
+
+// 工时：默认不用动。一根整体滑块管全局，单项只露出占钱最多的几条，其余收起；1 天按 8 小时显示
+function HoursPanel({ market, draft, raw, settings, set }: { market: string; draft: QuoteState; raw: BriefType; settings: QuoteSettings; set: (p: Partial<QuoteState>) => void }): JSX.Element {
+  const rows = hourRows(raw, draft, settings)
+  const locked = draft.status !== '草稿'
+  const major = rows.filter(r => r.major), rest = rows.filter(r => !r.major)
+  const changed = draft.hourScale !== 1 || Object.keys(draft.hourEdits).length > 0
+  const drag = (id: string, suggested: number, v: number): void => {
+    const { [id]: _, ...others } = draft.hourEdits
+    set({ hourEdits: v === suggested ? others : { ...others, [id]: v } })
+  }
+  const row = (r: HourRow): JSX.Element => (
+    <label key={r.id} className={hRow}>
+      <span className="min-w-0 leading-snug">{r.title}<em className="block not-italic text-[11px] text-on-surface-variant/70">{BASIS_TEXT[r.basis]}</em></span>
+      <input className="w-full accent-primary disabled:opacity-50" type="range" aria-label={`${r.title}的小时`} min={0} max={r.max} step={0.5} value={r.hours} disabled={locked} onChange={e => drag(r.id, r.suggested, Number(e.target.value))} />
+      <span className={hVal} title={`${r.hours} 小时`}>{hoursLabel(r.hours)}</span>
+    </label>
+  )
+  return (
+    <div className="mb-4 grid gap-2 rounded-xl bg-surface-container-high px-4 py-3">
+      <p className="text-xs text-on-surface-variant">{market}</p>
+      <label className={hRow}>
+        <span>全部工时</span>
+        <input className="w-full accent-primary disabled:opacity-50" type="range" aria-label="整体小时倍率" min={HOUR_SCALE_MIN} max={HOUR_SCALE_MAX} step={0.1} value={draft.hourScale} disabled={locked} onChange={e => set({ hourScale: Number(e.target.value) })} />
+        <span className={hVal}>{scaleLabel(draft.hourScale)}</span>
+      </label>
+      {major.map(row)}
+      {rest.length > 0 && (
+        <details >
+          <summary className="cursor-pointer text-xs text-on-surface-variant">其余 {rest.length} 项，{hoursLabel(rest.reduce((a, r) => a + r.hours, 0))}</summary>
+          <div className="mt-2 grid gap-2">{rest.map(row)}</div>
+        </details>
+      )}
+      {changed && !locked && <button type="button" className="justify-self-start text-xs text-primary" onClick={() => set({ hourEdits: {}, hourScale: 1 })}>恢复 AI 的估计</button>}
+    </div>
+  )
+}
+
 // 与网页版 QuotePanel 同一套计算和文字（web/shared/order-judge-sheet.ts）；表单改动即时反映到报价单，点保存才写回网站
-function QuotePanel({ project, version, onSaved, calib }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
+function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibrations }): JSX.Element {
+  const calib = calibFor(calibs, version.brief.clientType)
   const [draft, setDraft] = useState<QuoteState>(version.quote)
   const [budgetText, setBudgetText] = useState(version.quote.budget == null ? '' : String(version.quote.budget))
   const [deadlineText, setDeadlineText] = useState(version.quote.deadlineDate ?? '')
@@ -248,9 +287,11 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
   const pending = freeze(normalizeQuote(draft), calib.settings)
   const sheet = buildSheet(project.title, project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? pending : v.quote })), version.n, calib.settings)
   const text = view === '客户版' ? clientText(sheet) : selfText(sheet, calib)
+  const summary = selfSummary(sheet)
   const dirty = JSON.stringify(pending) !== JSON.stringify(version.quote)
   const kinds = WORK_KINDS.filter(k => sheet.chosen?.lines.some(l => l.work === k))
   const parsed = parseBudget(version.brief.budget)
+  const [moreOn] = useState(draft.bonus.on || draft.discount.ratio > 0 || draft.resultHours > 0 || draft.expenses.length > 0)
   const expenses = draft.expenses.length < MAX_EXPENSES ? [...draft.expenses, { name: '', amount: 0 }] : draft.expenses
   const setExpense = (i: number, patch: Partial<Expense>): void => set({ expenses: expenses.map((e, j) => (j === i ? { ...e, ...patch } : e)).filter(e => e.name || e.amount) })
 
@@ -283,26 +324,20 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
 
   return (
     <Section label={sheet.base ? `变更单 · 基于第 ${sheet.base.n} 版` : '报价'} icon="request_quote">
+      {summary && (
+        <div className="mb-3 grid gap-0.5 rounded-xl border border-primary/40 bg-primary/10 px-4 py-3" role="status">
+          <span className="text-xs text-on-surface-variant">{summary.name === '变更' ? '这次变更报价' : `报价 · ${summary.name}档`}</span>
+          <b className="text-[34px] font-bold leading-tight text-primary tabular-nums">¥{summary.price.toLocaleString('zh-CN')}</b>
+          <span className="text-xs text-on-surface-variant tabular-nums">{[summary.days != null ? `约 ${summary.days} 天做完` : '', `最低可收 ¥${summary.minPrice.toLocaleString('zh-CN')}`, ...summary.others.map(o => `${o.name}档 ¥${o.price.toLocaleString('zh-CN')}`)].filter(Boolean).join(' · ')}</span>
+        </div>
+      )}
+      <HoursPanel market={marketLine(version.brief, calib.market)} draft={pending} raw={version.brief} settings={sheet.settings} set={set} />
       <div className="grid gap-2.5">
         <div className={row}><span className={label}>状态</span><Seg label="状态" options={VERSION_STATUSES} value={draft.status} onPick={st => set({ status: st })} /></div>
-        {draft.status === '已报价' && (
-          <div className={row}><span className={label}>客户结果</span><Seg label="客户结果" options={OUTCOMES} value={draft.outcome} text={o => (o === '嫌贵' ? '嫌贵没成交' : o)} onPick={o => set({ outcome: o })} /></div>
-        )}
-        {draft.status === '已报价' && draft.outcome === '嫌贵' && (
-          <label className={row}><span className={label}>客户说的预算</span>
-            <input className={qInput} inputMode="numeric" value={draft.clientBudget ?? ''} placeholder="没说就空着" onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); set({ clientBudget: v ? Number(v) : null }) }} />
-            <span className="text-xs text-on-surface-variant">元</span>
-          </label>
-        )}
-        {draft.status === '已成交' && kinds.map(k => (
-          <label key={k} className={row}><span className={label}>实际{k}</span>
-            <input className={qInput} inputMode="decimal" value={draft.actual[k] || ''} placeholder="做完再填" onChange={e => set({ actual: { ...draft.actual, [k]: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } })} />
-            <span className="text-xs text-on-surface-variant">小时</span>
-          </label>
-        ))}
-        {draft.status === '已成交' && (
-          <div className={row}><span className={label}>做完觉得</span><Seg label="做完觉得" options={FEELINGS} value={draft.feeling} onPick={f => set({ feeling: f })} /></div>
-        )}
+        <label className={row}><span className={label}>{draft.status === '已成交' ? '成交价' : '实际报价'}</span>
+          <input className={qInput} inputMode="numeric" aria-label="实际报价" value={draft.finalPrice ?? ''} placeholder={sheet.chosen ? `默认 ${sheet.chosen.quote}` : ''} onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); set({ finalPrice: v ? Number(v) : null }) }} />
+          <span className="text-xs text-on-surface-variant">元</span>
+        </label>
         {!sheet.base && sheet.tiers.length > 1 && (
           <div className={row}><span className={label}>主推</span><Seg label="主推档" options={sheet.tiers.map(t => t.name)} value={sheet.chosen?.name ?? ''} onPick={t => set({ tier: t as QuoteState['tier'] })} /></div>
         )}
@@ -318,6 +353,32 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
             onChange={e => { setDeadlineText(e.target.value); set({ deadlineDate: parseDeadline(e.target.value, ymd(new Date())) }) }} />
           <span className="text-xs text-on-surface-variant whitespace-nowrap">{deadlineText.trim() ? (draft.deadlineDate ? `读成 ${draft.deadlineDate}` : '读不出日期') : sheet.deadline ? `按 ${sheet.deadline}` : ''}</span>
         </label>
+        {draft.status !== '草稿' && (
+          <div className="grid gap-2.5 border-t border-dashed border-outline-variant/40 pt-2.5">
+            <p className="text-xs font-bold text-on-surface">{draft.status === '已报价' ? '客户怎么回复' : '做完后填'}</p>
+        {draft.status === '已报价' && (
+          <div className={row}><span className={label}>客户结果</span><Seg label="客户结果" options={OUTCOMES} value={draft.outcome} text={o => (o === '嫌贵' ? '嫌贵没成交' : o)} onPick={o => set({ outcome: o })} /></div>
+        )}
+        {draft.status === '已报价' && draft.outcome === '嫌贵' && (
+          <label className={row}><span className={label}>客户说的预算</span>
+            <input className={qInput} inputMode="numeric" value={draft.clientBudget ?? ''} placeholder="没说就空着" onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); set({ clientBudget: v ? Number(v) : null }) }} />
+            <span className="text-xs text-on-surface-variant">元</span>
+          </label>
+        )}
+        {draft.status === '已成交' && kinds.map(k => (
+          <label key={k} className={row}><span className={label}>实际{k === '接手改' ? '验证和接手' : '新做'}</span>
+            <input className={qInput} inputMode="decimal" value={draft.actual[k] || ''} placeholder="做完再填" onChange={e => set({ actual: { ...draft.actual, [k]: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } })} />
+            <span className="text-xs text-on-surface-variant">小时</span>
+          </label>
+        ))}
+        {draft.status === '已成交' && (
+          <div className={row}><span className={label}>做完觉得</span><Seg label="做完觉得" options={FEELINGS} value={draft.feeling} onPick={f => set({ feeling: f })} /></div>
+        )}
+          </div>
+        )}
+        <details open={moreOn}>
+        <summary className="cursor-pointer text-xs text-on-surface-variant">更多设置</summary>
+        <div className="mt-2.5 grid gap-2.5">
         <label className={row}><span className={label}>每天投入</span>
           <input className={qInput} inputMode="decimal" value={draft.dailyHours || ''} placeholder="4" onChange={e => set({ dailyHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
           <span className="text-xs text-on-surface-variant">小时</span>
@@ -364,6 +425,8 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
             <input className={`${qInput} w-52`} value={draft.discount.reason} placeholder="同学、老客户第 3 单、换作品展示权" maxLength={60} onChange={e => set({ discount: { ...draft.discount, reason: e.target.value } })} />
           </label>
         )}
+        </div>
+        </details>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <Seg label="报价单版本" options={['自用版', '客户版'] as const} value={view} onPick={setView} />
@@ -374,7 +437,27 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
           {note && <span role="status" className={`absolute right-0 top-full mt-1 w-max max-w-[260px] text-xs ${note.ok ? 'text-primary' : 'text-error'}`}>{note.text}</span>}
         </div>
       </div>
-      <pre className="mt-6 whitespace-pre-wrap break-words rounded-xl bg-surface-container-high px-4 py-3 font-body text-[13px] leading-relaxed text-on-surface">{text}</pre>
+      {view === '客户版' || !summary ? <pre className="mt-6 whitespace-pre-wrap break-words rounded-xl bg-surface-container-high px-4 py-3 font-body text-[13px] leading-relaxed text-on-surface">{text}</pre> : (
+        <div className="mt-5 grid gap-2.5">
+          {summary.alerts.map(a => <p key={a} className="rounded-xl border border-error/50 px-3 py-2 text-[13px] text-error">{a}</p>)}
+          <h4 className="text-[13px] font-bold text-on-surface">这笔钱花在哪</h4>
+          {summary.groups.map(g => (
+            <div key={g.label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 text-[13px] text-on-surface">
+              <span>{g.label}</span>
+              <b className="font-bold tabular-nums">{g.amount < 0 ? '−' : ''}¥{Math.abs(g.amount).toLocaleString('zh-CN')}</b>
+              {g.detail && <small className="col-span-2 text-xs leading-relaxed text-on-surface-variant/70">{g.detail}</small>}
+            </div>
+          ))}
+          <details>
+            <summary className="cursor-pointer text-xs text-on-surface-variant">逐项算式</summary>
+            <pre className="mt-2 whitespace-pre-wrap break-words rounded-xl bg-surface-container-high px-4 py-3 font-body text-[13px] leading-relaxed text-on-surface">{text}</pre>
+          </details>
+        </div>
+      )}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs text-on-surface-variant">系统目前学到了什么</summary>
+        <div className="mt-2 grid gap-1 text-xs text-on-surface-variant">{calib.notes.map(n => <span key={n}>{n}</span>)}</div>
+      </details>
     </Section>
   )
 }
@@ -382,7 +465,8 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
 const thisMonth = (): string => new Date().toISOString().slice(0, 7)
 
 // 与网页版 MaintenancePanel 同一套计算和文字（web/shared/order-judge-maintenance.ts）；记过月份后月费锁定
-function MaintenancePanel({ project, all, onSaved, calib }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
+function MaintenancePanel({ project, all, onSaved, calib: calibs }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibrations }): JSX.Element {
+  const calib = calibFor(calibs, latestType(project.versions))
   const [draft, setDraft] = useState<Maintenance>(project.maintenance)
   const [view, setView] = useState<'自用版' | '客户版'>('自用版')
   const [busy, setBusy] = useState(false)
@@ -716,7 +800,7 @@ function OrderJudge(): JSX.Element {
     }
   }
 
-  const calib = calibrate(view?.projects ?? [])
+  const calib = { byType: calibrateByType(view?.projects ?? []), market: view?.market }
   const replaceProject = (p: Project): void => setView((v) => v && { ...v, projects: v.projects.map(x => (x.id === p.id ? p : x)) })
 
   const remove = async (id: string): Promise<void> => {
