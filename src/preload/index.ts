@@ -413,7 +413,6 @@ contextBridge.exposeInMainWorld('miaoyuApi', {
 })
 
 contextBridge.exposeInMainWorld('orderJudgeApi', {
-  openWeb: () => ipcRenderer.invoke('order-judge:open-web'),
   load: () => ipcRenderer.invoke('order-judge:load'),
   deleteProject: (id: string) => ipcRenderer.invoke('order-judge:delete-project', id),
   saveQuote: (versionId: string, quote: unknown) => ipcRenderer.invoke('order-judge:save-quote', versionId, quote),

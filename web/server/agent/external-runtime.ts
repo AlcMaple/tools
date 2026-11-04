@@ -73,14 +73,14 @@ interface Connection {profile:ProviderProfile;transport:ProviderTransport;price:
 const connections=new Map<string,Connection>(),connecting=new Map<string,AbortController>()
 const account=(uid:number)=>{const row=db.prepare('SELECT token_version,ai_config FROM users WHERE id=?').get(uid) as {token_version:number;ai_config:string}|undefined;if(!row)throw new AgentRunError('AUTH_REQUIRED',401);return row}
 function selection(uid:number){const row=account(uid);return {...row,choice:normalizeAiConfig(row.ai_config)}}
-function selectedConnection(uid:number|null):Connection|undefined{
-  const row=uid===null?null:selection(uid),id=row?.choice.provider==='byok'?`user:${uid}`:'server',entry=connections.get(id)
+function selectedConnection(uid:number|null,forceServer=false):Connection|undefined{
+  const row=uid===null?null:selection(uid),id=!forceServer&&row?.choice.provider==='byok'?`user:${uid}`:'server',entry=connections.get(id)
   if(entry&&(entry.until<=Date.now()||row&&id!=='server'&&(row.token_version!==entry.tv||row.ai_config!==entry.config))){connections.delete(id);return undefined}
   return entry
 }
 const cleanup=setInterval(()=>{for(const [id,c] of connections)if(c.until<=Date.now())connections.delete(id)},60_000);cleanup.unref()
 export function externalCanPrepare(uid:number|null){return externalEnabled()&&Boolean(AI_API_KEY)&&(uid===null||selection(uid).choice.provider==='server')}
-export function externalReady(uid:number|null){const entry=selectedConnection(uid);return Boolean(entry&&externalEnabled(entry.profile.source))}
+export function externalReady(uid:number|null,forceServer=false){const entry=selectedConnection(uid,forceServer);return Boolean(entry&&externalEnabled(entry.profile.source))}
 export function externalStatus(uid:number|null){
   const row=uid===null?null:selection(uid),entry=selectedConnection(uid)
   return {enabled:externalEnabled(row?.choice.provider??'server'),disabled:!agentEnabled(true,process.env.AGENT_AI_ENABLED),canPrepare:externalCanPrepare(uid),configured:Boolean(AI_API_KEY),ready:externalReady(uid),source:row?.choice.provider??'server',model:entry?.profile.model??(row?.choice.provider==='byok'?row.choice.model:AI_MODEL),
@@ -148,10 +148,10 @@ function sharedPreparationError(error:unknown){
   // 仅供应商级失败可共享；额度、身份、并发和取消不是服务器连接故障。
   return error instanceof Error&&'code' in error&&typeof error.code==='string'&&/^(PROVIDER_HTTP_[0-9]{3}|PROVIDER_UNAVAILABLE|PROVIDER_CAPABILITY|INVALID_OUTPUT)$/.test(error.code)
 }
-export async function prepareExternal(uid:number|null,owner:string,signal:AbortSignal){
+export async function prepareExternal(uid:number|null,owner:string,signal:AbortSignal,forceServer=false){
   signal.throwIfAborted()
-  if(externalReady(uid))return externalStatus(uid)
-  const source=uid===null?'server':selection(uid).choice.provider
+  if(externalReady(uid,forceServer))return externalStatus(uid)
+  const source=uid===null||forceServer?'server':selection(uid).choice.provider
   if(!externalEnabled(source))throw new AgentRunError('AGENT_AI_DISABLED',503)
   if(source==='byok')throw new AgentRunError('PROVIDER_CONNECTION_REQUIRED',503)
   const joined=serverPreparation!==null
@@ -176,7 +176,7 @@ export async function prepareExternal(uid:number|null,owner:string,signal:AbortS
     throw error
   }
   const status=externalStatus(uid)
-  if(!status.ready||status.source!=='server')throw new AgentRunError('PROVIDER_CHANGED')
+  if(!externalReady(uid,forceServer)||(!forceServer&&status.source!=='server'))throw new AgentRunError('PROVIDER_CHANGED')
   return status
 }
 // 接单评估跟随设置里「用谁的」（users.ai_config，与助手同一份）：选项目服务器就用服务器 Key；
@@ -188,7 +188,7 @@ export interface JudgeConnection {
   execute:<T>(action:()=>Promise<T>)=>Promise<T>
   call:(body:Record<string,unknown>,signal:AbortSignal)=>Promise<unknown>
 }
-export const aiSource=(uid:number)=>selection(uid).choice.provider
+export const aiSource=(uid:number,forceServer=false):'server'|'byok'=>forceServer?'server':selection(uid).choice.provider
 // 按设置里选中的型号判断能否看图，上传前就拦下，免得图传上去才在开回合时报错。
 export function imagesAllowed(uid:number){
   const choice=selection(uid).choice
@@ -197,11 +197,12 @@ export function imagesAllowed(uid:number){
     return profile.vision===true
   }catch{return false}
 }
-export async function judgeConnection(uid:number,signal:AbortSignal):Promise<JudgeConnection>{
-  const source=selection(uid).choice.provider,owner=`user:${uid}`
+// forceServer：桌面端只用服务器 Key，不看账号里选的是哪边
+export async function judgeConnection(uid:number,signal:AbortSignal,forceServer=false):Promise<JudgeConnection>{
+  const source=aiSource(uid,forceServer),owner=`user:${uid}`
   if(!externalEnabled(source))throw new AgentRunError('AGENT_AI_DISABLED',503)
-  if(source==='server')await prepareExternal(uid,owner,signal)
-  const c=selectedConnection(uid)
+  if(source==='server')await prepareExternal(uid,owner,signal,forceServer)
+  const c=selectedConnection(uid,forceServer)
   if(!c||c.profile.source!==source)throw new AgentRunError('PROVIDER_CONNECTION_REQUIRED',409)
   const send=async(body:Record<string,unknown>,s:AbortSignal)=>{
     try{return await c.transport('chat/completions',body,s)}catch(error){

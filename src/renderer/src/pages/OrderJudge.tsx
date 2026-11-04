@@ -787,13 +787,6 @@ function OrderJudge(): JSX.Element {
                 {view && !view.loggedIn ? '登录网页版账号后使用' : projects.length ? `${projects.length} 个项目` : '还没有整理过的项目'}
               </p>
             </div>
-            <button
-              onClick={() => void window.orderJudgeApi.openWeb()}
-              className="shrink-0 flex items-center gap-2 px-3.5 sm:px-5 py-2.5 rounded-xl bg-surface-container-high border border-outline-variant/20 text-on-surface font-label text-xs uppercase tracking-widest hover:bg-surface-bright hover:border-primary/40 transition-all active:scale-95 whitespace-nowrap"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>open_in_new</span>
-              <span className="hidden sm:inline">在网页打开</span>
-            </button>
           </div>
         </div>
 

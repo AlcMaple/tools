@@ -83,9 +83,19 @@ const BY_SOURCE: Record<Source, Record<string, string>> = {
   },
 }
 
-function errorBody(code: string, source?: Source): { code: string; error: string } {
+// 桌面端只能用服务器 Key，设置里没有可改的地方，提示只能让用户等
+const DESKTOP: Record<string, string> = {
+  PROVIDER_HTTP_401: '服务器的 AI Key 失效了（HTTP 401），请等待服务器恢复，材料还在',
+  PROVIDER_HTTP_402: '服务器的 AI 余额用完了（HTTP 402），请等待服务器充值后再整理，材料还在',
+  DAILY_QUOTA: '今天用服务器 AI 的次数用完了，明天再来',
+  COST_LIMIT: '服务器 AI 的费用额度不够了：可能是这一单材料太多，也可能是今天的额度用完了。少放些截图再试，或等明天',
+}
+
+const isDesktop = (c: Context<Env>): boolean => c.req.header('X-Maple-Client') === 'desktop'
+
+function errorBody(code: string, source?: Source, desktop = false): { code: string; error: string } {
   const http = /^PROVIDER_HTTP_(\d+)$/.exec(code)
-  const known = (source && BY_SOURCE[source][code]) ?? MESSAGES[code]
+  const known = (desktop && DESKTOP[code]) || (source && BY_SOURCE[source][code]) || MESSAGES[code]
   return { code, error: known ?? (http ? `AI 返回 HTTP ${http[1]}，没有自动重试` : '这次整理失败了，请手动重试') }
 }
 
@@ -447,7 +457,7 @@ api.get('/versions/:id/files/:file', async (c) => {
 
 // 新项目（projectId 为 null）或给已有项目追加一个版本，共用一条整理流程
 async function organize(c: Context<Env>, projectId: string | null): Promise<Response> {
-  const uid = c.get('uid')
+  const uid = c.get('uid'), desktop = isDesktop(c)
   const input = parseMaterials(await c.req.json().catch(() => null))
   if (!input) return c.json(errorBody('BAD_INPUT'), 400)
   const previous = projectId ? judgeData.latest(uid, projectId) : null
@@ -470,7 +480,7 @@ async function organize(c: Context<Env>, projectId: string | null): Promise<Resp
     const started = Date.now()
     let source: Source | undefined
     try {
-      source = aiSource(uid)
+      source = aiSource(uid, desktop)
       const urls = extractUrls(input.text)
       let links = ''
       if (urls.length) {
@@ -478,7 +488,7 @@ async function organize(c: Context<Env>, projectId: string | null): Promise<Resp
         links = await fetchLinks(urls, signal)
       }
       await send({ type: 'stage', stage: 'ai' })
-      const conn = await connection(uid, signal)
+      const conn = await connection(uid, signal, desktop)
       console.info(`[order-judge] → uid=${uid} ${conn.source} ${conn.model} ${previous ? `追加第 ${previous.n + 1} 版` : '新项目'} 文字 ${input.text.length} 字 网址 ${urls.length} 个 图片 ${input.images.length} 张`)
       const userText = briefUserText(input.text, links, input.images.map((x) => x.name), previous?.brief ?? null)
       const brief = await conn.execute(() => askBrief(conn, uid, previous?.brief ?? null, userText, input.images.map((x) => x.dataUrl), signal))
@@ -489,7 +499,7 @@ async function organize(c: Context<Env>, projectId: string | null): Promise<Resp
     } catch (e) {
       const code = e instanceof AgentRunError || e instanceof JudgeDataError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
       console.error(`[order-judge] ✗ uid=${uid} ${code} ${Date.now() - started}ms`, e)
-      if (!out.aborted) await send({ type: 'error', ...(e instanceof JudgeDataError ? { code, error: e.message } : errorBody(code, source)) })
+      if (!out.aborted) await send({ type: 'error', ...(e instanceof JudgeDataError ? { code, error: e.message } : errorBody(code, source, desktop)) })
     } finally {
       running.delete(uid)
     }

@@ -1,9 +1,9 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { convertMaterial, type ConvertKind } from '../order-judge/convert'
 import { onWebAccountChange } from './webAccount'
-import { deleteProject, judgeWebsite, loadProjects, organize, saveMaintenance, saveQuote, type OrganizeInput } from '../order-judge/service'
+import { deleteProject, loadProjects, organize, saveMaintenance, saveQuote, type OrganizeInput } from '../order-judge/service'
 
 const MAX_CONVERT_BYTES = 1024 * 1024 * 1024
 const CMAP_NAME = /^[A-Za-z0-9-]{1,40}$/
@@ -16,7 +16,6 @@ function cmapDir(): string {
 export function registerOrderJudgeIpc(): void {
   // 换账号 / 登出后项目列表属于另一个人了，让页面重新拉
   onWebAccountChange(() => { for (const win of BrowserWindow.getAllWindows()) win.webContents.send('order-judge:changed') })
-  ipcMain.handle('order-judge:open-web', () => shell.openExternal(judgeWebsite()))
   ipcMain.handle('order-judge:load', () => loadProjects())
   ipcMain.handle('order-judge:delete-project', (_e, id: unknown) => deleteProject(typeof id === 'string' ? id : ''))
   ipcMain.handle('order-judge:save-quote', (_e, versionId: unknown, quote: unknown) => saveQuote(typeof versionId === 'string' ? versionId : '', quote))

@@ -136,6 +136,7 @@ function requestHeaders(token = ''): Record<string, string> {
     Accept: 'application/json',
     'Content-Type': 'application/json; charset=utf-8',
     'User-Agent': `MapleTools/${app.getVersion()}`,
+    'X-Maple-Client': 'desktop',
   }
   if (token) {
     // 生产端只读取 __Host-mt_session，开发端仍读取 mt_session。Electron 是手动构造

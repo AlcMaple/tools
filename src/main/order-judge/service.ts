@@ -5,7 +5,7 @@ import { app } from 'electron'
 import { existsSync } from 'fs'
 import { rm } from 'fs/promises'
 import { join } from 'path'
-import { authedRequest, onWebAccountChange, readWebAccount, webAccountLines, WEB_BASE } from '../ipc/webAccount'
+import { authedRequest, onWebAccountChange, readWebAccount, webAccountLines } from '../ipc/webAccount'
 import { WebRequestError } from '../shared/net-lines'
 import { logError, logInfo } from '../shared/logger'
 import { MAX_IMAGES } from '../../../web/shared/order-judge'
@@ -20,8 +20,6 @@ const BASE64_RE = /^[A-Za-z0-9+/=]*$/
 const active = new Set<AbortController>()
 export function stopJudgeRequests(): void { for (const controller of active) controller.abort(); active.clear() }
 onWebAccountChange(stopJudgeRequests)
-
-export const judgeWebsite = (): string => WEB_BASE + '/#/judge'
 
 // 2026-11 重做前桌面在本机留的设置、历史、截图、迁移备份和同步状态；用户决定旧数据全部删除
 export async function removeRetiredJudgeData(): Promise<void> {

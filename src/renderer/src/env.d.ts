@@ -173,7 +173,6 @@ declare global {
       electron: () => string
     }
     orderJudgeApi: {
-      openWeb: () => Promise<void>
       load: () => Promise<OrderJudgeView>
       deleteProject: (id: string) => Promise<void>
       saveQuote: (versionId: string, quote: QuoteState) => Promise<Project>
