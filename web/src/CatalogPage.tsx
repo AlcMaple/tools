@@ -172,7 +172,7 @@ export function CatalogPage(): JSX.Element {
       ) : items.length === 0 && loading ? (
         <div className="page-state"><Spinner size={36} /><p className="faint small">纱雾正在翻目录…</p></div>
       ) : items.length === 0 && !error ? (
-        <div className="page-state"><p className="faint small">{q ? `没有找到「${q}」，换个名字试试` : '这一年没有收录的番'}</p></div>
+        <div className="page-state"><p className="faint small">{q ? (year > 0 ? `没有找到 ${year} 年的「${q}」` : `没有找到「${q}」，换个名字试试`) : '这一年没有收录的番'}</p></div>
       ) : (
         <div className="film is-vertical catalog-grid">
           {items.map((item) => (
