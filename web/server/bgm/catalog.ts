@@ -140,7 +140,7 @@ export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; 
   const shown = opts.adult ? '1' : visible
   if (opts.q.trim()) {
     const one = h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id = ? AND ${shown}`)
-    const rows = searchAnime(opts.q, 120)
+    const rows = searchAnime(opts.q, 120, opts.year)
       .map((hit) => one.get(hit.bgmId) as IndexRow | undefined)
       .filter((row): row is IndexRow => !!row)
     return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
