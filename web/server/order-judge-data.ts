@@ -1,6 +1,7 @@
 // 接单评估的存取。一份数据是「DB 行 + 磁盘文件」两半：版本的截图和附件落 dataDir/order-judge/<uid>/<版本 id>/，
 // 写入先落文件再插行（插行失败删目录），删除先删行再删目录；目录名是随机 UUID，不存在同名文件先删后写的竞态。
 
+import { createHmac } from 'node:crypto'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type Database from 'better-sqlite3'
@@ -8,7 +9,8 @@ import { db } from './db'
 import { dataDir } from './data-dir'
 import type { Project, Version } from '../shared/order-judge-api'
 import type { Brief, BriefChange } from '../shared/order-judge-brief'
-import { normalizeQuote } from '../shared/order-judge-sheet'
+import { AUTH_SECRET } from './secrets'
+import { MARKET_WINDOW_MS, marketStats, normalizeQuote, sampleOf, type MarketStat, type SampleRow } from '../shared/order-judge-sheet'
 import { normalizeMaintenance } from '../shared/order-judge-maintenance'
 
 export class JudgeDataError extends Error {
@@ -34,6 +36,9 @@ export const rowToVersion = (r: VersionRow): Version => ({
   quote: normalizeQuote(JSON.parse(r.quote)),
 })
 
+// 样本表和账号、项目都不关联：键是不可逆的散列，用户删除项目时能按版本 id 算出来一起删
+const blind = (v: string): string => createHmac('sha256', AUTH_SECRET).update('order-judge-pool:' + v).digest('hex').slice(0, 32)
+
 export class JudgeData {
   constructor(readonly database: Database.Database) {
     const retired = RETIRED.filter(t => database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t))
@@ -48,6 +53,9 @@ export class JudgeData {
       CREATE TABLE IF NOT EXISTS order_judge_projects (
         id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS order_judge_samples (
+        key TEXT PRIMARY KEY, contributor TEXT NOT NULL, client_type TEXT NOT NULL, category TEXT NOT NULL,
+        result TEXT NOT NULL, price INTEGER NOT NULL, budget INTEGER, month INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS order_judge_projects_user ON order_judge_projects(user_id, updated_at DESC);
       CREATE TABLE IF NOT EXISTS order_judge_versions (
         id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES order_judge_projects(id) ON DELETE CASCADE,
@@ -76,14 +84,35 @@ export class JudgeData {
     return { id: row.id, title: row.title, createdAt: row.created_at, updatedAt: row.updated_at, versions, maintenance: normalizeMaintenance(JSON.parse(row.maintenance)) }
   }
 
-  projects(uid: number, limit: number): Project[] {
-    const rows = this.database.prepare('SELECT id FROM order_judge_projects WHERE user_id=? ORDER BY updated_at DESC LIMIT ?').all(uid, limit) as { id: string }[]
+  projects(uid: number): Project[] {
+    const rows = this.database.prepare('SELECT id FROM order_judge_projects WHERE user_id=? ORDER BY updated_at DESC').all(uid) as { id: string }[]
     return rows.map(r => this.project(uid, r.id)!)
   }
 
   latest(uid: number, projectId: string): Version | null {
     const row = this.database.prepare('SELECT v.* FROM order_judge_versions v JOIN order_judge_projects p ON p.id=v.project_id WHERE p.id=? AND p.user_id=? ORDER BY v.n DESC LIMIT 1').get(projectId, uid) as VersionRow | undefined
     return row ? rowToVersion(row) : null
+  }
+
+  // 每次保存报价时同步：最后保存的结果覆盖之前的，结果不再成立就删掉
+  syncSample(uid: number, projectId: string, versionId: string): void {
+    const project = this.project(uid, projectId)
+    const v = project?.versions.find(x => x.id === versionId)
+    if (!project || !v) return
+    const sample = sampleOf(project.versions, v.n)
+    if (!sample) { this.removeSamples([versionId]); return }
+    const now = new Date()
+    this.database.prepare('INSERT OR REPLACE INTO order_judge_samples VALUES (?,?,?,?,?,?,?,?)')
+      .run(blind(versionId), blind('user:' + uid), sample.clientType, sample.category, sample.result, sample.price, sample.budget, Date.UTC(now.getFullYear(), now.getMonth(), 1))
+  }
+
+  removeSamples(versionIds: string[]): void {
+    for (const id of versionIds) this.database.prepare('DELETE FROM order_judge_samples WHERE key=?').run(blind(id))
+  }
+
+  market(): MarketStat[] {
+    const rows = this.database.prepare('SELECT contributor, client_type AS clientType, category, result, price, budget FROM order_judge_samples WHERE month>=?').all(Date.now() - MARKET_WINDOW_MS) as SampleRow[]
+    return marketStats(rows)
   }
 
   versionIds(uid: number, projectId: string): string[] {

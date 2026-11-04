@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
-import type { Brief, BriefItem } from '../shared/order-judge-brief'
-import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
+import { briefSystemPrompt, normalizeBrief, type Brief, type BriefItem } from '../shared/order-judge-brief'
+import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, parseDeadline, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
 import { EMPTY_MAINTENANCE, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance } from '../shared/order-judge-maintenance'
-import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type QuoteState } from '../shared/order-judge-sheet'
+import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, calibrateByType, experienceLines, carryHourEdits, clientText, freeze, hourRows, hoursLabel, marketLine, marketStats, normalizeQuote, sampleOf, selfText, type QuoteState } from '../shared/order-judge-sheet'
+
+assert.deepEqual(DEFAULT_QUOTE_SETTINGS.rates, { 新做: 67, 接手改: 67 })
+// 下面的算式用两档不同的时间值，才测得出新做 / 接手改有没有算混；线上起点是上面这一行
+Object.assign(DEFAULT_QUOTE_SETTINGS.rates, { 新做: 31, 接手改: 267 })
 
 let checks = 0
 const pass = (label: string): void => { console.log(`PASS Q${++checks}: ${label}`) }
@@ -10,7 +14,8 @@ const pass = (label: string): void => { console.log(`PASS Q${++checks}: ${label}
 const item = (id: string, priority: BriefItem['priority'], hours: number, extra: Partial<BriefItem> = {}): BriefItem =>
   ({ id, title: `条目${id}`, detail: '', priority, kind: '新做', hours, reason: '理由', unclear: '', ...extra })
 const brief = (items: BriefItem[]): Brief =>
-  ({ title: '测试', clientType: '学生单', outcome: '', budget: '', deadline: '', alternative: '', items, excluded: [], questions: [] })
+  ({ title: '测试', clientType: '商单', outcome: '', budget: '', deadline: '', items, excluded: [], questions: [] })
+const basisOfNormalized = (b: Brief): string | undefined => normalizeBrief({ items: b.items }, null).items[0].basis
 const none: QuoteExtras = { expenses: [], resultHours: 0 }
 
 const b = brief([
@@ -102,11 +107,14 @@ const v = (quote: Partial<QuoteState>, b: Brief = one) => ({ n: 1, at: 0, brief:
 const proj = (quote: Partial<QuoteState>, b?: Brief) => ({ title: 'p', versions: [v(quote, b)] })
 
 assert.deepEqual(calibrate([]).settings, DEFAULT_QUOTE_SETTINGS)
-assert.match(calibrate([]).notes.join(), /新做时间值 31：来自答题/)
+assert.match(calibrate([]).notes.join(), /新做时间值 31：来自一单真实成交/)
 pass('没有回填时时间值就是答题结果')
 
 // 成交 390，实际 20 小时，觉得亏 → 每小时 19.5 < 31，不动；实际 20 ÷ 预估 10 → 小时 × 2
-const c1 = calibrate([proj({ status: '已成交', actual: { 新做: 20, 接手改: 0 }, feeling: '亏' })])
+const c1one = proj({ status: '已成交', actual: { 新做: 20, 接手改: 0 }, feeling: '亏' })
+assert.equal(calibrate([c1one, c1one]).settings.hourFactor['新做'], 1)
+assert.match(calibrate([c1one, c1one]).notes.join(), /已有 2 单，攒够 3 单才调整/)
+const c1 = calibrate([c1one, c1one, c1one])
 assert.equal(c1.settings.rates['新做'], 31)
 assert.equal(c1.settings.hourFactor['新做'], 2)
 assert.equal(c1.settings.hourFactor['接手改'], 1)
@@ -130,18 +138,30 @@ pass('自己不想接的单也是依据：时间值高于它的每小时报价')
 
 const c5 = calibrate([proj({ status: '已报价', outcome: '嫌贵', clientBudget: 200 }), proj({ status: '已报价', outcome: '嫌贵', clientBudget: 600 })])
 assert.deepEqual(c5.settings, DEFAULT_QUOTE_SETTINGS)
-assert.deepEqual(c5.budgets['学生单'], { median: 400, count: 2 })
-pass('客户嫌贵只记预算参考，不动时间值')
+assert.deepEqual(c5.budgets['商单'], { median: 400, count: 2 })
+pass('客户嫌贵不满 3 单只记预算，不动时间值')
+
+const reject = (clientBudget: number | null) => proj({ status: '已报价', outcome: '嫌贵', clientBudget })
+assert.equal(calibrate([reject(200), reject(200), reject(250)]).settings.rates['新做'], 20)
+assert.equal(calibrate([reject(290), reject(290), reject(290)]).settings.rates['新做'], 29)
+const painful = proj({ status: '已成交', actual: { 新做: 5, 接手改: 0 }, feeling: '亏' })
+const clash = calibrate([painful, reject(200), reject(200), reject(200)])
+assert.equal(clash.settings.rates['新做'], 49)
+assert.match(clash.notes.join(), /两边都难满意/)
+pass('嫌贵满 3 单压低时间值，和亏冲突时取中间')
+
+const extreme = proj({ status: '已成交', actual: { 新做: 1, 接手改: 0 }, feeling: '亏' })
+assert.equal(calibrate([painful, painful, extreme]).settings.rates['新做'], 78)
+pass('一单极端的亏不再决定时间值')
 
 // 冻结：报出去之后再校准，那一版的价不变
 const quoted = freeze(normalizeQuote({ status: '已报价' }), DEFAULT_QUOTE_SETTINGS)
 assert.deepEqual(quoted.frozen?.rates, { 新做: 31, 接手改: 267 })
 const later = buildSheet('p', [v(quoted)], 1, c2.settings)
 assert.equal(later.chosen!.floor, 310)
-// 草稿用校准后的：小时 × 0.5（实际 5 ÷ 预估 10）、时间值 78 → 5 × 78
-assert.equal(buildSheet('p', [v(EMPTY_QUOTE)], 1, c2.settings).chosen!.floor, 390)
+// 草稿用校准后的时间值 78；小时系数不满 3 单不动 → 10 × 78
+assert.equal(buildSheet('p', [v(EMPTY_QUOTE)], 1, c2.settings).chosen!.floor, 780)
 assert.equal(freeze({ ...quoted, status: '草稿' }, DEFAULT_QUOTE_SETTINGS).frozen, null)
-assert.match(selfText(later, c2), /按报出去那一刻的/)
 pass('离开草稿时冻结当时的时间值，之后校准只影响草稿')
 
 // 小时系数作用在 AI 估的小时上，并写明
@@ -165,7 +185,7 @@ assert.match(selfText(bs), /奖金是客户达标后多赚 ¥8,000 的 2%/)
 pass('成效奖金：先付 = 底线，奖金按把握倒推，平均收入等于原报价')
 
 assert.equal(buildSheet('p', [v({ bonus: { ...terms, confidence: 0.9 } }, shop)], 1).bonus!.amount, 90)
-assert.equal(buildSheet('p', [v({ bonus: terms })], 1).bonus, null)
+assert.equal(buildSheet('p', [v({ bonus: terms }, { ...one, clientType: '学生单' })], 1).bonus, null)
 assert.match(selfText(buildSheet('p', [v({ bonus: { ...terms, verify: '' } }, shop)], 1)), /条款还缺：怎么算达标/)
 const withDiscount = buildSheet('p', [v({ bonus: terms, discount: { ratio: 0.2, reason: '老客户' } }, shop)], 1)
 assert.doesNotMatch(clientText(withDiscount), /人情折让/)
@@ -223,5 +243,214 @@ assert.match(ct, /随时可以停，停了以后再有需求按变更单另算/)
 assert.doesNotMatch(ct, /小时/)
 assert.match(maintenanceSelfText('商城', raw, s1), /2026 年 11 月  12\.5 小时，每小时 ¥96  值  交付：会员系统/)
 pass('月维护的客户版不出现小时，自用版逐月列出每小时实际拿到多少')
+
+// ── 不按写代码算时间：直接能做的功能 0 小时，只收最低收费 ──
+const easy = brief([item('r1', '必须', 0), item('r2', '应该', 0), item('r3', '可以', 0)])
+const easyTiers = tiers(easy, none)
+assert.equal(easyTiers.length, 1)
+assert.equal(easyTiers[0].quote, 50)
+assert.equal(easyTiers[0].floor, 50)
+assert.equal(easyTiers[0].itemIds.length, 3)
+assert(easyTiers[0].lines.some(l => l.kind === 'min' && l.amount === 50))
+assert.equal(applyDiscount(easyTiers[0], { ratio: 0.2, reason: '同学' }).price, 50)
+pass('三个直接能做的功能只收最低收费 50，三档价格一样时只留范围最大的一档，折让不会把它压到 50 以下')
+
+const easySelf = selfText(buildSheet('p', [v({}, easy)], 1))
+assert.match(easySelf, /AI 直接写好，不收时间：条目r1/)
+assert.match(easySelf, /· 最低收费  ¥50/)
+pass('每个条目都列在自用版里，0 小时的写明不计时间')
+
+// 学生单、个人单不加兜底：同样的条目，商单有兜底，学生单没有
+const unclear = brief([item('r1', '必须', 2, { unclear: '字段没说' })])
+assert.equal(tiers(unclear, none)[0].lines.filter(l => l.kind === 'pad').length, 1)
+assert.equal(tiers({ ...unclear, clientType: '学生单' }, none)[0].lines.filter(l => l.kind === 'pad').length, 0)
+assert.equal(tiers({ ...unclear, clientType: '个人单' }, none)[0].lines.filter(l => l.kind === 'pad').length, 0)
+pass('兜底只给商单，学生单和个人单没有')
+
+const student = { ...unclear, clientType: '学生单' as const }
+assert.match(clientText(buildSheet('p', [v({}, student)], 1)), /保修，不另外收费/)
+assert.match(clientText(buildSheet('p', [v({}, unclear)], 1)), /立刻响应，放下手头的事/)
+pass('保修照给：学生单写明不另外收费，商单写明立刻响应')
+
+// ── 截止日和工期 ──
+assert.equal(parseDeadline('12 月 20 日', '2026-11-04'), '2026-12-20')
+assert.equal(parseDeadline('1月5号', '2026-11-04'), '2027-01-05')
+assert.equal(parseDeadline('2026-12-20', '2026-11-04'), '2026-12-20')
+assert.equal(parseDeadline('明天', '2026-11-04'), '2026-11-05')
+assert.equal(parseDeadline('后天交', '2026-11-04'), '2026-11-06')
+assert.equal(parseDeadline('3 天内', '2026-11-04'), '2026-11-07')
+assert.equal(parseDeadline('越快越好', '2026-11-04'), null)
+assert.equal(parseDeadline('2 月 31 日', '2026-11-04'), null)
+pass('截止日读成日期：月日、完整日期、今明后天、几天内；读不出来和不存在的日子返回空')
+
+const timed = brief([item('r1', '必须', 8), item('r2', '应该', 8)])
+const now = new Date(2026, 10, 4, 12)
+const plan = (q: Partial<QuoteState>) => buildSheet('p', [{ n: 1, at: 0, brief: { ...timed, deadline: '12 月 20 日' }, quote: { ...EMPTY_QUOTE, dailyHours: 4, ...q } }], 1, DEFAULT_QUOTE_SETTINGS, now)
+const roomy = plan({})
+assert.deepEqual(roomy.plans.map(p => [p.name, p.days, p.ready, p.slack]), [['基础', 2, '2026-11-06', 44], ['推荐', 4, '2026-11-08', 42]])
+assert.match(selfText(roomy), /基础档  8 小时 ÷ 4 = 2 天，从今天开工最早 11 月 6 日交付/)
+assert.match(selfText(roomy), /截止 12 月 20 日（材料里写的「12 月 20 日」）：每一档都来得及，最紧的一档余 42 天/)
+assert.match(clientText(roomy), /【推荐档】[\s\S]*预计 4 天交付/)
+pass('工期：各档小时 ÷ 每天投入，从今天往后数，和截止日比出余量；客户版只写预计几天')
+
+const tight = plan({ deadlineDate: '2026-11-07' })
+assert.deepEqual(tight.plans.map(p => p.slack), [1, -1])
+assert.match(selfText(tight), /推荐档晚 1 天；基础档来得及，余 1 天，可以只做到这一档，或和客户商量延期/)
+const never = plan({ deadlineDate: '2026-11-04', dailyHours: 2 })
+assert.match(selfText(never), /基础档晚 4 天、推荐档晚 8 天，来不及；砍范围或和客户商量延期/)
+assert.equal(plan({}).deadlineFrom, '材料')
+assert.equal(tight.deadlineFrom, '手填')
+pass('截止日不够时指出哪一档能赶上，一档都赶不上就说来不及；手填的截止日优先于材料里的说法')
+
+const norm = normalizeQuote({ deadlineDate: '2026-12-20', dailyHours: 0 })
+assert.equal(norm.deadlineDate, '2026-12-20')
+assert.equal(norm.dailyHours, 8)
+assert.equal(normalizeQuote({ deadlineDate: '明天' }).deadlineDate, null)
+pass('截止日只认 YYYY-MM-DD，每天投入为 0 时回到默认 8 小时')
+
+// 滑块：单项值不吃校准系数，整体倍率只缩没拖过的；钱和工期一起变；成交时调定的小时不会被变更单重复收费
+const dragged = brief([item('r1', '必须', 10, { basis: '确认' }), item('r2', '必须', 2, { basis: '上线' }), item('r3', '必须', 0, { basis: '直接做' })])
+const calibrated = { ...DEFAULT_QUOTE_SETTINGS, hourFactor: { 新做: 2, 接手改: 1 } }
+const dragSheet = (q: Partial<QuoteState>) => buildSheet('p', [{ n: 1, at: 0, brief: dragged, quote: { ...EMPTY_QUOTE, ...q } }], 1, calibrated)
+assert.equal(dragSheet({}).chosen!.floor, 24 * 31)
+assert.equal(dragSheet({ hourEdits: { r1: 4 } }).chosen!.floor, (4 + 4) * 31)
+assert.equal(dragSheet({ hourScale: 0.5 }).chosen!.floor, 12 * 31)
+assert.equal(dragSheet({ hourScale: 0.5, hourEdits: { r2: 8 } }).chosen!.floor, (10 + 8) * 31)
+assert.equal(dragSheet({ hourEdits: { r3: 8 } }).plans[0].hours, 32)
+pass('滑块改小时：单项不吃系数，整体只缩没拖过的，价格和工期跟着变')
+
+const blocksText = clientText(dragSheet({}))
+assert.match(blocksText, /上线保障 ¥\d+/)
+assert.match(blocksText, /需求确认 ¥\d+/)
+assert.doesNotMatch(blocksText, /小时|底线/)
+const blockSum = [...blocksText.matchAll(/^  (?:上线保障|需求确认) ¥([\d,]+)$/gm)].reduce((a, m) => a + Number(m[1].replace(',', '')), 0)
+assert.equal(blockSum, dragSheet({}).chosen!.quote)
+pass('客户版按判断分项列价，分项加起来等于报价，不露小时')
+
+const manyItems = brief([item('r1', '必须', 40), item('r2', '必须', 4), ...Array.from({ length: 20 }, (_, i) => item(`r${i + 3}`, '应该', 0))])
+const rows = hourRows(manyItems, EMPTY_QUOTE, DEFAULT_QUOTE_SETTINGS)
+assert.deepEqual(rows.filter(r => r.major).map(r => r.id), ['r1'])
+const before = hourRows(manyItems, EMPTY_QUOTE, DEFAULT_QUOTE_SETTINGS)
+const dragging = hourRows(manyItems, { ...EMPTY_QUOTE, hourEdits: { r2: 90, r9: 2 } }, DEFAULT_QUOTE_SETTINGS)
+assert.deepEqual(dragging.map(r => [r.id, r.max, r.major]), before.map(r => [r.id, r.max, r.major]))
+assert.equal(hoursLabel(0), '0 小时')
+assert.equal(hoursLabel(4), '4 小时')
+assert.equal(hoursLabel(12), '1 天 4 小时')
+assert.equal(hoursLabel(16), '2 天')
+pass('22 条需求只露出占钱 80% 的条目；拖动时行序、上限、收起都不变；8 小时起按整天加小时显示')
+
+const dealt: QuoteState = { ...EMPTY_QUOTE, status: '已成交', hourEdits: { r1: 3 } }
+const afterDeal = brief([item('r1', '必须', 10, { basis: '确认' }), item('r2', '必须', 2, { basis: '上线' }), item('r3', '必须', 0, { basis: '直接做' })])
+const dealChange = buildSheet('p', [{ n: 1, at: 0, brief: dragged, quote: dealt }, { n: 2, at: 1, brief: afterDeal, quote: EMPTY_QUOTE }], 2)
+assert.equal(dealChange.chosen, null)
+pass('成交时把条目调低，下一版 AI 小时没变时变更单不收钱')
+
+const carried = carryHourEdits({ ...EMPTY_QUOTE, hourEdits: { r1: 3, r2: 5 } }, dragged, brief([item('r1', '必须', 10), item('r2', '必须', 9)]))
+assert.deepEqual(carried.hourEdits, { r1: 3 })
+assert.deepEqual(normalizeQuote({ hourEdits: { r1: 3.3, bad: 1, r2: 999 }, hourScale: 9 }).hourEdits, { r1: 3.5, r2: 200 })
+assert.equal(normalizeQuote({ hourScale: 9 }).hourScale, 1)
+const zeroItem = brief([item('r1', '必须', 0, { basis: '验证' })])
+assert.equal(basisOfNormalized(zeroItem), '直接做')
+pass('追加版本只沿用没变条目的拖动值；非法值被挡；0 小时一律算直接做')
+
+const savedCalib = (q: Partial<QuoteState>) => calibrate(Array.from({ length: 3 }, () => ({ title: 'p', versions: [{ n: 1, at: 0, brief: brief([item('r1', '必须', 10), item('r2', '必须', 10)]), quote: { ...EMPTY_QUOTE, ...q } }] }))).settings.hourFactor['新做']
+assert.equal(savedCalib({ hourEdits: { r1: 20 } }), 1.5)
+assert.equal(savedCalib({ status: '已报价' }), 1)
+assert.equal(savedCalib({}), 1)
+assert.equal(savedCalib({ hourScale: 0.5 }), 0.5)
+assert.equal(savedCalib({ hourEdits: { r1: 20 }, status: '已成交', actual: { 新做: 30, 接手改: 0 } }), 1.5)
+pass('校准用最后保存的小时，没拖的算认可，未处理的草稿不算；有实际小时时以实际为准')
+
+// 三类单子：从 0 到 1 只收入场价，业务单几百块，价差来自验证可行性
+const priceOf = (items: BriefItem[]): number => tiers(brief(items), none).at(-1)!.quote
+const admin = priceOf(Array.from({ length: 12 }, (_, i) => item(`r${i + 1}`, '必须', 0, { basis: '直接做' })))
+const business = priceOf([item('r1', '必须', 0, { basis: '直接做' }), item('r2', '必须', 3, { basis: '确认' }), item('r3', '必须', 3, { basis: '上线' })])
+const hard = priceOf([item('r1', '必须', 16, { basis: '验证' }), item('r2', '必须', 16, { basis: '验证' }), item('r3', '必须', 16, { basis: '验证' }), item('r4', '必须', 4, { basis: '确认' })])
+console.log({ admin, business, hard })
+assert.equal(admin, 50)
+assert(business >= 200 && business < 1000)
+assert(hard > 10000)
+pass('12 个直接能做的后台 ¥50，业务单几百，硬骨头过万')
+
+const mVer = (q: Partial<QuoteState>, b: Brief = brief([item('r1', '必须', 2)])) => [{ n: 1, at: 0, brief: b, quote: { ...EMPTY_QUOTE, ...q } }]
+const finalSheet = buildSheet('p', mVer({ finalPrice: 900 }), 1)
+assert.equal(finalSheet.chosen!.quote, 900); assert.equal(finalSheet.tiers.length, 1)
+assert.match(clientText(finalSheet), /¥900/)
+pass('填了实际报价只报这一个价')
+
+assert.equal(sampleOf(mVer({}), 1), null)
+assert.equal(sampleOf(mVer({ status: '已报价' }), 1), null)
+assert.equal(sampleOf(mVer({ status: '已成交', share: false }), 1), null)
+assert.equal(sampleOf(mVer({ status: '已报价', outcome: '我没接' }), 1), null)
+assert.deepEqual(sampleOf(mVer({ status: '已成交', finalPrice: 900 }), 1), { clientType: '商单', category: '其他', result: '成交', price: 900, budget: null })
+assert.deepEqual(Object.keys(sampleOf(mVer({ status: '已报价', outcome: '嫌贵', clientBudget: 300 }), 1)!).sort(), ['budget', 'category', 'clientType', 'price', 'result'])
+pass('只有成交和客户拒绝进样本，不贡献和草稿不进，样本不含客户文字')
+
+const mDeal = (price: number, contributor: string, clientType: 'typeA' | '商单' = '商单') => ({ clientType, category: '网站', result: '成交', price, budget: null, contributor }) as never
+assert.deepEqual(marketStats([mDeal(1, 'a'), mDeal(2, 'a')]), [])
+assert.equal(marketStats([mDeal(1, 'a'), mDeal(2, 'a'), mDeal(3, 'a')]).length, 1)
+const mStat = marketStats([100, 200, 300, 400, 500].map((p, i) => mDeal(p, String(i % 3))))
+assert.deepEqual(mStat, [{ clientType: '商单', category: '网站', count: 5, low: 200, high: 400 }])
+assert.match(marketLine({ ...brief([]), category: '网站' }, mStat), /5 单成交，多数在 ¥200 ～ ¥400/)
+assert.match(marketLine({ ...brief([]), clientType: '学生单', category: '网站' }, mStat), /同类成交还不够/)
+pass('行情要 3 单才显示，一个人的数据也算，学生单和商单不混')
+
+const thesis = { ...brief([item('r1', '必须', 3, { basis: '接手', kind: '接手改' })]), clientType: '学生单' as const }
+const atStart = { ...DEFAULT_QUOTE_SETTINGS, rates: { 新做: 67, 接手改: 67 } }
+assert.equal(buildSheet('p', [v({}, thesis)], 1, atStart).chosen!.quote, 260)
+assert.equal(buildSheet('p', [v({ frozen: { rates: { 新做: 31, 接手改: 267 }, hourFactor: { 新做: 1, 接手改: 1 }, basisFactor: {} } }, thesis)], 1, atStart).chosen!.floor, 801)
+pass('论文单回测：3 小时报 ¥260；已冻结的报价不被改')
+
+const dealOf = (type: '学生单' | '商单') => ({ title: 'p', versions: [{ n: 1, at: 0, brief: { ...brief([item('r1', '必须', 10)]), clientType: type }, quote: { ...EMPTY_QUOTE, status: '已成交' as const, actual: { 新做: 1, 接手改: 0 }, feeling: '亏' as const } }] })
+const split = calibrateByType([dealOf('学生单'), dealOf('学生单'), dealOf('学生单')])
+assert.ok(split.学生单.settings.rates['新做'] > 31)
+assert.equal(split.商单.settings.rates['新做'], 31)
+assert.equal(split.个人单.settings.rates['新做'], 31)
+pass('校准按客户类型分开：学生单的亏不影响商单和个人单')
+
+const near = tiers(brief([item('r1', '必须', 100), item('r2', '应该', 5)]), none)
+assert.deepEqual(near.map(t => t.name), ['推荐'])
+const apart = tiers(brief([item('r1', '必须', 100), item('r2', '应该', 50)]), none)
+assert.deepEqual(apart.map(t => t.name), ['基础', '推荐'])
+pass('相邻两档价差不到 1 成合并成范围大的那档')
+
+const talking = buildSheet('p', [{ n: 1, at: 0, brief: b, quote: { ...EMPTY_QUOTE, status: '已报价' } }, { n: 2, at: 1, brief: b, quote: EMPTY_QUOTE }], 2)
+assert.equal(talking.base, null); assert.equal(talking.change, null); assert(talking.tiers.length > 0)
+pass('第 1 版只是报过价时，追加的第 2 版仍是完整报价，不是变更单')
+
+const oldest = Array.from({ length: 51 }, (_, i) => ({ title: `p${i}`, versions: [{ n: 1, at: i, brief: brief([item('r1', '必须', 10)]), quote: { ...EMPTY_QUOTE, status: '已成交' as const, actual: { 新做: i === 0 ? 100 : 10, 接手改: 0 }, hourEdits: {} } }] }))
+assert.equal(calibrate(oldest).settings.hourFactor['新做'], 1)
+assert.equal(calibrate(oldest.slice(0, 3).map((p, i) => ({ ...p, versions: [{ ...p.versions[0], quote: { ...p.versions[0].quote, actual: { 新做: i === 0 ? 100 : 30, 接手改: 0 } } }] }))).settings.hourFactor['新做'], 3)
+pass('校准只用最近 50 个项目')
+
+const fact = (hours: number, edit: number, title = '微信分账') => ({ title: 'p', versions: [{ n: 1, at: 0, brief: { ...brief([item('r1', '必须', hours, { title, basis: hours ? '验证' as const : '直接做' as const }), item('r2', '必须', 10, { basis: '确认' })]), category: '电商支付' as const }, quote: { ...EMPTY_QUOTE, hourEdits: { r1: edit } } }] })
+const learned = calibrate([fact(4, 8), fact(4, 8), fact(4, 8)]).settings
+assert.equal(learned.basisFactor['验证'], 2)
+assert.equal(learned.basisFactor['确认'], 1)
+const applied = buildSheet('p', [{ n: 1, at: 0, brief: brief([item('r1', '必须', 4, { basis: '验证' }), item('r2', '必须', 4, { basis: '确认' })]), quote: EMPTY_QUOTE }], 1, learned).chosen!.lines
+assert.deepEqual(applied.map(l => l.hours), [8, 4])
+pass('按判断类型分别校准：只放大一直被低估的那一类')
+
+const oldFrozen = normalizeQuote({ status: '已报价', frozen: { rates: { 新做: 31, 接手改: 267 }, hourFactor: { 新做: 1, 接手改: 1 } } })
+assert.equal(buildSheet('p', [{ n: 1, at: 0, brief: brief([item('r1', '必须', 4, { basis: '验证' })]), quote: oldFrozen }], 1, learned).chosen!.lines[0].hours, 4)
+pass('已冻结的报价不吃后来的分类系数')
+
+const exp = experienceLines([fact(0, 3, '订阅消息')], '商单')
+assert.match(exp[0], /电商支付｜订阅消息｜.*：0 小时 → 3 小时（调整）/)
+assert.deepEqual(experienceLines([fact(0, 3)], '学生单'), [])
+assert.match(briefSystemPrompt(null, '商单', exp), /订阅消息/)
+assert.doesNotMatch(briefSystemPrompt(null, '商单'), /过去同类单子/)
+assert.equal(experienceLines(Array.from({ length: 20 }, () => fact(4, 8)), '商单', 30).length, 30)
+assert.match(briefSystemPrompt(null, '商单'), /保修、售后答疑不单列/)
+pass('历史修正传给 AI：估 0 的也传，不跨客户类型，最多 30 条')
+
+const doneProject = { title: 'p', versions: [{ n: 1, at: 0, brief: brief([item('r1', '必须', 10)]), quote: { ...EMPTY_QUOTE, status: '已成交' as const, actual: { 新做: 20, 接手改: 0 } } }] }
+const lostProject = { title: 'p', versions: [{ n: 1, at: 0, brief: brief([item('r1', '必须', 10)]), quote: { ...EMPTY_QUOTE, status: '已报价' as const, outcome: '没回音' as const } }] }
+const acc = calibrate([doneProject, lostProject]).notes.join()
+assert.match(acc, /最近 1 单，AI 估的小时和实际平均差 50%/)
+assert.match(acc, /有结果的 2 单，成交 1 单（50%）/)
+assert.doesNotMatch(calibrate([fact(4, 8)]).notes.join(), /历史记录/)
+assert.match(calibrate(Array.from({ length: 20 }, () => fact(4, 8))).notes.join(), /历史记录 40 条，每次只能带 30 条/)
+pass('准确度：小时偏差和成交率')
 
 console.log(`\n${checks} 项全部通过`)

@@ -9,7 +9,8 @@ import { authedRequest, onWebAccountChange, readWebAccount, webAccountLines } fr
 import { WebRequestError } from '../shared/net-lines'
 import { logError, logInfo } from '../shared/logger'
 import { MAX_IMAGES } from '../../../web/shared/order-judge'
-import { normalizeQuote } from '../../../web/shared/order-judge-sheet'
+import { isChoosableClientType } from '../../../web/shared/order-judge-brief'
+import { normalizeQuote, type MarketStat } from '../../../web/shared/order-judge-sheet'
 import { normalizeMaintenance } from '../../../web/shared/order-judge-maintenance'
 import { ATTACH_MAX_FILES, type JudgeEvent, type JudgeState, type Project } from '../../../web/shared/order-judge-api'
 
@@ -40,13 +41,13 @@ async function remote<T>(path: string, method = 'GET', body?: unknown): Promise<
   return value
 }
 
-export interface JudgeView { loggedIn: boolean; username: string; accountId: number; projects: Project[] }
+export interface JudgeView { loggedIn: boolean; username: string; accountId: number; projects: Project[]; market?: MarketStat[] }
 
 export async function loadProjects(): Promise<JudgeView> {
   const account = await readWebAccount()
   if (!account.token) return { loggedIn: false, username: '', accountId: 0, projects: [] }
   const state = await remote<JudgeState>('')
-  return { loggedIn: true, username: account.username, accountId: account.accountId, projects: state.projects }
+  return { loggedIn: true, username: account.username, accountId: account.accountId, projects: state.projects, market: state.market }
 }
 
 export async function deleteProject(id: string): Promise<void> {
@@ -73,6 +74,7 @@ export async function versionImage(uid: string, id: string, file: string): Promi
 
 export interface OrganizeInput {
   projectId: string | null
+  clientType: string
   text: string
   images: { name: string; dataUrl: string }[]
   files: { name: string; data: string }[]
@@ -90,7 +92,8 @@ export async function organize(input: OrganizeInput, onStage: (stage: OrganizeSt
   const images = Array.isArray(input?.images) ? input.images : []
   const files = Array.isArray(input?.files) ? input.files : []
   const projectId = input?.projectId ?? null
-  if ((projectId !== null && (typeof projectId !== 'string' || !ID_RE.test(projectId)))
+  if (!isChoosableClientType(input?.clientType)
+    || (projectId !== null && (typeof projectId !== 'string' || !ID_RE.test(projectId)))
     || images.length > MAX_IMAGES || images.some(x => typeof x?.name !== 'string' || typeof x?.dataUrl !== 'string' || !DATA_URL_RE.test(x.dataUrl))
     || files.length > ATTACH_MAX_FILES || files.some(x => typeof x?.name !== 'string' || typeof x?.data !== 'string' || !BASE64_RE.test(x.data))) {
     return { ok: false, code: 'BAD_INPUT', error: '材料没有通过检查，清空后重新放一次' }
@@ -101,7 +104,7 @@ export async function organize(input: OrganizeInput, onStage: (stage: OrganizeSt
   let project: Project | null = null
   try {
     const path = projectId ? `/api/order-judge/projects/${projectId}/versions` : '/api/order-judge/projects'
-    await webAccountLines(path, JSON.stringify({ text, images, files }), controller.signal, raw => {
+    await webAccountLines(path, JSON.stringify({ clientType: input.clientType, text, images, files }), controller.signal, raw => {
       const event = raw as JudgeEvent
       if (event.type === 'stage') onStage(event)
       else if (event.type === 'done') project = event.project

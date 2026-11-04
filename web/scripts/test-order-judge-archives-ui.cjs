@@ -30,6 +30,7 @@ async function main() {
     const send = async file => {
       await page.locator('input[type=file]').first().setInputFiles(file)
       assert.equal(await page.locator('.oj-file.bad').count(), 0)
+      await page.getByRole('group', { name: '客户类型' }).getByRole('button', { name: '个人单' }).click()
       await page.locator('.oj-go').click()
     }
     await open()

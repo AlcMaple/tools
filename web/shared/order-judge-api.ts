@@ -1,3 +1,4 @@
+import type { MarketStat } from './order-judge-sheet'
 // 接单评估前后端共用的接口形状。方案见 docs/ideas/021-接单评估重新定位.md：
 // 一个项目 = 同一个客户的同一单；客户每追加 / 调整一次需求，就多一个版本，版本只存这次新放进来的材料，
 // AI 读上一版的需求清单 + 这次的材料，给出完整的新清单，服务端按条目 id 算出与上一版的差别。
@@ -30,7 +31,8 @@ export interface Project {
   maintenance: Maintenance
 }
 
-export interface JudgeState { projects: Project[]; seq: number }
+export interface JudgeState {
+  market?: MarketStat[]; projects: Project[]; seq: number }
 
 export interface JudgeImage { name: string; dataUrl: string }
 
@@ -43,7 +45,8 @@ export type JudgeEvent =
   | { type: 'done'; project: Project }
   | { type: 'error'; code: string; error: string }
 
-export const PROJECT_LIMIT = 50
+// 备份恢复时防畸形文件的上限，不是用户项目数的限制：用户的项目从不自动删除
+export const BACKUP_MAX_PROJECTS = 100_000
 export const VERSION_LIMIT = 20
 export const ATTACH_MAX_FILES = 10
 export const ATTACH_MAX_BYTES = 6 * 1024 * 1024

@@ -72,7 +72,7 @@ if (process.argv.includes('--browser')) {
   app.use('*', securityHeaders())
   app.route('/api/auth', auth)
   app.route('/api/order-judge', createOrderJudgeApi(async () => ({
-    source: 'server', model: 'archive-fixture', execute: action => action(), call: async () => ({ choices: [{ message: { content: JSON.stringify({ title: '压缩包回归通过', clientType: '个人单', outcome: '夹具结果', budget: '', deadline: '', alternative: '', items: [{ id: null, title: '修复登录', detail: '夹具条目', priority: '必须', kind: '接手改', hours: 2, reason: '夹具', unclear: '' }], excluded: [], questions: [] }) } }] }),
+    source: 'server', model: 'archive-fixture', execute: action => action(), call: async () => ({ choices: [{ message: { content: JSON.stringify({ title: '压缩包回归通过', clientType: '个人单', outcome: '夹具结果', budget: '', deadline: '', items: [{ id: null, title: '修复登录', detail: '夹具条目', priority: '必须', kind: '接手改', hours: 2, reason: '夹具', unclear: '' }], excluded: [], questions: [] }) } }] }),
   })))
   app.get('/api/agent/provider', c => c.json({ enabled: true, ready: true, source: 'server', model: 'archive-fixture' }))
   app.all('/api/*', c => c.json({ error: 'fixture endpoint' }, 404))

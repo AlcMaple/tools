@@ -9,10 +9,10 @@ import { Ic } from '../SketchIcon'
 import { Select } from '../Select'
 import { useIsWide } from '../useMediaQuery'
 import { precheck } from '../../shared/order-judge'
-import { PRIORITIES, WORK_KINDS, type BriefItem } from '../../shared/order-judge-brief'
-import { parseBudget, type Expense } from '../../shared/order-judge-quote'
+import { BASIS_TEXT, CHOOSABLE_CLIENT_TYPES, PRIORITIES, WORK_KINDS, isChoosableClientType, type Brief as BriefType, type BriefItem, type ChoosableClientType } from '../../shared/order-judge-brief'
+import { parseBudget, parseDeadline, ymd, type Expense, type QuoteSettings } from '../../shared/order-judge-quote'
 import { MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance, type MonthRecord } from '../../shared/order-judge-maintenance'
-import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../shared/order-judge-sheet'
+import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibFor, calibrateByType, latestType, clientText, freeze, normalizeQuote, selfText, marketLine, HOUR_SCALE_MAX, HOUR_SCALE_MIN, hourRows, hoursLabel, scaleLabel, selfSummary, type Calibrations, type HourRow, type QuoteState, type Sheet } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
 import { readByokKey } from '../reviews/byok'
@@ -59,6 +59,14 @@ const errorOf = (e: unknown): { code: string; message: string } =>
 
 const latest = (p: Project): Version => p.versions[p.versions.length - 1]
 
+const TYPE_KEY = 'order-judge:client-type'
+function readClientType(): ChoosableClientType | null {
+  try { const v = localStorage.getItem(TYPE_KEY); return isChoosableClientType(v) ? v : null } catch { return null }
+}
+function saveClientType(t: ChoosableClientType): void {
+  try { localStorage.setItem(TYPE_KEY, t) } catch { /* 记不住就每次再选 */ }
+}
+
 export function OrderJudgePage({ onLogin }: { onLogin: () => void }): JSX.Element | null {
   const { user, ready } = useAuth()
   if (!ready) return null
@@ -94,7 +102,7 @@ function JudgeWorkspace(): JSX.Element {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('new')
   const [state, setState] = useState<JudgeState | null>(null)
-  const calib = calibrate(state?.projects ?? [])
+  const calib = { byType: calibrateByType(state?.projects ?? []), market: state?.market }
   const all = state?.projects ?? []
   const [loadError, setLoadError] = useState('')
   const [syncError, setSyncError] = useState('')
@@ -114,6 +122,9 @@ function JudgeWorkspace(): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const [mobileDetail, setMobileDetail] = useState(false)
+  const [clientType, setClientType] = useState<ChoosableClientType | null>(readClientType)
+  const [typeTip, setTypeTip] = useState(false)
+  const [matOpen, setMatOpen] = useState(false)
   const wide = useIsWide()
   const nextId = useRef(1)
   const shotNo = useRef(1)
@@ -264,6 +275,7 @@ function JudgeWorkspace(): JSX.Element {
     clearMaterials()
     setOutcome(null)
     setTarget(null)
+    setMatOpen(false)
     setTab('new')
   }
 
@@ -271,6 +283,9 @@ function JudgeWorkspace(): JSX.Element {
     clearMaterials()
     setOutcome(null)
     setTarget(project)
+    setMatOpen(true)
+    const kept = latest(project).brief.clientType
+    if (isChoosableClientType(kept)) setClientType(kept)
     setTab('new')
     setMobileDetail(false)
     window.scrollTo({ top: 0 })
@@ -281,6 +296,7 @@ function JudgeWorkspace(): JSX.Element {
     const pre = precheck(text, materials.length)
     if (pre === 'empty') { setTip(true); return }
     if (pre === 'chat-record') { setOutcome({ kind: 'chat-record' }); return }
+    if (!clientType) { setTypeTip(true); return }
     if (noKey) { window.location.hash = '#/settings/ai'; return }
     const controller = new AbortController()
     abortRef.current = controller
@@ -312,7 +328,7 @@ function JudgeWorkspace(): JSX.Element {
       if (byok && ai && !(provider?.ready && provider.source === 'byok')) {
         setProvider(await connectProvider(ai.endpoint, ai.model, readByokKey().trim()))
       }
-      const project = await organize(target?.id ?? null, prepared.text, prepared.images, prepared.attachments, (e) => {
+      const project = await organize(target?.id ?? null, clientType, prepared.text, prepared.images, prepared.attachments, (e) => {
         if (e.stage === 'links') { setLinkCount(e.count); setStage('links') } else setStage('ai')
       }, controller.signal)
       if (controller.signal.aborted) return
@@ -320,6 +336,7 @@ function JudgeWorkspace(): JSX.Element {
       setTarget(project)
       setSelected(project.id)
       clearMaterials()
+      setMatOpen(false)
       setOutcome({ kind: 'done', project, ms: Date.now() - t0 })
     } catch (e) {
       if (controller.signal.aborted) return
@@ -360,6 +377,7 @@ function JudgeWorkspace(): JSX.Element {
 
   // 平板 / 手机：整理中和出结果后不显示编辑区（CSS 只在 ≤960px 生效，桌面仍是两栏）
   const flow = running || outcome !== null
+  const solo = !!target && !matOpen && !running && !text && materials.length === 0
   const head = <Head tab={tab} onTab={(t) => { setTab(t); setMobileDetail(false) }} count={state ? state.projects.length : null} />
   const deleting = deleteTarget && <DeleteProjectDialog project={deleteTarget} onDelete={removeProject} onClose={() => setDeleteTarget(null)} />
 
@@ -382,6 +400,7 @@ function JudgeWorkspace(): JSX.Element {
           <div className="oj-hist">
             <section className="panel oj-rows">
               <span className="tape tl lav" />
+              <div className="oj-rows-scroll">
               {list.map((p) => {
                 const v = latest(p)
                 return (
@@ -399,6 +418,7 @@ function JudgeWorkspace(): JSX.Element {
                   </div>
                 )
               })}
+              </div>
             </section>
             {current && <div className="oj-desk">{sheet}</div>}
           </div>
@@ -419,9 +439,9 @@ function JudgeWorkspace(): JSX.Element {
         </div>
       )}
       {(loadError || syncError) && <p className="nag mt16"><Ic name="alert" />{loadError || syncError}</p>}
-      <div className={`oj-grid${flow ? ' flow' : ''}`}>
+      <div className={`oj-grid${flow ? ' flow' : ''}${solo ? ' solo' : ''}`}>
         <section
-          className="panel oj-mat"
+          className={`panel oj-mat${solo ? ' solo' : ''}`}
           onDragEnter={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDrag(true) } }}
           onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }}
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrag(false) }}
@@ -435,7 +455,17 @@ function JudgeWorkspace(): JSX.Element {
           <div className="panel-title oj-mat-title">
             <Ic name="clip" />
             <span className="oj-mat-name">{target ? `给「${target.title}」追加需求` : '客户材料'}</span>
-            {target && !running && <button type="button" className="btn btn-sm btn-ghost" onClick={startNew}>改为新项目</button>}
+            {target && !running && <button type="button" className="btn btn-sm btn-ghost" onClick={startNew}>{solo ? '新项目' : '改为新项目'}</button>}
+            {solo && target && target.versions.length < VERSION_LIMIT && <button type="button" className="btn btn-sm" onClick={() => { setMatOpen(true); setTimeout(() => textRef.current?.focus(), 0) }}>追加需求</button>}
+          </div>
+          <div className="oj-type">
+            <span className="oj-qlabel">客户类型</span>
+            <div className="seg" role="group" aria-label="客户类型">
+              {CHOOSABLE_CLIENT_TYPES.map(t => (
+                <button key={t} type="button" disabled={running} className={clientType === t ? 'on' : ''} onClick={() => { setClientType(t); saveClientType(t); setTypeTip(false) }}>{t}</button>
+              ))}
+            </div>
+            <span className={`oj-type-tip${typeTip && !clientType ? ' on' : ''}`} role="status">先选客户类型</span>
           </div>
           <div className={`oj-drop${drag ? ' drag' : ''}`}>
             <textarea
@@ -660,10 +690,9 @@ function Step({ state, title, sub }: { state: 'done' | 'run' | 'wait'; title: st
   )
 }
 
-const hoursText = (h: number): string => `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`
 
 // 一个项目：版本切换 + 这一版的需求清单 + 这一版放进来的材料
-function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project: Project; ms?: number; onAppend?: () => void; onSaved: (p: Project) => void; calib: Calibration; all: Project[] }): JSX.Element {
+function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project: Project; ms?: number; onAppend?: () => void; onSaved: (p: Project) => void; calib: Calibrations; all: Project[] }): JSX.Element {
   const [n, setN] = useState(latest(project).n)
   const version = project.versions.find(v => v.n === n) ?? latest(project)
   const b = version.brief
@@ -671,7 +700,7 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
   for (const c of version.changes) if (c.type !== 'removed') marks.set(c.id, c.type === 'added' ? '新增' : '有改动')
   const removed = version.changes.filter((c): c is Extract<typeof c, { type: 'removed' }> => c.type === 'removed')
   const meta = [`第 ${version.n} 版`, when(version.at), b.clientType, ms ? `用时 ${Math.round(ms / 1000)} 秒` : ''].filter(Boolean).join(' · ')
-  const facts: [string, string][] = [['客户在意的结果', b.outcome], ['预算', b.budget], ['截止', b.deadline], ['不找你会怎么办', b.alternative]]
+  const facts: [string, string][] = [['客户在意的结果', b.outcome], ['客户预算', b.budget], ['截止', b.deadline]]
   const groups = PRIORITIES.map(p => ({ p, items: b.items.filter(i => i.priority === p) })).filter(g => g.items.length)
   return (
     <section className="panel oj-sheet">
@@ -688,9 +717,11 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
       <dl className="oj-facts">
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd className={v ? '' : 'ask'}>{v || '待问'}</dd></div>)}
       </dl>
+      <div className="oj-cols">
+      <div className="oj-col">
       {groups.map(g => (
         <div key={g.p} className="oj-sec">
-          <h3><Ic name="check" />{g.p === '不做' ? '这次不做' : g.p}<span className="oj-sum">{hoursText(g.items.reduce((s, i) => s + i.hours, 0))}</span></h3>
+          <h3><Ic name="check" />{g.p === '不做' ? '这次不做' : g.p}</h3>
           <ul className="oj-items">{g.items.map(item => <Item key={item.id} item={item} mark={marks.get(item.id)} />)}</ul>
         </div>
       ))}
@@ -712,8 +743,12 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
           <ul className="oj-q">{b.questions.map((q, i) => <li key={i}><span>{q}</span></li>)}</ul>
         </div>
       )}
+      </div>
+      <div className="oj-col">
       <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} />
       {project.versions.some(v => v.quote.status === '已成交') && <MaintenancePanel key={`m:${project.id}`} project={project} all={all} onSaved={onSaved} calib={calib} />}
+      </div>
+      </div>
       {(version.text || version.images.length > 0 || version.files.length > 0) && (
         <details className="oj-sec oj-src">
           <summary><Ic name="clip" cls="ic ic-sm" />第 {version.n} 版放进来的材料</summary>
@@ -748,7 +783,8 @@ const BONUS_INPUTS: [keyof BonusTerms, string, string][] = [
 const thisMonth = (): string => new Date().toISOString().slice(0, 7)
 
 // 月维护：项目级，成交过才出现。月费定了就不改：一旦记过月份，月费输入框锁住
-function MaintenancePanel({ project, all, onSaved, calib }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
+function MaintenancePanel({ project, all, onSaved, calib: calibs }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibrations }): JSX.Element {
+  const calib = calibFor(calibs, latestType(project.versions))
   const [draft, setDraft] = useState<Maintenance>(project.maintenance)
   const [view, setView] = useState<'client' | 'self'>('self')
   const [busy, setBusy] = useState(false)
@@ -863,10 +899,49 @@ function MaintenancePanel({ project, all, onSaved, calib }: { project: Project; 
 
 const pct = (r: number): string => (r ? `${Math.round(r * 100)}%` : '不让')
 
+// 工时：默认不用动。一根整体滑块管全局，单项只露出占钱最多的几条，其余收起；1 天按 8 小时显示
+function HoursPanel({ market, draft, raw, settings, set }: { market: string; draft: QuoteState; raw: BriefType; settings: QuoteSettings; set: (p: Partial<QuoteState>) => void }): JSX.Element {
+  const rows = hourRows(raw, draft, settings)
+  const locked = draft.status !== '草稿'
+  const major = rows.filter(r => r.major), rest = rows.filter(r => !r.major)
+  const changed = draft.hourScale !== 1 || Object.keys(draft.hourEdits).length > 0
+  const drag = (id: string, suggested: number, v: number): void => {
+    const { [id]: _, ...others } = draft.hourEdits
+    set({ hourEdits: v === suggested ? others : { ...others, [id]: v } })
+  }
+  const row = (r: HourRow): JSX.Element => (
+    <label key={r.id} className="oj-hrow">
+      <span title={`${r.title}：${BASIS_TEXT[r.basis]}`}>{r.title}<em>{BASIS_TEXT[r.basis]}</em></span>
+      <input type="range" aria-label={`${r.title}的小时`} min={0} max={r.max} step={0.5} value={r.hours} disabled={locked} onChange={e => drag(r.id, r.suggested, Number(e.target.value))} />
+      <span className="oj-hval" title={`${r.hours} 小时`}>{hoursLabel(r.hours)}</span>
+    </label>
+  )
+  return (
+    <div className="oj-hours">
+      <p className="oj-hmarket">{market}</p>
+      <label className="oj-hrow">
+        <span>全部工时</span>
+        <input type="range" aria-label="整体小时倍率" min={HOUR_SCALE_MIN} max={HOUR_SCALE_MAX} step={0.1} value={draft.hourScale} disabled={locked} onChange={e => set({ hourScale: Number(e.target.value) })} />
+        <span className="oj-hval">{scaleLabel(draft.hourScale)}</span>
+      </label>
+      {major.map(row)}
+      {rest.length > 0 && (
+        <details className="oj-hmore">
+          <summary>其余 {rest.length} 项，{hoursLabel(rest.reduce((a, r) => a + r.hours, 0))}</summary>
+          <div>{rest.map(row)}</div>
+        </details>
+      )}
+      {changed && !locked && <button type="button" className="oj-hreset" onClick={() => set({ hourEdits: {}, hourScale: 1 })}>恢复 AI 的估计</button>}
+    </div>
+  )
+}
+
 // 报价：表单改动即时反映到下面的报价单，点保存才写回；复制 / 下载的就是当前看到的文字
-function QuotePanel({ project, version, onSaved, calib }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
+function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibrations }): JSX.Element {
+  const calib = calibFor(calibs, version.brief.clientType)
   const [draft, setDraft] = useState<QuoteState>(version.quote)
   const [budgetText, setBudgetText] = useState(version.quote.budget == null ? '' : String(version.quote.budget))
+  const [deadlineText, setDeadlineText] = useState(version.quote.deadlineDate ?? '')
   const [view, setView] = useState<'client' | 'self'>('self')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
@@ -876,9 +951,11 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
   const versions = project.versions.map(v => ({ n: v.n, at: v.at, brief: v.brief, quote: v.id === version.id ? pending : v.quote }))
   const sheet = buildSheet(project.title, versions, version.n, calib.settings)
   const text = view === 'client' ? clientText(sheet) : selfText(sheet, calib)
+  const summary = selfSummary(sheet)
   const dirty = JSON.stringify(pending) !== JSON.stringify(version.quote)
   const kinds = WORK_KINDS.filter(k => sheet.chosen?.lines.some(l => l.work === k))
   const parsed = parseBudget(version.brief.budget)
+  const [moreOn] = useState(draft.bonus.on || draft.discount.ratio > 0 || draft.resultHours > 0 || draft.expenses.length > 0)
 
   const save = async (): Promise<void> => {
     setBusy(true)
@@ -909,6 +986,14 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
   return (
     <div className="oj-sec oj-quote">
       <h3><Ic name="ticket" />{sheet.base ? `变更单 · 基于第 ${sheet.base.n} 版` : '报价'}</h3>
+      {summary && (
+        <div className="oj-hero" role="status">
+          <span className="oj-hero-name">{summary.name === '变更' ? '这次变更报价' : `报价 · ${summary.name}档`}</span>
+          <b className="oj-hero-price">¥{summary.price.toLocaleString('zh-CN')}</b>
+          <span className="oj-hero-sub">{[summary.days != null ? `约 ${summary.days} 天做完` : '', `最低可收 ¥${summary.minPrice.toLocaleString('zh-CN')}`, ...summary.others.map(o => `${o.name}档 ¥${o.price.toLocaleString('zh-CN')}`)].filter(Boolean).join(' · ')}</span>
+        </div>
+      )}
+      <HoursPanel market={marketLine(version.brief, calib.market)} draft={pending} raw={version.brief} settings={sheet.settings} set={set} />
       <div className="oj-qform">
         <div className="oj-qrow">
           <span className="oj-qlabel">状态</span>
@@ -916,6 +1001,37 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
             {VERSION_STATUSES.map(st => <button key={st} type="button" className={draft.status === st ? 'on' : ''} onClick={() => set({ status: st })}>{st}</button>)}
           </div>
         </div>
+        <label className="oj-qrow">
+          <span className="oj-qlabel">{draft.status === '已成交' ? '成交价' : '实际报价'}</span>
+          <input className="oj-qin" inputMode="numeric" aria-label="实际报价" value={draft.finalPrice ?? ''} placeholder={sheet.chosen ? `默认 ${sheet.chosen.quote}` : ''}
+            onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); set({ finalPrice: v ? Number(v) : null }) }} />
+          <span className="faint small">元</span>
+        </label>
+        {!sheet.base && sheet.tiers.length > 1 && (
+          <div className="oj-qrow">
+            <span className="oj-qlabel">主推</span>
+            <div className="seg" role="group" aria-label="主推档">
+              {sheet.tiers.map(t => <button key={t.name} type="button" className={sheet.chosen?.name === t.name ? 'on' : ''} onClick={() => set({ tier: t.name })}>{t.name}</button>)}
+            </div>
+          </div>
+        )}
+        {!sheet.base && (
+          <label className="oj-qrow">
+            <span className="oj-qlabel">客户预算</span>
+            <input className="oj-qin" inputMode="numeric" value={budgetText} placeholder={parsed != null ? `材料里是 ${parsed}` : '待问'}
+              onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); setBudgetText(v); set({ budget: v ? Number(v) : null }) }} />
+            <span className="faint small">元</span>
+          </label>
+        )}
+        <label className="oj-qrow">
+          <span className="oj-qlabel">截止日</span>
+          <input className="oj-qin wide" value={deadlineText} placeholder={version.brief.deadline ? `材料里是「${version.brief.deadline}」` : '如 12 月 20 日、明天'}
+            onChange={e => { setDeadlineText(e.target.value); set({ deadlineDate: parseDeadline(e.target.value, ymd(new Date())) }) }} />
+          <span className="faint small oj-qhint">{deadlineText.trim() ? (draft.deadlineDate ? `读成 ${draft.deadlineDate}` : '读不出日期') : sheet.deadline ? `按 ${sheet.deadline}` : ''}</span>
+        </label>
+        {draft.status !== '草稿' && (
+          <div className="oj-qstage">
+            <p>{draft.status === '已报价' ? '客户怎么回复' : '做完后填'}</p>
         {draft.status === '已报价' && (
           <div className="oj-qrow">
             <span className="oj-qlabel">客户结果</span>
@@ -934,7 +1050,7 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
         )}
         {draft.status === '已成交' && kinds.map(k => (
           <label key={k} className="oj-qrow">
-            <span className="oj-qlabel">实际{k}</span>
+            <span className="oj-qlabel">实际{k === '接手改' ? '验证和接手' : '新做'}</span>
             <input className="oj-qin" inputMode="decimal" value={draft.actual[k] || ''} placeholder="做完再填"
               onChange={e => set({ actual: { ...draft.actual, [k]: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } })} />
             <span className="faint small">小时</span>
@@ -948,22 +1064,17 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
             </div>
           </div>
         )}
-        {!sheet.base && sheet.tiers.length > 1 && (
-          <div className="oj-qrow">
-            <span className="oj-qlabel">主推</span>
-            <div className="seg" role="group" aria-label="主推档">
-              {sheet.tiers.map(t => <button key={t.name} type="button" className={sheet.chosen?.name === t.name ? 'on' : ''} onClick={() => set({ tier: t.name })}>{t.name}</button>)}
-            </div>
           </div>
         )}
-        {!sheet.base && (
-          <label className="oj-qrow">
-            <span className="oj-qlabel">预算</span>
-            <input className="oj-qin" inputMode="numeric" value={budgetText} placeholder={parsed != null ? `材料里是 ${parsed}` : '待问'}
-              onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); setBudgetText(v); set({ budget: v ? Number(v) : null }) }} />
-            <span className="faint small">元</span>
-          </label>
-        )}
+        <details className="oj-qmore" open={moreOn}>
+        <summary>更多设置</summary>
+        <div className="oj-qform">
+        <label className="oj-qrow">
+          <span className="oj-qlabel">每天投入</span>
+          <input className="oj-qin" inputMode="decimal" value={draft.dailyHours || ''} placeholder="4"
+            onChange={e => set({ dailyHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+          <span className="faint small">小时</span>
+        </label>
         <label className="oj-qrow">
           <span className="oj-qlabel">交付后修改</span>
           <input className="oj-qin" inputMode="decimal" value={draft.resultHours || ''} placeholder="0"
@@ -1034,6 +1145,8 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
               onChange={e => set({ discount: { ...draft.discount, reason: e.target.value } })} />
           </label>
         )}
+        </div>
+        </details>
       </div>
       <div className="oj-qbar">
         <div className="seg" role="group" aria-label="报价单版本">
@@ -1047,7 +1160,27 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
           {note && <span className={`oj-qnote ${note.ok ? '' : 'bad'}`} role="status">{note.text}</span>}
         </div>
       </div>
-      <pre className="oj-qtext">{text}</pre>
+      {view === 'client' || !summary ? <pre className="oj-qtext">{text}</pre> : (
+        <div className="oj-self">
+          {summary.alerts.map(a => <p key={a} className="oj-self-alert">{a}</p>)}
+          <h4>这笔钱花在哪</h4>
+          {summary.groups.map(g => (
+            <div key={g.label} className="oj-self-row">
+              <span>{g.label}</span>
+              <b>{g.amount < 0 ? '−' : ''}¥{Math.abs(g.amount).toLocaleString('zh-CN')}</b>
+              {g.detail && <small>{g.detail}</small>}
+            </div>
+          ))}
+          <details className="oj-qmore">
+            <summary>逐项算式</summary>
+            <pre className="oj-qtext">{text}</pre>
+          </details>
+        </div>
+      )}
+      <details className="oj-hmore" style={{ marginTop: 12 }}>
+        <summary>系统目前学到了什么</summary>
+        <div className="faint small">{calib.notes.map(n => <span key={n}>{n}</span>)}</div>
+      </details>
     </div>
   )
 }
@@ -1059,7 +1192,6 @@ function Item({ item, mark }: { item: BriefItem; mark?: string }): JSX.Element {
         <b>{item.title}</b>
         <span className="oj-tag">{item.kind}</span>
         {mark && <span className="oj-flip">{mark}</span>}
-        <span className="oj-item-h">{hoursText(item.hours)}</span>
       </div>
       {item.detail && <p>{item.detail}</p>}
       {item.reason && <p className="why">{item.reason}</p>}

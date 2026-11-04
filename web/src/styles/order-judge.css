@@ -227,6 +227,36 @@
 .oj-src-text { margin-top: 8px; max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: 12.5px; line-height: 1.65; color: var(--ink-sub); }
 
 /* 报价 */
+.oj-hours { display: grid; gap: 8px; margin-bottom: 14px; padding: 12px 14px; background: var(--paper-2); border: 1px solid var(--line); border-radius: 3px; }
+.oj-hmarket { margin: 0; font-size: 12.5px; color: var(--ink-sub); }
+.oj-hero { display: grid; gap: 2px; margin-bottom: 12px; padding: 14px 16px; background: var(--teal-wash); border: 1.5px solid var(--teal-line); border-radius: 3px; }
+.oj-hero-name { font-size: 12.5px; color: var(--ink-sub); }
+.oj-hero-price { font-size: 34px; line-height: 1.2; font-weight: 700; color: var(--teal); font-variant-numeric: tabular-nums; }
+.oj-hero-sub { font-size: 12.5px; color: var(--ink-sub); font-variant-numeric: tabular-nums; }
+.oj-qstage { display: grid; gap: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.oj-qstage > p { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.oj-self { margin-top: 20px; display: grid; gap: 10px; }
+.oj-self h4 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.oj-self-alert { margin: 0; padding: 8px 12px; font-size: 13px; color: var(--sakura); border: 1px solid var(--sakura); border-radius: 3px; }
+.oj-self-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 12px; font-size: 13.5px; color: var(--ink); }
+.oj-self-row b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.oj-self-row small { grid-column: 1 / -1; font-size: 12px; line-height: 1.6; color: var(--ink-faint); }
+.oj-self .oj-qtext { margin-top: 10px; }
+.oj-hrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, 1fr) 84px; align-items: center; gap: 10px; font-size: 13px; color: var(--ink); }
+.oj-hrow > span:first-child { min-width: 0; line-height: 1.35; }
+.oj-hrow em { display: block; font-style: normal; font-size: 11.5px; color: var(--ink-faint); }
+.oj-hval { text-align: right; font-size: 12.5px; color: var(--ink-sub); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.oj-hrow input[type=range] { width: 100%; height: 18px; margin: 0; background: transparent; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.oj-hrow input[type=range]:disabled { opacity: .5; cursor: default; }
+.oj-hrow input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--line); border-radius: 2px; }
+.oj-hrow input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; background: var(--teal); border-radius: 50%; }
+.oj-hrow input[type=range]::-moz-range-track { height: 4px; background: var(--line); border-radius: 2px; }
+.oj-hrow input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; background: var(--teal); border-radius: 50%; }
+.oj-hmore > summary, .oj-qmore > summary { cursor: pointer; font-size: 12.5px; color: var(--ink-sub); }
+.oj-hmore > div { display: grid; gap: 8px; margin-top: 8px; }
+.oj-qmore > .oj-qform { margin-top: 10px; }
+.oj-hreset { justify-self: start; padding: 0; font: inherit; font-size: 12.5px; color: var(--teal); background: none; border: 0; cursor: pointer; }
+@media (max-width: 600px) { .oj-hrow { grid-template-columns: minmax(0, 1fr) 84px; } .oj-hrow input[type=range] { grid-column: 1 / -1; grid-row: 2; } }
 .oj-qform { display: grid; gap: 10px; }
 .oj-qrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .oj-qrow.top { align-items: flex-start; }
@@ -249,3 +279,28 @@
 .oj-qmonth .seg { justify-self: start; }
 .oj-qmonth .seg > button { padding: 5px 11px; font-size: 12.5px; }
 .oj-qexp > .btn { justify-self: start; }
+
+/* ---------- 客户类型 / 追加后的收起输入区 / 清单与报价并排 ---------- */
+.oj-type { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.oj-type .oj-qlabel { flex: none; }
+/* 提示占位但不显示，出现时不推动旁边的内容 */
+.oj-type-tip { font-size: 12.5px; color: var(--gold); visibility: hidden; }
+.oj-type-tip.on { visibility: visible; }
+
+/* 已有项目且没在写新内容时，输入区收成一条，清单和报价占满宽度 */
+.oj-grid.solo { grid-template-columns: minmax(0, 1fr); }
+.oj-mat.solo .oj-type, .oj-mat.solo .oj-drop, .oj-mat.solo .oj-files, .oj-mat.solo .oj-bar, .oj-mat.solo .oj-how { display: none; }
+.oj-mat.solo .panel-title { margin-bottom: 0; }
+
+.oj-sheet { container-type: inline-size; }
+.oj-cols { display: block; }
+@container (min-width: 860px) {
+  .oj-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 32px; align-items: start; }
+  .oj-cols .oj-col:first-child > .oj-sec:first-child { margin-top: 18px; }
+}
+.oj-qhint { white-space: nowrap; }
+/* 右侧详情很长，左栏跟着滚动才不会留一大片空白；项目多时列表自己滚 */
+@media (min-width: 961px) {
+  .oj-grid:not(.solo) > .oj-mat, .oj-hist > .oj-rows { position: sticky; top: calc(var(--nav-h) + 16px); }
+  .oj-rows-scroll { max-height: calc(100vh - var(--nav-h) - 64px); overflow-y: auto; }
+}
