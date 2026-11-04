@@ -10,7 +10,7 @@ import { WebRequestError } from '../shared/net-lines'
 import { logError, logInfo } from '../shared/logger'
 import { MAX_IMAGES } from '../../../web/shared/order-judge'
 import { isChoosableClientType } from '../../../web/shared/order-judge-brief'
-import { normalizeQuote } from '../../../web/shared/order-judge-sheet'
+import { normalizeQuote, type MarketStat } from '../../../web/shared/order-judge-sheet'
 import { normalizeMaintenance } from '../../../web/shared/order-judge-maintenance'
 import { ATTACH_MAX_FILES, type JudgeEvent, type JudgeState, type Project } from '../../../web/shared/order-judge-api'
 
@@ -41,13 +41,13 @@ async function remote<T>(path: string, method = 'GET', body?: unknown): Promise<
   return value
 }
 
-export interface JudgeView { loggedIn: boolean; username: string; accountId: number; projects: Project[] }
+export interface JudgeView { loggedIn: boolean; username: string; accountId: number; projects: Project[]; market?: MarketStat[] }
 
 export async function loadProjects(): Promise<JudgeView> {
   const account = await readWebAccount()
   if (!account.token) return { loggedIn: false, username: '', accountId: 0, projects: [] }
   const state = await remote<JudgeState>('')
-  return { loggedIn: true, username: account.username, accountId: account.accountId, projects: state.projects }
+  return { loggedIn: true, username: account.username, accountId: account.accountId, projects: state.projects, market: state.market }
 }
 
 export async function deleteProject(id: string): Promise<void> {

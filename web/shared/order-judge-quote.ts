@@ -9,7 +9,7 @@
 //   所以每条未说清的需求加它自己小时的 0.5 倍。报价单上这笔叫「兜底」：14 天保修、立刻响应的成本就从这里出
 // - 报价 = 底线 ÷ (1 − 最大折让)：用户原话「1000 的单最低收 800」，即让满 2 成正好落在底线，人情价跌不穿底线
 
-import { diffBrief, type Brief, type BriefItem, type ClientType, type Priority, type WorkKind } from './order-judge-brief'
+import { BASIS_TEXT, basisOf, diffBrief, workOf, type Basis, type Brief, type BriefItem, type ClientType, type Priority, type WorkKind } from './order-judge-brief'
 
 // 兜底只给商单：学生单、个人单按「能用就行、出问题再修」估，没有未说清就多收的钱，14 天保修照给但不单独收费
 export const hasPad = (type: ClientType): boolean => type === '商单' || type === '待确认'
@@ -18,6 +18,8 @@ export const settingsForType = (s: QuoteSettings, type: ClientType): QuoteSettin
 export interface QuoteSettings {
   rates: Record<WorkKind, number>
   hourFactor: Record<WorkKind, number>
+  // 某类判断攒够样本后优先于 hourFactor；实际小时只分新做 / 接手改，所以两者并存
+  basisFactor: Partial<Record<Basis, number>>
   padRatio: number
   maxDiscount: number
   warrantyDays: number
@@ -27,12 +29,20 @@ export interface QuoteSettings {
 export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
   rates: { 新做: 31, 接手改: 267 },
   hourFactor: { 新做: 1, 接手改: 1 },
+  basisFactor: {},
   padRatio: 0.5,
   maxDiscount: 0.2,
   warrantyDays: 14,
   // 最低收费：功能都是直接能做、没有要想的点时，价格不再随条数往上堆，只象征性收这一笔（开发者 2026-11-04：三个简单功能 50 差不多了）
   minCharge: 50,
 }
+
+// 学生单不分新做 / 接手改，统一用真实成交折出的每小时：毕业论文单收 ¥200、实际 3 小时、开发者觉得值（2026-11-04），只一单，是开发期的基准。
+// 各客户类型的校准从自己的起点出发，互不影响
+export const STUDENT_RATE = 67
+export const defaultsFor = (type: ClientType): QuoteSettings => (type === '学生单' ? { ...DEFAULT_QUOTE_SETTINGS, rates: { 新做: STUDENT_RATE, 接手改: STUDENT_RATE } } : DEFAULT_QUOTE_SETTINGS)
+
+export const factorOf = (i: BriefItem, s: QuoteSettings): number => s.basisFactor[basisOf(i)] ?? s.hourFactor[workOf(i)]
 
 export interface Expense { name: string; amount: number }
 
@@ -47,6 +57,8 @@ export interface QuoteLine {
   kind: LineKind
   itemId?: string
   work?: WorkKind
+  basis?: Basis
+  manual?: boolean
   label: string
   hours: number
   rate: number
@@ -69,6 +81,8 @@ export interface Tier extends Priced {
   excluded: string[]
 }
 
+const TIER_MIN_GAP = 0.1
+
 const TIER_SCOPE: Record<TierName, Priority[]> = {
   基础: ['必须'],
   推荐: ['必须', '应该'],
@@ -82,11 +96,12 @@ function itemLines(items: BriefItem[], s: QuoteSettings, hoursOf: (i: BriefItem)
   const lines: QuoteLine[] = []
   for (const i of items) {
     const raw = hoursOf(i)
-    const factor = s.hourFactor[i.kind]
+    const work = workOf(i)
+    const factor = i.manual ? 1 : factorOf(i, s)
     const hours = Math.round(raw * factor * 2) / 2
-    const rate = s.rates[i.kind]
-    const scaled = factor === 1 ? '' : `AI 估 ${raw} 小时，按你过去的实际 × ${factor}，`
-    lines.push({ kind: 'item', itemId: i.id, work: i.kind, label: i.title, hours, rate, amount: yuan(hours * rate), why: hours > 0 ? `${i.kind}，${scaled}${hoursText(hours)} × ${rate}，${whyOf(i)}` : `${i.kind}，不计时间，${whyOf(i)}` })
+    const rate = s.rates[work]
+    const scaled = i.manual ? '你调过的，' : factor === 1 ? '' : `AI 估 ${raw} 小时，按你过去的实际 × ${factor}，`
+    lines.push({ kind: 'item', itemId: i.id, work, basis: basisOf(i), manual: i.manual, label: i.title, hours, rate, amount: yuan(hours * rate), why: hours > 0 ? `${BASIS_TEXT[basisOf(i)]}，${scaled}${whyOf(i)}` : `${BASIS_TEXT[basisOf(i)]}，${whyOf(i)}` })
   }
   if (s.padRatio <= 0) return lines
   const padded = lines.filter(l => items.find(i => i.id === l.itemId)?.unclear)
@@ -134,8 +149,8 @@ export function tiers(brief: Brief, extras: QuoteExtras, settings: QuoteSettings
     const lines = [...itemLines(items, s, i => i.hours, i => i.reason), ...extraLines(extras, s)]
     const excluded = brief.items.filter(i => !scope.includes(i.priority)).map(i => i.title)
     const tier = { name, itemIds, excluded, ...price(lines, s) }
-    // 价格一样时留范围大的那档，客户同价拿到更多
-    if (out.length && out[out.length - 1].quote === tier.quote) out.pop()
+    // 上一档只便宜不到 1 成时不值得并列：客户多花一点拿到更多，选择只是噪音，留范围大的那档
+    if (out.length && tier.quote <= out[out.length - 1].quote * (1 + TIER_MIN_GAP)) out.pop()
     out.push(tier)
   }
   return out
@@ -214,14 +229,15 @@ export function changeOrder(deal: Brief, current: Brief, extras: QuoteExtras, se
   }
   const items = current.items.filter(i => charge.has(i.id))
   const lines = [...itemLines(items, s, i => charge.get(i.id)!.hours, i => charge.get(i.id)!.why), ...extraLines(extras, s)]
-  return { removed, ...price(lines, s) }
+  // 没有要收费的变更时不能走 price：空清单也会被补上最低收费
+  return { removed, ...(lines.length ? price(lines, s) : { lines, floor: 0, quote: 0, minPrice: 0 }) }
 }
 
 // ── 工期 ──
 // 客户常问「多久能做完」，也常给截止日：按各档的总小时 ÷ 你每天能投入的小时算出几天，再和截止日比。
-// 每天能投入几小时是你自己填的（默认 4），不含等客户回复的时间
+// 每天能投入几小时是你自己填的（默认 8，开发者 2026-11-04 定「1 天 8 小时」），不含等客户回复的时间
 
-export const DEFAULT_DAILY_HOURS = 4
+export const DEFAULT_DAILY_HOURS = 8
 
 export interface Plan {
   name: string
