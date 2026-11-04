@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import type { Brief, BriefItem } from '../shared/order-judge-brief'
-import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
+import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, parseDeadline, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
 import { EMPTY_MAINTENANCE, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance } from '../shared/order-judge-maintenance'
 import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type QuoteState } from '../shared/order-judge-sheet'
 
@@ -10,7 +10,7 @@ const pass = (label: string): void => { console.log(`PASS Q${++checks}: ${label}
 const item = (id: string, priority: BriefItem['priority'], hours: number, extra: Partial<BriefItem> = {}): BriefItem =>
   ({ id, title: `条目${id}`, detail: '', priority, kind: '新做', hours, reason: '理由', unclear: '', ...extra })
 const brief = (items: BriefItem[]): Brief =>
-  ({ title: '测试', clientType: '学生单', outcome: '', budget: '', deadline: '', alternative: '', items, excluded: [], questions: [] })
+  ({ title: '测试', clientType: '商单', outcome: '', budget: '', deadline: '', items, excluded: [], questions: [] })
 const none: QuoteExtras = { expenses: [], resultHours: 0 }
 
 const b = brief([
@@ -130,7 +130,7 @@ pass('自己不想接的单也是依据：时间值高于它的每小时报价')
 
 const c5 = calibrate([proj({ status: '已报价', outcome: '嫌贵', clientBudget: 200 }), proj({ status: '已报价', outcome: '嫌贵', clientBudget: 600 })])
 assert.deepEqual(c5.settings, DEFAULT_QUOTE_SETTINGS)
-assert.deepEqual(c5.budgets['学生单'], { median: 400, count: 2 })
+assert.deepEqual(c5.budgets['商单'], { median: 400, count: 2 })
 pass('客户嫌贵只记预算参考，不动时间值')
 
 // 冻结：报出去之后再校准，那一版的价不变
@@ -165,7 +165,7 @@ assert.match(selfText(bs), /奖金是客户达标后多赚 ¥8,000 的 2%/)
 pass('成效奖金：先付 = 底线，奖金按把握倒推，平均收入等于原报价')
 
 assert.equal(buildSheet('p', [v({ bonus: { ...terms, confidence: 0.9 } }, shop)], 1).bonus!.amount, 90)
-assert.equal(buildSheet('p', [v({ bonus: terms })], 1).bonus, null)
+assert.equal(buildSheet('p', [v({ bonus: terms }, { ...one, clientType: '学生单' })], 1).bonus, null)
 assert.match(selfText(buildSheet('p', [v({ bonus: { ...terms, verify: '' } }, shop)], 1)), /条款还缺：怎么算达标/)
 const withDiscount = buildSheet('p', [v({ bonus: terms, discount: { ratio: 0.2, reason: '老客户' } }, shop)], 1)
 assert.doesNotMatch(clientText(withDiscount), /人情折让/)
@@ -223,5 +223,69 @@ assert.match(ct, /随时可以停，停了以后再有需求按变更单另算/)
 assert.doesNotMatch(ct, /小时/)
 assert.match(maintenanceSelfText('商城', raw, s1), /2026 年 11 月  12\.5 小时，每小时 ¥96  值  交付：会员系统/)
 pass('月维护的客户版不出现小时，自用版逐月列出每小时实际拿到多少')
+
+// ── 不按写代码算时间：直接能做的功能 0 小时，只收最低收费 ──
+const easy = brief([item('r1', '必须', 0), item('r2', '应该', 0), item('r3', '可以', 0)])
+const easyTiers = tiers(easy, none)
+assert.equal(easyTiers.length, 1)
+assert.equal(easyTiers[0].quote, 50)
+assert.equal(easyTiers[0].floor, 50)
+assert.equal(easyTiers[0].itemIds.length, 3)
+assert(easyTiers[0].lines.some(l => l.kind === 'min' && l.amount === 50))
+assert.equal(applyDiscount(easyTiers[0], { ratio: 0.2, reason: '同学' }).price, 50)
+pass('三个直接能做的功能只收最低收费 50，三档价格一样时只留范围最大的一档，折让不会把它压到 50 以下')
+
+const easySelf = selfText(buildSheet('p', [v({}, easy)], 1))
+assert.match(easySelf, /· 条目r1  ¥0  .*不计时间/)
+assert.match(easySelf, /· 最低收费  ¥50/)
+pass('每个条目都列在自用版里，0 小时的写明不计时间')
+
+// 学生单、个人单不加兜底：同样的条目，商单有兜底，学生单没有
+const unclear = brief([item('r1', '必须', 2, { unclear: '字段没说' })])
+assert.equal(tiers(unclear, none)[0].lines.filter(l => l.kind === 'pad').length, 1)
+assert.equal(tiers({ ...unclear, clientType: '学生单' }, none)[0].lines.filter(l => l.kind === 'pad').length, 0)
+assert.equal(tiers({ ...unclear, clientType: '个人单' }, none)[0].lines.filter(l => l.kind === 'pad').length, 0)
+pass('兜底只给商单，学生单和个人单没有')
+
+const student = { ...unclear, clientType: '学生单' as const }
+assert.match(clientText(buildSheet('p', [v({}, student)], 1)), /保修，不另外收费/)
+assert.match(clientText(buildSheet('p', [v({}, unclear)], 1)), /立刻响应，放下手头的事/)
+pass('保修照给：学生单写明不另外收费，商单写明立刻响应')
+
+// ── 截止日和工期 ──
+assert.equal(parseDeadline('12 月 20 日', '2026-11-04'), '2026-12-20')
+assert.equal(parseDeadline('1月5号', '2026-11-04'), '2027-01-05')
+assert.equal(parseDeadline('2026-12-20', '2026-11-04'), '2026-12-20')
+assert.equal(parseDeadline('明天', '2026-11-04'), '2026-11-05')
+assert.equal(parseDeadline('后天交', '2026-11-04'), '2026-11-06')
+assert.equal(parseDeadline('3 天内', '2026-11-04'), '2026-11-07')
+assert.equal(parseDeadline('越快越好', '2026-11-04'), null)
+assert.equal(parseDeadline('2 月 31 日', '2026-11-04'), null)
+pass('截止日读成日期：月日、完整日期、今明后天、几天内；读不出来和不存在的日子返回空')
+
+const timed = brief([item('r1', '必须', 8), item('r2', '应该', 8)])
+const now = new Date(2026, 10, 4, 12)
+const plan = (q: Partial<QuoteState>) => buildSheet('p', [{ n: 1, at: 0, brief: { ...timed, deadline: '12 月 20 日' }, quote: { ...EMPTY_QUOTE, ...q } }], 1, DEFAULT_QUOTE_SETTINGS, now)
+const roomy = plan({})
+assert.deepEqual(roomy.plans.map(p => [p.name, p.days, p.ready, p.slack]), [['基础', 2, '2026-11-06', 44], ['推荐', 4, '2026-11-08', 42]])
+assert.match(selfText(roomy), /基础档  8 小时 ÷ 4 = 2 天，从今天开工最早 11 月 6 日交付/)
+assert.match(selfText(roomy), /截止 12 月 20 日（材料里写的「12 月 20 日」）：每一档都来得及，最紧的一档余 42 天/)
+assert.match(clientText(roomy), /【推荐档】[\s\S]*预计 4 天交付/)
+pass('工期：各档小时 ÷ 每天投入，从今天往后数，和截止日比出余量；客户版只写预计几天')
+
+const tight = plan({ deadlineDate: '2026-11-07' })
+assert.deepEqual(tight.plans.map(p => p.slack), [1, -1])
+assert.match(selfText(tight), /推荐档晚 1 天；基础档来得及，余 1 天，可以只做到这一档，或和客户商量延期/)
+const never = plan({ deadlineDate: '2026-11-04', dailyHours: 2 })
+assert.match(selfText(never), /基础档晚 4 天、推荐档晚 8 天，来不及；砍范围或和客户商量延期/)
+assert.equal(plan({}).deadlineFrom, '材料')
+assert.equal(tight.deadlineFrom, '手填')
+pass('截止日不够时指出哪一档能赶上，一档都赶不上就说来不及；手填的截止日优先于材料里的说法')
+
+const norm = normalizeQuote({ deadlineDate: '2026-12-20', dailyHours: 0 })
+assert.equal(norm.deadlineDate, '2026-12-20')
+assert.equal(norm.dailyHours, 4)
+assert.equal(normalizeQuote({ deadlineDate: '明天' }).deadlineDate, null)
+pass('截止日只认 YYYY-MM-DD，每天投入为 0 时回到默认 4 小时')
 
 console.log(`\n${checks} 项全部通过`)

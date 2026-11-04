@@ -58,13 +58,13 @@ export function logClient(tag: string, error: unknown): void {
 // NDJSON：一行一个事件；HTTP 非 200 的是发请求前就拒了（限流、没连 AI、项目不存在）。
 // projectId 为 null 是新项目，否则给这个项目追加一个版本
 export async function organize(
-  projectId: string | null, text: string, images: JudgeImage[], files: File[],
+  projectId: string | null, clientType: string, text: string, images: JudgeImage[], files: File[],
   onStage: (e: Extract<JudgeEvent, { type: 'stage' }>) => void,
   signal: AbortSignal,
 ): Promise<Project> {
   const attached = await Promise.all(files.map(async (f) => ({ name: f.name, data: await fileBase64(f) })))
   const url = projectId ? `/api/order-judge/projects/${projectId}/versions` : '/api/order-judge/projects'
-  return readApi(url, { ...send('POST', { text, images, files: attached }), signal }, async (res) => {
+  return readApi(url, { ...send('POST', { clientType, text, images, files: attached }), signal }, async (res) => {
     if (!res.ok || !res.body) await json(res)
     const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader()
     let result: Project | null = null, failure: JudgeError | null = null

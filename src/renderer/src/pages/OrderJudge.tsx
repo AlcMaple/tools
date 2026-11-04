@@ -4,9 +4,9 @@ import TopBar from '../components/TopBar'
 import { ipcErrMsg } from '../utils/ipcError'
 import { reportError } from '../utils/reportError'
 import { VIDEO_FRAMES, precheck } from '../../../../web/shared/order-judge'
-import { PRIORITIES, WORK_KINDS, type BriefItem } from '../../../../web/shared/order-judge-brief'
+import { CHOOSABLE_CLIENT_TYPES, PRIORITIES, WORK_KINDS, isChoosableClientType, type BriefItem, type ChoosableClientType } from '../../../../web/shared/order-judge-brief'
 import { VERSION_LIMIT, type Project, type Version } from '../../../../web/shared/order-judge-api'
-import { parseBudget, type Expense } from '../../../../web/shared/order-judge-quote'
+import { parseBudget, parseDeadline, ymd, type Expense } from '../../../../web/shared/order-judge-quote'
 import { MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance, type MonthRecord } from '../../../../web/shared/order-judge-maintenance'
 import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../../../web/shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../utils/orderJudgePrepare'
@@ -37,6 +37,14 @@ interface Running {
 
 let nextId = 1
 
+const TYPE_KEY = 'order-judge:client-type'
+function readClientType(): ChoosableClientType | null {
+  try { const v = localStorage.getItem(TYPE_KEY); return isChoosableClientType(v) ? v : null } catch { return null }
+}
+function saveClientType(t: ChoosableClientType): void {
+  try { localStorage.setItem(TYPE_KEY, t) } catch { /* 记不住就每次再选 */ }
+}
+
 function formatWhen(at: number): string {
   const d = new Date(at)
   const now = new Date()
@@ -50,7 +58,7 @@ function formatWhen(at: number): string {
 }
 
 const latest = (p: Project): Version => p.versions[p.versions.length - 1]
-const hoursText = (h: number): string => `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`
+const hoursText = (h: number): string => (h === 0 ? '直接做' : `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`)
 
 async function fileBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer())
@@ -113,7 +121,7 @@ function ProjectSheet({ project, base, ms, onAppend, onDelete, onClose, onSaved,
   for (const c of version.changes) if (c.type !== 'removed') marks.set(c.id, c.type === 'added' ? '新增' : '有改动')
   const removed = version.changes.filter((c): c is Extract<typeof c, { type: 'removed' }> => c.type === 'removed')
   const meta = [`第 ${version.n} 版`, formatWhen(version.at), b.clientType, ms ? `用时 ${Math.round(ms / 1000)} 秒` : ''].filter(Boolean).join(' · ')
-  const facts: [string, string][] = [['客户在意的结果', b.outcome], ['预算', b.budget], ['截止', b.deadline], ['不找你会怎么办', b.alternative]]
+  const facts: [string, string][] = [['客户在意的结果', b.outcome], ['客户预算', b.budget], ['截止', b.deadline]]
   const groups = PRIORITIES.map(p => ({ p, items: b.items.filter(i => i.priority === p) })).filter(g => g.items.length)
   const tool = 'h-8 px-2.5 rounded-xl hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1'
   return (
@@ -231,6 +239,7 @@ const qInput = 'h-8 w-24 rounded-lg border border-outline-variant/40 bg-surface-
 function QuotePanel({ project, version, onSaved, calib }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
   const [draft, setDraft] = useState<QuoteState>(version.quote)
   const [budgetText, setBudgetText] = useState(version.quote.budget == null ? '' : String(version.quote.budget))
+  const [deadlineText, setDeadlineText] = useState(version.quote.deadlineDate ?? '')
   const [view, setView] = useState<'自用版' | '客户版'>('自用版')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
@@ -298,12 +307,21 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
           <div className={row}><span className={label}>主推</span><Seg label="主推档" options={sheet.tiers.map(t => t.name)} value={sheet.chosen?.name ?? ''} onPick={t => set({ tier: t as QuoteState['tier'] })} /></div>
         )}
         {!sheet.base && (
-          <label className={row}><span className={label}>预算</span>
+          <label className={row}><span className={label}>客户预算</span>
             <input className={qInput} inputMode="numeric" value={budgetText} placeholder={parsed != null ? `材料里是 ${parsed}` : '待问'}
               onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); setBudgetText(v); set({ budget: v ? Number(v) : null }) }} />
             <span className="text-xs text-on-surface-variant">元</span>
           </label>
         )}
+        <label className={row}><span className={label}>截止日</span>
+          <input className={`${qInput} w-52`} value={deadlineText} placeholder={version.brief.deadline ? `材料里是「${version.brief.deadline}」` : '如 12 月 20 日、明天'}
+            onChange={e => { setDeadlineText(e.target.value); set({ deadlineDate: parseDeadline(e.target.value, ymd(new Date())) }) }} />
+          <span className="text-xs text-on-surface-variant whitespace-nowrap">{deadlineText.trim() ? (draft.deadlineDate ? `读成 ${draft.deadlineDate}` : '读不出日期') : sheet.deadline ? `按 ${sheet.deadline}` : ''}</span>
+        </label>
+        <label className={row}><span className={label}>每天投入</span>
+          <input className={qInput} inputMode="decimal" value={draft.dailyHours || ''} placeholder="4" onChange={e => set({ dailyHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+          <span className="text-xs text-on-surface-variant">小时</span>
+        </label>
         <label className={row}><span className={label}>交付后修改</span>
           <input className={qInput} inputMode="decimal" value={draft.resultHours || ''} placeholder="0" onChange={e => set({ resultHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
           <span className="text-xs text-on-surface-variant">小时</span>
@@ -530,6 +548,8 @@ function OrderJudge(): JSX.Element {
   const [deleteError, setDeleteError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [emptyTip, setEmptyTip] = useState(false)
+  const [clientType, setClientType] = useState<ChoosableClientType | null>(readClientType)
+  const [typeTip, setTypeTip] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const resultRef = useRef<HTMLElement>(null)
@@ -654,6 +674,10 @@ function OrderJudge(): JSX.Element {
       setTimeout(() => setEmptyTip(false), 1600)
       return
     }
+    if (!clientType) {
+      setTypeTip(true)
+      return
+    }
     setSelected(null)
     setOutcome(null)
     const startedAt = Date.now()
@@ -672,7 +696,7 @@ function OrderJudge(): JSX.Element {
       }
       setRunning((r) => (r ? { ...r, stats: prepared.stats } : r))
       const files = await Promise.all(prepared.attachments.map(async (f) => ({ name: f.name, data: await fileBase64(f) })))
-      const res = await window.orderJudgeApi.organize({ projectId: targetProject?.id ?? null, text: prepared.text, images: prepared.images, files })
+      const res = await window.orderJudgeApi.organize({ projectId: targetProject?.id ?? null, clientType, text: prepared.text, images: prepared.images, files })
       if (res.ok) {
         setView((v) => v && { ...v, projects: [res.project, ...v.projects.filter(p => p.id !== res.project.id)] })
         setOutcome({ type: 'done', projectId: res.project.id, ms: Date.now() - startedAt })
@@ -760,11 +784,9 @@ function OrderJudge(): JSX.Element {
     }
     if (outcome.type === 'error') {
       const login = outcome.code === 'AUTH_REQUIRED'
-      const ai = ['BYOK_REQUIRED', 'PROVIDER_CONNECTION_REQUIRED', 'PROVIDER_HTTP_401'].includes(outcome.code)
       return (
         <Notice title={login ? '还没登录网页版账号' : '这次没有整理出来'}
-          desc={`${outcome.detail}${login || ai ? '' : `\n${outcome.code}`}`}
-          action={ai ? { label: '去网页版设置 AI', onClick: () => void window.orderJudgeApi.openWeb() } : undefined} />
+          desc={`${outcome.detail}${login ? '' : `\n${outcome.code}`}`} />
       )
     }
     const done = projects.find(p => p.id === outcome.projectId)
@@ -800,6 +822,12 @@ function OrderJudge(): JSX.Element {
               {targetProject && (
                 <button type="button" disabled={!!running} onClick={() => setTarget(null)} className="shrink-0 h-8 px-2.5 rounded-xl font-label text-primary hover:bg-primary/10 disabled:opacity-50">改为新项目</button>
               )}
+            </div>
+
+            <div className="mb-2 flex h-8 items-center gap-3 px-1">
+              <span className="font-label text-xs text-on-surface-variant">客户类型</span>
+              <Seg label="客户类型" options={CHOOSABLE_CLIENT_TYPES} value={clientType as ChoosableClientType} onPick={t => { setClientType(t); saveClientType(t); setTypeTip(false) }} />
+              <span className={`text-xs text-amber ${typeTip && !clientType ? '' : 'invisible'}`} role="status">先选客户类型</span>
             </div>
 
             <section

@@ -5,6 +5,7 @@ export interface OrderJudgeView { loggedIn: boolean; username: string; accountId
 
 export interface OrderJudgeOrganizeInput {
   projectId: string | null
+  clientType: string
   text: string
   images: { name: string; dataUrl: string }[]
   files: { name: string; data: string }[]

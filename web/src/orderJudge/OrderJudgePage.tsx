@@ -9,8 +9,8 @@ import { Ic } from '../SketchIcon'
 import { Select } from '../Select'
 import { useIsWide } from '../useMediaQuery'
 import { precheck } from '../../shared/order-judge'
-import { PRIORITIES, WORK_KINDS, type BriefItem } from '../../shared/order-judge-brief'
-import { parseBudget, type Expense } from '../../shared/order-judge-quote'
+import { CHOOSABLE_CLIENT_TYPES, PRIORITIES, WORK_KINDS, isChoosableClientType, type BriefItem, type ChoosableClientType } from '../../shared/order-judge-brief'
+import { parseBudget, parseDeadline, ymd, type Expense } from '../../shared/order-judge-quote'
 import { MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance, type MonthRecord } from '../../shared/order-judge-maintenance'
 import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibrate, clientText, freeze, normalizeQuote, selfText, type Calibration, type QuoteState } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
@@ -58,6 +58,14 @@ const errorOf = (e: unknown): { code: string; message: string } =>
   e instanceof JudgeError ? { code: e.code, message: e.message } : { code: 'NETWORK', message: e instanceof Error ? e.message : String(e) }
 
 const latest = (p: Project): Version => p.versions[p.versions.length - 1]
+
+const TYPE_KEY = 'order-judge:client-type'
+function readClientType(): ChoosableClientType | null {
+  try { const v = localStorage.getItem(TYPE_KEY); return isChoosableClientType(v) ? v : null } catch { return null }
+}
+function saveClientType(t: ChoosableClientType): void {
+  try { localStorage.setItem(TYPE_KEY, t) } catch { /* 记不住就每次再选 */ }
+}
 
 export function OrderJudgePage({ onLogin }: { onLogin: () => void }): JSX.Element | null {
   const { user, ready } = useAuth()
@@ -114,6 +122,9 @@ function JudgeWorkspace(): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const [mobileDetail, setMobileDetail] = useState(false)
+  const [clientType, setClientType] = useState<ChoosableClientType | null>(readClientType)
+  const [typeTip, setTypeTip] = useState(false)
+  const [matOpen, setMatOpen] = useState(false)
   const wide = useIsWide()
   const nextId = useRef(1)
   const shotNo = useRef(1)
@@ -264,6 +275,7 @@ function JudgeWorkspace(): JSX.Element {
     clearMaterials()
     setOutcome(null)
     setTarget(null)
+    setMatOpen(false)
     setTab('new')
   }
 
@@ -271,6 +283,9 @@ function JudgeWorkspace(): JSX.Element {
     clearMaterials()
     setOutcome(null)
     setTarget(project)
+    setMatOpen(true)
+    const kept = latest(project).brief.clientType
+    if (isChoosableClientType(kept)) setClientType(kept)
     setTab('new')
     setMobileDetail(false)
     window.scrollTo({ top: 0 })
@@ -281,6 +296,7 @@ function JudgeWorkspace(): JSX.Element {
     const pre = precheck(text, materials.length)
     if (pre === 'empty') { setTip(true); return }
     if (pre === 'chat-record') { setOutcome({ kind: 'chat-record' }); return }
+    if (!clientType) { setTypeTip(true); return }
     if (noKey) { window.location.hash = '#/settings/ai'; return }
     const controller = new AbortController()
     abortRef.current = controller
@@ -312,7 +328,7 @@ function JudgeWorkspace(): JSX.Element {
       if (byok && ai && !(provider?.ready && provider.source === 'byok')) {
         setProvider(await connectProvider(ai.endpoint, ai.model, readByokKey().trim()))
       }
-      const project = await organize(target?.id ?? null, prepared.text, prepared.images, prepared.attachments, (e) => {
+      const project = await organize(target?.id ?? null, clientType, prepared.text, prepared.images, prepared.attachments, (e) => {
         if (e.stage === 'links') { setLinkCount(e.count); setStage('links') } else setStage('ai')
       }, controller.signal)
       if (controller.signal.aborted) return
@@ -320,6 +336,7 @@ function JudgeWorkspace(): JSX.Element {
       setTarget(project)
       setSelected(project.id)
       clearMaterials()
+      setMatOpen(false)
       setOutcome({ kind: 'done', project, ms: Date.now() - t0 })
     } catch (e) {
       if (controller.signal.aborted) return
@@ -360,6 +377,7 @@ function JudgeWorkspace(): JSX.Element {
 
   // 平板 / 手机：整理中和出结果后不显示编辑区（CSS 只在 ≤960px 生效，桌面仍是两栏）
   const flow = running || outcome !== null
+  const solo = !!target && !matOpen && !running && !text && materials.length === 0
   const head = <Head tab={tab} onTab={(t) => { setTab(t); setMobileDetail(false) }} count={state ? state.projects.length : null} />
   const deleting = deleteTarget && <DeleteProjectDialog project={deleteTarget} onDelete={removeProject} onClose={() => setDeleteTarget(null)} />
 
@@ -419,9 +437,9 @@ function JudgeWorkspace(): JSX.Element {
         </div>
       )}
       {(loadError || syncError) && <p className="nag mt16"><Ic name="alert" />{loadError || syncError}</p>}
-      <div className={`oj-grid${flow ? ' flow' : ''}`}>
+      <div className={`oj-grid${flow ? ' flow' : ''}${solo ? ' solo' : ''}`}>
         <section
-          className="panel oj-mat"
+          className={`panel oj-mat${solo ? ' solo' : ''}`}
           onDragEnter={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDrag(true) } }}
           onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }}
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrag(false) }}
@@ -435,7 +453,17 @@ function JudgeWorkspace(): JSX.Element {
           <div className="panel-title oj-mat-title">
             <Ic name="clip" />
             <span className="oj-mat-name">{target ? `给「${target.title}」追加需求` : '客户材料'}</span>
-            {target && !running && <button type="button" className="btn btn-sm btn-ghost" onClick={startNew}>改为新项目</button>}
+            {target && !running && <button type="button" className="btn btn-sm btn-ghost" onClick={startNew}>{solo ? '新项目' : '改为新项目'}</button>}
+            {solo && target && target.versions.length < VERSION_LIMIT && <button type="button" className="btn btn-sm" onClick={() => { setMatOpen(true); setTimeout(() => textRef.current?.focus(), 0) }}>追加需求</button>}
+          </div>
+          <div className="oj-type">
+            <span className="oj-qlabel">客户类型</span>
+            <div className="seg" role="group" aria-label="客户类型">
+              {CHOOSABLE_CLIENT_TYPES.map(t => (
+                <button key={t} type="button" disabled={running} className={clientType === t ? 'on' : ''} onClick={() => { setClientType(t); saveClientType(t); setTypeTip(false) }}>{t}</button>
+              ))}
+            </div>
+            <span className={`oj-type-tip${typeTip && !clientType ? ' on' : ''}`} role="status">先选客户类型</span>
           </div>
           <div className={`oj-drop${drag ? ' drag' : ''}`}>
             <textarea
@@ -660,7 +688,7 @@ function Step({ state, title, sub }: { state: 'done' | 'run' | 'wait'; title: st
   )
 }
 
-const hoursText = (h: number): string => `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`
+const hoursText = (h: number): string => (h === 0 ? '直接做' : `${Number.isInteger(h) ? h : h.toFixed(1)} 小时`)
 
 // 一个项目：版本切换 + 这一版的需求清单 + 这一版放进来的材料
 function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project: Project; ms?: number; onAppend?: () => void; onSaved: (p: Project) => void; calib: Calibration; all: Project[] }): JSX.Element {
@@ -671,7 +699,7 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
   for (const c of version.changes) if (c.type !== 'removed') marks.set(c.id, c.type === 'added' ? '新增' : '有改动')
   const removed = version.changes.filter((c): c is Extract<typeof c, { type: 'removed' }> => c.type === 'removed')
   const meta = [`第 ${version.n} 版`, when(version.at), b.clientType, ms ? `用时 ${Math.round(ms / 1000)} 秒` : ''].filter(Boolean).join(' · ')
-  const facts: [string, string][] = [['客户在意的结果', b.outcome], ['预算', b.budget], ['截止', b.deadline], ['不找你会怎么办', b.alternative]]
+  const facts: [string, string][] = [['客户在意的结果', b.outcome], ['客户预算', b.budget], ['截止', b.deadline]]
   const groups = PRIORITIES.map(p => ({ p, items: b.items.filter(i => i.priority === p) })).filter(g => g.items.length)
   return (
     <section className="panel oj-sheet">
@@ -688,6 +716,8 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
       <dl className="oj-facts">
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd className={v ? '' : 'ask'}>{v || '待问'}</dd></div>)}
       </dl>
+      <div className="oj-cols">
+      <div className="oj-col">
       {groups.map(g => (
         <div key={g.p} className="oj-sec">
           <h3><Ic name="check" />{g.p === '不做' ? '这次不做' : g.p}<span className="oj-sum">{hoursText(g.items.reduce((s, i) => s + i.hours, 0))}</span></h3>
@@ -712,8 +742,12 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
           <ul className="oj-q">{b.questions.map((q, i) => <li key={i}><span>{q}</span></li>)}</ul>
         </div>
       )}
+      </div>
+      <div className="oj-col">
       <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} />
       {project.versions.some(v => v.quote.status === '已成交') && <MaintenancePanel key={`m:${project.id}`} project={project} all={all} onSaved={onSaved} calib={calib} />}
+      </div>
+      </div>
       {(version.text || version.images.length > 0 || version.files.length > 0) && (
         <details className="oj-sec oj-src">
           <summary><Ic name="clip" cls="ic ic-sm" />第 {version.n} 版放进来的材料</summary>
@@ -867,6 +901,7 @@ const pct = (r: number): string => (r ? `${Math.round(r * 100)}%` : '不让')
 function QuotePanel({ project, version, onSaved, calib }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibration }): JSX.Element {
   const [draft, setDraft] = useState<QuoteState>(version.quote)
   const [budgetText, setBudgetText] = useState(version.quote.budget == null ? '' : String(version.quote.budget))
+  const [deadlineText, setDeadlineText] = useState(version.quote.deadlineDate ?? '')
   const [view, setView] = useState<'client' | 'self'>('self')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
@@ -958,12 +993,24 @@ function QuotePanel({ project, version, onSaved, calib }: { project: Project; ve
         )}
         {!sheet.base && (
           <label className="oj-qrow">
-            <span className="oj-qlabel">预算</span>
+            <span className="oj-qlabel">客户预算</span>
             <input className="oj-qin" inputMode="numeric" value={budgetText} placeholder={parsed != null ? `材料里是 ${parsed}` : '待问'}
               onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); setBudgetText(v); set({ budget: v ? Number(v) : null }) }} />
             <span className="faint small">元</span>
           </label>
         )}
+        <label className="oj-qrow">
+          <span className="oj-qlabel">截止日</span>
+          <input className="oj-qin wide" value={deadlineText} placeholder={version.brief.deadline ? `材料里是「${version.brief.deadline}」` : '如 12 月 20 日、明天'}
+            onChange={e => { setDeadlineText(e.target.value); set({ deadlineDate: parseDeadline(e.target.value, ymd(new Date())) }) }} />
+          <span className="faint small oj-qhint">{deadlineText.trim() ? (draft.deadlineDate ? `读成 ${draft.deadlineDate}` : '读不出日期') : sheet.deadline ? `按 ${sheet.deadline}` : ''}</span>
+        </label>
+        <label className="oj-qrow">
+          <span className="oj-qlabel">每天投入</span>
+          <input className="oj-qin" inputMode="decimal" value={draft.dailyHours || ''} placeholder="4"
+            onChange={e => set({ dailyHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+          <span className="faint small">小时</span>
+        </label>
         <label className="oj-qrow">
           <span className="oj-qlabel">交付后修改</span>
           <input className="oj-qin" inputMode="decimal" value={draft.resultHours || ''} placeholder="0"

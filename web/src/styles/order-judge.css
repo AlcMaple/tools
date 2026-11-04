@@ -249,3 +249,23 @@
 .oj-qmonth .seg { justify-self: start; }
 .oj-qmonth .seg > button { padding: 5px 11px; font-size: 12.5px; }
 .oj-qexp > .btn { justify-self: start; }
+
+/* ---------- 客户类型 / 追加后的收起输入区 / 清单与报价并排 ---------- */
+.oj-type { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.oj-type .oj-qlabel { flex: none; }
+/* 提示占位但不显示，出现时不推动旁边的内容 */
+.oj-type-tip { font-size: 12.5px; color: var(--gold); visibility: hidden; }
+.oj-type-tip.on { visibility: visible; }
+
+/* 已有项目且没在写新内容时，输入区收成一条，清单和报价占满宽度 */
+.oj-grid.solo { grid-template-columns: minmax(0, 1fr); }
+.oj-mat.solo .oj-type, .oj-mat.solo .oj-drop, .oj-mat.solo .oj-files, .oj-mat.solo .oj-bar, .oj-mat.solo .oj-how { display: none; }
+.oj-mat.solo .panel-title { margin-bottom: 0; }
+
+.oj-sheet { container-type: inline-size; }
+.oj-cols { display: block; }
+@container (min-width: 860px) {
+  .oj-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 32px; align-items: start; }
+  .oj-cols .oj-col:first-child > .oj-sec:first-child { margin-top: 18px; }
+}
+.oj-qhint { white-space: nowrap; }

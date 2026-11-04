@@ -19,7 +19,7 @@ import { getSession, rateLimited } from './auth'
 import { AgentRunError } from '../shared/agent-run'
 import { aiSource, judgeConnection, publicAddress, type JudgeConnection } from './agent/external-runtime'
 import { MAX_IMAGES, SAME_SITE_GAP_MS, extractUrls, groupByHost, pageDigest } from '../shared/order-judge'
-import { briefSystemPrompt, briefUserText, diffBrief, normalizeBrief, type Brief } from '../shared/order-judge-brief'
+import { briefSystemPrompt, briefUserText, diffBrief, isChoosableClientType, normalizeBrief, type Brief, type ChoosableClientType } from '../shared/order-judge-brief'
 import { EMPTY_QUOTE, normalizeQuote, type QuoteState } from '../shared/order-judge-sheet'
 import { normalizeMaintenance } from '../shared/order-judge-maintenance'
 import {
@@ -208,7 +208,7 @@ function contentOf(raw: unknown): string | null {
   return typeof content === 'string' && content.trim() ? content : null
 }
 
-async function askBrief(conn: JudgeConnection, uid: number, previous: Brief | null, userText: string, images: string[], signal: AbortSignal): Promise<Brief> {
+async function askBrief(conn: JudgeConnection, uid: number, previous: Brief | null, clientType: ChoosableClientType, userText: string, images: string[], signal: AbortSignal): Promise<Brief> {
   const model = conn.model
   const body = {
     model,
@@ -217,7 +217,7 @@ async function askBrief(conn: JudgeConnection, uid: number, previous: Brief | nu
     response_format: { type: 'json_object' },
     ...(model.startsWith('deepseek-') ? { thinking: { type: 'disabled' } } : {}),
     messages: [
-      { role: 'system', content: briefSystemPrompt(previous) },
+      { role: 'system', content: briefSystemPrompt(previous, clientType) },
       { role: 'user', content: [{ type: 'text', text: userText }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))] },
     ],
   }
@@ -230,7 +230,7 @@ async function askBrief(conn: JudgeConnection, uid: number, previous: Brief | nu
     }
     let brief: Brief
     try {
-      brief = normalizeBrief(JSON.parse(content), previous)
+      brief = normalizeBrief(JSON.parse(content), previous, clientType)
     } catch (e) {
       console.error(`[order-judge] uid=${uid} 需求清单不是 JSON: ${content.slice(0, 200)}`, e)
       throw new AgentRunError('BAD_RESPONSE', 503)
@@ -246,10 +246,11 @@ async function askBrief(conn: JudgeConnection, uid: number, previous: Brief | nu
 
 // ── 材料 ──
 
-type Materials = { text: string; images: { name: string; bytes: Buffer; dataUrl: string }[]; files: { name: string; bytes: Buffer }[] }
+type Materials = { text: string; clientType: ChoosableClientType; images: { name: string; bytes: Buffer; dataUrl: string }[]; files: { name: string; bytes: Buffer }[] }
 
 function parseMaterials(input: unknown): Materials | null {
-  const o = (input && typeof input === 'object' ? input : {}) as { text?: unknown; images?: unknown; files?: unknown }
+  const o = (input && typeof input === 'object' ? input : {}) as { text?: unknown; images?: unknown; files?: unknown; clientType?: unknown }
+  if (!isChoosableClientType(o.clientType)) return null
   const text = typeof o.text === 'string' ? o.text : ''
   if (text.length > MAX_TEXT_CHARS || !Array.isArray(o.images) || o.images.length > MAX_IMAGES) return null
   const images: Materials['images'] = []
@@ -276,7 +277,7 @@ function parseMaterials(input: unknown): Materials | null {
     }
   }
   if (!text.trim() && !images.length && !files.length) return null
-  return { text, images, files }
+  return { text, images, files, clientType: o.clientType }
 }
 
 async function removeDirs(uid: number, ids: string[]): Promise<void> {
@@ -491,7 +492,7 @@ async function organize(c: Context<Env>, projectId: string | null): Promise<Resp
       const conn = await connection(uid, signal, desktop)
       console.info(`[order-judge] → uid=${uid} ${conn.source} ${conn.model} ${previous ? `追加第 ${previous.n + 1} 版` : '新项目'} 文字 ${input.text.length} 字 网址 ${urls.length} 个 图片 ${input.images.length} 张`)
       const userText = briefUserText(input.text, links, input.images.map((x) => x.name), previous?.brief ?? null)
-      const brief = await conn.execute(() => askBrief(conn, uid, previous?.brief ?? null, userText, input.images.map((x) => x.dataUrl), signal))
+      const brief = await conn.execute(() => askBrief(conn, uid, previous?.brief ?? null, input.clientType, userText, input.images.map((x) => x.dataUrl), signal))
       const project = await saveVersion(uid, projectId, input, brief, previous?.brief ?? null, conn.model)
       judgeEvents.changed(uid, judgeData.seq(uid))
       console.info(`[order-judge] ← uid=${uid} ${brief.title} ${brief.items.length} 条 ${Date.now() - started}ms`)

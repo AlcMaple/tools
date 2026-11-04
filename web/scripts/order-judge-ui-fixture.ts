@@ -1,6 +1,6 @@
 // 接单评估手动点的夹具：隔离的临时数据目录 + 固定回复的假 AI，不花额度，不碰生产数据
 // 运行：npm run test:order-judge-ui:serve，按终端打印的登录地址打开；Ctrl+C 退出，临时数据一并删除
-// 假 AI：第 1 次整理返回第 1 版，第 2 次起返回第 2 版；文字里写「余额」会模拟余额用完（402），写「限流」会模拟限流（429）
+// 假 AI：第 1 次整理返回第 1 版（三个功能里一个直接能做，其余只有确认和验证的小时），第 2 次起返回第 2 版（多一条接手改旧代码）；文字里写「余额」会模拟余额用完（402），写「限流」会模拟限流（429）
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -17,11 +17,11 @@ const { createOrderJudgeApi } = await import('../server/order-judge')
 const { AgentRunError } = await import('../shared/agent-run')
 
 const V1 = {
-  title: '社团报名小程序', clientType: '学生单', outcome: '答辩前能演示报名流程', budget: '', deadline: '12 月 20 日', alternative: '',
+  title: '社团报名小程序', clientType: '学生单', outcome: '答辩前能演示报名流程', budget: '', deadline: '12 月 20 日',
   items: [
-    { id: null, title: '报名表单页', detail: '姓名、学号、社团选择', priority: '必须', kind: '新做', hours: 4, reason: '一个表单页加校验', unclear: '' },
-    { id: null, title: '管理员导出 Excel', detail: '导出全部报名', priority: '应该', kind: '新做', hours: 3, reason: '一个导出接口', unclear: '导出字段没说' },
-    { id: null, title: '消息推送', detail: '报名成功后推送', priority: '可以', kind: '新做', hours: 2, reason: '订阅消息', unclear: '' },
+    { id: null, title: '报名表单页', detail: '姓名、学号、社团选择', priority: '必须', kind: '新做', hours: 0, reason: '直接能做', unclear: '' },
+    { id: null, title: '管理员导出 Excel', detail: '导出全部报名', priority: '应该', kind: '新做', hours: 0.5, reason: '要和客户确认导出哪些字段', unclear: '导出字段没说' },
+    { id: null, title: '消息推送', detail: '报名成功后推送', priority: '可以', kind: '新做', hours: 1, reason: '要先确认小程序能不能开通订阅消息模板', unclear: '' },
   ],
   excluded: ['论文正文'], questions: ['预算大概多少'],
 }
@@ -29,9 +29,9 @@ const V2 = {
   ...V1,
   budget: '800',
   items: [
-    { id: 'r1', title: '报名表单页', detail: '姓名、学号、社团选择、手机号', priority: '必须', kind: '新做', hours: 5, reason: '多一个字段和校验', unclear: '' },
-    { id: 'r2', title: '管理员导出 Excel', detail: '导出全部报名', priority: '应该', kind: '新做', hours: 3, reason: '一个导出接口', unclear: '导出字段没说' },
-    { id: 'r9', title: '接手修改旧登录', detail: '客户已有登录页报错', priority: '必须', kind: '接手改', hours: 6, reason: '先读懂旧代码再修', unclear: '' },
+    { id: 'r1', title: '报名表单页', detail: '姓名、学号、社团选择、手机号', priority: '必须', kind: '新做', hours: 0, reason: '直接能做', unclear: '' },
+    { id: 'r2', title: '管理员导出 Excel', detail: '导出全部报名', priority: '应该', kind: '新做', hours: 0.5, reason: '要和客户确认导出哪些字段', unclear: '导出字段没说' },
+    { id: 'r9', title: '接手修改旧登录', detail: '客户已有登录页报错', priority: '必须', kind: '接手改', hours: 3, reason: '先读懂客户的旧登录代码再修', unclear: '' },
   ],
 }
 

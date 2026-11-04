@@ -4,8 +4,8 @@
 import { WORK_KINDS, type Brief, type ClientType, type WorkKind } from './order-judge-brief'
 import type { Maintenance } from './order-judge-maintenance'
 import {
-  DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, tiers, zone,
-  type ChangeOrder, type Discount, type Expense, type Priced, type QuoteLine, type QuoteSettings, type Tier, type TierName, type Zone,
+  DEFAULT_DAILY_HOURS, DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, parseDeadline, planOf, tiers, ymd, zone,
+  type ChangeOrder, type Discount, type Expense, type Plan, type Priced, type QuoteLine, type QuoteSettings, type Tier, type TierName, type Zone,
 } from './order-judge-quote'
 
 export const VERSION_STATUSES = ['草稿', '已报价', '已成交'] as const
@@ -54,11 +54,13 @@ export interface QuoteState {
   feeling: Feeling
   frozen: Frozen | null
   bonus: BonusTerms
+  deadlineDate: string | null
+  dailyHours: number
 }
 
 export const EMPTY_QUOTE: QuoteState = {
   status: '草稿', budget: null, resultHours: 0, expenses: [], tier: '推荐', discount: { ratio: 0, reason: '' },
-  outcome: '待定', clientBudget: null, actual: { 新做: 0, 接手改: 0 }, feeling: '待定', frozen: null, bonus: EMPTY_BONUS,
+  outcome: '待定', clientBudget: null, actual: { 新做: 0, 接手改: 0 }, feeling: '待定', frozen: null, bonus: EMPTY_BONUS, deadlineDate: null, dailyHours: DEFAULT_DAILY_HOURS,
 }
 
 const num = (v: unknown, max: number): number => {
@@ -87,6 +89,8 @@ export function normalizeQuote(raw: unknown): QuoteState {
     feeling: FEELINGS.includes(o.feeling as Feeling) ? o.feeling as Feeling : '待定',
     frozen: frozenOf(o.frozen),
     bonus: bonusOf(o.bonus),
+    deadlineDate: typeof o.deadlineDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.deadlineDate) ? o.deadlineDate : null,
+    dailyHours: num(o.dailyHours, 16) || DEFAULT_DAILY_HOURS,
   }
 }
 
@@ -147,10 +151,13 @@ export interface Sheet {
   zone: Zone
   settings: QuoteSettings
   bonus: { fixed: number; amount: number; confidence: number; expected: number } | null
+  deadline: string | null
+  deadlineFrom: '手填' | '材料' | null
+  plans: Plan[]
 }
 
 // 本版之前最近一个「已成交」的版本就是变更单的基准；没有就按整单出三档
-export function buildSheet(title: string, versions: SheetVersion[], n: number, current: QuoteSettings = DEFAULT_QUOTE_SETTINGS): Sheet {
+export function buildSheet(title: string, versions: SheetVersion[], n: number, current: QuoteSettings = DEFAULT_QUOTE_SETTINGS, now: Date = new Date()): Sheet {
   const v = versions.find(x => x.n === n)!
   const s = settingsFor(v.quote, current)
   const base = [...versions].filter(x => x.n < n && x.quote.status === '已成交').sort((a, b) => b.n - a.n)[0] ?? null
@@ -158,10 +165,15 @@ export function buildSheet(title: string, versions: SheetVersion[], n: number, c
   const parsed = parseBudget(v.brief.budget)
   const budget = v.quote.budget ?? parsed
   const budgetFrom = v.quote.budget != null ? '手填' : parsed != null ? '材料' : null
+  const today = ymd(now)
+  const parsedDeadline = parseDeadline(v.brief.deadline, today)
+  const deadline = v.quote.deadlineDate ?? parsedDeadline
+  const deadlineFrom = v.quote.deadlineDate ? '手填' : parsedDeadline ? '材料' : null
+  const timing = { deadline, deadlineFrom } as const
   if (base) {
     const change = changeOrder(base.brief, v.brief, extras, s)
     const chosen = change.lines.length ? { name: '变更', ...change } : null
-    return { title, n, at: v.at, brief: v.brief, quote: v.quote, budget, budgetFrom, base, tiers: [], change, chosen, discount: chosen && applyDiscount(chosen, v.quote.discount, s), zone: { type: 'unknown' }, settings: s, bonus: null }
+    return { title, n, at: v.at, brief: v.brief, quote: v.quote, budget, budgetFrom, base, tiers: [], change, chosen, discount: chosen && applyDiscount(chosen, v.quote.discount, s), zone: { type: 'unknown' }, settings: s, bonus: null, ...timing, plans: chosen ? [planOf('变更', chosen, v.quote.dailyHours, today, deadline)] : [] }
   }
   const ts = tiers(v.brief, extras, s)
   const tier = ts.find(t => t.name === v.quote.tier) ?? ts[ts.length - 1] ?? null
@@ -169,6 +181,7 @@ export function buildSheet(title: string, versions: SheetVersion[], n: number, c
     title, n, at: v.at, brief: v.brief, quote: v.quote, budget, budgetFrom, base: null, tiers: ts, change: null,
     chosen: tier, discount: tier && applyDiscount(tier, v.quote.discount, s), zone: zone(v.brief, extras, budget, s), settings: s,
     bonus: tier && v.quote.bonus.on && bonusAllowed(v.brief) ? bonusPlan(tier, v.quote.bonus.confidence) : null,
+    ...timing, plans: ts.map(t => planOf(t.name, t, v.quote.dailyHours, today, deadline)),
   }
 }
 
@@ -192,8 +205,10 @@ const RESULT_PROMISE: Record<ClientType, string> = {
   待确认: '交付后按需求清单陪你验收，改到通过',
 }
 
-const WARRANTY = (days: number): string[] => [
-  `交付后 ${days} 天保修：需求清单里写了的功能，在交付时的环境下不工作，我会立刻响应，放下手头的事只修这一件，直到解决`,
+const WARRANTY = (days: number, type: ClientType): string[] => [
+  type === '商单'
+    ? `交付后 ${days} 天保修：需求清单里写了的功能，在交付时的环境下不工作，我会立刻响应，放下手头的事只修这一件，直到解决`
+    : `交付后 ${days} 天保修，不另外收费：需求清单里写了的功能，在交付时的环境下不工作，我会尽快帮你修好`,
   `不在保修里：清单外的新想法；你自己改了代码、环境或第三方服务后出的问题；${days} 天后发现的问题，这些按变更单另算`,
   '要更长的保修或加急，也按变更单另算',
 ]
@@ -236,7 +251,7 @@ function bonusLines(sheet: Sheet): string[] {
 }
 
 function afterLines(sheet: Sheet, days: number): string[] {
-  const out = ['', '【交付之后】', ...WARRANTY(days).map(x => '· ' + x)]
+  const out = ['', '【交付之后】', ...WARRANTY(days, sheet.brief.clientType).map(x => '· ' + x)]
   if (sheet.quote.resultHours > 0) out.push('· ' + RESULT_PROMISE[sheet.brief.clientType])
   return out
 }
@@ -252,6 +267,7 @@ export function clientText(sheet: Sheet): string {
     out.push('', `【这次变更】${money(sheet.chosen.quote)}`)
     for (const l of sheet.chosen.lines.filter(x => x.kind === 'item')) out.push(`· ${l.label}`)
     for (const bl of blocks(sheet.chosen)) out.push(`  ${bl.label} ${money(bl.amount)}`)
+    if (sheet.plans[0]) out.push(`  预计 ${sheet.plans[0].days} 天交付`)
     out.push(...discountLines(sheet))
     out.push('', '【交付之后】', `· 这次变更的内容交付后 ${s.warrantyDays} 天保修，规则同原单`)
     return out.join('\n')
@@ -263,6 +279,8 @@ export function clientText(sheet: Sheet): string {
     out.push('', `【${t.name}档】${money(t.quote)}${t.name === sheet.chosen?.name ? '（主推）' : ''}`)
     for (const id of t.itemIds) out.push(`· ${byId.get(id)!.title}`)
     for (const bl of blocks(t)) out.push(`  ${bl.label} ${money(bl.amount)}`)
+    const plan = sheet.plans.find(x => x.name === t.name)
+    if (plan) out.push(`  预计 ${plan.days} 天交付`)
   }
   out.push(...bonusLines(sheet), ...discountLines(sheet), ...afterLines(sheet, s.warrantyDays))
   const notIn = [...b.items.filter(i => i.priority === '不做').map(i => i.title), ...b.excluded]
@@ -271,13 +289,30 @@ export function clientText(sheet: Sheet): string {
   return out.join('\n')
 }
 
-const lineText = (l: QuoteLine): string => (l.kind === 'expense' ? `· ${l.label}  ${money(l.amount)}  ${l.why}` : `· ${l.label}  ${l.hours} 小时 × ${l.rate} = ${money(l.amount)}  ${l.why}`)
+const lineText = (l: QuoteLine): string => (l.kind === 'expense' || l.kind === 'min' || (l.kind === 'item' && l.hours === 0) ? `· ${l.label}  ${money(l.amount)}  ${l.why}` : `· ${l.label}  ${l.hours} 小时 × ${l.rate} = ${money(l.amount)}  ${l.why}`)
 
 function zoneText(z: Zone, budget: number | null): string[] {
   if (z.type === 'unknown') return budget == null ? ['预算：待问'] : []
   if (z.type === 'fits') return [`预算 ${money(z.budget)}：完整范围就能成交，底线 ${money(z.floor)}，可报 ${money(z.quote)}`]
   if (z.type === 'cut') return [`预算 ${money(z.budget)}：完整范围放不下，砍掉 ${z.cut.join('、')} 后底线 ${money(z.floor)}，可报 ${money(z.quote)}`]
   return [`预算 ${money(z.budget)}：只做必须的底线也要 ${money(z.floor)}，差 ${money(z.gap)}，这单在这个预算下不成立`]
+}
+
+const md = (date: string): string => { const [, m, d] = date.split('-').map(Number); return `${m} 月 ${d} 日` }
+
+// 工期：各档总小时 ÷ 每天投入小时；有截止日就说清每一档来不来得及，不够时指出哪一档能赶上
+export function planText(sheet: Sheet): string[] {
+  if (!sheet.plans.length) return []
+  const out = ['', `【工期】每天投入 ${sheet.quote.dailyHours} 小时，不含等客户回复的时间`]
+  for (const p of sheet.plans) out.push(`· ${p.name === '变更' ? '这次变更' : p.name + '档'}  ${p.hours} 小时 ÷ ${sheet.quote.dailyHours} = ${p.days} 天，从今天开工最早 ${md(p.ready)}交付`)
+  if (!sheet.deadline) return [...out, '截止日：待问']
+  const from = sheet.deadlineFrom === '材料' ? `（材料里写的「${sheet.brief.deadline}」）` : ''
+  const ok = sheet.plans.filter(p => p.slack != null && p.slack >= 0)
+  const late = sheet.plans.filter(p => p.slack != null && p.slack < 0)
+  if (!late.length) out.push(`截止 ${md(sheet.deadline)}${from}：${sheet.plans.length > 1 ? '每一档都来得及，最紧的一档' : '来得及，'}余 ${Math.min(...sheet.plans.map(p => p.slack!))} 天`)
+  else if (ok.length) out.push(`截止 ${md(sheet.deadline)}${from}：${late.map(p => `${p.name}档晚 ${-p.slack!} 天`).join('、')}；${ok[ok.length - 1].name}档来得及，余 ${ok[ok.length - 1].slack} 天，可以只做到这一档，或和客户商量延期`)
+  else out.push(`截止 ${md(sheet.deadline)}${from}：${late.map(p => `${p.name === '变更' ? '这次变更' : p.name + '档'}晚 ${-p.slack!} 天`).join('、')}，来不及；砍范围或和客户商量延期`)
+  return out
 }
 
 export function selfText(sheet: Sheet, calib: Calibration | null = null): string {
@@ -293,6 +328,7 @@ export function selfText(sheet: Sheet, calib: Calibration | null = null): string
     out.push(...p.lines.map(lineText))
   }
   if (sheet.change?.removed.length) out.push('', '【这一版去掉的】已成交的部分，客户不提就不退', ...sheet.change.removed.map(x => '· ' + x))
+  out.push(...planText(sheet))
   if (!sheet.change) out.push('', ...zoneText(sheet.zone, sheet.budget))
   if (sheet.bonus && sheet.chosen) {
     const p = sheet.bonus, t = sheet.quote.bonus

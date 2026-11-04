@@ -31,7 +31,7 @@ assert(!existsSync(join(process.env.DATA_DIR, 'order-judge', '1', 'old')))
 pass('重做前的旧表和旧文件在启动时删除')
 
 const V1 = {
-  title: '社团报名小程序', clientType: '学生单', outcome: '答辩前能演示报名流程', budget: '', deadline: '12 月 20 日', alternative: '',
+  title: '社团报名小程序', clientType: '学生单', outcome: '答辩前能演示报名流程', budget: '', deadline: '12 月 20 日',
   items: [
     { id: null, title: '报名表单页', detail: '姓名、学号、社团选择', priority: '必须', kind: '新做', hours: 4, reason: '一个表单页加校验', unclear: '' },
     { id: null, title: '管理员导出 Excel', detail: '导出全部报名', priority: '应该', kind: '新做', hours: 3, reason: '一个导出接口', unclear: '导出字段没说' },
@@ -86,6 +86,10 @@ try {
 
   await page.locator('.oj-text').fill('做个社团报名小程序，12 月 20 日答辩')
   await page.getByRole('button', { name: '整理需求' }).click()
+  await page.getByText('先选客户类型').waitFor({ state: 'visible' })
+  assert.equal(prompts.length, 0)
+  await page.getByRole('group', { name: '客户类型' }).getByRole('button', { name: '学生单' }).click()
+  await page.getByRole('button', { name: '整理需求' }).click()
   await page.getByText('社团报名小程序', { exact: true }).first().waitFor()
   const sheet = page.locator('.oj-result .oj-sheet')
   assert.match(await sheet.innerText(), /第 1 版/)
@@ -98,12 +102,14 @@ try {
   pass('新项目整理出第 1 版：客户类型、待问的预算、按优先级分组的小时、不清楚的点、不包含')
   if (shots) await page.screenshot({ path: join(shots, 'v1-desktop.png'), fullPage: true })
 
-  // 基础 4×31=124 → 报价 160；推荐 +3×31 +兜底 1.5×31≈47 = 264 → 330；完整 +2×31 = 326 → 410
+  // 学生单没有兜底：基础 4×31=124 → 报价 160；推荐 +3×31 = 217 → 280；完整 +2×31 = 279 → 350
   const quote = sheet.locator('.oj-quote')
   const selfV1 = await quote.locator('.oj-qtext').innerText()
   assert.match(selfV1, /【基础档】底线 ¥124 · 报价 ¥160/)
-  assert.match(selfV1, /【推荐档】底线 ¥264 · 报价 ¥330/)
-  assert.match(selfV1, /兜底：管理员导出 Excel  1\.5 小时 × 31 = ¥47  未说清「导出字段没说」/)
+  assert.match(selfV1, /【推荐档】底线 ¥217 · 报价 ¥280/)
+  assert.doesNotMatch(selfV1, /兜底/)
+  assert.match(selfV1, /基础档  4 小时 ÷ 4 = 1 天，从今天开工最早 \d+ 月 \d+ 日交付/)
+  assert.match(selfV1, /截止 12 月 20 日（材料里写的「12 月 20 日」）：每一档都来得及/)
   assert.match(selfV1, /预算：待问/)
   assert.equal(await quote.getByRole('group', { name: '成效奖金' }).count(), 0)
   await quote.getByRole('group', { name: '人情折让' }).getByRole('button', { name: '10%' }).click()
@@ -111,9 +117,10 @@ try {
   await quote.getByRole('group', { name: '状态' }).getByRole('button', { name: '已成交' }).click()
   await quote.getByRole('group', { name: '报价单版本' }).getByRole('button', { name: '客户版' }).click()
   const clientV1 = await quote.locator('.oj-qtext').innerText()
-  assert(clientV1.indexOf('【完整档】¥410') < clientV1.indexOf('【推荐档】¥330（主推）'))
-  assert.match(clientV1, /人情折让 −¥33（同学）\n实收 ¥297/)
-  assert.match(clientV1, /14 天保修/)
+  assert(clientV1.indexOf('【完整档】¥350') < clientV1.indexOf('【推荐档】¥280（主推）'))
+  assert.match(clientV1, /人情折让 −¥28（同学）\n实收 ¥252/)
+  assert.match(clientV1, /14 天保修，不另外收费/)
+  assert.match(clientV1, /预计 2 天交付/)
   assert.doesNotMatch(clientV1, /小时|底线/)
   await quote.getByRole('button', { name: '保存' }).click()
   await quote.getByText('已保存').waitFor()
@@ -123,6 +130,7 @@ try {
   if (shots) await page.screenshot({ path: join(shots, 'v1-quote.png'), fullPage: true })
 
   assert.match(await page.locator('.oj-mat-name').innerText(), /给「社团报名小程序」追加需求/)
+  await page.getByRole('button', { name: '追加需求', exact: true }).first().click()
   await page.locator('.oj-text').fill('客户补充：表单要加手机号，不要推送了，旧登录页也帮忙修一下，预算 800')
   await page.getByRole('button', { name: '整理第 2 版' }).click()
   await sheet.getByText('这一版去掉了').waitFor()
@@ -202,10 +210,11 @@ try {
   assert.deepEqual(left, { p: 0, v: 0 })
   pass('删除项目连同所有版本一起删掉')
 
-  replies.push({ ...V1, clientType: '商单' })
+  replies.push(V1)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(origin + '/#/judge'); await page.reload()
   await page.locator('.oj-text').fill('做个社团报名小程序')
+  await page.getByRole('group', { name: '客户类型' }).getByRole('button', { name: '商单' }).click()
   await page.getByRole('button', { name: '整理需求' }).click()
   await page.getByText('社团报名小程序', { exact: true }).first().waitFor()
   await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth + 1)
