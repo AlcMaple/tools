@@ -4,7 +4,7 @@
 import { BASES, BASIS_TEXT, CLIENT_TYPES, MAX_ITEMS, MAX_ITEM_HOURS, WORK_KINDS, basisOf, workOf, type Basis, type Brief, type BriefItem, type Category, type ClientType, type WorkKind } from './order-judge-brief'
 import type { Maintenance } from './order-judge-maintenance'
 import {
-  DEFAULT_DAILY_HOURS, DEFAULT_QUOTE_SETTINGS, STUDENT_RATE, applyDiscount, changeOrder, defaultsFor, factorOf, parseBudget, parseDeadline, planOf, tiers, ymd, zone,
+  DEFAULT_DAILY_HOURS, DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, factorOf, parseBudget, parseDeadline, planOf, tiers, ymd, zone,
   type ChangeOrder, type Discount, type Expense, type Plan, type Priced, type QuoteLine, type QuoteSettings, type Tier, type TierName, type Zone,
 } from './order-judge-quote'
 
@@ -268,7 +268,7 @@ export interface Sheet {
 // 本版之前最近一个「已成交」的版本就是变更单的基准；没有就按整单出三档
 export function buildSheet(title: string, versions: SheetVersion[], n: number, settings?: QuoteSettings, now: Date = new Date()): Sheet {
   const raw = versions.find(x => x.n === n)!
-  const current = settings ?? defaultsFor(raw.brief.clientType)
+  const current = settings ?? DEFAULT_QUOTE_SETTINGS
   const s = settingsFor(raw.quote, current)
   const rawBase = [...versions].filter(x => x.n < n && x.quote.status === '已成交').sort((a, b) => b.n - a.n)[0] ?? null
   const base = rawBase && { ...rawBase, brief: adjustBrief(rawBase.brief, rawBase.quote, settingsFor(rawBase.quote, current)) }
@@ -583,7 +583,7 @@ export const latestType = (versions: { n: number; brief: Brief }[]): ClientType 
 
 // 商单、学生单、个人单的价钱和感受不能互相影响，一个项目按最新版本的客户类型归入一组
 export function calibrateByType(projects: { title: string; versions: SheetVersion[]; maintenance?: Maintenance }[]): Record<ClientType, Calibration> {
-  return Object.fromEntries(CLIENT_TYPES.map(t => [t, calibrate(projects.filter(p => latestType(p.versions) === t), defaultsFor(t))])) as Record<ClientType, Calibration>
+  return Object.fromEntries(CLIENT_TYPES.map(t => [t, calibrate(projects.filter(p => latestType(p.versions) === t))])) as Record<ClientType, Calibration>
 }
 export const calibFor = (c: Calibrations, type: ClientType): Calibration => ({ ...c.byType[type], market: c.market })
 
@@ -637,7 +637,7 @@ function experienceRows(projects: LearnProject[], base: QuoteSettings): (ItemFac
 }
 
 export function experienceLines(projects: LearnProject[], type: ClientType, limit = EXPERIENCE_LIMIT): string[] {
-  return experienceRows(projects.filter(p => latestType(p.versions) === type), defaultsFor(type)).slice(0, limit).map(r => `${r.category}｜${r.title.slice(0, 40)}｜${BASIS_TEXT[r.basis]}：${r.ai} 小时 → ${r.final} 小时（${r.source}）`)
+  return experienceRows(projects.filter(p => latestType(p.versions) === type), DEFAULT_QUOTE_SETTINGS).slice(0, limit).map(r => `${r.category}｜${r.title.slice(0, 40)}｜${BASIS_TEXT[r.basis]}：${r.ai} 小时 → ${r.final} 小时（${r.source}）`)
 }
 
 // 能不能验证「越用越准」：AI 估的和做完的差多少，报出去的单成交了多少
@@ -734,7 +734,7 @@ export function calibrate(projects: { title: string; versions: SheetVersion[]; m
     // 取中位数：一单极端的亏或值不能决定之后所有报价
     const lo = lows[k].length ? median(lows[k]) : null, hi = highs[k].length ? median(highs[k]) : null
     let rate = base.rates[k]
-    const origin = base.rates[k] === STUDENT_RATE ? '来自一单真实成交' : '来自答题'
+    const origin = '来自一单真实成交'
     let why = origin
     if (exact[k].length) {
       rate = median(exact[k])

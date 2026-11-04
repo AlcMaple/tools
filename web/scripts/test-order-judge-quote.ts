@@ -4,6 +4,10 @@ import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, parseD
 import { EMPTY_MAINTENANCE, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance } from '../shared/order-judge-maintenance'
 import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, calibrateByType, experienceLines, carryHourEdits, clientText, freeze, hourRows, hoursLabel, marketLine, marketStats, normalizeQuote, sampleOf, selfText, type QuoteState } from '../shared/order-judge-sheet'
 
+assert.deepEqual(DEFAULT_QUOTE_SETTINGS.rates, { 新做: 67, 接手改: 67 })
+// 下面的算式用两档不同的时间值，才测得出新做 / 接手改有没有算混；线上起点是上面这一行
+Object.assign(DEFAULT_QUOTE_SETTINGS.rates, { 新做: 31, 接手改: 267 })
+
 let checks = 0
 const pass = (label: string): void => { console.log(`PASS Q${++checks}: ${label}`) }
 
@@ -103,7 +107,7 @@ const v = (quote: Partial<QuoteState>, b: Brief = one) => ({ n: 1, at: 0, brief:
 const proj = (quote: Partial<QuoteState>, b?: Brief) => ({ title: 'p', versions: [v(quote, b)] })
 
 assert.deepEqual(calibrate([]).settings, DEFAULT_QUOTE_SETTINGS)
-assert.match(calibrate([]).notes.join(), /新做时间值 31：来自答题/)
+assert.match(calibrate([]).notes.join(), /新做时间值 31：来自一单真实成交/)
 pass('没有回填时时间值就是答题结果')
 
 // 成交 390，实际 20 小时，觉得亏 → 每小时 19.5 < 31，不动；实际 20 ÷ 预估 10 → 小时 × 2
@@ -392,18 +396,14 @@ assert.match(marketLine({ ...brief([]), clientType: '学生单', category: '网�
 pass('行情要 3 单才显示，一个人的数据也算，学生单和商单不混')
 
 const thesis = { ...brief([item('r1', '必须', 3, { basis: '接手', kind: '接手改' })]), clientType: '学生单' as const }
-const thesisSheet = buildSheet('p', [v({}, thesis)], 1)
-assert.equal(thesisSheet.chosen!.floor, 201)
-assert.equal(thesisSheet.chosen!.quote, 260)
-assert.equal(buildSheet('p', [v({}, { ...thesis, clientType: '商单' })], 1).chosen!.floor, 801)
-assert.equal(buildSheet('p', [v({ frozen: { rates: { 新做: 31, 接手改: 267 }, hourFactor: { 新做: 1, 接手改: 1 } } }, thesis)], 1).chosen!.floor, 801)
-assert.equal(calibrateByType([]).学生单.settings.rates['接手改'], 67)
-assert.match(calibrateByType([]).学生单.notes.join(), /来自一单真实成交/)
-pass('学生单统一 ¥67，商单不变，已冻结的报价不被改')
+const atStart = { ...DEFAULT_QUOTE_SETTINGS, rates: { 新做: 67, 接手改: 67 } }
+assert.equal(buildSheet('p', [v({}, thesis)], 1, atStart).chosen!.quote, 260)
+assert.equal(buildSheet('p', [v({ frozen: { rates: { 新做: 31, 接手改: 267 }, hourFactor: { 新做: 1, 接手改: 1 }, basisFactor: {} } }, thesis)], 1, atStart).chosen!.floor, 801)
+pass('论文单回测：3 小时报 ¥260；已冻结的报价不被改')
 
 const dealOf = (type: '学生单' | '商单') => ({ title: 'p', versions: [{ n: 1, at: 0, brief: { ...brief([item('r1', '必须', 10)]), clientType: type }, quote: { ...EMPTY_QUOTE, status: '已成交' as const, actual: { 新做: 1, 接手改: 0 }, feeling: '亏' as const } }] })
 const split = calibrateByType([dealOf('学生单'), dealOf('学生单'), dealOf('学生单')])
-assert.ok(split.学生单.settings.rates['新做'] > 67)
+assert.ok(split.学生单.settings.rates['新做'] > 31)
 assert.equal(split.商单.settings.rates['新做'], 31)
 assert.equal(split.个人单.settings.rates['新做'], 31)
 pass('校准按客户类型分开：学生单的亏不影响商单和个人单')
@@ -441,6 +441,7 @@ assert.deepEqual(experienceLines([fact(0, 3)], '学生单'), [])
 assert.match(briefSystemPrompt(null, '商单', exp), /订阅消息/)
 assert.doesNotMatch(briefSystemPrompt(null, '商单'), /过去同类单子/)
 assert.equal(experienceLines(Array.from({ length: 20 }, () => fact(4, 8)), '商单', 30).length, 30)
+assert.match(briefSystemPrompt(null, '商单'), /保修、售后答疑不单列/)
 pass('历史修正传给 AI：估 0 的也传，不跨客户类型，最多 30 条')
 
 const doneProject = { title: 'p', versions: [{ n: 1, at: 0, brief: brief([item('r1', '必须', 10)]), quote: { ...EMPTY_QUOTE, status: '已成交' as const, actual: { 新做: 20, 接手改: 0 } } }] }

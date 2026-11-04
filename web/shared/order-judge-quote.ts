@@ -27,7 +27,9 @@ export interface QuoteSettings {
 }
 
 export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
-  rates: { 新做: 31, 接手改: 267 },
+  // 所有客户类型的起点：目前唯一的真实成交，毕业论文单收 ¥200、实际 3 小时、开发者觉得值（2026-11-04）。
+  // 答题得出的 31 / 267 开发者不信，267 还把 29 小时的商单推到 ¥8,770。低估能靠「亏」抬上去，高估客户直接走人
+  rates: { 新做: 67, 接手改: 67 },
   hourFactor: { 新做: 1, 接手改: 1 },
   basisFactor: {},
   padRatio: 0.5,
@@ -36,11 +38,6 @@ export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
   // 最低收费：功能都是直接能做、没有要想的点时，价格不再随条数往上堆，只象征性收这一笔（开发者 2026-11-04：三个简单功能 50 差不多了）
   minCharge: 50,
 }
-
-// 学生单不分新做 / 接手改，统一用真实成交折出的每小时：毕业论文单收 ¥200、实际 3 小时、开发者觉得值（2026-11-04），只一单，是开发期的基准。
-// 各客户类型的校准从自己的起点出发，互不影响
-export const STUDENT_RATE = 67
-export const defaultsFor = (type: ClientType): QuoteSettings => (type === '学生单' ? { ...DEFAULT_QUOTE_SETTINGS, rates: { 新做: STUDENT_RATE, 接手改: STUDENT_RATE } } : DEFAULT_QUOTE_SETTINGS)
 
 export const factorOf = (i: BriefItem, s: QuoteSettings): number => s.basisFactor[basisOf(i)] ?? s.hourFactor[workOf(i)]
 

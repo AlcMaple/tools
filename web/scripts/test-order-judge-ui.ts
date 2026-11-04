@@ -101,24 +101,24 @@ try {
   pass('新项目整理出第 1 版：客户类型、待问的预算、按优先级分组的小时、不清楚的点、不包含')
   if (shots) await page.screenshot({ path: join(shots, 'v1-desktop.png'), fullPage: true })
 
-  // 个人单没有兜底：基础 4×31=124 → 报价 160；推荐 +3×31 = 217 → 280；完整 +2×31 = 279 → 350
+  // 个人单没有兜底：基础 4×67=268 → 报价 340；推荐 +3×67 = 469 → 590；完整 +2×67 = 603 → 760
   const quote = sheet.locator('.oj-quote')
   const selfV1 = await quote.locator('.oj-qtext').evaluate(e => e.textContent ?? '')
-  assert.match(selfV1, /【基础档】底线 ¥124 · 报价 ¥160/)
-  assert.match(selfV1, /【推荐档】底线 ¥217 · 报价 ¥280/)
+  assert.match(selfV1, /【基础档】底线 ¥268 · 报价 ¥340/)
+  assert.match(selfV1, /【推荐档】底线 ¥469 · 报价 ¥590/)
   assert.doesNotMatch(selfV1, /兜底/)
   assert.match(selfV1, /基础档  4 小时 ÷ 8 = 1 天，从今天开工最早 \d+ 月 \d+ 日交付/)
   assert.match(selfV1, /截止 12 月 20 日（材料里写的「12 月 20 日」）：每一档都来得及/)
   assert.match(selfV1, /预算：待问/)
   assert.equal(await quote.getByRole('group', { name: '成效奖金' }).count(), 0)
   await quote.getByLabel('整体小时倍率').fill('2')
-  assert.match(await quote.locator('.oj-qtext').evaluate(e => e.textContent ?? ''), /【基础档】底线 ¥248/)
+  assert.match(await quote.locator('.oj-qtext').evaluate(e => e.textContent ?? ''), /【基础档】底线 ¥536/)
   await quote.getByLabel('报名表单页的小时').fill('12')
   assert.match(await quote.locator('.oj-hours').innerText(), /报名表单页[\s\S]*?1 天 4 小时/)
-  assert.match(await quote.locator('.oj-qtext').evaluate(e => e.textContent ?? ''), /【基础档】底线 ¥372/)
+  assert.match(await quote.locator('.oj-qtext').evaluate(e => e.textContent ?? ''), /【基础档】底线 ¥804/)
   if (shots) await quote.locator('.oj-hours').screenshot({ path: join(shots, 'hours-desktop.png') })
   await quote.getByRole('button', { name: '恢复 AI 的估计' }).click()
-  assert.match(await quote.locator('.oj-qtext').evaluate(e => e.textContent ?? ''), /【基础档】底线 ¥124/)
+  assert.match(await quote.locator('.oj-qtext').evaluate(e => e.textContent ?? ''), /【基础档】底线 ¥268/)
   // 真实鼠标：按住后拖到滑块外仍然跟手，行不换位，按下的位置就是滑块去的位置
   const sliders = quote.locator('.oj-hrow input[type=range]')
   const namesBefore = await quote.locator('.oj-hrow > span:first-child').allInnerTexts()
@@ -142,8 +142,8 @@ try {
   await quote.getByRole('group', { name: '状态' }).getByRole('button', { name: '已成交' }).click()
   await quote.getByRole('group', { name: '报价单版本' }).getByRole('button', { name: '客户版' }).click()
   const clientV1 = await quote.locator('.oj-qtext').evaluate(e => e.textContent ?? '')
-  assert(clientV1.indexOf('【完整档】¥350') < clientV1.indexOf('【推荐档】¥280（主推）'))
-  assert.match(clientV1, /人情折让 −¥28（同学）\n实收 ¥252/)
+  assert(clientV1.indexOf('【完整档】¥760') < clientV1.indexOf('【推荐档】¥590（主推）'))
+  assert.match(clientV1, /人情折让 −¥59（同学）\n实收 ¥531/)
   assert.match(clientV1, /14 天保修，不另外收费/)
   assert.match(clientV1, /预计 1 天交付/)
   assert.doesNotMatch(clientV1, /小时|底线/)
@@ -170,11 +170,11 @@ try {
   pass('追加需求带上一版清单给 AI，第 2 版标出改动、新增、去掉，没变的条目不标')
   if (shots) await page.screenshot({ path: join(shots, 'v2-desktop.png'), fullPage: true })
 
-  // 第 1 版已成交，第 2 版是变更单：报名表单内容改了整条 5×31=155，旧登录新增 6×267=1602，导出没变不收，推送去掉不退
+  // 第 1 版已成交，第 2 版是变更单：报名表单内容改了整条 5×67=335，旧登录新增 6×67=402，导出没变不收，推送去掉不退
   const change = sheet.locator('.oj-quote')
   assert.match(await change.locator('h3').innerText(), /变更单 · 基于第 1 版/)
   const selfV2 = await change.locator('.oj-qtext').evaluate(e => e.textContent ?? '')
-  assert.match(selfV2, /底线 ¥1,757 · 报价 ¥2,200/)
+  assert.match(selfV2, /底线 ¥737 · 报价 ¥930/)
   assert.doesNotMatch(selfV2, /管理员导出 Excel  \d/)
   assert.match(selfV2, /客户不提就不退\n· 消息推送/)
   await change.getByText('更多设置').click()
@@ -189,14 +189,14 @@ try {
   await change.getByText('已保存').waitFor()
   const fed = JSON.parse((db.prepare('SELECT quote FROM order_judge_versions WHERE n=2').get() as { quote: string }).quote) as { actual: Record<string, number>; feeling: string; frozen: { rates: Record<string, number> } }
   assert.deepEqual(fed.actual, { 新做: 8, 接手改: 3 }); assert.equal(fed.feeling, '亏')
-  assert.deepEqual(fed.frozen.rates, { 新做: 31, 接手改: 267 })
+  assert.deepEqual(fed.frozen.rates, { 新做: 67, 接手改: 67 })
   pass('成交后按新做 / 接手改分别回填实际小时和感受，保存时冻结当时的时间值')
 
-  // 月维护：第 2 版是成交过的变更单，实际 8 + 3 = 11 小时 → 建议 11 × 31 = 341
+  // 月维护：第 2 版是成交过的变更单，实际 8 + 3 = 11 小时 → 建议 11 × 67 = 737
   const maint = sheet.locator('.oj-maint')
   await maint.getByRole('group', { name: '月维护状态' }).getByRole('button', { name: '在做' }).click()
   const fee = maint.getByRole('textbox', { name: '月费', exact: true })
-  assert.equal(await fee.getAttribute('placeholder'), '建议 341')
+  assert.equal(await fee.getAttribute('placeholder'), '建议 737')
   await fee.fill('600')
   await maint.getByRole('button', { name: '记一个月' }).click()
   await maint.getByRole('textbox', { name: '月份', exact: true }).fill('2026-11')
@@ -244,13 +244,13 @@ try {
   await page.getByText('社团报名小程序', { exact: true }).first().waitFor()
   await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth + 1)
   assert(await page.locator('.oj-flowbar').isVisible())
-  // 商单：底线 264、报价 330，把握 5 成 → 奖金 (330 − 264) ÷ 0.5 = 132 → 140
+  // 商单：底线 570、报价 720，把握 5 成 → 奖金 (720 − 570) ÷ 0.5 = 300
   const shop = page.locator('.oj-result .oj-quote')
   await shop.getByText('更多设置').click()
   await shop.getByRole('group', { name: '成效奖金' }).getByRole('button', { name: '加', exact: true }).click()
   await shop.getByLabel('看什么').fill('报名转化率')
   await shop.getByRole('group', { name: '报价单版本' }).getByRole('button', { name: '客户版' }).click()
-  assert.match(await shop.locator('.oj-qtext').evaluate(e => e.textContent ?? ''), /先付 ¥264，交付时付清\n达标后再付 ¥140\n· 看什么：报名转化率/)
+  assert.match(await shop.locator('.oj-qtext').evaluate(e => e.textContent ?? ''), /先付 ¥570，交付时付清\n达标后再付 ¥300\n· 看什么：报名转化率/)
   assert.equal(await shop.getByRole('group', { name: '人情折让' }).count(), 0)
   await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth + 1)
   if (shots) await shop.screenshot({ path: join(shots, 'bonus-mobile.png') })
