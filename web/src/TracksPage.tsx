@@ -60,8 +60,9 @@ import { Popover } from './Popover'
 import { SketchSheet } from './SketchSheet'
 import { LegacyRig, useSpriteStyle } from './sprites'
 import { useIsWide } from './useMediaQuery'
+import type { TrackFilter, TracksNavigationMemory } from './tracks/navigationMemory'
 
-export type TrackFilter = 'all' | TrackStatus
+export type { TrackFilter } from './tracks/navigationMemory'
 type TrackView = 'cards' | 'list' | 'timeline'
 type AddFlow = { initialQuery?: string; backfill?: BackfillTarget }
 
@@ -95,13 +96,18 @@ function applyLocal(t: Track, p: TrackPatch): Track {
   return next
 }
 
-export function TracksPage({ filter, onFilterChange, query, onQueryChange }: {
-  filter: TrackFilter
-  onFilterChange: (next: TrackFilter) => void
-  query: string
-  onQueryChange: (next: string) => void
-}): JSX.Element {
+export function TracksPage({ navigation }: { navigation: TracksNavigationMemory }): JSX.Element {
   const { user, ready, error: authError } = useAuth()
+  const [filter, setFilter] = useState<TrackFilter>(navigation.filter)
+  const [query, setQuery] = useState(navigation.query)
+  const onFilterChange = (next: TrackFilter): void => {
+    navigation.filter = next
+    setFilter(next)
+  }
+  const onQueryChange = (next: string): void => {
+    navigation.query = next
+    setQuery(next)
+  }
   const [tracks, setTracks] = useState<Track[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tracksError, setTracksError] = useState<string | null>(null)

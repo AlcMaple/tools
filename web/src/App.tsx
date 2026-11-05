@@ -17,7 +17,8 @@ import { NagBar } from './NagBar'
 import { REWARDS_ENABLED, navigate, useRoute, type Route } from './router'
 import { RewardsPage } from './RewardsPage'
 import { SettingsPage } from './SettingsPage'
-import { TracksPage, type TrackFilter } from './TracksPage'
+import { TracksPage } from './TracksPage'
+import { tracksNavigationForOwner, type TracksNavigationMemory } from './tracks/navigationMemory'
 import { Ic, SketchSprite, type SketchIconName } from './SketchIcon'
 import { Splash } from './Splash'
 import { Popover } from './Popover'
@@ -66,12 +67,9 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
   useEffect(() => { window.__mtAppReady?.() }, [])
   const route = useRoute()
   const { user, ready, dailyReward } = useAuth()
-  const [tracksFilter, setTracksFilter] = useState<TrackFilter>('all')
-  const [tracksQuery, setTracksQuery] = useState('')
-  useEffect(() => {
-    setTracksFilter('all')
-    setTracksQuery('')
-  }, [user?.id])
+  const tracksMemory = useRef<TracksNavigationMemory | null>(null)
+  const tracksNavigation = tracksNavigationForOwner(tracksMemory.current, user?.id ?? null)
+  tracksMemory.current = tracksNavigation
   const [feedbackUnread, setFeedbackUnread] = useState(0)
   const [mUserOpen, setMUserOpen] = useState(false)
   const mUserBtn = useRef<HTMLButtonElement>(null)
@@ -356,7 +354,7 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
             {route === 'feedback' ? <FeedbackPanel key={user?.id ?? 'guest'} /> : route === 'settings'
               ? <SettingsPage />
               : route === 'tracks'
-                ? <TracksPage filter={tracksFilter} onFilterChange={setTracksFilter} query={tracksQuery} onQueryChange={setTracksQuery} />
+                ? <TracksPage key={user?.id ?? 'guest'} navigation={tracksNavigation} />
                 : route === 'catalog'
                   ? <CatalogPage key={user?.id ?? 'guest'} />
                 : route === 'history'
