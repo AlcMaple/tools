@@ -180,7 +180,7 @@ export function normalizeQuote(raw: unknown): QuoteState {
     dailyHours: num(o.dailyHours, 16) || DEFAULT_DAILY_HOURS,
     hourEdits: hourEditsOf(o.hourEdits),
     hourScale: hourScaleOf(o.hourScale),
-    finalPrice: o.finalPrice == null || o.finalPrice === '' ? null : Math.round(num(o.finalPrice, 100_000_000)) || null,
+    finalPrice: o.finalPrice == null || o.finalPrice === '' ? null : Math.round(num(o.finalPrice, 100_000_000)),
     share: o.share !== false,
   }
 }
@@ -300,7 +300,7 @@ export function buildSheet(title: string, versions: SheetVersion[], n: number, s
   const picked = computed.find(t => t.name === v.quote.tier) ?? computed[computed.length - 1] ?? null
   // 手填了实际报价就只报这一个价：客户看到的范围是主推档，分项按比例摊，不再出公式算的另外两档
   const final = v.quote.finalPrice
-  const ts = picked && final ? [{ ...picked, quote: final, floor: Math.min(picked.floor, final), minPrice: Math.min(picked.minPrice, final) }] : computed
+  const ts = picked && final != null ? [{ ...picked, quote: final, floor: Math.min(picked.floor, final), minPrice: Math.min(picked.minPrice, final) }] : computed
   const tier = ts.find(t => t.name === v.quote.tier) ?? ts[ts.length - 1] ?? null
   return {
     title, n, at: v.at, brief: v.brief, quote: v.quote, budget, budgetFrom, base: null, tiers: ts, change: null,
