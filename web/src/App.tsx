@@ -26,7 +26,7 @@ import { AgentHost } from './agent/AgentHost'
 import { openAgent } from './agent/navigation'
 import { OrderJudgePage } from './orderJudge/OrderJudgePage'
 import { RoomPage } from './RoomPage'
-import { FindAnime, openFindAnime } from './FindAnime'
+import { FindAnime, openFindAnime, cancelWatchLogin } from './FindAnime'
 
 // 各页书脊的小 accents：胶带色 / 印章 / 拟声词（原型稿逐页配置）
 const SPINE: Record<Route, { tape: string; stamp: string; stampCls: string; kira: string }> = {
@@ -180,10 +180,10 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
   const announceAfterSplash = useCallback(() => {
     if (route === 'calendar') setAnnouncementArmed(true)
   }, [route])
-  const openLogin = (): void => {
+  const openLogin = useCallback((): void => {
     setAuthMode('login')
     setAuthOpen(true)
-  }
+  }, [])
   const sp = SPINE[route]
 
   return (
@@ -385,6 +385,7 @@ export default function App({ splashArt }: { splashArt: string | null }): JSX.El
         onClose={() => {
           setAuthOpen(false)
           setOauthError(null)
+          if (!auth.user) cancelWatchLogin()
           if ((route === 'settings' || route === 'rewards') && !auth.user) navigate('calendar')
         }}
       />

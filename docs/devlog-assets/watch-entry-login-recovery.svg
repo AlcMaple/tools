@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="690" viewBox="0 0 1080 690">
+  <style>text{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;fill:#282529}.title{font-size:19px;font-weight:700}.sub{font-size:12.5px;fill:#756f73}.head{font-size:14px;font-weight:700}.label{font-size:12.5px;font-weight:700}.body{font-size:11px}.green{fill:#316247}.red{fill:#96434f}.blue{fill:#36566d}.yellow{fill:#7a6234}</style>
+  <rect x="1" y="1" width="1078" height="688" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="28" y="37" class="title">登录后接着看：中断时不丢掉刚选的番</text>
+  <text x="28" y="63" class="sub">正常登录直接进入原番选源；确认中断时留在弹窗，点「继续登录」就接上</text>
+  <text x="28" y="103" class="head">用户会经历什么？</text>
+  <rect x="28" y="119" width="312" height="140" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="46" y="146" class="label green">平时：不用再找一遍</text>
+  <text x="46" y="177" class="body">卡片「登录后观看」 → 完成登录</text>
+  <text x="46" y="201" class="body">→ 原番、原集数的选源弹窗</text>
+  <text x="46" y="235" class="body green">不自动播放，也不自动加入追番</text>
+  <rect x="360" y="119" width="360" height="140" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="378" y="146" class="label red">确认中断：弹窗仍在，选择仍在</text>
+  <text x="378" y="177" class="body">提交已被接受，但网络打断了最后的确认</text>
+  <text x="378" y="201" class="body">显示实际连接错误 +「继续登录」</text>
+  <text x="378" y="235" class="body red">原来会直接关窗，待看的条目随之丢失</text>
+  <rect x="740" y="119" width="312" height="140" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="758" y="146" class="label green">网络恢复：只多点一次</text>
+  <text x="758" y="177" class="body">点击「继续登录」 → 确认成功</text>
+  <text x="758" y="201" class="body">→ 仍是刚才的番与集数</text>
+  <text x="758" y="235" class="body green">密码、注册、验证码三种方式都保持</text>
+  <text x="28" y="301" class="head">背后为什么不能直接重交表单？</text>
+  <rect x="28" y="317" width="1024" height="116" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="46" y="345" class="label blue">把「提交凭据」和「确认已登录」分开</text>
+  <text x="46" y="374" class="body">账号已经建好或验证码已经用过，再次提交会变成重复注册或无效验证码</text>
+  <text x="46" y="400" class="body">「继续登录」只确认当前身份，不重交密码、不再注册、不再消耗验证码，也不定时探测或自动重试</text>
+  <text x="28" y="475" class="head">如果仍没恢复，用户能做什么？</text>
+  <rect x="28" y="491" width="312" height="115" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="46" y="519" class="label yellow">网络仍不通</text>
+  <text x="46" y="547" class="body">保留待看条目和「继续登录」</text>
+  <text x="46" y="573" class="body">由用户决定何时再试，不循环请求</text>
+  <rect x="360" y="491" width="360" height="115" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="378" y="519" class="label">登录确实已失效</text>
+  <text x="378" y="547" class="body">显示「登录已失效，请重新登录」</text>
+  <text x="378" y="573" class="body">回到表单，不再停在仅确认身份的循环</text>
+  <rect x="740" y="491" width="312" height="115" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="758" y="519" class="label">用户主动关闭</text>
+  <text x="758" y="547" class="body">关闭按钮、遮罩或 Esc 都取消本次待看</text>
+  <text x="758" y="573" class="body">以后再登录，不突然弹出旧选择</text>
+  <text x="28" y="651" class="sub">常见情况仍是完成登录后直接选源；本地中断回归不代表真实片源、手机或声音已通过验收</text>
+</svg>
