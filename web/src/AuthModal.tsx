@@ -5,7 +5,7 @@ import { openFeedback } from './feedback'
 // 逻辑与旧版一致：邮箱验证码确认地址后新旧账号都直接登录；找回 = 账号 + 密保问题 + 答案 + 新密码×2；
 // Enter 提交、ESC / 背景 / × 关闭；第三方入口按服务端配置显示（未配凭据整体不出现）。
 import { useEffect, useRef, useState } from 'react'
-import { auth, fetchOauthProviders, fetchQuestions, pendingInviteCode } from './auth'
+import { auth, fetchOauthProviders, fetchQuestions, LoginConfirmationError, pendingInviteCode } from './auth'
 import type { SecurityQuestion } from './auth'
 import { Ic } from './SketchIcon'
 import { PasswordInput } from './PasswordInput'
@@ -136,6 +136,7 @@ export function AuthModal({
   const [error, setError] = useState<string | null>(null)
   const [okMsg, setOkMsg] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [confirmingLogin, setConfirmingLogin] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
   const [githubEnabled, setGithubEnabled] = useState(false)
   const [linuxdoEnabled, setLinuxdoEnabled] = useState(false)
@@ -169,7 +170,12 @@ export function AuthModal({
     setError(presetError)
     setOkMsg(null)
     setSubmitting(false)
+    setConfirmingLogin(false)
     userRef.current?.focus()
+  }, [open, presetError])
+
+  useEffect(() => {
+    if (!open) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
     }
@@ -180,6 +186,7 @@ export function AuthModal({
   useEffect(() => {
     setError(null)
     setOkMsg(null)
+    setConfirmingLogin(false)
     if (mode === 'email') {
       setEmailStep('address')
       setEmailChallengeId('')
@@ -244,9 +251,27 @@ export function AuthModal({
     return `/api/auth/oauth/${provider}/start?${params.toString()}`
   }
 
+  const loginError = (err: unknown, fallback: string): void => {
+    setConfirmingLogin(err instanceof LoginConfirmationError)
+    setOkMsg(null)
+    setError(err instanceof Error ? err.message : fallback)
+  }
+
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()
     setError(null)
+    if (confirmingLogin) {
+      setSubmitting(true)
+      try {
+        await auth.confirmLogin()
+        onClose()
+      } catch (err) {
+        loginError(err, '登录确认失败，请重试')
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
     if (isEmail && emailStep === 'address') {
       setSubmitting(true)
       try {
@@ -268,7 +293,7 @@ export function AuthModal({
         await auth.verifyEmailCode(emailChallengeId, emailCode.trim())
         onClose()
       } catch (err) {
-        setError(err instanceof Error ? err.message : '验证码校验失败，请重试')
+        loginError(err, '验证码校验失败，请重试')
       } finally {
         setSubmitting(false)
       }
@@ -299,7 +324,7 @@ export function AuthModal({
         onClose()
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '出错了，请重试')
+      loginError(err, '出错了，请重试')
     } finally {
       setSubmitting(false)
     }
@@ -368,7 +393,7 @@ export function AuthModal({
           )}
 
           <form onSubmit={submit} className="auth-pane show">
-            {isEmail ? (
+            {!confirmingLogin && (isEmail ? (
               <>
                 <label className="field">
                   <span className="field-label">邮箱</span>
@@ -522,7 +547,7 @@ export function AuthModal({
                   </label>
                 )}
               </>
-            )}
+            ))}
 
             {(error || okMsg) && (
               <p className={`form-note${error ? ' err' : ''}`} aria-live="polite">
@@ -533,7 +558,7 @@ export function AuthModal({
             <button type="submit" disabled={submitting} className="btn btn-primary btn-block mt8">
               {submitting
                 ? '请稍候…'
-                : isEmail
+                : confirmingLogin ? '继续登录' : isEmail
                   ? emailStep === 'address' ? '发送验证码' : '验证并登录'
                   : isForgot
                     ? '重置密码'
@@ -567,7 +592,7 @@ export function AuthModal({
           </form>
 
           <button type="button" className="link mt8" onClick={() => openFeedback('ACCOUNT_ACCESS_PROBLEM')}>登录遇到问题？反馈一下</button>
-          {(googleEnabled || githubEnabled || linuxdoEnabled) && !isForgot && (
+          {(googleEnabled || githubEnabled || linuxdoEnabled) && !isForgot && !confirmingLogin && (
             <>
               <div className="or-line mt8" aria-hidden="true">
                 或

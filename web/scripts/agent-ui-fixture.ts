@@ -72,7 +72,8 @@ export async function createAgentUiFixture(){
     yield{type:'output',value:{kind:'answer',text:built,sourceIds:['ui-tracks-source']}}
   }},tools:[{name:'listMyTracks',async execute(_args,actor){metrics.toolCalls++;if(actor.uid!==uid)throw new Error('OWNER_MISMATCH');return{ok:true,data:{items:[],revision:0},sources:[{sourceId:'ui-tracks-source',kind:'my_tracks',label:'测试手帐里的追番',retrievedAt:1}],resultCount:0,truncated:false}}}]}))
   const app=new Hono<{Variables:{agentUid:number}}>();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard())
-  if(process.env.AGENT_UI_WATCH==='1'){const {addWatchFixture}=await import('./watch-fixture-routes');addWatchFixture(app,directory,db)}
+  let watchFixture: {password?:string}|undefined
+  if(process.env.AGENT_UI_WATCH==='1'){const {addWatchFixture}=await import('./watch-fixture-routes');watchFixture=addWatchFixture(app,directory,db)}
   const {createGuestApi}=await import('../server/agent/guest-api')
   const {guestDataTools}=await import('../server/agent/run-runtime')
   const guestKnowledge=()=>registry.guestSnapshot({enabled:true,permissionVersion:mode,features:AGENT_FEATURES.map(f=>f.id),tools:['readCachedCalendar','listPublicReviews','aggregatePublicData'],conditions:{answerModelReady:true}})
@@ -106,7 +107,7 @@ export async function createAgentUiFixture(){
   const server=serve({fetch:app.fetch,hostname:'127.0.0.1',port});await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('FIXTURE_ADDRESS')
   const origin=`http://127.0.0.1:${address.port}`,browserOrigin=`http://agent-phase4.localhost:${address.port}`;network.enableNetConnect(new URL(origin).host)
   const close=async()=>{await runs.close();await context.close();await productionContext.close();const done=new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));(server as Server).closeAllConnections();await done;db.close();await network.close();setGlobalDispatcher(oldDispatcher);globalThis.fetch=originalFetch;process.chdir(oldCwd);process.env=oldEnv;rmSync(directory,{recursive:true,force:true})}
-  return{origin,browserOrigin,originalFetch,createUser,alice,bob,welcomeId:welcome.id,storyId:story.id,actionId:actionBook.id,history,store,context,runs,db,metrics,close}
+  return{origin,browserOrigin,watchFixture,originalFetch,createUser,alice,bob,welcomeId:welcome.id,storyId:story.id,actionId:actionBook.id,history,store,context,runs,db,metrics,close}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   process.env.AGENT_UI_FIXTURE='1';process.env.NODE_ENV='test';const fixture=await createAgentUiFixture()

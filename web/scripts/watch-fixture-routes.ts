@@ -2,11 +2,27 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { randomBytes, scryptSync } from 'node:crypto'
 import type { Hono } from 'hono'
-import { getSession } from '../server/auth'
+import { getSession, issueSession } from '../server/auth'
 
-export function addWatchFixture(app: Hono<{ Variables: { agentUid: number } }>, directory: string, database: typeof import('../server/db').db): void {
+export function addWatchFixture(app: Hono<{ Variables: { agentUid: number } }>, directory: string, database: typeof import('../server/db').db): { password?: string } {
   if (process.env.AGENT_UI_WATCH !== '1' || process.env.AGENT_UI_FIXTURE !== '1') throw new Error('WATCH_FIXTURE_TEST_ONLY')
+  let password: string | undefined
+  if (process.env.AGENT_UI_WATCH_LOGIN === '1') {
+    password = randomBytes(18).toString('hex')
+    const salt = randomBytes(16)
+    database.prepare("UPDATE users SET pass_hash=? WHERE username='ui_empty'").run(salt.toString('hex') + ':' + scryptSync(password, salt, 64).toString('hex'))
+    app.get('/api/auth/oauth/providers', c => c.json({ email: true, google: false, github: false, linuxdo: false }))
+    app.post('/api/auth/email/start', c => c.json({ challengeId: 'watch-login-fixture', expiresIn: 600 }))
+    app.post('/api/auth/email/verify', async c => {
+      const body = await c.req.json() as { challengeId?: string; code?: string }
+      if (body.challengeId !== 'watch-login-fixture' || body.code !== '123456') return c.json({ error: '测试验证码不匹配' }, 400)
+      const user = database.prepare("SELECT id,username FROM users WHERE username='ui_empty'").get() as { id: number; username: string }
+      await issueSession(c, { uid: user.id, username: user.username, tv: 0 })
+      return c.json({ username: user.username, hasSecurity: true, hasEmail: true, hasPassword: true })
+    })
+  }
   const mediaPath = join(directory, 'watch-fixture.mp4')
   execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=24', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100', '-t', '120', '-c:v', 'libx264', '-preset', 'ultrafast', '-b:v', '240k', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '48k', '-movflags', '+faststart', '-y', mediaPath])
   const media = readFileSync(mediaPath)
@@ -48,4 +64,5 @@ export function addWatchFixture(app: Hono<{ Variables: { agentUid: number } }>, 
     if (!path) return c.body(null, 404)
     return c.body(readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'), 200, { 'Content-Type': 'application/javascript; charset=utf-8' })
   })
+  return { password }
 }

@@ -45,7 +45,8 @@
     "test:auth-dialog-labels": "tsx scripts/test-auth-dialog-labels.ts",
     "test:watch-entry": "npm run build:agent-release && tsx scripts/test-watch-entry.ts",
     "test:watch-ui:serve": "npm run build && tsx scripts/watch-ui-fixture.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:watch-login": "npm run build && tsx scripts/test-watch-login.ts"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.9",
