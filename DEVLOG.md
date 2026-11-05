@@ -15,6 +15,7 @@
 
 - [安装包](docs/devlog/2026-安装包.md)
 - [网页版](docs/devlog/2026-网页版.md)
+- [观看衔接](docs/devlog/2026-观看衔接.md)
 - [妙语库](docs/devlog/2026-妙语库.md)
 - [在线观看](docs/devlog/2026-在线观看.md) · [当前网页版修复入口](docs/ideas/011-在线观看.md)
 - [BGM 登录功能](docs/devlog/2026-BGM登录功能.md)
