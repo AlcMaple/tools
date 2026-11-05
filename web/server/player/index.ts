@@ -26,6 +26,7 @@ import { Agent, request } from 'undici'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { getSession } from '../auth'
+import { db } from '../db'
 import { AUTH_SECRET } from '../secrets'
 import { playerPageSecurity, renderNonce } from '../security'
 import { captureClientLog } from '../monitoring'
@@ -324,23 +325,25 @@ const VENDOR: Record<string, string> = {
   'artplayer.js': 'node_modules/artplayer/dist/artplayer.js',
   'hls.js': 'node_modules/hls.js/dist/hls.min.js',
   // 播放页专用的浏览器监控 bundle，由 npm run build 第二步产出（scripts/build-player-monitor.ts）。
-  // **dev 下 dist 不存在是正常的**，发一段空脚本让页面照常跑（页面里所有 playerMonitor 调用都判了空）。
+  // 监控未构建时仍允许页面播放；续看辅助脚本由 build 和 dev 启动流程预先生成
   'monitor.js': 'dist/player-monitor.js',
+  'watch-history.js': 'dist/watch-history.js',
 }
 player.get('/vendor/:file', (c) => {
   const file = c.req.param('file')
   const path = VENDOR[file]
   if (!path) return c.body(null, 404)
-  let js = vendorCache.get(file)
+  const history = file === 'watch-history.js'
+  let js = history ? undefined : vendorCache.get(file)
   if (js === undefined) {
     try { js = readFileSync(join(process.cwd(), path), 'utf8') } catch {
       if (file !== 'monitor.js') return c.body(null, 404)
       js = '/* player monitor not built (dev) */'
     }
-    vendorCache.set(file, js)
+    if (!history) vendorCache.set(file, js)
   }
   c.header('Content-Type', 'application/javascript; charset=utf-8')
-  c.header('Cache-Control', 'public, max-age=86400')
+  c.header('Cache-Control', history ? 'no-cache' : 'public, max-age=86400')
   return c.body(js)
 })
 
@@ -396,6 +399,8 @@ player.get('/page', async (c) => {
   const bgmIdRaw = c.req.query('bgmId')
   const bgmId = parsePlayerBgmId(bgmIdRaw)
   if (bgmIdRaw && bgmId == null) return c.json({ error: 'bgmId 不合法' }, 400)
+  const track = bgmId == null ? undefined : db.prepare('SELECT updated_at FROM tracks WHERE user_id=? AND bgm_id=?').get(session.uid, bgmId) as { updated_at: number } | undefined
+  const watchContext = track && bgmId != null ? { ownerId: session.uid, bgmId, trackUpdatedAt: track.updated_at } : null
   c.header('Cache-Control', 'no-store')
   const dsn = process.env.PLAYER_SENTRY_DSN?.trim() ?? ''
   const monitor = {
@@ -408,7 +413,7 @@ player.get('/page', async (c) => {
     PLAY_PAGE
       .replace('__PLAYER_SOURCES__', serializePlayerSources(playerSourceOptions(args.src, args.id, args.ep, bgmId)))
       .replace('__MONITOR_CONFIG__', inlineJson(monitor))
-      .replace('__PAGE_ARGS__', inlineJson({ src: args.src, id: args.id, ep: args.ep, bgmId })),
+      .replace('__PAGE_ARGS__', inlineJson({ src: args.src, id: args.id, ep: args.ep, bgmId, ownerId: session.uid, watchContext })),
   )
   playerPageSecurity(c, page.nonce, { inlineStyles: true })
   c.header('Referrer-Policy', 'no-referrer')
