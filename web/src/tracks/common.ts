@@ -1,6 +1,8 @@
-// 追番页拆分后跨文件共用的小常量 / 纯函数。组件、样式语义都不在这儿。
+// 追番页拆分后跨文件共用的小常量与观看入口。组件、样式语义都不在这儿。
 import type { Track, TrackStatus } from '../api'
 import { toast } from '../Toast'
+import { auth } from '../auth'
+import { recentWatchEpisode } from '../../shared/watch-episode-history'
 
 export const SHORT_DAY: Record<number, string> = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' }
 
@@ -25,9 +27,14 @@ export function tagLimitToast(): void {
   toast(`这部番的自定义标签已经贴满 ${USER_TAG_MAX} 个啦，先撕掉一张再贴吧`, { err: true })
 }
 
-// 卡片上的计数就是当前要看的那一集:显示 N 就播 N,还没开始(0)则从第 1 集起。
-// 同时夹到总集数上限,避免异常同步数据生成不存在的集数链接。
-export function watchEp(t: Track): number {
+// 续看与手帐计数分开；手帐被编辑后旧续看失效，用户的新记录优先。
+export function watchEp(t: Track, useRecent = true): number {
+  if (useRecent && typeof window !== 'undefined') {
+    try {
+      const recent = recentWatchEpisode(window.localStorage, auth.user?.id ?? null, t)
+      if (recent != null) return recent
+    } catch { /* 浏览器禁用存储时仍按手帐打开 */ }
+  }
   const n = t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode) : t.episode
   return Math.max(1, n)
 }

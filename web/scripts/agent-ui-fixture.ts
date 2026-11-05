@@ -18,8 +18,15 @@ export async function createAgentUiFixture(){
   writeFileSync(join(directory,'data/calendar-cache.json'),JSON.stringify({at:Date.now(),data:Array.from({length:7},(_,index)=>({id:index+1,label:['星期一','星期二','星期三','星期四','星期五','星期六','星期日'][index],items:index<3?[{id:101+index,name:['葬送的芙莉莲','摇曳露营△','夏目友人帐'][index],name_cn:['葬送的芙莉莲','摇曳露营△','夏目友人帐'][index],url:'',cover:'',airDate:'2026-09-01',episodes:[28,12,13][index],score:0}]:[]}))}))
   for(const key of Object.keys(process.env))if(/^(SENTRY_|VITE_SENTRY_|SMTP_|AI_|GOOGLE_|MAPLETOOLS_ENV_FILE$|VERCEL$)/.test(key)||/^(?:https?_proxy|all_proxy|no_proxy)$/i.test(key))delete process.env[key]
   process.env.NODE_ENV='production';process.env.DATA_DIR=join(directory,'data');process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.EMAIL_MODE='disabled';process.env.AGENT_CONTEXT_AI_ENABLED='0'
-  const metrics={externalRequests:0,apiRequests:0,modelCalls:0,toolCalls:0,connections:0}
-  globalThis.fetch=async()=>{metrics.externalRequests++;throw new Error('EXTERNAL_REQUEST_BLOCKED')}
+  const metrics={externalRequests:0,apiRequests:0,modelCalls:0,toolCalls:0,connections:0,localSubjectReads:0}
+  globalThis.fetch=async input=>{
+    const url=typeof input==='string'?input:input instanceof URL?input.href:input.url
+    if(process.env.AGENT_UI_LIBRARY_CORPUS==='1'&&url==='https://api.bgm.tv/v0/subjects/900004'){
+      metrics.localSubjectReads++
+      return Response.json({name:'候补手帐四号',name_cn:'候补手帐四号',date:'2024-01-01',rating:{score:7},images:{large:'/assets/sagiri-avatar.webp'},total_episodes:12,tags:[{name:'本地合成资料'}],infobox:[]})
+    }
+    metrics.externalRequests++;throw new Error('EXTERNAL_REQUEST_BLOCKED')
+  }
   const {MockAgent,getGlobalDispatcher,setGlobalDispatcher}=await import('undici'),oldDispatcher=getGlobalDispatcher(),network=new MockAgent();network.disableNetConnect();setGlobalDispatcher(network)
   const {Hono}=await import('hono'),{serve}=await import('@hono/node-server'),{serveStatic}=await import('@hono/node-server/serve-static')
   const {db}=await import('../server/db'),{getSession,issueSession}=await import('../server/auth'),{sameOriginGuard,securityHeaders}=await import('../server/security')
@@ -72,6 +79,7 @@ export async function createAgentUiFixture(){
     yield{type:'output',value:{kind:'answer',text:built,sourceIds:['ui-tracks-source']}}
   }},tools:[{name:'listMyTracks',async execute(_args,actor){metrics.toolCalls++;if(actor.uid!==uid)throw new Error('OWNER_MISMATCH');return{ok:true,data:{items:[],revision:0},sources:[{sourceId:'ui-tracks-source',kind:'my_tracks',label:'测试手帐里的追番',retrievedAt:1}],resultCount:0,truncated:false}}}]}))
   const app=new Hono<{Variables:{agentUid:number}}>();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard())
+  if(process.env.AGENT_UI_WATCH==='1'){const {addWatchFixture}=await import('./watch-fixture-routes');addWatchFixture(app,directory,db)}
   const {createGuestApi}=await import('../server/agent/guest-api')
   const {guestDataTools}=await import('../server/agent/run-runtime')
   const guestKnowledge=()=>registry.guestSnapshot({enabled:true,permissionVersion:mode,features:AGENT_FEATURES.map(f=>f.id),tools:['readCachedCalendar','listPublicReviews','aggregatePublicData'],conditions:{answerModelReady:true}})

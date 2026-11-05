@@ -14,6 +14,7 @@ import { useAuth } from '../auth'
 import { loadBindings, saveBindingsCache } from '../tracksSync'
 import { watchEp } from './common'
 import { SourceBindPickerModal, SourceSearchModal, type PickerFlow, type SearchFlow } from './sourceModals'
+import { WATCH_EPISODES_KEY } from '../../shared/watch-episode-history'
 
 // 「继续看 / 试看」的共用流程：源绑定表、片源定位、候选 / 搜索弹窗。
 // 我的追番和番剧周历都走这一份，请求预算、绑定缓存和弹窗行为才不会出现两套。
@@ -43,6 +44,20 @@ export function useSourceWatch(onError: (message: string) => void): {
   useEffect(() => () => locateRequest.current?.abort(), [user?.id])
   const [pickerFlow, setPickerFlow] = useState<PickerFlow | null>(null)
   const [searchFlow, setSearchFlow] = useState<SearchFlow | null>(null)
+  const [, refreshEpisode] = useState(0)
+
+  useEffect(() => {
+    const refresh = (): void => refreshEpisode(value => value + 1)
+    const changed = (event: StorageEvent): void => { if (event.key === WATCH_EPISODES_KEY) refresh() }
+    window.addEventListener('storage', changed)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('pageshow', refresh)
+    return () => {
+      window.removeEventListener('storage', changed)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('pageshow', refresh)
+    }
+  }, [])
 
   useEffect(() => {
     if (!user) {

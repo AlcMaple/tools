@@ -1,5 +1,5 @@
 // 新播放页模板。视觉沿用「纱雾画稿」设计系统（web/public/styles/sketch-*.css），布局照旧页；
-// 播放器换成 ArtPlayer，页面脚本只做三件事：拿地址 → 喂给播放器 → 出错时把原因和「重试」摆出来。
+// 播放器使用 ArtPlayer，播放恢复与错误提示留在同一页，避免换集后重建另一套状态
 //
 // 从旧页带过来的、已验证的坑（详见 docs/design/播放页重写方案.md 第四节）：
 //   - CSP：不能写内联 style= 属性，状态切换只用 classList；脚本 / <style> 要 nonce；依赖全部自托管
@@ -22,6 +22,7 @@ export const PLAY_PAGE = `<!doctype html>
 <script src="/api/player/vendor/monitor.js"></script>
 <script src="/api/player/vendor/hls.js"></script>
 <script src="/api/player/vendor/artplayer.js"></script>
+<script src="/api/player/vendor/watch-history.js"></script>
 <link rel="stylesheet" href="/styles/sketch-tokens.css">
 <link rel="stylesheet" href="/styles/sketch-ui.css">
 <style nonce="__CSP_NONCE__">
@@ -145,7 +146,8 @@ ${PLAYBACK_BEACON}
   var goodEps = {}, goodNotes = {}
   var generation = 0
   var offlineAt = null, offlineTime = 0, offlineWasPlaying = false
-  var RESUME_KEY = 'player:resume:' + src + ':' + id + ':' + ep
+  // 旧键没有账号归属，留作回滚，不猜测它属于当前登录者
+  var RESUME_KEY = 'player:resume:user:' + ARGS.ownerId + ':' + src + ':' + id + ':' + ep
   // iOS 把后台标签页整个回收后浏览器会自己重载：进度和「当时在不在播」先记下，重载后从原地接着。
   function stashResume(){
     try {
@@ -614,7 +616,7 @@ ${PLAYBACK_BEACON}
       container: '#art',
       url: mediaUrl(pl),
       type: pl.kind === 'hls' ? 'm3u8' : 'mp4',
-      id: src + ':' + id + ':' + ep,
+      id: 'user:' + ARGS.ownerId + ':' + src + ':' + id + ':' + ep,
       autoplay: !!autoplay,
       playsInline: true,
       autoPlayback: !resumeAt,
@@ -672,6 +674,11 @@ ${PLAYBACK_BEACON}
     v.addEventListener('seeked', function(){ if (art === me){ seekPending = false; if (slow && slow.gen === generation) slow.hist = [] } })
     v.addEventListener('play', function(){ if (art === me) playedGen = generation })
     v.addEventListener('playing', function(){ if (art === me) firstGen = generation })
+    v.addEventListener('playing', function(){
+      if (art !== me || !ARGS.watchContext || !window.MapleWatchHistory) return
+      try { window.MapleWatchHistory.rememberWatchEpisode(window.localStorage, ARGS.watchContext, ep) }
+      catch (error) { slog('watch episode history not saved: ' + (error && (error.stack || error.message) || String(error))) }
+    })
     startTape(v)
     startStallWatch(v)
     agentWatch(v)
