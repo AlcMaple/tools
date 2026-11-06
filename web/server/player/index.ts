@@ -32,7 +32,7 @@ import { captureClientLog } from '../monitoring'
 import { sanitizeSentryUser } from '../../shared/sentry-user'
 import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources, type WebPlayerSource } from '../player-sources'
 import { serveStream } from '../xifan/stream'
-import { schedulePrefetch, serveFromDisk, warmDisk } from '../xifan/disk'
+import { serveFromDisk, warmDisk } from '../xifan/disk'
 import { canProxy } from '../xifan/proxy-hosts'
 import * as xifan from '../xifan/resolve'
 import * as girigiri from '../girigiri/resolve'
@@ -126,14 +126,6 @@ player.get('/playlist', async (c) => {
     if (playlist.first?.kind === 'mp4') {
       void layoutOf(playlist.first.url)
       if (canProxy(playlist.first.url)) warmDisk(playlist.first.url, new URL(playlist.first.url).pathname.slice(-40))
-    }
-    const next = args.ep + 1
-    if (args.src === 'xifan' && playlist.eps.includes(next)) {
-      const { id } = args
-      schedulePrefetch(session.uid, `xifan:${id}:${next}`, async () => {
-        const line = (await xifan.getPlaylist(id, next, session.uid)).first
-        return line?.kind === 'mp4' && canProxy(line.url) ? line.url : null
-      })
     }
     return c.json(playlist)
   } catch (error) {
