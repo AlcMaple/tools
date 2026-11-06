@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 660" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect x="1" y="1" width="1118" height="658" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">普通播放不再自动下载下一集</text>
+  <text x="32" y="63" font-size="12.5" fill="#756f73">打开第9集，不等于准备看第10集；当前集缓冲保留，主动开启的本机缓存也保留</text>
+  <rect x="32" y="90" width="512" height="316" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <rect x="576" y="90" width="512" height="316" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="52" y="118" font-size="14" font-weight="700" fill="#96434f">原来：页面一打开，下一集就被排上了</text>
+  <text x="596" y="118" font-size="14" font-weight="700" fill="#316247">现在：普通播放只准备当前这一集</text>
+  <rect x="52" y="138" width="472" height="56" rx="9" fill="#ffffff" stroke="#d99aa5"/>
+  <rect x="596" y="138" width="472" height="56" rx="9" fill="#ffffff" stroke="#7fad91"/>
+  <text x="68" y="161" font-size="12.5" font-weight="700" fill="#282529">用户看到：第9集与选集列表</text>
+  <text x="68" y="180" font-size="11" fill="#756f73">可能还没播放，也可能只想试试看</text>
+  <text x="612" y="161" font-size="12.5" font-weight="700" fill="#282529">用户看到：同一集、同一套播放控件</text>
+  <text x="612" y="180" font-size="11" fill="#756f73">没有新增说明、开关或确认步骤</text>
+  <path d="M288 198v24m-5-5 5 5 5-5M832 198v24m-5-5 5 5 5-5" fill="none" stroke="#756f73" stroke-width="1.5"/>
+  <rect x="52" y="230" width="472" height="68" rx="9" fill="#ffffff" stroke="#d99aa5"/>
+  <rect x="596" y="230" width="472" height="68" rx="9" fill="#ffffff" stroke="#7fad91"/>
+  <text x="68" y="253" font-size="12.5" font-weight="700" fill="#96434f">背后：延时开始准备下一集</text>
+  <text x="68" y="273" font-size="11" fill="#756f73">没有“已开始观看”或“仍留在页面”的前提</text>
+  <text x="612" y="253" font-size="12.5" font-weight="700" fill="#316247">背后：不登记隐式的下一集任务</text>
+  <text x="612" y="273" font-size="11" fill="#756f73">真正选择第10集时，照常获取它的播放地址</text>
+  <path d="M288 302v24m-5-5 5 5 5-5M832 302v24m-5-5 5 5 5-5" fill="none" stroke="#756f73" stroke-width="1.5"/>
+  <text x="68" y="351" font-size="12.5" font-weight="700" fill="#96434f">失败或离开后，也可能下载没看过的整集</text>
+  <text x="68" y="375" font-size="11" fill="#756f73">这与用户有没有开启本机缓存是两件事</text>
+  <text x="612" y="351" font-size="12.5" font-weight="700" fill="#316247">暂停、续播与手动换集的操作不变</text>
+  <text x="612" y="375" font-size="11" fill="#756f73">不以后台下载量冒充观看进度</text>
+  <text x="32" y="440" font-size="14" font-weight="700" fill="#282529">三种“准备”分开看，避免误改现有体验</text>
+  <rect x="32" y="458" width="332" height="124" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <rect x="394" y="458" width="332" height="124" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <rect x="756" y="458" width="332" height="124" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="48" y="486" font-size="12.5" font-weight="700" fill="#36566d">当前集缓冲：保留</text>
+  <text x="48" y="510" font-size="11" fill="#756f73">服务器仍会为当前集热身、边下边播</text>
+  <text x="48" y="531" font-size="11" fill="#756f73">本次不承诺关闭页面就终止所有当前集下载</text>
+  <text x="410" y="486" font-size="12.5" font-weight="700" fill="#36566d">本机缓存：原设置继续生效</text>
+  <text x="410" y="510" font-size="11" fill="#756f73">用户主动启用后，已有的下一集缓存仍在</text>
+  <text x="410" y="531" font-size="11" fill="#756f73">不清理用户已存好的番，也不自动改设置</text>
+  <text x="772" y="486" font-size="12.5" font-weight="700" fill="#7a6234">取舍：默认换集少一份预热</text>
+  <text x="772" y="510" font-size="11" fill="#756f73">下一集首次起播可能要重新等待</text>
+  <text x="772" y="531" font-size="11" fill="#756f73">实际等待差异未测，交由 Draft PR 审核</text>
+  <text x="32" y="616" font-size="11" fill="#756f73">常见路径：继续看同一集、暂停后再看、手动选下一集，界面都不增加一步</text>
+  <text x="32" y="638" font-size="11" fill="#756f73">本次只移除默认的服务器下一集预取，不把它说成整套后台下载生命周期已经修好</text>
+</svg>
