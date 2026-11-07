@@ -304,3 +304,82 @@
   .oj-grid:not(.solo) > .oj-mat, .oj-hist > .oj-rows { position: sticky; top: calc(var(--nav-h) + 16px); }
   .oj-rows-scroll { max-height: calc(100vh - var(--nav-h) - 64px); overflow-y: auto; }
 }
+
+/* ---------- 客户确认需求页 / 流程图 ---------- */
+.oj-scope { max-width: 1080px; margin: 0 auto; padding: 28px 16px 56px; display: grid; gap: 16px; }
+.oj-scope-head h1 { font-size: 30px; }
+.oj-scope-head p { margin-top: 6px; font-size: 14px; line-height: 1.7; color: var(--ink-sub); }
+.oj-scope-msg { display: flex; align-items: center; gap: 8px; padding: 22px; font-size: 14px; color: var(--ink); }
+.oj-scope-sec { padding: 18px 18px 20px; min-width: 0; }
+.oj-scope-sec h2 { font-size: 14.5px; font-weight: 600; color: var(--ink); margin-bottom: 12px; }
+.oj-scope-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; align-items: start; }
+@media (min-width: 861px) { .oj-scope-flow { position: sticky; top: 16px; } }
+@media (max-width: 860px) { .oj-scope-cols { grid-template-columns: minmax(0, 1fr); } }
+.oj-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.oj-plan { display: grid; gap: 4px; align-content: start; padding: 12px 14px; text-align: left; font: inherit; color: var(--ink); background: var(--card); border: 1.5px solid var(--line); border-radius: 8px; cursor: pointer; }
+.oj-plan.on { background: var(--teal-wash); border-color: var(--teal-line); }
+.oj-plan b { font-size: 13.5px; font-weight: 600; }
+.oj-plan em { margin-left: 6px; font-style: normal; font-weight: 400; font-size: 11px; color: var(--teal); }
+.oj-plan span { font-size: 12.5px; line-height: 1.6; color: var(--ink-sub); }
+.oj-plan span.fit { color: var(--teal); }
+.oj-stage { display: grid; gap: 2px; }
+.oj-stage + .oj-stage { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.oj-stage h3 { font-size: 12.5px; font-weight: 600; color: var(--ink-sub); margin-bottom: 4px; }
+.oj-pick { display: flex; gap: 10px; width: 100%; min-height: 40px; padding: 7px 4px; text-align: left; font: inherit; color: var(--ink); background: none; border: 0; cursor: pointer; }
+.oj-pick .box { flex: none; width: 18px; height: 18px; margin-top: 1px; display: grid; place-items: center; border: 1.5px solid var(--line-strong); border-radius: 4px; color: #fff; }
+.oj-pick.on .box { background: var(--teal-mid); border-color: var(--teal); }
+.oj-pick .box .ic { width: 12px; height: 12px; stroke-width: 2.6; }
+.oj-pick.lock { cursor: not-allowed; opacity: .55; }
+.oj-pick.lock .box { color: var(--ink-faint); border-style: dashed; }
+.oj-pick.lock .box .ic { stroke-width: 2; }
+.oj-pick .txt, .oj-custom .txt { display: grid; gap: 1px; min-width: 0; }
+.oj-pick b, .oj-custom b { font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+.oj-pick small, .oj-custom small { font-size: 12px; line-height: 1.55; color: var(--ink-faint); overflow-wrap: anywhere; }
+.oj-custom { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; }
+.oj-custom-form { display: grid; gap: 8px; margin-top: 4px; }
+.oj-custom-form .oj-qin { width: 100%; }
+.oj-custom-form .dd-host { width: 100%; }
+.oj-custom-form .btn { justify-self: start; }
+.oj-answer { display: grid; gap: 6px; margin-bottom: 12px; font-size: 13.5px; color: var(--ink); }
+.oj-answer h2 { margin-bottom: 0; }
+.oj-answer textarea { width: 100%; resize: vertical; line-height: 1.6; }
+.oj-scope-submit { position: relative; display: flex; padding-bottom: 20px; }
+.oj-scope-submit .oj-qnote { left: 0; right: auto; top: calc(100% - 16px); }
+@media (max-width: 860px) { .oj-scope-submit .btn { width: 100%; min-height: 46px; } }
+
+.oj-flow { position: relative; display: grid; gap: 36px; padding: 4px 0; }
+.oj-flow-lines { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.oj-flow-lines path { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.oj-flow-lines path.on { stroke: var(--teal-line); stroke-dasharray: none; }
+.oj-flow-lines path.bad { stroke: var(--sakura); stroke-dasharray: none; }
+.oj-flow-lines path.hi { stroke: var(--teal); stroke-width: 2.5; }
+.oj-flow-lines path.bad.hi { stroke: var(--sakura); }
+.oj-flow-lines path.dim { opacity: .25; }
+.oj-flow-layer { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 36px 10px; }
+.oj-flow-node { max-width: 100%; padding: 6px 12px; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink-faint); overflow-wrap: anywhere; background: var(--paper-2); border: 1.5px dashed var(--line); border-radius: 8px; }
+button.oj-flow-node { cursor: pointer; }
+.oj-flow-node.on { color: var(--ink); background: var(--teal-wash); border: 1.5px solid var(--teal-line); }
+.oj-flow-node.lock { opacity: .45; text-decoration: line-through; cursor: not-allowed; }
+.oj-flow-node.bad { background: var(--sakura-wash); border: 1.5px solid var(--sakura); }
+.oj-conflicts { display: grid; gap: 6px; margin-top: 14px; }
+.oj-conflicts li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; padding: 5px 10px; font-size: 12.5px; line-height: 1.5; color: var(--ink); background: var(--sakura-wash); border-radius: 6px; }
+.oj-conflicts .btn { flex: none; }
+
+/* 开发者侧 */
+.oj-scope-url { width: 100%; font-size: 12.5px; }
+.oj-scope-btns { margin-top: 8px; padding-bottom: 20px; flex-wrap: wrap; }
+.oj-devplans { display: grid; gap: 10px; }
+.oj-devplan { display: grid; gap: 4px; padding: 12px 14px; background: var(--paper-2); border: 1px solid var(--line); border-radius: 8px; }
+.oj-devplan b { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.oj-devplan em { margin-left: 6px; font-style: normal; font-weight: 400; font-size: 11px; color: var(--teal); }
+.oj-devplan span { font-size: 12.5px; line-height: 1.6; color: var(--ink-sub); }
+.oj-devplan small { font-size: 12px; line-height: 1.6; color: var(--ink-faint); }
+.oj-devplan .btn { justify-self: start; margin-top: 6px; }
+.oj-hero-price small { font-size: 14px; font-weight: 400; }
+.oj-qnote.left { left: 0; right: auto; }
+.oj-scope-warn { margin-bottom: 8px; font-size: 12.5px; color: var(--gold); }
+.oj-scope-sub { display: grid; gap: 10px; margin-top: 18px; }
+.oj-scope-sub > .btn { justify-self: start; }
+.oj-scope-subhead { font-size: 13px; font-weight: 600; color: var(--ink); }
+.oj-scope-note { font-size: 13px; line-height: 1.65; color: var(--ink-sub); overflow-wrap: anywhere; }
+.oj-plan-reason { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--ink-sub); }

@@ -6,6 +6,7 @@ import type { MarketStat } from './order-judge-sheet'
 import type { Brief, BriefChange } from './order-judge-brief'
 import type { QuoteState } from './order-judge-sheet'
 import type { Maintenance } from './order-judge-maintenance'
+import type { ScopeLink } from './order-judge-scope'
 
 export interface VersionFile { file: string; name: string; size: number }
 
@@ -29,6 +30,7 @@ export interface Project {
   updatedAt: number
   versions: Version[]
   maintenance: Maintenance
+  scope: ScopeLink | null
 }
 
 export interface JudgeState {

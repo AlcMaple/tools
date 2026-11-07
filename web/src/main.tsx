@@ -8,6 +8,7 @@ import { cleanupExpiredEpisodes } from './mediaCache'
 import './index.css'
 import { cachedSplashArt } from './splash-art'
 import { installIosKeyboardFocus } from './iosKeyboardFocus'
+import { ScopePage } from './orderJudge/ScopePage'
 
 installIosKeyboardFocus()
 
@@ -28,7 +29,11 @@ const monitoringReady: Promise<CaptureRecoverableError | undefined> = import.met
       })
   : Promise.resolve(undefined)
 
-void cachedSplashArt().then((splashArt) => {
+// 发给客户的确认页：不是这个站的用户，不启动 App、追番缓存和开屏
+const scopeToken = /^#\/scope\/([\w-]+)/.exec(window.location.hash)?.[1]
+
+if (scopeToken) createRoot(document.getElementById('root')!).render(<StrictMode><ScopePage token={scopeToken} /></StrictMode>)
+else void cachedSplashArt().then((splashArt) => {
   registerCoverCacheWorker()
   // 过期清理不挡首屏；神回要查追番数据，登录态这时候一般已经在了。
   setTimeout(() => {

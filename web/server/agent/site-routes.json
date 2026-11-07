@@ -662,6 +662,11 @@
   {
     "file": "server/index.ts",
     "method": "route",
+    "path": "/api/order-judge-scope"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
     "path": "/api/order-judge"
   },
   {
@@ -730,9 +735,24 @@
     "path": "/google/rebind-email"
   },
   {
+    "file": "server/order-judge-scope.ts",
+    "method": "get",
+    "path": "/:token"
+  },
+  {
+    "file": "server/order-judge-scope.ts",
+    "method": "put",
+    "path": "/:token"
+  },
+  {
     "file": "server/order-judge.ts",
     "method": "delete",
     "path": "/projects/:id"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "delete",
+    "path": "/projects/:id/scope"
   },
   {
     "file": "server/order-judge.ts",
@@ -763,6 +783,21 @@
     "file": "server/order-judge.ts",
     "method": "post",
     "path": "/projects"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/projects/:id/scope"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/projects/:id/scope/apply"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/projects/:id/scope/pick"
   },
   {
     "file": "server/order-judge.ts",

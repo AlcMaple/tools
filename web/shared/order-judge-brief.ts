@@ -38,7 +38,18 @@ export interface BriefItem {
   basis?: Basis
   // 小时是开发者拖滑块定的，不再乘历史校准系数；只在计算时带上，不落库
   manual?: boolean
+  // 给客户看流程图用：这条属于哪个阶段、要先有哪些条目。老清单没有
+  stage?: string
+  dependsOn?: string[]
 }
+
+export interface ScopePlan { id: string; name: string; summary: string; fit?: string; itemIds: string[]; blocks?: string[]; recommended?: boolean }
+
+export const ENGAGEMENTS = ['一次性', '长期'] as const
+export type EngagementMode = typeof ENGAGEMENTS[number]
+export interface Engagement { mode: EngagementMode; reason: string; monthHours: number; firstMonth: string[] }
+
+export interface BriefConfirmed { at: number; note: string; conflicts: string[]; answers: { q: string; a: string }[]; by?: 'developer' }
 
 // 这条的小时按哪个时间值算。从 0 到 1 的实现几乎不要钱，贵的是验证可行性和旧系统里要人亲自处理的部分，两者都是要动脑的硬判断，
 // 共用答题时「修别人写坏的项目」测出来的高价；确认和上线按普通时间值。老清单没有 basis，不算验证，价格不因升级而变
@@ -62,6 +73,9 @@ export interface Brief {
   items: BriefItem[]
   excluded: string[]
   questions: string[]
+  plans?: ScopePlan[]
+  engagement?: Engagement
+  confirmed?: BriefConfirmed
 }
 
 export type BriefChange =
@@ -108,11 +122,20 @@ const RULES = `你是个人接单开发者的需求整理助手。
 - budget、deadline：材料里客户说的预算、截止日期；材料里没有就留空，不猜
 - excluded：容易被客户默认包含、但这次不包含的东西（例如部署上线、论文正文、后续新功能、长期维护），每条一句话
 - questions：接下来要问客户的问题，每条不超过 40 字，按重要性排序。budget、deadline、outcome 材料里没有的，一定要问；每个 unclear 都要有对应的问题；客户前后说法矛盾的，也写成问题，不要自己挑一个版本
+- 客户不懂技术，title、detail、stage、plans 都写给客户看：说用户能做什么，不出现接口、数据库、前端、后端这类词
+- 补全实现路线：客户没提但走到某个功能必须先有的步骤（注册登录、后台录入数据、资料核对），也要列成条目，它们的优先级不低于依赖它们的条目；客户没提这件事写进 reason
+- ref：每条一个编号，沿用上一版的条目写它的 id，新条目写 n1、n2…
+- stage：这条属于哪个阶段，2～8 字，例如「账号」「浏览商品」「下单付款」「商家管理」，同类条目用同一个说法
+- dependsOn：用户或开发上必须先有哪些条目，写它们的 ref；只写直接前置，不写隔代的，没有就写空数组，不能成环
+- plans：客户说不清自己要什么，所以给他 2～3 个能想象出来的成品让他挑，像点奶茶，先挑最接近想要的那杯，再加减配料。方案是达到同一个结果的几条路，可以互斥（客户搭系统时只能定一次的选择，比如店开在有赞还是定制小程序，写进 blocks），也可以互补（主打方向不同，别的方案的条目还能加上）：达到同一个结果的不同做法、不同产品、不同部署方式或不同档位的路线（比如在有赞上开店、定制小程序、接手修好旧小程序；数据放客户自己的服务器还是云上托管）。绝对不能是「先做这个，再加那个，最后全做」的分期，也不能是同一批功能的大小档，那样三个方案可以叠加着全做，客户看不出区别。每个方案包含 name（8 字内，像产品名，写成品是什么，不写「基础版」「完整版」）、summary（做完是什么样：一个具体画面，用的人打开后看到什么、怎么用，两句以内）、fit（取舍：得到什么，放弃或要晚点才有什么，一句话）、itemIds（这条路包含哪些条目的 ref，前置条目也要带上）、blocks（和这条路冲突的条目 ref：只有客户搭系统时定一次、整套只能走一条的才算，比如推倒重写还是接手旧代码、用现成平台搭还是定制、库存以旧 ERP 为准还是新系统为准、部署在客户服务器还是云上；使用的人每次都能自己选的方式不算冲突，比如收款码和微信分账、一次付清和分期、接龙下单和购物车下单，都能同时做，一律不写进来；依赖它的下游条目会自动一起锁，不用重复写；几个方案能互相补充时写空数组）、recommended（只有一个 true，选材料里最贴近客户说法的那个）。每条路独有的条目要出现在 items 里，哪怕客户没提过，priority 写「可以」；通用底座（比如登录）可以共用，但独有条目要占大头。不要为了凑数硬造不同的路：如果这个需求本来只有一种合理做法，说明方向已经定了，plans 只给 1 个，itemIds 是你推荐做的那一套，客户会在它上面增删和补充；后续要分期做的事不放进 plans，写进 excluded 或 questions
+- engagement：判断合作方式。mode 默认「一次性」；需求要分多次和客户对接、要多方（工厂、供应商、其他部门）核对资料、要沉淀好几个月才能落地、范围现在无法定死的写「长期」。reason 一句话写依据；不管哪种 mode，monthHours 都写「如果按长期合作，每月人要投入的小时」，firstMonth 都写「如果按长期合作，第一个月交付什么」（通常是把需求和路线理清、验证最不确定的部分）
 - 所有文字用中文，句末不加句号，不要用破折号连接句子
 
 只输出 JSON：
 {"title":"一句话项目名","category":"","clientType":"商单|学生单|个人单","outcome":"","budget":"","deadline":"",
- "items":[{"id":"沿用上一版的 id，新条目写 null","title":"","detail":"","priority":"必须|应该|可以|不做","kind":"新做|接手改","basis":"直接做|确认|验证|接手|上线","hours":数字,"reason":"","unclear":""}],
+ "items":[{"id":"沿用上一版的 id，新条目写 null","ref":"","title":"","detail":"","stage":"","dependsOn":[""],"priority":"必须|应该|可以|不做","kind":"新做|接手改","basis":"直接做|确认|验证|接手|上线","hours":数字,"reason":"","unclear":""}],
+ "plans":[{"name":"","summary":"","fit":"","itemIds":[""],"blocks":[],"recommended":false}],
+ "engagement":{"mode":"一次性|长期","reason":"","monthHours":数字,"firstMonth":[""]},
  "excluded":[""],"questions":[""]}`
 
 const REVISE = `
@@ -144,6 +167,42 @@ const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim
 const list = (v: unknown, max: number): string[] => (Array.isArray(v) ? v.map(x => str(x, 200)).filter(Boolean).slice(0, max) : [])
 const pick = <T extends string>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? v as T : fallback)
 
+// 模型可能写出环，环上的那条依赖直接去掉，否则流程图没有起点
+function breakCycles(items: BriefItem[]): void {
+  const byId = new Map(items.map(i => [i.id, i]))
+  const done = new Set<string>(), path = new Set<string>()
+  const visit = (item: BriefItem): void => {
+    if (done.has(item.id)) return
+    path.add(item.id)
+    item.dependsOn = item.dependsOn?.filter(d => {
+      if (path.has(d)) return false
+      const dep = byId.get(d)
+      if (dep) visit(dep)
+      return !!dep
+    })
+    if (!item.dependsOn?.length) delete item.dependsOn
+    path.delete(item.id)
+    done.add(item.id)
+  }
+  items.forEach(visit)
+}
+
+function normalizeEngagement(v: unknown): { engagement?: Engagement } {
+  if (!v || typeof v !== 'object') return {}
+  const r = v as Record<string, unknown>
+  const hours = Number(r.monthHours)
+  return { engagement: { mode: pick(r.mode, ENGAGEMENTS, '一次性'), reason: str(r.reason, 200), monthHours: Number.isFinite(hours) ? Math.min(744, Math.max(0, Math.round(hours))) : 0, firstMonth: list(r.firstMonth, 8) } }
+}
+
+function normalizeConfirmed(v: unknown): { confirmed?: BriefConfirmed } {
+  if (!v || typeof v !== 'object') return {}
+  const r = v as Record<string, unknown>
+  return { confirmed: {
+    ...(r.by === 'developer' ? { by: 'developer' as const } : {}), at: Number(r.at) || 0, note: str(r.note, 500), conflicts: list(r.conflicts, 30),
+    answers: (Array.isArray(r.answers) ? r.answers : []).slice(0, 20).map(a => ({ q: str((a as { q?: unknown })?.q, 200), a: str((a as { a?: unknown })?.a, 300) })).filter(a => a.q && a.a),
+  } }
+}
+
 // 模型给的 id 只认上一版里真实存在、且这一版第一次出现的；其余一律当新增，按 r1、r2… 续号，不让模型造 id
 export function normalizeBrief(raw: unknown, previous: Brief | null, clientType?: ChoosableClientType): Brief {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
@@ -151,6 +210,9 @@ export function normalizeBrief(raw: unknown, previous: Brief | null, clientType?
   const used = new Set<string>()
   let next = Math.max(0, ...[...known].map(id => Number(id.slice(1)) || 0)) + 1
   const items: BriefItem[] = []
+  // 依赖和方案里写的是模型自己的 ref 或 id，统一换成最终 id
+  const refs = new Map<string, string>()
+  const rawDeps: unknown[] = []
   for (const x of Array.isArray(o.items) ? o.items.slice(0, MAX_ITEMS) : []) {
     const r = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
     const title = str(r.title, 120)
@@ -159,6 +221,9 @@ export function normalizeBrief(raw: unknown, previous: Brief | null, clientType?
     const claimed = typeof r.id === 'string' && known.has(r.id) && !used.has(r.id) ? r.id : null
     const id = claimed ?? `r${next++}`
     used.add(id)
+    for (const key of [r.ref, r.id]) if (typeof key === 'string' && key && !refs.has(key)) refs.set(key, id)
+    rawDeps.push(r.dependsOn)
+    const stage = str(r.stage, 12)
     const item: BriefItem = {
       id,
       title,
@@ -168,12 +233,29 @@ export function normalizeBrief(raw: unknown, previous: Brief | null, clientType?
       hours: Number.isFinite(hours) ? Math.min(MAX_ITEM_HOURS, Math.max(0, Math.round(hours * 2) / 2)) : 0,
       reason: str(r.reason, 300),
       unclear: str(r.unclear, 300),
+      ...(stage ? { stage } : {}),
     }
     // 模型写 0 小时却标了别的判断，或有小时却标直接做，都以小时为准
     const basis = BASES.includes(r.basis as Basis) ? r.basis as Basis : undefined
     items.push(basis ? { ...item, basis: basisOf({ ...item, basis: (basis === '直接做') === (item.hours <= 0) ? basis : undefined }) } : item)
   }
+  const toIds = (v: unknown): string[] => [...new Set((Array.isArray(v) ? v : []).map(x => (typeof x === 'string' ? refs.get(x) : undefined)).filter((x): x is string => !!x))]
+  items.forEach((item, i) => { const deps = toIds(rawDeps[i]).filter(d => d !== item.id); if (deps.length) item.dependsOn = deps })
+  breakCycles(items)
+  const plans = (Array.isArray(o.plans) ? o.plans.slice(0, 3) : []).map((x, i) => {
+    const r = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
+    return { id: `p${i + 1}`, name: str(r.name, 12), summary: str(r.summary, 120), fit: str(r.fit, 120), itemIds: toIds(r.itemIds), blocks: toIds(r.blocks), recommended: r.recommended === true }
+  }).filter(p => p.name && p.itemIds.length).map(({ blocks, ...p }) => {
+    // 方案自己包含的条目不可能和自己冲突，模型写错时以 itemIds 为准
+    const own = new Set(p.itemIds), b = blocks.filter(id => !own.has(id))
+    return b.length ? { ...p, blocks: b } : p
+  })
+  const firstPick = plans.findIndex(p => p.recommended)
+  plans.forEach((p, i) => { p.recommended = i === Math.max(0, firstPick) })
   return {
+    ...(plans.length ? { plans } : {}),
+    ...normalizeEngagement(o.engagement),
+    ...normalizeConfirmed(o.confirmed),
     title: str(o.title, 120),
     category: pick(o.category, CATEGORIES, '其他'),
     clientType: clientType ?? pick(o.clientType, CLIENT_TYPES, '待确认'),
