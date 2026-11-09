@@ -266,11 +266,12 @@ export function flowChannels(from: FlowRect, to: FlowRect, rects: FlowRect[]): n
 }
 
 // track 给每个来源在通道里一条自己的横线：同一来源的分叉一眼是一棵树，不同来源叠在一起就分不清谁连谁。nudge 同理，用在穿缝的竖线上
-export function flowRoute(from: FlowRect, to: FlowRect, rects: FlowRect[], width: number, track: (channel: number) => number = () => 0, nudge = 0): FlowPoint[] {
+// enter：同一个功能有几个前置时各占它顶边的一个入口，线不在同一点汇合，才看得出每根从哪来
+export function flowRoute(from: FlowRect, to: FlowRect, rects: FlowRect[], width: number, track: (channel: number) => number = () => 0, nudge = 0, enter = 0): FlowPoint[] {
   const rows = rowsOf(rects)
   const rowAt = (r: FlowRect): number => rows.findIndex(row => Math.abs(row[0].top - r.top) < 2)
   const a = rowAt(from), b = rowAt(to)
-  const x1 = (from.left + from.right) / 2, x2 = (to.left + to.right) / 2
+  const x1 = (from.left + from.right) / 2, x2 = (to.left + to.right) / 2 + enter
   const pts: FlowPoint[] = [{ x: x1, y: from.bottom }]
   let x = x1
   for (let r = a + 1; r <= b; r++) {
@@ -289,4 +290,61 @@ export function flowRoute(from: FlowRect, to: FlowRect, rects: FlowRect[], width
   }
   pts.push({ x: x2, y: to.top })
   return pts
+}
+
+export interface FlowSize { w: number; h: number }
+export interface FlowLayoutResult { pos: Map<string, FlowPoint>; width: number; height: number }
+
+// 每层按「想去的中心」排好后可能互相重叠：重叠的连成一块，整块挪到各自偏差平方和最小的位置（保序回归），不会把谁挤到很远
+function packRow(items: { id: string; w: number; want: number }[], gap: number): Map<string, number> {
+  const blocks: { ids: string[]; widths: number[]; sum: number; n: number; left: number; span: number }[] = []
+  for (const it of items) {
+    let b = { ids: [it.id], widths: [it.w], sum: it.want - it.w / 2, n: 1, left: it.want - it.w / 2, span: it.w }
+    for (let prev = blocks[blocks.length - 1]; prev && prev.left + prev.span + gap > b.left; prev = blocks[blocks.length - 1]) {
+      blocks.pop()
+      const shift = prev.span + gap
+      const sum = prev.sum + b.sum - shift * b.n, n = prev.n + b.n
+      b = { ids: [...prev.ids, ...b.ids], widths: [...prev.widths, ...b.widths], sum, n, left: sum / n, span: shift + b.span }
+    }
+    blocks.push(b)
+  }
+  const out = new Map<string, number>()
+  for (const b of blocks) {
+    let x = b.left
+    b.ids.forEach((id, i) => { out.set(id, x); x += b.widths[i] + gap })
+  }
+  return out
+}
+
+// 先由上往下让子节点落到上级正下方，再由下往上把上级挪到子节点中间；同层按想去的位置排序，交叉少
+export function flowLayout(layers: string[][], parentsOf: (id: string) => string[], size: (id: string) => FlowSize, gapX = 28, gapY: (row: number) => number = () => 52): FlowLayoutResult {
+  const left = new Map<string, number>()
+  const layerOf = new Map(layers.flatMap((l, i) => l.map(id => [id, i] as const)))
+  const center = (id: string): number => left.get(id)! + size(id).w / 2
+  const near = (id: string): string[] => {
+    const ps = parentsOf(id).filter(p => left.has(p))
+    const top = Math.max(-1, ...ps.map(p => layerOf.get(p) ?? -1))
+    return ps.filter(p => layerOf.get(p) === top)
+  }
+  const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length
+  const rows = layers.map(l => [...l])
+  rows.forEach(row => {
+    const want = new Map(row.map((id, i) => { const ps = near(id); return [id, ps.length ? mean(ps.map(center)) : i * 1e-3] as const }))
+    let cursor = -Infinity
+    row.sort((a, b) => want.get(a)! - want.get(b)!)
+    for (const id of row) if (!near(id).length) { want.set(id, Math.max(cursor, 0) + size(id).w / 2); cursor = want.get(id)! + size(id).w / 2 + gapX }
+    packRow(row.map(id => ({ id, w: size(id).w, want: want.get(id)! })), gapX).forEach((x, id) => left.set(id, x))
+  })
+  const childrenOf = (id: string): string[] => rows[(layerOf.get(id) ?? 0) + 1]?.filter(c => near(c).includes(id)) ?? []
+  for (let i = rows.length - 2; i >= 0; i--) {
+    packRow(rows[i].map(id => { const cs = childrenOf(id); return { id, w: size(id).w, want: cs.length ? mean(cs.map(center)) : center(id) } }), gapX).forEach((x, id) => left.set(id, x))
+  }
+  const minX = Math.min(0, ...[...left.values()])
+  const pos = new Map<string, FlowPoint>()
+  let y = 0, width = 0
+  rows.forEach((row, r) => {
+    for (const id of row) { pos.set(id, { x: left.get(id)! - minX, y }); width = Math.max(width, left.get(id)! - minX + size(id).w) }
+    y += Math.max(0, ...row.map(id => size(id).h)) + (r < rows.length - 1 ? gapY(r) : 0)
+  })
+  return { pos, width, height: y }
 }

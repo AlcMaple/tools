@@ -1,10 +1,10 @@
 // 功能拼接流程图：客户页可点击切换，开发者侧只读。连线要跟着节点真实位置走（换行、改字都会变），所以量 DOM 而不是算网格
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
-import { flowChannels, flowOrderedLayers, flowRoute, scopeConflicts, type FlowPoint, type FlowRect, type ScopeNode } from '../../shared/order-judge-scope'
+import { flowChannels, flowLayout, flowOrderedLayers, flowRoute, scopeConflicts, type FlowPoint, type FlowRect, type ScopeNode } from '../../shared/order-judge-scope'
 
 interface Edge { key: string; from: string; to: string; d: string; on: boolean; bad: boolean; sub: boolean }
 
-const MIN_K = 0.3, MAX_K = 2.5, MAX_H = 720
+const MIN_K = 0.3, MAX_K = 2.5, MAX_H = 720, TRACK = 10
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
 
 function roundedPath(raw: FlowPoint[]): string {
@@ -58,16 +58,26 @@ export function FlowPreview({ nodes: base0, picked, locked, onToggle, editable, 
   const byId = new Map(nodes.map(n => [n.id, n]))
   const layers = flowOrderedLayers(base0)
   const [hover, setHover] = useState<string | null>(null)
-  const bad = new Set(scopeConflicts(nodes, picked).map(c => c.id))
   const layerOf = new Map(layers.flatMap((l, i) => l.map(id => [id, i] as const)))
+  // 位置由上下级关系算出来（子节点在上级下方、上级在子节点中间），不再把每层排成居中的一行；宽高要先量出来
+  const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({})
+  // 每个来源在层间通道里占一条自己的横线，线多的通道相应拉高，不把几根横线挤成一团
+  const drawn = nodes.flatMap(n => (picked.has(n.id) ? n.dependsOn.filter(d => byId.has(d) && !implied(nodes, picked, d, n.id)).map(d => ({ d, id: n.id })) : []))
+  const passing = layers.map((_, r) => new Set(drawn.filter(l => (layerOf.get(l.d) ?? 0) <= r && (layerOf.get(l.id) ?? 0) > r).map(l => l.d)).size)
+  const layout = flowLayout(layers, id => byId.get(id)?.dependsOn ?? [], id => sizes[id] ?? { w: 120, h: 32 }, 28, r => 34 + Math.max(0, passing[r] - 1) * TRACK)
+  const layoutKey = [...layout.pos].map(([id, p]) => `${id}@${Math.round(p.x)},${Math.round(p.y)}`).join()
+  const bad = new Set(scopeConflicts(nodes, picked).map(c => c.id))
   // 每个功能只常驻一条线连到上一层最近的前置，形成一棵清楚的树；其余前置（跨层或多个来源）悬停相关功能时才画，编辑时全画
   const primaryOf = (n: ScopeNode): string | undefined => n.dependsOn.reduce<string | undefined>((best, d) => (best == null || (layerOf.get(d) ?? -1) > (layerOf.get(best) ?? -1) ? d : best), undefined)
-  const signature = nodesKey + [...picked].join() + JSON.stringify(offsets)
+  const signature = nodesKey + [...picked].join() + JSON.stringify(offsets) + layoutKey
 
   useLayoutEffect(() => {
     const el = box.current
     if (!el) return
     const measure = (): void => {
+      const got: Record<string, { w: number; h: number }> = {}
+      el.querySelectorAll<HTMLElement>('[data-node]').forEach(n => { got[n.dataset.node!] = { w: n.offsetWidth, h: n.offsetHeight } })
+      if (Object.keys(got).some(id => got[id].w !== sizes[id]?.w || got[id].h !== sizes[id]?.h)) { setSizes(got); return }
       const base = el.getBoundingClientRect()
       const k = viewRef.current.k
       const at = new Map<string, FlowRect>()
@@ -87,17 +97,17 @@ export function FlowPreview({ nodes: base0, picked, locked, onToggle, editable, 
       }
       const trackOf = (src: string) => (ch: number): number => {
         const list = (users.get(ch) ?? []).sort((p, q) => sources.indexOf(p) - sources.indexOf(q))
-        const step = Math.min(6, 22 / Math.max(list.length - 1, 1))
-        return (list.indexOf(src) - (list.length - 1) / 2) * step
+        return (list.indexOf(src) - (list.length - 1) / 2) * TRACK
       }
       for (const n of nodes) {
         const to = at.get(n.id)
-        if (!to) continue
-        for (const d of n.dependsOn) {
-          const from = at.get(d)
-          // 没选的功能不画线：选得少时满屏虚线盖住真正走得通的路线
-          if (!from || !picked.has(n.id) || implied(nodes, picked, d, n.id)) continue
-          next.push({ key: `${d}>${n.id}`, from: d, to: n.id, d: roundedPath(flowRoute(from, to, rects, el.offsetWidth, trackOf(d), (sources.indexOf(d) % 3 - 1) * 3)), on: picked.has(n.id) && picked.has(d), bad: picked.has(n.id) && !picked.has(d), sub: d !== primaryOf(n) })
+        if (!to || !picked.has(n.id)) continue
+        // 没选的功能不画线：选得少时满屏的线盖住真正走得通的路线
+        const ins = n.dependsOn.filter(d => at.has(d) && !implied(nodes, picked, d, n.id)).sort((p, q) => at.get(p)!.left - at.get(q)!.left)
+        const span = Math.min(14, (to.right - to.left - 24) / Math.max(ins.length - 1, 1))
+        for (const [i, d] of ins.entries()) {
+          const from = at.get(d)!
+          next.push({ key: `${d}>${n.id}`, from: d, to: n.id, d: roundedPath(flowRoute(from, to, rects, el.offsetWidth, trackOf(d), (sources.indexOf(d) % 3 - 1) * 3, (i - (ins.length - 1) / 2) * span)), on: picked.has(n.id) && picked.has(d), bad: picked.has(n.id) && !picked.has(d), sub: d !== primaryOf(n) })
         }
       }
       setEdges(next)
@@ -119,7 +129,8 @@ export function FlowPreview({ nodes: base0, picked, locked, onToggle, editable, 
     const vw = vp.clientWidth, W = Math.max(st.offsetWidth, st.scrollWidth), H = Math.max(st.offsetHeight, st.scrollHeight)
     if (!vw || !W || !H) return
     const k = clamp(Math.min(1, vw / W, MAX_H / H), MIN_K, 1)
-    setView(v => (Math.abs(v.k - k) < 0.001 ? v : { k, x: (vw - W * k) / 2, y: 0 }))
+    const x = (vw - W * k) / 2
+    setView(v => (Math.abs(v.k - k) < 0.001 && Math.abs(v.x - x) < 0.5 && v.y === 0 ? v : { k, x, y: 0 }))
   }
   const zoomAt = (px: number, py: number, f: number): void => {
     touched.current = true
@@ -197,27 +208,30 @@ export function FlowPreview({ nodes: base0, picked, locked, onToggle, editable, 
   return (
     <div ref={port} className={`oj-flow${editable ? ' edit' : ''}`} style={{ height }} onPointerDown={startPan} onDoubleClick={e => { if (!(e.target as HTMLElement).closest('[data-node],.oj-flow-tools')) { touched.current = false; fit() } }}>
       {editable && <div className="oj-flow-tools"><button type="button" className="btn btn-sm btn-ghost" disabled={!edited} onClick={() => { setOffsets({}); setAdded([]); setRemoved([]) }}>还原</button></div>}
-      <div ref={box} className="oj-flow-stage" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
+      <div ref={box} className="oj-flow-stage" style={{ width: layout.width, height: layout.height, transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }} onMouseOut={() => setHover(null)}>
       <svg className="oj-flow-lines" width={size.w} height={size.h} aria-hidden="true">
-        {edges.map(e => <path key={e.key} d={e.d} className={`${e.bad ? 'bad' : e.on ? 'on' : ''}${e.sub ? ' sub' : ''}${hover ? (e.from === hover || e.to === hover ? ' hi' : ' dim') : ''}`} />)}
+        <defs>
+          {['on', 'bad', 'hi'].map(t => <marker key={t} id={`oj-arrow-${t}`} className={t} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1.5 L9 5 L1 8.5 Z" /></marker>)}
+        </defs>
+        {edges.map(e => {
+          const hi = !!hover && (e.from === hover || e.to === hover)
+          return <path key={e.key} d={e.d} markerEnd={`url(#oj-arrow-${e.bad ? 'bad' : hi ? 'hi' : 'on'})`} className={`${e.bad ? 'bad' : 'on'}${e.sub ? ' sub' : ''}${hover ? (hi ? ' hi' : ' dim') : ''}`} />
+        })}
         {editable && edges.map(e => <path key={`${e.key}!`} d={e.d} className="hit" onClick={() => dropEdge(e.from, e.to)}><title>点一下删掉这条连线</title></path>)}
         {drawing && lineFrom(drawing.from) && <line className="draft" x1={lineFrom(drawing.from)!.x} y1={lineFrom(drawing.from)!.y} x2={drawing.x} y2={drawing.y} />}
       </svg>
-      {layers.map((layer, i) => (
-        <div key={i} className="oj-flow-layer" onMouseOut={() => setHover(null)}>
-          {layer.map(id => {
+      {layers.flat().map(id => {
             const n = byId.get(id)!
             const lock = !!locked?.has(id)
             const cls = `oj-flow-node${picked.has(id) ? ' on' : ''}${bad.has(id) ? ' bad' : ''}${lock ? ' lock' : ''}`
             const off = offsets[id]
-            const style = off ? { transform: `translate(${off.x}px, ${off.y}px)` } : undefined
+            const p = layout.pos.get(id)!
+            const style = { left: p.x, top: p.y, transform: off ? `translate(${off.x}px, ${off.y}px)` : undefined }
             const port = editable ? <i className="oj-flow-port" aria-label={`从${n.title}连线`} onPointerDown={startLink(id)} /> : null
             return onToggle && !lock
               ? <button key={id} type="button" data-node={id} className={cls} style={style} aria-pressed={picked.has(id)} onMouseOver={() => setHover(id)} onPointerDown={startDrag(id)} onClick={() => { if (!moved.current) onToggle(id); moved.current = false }}>{n.title}{port}</button>
               : <span key={id} data-node={id} className={cls} style={style} title={lock ? '和所选方案冲突' : undefined} onMouseOver={() => setHover(id)} onPointerDown={startDrag(id)}>{n.title}{port}</span>
-          })}
-        </div>
-      ))}
+      })}
       </div>
     </div>
   )

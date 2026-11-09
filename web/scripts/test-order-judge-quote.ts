@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { briefSystemPrompt, normalizeBrief, type Brief, type BriefItem } from '../shared/order-judge-brief'
 import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, parseDeadline, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
-import { inScoping, flowOrderedLayers, flowChannels, flowRoute, flowLayers, scopeConflicts, plansOf, blockedBy, normalizeSubmission, applySubmission, scopeView, needsEstimate, normalizeEstimate, submissionText } from '../shared/order-judge-scope'
+import { inScoping, flowOrderedLayers, flowChannels, flowRoute, flowLayers, flowLayout, scopeConflicts, plansOf, blockedBy, normalizeSubmission, applySubmission, scopeView, needsEstimate, normalizeEstimate, submissionText } from '../shared/order-judge-scope'
 import { longTermClientText, longTermFee, planOf } from '../shared/order-judge-maintenance'
 import { EMPTY_MAINTENANCE, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance } from '../shared/order-judge-maintenance'
 import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, calibrateByType, experienceLines, carryHourEdits, clientText, freeze, hourRows, hoursLabel, marketLine, marketStats, normalizeQuote, sampleOf, selfText, type QuoteState } from '../shared/order-judge-sheet'
@@ -472,6 +472,14 @@ pass('准确度：小时偏差和成交率')
   const seen = new Set<string>(); const dfs = (id: string, path: string[]): void => { assert(!path.includes(id), '不能有环'); seen.add(id); raw.items.find(i => i.id === id)?.dependsOn?.forEach(d => dfs(d, [...path, id])) }
   raw.items.forEach(i => dfs(i.id, []))
   pass('ref 映射成最终 id，未知依赖和自依赖丢弃，环被打断，推荐方案只留一个')
+  const tidy = normalizeBrief({ title: 'x', items: [
+    { ref: 'a', title: '环境', priority: '必须', hours: 1 },
+    { ref: 'b', title: '搜索', priority: '必须', hours: 1, dependsOn: ['a'] },
+    { ref: 'c', title: '浏览', priority: '必须', hours: 1, dependsOn: ['b', 'a'] },
+    { ref: 'd', title: '跑通', priority: '必须', hours: 1, dependsOn: ['c', 'b'] },
+  ] }, null).items
+  assert.deepEqual(tidy.map(i => i.dependsOn ?? []), [[], ['r1'], ['r2'], ['r3']])
+  pass('隔代前置去掉：已经能经别的前置走到的不再单写，流程图不多出跨层长线')
 
   const old = brief([item('r1', '必须', 0), item('r2', '应该', 1), item('r3', '可以', 1), item('r4', '不做', 1)])
   const plans = plansOf(old)
@@ -542,6 +550,19 @@ pass('准确度：小时偏差和成交率')
   const y1 = flowRoute(s1, t1, [s1, s2, t1, t2], 300, () => -3)[1].y, y2 = flowRoute(s2, t2, [s1, s2, t1, t2], 300, () => 3)[1].y
   assert.notEqual(y1, y2)
   pass('不同来源在通道里走不同的横线')
+
+  const deps: Record<string, string[]> = { root: [], a: ['root'], b: ['root'], a1: ['a'], a2: ['a'], a3: ['a'], b1: ['b'] }
+  const lay = flowLayout([['root'], ['b', 'a'], ['b1', 'a1', 'a2', 'a3']], id => deps[id], () => ({ w: 100, h: 30 }))
+  const cx = (id: string): number => lay.pos.get(id)!.x + 50
+  for (const row0 of [['a', 'b'], ['a1', 'a2', 'a3', 'b1']]) {
+    const row = [...row0].sort((p, q) => lay.pos.get(p)!.x - lay.pos.get(q)!.x)
+    for (let i = 1; i < row.length; i++) assert(lay.pos.get(row[i])!.x >= lay.pos.get(row[i - 1])!.x + 100, `${row[i - 1]} 与 ${row[i]} 重叠`)
+  }
+  assert((cx('a1') < cx('b1')) === (cx('a') < cx('b')), '子节点没跟着上级排')
+  assert(Math.abs(cx('a') - cx('a2')) < 1, '上级不在子节点中间')
+  assert(Math.abs(cx('b') - cx('b1')) < 1, '单个子节点不在上级正下方')
+  assert(Math.abs(cx('root') - (cx('a') + cx('b')) / 2) < 1, '根节点不在两个子节点中间')
+  pass('流程图按上下级排位：子节点在上级下方，上级在子节点中间，同层不重叠')
 
   const rough = longTermFee([], 'p', EMPTY_MAINTENANCE, 0, DEFAULT_QUOTE_SETTINGS, 30)
   assert.equal(rough.hours, 10); assert.equal(rough.fee, 10 * DEFAULT_QUOTE_SETTINGS.rates['新做'])
