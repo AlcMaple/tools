@@ -169,8 +169,8 @@ export function CatalogPage(): JSX.Element {
               <Select options={YEAR_OPTIONS} value={String(year)} onChange={(id) => setYear(Number(id))} placeholder="全部年份" />
             </div>
             <div className="seg" role="group" aria-label="排序">
-              <button type="button" className={sort === 'score' ? 'on' : ''} aria-pressed={sort === 'score'} disabled={!!q} onClick={() => setSort('score')}>评分</button>
-              <button type="button" className={sort === 'date' ? 'on' : ''} aria-pressed={sort === 'date'} disabled={!!q} onClick={() => setSort('date')}>最新</button>
+              <button type="button" className={sort === 'score' ? 'on' : ''} aria-pressed={sort === 'score'} onClick={() => setSort('score')}>评分</button>
+              <button type="button" className={sort === 'date' ? 'on' : ''} aria-pressed={sort === 'date'} onClick={() => setSort('date')}>最新</button>
             </div>
           </div>
         </div>

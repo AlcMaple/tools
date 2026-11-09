@@ -135,7 +135,7 @@ export function getCatalogItem(id: number): CatalogItem | null {
 // 线上一次切换要等几百毫秒到秒级。排序键、可见性和生效标签只在索引换新（句柄变了）或管理员改标签时才变，
 // 所以整表只读一次、两种排序预排好，请求里只做内存过滤，再按 id 取这一页 48 行
 interface SnapshotEntry { id: number; year: string; visible: boolean; tags: string[] }
-interface CatalogSnapshot { handle: object; overrides: number; byScore: SnapshotEntry[]; byDate: SnapshotEntry[] }
+interface CatalogSnapshot { handle: object; overrides: number; byScore: SnapshotEntry[]; byDate: SnapshotEntry[]; scoreRank: Map<number, number>; dateRank: Map<number, number> }
 let snapshot: CatalogSnapshot | null = null
 let overrideVersion = 0
 
@@ -153,7 +153,8 @@ function catalogSnapshot(h: NonNullable<ReturnType<typeof openOfflineIndex>>): C
   // 与原 SQL 排序逐键一致：评分 = 够人数优先、分高、有日期、日期新；最新 = 有日期、日期新、分高
   const byScore = [...keyed].sort((a, b) => b.enough - a.enough || b.score - a.score || cmp(a.date === '' ? 1 : 0, b.date === '' ? 1 : 0) || cmp(b.date, a.date)).map((k) => k.entry)
   const byDate = [...keyed].sort((a, b) => cmp(a.date === '' ? 1 : 0, b.date === '' ? 1 : 0) || cmp(b.date, a.date) || b.score - a.score).map((k) => k.entry)
-  snapshot = { handle: h, overrides: overrideVersion, byScore, byDate }
+  const rank = (list: SnapshotEntry[]): Map<number, number> => new Map(list.map((e, i) => [e.id, i]))
+  snapshot = { handle: h, overrides: overrideVersion, byScore, byDate, scoreRank: rank(byScore), dateRank: rank(byDate) }
   return snapshot
 }
 
@@ -174,6 +175,9 @@ export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; 
     const rows = searchAnime(opts.q, 120, opts.year, candidateIds)
       .map((hit) => one.get(hit.bgmId) as IndexRow | undefined)
       .filter((row): row is IndexRow => !!row)
+    // 搜索先按相关度截出前 120 条候选，再按用户选的排序重排，否则「最新」在搜索时没有效果
+    const order = opts.sort === 'date' ? snap.dateRank : snap.scoreRank
+    rows.sort((a, b) => (order.get(a.bgm_id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.bgm_id) ?? Number.MAX_SAFE_INTEGER))
     return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
   }
   const year = opts.year > 0 ? String(opts.year) : ''
