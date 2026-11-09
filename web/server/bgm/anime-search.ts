@@ -40,6 +40,7 @@ export function searchAnimeTable(
   query: string,
   limit = 30,
   year = 0,
+  candidateIds?: readonly number[],
 ): AnimeHit[] {
   const q = query.trim()
   if (!q) return []
@@ -67,11 +68,13 @@ export function searchAnimeTable(
   // 先收窄年份，避免其他年份占满候选上限后把目标条目挤掉
   if (year > 0) params.year = String(year)
   const yearFilter = year > 0 ? 'AND substr(date, 1, 4) = @year' : ''
+  if (candidateIds) params.candidateIds = JSON.stringify(candidateIds)
+  const candidateFilter = candidateIds ? 'AND bgm_id IN (SELECT value FROM json_each(@candidateIds))' : ''
 
   const rows = db
     .prepare(
       `SELECT bgm_id, name, name_cn, date, score FROM ${table}
-       WHERE (${gramConds.join(' OR ')}) ${yearFilter}
+       WHERE (${gramConds.join(' OR ')}) ${yearFilter} ${candidateFilter}
        ORDER BY
          (CASE WHEN name_cn = @exact OR name = @exact THEN 3
                WHEN name_cn LIKE @prefix ESCAPE '\\' OR name LIKE @prefix ESCAPE '\\' THEN 2

@@ -51,7 +51,8 @@
     "test:girigiri": "tsx scripts/test-girigiri-next.ts",
     "test:catalog-navigation:serve": "npm run build && node scripts/catalog-navigation-fixture.mjs",
     "test:auth-dialog-labels": "tsx scripts/test-auth-dialog-labels.ts",
-    "test:manual-add-mode": "npm run build && tsx scripts/test-manual-add-mode.ts"
+    "test:manual-add-mode": "npm run build && tsx scripts/test-manual-add-mode.ts",
+    "test:catalog-discovery": "npm run build && tsx scripts/test-catalog-discovery.ts"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.9",

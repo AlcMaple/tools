@@ -90,8 +90,10 @@ export function clearCatalogCover(bgmId: number): Promise<CatalogItem> {
   return catalogEdit(`${bgmId}/cover`, { method: 'DELETE' })
 }
 
-export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number }, signal?: AbortSignal): Promise<CatalogResult> {
+export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number; include?: string[]; exclude?: string[] }, signal?: AbortSignal): Promise<CatalogResult> {
   const query = new URLSearchParams({ q: params.q, year: String(params.year), sort: params.sort, offset: String(params.offset), limit: String(params.limit) })
+  if (params.include?.length) query.set('include', JSON.stringify(params.include))
+  if (params.exclude?.length) query.set('exclude', JSON.stringify(params.exclude))
   const res = await fetch(`/api/catalog?${query}`, { signal })
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }

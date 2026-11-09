@@ -131,27 +131,58 @@ export function getCatalogItem(id: number): CatalogItem | null {
   return row ? toItem(row, true) : null
 }
 
-export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean } {
+// 目录快照：3 万行每次请求都在 SQLite 里全表扫两遍（计数 + 排序取页）再在 JS 里按题材扫一遍，
+// 线上一次切换要等几百毫秒到秒级。排序键、可见性和生效标签只在索引换新（句柄变了）或管理员改标签时才变，
+// 所以整表只读一次、两种排序预排好，请求里只做内存过滤，再按 id 取这一页 48 行
+interface SnapshotEntry { id: number; year: string; visible: boolean; tags: string[] }
+interface CatalogSnapshot { handle: object; overrides: number; byScore: SnapshotEntry[]; byDate: SnapshotEntry[] }
+let snapshot: CatalogSnapshot | null = null
+let overrideVersion = 0
+
+const cmp = (a: string | number, b: string | number): number => (a < b ? -1 : a > b ? 1 : 0)
+
+function catalogSnapshot(h: NonNullable<ReturnType<typeof openOfflineIndex>>): CatalogSnapshot {
+  if (snapshot && snapshot.handle === h && snapshot.overrides === overrideVersion) return snapshot
+  const overrides = new Map((db.prepare('SELECT bgm_id, tags FROM catalog_override WHERE tags IS NOT NULL').all() as { bgm_id: number; tags: string }[]).map((row) => [row.bgm_id, row.tags]))
+  const enough = hasColumn('votes') ? `votes >= ${MIN_VOTES}` : '1'
+  const rows = h.prepare(`SELECT bgm_id, date, score, tags, (${visibleSql()}) AS visible, (${enough}) AS enough FROM anime ORDER BY bgm_id`).all() as { bgm_id: number; date: string; score: number; tags: string; visible: number; enough: number }[]
+  const keyed = rows.map((row) => ({
+    entry: { id: row.bgm_id, year: row.date.slice(0, 4), visible: !!row.visible, tags: parseTags(overrides.get(row.bgm_id) ?? row.tags, Number.MAX_SAFE_INTEGER) },
+    date: row.date, score: row.score, enough: row.enough,
+  }))
+  // 与原 SQL 排序逐键一致：评分 = 够人数优先、分高、有日期、日期新；最新 = 有日期、日期新、分高
+  const byScore = [...keyed].sort((a, b) => b.enough - a.enough || b.score - a.score || cmp(a.date === '' ? 1 : 0, b.date === '' ? 1 : 0) || cmp(b.date, a.date)).map((k) => k.entry)
+  const byDate = [...keyed].sort((a, b) => cmp(a.date === '' ? 1 : 0, b.date === '' ? 1 : 0) || cmp(b.date, a.date) || b.score - a.score).map((k) => k.entry)
+  snapshot = { handle: h, overrides: overrideVersion, byScore, byDate }
+  return snapshot
+}
+
+export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean; include?: string[]; exclude?: string[] }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean } {
   const h = openOfflineIndex()
   const covered = (countDone.get() as { n: number }).n
   if (!h || !hasAnimeTable()) return { ready: false, total: 0, items: [], covered, admin: opts.admin }
-  const visible = visibleSql()
+  const snap = catalogSnapshot(h)
   const cols = colsSql()
-  const shown = opts.adult ? '1' : visible
+  const include = opts.include ?? [], exclude = opts.exclude ?? []
+  const hasTags = include.length > 0 || exclude.length > 0
+  const tagMatch = (e: SnapshotEntry): boolean => include.every((tag) => e.tags.includes(tag)) && !exclude.some((tag) => e.tags.includes(tag))
   if (opts.q.trim()) {
+    const shown = opts.adult ? '1' : visibleSql()
+    // 题材要在搜索截断 120 条之前收窄，否则高分的不相干条目会把目标挤出候选
+    const candidateIds = hasTags ? snap.byScore.filter((e) => (opts.adult || e.visible) && tagMatch(e)).map((e) => e.id) : undefined
     const one = h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id = ? AND ${shown}`)
-    const rows = searchAnime(opts.q, 120, opts.year)
+    const rows = searchAnime(opts.q, 120, opts.year, candidateIds)
       .map((hit) => one.get(hit.bgmId) as IndexRow | undefined)
       .filter((row): row is IndexRow => !!row)
     return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
   }
-  const where = `WHERE ${shown}${opts.year > 0 ? ' AND substr(date, 1, 4) = ?' : ''}`
-  const params: unknown[] = opts.year > 0 ? [String(opts.year)] : []
-  // 没有放送日期的条目多是未定档 / 废弃企划，排到最后
-  const order = opts.sort === 'date' ? "(date = '') ASC, date DESC, score DESC" : scoreOrderSql()
-  const total = (h.prepare(`SELECT COUNT(*) AS n FROM anime ${where}`).get(...params) as { n: number }).n
-  const rows = h.prepare(`SELECT ${cols} FROM anime ${where} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...params, opts.limit, opts.offset) as IndexRow[]
-  return { ready: true, total, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
+  const year = opts.year > 0 ? String(opts.year) : ''
+  const matched = (opts.sort === 'date' ? snap.byDate : snap.byScore)
+    .filter((e) => (opts.adult || e.visible) && (!year || e.year === year) && (!hasTags || tagMatch(e)))
+  const ids = matched.slice(opts.offset, opts.offset + opts.limit).map((e) => e.id)
+  const byId = new Map((h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as IndexRow[]).map((r) => [r.bgm_id, r]))
+  const rows = ids.map((id) => byId.get(id)).filter((r): r is IndexRow => !!r)
+  return { ready: true, total: matched.length, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
 }
 
 // ── 管理员编辑 ───────────────────────────────────────────────────────────────
@@ -210,6 +241,7 @@ export function saveCatalogText(id: number, input: { nameCn: unknown; tags: unkn
     upsertText.run({ id, name_cn: nameCn, tags, now: Date.now() })
     dropEmpty.run(id)
   })()
+  overrideVersion++
 }
 
 export async function saveCatalogCover(id: number, file: File): Promise<void> {
