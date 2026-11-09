@@ -833,6 +833,7 @@ export function Poster({
   watch,
   meta,
   coverExtra,
+  details,
 }: {
   item: CalendarItem
   weekday: number
@@ -842,6 +843,7 @@ export function Poster({
   watch?: PosterWatch
   meta?: string
   coverExtra?: React.ReactNode
+  details?: React.ReactNode
 }): JSX.Element {
   const displayTitle = item.name_cn || item.name
   const on = tracked
@@ -886,6 +888,7 @@ export function Poster({
         {displayTitle}
       </div>
       <div className="poster-ep">{meta ?? (item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中')}</div>
+      {details}
       {watch && canTrack && (
         <div className="poster-watch">
           <ContinueWatchAction

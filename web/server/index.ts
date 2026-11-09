@@ -149,6 +149,17 @@ app.route('/api/player', player)
 // 全部番剧：只读离线索引和已补好的封面，浏览不会触发任何 BGM 请求
 app.get('/api/catalog', async (c) => {
   const session = await getSession(c)
+  const tags = (key: string): string[] | null => {
+    const raw = c.req.query(key)
+    if (!raw) return []
+    try {
+      const value: unknown = JSON.parse(raw)
+      if (!Array.isArray(value) || value.length > 5 || value.some(tag => typeof tag !== 'string' || !tag.trim() || tag.length > 20)) return null
+      return [...new Set((value as string[]).map(tag => tag.trim()))]
+    } catch { return null }
+  }
+  const include = tags('include'), exclude = tags('exclude')
+  if (!include || !exclude) return c.json({ error: '每组题材最多5个，每个1–20字' }, 400)
   const num = (key: string, fallback: number): number => {
     const value = Number(c.req.query(key))
     return Number.isSafeInteger(value) && value >= 0 ? value : fallback
@@ -162,6 +173,8 @@ app.get('/api/catalog', async (c) => {
     limit: Math.min(Math.max(num('limit', 48), 1), 96),
     adult: !!session,
     admin: !!session && isAdminUid(session.uid),
+    include,
+    exclude,
   }))
 })
 

@@ -131,22 +131,33 @@ export function getCatalogItem(id: number): CatalogItem | null {
   return row ? toItem(row, true) : null
 }
 
-export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean } {
+export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean; include?: string[]; exclude?: string[] }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean } {
   const h = openOfflineIndex()
   const covered = (countDone.get() as { n: number }).n
   if (!h || !hasAnimeTable()) return { ready: false, total: 0, items: [], covered, admin: opts.admin }
   const visible = visibleSql()
   const cols = colsSql()
   const shown = opts.adult ? '1' : visible
+  let candidateIds: number[] | undefined
+  if (opts.include?.length || opts.exclude?.length) {
+    // 覆盖表和只读索引不在同一库；先合并有效题材，再做搜索截断和分页，不能只筛当前48张卡
+    const overrides = new Map((db.prepare('SELECT bgm_id, tags FROM catalog_override WHERE tags IS NOT NULL').all() as { bgm_id: number; tags: string }[]).map(row => [row.bgm_id, row.tags]))
+    candidateIds = []
+    for (const row of h.prepare(`SELECT bgm_id, tags FROM anime WHERE ${shown}`).iterate() as Iterable<{ bgm_id: number; tags: string }>) {
+      const tags = parseTags(overrides.get(row.bgm_id) ?? row.tags, Number.MAX_SAFE_INTEGER)
+      if ((opts.include ?? []).every(tag => tags.includes(tag)) && !(opts.exclude ?? []).some(tag => tags.includes(tag))) candidateIds.push(row.bgm_id)
+    }
+  }
   if (opts.q.trim()) {
     const one = h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id = ? AND ${shown}`)
-    const rows = searchAnime(opts.q, 120, opts.year)
+    const rows = searchAnime(opts.q, 120, opts.year, candidateIds)
       .map((hit) => one.get(hit.bgmId) as IndexRow | undefined)
       .filter((row): row is IndexRow => !!row)
     return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
   }
-  const where = `WHERE ${shown}${opts.year > 0 ? ' AND substr(date, 1, 4) = ?' : ''}`
+  const where = `WHERE ${shown}${opts.year > 0 ? ' AND substr(date, 1, 4) = ?' : ''}${candidateIds ? ' AND bgm_id IN (SELECT value FROM json_each(?))' : ''}`
   const params: unknown[] = opts.year > 0 ? [String(opts.year)] : []
+  if (candidateIds) params.push(JSON.stringify(candidateIds))
   // 没有放送日期的条目多是未定档 / 废弃企划，排到最后
   const order = opts.sort === 'date' ? "(date = '') ASC, date DESC, score DESC" : scoreOrderSql()
   const total = (h.prepare(`SELECT COUNT(*) AS n FROM anime ${where}`).get(...params) as { n: number }).n

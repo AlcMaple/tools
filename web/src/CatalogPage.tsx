@@ -9,12 +9,13 @@ import { Select } from './Select'
 import { Ic, Spinner } from './SketchIcon'
 import { useSourceWatch } from './tracks/useSourceWatch'
 import { useTrackToggle } from './useTrackToggle'
+import { CatalogDiscovery, type DiscoveryFilters } from './CatalogDiscovery'
 
 const PAGE = 48
 type Sort = 'score' | 'date'
 
 // 只记住本次打开网站时的筛选，不缓存列表，账号变化后仍重新读取可见条目
-let lastView: { query: string; year: number; sort: Sort } = { query: '', year: 0, sort: 'score' }
+let lastView: { query: string; year: number; sort: Sort; discovery: DiscoveryFilters } = { query: '', year: 0, sort: 'score', discovery: { include: [], exclude: [] } }
 
 const thisYear = new Date().getFullYear()
 const YEAR_OPTIONS = [
@@ -37,6 +38,7 @@ export function CatalogPage(): JSX.Element {
   const [q, setQ] = useState(lastView.query.trim())
   const [year, setYear] = useState(lastView.year)
   const [sort, setSort] = useState<Sort>(lastView.sort)
+  const [discovery, setDiscovery] = useState(lastView.discovery)
   const [admin, setAdmin] = useState(false)
   const [editing, setEditing] = useState<CatalogItem | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
@@ -58,8 +60,8 @@ export function CatalogPage(): JSX.Element {
   }
 
   useEffect(() => {
-    lastView = { query, year, sort }
-  }, [query, year, sort])
+    lastView = { query, year, sort, discovery }
+  }, [query, year, sort, discovery])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQ(query.trim()), 300)
@@ -73,7 +75,8 @@ export function CatalogPage(): JSX.Element {
     const gen = offset === 0 ? ++generation.current : generation.current
     setLoading(true)
     setError(null)
-    fetchCatalog({ q, year, sort, offset, limit: PAGE }, ctl.signal)
+    if (offset === 0) setItems([])
+    fetchCatalog({ q, year, sort, offset, limit: PAGE, ...discovery }, ctl.signal)
       .then((r) => {
         if (gen !== generation.current) return
         setReady(r.ready)
@@ -92,7 +95,7 @@ export function CatalogPage(): JSX.Element {
   useEffect(() => {
     load(0)
     return () => controller.current?.abort()
-  }, [q, year, sort])
+  }, [q, year, sort, discovery])
 
   const hasMore = items.length < total
   useEffect(() => {
@@ -151,12 +154,14 @@ export function CatalogPage(): JSX.Element {
         )}
       </header>
 
+      <CatalogDiscovery value={discovery} onApply={setDiscovery} />
       {sourceWatch.modals}
       {editing && (
         <CatalogEditDialog
           item={editing}
           onSaved={(next) => {
-            setItems((prev) => prev.map((i) => (i.bgmId === next.bgmId ? next : i)))
+            if (discovery.include.length || discovery.exclude.length) load(0)
+            else setItems((prev) => prev.map((i) => (i.bgmId === next.bgmId ? next : i)))
             setEditing(next)
           }}
           onClose={() => setEditing(null)}
@@ -172,7 +177,7 @@ export function CatalogPage(): JSX.Element {
       ) : items.length === 0 && loading ? (
         <div className="page-state"><Spinner size={36} /><p className="faint small">纱雾正在翻目录…</p></div>
       ) : items.length === 0 && !error ? (
-        <div className="page-state"><p className="faint small">{q ? (year > 0 ? `没有找到 ${year} 年的「${q}」` : `没有找到「${q}」，换个名字试试`) : '这一年没有收录的番'}</p></div>
+        <div className="page-state"><p className="faint small">{discovery.include.length || discovery.exclude.length ? '没有符合这些条件的番，试着减少题材或清空题材筛选' : q ? (year > 0 ? `没有找到 ${year} 年的「${q}」` : `没有找到「${q}」，换个名字试试`) : '这一年没有收录的番'}</p></div>
       ) : (
         <div className="film is-vertical catalog-grid">
           {items.map((item) => (
@@ -185,6 +190,7 @@ export function CatalogPage(): JSX.Element {
               onToggle={(i, w) => track.toggle(i, w, 'plan')}
               watch={posterWatch}
               meta={metaOf(item)}
+              details={item.tags.length > 0 ? <div className="catalog-tags">{[...new Set(item.tags)].map(tag => <span key={tag}>{tag}</span>)}</div> : undefined}
               coverExtra={admin && (
                 <button type="button" className="catalog-edit-btn" onClick={() => setEditing(item)} aria-label="编辑卡片" title="编辑卡片">
                   <Ic name="pencil" cls="ic ic-sm" />

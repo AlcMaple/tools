@@ -55,11 +55,11 @@ export function openOfflineIndex(): DB | null {
  * 搜索动漫 —— 二元组命中，排序：精确 > 前缀 > 整串子串 > 部分命中，同档按「命中片段数」再按 BGM 评分。
  * 约 3 万条动画、字段都短串，全表扫几毫秒，不必上 FTS（真慢了再换 trigram / 预存二元组）。
  */
-export function searchAnime(query: string, limit = 30, year = 0): AnimeHit[] {
+export function searchAnime(query: string, limit = 30, year = 0, candidateIds?: readonly number[]): AnimeHit[] {
   if (!query.trim()) return []
   const h = openOfflineIndex()
   if (!h) return []
-  return searchAnimeTable(h, 'anime', query, limit, year)
+  return searchAnimeTable(h, 'anime', query, limit, year, candidateIds)
 }
 
 // `eps` 列是后加的，而线上索引由 cron 每周重建 —— 代码先上线、cron 还没跑那段时间里索引是**旧结构**，
