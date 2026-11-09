@@ -13,6 +13,9 @@
   },
   "scripts": {
     "test:order-judge-archives": "tsx scripts/test-order-judge-archives.ts",
+    "test:watch-entry": "npm run build:agent-release && tsx scripts/test-watch-entry.ts",
+    "test:watch-ui:serve": "npm run build && tsx scripts/watch-ui-fixture.ts",
+    "test:watch-login": "npm run build && tsx scripts/test-watch-login.ts",
     "test:order-judge-quote": "tsx scripts/test-order-judge-quote.ts",
     "test:order-judge-ui": "npm run build && tsx scripts/test-order-judge-ui.ts",
     "test:order-judge-ui:serve": "npm run build && tsx scripts/order-judge-ui-fixture.ts",
