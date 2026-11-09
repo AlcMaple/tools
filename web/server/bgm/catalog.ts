@@ -135,7 +135,51 @@ export function getCatalogItem(id: number): CatalogItem | null {
 // 线上一次切换要等几百毫秒到秒级。排序键、可见性和生效标签只在索引换新（句柄变了）或管理员改标签时才变，
 // 所以整表只读一次、两种排序预排好，请求里只做内存过滤，再按 id 取这一页 48 行
 interface SnapshotEntry { id: number; year: string; visible: boolean; tags: string[] }
-interface CatalogSnapshot { handle: object; overrides: number; byScore: SnapshotEntry[]; byDate: SnapshotEntry[]; scoreRank: Map<number, number>; dateRank: Map<number, number> }
+interface CatalogSnapshot { handle: object; overrides: number; byScore: SnapshotEntry[]; byDate: SnapshotEntry[]; scoreRank: Map<number, number>; dateRank: Map<number, number>; genres: { guest: TagCount[]; adult: TagCount[] } }
+
+// 快捷题材：收录部数够门槛的标签才露出来，按部数从多到少。频次最高的有一大半是 TV / 短片 / 年份 / 制作公司这类形式标签，
+// 不是题材，所以由管理员逐个决定显示还是隐藏；纯年份标签默认隐藏，其余默认显示，管理员改过的以表里为准。
+// 口径：2026-11-02 本地索引访客可见约 2.9 万部，共 17161 个标签；≥500 部 59 个、≥200 部 111 个、≥100 部 202 个、≥50 部 392 个。
+// 取 100：中等题材（悬疑 248、魔法少女 216、推理 177、武侠 155）都进得来，管理员一次要审的约 200 个还审得完
+export const GENRE_MIN_COUNT = 100
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS catalog_genre (
+    tag     TEXT PRIMARY KEY,
+    visible INTEGER NOT NULL CHECK (visible IN (0, 1))
+  );
+`)
+let genreRules: Map<string, boolean> | null = null
+function genreVisible(tag: string): boolean {
+  genreRules ??= new Map((db.prepare('SELECT tag, visible FROM catalog_genre').all() as { tag: string; visible: number }[]).map((r) => [r.tag, !!r.visible]))
+  return genreRules.get(tag) ?? !/^\d{4}$/.test(tag)
+}
+
+type TagCount = [tag: string, count: number]
+function tagCounts(entries: SnapshotEntry[]): TagCount[] {
+  const counts = new Map<string, number>()
+  for (const e of entries) for (const tag of new Set(e.tags)) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+  return [...counts].filter(([, n]) => n >= GENRE_MIN_COUNT).sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))
+}
+
+export interface GenreRow { tag: string; count: number; visible: boolean }
+
+// 管理员看的是全部条目（含只给登录用户的）的计数，与他自己在目录里看到的一致
+export function listGenresForAdmin(): GenreRow[] {
+  const h = openOfflineIndex()
+  if (!h || !hasAnimeTable()) return []
+  return catalogSnapshot(h).genres.adult.map(([tag, count]) => ({ tag, count, visible: genreVisible(tag) }))
+}
+
+export function saveGenreVisibility(input: unknown): void {
+  if (!Array.isArray(input) || input.length > 1000) throw new CatalogEditError('题材列表格式不对')
+  const rows = input.map((r: unknown) => r as { tag?: unknown; visible?: unknown })
+  if (rows.some((r) => typeof r.tag !== 'string' || !r.tag.trim() || r.tag.length > 40 || typeof r.visible !== 'boolean')) throw new CatalogEditError('题材列表格式不对')
+  const upsert = db.prepare('INSERT INTO catalog_genre (tag, visible) VALUES (?, ?) ON CONFLICT(tag) DO UPDATE SET visible = excluded.visible')
+  db.transaction(() => { for (const r of rows) upsert.run(r.tag as string, r.visible ? 1 : 0) })()
+  genreRules = null
+}
+
 let snapshot: CatalogSnapshot | null = null
 let overrideVersion = 0
 
@@ -154,15 +198,16 @@ function catalogSnapshot(h: NonNullable<ReturnType<typeof openOfflineIndex>>): C
   const byScore = [...keyed].sort((a, b) => b.enough - a.enough || b.score - a.score || cmp(a.date === '' ? 1 : 0, b.date === '' ? 1 : 0) || cmp(b.date, a.date)).map((k) => k.entry)
   const byDate = [...keyed].sort((a, b) => cmp(a.date === '' ? 1 : 0, b.date === '' ? 1 : 0) || cmp(b.date, a.date) || b.score - a.score).map((k) => k.entry)
   const rank = (list: SnapshotEntry[]): Map<number, number> => new Map(list.map((e, i) => [e.id, i]))
-  snapshot = { handle: h, overrides: overrideVersion, byScore, byDate, scoreRank: rank(byScore), dateRank: rank(byDate) }
+  snapshot = { handle: h, overrides: overrideVersion, byScore, byDate, scoreRank: rank(byScore), dateRank: rank(byDate), genres: { guest: tagCounts(byScore.filter((e) => e.visible)), adult: tagCounts(byScore) } }
   return snapshot
 }
 
-export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean; include?: string[]; exclude?: string[] }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean } {
+export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean; include?: string[]; exclude?: string[] }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[] } {
   const h = openOfflineIndex()
   const covered = (countDone.get() as { n: number }).n
-  if (!h || !hasAnimeTable()) return { ready: false, total: 0, items: [], covered, admin: opts.admin }
+  if (!h || !hasAnimeTable()) return { ready: false, total: 0, items: [], covered, admin: opts.admin, genres: [] }
   const snap = catalogSnapshot(h)
+  const genres = (opts.adult ? snap.genres.adult : snap.genres.guest).map(([tag]) => tag).filter(genreVisible)
   const cols = colsSql()
   const include = opts.include ?? [], exclude = opts.exclude ?? []
   const hasTags = include.length > 0 || exclude.length > 0
@@ -178,7 +223,7 @@ export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; 
     // 搜索先按相关度截出前 120 条候选，再按用户选的排序重排，否则「最新」在搜索时没有效果
     const order = opts.sort === 'date' ? snap.dateRank : snap.scoreRank
     rows.sort((a, b) => (order.get(a.bgm_id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.bgm_id) ?? Number.MAX_SAFE_INTEGER))
-    return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
+    return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres }
   }
   const year = opts.year > 0 ? String(opts.year) : ''
   const matched = (opts.sort === 'date' ? snap.byDate : snap.byScore)
@@ -186,7 +231,7 @@ export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; 
   const ids = matched.slice(opts.offset, opts.offset + opts.limit).map((e) => e.id)
   const byId = new Map((h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as IndexRow[]).map((r) => [r.bgm_id, r]))
   const rows = ids.map((id) => byId.get(id)).filter((r): r is IndexRow => !!r)
-  return { ready: true, total: matched.length, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
+  return { ready: true, total: matched.length, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres }
 }
 
 // ── 管理员编辑 ───────────────────────────────────────────────────────────────

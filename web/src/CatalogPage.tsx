@@ -20,7 +20,7 @@ let lastView: { query: string; year: number; sort: Sort; discovery: DiscoveryFil
 
 // 切回看过的条件（比如 2027 年 → 全部年份）先把上次的列表原样摆出来，同时照常重新请求覆盖；
 // 键里带账号，退出登录后不会把只给登录用户看的条目摆给访客
-interface CachedView { items: CatalogItem[]; total: number; ready: boolean; admin: boolean }
+interface CachedView { items: CatalogItem[]; total: number; ready: boolean; admin: boolean; genres: string[] }
 const viewCache = new Map<string, CachedView>()
 const VIEW_CACHE_MAX = 12
 
@@ -47,6 +47,7 @@ export function CatalogPage(): JSX.Element {
   const [sort, setSort] = useState<Sort>(lastView.sort)
   const [discovery, setDiscovery] = useState(lastView.discovery)
   const [stale, setStale] = useState(false)
+  const [genres, setGenres] = useState<string[]>([])
   const { user } = useAuth()
   const viewKey = JSON.stringify([user?.id ?? 0, q, year, sort, discovery])
   const [admin, setAdmin] = useState(false)
@@ -90,6 +91,7 @@ export function CatalogPage(): JSX.Element {
       if (cached) {
         setReady(cached.ready)
         setAdmin(cached.admin)
+        setGenres(cached.genres)
         setTotal(cached.total)
         setItems(cached.items)
       }
@@ -102,11 +104,12 @@ export function CatalogPage(): JSX.Element {
         setStale(false)
         setReady(r.ready)
         setAdmin(r.admin)
+        setGenres(r.genres)
         setTotal(r.total)
         setItems((prev) => {
           const next = offset === 0 ? r.items : [...prev, ...r.items]
           viewCache.delete(key)
-          viewCache.set(key, { items: next, total: r.total, ready: r.ready, admin: r.admin })
+          viewCache.set(key, { items: next, total: r.total, ready: r.ready, admin: r.admin, genres: r.genres })
           if (viewCache.size > VIEW_CACHE_MAX) viewCache.delete(viewCache.keys().next().value as string)
           return next
         })
@@ -181,7 +184,7 @@ export function CatalogPage(): JSX.Element {
         )}
       </header>
 
-      <CatalogDiscovery value={discovery} onApply={setDiscovery} />
+      <CatalogDiscovery value={discovery} genres={genres} admin={admin} onApply={setDiscovery} onGenresSaved={() => { viewCache.clear(); load(0) }} />
       {sourceWatch.modals}
       {editing && (
         <CatalogEditDialog

@@ -15,7 +15,7 @@ for (const [id, name, tags, nsfw] of [
   [8202, '恋爱日常', ['日常', '喜剧', '恋爱'], 0],
   [8203, '旅途里的日常', ['日常'], 0],
   [8204, '校园日常', ['日常系', '喜剧'], 0],
-  [8205, '受限日常', ['日常', '喜剧'], 1],
+  [8205, '受限日常', ['日常', '喜剧', '悬疑'], 1],
   [8206, '改过题材的日常', ['日常', '喜剧'], 0],
 ] as const) add.run(id, name, name, '[]', '2023-01-01', 8, JSON.stringify(tags), nsfw, 12, 100)
 fixture.db.prepare('INSERT INTO catalog_override(bgm_id,tags,updated_at) VALUES(?,?,?)').run(8206, JSON.stringify(['科幻']), Date.now())
@@ -67,6 +67,31 @@ if (process.argv.includes('--serve')) {
       for (let n = 0; n < 30000; n++) fill.run(20000 + n, 'fixture-' + n, 'fixture-' + n, '[]', '2024-01-01', 7, n % 2 ? '["日常","喜剧"]' : '["恋爱"]', 0, 12, 100)
     })()
     large.close()
+    const genreRows = new Database(join(process.cwd(), 'data/bgm_index.db'))
+    const genreInsert = genreRows.prepare('INSERT INTO anime VALUES (?,?,?,?,?,?,?,?,?,?)')
+    genreRows.transaction(() => {
+      for (let n = 0; n < 120; n++) genreInsert.run(60000 + n, 'genre-' + n, 'genre-' + n, '[]', '2024-01-01', 6, '["2024","悬疑"]', 0, 12, 100)
+      for (let n = 0; n < 120; n++) genreInsert.run(61000 + n, 'limited-' + n, 'limited-' + n, '[]', '2024-01-01', 6, '["限定题材"]', 1, 12, 100)
+      for (let n = 0; n < 99; n++) genreInsert.run(62000 + n, 'rare-' + n, 'rare-' + n, '[]', '2024-01-01', 6, '["冷门题材"]', 0, 12, 100)
+    })()
+    genreRows.close()
+    const genresOf = async (): Promise<string[]> => ((await request({})).data as unknown as { genres: string[] }).genres
+    assert.deepEqual(await genresOf(), ['恋爱', '喜剧', '日常', '悬疑'], 'GENRES_THRESHOLD_VISIBLE_COUNT_AND_YEAR_DEFAULT')
+    const { saveGenreVisibility, listGenresForAdmin } = await import('../server/bgm/catalog')
+    saveGenreVisibility([{ tag: '悬疑', visible: false }, { tag: '2024', visible: true }])
+    assert.deepEqual(await genresOf(), ['恋爱', '喜剧', '日常', '2024'], 'ADMIN_GENRE_VISIBILITY_MUST_APPLY')
+    const adminRows = listGenresForAdmin()
+    assert.deepEqual(adminRows.map(r => r.count), [...adminRows.map(r => r.count)].sort((a, b) => b - a), 'ADMIN_GENRES_SORTED_DESC')
+    assert.ok(adminRows.some(r => r.tag === '限定题材' && r.count === 120) && adminRows.some(r => r.tag === '悬疑' && !r.visible), 'ADMIN_SEES_ALL_INCLUDING_HIDDEN')
+    assert.ok(!adminRows.some(r => r.tag === '冷门题材'), 'GENRE_BELOW_THRESHOLD_HIDDEN')
+    for (const bad of [null, [{ tag: '', visible: true }], [{ tag: '悬疑', visible: 'yes' }]]) assert.throws(() => saveGenreVisibility(bad))
+    saveGenreVisibility([{ tag: '悬疑', visible: true }, { tag: '2024', visible: false }])
+    const guestGenre = await fixture.originalFetch(fixture.origin + '/api/catalog/genres')
+    assert.equal(guestGenre.status, 401, 'GENRE_ADMIN_REQUIRES_LOGIN')
+    const guestSave = await fixture.originalFetch(fixture.origin + '/api/catalog/genres', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ genres: [{ tag: '恋爱', visible: false }] }) })
+    assert.equal(guestSave.status, 401, 'GENRE_SAVE_REQUIRES_LOGIN')
+    assert.ok((await genresOf()).includes('恋爱'), 'GUEST_SAVE_MUST_NOT_APPLY')
+    console.log('PASS genre threshold, guest counting, year default, admin visibility and ordering')
     const elapsed: number[] = []
     for (let n = 0; n < 3; n++) {
       const start = performance.now()

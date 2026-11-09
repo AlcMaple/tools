@@ -7,7 +7,7 @@ import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
 import { bgmHealth, noteBgmRequest } from './bgm/bgm-health'
 import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
-import { CatalogEditError, clearCatalogCover, getCatalogItem, saveCatalogCoverUrl, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
+import { CatalogEditError, clearCatalogCover, getCatalogItem, listGenresForAdmin, saveGenreVisibility, saveCatalogCoverUrl, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
 import { CoverError, getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
@@ -190,6 +190,25 @@ const catalogEditFailed = (c: Context, error: unknown): Response => {
   if (error instanceof CatalogEditError) return c.json({ error: error.message }, error.status)
   throw error
 }
+
+// 快捷题材的显示 / 隐藏：要注册在 /api/catalog/:id 之前，否则 genres 会被当成 bgmId
+const genreAdmin = async (c: Context): Promise<Response | null> => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  return isAdminUid(session.uid) ? null : c.json({ error: '只有管理员能编辑' }, 403)
+}
+app.get('/api/catalog/genres', async (c) => {
+  const denied = await genreAdmin(c)
+  if (denied) return denied
+  return c.json({ genres: listGenresForAdmin() })
+})
+app.put('/api/catalog/genres', async (c) => {
+  const denied = await genreAdmin(c)
+  if (denied) return denied
+  const body = await c.req.json().catch(() => null) as { genres?: unknown } | null
+  try { saveGenreVisibility(body?.genres) } catch (error) { return catalogEditFailed(c, error) }
+  return c.json({ genres: listGenresForAdmin() })
+})
 
 app.put('/api/catalog/:id', async (c) => {
   const id = await catalogAdmin(c)
