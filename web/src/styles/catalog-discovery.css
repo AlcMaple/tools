@@ -11,3 +11,5 @@
 .catalog-discovery-status { margin-top: 10px; min-height: 36px; overflow-wrap: anywhere; }
 .catalog-tags { display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 0 3px; color: var(--ink-sub); font-size: 11px; }
 @media (max-width: 620px) { .catalog-discovery { padding: 14px; } .catalog-discovery-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.catalog-grid { transition: opacity .15s; }
+.catalog-grid.is-stale { opacity: .55; pointer-events: none; }
