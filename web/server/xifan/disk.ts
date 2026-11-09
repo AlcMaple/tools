@@ -47,7 +47,6 @@ const TRANSPORT_GIVEUP_MS = 60_000
 const PIECE_COOLDOWN_MS = 3_000
 // 正在被看 = 这么久内有过读取端。之后它还没下完也让位给预取。
 const WATCH_TTL_MS = 2 * 60_000
-const PREFETCH_DELAY_MS = 30_000
 const MAX_BYTES = 4 * 1024 * 1024 * 1024
 export const MAX_FILE_BYTES = 1.5 * 1024 * 1024 * 1024
 
@@ -501,13 +500,12 @@ export function warmDisk(url: string, label: string): void {
 // 看第 N 集时把第 N+1 集排进来。它只在没有「正在被看且没下完」的集时才拿连接（见 pickPiece），
 // 所以当前这集下完之前完全不动它；地址等真开始前再解析，不拿一个排了很久的过期地址。
 // 每个用户只保留最新的一个预取：换番 / 往后跳着看时，他上一个还没下完的预取撤掉（已下的块留着，回来接着用）。
-const prefetchOf = new Map<number, { label: string; key: string | null; timer: NodeJS.Timeout | null }>()
+const prefetchOf = new Map<number, { label: string; key: string | null }>()
 
 function dropPrefetch(owner: number): void {
   const old = prefetchOf.get(owner)
   if (!old) return
   prefetchOf.delete(owner)
-  if (old.timer) clearTimeout(old.timer)
   const e = old.key ? entries.get(old.key) : undefined
   if (e?.prefetch) {
     e.prefetch = null
@@ -519,29 +517,26 @@ function dropPrefetch(owner: number): void {
 export function schedulePrefetch(owner: number, label: string, resolveUrl: () => Promise<string | null>): void {
   if (prefetchOf.get(owner)?.label === label) return
   dropPrefetch(owner)
-  const slot: { label: string; key: string | null; timer: NodeJS.Timeout | null } = { label, key: null, timer: null }
+  // 触发点已是「看到 70%」，不再延迟：早先挂在打开播放列表上，才需要等 30 秒滤掉只是点开看看的人
+  const slot: { label: string; key: string | null } = { label, key: null }
   prefetchOf.set(owner, slot)
-  slot.timer = setTimeout(() => {
-    slot.timer = null
-    void (async () => {
-      try {
-        const url = await resolveUrl()
-        if (!url || prefetchOf.get(owner) !== slot) return
-        slot.key = mediaKey(url)
-        if (diskFile(url)) return
-        const e = await entryOf(url, label)
-        if (prefetchOf.get(owner) !== slot) return
-        if (e && !e.complete && !e.prefetch) {
-          e.prefetch = { notBefore: Date.now() }
-          log(`排队预取 ${label}`)
-          pump()
-        }
-      } catch (error) {
-        console.error(`[xifan:disk] ${label} 解析下一集失败，不预取：`, error)
+  void (async () => {
+    try {
+      const url = await resolveUrl()
+      if (!url || prefetchOf.get(owner) !== slot) return
+      slot.key = mediaKey(url)
+      if (diskFile(url)) return
+      const e = await entryOf(url, label)
+      if (prefetchOf.get(owner) !== slot) return
+      if (e && !e.complete && !e.prefetch) {
+        e.prefetch = { notBefore: Date.now() }
+        log(`排队预取 ${label}`)
+        pump()
       }
-    })()
-  }, PREFETCH_DELAY_MS)
-  slot.timer.unref()
+    } catch (error) {
+      console.error(`[xifan:disk] ${label} 解析下一集失败，不预取：`, error)
+    }
+  })()
 }
 
 // 诊断用：每集当前游标处的连续领先、已下比例。

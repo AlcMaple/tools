@@ -871,6 +871,11 @@
   },
   {
     "file": "server/player/index.ts",
+    "method": "post",
+    "path": "/prefetch-next"
+  },
+  {
+    "file": "server/player/index.ts",
     "method": "route",
     "path": "/"
   },

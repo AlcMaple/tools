@@ -6,6 +6,7 @@
 //   GET  /api/player/page?src=xifan|girigiri&id=&ep=[&bgmId=]   → 播放页
 //   GET  /api/player/playlist?src&id&ep                          → 统一结构：{ title, lines, first, eps }
 //   GET  /api/player/resolve?src&id&ep&source                    → 用户手动点线路时解析那一条
+//   POST /api/player/prefetch-next?src&id&ep                     → 看到约 70% 时让服务器预取下一集（稀饭 mp4）
 //   GET  /api/player/stream?u&s[&range]                          → mp4：moov 在尾部的先改成虚拟 faststart（faststart.ts）；
 //                                                                 底下源站 mp4 边下边播落盘（disk.ts），太大的才走 stream.ts
 //   GET  /api/player/hls?u&s                                     → m3u8：拉回来把分片 / 子表 / key 改写成本站地址
@@ -127,18 +128,29 @@ player.get('/playlist', async (c) => {
       void layoutOf(playlist.first.url)
       if (canProxy(playlist.first.url)) warmDisk(playlist.first.url, new URL(playlist.first.url).pathname.slice(-40))
     }
-    const next = args.ep + 1
-    if (args.src === 'xifan' && playlist.eps.includes(next)) {
-      const { id } = args
-      schedulePrefetch(session.uid, `xifan:${id}:${next}`, async () => {
-        const line = (await xifan.getPlaylist(id, next, session.uid)).first
-        return line?.kind === 'mp4' && canProxy(line.url) ? line.url : null
-      })
-    }
     return c.json(playlist)
   } catch (error) {
     return resolveFailure(c, error)
   }
+})
+
+// 下一集预取由播放页在看到约 70% 时发一次触发，不在打开播放列表时登记：打开页面不等于会看下去，
+// 早先 /playlist 一打开就排队，只点开不看的人也会让服务器白下一整集（单集最大 1.5GB）。
+// 只发一次、不心跳；失败不重试，下一集照常现拉，代价只是起播慢一点。
+player.post('/prefetch-next', async (c) => {
+  const args = parseSrc(c)
+  if (args instanceof Response) return args
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录', code: 'AUTH_REQUIRED' }, 401)
+  if (args.src !== 'xifan') return c.json({ ok: false, code: 'PREFETCH_UNSUPPORTED' })
+  const { id, ep } = args
+  const next = ep + 1
+  schedulePrefetch(session.uid, `xifan:${id}:${next}`, async () => {
+    const p = await xifan.getPlaylist(id, next, session.uid)
+    if (!p.eps.includes(next)) return null
+    return p.first?.kind === 'mp4' && canProxy(p.first.url) ? p.first.url : null
+  })
+  return c.json({ ok: true })
 })
 
 player.get('/resolve', async (c) => {

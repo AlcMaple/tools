@@ -682,6 +682,14 @@ ${PLAYBACK_BEACON}
     v.addEventListener('seeked', function(){ if (art === me){ seekPending = false; if (slow && slow.gen === generation) slow.hist = [] } })
     v.addEventListener('play', function(){ if (art === me) playedGen = generation })
     v.addEventListener('playing', function(){ if (art === me) firstGen = generation })
+    v.addEventListener('timeupdate', function(){
+      if (nextAsked || art !== me || src !== 'xifan' || (cur && cur.localHash)) return
+      if (!Number.isFinite(v.duration) || v.duration <= 0 || v.currentTime < v.duration * 0.7) return
+      nextAsked = true
+      fetch('/api/player/prefetch-next?src=' + src + '&id=' + encodeURIComponent(id) + '&ep=' + ep, { method: 'POST', keepalive: true })
+        .then(function(r){ slog('prefetch-next ep' + (ep + 1) + ' status=' + r.status) })
+        .catch(function(e){ slog('prefetch-next failed ' + (e && e.message)) })
+    })
     startTape(v)
     startStallWatch(v)
     agentWatch(v)
@@ -748,6 +756,8 @@ ${PLAYBACK_BEACON}
 
   // 播放出错：不换线、不探测。只区分「断网」和「这条线路真坏了」，两种都给用户一个明确的出口。
   var autoRetries = 0, bootFirst = null
+  // 每个播放页（一集）只触发一次下一集预取；换线重挂播放器也不再发
+  var nextAsked = false
   function onMediaError(why){
     if (!cur || !art) return
     var v = art.video
