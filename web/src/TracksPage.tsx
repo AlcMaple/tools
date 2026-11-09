@@ -60,7 +60,7 @@ import { Popover } from './Popover'
 import { SketchSheet } from './SketchSheet'
 import { LegacyRig, useSpriteStyle } from './sprites'
 import { useIsWide } from './useMediaQuery'
-import type { TrackFilter, TracksNavigationMemory } from './tracks/navigationMemory'
+import { rememberTracksNavigation, type TrackFilter, type TracksNavigationMemory } from './tracks/navigationMemory'
 
 export type { TrackFilter } from './tracks/navigationMemory'
 type TrackView = 'cards' | 'list' | 'timeline'
@@ -101,11 +101,11 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
   const [filter, setFilter] = useState<TrackFilter>(navigation.filter)
   const [query, setQuery] = useState(navigation.query)
   const onFilterChange = (next: TrackFilter): void => {
-    navigation.filter = next
+    rememberTracksNavigation(navigation, { filter: next })
     setFilter(next)
   }
   const onQueryChange = (next: string): void => {
-    navigation.query = next
+    rememberTracksNavigation(navigation, { query: next })
     setQuery(next)
   }
   const [tracks, setTracks] = useState<Track[] | null>(null)

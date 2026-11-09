@@ -12,3 +12,7 @@ export function tracksNavigationForOwner(previous: TracksNavigationMemory | null
   if (previous?.ownerId === ownerId) return previous
   return { ownerId, filter: 'all', query: '' }
 }
+
+export function rememberTracksNavigation(memory: TracksNavigationMemory, patch: Partial<Pick<TracksNavigationMemory, 'filter' | 'query'>>): void {
+  Object.assign(memory, patch)
+}

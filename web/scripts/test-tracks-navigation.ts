@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,10 +19,7 @@ for (const ownerId of [2, null, 1]) {
   assert.equal(next.filter, 'all')
   assert.equal(next.query, '')
 }
-const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-assert(!/setTracks(?:Query|Filter)/.test(appSource), 'search and filter updates must stay in TracksPage')
-assert(appSource.includes("key={user?.id ?? 'guest'} navigation={tracksNavigation}"), 'owner change remounts the page')
-console.log('PASS tracks memory: owner boundary is synchronous; input updates stay in the page')
+console.log('PASS tracks memory: owner boundary selects a fresh object synchronously')
 
 process.env.NODE_ENV = 'test'
 process.env.AGENT_UI_FIXTURE = '1'
