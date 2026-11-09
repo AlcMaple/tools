@@ -568,4 +568,19 @@ pass('准确度：小时偏差和成交率')
   pass('长期月费 = 每月小时 × 时间值 + 支出，开发者覆盖优先于 AI')
 }
 
+// ── 按模块填实际小时 ──
+{
+  const two = brief([item('r1', '必须', 10), item('r2', '必须', 6)])
+  assert.deepEqual(normalizeQuote({ itemActual: { r1: 2, r2: 0, r3: '', x9: 4 } }).itemActual, { r1: 2, r2: 0 })
+  const full = proj({ status: '已成交', itemActual: { r1: 2, r2: 1 }, feeling: '刚好' }, two)
+  assert.equal(calibrate([full, full, full]).settings.hourFactor['新做'], 0.2)
+  const partial = proj({ status: '已成交', itemActual: { r1: 2 }, feeling: '刚好' }, two)
+  assert.equal(calibrate([partial, partial, partial]).settings.hourFactor['新做'], 1)
+  pass('每个要花时间的模块都填了，合计当作整类实际小时；只填一部分不算整类')
+  const mixed = proj({ status: '已成交', actual: { 新做: 5, 接手改: 0 }, itemActual: { r1: 2 }, feeling: '刚好' }, two)
+  const lines = experienceLines([mixed], '商单')
+  assert.ok(lines.some(l => /10 小时 → 2 小时/.test(l)) && lines.some(l => /6 小时 → 3 小时/.test(l)), lines.join('\n'))
+  pass('填了模块的条目取实际，其余条目分整类实际扣掉已填后的余量')
+}
+
 console.log(`\n${checks} 项全部通过`)

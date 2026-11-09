@@ -105,7 +105,7 @@ function JudgeWorkspace(): JSX.Element {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('new')
   const [state, setState] = useState<JudgeState | null>(null)
-  const calib = { byType: calibrateByType(state?.projects ?? []), market: state?.market }
+  const calib = { byType: state?.learned ?? calibrateByType(state?.projects ?? []), market: state?.market }
   const all = state?.projects ?? []
   const [loadError, setLoadError] = useState('')
   const [syncError, setSyncError] = useState('')
@@ -1051,6 +1051,7 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
   const summary = selfSummary(sheet)
   const dirty = JSON.stringify(pending) !== JSON.stringify(version.quote)
   const kinds = WORK_KINDS.filter(k => sheet.chosen?.lines.some(l => l.work === k))
+  const moduleRows = hourRows(version.brief, draft, sheet.settings).filter(r => r.suggested > 0)
   const parsed = parseBudget(version.brief.budget)
   const [moreOn] = useState(draft.bonus.on || draft.discount.ratio > 0 || draft.resultHours > 0 || draft.expenses.length > 0)
 
@@ -1153,6 +1154,24 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
             <span className="faint small">小时</span>
           </label>
         ))}
+        {draft.status === '已成交' && moduleRows.length > 0 && (
+          <details className="oj-qmore oj-qmods" open={Object.keys(draft.itemActual).length > 0 || undefined}>
+            <summary>按模块填实际小时（可选）</summary>
+            {moduleRows.map(r => (
+              <label key={r.id} className="oj-qrow">
+                <span className="oj-qlabel">{r.title}</span>
+                <input className="oj-qin" inputMode="decimal" value={draft.itemActual[r.id] ?? ''} placeholder={`估 ${hoursLabel(r.hours)}`}
+                  onChange={e => {
+                    const t = e.target.value.replace(/[^\d.]/g, '')
+                    const next = { ...draft.itemActual }
+                    if (t === '') delete next[r.id]; else next[r.id] = Number(t) || 0
+                    set({ itemActual: next })
+                  }} />
+                <span className="faint small">小时</span>
+              </label>
+            ))}
+          </details>
+        )}
         {draft.status === '已成交' && (
           <div className="oj-qrow">
             <span className="oj-qlabel">做完觉得</span>

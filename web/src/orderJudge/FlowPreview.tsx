@@ -24,6 +24,15 @@ const reaches = (nodes: ScopeNode[], from: string, to: string): boolean => {
   return walk(from)
 }
 
+// A→B→C 又画一条 A→C 只会多出一根线：中间的功能都选了，A→C 已经被这条路径表达，不再单画。
+// 中间有没选的才保留，那是真正缺了东西的提示。只影响画线，冲突检查仍用完整依赖
+const implied = (nodes: ScopeNode[], picked: ReadonlySet<string>, from: string, to: string): boolean => {
+  const byId = new Map(nodes.map(n => [n.id, n]))
+  const seen = new Set<string>()
+  const walk = (id: string): boolean => (byId.get(id)?.dependsOn ?? []).some(d => d === from || (picked.has(d) && !seen.has(d) && (seen.add(d), walk(d))))
+  return (byId.get(to)?.dependsOn ?? []).some(m => m !== from && picked.has(m) && (seen.clear(), walk(m)))
+}
+
 // editable：节点可拖动，从节点底部圆点拖到另一个节点就连一条「先有前者」，点线删掉；改动只在这个页面里，刷新还原
 export function FlowPreview({ nodes: base0, picked, locked, onToggle, editable, onNodes }: { nodes: ScopeNode[]; picked: ReadonlySet<string>; locked?: ReadonlySet<string>; onToggle?: (id: string) => void; editable?: boolean; onNodes?: (nodes: ScopeNode[]) => void }): JSX.Element {
   const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({})
@@ -55,7 +64,7 @@ export function FlowPreview({ nodes: base0, picked, locked, onToggle, editable, 
       })
       const rects = [...at.values()]
       const next: Edge[] = []
-      const links = nodes.flatMap(n => (picked.has(n.id) && at.has(n.id) ? n.dependsOn.filter(d => at.has(d)).map(d => ({ d, id: n.id })) : []))
+      const links = nodes.flatMap(n => (picked.has(n.id) && at.has(n.id) ? n.dependsOn.filter(d => at.has(d) && !implied(nodes, picked, d, n.id)).map(d => ({ d, id: n.id })) : []))
       const sources = [...new Set(links.map(l => l.d))].sort((p, q) => at.get(p)!.left - at.get(q)!.left)
       const users = new Map<number, string[]>()
       for (const l of links) for (const ch of flowChannels(at.get(l.d)!, at.get(l.id)!, rects)) {
@@ -74,7 +83,7 @@ export function FlowPreview({ nodes: base0, picked, locked, onToggle, editable, 
         for (const d of n.dependsOn) {
           const from = at.get(d)
           // 没选的功能不画线：选得少时满屏虚线盖住真正走得通的路线
-          if (!from || !picked.has(n.id)) continue
+          if (!from || !picked.has(n.id) || implied(nodes, picked, d, n.id)) continue
           next.push({ key: `${d}>${n.id}`, from: d, to: n.id, d: roundedPath(flowRoute(from, to, rects, base.width, trackOf(d), (sources.indexOf(d) % 3 - 1) * 3)), on: picked.has(n.id) && picked.has(d), bad: picked.has(n.id) && !picked.has(d) })
         }
       }

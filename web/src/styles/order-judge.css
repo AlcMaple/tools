@@ -353,9 +353,9 @@
 .oj-flow { position: relative; display: grid; gap: 36px; padding: 4px 0; }
 .oj-flow-lines { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
 .oj-flow-lines path { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 4; }
-.oj-flow-lines path.on { stroke: var(--teal-line); stroke-dasharray: none; }
+.oj-flow-lines path.on { stroke: var(--teal-line); stroke-dasharray: none; opacity: .75; }
 .oj-flow-lines path.bad { stroke: var(--sakura); stroke-dasharray: none; }
-.oj-flow-lines path.hi { stroke: var(--teal); stroke-width: 2.5; }
+.oj-flow-lines path.hi { stroke: var(--teal); stroke-width: 2.5; opacity: 1; }
 .oj-flow-lines path.bad.hi { stroke: var(--sakura); }
 .oj-flow-lines path.dim { opacity: .25; }
 .oj-flow-lines path.hit { stroke: transparent; stroke-width: 12; stroke-dasharray: none; pointer-events: stroke; cursor: pointer; }
