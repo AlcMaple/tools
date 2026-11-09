@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="570" viewBox="0 0 1020 570">
+  <rect x="1" y="1" width="1018" height="568" rx="14" fill="#fbfafb" stroke="#e2dcdf" />
+  <text x="28" y="38" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="19" font-weight="700">追番上下文：离开后接着找，换账号重新开始</text>
+  <text x="28" y="66" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#756f73" font-size="12.5">保留同一次浏览里选中的状态和搜索词，不让前一个账号的条件影响新账号</text>
+  <text x="28" y="107" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="14" font-weight="700">同一个账号：少找一遍</text>
+  <rect x="28" y="123" width="294" height="100" rx="10" fill="#edf7f1" stroke="#7fad91" />
+  <text x="46" y="154" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#316247" font-size="12.5" font-weight="700">我的追番</text>
+  <text x="46" y="183" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="11">选「在看」 + 搜「芙莉莲」 → 一条结果</text>
+  <rect x="360" y="123" width="294" height="100" rx="10" fill="#eef4f8" stroke="#91adc1" />
+  <text x="378" y="154" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#36566d" font-size="12.5" font-weight="700">切去看周历</text>
+  <text x="378" y="183" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="11">记住条件，不保存另一份追番数据</text>
+  <text x="337" y="179" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="14" font-weight="700">→</text>
+  <rect x="692" y="123" width="300" height="100" rx="10" fill="#edf7f1" stroke="#7fad91" />
+  <text x="710" y="154" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#316247" font-size="12.5" font-weight="700">返回我的追番</text>
+  <text x="710" y="183" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="11">仍是「在看」 + 原词 + 一条结果</text>
+  <text x="669" y="179" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="14" font-weight="700">→</text>
+  <text x="28" y="266" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="14" font-weight="700">不同账号：先选新上下文，再画新页面</text>
+  <rect x="28" y="282" width="470" height="113" rx="10" fill="#fdeef0" stroke="#d99aa5" />
+  <text x="46" y="312" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#96434f" font-size="12.5" font-weight="700">退出或换账号，不继承旧条件</text>
+  <text x="46" y="341" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="11">新页面从「全部」与空搜索开始，切回原账号也重新开始</text>
+  <text x="46" y="368" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="11">不在页面画完后才补清空，不把跨页保留变成跨账号保留</text>
+  <rect x="518" y="282" width="474" height="113" rx="10" fill="#eef4f8" stroke="#91adc1" />
+  <text x="536" y="312" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#36566d" font-size="12.5" font-weight="700">输入只更新追番内页</text>
+  <text x="536" y="341" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="11">外壳只暂存当前账号的条件，不接收每次输入的更新</text>
+  <text x="536" y="368" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="11">这是更新范围的收窄，没有声称实测过大列表输入加速</text>
+  <rect x="28" y="424" width="964" height="102" rx="10" fill="#f4f2f5" stroke="#c3bcc6" />
+  <text x="46" y="453" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="12.5" font-weight="700">保持原来顺手的操作</text>
+  <text x="46" y="482" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="11">切换状态不清空搜索；「清空搜索」恢复完整列表；刷新仍用默认条件，不新增本地存储</text>
+  <text x="46" y="506" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529" font-size="11">追番记录、标签、排序和观看进度不变；本次只解决同一次浏览里的返回与账号边界</text>
+</svg>
