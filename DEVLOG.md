@@ -15,11 +15,13 @@
 
 - [安装包](docs/devlog/2026-安装包.md)
 - [网页版](docs/devlog/2026-网页版.md)
+- [观看衔接](docs/devlog/2026-观看衔接.md)
 - [妙语库](docs/devlog/2026-妙语库.md)
 - [在线观看](docs/devlog/2026-在线观看.md) · [当前网页版修复入口](docs/ideas/011-在线观看.md)
 - [BGM 登录功能](docs/devlog/2026-BGM登录功能.md)
 - [稀饭账号](docs/devlog/2026-稀饭账号.md)
 - [动漫查询](docs/devlog/2026-动漫查询.md)
+- [追番上下文](docs/devlog/2026-追番上下文.md)
 - [B 站源](docs/devlog/2026-B站源.md)
 - [接单评估](docs/devlog/2026-接单评估.md)
 

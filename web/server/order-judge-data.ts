@@ -9,8 +9,9 @@ import { db } from './db'
 import { dataDir } from './data-dir'
 import type { Project, Version } from '../shared/order-judge-api'
 import type { Brief, BriefChange } from '../shared/order-judge-brief'
+import type { ClientType } from '../shared/order-judge-brief'
 import { AUTH_SECRET } from './secrets'
-import { MARKET_WINDOW_MS, marketStats, normalizeQuote, sampleOf, type MarketStat, type SampleRow } from '../shared/order-judge-sheet'
+import { CALIBRATION_PROJECTS, MARKET_WINDOW_MS, calibrateByType, marketStats, normalizeQuote, sampleOf, type Calibration, type MarketStat, type SampleRow } from '../shared/order-judge-sheet'
 import { normalizeMaintenance } from '../shared/order-judge-maintenance'
 import { SCOPE_TTL_MS, type ScopeLink, type ScopeSubmission } from '../shared/order-judge-scope'
 
@@ -85,7 +86,11 @@ export class JudgeData {
     return (this.database.prepare('SELECT seq FROM order_judge_changes WHERE user_id=?').get(uid) as { seq: number } | undefined)?.seq ?? 0
   }
 
+  private poolVersion = 0
+  private pooled: { at: number; version: number; value: Record<ClientType, Calibration> } | null = null
+
   bump(uid: number): void {
+    this.poolVersion++
     this.database.prepare('INSERT INTO order_judge_changes VALUES (?,1) ON CONFLICT(user_id) DO UPDATE SET seq=seq+1').run(uid)
   }
 
@@ -159,6 +164,26 @@ export class JudgeData {
   market(): MarketStat[] {
     const rows = this.database.prepare('SELECT contributor, client_type AS clientType, category, result, price, budget FROM order_judge_samples WHERE month>=?').all(Date.now() - MARKET_WINDOW_MS) as SampleRow[]
     return marketStats(rows)
+  }
+
+  // 全站汇总的校准：时间值、小时系数、每类条目的修正都从所有用户的项目里学，用户之间只共享算出来的数。
+  // 只取版本里的清单和报价（不含原文、图片、附件、标题），不愿贡献的项目整个不进；结果缓存到任何人保存为止
+  learned(): Record<ClientType, Calibration> {
+    if (this.pooled && this.pooled.version === this.poolVersion && Date.now() - this.pooled.at < 600_000) return this.pooled.value
+    const rows = this.database.prepare(`
+      SELECT p.id AS pid, v.n, v.at, v.brief, v.quote FROM order_judge_versions v
+      JOIN (SELECT id FROM order_judge_projects ORDER BY updated_at DESC LIMIT ?) p ON p.id = v.project_id
+      ORDER BY v.project_id, v.n`).all(CALIBRATION_PROJECTS * 20) as { pid: string; n: number; at: number; brief: string; quote: string }[]
+    const byProject = new Map<string, { title: string; versions: { n: number; at: number; brief: Brief; quote: ReturnType<typeof normalizeQuote> }[] }>()
+    for (const r of rows) {
+      const list = byProject.get(r.pid) ?? { title: '', versions: [] }
+      list.versions.push({ n: r.n, at: r.at, brief: JSON.parse(r.brief) as Brief, quote: normalizeQuote(JSON.parse(r.quote)) })
+      byProject.set(r.pid, list)
+    }
+    const projects = [...byProject.values()].filter(p => p.versions.every(v => v.quote.share))
+    const value = calibrateByType(projects)
+    this.pooled = { at: Date.now(), version: this.poolVersion, value }
+    return value
   }
 
   versionIds(uid: number, projectId: string): string[] {

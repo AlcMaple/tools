@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 720" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="718" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">本机已缓存的一集，切走再回来就报「播放出错」：把后台的时间当成了「卡住」</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：整集一直好好放在手机里，错在「切走 16 秒」被算成「卡了 8 秒」，随后换去的线路本身还是个播不了的地址（11-08 20:37 iPhone 实测）</text>
+
+  <!-- ============ 一、用户看到的 ============ -->
+  <rect x="32" y="84" width="1056" height="150" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、用户看到的：同一集，从 1065 秒处接着看</text>
+
+  <text x="56" y="140" font-size="12.5" font-weight="700" fill="#96434f">改前</text>
+  <rect x="110" y="126" width="230" height="22" rx="6" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="120" y="141" font-size="11" fill="#316247">点开，画面出来</text>
+  <rect x="344" y="126" width="150" height="22" rx="6" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="354" y="141" font-size="11" fill="#4a4450">切到别的 App</text>
+  <rect x="498" y="126" width="560" height="22" rx="6" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="508" y="141" font-size="11" fill="#96434f">回来：黑屏「加载失败」，红框「这条线路播放出错（video code=4）」，每秒报一次</text>
+
+  <text x="56" y="184" font-size="12.5" font-weight="700" fill="#316247">改后</text>
+  <rect x="110" y="170" width="230" height="22" rx="6" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="120" y="185" font-size="11" fill="#316247">点开，画面出来</text>
+  <rect x="344" y="170" width="150" height="22" rx="6" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="354" y="185" font-size="11" fill="#4a4450">切到别的 App</text>
+  <rect x="498" y="170" width="560" height="22" rx="6" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="508" y="185" font-size="11" fill="#316247">回来：接着从本机播，没有任何提示</text>
+  <text x="56" y="218" font-size="11" fill="#756f73">放映室直接点开没事：那时没有续播位置，不会去等 seek，看门狗没机会误判</text>
+
+  <!-- ============ 二、背后在做的 ============ -->
+  <rect x="32" y="250" width="1056" height="232" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="276" font-size="14" font-weight="700" fill="#353136">二、背后在做的：同一条时间轴（服务端日志原始时间）</text>
+
+  <path d="M70 330 H1050" stroke="#c3bcc6" stroke-width="2"/>
+  <circle cx="90" cy="330" r="6" fill="#4b8f6a"/>
+  <circle cx="300" cy="330" r="6" fill="#6d686b"/>
+  <circle cx="620" cy="330" r="6" fill="#96434f"/>
+  <circle cx="780" cy="330" r="6" fill="#96434f"/>
+
+  <text x="90" y="312" font-size="11" fill="#316247" text-anchor="middle" font-weight="700">12:37:11</text>
+  <rect x="40" y="346" width="200" height="56" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="52" y="366" font-size="12" font-weight="700" fill="#316247">挂载本机缓存</text>
+  <text x="52" y="384" font-size="11" fill="#316247">整集都在，续播 1065.7 秒，</text>
+  <text x="52" y="398" font-size="11" fill="#316247">开始 seek 并记下起点</text>
+
+  <text x="300" y="312" font-size="11" fill="#4a4450" text-anchor="middle" font-weight="700">12:37:18</text>
+  <rect x="250" y="346" width="200" height="56" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="262" y="366" font-size="12" font-weight="700" fill="#4a4450">页面被切到后台</text>
+  <text x="262" y="384" font-size="11" fill="#4a4450">视频和 SW 一起挂起，</text>
+  <text x="262" y="398" font-size="11" fill="#4a4450">seek 落不了地，计时照走</text>
+
+  <text x="620" y="312" font-size="11" fill="#96434f" text-anchor="middle" font-weight="700">12:37:27</text>
+  <rect x="520" y="346" width="200" height="56" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="532" y="366" font-size="12" font-weight="700" fill="#96434f">看门狗：seek 卡了 16 秒</text>
+  <text x="532" y="384" font-size="11" fill="#96434f">超过 8 秒就判定卡死，</text>
+  <text x="532" y="398" font-size="11" fill="#96434f">不管整集其实都在本机</text>
+
+  <text x="860" y="312" font-size="11" fill="#96434f" text-anchor="middle" font-weight="700">之后每约 1 秒</text>
+  <rect x="740" y="346" width="300" height="56" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="752" y="366" font-size="12" font-weight="700" fill="#96434f">换去的线路是个死地址</text>
+  <text x="752" y="384" font-size="11" fill="#96434f">本机存的只有「主机 + 路径」，没有协议和签名，</text>
+  <text x="752" y="398" font-size="11" fill="#96434f">经本站请求必然 code=4，红框一直在</text>
+
+  <path d="M240 374 H248" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <path d="M450 374 H518" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <path d="M720 374 H738" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <text x="52" y="444" font-size="11" fill="#756f73">两个毛病叠在一起：第一个把本机换掉（不该换），第二个换去的地方是坏的（换了也白换）。只修第二个，用户会看到画面先黑一下再恢复，仍然多余</text>
+  <text x="52" y="464" font-size="11" fill="#756f73">所以两个都修</text>
+
+  <!-- ============ 三、怎么修、为什么不那样做 ============ -->
+  <rect x="32" y="498" width="520" height="150" rx="12" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="52" y="524" font-size="14" font-weight="700" fill="#36566d">怎么修</text>
+  <text x="52" y="548" font-size="11.5" fill="#36566d">① 页面在后台时，看门狗不累计 seek 和卡顿的时间；</text>
+  <text x="68" y="566" font-size="11.5" fill="#36566d">回到前台重新起算</text>
+  <text x="52" y="590" font-size="11.5" fill="#36566d">② 退回经本站时，没有签名的线路换成开播时解析出的真线路；</text>
+  <text x="68" y="608" font-size="11.5" fill="#36566d">解析不到就提示「本机文件读不出来」，不再空转重试</text>
+  <text x="52" y="632" font-size="11.5" fill="#36566d">前台真正卡死的 seek，仍在 8 秒后换到经本站（原有兜底保留）</text>
+
+  <rect x="568" y="498" width="520" height="150" rx="12" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="588" y="524" font-size="14" font-weight="700" fill="#7a6234">为什么不干脆「整集在本机就永不切换」</text>
+  <text x="588" y="548" font-size="11.5" fill="#7a6234">整集在本机不代表读得出来：文件可能缺块、被系统清掉，</text>
+  <text x="588" y="566" font-size="11.5" fill="#7a6234">前台 seek 真卡住时，换到经本站是用户唯一的出路。</text>
+  <text x="588" y="590" font-size="11.5" fill="#7a6234">要拦的只有「后台那段时间」这一种误判，别的情况照旧兜底</text>
+  <text x="588" y="618" font-size="11.5" fill="#7a6234">还没查实：seek 到 1065 秒这一下本身会不会慢，</text>
+  <text x="588" y="636" font-size="11.5" fill="#7a6234">日志看不出来，要真机复测</text>
+
+  <text x="32" y="682" font-size="12.5" font-weight="700" fill="#316247">常见情况：不续播、不切后台，从头看本机缓存的集，这条路径一次都不会走到</text>
+  <text x="32" y="702" font-size="11" fill="#756f73">时间点来自 web 服务端 [player:client] 日志，可用 check-playback.sh 24 'player:client' 3000 复查</text>
+</svg>

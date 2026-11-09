@@ -535,6 +535,9 @@ ${PLAYBACK_BEACON}
   }
   function watchSlow(v, now){
     if (!slow || slow.gen !== generation) slow = { gen: generation, hist: [], fb: null, preparing: false, switching: false }
+    // 切到后台 / 锁屏时浏览器把 <video> 和 SW 一起挂起，seek 落不了地不是源慢。时间不能算在等待里：
+    // 真机 11-08 20:37 本机整集已在、续播跳 1065 秒，用户切走 16 秒回来，看门狗当成「seek 卡了 8 秒」把本机整个换掉
+    if (document.hidden){ if (seekPending) seekAt = now; slow.hist = []; return }
     if (v.paused || playedGen !== generation || slow.switching) return
     var ahead = downloadAhead(v)
     slow.hist.push([now, ahead])
@@ -562,7 +565,8 @@ ${PLAYBACK_BEACON}
     if (st.preparing) return
     st.preparing = true
     var direct = pl.localHash || (src === 'girigiri' && pl.kind === 'hls')
-    if (direct && !pl.viaServer) st.server = Object.assign(plainOf(pl), { viaServer: true })
+    var sv = direct && !pl.viaServer ? serverOf(pl) : null
+    if (sv) st.server = sv
     var mine = await fingerprint(pl)
     if (gen !== generation) return
     if (mine){
@@ -601,6 +605,12 @@ ${PLAYBACK_BEACON}
     swapSource(next, at, playing)
   }
   function plainOf(pl){ var p = Object.assign({}, pl); delete p.localHash; delete p.localJob; return p }
+  // 开播直接用了本机下完的那份时，线路里只有去掉签名的 host+路径（没有 s、没有协议），原样退回经本站会请求一个永远播不了的地址（真机 video code=4 连环报错）。
+  // 这种线路要换成开播时解析出的那条真线路
+  function serverOf(pl){
+    if (pl.s) return Object.assign(plainOf(pl), { viaServer: true })
+    return bootFirst ? Object.assign({}, bootFirst, { viaServer: true }) : null
+  }
 
   function mount(pl, resumeAt, autoplay){
     destroyPlayer()
@@ -672,6 +682,14 @@ ${PLAYBACK_BEACON}
     v.addEventListener('seeked', function(){ if (art === me){ seekPending = false; if (slow && slow.gen === generation) slow.hist = [] } })
     v.addEventListener('play', function(){ if (art === me) playedGen = generation })
     v.addEventListener('playing', function(){ if (art === me) firstGen = generation })
+    v.addEventListener('timeupdate', function(){
+      if (nextAsked || art !== me || src !== 'xifan' || (cur && cur.localHash)) return
+      if (!Number.isFinite(v.duration) || v.duration <= 0 || v.currentTime < v.duration * 0.7) return
+      nextAsked = true
+      fetch('/api/player/prefetch-next?src=' + src + '&id=' + encodeURIComponent(id) + '&ep=' + ep, { method: 'POST', keepalive: true })
+        .then(function(r){ slog('prefetch-next ep' + (ep + 1) + ' status=' + r.status) })
+        .catch(function(e){ slog('prefetch-next failed ' + (e && e.message)) })
+    })
     startTape(v)
     startStallWatch(v)
     agentWatch(v)
@@ -738,6 +756,8 @@ ${PLAYBACK_BEACON}
 
   // 播放出错：不换线、不探测。只区分「断网」和「这条线路真坏了」，两种都给用户一个明确的出口。
   var autoRetries = 0, bootFirst = null
+  // 每个播放页（一集）只触发一次下一集预取；换线重挂播放器也不再发
+  var nextAsked = false
   function onMediaError(why){
     if (!cur || !art) return
     var v = art.video
@@ -754,7 +774,9 @@ ${PLAYBACK_BEACON}
     if (pl.localHash){
       localOff = true
       keepCaching(pl)
-      var plain = plainOf(pl)
+      var plain = serverOf(pl)
+      if (!plain){ fail('这一集没有下到本机，本机文件也读不出来', 'LOCAL_UNREADABLE', function(){ autoRetries = 0; boot() }); return }
+      delete plain.viaServer
       resolved[pl.source] = plain
       swapSource(plain, at, !v.paused)
       return
@@ -796,7 +818,10 @@ ${PLAYBACK_BEACON}
   // 历史：09-21 曾「离开 3 分钟整页刷新」、之后又试过「回前台查登录」，都撤掉了——没坏也刷新要重新缓冲；
   // 刷新后看到一行 JSON 的真因（换源拼错地址、/page 未登录回 JSON）已在服务端修掉。
   // 这里只在藏到后台时记一下进度：iOS 回收整个标签页后浏览器自己重载，boot() 取回接着播。
-  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden'){ stashResume(); qosFlush('hidden'); if (art && cur) qosStart(cur.source) } })
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'hidden'){ stashResume(); qosFlush('hidden'); if (art && cur) qosStart(cur.source) }
+    else { if (seekPending) seekAt = performance.now(); if (stallSince) stallSince = performance.now() }
+  })
 
   // ——— 线路 / 选集 / 源 ———
   var lineRequest = 0

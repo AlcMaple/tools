@@ -386,7 +386,7 @@ api.use('*', async (c, next) => {
   await next()
 })
 
-api.get('/', (c) => c.json({ projects: judgeData.projects(c.get('uid')), seq: judgeData.seq(c.get('uid')), market: judgeData.market() }))
+api.get('/', (c) => c.json({ projects: judgeData.projects(c.get('uid')), seq: judgeData.seq(c.get('uid')), market: judgeData.market(), learned: judgeData.learned() }))
 
 api.get('/sync/events', async c => {
   const uid = c.get('uid'), session = await getSession(c)

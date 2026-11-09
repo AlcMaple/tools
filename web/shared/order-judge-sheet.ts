@@ -1,7 +1,7 @@
 // 报价单：一个版本的报价设置（状态、预算、支出、交付后修改、主推档、人情折让）+ 计算结果 → 客户版 / 自用版文字。
 // 文字用全角括号和圆点而不是 Markdown，客户多半在微信里看，井号和星号会原样露出来。网页和桌面共用
 
-import { BASES, BASIS_TEXT, CLIENT_TYPES, MAX_ITEMS, MAX_ITEM_HOURS, WORK_KINDS, basisOf, workOf, type Basis, type Brief, type BriefItem, type Category, type ClientType, type WorkKind } from './order-judge-brief'
+import { BASES, BASIS_TEXT, CLIENT_TYPES, MAX_ITEMS, WORK_KINDS, basisOf, workOf, type Basis, type Brief, type BriefItem, type Category, type ClientType, type WorkKind } from './order-judge-brief'
 import type { Maintenance } from './order-judge-maintenance'
 import {
   DEFAULT_DAILY_HOURS, DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, factorOf, parseBudget, parseDeadline, planOf, tiers, ymd, zone,
@@ -14,7 +14,7 @@ export const TIER_NAMES: TierName[] = ['基础', '推荐', '完整']
 export const DISCOUNT_STEPS = [0, 0.05, 0.1, 0.15, 0.2]
 export const MAX_EXPENSES = 10
 // 回填口径见 021「反馈与自动纠正」：客户结果只记在已报价的版本上（成交直接把状态改成已成交），实际小时和亏 / 值只记在已成交的版本上
-export const OUTCOMES = ['待定', '嫌贵', '没回音', '我没接'] as const
+export const OUTCOMES = ['待定', '同意', '嫌贵', '没回音', '我没接'] as const
 export const FEELINGS = ['待定', '亏', '刚好', '值'] as const
 export type Outcome = typeof OUTCOMES[number]
 export type Feeling = typeof FEELINGS[number]
@@ -51,6 +51,7 @@ export interface QuoteState {
   outcome: Outcome
   clientBudget: number | null
   actual: Record<WorkKind, number>
+  itemActual: Record<string, number>
   feeling: Feeling
   frozen: Frozen | null
   bonus: BonusTerms
@@ -64,20 +65,22 @@ export interface QuoteState {
 
 export const EMPTY_QUOTE: QuoteState = {
   status: '草稿', budget: null, resultHours: 0, expenses: [], tier: '推荐', discount: { ratio: 0, reason: '' },
-  outcome: '待定', clientBudget: null, actual: { 新做: 0, 接手改: 0 }, feeling: '待定', frozen: null, bonus: EMPTY_BONUS, deadlineDate: null, dailyHours: DEFAULT_DAILY_HOURS,
+  outcome: '待定', clientBudget: null, actual: { 新做: 0, 接手改: 0 }, itemActual: {}, feeling: '待定', frozen: null, bonus: EMPTY_BONUS, deadlineDate: null, dailyHours: DEFAULT_DAILY_HOURS,
   hourEdits: {}, hourScale: 1, finalPrice: null, share: true,
 }
 
 export const HOUR_SCALE_MIN = 0.5
 export const HOUR_SCALE_MAX = 2
 export const HOURS_PER_DAY = 8
+export const ITEM_MAX_DAYS = 7
+export const ITEM_MAX_HOURS = ITEM_MAX_DAYS * HOURS_PER_DAY
 // 单项滑块只露出合计占到这个比例的几条，其余收起：功能再多也只用看几根，这是「估价要快」的关键
 const MAJOR_SHARE = 0.8
 
 const half = (h: number): number => Math.round(h * 2) / 2
 
 function aiHours(i: BriefItem, q: QuoteState, s: QuoteSettings): number {
-  return Math.min(MAX_ITEM_HOURS, half(i.hours * factorOf(i, s) * q.hourScale))
+  return Math.min(ITEM_MAX_HOURS, half(i.hours * factorOf(i, s) * q.hourScale))
 }
 
 // 原本直接能做的条目被拖出小时后，不能还算「直接做」，否则这笔钱进不了判断分项
@@ -117,7 +120,7 @@ export function hourRows(b: Brief, q: QuoteState, s: QuoteSettings): HourRow[] {
     const suggested = aiHours(i, q, s)
     const hours = q.hourEdits[i.id] ?? suggested
     const base = i.hours * factorOf(i, s)
-    return { id: i.id, title: i.title, basis: basisOf(withHours(i, hours)), hours, suggested, max: Math.min(MAX_ITEM_HOURS, Math.max(16, Math.ceil(base * 3))), amount: base * s.rates[workOf(i)], edited: q.hourEdits[i.id] != null, major: false }
+    return { id: i.id, title: i.title, basis: basisOf(withHours(i, hours)), hours, suggested, max: ITEM_MAX_HOURS, amount: base * s.rates[workOf(i)], edited: q.hourEdits[i.id] != null, major: false }
   }).sort((x, y) => y.amount - x.amount)
   const total = rows.reduce((a, r) => a + r.amount, 0)
   let seen = 0
@@ -173,6 +176,7 @@ export function normalizeQuote(raw: unknown): QuoteState {
     outcome: OUTCOMES.includes(o.outcome as Outcome) ? o.outcome as Outcome : '待定',
     clientBudget: o.clientBudget == null || o.clientBudget === '' ? null : Math.round(num(o.clientBudget, 100_000_000)) || null,
     actual: perKind(o.actual, 1000),
+    itemActual: itemActualOf(o.itemActual),
     feeling: FEELINGS.includes(o.feeling as Feeling) ? o.feeling as Feeling : '待定',
     frozen: frozenOf(o.frozen),
     bonus: bonusOf(o.bonus),
@@ -188,10 +192,21 @@ export function normalizeQuote(raw: unknown): QuoteState {
 function hourEditsOf(v: unknown): Record<string, number> {
   const out: Record<string, number> = {}
   for (const [id, h] of Object.entries(v && typeof v === 'object' ? v : {}).slice(0, MAX_ITEMS)) {
-    if (/^r\d+$/.test(id) && Number.isFinite(Number(h))) out[id] = num(h, MAX_ITEM_HOURS)
+    if (/^r\d+$/.test(id) && Number.isFinite(Number(h))) out[id] = num(h, ITEM_MAX_HOURS)
   }
   return out
 }
+
+// 按模块填的实际小时：键存在就是填过（0 也算），留空不存键
+function itemActualOf(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [id, h] of Object.entries(v && typeof v === 'object' ? v : {}).slice(0, MAX_ITEMS)) {
+    if (/^r\d+$/.test(id) && h !== '' && h != null && Number.isFinite(Number(h)) && Number(h) >= 0) out[id] = num(h, ITEM_MAX_HOURS)
+  }
+  return out
+}
+
+export const hasActual = (q: QuoteState): boolean => WORK_KINDS.some(k => q.actual[k] > 0) || Object.values(q.itemActual).some(h => h > 0)
 
 function hourScaleOf(v: unknown): number {
   const n = Number(v)
@@ -603,6 +618,14 @@ function shares(lines: QuoteLine[]): Record<WorkKind, number> {
 const hoursBy = (lines: QuoteLine[], k: WorkKind, f: number, kinds: QuoteLine['kind'][]): number =>
   lines.filter(l => l.work === k && kinds.includes(l.kind)).reduce((a, l) => a + (l.kind === 'item' && !l.manual ? l.hours / f : l.hours), 0)
 
+// 这一类的实际小时：填了整类就用整类；没填但每个要花时间的条目都按模块填了，就用它们的合计加上上线结果的预估
+function actualHours(q: QuoteState, lines: QuoteLine[], k: WorkKind, factor: number): number {
+  if (q.actual[k] > 0) return q.actual[k]
+  const items = lines.filter(l => l.work === k && l.kind === 'item' && l.hours > 0)
+  if (!items.length || !items.every(l => l.itemId != null && q.itemActual[l.itemId] != null)) return 0
+  return items.reduce((a, l) => a + q.itemActual[l.itemId!], 0) + hoursBy(lines, k, factor, ['result'])
+}
+
 interface ItemFact { category: string; title: string; basis: Basis; ai: number; final: number }
 interface ProjectFacts { source: '实际' | '调整'; items: ItemFact[] }
 type LearnProject = { title: string; versions: SheetVersion[]; maintenance?: Maintenance }
@@ -613,18 +636,27 @@ const byRecent = <T extends LearnProject>(projects: T[]): T[] => [...projects].s
 function projectFacts(p: LearnProject, base: QuoteSettings): ProjectFacts | null {
   const desc = [...p.versions].sort((a, b) => b.n - a.n)
   const sheetOf = (v: SheetVersion): Sheet => buildSheet(p.title, p.versions, v.n, base)
-  const done = desc.find(v => v.quote.status === '已成交' && WORK_KINDS.some(k => v.quote.actual[k] > 0) && !sheetOf(v).base)
+  const done = desc.find(v => v.quote.status === '已成交' && hasActual(v.quote) && !sheetOf(v).base)
   const v = done ?? desc.find(x => x.quote.status !== '草稿' || x.quote.hourScale !== 1 || Object.keys(x.quote.hourEdits).length > 0)
   if (!v) return null
   const s = settingsFor(v.quote, base)
   const chosen = done ? sheetOf(done).chosen as Tier | null : null
   const kept = adjustBrief(v.brief, v.quote, s).items.filter(i => i.priority !== '不做' && (!chosen?.itemIds || chosen.itemIds.includes(i.id)))
   const shown = (i: BriefItem): number => (i.manual ? i.hours : i.hours * factorOf(i, s))
+  // 按模块填过的条目直接取实际；其余条目分这一类实际小时扣掉已填部分后的余量
+  const own = (i: BriefItem): number | undefined => (done ? v.quote.itemActual[i.id] : undefined)
   const items = kept.map(i => {
-    const total = kept.filter(x => workOf(x) === workOf(i)).reduce((a, x) => a + shown(x), 0)
-    const actual = done ? v.quote.actual[workOf(i)] : 0
     const raw = v.brief.items.find(x => x.id === i.id)!
-    return { category: v.brief.category ?? '其他', title: i.title, basis: basisOf(raw), ai: raw.hours, final: half(actual > 0 && total > 0 ? shown(i) * actual / total : shown(i)) }
+    const mine = own(i)
+    let final = shown(i)
+    if (mine != null) final = mine
+    else if (done) {
+      const same = kept.filter(x => workOf(x) === workOf(i))
+      const left = Math.max(0, v.quote.actual[workOf(i)] - same.reduce((a, x) => a + (own(x) ?? 0), 0))
+      const total = same.filter(x => own(x) == null).reduce((a, x) => a + shown(x), 0)
+      if (v.quote.actual[workOf(i)] > 0 && total > 0) final = shown(i) * left / total
+    }
+    return { category: v.brief.category ?? '其他', title: i.title, basis: basisOf(raw), ai: raw.hours, final: half(final) }
   })
   return { source: done ? '实际' : '调整', items }
 }
@@ -685,7 +717,7 @@ export function calibrate(projects: { title: string; versions: SheetVersion[]; m
     if (q.status === '已报价' && q.outcome === '嫌贵' && q.clientBudget) (budgets[v.brief.clientType] ??= []).push(q.clientBudget)
     const worth = q.status === '已成交' && q.feeling !== '待定'
     const refused = q.status === '已报价' && q.outcome === '我没接'
-    const timed = q.status === '已成交' && WORK_KINDS.some(k => q.actual[k] > 0)
+    const timed = q.status === '已成交' && hasActual(q)
     const rejected = q.status === '已报价' && q.outcome === '嫌贵'
     if (!worth && !refused && !timed && !rejected) continue
     const sheet = buildSheet(p.title, p.versions, v.n, base)
@@ -696,7 +728,7 @@ export function calibrate(projects: { title: string; versions: SheetVersion[]; m
     const expense = lines.filter(l => l.kind === 'expense').reduce((a, l) => a + l.amount, 0)
     for (const k of WORK_KINDS) {
       if (!share[k]) continue
-      const actual = q.actual[k]
+      const actual = actualHours(q, lines, k, f[k])
       const estimate = hoursBy(lines, k, f[k], ['item', 'result'])
       // 小时系数校准的是 AI 的预估，分母一律用 AI 原始小时，开发者拖过也不影响
       const aiEstimate = lines.filter(l => l.work === k && l.kind === 'item').reduce((a, l) => a + (v.brief.items.find(i => i.id === l.itemId)?.hours ?? 0), 0) + hoursBy(lines, k, 1, ['result'])

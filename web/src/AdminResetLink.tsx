@@ -4,7 +4,6 @@ import { Select } from './Select'
 
 export function AdminResetLink(): JSX.Element {
   const [users, setUsers] = useState<{ id: string; text: string }[]>([])
-  const [total, setTotal] = useState(0)
   const [username, setUsername] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -14,7 +13,6 @@ export function AdminResetLink(): JSX.Element {
   useEffect(() => {
     void auth.resetUsers()
       .then((r) => {
-        setTotal(r.total)
         setUsers(r.users.map((u) => ({ id: u.username, text: u.self ? `${u.username}（我）` : u.username })))
       })
       .catch((err) => setError(err instanceof Error ? err.message : '用户列表读取失败'))
@@ -37,7 +35,7 @@ export function AdminResetLink(): JSX.Element {
 
   return (
     <form className="feedback-reset" onSubmit={(e) => void issue(e)}>
-      <span className="feedback-label">重置账号的密码和密保 <span className="faint">（共 {total} 个用户）</span></span>
+      <span className="feedback-label">重置账号的密码和密保 <span className="faint">（共 {users.length} 个用户）</span></span>
       <div className="feedback-reset-row">
         <div className="feedback-reset-pick">
           <Select options={users} value={username} onChange={(v) => { setUsername(v); setResult(null) }} placeholder="选择用户…" />
