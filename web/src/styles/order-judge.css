@@ -266,6 +266,11 @@
 .oj-qrow.top .oj-qlabel { padding-top: 8px; }
 .oj-qlabel { flex: 0 0 84px; font-size: 12.5px; color: var(--ink-sub); }
 .oj-qin { width: 96px; min-height: 34px; padding: 6px 10px; font: inherit; font-size: 13.5px; color: var(--ink); background: var(--field-bg); border: 1.5px solid var(--field-line); border-radius: 8px 11px 8px 11px; outline: none; transition: border-color .2s, box-shadow .2s; }
+.oj-qmods { display: grid; }
+.oj-qmods > summary { margin-bottom: 4px; }
+.oj-qmods .oj-qrow { display: grid; grid-template-columns: minmax(0, 1fr) 88px 28px; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--line); }
+.oj-qmods .oj-qlabel { flex: none; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+.oj-qmods .oj-qin { width: 100%; min-width: 0; }
 .oj-qin.wide { width: 220px; max-width: 100%; }
 .oj-qin::placeholder { color: var(--ink-faint); }
 .oj-qin:focus { border-color: var(--teal-line); box-shadow: 0 0 0 3px var(--teal-wash); }
@@ -350,13 +355,17 @@
 .oj-scope-submit .oj-qnote { left: 0; right: auto; top: calc(100% - 16px); }
 @media (max-width: 860px) { .oj-scope-submit .btn { width: 100%; min-height: 46px; } }
 
-.oj-flow { position: relative; display: grid; gap: 36px; padding: 4px 0; }
+.oj-flow { position: relative; overflow: hidden; min-height: 80px; cursor: grab; }
+.oj-flow-stage { position: relative; display: grid; justify-items: center; gap: 36px; width: max-content; min-width: 100%; padding: 4px 0; transform-origin: 0 0; }
+.oj-flow-tools { position: absolute; top: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 2px; padding: 2px 4px; background: var(--paper); border: 1px dashed var(--line); border-radius: 8px; cursor: default; }
 .oj-flow-lines { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
 .oj-flow-lines path { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 4; }
 .oj-flow-lines path.on { stroke: var(--teal-line); stroke-dasharray: none; opacity: .75; }
 .oj-flow-lines path.bad { stroke: var(--sakura); stroke-dasharray: none; }
 .oj-flow-lines path.hi { stroke: var(--teal); stroke-width: 2.5; opacity: 1; }
 .oj-flow-lines path.bad.hi { stroke: var(--sakura); }
+.oj-flow-lines path.sub { stroke-width: 1.2; stroke-dasharray: 3 4; opacity: .4; }
+.oj-flow-lines path.sub.hi { opacity: 1; stroke-width: 2; stroke-dasharray: none; }
 .oj-flow-lines path.dim { opacity: .25; }
 .oj-flow-lines path.hit { stroke: transparent; stroke-width: 12; stroke-dasharray: none; pointer-events: stroke; cursor: pointer; }
 .oj-flow-lines path.hit:hover { stroke: var(--sakura); opacity: .35; }
@@ -364,11 +373,10 @@
 .oj-flow.edit .oj-flow-node { position: relative; touch-action: none; cursor: grab; user-select: none; }
 .oj-flow-port { position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; margin-left: -6px; background: var(--paper); border: 2px solid var(--teal-line); border-radius: 50%; cursor: crosshair; touch-action: none; }
 .oj-flow-port:hover { background: var(--teal); }
-.oj-flow-reset { position: absolute; top: -34px; right: 0; }
-.oj-flow-layer { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 36px 10px; }
-.oj-flow-node { max-width: 100%; padding: 6px 12px; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink-faint); overflow-wrap: anywhere; background: var(--paper-2); border: 1.5px dashed var(--line); border-radius: 8px; }
-button.oj-flow-node { cursor: pointer; }
+.oj-flow-layer { position: relative; display: flex; flex-wrap: nowrap; width: max-content; gap: 10px; }
+.oj-flow-node { flex: none; max-width: 220px; padding: 6px 12px; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink-faint); overflow-wrap: anywhere; background: var(--paper-2); border: 1.5px dashed var(--line); border-radius: 8px; }
 .oj-flow-node.on { color: var(--ink); background: var(--teal-wash); border: 1.5px solid var(--teal-line); }
+button.oj-flow-node { cursor: pointer; }
 .oj-flow-node.lock { opacity: .45; text-decoration: line-through; cursor: not-allowed; }
 .oj-flow-node.bad { background: var(--sakura-wash); border: 1.5px solid var(--sakura); }
 .oj-conflicts { display: grid; gap: 6px; margin-top: 14px; }
