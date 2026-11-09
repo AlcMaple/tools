@@ -12,7 +12,7 @@ import { precheck } from '../../shared/order-judge'
 import { BASIS_TEXT, CHOOSABLE_CLIENT_TYPES, PRIORITIES, WORK_KINDS, isChoosableClientType, type Brief as BriefType, type BriefItem, type ChoosableClientType } from '../../shared/order-judge-brief'
 import { parseBudget, parseDeadline, ymd, type Expense, type QuoteSettings } from '../../shared/order-judge-quote'
 import { COOPERATION_PLANS, MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, longTermClientText, longTermFee, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, planOf, suggestFee, type CooperationPlan, type Maintenance, type MonthRecord } from '../../shared/order-judge-maintenance'
-import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibFor, calibrateByType, latestType, clientText, freeze, normalizeQuote, selfText, marketLine, HOUR_SCALE_MAX, HOUR_SCALE_MIN, hourRows, hoursLabel, scaleLabel, selfSummary, type Calibrations, type HourRow, type QuoteState, type Sheet } from '../../shared/order-judge-sheet'
+import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, ITEM_MAX_DAYS, ITEM_MAX_HOURS, OUTCOMES, VERSION_STATUSES, buildSheet, calibFor, calibrateByType, latestType, clientText, freeze, normalizeQuote, selfText, marketLine, HOUR_SCALE_MAX, HOUR_SCALE_MIN, hourRows, hoursLabel, scaleLabel, selfSummary, type Calibrations, type HourRow, type QuoteState, type Sheet } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
 import { FlowPreview } from './FlowPreview'
@@ -1005,7 +1005,11 @@ function HoursPanel({ market, draft, raw, settings, set }: { market: string; dra
     <label key={r.id} className="oj-hrow">
       <span title={`${r.title}：${BASIS_TEXT[r.basis]}`}>{r.title}<em>{BASIS_TEXT[r.basis]}</em></span>
       <input type="range" aria-label={`${r.title}的小时`} min={0} max={r.max} step={0.5} value={r.hours} disabled={locked} onChange={e => drag(r.id, r.suggested, Number(e.target.value))} />
-      <span className="oj-hval" title={`${r.hours} 小时`}>{hoursLabel(r.hours)}</span>
+      <span className="oj-hval" title={hoursLabel(r.hours)}>
+        <input key={`${r.id}:${r.hours}`} type="number" className="oj-hnum" aria-label={`${r.title}的小时数`} min={0} max={ITEM_MAX_HOURS} step={0.5} defaultValue={r.hours} disabled={locked}
+          onBlur={e => { const v = Math.min(ITEM_MAX_HOURS, Math.max(0, Math.round(Number(e.target.value) * 2) / 2)); if (e.target.value !== '' && Number.isFinite(v) && v !== r.hours) drag(r.id, r.suggested, v); else e.target.value = String(r.hours) }}
+          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }} />小时
+      </span>
     </label>
   )
   return (
@@ -1023,6 +1027,7 @@ function HoursPanel({ market, draft, raw, settings, set }: { market: string; dra
           <div>{rest.map(row)}</div>
         </details>
       )}
+      {rows.some(r => r.hours >= ITEM_MAX_HOURS) && <p className="oj-scope-warn">单项最多 {ITEM_MAX_DAYS} 天；某一项要做更久，建议把上面的合作方式改成长期</p>}
       {changed && !locked && <button type="button" className="oj-hreset" onClick={() => set({ hourEdits: {}, hourScale: 1 })}>恢复 AI 的估计</button>}
     </div>
   )
@@ -1142,7 +1147,7 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
         )}
         {draft.status === '已成交' && kinds.map(k => (
           <label key={k} className="oj-qrow">
-            <span className="oj-qlabel">实际{k === '接手改' ? '验证和接手' : '新做'}</span>
+            <span className="oj-qlabel">{k === '接手改' ? '验证和改旧代码用时' : '从零做的部分用时'}</span>
             <input className="oj-qin" inputMode="decimal" value={draft.actual[k] || ''} placeholder="做完再填"
               onChange={e => set({ actual: { ...draft.actual, [k]: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } })} />
             <span className="faint small">小时</span>

@@ -349,7 +349,7 @@ pass('成交时把条目调低，下一版 AI 小时没变时变更单不收钱'
 
 const carried = carryHourEdits({ ...EMPTY_QUOTE, hourEdits: { r1: 3, r2: 5 } }, dragged, brief([item('r1', '必须', 10), item('r2', '必须', 9)]))
 assert.deepEqual(carried.hourEdits, { r1: 3 })
-assert.deepEqual(normalizeQuote({ hourEdits: { r1: 3.3, bad: 1, r2: 999 }, hourScale: 9 }).hourEdits, { r1: 3.5, r2: 200 })
+assert.deepEqual(normalizeQuote({ hourEdits: { r1: 3.3, bad: 1, r2: 999 }, hourScale: 9 }).hourEdits, { r1: 3.5, r2: 56 })
 assert.equal(normalizeQuote({ hourScale: 9 }).hourScale, 1)
 const zeroItem = brief([item('r1', '必须', 0, { basis: '验证' })])
 assert.equal(basisOfNormalized(zeroItem), '直接做')

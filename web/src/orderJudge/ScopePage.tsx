@@ -53,7 +53,9 @@ function ScopeForm({ token, initial, onGone }: { token: string; initial: ScopeVi
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(saved ? { ok: true, text: '已提交，还可以改了再提交' } : null)
 
-  const nodes = useMemo(() => [...view.items, ...customNodes(custom)], [view.items, custom])
+  const baseNodes = useMemo(() => [...view.items, ...customNodes(custom)], [view.items, custom])
+  const [edited, setEdited] = useState<ScopeNode[] | null>(null)
+  const nodes = edited && edited.length === baseNodes.length ? edited : baseNodes
   const allPicked = useMemo(() => new Set([...picked, ...custom.map(c => c.id)]), [picked, custom])
   const blocked = useMemo(() => blockedBy(view.plans.find(p => p.id === planId), view.items), [view.plans, view.items, planId])
   const conflicts = scopeConflicts(nodes, allPicked)
@@ -161,7 +163,7 @@ function ScopeForm({ token, initial, onGone }: { token: string; initial: ScopeVi
         </section>
         <section className="panel oj-scope-sec oj-scope-flow">
           <h2>功能怎么连起来</h2>
-          <FlowPreview nodes={nodes} picked={allPicked} locked={blocked} onToggle={toggle} />
+          <FlowPreview nodes={baseNodes} picked={allPicked} locked={blocked} onToggle={toggle} editable onNodes={setEdited} />
           {conflicts.length > 0 && (
             <ul className="oj-conflicts">
               {conflicts.map(c => (

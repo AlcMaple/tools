@@ -246,6 +246,9 @@
 .oj-hrow > span:first-child { min-width: 0; line-height: 1.35; }
 .oj-hrow em { display: block; font-style: normal; font-size: 11.5px; color: var(--ink-faint); }
 .oj-hval { text-align: right; font-size: 12.5px; color: var(--ink-sub); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.oj-hnum { width: 52px; padding: 1px 4px; font: inherit; font-size: 12.5px; text-align: right; color: var(--ink); background: transparent; border: 1px solid transparent; border-radius: 4px; appearance: textfield; -moz-appearance: textfield; }
+.oj-hnum::-webkit-inner-spin-button, .oj-hnum::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.oj-hnum:hover:not(:disabled), .oj-hnum:focus { border-color: var(--line); background: var(--paper); outline: none; }
 .oj-hrow input[type=range] { width: 100%; height: 18px; margin: 0; background: transparent; appearance: none; -webkit-appearance: none; cursor: pointer; }
 .oj-hrow input[type=range]:disabled { opacity: .5; cursor: default; }
 .oj-hrow input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--line); border-radius: 2px; }
@@ -355,6 +358,13 @@
 .oj-flow-lines path.hi { stroke: var(--teal); stroke-width: 2.5; }
 .oj-flow-lines path.bad.hi { stroke: var(--sakura); }
 .oj-flow-lines path.dim { opacity: .25; }
+.oj-flow-lines path.hit { stroke: transparent; stroke-width: 12; stroke-dasharray: none; pointer-events: stroke; cursor: pointer; }
+.oj-flow-lines path.hit:hover { stroke: var(--sakura); opacity: .35; }
+.oj-flow-lines line.draft { stroke: var(--teal); stroke-width: 2; stroke-dasharray: 4 4; }
+.oj-flow.edit .oj-flow-node { position: relative; touch-action: none; cursor: grab; user-select: none; }
+.oj-flow-port { position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; margin-left: -6px; background: var(--paper); border: 2px solid var(--teal-line); border-radius: 50%; cursor: crosshair; touch-action: none; }
+.oj-flow-port:hover { background: var(--teal); }
+.oj-flow-reset { position: absolute; top: -34px; right: 0; }
 .oj-flow-layer { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 36px 10px; }
 .oj-flow-node { max-width: 100%; padding: 6px 12px; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink-faint); overflow-wrap: anywhere; background: var(--paper-2); border: 1.5px dashed var(--line); border-radius: 8px; }
 button.oj-flow-node { cursor: pointer; }
