@@ -6,6 +6,25 @@ import { Ic, Spinner } from './SketchIcon'
 
 const splitTags = (raw: string): string[] => raw.split(/[\s,，、]+/).map((t) => t.trim()).filter(Boolean)
 
+const COVER_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+
+// 网图先由管理员自己的浏览器取：管理员看得到这张图，浏览器就取得到，而服务器未必连得上图片所在网站
+// （线上那台连不上百科图床）。不带 Referer 是因为百科图床对外站 Referer 回 403。
+// 图床不允许跨域读取、或取到的不是图片时返回 null，改由服务器下载，失败原因以服务器报的为准
+async function fetchCoverInBrowser(raw: string): Promise<File | null> {
+  if (raw.includes('…') || /%E2%80%A6/i.test(raw)) return null
+  try {
+    const url = new URL(raw)
+    if (url.protocol === 'http:') url.protocol = 'https:'
+    const res = await fetch(url, { referrerPolicy: 'no-referrer', credentials: 'omit', signal: AbortSignal.timeout(15_000) })
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return COVER_TYPES.includes(blob.type) ? new File([blob], 'cover', { type: blob.type }) : null
+  } catch {
+    return null
+  }
+}
+
 export function CatalogEditDialog({ item, onSaved, onClose }: {
   item: CatalogItem
   onSaved: (item: CatalogItem) => void
@@ -40,7 +59,10 @@ export function CatalogEditDialog({ item, onSaved, onClose }: {
   const commitCoverUrl = (): void => {
     const v = coverUrlDraft.trim()
     setCoverEditing(false)
-    if (v && v !== item.cover) void run('cover', () => saveCatalogCoverUrl(item.bgmId, v), false)
+    if (v) void run('cover', async () => {
+      const file = await fetchCoverInBrowser(v)
+      return file ? uploadCatalogCover(item.bgmId, file) : saveCatalogCoverUrl(item.bgmId, v)
+    }, false)
   }
 
   const save = (): void => {

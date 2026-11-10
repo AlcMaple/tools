@@ -8,11 +8,16 @@
 // - 结果存 web.db：索引每周整库重建，封面不跟着丢；新入库的番自然排进队尾
 import { mkdirSync } from 'node:fs'
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { isIP } from 'node:net'
+import { lookup } from 'node:dns/promises'
+import { lookup as lookupAddress } from 'node:dns'
 import { join } from 'node:path'
+import { Agent, fetch as undiciFetch } from 'undici'
 import { db } from '../db'
 import { dataDir } from '../data-dir'
 import { getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './cover-proxy'
 import { noteBgmRequest } from './bgm-health'
+import { publicAddress } from '../agent/external-runtime'
 import { openOfflineIndex, searchAnime } from './anime-index'
 
 // 实测口径：约 3 万部 × 2 次请求（条目 + 图片），8 秒一部约 2.8 天补完，远低于 BGM 对单 IP 的容忍度
@@ -35,7 +40,8 @@ db.exec(`
 
 // 管理员手改的卡片信息。NULL / 空 cover_mime 且空 cover_url = 这一项没改，沿用索引和后台补的封面。
 // 上传的封面字节在 catalogCoversDir/<bgm_id>，这张表的 cover_mime 是另一半凭据：两半在每条写路径上同进同退。
-// cover_url 是填的网图地址，和上传互斥：换成哪一种，另一种（含磁盘文件）就一起清掉
+// cover_url 是历史：曾经直接存网图地址交给浏览器加载，现在填网图会在保存时下载成 cover_mime + 文件，
+// 这一列只剩旧数据还在读，新写入一律置空
 db.exec(`
   CREATE TABLE IF NOT EXISTS catalog_override (
     bgm_id     INTEGER PRIMARY KEY,
@@ -50,6 +56,10 @@ if (!(db.prepare('PRAGMA table_info(catalog_override)').all() as { name: string 
 }
 export const catalogCoversDir = join(dataDir, 'catalog-covers')
 mkdirSync(catalogCoversDir, { recursive: true })
+
+// 从浏览器开发者工具里复制的地址，中间会被省略成「…」，这种地址在哪都打不开。
+// 旧数据里已经存了几条，读出来时当作没填，卡片回到默认封面而不是裂图
+const isTruncatedUrl = (url: string): boolean => url.includes('…') || /%E2%80%A6/i.test(url)
 
 interface OverrideRow { name_cn: string | null; tags: string | null; cover_mime: string; cover_url: string; updated_at: number }
 const overrideRow = db.prepare('SELECT name_cn, tags, cover_mime, cover_url, updated_at FROM catalog_override WHERE bgm_id = ?')
@@ -86,11 +96,12 @@ function toItem(row: IndexRow, admin: boolean): CatalogItem {
   const ov = overrideRow.get(row.bgm_id) as OverrideRow | undefined
   // R18 条目只给登录用户列出，索引里的标签多是露骨字眼，不展示；封面不去补，管理员手动上传的除外
   const tags = ov?.tags != null ? parseTags(ov.tags, MAX_TAGS) : row.adult ? [] : parseTags(row.tags, 6)
+  const legacyUrl = ov && !isTruncatedUrl(ov.cover_url) ? ov.cover_url : ''
   const cover = ov?.cover_mime ? `/api/catalog/${row.bgm_id}/cover-file?v=${ov.updated_at}`
-    : ov?.cover_url ? ov.cover_url
+    : legacyUrl ? legacyUrl
     : row.adult ? '' : (coverRow.get(row.bgm_id) as { path: string } | undefined)?.path ?? ''
   const item: CatalogItem = { bgmId: row.bgm_id, name: row.name, nameCn: ov?.name_cn ?? row.name_cn, date: row.date, score: row.score, eps: Number(row.eps) || 0, tags, cover }
-  if (admin) item.edited = { nameCn: ov?.name_cn != null, tags: ov?.tags != null, cover: !!ov?.cover_mime || !!ov?.cover_url }
+  if (admin) item.edited = { nameCn: ov?.name_cn != null, tags: ov?.tags != null, cover: !!ov?.cover_mime || !!legacyUrl }
   return item
 }
 
@@ -243,6 +254,7 @@ export class CatalogEditError extends Error {
 const MAX_TAGS = 10
 const COVER_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 const COVER_MAX_BYTES = 4 * 1024 * 1024
+const COVER_FETCH_UA = 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)'
 const coverFile = (id: number): string => join(catalogCoversDir, String(id))
 
 function existsInIndex(id: number): boolean {
@@ -293,12 +305,8 @@ export function saveCatalogText(id: number, input: { nameCn: unknown; tags: unkn
   overrideVersion++
 }
 
-export async function saveCatalogCover(id: number, file: File): Promise<void> {
-  if (!existsInIndex(id)) throw new CatalogEditError('索引里没有这部番', 404)
-  if (!COVER_MIME.has(file.type)) throw new CatalogEditError('只支持 PNG / JPEG / WebP / GIF')
-  if (file.size > COVER_MAX_BYTES) throw new CatalogEditError('图片不能超过 4MB')
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  await withLock(id, async () => {
+function storeCover(id: number, bytes: Uint8Array, mime: string): Promise<void> {
+  return withLock(id, async () => {
     // 先写临时文件再改名：读取端要么读到旧图、要么读到新图，不会读到写了一半的
     const tmp = `${coverFile(id)}.tmp`
     await writeFile(tmp, bytes)
@@ -306,30 +314,105 @@ export async function saveCatalogCover(id: number, file: File): Promise<void> {
     db.prepare(`
       INSERT INTO catalog_override (bgm_id, cover_mime, cover_url, updated_at) VALUES (?, ?, '', ?)
       ON CONFLICT(bgm_id) DO UPDATE SET cover_mime = excluded.cover_mime, cover_url = '', updated_at = excluded.updated_at
-    `).run(id, file.type, Date.now())
+    `).run(id, mime, Date.now())
   })
 }
 
-const COVER_URL_MAX = 1000
+export async function saveCatalogCover(id: number, file: File): Promise<void> {
+  if (!existsInIndex(id)) throw new CatalogEditError('索引里没有这部番', 404)
+  if (!COVER_MIME.has(file.type)) throw new CatalogEditError('只支持 PNG / JPEG / WebP / GIF')
+  if (file.size > COVER_MAX_BYTES) throw new CatalogEditError('图片不能超过 4MB')
+  await storeCover(id, new Uint8Array(await file.arrayBuffer()), file.type)
+}
 
-// 只收 https 网图（http 存成 https，和前端 coverUrl 的放行规则一致）；存进去的就是原样地址，
-// 显示时照常经 coverUrl 走 lain 代理等分流
+const COVER_URL_MAX = 1000
+const IS_DEV = process.env.NODE_ENV !== 'production' && !process.env.VERCEL
+
+// 本地开发走 Clash fake-ip 时 DNS 给的是 198.18.x，直连它就是走 TUN，开发环境放行
+function allowedAddress(address: string): boolean {
+  return publicAddress(address) || (IS_DEV && isIP(address) === 4 && /^198\.(18|19)\./.test(address))
+}
+
+// 图床回的 Content-Type 不可靠（百科图床按 Accept 换格式），按文件头认
+function sniffImage(b: Uint8Array): string {
+  const at = (i: number, ...sig: number[]): boolean => sig.every((v, k) => b[i + k] === v)
+  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'image/png'
+  if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg'
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'image/gif'
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp'
+  return ''
+}
+
+// 地址是管理员填的，仍要挡住内网：每一跳都解析并校验，再把连接固定到校验过的那个地址上。
+// 不带 Referer：百科图床对外站 Referer 回 403。失败不重试，原因原样报给管理员
+async function downloadCover(start: string): Promise<{ bytes: Uint8Array; mime: string }> {
+  const signal = AbortSignal.timeout(20_000)
+  let current = start
+  for (let hop = 0; hop < 4; hop++) {
+    const u = new URL(current)
+    if (u.protocol !== 'https:' && !(hop > 0 && u.protocol === 'http:')) throw new CatalogEditError('图片地址要以 https:// 开头')
+    if (u.username || u.password) throw new CatalogEditError('图片地址不能带账号密码')
+    const host = u.hostname.replace(/^\[|\]$/g, '')
+    const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true, verbatim: true })
+    if (!addresses.length || addresses.some((a) => !allowedAddress(a.address))) throw new CatalogEditError('不能用内网地址的图片')
+    const pinned = addresses[0].address
+    const dispatcher = new Agent({ connect: { lookup: (_h, options, callback) => lookupAddress(pinned, options, callback) } })
+    try {
+      const res = await undiciFetch(current, {
+        redirect: 'manual',
+        dispatcher,
+        signal,
+        headers: { 'User-Agent': COVER_FETCH_UA, Accept: 'image/webp,image/png,image/jpeg,image/gif' },
+      })
+      const location = res.headers.get('location')
+      if (res.status >= 300 && res.status < 400 && location) {
+        await res.body?.cancel()
+        current = new URL(location, current).toString()
+        continue
+      }
+      if (!res.ok || !res.body) {
+        await res.body?.cancel()
+        throw new CatalogEditError(`图片所在网站返回 HTTP ${res.status}，可以先存到本地再上传`)
+      }
+      const chunks: Uint8Array[] = []
+      let size = 0
+      for await (const part of res.body) {
+        size += part.byteLength
+        if (size > COVER_MAX_BYTES) throw new CatalogEditError('图片不能超过 4MB')
+        chunks.push(part)
+      }
+      const bytes = Buffer.concat(chunks, size)
+      const mime = sniffImage(bytes)
+      if (!mime) throw new CatalogEditError('这个地址不是 PNG / JPEG / WebP / GIF 图片')
+      return { bytes, mime }
+    } finally {
+      await dispatcher.close()
+    }
+  }
+  throw new CatalogEditError('图片地址跳转次数太多')
+}
+
+// 网图在保存时就下载到服务器，之后和本地上传走同一条路。直接把外链交给浏览器会裂：
+// 百科图床按 Referer 防盗链，维基图床国内直连不通
 export async function saveCatalogCoverUrl(id: number, raw: unknown): Promise<void> {
   if (!existsInIndex(id)) throw new CatalogEditError('索引里没有这部番', 404)
   if (typeof raw !== 'string' || !raw.trim()) throw new CatalogEditError('请填写图片地址')
+  if (isTruncatedUrl(raw)) throw new CatalogEditError('这个地址中间被「…」省略了一段，请复制完整的图片地址')
   let url: URL
   try { url = new URL(raw.trim()) } catch { throw new CatalogEditError('图片地址格式不对') }
   if (url.protocol === 'http:') url.protocol = 'https:'
-  if (url.protocol !== 'https:' || url.username || url.password) throw new CatalogEditError('图片地址要以 https:// 开头')
   const value = url.toString()
   if (value.length > COVER_URL_MAX) throw new CatalogEditError('图片地址太长')
-  await withLock(id, async () => {
-    db.prepare(`
-      INSERT INTO catalog_override (bgm_id, cover_mime, cover_url, updated_at) VALUES (?, '', ?, ?)
-      ON CONFLICT(bgm_id) DO UPDATE SET cover_mime = '', cover_url = excluded.cover_url, updated_at = excluded.updated_at
-    `).run(id, value, Date.now())
-    await unlinkCover(id)
-  })
+  let image: { bytes: Uint8Array; mime: string }
+  try {
+    image = await downloadCover(value)
+  } catch (error) {
+    console.warn(`[catalog] 网图封面下载失败 bgm_id=${id} host=${url.hostname}:`, error)
+    if (error instanceof CatalogEditError) throw error
+    const timedOut = error instanceof Error && error.name === 'TimeoutError'
+    throw new CatalogEditError(timedOut ? '服务器 20 秒内没下载完这张图，可以先存到本地再上传' : '服务器连不上图片所在网站，可以先存到本地再上传')
+  }
+  await storeCover(id, image.bytes, image.mime)
 }
 
 const unlinkCover = (id: number): Promise<void> =>
