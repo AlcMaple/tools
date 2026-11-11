@@ -7,6 +7,7 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
   {...feature('web.tracks','我的追番','管理自己的追番状态、进度、标签、收藏程度及鉴赏神回。','/#/tracks',['登录后添加番剧或手动条目','在卡片编辑进度、状态、标签或详情','可导入 Bangumi 收藏及使用既有同步入口','让纱雾预览追番添加或状态、进度、标签的改动，核对新旧值后点击确认再执行'],['私人资料仅当前账号可读','Agent 可预览追番添加与状态、进度、标签变更：旧值和 revision 由服务端读取，用户点击确认后由独立接口执行并回读；取消即不写','Agent 不代为删除、上传封面或导入，添加只用离线已收录的正数条目、不联网补全'],['listMyTracks']),revision:2},
   {...feature('web.community','同好手帐','浏览用户主动公开的番剧、点评与推荐。','/#/community',['打开同好手帐查看公开用户或公开点评','从条目进入番剧讨论或公开用户页'],['关闭公开开关或撤回发布后不再进入工具结果','公开用户按公开开关计数；追番、点评与推荐按动画记录统计，筛选和查询时点见可展开来源明细'],['listPublicReviews','aggregatePublicData'],'public'),revision:3},
   {...feature('web.catalog','全部番剧','按番名、年份与题材组合发现动画，可试看或追番。','/#/anime',['打开全部番剧，按评分或最新排序、按年份筛选或搜番名','按题材找番中点题材或手动输入，光标在哪个框就加进哪个框，结果实时更新；清空题材可恢复目录','在海报上点圆章追番，或点试看挑片源'],['封面由服务器每天慢慢补，还没补到的显示番名占位','管理员可以手改卡片的中文名、标签和封面，并决定哪些题材出现在快捷题材里','数据来自每周更新的离线索引，刚开播的新番可能要等下一次同步'],[],'public'),revision:3},
+  feature('web.relatedAnime','相关作品','从目录条目查看前传、续集与番外等直接关联动画。','/#/anime',['在条目点击相关作品','按关系分组查看；查看关联可继续打开另一作品，返回上一部恢复前一条目','登录后可将未收藏条目加入想看'],['作品关系不代表推荐观看顺序','资料尚未准备好与没有关联分开显示；不在浏览时请求外站'],[],'public'),
   feature('web.reviews','点评与推荐助手','为已在看或看完的番剧整理点评或推荐草稿。','/#/tracks',['进入符合状态的追番卡片，点击点评','填写问题、调整草稿，明确点击发布或撤回'],['须登录并拥有该番剧；想看和观望不满足写点评条件','Agent 不直接生成发布请求；模型连接状态以当前配置为准']),
   feature('web.backup','备份与恢复','把自己的追番和点评导出一份留在本地，需要时导回。','/#/settings',['在设置的备份与恢复口袋选择导出（ZIP 可导回，Markdown 只供阅读）','从备份恢复时选择之前导出的 .zip 或 data.json，按条目合并、谁改得晚用谁'],['导入只认 ZIP / JSON；别人的备份只导入追番列表，不含点评','Agent 不代为导出或导入']),
   feature('web.auth','登录与注册','使用账号登录后管理私人数据。','/#/settings',['点击登录/注册，使用已开通的登录方式','在设置中按界面流程修改账号、密码与公开开关'],['访客可了解登录流程，但不执行账号操作；不向 Agent 提供密码或验证码'],[],'public'),
@@ -25,6 +26,7 @@ export const SITE_FEATURES:readonly FeatureDescription[]=[
 ]
 // 仅构建校验使用，不进入模型或公开快照。每个顶层 API 入口必须有功能归属。
 export const SITE_API_FEATURES:Readonly<Record<string,string>>={
+ '/api/catalog/:id/related':'web.relatedAnime',
  '/api/request-log':'infrastructure.monitoring','/api/subject-cover/:id':'infrastructure.cover','/api/boot-log':'infrastructure.monitoring','/api/health':'infrastructure.health','/api/health/bgm':'infrastructure.health','/api/cover/*':'infrastructure.cover','/api/auth':'web.auth','/api/auth/oauth':'web.auth',
  '/api/rewards':'web.rewards','/api/community':'web.community','/api/announcements':'web.announcements',
  '/api/feedback':'web.feedback','/api/tracks':'web.tracks','/api/reviews':'web.reviews','/api/backup':'web.backup','/api/order-judge':'web.orderJudge','/api/order-judge-scope':'web.orderJudge','/api/agent':'agent.run','/api/xifan':'web.xifan','/api/girigiri':'web.girigiri','/api/player':'web.xifan','/api/search':'web.search','/api/catalog':'web.catalog','/api/catalog/genres':'web.catalog','/api/catalog/:id':'web.catalog','/api/catalog/:id/cover':'web.catalog','/api/catalog/:id/cover-file':'web.catalog','/api/search-log':'web.search','/api/calendar':'web.calendar','/api/calendar/seasons':'web.calendar','/api/calendar/seasons/:key':'web.calendar',

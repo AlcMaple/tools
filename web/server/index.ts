@@ -7,7 +7,7 @@ import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
 import { bgmHealth, noteBgmRequest } from './bgm/bgm-health'
 import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
-import { CatalogEditError, clearCatalogCover, getCatalogItem, listGenresForAdmin, saveGenreVisibility, saveCatalogCoverUrl, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
+import { CatalogEditError, clearCatalogCover, getCatalogItem, listGenresForAdmin, saveGenreVisibility, saveCatalogCoverUrl, isAdultEntry, listCatalog, relatedCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
 import { CoverError, getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
@@ -176,6 +176,15 @@ app.get('/api/catalog', async (c) => {
     include,
     exclude,
   }))
+})
+
+app.get('/api/catalog/:id/related', async c => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: '条目编号不正确' }, 400)
+  const session = await getSession(c)
+  c.header('Cache-Control', 'no-store')
+  const result = relatedCatalog(id, !!session)
+  return result ? c.json(result) : c.json({ error: '没有找到这部番' }, 404)
 })
 
 // 管理员手改卡片：中文名、标签、封面。改的是全站共用的目录，不是某个用户自己的追番

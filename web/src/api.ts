@@ -64,6 +64,17 @@ export interface CatalogItem {
 
 export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[] }
 
+export interface RelatedAnimeResult { ready: boolean; source: CatalogItem; items: (CatalogItem & { relation: string })[]; truncated: boolean }
+
+export async function fetchRelatedAnime(id: number, signal: AbortSignal): Promise<RelatedAnimeResult> {
+  const response = await fetchApi(`/api/catalog/${id}/related`, { signal }, 10_000)
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error || `关联作品读取失败（HTTP ${response.status}）`)
+  }
+  return response.json() as Promise<RelatedAnimeResult>
+}
+
 async function catalogEdit(path: string, init: RequestInit): Promise<CatalogItem> {
   const res = await fetch(`/api/catalog/${path}`, init)
   const body = (await res.json().catch(() => ({}))) as { error?: string; item?: CatalogItem | null }
