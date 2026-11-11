@@ -27,6 +27,14 @@
 
 ## 当前未归类记录（2026-10）
 
+## 2026-11-11 fix(dev): 删掉 Electron 程序后 npm run dev 能自动补回并启动
+
+**效果**：为腾空间删掉 `node_modules/electron/dist/Electron.app` 后，`npm run dev` / `npm run preview` 不再报 `spawn …/Electron ENOENT`，启动前会先把缺失的 Electron 程序补回来再启动
+
+**关键决策**：electron 包自带「程序缺了就补下」的逻辑，但只在 `require('electron')` 时触发；`electron-vite` 直接读 `node_modules/electron/path.txt` 去启动，绕过了它。所以 `predev` / `prepreview` 钩子只做一次 `require('electron')`，不自己写下载逻辑。`npm start` 走 electron 自己的命令行，本来就会补，没加钩子
+
+**边界 / 风险**：本机缓存 `~/Library/Caches/electron` 还在时直接解压；缓存也删了会按 `.npmrc` 的 npmmirror 镜像重新下载，需要联网，这条路径未实测
+
 ## 2026-11-03 fix(homework): 复制可整组粘贴回
 
 **效果**：行内「复制三防阵容」现在带上防守方备注（末行 `备注：a / b`）。在「添加换防」或「编辑三防阵容」任一输入框里粘贴这段文本，会拆成防 1 / 防 2 / 防 3 三格，备注并入「防守方备注」（与已有备注去重合并）。其他文本粘贴行为不变

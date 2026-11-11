@@ -4,8 +4,10 @@
   "description": "番外小站 Desktop App",
   "main": "out/main/index.js",
   "scripts": {
+    "predev": "node scripts/ensure-electron.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "prepreview": "node scripts/ensure-electron.mjs",
     "preview": "electron-vite preview",
     "start": "electron .",
     "dist": "npm run build && electron-builder",
