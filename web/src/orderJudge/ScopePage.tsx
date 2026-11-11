@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Ic, SketchSprite } from '../SketchIcon'
 import { Select } from '../Select'
-import { MAX_CUSTOM, blockedBy, customNodes, flowLayers, recommendedPlan, scopeConflicts, type ScopeCustom, type ScopeNode, type ScopeView } from '../../shared/order-judge-scope'
+import { MAX_CUSTOM, blockedBy, customNodes, type ScopeEdge, flowLayers, recommendedPlan, scopeConflicts, type ScopeCustom, type ScopeNode, type ScopeView } from '../../shared/order-judge-scope'
 import { FlowPreview } from './FlowPreview'
 import { JudgeError, fetchScope, submitScope } from './api'
 
@@ -57,16 +57,50 @@ function ScopeForm({ token, initial, onGone }: { token: string; initial: ScopeVi
   const [edited, setEdited] = useState<ScopeNode[] | null>(null)
   const nodes = edited && edited.length === baseNodes.length ? edited : baseNodes
   const allPicked = useMemo(() => new Set([...picked, ...custom.map(c => c.id)]), [picked, custom])
-  const blocked = useMemo(() => blockedBy(view.plans.find(p => p.id === planId), view.items), [view.plans, view.items, planId])
+  // 方案标了冲突、客户认为不冲突的条目：解锁后和普通条目一样勾选，提交时带上让开发者知道
+  const [unblocked, setUnblocked] = useState<Set<string>>(() => new Set(saved?.unblocked ?? []))
+  const plan = view.plans.find(p => p.id === planId)
+  const blocked = useMemo(() => blockedBy(plan, view.items, unblocked), [plan, view.items, unblocked])
+  const lockedByPlan = useMemo(() => blockedBy(plan, view.items), [plan, view.items])
+  const unlock = (id: string): void => {
+    if (!blocked.has(id)) return
+    touch()
+    // 它被锁可能是因为前置被锁，前置一起放开才勾得上
+    const chain = [...withPrerequisites(view.items, [id])].filter(x => lockedByPlan.has(x))
+    setUnblocked(s => new Set([...s, ...chain]))
+    setPicked(s => new Set([...s, ...chain]))
+  }
+  const relock = (id: string): void => {
+    touch()
+    // 和解锁对称：当初连着前置一起放开的，恢复时也一起锁回去，不留一个「恢复了但没变化」的状态
+    const chain = new Set([...withPrerequisites(view.items, [id])].filter(x => lockedByPlan.has(x)))
+    const next = new Set([...unblocked].filter(x => !chain.has(x)))
+    const again = blockedBy(plan, view.items, next)
+    setUnblocked(new Set([...next].filter(x => !again.has(x))))
+    setPicked(s => new Set([...s].filter(x => !again.has(x))))
+  }
+  const edges = (list: ScopeNode[]): string[] => list.flatMap(n => n.dependsOn.map(d => `${d}>${n.id}`))
+  const links = useMemo(() => {
+    const was = new Set(edges(baseNodes)), now = new Set(edges(nodes))
+    const pair = (k: string): ScopeEdge => k.split('>') as ScopeEdge
+    return { add: [...now].filter(k => !was.has(k)).map(pair), drop: [...was].filter(k => !now.has(k)).map(pair) }
+  }, [baseNodes, nodes])
   const conflicts = scopeConflicts(nodes, allPicked)
   const stages = useMemo(() => {
     const m = new Map<string, ScopeNode[]>()
-    // 按前置关系排，先看到登录这类起点
-    const order = flowLayers(view.items).flat()
-    const sorted = order.map(id => view.items.find(i => i.id === id)!)
+    // 按前置关系排，先看到登录这类起点；客户在图里调换了先后，清单的顺序跟着变
+    const order = flowLayers(nodes).flat()
+    const sorted = order.map(id => view.items.find(i => i.id === id)).filter((i): i is ScopeNode => !!i)
     for (const i of sorted) { const k = i.stage || '功能'; m.set(k, [...(m.get(k) ?? []), i]) }
     return [...m]
-  }, [view.items])
+  }, [view.items, nodes])
+  // 客户改过前置的条目在清单里写明现在排在谁后面，图和清单对得上
+  const titleOf = new Map(nodes.map(n => [n.id, n.title]))
+  const baseDeps = new Map(baseNodes.map(n => [n.id, n.dependsOn]))
+  const movedAfter = (id: string): string => {
+    const now = nodes.find(n => n.id === id)?.dependsOn ?? [], was = baseDeps.get(id) ?? []
+    return now.length === was.length && now.every(d => was.includes(d)) ? '' : now.length ? `改为排在${now.map(d => `「${titleOf.get(d) ?? d}」`).join('、')}之后` : '改为不依赖别的功能'
+  }
 
   const touch = (): void => setStatus(null)
   const toggle = (id: string): void => {
@@ -77,7 +111,7 @@ function ScopeForm({ token, initial, onGone }: { token: string; initial: ScopeVi
   const choosePlan = (id: string): void => {
     const plan = view.plans.find(p => p.id === id)
     if (!plan) return
-    touch(); setPlanId(id); setPicked(new Set(plan.itemIds))
+    touch(); setPlanId(id); setPicked(new Set(plan.itemIds)); setUnblocked(new Set())
   }
   const restore = (ids: string[]): void => {
     touch()
@@ -95,7 +129,7 @@ function ScopeForm({ token, initial, onGone }: { token: string; initial: ScopeVi
   const submit = async (): Promise<void> => {
     setBusy(true); setStatus(null)
     try {
-      await submitScope(token, { planId, picked: [...picked], custom, answers: answers.map((a, i) => ({ i, a })).filter(x => x.a.trim()), note })
+      await submitScope(token, { planId, picked: [...picked], custom, answers: answers.map((a, i) => ({ i, a })).filter(x => x.a.trim()), note, links, unblocked: [...unblocked] })
       setStatus({ ok: true, text: '已提交，还可以改了再提交' })
     } catch (e) {
       console.error('[scope] 提交失败', e)
@@ -131,14 +165,14 @@ function ScopeForm({ token, initial, onGone }: { token: string; initial: ScopeVi
             <div key={stage} className="oj-stage">
               <h3>{stage}</h3>
               {items.map(i => blocked.has(i.id) ? (
-                <div key={i.id} role="checkbox" aria-checked={false} aria-disabled="true" className="oj-pick lock">
+                <div key={i.id} className="oj-pick lock ask">
                   <span className="box"><Ic name="x" cls="ic ic-sm" /></span>
-                  <span className="txt"><b>{i.title}</b><small>和所选方案冲突</small></span>
+                  <span className="txt"><b>{i.title}</b><small>和所选方案冲突</small><button type="button" className="oj-pick-undo" onClick={() => unlock(i.id)}>不冲突，仍然要</button></span>
                 </div>
               ) : (
                 <button key={i.id} type="button" role="checkbox" aria-checked={picked.has(i.id)} className={`oj-pick${picked.has(i.id) ? ' on' : ''}`} onClick={() => toggle(i.id)}>
                   <span className="box">{picked.has(i.id) && <Ic name="check" cls="ic ic-sm" />}</span>
-                  <span className="txt"><b>{i.title}</b>{i.detail && <small>{i.detail}</small>}</span>
+                  <span className="txt"><b>{i.title}</b>{i.detail && <small>{i.detail}</small>}{movedAfter(i.id) && <small className="oj-pick-moved">{movedAfter(i.id)}</small>}{lockedByPlan.has(i.id) && <span role="button" tabIndex={0} className="oj-pick-undo" onClick={e => { e.stopPropagation(); relock(i.id) }} onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); relock(i.id) } }}>恢复为冲突</span>}</span>
                 </button>
               ))}
             </div>
@@ -163,7 +197,7 @@ function ScopeForm({ token, initial, onGone }: { token: string; initial: ScopeVi
         </section>
         <section className="panel oj-scope-sec oj-scope-flow">
           <h2>功能怎么连起来</h2>
-          <FlowPreview nodes={baseNodes} picked={allPicked} locked={blocked} onToggle={toggle} editable onNodes={setEdited} />
+          <FlowPreview nodes={baseNodes} picked={allPicked} locked={blocked} onToggle={toggle} onPick={ids => { if (ids.length) restore(ids) }} onUnlock={unlock} editable onNodes={setEdited} initialLinks={saved?.links} />
           {conflicts.length > 0 && (
             <ul className="oj-conflicts">
               {conflicts.map(c => (

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { briefSystemPrompt, normalizeBrief, type Brief, type BriefItem } from '../shared/order-judge-brief'
 import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, parseDeadline, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
-import { inScoping, flowOrderedLayers, flowChannels, flowRoute, flowLayers, flowLayout, scopeConflicts, plansOf, blockedBy, normalizeSubmission, applySubmission, scopeView, needsEstimate, normalizeEstimate, submissionText } from '../shared/order-judge-scope'
+import { inScoping, flowOrderedLayers, flowChannels, flowRoute, flowLayers, flowLayout, scopeConflicts, plansOf, blockedBy, normalizeSubmission, applySubmission, applyLinks, submissionNotes, scopeView, needsEstimate, normalizeEstimate, submissionText } from '../shared/order-judge-scope'
 import { longTermClientText, longTermFee, planOf } from '../shared/order-judge-maintenance'
 import { EMPTY_MAINTENANCE, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance } from '../shared/order-judge-maintenance'
 import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, calibrateByType, experienceLines, carryHourEdits, clientText, freeze, hourRows, hoursLabel, marketLine, marketStats, normalizeQuote, sampleOf, selfText, type QuoteState } from '../shared/order-judge-sheet'
@@ -512,6 +512,21 @@ pass('准确度：小时偏差和成交率')
   assert.deepEqual([...blockedBy({ id: 'p', name: 'p', summary: '', itemIds: ['d'], blocks: ['a'] }, lockChain)], ['a', 'b', 'c'])
   assert.equal(blockedBy({ id: 'p', name: 'p', summary: '', itemIds: ['a'] }, lockChain).size, 0)
   pass('互斥方案：冲突条目不含方案自己的，客户提交里和所选方案冲突的条目丢弃；互补方案不拦')
+
+  const freed = normalizeSubmission({ planId: 'p1', picked: ['r1', 'r2'], unblocked: ['r2', 'ghost'] }, forked)!
+  assert.deepEqual([freed.picked, freed.unblocked], [['r1', 'r2'], ['r2']])
+  assert.deepEqual([...blockedBy({ id: 'p', name: 'p', summary: '', itemIds: ['d'], blocks: ['a'] }, lockChain, new Set(['a']))], [])
+  assert.match(submissionNotes(forked, freed).join(), /小程序支付.*不冲突/)
+  assert.ok(applySubmission(forked, freed, null, 1).confirmed?.conflicts.some(c => /不冲突/.test(c)))
+  pass('客户认为不冲突的条目可以勾上，连带锁一起放开，并写进给开发者看的记录')
+
+  const turned = normalizeSubmission({ picked: ['r1', 'r2'], custom: [{ id: 'c5', title: '甲', after: [] }], links: { add: [['r2', 'r1'], ['r1', 'r1'], ['evil', 'r1'], ['c5', 'r3']], drop: [['r1', 'r2']] } }, flow)!
+  assert.deepEqual(turned.links, { add: [['r2', 'r1'], ['c1', 'r3']], drop: [['r1', 'r2']] })
+  const relinked = applySubmission(flow, turned, null, 1)
+  assert.deepEqual(relinked.items.slice(0, 2).map(i => i.dependsOn), [['r2'], []])
+  assert.deepEqual(relinked.items.find(i => i.id === 'r3')?.dependsOn, [relinked.items[relinked.items.length - 1].id])
+  assert.deepEqual(applyLinks(lockChain, { add: [['c', 'a'], ['d', 'a']], drop: [] }).map(n => n.dependsOn), [['d'], ['a'], ['b'], []])
+  pass('客户调换的先后关系跟着提交进新清单，客户条目换号后仍对得上，会成环的那条跳过')
 
   const est = normalizeEstimate({ items: [{ id: 'c1', hours: 3, basis: '确认', reason: 'x' }, { id: 'r3', hours: 50, title: '偷改', priority: '必须' }, { id: 'r2', hours: 'NaN' }], budget: '8000', questions: [] })
   const applied = applySubmission(flow, s, est, 123)

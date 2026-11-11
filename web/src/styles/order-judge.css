@@ -268,7 +268,11 @@
 .oj-qin { width: 96px; min-height: 34px; padding: 6px 10px; font: inherit; font-size: 13.5px; color: var(--ink); background: var(--field-bg); border: 1.5px solid var(--field-line); border-radius: 8px 11px 8px 11px; outline: none; transition: border-color .2s, box-shadow .2s; }
 .oj-qmods { display: grid; }
 .oj-qmods > summary { margin-bottom: 4px; }
-.oj-qmods .oj-qrow { display: grid; grid-template-columns: minmax(0, 1fr) 88px 28px; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--line); }
+/* 做完后填：两项用时并排、标签不折行；模块按可用宽度排成多列，名字紧挨着输入框 */
+.oj-qpair { display: flex; flex-wrap: wrap; gap: 10px 32px; }
+.oj-qpair .oj-qlabel { flex: none; white-space: nowrap; }
+.oj-qmods-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0 32px; }
+.oj-qmods .oj-qrow { display: grid; grid-template-columns: minmax(0, 1fr) 88px 28px; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px dashed var(--line); }
 .oj-qmods .oj-qlabel { flex: none; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
 .oj-qmods .oj-qin { width: 100%; min-width: 0; }
 .oj-qin.wide { width: 220px; max-width: 100%; }
@@ -355,31 +359,67 @@
 .oj-scope-submit .oj-qnote { left: 0; right: auto; top: calc(100% - 16px); }
 @media (max-width: 860px) { .oj-scope-submit .btn { width: 100%; min-height: 46px; } }
 
+.oj-flowbox { display: grid; gap: 8px; min-width: 0; }
+.oj-flowbox.full { position: fixed; inset: 0; z-index: 170; grid-template-rows: auto minmax(0, 1fr); padding: 12px 16px 16px; background: var(--paper); overscroll-behavior: contain; }
+.oj-flowbox.full .oj-flow { height: 100%; touch-action: none; border: 1px dashed var(--line); border-radius: 10px; background: var(--card); }
+.oj-flow-tools { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px 10px; }
+.oj-flow-hint { margin-right: auto; font-size: 12px; color: var(--ink-faint); }
+.oj-flow-btns { display: flex; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
+.oj-flow-btns button { min-width: 32px; height: 30px; padding: 0 9px; font: inherit; font-size: 12.5px; color: var(--ink-sub); background: none; border: 0; cursor: pointer; white-space: nowrap; }
+.oj-flow-btns button + button { border-left: 1px solid var(--line); }
+.oj-flow-btns button:disabled { color: var(--ink-faint); opacity: .55; cursor: default; }
+.oj-flow-btns button.pct { min-width: 52px; font-variant-numeric: tabular-nums; }
+@media (hover: hover) { .oj-flow-btns button:not(:disabled):hover { background: var(--teal-wash); color: var(--ink); } }
+@media (max-width: 600px) { .oj-flow-hint { flex-basis: 100%; } .oj-flow-btns button { height: 36px; } }
 .oj-flow { position: relative; width: 100%; min-width: 0; overflow: hidden; min-height: 80px; cursor: grab; }
+.oj-flow:active { cursor: grabbing; }
 .oj-flow-stage { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
-.oj-flow-tools { position: absolute; top: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 2px; padding: 2px 4px; background: var(--paper); border: 1px dashed var(--line); border-radius: 8px; cursor: default; }
 .oj-flow-lines { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
 .oj-flow-lines path { fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .oj-flow-lines path.on { stroke: var(--ink-sub); opacity: .7; }
 .oj-flow-lines path.bad { stroke: var(--sakura); }
 .oj-flow-lines path.sub { stroke-width: 1.3; opacity: .6; }
-.oj-flow-lines path.hi { stroke: var(--teal); stroke-width: 2.2; opacity: 1; }
+.oj-flow-lines path.hi { stroke: var(--teal); stroke-width: 2.4; opacity: 1; }
 .oj-flow-lines path.bad.hi { stroke: var(--sakura); }
 .oj-flow-lines path.dim { opacity: .18; }
 .oj-flow-lines marker path { stroke: none; }
 .oj-flow-lines marker.on path { fill: var(--ink-sub); }
 .oj-flow-lines marker.bad path { fill: var(--sakura); }
 .oj-flow-lines marker.hi path { fill: var(--teal); }
-.oj-flow-lines path.hit { stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
-.oj-flow-lines path.hit:hover { stroke: var(--sakura); opacity: .35; }
-.oj-flow-lines line.draft { stroke: var(--teal); stroke-width: 2; stroke-linecap: round; }
-.oj-flow.edit .oj-flow-node { touch-action: none; cursor: grab; user-select: none; }
-.oj-flow-port { position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; margin-left: -6px; background: var(--paper); border: 2px solid var(--teal-line); border-radius: 50%; cursor: crosshair; touch-action: none; }
-.oj-flow-port:hover { background: var(--teal); }
+.oj-flow-lines path.hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+.oj-flow-lines path.hit:hover { stroke: var(--teal); opacity: .22; }
+.oj-flow.linking path.hit { pointer-events: none; }
+.oj-flow-lines path.draft { stroke: var(--teal); stroke-width: 2; stroke-dasharray: 5 4; }
+.oj-flow-lines path.draft.deny { stroke: var(--ink-faint); }
+.oj-flow-lines line.guide { stroke: var(--sakura); stroke-width: 1; stroke-dasharray: 3 3; }
+.oj-flowbox.edit .oj-flow-node { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+/* 圆点本身小，可点范围用伪元素放大到 28px，手指和鼠标都好抓 */
+.oj-flow-port { position: absolute; left: 50%; bottom: -7px; width: 12px; height: 12px; margin-left: -6px; background: var(--paper); border: 2px solid var(--teal-line); border-radius: 50%; cursor: crosshair; touch-action: none; transition: transform .12s, background .12s; }
+.oj-flow-port::before { content: ''; position: absolute; inset: -8px; border-radius: 50%; }
+.oj-flow-node:hover .oj-flow-port, .oj-flow-port:hover { background: var(--teal); transform: scale(1.3); }
+.oj-flow.linking .oj-flow-port { pointer-events: none; }
+.oj-flow-node.aim { box-shadow: 0 0 0 3px var(--teal-wash), 0 0 0 4.5px var(--teal); }
+.oj-flow-node.deny { cursor: not-allowed; opacity: .5; }
+.oj-flow-ctl { position: absolute; z-index: 2; display: flex; width: max-content; background: var(--card); border: 1.5px solid var(--teal); border-radius: 999px; box-shadow: var(--shadow-1); overflow: hidden; cursor: default; }
+.oj-flow-ctl button { width: 30px; height: 28px; padding: 0; font: inherit; font-size: 16px; line-height: 1; color: var(--ink-sub); background: none; border: 0; cursor: pointer; }
+.oj-flow-ctl .grip { position: relative; touch-action: none; }
+.oj-flow-ctl button + button { border-left: 1px solid var(--line); }
+.oj-flow-ctl button:disabled { color: var(--ink-faint); opacity: .5; cursor: not-allowed; }
+@media (hover: hover) { .oj-flow-ctl .flip:not(:disabled):hover { background: var(--teal-wash); color: var(--teal); } }
+.oj-flow-ctl .grip.y { cursor: ns-resize; }
+.oj-flow-ctl .grip.x { cursor: ew-resize; }
+.oj-flow-ctl .grip::before { content: ''; position: absolute; left: 50%; top: 50%; width: 12px; height: 8px; margin: -4px 0 0 -6px; border-top: 2px solid var(--teal); border-bottom: 2px solid var(--teal); }
+.oj-flow-ctl .grip.x::before { transform: rotate(90deg); }
+@media (hover: hover) { .oj-flow-ctl .del:hover { background: var(--sakura-wash); color: var(--sakura); } }
 .oj-flow-node { position: absolute; width: max-content; max-width: 220px; padding: 6px 12px; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink-faint); overflow-wrap: anywhere; background: var(--paper-2); border: 1.5px dashed var(--line); border-radius: 8px; }
 .oj-flow-node.on { color: var(--ink); background: var(--teal-wash); border: 1.5px solid var(--teal-line); }
 button.oj-flow-node { cursor: pointer; }
 .oj-flow-node.lock { opacity: .45; text-decoration: line-through; cursor: not-allowed; }
+button.oj-flow-node.lock { cursor: pointer; }
+.oj-pick .oj-pick-moved { color: var(--teal); }
+.oj-pick-undo { justify-self: start; padding: 0; font: inherit; font-size: 12px; color: var(--teal); background: none; border: 0; cursor: pointer; }
+.oj-pick.lock.ask { cursor: default; opacity: 1; }
+.oj-pick.lock.ask .box, .oj-pick.lock.ask b, .oj-pick.lock.ask small { opacity: .55; }
 .oj-flow-node.bad { background: var(--sakura-wash); border: 1.5px solid var(--sakura); }
 .oj-conflicts { display: grid; gap: 6px; margin-top: 14px; }
 .oj-conflicts li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; padding: 5px 10px; font-size: 12.5px; line-height: 1.5; color: var(--ink); background: var(--sakura-wash); border-radius: 6px; }

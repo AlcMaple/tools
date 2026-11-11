@@ -1051,7 +1051,7 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
   const summary = selfSummary(sheet)
   const dirty = JSON.stringify(pending) !== JSON.stringify(version.quote)
   const kinds = WORK_KINDS.filter(k => sheet.chosen?.lines.some(l => l.work === k))
-  const moduleRows = hourRows(version.brief, draft, sheet.settings).filter(r => r.suggested > 0)
+  const moduleRows = hourRows(version.brief, draft, sheet.settings).filter(r => r.hours > 0 || draft.itemActual[r.id] != null)
   const parsed = parseBudget(version.brief.budget)
   const [moreOn] = useState(draft.bonus.on || draft.discount.ratio > 0 || draft.resultHours > 0 || draft.expenses.length > 0)
 
@@ -1146,17 +1146,18 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
             <span className="faint small">元</span>
           </label>
         )}
-        {draft.status === '已成交' && kinds.map(k => (
+        {draft.status === '已成交' && kinds.length > 0 && <div className="oj-qpair">{kinds.map(k => (
           <label key={k} className="oj-qrow">
             <span className="oj-qlabel">{k === '接手改' ? '验证和改旧代码用时' : '从零做的部分用时'}</span>
             <input className="oj-qin" inputMode="decimal" value={draft.actual[k] || ''} placeholder="做完再填"
               onChange={e => set({ actual: { ...draft.actual, [k]: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } })} />
             <span className="faint small">小时</span>
           </label>
-        ))}
+        ))}</div>}
         {draft.status === '已成交' && moduleRows.length > 0 && (
           <details className="oj-qmore oj-qmods" open={Object.keys(draft.itemActual).length > 0 || undefined}>
             <summary>按模块填实际小时（可选）</summary>
+            <div className="oj-qmods-grid">
             {moduleRows.map(r => (
               <label key={r.id} className="oj-qrow">
                 <span className="oj-qlabel">{r.title}</span>
@@ -1170,6 +1171,7 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
                 <span className="faint small">小时</span>
               </label>
             ))}
+            </div>
           </details>
         )}
         {draft.status === '已成交' && (
