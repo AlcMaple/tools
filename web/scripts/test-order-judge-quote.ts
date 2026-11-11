@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { briefSystemPrompt, normalizeBrief, type Brief, type BriefItem } from '../shared/order-judge-brief'
 import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, parseDeadline, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
+import { inScoping, flowOrderedLayers, flowChannels, flowRoute, flowLayers, flowLayout, scopeConflicts, plansOf, blockedBy, normalizeSubmission, applySubmission, scopeView, needsEstimate, normalizeEstimate, submissionText } from '../shared/order-judge-scope'
+import { longTermClientText, longTermFee, planOf } from '../shared/order-judge-maintenance'
 import { EMPTY_MAINTENANCE, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance } from '../shared/order-judge-maintenance'
 import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, calibrateByType, experienceLines, carryHourEdits, clientText, freeze, hourRows, hoursLabel, marketLine, marketStats, normalizeQuote, sampleOf, selfText, type QuoteState } from '../shared/order-judge-sheet'
 
@@ -347,7 +349,7 @@ pass('成交时把条目调低，下一版 AI 小时没变时变更单不收钱'
 
 const carried = carryHourEdits({ ...EMPTY_QUOTE, hourEdits: { r1: 3, r2: 5 } }, dragged, brief([item('r1', '必须', 10), item('r2', '必须', 9)]))
 assert.deepEqual(carried.hourEdits, { r1: 3 })
-assert.deepEqual(normalizeQuote({ hourEdits: { r1: 3.3, bad: 1, r2: 999 }, hourScale: 9 }).hourEdits, { r1: 3.5, r2: 200 })
+assert.deepEqual(normalizeQuote({ hourEdits: { r1: 3.3, bad: 1, r2: 999 }, hourScale: 9 }).hourEdits, { r1: 3.5, r2: 56 })
 assert.equal(normalizeQuote({ hourScale: 9 }).hourScale, 1)
 const zeroItem = brief([item('r1', '必须', 0, { basis: '验证' })])
 assert.equal(basisOfNormalized(zeroItem), '直接做')
@@ -452,5 +454,154 @@ assert.match(acc, /有结果的 2 单，成交 1 单（50%）/)
 assert.doesNotMatch(calibrate([fact(4, 8)]).notes.join(), /历史记录/)
 assert.match(calibrate(Array.from({ length: 20 }, () => fact(4, 8))).notes.join(), /历史记录 40 条，每次只能带 30 条/)
 pass('准确度：小时偏差和成交率')
+
+
+// ── 客户确认需求 / 长期合作 ──
+{
+  const raw = normalizeBrief({ title: 'x', items: [
+    { ref: 'n1', title: '登录', priority: '必须', hours: 0, stage: '账号', dependsOn: ['n3'] },
+    { ref: 'n2', title: '下单', priority: '必须', hours: 0, dependsOn: ['n1', 'ghost', 'n2'] },
+    { ref: 'n3', title: '后台', priority: '应该', hours: 2, dependsOn: ['n2'] },
+  ], plans: [{ name: '甲', summary: 's', itemIds: ['n1', 'n2', 'ghost'], recommended: true }, { name: '乙', summary: 's', itemIds: ['n3'], recommended: true }],
+  engagement: { mode: '长期', reason: 'r', monthHours: 40.4, firstMonth: ['路线图'] } }, null)
+  const [a, b2, c] = raw.items
+  assert.deepEqual([a.id, b2.id, c.id], ['r1', 'r2', 'r3'])
+  assert.deepEqual(raw.plans?.[0].itemIds, ['r1', 'r2'])
+  assert.deepEqual(raw.plans?.map(p => p.recommended), [true, false])
+  assert.deepEqual(raw.engagement, { mode: '长期', reason: 'r', monthHours: 40, firstMonth: ['路线图'] })
+  const seen = new Set<string>(); const dfs = (id: string, path: string[]): void => { assert(!path.includes(id), '不能有环'); seen.add(id); raw.items.find(i => i.id === id)?.dependsOn?.forEach(d => dfs(d, [...path, id])) }
+  raw.items.forEach(i => dfs(i.id, []))
+  pass('ref 映射成最终 id，未知依赖和自依赖丢弃，环被打断，推荐方案只留一个')
+  const tidy = normalizeBrief({ title: 'x', items: [
+    { ref: 'a', title: '环境', priority: '必须', hours: 1 },
+    { ref: 'b', title: '搜索', priority: '必须', hours: 1, dependsOn: ['a'] },
+    { ref: 'c', title: '浏览', priority: '必须', hours: 1, dependsOn: ['b', 'a'] },
+    { ref: 'd', title: '跑通', priority: '必须', hours: 1, dependsOn: ['c', 'b'] },
+  ] }, null).items
+  assert.deepEqual(tidy.map(i => i.dependsOn ?? []), [[], ['r1'], ['r2'], ['r3']])
+  pass('隔代前置去掉：已经能经别的前置走到的不再单写，流程图不多出跨层长线')
+
+  const old = brief([item('r1', '必须', 0), item('r2', '应该', 1), item('r3', '可以', 1), item('r4', '不做', 1)])
+  const plans = plansOf(old)
+  assert.deepEqual(plans.map(p => p.itemIds.length), [1, 2, 3])
+  assert.equal(plans.filter(p => p.recommended).length, 1)
+  assert.equal(plansOf(brief([item('r1', '必须', 0)])).length, 1)
+  pass('老清单没有方案时按优先级切，相同内容合并')
+
+  const nodes = [{ id: 'a', title: 'A', dependsOn: [] }, { id: 'b', title: 'B', dependsOn: ['a', 'gone'] }, { id: 'c', title: 'C', dependsOn: ['b'] }, { id: 'd', title: 'D', dependsOn: [] }]
+  assert.deepEqual(flowLayers(nodes), [['a', 'd'], ['b'], ['c']])
+  assert.deepEqual(scopeConflicts(nodes, new Set(['a', 'c'])), [{ id: 'c', title: 'C', missing: [{ id: 'b', title: 'B' }] }])
+  pass('流程图按最长前置链分层，未选的前置报冲突')
+
+  const flow = brief([item('r1', '必须', 2, { dependsOn: [] }), item('r2', '应该', 1, { dependsOn: ['r1'] }), item('r3', '可以', 9)])
+  flow.questions = ['预算多少']
+  assert.equal(normalizeSubmission({ picked: ['nope'] }, flow), null)
+  const s = normalizeSubmission({ planId: 'p1', picked: ['r2', 'evil', 'r2'], custom: [{ title: ' 积分 ', detail: 'd', after: ['r2', 'evil'] }, { title: '' }], answers: [{ i: 0, a: '八千' }, { i: 9, a: 'x' }], note: 'n' }, flow)!
+  assert.deepEqual(s, { planId: 'p1', picked: ['r2'], custom: [{ id: 'c1', title: '积分', detail: 'd', after: ['r2'] }], answers: [{ q: '预算多少', a: '八千' }], note: 'n' })
+  assert(needsEstimate(s)); assert(!needsEstimate({ ...s, custom: [], answers: [], note: '' }))
+  assert.match(submissionText(flow, s), /积分/)
+  pass('客户提交只认这一版的 id，文字限长，未知问题丢弃')
+
+  const forked = normalizeBrief({ title: 'x', items: [
+    { ref: 'n1', title: '接龙', priority: '可以', hours: 0 }, { ref: 'n2', title: '小程序支付', priority: '可以', hours: 0 }, { ref: 'n3', title: '导出', priority: '可以', hours: 0 },
+  ], plans: [{ name: '接龙', summary: 's', itemIds: ['n1'], blocks: ['n2', 'n1', 'ghost'], recommended: true }, { name: '商城', summary: 's', itemIds: ['n2'], blocks: [] }] }, null)
+  assert.deepEqual(forked.plans?.map(p => p.blocks), [['r2'], undefined])
+  assert.deepEqual(normalizeSubmission({ planId: 'p1', picked: ['r1', 'r2', 'r3'] }, forked)?.picked, ['r1', 'r3'])
+  assert.deepEqual(normalizeSubmission({ planId: 'p2', picked: ['r1', 'r2'] }, forked)?.picked, ['r1', 'r2'])
+  const lockChain = [{ id: 'a', dependsOn: [] }, { id: 'b', dependsOn: ['a'] }, { id: 'c', dependsOn: ['b'] }, { id: 'd', dependsOn: [] }]
+  assert.deepEqual([...blockedBy({ id: 'p', name: 'p', summary: '', itemIds: ['d'], blocks: ['a'] }, lockChain)], ['a', 'b', 'c'])
+  assert.equal(blockedBy({ id: 'p', name: 'p', summary: '', itemIds: ['a'] }, lockChain).size, 0)
+  pass('互斥方案：冲突条目不含方案自己的，客户提交里和所选方案冲突的条目丢弃；互补方案不拦')
+
+  const est = normalizeEstimate({ items: [{ id: 'c1', hours: 3, basis: '确认', reason: 'x' }, { id: 'r3', hours: 50, title: '偷改', priority: '必须' }, { id: 'r2', hours: 'NaN' }], budget: '8000', questions: [] })
+  const applied = applySubmission(flow, s, est, 123)
+  assert.equal(applied.items.find(i => i.id === 'r3')!.priority, '不做')
+  assert.equal(applied.items.find(i => i.id === 'r3')!.hours, 9)
+  assert.equal(applied.items.find(i => i.id === 'r1')!.priority, '不做')
+  assert.equal(applied.items.find(i => i.id === 'r2')!.priority, '必须')
+  const added = applied.items.find(i => i.title === '积分')!
+  assert.deepEqual([added.id, added.priority, added.hours, added.dependsOn], ['r4', '必须', 3, ['r2']])
+  assert(applied.excluded.includes('条目r1')); assert.equal(applied.budget, '8000')
+  assert.equal(applied.plans, undefined)
+  assert.deepEqual(applied.confirmed?.conflicts, ['条目r2需要先有条目r1'])
+  assert.deepEqual(tiers(applied, none).length, 1)
+  pass('AI 改不了范围；确认项转必须，没勾的转不做进不包含，报价只出一份范围')
+
+  const chain = normalizeSubmission({ picked: ['r1'], custom: [{ id: 'c9', title: '后加', after: ['c7'] }, { id: 'c7', title: '甲', after: ['r1'] }, { id: 'c8', title: '乙', after: ['c7'] }] }, flow)!
+  assert.deepEqual(chain.custom.map(c => [c.id, c.after]), [['c1', []], ['c2', ['r1']], ['c3', ['c2']]])
+  const chained = applySubmission(flow, chain, null, 1).items
+  assert.deepEqual(chained.find(i => i.title === '乙')!.dependsOn, [chained.find(i => i.title === '甲')!.id])
+  pass('客户条目可接在前面的客户条目后，重新编号后依赖不断，也成不了环')
+
+  const box = (left: number, top: number, w = 80): { left: number; right: number; top: number; bottom: number } => ({ left, right: left + w, top, bottom: top + 30 })
+  const src = box(100, 0), blockA = box(60, 60), blockB = box(150, 60), dst = box(100, 120)
+  const route = flowRoute(src, dst, [src, blockA, blockB, dst], 300)
+  for (let i = 1; i < route.length; i++) for (const n of [blockA, blockB]) {
+    const p = route[i - 1], q = route[i]
+    assert(!(Math.max(p.x, q.x) > n.left && Math.min(p.x, q.x) < n.right && Math.max(p.y, q.y) > n.top && Math.min(p.y, q.y) < n.bottom), '连线压住节点')
+  }
+  assert.deepEqual(route[route.length - 1], { x: 140, y: 120 })
+  pass('隔行连线从节点缝隙穿过，不压住中间的节点')
+
+  assert.deepEqual(flowOrderedLayers([{ id: 'l', dependsOn: [] }, { id: 'r', dependsOn: [] }, { id: 'x', dependsOn: ['r'] }, { id: 'y', dependsOn: ['l'] }])[1], ['y', 'x'])
+  pass('子节点排到上级下方')
+  const s1 = box(0, 0), s2 = box(200, 0), t1 = box(200, 60), t2 = box(0, 60)
+  assert.deepEqual(flowChannels(s1, t1, [s1, s2, t1, t2]), [1])
+  const y1 = flowRoute(s1, t1, [s1, s2, t1, t2], 300, () => -3)[1].y, y2 = flowRoute(s2, t2, [s1, s2, t1, t2], 300, () => 3)[1].y
+  assert.notEqual(y1, y2)
+  pass('不同来源在通道里走不同的横线')
+
+  const deps: Record<string, string[]> = { root: [], a: ['root'], b: ['root'], a1: ['a'], a2: ['a'], a3: ['a'], b1: ['b'] }
+  const lay = flowLayout([['root'], ['b', 'a'], ['b1', 'a1', 'a2', 'a3']], id => deps[id], () => ({ w: 100, h: 30 }))
+  const cx = (id: string): number => lay.pos.get(id)!.x + 50
+  for (const row0 of [['a', 'b'], ['a1', 'a2', 'a3', 'b1']]) {
+    const row = [...row0].sort((p, q) => lay.pos.get(p)!.x - lay.pos.get(q)!.x)
+    for (let i = 1; i < row.length; i++) assert(lay.pos.get(row[i])!.x >= lay.pos.get(row[i - 1])!.x + 100, `${row[i - 1]} 与 ${row[i]} 重叠`)
+  }
+  assert((cx('a1') < cx('b1')) === (cx('a') < cx('b')), '子节点没跟着上级排')
+  assert(Math.abs(cx('a') - cx('a2')) < 1, '上级不在子节点中间')
+  assert(Math.abs(cx('b') - cx('b1')) < 1, '单个子节点不在上级正下方')
+  assert(Math.abs(cx('root') - (cx('a') + cx('b')) / 2) < 1, '根节点不在两个子节点中间')
+  pass('流程图按上下级排位：子节点在上级下方，上级在子节点中间，同层不重叠')
+
+  const rough = longTermFee([], 'p', EMPTY_MAINTENANCE, 0, DEFAULT_QUOTE_SETTINGS, 30)
+  assert.equal(rough.hours, 10); assert.equal(rough.fee, 10 * DEFAULT_QUOTE_SETTINGS.rates['新做'])
+  assert.equal(longTermFee([], 'p', EMPTY_MAINTENANCE, 0).hours, 8)
+  pass('AI 没估每月小时也给得出长期月费，来源写明是粗估')
+  const planned = { ...flow, plans: [{ id: 'p1', name: '甲', summary: '', itemIds: ['r1'] }] }
+  assert(inScoping(planned, false, '草稿')); assert(!inScoping(flow, false, '草稿')); assert(!inScoping(planned, true, '草稿')); assert(!inScoping(planned, false, '已报价'))
+  assert(!inScoping(applySubmission(planned, { planId: 'p1', picked: ['r1'], custom: [], answers: [], note: '' }, null, 1), false, '草稿'))
+  pass('需求没定不进估价；老清单、成交后的变更、报过价的不受影响')
+
+  const secret = { ...flow, budget: '机密预算' }
+  const leak = JSON.stringify(scopeView(secret, { submission: null, submittedAt: null }))
+  for (const word of ['hours', 'reason', 'priority', 'budget', '理由', '机密预算']) assert(!leak.includes(word), word)
+  pass('客户侧数据不含小时、理由、优先级、预算')
+
+  const m = normalizeMaintenance({ plan: '长期', monthHours: 40, expenses: [{ name: '服务器', amount: 100 }] })
+  assert.equal(planOf(EMPTY_MAINTENANCE), '一次性')
+  assert.equal(planOf(EMPTY_MAINTENANCE, { mode: '长期' }), '长期')
+  assert.equal(planOf({ ...EMPTY_MAINTENANCE, plan: '一次性' }, { mode: '长期' }), '一次性')
+  assert.equal(longTermFee([], 'p', m, 10).fee, 40 * DEFAULT_QUOTE_SETTINGS.rates['新做'] + 100)
+  assert.equal(longTermFee([], 'p', EMPTY_MAINTENANCE, 10).hours, 10)
+  const text = longTermClientText('螺丝', m, 1340, ['路线图'])
+  assert.match(text, /每月 ¥1,340/); assert.match(text, /路线图/); assert.match(text, /随时可以停/)
+  pass('长期月费 = 每月小时 × 时间值 + 支出，开发者覆盖优先于 AI')
+}
+
+// ── 按模块填实际小时 ──
+{
+  const two = brief([item('r1', '必须', 10), item('r2', '必须', 6)])
+  assert.deepEqual(normalizeQuote({ itemActual: { r1: 2, r2: 0, r3: '', x9: 4 } }).itemActual, { r1: 2, r2: 0 })
+  const full = proj({ status: '已成交', itemActual: { r1: 2, r2: 1 }, feeling: '刚好' }, two)
+  assert.equal(calibrate([full, full, full]).settings.hourFactor['新做'], 0.2)
+  const partial = proj({ status: '已成交', itemActual: { r1: 2 }, feeling: '刚好' }, two)
+  assert.equal(calibrate([partial, partial, partial]).settings.hourFactor['新做'], 1)
+  pass('每个要花时间的模块都填了，合计当作整类实际小时；只填一部分不算整类')
+  const mixed = proj({ status: '已成交', actual: { 新做: 5, 接手改: 0 }, itemActual: { r1: 2 }, feeling: '刚好' }, two)
+  const lines = experienceLines([mixed], '商单')
+  assert.ok(lines.some(l => /10 小时 → 2 小时/.test(l)) && lines.some(l => /6 小时 → 3 小时/.test(l)), lines.join('\n'))
+  pass('填了模块的条目取实际，其余条目分整类实际扣掉已填后的余量')
+}
 
 console.log(`\n${checks} 项全部通过`)

@@ -70,6 +70,8 @@ class AuthRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
 }
 
+export class LoginConfirmationError extends Error {}
+
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const res = await (path === '/me' ? fetchApi : fetch)(`/api/auth${path}`, {
     method: body === undefined ? 'GET' : 'POST',
@@ -168,14 +170,20 @@ export const auth = {
   async refresh(): Promise<void> {
     await auth.init()
   },
+  async confirmLogin(): Promise<void> {
+    await auth.init()
+    // 凭据已经被接受，网络中断后只重读身份，避免重复注册或消耗验证码
+    if (readError) throw new LoginConfirmationError(readError)
+    if (!currentUser) throw new Error('登录已失效，请重新登录')
+  },
   async register(username: string, password: string, confirm: string): Promise<void> {
     await request<LoginRes>('/register', { username, password, confirm, inviteCode: pendingInviteCode() })
     clearPendingInvite()
-    await auth.init()
+    await auth.confirmLogin()
   },
   async login(username: string, password: string): Promise<void> {
     await request<LoginRes>('/login', { username, password })
-    await auth.init() // 顺带把 createdAt / hasSecurity 拉全
+    await auth.confirmLogin()
   },
   async requestEmailCode(email: string): Promise<{ challengeId: string; expiresIn: number }> {
     return request<{ challengeId: string; expiresIn: number }>('/email/start', { email })
@@ -187,7 +195,7 @@ export const auth = {
   async verifyEmailCode(challengeId: string, code: string): Promise<void> {
     await request<LoginRes>('/email/verify', { challengeId, code, inviteCode: pendingInviteCode() })
     clearPendingInvite()
-    await auth.init()
+    await auth.confirmLogin()
   },
   async logout(): Promise<void> {
     await request('/logout', {})

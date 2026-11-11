@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarItem, CalendarResult, SeasonSummary, CalendarWeekday, SourceBinding, SourceId, Track, WatchMode } from './api'
 import { SOURCES, coverUrl, fetchCalendar, fetchSeasons, sourceById } from './api'
-import { openFindAnime } from './FindAnime'
+import { openFindAnime, requestAnimeWatch } from './FindAnime'
 import { ContinueWatchAction } from './tracks/TrackCard'
 import { watchEp } from './tracks/common'
 import { useSourceWatch } from './tracks/useSourceWatch'
@@ -833,6 +833,7 @@ export function Poster({
   watch,
   meta,
   coverExtra,
+  details,
 }: {
   item: CalendarItem
   weekday: number
@@ -842,6 +843,7 @@ export function Poster({
   watch?: PosterWatch
   meta?: string
   coverExtra?: React.ReactNode
+  details?: React.ReactNode
 }): JSX.Element {
   const displayTitle = item.name_cn || item.name
   const on = tracked
@@ -886,6 +888,14 @@ export function Poster({
         {displayTitle}
       </div>
       <div className="poster-ep">{meta ?? (item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中')}</div>
+      {details}
+      {watch && !canTrack && (
+        <div className="poster-watch">
+          <button type="button" className="btn btn-sm" onClick={() => requestAnimeWatch(item)}>
+            <Ic name="play" cls="ic ic-sm" />登录后观看
+          </button>
+        </div>
+      )}
       {watch && canTrack && (
         <div className="poster-watch">
           <ContinueWatchAction

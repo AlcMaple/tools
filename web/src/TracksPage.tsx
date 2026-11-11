@@ -60,8 +60,9 @@ import { Popover } from './Popover'
 import { SketchSheet } from './SketchSheet'
 import { LegacyRig, useSpriteStyle } from './sprites'
 import { useIsWide } from './useMediaQuery'
+import { rememberTracksNavigation, type TrackFilter, type TracksNavigationMemory } from './tracks/navigationMemory'
 
-type FilterKey = 'all' | TrackStatus
+export type { TrackFilter } from './tracks/navigationMemory'
 type TrackView = 'cards' | 'list' | 'timeline'
 type AddFlow = { initialQuery?: string; backfill?: BackfillTarget }
 
@@ -95,20 +96,28 @@ function applyLocal(t: Track, p: TrackPatch): Track {
   return next
 }
 
-export function TracksPage(): JSX.Element {
+export function TracksPage({ navigation }: { navigation: TracksNavigationMemory }): JSX.Element {
   const { user, ready, error: authError } = useAuth()
+  const [filter, setFilter] = useState<TrackFilter>(navigation.filter)
+  const [query, setQuery] = useState(navigation.query)
+  const onFilterChange = (next: TrackFilter): void => {
+    rememberTracksNavigation(navigation, { filter: next })
+    setFilter(next)
+  }
+  const onQueryChange = (next: string): void => {
+    rememberTracksNavigation(navigation, { query: next })
+    setQuery(next)
+  }
   const [tracks, setTracks] = useState<Track[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tracksError, setTracksError] = useState<string | null>(null)
   const [loadProgress, setLoadProgress] = useState<TracksLoadProgress | null>(null)
-  const [filter, setFilter] = useState<FilterKey>('all')
   const [view, setView] = useState<TrackView>('cards')
   const [sort, setSortState] = useState<TrackSort>(readSort)
   const setSort = (next: TrackSort): void => {
     setSortState(next)
     try { localStorage.setItem(SORT_KEY, next) } catch { /* 无痕窗口等存不下就只在本次生效 */ }
   }
-  const [query, setQuery] = useState('')
   const [tags, setTags] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<number | null>(null)
   const [confirming, setConfirming] = useState<number | null>(null)
@@ -475,11 +484,11 @@ export function TracksPage(): JSX.Element {
             spellCheck={false}
             autoComplete="off"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => onQueryChange(e.target.value)}
             placeholder="在这页里搜番名…"
           />
           {query && (
-            <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="清空搜索">
+            <button type="button" className="search-clear" onClick={() => onQueryChange('')} aria-label="清空搜索">
               <Ic name="x" cls="ic ic-sm" />
             </button>
           )}
@@ -540,13 +549,13 @@ export function TracksPage(): JSX.Element {
       {!wide && toolbar}
 
       <div className="tabf-row">
-        {([['all', '全部'], ...STATUS_META.map((m) => [m.key, m.label])] as [FilterKey, string][]).map(
+        {([['all', '全部'], ...STATUS_META.map((m) => [m.key, m.label])] as [TrackFilter, string][]).map(
           ([k, label]) => (
             <button
               key={k}
               type="button"
               className={`tabf${filter === k ? ' on' : ''}`}
-              onClick={() => setFilter(k)}
+              onClick={() => onFilterChange(k)}
             >
               {label} <span className="badge-num">{counts[k]}</span>
             </button>

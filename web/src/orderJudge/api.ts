@@ -3,6 +3,7 @@ import type { JudgeEvent, JudgeImage, JudgeState, JudgeSyncEvent, Project } from
 import { judgeLineReader } from '../../shared/order-judge-lines'
 import type { QuoteState } from '../../shared/order-judge-sheet'
 import type { Maintenance } from '../../shared/order-judge-maintenance'
+import type { ScopeView } from '../../shared/order-judge-scope'
 
 export class JudgeError extends Error {
   constructor(readonly code: string, message: string) {
@@ -140,3 +141,17 @@ export function followJudgeChanges(onChange: () => void, onError: (error: unknow
     document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume)
   }
 }
+
+const projectOf = async (res: Response): Promise<Project> => (await json<{ project: Project }>(res)).project
+
+export const createScope = async (projectId: string): Promise<Project> => projectOf(await fetchApi(`/api/order-judge/projects/${projectId}/scope`, send('POST')))
+export const revokeScope = async (projectId: string): Promise<Project> => projectOf(await fetchApi(`/api/order-judge/projects/${projectId}/scope`, send('DELETE')))
+// 客户加了条目或回答时要等 AI，服务端上限 120 秒
+export const applyScope = async (projectId: string): Promise<Project> => projectOf(await fetchApi(`/api/order-judge/projects/${projectId}/scope/apply`, send('POST'), 130_000))
+
+export const pickPlan = async (projectId: string, planId: string): Promise<Project> => projectOf(await fetchApi(`/api/order-judge/projects/${projectId}/scope/pick`, send('POST', { planId })))
+
+export const fetchScope = async (token: string): Promise<ScopeView> =>
+  (await json<{ view: ScopeView }>(await fetchApi(`/api/order-judge-scope/${token}`, { credentials: 'omit' }))).view
+export const submitScope = async (token: string, body: unknown): Promise<ScopeView> =>
+  (await json<{ view: ScopeView }>(await fetchApi(`/api/order-judge-scope/${token}`, { ...send('PUT', body), credentials: 'omit' }))).view

@@ -801,6 +801,21 @@ tracks.get('/import/bgm/status', async (c) => {
   return c.json(importTasks.get(uid) ?? idleImportStatus())
 })
 
+class PlaybackProgressError extends Error {
+  constructor(message: string, readonly status: 400 | 404 | 409) { super(message) }
+}
+
+tracks.get('/:bgmId/playback-progress', async c => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  const id = Number(c.req.param('bgmId'))
+  if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: '条目编号不正确' }, 400)
+  const row = oneStmt.get(uid, id) as TrackRow | undefined
+  if (!row) return c.json({ error: '先将这部番加入手帐，再记录进度' }, 404)
+  c.header('Cache-Control', 'no-store')
+  return c.json({ ownerId: uid, revision: currentRev(uid), episode: row.episode, title: row.title_cn || row.title, totalEpisodes: row.total_episodes })
+})
+
 tracks.put('/:bgmId', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
@@ -809,6 +824,17 @@ tracks.put('/:bgmId', async (c) => {
   if (!Number.isInteger(bgmId) || bgmId === 0) return c.json({ error: 'bgmId 不合法' }, 400)
 
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  let playbackProgress: { ownerId: number; revision: number } | null = null
+  if ('playbackProgress' in body) {
+    const guard = body.playbackProgress as Record<string, unknown> | null
+    if (!guard || typeof guard !== 'object' || Array.isArray(guard)
+      || typeof guard.ownerId !== 'number' || !Number.isSafeInteger(guard.ownerId)
+      || typeof guard.revision !== 'number' || !Number.isSafeInteger(guard.revision) || guard.revision < 0
+      || typeof body.episode !== 'number' || !Number.isSafeInteger(body.episode) || body.episode < 1
+      || Object.keys(body).some(key => !['episode', 'playbackProgress'].includes(key))) return c.json({ error: '播放进度请求格式不正确' }, 400)
+    if (guard.ownerId !== uid) return c.json({ error: '账号已变化，请重新打开播放页' }, 409)
+    playbackProgress = { ownerId: guard.ownerId, revision: guard.revision }
+  }
   const customCreation = isCustomBgmId(bgmId) && !oneStmt.get(uid, bgmId)
   const customTitle = typeof body.title === 'string' ? body.title.trim() : ''
   if (customCreation || (isCustomBgmId(bgmId) && 'title' in body)) {
@@ -891,6 +917,12 @@ tracks.put('/:bgmId', async (c) => {
   // 同时新增同一条，也不会使用 await 前的旧判断撞 UNIQUE；数据写入和 rev 永远一起提交。
   const write = db.transaction((): { row: TrackRow; fillDetail: boolean; orphanedCover: boolean; error?: string } => {
     const prev = oneStmt.get(uid, bgmId) as TrackRow | undefined
+    if (playbackProgress) {
+      if (!prev) throw new PlaybackProgressError('手帐记录已移除，请返回手帐确认', 404)
+      if (currentRev(uid) !== playbackProgress.revision) throw new PlaybackProgressError('手帐已在其他页面更新，请重新读取后确认', 409)
+      if (prev.total_episodes != null && prev.total_episodes > 0 && nextEpisode > prev.total_episodes) throw new PlaybackProgressError('当前集数超过手帐总集数，请返回手帐确认', 400)
+      if (nextEpisode <= prev.episode) return { row: prev, fillDetail: false, orphanedCover: false }
+    }
     if (!prev) {
       const airDate = String(body.airDate ?? '')
       const insertedTotal = isCustomBgmId(bgmId)
@@ -932,6 +964,10 @@ tracks.put('/:bgmId', async (c) => {
     // 更新只写 body 里明确给了的字段；没给的一个都不碰。
     const sets: string[] = []
     const args: unknown[] = []
+    if (playbackProgress && (prev.status === 'plan' || prev.status === 'considering')) {
+      sets.push('status = ?')
+      args.push('watching')
+    }
     if (hasStatus) {
       sets.push('status = ?')
       args.push(nextStatus)
@@ -996,7 +1032,11 @@ tracks.put('/:bgmId', async (c) => {
       orphanedCover: hasCover && !!prev.cover_mime,
     }
   })
-  const result = write.immediate()
+  let result: ReturnType<typeof write>
+  try { result = write.immediate() } catch (error) {
+    if (error instanceof PlaybackProgressError) return c.json({ error: error.message }, error.status)
+    throw error
+  }
   if (result.error) return c.json({ error: result.error }, 400)
 
   if (result.orphanedCover) cleanupOrphanedCover(uid, bgmId)

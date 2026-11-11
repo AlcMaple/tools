@@ -8,7 +8,7 @@ import { stream } from 'hono/streaming'
 import { isIP } from 'node:net'
 import { lookup } from 'node:dns/promises'
 import { lookup as lookupAddress } from 'node:dns'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Agent, fetch as undiciFetch } from 'undici'
@@ -22,6 +22,7 @@ import { MAX_IMAGES, SAME_SITE_GAP_MS, extractUrls, groupByHost, pageDigest } fr
 import { briefSystemPrompt, briefUserText, diffBrief, isChoosableClientType, normalizeBrief, type Brief, type ChoosableClientType } from '../shared/order-judge-brief'
 import { EMPTY_QUOTE, carryHourEdits, experienceLines, normalizeQuote, type QuoteState } from '../shared/order-judge-sheet'
 import { normalizeMaintenance } from '../shared/order-judge-maintenance'
+import { SCOPE_ESTIMATE_PROMPT, plansOf, applySubmission, needsEstimate, normalizeEstimate, scopeEstimateInput, submissionText, type ScopeEstimate, type ScopeSubmission } from '../shared/order-judge-scope'
 import {
   ATTACH_FILE_RE, ATTACH_MAX_BYTES, ATTACH_MAX_FILES, ATTACH_MAX_TOTAL, JUDGE_MAX_BODY, JUDGES_PER_MINUTE, MAX_TEXT_CHARS, VERSION_LIMIT,
   type JudgeEvent, type JudgeSyncEvent, type Project, type VersionFile,
@@ -60,6 +61,10 @@ const MESSAGES: Record<string, string> = {
   BAD_QUOTE: '报价或月维护的设置格式不对，刷新页面后再保存',
   VERSION_FULL: `这一单已经有 ${VERSION_LIMIT} 个版本，新开一个项目再追加`,
   ABORTED: '整理超时或被取消了，请手动重试',
+  SCOPE_NONE: '这个项目还没有客户确认链接',
+  SCOPE_EMPTY: '客户还没有提交',
+  SCOPE_STALE: '客户确认的不是最新一版清单，重新生成链接发给客户',
+  SCOPE_CHANGED: '客户刚刚又改了一次，看过新内容后再点',
 }
 // 新版本沿用上一版的报价设置，状态回到草稿；项目里已有成交版本时新版本是变更单，支出和交付后修改已经在原单收过，从空白开始
 function carriedQuote(projectId: string): QuoteState {
@@ -246,6 +251,27 @@ async function askBrief(conn: JudgeConnection, uid: number, previous: Brief | nu
   throw new AgentRunError('EMPTY_RESPONSE', 503)
 }
 
+async function askEstimate(conn: JudgeConnection, uid: number, brief: Brief, submission: ScopeSubmission, signal: AbortSignal): Promise<ScopeEstimate> {
+  const body = {
+    model: conn.model, temperature: 0.2, max_tokens: 3000, response_format: { type: 'json_object' },
+    ...(conn.model.startsWith('deepseek-') ? { thinking: { type: 'disabled' } } : {}),
+    messages: [{ role: 'system', content: SCOPE_ESTIMATE_PROMPT }, { role: 'user', content: scopeEstimateInput(brief, submission) }],
+  }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const content = contentOf(await conn.call(body, signal))
+    if (!content) {
+      console.info(`[order-judge] uid=${uid} 客户确认估算第 ${attempt} 次返回空内容`)
+      continue
+    }
+    try { return normalizeEstimate(JSON.parse(content)) }
+    catch (e) {
+      console.error(`[order-judge] uid=${uid} 客户确认估算不是 JSON: ${content.slice(0, 200)}`, e)
+      throw new AgentRunError('BAD_RESPONSE', 503)
+    }
+  }
+  throw new AgentRunError('EMPTY_RESPONSE', 503)
+}
+
 // ── 材料 ──
 
 type Materials = { text: string; clientType: ChoosableClientType; images: { name: string; bytes: Buffer; dataUrl: string }[]; files: { name: string; bytes: Buffer }[] }
@@ -290,7 +316,7 @@ async function removeDirs(uid: number, ids: string[]): Promise<void> {
 }
 
 // 先落文件再插行；插行失败删掉刚写的目录。用户的项目从不自动删除
-async function saveVersion(uid: number, projectId: string | null, input: Materials, brief: Brief, previous: Brief | null, model: string): Promise<Project> {
+async function saveVersion(uid: number, projectId: string | null, input: Omit<Materials, 'clientType'>, brief: Brief, previous: Brief | null, model: string): Promise<Project> {
   const id = randomUUID()
   const dir = versionDir(uid, id)
   await mkdir(dir, { recursive: true })
@@ -360,7 +386,7 @@ api.use('*', async (c, next) => {
   await next()
 })
 
-api.get('/', (c) => c.json({ projects: judgeData.projects(c.get('uid')), seq: judgeData.seq(c.get('uid')), market: judgeData.market() }))
+api.get('/', (c) => c.json({ projects: judgeData.projects(c.get('uid')), seq: judgeData.seq(c.get('uid')), market: judgeData.market(), learned: judgeData.learned() }))
 
 api.get('/sync/events', async c => {
   const uid = c.get('uid'), session = await getSession(c)
@@ -492,7 +518,13 @@ async function organize(c: Context<Env>, projectId: string | null): Promise<Resp
       console.info(`[order-judge] → uid=${uid} ${conn.source} ${conn.model} ${previous ? `追加第 ${previous.n + 1} 版` : '新项目'} 文字 ${input.text.length} 字 网址 ${urls.length} 个 图片 ${input.images.length} 张`)
       const userText = briefUserText(input.text, links, input.images.map((x) => x.name), previous?.brief ?? null)
       const brief = await conn.execute(() => askBrief(conn, uid, previous?.brief ?? null, input.clientType, userText, input.images.map((x) => x.dataUrl), signal))
-      const project = await saveVersion(uid, projectId, input, brief, previous?.brief ?? null, conn.model)
+      let project = await saveVersion(uid, projectId, input, brief, previous?.brief ?? null, conn.model)
+      // 链接反正要发给客户，有方案就直接生成；旧链接上客户的提交还没应用时不覆盖，免得把它作废
+      if (brief.plans?.length && !brief.confirmed && !judgeData.scope(project.id)?.submission) {
+        judgeData.createScope(uid, project.id, judgeData.latest(uid, project.id)!.id, randomBytes(24).toString('base64url'))
+        judgeData.bump(uid)
+        project = judgeData.project(uid, project.id) ?? project
+      }
       judgeEvents.changed(uid, judgeData.seq(uid))
       console.info(`[order-judge] ← uid=${uid} ${brief.title} ${brief.items.length} 条 ${Date.now() - started}ms`)
       await send({ type: 'done', project })
@@ -539,6 +571,89 @@ api.put('/projects/:id/maintenance', bodyLimit({ maxSize: 32768 }), async (c) =>
   if (!r.changes) return c.json(errorBody('NOT_FOUND'), 404)
   judgeData.bump(uid); judgeEvents.changed(uid, judgeData.seq(uid))
   return c.json({ project: judgeData.project(uid, id) })
+})
+
+api.post('/projects/:id/scope', (c) => {
+  const uid = c.get('uid'), id = c.req.param('id')
+  const version = ID_RE.test(id) ? judgeData.latest(uid, id) : null
+  if (!version) return c.json(errorBody('NOT_FOUND'), 404)
+  judgeData.createScope(uid, id, version.id, randomBytes(24).toString('base64url'))
+  judgeData.bump(uid); judgeEvents.changed(uid, judgeData.seq(uid))
+  return c.json({ project: judgeData.project(uid, id) })
+})
+
+api.delete('/projects/:id/scope', (c) => {
+  const uid = c.get('uid'), id = c.req.param('id')
+  if (!ID_RE.test(id) || !judgeData.removeScope(uid, id)) return c.json(errorBody('SCOPE_NONE'), 404)
+  judgeData.bump(uid); judgeEvents.changed(uid, judgeData.seq(uid))
+  return c.json({ project: judgeData.project(uid, id) })
+})
+
+// 不等客户：开发者自己选定一个方案，走和客户确认同一条路进估价，不调 AI
+api.post('/projects/:id/scope/pick', bodyLimit({ maxSize: 1024 }), async (c) => {
+  const uid = c.get('uid'), id = c.req.param('id')
+  const latest = ID_RE.test(id) ? judgeData.latest(uid, id) : null
+  if (!latest) return c.json(errorBody('NOT_FOUND'), 404)
+  const body = await c.req.json().catch(() => null) as { planId?: unknown } | null
+  const plan = plansOf(latest.brief).find(p => p.id === body?.planId)
+  if (!plan) return c.json(errorBody('BAD_INPUT'), 400)
+  if (latest.n >= VERSION_LIMIT) return c.json(errorBody('VERSION_FULL'), 409)
+  const submission: ScopeSubmission = { planId: plan.id, picked: plan.itemIds, custom: [], answers: [], note: '' }
+  const applied = applySubmission(latest.brief, submission, null, Date.now())
+  const brief: Brief = { ...applied, confirmed: { ...applied.confirmed!, by: 'developer' } }
+  await saveVersion(uid, id, { text: `开发者选定方案「${plan.name}」`, images: [], files: [] }, brief, latest.brief, latest.model)
+  judgeData.closeScope(id)
+  judgeData.bump(uid); judgeEvents.changed(uid, judgeData.seq(uid))
+  return c.json({ project: judgeData.project(uid, id) })
+})
+
+api.post('/projects/:id/scope/apply', async (c) => {
+  const uid = c.get('uid'), id = c.req.param('id'), desktop = isDesktop(c)
+  const latest = ID_RE.test(id) ? judgeData.latest(uid, id) : null
+  if (!latest) return c.json(errorBody('NOT_FOUND'), 404)
+  const link = judgeData.scope(id)
+  if (!link) return c.json(errorBody('SCOPE_NONE'), 404)
+  if (!link.submission) return c.json(errorBody('SCOPE_EMPTY'), 409)
+  if (link.versionId !== latest.id) return c.json(errorBody('SCOPE_STALE'), 409)
+  if (latest.n >= VERSION_LIMIT) return c.json(errorBody('VERSION_FULL'), 409)
+  if (running.has(uid)) return c.json(errorBody('JUDGE_BUSY'), 409)
+  const submission = link.submission
+  const ask = needsEstimate(submission)
+  if (ask) {
+    if (running.size >= MAX_RUNNING) return c.json(errorBody('SERVER_BUSY'), 429)
+    const wait = takeSlot(uid, recent)
+    if (wait) {
+      c.header('Retry-After', String(wait))
+      return c.json({ ...errorBody('RATE_LIMITED'), error: `${MESSAGES.RATE_LIMITED}，${wait} 秒后可以再点` }, 429)
+    }
+  }
+  running.add(uid)
+  const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(120_000)])
+  let source: Source | undefined
+  try {
+    let estimate: ScopeEstimate | null = null, model = latest.model
+    if (ask) {
+      source = aiSource(uid, desktop)
+      const conn = await connection(uid, signal, desktop)
+      model = conn.model
+      estimate = await conn.execute(() => askEstimate(conn, uid, latest.brief, submission, signal))
+    }
+    // AI 跑的这段时间客户可能又提交了，不能拿旧内容盖掉
+    if (judgeData.scope(id)?.submittedAt !== link.submittedAt) return c.json(errorBody('SCOPE_CHANGED'), 409)
+    const brief = applySubmission(latest.brief, submission, estimate, Date.now())
+    await saveVersion(uid, id, { text: submissionText(latest.brief, submission), images: [], files: [] }, brief, latest.brief, model)
+    judgeData.closeScope(id)
+    judgeData.bump(uid); judgeEvents.changed(uid, judgeData.seq(uid))
+    console.info(`[order-judge] uid=${uid} 按客户确认生成新版本 ${submission.picked.length} 条 + 新增 ${submission.custom.length} 条`)
+    return c.json({ project: judgeData.project(uid, id) })
+  } catch (e) {
+    if (e instanceof JudgeDataError) throw e
+    const code = e instanceof AgentRunError ? e.code : signal.aborted ? 'ABORTED' : 'UNEXPECTED'
+    console.error(`[order-judge] ✗ uid=${uid} 客户确认 ${code}`, e)
+    return c.json(errorBody(code, source, desktop), code === 'UNEXPECTED' ? 500 : 503)
+  } finally {
+    running.delete(uid)
+  }
 })
 
 const materialLimit = bodyLimit({ maxSize: JUDGE_MAX_BODY, onError: (c) => c.json(errorBody('MESSAGE_TOO_LARGE'), 413) })

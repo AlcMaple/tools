@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="620" viewBox="0 0 1040 620">
+<style>text{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;fill:#282529}.title{font-size:19px;font-weight:700}.sub{font-size:12.5px;fill:#756f73}.head{font-size:14px;font-weight:700}.body{font-size:12px}</style>
+<rect x="1" y="1" width="1038" height="618" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="28" y="37" class="title">不知道番名，也能按想看的题材找番</text>
+<text x="28" y="64" class="sub">包含日常和喜剧、排除恋爱 → 缩小候选 → 沿用原有追番与观看入口</text>
+<rect x="28" y="90" width="984" height="150" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="48" y="119" class="head">用户会经历什么</text>
+<text x="48" y="151" class="body">全部番剧 → 按题材找番 → 填写「同时包含」「排除题材」→ 点击「找番」</text>
+<text x="48" y="180" class="body">结果显示当前条件和卡片标签，已有的番名、年份与排序继续有效</text>
+<text x="48" y="209" class="body">跨页返回仍保留本次条件；「清空题材」只撤销题材，不丢其他筛选</text>
+<rect x="28" y="260" width="476" height="145" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+<text x="48" y="289" class="head">背后怎么保证结果一致</text>
+<text x="48" y="321" class="body">先采用管理员改过的标签，再检查包含与排除</text>
+<text x="48" y="349" class="body">在搜索候选截断、总数与分页之前筛选</text>
+<text x="48" y="377" class="body">只读本站已有资料，浏览不新增外站请求</text>
+<rect x="524" y="260" width="488" height="145" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="544" y="289" class="head">为什么不只过滤眼前的卡片</text>
+<text x="544" y="321" class="body">当前页没匹配，不代表整个目录没有</text>
+<text x="544" y="349" class="body">如果先截断再筛选，目标可能被不匹配作品挤掉</text>
+<text x="544" y="377" class="body">这是可控的发现工具，不冒充自动个性化推荐</text>
+<rect x="28" y="425" width="984" height="135" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="48" y="454" class="head">条件太窄或资料不完整时</text>
+<text x="48" y="485" class="body">同一题材同时包含和排除：表单提示调整，原结果不变</text>
+<text x="48" y="513" class="body">没有匹配：减少题材或清空；缺标签不算命中，排除也不是内容避雷保证</text>
+<text x="48" y="541" class="body">标签精确匹配，不把近义词猜成同一类；访客可见范围保持原样</text>
+<text x="28" y="592" class="sub">有明确番名时仍直接搜索，不必使用题材筛选；不引入新的推荐页面或付费调用</text>
+</svg>

@@ -11,10 +11,13 @@ import { useIsWide } from '../useMediaQuery'
 import { precheck } from '../../shared/order-judge'
 import { BASIS_TEXT, CHOOSABLE_CLIENT_TYPES, PRIORITIES, WORK_KINDS, isChoosableClientType, type Brief as BriefType, type BriefItem, type ChoosableClientType } from '../../shared/order-judge-brief'
 import { parseBudget, parseDeadline, ymd, type Expense, type QuoteSettings } from '../../shared/order-judge-quote'
-import { MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance, type MonthRecord } from '../../shared/order-judge-maintenance'
-import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, OUTCOMES, VERSION_STATUSES, buildSheet, calibFor, calibrateByType, latestType, clientText, freeze, normalizeQuote, selfText, marketLine, HOUR_SCALE_MAX, HOUR_SCALE_MIN, hourRows, hoursLabel, scaleLabel, selfSummary, type Calibrations, type HourRow, type QuoteState, type Sheet } from '../../shared/order-judge-sheet'
+import { COOPERATION_PLANS, MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, longTermClientText, longTermFee, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, planOf, suggestFee, type CooperationPlan, type Maintenance, type MonthRecord } from '../../shared/order-judge-maintenance'
+import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, ITEM_MAX_DAYS, ITEM_MAX_HOURS, OUTCOMES, VERSION_STATUSES, buildSheet, calibFor, calibrateByType, latestType, clientText, freeze, normalizeQuote, selfText, marketLine, HOUR_SCALE_MAX, HOUR_SCALE_MIN, hourRows, hoursLabel, scaleLabel, selfSummary, type Calibrations, type HourRow, type QuoteState, type Sheet } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
+import { FlowPreview } from './FlowPreview'
+import { PlanList, ScopePanel } from './ScopePanel'
+import { inScoping, plansOf, recommendedPlan } from '../../shared/order-judge-scope'
 import { readByokKey } from '../reviews/byok'
 import type { JudgeState, Project, Version } from '../../shared/order-judge-api'
 import { MAX_TEXT_CHARS, VERSION_LIMIT } from '../../shared/order-judge-api'
@@ -102,7 +105,7 @@ function JudgeWorkspace(): JSX.Element {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('new')
   const [state, setState] = useState<JudgeState | null>(null)
-  const calib = { byType: calibrateByType(state?.projects ?? []), market: state?.market }
+  const calib = { byType: state?.learned ?? calibrateByType(state?.projects ?? []), market: state?.market }
   const all = state?.projects ?? []
   const [loadError, setLoadError] = useState('')
   const [syncError, setSyncError] = useState('')
@@ -360,6 +363,8 @@ function JudgeWorkspace(): JSX.Element {
     setOutcome(null)
   }
 
+  // 详情拿的是整理或点开那一刻的对象，客户从链接提交只会经同步到达 state，要用更新的那份
+  const fresh = (p: Project): Project => { const q = state?.projects.find(x => x.id === p.id); return q && q.updatedAt >= p.updatedAt ? q : p }
   const replaceProject = (p: Project): void => {
     setState((s) => (s ? { ...s, projects: s.projects.map((x) => (x.id === p.id ? p : x)) } : s))
     setOutcome((o) => (o?.kind === 'done' && o.project.id === p.id ? { ...o, project: p } : o))
@@ -567,7 +572,7 @@ function JudgeWorkspace(): JSX.Element {
               </div>
             </section>
           ) : outcome?.kind === 'done' ? (
-            <ProjectSheet key={`${outcome.project.id}:${latest(outcome.project).n}`} project={outcome.project} ms={outcome.ms} onSaved={replaceProject} calib={calib} all={all} />
+            <ProjectSheet key={`${outcome.project.id}:${latest(fresh(outcome.project)).n}`} project={fresh(outcome.project)} ms={outcome.ms} onSaved={replaceProject} calib={calib} all={all} />
           ) : outcome?.kind === 'chat-record' ? (
             <section className="panel oj-sheet">
               <span className="tape tl gold" />
@@ -594,7 +599,7 @@ function JudgeWorkspace(): JSX.Element {
               )}
             </section>
           ) : target ? (
-            <ProjectSheet key={`${target.id}:${latest(target).n}`} project={target} onSaved={replaceProject} calib={calib} all={all} />
+            <ProjectSheet key={`${target.id}:${latest(fresh(target)).n}`} project={fresh(target)} onSaved={replaceProject} calib={calib} all={all} />
           ) : (
             <section className="panel oj-sheet blank oj-blank">
               <div className="empty" style={{ padding: '10px 0' }}>
@@ -701,6 +706,12 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
   const removed = version.changes.filter((c): c is Extract<typeof c, { type: 'removed' }> => c.type === 'removed')
   const meta = [`第 ${version.n} 版`, when(version.at), b.clientType, ms ? `用时 ${Math.round(ms / 1000)} 秒` : ''].filter(Boolean).join(' · ')
   const facts: [string, string][] = [['客户在意的结果', b.outcome], ['客户预算', b.budget], ['截止', b.deadline]]
+  const isLatest = version.id === latest(project).id
+  const plan = planOf(project.maintenance, latest(project).brief.engagement)
+  const dealt = project.versions.some(v => v.quote.status === '已成交')
+  const scoping = inScoping(b, dealt, version.quote.status)
+  const flowNodes = b.items.filter(i => i.dependsOn?.length || b.items.some(x => x.dependsOn?.includes(i.id)))
+    .map(i => ({ id: i.id, title: i.title, detail: i.detail, stage: i.stage ?? '', dependsOn: i.dependsOn ?? [] }))
   const groups = PRIORITIES.map(p => ({ p, items: b.items.filter(i => i.priority === p) })).filter(g => g.items.length)
   return (
     <section className="panel oj-sheet">
@@ -717,8 +728,45 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
       <dl className="oj-facts">
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd className={v ? '' : 'ask'}>{v || '待问'}</dd></div>)}
       </dl>
+      {scoping ? (
+        <div className="oj-cols">
+          <div className="oj-col">
+            {isLatest ? <PlanList project={project} latest={version} onSaved={onSaved} /> : <div className="oj-sec"><h3><Ic name="doc" />需求方案</h3><ul className="oj-plain">{plansOf(b).map(p => <li key={p.id}>{p.name}：{p.summary}{p.fit ? `；${p.fit}` : ''}</li>)}</ul></div>}
+            {b.questions.length > 0 && (
+              <div className="oj-sec">
+                <h3><Ic name="edit" />要问客户的</h3>
+                <ul className="oj-q">{b.questions.map((q, i) => <li key={i}><span>{q}</span></li>)}</ul>
+              </div>
+            )}
+          </div>
+          <div className="oj-col">
+            {isLatest && <ScopePanel project={project} latest={version} onSaved={onSaved} />}
+            {flowNodes.length > 0 && (
+              <div className="oj-sec">
+                <h3><Ic name="chev" />流程图 · {recommendedPlan(plansOf(b))?.name}</h3>
+                <FlowPreview nodes={flowNodes} picked={new Set(recommendedPlan(plansOf(b))?.itemIds ?? [])} />
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="oj-cols">
       <div className="oj-col">
+      {isLatest && project.scope && <ScopePanel project={project} latest={version} onSaved={onSaved} />}
+      {b.confirmed && (
+        <div className="oj-sec">
+          <h3><Ic name="check" />{b.confirmed.by === 'developer' ? '已选定方案' : '客户已确认'}</h3>
+          {b.confirmed.conflicts.length > 0 && <ul className="oj-conflicts">{b.confirmed.conflicts.map(c => <li key={c}><span>{c}</span></li>)}</ul>}
+          {b.confirmed.answers.length > 0 && <ul className="oj-plain">{b.confirmed.answers.map(a => <li key={a.q}>{a.q}：{a.a}</li>)}</ul>}
+          {b.confirmed.note && <p className="oj-scope-note">备注：{b.confirmed.note}</p>}
+        </div>
+      )}
+      {flowNodes.length > 0 && (
+        <details className="oj-sec oj-src">
+          <summary><Ic name="chev" cls="ic ic-sm" />流程图</summary>
+          <FlowPreview nodes={flowNodes} picked={new Set(b.items.filter(i => i.priority !== '不做').map(i => i.id))} />
+        </details>
+      )}
       {groups.map(g => (
         <div key={g.p} className="oj-sec">
           <h3><Ic name="check" />{g.p === '不做' ? '这次不做' : g.p}</h3>
@@ -745,10 +793,12 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
       )}
       </div>
       <div className="oj-col">
-      <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} />
-      {project.versions.some(v => v.quote.status === '已成交') && <MaintenancePanel key={`m:${project.id}`} project={project} all={all} onSaved={onSaved} calib={calib} />}
+      <PlanBar project={project} plan={plan} onSaved={onSaved} />
+      {(plan !== '长期' || dealt) && <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} />}
+      {(plan === '长期' || dealt) && <MaintenancePanel key={`m:${project.id}:${plan}`} project={project} all={all} onSaved={onSaved} calib={calib} long={plan === '长期'} />}
       </div>
       </div>
+      )}
       {(version.text || version.images.length > 0 || version.files.length > 0) && (
         <details className="oj-sec oj-src">
           <summary><Ic name="clip" cls="ic ic-sm" />第 {version.n} 版放进来的材料</summary>
@@ -782,8 +832,31 @@ const BONUS_INPUTS: [keyof BonusTerms, string, string][] = [
 
 const thisMonth = (): string => new Date().toISOString().slice(0, 7)
 
-// 月维护：项目级，成交过才出现。月费定了就不改：一旦记过月份，月费输入框锁住
-function MaintenancePanel({ project, all, onSaved, calib: calibs }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibrations }): JSX.Element {
+function PlanBar({ project, plan, onSaved }: { project: Project; plan: CooperationPlan; onSaved: (p: Project) => void }): JSX.Element {
+  const [error, setError] = useState('')
+  const engagement = latest(project).brief.engagement
+  const choose = async (next: CooperationPlan): Promise<void> => {
+    if (next === plan) return
+    setError('')
+    try { onSaved(await saveMaintenance(project.id, { ...project.maintenance, plan: next })) }
+    catch (e) { logClient('order-judge:plan', e); setError(errorOf(e).message) }
+  }
+  return (
+    <div className="oj-sec">
+      <div className="oj-qrow">
+        <span className="oj-qlabel">合作方式</span>
+        <div className="seg" role="group" aria-label="合作方式">
+          {COOPERATION_PLANS.map(p => <button key={p} type="button" className={plan === p ? 'on' : ''} onClick={() => void choose(p)}>{p}</button>)}
+        </div>
+      </div>
+      {engagement?.reason && <p className="oj-plan-reason" style={{ marginTop: 8 }}>AI：{engagement.mode}，{engagement.reason}</p>}
+      {error && <p className="oj-scope-warn" role="alert">{error}</p>}
+    </div>
+  )
+}
+
+// 月维护：项目级，成交过才出现；长期合作没有成交也可用，这时它就是报价。月费定了就不改：一旦记过月份，月费输入框锁住
+function MaintenancePanel({ project, all, onSaved, calib: calibs, long = false }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibrations; long?: boolean }): JSX.Element {
   const calib = calibFor(calibs, latestType(project.versions))
   const [draft, setDraft] = useState<Maintenance>(project.maintenance)
   const [view, setView] = useState<'client' | 'self'>('self')
@@ -792,8 +865,12 @@ function MaintenancePanel({ project, all, onSaved, calib: calibs }: { project: P
   const set = (patch: Partial<Maintenance>): void => { setDraft(d => ({ ...d, ...patch })); setNote(null) }
   const pending = normalizeMaintenance(draft)
   const dirty = JSON.stringify(pending) !== JSON.stringify(project.maintenance)
-  const suggestion = suggestFee(all.some(p => p.id === project.id) ? all : [...all, project], project.id, calib.settings)
-  const text = view === 'client' ? maintenanceClientText(project.title, pending) : maintenanceSelfText(project.title, pending, suggestion)
+  const pool = all.some(p => p.id === project.id) ? all : [...all, project]
+  const engagement = latest(project).brief.engagement
+  const scopeHours = latest(project).brief.items.filter(i => i.priority !== '不做').reduce((a, i) => a + i.hours, 0)
+  const suggestion = long ? longTermFee(pool, project.id, pending, engagement?.monthHours ?? 0, calib.settings, scopeHours) : suggestFee(pool, project.id, calib.settings)
+  const text = view === 'self' ? maintenanceSelfText(project.title, pending, suggestion, long)
+    : long ? longTermClientText(project.title, pending, suggestion.fee, engagement?.firstMonth ?? []) : maintenanceClientText(project.title, pending)
   const locked = project.maintenance.months.length > 0 && project.maintenance.fee > 0
   const expenses = draft.expenses.length < MAX_MAINT_EXPENSES ? [...draft.expenses, { name: '', amount: 0 }] : draft.expenses
   const setExpense = (i: number, patch: Partial<Expense>): void => set({ expenses: expenses.map((e, j) => (j === i ? { ...e, ...patch } : e)).filter(e => e.name || e.amount) })
@@ -818,23 +895,38 @@ function MaintenancePanel({ project, all, onSaved, calib: calibs }: { project: P
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `${project.title}-月维护${view === 'client' ? '' : '-自用'}.txt`
+    a.download = `${project.title}-${long ? '长期合作' : '月维护'}${view === 'client' ? '' : '-自用'}.txt`
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   return (
     <div className="oj-sec oj-maint">
-      <h3><Ic name="calendar" />月维护</h3>
+      <h3><Ic name="calendar" />{long ? '长期合作' : '月维护'}</h3>
+      {long && (pending.fee || suggestion.fee != null) && (
+        <div className="oj-hero" role="status">
+          <span className="oj-hero-name">{pending.fee ? '月费' : '建议月费'}</span>
+          <b className="oj-hero-price">¥{(pending.fee || suggestion.fee!).toLocaleString('zh-CN')}<small> / 月</small></b>
+          <span className="oj-hero-sub">{suggestion.hours} 小时 × {suggestion.rate}，小时来自{suggestion.source}</span>
+        </div>
+      )}
       <div className="oj-qform">
         <div className="oj-qrow">
           <span className="oj-qlabel">状态</span>
           <div className="seg" role="group" aria-label="月维护状态">
-            {MAINTENANCE_STATES.map(st => <button key={st} type="button" className={draft.state === st ? 'on' : ''} onClick={() => set({ state: st })}>{st}</button>)}
+            {MAINTENANCE_STATES.map(st => <button key={st} type="button" className={draft.state === st ? 'on' : ''} onClick={() => set({ state: st })}>{long && st === '不做' ? '待开始' : st}</button>)}
           </div>
         </div>
-        {draft.state !== '不做' && (
+        {(long || draft.state !== '不做') && (
           <>
+            {long && (
+              <label className="oj-qrow">
+                <span className="oj-qlabel">每月投入</span>
+                <input className="oj-qin" aria-label="每月投入小时" inputMode="decimal" value={draft.monthHours || ''} placeholder={engagement?.monthHours ? `AI 估 ${engagement.monthHours}` : '小时'} disabled={locked}
+                  onChange={e => set({ monthHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+                <span className="faint small">小时</span>
+              </label>
+            )}
             <label className="oj-qrow">
               <span className="oj-qlabel">月费</span>
               <input className="oj-qin" aria-label="月费" inputMode="numeric" value={draft.fee || ''} disabled={locked} placeholder={suggestion.fee != null ? `建议 ${suggestion.fee}` : '自己定'}
@@ -913,7 +1005,11 @@ function HoursPanel({ market, draft, raw, settings, set }: { market: string; dra
     <label key={r.id} className="oj-hrow">
       <span title={`${r.title}：${BASIS_TEXT[r.basis]}`}>{r.title}<em>{BASIS_TEXT[r.basis]}</em></span>
       <input type="range" aria-label={`${r.title}的小时`} min={0} max={r.max} step={0.5} value={r.hours} disabled={locked} onChange={e => drag(r.id, r.suggested, Number(e.target.value))} />
-      <span className="oj-hval" title={`${r.hours} 小时`}>{hoursLabel(r.hours)}</span>
+      <span className="oj-hval" title={hoursLabel(r.hours)}>
+        <input key={`${r.id}:${r.hours}`} type="number" className="oj-hnum" aria-label={`${r.title}的小时数`} min={0} max={ITEM_MAX_HOURS} step={0.5} defaultValue={r.hours} disabled={locked}
+          onBlur={e => { const v = Math.min(ITEM_MAX_HOURS, Math.max(0, Math.round(Number(e.target.value) * 2) / 2)); if (e.target.value !== '' && Number.isFinite(v) && v !== r.hours) drag(r.id, r.suggested, v); else e.target.value = String(r.hours) }}
+          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }} />小时
+      </span>
     </label>
   )
   return (
@@ -931,6 +1027,7 @@ function HoursPanel({ market, draft, raw, settings, set }: { market: string; dra
           <div>{rest.map(row)}</div>
         </details>
       )}
+      {rows.some(r => r.hours >= ITEM_MAX_HOURS) && <p className="oj-scope-warn">单项最多 {ITEM_MAX_DAYS} 天；某一项要做更久，建议把上面的合作方式改成长期</p>}
       {changed && !locked && <button type="button" className="oj-hreset" onClick={() => set({ hourEdits: {}, hourScale: 1 })}>恢复 AI 的估计</button>}
     </div>
   )
@@ -954,6 +1051,7 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
   const summary = selfSummary(sheet)
   const dirty = JSON.stringify(pending) !== JSON.stringify(version.quote)
   const kinds = WORK_KINDS.filter(k => sheet.chosen?.lines.some(l => l.work === k))
+  const moduleRows = hourRows(version.brief, draft, sheet.settings).filter(r => r.suggested > 0)
   const parsed = parseBudget(version.brief.budget)
   const [moreOn] = useState(draft.bonus.on || draft.discount.ratio > 0 || draft.resultHours > 0 || draft.expenses.length > 0)
 
@@ -1050,12 +1148,30 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
         )}
         {draft.status === '已成交' && kinds.map(k => (
           <label key={k} className="oj-qrow">
-            <span className="oj-qlabel">实际{k === '接手改' ? '验证和接手' : '新做'}</span>
+            <span className="oj-qlabel">{k === '接手改' ? '验证和改旧代码用时' : '从零做的部分用时'}</span>
             <input className="oj-qin" inputMode="decimal" value={draft.actual[k] || ''} placeholder="做完再填"
               onChange={e => set({ actual: { ...draft.actual, [k]: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 } })} />
             <span className="faint small">小时</span>
           </label>
         ))}
+        {draft.status === '已成交' && moduleRows.length > 0 && (
+          <details className="oj-qmore oj-qmods" open={Object.keys(draft.itemActual).length > 0 || undefined}>
+            <summary>按模块填实际小时（可选）</summary>
+            {moduleRows.map(r => (
+              <label key={r.id} className="oj-qrow">
+                <span className="oj-qlabel">{r.title}</span>
+                <input className="oj-qin" inputMode="decimal" value={draft.itemActual[r.id] ?? ''} placeholder={`估 ${hoursLabel(r.hours)}`}
+                  onChange={e => {
+                    const t = e.target.value.replace(/[^\d.]/g, '')
+                    const next = { ...draft.itemActual }
+                    if (t === '') delete next[r.id]; else next[r.id] = Number(t) || 0
+                    set({ itemActual: next })
+                  }} />
+                <span className="faint small">小时</span>
+              </label>
+            ))}
+          </details>
+        )}
         {draft.status === '已成交' && (
           <div className="oj-qrow">
             <span className="oj-qlabel">做完觉得</span>

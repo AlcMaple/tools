@@ -1,4 +1,5 @@
-import type { MarketStat } from './order-judge-sheet'
+import type { Calibration, MarketStat } from './order-judge-sheet'
+import type { ClientType } from './order-judge-brief'
 // 接单评估前后端共用的接口形状。方案见 docs/ideas/021-接单评估重新定位.md：
 // 一个项目 = 同一个客户的同一单；客户每追加 / 调整一次需求，就多一个版本，版本只存这次新放进来的材料，
 // AI 读上一版的需求清单 + 这次的材料，给出完整的新清单，服务端按条目 id 算出与上一版的差别。
@@ -6,6 +7,7 @@ import type { MarketStat } from './order-judge-sheet'
 import type { Brief, BriefChange } from './order-judge-brief'
 import type { QuoteState } from './order-judge-sheet'
 import type { Maintenance } from './order-judge-maintenance'
+import type { ScopeLink } from './order-judge-scope'
 
 export interface VersionFile { file: string; name: string; size: number }
 
@@ -29,10 +31,11 @@ export interface Project {
   updatedAt: number
   versions: Version[]
   maintenance: Maintenance
+  scope: ScopeLink | null
 }
 
 export interface JudgeState {
-  market?: MarketStat[]; projects: Project[]; seq: number }
+  market?: MarketStat[]; learned?: Record<ClientType, Calibration>; projects: Project[]; seq: number }
 
 export interface JudgeImage { name: string; dataUrl: string }
 

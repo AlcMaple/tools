@@ -15,15 +15,25 @@
 
 - [安装包](docs/devlog/2026-安装包.md)
 - [网页版](docs/devlog/2026-网页版.md)
+- [观看衔接](docs/devlog/2026-观看衔接.md)
 - [妙语库](docs/devlog/2026-妙语库.md)
 - [在线观看](docs/devlog/2026-在线观看.md) · [当前网页版修复入口](docs/ideas/011-在线观看.md)
 - [BGM 登录功能](docs/devlog/2026-BGM登录功能.md)
 - [稀饭账号](docs/devlog/2026-稀饭账号.md)
 - [动漫查询](docs/devlog/2026-动漫查询.md)
+- [追番上下文](docs/devlog/2026-追番上下文.md)
 - [B 站源](docs/devlog/2026-B站源.md)
 - [接单评估](docs/devlog/2026-接单评估.md)
 
 ## 当前未归类记录（2026-10）
+
+## 2026-11-11 fix(dev): 删掉 Electron 程序后 npm run dev 能自动补回并启动
+
+**效果**：为腾空间删掉 `node_modules/electron/dist/Electron.app` 后，`npm run dev` / `npm run preview` 不再报 `spawn …/Electron ENOENT`，启动前会先把缺失的 Electron 程序补回来再启动
+
+**关键决策**：electron 包自带「程序缺了就补下」的逻辑，但只在 `require('electron')` 时触发；`electron-vite` 直接读 `node_modules/electron/path.txt` 去启动，绕过了它。所以 `predev` / `prepreview` 钩子只做一次 `require('electron')`，不自己写下载逻辑。`npm start` 走 electron 自己的命令行，本来就会补，没加钩子
+
+**边界 / 风险**：本机缓存 `~/Library/Caches/electron` 还在时直接解压；缓存也删了会按 `.npmrc` 的 npmmirror 镜像重新下载，需要联网，这条路径未实测
 
 ## 2026-11-03 fix(homework): 复制可整组粘贴回
 

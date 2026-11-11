@@ -1,5 +1,5 @@
 // 新播放页模板。视觉沿用「纱雾画稿」设计系统（web/public/styles/sketch-*.css），布局照旧页；
-// 播放器使用 ArtPlayer，播放恢复与错误提示留在同一页，避免换集后重建另一套状态
+// 播放器换成 ArtPlayer，页面脚本只做三件事：拿地址 → 喂给播放器 → 出错时把原因和「重试」摆出来。
 //
 // 从旧页带过来的、已验证的坑（详见 docs/design/播放页重写方案.md 第四节）：
 //   - CSP：不能写内联 style= 属性，状态切换只用 classList；脚本 / <style> 要 nonce；依赖全部自托管
@@ -22,7 +22,6 @@ export const PLAY_PAGE = `<!doctype html>
 <script src="/api/player/vendor/monitor.js"></script>
 <script src="/api/player/vendor/hls.js"></script>
 <script src="/api/player/vendor/artplayer.js"></script>
-<script src="/api/player/vendor/watch-history.js"></script>
 <link rel="stylesheet" href="/styles/sketch-tokens.css">
 <link rel="stylesheet" href="/styles/sketch-ui.css">
 <style nonce="__CSP_NONCE__">
@@ -52,6 +51,10 @@ export const PLAY_PAGE = `<!doctype html>
   .icon-sprite { display: none }
   .ep-good-note { display: none; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 14px; border-radius: var(--r-card); background: var(--gold-hl); border: 1.5px solid var(--gold); color: #6b5416; font-size: 13px; line-height: 1.6 }
   .ep-good-note.show { display: flex }
+  .journal-row { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-bottom: 24px }
+  .journal-row[hidden] { display: none }
+  #journal-status { color: var(--ink-sub); font-size: 12px }
+  #journal-message { position: absolute; left: 0; bottom: 0; width: max-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink-sub) }
   .ep-good-note::before { content: '★'; flex: none; margin-top: 1px; color: var(--gold) }
 </style>
 </head>
@@ -69,6 +72,12 @@ export const PLAY_PAGE = `<!doctype html>
     <div class="seg src-seg" id="sources"></div>
   </div>
   <div class="ep-good-note" id="epgood"></div>
+  <div class="journal-row" id="journal" hidden>
+    <button type="button" class="btn btn-sm" id="journal-save" disabled>记到手帐</button>
+    <button type="button" class="btn btn-sm btn-ghost" id="journal-read">重新读取手帐</button>
+    <span id="journal-status"></span>
+    <span id="journal-message" role="status" aria-live="polite"></span>
+  </div>
   <div class="player-frame mt16"><div id="art"></div></div>
   <div id="buf" aria-live="polite"></div>
   <div id="err" role="alert" aria-live="polite">
@@ -146,8 +155,7 @@ ${PLAYBACK_BEACON}
   var goodEps = {}, goodNotes = {}
   var generation = 0
   var offlineAt = null, offlineTime = 0, offlineWasPlaying = false
-  // 旧键没有账号归属，留作回滚，不猜测它属于当前登录者
-  var RESUME_KEY = 'player:resume:user:' + ARGS.ownerId + ':' + src + ':' + id + ':' + ep
+  var RESUME_KEY = 'player:resume:' + src + ':' + id + ':' + ep
   // iOS 把后台标签页整个回收后浏览器会自己重载：进度和「当时在不在播」先记下，重载后从原地接着。
   function stashResume(){
     try {
@@ -537,6 +545,9 @@ ${PLAYBACK_BEACON}
   }
   function watchSlow(v, now){
     if (!slow || slow.gen !== generation) slow = { gen: generation, hist: [], fb: null, preparing: false, switching: false }
+    // 切到后台 / 锁屏时浏览器把 <video> 和 SW 一起挂起，seek 落不了地不是源慢。时间不能算在等待里：
+    // 真机 11-08 20:37 本机整集已在、续播跳 1065 秒，用户切走 16 秒回来，看门狗当成「seek 卡了 8 秒」把本机整个换掉
+    if (document.hidden){ if (seekPending) seekAt = now; slow.hist = []; return }
     if (v.paused || playedGen !== generation || slow.switching) return
     var ahead = downloadAhead(v)
     slow.hist.push([now, ahead])
@@ -564,7 +575,8 @@ ${PLAYBACK_BEACON}
     if (st.preparing) return
     st.preparing = true
     var direct = pl.localHash || (src === 'girigiri' && pl.kind === 'hls')
-    if (direct && !pl.viaServer) st.server = Object.assign(plainOf(pl), { viaServer: true })
+    var sv = direct && !pl.viaServer ? serverOf(pl) : null
+    if (sv) st.server = sv
     var mine = await fingerprint(pl)
     if (gen !== generation) return
     if (mine){
@@ -603,6 +615,12 @@ ${PLAYBACK_BEACON}
     swapSource(next, at, playing)
   }
   function plainOf(pl){ var p = Object.assign({}, pl); delete p.localHash; delete p.localJob; return p }
+  // 开播直接用了本机下完的那份时，线路里只有去掉签名的 host+路径（没有 s、没有协议），原样退回经本站会请求一个永远播不了的地址（真机 video code=4 连环报错）。
+  // 这种线路要换成开播时解析出的那条真线路
+  function serverOf(pl){
+    if (pl.s) return Object.assign(plainOf(pl), { viaServer: true })
+    return bootFirst ? Object.assign({}, bootFirst, { viaServer: true }) : null
+  }
 
   function mount(pl, resumeAt, autoplay){
     destroyPlayer()
@@ -616,7 +634,7 @@ ${PLAYBACK_BEACON}
       container: '#art',
       url: mediaUrl(pl),
       type: pl.kind === 'hls' ? 'm3u8' : 'mp4',
-      id: 'user:' + ARGS.ownerId + ':' + src + ':' + id + ':' + ep,
+      id: src + ':' + id + ':' + ep,
       autoplay: !!autoplay,
       playsInline: true,
       autoPlayback: !resumeAt,
@@ -674,10 +692,13 @@ ${PLAYBACK_BEACON}
     v.addEventListener('seeked', function(){ if (art === me){ seekPending = false; if (slow && slow.gen === generation) slow.hist = [] } })
     v.addEventListener('play', function(){ if (art === me) playedGen = generation })
     v.addEventListener('playing', function(){ if (art === me) firstGen = generation })
-    v.addEventListener('playing', function(){
-      if (art !== me || !ARGS.watchContext || !window.MapleWatchHistory) return
-      try { window.MapleWatchHistory.rememberWatchEpisode(window.localStorage, ARGS.watchContext, ep) }
-      catch (error) { slog('watch episode history not saved: ' + (error && (error.stack || error.message) || String(error))) }
+    v.addEventListener('timeupdate', function(){
+      if (nextAsked || art !== me || src !== 'xifan' || (cur && cur.localHash)) return
+      if (!Number.isFinite(v.duration) || v.duration <= 0 || v.currentTime < v.duration * 0.7) return
+      nextAsked = true
+      fetch('/api/player/prefetch-next?src=' + src + '&id=' + encodeURIComponent(id) + '&ep=' + ep, { method: 'POST', keepalive: true })
+        .then(function(r){ slog('prefetch-next ep' + (ep + 1) + ' status=' + r.status) })
+        .catch(function(e){ slog('prefetch-next failed ' + (e && e.message)) })
     })
     startTape(v)
     startStallWatch(v)
@@ -745,6 +766,8 @@ ${PLAYBACK_BEACON}
 
   // 播放出错：不换线、不探测。只区分「断网」和「这条线路真坏了」，两种都给用户一个明确的出口。
   var autoRetries = 0, bootFirst = null
+  // 每个播放页（一集）只触发一次下一集预取；换线重挂播放器也不再发
+  var nextAsked = false
   function onMediaError(why){
     if (!cur || !art) return
     var v = art.video
@@ -761,7 +784,9 @@ ${PLAYBACK_BEACON}
     if (pl.localHash){
       localOff = true
       keepCaching(pl)
-      var plain = plainOf(pl)
+      var plain = serverOf(pl)
+      if (!plain){ fail('这一集没有下到本机，本机文件也读不出来', 'LOCAL_UNREADABLE', function(){ autoRetries = 0; boot() }); return }
+      delete plain.viaServer
       resolved[pl.source] = plain
       swapSource(plain, at, !v.paused)
       return
@@ -803,7 +828,10 @@ ${PLAYBACK_BEACON}
   // 历史：09-21 曾「离开 3 分钟整页刷新」、之后又试过「回前台查登录」，都撤掉了——没坏也刷新要重新缓冲；
   // 刷新后看到一行 JSON 的真因（换源拼错地址、/page 未登录回 JSON）已在服务端修掉。
   // 这里只在藏到后台时记一下进度：iOS 回收整个标签页后浏览器自己重载，boot() 取回接着播。
-  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden'){ stashResume(); qosFlush('hidden'); if (art && cur) qosStart(cur.source) } })
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'hidden'){ stashResume(); qosFlush('hidden'); if (art && cur) qosStart(cur.source) }
+    else { if (seekPending) seekAt = performance.now(); if (stallSince) stallSince = performance.now() }
+  })
 
   // ——— 线路 / 选集 / 源 ———
   var lineRequest = 0
@@ -927,6 +955,53 @@ ${PLAYBACK_BEACON}
       .then(function(d){ if (!d) return; (d.goodEpisodes || []).forEach(function(n){ goodEps[n] = true }); goodNotes = d.goodEpisodeNotes || {} })
       .catch(function(){})
   }
+  var journalSnapshot = null, journalBusy = false, journalController = null, journalLeaving = false
+  function renderJournal(){
+    $('journal-save').textContent = journalBusy ? '处理中…' : '记到第 ' + ep + ' 集'
+    $('journal-save').disabled = journalBusy || !journalSnapshot || ep <= journalSnapshot.episode
+    $('journal-read').disabled = journalBusy
+    $('journal-status').textContent = journalSnapshot ? ('手帐：' + journalSnapshot.title + ' · 第 ' + journalSnapshot.episode + ' 集') : ''
+  }
+  async function journalRequest(url, options){
+    var ctl = new AbortController(); journalController = ctl
+    var timer = setTimeout(function(){ ctl.abort() }, 10000)
+    try {
+      var response = await fetch(url, Object.assign({}, options, { signal: ctl.signal, cache: 'no-store' }))
+      var data = await response.json()
+      if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status))
+      return data
+    } finally { clearTimeout(timer); if (journalController === ctl) journalController = null }
+  }
+  async function readJournal(){
+    if (!bgmId || !ARGS.ownerId || journalBusy) return
+    journalBusy = true; journalSnapshot = null; $('journal-message').textContent = ''; renderJournal()
+    try {
+      var data = await journalRequest('/api/tracks/' + bgmId + '/playback-progress', {})
+      if (data.ownerId !== ARGS.ownerId) throw new Error('账号已变化，请重新打开播放页')
+      journalSnapshot = data
+    } catch (e){
+      if (!journalLeaving) $('journal-message').textContent = e.name === 'AbortError' ? '读取超时，请手动重新读取手帐' : e.message
+      slog('journal read failed: ' + (e.stack || e.message))
+    } finally { journalBusy = false; renderJournal() }
+  }
+  $('journal-read').onclick = readJournal
+  $('journal-save').onclick = async function(){
+    if (journalBusy || !journalSnapshot || ep <= journalSnapshot.episode) return
+    var expected = journalSnapshot
+    journalBusy = true; $('journal-message').textContent = ''; renderJournal()
+    try {
+      var saved = await journalRequest('/api/tracks/' + bgmId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ episode: ep, playbackProgress: { ownerId: expected.ownerId, revision: expected.revision } }) })
+      journalSnapshot = Object.assign({}, expected, { episode: saved.episode })
+      $('journal-message').textContent = '已记到手帐'
+    } catch (e){
+      journalSnapshot = null
+      if (!journalLeaving) $('journal-message').textContent = e.name === 'AbortError' ? '保存结果未确认，请重新读取手帐' : e.message
+      slog('journal save failed: ' + (e.stack || e.message))
+    } finally { journalBusy = false; renderJournal() }
+  }
+  window.addEventListener('pagehide', function(){ journalLeaving = true; if (journalController) journalController.abort() })
+  window.addEventListener('pageshow', function(){ journalLeaving = false })
+  if (bgmId && ARGS.ownerId){ $('journal').hidden = false; readJournal() }
   function renderGoodNote(){
     var box = $('epgood')
     if (!goodEps[ep]){ box.classList.remove('show'); box.textContent = ''; return }

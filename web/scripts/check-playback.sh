@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # 不开播 / 卡顿复查：列出最近的卡顿记录，以及同一时段 nginx 实际发给该 IP 的速度。
-# 用法：web/scripts/check-playback.sh [最近几小时，默认 24]
+# 用法：web/scripts/check-playback.sh [最近几小时，默认 24] [播放器日志的过滤正则，默认只看卡顿类；查某一集的完整经过可传 'ep5|mount|swap|local|seek']
 set -euo pipefail
 HOURS="${1:-24}"
-ssh -p 31789 -i ~/.ssh/tryidc_web root@103.250.172.17 HOURS="$HOURS" 'bash -s' <<'EOF'
+PATTERN="${2:-stall|kick|qos stalls=[1-9]|startup=[0-9]{2,}|media error}"
+ssh -p 31789 -i ~/.ssh/tryidc_web root@103.250.172.17 HOURS="$HOURS" TAILN="${3:-40}" PAT_B64="$(printf %s "$PATTERN" | base64 | tr -d '\n')" 'bash -s' <<'EOF'
+PAT=$(printf %s "$PAT_B64" | base64 -d)
 since=$(date -u -d "-$HOURS hours" +%Y-%m-%dT%H:%M)
 echo "== 播放器：卡顿 / 推一把 / 有问题的 qos（$since UTC 之后）"
 cat /home/mapletools/.pm2/logs/mapletools-web-out.log* 2>/dev/null \
   | grep -aE '^\[player:client\] [0-9T:.-]+Z' \
   | awk -v s="$since" '$2 >= s' \
-  | grep -aE 'stall|kick|qos stalls=[1-9]|startup=[0-9]{2,}|media error' | cut -c1-400 | tail -40
+  | grep -aE "$PAT" | cut -c1-400 | tail -${TAILN:-40}
 echo
 echo "== nginx：/api/player/stream 大请求的实际到手速度（>1MB）"
 zcat -f /var/log/nginx/access.log /var/log/nginx/access.log.1 2>/dev/null \

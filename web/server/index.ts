@@ -7,7 +7,7 @@ import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
 import { bgmHealth, noteBgmRequest } from './bgm/bgm-health'
 import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
-import { CatalogEditError, clearCatalogCover, getCatalogItem, saveCatalogCoverUrl, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
+import { CatalogEditError, clearCatalogCover, getCatalogItem, listGenresForAdmin, saveGenreVisibility, saveCatalogCoverUrl, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
 import { CoverError, getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
@@ -25,6 +25,7 @@ import community from './community'
 import reviews from './reviews'
 import backup from './backup'
 import orderJudge from './order-judge'
+import orderJudgeScope from './order-judge-scope'
 import agentHistory from './agent/history-api'
 import agentGuest from './agent/guest-api'
 import { maintenanceMode } from './maintenance'
@@ -125,6 +126,7 @@ app.route('/api/reviews', reviews)
 // 备份导入导出：追番 + 点评/推荐，用户自己留底或跨账号拿追番清单
 app.route('/api/backup', backup)
 app.route('/api/order-judge', orderJudge)
+app.route('/api/order-judge-scope', orderJudgeScope)
 
 app.route('/api/agent', agentGuest)
 app.route('/api/agent', agentHistory)
@@ -147,6 +149,17 @@ app.route('/api/player', player)
 // 全部番剧：只读离线索引和已补好的封面，浏览不会触发任何 BGM 请求
 app.get('/api/catalog', async (c) => {
   const session = await getSession(c)
+  const tags = (key: string): string[] | null => {
+    const raw = c.req.query(key)
+    if (!raw) return []
+    try {
+      const value: unknown = JSON.parse(raw)
+      if (!Array.isArray(value) || value.length > 5 || value.some(tag => typeof tag !== 'string' || !tag.trim() || tag.length > 20)) return null
+      return [...new Set((value as string[]).map(tag => tag.trim()))]
+    } catch { return null }
+  }
+  const include = tags('include'), exclude = tags('exclude')
+  if (!include || !exclude) return c.json({ error: '每组题材最多5个，每个1–20字' }, 400)
   const num = (key: string, fallback: number): number => {
     const value = Number(c.req.query(key))
     return Number.isSafeInteger(value) && value >= 0 ? value : fallback
@@ -160,6 +173,8 @@ app.get('/api/catalog', async (c) => {
     limit: Math.min(Math.max(num('limit', 48), 1), 96),
     adult: !!session,
     admin: !!session && isAdminUid(session.uid),
+    include,
+    exclude,
   }))
 })
 
@@ -175,6 +190,25 @@ const catalogEditFailed = (c: Context, error: unknown): Response => {
   if (error instanceof CatalogEditError) return c.json({ error: error.message }, error.status)
   throw error
 }
+
+// 快捷题材的显示 / 隐藏：要注册在 /api/catalog/:id 之前，否则 genres 会被当成 bgmId
+const genreAdmin = async (c: Context): Promise<Response | null> => {
+  const session = await getSession(c)
+  if (!session) return c.json({ error: '未登录' }, 401)
+  return isAdminUid(session.uid) ? null : c.json({ error: '只有管理员能编辑' }, 403)
+}
+app.get('/api/catalog/genres', async (c) => {
+  const denied = await genreAdmin(c)
+  if (denied) return denied
+  return c.json({ genres: listGenresForAdmin() })
+})
+app.put('/api/catalog/genres', async (c) => {
+  const denied = await genreAdmin(c)
+  if (denied) return denied
+  const body = await c.req.json().catch(() => null) as { genres?: unknown } | null
+  try { saveGenreVisibility(body?.genres) } catch (error) { return catalogEditFailed(c, error) }
+  return c.json({ genres: listGenresForAdmin() })
+})
 
 app.put('/api/catalog/:id', async (c) => {
   const id = await catalogAdmin(c)

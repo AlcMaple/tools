@@ -182,8 +182,8 @@ try {
   pass('成交后追加的版本出变更单：只算新增和改动，去掉的不退，折让不沿用')
 
   await change.getByRole('group', { name: '状态' }).getByRole('button', { name: '已成交' }).click()
-  await change.getByLabel('实际新做').fill('8')
-  await change.getByLabel('实际验证和接手').fill('3')
+  await change.getByLabel('从零做的部分用时').fill('8')
+  await change.getByLabel('验证和改旧代码用时').fill('3')
   await change.getByRole('group', { name: '做完觉得' }).getByRole('button', { name: '亏' }).click()
   await change.getByRole('button', { name: '保存' }).click()
   await change.getByText('已保存').waitFor()

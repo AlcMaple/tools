@@ -58,7 +58,7 @@ export function SourceBindPickerModal({
 
   const { track, candidates, mode, agentAction } = flow
   const title = track.titleCn || track.title
-  const ep = watchEp(track, !agentAction)
+  const ep = watchEp(track)
 
   return (
     <div
@@ -246,7 +246,7 @@ export function SourceSearchModal({
   }
 
   const title = track.titleCn || track.title
-  const ep = watchEp(track, !agentAction)
+  const ep = watchEp(track)
 
   return (
     <div

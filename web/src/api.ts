@@ -62,7 +62,7 @@ export interface CatalogItem {
   edited?: { nameCn: boolean; tags: boolean; cover: boolean }
 }
 
-export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean }
+export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[] }
 
 async function catalogEdit(path: string, init: RequestInit): Promise<CatalogItem> {
   const res = await fetch(`/api/catalog/${path}`, init)
@@ -90,8 +90,27 @@ export function clearCatalogCover(bgmId: number): Promise<CatalogItem> {
   return catalogEdit(`${bgmId}/cover`, { method: 'DELETE' })
 }
 
-export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number }, signal?: AbortSignal): Promise<CatalogResult> {
+export interface CatalogGenre { tag: string; count: number; visible: boolean }
+
+async function catalogGenres(init?: RequestInit): Promise<CatalogGenre[]> {
+  const res = await fetch('/api/catalog/genres', init)
+  const body = (await res.json().catch(() => ({}))) as { error?: string; genres?: CatalogGenre[] }
+  if (!res.ok || !body.genres) throw new Error(body.error || `读取题材失败（HTTP ${res.status}）`)
+  return body.genres
+}
+
+export function fetchCatalogGenres(signal?: AbortSignal): Promise<CatalogGenre[]> {
+  return catalogGenres({ signal })
+}
+
+export function saveCatalogGenres(genres: { tag: string; visible: boolean }[]): Promise<CatalogGenre[]> {
+  return catalogGenres({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ genres }) })
+}
+
+export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number; include?: string[]; exclude?: string[] }, signal?: AbortSignal): Promise<CatalogResult> {
   const query = new URLSearchParams({ q: params.q, year: String(params.year), sort: params.sort, offset: String(params.offset), limit: String(params.limit) })
+  if (params.include?.length) query.set('include', JSON.stringify(params.include))
+  if (params.exclude?.length) query.set('exclude', JSON.stringify(params.exclude))
   const res = await fetch(`/api/catalog?${query}`, { signal })
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }

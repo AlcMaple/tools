@@ -12,6 +12,9 @@ export type MaintenanceState = typeof MAINTENANCE_STATES[number]
 export const MAX_MONTHS = 60
 export const MAX_MAINT_EXPENSES = 10
 
+export const COOPERATION_PLANS = ['一次性', '长期'] as const
+export type CooperationPlan = typeof COOPERATION_PLANS[number]
+
 export interface MonthRecord { month: string; delivered: string; hours: number; feeling: Feeling }
 
 export interface Maintenance {
@@ -20,9 +23,12 @@ export interface Maintenance {
   start: string
   expenses: Expense[]
   months: MonthRecord[]
+  // 空表示跟 AI 的判断走，开发者点过才有值
+  plan: CooperationPlan | ''
+  monthHours: number
 }
 
-export const EMPTY_MAINTENANCE: Maintenance = { state: '不做', fee: 0, start: '', expenses: [], months: [] }
+export const EMPTY_MAINTENANCE: Maintenance = { state: '不做', fee: 0, start: '', expenses: [], months: [], plan: '', monthHours: 0 }
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '')
@@ -50,6 +56,8 @@ export function normalizeMaintenance(raw: unknown): Maintenance {
       const r = (m && typeof m === 'object' ? m : {}) as Record<string, unknown>
       return { month: month(r.month), delivered: str(r.delivered, 200), hours: halfHours(r.hours), feeling: FEELINGS.includes(r.feeling as Feeling) ? r.feeling as Feeling : '待定' }
     }).filter(m => m.month),
+    plan: COOPERATION_PLANS.includes(o.plan as CooperationPlan) ? o.plan as CooperationPlan : '',
+    monthHours: halfHours(o.monthHours),
   }
 }
 
@@ -87,6 +95,25 @@ export function suggestFee(projects: MaintProject[], projectId: string, s: Quote
   return withFee(null, '没有数据：先用「追加需求」录入第一个月要做的大功能，或自己定')
 }
 
+const ROUGH_MONTHS = 3
+const MIN_MONTH_HOURS = 8
+
+export const planOf = (m: Maintenance, engagement?: { mode: CooperationPlan }): CooperationPlan => m.plan || engagement?.mode || '一次性'
+
+// 长期合作的月费 = 每月投入小时 × 新做时间值 + 支出。小时开发者填的优先，其次 AI 估的；都没有才退回月维护的历史口径
+export function longTermFee(projects: MaintProject[], projectId: string, m: Maintenance, aiHours: number, s: QuoteSettings = DEFAULT_QUOTE_SETTINGS, scopeHours = 0): FeeSuggestion {
+  const hours = m.monthHours || aiHours
+  const rate = s.rates['新做']
+  if (!hours) {
+    const history = suggestFee(projects, projectId, s)
+    if (history.fee != null) return history
+    // 没有任何依据时也要给个数：不知道多少钱正是来估价的原因。按 3 个月摊是粗估，不是实测，来源里写明，开发者可以改
+    const rough = Math.max(MIN_MONTH_HOURS, Math.ceil(scopeHours / ROUGH_MONTHS))
+    return { hours: rough, source: `清单 ${scopeHours} 小时按 ${ROUGH_MONTHS} 个月摊的粗估`, rate, fee: Math.round(rough * rate) + expenseSum(m) }
+  }
+  return { hours, source: m.monthHours ? '你填的每月投入' : 'AI 估的每月投入', rate, fee: Math.round(hours * rate) + expenseSum(m) }
+}
+
 const money = (n: number): string => `¥${n.toLocaleString('zh-CN')}`
 const monthText = (m: string): string => (m ? `${Number(m.slice(0, 4))} 年 ${Number(m.slice(5))} 月` : '')
 
@@ -98,9 +125,17 @@ export function maintenanceClientText(title: string, m: Maintenance): string {
   return out.join('\n')
 }
 
-export function maintenanceSelfText(title: string, m: Maintenance, suggestion: FeeSuggestion): string {
-  const out = [`${title} 月维护 · ${m.state}`, `月费 ${m.fee ? money(m.fee) : '未定'}，定了就不改，这个项目的记录只用于下一个月维护项目`]
-  out.push(`建议月费 ${suggestion.fee != null ? money(suggestion.fee) : '没有'}：${suggestion.hours != null ? `${suggestion.hours} 小时 × 新做 ${suggestion.rate}` : ''}${m.expenses.length ? ` + 支出 ${money(expenseSum(m))}` : ''}，小时来自${suggestion.source}`)
+export function longTermClientText(title: string, m: Maintenance, fee: number | null, firstMonth: string[]): string {
+  const out = [`${title} 长期合作`, `每月 ${m.fee || fee ? money(m.fee || fee!) : '待定'}${m.start ? `，从 ${monthText(m.start)} 开始` : ''}`, '这个项目要边核对边推进，不报总价，按月投入、按月交付']
+  out.push('', '【第一个月交付】', ...(firstMonth.length ? firstMonth : ['需求路线图', '最不确定部分的可行性结论']).map(x => `· ${x}`))
+  if (m.expenses.length) out.push('', `${m.expenses.map(e => e.name).join('、')}的费用已经算在月费里`)
+  out.push('', '【规则】', '· 第一个月之后按你定的先后顺序做，每月交付一份', '· 一个月做不完的排到下个月，不另收钱', '· 每月约定的日子付款，当天交付', '· 随时可以停')
+  return out.join('\n')
+}
+
+export function maintenanceSelfText(title: string, m: Maintenance, suggestion: FeeSuggestion, long = false): string {
+  const out = [long ? `${title} 长期合作 · ${m.state === '不做' ? '待开始' : m.state}` : `${title} 月维护 · ${m.state}`, `月费 ${m.fee ? money(m.fee) : '未定'}，定了就不改，这个项目的记录只用于下一个月维护项目`]
+  out.push(suggestion.fee != null ? `建议月费 ${money(suggestion.fee)}：${suggestion.hours} 小时 × 新做 ${suggestion.rate}${m.expenses.length ? ` + 支出 ${money(expenseSum(m))}` : ''}，小时来自${suggestion.source}` : `建议月费 没有，${suggestion.source}`)
   if (m.months.length) {
     out.push('', '【每月记录】')
     for (const r of m.months) {

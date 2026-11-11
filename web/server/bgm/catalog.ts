@@ -8,11 +8,16 @@
 // - 结果存 web.db：索引每周整库重建，封面不跟着丢；新入库的番自然排进队尾
 import { mkdirSync } from 'node:fs'
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { isIP } from 'node:net'
+import { lookup } from 'node:dns/promises'
+import { lookup as lookupAddress } from 'node:dns'
 import { join } from 'node:path'
+import { Agent, fetch as undiciFetch } from 'undici'
 import { db } from '../db'
 import { dataDir } from '../data-dir'
 import { getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './cover-proxy'
 import { noteBgmRequest } from './bgm-health'
+import { publicAddress } from '../agent/external-runtime'
 import { openOfflineIndex, searchAnime } from './anime-index'
 
 // 实测口径：约 3 万部 × 2 次请求（条目 + 图片），8 秒一部约 2.8 天补完，远低于 BGM 对单 IP 的容忍度
@@ -35,7 +40,8 @@ db.exec(`
 
 // 管理员手改的卡片信息。NULL / 空 cover_mime 且空 cover_url = 这一项没改，沿用索引和后台补的封面。
 // 上传的封面字节在 catalogCoversDir/<bgm_id>，这张表的 cover_mime 是另一半凭据：两半在每条写路径上同进同退。
-// cover_url 是填的网图地址，和上传互斥：换成哪一种，另一种（含磁盘文件）就一起清掉
+// cover_url 是历史：曾经直接存网图地址交给浏览器加载，现在填网图会在保存时下载成 cover_mime + 文件，
+// 这一列只剩旧数据还在读，新写入一律置空
 db.exec(`
   CREATE TABLE IF NOT EXISTS catalog_override (
     bgm_id     INTEGER PRIMARY KEY,
@@ -50,6 +56,10 @@ if (!(db.prepare('PRAGMA table_info(catalog_override)').all() as { name: string 
 }
 export const catalogCoversDir = join(dataDir, 'catalog-covers')
 mkdirSync(catalogCoversDir, { recursive: true })
+
+// 从浏览器开发者工具里复制的地址，中间会被省略成「…」，这种地址在哪都打不开。
+// 旧数据里已经存了几条，读出来时当作没填，卡片回到默认封面而不是裂图
+const isTruncatedUrl = (url: string): boolean => url.includes('…') || /%E2%80%A6/i.test(url)
 
 interface OverrideRow { name_cn: string | null; tags: string | null; cover_mime: string; cover_url: string; updated_at: number }
 const overrideRow = db.prepare('SELECT name_cn, tags, cover_mime, cover_url, updated_at FROM catalog_override WHERE bgm_id = ?')
@@ -86,11 +96,12 @@ function toItem(row: IndexRow, admin: boolean): CatalogItem {
   const ov = overrideRow.get(row.bgm_id) as OverrideRow | undefined
   // R18 条目只给登录用户列出，索引里的标签多是露骨字眼，不展示；封面不去补，管理员手动上传的除外
   const tags = ov?.tags != null ? parseTags(ov.tags, MAX_TAGS) : row.adult ? [] : parseTags(row.tags, 6)
+  const legacyUrl = ov && !isTruncatedUrl(ov.cover_url) ? ov.cover_url : ''
   const cover = ov?.cover_mime ? `/api/catalog/${row.bgm_id}/cover-file?v=${ov.updated_at}`
-    : ov?.cover_url ? ov.cover_url
+    : legacyUrl ? legacyUrl
     : row.adult ? '' : (coverRow.get(row.bgm_id) as { path: string } | undefined)?.path ?? ''
   const item: CatalogItem = { bgmId: row.bgm_id, name: row.name, nameCn: ov?.name_cn ?? row.name_cn, date: row.date, score: row.score, eps: Number(row.eps) || 0, tags, cover }
-  if (admin) item.edited = { nameCn: ov?.name_cn != null, tags: ov?.tags != null, cover: !!ov?.cover_mime || !!ov?.cover_url }
+  if (admin) item.edited = { nameCn: ov?.name_cn != null, tags: ov?.tags != null, cover: !!ov?.cover_mime || !!legacyUrl }
   return item
 }
 
@@ -131,27 +142,107 @@ export function getCatalogItem(id: number): CatalogItem | null {
   return row ? toItem(row, true) : null
 }
 
-export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean } {
+// 目录快照：3 万行每次请求都在 SQLite 里全表扫两遍（计数 + 排序取页）再在 JS 里按题材扫一遍，
+// 线上一次切换要等几百毫秒到秒级。排序键、可见性和生效标签只在索引换新（句柄变了）或管理员改标签时才变，
+// 所以整表只读一次、两种排序预排好，请求里只做内存过滤，再按 id 取这一页 48 行
+interface SnapshotEntry { id: number; year: string; visible: boolean; tags: string[] }
+interface CatalogSnapshot { handle: object; overrides: number; byScore: SnapshotEntry[]; byDate: SnapshotEntry[]; scoreRank: Map<number, number>; dateRank: Map<number, number>; genres: { guest: TagCount[]; adult: TagCount[] } }
+
+// 快捷题材：收录部数够门槛的标签才露出来，按部数从多到少。频次最高的有一大半是 TV / 短片 / 年份 / 制作公司这类形式标签，
+// 不是题材，所以由管理员逐个决定显示还是隐藏；纯年份标签默认隐藏，其余默认显示，管理员改过的以表里为准。
+// 口径：2026-11-02 本地索引访客可见约 2.9 万部，共 17161 个标签；≥500 部 59 个、≥200 部 111 个、≥100 部 202 个、≥50 部 392 个。
+// 取 100：中等题材（悬疑 248、魔法少女 216、推理 177、武侠 155）都进得来，管理员一次要审的约 200 个还审得完
+export const GENRE_MIN_COUNT = 100
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS catalog_genre (
+    tag     TEXT PRIMARY KEY,
+    visible INTEGER NOT NULL CHECK (visible IN (0, 1))
+  );
+`)
+let genreRules: Map<string, boolean> | null = null
+function genreVisible(tag: string): boolean {
+  genreRules ??= new Map((db.prepare('SELECT tag, visible FROM catalog_genre').all() as { tag: string; visible: number }[]).map((r) => [r.tag, !!r.visible]))
+  return genreRules.get(tag) ?? !/^\d{4}$/.test(tag)
+}
+
+type TagCount = [tag: string, count: number]
+function tagCounts(entries: SnapshotEntry[]): TagCount[] {
+  const counts = new Map<string, number>()
+  for (const e of entries) for (const tag of new Set(e.tags)) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+  return [...counts].filter(([, n]) => n >= GENRE_MIN_COUNT).sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))
+}
+
+export interface GenreRow { tag: string; count: number; visible: boolean }
+
+// 管理员看的是全部条目（含只给登录用户的）的计数，与他自己在目录里看到的一致
+export function listGenresForAdmin(): GenreRow[] {
+  const h = openOfflineIndex()
+  if (!h || !hasAnimeTable()) return []
+  return catalogSnapshot(h).genres.adult.map(([tag, count]) => ({ tag, count, visible: genreVisible(tag) }))
+}
+
+export function saveGenreVisibility(input: unknown): void {
+  if (!Array.isArray(input) || input.length > 1000) throw new CatalogEditError('题材列表格式不对')
+  const rows = input.map((r: unknown) => r as { tag?: unknown; visible?: unknown })
+  if (rows.some((r) => typeof r.tag !== 'string' || !r.tag.trim() || r.tag.length > 40 || typeof r.visible !== 'boolean')) throw new CatalogEditError('题材列表格式不对')
+  const upsert = db.prepare('INSERT INTO catalog_genre (tag, visible) VALUES (?, ?) ON CONFLICT(tag) DO UPDATE SET visible = excluded.visible')
+  db.transaction(() => { for (const r of rows) upsert.run(r.tag as string, r.visible ? 1 : 0) })()
+  genreRules = null
+}
+
+let snapshot: CatalogSnapshot | null = null
+let overrideVersion = 0
+
+const cmp = (a: string | number, b: string | number): number => (a < b ? -1 : a > b ? 1 : 0)
+
+function catalogSnapshot(h: NonNullable<ReturnType<typeof openOfflineIndex>>): CatalogSnapshot {
+  if (snapshot && snapshot.handle === h && snapshot.overrides === overrideVersion) return snapshot
+  const overrides = new Map((db.prepare('SELECT bgm_id, tags FROM catalog_override WHERE tags IS NOT NULL').all() as { bgm_id: number; tags: string }[]).map((row) => [row.bgm_id, row.tags]))
+  const enough = hasColumn('votes') ? `votes >= ${MIN_VOTES}` : '1'
+  const rows = h.prepare(`SELECT bgm_id, date, score, tags, (${visibleSql()}) AS visible, (${enough}) AS enough FROM anime ORDER BY bgm_id`).all() as { bgm_id: number; date: string; score: number; tags: string; visible: number; enough: number }[]
+  const keyed = rows.map((row) => ({
+    entry: { id: row.bgm_id, year: row.date.slice(0, 4), visible: !!row.visible, tags: parseTags(overrides.get(row.bgm_id) ?? row.tags, Number.MAX_SAFE_INTEGER) },
+    date: row.date, score: row.score, enough: row.enough,
+  }))
+  // 与原 SQL 排序逐键一致：评分 = 够人数优先、分高、有日期、日期新；最新 = 有日期、日期新、分高
+  const byScore = [...keyed].sort((a, b) => b.enough - a.enough || b.score - a.score || cmp(a.date === '' ? 1 : 0, b.date === '' ? 1 : 0) || cmp(b.date, a.date)).map((k) => k.entry)
+  const byDate = [...keyed].sort((a, b) => cmp(a.date === '' ? 1 : 0, b.date === '' ? 1 : 0) || cmp(b.date, a.date) || b.score - a.score).map((k) => k.entry)
+  const rank = (list: SnapshotEntry[]): Map<number, number> => new Map(list.map((e, i) => [e.id, i]))
+  snapshot = { handle: h, overrides: overrideVersion, byScore, byDate, scoreRank: rank(byScore), dateRank: rank(byDate), genres: { guest: tagCounts(byScore.filter((e) => e.visible)), adult: tagCounts(byScore) } }
+  return snapshot
+}
+
+export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean; include?: string[]; exclude?: string[] }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[] } {
   const h = openOfflineIndex()
   const covered = (countDone.get() as { n: number }).n
-  if (!h || !hasAnimeTable()) return { ready: false, total: 0, items: [], covered, admin: opts.admin }
-  const visible = visibleSql()
+  if (!h || !hasAnimeTable()) return { ready: false, total: 0, items: [], covered, admin: opts.admin, genres: [] }
+  const snap = catalogSnapshot(h)
+  const genres = (opts.adult ? snap.genres.adult : snap.genres.guest).map(([tag]) => tag).filter(genreVisible)
   const cols = colsSql()
-  const shown = opts.adult ? '1' : visible
+  const include = opts.include ?? [], exclude = opts.exclude ?? []
+  const hasTags = include.length > 0 || exclude.length > 0
+  const tagMatch = (e: SnapshotEntry): boolean => include.every((tag) => e.tags.includes(tag)) && !exclude.some((tag) => e.tags.includes(tag))
   if (opts.q.trim()) {
+    const shown = opts.adult ? '1' : visibleSql()
+    // 题材要在搜索截断 120 条之前收窄，否则高分的不相干条目会把目标挤出候选
+    const candidateIds = hasTags ? snap.byScore.filter((e) => (opts.adult || e.visible) && tagMatch(e)).map((e) => e.id) : undefined
     const one = h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id = ? AND ${shown}`)
-    const rows = searchAnime(opts.q, 120, opts.year)
+    const rows = searchAnime(opts.q, 120, opts.year, candidateIds)
       .map((hit) => one.get(hit.bgmId) as IndexRow | undefined)
       .filter((row): row is IndexRow => !!row)
-    return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
+    // 搜索先按相关度截出前 120 条候选，再按用户选的排序重排，否则「最新」在搜索时没有效果
+    const order = opts.sort === 'date' ? snap.dateRank : snap.scoreRank
+    rows.sort((a, b) => (order.get(a.bgm_id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.bgm_id) ?? Number.MAX_SAFE_INTEGER))
+    return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres }
   }
-  const where = `WHERE ${shown}${opts.year > 0 ? ' AND substr(date, 1, 4) = ?' : ''}`
-  const params: unknown[] = opts.year > 0 ? [String(opts.year)] : []
-  // 没有放送日期的条目多是未定档 / 废弃企划，排到最后
-  const order = opts.sort === 'date' ? "(date = '') ASC, date DESC, score DESC" : scoreOrderSql()
-  const total = (h.prepare(`SELECT COUNT(*) AS n FROM anime ${where}`).get(...params) as { n: number }).n
-  const rows = h.prepare(`SELECT ${cols} FROM anime ${where} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...params, opts.limit, opts.offset) as IndexRow[]
-  return { ready: true, total, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin }
+  const year = opts.year > 0 ? String(opts.year) : ''
+  const matched = (opts.sort === 'date' ? snap.byDate : snap.byScore)
+    .filter((e) => (opts.adult || e.visible) && (!year || e.year === year) && (!hasTags || tagMatch(e)))
+  const ids = matched.slice(opts.offset, opts.offset + opts.limit).map((e) => e.id)
+  const byId = new Map((h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as IndexRow[]).map((r) => [r.bgm_id, r]))
+  const rows = ids.map((id) => byId.get(id)).filter((r): r is IndexRow => !!r)
+  return { ready: true, total: matched.length, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres }
 }
 
 // ── 管理员编辑 ───────────────────────────────────────────────────────────────
@@ -163,6 +254,7 @@ export class CatalogEditError extends Error {
 const MAX_TAGS = 10
 const COVER_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 const COVER_MAX_BYTES = 4 * 1024 * 1024
+const COVER_FETCH_UA = 'MapleTools-Web/0.1 (https://github.com/AlcMaple/tools)'
 const coverFile = (id: number): string => join(catalogCoversDir, String(id))
 
 function existsInIndex(id: number): boolean {
@@ -210,14 +302,11 @@ export function saveCatalogText(id: number, input: { nameCn: unknown; tags: unkn
     upsertText.run({ id, name_cn: nameCn, tags, now: Date.now() })
     dropEmpty.run(id)
   })()
+  overrideVersion++
 }
 
-export async function saveCatalogCover(id: number, file: File): Promise<void> {
-  if (!existsInIndex(id)) throw new CatalogEditError('索引里没有这部番', 404)
-  if (!COVER_MIME.has(file.type)) throw new CatalogEditError('只支持 PNG / JPEG / WebP / GIF')
-  if (file.size > COVER_MAX_BYTES) throw new CatalogEditError('图片不能超过 4MB')
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  await withLock(id, async () => {
+function storeCover(id: number, bytes: Uint8Array, mime: string): Promise<void> {
+  return withLock(id, async () => {
     // 先写临时文件再改名：读取端要么读到旧图、要么读到新图，不会读到写了一半的
     const tmp = `${coverFile(id)}.tmp`
     await writeFile(tmp, bytes)
@@ -225,30 +314,105 @@ export async function saveCatalogCover(id: number, file: File): Promise<void> {
     db.prepare(`
       INSERT INTO catalog_override (bgm_id, cover_mime, cover_url, updated_at) VALUES (?, ?, '', ?)
       ON CONFLICT(bgm_id) DO UPDATE SET cover_mime = excluded.cover_mime, cover_url = '', updated_at = excluded.updated_at
-    `).run(id, file.type, Date.now())
+    `).run(id, mime, Date.now())
   })
 }
 
-const COVER_URL_MAX = 1000
+export async function saveCatalogCover(id: number, file: File): Promise<void> {
+  if (!existsInIndex(id)) throw new CatalogEditError('索引里没有这部番', 404)
+  if (!COVER_MIME.has(file.type)) throw new CatalogEditError('只支持 PNG / JPEG / WebP / GIF')
+  if (file.size > COVER_MAX_BYTES) throw new CatalogEditError('图片不能超过 4MB')
+  await storeCover(id, new Uint8Array(await file.arrayBuffer()), file.type)
+}
 
-// 只收 https 网图（http 存成 https，和前端 coverUrl 的放行规则一致）；存进去的就是原样地址，
-// 显示时照常经 coverUrl 走 lain 代理等分流
+const COVER_URL_MAX = 1000
+const IS_DEV = process.env.NODE_ENV !== 'production' && !process.env.VERCEL
+
+// 本地开发走 Clash fake-ip 时 DNS 给的是 198.18.x，直连它就是走 TUN，开发环境放行
+function allowedAddress(address: string): boolean {
+  return publicAddress(address) || (IS_DEV && isIP(address) === 4 && /^198\.(18|19)\./.test(address))
+}
+
+// 图床回的 Content-Type 不可靠（百科图床按 Accept 换格式），按文件头认
+function sniffImage(b: Uint8Array): string {
+  const at = (i: number, ...sig: number[]): boolean => sig.every((v, k) => b[i + k] === v)
+  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'image/png'
+  if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg'
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'image/gif'
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp'
+  return ''
+}
+
+// 地址是管理员填的，仍要挡住内网：每一跳都解析并校验，再把连接固定到校验过的那个地址上。
+// 不带 Referer：百科图床对外站 Referer 回 403。失败不重试，原因原样报给管理员
+async function downloadCover(start: string): Promise<{ bytes: Uint8Array; mime: string }> {
+  const signal = AbortSignal.timeout(20_000)
+  let current = start
+  for (let hop = 0; hop < 4; hop++) {
+    const u = new URL(current)
+    if (u.protocol !== 'https:' && !(hop > 0 && u.protocol === 'http:')) throw new CatalogEditError('图片地址要以 https:// 开头')
+    if (u.username || u.password) throw new CatalogEditError('图片地址不能带账号密码')
+    const host = u.hostname.replace(/^\[|\]$/g, '')
+    const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true, verbatim: true })
+    if (!addresses.length || addresses.some((a) => !allowedAddress(a.address))) throw new CatalogEditError('不能用内网地址的图片')
+    const pinned = addresses[0].address
+    const dispatcher = new Agent({ connect: { lookup: (_h, options, callback) => lookupAddress(pinned, options, callback) } })
+    try {
+      const res = await undiciFetch(current, {
+        redirect: 'manual',
+        dispatcher,
+        signal,
+        headers: { 'User-Agent': COVER_FETCH_UA, Accept: 'image/webp,image/png,image/jpeg,image/gif' },
+      })
+      const location = res.headers.get('location')
+      if (res.status >= 300 && res.status < 400 && location) {
+        await res.body?.cancel()
+        current = new URL(location, current).toString()
+        continue
+      }
+      if (!res.ok || !res.body) {
+        await res.body?.cancel()
+        throw new CatalogEditError(`图片所在网站返回 HTTP ${res.status}，可以先存到本地再上传`)
+      }
+      const chunks: Uint8Array[] = []
+      let size = 0
+      for await (const part of res.body) {
+        size += part.byteLength
+        if (size > COVER_MAX_BYTES) throw new CatalogEditError('图片不能超过 4MB')
+        chunks.push(part)
+      }
+      const bytes = Buffer.concat(chunks, size)
+      const mime = sniffImage(bytes)
+      if (!mime) throw new CatalogEditError('这个地址不是 PNG / JPEG / WebP / GIF 图片')
+      return { bytes, mime }
+    } finally {
+      await dispatcher.close()
+    }
+  }
+  throw new CatalogEditError('图片地址跳转次数太多')
+}
+
+// 网图在保存时就下载到服务器，之后和本地上传走同一条路。直接把外链交给浏览器会裂：
+// 百科图床按 Referer 防盗链，维基图床国内直连不通
 export async function saveCatalogCoverUrl(id: number, raw: unknown): Promise<void> {
   if (!existsInIndex(id)) throw new CatalogEditError('索引里没有这部番', 404)
   if (typeof raw !== 'string' || !raw.trim()) throw new CatalogEditError('请填写图片地址')
+  if (isTruncatedUrl(raw)) throw new CatalogEditError('这个地址中间被「…」省略了一段，请复制完整的图片地址')
   let url: URL
   try { url = new URL(raw.trim()) } catch { throw new CatalogEditError('图片地址格式不对') }
   if (url.protocol === 'http:') url.protocol = 'https:'
-  if (url.protocol !== 'https:' || url.username || url.password) throw new CatalogEditError('图片地址要以 https:// 开头')
   const value = url.toString()
   if (value.length > COVER_URL_MAX) throw new CatalogEditError('图片地址太长')
-  await withLock(id, async () => {
-    db.prepare(`
-      INSERT INTO catalog_override (bgm_id, cover_mime, cover_url, updated_at) VALUES (?, '', ?, ?)
-      ON CONFLICT(bgm_id) DO UPDATE SET cover_mime = '', cover_url = excluded.cover_url, updated_at = excluded.updated_at
-    `).run(id, value, Date.now())
-    await unlinkCover(id)
-  })
+  let image: { bytes: Uint8Array; mime: string }
+  try {
+    image = await downloadCover(value)
+  } catch (error) {
+    console.warn(`[catalog] 网图封面下载失败 bgm_id=${id} host=${url.hostname}:`, error)
+    if (error instanceof CatalogEditError) throw error
+    const timedOut = error instanceof Error && error.name === 'TimeoutError'
+    throw new CatalogEditError(timedOut ? '服务器 20 秒内没下载完这张图，可以先存到本地再上传' : '服务器连不上图片所在网站，可以先存到本地再上传')
+  }
+  await storeCover(id, image.bytes, image.mime)
 }
 
 const unlinkCover = (id: number): Promise<void> =>

@@ -562,6 +562,11 @@
   {
     "file": "server/index.ts",
     "method": "get",
+    "path": "/api/catalog/genres"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
     "path": "/api/cover/*"
   },
   {
@@ -608,6 +613,11 @@
     "file": "server/index.ts",
     "method": "put",
     "path": "/api/catalog/:id/cover"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "put",
+    "path": "/api/catalog/genres"
   },
   {
     "file": "server/index.ts",
@@ -658,6 +668,11 @@
     "file": "server/index.ts",
     "method": "route",
     "path": "/api/girigiri"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "route",
+    "path": "/api/order-judge-scope"
   },
   {
     "file": "server/index.ts",
@@ -730,9 +745,24 @@
     "path": "/google/rebind-email"
   },
   {
+    "file": "server/order-judge-scope.ts",
+    "method": "get",
+    "path": "/:token"
+  },
+  {
+    "file": "server/order-judge-scope.ts",
+    "method": "put",
+    "path": "/:token"
+  },
+  {
     "file": "server/order-judge.ts",
     "method": "delete",
     "path": "/projects/:id"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "delete",
+    "path": "/projects/:id/scope"
   },
   {
     "file": "server/order-judge.ts",
@@ -763,6 +793,21 @@
     "file": "server/order-judge.ts",
     "method": "post",
     "path": "/projects"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/projects/:id/scope"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/projects/:id/scope/apply"
+  },
+  {
+    "file": "server/order-judge.ts",
+    "method": "post",
+    "path": "/projects/:id/scope/pick"
   },
   {
     "file": "server/order-judge.ts",
@@ -833,6 +878,11 @@
     "file": "server/player/index.ts",
     "method": "post",
     "path": "/line-speed"
+  },
+  {
+    "file": "server/player/index.ts",
+    "method": "post",
+    "path": "/prefetch-next"
   },
   {
     "file": "server/player/index.ts",
@@ -923,6 +973,11 @@
     "file": "server/tracks.ts",
     "method": "get",
     "path": "/:bgmId/good-episodes"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
+    "path": "/:bgmId/playback-progress"
   },
   {
     "file": "server/tracks.ts",
