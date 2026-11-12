@@ -833,6 +833,7 @@ export function Poster({
   watch,
   meta,
   coverExtra,
+  onDetails,
   details,
 }: {
   item: CalendarItem
@@ -843,6 +844,7 @@ export function Poster({
   watch?: PosterWatch
   meta?: string
   coverExtra?: React.ReactNode
+  onDetails?: () => void
   details?: React.ReactNode
 }): JSX.Element {
   const displayTitle = item.name_cn || item.name
@@ -884,9 +886,9 @@ export function Poster({
           </button>
         )}
       </div>
-      <div className="poster-title" title={displayTitle}>
-        {displayTitle}
-      </div>
+      {onDetails ? (
+        <button type="button" className="poster-title poster-details-link" title="查看作品简介" aria-label={`查看 ${displayTitle} 的简介`} onClick={onDetails}>{displayTitle}</button>
+      ) : <div className="poster-title" title={displayTitle}>{displayTitle}</div>}
       <div className="poster-ep">{meta ?? (item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中')}</div>
       {details}
       {watch && !canTrack && (

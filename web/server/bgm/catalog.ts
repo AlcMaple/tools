@@ -142,6 +142,20 @@ export function getCatalogItem(id: number): CatalogItem | null {
   return row ? toItem(row, true) : null
 }
 
+// 详情沿用目录可见性和管理员覆写，只按需读取公开归档文本，不经过私人鉴赏材料或在线详情
+export function getCatalogDetails(id: number, adult: boolean): { ready: boolean; detail: { item: CatalogItem; aliases: string[]; summary: string; summaryStatus: 'available' | 'empty' | 'unavailable' } | null } {
+  const h = openOfflineIndex()
+  if (!h || !hasAnimeTable()) return { ready: false, detail: null }
+  const summaryReady = hasColumn('summary')
+  const row = h.prepare(`SELECT ${colsSql()}, aliases, ${summaryReady ? 'summary' : "'' AS summary"} FROM anime WHERE bgm_id = ? ${adult ? '' : `AND (${visibleSql()})`}`).get(id) as (IndexRow & { aliases: string; summary: string }) | undefined
+  if (!row) return { ready: true, detail: null }
+  const summary = typeof row.summary === 'string' ? row.summary.trim().slice(0, 20_000) : ''
+  return { ready: true, detail: {
+    item: toItem(row, false), aliases: parseTags(row.aliases, 20).map(alias => alias.slice(0, 200)), summary,
+    summaryStatus: !summaryReady ? 'unavailable' : summary ? 'available' : 'empty',
+  } }
+}
+
 // 目录快照：3 万行每次请求都在 SQLite 里全表扫两遍（计数 + 排序取页）再在 JS 里按题材扫一遍，
 // 线上一次切换要等几百毫秒到秒级。排序键、可见性和生效标签只在索引换新（句柄变了）或管理员改标签时才变，
 // 所以整表只读一次、两种排序预排好，请求里只做内存过滤，再按 id 取这一页 48 行

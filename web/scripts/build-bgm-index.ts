@@ -28,6 +28,7 @@ interface Row {
   name: string
   name_cn: string
   aliases: string
+  summary: string
   tags: string
   date: string
   score: number
@@ -136,6 +137,7 @@ async function buildIndex(
       name    TEXT NOT NULL DEFAULT '',
       name_cn TEXT NOT NULL DEFAULT '',
       aliases TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
       tags    TEXT NOT NULL DEFAULT '[]',
       date    TEXT NOT NULL DEFAULT '',
       score   REAL NOT NULL DEFAULT 0,
@@ -148,10 +150,10 @@ async function buildIndex(
     CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT);
   `)
   const ins = db.prepare(
-    `INSERT OR REPLACE INTO anime (bgm_id,name,name_cn,aliases,tags,date,score,nsfw,votes) VALUES (?,?,?,?,?,?,?,?,?)`
+    `INSERT OR REPLACE INTO anime (bgm_id,name,name_cn,aliases,tags,date,score,nsfw,votes,summary) VALUES (?,?,?,?,?,?,?,?,?,?)`
   )
   const flush = db.transaction((batch: Row[]) => {
-    for (const r of batch) ins.run(r.bgm_id, r.name, r.name_cn, r.aliases, r.tags, r.date, r.score, r.nsfw, r.votes)
+    for (const r of batch) ins.run(r.bgm_id, r.name, r.name_cn, r.aliases, r.tags, r.date, r.score, r.nsfw, r.votes, r.summary)
   })
 
   let n = 0
@@ -176,6 +178,7 @@ async function buildIndex(
       name: String(o.name ?? ''),
       name_cn: String(o.name_cn ?? ''),
       aliases: JSON.stringify(parseAliasesFromWiki(o.infobox)),
+      summary: typeof o.summary === 'string' ? o.summary.trim().slice(0, 20_000) : '',
       tags: JSON.stringify(topTags(o.tags)),
       date: String(o.date ?? ''),
       score: Number(o.score) || 0,

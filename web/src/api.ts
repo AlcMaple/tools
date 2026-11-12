@@ -64,6 +64,16 @@ export interface CatalogItem {
 
 export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[] }
 
+export interface CatalogDetails { item: CatalogItem; aliases: string[]; summary: string; summaryStatus: 'available' | 'empty' | 'unavailable' }
+
+export function fetchCatalogDetails(bgmId: number, signal: AbortSignal): Promise<CatalogDetails> {
+  return readApi(`/api/catalog/${bgmId}/details`, { signal }, async res => {
+    const body = await res.json() as CatalogDetails & { error?: string }
+    if (!res.ok) throw new Error(body.error || `作品资料读取失败（HTTP ${res.status}）`)
+    return body
+  }, 15_000)
+}
+
 async function catalogEdit(path: string, init: RequestInit): Promise<CatalogItem> {
   const res = await fetch(`/api/catalog/${path}`, init)
   const body = (await res.json().catch(() => ({}))) as { error?: string; item?: CatalogItem | null }

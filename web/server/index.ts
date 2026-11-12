@@ -7,7 +7,7 @@ import { monitoringErrorHandler, monitoringMiddleware } from './monitoring'
 import { getCalendar } from './bgm/calendar'
 import { bgmHealth, noteBgmRequest } from './bgm/bgm-health'
 import { deriveSeason, getSeason, isBackfillable, isSeasonKey, listSeasons, seasonKeyOf } from './bgm/calendar-history'
-import { CatalogEditError, clearCatalogCover, getCatalogItem, listGenresForAdmin, saveGenreVisibility, saveCatalogCoverUrl, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
+import { CatalogEditError, clearCatalogCover, getCatalogDetails, getCatalogItem, listGenresForAdmin, saveGenreVisibility, saveCatalogCoverUrl, isAdultEntry, listCatalog, readCatalogCover, saveCatalogCover, saveCatalogText } from './bgm/catalog'
 import { CoverError, getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } from './bgm/cover-proxy'
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
@@ -176,6 +176,17 @@ app.get('/api/catalog', async (c) => {
     include,
     exclude,
   }))
+})
+
+app.get('/api/catalog/:id/details', async (c) => {
+  c.header('Cache-Control', 'no-store')
+  const id = Number(c.req.param('id'))
+  if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: '作品编号不正确', code: 'INVALID_CATALOG_ID' }, 400)
+  const session = await getSession(c)
+  const result = getCatalogDetails(id, !!session)
+  if (!result.ready) return c.json({ error: '作品资料暂未就绪', code: 'CATALOG_NOT_READY' }, 409)
+  if (!result.detail) return c.json({ error: '没有找到这部作品', code: 'CATALOG_NOT_FOUND' }, 404)
+  return c.json(result.detail)
 })
 
 // 管理员手改卡片：中文名、标签、封面。改的是全站共用的目录，不是某个用户自己的追番
