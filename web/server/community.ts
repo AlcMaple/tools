@@ -453,6 +453,26 @@ community.get('/reviews/:bgmId', (c) => {
   })
 })
 
+// 行动只带作品身份，不能把分享者的进度、笔记、来源或可撤回封面复制到读者手帐
+export function publicAnimeForAction(bgmId: number, source: unknown): { id: number; name: string; name_cn: string; airDate: string; episodes: number; score: number; cover: string; url: string } | null {
+  if (!Number.isSafeInteger(bgmId) || bgmId <= 0 || !source || typeof source !== 'object') return null
+  const from = source as { kind?: unknown; username?: unknown }
+  if (from.kind !== 'reviews' && from.kind !== 'profile') return null
+  if (from.kind === 'profile' && (typeof from.username !== 'string' || !from.username || from.username.length > 200)) return null
+  const condition = from.kind === 'profile' ? 'u.username = ? COLLATE NOCASE' : "EXISTS (SELECT 1 FROM review_contents r WHERE r.user_id = t.user_id AND r.bgm_id = t.bgm_id AND r.published = 1 AND r.mode IN ('review','recommend'))"
+  const row = db.prepare(`SELECT t.title, t.title_cn, t.air_date FROM tracks t JOIN users u ON u.id = t.user_id
+    WHERE t.bgm_id = ? AND u.tracks_public = 1 AND COALESCE(json_extract(t.extra, '$.subjectType'), 'anime') = 'anime' AND ${condition}
+    ORDER BY t.id DESC LIMIT 1`).get(...(from.kind === 'profile' ? [bgmId, from.username as string] : [bgmId])) as { title: string; title_cn: string; air_date: string } | undefined
+  if (!row || !(row.title.trim() || row.title_cn.trim())) return null
+  return { id: bgmId, name: row.title.slice(0, 200), name_cn: row.title_cn.slice(0, 200), airDate: row.air_date.slice(0, 10), episodes: 0, score: 0, cover: '', url: '' }
+}
+
+community.get('/action/:bgmId', c => {
+  publicHeaders(c)
+  const item = publicAnimeForAction(Number(c.req.param('bgmId')), { kind: c.req.query('kind'), username: c.req.query('username') })
+  return item ? c.json(item) : c.json({ error: '这部作品的公开分享已不可用', code: 'PUBLIC_ANIME_UNAVAILABLE' }, 404)
+})
+
 // 本地封面不能复用只认当前会话的 tracks 路径；这里重新检查公开开关，让撤回公开后旧地址也失效。
 community.get('/:username/:bgmId/cover-file', async (c) => {
   publicHeaders(c)

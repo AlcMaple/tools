@@ -499,6 +499,20 @@ export async function fetchCommunityProfile(username: string): Promise<Community
   return json<CommunityProfile>(await fetch(`/api/community/${encodeURIComponent(username)}`, { cache: 'no-store' }))
 }
 
+export type CommunityActionSource = { kind: 'reviews' } | { kind: 'profile'; username: string }
+
+export async function fetchCommunityAnime(bgmId: number, source: CommunityActionSource, signal: AbortSignal): Promise<CalendarItem> {
+  const query = new URLSearchParams({ kind: source.kind })
+  if (source.kind === 'profile') query.set('username', source.username)
+  return json<CalendarItem>(await fetchApi(`/api/community/action/${bgmId}?${query}`, { signal, cache: 'no-store' }, 15_000))
+}
+
+export async function saveCommunityPlan(bgmId: number, source: CommunityActionSource, expectedOwner: number, signal: AbortSignal): Promise<Track> {
+  return json<Track>(await fetchApi(`/api/tracks/${bgmId}`, { method: 'PUT', signal,
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ communitySource: source, expectedOwner }),
+  }))
+}
+
 // —— 番剧维度的公开点评（「大家聊过的番」）——
 export interface CommunityReviewAnime {
   bgmId: number

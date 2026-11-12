@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="650" viewBox="0 0 1000 650">
+<rect x="1" y="1" width="998" height="648" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<g font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529">
+<text x="28" y="38" font-size="19" font-weight="700">同好推荐看中了，直接接着看或加入自己的想看</text>
+<text x="28" y="63" font-size="12.5" fill="#756f73">沿用公开推荐和手帐，不另造推荐页；只带作品身份，不带走作者的观看进度</text>
+<text x="28" y="101" font-size="14" font-weight="700">用户看到的：读推荐之后，不必再重新找一遍番名</text>
+<rect x="28" y="119" width="284" height="122" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="46" y="146" font-size="12.5" font-weight="700" fill="#96434f">之前：读完后缺少本站下一步</text>
+<text x="46" y="174" font-size="11">推荐详情只有返回、作者和分享图</text>
+<text x="46" y="198" font-size="11">公开手帐只提供外部资料链接</text>
+<text x="46" y="222" font-size="11">点全局找番只打开登录框，没有选中作品</text>
+<path d="M322 180h28m-8-6 8 6-8 6" fill="none" stroke="#7fad91" stroke-width="2"/>
+<rect x="362" y="119" width="286" height="122" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="380" y="146" font-size="12.5" font-weight="700" fill="#316247">观看：复用原来的登录与选源</text>
+<text x="380" y="174" font-size="11">访客明确点「登录后观看」，取消回原页</text>
+<text x="380" y="198" font-size="11">已登录从自己的手帐继续，不跟随作者</text>
+<text x="380" y="222" font-size="11">合成验收：作者到第 28 集，自己仍开第 7 集</text>
+<rect x="672" y="119" width="300" height="122" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="690" y="146" font-size="12.5" font-weight="700" fill="#316247">想看：仅明确操作才新增</text>
+<text x="690" y="174" font-size="11">先读完自己的手帐，再确认是否已经有了</text>
+<text x="690" y="198" font-size="11">没有才加为想看，自己的进度从 0 开始</text>
+<text x="690" y="222" font-size="11">已经在追番则只回读，原状态与进度不动</text>
+<text x="28" y="279" font-size="14" font-weight="700">背后做什么：重新核对公开性，只在本人记录里保存</text>
+<rect x="28" y="297" width="944" height="96" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+<text x="46" y="325" font-size="12.5" font-weight="700" fill="#36566d">当前仍然公开的作品 → 读取本人手帐 → 服务端再次确认 → 仅新增或保持原样</text>
+<text x="46" y="353" font-size="11">为什么不直接复制？作者的集数、标签、笔记、评分、播放绑定和私人封面都不属于新读者</text>
+<text x="46" y="377" font-size="11">其他设备刚刚加过也不覆盖，重复点击不重复创建，不改变作者记录</text>
+<text x="28" y="433" font-size="14" font-weight="700">边界和恢复：没有把握时停止，不替用户猜</text>
+<rect x="28" y="451" width="456" height="126" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="46" y="478" font-size="12.5" font-weight="700" fill="#7a6234">公开内容或账号已经变化</text>
+<text x="46" y="505" font-size="11">作者转私有或撤回推荐 → 提示公开分享已不可用</text>
+<text x="46" y="530" font-size="11">账号切换 → 拒绝旧账号的保存，不写给新账号</text>
+<text x="46" y="555" font-size="11">自定义或非动画作品 → 不猜关联作品，不发起播放</text>
+<rect x="504" y="451" width="468" height="126" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="522" y="478" font-size="12.5" font-weight="700" fill="#4a4450">请求变慢或失败</text>
+<text x="522" y="505" font-size="11">观看身份读取可取消，取消后不弹登录或选源</text>
+<text x="522" y="530" font-size="11">本人手帐读取失败 → 留在原页，零新增</text>
+<text x="522" y="555" font-size="11">错误浮在按钮旁，不挤动动作；不自动重试</text>
+<text x="28" y="615" font-size="12.5" fill="#756f73">常见情况：读推荐 → 点观看；或点加入想看 → 下次在自己的手帐找到它</text>
+<text x="28" y="637" font-size="11" fill="#756f73">本次是隔离合成数据验收，固定测试片不代表真实片源、真机或整集稳定性</text>
+</g></svg>

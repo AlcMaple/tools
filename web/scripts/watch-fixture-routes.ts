@@ -36,7 +36,7 @@ export function addWatchFixture(app: Hono<{ Variables: { agentUid: number } }>, 
   app.get('/api/catalog', c => {
     const q = (c.req.query('q') ?? '').trim(), year = Number(c.req.query('year') ?? 0)
     const found = items.filter(item => (!q || item.nameCn.includes(q)) && (!year || item.date.startsWith(String(year))))
-    return c.json({ ready: true, admin: false, total: found.length, items: found })
+    return c.json({ ready: true, admin: false, total: found.length, items: found, genres: [] })
   })
   app.post('/api/xifan/search', async c => {
     if (!await getSession(c)) return c.json({ code: 'AUTH_REQUIRED', error: '请先登录' }, 401)

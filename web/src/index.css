@@ -511,3 +511,11 @@
   cursor: pointer;
   border-radius: 6px;
 }
+
+.public-anime-actions { display: flex; flex-wrap: wrap; gap: 8px; position: relative; margin-top: 12px; }
+.public-anime-actions > .btn { min-width: 96px; }
+.public-anime-action-error { position: absolute; top: calc(100% + 4px); left: 0; width: max-content; max-width: min(360px, 100%); z-index: 5; margin: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--sakura); color: var(--sakura); background: var(--card); box-shadow: var(--shadow-1); font-size: 12px; overflow-wrap: anywhere; }
+
+.community-track-card.with-actions { height: 272px; grid-template-rows: minmax(0, 1fr) auto; }
+.community-track-card > .public-anime-actions { grid-column: 1 / -1; margin-top: 0; }
+@media (max-width: 520px) { .community-track-card.with-actions { height: 254px; } }

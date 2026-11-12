@@ -442,6 +442,11 @@
   {
     "file": "server/community.ts",
     "method": "get",
+    "path": "/action/:bgmId"
+  },
+  {
+    "file": "server/community.ts",
+    "method": "get",
     "path": "/reviews"
   },
   {
