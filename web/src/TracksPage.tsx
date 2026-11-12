@@ -48,6 +48,7 @@ import {
 } from './tracksSync'
 import { STATUS_META, allTagsOf, tagLimitToast } from './tracks/common'
 import { TrackCard } from './tracks/TrackCard'
+import { reusableUserTags } from './tracks/TagInput'
 import { TrackListRow } from './tracks/TrackList'
 import { TrackTimeline } from './tracks/TrackTimeline'
 import { SORT_OPTIONS, sortTracks, type TrackSort } from './tracks/season'
@@ -376,6 +377,8 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
     return () => observer.disconnect()
   }, [renderKey, visibleCount, filtered.length])
 
+  const reusableTags = useMemo(() => reusableUserTags(animeTracks), [animeTracks])
+
   const allTags = useMemo(() => {
     const m = new Map<string, number>()
     for (const t of animeTracks) for (const x of allTagsOf(t)) m.set(x, (m.get(x) ?? 0) + 1)
@@ -644,6 +647,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
             return (
               <TrackCard
                 key={t.bgmId}
+                tagChoices={reusableTags}
                 t={t}
                 isToday={todayIds.has(t.bgmId)}
                 bound={bound}
@@ -680,6 +684,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
       {editingTrack && (
         <EditModal
           t={editingTrack}
+          tagChoices={reusableTags}
           onPatch={patch}
           onUploadCover={uploadCover}
           onClose={() => setEditing(null)}

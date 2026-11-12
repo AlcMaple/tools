@@ -5,6 +5,7 @@ import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
 import { SeasonStamp } from './SeasonStamp'
+import { TagInput } from './TagInput'
 import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast, watchEp } from './common'
 import {
   clampEpisode,
@@ -18,6 +19,7 @@ import {
 // ── 卡片（手帐内页行卡） ───────────────────────────────────────────────────────
 export function TrackCard({
   t,
+  tagChoices = [],
   isToday,
   bound,
   locating,
@@ -33,6 +35,7 @@ export function TrackCard({
   posterBusy,
 }: {
   t: Track
+  tagChoices?: readonly string[]
   isToday: boolean
   bound: Partial<Record<SourceId, SourceBinding>>
   locating: boolean
@@ -50,12 +53,10 @@ export function TrackCard({
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
   const ep = watchEp(t)
-  // 卡片上的行内标签输入（＋ 标签 → 回车贴上）
   const [addingTag, setAddingTag] = useState(false)
-  const [tagDraft, setTagDraft] = useState('')
   const [episodePreview, setEpisodePreview] = useState<number | null>(null)
-  const commitTag = (): void => {
-    const v = tagDraft.trim()
+  const commitTag = (value: string): void => {
+    const v = value.trim()
     if (v && !allTagsOf(t).includes(v)) {
       if (t.userTags.length >= USER_TAG_MAX) {
         tagLimitToast()
@@ -64,7 +65,6 @@ export function TrackCard({
         toast(`贴上了『${v}』标签`)
       }
     }
-    setTagDraft('')
     setAddingTag(false)
   }
 
@@ -196,25 +196,7 @@ export function TrackCard({
             </span>
           ))}
           {addingTag ? (
-            <input
-              className="tagx-input"
-              style={{ borderStyle: 'dashed', borderColor: 'var(--teal-line)' }}
-              autoFocus
-              value={tagDraft}
-              onChange={(e) => setTagDraft(e.target.value)}
-              onBlur={commitTag}
-              onKeyDown={(e) => {
-                // isComposing 守卫 —— 中文输入法按回车是「确认拼音」，不是「提交标签」
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitTag()
-                if (e.key === 'Escape') {
-                  setTagDraft('')
-                  setAddingTag(false)
-                }
-              }}
-              placeholder="回车贴上，≤20 字"
-              maxLength={20}
-              spellCheck={false}
-            />
+            <TagInput choices={tagChoices} excluded={allTagsOf(t)} onCommit={commitTag} onCancel={() => setAddingTag(false)} />
           ) : (
             <button type="button" className="tagx tagx-add" onClick={() => setAddingTag(true)}>
               ＋ 标签

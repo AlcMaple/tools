@@ -511,3 +511,9 @@
   cursor: pointer;
   border-radius: 6px;
 }
+
+.tag-reuse-input { border-style: dashed; border-color: var(--teal-line); }
+.tag-reuse-options { overflow-y: auto; }
+.tag-reuse-options::-webkit-scrollbar-track { margin-block: 8px; }
+.tag-reuse-options .dd-item { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-reuse-options .dd-item.is-active { background: var(--teal-wash); color: var(--teal); }
