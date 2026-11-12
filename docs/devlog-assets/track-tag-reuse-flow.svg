@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="650" viewBox="0 0 1000 650">
+<rect x="1" y="1" width="998" height="648" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<g font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529">
+<text x="28" y="38" font-size="19" font-weight="700">归到同一组，不必把同一个标签再写一遍</text>
+<text x="28" y="63" font-size="12.5" fill="#756f73">沿用卡片和详情中的「＋ 标签」，从自己的旧标签里选，也保留自由输入</text>
+<text x="28" y="103" font-size="14" font-weight="700">用户看到的：同样整理三部候补，少三次文字输入</text>
+<rect x="28" y="121" width="446" height="126" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="46" y="148" font-size="12.5" font-weight="700" fill="#96434f">之前：每部都要重新输入</text>
+<text x="46" y="177" font-size="11">点「＋ 标签」 → 输入「周末再看」 → 回车</text>
+<text x="46" y="203" font-size="11">三部重复同一文本 3 次，添加阶段实际 9 个动作</text>
+<text x="46" y="227" font-size="11">基线：34 条持续使用的合成角色收藏</text>
+<rect x="500" y="121" width="472" height="126" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="518" y="148" font-size="12.5" font-weight="700" fill="#316247">现在：直接复用已经用过的标签</text>
+<text x="518" y="177" font-size="11">点「＋ 标签」 → 点候选「周末再看」</text>
+<text x="518" y="203" font-size="11">等价三部候补实测 6 次点击，重复文字输入 0 次</text>
+<text x="518" y="227" font-size="11">仅比较添加阶段，不含找番和筛选，不是耗时基准</text>
+<text x="28" y="284" font-size="14" font-weight="700">背后怎么做：复用当前手帐，不增加一份标签数据</text>
+<rect x="28" y="302" width="944" height="100" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+<text x="46" y="329" font-size="12.5" font-weight="700" fill="#36566d">本人已有自定义标签 → 排除当前条目已有的 → 输入筛选或直接选择 → 原来的保存流程</text>
+<text x="46" y="357" font-size="11">不混入 Bangumi 题材，不取别人的标签；切账号换一套候选，不建立新标签表或新分类页</text>
+<text x="46" y="382" font-size="11">为什么暂不做批量？三条样本不足以支撑额外选择模式和误批量修改成本，先保留逐条明确选择</text>
+<text x="28" y="442" font-size="14" font-weight="700">边界：保留熟悉的操作，不让候选代替用户决定</text>
+<rect x="28" y="460" width="456" height="126" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="46" y="487" font-size="12.5" font-weight="700" fill="#7a6234">自由输入和键盘</text>
+<text x="46" y="514" font-size="11">没有合适候选仍可输入新标签；回车或失焦照常保存</text>
+<text x="46" y="539" font-size="11">方向键选候选，回车确认；Escape 取消，不贴草稿</text>
+<text x="46" y="564" font-size="11">中文输入法确认拼音时不误提交，选择后不重复保存</text>
+<rect x="504" y="460" width="468" height="126" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="522" y="487" font-size="12.5" font-weight="700" fill="#4a4450">浮层和数据变化</text>
+<text x="522" y="514" font-size="11">浮层与输入框同宽，不挤卡片；窄屏从详情入口编辑</text>
+<text x="522" y="539" font-size="11">当前已有的标签不再列出；候选重排仍确认原选中项</text>
+<text x="522" y="564" font-size="11">技术回归核对服务端保存后再刷新，不拿乐观提示作凭证</text>
+<text x="28" y="625" font-size="12.5" fill="#756f73">常见情况：选择旧标签 → 下次仍用原「类型」筛选找回，原进度、状态和其他标签不变</text>
+</g></svg>
