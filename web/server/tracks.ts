@@ -28,6 +28,7 @@ import {
 import { db } from './db'
 import { coversDir } from './data-dir'
 import { getSession } from './auth'
+import { publicAnimeForAction } from './community'
 
 const tracks = new Hono()
 
@@ -809,6 +810,27 @@ tracks.put('/:bgmId', async (c) => {
   if (!Number.isInteger(bgmId) || bgmId === 0) return c.json({ error: 'bgmId 不合法' }, 400)
 
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  if ('communitySource' in body) {
+    if (body.expectedOwner !== uid) return c.json({ error: '账号已变化，请重新打开这页', code: 'OWNER_CHANGED' }, 409)
+    // 公开性与是否已有记录在同一写事务内确认，另一个标签页刚保存也只回读，不覆盖
+    const saved = db.transaction(() => {
+      const item = publicAnimeForAction(bgmId, body.communitySource)
+      if (!item) return null
+      const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
+      if (existing) return { row: existing, created: false }
+      const now = Date.now()
+      insertStmt.run({ user_id: uid, bgm_id: bgmId, status: 'plan', episode: 0,
+        total_episodes: initialTotal(bgmId, item.airDate), title: item.name, title_cn: item.name_cn,
+        cover: '', air_weekday: weekdayFromDate(item.airDate), air_date: item.airDate, score: 0,
+        bgm_tags: '[]', user_tags: '[]', aliases: '[]', extra: '{}', observe_count: 0, updated_at: now })
+      bumpRev(uid)
+      return { row: oneStmt.get(uid, bgmId) as TrackRow, created: true }
+    }).immediate()
+    if (!saved) return c.json({ error: '这部作品的公开分享已不可用', code: 'PUBLIC_ANIME_UNAVAILABLE' }, 404)
+    if (saved.created) fillDetailLater(uid, bgmId)
+    return c.json(toJson(saved.row))
+  }
+
   const customCreation = isCustomBgmId(bgmId) && !oneStmt.get(uid, bgmId)
   const customTitle = typeof body.title === 'string' ? body.title.trim() : ''
   if (customCreation || (isCustomBgmId(bgmId) && 'title' in body)) {

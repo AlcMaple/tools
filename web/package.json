@@ -52,7 +52,9 @@
     "test:catalog-navigation:serve": "npm run build && node scripts/catalog-navigation-fixture.mjs",
     "test:auth-dialog-labels": "tsx scripts/test-auth-dialog-labels.ts",
     "test:manual-add-mode": "npm run build && tsx scripts/test-manual-add-mode.ts",
-    "test:catalog-discovery": "npm run build && tsx scripts/test-catalog-discovery.ts"
+    "test:catalog-discovery": "npm run build && tsx scripts/test-catalog-discovery.ts",
+    "test:community-actions": "npm run build && tsx scripts/test-community-actions.ts",
+    "test:community-actions:serve": "npm run build && tsx scripts/test-community-actions.ts --serve"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.9",
