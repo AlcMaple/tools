@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="670" viewBox="0 0 1000 670">
+<rect x="1" y="1" width="998" height="668" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<g font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" fill="#282529">
+<text x="28" y="38" font-size="19" font-weight="700">先了解作品，再决定观看或追番</text>
+<text x="28" y="63" font-size="12.5" fill="#756f73">点番名即可读简介；关闭仍是原来的搜索、题材、年份和列表，不需要先登录</text>
+<text x="28" y="103" font-size="14" font-weight="700">用户看到的：从候选到决定，不另开一套找番页</text>
+<rect x="28" y="121" width="280" height="120" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="46" y="148" font-size="12.5" font-weight="700" fill="#96434f">之前：只看到卡片，难以了解内容</text>
+<text x="46" y="176" font-size="11">标题、评分、题材和登录后观看</text>
+<text x="46" y="199" font-size="11">点标题没有简介，也没有返回路径可走</text>
+<text x="46" y="221" font-size="11">依据：访客实际搜索芙莉莲并点开标题</text>
+<path d="M318 180h38m-9-7 9 7-9 7" fill="none" stroke="#7fad91" stroke-width="2"/>
+<rect x="368" y="121" width="280" height="120" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="386" y="148" font-size="12.5" font-weight="700" fill="#316247">现在：番名就是简介入口</text>
+<text x="386" y="176" font-size="11">读原名、别名、放送信息与公开简介</text>
+<text x="386" y="199" font-size="11">标题可用键盘打开，Esc 关闭并还原焦点</text>
+<text x="386" y="221" font-size="11">长文在弹窗内滚动，操作按钮保持可见</text>
+<path d="M658 180h24m-9-7 9 7-9 7" fill="none" stroke="#7fad91" stroke-width="2"/>
+<rect x="694" y="121" width="278" height="120" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="712" y="148" font-size="12.5" font-weight="700" fill="#316247">决定之后：复用原来的动作</text>
+<text x="712" y="176" font-size="11">访客点「登录后观看」接原认证入口</text>
+<text x="712" y="199" font-size="11">已登录可明确「加入想看」或「观看」</text>
+<text x="712" y="221" font-size="11">不自动加番，不更改原有观看进度</text>
+<text x="28" y="279" font-size="14" font-weight="700">背后如何拿资料：只读已经整理好的公开归档</text>
+<rect x="28" y="297" width="944" height="105" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+<text x="46" y="324" font-size="12.5" font-weight="700" fill="#36566d">每周既有整理流程保留简介 → 用户点击时只读这一部 → 按普通文字显示</text>
+<text x="46" y="352" font-size="11">不把长简介塞进整页列表；不因点卡片去请求外站、模型或媒体；不开放个人鉴赏笔记</text>
+<text x="46" y="377" font-size="11">为什么不复用点评材料？那份材料混有私人笔记，而且会在线补资料，与访客只读需求不同</text>
+<text x="28" y="442" font-size="14" font-weight="700">边界状态：告诉用户当前发生什么，不假装都有简介</text>
+<rect x="28" y="459" width="456" height="132" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="46" y="486" font-size="12.5" font-weight="700" fill="#7a6234">资料不全或不可见</text>
+<text x="46" y="513" font-size="11">旧资料未含简介 →「简介暂未就绪」，仍能查看作品信息</text>
+<text x="46" y="538" font-size="11">作品本身没简介 →「这部作品暂时没有简介」</text>
+<text x="46" y="563" font-size="11">目录对访客不可见的作品，简介同样不可见</text>
+<rect x="504" y="459" width="468" height="132" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+<text x="522" y="486" font-size="12.5" font-weight="700" fill="#4a4450">取消或失败</text>
+<text x="522" y="513" font-size="11">关闭弹窗立即取消读取；旧响应不覆盖下一部作品</text>
+<text x="522" y="538" font-size="11">请求失败显示具体原因，不自动循环重试</text>
+<text x="522" y="563" font-size="11">加入想看失败时在弹窗内显示错误，用户可返回列表</text>
+<text x="28" y="629" font-size="12.5" fill="#756f73">常见情况：搜到候选 → 读简介 → 自己决定；原来直接观看或追番的入口保持不变</text>
+<text x="28" y="651" font-size="11" fill="#756f73">本次仅隔离环境验收；线上简介要等维护者合并、部署并更新离线资料后才出现</text>
+</g></svg>

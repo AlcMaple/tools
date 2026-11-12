@@ -562,6 +562,11 @@
   {
     "file": "server/index.ts",
     "method": "get",
+    "path": "/api/catalog/:id/details"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
     "path": "/api/catalog/genres"
   },
   {

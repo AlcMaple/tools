@@ -5,6 +5,8 @@ import type { CatalogItem, CalendarItem } from './api'
 import { coverUrl, fetchCatalog, sourceById } from './api'
 import { Poster, type PosterWatch } from './CalendarPage'
 import { CatalogEditDialog } from './CatalogEditDialog'
+import { CatalogDetailsDialog } from './CatalogDetailsDialog'
+import { requestAnimeWatch } from './FindAnime'
 import { Select } from './Select'
 import { Ic, Spinner } from './SketchIcon'
 import { useSourceWatch } from './tracks/useSourceWatch'
@@ -51,6 +53,8 @@ export function CatalogPage(): JSX.Element {
   const { user } = useAuth()
   const viewKey = JSON.stringify([user?.id ?? 0, q, year, sort, discovery])
   const [admin, setAdmin] = useState(false)
+  const [details, setDetails] = useState<{ id: number; owner: number } | null>(null)
+  useEffect(() => { setDetails(null) }, [user?.id])
   const [editing, setEditing] = useState<CatalogItem | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
   const [total, setTotal] = useState(0)
@@ -149,6 +153,12 @@ export function CatalogPage(): JSX.Element {
 
   return (
     <div className={`catalog-page${fan.length ? '' : ' no-art'}`}>
+      {details && details.owner === (user?.id ?? 0) && <CatalogDetailsDialog
+        key={`${details.owner}:${details.id}`} id={details.id} onClose={() => setDetails(null)}
+        canTrack={track.canTrack} tracked={track.tracked.has(details.id)} trackError={track.error}
+        onTrack={item => track.toggle(asCalendarItem(item), 0, 'plan')}
+        onWatch={item => { setDetails(null); requestAnimeWatch(asCalendarItem(item)) }}
+      />}
       <header className="sketch-hero">
         <div className="sketch-hero-body">
           <div>
@@ -223,6 +233,7 @@ export function CatalogPage(): JSX.Element {
               onToggle={(i, w) => track.toggle(i, w, 'plan')}
               watch={posterWatch}
               meta={metaOf(item)}
+              onDetails={() => setDetails({ id: item.bgmId, owner: user?.id ?? 0 })}
               details={item.tags.length > 0 ? <div className="catalog-tags">{[...new Set(item.tags)].map(tag => <span key={tag}>{tag}</span>)}</div> : undefined}
               coverExtra={admin && (
                 <button type="button" className="catalog-edit-btn" onClick={() => setEditing(item)} aria-label="编辑卡片" title="编辑卡片">
