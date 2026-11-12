@@ -27,8 +27,8 @@ export function TrackListRow({
   const episodeLabel = t.status === 'considering'
     ? '还没开动'
     : t.totalEpisodes != null
-      ? `EP ${ep} / ${t.totalEpisodes}`
-      : `EP ${ep}`
+      ? `EP ${t.episode} / ${t.totalEpisodes}`
+      : `EP ${t.episode}`
 
   return (
     <article className={`trk-list-row${t.status === 'considering' ? ' is-considering' : ''}`}>
