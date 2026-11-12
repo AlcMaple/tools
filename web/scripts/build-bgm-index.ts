@@ -2,7 +2,8 @@
 //
 // 用法：
 //   cd web && npm run sync:index                                 下最新档（bangumi/Archive，~400MB zip）重建
-//   cd web && npx tsx scripts/build-bgm-index.ts --file a.jsonlines [--episode-file e.jsonlines]
+//   cd web && npm run sync:index -- --file a.jsonlines [--episode-file e.jsonlines] [--relation-file r.jsonlines]
+//   cd web && npm run sync:index -- --archive-file archive.zip     用已有归档离线重建，保留输入文件
 //                                                                用本地已解压的 jsonlines（测试用，不下载）
 //
 // 索引**不在 git 里、也不是 build 产物**，`git pull + npm run build` 不会更新它 —— 生产靠 cron 每周跑本脚本，
@@ -20,6 +21,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { indexDbPath } from '../server/bgm/anime-index'
+import { importAnimeRelations } from './import-anime-relations'
 
 const LATEST_JSON = 'https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json'
 
@@ -124,6 +126,7 @@ async function buildIndex(
   lines: AsyncIterable<string>,
   episodeLines: (() => AsyncIterable<string>) | null,
   force = false,
+  relationLines: (() => AsyncIterable<string>) | null = null,
 ): Promise<void> {
   const tmp = indexDbPath + '.tmp'
   rmSync(tmp, { force: true })
@@ -204,6 +207,12 @@ async function buildIndex(
     withEps = counts.size
   }
 
+  if (relationLines) {
+    try {
+      const count = await importAnimeRelations(db, relationLines(), animeIds)
+      db.prepare("INSERT INTO meta (k,v) VALUES ('relation_count', ?)").run(String(count))
+    } catch (error) { db.close(); rmSync(tmp, { force: true }); throw error }
+  }
   db.prepare(`INSERT OR REPLACE INTO meta (k,v) VALUES ('built_at', ?)`).run(String(Date.now()))
   db.prepare(`INSERT OR REPLACE INTO meta (k,v) VALUES ('count', ?)`).run(String(n))
   db.prepare(`INSERT OR REPLACE INTO meta (k,v) VALUES ('eps_count', ?)`).run(String(withEps))
@@ -249,7 +258,7 @@ function zipMembers(zipPath: string): string[] {
 }
 
 function subjectFileInZip(members: string[]): string {
-  const f = members.find((x) => /subject.*\.jsonlines$/i.test(x))
+  const f = members.find((x) => /(^|\/)subject\.jsonlines$/i.test(x))
   if (!f) throw new Error('压缩包里找不到 subject*.jsonlines，实际文件：' + members.join(', '))
   return f
 }
@@ -259,12 +268,21 @@ function episodeFileInZip(members: string[]): string | null {
   return members.find((x) => /episode.*\.jsonlines$/i.test(x)) ?? null
 }
 
-function unzipLines(zipPath: string, inner: string): AsyncIterable<string> {
+async function* unzipLines(zipPath: string, inner: string): AsyncIterable<string> {
   // unzip -p：把压缩包里指定文件的内容直接吐到 stdout（流式，不落盘），逐行喂给解析
   const child = spawn('unzip', ['-p', zipPath, inner])
-  child.stderr.on('data', () => { /* 忽略 unzip 的提示噪音 */ })
-  child.on('error', (e) => { throw e })
-  return createInterface({ input: child.stdout, crlfDelay: Infinity })
+  let stderr = ''
+  child.stderr.on('data', data => { stderr = (stderr + String(data)).slice(-2000) })
+  const finished = new Promise<Error | null>(resolve => {
+    child.once('error', error => resolve(error))
+    child.once('close', code => resolve(code === 0 ? null : new Error(`解压 ${inner} 失败（${code}）：${stderr}`)))
+  })
+  const reader = createInterface({ input: child.stdout, crlfDelay: Infinity })
+  try {
+    for await (const line of reader) yield line
+    const error = await finished
+    if (error) throw error
+  } finally { reader.close(); if (child.exitCode === null) child.kill() }
 }
 
 async function main(): Promise<void> {
@@ -274,21 +292,29 @@ async function main(): Promise<void> {
     const path = process.argv[i + 1]
     const j = process.argv.indexOf('--episode-file')
     const epPath = j >= 0 ? process.argv[j + 1] : undefined
+    const k = process.argv.indexOf('--relation-file')
+    const relationPath = k >= 0 ? process.argv[k + 1] : undefined
+    if (k >= 0 && !relationPath) throw new Error('--relation-file 需要文件路径')
     console.log(`用本地文件 ${path}${epPath ? ` + ${epPath}` : '（无 episode 档，集数留空）'}（跳过下载）`)
     await buildIndex(
       createInterface({ input: createReadStream(path), crlfDelay: Infinity }),
       epPath ? () => createInterface({ input: createReadStream(epPath), crlfDelay: Infinity }) : null,
       force,
+      relationPath ? () => createInterface({ input: createReadStream(relationPath), crlfDelay: Infinity }) : null,
     )
     return
   }
-  const zip = await downloadDump()
+  const archiveArg = process.argv.indexOf('--archive-file')
+  const suppliedArchive = archiveArg >= 0 ? process.argv[archiveArg + 1] : undefined
+  if (archiveArg >= 0 && !suppliedArchive) throw new Error('--archive-file 需要文件路径')
+  const zip = suppliedArchive ?? await downloadDump()
   const members = zipMembers(zip)
   const inner = subjectFileInZip(members)
   const epInner = episodeFileInZip(members)
+  const relationInner = members.find(x => /(^|\/)subject[-_]relations\.jsonlines$/i.test(x)) ?? null
   console.log(`解压取 ${inner}${epInner ? ` + ${epInner}` : '（压缩包里没有 episode 档，集数留空）'}`)
-  await buildIndex(unzipLines(zip, inner), epInner ? () => unzipLines(zip, epInner) : null, force)
-  rmSync(zip, { force: true })
+  await buildIndex(unzipLines(zip, inner), epInner ? () => unzipLines(zip, epInner) : null, force, relationInner ? () => unzipLines(zip, relationInner) : null)
+  if (!suppliedArchive) rmSync(zip, { force: true })
 }
 
 main().catch((e) => {

@@ -11,6 +11,7 @@ import { useSourceWatch } from './tracks/useSourceWatch'
 import { useTrackToggle } from './useTrackToggle'
 import { CatalogDiscovery, type DiscoveryFilters } from './CatalogDiscovery'
 import { useAuth } from './auth'
+import { RelatedAnimeDialog } from './RelatedAnimeDialog'
 
 const PAGE = 48
 type Sort = 'score' | 'date'
@@ -52,6 +53,7 @@ export function CatalogPage(): JSX.Element {
   const viewKey = JSON.stringify([user?.id ?? 0, q, year, sort, discovery])
   const [admin, setAdmin] = useState(false)
   const [editing, setEditing] = useState<CatalogItem | null>(null)
+  const [relatedId, setRelatedId] = useState<number | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
   const [total, setTotal] = useState(0)
   const [ready, setReady] = useState(true)
@@ -186,6 +188,8 @@ export function CatalogPage(): JSX.Element {
 
       <CatalogDiscovery value={discovery} genres={genres} admin={admin} onApply={setDiscovery} onGenresSaved={() => { viewCache.clear(); load(0) }} />
       {sourceWatch.modals}
+      {relatedId !== null && <RelatedAnimeDialog key={relatedId} id={relatedId} tracks={track.tracksById}
+        onAdd={item => { if (!track.tracked.has(item.bgmId)) track.toggle(asCalendarItem(item), 0, 'plan') }} onClose={() => setRelatedId(null)} />}
       {editing && (
         <CatalogEditDialog
           item={editing}
@@ -224,6 +228,7 @@ export function CatalogPage(): JSX.Element {
               watch={posterWatch}
               meta={metaOf(item)}
               details={item.tags.length > 0 ? <div className="catalog-tags">{[...new Set(item.tags)].map(tag => <span key={tag}>{tag}</span>)}</div> : undefined}
+              onRelated={() => setRelatedId(item.bgmId)}
               coverExtra={admin && (
                 <button type="button" className="catalog-edit-btn" onClick={() => setEditing(item)} aria-label="编辑卡片" title="编辑卡片">
                   <Ic name="pencil" cls="ic ic-sm" />
