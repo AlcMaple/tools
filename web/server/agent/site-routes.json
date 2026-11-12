@@ -977,6 +977,11 @@
   {
     "file": "server/tracks.ts",
     "method": "get",
+    "path": "/:bgmId/playback-progress"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
     "path": "/"
   },
   {

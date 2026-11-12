@@ -420,7 +420,7 @@ player.get('/page', async (c) => {
     PLAY_PAGE
       .replace('__PLAYER_SOURCES__', serializePlayerSources(playerSourceOptions(args.src, args.id, args.ep, bgmId)))
       .replace('__MONITOR_CONFIG__', inlineJson(monitor))
-      .replace('__PAGE_ARGS__', inlineJson({ src: args.src, id: args.id, ep: args.ep, bgmId })),
+      .replace('__PAGE_ARGS__', inlineJson({ src: args.src, id: args.id, ep: args.ep, bgmId, ownerId: session.uid })),
   )
   playerPageSecurity(c, page.nonce, { inlineStyles: true })
   c.header('Referrer-Policy', 'no-referrer')

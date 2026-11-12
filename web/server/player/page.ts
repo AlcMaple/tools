@@ -51,6 +51,10 @@ export const PLAY_PAGE = `<!doctype html>
   .icon-sprite { display: none }
   .ep-good-note { display: none; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 14px; border-radius: var(--r-card); background: var(--gold-hl); border: 1.5px solid var(--gold); color: #6b5416; font-size: 13px; line-height: 1.6 }
   .ep-good-note.show { display: flex }
+  .journal-row { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-bottom: 24px }
+  .journal-row[hidden] { display: none }
+  #journal-status { color: var(--ink-sub); font-size: 12px }
+  #journal-message { position: absolute; left: 0; bottom: 0; width: max-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink-sub) }
   .ep-good-note::before { content: '★'; flex: none; margin-top: 1px; color: var(--gold) }
 </style>
 </head>
@@ -68,6 +72,12 @@ export const PLAY_PAGE = `<!doctype html>
     <div class="seg src-seg" id="sources"></div>
   </div>
   <div class="ep-good-note" id="epgood"></div>
+  <div class="journal-row" id="journal" hidden>
+    <button type="button" class="btn btn-sm" id="journal-save" disabled>记到手帐</button>
+    <button type="button" class="btn btn-sm btn-ghost" id="journal-read">重新读取手帐</button>
+    <span id="journal-status"></span>
+    <span id="journal-message" role="status" aria-live="polite"></span>
+  </div>
   <div class="player-frame mt16"><div id="art"></div></div>
   <div id="buf" aria-live="polite"></div>
   <div id="err" role="alert" aria-live="polite">
@@ -945,6 +955,53 @@ ${PLAYBACK_BEACON}
       .then(function(d){ if (!d) return; (d.goodEpisodes || []).forEach(function(n){ goodEps[n] = true }); goodNotes = d.goodEpisodeNotes || {} })
       .catch(function(){})
   }
+  var journalSnapshot = null, journalBusy = false, journalController = null, journalLeaving = false
+  function renderJournal(){
+    $('journal-save').textContent = journalBusy ? '处理中…' : '记到第 ' + ep + ' 集'
+    $('journal-save').disabled = journalBusy || !journalSnapshot || ep <= journalSnapshot.episode
+    $('journal-read').disabled = journalBusy
+    $('journal-status').textContent = journalSnapshot ? ('手帐：' + journalSnapshot.title + ' · 第 ' + journalSnapshot.episode + ' 集') : ''
+  }
+  async function journalRequest(url, options){
+    var ctl = new AbortController(); journalController = ctl
+    var timer = setTimeout(function(){ ctl.abort() }, 10000)
+    try {
+      var response = await fetch(url, Object.assign({}, options, { signal: ctl.signal, cache: 'no-store' }))
+      var data = await response.json()
+      if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status))
+      return data
+    } finally { clearTimeout(timer); if (journalController === ctl) journalController = null }
+  }
+  async function readJournal(){
+    if (!bgmId || !ARGS.ownerId || journalBusy) return
+    journalBusy = true; journalSnapshot = null; $('journal-message').textContent = ''; renderJournal()
+    try {
+      var data = await journalRequest('/api/tracks/' + bgmId + '/playback-progress', {})
+      if (data.ownerId !== ARGS.ownerId) throw new Error('账号已变化，请重新打开播放页')
+      journalSnapshot = data
+    } catch (e){
+      if (!journalLeaving) $('journal-message').textContent = e.name === 'AbortError' ? '读取超时，请手动重新读取手帐' : e.message
+      slog('journal read failed: ' + (e.stack || e.message))
+    } finally { journalBusy = false; renderJournal() }
+  }
+  $('journal-read').onclick = readJournal
+  $('journal-save').onclick = async function(){
+    if (journalBusy || !journalSnapshot || ep <= journalSnapshot.episode) return
+    var expected = journalSnapshot
+    journalBusy = true; $('journal-message').textContent = ''; renderJournal()
+    try {
+      var saved = await journalRequest('/api/tracks/' + bgmId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ episode: ep, playbackProgress: { ownerId: expected.ownerId, revision: expected.revision } }) })
+      journalSnapshot = Object.assign({}, expected, { episode: saved.episode })
+      $('journal-message').textContent = '已记到手帐'
+    } catch (e){
+      journalSnapshot = null
+      if (!journalLeaving) $('journal-message').textContent = e.name === 'AbortError' ? '保存结果未确认，请重新读取手帐' : e.message
+      slog('journal save failed: ' + (e.stack || e.message))
+    } finally { journalBusy = false; renderJournal() }
+  }
+  window.addEventListener('pagehide', function(){ journalLeaving = true; if (journalController) journalController.abort() })
+  window.addEventListener('pageshow', function(){ journalLeaving = false })
+  if (bgmId && ARGS.ownerId){ $('journal').hidden = false; readJournal() }
   function renderGoodNote(){
     var box = $('epgood')
     if (!goodEps[ep]){ box.classList.remove('show'); box.textContent = ''; return }

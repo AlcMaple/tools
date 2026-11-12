@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="570" viewBox="0 0 1040 570">
+<style>text{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;fill:#282529}.title{font-size:19px;font-weight:700}.sub{font-size:12.5px;fill:#756f73}.head{font-size:14px;font-weight:700}.body{font-size:12px}</style>
+<rect x="1" y="1" width="1038" height="568" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="28" y="38" class="title">点开或回看不改进度，明确记到手帐才生效</text>
+<text x="28" y="66" class="sub">卡片、列表、继续看只用同一份手帐集数，不再让本机最近播放替代它</text>
+<rect x="28" y="92" width="476" height="160" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="48" y="122" class="head">只是看一眼</text>
+<text x="48" y="155" class="body">原手帐第5集 → 打开末集 → 播放或离开</text>
+<text x="48" y="185" class="body">没有点击记进度：手帐仍为5，继续看仍从5进入</text>
+<text x="48" y="215" class="body">回看更早集数也不回退手帐</text>
+<rect x="524" y="92" width="488" height="160" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+<text x="544" y="122" class="head">我决定记下来</text>
+<text x="544" y="155" class="body">选第6集 → 明确点「记到第6集」</text>
+<text x="544" y="185" class="body">保存成功 →「已记到手帐」→ 卡片和列表都显示6</text>
+<text x="544" y="215" class="body">只推进手帐，不自动标整部看完，不另建进度</text>
+<rect x="28" y="272" width="984" height="115" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="48" y="302" class="head">为什么不按播放时长自动判断</text>
+<text x="48" y="334" class="body">看结局、误点、跳看和重看都可能开始播放，时长本身也不证明用户想把它记为进度</text>
+<text x="48" y="364" class="body">保存由用户点击确认，背后再核对账号、记录和版本，然后一次写入原手帐</text>
+<rect x="28" y="407" width="984" height="105" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="48" y="437" class="head">账号变化、其他页面改过、记录被删或保存超时</text>
+<text x="48" y="469" class="body">不覆盖、不重建、不自动重发，显示原因；重新读取后再决定，未确认就保持原进度</text>
+<text x="28" y="546" class="sub">图中5与6为固定本地夹具的实际验收集数，不代表真实动漫观看完成</text>
+</svg>
