@@ -62,7 +62,7 @@ export interface CatalogItem {
   edited?: { nameCn: boolean; tags: boolean; cover: boolean }
 }
 
-export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[] }
+export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[]; planningReady?: boolean }
 
 async function catalogEdit(path: string, init: RequestInit): Promise<CatalogItem> {
   const res = await fetch(`/api/catalog/${path}`, init)
@@ -107,8 +107,10 @@ export function saveCatalogGenres(genres: { tag: string; visible: boolean }[]): 
   return catalogGenres({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ genres }) })
 }
 
-export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number; include?: string[]; exclude?: string[] }, signal?: AbortSignal): Promise<CatalogResult> {
+export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number; include?: string[]; exclude?: string[]; maxEps?: number; finished?: boolean }, signal?: AbortSignal): Promise<CatalogResult> {
   const query = new URLSearchParams({ q: params.q, year: String(params.year), sort: params.sort, offset: String(params.offset), limit: String(params.limit) })
+  if (params.maxEps) query.set('maxEps', String(params.maxEps))
+  if (params.finished) query.set('finished', '1')
   if (params.include?.length) query.set('include', JSON.stringify(params.include))
   if (params.exclude?.length) query.set('exclude', JSON.stringify(params.exclude))
   const res = await fetch(`/api/catalog?${query}`, { signal })

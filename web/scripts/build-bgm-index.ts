@@ -10,6 +10,7 @@
 // 本地跑带 HTTPS_PROXY 走 Clash。依赖系统 `unzip`（流式取压缩包里的 subject 文件，不整包落盘解压）。
 //
 // **原子替换**：先写 `bgm_index.db.tmp`，成了再 rename 覆盖 —— 搜索端要么读旧库、要么读新库，绝不读半成品。
+import { explicitEndDate } from '../shared/catalog-planning'
 import '../server/http' // 副作用：EnvHttpProxyAgent，让 fetch 认 HTTPS_PROXY
 import Database from 'better-sqlite3'
 import { createReadStream, createWriteStream, renameSync, rmSync, statSync } from 'node:fs'
@@ -33,6 +34,7 @@ interface Row {
   score: number
   nsfw: number
   votes: number
+  end_date: string
 }
 
 // 归档的 subject 档里**没有**总集数字段（官方 schema 只有 id/type/name/name_cn/infobox/platform/
@@ -138,6 +140,7 @@ async function buildIndex(
       aliases TEXT NOT NULL DEFAULT '',
       tags    TEXT NOT NULL DEFAULT '[]',
       date    TEXT NOT NULL DEFAULT '',
+      end_date TEXT NOT NULL DEFAULT '',
       score   REAL NOT NULL DEFAULT 0,
       -- 本篇集数。0 = 档里数不出来（没有章节数据 / 没扫 episode 文件），**不是**「0 集」；
       -- 读取方（server/bgm/anime-index.ts epsOf）把 0 当「不知道」，退回在线详情补。
@@ -148,10 +151,10 @@ async function buildIndex(
     CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT);
   `)
   const ins = db.prepare(
-    `INSERT OR REPLACE INTO anime (bgm_id,name,name_cn,aliases,tags,date,score,nsfw,votes) VALUES (?,?,?,?,?,?,?,?,?)`
+    `INSERT OR REPLACE INTO anime (bgm_id,name,name_cn,aliases,tags,date,score,nsfw,votes,end_date) VALUES (?,?,?,?,?,?,?,?,?,?)`
   )
   const flush = db.transaction((batch: Row[]) => {
-    for (const r of batch) ins.run(r.bgm_id, r.name, r.name_cn, r.aliases, r.tags, r.date, r.score, r.nsfw, r.votes)
+    for (const r of batch) ins.run(r.bgm_id, r.name, r.name_cn, r.aliases, r.tags, r.date, r.score, r.nsfw, r.votes, r.end_date)
   })
 
   let n = 0
@@ -178,6 +181,7 @@ async function buildIndex(
       aliases: JSON.stringify(parseAliasesFromWiki(o.infobox)),
       tags: JSON.stringify(topTags(o.tags)),
       date: String(o.date ?? ''),
+      end_date: explicitEndDate(o.infobox, String(o.date ?? '')),
       score: Number(o.score) || 0,
       nsfw: o.nsfw ? 1 : 0,
       votes: voteCount(o.score_details),

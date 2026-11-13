@@ -16,11 +16,11 @@ const PAGE = 48
 type Sort = 'score' | 'date'
 
 // 只记住本次打开网站时的筛选
-let lastView: { query: string; year: number; sort: Sort; discovery: DiscoveryFilters } = { query: '', year: 0, sort: 'score', discovery: { include: [], exclude: [] } }
+let lastView: { query: string; year: number; sort: Sort; maxEps: number; finished: boolean; discovery: DiscoveryFilters } = { query: '', year: 0, sort: 'score', maxEps: 0, finished: false, discovery: { include: [], exclude: [] } }
 
 // 切回看过的条件（比如 2027 年 → 全部年份）先把上次的列表原样摆出来，同时照常重新请求覆盖；
 // 键里带账号，退出登录后不会把只给登录用户看的条目摆给访客
-interface CachedView { items: CatalogItem[]; total: number; ready: boolean; admin: boolean; genres: string[] }
+interface CachedView { items: CatalogItem[]; total: number; ready: boolean; admin: boolean; genres: string[]; planningReady: boolean }
 const viewCache = new Map<string, CachedView>()
 const VIEW_CACHE_MAX = 12
 
@@ -46,10 +46,13 @@ export function CatalogPage(): JSX.Element {
   const [year, setYear] = useState(lastView.year)
   const [sort, setSort] = useState<Sort>(lastView.sort)
   const [discovery, setDiscovery] = useState(lastView.discovery)
+  const [planningReady, setPlanningReady] = useState(false)
+  const [maxEps, setMaxEps] = useState(lastView.maxEps)
+  const [finished, setFinished] = useState(lastView.finished)
   const [stale, setStale] = useState(false)
   const [genres, setGenres] = useState<string[]>([])
   const { user } = useAuth()
-  const viewKey = JSON.stringify([user?.id ?? 0, q, year, sort, discovery])
+  const viewKey = JSON.stringify([user?.id ?? 0, q, year, sort, discovery, maxEps, finished])
   const [admin, setAdmin] = useState(false)
   const [editing, setEditing] = useState<CatalogItem | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
@@ -71,8 +74,8 @@ export function CatalogPage(): JSX.Element {
   }
 
   useEffect(() => {
-    lastView = { query, year, sort, discovery }
-  }, [query, year, sort, discovery])
+    lastView = { query, year, sort, discovery, maxEps, finished }
+  }, [query, year, sort, discovery, maxEps, finished])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQ(query.trim()), 300)
@@ -89,6 +92,7 @@ export function CatalogPage(): JSX.Element {
     if (offset === 0) {
       const cached = viewCache.get(viewKey)
       if (cached) {
+        setPlanningReady(cached.planningReady)
         setReady(cached.ready)
         setAdmin(cached.admin)
         setGenres(cached.genres)
@@ -98,9 +102,11 @@ export function CatalogPage(): JSX.Element {
       setStale(!cached)
     }
     const key = viewKey
-    fetchCatalog({ q, year, sort, offset, limit: PAGE, ...discovery }, ctl.signal)
+    fetchCatalog({ q, year, sort, offset, limit: PAGE, maxEps, finished, ...discovery }, ctl.signal)
       .then((r) => {
         if (gen !== generation.current) return
+        setPlanningReady(!!r.planningReady)
+        if (!r.planningReady) { setMaxEps(0); setFinished(false) }
         setStale(false)
         setReady(r.ready)
         setAdmin(r.admin)
@@ -109,7 +115,7 @@ export function CatalogPage(): JSX.Element {
         setItems((prev) => {
           const next = offset === 0 ? r.items : [...prev, ...r.items]
           viewCache.delete(key)
-          viewCache.set(key, { items: next, total: r.total, ready: r.ready, admin: r.admin, genres: r.genres })
+          viewCache.set(key, { items: next, total: r.total, ready: r.ready, admin: r.admin, genres: r.genres, planningReady: !!r.planningReady })
           if (viewCache.size > VIEW_CACHE_MAX) viewCache.delete(viewCache.keys().next().value as string)
           return next
         })
@@ -184,6 +190,14 @@ export function CatalogPage(): JSX.Element {
         )}
       </header>
 
+      {planningReady && <div className="catalog-planning" role="group" aria-label="篇幅与播出状态">
+        <div className="catalog-length">
+          <Select options={[{ id: '0', text: '不限集数' }, { id: '13', text: '13 集以内' }, { id: '26', text: '26 集以内' }, { id: '52', text: '52 集以内' }]} value={String(maxEps)} onChange={id => setMaxEps(Number(id))} placeholder="不限集数" />
+        </div>
+        <button type="button" className={`chip${finished ? ' on' : ''}`} aria-pressed={finished} onClick={() => setFinished(v => !v)}>已播完</button>
+        {(maxEps > 0 || finished) && <button type="button" className="btn btn-ghost small" onClick={() => { setMaxEps(0); setFinished(false) }}>清空篇幅与状态</button>}
+      </div>}
+
       <CatalogDiscovery value={discovery} genres={genres} admin={admin} onApply={setDiscovery} onGenresSaved={() => { viewCache.clear(); load(0) }} />
       {sourceWatch.modals}
       {editing && (
@@ -210,7 +224,7 @@ export function CatalogPage(): JSX.Element {
       ) : items.length === 0 && loading ? (
         <div className="page-state"><Spinner size={36} /><p className="faint small">纱雾正在翻目录…</p></div>
       ) : items.length === 0 && !error ? (
-        <div className="page-state"><p className="faint small">{discovery.include.length || discovery.exclude.length ? '没有符合这些条件的番，试着减少题材或清空题材筛选' : q ? (year > 0 ? `没有找到 ${year} 年的「${q}」` : `没有找到「${q}」，换个名字试试`) : '这一年没有收录的番'}</p></div>
+        <div className="page-state"><p className="faint small">{maxEps > 0 || finished ? '没有符合这些条件的番，试着放宽集数或取消已播完' : discovery.include.length || discovery.exclude.length ? '没有符合这些条件的番，试着减少题材或清空题材筛选' : q ? (year > 0 ? `没有找到 ${year} 年的「${q}」` : `没有找到「${q}」，换个名字试试`) : '这一年没有收录的番'}</p></div>
       ) : (
         <div className={`film is-vertical catalog-grid${stale ? ' is-stale' : ''}`} aria-busy={stale}>
           {items.map((item) => (

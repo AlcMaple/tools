@@ -27,3 +27,9 @@
 @media (max-width: 620px) { .catalog-discovery { padding: 14px; } .catalog-discovery-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .catalog-discovery-fields .btn { grid-column: 1 / -1; } }
 .catalog-grid { transition: opacity .15s; }
 .catalog-grid.is-stale { opacity: .55; pointer-events: none; }
+
+.catalog-planning { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.catalog-length { width: 150px; }
+.catalog-length .dd-host { width: 100%; }
+.catalog-planning .chip { border: 1px solid var(--line); border-radius: 20px; padding: 8px 14px; background: transparent; color: var(--ink-sub); font: inherit; cursor: pointer; }
+.catalog-planning .chip.on { color: var(--teal); background: color-mix(in srgb, var(--teal) 10%, var(--paper)); border-color: var(--teal-line); }
