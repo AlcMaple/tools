@@ -1,3 +1,4 @@
+import { EPISODE_LIMITS } from '../shared/catalog-planning'
 import { Hono, type Context } from 'hono'
 import { isAdminUid } from './admin'
 import bootLog from './boot-log'
@@ -164,6 +165,9 @@ app.get('/api/catalog', async (c) => {
     const value = Number(c.req.query(key))
     return Number.isSafeInteger(value) && value >= 0 ? value : fallback
   }
+  const maxEps = Number(c.req.query('maxEps') ?? 0)
+  const finished = c.req.query('finished') ?? '0'
+  if (!EPISODE_LIMITS.some(limit => limit === maxEps) || !['0', '1'].includes(finished)) return c.json({ error: '集数或播出状态条件不正确' }, 400)
   c.header('Cache-Control', 'no-store')
   return c.json(listCatalog({
     q: (c.req.query('q') ?? '').slice(0, 80),
@@ -175,6 +179,8 @@ app.get('/api/catalog', async (c) => {
     admin: !!session && isAdminUid(session.uid),
     include,
     exclude,
+    maxEps,
+    finished: finished === '1',
   }))
 })
 

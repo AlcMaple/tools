@@ -1,3 +1,4 @@
+import { matchesPlanning } from '../../shared/catalog-planning'
 // 全部番剧：把离线索引整张表做成可浏览的目录，外加一个慢慢补封面的后台任务。
 //
 // 离线档里没有封面字段，每部番只能问 BGM 一次 `/v0/subjects/:id` 拿图床路径，再把图下到服务器磁盘
@@ -145,7 +146,7 @@ export function getCatalogItem(id: number): CatalogItem | null {
 // 目录快照：3 万行每次请求都在 SQLite 里全表扫两遍（计数 + 排序取页）再在 JS 里按题材扫一遍，
 // 线上一次切换要等几百毫秒到秒级。排序键、可见性和生效标签只在索引换新（句柄变了）或管理员改标签时才变，
 // 所以整表只读一次、两种排序预排好，请求里只做内存过滤，再按 id 取这一页 48 行
-interface SnapshotEntry { id: number; year: string; visible: boolean; tags: string[] }
+interface SnapshotEntry { id: number; eps: number; endDate: string; year: string; visible: boolean; tags: string[] }
 interface CatalogSnapshot { handle: object; overrides: number; byScore: SnapshotEntry[]; byDate: SnapshotEntry[]; scoreRank: Map<number, number>; dateRank: Map<number, number>; genres: { guest: TagCount[]; adult: TagCount[] } }
 
 // 快捷题材：收录部数够门槛的标签才露出来，按部数从多到少。频次最高的有一大半是 TV / 短片 / 年份 / 制作公司这类形式标签，
@@ -200,9 +201,9 @@ function catalogSnapshot(h: NonNullable<ReturnType<typeof openOfflineIndex>>): C
   if (snapshot && snapshot.handle === h && snapshot.overrides === overrideVersion) return snapshot
   const overrides = new Map((db.prepare('SELECT bgm_id, tags FROM catalog_override WHERE tags IS NOT NULL').all() as { bgm_id: number; tags: string }[]).map((row) => [row.bgm_id, row.tags]))
   const enough = hasColumn('votes') ? `votes >= ${MIN_VOTES}` : '1'
-  const rows = h.prepare(`SELECT bgm_id, date, score, tags, (${visibleSql()}) AS visible, (${enough}) AS enough FROM anime ORDER BY bgm_id`).all() as { bgm_id: number; date: string; score: number; tags: string; visible: number; enough: number }[]
+  const rows = h.prepare(`SELECT bgm_id, date, score, tags, ${hasColumn('eps') ? 'eps' : '0 AS eps'}, ${hasColumn('end_date') ? 'end_date' : "'' AS end_date"}, (${visibleSql()}) AS visible, (${enough}) AS enough FROM anime ORDER BY bgm_id`).all() as { bgm_id: number; date: string; eps: number; end_date: string; score: number; tags: string; visible: number; enough: number }[]
   const keyed = rows.map((row) => ({
-    entry: { id: row.bgm_id, year: row.date.slice(0, 4), visible: !!row.visible, tags: parseTags(overrides.get(row.bgm_id) ?? row.tags, Number.MAX_SAFE_INTEGER) },
+    entry: { id: row.bgm_id, eps: Number(row.eps) || 0, endDate: row.end_date, year: row.date.slice(0, 4), visible: !!row.visible, tags: parseTags(overrides.get(row.bgm_id) ?? row.tags, Number.MAX_SAFE_INTEGER) },
     date: row.date, score: row.score, enough: row.enough,
   }))
   // 与原 SQL 排序逐键一致：评分 = 够人数优先、分高、有日期、日期新；最新 = 有日期、日期新、分高
@@ -213,20 +214,25 @@ function catalogSnapshot(h: NonNullable<ReturnType<typeof openOfflineIndex>>): C
   return snapshot
 }
 
-export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean; include?: string[]; exclude?: string[] }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[] } {
+export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean; include?: string[]; exclude?: string[]; maxEps?: number; finished?: boolean }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[]; planningReady: boolean } {
   const h = openOfflineIndex()
   const covered = (countDone.get() as { n: number }).n
-  if (!h || !hasAnimeTable()) return { ready: false, total: 0, items: [], covered, admin: opts.admin, genres: [] }
+  if (!h || !hasAnimeTable()) return { ready: false, total: 0, items: [], covered, admin: opts.admin, genres: [], planningReady: false }
+  const planningReady = hasColumn('eps') && hasColumn('end_date')
   const snap = catalogSnapshot(h)
   const genres = (opts.adult ? snap.genres.adult : snap.genres.guest).map(([tag]) => tag).filter(genreVisible)
   const cols = colsSql()
   const include = opts.include ?? [], exclude = opts.exclude ?? []
+  const maxEps = opts.maxEps ?? 0, finished = opts.finished ?? false
+  const today = new Date().toISOString().slice(0, 10)
+  const planningMatch = (e: SnapshotEntry): boolean => matchesPlanning(e.eps, e.endDate, maxEps, finished, today)
+  const hasPlanning = maxEps > 0 || finished
   const hasTags = include.length > 0 || exclude.length > 0
   const tagMatch = (e: SnapshotEntry): boolean => include.every((tag) => e.tags.includes(tag)) && !exclude.some((tag) => e.tags.includes(tag))
   if (opts.q.trim()) {
     const shown = opts.adult ? '1' : visibleSql()
-    // 题材要在搜索截断 120 条之前收窄，否则高分的不相干条目会把目标挤出候选
-    const candidateIds = hasTags ? snap.byScore.filter((e) => (opts.adult || e.visible) && tagMatch(e)).map((e) => e.id) : undefined
+    // 题材和篇幅条件都在搜索截断 120 条之前收窄，避免不相干的高分条目挤掉目标
+    const candidateIds = hasTags || hasPlanning ? snap.byScore.filter((e) => (opts.adult || e.visible) && tagMatch(e) && planningMatch(e)).map((e) => e.id) : undefined
     const one = h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id = ? AND ${shown}`)
     const rows = searchAnime(opts.q, 120, opts.year, candidateIds)
       .map((hit) => one.get(hit.bgmId) as IndexRow | undefined)
@@ -234,15 +240,15 @@ export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; 
     // 搜索先按相关度截出前 120 条候选，再按用户选的排序重排，否则「最新」在搜索时没有效果
     const order = opts.sort === 'date' ? snap.dateRank : snap.scoreRank
     rows.sort((a, b) => (order.get(a.bgm_id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.bgm_id) ?? Number.MAX_SAFE_INTEGER))
-    return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres }
+    return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres, planningReady }
   }
   const year = opts.year > 0 ? String(opts.year) : ''
   const matched = (opts.sort === 'date' ? snap.byDate : snap.byScore)
-    .filter((e) => (opts.adult || e.visible) && (!year || e.year === year) && (!hasTags || tagMatch(e)))
+    .filter((e) => (opts.adult || e.visible) && (!year || e.year === year) && (!hasTags || tagMatch(e)) && planningMatch(e))
   const ids = matched.slice(opts.offset, opts.offset + opts.limit).map((e) => e.id)
   const byId = new Map((h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as IndexRow[]).map((r) => [r.bgm_id, r]))
   const rows = ids.map((id) => byId.get(id)).filter((r): r is IndexRow => !!r)
-  return { ready: true, total: matched.length, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres }
+  return { ready: true, total: matched.length, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres, planningReady }
 }
 
 // ── 管理员编辑 ───────────────────────────────────────────────────────────────
