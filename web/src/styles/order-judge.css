@@ -266,6 +266,46 @@
 .oj-qrow.top .oj-qlabel { padding-top: 8px; }
 .oj-qlabel { flex: 0 0 84px; font-size: 12.5px; color: var(--ink-sub); }
 .oj-qin { width: 96px; min-height: 34px; padding: 6px 10px; font: inherit; font-size: 13.5px; color: var(--ink); background: var(--field-bg); border: 1.5px solid var(--field-line); border-radius: 8px 11px 8px 11px; outline: none; transition: border-color .2s, box-shadow .2s; }
+/* 按天记：一段一张便签，上面选模块、下面填日期区间。选中只换底色，边框宽度固定；「N 天」和删除钮各占固定位置，不随内容挤动 */
+.oj-qdays { display: grid; gap: 10px; }
+.oj-qdays > * { min-width: 0; }
+.oj-qdays > summary { margin-bottom: 0; }
+.oj-qdays-tip { margin: 0; line-height: 1.6; }
+.oj-qspan { display: grid; gap: 10px; padding: 12px 14px; background: var(--field-bg); border: 1.5px dashed var(--line-strong); border-radius: 10px 14px 10px 14px; }
+.oj-qspan-chips { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.oj-qchip { max-width: 100%; font: inherit; font-size: 12.5px; line-height: 1.4; padding: 4px 12px; text-align: left; color: var(--ink-sub); background: transparent; border: 1.5px solid var(--line-strong); border-radius: 14px 12px 14px 12px; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+.oj-qchip:hover { border-color: var(--teal-line); }
+.oj-qchip.on { color: var(--ink); background: var(--teal-wash); border-color: var(--teal-line); }
+.oj-qspan-when { display: grid; grid-template-columns: minmax(0, 1fr) 44px 28px; align-items: center; gap: 8px; }
+.oj-daterange { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; min-width: 0; min-height: 38px; padding: 6px 12px; font: inherit; font-size: 13.5px; text-align: left; color: var(--ink); background: var(--paper); border: 1.5px solid var(--field-line); border-radius: 8px 11px 8px 11px; cursor: pointer; transition: border-color .2s, box-shadow .2s; }
+.oj-daterange .ic { flex: none; color: var(--ink-faint); }
+.oj-daterange-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oj-daterange.empty .oj-daterange-text { color: var(--ink-faint); }
+.oj-daterange.open { border-color: var(--teal-line); box-shadow: 0 0 0 3px var(--teal-wash); }
+.oj-daterange.open .ic { color: var(--teal); }
+@media (hover: hover) { .oj-daterange:hover { border-color: var(--teal-line); } }
+/* 月历浮层：沿用下拉浮层的皮肤；日期格固定大小，选中只换底色 */
+.oj-cal { width: 292px; max-width: calc(100vw - 24px); padding: 10px 12px 12px; background: var(--card); border: 1.5px solid var(--line-strong); border-radius: 8px 14px 8px 14px; box-shadow: var(--shadow-2); animation: fade-in .15s var(--ease-page); }
+.oj-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.oj-cal-nav { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; color: var(--ink-sub); background: none; border: 0; border-radius: 8px; cursor: pointer; }
+.oj-cal-nav.prev .ic { transform: rotate(90deg); }
+.oj-cal-nav.next .ic { transform: rotate(-90deg); }
+.oj-cal-nav:disabled { opacity: .3; cursor: default; }
+@media (hover: hover) { .oj-cal-nav:not(:disabled):hover { background: var(--teal-wash); color: var(--teal); } }
+.oj-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px 0; }
+.oj-cal-wk { padding: 4px 0; text-align: center; font-size: 11.5px; color: var(--ink-faint); }
+.oj-cal-day { height: 34px; padding: 0; font: inherit; font-size: 13px; color: var(--ink); background: none; border: 1.5px solid transparent; border-radius: 8px; cursor: pointer; }
+.oj-cal-day.today { border-color: var(--line-strong); }
+.oj-cal-day.in { background: var(--teal-wash); border-radius: 0; }
+.oj-cal-day.edge { color: #fff; background: var(--teal-mid); border-color: var(--teal); }
+.oj-cal-day:disabled { color: var(--ink-faint); opacity: .45; cursor: default; }
+@media (hover: hover) { .oj-cal-day:not(:disabled):not(.edge):hover { background: var(--teal-wash); } }
+.oj-cal-tip { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-faint); }
+.oj-cal-done { margin-top: 8px; width: 100%; min-height: 34px; font: inherit; font-size: 13px; color: #fff; background: var(--teal-mid); border: 1.5px solid var(--teal); border-radius: 8px 11px 8px 11px; cursor: pointer; }
+.oj-qspan-n { white-space: nowrap; text-align: right; }
+.oj-qspan-x { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; color: var(--ink-faint); background: none; border: 0; border-radius: 8px; cursor: pointer; }
+.oj-qspan-x:hover { color: var(--ink); }
+.oj-qdays-add { justify-self: start; font: inherit; font-size: 12.5px; color: var(--teal); background: none; border: 0; padding: 4px 2px; cursor: pointer; }
 .oj-qmods { display: grid; }
 .oj-qmods > summary { margin-bottom: 4px; }
 /* 做完后填：两项用时并排、标签不折行；模块按可用宽度排成多列，名字紧挨着输入框 */

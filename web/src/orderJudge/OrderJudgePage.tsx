@@ -12,9 +12,10 @@ import { precheck } from '../../shared/order-judge'
 import { BASIS_TEXT, CHOOSABLE_CLIENT_TYPES, PRIORITIES, WORK_KINDS, isChoosableClientType, type Brief as BriefType, type BriefItem, type ChoosableClientType } from '../../shared/order-judge-brief'
 import { parseBudget, parseDeadline, ymd, type Expense, type QuoteSettings } from '../../shared/order-judge-quote'
 import { COOPERATION_PLANS, MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, longTermClientText, longTermFee, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, planOf, suggestFee, type CooperationPlan, type Maintenance, type MonthRecord } from '../../shared/order-judge-maintenance'
-import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, ITEM_MAX_DAYS, ITEM_MAX_HOURS, OUTCOMES, VERSION_STATUSES, buildSheet, calibFor, calibrateByType, latestType, clientText, freeze, normalizeQuote, selfText, marketLine, HOUR_SCALE_MAX, HOUR_SCALE_MIN, hourRows, hoursLabel, scaleLabel, selfSummary, type Calibrations, type HourRow, type QuoteState, type Sheet } from '../../shared/order-judge-sheet'
+import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, ITEM_MAX_DAYS, ITEM_MAX_HOURS, OUTCOMES, VERSION_STATUSES, buildSheet, calibFor, calibrateByType, latestType, clientText, freeze, normalizeQuote, selfText, marketLine, HOUR_SCALE_MAX, HOUR_SCALE_MIN, hourRows, hoursLabel, scaleLabel, selfSummary, spanDays, type Calibrations, type HourRow, type QuoteState, type Sheet, type WorkSpan } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
+import { DateRange } from './DateRange'
 import { FlowPreview } from './FlowPreview'
 import { PlanList, ScopePanel } from './ScopePanel'
 import { inScoping, plansOf, recommendedPlan } from '../../shared/order-judge-scope'
@@ -1034,6 +1035,23 @@ function HoursPanel({ market, draft, raw, settings, set }: { market: string; dra
 }
 
 // 报价：表单改动即时反映到下面的报价单，点保存才写回；复制 / 下载的就是当前看到的文字
+function SpanRow({ span, modules, onChange, onRemove }: { span: WorkSpan; modules: HourRow[]; onChange: (d: WorkSpan) => void; onRemove: () => void }): JSX.Element {
+  const toggle = (id: string): void => onChange({ ...span, ids: span.ids.includes(id) ? span.ids.filter(x => x !== id) : [...span.ids, id] })
+  const days = spanDays(span)
+  return (
+    <div className="oj-qspan">
+      <div className="oj-qspan-chips" role="group" aria-label="做了哪些模块">
+        {modules.map(m => <button key={m.id} type="button" aria-pressed={span.ids.includes(m.id)} className={`oj-qchip${span.ids.includes(m.id) ? ' on' : ''}`} onClick={() => toggle(m.id)}>{m.title}</button>)}
+      </div>
+      <div className="oj-qspan-when">
+        <DateRange from={span.from} to={span.to} onChange={(from, to) => onChange({ ...span, from, to })} />
+        <span className="oj-qspan-n faint small">{days > 0 ? `${days} 天` : ''}</span>
+        <button type="button" className="oj-qspan-x" aria-label="删除这一段" onClick={onRemove}><Ic name="trash" cls="ic ic-sm" /></button>
+      </div>
+    </div>
+  )
+}
+
 function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibrations }): JSX.Element {
   const calib = calibFor(calibs, version.brief.clientType)
   const [draft, setDraft] = useState<QuoteState>(version.quote)
@@ -1154,6 +1172,18 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
             <span className="faint small">小时</span>
           </label>
         ))}</div>}
+        {draft.status === '已成交' && moduleRows.length > 0 && (
+          <details className="oj-qmore oj-qdays" open={draft.days.length > 0 || undefined}>
+            <summary>按天记（记不清每个模块用了几小时时用）</summary>
+            <p className="faint small oj-qdays-tip">选一个或几个模块，填这些模块做了哪几天。同一个模块填了单独一段，就以单独那段为准</p>
+            {draft.days.map((d, i) => (
+              <SpanRow key={i} span={d} modules={moduleRows}
+                onChange={next => setDraft(x => ({ ...x, days: x.days.map((y, j) => (j === i ? next : y)) }))}
+                onRemove={() => setDraft(x => ({ ...x, days: x.days.filter((_, j) => j !== i) }))} />
+            ))}
+            <button type="button" className="oj-qdays-add" onClick={() => setDraft(x => ({ ...x, days: [...x.days, { from: null, to: null, ids: [] }] }))}>加一段</button>
+          </details>
+        )}
         {draft.status === '已成交' && moduleRows.length > 0 && (
           <details className="oj-qmore oj-qmods" open={Object.keys(draft.itemActual).length > 0 || undefined}>
             <summary>按模块填实际小时（可选）</summary>
