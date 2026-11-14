@@ -52,6 +52,12 @@ export const PLAY_PAGE = `<!doctype html>
   .ep-good-note { display: none; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 14px; border-radius: var(--r-card); background: var(--gold-hl); border: 1.5px solid var(--gold); color: #6b5416; font-size: 13px; line-height: 1.6 }
   .ep-good-note.show { display: flex }
   .ep-good-note::before { content: '★'; flex: none; margin-top: 1px; color: var(--gold) }
+/* 控件隐藏时 ArtPlayer 只把底栏调成透明，进度条和按钮仍接收点击：刚开播想点全屏时控件刚好收起，
+   一点就误跳了进度。收起时整条底栏不接点击，点画面先唤出控件 */
+.art-video-player:not(.art-control-show):not(.art-hover) .art-bottom .art-progress,
+.art-video-player:not(.art-control-show):not(.art-hover) .art-bottom .art-controls { pointer-events: none; }
+.art-video-player .art-controls .art-control.next-off { display: none; }
+.ep-cell.named { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 6px; font-size: 13px; line-height: 44px; }
 </style>
 </head>
 <body data-page="player">
@@ -145,6 +151,7 @@ ${PLAYBACK_BEACON}
   var goodEps = {}, goodNotes = {}, epLabels = {}
   var generation = 0
   var offlineAt = null, offlineTime = 0, offlineWasPlaying = false
+  var startEp = ep
   var RESUME_KEY = 'player:resume:' + src + ':' + id + ':' + ep
   // iOS 把后台标签页整个回收后浏览器会自己重载：进度和「当时在不在播」先记下，重载后从原地接着。
   function stashResume(){
@@ -356,7 +363,7 @@ ${PLAYBACK_BEACON}
 
   // 本机下完的这一集，不管是哪条线路、哪个站下的：同一站同一番，或同一个 Bangumi 条目（稀饭 / Girigiri 互认）。
   // 联网开播时先查它，有就直接播，不再挑线路；断网 / 本站连不上时也靠它，没下完的缺口在断网时等不来。
-  // 选集只列本机已下完的集，换集照常整页跳转（页面本身由 SW 的离线壳兜住）。
+  // 选集只列本机已下完的集；点选集格子照常整页跳转（页面本身由 SW 的离线壳兜住），控制栏的下一集原地换
   function sameAnime(meta){ return (meta.src === src && String(meta.id) === String(id)) || (!!bgmId && String(meta.bgmId) === String(bgmId)) }
   async function findOffline(){
     if (!navigator.storage || !navigator.storage.getDirectory || !navigator.serviceWorker || !navigator.serviceWorker.controller) return null
@@ -375,7 +382,7 @@ ${PLAYBACK_BEACON}
     if (hit) hit.eps = done.sort(function(a, b){ return a - b })
     return hit
   }
-  async function bootOffline(why){
+  async function bootOffline(why, start){
     var hit = await findOffline()
     if (!hit) return false
     slog('offline play ' + why + ' hash=' + hit.hash.slice(0, 8))
@@ -387,7 +394,7 @@ ${PLAYBACK_BEACON}
     renderEps(); renderLines(); renderGoodNote()
     localComplete = true
     var resume = takeResume()
-    mount({ source: 0, kind: hit.meta.kind || 'mp4', url: hit.meta.key, localHash: hit.hash }, resume ? resume.t : 0, !!(resume && resume.playing))
+    ;(start || mount)({ source: 0, kind: hit.meta.kind || 'mp4', url: hit.meta.key, localHash: hit.hash }, resume ? resume.t : 0, !!(resume && resume.playing))
     return true
   }
 
@@ -640,6 +647,15 @@ ${PLAYBACK_BEACON}
       airplay: true,
       lang: 'zh-cn',
       theme: '#2f7d5e',
+      // 全屏时也能换下一集；播完仍不自动跳，只给按钮
+      controls: [{
+        name: 'next-ep',
+        position: 'left',
+        index: 11,
+        tooltip: '下一集',
+        html: '<i class="art-icon next-ep-ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M6 5.5v13a1 1 0 0 0 1.5.86l10-6.5a1 1 0 0 0 0-1.72l-10-6.5A1 1 0 0 0 6 5.5z"/><rect x="18" y="5" width="2.4" height="14" rx="1"/></svg></i>',
+        click: function(){ var n = nextEpOf(); if (n != null) switchEp(n) },
+      }],
       customType: {
         // 退路换源时同一台播放器会再调一次，线路和代次按调用那一刻的 cur / generation 取，不能用 mount 时的闭包
         m3u8: function(video, url){
@@ -712,7 +728,7 @@ ${PLAYBACK_BEACON}
       onMediaError('video code=' + v.error.code)
     })
     // 没起播前别转圈：ArtPlayer 在 canplay 之前一直显示 loading，可首播要等用户点，那不是「在加载」。
-    art.on('ready', function(){ if (!autoplay) art.loading.show = false; agentReport('player_ready', 'line ' + pl.source) })
+    art.on('ready', function(){ if (!autoplay) art.loading.show = false; agentReport('player_ready', 'line ' + pl.source); renderNextBtn() })
   }
 
   function freezeFrame(v){
@@ -727,8 +743,8 @@ ${PLAYBACK_BEACON}
 
   // 退路：同一台播放器、同一个 <video> 只换地址。整台销毁重建会退出全屏、控件和进度条先归 0，
   // 用户以为看着看着断了。换集 / 手动换线路仍走 mount
-  function swapSource(pl, at, playing){
-    if (!art || !cur || cur.kind !== pl.kind) return mount(pl, at, playing)
+  function swapSource(pl, at, playing, why){
+    if (!art || !cur) return mount(pl, at, playing)
     stopSource()
     var gen = generation, v = art.video
     cur = pl; clearFail(); renderLines()
@@ -748,8 +764,11 @@ ${PLAYBACK_BEACON}
       try { v.currentTime = Math.min(at, Number.isFinite(v.duration) ? Math.max(0, v.duration - .25) : at) } catch (e) {}
       if (playing) v.play().catch(function(e){ slog('swap play rejected ' + (e && e.name)) })
     })
+    // ArtPlayer 每次换地址都按 option.type 重新挑播放方式（m3u8 走上面的 hls.js，mp4 直接给 <video>），
+    // stopSource 已经拆掉旧的 hls.js，所以 mp4 / HLS 互换也能留在同一台播放器里
+    art.option.type = pl.kind === 'hls' ? 'm3u8' : 'mp4'
     art.url = mediaUrl(pl)
-    setBuffering(v, true, '换线路中')
+    setBuffering(v, true, why || '换线路中')
     startTape(v)
     startStallWatch(v)
   }
@@ -907,6 +926,32 @@ ${PLAYBACK_BEACON}
       box.appendChild(b)
     })
   }
+  function nextEpOf(){
+    for (var i = 0; i < eps.length; i++) if (eps[i] > ep) return eps[i]
+    return null
+  }
+  function renderNextBtn(){
+    var ic = art && art.template && art.template.$player && art.template.$player.querySelector('.next-ep-ic')
+    var ctl = ic && ic.closest('.art-control')
+    if (ctl) ctl.classList.toggle('next-off', nextEpOf() == null)
+  }
+  // 播放器内换集：整页跳转会退出全屏，所以复用换线路的同一台播放器（swapSource）原地换地址，
+  // mp4 / HLS 互换、离线只播本机已下完的集也一样；只有播放器还没建起来时才整页跳转
+  async function switchEp(n){
+    if (!art || !cur) return goEp(n)
+    slog('switch ep ' + ep + ' -> ' + n + ' in place')
+    try { art.video.pause() } catch (e) {}
+    ep = n
+    RESUME_KEY = 'player:resume:' + src + ':' + id + ':' + ep
+    var q = new URLSearchParams(location.search); q.set('ep', String(n))
+    history.replaceState(null, '', location.pathname + '?' + q.toString())
+    if (art.option) art.option.id = src + ':' + id + ':' + ep
+    ++lineRequest
+    resolved = {}; emptyLines = {}; triedLines = {}; nextAsked = false; nextQueued = false; bootFirst = null; autoRetries = 0; localOff = false
+    clearFail()
+    renderSources(); renderNextBtn()
+    await boot(true)
+  }
   function goEp(n){
     var q = new URLSearchParams({ src: src, id: id, ep: String(n) })
     if (bgmId) q.set('bgmId', String(bgmId))
@@ -919,10 +964,17 @@ ${PLAYBACK_BEACON}
       var b = document.createElement('button'); b.type = 'button'
       b.className = 'ep-cell' + (n === ep ? ' on' : '') + (goodEps[n] ? ' good' : '')
       b.textContent = epLabels[n] || n
-      if (epLabels[n]){ b.title = '第 ' + n + ' 个 · ' + epLabels[n]; b.style.cssText = 'display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 6px;font-size:13px;line-height:44px' }
+      if (epLabels[n]){ b.title = '第 ' + n + ' 个 · ' + epLabels[n]; b.classList.add('named') }
       b.onclick = function(){ if (n !== ep) goEp(n) }
       box.appendChild(b)
     })
+  }
+  // 服务端给的换源地址是按开页那一集算的（含合集偏移），播放器内换过集就按差值平移
+  function sourceHref(href){
+    if (ep === startEp) return href
+    var u = new URL(href, location.href)
+    u.searchParams.set('ep', String(Math.max(1, Number(u.searchParams.get('ep')) + ep - startEp)))
+    return u.pathname + u.search
   }
   // 源切换：绑定表给的是旧播放页地址，这里只借它的 animeId 换成新页地址。
   function renderSources(){
@@ -934,7 +986,7 @@ ${PLAYBACK_BEACON}
       if (s.active) b.setAttribute('aria-current', 'true')
       // href 由服务端 playerSourceOptions 直接生成（已是 /api/player/page?src=&id=&ep=&bgmId=），原样跳。
       // 早先这里还按旧播放页的 animeId 参数重新拼，拼出来 id 为空 → 整页变成一行 JSON「animeId 不合法」。
-      else if (s.href) b.onclick = function(){ destroyPlayer(); location.assign(s.href) }
+      else if (s.href) b.onclick = function(){ destroyPlayer(); location.assign(sourceHref(s.href)) }
       else b.onclick = function(){ fail(s.label + ' 尚未关联，请回「我的追番」选择片源') }
       box.appendChild(b)
     })
@@ -953,22 +1005,29 @@ ${PLAYBACK_BEACON}
     box.classList.add('show')
   }
 
-  async function boot(){
+  var epRequest = 0
+  async function boot(inPlace){
+    var req = ++epRequest
+    // 原地换集：同一台播放器换地址（保住全屏），用户刚点了下一集所以直接播
+    var start = inPlace === true
+      ? function(pl){ if (req === epRequest) swapSource(pl, 0, true, '换集中') }
+      : function(pl, at, playing){ if (req === epRequest) mount(pl, at, playing) }
     renderSources()
     $('epbadge').textContent = 'EP ' + ep + (epOffset && ep > epOffset ? ' · 本番第 ' + (ep - epOffset) + ' 集' : '')
     renderEps()
     var good = loadGoodEpisodes()
     try {
       var r = await fetch('/api/player/playlist?src=' + src + '&id=' + encodeURIComponent(id) + '&ep=' + ep, { cache: 'no-store' })
-      if (r.status >= 500 && await bootOffline('playlist ' + r.status)) return
+      if (r.status >= 500 && await bootOffline('playlist ' + r.status, start)) return
       var d = await r.json()
       if (!r.ok || d.error){ fail('加载失败：' + (d.error || r.status), d.code, boot); return }
       lines = d.lines || []; eps = d.eps || []; epLabels = d.epLabels || {}
       mergeSpeeds(d)
       cacheTitle = d.title || ''
+      if (req !== epRequest) return
       if (d.title){ $('ttl').textContent = d.title; document.title = d.title + ' · EP' + ep }
       await good
-      renderEps(); renderLines(); renderGoodNote()
+      renderEps(); renderLines(); renderGoodNote(); renderNextBtn()
       var resume = takeResume()
       if (resume) slog('resume from ' + resume.t.toFixed(1) + (resume.playing ? ' (was playing)' : ''))
       bootFirst = d.first || null
@@ -977,18 +1036,18 @@ ${PLAYBACK_BEACON}
       if (have){
         slog('local done ep' + ep + ' from ' + have.meta.src + ':' + have.meta.id + ' hash=' + have.hash.slice(0, 8))
         localComplete = true
-        mount({ source: 0, kind: have.meta.kind || 'mp4', url: have.meta.key, localHash: have.hash }, resume ? resume.t : 0, !!(resume && resume.playing))
+        start({ source: 0, kind: have.meta.kind || 'mp4', url: have.meta.key, localHash: have.hash }, resume ? resume.t : 0, !!(resume && resume.playing))
         queueNextEp()
         return
       }
       if (d.first){
         resolved[d.first.source] = d.first
         var pick = await pickFastest(d.first, ep, lines)
-        mount(await prepareLocal(pick), resume ? resume.t : 0, !!(resume && resume.playing))
+        start(await prepareLocal(pick), resume ? resume.t : 0, !!(resume && resume.playing))
       }
       else fail('这一集解析不到 —— 可能还没更新，点上面别的集试试', 'LINE_EMPTY')
     } catch (e){
-      if (await bootOffline('playlist ' + (e && e.message))) return
+      if (await bootOffline('playlist ' + (e && e.message), start)) return
       if (!navigator.onLine){ fail('网络已断开，这一集没有下载到本机', 'OFFLINE', boot); return }
       fail('请求失败：' + (e && e.message || e), 'FETCH_FAILED', boot)
     }

@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 860" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <rect x="1" y="1" width="1118" height="858" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">全屏追番不用再退出来：控制栏「下一集」+ 控件收起时不误触进度</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">点下一集后仍在原来的全屏画面里，转一两秒接着播；不管新一集是 mp4、HLS 还是断网时本机下好的那份，都一样</text>
+
+  <!-- 块 1：主链路 -->
+  <text x="32" y="98" font-size="14" font-weight="700" fill="#282529">① 点下一集时发生了什么</text>
+
+  <text x="32" y="126" font-size="11" font-weight="700" fill="#316247">用户看到的</text>
+  <rect x="32" y="134" width="248" height="62" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="46" y="157" font-size="12.5" font-weight="700" fill="#316247">全屏看第 3 集</text>
+  <text x="46" y="178" font-size="11" fill="#316247">点一下画面，控件出来</text>
+  <rect x="300" y="134" width="248" height="62" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="314" y="157" font-size="12.5" font-weight="700" fill="#316247">点播放键旁边的 ▶|</text>
+  <text x="314" y="178" font-size="11" fill="#316247">最后一集时这个按钮不出现</text>
+  <rect x="568" y="134" width="248" height="62" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="582" y="157" font-size="12.5" font-weight="700" fill="#316247">画面停住，显示「换集中」</text>
+  <text x="582" y="178" font-size="11" fill="#316247">一直是全屏，没有闪出页面</text>
+  <rect x="836" y="134" width="252" height="62" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="850" y="157" font-size="12.5" font-weight="700" fill="#316247">第 4 集从头开播，仍是全屏</text>
+  <text x="850" y="178" font-size="11" fill="#316247">播完不会自动跳下一集，跟以前一样</text>
+  <path d="M280 165 h20 M548 165 h20 M816 165 h20" stroke="#7fad91" stroke-width="1.5"/>
+
+  <text x="32" y="226" font-size="11" font-weight="700" fill="#36566d">背后在做的</text>
+  <rect x="32" y="234" width="248" height="78" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="46" y="257" font-size="12.5" font-weight="700" fill="#36566d">先暂停当前这集</text>
+  <text x="46" y="278" font-size="11" fill="#36566d">地址栏、集数标记、选集高亮</text>
+  <text x="46" y="296" font-size="11" fill="#36566d">一起换成第 4 集</text>
+  <rect x="300" y="234" width="248" height="78" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="314" y="257" font-size="12.5" font-weight="700" fill="#36566d">问服务器第 4 集在哪播</text>
+  <text x="314" y="278" font-size="11" fill="#36566d">断网问不到时，改找本机已下完的</text>
+  <text x="314" y="296" font-size="11" fill="#36566d">第 4 集</text>
+  <rect x="568" y="234" width="520" height="78" rx="9" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="582" y="257" font-size="12.5" font-weight="700" fill="#36566d">还是这台播放器，只把视频地址换掉</text>
+  <text x="582" y="278" font-size="11" fill="#36566d">按新一集的格式重新选播放方式（分片流 / 整个文件），旧的那套先拆掉再接新的</text>
+  <text x="582" y="296" font-size="11" fill="#36566d">跟「换线路」走的是同一条路，所以换线路时格式不同也不再退出全屏</text>
+  <path d="M280 273 h20 M548 273 h20" stroke="#91adc1" stroke-width="1.5"/>
+
+  <!-- 块 2：为什么不整页跳转 -->
+  <text x="32" y="350" font-size="14" font-weight="700" fill="#282529">② 为什么不直接跳到下一集的页面</text>
+  <rect x="32" y="362" width="520" height="104" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="46" y="386" font-size="12.5" font-weight="700" fill="#96434f">跳页面，或者重建一台播放器 = 浏览器强制退出全屏</text>
+  <text x="46" y="408" font-size="11" fill="#96434f">原来选集格子就是整页跳转，所以全屏时想看下一集，</text>
+  <text x="46" y="426" font-size="11" fill="#96434f">只能先退出全屏、往下翻到选集、点完再重新全屏</text>
+  <text x="46" y="448" font-size="11" fill="#96434f">只加一个按钮、背后还是跳页面，等于没解决</text>
+  <rect x="568" y="362" width="520" height="104" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="582" y="386" font-size="12.5" font-weight="700" fill="#316247">全屏挂在这台播放器上，播放器不换，全屏就不掉</text>
+  <text x="582" y="408" font-size="11" fill="#316247">换集只换视频地址，跟主流视频站一样：黑一下、转一会儿就开播</text>
+  <text x="582" y="426" font-size="11" fill="#316247">只有页面刚打开、播放器还没建起来时，才退回整页跳转</text>
+  <text x="582" y="448" font-size="11" fill="#316247">不在全屏里的选集格子仍是整页跳转，行为不变</text>
+
+  <!-- 块 3：误触进度 -->
+  <text x="32" y="504" font-size="14" font-weight="700" fill="#282529">③ 控件收起时，点下面不再误跳进度</text>
+  <rect x="32" y="516" width="520" height="104" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="46" y="540" font-size="12.5" font-weight="700" fill="#96434f">之前：控件收起只是变透明，底栏照样能点</text>
+  <text x="46" y="562" font-size="11" fill="#96434f">刚开播想点全屏，控件正好收起来了，</text>
+  <text x="46" y="580" font-size="11" fill="#96434f">一点下去点在看不见的进度条上，直接跳到那个位置</text>
+  <text x="46" y="602" font-size="11" fill="#96434f">手机上最常见，因为手机没有「鼠标悬停就显示」</text>
+  <rect x="568" y="516" width="520" height="104" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="582" y="540" font-size="12.5" font-weight="700" fill="#316247">现在：收起时整条底栏不接点击</text>
+  <text x="582" y="562" font-size="11" fill="#316247">第一下点画面只是把控件叫出来，看得见了才能拖进度、点按钮</text>
+  <text x="582" y="580" font-size="11" fill="#316247">电脑上鼠标移上去控件就出现，操作跟以前一样</text>
+
+  <!-- 块 4：边界 -->
+  <text x="32" y="658" font-size="14" font-weight="700" fill="#282529">④ 边界情况</text>
+  <rect x="32" y="670" width="1056" height="132" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="46" y="694" font-size="11" fill="#7a6234"><tspan font-weight="700">最后一集</tspan>：▶| 不出现；断网时只在本机下完的集之间跳，没下的集不会跳过去黑屏</text>
+  <text x="46" y="716" font-size="11" fill="#7a6234"><tspan font-weight="700">连点两下</tspan>：只认最后一次，不会两集抢着播</text>
+  <text x="46" y="738" font-size="11" fill="#7a6234"><tspan font-weight="700">换集后再换站</tspan>：页面上方的换源按钮跟着换到新一集，不会跳回开页时那一集</text>
+  <text x="46" y="760" font-size="11" fill="#7a6234"><tspan font-weight="700">iPhone</tspan>：用的是系统自带的视频全屏，换地址仍在同一个视频上，按理不会退出，还没真机确认</text>
+  <text x="46" y="782" font-size="11" fill="#7a6234"><tspan font-weight="700">已验证</tspan>：本机网页全屏下 分片流 → 整个文件、整个文件 → 分片流、断网播本机下好的集，三种都不退出全屏、正常开播</text>
+
+  <text x="32" y="832" font-size="12" fill="#756f73">常见情况：同一部番前后集格式相同，点下一集就是「画面停一下 → 新一集开播」，看不到任何提示以外的变化</text>
+</svg>
