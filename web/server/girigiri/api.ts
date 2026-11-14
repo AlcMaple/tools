@@ -45,15 +45,28 @@ function mediaUrl(value: string): string {
   }
 }
 
-export interface GirigiriEpisode { number: number | null; name: string; episodeIndex: number; url: string }
+export interface GirigiriEpisode { number: number | null; name: string; episodeIndex: number; url: string; guessed: boolean }
 export interface GirigiriSource { source: number; sourceIndex: number; name: string; episodes: GirigiriEpisode[] }
 export interface GirigiriDetail { id: string; title: string; sources: GirigiriSource[] }
 
 function episodeNumber(name: string, count: number): number | null {
-  const match = name.match(/^(?:第\s*)?(\d+)\s*(?:[集话話期])?$/u)
+  // 先行放送的集会标成「先行01」「先行版 01」，仍是正片的那一集
+  const match = name.match(/^(?:先行(?:版|放送)?\s*)?(?:第\s*)?(\d+)\s*(?:[集话話期])?$/u)
   if (match) return positiveInt(match[1])
   // 单集电影常标「正片」，但 PV / OVA 等特殊条目不冒充正片集号。
   return count === 1 && /^(?:正片|全片|全集|HD|BD|高清|超清|1080P|720P|剧场版|劇場版)$/i.test(name) ? 1 : null
+}
+
+// 认不出的集名（「先行01」之外更怪的写法）不能直接丢：丢了第一集，选集就从第 2 集开始，用户找不到它。
+// 按列表位置补一个集号，只在这个号没被认出来的集占用时才补；播放页用原集名显示，不冒充普通集号
+function withGuessedNumbers(episodes: GirigiriEpisode[]): GirigiriEpisode[] {
+  const taken = new Set(episodes.flatMap((episode) => episode.number === null ? [] : [episode.number]))
+  return episodes.map((episode) => {
+    const position = episode.episodeIndex + 1
+    if (episode.number !== null || taken.has(position)) return episode
+    taken.add(position)
+    return { ...episode, number: position, guessed: true }
+  })
 }
 
 export function parseDetail(value: unknown, id: string): GirigiriDetail {
@@ -77,10 +90,14 @@ export function parseDetail(value: unknown, id: string): GirigiriDetail {
     const sourceIndex = sources.length
     sources.push({ source: sourceIndex + 1, sourceIndex,
       name: code === 'cht' ? '繁中' : code === 'chs' ? '简中' : code,
-      episodes: entries.map((entry, episodeIndex) => ({ name: entry.name, number: episodeNumber(entry.name, entries.length), episodeIndex, url: mediaUrl(entry.url) })),
+      episodes: withGuessedNumbers(entries.map((entry, episodeIndex) => ({ name: entry.name, number: episodeNumber(entry.name, entries.length), episodeIndex, url: mediaUrl(entry.url), guessed: false }))),
     })
   }
   return { id: id.toUpperCase(), title: text(data.vod_name), sources }
+}
+
+export function detailPageUrl(id: string): string {
+  return `${BASE_URL}/detail/${id.toUpperCase().slice(2)}`
 }
 
 export function sourcePageUrl(detail: GirigiriDetail, ep: number): string {

@@ -52,7 +52,7 @@ player.route('/', probe)
 
 interface Line { source: number; name: string }
 interface PlayLine { source: number; kind: 'mp4' | 'hls'; url: string; s: string }
-interface Playlist { title: string; lines: Line[]; first: PlayLine | null; eps: number[]; speeds: Record<number, number> }
+interface Playlist { title: string; lines: Line[]; first: PlayLine | null; eps: number[]; epLabels?: Record<number, string>; speeds: Record<number, number> }
 
 function sign(url: string): string {
   return createHmac('sha256', AUTH_SECRET).update('player-media:' + url).digest('base64url').slice(0, 32)
@@ -85,7 +85,7 @@ async function playlistOf(src: WebPlayerSource, id: string, ep: number, uid: num
     return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps, speeds: speedsFor(src, p.lines) }
   }
   const p = await girigiri.getPlaylist(id, ep)
-  return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps, speeds: speedsFor(src, p.lines) }
+  return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps, epLabels: p.epLabels, speeds: speedsFor(src, p.lines) }
 }
 
 async function lineOf(src: WebPlayerSource, id: string, ep: number, source: number, uid: number): Promise<PlayLine | null> {

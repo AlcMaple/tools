@@ -13,7 +13,7 @@ import {
   verifyGirigiriCaptcha,
 } from './girigiri/search'
 import { getSourcePageUrl, isGirigiriId } from './girigiri/resolve'
-import { GirigiriError } from './girigiri/api'
+import { GirigiriError, detailPageUrl } from './girigiri/api'
 
 const girigiri = new Hono()
 
@@ -26,7 +26,7 @@ function failure(c: Context, error: unknown): Response {
   }, status)
 }
 
-// 源站使用零基线路/选集索引，必须从真实列表查集号；缺集时不跳回第 1 集。
+// 源站使用零基线路/选集索引，必须从真实列表查集号；缺集时不跳回第 1 集，改送详情页
 girigiri.get('/source-page', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录' }, 401)
@@ -39,6 +39,11 @@ girigiri.get('/source-page', async (c) => {
   try {
     return c.redirect(await getSourcePageUrl(id, ep), 302)
   } catch (error) {
+    // 集名认不出来时用户还在源站流程里，送到该番详情页自己挑集，比一行 JSON 报错有用
+    if (error instanceof GirigiriError && error.code === 'GIRIGIRI_EPISODE_NOT_FOUND') {
+      console.warn(`[girigiri] ${id} 找不到第 ${ep} 集，转到详情页`)
+      return c.redirect(detailPageUrl(id), 302)
+    }
     return failure(c, error)
   }
 })

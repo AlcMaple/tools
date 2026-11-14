@@ -142,7 +142,7 @@ ${PLAYBACK_BEACON}
 
   // ——— 状态 ———
   var lines = [], eps = [], cur = null, resolved = {}, art = null, hls = null, emptyLines = {}
-  var goodEps = {}, goodNotes = {}
+  var goodEps = {}, goodNotes = {}, epLabels = {}
   var generation = 0
   var offlineAt = null, offlineTime = 0, offlineWasPlaying = false
   var RESUME_KEY = 'player:resume:' + src + ':' + id + ':' + ep
@@ -918,7 +918,8 @@ ${PLAYBACK_BEACON}
     eps.forEach(function(n){
       var b = document.createElement('button'); b.type = 'button'
       b.className = 'ep-cell' + (n === ep ? ' on' : '') + (goodEps[n] ? ' good' : '')
-      b.textContent = n
+      b.textContent = epLabels[n] || n
+      if (epLabels[n]){ b.title = '第 ' + n + ' 个 · ' + epLabels[n]; b.style.cssText = 'display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 6px;font-size:13px;line-height:44px' }
       b.onclick = function(){ if (n !== ep) goEp(n) }
       box.appendChild(b)
     })
@@ -962,7 +963,7 @@ ${PLAYBACK_BEACON}
       if (r.status >= 500 && await bootOffline('playlist ' + r.status)) return
       var d = await r.json()
       if (!r.ok || d.error){ fail('加载失败：' + (d.error || r.status), d.code, boot); return }
-      lines = d.lines || []; eps = d.eps || []
+      lines = d.lines || []; eps = d.eps || []; epLabels = d.epLabels || {}
       mergeSpeeds(d)
       cacheTitle = d.title || ''
       if (d.title){ $('ttl').textContent = d.title; document.title = d.title + ' · EP' + ep }
