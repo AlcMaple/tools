@@ -190,6 +190,10 @@ function ensureColumn(table: string, column: string, decl: string): void {
 // 网页端现在也要读写它，两处各存一份必然对不上（见 AGENTS「一份数据拆成两半」）。
 // 新旧稀饭编号并不对应；保留旧绑定但不拿它猜新站资源，待用户重新确认。
 ensureColumn('xifan_binding', 'source_version', "source_version TEXT NOT NULL DEFAULT 'legacy'")
+// 一个源站条目可能把几部番连在一起（Girigiri 的乱马1/2 = 本篇 18 集 + 热斗篇 143 集），
+// 绑定时记下这部番从合集第几集之后开始，追番卡片上的集数才能直接换算成源站集数
+ensureColumn('xifan_binding', 'ep_offset', 'ep_offset INTEGER NOT NULL DEFAULT 0')
+ensureColumn('girigiri_binding', 'ep_offset', 'ep_offset INTEGER NOT NULL DEFAULT 0')
 ensureColumn('tracks', 'observe_count', 'observe_count INTEGER NOT NULL DEFAULT 0')
 // 加入追番的时间 —— 追番「年份 / 季度」时间线按它归档。updated_at 每次编辑都会刷新，
 // 不能拿来归档。老记录没有真实加入时间，只能拿当时的 updated_at 兜底（偏晚），用户可在页面里改。

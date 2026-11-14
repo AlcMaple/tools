@@ -207,12 +207,14 @@ xifan.post('/locate', async (c) => {
 xifan.post('/bind', async (c) => {
   const s = await getSession(c)
   if (!s) return c.json({ error: '未登录' }, 401)
-  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; xifanId?: number; xifanName?: string }
+  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; xifanId?: number; xifanName?: string; epOffset?: unknown }
   const bgmId = Number(body.bgmId)
   const xifanId = Number(body.xifanId)
   if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
   if (!Number.isInteger(xifanId) || xifanId <= 0) return c.json({ error: 'xifanId 不合法' }, 400)
-  putBinding(bgmId, xifanId, String(body.xifanName ?? '').slice(0, 200))
+  const epOffset = body.epOffset == null ? 0 : Number(body.epOffset)
+  if (!Number.isInteger(epOffset) || epOffset < 0 || epOffset > 5000) return c.json({ error: 'epOffset 不合法' }, 400)
+  putBinding(bgmId, xifanId, String(body.xifanName ?? '').slice(0, 200), epOffset)
   return c.json({ ok: true, binding: getBinding(bgmId) })
 })
 
@@ -220,8 +222,10 @@ xifan.post('/bind', async (c) => {
 xifan.get('/bindings', async (c) => {
   const s = await getSession(c)
   if (!s) return c.json({ data: {} }) // 未登录没有追番，空即可，不当错误
-  const rows = db.prepare('SELECT bgm_id FROM tracks WHERE user_id = ?').all(s.uid) as { bgm_id: number }[]
-  return c.json({ data: bindingsFor(rows.map((r) => r.bgm_id)) })
+  const rows = db.prepare('SELECT bgm_id, total_episodes FROM tracks WHERE user_id = ?').all(s.uid) as { bgm_id: number; total_episodes: number | null }[]
+  const data = bindingsFor(rows.map((r) => r.bgm_id))
+  for (const r of rows) if (data[r.bgm_id]) data[r.bgm_id].episodes = r.total_episodes
+  return c.json({ data })
 })
 
 export default xifan

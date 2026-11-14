@@ -31,3 +31,22 @@ export function watchEp(t: Track): number {
   const n = t.totalEpisodes != null ? Math.min(t.totalEpisodes, t.episode) : t.episode
   return Math.max(1, n)
 }
+
+// 源站条目可能是几部番的合集，卡片集数要加上这部番在合集里的起点；老缓存里没有偏移按 0 算
+export function sourceEp(ep: number, binding: { epOffset?: number } | undefined): number {
+  return ep + (binding?.epOffset ?? 0)
+}
+
+// 同一源站条目已被追番里的另一部绑过时，新绑的这部默认接在它后面（取已知最远的结尾）
+export function suggestEpOffset(
+  bindings: Record<number, { id: string; epOffset?: number; episodes?: number | null }>,
+  bgmId: number,
+  sourceId: string,
+): number {
+  let offset = 0
+  for (const [key, b] of Object.entries(bindings)) {
+    if (Number(key) === bgmId || b.id !== sourceId || !b.episodes) continue
+    offset = Math.max(offset, (b.epOffset ?? 0) + b.episodes)
+  }
+  return offset
+}

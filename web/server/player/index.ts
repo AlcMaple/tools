@@ -31,7 +31,7 @@ import { AUTH_SECRET } from '../secrets'
 import { playerPageSecurity, renderNonce } from '../security'
 import { captureClientLog } from '../monitoring'
 import { sanitizeSentryUser } from '../../shared/sentry-user'
-import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources, type WebPlayerSource } from '../player-sources'
+import { parsePlayerBgmId, playerEpOffset, playerSourceOptions, serializePlayerSources, type WebPlayerSource } from '../player-sources'
 import { serveStream } from '../xifan/stream'
 import { schedulePrefetch, serveFromDisk, warmDisk } from '../xifan/disk'
 import { canProxy } from '../xifan/proxy-hosts'
@@ -420,7 +420,7 @@ player.get('/page', async (c) => {
     PLAY_PAGE
       .replace('__PLAYER_SOURCES__', serializePlayerSources(playerSourceOptions(args.src, args.id, args.ep, bgmId)))
       .replace('__MONITOR_CONFIG__', inlineJson(monitor))
-      .replace('__PAGE_ARGS__', inlineJson({ src: args.src, id: args.id, ep: args.ep, bgmId })),
+      .replace('__PAGE_ARGS__', inlineJson({ src: args.src, id: args.id, ep: args.ep, bgmId, epOffset: playerEpOffset(args.src, args.id, bgmId) })),
   )
   playerPageSecurity(c, page.nonce, { inlineStyles: true })
   c.header('Referrer-Policy', 'no-referrer')

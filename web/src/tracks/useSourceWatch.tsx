@@ -12,7 +12,7 @@ import { SOURCES, sourceById } from '../api'
 import { isRecentAir } from '../../shared/anime-age'
 import { useAuth } from '../auth'
 import { loadBindings, saveBindingsCache } from '../tracksSync'
-import { watchEp } from './common'
+import { sourceEp, suggestEpOffset, watchEp } from './common'
 import { SourceBindPickerModal, SourceSearchModal, type PickerFlow, type SearchFlow } from './sourceModals'
 
 // 「继续看 / 试看」的共用流程：源绑定表、片源定位、候选 / 搜索弹窗。
@@ -67,9 +67,10 @@ export function useSourceWatch(onError: (message: string) => void): {
     // rebind = 用户在弹窗里点了「不对，重认」，跳过已有绑定，重新挑选。
     const bound = bindings[source.id][t.bgmId]
     if (bound && !rebind) {
+      const ep = sourceEp(watchEp(t), bound)
       const url = mode === 'source'
-        ? source.sourcePageUrl(bound.id, watchEp(t))
-        : source.playPageUrl(bound.id, watchEp(t), t.bgmId)
+        ? source.sourcePageUrl(bound.id, ep)
+        : source.playPageUrl(bound.id, ep, t.bgmId)
       window.open(url, '_blank', 'noopener')
       return
     }
@@ -87,7 +88,8 @@ export function useSourceWatch(onError: (message: string) => void): {
         if (r.bound && !rebind) {
           // 极少见：加载后别的用户刚绑上 → 记下来（卡片下次即变链接），并尽力开一下
           const b = r.bound
-          setBindings((prev) => ({ ...prev, [source.id]: { ...prev[source.id], [t.bgmId]: { id: b.id, name: b.name } } }))
+          // locate 不带偏移和集数；拿到的是别人刚建的绑定，下次整份刷新时再补齐
+          setBindings((prev) => ({ ...prev, [source.id]: { ...prev[source.id], [t.bgmId]: { id: b.id, name: b.name, epOffset: 0, episodes: t.totalEpisodes } } }))
           const url = mode === 'source'
             ? source.sourcePageUrl(b.id, watchEp(t))
             : source.playPageUrl(b.id, watchEp(t), t.bgmId)
@@ -102,12 +104,16 @@ export function useSourceWatch(onError: (message: string) => void): {
       .finally(() => { if (locateRequest.current === controller) setLocating(null) })
   }
 
+  const offsetFor = (source: SourceId, bgmId: number) => (id: string): number => suggestEpOffset(bindings[source], bgmId, id)
+
   // 用户在选择框点了某个候选 = 确认绑定：落库 + 本地记下（卡片即变链接）。开播由候选行自身的链接完成。
-  const confirmBind = (source: OnlineSource, bgmId: number, cand: SourceCandidate): void => {
+  const confirmBind = (source: OnlineSource, t: Track, cand: SourceCandidate): void => {
+    const bgmId = t.bgmId
     const previous = bindings[source.id][bgmId]
-    setBindings((prev) => ({ ...prev, [source.id]: { ...prev[source.id], [bgmId]: { id: cand.id, name: cand.name } } }))
+    const epOffset = offsetFor(source.id, bgmId)(cand.id)
+    setBindings((prev) => ({ ...prev, [source.id]: { ...prev[source.id], [bgmId]: { id: cand.id, name: cand.name, epOffset, episodes: t.totalEpisodes } } }))
     setPickerFlow(null)
-    void source.bind(bgmId, cand.id, cand.name).catch((e: Error) => {
+    void source.bind(bgmId, cand.id, cand.name, epOffset).catch((e: Error) => {
       setError(e.message)
       setBindings((prev) => {
         const nextSrc = { ...prev[source.id] }
@@ -125,7 +131,7 @@ export function useSourceWatch(onError: (message: string) => void): {
     if (!flow) return
     const remarks = [hit.episode, hit.year, hit.area].filter(Boolean).join(' · ')
     setSearchFlow(null)
-    confirmBind(source, flow.track.bgmId, { id: hit.id, name: hit.name, day: 0, remarks, score: 0 })
+    confirmBind(source, flow.track, { id: hit.id, name: hit.name, day: 0, remarks, score: 0 })
   }
 
   const modals = (
@@ -134,7 +140,8 @@ export function useSourceWatch(onError: (message: string) => void): {
         <SourceBindPickerModal
           source={sourceById(pickerFlow.source)}
           flow={pickerFlow}
-          onPick={(cand) => confirmBind(sourceById(pickerFlow.source), pickerFlow.track.bgmId, cand)}
+          offsetFor={offsetFor(pickerFlow.source, pickerFlow.track.bgmId)}
+          onPick={(cand) => confirmBind(sourceById(pickerFlow.source), pickerFlow.track, cand)}
           onSearch={() => {
             setSearchFlow({ source: pickerFlow.source, track: pickerFlow.track, mode: pickerFlow.mode, agentAction: pickerFlow.agentAction })
             setPickerFlow(null)
@@ -147,6 +154,7 @@ export function useSourceWatch(onError: (message: string) => void): {
         <SourceSearchModal
           source={sourceById(searchFlow.source)}
           flow={searchFlow}
+          offsetFor={offsetFor(searchFlow.source, searchFlow.track.bgmId)}
           onPick={(hit) => confirmSearchBind(sourceById(searchFlow.source), hit)}
           onClose={() => setSearchFlow(null)}
         />

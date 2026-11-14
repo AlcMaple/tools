@@ -88,7 +88,7 @@ export const PLAY_PAGE = `<!doctype html>
   var $ = function(id){ return document.getElementById(id) }
   var ARGS = __PAGE_ARGS__
   var sourceOptions = __PLAYER_SOURCES__
-  var src = ARGS.src, id = ARGS.id, ep = ARGS.ep, bgmId = ARGS.bgmId
+  var src = ARGS.src, id = ARGS.id, ep = ARGS.ep, bgmId = ARGS.bgmId, epOffset = ARGS.epOffset || 0
 ${PLAYBACK_BEACON}
   agentReport('page_ready', 'ep ' + ep)
 
@@ -942,19 +942,19 @@ ${PLAYBACK_BEACON}
     if (!bgmId) return Promise.resolve()
     return fetch('/api/tracks/' + bgmId + '/good-episodes', { cache: 'no-store' })
       .then(function(r){ return r.ok ? r.json() : null })
-      .then(function(d){ if (!d) return; (d.goodEpisodes || []).forEach(function(n){ goodEps[n] = true }); goodNotes = d.goodEpisodeNotes || {} })
+      .then(function(d){ if (!d) return; (d.goodEpisodes || []).forEach(function(n){ goodEps[n + epOffset] = true }); goodNotes = d.goodEpisodeNotes || {} })
       .catch(function(){})
   }
   function renderGoodNote(){
     var box = $('epgood')
     if (!goodEps[ep]){ box.classList.remove('show'); box.textContent = ''; return }
-    box.textContent = goodNotes[ep] ? ('这集我标过好看：' + goodNotes[ep]) : '这集我标过好看，就是没留下备注'
+    box.textContent = goodNotes[ep - epOffset] ? ('这集我标过好看：' + goodNotes[ep - epOffset]) : '这集我标过好看，就是没留下备注'
     box.classList.add('show')
   }
 
   async function boot(){
     renderSources()
-    $('epbadge').textContent = 'EP ' + ep
+    $('epbadge').textContent = 'EP ' + ep + (epOffset && ep > epOffset ? ' · 本番第 ' + (ep - epOffset) + ' 集' : '')
     renderEps()
     var good = loadGoodEpisodes()
     try {

@@ -38,12 +38,14 @@ function linkFor(source: OnlineSource, mode: WatchMode, id: string, ep: number, 
 export function SourceBindPickerModal({
   source,
   flow,
+  offsetFor,
   onPick,
   onSearch,
   onClose,
 }: {
   source: OnlineSource
   flow: PickerFlow
+  offsetFor: (id: string) => number
   onPick: (cand: SourceCandidate) => void
   onSearch: () => void
   onClose: () => void
@@ -81,11 +83,11 @@ export function SourceBindPickerModal({
 
         {/* candidates 必非空：零候选由上层直接落到搜索弹窗，不会走到这里 */}
         <div className="cand-list custom-scrollbar">
-          {candidates.map((c) => (
+          {candidates.map((c) => { const offset = offsetFor(c.id); return (
             <a
               key={c.id}
               className="sugg-item"
-              href={linkFor(source, mode, c.id, ep, track.bgmId, agentAction)}
+              href={linkFor(source, mode, c.id, ep + offset, track.bgmId, agentAction)}
               target="_blank"
               rel="noreferrer"
               onClick={() => onPick(c)}
@@ -96,10 +98,11 @@ export function SourceBindPickerModal({
               <span className="sugg-meta">
                 {c.day ? `周${SHORT_DAY[c.day]}` : ''}
                 {c.remarks ? `${c.day ? ' · ' : ''}${c.remarks.replace('|', ' · ')}` : ''}
+                {offset > 0 ? `${c.day || c.remarks ? ' · ' : ''}合集第 ${ep + offset} 集` : ''}
               </span>
               <Ic name="play" cls="ic ic-sm" />
             </a>
-          ))}
+          )})}
         </div>
 
         <button className="btn btn-sm btn-ghost btn-block mt16" type="button" onClick={onSearch}>
@@ -116,11 +119,13 @@ type SearchStatus = 'searching' | 'captcha' | 'verifying' | 'results' | 'error'
 export function SourceSearchModal({
   source,
   flow,
+  offsetFor,
   onPick,
   onClose,
 }: {
   source: OnlineSource
   flow: SearchFlow
+  offsetFor: (id: string) => number
   onPick: (hit: SourceSearchHit) => void
   onClose: () => void
 }): JSX.Element {
@@ -370,12 +375,13 @@ export function SourceSearchModal({
               <p className="field-label mb16">搜索结果 · {results.length} 部</p>
               <div className="cand-list custom-scrollbar" style={{ maxHeight: '45vh' }}>
                 {results.map((hit) => {
-                  const meta = [hit.episode, hit.year, hit.area].filter(Boolean).join(' · ')
+                  const offset = offsetFor(hit.id)
+                  const meta = [hit.episode, hit.year, hit.area, offset > 0 ? `合集第 ${ep + offset} 集` : ''].filter(Boolean).join(' · ')
                   return (
                     <a
                       key={hit.id}
                       className="sugg-item"
-                      href={linkFor(source, mode, hit.id, ep, track.bgmId, agentAction)}
+                      href={linkFor(source, mode, hit.id, ep + offset, track.bgmId, agentAction)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => onPick(hit)}

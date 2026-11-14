@@ -5,7 +5,7 @@ import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
 import { SeasonStamp } from './SeasonStamp'
-import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast, watchEp } from './common'
+import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast, sourceEp, watchEp } from './common'
 import {
   clampEpisode,
   episodeFromDrag,
@@ -822,7 +822,7 @@ export function WatchSourceDialog({ ep, bound, title, onClose, onPick }: {
                       {b
                         ? (
                           <>
-                            <span className="wsrc-bound" title={`已认作《${b.name}》`}>《{b.name}》</span>
+                            <span className="wsrc-bound" title={`已认作《${b.name}》`}>《{b.name}》{sourceEp(ep, b) !== ep ? ` 第 ${sourceEp(ep, b)} 集` : ''}</span>
                             <button type="button" className="wsrc-relink" onClick={() => rebind(s.id)} title="认错了？重新挑一个">
                               不对，重认
                             </button>

@@ -101,20 +101,24 @@ girigiri.post('/locate', async (c) => {
 girigiri.post('/bind', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录' }, 401)
-  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; girigiriId?: unknown; girigiriName?: unknown }
+  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; girigiriId?: unknown; girigiriName?: unknown; epOffset?: unknown }
   const bgmId = Number(body.bgmId)
   const id = typeof body.girigiriId === 'string' ? body.girigiriId.trim().toUpperCase() : ''
   if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
   if (!isGirigiriId(id)) return c.json({ error: 'girigiriId 不合法' }, 400)
-  putBinding(bgmId, id, String(body.girigiriName ?? '').slice(0, 200))
+  const epOffset = body.epOffset == null ? 0 : Number(body.epOffset)
+  if (!Number.isInteger(epOffset) || epOffset < 0 || epOffset > 5000) return c.json({ error: 'epOffset 不合法' }, 400)
+  putBinding(bgmId, id, String(body.girigiriName ?? '').slice(0, 200), epOffset)
   return c.json({ ok: true, binding: getBinding(bgmId) })
 })
 
 girigiri.get('/bindings', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ data: {} })
-  const rows = db.prepare('SELECT bgm_id FROM tracks WHERE user_id = ?').all(session.uid) as { bgm_id: number }[]
-  return c.json({ data: bindingsFor(rows.map((row) => row.bgm_id)) })
+  const rows = db.prepare('SELECT bgm_id, total_episodes FROM tracks WHERE user_id = ?').all(session.uid) as { bgm_id: number; total_episodes: number | null }[]
+  const data = bindingsFor(rows.map((row) => row.bgm_id))
+  for (const row of rows) if (data[row.bgm_id]) data[row.bgm_id].episodes = row.total_episodes
+  return c.json({ data })
 })
 
 export default girigiri
