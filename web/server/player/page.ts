@@ -483,7 +483,13 @@ ${PLAYBACK_BEACON}
       if (!art || art.video !== v) return
       governBg(v)
       var now = performance.now(), t = v.currentTime
-      if (v.paused || v.ended){ if (!v.seeking) setBuffering(v, false); lastT = t; lastTAt = now; return }
+      if (v.paused || v.ended){
+        if (!v.seeking) setBuffering(v, false)
+        // 带 autoplay 开的页，iPhone 不让有声自动播：已拿到时长、停在暂停上，ArtPlayer 的圈却要等 canplay 才收，
+        // 用户看到的是一直转圈，其实点播放就能起（真机 11-15 ep6）。拿到时长后的暂停一律不转圈
+        if (!v.seeking && v.readyState >= 1 && art.loading.show && !$('buf').classList.contains('show')) art.loading.show = false
+        lastT = t; lastTAt = now; return
+      }
       if (t !== lastT){
         if (stallSince && !stallReported && now - stallSince > 1500) slog('stall recovered after ' + Math.round(now - stallSince) + 'ms ' + snapshot(v))
         if (stallSince && now - stallSince > 1500) qosStall(now - stallSince, stallSince)
@@ -774,7 +780,7 @@ ${PLAYBACK_BEACON}
   }
 
   // 播放出错：不换线、不探测。只区分「断网」和「这条线路真坏了」，两种都给用户一个明确的出口。
-  var autoRetries = 0, bootFirst = null
+  var autoRetries = 0, bootFirst = null, retryWait = false
   // 每个播放页（一集）只触发一次下一集预取；换线重挂播放器也不再发
   var nextAsked = false
   function onMediaError(why){
@@ -802,10 +808,14 @@ ${PLAYBACK_BEACON}
     }
     // 源站建连慢时服务端偶尔还是会 502 → code=4。第一次别急着红框，等 2 秒自己重挂一次（保留进度），
     // 第二次才把「重试」交给用户。换线 / 换集会把计数清零。
+    // 重挂用 swapSource 不用 mount：整台重建会退出全屏、画面黑掉（真机 11-15 ep7 播到 19:45 解码出错 code=3，重挂后被踢出全屏）。
+    // 等待的 2 秒里同一个源再冒的错（hls.js 跟着报 fragLoadError）不算第二次
+    if (retryWait) return
     if (autoRetries < 1){
       autoRetries++
       setBuffering(v, true, '线路没响应，正在重试')
-      setTimeout(function(){ if (cur === pl) mount(pl, at, true) }, 2000)
+      retryWait = true
+      setTimeout(function(){ retryWait = false; if (cur === pl) swapSource(pl, at, true, '线路没响应，正在重试') }, 2000)
       return
     }
     fail('这条线路播放出错（' + why + '）', 'MEDIA_ERROR', function(){ autoRetries = 0; mount(pl, at, true) })
@@ -1011,7 +1021,9 @@ ${PLAYBACK_BEACON}
     // 原地换集：同一台播放器换地址（保住全屏），用户刚点了下一集所以直接播
     var start = inPlace === true
       ? function(pl){ if (req === epRequest) swapSource(pl, 0, true, '换集中') }
-      : function(pl, at, playing){ if (req === epRequest) mount(pl, at, playing) }
+      // 整页打开一律不自动播：跳页后 iPhone 不认上一页那下点击，有声自动播会被拦，停在暂停上还一直转圈（真机 11-15 ep6）。
+      // 续播只回到原时间点，等用户点播放
+      : function(pl, at){ if (req === epRequest) mount(pl, at, false) }
     renderSources()
     $('epbadge').textContent = 'EP ' + ep + (epOffset && ep > epOffset ? ' · 本番第 ' + (ep - epOffset) + ' 集' : '')
     renderEps()

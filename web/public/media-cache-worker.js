@@ -155,7 +155,9 @@ async function writeFile(dir, name, bytes) {
 async function writeFileAtomic(dir, name, bytes) {
   await writeFile(dir, 't' + name, bytes)
   const tmp = await dir.getFileHandle('t' + name)
-  if (typeof tmp.move === 'function') { await tmp.move(name); return }
+  // Safari 的 move 要求「目标目录, 新名字」两个参数，只传名字会抛 Not enough arguments（真机 11-15：iPhone 上 HLS 一片都存不下来，
+  // 被当成传输中断连试 3 次后整集放弃）。两个参数的写法 Chrome 也认
+  if (typeof tmp.move === 'function') { await tmp.move(dir, name); return }
   await writeFile(dir, name, bytes)
   await dir.removeEntry('t' + name)
 }
