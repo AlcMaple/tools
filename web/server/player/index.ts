@@ -112,6 +112,13 @@ function resolveFailure(c: Context, error: unknown): Response {
   if (error instanceof GirigiriError) {
     return c.json({ error: message, code: error.code, upstreamStatus: error.upstreamStatus }, error.upstreamStatus === 429 ? 429 : 502)
   }
+  // undici 连不上源站时只抛一句「fetch failed」，原因在 cause 里。原样透给页面，用户分不清是本站坏了还是源站连不上
+  if (error instanceof TypeError && message === 'fetch failed') {
+    const site = c.req.query('src') === 'girigiri' ? 'Girigiri' : '稀饭'
+    const detail = String(cause ?? '')
+    const why = /timeout/i.test(detail) ? '连接超时' : /closed|reset|terminated/i.test(detail) ? '连接被断开' : '连不通'
+    return c.json({ error: `本站连不上 ${site}（${why}），稍后点重试`, code: 'UPSTREAM_UNREACHABLE' }, 502)
+  }
   return c.json({ error: message }, 502)
 }
 

@@ -670,9 +670,13 @@ ${PLAYBACK_BEACON}
             var noRetry = { maxNumRetry: 0, retryDelayMs: 0, maxRetryDelayMs: 0 }
             // 本地缓存的分片要等下载器整片落盘才回头，首字节天然比直连晚，放宽等待；不加重试。
             var policy = { default: { maxTimeToFirstByteMs: local ? 30000 : 10000, maxLoadTimeMs: local ? 45000 : 30000, timeoutRetry: noRetry, errorRetry: noRetry } }
-            hls = new Hls({ maxBufferLength: 90, maxMaxBufferLength: 120, backBufferLength: 60,
+            hls = new Hls({ fLoader: tsCheckLoader(), maxBufferLength: 90, maxMaxBufferLength: 120, backBufferLength: 60,
               manifestLoadPolicy: policy, playlistLoadPolicy: policy, keyLoadPolicy: policy, fragLoadPolicy: policy })
+            hls.on(Hls.Events.BUFFER_CODECS, function(e, d){
+              slog('hls codecs ' + Object.keys(d).map(function(k){ return k + '=' + (d[k] && d[k].codec) }).join(' ') + ' mms=' + !!window.ManagedMediaSource)
+            })
             hls.on(Hls.Events.ERROR, function(e, data){
+              if (gen === generation && data && data.type === 'mediaError') slog('hls media ' + data.details + ' fatal=' + data.fatal + ' ' + (data.error && data.error.message || '') + (data.frag ? ' sn=' + data.frag.sn : ''))
               if (gen === generation && data && data.fatal) onMediaError('hls ' + data.type + '/' + data.details)
             })
             hls.loadSource(url); hls.attachMedia(video)
@@ -737,6 +741,34 @@ ${PLAYBACK_BEACON}
     art.on('ready', function(){ if (!autoplay) art.loading.show = false; agentReport('player_ready', 'line ' + pl.source); renderNextBtn() })
   }
 
+  // TS 分片长度不是 188 的整数倍 = 被截断了。真机 11-15 飙马野郎 ep1：iPhone 那条 CDN 线路对第 4 片只给 1638400 字节（完整 2119136）
+  // 且正常结束，hls.js 照单全收，播到 39 秒解码出错黑屏。同一地址再取多半还是那份，换个参数重取一次；还不完整就照原样交出去，由出错处理接手
+  function tsCheckLoader(){
+    var Base = Hls.DefaultConfig.loader
+    return function(config){
+      var inner = new Base(config), self = this
+      self.context = null; self.stats = inner.stats
+      self.load = function(ctx, cfg, cbs){
+        self.context = ctx
+        inner.load(ctx, cfg, Object.assign({}, cbs, { onSuccess: function(res, stats, c, net){
+          var d = res && res.data
+          var bad = d && d.byteLength >= 188 && d.byteLength % 188 !== 0 && new Uint8Array(d, 0, 1)[0] === 0x47
+          if (!bad || ctx.mtBusted) return cbs.onSuccess(res, stats, c, net)
+          slog('ts truncated ' + d.byteLength + 'B url=' + ctx.url)
+          ctx.mtBusted = true
+          var retry = Object.assign({}, ctx, { url: ctx.url + (ctx.url.indexOf('?') < 0 ? '?' : '&') + '_mt=' + Date.now() })
+          inner.destroy(); inner = new Base(config); self.stats = inner.stats
+          self.load(retry, cfg, cbs)
+        } }))
+        self.stats = inner.stats
+      }
+      self.abort = function(){ inner.abort() }
+      self.destroy = function(){ inner.destroy() }
+      self.getCacheAge = function(){ return inner.getCacheAge ? inner.getCacheAge() : null }
+      self.getResponseHeader = function(n){ return inner.getResponseHeader ? inner.getResponseHeader(n) : null }
+    }
+  }
+
   function freezeFrame(v){
     if (!v.videoWidth || v.readyState < 2) return
     try {
@@ -780,7 +812,7 @@ ${PLAYBACK_BEACON}
   }
 
   // 播放出错：不换线、不探测。只区分「断网」和「这条线路真坏了」，两种都给用户一个明确的出口。
-  var autoRetries = 0, bootFirst = null, retryWait = false
+  var autoRetries = 0, bootFirst = null, retryWait = false, decodeFix = { gen: -1, n: 0, at: 0 }
   // 每个播放页（一集）只触发一次下一集预取；换线重挂播放器也不再发
   var nextAsked = false
   function onMediaError(why){
@@ -789,6 +821,35 @@ ${PLAYBACK_BEACON}
     slog('media error ' + why + ' ' + snapshot(v) + ' url=' + cur.url, true)
     var at = v.currentTime || 0, pl = cur
     if (!navigator.onLine){ holdForNetwork(); return }
+    // hls.js 的解码错按它官方做法原地恢复：先 recoverMediaError，再不行换音频编码再恢复，都在同一个 <video> 上，不黑屏不换源。
+    // 数据本身坏了（如 11-15 飙马野郎 ep1 第 4 片被截断）原地恢复救不回来，4 秒没走过出错点就照原来的路退回
+    if (hls && (v.error && v.error.code === 3 || /mediaError/.test(why))){
+      if (decodeFix.gen !== generation) decodeFix = { gen: generation, n: 0, at: 0 }
+      var nowMs = performance.now()
+      // 同一次解码错 <video> 和 hls.js 各报一遍，1 秒内的算同一次
+      if (nowMs - decodeFix.at < 1000) return
+      if (nowMs - decodeFix.at > 60000) decodeFix.n = 0
+      if (decodeFix.n < 2){
+        decodeFix.n++; decodeFix.at = nowMs
+        slog('decode recover #' + decodeFix.n + ' t=' + at.toFixed(1))
+        var wasPlaying = !v.paused, g = generation, n = decodeFix.n
+        try {
+          if (n === 2) hls.swapAudioCodec()
+          hls.recoverMediaError()
+          // 恢复会重建 MediaSource，<video> 停在暂停、不再报错，看门狗只盯播放中的卡顿，于是一直黑着（真机 11-15 第 39 秒）。
+          // 自己接着播，4 秒内没走过出错点就当这一步没救回来，进下一步
+          if (wasPlaying) v.play().catch(function(){})
+          setTimeout(function(){
+            if (g !== generation || decodeFix.n !== n || !art || art.video !== v) return
+            if (v.currentTime > at + .5) { slog('decode recover #' + n + ' ok t=' + v.currentTime.toFixed(1)); return }
+            slog('decode recover #' + n + ' stuck t=' + v.currentTime.toFixed(1) + ' ' + snapshot(v))
+            decodeFix.at = 0
+            onMediaError('decode stuck mediaError')
+          }, 4000)
+          return
+        } catch (e){ slog('decode recover failed ' + (e && e.message)) }
+      }
+    }
     if (pl.localHash && !pl.source && bootFirst){
       // 开播直接用了本机下完的那份（可能是别的线路 / 别的站下的），坏了就回到正常挑线路
       localOff = true

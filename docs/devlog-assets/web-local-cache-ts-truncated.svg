@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 812" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="810" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">每次播到 39 秒就黑屏：源站给的那一片后半截是空的，现在当场认出来、换一份重取</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：坏在 iPhone 那条网络路线上的视频服务器缓存，不是我们存坏的；改后手机自己发现、9 秒补完这一片，用户无感（11-15 飙马野郎 ep1 真机）</text>
+
+  <!-- 一、用户看到的 -->
+  <rect x="32" y="84" width="1056" height="150" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、用户看到的：从头看飙马野郎第 1 集</text>
+
+  <text x="56" y="142" font-size="12.5" font-weight="700" fill="#96434f">改前</text>
+  <rect x="110" y="128" width="300" height="22" rx="6" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="120" y="143" font-size="11" fill="#316247">0～39 秒正常播放</text>
+  <rect x="414" y="128" width="644" height="22" rx="6" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="424" y="143" font-size="11" fill="#96434f">39 秒画面和声音一起没了，一直黑着；刷新、重进、读本机都一样，每次停在同一秒</text>
+
+  <text x="56" y="186" font-size="12.5" font-weight="700" fill="#316247">改后</text>
+  <rect x="110" y="172" width="948" height="22" rx="6" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="120" y="187" font-size="11" fill="#316247">一直播过去，没有任何提示；手机在后台把坏的那一片删掉重下，9 秒补完</text>
+  <text x="56" y="218" font-size="11" fill="#756f73">电脑上一直测不出来：电脑走的是另一条网络路线，拿到的是完整的那份</text>
+
+  <!-- 二、背后在做的 -->
+  <rect x="32" y="250" width="1056" height="262" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="276" font-size="14" font-weight="700" fill="#353136">二、背后在做的：第 4 片（32～42 秒）</text>
+
+  <rect x="52" y="292" width="320" height="96" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="68" y="314" font-size="12.5" font-weight="700" fill="#4a4450">源站完整的这一片</text>
+  <text x="68" y="336" font-size="11" fill="#4a4450">2119136 字节</text>
+  <text x="68" y="354" font-size="11" fill="#4a4450">电脑、服务器反复取 13 次都是这份</text>
+  <text x="68" y="372" font-size="11" fill="#4a4450">正好是 188 字节小包的整数倍</text>
+
+  <rect x="400" y="292" width="320" height="96" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="416" y="314" font-size="12.5" font-weight="700" fill="#96434f">iPhone 那条路线拿到的</text>
+  <text x="416" y="336" font-size="11" fill="#96434f">1638400 字节，后面约 2.4 秒的内容没有</text>
+  <text x="416" y="354" font-size="11" fill="#96434f">传输「正常结束」，不报任何错</text>
+  <text x="416" y="372" font-size="11" fill="#96434f">不是 188 的整数倍</text>
+
+  <rect x="748" y="292" width="320" height="96" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="764" y="314" font-size="12.5" font-weight="700" fill="#96434f">改前：两条路都照单全收</text>
+  <text x="764" y="336" font-size="11" fill="#96434f">下载器存进手机，以后每次都读这份</text>
+  <text x="764" y="354" font-size="11" fill="#96434f">直接在线播也拿到同一份</text>
+  <text x="764" y="372" font-size="11" fill="#96434f">播到 39 秒没有数据，解码出错</text>
+
+  <text x="52" y="418" font-size="12.5" font-weight="700" fill="#316247">改后</text>
+  <rect x="110" y="402" width="230" height="26" rx="6" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="122" y="419" font-size="11" fill="#36566d">拿到一片，先量长度</text>
+  <line x1="340" y1="415" x2="372" y2="415" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="376" y="402" width="250" height="26" rx="6" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="388" y="419" font-size="11" fill="#7a6234">不是 188 的整数倍：认定被截断</text>
+  <line x1="626" y1="415" x2="658" y2="415" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="662" y="402" width="400" height="26" rx="6" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="674" y="419" font-size="11" fill="#316247">地址后加个参数重取一次，拿到完整的才存、才交给播放器</text>
+
+  <rect x="110" y="440" width="952" height="56" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="126" y="461" font-size="11" fill="#4a4450">· 下载器：坏片不存；以前已经存进手机的坏片，打开这一集时查出来删掉重下，已下完的集也查</text>
+  <text x="126" y="480" font-size="11" fill="#4a4450">· 播放器：不读本机、直接在线播时同样量一次，坏了就加参数重取；重取还是坏的就照原样交出去，走原来的出错处理</text>
+
+  <!-- 三、为什么这样做 -->
+  <rect x="32" y="528" width="1056" height="264" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="554" font-size="14" font-weight="700" fill="#353136">三、为什么这样做（容易改错的地方）</text>
+
+  <rect x="52" y="570" width="500" height="100" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="68" y="592" font-size="12.5" font-weight="700" fill="#7a6234">为什么不跟源站比对，只量长度</text>
+  <text x="68" y="614" font-size="11" fill="#7a6234">手机不知道「完整的应该多大」，源站也给不出标准答案：</text>
+  <text x="68" y="632" font-size="11" fill="#7a6234">坏的那份就是它自己给的。这种视频格式由 188 字节的</text>
+  <text x="68" y="650" font-size="11" fill="#7a6234">小包首尾相接，量一下长度就能当场认出，不多发请求</text>
+
+  <rect x="568" y="570" width="500" height="100" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="584" y="592" font-size="12.5" font-weight="700" fill="#7a6234">为什么重取要加参数</text>
+  <text x="584" y="614" font-size="11" fill="#7a6234">坏的那份存在视频服务器离手机近的那个节点里，</text>
+  <text x="584" y="632" font-size="11" fill="#7a6234">原地址再取多少次都是它。加参数等于换个地址，</text>
+  <text x="584" y="650" font-size="11" fill="#7a6234">节点只能回源拿完整的；只重取一次，不循环</text>
+
+  <rect x="52" y="682" width="1016" height="94" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="68" y="704" font-size="12.5" font-weight="700" fill="#96434f">排查时走过的弯路：一度以为是播放器参数，其实是「哪一刻拿到哪份」</text>
+  <text x="68" y="726" font-size="11" fill="#96434f">在 iPhone 上逐组对照实验，同样的参数有时过、有时不过；最后发现只要这一片放进播放器后缓冲只到 39.0 秒（正常 41.4 秒）就必失败，</text>
+  <text x="68" y="744" font-size="11" fill="#96434f">再逐片比对手机里存的和源站的，只有第 4 片对不上。以后遇到「每次停在同一秒」，先比对那一片的字节，不要先调参数</text>
+  <text x="68" y="764" font-size="11" fill="#756f73">只覆盖这类小包格式的分片（Girigiri、稀饭的 HLS 线路都是）；另一种分片格式不查</text>
+</svg>
