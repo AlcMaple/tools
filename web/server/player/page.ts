@@ -208,8 +208,8 @@ ${PLAYBACK_BEACON}
     return !!(r && Date.now() - r.at < WEEK)
   }
   function noteSpeed(host, bps){
-    // Girigiri 所有线路在同一个源站，没得挑，服务端也不收
-    if (src !== 'xifan' || !host || !(bps > 0) || Date.now() - speedSentAt < 4000) return
+    // 样本只来自缓存下载器顺带量到的字节；服务端只收登记过的源站
+    if (!host || !(bps > 0) || Date.now() - speedSentAt < 4000) return
     speedSentAt = Date.now()
     fetch('/api/player/line-speed', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ src: src, host: host, bps: Math.round(bps) }), keepalive: true })
       .then(function(r){ if (!r.ok) slog('line speed rejected ' + host + ' ' + r.status) }, function(e){ slog('line speed post failed ' + (e && e.message)) })
