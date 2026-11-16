@@ -126,7 +126,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
   const [poster, setPoster] = useState<PosterInput | null>(null)
   const [posterBusy, setPosterBusy] = useState(false)
   // 在线源绑定：source → (bgmId → {id,name})。加载时一次拿齐，绑过的源「继续看」直接开。
-  const { bindings, locating, continueWatch, startSearch, modals: watchModals } = useSourceWatch(setError)
+  const { bindings, locating, continueWatch, startSearch, modals: watchModals } = useSourceWatch(setError, true)
   const [adding, setAdding] = useState<AddFlow | null>(null) // 加番搜索弹窗
   const [importOpen, setImportOpen] = useState(false)
   const today = useMemo(todayBgmId, [])

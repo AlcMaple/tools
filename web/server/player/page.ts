@@ -49,6 +49,8 @@ export const PLAY_PAGE = `<!doctype html>
   .player-title { font-size: 24px }
   .section-title { font-size: 18px }
   .icon-sprite { display: none }
+  .tracks-return { position: relative; display: inline-block }
+  #tracks-return-error { position: absolute; top: calc(100% + 4px); left: 0; width: max-content; max-width: min(320px, 80vw); z-index: 3; padding: 6px 10px; border: 1px solid var(--sakura); border-radius: var(--r-card); background: var(--sakura-wash); color: #923d49; font-size: 12px }
   .ep-good-note { display: none; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 14px; border-radius: var(--r-card); background: var(--gold-hl); border: 1.5px solid var(--gold); color: #6b5416; font-size: 13px; line-height: 1.6 }
   .ep-good-note.show { display: flex }
   .ep-good-note::before { content: '★'; flex: none; margin-top: 1px; color: var(--gold) }
@@ -63,9 +65,12 @@ export const PLAY_PAGE = `<!doctype html>
 <body data-page="player">
 <div class="player-scroll">
 <div class="sheet-wrap">
-  <a class="btn btn-sm btn-ghost" href="/#/tracks">
-    <svg class="ic ic-sm"><use href="#i-back"></use></svg>回到我的追番
-  </a>
+  <div class="tracks-return">
+    <a id="tracks-return" class="btn btn-sm btn-ghost" href="/#/tracks">
+      <svg class="ic ic-sm"><use href="#i-back"></use></svg>回到我的追番
+    </a>
+    <span id="tracks-return-error" role="alert" hidden></span>
+  </div>
   <div class="spread hd-row mt16">
     <div>
       <h1 class="title-sketch player-title" id="ttl">继续看</h1>
@@ -95,6 +100,64 @@ export const PLAY_PAGE = `<!doctype html>
   var ARGS = __PAGE_ARGS__
   var sourceOptions = __PLAYER_SOURCES__
   var src = ARGS.src, id = ARGS.id, ep = ARGS.ep, bgmId = ARGS.bgmId, epOffset = ARGS.epOffset || 0
+  var returningToTracks = false
+  $('tracks-return').addEventListener('click', async function(event){
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    if (returningToTracks){ event.preventDefault(); return }
+    var original, returnOriginal
+    try {
+      original = window.opener
+      if (!original || original.closed || original.location.origin !== location.origin) return
+      returnOriginal = original.__mapleReturnToTracks
+      if (typeof returnOriginal !== 'function' || !Number.isInteger(ARGS.ownerId)) return
+    } catch (e) { return }
+    event.preventDefault()
+    returningToTracks = true
+    var errorNote = $('tracks-return-error')
+    errorNote.hidden = true
+    var controller = new AbortController()
+    var timeout = setTimeout(function(){ controller.abort() }, 2500)
+    var identityStatus = 0
+    var abortReturn = function(){ controller.abort() }
+    window.addEventListener('pagehide', abortReturn, { once: true })
+    var fallback = function(){ location.assign('/#/tracks') }
+    try {
+      // Cookie 可在别的标签页换号；旧原页与播放页里的账号都不足以证明现在仍是同一人。
+      var response = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+      identityStatus = response.status
+      if (response.status === 401){ fallback(); return }
+      var identity
+      try {
+        identity = await response.json()
+      } catch (parseError) {
+        slog('tracks return identity body HTTP ' + response.status + ' ' + (parseError && parseError.stack || parseError))
+        throw new Error('HTTP ' + response.status + (response.ok ? ' · 登录状态响应格式异常' : ''))
+      }
+      if (!response.ok){
+        var details = identity && [identity.error, identity.code].filter(function(value){ return typeof value === 'string' && value }).join(' · ')
+        throw new Error('HTTP ' + response.status + (details ? ' · ' + details : ''))
+      }
+      if (!identity || !Number.isInteger(identity.id)) throw new Error('HTTP ' + response.status + ' · 登录状态响应格式异常')
+      if (identity.id !== ARGS.ownerId){ fallback(); return }
+      try {
+        if (original.closed || original.__mapleReturnToTracks !== returnOriginal || !returnOriginal(window, identity.id)){
+          fallback(); return
+        }
+      } catch (e) { fallback(); return }
+      window.close()
+      // 某些浏览器不让关闭当前标签，普通返回链接仍是完整兜底，不留下失效按钮。
+      setTimeout(function(){ if (!window.closed) fallback() }, 150)
+    } catch (e) {
+      var reason = controller.signal.aborted ? (identityStatus ? 'HTTP ' + identityStatus + ' · ' : '') + '登录状态确认超时' : (e && e.message) || '登录状态确认失败'
+      errorNote.textContent = reason
+      errorNote.hidden = false
+      slog('tracks return check failed ' + (e && e.stack || reason))
+    } finally {
+      clearTimeout(timeout)
+      window.removeEventListener('pagehide', abortReturn)
+      returningToTracks = false
+    }
+  })
 ${PLAYBACK_BEACON}
   agentReport('page_ready', 'ep ' + ep)
 
