@@ -25,7 +25,7 @@ LIVE_ONLY=0
 
 SSH=(ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15)
 RSH="ssh -p $SSH_PORT -i $SSH_KEY -o BatchMode=yes -o ConnectTimeout=15"
-STAMP="$(date +%Y%m%d-%H%M%S)"
+STAMP="$(date +%Y-%m-%d_%H-%M-%S)"   # 本机时间；同一天多次备份按时分秒就能分先后
 say() { printf '%s\n' "$*" >&2; }
 die() { say "✗ $*"; exit 1; }
 
