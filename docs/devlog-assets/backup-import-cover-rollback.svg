@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="938" viewBox="0 0 1020 938" role="img" aria-labelledby="title desc">
+  <title id="title">备份导入失败，原手帐与原封面一起保留</title>
+  <desc id="desc">修复方案：先在磁盘保留原图，新图完整写好后替换；成功保留新图，失败按相反顺序恢复，恢复异常时保留原图副本</desc>
+  <defs>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;fill:#282529}
+      .title{font-size:19px;font-weight:700}.sub{font-size:12.5px;fill:#756f73}.section{font-size:14px;font-weight:700}.head{font-size:12.5px;font-weight:700}.body{font-size:11px}.green{fill:#316247}.blue{fill:#36566d}.red{fill:#96434f}.yellow{fill:#7a6234}.muted{fill:#756f73}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#91adc1"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1018" height="936" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="28" y="38" class="title">备份导入失败，原手帐与原封面一起保留</text>
+  <text x="28" y="65" class="sub">成功才留下新图；出错先还原本次改动，原图与原记录不分家</text>
+
+  <rect x="28" y="87" width="964" height="80" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="46" y="114" class="head red">本地故障注入已确认：记录回来了，原图文件却丢了</text>
+  <text x="46" y="140" class="body">导入报错后，3 条手帐仍在、第 9 集未变；重新读取封面时文件已不存在</text>
+  <text x="46" y="159" class="body">页面仍可能显示缓存的原图 A，所以“截图看着没变”不等于原文件被保住了</text>
+
+  <text x="28" y="201" class="section">用户操作与验证结果：成功、失败分别核对</text>
+  <rect x="28" y="218" width="470" height="89" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="46" y="246" class="head green">导入成功</text>
+  <text x="46" y="273" class="body">提示成功，保存的新记录与封面 B 一致</text>
+  <text x="46" y="295" class="body">列表仍可能缓存 A，另用新请求确认 B</text>
+  <rect x="518" y="218" width="474" height="89" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="536" y="246" class="head blue">导入失败，且还原成功</text>
+  <text x="536" y="273" class="body">明确显示失败，原记录与原封面 A 仍可用</text>
+  <text x="536" y="295" class="body">重新取图仍是 A，不靠缓存遮住文件问题</text>
+
+  <text x="28" y="342" class="section">背后在做的：在同一次封面保护中完成</text>
+  <rect x="28" y="358" width="226" height="99" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="44" y="387" class="head blue">先保留磁盘上的原图</text>
+  <text x="44" y="414" class="body">受影响目标都留下原件副本</text>
+  <text x="44" y="437" class="body">原来没有文件也明确记下</text>
+  <path d="M260 408H274" stroke="#91adc1" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="282" y="358" width="226" height="99" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="298" y="387" class="head blue">把新图完整写好</text>
+  <text x="298" y="414" class="body">先写临时位置，再一次替换</text>
+  <text x="298" y="437" class="body">不让半张新图成为当前封面</text>
+  <path d="M514 408H528" stroke="#91adc1" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="536" y="358" width="226" height="99" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="552" y="387" class="head blue">完成记录的本次导入</text>
+  <text x="552" y="414" class="body">等待记录是否真正提交成功</text>
+  <text x="552" y="437" class="body">原图副本在结果确定前保留</text>
+  <path d="M768 408H782" stroke="#91adc1" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="790" y="358" width="202" height="99" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="806" y="387" class="head">按结果分别收尾</text>
+  <text x="806" y="414" class="body">成功清临时文件</text>
+  <text x="806" y="437" class="body">失败还原本轮改动</text>
+
+  <rect x="28" y="478" width="470" height="91" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="46" y="506" class="head green">记录已提交：留下新图 B</text>
+  <text x="46" y="533" class="body">只清理临时副本，不再用原图覆盖已成功的新记录</text>
+  <text x="46" y="555" class="body">成功后的清理问题，与导入失败是不同状态</text>
+  <rect x="518" y="478" width="474" height="91" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="536" y="506" class="head blue">导入失败：按相反顺序还原全部目标</text>
+  <text x="536" y="533" class="body">有旧图的换回 A；原来没有旧图的清掉本次新文件</text>
+  <text x="536" y="555" class="body">不只处理最后报错的一部，也不放开后续上传交错覆盖</text>
+
+  <text x="28" y="606" class="section">边界：还原应覆盖已经发生的改动</text>
+  <rect x="28" y="623" width="470" height="88" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="46" y="651" class="head">旧图本来缺失，或一次导入多部</text>
+  <text x="46" y="678" class="body">缺失就还原为缺失，不留下新目标；多部都按原状态还原</text>
+  <text x="46" y="700" class="body">未参与本次导入的封面与记录保持不动</text>
+  <rect x="518" y="623" width="474" height="88" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="536" y="651" class="head yellow">保留副本的容量预算用完</text>
+  <text x="536" y="678" class="body">停止继续处理，同时还原已经发生的改动</text>
+  <text x="536" y="700" class="body">超出上限也走失败收尾，不留下半次导入</text>
+  <rect x="28" y="727" width="470" height="98" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="46" y="755" class="head red">还原动作本身也失败</text>
+  <text x="46" y="782" class="body">留下可救回原图的副本，记录原错误与还原错误</text>
+  <text x="46" y="805" class="body">不把最后一份原图当临时垃圾清掉，不声称全部恢复</text>
+  <rect x="518" y="727" width="474" height="98" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="536" y="755" class="head blue">为什么只让记录回滚还不够？</text>
+  <text x="536" y="782" class="body">记录恢复，不会自动把已经覆盖的磁盘文件变回来</text>
+  <text x="536" y="805" class="body">保护需要同时照顾记录与封面，而不是再加一个备份入口</text>
+
+  <text x="28" y="863" class="head green">正常导入继续使用原入口，失败不会自动重发</text>
+  <text x="28" y="887" class="body">本地失败与成功已复验，列表缓存刷新另行跟踪；不承诺进程崩溃、断电时跨记录与文件的原子恢复</text>
+  <text x="28" y="911" class="body muted">原删除、归档季度、同步和服务器离机备份不在本次改动范围</text>
+</svg>

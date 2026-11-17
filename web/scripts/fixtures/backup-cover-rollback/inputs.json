@@ -1,0 +1,13 @@
+{
+  "synthetic": true,
+  "records": 3,
+  "manualEpisode": 9,
+  "authMaterialIncluded": false,
+  "description": "Frozen local product ZIP and synthetic covers; C is a later legitimate upload",
+  "sha256": {
+    "cover-A.png": "b2e9ad17c7b36e7918b5204e23bc259f1387b6c52718254b03f3f733b3031052",
+    "cover-B.png": "c2756e79936b4a6a257837ebd5b7950a69311ee2be49b1a1529b9f50f3387ed4",
+    "cover-C.png": "9ae06bc1843072ec60ea5a28ae6c5c4e70f5afde764c6f08d99830c57e3d3fa4",
+    "product-backup-B.zip": "0975c0c8bb6aefee6e79ccd9de9c080d5562176044f32b88e8a0f157f700a60a"
+  }
+}
