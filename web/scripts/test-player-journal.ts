@@ -41,6 +41,7 @@ try {
   assert.equal(row().episode, 5)
   const saved = await save(6, first)
   assert.equal(saved.status, 200)
+  const savedRevision = (await saved.json() as { revision: number }).revision
   assert.equal(row().episode, 6)
   assert.equal((await save(8, first)).status, 409, 'STALE_REVISION_MUST_NOT_OVERWRITE')
   const fresh = await read()
@@ -48,6 +49,9 @@ try {
   assert.equal((await save(3, fresh)).status, 200)
   assert.equal(row().episode, 6, 'rewatching must not lower journal')
   assert.equal((await read()).revision, fresh.revision)
+  assert.equal(savedRevision, fresh.revision, 'SAVE_MUST_RETURN_NEW_REVISION')
+  assert.equal((await save(7, { ownerId: first.ownerId, revision: savedRevision })).status, 200, 'SECOND_SAVE_ON_SAME_PAGE_MUST_PASS')
+  assert.equal(row().episode, 7)
   const beforeDelete = await read()
   fixture.db.prepare('DELETE FROM tracks WHERE user_id=? AND bgm_id=101').run(fixture.alice)
   assert.equal((await save(7, beforeDelete)).status, 404)

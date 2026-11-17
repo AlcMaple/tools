@@ -1115,7 +1115,7 @@ ${PLAYBACK_BEACON}
     journalBusy = true; $('journal-message').textContent = ''; renderJournal()
     try {
       var saved = await journalRequest('/api/tracks/' + bgmId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ episode: ep, playbackProgress: { ownerId: expected.ownerId, revision: expected.revision } }) })
-      journalSnapshot = Object.assign({}, expected, { episode: saved.episode })
+      journalSnapshot = Object.assign({}, expected, { episode: saved.episode, revision: saved.revision })
       $('journal-message').textContent = '已记到手帐'
     } catch (e){
       journalSnapshot = null

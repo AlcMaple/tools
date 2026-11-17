@@ -1041,6 +1041,8 @@ tracks.put('/:bgmId', async (c) => {
 
   if (result.orphanedCover) cleanupOrphanedCover(uid, bgmId)
   if (result.fillDetail) fillDetailLater(uid, bgmId)
+  // 播放页拿这个 revision 接着做下一次保存；不带的话同一页第二次保存必然 409
+  if (playbackProgress) return c.json({ ...toJson(result.row), revision: currentRev(uid) })
   return c.json(toJson(result.row))
 })
 
