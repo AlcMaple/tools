@@ -20,6 +20,7 @@ import type { PosterScoreSignals } from '../shared/poster-score'
 import type { ReviewMode } from './reviews/reviewsApi'
 import { SketchSheet } from './SketchSheet'
 import { useSpriteStyle } from './sprites'
+import { PublicAnimeActions } from './PublicAnimeActions'
 
 function posterInputFrom(opts: {
   bgmId: number
@@ -302,6 +303,7 @@ export function AnimeReviewsView({
             <div>
               <h1 className="title-sketch" style={{ fontSize: 30 }}>{title}</h1>
               <p className="muted small mt8">大家聊过 {data.review.length + data.recommend.length} 篇</p>
+              <PublicAnimeActions bgmId={data.anime.bgmId} source={{ kind: 'reviews' }} />
             </div>
           </div>
         )}
@@ -485,7 +487,7 @@ function PublicTrackCard({ track, username }: { track: PublicTrack; username: st
     : `${track.episode} 集`
   const title = track.titleCn || track.title || `BGM ${track.bgmId}`
   return (
-    <article className="community-track-card">
+    <article className={`community-track-card${track.bgmId > 0 ? ' with-actions' : ''}`}>
       <div className="community-track-cover" style={{position:'relative'}}>
         {image && !coverFailed
           ? <img src={image} alt="" loading="lazy" onError={() => setCoverFailed(true)} />
@@ -536,6 +538,7 @@ function PublicTrackCard({ track, username }: { track: PublicTrack; username: st
           </a>
         ) : <span className="community-track-link-placeholder" aria-hidden="true" />}
       </div>
+      <PublicAnimeActions bgmId={track.bgmId} source={{ kind: 'profile', username }} />
       {highlightsOpen && <PublicHighlightsModal track={track} onClose={() => setHighlightsOpen(false)} />}
       {openReview && track[openReview] && (
         <PublicReviewModal

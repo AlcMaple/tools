@@ -64,6 +64,27 @@ export interface CatalogItem {
 
 export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[]; planningReady?: boolean }
 
+export interface RelatedAnimeResult { ready: boolean; source: CatalogItem; items: (CatalogItem & { relation: string })[]; truncated: boolean }
+
+export async function fetchRelatedAnime(id: number, signal: AbortSignal): Promise<RelatedAnimeResult> {
+  const response = await fetchApi(`/api/catalog/${id}/related`, { signal }, 10_000)
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error || `关联作品读取失败（HTTP ${response.status}）`)
+  }
+  return response.json() as Promise<RelatedAnimeResult>
+}
+
+export interface CatalogDetails { item: CatalogItem; aliases: string[]; summary: string; summaryStatus: 'available' | 'empty' | 'unavailable' }
+
+export function fetchCatalogDetails(bgmId: number, signal: AbortSignal): Promise<CatalogDetails> {
+  return readApi(`/api/catalog/${bgmId}/details`, { signal }, async res => {
+    const body = await res.json() as CatalogDetails & { error?: string }
+    if (!res.ok) throw new Error(body.error || `作品资料读取失败（HTTP ${res.status}）`)
+    return body
+  }, 15_000)
+}
+
 async function catalogEdit(path: string, init: RequestInit): Promise<CatalogItem> {
   const res = await fetch(`/api/catalog/${path}`, init)
   const body = (await res.json().catch(() => ({}))) as { error?: string; item?: CatalogItem | null }
@@ -501,6 +522,20 @@ export async function fetchCommunityProfile(username: string): Promise<Community
   return json<CommunityProfile>(await fetch(`/api/community/${encodeURIComponent(username)}`, { cache: 'no-store' }))
 }
 
+export type CommunityActionSource = { kind: 'reviews' } | { kind: 'profile'; username: string }
+
+export async function fetchCommunityAnime(bgmId: number, source: CommunityActionSource, signal: AbortSignal): Promise<CalendarItem> {
+  const query = new URLSearchParams({ kind: source.kind })
+  if (source.kind === 'profile') query.set('username', source.username)
+  return json<CalendarItem>(await fetchApi(`/api/community/action/${bgmId}?${query}`, { signal, cache: 'no-store' }, 15_000))
+}
+
+export async function saveCommunityPlan(bgmId: number, source: CommunityActionSource, expectedOwner: number, signal: AbortSignal): Promise<Track> {
+  return json<Track>(await fetchApi(`/api/tracks/${bgmId}`, { method: 'PUT', signal,
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ communitySource: source, expectedOwner }),
+  }))
+}
+
 // —— 番剧维度的公开点评（「大家聊过的番」）——
 export interface CommunityReviewAnime {
   bgmId: number
@@ -643,6 +678,8 @@ export interface XifanCandidate {
 export interface XifanBinding {
   xifanId: number
   xifanName: string
+  epOffset?: number
+  episodes?: number | null
 }
 
 export interface XifanSearchHit {
@@ -719,11 +756,11 @@ export async function locateXifan(
   )
 }
 
-export async function bindXifan(bgmId: number, xifanId: number, xifanName: string): Promise<void> {
+export async function bindXifan(bgmId: number, xifanId: number, xifanName: string, epOffset: number): Promise<void> {
   await json<{ ok: boolean }>(await fetch('/api/xifan/bind', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bgmId, xifanId, xifanName }),
+    body: JSON.stringify({ bgmId, xifanId, xifanName, epOffset }),
   }))
 }
 
@@ -781,6 +818,8 @@ export interface GirigiriCandidate {
 export interface GirigiriBinding {
   girigiriId: string
   girigiriName: string
+  epOffset?: number
+  episodes?: number | null
 }
 
 export interface GirigiriSearchHit {
@@ -816,11 +855,11 @@ export async function locateGirigiri(
   }))
 }
 
-export async function bindGirigiri(bgmId: number, girigiriId: string, girigiriName: string): Promise<void> {
+export async function bindGirigiri(bgmId: number, girigiriId: string, girigiriName: string, epOffset: number): Promise<void> {
   await json<{ ok: boolean }>(await fetch('/api/girigiri/bind', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bgmId, girigiriId, girigiriName }),
+    body: JSON.stringify({ bgmId, girigiriId, girigiriName, epOffset }),
   }))
 }
 
@@ -925,6 +964,9 @@ export interface SourceCandidate {
 export interface SourceBinding {
   id: string
   name: string
+  // 这部番在源站条目里排在第几集之后（合集里的续篇才非 0）
+  epOffset: number
+  episodes: number | null
 }
 export interface SourceSearchHit {
   id: string
@@ -943,7 +985,7 @@ export interface OnlineSource {
   captchaEventKey?: string
   fetchBindings(): Promise<Record<number, SourceBinding>>
   locate(bgmId: number, titles: string[], rebind?: boolean, signal?: AbortSignal): Promise<{ bound?: SourceCandidate; candidates: SourceCandidate[] }>
-  bind(bgmId: number, id: string, name: string): Promise<void>
+  bind(bgmId: number, id: string, name: string, epOffset: number): Promise<void>
   search(keyword: string, signal?: AbortSignal): Promise<SourceSearchResult>
   fetchCaptcha(): Promise<{ imageB64: string; mime: string }>
   verifyCaptcha(code: string): Promise<{ success: boolean }>
@@ -958,7 +1000,7 @@ const XIFAN_SOURCE: OnlineSource = {
   fetchBindings: async () => {
     const raw = await fetchXifanBindings()
     const out: Record<number, SourceBinding> = {}
-    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: String(b.xifanId), name: b.xifanName }
+    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: String(b.xifanId), name: b.xifanName, epOffset: b.epOffset ?? 0, episodes: b.episodes ?? null }
     return out
   },
   locate: async (bgmId, titles, rebind, signal) => {
@@ -966,7 +1008,7 @@ const XIFAN_SOURCE: OnlineSource = {
     const r = await locateXifan(bgmId, titles, rebind, signal)
     return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
   },
-  bind: (bgmId, id, name) => bindXifan(bgmId, Number(id), name),
+  bind: (bgmId, id, name, epOffset) => bindXifan(bgmId, Number(id), name, epOffset),
   search: async (keyword, signal) => {
     const r = await searchXifan(keyword, signal)
     if (r.needsCaptcha) return r
@@ -984,7 +1026,7 @@ const GIRIGIRI_SOURCE: OnlineSource = {
   fetchBindings: async () => {
     const raw = await fetchGirigiriBindings()
     const out: Record<number, SourceBinding> = {}
-    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: b.girigiriId, name: b.girigiriName }
+    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: b.girigiriId, name: b.girigiriName, epOffset: b.epOffset ?? 0, episodes: b.episodes ?? null }
     return out
   },
   locate: async (bgmId, titles, rebind, signal) => {
@@ -992,7 +1034,7 @@ const GIRIGIRI_SOURCE: OnlineSource = {
     const r = await locateGirigiri(bgmId, titles, rebind, signal)
     return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
   },
-  bind: (bgmId, id, name) => bindGirigiri(bgmId, id, name),
+  bind: (bgmId, id, name, epOffset) => bindGirigiri(bgmId, id, name, epOffset),
   search: async (keyword, signal) => {
     const r = await searchGirigiri(keyword, signal)
     if (r.needsCaptcha) return r

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 690" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="688" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">出错之后：不再黑着不动，也不再把本机已有的一集误切到经本站</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：同一轮还修了三处出错后的连锁反应，改前一次出错会接连引出黑屏、误切、看一会卡一会（11-15 飙马野郎 ep1 真机）</text>
+
+  <!-- 一、改前的连锁反应 -->
+  <rect x="32" y="84" width="1056" height="178" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、改前：一次解码出错引出的连锁反应</text>
+
+  <rect x="52" y="126" width="230" height="56" rx="8" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="64" y="148" font-size="11.5" font-weight="700" fill="#96434f">39 秒解码出错</text>
+  <text x="64" y="166" font-size="11" fill="#96434f">重新加载这一集，画面黑掉</text>
+  <line x1="282" y1="154" x2="314" y2="154" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="318" y="126" width="230" height="56" rx="8" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="330" y="148" font-size="11.5" font-weight="700" fill="#96434f">本机进度被清空</text>
+  <text x="330" y="166" font-size="11" fill="#96434f">明明存了 130 片，看着像 0 片</text>
+  <line x1="548" y1="154" x2="580" y2="154" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="584" y="126" width="230" height="56" rx="8" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="596" y="148" font-size="11.5" font-weight="700" fill="#96434f">误判「下载跟不上」</text>
+  <text x="596" y="166" font-size="11" fill="#96434f">只剩 10 秒缓冲，切去经本站</text>
+  <line x1="814" y1="154" x2="846" y2="154" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="850" y="126" width="218" height="56" rx="8" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="862" y="148" font-size="11.5" font-weight="700" fill="#96434f">看一会卡一会</text>
+  <text x="862" y="166" font-size="11" fill="#96434f">经本站跟不上 1080p，最长卡 12.6 秒</text>
+
+  <text x="52" y="210" font-size="11" fill="#4a4450">另一条线：第一版「原地恢复」恢复完视频停在暂停、不再报错，看门狗只盯播放中的卡顿，于是一直黑着、什么都不发生</text>
+  <text x="52" y="230" font-size="11" fill="#4a4450">再一条线：线路出错自动重试时整台播放器拆了重建，全屏被退出（学生会 ep7 19:45）</text>
+
+  <!-- 二、改后 -->
+  <rect x="32" y="278" width="1056" height="214" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="304" font-size="14" font-weight="700" fill="#353136">二、改后：解码出错时一步一步来，都在同一个播放器里</text>
+
+  <rect x="52" y="320" width="240" height="70" rx="8" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="64" y="342" font-size="11.5" font-weight="700" fill="#36566d">① 原地恢复</text>
+  <text x="64" y="360" font-size="11" fill="#36566d">原来在播就自己接着播</text>
+  <text x="64" y="378" font-size="11" fill="#36566d">4 秒内走过出错点算成功</text>
+  <line x1="292" y1="355" x2="324" y2="355" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="328" y="320" width="240" height="70" rx="8" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="340" y="342" font-size="11.5" font-weight="700" fill="#36566d">② 换音频解码方式再恢复</text>
+  <text x="340" y="360" font-size="11" fill="#36566d">同样等 4 秒看有没有走过去</text>
+  <line x1="568" y1="355" x2="600" y2="355" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="604" y="320" width="464" height="70" rx="8" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="616" y="342" font-size="11.5" font-weight="700" fill="#4a4450">③ 还不行才走原来的路</text>
+  <text x="616" y="360" font-size="11" fill="#4a4450">重新加载、退回经本站；重试也在同一个播放器里换地址，</text>
+  <text x="616" y="378" font-size="11" fill="#4a4450">全屏和进度保留，等待的 2 秒里同一个错报两遍只算一次</text>
+
+  <rect x="52" y="406" width="1016" height="70" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="68" y="428" font-size="11.5" font-weight="700" fill="#316247">同一集重新加载后，下载器把手里已有的片重新报一遍</text>
+  <text x="68" y="448" font-size="11" fill="#316247">播放页据此算「本机还领先多少秒」，不会再拿播放器自己那几秒缓冲当成下载进度去误切；</text>
+  <text x="68" y="466" font-size="11" fill="#316247">真正下载跟不上时，原来的切换规则不变</text>
+
+  <!-- 三、提示文案 -->
+  <rect x="32" y="508" width="1056" height="162" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="534" font-size="14" font-weight="700" fill="#353136">三、本站连不上源站时，提示说清是谁连不上</text>
+
+  <rect x="52" y="550" width="500" height="64" rx="8" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="64" y="572" font-size="11.5" font-weight="700" fill="#96434f">改前</text>
+  <text x="64" y="594" font-size="11" fill="#96434f">「加载失败：fetch failed」，分不清是本站坏了还是源站</text>
+  <rect x="568" y="550" width="500" height="64" rx="8" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="580" y="572" font-size="11.5" font-weight="700" fill="#316247">改后</text>
+  <text x="580" y="594" font-size="11" fill="#316247">「加载失败：本站连不上 Girigiri（连接超时），稍后点重试」</text>
+
+  <text x="52" y="640" font-size="11" fill="#756f73">常见情况：近 5 周开播 237 次，本站连不上源站只有 2 次，都在 11-15，刷新即恢复；本机只存了一部分的集，打开时仍要先连源站拿地址，</text>
+  <text x="52" y="658" font-size="11" fill="#756f73">只有整集下完的才能在连不上时直接播</text>
+</svg>

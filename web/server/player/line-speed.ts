@@ -3,7 +3,8 @@
 // 按源站记，不按线路号或番记：2026-10-31 抽查 7 部稀饭 10 月新番 + 1 部旧番，线路编号全站统一
 // （4 新番主线-1 → apn.moedot.net，1 新番主线-2 → play.xfvod.pro，2 备用-1 → dl.playxf.top，5 旧番主线-1 → play.xfvod.pro），
 // 同一编号在每部番里都是同一个源站；所以「线路编号 → 源站」也全站一张，新番打开就能排序，不用先解析试探。
-// Girigiri 抽查 8 部，繁中 / 简中全在 akua.girigirilove.com，线路编号还是按这部番有哪几条依次排的，不记，排序时都算 0。
+// Girigiri 抽查 8 部，繁中 / 简中全在同一个源站（HLS 在 akua.girigirilove.com，分片相对路径同域；mp4 在 ana.girigirilove.com），
+// 线路编号按这部番有哪几条依次排的，不记，排序时都算 0；所以只按源站域名登记（`girigiri:<域名>`），只给观测页看，不参与选线路。
 //
 // 样本只来自用户本来就在下的直连字节；只收服务端自己解析出过的源站，防止有人往表里塞任意域名。
 // 「这台设备连不上」不进这里：同一源站有的运营商直连饿死、有的很快（AGENTS.md iPhone 事故），只记在各自浏览器。
@@ -58,9 +59,19 @@ function hostOf(url: string): string {
 }
 
 export function noteLineHost(src: string, source: number, url: string): void {
-  if (src !== 'xifan') return
-  const host = hostOf(url), key = `${src}:${source}`
-  if (!host || store.lines[key] === host) return
+  if (src !== 'xifan' && src !== 'girigiri') return
+  const host = hostOf(url)
+  if (!host) return
+  if (src === 'girigiri') {
+    const key = `girigiri:${host}`, name = /\.m3u8(?:$|[?#])/i.test(url) ? 'Girigiri HLS' : 'Girigiri MP4'
+    if (store.lines[key] === host && store.names[key] === name) return
+    store.lines[key] = host
+    store.names[key] = name
+    save()
+    return
+  }
+  const key = `${src}:${source}`
+  if (store.lines[key] === host) return
   store.lines[key] = host
   save()
 }
@@ -127,6 +138,7 @@ function dayKey(ms: number): string {
 }
 
 export interface LineStatus {
+  site: 'xifan' | 'girigiri'
   source: number
   name: string
   bps: number
@@ -141,8 +153,9 @@ export function lineStatus(uid: number): { lines: LineStatus[]; me: { n: number;
   const now = Date.now()
   const last = Math.floor(now / BUCKET_MS) * BUCKET_MS
   const lines: LineStatus[] = Object.entries(store.lines)
-    .filter(([k]) => k.startsWith('xifan:'))
+    .filter(([k]) => k.startsWith('xifan:') || k.startsWith('girigiri:'))
     .map(([k, host]) => {
+      const site = k.startsWith('girigiri:') ? 'girigiri' as const : 'xifan' as const
       const r = store.hosts[host]
       const byT = new Map((r?.buckets ?? []).map(b => [b.t, b]))
       const bars = Array.from({ length: BUCKETS }, (_, i) => {
@@ -152,8 +165,9 @@ export function lineStatus(uid: number): { lines: LineStatus[]; me: { n: number;
       })
       const users = new Set((r?.buckets ?? []).flatMap(b => Object.keys(b.s)))
       return {
-        source: Number(k.slice(6)),
-        name: store.names[k] ?? `线路 ${k.slice(6)}`,
+        site,
+        source: site === 'xifan' ? Number(k.slice(6)) : 0,
+        name: store.names[k] ?? (site === 'xifan' ? `线路 ${k.slice(6)}` : 'Girigiri'),
         bps: r?.samples.length ? p90(r.samples.map(x => x.bps)) : 0,
         users: users.size,
         samples: r?.n ?? 0,

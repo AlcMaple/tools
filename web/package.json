@@ -53,7 +53,16 @@
     "test:auth-dialog-labels": "tsx scripts/test-auth-dialog-labels.ts",
     "test:manual-add-mode": "npm run build && tsx scripts/test-manual-add-mode.ts",
     "test:catalog-discovery": "npm run build && tsx scripts/test-catalog-discovery.ts",
-    "test:catalog-planning": "npm run build && tsx scripts/test-catalog-planning.ts"
+    "test:catalog-planning": "npm run build && tsx scripts/test-catalog-planning.ts",
+    "test:track-tags": "npm run build && tsx scripts/test-track-tags.ts",
+    "test:track-tags:serve": "npm run build && tsx scripts/test-track-tags.ts --serve",
+    "test:community-actions": "npm run build && tsx scripts/test-community-actions.ts",
+    "test:community-actions:serve": "npm run build && tsx scripts/test-community-actions.ts --serve",
+    "test:related-anime": "npm run build && tsx scripts/test-related-anime.ts",
+    "test:related-index": "tsx scripts/test-related-index.ts",
+    "test:player-journal": "npm run build && tsx scripts/test-player-journal.ts",
+    "test:catalog-details": "npm run build && tsx scripts/test-catalog-details.ts",
+    "test:catalog-details:serve": "npm run build && tsx scripts/test-catalog-details.ts --serve"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.9",

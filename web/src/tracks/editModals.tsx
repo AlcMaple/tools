@@ -3,6 +3,7 @@ import type { ChangeEvent } from 'react'
 import { coverUrl, type Track, type TrackPatch } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
+import { TagInput } from './TagInput'
 import { SEASON_MONTHS, addedAtOf, seasonOf, seasonStamp } from './TrackTimeline'
 import { SEG_CLS, SEG_ORDER, SHORT_DAY, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast } from './common'
 
@@ -10,18 +11,19 @@ import { SEG_CLS, SEG_ORDER, SHORT_DAY, STATUS_META, USER_TAG_MAX, allTagsOf, ta
 // 没有保存按钮 —— 改完即生效。
 export function EditModal({
   t,
+  tagChoices = [],
   onPatch,
   onUploadCover,
   onClose,
 }: {
   t: Track
+  tagChoices?: readonly string[]
   onPatch: (bgmId: number, p: TrackPatch) => void
   onUploadCover: (bgmId: number, file: File) => Promise<void>
   onClose: () => void
 }): JSX.Element {
   const [totalDraft, setTotalDraft] = useState(t.totalEpisodes != null ? String(t.totalEpisodes) : '')
   const [adding, setAdding] = useState(false)
-  const [tagDraft, setTagDraft] = useState('')
   const [coverEditing, setCoverEditing] = useState(false)
   const [coverUrlDraft, setCoverUrlDraft] = useState('')
   const [coverUploading, setCoverUploading] = useState(false)
@@ -74,13 +76,12 @@ export function EditModal({
     setTotalDraft(total != null ? String(total) : '')
   }
 
-  const commitTag = (): void => {
-    const v = tagDraft.trim()
+  const commitTag = (value: string): void => {
+    const v = value.trim()
     if (v && !allTagsOf(t).includes(v)) {
       if (t.userTags.length >= USER_TAG_MAX) tagLimitToast()
       else onPatch(t.bgmId, { userTags: [...t.userTags, v] })
     }
-    setTagDraft('')
     setAdding(false)
   }
 
@@ -261,25 +262,7 @@ export function EditModal({
               </span>
             ))}
             {adding ? (
-              <input
-                className="tagx-input"
-                style={{ borderStyle: 'dashed', borderColor: 'var(--teal-line)' }}
-                autoFocus
-                value={tagDraft}
-                onChange={(e) => setTagDraft(e.target.value)}
-                onBlur={commitTag}
-                onKeyDown={(e) => {
-                  // isComposing 守卫 —— 中文输入法按回车是「确认拼音」，不是「提交标签」
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitTag()
-                  if (e.key === 'Escape') {
-                    setTagDraft('')
-                    setAdding(false)
-                  }
-                }}
-                placeholder="例：下饭"
-                maxLength={20}
-                spellCheck={false}
-              />
+              <TagInput choices={tagChoices} excluded={allTagsOf(t)} onCommit={commitTag} onCancel={() => setAdding(false)} />
             ) : (
               <button type="button" className="tagx tagx-add" onClick={() => setAdding(true)}>
                 ＋ 标签

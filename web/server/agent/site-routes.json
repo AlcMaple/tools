@@ -442,6 +442,11 @@
   {
     "file": "server/community.ts",
     "method": "get",
+    "path": "/action/:bgmId"
+  },
+  {
+    "file": "server/community.ts",
+    "method": "get",
     "path": "/reviews"
   },
   {
@@ -558,6 +563,16 @@
     "file": "server/index.ts",
     "method": "get",
     "path": "/api/catalog/:id/cover-file"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/catalog/:id/details"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/catalog/:id/related"
   },
   {
     "file": "server/index.ts",
@@ -973,6 +988,11 @@
     "file": "server/tracks.ts",
     "method": "get",
     "path": "/:bgmId/good-episodes"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
+    "path": "/:bgmId/playback-progress"
   },
   {
     "file": "server/tracks.ts",
