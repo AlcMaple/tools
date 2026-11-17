@@ -1,7 +1,7 @@
 // 开发者侧：生成 / 收回客户确认链接，看客户提交了什么，再按这份生成新版本
 import { useState } from 'react'
 import { Ic } from '../SketchIcon'
-import { customNodes, plansOf, scopeConflicts, scopeView } from '../../shared/order-judge-scope'
+import { applyLinks, customNodes, plansOf, scopeConflicts, scopeView, submissionNotes } from '../../shared/order-judge-scope'
 import type { Project, Version } from '../../shared/order-judge-api'
 import { FlowPreview } from './FlowPreview'
 import { JudgeError, applyScope, createScope, logClient, pickPlan, revokeScope } from './api'
@@ -63,7 +63,8 @@ export function ScopePanel({ project, latest, onSaved }: { project: Project; lat
 
   const sub = link?.submission
   const items = base && sub ? scopeView(base.brief, link!).items : []
-  const nodes = sub ? [...items, ...customNodes(sub.custom)] : []
+  const nodes = sub ? applyLinks([...items, ...customNodes(sub.custom)], sub.links) : []
+  const notes = sub && base ? submissionNotes(base.brief, sub) : []
   const picked = new Set(sub ? [...sub.picked, ...sub.custom.map(c => c.id)] : [])
   const conflicts = sub ? scopeConflicts(nodes, picked) : []
   const planName = sub && base ? scopeView(base.brief, link!).plans.find(p => p.id === sub.planId)?.name : ''
@@ -94,6 +95,7 @@ export function ScopePanel({ project, latest, onSaved }: { project: Project; lat
               <p className="oj-scope-subhead">客户已提交{planName ? ` · ${planName}` : ''} · {sub.picked.length} 项{sub.custom.length ? `，新增 ${sub.custom.length} 项` : ''}</p>
               <FlowPreview nodes={nodes} picked={picked} />
               {conflicts.length > 0 && <ul className="oj-conflicts">{conflicts.map(c => <li key={c.id}><span>{c.title}需要先有{c.missing.map(m => m.title).join('、')}</span></li>)}</ul>}
+              {notes.length > 0 && <ul className="oj-plain">{notes.map(n => <li key={n}>{n}</li>)}</ul>}
               {sub.custom.length > 0 && <ul className="oj-plain">{sub.custom.map(c => <li key={c.id}>新增：{c.title}{c.detail ? `，${c.detail}` : ''}</li>)}</ul>}
               {sub.answers.length > 0 && <ul className="oj-plain">{sub.answers.map(a => <li key={a.q}>{a.q}：{a.a}</li>)}</ul>}
               {sub.note && <p className="oj-scope-note">备注：{sub.note}</p>}

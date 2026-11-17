@@ -37,16 +37,23 @@ async function topDir(): Promise<FileSystemDirectoryHandle | null> {
   }
 }
 
+// 已下完的集 meta.total 就是总字节（mp4 是源站长度，HLS 是下完时累计的字节），不用再逐片 getFile：
+// 一集有几百个分片文件，缓存几十集时逐个读文件是放映室打开慢的根因。没下完或旧数据（total 为 0）才扫目录，且并行读
 async function readEntry(hash: string, dir: FileSystemDirectoryHandle): Promise<(Meta & { hash: string; bytes: number }) | null> {
-  let meta: Meta | null = null
-  let bytes = 0
-  for await (const [name, handle] of dir.entries()) {
-    if (handle.kind !== 'file') continue
-    const file = await (handle as FileSystemFileHandle).getFile()
-    if (name === 'meta.json') meta = JSON.parse(await file.text()) as Meta
-    else bytes += file.size
+  let meta: Meta
+  try {
+    meta = JSON.parse(await (await (await dir.getFileHandle('meta.json')).getFile()).text()) as Meta
+  } catch (err) {
+    if ((err as DOMException).name === 'NotFoundError') return null
+    throw err
   }
-  return meta ? { ...meta, hash, bytes } : null
+  if (meta.complete && meta.total > 0) return { ...meta, hash, bytes: meta.total }
+  const files: Promise<number>[] = []
+  for await (const [name, handle] of dir.entries()) {
+    if (handle.kind === 'file' && name !== 'meta.json') files.push((handle as FileSystemFileHandle).getFile().then((f) => f.size))
+  }
+  const bytes = (await Promise.all(files)).reduce((sum, n) => sum + n, 0)
+  return { ...meta, hash, bytes }
 }
 
 // 播放页只查当前这一集，这里按番一次查全；查不到（未登录、网络失败）就当作不知道，宁可不删。
@@ -67,15 +74,19 @@ async function goodEpisodesOf(bgmIds: number[]): Promise<Map<number, Set<number>
 export async function listCachedEpisodes(): Promise<CachedEpisode[]> {
   const top = await topDir()
   if (!top) return []
+  const dirs: [string, FileSystemDirectoryHandle][] = []
+  for await (const [hash, handle] of top.entries()) if (handle.kind === 'directory') dirs.push([hash, handle as FileSystemDirectoryHandle])
   const raw: (Meta & { hash: string; bytes: number })[] = []
-  for await (const [hash, handle] of top.entries()) {
-    if (handle.kind !== 'directory') continue
-    try {
-      const entry = await readEntry(hash, handle as FileSystemDirectoryHandle)
-      if (entry) raw.push(entry)
-    } catch (err) {
-      console.error('[media-cache] 读取缓存条目失败', hash, err)
-    }
+  // 分批并行：一次全开会把浏览器的文件句柄请求堆满，8 个一批足够把磁盘读满
+  for (let i = 0; i < dirs.length; i += 8) {
+    await Promise.all(dirs.slice(i, i + 8).map(async ([hash, dir]) => {
+      try {
+        const entry = await readEntry(hash, dir)
+        if (entry) raw.push(entry)
+      } catch (err) {
+        console.error('[media-cache] 读取缓存条目失败', hash, err)
+      }
+    }))
   }
   const bgmIds = [...new Set(raw.map((e) => e.bgmId).filter((id): id is number => typeof id === 'number'))]
   const good = await goodEpisodesOf(bgmIds)

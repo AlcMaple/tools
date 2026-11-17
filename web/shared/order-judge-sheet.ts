@@ -41,6 +41,9 @@ export const bonusAllowed = (b: Brief): boolean => b.clientType === '商单' || 
 // 报出去的价不能因为之后的校准变掉：状态离开草稿时把当时的时间值和小时系数存进版本
 export interface Frozen { rates: Record<WorkKind, number>; hourFactor: Record<WorkKind, number>; basisFactor: Partial<Record<Basis, number>> }
 
+// 按天记的实际用时：一批模块（可多个）做了哪几天。结束日不填就是开始那一天；不选模块表示联调、返工这类说不清属于哪个模块的时间
+export interface WorkSpan { from: string | null; to: string | null; ids: string[] }
+
 export interface QuoteState {
   status: VersionStatus
   budget: number | null
@@ -52,6 +55,7 @@ export interface QuoteState {
   clientBudget: number | null
   actual: Record<WorkKind, number>
   itemActual: Record<string, number>
+  days: WorkSpan[]
   feeling: Feeling
   frozen: Frozen | null
   bonus: BonusTerms
@@ -65,7 +69,7 @@ export interface QuoteState {
 
 export const EMPTY_QUOTE: QuoteState = {
   status: '草稿', budget: null, resultHours: 0, expenses: [], tier: '推荐', discount: { ratio: 0, reason: '' },
-  outcome: '待定', clientBudget: null, actual: { 新做: 0, 接手改: 0 }, itemActual: {}, feeling: '待定', frozen: null, bonus: EMPTY_BONUS, deadlineDate: null, dailyHours: DEFAULT_DAILY_HOURS,
+  outcome: '待定', clientBudget: null, actual: { 新做: 0, 接手改: 0 }, itemActual: {}, days: [], feeling: '待定', frozen: null, bonus: EMPTY_BONUS, deadlineDate: null, dailyHours: DEFAULT_DAILY_HOURS,
   hourEdits: {}, hourScale: 1, finalPrice: null, share: true,
 }
 
@@ -177,6 +181,7 @@ export function normalizeQuote(raw: unknown): QuoteState {
     clientBudget: o.clientBudget == null || o.clientBudget === '' ? null : Math.round(num(o.clientBudget, 100_000_000)) || null,
     actual: perKind(o.actual, 1000),
     itemActual: itemActualOf(o.itemActual),
+    days: daysOf(o.days),
     feeling: FEELINGS.includes(o.feeling as Feeling) ? o.feeling as Feeling : '待定',
     frozen: frozenOf(o.frozen),
     bonus: bonusOf(o.bonus),
@@ -206,7 +211,64 @@ function itemActualOf(v: unknown): Record<string, number> {
   return out
 }
 
-export const hasActual = (q: QuoteState): boolean => WORK_KINDS.some(k => q.actual[k] > 0) || Object.values(q.itemActual).some(h => h > 0)
+const MAX_SPANS = 60
+const MAX_SPAN_DAYS = 366
+const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v))
+function daysOf(v: unknown): WorkSpan[] {
+  return (Array.isArray(v) ? v : []).slice(0, MAX_SPANS).flatMap(d => {
+    const r = (d && typeof d === 'object' ? d : {}) as Record<string, unknown>
+    if (!isDay(r.from)) return []
+    let from: string = r.from, to: string = isDay(r.to) ? r.to : r.from
+    if (to < from) [from, to] = [to, from]
+    if (spanDays({ from, to, ids: [] }) > MAX_SPAN_DAYS) return []
+    const ids = [...new Set((Array.isArray(r.ids) ? r.ids : []).filter((x): x is string => typeof x === 'string' && /^r\d+$/.test(x)))].slice(0, MAX_ITEMS)
+    return [{ from, to: to === from ? null : to, ids }]
+  })
+}
+
+const DAY_MS = 86_400_000
+const dayNumber = (s: string): number => Math.round(Date.parse(s) / DAY_MS)
+const dayString = (n: number): string => new Date(n * DAY_MS).toISOString().slice(0, 10)
+
+// 这一段一共几天（含首尾）；日期没填全时为 0
+export function spanDays(s: WorkSpan): number {
+  if (!s.from) return 0
+  const to = s.to ?? s.from
+  return Math.abs(dayNumber(to) - dayNumber(s.from)) + 1
+}
+
+export const hasActual = (q: QuoteState): boolean => WORK_KINDS.some(k => q.actual[k] > 0) || Object.values(q.itemActual).some(h => h > 0) || q.days.length > 0
+
+// 把按天记折成新做 / 接手改的实际小时：
+// 1. 一个模块做了哪几天，看包含它且模块最少的那几段（单独填 A 比「A+B」更具体）；这样「A+B 11-13」加「A 11-11」就是 A 只做了 11 日、B 做了 11 到 13 日
+// 2. 所有段覆盖的日子去重后，每天按每天投入的小时算，由当天在做的模块按预估小时比例分；当天没有模块在做（联调、返工）就按全部模块的预估比例分
+// 多模块一起做的日子只折成整类实际，不拆给单个模块
+export function dayActuals(spans: WorkSpan[], mods: { id: string; work: WorkKind; hours: number }[], dailyHours: number): Record<WorkKind, number> {
+  const out = { 新做: 0, 接手改: 0 } as Record<WorkKind, number>
+  const valid = spans.filter(s => s.from).map(s => {
+    const a = dayNumber(s.from!), b = dayNumber(s.to ?? s.from!)
+    return { ids: s.ids, lo: Math.min(a, b), hi: Math.max(a, b) }
+  })
+  const all = new Set<number>()
+  for (const s of valid) for (let n = s.lo; n <= s.hi; n++) all.add(n)
+  const own = new Map<string, Set<number>>()
+  for (const m of mods) {
+    const mine = valid.filter(s => s.ids.includes(m.id))
+    const fewest = Math.min(...mine.map(s => s.ids.length))
+    const set = new Set<number>()
+    for (const s of mine.filter(x => x.ids.length === fewest)) for (let n = s.lo; n <= s.hi; n++) set.add(n)
+    own.set(m.id, set)
+  }
+  const costed = mods.filter(m => m.hours > 0)
+  for (const n of all) {
+    const active = costed.filter(m => own.get(m.id)?.has(n))
+    const pool = active.length ? active : costed
+    const total = pool.reduce((a, m) => a + m.hours, 0)
+    if (total <= 0) { out['新做'] += dailyHours; continue }
+    for (const m of pool) out[m.work] += dailyHours * m.hours / total
+  }
+  return out
+}
 
 function hourScaleOf(v: unknown): number {
   const n = Number(v)
@@ -621,6 +683,10 @@ const hoursBy = (lines: QuoteLine[], k: WorkKind, f: number, kinds: QuoteLine['k
 // 这一类的实际小时：填了整类就用整类；没填但每个要花时间的条目都按模块填了，就用它们的合计加上上线结果的预估
 function actualHours(q: QuoteState, lines: QuoteLine[], k: WorkKind, factor: number): number {
   if (q.actual[k] > 0) return q.actual[k]
+  if (q.days.length) {
+    const byDay = dayActuals(q.days, lines.filter(l => l.kind === 'item' && l.work && l.itemId != null).map(l => ({ id: l.itemId!, work: l.work!, hours: l.hours })), q.dailyHours)[k]
+    if (byDay > 0) return byDay
+  }
   const items = lines.filter(l => l.work === k && l.kind === 'item' && l.hours > 0)
   if (!items.length || !items.every(l => l.itemId != null && q.itemActual[l.itemId] != null)) return 0
   return items.reduce((a, l) => a + q.itemActual[l.itemId!], 0) + hoursBy(lines, k, factor, ['result'])
@@ -645,6 +711,8 @@ function projectFacts(p: LearnProject, base: QuoteSettings): ProjectFacts | null
   const shown = (i: BriefItem): number => (i.manual ? i.hours : i.hours * factorOf(i, s))
   // 按模块填过的条目直接取实际；其余条目分这一类实际小时扣掉已填部分后的余量
   const own = (i: BriefItem): number | undefined => (done ? v.quote.itemActual[i.id] : undefined)
+  const byDay = done && v.quote.days.length ? dayActuals(v.quote.days, kept.map(i => ({ id: i.id, work: workOf(i), hours: shown(i) })), v.quote.dailyHours) : null
+  const kindActual = (k: WorkKind): number => (v.quote.actual[k] > 0 ? v.quote.actual[k] : byDay?.[k] ?? 0)
   const items = kept.map(i => {
     const raw = v.brief.items.find(x => x.id === i.id)!
     const mine = own(i)
@@ -652,9 +720,9 @@ function projectFacts(p: LearnProject, base: QuoteSettings): ProjectFacts | null
     if (mine != null) final = mine
     else if (done) {
       const same = kept.filter(x => workOf(x) === workOf(i))
-      const left = Math.max(0, v.quote.actual[workOf(i)] - same.reduce((a, x) => a + (own(x) ?? 0), 0))
+      const left = Math.max(0, kindActual(workOf(i)) - same.reduce((a, x) => a + (own(x) ?? 0), 0))
       const total = same.filter(x => own(x) == null).reduce((a, x) => a + shown(x), 0)
-      if (v.quote.actual[workOf(i)] > 0 && total > 0) final = shown(i) * left / total
+      if (kindActual(workOf(i)) > 0 && total > 0) final = shown(i) * left / total
     }
     return { category: v.brief.category ?? '其他', title: i.title, basis: basisOf(raw), ai: raw.hours, final: half(final) }
   })

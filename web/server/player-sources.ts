@@ -1,7 +1,7 @@
 // 网页播放器的跨站源切换上下文。
 //
 // 稀饭 animeId 与 Girigiri GV id 不能互相推断；播放页只携带稳定的 bgmId，
-// 这里分别查两张绑定表，再生成保持同一集数的站内播放页地址。视频与线路解析仍由
+// 这里分别查两张绑定表，再生成保持同一集数的站内播放页地址（合集条目按各自偏移换算）。视频与线路解析仍由
 // 各自原有播放器负责，本模块不接触媒体字节。
 import { getBinding as getGirigiriBinding } from './girigiri/bindings'
 import { getBinding as getXifanBinding } from './xifan/bindings'
@@ -28,6 +28,17 @@ function playPageHref(source: WebPlayerSource, sourceId: number | string, ep: nu
   return `/api/player/page?${query.toString()}`
 }
 
+// 当前源条目若是合集，追番集数 = 源站集数 - 偏移；只认 URL 里正在播的那个条目，绑定换了就不套旧偏移
+export function playerEpOffset(active: WebPlayerSource, activeSourceId: number | string, bgmId: number | null): number {
+  if (bgmId == null) return 0
+  if (active === 'xifan') {
+    const b = getXifanBinding(bgmId)
+    return b && b.xifanId === Number(activeSourceId) ? b.epOffset : 0
+  }
+  const b = getGirigiriBinding(bgmId)
+  return b && b.girigiriId === String(activeSourceId).toUpperCase() ? b.epOffset : 0
+}
+
 export function playerSourceOptions(
   active: WebPlayerSource,
   activeSourceId: number | string,
@@ -40,6 +51,10 @@ export function playerSourceOptions(
   // 已校验 id 为准，避免新标签抢先读取绑定表时把正在播放的源误标成“未关联”。
   const xifanId = active === 'xifan' ? Number(activeSourceId) : xifanBinding?.xifanId
   const girigiriId = active === 'girigiri' ? String(activeSourceId).toUpperCase() : girigiriBinding?.girigiriId
+  // 两站可能一边是单部、一边是合集，换源时先还原成这部番自己的集数再套对方的偏移
+  const ownEp = ep - playerEpOffset(active, activeSourceId, bgmId)
+  const epFor = (source: WebPlayerSource, offset: number | undefined): number =>
+    source === active ? ep : Math.max(1, ownEp + (offset ?? 0))
 
   const options: WebPlayerSourceOption[] = [
     {
@@ -47,7 +62,7 @@ export function playerSourceOptions(
       label: '稀饭',
       active: active === 'xifan',
       href: Number.isInteger(xifanId) && Number(xifanId) > 0
-        ? playPageHref('xifan', Number(xifanId), ep, bgmId)
+        ? playPageHref('xifan', Number(xifanId), epFor('xifan', xifanBinding?.epOffset), bgmId)
         : null,
     },
     {
@@ -55,7 +70,7 @@ export function playerSourceOptions(
       label: 'Girigiri',
       active: active === 'girigiri',
       href: typeof girigiriId === 'string' && /^GV\d+$/.test(girigiriId)
-        ? playPageHref('girigiri', girigiriId, ep, bgmId)
+        ? playPageHref('girigiri', girigiriId, epFor('girigiri', girigiriBinding?.epOffset), bgmId)
         : null,
     },
   ]

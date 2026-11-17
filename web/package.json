@@ -54,7 +54,8 @@
     "test:manual-add-mode": "npm run build && tsx scripts/test-manual-add-mode.ts",
     "test:catalog-discovery": "npm run build && tsx scripts/test-catalog-discovery.ts",
     "test:related-anime": "npm run build && tsx scripts/test-related-anime.ts",
-    "test:related-index": "tsx scripts/test-related-index.ts"
+    "test:related-index": "tsx scripts/test-related-index.ts",
+    "test:player-journal": "npm run build && tsx scripts/test-player-journal.ts"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.9",

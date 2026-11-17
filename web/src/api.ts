@@ -652,6 +652,8 @@ export interface XifanCandidate {
 export interface XifanBinding {
   xifanId: number
   xifanName: string
+  epOffset?: number
+  episodes?: number | null
 }
 
 export interface XifanSearchHit {
@@ -728,11 +730,11 @@ export async function locateXifan(
   )
 }
 
-export async function bindXifan(bgmId: number, xifanId: number, xifanName: string): Promise<void> {
+export async function bindXifan(bgmId: number, xifanId: number, xifanName: string, epOffset: number): Promise<void> {
   await json<{ ok: boolean }>(await fetch('/api/xifan/bind', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bgmId, xifanId, xifanName }),
+    body: JSON.stringify({ bgmId, xifanId, xifanName, epOffset }),
   }))
 }
 
@@ -790,6 +792,8 @@ export interface GirigiriCandidate {
 export interface GirigiriBinding {
   girigiriId: string
   girigiriName: string
+  epOffset?: number
+  episodes?: number | null
 }
 
 export interface GirigiriSearchHit {
@@ -825,11 +829,11 @@ export async function locateGirigiri(
   }))
 }
 
-export async function bindGirigiri(bgmId: number, girigiriId: string, girigiriName: string): Promise<void> {
+export async function bindGirigiri(bgmId: number, girigiriId: string, girigiriName: string, epOffset: number): Promise<void> {
   await json<{ ok: boolean }>(await fetch('/api/girigiri/bind', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bgmId, girigiriId, girigiriName }),
+    body: JSON.stringify({ bgmId, girigiriId, girigiriName, epOffset }),
   }))
 }
 
@@ -934,6 +938,9 @@ export interface SourceCandidate {
 export interface SourceBinding {
   id: string
   name: string
+  // 这部番在源站条目里排在第几集之后（合集里的续篇才非 0）
+  epOffset: number
+  episodes: number | null
 }
 export interface SourceSearchHit {
   id: string
@@ -952,7 +959,7 @@ export interface OnlineSource {
   captchaEventKey?: string
   fetchBindings(): Promise<Record<number, SourceBinding>>
   locate(bgmId: number, titles: string[], rebind?: boolean, signal?: AbortSignal): Promise<{ bound?: SourceCandidate; candidates: SourceCandidate[] }>
-  bind(bgmId: number, id: string, name: string): Promise<void>
+  bind(bgmId: number, id: string, name: string, epOffset: number): Promise<void>
   search(keyword: string, signal?: AbortSignal): Promise<SourceSearchResult>
   fetchCaptcha(): Promise<{ imageB64: string; mime: string }>
   verifyCaptcha(code: string): Promise<{ success: boolean }>
@@ -967,7 +974,7 @@ const XIFAN_SOURCE: OnlineSource = {
   fetchBindings: async () => {
     const raw = await fetchXifanBindings()
     const out: Record<number, SourceBinding> = {}
-    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: String(b.xifanId), name: b.xifanName }
+    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: String(b.xifanId), name: b.xifanName, epOffset: b.epOffset ?? 0, episodes: b.episodes ?? null }
     return out
   },
   locate: async (bgmId, titles, rebind, signal) => {
@@ -975,7 +982,7 @@ const XIFAN_SOURCE: OnlineSource = {
     const r = await locateXifan(bgmId, titles, rebind, signal)
     return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
   },
-  bind: (bgmId, id, name) => bindXifan(bgmId, Number(id), name),
+  bind: (bgmId, id, name, epOffset) => bindXifan(bgmId, Number(id), name, epOffset),
   search: async (keyword, signal) => {
     const r = await searchXifan(keyword, signal)
     if (r.needsCaptcha) return r
@@ -993,7 +1000,7 @@ const GIRIGIRI_SOURCE: OnlineSource = {
   fetchBindings: async () => {
     const raw = await fetchGirigiriBindings()
     const out: Record<number, SourceBinding> = {}
-    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: b.girigiriId, name: b.girigiriName }
+    for (const [bgmId, b] of Object.entries(raw)) out[Number(bgmId)] = { id: b.girigiriId, name: b.girigiriName, epOffset: b.epOffset ?? 0, episodes: b.episodes ?? null }
     return out
   },
   locate: async (bgmId, titles, rebind, signal) => {
@@ -1001,7 +1008,7 @@ const GIRIGIRI_SOURCE: OnlineSource = {
     const r = await locateGirigiri(bgmId, titles, rebind, signal)
     return { bound: r.bound ? toCand(r.bound) : undefined, candidates: r.candidates.map(toCand) }
   },
-  bind: (bgmId, id, name) => bindGirigiri(bgmId, id, name),
+  bind: (bgmId, id, name, epOffset) => bindGirigiri(bgmId, id, name, epOffset),
   search: async (keyword, signal) => {
     const r = await searchGirigiri(keyword, signal)
     if (r.needsCaptcha) return r

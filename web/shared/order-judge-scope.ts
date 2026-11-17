@@ -8,7 +8,23 @@ export interface ScopeNode { id: string; title: string; detail: string; stage: s
 
 export interface ScopeCustom { id: string; title: string; detail: string; after: string[] }
 export interface ScopeAnswer { q: string; a: string }
-export interface ScopeSubmission { planId: string; picked: string[]; custom: ScopeCustom[]; answers: ScopeAnswer[]; note: string }
+// links：客户在流程图里改的先后关系，[前置, 依赖它的]。unblocked：方案标了冲突、客户认为不冲突仍然要的条目
+export type ScopeEdge = [string, string]
+export interface ScopeLinks { add: ScopeEdge[]; drop: ScopeEdge[] }
+export interface ScopeSubmission { planId: string; picked: string[]; custom: ScopeCustom[]; answers: ScopeAnswer[]; note: string; links?: ScopeLinks; unblocked?: string[] }
+export const MAX_LINK_EDITS = 100
+
+// 逐条应用，会成环的那条跳过：提交内容不可信，画图和估价都假设没有环
+export function applyLinks<T extends Pick<ScopeNode, 'id' | 'dependsOn'>>(nodes: T[], links: ScopeLinks | undefined): T[] {
+  if (!links || (!links.add.length && !links.drop.length)) return nodes
+  const deps = new Map(nodes.map(n => [n.id, n.dependsOn.filter(d => !links.drop.some(([f, t]) => f === d && t === n.id))]))
+  const reaches = (from: string, to: string, seen = new Set<string>()): boolean => from === to || (!seen.has(from) && (seen.add(from), (deps.get(from) ?? []).some(d => reaches(d, to, seen))))
+  for (const [from, to] of links.add) {
+    if (from === to || !deps.has(from) || !deps.has(to) || deps.get(to)!.includes(from) || reaches(from, to)) continue
+    deps.get(to)!.push(from)
+  }
+  return nodes.map(n => ({ ...n, dependsOn: deps.get(n.id)! }))
+}
 
 export interface ScopeLink {
   token: string
@@ -52,12 +68,13 @@ export function plansOf(b: Brief): ScopePlan[] {
 }
 
 // 前置被锁的条目也做不成，一起锁上，免得客户勾出一个缺前置又补不回来的功能
-export function blockedBy(plan: ScopePlan | undefined, items: Pick<ScopeNode, 'id' | 'dependsOn'>[]): Set<string> {
-  const out = new Set(plan?.blocks ?? [])
+// allow：客户认为不冲突的条目，不锁，也不再连带锁住依赖它的条目
+export function blockedBy(plan: ScopePlan | undefined, items: Pick<ScopeNode, 'id' | 'dependsOn'>[], allow: ReadonlySet<string> = new Set()): Set<string> {
+  const out = new Set((plan?.blocks ?? []).filter(id => !allow.has(id)))
   const own = new Set(plan?.itemIds ?? [])
   for (let grew = true; grew;) {
     grew = false
-    for (const i of items) if (!out.has(i.id) && !own.has(i.id) && i.dependsOn.some(d => out.has(d))) { out.add(i.id); grew = true }
+    for (const i of items) if (!out.has(i.id) && !own.has(i.id) && !allow.has(i.id) && i.dependsOn.some(d => out.has(d))) { out.add(i.id); grew = true }
   }
   return out
 }
@@ -130,8 +147,10 @@ const text = (v: unknown, max: number): string => (typeof v === 'string' ? v.tri
 export function normalizeSubmission(raw: unknown, b: Brief): ScopeSubmission | null {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const known = new Set(b.items.map(i => i.id))
-  // 和所选方案冲突的条目页面上锁着，提交里出现了也不认
-  const blocked = blockedBy(plansOf(b).find(p => p.id === o.planId), b.items.map(nodeOf))
+  // 和所选方案冲突的条目页面上锁着，提交里出现了也不认；客户点过「仍然要」的除外，那些记进 unblocked 给开发者看
+  const plan = plansOf(b).find(p => p.id === o.planId), nodes = b.items.map(nodeOf)
+  const allow = new Set((Array.isArray(o.unblocked) ? o.unblocked : []).filter((x): x is string => typeof x === 'string' && known.has(x)))
+  const locked = blockedBy(plan, nodes), blocked = blockedBy(plan, nodes, allow)
   const picked = (Array.isArray(o.picked) ? o.picked : []).filter((x): x is string => typeof x === 'string' && known.has(x) && !blocked.has(x))
   const rawCustom = (Array.isArray(o.custom) ? o.custom : []).slice(0, MAX_CUSTOM) as Record<string, unknown>[]
   const custom: ScopeCustom[] = []
@@ -151,13 +170,41 @@ export function normalizeSubmission(raw: unknown, b: Brief): ScopeSubmission | n
     const q = b.questions[Number(a?.i)], value = text(a?.a, 300)
     if (q && value && !answers.some(x => x.q === q)) answers.push({ q, a: value })
   }
-  return { planId: text(o.planId, 20), picked: [...new Set(picked)], custom, answers, note: text(o.note, 500) }
+  const valid = new Set([...known, ...custom.map(c => c.id)])
+  const rawLinks = (o.links && typeof o.links === 'object' ? o.links : {}) as Record<string, unknown>
+  const edges = (v: unknown): ScopeEdge[] => {
+    const out: ScopeEdge[] = []
+    for (const e of (Array.isArray(v) ? v : []).slice(0, MAX_LINK_EDITS)) {
+      const [from, to] = (Array.isArray(e) ? e : []).map(x => (typeof x !== 'string' ? '' : known.has(x) ? x : renamed.get(x) ?? ''))
+      if (from && to && from !== to && valid.has(from) && valid.has(to) && !out.some(x => x[0] === from && x[1] === to)) out.push([from, to])
+    }
+    return out
+  }
+  const links: ScopeLinks = { add: edges(rawLinks.add), drop: edges(rawLinks.drop) }
+  const unblocked = [...new Set(picked)].filter(id => locked.has(id))
+  return {
+    planId: text(o.planId, 20), picked: [...new Set(picked)], custom, answers, note: text(o.note, 500),
+    ...(links.add.length || links.drop.length ? { links } : {}), ...(unblocked.length ? { unblocked } : {}),
+  }
+}
+
+// 客户和系统判断不一致的地方，开发者要看得到：解除的方案冲突、改过的先后关系
+export function submissionNotes(b: Brief, s: ScopeSubmission): string[] {
+  const title = new Map([...b.items.map(i => [i.id, i.title] as const), ...s.custom.map(c => [c.id, c.title] as const)])
+  const edge = ([from, to]: ScopeEdge): string => `「${title.get(from) ?? from}」→「${title.get(to) ?? to}」`
+  return [
+    ...(s.unblocked ?? []).map(id => `客户认为「${title.get(id) ?? id}」和所选方案不冲突，仍然要`),
+    ...(s.links?.add ?? []).map(e => `客户加了先后关系 ${edge(e)}`),
+    ...(s.links?.drop ?? []).map(e => `客户去掉了先后关系 ${edge(e)}`),
+  ]
 }
 
 export function submissionText(b: Brief, s: ScopeSubmission): string {
   const picked = new Set(s.picked)
   const lines = ['客户确认的需求', ...b.items.filter(i => picked.has(i.id)).map(i => `· ${i.title}`)]
   if (s.custom.length) lines.push('', '客户自己加的', ...s.custom.map(c => `· ${c.title}${c.detail ? `：${c.detail}` : ''}`))
+  const notes = submissionNotes(b, s)
+  if (notes.length) lines.push('', '客户的调整', ...notes.map(n => `· ${n}`))
   if (s.answers.length) lines.push('', '客户的回答', ...s.answers.map(a => `· ${a.q}：${a.a}`))
   if (s.note) lines.push('', `客户备注：${s.note}`)
   return lines.join('\n')
@@ -221,10 +268,16 @@ export function applySubmission(b: Brief, s: ScopeSubmission, est: ScopeEstimate
       stage: '客户新增', dependsOn: c.after.map(a => customIds.get(a) ?? a),
     })
   }
+  const renameEdge = ([f, t]: ScopeEdge): ScopeEdge => [customIds.get(f) ?? f, customIds.get(t) ?? t]
+  const linked = applyLinks(items.map(i => ({ ...i, dependsOn: i.dependsOn ?? [] })), s.links && { add: s.links.add.map(renameEdge), drop: s.links.drop.map(renameEdge) })
+  items.splice(0, items.length, ...linked)
   const dropped = b.items.filter(i => !picked.has(i.id)).map(i => i.title)
   const answered = new Set(s.answers.map(a => a.q))
   const nodes = items.filter(i => i.priority === '必须').map(nodeOf)
-  const conflicts = scopeConflicts(items.map(nodeOf), new Set(nodes.map(n => n.id))).map(c => `${c.title}需要先有${c.missing.map(m => m.title).join('、')}`)
+  const conflicts = [
+    ...scopeConflicts(items.map(nodeOf), new Set(nodes.map(n => n.id))).map(c => `${c.title}需要先有${c.missing.map(m => m.title).join('、')}`),
+    ...submissionNotes(b, s),
+  ]
   return {
     ...b,
     outcome: est?.outcome || b.outcome,
