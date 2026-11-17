@@ -7,23 +7,26 @@ import { db } from '../db'
 export interface Binding {
   xifanId: number
   xifanName: string
+  epOffset: number
+  // 当前用户追番里这部番的总集数，前端据此给同一合集里的下一部番建议偏移
+  episodes?: number | null
 }
 
-const getStmt = db.prepare("SELECT xifan_id, xifan_name FROM xifan_binding WHERE bgm_id = ? AND source_version = 'next'")
+const getStmt = db.prepare("SELECT xifan_id, xifan_name, ep_offset FROM xifan_binding WHERE bgm_id = ? AND source_version = 'next'")
 const upsertStmt = db.prepare(`
-  INSERT INTO xifan_binding (bgm_id, xifan_id, xifan_name, updated_at, source_version) VALUES (?, ?, ?, ?, 'next')
+  INSERT INTO xifan_binding (bgm_id, xifan_id, xifan_name, ep_offset, updated_at, source_version) VALUES (?, ?, ?, ?, ?, 'next')
   ON CONFLICT(bgm_id) DO UPDATE SET
-    xifan_id = excluded.xifan_id, xifan_name = excluded.xifan_name, updated_at = excluded.updated_at,
+    xifan_id = excluded.xifan_id, xifan_name = excluded.xifan_name, ep_offset = excluded.ep_offset, updated_at = excluded.updated_at,
     source_version = excluded.source_version
 `)
 
 export function getBinding(bgmId: number): Binding | null {
-  const r = getStmt.get(bgmId) as { xifan_id: number; xifan_name: string } | undefined
-  return r ? { xifanId: r.xifan_id, xifanName: r.xifan_name } : null
+  const r = getStmt.get(bgmId) as { xifan_id: number; xifan_name: string; ep_offset: number } | undefined
+  return r ? { xifanId: r.xifan_id, xifanName: r.xifan_name, epOffset: r.ep_offset } : null
 }
 
-export function putBinding(bgmId: number, xifanId: number, xifanName: string): void {
-  upsertStmt.run(bgmId, xifanId, xifanName, Date.now())
+export function putBinding(bgmId: number, xifanId: number, xifanName: string, epOffset = 0): void {
+  upsertStmt.run(bgmId, xifanId, xifanName, epOffset, Date.now())
 }
 
 /** 一次拿多条 —— 追番页加载时把当前用户所有已绑关系批量取回，绑过的「继续看」直接是链接、无需再定位。 */
@@ -31,9 +34,9 @@ export function bindingsFor(bgmIds: number[]): Record<number, Binding> {
   if (!bgmIds.length) return {}
   const placeholders = bgmIds.map(() => '?').join(',')
   const rows = db
-    .prepare(`SELECT bgm_id, xifan_id, xifan_name FROM xifan_binding WHERE source_version = 'next' AND bgm_id IN (${placeholders})`)
-    .all(...bgmIds) as { bgm_id: number; xifan_id: number; xifan_name: string }[]
+    .prepare(`SELECT bgm_id, xifan_id, xifan_name, ep_offset FROM xifan_binding WHERE source_version = 'next' AND bgm_id IN (${placeholders})`)
+    .all(...bgmIds) as { bgm_id: number; xifan_id: number; xifan_name: string; ep_offset: number }[]
   const out: Record<number, Binding> = {}
-  for (const r of rows) out[r.bgm_id] = { xifanId: r.xifan_id, xifanName: r.xifan_name }
+  for (const r of rows) out[r.bgm_id] = { xifanId: r.xifan_id, xifanName: r.xifan_name, epOffset: r.ep_offset }
   return out
 }

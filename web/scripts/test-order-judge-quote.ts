@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { briefSystemPrompt, normalizeBrief, type Brief, type BriefItem } from '../shared/order-judge-brief'
 import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, parseDeadline, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
-import { inScoping, flowOrderedLayers, flowChannels, flowRoute, flowLayers, flowLayout, scopeConflicts, plansOf, blockedBy, normalizeSubmission, applySubmission, scopeView, needsEstimate, normalizeEstimate, submissionText } from '../shared/order-judge-scope'
+import { inScoping, flowOrderedLayers, flowChannels, flowRoute, flowLayers, flowLayout, scopeConflicts, plansOf, blockedBy, normalizeSubmission, applySubmission, applyLinks, submissionNotes, scopeView, needsEstimate, normalizeEstimate, submissionText } from '../shared/order-judge-scope'
 import { longTermClientText, longTermFee, planOf } from '../shared/order-judge-maintenance'
 import { EMPTY_MAINTENANCE, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance } from '../shared/order-judge-maintenance'
-import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, calibrateByType, experienceLines, carryHourEdits, clientText, freeze, hourRows, hoursLabel, marketLine, marketStats, normalizeQuote, sampleOf, selfText, type QuoteState } from '../shared/order-judge-sheet'
+import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, calibrateByType, dayActuals, experienceLines, spanDays, carryHourEdits, clientText, freeze, hourRows, hoursLabel, marketLine, marketStats, normalizeQuote, sampleOf, selfText, type QuoteState } from '../shared/order-judge-sheet'
 
 assert.deepEqual(DEFAULT_QUOTE_SETTINGS.rates, { 新做: 67, 接手改: 67 })
 // 下面的算式用两档不同的时间值，才测得出新做 / 接手改有没有算混；线上起点是上面这一行
@@ -513,6 +513,21 @@ pass('准确度：小时偏差和成交率')
   assert.equal(blockedBy({ id: 'p', name: 'p', summary: '', itemIds: ['a'] }, lockChain).size, 0)
   pass('互斥方案：冲突条目不含方案自己的，客户提交里和所选方案冲突的条目丢弃；互补方案不拦')
 
+  const freed = normalizeSubmission({ planId: 'p1', picked: ['r1', 'r2'], unblocked: ['r2', 'ghost'] }, forked)!
+  assert.deepEqual([freed.picked, freed.unblocked], [['r1', 'r2'], ['r2']])
+  assert.deepEqual([...blockedBy({ id: 'p', name: 'p', summary: '', itemIds: ['d'], blocks: ['a'] }, lockChain, new Set(['a']))], [])
+  assert.match(submissionNotes(forked, freed).join(), /小程序支付.*不冲突/)
+  assert.ok(applySubmission(forked, freed, null, 1).confirmed?.conflicts.some(c => /不冲突/.test(c)))
+  pass('客户认为不冲突的条目可以勾上，连带锁一起放开，并写进给开发者看的记录')
+
+  const turned = normalizeSubmission({ picked: ['r1', 'r2'], custom: [{ id: 'c5', title: '甲', after: [] }], links: { add: [['r2', 'r1'], ['r1', 'r1'], ['evil', 'r1'], ['c5', 'r3']], drop: [['r1', 'r2']] } }, flow)!
+  assert.deepEqual(turned.links, { add: [['r2', 'r1'], ['c1', 'r3']], drop: [['r1', 'r2']] })
+  const relinked = applySubmission(flow, turned, null, 1)
+  assert.deepEqual(relinked.items.slice(0, 2).map(i => i.dependsOn), [['r2'], []])
+  assert.deepEqual(relinked.items.find(i => i.id === 'r3')?.dependsOn, [relinked.items[relinked.items.length - 1].id])
+  assert.deepEqual(applyLinks(lockChain, { add: [['c', 'a'], ['d', 'a']], drop: [] }).map(n => n.dependsOn), [['d'], ['a'], ['b'], []])
+  pass('客户调换的先后关系跟着提交进新清单，客户条目换号后仍对得上，会成环的那条跳过')
+
   const est = normalizeEstimate({ items: [{ id: 'c1', hours: 3, basis: '确认', reason: 'x' }, { id: 'r3', hours: 50, title: '偷改', priority: '必须' }, { id: 'r2', hours: 'NaN' }], budget: '8000', questions: [] })
   const applied = applySubmission(flow, s, est, 123)
   assert.equal(applied.items.find(i => i.id === 'r3')!.priority, '不做')
@@ -602,6 +617,39 @@ pass('准确度：小时偏差和成交率')
   const lines = experienceLines([mixed], '商单')
   assert.ok(lines.some(l => /10 小时 → 2 小时/.test(l)) && lines.some(l => /6 小时 → 3 小时/.test(l)), lines.join('\n'))
   pass('填了模块的条目取实际，其余条目分整类实际扣掉已填后的余量')
+}
+
+// ── 按天记 ──
+{
+  const two = brief([item('r1', '必须', 10), item('r2', '必须', 6)])
+  const norm = normalizeQuote({ days: [{ from: '2026-11-13', to: '2026-11-11', ids: ['r1', 'r1', 'x'] }, { from: 'bad', ids: ['r2'] }, { from: '2026-11-12', to: '2026-11-12' }, { from: '2026-01-01', to: '2030-01-01' }] }).days
+  assert.deepEqual(norm, [{ from: '2026-11-11', to: '2026-11-13', ids: ['r1'] }, { from: '2026-11-12', to: null, ids: [] }])
+  assert.equal(spanDays({ from: '2026-11-11', to: '2026-11-13', ids: [] }), 3)
+  assert.equal(spanDays({ from: '2026-11-11', to: null, ids: [] }), 1)
+  pass('按天记的日期区间：倒填会对调、超过一年的丢弃')
+  // A+B 11-11 到 11-13，再单独填 A 11-11：A 只做 1 天，B 做 3 天；每天 8 小时，11 日按预估 10:6 分，12、13 日全是 B
+  const same = [{ id: 'r1', work: '新做' as const, hours: 10 }, { id: 'r2', work: '新做' as const, hours: 6 }]
+  const AB = { from: '2026-11-11', to: '2026-11-13', ids: ['r1', 'r2'] }, A = { from: '2026-11-11', to: null, ids: ['r1'] }
+  assert.equal(dayActuals([AB, A], same, 8)['新做'], 24)
+  const kinds = [{ id: 'r1', work: '新做' as const, hours: 10 }, { id: 'r2', work: '接手改' as const, hours: 6 }]
+  const byKind = dayActuals([AB, A], kinds, 8)
+  assert.equal(Math.round(byKind['新做'] * 1000) / 1000, 5)
+  assert.equal(Math.round(byKind['接手改'] * 1000) / 1000, 19)
+  pass('A+B 三天、A 单独一天：A 只算第一天，B 三天；每天按在做的模块预估比例分')
+  assert.deepEqual(dayActuals([A, AB], kinds, 8), byKind)
+  pass('先填单个模块再填区间，和先填区间再填单个模块结果一样')
+  const B12 = { from: '2026-11-11', to: '2026-11-12', ids: ['r2'] }
+  assert.equal(dayActuals([AB, A, B12], same, 8)['新做'], 24)
+  pass('某天所有模块都被更具体的一段排除时，当作联调、返工，按全部模块比例分')
+  const q = (extra: Record<string, unknown>) => proj({ status: '已成交', dailyHours: 8, feeling: '刚好', ...extra }, two)
+  const three = q({ days: [AB] })
+  assert.equal(calibrate([three, three, three]).settings.hourFactor['新做'], 1.5)
+  const own = q({ actual: { 新做: 8, 接手改: 0 }, days: [AB] })
+  assert.equal(calibrate([own, own, own]).settings.hourFactor['新做'], 0.5)
+  pass('按天记折成整类实际校准小时系数；整类已填时以整类为准')
+  const lines = experienceLines([q({ days: [{ from: '2026-11-11', to: null, ids: ['r1', 'r2'] }] })], '商单')
+  assert.ok(lines.some(l => /10 小时 → 5 小时/.test(l)) && lines.some(l => /6 小时 → 3 小时/.test(l)), lines.join('\n'))
+  pass('多模块一起做的日子只折成整类实际，按预估比例摊给条目')
 }
 
 console.log(`\n${checks} 项全部通过`)
