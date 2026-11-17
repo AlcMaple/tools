@@ -51,6 +51,10 @@ if (process.argv.includes('--serve')) {
   const track=await fresh.json() as {status:string;episode:number;cover:string;userTags:string[];goodEpisodeNotes:object}
   assert.equal(track.status,'plan');assert.equal(track.episode,0);assert.equal(track.cover,'');assert.deepEqual(track.userTags,[]);assert.deepEqual(track.goodEpisodeNotes,{})
   assert.equal(rev(),beforeRev+1)
+  // 分享者那条用的是自己的标题；索引查不到时先借用，补全后必须换成官方标题，且不再变回去
+  const titleOf = () => db.prepare('SELECT title,title_cn FROM tracks WHERE user_id=? AND bgm_id=110').get(f.alice) as {title:string;title_cn:string}
+  for (let i = 0; i < 100 && titleOf().title !== '合成作品'; i++) await new Promise(r => setTimeout(r, 50))
+  assert.deepEqual(titleOf(),{title:'合成作品',title_cn:'合成作品'},'SHARER_CUSTOM_TITLE_MUST_BE_REPLACED_BY_OFFICIAL')
   await save(110,alice,f.alice);assert.equal(rev(),beforeRev+1,'DUPLICATE_SAVE_MUST_BE_NOOP')
   assert.equal((await save(110,bob,f.alice)).status,409,'OWNER_SWITCH_MUST_REJECT')
   assert.equal((await save(110,'',f.alice)).status,401)

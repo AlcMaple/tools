@@ -417,17 +417,19 @@ function needsDetail(row: TrackRow): boolean {
  * 同一进程中失败不再自动尝试；记下原因，下一次服务启动后才可能重新补。
  */
 const detailScheduled = new Set<string>()
-function fillDetailLater(uid: number, bgmId: number): void {
+// provisionalTitle：从同好处加入、索引里查不到官方名时先借用分享者那条的标题（可能是对方的自定义标题）。
+// 补全时只要标题仍是这份临时值就换成官方的；读者在等待期间自己改过就以读者为准
+function fillDetailLater(uid: number, bgmId: number, provisionalTitle?: { title: string; titleCn: string }): void {
   if (isCustomBgmId(bgmId)) return
   const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
-  if (!existing || !needsDetail(existing)) return
+  if (!existing || (!needsDetail(existing) && !provisionalTitle)) return
   const key = `${uid}:${bgmId}`
   if (detailScheduled.has(key)) return
   detailScheduled.add(key)
   setTimeout(() => {
     void (async () => {
       const recheck = oneStmt.get(uid, bgmId) as TrackRow | undefined
-      if (!recheck || !needsDetail(recheck)) return
+      if (!recheck || (!needsDetail(recheck) && !provisionalTitle)) return
       try {
         const d = await scheduleBgmCoverRequest(() => fetchSubjectDetail(bgmId))
         const apply = db.transaction(() => {
@@ -438,6 +440,11 @@ function fillDetailLater(uid: number, bgmId: number): void {
 
           const sets: string[] = []
           const args: unknown[] = []
+          if (provisionalTitle && (d.name.trim() || d.nameCn.trim())
+            && current.title === provisionalTitle.title && current.title_cn === provisionalTitle.titleCn) {
+            sets.push('title = ?', 'title_cn = ?')
+            args.push(d.name.trim() || current.title, d.nameCn.trim())
+          }
           if (d.tags.length && parseList(current.bgm_tags).length === 0) {
             sets.push('bgm_tags = ?')
             args.push(JSON.stringify(d.tags))
@@ -817,17 +824,17 @@ tracks.put('/:bgmId', async (c) => {
       const item = publicAnimeForAction(bgmId, body.communitySource)
       if (!item) return null
       const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
-      if (existing) return { row: existing, created: false }
+      if (existing) return { row: existing, created: false, provisional: undefined }
       const now = Date.now()
       insertStmt.run({ user_id: uid, bgm_id: bgmId, status: 'plan', episode: 0,
         total_episodes: initialTotal(bgmId, item.airDate), title: item.name, title_cn: item.name_cn,
         cover: '', air_weekday: weekdayFromDate(item.airDate), air_date: item.airDate, score: 0,
         bgm_tags: '[]', user_tags: '[]', aliases: '[]', extra: '{}', observe_count: 0, updated_at: now })
       bumpRev(uid)
-      return { row: oneStmt.get(uid, bgmId) as TrackRow, created: true }
+      return { row: oneStmt.get(uid, bgmId) as TrackRow, created: true, provisional: item.titleOfficial ? undefined : { title: item.name, titleCn: item.name_cn } }
     }).immediate()
     if (!saved) return c.json({ error: '这部作品的公开分享已不可用', code: 'PUBLIC_ANIME_UNAVAILABLE' }, 404)
-    if (saved.created) fillDetailLater(uid, bgmId)
+    if (saved.created) fillDetailLater(uid, bgmId, saved.provisional)
     return c.json(toJson(saved.row))
   }
 

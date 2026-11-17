@@ -8,6 +8,7 @@ import type { Context } from 'hono'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { db } from './db'
+import { getCatalogItem } from './bgm/catalog'
 import { coversDir } from './data-dir'
 import { bindingsFor as girigiriBindingsFor } from './girigiri/bindings'
 import { bindingsFor as xifanBindingsFor } from './xifan/bindings'
@@ -454,7 +455,9 @@ community.get('/reviews/:bgmId', (c) => {
 })
 
 // 行动只带作品身份，不能把分享者的进度、笔记、来源或可撤回封面复制到读者手帐
-export function publicAnimeForAction(bgmId: number, source: unknown): { id: number; name: string; name_cn: string; airDate: string; episodes: number; score: number; cover: string; url: string } | null {
+// 分享者可以给正数条目改自定义标题；读者拿到的必须是官方标题。索引有就直接用，索引缺这条时
+// titleOfficial=false，由加入想看后的详情补全把这份临时标题换成官方的
+export function publicAnimeForAction(bgmId: number, source: unknown): { id: number; name: string; name_cn: string; airDate: string; episodes: number; score: number; cover: string; url: string; titleOfficial: boolean } | null {
   if (!Number.isSafeInteger(bgmId) || bgmId <= 0 || !source || typeof source !== 'object') return null
   const from = source as { kind?: unknown; username?: unknown }
   if (from.kind !== 'reviews' && from.kind !== 'profile') return null
@@ -464,13 +467,17 @@ export function publicAnimeForAction(bgmId: number, source: unknown): { id: numb
     WHERE t.bgm_id = ? AND u.tracks_public = 1 AND COALESCE(json_extract(t.extra, '$.subjectType'), 'anime') = 'anime' AND ${condition}
     ORDER BY t.id DESC LIMIT 1`).get(...(from.kind === 'profile' ? [bgmId, from.username as string] : [bgmId])) as { title: string; title_cn: string; air_date: string } | undefined
   if (!row || !(row.title.trim() || row.title_cn.trim())) return null
-  return { id: bgmId, name: row.title.slice(0, 200), name_cn: row.title_cn.slice(0, 200), airDate: row.air_date.slice(0, 10), episodes: 0, score: 0, cover: '', url: '' }
+  const official = getCatalogItem(bgmId)
+  if (official && (official.name.trim() || official.nameCn.trim())) {
+    return { id: bgmId, name: official.name.slice(0, 200), name_cn: official.nameCn.slice(0, 200), airDate: (official.date || row.air_date).slice(0, 10), episodes: 0, score: 0, cover: '', url: '', titleOfficial: true }
+  }
+  return { id: bgmId, name: row.title.slice(0, 200), name_cn: row.title_cn.slice(0, 200), airDate: row.air_date.slice(0, 10), episodes: 0, score: 0, cover: '', url: '', titleOfficial: false }
 }
 
 community.get('/action/:bgmId', c => {
   publicHeaders(c)
   const item = publicAnimeForAction(Number(c.req.param('bgmId')), { kind: c.req.query('kind'), username: c.req.query('username') })
-  return item ? c.json(item) : c.json({ error: '这部作品的公开分享已不可用', code: 'PUBLIC_ANIME_UNAVAILABLE' }, 404)
+  return item ? c.json({ id: item.id, name: item.name, name_cn: item.name_cn, airDate: item.airDate, episodes: item.episodes, score: item.score, cover: item.cover, url: item.url }) : c.json({ error: '这部作品的公开分享已不可用', code: 'PUBLIC_ANIME_UNAVAILABLE' }, 404)
 })
 
 // 本地封面不能复用只认当前会话的 tracks 路径；这里重新检查公开开关，让撤回公开后旧地址也失效。
