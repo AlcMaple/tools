@@ -31,8 +31,9 @@ export function addWatchFixture(app: Hono<{ Variables: { agentUid: number } }>, 
     { bgmId: 110, name: 'Fixture', nameCn: '夹具里的另一部番', date: '2024-01-01', eps: 12, score: 7, cover: '', tags: [] },
   ]
   database.prepare("INSERT OR REPLACE INTO xifan_binding(bgm_id,xifan_id,xifan_name,updated_at,source_version) VALUES(101,1001,?,?,'next')").run('葬送的芙莉莲 · 本地验证片', Date.now())
-  let mediaRequests = 0, playlistRequests = 0
-  app.get('/__watch-test/status', c => c.json({ fixtureOnly: true, mediaRequests, playlistRequests, durationSeconds: 120, productionData: false }))
+  let mediaRequests = 0, playlistRequests = 0, prefetchRequests = 0
+  app.post('/api/player/prefetch-next', c => { prefetchRequests++; return c.json({ ok: true, fixtureOnly: true }) })
+  app.get('/__watch-test/status', c => c.json({ fixtureOnly: true, mediaRequests, playlistRequests, prefetchRequests, durationSeconds: 120, productionData: false }))
   app.get('/api/catalog', c => {
     const q = (c.req.query('q') ?? '').trim(), year = Number(c.req.query('year') ?? 0)
     const found = items.filter(item => (!q || item.nameCn.includes(q)) && (!year || item.date.startsWith(String(year))))
