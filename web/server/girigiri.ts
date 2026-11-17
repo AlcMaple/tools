@@ -13,7 +13,7 @@ import {
   verifyGirigiriCaptcha,
 } from './girigiri/search'
 import { getSourcePageUrl, isGirigiriId } from './girigiri/resolve'
-import { GirigiriError } from './girigiri/api'
+import { GirigiriError, detailPageUrl } from './girigiri/api'
 
 const girigiri = new Hono()
 
@@ -26,7 +26,7 @@ function failure(c: Context, error: unknown): Response {
   }, status)
 }
 
-// 源站使用零基线路/选集索引，必须从真实列表查集号；缺集时不跳回第 1 集。
+// 源站使用零基线路/选集索引，必须从真实列表查集号；缺集时不跳回第 1 集，改送详情页
 girigiri.get('/source-page', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录' }, 401)
@@ -39,6 +39,11 @@ girigiri.get('/source-page', async (c) => {
   try {
     return c.redirect(await getSourcePageUrl(id, ep), 302)
   } catch (error) {
+    // 集名认不出来时用户还在源站流程里，送到该番详情页自己挑集，比一行 JSON 报错有用
+    if (error instanceof GirigiriError && error.code === 'GIRIGIRI_EPISODE_NOT_FOUND') {
+      console.warn(`[girigiri] ${id} 找不到第 ${ep} 集，转到详情页`)
+      return c.redirect(detailPageUrl(id), 302)
+    }
     return failure(c, error)
   }
 })
@@ -101,20 +106,24 @@ girigiri.post('/locate', async (c) => {
 girigiri.post('/bind', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录' }, 401)
-  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; girigiriId?: unknown; girigiriName?: unknown }
+  const body = (await c.req.json().catch(() => ({}))) as { bgmId?: number; girigiriId?: unknown; girigiriName?: unknown; epOffset?: unknown }
   const bgmId = Number(body.bgmId)
   const id = typeof body.girigiriId === 'string' ? body.girigiriId.trim().toUpperCase() : ''
   if (!Number.isInteger(bgmId) || bgmId <= 0) return c.json({ error: 'bgmId 不合法' }, 400)
   if (!isGirigiriId(id)) return c.json({ error: 'girigiriId 不合法' }, 400)
-  putBinding(bgmId, id, String(body.girigiriName ?? '').slice(0, 200))
+  const epOffset = body.epOffset == null ? 0 : Number(body.epOffset)
+  if (!Number.isInteger(epOffset) || epOffset < 0 || epOffset > 5000) return c.json({ error: 'epOffset 不合法' }, 400)
+  putBinding(bgmId, id, String(body.girigiriName ?? '').slice(0, 200), epOffset)
   return c.json({ ok: true, binding: getBinding(bgmId) })
 })
 
 girigiri.get('/bindings', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ data: {} })
-  const rows = db.prepare('SELECT bgm_id FROM tracks WHERE user_id = ?').all(session.uid) as { bgm_id: number }[]
-  return c.json({ data: bindingsFor(rows.map((row) => row.bgm_id)) })
+  const rows = db.prepare('SELECT bgm_id, total_episodes FROM tracks WHERE user_id = ?').all(session.uid) as { bgm_id: number; total_episodes: number | null }[]
+  const data = bindingsFor(rows.map((row) => row.bgm_id))
+  for (const row of rows) if (data[row.bgm_id]) data[row.bgm_id].episodes = row.total_episodes
+  return c.json({ data })
 })
 
 export default girigiri

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 700" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a-gray" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#6d686b"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1118" height="698" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+
+  <text x="32" y="38" font-size="19" font-weight="700" fill="#282529">iPhone 上新番一片都存不进本机：存每一片的最后一步「改名」在 Safari 上必失败</text>
+  <text x="32" y="61" font-size="12.5" fill="#756f73">结论先行：跟源站、网速、拖进度都无关，只看格式。老番给 mp4 一直能存；新番给 HLS 的从上线起在 iPhone 上就没存成过（改后 11-15 实测：学生会 ep6 106 秒、ep7 52 秒下完）</text>
+
+  <!-- 一、用户看到的 -->
+  <rect x="32" y="84" width="1056" height="168" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="110" font-size="14" font-weight="700" fill="#353136">一、用户看到的：同是 Girigiri、同在 iPhone 上看</text>
+
+  <rect x="52" y="124" width="500" height="112" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="68" y="146" font-size="12.5" font-weight="700" fill="#316247">老番（现实主义勇者，源站给 mp4）</text>
+  <text x="68" y="168" font-size="11" fill="#316247">胶片柜里 14～26 集整集都在，每集约 200MB</text>
+  <text x="68" y="186" font-size="11" fill="#316247">一集下完自动接着下一集</text>
+  <text x="68" y="212" font-size="11" fill="#4a4450">所以看起来「本地缓存一直好好的」</text>
+
+  <rect x="568" y="124" width="500" height="112" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="584" y="146" font-size="12.5" font-weight="700" fill="#96434f">新番（学生会也有洞！，源站给 HLS）</text>
+  <text x="584" y="168" font-size="11" fill="#96434f">改前：胶片柜里两集加起来只有 7MB</text>
+  <text x="584" y="186" font-size="11" fill="#96434f">开播约 20 秒后退回经本站播放，网速再快也一样</text>
+  <text x="584" y="212" font-size="11" fill="#316247">改后：和老番一样整集存下，一集约 1～2 分钟</text>
+
+  <!-- 二、背后在做的 -->
+  <rect x="32" y="268" width="1056" height="232" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="294" font-size="14" font-weight="700" fill="#353136">二、背后在做的：两种格式落盘方式不同</text>
+
+  <text x="52" y="328" font-size="12.5" font-weight="700" fill="#316247">mp4</text>
+  <rect x="110" y="312" width="220" height="26" rx="6" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="122" y="329" font-size="11" fill="#36566d">下满 1MB</text>
+  <line x1="330" y1="325" x2="362" y2="325" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="366" y="312" width="260" height="26" rx="6" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="378" y="329" font-size="11" fill="#316247">直接写成这一块的文件，完成</text>
+
+  <text x="52" y="378" font-size="12.5" font-weight="700" fill="#96434f">HLS</text>
+  <rect x="110" y="362" width="220" height="26" rx="6" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="122" y="379" font-size="11" fill="#36566d">整片下完（几百 KB～2MB）</text>
+  <line x1="330" y1="375" x2="362" y2="375" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="366" y="362" width="260" height="26" rx="6" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="378" y="379" font-size="11" fill="#36566d">先写成临时文件</text>
+  <line x1="626" y1="375" x2="658" y2="375" stroke="#6d686b" marker-end="url(#a-gray)"/>
+  <rect x="662" y="362" width="400" height="26" rx="6" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="674" y="379" font-size="11" fill="#96434f">改成正式名：Safari 报「参数不够」，这一片作废</text>
+
+  <rect x="110" y="404" width="952" height="80" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="126" y="426" font-size="12.5" font-weight="700" fill="#7a6234">为什么一直没发现</text>
+  <text x="126" y="447" font-size="11" fill="#7a6234">· 电脑上的 Chrome 改名只要给新名字，Safari 要同时给「放到哪个文件夹」和新名字；开发和测试都在电脑上，从没出错</text>
+  <text x="126" y="466" font-size="11" fill="#7a6234">· 这个错被当成「网络中断」：每片重下一遍，连续 3 次后整集放弃，日志看着像网不好，而不是像代码写错</text>
+
+  <!-- 三、同一轮顺手修的 -->
+  <rect x="32" y="516" width="1056" height="164" rx="12" fill="#ffffff" stroke="#cfc7cb"/>
+  <text x="52" y="542" font-size="14" font-weight="700" fill="#353136">三、同一轮修的另外两处</text>
+
+  <rect x="52" y="556" width="500" height="108" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="68" y="578" font-size="12.5" font-weight="700" fill="#4a4450">打开一集时一直转圈</text>
+  <text x="68" y="600" font-size="11" fill="#96434f">改前：续播时自动开播，跳页后 iPhone 不许有声自动播，</text>
+  <text x="68" y="617" font-size="11" fill="#96434f">停在暂停上却一直转圈，其实点播放就能看</text>
+  <text x="68" y="643" font-size="11" fill="#316247">改后：整页打开一律停在原时间点，显示播放按钮，等用户点</text>
+
+  <rect x="568" y="556" width="500" height="108" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="584" y="578" font-size="12.5" font-weight="700" fill="#4a4450">线路出错自动重试时被踢出全屏</text>
+  <text x="584" y="600" font-size="11" fill="#96434f">改前：播到 19:45 解码出错，2 秒后重试是把整台播放器拆了重建，</text>
+  <text x="584" y="617" font-size="11" fill="#96434f">全屏退出、画面黑掉</text>
+  <text x="584" y="643" font-size="11" fill="#316247">改后：同一台播放器重新加载，全屏和进度都保留</text>
+</svg>

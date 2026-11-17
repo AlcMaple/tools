@@ -5,7 +5,7 @@ import { toast } from './Toast'
 // 设计稿：docs/design-mockups/线路状态与本地缓存.html
 
 interface Bar { t: number; bps: number; users: number }
-interface LineStatus { source: number; name: string; bps: number; users: number; samples: number; mine: number; bars: (Bar | null)[] }
+interface LineStatus { site: 'xifan' | 'girigiri'; source: number; name: string; bps: number; users: number; samples: number; mine: number; bars: (Bar | null)[] }
 interface Status { lines: LineStatus[]; me: { n: number; rank: number; days: number[] } }
 type Load = Status | null | 'error' | 'login'
 
@@ -48,11 +48,11 @@ function Lines({ status }: { status: Load }): JSX.Element {
       {status.lines.map((l) => {
         const lv = level(l.bps)
         return (
-          <div key={l.source} className="ls-line">
+          <div key={`${l.site}-${l.source}-${l.name}`} className="ls-line">
             <div className="ls-line-top">
               <div>
                 <div className="ls-line-name">{l.name}</div>
-                <div className="ls-line-site">稀饭</div>
+                <div className="ls-line-site">{l.site === 'girigiri' ? 'Girigiri' : '稀饭'}</div>
               </div>
               <div className="ls-speed">{l.bps ? mbps(l.bps) : '—'}{l.bps > 0 && <small>Mbps</small>}</div>
               <span className={`ls-pill ${lv}`}>{WORD[lv]}</span>
@@ -200,8 +200,8 @@ function Mine({ status }: { status: Load }): JSX.Element | null {
   return (
     <div className="ls-contrib">
       <div className="ls-card">
-        {measured.length === 0 ? <p className="muted small">哥哥还没在稀饭看过番呢</p> : measured.map((l) => (
-          <div key={l.source} className="ls-vs">
+        {measured.length === 0 ? <p className="muted small">哥哥还没帮忙量过线路呢</p> : measured.map((l) => (
+          <div key={`${l.site}-${l.source}-${l.name}`} className="ls-vs">
             <span>{l.name}</span>
             <div className="ls-track">
               <div className="all" style={{ width: `${(l.bps / top) * 100}%` }} />
@@ -214,7 +214,7 @@ function Mine({ status }: { status: Load }): JSX.Element | null {
       </div>
       <div className="ls-card ls-stamp">
         <div className="ls-stamp-ring"><b>{status.me.n}</b><small>次测速</small></div>
-        <p>{status.me.n > 0 ? `哥哥是第 ${status.me.rank} 勤快的观测员呢` : '看一集稀饭的番就能盖上章啦'}</p>
+        <p>{status.me.n > 0 ? `哥哥是第 ${status.me.rank} 勤快的观测员呢` : '看一集番就能盖上章啦'}</p>
         <div className="ls-dots">
           {status.me.days.map((n, i) => (
             <span key={i} className={n === 0 ? 'd0' : n / peak < 0.34 ? 'd1' : n / peak < 0.67 ? 'd2' : 'd3'} />

@@ -567,6 +567,16 @@
   {
     "file": "server/index.ts",
     "method": "get",
+    "path": "/api/catalog/:id/details"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
+    "path": "/api/catalog/:id/related"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
     "path": "/api/catalog/genres"
   },
   {
@@ -978,6 +988,11 @@
     "file": "server/tracks.ts",
     "method": "get",
     "path": "/:bgmId/good-episodes"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
+    "path": "/:bgmId/playback-progress"
   },
   {
     "file": "server/tracks.ts",

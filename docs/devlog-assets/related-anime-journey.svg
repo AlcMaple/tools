@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="610" viewBox="0 0 1040 610">
+<style>text{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;fill:#282529}.title{font-size:19px;font-weight:700}.sub{font-size:12.5px;fill:#756f73}.head{font-size:14px;font-weight:700}.body{font-size:12px}</style>
+<rect x="1" y="1" width="1038" height="608" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+<text x="28" y="38" class="title">从一部番找到前传、续集和番外，再接回想看清单</text>
+<text x="28" y="66" class="sub">关联查询只读本站离线资料；观看与手帐进度仍由用户决定</text>
+<rect x="28" y="92" width="984" height="145" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+<text x="48" y="122" class="head">用户看到的主线</text>
+<text x="48" y="152" class="body">目录卡片「相关作品」 → 按续集、番外篇、不同演绎等分组 → 查看另一部的关联</text>
+<text x="48" y="182" class="body">登录后点「加入想看」保存；已收藏条目显示原状态，不再新增第二条</text>
+<text x="48" y="212" class="body">「返回上一部」接回原作品；关闭弹窗回到原目录，搜索与筛选不丢</text>
+<rect x="28" y="257" width="476" height="150" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+<text x="48" y="287" class="head">背后怎么取得关系</text>
+<text x="48" y="319" class="body">既有归档 → 作品与关系一起导入临时索引</text>
+<text x="48" y="349" class="body">检查完成后整体替换，出错时保留旧索引</text>
+<text x="48" y="379" class="body">每次只读直接关联，不在用户浏览时爬外站</text>
+<rect x="524" y="257" width="488" height="150" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+<text x="544" y="287" class="head">为什么不直接给观看顺序</text>
+<text x="544" y="319" class="body">前传描述故事关系，不一定适合先看</text>
+<text x="544" y="349" class="body">总集篇与不同演绎不是下一季，不能混成一条线</text>
+<text x="544" y="379" class="body">保留关系名称，不用猜测替用户作观看决定</text>
+<rect x="28" y="427" width="984" height="130" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+<text x="48" y="457" class="head">没有资料、权限变化或保存失败时</text>
+<text x="48" y="487" class="body">旧索引尚无关联资料与确实没有关联分开提示；访客不展示受限起点和目标</text>
+<text x="48" y="517" class="body">读取失败显示具体错误，不自动重试；保存仍使用原手帐流程，失败不冒充成功</text>
+<text x="28" y="587" class="sub">只想直接看某一部时仍走原有入口，无需经过关联弹窗</text>
+</svg>

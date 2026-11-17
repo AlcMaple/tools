@@ -53,7 +53,7 @@ export function GuestAgent({open,close,login,header}:{open:boolean;close:()=>voi
       const data=await response.json();if(attempt.signal.aborted||!alive.current)throw new DOMException('Stopped','AbortError')
       if(!response.ok||!data.ready)throw new Error(data.error??'AI 暂时没有准备好，请稍后重试。')
     })
-    void fetch('/api/agent/guest/status',{signal:controller.signal,credentials:'same-origin'}).then(async response=>{const data=await response.json();if(!controller.signal.aborted&&alive.current){if(!response.ok)throw new Error(data.error??'连接检查失败');setAvailable((data.provider.ready||data.provider.canPrepare)&&data.knowledge.status==='ready');setEnabled(data.provider.enabled);if(data.provider.canPrepare||data.provider.ready)void connection.current?.ensure().catch(()=>{})}}).catch(e=>{if(!controller.signal.aborted&&alive.current)setError(e instanceof Error?e.message:'连接检查失败')})
+    void fetch('/api/agent/guest/status',{signal:controller.signal,credentials:'same-origin'}).then(async response=>{const data=await response.json();if(!controller.signal.aborted&&alive.current){if(!response.ok)throw new Error(data.error??'连接检查失败');setAvailable((data.provider.ready||data.provider.canPrepare)&&data.knowledge.status==='ready');setEnabled(data.provider.enabled)}}).catch(e=>{if(!controller.signal.aborted&&alive.current)setError(e instanceof Error?e.message:'连接检查失败')})
     const hide=()=>{active.current?.abort();warmup.current?.abort();controller.abort()};window.addEventListener('pagehide',hide)
     return()=>{alive.current=false;active.current?.abort();warmup.current?.abort();controller.abort();window.removeEventListener('pagehide',hide)}
   },[])
