@@ -14,6 +14,7 @@ import { useAuth } from '../auth'
 import { loadBindings, saveBindingsCache } from '../tracksSync'
 import { sourceEp, suggestEpOffset, watchEp } from './common'
 import { SourceBindPickerModal, SourceSearchModal, type PickerFlow, type SearchFlow } from './sourceModals'
+import { allowsTracksPlayerOpener, useTracksPlayerReturn } from './playerReturn'
 
 // 「继续看 / 试看」的共用流程：源绑定表、片源定位、候选 / 搜索弹窗。
 // 我的追番和番剧周历都走这一份，请求预算、绑定缓存和弹窗行为才不会出现两套。
@@ -28,7 +29,7 @@ const isRecentAnime = (t: Track): boolean => isRecentAir(t.airDate)
 
 const emptyBindings = (): Record<SourceId, Record<number, SourceBinding>> => ({ xifan: {}, girigiri: {} })
 
-export function useSourceWatch(onError: (message: string) => void): {
+export function useSourceWatch(onError: (message: string) => void, returnToTracks = false): {
   bindings: Record<SourceId, Record<number, SourceBinding>>
   locating: { source: SourceId; bgmId: number } | null
   continueWatch: (source: OnlineSource, t: Track, mode: WatchMode, rebind?: boolean) => void
@@ -36,6 +37,7 @@ export function useSourceWatch(onError: (message: string) => void): {
   modals: JSX.Element
 } {
   const { user } = useAuth()
+  useTracksPlayerReturn(returnToTracks, user?.id ?? null)
   const setError = onError
   const [bindings, setBindings] = useState<Record<SourceId, Record<number, SourceBinding>>>(emptyBindings)
   const [locating, setLocating] = useState<{ source: SourceId; bgmId: number } | null>(null)
@@ -71,7 +73,7 @@ export function useSourceWatch(onError: (message: string) => void): {
       const url = mode === 'source'
         ? source.sourcePageUrl(bound.id, ep)
         : source.playPageUrl(bound.id, ep, t.bgmId)
-      window.open(url, '_blank', 'noopener')
+      window.open(url, '_blank', allowsTracksPlayerOpener(url, mode, returnToTracks) ? '' : 'noopener')
       return
     }
     if (source.id === 'xifan' || !isRecentAnime(t)) {
@@ -93,7 +95,7 @@ export function useSourceWatch(onError: (message: string) => void): {
           const url = mode === 'source'
             ? source.sourcePageUrl(b.id, watchEp(t))
             : source.playPageUrl(b.id, watchEp(t), t.bgmId)
-          window.open(url, '_blank', 'noopener')
+          window.open(url, '_blank', allowsTracksPlayerOpener(url, mode, returnToTracks) ? '' : 'noopener')
         } else if (r.candidates.length) {
           setPickerFlow({ source: source.id, track: t, candidates: r.candidates, mode })
         } else {
@@ -140,6 +142,7 @@ export function useSourceWatch(onError: (message: string) => void): {
         <SourceBindPickerModal
           source={sourceById(pickerFlow.source)}
           flow={pickerFlow}
+          returnToTracks={returnToTracks}
           offsetFor={offsetFor(pickerFlow.source, pickerFlow.track.bgmId)}
           onPick={(cand) => confirmBind(sourceById(pickerFlow.source), pickerFlow.track, cand)}
           onSearch={() => {
@@ -154,6 +157,7 @@ export function useSourceWatch(onError: (message: string) => void): {
         <SourceSearchModal
           source={sourceById(searchFlow.source)}
           flow={searchFlow}
+          returnToTracks={returnToTracks}
           offsetFor={offsetFor(searchFlow.source, searchFlow.track.bgmId)}
           onPick={(hit) => confirmSearchBind(sourceById(searchFlow.source), hit)}
           onClose={() => setSearchFlow(null)}
