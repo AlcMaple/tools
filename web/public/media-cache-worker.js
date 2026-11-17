@@ -54,7 +54,13 @@ self.onmessage = (e) => {
   if (m.type === 'stop') { stopAll(); return }
   if (m.type !== 'job') return
   if (m.priority === 'current') {
-    if (current && current.job.hash === m.job.hash) { queue = []; return }
+    // 同一集重新挂上（出错重载、退路换回本机）时页面已把下载进度清空，不补发一次 start 它就只能拿播放器缓冲当领先量，
+    // 刚重载时只有几秒，被当成下载跟不上切去经本站（真机 11-15 飙马野郎 ep1：本机已有 130 片仍被切走，之后看一会卡一会）
+    if (current && current.job.hash === m.job.hash) {
+      queue = []
+      if (current.started) post({ ...current.started, have: Array.from(current.have) })
+      return
+    }
     stopAll()
     queue = [m.job]
   } else if (!queue.some((j) => j.hash === m.job.hash) && !(current && current.job.hash === m.job.hash)) {
@@ -155,7 +161,9 @@ async function writeFile(dir, name, bytes) {
 async function writeFileAtomic(dir, name, bytes) {
   await writeFile(dir, 't' + name, bytes)
   const tmp = await dir.getFileHandle('t' + name)
-  if (typeof tmp.move === 'function') { await tmp.move(name); return }
+  // Safari 的 move 要求「目标目录, 新名字」两个参数，只传名字会抛 Not enough arguments（真机 11-15：iPhone 上 HLS 一片都存不下来，
+  // 被当成传输中断连试 3 次后整集放弃）。两个参数的写法 Chrome 也认
+  if (typeof tmp.move === 'function') { await tmp.move(dir, name); return }
   await writeFile(dir, name, bytes)
   await dir.removeEntry('t' + name)
 }
@@ -227,7 +235,8 @@ async function run(state) {
   await writeMeta(dir, meta)
   channel.postMessage({ type: 'meta', hash: job.hash })
   log('ep' + job.ep + ' 开始 ' + (total / 1048576).toFixed(0) + 'MB，已有 ' + state.have.size + '/' + n + ' 块')
-  post({ type: 'start', hash: job.hash, kind: 'mp4', total, chunk: CHUNK, have: Array.from(state.have) })
+  state.started = { type: 'start', hash: job.hash, kind: 'mp4', total, chunk: CHUNK }
+  post({ ...state.started, have: Array.from(state.have) })
 
   const startedAt = performance.now()
   let fetchedBytes = 0, failures = 0
@@ -466,11 +475,43 @@ async function fetchWhole(url, conns, signal) {
   return whole
 }
 
+// TS 分片由 188 字节的包首尾相接，长度不是 188 的整数倍就是被截断的。真机 11-15 飙马野郎 ep1：iPhone 那条 CDN 线路对第 4 片
+// 只给 1638400 字节（完整 2119136）且正常结束，不报错；存下来后 iPhone 每次播到 39 秒都解码出错。fMP4 等其他格式不查
+function truncatedTs(bytes) {
+  return bytes.length >= 188 && bytes[0] === 0x47 && bytes.length % 188 !== 0
+}
+// 同一地址再取一次多半还是那份截断的（坏在 CDN 节点缓存里），重取时加个参数换一份
+function bust(url) {
+  return url + (url.includes('?') ? '&' : '?') + '_mt=' + Date.now()
+}
+// 以前没查长度时存下的坏片：开工前删掉，当作没下过
+async function dropTruncated(dir, n) {
+  let dropped = 0
+  for await (const [name, handle] of dir.entries()) {
+    const m = /^r(\d+)$/.exec(name)
+    if (!m || Number(m[1]) >= n) continue
+    const file = await handle.getFile()
+    if (file.size < 188 || file.size % 188 === 0) continue
+    if (new Uint8Array(await file.slice(0, 1).arrayBuffer())[0] !== 0x47) continue
+    await dir.removeEntry(name)
+    dropped++
+  }
+  return dropped
+}
+
 async function runHls(state) {
   const job = state.job
   let { top, dir } = await jobDir(job.hash)
   let meta = await readMeta(dir)
   const now = Date.now()
+  if (meta && meta.complete) {
+    const dropped = await dropTruncated(dir, meta.count)
+    if (dropped) {
+      log('ep' + job.ep + ' 已下完的这一集有 ' + dropped + ' 片不完整，删掉重下')
+      meta = { ...meta, complete: false }
+      await writeMeta(dir, meta)
+    }
+  }
   if (meta && meta.complete) {
     await writeMeta(dir, { ...meta, savedAt: now })
     post({ type: 'complete', hash: job.hash, total: meta.total, cached: true })
@@ -488,6 +529,8 @@ async function runHls(state) {
   const n = res.length
   const seeded = await adoptSeed(top, dir, job.seed, (m) => m.kind === 'hls' && m.count === n, (name) => /^r\d+$/.test(name))
   if (seeded) log('ep' + job.ep + ' 从上一条线路接过 ' + seeded + ' 片')
+  const dropped = await dropTruncated(dir, n)
+  if (dropped) log('ep' + job.ep + ' 本机有 ' + dropped + ' 片不完整，删掉重下')
   let haveBytes = 0
   for await (const [name, handle] of dir.entries()) {
     const m = /^r(\d+)$/.exec(name)
@@ -501,12 +544,13 @@ async function runHls(state) {
     count: n, total: 0, createdAt: meta ? meta.createdAt : now, savedAt: now, complete: false }
   await writeMeta(dir, meta)
   channel.postMessage({ type: 'meta', hash: job.hash })
-  post({ type: 'start', hash: job.hash, kind: 'hls', segs, have: Array.from(state.have) })
+  state.started = { type: 'start', hash: job.hash, kind: 'hls', segs }
+  post({ ...state.started, have: Array.from(state.have) })
   log('ep' + job.ep + ' 开始 HLS ' + n + ' 片，同时 ' + (job.par || 1) + ' 片 × 每片 ' + (job.conns || 1) + ' 段，已有 ' + state.have.size + ' 片')
 
   const startedAt = performance.now()
   let fetchedBytes = 0, failures = 0, quotaChecked = false, fatal = null
-  const inflight = new Set()
+  const inflight = new Set(), busted = new Set()
   const ctrls = new Set()
   // 播放器要了哪片就从哪片往后接着拉（跳进度之后紧接着要的就是后面几片），到尾再回头补前面的缺口。
   let cursor = 0
@@ -531,8 +575,9 @@ async function runHls(state) {
       const ctrl = new AbortController()
       ctrls.add(ctrl)
       try {
-        const bytes = await fetchWhole(res[next], job.conns || 1, ctrl.signal)
+        const bytes = await fetchWhole(busted.has(next) ? bust(res[next]) : res[next], job.conns || 1, ctrl.signal)
         if (state.stopped || fatal) return
+        if (truncatedTs(bytes)) { busted.add(next); throw new Error('分片不完整，只收到 ' + bytes.length + ' 字节') }
         if (!quotaChecked) {
           quotaChecked = true
           const est = await navigator.storage.estimate()

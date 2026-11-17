@@ -86,6 +86,28 @@ export interface CatalogItem {
 
 export type CatalogSort = 'score' | 'date'
 
+// 来源：https://github.com/bangumi/common/blob/master/subject_relations.yml 的动画关系；故事关系不等于推荐观看顺序
+const RELATIONS: Readonly<Record<number, string>> = { 1: '改编', 2: '前传', 3: '续集', 4: '总集篇', 5: '全集', 6: '番外篇', 7: '角色出演', 8: '相同世界观', 9: '不同世界观', 10: '不同演绎', 11: '衍生', 12: '主线故事', 14: '联动', 99: '其他关联' }
+
+export function relatedCatalog(id: number, adult: boolean): { ready: boolean; source: CatalogItem; items: (CatalogItem & { relation: string })[]; truncated: boolean } | null {
+  const h = openOfflineIndex()
+  if (!h || !hasAnimeTable()) return null
+  const shown = adult ? '1' : visibleSql()
+  const one = h.prepare(`SELECT ${colsSql()} FROM anime WHERE bgm_id = ? AND ${shown}`)
+  const source = one.get(id) as IndexRow | undefined
+  if (!source) return null
+  const ready = !!h.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='anime_relation'").get()
+  if (!ready) return { ready: false, source: toItem(source, false), items: [], truncated: false }
+  const relations = h.prepare(`SELECT relation_type, related_subject_id FROM anime_relation
+    WHERE subject_id = ? AND related_subject_id != subject_id AND related_subject_id IN (SELECT bgm_id FROM anime WHERE ${shown})
+    GROUP BY relation_type, related_subject_id ORDER BY relation_type, MIN(sort), related_subject_id LIMIT 201`).all(id) as { relation_type: number; related_subject_id: number }[]
+  const items = relations.slice(0, 200).flatMap(relation => {
+    const row = one.get(relation.related_subject_id) as IndexRow | undefined
+    return row ? [{ ...toItem(row, false), relation: RELATIONS[relation.relation_type] ?? '其他关联' }] : []
+  })
+  return { ready: true, source: toItem(source, false), items, truncated: relations.length > 200 }
+}
+
 interface IndexRow { bgm_id: number; name: string; name_cn: string; date: string; score: number; eps?: number; tags: string; adult: number }
 
 function parseTags(raw: string, max: number): string[] {

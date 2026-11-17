@@ -31,7 +31,7 @@ import { AUTH_SECRET } from '../secrets'
 import { playerPageSecurity, renderNonce } from '../security'
 import { captureClientLog } from '../monitoring'
 import { sanitizeSentryUser } from '../../shared/sentry-user'
-import { parsePlayerBgmId, playerSourceOptions, serializePlayerSources, type WebPlayerSource } from '../player-sources'
+import { parsePlayerBgmId, playerEpOffset, playerSourceOptions, serializePlayerSources, type WebPlayerSource } from '../player-sources'
 import { serveStream } from '../xifan/stream'
 import { schedulePrefetch, serveFromDisk, warmDisk } from '../xifan/disk'
 import { canProxy } from '../xifan/proxy-hosts'
@@ -52,7 +52,7 @@ player.route('/', probe)
 
 interface Line { source: number; name: string }
 interface PlayLine { source: number; kind: 'mp4' | 'hls'; url: string; s: string }
-interface Playlist { title: string; lines: Line[]; first: PlayLine | null; eps: number[]; speeds: Record<number, number> }
+interface Playlist { title: string; lines: Line[]; first: PlayLine | null; eps: number[]; epLabels?: Record<number, string>; speeds: Record<number, number> }
 
 function sign(url: string): string {
   return createHmac('sha256', AUTH_SECRET).update('player-media:' + url).digest('base64url').slice(0, 32)
@@ -85,7 +85,7 @@ async function playlistOf(src: WebPlayerSource, id: string, ep: number, uid: num
     return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps, speeds: speedsFor(src, p.lines) }
   }
   const p = await girigiri.getPlaylist(id, ep)
-  return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps, speeds: speedsFor(src, p.lines) }
+  return { title: p.title, lines: p.lines, first: signed(p.first), eps: p.eps, epLabels: p.epLabels, speeds: speedsFor(src, p.lines) }
 }
 
 async function lineOf(src: WebPlayerSource, id: string, ep: number, source: number, uid: number): Promise<PlayLine | null> {
@@ -111,6 +111,13 @@ function resolveFailure(c: Context, error: unknown): Response {
   }
   if (error instanceof GirigiriError) {
     return c.json({ error: message, code: error.code, upstreamStatus: error.upstreamStatus }, error.upstreamStatus === 429 ? 429 : 502)
+  }
+  // undici 连不上源站时只抛一句「fetch failed」，原因在 cause 里。原样透给页面，用户分不清是本站坏了还是源站连不上
+  if (error instanceof TypeError && message === 'fetch failed') {
+    const site = c.req.query('src') === 'girigiri' ? 'Girigiri' : '稀饭'
+    const detail = String(cause ?? '')
+    const why = /timeout/i.test(detail) ? '连接超时' : /closed|reset|terminated/i.test(detail) ? '连接被断开' : '连不通'
+    return c.json({ error: `本站连不上 ${site}（${why}），稍后点重试`, code: 'UPSTREAM_UNREACHABLE' }, 502)
   }
   return c.json({ error: message }, 502)
 }
@@ -420,7 +427,7 @@ player.get('/page', async (c) => {
     PLAY_PAGE
       .replace('__PLAYER_SOURCES__', serializePlayerSources(playerSourceOptions(args.src, args.id, args.ep, bgmId)))
       .replace('__MONITOR_CONFIG__', inlineJson(monitor))
-      .replace('__PAGE_ARGS__', inlineJson({ src: args.src, id: args.id, ep: args.ep, bgmId })),
+      .replace('__PAGE_ARGS__', inlineJson({ src: args.src, id: args.id, ep: args.ep, bgmId, ownerId: session.uid, epOffset: playerEpOffset(args.src, args.id, bgmId) })),
   )
   playerPageSecurity(c, page.nonce, { inlineStyles: true })
   c.header('Referrer-Policy', 'no-referrer')
