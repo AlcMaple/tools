@@ -232,3 +232,6 @@ logs/
 bgm_cache/
 html_cache/
 maple-tools-*.zip
+
+# 线上服务器数据备份（含用户数据和密钥，绝不进 git）
+server-backups/

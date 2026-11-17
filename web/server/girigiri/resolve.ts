@@ -8,6 +8,7 @@ export interface GirigiriPlaylist {
   lines: GirigiriLineMeta[]
   first: GirigiriPlayLine | null
   eps: number[]
+  epLabels: Record<number, string>
 }
 
 function assertEp(ep: number): void {
@@ -19,6 +20,12 @@ function lineOf(source: GirigiriSource | undefined, ep: number): GirigiriPlayLin
   if (!source || !episode) return null
   if (!episode.url) throw new Error('Girigiri 当前集返回了无效的媒体地址')
   return { source: source.source, url: episode.url, kind: /\.m3u8(?:$|[?#])/i.test(episode.url) ? 'hls' : 'mp4' }
+}
+
+function labelsOf(detail: GirigiriDetail): Record<number, string> {
+  const labels: Record<number, string> = {}
+  for (const source of detail.sources) for (const ep of source.episodes) if (ep.guessed && ep.number !== null) labels[ep.number] ??= ep.name
+  return labels
 }
 
 function episodesOf(detail: GirigiriDetail): number[] {
@@ -33,6 +40,7 @@ export async function getPlaylist(id: string, ep: number): Promise<GirigiriPlayl
     lines: detail.sources.map(({ source, name }) => ({ source, name })),
     first: lineOf(detail.sources[0], ep),
     eps: episodesOf(detail),
+    epLabels: labelsOf(detail),
   }
 }
 

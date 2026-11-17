@@ -28,6 +28,7 @@ import {
 import { db } from './db'
 import { coversDir } from './data-dir'
 import { getSession } from './auth'
+import { publicAnimeForAction } from './community'
 
 const tracks = new Hono()
 
@@ -416,17 +417,19 @@ function needsDetail(row: TrackRow): boolean {
  * 同一进程中失败不再自动尝试；记下原因，下一次服务启动后才可能重新补。
  */
 const detailScheduled = new Set<string>()
-function fillDetailLater(uid: number, bgmId: number): void {
+// provisionalTitle：从同好处加入、索引里查不到官方名时先借用分享者那条的标题（可能是对方的自定义标题）。
+// 补全时只要标题仍是这份临时值就换成官方的；读者在等待期间自己改过就以读者为准
+function fillDetailLater(uid: number, bgmId: number, provisionalTitle?: { title: string; titleCn: string }): void {
   if (isCustomBgmId(bgmId)) return
   const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
-  if (!existing || !needsDetail(existing)) return
+  if (!existing || (!needsDetail(existing) && !provisionalTitle)) return
   const key = `${uid}:${bgmId}`
   if (detailScheduled.has(key)) return
   detailScheduled.add(key)
   setTimeout(() => {
     void (async () => {
       const recheck = oneStmt.get(uid, bgmId) as TrackRow | undefined
-      if (!recheck || !needsDetail(recheck)) return
+      if (!recheck || (!needsDetail(recheck) && !provisionalTitle)) return
       try {
         const d = await scheduleBgmCoverRequest(() => fetchSubjectDetail(bgmId))
         const apply = db.transaction(() => {
@@ -437,6 +440,11 @@ function fillDetailLater(uid: number, bgmId: number): void {
 
           const sets: string[] = []
           const args: unknown[] = []
+          if (provisionalTitle && (d.name.trim() || d.nameCn.trim())
+            && current.title === provisionalTitle.title && current.title_cn === provisionalTitle.titleCn) {
+            sets.push('title = ?', 'title_cn = ?')
+            args.push(d.name.trim() || current.title, d.nameCn.trim())
+          }
           if (d.tags.length && parseList(current.bgm_tags).length === 0) {
             sets.push('bgm_tags = ?')
             args.push(JSON.stringify(d.tags))
@@ -801,6 +809,21 @@ tracks.get('/import/bgm/status', async (c) => {
   return c.json(importTasks.get(uid) ?? idleImportStatus())
 })
 
+class PlaybackProgressError extends Error {
+  constructor(message: string, readonly status: 400 | 404 | 409) { super(message) }
+}
+
+tracks.get('/:bgmId/playback-progress', async c => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  const id = Number(c.req.param('bgmId'))
+  if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: '条目编号不正确' }, 400)
+  const row = oneStmt.get(uid, id) as TrackRow | undefined
+  if (!row) return c.json({ error: '先将这部番加入手帐，再记录进度' }, 404)
+  c.header('Cache-Control', 'no-store')
+  return c.json({ ownerId: uid, revision: currentRev(uid), episode: row.episode, title: row.title_cn || row.title, totalEpisodes: row.total_episodes })
+})
+
 tracks.put('/:bgmId', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
@@ -809,6 +832,38 @@ tracks.put('/:bgmId', async (c) => {
   if (!Number.isInteger(bgmId) || bgmId === 0) return c.json({ error: 'bgmId 不合法' }, 400)
 
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  if ('communitySource' in body) {
+    if (body.expectedOwner !== uid) return c.json({ error: '账号已变化，请重新打开这页', code: 'OWNER_CHANGED' }, 409)
+    // 公开性与是否已有记录在同一写事务内确认，另一个标签页刚保存也只回读，不覆盖
+    const saved = db.transaction(() => {
+      const item = publicAnimeForAction(bgmId, body.communitySource)
+      if (!item) return null
+      const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
+      if (existing) return { row: existing, created: false, provisional: undefined }
+      const now = Date.now()
+      insertStmt.run({ user_id: uid, bgm_id: bgmId, status: 'plan', episode: 0,
+        total_episodes: initialTotal(bgmId, item.airDate), title: item.name, title_cn: item.name_cn,
+        cover: '', air_weekday: weekdayFromDate(item.airDate), air_date: item.airDate, score: 0,
+        bgm_tags: '[]', user_tags: '[]', aliases: '[]', extra: '{}', observe_count: 0, updated_at: now })
+      bumpRev(uid)
+      return { row: oneStmt.get(uid, bgmId) as TrackRow, created: true, provisional: item.titleOfficial ? undefined : { title: item.name, titleCn: item.name_cn } }
+    }).immediate()
+    if (!saved) return c.json({ error: '这部作品的公开分享已不可用', code: 'PUBLIC_ANIME_UNAVAILABLE' }, 404)
+    if (saved.created) fillDetailLater(uid, bgmId, saved.provisional)
+    return c.json(toJson(saved.row))
+  }
+
+  let playbackProgress: { ownerId: number; revision: number } | null = null
+  if ('playbackProgress' in body) {
+    const guard = body.playbackProgress as Record<string, unknown> | null
+    if (!guard || typeof guard !== 'object' || Array.isArray(guard)
+      || typeof guard.ownerId !== 'number' || !Number.isSafeInteger(guard.ownerId)
+      || typeof guard.revision !== 'number' || !Number.isSafeInteger(guard.revision) || guard.revision < 0
+      || typeof body.episode !== 'number' || !Number.isSafeInteger(body.episode) || body.episode < 1
+      || Object.keys(body).some(key => !['episode', 'playbackProgress'].includes(key))) return c.json({ error: '播放进度请求格式不正确' }, 400)
+    if (guard.ownerId !== uid) return c.json({ error: '账号已变化，请重新打开播放页' }, 409)
+    playbackProgress = { ownerId: guard.ownerId, revision: guard.revision }
+  }
   const customCreation = isCustomBgmId(bgmId) && !oneStmt.get(uid, bgmId)
   const customTitle = typeof body.title === 'string' ? body.title.trim() : ''
   if (customCreation || (isCustomBgmId(bgmId) && 'title' in body)) {
@@ -891,6 +946,12 @@ tracks.put('/:bgmId', async (c) => {
   // 同时新增同一条，也不会使用 await 前的旧判断撞 UNIQUE；数据写入和 rev 永远一起提交。
   const write = db.transaction((): { row: TrackRow; fillDetail: boolean; orphanedCover: boolean; error?: string } => {
     const prev = oneStmt.get(uid, bgmId) as TrackRow | undefined
+    if (playbackProgress) {
+      if (!prev) throw new PlaybackProgressError('手帐记录已移除，请返回手帐确认', 404)
+      if (currentRev(uid) !== playbackProgress.revision) throw new PlaybackProgressError('手帐已在其他页面更新，请重新读取后确认', 409)
+      if (prev.total_episodes != null && prev.total_episodes > 0 && nextEpisode > prev.total_episodes) throw new PlaybackProgressError('当前集数超过手帐总集数，请返回手帐确认', 400)
+      if (nextEpisode <= prev.episode) return { row: prev, fillDetail: false, orphanedCover: false }
+    }
     if (!prev) {
       const airDate = String(body.airDate ?? '')
       const insertedTotal = isCustomBgmId(bgmId)
@@ -932,6 +993,10 @@ tracks.put('/:bgmId', async (c) => {
     // 更新只写 body 里明确给了的字段；没给的一个都不碰。
     const sets: string[] = []
     const args: unknown[] = []
+    if (playbackProgress && (prev.status === 'plan' || prev.status === 'considering')) {
+      sets.push('status = ?')
+      args.push('watching')
+    }
     if (hasStatus) {
       sets.push('status = ?')
       args.push(nextStatus)
@@ -996,11 +1061,17 @@ tracks.put('/:bgmId', async (c) => {
       orphanedCover: hasCover && !!prev.cover_mime,
     }
   })
-  const result = write.immediate()
+  let result: ReturnType<typeof write>
+  try { result = write.immediate() } catch (error) {
+    if (error instanceof PlaybackProgressError) return c.json({ error: error.message }, error.status)
+    throw error
+  }
   if (result.error) return c.json({ error: result.error }, 400)
 
   if (result.orphanedCover) cleanupOrphanedCover(uid, bgmId)
   if (result.fillDetail) fillDetailLater(uid, bgmId)
+  // 播放页拿这个 revision 接着做下一次保存；不带的话同一页第二次保存必然 409
+  if (playbackProgress) return c.json({ ...toJson(result.row), revision: currentRev(uid) })
   return c.json(toJson(result.row))
 })
 

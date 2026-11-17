@@ -1,0 +1,15 @@
+.dlg.related-anime { width: min(680px, 100%); display: flex; flex-direction: column; max-height: 85svh; overflow: hidden; }
+.related-source { margin: 14px 0 4px; font-size: 18px; overflow-wrap: anywhere; }
+.related-body { overflow-y: auto; min-height: 100px; padding-right: 6px; }
+.related-body::-webkit-scrollbar { width: 4px; }
+.related-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.related-body::-webkit-scrollbar-track { margin: 8px 0; }
+.related-group h3 { margin: 18px 0 10px; color: var(--teal); font-size: 14px; }
+.related-card { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); }
+.related-card img, .related-cover { width: 60px; height: 82px; object-fit: cover; border-radius: 6px; background: var(--paper-2); }
+.related-cover { display: grid; place-items: center; color: var(--ink-sub); }
+.related-card h4 { margin: 0 0 6px; font-size: 15px; overflow-wrap: anywhere; }
+.related-card p { margin: 0 0 10px; }
+.related-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.poster-related { margin-top: 6px; align-self: stretch; }
+@media (max-width: 500px) { .related-card { grid-template-columns: 44px minmax(0, 1fr); gap: 10px; } .related-card img, .related-cover { width: 44px; height: 64px; } }
