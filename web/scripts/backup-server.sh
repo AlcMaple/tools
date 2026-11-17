@@ -11,6 +11,10 @@
 #   static/bgm_index.db                    番剧索引：每周四才变，源站没变就不重复拉
 #   static/bgm-cover-cache/                封面缓存：文件名是内容哈希、写入后不再改，只增量补新文件
 # 旧快照不会自动删，由人决定；脚本只在最后列出来。
+#
+# 怎么分类、备什么都不靠人记：服务器端的 backup-collect.sh 扫描数据目录的每一项，默认全部纳入；
+# 没登记过的新条目自动备份并在报告里标「未分类」。每次跑完还会和上一份快照对比，
+# 报告新增 / 消失的条目、新表、列变化、行数变化，同时存成 snapshots/mapletools-<时间戳>.report.txt。
 set -euo pipefail
 umask 077
 
@@ -40,49 +44,30 @@ FREE_KB="$(df -k "$OUT" | awk 'NR==2{print $4}')"
 
 "${SSH[@]}" "$HOST" true || die "连不上服务器 $HOST（端口 $SSH_PORT）"
 
+# ── 0. 服务器每日备份还活着吗、服务器上的脚本是不是落后于仓库 ───────────────────────
+# 只警告不拦截：这里要拿的是一份新快照，每日备份出问题不该让你拿不到它
+SRV="$("${SSH[@]}" -n "$HOST" 'echo "last_ok=$(cat /opt/mapletools-backup/LAST_OK 2>/dev/null)"
+  echo "collect=$(sha256sum /usr/local/bin/mapletools-backup-collect.sh 2>/dev/null | cut -d" " -f1)"
+  echo "daily=$(sha256sum /usr/local/bin/mapletools-backup.sh 2>/dev/null | cut -d" " -f1)"')"
+srv_field() { printf '%s\n' "$SRV" | sed -n "s/^$1=//p"; }
+LAST_OK="$(srv_field last_ok)"
+if [ -z "$LAST_OK" ]; then
+  say "⚠ 服务器每日备份没有成功记录（/opt/mapletools-backup/LAST_OK 不存在）：新版每日备份还没装，或一直没跑成功"
+elif [ $(( $(date +%s) - LAST_OK )) -gt 93600 ]; then
+  say "⚠ 服务器每日备份已超过 26 小时没成功过（上次 $(date -r "$LAST_OK" '+%F %T')），看 /var/log/mapletools-backup.log"
+fi
+for pair in "collect:backup-collect.sh" "daily:backup-daily.sh"; do
+  want="$(shasum -a 256 "$(dirname "$0")/${pair#*:}" | cut -d' ' -f1)"
+  [ "$(srv_field "${pair%%:*}")" = "$want" ] || say "⚠ 服务器上的 ${pair#*:} 和仓库不一致（没装或已落后），需要重新复制到 /usr/local/bin/"
+done
+
 # ── 1. 快照：服务器上暂存 → 流式拉回 → 本机校验 → 才改成正式文件名 ──────────────
 say "== 快照：库、用户上传文件、服务器配置"
 PART="$OUT/snapshots/.mapletools-$STAMP.tar.gz.part"
 trap 'rm -f "$PART"; rm -rf "${VERIFY:-}"' EXIT
 
-# 远端脚本走 stdin、tar 流走 stdout，进度走 stderr；暂存目录退出时自动清掉
-"${SSH[@]}" "$HOST" 'bash -s' > "$PART" <<'REMOTE'
-set -euo pipefail
-umask 077
-D=/opt/mapletools-data
-S="$(mktemp -d /tmp/mt-snap.XXXXXX)"
-trap 'rm -rf "$S"' EXIT
-mkdir -p "$S/data" "$S/system"
-
-# 库必须用 .backup：开着 WAL，cp 会拷到写入中途撕裂的文件
-sqlite3 "$D/web.db" ".backup '$S/data/web.db'"
-[ "$(sqlite3 "$S/data/web.db" 'PRAGMA integrity_check')" = ok ] || { echo "web.db 完整性检查失败" >&2; exit 1; }
-
-# 与库配套的磁盘文件、小型状态文件、密钥配置
-for p in covers catalog-covers order-judge calendar-seasons holidays \
-         calendar-cache.json line-speed.json ecosystem.config.cjs .env.ai .env.sentry; do
-  if [ -e "$D/$p" ]; then cp -a "$D/$p" "$S/data/"; else echo "（服务器上没有 $p，跳过）" >&2; fi
-done
-
-# 换机器要重做的系统配置：nginx、mtweb 包装器、备份脚本、日志轮转、BBR、定时任务
-for f in /etc/nginx/nginx.conf /etc/nginx/sites-available/mapletools-web /usr/local/bin/mtweb \
-         /usr/local/bin/mapletools-backup.sh /etc/logrotate.d/mapletools-pm2 \
-         /etc/sysctl.d/90-bbr.conf /etc/modules-load.d/bbr.conf; do
-  if [ -e "$f" ]; then cp -a --parents "$f" "$S/system/"; else echo "（服务器上没有 $f，跳过）" >&2; fi
-done
-crontab -l > "$S/system/crontab-root.txt" 2>/dev/null || true
-
-{
-  echo "taken_at=$(date -Is)"
-  echo "host=$(hostname)"
-  echo "code_commit=$(git -C /opt/mapletools rev-parse HEAD)"
-  echo "code_dirty_files=$(git -C /opt/mapletools status --short | wc -l)"
-  sqlite3 "$S/data/web.db" "select 'rows_users='||count(*) from users; select 'rows_tracks='||count(*) from tracks;"
-} > "$S/INFO.txt"
-( cd "$S" && find . -type f ! -name MANIFEST.sha256 -print0 | sort -z | xargs -0 sha256sum > MANIFEST.sha256 )
-
-tar -czf - -C "$S" .
-REMOTE
+# 收集脚本在 backup-collect.sh：默认全备、自动分类，tar 流走 stdout，进度和警告走 stderr
+"${SSH[@]}" "$HOST" 'bash -s' > "$PART" < "$(dirname "$0")/backup-collect.sh"
 
 # 本机再验一遍：压缩包完整、清单哈希对得上、库能打开且行数与服务器记录的一致
 gzip -t "$PART"
@@ -92,24 +77,78 @@ tar -xzf "$PART" -C "$VERIFY"
 [ "$(sqlite3 "$VERIFY/data/web.db" 'PRAGMA integrity_check')" = ok ] || die "快照里的库损坏，已丢弃"
 LOCAL_USERS="$(sqlite3 "$VERIFY/data/web.db" 'select count(*) from users')"
 grep -qx "rows_users=$LOCAL_USERS" "$VERIFY/INFO.txt" || die "用户数和服务器记录的不一致，已丢弃"
+PREV="${BACKUP_PREV:-$(ls -1t "$OUT/snapshots"/mapletools-*.tar.gz 2>/dev/null | head -1 || true)}"   # 对比用：上一份快照（BACKUP_PREV 可指定，测试用）
 FINAL="$OUT/snapshots/mapletools-$STAMP.tar.gz"
 mv "$PART" "$FINAL"
+INV_NOW="$VERIFY/inventory.tsv"
 say "✓ $FINAL  ($(du -h "$FINAL" | cut -f1))"
 sed 's/^/    /' "$VERIFY/INFO.txt" >&2
 
-# ── 2. 静态区：基本不变的数据，只补新的 ──────────────────────────────────────────
+# ── 变化报告：和上一份快照对比，不用人记得「这次动了什么数据」 ─────────────────────
+REPORT="$OUT/snapshots/mapletools-$STAMP.report.txt"
+NOW="$(sed -n 's/^now_epoch=//p' "$VERIFY/INFO.txt")"
+{
+  UNCL="$(sed -n 's/^unclassified=//p' "$VERIFY/INFO.txt")"
+  if [ -n "$UNCL" ]; then
+    echo "⚠ 未分类的新条目（已自动纳入备份，不会漏）：$UNCL"
+    echo "  → 判断它属于哪一类，补进 backup-collect.sh 顶部的已知表，并在部署文档里记一行"
+    echo
+  fi
+  PREV_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mt-prev.XXXXXX")"
+  if [ -n "$PREV" ] && tar -xzf "$PREV" -C "$PREV_DIR" ./inventory.tsv ./schema.tsv 2>/dev/null; then
+    echo "对比基准：$(basename "$PREV")"
+    echo "── 数据条目（live 每次备 / static 增量补 / sqlite、db 用 .backup / skip 故意不备）"
+    awk -F'\t' -v now="$NOW" '
+      function age(t,  d) { if (t <= 0) return "无文件"; d = now - t
+        if (d < 3600) return int(d/60) "分钟前"; if (d < 86400) return int(d/3600) "小时前"; return int(d/86400) "天前" }
+      NR==FNR { pk[$1]=$3; pf[$1]=$4; next }
+      { seen[$1]=1
+        if ($2 == "skip") { skip = skip " " $1; next }
+        if (!($1 in pk)) mark = "新增"
+        else if ($3 != pk[$1] || $4 != pf[$1]) mark = sprintf("%+d KB / %+d 个文件", $3-pk[$1], $4-pf[$1])
+        else { same = same " " $1; next }
+        printf "  %-26s %-9s %8d KB  %-22s 最近写入 %s\n", $1, $2, $3, mark, age($5) }
+      END { for (k in pk) if (!(k in seen)) printf "  %-26s 已从服务器消失（本机旧快照里仍有）\n", k
+            if (same != "") print "  没变化：" same
+            if (skip != "") print "  故意不备：" skip }
+    ' "$PREV_DIR/inventory.tsv" "$VERIFY/inventory.tsv"
+    echo "── 数据表（新增 / 消失 / 列变化 / 行数变化）"
+    awk -F'\t' '
+      NR==FNR { r[$1"\t"$2]=$3; c[$1"\t"$2]=$4; next }
+      { k=$1"\t"$2; seen[k]=1
+        if (!(k in r)) printf "  + 新表  %s.%s（%s 行，列：%s）\n", $1, $2, $3, $4
+        else { if (c[k] != $4) printf "  ~ 列变了  %s.%s：%s → %s\n", $1, $2, c[k], $4
+               if (r[k] != $3) { n++; line[n]=sprintf("  行数  %s.%s：%d → %d（%+d）", $1, $2, r[k], $3, $3-r[k]) } } }
+      END { for (k in r) if (!(k in seen)) { split(k, a, "\t"); printf "  - 表消失  %s.%s\n", a[1], a[2] }
+            for (i=1;i<=n;i++) print line[i] }
+    ' "$PREV_DIR/schema.tsv" "$VERIFY/schema.tsv"
+  else
+    echo "（没有上一份可对比的快照，本次只做基线）"
+  fi
+  rm -rf "$PREV_DIR"
+} | tee "$REPORT" >&2
+
+# ── 2. 静态区：按快照里的清单同步，不再写死名字 ─────────────────────────────────
+# static = 写入后不再改（已有的不重复拉）；oversize = 未分类的大条目（按更新增量补）。都不加 --delete
 if [ "$LIVE_ONLY" = 0 ]; then
   say "== 静态区（已有的不重复拉）"
-  BEFORE="$(stat -f %m "$OUT/static/bgm_index.db" 2>/dev/null || echo 0)"
-  rsync -rlt --partial -e "$RSH" "$HOST:$DATA/bgm_index.db" "$OUT/static/"
-  AFTER="$(stat -f %m "$OUT/static/bgm_index.db")"
-  if [ "$BEFORE" = "$AFTER" ]; then say "  bgm_index.db 没变，跳过"; else say "  bgm_index.db 已更新"; fi
-  mkdir -p "$OUT/static/bgm-cover-cache"
-  N0="$(ls "$OUT/static/bgm-cover-cache" | wc -l | tr -d ' ')"
-  # 不加 --delete：服务器上清掉的封面缓存，本机这份仍然留着
-  rsync -rlt --ignore-existing --partial -e "$RSH" "$HOST:$DATA/bgm-cover-cache/" "$OUT/static/bgm-cover-cache/"
-  N1="$(ls "$OUT/static/bgm-cover-cache" | wc -l | tr -d ' ')"
-  say "  bgm-cover-cache：原有 $N0 个，新补 $((N1 - N0)) 个，现共 $N1 个"
+  while IFS=$'\t' read -r name cls _; do
+    [ "$cls" = static ] || [ "$cls" = oversize ] || continue
+    kind="$("${SSH[@]}" -n "$HOST" "[ -d '$DATA/$name' ] && echo dir || echo file")"
+    if [ "$kind" = file ]; then
+      BEFORE="$(stat -f %m "$OUT/static/$name" 2>/dev/null || echo 0)"
+      rsync -rlt --partial -e "$RSH" "$HOST:$DATA/$name" "$OUT/static/"
+      AFTER="$(stat -f %m "$OUT/static/$name")"
+      if [ "$BEFORE" = "$AFTER" ]; then say "  $name 没变，跳过"; else say "  $name 已更新"; fi
+    else
+      mkdir -p "$OUT/static/$name"
+      N0="$(find "$OUT/static/$name" -type f | wc -l | tr -d ' ')"
+      OPT=--ignore-existing; [ "$cls" = oversize ] && OPT=--update
+      rsync -rlt $OPT --partial -e "$RSH" "$HOST:$DATA/$name/" "$OUT/static/$name/"
+      N1="$(find "$OUT/static/$name" -type f | wc -l | tr -d ' ')"
+      say "  $name：原有 $N0 个，新补 $((N1 - N0)) 个，现共 $N1 个"
+    fi
+  done < "$INV_NOW"
 fi
 
 # ── 3. 旧快照清单：是否删除由人决定 ──────────────────────────────────────────────
