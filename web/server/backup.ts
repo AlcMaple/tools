@@ -14,7 +14,8 @@
 // 没有的不动 —— 和 /api/tracks/sync 的「整包覆盖」是两回事，绝不删任何一条。
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, lstatSync, mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate'
 import { db } from './db'
 import { sign, verify } from 'hono/jwt'
@@ -576,13 +577,23 @@ backup.post('/import', async (c) => {
     foreignBackup,
   }
 
-  // 封面文件在事务里同步写：决策（谁新谁旧）和落盘在同一把锁、同一个事务里，事务失败就把刚写的删掉。
-  // 锁住所有带图的 bgmId，和上传 / 同步的封面操作串行，避免互相覆盖对方刚写的字节。
+  // SQLite 回滚不了封面文件，旧图留同盘副本；补偿结束前不释放上传共用的锁，避免晚到的恢复覆盖新上传。
+  // 磁盘快照沿用导出图片总预算，不把最多数千张旧图再堆进内存。
   const withCovers = tracksIn.filter((t) => t.coverBytes).map((t) => t.bgmId)
-  await T.withCoverFileLocks(uid, withCovers, async () => {
-    const written: number[] = []
+  const importFailure = await T.withCoverFileLocks(uid, withCovers, async () => {
+    let coverDirectory: string | null = null
+    let snapshotBytes = 0
+    const coverJournal: { bgmId: number; target: string; prior: string | null }[] = []
+    const snapshotLimitError = new Error('需要保留的原封面超过 200 MB，请分批导入')
+    const cleanupSnapshots = (): void => {
+      if (!coverDirectory) return
+      try {
+        rmSync(coverDirectory, { recursive: true, force: true })
+      } catch (error) {
+        console.error('[backup:import] cover snapshot cleanup failed', { uid, directory: coverDirectory }, error)
+      }
+    }
     const apply = db.transaction(() => {
-      written.length = 0
       summary.tracks = { added: 0, updated: 0, skipped: 0 }
       summary.reviews = foreignBackup ? null : { imported: 0, skipped: 0 }
       summary.covers.imported = 0
@@ -596,8 +607,27 @@ backup.post('/import', async (c) => {
         let cover = t.cover
         let coverMime = ''
         if (t.coverBytes) {
-          writeFileSync(T.coverFilePath(uid, t.bgmId), t.coverBytes)
-          written.push(t.bgmId)
+          const target = T.coverFilePath(uid, t.bgmId)
+          coverDirectory ??= mkdtempSync(join(dirname(target), `.backup-${uid}-`))
+          let priorSize: number | null = null
+          try {
+            const stat = lstatSync(target)
+            if (!stat.isFile()) throw new Error(`原封面不是普通文件：${t.bgmId}`)
+            priorSize = stat.size
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          }
+          let prior: string | null = null
+          if (priorSize !== null) {
+            if (snapshotBytes + priorSize > EXPORT_COVERS_MAX_BYTES) throw snapshotLimitError
+            prior = join(coverDirectory, `${t.bgmId}.old`)
+            copyFileSync(target, prior)
+            snapshotBytes += priorSize
+          }
+          const staged = join(coverDirectory, `${t.bgmId}.new`)
+          writeFileSync(staged, t.coverBytes)
+          coverJournal.push({ bgmId: t.bgmId, target, prior })
+          renameSync(staged, target)
           cover = T.coverSentinel(t.bgmId)
           coverMime = t.coverMime
           summary.covers.imported++
@@ -698,17 +728,31 @@ backup.post('/import', async (c) => {
     try {
       apply.immediate()
     } catch (e) {
-      judgeRestore.rollback()
-      for (const id of written) {
+      console.error('[backup:import] import failed', e)
+      try {
+        judgeRestore.rollback()
+      } catch (error) {
+        console.error('[backup:import] order-judge rollback failed', error)
+      }
+      let coverRestoreFailed = false
+      for (const entry of coverJournal.reverse()) {
         try {
-          unlinkSync(T.coverFilePath(uid, id))
-        } catch {
-          /* 已经没了 */
+          if (entry.prior) renameSync(entry.prior, entry.target)
+          else unlinkSync(entry.target)
+        } catch (error) {
+          if (!entry.prior && (error as NodeJS.ErrnoException).code === 'ENOENT') continue
+          coverRestoreFailed = true
+          console.error('[backup:import] cover rollback failed', { uid, bgmId: entry.bgmId, recoveryPath: entry.prior }, error)
         }
       }
+      if (coverRestoreFailed) console.error('[backup:import] cover recovery files retained', { uid, directory: coverDirectory })
+      else cleanupSnapshots()
+      if (e === snapshotLimitError && !coverRestoreFailed) return c.json({ error: snapshotLimitError.message }, 413)
       throw e
     }
+    cleanupSnapshots()
   })
+  if (importFailure) return importFailure
 
   if (summary.tracks.added || summary.tracks.updated) T.fillCalendarMetadataLater(uid)
   judgeRestore.committed()
