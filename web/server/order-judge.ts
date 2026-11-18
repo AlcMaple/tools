@@ -58,6 +58,7 @@ const MESSAGES: Record<string, string> = {
   BAD_INPUT: '材料格式不对，刷新页面后重新放入',
   MESSAGE_TOO_LARGE: '材料太大了：截图少放几张，或把视频换成几张关键截图',
   NOT_FOUND: '这个项目不存在，可能已在别处删除',
+  PLAN_FIXED: '合作方式已由系统确定',
   BAD_QUOTE: '报价或月维护的设置格式不对，刷新页面后再保存',
   VERSION_FULL: `这一单已经有 ${VERSION_LIMIT} 个版本，新开一个项目再追加`,
   ABORTED: '整理超时或被取消了，请手动重试',
@@ -346,6 +347,8 @@ async function saveVersion(uid: number, projectId: string | null, input: Omit<Ma
         db.prepare('UPDATE order_judge_projects SET title=?, updated_at=? WHERE id=?').run(brief.title || '未命名项目', now, pid)
       } else {
         pid = randomUUID()
+        // 首次未给出分类也要记录默认决定，避免下一版才给出分类时换了报价方式
+        brief = { ...brief, engagement: brief.engagement ?? { mode: '一次性', reason: '', firstMonth: [], monthHours: 0 } }
         db.prepare('INSERT INTO order_judge_projects (id,user_id,title,created_at,updated_at) VALUES (?,?,?,?,?)').run(pid, uid, brief.title || '未命名项目', now, now)
       }
       db.prepare('INSERT INTO order_judge_versions (id,project_id,user_id,n,at,text,images,files,brief,changes,model,quote) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
@@ -566,7 +569,12 @@ api.put('/projects/:id/maintenance', bodyLimit({ maxSize: 32768 }), async (c) =>
   if (!ID_RE.test(id)) return c.json(errorBody('NOT_FOUND'), 404)
   const body: unknown = await c.req.json().catch(() => null)
   if (!body || typeof body !== 'object') return c.json(errorBody('BAD_QUOTE'), 400)
-  const maintenance = normalizeMaintenance(body)
+  const current = db.prepare('SELECT maintenance FROM order_judge_projects WHERE id=? AND user_id=?').get(id, uid) as { maintenance: string } | undefined
+  if (!current) return c.json(errorBody('NOT_FOUND'), 404)
+  if ('plan' in body && Object.keys(body).length === 1) return c.json(errorBody('PLAN_FIXED'), 409)
+  // 兼容旧客户端的整份月费表单：保留历史标记和它不认识的反馈字段，但不接受它改变合作方式
+  const stored = normalizeMaintenance(JSON.parse(current.maintenance))
+  const maintenance = normalizeMaintenance({ ...stored, ...body, plan: stored.plan })
   const r = db.prepare('UPDATE order_judge_projects SET maintenance=?, updated_at=? WHERE id=? AND user_id=?').run(JSON.stringify(maintenance), Date.now(), id, uid)
   if (!r.changes) return c.json(errorBody('NOT_FOUND'), 404)
   judgeData.bump(uid); judgeEvents.changed(uid, judgeData.seq(uid))

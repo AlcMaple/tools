@@ -11,7 +11,7 @@ import { useIsWide } from '../useMediaQuery'
 import { precheck } from '../../shared/order-judge'
 import { BASIS_TEXT, CHOOSABLE_CLIENT_TYPES, PRIORITIES, WORK_KINDS, isChoosableClientType, type Brief as BriefType, type BriefItem, type ChoosableClientType } from '../../shared/order-judge-brief'
 import { parseBudget, parseDeadline, ymd, type Expense, type QuoteSettings } from '../../shared/order-judge-quote'
-import { COOPERATION_PLANS, MAINTENANCE_STATES, MAX_MAINT_EXPENSES, MAX_MONTHS, longTermClientText, longTermFee, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, planOf, suggestFee, type CooperationPlan, type Maintenance, type MonthRecord } from '../../shared/order-judge-maintenance'
+import { MAINTENANCE_STATES, MONTHLY_REPLIES, MAX_MAINT_EXPENSES, MAX_MONTHS, longTermClientText, longTermFee, maintenanceSelfText, normalizeMaintenance, projectDecision, type Maintenance, type MonthRecord } from '../../shared/order-judge-maintenance'
 import { BONUS_RESULTS, CONFIDENCE_STEPS, DISCOUNT_STEPS, FEELINGS, bonusAllowed, type BonusTerms, MAX_EXPENSES, ITEM_MAX_DAYS, ITEM_MAX_HOURS, OUTCOMES, VERSION_STATUSES, buildSheet, calibFor, calibrateByType, latestType, clientText, freeze, normalizeQuote, selfText, marketLine, HOUR_SCALE_MAX, HOUR_SCALE_MIN, hourRows, hoursLabel, scaleLabel, selfSummary, spanDays, type Calibrations, type HourRow, type QuoteState, type Sheet, type WorkSpan } from '../../shared/order-judge-sheet'
 import { imageTileCount, kindOf, prepareMaterials } from '../../shared/order-judge-prepare'
 import { expandArchive, isArchive } from './archive'
@@ -708,9 +708,9 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
   const meta = [`第 ${version.n} 版`, when(version.at), b.clientType, ms ? `用时 ${Math.round(ms / 1000)} 秒` : ''].filter(Boolean).join(' · ')
   const facts: [string, string][] = [['客户在意的结果', b.outcome], ['客户预算', b.budget], ['截止', b.deadline]]
   const isLatest = version.id === latest(project).id
-  const plan = planOf(project.maintenance, latest(project).brief.engagement)
+  const decision = projectDecision(project.versions, project.maintenance)
   const dealt = project.versions.some(v => v.quote.status === '已成交')
-  const scoping = inScoping(b, dealt, version.quote.status)
+  const scoping = inScoping(b, dealt || (decision.mode === '长期' && project.maintenance.reply === '同意'), version.quote.status)
   const flowNodes = b.items.filter(i => i.dependsOn?.length || b.items.some(x => x.dependsOn?.includes(i.id)))
     .map(i => ({ id: i.id, title: i.title, detail: i.detail, stage: i.stage ?? '', dependsOn: i.dependsOn ?? [] }))
   const groups = PRIORITIES.map(p => ({ p, items: b.items.filter(i => i.priority === p) })).filter(g => g.items.length)
@@ -794,9 +794,9 @@ function ProjectSheet({ project, ms, onAppend, onSaved, calib, all }: { project:
       )}
       </div>
       <div className="oj-col">
-      <PlanBar project={project} plan={plan} onSaved={onSaved} />
-      {(plan !== '长期' || dealt) && <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} />}
-      {(plan === '长期' || dealt) && <MaintenancePanel key={`m:${project.id}:${plan}`} project={project} all={all} onSaved={onSaved} calib={calib} long={plan === '长期'} />}
+      {decision.mode === '长期'
+        ? <MaintenancePanel key={project.id} project={project} all={all} onSaved={onSaved} calib={calib} reason={decision.reason} />
+        : <QuotePanel key={version.id} project={project} version={version} onSaved={onSaved} calib={calib} reason={decision.reason} />}
       </div>
       </div>
       )}
@@ -833,31 +833,20 @@ const BONUS_INPUTS: [keyof BonusTerms, string, string][] = [
 
 const thisMonth = (): string => new Date().toISOString().slice(0, 7)
 
-function PlanBar({ project, plan, onSaved }: { project: Project; plan: CooperationPlan; onSaved: (p: Project) => void }): JSX.Element {
-  const [error, setError] = useState('')
-  const engagement = latest(project).brief.engagement
-  const choose = async (next: CooperationPlan): Promise<void> => {
-    if (next === plan) return
-    setError('')
-    try { onSaved(await saveMaintenance(project.id, { ...project.maintenance, plan: next })) }
-    catch (e) { logClient('order-judge:plan', e); setError(errorOf(e).message) }
-  }
-  return (
-    <div className="oj-sec">
-      <div className="oj-qrow">
-        <span className="oj-qlabel">合作方式</span>
-        <div className="seg" role="group" aria-label="合作方式">
-          {COOPERATION_PLANS.map(p => <button key={p} type="button" className={plan === p ? 'on' : ''} onClick={() => void choose(p)}>{p}</button>)}
-        </div>
-      </div>
-      {engagement?.reason && <p className="oj-plan-reason" style={{ marginTop: 8 }}>AI：{engagement.mode}，{engagement.reason}</p>}
-      {error && <p className="oj-scope-warn" role="alert">{error}</p>}
-    </div>
-  )
+function ReplyField<T extends string>({ options, value, onChange, label, locked, display = v => v }: {
+  options: readonly T[]; value: T; onChange: (v: T) => void; label: string; locked?: boolean; display?: (v: T) => string
+}): JSX.Element {
+  return <div className="oj-qrow oj-reply" role="group" aria-label={label}>
+    <span className="oj-qlabel">客户回复</span>
+    {locked ? <strong>{display(value)}</strong> :
+      <Select options={options.map(id => ({ id, text: display(id) }))} value={value} placeholder="选择回复" onChange={id => {
+        const choice = options.find(v => v === id)
+        if (choice) onChange(choice)
+      }} />}
+  </div>
 }
 
-// 月维护：项目级，成交过才出现；长期合作没有成交也可用，这时它就是报价。月费定了就不改：一旦记过月份，月费输入框锁住
-function MaintenancePanel({ project, all, onSaved, calib: calibs, long = false }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibrations; long?: boolean }): JSX.Element {
+function MaintenancePanel({ project, all, onSaved, calib: calibs, reason }: { project: Project; all: Project[]; onSaved: (p: Project) => void; calib: Calibrations; reason: string }): JSX.Element {
   const calib = calibFor(calibs, latestType(project.versions))
   const [draft, setDraft] = useState<Maintenance>(project.maintenance)
   const [view, setView] = useState<'client' | 'self'>('self')
@@ -869,10 +858,13 @@ function MaintenancePanel({ project, all, onSaved, calib: calibs, long = false }
   const pool = all.some(p => p.id === project.id) ? all : [...all, project]
   const engagement = latest(project).brief.engagement
   const scopeHours = latest(project).brief.items.filter(i => i.priority !== '不做').reduce((a, i) => a + i.hours, 0)
-  const suggestion = long ? longTermFee(pool, project.id, pending, engagement?.monthHours ?? 0, calib.settings, scopeHours) : suggestFee(pool, project.id, calib.settings)
-  const text = view === 'self' ? maintenanceSelfText(project.title, pending, suggestion, long)
-    : long ? longTermClientText(project.title, pending, suggestion.fee, engagement?.firstMonth ?? []) : maintenanceClientText(project.title, pending)
+  const suggestion = longTermFee(pool, project.id, pending, engagement?.monthHours ?? 0, calib.settings, scopeHours)
+  const text = view === 'self' ? maintenanceSelfText(project.title, pending, suggestion, true)
+    : longTermClientText(project.title, pending, suggestion.fee, engagement?.firstMonth ?? [])
   const locked = project.maintenance.months.length > 0 && project.maintenance.fee > 0
+  const accepted = pending.reply === '同意'
+  const sent = pending.reply !== '未报价'
+  const underway = pending.state !== '不做' || pending.months.some(r => r.hours > 0 || r.delivered || r.feeling !== '待定')
   const expenses = draft.expenses.length < MAX_MAINT_EXPENSES ? [...draft.expenses, { name: '', amount: 0 }] : draft.expenses
   const setExpense = (i: number, patch: Partial<Expense>): void => set({ expenses: expenses.map((e, j) => (j === i ? { ...e, ...patch } : e)).filter(e => e.name || e.amount) })
   const setMonth = (i: number, patch: Partial<MonthRecord>): void => set({ months: draft.months.map((m, j) => (j === i ? { ...m, ...patch } : m)) })
@@ -880,7 +872,11 @@ function MaintenancePanel({ project, all, onSaved, calib: calibs, long = false }
   const save = async (): Promise<void> => {
     setBusy(true)
     try {
-      const saved = await saveMaintenance(project.id, pending)
+      // 第一次报出时才把建议记为报价，别用今天的估算补写老项目缺失的历史金额
+      const firstOffer = sent && project.maintenance.reply === '未报价'
+      const saved = await saveMaintenance(project.id, firstOffer ? {
+        ...pending, fee: pending.fee || suggestion.fee, monthHours: pending.monthHours || suggestion.hours,
+      } : pending)
       onSaved(saved)
       setDraft(saved.maintenance)
       setNote({ ok: true, text: '已保存' })
@@ -896,82 +892,95 @@ function MaintenancePanel({ project, all, onSaved, calib: calibs, long = false }
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `${project.title}-${long ? '长期合作' : '月维护'}${view === 'client' ? '' : '-自用'}.txt`
+    a.download = `${project.title}-长期合作${view === 'client' ? '' : '-自用'}.txt`
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   return (
     <div className="oj-sec oj-maint">
-      <h3><Ic name="calendar" />{long ? '长期合作' : '月维护'}</h3>
-      {long && (pending.fee || suggestion.fee != null) && (
-        <div className="oj-hero" role="status">
-          <span className="oj-hero-name">{pending.fee ? '月费' : '建议月费'}</span>
-          <b className="oj-hero-price">¥{(pending.fee || suggestion.fee!).toLocaleString('zh-CN')}<small> / 月</small></b>
-          <span className="oj-hero-sub">{suggestion.hours} 小时 × {suggestion.rate}，小时来自{suggestion.source}</span>
-        </div>
-      )}
+      <h3><Ic name="calendar" />长期合作</h3>
+      {reason && <p className="oj-plan-reason">{reason}</p>}
+      <div className="oj-hero" role="status">
+        <span className="oj-hero-name">{pending.fee ? '月费' : '建议月费'}</span>
+        <b className="oj-hero-price">¥{(pending.fee || suggestion.fee).toLocaleString('zh-CN')}<small> / 月</small></b>
+        <span className="oj-hero-sub">{pending.fee > 0 && pending.fee !== suggestion.fee ? `当前建议 ¥${suggestion.fee.toLocaleString('zh-CN')} / 月 · ` : ''}{suggestion.hours} 小时 × {suggestion.rate}{pending.expenses.length ? ' + 每月支出' : ''}，小时来自{suggestion.source}</span>
+      </div>
       <div className="oj-qform">
         <div className="oj-qrow">
-          <span className="oj-qlabel">状态</span>
-          <div className="seg" role="group" aria-label="月维护状态">
-            {MAINTENANCE_STATES.map(st => <button key={st} type="button" className={draft.state === st ? 'on' : ''} onClick={() => set({ state: st })}>{long && st === '不做' ? '待开始' : st}</button>)}
+          <span className="oj-qlabel">报价状态</span>
+          <div className="seg" role="group" aria-label="月费报价状态">
+            <button type="button" aria-pressed={!sent} className={!sent ? 'on' : ''} disabled={underway} onClick={() => set({ reply: '未报价' })}>未报价</button>
+            <button type="button" aria-pressed={sent} className={sent ? 'on' : ''} onClick={() => { if (!sent) set({ reply: '待回复' }) }}>已报价</button>
           </div>
         </div>
-        {(long || draft.state !== '不做') && (
-          <>
-            {long && (
-              <label className="oj-qrow">
-                <span className="oj-qlabel">每月投入</span>
-                <input className="oj-qin" aria-label="每月投入小时" inputMode="decimal" value={draft.monthHours || ''} placeholder={engagement?.monthHours ? `AI 估 ${engagement.monthHours}` : '小时'} disabled={locked}
-                  onChange={e => set({ monthHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
-                <span className="faint small">小时</span>
-              </label>
+        {sent && <>
+          <ReplyField label="月费客户回复" options={MONTHLY_REPLIES} value={pending.reply === '未报价' ? '待回复' : pending.reply}
+            locked={underway} onChange={reply => set({ reply })} />
+          {draft.reply === '嫌贵' && <label className="oj-qrow">
+            <span className="oj-qlabel">客户月预算</span>
+            <input className="oj-qin" inputMode="numeric" value={draft.clientBudget || ''} placeholder="没说可留空" onChange={e => set({ clientBudget: Number(e.target.value.replace(/\D/g, '')) })} />
+            <span className="faint small">元 / 月</span>
+          </label>}
+          <label className="oj-qrow">
+            <span className="oj-qlabel">客户原话</span>
+            <input className="oj-qin wide" value={draft.replyNote} maxLength={300} placeholder="选填" onChange={e => set({ replyNote: e.target.value })} />
+          </label>
+        </>}
+        {accepted && <div className="oj-qrow">
+          <span className="oj-qlabel">合作进度</span>
+          <div className="seg" role="group" aria-label="合作进度">
+            {MAINTENANCE_STATES.map(st => <button key={st} type="button" aria-pressed={draft.state === st} className={draft.state === st ? 'on' : ''} onClick={() => set({ state: st })}>{st === '不做' ? '待开始' : st}</button>)}
+          </div>
+        </div>}
+        <label className="oj-qrow">
+          <span className="oj-qlabel">每月投入</span>
+          <input className="oj-qin" aria-label="每月投入小时" inputMode="decimal" value={draft.monthHours || ''} placeholder={engagement?.monthHours ? `AI 估 ${engagement.monthHours}` : '小时'} disabled={locked}
+            onChange={e => set({ monthHours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+          <span className="faint small">小时</span>
+        </label>
+        <label className="oj-qrow">
+          <span className="oj-qlabel">月费</span>
+          <input className="oj-qin" aria-label="月费" inputMode="numeric" value={draft.fee || ''} disabled={locked} placeholder={`建议 ${suggestion.fee}`}
+            onChange={e => set({ fee: Number(e.target.value.replace(/[^\d]/g, '')) || 0 })} />
+          <span className="faint small">元{locked ? '，已经记过月份，不再改' : ''}</span>
+        </label>
+        {accepted && <label className="oj-qrow">
+          <span className="oj-qlabel">开始月份</span>
+          <input className="oj-qin" aria-label="开始月份" value={draft.start} placeholder={thisMonth()} maxLength={7} onChange={e => set({ start: e.target.value.replace(/[^\d-]/g, '') })} />
+        </label>}
+        <div className="oj-qrow top">
+          <span className="oj-qlabel">每月支出</span>
+          <div className="oj-qexp">
+            {expenses.map((e, i) => (
+              <div key={i} className="oj-qexp-row">
+                <input className="oj-qin wide" value={e.name} placeholder="服务器、域名、付费接口" maxLength={40} onChange={ev => setExpense(i, { name: ev.target.value })} />
+                <input className="oj-qin" inputMode="numeric" value={e.amount || ''} placeholder="金额" onChange={ev => setExpense(i, { amount: Number(ev.target.value.replace(/[^\d]/g, '')) || 0 })} />
+              </div>
+            ))}
+          </div>
+        </div>
+        {accepted && (draft.state !== '不做' || draft.months.length > 0) && <div className="oj-qrow top">
+          <span className="oj-qlabel">每月记录</span>
+          <div className="oj-qexp">
+            {draft.months.map((m, i) => (
+              <div key={i} className="oj-qmonth">
+                <div className="oj-qexp-row">
+                  <input className="oj-qin" aria-label="月份" value={m.month} placeholder={thisMonth()} maxLength={7} onChange={e => setMonth(i, { month: e.target.value.replace(/[^\d-]/g, '') })} />
+                  <input className="oj-qin" aria-label="实际小时" inputMode="decimal" value={m.hours || ''} placeholder="实际小时" onChange={e => setMonth(i, { hours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ months: draft.months.filter((_, j) => j !== i) })}><Ic name="trash" cls="ic ic-sm" />删除</button>
+                </div>
+                <input className="oj-qin wide" aria-label="交付了什么" value={m.delivered} placeholder="这个月交付的大功能" maxLength={200} onChange={e => setMonth(i, { delivered: e.target.value })} />
+                <div className="seg" role="group" aria-label={`${m.month || '这个月'}觉得`}>
+                  {FEELINGS.map(f => <button key={f} type="button" className={m.feeling === f ? 'on' : ''} onClick={() => setMonth(i, { feeling: f })}>{f}</button>)}
+                </div>
+              </div>
+            ))}
+            {draft.months.length < MAX_MONTHS && (
+              <button type="button" className="btn btn-sm" onClick={() => set({ months: [...draft.months, { month: thisMonth(), delivered: '', hours: 0, feeling: '待定' }] })}><Ic name="plus" cls="ic ic-sm" />记一个月</button>
             )}
-            <label className="oj-qrow">
-              <span className="oj-qlabel">月费</span>
-              <input className="oj-qin" aria-label="月费" inputMode="numeric" value={draft.fee || ''} disabled={locked} placeholder={suggestion.fee != null ? `建议 ${suggestion.fee}` : '自己定'}
-                onChange={e => set({ fee: Number(e.target.value.replace(/[^\d]/g, '')) || 0 })} />
-              <span className="faint small">元{locked ? '，已经记过月份，不再改' : ''}</span>
-            </label>
-            <label className="oj-qrow">
-              <span className="oj-qlabel">开始月份</span>
-              <input className="oj-qin" aria-label="开始月份" value={draft.start} placeholder={thisMonth()} maxLength={7} onChange={e => set({ start: e.target.value.replace(/[^\d-]/g, '') })} />
-            </label>
-            <div className="oj-qrow top">
-              <span className="oj-qlabel">每月支出</span>
-              <div className="oj-qexp">
-                {expenses.map((e, i) => (
-                  <div key={i} className="oj-qexp-row">
-                    <input className="oj-qin wide" value={e.name} placeholder="服务器、域名、付费接口" maxLength={40} onChange={ev => setExpense(i, { name: ev.target.value })} />
-                    <input className="oj-qin" inputMode="numeric" value={e.amount || ''} placeholder="金额" onChange={ev => setExpense(i, { amount: Number(ev.target.value.replace(/[^\d]/g, '')) || 0 })} />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="oj-qrow top">
-              <span className="oj-qlabel">每月记录</span>
-              <div className="oj-qexp">
-                {draft.months.map((m, i) => (
-                  <div key={i} className="oj-qmonth">
-                    <div className="oj-qexp-row">
-                      <input className="oj-qin" aria-label="月份" value={m.month} placeholder={thisMonth()} maxLength={7} onChange={e => setMonth(i, { month: e.target.value.replace(/[^\d-]/g, '') })} />
-                      <input className="oj-qin" aria-label="实际小时" inputMode="decimal" value={m.hours || ''} placeholder="实际小时" onChange={e => setMonth(i, { hours: Number(e.target.value.replace(/[^\d.]/g, '')) || 0 })} />
-                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ months: draft.months.filter((_, j) => j !== i) })}><Ic name="trash" cls="ic ic-sm" />删除</button>
-                    </div>
-                    <input className="oj-qin wide" aria-label="交付了什么" value={m.delivered} placeholder="这个月交付的大功能" maxLength={200} onChange={e => setMonth(i, { delivered: e.target.value })} />
-                    <div className="seg" role="group" aria-label={`${m.month || '这个月'}觉得`}>
-                      {FEELINGS.map(f => <button key={f} type="button" className={m.feeling === f ? 'on' : ''} onClick={() => setMonth(i, { feeling: f })}>{f}</button>)}
-                    </div>
-                  </div>
-                ))}
-                {draft.months.length < MAX_MONTHS && (
-                  <button type="button" className="btn btn-sm" onClick={() => set({ months: [...draft.months, { month: thisMonth(), delivered: '', hours: 0, feeling: '待定' }] })}><Ic name="plus" cls="ic ic-sm" />记一个月</button>
-                )}
-              </div>
-            </div>
-          </>
-        )}
+          </div>
+        </div>}
       </div>
       <div className="oj-qbar">
         <div className="seg" role="group" aria-label="月维护说明版本">
@@ -986,6 +995,10 @@ function MaintenancePanel({ project, all, onSaved, calib: calibs, long = false }
         </div>
       </div>
       <pre className="oj-qtext">{text}</pre>
+      <details className="oj-hmore">
+        <summary>月费建议的依据</summary>
+        <div className="faint small">{suggestion.notes.map(n => <span key={n}>{n}</span>)}</div>
+      </details>
     </div>
   )
 }
@@ -1028,7 +1041,7 @@ function HoursPanel({ market, draft, raw, settings, set }: { market: string; dra
           <div>{rest.map(row)}</div>
         </details>
       )}
-      {rows.some(r => r.hours >= ITEM_MAX_HOURS) && <p className="oj-scope-warn">单项最多 {ITEM_MAX_DAYS} 天；某一项要做更久，建议把上面的合作方式改成长期</p>}
+      {rows.some(r => r.hours >= ITEM_MAX_HOURS) && <p className="oj-scope-warn">单项最多 {ITEM_MAX_DAYS} 天，超出的工作可拆成独立需求</p>}
       {changed && !locked && <button type="button" className="oj-hreset" onClick={() => set({ hourEdits: {}, hourScale: 1 })}>恢复 AI 的估计</button>}
     </div>
   )
@@ -1052,7 +1065,7 @@ function SpanRow({ span, modules, onChange, onRemove }: { span: WorkSpan; module
   )
 }
 
-function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibrations }): JSX.Element {
+function QuotePanel({ project, version, onSaved, calib: calibs, reason }: { reason: string; project: Project; version: Version; onSaved: (p: Project) => void; calib: Calibrations }): JSX.Element {
   const calib = calibFor(calibs, version.brief.clientType)
   const [draft, setDraft] = useState<QuoteState>(version.quote)
   const [budgetText, setBudgetText] = useState(version.quote.budget == null ? '' : String(version.quote.budget))
@@ -1101,7 +1114,8 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
 
   return (
     <div className="oj-sec oj-quote">
-      <h3><Ic name="ticket" />{sheet.base ? `变更单 · 基于第 ${sheet.base.n} 版` : '报价'}</h3>
+      <h3><Ic name="ticket" />{sheet.base ? `变更单 · 基于第 ${sheet.base.n} 版` : '一次性报价'}</h3>
+      {reason && <p className="oj-plan-reason">{reason}</p>}
       {summary && (
         <div className="oj-hero" role="status">
           <span className="oj-hero-name">{summary.name === '变更' ? '这次变更报价' : `报价 · ${summary.name}档`}</span>
@@ -1147,14 +1161,10 @@ function QuotePanel({ project, version, onSaved, calib: calibs }: { project: Pro
         </label>
         {draft.status !== '草稿' && (
           <div className="oj-qstage">
-            <p>{draft.status === '已报价' ? '客户怎么回复' : '做完后填'}</p>
+            {draft.status === '已成交' && <p>做完后填</p>}
         {draft.status === '已报价' && (
-          <div className="oj-qrow">
-            <span className="oj-qlabel">客户结果</span>
-            <div className="seg" role="group" aria-label="客户结果">
-              {OUTCOMES.map(o => <button key={o} type="button" className={draft.outcome === o ? 'on' : ''} onClick={() => set({ outcome: o })}>{o === '嫌贵' ? '嫌贵没成交' : o}</button>)}
-            </div>
-          </div>
+          <ReplyField label="一次性客户回复" options={OUTCOMES} value={draft.outcome}
+            display={o => o === '嫌贵' ? '嫌贵没成交' : o} onChange={outcome => set({ outcome })} />
         )}
         {draft.status === '已报价' && draft.outcome === '嫌贵' && (
           <label className="oj-qrow">

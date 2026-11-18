@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { briefSystemPrompt, normalizeBrief, type Brief, type BriefItem } from '../shared/order-judge-brief'
 import { DEFAULT_QUOTE_SETTINGS, applyDiscount, changeOrder, parseBudget, parseDeadline, tiers, zone, type QuoteExtras } from '../shared/order-judge-quote'
 import { inScoping, flowOrderedLayers, flowChannels, flowRoute, flowLayers, flowLayout, scopeConflicts, plansOf, blockedBy, normalizeSubmission, applySubmission, applyLinks, submissionNotes, scopeView, needsEstimate, normalizeEstimate, submissionText } from '../shared/order-judge-scope'
-import { longTermClientText, longTermFee, planOf } from '../shared/order-judge-maintenance'
+import { longTermClientText, longTermFee, projectDecision } from '../shared/order-judge-maintenance'
 import { EMPTY_MAINTENANCE, maintenanceClientText, maintenanceSelfText, normalizeMaintenance, suggestFee, type Maintenance } from '../shared/order-judge-maintenance'
 import { EMPTY_BONUS, EMPTY_QUOTE, buildSheet, calibrate, calibrateByType, dayActuals, experienceLines, spanDays, carryHourEdits, clientText, freeze, hourRows, hoursLabel, marketLine, marketStats, normalizeQuote, sampleOf, selfText, type QuoteState } from '../shared/order-judge-sheet'
 
@@ -594,14 +594,59 @@ pass('准确度：小时偏差和成交率')
   pass('客户侧数据不含小时、理由、优先级、预算')
 
   const m = normalizeMaintenance({ plan: '长期', monthHours: 40, expenses: [{ name: '服务器', amount: 100 }] })
-  assert.equal(planOf(EMPTY_MAINTENANCE), '一次性')
-  assert.equal(planOf(EMPTY_MAINTENANCE, { mode: '长期' }), '长期')
-  assert.equal(planOf({ ...EMPTY_MAINTENANCE, plan: '一次性' }, { mode: '长期' }), '一次性')
+  const classified = (n: number, mode: '一次性' | '长期') => ({ n, brief: { engagement: { mode, reason: '第' + n + '版', monthHours: 8, firstMonth: [] } } })
+  assert.equal(projectDecision([], EMPTY_MAINTENANCE).mode, '一次性')
+  assert.equal(projectDecision([{ n: 1, brief: {} }], m).mode, '长期')
+  const fixed = projectDecision([classified(2, '一次性'), classified(1, '长期')], { ...m, plan: '一次性' })
+  assert.deepEqual([fixed.mode, fixed.reason], ['长期', '第1版'])
+  assert.equal(projectDecision([classified(1, '一次性'), classified(2, '长期')], m).mode, '一次性')
   assert.equal(longTermFee([], 'p', m, 10).fee, 40 * DEFAULT_QUOTE_SETTINGS.rates['新做'] + 100)
   assert.equal(longTermFee([], 'p', EMPTY_MAINTENANCE, 10).hours, 10)
   const text = longTermClientText('螺丝', m, 1340, ['路线图'])
   assert.match(text, /每月 ¥1,340/); assert.match(text, /路线图/); assert.match(text, /随时可以停/)
-  pass('长期月费 = 每月小时 × 时间值 + 支出，开发者覆盖优先于 AI')
+  pass('长期月费 = 每月小时 × 时间值 + 支出，首次系统判定和理由优先于后续版本与旧手动记录')
+}
+
+// ── 月报价反馈 ──
+{
+  const old = { state: '不做', fee: 2100, start: '2026-10' }
+  assert.equal(normalizeMaintenance(old).reply, '未报价')
+  assert.equal(normalizeMaintenance({ ...old, months: [{ month: '2026-10' }] }).reply, '未报价')
+  for (const state of ['在做', '已停']) assert.equal(normalizeMaintenance({ ...old, state }).reply, '同意')
+  assert.equal(normalizeMaintenance({ ...old, months: [{ month: '2026-10', hours: 4 }] }).reply, '同意')
+  const rejected = normalizeMaintenance({ ...old, reply: '嫌贵', replyNote: ' 月预算两千 ', clientBudget: 2000 })
+  assert.equal(rejected.replyNote, '月预算两千'); assert.equal(rejected.clientBudget, 2000)
+  assert.deepEqual(normalizeMaintenance(JSON.parse(JSON.stringify(rejected))), rejected)
+  assert.equal(normalizeMaintenance({ ...rejected, reply: '考虑中' }).clientBudget, 0)
+  pass('旧待开始和空月份不算成交，已履约保留；月费反馈可往返保存')
+
+  const cur = mp('当前', [v({})], { ...EMPTY_MAINTENANCE, expenses: [{ name: '服务器', amount: 100 }] })
+  const prior = (id: string, reply: Maintenance['reply'], budget = 900) => mp(id, [v({})], {
+    ...EMPTY_MAINTENANCE, reply, fee: 1400, monthHours: 40, clientBudget: budget, expenses: [{ name: '域名', amount: 100 }],
+  })
+  const sug = (...peers: typeof cur[]) => longTermFee([cur, ...peers], cur.id, cur.maintenance, 40)
+  const a = prior('a', '嫌贵'), b = prior('b', '嫌贵'), c = prior('c', '嫌贵')
+  assert.equal(sug().fee, 1340)
+  for (const reply of ['未报价', '待回复', '考虑中', '已拒绝', '我没接', '没回音', '同意'] as const) {
+    assert.equal(sug(a, b, prior('c', reply)).fee, 1340)
+  }
+  assert.equal(sug(a, b, prior('c', '嫌贵', 0)).fee, 1340)
+  assert.equal(sug(a, b, { ...c, id: cur.id }).fee, 1340)
+  assert.equal(sug(a, b, { ...c, versions: [v({}, { ...one, clientType: '学生单' })] }).fee, 1340)
+  assert.equal(sug(a, b, { ...c, versions: [v({}), { ...v({}), n: 2 }] }).fee, 900)
+  assert.equal(sug(a, b, { ...c, maintenance: { ...c.maintenance, reply: '没回音' } }).fee, 1340)
+  pass('月费只用其他同客户类型项目：三次有预算的嫌贵才调价，沉默、撤回反馈和改版本不凑样本')
+
+  const done = prior('完工', '同意')
+  done.maintenance.months = [{ month: '2026-10', delivered: '', hours: 20, feeling: '亏' }]
+  assert.equal(sug(a, b, c, done).rate, 65)
+  assert.equal(sug(a, b, c, done).fee, 2700)
+  done.maintenance.months[0].feeling = '刚好'
+  assert.equal(sug(done).rate, 65)
+  assert.equal(sug(done).fee, 2700)
+  assert(!sug(a, b, c).notes.join('').includes('月预算两千'))
+  assert.equal(calibrateByType([a, b, c]).商单.settings.rates.新做, 31)
+  pass('月费校准参考实际交付、保护亏损底线，绝不把月预算当一次性项目总价')
 }
 
 // ── 按模块填实际小时 ──

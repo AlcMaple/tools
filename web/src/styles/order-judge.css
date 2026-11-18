@@ -320,6 +320,10 @@
 .oj-qin:focus { border-color: var(--teal-line); box-shadow: 0 0 0 3px var(--teal-wash); }
 .oj-qexp { display: grid; gap: 6px; min-width: 0; }
 .oj-qexp-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.oj-reply .dd-host { width: min(100%, 220px); min-width: 0; }
+.oj-reply .dd-trigger { min-height: 38px; padding-block: 6px; }
+.oj-reply strong { font-size: 13.5px; color: var(--teal); }
+@media (max-width: 600px) { .oj-reply .dd-host { width: 100%; } }
 .oj-qrow .seg > button { padding: 5px 11px; font-size: 12.5px; }
 .oj-qbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .oj-qbtns { position: relative; display: flex; gap: 8px; align-items: center; }
@@ -482,4 +486,4 @@ button.oj-flow-node.lock { cursor: pointer; }
 .oj-scope-sub > .btn { justify-self: start; }
 .oj-scope-subhead { font-size: 13px; font-weight: 600; color: var(--ink); }
 .oj-scope-note { font-size: 13px; line-height: 1.65; color: var(--ink-sub); overflow-wrap: anywhere; }
-.oj-plan-reason { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--ink-sub); }
+.oj-plan-reason { margin: 0 0 12px; font-size: 12.5px; line-height: 1.6; color: var(--ink-sub); }
