@@ -809,6 +809,7 @@ export interface PosterWatch {
   tracksById: Map<number, Track>
   bindings: Record<SourceId, Record<number, SourceBinding>>
   locating: { source: SourceId; bgmId: number } | null
+  onOpenSource?: (t: Track) => void
   onContinue: (t: Track, source: SourceId, mode: WatchMode, rebind?: boolean) => void
 }
 
@@ -909,6 +910,7 @@ export function Poster({
             ep={watchEp(watchTrack)}
             bound={bound}
             locating={watch.locating?.bgmId === item.id}
+            onOpen={watch.onOpenSource && (() => watch.onOpenSource?.(watchTrack))}
             onPick={(source, mode, rebind) => watch.onContinue(watchTrack, source, mode, rebind)}
           />
           <a className="btn btn-sm btn-ghost" href={`https://bgm.tv/subject/${item.id}`} target="_blank" rel="noreferrer" title="在 Bangumi 查看详情">

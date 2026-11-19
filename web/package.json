@@ -42,6 +42,7 @@
     "sync:agent-guide": "tsx scripts/sync-agent-feature-docs.ts",
     "test:agent-data": "npm run build && tsx scripts/test-agent-data.ts",
     "test:catalog-search-year": "npm run build && tsx scripts/test-catalog-search-year.ts",
+    "test:catalog-window": "npm run build && node scripts/test-catalog-window.cjs",
     "build:agent-release": "tsx scripts/build-agent-release.ts",
     "test:agent-ui": "npm run build && tsx scripts/test-agent-ui.ts",
     "test:agent-ui:serve": "npm run build && tsx scripts/agent-ui-fixture.ts",

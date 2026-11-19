@@ -1,8 +1,8 @@
 // 全部番剧 —— 离线索引里的整张动画表，皮肤沿用周历的拍立得海报墙（纵向排布）。
 // 封面由服务端后台慢慢补，没补到的就是纸片占位；这一页从不让浏览触发 BGM 请求。
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CatalogItem, CalendarItem } from './api'
-import { coverUrl, fetchCatalog, sourceById } from './api'
+import type { CatalogItem, CalendarItem, Track } from './api'
+import { coverUrl, fetchCatalog, sourceById, SOURCES } from './api'
 import { Poster, type PosterWatch } from './CalendarPage'
 import { CatalogEditDialog } from './CatalogEditDialog'
 import { CatalogDetailsDialog } from './CatalogDetailsDialog'
@@ -14,6 +14,9 @@ import { useTrackToggle } from './useTrackToggle'
 import { CatalogDiscovery, type DiscoveryFilters } from './CatalogDiscovery'
 import { useAuth } from './auth'
 import { RelatedAnimeDialog } from './RelatedAnimeDialog'
+import { CatalogGrid } from './CatalogGrid'
+import { WatchSourceDialog } from './tracks/TrackCard'
+import { watchEp } from './tracks/common'
 
 const PAGE = 48
 type Sort = 'score' | 'date'
@@ -21,7 +24,7 @@ type Sort = 'score' | 'date'
 // 只记住本次打开网站时的筛选
 let lastView: { query: string; year: number; sort: Sort; maxEps: number; finished: boolean; discovery: DiscoveryFilters } = { query: '', year: 0, sort: 'score', maxEps: 0, finished: false, discovery: { include: [], exclude: [] } }
 
-// 切回看过的条件（比如 2027 年 → 全部年份）先把上次的列表原样摆出来，同时照常重新请求覆盖；
+// 切回看过的条件先显示首批再刷新，其他筛选不累积整份浏览历史；
 // 键里带账号，退出登录后不会把只给登录用户看的条目摆给访客
 interface CachedView { items: CatalogItem[]; total: number; ready: boolean; admin: boolean; genres: string[]; planningReady: boolean }
 const viewCache = new Map<string, CachedView>()
@@ -61,21 +64,23 @@ export function CatalogPage(): JSX.Element {
   useEffect(() => { setDetails(null) }, [user?.id])
   const [editing, setEditing] = useState<CatalogItem | null>(null)
   const [relatedId, setRelatedId] = useState<number | null>(null)
+  const [watchChoice, setWatchChoice] = useState<Track | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
   const [total, setTotal] = useState(0)
   const [ready, setReady] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const generation = useRef(0)
   const controller = useRef<AbortController | null>(null)
   const moreRef = useRef<HTMLDivElement>(null)
 
   const track = useTrackToggle()
   const sourceWatch = useSourceWatch(setError)
+  const watchTarget = watchChoice && (track.tracksById.get(watchChoice.bgmId) ?? watchChoice)
   const posterWatch: PosterWatch = {
     tracksById: track.tracksById,
     bindings: sourceWatch.bindings,
     locating: sourceWatch.locating,
+    onOpenSource: setWatchChoice,
     onContinue: (t, source, mode, rebind) => sourceWatch.continueWatch(sourceById(source), t, mode, rebind),
   }
 
@@ -89,10 +94,10 @@ export function CatalogPage(): JSX.Element {
   }, [query])
 
   const load = (offset: number): void => {
+    if (offset > 0 && controller.current) return
     controller.current?.abort()
     const ctl = new AbortController()
     controller.current = ctl
-    const gen = offset === 0 ? ++generation.current : generation.current
     setLoading(true)
     setError(null)
     if (offset === 0) {
@@ -110,7 +115,7 @@ export function CatalogPage(): JSX.Element {
     const key = viewKey
     fetchCatalog({ q, year, sort, offset, limit: PAGE, maxEps, finished, ...discovery }, ctl.signal)
       .then((r) => {
-        if (gen !== generation.current) return
+        if (ctl.signal.aborted || controller.current !== ctl) return
         setPlanningReady(!!r.planningReady)
         if (!r.planningReady) { setMaxEps(0); setFinished(false) }
         setStale(false)
@@ -118,20 +123,26 @@ export function CatalogPage(): JSX.Element {
         setAdmin(r.admin)
         setGenres(r.genres)
         setTotal(r.total)
-        setItems((prev) => {
-          const next = offset === 0 ? r.items : [...prev, ...r.items]
+        if (offset === 0) {
           viewCache.delete(key)
-          viewCache.set(key, { items: next, total: r.total, ready: r.ready, admin: r.admin, genres: r.genres, planningReady: !!r.planningReady })
+          viewCache.set(key, { items: r.items.slice(0, PAGE), total: r.total, ready: r.ready, admin: r.admin, genres: r.genres, planningReady: !!r.planningReady })
           if (viewCache.size > VIEW_CACHE_MAX) viewCache.delete(viewCache.keys().next().value as string)
-          return next
-        })
+          setItems(r.items)
+        } else {
+          setItems(prev => [...prev, ...r.items])
+        }
       })
       .catch((e: Error) => {
         if (ctl.signal.aborted) return
         console.warn('[catalog] 读取失败', e)
         setError(e.message)
       })
-      .finally(() => { if (controller.current === ctl) { setLoading(false); setStale(false) } })
+      .finally(() => {
+        if (controller.current !== ctl) return
+        controller.current = null
+        setLoading(false)
+        setStale(false)
+      })
   }
 
   useEffect(() => {
@@ -148,10 +159,17 @@ export function CatalogPage(): JSX.Element {
     }, { rootMargin: '600px 0px' })
     observer.observe(target)
     return () => observer.disconnect()
-  }, [hasMore, loading, error, items.length])
+  }, [viewKey, hasMore, loading, error, items.length])
 
   // 页头的扇面跟着当前列表走：筛了年份 / 搜了名字，叠着的就是那几部
-  const fan = useMemo(() => items.filter((i) => i.cover).slice(0, 3), [items])
+  const fan = useMemo(() => {
+    const covers: CatalogItem[] = []
+    for (const item of items) {
+      if (item.cover) covers.push(item)
+      if (covers.length === 3) break
+    }
+    return covers
+  }, [items])
 
   const summary = useMemo(() => {
     if (!ready) return ''
@@ -212,6 +230,12 @@ export function CatalogPage(): JSX.Element {
 
       <CatalogDiscovery value={discovery} genres={genres} admin={admin} onApply={setDiscovery} onGenresSaved={() => { viewCache.clear(); load(0) }} />
       {sourceWatch.modals}
+      {watchTarget && <WatchSourceDialog
+        ep={watchEp(watchTarget)}
+        bound={Object.fromEntries(SOURCES.map(source => [source.id, sourceWatch.bindings[source.id][watchTarget.bgmId]]))}
+        onClose={() => setWatchChoice(null)}
+        onPick={(source, mode, rebind) => posterWatch.onContinue(watchTarget, source, mode, rebind)}
+      />}
       {relatedId !== null && <RelatedAnimeDialog key={relatedId} id={relatedId} tracks={track.tracksById}
         onAdd={item => { if (!track.tracked.has(item.bgmId)) track.toggle(asCalendarItem(item), 0, 'plan') }} onClose={() => setRelatedId(null)} />}
       {editing && (
@@ -240,28 +264,26 @@ export function CatalogPage(): JSX.Element {
       ) : items.length === 0 && !error ? (
         <div className="page-state"><p className="faint small">{maxEps > 0 || finished ? '没有符合这些条件的番，试着放宽集数或取消已播完' : discovery.include.length || discovery.exclude.length ? '没有符合这些条件的番，试着减少题材或清空题材筛选' : q ? (year > 0 ? `没有找到 ${year} 年的「${q}」` : `没有找到「${q}」，换个名字试试`) : '这一年没有收录的番'}</p></div>
       ) : (
-        <div className={`film is-vertical catalog-grid${stale ? ' is-stale' : ''}`} aria-busy={stale}>
-          {items.map((item) => (
-            <Poster
-              key={item.bgmId}
-              item={asCalendarItem(item)}
-              weekday={0}
-              canTrack={track.canTrack}
-              tracked={track.tracked.has(item.bgmId)}
-              onToggle={(i, w) => track.toggle(i, w, 'plan')}
-              watch={posterWatch}
-              meta={metaOf(item)}
-              onDetails={() => setDetails({ id: item.bgmId, owner: user?.id ?? 0 })}
-              details={item.tags.length > 0 ? <div className="catalog-tags">{[...new Set(item.tags)].map(tag => <span key={tag}>{tag}</span>)}</div> : undefined}
-              onRelated={() => setRelatedId(item.bgmId)}
-              coverExtra={admin && (
-                <button type="button" className="catalog-edit-btn" onClick={() => setEditing(item)} aria-label="编辑卡片" title="编辑卡片">
-                  <Ic name="pencil" cls="ic ic-sm" />
-                </button>
-              )}
-            />
-          ))}
-        </div>
+        <CatalogGrid key={viewKey} items={items} stale={stale} render={item => (
+          <Poster
+            key={item.bgmId}
+            item={asCalendarItem(item)}
+            weekday={0}
+            canTrack={track.canTrack}
+            tracked={track.tracked.has(item.bgmId)}
+            onToggle={(i, w) => track.toggle(i, w, 'plan')}
+            watch={posterWatch}
+            meta={metaOf(item)}
+            onDetails={() => setDetails({ id: item.bgmId, owner: user?.id ?? 0 })}
+            details={item.tags.length > 0 ? <div className="catalog-tags">{[...new Set(item.tags)].map(tag => <span key={tag}>{tag}</span>)}</div> : undefined}
+            onRelated={() => setRelatedId(item.bgmId)}
+            coverExtra={admin && (
+              <button type="button" className="catalog-edit-btn" onClick={() => setEditing(item)} aria-label="编辑卡片" title="编辑卡片">
+                <Ic name="pencil" cls="ic ic-sm" />
+              </button>
+            )}
+          />
+        )} />
       )}
 
       {hasMore && (

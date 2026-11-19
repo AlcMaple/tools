@@ -832,17 +832,18 @@ export function WatchSourceDialog({ ep, bound, title, onClose, onPick }: {
   )
 }
 
-export function ContinueWatchAction({ label, ep, bound, locating, onPick, className = 'btn btn-sm btn-primary' }: {
+export function ContinueWatchAction({ label, ep, bound, locating, onOpen, onPick, className = 'btn btn-sm btn-primary' }: {
   className?: string
   label: string
   ep: number
   bound: Partial<Record<SourceId, SourceBinding>>
   locating: boolean
+  onOpen?: () => void
   onPick: (source: SourceId, mode: WatchMode, rebind?: boolean) => void
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   return <>
-    <button type="button" className={className} disabled={locating} onClick={() => setOpen(true)} title={`挑个源看第 ${ep} 话`}>
+    <button type="button" className={className} disabled={locating} onClick={onOpen ?? (() => setOpen(true))} title={`挑个源看第 ${ep} 话`}>
       {locating ? <Spinner size={12} /> : <Ic name="play" cls="ic ic-sm" />}
       <span>{locating ? '找片源中…' : label}</span>
     </button>

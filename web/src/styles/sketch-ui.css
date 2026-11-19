@@ -3529,7 +3529,8 @@ body[data-auth='out'] .track-btn { display: none; }
 .catalog-toolbar .searchbar { flex: 1 1 260px; max-width: 420px; }
 .catalog-year { width: 150px; }
 .catalog-year .dd-host { width: 100%; }
-.catalog-grid { padding-top: 4px; }
+/* 目录自己按首个可见行补位，浏览器再自动锚定会重复纠偏 */
+.catalog-page { overflow-anchor: none; }
 @media (max-width: 640px) {
   .catalog-toolbar .searchbar { flex-basis: 100%; max-width: none; }
   .catalog-year { flex: 1; width: auto; }
