@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="802" viewBox="0 0 1020 802" role="img" aria-labelledby="title desc">
+  <title id="title">备份回贴，保留原来的追番季度</title>
+  <desc id="desc">修复方案：归档日期决定作品在时间线的位置，修改时间只决定合并采用哪份记录；保留本地较新修改和旧备份缺日期时的原有回退</desc>
+  <defs>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;fill:#282529}
+      .title{font-size:19px;font-weight:700}.sub{font-size:12.5px;fill:#756f73}.section{font-size:14px;font-weight:700}.head{font-size:12.5px;font-weight:700}.body{font-size:11px}.green{fill:#316247}.blue{fill:#36566d}.red{fill:#96434f}.yellow{fill:#7a6234}.muted{fill:#756f73}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#91adc1"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1018" height="800" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="28" y="38" class="title">备份回贴，保留原来的追番季度</text>
+  <text x="28" y="65" class="sub">修复方案：采用备份中的归档日期，不把最近一次修改误当成加入追番的时间</text>
+
+  <rect x="28" y="87" width="470" height="87" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="46" y="115" class="head blue">加入 / 归档日期：记在哪一季</text>
+  <text x="46" y="142" class="body">决定作品在时间线上的年份和季度</text>
+  <text x="46" y="162" class="body">用户在「记在哪一季」调整的也是这个位置</text>
+  <rect x="518" y="87" width="474" height="87" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="536" y="115" class="head yellow">最近修改时间：哪份记录更新</text>
+  <text x="536" y="142" class="body">决定导入时采用备份，还是保留较新的本地记录</text>
+  <text x="536" y="162" class="body">改过标签或进度，不代表作品换了一季</text>
+
+  <text x="28" y="208" class="section">从导出到找回：完整恢复同一条手帐</text>
+  <text x="28" y="232" class="body muted">用户看到的</text>
+  <rect x="28" y="244" width="294" height="96" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="46" y="273" class="head green">原季度里的作品</text>
+  <text x="46" y="300" class="body">保留已记下的进度和标签</text>
+  <text x="46" y="322" class="body">用「整本抄走（ZIP）」导出</text>
+  <path d="M330 292H350" stroke="#91adc1" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="360" y="244" width="294" height="96" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="378" y="273" class="head blue">之后从同一份备份回贴</text>
+  <text x="378" y="300" class="body">用「选文件贴回来」选择备份</text>
+  <text x="378" y="322" class="body">不是再手动重录一条作品</text>
+  <path d="M662 292H682" stroke="#91adc1" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="692" y="244" width="300" height="96" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="710" y="273" class="head green">仍在原来那一季找回</text>
+  <text x="710" y="300" class="body">作品、进度与标签随原记录回来</text>
+  <text x="710" y="322" class="body">不因最后一次编辑而挪到别的季度</text>
+
+  <text x="28" y="367" class="body muted">背后在做的</text>
+  <rect x="28" y="379" width="294" height="83" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="46" y="407" class="head">两种日期各留一份</text>
+  <text x="46" y="434" class="body">备份保留归档日期，也保留修改时间</text>
+  <rect x="360" y="379" width="294" height="83" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="378" y="407" class="head blue">先沿用原有合并规则</text>
+  <text x="378" y="434" class="body">同一部番，先判断哪份修改更新</text>
+  <rect x="692" y="379" width="300" height="83" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="710" y="407" class="head green">采用记录，也采用它的原季度</text>
+  <text x="710" y="434" class="body">本地没有这部番，也按备份原日期恢复</text>
+
+  <text x="28" y="499" class="section">旧备份与本地修改：恢复不等于覆盖</text>
+  <rect x="28" y="515" width="470" height="96" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="46" y="543" class="head red">本地记录比备份更新</text>
+  <text x="46" y="570" class="body">保留本地整条记录，包括它的归档季度</text>
+  <text x="46" y="593" class="body">不跳过合并判断，单独用旧日期覆盖新记录</text>
+  <rect x="518" y="515" width="474" height="96" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="536" y="543" class="head">旧备份缺日期，本地已有这部番</text>
+  <text x="536" y="570" class="body">保留本地原来的归档日期</text>
+  <text x="536" y="593" class="body">缺失的信息不拿修改时间强行补写</text>
+  <rect x="28" y="627" width="470" height="96" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="46" y="655" class="head yellow">旧备份缺日期，本地也没有这部番</text>
+  <text x="46" y="682" class="body">继续原来的修改时间回退规则</text>
+  <text x="46" y="705" class="body">缺少原始日期，就不声称恢复了真实加入时间</text>
+  <rect x="518" y="627" width="474" height="96" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="536" y="655" class="head blue">为什么不顺手加回收站？</text>
+  <text x="536" y="682" class="body">本次修的是已有备份带回的信息是否完整</text>
+  <text x="536" y="705" class="body">原删除、封面处理、账号边界与同步规则不扩展</text>
+
+  <text x="28" y="759" class="head green">常见操作不变：仍用原来的 ZIP 导出与回贴入口</text>
+  <text x="28" y="782" class="body muted">图是修复方案，结果还要通过实际导出、回贴和新旧记录合并验证</text>
+</svg>
