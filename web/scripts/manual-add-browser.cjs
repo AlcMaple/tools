@@ -11,9 +11,11 @@ async function main() {
   await app.whenReady()
   const window = new BrowserWindow({ show: false, width: 1360, height: 980, webPreferences: { contextIsolation: true, nodeIntegration: false } })
   let trackWrites = 0
+  const searchModes = []
   window.webContents.session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (request, done) => {
     const url = new URL(request.url)
     if (request.method === 'PUT' && url.pathname.startsWith('/api/tracks/')) trackWrites++
+    if (url.pathname === '/api/search' && url.searchParams.get('q')) searchModes.push(url.searchParams.get('mode') ?? 'local')
     done({ cancel: url.origin !== origin })
   })
   const read = expression => window.webContents.executeJavaScript(expression)
@@ -27,12 +29,17 @@ async function main() {
   }
   const click = expression => read(`(() => { const element = ${expression}; if (!element) throw new Error('MANUAL_ADD_TARGET_MISSING'); element.click() })()`)
   const namedButton = text => `Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)})`
-  const fill = value => read(`(() => { const input = document.querySelector('input[aria-label="自定义番名"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  const fill = (value, label = '自定义番名') => read(`(() => { const input = document.querySelector(${JSON.stringify(`input[aria-label="${label}"]`)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   const customSelected = () => read("Array.from(document.querySelectorAll('[role=tab]')).find(tab => tab.textContent.trim() === '自己记一条')?.getAttribute('aria-selected')")
   await window.loadURL(origin + '/__agent-test/login/empty')
   await waitFor("document.querySelector('main')?.textContent.includes('手帐还是空的')")
   await click(namedButton('加番'))
   await waitFor("document.querySelector('[role=dialog]')")
+  await fill('k', '搜索要贴进手帐的番剧')
+  await waitFor("document.querySelector('#addList .add-hit-title, .add-online-link')")
+  assert.deepEqual(await read("Array.from(document.querySelectorAll('#addList .add-hit-title'), el => el.textContent)"), ['K SEVEN STORIES', '番外篇', 'K'], 'lowercase k must find the series, alias and exact title in the existing newest-year-first order')
+  assert.deepEqual(searchModes, ['local'], 'typing must issue exactly one offline search')
+  console.log('PASS add search: lowercase k finds 3 offline matches in year order without an online search')
   await click("Array.from(document.querySelectorAll('[role=tab]')).find(tab => tab.textContent.trim() === '自己记一条')")
   await waitFor("document.querySelector('input[aria-label=\"自定义番名\"]')")
   await fill('手动回归一号')

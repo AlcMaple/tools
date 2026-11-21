@@ -79,9 +79,10 @@ function explain(err: unknown): string {
 
 export async function searchOnline(query: string, now = Date.now()): Promise<OnlineResult> {
   const q = query.trim()
-  if (q.length < 2) return { hits: [] } // 一个字的词在线搜也是噪音，不值得为它开一次口子
+  if (!q) return { hits: [] }
 
-  const cached = cache.get(q)
+  const cacheKey = q.toLowerCase()
+  const cached = cache.get(cacheKey)
   if (cached && now - cached.at < CACHE_TTL) return { hits: cached.hits }
 
   if (now < cooldownUntil) {
@@ -111,7 +112,7 @@ export async function searchOnline(query: string, now = Date.now()): Promise<Onl
       .map((hit) => ({ ...hit, searchAdditionToken: signSearchAddition(hit, now) }))
     failStreak = 0
     if (cache.size >= CACHE_MAX) cache.clear() // 简单粗暴：满了整清，反正是纯加速
-    cache.set(q, { at: now, hits })
+    cache.set(cacheKey, { at: now, hits })
     return { hits }
   } catch (err) {
     // **不重试**（传输层抖动 fetchJson 已经兜过一次）。连挂几次就闭嘴一段时间，

@@ -44,7 +44,8 @@ export function searchAnimeTable(
 ): AnimeHit[] {
   const q = query.trim()
   if (!q) return []
-  const grams = queryGrams(q)
+  const singleAscii = /^[a-z0-9]$/i.test(q)
+  const grams = singleAscii ? [q] : queryGrams(q)
   if (!grams.length) return []
   if (table !== 'anime' && table !== 'bgm_search_additions') {
     throw new Error(`不支持的动漫搜索表：${String(table)}`)
@@ -65,6 +66,11 @@ export function searchAnimeTable(
   })
   const hits = gramConds.map((c) => `(${c})`).join(' + ')
 
+  // 单字母或数字要能搜到《K》和「K-ON!」，但不该仅因「Kiki」含 k 就命中。
+  // 先用上面的 LIKE 粗筛，再给原名、译名、别名补空格边界，按独立词核对。
+  const tokenFilter = singleAscii ? "AND lower(printf(' %s %s %s ', name, name_cn, aliases)) GLOB @token" : ''
+  if (singleAscii) params.token = `*[^a-z0-9]${q.toLowerCase()}[^a-z0-9]*`
+
   // 先收窄年份，避免其他年份占满候选上限后把目标条目挤掉
   if (year > 0) params.year = String(year)
   const yearFilter = year > 0 ? 'AND substr(date, 1, 4) = @year' : ''
@@ -74,9 +80,9 @@ export function searchAnimeTable(
   const rows = db
     .prepare(
       `SELECT bgm_id, name, name_cn, date, score FROM ${table}
-       WHERE (${gramConds.join(' OR ')}) ${yearFilter} ${candidateFilter}
+       WHERE (${gramConds.join(' OR ')}) ${yearFilter} ${candidateFilter} ${tokenFilter}
        ORDER BY
-         (CASE WHEN name_cn = @exact OR name = @exact THEN 3
+         (CASE WHEN name_cn = @exact COLLATE NOCASE OR name = @exact COLLATE NOCASE THEN 3
                WHEN name_cn LIKE @prefix ESCAPE '\\' OR name LIKE @prefix ESCAPE '\\' THEN 2
                WHEN ${anyCol('full')} THEN 1 ELSE 0 END) DESC,
          (${hits}) DESC,

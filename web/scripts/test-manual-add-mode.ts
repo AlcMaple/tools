@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import Database from 'better-sqlite3'
 import { createAgentUiFixture } from './agent-ui-fixture'
 
 process.env.NODE_ENV = 'test'
@@ -12,6 +13,18 @@ process.env.AGENT_UI_FIXTURE = '1'
 const fixture = await createAgentUiFixture()
 const profile = mkdtempSync(join(tmpdir(), 'manual-add-browser-'))
 try {
+  const index = new Database(join(process.cwd(), 'data/bgm_index.db'))
+  try {
+    index.exec('CREATE TABLE anime (bgm_id INTEGER PRIMARY KEY, name TEXT, name_cn TEXT, aliases TEXT, date TEXT, score REAL); CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT)')
+    index.prepare('INSERT INTO meta VALUES (?,?)').run('built_at', String(Date.now()))
+    const add = index.prepare('INSERT INTO anime VALUES (?,?,?,?,?,?)')
+    add.run(38069, 'K', '', '[]', '2012-10-04', 6.5)
+    add.run(8801, 'K SEVEN STORIES', '', '[]', '2018-09-01', 6.6)
+    add.run(8802, 'Side Story', '番外篇', '["Side K"]', '2015-01-01', 9)
+    add.run(8803, 'Kiki', '', '[]', '2019-01-01', 10)
+  } finally {
+    index.close()
+  }
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
   const electron = createRequire(import.meta.url)('electron') as string

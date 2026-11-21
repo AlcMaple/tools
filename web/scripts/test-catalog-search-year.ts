@@ -25,11 +25,16 @@ for (const row of [
   [8104, 'Frieren Short', '葬送的芙莉莲 短篇', '[]', '2023-10-01', 6.8, '[]', 0, 11, 100],
   [8105, 'Frieren Short Two', '葬送的芙莉莲 短篇第二期', '[]', '2025-01-01', 6.6, '[]', 0, 11, 100],
   [8106, 'Restricted Fixture', '葬送的芙莉莲 受限夹具条目', '[]', '2023-01-01', 9.9, '[]', 1, 1, 100],
+  [38069, 'K', '', '[]', '2012-10-04', 6.5, '[]', 0, 13, 100],
+  [251986, 'K SEVEN STORIES Episode 3', '', '[]', '2018-09-01', 6.6, '[]', 0, 1, 100],
+  [8201, 'K-ON!', '', '["Volume 8"]', '2009-04-02', 8.2, '[]', 0, 13, 100],
+  [8202, 'Project', '', '["Code K: Side Story"]', '2012-12-01', 6.2, '[]', 0, 1, 100],
+  [8203, 'Kiki', '', '["Volume 18"]', '1989-07-29', 9.9, '[]', 0, 1, 100],
 ]) insert.run(...row)
 index.close()
 
 if (process.argv.includes('--serve')) {
-  console.log(JSON.stringify({ origin: fixture.origin, browserUrl: fixture.browserOrigin + '/', mode: 'isolated-catalog-search-year', realAiCalls: 0, syntheticVisibleEntries: 5 }))
+  console.log(JSON.stringify({ origin: fixture.origin, browserUrl: fixture.browserOrigin + '/', mode: 'isolated-catalog-search-year', realAiCalls: 0, syntheticVisibleEntries: 10 }))
   let closing = false
   const close = (): void => {
     if (closing) return
@@ -41,14 +46,34 @@ if (process.argv.includes('--serve')) {
 } else {
   const profile = mkdtempSync(join(tmpdir(), 'catalog-search-year-browser-'))
   try {
-    const request = async (q: string, year: number, offset = 0, limit = 48): Promise<Reply> => {
+    const request = async (q: string, year: number, offset = 0, limit = 48, sort = 'score'): Promise<Reply> => {
       const url = new URL('/api/catalog', fixture.origin)
-      url.search = new URLSearchParams({ q, year: String(year), offset: String(offset), limit: String(limit) }).toString()
+      url.search = new URLSearchParams({ q, year: String(year), offset: String(offset), limit: String(limit), sort }).toString()
       const response = await fixture.originalFetch(url)
       assert.equal(response.status, 200)
       return await response.json() as Reply
     }
     const ids = (value: Reply): number[] => value.items.map(item => item.bgmId)
+    const localIds = async (q: string, expectedSource = 'local'): Promise<number[]> => {
+      const url = new URL('/api/search', fixture.origin)
+      url.search = new URLSearchParams({ q, mode: 'local' }).toString()
+      const response = await fixture.originalFetch(url)
+      assert.equal(response.status, 200)
+      const { source, data } = await response.json() as { source: string; data: { bgmId: number }[] }
+      assert.equal(source, expectedSource)
+      return data.map(hit => hit.bgmId)
+    }
+    const expected = [8201, 8202, 38069, 251986]
+    for (const q of ['k', ' K ']) {
+      assert.deepEqual((await localIds(q)).sort((a, b) => a - b), expected, 'local search includes standalone K in titles and aliases, not Kiki')
+      assert.deepEqual(ids(await request(q, 0)), [8201, 251986, 38069, 8202], 'catalog keeps score order for matching entries')
+    }
+    assert.deepEqual(ids(await request('k', 2012, 0, 48, 'date')), [8202, 38069], 'catalog keeps year filter and latest order')
+    assert.deepEqual(await localIds('8'), [8201], '8 is a standalone alias token; 18 is not')
+    assert.deepEqual((await localIds('k Frieren')).sort(), (await localIds('Frieren')).sort(), 'one letter in a longer query must not add unrelated hits')
+    fixture.db.prepare('INSERT INTO bgm_search_additions (bgm_id, name, name_cn, aliases, date, score, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(8301, 'Project', '', '["Code Q"]', '', 0, Date.now())
+    assert.deepEqual(await localIds('q', 'learned'), [8301], 'additions must match single-letter aliases when the archive has no hits')
+    console.log('PASS single-character local and catalog searches: case, whitespace, boundaries, aliases, year and sort')
     const filtered = await request('芙莉莲', 2023)
     assert.equal(filtered.ready, true)
     assert.equal(filtered.total, 2, 'keyword and selected year must combine before counting results')
@@ -76,6 +101,7 @@ if (process.argv.includes('--serve')) {
     const add = extra.prepare('INSERT INTO anime VALUES (?,?,?,?,?,?,?,?,?,?)')
     extra.transaction(() => {
       for (let n = 0; n < 121; n++) add.run(9000 + n, 'Other Year ' + n, '芙莉莲干扰条目' + n, '[]', '2026-01-01', 10, '[]', 0, 1, 100)
+      for (let n = 0; n < 31; n++) add.run(9200 + n, 'K Series ' + n, '', '[]', '2026-01-01', 9, '[]', 0, 1, 100)
       add.run(9999, 'Late Matching Year', '芙莉莲尾部年份目标', '[]', '1998-01-01', 1, '[]', 0, 1, 100)
     })()
     extra.close()
@@ -83,8 +109,11 @@ if (process.argv.includes('--serve')) {
     assert.equal(beyondCap.total, 1, 'selected-year match beyond 120 other-year candidates must not disappear')
     assert.deepEqual(ids(beyondCap), [9999])
     console.log('PASS catalog search-year: year is applied before the 120-candidate cut')
+    const capped = await localIds('k')
+    assert.equal(capped.length, 30)
+    assert.equal(capped[0], 38069, 'case-insensitive exact title must win before the 30-result cut')
     const reset = new Database(indexPath)
-    reset.prepare('DELETE FROM anime WHERE bgm_id >= ?').run(9000)
+    reset.prepare('DELETE FROM anime WHERE bgm_id BETWEEN ? AND ?').run(9000, 9999)
     reset.close()
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
