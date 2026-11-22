@@ -18,7 +18,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type {
   AnimeHit,
   BgmImportStatus,
-  CalendarResult,
   OnlineSource,
   SourceBinding,
   SourceId,
@@ -32,7 +31,6 @@ import { SOURCES, backfillTrack, deleteTrack, editTrackGoodEpisodes, importTrack
 import { isRecentAir } from '../shared/anime-age'
 import { applyGoodEpisodeEdit, type GoodEpisodeEdit } from '../shared/good-episodes'
 import { auth, useAuth } from './auth'
-import { cacheGet } from './dataCache'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { GoodEpisodesModal } from './GoodEpisodesModal'
@@ -42,6 +40,7 @@ import type { PosterInput } from './reviews/poster'
 import { fetchMaterial, fetchReviewsState } from './reviews/reviewsApi'
 import {
   loadTracks,
+  mergeTrack,
   reloadTracks,
   runTracksMutation,
   runTrackMutation,
@@ -168,7 +167,9 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
     setTracks(null)
     setTracksError(null)
     setLoadProgress(null)
-    const stopTracks = loadTracks(user.username, setTracks, setTracksError, setLoadProgress)
+    const stopTracks = loadTracks(user.username, setTracks, setTracksError, setLoadProgress, saved => {
+      setTracks(prev => prev ? mergeTrack(prev, saved) : prev)
+    })
     return () => {
       stopTracks()
     }
@@ -180,36 +181,6 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
     if (user && tracks) saveTracksCache(user.username, tracks)
   }, [user, tracks])
 
-
-  // 先展示占位；成功响应由账号写队列合并，连续操作结束后再通知共享列表。
-  const addFromSearch = (hit: AnimeHit): void => {
-    if (!user) return
-    setError(null)
-    // 周历缓存里若有这部（加番大多加当季新番），封面 / 放送星期立刻带上：
-    // 乐观卡片即时有图，cover 随 PUT 落库，不用等服务端后台补
-    const cal = cacheGet<CalendarResult>('calendar', 14 * 24 * 60 * 60_000)
-    const calDay = cal?.data.find((d) => d.items.some((i) => i.id === hit.bgmId))
-    const calItem = calDay?.items.find((i) => i.id === hit.bgmId)
-    const optimistic: Track = {
-      bgmId: hit.bgmId, status: 'plan', episode: 0, totalEpisodes: null,
-      title: hit.name, titleCn: hit.nameCn, cover: calItem?.cover ?? '', airWeekday: calDay?.id ?? 0,
-      airDate: hit.date, score: hit.score, bgmTags: [], userTags: [], aliases: [],
-      observeCount: 0, subjectType: 'anime', goodEpisodes: [], goodEpisodeNotes: {}, favorite: 0, createdAt: Date.now(), updatedAt: Date.now(),
-    }
-    setTracks((prev) => (prev && prev.some((t) => t.bgmId === hit.bgmId) ? prev : [optimistic, ...(prev ?? [])]))
-    void runTrackMutation(user.username, hit.bgmId, () =>
-      putTrack(hit.bgmId, {
-        title: hit.name,
-        titleCn: hit.nameCn,
-        status: 'plan',
-        airDate: hit.date,
-        score: hit.score,
-        ...(calItem?.cover ? { cover: calItem.cover } : {}),
-        ...(calDay ? { airWeekday: calDay.id } : {}),
-      }, { searchAdditionToken: hit.searchAdditionToken })
-    ).then(() => toast(`『${hit.nameCn || hit.name}』已加入想看`))
-      .catch((e: Error) => setError(e.message))
-  }
 
   const addCustom = async (title: string): Promise<void> => {
     if (!user) throw new Error('未登录')
@@ -713,11 +684,11 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
 
       {watchModals}
 
-      {adding && (
+      {adding && user && (
         <AddSearchModal
-          key={adding.backfill ? `backfill:${adding.backfill.customBgmId}` : 'new'}
+          key={`${user.id}:${adding.backfill?.customBgmId ?? 'new'}`}
+          account={user}
           trackedIds={new Set(animeTracks.map((t) => t.bgmId))}
-          onAdd={addFromSearch}
           onAddCustom={addCustom}
           initialQuery={adding.initialQuery}
           backfill={adding.backfill}

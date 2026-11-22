@@ -3529,6 +3529,7 @@ body[data-auth='out'] .track-btn { display: none; }
 .add-hit-title { font-weight: 600; font-size: 13.5px; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
 .add-hit-sub { margin-top: 2px; font-size: 11.5px; line-height: 1.4; color: var(--ink-faint); overflow-wrap: anywhere; }
 .add-hit-acts { flex: none; display: flex; align-items: center; gap: 8px; }
+.add-hit-write { display: grid; place-items: center; inline-size: calc(4em + 48px); min-block-size: 36px; white-space: nowrap; }
 @media (max-width: 600px) {
   .add-hit { flex-wrap: wrap; row-gap: 8px; border-bottom: 1px dashed var(--line); }
   .add-hit-text { flex-basis: 100%; }

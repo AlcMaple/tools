@@ -38,6 +38,11 @@ export function useTrackToggle(): {
         setTracksById(new Map(ts.map((t) => [t.bgmId, t])))
       },
       setLoadError,
+      undefined,
+      saved => {
+        setTracked(prev => new Set(prev).add(saved.bgmId))
+        setTracksById(prev => new Map(prev).set(saved.bgmId, saved))
+      },
     )
   }, [user])
 

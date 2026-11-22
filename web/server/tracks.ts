@@ -762,6 +762,8 @@ tracks.get('/', async (c) => {
   const started = performance.now()
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
+  const owner = c.req.header('X-Tracks-Owner')
+  if (owner !== undefined && owner !== String(uid)) return c.json({ error: '账号已变化，请重新打开追番', code: 'OWNER_CHANGED' }, 409)
   const snapshot = readTracksSnapshot(uid)
   fillCalendarMetadataLater(uid)
   // 逐字段判缺：只挑「缺封面」会让有封面、缺放送日期的条目永远补不上（卡片播出季印章一直是「未定」）。
@@ -841,6 +843,50 @@ tracks.get('/:bgmId/playback-progress', async c => {
   if (!row) return c.json({ error: '先将这部番加入手帐，再记录进度' }, 404)
   c.header('Cache-Control', 'no-store')
   return c.json({ ownerId: uid, revision: currentRev(uid), episode: row.episode, title: row.title_cn || row.title, totalEpisodes: row.total_episodes })
+})
+
+tracks.post('/add', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '登录后才能加入追番', code: 'AUTH_REQUIRED' }, 401)
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null)
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || typeof body.bgmId !== 'number' || !Number.isSafeInteger(body.bgmId) || body.bgmId <= 0) {
+    return c.json({ error: '加番请求格式不正确', code: 'INVALID_TRACK' }, 400)
+  }
+  if (body.expectedOwner !== uid) return c.json({ error: '账号已变化，请重新打开加番', code: 'OWNER_CHANGED' }, 409)
+
+  const { bgmId, title, titleCn, airDate, score, cover = '', airWeekday = 0 } = body
+  if (typeof title !== 'string' || typeof titleCn !== 'string' || !(title.trim() || titleCn.trim())
+    || title.length > 1024 || titleCn.length > 1024 || typeof airDate !== 'string' || airDate.length > 32
+    || typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 10
+    || typeof cover !== 'string' || cover.length > 2000
+    || typeof airWeekday !== 'number' || !Number.isInteger(airWeekday) || airWeekday < 0 || airWeekday > 7) {
+    return c.json({ error: '番剧资料格式不正确，请重新搜索', code: 'INVALID_TRACK' }, 400)
+  }
+
+  const now = Date.now()
+  const candidate = verifySearchAdditionToken(body.searchAdditionToken, bgmId, now)
+  const saved = db.transaction(() => {
+    // 丢了回执或两页同时点加番时，只返回现有记录，不重置进度、状态或自定义封面。
+    const existing = oneStmt.get(uid, bgmId) as TrackRow | undefined
+    if (existing) return { row: existing, created: false }
+    insertStmt.run({
+      user_id: uid, bgm_id: bgmId, status: 'plan', episode: 0,
+      total_episodes: initialTotal(bgmId, airDate), title, title_cn: titleCn, cover,
+      air_weekday: airWeekday || weekdayFromDate(airDate), air_date: airDate, score,
+      bgm_tags: '[]', user_tags: '[]', aliases: '[]', extra: '{}', observe_count: 0, updated_at: now,
+    })
+    if (candidate) saveSearchAddition(candidate, now)
+    bumpRev(uid)
+    return { row: oneStmt.get(uid, bgmId) as TrackRow, created: true }
+  }).immediate()
+
+  if (saved.created) {
+    try { fillDetailLater(uid, bgmId) } catch (error) {
+      console.warn(`[tracks] 排队补全条目 ${bgmId} 失败:`, error)
+    }
+  }
+  return c.json(toJson(saved.row), saved.created ? 201 : 200)
 })
 
 tracks.put('/:bgmId', async (c) => {

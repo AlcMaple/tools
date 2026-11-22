@@ -343,12 +343,16 @@ function normalizeTracksSnapshot(snapshot: TracksSnapshot): TracksSnapshot {
 export async function fetchTracks(
   onPartial?: (snapshot: TracksSnapshot, progress: TracksLoadProgress) => void,
   signal?: AbortSignal,
+  expectedOwner?: number,
 ): Promise<TracksSnapshot> {
-  if (!onPartial) return normalizeTracksSnapshot(await json<TracksSnapshot>(await fetchApi('/api/tracks', { signal, cache: 'no-store' })))
+  const headers = new Headers(expectedOwner == null ? undefined : { 'X-Tracks-Owner': String(expectedOwner) })
+  if (!onPartial) return normalizeTracksSnapshot(await json<TracksSnapshot>(await fetchApi('/api/tracks', { signal, cache: 'no-store', headers })))
+  headers.set('Accept', 'application/x-ndjson')
+  headers.set('X-Calendar-Day', String(new Date().getDay() || 7))
   return readApi('/api/tracks', {
     signal,
     cache: 'no-store',
-    headers: { Accept: 'application/x-ndjson', 'X-Calendar-Day': String(new Date().getDay() || 7) },
+    headers,
   }, async response => {
     // 部署切换期间旧服务仍可返回 JSON；只消费这次响应，不追加重试。
     if (!response.ok || !response.headers.get('Content-Type')?.includes('application/x-ndjson')) {
@@ -421,6 +425,53 @@ export async function putTrack(bgmId: number, patch: TrackPatch, options: TrackW
       : patch),
   })
   return json<Track>(res)
+}
+
+export class SearchTrackAddHttpError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message)
+  }
+
+  get rejected(): boolean {
+    return (this.status >= 400 && this.status < 500 && this.status !== 408 && this.status !== 499)
+      || this.code === 'MAINTENANCE'
+  }
+}
+
+let activeAddKeepaliveBytes = 0
+
+export async function addSearchTrack(
+  expectedOwner: number,
+  hit: AnimeHit,
+  calendar: { cover?: string; airWeekday?: number },
+): Promise<Track> {
+  const body = JSON.stringify({
+    expectedOwner, bgmId: hit.bgmId, title: hit.name, titleCn: hit.nameCn,
+    airDate: hit.date, score: hit.score, searchAdditionToken: hit.searchAdditionToken, ...calendar,
+  })
+  const bytes = new TextEncoder().encode(body).length
+  // keepalive 共用浏览器的 64 KiB 在途限额；给其他请求留余量，超出时仍正常发请求。
+  const keepalive = activeAddKeepaliveBytes + bytes <= 48 * 1024
+  if (keepalive) activeAddKeepaliveBytes += bytes
+  try {
+    return await readApi('/api/tracks/add', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive,
+    }, async response => {
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null) as { error?: unknown; code?: unknown } | null
+        throw new SearchTrackAddHttpError(
+          typeof detail?.error === 'string' ? detail.error : `HTTP ${response.status}`,
+          response.status,
+          typeof detail?.code === 'string' ? detail.code : undefined,
+        )
+      }
+      const track = await response.json() as Track
+      if (track?.bgmId !== hit.bgmId || !track.status) throw new Error('加番回执不完整')
+      return track
+    })
+  } finally {
+    if (keepalive) activeAddKeepaliveBytes -= bytes
+  }
 }
 
 export async function editTrackGoodEpisodes(bgmId: number, ownerId: number, edit: GoodEpisodeEdit): Promise<Track> {

@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="504" viewBox="0 0 940 504"
+     font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif"
+     role="img" aria-labelledby="title desc">
+  <title id="title">连续加番：存好一部，就确认一部</title>
+  <desc id="desc">旧版先显示已在看番，实际请求还在逐笔排队，刷新会丢掉尚未发出的请求。新版每个不同作品独立发送，点击后显示加入中，服务器保存后这一行才显示已加入。明确失败时提示原因并恢复按钮；没有回执时显示确认中，只查站点记录，不自动补发。本地测试连点 12 部，首笔挂起时其余 11 部已保存。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto">
+      <path d="M1.5 1.5 6 4 1.5 6.5" fill="none" stroke="#6d7d89" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="938" height="502" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="28" y="39" fill="#282529" font-size="19" font-weight="700">连续加番：存好一部，就确认一部</text>
+  <text x="28" y="63" fill="#756f73" font-size="12.5">本地浏览器回归：连点 12 部，首笔挂起时，其余 11 部已经保存</text>
+
+  <rect x="28" y="82" width="884" height="40" rx="9" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="46" y="107" fill="#96434f" font-size="12.5" font-weight="700">修复前</text>
+  <text x="104" y="107" fill="#96434f" font-size="11.5">点完先显示「已在看番」，后点的作品还在等前一笔 → 整页刷新会丢掉尚未发出的请求</text>
+
+  <rect x="28" y="137" width="884" height="204" rx="10" fill="#fffdfc" stroke="#e2dcdf"/>
+  <text x="46" y="161" fill="#282529" font-size="14" font-weight="700">修复后 · 每部作品单独保存</text>
+  <text x="894" y="161" text-anchor="end" fill="#756f73" font-size="11">「找番」里的按钮叫「追番」，保存流程相同</text>
+
+  <g fill="#4a4450" font-size="11" font-weight="700">
+    <text x="134" y="185">点击这一部</text>
+    <text x="392" y="185">等这一部保存</text>
+    <text x="650" y="185">收到保存结果</text>
+    <text x="46" y="224">你看到的</text>
+    <text x="46" y="292">背后在做的</text>
+  </g>
+  <g fill="none" stroke="#91adc1" stroke-width="1.3" marker-end="url(#arrow)">
+    <path d="M202 181H374"/>
+    <path d="M468 181H632"/>
+    <path d="M371 286H387"/>
+    <path d="M629 286H645"/>
+  </g>
+
+  <rect x="134" y="195" width="232" height="53" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <rect x="392" y="195" width="232" height="53" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <rect x="650" y="195" width="244" height="53" rx="9" fill="#edf7f1" stroke="#7fad91"/>
+  <g font-size="12.5" font-weight="700">
+    <text x="150" y="217" fill="#4a4450">点「加入」</text>
+    <text x="408" y="217" fill="#7a6234">「加入中…」</text>
+    <text x="666" y="217" fill="#316247">「已加入」</text>
+  </g>
+  <g font-size="11">
+    <text x="150" y="235" fill="#4a4450">可以接着点别的番</text>
+    <text x="408" y="235" fill="#7a6234">点到了，只暂时锁住这一部</text>
+    <text x="666" y="235" fill="#316247">这一行单独确认，不等别的番</text>
+  </g>
+
+  <g fill="#eef4f8" stroke="#91adc1">
+    <rect x="134" y="258" width="232" height="65" rx="9"/>
+    <rect x="392" y="258" width="232" height="65" rx="9"/>
+    <rect x="650" y="258" width="244" height="65" rx="9"/>
+  </g>
+  <g fill="#36566d">
+    <g font-size="12.5" font-weight="700">
+      <text x="150" y="282">这一笔马上发给本站</text>
+      <text x="408" y="282">写进自己的追番列表</text>
+      <text x="666" y="282">本站确认已保存</text>
+    </g>
+    <g font-size="11">
+      <text x="150" y="302">不同作品的请求互不等待</text>
+      <text x="408" y="302">已有这部就保留原状态和进度</text>
+      <text x="666" y="302">封面和标签随后再补，不耽误加入</text>
+    </g>
+  </g>
+
+  <text x="28" y="370" fill="#282529" font-size="14" font-weight="700">如果还没看到「已加入」</text>
+  <rect x="28" y="383" width="430" height="72" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <rect x="482" y="383" width="430" height="72" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <g fill="#96434f">
+    <text x="46" y="407" font-size="12.5" font-weight="700">点击时已断网，或本站明确拒绝</text>
+    <text x="46" y="427" font-size="11">弹窗上方提醒，例如「加入失败：网络已断开」</text>
+    <text x="46" y="443" font-size="11">「加入」可再次点击，不会自动重试</text>
+  </g>
+  <g fill="#7a6234">
+    <text x="500" y="407" font-size="12.5" font-weight="700">没有回执，未必是保存失败</text>
+    <text x="500" y="427" font-size="11">回查时显示「确认中…」，查到就显示「已加入」</text>
+    <text x="500" y="443" font-size="11">刷新后只查，不补发；第一次查不到也不算失败</text>
+  </g>
+
+  <text x="28" y="483" fill="#316247" font-size="12.5" font-weight="700">看到「已加入」就已经保存；之后刷新页面，不用再点一次</text>
+</svg>

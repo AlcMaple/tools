@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { fetchApi } from '../src/request'
 import { coverUrl, fetchTracks, searchAnime, searchXifan, type Track, type TracksLoadProgress } from '../src/api'
+import type { SearchTrackAddStatus } from '../src/tracksSync'
 
 const originalFetch = globalThis.fetch
 const directory = mkdtempSync(join(tmpdir(), 'maple-tracks-loading-'))
@@ -74,9 +75,10 @@ try {
   Object.defineProperty(globalThis, 'window', { value: fakeWindow, configurable: true })
   Object.defineProperty(globalThis, 'document', { value: Object.assign(new EventTarget(), { visibilityState: 'visible' }), configurable: true })
   Object.defineProperty(globalThis, 'localStorage', { value: localStorage, configurable: true })
+  Object.defineProperty(globalThis, 'sessionStorage', { value: localStorage, configurable: true })
   Object.defineProperty(globalThis, 'BroadcastChannel', { value: undefined, configurable: true })
   const { cacheSet, cachePeek } = await import('../src/dataCache')
-  const { loadTracks, saveTracksCache, runTracksMutation, runTrackMutation } = await import('../src/tracksSync')
+  const { loadTracks, saveTracksCache, runTracksMutation, runTrackMutation, runSearchTrackAdd, watchSearchTrackAdds } = await import('../src/tracksSync')
   const flush = () => new Promise(resolve => setTimeout(resolve, 10))
   const streamRows = Array.from({ length: 20 }, (_, index) => ({ bgmId: index + 1, title: `流式番剧${index + 1}`, subjectType: 'anime', status: 'watching' }))
   const streamCounts = { all: 20, watching: 20, plan: 0, considering: 0, done: 0 }
@@ -254,6 +256,111 @@ try {
     globalThis.fetch = async () => Response.json({ error: '未登录' }, { status: 401 })
     await auth.init()
     assert.equal(auth.user, null)
+  })
+
+  await check('搜索加番只越过无关作品，保留同一作品的编辑、删除及批量屏障', async () => {
+    const { auth } = await import('../src/auth')
+    const account = { id: 91, username: 'add-order' }
+    const events: string[] = []
+    const adds = new Map<number, () => void>()
+    let finishEdit!: () => void
+    let finishBulk!: () => void
+    const row = (bgmId: number): Track => ({ ...streamRows[0], bgmId, episode: 0, status: 'plan' } as Track)
+    const hit = (bgmId: number) => ({ bgmId, name: '样本 ' + bgmId, nameCn: '', date: '2025-01-01', score: 7 })
+    const server = new Map<number, Track>()
+    globalThis.fetch = async (url, init) => {
+      if (url === '/api/auth/me') return Response.json(account)
+      if (url === '/api/tracks/revision') return Response.json({ rev: 1 })
+      if (url === '/api/tracks') return Response.json({ rev: 2, data: [...server.values()] })
+      assert.equal(url, '/api/tracks/add')
+      const { bgmId } = JSON.parse(String(init?.body))
+      events.push('加' + bgmId)
+      return new Promise(resolve => adds.set(bgmId, () => {
+        server.set(bgmId, row(bgmId))
+        resolve(Response.json(row(bgmId), { status: 201 }))
+      }))
+    }
+    await auth.init()
+    cacheSet('tracksServer:' + account.username, { rev: 1, data: [] })
+    const published: number[] = []
+    const stop = loadTracks(account.username, () => {}, undefined, undefined, saved => published.push(saved.bgmId))
+    await flush()
+    const edit = runTrackMutation(account.username, 1, () => new Promise(resolve => {
+      events.push('改1')
+      finishEdit = () => resolve(row(1))
+    }))
+    runSearchTrackAdd(account, hit(1))
+    runSearchTrackAdd(account, hit(2))
+    const remove = runTrackMutation(account.username, 1, async () => {
+      events.push('删1')
+      server.delete(1)
+    })
+    const batch = runTracksMutation(account.username, () => new Promise<void>(resolve => {
+      events.push('整批')
+      finishBulk = resolve
+    }))
+    runSearchTrackAdd(account, hit(3))
+    await flush()
+    assert.deepEqual(events, ['加2', '改1'])
+    finishEdit()
+    await edit; await flush()
+    assert.deepEqual(events, ['加2', '改1', '加1'])
+    adds.get(1)!()
+    await remove; await flush()
+    assert.deepEqual(events, ['加2', '改1', '加1', '删1'])
+    assert.deepEqual(published, [])
+    adds.get(2)!()
+    await flush()
+    assert.deepEqual(events, ['加2', '改1', '加1', '删1', '整批'])
+    assert.deepEqual(published, [2])
+    finishBulk()
+    await batch; await flush()
+    assert.deepEqual(events, ['加2', '改1', '加1', '删1', '整批', '加3'])
+    adds.get(3)!()
+    await flush()
+    assert.deepEqual(published, [2, 3])
+    stop()
+  })
+
+  await check('刷新第一次读回没有条目，旧请求随后提交仍能被正常版本同步找到且不补发', async () => {
+    const { auth } = await import('../src/auth')
+    const account = { id: 92, username: 'add-reload' }
+    const key = 'mapletools-add-check:' + account.id
+    const bgmId = 42
+    const marker = JSON.stringify([[bgmId, Date.now() + 60_000]])
+    const calls: string[] = []
+    let release!: (response: Response) => void
+    let committed = false
+    globalThis.fetch = async (url, init) => {
+      if (url === '/api/auth/me') return Response.json(account)
+      calls.push(String(url))
+      if (url === '/api/tracks/revision') return Response.json({ rev: committed ? 2 : 1 })
+      assert.equal(url, '/api/tracks')
+      assert.equal(new Headers(init?.headers).get('X-Tracks-Owner'), String(account.id))
+      if (!committed) return new Promise(resolve => { release = resolve })
+      return Response.json({ rev: 2, data: [{ ...streamRows[0], bgmId, status: 'plan' }] })
+    }
+    await auth.init()
+    cacheSet('tracksServer:' + account.username, { rev: 1, data: [] })
+    sessionStorage.setItem(key, marker)
+    let rows: Track[] = []
+    let states: ReadonlyMap<number, SearchTrackAddStatus> = new Map()
+    const stopAdds = watchSearchTrackAdds(account, value => { states = value })
+    const stopTracks = loadTracks(account.username, value => { rows = value })
+    assert.deepEqual([...states], [[bgmId, 'checking']])
+    assert.deepEqual(calls, ['/api/tracks'])
+    release(Response.json({ rev: 1, data: [] }))
+    await flush()
+    assert.equal(rows.length, 0)
+    assert.equal(states.size, 0)
+    assert.equal(sessionStorage.getItem(key), marker)
+    committed = true
+    for (const callback of intervals.values()) callback()
+    await flush()
+    assert.deepEqual(rows.map(track => track.bgmId), [bgmId])
+    assert.equal(sessionStorage.getItem(key), null)
+    assert.deepEqual(calls, ['/api/tracks', '/api/tracks/revision', '/api/tracks'])
+    stopAdds(); stopTracks()
   })
 
   process.env.NODE_ENV = 'production'

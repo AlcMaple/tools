@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { AnimeHit, CalendarItem, SourceBinding, SourceId, Track } from './api'
-import { SOURCES, putTrack, sourceById } from './api'
+import { SOURCES, sourceById } from './api'
 import { useAuth } from './auth'
 import { toast } from './Toast'
-import { loadTracks, reloadTracks, runTrackMutation } from './tracksSync'
+import { loadTracks, reloadTracks } from './tracksSync'
 import { ContinueWatchAction, WatchSourceDialog } from './tracks/TrackCard'
 import { AddSearchModal } from './tracks/addSearchModal'
 import { watchEp } from './tracks/common'
@@ -94,16 +94,10 @@ export function FindAnime({ onLogin }: { onLogin: () => void }): JSX.Element | n
     setTracksReady(false); setTracksError(null)
     return loadTracks(user.username, (ts) => {
       setTracksById(new Map(ts.map((t) => [t.bgmId, t]))); setTracksReady(true)
-    }, (e) => { setTracksError(e); if (e && !pendingWatch) toast(e, { err: true }) })
+    }, (e) => { setTracksError(e); if (e && !pendingWatch) toast(e, { err: true }) }, undefined, saved => {
+      setTracksById(prev => new Map(prev).set(saved.bgmId, saved))
+    })
   }, [user, open, pendingWatch])
-
-  const want = (hit: AnimeHit): void => {
-    if (!user) return
-    void runTrackMutation(user.username, hit.bgmId, () =>
-      putTrack(hit.bgmId, { title: hit.name, titleCn: hit.nameCn, status: 'plan', airDate: hit.date, score: hit.score }, { searchAdditionToken: hit.searchAdditionToken }),
-    ).then(() => toast(`『${hit.nameCn || hit.name}』已加入追番`))
-      .catch((e: Error) => toast(e.message, { err: true }))
-  }
 
   const renderTry = (hit: AnimeHit): JSX.Element => {
     const t = tracksById.get(hit.bgmId) ?? trialTrack(hit)
@@ -135,8 +129,9 @@ export function FindAnime({ onLogin }: { onLogin: () => void }): JSX.Element | n
     <>
       {open && (
         <AddSearchModal
+          key={user.id}
+          account={user}
           trackedIds={new Set(tracksById.keys())}
-          onAdd={want}
           onAddCustom={() => Promise.resolve()}
           renderTry={renderTry}
           onClose={() => setOpen(false)}

@@ -1032,6 +1032,11 @@
   {
     "file": "server/tracks.ts",
     "method": "post",
+    "path": "/add"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "post",
     "path": "/import/bgm"
   },
   {

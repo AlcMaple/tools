@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { reportSlowSearch, searchAnime, searchAnimeOnline, type AnimeHit, type AnimeSearchMode } from '../api'
+import type { AuthUser } from '../auth'
 import { Ic, Spinner } from '../SketchIcon'
+import { runSearchTrackAdd, watchSearchTrackAdds, type SearchTrackAddStatus } from '../tracksSync'
 
 // ── 加番搜索弹窗 ───────────────────────────────────────────────────────────────
 // 默认搜索由服务端翻离线索引 → 已加番共享补充；点「在线搜 Bangumi」才访问在线结果。
-// 防抖 300ms；点「贴进手帐」即时加、弹窗不关（可连着加多部）；已在看的显示已存在、不可重复加。
+// 防抖 300ms；点击后弹窗不关，逐部等回执，已存在的条目不可重复加。
 // 「自己记一条」用负数 bgmId 留下待回填的手动条目；从卡片进入时复用这扇窗选 BGM 并回填。
 // 索引超过这个天数没更新就提示。一周一档 + 3 天容错：正常同步永远碰不到，挂了才会露头
 const STALE_AFTER_DAYS = 10
@@ -34,8 +36,10 @@ const ADD_COPY = {
   customEmpty: '先写个标题嘛……',
   backfillAction: '回填',
   backfillBusy: '回填中…',
-  tracked: '已在看番',
+  tracked: '已加入',
   add: '加入',
+  adding: '加入中…',
+  checkingAdd: '确认中…',
   findTitle: '找番',
   findSubtitle: '想看哪部，搜到就能直接看，也能先追上',
   want: '追番',
@@ -54,8 +58,8 @@ export interface BackfillTarget {
 }
 
 export function AddSearchModal({
+  account,
   trackedIds,
-  onAdd,
   onAddCustom,
   backfill,
   onBackfill,
@@ -63,8 +67,8 @@ export function AddSearchModal({
   renderTry,
   onClose,
 }: {
+  account: Pick<AuthUser, 'id' | 'username'>
   trackedIds: Set<number>
-  onAdd: (hit: AnimeHit) => void
   onAddCustom: (title: string) => Promise<void>
   backfill?: BackfillTarget
   onBackfill?: (customBgmId: number, hit: AnimeHit) => Promise<void>
@@ -121,7 +125,8 @@ export function AddSearchModal({
       })
     return () => controller.abort()
   }, [])
-  const [added, setAdded] = useState<Set<number>>(new Set()) // 本次弹窗点过的，即时变「已追」
+  const [addStatus, setAddStatus] = useState<ReadonlyMap<number, SearchTrackAddStatus>>(() => new Map())
+  useLayoutEffect(() => watchSearchTrackAdds(account, setAddStatus), [account])
 
   useLayoutEffect(() => {
     customInput.current?.focus()
@@ -289,11 +294,6 @@ export function AddSearchModal({
     setOnlineError('')
     setBackfillError('')
     setLoading(!!value.trim())
-  }
-
-  const add = (hit: AnimeHit): void => {
-    setAdded((prev) => new Set(prev).add(hit.bgmId))
-    onAdd(hit)
   }
 
   const q = query.trim()
@@ -469,7 +469,14 @@ export function AddSearchModal({
                 <p className="faint small add-source-note">{ADD_COPY.online}</p>
               )}
               {results.map((h) => {
-                const tracked = trackedIds.has(h.bgmId) || added.has(h.bgmId)
+                const state = addStatus.get(h.bgmId)
+                const pendingAdd = state === 'sending' || state === 'checking'
+                const tracked = !pendingAdd && (trackedIds.has(h.bgmId) || state === 'confirmed')
+                const actionLabel = backfill
+                  ? (backfillBusyId === h.bgmId ? ADD_COPY.backfillBusy : ADD_COPY.backfillAction)
+                  : state === 'sending' ? ADD_COPY.adding
+                  : state === 'checking' ? ADD_COPY.checkingAdd
+                  : finding ? ADD_COPY.want : ADD_COPY.add
                 const year = resultYear(h)
                 // 主标题要一眼可读：中文译名优先；副信息（原名 / 年份 / 评分）弱化成第二行
                 const mainTitle = h.nameCn || h.name
@@ -483,23 +490,23 @@ export function AddSearchModal({
                       {sub && <div className="add-hit-sub">{sub}</div>}
                     </div>
                     <div className="add-hit-acts">
-                    {finding && renderTry?.(h)}
-                    {tracked ? (
-                      <span className="tagx mine" style={{ flex: 'none' }}>
-                        {ADD_COPY.tracked}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-primary"
-                        style={{ flex: 'none' }}
-                        disabled={backfillBusyId != null}
-                        onClick={() => (backfill ? backfillHit(h) : add(h))}
-                      >
-                        {backfill && backfillBusyId === h.bgmId ? <Spinner size={14} /> : <Ic name="plus" cls="ic ic-sm" />}
-                        {backfill ? (backfillBusyId === h.bgmId ? ADD_COPY.backfillBusy : ADD_COPY.backfillAction) : finding ? ADD_COPY.want : ADD_COPY.add}
-                      </button>
-                    )}
+                      {finding && renderTry?.(h)}
+                      <div className={backfill ? undefined : 'add-hit-write'}>
+                        {tracked ? (
+                          <span className="tagx mine">{ADD_COPY.tracked}</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary"
+                            disabled={pendingAdd || backfillBusyId != null}
+                            aria-busy={pendingAdd || undefined}
+                            onClick={() => (backfill ? backfillHit(h) : runSearchTrackAdd(account, h))}
+                          >
+                            {pendingAdd || (backfill && backfillBusyId === h.bgmId) ? <Spinner size={14} /> : <Ic name="plus" cls="ic ic-sm" />}
+                            {actionLabel}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
