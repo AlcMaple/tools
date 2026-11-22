@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "test:good-episodes": "npm run build && tsx scripts/test-good-episodes.ts",
     "test:order-judge-archives": "tsx scripts/test-order-judge-archives.ts",
     "test:watch-entry": "npm run build:agent-release && tsx scripts/test-watch-entry.ts",
     "test:watch-ui:serve": "npm run build && tsx scripts/watch-ui-fixture.ts",

@@ -14,7 +14,7 @@ import { AGENT_NAVIGATION_EVENT,takeAgentNavigation } from './agent/navigation'
 //
 // 卡片 / 列表 / 弹窗 / 在线源逻辑拆到 src/tracks/*；稀饭 / Girigiri（以后还有嗷呜 / B站）统一走
 // api.ts 的 OnlineSource 适配器，这里的 state / handler / 弹窗都参数化到 `source`。
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
   AnimeHit,
   BgmImportStatus,
@@ -28,8 +28,9 @@ import type {
   TracksLoadProgress,
   WatchMode,
 } from './api'
-import { SOURCES, backfillTrack, deleteTrack, importTracksFromBgm, putTrack, sourceById, uploadTrackCover } from './api'
+import { SOURCES, backfillTrack, deleteTrack, editTrackGoodEpisodes, importTracksFromBgm, putTrack, sourceById, uploadTrackCover } from './api'
 import { isRecentAir } from '../shared/anime-age'
+import { applyGoodEpisodeEdit, type GoodEpisodeEdit } from '../shared/good-episodes'
 import { auth, useAuth } from './auth'
 import { cacheGet } from './dataCache'
 import { Ic, Spinner } from './SketchIcon'
@@ -287,6 +288,24 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
       else setError(e.message)
     })
   }
+
+  const ownerId = user?.id
+  const username = user?.username
+  const editGoodEpisode = useCallback((bgmId: number, edit: GoodEpisodeEdit): void => {
+    if (ownerId == null || !username) return
+    const updatedAt = Date.now()
+    setTracks(prev => prev && prev.map(track => {
+      if (track.bgmId !== bgmId) return track
+      const next = applyGoodEpisodeEdit(track, edit)
+      return next === track ? track : { ...track, ...next, updatedAt }
+    }))
+    void runTrackMutation(username, bgmId, () => editTrackGoodEpisodes(bgmId, ownerId, edit)).catch((error: Error) => {
+      if (auth.user?.id !== ownerId) return
+      const subject = edit.kind === 'clear' ? '鉴赏神回没清空'
+        : `第 ${edit.episode} 集${edit.kind === 'set-note' ? '备注' : ''}没保存`
+      toast(`${subject}：${error.message}`, { err: true })
+    })
+  }, [ownerId, username])
 
   // 本地图片上传封面 —— 不走 patch()：写入的是文件而不是字段，服务端存完盘才知道最终
   // URL（/api/tracks/<id>/cover-file），所以拿服务端返回的整条记录覆盖本地，而不是乐观先改。
@@ -724,7 +743,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
       )}
 
       {markingGoodTrack && (
-        <GoodEpisodesModal t={markingGoodTrack} onPatch={patch} onClose={() => setMarkingGood(null)} />
+        <GoodEpisodesModal key={markingGoodTrack.bgmId} t={markingGoodTrack} onEdit={editGoodEpisode} onClose={() => setMarkingGood(null)} />
       )}
 
       {writingReviewTrack && (

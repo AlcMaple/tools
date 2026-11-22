@@ -8,6 +8,7 @@ import type { Context } from 'hono'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isRecentAir } from '../shared/anime-age'
+import { applyGoodEpisodeEdit, GOOD_EPISODE_NOTE_MAX_LENGTH, type GoodEpisodeEdit, type GoodEpisodeState } from '../shared/good-episodes'
 import { epsOf } from './bgm/anime-index'
 import { getCalendarMetadata, type CalendarMetadata } from './bgm/calendar'
 import {
@@ -39,6 +40,7 @@ type Status = (typeof STATUSES)[number]
 const USER_TAG_MAX_LEN = 20
 const USER_TAG_MAX_COUNT = 12
 const MAX_TRACKS = 5000 // 单次同步 / 导入的条数上限（正常用户几百条封顶）
+const MAX_EXTRA_BYTES = 16 * 1024 // 单条 extra 的空间上限
 
 const isCustomBgmId = (bgmId: number): boolean => Number.isInteger(bgmId) && bgmId < 0
 
@@ -122,6 +124,23 @@ function normalizeGoodEpisodeNotes(input: unknown, eps: number[]): Record<number
   return out
 }
 
+function readGoodEpisodes(extra: Record<string, unknown>): GoodEpisodeState {
+  const goodEpisodes = normalizeGoodEpisodes(extra.goodEpisodes)
+  return { goodEpisodes, goodEpisodeNotes: normalizeGoodEpisodeNotes(extra.goodEpisodeNotes, goodEpisodes) }
+}
+
+function parseGoodEpisodeEdit(raw: unknown): GoodEpisodeEdit | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const { kind, episode, marked, text } = raw as Record<string, unknown>
+  if (kind === 'clear') return { kind }
+  if (typeof episode !== 'number' || !Number.isSafeInteger(episode) || episode < 1) return null
+  if (kind === 'set-mark' && typeof marked === 'boolean') return { kind, episode, marked }
+  if (kind === 'set-note' && typeof text === 'string' && text.length <= GOOD_EPISODE_NOTE_MAX_LENGTH) {
+    return { kind, episode, text }
+  }
+  return null
+}
+
 const parseList = (s: string): string[] => {
   try {
     const v = JSON.parse(s)
@@ -171,8 +190,7 @@ function toJson(r: TrackRow): Record<string, unknown> & { bgmId: number; status:
     subjectType: subjectTypeOf(extra),
     // 鉴赏神回本是桌面端专属字段（存在 extra 里）；网页版现在也能读写这两个 key，
     // 其余 extra 字段仍然原样透传、不认识、不改写。
-    goodEpisodes: normalizeGoodEpisodes(extra.goodEpisodes),
-    goodEpisodeNotes: normalizeGoodEpisodeNotes(extra.goodEpisodeNotes, normalizeGoodEpisodes(extra.goodEpisodes)),
+    ...readGoodEpisodes(extra),
     // 最爱值同样是桌面端专属字段（存在 extra 里），网页版现在也能读写它。
     favorite: normalizeFavorite(extra.favorite),
     updatedAt: r.updated_at,
@@ -206,6 +224,7 @@ function toSyncJson(r: TrackRow): Record<string, unknown> {
 const listByInsertStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id ASC')
 const listNewestFirstStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id DESC')
 const oneStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? AND bgm_id = ?')
+const updateExtraStmt = db.prepare('UPDATE tracks SET extra = ?, updated_at = ? WHERE user_id = ? AND bgm_id = ?')
 const delStmt = db.prepare('DELETE FROM tracks WHERE user_id = ? AND bgm_id = ?')
 const insertStmt = db.prepare(`
   INSERT INTO tracks (user_id, bgm_id, status, episode, total_episodes, title, title_cn, cover,
@@ -1273,9 +1292,41 @@ tracks.get('/:bgmId/good-episodes', async (c) => {
   c.header('Cache-Control', 'no-store')
   const row = oneStmt.get(uid, bgmId) as TrackRow | undefined
   if (!row) return c.json({ goodEpisodes: [], goodEpisodeNotes: {} })
-  const extra = parseExtra(row.extra)
-  const goodEpisodes = normalizeGoodEpisodes(extra.goodEpisodes)
-  return c.json({ goodEpisodes, goodEpisodeNotes: normalizeGoodEpisodeNotes(extra.goodEpisodeNotes, goodEpisodes) })
+  return c.json(readGoodEpisodes(parseExtra(row.extra)))
+})
+
+tracks.patch('/:bgmId/good-episodes', async (c) => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  const bgmId = Number(c.req.param('bgmId'))
+  if (!Number.isSafeInteger(bgmId) || bgmId === 0) return c.json({ error: 'bgmId 不合法' }, 400)
+
+  const body: unknown = await c.req.json().catch(() => null)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({ error: '鉴赏神回请求格式不正确' }, 400)
+  const { ownerId, edit: raw } = body as Record<string, unknown>
+  const edit = parseGoodEpisodeEdit(raw)
+  if (!Number.isSafeInteger(ownerId) || !edit) return c.json({ error: '鉴赏神回请求格式不正确' }, 400)
+  if (ownerId !== uid) return c.json({ error: '账号已变化，请重新打开这页' }, 409)
+
+  const result = db.transaction(() => {
+    const row = oneStmt.get(uid, bgmId) as TrackRow | undefined
+    if (!row) return { kind: 'missing' } as const
+    // 拿到写锁后再读当前标记；另一页刚保存的其他集和备注不应被本页旧快照覆盖。
+    const extra = parseExtra(row.extra)
+    const previous = readGoodEpisodes(extra)
+    const next = applyGoodEpisodeEdit(previous, edit)
+    if (next === previous) return { kind: 'saved', row } as const
+    const encoded = JSON.stringify({ ...extra, ...next })
+    if (encoded.length > MAX_EXTRA_BYTES) return { kind: 'too-large' } as const
+    const updatedAt = Date.now()
+    updateExtraStmt.run(encoded, updatedAt, uid, bgmId)
+    bumpRev(uid)
+    return { kind: 'saved', row: { ...row, extra: encoded, updated_at: updatedAt } } as const
+  }).immediate()
+
+  if (result.kind === 'missing') return c.json({ error: '这部番已不在手帐里' }, 404)
+  if (result.kind === 'too-large') return c.json({ error: '鉴赏神回数据过大' }, 400)
+  return c.json(toJson(result.row))
 })
 
 /** 本地上传封面的读取端。要登录、且只能读自己那份 —— uid 从会话拿，不信路径。 */
@@ -1305,7 +1356,6 @@ tracks.get('/:bgmId/cover-file', async (c) => {
 // 上传时不会带这两个字段，若整条替换就会把网页记录的放送星期抹成 0、周历分组就散了。
 // 所以已存在的记录只写 app 明确给了的字段。
 
-const MAX_EXTRA_BYTES = 16 * 1024 // 单条 extra 上限：这是给 app 的自由容器，得防止被当网盘用
 const SYNC_SCHEMA = 2
 
 function syncExtra(value: unknown): Record<string, unknown> {

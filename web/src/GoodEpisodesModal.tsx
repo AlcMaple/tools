@@ -10,9 +10,9 @@
 // 备注编辑：不用悬浮气泡（试过，锚定位置在弹窗里飘、点哪都可能溢出，还挡住内容）。
 // 备注采用短 debounce 而不是只等失焦：切换集数或关闭弹窗前也要保住最后一笔，
 // 同时避免每个字符都单独发请求；跟「全部集数」的网格点亮/取消仍是两个模式。
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Track, TrackPatch } from './api'
-import { normalizeGoodEpisodes } from './api'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { Track } from './api'
+import { applyGoodEpisodeEdit, GOOD_EPISODE_NOTE_MAX_LENGTH, type GoodEpisodeEdit, type GoodEpisodeState } from '../shared/good-episodes'
 import { Ic } from './SketchIcon'
 
 const ONGOING_MIN = 1
@@ -21,11 +21,11 @@ type ViewMode = 'all' | 'marked'
 
 export function GoodEpisodesModal({
   t,
-  onPatch,
+  onEdit,
   onClose,
 }: {
   t: Track
-  onPatch: (bgmId: number, p: TrackPatch) => void
+  onEdit: (bgmId: number, edit: GoodEpisodeEdit) => void
   onClose: () => void
 }): JSX.Element {
   const [view, setView] = useState<ViewMode>('all')
@@ -42,19 +42,39 @@ export function GoodEpisodesModal({
   const notes = t.goodEpisodeNotes
   const marked = useMemo(() => new Set(episodes), [episodes])
   const [draftNotes, setDraftNotes] = useState<Record<number, string>>(notes)
-  const noteTimers = useRef(new Map<number, number>())
-  const pendingNotes = useRef(new Map<number, string>())
-  const notesRef = useRef(notes)
+  const latest = useRef<GoodEpisodeState>({ goodEpisodes: episodes, goodEpisodeNotes: notes })
+  const pendingNotes = useRef(new Map<number, { text: string; timer: number }>())
 
-  useEffect(() => {
-    notesRef.current = notes
-    // 权威快照回来时，保留 debounce 窗口内还没提交的文字，避免实时编辑被旧快照盖掉。
-    setDraftNotes(() => {
-      const next = { ...notes }
-      for (const [episode, raw] of pendingNotes.current) next[episode] = raw
-      return next
-    })
-  }, [notes])
+  const takeNoteDraft = useCallback((n: number): string | undefined => {
+    const draft = pendingNotes.current.get(n)
+    if (!draft) return
+    window.clearTimeout(draft.timer)
+    pendingNotes.current.delete(n)
+    return draft.text
+  }, [])
+
+  useLayoutEffect(() => {
+    latest.current = { goodEpisodes: episodes, goodEpisodeNotes: notes }
+    let next = notes
+    // 还在防抖中的草稿不该被回读盖掉，但取消标记后它也不能跟着下一次点亮回来。
+    for (const [n, draft] of pendingNotes.current) {
+      if (!marked.has(n)) {
+        takeNoteDraft(n)
+        continue
+      }
+      if (next === notes) next = { ...notes }
+      next[n] = draft.text
+    }
+    setDraftNotes(next)
+  }, [episodes, marked, notes, takeNoteDraft])
+
+  const submit = useCallback((edit: GoodEpisodeEdit): void => {
+    const next = applyGoodEpisodeEdit(latest.current, edit)
+    if (next === latest.current) return
+    // React 还没重绘时也可能收到下一次点击，它必须基于刚刚那一笔而不是上一次渲染。
+    latest.current = next
+    onEdit(t.bgmId, edit)
+  }, [onEdit, t.bgmId])
 
   // 网格上限：总集数已知就用它；未知则取 max(当前观看集, 已标最高集, 1)
   const maxN = useMemo(() => {
@@ -64,61 +84,34 @@ export function GoodEpisodesModal({
   }, [t.totalEpisodes, t.episode, episodes])
 
   const toggle = (n: number): void => {
-    const next = new Set(marked)
-    if (next.has(n)) next.delete(n)
-    else next.add(n)
-    onPatch(t.bgmId, { goodEpisodes: normalizeGoodEpisodes([...next]) })
+    const nextMarked = !latest.current.goodEpisodes.includes(n)
+    if (!nextMarked) takeNoteDraft(n)
+    submit({ kind: 'set-mark', episode: n, marked: nextMarked })
   }
 
   const clearAll = (): void => {
-    if (episodes.length === 0) return
-    onPatch(t.bgmId, { goodEpisodes: [], goodEpisodeNotes: {} })
+    for (const n of pendingNotes.current.keys()) takeNoteDraft(n)
+    submit({ kind: 'clear' })
   }
 
-  // trim 后为空就删掉这一集的备注，不留孤儿。跟现值一样就不发请求。
-  const commitNote = (n: number, raw: string): void => {
-    const trimmed = raw.trim()
-    pendingNotes.current.delete(n)
-    if ((notesRef.current[n] ?? '') === trimmed) return
-    const nextNotes = { ...notesRef.current }
-    if (trimmed) nextNotes[n] = trimmed
-    else delete nextNotes[n]
-    notesRef.current = nextNotes
-    onPatch(t.bgmId, { goodEpisodeNotes: nextNotes })
-  }
+  const flushNote = useCallback((n: number): void => {
+    const text = takeNoteDraft(n)
+    if (text !== undefined) submit({ kind: 'set-note', episode: n, text: text.trim() })
+  }, [submit, takeNoteDraft])
 
-  // 输入时延迟一点提交，既能做到不按回车也会保存，又不会每个字符都打一次接口。
-  const scheduleNote = (n: number, raw: string): void => {
-    setDraftNotes((prev) => ({ ...prev, [n]: raw }))
-    pendingNotes.current.set(n, raw)
-    const previous = noteTimers.current.get(n)
-    if (previous !== undefined) window.clearTimeout(previous)
-    const timer = window.setTimeout(() => {
-      noteTimers.current.delete(n)
-      commitNote(n, raw)
-    }, 450)
-    noteTimers.current.set(n, timer)
-  }
-
-  const flushNote = (n: number, raw: string): void => {
-    const timer = noteTimers.current.get(n)
-    if (timer !== undefined) window.clearTimeout(timer)
-    noteTimers.current.delete(n)
-    pendingNotes.current.delete(n)
-    commitNote(n, raw)
+  const scheduleNote = (n: number, text: string): void => {
+    takeNoteDraft(n)
+    pendingNotes.current.set(n, { text, timer: window.setTimeout(() => flushNote(n), 450) })
+    setDraftNotes(prev => ({ ...prev, [n]: text }))
   }
 
   useEffect(() => {
-    const timers = noteTimers.current
     const pending = pendingNotes.current
     return () => {
-      for (const timer of timers.values()) window.clearTimeout(timer)
-      timers.clear()
       // 关闭弹窗或按 Escape 时，仍把最后一段尚未到 debounce 时间的文字送出。
-      for (const [n, raw] of pending) commitNote(n, raw)
-      pending.clear()
+      for (const n of pending.keys()) flushNote(n)
     }
-  }, [t.bgmId])
+  }, [flushNote])
 
   const title = t.titleCn || t.title
 
@@ -173,6 +166,7 @@ export function GoodEpisodesModal({
                     type="button"
                     className={`ge-ep${isMarked ? ' on' : ''}`}
                     onClick={() => toggle(n)}
+                    aria-pressed={isMarked}
                     title={note}
                   >
                     {n}
@@ -206,9 +200,9 @@ export function GoodEpisodesModal({
                     className="ge-row-note"
                     value={draftNotes[n] ?? ''}
                     placeholder="这集哪里戳中你了…"
-                    maxLength={60}
+                    maxLength={GOOD_EPISODE_NOTE_MAX_LENGTH}
                     onChange={(e) => scheduleNote(n, e.target.value)}
-                    onBlur={(e) => flushNote(n, e.currentTarget.value)}
+                    onBlur={() => flushNote(n)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
                     }}

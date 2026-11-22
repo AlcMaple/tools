@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="904" height="493" viewBox="0 0 904 493"
+     font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif"
+     role="img" aria-labelledby="title desc">
+  <title id="title">一个网页里连点，为什么会漏掉第 2 集？</title>
+  <desc id="desc">第 1 集还在保存，用户在一次界面更新前连点第 2、3 集。旧版两次都从只有第 1 集的旧清单计算，分别发出整份 1、2 和 1、3，最后第 2 集丢失。新版先记住每次点击，只发送目标集的状态，最后保留 1、2、3 集。</desc>
+  <defs>
+    <rect id="ep-on" width="28" height="28" rx="7" fill="#fff8e8" stroke="#d9bd85"/>
+    <rect id="ep-lost" width="28" height="28" rx="7" fill="#fdeef0" stroke="#d99aa5" stroke-dasharray="3 2"/>
+  </defs>
+  <rect x="1" y="1" width="902" height="491" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="28" y="39" fill="#282529" font-size="19" font-weight="700">一个网页里连点，为什么会漏掉第 2 集？</text>
+  <text x="28" y="63" fill="#756f73" font-size="12.5">旧版最后只亮 1、3；修复后，按钮点了就亮，1、2、3 都能保存</text>
+
+  <rect x="28" y="82" width="848" height="36" rx="9" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="46" y="104" fill="#4a4450" font-size="12.5" font-weight="700">只开这一个网页</text>
+  <text x="151" y="104" fill="#4a4450" font-size="11">第 1 集还在等保存 → 连点第 2、3 集，两下之间按钮还没按新状态重画</text>
+
+  <text x="28" y="148" fill="#282529" font-size="14" font-weight="700">你看到的：连点后的弹窗</text>
+  <rect x="28" y="162" width="412" height="79" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <rect x="464" y="162" width="412" height="79" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="46" y="186" fill="#96434f" font-size="12.5" font-weight="700">修复前 · 已标 2 集</text>
+  <text x="482" y="186" fill="#316247" font-size="12.5" font-weight="700">修复后 · 已标 3 集</text>
+  <g transform="translate(46 198)" text-anchor="middle" font-size="11" font-weight="700">
+    <use href="#ep-on"/><use href="#ep-lost" x="35"/><use href="#ep-on" x="70"/>
+    <text x="14" y="18" fill="#7a6234">1</text><text x="49" y="18" fill="#96434f">2</text><text x="84" y="18" fill="#7a6234">3</text>
+  </g>
+  <g transform="translate(482 198)" text-anchor="middle" font-size="11" font-weight="700" fill="#7a6234">
+    <use href="#ep-on"/><use href="#ep-on" x="35"/><use href="#ep-on" x="70"/>
+    <text x="14" y="18">1</text><text x="49" y="18">2</text><text x="84" y="18">3</text>
+  </g>
+  <text x="160" y="216" fill="#96434f" font-size="11">明明点了第 2 集，结果没亮</text>
+  <text x="596" y="216" fill="#316247" font-size="11">不用等上一笔保存，三集都亮了</text>
+
+  <text x="28" y="272" fill="#282529" font-size="14" font-weight="700">背后怎么保存：每次点击发出了什么？</text>
+  <rect x="28" y="286" width="412" height="132" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <rect x="464" y="286" width="412" height="132" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <g fill="#96434f">
+    <text x="46" y="311" font-size="12.5" font-weight="700">旧版：两下都拿同一份旧清单来算</text>
+    <text x="46" y="337" font-size="11"><tspan font-weight="700">点第 2 集</tspan><tspan>　从「1」算出「1、2」，发整份「1、2」</tspan></text>
+    <text x="46" y="361" font-size="11"><tspan font-weight="700">点第 3 集</tspan><tspan>　还是从「1」算，发整份「1、3」</tspan></text>
+    <rect x="46" y="378" width="376" height="26" rx="6" fill="#fbfafb" stroke="#d99aa5"/>
+    <text x="57" y="395" font-size="11" font-weight="700">服务器用「1、3」替换「1、2」，再查看只剩 1、3</text>
+  </g>
+  <g fill="#36566d">
+    <text x="482" y="311" font-size="12.5" font-weight="700">新版：先记住这次点击，下次从新状态接着改</text>
+    <text x="482" y="337" font-size="11"><tspan font-weight="700">点第 2 集</tspan><tspan>　记成「1、2」，只发「点亮第 2 集」</tspan></text>
+    <text x="482" y="361" font-size="11"><tspan font-weight="700">点第 3 集</tspan><tspan>　接着加到「1、2、3」，只发「点亮第 3 集」</tspan></text>
+    <rect x="482" y="378" width="376" height="26" rx="6" fill="#edf7f1" stroke="#7fad91"/>
+    <text x="493" y="395" fill="#316247" font-size="11" font-weight="700">服务器按顺序点亮 1、2、3，再查看三集都在</text>
+  </g>
+
+  <rect x="28" y="433" width="848" height="39" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="46" y="457" fill="#7a6234" font-size="12.5" font-weight="700">不是少发了一次</text>
+  <text x="154" y="457" fill="#7a6234" font-size="11">两版都按顺序发请求，迟到的旧列表也没改掉界面；问题是旧版发了过时的整份清单</text>
+</svg>

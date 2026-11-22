@@ -1016,6 +1016,11 @@
   },
   {
     "file": "server/tracks.ts",
+    "method": "patch",
+    "path": "/:bgmId/good-episodes"
+  },
+  {
+    "file": "server/tracks.ts",
     "method": "post",
     "path": "/:bgmId/cover"
   },

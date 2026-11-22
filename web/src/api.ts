@@ -1,4 +1,5 @@
 import { fetchApi, readApi } from './request'
+import type { GoodEpisodeEdit } from '../shared/good-episodes'
 // 前端与后端 server/bgm/calendar.ts 的返回结构对应。网页版前端不共享后端代码（后端有
 // undici 等 Node 依赖，不能进浏览器包），这里独立声明一份同形状类型。
 export interface CalendarItem {
@@ -420,6 +421,14 @@ export async function putTrack(bgmId: number, patch: TrackPatch, options: TrackW
       : patch),
   })
   return json<Track>(res)
+}
+
+export async function editTrackGoodEpisodes(bgmId: number, ownerId: number, edit: GoodEpisodeEdit): Promise<Track> {
+  return json<Track>(await fetchApi(`/api/tracks/${bgmId}/good-episodes`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ownerId, edit }),
+  }))
 }
 
 // 把负数手动条目归并到用户从搜索结果选中的真实 BGM 条目；服务端会重新取权威详情。

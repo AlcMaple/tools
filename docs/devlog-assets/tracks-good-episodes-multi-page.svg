@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="904" height="486" viewBox="0 0 904 486"
+     font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif"
+     role="img" aria-labelledby="title desc">
+  <title id="title">两个网页改不同集，会不会互相盖掉？</title>
+  <desc id="desc">同一账号的 A 页先点亮第 1 集，但保存慢；B 页先存下第 4 集及备注。A 页的写入后来到，旧版用只有第 1 集的整份清单替换，抹掉第 4 集和备注；新版只点亮第 1 集，留下第 4 集和备注。B 页由本地第二笔请求模拟，不是两台设备实测。</desc>
+  <defs>
+    <rect id="ep-on" width="28" height="28" rx="7" fill="#fff8e8" stroke="#d9bd85"/>
+    <rect id="ep-lost" width="28" height="28" rx="7" fill="#fdeef0" stroke="#d99aa5" stroke-dasharray="3 2"/>
+    <path id="next" d="M0 0h16m-4-4 4 4-4 4" fill="none" stroke="#756f73" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </defs>
+  <rect x="1" y="1" width="902" height="484" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="28" y="39" fill="#282529" font-size="19" font-weight="700">两个网页改不同集，会不会互相盖掉？</text>
+  <text x="28" y="63" fill="#756f73" font-size="12.5">旧版晚到的整份清单会盖掉先保存的标记；新版改第 1 集，不会碰第 4 集</text>
+
+  <text x="28" y="99" fill="#282529" font-size="14" font-weight="700">用户怎么操作：同一账号、同一部番，开着 A、B 两个网页</text>
+  <rect x="28" y="114" width="264" height="92" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <rect x="320" y="114" width="264" height="92" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <rect x="612" y="114" width="264" height="92" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <use href="#next" x="298" y="160"/><use href="#next" x="590" y="160"/>
+  <g fill="#4a4450">
+    <text x="46" y="141" font-size="12.5" font-weight="700">A 页先点亮第 1 集</text>
+    <text x="46" y="166" font-size="11">按钮已经亮了</text>
+    <text x="46" y="187" font-size="11">但 A 的保存还没到服务器</text>
+    <text x="630" y="141" font-size="12.5" font-weight="700">A 页的保存后到</text>
+    <text x="630" y="166" font-size="11">A 当时还没看到 B 的新标记</text>
+    <text x="630" y="187" font-size="11">同一个点击，新旧版发的内容不同</text>
+  </g>
+  <g fill="#36566d">
+    <text x="338" y="141" font-size="12.5" font-weight="700">B 页先存下第 4 集和备注</text>
+    <text x="338" y="166" font-size="11">B 的修改先到服务器</text>
+    <text x="338" y="187" font-size="11">此时云端只有第 4 集和它的备注</text>
+  </g>
+
+  <text x="28" y="242" fill="#282529" font-size="14" font-weight="700">服务器怎么处理 A 的这一笔？</text>
+  <rect x="28" y="255" width="412" height="127" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <rect x="464" y="255" width="412" height="127" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <g fill="#96434f">
+    <text x="46" y="281" font-size="12.5" font-weight="700">修复前：A 发整份标记「1」</text>
+    <text x="46" y="307" font-size="11">服务端用「1」替换已有的「4」</text>
+    <text x="119" y="348" font-size="11">只剩第 1 集，第 4 集和备注都被覆盖</text>
+  </g>
+  <g fill="#316247">
+    <text x="482" y="281" font-size="12.5" font-weight="700">修复后：A 只发「点亮第 1 集」</text>
+    <text x="482" y="307" font-size="11">服务端先读到已有的「4」，再加上「1」</text>
+    <text x="555" y="348" font-size="11">第 1、4 集都亮，第 4 集的备注也在</text>
+  </g>
+  <g transform="translate(46 329)" text-anchor="middle" font-size="11" font-weight="700">
+    <use href="#ep-on"/><use href="#ep-lost" x="35"/>
+    <text x="14" y="18" fill="#7a6234">1</text><text x="49" y="18" fill="#96434f">4</text>
+  </g>
+  <g transform="translate(482 329)" text-anchor="middle" font-size="11" font-weight="700" fill="#7a6234">
+    <use href="#ep-on"/><use href="#ep-on" x="35"/>
+    <text x="14" y="18">1</text><text x="49" y="18">4</text><circle cx="57" cy="6.5" r="2"/>
+  </g>
+
+  <rect x="28" y="401" width="848" height="63" rx="9" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="46" y="427" fill="#7a6234" font-size="12.5" font-weight="700">这张图讲的是网页</text>
+  <text x="167" y="426" fill="#7a6234" font-size="11">两个标签页就够，不必是两台设备；别页要等下次校验或刷新才看到新标记</text>
+  <text x="167" y="446" fill="#7a6234" font-size="11">B 页由本地第二笔请求模拟，未做双设备实测；独立桌面端的手动上传／拉取没有改动</text>
+</svg>
