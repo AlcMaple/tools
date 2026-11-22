@@ -9,18 +9,24 @@ export function PasswordInput({
   placeholder,
   autoComplete = 'current-password',
   id,
+  disabled,
+  maxLength,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
   autoComplete?: string
   id?: string
+  disabled?: boolean
+  maxLength?: number
 }): JSX.Element {
   const [reveal, setReveal] = useState(false)
   return (
     <div className="field-row">
       <input
         id={id}
+        disabled={disabled}
+        maxLength={maxLength}
         type={reveal ? 'text' : 'password'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -30,6 +36,7 @@ export function PasswordInput({
       <button
         type="button"
         className="eye"
+        disabled={disabled}
         onClick={() => setReveal((r) => !r)}
         title={reveal ? '隐藏密码' : '显示密码'}
         aria-label={reveal ? '隐藏密码' : '显示密码'}

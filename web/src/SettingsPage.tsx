@@ -20,12 +20,12 @@ import {
   unbindEmailVerify,
   useAuth,
 } from './auth'
-import type { SecurityQuestion } from './auth'
+import type { AiConfig, AuthUser, SecurityQuestion } from './auth'
 import { Ic, Spinner } from './SketchIcon'
 import { toast } from './Toast'
 import { PasswordInput } from './PasswordInput'
 import { Select } from './Select'
-import { readByokKey, writeByokKey } from './reviews/byok'
+import { keyEndpoint, readByokKey, writeByokKey } from './ai-key'
 import { BackupModule } from './BackupModule'
 import { SketchSheet } from './SketchSheet'
 import { LegacyRig, setSpriteStyle, useSpriteStyle } from './sprites'
@@ -186,11 +186,11 @@ export function SettingsPage(): JSX.Element | null {
           <section className={`pocket${module === 'ai' ? ' open' : ''}`} data-mod="ai">
             <button className="pocket-tab" type="button" onClick={() => selectModule('ai')}>
               <Ic name="edit" />
-              点评助手
-              <span className="pocket-hint">写点评时谁来帮忙</span>
+              AI 设置
+              <span className="pocket-hint">模型来源 · 今日用量</span>
               <Ic name="chev" cls="ic chev" />
             </button>
-            <div className="pocket-body">{module === 'ai' && <AiModule />}</div>
+            <div className="pocket-body">{module === 'ai' && <AiModule key={user.id} user={user} />}</div>
           </section>
 
           <section className={`pocket${module === 'backup' ? ' open' : ''}`} data-mod="backup">
@@ -359,105 +359,100 @@ function PrivacyModule(): JSX.Element | null {
   )
 }
 
-// 点评助手的 AI 来源 —— 服务器 AI（默认，所有登录用户可用）或自配 API（浏览器直连）。
-// 没有保存按钮 —— 跟编辑追番一样改完即生效：endpoint / model 防抖后随账号同步，
-// API key 直接落本机 localStorage（不入库、不同步）。清空输入框 = 清掉 key，不另设按钮。
-function AiModule(): JSX.Element | null {
-  const { user } = useAuth()
-  const [endpoint, setEndpoint] = useState(user?.aiConfig.endpoint ?? '')
-  const [model, setModel] = useState(user?.aiConfig.model ?? '')
-  const [key, setKey] = useState(() => readByokKey())
-  const [error, setError] = useState<string | null>(null)
-  const saveTimer = useRef<number | undefined>(undefined)
+interface AiSettingsInfo {
+  profiles: { endpoint: string; model: string }[]
+  usage: { turns: number; tokens: number; cost: number }
+}
 
-  useEffect(() => () => window.clearTimeout(saveTimer.current), [])
+function AiModule({ user }: { user: AuthUser }): JSX.Element {
+  const [provider, setProvider] = useState(user.aiConfig.provider)
+  const [endpoint, setEndpoint] = useState(user.aiConfig.endpoint)
+  const [model, setModel] = useState(user.aiConfig.model)
+  const [key, setKey] = useState(() => readByokKey(user.id, user.aiConfig.endpoint))
+  const [busy, setBusy] = useState(false)
+  const saving = useRef(false)
+  const [info, setInfo] = useState<AiSettingsInfo | null>(null)
+  const [usageError, setUsageError] = useState(false)
 
-  if (!user) return null
-  const provider = user.aiConfig.provider
+  useEffect(() => {
+    const controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10000)])
+    void fetch('/api/agent/provider', { signal, credentials: 'same-origin' }).then(async (response) => {
+      if (!response.ok || response.headers.get('X-Agent-Owner') !== String(user.id)) throw new Error('AI_SETTINGS_READ_FAILED')
+      const data = await response.json() as AiSettingsInfo
+      if (!signal.aborted) setInfo(data)
+    }).catch(() => { if (!controller.signal.aborted) setUsageError(true) })
+    return () => controller.abort()
+  }, [user.id])
 
-  const pushConfig = (next: { provider?: 'server' | 'byok'; endpoint?: string; model?: string }): void => {
-    setError(null)
-    auth
-      .saveAiConfig({
-        provider: next.provider ?? provider,
-        endpoint: (next.endpoint ?? endpoint).trim(),
-        model: (next.model ?? model).trim(),
-      })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : '没存上，检查下网络'))
+  const changeEndpoint = (value: string): void => {
+    if (keyEndpoint(value) !== keyEndpoint(endpoint)) setKey(readByokKey(user.id, value))
+    setEndpoint(value)
   }
-
-  const scheduleConfig = (next: { endpoint?: string; model?: string }): void => {
-    window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(() => pushConfig(next), 700)
+  const save = async (): Promise<void> => {
+    if (saving.current || auth.user?.id !== user.id) return
+    const config: AiConfig = { provider, endpoint: endpoint.trim(), model: model.trim() }
+    if (provider === 'byok' && (!config.endpoint || !config.model)) {
+      toast('请先填写接口地址和模型', { err: true })
+      return
+    }
+    saving.current = true
+    setBusy(true)
+    try {
+      await auth.saveAiConfig(user.id, config)
+      if (auth.user?.id !== user.id) return
+      if (provider === 'byok' && !writeByokKey(user.id, config.endpoint, key.trim())) {
+        toast('这台设备没存下 API Key，请检查浏览器存储设置', { err: true })
+        return
+      }
+      toast('AI 设置已保存')
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'AI 设置没存上，请重试', { err: true })
+    } finally {
+      saving.current = false
+      setBusy(false)
+    }
   }
 
   return (
-    <div style={{ paddingTop: 6 }}>
-      <div className="field mb16">
-        <span className="field-label">写点评时用谁的</span>
-        <div className="status-seg" style={{ marginLeft: 0 }} role="group" aria-label="AI 来源">
-          <button
-            type="button"
-            className={`seg-btn${provider === 'server' ? ' on' : ''}`}
-            aria-pressed={provider === 'server'}
-            onClick={() => provider !== 'server' && pushConfig({ provider: 'server' })}
-          >
-            用我这边的
-          </button>
-          <button
-            type="button"
-            className={`seg-btn${provider === 'byok' ? ' on' : ''}`}
-            aria-pressed={provider === 'byok'}
-            onClick={() => provider !== 'byok' && pushConfig({ provider: 'byok' })}
-          >
-            用你自己的
-          </button>
+    <form className="ai-settings" onSubmit={event => { event.preventDefault(); void save() }}>
+      <div className="field">
+        <span className="field-label">使用哪个 AI</span>
+        <div className="seg ai-settings-source" role="group" aria-label="AI 来源">
+          <button type="button" className={provider === 'server' ? 'on' : undefined} aria-pressed={provider === 'server'} disabled={busy} onClick={() => setProvider('server')}>站点 AI</button>
+          <button type="button" className={provider === 'byok' ? 'on' : undefined} aria-pressed={provider === 'byok'} disabled={busy} onClick={() => setProvider('byok')}>自配 API</button>
         </div>
       </div>
-
       {provider === 'byok' && (
         <>
-          <Field label="接口地址">
-            <input
-              value={endpoint}
-              onChange={(e) => {
-                setEndpoint(e.target.value)
-                scheduleConfig({ endpoint: e.target.value })
-              }}
-              onBlur={() => pushConfig({ endpoint })}
-              placeholder="https://api.example.com/v1"
-              spellCheck={false}
-              style={{ width: '100%' }}
-            />
-          </Field>
-          <Field label="模型">
-            <input
-              value={model}
-              onChange={(e) => {
-                setModel(e.target.value)
-                scheduleConfig({ model: e.target.value })
-              }}
-              onBlur={() => pushConfig({ model })}
-              placeholder="gpt-4o-mini"
-              spellCheck={false}
-              style={{ width: '100%' }}
-            />
-          </Field>
-          <Field label="API key（只存这台设备，清空即删除）">
-            <PasswordInput
-              value={key}
-              autoComplete="off"
-              placeholder="sk-..."
-              onChange={(v) => {
-                setKey(v)
-                writeByokKey(v.trim())
-              }}
-            />
+          {Boolean(info?.profiles?.length) && <div className="field">
+            <span className="field-label">模型预设</span>
+            <div className="row flex-wrap gap-2">
+              {info?.profiles.map(item => <button type="button" key={item.endpoint + item.model} title={item.endpoint} className="btn btn-sm" disabled={busy} onClick={() => { changeEndpoint(item.endpoint); setModel(item.model) }}>{item.model}</button>)}
+            </div>
+          </div>}
+          <div className="ai-settings-fields">
+            <Field label="接口地址">
+              <span className="field-row">
+                <input value={endpoint} onChange={e => changeEndpoint(e.target.value)} placeholder="https://api.example.com/v1" spellCheck={false} maxLength={300} disabled={busy} />
+              </span>
+            </Field>
+            <Field label="模型">
+              <span className="field-row">
+                <input value={model} onChange={e => setModel(e.target.value)} placeholder="模型名称" spellCheck={false} maxLength={100} disabled={busy} />
+              </span>
+            </Field>
+          </div>
+          <Field label="API Key（不同步，清空后保存即删除）">
+            <PasswordInput value={key} onChange={setKey} autoComplete="off" placeholder="API Key" maxLength={4096} disabled={busy} />
           </Field>
         </>
       )}
-      {error && <p className="form-note err" aria-live="polite">{error}</p>}
-    </div>
+      <div className="spread ai-settings-footer">
+        <button type="submit" className="btn btn-sm btn-primary" disabled={busy}>{busy ? '保存中…' : '保存'}</button>
+        <p className="muted small">{info ? `今日用量 · ${info.usage.turns} 轮 · ${info.usage.tokens} token · 估算 US$${info.usage.cost.toFixed(4)}` : usageError ? '今日用量暂未读到' : ''}</p>
+      </div>
+    </form>
   )
 }
 

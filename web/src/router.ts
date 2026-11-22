@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 
 // 放映福利暂无用户场景：只在开发环境露出，生产构建里入口和 #/rewards 都不可达。
-export const REWARDS_ENABLED = import.meta.env.DEV
+export const REWARDS_ENABLED = import.meta.env?.DEV ?? false
 
 export type Route = 'calendar' | 'catalog' | 'history' | 'settings' | 'tracks' | 'rewards' | 'community' | 'feedback' | 'judge' | 'room'
 

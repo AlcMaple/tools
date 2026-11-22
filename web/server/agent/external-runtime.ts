@@ -1,3 +1,4 @@
+import type { AgentAiAccess } from '../../shared/agent-ai'
 import { waitBounded } from './run-service'
 import { readCompletionStream } from './provider-stream'
 import { isIP } from 'node:net'
@@ -49,6 +50,9 @@ export function matchEndpoint(endpoint:string,model:string):EndpointProfile{
   if(!profile)throw new AgentRunError('ENDPOINT_NOT_ALLOWED',400)
   return profile
 }
+function serverEndpointProfile():EndpointProfile{
+  return matchEndpoint(AI_BASE_URL,selectServerModel(AI_MODEL,parseConfig<ModelUpgradeApproval|null>('AGENT_MODEL_APPROVAL',null)))
+}
 export function protectedTransport(endpoint:string,key:string):ProviderTransport{
   const base=endpointUrl(endpoint),host=new URL(base).hostname
   return async(path,body,signal,_headers,onText)=>{
@@ -79,7 +83,10 @@ function selectedConnection(uid:number|null,forceServer=false):Connection|undefi
   return entry
 }
 const cleanup=setInterval(()=>{for(const [id,c] of connections)if(c.until<=Date.now())connections.delete(id)},60_000);cleanup.unref()
-export function externalCanPrepare(uid:number|null){return externalEnabled()&&Boolean(AI_API_KEY)&&(uid===null||selection(uid).choice.provider==='server')}
+export function externalCanPrepare(uid:number|null){
+  const source=uid===null?'server':selection(uid).choice.provider
+  return externalEnabled(source)&&(source==='byok'||Boolean(AI_API_KEY))
+}
 export function externalReady(uid:number|null,forceServer=false){const entry=selectedConnection(uid,forceServer);return Boolean(entry&&externalEnabled(entry.profile.source))}
 export function externalStatus(uid:number|null){
   const row=uid===null?null:selection(uid),entry=selectedConnection(uid)
@@ -92,38 +99,38 @@ export function forgetConnection(uid:number){
   // 撤销探测本身；保留锁直到旧请求退出，晚到结果还须通过同一操作身份检查。
   connecting.get(id)?.abort(new AgentRunError('PROVIDER_CHANGED'))
 }
-export async function connectExternal(uid:number|null,owner:string,input:{source:'server'|'byok';endpoint?:string;model?:string;key?:string},signal:AbortSignal,preserveSelection=false){
+function byokProfile(choice:ReturnType<typeof normalizeAiConfig>){
+  if(!choice.endpoint||!choice.model)throw new AgentRunError('BYOK_SETTINGS_REQUIRED',400)
+  return matchEndpoint(choice.endpoint,choice.model)
+}
+function savedByokProfile(choice:ReturnType<typeof normalizeAiConfig>,input:{endpoint:string;model:string}){
+  if(choice.provider!=='byok'||choice.endpoint!==input.endpoint||choice.model!==input.model)throw new AgentRunError('AI_SETTINGS_CHANGED')
+  return byokProfile(choice)
+}
+type ConnectInput={source:'server'}|{source:'byok';endpoint:string;model:string;key:string}
+export async function connectExternal(uid:number|null,owner:string,input:ConnectInput,signal:AbortSignal){
   signal.throwIfAborted()
   if(!externalEnabled(input.source))throw new AgentRunError('AGENT_AI_DISABLED',503)
-  const row=uid===null?null:account(uid)
-  if(uid===null&&input.source!=='server')throw new AgentRunError('AUTH_REQUIRED',401)
-  const id=input.source==='server'?'server':`user:${uid}`
+  const row=uid===null?null:selection(uid),project=input.source==='server'
+  if(!project&&!row)throw new AgentRunError('AUTH_REQUIRED',401)
+  const cfg=project?serverEndpointProfile():savedByokProfile(row!.choice,input),key=project?AI_API_KEY:input.key
+  if(!key)throw new AgentRunError(project?'PROVIDER_NOT_CONFIGURED':'BYOK_KEY_REQUIRED',project?503:400)
+  if(key.length>4096||/[^\x21-\x7e]/.test(key))throw new AgentRunError(project?'PROVIDER_NOT_CONFIGURED':'BYOK_KEY_INVALID',project?503:400)
+  const id=project?'server':`user:${uid}`,fingerprint=providerFingerprint(input.source,cfg.model,cfg.endpoint,key)
+  const current=selectedConnection(project?null:uid)
+  if(current?.profile.fingerprint===fingerprint)return externalStatus(uid)
   const locks=[...new Set([id,...(uid===null?[]:[`user:${uid}`])])]
-  // 必须先锁住账号选择和目标连接，再改配置；拒绝的并发请求没有写入副作用。
   if(locks.some(lock=>connecting.has(lock)))throw new AgentRunError('CONNECTION_BUSY',429)
+  if(!current&&connections.size>=500)throw new AgentRunError('GLOBAL_BUSY',429)
   const operation=new AbortController()
   for(const lock of locks)connecting.set(lock,operation)
   const probeSignal=AbortSignal.any([signal,operation.signal,AbortSignal.timeout(30000)])
   try{
-    if(uid!==null&&!preserveSelection){
-      connections.delete(`user:${uid}`)
-      db.prepare('UPDATE users SET ai_config=? WHERE id=?').run(JSON.stringify({provider:input.source,endpoint:input.endpoint??'',model:input.model??''}),uid)
-    }
-    let cfg:EndpointProfile,key:string
-    if(input.source==='server'){
-      const model=selectServerModel(AI_MODEL,parseConfig<ModelUpgradeApproval|null>('AGENT_MODEL_APPROVAL',null))
-      cfg=matchEndpoint(AI_BASE_URL,model);key=AI_API_KEY
-    }else{cfg=matchEndpoint(input.endpoint??'',input.model??'');key=input.key??''}
-    if(!key||key.length>4096||/[\s\x00-\x1f\x7f]/.test(key))throw new AgentRunError('PROVIDER_NOT_CONFIGURED',503)
-    // 来源先切换；新连接失败也不暗中使用旧模型。
-    if(uid!==null&&!preserveSelection)db.prepare('UPDATE users SET ai_config=? WHERE id=?').run(JSON.stringify({provider:input.source,endpoint:cfg.endpoint,model:cfg.model}),uid)
-    const config=uid===null?'':account(uid).ai_config
-    if(input.source==='server'&&selectedConnection(null))return externalStatus(uid)
-    if(connections.size>=500)throw new AgentRunError('GLOBAL_BUSY',429)
+    // Key 变了就重新校验；新 Key 失败时也不沿用旧凭据，不写账号设置。
     connections.delete(id)
-    return await externalQuota.turn(owner,uid===null,input.source==='server',async()=>{
+    return await externalQuota.turn(owner,uid===null,project,async()=>{
       probeSignal.throwIfAborted()
-      const transport=protectedTransport(cfg.endpoint,key),profile:ProviderProfile={source:input.source,model:cfg.model,fingerprint:providerFingerprint(input.source,cfg.model,cfg.endpoint,key),capabilities:{protocol:'chat_completions',contextTokens:cfg.contextTokens,maxOutputTokens:cfg.maxOutputTokens,toolCalling:false,tokenCounting:'estimate',nativeCompaction:'none',nativeMinimumTokens:0,verified:false}}
+      const transport=protectedTransport(cfg.endpoint,key),profile:ProviderProfile={source:input.source,model:cfg.model,fingerprint,capabilities:{protocol:'chat_completions',contextTokens:cfg.contextTokens,maxOutputTokens:cfg.maxOutputTokens,toolCalling:false,tokenCounting:'estimate',nativeCompaction:'none',nativeMinimumTokens:0,verified:false}}
       const metered=meteredTransport(transport,externalQuota,cfg.price,cfg.contextTokens)
       const probe=await waitBounded(createProtocolProvider(profile,metered).probe(probeSignal),probeSignal)
       probeSignal.throwIfAborted()
@@ -132,10 +139,10 @@ export async function connectExternal(uid:number|null,owner:string,input:{source
       if(row){
         const current=account(uid!)
         if(current.token_version!==row.token_version)throw new AgentRunError('AUTH_REQUIRED',401)
-        if(current.ai_config!==config)throw new AgentRunError('PROVIDER_CHANGED')
+        if(!project&&current.ai_config!==row.ai_config)throw new AgentRunError('AI_SETTINGS_CHANGED')
       }
       profile.capabilities=probe.value
-      connections.set(id,{profile,transport,price:cfg.price,vision:cfg.vision===true,until:Date.now()+30*60_000,tv:row?.token_version??0,config})
+      connections.set(id,{profile,transport,price:cfg.price,vision:cfg.vision===true,until:Date.now()+30*60_000,tv:row?.token_version??0,config:project?'':row!.ai_config})
       return externalStatus(uid)
     },false)
   }finally{
@@ -162,7 +169,7 @@ export async function prepareExternal(uid:number|null,owner:string,signal:AbortS
     // 以前用调用者的 signal，页面在 30 分钟连接建立前刷新一次，探测就被 abort：
     // 钱照付、连接没缓存、下次加载再探一次（终端里那条 Client connection prematurely closed 就是它）。
     // 各调用者仍用自己的 signal 停止**等待**（下面的 waitBounded），共享的活照做完。
-    serverPreparation=connectExternal(uid,owner,{source:'server'},AbortSignal.timeout(30_000),true).then(()=>{serverPreparationFailure=null},error=>{
+    serverPreparation=connectExternal(uid,owner,{source:'server'},AbortSignal.timeout(30_000)).then(()=>{serverPreparationFailure=null},error=>{
       serverPreparationFailure=sharedPreparationError(error)?{error,until:Date.now()+30000}:null
       throw error
     })
@@ -176,7 +183,7 @@ export async function prepareExternal(uid:number|null,owner:string,signal:AbortS
     throw error
   }
   const status=externalStatus(uid)
-  if(!externalReady(uid,forceServer)||(!forceServer&&status.source!=='server'))throw new AgentRunError('PROVIDER_CHANGED')
+  if(!externalReady(uid,forceServer)||(!forceServer&&status.source!=='server'))throw new AgentRunError('AI_SETTINGS_CHANGED')
   return status
 }
 // 接单评估跟随设置里「用谁的」（users.ai_config，与助手同一份）：选项目服务器就用服务器 Key；
@@ -192,10 +199,8 @@ export const aiSource=(uid:number,forceServer=false):'server'|'byok'=>forceServe
 // 按设置里选中的型号判断能否看图，上传前就拦下，免得图传上去才在开回合时报错。
 export function imagesAllowed(uid:number){
   const choice=selection(uid).choice
-  try{
-    const profile=choice.provider==='server'?matchEndpoint(AI_BASE_URL,selectServerModel(AI_MODEL,parseConfig<ModelUpgradeApproval|null>('AGENT_MODEL_APPROVAL',null))):matchEndpoint(choice.endpoint,choice.model)
-    return profile.vision===true
-  }catch{return false}
+  if(choice.provider==='byok')return byokProfile(choice).vision===true
+  try{return serverEndpointProfile().vision===true}catch{return false}
 }
 // forceServer：桌面端只用服务器 Key，不看账号里选的是哪边
 export async function judgeConnection(uid:number,signal:AbortSignal,forceServer=false):Promise<JudgeConnection>{
@@ -219,6 +224,34 @@ export async function judgeConnection(uid:number,signal:AbortSignal,forceServer=
     try{const result=await send(body,s);settle(reportedUsage(result));return result}catch(error){settle(null);throw error}
   }}
 }
+export async function externalBindingForAction(uid:number|null,owner:string,signal:AbortSignal,hasImages=false,ai?:AgentAiAccess){
+  signal.throwIfAborted()
+  const row=uid===null?null:selection(uid),source=row?.choice.provider??'server'
+  if(ai&&ai.uid!==uid)throw new AgentRunError('AUTH_CHANGED',409)
+  if(ai&&ai.source!==source)throw new AgentRunError('AI_SETTINGS_CHANGED')
+  if(!externalEnabled(source))throw new AgentRunError('AGENT_AI_DISABLED',503)
+  const current=selectedConnection(uid)
+  if(ai?.source==='byok'){
+    const profile=savedByokProfile(row!.choice,ai)
+    if(hasImages&&profile.vision!==true)throw new AgentRunError('IMAGE_UNSUPPORTED',400)
+  }else if(hasImages&&(current?!current.vision:source==='server'&&serverEndpointProfile().vision!==true))throw new AgentRunError('IMAGE_UNSUPPORTED',400)
+  if(!current||ai?.source==='byok'){
+    const status=externalQuota.status(owner)
+    if(status.turns>=(uid===null?status.limits.guestTurns:status.limits.userTurns))throw new AgentRunError('DAILY_QUOTA',429)
+    if(ai?.source==='byok')await connectExternal(uid,owner,ai,signal)
+    else if(source==='server')await prepareExternal(uid,owner,signal)
+  }
+  signal.throwIfAborted()
+  if(row){
+    const latest=account(uid!)
+    if(latest.token_version!==row.token_version)throw new AgentRunError('AUTH_REQUIRED',401)
+    if(latest.ai_config!==row.ai_config)throw new AgentRunError('AI_SETTINGS_CHANGED')
+  }
+  const binding=externalBinding(uid,owner)
+  if(hasImages&&!binding.provider.vision)throw new AgentRunError('IMAGE_UNSUPPORTED',400)
+  return binding
+}
+
 export function externalBinding(uid:number|null,owner:string){
   if(!externalEnabled(uid===null?'server':selection(uid).choice.provider))throw new AgentRunError('AGENT_AI_DISABLED',503)
   const c=selectedConnection(uid);if(!c)throw new AgentRunError('PROVIDER_CONNECTION_REQUIRED',503)
@@ -232,7 +265,7 @@ export function externalBinding(uid:number|null,owner:string){
   const context=createProtocolProvider(profile,transport)
   const json=context.json.bind(context)
   context.json=async(...args)=>{const result=await json(...args),u=result.usage;return {...result,usage:{...u,estimatedCost:u.inputTokens!==null&&u.outputTokens!==null?estimateCost(u.inputTokens,u.cachedInputTokens??0,u.outputTokens,c.price):null,currency:c.price.currency,priceVersion:c.price.version}}}
-  // connect 已完成真实 JSON + 工具探测；prepare 复用结果，不再付费重复探测。
+  // 已完成 JSON 和工具探测；压缩复用结果，不为同一连接再付一次探测费用。
   context.probe=async()=>({value:profile.capabilities,usage:{operation:'compact',provider:profile.source,model:profile.model,inputTokens:0,cachedInputTokens:0,outputTokens:0,durationMs:0,resultCount:0,estimatedCost:0,currency:c.price.currency,priceVersion:c.price.version}})
   const output=Number(process.env.AGENT_ANSWER_OUTPUT_TOKENS??8192)
   if(!Number.isSafeInteger(output)||output<256||output>8192)throw new AgentRunError('PROVIDER_CONFIGURATION',503)

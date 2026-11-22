@@ -19,12 +19,11 @@ import { DateRange } from './DateRange'
 import { FlowPreview } from './FlowPreview'
 import { PlanList, ScopePanel } from './ScopePanel'
 import { inScoping, plansOf, recommendedPlan } from '../../shared/order-judge-scope'
-import { readByokKey } from '../reviews/byok'
+import { readByokKey } from '../ai-key'
 import type { JudgeState, Project, Version } from '../../shared/order-judge-api'
 import { MAX_TEXT_CHARS, VERSION_LIMIT } from '../../shared/order-judge-api'
 import {
-  JudgeError, attachUrl, connectProvider, deleteProject, saveMaintenance, saveQuote, followJudgeChanges, imageUrl, loadState, logClient, organize, providerStatus,
-  type ProviderStatus,
+  JudgeError, attachUrl, connectProvider, deleteProject, saveMaintenance, saveQuote, followJudgeChanges, imageUrl, loadState, logClient, organize,
 } from './api'
 
 const ACCEPT = 'image/*,video/*,.pdf,.doc,.docx,.rtf,.odt,.pages,.html,.htm,.txt,.md,.xlsx,.xls,.csv,.zip,.rar'
@@ -45,7 +44,7 @@ type Outcome =
   | { kind: 'chat-record' }
   | { kind: 'error'; code: string; message: string; at: number }
 
-const SETTINGS_CODES = new Set(['BYOK_REQUIRED', 'PROVIDER_CONNECTION_REQUIRED', 'PROVIDER_HTTP_401'])
+const SETTINGS_CODES = new Set(['BYOK_REQUIRED', 'BYOK_KEY_REQUIRED', 'BYOK_KEY_INVALID', 'BYOK_SETTINGS_REQUIRED', 'AI_SETTINGS_CHANGED', 'ENDPOINT_NOT_ALLOWED', 'PROVIDER_CAPABILITY', 'PROVIDER_CONNECTION_REQUIRED', 'PROVIDER_HTTP_401', 'PROVIDER_HTTP_403'])
 
 function when(at: number): string {
   const d = new Date(at)
@@ -110,7 +109,6 @@ function JudgeWorkspace(): JSX.Element {
   const all = state?.projects ?? []
   const [loadError, setLoadError] = useState('')
   const [syncError, setSyncError] = useState('')
-  const [provider, setProvider] = useState<ProviderStatus | null>(null)
   const [target, setTarget] = useState<Project | null>(null)
   const [text, setText] = useState('')
   const [materials, setMaterials] = useState<Material[]>([])
@@ -140,13 +138,6 @@ function JudgeWorkspace(): JSX.Element {
   const mountedRef = useRef(true)
   materialsRef.current = materials
 
-  const refreshProvider = useCallback(() => {
-    providerStatus().then(setProvider).catch((e: unknown) => {
-      logClient('order-judge:provider', e)
-      setProvider(null)
-    })
-  }, [])
-
   useEffect(() => {
     mountedRef.current = true
     let queued = false
@@ -160,13 +151,12 @@ function JudgeWorkspace(): JSX.Element {
     }
     refresh()
     const unfollow = followJudgeChanges(refresh, error => { logClient('order-judge:sync', error); if (mountedRef.current) setSyncError(errorOf(error).message) }, () => { if (mountedRef.current) setSyncError('') })
-    refreshProvider()
     return () => {
       mountedRef.current = false; unfollow()
       abortRef.current?.abort()
       for (const m of materialsRef.current) if (m.thumb) URL.revokeObjectURL(m.thumb)
     }
-  }, [refreshProvider])
+  }, [])
 
   useEffect(() => {
     if (!running) return
@@ -187,7 +177,7 @@ function JudgeWorkspace(): JSX.Element {
 
   const ai = user?.aiConfig
   const byok = ai?.provider === 'byok'
-  const noKey = byok && !readByokKey().trim()
+  const noKey = byok && user && !readByokKey(user.id, ai.endpoint)
 
   const addFiles = useCallback((files: File[]) => {
     const fresh: Material[] = files.map((file) => {
@@ -329,8 +319,10 @@ function JudgeWorkspace(): JSX.Element {
       if (failedArchives.length) throw new JudgeError('ARCHIVE_UNREADABLE', failedArchives.map(m => `${m.file.name}：${prepared.materialNotes[m.file.name]}`).join('；'))
       if (prepared.text.length > MAX_TEXT_CHARS) throw new JudgeError('MATERIAL_TEXT_TOO_LONG', '材料文字超过 20 万字，请拆分后再整理')
       setPrepStats(prepared.stats.join(' · '))
-      if (byok && ai && !(provider?.ready && provider.source === 'byok')) {
-        setProvider(await connectProvider(ai.endpoint, ai.model, readByokKey().trim()))
+      if (byok && ai && user) {
+        const key = readByokKey(user.id, ai.endpoint)
+        if (!key) throw new JudgeError('BYOK_KEY_REQUIRED', '这台设备还没填你的 API Key')
+        await connectProvider({ source: 'byok', uid: user.id, endpoint: ai.endpoint, model: ai.model, key }, controller.signal)
       }
       const project = await organize(target?.id ?? null, clientType, prepared.text, prepared.images, prepared.attachments, (e) => {
         if (e.stage === 'links') { setLinkCount(e.count); setStage('links') } else setStage('ai')
@@ -347,7 +339,6 @@ function JudgeWorkspace(): JSX.Element {
       const { code, message } = errorOf(e)
       if (code === 'NETWORK') logClient('order-judge:organize', e)
       setOutcome({ kind: 'error', code, message, at: Date.now() })
-      if (code === 'PROVIDER_CONNECTION_REQUIRED' || code === 'PROVIDER_HTTP_401') refreshProvider()
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null

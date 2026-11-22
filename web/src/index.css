@@ -84,6 +84,21 @@
 .form-note { min-height: 18px; margin: 8px 0 2px; font-size: 12.5px; color: var(--teal); }
 .form-note.err { color: var(--sakura); }
 
+/* AI 设置 */
+.ai-settings { display: grid; gap: 16px; max-width: 36rem; padding-top: 12px; }
+.ai-settings-source { align-self: flex-start; display: inline-grid; grid-template-columns: repeat(2, 1fr); }
+.ai-settings-source > button { min-height: 38px; padding-inline: 16px; white-space: nowrap; }
+.ai-settings-source > button:disabled { opacity: .62; cursor: default; }
+.ai-settings-fields { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+.ai-settings .field-row:has(> .eye) > input { padding-inline-end: 50px; }
+.ai-settings-footer { padding-top: 12px; border-top: 1.5px dashed var(--line); }
+.ai-settings-footer > button { min-width: 5rem; }
+.ai-settings-footer > p { margin: 0; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .ai-settings-fields { grid-template-columns: minmax(0, 1fr); }
+  .ai-settings-footer > p { flex-basis: 100%; }
+}
+
 /* 设置页「备份与恢复」：两段手帐段落；导出形态是贴纸式单选（虚线框，选中 = 青色荧光底 + 勾），
    按钮只有一个，颜色不再暗示“哪个是默认导出” */
 .backup-module { display: flex; flex-direction: column; gap: 22px; padding-top: 8px; }

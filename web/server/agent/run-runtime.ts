@@ -13,7 +13,7 @@ import { emailDeliveryConfigured } from '../email-delivery'
 import { agentContextService } from './context-runtime'
 import type { RunProvider,RunBinding } from './run-service'
 import { db } from '../db'
-import { externalBinding,externalReady,externalCanPrepare } from './external-runtime'
+import { externalBindingForAction,externalReady,externalCanPrepare } from './external-runtime'
 import { GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,GITHUB_CLIENT_ID,GITHUB_CLIENT_SECRET,LINUXDO_CLIENT_ID,LINUXDO_CLIENT_SECRET } from '../secrets'
 import { AgentRunError } from '../../shared/agent-run'
 import { AGENT_FEATURES, AGENT_FEATURE_REGISTRATIONS, AgentKnowledgeRegistry, knowledgeHash } from './knowledge'
@@ -51,7 +51,11 @@ export const agentPlaybackStore=new AgentPlaybackStore(db,Date.now,uid=>currentA
   verifyCaptcha:(uid,code)=>verifyXifanCaptcha(uid,code),
 })
 // 测试通过显式依赖注入接入脚本 provider / 只读工具；生产入口从不导入测试夹具。
-export const agentRunService=new AgentRunService(agentRunStore,(uid,sessionId)=>{const binding=externalBinding(uid,`user:${uid}`);return {...bindAgentDataRun(uid,sessionId,binding.provider),execute:binding.execute}})
+export const agentRunService=new AgentRunService(agentRunStore,async(uid,sessionId,signal,hasImages,ai)=>{
+  if(currentAgentKnowledge(uid).status!=='ready')throw new AgentRunError('KNOWLEDGE_PENDING_SYNC')
+  const binding=await externalBindingForAction(uid,`user:${uid}`,signal,hasImages,ai)
+  return {...bindAgentDataRun(uid,sessionId,binding.provider),execute:binding.execute}
+})
 
 // 工具身份固定绑定服务端会话，不接受模型提供的账号参数。
 export function bindAgentDataRun(uid:number,sessionId:string,provider:RunProvider):RunBinding {

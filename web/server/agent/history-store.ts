@@ -275,6 +275,13 @@ export class AgentHistoryStore {
     }).immediate()
   }
 
+  checkUserAppend(uid:number,id:string,expectedRevision:number,body:string,editFromSeq?:number):void {
+    const s=this.session(uid,id)
+    this.expectRevision(s,expectedRevision);this.expectWritable(s)
+    if(editFromSeq!==undefined)this.expectTruncationTarget(s,editFromSeq)
+    else {this.expectSendable(s);this.expectSpace(s,encodeContent(emptyContent(body)).bytes,true)}
+  }
+
   // images 只由服务端回合传入（编号已在 begin 事务里核过归属）；HTTP 追加消息不带图。
   appendUser(uid: number, id: string, input: unknown, images: string[] = []) {
     const p = parse<AppendUserMessage>(images.length ? IMAGE_MESSAGE_SCHEMA : USER_MESSAGE_SCHEMA, input)
@@ -359,14 +366,17 @@ export class AgentHistoryStore {
   // 这是用户主动放弃这段分支）；摘要 / 上下文任务作废，run 行经 context_generation 触发器清理。
   // seq 不回退——旧游标和晚到请求不会指向新的同号消息。当前番剧与已确认偏好不动。
   truncateSession(uid: number, id: string, input: unknown): HistorySession { return this.truncateReleasing(uid, id, input).session }
+  private expectTruncationTarget(s:SessionRow,fromSeq:number):void {
+    this.expectIdle(s)
+    const target=this.db.prepare('SELECT role FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq = ?').get(s.user_id,s.id,fromSeq) as {role:string}|undefined
+    if(!target)throw new AgentHistoryError('INVALID_ARGUMENT',400,'要编辑的消息已经不在了，请刷新对话。')
+    if(target.role!=='user')throw new AgentHistoryError('INVALID_ARGUMENT',400,'只能从自己发的消息处重新开始。')
+  }
   // 同上，并带回被截掉消息的附图编号，供接口给这些文件续一段宽限期（编辑重发会带回）。
   truncateReleasing(uid: number, id: string, input: unknown): { session: HistorySession; releasedImages: string[] } {
     const p = parse<{ expectedRevision: number; fromSeq: number }>(TRUNCATE_SESSION_SCHEMA, input)
     return this.db.transaction(() => {
-      const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectIdle(s)
-      const target = this.db.prepare('SELECT role FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq = ?').get(uid, id, p.fromSeq) as { role: string } | undefined
-      if (!target) throw new AgentHistoryError('INVALID_ARGUMENT', 400, '要编辑的消息已经不在了，请刷新对话。')
-      if (target.role !== 'user') throw new AgentHistoryError('INVALID_ARGUMENT', 400, '只能从自己发的消息处重新开始。')
+      const s = this.session(uid, id); this.expectRevision(s, p.expectedRevision); this.expectTruncationTarget(s, p.fromSeq)
       const removed = this.db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(stored_bytes), 0) AS bytes FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq >= ?').get(uid, id, p.fromSeq) as { n: number; bytes: number }
       const released = (this.db.prepare("SELECT images_json FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq >= ? AND images_json != '[]'").all(uid, id, p.fromSeq) as { images_json: string }[]).flatMap(r => JSON.parse(r.images_json) as string[])
       this.db.prepare('DELETE FROM agent_messages WHERE user_id = ? AND session_id = ? AND seq >= ?').run(uid, id, p.fromSeq)

@@ -1,3 +1,4 @@
+import type { AgentByokAccess } from '../../shared/agent-ai'
 import { fetchApi, readApi } from '../request'
 import type { JudgeEvent, JudgeImage, JudgeState, JudgeSyncEvent, Project } from '../../shared/order-judge-api'
 import { judgeLineReader } from '../../shared/order-judge-lines'
@@ -86,18 +87,11 @@ export async function organize(
   }, 300_000)
 }
 
-export interface ProviderStatus {
-  enabled: boolean
-  ready: boolean
-  source: 'server' | 'byok'
-  model: string
-  profiles?: { endpoint: string; model: string }[]
+export async function connectProvider(access: AgentByokAccess, signal: AbortSignal): Promise<void> {
+  const response = await fetchApi('/api/agent/provider/connect', { ...send('POST', access), signal }, 40_000)
+  await json(response)
+  if (response.headers.get('X-Agent-Owner') !== String(access.uid)) throw new JudgeError('AUTH_CHANGED', '登录状态已变化，请重新打开接单评估')
 }
-
-export const providerStatus = async (): Promise<ProviderStatus> => json(await fetchApi('/api/agent/provider', { credentials: 'same-origin' }))
-
-export const connectProvider = async (endpoint: string, model: string, key: string): Promise<ProviderStatus> =>
-  json(await fetchApi('/api/agent/provider/connect', send('POST', { source: 'byok', endpoint, model, key }), 40_000))
 
 export function followJudgeChanges(onChange: () => void, onError: (error: unknown) => void, onConnected: () => void = () => {}): () => void {
   let stopped = false, attempts = 0, controller: AbortController | null = null, timer: number | undefined

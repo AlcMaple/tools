@@ -31,7 +31,7 @@ export class ExternalQuota {
       CREATE TABLE IF NOT EXISTS agent_ai_usage (id TEXT PRIMARY KEY,turn_id TEXT NOT NULL,day TEXT NOT NULL,operation TEXT NOT NULL,model TEXT NOT NULL,input_tokens INTEGER,output_tokens INTEGER,cached_tokens INTEGER,duration_ms INTEGER NOT NULL DEFAULT 0,cost REAL NOT NULL,price_version TEXT NOT NULL,state TEXT NOT NULL);`)
   }
   // counted=false:连接探测。仍占并发租约、仍计 token 与费用,但不消耗「每日对话轮次」——
-  // 用户没发消息也会因连接过期(30 分钟)自动重连,把探测算成一轮会凭空吃光额度。
+  // 一次显式使用冷连接会先探测再正式调用；探测不算一次对话。
   async turn<T>(owner:string,guest:boolean,project:boolean,action:()=>Promise<T>,counted=true):Promise<T>{
     const active=this.scope.getStore();if(active){if(active.owner!==owner||active.guest!==guest||active.project!==project)throw new AgentRunError('AUTH_REQUIRED',401);return action()}
     const day=new Date(this.now()).toISOString().slice(0,10),id=randomUUID(),lease=randomUUID()

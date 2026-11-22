@@ -1,8 +1,9 @@
+import type { AgentAiAccess } from '../../shared/agent-ai'
 import { randomUUID } from 'node:crypto'
 import { AGENT_TOOLS, MODEL_OUTPUT_SCHEMA, type AgentToolName, type AgentUsage, type JsonValue } from '../../shared/agent-contracts'
 import { ASSISTANT_UPDATE_SCHEMA, AgentHistoryError, type AssistantMessageContent, type HistoryAction, type HistorySource } from '../../shared/agent-history'
 import { logAgentIssue } from './diagnostics'
-import { AgentRunError, RUN_LIMITS, START_RUN_SCHEMA, RESUME_RUN_SCHEMA, type StartRun, type ResumeRun, type ReadToolCall, type RunCheckpoint } from '../../shared/agent-run'
+import { AgentRunError, RUN_LIMITS, START_RUN_SCHEMA, RESUME_RUN_SCHEMA, type StartRun, type RunAiInput, type ResumeRun, type ReadToolCall, type RunCheckpoint } from '../../shared/agent-run'
 import { AGENT_LIMITS, AGENT_SYSTEM_RULES } from './policy'
 import type { AgentContextService } from './context-service'
 import { IMAGE_INPUT_TOKENS, estimateContextTokens } from './context-provider'
@@ -31,7 +32,7 @@ export interface RunBinding {
   execute?(action:()=>Promise<void>):Promise<void>
   assertIdentity(): void
 }
-export type RunResolver = (uid:number,sessionId:string) => RunBinding | Promise<RunBinding>
+export type RunResolver = (uid:number,sessionId:string,signal:AbortSignal,hasImages:boolean,ai?:AgentAiAccess) => RunBinding | Promise<RunBinding>
 type Controls = { heartbeatMs: number; idleMs: number; softTargetMs: number; longTaskMs: number; activeTurnMs: number; toolRounds: number }
 const outputError = (): never => { throw new AgentRunError('INVALID_OUTPUT') }
 function json(value: unknown): JsonValue {
@@ -69,23 +70,40 @@ export class AgentRunService {
     if(!['server','byok'].includes(binding.provider.source)||!binding.provider.model.trim()||binding.provider.model.length>100||!binding.provider.fingerprint)throw new AgentRunError('PROVIDER_CAPABILITY')
     return knowledge
   }
-  async start(uid:number,sessionId:string,input:unknown,authVersion:number){
+  private async resolveForTurn(uid:number,sessionId:string,hasImages:boolean,requestSignal?:AbortSignal,ai?:AgentAiAccess){
+    const deadline=AbortSignal.timeout(30_000),signal=requestSignal?AbortSignal.any([deadline,requestSignal]):deadline
+    signal.throwIfAborted()
+    const binding=await waitBounded(Promise.resolve(this.resolve(uid,sessionId,signal,hasImages,ai)),signal)
+    signal.throwIfAborted()
+    const knowledge=this.checkBinding(binding)
+    if(hasImages&&!binding.provider.vision)throw new AgentRunError('IMAGE_UNSUPPORTED',400)
+    return {binding,knowledge}
+  }
+  async start(uid:number,sessionId:string,input:unknown,authVersion:number,requestSignal?:AbortSignal){
     if(!matchesContract(START_RUN_SCHEMA,input))throw new AgentRunError('INVALID_ARGUMENT',400)
-    const p=input as StartRun
+    const {ai,...p}=input as StartRun & RunAiInput
+    if(ai&&ai.uid!==uid)throw new AgentRunError('AUTH_CHANGED',409)
     if((!p.body.trim()&&!p.images?.length)||p.body.trim()==='/compact')throw new AgentRunError('INVALID_ARGUMENT',400)
     this.store.recover()
-    const binding=await waitBounded(Promise.resolve(this.resolve(uid,sessionId)),AbortSignal.timeout(30_000)),knowledge=this.checkBinding(binding)
-    // 在写入消息前拦下：看不了图的型号不能把图静默丢掉再回答。
-    if(p.images?.length&&!binding.provider.vision)throw new AgentRunError('IMAGE_UNSUPPORTED',400)
+    const {existing}=this.store.checkStart(uid,sessionId,p,authVersion)
+    if(existing)return {run:this.store.view(existing),session:null,userMessage:null}
+    const {binding,knowledge}=await this.resolveForTurn(uid,sessionId,Boolean(p.images?.length),requestSignal,ai)
     const result=this.store.begin(uid,sessionId,p,knowledge,authVersion)
-    if(result.fresh)this.launch(result.row,binding)
+    if(result.fresh){
+      if(result.releasedImages.length)await new AgentImageStore(this.store.db).graceRemoved(uid,sessionId,result.releasedImages)
+      this.launch(result.row,binding)
+    }
     return {run:this.store.view(result.row),session:result.session,userMessage:result.userMessage}
   }
-  async resume(uid:number,id:string,input:unknown,authVersion:number){
+  async resume(uid:number,id:string,input:unknown,authVersion:number,requestSignal?:AbortSignal){
     if(!matchesContract(RESUME_RUN_SCHEMA,input))throw new AgentRunError('INVALID_ARGUMENT',400)
-    this.store.recover();const resumed=this.store.row(uid,id)
-    const binding=await waitBounded(Promise.resolve(this.resolve(uid,resumed.session_id)),AbortSignal.timeout(30_000)),knowledge=this.checkBinding(binding)
-    const result=this.store.resume(uid,id,input as ResumeRun,knowledge,authVersion)
+    this.store.recover()
+    const {ai,...p}=input as ResumeRun & RunAiInput
+    if(ai&&ai.uid!==uid)throw new AgentRunError('AUTH_CHANGED',409)
+    const {row,alreadyResumed,images}=this.store.checkResume(uid,id,p,authVersion)
+    if(alreadyResumed)return this.store.view(row)
+    const {binding,knowledge}=await this.resolveForTurn(uid,row.session_id,images,requestSignal,ai)
+    const result=this.store.resume(uid,id,p,knowledge,authVersion)
     if(result.fresh)this.launch(result.row,binding)
     return this.store.view(result.row)
   }

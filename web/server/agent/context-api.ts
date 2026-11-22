@@ -4,7 +4,7 @@ import { AgentHistoryError } from '../../shared/agent-history'
 import {
   PREFERENCE_SETTINGS_SCHEMA, type PreferenceValues, COMPACT_SCHEMA, PREPARE_CONTEXT_SCHEMA, PREFERENCE_CREATE_SCHEMA, PREFERENCE_EDIT_SCHEMA, CONFIRM_PREFERENCE_SCHEMA,
   PIN_MESSAGE_SCHEMA, CONTEXT_SETTINGS_SCHEMA, SUMMARY_EDIT_SCHEMA, SUMMARY_RESTORE_SCHEMA,
-  type CompactJob, type CompactRequest, type PreferenceCard,
+  type CompactJob, type CompactRequest, type ManualCompactRequest, type PreferenceCard,
 } from '../../shared/agent-context'
 import { matchesContract } from './validation'
 import { contextError } from './context-store'
@@ -58,7 +58,7 @@ export function createAgentContextApi(service:AgentContextService) {
     const p=await input<{expectedRevision:number;pinned:boolean}>(c,PIN_MESSAGE_SCHEMA)
     return c.json({session:store.setContext(c.get('agentUid'),c.req.param('id'),p.expectedRevision,{messageId:c.req.param('messageId'),pinned:p.pinned})})
   })
-  api.post('/sessions/:id/compact',async c=>keepJob(c,service,service.start(c.get('agentUid'),c.req.param('id'),await input<CompactRequest>(c,COMPACT_SCHEMA))))
+  api.post('/sessions/:id/compact',async c=>keepJob(c,service,service.start(c.get('agentUid'),c.req.param('id'),await input<ManualCompactRequest>(c,COMPACT_SCHEMA))))
   api.post('/sessions/:id/context/prepare',async c=>{
     const p=await input<CompactRequest&{question:string}>(c,PREPARE_CONTEXT_SCHEMA)
     const result=await service.prepare(c.get('agentUid'),c.req.param('id'),p)

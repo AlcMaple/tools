@@ -110,48 +110,67 @@ export class AgentRunStore {
       .all(uid,id,after,RUN_LIMITS.eventPage) as {seq:number;type:RunEventKind;data_json:string;created_at:number}[])
       .map(e=>({runId:id,seq:e.seq,type:e.type,data:JSON.parse(e.data_json) as JsonValue,createdAt:e.created_at}))
   }
-  begin(uid: number, sessionId: string, p: StartRun, knowledge: KnowledgeSnapshot, authVersion: number) {
-    return this.db.transaction(() => {
-      this.assertIdentity(uid,authVersion)
-      const images=p.images??[],requestHash = knowledgeHash({body:p.body,clientVersion:p.clientVersion??null,...images.length?{images}:{}})
-      const existing = this.db.prepare('SELECT * FROM agent_runs WHERE user_id=? AND session_id=? AND request_id=?').get(uid,sessionId,p.requestId) as RunRow|undefined
-      // 幂等重放:客户端本来就有这些状态,不必再拼一次用户消息。
-      if (existing) { if(existing.request_hash!==requestHash) throw new AgentRunError('IDEMPOTENCY_CONFLICT'); return {row:existing,fresh:false,session:null,userMessage:null} }
-      if (this.db.prepare("SELECT 1 FROM agent_runs WHERE user_id=? AND state='running'").get(uid)) throw new AgentRunError('RUN_BUSY')
-      if (this.db.prepare('SELECT 1 FROM agent_sessions WHERE user_id=? AND context_job_id IS NOT NULL').get(uid)) throw new AgentRunError('SESSION_BUSY')
-      const session = this.history().snapshot(uid,sessionId,{limit:1}).session
-      if (session.revision!==p.expectedRevision) throw new AgentRunError('REVISION_CONFLICT')
+  checkStart(uid:number,sessionId:string,p:StartRun,authVersion:number) {
+    this.assertIdentity(uid,authVersion)
+    const images=p.images??[],requestHash=knowledgeHash({body:p.body,clientVersion:p.clientVersion??null,...images.length?{images}:{},
+      ...p.editFromSeq===undefined?{}:{editFromSeq:p.editFromSeq}})
+    const existing=this.db.prepare('SELECT * FROM agent_runs WHERE user_id=? AND session_id=? AND request_id=?').get(uid,sessionId,p.requestId) as RunRow|undefined
+    if(existing){
+      if(existing.request_hash!==requestHash)throw new AgentRunError('IDEMPOTENCY_CONFLICT')
+      return {existing,requestHash}
+    }
+    if(this.db.prepare("SELECT 1 FROM agent_runs WHERE user_id=? AND state='running'").get(uid))throw new AgentRunError('RUN_BUSY')
+    if(this.db.prepare('SELECT 1 FROM agent_sessions WHERE user_id=? AND context_job_id IS NOT NULL').get(uid))throw new AgentRunError('SESSION_BUSY')
+    this.history().checkUserAppend(uid,sessionId,p.expectedRevision,p.body,p.editFromSeq)
+    if(p.editFromSeq===undefined){
       const count = this.db.prepare('SELECT COUNT(*) AS n FROM agent_runs WHERE user_id=? AND session_id=?').get(uid,sessionId) as {n:number}
       if (count.n >= RUN_LIMITS.runsPerSession) throw new AgentRunError('RUN_STORAGE_LIMIT')
+    }
+    if(images.length)new AgentImageStore(this.db).checkUnbound(uid,sessionId,images,existsSync,p.editFromSeq)
+    return {existing:null,requestHash}
+  }
+  begin(uid: number, sessionId: string, p: StartRun, knowledge: KnowledgeSnapshot, authVersion: number) {
+    return this.db.transaction(() => {
+      const {existing,requestHash}=this.checkStart(uid,sessionId,p,authVersion)
+      if(existing)return {row:existing,fresh:false,session:null,userMessage:null,releasedImages:[]}
       const id=randomUUID(), now=this.now(), history=this.history(id)
-      if(images.length)new AgentImageStore(this.db).checkUnbound(uid,sessionId,images,existsSync)
-      const user=history.appendUser(uid,sessionId,{requestId:randomUUID(),expectedRevision:p.expectedRevision,body:p.body},images)
+      // 连接可能失败或被取消；编辑旧对话必须等本轮能开始后，才与新消息一起提交。
+      const edited=p.editFromSeq===undefined?null:history.truncateReleasing(uid,sessionId,{expectedRevision:p.expectedRevision,fromSeq:p.editFromSeq})
+      const user=history.appendUser(uid,sessionId,{requestId:randomUUID(),expectedRevision:edited?.session.revision??p.expectedRevision,body:p.body},p.images)
       this.db.prepare(`INSERT INTO agent_runs(id,user_id,session_id,request_id,request_hash,user_message_id,state,started_at,created_at,updated_at,lease_until,auth_version,knowledge_json,client_version,checkpoint_json)
         VALUES(?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?)`).run(id,uid,sessionId,p.requestId,requestHash,user.message.id,now,now,now,now+RUN_LIMITS.leaseMs,authVersion,JSON.stringify(knowledge),p.clientVersion??null,JSON.stringify(emptyCheckpoint()))
       this.db.prepare('UPDATE agent_sessions SET run_id=? WHERE user_id=? AND id=?').run(id,uid,sessionId)
       this.space(this.row(uid,id),Buffer.byteLength(JSON.stringify(knowledge))+512)
       this.event(uid,id,'started',{attempt:1})
       // 连同落库后的会话与用户消息一起返回:客户端不必为了确认"我这句存下了"再拉一轮快照。
-      return {row:this.row(uid,id),fresh:true,session:this.history().snapshot(uid,sessionId,{limit:1}).session,userMessage:user.message}
+      return {row:this.row(uid,id),fresh:true,session:this.history().snapshot(uid,sessionId,{limit:1}).session,userMessage:user.message,releasedImages:edited?.releasedImages??[]}
     }).immediate()
+  }
+  checkResume(uid:number,id:string,p:ResumeRun,authVersion:number) {
+    this.assertIdentity(uid,authVersion)
+    const row=this.row(uid,id),hash=knowledgeHash({clientVersion:p.clientVersion??null})
+    const prior=this.db.prepare('SELECT request_hash FROM agent_run_resumes WHERE user_id=? AND run_id=? AND request_id=?').get(uid,id,p.requestId) as {request_hash:string}|undefined
+    if(prior){
+      if(prior.request_hash!==hash)throw new AgentRunError('IDEMPOTENCY_CONFLICT')
+      return {row,hash,alreadyResumed:true,images:false}
+    }
+    if(!this.view(row).canResume)throw new AgentRunError('CONTINUE_REQUIRED')
+    if(row.auth_version!==authVersion)throw new AgentRunError('AUTH_REQUIRED',401)
+    const session=this.history().snapshot(uid,row.session_id,{limit:1}).session
+    if(session.revision!==p.expectedRevision)throw new AgentRunError('REVISION_CONFLICT')
+    if(session.archivedAt!==null)throw new AgentRunError('SESSION_ARCHIVED')
+    if(this.db.prepare("SELECT 1 FROM agent_runs WHERE user_id=? AND state='running'").get(uid)
+      ||this.db.prepare('SELECT 1 FROM agent_sessions WHERE user_id=? AND context_job_id IS NOT NULL').get(uid))throw new AgentRunError('RUN_BUSY')
+    // 与 appendUser 同一口径：只等还在写的回复，待确认的预览不挡继续（它在等用户，不是在跑）。
+    if(this.db.prepare("SELECT 1 FROM agent_messages WHERE user_id=? AND session_id=? AND status='streaming'").get(uid,row.session_id))throw new AgentRunError('SESSION_BUSY')
+    const newest=this.db.prepare("SELECT id,json_array_length(images_json) AS images FROM agent_messages WHERE user_id=? AND session_id=? AND role='user' ORDER BY seq DESC LIMIT 1").get(uid,row.session_id) as {id:string;images:number}|undefined
+    if(newest?.id!==row.user_message_id)throw new AgentRunError('STALE_TURN')
+    return {row,hash,alreadyResumed:false,images:newest.images>0}
   }
   resume(uid: number, id: string, p: ResumeRun, knowledge: KnowledgeSnapshot, authVersion: number) {
     return this.db.transaction(() => {
-      this.assertIdentity(uid,authVersion)
-      const row=this.row(uid,id), hash=knowledgeHash({clientVersion:p.clientVersion??null})
-      const prior=this.db.prepare('SELECT request_hash FROM agent_run_resumes WHERE user_id=? AND run_id=? AND request_id=?').get(uid,id,p.requestId) as {request_hash:string}|undefined
-      if(prior){if(prior.request_hash!==hash)throw new AgentRunError('IDEMPOTENCY_CONFLICT');return{row,fresh:false}}
-      if(!this.view(row).canResume)throw new AgentRunError('CONTINUE_REQUIRED')
-      if(row.auth_version!==authVersion)throw new AgentRunError('AUTH_REQUIRED',401)
-      const session=this.history().snapshot(uid,row.session_id,{limit:1}).session
-      if(session.revision!==p.expectedRevision)throw new AgentRunError('REVISION_CONFLICT')
-      if(session.archivedAt!==null)throw new AgentRunError('SESSION_ARCHIVED')
-      if(this.db.prepare("SELECT 1 FROM agent_runs WHERE user_id=? AND state='running'").get(uid)
-        ||this.db.prepare('SELECT 1 FROM agent_sessions WHERE user_id=? AND context_job_id IS NOT NULL').get(uid))throw new AgentRunError('RUN_BUSY')
-      // 与 appendUser 同一口径：只等还在写的回复，待确认的预览不挡继续（它在等用户，不是在跑）。
-      if(this.db.prepare("SELECT 1 FROM agent_messages WHERE user_id=? AND session_id=? AND status='streaming'").get(uid,row.session_id))throw new AgentRunError('SESSION_BUSY')
-      const newest=this.db.prepare("SELECT id FROM agent_messages WHERE user_id=? AND session_id=? AND role='user' ORDER BY seq DESC LIMIT 1").get(uid,row.session_id) as {id:string}
-      if(newest.id!==row.user_message_id)throw new AgentRunError('STALE_TURN')
+      const {row,hash,alreadyResumed}=this.checkResume(uid,id,p,authVersion)
+      if(alreadyResumed)return {row,fresh:false}
       const now=this.now(), checkpoint=this.checkpoint(row)
       checkpoint.inFlight=null;checkpoint.pendingCalls=[];checkpoint.usage=[]
       if(knowledge.version!==this.knowledge(row).version)checkpoint.results=[]

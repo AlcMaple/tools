@@ -7,6 +7,8 @@ import { createElement } from 'react'
 import type { RunView } from '../shared/agent-run'
 import type { HistoryMessage,HistorySession } from '../shared/agent-history'
 import { AgentController } from '../src/agent/controller'
+import { readByokKey, writeByokKey } from '../src/ai-key'
+import type { AiConfig } from '../src/auth'
 import { emptyPreferenceValues } from '../shared/agent-context'
 import { firstMessageTitle } from '../server/agent/history-store'
 import { MessageCard } from '../src/agent/AgentCards'
@@ -18,14 +20,14 @@ process.env.NODE_ENV='test';process.env.AGENT_UI_FIXTURE='1'
 const fixture=await createAgentUiFixture(),controllers:AgentController[]=[],fetches:{path:string;method:string;body:unknown}[]=[]
 const {Hono}=await import('hono'),{issueSession}=await import('../server/auth'),{readLoadedRelease}=await import('../server/agent/release')
 let checks=0,serial=0
-const settlePlan = checkPlan('U', 50, () => checks)
+const settlePlan = checkPlan('U', 53, () => checks)
 const waitFor=async(test:()=>boolean)=>{for(let i=0;i<200;i++){if(test())return;await delay(20)}throw new Error('UI_FIXTURE_WAIT_TIMEOUT')}
 const check=async(name:string,run:()=>unknown|Promise<unknown>)=>{await run();checks++;console.log(`PASS U${String(checks).padStart(2,'0')} ${name}`)}
 async function owner(uid?:number){const name=`ui_case_${++serial}`,id=uid??fixture.createUser(name);const app=new Hono().get('/',async c=>{await issueSession(c,{uid:id,username:name,tv:0});return c.text('ok')});const cookie=(await app.request(fixture.origin)).headers.get('set-cookie')!.split(';')[0]
   const fetchImpl:typeof fetch=async(input,init)=>{const path=String(input);fetches.push({path,method:init?.method??'GET',body:init?.body?JSON.parse(String(init.body)):null});const headers=new Headers(init?.headers);headers.set('Cookie',cookie);headers.set('Origin',fixture.origin);return fixture.originalFetch(path.startsWith('/')?fixture.origin+path:path,{...init,headers})}
   return{uid:id,fetchImpl}
 }
-async function controller(uid?:number,override?:(base:typeof fetch)=>typeof fetch){const actor=await owner(uid);const c=new AgentController(actor.uid,readLoadedRelease().release,{fetchImpl:override?override(actor.fetchImpl):actor.fetchImpl,pollMs:200});controllers.push(c);await c.initialize();assert.equal(c.getSnapshot().error,null);return c}
+async function controller(uid?:number,override?:(base:typeof fetch)=>typeof fetch,settings:{aiConfig?:()=>AiConfig|null;keys?:Pick<Storage,'getItem'>}={}){const actor=await owner(uid);const c=new AgentController(actor.uid,readLoadedRelease().release,{fetchImpl:override?override(actor.fetchImpl):actor.fetchImpl,pollMs:200,...settings});controllers.push(c);await c.initialize();assert.equal(c.getSnapshot().error,null);return c}
 async function seedSession(c:AgentController){const session=fixture.history.createSession(c.uid,{requestId:randomUUID(),currentBgmId:c.getSnapshot().anime?.bgmId??null});await c.select(session.id)}
 const blank=(id='message-1'):HistoryMessage=>({id,sessionId:'session-1',seq:1,role:'assistant',body:'',status:'streaming',sources:[],sourceIds:[],actions:[],actionIds:[],toolSummaries:[],usage:[],pinned:false,createdAt:1,updatedAt:1})
 const mode=async(value:string)=>{const response=await fixture.originalFetch(fixture.origin+'/__agent-test/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:value})});assert(response.ok)}
@@ -187,46 +189,98 @@ try{
     for(const bad of [{tone:'漏字段'},{...values,tone:'长'.repeat(501)},{...values,userId:actor.uid}]){const response=await actor.fetchImpl('/api/agent/preferences/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectedVersion:original.version,values:bad})});assert.equal(response.status,400);assert.deepEqual(fixture.store.preferenceSettings(actor.uid),original)}
     assert.throws(()=>fixture.store.proposePreference(actor.uid,{category:'tone',value:'第二个说话方式'}),/此分类已有偏好/)
   })
-  await check('有 key 时页面后台预连接，发送复用探测且不显示连接提示',async()=>{
-    const uid=fixture.createUser('auto-connect'),models=fixture.metrics.modelCalls;let connected=false,probes=0
+  const coldBootstrap=async(response:Response,path:string,connected:boolean)=>{
+    if(!['/api/agent/knowledge','/api/agent/bootstrap'].includes(path)||!response.ok)return response
+    const data=await response.json(),knowledge=path.endsWith('/bootstrap')?data.knowledge:data
+    knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=connected
+    return Response.json(data,{headers:response.headers})
+  }
+  const sendsRun=(path:string,init:RequestInit|undefined)=>init?.method==='POST'&&/^\/api\/agent\/sessions\/[^/]+\/runs$/.test(path)
+  const stoppedProvider=(uid:number)=>Response.json({code:'PROVIDER_HTTP_401',error:'API key 检查失败'},{status:503,headers:{'X-Agent-Owner':String(uid)}})
+  await check('有默认模型但连接冷时，登录初始化、开关助手和翻历史只读；首次发送才准备',async()=>{
+    const uid=fixture.createUser('send-to-connect'),models=fixture.metrics.modelCalls,start=fetches.length
+    let connected=false,prepares=0,legacy=0
     const c=await controller(uid,base=>async(input,init)=>{
-      if(String(input)==='/api/agent/provider/prepare'){if(!connected)probes++;connected=true;return Response.json({ready:true},{headers:{'X-Agent-Owner':String(uid)}})}
-      const response=await base(input,init)
-      // /bootstrap 把功能说明和会话列表合并返回了,两处的 knowledge 都要按同一套条件改写。
-      if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=connected;return Response.json(knowledge,{headers:response.headers})}
-      if(String(input)==='/api/agent/bootstrap'){const boot=await response.json();boot.knowledge.conditions.answerModelAutoConnect=true;boot.knowledge.conditions.answerModelReady=connected;return Response.json(boot,{headers:response.headers})}
-      return response
+      const path=String(input)
+      if(path==='/api/agent/provider/prepare'){legacy++;return stoppedProvider(uid)}
+      if(sendsRun(path,init)&&!connected){prepares++;connected=true}
+      return coldBootstrap(await base(input,init),path,connected)
     })
-    assert.equal(probes,1);assert.equal(fixture.metrics.modelCalls,models);assert(!c.getSnapshot().status.includes('连接'))
-    c.setDraft('首次自动检查后回答');await c.send();assert.equal(c.getSnapshot().error,null);assert.equal(probes,1);await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle')
-    c.setDraft('继续对话');await c.send();await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle');assert.equal(probes,1)
+    c.setOpen(true);await c.list();c.setOpen(false);await c.refresh(true)
+    assert.deepEqual([legacy,prepares,fixture.metrics.modelCalls-models],[0,0,0])
+    assert(fetches.slice(start).every(entry=>entry.method==='GET'))
+    c.setDraft('首次按需连接后回答');await c.send();assert.equal(c.getSnapshot().error,null);assert.equal(prepares,1)
+    await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle')
+    c.setDraft('继续对话');await c.send();await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle')
+    assert.deepEqual([legacy,prepares],[0,1])
   })
-  await check('自动探测失败保留草稿，不建会话、不发送回答、不自动重试',async()=>{
-    const uid=fixture.createUser('auto-fail'),models=fixture.metrics.modelCalls;let probes=0
+  await check('首次发送的探测失败保留原草稿，不写消息或启动对话，不自动重试',async()=>{
+    const uid=fixture.createUser('prepare-failed'),models=fixture.metrics.modelCalls
+    let calls=0
     const c=await controller(uid,base=>async(input,init)=>{
-      if(String(input)==='/api/agent/provider/prepare'){probes++;return Response.json({code:'PROVIDER_HTTP_401',error:'API key 检查失败'},{status:503,headers:{'X-Agent-Owner':String(uid)}})}
-      const response=await base(input,init)
-      if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=false;return Response.json(knowledge,{headers:response.headers})}
-      if(String(input)==='/api/agent/bootstrap'){const boot=await response.json();boot.knowledge.conditions.answerModelAutoConnect=true;boot.knowledge.conditions.answerModelReady=false;return Response.json(boot,{headers:response.headers})}
-      return response
+      const path=String(input)
+      if(sendsRun(path,init)){calls++;return stoppedProvider(uid)}
+      return coldBootstrap(await base(input,init),path,false)
     })
-    c.setDraft('失败后保留的问题');await c.send();assert.equal(c.getSnapshot().draft,'失败后保留的问题');assert.equal(c.getSnapshot().session,null);assert.equal(c.getSnapshot().error?.code,'PROVIDER_HTTP_401');assert.equal(probes,1);assert.equal(fixture.metrics.modelCalls,models)
+    assert.equal(calls,0)
+    c.setDraft('失败后保留的问题');await c.send()
+    assert.equal(c.getSnapshot().draft,'失败后保留的问题');assert.equal(c.getSnapshot().session?.startedAt,null)
+    assert.deepEqual(c.getSnapshot().sessions,[]);assert.deepEqual(c.getSnapshot().messages,[])
+    assert.equal(c.getSnapshot().error?.code,'PROVIDER_HTTP_401');assert.equal(calls,1);assert.equal(fixture.metrics.modelCalls,models)
   })
-  await check('后台准备未结束时发送立即显示问题与思考占位，复用同一连接请求',async()=>{
-    const uid=fixture.createUser('pending-placeholder');let release=()=>{},probes=0,ready=false
+  await check('发送后服务端准备未结束时立即显示问题与思考占位',async()=>{
+    const uid=fixture.createUser('pending-placeholder');let release=()=>{},calls=0,ready=false
     const gate=new Promise<void>(r=>{release=r})
     const c=await controller(uid,base=>async(input,init)=>{
-      if(String(input)==='/api/agent/provider/prepare'){probes++;await gate;ready=true;return Response.json({ready:true},{headers:{'X-Agent-Owner':String(uid)}})}
-      const response=await base(input,init)
-      if(String(input)==='/api/agent/knowledge'){const knowledge=await response.json();knowledge.conditions.answerModelAutoConnect=true;knowledge.conditions.answerModelReady=ready;return Response.json(knowledge,{headers:response.headers})}
-      if(String(input)==='/api/agent/bootstrap'){const boot=await response.json();boot.knowledge.conditions.answerModelAutoConnect=true;boot.knowledge.conditions.answerModelReady=ready;return Response.json(boot,{headers:response.headers})}
-      return response
+      const path=String(input)
+      if(sendsRun(path,init)){calls++;await gate;ready=true}
+      return coldBootstrap(await base(input,init),path,ready)
     })
-    assert.equal(probes,1);assert.equal(c.getSnapshot().error,null);assert.equal(c.getSnapshot().status,'')
-    c.setDraft('立即出现的消息');const pending=c.send();assert.equal(c.getSnapshot().pendingBody,'立即出现的消息');assert.equal(c.getSnapshot().draft,'');assert(c.getSnapshot().status.includes('纱雾'));assert(!c.getSnapshot().status.includes('连接'));assert.equal(probes,1)
+    assert.equal(calls,0);assert.equal(c.getSnapshot().error,null);assert.equal(c.getSnapshot().status,'')
+    c.setDraft('立即出现的消息');const pending=c.send()
+    assert.equal(c.getSnapshot().pendingBody,'立即出现的消息');assert.equal(c.getSnapshot().draft,'');assert(c.getSnapshot().status.includes('纱雾'));assert(!c.getSnapshot().status.includes('连接'))
+    await waitFor(()=>calls===1);assert.equal(c.getSnapshot().pendingBody,'立即出现的消息')
     release();await pending;await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle');assert.equal(c.getSnapshot().pendingBody,null)
   })
+  await check('编辑重问走同一个有效发送请求，服务端拒绝时保留旧聊天和编辑草稿',async()=>{
+    const uid=fixture.createUser('edit-before-connection');let fail=false,sequence:number|undefined
+    const c=await controller(uid,base=>async(input,init)=>{
+      if(fail&&sendsRun(String(input),init)){sequence=JSON.parse(String(init?.body)).editFromSeq;return stoppedProvider(uid)}
+      return base(input,init)
+    })
+    c.setDraft('原来的问题');await c.send();await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle')
+    const saved=c.getSnapshot().messages,session=c.getSnapshot().session!,start=fetches.length
+    c.startEdit(saved[0]);c.setDraft('尚未改写的问题');fail=true;await c.send()
+    assert.equal(sequence,saved[0].seq);assert.equal(c.getSnapshot().draft,'尚未改写的问题')
+    assert.deepEqual(c.getSnapshot().messages,saved);assert.equal(c.getSnapshot().editingSeq,saved[0].seq)
+    assert.equal(fixture.history.exportSession(uid,session.id).messages[0].body,'原来的问题')
+    assert(!fetches.slice(start).some(entry=>entry.path.endsWith('/truncate')))
+  })
   await check('浏览器侧控制器没有新增工具执行权限，所有验证仅访问本机',()=>{assert.equal(fixture.metrics.externalRequests,0);assert(fetches.every(item=>item.path.startsWith('/api/agent/')));assert(!fetches.some(item=>/applyTrack|playback|\/api\/xifan|\/api\/girigiri/.test(item.path)))})
+  await check('自配 Key 只读同账号同地址的本机记录，旧的无归属记录不自动继承',()=>{
+    const map=new Map<string,string>([['mt.byok.key','legacy-fixture-secret']]),storage={getItem:(key:string)=>map.get(key)??null,setItem:(k:string,v:string)=>{map.set(k,v)},removeItem:(k:string)=>{map.delete(k)}}
+    const endpoint='https://api.deepseek.com'
+    assert.equal(readByokKey(1,endpoint,storage),'')
+    assert(writeByokKey(1,endpoint+'/','fixture-browser-key',storage))
+    assert.equal(readByokKey(1,endpoint,storage),'fixture-browser-key')
+    assert.equal(readByokKey(2,endpoint,storage),'');assert.equal(readByokKey(1,'https://other.example',storage),'')
+    assert(writeByokKey(1,endpoint,'',storage));assert.equal(readByokKey(1,endpoint,storage),'')
+  })
+  await check('自配发送缺 Key 保留原草稿且不写入；有效发送才携带 Key，不进历史或导出',async()=>{
+    const uid=fixture.createUser('byok-on-send'),config:AiConfig={provider:'byok',endpoint:'https://api.deepseek.com',model:'deepseek-flash'}
+    fixture.db.prepare('UPDATE users SET ai_config=? WHERE id=?').run(JSON.stringify(config),uid)
+    const map=new Map<string,string>(),storage={getItem:(k:string)=>map.get(k)??null,setItem:(k:string,v:string)=>{map.set(k,v)},removeItem:(k:string)=>{map.delete(k)}}
+    const c=await controller(uid,undefined,{aiConfig:()=>config,keys:storage}),before=fetches.length,bindings=fixture.metrics.byokBindings
+    c.setDraft('这句用自配模型');await c.send();assert.equal(c.getSnapshot().error?.code,'BYOK_KEY_REQUIRED');assert.equal(c.getSnapshot().draft,'这句用自配模型');assert.equal(fetches.length,before)
+    writeByokKey(uid,config.endpoint,'fixture-browser-key',storage)
+    await c.send();assert.equal(c.getSnapshot().error,null);assert.equal(fixture.metrics.byokBindings-bindings,1)
+    await fixture.runs.wait(c.getSnapshot().run!.id);await waitFor(()=>c.getSnapshot().connection==='idle')
+    const calls=fetches.slice(before),keyRequests=calls.filter(r=>JSON.stringify(r.body).includes('fixture-browser-key'))
+    assert.equal(keyRequests.length,1);assert(keyRequests.every(r=>/\/runs$/.test(r.path)))
+    assert.equal(c.getSnapshot().messages[0]?.body,'这句用自配模型');assert(!JSON.stringify(await c.export()).includes('fixture-browser-key'))
+    const history=fixture.db.prepare('SELECT body FROM agent_messages WHERE user_id=?').all(uid)
+    assert(!JSON.stringify(history).includes('fixture-browser-key'))
+  })
   settlePlan()
   console.log(JSON.stringify({checks,failed:0,httpRequests:fetches.length,externalRequests:fixture.metrics.externalRequests,realAiCalls:0,modelQuality:'not_run',controller:'real-loopback-http-sse-and-error-fixtures',rendering:'React-text-escaping',database:'temporary-sqlite',browserLayout:'separate-cua-record'}))
 }finally{for(const c of controllers)c.dispose();await fixture.close()}

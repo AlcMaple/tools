@@ -1,39 +1,6 @@
-// 自配 API（BYOK）—— 浏览器直连用户填写的 OpenAI 兼容 endpoint。
-//
-// 边界（对应 docs/ideas/017 第 6.2 节）：
-//   - API key 只落**这台设备的**浏览器 localStorage：绝不写服务器数据库 / 日志，也不跨设备同步；
-//     换设备要重新填，清除靠「清掉 key」按钮。刷新 / 重开浏览器不丢（否则每天都要重填，没法用）
-//   - endpoint / model 随账号设置同步（走 auth.saveAiConfig）
-//   - endpoint 不支持浏览器跨域时，抛出可读错误让上层提示「切回服务器 AI」
-
+import type { AiConfig } from '../auth'
+// 点评直连用户填写的接口，不经过纱雾的模型适配名单。
 import { consumeSSE } from '../lib/sse'
-
-const KEY_STORAGE = 'mt.byok.key'
-
-export interface AiConfig {
-  provider: 'server' | 'byok'
-  endpoint: string
-  model: string
-}
-
-export const DEFAULT_AI_CONFIG: AiConfig = { provider: 'server', endpoint: '', model: '' }
-
-export function readByokKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORAGE) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-export function writeByokKey(key: string): void {
-  try {
-    if (key) localStorage.setItem(KEY_STORAGE, key)
-    else localStorage.removeItem(KEY_STORAGE)
-  } catch {
-    /* 隐私模式 / 存储被禁用：这台设备就存不住 key，用户仍可切回服务器 AI */
-  }
-}
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'

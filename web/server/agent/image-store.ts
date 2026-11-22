@@ -41,8 +41,8 @@ async function usedBytes(uid: number): Promise<number> {
 export class AgentImageStore {
   constructor(readonly db: Database.Database) {}
 
-  private referenced(uid: number, sessionId: string): Set<string> {
-    const rows = this.db.prepare("SELECT images_json FROM agent_messages WHERE user_id = ? AND session_id = ? AND images_json != '[]'").all(uid, sessionId) as { images_json: string }[]
+  private referenced(uid: number, sessionId: string, retainBefore: number|null=null): Set<string> {
+    const rows = this.db.prepare("SELECT images_json FROM agent_messages WHERE user_id = ? AND session_id = ? AND images_json != '[]' AND (? IS NULL OR seq < ?)").all(uid, sessionId, retainBefore, retainBefore) as { images_json: string }[]
     return new Set(rows.flatMap(r => JSON.parse(r.images_json) as string[]))
   }
 
@@ -65,10 +65,10 @@ export class AgentImageStore {
     return { id, ...size }
   }
 
-  // 只在 begin 事务里调用：编号必须是这个会话目录下已落盘、还没被别的消息引用的文件。
-  checkUnbound(uid: number, sessionId: string, ids: string[], exists: (path: string) => boolean) {
+  // 编辑重发只保留截断点之前的旧图引用；被替换的消息可以带回自己的图。
+  checkUnbound(uid: number, sessionId: string, ids: string[], exists: (path: string) => boolean, retainBefore?:number) {
     if (new Set(ids).size !== ids.length || ids.length > AGENT_IMAGE_LIMITS.perMessage) throw new AgentRunError('INVALID_ARGUMENT', 400)
-    const used = this.referenced(uid, sessionId)
+    const used = this.referenced(uid, sessionId, retainBefore)
     for (const id of ids) if (!ID.test(id) || used.has(id) || !exists(fileOf(uid, sessionId, id))) throw new AgentRunError('IMAGE_MISSING', 409)
   }
 

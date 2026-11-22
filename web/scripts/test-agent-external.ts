@@ -13,7 +13,7 @@ process.chdir(dir)
 for(const key of Object.keys(process.env))if(/^(AI_|AGENT_|SENTRY_|VITE_SENTRY_|SMTP_|GOOGLE_|MAPLETOOLS_ENV_FILE$)/.test(key))delete process.env[key]
 process.env.DATA_DIR=dir;process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.NODE_ENV='production';process.env.EMAIL_MODE='disabled'
 let checks=0
-const settlePlan = checkPlan('E', 38, () => checks)
+const settlePlan = checkPlan('E', 41, () => checks)
 const check=async(name:string,fn:()=>unknown)=>{await fn();console.log(`PASS E${++checks} ${name}`)}
 try{
  const {ExternalQuota,CONSERVATIVE_LIMITS}=await import('../server/agent/external-quota')
@@ -23,7 +23,7 @@ try{
  const {MODEL_OUTPUT_SCHEMA}=await import('../shared/agent-contracts')
  const {AgentRunError}=await import('../shared/agent-run')
  const {agentEnabled,allowedProviderAddress,prepareExternal,endpointUrl,publicAddress,matchEndpoint,externalStatus,connectExternal,externalBinding}=await import('../server/agent/external-runtime')
- const {parseConnection}=await import('../server/agent/external-api')
+ const {parseConnection,createExternalApi}=await import('../server/agent/external-api')
  const {guestTurn,parseGuestInput}=await import('../server/agent/guest-service')
  const {createGuestApi,guestIp}=await import('../server/agent/guest-api')
  const {currentGuestKnowledge}=await import('../server/agent/run-runtime')
@@ -56,8 +56,9 @@ try{
  await check('BYOK 配置失败保持 BYOK 来源且不返回凭据',async()=>{
   const uid=Number(db.prepare('INSERT INTO users(username,pass_hash,created_at) VALUES(?,?,?)').run('byok-boundary','unused',new Date().toISOString()).lastInsertRowid)
   process.env.AGENT_AI_ENABLED='1'
-  await assert.rejects(connectExternal(uid,`user:${uid}`,{source:'byok',endpoint:'https://127.0.0.1',model:'bad',key:'PRIVATE_TEST_CREDENTIAL'},new AbortController().signal),/ENDPOINT_NOT_ALLOWED/)
-  const status=externalStatus(uid);assert.equal(status.source,'byok');assert.equal(status.ready,false);assert(!JSON.stringify(status).includes('PRIVATE_TEST_CREDENTIAL'));assert(!String((db.prepare('SELECT ai_config FROM users WHERE id=?').get(uid) as {ai_config:string}).ai_config).includes('PRIVATE_TEST_CREDENTIAL'))
+  db.prepare('UPDATE users SET ai_config=? WHERE id=?').run(JSON.stringify({provider:'byok',endpoint:'https://unsupported.example',model:'bad'}),uid)
+  await assert.rejects(connectExternal(uid,`user:${uid}`,{source:'byok',endpoint:'https://unsupported.example',model:'bad',key:'PRIVATE_TEST_CREDENTIAL'},new AbortController().signal),/ENDPOINT_NOT_ALLOWED/)
+  const status=externalStatus(uid);assert.equal(status.source,'byok');assert.equal(status.ready,false);assert.equal(status.canPrepare,true);assert(!JSON.stringify(status).includes('PRIVATE_TEST_CREDENTIAL'));assert(!String((db.prepare('SELECT ai_config FROM users WHERE id=?').get(uid) as {ai_config:string}).ai_config).includes('PRIVATE_TEST_CREDENTIAL'))
   await assert.rejects(prepareExternal(uid,`user:${uid}`,new AbortController().signal),/PROVIDER_CONNECTION_REQUIRED/)
   assert.equal(externalStatus(uid).source,'byok')
   process.env.AGENT_AI_ENABLED='0'
@@ -99,12 +100,46 @@ try{
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),30)
   try{await assert.rejects(guestTurn(input,{provider,tools:[],knowledge:()=>knowledge},controller.signal,async()=>{}))}finally{clearTimeout(timer)}
  })
- let modelCalls=0
- const guestApi=createGuestApi({database:db,connect:async()=>({enabled:true,configured:true,ready:true,source:'server',model:profile.model}),binding:()=>({provider:{...fixtureProvider(answer),async *stream(){modelCalls++;yield {type:'output',value:answer}}},context:createProtocolProvider(profile,async()=>raw(answer)),execute:action=>action()}),status:()=>({enabled:true,configured:true,ready:true,source:'server',model:profile.model}),knowledge:()=>knowledge,tools:()=>[]})
+ let modelCalls=0,bindings=0
+ const guestApi=createGuestApi({database:db,binding:()=>{bindings++;return{provider:{...fixtureProvider(answer),async *stream(){modelCalls++;yield {type:'output',value:answer}}},context:createProtocolProvider(profile,async()=>raw(answer)),execute:action=>action()}},status:()=>({...externalStatus(null),enabled:true,configured:true,canPrepare:true,ready:bindings>0,source:'server',model:profile.model}),knowledge:()=>knowledge,tools:()=>[]})
  const app=new Hono();app.use('*',sameOriginGuard());app.route('/api/agent',guestApi)
  const post=(data:unknown,headers:Record<string,string>={})=>app.request('https://local.test/api/agent/guest/turns',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(data)})
+ await check('访客查状态和旧版独立连接都只读，空消息在绑定模型前被拒绝',async()=>{
+  const status=await app.request('https://local.test/api/agent/guest/status')
+  assert.equal(status.status,200);assert.equal((await status.json()).provider.ready,false)
+  const legacy=await app.request('https://local.test/api/agent/guest/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  assert.equal(legacy.status,409);assert.equal((await legacy.json()).code,'AI_CLIENT_REFRESH_REQUIRED')
+  assert.equal((await post({...input,body:'  '})).status,400)
+  assert.deepEqual([bindings,modelCalls],[0,0])
+ })
+ await check('真实登录准备旧接口和 GET 返回同一份只读状态，不开连接或写计费',async()=>{
+  const uid=Number(db.prepare('INSERT INTO users(username,pass_hash,created_at) VALUES(?,?,?)').run('legacy-provider-reader','unused',new Date().toISOString()).lastInsertRowid)
+  const login=new Hono().get('/',async c=>{await issueSession(c,{uid,username:'legacy-provider-reader',tv:0});return c.text('ok')})
+  const cookie=(await login.request('https://local.test/')).headers.get('set-cookie')!.split(';')[0]
+  const routes=new Hono().route('/api/agent/provider',createExternalApi())
+  const before=db.prepare('SELECT count(*) AS n FROM agent_ai_usage').get()
+  const read=await routes.request('https://local.test/api/agent/provider',{headers:{Cookie:cookie}})
+  const legacy=await routes.request('https://local.test/api/agent/provider/prepare',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{}'})
+  assert.equal(read.status,200);assert.equal(legacy.status,200)
+  assert.deepEqual(await legacy.json(),await read.json());assert.deepEqual(db.prepare('SELECT count(*) AS n FROM agent_ai_usage').get(),before)
+ })
+ await check('旧面板连接只回状态，新接单接口拒绝错账号与未保存配置，零账本写入',async()=>{
+  const uid=Number(db.prepare('INSERT INTO users(username,pass_hash,created_at) VALUES(?,?,?)').run('settings-only-sources','unused',new Date().toISOString()).lastInsertRowid)
+  const login=new Hono().get('/',async c=>{await issueSession(c,{uid,username:'settings-only-sources',tv:0});return c.text('ok')})
+  const cookie=(await login.request('https://local.test/')).headers.get('set-cookie')!.split(';')[0]
+  const routes=new Hono().route('/api/agent/provider',createExternalApi())
+  const dbConfig=()=>db.prepare('SELECT ai_config FROM users WHERE id=?').get(uid)
+  const before=db.prepare('SELECT count(*) AS n FROM agent_ai_usage').get(),config=dbConfig()
+  const connect=(body:unknown)=>routes.request('https://local.test/api/agent/provider/connect',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify(body)})
+  const custom={source:'byok',endpoint:'https://api.deepseek.com',model:profile.model,key:'dummy-only'}
+  for(const request of [{source:'server'},custom]){const res=await connect(request);assert.equal(res.status,409);assert.equal((await res.json()).code,'AI_CLIENT_REFRESH_REQUIRED')}
+  const crossOwner=await connect({...custom,uid:uid+1});assert.equal(crossOwner.status,409);assert.equal((await crossOwner.json()).code,'AUTH_CHANGED')
+  process.env.AGENT_AI_ENABLED='1'
+  try{const stale=await connect({...custom,uid});assert.equal(stale.status,409);assert.equal((await stale.json()).code,'AI_SETTINGS_CHANGED')}finally{process.env.AGENT_AI_ENABLED='0'}
+  assert.deepEqual(config,dbConfig());assert.deepEqual(db.prepare('SELECT count(*) AS n FROM agent_ai_usage').get(),before)
+ })
  await check('访客 HTTP SSE、来源、no-store 与反代不缓冲',async()=>{const response=await post(input);assert.equal(response.status,200);assert.equal(response.headers.get('X-Agent-Owner'),'guest');assert.equal(response.headers.get('X-Accel-Buffering'),'no');assert.equal(response.headers.get('Cache-Control'),'no-store');const text=await response.text();assert(text.includes('event: answer'));assert(text.includes('event: completed'));assert.equal(modelCalls,1)})
- await check('相同请求 ID 不重复付费；伪造转发 IP 不能绕过',async()=>{const response=await post(input,{'X-Real-IP':'8.8.8.8','X-Forwarded-For':'1.1.1.1'});assert.equal(response.status,409);assert.equal(modelCalls,1)})
+ await check('相同请求 ID 在绑定模型前拒绝；仍只发送原来的模型调用',async()=>{const response=await post(input,{'X-Real-IP':'8.8.8.8','X-Forwarded-For':'1.1.1.1'});assert.equal(response.status,409);assert.deepEqual([bindings,modelCalls],[1,1])})
  await check('访客附图只放宽提问接口的 body 上限，模型看不了图时在扣额度前拒绝，不落盘',async()=>{
   const big={...input,requestId:randomUUID(),images:[jpeg(1024*1024),jpeg(1024*1024)]}
   const response=await post(big);assert.equal(response.status,400);assert.equal((await response.json()).code,'IMAGE_UNSUPPORTED');assert.equal(modelCalls,1)

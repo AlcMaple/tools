@@ -6,8 +6,8 @@ import { isIP } from 'node:net'
 import { db } from '../db'
 import { getSession,rateLimited } from '../auth'
 import { AgentRunError } from '../../shared/agent-run'
-import { connectExternal,prepareExternal,externalBinding,externalStatus,guestOwner } from './external-runtime'
-import { externalBody,externalError } from './external-api'
+import { externalBindingForAction,externalStatus,guestOwner, type externalBinding } from './external-runtime'
+import { externalBody,externalError,legacyConnectionStatus } from './external-api'
 import { currentGuestKnowledge,guestDataTools } from './run-runtime'
 import { waitBounded } from './run-service'
 import { GUEST_BODY_BYTES,GUEST_LIMITS,guestTurn,parseGuestInput } from './guest-service'
@@ -28,7 +28,8 @@ export function guestIp(c:Context):string{
   }
   return remote
 }
-export function createGuestApi(deps:{database:typeof db;connect:typeof connectExternal;binding:typeof externalBinding;status:typeof externalStatus;knowledge:typeof currentGuestKnowledge;tools:typeof guestDataTools}={database:db,connect:(uid,owner,_input,signal)=>prepareExternal(uid,owner,signal),binding:externalBinding,status:externalStatus,knowledge:currentGuestKnowledge,tools:guestDataTools}){
+type GuestBinding=ReturnType<typeof externalBinding>
+export function createGuestApi(deps:{database:typeof db;binding:(uid:null,owner:string,signal:AbortSignal,hasImages:boolean)=>GuestBinding|Promise<GuestBinding>;status:typeof externalStatus;knowledge:typeof currentGuestKnowledge;tools:typeof guestDataTools}={database:db,binding:externalBindingForAction,status:externalStatus,knowledge:currentGuestKnowledge,tools:guestDataTools}){
 const db=deps.database
 const guest=new Hono<{Variables:{owner:string}}>()
 db.exec('CREATE TABLE IF NOT EXISTS agent_guest_requests(owner TEXT NOT NULL,id TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(owner,id))')
@@ -49,15 +50,25 @@ guest.onError((error,c)=>c.json(guestError(error),error instanceof AgentRunError
 guest.get('/guest/status',c=>c.json({provider:deps.status(null),knowledge:deps.knowledge()}))
 guest.post('/guest/connect',async c=>{
   const body=await externalBody(c);if(JSON.stringify(body)!=='{}')throw new AgentRunError('INVALID_ARGUMENT',400)
-  return c.json(await deps.connect(null,c.get('owner'),{source:'server'},AbortSignal.any([c.req.raw.signal,AbortSignal.timeout(30000)])))
+  return legacyConnectionStatus(c,deps.status(null))
 })
 guest.post('/guest/turns',async c=>{
-  const input=parseGuestInput(await externalBody(c)),owner=c.get('owner'),binding=deps.binding(null,owner)
+  const input=parseGuestInput(await externalBody(c)),owner=c.get('owner')
+  if(deps.knowledge().status!=='ready')throw new AgentRunError('KNOWLEDGE_PENDING_SYNC')
+  const cutoff=Date.now()-86400000
+  const checkRequest=()=>{
+    if(db.prepare('SELECT 1 FROM agent_guest_requests WHERE owner=? AND id=? AND created_at>=?').get(owner,input.requestId,cutoff))throw new AgentRunError('REQUEST_ALREADY_USED',409)
+    if((db.prepare('SELECT count(*) n FROM agent_guest_requests WHERE owner=? AND created_at>=?').get(owner,cutoff) as {n:number}).n>=100)throw new AgentRunError('DAILY_QUOTA',429)
+  }
+  checkRequest()
+  const waiting=AbortSignal.any([c.req.raw.signal,AbortSignal.timeout(30_000)])
+  waiting.throwIfAborted()
+  const binding=await waitBounded(Promise.resolve(deps.binding(null,owner,waiting,Boolean(input.images?.length))),waiting)
+  waiting.throwIfAborted()
   if(input.images?.length&&!binding.provider.vision)throw new AgentRunError('IMAGE_UNSUPPORTED',400)
   db.transaction(()=>{
-    db.prepare('DELETE FROM agent_guest_requests WHERE created_at<?').run(Date.now()-86400000)
-    if(db.prepare('SELECT 1 FROM agent_guest_requests WHERE owner=? AND id=?').get(owner,input.requestId))throw new AgentRunError('REQUEST_ALREADY_USED',409)
-    if((db.prepare('SELECT count(*) n FROM agent_guest_requests WHERE owner=?').get(owner) as {n:number}).n>=100)throw new AgentRunError('DAILY_QUOTA',429)
+    checkRequest()
+    db.prepare('DELETE FROM agent_guest_requests WHERE created_at<?').run(cutoff)
     db.prepare('INSERT INTO agent_guest_requests VALUES(?,?,?)').run(owner,input.requestId,Date.now())
   })()
   c.header('X-Accel-Buffering','no')

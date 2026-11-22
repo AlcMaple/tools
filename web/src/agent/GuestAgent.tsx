@@ -2,7 +2,6 @@ import { useEffect,useRef,useState } from 'react'
 import { LongText } from '../lib/LongText'
 import type { HistorySource } from '../../shared/agent-history'
 import type { AgentUsage } from '../../shared/agent-contracts'
-import { AgentConnection } from './connection'
 import { AgentSources } from './AgentSources'
 import { AgentMarkdown } from './AgentMarkdown'
 import { AgentActivity,agentActivity } from './AgentActivity'
@@ -44,18 +43,12 @@ function useGuestAttachments(){
 export function GuestAgent({open,close,login,header}:{open:boolean;close:()=>void;login:()=>void;header:JSX.Element}){
   const [messages,setMessages]=useState<Message[]>([]),[draft,setDraft]=useState(''),[available,setAvailable]=useState(false),[enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false),[status,setStatus]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState('')
   const attach=useGuestAttachments(),[dragging,setDragging]=useState(false),[lightbox,setLightbox]=useState<LightboxState>(null)
-  const connection=useRef<AgentConnection|null>(null),bottom=useRef(true),warmup=useRef<AbortController|null>(null)
+  const bottom=useRef(true)
   const active=useRef<AbortController|null>(null),alive=useRef(true),input=useRef<HTMLTextAreaElement>(null),scroll=useRef<HTMLDivElement>(null),composing=useRef(false)
-  useEffect(()=>{alive.current=true;const controller=new AbortController();warmup.current=controller
-    connection.current=new AgentConnection(async()=>{
-      const attempt=new AbortController();warmup.current=attempt
-      const response=await fetch('/api/agent/guest/connect',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}',signal:attempt.signal})
-      const data=await response.json();if(attempt.signal.aborted||!alive.current)throw new DOMException('Stopped','AbortError')
-      if(!response.ok||!data.ready)throw new Error(data.error??'AI 暂时没有准备好，请稍后重试。')
-    })
+  useEffect(()=>{alive.current=true;const controller=new AbortController()
     void fetch('/api/agent/guest/status',{signal:controller.signal,credentials:'same-origin'}).then(async response=>{const data=await response.json();if(!controller.signal.aborted&&alive.current){if(!response.ok)throw new Error(data.error??'连接检查失败');setAvailable((data.provider.ready||data.provider.canPrepare)&&data.knowledge.status==='ready');setEnabled(data.provider.enabled)}}).catch(e=>{if(!controller.signal.aborted&&alive.current)setError(e instanceof Error?e.message:'连接检查失败')})
-    const hide=()=>{active.current?.abort();warmup.current?.abort();controller.abort()};window.addEventListener('pagehide',hide)
-    return()=>{alive.current=false;active.current?.abort();warmup.current?.abort();controller.abort();window.removeEventListener('pagehide',hide)}
+    const hide=()=>{active.current?.abort();controller.abort()};window.addEventListener('pagehide',hide)
+    return()=>{alive.current=false;active.current?.abort();controller.abort();window.removeEventListener('pagehide',hide)}
   },[])
   useEffect(()=>{if(open)input.current?.focus({preventScroll:true})},[open])
   useEffect(()=>{if(bottom.current)scroll.current?.scrollTo({top:scroll.current.scrollHeight})},[messages,status,open])
@@ -64,12 +57,12 @@ export function GuestAgent({open,close,login,header}:{open:boolean;close:()=>voi
     if(busy||!available||(!draft.trim()&&!attached.length)||attached.some(a=>a.state!=='ready'))return
     const history=messages.map(({role,body,images})=>images?.length?{role,body,images:images.length}:{role,body})
     if(history.length>12||history.reduce((n,m)=>n+m.body.length,0)>12000){setError('本次临时对话已达到长度上限，请刷新后重新开始。');return}
-    const controller=new AbortController();active.current=controller;const body=draft.trim(),retryConnection=Boolean(error);bottom.current=true;setMessages(previous=>[...previous,{role:'user',body,...attached.length?{images:attached.map(a=>a.url)}:{}},{role:'assistant',body:'',status:'streaming'}]);setDraft('');attach.set([]);setBusy(true);setError('');setNotice('');setStatus(agentActivity('thinking'))
-    const timer=setTimeout(()=>controller.abort(),125000)
+    const controller=new AbortController();active.current=controller;const body=draft.trim();bottom.current=true;setMessages(previous=>[...previous,{role:'user',body,...attached.length?{images:attached.map(a=>a.url)}:{}},{role:'assistant',body:'',status:'streaming'}]);setDraft('');attach.set([]);setBusy(true);setError('');setNotice('');setStatus(agentActivity('thinking'))
+    // 首次准备最多 30 秒，之后仍留足原有两分钟的回复窗口。
+    const timer=setTimeout(()=>controller.abort(),155000)
     try{
-      await (retryConnection?connection.current?.retry():connection.current?.ensure())
-      if(controller.signal.aborted||!alive.current)return
       const images=await Promise.all(attached.map(a=>base64(a.blob!)))
+      if(controller.signal.aborted||!alive.current)return
       const response=await fetch('/api/agent/guest/turns',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),body,history,...images.length?{images}:{}}),signal:controller.signal})
       if(controller.signal.aborted||!alive.current)return
       if(!response.ok){const data=await response.json();if(data.code==='AGENT_AI_DISABLED')setAvailable(false);throw new Error(data.error??'请求没有完成')}
@@ -100,7 +93,7 @@ export function GuestAgent({open,close,login,header}:{open:boolean;close:()=>voi
       {messages.map((message,index)=><article key={index} className={`agent-message ${message.role==='user'?'agent-message-own':''}`}><div className="agent-message-by">{message.role==='user'?'我':'纱雾'}</div>{message.role==='user'?<>{message.images&&<AgentShots urls={message.images} onOpen={(urls,index)=>setLightbox({urls,index})}/>}{message.body&&<LongText className="agent-message-text" text={message.body}/>}</>:<>{message.body&&<AgentMarkdown text={message.body} streaming={message.status==='streaming'}/>} {message.status==='streaming'&&<AgentActivity label={status||agentActivity('thinking')}/>} {message.status==='failed'&&!message.body&&<p className="agent-message-empty">这次回复停住了，问题还在输入框里。</p>}</>}<AgentSources sources={message.sources??[]} onNavigate={close}/></article>)}
     </div></div>
     {!available&&<div className="agent-update"><span>{enabled?'模型尚未配置或功能说明待同步':'服务器 AI 暂不可用'}</span></div>}
-    <form className="agent-composer" onSubmit={event=>{event.preventDefault();void send()}}><AgentAttachStrip attachments={attach.attachments} tip={attach.tip} onRemove={attach.remove}/><textarea ref={input} onPaste={event=>{const files=imageFiles(event.clipboardData.items);if(!files.length||busy)return;event.preventDefault();attach.add(files)}} className="agent-scroll" rows={2} value={draft} maxLength={2000} aria-label="给纱雾的消息" placeholder="输入消息…" onChange={e=>setDraft(e.target.value)} onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onKeyDown={e=>{if(shouldSend(e.key,e.shiftKey,e.nativeEvent.isComposing||composing.current,e.keyCode)){e.preventDefault();void send()}}}/><div className="agent-composer-foot agent-guest-composer-foot"><AgentImageButton count={attach.attachments.length} disabled={busy} onFiles={attach.add}/>{busy?<button type="button" className="agent-text-button" onClick={()=>{active.current?.abort();warmup.current?.abort()}}>停止</button>:<button type="submit" className="agent-send" aria-label="发送消息" disabled={!available||(!draft.trim()&&!attach.attachments.length)||attach.attachments.some(a=>a.state!=='ready')}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 18V6M6 12l6-6 6 6"/></svg></button>}</div></form>
+    <form className="agent-composer" onSubmit={event=>{event.preventDefault();void send()}}><AgentAttachStrip attachments={attach.attachments} tip={attach.tip} onRemove={attach.remove}/><textarea ref={input} onPaste={event=>{const files=imageFiles(event.clipboardData.items);if(!files.length||busy)return;event.preventDefault();attach.add(files)}} className="agent-scroll" rows={2} value={draft} maxLength={2000} aria-label="给纱雾的消息" placeholder="输入消息…" onChange={e=>setDraft(e.target.value)} onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onKeyDown={e=>{if(shouldSend(e.key,e.shiftKey,e.nativeEvent.isComposing||composing.current,e.keyCode)){e.preventDefault();void send()}}}/><div className="agent-composer-foot agent-guest-composer-foot"><AgentImageButton count={attach.attachments.length} disabled={busy} onFiles={attach.add}/>{busy?<button type="button" className="agent-text-button" onClick={()=>active.current?.abort()}>停止</button>:<button type="submit" className="agent-send" aria-label="发送消息" disabled={!available||(!draft.trim()&&!attach.attachments.length)||attach.attachments.some(a=>a.state!=='ready')}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 18V6M6 12l6-6 6 6"/></svg></button>}</div></form>
     {dragging&&<div className="agent-drop">松手，把图片放进来</div>}
     <AgentLightbox box={lightbox} set={setLightbox}/>
   </section>:null

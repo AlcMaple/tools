@@ -38,7 +38,7 @@ export interface AuthUser {
   hasPassword: boolean
   // 默认 false；只有用户明确打开后才进入公开追番大厅。
   tracksPublic: boolean
-  /** AI 来源偏好（推荐与点评助手）。API key 不在这里 —— 只存本机浏览器。 */
+  /** 网站 AI 来源偏好，API Key 不随账号同步。 */
   aiConfig: AiConfig
 }
 
@@ -248,8 +248,8 @@ export const auth = {
     await auth.init()
   },
   // AI 来源偏好（provider / endpoint / model）。API key 由前端单独存本机浏览器，不走这里。
-  async saveAiConfig(aiConfig: AiConfig): Promise<void> {
-    await request('/settings', { aiConfig })
+  async saveAiConfig(uid: number, aiConfig: AiConfig): Promise<void> {
+    await request('/settings', { aiConfig, aiConfigOwner: uid })
     await auth.init()
   },
   /** 无密码账号（Google / 验证码注册）首次设置密码。 */

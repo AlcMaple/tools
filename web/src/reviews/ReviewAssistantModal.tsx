@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Track } from '../api'
-import { useAuth } from '../auth'
+import { useAuth, type AiConfig } from '../auth'
+import { readByokKey } from '../ai-key'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
 import {
   byokDraftStream,
   byokQuestions,
   materialToText,
-  readByokKey,
-  type AiConfig,
   type ByokSettings,
 } from './byok'
 import {
@@ -160,7 +159,7 @@ export function ReviewAssistantModal({
   }
 
   function byokKeyOrThrow(): string {
-    const key = readByokKey()
+    const key = user ? readByokKey(user.id, aiConfig.endpoint) : ''
     if (!key) throw new Error('你自己的 API key 还没填……去设置里填一下，或者用我这边的')
     return key
   }

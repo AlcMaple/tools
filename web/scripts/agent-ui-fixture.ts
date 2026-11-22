@@ -17,12 +17,12 @@ export async function createAgentUiFixture(){
   // 追番页会读取周历补全元数据；预置隔离缓存，测试不触发原页面的在线补全。
   writeFileSync(join(directory,'data/calendar-cache.json'),JSON.stringify({at:Date.now(),data:Array.from({length:7},(_,index)=>({id:index+1,label:['星期一','星期二','星期三','星期四','星期五','星期六','星期日'][index],items:index<3?[{id:101+index,name:['葬送的芙莉莲','摇曳露营△','夏目友人帐'][index],name_cn:['葬送的芙莉莲','摇曳露营△','夏目友人帐'][index],url:'',cover:'',airDate:'2026-09-01',episodes:[28,12,13][index],score:0}]:[]}))}))
   for(const key of Object.keys(process.env))if(/^(SENTRY_|VITE_SENTRY_|SMTP_|AI_|GOOGLE_|MAPLETOOLS_ENV_FILE$|VERCEL$)/.test(key)||/^(?:https?_proxy|all_proxy|no_proxy)$/i.test(key))delete process.env[key]
-  process.env.NODE_ENV='production';process.env.DATA_DIR=join(directory,'data');process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.EMAIL_MODE='disabled';process.env.AGENT_CONTEXT_AI_ENABLED='0'
-  const metrics={externalRequests:0,apiRequests:0,modelCalls:0,toolCalls:0,connections:0}
+  process.env.NODE_ENV='production';process.env.DATA_DIR=join(directory,'data');process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.EMAIL_MODE='disabled';process.env.AGENT_CONTEXT_AI_ENABLED='0';process.env.AGENT_AI_ENABLED='0'
+  const metrics={externalRequests:0,apiRequests:0,modelCalls:0,toolCalls:0,connections:0,serverBindings:0,byokBindings:0}
   globalThis.fetch=async()=>{metrics.externalRequests++;throw new Error('EXTERNAL_REQUEST_BLOCKED')}
   const {MockAgent,getGlobalDispatcher,setGlobalDispatcher}=await import('undici'),oldDispatcher=getGlobalDispatcher(),network=new MockAgent();network.disableNetConnect();setGlobalDispatcher(network)
   const {Hono}=await import('hono'),{serve}=await import('@hono/node-server'),{serveStatic}=await import('@hono/node-server/serve-static')
-  const {db}=await import('../server/db'),{getSession,issueSession}=await import('../server/auth'),{sameOriginGuard,securityHeaders}=await import('../server/security')
+  const {db}=await import('../server/db'),{getSession,issueSession,normalizeAiConfig}=await import('../server/auth'),{sameOriginGuard,securityHeaders}=await import('../server/security')
   const {AgentContextStore}=await import('../server/agent/context-store'),{AgentContextService}=await import('../server/agent/context-service'),{estimateContextTokens}=await import('../server/agent/context-provider')
   const {AgentRunStore}=await import('../server/agent/run-store'),{AgentRunService}=await import('../server/agent/run-service'),{createAgentRunApi}=await import('../server/agent/run-api'),{createAgentContextApi}=await import('../server/agent/context-api')
   const {AgentActionStore}=await import('../server/agent/actions-store')
@@ -63,24 +63,41 @@ export async function createAgentUiFixture(){
   const {READ_DATA_TOOLS}=await import('../server/agent/data-tools')
   const release=readLoadedRelease().release,registry=new AgentKnowledgeRegistry(release,AGENT_FEATURE_REGISTRATIONS,AGENT_FEATURES,READ_DATA_TOOLS)
   const knowledge=(uid:number)=>({...registry.snapshot(uid,{enabled:true,permissionVersion:mode,features:AGENT_FEATURES.map(f=>f.id),tools:['listMyTracks'],conditions:{answerModelReady:mode!=='unavailable',contextModelReady:true,chatUiReady:true}}),release:mode==='stale'?'older-client-test-server':release})
-  const runs=new AgentRunService(runStore,uid=>({context,knowledge:()=>knowledge(uid),assertIdentity(){},provider:{source:'byok',model:profile.model,fingerprint:profile.fingerprint,async *stream(request,signal):AsyncGenerator<RunProviderEvent>{
+  const {AgentRunError}=await import('../shared/agent-run'),{matchEndpoint}=await import('../server/agent/external-runtime')
+  const runs=new AgentRunService(runStore,(uid,_session,_signal,_hasImages,ai)=>{
+    if(ai){
+      const {ai_config}=db.prepare('SELECT ai_config FROM users WHERE id=?').get(uid) as {ai_config:string}
+      const config=normalizeAiConfig(ai_config)
+      if(ai.source!==config.provider)throw new AgentRunError('AI_SETTINGS_CHANGED')
+      if(ai.source==='byok'){
+        if(ai.endpoint!==config.endpoint||ai.model!==config.model)throw new AgentRunError('AI_SETTINGS_CHANGED')
+        matchEndpoint(config.endpoint,config.model)
+        if(ai.key!=='fixture-browser-key')throw new AgentRunError('PROVIDER_HTTP_401',503)
+        metrics.byokBindings++
+      }else metrics.serverBindings++
+    }
+    return {context,knowledge:()=>knowledge(uid),assertIdentity(){},provider:{source:'byok',model:profile.model,fingerprint:profile.fingerprint,async *stream(request,signal):AsyncGenerator<RunProviderEvent>{
     metrics.modelCalls++;yield{type:'usage',usage:usage()}
     if(!request.results.length){yield{type:'output',value:{kind:'tool_calls',calls:[{name:'listMyTracks',arguments:{filters:{limit:3}}}]}};return}
     const answer='线索已经夹进手帐啦。\n\n先从轻松的日常开始，慢慢看看角色之间的小细节。你想先聊哪一部？'
     let built=''
     for(const text of [answer.slice(0,10),answer.slice(10,28),answer.slice(28)]){await delay(mode==='slow'?3000:120,undefined,{signal});built+=text;yield{type:'delta',text};if(mode==='error')throw new Error('SCRIPTED_PROVIDER_ERROR')}
     yield{type:'output',value:{kind:'answer',text:built,sourceIds:['ui-tracks-source']}}
-  }},tools:[{name:'listMyTracks',async execute(_args,actor){metrics.toolCalls++;if(actor.uid!==uid)throw new Error('OWNER_MISMATCH');return{ok:true,data:{items:[],revision:0},sources:[{sourceId:'ui-tracks-source',kind:'my_tracks',label:'测试手帐里的追番',retrievedAt:1}],resultCount:0,truncated:false}}}]}))
+  }},tools:[{name:'listMyTracks',async execute(_args,actor){metrics.toolCalls++;if(actor.uid!==uid)throw new Error('OWNER_MISMATCH');return{ok:true,data:{items:[],revision:0},sources:[{sourceId:'ui-tracks-source',kind:'my_tracks',label:'测试手帐里的追番',retrievedAt:1}],resultCount:0,truncated:false}}}]}
+  })
   const app=new Hono<{Variables:{agentUid:number}}>();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard())
   let watchFixture: {password?:string}|undefined
   if(process.env.AGENT_UI_WATCH==='1'){const {addWatchFixture}=await import('./watch-fixture-routes');watchFixture=addWatchFixture(app,directory,db)}
   const {createGuestApi}=await import('../server/agent/guest-api')
   const {guestDataTools}=await import('../server/agent/run-runtime')
-  const guestKnowledge=()=>registry.guestSnapshot({enabled:true,permissionVersion:mode,features:AGENT_FEATURES.map(f=>f.id),tools:['readCachedCalendar','listPublicReviews','aggregatePublicData'],conditions:{answerModelReady:true}})
-  const guestStatus=()=>({enabled:true,configured:true,ready:true,source:'server' as const,model:'ui-guest-fixture'})
+  let guestConnected=false
+  const guestKnowledge=()=>registry.guestSnapshot({enabled:true,permissionVersion:mode,features:AGENT_FEATURES.map(f=>f.id),tools:['readCachedCalendar','listPublicReviews','aggregatePublicData'],conditions:{answerModelReady:guestConnected,answerModelAutoConnect:true}})
+  const guestStatus=()=>({enabled:true,configured:true,canPrepare:true,ready:guestConnected,source:'server' as const,model:'ui-guest-fixture'})
   app.route('/api/agent',createGuestApi({
-    database:db,status:guestStatus,connect:async()=>{metrics.connections++;await delay(300);return guestStatus()},knowledge:guestKnowledge,tools:guestDataTools,
-    binding:()=>({context:provider,execute:action=>action(),provider:{
+    database:db,status:guestStatus,knowledge:guestKnowledge,tools:guestDataTools,
+    binding:async(_uid,_owner,signal)=>{
+      if(!guestConnected){metrics.connections++;await delay(300,undefined,{signal});guestConnected=true}
+      return {context:provider,execute:action=>action(),provider:{
       source:'server',model:'ui-guest-fixture',fingerprint:'ui-guest-fixture',
       async *stream(request,signal){
         metrics.modelCalls++
@@ -93,7 +110,7 @@ export async function createAgentUiFixture(){
         for(const piece of [text.slice(0,30),text.slice(30,130),text.slice(130)]){await delay(mode==='slow'?3000:120,undefined,{signal});yield {type:'delta' as const,text:piece}}
         yield {type:'output' as const,value:{kind:'answer',text,sourceIds:[]}}
       },
-    }}),
+    }}},
   }))
   app.use('/api/agent/*',async(c,next)=>{metrics.apiRequests++;const session=await getSession(c);if(!session)return c.json({code:'AUTH_REQUIRED'},401);c.set('agentUid',session.uid);await next()})
   app.get('/__agent-test/login/:owner',async c=>{const owner=c.req.param('owner')==='bob'?{uid:bob,username:'ui_bob'}:c.req.param('owner')==='empty'?{uid:empty,username:'ui_empty'}:{uid:alice,username:'ui_alice'};await issueSession(c,{...owner,tv:0});return c.redirect('/#/tracks')})

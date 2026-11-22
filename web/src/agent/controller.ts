@@ -1,4 +1,6 @@
-import { AgentConnection } from './connection'
+import { AI_SETTINGS_MESSAGES, type AgentAiAccess } from '../../shared/agent-ai'
+import { readByokKey } from '../ai-key'
+import type { AiConfig } from '../auth'
 import { agentActivity } from './AgentActivity'
 import type { ContextSummary,CompactJob,PreferenceCard,PreferenceSettings,PreferenceValues } from '../../shared/agent-context'
 import type { PageAnimeContext,HistorySession,HistoryMessage,HistorySnapshot,HistoryAction } from '../../shared/agent-history'
@@ -28,7 +30,7 @@ export interface AgentUiState {
 const initial=():AgentUiState=>({ready:false,loading:false,syncing:false,busy:null,error:null,authExpired:false,open:false,knowledge:null,sessions:[],cursor:null,archived:false,
   session:null,messages:[],beforeSeq:null,context:null,preferences:[],preferenceSettings:null,run:null,watchingRun:null,job:null,connection:'idle',pendingBody:null,draft:'',anime:null,unread:0,status:'',actionPreviews:{},editingSeq:null,attachments:[],attachTip:null,pendingImages:[]})
 // 回合进行中才发现的附图问题（换了看不了图的连接后继续、图被清掉）：已知码原样给出原因，不只说「回复失败」。
-const IMAGE_FAILURES:Record<string,string>={IMAGE_UNSUPPORTED:'当前 AI 连接看不了图片，去掉图片再发，或换一个能看图的模型。',IMAGE_MISSING:'附的图找不到了，请重新添加后再发。'}
+const TURN_FAILURES:Readonly<Record<string,string>>={...AI_SETTINGS_MESSAGES,IMAGE_UNSUPPORTED:'当前 AI 连接看不了图片，去掉图片再发，或换一个能看图的模型。',IMAGE_MISSING:'附的图找不到了，请重新添加后再发。'}
 class UiError extends Error {constructor(readonly code:string,message:string){super(message)}}
 const issue=(error:unknown):AgentIssue=>error instanceof UiError?{code:error.code,message:error.message}:{code:'NETWORK_ERROR',message:'连接断开了，刚写的内容还在。'}
 const stopped=()=>new DOMException('Request superseded','AbortError')
@@ -44,7 +46,6 @@ export class AgentController {
   private readonly seen=new Map<string,number>()
   private readonly unreadMessages=new Map<string,Set<string>>()
   private readonly actionFetches=new Set<string>()
-  private readonly providerConnection=new AgentConnection(()=>this.connectProvider())
   private alive=true
   private selection=0
   private listSerial=0
@@ -59,11 +60,11 @@ export class AgentController {
   private reconnectTimer:ReturnType<typeof setTimeout>|null=null
   private reconnectN=0
   private poll:ReturnType<typeof setTimeout>|null=null
-  private failedSend:{requestId:string;body:string;sessionId:string;images:string}|null=null
+  private failedSend:{requestId:string;body:string;sessionId:string;images:string;editFromSeq:number|null}|null=null
   private tipTimer:ReturnType<typeof setTimeout>|null=null
   private pendingCreate:{requestId:string;title?:string;currentBgmId:number|null;pageContext:PageAnimeContext|null}|null=null
   private lastRefresh=0
-  constructor(readonly uid:number,readonly clientVersion:string,private readonly options:{fetchImpl?:typeof fetch;onAuthExpired?:()=>void;pollMs?:number;remember?:Storage}={}){}
+  constructor(readonly uid:number,readonly clientVersion:string,private readonly options:{fetchImpl?:typeof fetch;onAuthExpired?:()=>void;pollMs?:number;remember?:Storage;aiConfig?:()=>AiConfig|null;keys?:Pick<Storage,'getItem'>}={}){}
   getSnapshot=():AgentUiState=>this.state
   subscribe=(listener:()=>void)=>(()=>{this.listeners.add(listener);return()=>this.listeners.delete(listener)})()
   private set(patch:Partial<AgentUiState>){if(this.alive){this.state={...this.state,...patch};for(const listener of this.listeners)listener()}}
@@ -115,7 +116,6 @@ export class AgentController {
       const list=await this.api<{sessions:HistorySession[];nextCursor:Cursor|null;knowledge:KnowledgeSnapshot}>('/bootstrap')
       const knowledge=list.knowledge
       this.set({knowledge,sessions:list.sessions,cursor:list.nextCursor,ready:true})
-      if(knowledge.conditions.answerModelAutoConnect)void this.prepareProvider().catch(()=>{})
       const remembered=this.remembered(),selected=idValid(remembered)?remembered:list.sessions[0]?.id
       if(selected){await this.select(selected);if(this.state.error?.code==='NOT_FOUND'&&list.sessions[0]&&list.sessions[0].id!==selected)await this.select(list.sessions[0].id)}
     }catch(error){this.fail(error)}finally{this.set({loading:false,ready:true})}
@@ -209,36 +209,42 @@ export class AgentController {
     if(!this.state.session){this.set({anime});return}
     await this.mutate('更换番剧',async()=>{const session=this.state.session!;const response=await this.api<{session:HistorySession}>(`/sessions/${session.id}`,'PATCH',{expectedRevision:session.revision,currentBgmId:anime?.bgmId??null,pageContext:pageContext(anime)});this.updateSession(response.session);this.set({anime})})
   }
+  private aiAccess():{ai?:AgentAiAccess}{
+    if(!this.options.aiConfig)return {}
+    const config=this.options.aiConfig()
+    if(!config)throw new UiError('AUTH_CHANGED','登录状态已变化，请重新打开助手')
+    if(config.provider==='server')return {ai:{source:'server',uid:this.uid}}
+    const {endpoint,model}=config
+    if(!endpoint||!model)throw new UiError('BYOK_SETTINGS_REQUIRED',AI_SETTINGS_MESSAGES.BYOK_SETTINGS_REQUIRED)
+    const key=readByokKey(this.uid,endpoint,this.options.keys)
+    if(!key)throw new UiError('BYOK_KEY_REQUIRED',AI_SETTINGS_MESSAGES.BYOK_KEY_REQUIRED)
+    return {ai:{source:'byok',uid:this.uid,endpoint,model,key}}
+  }
   async send(){
     const body=this.state.draft.trim(),attached=this.state.attachments
     if(attached.some(a=>a.state!=='ready'))return
     if(!body&&!attached.length)return
     if(body==='/compact'&&!attached.length){await this.compact();return}
-    if(!this.state.knowledge?.conditions.answerModelReady&&!this.state.knowledge?.conditions.answerModelAutoConnect){this.set({error:{code:'AGENT_RUNTIME_NOT_READY',message:'回答模型尚未接入，消息未发送。'}});return}
-    const retryConnection=Boolean(this.state.error)
+    if(!this.state.knowledge?.conditions.answerModelReady&&!this.state.knowledge?.conditions.answerModelAutoConnect&&this.options.aiConfig?.()?.provider!=='byok'){this.set({error:{code:'AGENT_RUNTIME_NOT_READY',message:'回答模型尚未接入，消息未发送。'}});return}
     await this.mutate('发送',async()=>{
+      const access=this.aiAccess()
       this.set({pendingBody:body,draft:'',attachments:[],pendingImages:attached.map(a=>a.url),status:agentActivity('thinking')})
       try{
-      if(retryConnection&&this.state.knowledge?.conditions.answerModelAutoConnect)await this.providerConnection.retry()
-      else await this.prepareProvider()
-      let session=this.state.session??await this.create()
-      const editingSeq=this.state.editingSeq
-      if(editingSeq!==null&&session.startedAt){
-        const {session:cut}=await this.api<{session:HistorySession}>(`/sessions/${session.id}/truncate`,'POST',{expectedRevision:session.revision,fromSeq:editingSeq})
-        for(const message of this.state.messages)if(message.seq>=editingSeq)this.buffers.delete(message.id)
-        this.updateSession(cut);session=cut
-        this.set({messages:this.state.messages.filter(message=>message.seq<editingSeq),beforeSeq:null,run:null,watchingRun:null,context:null,editingSeq:null})
-        this.failedSend=null
-      }
+      const session=this.state.session??await this.create()
+      const editFromSeq=session.startedAt?this.state.editingSeq:null
       for(const [index,a] of attached.entries())if(!a.imageId){
         this.set({status:`上传图片 ${index+1}/${attached.length}…`})
         a.imageId=await this.upload(session.id,a.blob!)
       }
       if(attached.length)this.set({status:agentActivity('thinking')})
       const images=attached.map(a=>a.imageId!),imageKey=images.join(',')
-      const retry=this.failedSend?.sessionId===session.id&&this.failedSend.body===body&&this.failedSend.images===imageKey?this.failedSend:{requestId:crypto.randomUUID(),sessionId:session.id,body,images:imageKey}
+      const retry=this.failedSend?.sessionId===session.id&&this.failedSend.body===body&&this.failedSend.images===imageKey&&this.failedSend.editFromSeq===editFromSeq?this.failedSend:{requestId:crypto.randomUUID(),sessionId:session.id,body,images:imageKey,editFromSeq}
       this.failedSend=retry
-      const started=await this.api<{run:RunView;session:HistorySession|null;userMessage:HistoryMessage|null}>(`/sessions/${session.id}/runs`,'POST',{requestId:retry.requestId,expectedRevision:session.revision,body,clientVersion:this.clientVersion,...images.length?{images}:{}})
+      const started=await this.api<{run:RunView;session:HistorySession|null;userMessage:HistoryMessage|null}>(`/sessions/${session.id}/runs`,'POST',{requestId:retry.requestId,expectedRevision:session.revision,body,clientVersion:this.clientVersion,...access,...images.length?{images}:{},...editFromSeq===null?{}:{editFromSeq}})
+      if(editFromSeq!==null){
+        for(const message of this.state.messages)if(message.seq>=editFromSeq)this.buffers.delete(message.id)
+        this.set({messages:this.state.messages.filter(message=>message.seq<editFromSeq),beforeSeq:null,watchingRun:null,context:null,editingSeq:null})
+      }
       for(const a of attached)if(a.blob)URL.revokeObjectURL(a.url)
       const run=started.run
       if(!session.startedAt)this.drafts.delete('new')
@@ -252,16 +258,6 @@ export class AgentController {
       }
       }catch(error){if(!this.state.draft)this.set({draft:body});if(!this.state.attachments.length)this.set({attachments:attached});throw error}finally{this.set({pendingBody:null,pendingImages:[]})}
     })
-  }
-  private async prepareProvider(){
-    if(this.state.knowledge?.conditions.answerModelAutoConnect)await this.providerConnection.ensure()
-  }
-  private async connectProvider(){
-    // prepare 的响应本身就带 ready，不必再拉一次 /knowledge 才知道连上没有。
-    const status=await this.api<{ready:boolean}>('/provider/prepare','POST',{})
-    if(!status.ready)throw new UiError('PROVIDER_CONNECTION_REQUIRED','模型连接尚未就绪，请检查 AI 配置。')
-    const knowledge=this.state.knowledge
-    if(knowledge)this.set({knowledge:{...knowledge,conditions:{...knowledge.conditions,answerModelReady:true}}})
   }
   private follow(run:RunView,reconnect=false){
     if(this.streamRunId===run.id&&!reconnect&&this.state.connection==='connected'&&this.state.watchingRun?.attempt===run.attempt)return
@@ -355,12 +351,12 @@ export class AgentController {
         // 动作卡靠这一帧才知道自己存在；立刻去取预览详情，别等下一次全量刷新。
         this.syncActions()}
       const next={...(data.run as unknown as RunView|undefined)??run,state:event.type as RunView['state'],lastEventSeq:event.seq,canResume:event.type==='paused'}
-      if(current&&event.type==='failed'&&typeof data.code==='string'&&IMAGE_FAILURES[data.code])this.set({error:{code:data.code,message:IMAGE_FAILURES[data.code]}})
+      if(current&&event.type==='failed'&&typeof data.code==='string'&&TURN_FAILURES[data.code])this.set({error:{code:data.code,message:TURN_FAILURES[data.code]}})
       this.set({watchingRun:next,syncing:true,...current?{run:next,status:event.type==='completed'?'':event.type==='cancelled'?'已停止回复':event.type==='paused'?'已暂停':'回复失败，已保留生成内容'}:{}})
     }
   }
   async cancel(){const run=this.state.watchingRun?.state==='running'?this.state.watchingRun:this.state.run;if(!run)return;await this.mutate('停止回复',async()=>{const response=await this.api<{run:RunView}>(`/runs/${run.id}/cancel`,'POST',{});this.set({watchingRun:response.run,...this.state.session?.id===run.sessionId?{run:response.run}:{}});await this.refreshCurrent()})}
-  async resume(){const session=this.state.session,run=this.state.run;if(!session||!run?.canResume)return;await this.mutate('继续',async()=>{await this.prepareProvider();const response=await this.api<{run:RunView}>(`/runs/${run.id}/resume`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision,clientVersion:this.clientVersion});this.set({run:response.run});this.follow(response.run);try{await this.refreshCurrent()}catch{/* follow() 会补上进度 */}})}
+  async resume(){const session=this.state.session,run=this.state.run;if(!session||!run?.canResume)return;await this.mutate('继续',async()=>{const response=await this.api<{run:RunView}>(`/runs/${run.id}/resume`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision,clientVersion:this.clientVersion,...this.aiAccess()});this.set({run:response.run});this.follow(response.run);try{await this.refreshCurrent()}catch{/* follow() 会补上进度 */}})}
   // 编辑并重新提问：把该用户消息放回输入框；发送时截断这条之后的对话再重新生成（见 send）。
   startEdit(message:HistoryMessage){
     if(message.role!=='user'||!this.state.session?.startedAt||this.state.busy||this.state.loading||this.state.syncing)return
@@ -411,13 +407,13 @@ export class AgentController {
   }
   async compact(){
     const session=this.state.session;if(!session)return
-    if(!this.state.knowledge?.conditions.contextModelReady&&!this.state.knowledge?.conditions.answerModelAutoConnect){this.set({error:{code:'CONTEXT_AI_DISABLED',message:'压缩模型尚未接入。'}});return}
-    await this.mutate('压缩上下文',async()=>{await this.prepareProvider();const response=await this.api<{job:CompactJob}>(`/sessions/${session.id}/compact`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision});if(this.state.draft.trim()==='/compact')this.set({draft:''});this.watchCompact(response.job)})
+    if(!this.state.knowledge?.conditions.contextModelReady&&!this.state.knowledge?.conditions.answerModelAutoConnect&&this.options.aiConfig?.()?.provider!=='byok'){this.set({error:{code:'CONTEXT_AI_DISABLED',message:'压缩模型尚未接入。'}});return}
+    await this.mutate('压缩上下文',async()=>{const response=await this.api<{job:CompactJob}>(`/sessions/${session.id}/compact`,'POST',{requestId:crypto.randomUUID(),expectedRevision:session.revision,...this.aiAccess()});if(this.state.draft.trim()==='/compact')this.set({draft:''});this.watchCompact(response.job)})
   }
   private watchCompact(job:CompactJob){
     if(this.poll)clearTimeout(this.poll);this.set({job})
     if(!activeCompact(job))return
-    this.poll=setTimeout(()=>{this.poll=null;void this.api<{job:CompactJob}>(`/compactions/${job.id}`).then(async response=>{this.set({job:response.job});if(activeCompact(response.job))this.watchCompact(response.job);else if(this.state.session?.id===response.job.sessionId)await this.refreshCurrent()}).catch(error=>this.fail(error))},this.options.pollMs??2000)
+    this.poll=setTimeout(()=>{this.poll=null;void this.api<{job:CompactJob}>(`/compactions/${job.id}`).then(async response=>{this.set({job:response.job});if(activeCompact(response.job))this.watchCompact(response.job);else if(this.state.session?.id===response.job.sessionId){await this.refreshCurrent();const code=response.job.errorCode;if(response.job.stage==='failed'&&code&&Object.hasOwn(AI_SETTINGS_MESSAGES,code))this.set({error:{code,message:AI_SETTINGS_MESSAGES[code]}})}}).catch(error=>this.fail(error))},this.options.pollMs??2000)
   }
   async cancelCompact(){const job=this.state.job;if(!job)return;await this.mutate('停止整理',async()=>{const result=await this.api<{job:CompactJob}>(`/compactions/${job.id}/cancel`,'POST',{});if(this.poll)clearTimeout(this.poll);this.poll=null;this.set({job:result.job});await this.refreshCurrent()})}
   async preferences(){const serial=++this.preferenceSerial;try{const [response,settings]=await Promise.all([this.api<{preferences:PreferenceCard[]}>('/preferences'),this.api<PreferenceSettings>('/preferences/settings')]);if(serial===this.preferenceSerial)this.set({preferences:response.preferences,preferenceSettings:settings,error:null})}catch(error){this.fail(error)}}

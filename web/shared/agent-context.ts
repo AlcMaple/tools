@@ -1,3 +1,4 @@
+import { AGENT_AI_ACCESS_SCHEMA, type AgentAiAccess } from './agent-ai'
 import { SUMMARY_STATE_SCHEMA, type ContractSchema, type SummaryState, type AgentUsage } from './agent-contracts'
 import { HISTORY_ID_SCHEMA } from './agent-history'
 
@@ -35,6 +36,7 @@ export interface CompactJob {
 }
 export type NativeWindow = { protocol: 'openai_responses'; items: unknown[] } | { protocol: 'anthropic_messages'; content: unknown[] }
 export interface CompactRequest { requestId: string; expectedRevision: number }
+export interface ManualCompactRequest extends CompactRequest { ai?: AgentAiAccess }
 export interface PrepareContextRequest extends CompactRequest { question: string }
 
 const object = (properties: Record<string, ContractSchema>, required = Object.keys(properties)): ContractSchema => ({ type: 'object', properties, required, additionalProperties: false })
@@ -42,7 +44,7 @@ const integer = (minimum = 0): ContractSchema => ({ type: 'integer', minimum, ma
 const text = (maxLength: number): ContractSchema => ({ type: 'string', minLength: 1, maxLength })
 const bool: ContractSchema = { type: 'boolean' }
 const expectedRevision = integer()
-export const COMPACT_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, expectedRevision })
+export const COMPACT_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, expectedRevision, ai: AGENT_AI_ACCESS_SCHEMA }, ['requestId', 'expectedRevision'])
 export const PREPARE_CONTEXT_SCHEMA = object({ requestId: HISTORY_ID_SCHEMA, expectedRevision, question: { type: 'string', maxLength: 32_000 } })
 export const PREFERENCE_CREATE_SCHEMA = object({
   category: { type: 'string', enum: ['tone', 'liked_tags', 'avoided_tags', 'recommendation_focus'] },

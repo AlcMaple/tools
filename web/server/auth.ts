@@ -929,6 +929,9 @@ auth.post('/settings', async (c) => {
   }
 
   const hasAiConfig = 'aiConfig' in body
+  if (hasAiConfig && 'aiConfigOwner' in body && body.aiConfigOwner !== s.uid) {
+    return c.json({ code: 'AUTH_CHANGED', error: '登录状态已变化，请重新打开设置' }, 409)
+  }
   const nextAiConfig = hasAiConfig ? normalizeAiConfig(body.aiConfig) : null
 
   const current = str(body.currentPassword)

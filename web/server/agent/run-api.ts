@@ -154,13 +154,13 @@ export function createAgentRunApi(service:AgentRunService,knowledge:(uid:number)
       beforeCreatedAt:query.beforeCreatedAt?Number(query.beforeCreatedAt[0]):undefined,beforeId:query.beforeId?.[0]}))
   })
   app.post('/sessions/:sessionId/runs',async c=>{
-    const started=await service.start(c.get('runUid'),c.req.param('sessionId'),await readBody(c),c.get('runTv'))
+    const started=await service.start(c.get('runUid'),c.req.param('sessionId'),await readBody(c),c.get('runTv'),c.req.raw.signal)
     try{c.executionCtx.waitUntil(service.wait(started.run.id))}catch{}
     return c.json(started,202)
   })
   app.get('/runs/:runId',c=>c.json({run:service.status(c.get('runUid'),c.req.param('runId'))}))
   app.post('/runs/:runId/resume',async c=>{
-    const run=await service.resume(c.get('runUid'),c.req.param('runId'),await readBody(c),c.get('runTv'))
+    const run=await service.resume(c.get('runUid'),c.req.param('runId'),await readBody(c),c.get('runTv'),c.req.raw.signal)
     try{c.executionCtx.waitUntil(service.wait(run.id))}catch{}
     return c.json({run},202)
   })

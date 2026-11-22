@@ -118,7 +118,6 @@
 .agent-pane { flex:1;min-height:0;overflow:auto;padding:7px 17px 20px;overscroll-behavior:contain; }
 .agent-pane-hint { font-size:11px;line-height:1.8;color:var(--ink-sub);margin:3px 0 13px; }
 .agent-small-heading { font:14px var(--font-hand);margin:18px 0 9px; }
-.agent-segments { display:flex;gap:7px;margin:4px 0 14px; }.agent-segments>button { flex:1;font-size:11px;padding:7px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink-sub); }.agent-segments>button.on { border-color:var(--teal);color:var(--teal);background:var(--teal-wash); }
 .agent-session-row { display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:11px 9px;margin:0 0 8px;border:1px solid var(--line);border-radius:8px 12px 8px 12px;background:var(--paper);color:var(--ink-sub); }
 .agent-session-row.is-current { border-color:var(--teal-line); }.agent-session-row>span:nth-child(2) { min-width:0;flex:1; }.agent-session-row b { display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-size:12px;font-weight:500;color:var(--ink); }.agent-session-row small { display:block;margin-top:4px;font-size:9px;color:var(--ink-sub); }.agent-session-row>span:last-child { font-size:10px;color:var(--teal); }
 .agent-older { display:block;margin:5px auto 12px;border:none;background:none;color:var(--teal);font-size:10px;text-decoration:underline;text-underline-offset:4px; }

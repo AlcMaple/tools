@@ -19,7 +19,7 @@ mkdirSync(join(directory,'data'));process.chdir(directory)
 for(const key of Object.keys(process.env))if(/^(SENTRY_|VITE_SENTRY_|SMTP_|AI_|GOOGLE_|MAPLETOOLS_ENV_FILE$|VERCEL$)/.test(key)||/^(?:https?_proxy|all_proxy|no_proxy)$/i.test(key))delete process.env[key]
 process.env.NODE_ENV='production';process.env.DATA_DIR=join(directory,'data');process.env.AUTH_SECRET=randomBytes(48).toString('hex');process.env.EMAIL_MODE='disabled';process.env.AGENT_CONTEXT_AI_ENABLED='0';process.env.AGENT_AI_ENABLED='0'
 let externalRequests=0,checks=0,httpRequests=0,modelCalls=0,toolCalls=0
-const settlePlan = checkPlan('R', 38, () => checks)
+const settlePlan = checkPlan('R', 40, () => checks)
 let cleanup:(()=>Promise<void>)|undefined
 globalThis.fetch=async()=>{externalRequests++;throw new Error('EXTERNAL_REQUEST_BLOCKED')}
 const obj=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
@@ -126,6 +126,45 @@ try{
     const first=(await service.start(alice,b.id,p,0)).run,second=(await service.start(alice,b.id,p,0)).run;assert.equal(first.id,second.id);await service.wait(first.id)
     assert.equal(modelCalls-before,1);assert.equal(history.exportSession(alice,b.id).messages.length,2)
     await assert.rejects(()=>service.start(alice,b.id,{...p,body:'不同'},0),(e:unknown)=>e instanceof AgentRunError&&e.code==='IDEMPOTENCY_CONFLICT')
+  })
+  await check('无效或旧请求在准备模型之前被拒绝，合法发送才连接，幂等回读不重新连接',async()=>{
+    reset();let bindings=0
+    const gated=new AgentRunService(store,uid=>{bindings++;return{...resolve(),knowledge:()=>knowledge(uid)}},{heartbeatMs:5});services.push(gated)
+    const b=book(),p={requestId:randomUUID(),expectedRevision:b.revision,body:'有效消息'}
+    const code=(expected:string)=>(error:unknown)=>Boolean(error&&typeof error==='object'&&'code'in error&&error.code===expected)
+    await assert.rejects(()=>gated.start(alice,b.id,{...p,body:'   '},0),code('INVALID_ARGUMENT'))
+    await assert.rejects(()=>gated.start(bob,b.id,p,0),code('NOT_FOUND'))
+    await assert.rejects(()=>gated.start(alice,b.id,p,1),code('AUTH_REQUIRED'))
+    await assert.rejects(()=>gated.start(alice,b.id,{...p,expectedRevision:b.revision+1},0),code('REVISION_CONFLICT'))
+    await assert.rejects(()=>gated.start(alice,b.id,{...p,images:[randomUUID()]},0),code('IMAGE_MISSING'))
+    await assert.rejects(()=>gated.start(alice,b.id,{...p,editFromSeq:1},0),code('INVALID_ARGUMENT'))
+    const aborted=new AbortController();aborted.abort()
+    await assert.rejects(()=>gated.start(alice,b.id,p,0,aborted.signal),{name:'AbortError'})
+    assert.equal(bindings,0);assert.deepEqual(history.exportSession(alice,b.id).messages,[])
+    const first=(await gated.start(alice,b.id,p,0)).run;await gated.wait(first.id)
+    assert.equal(gated.status(alice,first.id).state,'completed')
+    assert.equal((await gated.start(alice,b.id,p,0)).run.id,first.id)
+    await assert.rejects(()=>gated.resume(alice,first.id,{requestId:randomUUID(),expectedRevision:revision(b.id)},0),code('CONTINUE_REQUIRED'))
+    assert.equal(bindings,1)
+  })
+  await check('编辑重问连接失败保留旧记录，成功后截断和追加一起落库',async()=>{
+    reset();const b=book()
+    await terminalRow(await begin(b.id))
+    const saved=history.exportSession(alice,b.id),from=saved.messages[0].seq
+    let allow=false
+    const gated=new AgentRunService(store,()=>{
+      if(!allow)throw new AgentRunError('PROVIDER_HTTP_503',503)
+      return{...resolve(),knowledge:()=>knowledge(alice)}
+    },{heartbeatMs:5});services.push(gated)
+    const p={requestId:randomUUID(),expectedRevision:saved.session.revision,body:'改过的问题',editFromSeq:from}
+    await assert.rejects(()=>gated.start(alice,b.id,p,0),/PROVIDER_HTTP_503/)
+    const retained=history.exportSession(alice,b.id)
+    assert.deepEqual(retained.session,saved.session);assert.deepEqual(retained.messages,saved.messages)
+    allow=true
+    const draft=await gated.start(alice,b.id,p,0);await gated.wait(draft.run.id)
+    const edited=history.exportSession(alice,b.id).messages
+    assert.equal(edited.length,2);assert.equal(edited[0].body,p.body);assert(edited[0].seq>saved.messages.at(-1)!.seq)
+    assert.equal((await gated.start(alice,b.id,p,0)).run.id,draft.run.id)
   })
   await check('同账号跨会话单回合锁，以及准备/执行期间的历史与压缩互斥',async()=>{
     reset();let release!:()=>void;const gate=new Promise<void>(r=>{release=r})
