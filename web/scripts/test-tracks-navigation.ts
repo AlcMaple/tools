@@ -45,7 +45,7 @@ try {
       child.once('close', resolve)
     }).finally(() => clearTimeout(timer))
     assert.equal(code, 0, `TRACKS_NAVIGATION_BROWSER_EXIT: ${code}`)
-    assert(completedOutput.includes('TRACKS_NAVIGATION_CASES=4'), 'TRACKS_NAVIGATION_CASES_INCOMPLETE')
+    assert(completedOutput.includes('TRACKS_NAVIGATION_CASES=5'), 'TRACKS_NAVIGATION_CASES_INCOMPLETE')
     assert.equal(fixture.metrics.modelCalls, 0)
     assert.equal(fixture.metrics.externalRequests, 0)
     console.log('PASS tracks navigation: synthetic accounts, 0 model calls, 0 external fetches')

@@ -499,7 +499,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
 
   const toolbar = (
     <div className="row mb16 trk-toolbar" style={{ flexWrap: 'wrap' }}>
-        <div className="searchbar">
+        <div className="searchbar searchbar-clearable">
           <Ic name="search" cls="ic" />
           <input
             id="trkSearch"

@@ -192,7 +192,7 @@ export function CatalogPage(): JSX.Element {
             <p className="muted small mt8">{summary || ' '}</p>
           </div>
           <div className="row catalog-toolbar">
-            <div className="searchbar">
+            <div className="searchbar searchbar-clearable">
               <Ic name="search" cls="ic" />
               <input
                 spellCheck={false}

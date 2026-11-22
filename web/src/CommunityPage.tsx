@@ -443,7 +443,7 @@ function ProfileView({
       ) : (
         <>
           <div className="row community-toolbar mt16" style={{ flexWrap: 'wrap' }}>
-            <div className="searchbar">
+            <div className="searchbar searchbar-clearable">
               <Ic name="search" cls="ic" />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="在这本手帐里搜番名…" spellCheck={false} />
               {query && <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="清空搜索"><Ic name="x" cls="ic ic-sm" /></button>}

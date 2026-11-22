@@ -314,7 +314,7 @@
   body[data-page='tracks'] .sketch-hero .trk-toolbar { margin-bottom: 0; }
   /* 页头里的工具栏不换行：控件都是固定宽度，空间不够时只压缩搜索框，否则查看方式会被挤到第二行 */
   body[data-page='tracks'] .sketch-hero .trk-toolbar { flex-wrap: nowrap !important; }
-  body[data-page='tracks'] .sketch-hero .trk-toolbar .searchbar { min-width: 72px; }
+  body[data-page='tracks'] .sketch-hero .trk-toolbar .searchbar { min-width: 104px; }
   body[data-page='tracks'] .sketch-hero .trk-toolbar .dd-host:not(.trk-sort) .dd-trigger { min-width: 112px !important; }
   body[data-page='tracks'] .sketch-hero .view-mode > button { min-width: 0; padding-inline: 7px; }
   .trk-head-actions { margin-left: auto; align-self: center; padding-bottom: 4px; }
@@ -2286,22 +2286,34 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 }
 
 /* 搜索 + 加番建议 */
-.searchbar { position: relative; flex: 1; min-width: 180px; max-width: 380px; }
-.searchbar > svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ink-faint); pointer-events: none; }
-.searchbar > input {
-  width: 100%;
+.searchbar {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  flex: 1;
+  min-width: 180px;
+  max-width: 380px;
   min-height: 42px;
-  padding: 9px 12px 9px 36px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--ink);
   background: var(--field-bg);
   border: 1.5px solid var(--field-line);
   border-radius: var(--r-pill);
-  outline: none;
   transition: border-color .2s, box-shadow .2s;
 }
-.searchbar > input:focus { border-color: var(--teal-line); box-shadow: 0 0 0 3px var(--teal-wash); }
+.searchbar > svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ink-faint); pointer-events: none; }
+.searchbar > input {
+  width: 100%;
+  min-width: 0;
+  align-self: stretch;
+  padding: 9px 11px 9px 35px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+.searchbar:focus-within { border-color: var(--teal-line); box-shadow: 0 0 0 3px var(--teal-wash); }
 .view-mode {
   flex: none;
   display: inline-flex;

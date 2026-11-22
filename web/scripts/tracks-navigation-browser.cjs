@@ -29,6 +29,53 @@ async function main() {
   const fillQuery = value => read(`(() => { const input = document.querySelector('#trkSearch'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await window.loadURL(origin + '/__agent-test/login/alice')
   await waitFor("document.querySelectorAll('main article').length === 3")
+
+  const searchGeometry = () => read(`(() => {
+    const input = document.querySelector('#trkSearch')
+    const field = input.parentElement
+    const clear = field.querySelector('.search-clear')
+    const bounds = el => {
+      if (!el) return null
+      const { left, right, top, width } = el.getBoundingClientRect()
+      return { left, right, top, width }
+    }
+    return { field: bounds(field), input: bounds(input), clear: bounds(clear), next: bounds(field.nextElementSibling) }
+  })()`)
+  const longQuery = '魔法少女什么的已经够了啦'.repeat(6)
+  // 筛选过后可能没有卡片；固定页面滚动槽只为测输入框本身有没有跳动。
+  await read("document.body.style.minHeight = '200vh'")
+  await read('document.fonts.ready.then(() => true)')
+  for (const width of [1360, 961, 390]) {
+    window.setContentSize(width, 980)
+    await waitFor(`innerWidth === ${width} && !!document.querySelector('#trkSearch') &&
+      Boolean(document.querySelector('.sketch-hero #trkSearch')) === ${width >= 961}`)
+    const empty = await searchGeometry()
+    await read("document.querySelector('#trkSearch').focus()")
+    await window.webContents.insertText(longQuery)
+    await waitFor(`document.querySelector('#trkSearch').value === ${JSON.stringify(longQuery)} &&
+      !!document.querySelector('.search-clear')`)
+    const filled = await searchGeometry()
+    const clipEdge = filled.input.right
+    const clearEdge = filled.clear.left
+    console.log(`SEARCH_CLEAR_LAYOUT ${width}px: inputRight=${clipEdge}, clearLeft=${clearEdge}`)
+    assert(clipEdge <= clearEdge, 'long input and clear button must occupy separate areas')
+    assert(filled.input.width > 0 && filled.clear.right <= filled.field.right)
+    assert.deepEqual(filled.field, empty.field, 'typing must not resize the search field')
+    assert.deepEqual(filled.input, empty.input, 'the clear button slot must be reserved when empty')
+    assert.deepEqual(filled.next, empty.next, 'typing must not move the neighboring filter')
+    await waitFor("document.querySelector('#trkSearch').scrollLeft > 0")
+    await read("document.querySelector('#trkSearch').scrollLeft = 0")
+    assert.equal(await read("document.querySelector('#trkSearch').scrollLeft"), 0)
+    assert.deepEqual((await searchGeometry()).clear, filled.clear, 'only the text may scroll')
+    assert.equal(await query(), longQuery, 'scrolling must not truncate the query')
+    await click("document.querySelector('#trkSearch + .search-clear')")
+    await waitFor("document.querySelector('#trkSearch').value === '' && document.querySelectorAll('main article').length === 3")
+  }
+  await read("document.body.style.minHeight = ''")
+  window.setContentSize(1360, 980)
+  await waitFor("innerWidth === 1360 && !!document.querySelector('.sketch-hero #trkSearch')")
+  console.log('PASS tracks search: fixed clear slot, horizontal text scroll and reset at 1360/961/390px')
+
   await click("Array.from(document.querySelectorAll('button.tabf')).find(button => button.textContent.trim().startsWith('在看'))")
   await waitFor("document.querySelector('.tabf.on')?.textContent.trim().startsWith('在看') && document.querySelectorAll('main article').length === 1")
   assert((await selected()).startsWith('在看'))
@@ -78,7 +125,7 @@ async function main() {
   assert.equal(await cards(), 0)
   assert.equal(await query(), '', 'logout must clear the previous account search query')
   console.log('PASS tracks navigation: logout resets the previous account filter and query')
-  console.log('TRACKS_NAVIGATION_CASES=4')
+  console.log('TRACKS_NAVIGATION_CASES=5')
   window.destroy()
 }
 
