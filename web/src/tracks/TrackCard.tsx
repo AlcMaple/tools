@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { SOURCES, coverUrl, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
+import { SOURCES, coverImageProps, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
 import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
@@ -83,6 +83,7 @@ export function TrackCard({
   const step = (delta: number): void => commitEpisode(t.episode + delta)
 
   const considering = t.status === 'considering'
+  const cover = coverImageProps(t.cover, t.bgmId)
   // 真实 BGM 条目的看完 / 在看才有「写点评」入口；手动条目先回填，避免点到需要正数 bgmId 的接口。
   const canReview = t.bgmId > 0 && (t.status === 'done' || t.status === 'watching')
   // 0–5：翻旧的档位。次数再多也只到 5，痕迹不会无限堆下去。
@@ -93,8 +94,8 @@ export function TrackCard({
       <span className={`tape tr ${considering ? 'lav' : isToday ? 'sakura' : 'teal'}`} />
       {considering && <WearLayer />}
       <div className="trk-cover" onClick={onEdit} title="想改封面的话，戳我一下…" style={{ cursor: 'pointer', position: 'relative' }}>
-        {t.cover ? (
-          <img className="cover-img" src={coverUrl(t.cover, t.bgmId)} alt={title} loading="lazy" decoding="async" />
+        {cover.src ? (
+          <img className="cover-img" alt={title} loading="lazy" decoding="async" {...cover} />
         ) : (
           <div className="cover-ph">☆</div>
         )}

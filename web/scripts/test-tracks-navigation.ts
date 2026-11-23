@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,8 +25,14 @@ process.env.NODE_ENV = 'test'
 process.env.AGENT_UI_FIXTURE = '1'
 const fixture = await createAgentUiFixture()
 const profile = mkdtempSync(join(tmpdir(), 'tracks-navigation-browser-'))
+const cdnCover = 'https://i0.hdslb.com/bfs/bangumi/fixture.jpg@450w_600h.webp'
+const webp = fileURLToPath(new URL('../public/assets/sagiri-avatar.webp', import.meta.url))
 try {
   fixture.db.prepare('UPDATE tracks SET cover=?,bgm_tags=?,aliases=?,air_date=?,score=?').run('/assets/sagiri-avatar.webp', '["夹具"]', '["夹具别名"]', '2026-09-01', 8)
+  fixture.db.prepare('UPDATE tracks SET cover=? WHERE user_id=? AND bgm_id=101').run(cdnCover, fixture.alice)
+  fixture.db.prepare("UPDATE tracks SET cover='/api/tracks/102/cover-file',cover_mime='image/webp' WHERE user_id=? AND bgm_id=102").run(fixture.alice)
+  copyFileSync(webp, join(process.cwd(), 'data/covers', `${fixture.alice}_102`))
+  fixture.db.prepare('UPDATE users SET tracks_public=1 WHERE id=?').run(fixture.alice)
   if (process.argv.includes('--serve')) {
     console.log(JSON.stringify({ origin: fixture.origin, browserUrl: fixture.browserOrigin + '/', mode: 'isolated-tracks-navigation', realAiCalls: 0 }))
     await new Promise<void>(resolve => { process.once('SIGINT', resolve); process.once('SIGTERM', resolve) })
@@ -35,7 +41,7 @@ try {
     delete env.ELECTRON_RUN_AS_NODE
     const electron = createRequire(import.meta.url)('electron') as string
     const runner = fileURLToPath(new URL('./tracks-navigation-browser.cjs', import.meta.url))
-    const child = spawn(electron, [runner, fixture.browserOrigin, profile], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(electron, [runner, fixture.browserOrigin, profile, cdnCover, webp], { env, stdio: ['ignore', 'pipe', 'pipe'] })
     let completedOutput = ''
     child.stdout.on('data', data => { completedOutput += data.toString(); process.stdout.write(data) })
     child.stderr.on('data', data => process.stderr.write(data))
@@ -45,6 +51,7 @@ try {
       child.once('close', resolve)
     }).finally(() => clearTimeout(timer))
     assert.equal(code, 0, `TRACKS_NAVIGATION_BROWSER_EXIT: ${code}`)
+    assert(completedOutput.includes('TRACKS_COVER_REFERER_COMPLETE'), 'TRACKS_COVER_REFERER_INCOMPLETE')
     assert(completedOutput.includes('TRACKS_NAVIGATION_CASES=5'), 'TRACKS_NAVIGATION_CASES_INCOMPLETE')
     assert.equal(fixture.metrics.modelCalls, 0)
     assert.equal(fixture.metrics.externalRequests, 0)

@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { fetchApi } from '../src/request'
-import { coverUrl, fetchTracks, searchAnime, searchXifan, type Track, type TracksLoadProgress } from '../src/api'
+import { coverImageProps, coverUrl, fetchTracks, searchAnime, searchXifan, type Track, type TracksLoadProgress } from '../src/api'
 import type { SearchTrackAddStatus } from '../src/tracksSync'
 
 const originalFetch = globalThis.fetch
@@ -60,6 +60,14 @@ try {
     assert.equal(coverUrl(raw, -1), raw)
     assert.equal(coverUrl('/api/tracks/1/cover-file', 1), '/api/tracks/1/cover-file')
     assert.equal(coverUrl('https://example.com/image.png', 1), 'https://example.com/image.png')
+  })
+  await check('B 站外链封面保留原 WebP 地址，仅封面请求省略来源', () => {
+    const raw = 'https://i0.hdslb.com/bfs/bangumi/sample.jpg@450w_600h.webp'
+    assert.deepEqual(coverImageProps(raw, -1), { referrerPolicy: 'no-referrer', src: raw })
+    for (const url of ['/api/tracks/-1/cover-file', '/api/community/fixture/-1/cover-file', 'https://example.com/image.webp', 'https://i0.hdslb.com.example.com/image.webp', 'https://example.com/i0.hdslb.com/image.webp', 'https://lain.bgm.tv/pic/cover/l/fixture.jpg']) {
+      assert.equal(coverImageProps(url, -1).referrerPolicy, undefined)
+      assert.equal(coverImageProps(url, -1).src, coverUrl(url, -1))
+    }
   })
 
   const storage = new Map<string, string>()

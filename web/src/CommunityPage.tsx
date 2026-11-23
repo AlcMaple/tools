@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  coverUrl,
+  coverImageProps,
   fetchAnimeReviews,
   fetchCommunityProfile,
   fetchCommunityReviewAnime,
@@ -247,13 +247,13 @@ function HallView({
 
 function ReviewAnimeCard({ anime }: { anime: CommunityReviewAnime }): JSX.Element {
   const [coverFailed, setCoverFailed] = useState(false)
-  const image = coverUrl(anime.cover)
+  const image = coverImageProps(anime.cover)
   const title = anime.titleCn || anime.title || `BGM ${anime.bgmId}`
   return (
     <div className="community-track-card review-anime-card">
       <div className="community-track-cover" style={{position:'relative'}}>
-        {image && !coverFailed
-          ? <img src={image} alt="" loading="lazy" onError={() => setCoverFailed(true)} />
+        {image.src && !coverFailed
+          ? <img alt="" loading="lazy" {...image} onError={() => setCoverFailed(true)} />
           : <span>NO<br />COVER</span>}
       </div>
       <div className="review-anime-body">
@@ -299,7 +299,7 @@ export function AnimeReviewsView({
         <a className="btn btn-sm btn-ghost" href="/#/community/reviews"><Ic name="back" cls="ic ic-sm" /> 返回列表</a>
         {data && (
           <div className="community-profile-identity">
-            <img className="dlg-cover" src={coverUrl(data.anime.cover)} alt="" onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
+            <img className="dlg-cover" alt="" {...coverImageProps(data.anime.cover)} onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
             <div>
               <h1 className="title-sketch" style={{ fontSize: 30 }}>{title}</h1>
               <p className="muted small mt8">大家聊过 {data.review.length + data.recommend.length} 篇</p>
@@ -475,7 +475,7 @@ function PublicTrackCard({ track, username }: { track: PublicTrack; username: st
   const [coverFailed, setCoverFailed] = useState(false)
   const [highlightsOpen, setHighlightsOpen] = useState(false)
   const [openReview, setOpenReview] = useState<'review' | 'recommend' | null>(null)
-  const image = coverUrl(track.cover)
+  const image = coverImageProps(track.cover)
   const highlightCount = track.goodEpisodes.length
   const subtitle = track.title && track.title !== (track.titleCn || track.title) ? track.title : ''
   const tags = [
@@ -489,8 +489,8 @@ function PublicTrackCard({ track, username }: { track: PublicTrack; username: st
   return (
     <article className={`community-track-card${track.bgmId > 0 ? ' with-actions' : ''}`}>
       <div className="community-track-cover" style={{position:'relative'}}>
-        {image && !coverFailed
-          ? <img src={image} alt="" loading="lazy" onError={() => setCoverFailed(true)} />
+        {image.src && !coverFailed
+          ? <img alt="" loading="lazy" {...image} onError={() => setCoverFailed(true)} />
           : <span>NO<br />COVER</span>}
       </div>
       <div className="community-track-body">

@@ -52,6 +52,12 @@ export function coverUrl(raw: string, bgmId?: number): string {
   }
 }
 
+export function coverImageProps(raw: string, bgmId?: number): { referrerPolicy?: 'no-referrer'; src: string } {
+  const src = coverUrl(raw, bgmId)
+  // B 站图片 CDN 对带本站来源的封面请求返回 403，直接打开同一 URL 则正常
+  return { referrerPolicy: /^https:\/\/i\d+\.hdslb\.com\//.test(src) ? 'no-referrer' : undefined, src }
+}
+
 export interface CatalogItem {
   bgmId: number
   name: string

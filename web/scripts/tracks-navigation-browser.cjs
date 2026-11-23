@@ -1,8 +1,11 @@
 const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
 const { setTimeout: delay } = require('node:timers/promises')
 const { app, BrowserWindow } = require('electron')
 
 const origin = process.argv[2]
+const cdnCover = process.argv[4]
+const coverBytes = readFileSync(process.argv[5])
 assert(origin && new URL(origin).hostname === 'agent-phase4.localhost')
 app.setPath('userData', process.argv[3])
 app.commandLine.appendSwitch('disable-gpu')
@@ -10,8 +13,20 @@ app.commandLine.appendSwitch('disable-gpu')
 async function main() {
   await app.whenReady()
   const window = new BrowserWindow({ show: false, width: 1360, height: 980, webPreferences: { contextIsolation: true, nodeIntegration: false } })
-  window.webContents.session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (request, done) => {
-    done({ cancel: new URL(request.url).origin !== origin })
+  const cdnRequests = []
+  const session = window.webContents.session
+  session.protocol.handle('https', request => {
+    if (request.url !== cdnCover) return new Response(null, { status: 404 })
+    const referer = request.headers.get('referer') ?? (request.referrer === 'about:client' ? '' : request.referrer)
+    const responseCode = referer ? 403 : 200
+    cdnRequests.push({ referer, responseCode })
+    return new Response(referer ? '403 Forbidden' : coverBytes, {
+      status: responseCode,
+      headers: { 'Content-Type': referer ? 'text/plain' : 'image/webp', 'Cache-Control': 'no-store' },
+    })
+  })
+  session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (request, done) => {
+    done({ cancel: new URL(request.url).origin !== origin && request.url !== cdnCover })
   })
   const read = expression => window.webContents.executeJavaScript(expression)
   const waitFor = async expression => {
@@ -29,6 +44,28 @@ async function main() {
   const fillQuery = value => read(`(() => { const input = document.querySelector('#trkSearch'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await window.loadURL(origin + '/__agent-test/login/alice')
   await waitFor("document.querySelectorAll('main article').length === 3")
+  const cdnCardImg = `document.querySelector(${JSON.stringify(`main img[src="${cdnCover}"]`)})`
+  const diskCover = 'document.querySelector(\'main img[src="/api/tracks/102/cover-file"]\')'
+  const imageReady = async selector => {
+    await read(`${selector}?.scrollIntoView({block: 'center'})`)
+    await waitFor(`${selector}?.complete`)
+    return read(`({ width: ${selector}.naturalWidth, policy: ${selector}.getAttribute('referrerpolicy') })`)
+  }
+  const trackImage = await imageReady(cdnCardImg)
+  console.log('CDN_TRACK_REQUEST ' + JSON.stringify(cdnRequests))
+  assert.deepEqual(cdnRequests, [{ referer: '', responseCode: 200 }], 'TRACK_CDN_WITH_SITE_REFERER_RETURNS_403')
+  assert(trackImage.width > 0, 'CDN_WEBP_MUST_DECODE_ON_TRACK_CARD')
+  assert.equal(trackImage.policy, 'no-referrer')
+  await click(`${cdnCardImg}.closest('.trk-cover')`)
+  const editImage = await imageReady("document.querySelector('[aria-label=\"编辑追番\"] img.dlg-cover')")
+  assert(editImage.width > 0, 'CDN_WEBP_MUST_DECODE_IN_EDITOR')
+  assert.equal(editImage.policy, 'no-referrer')
+  await click("document.querySelector('[aria-label=\"编辑追番\"] .dlg-close')")
+  const upload = await imageReady(diskCover)
+  assert(upload.width > 0, 'SAME_ORIGIN_UPLOADED_WEBP_MUST_STILL_DECODE')
+  assert.equal(upload.policy, null)
+  await read('window.scrollTo(0, 0)')
+  console.log('PASS tracks cover: CDN WebP decodes in card and editor; uploaded WebP unchanged')
 
   const searchGeometry = () => read(`(() => {
     const input = document.querySelector('#trkSearch')
@@ -125,6 +162,13 @@ async function main() {
   assert.equal(await cards(), 0)
   assert.equal(await query(), '', 'logout must clear the previous account search query')
   console.log('PASS tracks navigation: logout resets the previous account filter and query')
+  await window.loadURL(origin + '/u/ui_alice')
+  await waitFor(`!!${cdnCardImg}`)
+  const publicImage = await imageReady(cdnCardImg)
+  assert(publicImage.width > 0, 'CDN_WEBP_MUST_DECODE_ON_PUBLIC_TRACK_CARD')
+  assert.equal(publicImage.policy, 'no-referrer')
+  console.log('PASS tracks cover: CDN WebP decodes in the public notebook after logout')
+  console.log('TRACKS_COVER_REFERER_COMPLETE')
   console.log('TRACKS_NAVIGATION_CASES=5')
   window.destroy()
 }

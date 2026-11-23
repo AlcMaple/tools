@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { coverUrl, type Track, type TrackPatch } from '../api'
+import { coverImageProps, type Track, type TrackPatch } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
 import { TagInput } from './TagInput'
@@ -29,6 +29,7 @@ export function EditModal({
   const [coverUploading, setCoverUploading] = useState(false)
   const coverFileRef = useRef<HTMLInputElement>(null)
   const title = t.titleCn || t.title
+  const cover = coverImageProps(t.cover, t.bgmId)
   const sub = t.titleCn && t.title !== t.titleCn ? t.title : ''
   // 副标题行只在真有内容时才占位 —— 没有副标题也没有放送日 / 评分,就当这行容器不存在。
   const subLine = [sub, t.airWeekday ? `周${SHORT_DAY[t.airWeekday]}更新` : '', t.score > 0 ? `★ ${t.score.toFixed(1)}` : '']
@@ -113,8 +114,8 @@ export function EditModal({
               title="点击编辑封面"
               disabled={coverUploading}
             >
-              {t.cover ? (
-                <img className="dlg-cover" src={coverUrl(t.cover, t.bgmId)} alt="" />
+              {cover.src ? (
+                <img className="dlg-cover" alt="" {...cover} />
               ) : (
                 <span className="dlg-cover dlg-cover-ph">{coverUploading ? <Spinner /> : '＋ 封面'}</span>
               )}
