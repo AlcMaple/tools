@@ -1,4 +1,5 @@
 import { fetchApi, readApi } from './request'
+import type { CatalogPosition } from '../shared/catalog-position'
 import type { GoodEpisodeEdit } from '../shared/good-episodes'
 // 前端与后端 server/bgm/calendar.ts 的返回结构对应。网页版前端不共享后端代码（后端有
 // undici 等 Node 依赖，不能进浏览器包），这里独立声明一份同形状类型。
@@ -63,7 +64,7 @@ export interface CatalogItem {
   edited?: { nameCn: boolean; tags: boolean; cover: boolean }
 }
 
-export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[]; planningReady?: boolean }
+export interface CatalogResult { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[]; planningReady?: boolean; position?: CatalogPosition | null }
 
 export interface RelatedAnimeResult { ready: boolean; source: CatalogItem; items: (CatalogItem & { relation: string })[]; truncated: boolean }
 
@@ -129,12 +130,13 @@ export function saveCatalogGenres(genres: { tag: string; visible: boolean }[]): 
   return catalogGenres({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ genres }) })
 }
 
-export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number; include?: string[]; exclude?: string[]; maxEps?: number; finished?: boolean }, signal?: AbortSignal): Promise<CatalogResult> {
+export async function fetchCatalog(params: { q: string; year: number; sort: 'score' | 'date'; offset: number; limit: number; include?: string[]; exclude?: string[]; maxEps?: number; finished?: boolean; around?: number[] }, signal?: AbortSignal): Promise<CatalogResult> {
   const query = new URLSearchParams({ q: params.q, year: String(params.year), sort: params.sort, offset: String(params.offset), limit: String(params.limit) })
   if (params.maxEps) query.set('maxEps', String(params.maxEps))
   if (params.finished) query.set('finished', '1')
   if (params.include?.length) query.set('include', JSON.stringify(params.include))
   if (params.exclude?.length) query.set('exclude', JSON.stringify(params.exclude))
+  if (params.around) query.set('around', JSON.stringify(params.around))
   const res = await fetch(`/api/catalog?${query}`, { signal })
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }

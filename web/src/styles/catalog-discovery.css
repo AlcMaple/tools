@@ -27,6 +27,22 @@
 @media (max-width: 620px) { .catalog-discovery { padding: 14px; } .catalog-discovery-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .catalog-discovery-fields .btn { grid-column: 1 / -1; } }
 .catalog-grid { transition: opacity .15s; }
 .catalog-grid.is-stale { opacity: .55; pointer-events: none; }
+.catalog-resume { position: relative; width: max-content; max-width: 100%; margin-top: 12px; }
+.catalog-resume-note:not(:empty) {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 3;
+  width: max-content;
+  max-width: min(76vw, 28rem);
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 13px;
+}
+.catalog-before { display: grid; min-height: 46px; place-items: center; }
 
 .catalog-planning { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
 .catalog-length { width: 150px; }

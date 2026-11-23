@@ -39,9 +39,9 @@ if (process.argv.includes('--serve')) {
     assert.equal(matchesPlanning(12, '2020-03-28', 13, true, '2020-03-29'), true)
     assert.equal(matchesPlanning(7, '', 13, true, '2026-11-13'), false)
     console.log('PASS exact wiki dates, invalid/conflicting dates, unknowns and day boundary')
-    const request = async (values: Record<string, string>) => {
-      const response = await fixture.originalFetch(fixture.origin + '/api/catalog?' + new URLSearchParams(values))
-      return { status: response.status, data: await response.json() as { total: number; planningReady: boolean; items: { bgmId: number }[] } }
+    const request = async (values: Record<string, string>, cookie = '') => {
+      const response = await fixture.originalFetch(fixture.origin + '/api/catalog?' + new URLSearchParams(values), { headers: cookie ? { Cookie: cookie } : {} })
+      return { status: response.status, data: await response.json() as { total: number; planningReady: boolean; items: { bgmId: number }[]; position?: { id: number; offset: number } | null } }
     }
     const filters = { maxEps: '13', finished: '1', include: '["治愈"]' }
     assert.deepEqual((await request(filters)).data.items.map(i => i.bgmId), [8101], 'ONLY_KNOWN_SHORT_FINISHED_VISIBLE_CANDIDATE')
@@ -80,5 +80,44 @@ if (process.argv.includes('--serve')) {
     imported.close()
     assert.deepEqual((await request({ maxEps: '13', finished: '1' })).data.items.map(i => i.bgmId), [8001], 'ATOMIC_INDEX_REPLACEMENT_REFRESHES_SNAPSHOT')
     console.log('PASS actual npm index import, main-episode count and atomic snapshot refresh')
+
+    const scoped = new Database(path)
+    const addScoped = scoped.prepare('INSERT INTO anime (bgm_id,name,name_cn,aliases,date,score,tags,nsfw,eps,votes,end_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+    scoped.transaction(() => {
+      for (let i = 0; i < 150; i++) addScoped.run(10000+i, '目录定位'+i, '目录定位'+i, '[]', `2024-01-${String(i % 28 + 1).padStart(2, '0')}`, 5+i/50, '["治愈"]', 0, 12, 100, '2024-04-01')
+      addScoped.run(20001, '只对登录用户可见', '', '[]', '2024-01-01', 9, '["治愈"]', 1, 12, 100, '2024-04-01')
+      addScoped.run(20002, '被题材排除', '', '[]', '2024-01-01', 9, '["治愈","搞笑"]', 0, 12, 100, '2024-04-01')
+      addScoped.run(20003, '集数超出', '', '[]', '2024-01-01', 9, '["治愈"]', 0, 26, 100, '2024-04-01')
+      addScoped.run(20004, '年份不符', '', '[]', '2023-01-01', 9, '["治愈"]', 0, 12, 100, '2023-04-01')
+      addScoped.run(20005, '尚未播完', '', '[]', '2024-01-01', 9, '["治愈"]', 0, 12, 100, '2099-04-01')
+    })()
+    scoped.close()
+    const scope = { ...filters, year: '2024', exclude: '["搞笑"]' }
+    const itemIds = (r: Awaited<ReturnType<typeof request>>) => r.data.items.map(item => item.bgmId)
+    for (const sort of ['score', 'date']) {
+      const params = { ...scope, sort }
+      const expected = [...itemIds(await request({ ...params, limit: '96' })), ...itemIds(await request({ ...params, limit: '96', offset: '96' }))]
+      assert.equal(expected.length, 150)
+      const around = JSON.stringify([20001, 20002, 20003, 20004, 20005, expected[92], expected[68]])
+      const result = await request({ ...params, around, limit: '48' })
+      assert.deepEqual(result.data.position, { id: expected[92], offset: 68 })
+      assert.deepEqual(itemIds(result), expected.slice(68, 116))
+      assert.deepEqual(itemIds(await request({ ...params, offset: '20' })), expected.slice(20, 68))
+      assert.deepEqual(itemIds(await request({ ...params, offset: '116' })), expected.slice(116))
+      for (const [rank, offset] of [[0, 0], [149, 102]]) {
+        assert.deepEqual((await request({ ...params, around: JSON.stringify([expected[rank]]) })).data.position, { id: expected[rank], offset })
+      }
+    }
+    const login = await fixture.originalFetch(fixture.origin + '/__agent-test/login/alice', { redirect: 'manual' })
+    const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]
+    assert.equal((await request({ ...scope, around: '[20001,10000]' }, cookie)).data.position?.id, 20001)
+    const missing = await request({ ...scope, around: '[20001,20002,999999]' })
+    assert.equal(missing.data.position, null)
+    assert.deepEqual(itemIds(missing), [])
+    for (const bad of ['', '[]', '[0]', '[-1]', '["1"]', '[1.5]', '[null]', JSON.stringify(Array(13).fill(10000))]) {
+      assert.equal((await request({ around: bad })).status, 400)
+    }
+    assert.equal(fixture.metrics.externalRequests, 0)
+    console.log('PASS catalog locate uses filtered ranks, nearest eligible ID, both adjacent pages, visibility, bounds and invalid IDs')
   } finally { await fixture.close() }
 }

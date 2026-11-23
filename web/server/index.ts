@@ -1,4 +1,5 @@
 import { EPISODE_LIMITS } from '../shared/catalog-planning'
+import { isCatalogPositionIds } from '../shared/catalog-position'
 import { Hono, type Context } from 'hono'
 import { isAdminUid } from './admin'
 import bootLog from './boot-log'
@@ -168,12 +169,21 @@ app.get('/api/catalog', async (c) => {
   const maxEps = Number(c.req.query('maxEps') ?? 0)
   const finished = c.req.query('finished') ?? '0'
   if (!EPISODE_LIMITS.some(limit => limit === maxEps) || !['0', '1'].includes(finished)) return c.json({ error: '集数或播出状态条件不正确' }, 400)
+  let around: number[] | undefined
+  const rawAround = c.req.query('around')
+  if (rawAround !== undefined) {
+    if (rawAround.length > 256) return c.json({ error: '浏览位置不正确' }, 400)
+    let ids: unknown
+    try { ids = JSON.parse(rawAround) } catch { ids = null }
+    if (!isCatalogPositionIds(ids)) return c.json({ error: '浏览位置不正确' }, 400)
+    around = ids
+  }
   c.header('Cache-Control', 'no-store')
   return c.json(listCatalog({
     q: (c.req.query('q') ?? '').slice(0, 80),
     year: num('year', 0),
     sort: c.req.query('sort') === 'date' ? 'date' : 'score',
-    offset: Math.min(num('offset', 0), 50_000),
+    offset: num('offset', 0),
     limit: Math.min(Math.max(num('limit', 48), 1), 96),
     adult: !!session,
     admin: !!session && isAdminUid(session.uid),
@@ -181,6 +191,7 @@ app.get('/api/catalog', async (c) => {
     exclude,
     maxEps,
     finished: finished === '1',
+    around,
   }))
 })
 

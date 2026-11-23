@@ -1,4 +1,5 @@
 import { matchesPlanning } from '../../shared/catalog-planning'
+import type { CatalogPosition } from '../../shared/catalog-position'
 // 全部番剧：把离线索引整张表做成可浏览的目录，外加一个慢慢补封面的后台任务。
 //
 // 离线档里没有封面字段，每部番只能问 BGM 一次 `/v0/subjects/:id` 拿图床路径，再把图下到服务器磁盘
@@ -250,7 +251,7 @@ function catalogSnapshot(h: NonNullable<ReturnType<typeof openOfflineIndex>>): C
   return snapshot
 }
 
-export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean; include?: string[]; exclude?: string[]; maxEps?: number; finished?: boolean }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[]; planningReady: boolean } {
+export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; offset: number; limit: number; adult: boolean; admin: boolean; include?: string[]; exclude?: string[]; maxEps?: number; finished?: boolean; around?: number[] }): { ready: boolean; total: number; items: CatalogItem[]; covered: number; admin: boolean; genres: string[]; planningReady: boolean; position?: CatalogPosition | null } {
   const h = openOfflineIndex()
   const covered = (countDone.get() as { n: number }).n
   if (!h || !hasAnimeTable()) return { ready: false, total: 0, items: [], covered, admin: opts.admin, genres: [], planningReady: false }
@@ -265,6 +266,24 @@ export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; 
   const hasPlanning = maxEps > 0 || finished
   const hasTags = include.length > 0 || exclude.length > 0
   const tagMatch = (e: SnapshotEntry): boolean => include.every((tag) => e.tags.includes(tag)) && !exclude.some((tag) => e.tags.includes(tag))
+  const windowOf = <T,>(entries: T[], idOf: (entry: T) => number): { page: T[]; position?: CatalogPosition | null } => {
+    if (!opts.around) return { page: entries.slice(opts.offset, opts.offset + opts.limit) }
+    // 先做与普通翻页完全相同的可见性、筛选和排序，再按书签顺序找第一个仍在列表里的作品
+    const candidates = new Set(opts.around)
+    const ranks = new Map<number, number>()
+    for (const [rank, entry] of entries.entries()) {
+      const id = idOf(entry)
+      if (candidates.has(id)) ranks.set(id, rank)
+      if (ranks.size === candidates.size) break
+    }
+    for (const id of opts.around) {
+      const rank = ranks.get(id)
+      if (rank === undefined) continue
+      const offset = Math.max(0, Math.min(rank - Math.floor(opts.limit / 2), entries.length - opts.limit))
+      return { page: entries.slice(offset, offset + opts.limit), position: { id, offset } }
+    }
+    return { page: [], position: null }
+  }
   if (opts.q.trim()) {
     const shown = opts.adult ? '1' : visibleSql()
     // 题材和篇幅条件都在搜索截断 120 条之前收窄，避免不相干的高分条目挤掉目标
@@ -276,15 +295,17 @@ export function listCatalog(opts: { q: string; year: number; sort: CatalogSort; 
     // 搜索先按相关度截出前 120 条候选，再按用户选的排序重排，否则「最新」在搜索时没有效果
     const order = opts.sort === 'date' ? snap.dateRank : snap.scoreRank
     rows.sort((a, b) => (order.get(a.bgm_id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.bgm_id) ?? Number.MAX_SAFE_INTEGER))
-    return { ready: true, total: rows.length, items: rows.slice(opts.offset, opts.offset + opts.limit).map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres, planningReady }
+    const { page, position } = windowOf(rows, r => r.bgm_id)
+    return { ready: true, total: rows.length, items: page.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres, planningReady, position }
   }
   const year = opts.year > 0 ? String(opts.year) : ''
   const matched = (opts.sort === 'date' ? snap.byDate : snap.byScore)
     .filter((e) => (opts.adult || e.visible) && (!year || e.year === year) && (!hasTags || tagMatch(e)) && planningMatch(e))
-  const ids = matched.slice(opts.offset, opts.offset + opts.limit).map((e) => e.id)
+  const { page, position } = windowOf(matched, e => e.id)
+  const ids = page.map(e => e.id)
   const byId = new Map((h.prepare(`SELECT ${cols} FROM anime WHERE bgm_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as IndexRow[]).map((r) => [r.bgm_id, r]))
   const rows = ids.map((id) => byId.get(id)).filter((r): r is IndexRow => !!r)
-  return { ready: true, total: matched.length, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres, planningReady }
+  return { ready: true, total: matched.length, items: rows.map((r) => toItem(r, opts.admin)), covered, admin: opts.admin, genres, planningReady, position }
 }
 
 // ── 管理员编辑 ───────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const { spawn } = require('node:child_process')
-const { readFile, mkdtemp, rm } = require('node:fs/promises')
+const { readFile, writeFile, mkdtemp, rm } = require('node:fs/promises')
 const { createServer } = require('node:http')
 const { tmpdir } = require('node:os')
 const { extname, join, resolve, sep } = require('node:path')
@@ -20,6 +20,7 @@ async function fixture() {
   const dist = resolve(process.env.CATALOG_WINDOW_DIST || join(__dirname, '../dist'))
   const rows = Array.from({ length: TOTAL }, (_, i) => item(i + 1))
   const requests = []
+  const resume = { active: false, owner: 1, removed: new Set(), delayOffset: -1 }
   const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png', '.webp': 'image/webp' }
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')
@@ -30,6 +31,27 @@ async function fixture() {
       const offset = Number(url.searchParams.get('offset'))
       const limit = Number(url.searchParams.get('limit'))
       const sort = url.searchParams.get('sort')
+      if (resume.active) {
+        const q = url.searchParams.get('q')
+        const year = Number(url.searchParams.get('year'))
+        const maxEps = Number(url.searchParams.get('maxEps'))
+        const finished = url.searchParams.get('finished') === '1'
+        const include = JSON.parse(url.searchParams.get('include') || '[]')
+        const exclude = JSON.parse(url.searchParams.get('exclude') || '[]')
+        const around = JSON.parse(url.searchParams.get('around') || 'null')
+        const list = rows.slice(0, 540).filter(i => !resume.removed.has(i.bgmId) && (!q || i.bgmId % 3 === 0))
+        if (sort === 'date') list.reverse()
+        const data = { ready: true, total: list.length, covered: 0, admin: false, genres: [], planningReady: true }
+        const id = around?.find(candidate => list.some(i => i.bgmId === candidate))
+        const start = id === undefined ? offset : Math.max(0, Math.min(list.findIndex(i => i.bgmId === id) - Math.floor(limit / 2), list.length - limit))
+        requests.push({ sort, q, year, maxEps, finished, include, exclude, around, offset, limit, start })
+        if (!around && resume.delayOffset === offset) await delay(600)
+        return json({
+          ...data,
+          position: around ? id === undefined ? null : { id, offset: start } : undefined,
+          items: around && id === undefined ? [] : list.slice(start, start + limit),
+        })
+      }
       requests.push({ sort, offset, limit })
       const count = sort === 'date' ? SMALL : TOTAL
       // 只把已翻过的条目一次注入，避免慢测 624 次网络往返；最后一批仍走正式的自动续载
@@ -38,7 +60,7 @@ async function fixture() {
     }
     const details = /^\/api\/catalog\/(\d+)\/details$/.exec(path)
     if (details) return json({ item: rows[Number(details[1]) - 1], aliases: [], summary: '合成测试简介', summaryStatus: 'available' })
-    if (path === '/api/auth/me') return json({ id: 1, username: 'testcatalog', hasSecurity: true, hasEmail: false, hasPassword: true })
+    if (path === '/api/auth/me') return json({ id: resume.owner, username: 'testcatalog' + resume.owner, hasSecurity: true, hasEmail: false, hasPassword: true })
     if (path === '/api/tracks' || path === '/api/tracks/revision') return json({ data: [], rev: 1, viewRev: 1 })
     if (path === '/api/xifan/bindings' || path === '/api/girigiri/bindings') return json({ data: {} })
     if (path === '/api/calendar') return json({ data: [], updatedAt: Date.now(), fromCache: true })
@@ -59,7 +81,7 @@ async function fixture() {
     }
   })
   await new Promise(ok => server.listen(0, '127.0.0.1', ok))
-  return { origin: 'http://127.0.0.1:' + server.address().port, close: () => new Promise(ok => { server.close(ok); server.closeAllConnections() }) }
+  return { origin: 'http://127.0.0.1:' + server.address().port, resume, requests, close: () => new Promise(ok => { server.close(ok); server.closeAllConnections() }) }
 }
 
 function locate(target) {
@@ -82,7 +104,8 @@ function locate(target) {
     last: ids.at(-1), y: scrollY, height: document.scrollingElement.scrollHeight }
 }
 
-async function browser(origin, data) {
+async function browser(fixture, data) {
+  const { origin, resume, requests: recorded } = fixture
   const executable = process.env.CHROME_BIN || (process.platform === 'darwin'
     ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
     : process.platform === 'win32'
@@ -124,8 +147,7 @@ async function browser(origin, data) {
     })
   }
   try {
-    const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
-    const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+    let targetId, sessionId
     const rpc = (method, params) => send(method, params, sessionId)
     const read = async expression => {
       const response = await rpc('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
@@ -152,12 +174,21 @@ async function browser(origin, data) {
     const requests = () => read('fetch("/__catalog-fixture").then(r => r.json())')
     const emulation = (width, height) => rpc('Emulation.setDeviceMetricsOverride',
       { width, height, deviceScaleFactor: 3, mobile: true })
-    await emulation(390, 844)
-    await rpc('Network.enable')
-    await rpc('Network.setBlockedURLs', { urls: ['https://*'] })
-    await rpc('Page.navigate', { url: origin })
-    await waitFor(() => read('!!document.querySelector(".spine-user")'), 'synthetic login')
-    await read('location.hash="/anime";true')
+    const openCatalog = async () => {
+      ;({ targetId } = await send('Target.createTarget', { url: 'about:blank' }))
+      ;({ sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }))
+      await emulation(390, 844)
+      await rpc('Emulation.setTouchEmulationEnabled', { enabled: true })
+      await rpc('Network.enable')
+      await rpc('Network.setBlockedURLs', { urls: ['https://*'] })
+      await rpc('Page.navigate', { url: origin })
+      await waitFor(() => read('!!document.querySelector(".spine-user")'), 'synthetic login')
+      await waitFor(() => read('!document.querySelector(".sp")'), 'opening splash finished')
+      await read('location.hash="/anime";true')
+    }
+    const closeTab = () => send('Target.closeTarget', { targetId })
+    if (!process.argv.includes('--resume-only')) {
+    await openCatalog()
     await waitFor(async () => (await snap())?.mounted > 0, 'initial scored catalog')
     await settled()
     const initial = await snap()
@@ -225,6 +256,174 @@ async function browser(origin, data) {
     assert.equal((await snap()).last, SMALL)
     assert.deepEqual(await requests(), sortedRequests)
     console.log('PASS 离屏不关闭片源选择；排序后 0、48、96 各取一次，续载到末尾')
+    await closeTab()
+    }
+
+    resume.active = true
+    recorded.length = 0
+    await openCatalog()
+    const storageKey = 'mapletools-catalog-position-v1:1'
+    const position = () => read('localStorage.getItem(' + JSON.stringify(storageKey) + ')')
+    const resumeButton = 'document.querySelector(".catalog-resume button")'
+    const catalogReady = () => waitFor(async () => (await snap())?.mounted > 0 && await read('document.querySelector(".catalog-grid")?.getAttribute("aria-busy") === "false"'), 'catalog is ready')
+    const click = (selector, content) => read(`Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(e => e.textContent.trim() === ${JSON.stringify(content)}).click();true`)
+    const fill = (selector, value) => read(`(() => {
+      const input = document.querySelector(${JSON.stringify(selector)})
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(value)})
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+      return true
+    })()`)
+    const swipe = async (distance) => {
+      await rpc('Input.synthesizeScrollGesture', {
+        x: 190, y: 435, yDistance: distance, speed: 6400, gestureSourceType: 'touch', preventFling: true,
+      })
+      await settled()
+    }
+    const leave = async () => {
+      await read('location.hash="";true')
+      await waitFor(() => read('!document.querySelector(".catalog-page")'), 'left the catalog')
+    }
+    const enter = async () => {
+      await read('location.hash="/anime";true')
+      await catalogReady()
+    }
+    const findBookmark = async () => {
+      await waitFor(() => read('!!' + resumeButton), 'continue button')
+      await settled()
+      assert.equal((await snap()).y, 0, 'no automatic jump')
+    }
+    const tapResume = async () => {
+      const point = await read(`(() => {
+        const button = ${resumeButton}, rect = button.getBoundingClientRect()
+        const point = {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2}
+        return button.contains(document.elementFromPoint(point.x, point.y)) ? point : null
+      })()`)
+      assert(point, 'continue must be visible and tappable without scrolling down')
+      await rpc('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
+      await rpc('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    }
+    const restored = async (id, since) => {
+      await findBookmark()
+      assert(!recorded.slice(since).some(r => r.around), 'no lookup before clicking continue')
+      const count = recorded.length
+      await tapResume()
+      await waitFor(async () => {
+        const view = await snap(id)
+        return view?.selected >= 50 && view?.selected <= 90 && await read(`document.activeElement?.textContent === "样本番剧 #${id}"`)
+      }, 'target visible below sticky mobile header')
+      await settled()
+      const calls = recorded.slice(count)
+      assert.equal(calls.length, 1, 'restore must not replay the first page or intermediate pages')
+      assert(calls[0].start > 48, JSON.stringify(calls))
+      return calls[0]
+    }
+    await catalogReady()
+    await click('.catalog-toolbar .seg button', '最新')
+    await read('document.querySelector(".catalog-year .dd-trigger").click();true')
+    await click('.dd-item', '2024 年')
+    await read('document.querySelector(".catalog-length .dd-trigger").click();true')
+    await click('.dd-item', '13 集以内')
+    await fill('.catalog-discovery-fields label:first-child input', '奇幻')
+    await fill('.catalog-discovery-fields label:nth-child(2) input', '运动')
+    await click('.catalog-planning .chip', '已播完')
+    await waitFor(() => recorded.some(r => r.sort === 'date' && r.year === 2024 && r.maxEps === 13 && r.finished && r.include[0] === '奇幻' && r.exclude[0] === '运动'), 'filtered request')
+    await catalogReady()
+    assert.equal(await position(), null)
+    for (let i = 0; i < 8; i++) await swipe(-3900)
+    assert(recorded.some(r => r.offset === 48), JSON.stringify(recorded))
+    const saved = await position()
+    assert(saved, 'TOUCH_ONLY_MUST_SAVE')
+    const bookmark = JSON.parse(saved)
+    assert.deepEqual(bookmark.filters, { year: 2024, sort: 'date', include: ['奇幻'], exclude: ['运动'], maxEps: 13, finished: true })
+    assert(bookmark.ids.length > 1 && bookmark.ids[0] < 440, saved)
+    const id = bookmark.ids[0]
+    const savedView = await snap(id)
+    assert(savedView.selected !== null && savedView.selected > -400 && savedView.selected < 90, JSON.stringify(savedView))
+    console.log('PASS 390×844 只滑不点，保存深处作品及筛选，目标 ID ' + id)
+
+    await leave()
+    await enter()
+    await findBookmark()
+    await leave()
+    assert.equal(await position(), saved, 'quick visit must not replace the bookmark')
+    await enter()
+    await fill('.catalog-toolbar input', '临时搜索')
+    await waitFor(() => recorded.some(r => r.q === '临时搜索'), 'temporary search started')
+    await catalogReady()
+    await swipe(-4600)
+    assert.equal(await position(), saved, 'search scrolling must keep the previous bookmark')
+    await closeTab()
+
+    const reopened = recorded.length
+    await openCatalog()
+    await catalogReady()
+    await findBookmark()
+    assert.equal(await read('document.querySelector(".catalog-toolbar input").value'), '')
+    assert.equal(await read('document.querySelector(".catalog-toolbar .seg .on").textContent'), '评分')
+    if (process.env.CATALOG_RESUME_SCREENSHOT) {
+      const shot = await rpc('Page.captureScreenshot', { format: 'png' })
+      await writeFile(process.env.CATALOG_RESUME_SCREENSHOT, Buffer.from(shot.data, 'base64'))
+    }
+    const exact = await restored(id, reopened)
+    assert.deepEqual(exact.around, bookmark.ids)
+    assert.deepEqual([exact.sort, exact.year, exact.maxEps, exact.finished], ['date', 2024, 13, true])
+    assert.deepEqual([exact.include, exact.exclude], [['奇幻'], ['运动']])
+    assert.equal(await read('document.querySelector(".catalog-toolbar .seg .on").textContent'), '最新')
+    assert.equal(await read('document.querySelector(".catalog-planning .chip").getAttribute("aria-pressed")'), 'true')
+    assert.deepEqual(await read('Array.from(document.querySelectorAll(".catalog-discovery-fields input"), e => e.value)'), ['奇幻', '运动'])
+    await leave()
+    assert.equal(await position(), saved, 'leave immediately after restore without replacing the bookmark')
+    console.log('PASS 误进秒退、临时搜索都保留；关标签重开不自动跳；一键恢复只发一条定位请求；恢复即离开不改书签')
+
+    await enter()
+    const again = await restored(id, recorded.length)
+    resume.delayOffset = again.start - 48
+    await go((await read('document.querySelector(".catalog-grid").getBoundingClientRect().top + scrollY')) + 380)
+    await waitFor(() => recorded.some(r => !r.around && r.offset === again.start - 48), 'fetch previous page on upward scroll')
+    const before = await snap()
+    await waitFor(async () => (await snap())?.y > before.y + 300, 'loaded previous rows preserve current view')
+    const prepended = await snap()
+    assert.equal(prepended.first.id, before.first.id)
+    assert(Math.abs(prepended.first.top - before.first.top) <= 2)
+    await go(prepended.height)
+    await waitFor(() => recorded.some(r => !r.around && r.offset === again.start + 48), 'fetch next page on downward scroll')
+    assert.equal(await position(), saved, 'automatic alignment and app scrolling must not replace the bookmark')
+    await leave()
+    console.log('PASS 恢复后上滑取前一批、下滑取后一批，前插保持可见作品及位置')
+
+    resume.removed.add(id)
+    await enter()
+    await restored(bookmark.ids[1], recorded.length)
+    await leave()
+    resume.removed = new Set(bookmark.ids)
+    await enter()
+    await findBookmark()
+    await tapResume()
+    await waitFor(() => read('document.querySelector(".catalog-resume-note").textContent.includes("找不到上次浏览的位置")'), 'notice if every saved ID is gone')
+    assert.equal((await snap()).y, 0)
+    assert.equal(await position(), saved)
+    await closeTab()
+    resume.owner = 2
+    await openCatalog()
+    await catalogReady()
+    await settled()
+    assert.equal(await read('!!' + resumeButton), false, 'ACCOUNT_2_MUST_NOT_SEE_ACCOUNT_1_BOOKMARK')
+    await swipe(-4500)
+    assert(await read('localStorage.getItem("mapletools-catalog-position-v1:2")'), 'account 2 writes its own slot')
+    assert.equal(await position(), saved)
+    await closeTab()
+    resume.owner = 1
+    resume.removed.clear()
+    await openCatalog()
+    await catalogReady()
+    await findBookmark()
+    console.log('PASS 目标移除时继续同屏下一部；都移除时提示；同浏览器换账号互不显示或覆盖')
+    await restored(id, recorded.length)
+    await swipe(-1250)
+    const advanced = JSON.parse(await position())
+    assert(advanced.ids[0] < id, JSON.stringify(advanced))
+    assert.deepEqual(advanced.filters, bookmark.filters)
+    console.log('PASS 恢复后真正继续滑动会更新书签')
   } finally {
     chrome.kill('SIGTERM')
     await closed
@@ -235,7 +434,7 @@ async function run() {
   const data = await mkdtemp(join(tmpdir(), 'catalog-window-chrome-'))
   const server = await fixture()
   try {
-    await browser(server.origin, data)
+    await browser(server, data)
   } finally {
     await server.close()
     await rm(data, { recursive: true, force: true })
