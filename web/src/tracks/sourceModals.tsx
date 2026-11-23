@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { OnlineSource, SourceCandidate, SourceId, SourceSearchHit, Track, WatchMode } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
 import { SHORT_DAY, watchEp } from './common'
+import { tracksPlayerLinkRel } from './playerReturn'
 
 export interface PickerFlow {
   source: SourceId
@@ -38,6 +39,7 @@ function linkFor(source: OnlineSource, mode: WatchMode, id: string, ep: number, 
 export function SourceBindPickerModal({
   source,
   flow,
+  returnToTracks = false,
   offsetFor,
   onPick,
   onSearch,
@@ -45,6 +47,7 @@ export function SourceBindPickerModal({
 }: {
   source: OnlineSource
   flow: PickerFlow
+  returnToTracks?: boolean
   offsetFor: (id: string) => number
   onPick: (cand: SourceCandidate) => void
   onSearch: () => void
@@ -89,7 +92,8 @@ export function SourceBindPickerModal({
               className="sugg-item"
               href={linkFor(source, mode, c.id, ep + offset, track.bgmId, agentAction)}
               target="_blank"
-              rel="noreferrer"
+              rel={tracksPlayerLinkRel(linkFor(source, mode, c.id, ep + offset, track.bgmId, agentAction), mode, returnToTracks)}
+              referrerPolicy="no-referrer"
               onClick={() => onPick(c)}
             >
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
@@ -119,12 +123,14 @@ type SearchStatus = 'searching' | 'captcha' | 'verifying' | 'results' | 'error'
 export function SourceSearchModal({
   source,
   flow,
+  returnToTracks = false,
   offsetFor,
   onPick,
   onClose,
 }: {
   source: OnlineSource
   flow: SearchFlow
+  returnToTracks?: boolean
   offsetFor: (id: string) => number
   onPick: (hit: SourceSearchHit) => void
   onClose: () => void
@@ -383,7 +389,8 @@ export function SourceSearchModal({
                       className="sugg-item"
                       href={linkFor(source, mode, hit.id, ep + offset, track.bgmId, agentAction)}
                       target="_blank"
-                      rel="noreferrer"
+                      rel={tracksPlayerLinkRel(linkFor(source, mode, hit.id, ep + offset, track.bgmId, agentAction), mode, returnToTracks)}
+                      referrerPolicy="no-referrer"
                       onClick={() => onPick(hit)}
                     >
                       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>

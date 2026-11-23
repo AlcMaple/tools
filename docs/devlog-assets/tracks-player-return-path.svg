@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="806" viewBox="0 0 1020 806" role="img" aria-labelledby="title desc">
+  <title id="title">看完回到原来的追番范围</title>
+  <desc id="desc">方案：本站播放器优先返回仍打开且账号一致的原追番页，原页失效时保留普通返回链接，外部源站不获得返回权限</desc>
+  <defs>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;fill:#282529}
+      .title{font-size:19px;font-weight:700}.sub{font-size:12.5px;fill:#756f73}.section{font-size:14px;font-weight:700}.head{font-size:12.5px;font-weight:700}.body{font-size:11px}.green{fill:#316247}.blue{fill:#36566d}.red{fill:#96434f}.yellow{fill:#7a6234}.muted{fill:#756f73}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#91adc1"/></marker>
+  </defs>
+  <rect x="1" y="1" width="1018" height="804" rx="14" fill="#fbfafb" stroke="#e2dcdf"/>
+  <text x="28" y="38" class="title">看完回到原来的追番范围</text>
+  <text x="28" y="65" class="sub">方案：回到仍打开的原手帐继续整理，不重新搜索；原页失效时仍有普通返回入口</text>
+
+  <rect x="28" y="86" width="964" height="62" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="46" y="110" class="head red">当前阻力：原页还在，返回却另开了一份默认手帐</text>
+  <text x="46" y="132" class="body">本地基线实测：「在看 + 芙莉莲」1 条结果 → 本站播放器 → 返回后全部 3 条、搜索为空；第 11 集记录未丢</text>
+
+  <text x="28" y="181" class="section">正常回程：原页与当前账号都匹配</text>
+  <text x="28" y="206" class="body muted">用户看到的</text>
+  <rect x="28" y="218" width="294" height="100" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="46" y="246" class="head green">筛好范围，找到想看的番</text>
+  <text x="46" y="273" class="body">原追番页：在看 + 原搜索词</text>
+  <text x="46" y="296" class="body">原查看方式与位置留在这里</text>
+  <path d="M330 268H350" stroke="#91adc1" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="360" y="218" width="294" height="100" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="378" y="246" class="head blue">打开本站播放器</text>
+  <text x="378" y="273" class="body">独立标签页观看</text>
+  <text x="378" y="296" class="body">点击「回到我的追番」</text>
+  <path d="M662 268H682" stroke="#91adc1" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="692" y="218" width="300" height="100" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="710" y="246" class="head green">回到刚才的手帐</text>
+  <text x="710" y="273" class="body">不用重新筛选和搜索</text>
+  <text x="710" y="296" class="body">继续记录或整理，返回本身不改进度</text>
+
+  <text x="28" y="346" class="body muted">背后在做的</text>
+  <rect x="28" y="358" width="294" height="82" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="46" y="385" class="head">原页保留自己的状态</text>
+  <text x="46" y="412" class="body">不把搜索词和账号复制进播放器链接</text>
+  <rect x="360" y="358" width="294" height="82" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="378" y="385" class="head blue">返回时重新核对</text>
+  <text x="378" y="412" class="body">本站追番页仍有效，且当前账号一致</text>
+  <rect x="692" y="358" width="300" height="82" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="710" y="385" class="head green">确认原页接手再返回</text>
+  <text x="710" y="408" class="body">原页失效时走普通链接</text>
+  <text x="710" y="425" class="body">核对报错则留在播放页，不自动重试</text>
+
+  <text x="28" y="477" class="section">边界：要等的不是播放，而是正确的返回目标</text>
+  <rect x="28" y="493" width="470" height="95" rx="10" fill="#f4f2f5" stroke="#c3bcc6"/>
+  <text x="46" y="521" class="head">原页已关、已离开追番，或直接打开播放器</text>
+  <text x="46" y="548" class="body">普通「回到我的追番」照常可用</text>
+  <text x="46" y="571" class="body">不从旧链接或存储猜测原来的浏览范围</text>
+  <rect x="518" y="493" width="474" height="95" rx="10" fill="#fdeef0" stroke="#d99aa5"/>
+  <text x="536" y="521" class="head red">退出、换账号，或原页已经去了别的网站</text>
+  <text x="536" y="548" class="body">不接续旧账号的筛选与页面，不操作其他网站</text>
+  <text x="536" y="571" class="body">回到本站当前账号的普通追番入口</text>
+  <rect x="28" y="604" width="470" height="95" rx="10" fill="#eef4f8" stroke="#91adc1"/>
+  <text x="46" y="632" class="head blue">源站链接与修饰键点击</text>
+  <text x="46" y="659" class="body">外部源站仍独立打开，不获得返回原页的权限</text>
+  <text x="46" y="682" class="body">原生链接行为保持，不把所有新窗口连起来</text>
+  <rect x="518" y="604" width="474" height="95" rx="10" fill="#fff8e8" stroke="#d9bd85"/>
+  <text x="536" y="632" class="head yellow">为什么不另存一套筛选？</text>
+  <text x="536" y="659" class="body">原页已经保留上下文；复制后还要处理过期与账号错配</text>
+  <text x="536" y="682" class="body">本方案只连接回程，不新增永久存储或进度来源</text>
+
+  <rect x="28" y="722" width="964" height="54" rx="10" fill="#edf7f1" stroke="#7fad91"/>
+  <text x="46" y="745" class="head green">常见路径仍是一次返回动作</text>
+  <text x="46" y="765" class="body">不增加说明卡片或新入口；手帐的状态、集数、标签以及既有观看与记录规则保持原样</text>
+</svg>

@@ -10,7 +10,7 @@ import type { AgentUsage,SummaryState } from '../shared/agent-contracts'
 import type { ContextProvider,ProviderProfile } from '../server/agent/context-provider'
 import type { RunProviderEvent } from '../server/agent/run-service'
 
-export async function createAgentUiFixture(){
+export async function createAgentUiFixture(configure?: (app: import('hono').Hono<{ Variables: { agentUid: number } }>, database: typeof import('../server/db').db) => void){
   if(process.env.AGENT_UI_FIXTURE!=='1'||process.env.NODE_ENV!=='test')throw new Error('UI_FIXTURE_TEST_ONLY')
   const oldCwd=process.cwd(),oldEnv={...process.env},originalFetch=globalThis.fetch,directory=mkdtempSync(join(tmpdir(),'maple-agent-ui-'))
   mkdirSync(join(directory,'data'));process.chdir(directory)
@@ -86,6 +86,7 @@ export async function createAgentUiFixture(){
   }},tools:[{name:'listMyTracks',async execute(_args,actor){metrics.toolCalls++;if(actor.uid!==uid)throw new Error('OWNER_MISMATCH');return{ok:true,data:{items:[],revision:0},sources:[{sourceId:'ui-tracks-source',kind:'my_tracks',label:'测试手帐里的追番',retrievedAt:1}],resultCount:0,truncated:false}}}]}
   })
   const app=new Hono<{Variables:{agentUid:number}}>();app.use('*',securityHeaders());app.use('/api/*',sameOriginGuard())
+  configure?.(app,db)
   let watchFixture: {password?:string}|undefined
   if(process.env.AGENT_UI_WATCH==='1'){const {addWatchFixture}=await import('./watch-fixture-routes');watchFixture=addWatchFixture(app,directory,db)}
   const {createGuestApi}=await import('../server/agent/guest-api')

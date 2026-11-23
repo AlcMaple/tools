@@ -38,6 +38,8 @@
     "test:agent-loop": "npm run build:agent-release && tsx scripts/test-agent-loop.ts",
     "test:agent-tracks": "npm run build:agent-release && tsx scripts/test-agent-tracks.ts",
     "test:tracks-navigation": "npm run build && tsx scripts/test-tracks-navigation.ts",
+    "test:tracks-player-return": "npm run build && tsx scripts/test-tracks-player-return.ts",
+    "test:tracks-player-return-links": "tsx scripts/test-tracks-player-return-links.ts",
     "test:tracks-navigation:serve": "npm run build && tsx scripts/test-tracks-navigation.ts --serve",
     "typecheck": "tsc --noEmit",
     "test:agent-playback": "npm run build:agent-release && tsx scripts/test-agent-playback.ts",
