@@ -364,6 +364,7 @@ interface IncomingTrack {
   extra: Record<string, unknown>
   observeCount: number
   updatedAt: number
+  createdAt: number | null
   coverBytes: Uint8Array | null
   coverMime: string
   coverMissing: boolean
@@ -429,6 +430,9 @@ function readTracks(raw: unknown, files: Record<string, Uint8Array>, now: number
       extra,
       observeCount: Math.max(0, asInt(t.observeCount, 0)),
       updatedAt: Number.isFinite(ts) && ts > 0 ? Math.min(ts, now) : now,
+      // 缺失或坏字段不代表改到今天，旧备份更新已有条目时仍留在原归档季。
+      createdAt: typeof t.createdAt === 'number' && Number.isInteger(t.createdAt) && t.createdAt > 0 && t.createdAt <= now
+        ? t.createdAt : null,
       coverBytes,
       coverMime,
       coverMissing,
@@ -529,7 +533,11 @@ const fullUpdateStmt = db.prepare(`
       title = @title, title_cn = @title_cn, cover = @cover, cover_mime = @cover_mime,
       air_weekday = @air_weekday, air_date = @air_date, score = @score,
       bgm_tags = @bgm_tags, user_tags = @user_tags, aliases = @aliases, extra = @extra,
-      observe_count = @observe_count, updated_at = @updated_at
+      observe_count = @observe_count, updated_at = @updated_at, created_at = @created_at
+  WHERE user_id = @user_id AND bgm_id = @bgm_id
+`)
+const finishInsertStmt = db.prepare(`
+  UPDATE tracks SET cover_mime = @cover_mime, created_at = @created_at
   WHERE user_id = @user_id AND bgm_id = @bgm_id
 `)
 
@@ -627,15 +635,16 @@ backup.post('/import', async (c) => {
           extra: JSON.stringify(t.extra),
           observe_count: t.observeCount,
           updated_at: t.updatedAt,
+          created_at: t.createdAt ?? prev?.created_at ?? t.updatedAt,
         }
         if (prev) {
           fullUpdateStmt.run(row)
           summary.tracks.updated++
         } else {
-          // insertStmt 没有 cover_mime 列，插入后补一笔
-          const { cover_mime: _mime, ...insertRow } = row
+          // 共享新增路径按 updatedAt 归档，备份在原事务补回封面和归档时间，不改变其它新增入口。
+          const { cover_mime: _mime, created_at: _createdAt, ...insertRow } = row
           T.insertStmt.run(insertRow)
-          if (coverMime) db.prepare('UPDATE tracks SET cover_mime = ? WHERE user_id = ? AND bgm_id = ?').run(coverMime, uid, t.bgmId)
+          finishInsertStmt.run({ user_id: uid, bgm_id: t.bgmId, cover_mime: coverMime, created_at: row.created_at })
           summary.tracks.added++
         }
       }

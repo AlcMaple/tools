@@ -30,6 +30,7 @@
     "warm:seasons": "tsx scripts/warm-calendar-seasons.ts",
     "test:calendar-today": "npm run build && tsx scripts/test-calendar-today.ts",
     "test:backup": "tsx scripts/test-backup.ts",
+    "test:backup-created-at": "npm run build && tsx scripts/test-backup-created-at.ts",
     "test:account-reset": "tsx scripts/test-account-reset.ts",
     "test:maintenance": "tsx scripts/test-maintenance.ts",
     "test:agent-contract": "tsx scripts/test-agent-contract.ts",
