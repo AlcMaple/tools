@@ -33,7 +33,10 @@ const rows = [
   { id: 8106, name: 'Tag Restricted', name_cn: '标签受限夹具', summary: 'tag-restricted', tags: ['R18'] },
 ]
 writeFileSync(archive, rows.map(row => JSON.stringify({ type: 2, tags: ['冒险'], score: 8, date: '2023-09-29', ...row })).join('\n'))
-const build = spawnSync('npm', ['run', 'sync:index', '--', '--file', archive], { cwd: webRoot, env: process.env, encoding: 'utf8' })
+const npmCli = process.env.npm_execpath
+const args = ['run', 'sync:index', '--', '--file', archive]
+const build = spawnSync(npmCli ? process.execPath : 'npm', npmCli ? [npmCli, ...args] : args, { cwd: webRoot, env: process.env, encoding: 'utf8' })
+if (build.error) throw build.error
 process.stdout.write(build.stdout); process.stderr.write(build.stderr)
 assert.equal(build.status, 0, 'LOCAL_ARCHIVE_BUILD')
 const request = async (id: string, cookie = '') => {

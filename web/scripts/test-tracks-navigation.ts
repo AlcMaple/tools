@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createAgentUiFixture } from './agent-ui-fixture'
+import { createAgentUiFixture, fixtureBrowserEnv } from './agent-ui-fixture'
 import { tracksNavigationForOwner } from '../src/tracks/navigationMemory'
 
 const aliceMemory = tracksNavigationForOwner(null, 1)
@@ -37,11 +37,10 @@ try {
     console.log(JSON.stringify({ origin: fixture.origin, browserUrl: fixture.browserOrigin + '/', mode: 'isolated-tracks-navigation', realAiCalls: 0 }))
     await new Promise<void>(resolve => { process.once('SIGINT', resolve); process.once('SIGTERM', resolve) })
   } else {
-    const env = { ...process.env }
-    delete env.ELECTRON_RUN_AS_NODE
+    const env = fixtureBrowserEnv(fixture.browserOrigin)
     const electron = createRequire(import.meta.url)('electron') as string
     const runner = fileURLToPath(new URL('./tracks-navigation-browser.cjs', import.meta.url))
-    const child = spawn(electron, [runner, fixture.browserOrigin, profile, cdnCover, webp], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(electron, [runner, profile, webp, cdnCover], { env, stdio: ['ignore', 'pipe', 'pipe'] })
     let completedOutput = ''
     child.stdout.on('data', data => { completedOutput += data.toString(); process.stdout.write(data) })
     child.stderr.on('data', data => process.stderr.write(data))

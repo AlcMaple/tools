@@ -14,7 +14,10 @@ import { CoverError, getBgmCover, noteCoverRateLimit, scheduleBgmCoverRequest } 
 import { searchAnime, indexStatus } from './bgm/anime-index'
 import { searchAdditions } from './bgm/search-additions'
 import { searchOnline } from './bgm/search-online'
-import auth, { getSession } from './auth'
+import auth, { clientIp, getSession, rateLimited } from './auth'
+import { findDownloads } from './catalog-downloads/sources'
+import { downloadSubject } from './catalog-downloads/subject'
+import { DownloadEditError, readManual, saveManual } from './catalog-downloads/links'
 import announcements from './announcement'
 import feedback from './feedback'
 import oauth from './oauth'
@@ -215,6 +218,35 @@ app.get('/api/catalog/:id/details', async (c) => {
   return c.json(result.detail)
 })
 
+async function downloadTarget(c: Context, edit = false) {
+  c.header('Cache-Control', 'no-store')
+  const session = await getSession(c)
+  const canEdit = !!session && isAdminUid(session.uid)
+  if (edit && !canEdit) return session ? c.json({ error: '只有管理员能编辑' }, 403) : c.json({ error: '未登录' }, 401)
+  const id = Number(c.req.param('id'))
+  if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: '作品编号不正确', code: 'INVALID_CATALOG_ID' }, 400)
+  const season = c.req.query('season')
+  if (season !== undefined && !isSeasonKey(season)) return c.json({ error: '季度不合法' }, 400)
+  const { ready, subject } = downloadSubject(id, session?.uid, season)
+  if (!ready) return c.json({ error: '作品资料暂未就绪', code: 'CATALOG_NOT_READY' }, 409)
+  if (!subject) return c.json({ error: '没有找到这部作品', code: 'CATALOG_NOT_FOUND' }, 404)
+  return { id, subject, panel: { canEdit, episodes: subject.item.eps } }
+}
+
+app.get('/api/catalog/:id/downloads', async (c) => {
+  const target = await downloadTarget(c)
+  if (target instanceof Response) return target
+  const source = c.req.query('source') ?? 'manual'
+  if (source === 'manual') return c.json({ ...readManual(target.id), ...target.panel })
+  const page = Number(c.req.query('page') ?? 1)
+  if ((source !== 'garden' && source !== 'ani') || !Number.isSafeInteger(page) || page < 1 || page > 1000 || (source === 'ani' && page !== 1)) return c.json({ error: '下载来源或页码不正确' }, 400)
+  if (rateLimited(`catalog-downloads:${clientIp(c)}`, 60, 60_000)) {
+    c.header('Retry-After', '60')
+    return c.json({ error: '这一分钟查询下载资源的次数已用完' }, 429)
+  }
+  return c.json(await findDownloads(target.subject, source, page))
+})
+
 // 管理员手改卡片：中文名、标签、封面。改的是全站共用的目录，不是某个用户自己的追番
 const catalogAdmin = async (c: Context): Promise<number | Response> => {
   const session = await getSession(c)
@@ -227,6 +259,17 @@ const catalogEditFailed = (c: Context, error: unknown): Response => {
   if (error instanceof CatalogEditError) return c.json({ error: error.message }, error.status)
   throw error
 }
+
+app.put('/api/catalog/:id/downloads', async (c) => {
+  const target = await downloadTarget(c, true)
+  if (target instanceof Response) return target
+  const body: unknown = await c.req.json().catch(() => null)
+  try { return c.json({ ...saveManual(target.id, target.panel.episodes, body), ...target.panel }) }
+  catch (error) {
+    if (error instanceof DownloadEditError) return c.json({ error: error.message }, error.status)
+    throw error
+  }
+})
 
 // 快捷题材的显示 / 隐藏：要注册在 /api/catalog/:id 之前，否则 genres 会被当成 bgmId
 const genreAdmin = async (c: Context): Promise<Response | null> => {

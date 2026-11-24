@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
-import { createAgentUiFixture } from './agent-ui-fixture'
+import { createAgentUiFixture, fixtureBrowserEnv } from './agent-ui-fixture'
 
 const groups = [
   { key: 'burst', query: '系列连加样本', base: 910010, count: 12 },
@@ -105,11 +105,10 @@ try {
   assert.equal(revision(), previousRev)
   console.log('TRACK_ADD_API', JSON.stringify({ anonymous: anonymous.status, crossAccount: forbidden.status, malformed: malformed.status, duplicate: adds.map(r => r.status).sort(), replayProgress: row.episode, replayPreservedRevision: true }))
 
-  const env = { ...process.env }
-  delete env.ELECTRON_RUN_AS_NODE
+  const env = fixtureBrowserEnv(fixture.browserOrigin)
   const electron = createRequire(import.meta.url)('electron') as string
   const runner = fileURLToPath(new URL('./tracks-add-browser.cjs', import.meta.url))
-  const child = spawn(electron, [runner, fixture.browserOrigin, profile, JSON.stringify(groups)], { env, stdio: 'inherit' })
+  const child = spawn(electron, [runner, profile, JSON.stringify(groups)], { env, stdio: 'inherit' })
   const timer = setTimeout(() => child.kill('SIGTERM'), 90_000)
   const code = await new Promise<number | null>((resolve, reject) => {
     child.once('error', reject)

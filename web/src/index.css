@@ -568,3 +568,36 @@ body:has(.catalog-details[open]) { overflow: hidden; }
 }
 
 .catalog-details-status { position: absolute; bottom: calc(100% + 6px); left: 18px; right: 18px; margin: 0; padding: 10px 12px; background: var(--card); color: var(--sakura); border: 1px solid var(--sakura); border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
+
+.catalog-downloads ul { margin: 0; padding: 0; list-style: none; }
+.catalog-downloads section h3 { margin: 18px 0 2px; color: var(--teal); }
+.download-row { display: grid; gap: 5px; padding: 12px 0; overflow-wrap: anywhere; }
+.download-row + .download-row { border-top: 1px dashed var(--line); }
+.download-row strong { font-size: 14px; line-height: 1.55; }
+.download-actions, .download-tools, .download-choices, .download-episodes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.download-tools { justify-content: space-between; }
+.download-tools:not(:empty), .download-warning { margin-bottom: 12px; }
+.download-actions { margin-top: 4px; }
+.download-text { padding: 4px 3px; color: var(--teal); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.download-filter { gap: 8px; color: var(--ink-sub); font-size: 13px; }
+.download-filter > input { width: 76px; min-height: 36px; padding: 5px 9px; }
+.download-more { margin-top: 16px; }
+.download-copy { min-width: 7em; }
+.download-help { margin-top: 14px; color: var(--ink-sub); font-size: 13px; }
+.download-help summary { cursor: pointer; width: fit-content; }
+.download-help p { margin-top: 6px; }
+.download-help a { color: var(--teal); text-decoration: underline; }
+.download-warning { display: flex; align-items: center; gap: 6px; color: var(--ink-sub); font-size: 13px; }
+.download-warning .ic { flex: none; color: var(--sakura); }
+.download-editor { display: grid; gap: 14px; }
+.download-editor h3 { margin: 0; }
+.download-editor legend { margin-bottom: 6px; }
+.download-choices button { padding: 6px 12px; color: var(--ink-sub); border: 1px solid var(--line); border-radius: 16px; font-size: 13px; }
+.download-choices button[aria-pressed=true] { color: var(--teal); border-color: var(--teal-line); background: var(--teal-wash); }
+.download-episodes > label { width: 100px; }
+.download-save { position: relative; margin-top: 14px; }
+.download-notice { position: absolute; bottom: calc(100% + 3px); left: 0; width: max-content; max-width: 100%; background: var(--card); color: var(--sakura); font-size: 13px; }
+@media (max-width: 600px) {
+  .download-actions .btn, .download-choices button, .download-text { min-height: 40px; display: inline-flex; align-items: center; }
+  .download-choices button { padding-inline: 9px; }
+}

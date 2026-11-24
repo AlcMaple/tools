@@ -1,4 +1,5 @@
-import { mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync,cpSync } from 'node:fs'
+import { mkdtempSync,mkdirSync,readFileSync,writeFileSync,cpSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join,resolve } from 'node:path'
 import { randomBytes,randomUUID } from 'node:crypto'
@@ -9,6 +10,13 @@ import type { Server } from 'node:http'
 import type { AgentUsage,SummaryState } from '../shared/agent-contracts'
 import type { ContextProvider,ProviderProfile } from '../server/agent/context-provider'
 import type { RunProviderEvent } from '../server/agent/run-service'
+
+// Windows 版 Electron 遇到命令行 URL 后还有其他参数会在运行脚本前退出
+export function fixtureBrowserEnv(origin: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, AGENT_UI_BROWSER_ORIGIN: origin }
+  delete env.ELECTRON_RUN_AS_NODE
+  return env
+}
 
 export async function createAgentUiFixture(){
   if(process.env.AGENT_UI_FIXTURE!=='1'||process.env.NODE_ENV!=='test')throw new Error('UI_FIXTURE_TEST_ONLY')
@@ -29,6 +37,7 @@ export async function createAgentUiFixture(){
   const {AgentPlaybackStore}=await import('../server/agent/playback-store')
   const {AgentKnowledgeRegistry,AGENT_FEATURES,AGENT_FEATURE_REGISTRATIONS}=await import('../server/agent/knowledge'),{readLoadedRelease}=await import('../server/agent/release')
   const {default:production}=await import('../server/index'),{agentContextService:productionContext}=await import('../server/agent/context-runtime')
+  const {openOfflineIndex}=await import('../server/bgm/anime-index')
   const createUser=(name:string)=>Number(db.prepare('INSERT INTO users(username,pass_hash,created_at,security_question,security_answer_hash) VALUES(?,?,?,?,?)').run(name,randomBytes(32).toString('hex'),new Date().toISOString(),'fixture-question',randomBytes(32).toString('hex')).lastInsertRowid)
   const alice=createUser('ui_alice'),bob=createUser('ui_bob'),empty=createUser('ui_empty'),store=new AgentContextStore(db),history=store.history
   for(const [uid,id,title,status,episode,total] of [[alice,101,'葬送的芙莉莲','watching',7,28],[alice,102,'摇曳露营△','done',12,12],[alice,103,'夏目友人帐','plan',0,13],[bob,104,'另一位用户的条目','plan',0,12]] as const){
@@ -123,7 +132,25 @@ export async function createAgentUiFixture(){
   const port=Number(process.env.AGENT_UI_PORT??0);if(!Number.isInteger(port)||port<0||port>65535)throw new Error('FIXTURE_PORT');
   const server=serve({fetch:app.fetch,hostname:'127.0.0.1',port});await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('FIXTURE_ADDRESS')
   const origin=`http://127.0.0.1:${address.port}`,browserOrigin=`http://agent-phase4.localhost:${address.port}`;network.enableNetConnect(new URL(origin).host)
-  const close=async()=>{await runs.close();await context.close();await productionContext.close();const done=new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));(server as Server).closeAllConnections();await done;db.close();await network.close();setGlobalDispatcher(oldDispatcher);globalThis.fetch=originalFetch;process.chdir(oldCwd);process.env=oldEnv;rmSync(directory,{recursive:true,force:true})}
+  const close = async () => {
+    await runs.close()
+    await context.close()
+    await productionContext.close()
+    const httpServer = server as Server
+    const done = new Promise<void>((resolve, reject) => httpServer.close(error => error ? reject(error) : resolve()))
+    httpServer.closeAllConnections()
+    await done
+    // Windows 要等索引与连接的文件句柄释放后才能移除整个夹具
+    const index = openOfflineIndex()
+    if (index?.open) index.close()
+    db.close()
+    await network.close()
+    setGlobalDispatcher(oldDispatcher)
+    globalThis.fetch = originalFetch
+    process.chdir(oldCwd)
+    process.env = oldEnv
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 })
+  }
   return{origin,browserOrigin,watchFixture,originalFetch,createUser,alice,bob,welcomeId:welcome.id,storyId:story.id,actionId:actionBook.id,history,store,context,runs,db,metrics,close}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){

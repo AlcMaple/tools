@@ -1,12 +1,13 @@
 import type { SourceBinding, SourceId, Track, WatchMode } from '../api'
 import { Ic } from '../SketchIcon'
+import { CatalogDownloadButton } from '../CatalogDialog'
 import { ContinueWatchAction } from './TrackCard'
 import { watchEp } from './common'
 import { SeasonStamp } from './SeasonStamp'
 
 // ── 列表行（只读速览）────────────────────────────────────────────────────────
 // 列表只负责让用户快速扫过追番，不提供改集数 / 改状态 / 改最爱等编辑控件。
-// BGM 条目提供继续看 / BGM / 鉴赏神回；手动条目把前两项收成一个回填入口。
+// 手动条目先回填作品身份，避免从同名作品打开错误的播放或下载资源
 export function TrackListRow({
   t,
   bound,
@@ -57,6 +58,7 @@ export function TrackListRow({
               locating={locating}
               onPick={onContinue}
             />
+            <CatalogDownloadButton id={t.bgmId} title={title} />
             <a
               className="btn btn-sm btn-ghost"
               href={`https://bgm.tv/subject/${t.bgmId}`}

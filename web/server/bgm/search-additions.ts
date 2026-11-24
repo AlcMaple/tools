@@ -69,6 +69,11 @@ export function searchAdditions(query: string, limit = 30): AnimeHit[] {
   return searchAnimeTable(db, 'bgm_search_additions', query, limit)
 }
 
+export function searchAdditionById(id: number): (AnimeHit & { aliases: string[] }) | null {
+  const row = db.prepare('SELECT bgm_id AS bgmId, name, name_cn AS nameCn, date, score, aliases FROM bgm_search_additions WHERE bgm_id = ?').get(id) as (AnimeHit & { aliases: string }) | undefined
+  return row ? { ...row, aliases: JSON.parse(row.aliases) as string[] } : null
+}
+
 /**
  * 给 BGM 在线候选签短期凭证。凭证只证明候选来自服务端，真正落库仍要等已登录用户成功新增追番。
  */

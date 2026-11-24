@@ -21,7 +21,7 @@ trap 'rm -rf "$S"' EXIT
 mkdir -p "$S/data" "$S/system"
 
 # ── 已知条目：新增数据落盘位置时在这里补一行，没补也不会漏（见上方「默认全备」），只是报告里会标未分类 ──
-KNOWN_LIVE=" covers catalog-covers order-judge calendar-seasons holidays calendar-cache.json line-speed.json ecosystem.config.cjs .env.ai .env.sentry "
+KNOWN_LIVE=" covers catalog-covers catalog-downloads order-judge calendar-seasons holidays calendar-cache.json line-speed.json ecosystem.config.cjs .env.ai .env.sentry "
 KNOWN_STATIC=" bgm_index.db bgm-cover-cache "   # bgm_index.db 每周四才变；bgm-cover-cache 文件名是内容哈希、写入后不再改
 is_skip() {   # 可再生 / 临时：hls、prefetch 是转码和预抓缓存，丢了会自己重新生成
   case "$1" in

@@ -229,6 +229,10 @@ function toSyncJson(r: TrackRow): Record<string, unknown> {
 const listByInsertStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id ASC')
 const listNewestFirstStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id DESC')
 const oneStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? AND bgm_id = ?')
+export function ownsAnimeTrack(uid: number, bgmId: number): boolean {
+  const row = oneStmt.get(uid, bgmId) as TrackRow | undefined
+  return !!row && subjectTypeOf(parseExtra(row.extra)) === 'anime'
+}
 const adoptEpisodeTotal = db.prepare('UPDATE tracks SET total_episodes = ?, extra = ? WHERE user_id = ? AND bgm_id = ?')
 
 // 老手帐只存了正篇数，没有来源标记。只接管与归档正篇数或完整数相符的老番；
@@ -1283,10 +1287,10 @@ tracks.post('/:customBgmId/backfill', async (c) => {
           uid,
           customBgmId,
         )
-        saveSearchAddition({
+        if (detail.name.trim() || titleCn) saveSearchAddition({
           bgmId,
-          name: detail.name.trim() || title,
-          nameCn: detail.nameCn.trim() || titleCn,
+          name: detail.name.trim(),
+          nameCn: titleCn,
           date: detail.date,
           score: detail.score,
         }, now)

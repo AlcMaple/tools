@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { SOURCES, coverImageProps, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
 import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
+import { CatalogDownloadButton } from '../CatalogDialog'
 import { toast } from '../Toast'
 import { episodeLabel, specialAt, type EpisodeLayout } from '../../shared/episode-layout'
 import { SeasonStamp } from './SeasonStamp'
@@ -222,8 +223,9 @@ export function TrackCard({
                 locating={locating}
                 onPick={onContinue}
               />
+              <CatalogDownloadButton id={t.bgmId} title={title} />
               <a
-                className="btn btn-sm btn-ghost"
+                className="btn btn-sm btn-ghost trk-sec"
                 href={`https://bgm.tv/subject/${t.bgmId}`}
                 target="_blank"
                 rel="noreferrer"
@@ -289,7 +291,7 @@ export function TrackCard({
   )
 }
 
-// 桌面竖卡把「状态 / 神回 / 点评 / 分享图 / 移出」收进这个 ⋯ 菜单；手机仍用上面常驻的 .trk-sec 那组，CSS 二选一。
+// 桌面竖卡只常驻观看和下载，次要操作收进菜单；手机横卡空间足够，直接展开
 function TrackMenu({
   t,
   nudge,
@@ -347,6 +349,7 @@ function TrackMenu({
             </button>
           ))}
           <div className="trk-menu-sep" />
+          {t.bgmId > 0 && <a className="trk-menu-item" role="menuitem" href={`https://bgm.tv/subject/${t.bgmId}`} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>在 Bangumi 查看</a>}
           <button type="button" role="menuitem" className="trk-menu-item" onClick={run(onMarkGood)}>
             {t.goodEpisodes.length > 0 ? `鉴赏神回（${t.goodEpisodes.length}）` : '鉴赏神回'}
           </button>

@@ -151,7 +151,7 @@ export function CalendarHistoryPage(): JSX.Element {
             <span className="sparkle">✦</span>
           </div>
           <FilmRow label={`${day.label}在播番剧`} itemCount={day.items.length} vertical>
-            <DayFilm day={day} canTrack={track.canTrack} tracked={track.tracked} onToggle={track.toggle} />
+            <DayFilm day={day} season={season?.key} canTrack={track.canTrack} tracked={track.tracked} onToggle={track.toggle} />
           </FilmRow>
         </section>
       ))}

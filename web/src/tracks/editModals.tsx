@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { coverImageProps, type Track, type TrackPatch } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
+import { CatalogDownloadButton } from '../CatalogDialog'
 import { toast } from '../Toast'
 import { TagInput } from './TagInput'
 import { SEASON_MONTHS, addedAtOf, seasonOf, seasonStamp } from './TrackTimeline'
@@ -14,12 +15,14 @@ export function EditModal({
   tagChoices = [],
   onPatch,
   onUploadCover,
+  onBackfill,
   onClose,
 }: {
   t: Track
   tagChoices?: readonly string[]
   onPatch: (bgmId: number, p: TrackPatch) => void
   onUploadCover: (bgmId: number, file: File) => Promise<void>
+  onBackfill: () => void
   onClose: () => void
 }): JSX.Element {
   const [totalDraft, setTotalDraft] = useState<string | null>(null)
@@ -167,6 +170,9 @@ export function EditModal({
                 </button>
               ))}
             </div>
+            {t.bgmId < 0
+              ? <button className="btn btn-sm btn-ghost edit-backfill" type="button" onClick={onBackfill}><Ic name="refresh" cls="ic ic-sm" />回填 BGM</button>
+              : <CatalogDownloadButton id={t.bgmId} title={title} />}
           </div>
         </div>
 

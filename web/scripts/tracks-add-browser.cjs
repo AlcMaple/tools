@@ -3,11 +3,11 @@ const { setTimeout: delay } = require('node:timers/promises')
 const { once } = require('node:events')
 const { app, BrowserWindow } = require('electron')
 
-const origin = process.argv[2]
+const origin = process.env.AGENT_UI_BROWSER_ORIGIN
 assert(origin && new URL(origin).hostname === 'agent-phase4.localhost')
-app.setPath('userData', process.argv[3])
+app.setPath('userData', process.argv[2])
 app.commandLine.appendSwitch('disable-gpu')
-const [burst, failure, navigation, reload, offline, ambiguous] = JSON.parse(process.argv[4])
+const [burst, failure, navigation, reload, offline, ambiguous] = JSON.parse(process.argv[3])
 const all = group => group.items.map((_, index) => index + 1)
 
 async function main() {

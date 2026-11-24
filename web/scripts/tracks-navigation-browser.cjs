@@ -3,11 +3,11 @@ const { readFileSync } = require('node:fs')
 const { setTimeout: delay } = require('node:timers/promises')
 const { app, BrowserWindow } = require('electron')
 
-const origin = process.argv[2]
+const origin = process.env.AGENT_UI_BROWSER_ORIGIN
 const cdnCover = process.argv[4]
-const coverBytes = readFileSync(process.argv[5])
+const coverBytes = readFileSync(process.argv[3])
 assert(origin && new URL(origin).hostname === 'agent-phase4.localhost')
-app.setPath('userData', process.argv[3])
+app.setPath('userData', process.argv[2])
 app.commandLine.appendSwitch('disable-gpu')
 
 async function main() {

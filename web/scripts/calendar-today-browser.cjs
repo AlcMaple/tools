@@ -2,9 +2,9 @@ const assert = require('node:assert/strict')
 const { setTimeout: delay } = require('node:timers/promises')
 const { app, BrowserWindow } = require('electron')
 
-const origin = process.argv[2]
+const origin = process.env.AGENT_UI_BROWSER_ORIGIN
 assert(origin && new URL(origin).hostname === 'agent-phase4.localhost')
-app.setPath('userData', process.argv[3])
+app.setPath('userData', process.argv[2])
 app.commandLine.appendSwitch('disable-gpu')
 app.on('window-all-closed', () => {})
 
@@ -16,7 +16,11 @@ async function main() {
     { name: 'narrow vertical', width: 390, height: 844, layout: '纵向', scroll: true },
     { name: 'narrow horizontal', width: 390, height: 844, layout: '横向', scroll: false },
   ]
-  const window = new BrowserWindow({ show: false, useContentSize: true, width: 1360, height: 980, webPreferences: { contextIsolation: true, nodeIntegration: false } })
+  // Windows 隐藏窗口不会推进平滑滚动的合成帧，离屏绘制仍能测量实际滚动位置
+  const window = new BrowserWindow({
+    show: false, useContentSize: true, width: 1360, height: 980,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, offscreen: true, backgroundThrottling: false },
+  })
   let completed = 0
   for (const scene of scenes) {
     window.setContentSize(scene.width, scene.height)
@@ -48,6 +52,11 @@ async function main() {
     }
     await window.loadURL(origin + '/')
     await waitFor("document.querySelector('.day-head') && document.querySelector('.calendar-search input')")
+    if (await read("!!document.querySelector('.sp, .announcement-backdrop')")) {
+      await read("document.querySelector('.sp')?.click()")
+      await waitFor(button('知道啦'))
+      await click(button('知道啦'))
+    }
     await click(button(scene.layout))
     if (scene.scroll) {
       await waitFor("document.querySelectorAll('.day-sec').length === 7")

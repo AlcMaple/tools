@@ -9,6 +9,7 @@ import { useTrackToggle } from './useTrackToggle'
 import { navigate } from './router'
 import { cacheGet, cacheSet } from './dataCache'
 import { Ic, Spinner } from './SketchIcon'
+import { CatalogDownloadButton } from './CatalogDialog'
 import { toast } from './Toast'
 import { useIsWide } from './useMediaQuery'
 import { SketchSheet } from './SketchSheet'
@@ -113,7 +114,7 @@ function useDragScroll<T extends HTMLElement>(ref: React.RefObject<T>): {
   }
 
   const onPointerDown = (e: React.PointerEvent<T>): void => {
-    if (e.button !== 0 || !ref.current) return
+    if (e.button !== 0 || !ref.current?.contains(e.target as Node)) return
     if ((e.target as HTMLElement).closest?.(NO_DRAG_SELECTOR)) return
     stopMomentum()
     const now = performance.now()
@@ -777,6 +778,7 @@ export function DayFilm({
   onToggle,
   mineOnly,
   watch,
+  season,
 }: {
   day: { id: number; items: CalendarItem[] }
   canTrack: boolean
@@ -784,6 +786,7 @@ export function DayFilm({
   onToggle: (item: CalendarItem, weekday: number) => void
   mineOnly?: boolean
   watch?: PosterWatch
+  season?: string
 }): JSX.Element {
   if (day.items.length === 0) {
     return <div className="film-empty faint">{mineOnly ? '这一天没有你追的番' : '这一天没有排片'}</div>
@@ -799,6 +802,7 @@ export function DayFilm({
           tracked={tracked.has(item.id)}
           onToggle={onToggle}
           watch={watch}
+          season={season}
         />
       ))}
     </>
@@ -833,6 +837,7 @@ export function Poster({
   onToggle,
   watch,
   meta,
+  season,
   coverExtra,
   onDetails,
   details,
@@ -845,6 +850,7 @@ export function Poster({
   onToggle: (item: CalendarItem, weekday: number) => void
   watch?: PosterWatch
   meta?: string
+  season?: string
   coverExtra?: React.ReactNode
   onDetails?: () => void
   details?: React.ReactNode
@@ -892,7 +898,10 @@ export function Poster({
       {onDetails ? (
         <button type="button" className="poster-title poster-details-link" title="查看作品简介" aria-label={`查看 ${displayTitle} 的简介`} onClick={onDetails}>{displayTitle}</button>
       ) : <div className="poster-title" title={displayTitle}>{displayTitle}</div>}
-      <div className="poster-ep">{meta ?? (item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中')}</div>
+      <div className="poster-info">
+        <span className="poster-ep">{meta ?? (item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中')}</span>
+        <CatalogDownloadButton id={item.id} title={displayTitle} season={season} />
+      </div>
       {details}
       {onRelated && <button type="button" className="btn btn-sm btn-ghost poster-related" onClick={onRelated}>相关作品</button>}
       {watch && !canTrack && (

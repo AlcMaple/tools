@@ -572,6 +572,11 @@
   {
     "file": "server/index.ts",
     "method": "get",
+    "path": "/api/catalog/:id/downloads"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "get",
     "path": "/api/catalog/:id/related"
   },
   {
@@ -628,6 +633,11 @@
     "file": "server/index.ts",
     "method": "put",
     "path": "/api/catalog/:id/cover"
+  },
+  {
+    "file": "server/index.ts",
+    "method": "put",
+    "path": "/api/catalog/:id/downloads"
   },
   {
     "file": "server/index.ts",

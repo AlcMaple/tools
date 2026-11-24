@@ -1,4 +1,5 @@
 import { fetchApi, readApi } from './request'
+import type { DownloadPanelData, DownloadResults, ManualDownloads } from '../shared/catalog-downloads'
 import type { CatalogPosition } from '../shared/catalog-position'
 import type { GoodEpisodeEdit } from '../shared/good-episodes'
 import type { EpisodeDetails, EpisodeLayout } from '../shared/episode-layout'
@@ -84,7 +85,7 @@ export async function fetchRelatedAnime(id: number, signal: AbortSignal): Promis
   return response.json() as Promise<RelatedAnimeResult>
 }
 
-export interface CatalogDetails { item: CatalogItem; aliases: string[]; summary: string; summaryStatus: 'available' | 'empty' | 'unavailable' }
+export interface CatalogDetails { item: CatalogItem; aliases: string[]; endDate: string; summary: string; summaryStatus: 'available' | 'empty' | 'unavailable' }
 
 export function fetchCatalogDetails(bgmId: number, signal: AbortSignal): Promise<CatalogDetails> {
   return readApi(`/api/catalog/${bgmId}/details`, { signal }, async res => {
@@ -93,6 +94,27 @@ export function fetchCatalogDetails(bgmId: number, signal: AbortSignal): Promise
     return body
   }, 15_000)
 }
+
+export class DownloadConflict extends Error {}
+async function catalogDownloadApi<T>(id: number, params: Record<string, string>, init: RequestInit, season?: string): Promise<T> {
+  const query = new URLSearchParams(params)
+  if (season) query.set('season', season)
+  const search = query.toString()
+  return readApi(`/api/catalog/${id}/downloads${search ? '?' + search : ''}`, init, async res => {
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: string }
+      if (res.status === 409 && init.method === 'PUT') throw new DownloadConflict(body.error)
+      throw new Error(body.error || `下载资源请求失败（HTTP ${res.status}）`)
+    }
+    return res.json() as Promise<T>
+  }, 40_000)
+}
+export const fetchDownloadReleases = (id: number, source: 'garden' | 'ani', page: number, signal: AbortSignal, season?: string): Promise<DownloadResults> =>
+  catalogDownloadApi(id, { source, page: String(page) }, { signal }, season)
+export const fetchManualDownloads = (id: number, signal: AbortSignal, season?: string): Promise<DownloadPanelData> =>
+  catalogDownloadApi(id, {}, { signal }, season)
+export const saveManualDownloads = (id: number, data: ManualDownloads, season?: string): Promise<DownloadPanelData> =>
+  catalogDownloadApi(id, {}, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }, season)
 
 async function catalogEdit(path: string, init: RequestInit): Promise<CatalogItem> {
   const res = await fetch(`/api/catalog/${path}`, init)

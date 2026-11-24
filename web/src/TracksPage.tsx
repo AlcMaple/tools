@@ -232,6 +232,11 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
     }
   }
 
+  const openBackfill = (track: Track): void => {
+    const title = track.titleCn || track.title
+    setAdding({ initialQuery: title, backfill: { customBgmId: track.bgmId, title } })
+  }
+
   const backfill = async (customBgmId: number, hit: AnimeHit): Promise<void> => {
     if (!user) throw new Error('未登录')
     setError(null)
@@ -242,6 +247,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
         const found = prev.some((t) => t.bgmId === customBgmId)
         return found ? prev.map((t) => (t.bgmId === customBgmId ? updated : t)) : [updated, ...prev]
       })
+      setEditing(id => id === customBgmId ? updated.bgmId : id)
       setAdding(null)
       toast(`『${updated.titleCn || updated.title}』对上 BGM 啦，进度、标签和封面都留着。`)
     } catch (error) {
@@ -619,13 +625,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
               continueWatch(sourceById(sourceId), card, mode, rebind)
             }
             const onMarkGood = (): void => setMarkingGood(t.bgmId)
-            const onBackfill = (): void => {
-              const title = t.titleCn || t.title
-              setAdding({
-                initialQuery: title,
-                backfill: { customBgmId: t.bgmId, title },
-              })
-            }
+            const onBackfill = (): void => openBackfill(t)
             if (view === 'list') {
               return (
                 <TrackListRow
@@ -676,12 +676,13 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
         </div>
       )}
 
-      {editingTrack && (
+      {editingTrack && !adding && (
         <EditModal
           t={mainStoryTrack(editingTrack)}
           tagChoices={reusableTags}
           onPatch={patch}
           onUploadCover={uploadCover}
+          onBackfill={() => openBackfill(editingTrack)}
           onClose={() => setEditing(null)}
         />
       )}

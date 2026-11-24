@@ -3,6 +3,7 @@
 // 线条可见性依赖 sketch-ui.css 的 .ic（fill:none + stroke:currentColor，继承进 <use> 影子内容）。
 
 const SYMBOLS = `
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v11m-4-4 4 4 4-4M4.5 15v4.5h15V15"/></symbol>
 <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20l1.2-4.2L15.6 5.4a2.1 2.1 0 0 1 3 3L8.2 18.8 4 20z"/><path d="M13.6 7.4l3 3"/></symbol>
 <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></symbol>
 <symbol id="i-tracks" viewBox="0 0 24 24"><rect x="6" y="8.5" width="14" height="11.5" rx="2"/><path d="M4 15.5V6a2 2 0 0 1 2-2h9.5"/></symbol>
@@ -60,7 +61,7 @@ export type SketchIconName =
   | 'pencil' | 'calendar' | 'tracks' | 'settings' | 'search' | 'user' | 'plus' | 'minus'
   | 'play' | 'star' | 'x' | 'check' | 'alert' | 'chev' | 'eye' | 'eye-off' | 'refresh'
   | 'external' | 'dots' | 'logout' | 'clip' | 'tag' | 'edit' | 'mail' | 'google' | 'github' | 'linuxdo' | 'pause' | 'back' | 'heart' | 'folder'
-  | 'ticket' | 'gift' | 'judge' | 'doc' | 'video' | 'paste' | 'trash' | 'shelf' | 'sort'
+  | 'ticket' | 'gift' | 'judge' | 'doc' | 'video' | 'paste' | 'trash' | 'shelf' | 'sort' | 'download'
 
 export function Ic({ name, cls = 'ic' }: { name: SketchIconName; cls?: string }): JSX.Element {
   return (
