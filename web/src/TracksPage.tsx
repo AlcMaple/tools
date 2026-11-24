@@ -93,6 +93,7 @@ function applyLocal(t: Track, p: TrackPatch): Track {
   // updatedAt 跟服务端同语义（任何改动都刷新），乐观更新也要带上——页头「今天的功课」靠它当场划掉
   const next = { ...t, ...p, updatedAt: Date.now() } as Track
   const total = 'totalEpisodes' in p ? p.totalEpisodes ?? null : t.totalEpisodes
+  if ('totalEpisodes' in p && total !== t.totalEpisodes) delete next.episodeLayout
   if (total != null && next.episode > total) next.episode = total
   return next
 }

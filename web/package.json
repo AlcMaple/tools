@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "test:track-specials": "npm run build && tsx scripts/test-track-specials.ts",
     "test:tracks-add": "npm run build && tsx scripts/test-tracks-add.ts",
     "test:good-episodes": "npm run build && tsx scripts/test-good-episodes.ts",
     "test:order-judge-archives": "tsx scripts/test-order-judge-archives.ts",

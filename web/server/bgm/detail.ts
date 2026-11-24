@@ -27,7 +27,7 @@ export interface SubjectDetail {
   date: string
   cover: string // BGM 图床封面 URL（lain.bgm.tv/...）；离线档没有封面，靠这里补
   score: number
-  /** 本篇总集数，**0 = BGM 没写**（不是「0 集」）。落不落库看调用方的新老番判断。 */
+  // 未分类的话数，只在索引缺章节时兜底，不据此推断 SP
   eps: number
 }
 
@@ -49,8 +49,7 @@ function aliasesFromInfobox(infobox: unknown): string[] {
   return out
 }
 
-// timeoutMs 可调：加追番时**同步**取详情用短超时（默认给 4s），别让 BGM 抖动把
-// 「追番」按钮的响应卡住；后台延迟兜底（fillDetailLater）仍用宽松的 10s。
+// 普通加番在后台队列补详情；手动回填 BGM 的交互路径可单独限制等待时间
 export async function fetchSubjectDetail(bgmId: number, timeoutMs = 10000): Promise<SubjectDetail> {
   const raw = (await fetchJson(`https://api.bgm.tv/v0/subjects/${bgmId}`, {
     headers: BGM_HEADERS,
@@ -70,8 +69,8 @@ export async function fetchSubjectDetail(bgmId: number, timeoutMs = 10000): Prom
   const images = (raw.images ?? {}) as Record<string, unknown>
   const cover = ['large', 'common', 'medium'].map((k) => images[k]).find((v): v is string => typeof v === 'string' && !!v) ?? ''
 
-  // total_episodes 是 BGM 算好的本篇集数；老条目偶尔只有 eps，两个都拿不到就是 0（= 没写）。
-  const eps = Number(raw.total_episodes) || Number(raw.eps) || 0
+  // 优先采用条目标注的话数。汇总数不是分组依据，只有章节档能确定哪些是 SP
+  const eps = Number(raw.eps) || Number(raw.total_episodes) || 0
   const rating = (raw.rating ?? {}) as Record<string, unknown>
 
   return {

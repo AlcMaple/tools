@@ -14,6 +14,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { Track } from './api'
 import { applyGoodEpisodeEdit, GOOD_EPISODE_NOTE_MAX_LENGTH, type GoodEpisodeEdit, type GoodEpisodeState } from '../shared/good-episodes'
 import { Ic } from './SketchIcon'
+import { episodeLabel, specialAt } from '../shared/episode-layout'
 
 const ONGOING_MIN = 1
 
@@ -115,6 +116,21 @@ export function GoodEpisodesModal({
 
   const title = t.titleCn || t.title
 
+  const layout = t.episodeLayout
+  const episodeButton = (n: number): JSX.Element => {
+    const special = specialAt(layout, n)
+    const isMarked = marked.has(n)
+    const note = isMarked ? notes[n] : undefined
+    return (
+      <button key={n} type="button" className={`ge-ep${isMarked ? ' on' : ''}`}
+        onClick={() => toggle(n)} aria-pressed={isMarked} title={[special?.title, note].filter(Boolean).join(' · ') || undefined}>
+        {special ? episodeLabel(layout, n) : n}
+        {special?.title && <small>{special.title}</small>}
+        {note && <span className="ge-ep-dot" />}
+      </button>
+    )
+  }
+
   return (
     <div
       className="dlg-backdrop open"
@@ -156,25 +172,16 @@ export function GoodEpisodesModal({
 
         <div className="ge-body custom-scrollbar">
           {view === 'all' ? (
-            <div className="ge-grid">
-              {Array.from({ length: maxN }, (_, i) => i + 1).map((n) => {
-                const isMarked = marked.has(n)
-                const note = isMarked ? notes[n] : undefined
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    className={`ge-ep${isMarked ? ' on' : ''}`}
-                    onClick={() => toggle(n)}
-                    aria-pressed={isMarked}
-                    title={note}
-                  >
-                    {n}
-                    {note && <span className="ge-ep-dot" />}
-                  </button>
-                )
-              })}
-            </div>
+            <>
+              {layout && layout.main > 0 && <h4 className="ge-chapter-heading">正篇</h4>}
+              <div className="ge-grid">
+                {Array.from({ length: layout?.main ?? maxN }, (_, i) => episodeButton(i + 1))}
+              </div>
+              {layout && <>
+                <h4 className="ge-chapter-heading">SP 特别篇</h4>
+                <div className="ge-grid ge-specials">{layout.specials.map((_, i) => episodeButton(layout.main + i + 1))}</div>
+              </>}
+            </>
           ) : episodes.length === 0 ? (
             <div className="ge-empty">
               <Ic name="star" cls="ic ge-empty-star" />
@@ -194,7 +201,7 @@ export function GoodEpisodesModal({
                     title="取消标记这一集"
                   >
                     <Ic name="star" cls="ic ic-sm" />
-                    {n}
+                    {specialAt(layout, n) ? episodeLabel(layout, n) : n}
                   </button>
                   <input
                     className="ge-row-note"

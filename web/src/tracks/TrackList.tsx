@@ -3,6 +3,7 @@ import { Ic } from '../SketchIcon'
 import { ContinueWatchAction } from './TrackCard'
 import { watchEp } from './common'
 import { SeasonStamp } from './SeasonStamp'
+import { episodeBreakdown, episodeLabel } from '../../shared/episode-layout'
 
 // ── 列表行（只读速览）────────────────────────────────────────────────────────
 // 列表只负责让用户快速扫过追番，不提供改集数 / 改状态 / 改最爱等编辑控件。
@@ -24,11 +25,11 @@ export function TrackListRow({
 }): JSX.Element {
   const title = t.titleCn || t.title
   const ep = watchEp(t)
-  const episodeLabel = t.status === 'considering'
+  const progressLabel = t.status === 'considering'
     ? '还没开动'
     : t.totalEpisodes != null
-      ? `EP ${t.episode} / ${t.totalEpisodes}`
-      : `EP ${t.episode}`
+      ? `${episodeLabel(t.episodeLayout, t.episode)} / ${t.totalEpisodes}`
+      : episodeLabel(t.episodeLayout, t.episode)
 
   return (
     <article className={`trk-list-row${t.status === 'considering' ? ' is-considering' : ''}`}>
@@ -37,7 +38,10 @@ export function TrackListRow({
         <div className="trk-list-title" title={title}>{title}</div>
         <div className="trk-list-meta">
           <SeasonStamp airDate={t.airDate} className="list-season" />
-          <span className="trk-list-ep">{episodeLabel}</span>
+          <span className="trk-list-ep">
+            {progressLabel}
+            {t.episodeLayout && <small className="trk-chapters">{episodeBreakdown(t.episodeLayout)}</small>}
+          </span>
           <FavoriteDisplay value={t.favorite} />
         </div>
       </div>
@@ -53,6 +57,7 @@ export function TrackListRow({
             <ContinueWatchAction
               label={t.status === 'considering' ? '试看一集' : '继续看'}
               ep={ep}
+              layout={t.episodeLayout}
               bound={bound}
               locating={locating}
               onPick={onContinue}

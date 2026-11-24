@@ -1683,6 +1683,8 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   color: var(--ink);
 }
 .trk-ep { grid-area: ep; font-family: var(--font-hand); font-size: 13px; color: var(--ink-sub); white-space: nowrap; margin-top: 2px; }
+.trk-chapters { font-size: 12px; color: var(--teal); white-space: nowrap; }
+.trk-list-ep .trk-chapters { display: block; font-family: var(--font-body); }
 /* 集数和加减按钮保持完整；窄卡放不下进度条时，让进度条另起一行。 */
 .ep-ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ep-ctrl .ep-progress-shell { flex: 1; min-width: 100px; }
@@ -2948,6 +2950,11 @@ body[data-auth='out'] .track-btn { display: none; }
 }
 
 .ge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 6px; align-content: start; }
+.ge-chapter-heading { margin: 12px 0 6px; font-size: 12px; color: var(--teal); }
+.ge-chapter-heading:first-child { margin-top: 0; }
+.ge-specials { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+.ge-specials .ge-ep { height: auto; min-height: 34px; padding: 5px 8px; }
+.ge-specials small { display: block; overflow-wrap: anywhere; color: var(--ink-sub); }
 .ge-ep {
   position: relative;
   height: 34px;

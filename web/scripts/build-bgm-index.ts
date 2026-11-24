@@ -12,6 +12,7 @@
 //
 // **原子替换**：先写 `bgm_index.db.tmp`，成了再 rename 覆盖 —— 搜索端要么读旧库、要么读新库，绝不读半成品。
 import { explicitEndDate } from '../shared/catalog-planning'
+import type { SpecialEpisode } from '../shared/episode-layout'
 import '../server/http' // 副作用：EnvHttpProxyAgent，让 fetch 认 HTTPS_PROXY
 import Database from 'better-sqlite3'
 import { createReadStream, createWriteStream, renameSync, rmSync, statSync } from 'node:fs'
@@ -40,11 +41,8 @@ interface Row {
   end_date: string
 }
 
-// 归档的 subject 档里**没有**总集数字段（官方 schema 只有 id/type/name/name_cn/infobox/platform/
-// summary/nsfw/date/favorite/series/tags/score/score_details/rank/meta_tags）。集数在**另一个成员文件**
-// episode.jsonlines 里逐集一行，靠 subject_id 关联、type=0 表示本篇 —— 数一遍就是 BGM 自己
-// total_episodes 的口径。所以建索引要扫两个文件（zip 已在本地，只多一次解压，不重新下载）。
-const EPISODE_TYPE_MAIN = 0
+// Bangumi Archive 的 episode.jsonlines：type=0 本篇、1 特别篇，2 起是 OP/ED/PV 等，不算追番进度
+type ChapterCounts = { main: number; specials: (SpecialEpisode & { id: number })[] }
 
 // 档里的 infobox 是**原始 wiki 字符串**（跟在线 API 已解析成数组不同），得自己抠「别名」。
 // 两种写法都兼容：`|别名= 单值` 或 `|别名={ [别名一] [别名二|注释] }`。抠不到就空（加番时 detail 会补）。
@@ -99,14 +97,8 @@ function previousCount(): number {
 // 正常周增量是几百条（本周 30502），跌破 10% 只可能是出事了。真要强推（比如上游口径变了）用 --force。
 const MIN_KEEP_RATIO = 0.9
 
-/**
- * 第二遍：数每部动画的本篇集数。
- *
- * 只统计 `animeIds` 里的 subject_id —— 档里的 episode 覆盖漫画/游戏等所有类型，全收的话 Map 会涨到
- * 百万级；限定动画后只有约 3 万条，内存可忽略。
- */
-async function countEpisodes(lines: AsyncIterable<string>, animeIds: Set<number>): Promise<Map<number, number>> {
-  const counts = new Map<number, number>()
+async function countEpisodes(lines: AsyncIterable<string>, animeIds: Set<number>): Promise<Map<number, ChapterCounts>> {
+  const counts = new Map<number, ChapterCounts>()
   for await (const line of lines) {
     if (!line) continue
     let o: Record<string, unknown>
@@ -115,10 +107,18 @@ async function countEpisodes(lines: AsyncIterable<string>, animeIds: Set<number>
     } catch {
       continue
     }
-    if (Number(o.type) !== EPISODE_TYPE_MAIN) continue // SP/OP/ED/PV 不计入总集数
+    const type = o.type === '0' ? 0 : o.type === '1' ? 1 : o.type
+    if (type !== 0 && type !== 1) continue
     const sid = Number(o.subject_id)
     if (!sid || !animeIds.has(sid)) continue
-    counts.set(sid, (counts.get(sid) ?? 0) + 1)
+    let count = counts.get(sid)
+    if (!count) counts.set(sid, count = { main: 0, specials: [] })
+    if (type === 0) count.main++
+    else count.specials.push({
+      id: Number(o.id) || 0,
+      sort: typeof o.sort === 'number' && Number.isFinite(o.sort) ? o.sort : null,
+      title: (typeof o.name_cn === 'string' && o.name_cn.trim()) || (typeof o.name === 'string' ? o.name.trim() : ''),
+    })
   }
   return counts
 }
@@ -148,8 +148,9 @@ async function buildIndex(
       end_date TEXT NOT NULL DEFAULT '',
       score   REAL NOT NULL DEFAULT 0,
       -- 本篇集数。0 = 档里数不出来（没有章节数据 / 没扫 episode 文件），**不是**「0 集」；
-      -- 读取方（server/bgm/anime-index.ts epsOf）把 0 当「不知道」，退回在线详情补。
+      -- 有 SP 时手帐仍能记录特别篇；两者都没有才退回条目详情
       eps     INTEGER NOT NULL DEFAULT 0,
+      specials TEXT NOT NULL DEFAULT '[]',
       nsfw    INTEGER NOT NULL DEFAULT 0,
       votes   INTEGER NOT NULL DEFAULT 0
     );
@@ -202,16 +203,18 @@ async function buildIndex(
     flush(batch)
     n += batch.length
   }
-  // 第二遍：本篇集数。拿不到 episode 文件就整列留 0 —— 索引照常可用，加番时退回在线详情补集数，
-  // 不让「集数缺一块」把整次重建搞失败。
+  // 目录的篇幅筛选只算本篇；手帐另取 SP，不让「13 集以内」的口径跟着进度条改变
   let withEps = 0
   if (episodeLines) {
     const counts = await countEpisodes(episodeLines(), animeIds)
-    const upd = db.prepare('UPDATE anime SET eps = ? WHERE bgm_id = ?')
-    db.transaction((m: Map<number, number>) => {
-      for (const [sid, c] of m) upd.run(c, sid)
-    })(counts)
-    withEps = counts.size
+    const upd = db.prepare('UPDATE anime SET eps = ?, specials = ? WHERE bgm_id = ?')
+    db.transaction(() => {
+      for (const [sid, { main, specials }] of counts) {
+        if (main) withEps++
+        specials.sort((a, b) => (a.sort ?? Infinity) - (b.sort ?? Infinity) || a.id - b.id)
+        upd.run(main, JSON.stringify(specials.map(({ sort, title }) => ({ sort, title }))), sid)
+      }
+    })()
   }
 
   if (relationLines) {
@@ -272,7 +275,7 @@ function subjectFileInZip(members: string[]): string {
 
 // episode 文件缺失**不致命**：集数整列留 0，加番时退回在线详情。所以返回 null 而不是抛错。
 function episodeFileInZip(members: string[]): string | null {
-  return members.find((x) => /episode.*\.jsonlines$/i.test(x)) ?? null
+  return members.find((x) => /(^|\/)episode\.jsonlines$/i.test(x)) ?? null
 }
 
 async function* unzipLines(zipPath: string, inner: string): AsyncIterable<string> {

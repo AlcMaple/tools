@@ -4,6 +4,7 @@ import { coverImageProps, type Track, type TrackPatch } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
 import { TagInput } from './TagInput'
+import { episodeBreakdown, episodeLabel } from '../../shared/episode-layout'
 import { SEASON_MONTHS, addedAtOf, seasonOf, seasonStamp } from './TrackTimeline'
 import { SEG_CLS, SEG_ORDER, SHORT_DAY, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast } from './common'
 
@@ -22,7 +23,7 @@ export function EditModal({
   onUploadCover: (bgmId: number, file: File) => Promise<void>
   onClose: () => void
 }): JSX.Element {
-  const [totalDraft, setTotalDraft] = useState(t.totalEpisodes != null ? String(t.totalEpisodes) : '')
+  const [totalDraft, setTotalDraft] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [coverEditing, setCoverEditing] = useState(false)
   const [coverUrlDraft, setCoverUrlDraft] = useState('')
@@ -69,12 +70,14 @@ export function EditModal({
   }
 
   const commitTotal = (): void => {
+    // 旧卡片打开期间索引可能已把 25 补成 26；没动过输入框，不把旧值当成手填覆盖回去
+    if (totalDraft === null) return
     const raw = totalDraft.trim()
     const n = parseInt(raw, 10)
     // 清空 = 连载中（app 的语义，placeholder 也这么写）
     const total = raw === '' || !Number.isFinite(n) || n <= 0 ? null : n
     if (total !== t.totalEpisodes) onPatch(t.bgmId, { totalEpisodes: total })
-    setTotalDraft(total != null ? String(total) : '')
+    setTotalDraft(null)
   }
 
   const commitTag = (value: string): void => {
@@ -204,7 +207,7 @@ export function EditModal({
         </div>
 
         <div className="field mb16">
-          <span className="field-label">进度</span>
+          <span className="field-label">进度{t.episodeLayout && ` · ${episodeBreakdown(t.episodeLayout)}`}</span>
           <div className="ep-ctrl">
             <div className="stepper">
               <button
@@ -216,7 +219,7 @@ export function EditModal({
               >
                 <Ic name="minus" cls="ic ic-sm" />
               </button>
-              <span className="ep-num">EP {t.episode}</span>
+              <span className="ep-num">{episodeLabel(t.episodeLayout, t.episode)}</span>
               <button
                 type="button"
                 className="ep-plus"
@@ -231,7 +234,7 @@ export function EditModal({
             </div>
             <span className="field-row" style={{ flex: 1 }}>
               <input
-                value={totalDraft}
+                value={totalDraft ?? (t.totalEpisodes != null ? String(t.totalEpisodes) : '')}
                 onChange={(e) => setTotalDraft(e.target.value.replace(/[^0-9]/g, ''))}
                 onBlur={commitTotal}
                 onKeyDown={(e) => {

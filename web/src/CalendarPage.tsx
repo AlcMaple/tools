@@ -908,6 +908,7 @@ export function Poster({
             className={`btn btn-sm${on ? ' btn-primary' : ''}`}
             label={on ? '继续看' : '试看'}
             ep={watchEp(watchTrack)}
+            layout={watchTrack.episodeLayout}
             bound={bound}
             locating={watch.locating?.bgmId === item.id}
             onOpen={watch.onOpenSource && (() => watch.onOpenSource?.(watchTrack))}

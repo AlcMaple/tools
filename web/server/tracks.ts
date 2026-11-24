@@ -9,7 +9,8 @@ import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isRecentAir } from '../shared/anime-age'
 import { applyGoodEpisodeEdit, GOOD_EPISODE_NOTE_MAX_LENGTH, type GoodEpisodeEdit, type GoodEpisodeState } from '../shared/good-episodes'
-import { epsOf } from './bgm/anime-index'
+import { chapterIndex, epsOf } from './bgm/anime-index'
+import type { EpisodeLayout } from '../shared/episode-layout'
 import { getCalendarMetadata, type CalendarMetadata } from './bgm/calendar'
 import {
   BGM_COLLECTION_PAGE_SIZE,
@@ -167,14 +168,17 @@ function subjectTypeOf(extra: Record<string, unknown>): 'anime' | 'manga' | 'nov
     : 'anime'
 }
 
-function toJson(r: TrackRow): Record<string, unknown> & { bgmId: number; status: string; subjectType: string; airWeekday: number; airDate: string } {
+function toJson(r: TrackRow, chapters = chapterIndex()): Record<string, unknown> & { bgmId: number; status: string; subjectType: string; airWeekday: number; airDate: string } {
   const extra = parseExtra(r.extra)
+  const subjectType = subjectTypeOf(extra)
+  const layout = chapters?.layouts.get(r.bgm_id)
   return {
     bgmId: r.bgm_id,
     status: r.status,
     episode: r.episode,
     // NULL → null(= 连载中)。**别在这里悄悄折成 0** —— 那会把「不知道总共几集」变成「总共 0 集」。
     totalEpisodes: r.total_episodes,
+    ...(subjectType === 'anime' && layout && r.total_episodes === layout.main + layout.specials.length ? { episodeLayout: layout } : {}),
     title: r.title,
     titleCn: r.title_cn,
     cover: r.cover,
@@ -187,7 +191,7 @@ function toJson(r: TrackRow): Record<string, unknown> & { bgmId: number; status:
     observeCount: r.observe_count,
     // 网页版当前只展示动画，但全量同步必须保留漫画 / 小说。普通列表带上类别让前端过滤，
     // 不能在服务端 SELECT 时丢掉，否则桌面端下一次整包拉取会误删隐藏类别。
-    subjectType: subjectTypeOf(extra),
+    subjectType,
     // 鉴赏神回本是桌面端专属字段（存在 extra 里）；网页版现在也能读写这两个 key，
     // 其余 extra 字段仍然原样透传、不认识、不改写。
     ...readGoodEpisodes(extra),
@@ -212,7 +216,7 @@ function toSyncJson(r: TrackRow): Record<string, unknown> {
     observeCount: r.observe_count,
   }
   return {
-    ...toJson(r),
+    ...toJson(r, null),
     status: r.status === 'considering' ? 'plan' : r.status,
     extra: wireExtra,
   }
@@ -224,6 +228,37 @@ function toSyncJson(r: TrackRow): Record<string, unknown> {
 const listByInsertStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id ASC')
 const listNewestFirstStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? ORDER BY id DESC')
 const oneStmt = db.prepare('SELECT * FROM tracks WHERE user_id = ? AND bgm_id = ?')
+const adoptEpisodeTotal = db.prepare('UPDATE tracks SET total_episodes = ?, extra = ? WHERE user_id = ? AND bgm_id = ?')
+
+// 老手帐只存了正篇数，没有来源标记。只接管与归档正篇数或完整数相符的老番；
+// 此后手填（包括清空）优先，周更也不收缩既有进度。校正与读取在同一事务，不动观看状态或时间
+function withChapterTotal(uid: number, row: TrackRow, layout: EpisodeLayout | undefined): TrackRow {
+  if (!layout || row.total_episodes == null || isRecentAir(row.air_date)) return row
+  const total = layout.main + layout.specials.length
+  if (row.episode > total || row.total_episodes > total) return row
+  const extra = parseExtra(row.extra)
+  if (subjectTypeOf(extra) !== 'anime' || extra.episodeTotalMode === 'manual') return row
+  const fromBgm = extra.episodeTotalMode === 'bgm'
+  if (fromBgm && row.total_episodes === total) return row
+  if (!fromBgm && row.total_episodes !== layout.main && row.total_episodes !== total) return row
+  const tagged = fromBgm ? row.extra : JSON.stringify({ ...extra, episodeTotalMode: 'bgm' })
+  const encoded = tagged.length <= MAX_EXTRA_BYTES ? tagged : row.extra
+  if (row.total_episodes === total && row.extra === encoded) return row
+  adoptEpisodeTotal.run(total, encoded, uid, row.bgm_id)
+  return { ...row, total_episodes: total, extra: encoded }
+}
+
+function alignTrackRows(uid: number, rows: TrackRow[], chapters: ReturnType<typeof chapterIndex>): TrackRow[] {
+  let changed = false
+  const aligned = rows.map(row => {
+    const next = withChapterTotal(uid, row, chapters?.layouts.get(row.bgm_id))
+    if (next.total_episodes !== row.total_episodes) changed = true
+    return next
+  })
+  // 总数也是桌面上传字段。真正从 25 变到 26 才让旧整包重新确认；只补分类不制造同步冲突
+  if (changed) bumpRev(uid)
+  return aligned
+}
 const updateExtraStmt = db.prepare('UPDATE tracks SET extra = ?, updated_at = ? WHERE user_id = ? AND bgm_id = ?')
 const delStmt = db.prepare('DELETE FROM tracks WHERE user_id = ? AND bgm_id = ?')
 const insertStmt = db.prepare(`
@@ -294,7 +329,9 @@ const viewRevStmt = db.prepare('SELECT tracks_view_rev AS rev FROM users WHERE i
 const bumpViewRevStmt = db.prepare('UPDATE users SET tracks_view_rev = tracks_view_rev + 1 WHERE id = ?')
 
 const currentRev = (uid: number): number => (revStmt.get(uid) as { rev: number } | undefined)?.rev ?? 0
-const currentViewRev = (uid: number): number => (viewRevStmt.get(uid) as { rev: number } | undefined)?.rev ?? 0
+// 客户端有旧快照时只询问 revision；换章节索引后，即使用户没编辑过，也要让它重取一次
+const currentViewRev = (uid: number, chapters = chapterIndex()): number =>
+  ((viewRevStmt.get(uid) as { rev: number } | undefined)?.rev ?? 0) + (chapters?.version ?? 0)
 
 /** 任何会改动该用户追番数据的写入都要调 —— 漏一处,桌面端就会拿着过期 rev 静默覆盖掉网页的改动。 */
 const bumpRev = (uid: number): void => {
@@ -306,6 +343,8 @@ const publishedReviewModesStmt = db.prepare<[number]>(
 )
 
 const readTracksSnapshot = db.transaction((uid: number) => {
+  const chapters = chapterIndex()
+  const rows = alignTrackRows(uid, listNewestFirstStmt.all(uid) as TrackRow[], chapters)
   const byBgm = new Map<number, string[]>()
   for (const row of publishedReviewModesStmt.all(uid) as { bgm_id: number; mode: string }[]) {
     const list = byBgm.get(row.bgm_id) ?? []
@@ -314,18 +353,16 @@ const readTracksSnapshot = db.transaction((uid: number) => {
   }
   return {
     rev: currentRev(uid),
-    viewRev: currentViewRev(uid),
-    data: (listNewestFirstStmt.all(uid) as TrackRow[]).map((r) => ({
-      ...toJson(r),
-      publishedReviews: byBgm.get(r.bgm_id) ?? [],
-    })),
+    viewRev: currentViewRev(uid, chapters),
+    data: rows.map(r => ({ ...toJson(r, chapters), publishedReviews: byBgm.get(r.bgm_id) ?? [] })),
   }
 })
 
-const readSyncSnapshot = db.transaction((uid: number) => ({
-  rev: currentRev(uid),
-  data: (listByInsertStmt.all(uid) as TrackRow[]).map(toSyncJson),
-}))
+const readSyncSnapshot = db.transaction((uid: number) => {
+  const chapters = chapterIndex()
+  const rows = alignTrackRows(uid, listByInsertStmt.all(uid) as TrackRow[], chapters)
+  return { rev: currentRev(uid), data: rows.map(toSyncJson) }
+})
 
 function weekdayFromDate(date: unknown): number {
   if (typeof date !== 'string') return 0
@@ -489,9 +526,10 @@ function fillDetailLater(uid: number, bgmId: number, provisionalTitle?: { title:
           // 那列可能还是空的，空串会被当成新番、白白错过这次补集数的机会。
           // 仍为空才写：用户在这 800~2000ms 里手填了的话，以用户为准。
           const total = current.total_episodes
-          if (d.eps > 0 && total == null && !isRecentAir(d.date || current.air_date)) {
+          const indexedTotal = total == null ? epsOf(bgmId, d.eps) : 0
+          if (indexedTotal > 0 && total == null && parseExtra(current.extra).episodeTotalMode !== 'manual' && !isRecentAir(d.date || current.air_date)) {
             sets.push('total_episodes = ?')
-            args.push(d.eps)
+            args.push(indexedTotal)
           }
           // 详情请求本来就会执行；顺手把权威别名补进已晋升的共享条目，不增加任何 BGM 请求。
           // 该 UPDATE 只命中已有补充行，本地索引加番或普通详情回填不会凭空创建共享记录。
@@ -560,9 +598,10 @@ function importGate(now: number): string | null {
   return null
 }
 
-function importedTotal(item: BgmCollectionAnime, airDate: string, previous: number | null): number | null {
+function importedTotal(item: BgmCollectionAnime, airDate: string, previous?: TrackRow): number | null {
+  if (previous && parseExtra(previous.extra).episodeTotalMode === 'manual') return previous.total_episodes
   if (isRecentAir(airDate)) return null
-  return item.eps > 0 ? item.eps : previous
+  return epsOf(item.bgmId, item.eps) || previous?.total_episodes || null
 }
 
 function applyBgmImport(uid: number, items: BgmCollectionAnime[]): { added: number; updated: number; orphaned: number[] } {
@@ -577,7 +616,7 @@ function applyBgmImport(uid: number, items: BgmCollectionAnime[]): { added: numb
       const previous = oneStmt.get(uid, item.bgmId) as TrackRow | undefined
       const status = BGM_STATUS[item.collectionType]
       if (!previous) {
-        const total = importedTotal(item, item.airDate, null)
+        const total = importedTotal(item, item.airDate)
         insertStmt.run({
           user_id: uid,
           bgm_id: item.bgmId,
@@ -602,7 +641,7 @@ function applyBgmImport(uid: number, items: BgmCollectionAnime[]): { added: numb
       }
 
       const airDate = item.airDate || previous.air_date
-      const total = importedTotal(item, airDate, previous.total_episodes)
+      const total = importedTotal(item, airDate, previous)
       const derivedWeekday = weekdayFromDate(airDate)
       const hasBgmCover = item.cover.length > 0
       importUpdateStmt.run({
@@ -764,7 +803,7 @@ tracks.get('/', async (c) => {
   if (!uid) return c.json({ error: '未登录' }, 401)
   const owner = c.req.header('X-Tracks-Owner')
   if (owner !== undefined && owner !== String(uid)) return c.json({ error: '账号已变化，请重新打开追番', code: 'OWNER_CHANGED' }, 409)
-  const snapshot = readTracksSnapshot(uid)
+  const snapshot = readTracksSnapshot.immediate(uid)
   fillCalendarMetadataLater(uid)
   // 逐字段判缺：只挑「缺封面」会让有封面、缺放送日期的条目永远补不上（卡片播出季印章一直是「未定」）。
   // 本进程已排过的跳过再取 20 条，否则 BGM 本身就没日期的条目会一直占着这 20 个名额
@@ -834,12 +873,17 @@ class PlaybackProgressError extends Error {
   constructor(message: string, readonly status: 400 | 404 | 409) { super(message) }
 }
 
+const readPlaybackTrack = db.transaction((uid: number, id: number) => {
+  const row = oneStmt.get(uid, id) as TrackRow | undefined
+  return row && alignTrackRows(uid, [row], chapterIndex())[0]
+})
+
 tracks.get('/:bgmId/playback-progress', async c => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)
   const id = Number(c.req.param('bgmId'))
   if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: '条目编号不正确' }, 400)
-  const row = oneStmt.get(uid, id) as TrackRow | undefined
+  const row = readPlaybackTrack.immediate(uid, id)
   if (!row) return c.json({ error: '先将这部番加入手帐，再记录进度' }, 404)
   c.header('Cache-Control', 'no-store')
   return c.json({ ownerId: uid, revision: currentRev(uid), episode: row.episode, title: row.title_cn || row.title, totalEpisodes: row.total_episodes })
@@ -1010,7 +1054,8 @@ tracks.put('/:bgmId', async (c) => {
   // BGM 详情不再阻塞用户写入。事务拿到写锁后重新判断记录是否存在，因此即使两个设备
   // 同时新增同一条，也不会使用 await 前的旧判断撞 UNIQUE；数据写入和 rev 永远一起提交。
   const write = db.transaction((): { row: TrackRow; fillDetail: boolean; orphanedCover: boolean; error?: string } => {
-    const prev = oneStmt.get(uid, bgmId) as TrackRow | undefined
+    const stored = oneStmt.get(uid, bgmId) as TrackRow | undefined
+    const prev = stored && alignTrackRows(uid, [stored], chapterIndex())[0]
     if (playbackProgress) {
       if (!prev) throw new PlaybackProgressError('手帐记录已移除，请返回手帐确认', 404)
       if (currentRev(uid) !== playbackProgress.revision) throw new PlaybackProgressError('手帐已在其他页面更新，请重新读取后确认', 409)
@@ -1098,7 +1143,7 @@ tracks.put('/:bgmId', async (c) => {
       // 手填网图 URL 顶替掉本地上传：这条不再是 local 哨兵值，cover_mime 归零。
       args.push(nextCover, '')
     }
-    if (hasGoodEpisodes || hasGoodEpisodeNotes || hasFavorite) {
+    if (hasGoodEpisodes || hasGoodEpisodeNotes || hasFavorite || hasTotal) {
       const prevExtra = parseExtra(prev.extra)
       const nextEpisodes = hasGoodEpisodes ? normalizeGoodEpisodes(body.goodEpisodes) : normalizeGoodEpisodes(prevExtra.goodEpisodes)
       const nextNotes = normalizeGoodEpisodeNotes(
@@ -1106,7 +1151,12 @@ tracks.put('/:bgmId', async (c) => {
         nextEpisodes,
       )
       const nextFavorite = hasFavorite ? normalizeFavorite(body.favorite) : normalizeFavorite(prevExtra.favorite)
-      const nextExtraStr = JSON.stringify({ ...prevExtra, goodEpisodes: nextEpisodes, goodEpisodeNotes: nextNotes, favorite: nextFavorite })
+      const nextExtraStr = JSON.stringify({
+        ...prevExtra,
+        ...(hasGoodEpisodes || hasGoodEpisodeNotes ? { goodEpisodes: nextEpisodes, goodEpisodeNotes: nextNotes } : {}),
+        ...(hasFavorite ? { favorite: nextFavorite } : {}),
+        ...(hasTotal && bgmId > 0 ? { episodeTotalMode: 'manual' } : {}),
+      })
       if (nextExtraStr.length > MAX_EXTRA_BYTES) {
         return { row: prev, fillDetail: false, orphanedCover: false, error: '鉴赏神回数据过大' }
       }
@@ -1199,7 +1249,8 @@ tracks.post('/:customBgmId/backfill', async (c) => {
         const titleCn = detail.nameCn.trim()
         const airDate = detail.date || current.air_date
         const airWeekday = detail.date ? weekdayFromDate(detail.date) || current.air_weekday : current.air_weekday
-        const totalEpisodes = detail.eps > 0 ? Math.max(detail.eps, current.episode) : current.total_episodes
+        const bgmTotal = epsOf(bgmId, detail.eps)
+        const totalEpisodes = bgmTotal > 0 ? Math.max(bgmTotal, current.episode) : current.total_episodes
         const nextCover = keepLocalCover
           ? coverSentinel(bgmId)
           : hasUserCover
@@ -1427,7 +1478,7 @@ function statusCounts(uid: number): Record<Status, number> {
 tracks.get('/sync', async (c) => {
   const session = await getSession(c)
   if (!session) return c.json({ error: '未登录' }, 401)
-  const snapshot = readSyncSnapshot(session.uid)
+  const snapshot = readSyncSnapshot.immediate(session.uid)
   fillCalendarMetadataLater(session.uid)
   return c.json({
     ...snapshot,
@@ -1490,6 +1541,19 @@ tracks.post('/sync', async (c) => {
     }
 
     const existing = new Map((listByInsertStmt.all(uid) as TrackRow[]).map((r) => [r.bgm_id, r]))
+
+    // 桌面端会重建 extra，不认识网页的集数来源。总数原样传回时保留来源；明确改了则按手填处理
+    for (const [id, t] of incoming) {
+      const previous = existing.get(id)
+      if (!previous || id <= 0) continue
+      const old = parseExtra(previous.extra)
+      const changed = 'totalEpisodes' in t && (asTotal(t.totalEpisodes) ?? null) !== previous.total_episodes
+      const mode = changed ? 'manual' : old.episodeTotalMode
+      if ((mode !== 'manual' && mode !== 'bgm') || (!changed && !('extra' in t))) continue
+      const extra = { ...('extra' in t ? syncExtra(t.extra) : old), episodeTotalMode: mode }
+      if (JSON.stringify(extra).length > MAX_EXTRA_BYTES) return { invalidExtra: id } as const
+      t.extra = extra
+    }
 
     for (const [id, t] of incoming) {
       // 客户端时钟可能不准；未来的时间会让这条永远排在列表最前，夹到 now 为止
@@ -1579,6 +1643,7 @@ tracks.post('/sync', async (c) => {
   })
   const result = apply.immediate()
 
+  if ('invalidExtra' in result) return c.json({ error: `条目 ${result.invalidExtra} 的 extra 过大` }, 400)
   if (result.conflict) {
     return c.json(
       {
@@ -1621,7 +1686,7 @@ export const trackInternals = {
   coverSentinel,
   withCoverFileLocks,
   bumpRev,
-  toJson,
+  toJson: (row: TrackRow) => toJson(row, null),
   parseExtra,
   listByInsertStmt,
   insertStmt,

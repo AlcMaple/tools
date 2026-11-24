@@ -4,6 +4,7 @@ import { SOURCES, coverImageProps, type SourceBinding, type SourceId, type Track
 import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
+import { episodeBreakdown, episodeLabel, specialAt, type EpisodeLayout } from '../../shared/episode-layout'
 import { SeasonStamp } from './SeasonStamp'
 import { TagInput } from './TagInput'
 import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast, sourceEp, watchEp } from './common'
@@ -53,6 +54,8 @@ export function TrackCard({
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
   const ep = watchEp(t)
+  const layout = t.episodeLayout
+  const nextSpecial = specialAt(layout, t.episode + 1)
   const [addingTag, setAddingTag] = useState(false)
   const [episodePreview, setEpisodePreview] = useState<number | null>(null)
   const commitTag = (value: string): void => {
@@ -135,6 +138,7 @@ export function TrackCard({
           </span>
         </div>
 
+        {layout && <span className="trk-chapters">{episodeBreakdown(layout)}</span>}
         <div className="ep-ctrl">
           {/* 观望：不放集数、不放步进器、不放进度条 —— 那一套是「看到第几集」的语义 */}
           {t.status === 'considering' ? (
@@ -154,11 +158,12 @@ export function TrackCard({
             >
               <Ic name="minus" cls="ic ic-sm" />
             </button>
-            <EpisodeInput episode={episodePreview ?? t.episode} total={t.totalEpisodes} onCommit={commitEpisode} />
+            <EpisodeInput episode={episodePreview ?? t.episode} total={t.totalEpisodes} layout={layout} onCommit={commitEpisode} />
             <button
               type="button"
               className="ep-plus"
               aria-label="加一集"
+              title={nextSpecial ? `下一集：${episodeLabel(layout, t.episode + 1)}${nextSpecial.title ? ' · ' + nextSpecial.title : ''}` : undefined}
               onClick={() => step(1)}
               disabled={capped}
             >
@@ -168,6 +173,7 @@ export function TrackCard({
           <EpisodeProgress
             episode={t.episode}
             total={t.totalEpisodes}
+            layout={layout}
             done={t.status === 'done'}
             previewEpisode={episodePreview}
             onPreview={setEpisodePreview}
@@ -216,6 +222,7 @@ export function TrackCard({
               <ContinueWatchAction
                 label={considering ? '试看' : '继续看'}
                 ep={ep}
+                layout={layout}
                 bound={bound}
                 locating={locating}
                 onPick={onContinue}
@@ -408,17 +415,22 @@ function RemoveBtn({ onAskRemove }: { onAskRemove: () => void }): JSX.Element {
 function EpisodeInput({
   episode,
   total,
+  layout,
   onCommit,
 }: {
   episode: number
   total: number | null
+  layout?: EpisodeLayout
   onCommit: (episode: number) => void
 }): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const focusPending = useRef(false)
   // 常见集数统一预留四位，避免同列卡片的加号和进度条随位数左右错位。
-  const episodeWidth = `calc(${Math.max(4, String(episode).length, String(total ?? 0).length)}ch + 2.5em)`
+  const episodeWidth = `calc(${Math.max(4, String(episode).length, String(total ?? 0).length, ...(layout?.specials.map(s => String(s.sort ?? '').length) ?? []))}ch + 2.5em)`
+  const special = specialAt(layout, episode)
+  const label = episodeLabel(layout, episode)
+  const hint = special ? `${label}${special.title ? ' · ' + special.title : ''}（按观看顺序输入第 ${episode} 集）` : '点这里直接输入集数'
 
   useEffect(() => {
     if (draft !== null && focusPending.current) {
@@ -445,7 +457,8 @@ function EpisodeInput({
         value={draft}
         inputMode="numeric"
         pattern="[0-9]*"
-        aria-label="直接输入看到的集数"
+        aria-label={layout ? '按观看顺序输入集数，正篇之后是 SP' : '直接输入看到的集数'}
+        title={layout ? '按观看顺序输入集数，正篇之后是 SP' : undefined}
         onChange={(event) => setDraft(event.currentTarget.value.replace(/[^0-9]/g, ''))}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -471,10 +484,10 @@ function EpisodeInput({
         focusPending.current = true
         setDraft(String(episode))
       }}
-      title="点这里直接输入集数"
-      aria-label={`当前第 ${episode} 集，点击直接输入`}
+      title={hint}
+      aria-label={special ? `${hint}，点击直接输入` : `当前第 ${episode} 集，点击直接输入`}
     >
-      EP {episode}
+      {label}
     </button>
   )
 }
@@ -484,6 +497,7 @@ const EPISODE_DRAG_THRESHOLD_PX = 4
 function EpisodeProgress({
   episode,
   total,
+  layout,
   done,
   previewEpisode,
   onPreview,
@@ -491,6 +505,7 @@ function EpisodeProgress({
 }: {
   episode: number
   total: number | null
+  layout?: EpisodeLayout
   done: boolean
   previewEpisode: number | null
   onPreview: (episode: number | null) => void
@@ -619,7 +634,7 @@ function EpisodeProgress({
       aria-valuemin={0}
       aria-valuemax={max ?? 100}
       aria-valuenow={max != null ? shown : percentage}
-      aria-valuetext={max != null ? `第 ${shown} 集，共 ${max} 集` : `第 ${current} 集，连载中`}
+      aria-valuetext={max != null ? `${layout ? episodeLabel(layout, shown) : `第 ${shown} 集`}，共 ${max} 集` : `第 ${current} 集，连载中`}
       onPointerDown={startBarDrag}
       onPointerMove={moveDrag}
       onPointerUp={finishDrag}
@@ -765,8 +780,9 @@ function Nudge(): JSX.Element {
 }
 
 // 卡片的旋转会让 fixed 遮罩以卡片为包含块；弹窗挂到 body，避免被压窄或裁切。
-export function WatchSourceDialog({ ep, bound, title, onClose, onPick }: {
+export function WatchSourceDialog({ ep, layout, bound, title, onClose, onPick }: {
   ep: number
+  layout?: EpisodeLayout
   bound: Partial<Record<SourceId, SourceBinding>>
   title?: string
   onClose: () => void
@@ -791,7 +807,7 @@ export function WatchSourceDialog({ ep, bound, title, onClose, onPick }: {
             <button type="button" className="dlg-close" onClick={() => onClose()} aria-label="关闭" title="关闭">
               <Ic name="x" cls="ic" />
             </button>
-            <h3 className="dlg-title">{title && `${title} · `}要看第 {ep} 话啦</h3>
+            <h3 className="dlg-title">{title && `${title} · `}要看{specialAt(layout, ep) ? episodeLabel(layout, ep) : `第 ${ep} 话`}啦</h3>
             <p className="dlg-sub">
               从哪儿看呀……笨、笨蛋，才不是催你。挑个源，再挑「在纱雾这儿看」还是「跳去源站」。
             </p>
@@ -833,10 +849,11 @@ export function WatchSourceDialog({ ep, bound, title, onClose, onPick }: {
   )
 }
 
-export function ContinueWatchAction({ label, ep, bound, locating, onOpen, onPick, className = 'btn btn-sm btn-primary' }: {
+export function ContinueWatchAction({ label, ep, layout, bound, locating, onOpen, onPick, className = 'btn btn-sm btn-primary' }: {
   className?: string
   label: string
   ep: number
+  layout?: EpisodeLayout
   bound: Partial<Record<SourceId, SourceBinding>>
   locating: boolean
   onOpen?: () => void
@@ -844,10 +861,10 @@ export function ContinueWatchAction({ label, ep, bound, locating, onOpen, onPick
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   return <>
-    <button type="button" className={className} disabled={locating} onClick={onOpen ?? (() => setOpen(true))} title={`挑个源看第 ${ep} 话`}>
+    <button type="button" className={className} disabled={locating} onClick={onOpen ?? (() => setOpen(true))} title={`挑个源看${specialAt(layout, ep) ? episodeLabel(layout, ep) : `第 ${ep} 话`}`}>
       {locating ? <Spinner size={12} /> : <Ic name="play" cls="ic ic-sm" />}
       <span>{locating ? '找片源中…' : label}</span>
     </button>
-    {open && <WatchSourceDialog ep={ep} bound={bound} onClose={() => setOpen(false)} onPick={onPick} />}
+    {open && <WatchSourceDialog ep={ep} layout={layout} bound={bound} onClose={() => setOpen(false)} onPick={onPick} />}
   </>
 }

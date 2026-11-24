@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { dataDir } from '../data-dir'
 import { searchAnimeTable } from './anime-search'
 import type { AnimeHit } from './anime-search'
+import type { EpisodeLayout, SpecialEpisode } from '../../shared/episode-layout'
 
 export type { AnimeHit } from './anime-search'
 
@@ -42,8 +43,6 @@ export function openOfflineIndex(): DB | null {
     db = new Database(indexDbPath, { readonly: true, fileMustExist: true })
     dbMtime = mtime
     dbIdentity = identity
-    hasEpsColumn = null
-    epsProbedMtime = -1
     return db
   } catch {
     db = null
@@ -62,36 +61,35 @@ export function searchAnime(query: string, limit = 30, year = 0, candidateIds?: 
   return searchAnimeTable(h, 'anime', query, limit, year, candidateIds)
 }
 
-// `eps` 列是后加的，而线上索引由 cron 每周重建 —— 代码先上线、cron 还没跑那段时间里索引是**旧结构**，
-// 直接 SELECT eps 会抛 no such column，把整条读取路径带挂。所以每次换库（mtime 变）后探一次列是否存在。
-let hasEpsColumn: boolean | null = null
-let epsProbedMtime = -1
-
-function epsColumnExists(h: DB): boolean {
-  if (hasEpsColumn !== null && epsProbedMtime === dbMtime) return hasEpsColumn
-  try {
-    const cols = h.prepare('PRAGMA table_info(anime)').all() as { name: string }[]
-    hasEpsColumn = cols.some((c) => c.name === 'eps')
-  } catch {
-    hasEpsColumn = false
+function readChapterIndex(h: DB) {
+  const cols = h.pragma('table_info(anime)') as { name: string }[]
+  const main = cols.some(c => c.name === 'eps') ? h.prepare<[number], {eps: number}>('SELECT eps FROM anime WHERE bgm_id = ?') : null
+  const layouts = new Map<number, EpisodeLayout>()
+  const grouped = main && cols.some(c => c.name === 'specials')
+  if (grouped) {
+    const rows = h.prepare<[], {bgm_id: number; eps: number; specials: string}>("SELECT bgm_id, eps, specials FROM anime WHERE specials != '[]'")
+    for (const row of rows.iterate()) layouts.set(row.bgm_id, { main: row.eps, specials: JSON.parse(row.specials) as SpecialEpisode[] })
   }
-  epsProbedMtime = dbMtime
-  return hasEpsColumn
+  return { main, layouts, version: grouped ? Math.trunc(dbMtime) : 0 }
 }
 
-/**
- * 本篇集数，**0 = 不知道**（索引还没重建 / 档里没有该条目的章节数据），不是「0 集」。
- * 调用方拿到 0 应退回在线详情，别当成一个确定值写进 total_episodes。
- */
-export function epsOf(bgmId: number): number {
+// 周更索引以 rename 换库。分组只随只读句柄解析一次；老库没有分类时仍可正常追番
+const chaptersByIndex = new WeakMap<DB, ReturnType<typeof readChapterIndex>>()
+export function chapterIndex() {
   const h = openOfflineIndex()
-  if (!h || !epsColumnExists(h)) return 0
-  try {
-    const row = h.prepare('SELECT eps FROM anime WHERE bgm_id = ?').get(bgmId) as { eps: number } | undefined
-    return Number(row?.eps) || 0
-  } catch {
-    return 0
-  }
+  if (!h) return null
+  let chapters = chaptersByIndex.get(h)
+  if (!chapters) chaptersByIndex.set(h, chapters = readChapterIndex(h))
+  return chapters
+}
+
+// 手帐可记录的总数（正篇 + SP）；0 代表没有章节依据，目录的 eps 列仍只表示正篇
+export function epsOf(bgmId: number, reported = 0): number {
+  const chapters = chapterIndex()
+  const layout = chapters?.layouts.get(bgmId)
+  if (layout) return layout.main + layout.specials.length
+  const main = chapters?.main?.get(bgmId)?.eps ?? 0
+  return chapters?.version ? main || reported : reported || main
 }
 
 /** 索引状态 —— 给前端提示「索引就绪 / 还没生成」，以及更新时间。 */

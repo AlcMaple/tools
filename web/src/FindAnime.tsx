@@ -138,7 +138,7 @@ export function FindAnime({ onLogin }: { onLogin: () => void }): JSX.Element | n
         />
       )}
       {pendingWatch && pendingTrack && (tracksReady ? (
-        <WatchSourceDialog title={pendingWatch.name_cn || pendingWatch.name} ep={watchEp(pendingTrack)} bound={pendingBound}
+        <WatchSourceDialog title={pendingWatch.name_cn || pendingWatch.name} ep={watchEp(pendingTrack)} layout={pendingTrack.episodeLayout} bound={pendingBound}
           onClose={closePending} onPick={(source, mode, rebind) => continueWatch(sourceById(source), pendingTrack, mode, rebind)} />
       ) : createPortal(
         <div className="dlg-backdrop open"><div className="dlg" role="dialog" aria-modal="true" aria-label="读取观看进度">
