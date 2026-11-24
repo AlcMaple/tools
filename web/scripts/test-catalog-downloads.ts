@@ -34,7 +34,7 @@ function seedIndex(): void {
   db.exec("DROP TABLE IF EXISTS anime; CREATE TABLE anime(bgm_id INTEGER PRIMARY KEY, name TEXT, name_cn TEXT, aliases TEXT, summary TEXT, tags TEXT, score REAL, date TEXT, eps INTEGER, nsfw INTEGER)")
   const insert = db.prepare('INSERT INTO anime VALUES(?,?,?,?,?,?,?,?,?,?)')
   for (const [id, title, alias] of [[7101, '银河之旅', '银河旅行'], [7102, '星际旅人', 'Star Voyage'], [7103, '未收录作品', 'No Release'], [7104, '隐藏作品', 'Hidden'], [7105, '银河之旅 第二季', 'Galaxy S02'], [7106, '银河之旅', '1998 Galaxy']] as const) {
-    insert.run(id, alias, title, JSON.stringify([alias]), '用于下载入口验收', '["TV"]', 8, id === 7106 ? '1998-04-03' : '2023-10-01', 3, Number(id === 7104))
+    insert.run(id, alias, title, JSON.stringify([alias]), '用于下载入口验收', '["TV"]', id === 7103 ? 9.2 : 8, id === 7106 ? '1998-04-03' : '2023-10-01', id === 7103 ? 161 : 3, Number(id === 7104))
   }
   db.close()
 }
@@ -110,29 +110,67 @@ if (process.argv.includes('--serve')) {
       if (/^\/api\/catalog\/\d+\/downloads$/.test(url.pathname)) lookups.push(url)
     })
     const downloadButton = (name: string) => page.getByRole('button', { name: `下载《${name}》的资源`, exact: true }).first()
-    async function openFrom(button: Locator, title: string, release: string, id: number, canEdit: boolean, seasonKey?: string): Promise<void> {
+    async function openFrom(button: Locator, title: string, release: string, id: number, canEdit: boolean, options: { seasonKey?: string; returnTo?: Locator; keyboard?: boolean } = {}): Promise<void> {
       const start = lookups.length
-      await button.click()
+      if (options.keyboard) {
+        assert(await button.evaluate(el => el === document.activeElement), '键盘应能从「更多」走到下载')
+        await page.keyboard.press('Enter')
+      } else await button.click()
       const panel = page.locator('dialog.catalog-details[open]')
       await panel.getByRole('heading', { name: title, exact: true }).waitFor()
       await panel.getByText(release, { exact: true }).waitFor()
       await panel.getByText('正在查找下载资源…').waitFor({ state: 'hidden' })
       assert.equal(await panel.getByRole('button', { name: '补充链接' }).count(), Number(canEdit))
       assert.deepEqual(lookups.slice(start).map(u => [u.pathname, u.searchParams.get('source') ?? 'manual', u.searchParams.get('season')]).sort(),
-        ['ani', 'garden', 'manual'].map(source => [`/api/catalog/${id}/downloads`, source, seasonKey ?? null]))
+        ['ani', 'garden', 'manual'].map(source => [`/api/catalog/${id}/downloads`, source, options.seasonKey ?? null]))
       await page.keyboard.press('Escape')
       await panel.waitFor({ state: 'detached' })
-      assert(await button.evaluate(el => el === document.activeElement), '关闭后焦点应回到触发入口')
+      assert(await (options.returnTo ?? button).evaluate(el => el === document.activeElement), '关闭后焦点应回到卡片上的触发入口')
     }
     async function withinCard(button: Locator): Promise<void> {
-      await button.scrollIntoViewIfNeeded()
+      await button.evaluate(el => el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }))
+      await button.click({ trial: true })
       assert(await button.evaluate(el => {
         const card = el.closest('article')!.getBoundingClientRect()
         const rect = el.getBoundingClientRect()
         return rect.left >= card.left && rect.right <= card.right && el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
       }), '下载按钮须在卡片内且可点')
     }
+    async function assertNoHover(button: Locator): Promise<void> {
+      await button.scrollIntoViewIfNeeded()
+      await page.mouse.move(0, 0)
+      const appearance = () => button.evaluate(async el => {
+        const style = getComputedStyle(el)
+        void style.transform
+        await Promise.all(el.getAnimations().map(animation => animation.finished))
+        return [style.backgroundColor, style.borderColor, style.color, style.boxShadow, style.transform]
+      })
+      const idle = await appearance()
+      assert.notEqual(idle[0], 'rgba(0, 0, 0, 0)', '卡片下载入口常态就有底色')
+      await button.hover()
+      assert.deepEqual(await appearance(), idle, '悬停不改变下载入口的常态设计')
+    }
     await page.goto(fixture.origin + '/#/anime')
+    const rated = page.locator('.poster').filter({ has: page.getByRole('button', { name: '查看 未收录作品 的简介' }) })
+    const ratedDownload = downloadButton('未收录作品')
+    for (const width of [1470, 390, 360, 320]) {
+      await page.setViewportSize({ width, height: 840 })
+      await withinCard(ratedDownload)
+      const meta = rated.locator('.poster-ep')
+      assert.match(await meta.textContent() ?? '', /161\s*集.*★\s*9\.2/)
+      assert(await meta.evaluate(async el => {
+        await document.fonts.ready
+        const range = document.createRange()
+        range.selectNodeContents(el)
+        const rects = Array.from(range.getClientRects())
+        return rects.length > 0 && rects.every(r => Math.abs(r.top - rects[0].top) < 3 && r.right <= el.closest('article')!.getBoundingClientRect().right)
+      }), `${width}px：年份、三位数集数与评分都要完整排在一行`)
+      const related = await rated.getByRole('button', { name: '相关作品' }).boundingBox()
+      const entry = await ratedDownload.boundingBox()
+      assert(related && entry && related.x + related.width <= entry.x + 1 && Math.abs(related.y - entry.y) < 2, '下载与相关作品并排，不挤占评分行')
+    }
+    await page.setViewportSize({ width: 1180, height: 840 })
+    await assertNoHover(ratedDownload)
     const title = page.getByRole('button', { name: '查看 银河之旅 的简介', exact: true }).first()
     await title.click()
     const dialog = page.getByRole('dialog')
@@ -165,6 +203,7 @@ if (process.argv.includes('--serve')) {
     await page.goto(fixture.origin + '/#/')
     const current = downloadButton('周历新番')
     await withinCard(current)
+    await assertNoHover(current)
     assert.equal(lookups.length, beforeCalendar)
     if (process.env.DOWNLOAD_SCREENSHOT_DIR) await current.locator('xpath=ancestor::article').screenshot({ path: join(process.env.DOWNLOAD_SCREENSHOT_DIR, 'entry-calendar-desktop.png') })
     await openFrom(current, '周历新番', '周历新番 - 01 [1080p]', 7110, false)
@@ -181,22 +220,48 @@ if (process.argv.includes('--serve')) {
     const archived = downloadButton('往期新番')
     await withinCard(archived)
     assert.equal(lookups.length, beforeHistory)
-    await openFrom(archived, '往期新番', '往期新番 - 01 [1080p]', 7111, false, '2023-07')
+    await openFrom(archived, '往期新番', '往期新番 - 01 [1080p]', 7111, false, { seasonKey: '2023-07' })
     await page.goto(fixture.browserOrigin + '/__agent-test/login/alice')
     const beforeTracks = lookups.length
     const tracked = downloadButton('银河之旅')
+    const trackCard = page.locator('.trk-row').filter({ has: page.getByText('银河之旅', { exact: true }) })
+    const more = trackCard.getByRole('button', { name: '更多操作' })
+    const menu = page.getByRole('menu')
+    const menuDownload = menu.getByRole('menuitem', { name: '下载', exact: true })
     const custom = page.locator('article').filter({ hasText: '手动记录' })
     for (const width of [360, 1180]) {
       await page.setViewportSize({ width, height: 840 })
       for (const view of ['卡片', '列表']) {
         await page.getByRole('group', { name: '追番查看方式' }).getByRole('button', { name: view, exact: true }).click()
-        await withinCard(tracked)
-        if (width === 360 && view === '卡片') assert.equal(lookups.length, beforeTracks)
         assert.equal(await custom.getByRole('button', { name: '回填 BGM' }).count(), 1)
         assert.equal(await custom.getByRole('button', { name: /下载/ }).count(), 0)
-        await openFrom(tracked, '银河之旅', bundle.title, 7101, true)
-        assert.match(await tracked.locator('xpath=ancestor::article').innerText(), /1\s*\/\s*3/)
-        if (process.env.DOWNLOAD_SCREENSHOT_DIR) await tracked.locator('xpath=ancestor::article').screenshot({ path: join(process.env.DOWNLOAD_SCREENSHOT_DIR, `entry-${view}-${width}.png`) })
+        let card: Locator
+        if (view === '卡片') {
+          card = trackCard
+          assert.equal(await tracked.count(), 0)
+          assert.equal(await card.getByRole('link', { name: 'BGM' }).getAttribute('href'), 'https://bgm.tv/subject/7101')
+          await custom.getByRole('button', { name: '更多操作' }).click()
+          await menu.waitFor()
+          assert.equal(await menuDownload.count(), 0)
+          await page.keyboard.press('Escape')
+          await withinCard(more)
+          await more.press('Enter')
+          await menuDownload.waitFor()
+          assert.equal(await menu.getByText(/Bangumi/).count(), 0)
+          assert.equal(await menu.getByRole('menuitem', { name: '移出追番' }).count(), 1)
+          const statuses = await menu.getByRole('menuitemradio').count()
+          assert.equal(statuses, width === 360 ? 0 : 4)
+          for (let i = 0; i < statuses; i++) await page.keyboard.press('ArrowDown')
+          if (width === 360) assert.equal(lookups.length, beforeTracks)
+          await openFrom(menuDownload, '银河之旅', bundle.title, 7101, true, { returnTo: more, keyboard: true })
+          assert.equal(await more.getAttribute('aria-expanded'), 'false')
+        } else {
+          card = tracked.locator('xpath=ancestor::article')
+          await withinCard(tracked)
+          await openFrom(tracked, '银河之旅', bundle.title, 7101, true)
+        }
+        assert.match(await card.innerText(), /1\s*\/\s*3/)
+        if (process.env.DOWNLOAD_SCREENSHOT_DIR) await card.screenshot({ path: join(process.env.DOWNLOAD_SCREENSHOT_DIR, `entry-${view}-${width}.png`) })
       }
     }
     await page.getByRole('button', { name: '时间线', exact: true }).click()
@@ -228,7 +293,9 @@ if (process.argv.includes('--serve')) {
     assert(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().width <= window.innerWidth))
     await dialog.getByRole('button', { name: '返回列表' }).click()
     await page.goto(fixture.browserOrigin + '/#/tracks')
-    await tracked.click()
+    await page.getByRole('group', { name: '追番查看方式' }).getByRole('button', { name: '卡片', exact: true }).click()
+    await more.click()
+    await menuDownload.click()
     const manualRow = dialog.getByRole('listitem').filter({ hasText: '手工合集' })
     await manualRow.getByRole('button', { name: '编辑链接' }).click()
     await dialog.getByLabel('发布名称').fill('手工修订版')
@@ -257,6 +324,23 @@ if (process.argv.includes('--serve')) {
     await phoneDialog.getByRole('button', { name: '返回', exact: true }).tap()
     await phoneDialog.waitFor({ state: 'detached' })
     assert(await phoneEntry.evaluate(el => el === document.activeElement && el.getBoundingClientRect().height >= 44))
+    await phone.goto(fixture.origin + '/#/anime')
+    const phoneCatalog = phone.getByRole('button', { name: '下载《银河之旅》的资源' }).first()
+    assert(await phoneCatalog.evaluate(el => el.clientHeight >= 44 && el.clientWidth >= 44))
+    await phoneCatalog.tap()
+    await phoneDialog.getByText(bundle.title, { exact: true }).waitFor()
+    await phoneDialog.getByRole('button', { name: '返回', exact: true }).tap()
+    await phone.goto(fixture.origin + '/__agent-test/login/alice')
+    const phoneCard = phone.locator('.trk-row').filter({ has: phone.getByText('银河之旅', { exact: true }) })
+    const phoneMore = phoneCard.getByRole('button', { name: '更多操作' })
+    await phoneMore.tap()
+    const phoneDownload = phone.getByRole('menuitem', { name: '下载', exact: true })
+    const box = await phoneDownload.boundingBox()
+    assert(box && box.height >= 44 && box.width >= 44)
+    await phoneDownload.tap()
+    await phoneDialog.getByText(bundle.title, { exact: true }).waitFor()
+    await phoneDialog.getByRole('button', { name: '返回', exact: true }).tap()
+    assert(await phoneMore.evaluate(el => el === document.activeElement))
     await touch.close()
     assert.deepEqual(errors, [])
     console.log('PASS Chromium catalog, current and archived calendars, all three tracks views, lazy lookup, restored focus, attachment bytes, clipboard, pagination and administrator edits')

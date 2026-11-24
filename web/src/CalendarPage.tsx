@@ -849,7 +849,7 @@ export function Poster({
   tracked: boolean
   onToggle: (item: CalendarItem, weekday: number) => void
   watch?: PosterWatch
-  meta?: string
+  meta?: string[]
   season?: string
   coverExtra?: React.ReactNode
   onDetails?: () => void
@@ -857,6 +857,7 @@ export function Poster({
   onRelated?: () => void
 }): JSX.Element {
   const displayTitle = item.name_cn || item.name
+  const download = <CatalogDownloadButton id={item.id} title={displayTitle} season={season} />
   const on = tracked
   const watchTrack = watch?.tracksById.get(item.id) ?? trialTrack(item)
   const bound: Partial<Record<SourceId, SourceBinding>> = {}
@@ -899,11 +900,16 @@ export function Poster({
         <button type="button" className="poster-title poster-details-link" title="查看作品简介" aria-label={`查看 ${displayTitle} 的简介`} onClick={onDetails}>{displayTitle}</button>
       ) : <div className="poster-title" title={displayTitle}>{displayTitle}</div>}
       <div className="poster-info">
-        <span className="poster-ep">{meta ?? (item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中')}</span>
-        <CatalogDownloadButton id={item.id} title={displayTitle} season={season} />
+        {meta
+          ? <span className="poster-ep catalog-meta">{meta.map(field => <span key={field}>{field}</span>)}</span>
+          : <span className="poster-ep">{item.episodes > 0 ? `全 ${item.episodes} 集` : '连载中'}</span>}
+        {!onRelated && download}
       </div>
       {details}
-      {onRelated && <button type="button" className="btn btn-sm btn-ghost poster-related" onClick={onRelated}>相关作品</button>}
+      {onRelated && <div className="poster-tools">
+        <button type="button" className="poster-related" onClick={onRelated}>相关作品</button>
+        {download}
+      </div>}
       {watch && !canTrack && (
         <div className="poster-watch">
           <button type="button" className="btn btn-sm" onClick={() => requestAnimeWatch(item)}>

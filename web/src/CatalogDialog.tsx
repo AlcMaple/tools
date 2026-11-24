@@ -59,15 +59,24 @@ export function CatalogDialog({ section, title, meta, busy, children, actions, t
   )
 }
 
-export function CatalogDownloadButton({ id, title, season }: { id: number; title: string; season?: string }): JSX.Element | null {
+type DownloadSubject = { id: number; title: string; season?: string }
+
+export function CatalogDownloadDialog({ id, title, season, trigger, onClose }: DownloadSubject & {
+  trigger: HTMLButtonElement
+  onClose: () => void
+}): JSX.Element {
+  return <CatalogDialog section="下载资源" title={title} trigger={trigger} onClose={onClose}>
+    <CatalogDownloads key={`${id}:${season ?? ''}`} id={id} season={season} />
+  </CatalogDialog>
+}
+
+export function CatalogDownloadButton({ id, title, season }: DownloadSubject): JSX.Element | null {
   const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null)
   if (id <= 0) return null
   return <>
-    <button type="button" className="btn btn-sm btn-ghost download-entry" aria-haspopup="dialog" aria-label={`下载《${title}》的资源`} onClick={e => setTrigger(e.currentTarget)}>
+    <button type="button" className="download-entry" aria-haspopup="dialog" aria-label={`下载《${title}》的资源`} onClick={e => setTrigger(e.currentTarget)}>
       <Ic name="download" cls="ic ic-sm" />下载
     </button>
-    {trigger && <CatalogDialog section="下载资源" title={title} trigger={trigger} onClose={() => setTrigger(null)}>
-      <CatalogDownloads key={`${id}:${season ?? ''}`} id={id} season={season} />
-    </CatalogDialog>}
+    {trigger && <CatalogDownloadDialog id={id} title={title} season={season} trigger={trigger} onClose={() => setTrigger(null)} />}
   </>
 }

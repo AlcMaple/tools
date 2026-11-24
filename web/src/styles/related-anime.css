@@ -11,5 +11,4 @@
 .related-card h4 { margin: 0 0 6px; font-size: 15px; overflow-wrap: anywhere; }
 .related-card p { margin: 0 0 10px; }
 .related-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.poster-related { margin-top: 6px; align-self: stretch; }
 @media (max-width: 500px) { .related-card { grid-template-columns: 44px minmax(0, 1fr); gap: 10px; } .related-card img, .related-cover { width: 44px; height: 64px; } }

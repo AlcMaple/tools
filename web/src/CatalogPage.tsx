@@ -54,10 +54,10 @@ function asCalendarItem(item: CatalogItem): CalendarItem {
   return { id: item.bgmId, name: item.name, name_cn: item.nameCn, url: '', cover: item.cover, airDate: item.date, episodes: item.eps, score: item.score }
 }
 
-function metaOf(item: CatalogItem): string {
+function metaOf(item: CatalogItem): string[] {
   const year = /^\d{4}/.exec(item.date)?.[0]
-  return [year && Number(year) > 0 ? `${year} 年` : '', item.eps > 0 ? `${item.eps} 集` : '', item.score > 0 ? `★ ${item.score.toFixed(1)}` : '']
-    .filter(Boolean).join(' · ') || '未定档'
+  const fields = [year && Number(year) > 0 ? `${year}年` : '', item.eps > 0 ? `${item.eps}集` : '', item.score > 0 ? `★ ${item.score.toFixed(1)}` : ''].filter(Boolean)
+  return fields.length ? fields : ['未定档']
 }
 
 export function CatalogPage(): JSX.Element {

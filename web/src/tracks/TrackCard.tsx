@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { SOURCES, coverImageProps, type SourceBinding, type SourceId, type Track, type TrackPatch, type TrackStatus, type WatchMode } from '../api'
 import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
-import { CatalogDownloadButton } from '../CatalogDialog'
+import { CatalogDownloadDialog } from '../CatalogDialog'
 import { toast } from '../Toast'
 import { episodeLabel, specialAt, type EpisodeLayout } from '../../shared/episode-layout'
 import { SeasonStamp } from './SeasonStamp'
@@ -223,9 +223,8 @@ export function TrackCard({
                 locating={locating}
                 onPick={onContinue}
               />
-              <CatalogDownloadButton id={t.bgmId} title={title} />
               <a
-                className="btn btn-sm btn-ghost trk-sec"
+                className="btn btn-sm btn-ghost"
                 href={`https://bgm.tv/subject/${t.bgmId}`}
                 target="_blank"
                 rel="noreferrer"
@@ -268,30 +267,34 @@ export function TrackCard({
               {posterBusy ? '生成中…' : '分享图'}
             </button>
           )}
-          {/* 状态分段与「移出」永远是一个靠右的尾组；卡片变窄时尾组整体换行，
-              移出仍贴在右缘，不会因为 flex 折行掉到左下角。 */}
-          <div className="trk-tail trk-sec">
+          <div className="trk-tail">
             <StatusSeg t={t} considering={considering} onStatus={onStatus} />
-            <RemoveBtn onAskRemove={onAskRemove} />
+            <TrackMenu
+              t={t}
+              nudge={considering && t.observeCount >= NUDGE_AT}
+              canReview={canReview}
+              onStatus={onStatus}
+              onMarkGood={onMarkGood}
+              onWriteReview={onWriteReview}
+              onMakePoster={onMakePoster}
+              posterBusy={posterBusy}
+              onAskRemove={onAskRemove}
+            />
           </div>
-          <TrackMenu
-            t={t}
-            nudge={considering && t.observeCount >= NUDGE_AT}
-            canReview={canReview}
-            onStatus={onStatus}
-            onMarkGood={onMarkGood}
-            onWriteReview={onWriteReview}
-            onMakePoster={onMakePoster}
-            posterBusy={posterBusy}
-            onAskRemove={onAskRemove}
-          />
         </div>
       </div>
     </article>
   )
 }
 
-// 桌面竖卡只常驻观看和下载，次要操作收进菜单；手机横卡空间足够，直接展开
+function menuItems(menu: HTMLDivElement): HTMLButtonElement[] {
+  return Array.from(menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')).filter(el => el.getClientRects().length > 0)
+}
+
+function focusMenu(menu: HTMLDivElement | null): void {
+  if (menu) menuItems(menu)[0]?.focus({ preventScroll: true })
+}
+
 function TrackMenu({
   t,
   nudge,
@@ -313,35 +316,53 @@ function TrackMenu({
   posterBusy?: boolean
   onAskRemove: () => void
 }): JSX.Element {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [panel, setPanel] = useState<'menu' | 'download' | null>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const open = panel === 'menu'
   const run = (fn: () => void) => (): void => {
-    setOpen(false)
+    trigger.current?.focus({ preventScroll: true })
+    setPanel(null)
     fn()
   }
   return (
-    <div ref={ref} className={`trk-menu${open ? ' open' : ''}`}>
+    <div className={`trk-menu${open ? ' open' : ''}`}>
       <button
+        ref={trigger}
         type="button"
         className="btn btn-sm btn-ghost trk-menu-btn"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="更多操作"
         title="更多"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setPanel(open ? null : 'menu')}
       >
         <Ic name="dots" cls="ic ic-sm" />
         {nudge && !open && <Nudge />}
       </button>
-      <Popover anchor={ref} open={open} onClose={() => setOpen(false)} align="end" maxHeight={420} className="trk-menu-pop" role="menu">
-        <>
+      <Popover anchor={trigger} open={open} onClose={() => setPanel(null)} align="end" maxHeight={420} className="trk-menu-pop">
+        <div ref={focusMenu} className="trk-menu-items" role="menu" aria-label="更多操作" onKeyDown={e => {
+          if (e.key === 'Escape' || e.key === 'Tab') {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation() }
+            setPanel(null)
+            trigger.current?.focus({ preventScroll: true })
+            return
+          }
+          if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return
+          e.preventDefault()
+          const items = menuItems(e.currentTarget)
+          const index = items.findIndex(el => el === document.activeElement)
+          let next = (index + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+          if (e.key === 'Home') next = 0
+          if (e.key === 'End') next = items.length - 1
+          items[next]?.focus()
+        }}>
           {SEG_ORDER.map((s) => (
             <button
               key={s}
               type="button"
               role="menuitemradio"
               aria-checked={t.status === s}
-              className={`trk-menu-item${t.status === s ? ' on' : ''}`}
+              className={`trk-menu-item trk-menu-shortcut${t.status === s ? ' on' : ''}`}
               data-status={SEG_CLS[s]}
               onClick={run(() => onStatus(s))}
             >
@@ -349,17 +370,17 @@ function TrackMenu({
             </button>
           ))}
           <div className="trk-menu-sep" />
-          {t.bgmId > 0 && <a className="trk-menu-item" role="menuitem" href={`https://bgm.tv/subject/${t.bgmId}`} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>在 Bangumi 查看</a>}
-          <button type="button" role="menuitem" className="trk-menu-item" onClick={run(onMarkGood)}>
+          {t.bgmId > 0 && <button type="button" role="menuitem" className="trk-menu-item trk-menu-download" aria-haspopup="dialog" onClick={() => setPanel('download')}>下载</button>}
+          <button type="button" role="menuitem" className="trk-menu-item trk-menu-shortcut" onClick={run(onMarkGood)}>
             {t.goodEpisodes.length > 0 ? `鉴赏神回（${t.goodEpisodes.length}）` : '鉴赏神回'}
           </button>
           {canReview && (
-            <button type="button" role="menuitem" className="trk-menu-item" onClick={run(onWriteReview)}>
+            <button type="button" role="menuitem" className="trk-menu-item trk-menu-shortcut" onClick={run(onWriteReview)}>
               写点评
             </button>
           )}
           {onMakePoster && (
-            <button type="button" role="menuitem" className="trk-menu-item" disabled={posterBusy} onClick={run(onMakePoster)}>
+            <button type="button" role="menuitem" className="trk-menu-item trk-menu-shortcut" disabled={posterBusy} onClick={run(onMakePoster)}>
               {posterBusy ? '分享图生成中…' : '做分享图'}
             </button>
           )}
@@ -367,8 +388,11 @@ function TrackMenu({
           <button type="button" role="menuitem" className="trk-menu-item danger" onClick={run(onAskRemove)}>
             移出追番
           </button>
-        </>
+        </div>
       </Popover>
+      {/* 菜单项随浮层卸载，关闭下载弹窗要把焦点交回仍在卡片上的「更多」 */}
+      {panel === 'download' && t.bgmId > 0 && trigger.current &&
+        <CatalogDownloadDialog id={t.bgmId} title={t.titleCn || t.title} trigger={trigger.current} onClose={() => setPanel(null)} />}
     </div>
   )
 }
@@ -383,7 +407,7 @@ function StatusSeg({
   onStatus: (s: TrackStatus) => void
 }): JSX.Element {
   return (
-    <div className="status-seg" role="group" aria-label="追番状态">
+    <div className="status-seg trk-sec" role="group" aria-label="追番状态">
       {SEG_ORDER.map((s) => (
         <button
           key={s}
@@ -398,15 +422,6 @@ function StatusSeg({
         </button>
       ))}
     </div>
-  )
-}
-
-function RemoveBtn({ onAskRemove }: { onAskRemove: () => void }): JSX.Element {
-  return (
-    <button className="btn btn-sm btn-danger trk-rm" type="button" onClick={onAskRemove}>
-      <Ic name="x" cls="ic ic-sm" />
-      移出
-    </button>
   )
 }
 

@@ -957,11 +957,43 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .poster-ep { padding: 0 3px; font-size: 11px; font-weight: 700; color: var(--ink-sub); font-family: var(--font-hand); margin-top: -3px; }
 .poster-info { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
 .poster-info .poster-ep { min-width: 0; margin-top: 0; }
-.btn.download-entry { flex: none; white-space: nowrap; }
-.poster-info .download-entry { padding-inline: 6px; gap: 3px; border-color: transparent; color: var(--teal); }
+.catalog-meta { --meta-gap: clamp(2px, .7vw, 4px); display: flex; flex-wrap: wrap; column-gap: var(--meta-gap); }
+.catalog-meta > span { white-space: nowrap; }
+.catalog-meta > span + span::before { content: '·'; margin-inline-end: var(--meta-gap); }
+.download-entry, .poster-related {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 9px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.download-entry {
+  color: var(--teal);
+  background: var(--teal-wash);
+  border: 1px solid var(--teal-line);
+  border-radius: 5px;
+}
+.poster-info .download-entry { flex: none; }
+.catalog-grid .poster { align-self: stretch; }
+.poster-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: auto 2px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.poster-related { padding-inline: 2px; color: var(--ink); background: transparent; border: 0; }
+.poster-tools .download-entry { padding-inline: 2px; border: 0; border-inline-start: 1px solid var(--line); border-radius: 0 5px 5px 0; }
 .field > .download-entry, .field > .edit-backfill { align-self: flex-start; }
-.download-entry:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
-@media (pointer: coarse) { .btn.download-entry { min-height: 44px; } }
+.download-entry:focus-visible, .poster-related:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.download-entry:active, .poster-related:active { background: var(--paper-2); }
+@media (pointer: coarse) { .download-entry, .poster-related { min-height: 44px; } }
 
 /* 追番圆章按钮：常驻右上角，触控 44px */
 .track-btn {
@@ -2030,8 +2062,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   transform: rotate(-6deg);
   pointer-events: none;
 }
-.trk-rm { flex: none; }
-/* 状态分段 + 移出收进同一个靠右尾组。尾组是一个 flex item，窄卡时整体换行并继续靠右。 */
+/* 状态分段和更多按钮同属一个尾组，窄卡换行时仍贴右 */
 .trk-tail {
   display: flex;
   flex-wrap: wrap;
@@ -2043,7 +2074,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   max-width: 100%;
 }
 .trk-tail > .status-seg { margin-left: 0; }
-.trk-tail > .trk-rm { margin-left: 0; }
 .trk-edit-mobile {
   display: none;
   align-items: center;
@@ -2133,7 +2163,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
 .trk-sort .dd-trigger { width: 128px; gap: 4px; padding-inline: 10px; }
 .trk-sort .dd-val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 桌面 / 平板：相纸竖卡。封面固定 5:7 完整显示，卡片高度由封面决定，同一行天然等高；
-   状态、神回、点评、分享图、移出全部收进 ⋯ 菜单，手机仍用常驻的 .trk-sec。 */
+   竖卡只常驻观看、BGM 和更多，手机另有状态、神回和点评的快捷操作 */
 @media (min-width: 641px) {
   .trk-row {
     display: flex;
@@ -2179,44 +2209,45 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .trk-actions > .btn-primary { flex: 1 1 auto; justify-content: center; }
   .trk-actions > .btn { padding-inline: 10px; }
   .trk-sec { display: none; }
-  .trk-menu { position: relative; flex: none; }
-  .trk-menu-btn { padding-inline: 8px; }
-  .trk-menu-pop {
-    position: absolute;
-    right: 0;
-    bottom: calc(100% + 6px);
-    z-index: 6;
-    min-width: 148px;
-    padding: 6px;
-    display: flex;
-    flex-direction: column;
-    /* 状态 4 项 + 神回 / 点评 / 分享图 + 移出最高约 330px，超过浮层默认 240 上限时末项会溢出框外；
-       菜单高度给足，屏幕实在放不下时在框内滚动 */
-    overflow-y: auto;
-    background: var(--card);
-    border: 1.5px solid var(--line-strong);
-    border-radius: var(--r-card);
-    box-shadow: var(--shadow-1), 0 12px 28px rgba(62, 67, 80, .16);
-  }
-  .trk-menu-sep { flex: none; height: 0; margin: 5px 4px; border-top: 1px dashed var(--line); }
-  .trk-menu-item {
-    flex: none;
-    padding: 6px 10px;
-    font: inherit;
-    font-size: 13px;
-    text-align: left;
-    color: var(--ink);
-    background: none;
-    border: 1.5px dashed transparent;
-    border-radius: 7px;
-    cursor: pointer;
-  }
-  .trk-menu-item:disabled { opacity: .5; cursor: default; }
-  .trk-menu-item.on { font-weight: 600; background: var(--teal-wash); border-color: var(--teal-line); color: var(--teal); }
-  .trk-menu-item.danger { color: var(--sakura); }
-  @media (hover: hover) { .trk-menu-item:not(:disabled):hover { background: var(--silver-wash); } }
 }
-@media (max-width: 640px) { .trk-menu { display: none; } }
+
+.trk-menu { position: relative; flex: none; }
+.trk-menu-btn { padding-inline: 8px; }
+.trk-menu-pop {
+  min-width: 148px;
+  padding: 6px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-1), 0 12px 28px rgba(62, 67, 80, .16);
+}
+.trk-menu-items { display: flex; flex-direction: column; }
+.trk-menu-sep { flex: none; height: 0; margin: 5px 4px; border-top: 1px dashed var(--line); }
+.trk-menu-item {
+  flex: none;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--ink);
+  background: none;
+  border: 1.5px dashed transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.trk-menu-item:disabled { opacity: .5; cursor: default; }
+.trk-menu-item.on { font-weight: 600; background: var(--teal-wash); border-color: var(--teal-line); color: var(--teal); }
+.trk-menu-item.danger { color: var(--sakura); }
+@media (hover: hover) { .trk-menu-item:not(:disabled, .trk-menu-download):hover { background: var(--silver-wash); } }
+@media (max-width: 640px) {
+  /* 状态和神回等已有卡面快捷入口，菜单只补下载与移出，不重复列一遍 */
+  .trk-menu-shortcut, .trk-menu-sep, .trk-menu-btn .nudge { display: none; }
+}
+@media (pointer: coarse) {
+  .trk-menu-btn, .trk-menu-item { min-height: 44px; }
+  .trk-menu-btn { min-width: 44px; }
+}
 
 /* 手机：卡片改成信息优先的单栏，封面和标签收进详情弹窗。
    窄屏最需要的是标题、进度、状态和继续看；保留独立详情按钮，避免隐藏封面后
@@ -2238,7 +2269,7 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   /* 窄屏让划记本身吃掉剩余宽度：「观望」字头省掉（左边印章已经写着观望了） */
   .watchmarks { gap: 3px; padding: 2px 6px; }
   .wm-cap { display: none; }
-  /* 主操作药丸按内容宽度排列；状态 + 移出尾组始终靠右，空间不足时整体换行。 */
+  /* 主操作按内容宽度排列，状态和更多始终一起靠右 */
   .trk-actions {
     display: flex;
     gap: 8px;
@@ -2248,7 +2279,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   .trk-actions > .trk-tail { flex: 0 1 auto; width: auto; margin-left: auto; justify-content: flex-end; }
   .trk-tail > .status-seg { flex: 0 1 auto; max-width: 100%; }
   .trk-tail .status-seg .seg-btn { flex: 1 1 0; min-width: 0; }
-  .trk-tail > .trk-rm { margin-left: 0; }
   /* 状态分段从 4 段变窄后按等分排列，仍保持足够的触控高度。 */
   .status-seg { margin-left: 0; }
   .status-seg .seg-btn { flex: 1; min-width: 0; padding: 4px 6px; font-size: 12px; }
