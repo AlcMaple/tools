@@ -982,6 +982,11 @@
   {
     "file": "server/tracks.ts",
     "method": "get",
+    "path": "/:bgmId/chapters"
+  },
+  {
+    "file": "server/tracks.ts",
+    "method": "get",
     "path": "/:bgmId/cover-file"
   },
   {

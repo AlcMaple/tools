@@ -46,7 +46,7 @@ import {
   runTrackMutation,
   saveTracksCache,
 } from './tracksSync'
-import { STATUS_META, allTagsOf, tagLimitToast } from './tracks/common'
+import { STATUS_META, allTagsOf, mainStoryTrack, tagLimitToast } from './tracks/common'
 import { TrackCard } from './tracks/TrackCard'
 import { reusableUserTags } from './tracks/TagInput'
 import { TrackListRow } from './tracks/TrackList'
@@ -93,7 +93,10 @@ function applyLocal(t: Track, p: TrackPatch): Track {
   // updatedAt 跟服务端同语义（任何改动都刷新），乐观更新也要带上——页头「今天的功课」靠它当场划掉
   const next = { ...t, ...p, updatedAt: Date.now() } as Track
   const total = 'totalEpisodes' in p ? p.totalEpisodes ?? null : t.totalEpisodes
-  if ('totalEpisodes' in p && total !== t.totalEpisodes) delete next.episodeLayout
+  if ('totalEpisodes' in p) {
+    next.episodeTotalManual = true
+    if (total !== t.totalEpisodes) delete next.episodeLayout
+  }
   if (total != null && next.episode > total) next.episode = total
   return next
 }
@@ -605,6 +608,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
       ) : (
         <div className={view === 'list' ? 'trk-list' : 'trk-grid'}>
           {filtered.slice(0, visibleCount).map((t) => {
+            const card = mainStoryTrack(t)
             const bound: Partial<Record<SourceId, SourceBinding>> = {}
             for (const s of SOURCES) {
               const b = bindings[s.id][t.bgmId]
@@ -612,7 +616,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
             }
             const locatingThis = locating?.bgmId === t.bgmId
             const onContinue = (sourceId: SourceId, mode: WatchMode, rebind?: boolean): void => {
-              continueWatch(sourceById(sourceId), t, mode, rebind)
+              continueWatch(sourceById(sourceId), card, mode, rebind)
             }
             const onMarkGood = (): void => setMarkingGood(t.bgmId)
             const onBackfill = (): void => {
@@ -626,7 +630,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
               return (
                 <TrackListRow
                   key={t.bgmId}
-                  t={t}
+                  t={card}
                   bound={bound}
                   locating={locatingThis}
                   onContinue={onContinue}
@@ -639,7 +643,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
               <TrackCard
                 key={t.bgmId}
                 tagChoices={reusableTags}
-                t={t}
+                t={card}
                 isToday={todayIds.has(t.bgmId)}
                 bound={bound}
                 locating={locatingThis}
@@ -674,7 +678,7 @@ export function TracksPage({ navigation }: { navigation: TracksNavigationMemory 
 
       {editingTrack && (
         <EditModal
-          t={editingTrack}
+          t={mainStoryTrack(editingTrack)}
           tagChoices={reusableTags}
           onPatch={patch}
           onUploadCover={uploadCover}

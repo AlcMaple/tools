@@ -11,10 +11,11 @@
 // 备注采用短 debounce 而不是只等失焦：切换集数或关闭弹窗前也要保住最后一笔，
 // 同时避免每个字符都单独发请求；跟「全部集数」的网格点亮/取消仍是两个模式。
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Track } from './api'
+import { fetchTrackChapters, type Track } from './api'
+import { EpisodeGrid } from './tracks/EpisodeGrid'
 import { applyGoodEpisodeEdit, GOOD_EPISODE_NOTE_MAX_LENGTH, type GoodEpisodeEdit, type GoodEpisodeState } from '../shared/good-episodes'
 import { Ic } from './SketchIcon'
-import { episodeLabel, specialAt } from '../shared/episode-layout'
+import { episodeLabel, specialAt, type EpisodeDetails } from '../shared/episode-layout'
 
 const ONGOING_MIN = 1
 
@@ -30,10 +31,23 @@ export function GoodEpisodesModal({
   onClose: () => void
 }): JSX.Element {
   const [view, setView] = useState<ViewMode>('all')
+  const dismissTip = useRef<(() => void) | null>(null)
+  const [details, setDetails] = useState<EpisodeDetails>()
+  const [chapterError, setChapterError] = useState('')
+  useEffect(() => {
+    if (t.bgmId <= 0) return
+    const controller = new AbortController()
+    fetchTrackChapters(t.bgmId, controller.signal).then(data => {
+      if (!controller.signal.aborted) setDetails(data)
+    }).catch((error: Error) => {
+      if (!controller.signal.aborted) setChapterError(error.message)
+    })
+    return () => controller.abort()
+  }, [t.bgmId])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') (dismissTip.current ?? onClose)()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -117,19 +131,6 @@ export function GoodEpisodesModal({
   const title = t.titleCn || t.title
 
   const layout = t.episodeLayout
-  const episodeButton = (n: number): JSX.Element => {
-    const special = specialAt(layout, n)
-    const isMarked = marked.has(n)
-    const note = isMarked ? notes[n] : undefined
-    return (
-      <button key={n} type="button" className={`ge-ep${isMarked ? ' on' : ''}`}
-        onClick={() => toggle(n)} aria-pressed={isMarked} title={[special?.title, note].filter(Boolean).join(' · ') || undefined}>
-        {special ? episodeLabel(layout, n) : n}
-        {special?.title && <small>{special.title}</small>}
-        {note && <span className="ge-ep-dot" />}
-      </button>
-    )
-  }
 
   return (
     <div
@@ -149,8 +150,8 @@ export function GoodEpisodesModal({
           鉴赏神回
         </h3>
         <p className="dlg-sub">
-          『{title}』里我随手点亮的那几集。点一下亮起来，再点一下就灭掉——标准是我定的，不解释。
-          <span className="ge-hint">已标的集切到「只看鉴赏神回」能写句吐槽，不写也没关系。</span>
+          『{title}』
+          <span className="ge-hint">轻点集号标记神回，<span className="ge-hover-hint">悬停</span><span className="ge-touch-hint">长按</span>查看章节</span>
         </p>
 
         <div className="ge-view-toggle">
@@ -172,16 +173,9 @@ export function GoodEpisodesModal({
 
         <div className="ge-body custom-scrollbar">
           {view === 'all' ? (
-            <>
-              {layout && layout.main > 0 && <h4 className="ge-chapter-heading">正篇</h4>}
-              <div className="ge-grid">
-                {Array.from({ length: layout?.main ?? maxN }, (_, i) => episodeButton(i + 1))}
-              </div>
-              {layout && <>
-                <h4 className="ge-chapter-heading">SP 特别篇</h4>
-                <div className="ge-grid ge-specials">{layout.specials.map((_, i) => episodeButton(layout.main + i + 1))}</div>
-              </>}
-            </>
+            <EpisodeGrid count={maxN} layout={layout} details={details} dismissTip={dismissTip}
+              status={chapterError || (t.bgmId > 0 && !details ? '正在读取章节…' : undefined)}
+              marked={marked} notes={notes} onToggle={toggle} />
           ) : episodes.length === 0 ? (
             <div className="ge-empty">
               <Ic name="star" cls="ic ge-empty-star" />

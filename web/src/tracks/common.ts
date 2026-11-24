@@ -17,6 +17,13 @@ export const STAMP_CLS: Record<TrackStatus, string> = { plan: 'st-silver', consi
 
 export const allTagsOf = (t: Track): string[] => [...t.bgmTags, ...t.userTags]
 
+// 卡片只看正篇；曾经看到 SP 的位置仍留在原记录，打开卡片或神回弹窗都不应回写它
+export function mainStoryTrack(t: Track): Track {
+  if (!t.episodeLayout) return t
+  const { episodeLayout, ...rest } = t
+  return t.episodeTotalManual ? rest : { ...rest, episode: Math.min(t.episode, episodeLayout.main), totalEpisodes: episodeLayout.main }
+}
+
 // 与 server/tracks.ts 的 USER_TAG_MAX_COUNT 对齐。前端先拦一道：不拦的话乐观更新会先
 // 贴上第 13 个标签、再被后端 400 回滚，用户看到的是「贴上了又消失」。
 export const USER_TAG_MAX = 12

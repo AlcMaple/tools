@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { dataDir } from '../data-dir'
 import { searchAnimeTable } from './anime-search'
 import type { AnimeHit } from './anime-search'
-import type { EpisodeLayout, SpecialEpisode } from '../../shared/episode-layout'
+import type { EpisodeDetail, EpisodeDetails, EpisodeLayout, SpecialEpisode } from '../../shared/episode-layout'
 
 export type { AnimeHit } from './anime-search'
 
@@ -70,7 +70,10 @@ function readChapterIndex(h: DB) {
     const rows = h.prepare<[], {bgm_id: number; eps: number; specials: string}>("SELECT bgm_id, eps, specials FROM anime WHERE specials != '[]'")
     for (const row of rows.iterate()) layouts.set(row.bgm_id, { main: row.eps, specials: JSON.parse(row.specials) as SpecialEpisode[] })
   }
-  return { main, layouts, version: grouped ? Math.trunc(dbMtime) : 0 }
+  const details = h.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='anime_episode'").get()
+    ? h.prepare<[number], EpisodeDetail & { type: number }>(`SELECT type, sort, name, name_cn AS nameCn, airdate, duration
+        FROM anime_episode WHERE bgm_id=? ORDER BY type, sort IS NULL, sort, episode_id`) : null
+  return { main, layouts, details, version: grouped ? Math.trunc(dbMtime) : 0 }
 }
 
 // 周更索引以 rename 换库。分组只随只读句柄解析一次；老库没有分类时仍可正常追番
@@ -81,6 +84,14 @@ export function chapterIndex() {
   let chapters = chaptersByIndex.get(h)
   if (!chapters) chaptersByIndex.set(h, chapters = readChapterIndex(h))
   return chapters
+}
+
+export function episodeDetailsOf(bgmId: number): EpisodeDetails {
+  const result: EpisodeDetails = { main: [], specials: [] }
+  for (const { type, ...episode } of chapterIndex()?.details?.iterate(bgmId) ?? []) {
+    result[type === 1 ? 'specials' : 'main'].push(episode)
+  }
+  return result
 }
 
 // 手帐可记录的总数（正篇 + SP）；0 代表没有章节依据，目录的 eps 列仍只表示正篇

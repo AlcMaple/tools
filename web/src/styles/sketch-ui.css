@@ -1683,8 +1683,6 @@ input[type='checkbox'] { accent-color: var(--teal-mid); width: 16px; height: 16p
   color: var(--ink);
 }
 .trk-ep { grid-area: ep; font-family: var(--font-hand); font-size: 13px; color: var(--ink-sub); white-space: nowrap; margin-top: 2px; }
-.trk-chapters { font-size: 12px; color: var(--teal); white-space: nowrap; }
-.trk-list-ep .trk-chapters { display: block; font-family: var(--font-body); }
 /* 集数和加减按钮保持完整；窄卡放不下进度条时，让进度条另起一行。 */
 .ep-ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ep-ctrl .ep-progress-shell { flex: 1; min-width: 100px; }
@@ -2911,7 +2909,7 @@ body[data-auth='out'] .track-btn { display: none; }
 .ge-trigger-on { border-color: var(--gold); color: var(--gold); background: var(--gold-hl); }
 
 /* ── 鉴赏神回弹窗（GoodEpisodesModal）───────────────────────────────────────── */
-.ge-dlg { max-width: 560px; }
+.ge-dlg { width: min(510px, 100%); }
 .ge-title { display: flex; align-items: center; gap: 6px; }
 .ge-star { color: var(--gold); }
 .ge-hint { display: block; margin-top: 4px; color: var(--ink-faint); }
@@ -2939,38 +2937,59 @@ body[data-auth='out'] .track-btn { display: none; }
   cursor: pointer;
   transition: background-color .15s, color .15s;
 }
-.ge-view-btn.on { background: var(--gold-hl); color: var(--gold); font-weight: 600; }
+.ge-view-btn { font-weight: 600; }
+.ge-view-btn.on { background: var(--gold-hl); color: var(--gold); }
 .ge-view-count { font-size: 11px; opacity: .7; }
 
 /* 桌面结果区保留最低高度，切视图时减少跳动；移动端改由整个弹窗滚动。 */
-.ge-body { display: flex; flex-direction: column; min-height: 280px; max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; margin: 0 -2px; padding: 2px; }
+.ge-body { display: flex; flex-direction: column; min-height: 12rem; max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; margin: 0 -2px; padding: 2px; }
 @media (max-width: 960px) {
   /* 避免内层滚到底后截断滚动手势，使外层遮住的末行和底部操作无法露出。 */
   .ge-body { max-height: none; overflow: visible; }
 }
 
-.ge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 6px; align-content: start; }
-.ge-chapter-heading { margin: 12px 0 6px; font-size: 12px; color: var(--teal); }
-.ge-chapter-heading:first-child { margin-top: 0; }
-.ge-specials { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
-.ge-specials .ge-ep { height: auto; min-height: 34px; padding: 5px 8px; }
-.ge-specials small { display: block; overflow-wrap: anywhere; color: var(--ink-sub); }
+.ge-grid { display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: 4px; }
+.ge-sp-start { display: inline-flex; align-items: center; gap: 4px; }
+.ge-sp-label { display: inline-flex; align-items: center; height: 21px; padding: 0 3px 0 7px; border-left: 2px solid var(--teal); color: var(--teal); font: 700 11px/1 var(--font-body); }
 .ge-ep {
   position: relative;
-  height: 34px;
-  border: 1.5px solid var(--line);
-  border-radius: 8px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
   background: var(--card);
   color: var(--ink-sub);
-  font: inherit;
-  font-size: 12px;
+  font: 600 12px/1 var(--font-body);
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
-  transition: transform .12s, border-color .15s, background-color .15s, color .15s;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
-@media (hover: hover) { .ge-ep:hover { border-color: var(--gold); color: var(--ink); transform: translateY(-1px); } }
-.ge-ep.on { background: var(--gold-hl); border-color: var(--gold); color: var(--gold); font-weight: 700; }
-/* 有备注的集：角上一个常驻小圆点，标题 hover 即读；改备注统一去「只看鉴赏神回」列表。 */
-.ge-ep-dot { position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--gold); }
+.ge-ep.on { background: var(--gold-hl); border-color: var(--gold); color: var(--ink); }
+.ge-ep:focus-visible, .ge-ep[aria-describedby] { outline: 2px solid var(--teal); outline-offset: 0; }
+.ge-ep-dot { position: absolute; top: 2px; right: 2px; width: 4px; height: 4px; border-radius: 50%; background: var(--gold); }
+.ge-touch-hint { display: none; }
+@media (hover: none) {
+  .ge-hover-hint { display: none; }
+  .ge-touch-hint { display: inline; }
+  .ge-ep { min-width: 36px; height: 36px; }
+}
+.ge-tip {
+  position: fixed; z-index: 2; width: max-content; min-width: min(204px, calc(100vw - 16px)); max-width: min(300px, calc(100vw - 16px));
+  border: 1px solid var(--line-strong); border-radius: 7px; background: var(--card); color: var(--ink);
+  box-shadow: var(--shadow-2); font: 12px/1.5 var(--font-body); overflow-wrap: anywhere;
+}
+.ge-tip::before { content: ''; position: absolute; left: var(--tip-x); top: -5px; width: 8px; height: 8px; transform: translateX(-50%) rotate(45deg); border: solid var(--line-strong); border-width: 1px 0 0 1px; background: var(--sakura-wash); }
+.ge-tip[data-above="true"]::before { top: auto; bottom: -5px; transform: translateX(-50%) rotate(225deg); background: var(--card); }
+.ge-tip-head { position: relative; display: flex; align-items: baseline; gap: 8px; padding: 7px 11px; border-radius: 6px 6px 0 0; background: var(--sakura-wash); font-size: 13px; font-weight: 600; }
+.ge-tip-head b { flex: none; font-size: 11px; color: var(--ink-sub); font-variant-numeric: tabular-nums; }
+.ge-tip dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; padding: 7px 11px; }
+.ge-tip dt { color: var(--ink-sub); }
+.ge-tip dd { margin: 0; font-variant-numeric: tabular-nums; }
+.ge-tip p { margin: 0; padding: 7px 11px; color: var(--ink-sub); }
+.ge-tip-note { border-top: 1px dashed var(--line); }
+.ge-tip-note b { margin-right: 8px; }
 
 .ge-empty {
   flex: 1;

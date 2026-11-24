@@ -97,8 +97,10 @@ function previousCount(): number {
 // 正常周增量是几百条（本周 30502），跌破 10% 只可能是出事了。真要强推（比如上游口径变了）用 --force。
 const MIN_KEEP_RATIO = 0.9
 
-async function countEpisodes(lines: AsyncIterable<string>, animeIds: Set<number>): Promise<Map<number, ChapterCounts>> {
+async function indexEpisodes(db: Database.Database, lines: AsyncIterable<string>, animeIds: Set<number>): Promise<Map<number, ChapterCounts>> {
   const counts = new Map<number, ChapterCounts>()
+  const insert = db.prepare('INSERT INTO anime_episode (bgm_id, type, sort, episode_id, name, name_cn, airdate, duration) VALUES (?,?,?,?,?,?,?,?)')
+  const field = (v: unknown): string => typeof v === 'string' ? v.trim() : ''
   for await (const line of lines) {
     if (!line) continue
     let o: Record<string, unknown>
@@ -113,12 +115,12 @@ async function countEpisodes(lines: AsyncIterable<string>, animeIds: Set<number>
     if (!sid || !animeIds.has(sid)) continue
     let count = counts.get(sid)
     if (!count) counts.set(sid, count = { main: 0, specials: [] })
+    const id = Number(o.id) || 0
+    const sort = typeof o.sort === 'number' && Number.isFinite(o.sort) ? o.sort : null
+    const name = field(o.name), nameCn = field(o.name_cn)
+    insert.run(sid, type, sort, id, name, nameCn, field(o.airdate), field(o.duration))
     if (type === 0) count.main++
-    else count.specials.push({
-      id: Number(o.id) || 0,
-      sort: typeof o.sort === 'number' && Number.isFinite(o.sort) ? o.sort : null,
-      title: (typeof o.name_cn === 'string' && o.name_cn.trim()) || (typeof o.name === 'string' ? o.name.trim() : ''),
-    })
+    else count.specials.push({ id, sort, title: nameCn || name })
   }
   return counts
 }
@@ -155,6 +157,10 @@ async function buildIndex(
       votes   INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT);
+    CREATE TABLE anime_episode (
+      bgm_id INTEGER NOT NULL, type INTEGER NOT NULL, sort REAL, episode_id INTEGER NOT NULL,
+      name TEXT NOT NULL, name_cn TEXT NOT NULL, airdate TEXT NOT NULL, duration TEXT NOT NULL
+    );
   `)
   const ins = db.prepare(
     `INSERT OR REPLACE INTO anime (bgm_id,name,name_cn,aliases,tags,date,score,nsfw,votes,summary,end_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
@@ -206,7 +212,10 @@ async function buildIndex(
   // 目录的篇幅筛选只算本篇；手帐另取 SP，不让「13 集以内」的口径跟着进度条改变
   let withEps = 0
   if (episodeLines) {
-    const counts = await countEpisodes(episodeLines(), animeIds)
+    // 周档逐行落到临时库，只把计数与 SP 短标签留在内存，避免常驻几十万集的标题
+    db.exec('BEGIN')
+    const counts = await indexEpisodes(db, episodeLines(), animeIds)
+    db.exec('CREATE INDEX anime_episode_subject ON anime_episode (bgm_id, type, sort, episode_id); COMMIT')
     const upd = db.prepare('UPDATE anime SET eps = ?, specials = ? WHERE bgm_id = ?')
     db.transaction(() => {
       for (const [sid, { main, specials }] of counts) {

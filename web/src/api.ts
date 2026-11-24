@@ -1,7 +1,7 @@
 import { fetchApi, readApi } from './request'
 import type { CatalogPosition } from '../shared/catalog-position'
 import type { GoodEpisodeEdit } from '../shared/good-episodes'
-import type { EpisodeLayout } from '../shared/episode-layout'
+import type { EpisodeDetails, EpisodeLayout } from '../shared/episode-layout'
 // 前端与后端 server/bgm/calendar.ts 的返回结构对应。网页版前端不共享后端代码（后端有
 // undici 等 Node 依赖，不能进浏览器包），这里独立声明一份同形状类型。
 export interface CalendarItem {
@@ -212,6 +212,7 @@ export interface Track {
   /** null = 连载中（跟 app 的 totalEpisodes 同语义），**不是** 0 */
   totalEpisodes: number | null
   episodeLayout?: EpisodeLayout
+  episodeTotalManual?: true
   title: string
   titleCn: string
   cover: string
@@ -482,6 +483,10 @@ export async function addSearchTrack(
   } finally {
     if (keepalive) activeAddKeepaliveBytes -= bytes
   }
+}
+
+export async function fetchTrackChapters(bgmId: number, signal: AbortSignal): Promise<EpisodeDetails> {
+  return json<EpisodeDetails>(await fetchApi(`/api/tracks/${bgmId}/chapters`, { signal }, 10_000))
 }
 
 export async function editTrackGoodEpisodes(bgmId: number, ownerId: number, edit: GoodEpisodeEdit): Promise<Track> {

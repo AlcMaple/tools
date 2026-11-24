@@ -4,7 +4,7 @@ import { SOURCES, coverImageProps, type SourceBinding, type SourceId, type Track
 import { Popover } from '../Popover'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
-import { episodeBreakdown, episodeLabel, specialAt, type EpisodeLayout } from '../../shared/episode-layout'
+import { episodeLabel, specialAt, type EpisodeLayout } from '../../shared/episode-layout'
 import { SeasonStamp } from './SeasonStamp'
 import { TagInput } from './TagInput'
 import { SEG_CLS, SEG_ORDER, STAMP_CLS, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast, sourceEp, watchEp } from './common'
@@ -54,8 +54,6 @@ export function TrackCard({
   const title = t.titleCn || t.title
   const capped = t.totalEpisodes != null && t.episode >= t.totalEpisodes
   const ep = watchEp(t)
-  const layout = t.episodeLayout
-  const nextSpecial = specialAt(layout, t.episode + 1)
   const [addingTag, setAddingTag] = useState(false)
   const [episodePreview, setEpisodePreview] = useState<number | null>(null)
   const commitTag = (value: string): void => {
@@ -75,6 +73,7 @@ export function TrackCard({
     if (!Number.isSafeInteger(next)) return
     const ep = clampEpisode(next, t.totalEpisodes)
     setEpisodePreview(null)
+    if (ep === t.episode) return
     const p: TrackPatch = { episode: ep }
     // 「想看」首次推进 → 自动转「在看」。反方向（推满 → 看完）**不**自动，见文件头注释。
     if (ep > 0 && t.status === 'plan') {
@@ -134,11 +133,10 @@ export function TrackCard({
           <span className="trk-ep">
             {considering
               ? '还没开动'
-              : t.totalEpisodes != null ? `${episodePreview ?? t.episode} / ${t.totalEpisodes}` : `${episodePreview ?? t.episode} 集`}
+              : t.totalEpisodes === 0 ? '无正篇' : t.totalEpisodes != null ? `${episodePreview ?? t.episode} / ${t.totalEpisodes}` : `${episodePreview ?? t.episode} 集`}
           </span>
         </div>
 
-        {layout && <span className="trk-chapters">{episodeBreakdown(layout)}</span>}
         <div className="ep-ctrl">
           {/* 观望：不放集数、不放步进器、不放进度条 —— 那一套是「看到第几集」的语义 */}
           {t.status === 'considering' ? (
@@ -146,7 +144,7 @@ export function TrackCard({
               <WatchMarks value={t.observeCount} onChange={(n) => onPatch(t.bgmId, { observeCount: Math.max(0, n) })} />
               <span className="wm-rule" />
             </>
-          ) : (
+          ) : t.totalEpisodes === 0 ? null : (
           <>
           <div className="stepper">
             <button
@@ -158,12 +156,11 @@ export function TrackCard({
             >
               <Ic name="minus" cls="ic ic-sm" />
             </button>
-            <EpisodeInput episode={episodePreview ?? t.episode} total={t.totalEpisodes} layout={layout} onCommit={commitEpisode} />
+            <EpisodeInput episode={episodePreview ?? t.episode} total={t.totalEpisodes} onCommit={commitEpisode} />
             <button
               type="button"
               className="ep-plus"
               aria-label="加一集"
-              title={nextSpecial ? `下一集：${episodeLabel(layout, t.episode + 1)}${nextSpecial.title ? ' · ' + nextSpecial.title : ''}` : undefined}
               onClick={() => step(1)}
               disabled={capped}
             >
@@ -173,7 +170,6 @@ export function TrackCard({
           <EpisodeProgress
             episode={t.episode}
             total={t.totalEpisodes}
-            layout={layout}
             done={t.status === 'done'}
             previewEpisode={episodePreview}
             onPreview={setEpisodePreview}
@@ -222,7 +218,6 @@ export function TrackCard({
               <ContinueWatchAction
                 label={considering ? '试看' : '继续看'}
                 ep={ep}
-                layout={layout}
                 bound={bound}
                 locating={locating}
                 onPick={onContinue}
@@ -415,22 +410,17 @@ function RemoveBtn({ onAskRemove }: { onAskRemove: () => void }): JSX.Element {
 function EpisodeInput({
   episode,
   total,
-  layout,
   onCommit,
 }: {
   episode: number
   total: number | null
-  layout?: EpisodeLayout
   onCommit: (episode: number) => void
 }): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const focusPending = useRef(false)
   // 常见集数统一预留四位，避免同列卡片的加号和进度条随位数左右错位。
-  const episodeWidth = `calc(${Math.max(4, String(episode).length, String(total ?? 0).length, ...(layout?.specials.map(s => String(s.sort ?? '').length) ?? []))}ch + 2.5em)`
-  const special = specialAt(layout, episode)
-  const label = episodeLabel(layout, episode)
-  const hint = special ? `${label}${special.title ? ' · ' + special.title : ''}（按观看顺序输入第 ${episode} 集）` : '点这里直接输入集数'
+  const episodeWidth = `calc(${Math.max(4, String(episode).length, String(total ?? 0).length)}ch + 2.5em)`
 
   useEffect(() => {
     if (draft !== null && focusPending.current) {
@@ -457,8 +447,7 @@ function EpisodeInput({
         value={draft}
         inputMode="numeric"
         pattern="[0-9]*"
-        aria-label={layout ? '按观看顺序输入集数，正篇之后是 SP' : '直接输入看到的集数'}
-        title={layout ? '按观看顺序输入集数，正篇之后是 SP' : undefined}
+        aria-label="直接输入看到的集数"
         onChange={(event) => setDraft(event.currentTarget.value.replace(/[^0-9]/g, ''))}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -484,10 +473,10 @@ function EpisodeInput({
         focusPending.current = true
         setDraft(String(episode))
       }}
-      title={hint}
-      aria-label={special ? `${hint}，点击直接输入` : `当前第 ${episode} 集，点击直接输入`}
+      title="点这里直接输入集数"
+      aria-label={`当前第 ${episode} 集，点击直接输入`}
     >
-      {label}
+      EP {episode}
     </button>
   )
 }
@@ -497,7 +486,6 @@ const EPISODE_DRAG_THRESHOLD_PX = 4
 function EpisodeProgress({
   episode,
   total,
-  layout,
   done,
   previewEpisode,
   onPreview,
@@ -505,7 +493,6 @@ function EpisodeProgress({
 }: {
   episode: number
   total: number | null
-  layout?: EpisodeLayout
   done: boolean
   previewEpisode: number | null
   onPreview: (episode: number | null) => void
@@ -634,7 +621,7 @@ function EpisodeProgress({
       aria-valuemin={0}
       aria-valuemax={max ?? 100}
       aria-valuenow={max != null ? shown : percentage}
-      aria-valuetext={max != null ? `${layout ? episodeLabel(layout, shown) : `第 ${shown} 集`}，共 ${max} 集` : `第 ${current} 集，连载中`}
+      aria-valuetext={max != null ? `第 ${shown} 集，共 ${max} 集` : `第 ${current} 集，连载中`}
       onPointerDown={startBarDrag}
       onPointerMove={moveDrag}
       onPointerUp={finishDrag}

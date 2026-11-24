@@ -9,7 +9,7 @@ import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isRecentAir } from '../shared/anime-age'
 import { applyGoodEpisodeEdit, GOOD_EPISODE_NOTE_MAX_LENGTH, type GoodEpisodeEdit, type GoodEpisodeState } from '../shared/good-episodes'
-import { chapterIndex, epsOf } from './bgm/anime-index'
+import { chapterIndex, episodeDetailsOf, epsOf } from './bgm/anime-index'
 import type { EpisodeLayout } from '../shared/episode-layout'
 import { getCalendarMetadata, type CalendarMetadata } from './bgm/calendar'
 import {
@@ -178,7 +178,8 @@ function toJson(r: TrackRow, chapters = chapterIndex()): Record<string, unknown>
     episode: r.episode,
     // NULL → null(= 连载中)。**别在这里悄悄折成 0** —— 那会把「不知道总共几集」变成「总共 0 集」。
     totalEpisodes: r.total_episodes,
-    ...(subjectType === 'anime' && layout && r.total_episodes === layout.main + layout.specials.length ? { episodeLayout: layout } : {}),
+    ...(subjectType === 'anime' && layout && r.total_episodes === layout.main + layout.specials.length
+      ? { episodeLayout: layout, ...(extra.episodeTotalMode === 'manual' ? { episodeTotalManual: true } : {}) } : {}),
     title: r.title,
     titleCn: r.title_cn,
     cover: r.cover,
@@ -1381,6 +1382,17 @@ tracks.post('/:bgmId/cover', async (c) => {
  * 只读端点，给在线播放页（xifan.ts / girigiri.ts 的裸 HTML 播放器）用：不追这部番 /
  * 没标过都返回空，不当错误——播放页只是想知道「这集是不是我标过的鉴赏神回」，不是追番详情页。
  */
+tracks.get('/:bgmId/chapters', async c => {
+  const uid = await requireUid(c)
+  if (!uid) return c.json({ error: '未登录' }, 401)
+  const id = Number(c.req.param('bgmId'))
+  if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: '条目编号不正确' }, 400)
+  const row = oneStmt.get(uid, id) as TrackRow | undefined
+  if (!row || subjectTypeOf(parseExtra(row.extra)) !== 'anime') return c.json({ error: '这部番不在你的追番中' }, 404)
+  c.header('Cache-Control', 'private, no-store')
+  return c.json(episodeDetailsOf(id))
+})
+
 tracks.get('/:bgmId/good-episodes', async (c) => {
   const uid = await requireUid(c)
   if (!uid) return c.json({ error: '未登录' }, 401)

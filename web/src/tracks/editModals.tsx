@@ -4,7 +4,6 @@ import { coverImageProps, type Track, type TrackPatch } from '../api'
 import { Ic, Spinner } from '../SketchIcon'
 import { toast } from '../Toast'
 import { TagInput } from './TagInput'
-import { episodeBreakdown, episodeLabel } from '../../shared/episode-layout'
 import { SEASON_MONTHS, addedAtOf, seasonOf, seasonStamp } from './TrackTimeline'
 import { SEG_CLS, SEG_ORDER, SHORT_DAY, STATUS_META, USER_TAG_MAX, allTagsOf, tagLimitToast } from './common'
 
@@ -207,7 +206,7 @@ export function EditModal({
         </div>
 
         <div className="field mb16">
-          <span className="field-label">进度{t.episodeLayout && ` · ${episodeBreakdown(t.episodeLayout)}`}</span>
+          <span className="field-label">进度</span>
           <div className="ep-ctrl">
             <div className="stepper">
               <button
@@ -219,7 +218,7 @@ export function EditModal({
               >
                 <Ic name="minus" cls="ic ic-sm" />
               </button>
-              <span className="ep-num">{episodeLabel(t.episodeLayout, t.episode)}</span>
+              <span className="ep-num">{t.totalEpisodes === 0 ? '无正篇' : `EP ${t.episode}`}</span>
               <button
                 type="button"
                 className="ep-plus"
