@@ -1,6 +1,6 @@
 # 番外小站网页版（`web/`）
 
-番外小站桌面应用的网页版，**独立子项目**：自带 `package.json` / `node_modules`，与根目录的 Electron app 物理隔离
+网页版用自己的 `package.json` 声明依赖，作为 npm workspace 和桌面端共用根目录的锁文件。相同版本共享安装，版本冲突的包由 npm 分开放置
 
 ## 技术栈
 
@@ -10,13 +10,14 @@
 
 ## 本地开发
 
+在仓库根目录执行：
+
 ```bash
-cd web
 npm install
-npm run dev
+npm run dev:web
 ```
 
-打开 http://localhost:5173 —— 番剧周期表
+打开 http://localhost:5173。之后也可以在 `web/` 直接运行 `npm run dev`；下面的网页专用命令均在 `web/` 执行，无需重复安装
 
 ### 手动追番与 BGM 回填
 

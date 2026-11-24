@@ -220,10 +220,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: Install deps
-        run: npm ci
+      - name: Install desktop deps
+        run: npm ci --workspaces=false
 
       - name: Build
         run: npm run dist

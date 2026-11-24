@@ -1,5 +1,5 @@
 const { app, BrowserWindow } = require('electron')
-const { build } = require('../node_modules/esbuild')
+const { build } = require('esbuild')
 const { readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 const { resolve } = require('node:path')
 const output = process.env.PRETEXT_CHECK_DIR || '/tmp/maple-pretext-wide'

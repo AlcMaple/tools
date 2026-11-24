@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const { readFileSync, mkdirSync } = require('node:fs')
 const { resolve } = require('node:path')
-const { build } = require('../node_modules/esbuild')
+const { build } = require('esbuild')
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')
 
 const web = resolve(__dirname, '..')

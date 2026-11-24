@@ -1,8 +1,17 @@
 {
   "name": "mapletools",
   "version": "0.17.0",
+  "private": true,
   "description": "番外小站 Desktop App",
   "main": "out/main/index.js",
+  "workspaces": [
+    "web"
+  ],
+  "overrides": {
+    "@hono/vite-dev-server": {
+      "@hono/node-server": "^2.1.0"
+    }
+  },
   "scripts": {
     "predev": "node scripts/ensure-electron.mjs",
     "dev": "electron-vite dev",
@@ -12,7 +21,9 @@
     "start": "electron .",
     "dist": "npm run build && electron-builder",
     "build:win": "node scripts/build-win.mjs",
-    "sync:manifest": "node scripts/sync-manifest.mjs"
+    "sync:manifest": "node scripts/sync-manifest.mjs",
+    "dev:web": "npm run dev --workspace web --",
+    "build:web": "npm run build --workspace web"
   },
   "build": {
     "appId": "com.mapletools.app",
@@ -118,10 +129,11 @@
     "autoprefixer": "^10.4.17",
     "electron": "^44.9.3",
     "electron-builder": "^26.8.1",
-    "electron-vite": "^2.0.0",
+    "electron-vite": "^3.1.0",
     "pdfjs-dist": "4.4.168",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vite": "^6.4.3"
   }
 }

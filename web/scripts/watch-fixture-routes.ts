@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { randomBytes, scryptSync } from 'node:crypto'
 import type { Hono } from 'hono'
 import { getSession, issueSession } from '../server/auth'
@@ -59,11 +58,5 @@ export function addWatchFixture(app: Hono<{ Variables: { agentUid: number } }>, 
     return new Response(new Uint8Array(media.subarray(start, end + 1)), { status: range ? 206 : 200, headers })
   })
   app.get('/api/player/moov', c => c.body(null, 204))
-  app.get('/api/player/vendor/:file', c => {
-    const paths: Record<string, string> = { 'artplayer.js': '../node_modules/artplayer/dist/artplayer.js', 'hls.js': '../node_modules/hls.js/dist/hls.min.js', 'monitor.js': '../dist/player-monitor.js' }
-    const path = paths[c.req.param('file')]
-    if (!path) return c.body(null, 404)
-    return c.body(readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'), 200, { 'Content-Type': 'application/javascript; charset=utf-8' })
-  })
   return { password }
 }

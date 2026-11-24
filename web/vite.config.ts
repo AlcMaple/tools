@@ -1,4 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import devServer from '@hono/vite-dev-server'
@@ -26,7 +29,8 @@ const uploadSourceMaps = (command: string): boolean => command === 'build' && Bo
 
 // 接单评估读中文 PDF 要 pdf.js 的 CMap（169 个小文件）。不拷进 public/ 进仓库：dev 直接从
 // node_modules 出，构建时原样产出到 dist/pdfjs/cmaps/，版本永远跟着 pdfjs-dist 走。
-const CMAP_DIR = new URL('./node_modules/pdfjs-dist/cmaps/', import.meta.url)
+const resolvePackage = createRequire(import.meta.url).resolve
+const CMAP_DIR = join(dirname(resolvePackage('pdfjs-dist/package.json')), 'cmaps')
 const pdfCmaps: Plugin = {
   name: 'maple-pdfjs-cmaps',
   configureServer(server) {
@@ -34,7 +38,7 @@ const pdfCmaps: Plugin = {
       const name = (req.url ?? '').replace(/^\//, '').split('?')[0]
       if (!/^[\w.-]+\.bcmap$/.test(name)) return next()
       try {
-        const body = readFileSync(new URL(name, CMAP_DIR))
+        const body = readFileSync(join(CMAP_DIR, name))
         res.setHeader('Content-Type', 'application/octet-stream')
         res.end(body)
       } catch {
@@ -44,7 +48,7 @@ const pdfCmaps: Plugin = {
   },
   generateBundle() {
     for (const name of readdirSync(CMAP_DIR)) {
-      if (name.endsWith('.bcmap')) this.emitFile({ type: 'asset', fileName: `pdfjs/cmaps/${name}`, source: readFileSync(new URL(name, CMAP_DIR)) })
+      if (name.endsWith('.bcmap')) this.emitFile({ type: 'asset', fileName: `pdfjs/cmaps/${name}`, source: readFileSync(join(CMAP_DIR, name)) })
     }
   },
 }
@@ -52,19 +56,25 @@ const pdfCmaps: Plugin = {
 const agentRelease = JSON.parse(readFileSync(new URL('./server/agent-release.json',import.meta.url),'utf8')) as {codeHash:string}
 
 // Worker 与 WASM 必须同目录、同版本；本地开发和生产都从本站加载，不依赖 CDN。
+const archiveFiles = new Map([
+  ['worker-bundle.js', resolvePackage('libarchive.js/dist/worker-bundle.js')],
+  ['libarchive.wasm', resolvePackage('libarchive.js/dist/libarchive.wasm')],
+  ['LICENSE.txt', resolvePackage('libarchive.js/LICENSE')],
+])
 const archiveAssets: Plugin = {
   name: 'maple-archive-assets',
   configureServer(server) {
     server.middlewares.use(`/archive/${archivePackage.version}`, (req, res, next) => {
       const name = (req.url ?? '').replace(/^\//, '').split('?')[0]
-      if (!['worker-bundle.js', 'libarchive.wasm', 'LICENSE.txt'].includes(name)) return next()
+      const path = archiveFiles.get(name)
+      if (!path) return next()
       res.setHeader('Content-Type', name.endsWith('.wasm') ? 'application/wasm' : name.endsWith('.js') ? 'text/javascript' : 'text/plain')
-      res.end(readFileSync(new URL(`./node_modules/libarchive.js/${name === 'LICENSE.txt' ? 'LICENSE' : `dist/${name}`}`, import.meta.url)))
+      res.end(readFileSync(path))
     })
   },
   generateBundle() {
-    for (const name of ['worker-bundle.js', 'libarchive.wasm', 'LICENSE.txt']) {
-      this.emitFile({ type: 'asset', fileName: `archive/${archivePackage.version}/${name}`, source: readFileSync(new URL(`./node_modules/libarchive.js/${name === 'LICENSE.txt' ? 'LICENSE' : `dist/${name}`}`, import.meta.url)) })
+    for (const [name, path] of archiveFiles) {
+      this.emitFile({ type: 'asset', fileName: `archive/${archivePackage.version}/${name}`, source: readFileSync(path) })
     }
   },
 }
@@ -73,7 +83,11 @@ export default defineConfig(({ command }) => ({
   define: {__AGENT_CLIENT_RELEASE__: JSON.stringify(agentRelease.codeHash)},
   // dev 默认只监听 `[::1]`，把 localhost 解析成 127.0.0.1 的外部程序（NDM 之类下载管理器）连不上。
   // 钉死 IPv4 回环：浏览器访问 localhost 会 v6/v4 都试、自动落到 v4；不用 `::`/`0.0.0.0`，那会对局域网开放。
-  server: { host: '127.0.0.1', port: 5173 },
+  server: {
+    host: '127.0.0.1', port: 5173,
+    // workspace 自动探测会放行整个仓库；开发服务只需要 web 和共享依赖
+    fs: { allow: [fileURLToPath(new URL('.', import.meta.url)), fileURLToPath(new URL('../node_modules', import.meta.url))] },
+  },
   plugins: [
     react(),
     pdfCmaps,

@@ -61,8 +61,8 @@ Chromium 120 / Electron 28.3.3，macOS；80 条消息，每条 1,944 字符，�
 env -u ELECTRON_RUN_AS_NODE ./node_modules/.bin/electron web/scripts/test-pretext-ui.cjs
 env -u ELECTRON_RUN_AS_NODE ./node_modules/.bin/electron web/scripts/test-poster-pretext.cjs
 cd web
-./node_modules/.bin/tsx scripts/test-agent-ui.ts
-./node_modules/.bin/tsc --noEmit
+npm run test:agent-ui
+npm run typecheck
 env -u SENTRY_AUTH_TOKEN npm run build
 ```
 

@@ -25,7 +25,13 @@
 - [B 站源](docs/devlog/2026-B站源.md)
 - [接单评估](docs/devlog/2026-接单评估.md)
 
-## 当前未归类记录（2026-10）
+## 当前未归类记录（2026-11）
+
+## 2026-11-24 build(dev): 根目录一次安装桌面端和网页版依赖
+
+在仓库根目录执行一次 `npm install` 即可开发两端；已有两套安装的工作副本首次用 `npm ci` 清掉旧包。根目录 `npm run dev` 启动桌面端，`npm run dev:web` 启动网页版
+
+两端各自声明依赖，共用根锁文件与 Vite 6；不同主版本的邮件库仍分开安装。网页部署只装 web workspace，桌面发布跳过 web workspace。本机保留同一份 Electron 程序，清理后两处依赖目录合计少约 198 MiB（开发缓存会随运行变化）
 
 ## 2026-11-11 fix(dev): 删掉 Electron 程序后 npm run dev 能自动补回并启动
 
